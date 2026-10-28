@@ -12,3 +12,6 @@
 {"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/evidence-and-validation.md", "reason": "历史性能与fixture证明边界，冷热采样和现有验证命令"}
 {"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/scheduler-deadline-evidence.md", "reason": "本轮pilot在绘制不足15ms时仍多等约14.5ms；复用既有waitable timer的独立A/B、最大60Hz与旧系统回退合同"}
 {"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/residual-getdc-cost.md", "reason": "剩余GetDC成本的排除证据、与proof完全分离的SVG固定数值计量及小修边界；避免开启观察器改变被测路径"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/native-pagecontrol-unlimited.md", "reason": "生产RenderSurface真实屏外六向unlimited基线、Show/Hide占比及测试覆盖边界；用于S5同口径A/B"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/async-window-ownership-design.md", "reason": "S5候选帧/回执、latest-wins、幂等显隐、Z-order事件化、分阶段迁移及失败恢复合同的权威设计"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/ui3-window-call-audit.md", "reason": "S5全范围调用审计：渲染、pair/Bar直移、协调回执及UI工具同步原生副作用，保留生命周期/输入归一化边界"}

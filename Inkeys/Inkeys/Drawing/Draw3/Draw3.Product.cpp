@@ -144,9 +144,15 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool WaitForProductRuntimeRevision(std::uint64_t revision,
-		std::uint32_t timeoutMilliseconds) noexcept
+		std::uint32_t timeoutMilliseconds, bool waitWhileStopped) noexcept
 	{
-		return productHost.WaitForRuntimeRevision(revision, timeoutMilliseconds);
+		return productHost.WaitForRuntimeRevision(revision, timeoutMilliseconds, waitWhileStopped);
+	}
+
+	void NotifyProductWorkspaceProgress() noexcept
+	{
+		// 固定 Host 生命周期内只唤醒观察者，不进入 productCallMutex 或改变准入事实。
+		productHost.NotifyWorkspaceProgress();
 	}
 
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)

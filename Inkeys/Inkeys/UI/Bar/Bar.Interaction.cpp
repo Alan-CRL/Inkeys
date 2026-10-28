@@ -27,6 +27,8 @@ module;
 #include "Bar.Presentation.Source.h"
 #include "Bar.InteractionWorker.h"
 #include <type_traits>
+#include <thread>
+#include <cstring>
 #include <future>
 #include <stop_token>
 #include "Bar.Haptics.h"
@@ -8893,6 +8895,258 @@ bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 	return false;
 }
 
+bool BarUISetClass::RequestNativeDirectWindowMoveLocked(POINT translation,
+	unsigned long long transitionSerial, std::uint64_t leasedPresentationRevision) noexcept
+{
+	using namespace Inkeys::Window;
+	auto& service = GetService();
+	const auto serialBefore=bottomDockTransitionSerial.load(memory_order_acquire);
+	const auto deferred=bottomDockDeferredTransitionSerial.load(memory_order_relaxed);
+	const auto presentedSerial=bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
+	std::atomic_thread_fence(memory_order_acquire);
+	if(Inkeys::UI::Bar::ShouldDeferBarDirectWindowMove(0,transitionSerial,serialBefore,
+		bottomDockTransitionSerial.load(memory_order_acquire),deferred,presentedSerial)) return false;
+	auto lease = !leasedPresentationRevision ? service.TryAcquirePresentationLease(WindowRole::Bar) : SurfacePresentationLease{};
+	const auto nativeRevision = leasedPresentationRevision ? leasedPresentationRevision : (lease ? lease.Revision(WindowRole::Bar) : 0);
+	if (!leasedPresentationRevision && !lease) return false;
+	if (nativeRevision && !ConsumeNativeDirectWindowMoveLocked(nativeRevision))
+	{
+		CancelNativeDirectWindowMove(true);
+		if (nativeDirectMoveRevision.load(memory_order_acquire)) return false;
+	}
+	const auto native = service.SurfaceSnapshot(WindowRole::Bar);
+	const auto presentedFrame=BottomDockPresentedSnapshot();
+	if (!presentedFrame.dragActive || presentedFrame.dragSession!=bottomDockDragSession.load(memory_order_acquire)) return false;
+	if (!native || !native->known || !native->hwnd || !committedWindowScreenBoundsReady
+		|| native->hwnd != committedWindowHandle || native->generation != committedWindowGeneration
+		|| native->presentationRevision > committedWindowPresentationRevision
+		|| (nativeRevision && nativeRevision != committedWindowPresentationRevision)) return false;
+	const POINT presented{directWindowPresentedTranslationX.load(memory_order_acquire), directWindowPresentedTranslationY.load(memory_order_acquire)};
+	const auto delta = Inkeys::UI::Bar::ResolveBarDirectWindowMoveDelta(translation, presented);
+	if (!delta.x && !delta.y) return true;
+	WindowCandidate candidate;
+	candidate.frameSerial = ++nativeDirectMoveSerial;
+	candidate.workspaceRevision = bottomDockDragSession.load(memory_order_acquire);
+	auto& target = candidate.targets[0];
+	target.role = WindowRole::Bar; target.hwnd = native->hwnd; target.generation = native->generation;
+	target.bounds = Inkeys::UI::Bar::TranslateBarWindowRect(committedWindowScreenBounds, delta);
+	target.applyBounds = target.verifyBounds = target.requirePresentationMatch = true;
+	target.presentationRevision = committedWindowPresentationRevision;
+	CancelNativeDirectWindowMove();
+	const auto revision = service.PublishCandidate(candidate);
+	if (!revision) return false;
+	// 目标仍来自成功表面+绝对累计位移；入队不推进窗口/命中/光源缓存。
+	nativeDirectMove = {native->hwnd,native->generation,candidate.frameSerial,candidate.workspaceRevision,
+		transitionSerial,target.presentationRevision,target.bounds,translation};
+	nativeDirectMoveRevision.store(revision,memory_order_release);
+	const auto after=bottomDockTransitionSerial.load(memory_order_acquire);
+	if(after!=transitionSerial || (after&1ULL) || bottomDockDragSession.load(memory_order_acquire)!=candidate.workspaceRevision
+		|| bottomDockDeferredTransitionSerial.load(memory_order_acquire)>bottomDockPresentedTransitionSerial.load(memory_order_acquire))
+	{ CancelNativeDirectWindowMove(true); return false; }
+	return true;
+}
+
+void BarUISetClass::CancelNativeDirectWindowMove(bool preserveCompleted) noexcept
+{
+	const auto revision = nativeDirectMoveRevision.load(memory_order_acquire);
+	if (!revision) return;
+	auto& service=Inkeys::Window::GetService();
+	if (preserveCompleted)
+	{
+		// 取消也要等 owner 的真实退休回执；已完成位移仍需交接，不猜测 try_read 空值。
+		service.RequestCancelCandidatePreservingReceipt(Inkeys::Window::WindowRole::Bar,revision);
+		return;
+	}
+	service.CancelCandidate(Inkeys::Window::WindowRole::Bar,revision);
+	auto expected=revision;
+	(void)nativeDirectMoveRevision.compare_exchange_strong(expected,0,memory_order_acq_rel);
+}
+
+bool BarUISetClass::ConsumeNativeDirectWindowMoveLocked(std::uint64_t presentationRevision) noexcept
+{
+	using namespace Inkeys::Window;
+	const auto revision = nativeDirectMoveRevision.load(memory_order_acquire);
+	if (!revision) return true;
+	auto& service = GetService();
+	const auto receipt = service.TryReadCandidateRetirement(WindowRole::Bar,revision);
+	if (!receipt) return false; // cancelled/executing 仍可能在回滚，绝不能把失效当作退休。
+	const auto serialBefore=bottomDockTransitionSerial.load(memory_order_acquire);
+	std::atomic_thread_fence(memory_order_acquire);
+	const auto serialAfter=bottomDockTransitionSerial.load(memory_order_acquire);
+	if((serialBefore&1ULL)||serialBefore!=serialAfter)return false;
+	const auto& actual = receipt->actual[0];
+	const auto native = service.SurfaceSnapshot(WindowRole::Bar);
+	if(!native||!native->known)return false;
+	const bool current = receipt->phase==CommandPhase::Committed && receipt->count==1 && receipt->completedMask==1
+		&& receipt->revision==revision && receipt->frameSerial==nativeDirectMove.frameSerial
+		&& receipt->workspaceRevision==nativeDirectMove.session && nativeDirectMove.transitionSerial<=serialAfter
+		&& nativeDirectMove.session==bottomDockDragSession.load(memory_order_acquire)
+		&& native && native->known && actual.known
+		&& actual.hwnd==nativeDirectMove.hwnd && actual.generation==nativeDirectMove.generation
+		&& native->hwnd==actual.hwnd && native->generation==actual.generation
+		&& EqualRect(&actual.bounds,&nativeDirectMove.bounds) && EqualRect(&native->bounds,&nativeDirectMove.bounds)
+		&& actual.presentationRevision==presentationRevision;
+	if (current)
+	{
+		const POINT previous{directWindowPresentedTranslationX.load(memory_order_acquire),directWindowPresentedTranslationY.load(memory_order_acquire)};
+		const auto delta=Inkeys::UI::Bar::ResolveBarDirectWindowMoveDelta(nativeDirectMove.translation,previous);
+		committedWindowScreenBounds=actual.bounds; committedWindowScreenBoundsReady=true;
+		committedWindowPresentationRevision=actual.presentationRevision;
+		// 这里只反映已真实完成的位移；不推进 presentedTransitionSerial，新的吸附/显示屏障仍等新像素。
+		RebaseBottomDockPresentedWindow(nativeDirectMove.translation,delta);
+		lock_guard lightLock(borderCursorLightMutex);
+		for(size_t i=0;i<borderCursorVisibleRegionCount;++i) OffsetRect(&borderCursorVisibleRegions[i],delta.x,delta.y);
+	}
+	CancelNativeDirectWindowMove();
+	return true;
+}
+
+void BarUISetClass::PollNativeDirectWindowMove() noexcept
+{
+	if (!nativeDirectMoveRevision.load(memory_order_acquire)) return;
+	bool retry=false;
+	{
+		unique_lock lock(directWindowDragMutex,try_to_lock);
+		if (!lock.owns_lock()) return;
+		auto lease=Inkeys::Window::GetService().TryAcquirePresentationLease(Inkeys::Window::WindowRole::Bar);
+		if (!lease) return;
+		const auto before=nativeDirectMoveRevision.load(memory_order_acquire);
+		(void)ConsumeNativeDirectWindowMoveLocked(lease.Revision(Inkeys::Window::WindowRole::Bar));
+		retry=before && !nativeDirectMoveRevision.load(memory_order_acquire)
+			&&(directWindowDragTranslationX.load(memory_order_acquire)!=directWindowPresentedTranslationX.load(memory_order_acquire)
+				||directWindowDragTranslationY.load(memory_order_acquire)!=directWindowPresentedTranslationY.load(memory_order_acquire));
+	}
+	if (retry) UpdateRendering(false); // 拒绝/取消保留最新位移，由已有释放/像素事务接管。
+}
+
+int Inkeys::UI::Bar::RunBarNativeDirectMoveTests(
+	const std::function<bool()>& gateOwner, const std::function<void()>& releaseOwner)
+{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	using namespace Inkeys::Window;
+	using namespace std::chrono_literals;
+	int failures=0;
+	const auto Check=[&](bool value,const char* why){if(!value){++failures;std::fprintf(stderr,"[BarNativeMove] FAIL %s\n",why);}};
+	auto& service=GetService();
+	const auto initial=service.SurfaceSnapshot(WindowRole::Bar);
+	if(!initial||!initial->known||!initial->hwnd)return 1;
+	struct TestOwner : BarUISetClass
+	{
+		using BarUISetClass::BeginBottomDockTransition;
+		using BarUISetClass::CancelNativeDirectWindowMove;
+		using BarUISetClass::FinishBottomDockTransition;
+		using BarUISetClass::PollNativeDirectWindowMove;
+		using BarUISetClass::RequestNativeDirectWindowMoveLocked;
+		using BarUISetClass::bottomDockDeferredTransitionSerial;
+		using BarUISetClass::bottomDockDragActive;
+		using BarUISetClass::bottomDockDragSession;
+		using BarUISetClass::bottomDockPresentedDragActive;
+		using BarUISetClass::bottomDockPresentedDragSession;
+		using BarUISetClass::bottomDockPresentedTransitionSerial;
+		using BarUISetClass::bottomDockTransitionSerial;
+		using BarUISetClass::committedWindowGeneration;
+		using BarUISetClass::committedWindowHandle;
+		using BarUISetClass::committedWindowPresentationRevision;
+		using BarUISetClass::committedWindowScreenBounds;
+		using BarUISetClass::committedWindowScreenBoundsReady;
+		using BarUISetClass::directWindowDragMutex;
+		using BarUISetClass::directWindowDragPhase;
+		using BarUISetClass::directWindowDragTranslationX;
+		using BarUISetClass::directWindowDragTranslationY;
+		using BarUISetClass::directWindowPresentedTranslationX;
+		using BarUISetClass::directWindowPresentedTranslationY;
+		using BarUISetClass::nativeDirectMoveRevision;
+	} owner;
+	owner.committedWindowScreenBounds=initial->bounds;owner.committedWindowScreenBoundsReady=true;
+	owner.committedWindowPresentationRevision=initial->presentationRevision;
+	owner.committedWindowHandle=initial->hwnd;owner.committedWindowGeneration=initial->generation;
+	owner.bottomDockDragSession.store(77);owner.bottomDockDragActive.store(true);
+	owner.bottomDockPresentedDragActive.store(true);owner.bottomDockPresentedDragSession.store(77);
+	owner.directWindowDragPhase.store(BarDirectWindowDragPhase::Dragging);
+	const auto request=[&](POINT value,unsigned long long serial){
+		owner.bottomDockTransitionSerial.store(serial);
+		owner.directWindowDragTranslationX.store(value.x);owner.directWindowDragTranslationY.store(value.y);
+		std::scoped_lock lock(owner.directWindowDragMutex);
+		return owner.RequestNativeDirectWindowMoveLocked(value,serial);
+	};
+	const bool gated=gateOwner&&gateOwner();Check(gated,"bar move pauses real native owner");
+	Check(request({10,12},2)&&request({30,25},4),"bar input publishes latest absolute request while owner is delayed");
+	owner.bottomDockDragActive.store(false);owner.directWindowDragPhase.store(BarDirectWindowDragPhase::Idle);
+	owner.PollNativeDirectWindowMove();
+	Check(owner.directWindowPresentedTranslationX.load()==0 && owner.directWindowPresentedTranslationY.load()==0,
+		"accepted bar requests do not advance successful translation before native ACK");
+	if(releaseOwner)releaseOwner();
+	const auto deadline=std::chrono::steady_clock::now()+5s;
+	while(owner.nativeDirectMoveRevision.load()&&std::chrono::steady_clock::now()<deadline){owner.PollNativeDirectWindowMove();std::this_thread::sleep_for(1ms);}
+	RECT expected=TranslateBarWindowRect(initial->bounds,{30,25});RECT actual{};
+	Check(!owner.nativeDirectMoveRevision.load()&&GetWindowRect(initial->hwnd,&actual)&&EqualRect(&actual,&expected)
+		&&owner.directWindowPresentedTranslationX.load()==30&&owner.directWindowPresentedTranslationY.load()==25,
+		"one final Up converges latest bar bounds and translation without another input packet");
+
+	Check(request({34,27},6),"bar queues a move whose receipt will precede a new barrier");
+	const auto completedRevision=owner.nativeDirectMoveRevision.load();
+	std::optional<WindowCandidateReceipt> completedReceipt;
+	const auto completeDeadline=std::chrono::steady_clock::now()+5s;
+	while(!completedReceipt&&std::chrono::steady_clock::now()<completeDeadline){completedReceipt=service.TryReadCandidateReceipt(WindowRole::Bar,completedRevision);std::this_thread::sleep_for(1ms);}
+	Check(completedReceipt&&completedReceipt->phase==CommandPhase::Committed,"native move really completes before barrier publication");
+	owner.BeginBottomDockTransition();(void)owner.FinishBottomDockTransition(true);
+	const auto previousPresentedSerial=owner.bottomDockPresentedTransitionSerial.load();
+	owner.PollNativeDirectWindowMove();
+	expected=TranslateBarWindowRect(initial->bounds,{34,27});
+	Check(owner.directWindowPresentedTranslationX.load()==34&&owner.directWindowPresentedTranslationY.load()==27
+		&&owner.bottomDockPresentedTransitionSerial.load()==previousPresentedSerial,
+		"completed unread move reconciles actual geometry without confirming the newer dock barrier");
+	owner.bottomDockDeferredTransitionSerial.store(0);
+	const bool barrierGate=gateOwner&&gateOwner();Check(barrierGate,"bar barrier fixture pauses owner before queued move");
+	Check(request({45,38},10),"ordinary floating move queued before dock barrier");
+	const auto cancelledRevision=owner.nativeDirectMoveRevision.load();
+	owner.BeginBottomDockTransition();(void)owner.FinishBottomDockTransition(true);
+	Check(!request({55,48},12)&&owner.nativeDirectMoveRevision.load()
+		&&!service.CandidateCurrent(WindowRole::Bar,cancelledRevision),"new dock barrier cancels queued old pixels and rejects new direct move before matching rendered shape");
+	if(releaseOwner)releaseOwner();
+	const auto retirementDeadline=std::chrono::steady_clock::now()+5s;
+	while(owner.nativeDirectMoveRevision.load()&&std::chrono::steady_clock::now()<retirementDeadline){owner.PollNativeDirectWindowMove();std::this_thread::sleep_for(1ms);}
+	Check(!owner.nativeDirectMoveRevision.load()&&GetWindowRect(initial->hwnd,&actual)&&EqualRect(&actual,&expected),"cancelled pre-barrier move retires without changing native bounds");
+	owner.PollNativeDirectWindowMove();
+	owner.bottomDockDeferredTransitionSerial.store(0);owner.bottomDockPresentedTransitionSerial.store(12);
+	--owner.committedWindowGeneration;
+	Check(!request({56,49},14),"successful bitmap generation cannot be upgraded by reading a newer HWND identity");
+	++owner.committedWindowGeneration;
+	// 真实 ULW 替换像素后，旧位图版本的 queued move 必须在首次原生写入前拒绝。
+	auto lease=service.TryAcquirePresentationLease(WindowRole::Bar);
+	Check(static_cast<bool>(lease),"bar native presentation lease acquired");
+	owner.bottomDockTransitionSerial.store(16);
+	owner.directWindowDragTranslationX.store(60);owner.directWindowDragTranslationY.store(50);
+	bool queued=false;
+	{std::scoped_lock lock(owner.directWindowDragMutex);queued=lease&&owner.RequestNativeDirectWindowMoveLocked({60,50},16,lease.Revision(WindowRole::Bar));}Check(queued,"old-pixel bar move is queued behind the lease");
+	const auto staleRevision=owner.nativeDirectMoveRevision.load();
+	HDC source=CreateCompatibleDC(nullptr);void* pixels=nullptr;
+	BITMAPINFO bitmap{};bitmap.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bitmap.bmiHeader.biWidth=64;
+	bitmap.bmiHeader.biHeight=-64;bitmap.bmiHeader.biPlanes=1;bitmap.bmiHeader.biBitCount=32;bitmap.bmiHeader.biCompression=BI_RGB;
+	HBITMAP dib=source?CreateDIBSection(source,&bitmap,DIB_RGB_COLORS,&pixels,nullptr,0):nullptr;
+	const auto previous=source&&dib?SelectObject(source,dib):nullptr;
+	if(pixels)std::memset(pixels,0,64*64*4);
+	POINT destination{expected.left,expected.top},origin{};SIZE size{64,64};BLENDFUNCTION blend{AC_SRC_OVER,0,255,AC_SRC_ALPHA};
+	UPDATELAYEREDWINDOWINFO info{};info.cbSize=sizeof(info);info.pptDst=&destination;info.psize=&size;info.pptSrc=&origin;info.hdcSrc=source;info.pblend=&blend;info.dwFlags=ULW_ALPHA;
+	const bool pixelsChanged=lease&&source&&dib&&UpdateLayeredWindowIndirect(initial->hwnd,&info);
+	Check(pixelsChanged,"real offscreen bar ULW succeeds while geometry owner is excluded");
+	if(pixelsChanged)(void)lease.PixelsChanged(WindowRole::Bar);
+	lease.Reset();
+	std::optional<WindowCandidateReceipt> stale;
+	const auto staleDeadline=std::chrono::steady_clock::now()+5s;
+	while(!stale&&std::chrono::steady_clock::now()<staleDeadline){stale=service.TryReadCandidateReceipt(WindowRole::Bar,staleRevision);std::this_thread::sleep_for(1ms);}
+	Check(stale&&stale->phase!=CommandPhase::Committed&&GetWindowRect(initial->hwnd,&actual)&&EqualRect(&actual,&expected),
+		"new ULW pixel revision rejects stale bar move without pulling pixels to old geometry");
+	owner.CancelNativeDirectWindowMove();owner.committedWindowScreenBoundsReady=false;
+	Check(!request({80,70},8),"ULW without complete successful frame leaves direct-move eligibility closed");
+	if(previous)SelectObject(source,previous);if(dib)DeleteObject(dib);if(source)DeleteDC(source);
+	Check(service.SetBounds(WindowRole::Bar,initial->bounds),"bar fixture restores original native rectangle");
+	std::fprintf(stderr,"[BarNativeMove] failures=%d\n",failures);return failures;
+#else
+	(void)gateOwner;(void)releaseOwner;return 1;
+#endif
+}
+
 // 拖动交互
 InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 {
@@ -8923,6 +9177,13 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 	// 几何交接或末笔呈现时等待所有权，异步让出 worker，不阻塞窗口线程。
 	for (;;)
 	{
+		PollNativeDirectWindowMove();
+		if(nativeDirectMoveRevision.load(memory_order_acquire))
+		{
+			co_await InteractionDelay(std::chrono::milliseconds(1));
+			if(offSignal||InteractionCancelled()) co_return result;
+			continue;
+		}
 		BarDirectWindowDragPhase expected = BarDirectWindowDragPhase::Idle;
 		if (directWindowDragPhase.compare_exchange_weak(
 			expected, BarDirectWindowDragPhase::Dragging,
@@ -9466,6 +9727,8 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 				|| pixelDeltaY != appliedDeltaY;
 			const bool anyModeChanged = dockUpdate.modeChanged
 				|| centerUpdate.modeChanged;
+			// 新形态屏障发布前退休未完成直移；已完成回执只保留真实位置基准，不替代新形态帧。
+			if (anyModeChanged || foldedDuringDrag) CancelNativeDirectWindowMove(true);
 			// 每个采样都用同一个 seqlock tuple 发布抓手、两轴映射和窗口位移。
 			BeginBottomDockTransition();
 			bottomDockDragRigidGripScreenX.store(
@@ -9490,6 +9753,8 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 				awaitedTransitionSerial = publication.transitionSerial;
 			}
 			// 固定表面内的 dock/center 端点要抵消连续 HWND 位移，不能按纯平移漏掉重绘。
+			if (awaitedTransitionSerial || dockUpdate.mode == BarBottomDockMode::BottomDocked
+				|| centerUpdate.mode == BarBottomDockCenterMode::Centered) CancelNativeDirectWindowMove(true);
 			bool requestRendering = publication.visualChanged || (translationChanged
 				&& (dockUpdate.mode == BarBottomDockMode::BottomDocked
 					|| centerUpdate.mode == BarBottomDockCenterMode::Centered));
@@ -9522,49 +9787,30 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 							directWindowPresentedTranslationY.load(memory_order_acquire) };
 						const POINT moveDelta = ResolveBarDirectWindowMoveDelta(
 							desiredTranslation, presentedTranslation);
-						// held 表面已在 Down 预留；透明 HWND 可越屏，UI 底端由世界目标约束。
-						auto MoveFloatingWindow = [&]() -> BOOL
-						{
+						// 离屏轨迹保留最终 sink；产品只发布绝对目标，真实完成在回执中确认。
+						bool movedSynchronously = false;
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
-							if (bottomDockDirectMoveTestSink)
-								return bottomDockDirectMoveTestSink(floating_window,
-									currentWindowRect.left + moveDelta.x,
-									currentWindowRect.top + moveDelta.y);
-#endif
-							return SetWindowPos(floating_window, nullptr,
-								currentWindowRect.left + moveDelta.x,
-								currentWindowRect.top + moveDelta.y, 0, 0,
-								SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
-						};
-						if ((moveDelta.x != 0 || moveDelta.y != 0) && !MoveFloatingWindow())
+						if (bottomDockDirectMoveTestSink)
 						{
-							directMoveFailed = true;
-							return false;
+							if ((moveDelta.x || moveDelta.y) && !bottomDockDirectMoveTestSink(floating_window,
+								currentWindowRect.left + moveDelta.x, currentWindowRect.top + moveDelta.y))
+							{ directMoveFailed = true; return false; }
+							movedSynchronously = true;
 						}
-						if (moveDelta.x != 0 || moveDelta.y != 0)
+						else
+#endif
+						if (!RequestNativeDirectWindowMoveLocked(desiredTranslation,publication.transitionSerial)) requestRendering = true;
+						if (movedSynchronously && (moveDelta.x || moveDelta.y))
 						{
-							committedWindowScreenBounds = TranslateBarWindowRect(
-								currentWindowRect, moveDelta);
-							committedWindowScreenBoundsReady = true;
-							RebaseBottomDockPresentedWindow(
-								desiredTranslation, moveDelta);
-							// 第三光源接受区是屏幕缓存，HWND 直移后同步平移，不能等下一次 ULW。
+							committedWindowScreenBounds=TranslateBarWindowRect(currentWindowRect,moveDelta);
+							RebaseBottomDockPresentedWindow(desiredTranslation,moveDelta);
 							lock_guard lightLock(borderCursorLightMutex);
-							for (size_t regionIndex = 0;
-								regionIndex < borderCursorVisibleRegionCount;
-								++regionIndex)
-							{
-								RECT& region = borderCursorVisibleRegions[regionIndex];
-								region.left += moveDelta.x;
-								region.right += moveDelta.x;
-								region.top += moveDelta.y;
-								region.bottom += moveDelta.y;
-							}
+							for(size_t i=0;i<borderCursorVisibleRegionCount;++i) OffsetRect(&borderCursorVisibleRegions[i],moveDelta.x,moveDelta.y);
 						}
 					}
 					else requestRendering = true;
 				}
-				else requestRendering = true;
+				else { CancelNativeDirectWindowMove(true); requestRendering = true; }
 				appliedDeltaX = pixelDeltaX;
 				appliedDeltaY = pixelDeltaY;
 			}
@@ -9575,6 +9821,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 	ExMessage pointerMessage = msg;
 	while (!offSignal && !directMoveFailed)
 	{
+		PollNativeDirectWindowMove();
 		// 无输入时也输出限频摘要，才能区分流中断与已到达样本被仲裁拒绝。
 		LogDragDiagnostics("tracking");
 		if (!(co_await NextBarInteractionMessage(pointerMessage, EM_MOUSE, floating_window, true, nullptr,

@@ -380,3 +380,11 @@ Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只�
 - 内部保留撤全屏→离开白板样式→返回band/穿透顺序，只写实际需要变化的字段。全局刷新、Setting带内Raise与Shell worker仍独立，失败不撤销已完成workspace。
 - 新场景政策恢复只处理其实际修改对象，不恢复Bar/PPT无关几何/显隐。补偿绑定旧HWND/generation/region/property，不得重新按当前role取新pair执行旧CanvasPolicy；同owner重入、取消后在途回执和安全覆盖保持真实责任。
 - 不相交的Bar/PPT几何与capture取消可继续；普通Show/关穿透/新政策仍不得越过旧Canvas恢复。设置页的协调故障重试使用点击时捕获的当前workspace失败版本，不能伪装成Host CanvasRecovery token，也不能旧按钮重试新请求。
+
+## UI3 窗口回执与恢复边界（2026-10-28）
+
+PageControl/Whiteboard render callback 不使用上述同步命令等待合同；通过现有 Window Service 的固定 candidate/receipt 非阻塞发布/消费。同步兼容接口仅留给仍需要它的非渲染或生命周期调用。窗口 owner 的真实失败/恢复、1500ms命令期限与250ms失败重试不因异步化放宽；停止等待不能当作 owner 已退休。
+
+恢复严格按 candidate 写集：ULW 已定位的 verify-only 几何不得进入 native bounds 回滚；显隐补偿不能改变未写入的 style/owner/region。旧 HWND/generation 在安全 Hide 锁存前就必须拒绝；pair 第二窗失败保留完整恢复责任，半完成不允许发布成功。UI/协调器仅消费 owner 的 known 快照，不用实时 HWND 查询或 desired 判断 prepared/active。详细接口与测试矩阵见 [窗口候选合同](rendering-and-ui.md#ui3-原生窗口候选与真实回执2026-10-28)。
+
+异步 Prepare/Complete 使用独立 WorkspaceWindowReceipt，actual payload/快照先于终态通知。取消后的 Executing 仍代表物理恢复责任；原政策、product、Host、PPT 和窗口真值全部核验后才可 Committed。通知复用 runtime revision，250ms 无进展检查和原失败次数/退避不变。Freeze 与 Bar/PPT ULW 和 owner 几何写入用相应 role lease 互斥；回滚未退休不释放 lease。UI SyncDraw3State 只发布状态/期望并唤醒协调器，不同步等待 Setting 或画布窗口。

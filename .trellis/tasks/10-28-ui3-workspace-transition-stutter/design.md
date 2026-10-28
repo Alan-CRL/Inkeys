@@ -112,3 +112,23 @@ late资源或source映射改变仍完整bitmap绘制/full replacement提交，�
 100%/200%各一轮、每向2cycle短样本中，301/272个成功提交帧的四阶段SVG CPU累计占相同成功Bar callback时间4.59%/3.03%（全部496/462个callback口径为3.81%/2.62%）；成功帧SVG总P95约0.841/0.817ms，GetDC P95约6.384/14.719ms。保留100%单个约17ms raster离群，不据平均占比否认偶发慢帧；Draw阶段仅CPU提交，仍不能排除SVG的异步WARP成本。该pilot不替代前一批完整矩阵，也不据不同运行/样本P95相减推算占比。
 
 当前未选择公共SVG缓存重构、重复GetBounds微改或旧mask-slices方案：没有证据支持其足以解决剩余预算。继续保留完整绘制/提交和现有画质；若要进一步改变backing/source布局以缩小互操作面积，须单独设计固定坐标映射、布局/命中转换、负原点/多DPI、反向/失败/设备epoch及完整source包含证明，再作独立A/B。现有source/root/容量相互依赖，不能再次仅缩容量让其逐帧追扩。切换呈现后端、增线程和减光效不纳入本任务已验证修复。
+
+## S5：UI 候选帧与 Window Service 异步所有权（当前用户批准方向）
+
+后续实现以此节和 `research/async-window-ownership-design.md` 为准，不再把“render callback 内同步等待 Window owner”视为可接受的长期设计。真实屏外生产 RenderSurface 采样表明 Show/Hide（含RefreshOverlayGroup）占其内部耗时65.66%，详见 `research/native-pagecontrol-unlimited.md`；屏外未复现现场极低FPS，故该数据只用于选择接缝，不冒充完整现场证明。
+
+UI保留动画、布局、D2D/GetDC/ULW和候选命中计算，不再跨owner同步等待或直接裁决其它HWND状态。UI发布含revision/frameSerial/role/bounds/visible/promote/workspaceRevision/windowGeneration的固定候选，并非阻塞读取含实际bounds/visible/generation/phase的回执。采用原子revision+固定快照/既定mailbox，release/acquire保证一致；latest-wins合并连续变化，过期回执不覆盖新状态，完整真实回执前不ConsumeDamage、不发布命中或UI-ready。
+
+普通Show/Hide和SetBounds幂等，普通Show不再默认执行完整RefreshOverlayGroup。PPT Pointer Down promote、workspace/topology/band/owner变化和失败恢复才进行必要Z-order管理。不得仅把逐帧全组重排搬到另一线程。
+
+迁移顺序：P1 PageControl RenderSurface；P2 Whiteboard Freeze及背景ACK；P3 PageControl/Bar direct-move与Pointer Down promote；P4 StateMonitoring Prepare/Complete回执化。P1/P2须独立红绿和A/B，P3/P4保持像素/位置一致、pair原子性、输入fence、PPT身份和pending/Committed边界。复用现有Window overlay owner，不新增渲染owner或平行状态机。
+
+当前 `.trellis/spec/native-desktop/rendering-and-ui.md:458-459` 允许render同步等待和UI直接pair SetWindowPos，属于本阶段需要同步修订的旧合同。详细字段、故障语义、验证矩阵及禁止捷径见上述研究文档。
+
+### S5 接缝细化（实施审阅）
+
+PageControl 的 ULW 本身已经同时写入像素和位置；随后 native 候选使用 verifyBounds 核验，不再重复 SetBounds。Scene 捕获一份固定命中候选和 damage revision，回执只确认该帧；新反馈或光照允许继续 Advance 并取代旧候选，真正无新变化时复用成功像素等待 ACK。显示/隐藏与窗口政策的 owner 快照必须先于相应终态/通知发布，后续原生变化使相关 role 的旧候选失效。
+
+P3 的真实直移不能把 Publish 成功解释成 pair 成功。需要固定待确认请求和完整 mask 回执；UI ULW 与 owner bounds 写入复用 try-only role lease。owner 取不到 lease 时保留最新槽，失败回滚未退休时继续持有该责任；UI 不等待 lease。Pointer Down promote 是稀疏事件，不能放进会被下一像素帧覆盖的普通候选槽而丢失，应沿既有 owner 命令入口异步提交并绑定 HWND/generation。Bar 仍按当前 translation/geometry barrier 决定可直移资格，只有原生完整成功才重基准命中、窗口位置与光照接受区。
+
+P4 只改变既有协调器的推进方式：Prepare/Complete 返回独立回执，UI/background/native 进展轻量唤醒原等待者；250ms 仍作无事件/恢复兜底。唤醒不是 ready，最终仍核验完整 workspace/PPT/Host/output/content/窗口身份；新意图取消旧请求但不能提前丢弃执行中的物理恢复责任。Complete 前的焦点上下文须跨异步阶段保存，成功后仅重基准一次，不在每次轮询重新捕获而放宽焦点权限。

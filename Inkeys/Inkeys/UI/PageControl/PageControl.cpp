@@ -51,6 +51,7 @@ module Inkeys.UI.PageControl;
 
 import Inkeys.UI.Bar;
 import Inkeys.UI.MessageBox;
+import Inkeys.UI.Whiteboard;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.EraserAttributeMotion;
@@ -256,6 +257,9 @@ namespace Inkeys::UI::PageControl
 			SIZE committedPresentationSize{};
 			SIZE committedBackingCapacity{};
 			std::uint64_t committedDeviceGeneration = 0;
+			std::uint64_t committedWindowPresentationRevision = 0;
+			HWND committedWindowHandle = nullptr;
+			std::uint64_t committedWindowGeneration = 0;
 			bool committedPresentationReady = false;
 			bool forceFullPresentation = true;
 			bool windowCommitFailureActive = false;
@@ -350,6 +354,27 @@ namespace Inkeys::UI::PageControl
 			middleSnapRequest = { layout, sampledAt, centerSnapped };
 		}
 		std::array<SurfaceState, 4> surfaces;
+		struct NativePairMove
+		{
+			Inkeys::Window::WindowCandidate candidate;
+			PptLayoutState layout;
+			std::array<RECT, 2> logical{};
+			std::array<float, 2> scale{};
+			std::uint64_t nativeRevision = 0, dragRevision = 0, publicationRevision = 0;
+			bool snapMoving = false, committed = false, released = false;
+			unsigned observingMask = 3;
+		};
+		std::array<NativePairMove, 2> nativePairMoves;
+		std::mutex nativePairMoveMutex;
+		std::uint64_t hiddenTestNativePairCommits = 0;
+		void CancelNativeSurfaceFrame(std::size_t index) noexcept;
+		void CancelNativePairMove(std::size_t pairIndex) noexcept
+		{
+			std::scoped_lock pairLock(nativePairMoveMutex);
+			auto& pending = nativePairMoves[pairIndex];
+			if (pending.nativeRevision) Inkeys::Window::GetService().CancelCandidate(Roles[pairIndex * 2], pending.nativeRevision);
+			pending = {};
+		}
 		// 触摸批次只属于 HWND owner，不随渲染对象销毁而从另一线程重置。
 		struct NativeTouchState {DWORD id=0;bool active=false,primary=false;POINT lastClient{};std::uintptr_t source=0;};
 		std::array<NativeTouchState,4> nativeTouches;
@@ -365,7 +390,11 @@ namespace Inkeys::UI::PageControl
 			bool visible=false,locked=true;
 			std::uint64_t pptSession=0,semanticRevision=0,pptLayoutEpoch=0;
 			PptRecovery::State pptRecovery;
+			bool nativePending = false;
+			std::uint64_t nativePublicationRevision = 0;
 		};
+		std::atomic_uint64_t publishedRevision = 1;
+		std::array<std::atomic_bool, 4> nativeInputBarrier{};
 		std::mutex inputSnapshotMutex;
 		std::array<InputPresentation,4> inputPresentations;
 		std::atomic_uint64_t inputLifecycle=1;
@@ -374,20 +403,24 @@ namespace Inkeys::UI::PageControl
 		std::vector<std::unique_ptr<InputRegistrationContext>> inputContexts;
 		std::uint64_t inputSemanticRevision=0;
 		void CommitInputPresentationLocked(std::size_t index,WorkspaceMode mode,const WhiteboardState& whiteboard,
-			const PageControlSurfaceBudget& budget,bool visible,bool locked,std::uint64_t pptSession,std::uint64_t pptLayoutEpoch=0,PptRecovery::State pptRecovery={})
+			const PageControlSurfaceBudget& budget,bool visible,bool locked,std::uint64_t pptSession,std::uint64_t pptLayoutEpoch=0,PptRecovery::State pptRecovery={},std::uint64_t nativePublicationRevision=0)
 		{
 			const auto& previous=inputPresentations[index];
 			const bool same=previous.mode==mode
 				&&(mode!=WorkspaceMode::WhiteboardExpanded||(previous.whiteboard.generation==whiteboard.generation&&previous.whiteboard.currentPage==whiteboard.currentPage))
 				&&(mode!=WorkspaceMode::PptCompact||(previous.pptSession==pptSession&&previous.pptLayoutEpoch==pptLayoutEpoch&&previous.pptRecovery==pptRecovery));
 			const auto identity=same&&previous.semanticRevision?previous.semanticRevision:++inputSemanticRevision;
-			inputPresentations[index]={mode,whiteboard,budget,visible,locked,pptSession,identity,pptLayoutEpoch,pptRecovery};
+			inputPresentations[index]={mode,whiteboard,budget,visible,locked,pptSession,identity,pptLayoutEpoch,pptRecovery,false,nativePublicationRevision};
 		}
 		InputPresentation InputSnapshot(std::size_t index)
-		{std::scoped_lock lock(inputSnapshotMutex);return inputPresentations[index];}
+		{std::scoped_lock lock(inputSnapshotMutex);auto input=inputPresentations[index];
+			input.nativePending=nativeInputBarrier[index].load(std::memory_order_acquire)
+				||(input.nativePublicationRevision&&input.nativePublicationRevision!=publishedRevision.load(std::memory_order_acquire));return input;}
 		std::pair<InputPresentation,Inkeys::UI::Bar::BarSurfaceInputSample> CaptureInputSnapshot(std::size_t index,POINT local)
 		{
-			std::scoped_lock lock(inputSnapshotMutex);const auto input=inputPresentations[index];
+			std::scoped_lock lock(inputSnapshotMutex);auto input=inputPresentations[index];
+			input.nativePending=nativeInputBarrier[index].load(std::memory_order_acquire)
+				||(input.nativePublicationRevision&&input.nativePublicationRevision!=publishedRevision.load(std::memory_order_acquire));
 			return {input,input.visible?surfaces[index].scene.SamplePointer(local):Inkeys::UI::Bar::BarSurfaceInputSample{}};
 		}
 
@@ -395,13 +428,16 @@ namespace Inkeys::UI::PageControl
 		GroupLayoutBudgetCache groupLayoutBudget;
 		std::atomic_int hiddenTestBlockedUlwSurface = -1;
 		std::atomic_int hiddenTestBlockedResourceSurface = -1;
+		constexpr UINT HiddenTestOwnerGateMessage = WM_APP + 0x355;
+		std::atomic<HANDLE> hiddenTestOwnerEntered = nullptr, hiddenTestOwnerRelease = nullptr;
+		std::atomic_int hiddenTestBlockedNativeSurface = -1;
+		std::atomic_int hiddenTestBlockedBoundsSurface = -1;
 		std::atomic_bool hiddenTestMonitorEnabled = false;
 		std::atomic_uint hiddenTestDpi = USER_DEFAULT_SCREEN_DPI;
 		std::atomic<float> hiddenTestUiScale = 0.0F;
 		std::atomic_bool hiddenTestBudgetOverrideEnabled = false;
 		std::atomic_uint referenceCount = 0;
 		std::atomic_bool initialized = false;
-		std::atomic_uint64_t publishedRevision = 1;
 		std::atomic_uint64_t directMoveRevision = 1;
 		std::atomic_bool debugEnabled = false;
 		std::mutex lifecycleMutex;
@@ -685,6 +721,7 @@ namespace Inkeys::UI::PageControl
 		[[nodiscard]] PptDragRollbackResult RollbackDragTracking(
 			std::size_t pairIndex) noexcept
 		{
+			CancelNativePairMove(pairIndex);
 			PptDragRollbackResult result;
 			{
 				std::scoped_lock dragLock(dragCommitMutex);
@@ -1205,7 +1242,9 @@ namespace Inkeys::UI::PageControl
 			HRESULT failureHr = S_OK;
 			DWORD failureError = ERROR_SUCCESS;
 			bool resourcesFailed = false;
+			bool deferred = false;
 			bool pixelsSubmitted = false;
+			std::uint64_t presentationRevision = 0;
 		};
 
 		[[nodiscard]] PresentSceneResult PresentScene(std::size_t index,
@@ -1213,7 +1252,8 @@ namespace Inkeys::UI::PageControl
 			const FrameContext& frameContext, const RECT& presentationBounds,
 			SIZE backingCapacity, bool forceFullReplacement,
 			bool showDebugFrames, bool lifecycleRendering,
-			const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>* offscreenSink=nullptr) noexcept
+			const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>* offscreenSink=nullptr,
+			std::uint64_t expectedDirectRevision=0,std::uint64_t expectedPublication=0) noexcept
 		{
 			PresentSceneResult result;
 			auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
@@ -1365,6 +1405,18 @@ namespace Inkeys::UI::PageControl
 			}
 			state.scene.Renderer().FinishFrameDrawCommands(context.Get());
 			drawTimer.Stop();
+			auto nativeLease = hwnd ? Inkeys::Window::GetService().TryAcquirePresentationLease(Roles[index])
+				: Inkeys::Window::SurfacePresentationLease{};
+			const bool nativeDeferred = hwnd && (!nativeLease
+				|| (expectedDirectRevision && expectedDirectRevision != directMoveRevision.load(std::memory_order_acquire))
+				|| (expectedPublication && expectedPublication != publishedRevision.load(std::memory_order_acquire)));
+			if (nativeDeferred)
+			{
+				const auto end = state.scene.Renderer().EndFrameDraw(context.Get());
+				result.failureStage = "native-presentation-busy"; result.failureHr = end; result.deferred = SUCCEEDED(end);
+				result.status = IsDeviceLost(end) ? PresentStatus::DeviceLost : PresentStatus::Retry;
+				return result;
+			}
 			HDC source = nullptr;
 			bool presented = false;
 			DWORD ulwError = ERROR_SUCCESS;
@@ -1399,6 +1451,7 @@ namespace Inkeys::UI::PageControl
 					presented = offscreenSink ? (*offscreenSink)(info)!=FALSE
 						: UpdateLayeredWindowIndirect(hwnd, &info) != FALSE;
 					if (!presented) ulwError = GetLastError();
+					else if (nativeLease) result.presentationRevision = nativeLease.PixelsChanged(Roles[index]);
 				}
 				ulwTimer.Stop();
 				// ULW 只读取源 DC；这里没有通过 GDI 修改像素。
@@ -1554,34 +1607,48 @@ namespace Inkeys::UI::PageControl
 			return false;
 		}
 
-		[[nodiscard]] bool MovePairWindowsDirect(
-			const std::array<std::size_t, 2>& indices,
-			const std::array<RECT, 2>& targets, std::uint64_t revision) noexcept
+		bool QueueNativePairMove(const std::array<std::size_t, 2>& pair,
+			const std::array<RECT, 2>& presentationTargets, const std::array<RECT, 2>& logicalTargets,
+			const std::array<ResolvedSurfaceLayout, 2>& layouts, const DragPublicationSnapshot& publication,
+			std::uint64_t publicationRevision, bool snapMoving)
 		{
 			auto& service = Inkeys::Window::GetService();
-			const std::array<HWND, 2> handles{
-				service.Handle(Roles[indices[0]]), service.Handle(Roles[indices[1]]) };
-			constexpr UINT flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
-				| SWP_NOOWNERZORDER | SWP_NOSENDCHANGING;
-			return MovePairWindowsDirect(indices, targets, revision,
-				[&](std::size_t item, RECT& original)
-				{
-					SetLastError(handles[item] ? ERROR_SUCCESS : ERROR_INVALID_WINDOW_HANDLE);
-					return handles[item] && GetWindowRect(handles[item], &original) != FALSE;
-				},
-				[&](std::size_t item, const RECT& target)
-				{
-					SetLastError(ERROR_SUCCESS);
-					return SetWindowPos(handles[item], nullptr,
-						target.left, target.top, 0, 0, flags) != FALSE;
-				});
+			NativePairMove request;
+			request.layout = publication.layout; request.dragRevision = publication.revision;
+			request.publicationRevision = publicationRevision; request.snapMoving = snapMoving;
+			request.logical = logicalTargets; request.candidate.count = 2;
+			request.candidate.frameSerial = publication.revision;
+			request.candidate.workspaceRevision = publicationRevision;
+			for (std::size_t item = 0; item < pair.size(); ++item)
+			{
+				const auto native = service.SurfaceSnapshot(Roles[pair[item]]);
+				const auto& state = surfaces[pair[item]];
+				if (!native || !native->known || !native->hwnd || !state.committedPresentationReady
+					|| native->hwnd != state.committedWindowHandle || native->generation != state.committedWindowGeneration) return false;
+				auto& target = request.candidate.targets[item];
+				target.role = Roles[pair[item]]; target.hwnd = native->hwnd; target.generation = native->generation;
+				target.bounds = presentationTargets[item]; target.applyBounds = target.verifyBounds = true;
+				if (native->presentationRevision > state.committedWindowPresentationRevision) return false;
+				target.presentationRevision = state.committedWindowPresentationRevision;
+				target.requirePresentationMatch = true;
+				request.scale[item] = layouts[item].scale;
+			}
+			CancelNativePairMove(pair[0] / 2);
+			for (const auto index : pair) CancelNativeSurfaceFrame(index);
+			request.nativeRevision = service.PublishCandidate(request.candidate);
+			if (!request.nativeRevision) return false;
+			for (const auto index : pair) nativeInputBarrier[index].store(true, std::memory_order_release);
+			{ std::scoped_lock pairLock(nativePairMoveMutex); nativePairMoves[pair[0] / 2] = std::move(request); }
+			// 只唤醒轻量回执消费，不把接纳当成功，也不要求下一条 Move 才收敛。
+			RequestDragPair(pair[0] / 2);
+			return true;
 		}
 
 		// 只有拿到 renderTransactionMutex 才读写 Scene/bounds；忙时仅发布候选并唤醒 render。
 		template<typename MovePair>
 		void UpdateDragLocked(std::size_t index, POINT screen, MovePair&& movePair,
 			std::chrono::steady_clock::time_point sampleTime = std::chrono::steady_clock::now(),
-			bool renderAvailable = true)
+			bool renderAvailable = true, bool nativeAsync = false)
 		{
 			auto& state = surfaces[index];
 			const Surface moved = SurfaceFor(index);
@@ -1715,7 +1782,13 @@ namespace Inkeys::UI::PageControl
 				return;
 			}
 
-			// 渲染线程可能持锁同步等待当前 owner；WndProc 只能尝试，不能形成等待环。
+			if (nativeAsync)
+			{
+				if (!QueueNativePairMove(pair, presentationTargets, directLogicalTargets, candidateLayouts,
+					publication, snapshot.revision, snapMoving)) RequestDragPair(pairIndex);
+				return;
+			}
+			// 离屏 adapter 保留原同步成功/失败边界；产品路径只消费 owner 回执。
 			std::unique_lock presentationLock(
 				presentationMutex, std::try_to_lock);
 			if (!presentationLock.owns_lock())
@@ -1810,8 +1883,8 @@ namespace Inkeys::UI::PageControl
 			UpdateDragLocked(index, screen, [](const auto& pair,
 				const auto& targets, std::uint64_t revision)
 			{
-				return MovePairWindowsDirect(pair, targets, revision);
-			},sampleTime,renderLock.owns_lock());
+				(void)pair; (void)targets; (void)revision; return false;
+			},sampleTime,renderLock.owns_lock(),true);
 		}
 
 		void FlushCommittedDrag(std::size_t pair)
@@ -1934,27 +2007,17 @@ namespace Inkeys::UI::PageControl
 				static_cast<unsigned long>(error));
 			(void)std::fputs(line, stdout);
 			OutputDebugStringA(line);
-			// 同一次失败记录四个真实 HWND，避免单侧成功遮住另一侧的阶段。
+			// 诊断也消费 owner 快照，不能在 render 回调中重新同步查询其它 HWND。
 			for (std::size_t item = 0; item < Roles.size(); ++item)
 			{
-				const HWND hwnd = Inkeys::Window::GetService().Handle(Roles[item]);
-				RECT actual{};
-				if (hwnd) (void)GetWindowRect(hwnd, &actual);
-				(void)sprintf_s(line, "[PageControlPresent] peer=%s hwnd=0x%llX "
-					"visible=%d enabled=%d owner=0x%llX exStyle=0x%llX "
-					"rect=(%ld,%ld,%ld,%ld) committed=%d\n",
-					SurfaceName(item),
-					static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
-					hwnd && IsWindowVisible(hwnd) ? 1 : 0,
-					hwnd && IsWindowEnabled(hwnd) ? 1 : 0,
-					static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(
-						hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr)),
-					static_cast<unsigned long long>(hwnd
-						? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0),
-					actual.left, actual.top, actual.right, actual.bottom,
+				const auto native = Inkeys::Window::GetService().SurfaceSnapshot(Roles[item]);
+				if (!native) continue;
+				(void)sprintf_s(line, "[PageControlPresent] peer=%s hwnd=0x%llX generation=%llu known=%d visible=%d iconic=%d rect=(%ld,%ld,%ld,%ld) committed=%d\n",
+					SurfaceName(item), static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(native->hwnd)),
+					static_cast<unsigned long long>(native->generation), native->known ? 1 : 0, native->visible ? 1 : 0, native->iconic ? 1 : 0,
+					native->bounds.left, native->bounds.top, native->bounds.right, native->bounds.bottom,
 					surfaces[item].committedPresentationReady ? 1 : 0);
-				(void)std::fputs(line, stdout);
-				OutputDebugStringA(line);
+				(void)std::fputs(line, stdout); OutputDebugStringA(line);
 			}
 		}
 
@@ -1978,30 +2041,246 @@ namespace Inkeys::UI::PageControl
 				frame.currentPage, frame.totalPage, frame.pageAckEpoch);
 		}
 
-		void LogWindowCommitState(std::size_t index, HWND hwnd,
-			bool shouldShow, bool boundsApplied, bool visibilityApplied,
-			bool recovered) noexcept
+		struct HiddenWindowPerformanceTiming
 		{
-			RECT bounds{};
-			if (hwnd) (void)GetWindowRect(hwnd, &bounds);
-			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
-			const LONG_PTR exStyle = hwnd
-				? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
-			wchar_t message[640]{};
-			swprintf_s(message,
-				L"[PageControl] window commit %s: role=%u hwnd=0x%llX "
-				L"owner=0x%llX visible=%d topmost=%d bounds=(%ld,%ld,%ld,%ld) "
-				L"shouldShow=%d present=success setBounds=%d visibility=%d\n",
-				recovered ? L"recovered" : L"failed",
-				static_cast<unsigned>(Roles[index]),
-				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
-				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
-				hwnd && IsWindowVisible(hwnd) ? 1 : 0,
-				(exStyle & WS_EX_TOPMOST) != 0 ? 1 : 0,
-				bounds.left, bounds.top, bounds.right, bounds.bottom,
-				shouldShow ? 1 : 0, boundsApplied ? 1 : 0,
-				visibilityApplied ? 1 : 0);
-			OutputDebugStringW(message);
+			double presentSceneMs = 0.0;
+			double setBoundsMs = 0.0;
+			double visibilityMs = 0.0;
+			double candidateReceiptMs = 0.0;
+			double successfulPresentIntervalMs = 0.0;
+			std::uint64_t nativeRevision = 0;
+			bool nativeCommitted = false;
+			bool pixelsCommitted = false;
+		};
+		thread_local HiddenWindowPerformanceTiming* hiddenWindowPerformanceTiming = nullptr;
+
+		struct NativeSurfaceFrame
+		{
+			Inkeys::Window::WindowCandidate candidate;
+			RenderSnapshot snapshot;
+			PageControlSurfaceBudget budget;
+			PresentSceneResult pixels;
+			RECT monitor{}, target{}, presentation{};
+			SIZE presentationSize{}, backing{};
+			std::uint64_t revision = 0, sceneSerial = 0, deviceGeneration = 0, directRevision = 0;
+			float dpiScale = 1, uiScale = 1;
+			WorkspaceMode mode = WorkspaceMode::Hidden;
+			bool shouldShow = false, targetVisible = false, inputLocked = true;
+			bool pptFrame = false, dragGeometryAtTarget = false, keepAnimating = false;
+		};
+		// 每窗仅保留最新候选；较早完成只用于退休原生命令，不能覆盖新帧快照。
+		std::array<NativeSurfaceFrame, 4> nativeFrames;
+		std::array<std::uint64_t, 4> nextNativeFrameSerial{};
+		std::array<NativeSurfaceFrame, 4> confirmedNativeFrames;
+		std::array<std::chrono::steady_clock::time_point, 4> hiddenTestLastSuccessfulPresent{};
+
+		bool NativeFrameIdentityCurrent(const NativeSurfaceFrame& frame,
+			const RenderSnapshot& snapshot, const FrameContext& context,
+			const Inkeys::Window::WindowSurfaceState& native, const RECT& monitor,
+			float dpiScale, float uiScale, std::uint64_t directRevision) noexcept
+		{
+			return frame.revision && frame.snapshot.revision == snapshot.revision
+				&& frame.directRevision == directRevision && frame.deviceGeneration == context.epoch.generation
+				&& frame.candidate.targets[0].hwnd == native.hwnd
+				&& frame.candidate.targets[0].generation == native.generation
+				&& SameRect(frame.monitor, monitor) && frame.dpiScale == dpiScale && frame.uiScale == uiScale;
+		}
+
+		void CancelNativeSurfaceFrame(std::size_t index) noexcept
+		{
+			auto& pending = nativeFrames[index];
+			if (pending.revision) Inkeys::Window::GetService().CancelCandidate(Roles[index], pending.revision);
+			pending.revision = 0;
+		}
+
+		// 只消费 owner 已发布的实际状态；这里绝不等待窗口线程或查询实时 HWND。
+		bool ConsumeNativeSurfaceReceipt(std::size_t index, const RenderSnapshot& snapshot,
+			const FrameContext& context, const Inkeys::Window::WindowSurfaceState& native,
+			const RECT& monitor, float dpiScale, float uiScale, std::uint64_t directRevision)
+		{
+			auto& pending = nativeFrames[index];
+			if (!pending.revision) return false;
+			std::unique_lock renderLock(renderTransactionMutex, std::try_to_lock);
+			if (!renderLock.owns_lock()) return false;
+			auto& state = surfaces[index];
+			if (!NativeFrameIdentityCurrent(pending, snapshot, context, native, monitor, dpiScale, uiScale, directRevision))
+			{
+				CancelNativeSurfaceFrame(index);
+				state.forceFullPresentation = true;
+				return false;
+			}
+			const auto receipt = Inkeys::Window::GetService().TryReadCandidateReceipt(Roles[index], pending.revision);
+			if (!receipt)
+			{
+				if (!Inkeys::Window::GetService().CandidateCurrent(Roles[index], pending.revision))
+				{ CancelNativeSurfaceFrame(index); state.forceFullPresentation = true; }
+				return false;
+			}
+			auto receiptLease = Inkeys::Window::GetService().TryAcquirePresentationLease(Roles[index]);
+			if (!receiptLease) return false;
+			const auto latestNative = Inkeys::Window::GetService().SurfaceSnapshot(Roles[index]);
+			if (!latestNative) return false;
+			const auto& actual = receipt->actual[0];
+			const bool accepted = actual.known && receipt->phase == Inkeys::Window::CommandPhase::Committed
+				&& receipt->revision == pending.revision && receipt->frameSerial == pending.candidate.frameSerial
+				&& receipt->workspaceRevision == pending.snapshot.revision && receipt->count == 1 && receipt->completedMask == 1
+				&& actual.hwnd == pending.candidate.targets[0].hwnd && actual.generation == pending.candidate.targets[0].generation
+				&& actual.visible == pending.shouldShow && (!pending.shouldShow || (!actual.iconic && SameRect(actual.bounds, pending.presentation)
+					&& actual.presentationRevision == pending.candidate.targets[0].presentationRevision
+					&& actual.presentationRevision == receiptLease.Revision(Roles[index])))
+				&& latestNative->known && latestNative->hwnd == actual.hwnd && latestNative->generation == actual.generation
+				&& latestNative->visible == pending.shouldShow
+				&& (!pending.shouldShow || (!latestNative->iconic && SameRect(latestNative->bounds, pending.presentation)));
+			if (!accepted)
+			{
+				state.forceFullPresentation = true;
+				state.windowCommitFailureActive = true;
+				if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics()) diagnostics->presentFailed = true;
+				TraceSurfaceStage(index, "window-receipt", E_FAIL, receipt->error,
+					pending.snapshot, monitor, dpiScale, pending.budget, pending.target, pending.presentation);
+				CancelNativeSurfaceFrame(index);
+				return false;
+			}
+			std::unique_lock presentationLock(presentationMutex, std::try_to_lock);
+			if (!presentationLock.owns_lock()) return false;
+			if (pending.snapshot.revision != publishedRevision.load(std::memory_order_acquire)
+				|| pending.directRevision != directMoveRevision.load(std::memory_order_acquire)) return false;
+			std::unique_lock inputCommitLock(inputSnapshotMutex);
+			if (!state.scene.CommitPresentationCandidate(pending.sceneSerial, pending.shouldShow && !pending.inputLocked))
+			{
+				CancelNativeSurfaceFrame(index); state.forceFullPresentation = true; return false;
+			}
+			if (pending.pixels.pixelsSubmitted)
+			{
+				state.committedPresentationSize = pending.presentationSize;
+				state.committedBackingCapacity = pending.backing;
+				state.committedDeviceGeneration = pending.deviceGeneration;
+				state.committedPresentationReady = true; state.forceFullPresentation = false;
+				state.committedWindowPresentationRevision = actual.presentationRevision;
+				state.committedWindowHandle = actual.hwnd; state.committedWindowGeneration = actual.generation;
+				state.lastPresentedDebugFrameBounds = pending.pixels.debugFrameBounds;
+				state.lastPresentedDebugWindowBounds = pending.pixels.debugWindowBounds;
+				state.debugOverlayRefreshPending = false; (void)state.debugFrameSleepLatch.CommitPresented();
+			}
+			CommitInputPresentationLocked(index, pending.mode, pending.snapshot.whiteboard, pending.budget,
+				pending.targetVisible, pending.inputLocked, pending.snapshot.ppt.layout.session,
+				pending.snapshot.ppt.layout.epoch, pending.snapshot.ppt.recovery, pending.snapshot.revision);
+			nativeInputBarrier[index].store(false, std::memory_order_release);
+			inputCommitLock.unlock();
+			{
+				std::scoped_lock snapshotLock(snapshotMutex);
+				pageCommit.FinishSurface(static_cast<std::uint8_t>(1U << index), pending.pptFrame);
+			}
+			(void)CommitDragSurface(index, pending.snapshot.ppt, pending.dragGeometryAtTarget);
+			Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(static_cast<unsigned>(index), pending.presentation, pending.shouldShow);
+			state.windowCommitFailureActive = false;
+			if (state.lastFailureStage) TraceSurfaceStage(index, state.lastFailureStage, S_OK, ERROR_SUCCESS,
+				pending.snapshot, monitor, dpiScale, pending.budget, pending.target, pending.presentation, true);
+			if (hiddenWindowPerformanceTiming)
+			{
+				auto& timing = *hiddenWindowPerformanceTiming;
+				timing.nativeCommitted = true; timing.pixelsCommitted = pending.pixels.pixelsSubmitted;
+				timing.nativeRevision = pending.revision; timing.candidateReceiptMs = receipt->latencyMicroseconds / 1000.0;
+				if (pending.pixels.pixelsSubmitted)
+				{
+					const auto now = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(receipt->completedTicks));
+					const auto previous = hiddenTestLastSuccessfulPresent[index];
+					if (previous.time_since_epoch().count()) timing.successfulPresentIntervalMs = std::chrono::duration<double, std::milli>(now - previous).count();
+					hiddenTestLastSuccessfulPresent[index] = now;
+				}
+			}
+			confirmedNativeFrames[index] = pending;
+			const auto acknowledged = pending.snapshot.ppt;
+			const auto mask = pending.pptFrame ? static_cast<std::uint8_t>(1U << index) : std::uint8_t{};
+			pending.revision = 0;
+			presentationLock.unlock(); renderLock.unlock(); receiptLease.Reset();
+			FlushCommittedDrag(DragPairIndex(index));
+			AcknowledgePage(acknowledged, mask);
+			return true;
+		}
+
+		enum class PairMoveProgress { None, Pending, Committed };
+		PairMoveProgress ConsumeNativePairMove(std::size_t index, const FrameContext& context)
+		{
+			const auto pairIndex = index / 2;
+			std::unique_lock renderLock(renderTransactionMutex, std::try_to_lock);
+			if (!renderLock.owns_lock()) return PairMoveProgress::Pending;
+			std::unique_lock pairLock(nativePairMoveMutex, std::try_to_lock);
+			if (!pairLock.owns_lock()) return PairMoveProgress::Pending;
+			auto& pending = nativePairMoves[pairIndex];
+			if (!pending.nativeRevision) return PairMoveProgress::None;
+			auto& service = Inkeys::Window::GetService();
+			const auto retire = [&] { service.CancelCandidate(Roles[pairIndex * 2], pending.nativeRevision); pending = {}; };
+			const auto snapshot = SnapshotForRender();
+			const auto pair = DragPair(pairIndex);
+			if (snapshot.revision != pending.publicationRevision
+				|| snapshot.ppt.layout.session != pending.layout.session || snapshot.ppt.layout.epoch != pending.layout.epoch
+				|| snapshot.ppt.layout.pairVersions[pairIndex] != pending.dragRevision
+				|| !SameDragPairPosition(pairIndex, snapshot.ppt.layout, pending.layout))
+			{ retire(); return PairMoveProgress::None; }
+			if (!pending.committed)
+			{
+				const auto receipt = service.TryReadCandidateReceipt(Roles[pair[0]], pending.nativeRevision);
+				if (!receipt)
+				{
+					if (!service.CandidateCurrent(Roles[pair[0]], pending.nativeRevision)) { retire(); return PairMoveProgress::None; }
+					(void)surfaces[index].scene.Advance(context.frameTime);
+					return surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive()
+						? PairMoveProgress::None : PairMoveProgress::Pending;
+				}
+				auto lease = service.TryAcquirePresentationLease(Roles[pair[0]], Roles[pair[1]]);
+				if (!lease) return PairMoveProgress::Pending;
+				bool matched = receipt->phase == Inkeys::Window::CommandPhase::Committed
+					&& receipt->revision == pending.nativeRevision && receipt->count == 2 && receipt->completedMask == 3
+					&& receipt->frameSerial == pending.dragRevision && receipt->workspaceRevision == pending.candidate.workspaceRevision;
+				for (std::size_t item = 0; item < pair.size(); ++item)
+				{
+					const auto& target = pending.candidate.targets[item];
+					const auto& actual = receipt->actual[item];
+					const auto native = service.SurfaceSnapshot(Roles[pair[item]]);
+					matched = matched && native && native->known && actual.known
+						&& native->hwnd == target.hwnd && native->generation == target.generation
+						&& actual.hwnd == target.hwnd && actual.generation == target.generation
+						&& SameRect(actual.bounds, target.bounds) && SameRect(native->bounds, target.bounds)
+						&& actual.visible && native->visible && !actual.iconic && !native->iconic
+						&& actual.presentationRevision == lease.Revision(Roles[pair[item]]);
+				}
+				if (!matched)
+				{
+					// Window owner 已负责整对撤回；UI 保留最新拖动目标，按生产呈现重试收敛。
+					retire();
+					for (const auto item : pair) surfaces[item].forceFullPresentation = true;
+					RequestDragPair(pairIndex); return PairMoveProgress::None;
+				}
+				for (std::size_t item = 0; item < pair.size(); ++item)
+				{
+					SetBoundsDirect(surfaces[pair[item]].bounds, pending.logical[item], pending.scale[item]);
+					surfaces[pair[item]].committedWindowPresentationRevision = receipt->actual[item].presentationRevision;
+					nativeInputBarrier[pair[item]].store(false, std::memory_order_release);
+					Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(static_cast<unsigned>(pair[item]), pending.candidate.targets[item].bounds, true);
+				}
+				const auto committed = CommitDragPairDirect(pairIndex, pending.dragRevision, !pending.snapMoving);
+				if (!committed.matched) { retire(); return PairMoveProgress::None; }
+				pending.committed = true; pending.released = committed.released;
+				if (committed.completed && hiddenTestMonitorEnabled.load(std::memory_order_relaxed)) ++hiddenTestNativePairCommits;
+				// 回执在两个客户端之间共享一次真实 pair commit；快照不依赖下一条输入包。
+				for (std::size_t item = 0; item < pair.size(); ++item)
+				{
+					auto& confirmed = confirmedNativeFrames[pair[item]];
+					confirmed.directRevision = committed.directRevision;
+					confirmed.snapshot.ppt.layout = pending.layout;
+					confirmed.presentation = pending.candidate.targets[item].bounds;
+				}
+			}
+			pending.observingMask &= ~(1u << (index % 2));
+			const bool requiresFrame = pending.snapMoving || pending.released;
+			if (!pending.observingMask) pending = {};
+			(void)surfaces[index].scene.Advance(context.frameTime);
+			const bool visual = requiresFrame || surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive();
+			if (!visual) surfaces[index].scene.SuspendForIdle(context.frameTime);
+			pairLock.unlock(); renderLock.unlock();
+			FlushCommittedDrag(pairIndex);
+			return visual ? PairMoveProgress::None : PairMoveProgress::Committed;
 		}
 
 		FrameResult RenderSurface(std::size_t index,
@@ -2011,17 +2290,25 @@ namespace Inkeys::UI::PageControl
 			if (!initialized.load(std::memory_order_acquire))
 				return FrameResult::Idle;
 			auto& service = Inkeys::Window::GetService();
+			const auto pairProgress = ConsumeNativePairMove(index, frameContext);
+			if (pairProgress == PairMoveProgress::Pending) return FrameResult::Retry;
+			if (pairProgress == PairMoveProgress::Committed) return FrameResult::Idle;
 			const std::uint64_t frameDirectMoveRevision =
 				directMoveRevision.load(std::memory_order_acquire);
-			const HWND hwnd = service.Handle(Roles[index]);
-			if (!hwnd) return FrameResult::Retry;
+			const auto native = service.SurfaceSnapshot(Roles[index]);
+			if (!native || !native->known || !native->hwnd) return FrameResult::Retry;
+			const HWND hwnd = native->hwnd;
 			const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
 			auto renderSnapshot = SnapshotForRender();
 			auto& ppt = renderSnapshot.ppt;
 			const auto& whiteboard = renderSnapshot.whiteboard;
-			const auto groupBudget = GroupBudgetForFrame(renderSnapshot,
+			(void)ConsumeNativeSurfaceReceipt(index, renderSnapshot, frameContext, *native,
+				monitor, dpiScale, uiScale, frameDirectMoveRevision);
+			std::unique_lock renderLock(renderTransactionMutex, std::try_to_lock);
+			if (!renderLock.owns_lock()) return FrameResult::Retry;
+			const auto groupBudget = ResolveGroupBudgetLocked(renderSnapshot,
 				monitor, dpiScale, frameDirectMoveRevision,
-				frameContext.epoch.generation, uiScale);
+				frameContext.epoch.generation, false, uiScale);
 			ppt.uiScale = uiScale;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				groupBudget.presentationOutsetDip, groupBudget.bitmapLimit);
@@ -2045,9 +2332,7 @@ namespace Inkeys::UI::PageControl
 			bool pptFrame = false;
 			bool dragGeometryAtTarget = false;
 			{
-				FrameStageTimer renderLockTimer(diagnostics, FrameStage::PresentLockWait);
-				std::unique_lock renderLock(renderTransactionMutex);
-				renderLockTimer.Stop();
+				// render 锁仅覆盖本地视觉；输入路径正在交接时由下一批重试，不跨 owner 等待。
 				// 直移可在 frame 取快照后完成；旧帧不得先以 ULW 覆盖新 HWND 坐标。
 				if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
 					directMoveRevision.load(std::memory_order_acquire))
@@ -2081,6 +2366,12 @@ namespace Inkeys::UI::PageControl
 					state.lightingSubscribed = shouldSubscribeLighting;
 				}
 				(void)state.scene.Advance(frameContext.frameTime);
+				const auto& pendingAfterAdvance = nativeFrames[index];
+				if (pendingAfterAdvance.revision && !pendingAfterAdvance.keepAnimating
+					&& NativeFrameIdentityCurrent(pendingAfterAdvance, renderSnapshot, frameContext,
+						*native, monitor, dpiScale, uiScale, frameDirectMoveRevision)
+					&& state.scene.IsPresentationCandidateCurrent(pendingAfterAdvance.sceneSerial))
+					return FrameResult::Retry; // 只复用没有新反馈/光照变化的像素，owner 延迟不冻结新动画。
 				presentation = state.scene.PresentationBounds();
 				SIZE presentationSize{
 					presentation.right - presentation.left,
@@ -2146,6 +2437,13 @@ namespace Inkeys::UI::PageControl
 				shouldShow = ShouldKeepPageControlWindowVisible(
 					state.targetVisible, exitTransitionActive);
 				pptFrame = shouldShow && state.configuredMode == WorkspaceMode::PptCompact;
+				const auto& inputFrame = confirmedNativeFrames[index];
+				// 已接纳的按压继续保留；新位置/页面真实 ACK 前只关新业务准入，不取消整段手势。
+				const bool inputChanged = !NativeFrameIdentityCurrent(inputFrame, renderSnapshot, frameContext,
+					*native, monitor, dpiScale, uiScale, frameDirectMoveRevision)
+					|| inputFrame.mode != state.configuredMode || inputFrame.shouldShow != shouldShow
+					|| !SameRect(inputFrame.presentation, presentation);
+				if (inputChanged) nativeInputBarrier[index].store(true, std::memory_order_release);
 				if (shouldShow)
 				{
 					// 与发布共享短锁：新隐藏目标不能越过即将显示旧数字的在途帧。
@@ -2169,11 +2467,18 @@ namespace Inkeys::UI::PageControl
 							!= frameContext.epoch.generation;
 					const bool forceFullReplacement = state.forceFullPresentation
 						|| presentationSizeChanged || backingChanged || deviceChanged;
+					// 旧 owner 只可核验 ULW 几何，不能 SetBounds 或回滚位置覆盖下一帧。
+					CancelNativeSurfaceFrame(index);
+					const auto presentStarted = hiddenWindowPerformanceTiming
+						? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 					const auto presentResult = PresentScene(index, state, hwnd,
 						frameContext, presentation, backing.size,
 						forceFullReplacement,
 						debugEnabled.load(std::memory_order_acquire),
-						keepAnimating);
+						keepAnimating, nullptr, frameDirectMoveRevision, renderSnapshot.revision);
+					if (hiddenWindowPerformanceTiming)
+						hiddenWindowPerformanceTiming->presentSceneMs += std::chrono::duration<double, std::milli>(
+							std::chrono::steady_clock::now() - presentStarted).count();
 					presentStatus = presentResult.status;
 					keepAnimating = keepAnimating
 						|| presentResult.continueRendering;
@@ -2187,138 +2492,66 @@ namespace Inkeys::UI::PageControl
 						state.forceFullPresentation = true;
 						if (presentResult.resourcesFailed)
 							state.backingCapacity = { 1, 1 };
-						TraceSurfaceStage(index, presentResult.failureStage,
+						if (!presentResult.deferred) TraceSurfaceStage(index, presentResult.failureStage,
 							presentResult.failureHr, presentResult.failureError,
 							renderSnapshot, monitor, dpiScale, groupBudget,
 							target.logicalBounds, presentation);
 					}
 				}
 			}
-			// 业务回调可能反向发布 UI 状态，不能在 Scene/present 事务锁内调用。
+			if (diagnostics) diagnostics->presentCommitted = false; // ULW 成功不是完整窗口事务成功。
 			if (presentStatus != PresentStatus::Success)
-				return presentStatus == PresentStatus::DeviceLost
-					? FrameResult::DeviceLost : FrameResult::Retry;
-			FrameStageTimer presentationLockTimer(diagnostics, FrameStage::PresentLockWait);
-			std::unique_lock presentationLock(presentationMutex);
-			presentationLockTimer.Stop();
-			// 拖动期间产生的过期帧不能把已经直移的 HWND 拉回旧坐标。
-			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
-				directMoveRevision.load(std::memory_order_acquire))
-				|| renderSnapshot.revision != publishedRevision.load(std::memory_order_acquire))
-				return FrameResult::Retry;
-			const auto pendingDrag = ObservePendingDrag(
-				index, ppt.layout.pairVersions[DragPairIndex(index)]);
-			if (pendingDrag.matched)
-				TraceDrag("consume consumer=render surface=%s revision=%llu "
-					"stage=attempt committed_mask=%u released=%d",
-					SurfaceName(index),
-					static_cast<unsigned long long>(pendingDrag.revision),
-					static_cast<unsigned>(pendingDrag.committedSurfaceMask),
-					pendingDrag.released ? 1 : 0);
+				return presentStatus == PresentStatus::DeviceLost ? FrameResult::DeviceLost : FrameResult::Retry;
+			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision, directMoveRevision.load(std::memory_order_acquire))
+				|| renderSnapshot.revision != publishedRevision.load(std::memory_order_acquire)) return FrameResult::Retry;
+			auto& state = surfaces[index];
+			const auto pendingDrag = ObservePendingDrag(index, ppt.layout.pairVersions[DragPairIndex(index)]);
 			if (pendingDrag.matched && !shouldShow)
 			{
-				TraceDrag("consume consumer=render surface=%s revision=%llu "
-					"result=deferred reason=surface-hidden pending=1",
-					SurfaceName(index),
-					static_cast<unsigned long long>(pendingDrag.revision));
 				(void)RollbackDragTracking(DragPairIndex(index));
-				presentationLock.unlock();
-				FlushCommittedDrag(DragPairIndex(index));
-				return FrameResult::Retry;
+				renderLock.unlock(); FlushCommittedDrag(DragPairIndex(index)); return FrameResult::Retry;
 			}
-			bool boundsApplied = true;
-			bool visibilityApplied = false;
-			if (shouldShow)
+			const auto& confirmed = confirmedNativeFrames[index];
+			if (!pixelsSubmitted && !nativeFrames[index].revision
+				&& NativeFrameIdentityCurrent(confirmed, renderSnapshot, frameContext, *native,
+					monitor, dpiScale, uiScale, frameDirectMoveRevision)
+				&& confirmed.shouldShow == shouldShow && native->visible == shouldShow
+				&& (!shouldShow || (!native->iconic && SameRect(native->bounds, presentation)
+					&& SameRect(confirmed.presentation, presentation))))
 			{
-				boundsApplied = service.SetBounds(Roles[index], presentation);
-				if (boundsApplied)
-					visibilityApplied = service.Show(Roles[index]);
+				if (!keepAnimating) state.scene.SuspendForIdle(frameContext.frameTime);
+				return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
 			}
-			else
-				visibilityApplied = service.Hide(Roles[index]);
-			auto& state = surfaces[index];
-			if (!visibilityApplied || (shouldShow && !boundsApplied))
-			{
-				state.forceFullPresentation=true;
-				if(diagnostics){diagnostics->presentCommitted=false;diagnostics->presentFailed=true;}
-				if (pendingDrag.matched)
-					TraceDrag("consume consumer=render surface=%s revision=%llu "
-						"result=failed set_bounds=%d visibility=%d pending=1",
-						SurfaceName(index),
-						static_cast<unsigned long long>(pendingDrag.revision),
-						boundsApplied ? 1 : 0, visibilityApplied ? 1 : 0);
-				if (!state.windowCommitFailureActive)
-					LogWindowCommitState(index, hwnd, shouldShow,
-						boundsApplied, visibilityApplied, false);
-				state.windowCommitFailureActive = true;
-				presentationLock.unlock();
-				std::unique_lock renderLock(renderTransactionMutex);
-				TraceSurfaceStage(index, !boundsApplied ? "window-bounds"
-					: "window-visibility", E_FAIL, ERROR_GEN_FAILURE,
-					renderSnapshot, monitor, dpiScale, groupBudget,
-					target.logicalBounds, presentation);
-				return FrameResult::Retry;
-			}
-			if (state.windowCommitFailureActive)
-			{
-				state.windowCommitFailureActive = false;
-				LogWindowCommitState(index, hwnd, shouldShow,
-					boundsApplied, visibilityApplied, true);
-			}
-			{
-				std::scoped_lock snapshotLock(snapshotMutex);
-				// 即使发布在同步提交中途变化，也必须登记实际仍可见的旧 PPT 帧。
-				pageCommit.FinishSurface(static_cast<std::uint8_t>(1U << index), pptFrame);
-			}
-			// owner 可能在同步窗口提交期间发布了更新候选；旧提交必须继续重试。
-			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
-				directMoveRevision.load(std::memory_order_acquire))
-				|| renderSnapshot.revision != publishedRevision.load(std::memory_order_acquire))
-			{
-				if (pendingDrag.matched)
-					TraceDrag("consume consumer=render surface=%s revision=%llu "
-						"result=stale-after-window-commit pending=1",
-						SurfaceName(index),
-						static_cast<unsigned long long>(pendingDrag.revision));
-				return FrameResult::Retry;
-			}
-			// 命中和 workspace/锁定策略作为一份已呈现状态发布，WndProc 不得读到跨代组合。
-			std::unique_lock inputCommitLock(inputSnapshotMutex);
-			if(pixelsSubmitted){
-				// 像素、位置和可见性全部提交成功后才清除 dirty；失败保留旧命中快照。
-				(void)state.scene.ConsumeDamage();state.committedPresentationSize=completedPresentation;
-				state.committedBackingCapacity=completedBacking;state.committedDeviceGeneration=frameContext.epoch.generation;
-				state.committedPresentationReady=true;state.forceFullPresentation=false;
-				state.lastPresentedDebugFrameBounds=completedPixels.debugFrameBounds;state.lastPresentedDebugWindowBounds=completedPixels.debugWindowBounds;
-				state.debugOverlayRefreshPending=false;(void)state.debugFrameSleepLatch.CommitPresented();
-				state.scene.CommitPresented(shouldShow&&!state.inputLocked);
-			}else if(!shouldShow)state.scene.CommitPresented(false);
-			CommitInputPresentationLocked(index,state.configuredMode,whiteboard,groupBudget,state.targetVisible,state.inputLocked,ppt.layout.session,ppt.layout.epoch,ppt.recovery);
-			inputCommitLock.unlock();
-			const auto dragCommit = CommitDragSurface(index, ppt, dragGeometryAtTarget);
-			if (dragCommit.matched)
-				TraceDrag("consume consumer=render surface=%s revision=%llu "
-					"result=%s committed_mask=%u pending=%d geometry_at_target=%d",
-					SurfaceName(index),
-					static_cast<unsigned long long>(dragCommit.revision),
-					dragGeometryAtTarget ? "committed" : "geometry-pending",
-					static_cast<unsigned>(dragCommit.committedSurfaceMask),
-					dragCommit.completed ? 0 : 1, dragGeometryAtTarget ? 1 : 0);
-			Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
-				static_cast<unsigned int>(index), presentation, shouldShow);
-			presentationLock.unlock();
-			FlushCommittedDrag(DragPairIndex(index));
-			AcknowledgePage(ppt, pptFrame ? static_cast<std::uint8_t>(1U << index) : 0);
-			{
-				std::unique_lock renderLock(renderTransactionMutex);
-				if (state.lastFailureStage)
-					TraceSurfaceStage(index, state.lastFailureStage, S_OK,
-						ERROR_SUCCESS, renderSnapshot, monitor, dpiScale,
-						groupBudget, target.logicalBounds, presentation, true);
-			}
-			keepAnimating = keepAnimating || (dragCommit.matched && !dragGeometryAtTarget);
-			if(!keepAnimating)state.scene.SuspendForIdle(frameContext.frameTime);
-			return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
+			CancelNativeSurfaceFrame(index);
+			NativeSurfaceFrame frame;
+			frame.candidate.frameSerial = ++nextNativeFrameSerial[index];
+			frame.candidate.workspaceRevision = renderSnapshot.revision;
+			frame.candidate.count = 1;
+			auto& candidateTarget = frame.candidate.targets[0];
+			candidateTarget.role = Roles[index]; candidateTarget.hwnd = hwnd; candidateTarget.generation = native->generation;
+			candidateTarget.bounds = presentation;
+			// ULW 已原子提交像素及几何；Window Service 仅核验几何和管理显隐。
+			candidateTarget.applyBounds = false; candidateTarget.verifyBounds = shouldShow;
+			candidateTarget.requirePresentationMatch = shouldShow;
+			candidateTarget.presentationRevision = pixelsSubmitted ? completedPixels.presentationRevision
+				: state.committedWindowPresentationRevision;
+			candidateTarget.visibility = shouldShow ? Inkeys::Window::WindowCandidateVisibility::Show : Inkeys::Window::WindowCandidateVisibility::Hide;
+			frame.snapshot = renderSnapshot; frame.snapshot.ppt = ppt;
+			frame.budget = groupBudget; frame.pixels = completedPixels;
+			frame.monitor = monitor; frame.target = target.logicalBounds; frame.presentation = presentation;
+			frame.presentationSize = completedPresentation; frame.backing = completedBacking;
+			frame.deviceGeneration = frameContext.epoch.generation; frame.directRevision = frameDirectMoveRevision;
+			frame.dpiScale = dpiScale; frame.uiScale = uiScale; frame.mode = state.configuredMode;
+			frame.shouldShow = shouldShow; frame.targetVisible = state.targetVisible; frame.inputLocked = state.inputLocked;
+			frame.pptFrame = pptFrame; frame.dragGeometryAtTarget = dragGeometryAtTarget; frame.keepAnimating = keepAnimating;
+			frame.sceneSerial = state.scene.CapturePresentationCandidate();
+			const auto publishStarted = hiddenWindowPerformanceTiming ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+			frame.revision = service.PublishCandidate(frame.candidate);
+			if (hiddenWindowPerformanceTiming)
+				hiddenWindowPerformanceTiming->visibilityMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - publishStarted).count();
+			if (!frame.revision) { state.forceFullPresentation = true; return FrameResult::Retry; }
+			nativeFrames[index] = std::move(frame);
+			return keepAnimating ? FrameResult::Continue : FrameResult::Retry;
 		}
 
 		[[nodiscard]] std::chrono::steady_clock::time_point InputSampleTime(
@@ -2432,7 +2665,7 @@ namespace Inkeys::UI::PageControl
 			if (message == WM_LBUTTONDOWN)
 			{
 				// 动画帧可以更新命中几何，但排队的 Down 不能跨业务页面或放映会话重新解释。
-				if(event.semanticRevision&&event.semanticRevision!=committed.semanticRevision)return;
+				if(committed.nativePending || (event.semanticRevision&&event.semanticRevision!=committed.semanticRevision))return;
 				const auto [livePpt,liveWhiteboard]=Snapshot();
 				if(ResolveWorkspaceMode(SurfaceFor(index),livePpt,liveWhiteboard)!=committed.mode
 					||WhiteboardWorkspaceSwitching(liveWhiteboard)
@@ -2519,7 +2752,7 @@ namespace Inkeys::UI::PageControl
 				}
 				// Z 序和业务回调都可能同步进入 Window Service，必须位于 Scene 锁外。
 				if (promotePpt)
-					(void)Inkeys::Window::GetService().PromotePptWindow(Roles[index]);
+					(void)Inkeys::Window::GetService().RequestPromotePptWindow(Roles[index]);
 				if (invokeDirectionOnDown) InvokeDirection(index,invokeNext,committed.mode);
 				return;
 			}
@@ -2555,7 +2788,7 @@ namespace Inkeys::UI::PageControl
 						state.scene.CancelPointer();state.dragPending=false;state.dragging=true;
 						UpdateDrag(index,event.screenPoint,InputSampleTime(event));
 					}
-					shouldInvokeClick = acceptInput&&!state.dragging;
+					shouldInvokeClick = acceptInput&&!committed.nativePending&&!state.dragging;
 					releasedMode = committed.mode;
 					pressedWhiteboard = state.pressedWhiteboard;
 					if (shouldInvokeClick)
@@ -2587,8 +2820,16 @@ namespace Inkeys::UI::PageControl
 
 				if (dragEnded)
 				{
+					// Up 自己的布局吸收修订不是新业务身份；在同一短事务内交接给精确 pending pair。
+					std::scoped_lock pairLock(nativePairMoveMutex);
 					std::scoped_lock lock(snapshotMutex);
-					publishedRevision.fetch_add(1, std::memory_order_relaxed);
+					const auto previous = publishedRevision.load(std::memory_order_relaxed);
+					auto& native = nativePairMoves[dragPairIndex];
+					if (native.nativeRevision && native.publicationRevision == previous
+						&& native.dragRevision == dragRelease.revision && native.layout.session == livePpt.layout.session
+						&& native.layout.epoch == livePpt.layout.epoch)
+						native.publicationRevision = previous + 1;
+					publishedRevision.store(previous + 1, std::memory_order_release);
 				}
 				if (shouldInvokeClick && releasedMode == WorkspaceMode::PptCompact
 					&& clicked == PageWidget)
@@ -2783,6 +3024,28 @@ namespace Inkeys::UI::PageControl
 		{
 			const std::size_t index = Index(hwnd);
 			if(index>=surfaces.size())return message==WM_NCHITTEST?HTTRANSPARENT:DefWindowProcW(hwnd,message,wParam,lParam);
+			// 仅屏外集成测试使用的 owner 故障门，不进入正常窗口调度。
+			if (hiddenTestMonitorEnabled.load(std::memory_order_relaxed))
+			{
+				if (message == HiddenTestOwnerGateMessage)
+				{
+					if (const auto entered = hiddenTestOwnerEntered.load()) SetEvent(entered);
+					if (const auto release = hiddenTestOwnerRelease.load()) (void)WaitForSingleObject(release, 5000);
+					return 0;
+				}
+				if (message == WM_WINDOWPOSCHANGING && hiddenTestBlockedNativeSurface.load() == static_cast<int>(index))
+				{
+					auto* position = reinterpret_cast<WINDOWPOS*>(lParam);
+					if (position && (position->flags & SWP_SHOWWINDOW)) position->flags &= ~SWP_SHOWWINDOW;
+				}
+				if (message == WM_WINDOWPOSCHANGING)
+				{
+					auto* position = reinterpret_cast<WINDOWPOS*>(lParam);
+					auto expected = static_cast<int>(index);
+					if (position && !(position->flags & SWP_NOMOVE)
+						&& hiddenTestBlockedBoundsSurface.compare_exchange_strong(expected, -1)) ++position->x;
+				}
+			}
 			auto& touch = nativeTouches[index];
 			auto& client = pointerClients[index];
 			if(message==ReleasePageCaptureMessage){
@@ -3067,12 +3330,12 @@ namespace Inkeys::UI::PageControl
 				RECT window{};GetWindowRect(hwnd,&window);
 				const auto [input,sample]=CaptureInputSnapshot(index,{GET_X_LPARAM(lParam)-window.left,GET_Y_LPARAM(lParam)-window.top});
 				if(!input.visible)return HTTRANSPARENT;
-				return ShouldAcceptPageControlClientHit(input.mode,sample.background,sample.hit!=0,input.locked,
+				return ShouldAcceptPageControlClientHit(input.mode,sample.background,sample.hit!=0,input.locked||input.nativePending,
 					index==0&&(input.whiteboard.menu!=0||sample.popupBackground))?HTCLIENT:HTTRANSPARENT;
 			}
 			if(message==WM_MOUSEWHEEL){
 				const auto input=InputSnapshot(index);
-				if(input.visible&&!input.locked&&ResolveWorkspaceInputPolicy(input.mode).wheel){
+				if(input.visible&&!input.locked&&!input.nativePending&&ResolveWorkspaceInputPolicy(input.mode).wheel){
 					// 在 HWND producer 固定 token/代次，排队期间切换会话只能丢弃旧输入。
 					EnqueueLocalWheel(GET_WHEEL_DELTA_WPARAM(wParam));
 					Inkeys::UI::Bar::WakeInteractionWorker();
@@ -3085,7 +3348,7 @@ namespace Inkeys::UI::PageControl
 				POINT local=pointer.screen;ScreenToClient(hwnd,&local);
 				auto [input,sample]=CaptureInputSnapshot(index,local);
 				if(message==WM_LBUTTONDOWN){
-					if(!dispatchedPointer||!input.visible||input.locked||!sample.background)return 0;
+					if(!dispatchedPointer||!input.visible||input.locked||input.nativePending||!sample.background)return 0;
 					const auto identity=input.semanticRevision;
 					const auto region=PointerRegionForWidget(sample.hit);
 					// SetCapture 可同步取消旧 HWND；完成后重新核对已呈现身份再建立新源。
@@ -3093,7 +3356,7 @@ namespace Inkeys::UI::PageControl
 					if(GetCapture()==hwnd)nativeCaptureTickets[index]=nextNativeCaptureTicket.fetch_add(1,std::memory_order_relaxed);
 					local=pointer.screen;ScreenToClient(hwnd,&local);
 					std::tie(input,sample)=CaptureInputSnapshot(index,local);
-					if(!input.visible||input.locked||identity!=input.semanticRevision||!sample.background
+					if(!input.visible||input.locked||input.nativePending||identity!=input.semanticRevision||!sample.background
 						||region!=PointerRegionForWidget(sample.hit)
 						||(pointer.source==PointerInput::Source::Pen&&GetCapture()!=hwnd)
 						||client.session.Begin(pointer)==PointerInput::BeginResult::Rejected
@@ -3238,6 +3501,32 @@ namespace Inkeys::UI::PageControl
 				&&end.nextLabel==IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel)
 				&&board.nextLabel==IW(I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel),
 				"standard PPT Next/EndShow labels remain separate from whiteboard Add");
+		}
+		{
+			Scene candidate;
+			Check(candidate.ConfigureBackground({ .bounds = {0,0,100,80}, .visible = true }), "async snapshot scene initializes");
+			Check(candidate.SetBounds({10,20,110,100}, 1), "async snapshot original geometry");
+			const auto first = candidate.CapturePresentationCandidate();
+			Check(candidate.IsPresentationCandidateCurrent(first), "unchanged pending pixels can be reused without redraw");
+			const auto before = candidate.PresentedGeneration();
+			Check(before == 0 && !candidate.HitTestBackground({30,30}), "candidate capture alone never publishes hits");
+			Check(candidate.SetBounds({200,300,300,380}, 1), "later geometry updates the live candidate");
+			Check(candidate.ConfigureBackground({ .bounds = {0,0,50,40}, .visible = true }), "later live hit bounds shrink");
+			Check(!candidate.IsPresentationCandidateCurrent(first), "new visual work replaces pending pixels instead of freezing until ACK");
+			Check(candidate.CommitPresentationCandidate(first), "matching ACK commits the captured immutable candidate");
+			Check(candidate.PresentationToLogical({30,30}).has_value() && candidate.PresentedGeneration() == before + 1,
+				"captured hit snapshot commits only after ACK");
+			Check(candidate.HitTestBackground({90,70}), "ACK commits captured hit bounds instead of newer live geometry");
+			Check(candidate.IsInvalidated(), "ACK never consumes damage created after the captured frame");
+			const auto second = candidate.CapturePresentationCandidate();
+			const auto third = candidate.CapturePresentationCandidate();
+			Check(!candidate.CommitPresentationCandidate(second), "superseded snapshot ACK is rejected");
+			Check(candidate.CommitPresentationCandidate(third) && !candidate.IsInvalidated() && !candidate.HitTestBackground({90,70}), "latest matching ACK consumes only its own dirty work and hit bounds");
+			Check(!candidate.CommitPresentationCandidate(third), "duplicate ACK cannot increment hit generation");
+			const auto fourth = candidate.CapturePresentationCandidate(); candidate.Invalidate();
+			Check(candidate.CommitPresentationCandidate(fourth) && candidate.IsInvalidated(), "same-layout invalidation after capture survives a matching ACK");
+			const auto fifth = candidate.CapturePresentationCandidate(); candidate.CommitPresented();
+			Check(!candidate.CommitPresentationCandidate(fifth), "ordinary successful commit retires outstanding captured snapshots");
 		}
 		const auto epoch=Inkeys::UI::RenderPipeline::GetDeviceEpoch();
 		PptState ppt;ppt.presentationActive=true;ppt.presentationVisible=true;ppt.currentPage=7;ppt.totalPage=28;ppt.layout.showMiddlePair=true;
@@ -4229,6 +4518,448 @@ namespace Inkeys::UI::PageControl
 		std::fprintf(stderr,"[PageControlUI3] failures=%d\n",failures);return failures?1:0;
 	}
 
+	int RunHiddenWindowTransitionPerformance()
+	{
+		for (const auto client : Clients) Inkeys::UI::RenderPipeline::Unregister(client);
+		auto& service = Inkeys::Window::GetService();
+		service.SetCandidateDiagnosticsEnabled(true);
+		const std::filesystem::path directory = L"TestResults/ui3-workspace-transition/native-pagecontrol-unlimited";
+		std::filesystem::create_directories(directory);
+		std::ofstream frames(directory / "frames.csv");
+		std::ofstream summary(directory / "summary.csv");
+		frames << "cycle,direction,frame,surface,result,total_ms,present_scene_ms,set_bounds_ms,visibility_ms,other_ms,batch_ms,unlimited_fps,native_committed,pixels_committed,native_revision,candidate_receipt_ms,successful_present_interval_ms,queue_depth,max_queue_depth,coalesced,stale,published,executed,bounds_changes,visibility_changes,promotes\n";
+		summary << "cycle,direction,frames,duration_ms,work_ms,mean_unlimited_fps,incomplete,native_commits,pixel_commits\n";
+		std::uint64_t publication = 1;
+		auto PublishScene = [&](int scene)
+		{
+			PptState ppt;
+			ppt.layout.session = 1;
+			ppt.layout.epoch = 1;
+			ppt.publicationRevision = publication;
+			ppt.targetRevision = publication;
+			ppt.presentationActive = scene == 1;
+			ppt.presentationVisible = scene == 1;
+			ppt.currentPage = 1;
+			ppt.totalPage = 3;
+			WhiteboardState whiteboard;
+			whiteboard.active = scene == 2;
+			whiteboard.expandedLayoutTarget = scene == 2;
+			whiteboard.currentPage = 1;
+			whiteboard.totalPage = 1;
+			whiteboard.generation = 1;
+			++publication;
+			PublishPptState(ppt);
+			PublishWhiteboardState(whiteboard);
+		};
+		constexpr std::array<int, 6> scenes{ 1, 0, 2, 1, 2, 0 };
+		constexpr std::array<const char*, 6> names{
+			"DesktopToPpt", "PptToDesktop", "DesktopToWhiteboard",
+			"WhiteboardToPpt", "PptToWhiteboard", "WhiteboardToDesktop" };
+		int failures = 0;
+		PublishScene(0);
+		for (unsigned cycle = 0; cycle < 3; ++cycle)
+		{
+			for (std::size_t direction = 0; direction < scenes.size(); ++direction)
+			{
+				PublishScene(scenes[direction]);
+				const auto transitionStarted = std::chrono::steady_clock::now();
+				hiddenTestLastSuccessfulPresent = {};
+				unsigned frame = 0, idleFrames = 0, batches = 0, nativeCommits = 0, pixelCommits = 0;
+				double workMs = 0.0;
+				bool incomplete = true;
+				for (; frame < 200000; ++frame)
+				{
+					const auto batchStarted = std::chrono::steady_clock::now();
+					const FrameContext context{ Inkeys::UI::RenderPipeline::GetDeviceEpoch(),
+						Inkeys::UI::RenderPipeline::GetSharedAssets(), batchStarted };
+					struct Record
+					{
+						FrameResult result = FrameResult::Idle;
+						HiddenWindowPerformanceTiming timing;
+						double totalMs = 0.0;
+						Inkeys::Window::WindowCandidateDiagnostics native;
+					};
+					std::array<Record, Clients.size()> records;
+					bool allIdle = true;
+					for (std::size_t index = 0; index < Clients.size(); ++index)
+					{
+						hiddenWindowPerformanceTiming = &records[index].timing;
+						const auto surfaceStarted = std::chrono::steady_clock::now();
+						records[index].result = RenderSurface(index, context);
+						records[index].totalMs = std::chrono::duration<double, std::milli>(
+							std::chrono::steady_clock::now() - surfaceStarted).count();
+						hiddenWindowPerformanceTiming = nullptr;
+						records[index].native = service.CandidateDiagnostics();
+						nativeCommits += records[index].timing.nativeCommitted ? 1 : 0;
+						pixelCommits += records[index].timing.pixelsCommitted ? 1 : 0;
+						allIdle &= records[index].result == FrameResult::Idle;
+						if (records[index].result == FrameResult::DeviceLost) ++failures;
+					}
+					const double batchMs = std::chrono::duration<double, std::milli>(
+						std::chrono::steady_clock::now() - batchStarted).count();
+					++batches;
+					workMs += batchMs;
+					const double unlimitedFps = batchMs > 0.0 ? 1000.0 / batchMs : 0.0;
+					for (std::size_t index = 0; index < records.size(); ++index)
+					{
+						const auto& record = records[index];
+						const double otherMs = record.totalMs - record.timing.presentSceneMs
+							- record.timing.setBoundsMs - record.timing.visibilityMs;
+						frames << cycle << ',' << names[direction] << ',' << frame << ',' << index << ','
+							<< static_cast<unsigned>(record.result) << ',' << record.totalMs << ','
+							<< record.timing.presentSceneMs << ',' << record.timing.setBoundsMs << ','
+							<< record.timing.visibilityMs << ',' << otherMs << ',' << batchMs << ',' << unlimitedFps << ','
+							<< record.timing.nativeCommitted << ',' << record.timing.pixelsCommitted << ',' << record.timing.nativeRevision << ','
+							<< record.timing.candidateReceiptMs << ',' << record.timing.successfulPresentIntervalMs << ','
+							<< record.native.queueDepth << ',' << record.native.maxQueueDepth << ',' << record.native.coalesced << ','
+							<< record.native.stale << ',' << record.native.published << ',' << record.native.executed << ','
+							<< record.native.boundsChanges << ',' << record.native.visibilityChanges << ',' << record.native.promotes << '\n';
+					}
+					if (allIdle)
+					{
+						if (++idleFrames >= 2)
+						{
+							incomplete = false;
+							break;
+						}
+					}
+					else idleFrames = 0;
+				}
+				const double durationMs = std::chrono::duration<double, std::milli>(
+					std::chrono::steady_clock::now() - transitionStarted).count();
+				summary << cycle << ',' << names[direction] << ',' << batches << ',' << durationMs << ','
+					<< workMs << ',' << (workMs > 0.0 ? batches * 1000.0 / workMs : 0.0) << ',' << incomplete << ',' << nativeCommits << ',' << pixelCommits << '\n';
+				if (incomplete) ++failures;
+				std::fprintf(stderr, "[PageControlPerf] cycle=%u %s frames=%u work=%.3fms meanFPS=%.2f incomplete=%d\n",
+					cycle, names[direction], batches, workMs,
+					workMs > 0.0 ? batches * 1000.0 / workMs : 0.0, incomplete);
+			}
+		}
+		std::ofstream metadata(directory / "metadata.json");
+		metadata << "{\"productionRenderSurface\":true,\"nativeUlw\":true,\"nativeWindowService\":true,"
+			"\"offscreenCoordinates\":true,\"unlimitedPacing\":true,\"cycles\":3,\"dpi\":96,"
+			"\"asyncNativeOwnership\":true,\"successfulPresentClock\":\"window-owner-completed-steady-clock\","
+			"\"callbackCountIsNotPresentedFrames\":true,\"visibilityMsIsPublishCost\":true}\n";
+		service.SetCandidateDiagnosticsEnabled(false);
+		return failures;
+	}
+
+	// Invoke after hiddenTestMonitorEnabled=true, before Acquire(), only when transitionPerformance=false.
+	int RunHiddenWindowCandidateContracts()
+	{
+		using namespace Inkeys::Window;
+		int failures = 0;
+		auto Check = [&](bool valid, const char* why)
+		{
+			if (!valid) { ++failures; std::fprintf(stderr, "[WindowCandidateNative] FAIL %s\n", why); }
+		};
+		auto& service = GetService();
+		service.SetCandidateDiagnosticsEnabled(true);
+		auto WaitFor = [&](auto&& predicate)
+		{
+			const auto deadline = std::chrono::steady_clock::now() + 5s;
+			while (std::chrono::steady_clock::now() < deadline)
+			{ if (predicate()) return true; std::this_thread::sleep_for(1ms); }
+			return false;
+		};
+		auto Read = [&](std::size_t index)
+		{
+			std::optional<WindowSurfaceState> value;
+			(void)WaitFor([&] { value = service.SurfaceSnapshot(Roles[index]); return value && value->known; });
+			return value.value_or(WindowSurfaceState{});
+		};
+		auto Target = [&](std::size_t index)
+		{
+			const auto actual = Read(index);
+			WindowCandidateTarget target;
+			target.role = Roles[index]; target.hwnd = actual.hwnd; target.generation = actual.generation;
+			target.bounds = actual.bounds; target.applyBounds = true;
+			return target;
+		};
+		auto Submit = [&](const WindowCandidate& candidate)
+		{
+			std::uint64_t revision = 0;
+			Check(WaitFor([&] { revision = service.PublishCandidate(candidate); return revision != 0; }), "publish accepted");
+			std::optional<WindowCandidateReceipt> receipt;
+			Check(WaitFor([&] { receipt = service.TryReadCandidateReceipt(candidate.targets[0].role, revision);
+				return receipt && receipt->phase != CommandPhase::Queued && receipt->phase != CommandPhase::Executing; }), "native terminal receipt arrives");
+			return receipt.value_or(WindowCandidateReceipt{});
+		};
+		const auto initialLeft = Read(0), initialRight = Read(1);
+		WindowCandidate pair; pair.count = 2; pair.frameSerial = 700;
+		pair.targets = { Target(0), Target(1) };
+		OffsetRect(&pair.targets[0].bounds, 11, 7);
+		OffsetRect(&pair.targets[1].bounds, 11, 7);
+		hiddenTestBlockedBoundsSurface.store(1);
+		const auto failed = Submit(pair);
+		hiddenTestBlockedBoundsSurface.store(-1);
+		Check(failed.phase == CommandPhase::Rejected && failed.completedMask == 0,
+			"second-window failure rejects entire pair rather than acknowledging half");
+		const auto rolledLeft = Read(0), rolledRight = Read(1);
+		Check(EqualRect(&rolledLeft.bounds, &initialLeft.bounds) && EqualRect(&rolledRight.bounds, &initialRight.bounds),
+			"second-window failure restores both real native rectangles");
+		pair.frameSerial = 701;
+		const auto committed = Submit(pair);
+		Check(committed.phase == CommandPhase::Committed && committed.completedMask == 3,
+			"retry succeeds only with both exact native members");
+		const auto beforeRepeat = service.CandidateDiagnostics();
+		const auto repeated = Submit(pair);
+		const auto afterRepeat = service.CandidateDiagnostics();
+		Check(repeated.phase == CommandPhase::Committed && beforeRepeat.boundsChanges == afterRepeat.boundsChanges,
+			"repeated pair bounds are native no-op");
+
+		WindowCandidate shown; shown.targets[0] = Target(0); shown.targets[0].applyBounds = false;
+		shown.targets[0].visibility = WindowCandidateVisibility::Show;
+		Check(Submit(shown).phase == CommandPhase::Committed, "show native target before stale hide test");
+		const auto beforeShow = service.CandidateDiagnostics();
+		Check(Submit(shown).phase == CommandPhase::Committed, "repeat show confirms native state");
+		const auto afterShow = service.CandidateDiagnostics();
+		Check(afterShow.visibilityChanges == beforeShow.visibilityChanges && afterShow.promotes == beforeShow.promotes,
+			"ordinary repeat show neither writes visibility nor promotes");
+		WindowCandidate promoted; promoted.targets[0] = Target(3); promoted.targets[0].applyBounds = false;
+		promoted.targets[0].visibility = WindowCandidateVisibility::Show; promoted.targets[0].promote = true;
+		Check(Submit(promoted).phase == CommandPhase::Committed
+			&& service.CandidateDiagnostics().promotes == afterShow.promotes + 1,
+			"explicit promote owns group ordering");
+		Check(Submit(shown).phase == CommandPhase::Committed
+			&& GetWindow(service.Handle(Roles[3]), GW_HWNDPREV) == service.Handle(WindowRole::Bar),
+			"ordinary show preserves the explicitly promoted sibling below Bar");
+		WindowCandidate stale = shown; stale.targets[0].generation += 1;
+		stale.targets[0].visibility = WindowCandidateVisibility::Hide;
+		Check(Submit(stale).phase != CommandPhase::Committed && Read(0).visible,
+			"old-generation safety hide cannot touch current native HWND");
+
+		HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr), release = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		hiddenTestOwnerEntered.store(entered); hiddenTestOwnerRelease.store(release);
+		const bool posted = entered && release && PostMessageW(service.Handle(Roles[0]), HiddenTestOwnerGateMessage, 0, 0);
+		const bool gated = posted && WaitForSingleObject(entered, 2000) == WAIT_OBJECT_0;
+		Check(gated, "candidate cancellation gates the real owner");
+		const auto executed = service.CandidateDiagnostics().executed;
+		WindowCandidate cancelled; cancelled.targets[0] = Target(0); OffsetRect(&cancelled.targets[0].bounds, 100, 0);
+		const auto cancelRevision = gated ? service.PublishCandidate(cancelled) : 0;
+		if (cancelRevision) service.CancelCandidate(Roles[0], cancelRevision);
+		Check(cancelRevision && !service.CandidateCurrent(Roles[0], cancelRevision), "queued cancel invalidates atomic candidate immediately");
+		if (release) SetEvent(release);
+		if (cancelRevision) Check(WaitFor([&] { return service.CandidateDiagnostics().executed > executed; }), "cancelled native work retires after owner resumes");
+		const auto afterCancel = Read(0);
+		Check(EqualRect(&afterCancel.bounds, &pair.targets[0].bounds), "cancelled queued bounds never execute");
+		Check(service.Hide(Roles[0]) && service.Hide(Roles[3]) && service.SetBounds(Roles[0], initialLeft.bounds)
+			&& service.SetBounds(Roles[1], initialRight.bounds), "restore fixture before production renderer starts");
+		hiddenTestOwnerEntered.store(nullptr); hiddenTestOwnerRelease.store(nullptr);
+		if (entered) CloseHandle(entered); if (release) CloseHandle(release);
+		service.SetCandidateDiagnosticsEnabled(false);
+		std::fprintf(stderr, "[WindowCandidateNative] failures=%d\n", failures);
+		return failures;
+	}
+
+	int RunHiddenPageDirectMoveTests(const std::function<bool()>& gateOwner,
+		const std::function<void()>& releaseOwner)
+	{
+		int failures=0;auto Check=[&](bool value,const char* why){if(!value){++failures;std::fprintf(stderr,"[PageDirectNative] FAIL %s\n",why);}};
+		auto& service=Inkeys::Window::GetService();
+		auto Step=[&]{const FrameContext context{Inkeys::UI::RenderPipeline::GetDeviceEpoch(),Inkeys::UI::RenderPipeline::GetSharedAssets(),std::chrono::steady_clock::now()};
+			for(std::size_t i=0;i<Clients.size();++i)(void)RenderSurface(i,context);};
+		auto Until=[&](auto&& predicate){const auto end=std::chrono::steady_clock::now()+5s;
+			while(std::chrono::steady_clock::now()<end){Step();if(predicate())return true;std::this_thread::sleep_for(1ms);}return predicate();};
+		auto ppt=Snapshot().first;ppt.layout.bottomPairScale=1;ppt.layout.middlePairScale=1;ppt.layout.showBottomPair=true;ppt.layout.showMiddlePair=false;
+		ppt.presentationActive=ppt.presentationVisible=true;++ppt.publicationRevision;PublishPptState(ppt);PublishWhiteboardState({});
+		Check(Until([&]{return !InputSnapshot(0).locked&&!InputSnapshot(0).nativePending&&!InputSnapshot(1).nativePending
+			&&!nativeFrames[0].revision&&!nativeFrames[1].revision&&!surfaces[0].scene.AnimationActive()&&!surfaces[1].scene.AnimationActive();}),"pair fixture reaches fully acknowledged interactive idle frame");
+		for(const bool failSecond:{false,true})
+		{
+			const auto pairCommitsBefore = hiddenTestNativePairCommits;
+			const auto initial=service.SurfaceSnapshot(Roles[0]);if(!initial||!initial->known){Check(false,"pair has known native baseline");break;}
+			const auto page=surfaces[0].scene.Layout().buttons[PageWidget-1].localPixels;
+			const POINT local{(page.left+page.right)/2,(page.top+page.bottom)/2};
+			const auto outset=surfaces[0].scene.PresentationOutsetPixels();
+			Inkeys::UI::Bar::SurfaceInputEvent event;event.window=initial->hwnd;event.message=WM_LBUTTONDOWN;
+			event.logicalPointValid=true;event.logicalPoint=local;event.hitButtonId=PageWidget;event.backgroundHit=true;
+			event.semanticRevision=InputSnapshot(0).semanticRevision;event.screenPoint={initial->bounds.left+local.x+outset,initial->bounds.top+local.y+outset};
+			PageControlInputEvent(event,nullptr);
+			Check(surfaces[0].pointerActive&&surfaces[0].dragPending,"real input handler admits Page drag session");
+			const bool gated=gateOwner&&gateOwner();Check(gated,"pair move pauses real owner");
+			event.message=WM_MOUSEMOVE;event.screenPoint.x+=45;event.screenPoint.y-=35;PageControlInputEvent(event,nullptr);
+			event.message=WM_LBUTTONUP;event.screenPoint.x+=25;event.screenPoint.y-=20;PageControlInputEvent(event,nullptr);
+			{std::scoped_lock lock(dragCommitMutex);Check(dragCommitTrackers[0].pending&&dragCommitTrackers[0].released,
+				"Move plus final Up retains pair ownership before complete mask3 ACK");}
+			const auto nativeRevision=nativePairMoves[0].nativeRevision;
+			Check(nativeRevision!=0,"production input queued the latest two-window native candidate");
+			if(failSecond)hiddenTestBlockedBoundsSurface.store(1);
+			if(releaseOwner)releaseOwner();
+			std::optional<Inkeys::Window::WindowCandidateReceipt> nativeReceipt;
+			const auto nativeDeadline=std::chrono::steady_clock::now()+5s;
+			while(!nativeReceipt&&std::chrono::steady_clock::now()<nativeDeadline){nativeReceipt=service.TryReadCandidateReceipt(Roles[0],nativeRevision);std::this_thread::sleep_for(1ms);}
+			Check(nativeReceipt && (failSecond ? nativeReceipt->phase==Inkeys::Window::CommandPhase::Rejected&&nativeReceipt->completedMask==0
+				: nativeReceipt->phase==Inkeys::Window::CommandPhase::Committed&&nativeReceipt->completedMask==3),
+				"actual native pair terminal phase is verified before any fallback or replacement pixels");
+			Check(Until([&]{std::scoped_lock lock(dragCommitMutex);return !dragCommitTrackers[0].pending;}),
+				failSecond?"second-window failure rolls back then converges latest pair without another input":"latest pair converges after one Up without another input");
+			hiddenTestBlockedBoundsSurface.store(-1);
+			Check(hiddenTestNativePairCommits == pairCommitsBefore + (failSecond ? 0 : 1),
+				"released pair consumes exactly one actual mask3 receipt; rejected pair cannot be counted through fallback");
+			Check(Until([&]{return !InputSnapshot(0).nativePending&&!InputSnapshot(1).nativePending
+				&&!nativeFrames[0].revision&&!nativeFrames[1].revision&&!surfaces[0].scene.AnimationActive()&&!surfaces[1].scene.AnimationActive();}),"pair new geometry opens input and returns idle only after its actual receipt");
+			for(const std::size_t index:{0u,1u})
+			{
+				const auto native=service.SurfaceSnapshot(Roles[index]);const auto logical=CurrentBounds(surfaces[index].bounds);const auto padding=surfaces[index].scene.PresentationOutsetPixels();
+				const RECT expected{logical.left-padding,logical.top-padding,logical.right+padding,logical.bottom+padding};
+				Check(native&&native->known&&native->visible&&EqualRect(&native->bounds,&expected),"both pair HWNDs match the final successful logical geometry");
+			}
+		}
+		std::fprintf(stderr,"[PageDirectNative] failures=%d\n",failures);return failures;
+	}
+
+	// Insert beside RunHiddenWindowCandidateContracts. Call before Acquire(), non-perf only.
+	int RunHiddenWorkspaceWindowContracts()
+	{
+		using namespace Inkeys::Window;
+		int failures = 0;
+		auto Check = [&](bool value, const char* why)
+		{
+			if (!value) { ++failures; std::fprintf(stderr, "[WorkspaceWindowNative] FAIL %s\n", why); }
+		};
+		auto WaitFor = [&](auto&& predicate)
+		{
+			const auto deadline = std::chrono::steady_clock::now() + 7s;
+			while (std::chrono::steady_clock::now() < deadline)
+			{ if (predicate()) return true; std::this_thread::sleep_for(1ms); }
+			return predicate();
+		};
+		auto Terminal = [](CommandPhase phase) { return phase != CommandPhase::Queued && phase != CommandPhase::Executing; };
+		auto& service = GetService();
+		auto Read = [&](WindowRole role)
+		{
+			std::optional<WindowSurfaceState> value;
+			Check(WaitFor([&] { value = service.SurfaceSnapshot(role); return value && value->known; }), "read known owner snapshot");
+			return value.value_or(WindowSurfaceState{});
+		};
+		const auto originalLeft = Read(Roles[0]), originalRight = Read(Roles[1]), originalFreeze = Read(WindowRole::Freeze);
+
+		// 真正持有 UI 租约时 owner 只能保留最新 pair；不能回放旧位置或提前 ACK。
+		service.SetCandidateDiagnosticsEnabled(true);
+		const auto beforeMoves = service.CandidateDiagnostics();
+		auto heldPair = service.TryAcquirePresentationLease(Roles[0], Roles[1]);
+		Check(static_cast<bool>(heldPair), "UI acquires both pair roles before owner admission");
+		WindowCandidate move; move.count = 2; move.frameSerial = 800;
+		for (std::size_t i = 0; i < 2; ++i)
+		{
+			const auto& actual = i ? originalRight : originalLeft;
+			auto& target = move.targets[i]; target.role = Roles[i]; target.hwnd = actual.hwnd;
+			target.generation = actual.generation; target.bounds = actual.bounds;
+			target.presentationRevision = heldPair.Revision(Roles[i]); target.requirePresentationMatch = true;
+			OffsetRect(&target.bounds, 11, 7);
+		}
+		std::uint64_t firstMove = 0, lastMove = 0;
+		Check(WaitFor([&] { firstMove = service.PublishCandidate(move); return firstMove != 0; }), "first pair intent admitted without waiting for lease");
+		for (auto& target : move.targets) OffsetRect(&target.bounds, 23, 13);
+		++move.frameSerial;
+		Check(WaitFor([&] { lastMove = service.PublishCandidate(move); return lastMove != 0; }), "latest pair replaces waiting geometry");
+		Check(!service.TryReadCandidateReceipt(Roles[0], lastMove) && !service.CandidateCurrent(Roles[0], firstMove),
+			"lease-held pair never reports early success or keeps obsolete candidate current");
+		heldPair.Reset();
+		std::optional<WindowCandidateReceipt> moved;
+		Check(WaitFor([&] { moved = service.TryReadCandidateReceipt(Roles[0], lastMove); return moved && Terminal(moved->phase); }), "lease release wakes owner to complete latest pair");
+		Check(moved && moved->phase == CommandPhase::Committed && moved->completedMask == 3
+			&& EqualRect(&moved->actual[0].bounds, &move.targets[0].bounds) && EqualRect(&moved->actual[1].bounds, &move.targets[1].bounds),
+			"real pair receipt contains only latest requested native rectangles");
+		Check(service.CandidateDiagnostics().boundsChanges == beforeMoves.boundsChanges + 2, "owner performs exactly one bounds write per pair member");
+		Check(service.SetBounds(Roles[0], originalLeft.bounds) && service.SetBounds(Roles[1], originalRight.bounds), "restore pair geometry before rendering tests");
+		service.SetCandidateDiagnosticsEnabled(false);
+
+		const bool ownsDisplay = !Inkeys::Display::GetSnapshot();
+		if (ownsDisplay && !Inkeys::Display::Initialize())
+		{ Check(false, "real display snapshot initializes for native workspace policy"); return failures; }
+		std::atomic_uint notifications = 0, unknownAtNotification = 0;
+		service.SetWorkspaceProgressObserver([&]
+		{
+			for (const auto role : { WindowRole::Freeze, WindowRole::Drawpad, WindowRole::DrawpadPresentation })
+			{
+				const auto actual = service.SurfaceSnapshot(role);
+				// try-read 竞争可以返回空；返回值却不能仍是失效中的旧快照。
+				if (actual && !actual->known) unknownAtNotification.fetch_add(1);
+			}
+			notifications.fetch_add(1);
+		});
+		WorkspaceWindowPolicy policy; policy.revision = 900; policy.whiteboard = false;
+		policy.selectionMode = true; policy.hideDrawpad = true; // 全过程不显示画布，也不把屏外 HWND 搬到主屏。
+		auto freezeLease = service.TryAcquirePresentationLease(WindowRole::Freeze);
+		Check(static_cast<bool>(freezeLease), "background ULW lease gates real async preparation");
+		const auto notifiedBeforePrepare = notifications.load();
+		auto prepare = service.RequestPrepareWorkspaceWindowPolicy(policy);
+		Check(static_cast<bool>(prepare) && prepare.Phase() == CommandPhase::Queued && !prepare.Prepared() && !prepare.Current(),
+			"async prepare admission exposes neither terminal state nor prepared payload");
+		freezeLease.Reset();
+		Check(WaitFor([&] { return Terminal(prepare.Phase()); }), "async native preparation reaches terminal phase");
+		const auto prepared = prepare.Prepared();
+		Check(prepare.Phase() == CommandPhase::Committed && prepared && prepare.Current()
+			&& prepared->policy.revision == policy.revision, "actual owner prepare yields exact current immutable payload");
+		Check(WaitFor([&] { return notifications.load() > notifiedBeforePrepare; }), "prepare completion wakes registered coordinator observer");
+		if (prepared)
+		{
+			freezeLease = service.TryAcquirePresentationLease(WindowRole::Freeze);
+			const auto notifiedBeforeComplete = notifications.load();
+			auto complete = service.RequestCompleteWorkspaceWindowPolicy(policy, *prepared);
+			Check(static_cast<bool>(complete) && complete.Phase() == CommandPhase::Queued && !complete.Current(), "async Complete is not native success at admission");
+			freezeLease.Reset();
+			Check(WaitFor([&] { return Terminal(complete.Phase()); }), "async actual Complete finishes");
+			Check(complete.Phase() == CommandPhase::Committed && complete.Current(), "matching real native policy completion is current");
+			Check(WaitFor([&] { return notifications.load() > notifiedBeforeComplete; }), "Complete emits actual completion observer wake");
+			for (const auto role : { WindowRole::Freeze, WindowRole::Drawpad, WindowRole::DrawpadPresentation })
+				Check(!Read(role).visible, "headless workspace fixture never reveals canvas or background");
+			RECT changed = originalFreeze.bounds; OffsetRect(&changed, 3, 0);
+			Check(service.SetBounds(WindowRole::Freeze, changed), "later same-generation native geometry change succeeds");
+			const auto actual = Read(WindowRole::Freeze);
+			Check(actual.hwnd == originalFreeze.hwnd && actual.generation == originalFreeze.generation
+				&& EqualRect(&actual.bounds, &changed) && !complete.Current(), "same HWND/generation native change invalidates old workspace proof");
+			Check(service.SetBounds(WindowRole::Freeze, originalFreeze.bounds), "restore Freeze geometry");
+			++policy.revision;
+			auto stale = *prepared; stale.policy = policy; ++stale.primary.generation;
+			auto wrong = service.RequestCompleteWorkspaceWindowPolicy(policy, stale);
+			Check(WaitFor([&] { return Terminal(wrong.Phase()); }) && wrong.Phase() != CommandPhase::Committed && !wrong.Current(),
+				"wrong-generation prepared payload cannot complete native policy");
+		}
+
+		freezeLease = service.TryAcquirePresentationLease(WindowRole::Freeze);
+		const auto cancelledWake = notifications.load(); ++policy.revision;
+		auto cancelled = service.RequestPrepareWorkspaceWindowPolicy(policy);
+		Check(cancelled.Phase() == CommandPhase::Queued, "queued cancellation begins before native execution");
+		cancelled.Cancel();
+		Check(cancelled.Phase() == CommandPhase::Cancelled && !cancelled.Prepared() && !cancelled.Current(), "queued cancel never exposes a prepared success");
+		freezeLease.Reset();
+		Check(WaitFor([&] { return notifications.load() > cancelledWake; }), "owner drains cancelled request and notifies without native success");
+
+		// Guard 只在真实 CommandCompletion 已进入 Executing 后暂停；退出测试不会借用悬空栈。
+		struct ExecutingGate
+		{
+			HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr), release = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			std::atomic_bool ready = false, armed = true;
+			WorkspaceWindowReceipt receipt;
+			~ExecutingGate() { if (entered) CloseHandle(entered); if (release) CloseHandle(release); }
+		};
+		auto gate = std::make_shared<ExecutingGate>();
+		freezeLease = service.TryAcquirePresentationLease(WindowRole::Freeze); ++policy.revision;
+		gate->receipt = service.RequestPrepareWorkspaceWindowPolicy(policy, [gate]
+		{
+			if (gate->ready.load(std::memory_order_acquire) && gate->receipt.Phase() == CommandPhase::Executing && gate->armed.exchange(false))
+			{ if (gate->entered) SetEvent(gate->entered); if (gate->release) (void)WaitForSingleObject(gate->release, 5000); }
+			return true;
+		});
+		gate->ready.store(true, std::memory_order_release); freezeLease.Reset();
+		const bool executing = gate->entered && gate->release && WaitForSingleObject(gate->entered, 2000) == WAIT_OBJECT_0;
+		Check(executing && gate->receipt.Phase() == CommandPhase::Executing, "real owner publishes Executing before guard blocks");
+		gate->receipt.Cancel();
+		Check(!executing || (gate->receipt.Phase() == CommandPhase::Executing && !gate->receipt.Prepared()), "cancelled in-flight owner is not prematurely retired or ready");
+		if (gate->release) SetEvent(gate->release);
+		Check(WaitFor([&] { return Terminal(gate->receipt.Phase()); }) && gate->receipt.Phase() != CommandPhase::Committed,
+			"in-flight cancellation retires only after owner unwinds");
+		service.SetWorkspaceProgressObserver({});
+		Check(unknownAtNotification.load() == 0, "observer never receives terminal wake before owner snapshot publication");
+		Check(service.Hide(WindowRole::Freeze) && service.SetBounds(WindowRole::Freeze, originalFreeze.bounds), "workspace fixture leaves shared Freeze hidden and restored");
+		if (ownsDisplay) Inkeys::Display::Shutdown();
+		std::fprintf(stderr, "[WorkspaceWindowNative] failures=%d notifications=%u\n", failures, notifications.load());
+		return failures;
+	}
+
 	int RunHiddenWindowTests()
 	{
 		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
@@ -4241,6 +4972,7 @@ namespace Inkeys::UI::PageControl
 				std::fprintf(stderr, "[PageControlHidden] FAIL %s\n", why);
 			}
 		};
+
 		const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 		if (FAILED(com)) return 2;
 		const HRESULT initializedPipeline = Inkeys::UI::RenderPipeline::Initialize();
@@ -4283,9 +5015,20 @@ namespace Inkeys::UI::PageControl
 			return 4;
 		}
 		hiddenTestMonitorEnabled.store(true, std::memory_order_release);
+		const bool transitionPerformance = GetEnvironmentVariableW(
+			L"INKEYS_PAGE_CONTROL_TRANSITION_PERF", nullptr, 0) != 0;
+		if (!transitionPerformance)
+		{
+			failures += RunHiddenWindowCandidateContracts();
+			failures += RunHiddenWorkspaceWindowContracts();
+		}
 		bool acquired = Acquire();
 		Check(acquired, "four production render clients register");
-		if (acquired)
+		if (acquired && transitionPerformance)
+		{
+			failures += RunHiddenWindowTransitionPerformance();
+		}
+		else if (acquired)
 		{
 			std::atomic_int acknowledged = 0;
 			SetPptCallbacks({ .pagePresented = [&](std::uint64_t,
@@ -4308,6 +5051,32 @@ namespace Inkeys::UI::PageControl
 						mask |= static_cast<std::uint8_t>(1U << index);
 				return mask;
 			};
+			{
+				HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+				HANDLE release = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+				hiddenTestOwnerEntered.store(entered); hiddenTestOwnerRelease.store(release);
+				std::atomic_uint peerFrames = 0;
+				const bool registered = Inkeys::UI::RenderPipeline::Register(Client::Settings,
+					[&](const FrameContext&) { peerFrames.fetch_add(1); return FrameResult::Continue; });
+				Check(registered, "owner-delay peer client registers");
+				const bool posted = entered && release && PostMessageW(service.Handle(Roles[0]), HiddenTestOwnerGateMessage, 0, 0);
+				Check(posted && WaitForSingleObject(entered, 2000) == WAIT_OBJECT_0, "real overlay owner enters deterministic delay gate");
+				const auto peerBefore = peerFrames.load();
+				const auto hitBefore = surfaces[0].scene.PresentedGeneration();
+				// 新语义 Hidden 帧必须请求 native ACK，不能命中已确认的 idle 快路。
+				PptState hidden; hidden.layout.epoch = 1; hidden.publicationRevision = 1;
+				PublishPptState(hidden); RequestAll();
+				std::this_thread::sleep_for(120ms);
+				Check(peerFrames.load() >= peerBefore + 3, "delayed window owner cannot block other RenderPipeline clients");
+				Check(surfaces[0].scene.PresentedGeneration() == hitBefore && acknowledged.load() == 0,
+					"pending real owner ACK neither publishes hits nor confirms page UI-ready");
+				// 先释放 gate 再注销/关闭，失败路径也不会等待自己挡住的 owner。
+				if (release) SetEvent(release);
+				if (registered) Inkeys::UI::RenderPipeline::Unregister(Client::Settings);
+				Check(WaitFor([&] { return surfaces[0].scene.PresentedGeneration() > hitBefore; }), "owner release completes latest hidden receipt");
+				hiddenTestOwnerEntered.store(nullptr); hiddenTestOwnerRelease.store(nullptr);
+				if (entered) CloseHandle(entered); if (release) CloseHandle(release);
+			}
 			PptState ppt;
 			ppt.layout.session = 1;
 			ppt.layout.epoch = 1;
@@ -4329,6 +5098,23 @@ namespace Inkeys::UI::PageControl
 			Check(WaitFor([&] { return VisibleMask() == 3
 				&& acknowledged.load() == 1; }),
 				"failed peer retries and completes without new pointer or publication");
+			{
+				// 隐藏后故意拒绝一侧 Show：像素已成功不等于 native 已完成。
+				ppt.presentationActive = false; ppt.presentationVisible = false; ++ppt.publicationRevision;
+				PublishPptState(ppt); Check(WaitFor([&] { return VisibleMask() == 0; }), "native-failure fixture first hides peers");
+				hiddenTestBlockedNativeSurface.store(0);
+				const auto previousAck = acknowledged.load();
+				ppt.presentationActive = true; ppt.presentationVisible = true; ++ppt.targetRevision; ++ppt.publicationRevision;
+				PublishPptState(ppt);
+				Check(WaitFor([&] { return VisibleMask() == 2; }) && acknowledged.load() == previousAck,
+					"ULW success with native Show failure cannot acknowledge a partial pair");
+				Check(InputSnapshot(0).nativePending, "native failure keeps fresh pointer and business admission closed");
+				hiddenTestBlockedNativeSurface.store(-1);
+				Check(WaitFor([&] { return VisibleMask() == 3 && acknowledged.load() == previousAck + 1; }),
+					"native failure retry completes without another publication");
+				// 后续既有断言以当前目标为起点，保持原单侧资源故障用例的计数。
+				acknowledged.store(1);
+			}
 			{
 				std::scoped_lock renderLock(renderTransactionMutex);
 				surfaces[0].backingCapacity = { 1024, 1024 };
@@ -4499,11 +5285,29 @@ namespace Inkeys::UI::PageControl
 			PublishWhiteboardState({});
 			Check(WaitFor([&] { return VisibleMask() == 15; }),
 				"PPT four-surface layout returns after whiteboard coverage");
+			// 与性能 fixture 一样先排空四客户端，再串行驱动真实 Freeze 回调，避免第二个 D2D owner。
+			for (const auto client : Clients) Inkeys::UI::RenderPipeline::Unregister(client);
+			HANDLE backgroundEntered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			HANDLE backgroundRelease = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			hiddenTestOwnerEntered.store(backgroundEntered); hiddenTestOwnerRelease.store(backgroundRelease);
+			const auto gateNativeOwner = [&] {
+				if (!backgroundEntered || !backgroundRelease) return false;
+				ResetEvent(backgroundEntered); ResetEvent(backgroundRelease);
+				return PostMessageW(service.Handle(Roles[0]), HiddenTestOwnerGateMessage, 0, 0)
+					&& WaitForSingleObject(backgroundEntered, 2000) == WAIT_OBJECT_0;
+			};
+			const auto releaseNativeOwner = [&] { if (backgroundRelease) SetEvent(backgroundRelease); };
+			failures += RunHiddenPageDirectMoveTests(gateNativeOwner, releaseNativeOwner);
+			failures += Inkeys::UI::Bar::RunBarNativeDirectMoveTests(gateNativeOwner, releaseNativeOwner);
+			failures += Inkeys::UI::Whiteboard::RunHiddenBackgroundTests({-30000,-30000,-28080,-28920},gateNativeOwner,releaseNativeOwner);
+			hiddenTestOwnerEntered.store(nullptr); hiddenTestOwnerRelease.store(nullptr);
+			if (backgroundEntered) CloseHandle(backgroundEntered); if (backgroundRelease) CloseHandle(backgroundRelease);
 			SetPptCallbacks({});
 			Release();
 		}
 		hiddenTestBlockedUlwSurface.store(-1, std::memory_order_release);
 		hiddenTestBlockedResourceSurface.store(-1, std::memory_order_release);
+		hiddenTestBlockedNativeSurface.store(-1, std::memory_order_release);
 		hiddenTestMonitorEnabled.store(false, std::memory_order_release);
 		hiddenTestBudgetOverrideEnabled.store(false, std::memory_order_release);
 		service.StopAndJoin();
@@ -4590,8 +5394,12 @@ namespace Inkeys::UI::PageControl
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
 		auto& service = Inkeys::Window::GetService();
+		for (std::size_t pair = 0; pair < nativePairMoves.size(); ++pair) CancelNativePairMove(pair);
 		for (std::size_t index = 0; index < Roles.size(); ++index)
 		{
+			CancelNativeSurfaceFrame(index);
+			confirmedNativeFrames[index] = {};
+			nativeInputBarrier[index].store(true, std::memory_order_release);
 			if (service.Hide(Roles[index]))
 			{
 				{

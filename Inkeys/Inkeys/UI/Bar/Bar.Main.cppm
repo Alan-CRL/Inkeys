@@ -1013,6 +1013,8 @@ protected:
 	}
 	unsigned long long FinishBottomDockTransition(bool deferWindowMove = false) noexcept
 	{
+		// 全部输入/显示/工作区写者共用此屏障，稳定偶数发布前退休旧位图的原生直移。
+		if (deferWindowMove) CancelNativeDirectWindowMove(true);
 		return Inkeys::UI::Bar::FinishBarBottomDockTransition(
 			bottomDockTransitionSerial, bottomDockDeferredTransitionSerial, deferWindowMove);
 	}
@@ -1136,6 +1138,24 @@ protected:
 	atomic<LONG> directWindowPresentedTranslationY = 0;
 	RECT committedWindowScreenBounds{};
 	bool committedWindowScreenBoundsReady = false;
+	std::uint64_t committedWindowPresentationRevision = 0;
+	HWND committedWindowHandle = nullptr;
+	std::uint64_t committedWindowGeneration = 0;
+	struct NativeDirectMove
+	{
+		HWND hwnd = nullptr;
+		std::uint64_t generation = 0, frameSerial = 0, session = 0, transitionSerial = 0, presentationRevision = 0;
+		RECT bounds{};
+		POINT translation{};
+	} nativeDirectMove;
+	atomic<std::uint64_t> nativeDirectMoveRevision = 0;
+	std::uint64_t nativeDirectMoveSerial = 0;
+	// 载荷沿既有几何锁发布；窗口原生执行和回滚由同一个 Service owner 持有。
+	bool RequestNativeDirectWindowMoveLocked(POINT translation, unsigned long long transitionSerial,
+		std::uint64_t leasedPresentationRevision = 0) noexcept;
+	bool ConsumeNativeDirectWindowMoveLocked(std::uint64_t presentationRevision) noexcept;
+	void CancelNativeDirectWindowMove(bool preserveCompleted = false) noexcept;
+	void PollNativeDirectWindowMove() noexcept;
 	Inkeys::Display::Subscription displaySubscription;
 	atomic<unsigned long long> pendingDisplaySerial = 0;
 	mutex pendingDisplayPublishMutex;
@@ -1261,6 +1281,8 @@ namespace Inkeys::UI::Bar
 	export int RunUi3MultiTargetOffscreenBenchmark();
 	export int RunUi3WorkspaceCenteringTest();
 	export int RunUi3BottomDockTransitionTest();
+	export int RunBarNativeDirectMoveTests(const std::function<bool()>& gateOwner,
+		const std::function<void()>& releaseOwner);
 	bool RunUi3BottomDockInteractionSequence(BarUISetClass& owner,
 		const std::function<bool(const char*, POINT)>& render,
 		double downNormalizedY,

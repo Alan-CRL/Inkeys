@@ -28,7 +28,8 @@ namespace Inkeys::Drawing::Draw3
 	bool WaitForProductContentRevision(std::uint64_t revision,
 		std::uint32_t timeoutMilliseconds) noexcept;
 	bool WaitForProductRuntimeRevision(std::uint64_t revision,
-		std::uint32_t timeoutMilliseconds) noexcept;
+		std::uint32_t timeoutMilliseconds, bool waitWhileStopped = false) noexcept;
+	void NotifyProductWorkspaceProgress() noexcept;
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 	void PublishProductState(const Bridge::ProductState& state) noexcept;
 	// 协调者先关新 Down 再发布目标；只有同一 Host 代际和交接版本能够撤销自己的原因。

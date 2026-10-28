@@ -2573,10 +2573,15 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool Host::WaitForRuntimeRevision(std::uint64_t revision,
-		std::uint32_t timeoutMilliseconds) const noexcept
+		std::uint32_t timeoutMilliseconds, bool waitWhileStopped) const noexcept
 	{
 		return impl_->runtimeRevision.WaitForChange(
-			revision, timeoutMilliseconds, impl_->running);
+			revision, timeoutMilliseconds, impl_->running, waitWhileStopped);
+	}
+
+	void Host::NotifyWorkspaceProgress() noexcept
+	{
+		impl_->PublishRuntimeRevision();
 	}
 
 	bool Host::WaitForContentRevision(std::uint64_t revision,

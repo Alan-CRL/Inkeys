@@ -95,3 +95,38 @@ if ($LASTEXITCODE -ne 0) { throw "Solution build failed: $LASTEXITCODE" }
 - [ ] 每个候选独立保留证据和回退点，未获稳定收益/像素或状态回归则仅撤回该候选；不改其它任务和本分支已有修复。
 - [x] 在任务内记录当前首要耗时链、前后分位、未解风险、构建/测试退出码与实际覆盖；主会话已同步timer、容量和诊断合同，剩余性能验收仍进行中。
 - [ ] 未获用户当前任务明确授权不commit/push，不自动归档。
+
+## 8. S5：异步窗口所有权实施（用户已批准）
+
+先读 `research/async-window-ownership-design.md` 和 `research/native-pagecontrol-unlimited.md`，并补读规范中render同步等待、PageControl direct-move、Whiteboard ACK及workspace Prepare/Complete的完整相关章节。保留当前未提交的 `PageControl.cpp` 性能计时/驱动改动，它们是A/B基线，不得回退或覆盖其它agent/用户改动。
+
+### P1：PageControl candidate/receipt
+
+- [x] 建立并执行上述边界验证：mailbox 和背景内容失效有生产 helper 的确定性红→绿；幂等、Show/promote、owner 延迟、native 失败、pair 回滚及完整 ACK 门禁通过生产屏外故障注入。未把 API 缺失编译失败或静态同步调用检查冒充执行红测。
+- [x] 定义最小固定candidate/receipt及revision发布合同，复用现有Window overlay owner和mailbox/恢复能力；不把desired当真实完成，不新增第二套窗口管理器。
+- [x] 保留RenderSurface动画/布局/PresentScene/ULW，将同步SetBounds/Show/Hide改为非阻塞发布与回执消费。完整匹配回执前保留damage、旧命中和UI-ready；pending用Retry而非跨owner等待。
+- [x] 普通Show/Hide/SetBounds幂等，Z-order只在Pointer Down promote、workspace/topology/band/owner变化或恢复时执行。不得把逐帧RefreshOverlayGroup简单异步化。
+- [x] 用 `INKEYS_PAGE_CONTROL_TRANSITION_PERF=1 --page-control-hidden-test` 做同口径A/B，保存改动前后EXE哈希、frames/summary/metadata；补充队列深度、coalesced/stale命令和candidate→receipt延迟，不能只测UI callback。
+
+### P2：Whiteboard Freeze复用
+
+- [x] RenderBackground的Hide/SetBounds/Show改为同一candidate/receipt；BackgroundPrepared/ inactive ACK使用真实回执，不由UI/协调器直接查询HWND冒充ready。
+- [x] 首背景、最终显示、最小化恢复、退出源补偿、取消和旧generation回归；像素已成功而native pending时不无条件重复整屏重画，失效epoch/候选不得复用。
+
+### P3：direct-move与promote
+
+- [x] PageControl pair direct-move改为latest-wins窗口候选和pair mask回执，第二窗失败仍真实回滚；快速反向不播放旧位置。
+- [x] Pointer Down PromotePptWindow非阻塞化，保留PPT内部顺序及Bar正下方合同。
+- [x] Bar直移沿用现有原子translation/几何屏障迁移直接SetWindowPos，逐像素/命中验证旧位图不被搬到新位置。
+
+### P4：协调器与规范收尾
+
+- [x] StateMonitoring Prepare/Complete改为事件/回执驱动，保留250ms兜底、失败预算、Draw3首帧/fence、PPT session/target identity及pending/Committed。
+- [x] 更新rendering-and-ui、whiteboard、canvas-freeze-boundaries、ppt native-session及诊断规范中旧的同步等待/UI直接窗口操作合同。
+- [ ] 六向、翻页、任务栏自动升起、拖动/吸附、DPI/显示器、故障恢复、快速反向全回归；完整Solution Debug|ARM64及相关hidden/offscreen/state/headless通过。真实Office/WPS/DWM单列，不从屏外FPS外推。
+- [x] 每阶段独立记录证据和回退点；P1/P2未验证前不大范围推进P3/P4。未经用户明确授权不commit/push/归档。
+
+P1/P2 独立门禁已通过，完整命令、真实退出码、EXE 哈希与三轮 A/B 见 [S5 P1/P2 验证](verification/s5-p1p2-validation.md)。P3/P4 实现与本轮自动化回归也已完成，见 [S5 最终验证](verification/s5-final-verification.md)。完整现场覆盖与 R4 帧预算仍未闭环，不将代码/自动化通过写成全任务完成。
+
+- [x] 最终完整 solution、hidden（含真实 pair/Bar/Whiteboard/Workspace 异步）、state、offscreen、bottom-dock、centering、input-worker、headless 退出码均为 0；交替三轮原生 A/B 完整。
+- [ ] 真实 Office/WPS、任务栏与物理 DPI/显示器/触控端到端验收；R4 全帧预算。两版共享渲染短测均仅 1/54 组达到目标，保持记录而不调整阈值。

@@ -173,7 +173,8 @@ namespace Inkeys::UI::Bar
 			for(auto id=first;id<=last;++id)if(HitTestBarButton(frame.buttons[id-1],x,y))return id;
 			return 0;
 		}
-		FrameHit candidate,committed;
+		FrameHit candidate,committed,capturedCandidate;
+		std::uint64_t damageRevision=0,capturedDamageRevision=0,capturedSerial=0,committedSerial=0;
 		mutable std::mutex inputMutex;
 		ButtonPointerState pointer;
 		BarSurfaceButtonId hover=0,pressed=0,appliedHover=0,appliedPressed=0;
@@ -280,14 +281,14 @@ namespace Inkeys::UI::Bar
 		}
 		void FullDamage() noexcept
 		{
-			damage={0,0,presentation.right-presentation.left,presentation.bottom-presentation.top};invalidated=true;
+			damage={0,0,presentation.right-presentation.left,presentation.bottom-presentation.top};invalidated=true;++damageRevision;
 		}
 		void Include(RECT r) noexcept
 		{
 			const LONG pad=Outset();InflateRect(&r,pad,pad);
 			OffsetRect(&r,logical.left-presentation.left,logical.top-presentation.top);
 			r=IntersectBarDirtyRect(r,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
-			if(!Empty(r)){BarDirtyRegionTracker::UnionInPlace(damage,r);invalidated=true;}
+			if(!Empty(r)){BarDirtyRegionTracker::UnionInPlace(damage,r);invalidated=true;++damageRevision;}
 		}
 		LONG Outset() const noexcept { return backgroundOnly?0:static_cast<LONG>(std::ceil(DamageOutsetDip*scale)); }
 		void ConfigureButtonContent(BarButtonClass& button,const std::wstring& icon,
@@ -542,7 +543,7 @@ namespace Inkeys::UI::Bar
 				else{
 					RECT changedLight=previousCursorDamage;BarDirtyRegionTracker::UnionInPlace(changedLight,cursorDamage);
 					changedLight=IntersectBarDirtyRect(changedLight,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
-					if(!Empty(changedLight)){BarDirtyRegionTracker::UnionInPlace(damage,changedLight);invalidated=true;}
+					if(!Empty(changedLight)){BarDirtyRegionTracker::UnionInPlace(damage,changedLight);invalidated=true;++damageRevision;}
 				}
 				previousCursorDamage=cursorDamage;appliedLighting=light;
 				appliedLightingRevision=revision;appliedLightingPresentation=presentation;
@@ -820,6 +821,30 @@ namespace Inkeys::UI::Bar
 		std::scoped_lock lock(impl_->inputMutex);const auto generation=impl_->committed.generation+1;
 		impl_->committed=impl_->candidate;impl_->committed.generation=generation;
 		for(auto& button:impl_->committed.buttons)button.enabled&=inputEnabled;
+		impl_->committedSerial=impl_->capturedSerial;
+	}
+	std::uint64_t BarPageSurface::CapturePresentationCandidate() noexcept
+	{
+		impl_->capturedCandidate=impl_->candidate;
+		impl_->capturedDamageRevision=impl_->damageRevision;
+		return ++impl_->capturedSerial;
+	}
+	bool BarPageSurface::IsPresentationCandidateCurrent(std::uint64_t serial) const noexcept
+	{
+		return serial&&serial==impl_->capturedSerial&&serial>impl_->committedSerial
+			&&impl_->capturedDamageRevision==impl_->damageRevision;
+	}
+	bool BarPageSurface::CommitPresentationCandidate(std::uint64_t serial,bool inputEnabled) noexcept
+	{
+		if(!serial||serial!=impl_->capturedSerial||serial<=impl_->committedSerial)return false;
+		std::scoped_lock lock(impl_->inputMutex);
+		const auto generation=impl_->committed.generation+1;
+		impl_->committed=impl_->capturedCandidate;impl_->committed.generation=generation;
+		for(auto& button:impl_->committed.buttons)button.enabled&=inputEnabled;
+		impl_->committedSerial=serial;
+		// 捕获后的反馈/光照失效仍归下一帧，旧回执只消费它实际覆盖的 damage。
+		if(impl_->capturedDamageRevision==impl_->damageRevision){impl_->damage={};impl_->invalidated=false;}
+		return true;
 	}
 	std::uint64_t BarPageSurface::PresentedGeneration() const noexcept
 	{std::scoped_lock lock(impl_->inputMutex);return impl_->committed.generation;}

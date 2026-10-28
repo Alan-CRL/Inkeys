@@ -10,6 +10,9 @@ module;
 #include <wrl/client.h>
 
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <thread>
 #include <mutex>
 #include <memory>
 #include <optional>
@@ -18,7 +21,7 @@ module;
 #include "../../../IdtFreezeFrame.h"
 #include "Whiteboard.Theme.h"
 #include "Whiteboard.BackgroundState.h"
-#include "../../Window/Window.ShellFullscreen.h"
+#include "../../Drawing/Draw3/Draw3.Product.h"
 
 module Inkeys.UI.Whiteboard;
 
@@ -43,6 +46,16 @@ namespace Inkeys::UI::Whiteboard
 		std::atomic_bool expandedLayoutTarget = false;
 		std::atomic_bool active = false;
 		WhiteboardDetail::BackgroundState backgroundState;
+		struct BackgroundSubmission
+		{
+			WhiteboardDetail::BackgroundState::Frame frame;
+			std::uint64_t deviceGeneration = 0, nativeRevision = 0;
+			bool animationActive = false;
+		};
+		// 像素成功与原生确认分开保留；owner 忙时只重试回执，不重复整屏 GetDC/ULW。
+		std::optional<BackgroundSubmission> backgroundSubmission;
+		std::atomic<std::uint64_t> backgroundNativeRevision = 0;
+		std::uint64_t backgroundFrameSerial = 0;
 		std::mutex pageStateMutex;
 		PageStateTransaction pageTransaction;
 		std::uint32_t themeRgb = 0x123B32;
@@ -56,9 +69,18 @@ namespace Inkeys::UI::Whiteboard
 		Inkeys::Display::Subscription displaySubscription;
 
 		struct BackgroundTarget { RECT bounds{}; float scale = 1.0F; };
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		// 仅屏外 fixture 注入目标；生产仍只读 Display 的主屏快照。
+		BackgroundTarget hiddenBackgroundTarget;
+		bool hiddenBackgroundTest = false, hiddenBackgroundHoldReceipt = false;
+		std::uint64_t hiddenBackgroundPixelCount = 0;
+#endif
 		std::atomic<std::shared_ptr<const BackgroundTarget>> renderedBackgroundTarget;
 		[[nodiscard]] BackgroundTarget PrimaryTarget() noexcept
 		{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			if (hiddenBackgroundTest) return hiddenBackgroundTarget;
+#endif
 			// 尺寸和 DPI 必须来自同一显示快照；白板始终覆盖完整 rcMonitor。
 			const auto snapshot = Inkeys::Display::GetSnapshot();
 			if (const auto* monitor = snapshot ? snapshot->Primary() : nullptr)
@@ -126,152 +148,385 @@ namespace Inkeys::UI::Whiteboard
 				|| hr == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
 		}
 
+		bool CommitBackgroundInactive(const WhiteboardDetail::BackgroundState::Request& request)
+		{
+			if (!backgroundState.CommitInactive(request)) return false;
+			Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
+			return true;
+		}
+
+		void CancelBackgroundCandidate() noexcept
+		{
+			const auto revision = backgroundNativeRevision.exchange(0, std::memory_order_acq_rel);
+			if (revision) Inkeys::Window::GetService().CancelCandidate(WindowRole::Freeze, revision);
+		}
+
+		void DiscardBackgroundSubmission() noexcept
+		{
+			if (!backgroundSubmission) return;
+			const auto revision = backgroundSubmission->nativeRevision;
+			if (revision)
+			{
+				Inkeys::Window::GetService().CancelCandidate(WindowRole::Freeze, revision);
+				auto expected = revision;
+				(void)backgroundNativeRevision.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+			}
+			backgroundSubmission.reset();
+		}
+
+		bool PublishBackgroundCandidate(BackgroundSubmission& submission)
+		{
+			using Visibility = Inkeys::Window::WindowCandidateVisibility;
+			Inkeys::Window::WindowCandidate candidate;
+			candidate.frameSerial = submission.frame.frameSerial;
+			candidate.workspaceRevision = submission.frame.request.revision;
+			auto& target = candidate.targets[0];
+			target.role = WindowRole::Freeze;
+			target.hwnd = submission.frame.hwnd;
+			target.generation = submission.frame.generation;
+			target.bounds = submission.frame.bounds;
+			// ULW 已原子提交像素与位置，owner 只核验，不能把迟到的旧 bounds 再搬回去。
+			target.applyBounds = false;
+			target.verifyBounds = submission.frame.request.active;
+			target.presentationRevision = submission.frame.presentationRevision;
+			target.requirePresentationMatch = submission.frame.request.active;
+			target.visibility = !submission.frame.request.active ? Visibility::Hide
+				: submission.frame.request.revision ? Visibility::Preserve : Visibility::Show;
+			submission.nativeRevision = Inkeys::Window::GetService().PublishCandidate(candidate);
+			if (!submission.nativeRevision) return false;
+			backgroundNativeRevision.store(submission.nativeRevision, std::memory_order_release);
+			if (!initialized.load(std::memory_order_acquire) || !backgroundState.FrameCurrent(submission.frame))
+			{
+				CancelBackgroundCandidate();
+				return false;
+			}
+			return true;
+		}
+
 		FrameResult RenderBackground(const FrameContext& frameContext)
 		{
-			if (!initialized.load(std::memory_order_acquire))
-				return FrameResult::Idle;
+			if (!initialized.load(std::memory_order_acquire)) return FrameResult::Idle;
 			auto& service = Inkeys::Window::GetService();
 			const auto request = backgroundState.Desired();
 			const auto current = [request] { return initialized.load(std::memory_order_acquire)
 				&& backgroundState.Current(request); };
-			const auto surfaceCurrent = [&service](const WhiteboardDetail::BackgroundState::Surface& surface)
-			{ return surface.hwnd == service.Handle(WindowRole::Freeze) && IsWindow(surface.hwnd)
-				&& reinterpret_cast<std::uintptr_t>(GetPropW(surface.hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == surface.generation; };
-			if (const auto held = backgroundState.Held(); held && !surfaceCurrent(*held))
+			if (backgroundSubmission && (!backgroundState.FrameCurrent(backgroundSubmission->frame)
+				|| (backgroundSubmission->nativeRevision
+					&& !service.CandidateCurrent(WindowRole::Freeze, backgroundSubmission->nativeRevision))))
+				DiscardBackgroundSubmission();
+			// 已经释放的共享 Freeze 不再被白板重复隐藏；退出确认始终先于最小化暂停。
+			if (!request.active && backgroundState.InactiveCommitted(request)) return FrameResult::Idle;
+			if (!request.active && !backgroundState.Held())
+				return CommitBackgroundInactive(request) ? FrameResult::Idle : FrameResult::Retry;
+			const auto native = service.SurfaceSnapshot(WindowRole::Freeze);
+			if (!native || !native->known) return FrameResult::Retry;
+			if (const auto held = backgroundState.Held(); held
+				&& (held->hwnd != native->hwnd || held->generation != native->generation))
 			{
-				const auto generation = reinterpret_cast<std::uintptr_t>(GetPropW(held->hwnd, Inkeys::Window::Detail::WindowGenerationProperty));
-				if (!IsWindow(held->hwnd) || (generation && generation != held->generation))
-					backgroundState.RetireHeld(*held);
-				else return FrameResult::Retry; // 身份读取失败不是旧目标已经退休的凭据。
+				// 只有 owner 的已知退休/新代际快照才能释放旧责任，未知采样不能冒充销毁。
+				backgroundState.RetireHeld(*held);
+				DiscardBackgroundSubmission();
 			}
-			// 关闭确认先于最小化暂停；已经释放时不重复隐藏桌面/PPT共用 Freeze。
 			if (!request.active)
 			{
-				return WhiteboardDetail::CompleteBackgroundInactive(backgroundState, request,
-					[&](const WhiteboardDetail::BackgroundState::Surface& held)
-					{
-						const auto guard = [current, held] { return current() && held.hwnd == Inkeys::Window::GetService().Handle(WindowRole::Freeze)
-							&& reinterpret_cast<std::uintptr_t>(GetPropW(held.hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == held.generation; };
-						return guard() && service.Hide(WindowRole::Freeze, guard);
-					}) ? FrameResult::Idle : FrameResult::Retry;
+				const auto held = backgroundState.Held();
+				if (!held) return CommitBackgroundInactive(request) ? FrameResult::Idle : FrameResult::Retry;
+				if (!backgroundSubmission)
+					backgroundSubmission = BackgroundSubmission{{request, held->hwnd, held->generation,
+						native->bounds, backgroundState.ContentRevision(), ++backgroundFrameSerial}};
+				auto& pending = *backgroundSubmission;
+				if (!pending.nativeRevision)
+				{
+					(void)PublishBackgroundCandidate(pending);
+					return FrameResult::Retry;
+				}
+				const auto receipt = service.TryReadCandidateReceipt(WindowRole::Freeze, pending.nativeRevision);
+				if (!receipt || receipt->phase == Inkeys::Window::CommandPhase::Queued
+					|| receipt->phase == Inkeys::Window::CommandPhase::Executing) return FrameResult::Retry;
+				auto commitLease = service.TryAcquirePresentationLease(WindowRole::Freeze);
+				if (!commitLease) return FrameResult::Retry;
+				const bool hidden = WhiteboardDetail::BackgroundInactiveMatchesReceipt(request, *held,
+					pending.frame.frameSerial, pending.nativeRevision, *receipt,
+					receipt->phase == Inkeys::Window::CommandPhase::Committed);
+				const auto actual = service.SurfaceSnapshot(WindowRole::Freeze);
+				const bool committed = hidden && actual && actual->known && actual->hwnd == held->hwnd
+					&& actual->generation == held->generation && !actual->visible
+					&& WhiteboardDetail::CompleteBackgroundInactive(backgroundState, request,
+						[&](const auto& surface) { return surface == *held && current(); });
+				DiscardBackgroundSubmission();
+				if (committed) Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
+				return committed ? FrameResult::Idle : FrameResult::Retry;
 			}
-			if (service.WhiteboardWindowGroupMinimized()) return FrameResult::Idle;
-			const HWND hwnd = service.Handle(WindowRole::Freeze);
-			if (!hwnd) return FrameResult::Retry;
-			const auto generation = reinterpret_cast<std::uintptr_t>(GetPropW(hwnd,
-				Inkeys::Window::Detail::WindowGenerationProperty));
+			if (service.WhiteboardWindowGroupMinimized())
+			{
+				if (backgroundSubmission) { DiscardBackgroundSubmission(); backgroundState.Invalidate(); }
+				return FrameResult::Idle;
+			}
+			const HWND hwnd = native->hwnd;
+			const auto generation = native->generation;
 			if (!backgroundState.Bind(request, {hwnd, generation})) return FrameResult::Retry;
-			const auto currentSurface = [hwnd, generation, current] { return current() && Inkeys::Window::GetService().Handle(WindowRole::Freeze) == hwnd
-				&& reinterpret_cast<std::uintptr_t>(GetPropW(hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == generation; };
+			const auto currentSurface = [hwnd, generation, current, &service]
+			{
+				const auto surface = service.SurfaceSnapshot(WindowRole::Freeze);
+				return current() && surface && surface->known && surface->hwnd == hwnd && surface->generation == generation;
+			};
 			const auto target = PrimaryTarget();
 			const RECT bounds = target.bounds;
 			const float scale = target.scale;
-			RECT presentation{};
-			bool animationActive = false;
+			std::unique_lock renderLock(backgroundRenderMutex);
+			if (!EqualRect(&configuredBackgroundScreen, &bounds) || configuredBackgroundScale != scale)
 			{
-				std::unique_lock renderLock(backgroundRenderMutex);
-				if (!EqualRect(&configuredBackgroundScreen, &bounds)
-					|| configuredBackgroundScale != scale)
-					ConfigureBackgroundScene(bounds, scale);
+				ConfigureBackgroundScene(bounds, scale);
+				backgroundState.Invalidate();
+			}
+			if (backgroundSubmission && !backgroundState.FrameCurrent(backgroundSubmission->frame))
+				DiscardBackgroundSubmission();
+			if (!backgroundSubmission)
+			{
+				if (const auto prepared = backgroundState.Prepared(request.revision); prepared
+					&& !WhiteboardDetail::BackgroundFrameMatchesSurface(*prepared, *native, request.revision == 0))
+					backgroundState.Invalidate();
 				(void)backgroundScene.Advance(frameContext.frameTime);
-				presentation = backgroundScene.PresentationBounds();
-				const UINT width = static_cast<UINT>(presentation.right
-					- presentation.left);
-				const UINT height = static_cast<UINT>(presentation.bottom
-					- presentation.top);
-				const auto previousTarget = backgroundScene.Renderer().GetTargetBitmapSize();
-				const bool resourcesRecreated = backgroundScene.Renderer().GetDeviceGeneration()
-					!= frameContext.epoch.generation || previousTarget.width != width
-					|| previousTarget.height != height;
-				const HRESULT resourceHr = backgroundScene.EnsureDeviceResources(
-					frameContext.epoch, width, height);
-				if (FAILED(resourceHr)) return IsDeviceLost(resourceHr)
-					? FrameResult::DeviceLost : FrameResult::Retry;
-				// 新位图没有旧像素，恢复窗口也必须完成一次真实提交，不能沿用空脏区。
-				if (resourcesRecreated || !backgroundState.Prepared(request.revision))
-					backgroundScene.Invalidate();
-				const RECT frameDamage = backgroundScene.PendingDamage();
-				if (IsRectEmpty(&frameDamage))
+			}
+			const RECT presentation = backgroundScene.PresentationBounds();
+			const UINT width = static_cast<UINT>(presentation.right - presentation.left);
+			const UINT height = static_cast<UINT>(presentation.bottom - presentation.top);
+			const auto previousTarget = backgroundScene.Renderer().GetTargetBitmapSize();
+			const bool resourcesRecreated = backgroundScene.Renderer().GetDeviceGeneration() != frameContext.epoch.generation
+				|| previousTarget.width != width || previousTarget.height != height;
+			if (resourcesRecreated)
+			{
+				backgroundState.Invalidate();
+				DiscardBackgroundSubmission();
+			}
+			const HRESULT resourceHr = backgroundScene.EnsureDeviceResources(frameContext.epoch, width, height);
+			if (FAILED(resourceHr)) return IsDeviceLost(resourceHr) ? FrameResult::DeviceLost : FrameResult::Retry;
+			if (backgroundSubmission && (!backgroundState.FrameCurrent(backgroundSubmission->frame)
+				|| backgroundSubmission->deviceGeneration != frameContext.epoch.generation
+				|| !EqualRect(&backgroundSubmission->frame.bounds, &presentation)))
+				DiscardBackgroundSubmission();
+			if (backgroundSubmission)
+			{
+				auto& pending = *backgroundSubmission;
+				if (!pending.nativeRevision)
 				{
-					backgroundScene.SuspendForIdle(frameContext.frameTime);
-					return FrameResult::Idle;
-				}
-				auto* rawContext = backgroundScene.DeviceContext();
-				auto* rawGdi = backgroundScene.GdiInteropRenderTarget();
-				if (!rawContext || !rawGdi) return FrameResult::Retry;
-				ComPtr<ID2D1DeviceContext> context(rawContext);
-				ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
-				// 与主栏/分页采用同一绘制事务；先裁剪，成功呈现后才消费脏区。
-				backgroundScene.Renderer().BeginFrameDraw(context.Get(), D2D1::RectF(
-					static_cast<FLOAT>(frameDamage.left), static_cast<FLOAT>(frameDamage.top),
-					static_cast<FLOAT>(frameDamage.right), static_cast<FLOAT>(frameDamage.bottom)));
-				(void)backgroundScene.Render(context.Get(), frameContext.frameTime);
-				backgroundScene.Renderer().FinishFrameDrawCommands(context.Get());
-				HDC source = nullptr;
-				HRESULT getDcHr = gdi->GetDC(
-					D2D1_DC_INITIALIZE_MODE_COPY, &source);
-				HRESULT releaseDcHr = S_OK;
-				bool presented = false;
-				if (SUCCEEDED(getDcHr) && source)
-				{
-					POINT destination{ presentation.left, presentation.top };
-					POINT sourcePoint{};
-					SIZE size{ static_cast<LONG>(width), static_cast<LONG>(height) };
-					BLENDFUNCTION blend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
-					UPDATELAYEREDWINDOWINFO info{};
-					info.cbSize = sizeof(info);
-					info.pptDst = &destination;
-					info.psize = &size;
-					info.pptSrc = &sourcePoint;
-					info.hdcSrc = source;
-					info.pblend = &blend;
-					RECT dirty = frameDamage;
-					if (dirty.right <= dirty.left || dirty.bottom <= dirty.top)
-						dirty = RECT{ 0, 0, static_cast<LONG>(width),
-							static_cast<LONG>(height) };
-					info.prcDirty = &dirty;
-					info.dwFlags = ULW_ALPHA;
-					HDC destinationDc = GetDC(nullptr);
-					info.hdcDst = destinationDc;
-					presented = currentSurface() && SubmitFreezeSurface(hwnd, &info, true) && currentSurface();
-					if (destinationDc) ReleaseDC(nullptr, destinationDc);
-					const RECT gdiModifiedRect{};
-					releaseDcHr = gdi->ReleaseDC(&gdiModifiedRect);
-				}
-				else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
-				const HRESULT endDrawHr = backgroundScene.Renderer().EndFrameDraw(context.Get());
-				if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
-					|| IsDeviceLost(endDrawHr))
-				{
-					backgroundScene.ReleaseDeviceResources();
-					return FrameResult::DeviceLost;
-				}
-				if (FAILED(getDcHr) || FAILED(releaseDcHr)
-					|| FAILED(endDrawHr) || !presented)
-				{
-					backgroundScene.ReleaseDeviceResources();
+					(void)PublishBackgroundCandidate(pending);
 					return FrameResult::Retry;
 				}
-				animationActive = backgroundScene.AnimationActive();
-			}
-			if (!currentSurface()) return FrameResult::Retry;
-			// 新协议只准备像素/几何，最终显示由同请求 NativeComplete 确认；兼容旧无版本入口。
-			const bool boundsApplied = service.SetBounds(WindowRole::Freeze, presentation, currentSurface);
-			const bool visibleApplied = boundsApplied && (request.revision != 0 || service.Show(WindowRole::Freeze, currentSurface));
-			{
-				std::unique_lock renderLock(backgroundRenderMutex);
-				if (!visibleApplied)
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+				if (hiddenBackgroundTest && hiddenBackgroundHoldReceipt) return FrameResult::Retry;
+#endif
+				const auto receipt = service.TryReadCandidateReceipt(WindowRole::Freeze, pending.nativeRevision);
+				if (!receipt || receipt->phase == Inkeys::Window::CommandPhase::Queued
+					|| receipt->phase == Inkeys::Window::CommandPhase::Executing) return FrameResult::Retry;
+				auto commitLease = service.TryAcquirePresentationLease(WindowRole::Freeze);
+				if (!commitLease) return FrameResult::Retry;
+				const auto actual = service.SurfaceSnapshot(WindowRole::Freeze);
+				const bool acknowledged = WhiteboardDetail::BackgroundFrameMatchesReceipt(pending.frame,
+					pending.nativeRevision, *receipt, receipt->phase == Inkeys::Window::CommandPhase::Committed,
+					request.revision == 0) && currentSurface() && actual && !actual->iconic
+					&& WhiteboardDetail::BackgroundFrameMatchesSurface(pending.frame, *actual, request.revision == 0);
+				if (!acknowledged || !backgroundState.Prepare(pending.frame))
 				{
+					DiscardBackgroundSubmission();
+					backgroundState.Invalidate();
 					backgroundScene.Invalidate();
 					return FrameResult::Retry;
 				}
 				backgroundScene.CommitPresented(false);
 				(void)backgroundScene.ConsumeDamage();
+				const bool animationActive = pending.animationActive;
+				DiscardBackgroundSubmission();
+				if (!animationActive) backgroundScene.SuspendForIdle(frameContext.frameTime);
+				renderLock.unlock();
+				commitLease.Reset();
+				Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
+				return animationActive ? FrameResult::Continue : FrameResult::Idle;
 			}
-			if (!backgroundState.Prepare({request, hwnd, generation, presentation})) return FrameResult::Retry;
-			if (!animationActive) backgroundScene.SuspendForIdle(frameContext.frameTime);
-			return animationActive ? FrameResult::Continue : FrameResult::Idle;
+			// 当前内容或设备身份没有成功回执时保留 damage；未决 native 不会再次进入这一绘制分支。
+			if (resourcesRecreated || !backgroundState.Prepared(request.revision)) backgroundScene.Invalidate();
+			const auto contentRevision = backgroundState.ContentRevision();
+			const RECT frameDamage = backgroundScene.PendingDamage();
+			if (IsRectEmpty(&frameDamage))
+			{
+				backgroundScene.SuspendForIdle(frameContext.frameTime);
+				return FrameResult::Idle;
+			}
+			// 与 Workspace Prepare/回滚共用原子租约，owner 忙则让其它客户端继续，不等待 HWND。
+			auto nativeLease = service.TryAcquirePresentationLease(WindowRole::Freeze);
+			if (!nativeLease) return FrameResult::Retry;
+			std::uint64_t presentationRevision = 0;
+			auto* rawContext = backgroundScene.DeviceContext();
+			auto* rawGdi = backgroundScene.GdiInteropRenderTarget();
+			if (!rawContext || !rawGdi) return FrameResult::Retry;
+			ComPtr<ID2D1DeviceContext> context(rawContext);
+			ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
+			// 与主栏/分页采用同一绘制事务；先裁剪，成功呈现后才消费脏区。
+			backgroundScene.Renderer().BeginFrameDraw(context.Get(), D2D1::RectF(
+				static_cast<FLOAT>(frameDamage.left), static_cast<FLOAT>(frameDamage.top),
+				static_cast<FLOAT>(frameDamage.right), static_cast<FLOAT>(frameDamage.bottom)));
+			(void)backgroundScene.Render(context.Get(), frameContext.frameTime);
+			backgroundScene.Renderer().FinishFrameDrawCommands(context.Get());
+			HDC source = nullptr;
+			HRESULT getDcHr = gdi->GetDC(
+				D2D1_DC_INITIALIZE_MODE_COPY, &source);
+			HRESULT releaseDcHr = S_OK;
+			bool presented = false;
+			if (SUCCEEDED(getDcHr) && source)
+			{
+				POINT destination{ presentation.left, presentation.top };
+				POINT sourcePoint{};
+				SIZE size{ static_cast<LONG>(width), static_cast<LONG>(height) };
+				BLENDFUNCTION blend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+				UPDATELAYEREDWINDOWINFO info{};
+				info.cbSize = sizeof(info);
+				info.pptDst = &destination;
+				info.psize = &size;
+				info.pptSrc = &sourcePoint;
+				info.hdcSrc = source;
+				info.pblend = &blend;
+				RECT dirty = frameDamage;
+				if (dirty.right <= dirty.left || dirty.bottom <= dirty.top)
+					dirty = RECT{ 0, 0, static_cast<LONG>(width),
+						static_cast<LONG>(height) };
+				info.prcDirty = &dirty;
+				info.dwFlags = ULW_ALPHA;
+				HDC destinationDc = GetDC(nullptr);
+				info.hdcDst = destinationDc;
+				const bool pixelsApplied = currentSurface() && SubmitFreezeSurface(hwnd, &info, true);
+				if (pixelsApplied) presentationRevision = nativeLease.PixelsChanged(WindowRole::Freeze);
+				presented = pixelsApplied && currentSurface();
+				if (destinationDc) ReleaseDC(nullptr, destinationDc);
+				const RECT gdiModifiedRect{};
+				releaseDcHr = gdi->ReleaseDC(&gdiModifiedRect);
+			}
+			else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
+			const HRESULT endDrawHr = backgroundScene.Renderer().EndFrameDraw(context.Get());
+			if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
+				|| IsDeviceLost(endDrawHr))
+			{
+				backgroundState.Invalidate();
+				backgroundScene.ReleaseDeviceResources();
+				return FrameResult::DeviceLost;
+			}
+			if (FAILED(getDcHr) || FAILED(releaseDcHr)
+				|| FAILED(endDrawHr) || !presented)
+			{
+				backgroundState.Invalidate();
+				backgroundScene.ReleaseDeviceResources();
+				return FrameResult::Retry;
+			}
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			if (hiddenBackgroundTest) ++hiddenBackgroundPixelCount;
+#endif
+			if (!currentSurface() || contentRevision != backgroundState.ContentRevision()) return FrameResult::Retry;
+			backgroundSubmission = BackgroundSubmission{{request, hwnd, generation, presentation,
+				contentRevision, ++backgroundFrameSerial, presentationRevision}, frameContext.epoch.generation,
+				0, backgroundScene.AnimationActive()};
+			(void)PublishBackgroundCandidate(*backgroundSubmission);
+			return FrameResult::Retry;
 		}
+
+	}
+
+	int RunHiddenBackgroundTests(const RECT& bounds,
+		const std::function<bool()>& gateOwner, const std::function<void()>& releaseOwner)
+	{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		using namespace std::chrono_literals;
+		if (initialized.exchange(true)) return 1;
+		int failures = 0;
+		auto Check = [&](bool value, const char* message)
+		{
+			if (!value) { ++failures; std::fprintf(stderr, "[WhiteboardNative] FAIL %s\n", message); }
+		};
+		auto& service = Inkeys::Window::GetService();
+		const bool previousOwnership = WhiteboardFreezeSurfaceOwned();
+		SetWhiteboardFreezeSurfaceOwned(true);
+		hiddenBackgroundTarget = { bounds, 1.0F }; hiddenBackgroundTest = true;
+		hiddenBackgroundPixelCount = 0; hiddenBackgroundHoldReceipt = false;
+		backgroundState.Reset(); backgroundSubmission.reset(); backgroundNativeRevision.store(0);
+		configuredBackgroundScreen = {}; configuredBackgroundScale = 0;
+		const auto epoch = Inkeys::UI::RenderPipeline::GetDeviceEpoch();
+		auto Step = [&](std::uint64_t deviceGeneration = 0)
+		{
+			auto currentEpoch = epoch;
+			if (deviceGeneration) currentEpoch.generation = deviceGeneration;
+			return RenderBackground({currentEpoch, Inkeys::UI::RenderPipeline::GetSharedAssets(), std::chrono::steady_clock::now()});
+		};
+		auto Until = [&](auto&& predicate, std::uint64_t deviceGeneration = 0)
+		{
+			const auto deadline = std::chrono::steady_clock::now() + 5s;
+			while (std::chrono::steady_clock::now() < deadline)
+			{
+				(void)Step(deviceGeneration);
+				if (predicate()) return true;
+				std::this_thread::sleep_for(1ms);
+			}
+			return predicate();
+		};
+		Check(service.Hide(WindowRole::Freeze), "fixture begins with a hidden Freeze");
+		Check(backgroundState.Publish(true, 101), "first background request is accepted");
+		hiddenBackgroundHoldReceipt = true;
+		Check(Until([&] { return backgroundSubmission && backgroundSubmission->nativeRevision; }), "production ULW publishes a native candidate");
+		const auto firstPixels = hiddenBackgroundPixelCount;
+		for (unsigned repeat = 0; repeat < 8; ++repeat) (void)Step();
+		Check(firstPixels == 1 && hiddenBackgroundPixelCount == firstPixels && !BackgroundPrepared(101),
+			"pending native receipt keeps full-screen pixels without repeated redraw or early prepared ACK");
+		hiddenBackgroundHoldReceipt = false;
+		Check(Until([&] { return BackgroundPrepared(101); }), "full matching owner receipt prepares first background");
+		Check(!BackgroundMatchesActive(true, 101), "prepared hidden pixels cannot masquerade as final visible background");
+		Check(service.Show(WindowRole::Freeze) && Until([&] { return BackgroundMatchesActive(true, 101); })
+			&& hiddenBackgroundPixelCount == firstPixels,
+			"published real native visibility completes Active without another pixel submission");
+
+		// 退出不需要 ULW；阻塞真实 owner 时 UI callback 必须立即返回且不能提前 ACK。
+		const bool gated = gateOwner && gateOwner();
+		Check(gated, "background inactive test pauses the real overlay owner");
+		Check(backgroundState.Publish(false, 102), "inactive request is accepted");
+		const auto hideStarted = std::chrono::steady_clock::now();
+		for (unsigned repeat = 0; repeat < 8; ++repeat) (void)Step();
+		Check(std::chrono::steady_clock::now() - hideStarted < 250ms
+			&& !BackgroundMatchesActive(false, 102) && hiddenBackgroundPixelCount == firstPixels,
+			"inactive callbacks neither wait for owner nor repaint nor acknowledge queued Hide");
+		if (releaseOwner) releaseOwner();
+		Check(Until([&] { return BackgroundMatchesActive(false, 102); }), "real Hide receipt completes inactive ACK");
+
+		Check(backgroundState.Publish(true, 103), "reentry request is accepted");
+		hiddenBackgroundHoldReceipt = true;
+		Check(Until([&] { return backgroundSubmission && backgroundSubmission->nativeRevision; }), "reentry publishes pixels before delayed ACK");
+		const auto retiredFrame = backgroundSubmission ? backgroundSubmission->frame : WhiteboardDetail::BackgroundState::Frame{};
+		backgroundState.Invalidate(); CancelBackgroundCandidate();
+		{ std::scoped_lock pageLock(pageStateMutex); themeRgb = 0x172A46; themePattern = 2; }
+		configuredBackgroundScale = 0;
+		Check(!backgroundState.Prepare(retiredFrame) && !BackgroundPrepared(103), "same-revision theme invalidation rejects old frame ACK");
+		hiddenBackgroundHoldReceipt = false;
+		Check(Until([&] { return BackgroundPrepared(103); }), "latest themed background obtains its own production receipt");
+
+		Check(backgroundState.Publish(true, 104), "device-generation request is accepted");
+		hiddenBackgroundHoldReceipt = true;
+		Check(Until([&] { return backgroundSubmission && backgroundSubmission->nativeRevision; }), "pre-device frame is pending");
+		const auto oldDeviceFrame = backgroundSubmission ? backgroundSubmission->frame : WhiteboardDetail::BackgroundState::Frame{};
+		hiddenBackgroundHoldReceipt = false;
+		Check(Until([&] { return BackgroundPrepared(104); }, epoch.generation + 1)
+			&& !backgroundState.FrameCurrent(oldDeviceFrame), "device generation discards old pixel candidate before acknowledging rebuilt resources");
+		Check(backgroundState.Publish(false, 105), "final cleanup request is accepted");
+		Check(Until([&] { return BackgroundMatchesActive(false, 105); }), "final native Hide retires shared Freeze ownership");
+		CancelBackgroundCandidate(); DiscardBackgroundSubmission();
+		(void)service.Hide(WindowRole::Freeze);
+		backgroundScene.Reset(); backgroundState.Reset();
+		configuredBackgroundScreen = {}; configuredBackgroundScale = 0;
+		renderedBackgroundTarget.store({});
+		{ std::scoped_lock pageLock(pageStateMutex); themeRgb = 0x123B32; themePattern = 0; }
+		hiddenBackgroundHoldReceipt = false; hiddenBackgroundTest = false;
+		SetWhiteboardFreezeSurfaceOwned(previousOwnership);
+		initialized.store(false);
+		std::fprintf(stderr, "[WhiteboardNative] failures=%d pixels=%llu\n", failures,
+			static_cast<unsigned long long>(hiddenBackgroundPixelCount));
+		return failures;
+#else
+		(void)bounds; (void)gateOwner; (void)releaseOwner; return 1;
+#endif
 	}
 
 	bool Initialize(BusinessCallbacks callbacks)
@@ -311,7 +566,7 @@ namespace Inkeys::UI::Whiteboard
 				const auto rendered = renderedBackgroundTarget.load(std::memory_order_acquire);
 				const bool changed = !monitor || !rendered || !EqualRect(&monitor->bounds, &rendered->bounds)
 					|| rendered->scale != static_cast<float>(monitor->effectiveDpiX ? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI;
-				if (changed) { backgroundState.Invalidate(); Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze); }
+				if (changed) { backgroundState.Invalidate(); CancelBackgroundCandidate(); Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze); }
 				Inkeys::UI::PageControl::NotifyLayoutChanged();
 			});
 		PublishPageControlSnapshot();
@@ -325,10 +580,12 @@ namespace Inkeys::UI::Whiteboard
 		active.store(false, std::memory_order_release);
 		PublishPageControlSnapshot();
 		displaySubscription.Reset();
+		CancelBackgroundCandidate();
 		Inkeys::UI::RenderPipeline::Unregister(Client::WhiteboardFreeze);
 		(void)Inkeys::Window::GetService().Hide(WindowRole::Freeze);
 		{
 			std::unique_lock renderLock(backgroundRenderMutex);
+			DiscardBackgroundSubmission();
 			backgroundScene.Reset();
 			backgroundScene.ReleaseDeviceResources();
 		}
@@ -356,6 +613,9 @@ namespace Inkeys::UI::Whiteboard
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
 		if (!backgroundState.Publish(value, revision)) return;
+		CancelBackgroundCandidate();
+		if (!value && backgroundState.InactiveCommitted(backgroundState.Desired()))
+			Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
 		active.store(value, std::memory_order_release);
 		PublishPageControlSnapshot();
 		Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze);
@@ -384,6 +644,8 @@ namespace Inkeys::UI::Whiteboard
 		{
 			std::scoped_lock lock(backgroundRenderMutex);
 			configuredBackgroundScale = 0;
+			backgroundState.Invalidate();
+			CancelBackgroundCandidate();
 		}
 		PublishPageControlSnapshot();
 		if (themeChanged) Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze);
@@ -410,8 +672,9 @@ namespace Inkeys::UI::Whiteboard
 	bool BackgroundPrepared(std::uint64_t revision) noexcept
 	{
 		const auto frame = backgroundState.Prepared(revision);
-		return frame && frame->hwnd == Inkeys::Window::GetService().Handle(WindowRole::Freeze)
-			&& reinterpret_cast<std::uintptr_t>(GetPropW(frame->hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == frame->generation;
+		const auto native = Inkeys::Window::GetService().SurfaceSnapshot(WindowRole::Freeze);
+		return frame && native && WhiteboardDetail::BackgroundFrameMatchesSurface(*frame, *native, false)
+			&& backgroundState.FrameCurrent(*frame);
 	}
 
 	bool BackgroundMatchesActive(bool value, std::uint64_t revision) noexcept
@@ -420,11 +683,9 @@ namespace Inkeys::UI::Whiteboard
 		if (request.active != value || (revision && request.revision != revision)) return false;
 		if (!value) return backgroundState.InactiveCommitted(request);
 		const auto frame = backgroundState.Prepared(revision);
-		if (!frame || !frame->hwnd || !IsWindowVisible(frame->hwnd) || IsIconic(frame->hwnd)) return false;
-		RECT bounds{};
-		return Inkeys::Window::GetService().Handle(WindowRole::Freeze) == frame->hwnd
-			&& reinterpret_cast<std::uintptr_t>(GetPropW(frame->hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == frame->generation
-			&& GetWindowRect(frame->hwnd, &bounds) && EqualRect(&bounds, &frame->bounds)
-			&& backgroundState.Current(frame->request);
+		const auto native = Inkeys::Window::GetService().SurfaceSnapshot(WindowRole::Freeze);
+		// 最终显隐来自 Workspace Complete 的 owner 快照，不以 desired 或准备回执冒充 Active。
+		return frame && native && WhiteboardDetail::BackgroundFrameMatchesSurface(*frame, *native, true)
+			&& backgroundState.FrameCurrent(*frame);
 	}
 }

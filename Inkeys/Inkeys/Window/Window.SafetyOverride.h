@@ -11,11 +11,13 @@ namespace Inkeys::Window::Detail
 		std::uint64_t generation = 0;
 		bool hidden = false;
 		bool clickThrough = false;
-		void Latch(std::uint64_t current, bool hide, bool transparent) noexcept
+		bool Latch(std::uint64_t current, bool hide, bool transparent) noexcept
 		{
+			const bool changed = generation != current || (hide && !hidden) || (transparent && !clickThrough);
 			if (generation != current) { generation = current; hidden = clickThrough = false; }
 			hidden |= hide;
 			clickThrough |= transparent;
+			return changed;
 		}
 		[[nodiscard]] bool Hidden(std::uint64_t current) const noexcept { return generation == current && hidden; }
 		[[nodiscard]] bool ClickThrough(std::uint64_t current) const noexcept { return generation == current && clickThrough; }

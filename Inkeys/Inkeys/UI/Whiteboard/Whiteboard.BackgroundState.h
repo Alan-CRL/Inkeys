@@ -29,13 +29,14 @@ namespace Inkeys::UI::WhiteboardDetail
 			HWND hwnd = nullptr;
 			std::uint64_t generation = 0;
 			RECT bounds{};
+			std::uint64_t contentRevision = 0, frameSerial = 0, presentationRevision = 0;
 		};
 		void Reset()
 		{
 			std::scoped_lock lock(mutex_);
 			desired_ = {false, 0, desired_.serial + 1};
 			committed_ = desired_;
-			prepared_.reset(); held_.reset(); owned_ = false;
+			prepared_.reset(); held_.reset(); owned_ = false; contentRevision_ = 0;
 		}
 		bool Publish(bool active, std::uint64_t revision)
 		{
@@ -80,7 +81,8 @@ namespace Inkeys::UI::WhiteboardDetail
 		bool Prepare(const Frame& frame)
 		{
 			std::scoped_lock lock(mutex_);
-			if (!frame.request.active || frame.request != desired_ || !frame.hwnd || !frame.generation) return false;
+			if (!frame.request.active || frame.request != desired_ || !frame.hwnd || !frame.generation
+				|| frame.contentRevision != contentRevision_) return false;
 			const Surface surface{frame.hwnd, frame.generation};
 			if (held_ && *held_ != surface) return false;
 			held_ = surface; owned_ = true;
@@ -92,14 +94,57 @@ namespace Inkeys::UI::WhiteboardDetail
 			return desired_.active && (!revision || revision == desired_.revision)
 				&& prepared_ && prepared_->request == desired_ ? prepared_ : std::nullopt;
 		}
-		void Invalidate() { std::scoped_lock lock(mutex_); prepared_.reset(); }
+		[[nodiscard]] std::uint64_t ContentRevision() const
+		{ std::scoped_lock lock(mutex_); return contentRevision_; }
+		[[nodiscard]] bool FrameCurrent(const Frame& frame) const
+		{
+			std::scoped_lock lock(mutex_);
+			return frame.request == desired_ && frame.contentRevision == contentRevision_
+				&& held_ && *held_ == Surface{frame.hwnd, frame.generation};
+		}
+		// 同业务 revision 的主题、显示或设备失效也退休在途像素，迟到原生回执不能复活它们。
+		void Invalidate() { std::scoped_lock lock(mutex_); ++contentRevision_; prepared_.reset(); }
 	private:
 		mutable std::mutex mutex_;
 		Request desired_{}, committed_{};
 		std::optional<Frame> prepared_;
 		std::optional<Surface> held_;
 		bool owned_ = false;
+		std::uint64_t contentRevision_ = 0;
 	};
+
+	template<class NativeSurface>
+	[[nodiscard]] bool BackgroundFrameMatchesSurface(const BackgroundState::Frame& frame,
+		const NativeSurface& surface, bool requireVisible) noexcept
+	{
+		return surface.known && surface.hwnd == frame.hwnd && surface.generation == frame.generation
+			&& EqualRect(&surface.bounds, &frame.bounds)
+			&& (!frame.presentationRevision || surface.presentationRevision == frame.presentationRevision)
+			&& (!requireVisible || (surface.visible && !surface.iconic));
+	}
+
+	template<class NativeReceipt>
+	[[nodiscard]] bool BackgroundFrameMatchesReceipt(const BackgroundState::Frame& frame,
+		std::uint64_t nativeRevision, const NativeReceipt& receipt,
+		bool committed, bool requireVisible) noexcept
+	{
+		return committed && nativeRevision && receipt.revision == nativeRevision
+			&& receipt.frameSerial == frame.frameSerial && receipt.workspaceRevision == frame.request.revision
+			&& receipt.count == 1 && receipt.completedMask == 1
+			&& BackgroundFrameMatchesSurface(frame, receipt.actual[0], requireVisible);
+	}
+
+	template<class NativeReceipt>
+	[[nodiscard]] bool BackgroundInactiveMatchesReceipt(const BackgroundState::Request& request,
+		BackgroundState::Surface surface, std::uint64_t frameSerial, std::uint64_t nativeRevision,
+		const NativeReceipt& receipt, bool committed) noexcept
+	{
+		return !request.active && committed && nativeRevision && receipt.revision == nativeRevision
+			&& receipt.frameSerial == frameSerial && receipt.workspaceRevision == request.revision
+			&& receipt.count == 1 && receipt.completedMask == 1 && receipt.actual[0].known
+			&& receipt.actual[0].hwnd == surface.hwnd && receipt.actual[0].generation == surface.generation
+			&& !receipt.actual[0].visible;
+	}
 
 	template<class Hide>
 	[[nodiscard]] bool CompleteBackgroundInactive(BackgroundState& state, const BackgroundState::Request& request, Hide hide)

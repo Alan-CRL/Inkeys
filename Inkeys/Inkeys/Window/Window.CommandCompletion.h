@@ -1,6 +1,8 @@
 #pragma once
 
 #include <chrono>
+#include <atomic>
+#include <cstdint>
 #include <condition_variable>
 #include <future>
 #include <mutex>
@@ -23,8 +25,21 @@ namespace Inkeys::Window::Detail
 		[[nodiscard]] CommandPhase Phase() const noexcept
 		{
 			std::scoped_lock lock(mutex_);
+			if (phase_ == CommandPhase::Queued && CommandExpired(deadline_)) phase_ = CommandPhase::Expired;
 			return phase_;
 		}
+		void RecordNativeFailure(std::uint32_t error) noexcept
+		{
+			std::uint32_t empty = 0;
+			if (error) (void)nativeError_.compare_exchange_strong(empty, error, std::memory_order_relaxed);
+		}
+		void RecordRollbackFailure(std::uint32_t error) noexcept
+		{
+			std::uint32_t empty = 0;
+			if (error) (void)rollbackError_.compare_exchange_strong(empty, error, std::memory_order_relaxed);
+		}
+		[[nodiscard]] std::uint32_t NativeError() const noexcept { return nativeError_.load(std::memory_order_relaxed); }
+		[[nodiscard]] std::uint32_t RollbackError() const noexcept { return rollbackError_.load(std::memory_order_relaxed); }
 		[[nodiscard]] bool Current() const noexcept
 		{
 			std::scoped_lock lock(mutex_);
@@ -85,7 +100,8 @@ namespace Inkeys::Window::Detail
 		CommandDeadline deadline_;
 		mutable std::mutex mutex_;
 		std::condition_variable changed_;
-		CommandPhase phase_ = CommandPhase::Queued;
+		mutable CommandPhase phase_ = CommandPhase::Queued;
+		std::atomic<std::uint32_t> nativeError_ = 0, rollbackError_ = 0;
 		bool cancelled_ = false;
 	};
 

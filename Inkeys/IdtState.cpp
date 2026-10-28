@@ -226,6 +226,8 @@ namespace
 	};
 	struct WorkspaceWaitTracker
 	{
+		using Clock = std::chrono::steady_clock;
+		Clock::time_point checkedAt{};
 		WorkspaceWaitStage stage = WorkspaceWaitStage::None;
 		std::uint64_t outputRevision = 0;
 		std::uint64_t contentRevision = 0;
@@ -235,7 +237,8 @@ namespace
 
 		[[nodiscard]] bool Stalled(WorkspaceWaitStage next,
 			const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
-			std::uint64_t nextBackgroundRevision, bool nextBackgroundReady) noexcept
+			std::uint64_t nextBackgroundRevision, bool nextBackgroundReady,
+			Clock::time_point now = Clock::now()) noexcept
 		{
 			const bool changed = stage != next || outputRevision != runtime.readyOutputRevision ||
 				contentRevision != runtime.presentedContentRevision || presentation != runtime.presentationUiReady ||
@@ -248,8 +251,45 @@ namespace
 				presentation = runtime.presentationUiReady;
 				backgroundRevision = nextBackgroundRevision;
 				backgroundReady = nextBackgroundReady;
+				checkedAt = now;
+				return false;
 			}
-			return !changed;
+			// 异步完成可在一拍内多次唤醒；通知次数不能缩短原有 250ms 无进展预算。
+			if (now < checkedAt + std::chrono::milliseconds(250)) return false;
+			checkedAt = now;
+			return true;
+		}
+	};
+	[[nodiscard]] bool WorkspaceNativePending(Inkeys::Window::CommandPhase phase) noexcept
+	{
+		return phase == Inkeys::Window::CommandPhase::Queued || phase == Inkeys::Window::CommandPhase::Executing;
+	}
+	[[nodiscard]] bool CancelWorkspaceNativeAndRetired(const Inkeys::Window::WorkspaceWindowReceipt& receipt)
+	{
+		receipt.Cancel();
+		return !WorkspaceNativePending(receipt.Phase());
+	}
+	struct WorkspaceNativeOperation
+	{
+		Inkeys::Window::WorkspaceWindowReceipt receipt;
+		Inkeys::Window::WorkspaceWindowPolicy policy;
+		std::function<bool()> stillDesired;
+		bool completing = false;
+		Inkeys::Business::PptFocusForeground focusBefore;
+		bool focusMayFallBack = false;
+		WorkspaceHandoff::Clock::time_point submittedAt = WorkspaceHandoff::Clock::now();
+		bool timeoutNoted = false;
+
+		[[nodiscard]] bool CanConsume(bool complete) const
+		{ return completing == complete && stillDesired && stillDesired() && receipt.Current(); }
+		bool NoteExecutingTimeout(WorkspaceHandoff::Clock::time_point now = WorkspaceHandoff::Clock::now())
+		{
+			if (timeoutNoted || !WorkspaceNativePending(receipt.Phase())
+				|| now < submittedAt + std::chrono::milliseconds(1500)) return false;
+			timeoutNoted = true;
+			receipt.Cancel();
+			// 与原同步期限一致：排队过期不计 API 故障，在途超时只计一次且继续保留恢复责任。
+			return receipt.Phase() == Inkeys::Window::CommandPhase::Executing;
 		}
 	};
 	std::mutex workspaceHandoffMutex;
@@ -318,8 +358,10 @@ namespace
 			if (whiteboardNativeViewProjection.load(std::memory_order_acquire) != projected ||
 				whiteboardInputEpoch.load(std::memory_order_acquire) != epoch) return;
 			const auto next = (epoch << 2) | static_cast<std::uint64_t>(action);
-			if (queued == next || whiteboardNativeRequest.compare_exchange_weak(queued, next,
-				std::memory_order_acq_rel, std::memory_order_acquire)) return;
+			if (queued == next) return;
+			if (whiteboardNativeRequest.compare_exchange_weak(queued, next,
+				std::memory_order_acq_rel, std::memory_order_acquire))
+			{ Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress(); return; }
 		}
 	}
 	bool CloseWorkspaceAdmission(const WorkspaceHandoff& request) noexcept
@@ -1193,16 +1235,14 @@ void SyncDraw3State()
             stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
         }
     }
-	// 所有工具入口都汇聚于此，确保 Setting 只在非选择态加入画布 owner 链。
-	std::uint64_t settingOwnerState = 0;
+	// 输入只提交最新业务/owner 期望；原生调用由既有协调线程消费，不能阻塞共享 UI worker。
 	{
 		std::scoped_lock modeLock(stateModeTransitionMutex);
-		settingOwnerState = PublishSettingOwnerDesiredState(
-			!IsComputerInteractionMode(stateMode.StateModeSelect));
+		(void)PublishSettingOwnerDesiredState(!IsComputerInteractionMode(stateMode.StateModeSelect));
+		PublishDraw3StateLocked();
 	}
-	if (!ReadWorkspaceHandoff().pending) ApplySettingOwnerDesiredState(settingOwnerState);
-	PublishDraw3State();
-	ReconcileDraw3Presentation();
+	draw3PresentationRetryPending.store(true, std::memory_order_release);
+	Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
 }
 
 void ReconcileDraw3Presentation()
@@ -1344,6 +1384,7 @@ void NotifyWhiteboardWindowMinimizedChanged() noexcept
 {
 	// WndProc 只发通知；禁止在窗口 owner 内等待 Product 的控制锁。
 	whiteboardViewChanged.store(true, std::memory_order_release);
+	Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
 }
 
 bool PptScenePreparationAllowed() noexcept
@@ -1434,13 +1475,19 @@ void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generat
 void RequestWhiteboardPreviousPage() noexcept
 {
 	if (WhiteboardActive())
+	{
 		whiteboardPreviousRequested.store(true, std::memory_order_release);
+		Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
+	}
 }
 
 void RequestWhiteboardNextPage() noexcept
 {
 	if (WhiteboardActive())
+	{
 		whiteboardNextRequested.store(true, std::memory_order_release);
+		Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
+	}
 }
 
 namespace
@@ -1977,7 +2024,7 @@ bool ToggleFreezeFromButton()
 	Inkeys::UI::Freeze::Toggle();
 	const bool isActive = Inkeys::UI::Freeze::IsActive();
 	if (!wasActive && isActive)
-		(void)Inkeys::Window::GetService().RequestTopmostRefresh();
+		(void)Inkeys::Window::GetService().RequestTopmostRefreshAsync();
 	// 按下后工作区可能使冻结不可用，仅为真正生效的按钮动作确认反馈。
 	return wasActive != isActive;
 }
@@ -2040,7 +2087,7 @@ bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision)
 		(void)Inkeys::UI::Freeze::DeactivateIfRevision(toggled.revision);
 		return false;
 	}
-	if (toggled.active) (void)Inkeys::Window::GetService().RequestTopmostRefresh();
+	if (toggled.active) (void)Inkeys::Window::GetService().RequestTopmostRefreshAsync();
 	return true;
 }
 
@@ -3278,22 +3325,94 @@ int RunStateModeProductionTest() noexcept
 			progress.readyOutputRevision = 4;
 			progress.presentedContentRevision = 7;
 			WorkspaceWaitTracker tracker;
-			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false) &&
-				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
-				"unchanged-target-and-background-counts-as-no-progress");
+			const auto start = WorkspaceWaitTracker::Clock::time_point{};
+			const auto at = [start](int ms) { return start + std::chrono::milliseconds(ms); };
+			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(0)) &&
+				!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(0)) &&
+				!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(249)) &&
+				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(250)),
+				"extra-native-wakes-preserve-250ms-no-progress-budget");
 			++progress.presentedContentRevision;
-			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
+			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(300)) &&
+				!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(549)),
 				"new-presented-content-resets-wait-progress");
-			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
-				"same-new-content-remains-stalled");
+			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(550)),
+				"same-new-content-remains-stalled-at-original-cadence");
 			progress.presentationUiReady = Bridge::PresentationReadyIdentity{};
 			progress.presentationUiReady->targetRevision = 9;
-			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false),
+			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(600)),
 				"ppt-ui-ready-identity-is-real-progress");
-			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, false),
+			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, false, at(600)),
 				"background-stage-change-does-not-fail-in-place");
-			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, true),
+			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, true, at(600)),
 				"background-ready-change-resets-wait-progress");
+		}
+		stage = "workspace-async-native-and-progress";
+		{
+			using namespace Inkeys::Window;
+			CommandPhase phase = CommandPhase::Queued;
+			bool physicalCurrent = true;
+			unsigned cancels = 0;
+			WorkspaceWindowPrepared payload;
+			payload.policy.revision = 17;
+			WorkspaceWindowReceipt receipt{17, CommandReceipt{[&] { return phase; }, [&]
+			{
+				++cancels;
+				if (phase == CommandPhase::Queued) phase = CommandPhase::Cancelled;
+			}}, [&] { return std::optional(payload); }, [&] { return physicalCurrent; }};
+			require(receipt && !receipt.Prepared() && !receipt.Current() && WorkspaceNativePending(receipt.Phase()),
+				"queued-prepare-receipt-is-not-native-ready");
+			phase = CommandPhase::Executing;
+			require(!CancelWorkspaceNativeAndRetired(receipt) && cancels == 1 && !receipt.Prepared(),
+				"cancelled-executing-receipt-retains-native-rollback-responsibility");
+			std::uint64_t currentPolicy = 17, currentProduct = 3, currentHost = 4;
+			WorkspaceNativeOperation operation{receipt, payload.policy, [&]
+			{ return currentPolicy == 17 && currentProduct == 3 && currentHost == 4; }, true};
+			operation.submittedAt = WorkspaceHandoff::Clock::time_point{};
+			require(!operation.NoteExecutingTimeout(operation.submittedAt + std::chrono::milliseconds(1499)) &&
+				operation.NoteExecutingTimeout(operation.submittedAt + std::chrono::milliseconds(1500)) &&
+				!operation.NoteExecutingTimeout(operation.submittedAt + std::chrono::milliseconds(5000)) &&
+				receipt.Phase() == CommandPhase::Executing,
+				"executing-timeout-charges-once-at-1500ms-without-dropping-owner-responsibility");
+			phase = CommandPhase::Committed;
+			require(operation.CanConsume(true) && !operation.CanConsume(false),
+				"complete-receipt-cannot-be-consumed-as-prepare");
+			++currentProduct;
+			require(!operation.CanConsume(true), "product-change-rejects-late-complete");
+			--currentProduct; ++currentHost;
+			require(!operation.CanConsume(true), "host-generation-change-rejects-late-complete");
+			--currentHost; ++currentPolicy;
+			require(!operation.CanConsume(true), "workspace-policy-change-rejects-late-complete");
+			phase = CommandPhase::Rejected;
+			require(CancelWorkspaceNativeAndRetired(receipt) && !receipt.Current() && !receipt.Prepared(),
+				"only-terminal-retirement-permits-replacement-after-native-failure");
+			phase = CommandPhase::Committed;
+			require(receipt.Current() && receipt.Prepared()->policy.revision == 17,
+				"committed-prepare-publishes-exact-captured-payload");
+			physicalCurrent = false;
+			require(!receipt.Current(), "late-native-receipt-cannot-confirm-new-hwnd-or-safety-generation");
+			WorkspaceHandoff handoff;
+			(void)handoff.Request(Workspace::Whiteboard);
+			require(!handoff.Commit(handoff.revision, true, true, receipt.Current()) && handoff.pending,
+				"full-ui-and-host-ready-still-require-current-native-complete");
+			const auto before = ProductRuntimeSnapshot();
+			const auto beforeBridge = bridge.Snapshot();
+			NotifyProductWorkspaceProgress();
+			const auto after = ProductRuntimeSnapshot();
+			require(after.runtimeRevision != before.runtimeRevision && !after.running &&
+				after.firstFrameReady == before.firstFrameReady && after.readyOutputRevision == before.readyOutputRevision &&
+				after.presentedContentRevision == before.presentedContentRevision && after.presentationUiReady == before.presentationUiReady &&
+				bridge.Snapshot().revision == beforeBridge.revision,
+				"external-workspace-progress-wakes-without-fabricating-host-or-ui-ready");
+			require(WaitForProductRuntimeRevision(before.runtimeRevision, 0, true) &&
+				!WaitForProductRuntimeRevision(after.runtimeRevision, 0, true),
+				"stopped-host-workspace-wait-retains-completion-before-wait");
+			const auto applied = settingOwnerAppliedState.load(std::memory_order_acquire);
+			SyncDraw3State();
+			require(settingOwnerAppliedState.load(std::memory_order_acquire) == applied &&
+				draw3PresentationRetryPending.load(std::memory_order_acquire) &&
+				ProductRuntimeSnapshot().runtimeRevision != after.runtimeRevision,
+				"ui-tool-sync-publishes-native-intent-without-synchronous-window-application");
 		}
 		stage = "workspace-legacy-restart-callback";
 		{
@@ -3327,6 +3446,13 @@ void StateMonitoring()
 {
 	using namespace Inkeys::Drawing::Draw3;
 	using namespace Inkeys::Window;
+	auto& service = GetService();
+	service.SetWorkspaceProgressObserver(NotifyProductWorkspaceProgress);
+	struct ProgressSubscription
+	{
+		Service& service;
+		~ProgressSubscription() { service.SetWorkspaceProgressObserver({}); }
+	} progressSubscription{service};
 	auto snapshot = ProductRuntimeSnapshot();
 	std::uint64_t runtimeRevision = snapshot.runtimeRevision;
 	std::uint64_t observedHostGeneration = 0;
@@ -3335,17 +3461,17 @@ void StateMonitoring()
 	std::uint64_t preparedHostGeneration = 0;
 	std::uint64_t uiPreparedRevision = 0;
 	std::optional<WorkspaceWindowPrepared> prepared;
+	std::optional<WorkspaceNativeOperation> nativeOperation;
+	std::optional<WorkspaceWindowReceipt> completedNative;
 	WorkspaceWaitTracker waitTracker;
 	bool pageSwitching = false;
 	bool requestedPreviousPage = false;
 	std::size_t requestedPageIndex = 0;
 	std::uint64_t pageCommandCountBeforeRequest = 0;
-	auto& service = GetService();
 	while (!offSignal)
 	{
-		(void)WaitForProductRuntimeRevision(runtimeRevision, 250);
-		if (!offSignal && !ProductRunning())
-			std::this_thread::sleep_for(std::chrono::milliseconds(250));
+		// 同一通知版本覆盖 Host、背景与原生回执，停止态安全退场也能被真实完成即时唤醒。
+		(void)WaitForProductRuntimeRevision(runtimeRevision, 250, true);
 		if (offSignal) break;
 		if (!ReadWorkspaceHandoff().pending) ReconcileSettingOwnerDesiredState();
 		snapshot = ProductRuntimeSnapshot();
@@ -3367,6 +3493,20 @@ void StateMonitoring()
 		if (whiteboardViewChanged.exchange(false, std::memory_order_acq_rel) && !request.pending &&
 			request.desired == Workspace::Whiteboard)
 			request = RequestWorkspace(Workspace::Whiteboard, service.WhiteboardWindowGroupMinimized());
+
+		if (nativeOperation && (!request.pending || request.failed || !nativeOperation->stillDesired()))
+		{
+			// Cancel 只撤意图；Executing 仍持有真实恢复责任，必须先等其退休再开始新窗口事务。
+			if (!CancelWorkspaceNativeAndRetired(nativeOperation->receipt)) continue;
+			nativeOperation.reset(); prepared.reset(); completedNative.reset();
+		}
+		if (nativeOperation && nativeOperation->NoteExecutingTimeout())
+		{
+			FailWorkspaceRequest(request.revision);
+			request = ReadWorkspaceHandoff();
+		}
+		if (completedNative && !completedNative->Current())
+		{ completedNative.reset(); prepared.reset(); }
 
 		if (!request.pending)
 		{
@@ -3419,7 +3559,7 @@ void StateMonitoring()
 		if (!request.Ready(WorkspaceHandoff::Clock::now())) continue;
 		if (preparedRevision != request.revision)
 		{
-			prepared.reset();
+			prepared.reset(); completedNative.reset();
 			preparedRevision = request.revision;
 			preparedProductRevision = 0;
 		}
@@ -3443,7 +3583,7 @@ void StateMonitoring()
 		if (!stoppedOrFatalSafetyExit && (request.hostGeneration == 0 || snapshot.hostGeneration != request.hostGeneration)) continue;
 		if (preparedHostGeneration != request.hostGeneration)
 		{
-			prepared.reset();
+			prepared.reset(); completedNative.reset();
 			preparedHostGeneration = request.hostGeneration;
 		}
 		if (!guard()) continue;
@@ -3493,14 +3633,13 @@ void StateMonitoring()
 				(safeRelease || (current.running && !current.consumerFatal)) &&
 				ProductHost().ProductBridge().Snapshot().revision == revision;
 		};
-		const auto nativeFailed = [&]
+		const auto nativeFailed = [&](CommandPhase phase)
 		{
 			if (!guard()) return;
-			const auto phase = service.LastCommandReceipt().Phase();
 			// 取消/真实几何变化只欠重新准备，不属于当前 Native API 故障预算。
 			if (phase != CommandPhase::Cancelled && phase != CommandPhase::Expired)
 				FailWorkspaceRequest(request.revision);
-			prepared.reset();
+			prepared.reset(); completedNative.reset();
 			if (ShouldRestoreWhiteboardSourcePreview(request, phase))
 			{
 				SetWhiteboardFreezeSurfaceOwned(true);
@@ -3512,6 +3651,11 @@ void StateMonitoring()
 				Inkeys::UI::Whiteboard::PublishActive(true, request.revision);
 			}
 		};
+		if (nativeOperation && (nativeOperation->policy != policy || !nativeOperation->stillDesired()))
+		{
+			if (!CancelWorkspaceNativeAndRetired(nativeOperation->receipt)) continue;
+			nativeOperation.reset(); prepared.reset(); completedNative.reset();
+		}
 		if (!policy.whiteboard)
 		{
 			Inkeys::UI::Whiteboard::PublishActive(false, request.revision);
@@ -3521,19 +3665,30 @@ void StateMonitoring()
 			if (!backgroundReady) continue;
 		}
 		if (prepared && (prepared->policy != policy || preparedProductRevision != desired.revision))
-			prepared.reset();
+		{ prepared.reset(); completedNative.reset(); }
 		if (!prepared)
 		{
-			if (policy.whiteboard)
+			if (!nativeOperation)
 			{
-				SetWhiteboardFreezeSurfaceOwned(true);
-				Inkeys::UI::Freeze::SetWhiteboardActive(true);
-				FreezePPT = false;
+				if (policy.whiteboard)
+				{
+					SetWhiteboardFreezeSurfaceOwned(true);
+					Inkeys::UI::Freeze::SetWhiteboardActive(true);
+					FreezePPT = false;
+				}
+				auto receipt = service.RequestPrepareWorkspaceWindowPolicy(policy, nativeGuard);
+				if (!receipt) { nativeFailed(CommandPhase::Rejected); continue; }
+				nativeOperation = WorkspaceNativeOperation{std::move(receipt), policy, nativeGuard};
 			}
-			prepared = service.PrepareWorkspaceWindowPolicy(policy, nativeGuard);
-			if (!prepared) { nativeFailed(); continue; }
+			const auto phase = nativeOperation->receipt.Phase();
+			if (WorkspaceNativePending(phase)) continue;
+			auto operation = std::move(*nativeOperation); nativeOperation.reset();
+			if (phase != CommandPhase::Committed) { nativeFailed(phase); continue; }
+			if (!operation.CanConsume(false)) continue;
+			prepared = operation.receipt.Prepared();
+			if (!prepared) { nativeFailed(CommandPhase::Rejected); continue; }
 			preparedProductRevision = desired.revision;
-			// Prepare 已真实改变目标 geometry；Host 的窗口通知主动处理输出，不等待下一笔。
+			// Prepare 回执之后才读取实际目标 geometry；owner 从不等待 Host/背景/UI。
 		}
 		if (!guard()) continue;
 
@@ -3558,11 +3713,26 @@ void StateMonitoring()
 			if (!backgroundReady) continue;
 		}
 		else if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision)) continue;
-		const auto focusBefore = Inkeys::Business::CapturePptFocusRequest().foreground;
-		const bool focusMayFallBack = !policy.whiteboard && service.WhiteboardWindowMode() &&
-			(ForegroundMatchesWindowRole(focusBefore, WindowRole::Freeze) || ForegroundMatchesWindowRole(focusBefore, WindowRole::Drawpad));
-		if (!service.CompleteWorkspaceWindowPolicy(policy, *prepared, nativeGuard)) { nativeFailed(); continue; }
-		if (!policy.whiteboard) RebaseWhiteboardReturnFocus(focusBefore, focusMayFallBack);
+		if (!completedNative)
+		{
+			if (!nativeOperation)
+			{
+				const auto focusBefore = Inkeys::Business::CapturePptFocusRequest().foreground;
+				const bool focusMayFallBack = !policy.whiteboard && service.WhiteboardWindowMode() &&
+					(ForegroundMatchesWindowRole(focusBefore, WindowRole::Freeze) || ForegroundMatchesWindowRole(focusBefore, WindowRole::Drawpad));
+				auto receipt = service.RequestCompleteWorkspaceWindowPolicy(policy, *prepared, nativeGuard);
+				if (!receipt) { nativeFailed(CommandPhase::Rejected); continue; }
+				nativeOperation = WorkspaceNativeOperation{std::move(receipt), policy, nativeGuard, true, focusBefore, focusMayFallBack};
+			}
+			const auto phase = nativeOperation->receipt.Phase();
+			if (WorkspaceNativePending(phase)) continue;
+			auto operation = std::move(*nativeOperation); nativeOperation.reset();
+			if (phase != CommandPhase::Committed) { nativeFailed(phase); continue; }
+			if (!operation.CanConsume(true)) { prepared.reset(); continue; }
+			completedNative = std::move(operation.receipt);
+			// 前台基线在本次 Complete 入队前捕获，仅其真实提交回执允许一次受控 fallback。
+			if (!policy.whiteboard) RebaseWhiteboardReturnFocus(operation.focusBefore, operation.focusMayFallBack);
+		}
 		if (policy.whiteboard && !request.minimized &&
 			!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true, request.revision))
 		{
@@ -3571,7 +3741,8 @@ void StateMonitoring()
 			continue;
 		}
 		std::unique_lock finalModeLock(stateModeTransitionMutex);
-		if (!nativeGuard() || (!safeRelease && ProductHost().ProductBridge().Snapshot().revision != desired.revision)) continue;
+		if (!nativeGuard() || !completedNative->Current()
+			|| (!safeRelease && ProductHost().ProductBridge().Snapshot().revision != desired.revision)) continue;
 		const auto completedRuntime = ProductRuntimeSnapshot();
 		const bool completedTargetReady = (request.desired == Workspace::Whiteboard ||
 			WorkspacePrimaryIdentityMatches(request, desired, preparedSession, Inkeys::Business::CapturePptInputSession())) &&
@@ -3594,8 +3765,10 @@ void StateMonitoring()
 			(void)service.RequestWhiteboardActivation(WhiteboardActivationGuard(request.revision));
 		if (!policy.whiteboard)
 			(void)CompleteWhiteboardReturnFocus(Inkeys::Business::QueuePptFocusRequest);
-		prepared.reset();
+		prepared.reset(); completedNative.reset();
 	}
+	// 退出后恢复责任仍由 Window owner 保留，不能在状态线程析构时伪造退休。
+	if (nativeOperation) nativeOperation->receipt.Cancel();
 }
 
 bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)

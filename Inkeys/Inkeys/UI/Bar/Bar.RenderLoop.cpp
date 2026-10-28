@@ -12478,10 +12478,25 @@ bool presetButton = button.presetIndex >= 0;
 		bool deferWindowPresentation = false;
 		bool taskbarEdgePresentationDeferred = false;
 		bool sourcePresentationDeferred = false;
+		// owner 直移/回滚与 ULW 共享 try-only 租约；忙时保留本帧而不等待窗口线程。
+		auto nativeLease = !present_ ? Inkeys::Window::GetService().TryAcquirePresentationLease(Inkeys::Window::WindowRole::Bar)
+			: Inkeys::Window::SurfacePresentationLease{};
+		const auto nativeSurface = nativeLease ? Inkeys::Window::GetService().SurfaceSnapshot(Inkeys::Window::WindowRole::Bar)
+			: std::optional<Inkeys::Window::WindowSurfaceState>{};
+		const bool nativeLeaseBusy = !present_ && (!nativeLease || !nativeSurface || !nativeSurface->known || nativeSurface->hwnd != floating_window);
 		FrameStageTimer presentLockTimer(diagnostics, FrameStage::PresentLockWait);
 		Inkeys::UI::Bar::BarWindowPresentationTransaction directDragTransaction(
 			owner_.directWindowDragMutex, owner_.committedWindowScreenBoundsReady);
 		presentLockTimer.Stop();
+		bool nativeReceiptPending = false;
+		if (nativeLease)
+		{
+			if (!owner_.ConsumeNativeDirectWindowMoveLocked(nativeLease.Revision(Inkeys::Window::WindowRole::Bar)))
+			{
+				owner_.CancelNativeDirectWindowMove(true);
+				nativeReceiptPending = owner_.nativeDirectMoveRevision.load(memory_order_acquire) != 0;
+			}
+		}
 		struct ReleaseFlushOwnership
 		{
 			std::atomic<BarDirectWindowDragPhase>& phase;
@@ -12542,7 +12557,7 @@ bool presetButton = button.presetIndex >= 0;
 				latestDirectTranslation, presentedDirectTranslation,
 				frame.bottomDockReleaseInputFlush || fixedReleaseGeometry || (frame.bottomDockDragActive && (state.bottomDockFrameMode == BarBottomDockMode::BottomDocked
 					|| state.bottomDockFrameCenterMode == BarBottomDockCenterMode::Centered)));
-			deferWindowPresentation = framePresentation.deferred
+			deferWindowPresentation = nativeLeaseBusy || nativeReceiptPending || framePresentation.deferred
 				|| (frame.bottomDockReleaseInputFlush && (!releaseFlushOwnership.owned
 					|| transitionSerialBefore != state.bottomDockFrameTransitionSerial
 					|| transitionSerialAfter != state.bottomDockFrameTransitionSerial));
@@ -12586,7 +12601,11 @@ bool presetButton = button.presetIndex >= 0;
 						present_ ? present_(ulwi) : UpdateLayeredWindowIndirect(floating_window, &ulwi);
 					if (!updateLayeredWindowSucceeded)
 						updateLayeredWindowError = GetLastError();
-					else directDragTransaction.WindowUpdated();
+					else
+					{
+						directDragTransaction.WindowUpdated();
+						if (nativeLease) (void)nativeLease.PixelsChanged(Inkeys::Window::WindowRole::Bar);
+					}
 					ulwTimer.Stop();
 					// ULW 只读取源 DC；这里没有通过 GDI 修改像素。
 					const RECT gdiModifiedRect{};
@@ -12690,6 +12709,11 @@ bool presetButton = button.presetIndex >= 0;
 				presentedDestination.x + presentedSize.cx,
 				presentedDestination.y + presentedSize.cy };
 			owner_.committedWindowScreenBounds = committedWindowScreenBounds;
+			if (nativeLease)
+			{
+				owner_.committedWindowPresentationRevision = nativeLease.Revision(Inkeys::Window::WindowRole::Bar);
+				owner_.committedWindowHandle = nativeSurface->hwnd; owner_.committedWindowGeneration = nativeSurface->generation;
+			}
 			// 完整快照发布完成后才重新允许交互线程按此窗口基准直移。
 			if (!state.firstStartupFrameReported)
 			{
@@ -12877,6 +12901,17 @@ bool presetButton = button.presetIndex >= 0;
 			// 第三光源接受区也只消费完整成功事务对应的几何。
 			owner_.RefreshBorderCursorVisibleRegions();
 			directDragTransaction.Commit();
+			if (nativeLease && owner_.bottomDockDragActive.load(memory_order_acquire)
+				&& owner_.bottomDockMode.load(memory_order_acquire) == BarBottomDockMode::Floating
+				&& owner_.bottomDockCenterMode.load(memory_order_acquire) == BarBottomDockCenterMode::Free)
+			{
+				const auto serial = owner_.bottomDockTransitionSerial.load(memory_order_acquire);
+				const auto deferred = owner_.bottomDockDeferredTransitionSerial.load(memory_order_acquire);
+				const auto presentedSerial = owner_.bottomDockPresentedTransitionSerial.load(memory_order_acquire);
+				if (!Inkeys::UI::Bar::ShouldDeferBarDirectWindowMove(0,serial,serial,owner_.bottomDockTransitionSerial.load(memory_order_acquire),deferred,presentedSerial))
+					(void)owner_.RequestNativeDirectWindowMoveLocked({owner_.directWindowDragTranslationX.load(memory_order_acquire),
+						owner_.directWindowDragTranslationY.load(memory_order_acquire)},serial,nativeLease.Revision(Inkeys::Window::WindowRole::Bar));
+			}
 			state.bottomDockIndicatorRevealDamagePending = false;
 			state.committedAnchor = POINT{
 				static_cast<LONG>(lround(mainButton->x.val * frameZoom)),
@@ -13114,6 +13149,7 @@ BarRenderLoopCoordinator::RenderFrame(
 	frame.ordinal = frameOrdinal_;
 	finiteExit.Stage(Ui3FiniteDiagnosticStage::WakeAndSnapshot);
 	FrameStageTimer wakeAndSnapshotTimer(diagnostics, FrameStage::WakeAndSnapshot);
+	owner_.PollNativeDirectWindowMove();
 	if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop)
 		return finiteExit.Finish(FrameResult::Idle);
 	wakeAndSnapshotTimer.Stop();
@@ -13123,6 +13159,9 @@ BarRenderLoopCoordinator::RenderFrame(
 		if (diagnostics) diagnostics->backoffSkipped = true;
 		return finiteExit.Finish(FrameResult::Retry);
 	}
+	// Up 后先等已有 native 责任退休，不能先吸收尚未真实提交的窗口位移。
+	if (!owner_.bottomDockDragActive.load(memory_order_acquire) && owner_.nativeDirectMoveRevision.load(memory_order_acquire))
+		return finiteExit.Finish(FrameResult::Retry);
 	BarDirectWindowDragPhase expectedPhase = BarDirectWindowDragPhase::Idle;
 	const bool directTranslationPending =
 		owner_.directWindowDragTranslationX.load(memory_order_acquire) != 0

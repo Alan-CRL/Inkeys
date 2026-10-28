@@ -855,6 +855,29 @@ namespace
 			"host stop notification releases runtime waiter")) ++failures;
 	}
 
+	void TestWorkspaceProgressWake(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostRuntimeRevisionSignal;
+		HostRuntimeRevisionSignal signal;
+		std::atomic_bool running = false;
+		const auto beforeDecision = signal.Revision();
+		signal.Publish();
+		signal.Publish();
+		if (!Expect(signal.WaitForChange(beforeDecision, 0, running, true)
+			&& !signal.WaitForChange(signal.Revision(), 0, running, true),
+			"native and background progress coalesce without losing a pre-wait notification")) ++failures;
+		const auto observed = signal.Revision();
+		std::promise<bool> completed;
+		auto result = completed.get_future();
+		std::jthread waiter([&] { completed.set_value(signal.WaitForChange(observed, 1000, running, true)); });
+		if (!Expect(result.wait_for(std::chrono::milliseconds(30)) == std::future_status::timeout,
+			"stopped-host coordinator sleeps for real native progress instead of spinning")) ++failures;
+		signal.Publish();
+		if (!Expect(result.wait_for(std::chrono::milliseconds(750)) == std::future_status::ready && result.get(),
+			"native retirement wakes stopped-host coordinator without the 250ms sleep")) ++failures;
+		waiter.join();
+	}
+
 	void TestPptWaitObservationBoundary(int& failures)
 	{
 		using Inkeys::Drawing::Draw3::Detail::HostRuntimeRevisionSignal;
@@ -1230,6 +1253,7 @@ int RunDraw3BridgeTests()
 	TestCanvasRecoveryTokens(failures);
 	TestMergedRecoveryIntentProjection(failures);
 	TestPageRuntimeRevisionPolicy(failures);
+	TestWorkspaceProgressWake(failures);
 	TestDrawingActivityLifecycle(failures);
 	TestAcceptedStrokeNoticeLifecycle(failures);
 	TestPptWaitObservationBoundary(failures);

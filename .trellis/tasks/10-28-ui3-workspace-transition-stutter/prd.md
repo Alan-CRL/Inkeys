@@ -20,6 +20,11 @@
 | R3 | 保持三态安全和资源事务 | pending/Committed、输入fence、PPT身份、首帧/背景/owner回执及失败恢复均不提前放行；失败不发布新命中或消费未提交damage |
 | R4 | 可复现地验证性能收益 | 当前二进制的冷/热六向共享调度原始采样完整、sealed且零掉样；热态目标沿用batch P95≤16.67ms/P99≤33.4ms，同时报告活动主栏成功提交间隔及>50ms来源；未达标不得宣称修复完成 |
 | R5 | 控制改动及功耗边界 | 最小diff，公共按钮和统一renderer保持单一来源，默认光效/字体/动画轨迹不降级，稳定后回Idle；不引入额外渲染线程或切换默认后端 |
+| R6 | UI渲染不跨Window owner阻塞 | PageControl/Whiteboard生产render callback不再同步Submit等待SetBounds/Show/Hide；动画和D2D/ULW保留在UI，其它客户端在owner延迟时仍推进 |
+| R7 | 原生窗口状态由Window Service独立管理 | 使用revisioned candidate/receipt、latest-wins合并和实际bounds/visible/generation回执；旧命令不积压，过期回执不覆盖新状态 |
+| R8 | 显隐与Z-order按事件和幂等执行 | 重复bounds/显隐不提交；普通Show不逐帧RefreshOverlayGroup；仅明确promote、workspace/topology/band/owner变化及恢复执行必要Z-order |
+| R9 | 异步化不削弱呈现安全 | 完整匹配回执前不ConsumeDamage、不发布命中/UI-ready；pair半完成不算成功，失败/取消/代际变化保留旧快照并正确恢复 |
+| R10 | 按阶段覆盖同类链路 | P1 PageControl、P2 Whiteboard Freeze、P3 direct-move/Promote、P4 StateMonitoring；每阶段独立回归和性能A/B，不以只搬线程冒充完成 |
 
 ## 规划轮次交付验收（历史记录）
 
@@ -32,7 +37,7 @@
 ## 范围之外
 
 - 规划轮次不改代码已完成；实施轮次仅作本任务必要源码/测试/spec修改，不改无关任务、依赖或构建配置，不切换分支或创建worktree。
-- 不重写三态、按钮或渲染架构，不直接恢复旧无可靠收益的mask分片候选，不以关闭光效/禁动画/降低帧率掩盖卡顿。
+- 不另造平行三态、按钮或渲染架构；S5仅按用户批准的UI候选帧/Window Service异步所有权调整既有接缝，不直接恢复旧无可靠收益的mask分片候选，不以关闭光效/禁动画/降低帧率掩盖卡顿。
 - 实施轮次优先离屏；用户已允许必要GUI窗口但不使用Computer Use。本次未启动GUI，真实Office/WPS、ULW/DWM、触控和主观手感仍未验收，不据无窗口结果扩大平台支持结论。
 - 未经当前任务明确授权不commit/push，不自动归档。
 
@@ -50,3 +55,9 @@
 | R5 | 保留公共按钮/renderer、默认WARP/光效/动画；没有新渲染线程、全局timer period、commit或push。 |
 
 实际构建、分母、版本哈希与未达标样本以verification/final-verification.md为准；新增计量另记verification/svg-numeric-timing.md，不混用二进制版本。
+
+## S5 实施状态（2026-10-29）
+
+R6–R10 的异步窗口所有权、latest-wins/回执、幂等与事件层级、pair/Bar 直移、原协调器异步推进已实现；完整 Debug|ARM64 及本轮自动化正确性回归通过。真实四 HWND 交替三轮 A/B 的 batch P95 11.866→3.178ms（约下降73.2%），候选→回执与实际成功间隔均有记录。
+
+R4 仍未闭环：不含 native Window Service 的共享 Scheduler 三倍率短测，两版均仅1/54组达到16.67/33.4ms预算；未证明消除剩余绘制/GetDC成本或用户现场所有卡顿。真实 Office/WPS/DWM/设备端到端未验收。任务继续 in_progress；不 commit/push/归档。证据、完整哈希、命令/退出码和限制见 [S5 最终验证](verification/s5-final-verification.md)。

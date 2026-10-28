@@ -152,3 +152,11 @@ SVG计量接缝须确定性红绿覆盖default/null零读钟、四段数值、ne
 ### 7. Wrong vs Correct
 
 Wrong：前一batch只画8ms，下一次开始31ms，仍因绘制小于16.67ms宣称流畅。Correct：同时测batch起点截止的超时和真实commit间隔，先确认等待/调度与绘制各自成本，再独立A/B；保持最大60Hz和真正idle不唤醒。
+
+## 屏外原生窗口候选采样（2026-10-28）
+
+`INKEYS_PAGE_CONTROL_TRANSITION_PERF=1 Inkeys.exe --page-control-hidden-test` 使用生产 RenderSurface、屏外真实四 HWND、ULW 与 Window Service；保留原 `frames.csv/summary.csv/metadata.json` 字段。新增 native/pixel commit 计数、owner 完成时刻、candidate→receipt 延迟、队列深度及 coalesced/stale 计数必须区分回调工作量与成功提交，不将快速 Retry 或空 Idle 算作呈现。
+
+候选计时仅在 `SetCandidateDiagnosticsEnabled(true)` 时采集；默认关闭不为诊断格式化/写盘。提交期限使用的生产时钟与诊断读钟分开。`completedTicks` 为 owner 实际完成的软件时刻，不是 UI 消费时刻、GPU完成或 DWM 光学显示。队列深度必须为实际固定邮箱占用，短锁争用不能伪造峰值。A/B 保存双方 EXE SHA-256、metadata、原始 CSV 和真实进程退出码；原基线缺少新增时刻列时明确缺口，不事后把 callback proxy 当作旧原生成功间隔。
+
+P3 候选回执的 error 保存首个原生失败，rollbackError 独立保存恢复失败；不能在回滚后才用 GetLastError 推测原始阶段。lease 延后是正常 pending，不计为真实 HWND 失败。P4 progress notification 不等于窗口成功或 UI-ready，失败预算只按原有时间尺度和实际进展推进。

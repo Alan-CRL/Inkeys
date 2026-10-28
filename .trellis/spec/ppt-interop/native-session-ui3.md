@@ -172,3 +172,9 @@ if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision(
 - 合法BasicControl以及Unknown会话事实沿用既有资格；缺少可信墨迹target/HWND时可在真实隐藏并穿透画布后完成仅控制呈现，不伪造InkReady，不为不存在的墨迹target永久等待。受保护/fatal安全退场仍核对完整故障身份，不清独立故障门。
 - 白板内的放映开始、结束和换文稿更新后台可信会话事实；关闭白板时按最新事实返回Presentation或Desktop，不恢复已经结束的旧会话。普通翻页不推进工作区交接版本，继续使用session/target、slot、输出及UI-ready身份。
 - 验证须覆盖W→P的实际页码准备、PPT结束后W→D、过期UI-ready、BasicControl和Unknown；离屏测试不代表Office/WPS及系统任务栏实机验收。
+
+## 分页异步原生确认（2026-10-28）
+
+PageControl 的页码/UI-ready 同时要求像素事务和 Window Service 当前 candidate 的完整真实回执。固定帧命中与 damage revision 随候选捕获；旧 session/target/pageAckEpoch、workspace/publication、设备或 HWND generation 的完成不得提交后来帧。新几何/身份 native pending 期间禁止对应新输入；保留合法已准入手势不等于提前确认新页。普通 Show 不作为 promote，显式 Pointer Down 提升与可见性分开。具体 candidate/receipt 与失败矩阵见 [窗口候选合同](../native-desktop/rendering-and-ui.md#ui3-原生窗口候选与真实回执2026-10-28)。
+
+成对拖动只在当前 mask=3 的真实回执后提交；owner 与 ULW 通过 role lease/presentationRevision 互斥。最后 Move+Up 无后续消息也保留 pending 并收敛；旧像素/旧 session/旧 pair 回执不能覆盖新位置。Pointer Down 的 RequestPromotePptWindow 是独立异步事件，不受逐帧 candidate latest-wins 覆盖。

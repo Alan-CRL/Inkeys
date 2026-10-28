@@ -11,6 +11,9 @@ module;
 #include "../Helper/FailedCleanupDeadline.h"
 #include "../Drawing/Draw3/Draw3.DiagnosticOutput.h"
 #include "Window.CommandCompletion.h"
+#include "Window.CandidateMailbox.h"
+#include "Window.PresentationLease.h"
+#include "Window.NativeEventMailbox.h"
 #include "Window.ZOrderPolicy.h"
 #include "Window.SafetyOverride.h"
 #include "Window.ShellFullscreen.h"
@@ -232,6 +235,14 @@ namespace Inkeys::Window
 
 	class Service::Impl
 	{
+		struct NativeEventPayload
+		{
+			WindowRole role = WindowRole::Bar;
+			HWND hwnd = nullptr;
+			std::uint64_t generation = 0;
+			std::chrono::steady_clock::time_point deadline{};
+		};
+		using NativeEventMailbox = Detail::NativeEventMailbox<NativeEventPayload>;
 	public:
 		explicit Impl(std::size_t capacity) : messageCapacity_(capacity) {}
 
@@ -315,6 +326,9 @@ namespace Inkeys::Window
 		{
 			// 正式退出意图一经接受就不可撤销；此处不得等待可能已卡住的 HWND owner。
 			shutdownRequested_.store(true, std::memory_order_release);
+			promoteEvents_.Invalidate(); refreshEvents_.Invalidate();
+			workspaceNativeRevision_->fetch_add(1, std::memory_order_acq_rel);
+			candidateMailbox_.InvalidateRoles((std::uint64_t{1} << RoleCount) - 1);
 		}
 
 		[[nodiscard]] HWND Handle(WindowRole role) const noexcept
@@ -456,6 +470,86 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		[[nodiscard]] SurfacePresentationLease TryAcquirePresentationLease(WindowRole first, WindowRole second) noexcept
+		{
+			if (!running_.load(std::memory_order_acquire) || shutdownRequested_.load(std::memory_order_acquire) || !IsValidRole(first)
+				|| (!IsUiPopup(first) && first != WindowRole::Freeze)
+				|| (second != WindowRole::Count && (!IsValidRole(second) || (!IsUiPopup(second) && second != WindowRole::Freeze)))) return {};
+			const auto mask = (std::uint64_t{1} << RoleIndex(first))
+				| (second == WindowRole::Count ? 0 : std::uint64_t{1} << RoleIndex(second));
+			return AcquirePresentationLeaseMask(mask);
+		}
+
+		[[nodiscard]] std::uint64_t PublishCandidate(const WindowCandidate& candidate)
+		{
+			if (!running_.load(std::memory_order_acquire) || candidate.count == 0 || candidate.count > candidate.targets.size()) return 0;
+			std::uint64_t mask = 0;
+			for (std::size_t i = 0; i < candidate.count; ++i)
+			{
+				const auto& target = candidate.targets[i];
+				if (shutdownRequested_.load(std::memory_order_acquire)
+					&& (target.applyBounds || target.promote || target.visibility != WindowCandidateVisibility::Hide)) return 0;
+				if ((!IsUiPopup(target.role) && target.role != WindowRole::Freeze) || !target.hwnd || !target.generation
+					|| (mask & (std::uint64_t{1} << RoleIndex(target.role)))) return 0;
+				mask |= std::uint64_t{1} << RoleIndex(target.role);
+			}
+			CandidatePayload payload{ candidate, std::chrono::steady_clock::now(), candidateDiagnosticsEnabled_.load(std::memory_order_relaxed) };
+			const auto publication = candidateMailbox_.Publish(RoleIndex(candidate.targets[0].role), mask, payload);
+			if (!publication.revision) return 0;
+			if (payload.measured)
+			{
+				candidatesPublished_.fetch_add(1, std::memory_order_relaxed);
+				if (publication.coalesced) candidatesCoalesced_.fetch_add(1, std::memory_order_relaxed);
+				auto maximum = candidateMaxQueueDepth_.load(std::memory_order_relaxed);
+				while (maximum < publication.depth && !candidateMaxQueueDepth_.compare_exchange_weak(maximum, publication.depth, std::memory_order_relaxed)) {}
+			}
+			if (overlayEvent_) SetEvent(overlayEvent_);
+			return publication.revision;
+		}
+
+		[[nodiscard]] std::optional<WindowCandidateReceipt> TryReadCandidateReceipt(WindowRole role, std::uint64_t revision) const
+		{
+			return candidateMailbox_.TryRead(RoleIndex(role), revision);
+		}
+		void RequestCancelCandidatePreservingReceipt(WindowRole role, std::uint64_t revision) noexcept
+		{
+			candidateMailbox_.RequestCancel(RoleIndex(role), revision);
+			if (overlayEvent_) SetEvent(overlayEvent_);
+		}
+		[[nodiscard]] std::optional<WindowCandidateReceipt> TryReadCandidateRetirement(WindowRole role, std::uint64_t revision) const
+		{
+			auto receipt = candidateMailbox_.TryReadRetirement(RoleIndex(role), revision);
+			if (!receipt || receipt->phase == CommandPhase::Queued || receipt->phase == CommandPhase::Executing) return {};
+			// 退休读回只用来协调真实几何；旧语义不能凭此开放输入或确认新 UI-ready。
+			if (!candidateMailbox_.Current(RoleIndex(role), revision) && receipt->phase == CommandPhase::Committed)
+			{ receipt->phase = CommandPhase::Cancelled; receipt->completedMask = 0; }
+			return receipt;
+		}
+		[[nodiscard]] bool CandidateCurrent(WindowRole role, std::uint64_t revision) const noexcept
+		{
+			return candidateMailbox_.Current(RoleIndex(role), revision);
+		}
+		void CancelCandidate(WindowRole role, std::uint64_t revision) noexcept
+		{
+			candidateMailbox_.Cancel(RoleIndex(role), revision);
+			if (overlayEvent_) SetEvent(overlayEvent_);
+		}
+		[[nodiscard]] std::optional<WindowSurfaceState> SurfaceSnapshot(WindowRole role) const
+		{
+			if (!IsValidRole(role)) return {};
+			std::unique_lock lock(surfaceSnapshotsMutex_, std::try_to_lock);
+			if (!lock.owns_lock()) return {};
+			return surfaceSnapshots_[RoleIndex(role)];
+		}
+		void SetCandidateDiagnosticsEnabled(bool enabled) noexcept { candidateDiagnosticsEnabled_.store(enabled, std::memory_order_relaxed); }
+		[[nodiscard]] WindowCandidateDiagnostics CandidateDiagnostics() const noexcept
+		{
+			return { candidatesPublished_.load(std::memory_order_relaxed), candidatesCoalesced_.load(std::memory_order_relaxed),
+				candidatesStale_.load(std::memory_order_relaxed), candidatesExecuted_.load(std::memory_order_relaxed),
+				candidateBoundsChanges_.load(std::memory_order_relaxed), candidateVisibilityChanges_.load(std::memory_order_relaxed),
+				candidatePromotes_.load(std::memory_order_relaxed), candidateMailbox_.Depth(), candidateMaxQueueDepth_.load(std::memory_order_relaxed) };
+		}
+
 		[[nodiscard]] std::optional<WorkspaceWindowPrepared> PrepareWorkspaceWindowPolicy(
 			WorkspaceWindowPolicy policy, std::function<bool()> stillDesired)
 		{
@@ -472,6 +566,38 @@ namespace Inkeys::Window
 			command.workspacePolicy = policy; command.workspacePrepared = prepared;
 			command.stillDesired = std::move(stillDesired);
 			return Submit(std::move(command));
+		}
+
+		[[nodiscard]] WorkspaceWindowReceipt RequestPrepareWorkspaceWindowPolicy(WorkspaceWindowPolicy policy, std::function<bool()> stillDesired)
+		{
+			try
+			{
+				Command command; command.type = CommandType::PrepareWorkspacePolicy; command.role = WindowRole::Freeze;
+				command.workspacePolicy = policy; command.stillDesired = std::move(stillDesired);
+				command.workspaceResult = std::make_shared<std::optional<WorkspaceWindowPrepared>>();
+				command.workspaceRequest = std::make_shared<WorkspaceRequestState>();
+				return SubmitWorkspaceRequest(std::move(command));
+			}
+			catch (...) { return {}; }
+		}
+		[[nodiscard]] WorkspaceWindowReceipt RequestCompleteWorkspaceWindowPolicy(WorkspaceWindowPolicy policy,
+			const WorkspaceWindowPrepared& prepared, std::function<bool()> stillDesired)
+		{
+			try
+			{
+				Command command; command.type = CommandType::CompleteWorkspacePolicy; command.role = WindowRole::Freeze;
+				command.workspacePolicy = policy; command.workspacePrepared = prepared; command.stillDesired = std::move(stillDesired);
+				command.workspaceRequest = std::make_shared<WorkspaceRequestState>();
+				return SubmitWorkspaceRequest(std::move(command));
+			}
+			catch (...) { return {}; }
+		}
+		void SetWorkspaceProgressObserver(std::function<void()> callback)
+		{
+			std::unique_lock lock(workspaceObserverMutex_);
+			workspaceProgressObserver_ = {};
+			if (!workspaceObserverExecuting_) workspaceObserverCondition_.wait(lock, [this] { return workspaceObserverActiveCalls_ == 0; });
+			workspaceProgressObserver_ = std::move(callback);
 		}
 
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
@@ -623,7 +749,7 @@ namespace Inkeys::Window
 			if (!hwnd || hwnd != Handle(WindowRole::Freeze) || OwnerThreadId(WindowRole::Freeze) != GetCurrentThreadId()
 				|| !WhiteboardWindowMode() || (IsIconic(hwnd) != FALSE) != minimized) return false;
 			if (whiteboardGroupMinimized_.exchange(minimized, std::memory_order_acq_rel) != minimized)
-			{ ApplyOverlayFullscreen(OverlayRoot()); NotifyWhiteboardMinimizedChanged(); }
+			{ candidateMailbox_.InvalidateRoles((std::uint64_t{1} << RoleCount) - 1); workspaceNativeRevision_->fetch_add(1, std::memory_order_acq_rel); ApplyOverlayFullscreen(OverlayRoot()); NotifyWhiteboardMinimizedChanged(); }
 			return true;
 		}
 
@@ -748,6 +874,25 @@ namespace Inkeys::Window
 				return overlayFullscreen_.load(std::memory_order_acquire);
 			}
 
+		[[nodiscard]] bool PublishNativeEvent(NativeEventMailbox& mailbox, WindowRole role)
+		{
+			if (!running_.load(std::memory_order_acquire) || shutdownRequested_.load(std::memory_order_acquire)) return false;
+			const auto generation = records_[RoleIndex(role)].generation.load(std::memory_order_acquire);
+			const HWND hwnd = Handle(role);
+			if (!hwnd || !generation || generation != records_[RoleIndex(role)].generation.load(std::memory_order_acquire)) return false;
+			const auto revision = mailbox.Publish({ role, hwnd, generation, std::chrono::steady_clock::now() + std::chrono::milliseconds(1500) });
+			if (revision && overlayEvent_) SetEvent(overlayEvent_);
+			return revision != 0;
+		}
+		[[nodiscard]] bool RequestPromotePptWindow(WindowRole role)
+		{
+			return IsPpt(role) && PublishNativeEvent(promoteEvents_, role);
+		}
+		[[nodiscard]] bool RequestTopmostRefreshAsync()
+		{
+			return PublishNativeEvent(refreshEvents_, Handle(WindowRole::MagnifierHost) ? WindowRole::MagnifierHost : WindowRole::Freeze);
+		}
+
 		[[nodiscard]] bool PromotePptWindow(WindowRole role)
 		{
 			if (!IsPpt(role)) return false;
@@ -805,6 +950,7 @@ namespace Inkeys::Window
 			CancelPointerCapture,
 			RefreshTopmost,
 			PromotePpt,
+			ApplyCandidate,
 			BindMessages,
 			UnbindMessages,
 			Count,
@@ -812,6 +958,22 @@ namespace Inkeys::Window
 
 		static constexpr std::size_t CommandCount =
 			static_cast<std::size_t>(CommandType::Count);
+
+		struct CandidatePayload
+		{
+			WindowCandidate value;
+			std::chrono::steady_clock::time_point submittedAt{};
+			bool measured = false;
+		};
+		using CandidateMailbox = Detail::CandidateMailbox<CandidatePayload, WindowCandidateReceipt, RoleCount>;
+		using CandidateWork = CandidateMailbox::Work;
+
+
+		struct WorkspaceRequestState
+		{
+			std::optional<WorkspaceWindowPrepared> prepared;
+			std::uint64_t nativeRevision = 0;
+		};
 
 		struct Command
 		{
@@ -829,11 +991,27 @@ namespace Inkeys::Window
 			WorkspaceWindowPolicy workspacePolicy;
 			WorkspaceWindowPrepared workspacePrepared;
 			std::shared_ptr<std::optional<WorkspaceWindowPrepared>> workspaceResult;
+			std::shared_ptr<WorkspaceRequestState> workspaceRequest;
+			WindowRole identityRole = WindowRole::Count;
+			HWND identityWindow = nullptr;
+			std::uint64_t identityGeneration = 0;
+			bool notifyTopmost = false;
+			unsigned nativeEventKind = 0;
+			std::uint64_t nativeEventRevision = 0;
 			Message::BindOptions bindOptions{};
 			std::optional<WindowSpec> spec;
 			std::shared_ptr<Detail::CommandCompletion> completion;
 			std::uint64_t intentVersion = 0;
 			Detail::CommandDeadline deadline;
+			std::optional<CandidateWork> candidate;
+		};
+
+		struct CandidateRetirement
+		{
+			CandidateWork work;
+			std::shared_ptr<Detail::CommandCompletion> completion;
+			DWORD error = ERROR_SUCCESS;
+			SurfacePresentationLease lease;
 		};
 
 		struct CommandQueue
@@ -971,6 +1149,17 @@ namespace Inkeys::Window
 				whiteboardWindowMode_.store(false, std::memory_order_release);
 				whiteboardGroupMinimized_.store(false, std::memory_order_release);
 				whiteboardVisibleBeforeMinimize_.fill(false);
+			workspaceNativeRevision_->fetch_add(1, std::memory_order_acq_rel);
+			workspaceProgressPending_ = false;
+			promoteEvents_.Invalidate(); refreshEvents_.Invalidate();
+			pendingPromote_.reset(); pendingRefresh_.reset(); nativeEventRetryAt_.reset();
+			candidateMailbox_.Reset();
+			for (auto& retirement : candidateRetirements_) retirement.reset();
+			{
+				std::scoped_lock lock(surfaceSnapshotsMutex_);
+				for (std::size_t i = 0; i < RoleCount; ++i)
+				{ surfaceSnapshots_[i] = {}; surfaceSnapshots_[i].role = static_cast<WindowRole>(i); surfaceSnapshots_[i].known = true; }
+			}
 			canvasPolicyDirty_ = false;
 			canvasPolicyApplying_ = false;
 			canvasPolicyRetry_ = false;
@@ -1025,6 +1214,9 @@ namespace Inkeys::Window
 
 			Detail::StopShellFullscreen(shellFullscreen_);
 			shellFullscreen_.reset();
+			workspaceNativeRevision_->fetch_add(1, std::memory_order_acq_rel);
+			candidateMailbox_.Reset();
+			for (auto& retirement : candidateRetirements_) retirement.reset(); // 关闭 wake HANDLE 前释放 owner 持有的租约。
 			FailPendingCommands(overlayCommands_);
 			FailPendingCommands(settingCommands_);
 			if (overlayEvent_)
@@ -1069,6 +1261,7 @@ namespace Inkeys::Window
 				try
 				{
 					created = CreateGroup(settingGroup, threadId, failedCleanup);
+					PublishNativeSnapshots(settingGroup);
 					if (!created) failedCleanup.BeginKnownFailure();
 					readyPromise.set_value(created);
 				}
@@ -1101,11 +1294,19 @@ namespace Inkeys::Window
 				// 仅失败后的画布策略使用有界重试；正常静止仍保持无限等待。
 				const auto now = std::chrono::steady_clock::now();
 				const bool needsRecovery = commandRecovery_[settingGroup ? 1 : 0].has_value() || safetyCleanupRetry_[settingGroup ? 1 : 0];
-				const DWORD timeout = needsRecovery ? 250 : (!settingGroup && canvasPolicyRetry_
+				DWORD timeout = needsRecovery ? 250 : (!settingGroup && canvasPolicyRetry_
 					&& !shutdownRequested_.load(std::memory_order_acquire)
 					? (canvasPolicyRetryAt_ <= now ? 0 : static_cast<DWORD>(
 						std::chrono::duration_cast<std::chrono::milliseconds>(canvasPolicyRetryAt_ - now).count() + 1))
 					: INFINITE);
+				if (!settingGroup)
+					for (const auto& deadline : { leaseDeferredDeadline_, candidateLeaseDeadline_, nativeEventRetryAt_ })
+						if (deadline)
+						{
+							const DWORD leaseTimeout = *deadline <= now ? 0 : static_cast<DWORD>(
+								std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now).count() + 1);
+							timeout = (std::min)(timeout, leaseTimeout);
+						}
 				const DWORD waitResult = eventHandle
 					? MsgWaitForMultipleObjectsEx(
 						1, &eventHandle, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
@@ -1116,6 +1317,14 @@ namespace Inkeys::Window
 				{
 					ResetEvent(eventHandle);
 					DrainCommands(queue);
+					if (!settingGroup) { DrainNativeEvents(); DrainCandidates(); }
+				}
+				else if (waitResult == WAIT_TIMEOUT && !settingGroup)
+				{
+					const auto expiredAt = std::chrono::steady_clock::now();
+					if (leaseDeferredDeadline_ && expiredAt >= *leaseDeferredDeadline_) DrainCommands(queue);
+					if (candidateLeaseDeadline_ && expiredAt >= *candidateLeaseDeadline_) DrainCandidates();
+					if (nativeEventRetryAt_ && expiredAt >= *nativeEventRetryAt_) DrainNativeEvents();
 				}
 				else if (waitResult == WAIT_FAILED)
 				{
@@ -1130,7 +1339,12 @@ namespace Inkeys::Window
 					TranslateMessage(&message);
 					{
 						const MessageDispatch::Scope dispatchScope(message);
+						const bool changesNativeState = message.message == WM_SYSCOMMAND || message.message == WM_SIZE
+							|| message.message == WM_WINDOWPOSCHANGED || message.message == WM_SHOWWINDOW
+							|| message.message == WM_DPICHANGED || message.message == WM_DESTROY;
+						if (changesNativeState && !settingGroup) { candidateMailbox_.InvalidateRoles((std::uint64_t{1} << RoleCount) - 1); workspaceNativeRevision_->fetch_add(1, std::memory_order_acq_rel); }
 						DispatchMessageW(&message);
+						if (changesNativeState) PublishNativeSnapshots(settingGroup);
 					}
 					// 私有 wake 可能先于 native loop 被消费；退栈后先排空隐藏，再取下一条鼠标消息。
 					if (settingGroup && eventHandle && WaitForSingleObject(eventHandle, 0) == WAIT_OBJECT_0)
@@ -1145,13 +1359,25 @@ namespace Inkeys::Window
 				{
 					commandApplying_[settingGroup ? 1 : 0] = true;
 					(void)RetryCommandRecovery(settingGroup);
+					PublishNativeSnapshots(settingGroup);
 					commandApplying_[settingGroup ? 1 : 0] = false;
 				}
 				if (safetyCleanupRetry_[settingGroup ? 1 : 0])
 				{
 					commandApplying_[settingGroup ? 1 : 0] = true;
 					(void)RetrySafetyCleanup(settingGroup);
+					PublishNativeSnapshots(settingGroup);
 					commandApplying_[settingGroup ? 1 : 0] = false;
+				}
+				if (!settingGroup)
+				{
+					RefreshCandidateRetirements();
+					DrainWorkspaceProgress();
+					std::uint64_t retiring = 0;
+					for (std::size_t slot = 0; slot < RoleCount; ++slot)
+						if (candidateRetirements_[slot]) retiring |= std::uint64_t{1} << slot;
+					// 在途回滚的槽等既有 250ms 期限；不能因其最新候选仍排队而自唤醒忙转。
+					if (Detail::CandidatePumpHasWork(candidateMailbox_.PendingMask(), retiring | candidateLeaseBlocked_) && overlayEvent_) SetEvent(overlayEvent_);
 				}
 				if (!settingGroup && canvasPolicyRetry_ && !token.stop_requested()
 					&& !shutdownRequested_.load(std::memory_order_acquire)
@@ -1172,6 +1398,7 @@ namespace Inkeys::Window
 						ApplyOverlayFullscreen(root);
 				}
 				DestroyGroup(settingGroup);
+				PublishNativeSnapshots(settingGroup);
 				if (!settingGroup) shellWorkerForOwner.reset();
 				(settingGroup ? settingThreadId_ : overlayThreadId_).store(
 					0, std::memory_order_release);
@@ -1761,11 +1988,51 @@ namespace Inkeys::Window
 			return static_cast<std::size_t>(type);
 		}
 
+		[[nodiscard]] SurfacePresentationLease AcquirePresentationLeaseMask(std::uint64_t mask) noexcept
+		{
+			if (!Detail::TryAcquirePresentationBits(presentationLeaseBits_, mask)) return {};
+			return SurfacePresentationLease(&presentationLeaseBits_, presentationRevisions_.data(), mask, overlayEvent_);
+		}
+		[[nodiscard]] std::uint64_t CommandPresentationMask(const Command& command) const noexcept
+		{
+			if (command.candidate)
+			{
+				std::uint64_t mask = 0;
+				for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
+					if (command.candidate->candidate.value.targets[i].applyBounds)
+						mask |= std::uint64_t{1} << RoleIndex(command.candidate->candidate.value.targets[i].role);
+				return mask;
+			}
+			if (command.type == CommandType::SetBounds && (IsUiPopup(command.role) || command.role == WindowRole::Freeze))
+				return std::uint64_t{1} << RoleIndex(command.role);
+			if (command.type == CommandType::PrepareWorkspacePolicy || command.type == CommandType::CompleteWorkspacePolicy)
+			{
+				return std::uint64_t{1} << RoleIndex(WindowRole::Freeze);
+			}
+			return 0;
+		}
+
+		[[nodiscard]] bool CandidateIdentityCurrent(const CandidateWork& work) const noexcept
+		{
+			if (!candidateMailbox_.Current(work)) return false;
+			// 安全 Hide 也必须先核对代际，不能让旧候选锁存到重建后的 HWND。
+			for (std::size_t i = 0; i < work.candidate.value.count; ++i)
+			{
+				const auto& target = work.candidate.value.targets[i];
+				if (Handle(target.role) != target.hwnd || records_[RoleIndex(target.role)].generation.load(std::memory_order_acquire) != target.generation) return false;
+			}
+			return true;
+		}
+
 		[[nodiscard]] bool CommandCurrent(const Command& command) const noexcept
 		{
 			try
 			{
 				return (!command.completion || (running_.load(std::memory_order_acquire) && command.completion->Current()))
+					&& (!command.candidate || CandidateIdentityCurrent(*command.candidate))
+					&& (!command.nativeEventKind || (command.nativeEventKind == 1 ? promoteEvents_ : refreshEvents_).Current(command.nativeEventRevision))
+					&& (command.identityRole == WindowRole::Count || (Handle(command.identityRole) == command.identityWindow
+						&& records_[RoleIndex(command.identityRole)].generation.load(std::memory_order_acquire) == command.identityGeneration))
 					&& (!command.intentVersion || command.intentVersion ==
 						intentVersions_[IntentIndex(command.type)][RoleIndex(command.role)].load(std::memory_order_acquire))
 					&& (!command.stillDesired || command.stillDesired());
@@ -1797,29 +2064,31 @@ namespace Inkeys::Window
 						&& !IsIconic(Handle(WindowRole::Freeze)))))
 				return true; // 同次 ShowWindow 的 WM_SIZE 回执不是新意图，不能退休外层事务。
 			if (!command.deadline) command.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
-			command.completion = std::make_shared<Detail::CommandCompletion>(command.deadline);
+			if (!command.completion) command.completion = std::make_shared<Detail::CommandCompletion>(command.deadline);
 			receiptOwner_ = this;
 			lastReceipt_ = command.completion;
 			const auto completion = command.completion;
 			{
-				std::scoped_lock lock(queue.mutex);
+				std::unique_lock lock(queue.mutex, std::defer_lock);
+				if (wait) lock.lock();
+				else if (!lock.try_lock()) { completion->Cancel(); return false; }
 				if (!running_.load(std::memory_order_acquire)) { completion->Cancel(); return false; }
 				command.intentVersion = intentVersions_[IntentIndex(command.type)][RoleIndex(command.role)]
 					.fetch_add(1, std::memory_order_acq_rel) + 1;
 				// 周期刷新只保留最新一份排队责任；在途操作不能伪装成已经取消。
-				if (command.type == CommandType::RefreshTopmost)
+				if (command.type == CommandType::RefreshTopmost || command.type == CommandType::PromotePpt)
 					for (auto it = queue.commands.begin(); it != queue.commands.end(); )
-						if (it->type == CommandType::RefreshTopmost)
+						if (it->type == command.type && (command.type == CommandType::RefreshTopmost || it->role == command.role))
 						{
 							if (it->completion) it->completion->Cancel();
 							it = queue.commands.erase(it);
 						}
 						else ++it;
-				if (!ownerThreadId || ownerThreadId != GetCurrentThreadId()
+				if (!wait || !ownerThreadId || ownerThreadId != GetCurrentThreadId()
 					|| command.type == CommandType::ActivateWhiteboard) queue.commands.push_back(command);
 			}
 			// WndProc 重入不能越过尚未退栈的原生写入并提前报告新意图成功。
-			if (ownerThreadId && ownerThreadId == GetCurrentThreadId()
+			if (wait && ownerThreadId && ownerThreadId == GetCurrentThreadId()
 				&& command.type != CommandType::ActivateWhiteboard) return ExecuteTracked(command);
 			if (eventHandle) SetEvent(eventHandle);
 			if (IsSetting(command.role)
@@ -1828,14 +2097,245 @@ namespace Inkeys::Window
 			return wait ? completion->Wait() : true;
 		}
 
+		[[nodiscard]] WorkspaceWindowReceipt SubmitWorkspaceRequest(Command command)
+		{
+			const auto state = command.workspaceRequest;
+			const auto truth = workspaceNativeRevision_;
+			const auto revision = command.workspacePolicy.revision;
+			if (!revision) return {};
+			command.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+			command.completion = std::make_shared<Detail::CommandCompletion>(command.deadline);
+			const auto completion = command.completion;
+			WorkspaceWindowReceipt receipt{ revision,
+				CommandReceipt([completion] { return static_cast<CommandPhase>(completion->Phase()); }, [completion] { completion->Cancel(); }),
+				[state] { return state->prepared; },
+				[state, truth] { return state->nativeRevision != 0 && state->nativeRevision == truth->load(std::memory_order_acquire); } };
+			if (!Submit(std::move(command), false)) return {};
+			return receipt;
+		}
+		void NotifyWorkspaceProgress()
+		{
+			std::function<void()> callback;
+			try
+			{
+				std::scoped_lock lock(workspaceObserverMutex_);
+				callback = workspaceProgressObserver_;
+				if (callback) ++workspaceObserverActiveCalls_;
+			}
+			catch (...) { return; }
+			if (!callback) return;
+			workspaceObserverExecuting_ = true;
+			try { callback(); } catch (...) {}
+			workspaceObserverExecuting_ = false;
+			{ std::scoped_lock lock(workspaceObserverMutex_); --workspaceObserverActiveCalls_; }
+			workspaceObserverCondition_.notify_all();
+		}
+		void DrainWorkspaceProgress()
+		{
+			if (!workspaceProgressPending_) return;
+			workspaceProgressPending_ = false;
+			NotifyWorkspaceProgress();
+		}
+		[[nodiscard]] bool TouchesWorkspaceTruth(const Command& command) const noexcept
+		{
+			if (command.type == CommandType::PrepareWorkspacePolicy || command.type == CommandType::CompleteWorkspacePolicy
+				|| command.type == CommandType::SetWhiteboardWindowMode || command.type == CommandType::MinimizeWhiteboardGroup
+				|| command.type == CommandType::RestoreWhiteboardGroup || command.type == CommandType::HideAll
+				|| ((command.type == CommandType::Create || command.type == CommandType::Destroy) && !IsSetting(command.role) && !IsDisplayObserver(command.role))) return true;
+			if (command.candidate)
+			{
+				for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
+				{
+					const auto& target = command.candidate->candidate.value.targets[i];
+					if (target.role == WindowRole::Freeze && (target.applyBounds || target.visibility != WindowCandidateVisibility::Preserve)) return true;
+				}
+				return false;
+			}
+			return (IsCanvas(command.role) || command.role == WindowRole::Freeze)
+				&& command.type != CommandType::RefreshTopmost && command.type != CommandType::SetOverlayTopmost
+				&& command.type != CommandType::SetOverlayFullscreen && command.type != CommandType::ActivateWhiteboard;
+		}
+
+		[[nodiscard]] WindowSurfaceState ReadNativeSurface(WindowRole role) const noexcept
+		{
+			WindowSurfaceState state;
+			state.role = role;
+			state.hwnd = Handle(role);
+			state.generation = records_[RoleIndex(role)].generation.load(std::memory_order_acquire);
+			state.presentationRevision = presentationRevisions_[RoleIndex(role)].load(std::memory_order_acquire);
+			state.known = !state.hwnd;
+			if (state.hwnd && IsWindow(state.hwnd))
+			{
+				state.known = GetWindowRect(state.hwnd, &state.bounds) != FALSE;
+				state.visible = IsWindowVisible(state.hwnd) != FALSE;
+				state.iconic = IsIconic(state.hwnd) != FALSE;
+			}
+			return state;
+		}
+		void InvalidateNativeSnapshots(bool setting)
+		{
+			std::scoped_lock lock(surfaceSnapshotsMutex_);
+			for (std::size_t i = 0; i < RoleCount; ++i)
+				if (IsSetting(static_cast<WindowRole>(i)) == setting) surfaceSnapshots_[i].known = false;
+		}
+		void PublishNativeSnapshots(bool setting)
+		{
+			std::array<WindowSurfaceState, RoleCount> actual{};
+			for (std::size_t i = 0; i < RoleCount; ++i)
+				if (IsSetting(static_cast<WindowRole>(i)) == setting) actual[i] = ReadNativeSurface(static_cast<WindowRole>(i));
+			std::scoped_lock lock(surfaceSnapshotsMutex_);
+			for (std::size_t i = 0; i < RoleCount; ++i)
+				if (IsSetting(static_cast<WindowRole>(i)) == setting) surfaceSnapshots_[i] = actual[i];
+		}
+		void PublishCandidateSnapshots(const WindowCandidate& candidate, bool invalidating = false)
+		{
+			std::array<WindowSurfaceState, 2> actual{};
+			if (!invalidating)
+				for (std::size_t i = 0; i < candidate.count; ++i) actual[i] = ReadNativeSurface(candidate.targets[i].role);
+			std::scoped_lock lock(surfaceSnapshotsMutex_);
+			for (std::size_t i = 0; i < candidate.count; ++i)
+				if (invalidating) surfaceSnapshots_[RoleIndex(candidate.targets[i].role)].known = false;
+				else surfaceSnapshots_[RoleIndex(candidate.targets[i].role)] = actual[i];
+		}
+		void PublishCandidateReceipt(const CandidateRetirement& retirement)
+		{
+			const auto& work = retirement.work;
+			const auto& candidate = work.candidate.value;
+			WindowCandidateReceipt receipt;
+			receipt.revision = work.revision;
+			receipt.frameSerial = candidate.frameSerial;
+			receipt.workspaceRevision = candidate.workspaceRevision;
+			receipt.phase = static_cast<CommandPhase>(retirement.completion->Phase());
+			receipt.count = candidate.count;
+			receipt.error = retirement.completion->NativeError() ? retirement.completion->NativeError() : retirement.error;
+			receipt.rollbackError = retirement.completion->RollbackError();
+			for (std::size_t i = 0; i < candidate.count; ++i) receipt.actual[i] = ReadNativeSurface(candidate.targets[i].role);
+			if (receipt.phase == CommandPhase::Committed && candidateMailbox_.Current(work))
+				receipt.completedMask = (1u << candidate.count) - 1u;
+			else if (receipt.phase == CommandPhase::Committed) receipt.phase = CommandPhase::Cancelled;
+			if (work.candidate.measured)
+			{
+				const auto completedAt = std::chrono::steady_clock::now();
+				receipt.completedTicks = completedAt.time_since_epoch().count();
+				receipt.latencyMicroseconds = std::chrono::duration<double, std::micro>(completedAt - work.candidate.submittedAt).count();
+			}
+			(void)candidateMailbox_.Complete(work, receipt);
+		}
+		void RefreshCandidateRetirements()
+		{
+			for (auto& retirement : candidateRetirements_)
+				if (retirement && retirement->completion->Phase() != Detail::CommandPhase::Executing)
+				{ PublishCandidateReceipt(*retirement); retirement.reset(); }
+		}
+		void DrainCandidates()
+		{
+			RefreshCandidateRetirements();
+			candidateLeaseBlocked_ = 0;
+			candidateLeaseDeadline_.reset();
+			// 每次泵最多消费各固定槽一次；持续输入不能饿死 Win32 消息。
+			for (std::size_t slot = 0; slot < RoleCount; ++slot)
+			{
+				if (candidateRetirements_[slot]) continue;
+				auto work = candidateMailbox_.Take(slot);
+				if (!work) continue;
+				Command command;
+				command.type = CommandType::ApplyCandidate;
+				command.role = work->candidate.value.targets[0].role;
+				command.candidate = *work;
+				command.deadline = work->candidate.submittedAt + std::chrono::milliseconds(1500);
+				const auto leaseMask = CommandPresentationMask(command);
+				auto lease = leaseMask ? AcquirePresentationLeaseMask(leaseMask) : SurfacePresentationLease{};
+				if (leaseMask && !lease && CandidateIdentityCurrent(*work) && !Detail::CommandExpired(command.deadline)
+					&& candidateMailbox_.Defer(*work))
+				{
+					if (!candidateLeaseDeadline_ || *command.deadline < *candidateLeaseDeadline_) candidateLeaseDeadline_ = command.deadline;
+					candidateLeaseBlocked_ |= std::uint64_t{1} << slot;
+					continue;
+				}
+				try { command.completion = std::make_shared<Detail::CommandCompletion>(command.deadline); }
+				catch (...)
+				{
+					// 接纳后尚未触及 HWND 的分配失败也必须有终态，不能逃出 owner 消息循环。
+					WindowCandidateReceipt rejected;
+					rejected.revision = work->revision;
+					rejected.frameSerial = work->candidate.value.frameSerial;
+					rejected.workspaceRevision = work->candidate.value.workspaceRevision;
+					rejected.phase = CommandPhase::Rejected;
+					rejected.count = work->candidate.value.count;
+					rejected.error = ERROR_NOT_ENOUGH_MEMORY;
+					for (std::size_t i = 0; i < rejected.count; ++i) rejected.actual[i] = ReadNativeSurface(work->candidate.value.targets[i].role);
+					(void)candidateMailbox_.Complete(*work, rejected);
+					continue;
+				}
+				if (work->candidate.measured)
+				{
+					candidatesExecuted_.fetch_add(1, std::memory_order_relaxed);
+					if (!candidateMailbox_.Current(*work)) candidatesStale_.fetch_add(1, std::memory_order_relaxed);
+				}
+				candidateRetirements_[slot].emplace(CandidateRetirement{ *work, command.completion, ERROR_SUCCESS, std::move(lease) });
+				SetLastError(ERROR_SUCCESS);
+				const bool success = ExecuteTracked(command, {}, static_cast<bool>(candidateRetirements_[slot]->lease));
+				candidateRetirements_[slot]->error = success ? ERROR_SUCCESS : (GetLastError() ? GetLastError() : ERROR_GEN_FAILURE);
+				if (command.completion->Phase() != Detail::CommandPhase::Executing)
+				{ PublishCandidateReceipt(*candidateRetirements_[slot]); candidateRetirements_[slot].reset(); }
+			}
+		}
+
+		void DrainNativeEvents()
+		{
+			const auto now = std::chrono::steady_clock::now();
+			const auto previousRetry = nativeEventRetryAt_;
+			nativeEventRetryAt_.reset();
+			const auto retryAt = [&](std::chrono::steady_clock::time_point value)
+			{ if (!nativeEventRetryAt_ || value < *nativeEventRetryAt_) nativeEventRetryAt_ = value; };
+			const auto drain = [&](NativeEventMailbox& mailbox, std::optional<NativeEventMailbox::Work>& pending, unsigned kind)
+			{
+				const auto latest = mailbox.Take();
+				if (latest) pending = latest;
+				if (!pending) return;
+				if (!mailbox.Current(pending->revision) || now >= pending->payload.deadline)
+				{ pending.reset(); return; }
+				if (!latest && previousRetry && now < *previousRetry) { retryAt(*previousRetry); return; }
+				Command command; command.type = kind == 1 ? CommandType::PromotePpt : CommandType::RefreshTopmost;
+				command.role = kind == 1 ? pending->payload.role : WindowRole::Bar;
+				command.identityRole = pending->payload.role; command.identityWindow = pending->payload.hwnd;
+				command.identityGeneration = pending->payload.generation;
+				command.deadline = pending->payload.deadline; command.nativeEventKind = kind;
+				command.nativeEventRevision = pending->revision; command.notifyTopmost = kind == 2;
+				try
+				{
+					command.completion = std::make_shared<Detail::CommandCompletion>(command.deadline);
+					if (ExecuteTracked(command)) { pending.reset(); return; }
+				}
+				catch (...) {} // 尚未接触 HWND 的资源失败保留原期限，不在 UI 线程重试窗口政策。
+				if (!mailbox.Current(pending->revision)) { pending.reset(); return; }
+				retryAt((std::min)(pending->payload.deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(250)));
+			};
+			drain(promoteEvents_, pendingPromote_, 1);
+			drain(refreshEvents_, pendingRefresh_, 2);
+		}
+
 		void DrainCommands(CommandQueue& queue)
 		{
+			if (&queue == &overlayCommands_) leaseDeferredDeadline_.reset();
 			std::deque<Command> commands;
 			{
 				std::scoped_lock lock(queue.mutex);
 				commands.swap(queue.commands);
 			}
-			for (auto& command : commands) (void)ExecuteTracked(command);
+			for (auto& command : commands)
+			{
+				const auto mask = CommandPresentationMask(command);
+				auto lease = mask ? AcquirePresentationLeaseMask(mask) : SurfacePresentationLease{};
+				if (mask && !lease && CommandCurrent(command))
+				{
+					if (command.deadline && (!leaseDeferredDeadline_ || *command.deadline < *leaseDeferredDeadline_)) leaseDeferredDeadline_ = command.deadline;
+					try { std::scoped_lock lock(queue.mutex); queue.commands.push_back(std::move(command)); }
+					catch (...) { if (command.completion) { command.completion->Cancel(); command.completion->Retired(); } }
+					continue;
+				}
+				(void)ExecuteTracked(command, std::move(lease));
+			}
 		}
 
 		static constexpr std::array GroupRoles{ WindowRole::MagnifierHost, WindowRole::Freeze,
@@ -2804,6 +3304,7 @@ namespace Inkeys::Window
 				bool visible = false;
 				bool iconic = false;
 				bool viewOnly = false;
+				bool restoreBounds = true, restoreVisibility = true;
 				std::shared_ptr<Detail::CanvasRegion> region;
 				HANDLE nonRude = nullptr;
 				std::optional<Detail::CanvasPolicyKey> applied;
@@ -2815,6 +3316,7 @@ namespace Inkeys::Window
 			bool group = false;
 			bool canvas = false;
 			bool workspace = false;
+			bool candidate = false;
 			std::optional<GroupSnapshot> zOrder;
 			bool minimized = false;
 			std::array<bool, RoleCount> visibleBeforeMinimize{};
@@ -2826,6 +3328,8 @@ namespace Inkeys::Window
 			std::function<bool()> restore;
 			std::shared_ptr<Detail::CommandCompletion> completion;
 			bool independentUi = false;
+			SurfacePresentationLease presentationLease;
+			bool workspace = false;
 		};
 
 		[[nodiscard]] static bool IsZOrderOnlyCommand(CommandType type) noexcept
@@ -2838,6 +3342,7 @@ namespace Inkeys::Window
 		{
 			CommandSnapshot snapshot;
 			snapshot.originalWindow = Handle(command.role);
+			snapshot.candidate = command.type == CommandType::ApplyCandidate;
 			snapshot.workspace = command.type == CommandType::PrepareWorkspacePolicy || command.type == CommandType::CompleteWorkspacePolicy;
 			if (snapshot.workspace)
 			{ snapshot.zOrder = CaptureGroupZOrder(); if (!snapshot.zOrder) throw std::runtime_error("workspace identity"); }
@@ -2867,6 +3372,12 @@ namespace Inkeys::Window
 				native.viewOnly = snapshot.workspace && !IsCanvas(role) && role != WindowRole::Freeze;
 				native.hwnd = hwnd;
 				native.generation = records_[RoleIndex(role)].generation.load(std::memory_order_acquire);
+				if (command.candidate)
+					for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
+					{
+						const auto& target = command.candidate->candidate.value.targets[i];
+						if (target.role == role) { native.restoreBounds = target.applyBounds; native.restoreVisibility = target.visibility != WindowCandidateVisibility::Preserve; }
+					}
 				native.owner = GetWindow(hwnd, GW_OWNER);
 				if (!GetWindowRect(hwnd, &native.bounds)) throw std::runtime_error("window snapshot");
 				native.style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -2881,7 +3392,16 @@ namespace Inkeys::Window
 				}
 				snapshot.windows.push_back(native);
 			};
-			if (snapshot.workspace)
+			if (command.candidate)
+			{
+				for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
+				{
+					const auto& target = command.candidate->candidate.value.targets[i];
+					capture(target.role);
+					if (target.promote || (target.visibility == WindowCandidateVisibility::Show && !IsWindowVisible(target.hwnd))) { snapshot.zOrder = CaptureGroupZOrder(); if (!snapshot.zOrder) throw std::runtime_error("candidate z-order"); }
+				}
+			}
+			else if (snapshot.workspace)
 			{
 				capture(WindowRole::Freeze); capture(WindowRole::DrawpadPresentation); capture(WindowRole::Drawpad);
 				if (command.type == CommandType::PrepareWorkspacePolicy && command.workspacePolicy.whiteboard
@@ -2985,6 +3505,36 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool RestoreCommandSnapshot(const CommandSnapshot& snapshot, CommandType type, WindowRole role)
 		{
+			if (snapshot.candidate)
+			{
+				bool restored = true;
+				for (const auto& native : snapshot.windows)
+				{
+					if (Handle(native.role) != native.hwnd || records_[RoleIndex(native.role)].generation.load(std::memory_order_acquire) != native.generation) continue;
+					if (!IsWindow(native.hwnd)) { restored = false; continue; }
+					// verify-only ULW 候选未写几何；撤回不能把新帧搬回旧坐标。
+					if (native.restoreBounds)
+					{
+						RECT actual{};
+						if (!GetWindowRect(native.hwnd, &actual)) restored = false;
+						else if (!EqualRect(&actual, &native.bounds))
+						{
+							presentationRevisions_[RoleIndex(native.role)].fetch_add(1, std::memory_order_acq_rel);
+							if (!SetWindowPos(native.hwnd, nullptr, native.bounds.left, native.bounds.top,
+								native.bounds.right-native.bounds.left, native.bounds.bottom-native.bounds.top, SWP_NOZORDER | SWP_NOACTIVATE)) restored = false;
+						}
+						if (!GetWindowRect(native.hwnd, &actual) || !EqualRect(&actual, &native.bounds)) restored = false;
+					}
+					if (native.restoreVisibility)
+					{
+						const bool visible = safetyOverrides_[RoleIndex(native.role)].Visible(native.generation, native.visible) && !shutdownRequested_.load(std::memory_order_acquire);
+						if ((IsWindowVisible(native.hwnd) != FALSE) != visible) ShowWindow(native.hwnd, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
+						if ((IsWindowVisible(native.hwnd) != FALSE) != visible) restored = false;
+					}
+				}
+				if (snapshot.zOrder && !RestoreZOrderSnapshot(snapshot, CommandType::PromotePpt)) restored = false;
+				return restored;
+			}
 			// 场景恢复只写捕获的背景/画布；不能按当前 role 把旧策略应用到新 pair。
 			if (snapshot.workspace) return RestoreWorkspaceSnapshot(snapshot);
 			// 纯层级命令从未写画布/几何/显隐，必须在公共 FRAMECHANGED/Show 路径之前分流。
@@ -3052,13 +3602,20 @@ namespace Inkeys::Window
 			auto& recovery = commandRecovery_[setting ? 1 : 0];
 			if (!recovery) return true;
 			bool restored = false;
+			SetLastError(ERROR_SUCCESS);
 			try { restored = recovery->restore(); } catch (...) {}
-			if (!restored) return false;
+			if (!restored)
+			{
+				if (recovery->completion) recovery->completion->RecordRollbackFailure(GetLastError() ? GetLastError() : ERROR_GEN_FAILURE);
+				return false;
+			}
+			PublishNativeSnapshots(setting); // 物理恢复快照先于失败终态，异步协调器随后才能恢复源场景。
 			if (recovery->completion)
 			{
 				if (!recovery->completion->Current()) recovery->completion->Retired();
 				else if (!recovery->completion->Commit(false)) recovery->completion->Retired();
 			}
+			if (recovery->workspace) workspaceProgressPending_ = true;
 			recovery.reset();
 			if (!setting) overlayRecoveryActive_.store(false, std::memory_order_release);
 			return true;
@@ -3074,6 +3631,15 @@ namespace Inkeys::Window
 
 		[[nodiscard]] static bool IsSafetyCleanup(const Command& command) noexcept
 		{
+			if (command.candidate)
+			{
+				for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
+				{
+					const auto& target = command.candidate->candidate.value.targets[i];
+					if (target.visibility != WindowCandidateVisibility::Hide || target.applyBounds || target.promote) return false;
+				}
+				return true;
+			}
 			return command.type == CommandType::HideAll || command.type == CommandType::Hide
 				|| (command.type == CommandType::SetDrawpadSurfaceVisibility && command.drawpadVisibility == DrawpadSurfaceVisibility::Hidden)
 				|| (command.type == CommandType::SetClickThrough && command.enabled);
@@ -3081,15 +3647,24 @@ namespace Inkeys::Window
 
 		void LatchSafetyCleanup(const Command& command) noexcept
 		{
-			if (!IsSetting(command.role)) ++overlaySafetyRevision_;
+			bool changed = false;
 			const auto latch = [&](WindowRole role, bool hidden, bool transparent)
 			{
 				auto& record = records_[RoleIndex(role)];
-				if (!record.hwnd.load(std::memory_order_acquire)) return;
-				safetyOverrides_[RoleIndex(role)].Latch(record.generation.load(std::memory_order_acquire), hidden, transparent);
+				const HWND hwnd = record.hwnd.load(std::memory_order_acquire);
+				if (!hwnd) return;
+				changed = safetyOverrides_[RoleIndex(role)].Latch(record.generation.load(std::memory_order_acquire), hidden, transparent) || changed;
+				// 重复且已满足的安全意图不改变工作区凭据；实际漂移仍建立新的补偿屏障。
+				changed = (hidden && IsWindowVisible(hwnd))
+					|| (transparent && !(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT)) || changed;
 				if (hidden && IsCanvas(role)) Detail::NoteCanvasRecoveryHidden(record.canvasPolicy.recoveryVisible, record.canvasPolicy.recoveryIconic);
 			};
-			if (command.type == CommandType::HideAll)
+			if (command.candidate)
+			{
+				for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
+					latch(command.candidate->candidate.value.targets[i].role, true, false);
+			}
+			else if (command.type == CommandType::HideAll)
 				for (std::size_t i = 0; i < RoleCount; ++i)
 				{
 					const auto role = static_cast<WindowRole>(i);
@@ -3101,6 +3676,7 @@ namespace Inkeys::Window
 				latch(WindowRole::DrawpadPresentation, true, false);
 			}
 			else latch(command.role, command.type == CommandType::Hide, command.type == CommandType::SetClickThrough);
+			if (changed && !IsSetting(command.role)) { ++overlaySafetyRevision_; workspaceNativeRevision_->fetch_add(1, std::memory_order_acq_rel); }
 			safetyCleanupRetry_[IsSetting(command.role) ? 1 : 0] = true;
 		}
 
@@ -3120,7 +3696,7 @@ namespace Inkeys::Window
 				if (safety.hidden)
 				{
 					if (IsSetting(role)) succeeded = HideSettingWindow(hwnd) && succeeded;
-					else { ShowWindow(hwnd, SW_HIDE); succeeded = !IsWindowVisible(hwnd) && succeeded; }
+					else { if (IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_HIDE); succeeded = !IsWindowVisible(hwnd) && succeeded; }
 				}
 				if (safety.clickThrough)
 				{
@@ -3155,6 +3731,14 @@ namespace Inkeys::Window
 						safetyOverrides_[RoleIndex(WindowRole::Drawpad)].AllowInput(command.workspacePrepared.primary.generation);
 				}
 			}
+			else if (command.candidate)
+			{
+				for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
+				{
+					const auto& target = command.candidate->candidate.value.targets[i];
+					if (target.visibility == WindowCandidateVisibility::Show) allowShow(target.role);
+				}
+			}
 			else if (command.type == CommandType::Show) allowShow(command.role);
 			else if (command.type == CommandType::SetDrawpadSurfaceVisibility)
 			{
@@ -3165,9 +3749,81 @@ namespace Inkeys::Window
 				safetyOverrides_[RoleIndex(command.role)].AllowInput(records_[RoleIndex(command.role)].generation.load(std::memory_order_acquire));
 		}
 
-		[[nodiscard]] bool ExecuteTracked(const Command& command)
+		[[nodiscard]] bool ExecuteTracked(const Command& command, SurfacePresentationLease lease = {}, bool externalLeaseHeld = false)
+		{
+			// 旧命令连缓存失效权也没有；先退休自身，不能伤及后来已提交的窗口凭据。
+			if (!CommandCurrent(command))
+			{
+				if (command.completion) { command.completion->Cancel(); command.completion->Retired(); }
+				if (command.workspaceRequest)
+				{
+					workspaceProgressPending_ = true;
+					if (!commandApplying_[0]) DrainWorkspaceProgress();
+				}
+				SetLastError(Detail::CommandExpired(command.deadline) ? ERROR_TIMEOUT : ERROR_CANCELLED);
+				return false;
+			}
+			const auto leaseMask = CommandPresentationMask(command);
+			if (leaseMask && !lease && !externalLeaseHeld && CommandCurrent(command))
+			{
+				lease = AcquirePresentationLeaseMask(leaseMask);
+				if (!lease)
+				{
+					if (command.completion && command.completion->Begin()) (void)command.completion->Commit(false);
+					return false; // 同 owner 重入不能等待 UI 的 ULW 租约。
+				}
+			}
+			if (!command.candidate && command.type != CommandType::RefreshTopmost && command.type != CommandType::PromotePpt
+				&& command.type != CommandType::SetOverlayTopmost && command.type != CommandType::SetOverlayFullscreen
+				&& command.type != CommandType::BindMessages && command.type != CommandType::UnbindMessages
+				&& command.type != CommandType::CancelPointerCapture)
+			{
+				const bool group = command.type == CommandType::HideAll || command.type == CommandType::PrepareWorkspacePolicy
+					|| command.type == CommandType::CompleteWorkspacePolicy || command.type == CommandType::SetWhiteboardWindowMode
+					|| command.type == CommandType::MinimizeWhiteboardGroup || command.type == CommandType::RestoreWhiteboardGroup
+					|| command.type == CommandType::SetDrawpadSurfaceVisibility || IsCanvas(command.role)
+					|| command.role == WindowRole::Freeze || command.role == WindowRole::MagnifierHost;
+				candidateMailbox_.InvalidateRoles(group ? (std::uint64_t{1} << RoleCount) - 1
+					: std::uint64_t{1} << RoleIndex(command.role));
+			}
+			if (TouchesWorkspaceTruth(command)) workspaceNativeRevision_->fetch_add(1, std::memory_order_acq_rel);
+			if (command.candidate) PublishCandidateSnapshots(command.candidate->candidate.value, true);
+			else InvalidateNativeSnapshots(IsSetting(command.role));
+			bool snapshotPublished = false;
+			const bool result = ExecuteTrackedNative(command, snapshotPublished, std::move(lease));
+			// 失败可能在早先读回后又进行了回滚；成功路径已在终态唤醒前发布，无须重复扫描。
+			if (!result || !snapshotPublished)
+			{
+				if (command.candidate) PublishCandidateSnapshots(command.candidate->candidate.value);
+				else PublishNativeSnapshots(IsSetting(command.role));
+			}
+			if (command.workspaceRequest && command.completion->Phase() != Detail::CommandPhase::Executing
+				&& command.completion->Phase() != Detail::CommandPhase::Queued) workspaceProgressPending_ = true;
+			if (!IsSetting(command.role)) DrainWorkspaceProgress();
+			if (result && command.notifyTopmost) NotifyTopmostRefresh();
+			return result;
+		}
+
+		[[nodiscard]] bool ExecuteTrackedNative(const Command& command, bool& snapshotPublished, SurfacePresentationLease lease)
 		{
 			const bool setting = IsSetting(command.role);
+			const auto commitResult = [&](bool result)
+			{
+				// 实际快照先于完成 phase/条件变量唤醒，消费者不能读到终态配旧 native 状态。
+				if (command.candidate) PublishCandidateSnapshots(command.candidate->candidate.value);
+				else PublishNativeSnapshots(setting);
+				snapshotPublished = true;
+				if (result && command.workspaceRequest)
+				{
+					command.workspaceRequest->prepared = command.workspaceResult ? *command.workspaceResult : std::optional<WorkspaceWindowPrepared>(command.workspacePrepared);
+					command.workspaceRequest->nativeRevision = workspaceNativeRevision_->load(std::memory_order_acquire);
+				}
+				if (!CommandCurrent(command)) return false;
+				if (result && command.candidate)
+					return candidateMailbox_.TryCommit(*command.candidate, [&]
+					{ return !command.completion || command.completion->Commit(true); });
+				return !command.completion || command.completion->Commit(result);
+			};
 			bool& applying = commandApplying_[setting ? 1 : 0];
 			if (applying)
 			{
@@ -3180,7 +3836,7 @@ namespace Inkeys::Window
 				if (command.type == CommandType::MinimizeWhiteboardGroup && WhiteboardWindowGroupMinimized()
 					&& IsIconic(Handle(WindowRole::Freeze)))
 				{
-					if (command.completion && command.completion->Begin()) (void)command.completion->Commit(true);
+					if (command.completion && command.completion->Begin()) (void)commitResult(true);
 					return true;
 				}
 				if (command.completion) { command.completion->Cancel(); command.completion->Retired(); }
@@ -3199,7 +3855,7 @@ namespace Inkeys::Window
 			if (independentUi)
 			{
 				bool result = false; try { result = CommandCurrent(command) && Execute(command); } catch (...) {}
-				if (command.completion && !(CommandCurrent(command) && command.completion->Commit(result)))
+				if (command.completion && !commitResult(result))
 				{ command.completion->Cancel(); command.completion->Retired(); }
 				return result && CommandCurrent(command);
 			}
@@ -3220,7 +3876,7 @@ namespace Inkeys::Window
 				try { result = Execute(command); result = RetrySafetyCleanup(setting) && result; } catch (...) {}
 				if (command.completion)
 				{
-					if (CommandCurrent(command) && command.completion->Commit(result)) return result;
+					if (commitResult(result)) return result;
 					command.completion->Cancel();
 					command.completion->Retired();
 				}
@@ -3238,20 +3894,22 @@ namespace Inkeys::Window
 				prepared = Recovery{
 					[this, snapshot = CaptureCommandSnapshot(command), type = command.type, role = command.role]
 					{ return RestoreCommandSnapshot(snapshot, type, role); }, command.completion,
-					command.type == CommandType::PrepareWorkspacePolicy || command.type == CommandType::CompleteWorkspacePolicy || IsZOrderOnlyCommand(command.type) };
+					command.type == CommandType::PrepareWorkspacePolicy || command.type == CommandType::CompleteWorkspacePolicy || IsZOrderOnlyCommand(command.type), std::move(lease), command.workspaceRequest != nullptr };
+				SetLastError(ERROR_SUCCESS);
 				result = Execute(command);
+				if (!result && command.completion) command.completion->RecordNativeFailure(GetLastError() ? GetLastError() : ERROR_GEN_FAILURE);
 			}
-			catch (...) {}
+			catch (...) { if (command.completion) command.completion->RecordNativeFailure(ERROR_NOT_ENOUGH_MEMORY); }
 			if (command.type == CommandType::CompleteWorkspacePolicy && !WorkspacePreparedMatches(command.workspacePolicy, command.workspacePrepared)
 				&& command.completion) command.completion->Cancel();
 			const bool current = CommandCurrent(command);
-			if (result && current && (!command.completion || command.completion->Commit(true)))
+			if (result && current && commitResult(true))
 			{
 				ClearSafetyAfterCommit(command);
 				return true;
 			}
 			// 原生写入可能在超时/重入前已发生。先撤回；失败则由 owner 持有恢复责任并拒绝新事务越过。
-			if (!current && command.completion) command.completion->Cancel();
+			if (!current && command.completion) { command.completion->RecordNativeFailure(ERROR_CANCELLED); command.completion->Cancel(); }
 			if (prepared)
 			{
 				commandRecovery_[setting ? 1 : 0] = std::move(prepared);
@@ -3265,6 +3923,75 @@ namespace Inkeys::Window
 			}
 
 			return false;
+		}
+
+		[[nodiscard]] bool ApplyCandidate(const Command& command)
+		{
+			if (!command.candidate) return false;
+			const auto& work = *command.candidate;
+			const auto& candidate = work.candidate.value;
+			for (std::size_t i = 0; i < candidate.count; ++i)
+			{
+				const auto& target = candidate.targets[i];
+				if (target.requirePresentationMatch && presentationRevisions_[RoleIndex(target.role)].load(std::memory_order_acquire) != target.presentationRevision)
+				{ SetLastError(ERROR_CANCELLED); return false; }
+			}
+			const auto identityMatches = [&](const WindowCandidateTarget& target)
+			{
+				return CommandCurrent(command) && Handle(target.role) == target.hwnd
+					&& records_[RoleIndex(target.role)].generation.load(std::memory_order_acquire) == target.generation
+					&& IsWindow(target.hwnd);
+			};
+			for (std::size_t i = 0; i < candidate.count; ++i)
+			{
+				const auto& target = candidate.targets[i];
+				if (!identityMatches(target)) { SetLastError(ERROR_CANCELLED); return false; }
+				if (WhiteboardWindowGroupMinimized() && target.role == WindowRole::Freeze
+					&& (target.applyBounds || target.visibility == WindowCandidateVisibility::Show)) return false;
+				if (shutdownRequested_.load(std::memory_order_acquire)
+					&& (target.applyBounds || target.promote || target.visibility != WindowCandidateVisibility::Hide)) return false;
+				Command operation;
+				operation.role = target.role;
+				operation.stillDesired = [&] { return identityMatches(target); };
+				RECT before{};
+				if (!GetWindowRect(target.hwnd, &before)) return false;
+				if (target.applyBounds && !EqualRect(&before, &target.bounds))
+				{
+					operation.type = CommandType::SetBounds;
+					operation.bounds = target.bounds;
+					if (!Execute(operation)) return false;
+					if (work.candidate.measured) candidateBoundsChanges_.fetch_add(1, std::memory_order_relaxed);
+				}
+				if (!identityMatches(target)) return false;
+				if (target.visibility != WindowCandidateVisibility::Preserve)
+				{
+					const bool visible = target.visibility == WindowCandidateVisibility::Show;
+					if ((IsWindowVisible(target.hwnd) != FALSE) != visible)
+					{
+						operation.type = visible ? CommandType::Show : CommandType::Hide;
+						if (!Execute(operation)) return false;
+						if (work.candidate.measured) candidateVisibilityChanges_.fetch_add(1, std::memory_order_relaxed);
+					}
+				}
+				if (target.promote)
+				{
+					if (!identityMatches(target) || !IsPpt(target.role) || !RefreshOverlayGroup(&command, target.hwnd)) return false;
+					if (work.candidate.measured) candidatePromotes_.fetch_add(1, std::memory_order_relaxed);
+				}
+			}
+			// pair 两个成员全部真实读回后才确认；半完成留给既有恢复事务撤回。
+			for (std::size_t i = 0; i < candidate.count; ++i)
+			{
+				const auto& target = candidate.targets[i];
+				if (!identityMatches(target)) return false;
+				const auto actual = ReadNativeSurface(target.role);
+				if (!actual.known || ((target.applyBounds || target.verifyBounds) && !EqualRect(&actual.bounds, &target.bounds))
+					|| (target.visibility != WindowCandidateVisibility::Preserve
+						&& actual.visible != (target.visibility == WindowCandidateVisibility::Show))
+					|| (target.visibility == WindowCandidateVisibility::Show && actual.iconic))
+				{ SetLastError(ERROR_GEN_FAILURE); return false; }
+			}
+			return CommandCurrent(command);
 		}
 
 		[[nodiscard]] bool Execute(const Command& command)
@@ -3288,6 +4015,7 @@ namespace Inkeys::Window
 					return false;
 			}
 			// 这些事务可能需要处理一组 HWND，不能被单角色 HWND 前置检查短路。
+			if (command.type == CommandType::ApplyCandidate) return ApplyCandidate(command);
 			if (command.type == CommandType::PrepareWorkspacePolicy) return ApplyPrepareWorkspacePolicy(command);
 			if (command.type == CommandType::CompleteWorkspacePolicy) return ApplyCompleteWorkspacePolicy(command);
 			if (command.type == CommandType::SetWhiteboardWindowMode)
@@ -3385,10 +4113,13 @@ namespace Inkeys::Window
 				}
 				else
 				{
-					ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-					if (IsPpt(command.role))
+					if (!IsWindowVisible(hwnd))
 					{
-						succeeded = RefreshOverlayGroup(&command, hwnd);
+						ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+						// 首次显示只维护目标与 Bar 的相对位置；普通 Show 不是整组 promote。
+						const HWND bar = Handle(WindowRole::Bar);
+						if (IsPpt(command.role) && bar && IsWindow(bar))
+							succeeded = SetWindowPos(hwnd, bar, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
 						if (!succeeded) error = GetLastError();
 					}
 
@@ -3423,7 +4154,7 @@ namespace Inkeys::Window
 					ReportCommandResult(command, hidden, error, hwnd);
 					return hidden;
 				}
-				ShowWindow(hwnd, SW_HIDE);
+				if (IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_HIDE);
 				if (command.role == WindowRole::Freeze || command.role == WindowRole::Drawpad)
 					ApplyOverlayFullscreen(OverlayRoot());
 				if (IsWindowVisible(hwnd))
@@ -3452,7 +4183,11 @@ namespace Inkeys::Window
 			case CommandType::SetBounds:
 			{
 				if (WhiteboardWindowGroupMinimized() && command.role == WindowRole::Freeze) return false;
+				RECT before{};
+				if (command.role != WindowRole::Drawpad && GetWindowRect(hwnd, &before) && EqualRect(&before, &command.bounds)) return true;
 				SetLastError(ERROR_SUCCESS);
+				if (IsUiPopup(command.role) || command.role == WindowRole::Freeze)
+					presentationRevisions_[RoleIndex(command.role)].fetch_add(1, std::memory_order_acq_rel);
 				const bool succeeded = command.role == WindowRole::Drawpad
 					? ApplyDrawpadBounds(command.bounds)
 					: SetWindowPos(hwnd, nullptr, command.bounds.left,
@@ -3968,6 +4703,28 @@ namespace Inkeys::Window
 			return true;
 		}
 
+		NativeEventMailbox promoteEvents_, refreshEvents_;
+		std::optional<NativeEventMailbox::Work> pendingPromote_, pendingRefresh_;
+		Detail::CommandDeadline nativeEventRetryAt_;
+		std::shared_ptr<std::atomic<std::uint64_t>> workspaceNativeRevision_ = std::make_shared<std::atomic<std::uint64_t>>(1);
+		bool workspaceProgressPending_ = false;
+		std::mutex workspaceObserverMutex_;
+		std::condition_variable workspaceObserverCondition_;
+		std::function<void()> workspaceProgressObserver_;
+		std::size_t workspaceObserverActiveCalls_ = 0;
+		static thread_local bool workspaceObserverExecuting_;
+		std::atomic<std::uint64_t> presentationLeaseBits_ = 0;
+		std::array<std::atomic<std::uint64_t>, RoleCount> presentationRevisions_{};
+		std::uint64_t candidateLeaseBlocked_ = 0;
+		Detail::CommandDeadline leaseDeferredDeadline_, candidateLeaseDeadline_;
+		CandidateMailbox candidateMailbox_;
+		std::array<std::optional<CandidateRetirement>, RoleCount> candidateRetirements_{};
+		mutable std::mutex surfaceSnapshotsMutex_;
+		std::array<WindowSurfaceState, RoleCount> surfaceSnapshots_{};
+		std::atomic_bool candidateDiagnosticsEnabled_ = false;
+		std::atomic<std::uint64_t> candidatesPublished_ = 0, candidatesCoalesced_ = 0, candidatesStale_ = 0, candidatesExecuted_ = 0;
+		std::atomic<std::uint64_t> candidateBoundsChanges_ = 0, candidateVisibilityChanges_ = 0, candidatePromotes_ = 0;
+		std::atomic<std::size_t> candidateMaxQueueDepth_ = 0;
 		std::size_t messageCapacity_ = 63;
 		std::array<std::optional<WindowSpec>, RoleCount> specs_{};
 		std::array<std::atomic_bool, RoleCount> configured_{};
@@ -4012,9 +4769,42 @@ namespace Inkeys::Window
 			std::array<bool, RoleCount> whiteboardVisibleBeforeMinimize_{};
 		};
 
+	thread_local bool Service::Impl::workspaceObserverExecuting_ = false;
 	thread_local bool Service::Impl::topmostObserverExecuting_ = false;
 	thread_local const Service::Impl* Service::Impl::receiptOwner_ = nullptr;
 	thread_local std::shared_ptr<Detail::CommandCompletion> Service::Impl::lastReceipt_;
+
+	SurfacePresentationLease::SurfacePresentationLease(SurfacePresentationLease&& other) noexcept
+		: active_(std::exchange(other.active_, nullptr)), revisions_(std::exchange(other.revisions_, nullptr)),
+		mask_(std::exchange(other.mask_, 0)), wake_(std::exchange(other.wake_, nullptr)) {}
+	SurfacePresentationLease& SurfacePresentationLease::operator=(SurfacePresentationLease&& other) noexcept
+	{
+		if (this != &other)
+		{
+			Reset(); active_ = std::exchange(other.active_, nullptr); revisions_ = std::exchange(other.revisions_, nullptr);
+			mask_ = std::exchange(other.mask_, 0); wake_ = std::exchange(other.wake_, nullptr);
+		}
+		return *this;
+	}
+	void SurfacePresentationLease::Reset() noexcept
+	{
+		if (mask_ && active_)
+		{
+			Detail::ReleasePresentationBits(*active_, mask_);
+			if (wake_) SetEvent(wake_);
+		}
+		active_ = nullptr; revisions_ = nullptr; mask_ = 0; wake_ = nullptr;
+	}
+	std::uint64_t SurfacePresentationLease::Revision(WindowRole role) const noexcept
+	{
+		return IsValidRole(role) && (mask_ & (std::uint64_t{1} << RoleIndex(role))) && revisions_
+			? revisions_[RoleIndex(role)].load(std::memory_order_acquire) : 0;
+	}
+	std::uint64_t SurfacePresentationLease::PixelsChanged(WindowRole role) noexcept
+	{
+		return IsValidRole(role) && (mask_ & (std::uint64_t{1} << RoleIndex(role))) && revisions_
+			? revisions_[RoleIndex(role)].fetch_add(1, std::memory_order_acq_rel) + 1 : 0;
+	}
 
 	SIZE QuerySettingFrameThickness(UINT dpi) noexcept
 	{
@@ -4162,6 +4952,22 @@ namespace Inkeys::Window
 			std::move(stillDesired));
 	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds, std::function<bool()> stillDesired) { return impl_->SetBounds(role, bounds, std::move(stillDesired)); }
+	SurfacePresentationLease Service::TryAcquirePresentationLease(WindowRole first, WindowRole second) noexcept { return impl_->TryAcquirePresentationLease(first, second); }
+	WorkspaceWindowReceipt Service::RequestPrepareWorkspaceWindowPolicy(WorkspaceWindowPolicy policy, std::function<bool()> guard) { return impl_->RequestPrepareWorkspaceWindowPolicy(policy, std::move(guard)); }
+	WorkspaceWindowReceipt Service::RequestCompleteWorkspaceWindowPolicy(WorkspaceWindowPolicy policy, const WorkspaceWindowPrepared& prepared, std::function<bool()> guard) { return impl_->RequestCompleteWorkspaceWindowPolicy(policy, prepared, std::move(guard)); }
+	void Service::SetWorkspaceProgressObserver(std::function<void()> callback) { impl_->SetWorkspaceProgressObserver(std::move(callback)); }
+	bool Service::RequestPromotePptWindow(WindowRole role) { return impl_->RequestPromotePptWindow(role); }
+	bool Service::RequestTopmostRefreshAsync() { return impl_->RequestTopmostRefreshAsync(); }
+	std::uint64_t Service::PublishCandidate(const WindowCandidate& candidate) { return impl_->PublishCandidate(candidate); }
+	std::optional<WindowCandidateReceipt> Service::TryReadCandidateReceipt(WindowRole role, std::uint64_t revision) const { return impl_->TryReadCandidateReceipt(role, revision); }
+	void Service::RequestCancelCandidatePreservingReceipt(WindowRole role, std::uint64_t revision) noexcept { impl_->RequestCancelCandidatePreservingReceipt(role, revision); }
+	std::optional<WindowCandidateReceipt> Service::TryReadCandidateRetirement(WindowRole role, std::uint64_t revision) const { return impl_->TryReadCandidateRetirement(role, revision); }
+	bool Service::CandidateCurrent(WindowRole role, std::uint64_t revision) const noexcept { return impl_->CandidateCurrent(role, revision); }
+	void Service::CancelCandidate(WindowRole role, std::uint64_t revision) noexcept { impl_->CancelCandidate(role, revision); }
+	std::optional<WindowSurfaceState> Service::SurfaceSnapshot(WindowRole role) const { return impl_->SurfaceSnapshot(role); }
+	void Service::SetCandidateDiagnosticsEnabled(bool enabled) noexcept { impl_->SetCandidateDiagnosticsEnabled(enabled); }
+	WindowCandidateDiagnostics Service::CandidateDiagnostics() const noexcept { return impl_->CandidateDiagnostics(); }
+
 	bool Service::SetClickThrough(WindowRole role, bool enabled,
 		std::function<bool()> stillDesired)
 	{ return impl_->SetClickThrough(role, enabled, std::move(stillDesired)); }

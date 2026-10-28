@@ -143,6 +143,11 @@ export namespace Inkeys::UI::Bar
 		void HandleFrameEndDrawResult(HRESULT);
 		// 输入仅查询上次成功提交的快照，候选帧失败不能提前移动命中区域。
 		void CommitPresented(bool inputEnabled = true) noexcept;
+		// 固定候选快照只保留最新帧；异步原生回执不能确认后来推进的命中或清除新 damage。
+		[[nodiscard]] std::uint64_t CapturePresentationCandidate() noexcept;
+		[[nodiscard]] bool IsPresentationCandidateCurrent(std::uint64_t serial) const noexcept;
+		[[nodiscard]] bool CommitPresentationCandidate(std::uint64_t serial,
+			bool inputEnabled = true) noexcept;
 		[[nodiscard]] std::uint64_t PresentedGeneration() const noexcept;
 		[[nodiscard]] std::optional<POINT> PresentationToLogical(POINT) const noexcept;
 		[[nodiscard]] bool HitTestBackground(POINT) const noexcept;
