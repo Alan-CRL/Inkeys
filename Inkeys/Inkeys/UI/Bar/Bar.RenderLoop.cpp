@@ -7741,53 +7741,28 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		const POINT frameAnchor{
 			static_cast<LONG>(lround(static_cast<double>(mainButton->x.val) * frameZoom)),
 			static_cast<LONG>(lround(static_cast<double>(mainButton->y.val) * frameZoom)) };
-		auto AnimationAbsMaximum = [](const BarUiValueClass& value)
+		auto ValueRange = [](const auto& value)
 			{
-				double maximum = max({
-					abs(static_cast<double>(value.val)),
-					abs(static_cast<double>(value.startV)),
-					abs(static_cast<double>(value.tar)) });
-				if (value.hasMiddleV)
-					maximum = max(maximum,
-						abs(static_cast<double>(value.middleV)));
-				if (BarUiIsBackCurve(value.activeCurve)
-					|| (value.hasMiddleV
-						&& BarUiIsBackCurve(value.activeMiddleCurve)))
-					maximum *= 1.06;
-				return maximum;
+				const auto first = BarUiGetCurveExtrema(value.activeCurve);
+				const auto second = BarUiGetCurveExtrema(value.activeMiddleCurve);
+				return ResolveBarWindowAnimationRange(
+					value.val, value.startV, value.tar,
+					value.hasMiddleV, value.middleV,
+					{ first.minimum, first.maximum },
+					{ second.minimum, second.maximum });
 			};
-		const double mainBarMaximumWidth = max(80.0,
-			AnimationAbsMaximum(mainBar->w));
-		const auto moreSnapshotForCapacity =
-			state.barButtonSet.GetMoreButtonSnapshot();
-		const double moreItemCount = static_cast<double>(
-			moreSnapshotForCapacity.explicitMore.size()
-			+ moreSnapshotForCapacity.forcedOverflow.size());
-		const double moreMaximumHeight = min(
-			static_cast<double>(state.barWindow.h) / max(0.000001, frameZoom),
-			BarMorePanelPadding * 2.0
-				+ max(1.0, moreItemCount) * 75.0
-				+ BarMorePanelSeparatorGap);
-		const double horizontalCapacityDip = mainBarMaximumWidth
-			+ state.mainButtonBaseSize / 2.0 + 10.0
-			+ max({ BarDrawAttributeExpandedWidth / 2.0,
-				BarGeometryAttributeExpandedWidth / 2.0, 207.5 }) + 24.0;
-		const double verticalCapacityDip = max(
-			state.mainButtonBaseSize / 2.0 + 10.0
-				+ BarDrawAttributeExpandedHeight
-				+ BarColorPickerPanelGap + BarColorPickerPanelHeight + 24.0,
-			state.mainButtonBaseSize / 2.0 + BarMorePanelAnchorGap
-				+ moreMaximumHeight + 24.0);
-		const double capacityPlanningZoom = max(frameZoom,
-			state.displayCapacityZoom);
-		SIZE requestedCapacity{
-			max<LONG>(1, static_cast<LONG>(ceil(horizontalCapacityDip
-				* capacityPlanningZoom)) * 2),
-			max<LONG>(1, static_cast<LONG>(ceil(verticalCapacityDip
-				* capacityPlanningZoom)) * 2) };
-		const bool capacityEpochChanged = !fixedSurfaceGeometry && (!state.capacityOriginInitialized
-			|| requestedCapacity.cx > state.capacitySize.cx
-			|| requestedCapacity.cy > state.capacitySize.cy);
+		// 横向保留原有安全预约；仅对完整曲线极值加固定裕量，不重复放大回弹current。
+		const auto mainBarWidthRange = ValueRange(mainBar->w);
+		double mainBarMaximumWidth = max(80.0, max(abs(mainBarWidthRange.minimum), abs(mainBarWidthRange.maximum)));
+		if (BarUiIsBackCurve(mainBar->w.activeCurve) || (mainBar->w.hasMiddleV && BarUiIsBackCurve(mainBar->w.activeMiddleCurve)))
+			mainBarMaximumWidth *= 1.06;
+		const double horizontalCapacityDip = mainBarMaximumWidth + state.mainButtonBaseSize / 2.0 + 10.0
+			+ max({ BarDrawAttributeExpandedWidth / 2.0, BarGeometryAttributeExpandedWidth / 2.0, 207.5 }) + 24.0;
+		const LONG requestedWidth = max<LONG>(1, static_cast<LONG>(ceil(horizontalCapacityDip
+			* max(frameZoom, state.displayCapacityZoom))) * 2);
+		// 纵向按实际可见/在途内容预约，隐藏属性和More不再无条件占满整屏高度。
+		const bool capacityEpochChanged = !fixedSurfaceGeometry
+			&& (!state.capacityOriginInitialized || requestedWidth > state.capacitySize.cx);
 		if (fixedReleaseGeometry)
 		{
 			state.capacitySize = state.releasedWindowSurface.CapacitySize();
@@ -7801,13 +7776,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		}
 		else
 		{
-			state.capacitySize.cx = max(state.capacitySize.cx, requestedCapacity.cx);
-			state.capacitySize.cy = max(state.capacitySize.cy, requestedCapacity.cy);
+			state.capacitySize.cx = max(state.capacitySize.cx, requestedWidth);
+			state.capacitySize.cy = max<LONG>(1, state.capacitySize.cy);
 			state.capacityOrigin = { frameAnchor.x - state.capacitySize.cx / 2,
 				frameAnchor.y - state.capacitySize.cy / 2 };
 		}
 		state.capacityOriginInitialized = true;
-		state.capacityZoom = capacityPlanningZoom;
+		state.capacityZoom = max(frameZoom, state.displayCapacityZoom);
 
 		// BeginDraw 前计算三个根控件的保守边界，用同一 dirty rect 约束清除、D2D 和 ULW。
 		mainButton->UpInh(BarUiInheritClass(
@@ -8044,16 +8019,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				dockModeReservationTextSize.width,
 				dockModeReservationTextSize.height,
 				dockVisibleMainBarTopDip);
-		auto ValueRange = [](const auto& value)
-			{
-				const auto first = BarUiGetCurveExtrema(value.activeCurve);
-				const auto second = BarUiGetCurveExtrema(value.activeMiddleCurve);
-				return ResolveBarWindowAnimationRange(
-					value.val, value.startV, value.tar,
-					value.hasMiddleV, value.middleV,
-					{ first.minimum, first.maximum },
-					{ second.minimum, second.maximum });
-			};
 		const double maximumIndicatorScale = max(
 			frame.bottomDockDragActive && !fixedDragGeometry
 				? BarUiGetCurveExtrema(BarUiCurveEnum::EaseOutBack).maximum : 0.0,
@@ -8128,7 +8093,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		// 存储脏区允许越屏；UI 定位仍使用真实 barWindow/工作区，二者不能混用。
 		state.dirtyRegionTracker.BeginFrame(windowBounds);
 		if ((state.presentDecision.NeedsFullDirty() && !alphaOnlyDemand)
-			|| state.unclassifiedDamagePending)
+			|| state.unclassifiedDamagePending || state.bottomDockRootLayoutChanged)
 			state.dirtyRegionTracker.ForceFullDamage();
 		if (state.bottomDockIndicatorRevealDamagePending)
 		{
@@ -9025,7 +8990,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| frame.bottomDockRecoveryActive
 			|| state.bottomDockVisualActive;
 		const bool reserveAnimationEnvelope =
-			state.mainBarTimeline.IsActive()
+			state.displayTransitionActive || state.taskbarDockAnimationActive || state.whiteboardDockAnimationActive
+			|| state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
 			|| owner_.eraserAttribute.Changed()
@@ -9057,6 +9023,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| reserveBottomDockVisualEnvelope;
 		constexpr LONG viewportPadding = 2;
 		RECT predictedEnvelope{};
+		POINT minimumCapacityAnchor = frameAnchor, maximumCapacityAnchor = frameAnchor;
 		if (reserveAnimationEnvelope)
 		{
 			// 只传播实际动画段的 Back 极值，禁止把绝对坐标或整张 capacity 放大。
@@ -9175,6 +9142,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						centeredRootRange.minimumDip,
 						centeredRootRange.maximumDip };
 			}
+			// Y由displayCenterY逐帧SetDirect派生，预约其完整已知段而不是当前采样。
+			const auto displayAnchorY = ValueRange(state.displayCenterY);
+			minimumCapacityAnchor.y = static_cast<LONG>(floor(min(mainButtonY.minimum * frameZoom, displayAnchorY.minimum)));
+			maximumCapacityAnchor.y = static_cast<LONG>(ceil(max(mainButtonY.maximum * frameZoom, displayAnchorY.maximum)));
 			AddRoot(mainButtonX, mainButtonY, mainButton);
 			const auto mainBarX = AddRanges(mainButtonX, mainBarOffsetX);
 			const auto mainBarY = AddRanges(mainButtonY, ValueRange(mainBar->y));
@@ -9495,8 +9466,27 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		{
 			RECT storageBounds = layoutBounds;
 			if (frame.bottomDockDragActive) UnionBarWindowRect(storageBounds, candidateViewport);
+			// 当前/目标几何由同一份完整包络给出，不为从未打开的隐藏面板预约巨幅GDI位图。
+			// 按独立的所需尺寸预约显示缩放终点，不能再次放大已经保留的历史容量。
+			auto requiredCapacity = ResolveBarWindowCapacity(
+				SIZE{ 1, 1 }, frameAnchor, capacityContentBounds, storageBounds, 2, candidateViewport);
+			for (const POINT anchor : { minimumCapacityAnchor, maximumCapacityAnchor })
+			{
+				const auto sweptCapacity = ResolveBarWindowCapacity(
+					SIZE{ 1, 1 }, anchor, capacityContentBounds, storageBounds, 2, candidateViewport);
+				requiredCapacity.size.cx = max(requiredCapacity.size.cx, sweptCapacity.size.cx);
+				requiredCapacity.size.cy = max(requiredCapacity.size.cy, sweptCapacity.size.cy);
+			}
+			const double capacityZoomRatio = max(1.0, state.capacityZoom / max(0.000001, frameZoom));
+			const LONG plannedHeight = static_cast<LONG>(ceil(requiredCapacity.size.cy * capacityZoomRatio));
+			// 仅真实突破时留两侧像素裕量，避免DPI/光影边界取整造成2px二次创建；不逐帧叠加。
+			const LONG paddedHeight = plannedHeight <= (numeric_limits<LONG>::max)() - viewportPadding * 2
+				? plannedHeight + viewportPadding * 2 : plannedHeight;
+			const SIZE reservedSize{
+				max(state.capacitySize.cx, static_cast<LONG>(ceil(requiredCapacity.size.cx * capacityZoomRatio))),
+				plannedHeight > state.capacitySize.cy ? paddedHeight : state.capacitySize.cy };
 			const auto capacityDecision = ResolveBarWindowCapacity(
-				state.capacitySize, frameAnchor, capacityContentBounds,
+				reservedSize, frameAnchor, capacityContentBounds,
 				storageBounds, 2, candidateViewport);
 			state.capacityOrigin = capacityDecision.origin;
 			state.capacitySize = capacityDecision.size;
@@ -9559,7 +9549,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				diagnostics->failureRecoveryReset = true;
 			state.presentDecision.ResetFailureRecovery();
 			state.presentDecision.RequireFullDirtyRetry();
-			state.dirtyRegionTracker.ForceFullDamage();
 		}
 		ID2D1DeviceContext* barDeviceContext = state.spec.GetDeviceContext();
 		ID2D1GdiInteropRenderTarget* barGdiInterop =
@@ -9651,7 +9640,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		if (mappingFullWindowReplacement)
 		{
 			// 映射 tuple 变化会重新解释整张 HWND，本帧必须清除并替换完整候选范围。
-			state.dirtyRegionTracker.ForceFullDamage();
+			// 只扩大清绘范围；观察结束后不能丢掉未变对象的成功边界。
 			businessDirty = candidateViewport;
 		}
 		// 调试覆盖层在业务脏区解析后加入，避免红框反向污染业务 damage。

@@ -1,0 +1,14 @@
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/ui3-contract-reading-map.md", "reason": "两份大规范注入会截断，必须按章节从磁盘补读，不能仅依赖hook前缀"}
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "UI3唯一产品入口、层边界及最小验证要求"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "公共按钮/统一状态、串行调度、脏区成功事务、动画包络/批次和连续字体合同；注入会截断，须按本任务ui3-contract-reading-map补读"}
+{"file": ".trellis/spec/native-desktop/ui3-render-diagnostics.md", "reason": "raw详细计时门、真实commit、默认关闭、基准与预算口径"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "首背景/窗口回执、三态交接、分页与基线恢复"}
+{"file": ".trellis/spec/native-desktop/canvas-freeze-boundaries.md", "reason": "输入fence、失败补偿、迟到完成和退出责任；注入会截断，须按本任务ui3-contract-reading-map补读"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PPT可信身份、UI-ready、后台事实和交互门禁"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++线程/所有权、最小实现与中文注释"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建入口及无窗口/平台证据边界；冲突时遵守本轮用户Solution Debug ARM64要求"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/workspace-transition-path.md", "reason": "六方向状态/线程、owner等待、背景ACK与重复投影证据"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/render-animation-hotpath.md", "reason": "整窗重画/SVG换色/条件容量链及反证，避免未经测量优化"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/evidence-and-validation.md", "reason": "历史性能与fixture证明边界，冷热采样和现有验证命令"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/scheduler-deadline-evidence.md", "reason": "本轮pilot在绘制不足15ms时仍多等约14.5ms；复用既有waitable timer的独立A/B、最大60Hz与旧系统回退合同"}
+{"file": ".trellis/tasks/10-28-ui3-workspace-transition-stutter/research/residual-getdc-cost.md", "reason": "剩余GetDC成本的排除证据、与proof完全分离的SVG固定数值计量及小修边界；避免开启观察器改变被测路径"}

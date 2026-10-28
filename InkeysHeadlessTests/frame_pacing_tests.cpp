@@ -540,6 +540,12 @@ int RunFramePacingTests(bool benchmark)
 	TestAnimationFrameClockRebase();
 	TestOneSecondFrameRate();
 	TestDebugFrameSleepLatch();
+	// 真实timer接缝拒绝非法等待，正常路径不依赖系统timeBeginPeriod或忙等尾段。
+	Check(!Inkeys::UI::Bar::TryWaitForRemainingFrameTime(0.0) && !Inkeys::UI::Bar::TryWaitForRemainingFrameTime(-1.0)
+		&& !Inkeys::UI::Bar::TryWaitForRemainingFrameTime((std::numeric_limits<double>::infinity)())
+		&& !Inkeys::UI::Bar::TryWaitForRemainingFrameTime((std::numeric_limits<double>::quiet_NaN)()),
+		"scheduler timer rejects zero, negative and non-finite waits");
+	Check(Inkeys::UI::Bar::TryWaitForRemainingFrameTime(1.0), "scheduler uses actual high-resolution or compatible waitable timer");
 	TestPoliciesAndMeasurements();
 	if (benchmark) RunFramePacingBenchmarks();
 	return failureCount;

@@ -101,3 +101,54 @@ failed = sample.presentFailed || result == FrameResult::DeviceLost;
 - 热态目标为 batch P95≤16.67 ms、P99≤33.4 ms；同时报告主栏成功提交间隔、超过 50 ms 的异常来源和正常静置是否仍唤醒。资源计数按几何稳定的重复帧检查；回弹/改变几何产生合法新遮罩不能冒充缓存缺陷。
 - `--ui3-input-worker-test` 直接验证生产注册、mailbox、dispatcher/续接、跨目标公平、超限取消和卸载排空；`InkeysHeadlessTests --no-window` 验证纯策略/状态合同。绘制/像素/命中/设备重建/失败提交回归使用 `--bar-eraser-offscreen-test` 中的真实公共实现。
 - 基准通过也只证明此软件渲染事务和指定输入负载；不证明原生 ULW/DWM、真实 Office/WPS、触摸驱动或视觉帧率。未启动 GUI 时必须将原生转场与主观手感列为人工验收，不能由无窗口结果推断通过。
+
+## 三态转场离屏采样与像素对照（2026-10-28）
+
+### 1. Scope / Trigger
+
+修改主栏三态动画、frame pacing、容量预约或转场性能fixture时适用。复用现有workspace-centering真实主栏coordinator、公共按钮/renderer及PageControl；固定16ms正确性Step不能冒充真实调度性能。
+
+### 2. Signatures
+
+- `Inkeys.exe --ui3-workspace-centering-test`：不设置以下性能变量时仍执行原几何/反向/失败正确性测试。
+- `INKEYS_UI3_TRANSITION_PERF=pilot`：100%、一轮、每方向两次；`full`运行三倍率三轮，默认每方向30次。
+- `INKEYS_UI3_TRANSITION_CYCLES=1..30`：完整模式的有界重复数，实际值必须随结果记录；不能将5次写成30次。
+- `INKEYS_UI3_TRANSITION_PIXELS`：在原确定时间几何模式下额外保存选定帧的实际ULW source/viewport BGRA，用于前后对照；还须核对该attempt的完整呈现事务成功；不能同时当性能采样。
+
+- `INKEYS_UI3_TRANSITION_SVG_TIMING`：仅转场性能fixture显式启用独立SVG数值采样；`INKEYS_UI3_TRANSITION_PERF=svg-pilot`选择100%/200%、一轮、每方向两次，不替代三倍率三轮验收。
+- `Ui3SvgStageTimings`：`calls[Ui3SvgStageCount]`、`elapsedMs[Ui3SvgStageCount]`、`clockReads`，`Ui3SvgStageCount=Draw+1`，目前为Parse/Raster/Upload/Draw四项。
+- `SvgStageTimingScope(Ui3SvgStageTimings*, Ui3SvgTimingClock=nullptr)`：独立owner线程TLS；注入时钟返回`steady_clock::duration`的tick计数，默认使用steady_clock；RAII恢复前一数值sink/时钟。
+
+### 3. Contracts
+
+- 性能模式走真实Scheduler和实际steady_clock；所有fixture状态/分页快照变更在同一render owner上，runner只等待完成，不并发裸写动画对象。保留默认动画/光效/字体路径、真实展开主栏和完整呈现事务。
+- 六向分别报告batch、Bar、计算、Draw、GetDC、真实成功commit间隔及每transition内的target尺寸变化。成功样本使用生产stamp validator的Valid状态并核epoch/client generation/success serial；idle/失败/身份断链不串联间隔。空Continue不算成功帧，完整结束、sealed及零掉样必须核验。
+- SVG数值scope不设置`CurrentUi3SvgScope`，不调用proof观察、NoteOperation或改变缓存/hidden/绘制决策；无数值sink且原probe关闭时，既有StageTimer不读钟。数值与原probe同时开启时共享同一对原probe读钟，原clockReads只增加2；null/嵌套scope按LIFO屏蔽及恢复。timer内只写固定数值，不分配、不做I/O、不持有COM资源。
+- SVG分段复用实际Parse/Raster/Upload/Draw钩子，calls表示真实执行次数；Draw仅为CPU提交，Raster包含lunasvg内部工作，UTF转换/换色等前置CPU工作不在四段内，不将四段之和称为完整SVG函数或全部WARP耗时。
+- 转场数值sidecar预先分配32768个固定帧槽，按Bar callback ordinal/frame_ticks/phase关联；Stop/join后写`*-svg.csv`，缺配、溢出或验真scope变化使fixture失败。RawCaptureReport原schema不变，metadata另记numericSvgTiming/svgStageCount/svgTimingDropped；新旧二进制证据分别保存。
+- RawCaptureReport仍用既有schema。原始结果在忽略目录 `TestResults/ui3-workspace-transition/`，每个版本另存目录、EXE哈希、执行环境/倍率/光效/实际cycles；采样之间不并行构建或运行其它重负载。
+- 当前fixture直接发布测试workspace，未覆盖真实Draw3/原生窗口协调、WhiteboardFreeze全屏背景或fresh容量；metadata必须明确这些边界，不能把场景直接切换称为完整业务请求到ACK的总延迟。首次新峰值扩容须另查实际尺寸序列，warm无resize不能外推cold。
+- 像素读回/文件写出仅在测试标志启用且指定帧发生，不进入默认产品帧；同一确定时间轨迹按实际source/viewport比较BGRA，不能只比较bitmap尺寸或裁剪中心。读回发生在ULW sink内、EndDraw之前，失败attempt的图片不能冒充成功帧。差异必须定位原因，不能以平均差很低自动宣称等价。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 要求 |
+| --- | --- |
+| raw掉样/未封口、失败/无效stamp或没有有效活动提交 | 该组不得宣称通过，保留失败和分母 |
+| fixture使用700ms场景间隔/空Continue | 仅实际成功提交纳入活动帧；不计作光学帧率 |
+| cycles超出1..30、初始化/注册/执行超时 | 非零退出；先Stop/join再释放测试资源 |
+| 固定时间Step或像素读回模式 | 只用于几何/像素正确性，不纳入真实Scheduler性能分位 |
+
+### 5. Good / Base / Bad Cases
+
+Good：同机同环境三轮A/B，batch与真实成功间隔分别报告，独立timer-only和容量候选归因。Base：原geometry入口保持原断言。Bad：拿callback-end当commit、拿固定16ms序列当60FPS、只选择最快一轮，或把未覆盖Freeze/native标成已测。
+
+### 6. Tests Required
+
+SVG计量接缝须确定性红绿覆盖default/null零读钟、四段数值、nested/null恢复、proof共存只读同一对时钟、真实cache复用与整幅BGRA透明性；同一callback的数值行与raw逐一关联、sealed且零掉样。其短采样不替代完整性能矩阵。
+
+完整Debug|ARM64 Solution、frame pacing与Scheduler的headless --no-window、workspace-centering几何/失败/快速反向、适用真实公共renderer离屏回归。容量/映射变化还需相同确定轨迹的完整viewport BGRA对照，展开属性/拖动/倍率与设备失败恢复单独覆盖；高分timer兼容路径不代表真实Win7已测。性能沿用热态batch P95≤16.67ms/P99≤33.4ms，并保留未达标组、成功间隔和>50ms来源；不以性能改善自动替代原生视觉验收。
+
+### 7. Wrong vs Correct
+
+Wrong：前一batch只画8ms，下一次开始31ms，仍因绘制小于16.67ms宣称流畅。Correct：同时测batch起点截止的超时和真实commit间隔，先确认等待/调度与绘制各自成本，再独立A/B；保持最大60Hz和真正idle不唤醒。

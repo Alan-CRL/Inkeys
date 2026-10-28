@@ -219,12 +219,15 @@ void Scheduler::Unregister(Client) noexcept;
 void Scheduler::Request(Client) noexcept;
 void Scheduler::Request(ClientMask) noexcept;
 bool Scheduler::PostControl(ControlTask);
+// 复用独立FramePacing模块的非自旋timer能力；false由Scheduler按原deadline回退。
+bool Inkeys::UI::Bar::TryWaitForRemainingFrameTime(double requestedWaitMs) noexcept;
 ~~~
 
 #### 3. Contracts
 
 - 每个客户端占一个原子请求位；`Request(mask)` 使用 `fetch_or` 合并并设置唯一 manual-reset event。idle 边界必须遵循 `ResetEvent -> TakeRequested -> 重查 stop -> wait`，不能丢失发生在 reset 前后的请求。
 - 每帧只回调请求位、上一帧 `Continue` 或 `Retry` 的客户端。固定顺序不得依赖注册顺序；帧截止时间以 `steady_clock` 控制到最多 60 FPS，pacing 期间追加的请求可并入下一批但不能提前越过期限。
+- 活动帧等待复用 `TryWaitForRemainingFrameTime` 的线程私有高分辨率/兼容waitable timer，剩余时间非正/非有限返回false；timer创建/设置/等待失败只按原deadline回退 `sleep_until`，不重等整段。正常路径无自旋尾段，不新增全局 `timeBeginPeriod`，不能依赖Draw3绘制态的timer period；idle仍沿唯一event无限等待。deadline继续基于batch起点，过期直接工作，Stop/join与线程私有timer生命周期一致。
 - `Idle` 不自动续帧；`Continue` 只续当前客户端；`Retry` 只重试当前客户端；`DeviceLost` 调用进程级恢复回调并请求全部已注册槽；`Stop` 只用于显式进程级管线退出。普通客户端观察到 `offSignal` 时返回 `Idle` 并等待主线程同步注销，不得抢先停止共享线程。
 - `Unregister` 返回前必须等待该客户端正在执行的回调退出。不得从客户端自己的回调内注销自身；释放 per-window target/context 前必须先同步注销。
 - 单窗 `D2DERR_RECREATE_TARGET`、ULW 或资源创建失败返回 `Retry` 并仅丢弃该窗 target。`DXGI_ERROR_DEVICE_REMOVED/RESET/DRIVER_INTERNAL_ERROR` 返回 `DeviceLost`，共享 device epoch 只能由唯一调度线程切换。
@@ -246,6 +249,7 @@ bool Scheduler::PostControl(ControlTask);
 | 共享 device 首次恢复失败 | 后续节拍继续恢复，成功前客户端回调计数不增加 |
 | 客户端因租约或局部条件暂不能提交 | 返回 `Continue` / `Retry`，不得在回调内等待下一帧期限 |
 | 请求落在 idle reset/wait 边界 | event 或二次 `TakeRequested` 至少有一路保留请求 |
+| 没有Draw3或处于Selection、旧系统不支持高分flag、timer操作失败 | 正常使用独立timer；旧系统走既有兼容timer，失败只等原deadline；不忙等、不额外申请全局period |
 | 注销时回调仍在执行 | `Unregister` 阻塞到回调退出，再允许释放资源 |
 | Scheduler 停止后重启 | 旧请求/control/event 不得触发回调；新请求仍可唤醒 |
 | `offSignal` 在 Setting 可见时生效 | Bar 返回 `Idle`；主线程先 drain/unregister Setting，再 join Bar/PPT 并停止管线 |
@@ -259,7 +263,7 @@ bool Scheduler::PostControl(ControlTask);
 
 #### 6. Tests Required
 
-- Headless 断言请求位合并、固定顺序、并发请求不丢失、Settings 独自 60 FPS/隐藏 idle、`Continue/Retry` 局部续帧、`DeviceLost` 全槽请求、恢复失败重试、同步注销、restart 清理和相邻帧不少于约 16 ms。
+- Headless 断言请求位合并、固定顺序、并发请求不丢失、Settings 独自 60 FPS/隐藏 idle、`Continue/Retry` 局部续帧、`DeviceLost` 全槽请求、恢复失败重试、同步注销、restart 清理和相邻帧不少于约 16 ms。新增无自旋入口覆盖0/负数/非有限拒绝与真实timer完成；转场原始batch测量需分开绘制超预算和deadline超时，不能用仅回调耗时代表成功提交节拍。
 - 窗口测试断言 Bar/四个 PageControl HWND 生命周期、共享底部角色和 Z 序；完整 Solution `Debug|ARM64` 构建验证 module/project 登记。
 - 手工验证静止休眠、Bar 直移期间 PPT 更新、设备/DPI 切换、PowerPoint/WPS 长按与拖动；自动测试不能替代真实 Office/WPS 和显示器切换。
 
@@ -728,6 +732,8 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - 空 presentDirty 的整窗清绘兜底只扩大绘制/提交范围，不得在选择性 Observe 结束后补设 tracker 全脏；否则 CommitPresented 会遗失未观察对象的成功边界，下一局部帧无法清旧。真正的全观察校准须在观察前请求 full，失败重试沿既有 RetainForRetry(true) 处理。
 - Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。全可见内容边界只在首帧、DPI/容量纪元、顶层外框动画、整栏拖动和最终 idle 帧重算，普通 hover/按压/光影帧复用缓存。禁止逐帧清空并重建哈希节点、复制完整快照，或为动态缩窗在普通高频帧遍历全部 SVG/PNG/Word 内容。
 - D2D target 容量以主按钮为稳定锚点，启动、DPI/显示器纪元或真实内容突破容量才重建；固定 held 段按下述底栏合同冻结存储映射；其余整栏拖动只平移 `capacityOrigin` 和 viewport，同尺寸不重建 target。容量突破要保守对称扩容并强制全脏，不得为追求立即缩小而频繁重建。
+- 容量以实际可见/在途内容和完整current/稳定预测viewport为依据，不为未打开的全部属性和More面板预留整套最大高度。横向保留既有对称安全预约及边距，但其主栏Back宽度上界须来自整段实际曲线极值，不能把已过冲的current再乘启发系数逐帧追扩。纵向结合完整viewport与真实displayCenterY驱动段的未来锚点reach，不能只读已SetDirect的当前root。先独立求所需容量，再按displayCapacityZoom/frameZoom预留目标倍率并max历史容量，禁止对历史容量重复乘倍率。仅独立planned高度真实突破历史时，可一次加两侧viewportPadding作为分数像素取整/边缘余量；不能逐帧对历史容量再加padding。fixed drag/release映射、实际source包含及整窗替换不变。
+- 已知居中root布局改变时，在任何Observe前请求全观察；晚期才确定的纯target容量/source映射改变只扩大实际paint/ULW到完整viewport，不晚置tracker全量校准而清掉未Observe稳定对象的成功bounds。资源或呈现失败仍保留RequireFullDirtyRetry，下一帧在观察前进入全量恢复；完整新bitmap不能只画旧局部dirty。
 - 除主栏固定手势的一次 Down 预留外，只有可改变顶层外框的动画批次才在首帧扩展 viewport 并保留保守扫掠包络；批次内不缩放，最终 idle 帧只收缩一次。普通 hover、按压、帧率文字和光影不得将 HWND 扩到整个容量。完整 predicted envelope 与既有 committed viewport 先参与候选 viewport，再将该完整范围传给 `ResolveBarWindowCapacity(..., requiredViewport)`，最后 `EnsureDeviceResources` 并按最终 origin 重算 source。GetDC 前以 `IsBarWindowSourceContained` 校验 source 非负、size 为正、source+size 位于实际 bitmap 内，使用宽整数避免加法溢出；无效时保留全脏及成功快照并沿既有资源失败退避重算，禁止钳 source 后提交裁剪帧。提示的 Back/描边/Gaussian/AA 完整包络同时须包含于 viewport。
 - 粗细 Slider/FineDial 连续手势的完整交互域必须复用 `GetBarThicknessSliderRange(currentPenMode, dpiZoom).max`，在按下/捕获首帧按最大端滑块位置计算完整 Preview Popup。包络同时覆盖 DPI 换算后的最大圆、数字从圆外迁入圆内的最宽 Surface、Slider/FineDial 两个目标位置、Popup Back 极值，以及实际可见描边、PointLight `pointLightDiffuseExtraWidth` 和抗锯齿外扩；捕获、拖动与 FineDial 物理期间保持该预约，候选粗细逐帧增长不得再次 resize。
 - Popup 已可见时，粗细快捷按钮或切换笔型产生的程序化动画必须在首个变化帧按 `drawAttributePenThickness.tar`、滑块归一化目标和 FineDial 目标位置预留紧致包络，并覆盖当前到目标的动画段、数字内外迁移与 Popup 回弹；不得等动画结束后才按实际内容追扩，也不得因此退化为预留当前笔型完整量程。

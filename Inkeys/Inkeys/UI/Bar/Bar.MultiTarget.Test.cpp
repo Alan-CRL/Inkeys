@@ -9,6 +9,7 @@ module;
 #include "Bar.BottomDock.h"
 #include "Bar.WindowGeometry.h"
 #include "Bar.InteractionWorker.h"
+#include "Bar.PresentationProbe.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -108,6 +109,35 @@ namespace Inkeys::UI::Bar
 			return info.hdcSrc && info.psize && info.psize->cx > 0
 				&& info.psize->cy > 0 && info.pptSrc && info.pblend
 				&& info.pblend->AlphaFormat == AC_SRC_ALPHA;
+		}
+
+		// 显式几何回归才读回源DC；不进入性能模式或产品呈现路径。
+		bool SaveTransitionPixels(const std::filesystem::path& path, const UPDATELAYEREDWINDOWINFO& info)
+		{
+			BITMAPINFO bitmap{};
+			bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bitmap.bmiHeader.biWidth = info.psize->cx; bitmap.bmiHeader.biHeight = -info.psize->cy;
+			bitmap.bmiHeader.biPlanes = 1; bitmap.bmiHeader.biBitCount = 32;
+			void* pixels = nullptr;
+			HBITMAP dib = CreateDIBSection(nullptr, &bitmap, DIB_RGB_COLORS, &pixels, nullptr, 0);
+			HDC copy = CreateCompatibleDC(nullptr);
+			bool saved = false;
+			if (dib && copy && pixels)
+			{
+				const auto previous = SelectObject(copy, dib);
+				if (BitBlt(copy, 0, 0, info.psize->cx, info.psize->cy, info.hdcSrc, info.pptSrc->x, info.pptSrc->y, SRCCOPY))
+				{
+					GdiFlush();
+					std::ofstream file(path, std::ios::binary);
+					file.write(reinterpret_cast<const char*>(info.psize), sizeof(SIZE));
+					file.write(static_cast<const char*>(pixels), static_cast<std::streamsize>(info.psize->cx) * info.psize->cy * 4);
+					saved = file.good();
+				}
+				SelectObject(copy, previous);
+			}
+			if (copy) DeleteDC(copy);
+			if (dib) DeleteObject(dib);
+			return saved;
 		}
 		Pages::OffscreenSnapshot PageSnapshot(Workload workload, unsigned frame)
 		{
@@ -558,6 +588,190 @@ namespace Inkeys::UI::Bar
 				if (!RunRapidReverse() || !RunRestoreAnimationsOff()) return failures_;
 				std::fprintf(stderr, "[UI3WorkspaceCentering] case=%s complete failures=%d\n",
 					caseName_.c_str(), failures_);
+				return failures_;
+			}
+
+
+			int RunPerformance(unsigned cycles, unsigned run, const std::filesystem::path& directory,
+				std::ofstream& summary, bool svgTimingEnabled)
+			{
+				if (!Initialize()) return failures_;
+				struct SvgFrame
+				{
+					Ui3SvgStageTimings timing;
+					std::int64_t frameTicks = 0;
+					unsigned phase = 0;
+					bool observationUnchanged = true;
+				};
+				// 固定上界、owner唯一写；结束join后才写盘，不把验真probe当计量开关。
+				std::vector<SvgFrame> svgFrames(svgTimingEnabled ? 32768 : 0);
+				unsigned svgTimingDropped = 0;
+				struct Transition { unsigned phase = 0, begin = 0, end = 0; };
+				constexpr std::array<const char*, 6> names{
+					"DesktopToPpt", "PptToDesktop", "DesktopToWhiteboard",
+					"WhiteboardToPpt", "PptToWhiteboard", "WhiteboardToDesktop" };
+				std::vector<Transition> transitions;
+				transitions.reserve(cycles * names.size());
+				Pipeline::Scheduler scheduler;
+				if (!scheduler.ConfigureRawCapture(32768)) return Fail("raw capture allocation failed"), failures_;
+				std::atomic_bool complete = false;
+				unsigned ordinal = 0, phase = 0;
+				Workload workload = Workload::Main;
+				auto phaseStart = Clock::now();
+				bool begin = true;
+				// 业务意图、动画对象与分页快照都只在同一串行render owner上访问。
+				bool registered = scheduler.Register(Pipeline::Client::Bar, [&](const Pipeline::FrameContext& frame)
+				{
+					++ordinal;
+					SvgFrame* svgFrame = svgTimingEnabled && ordinal <= svgFrames.size() ? &svgFrames[ordinal - 1] : nullptr;
+					if (svgTimingEnabled && !svgFrame) ++svgTimingDropped;
+					SvgStageTimingScope svgTiming(svgFrame ? &svgFrame->timing : nullptr);
+					auto* originalObservation = CurrentUi3SvgScope();
+					if (svgFrame && originalObservation) ++failures_;
+					if (svgFrame) { svgFrame->frameTicks = frame.frameTime.time_since_epoch().count(); svgFrame->phase = phase % 6; }
+					if (begin)
+					{
+						phaseStart = frame.frameTime;
+						workload = phase % 6 == 0 || phase % 6 == 3 ? Workload::Ppt
+							: phase % 6 == 2 || phase % 6 == 4 ? Workload::Whiteboard : Workload::Main;
+						workspaceScope_->Set(workload == Workload::Ppt ? WorkspaceScene::Presentation
+							: workload == Workload::Whiteboard ? WorkspaceScene::Whiteboard : WorkspaceScene::Desktop);
+						PublishPptSession(1, workload == Workload::Ppt || phase % 6 == 4, nullptr);
+						SetWhiteboardActive(workload == Workload::Whiteboard);
+						owner_->UpdateRendering(false);
+						transitions.push_back({ phase % 6, ordinal, ordinal });
+						scheduler.Request(Pipeline::PptPageMask());
+						begin = false;
+					}
+					const auto result = mainFrame_(frame);
+					if (svgFrame) svgFrame->observationUnchanged = CurrentUi3SvgScope() == originalObservation;
+					transitions.back().end = ordinal;
+					if (result == Pipeline::FrameResult::DeviceLost || rejectedMappingAttempts_)
+					{
+						++failures_; complete.store(true, std::memory_order_release); return Pipeline::FrameResult::Idle;
+					}
+					// 等真实动画落定；700ms只是场景间隔下限，不能以空Continue计有效提交。
+					if (result == Pipeline::FrameResult::Idle && frame.frameTime - phaseStart >= std::chrono::milliseconds(700))
+					{
+						if (++phase == cycles * names.size())
+						{
+							complete.store(true, std::memory_order_release); return Pipeline::FrameResult::Idle;
+						}
+						begin = true;
+					}
+					return Pipeline::FrameResult::Continue;
+				});
+				for (unsigned index = 0; index < PageClients.size(); ++index)
+				{
+					const LONG x = index % 2 ? 1500 : 0, y = index < 2 ? 950 : 450;
+					const auto page = Pages::CreatePageControlOffscreenRenderCallback(index, [&]
+					{
+						auto snapshot = PageSnapshot(workload, 0);
+						snapshot.whiteboard.menu = 0;
+						return snapshot;
+					}, RECT{ x, y, x + static_cast<LONG>((index < 2 ? 305 : 80) * scale_),
+						y + static_cast<LONG>((index < 2 ? 80 : 240) * scale_) }, static_cast<float>(scale_), ReceivePresentation);
+					registered &= scheduler.Register(PageClients[index], page);
+				}
+				const bool started = registered && scheduler.Start([](Clock::time_point now)
+					{ return Pipeline::FrameContext{ Pipeline::GetDeviceEpoch(), Pipeline::GetSharedAssets(), now }; });
+				if (started)
+				{
+					scheduler.Request(Pipeline::Mask(Pipeline::Client::Bar));
+					const auto deadline = Clock::now() + std::chrono::seconds(cycles * 12 + 30);
+					while (!complete.load(std::memory_order_acquire) && Clock::now() < deadline)
+						std::this_thread::sleep_for(std::chrono::milliseconds(20));
+				}
+				scheduler.Stop();
+				const auto raw = scheduler.TakeRawCapture();
+				if (!started || !complete.load() || !raw || !raw->sealed || raw->callbackDropped || raw->batchDropped || raw->invalidCallbacks || raw->invalidBatches)
+					return Fail("transition run incomplete or capture dropped"), failures_;
+				const std::string stem = "transition-" + std::to_string(static_cast<unsigned>(scale_ * 100)) + "-" + std::to_string(run);
+				WriteRaw(directory / stem, *raw);
+				// 覆盖稳态基准的metadata标签，不能把固定120/600帧冒充本次转场负载。
+				std::ofstream metadata(directory / (stem + "-metadata.json"));
+				metadata << "{\"schemaVersion\":" << raw->schemaVersion << ",\"sealed\":" << raw->sealed
+					<< ",\"clockPeriodNum\":" << raw->clockPeriodNum << ",\"clockPeriodDen\":" << raw->clockPeriodDen
+					<< ",\"callbackDropped\":" << raw->callbackDropped << ",\"batchDropped\":" << raw->batchDropped
+					<< ",\"activity\":\"six-directed-workspace-transitions\",\"backend\":\"WARP\",\"nativeUlw\":false,\"freezeCovered\":false,\"nativeCoordinatorCovered\":false,\"freshCapacityCovered\":false,\"cycles\":" << cycles
+					<< ",\"numericSvgTiming\":" << svgTimingEnabled << ",\"svgStageCount\":" << Ui3SvgStageCount << ",\"svgTimingDropped\":" << svgTimingDropped << "}\n";
+				if (svgTimingEnabled)
+				{
+					std::ofstream svgCsv(directory / (stem + "-svg.csv"));
+					svgCsv << "batch,ordinal,phase,frame_ticks,committed,clock_reads,parse_calls,parse_ms,raster_calls,raster_ms,upload_calls,upload_ms,draw_calls,draw_ms,observation_unchanged\n";
+					unsigned matched = 0;
+					for (const auto& row : raw->callbacks)
+					{
+						if (row.client != Pipeline::Client::Bar) continue;
+						if (matched >= ordinal || matched >= svgFrames.size()) { ++failures_; break; }
+						const auto& svg = svgFrames[matched++];
+						if (svg.frameTicks != row.frameTimeTicks || !svg.observationUnchanged) ++failures_;
+						svgCsv << row.batchSerial << ',' << matched << ',' << names[svg.phase] << ',' << svg.frameTicks
+							<< ',' << row.frame.presentCommitted << ',' << svg.timing.clockReads;
+						for (unsigned stage = 0; stage < Ui3SvgStageCount; ++stage)
+							svgCsv << ',' << svg.timing.calls[stage] << ',' << svg.timing.elapsedMs[stage];
+						svgCsv << ',' << svg.observationUnchanged << '\n';
+					}
+					if (svgTimingDropped || matched != ordinal || !svgCsv) ++failures_;
+				}
+				std::ofstream phases(directory / (stem + "-phases.csv"));
+				phases << "phase,begin_batch,end_batch\n";
+				for (const auto& transition : transitions)
+					phases << names[transition.phase] << ',' << transition.begin << ',' << transition.end << '\n';
+				for (unsigned direction = 0; direction < names.size(); ++direction)
+				{
+					std::vector<double> batches, callbacks, draws, getdc, intervals, compute;
+					unsigned commits = 0, resizing = 0;
+					for (const auto& transition : transitions)
+					{
+						if (transition.phase != direction) continue;
+						std::int64_t previousCommit = 0;
+						std::uint64_t previousSuccess = 0, previousEpoch = 0, previousGeneration = 0;
+						SIZE previousSize{};
+						unsigned transitionResizes = 0;
+						for (const auto& row : raw->callbacks)
+						{
+							if (row.client != Pipeline::Client::Bar || row.batchSerial < transition.begin || row.batchSerial > transition.end) continue;
+							if (row.frame.presentFailed || row.frame.callbackException) ++failures_;
+							if (!row.frame.presentCommitted) { previousCommit = 0; continue; }
+							if (row.barCommitStatus != Pipeline::BarCommitStampStatus::Valid || !row.validTime
+								|| row.contextEpoch != row.frame.epoch || row.frame.barCommitTicks <= row.startTicks || row.frame.barCommitTicks > row.endTicks)
+								{ ++failures_; previousCommit = 0; continue; }
+							++commits;
+							if (previousCommit && row.hasPreviousTrueBarCommit && row.previousTrueBarCommitTicks == previousCommit
+								&& row.barSuccessSerial == previousSuccess + 1 && row.contextEpoch == previousEpoch
+								&& row.callbackGeneration == previousGeneration)
+								intervals.push_back(Milliseconds(*raw, row.frame.barCommitTicks - previousCommit));
+							previousCommit = row.frame.barCommitTicks;
+							previousSuccess = row.barSuccessSerial; previousEpoch = row.contextEpoch; previousGeneration = row.callbackGeneration;
+							callbacks.push_back(Milliseconds(*raw, row.endTicks - row.startTicks));
+							const auto& batch = raw->batches[row.batchSerial - 1];
+							if (batch.frameTimeTicks != row.frameTimeTicks) ++failures_;
+							batches.push_back(Milliseconds(*raw, batch.endTicks - batch.beginTicks));
+							compute.push_back(ComputeMilliseconds(row.frame));
+							draws.push_back(row.frame.stageMs[static_cast<unsigned>(Pipeline::FrameStage::Draw)]);
+							getdc.push_back(row.frame.stageMs[static_cast<unsigned>(Pipeline::FrameStage::GetDC)]);
+							if (previousSize.cx && (previousSize.cx != row.frame.targetSize.cx || previousSize.cy != row.frame.targetSize.cy)) { ++resizing; ++transitionResizes; }
+							previousSize = row.frame.targetSize;
+						}
+						// 首次pending placement在第二帧才建立真实显示目标，允许该次明确重定向增长一次。
+						const unsigned allowed = transition.begin == 1 ? 1u : 0u;
+						if (transitionResizes > allowed)
+						{
+							++failures_;
+							std::fprintf(stderr,"[UI3TransitionPerf] FAIL repeated target growth direction=%s count=%u allowed=%u\n",
+								names[direction],transitionResizes,allowed);
+						}
+					}
+					if (!commits || intervals.empty()) ++failures_;
+					summary << scale_ << ',' << run << ',' << names[direction] << ',' << cycles << ',' << commits << ','
+						<< Quantile(batches,.95) << ',' << Quantile(batches,.99) << ',' << Quantile(callbacks,.95) << ','
+						<< Quantile(compute,.95) << ',' << Quantile(draws,.95) << ',' << Quantile(getdc,.95) << ','
+						<< Quantile(intervals,.95) << ',' << Quantile(intervals,.99) << ',' << resizing << ',' << failures_ << '\n';
+					std::fprintf(stderr, "[UI3TransitionPerf] scale=%.2f run=%u %s commits=%u batchP95=%.3f getdcP95=%.3f intervalP95=%.3f resize=%u\n",
+						scale_, run, names[direction], commits, Quantile(batches,.95), Quantile(getdc,.95), Quantile(intervals,.95), resizing);
+				}
+				summary.flush();
 				return failures_;
 			}
 
@@ -1423,6 +1637,14 @@ namespace Inkeys::UI::Bar
 							++injectedPresentFailures_;
 							return FALSE;
 						}
+						if (pixelPhase_ && (pixelFrame_ == 1 || pixelFrame_ == 6 || pixelFrame_ == 15 || pixelFrame_ == 25)
+							&& GetEnvironmentVariableW(L"INKEYS_UI3_TRANSITION_PIXELS", nullptr, 0) != 0)
+						{
+							const auto path = std::filesystem::path(L"TestResults/ui3-workspace-centering/pixels");
+							std::filesystem::create_directories(path);
+							if (!SaveTransitionPixels(path / (caseName_ + "-" + pixelPhase_ + "-" + std::to_string(pixelFrame_) + ".bgra"), info))
+								++rejectedMappingAttempts_;
+						}
 						presentedUlw_ = sample;
 						return TRUE;
 					});
@@ -1504,8 +1726,10 @@ namespace Inkeys::UI::Bar
 				const bool resumedFromIdle = lastResult_ == Pipeline::FrameResult::Idle;
 				const double frameTimeMs = std::chrono::duration<double, std::milli>(
 					frameTime_ - frameOrigin_).count();
+				pixelPhase_ = phase; pixelFrame_ = phaseFrame;
 				const auto result = mainFrame_(Pipeline::FrameContext{
 					Pipeline::GetDeviceEpoch(), Pipeline::GetSharedAssets(), frameTime_ });
+				pixelPhase_ = nullptr;
 				frameTime_ += std::chrono::milliseconds(16);
 				++frameOrdinal_;
 				if (result == Pipeline::FrameResult::DeviceLost)
@@ -1749,6 +1973,8 @@ namespace Inkeys::UI::Bar
 			std::vector<WorkspaceWindowEvent> windowEvents_;
 			unsigned long long windowEventOrdinal_ = 0;
 			const char* activeWindowPhase_ = nullptr;
+			const char* pixelPhase_ = nullptr;
+			unsigned pixelFrame_ = 0;
 			unsigned directMoveCount_ = 0;
 			unsigned prematureDirectMoves_ = 0;
 			unsigned globalBarrierInjections_ = 0;
@@ -1835,7 +2061,51 @@ namespace Inkeys::UI::Bar
 			failures, failures ? "FAIL" : "PASS");
 		return failures ? 1 : 0;
 	}
-	int RunUi3WorkspaceCenteringTest() { return RunUi3GeometryTests(false); }
+	int RunUi3WorkspaceCenteringTest()
+	{
+		// 性能模式仍复用生产协调器与现有离屏入口；不创建产品窗口。
+		if (GetEnvironmentVariableW(L"INKEYS_UI3_TRANSITION_PERF", nullptr, 0) == 0)
+			return RunUi3GeometryTests(false);
+		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+		const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		if (FAILED(com)) return 2;
+		if (FAILED(Pipeline::Initialize())) { CoUninitialize(); return 3; }
+		IdtFontFileLoader::IsLoaderInitialized(); IdtFontCollectionLoader::IsLoaderInitialized();
+		const std::array<UINT,4> fonts{ IDR_TTF1, IDR_TTF7, IDR_TTF3, IDR_TTF8 };
+		int failures = FAILED(Pipeline::InitializeFontCollection(IdtFontFileLoader::GetLoader(), IdtFontCollectionLoader::GetLoader(), fonts)) || !I18n::load(1,L"JSON",L"zh-CN");
+		wchar_t setting[32]{};
+		const bool configured = GetEnvironmentVariableW(L"INKEYS_UI3_TRANSITION_PERF",setting,32) != 0;
+		const bool svgPilot = configured && std::wstring_view(setting) == L"svg-pilot";
+		const bool pilot = svgPilot || (configured && std::wstring_view(setting) == L"pilot");
+		const bool svgTimingEnabled = GetEnvironmentVariableW(L"INKEYS_UI3_TRANSITION_SVG_TIMING", nullptr, 0) != 0;
+		unsigned cycles = pilot ? 2u : 30u;
+		if (!pilot && GetEnvironmentVariableW(L"INKEYS_UI3_TRANSITION_CYCLES", setting, 32))
+		{
+			const int requested = _wtoi(setting);
+			if (requested < 1 || requested > 30) { Pipeline::Shutdown(); CoUninitialize(); return 2; }
+			cycles = static_cast<unsigned>(requested);
+		}
+		const std::filesystem::path directory = L"TestResults/ui3-workspace-transition/current";
+		std::filesystem::create_directories(directory);
+		const auto originalPath = globalPath;
+		globalPath = (std::filesystem::absolute(directory)/L"runtime-config").wstring()+L"\\";
+		std::filesystem::create_directories(std::filesystem::path(globalPath)/L"Inkeys/Config");
+		std::ofstream samples(directory/L"geometry.csv"), summary(directory/L"summary.csv");
+		summary << "scale,run,direction,cycles,commits,batch_p95_ms,batch_p99_ms,bar_p95_ms,compute_p95_ms,draw_p95_ms,getdc_p95_ms,interval_p95_ms,interval_p99_ms,target_changes,failures\n";
+		BarUiAnimationEnabled=true; BarUiAnimationSpeedRate=1; BarUiEdgeLightingEnabled=true; BarUiDynamicEdgeLightingEnabled=true; BarUiDebugModeEnabled=false;
+		bool initialized=false;
+		for (double scale : {1.0,1.5,2.0})
+		{
+			if (pilot && scale != 1.0 && !(svgPilot && scale == 2.0)) continue;
+			for (unsigned run=1;run<=(pilot?1u:3u);++run)
+			{
+				WorkspaceCenteringFixture fixture(scale,false,initialized,samples);
+				failures += fixture.RunPerformance(cycles,run,directory,summary,svgTimingEnabled);
+			}
+		}
+		barUISet.spec.DiscardDeviceResources(); Pipeline::Shutdown(); globalPath=originalPath; CoUninitialize();
+		return failures?1:0;
+	}
 	int RunUi3BottomDockTransitionTest() { return RunUi3GeometryTests(true); }
 #else
 	int RunUi3BottomDockTransitionTest() { return 2; }

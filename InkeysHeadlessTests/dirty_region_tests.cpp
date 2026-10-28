@@ -245,6 +245,38 @@ namespace
 			"observed group child advances without a full snapshot copy");
 	}
 
+	void TestFullReplacementObservationBoundaries()
+	{
+		using namespace Inkeys::UI::Bar;
+		constexpr RECT window{0,0,300,200};
+		for (bool rootMoved : {false,true})
+		{
+			BarDirtyRegionTracker tracker;
+			tracker.BeginFrame(window);
+			tracker.Observe(1, RECT{10,10,30,30});
+			tracker.Observe(2, RECT{80,10,100,30});
+			tracker.CommitPresented();
+			tracker.BeginFrame(window);
+			// 已知根移动必须先全量观察；纯target扩容只需整窗绘制/提交。
+			if (rootMoved) tracker.ForceFullDamage();
+			tracker.MarkChanged(1);
+			tracker.Observe(1, RECT{20,10,40,30});
+			Check(tracker.ShouldObserve(2) == rootMoved,
+				"root relayout observes stable children before full presentation; storage growth keeps selective observation");
+			if (tracker.ShouldObserve(2)) tracker.Observe(2, RECT{90,10,110,30});
+			(void)tracker.ResolveDamage(false);
+			Check(ShouldForceBarFullWindowReplacement(false, BarPresentMappingMode::FullReplacement, rootMoved),
+				"both root and capacity changes still require full replacement");
+			tracker.CommitPresented();
+			// 下一帧只隐藏此前稳定子项，必须清理最后成功呈现的实际位置。
+			tracker.BeginFrame(window);
+			tracker.MarkChanged(2);
+			tracker.Observe(2, RECT{});
+			Check(SameRect(tracker.ResolveDamage(false), rootMoved ? RECT{90,10,110,30} : RECT{80,10,100,30}),
+				"full target replacement retains stable bounds or commits moved child bounds for later hiding");
+		}
+	}
+
 	void TestTrackerRetainsPendingGroupDamageAcrossFrames()
 	{
 		constexpr RECT window{ 0, 0, 1400, 800 };
@@ -364,6 +396,7 @@ int RunDirtyRegionTests()
 	TestRetryRetainsDamageAndCommitAdvancesSnapshot();
 	TestExplicitAndFullRetryDamage();
 	TestStableRecordsAndSelectiveObservation();
+	TestFullReplacementObservationBoundaries();
 	TestTrackerRetainsPendingGroupDamageAcrossFrames();
 	TestLightDamageUsesAffectedBorderBands();
 	TestScaledDirectContentUsesPresentedBounds();

@@ -29,6 +29,8 @@ module;
 
 module Inkeys.UI.RenderPipeline;
 
+import Inkeys.UI.Bar.FramePacing;
+
 #include "RenderPipeline.Diagnostics.h"
 
 namespace Inkeys::UI::RenderPipeline
@@ -734,7 +736,14 @@ namespace Inkeys::UI::RenderPipeline
 					}
 
 					const auto now = std::chrono::steady_clock::now();
-					if (now < nextDeadline) std::this_thread::sleep_until(nextDeadline);
+					if (now < nextDeadline)
+					{
+						// 不依赖Draw3绘制态的系统timer period，避免粗粒度sleep把60Hz节拍拖成约30Hz。
+						// 复用现有高分辨率/兼容timer；失败才回退原等待，不设置自旋尾段。
+						const double remainingMs = std::chrono::duration<double, std::milli>(nextDeadline - now).count();
+						if (!Inkeys::UI::Bar::TryWaitForRemainingFrameTime(remainingMs))
+							std::this_thread::sleep_until(nextDeadline);
+					}
 					const auto frameTime = std::chrono::steady_clock::now();
 					nextDeadline = frameTime + FrameInterval;
 					pending |= takeRequested();

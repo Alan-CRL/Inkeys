@@ -1881,6 +1881,76 @@ namespace Inkeys::UI::Bar
 					}
 					expect(CurrentUi3SvgScope() == nullptr && probe->CountersAfterOwnerStopped().clockReads == nullBefore.clockReads
 						&& probe->CountersAfterOwnerStopped().drawSubmit == nullBefore.drawSubmit, "B326 null scope adds no observation clock or draw counter");
+					// 独立数值计量不能安装验真probe，也不能改变真实cache/绘制决策。
+					static std::int64_t numericClockReads = 0;
+					const auto numericClock = []() noexcept -> std::int64_t { return ++numericClockReads * 1000; };
+					numericClockReads = 0;
+					Ui3SvgStageTimings outerTiming, innerTiming;
+					{
+						SvgStageTimingScope absent(nullptr, numericClock);
+						Ui3SvgStageTimer timer(Ui3SvgStage::Parse);
+					}
+					expect(numericClockReads == 0 && CurrentUi3SvgScope() == nullptr, "N01 default/null numeric scope reads no clock and installs no proof");
+					{
+						SvgStageTimingScope outer(&outerTiming, numericClock);
+						{ Ui3SvgStageTimer timer(Ui3SvgStage::Parse); }
+						{
+							SvgStageTimingScope inner(&innerTiming, numericClock);
+							{ Ui3SvgStageTimer timer(Ui3SvgStage::Raster); }
+							{ SvgStageTimingScope absent(nullptr, numericClock); Ui3SvgStageTimer timer(Ui3SvgStage::Upload); }
+						}
+						{ Ui3SvgStageTimer timer(Ui3SvgStage::Draw); }
+					}
+					expect(numericClockReads == 6 && outerTiming.clockReads == 4 && innerTiming.clockReads == 2
+						&& outerTiming.calls[0] == 1 && outerTiming.calls[3] == 1 && innerTiming.calls[1] == 1
+						&& outerTiming.elapsedMs[0] > 0 && outerTiming.elapsedMs[3] > 0 && innerTiming.elapsedMs[1] > 0
+						&& CurrentUi3SvgScope() == nullptr, "N02 numeric-only stages and nested/null scopes restore without proof state");
+					Ui3SvgStageTimings combinedTiming;
+					const auto combinedBefore = probe->CountersAfterOwnerStopped();
+					const auto numericReadsBefore = numericClockReads;
+					{
+						SvgObservationScope observed(probe.get(), true);
+						auto* originalScope = CurrentUi3SvgScope();
+						{ SvgStageTimingScope timing(&combinedTiming, numericClock); Ui3SvgStageTimer timer(Ui3SvgStage::Upload); }
+						expect(CurrentUi3SvgScope() == originalScope, "N03 numeric timing preserves the active proof scope identity");
+					}
+					const auto combinedAfter = probe->CountersAfterOwnerStopped();
+					expect(combinedAfter.clockReads == combinedBefore.clockReads + 2 && numericClockReads == numericReadsBefore
+						&& combinedTiming.clockReads == 2 && combinedTiming.calls[2] == 1
+						&& std::abs(combinedAfter.uploadMs - combinedBefore.uploadMs - combinedTiming.elapsedMs[2]) < 0.0000001,
+						"N04 dual sinks share one clock pair and retain original probe timing semantics");
+					const auto bitmapBeforeTiming = svg.cacheBitmap.Get();
+					auto renderNumeric = [&](Ui3SvgStageTimings* timing)
+					{
+						SvgStageTimingScope numeric(timing);
+						expect(CurrentUi3SvgScope() == nullptr, "N05 numeric-only real renderer keeps proof absent");
+						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
+						(void)renderer.Svg(dc, svg, BarUiInheritClass(16,16));
+						expect(SUCCEEDED(dc->EndDraw()), "N05 real numeric timing draw completes");
+						return ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+					};
+					Ui3SvgStageTimings realTiming;
+					const auto numericOffPixels = renderNumeric(nullptr), numericOnPixels = renderNumeric(&realTiming);
+					expect(numericOffPixels == numericOnPixels && numericOnPixels.size() == svgSize * svgSize * 4
+						&& svg.cacheBitmap.Get() == bitmapBeforeTiming && realTiming.calls[0] == 0 && realTiming.calls[1] == 0
+						&& realTiming.calls[2] == 0 && realTiming.calls[3] == 1 && realTiming.clockReads == 2
+						&& probe->CountersAfterOwnerStopped().clockReads == combinedAfter.clockReads
+						&& probe->CountersAfterOwnerStopped().drawSubmit == combinedAfter.drawSubmit,
+						"N06 numeric on/off is BGRA exact with unchanged actual cache and no proof operations");
+					Ui3SvgStageTimings overheadTiming;
+					constexpr unsigned overheadIterations = 4096;
+					const auto measureTimingCost = [&](Ui3SvgStageTimings* timing)
+					{
+						SvgStageTimingScope numeric(timing);
+						const auto started = std::chrono::steady_clock::now();
+						for (unsigned i = 0; i < overheadIterations; ++i) { Ui3SvgStageTimer timer(Ui3SvgStage::Draw); }
+						return std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - started).count() / overheadIterations;
+					};
+					const double inactivePairNs = measureTimingCost(nullptr), activePairNs = measureTimingCost(&overheadTiming);
+					expect(overheadTiming.calls[3] == overheadIterations && overheadTiming.clockReads == overheadIterations * 2,
+						"N07 bounded timing overhead control records exactly one clock pair per stage");
+					report << "[Ui3SvgNumericTiming] iterations=" << overheadIterations << " inactive-pair-ns=" << inactivePairNs
+						<< " active-pair-ns=" << activePairNs << " extra-pair-ns=" << activePairNs - inactivePairNs << '\n';
 					// H1：全Clear之后的未知写不能因成功EndDraw被早先Clear追认。
 					auto unknownReplayFrame = [&](bool unknownBeforeClear)
 					{

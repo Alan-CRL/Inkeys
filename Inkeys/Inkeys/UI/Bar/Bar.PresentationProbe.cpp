@@ -17,6 +17,8 @@ namespace Inkeys::UI::Bar
 		thread_local Ui3FiniteOwnerContext* ownerContext = nullptr;
 		thread_local Ui3FinitePublication::Mutation* currentMutation = nullptr;
 		thread_local Ui3SvgScopeState* svgScope = nullptr;
+		thread_local Ui3SvgStageTimings* svgTimings = nullptr;
+		thread_local Ui3SvgTimingClock svgTimingClock = nullptr;
 
 		bool SvgRectValid(const std::uint32_t bits[4]) noexcept
 		{
@@ -603,17 +605,44 @@ namespace Inkeys::UI::Bar
 	{
 		Increment(CurrentCounters().clockReads); return std::chrono::steady_clock::now().time_since_epoch().count();
 	}
+	SvgStageTimingScope::SvgStageTimingScope(Ui3SvgStageTimings* timings, Ui3SvgTimingClock clock) noexcept
+		: previous_(svgTimings), previousClock_(svgTimingClock)
+	{
+		svgTimings = timings; svgTimingClock = clock;
+	}
+	SvgStageTimingScope::~SvgStageTimingScope()
+	{
+		svgTimings = previous_; svgTimingClock = previousClock_;
+	}
+	std::int64_t Ui3SvgStageTimer::ReadTicks() noexcept
+	{
+		if (timings_ && timings_->clockReads != (std::numeric_limits<std::uint64_t>::max)()) ++timings_->clockReads;
+		// 两种sink同时开启时共享原probe的这一读钟，不能额外推进其时钟/观察计数。
+		if (probe_) return probe_->ReadTicks();
+		return readTicks_ ? readTicks_() : std::chrono::steady_clock::now().time_since_epoch().count();
+	}
 	Ui3SvgStageTimer::Ui3SvgStageTimer(Ui3SvgStage stage) noexcept
 	{
-		if (!svgScope || !svgScope->probe || !svgScope->clocksEnabled) return;
-		probe_ = svgScope->probe; elapsed_ = probe_->ElapsedCounter(stage); started_ = probe_->ReadTicks();
+		stage_ = static_cast<std::size_t>(stage);
+		timings_ = stage_ < Ui3SvgStageCount ? svgTimings : nullptr;
+		readTicks_ = svgTimingClock;
+		if (svgScope && svgScope->probe && svgScope->clocksEnabled)
+		{
+			probe_ = svgScope->probe; elapsed_ = probe_->ElapsedCounter(stage);
+		}
+		if (!elapsed_ && !timings_) return;
+		if (timings_ && timings_->calls[stage_] != (std::numeric_limits<std::uint64_t>::max)()) ++timings_->calls[stage_];
+		started_ = ReadTicks();
 	}
 	Ui3SvgStageTimer::~Ui3SvgStageTimer()
 	{
-		if (elapsed_)
+		if (!elapsed_ && !timings_) return;
+		const auto ended = ReadTicks();
+		if (ended >= started_)
 		{
-			const auto ended = probe_->ReadTicks();
-			if (ended >= started_) *elapsed_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::duration(ended - started_)).count();
+			const double elapsedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::duration(ended - started_)).count();
+			if (elapsed_) *elapsed_ += elapsedMs;
+			if (timings_) timings_->elapsedMs[stage_] += elapsedMs;
 		}
 	}
 	void ObserveUi3SvgOperation(Ui3SvgStage stage, Ui3SvgOperation operation) noexcept
