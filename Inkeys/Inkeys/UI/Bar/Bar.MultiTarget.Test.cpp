@@ -547,14 +547,14 @@ namespace Inkeys::UI::Bar
 				}
 				if (!Initialize()) return failures_;
 				if (!RunFreezeHideTransition()) return failures_;
-				if (!RunPhase("DesktopToPpt", [&] { PublishPptSession(1, true, nullptr); }, true, true)) return failures_;
-				if (!RunPhase("LeavePpt", [&] { PublishPptSession(1, false, nullptr); }, true)) return failures_;
-				if (!RunPhase("DesktopToWhiteboard", [&] { SetWhiteboardActive(true); }, true)) return failures_;
-				if (!RunPhase("LeaveWhiteboard", [&] { SetWhiteboardActive(false); }, true)) return failures_;
-				if (!RunPhase("DesktopToPptBeforeSwitch", [&] { PublishPptSession(1, true, nullptr); }, true)) return failures_;
-				if (!RunPhase("PptToWhiteboard", [&] { SetWhiteboardActive(true); }, false)) return failures_;
-				if (!RunPhase("WhiteboardToPpt", [&] { SetWhiteboardActive(false); }, false)) return failures_;
-				if (!RunPhase("FinalLeavePpt", [&] { PublishPptSession(1, false, nullptr); }, true)) return failures_;
+				if (!RunPhase("DesktopToPpt", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); PublishPptSession(1, true, nullptr); }, true, true)) return failures_;
+				if (!RunPhase("LeavePpt", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, true)) return failures_;
+				if (!RunPhase("DesktopToWhiteboard", [&] { workspaceScope_->Set(WorkspaceScene::Whiteboard); SetWhiteboardActive(true); }, true)) return failures_;
+				if (!RunPhase("LeaveWhiteboard", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); SetWhiteboardActive(false); }, true)) return failures_;
+				if (!RunPhase("DesktopToPptBeforeSwitch", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); PublishPptSession(1, true, nullptr); }, true)) return failures_;
+				if (!RunPhase("PptToWhiteboard", [&] { workspaceScope_->Set(WorkspaceScene::Whiteboard); SetWhiteboardActive(true); }, false)) return failures_;
+				if (!RunPhase("WhiteboardToPpt", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); SetWhiteboardActive(false); }, false)) return failures_;
+				if (!RunPhase("FinalLeavePpt", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, true)) return failures_;
 				if (!RunRapidReverse() || !RunRestoreAnimationsOff()) return failures_;
 				std::fprintf(stderr, "[UI3WorkspaceCentering] case=%s complete failures=%d\n",
 					caseName_.c_str(), failures_);
@@ -643,8 +643,16 @@ namespace Inkeys::UI::Bar
 					caseName_ += workspace == 1 ? "-ppt" : "-whiteboard";
 					SetCurrentPageHasContent(true);
 					if (!SetTool(false) || !Settle()) return failures_;
-					if (workspace == 1) PublishPptSession(1, true, nullptr);
-					else SetWhiteboardActive(true);
+					if (workspace == 1)
+					{
+						workspaceScope_->Set(WorkspaceScene::Presentation);
+						PublishPptSession(1, true, nullptr);
+					}
+					else
+					{
+						workspaceScope_->Set(WorkspaceScene::Whiteboard);
+						SetWhiteboardActive(true);
+					}
 					SetCurrentPageHasContent(false);
 					if (!SetTool(true)) return failures_;
 					for (unsigned frame = 0; frame < 5; ++frame)
@@ -1251,6 +1259,7 @@ namespace Inkeys::UI::Bar
 					if (!SetTool(false) || !Settle()) return false;
 					const auto members = owner_->barButtonSet.buttonList.Snapshot();
 					if (!freeze->IsVisible()) return Fail("desktop Freeze must start visible");
+					workspaceScope_->Set(WorkspaceScene::Presentation);
 					PublishPptSession(1, true, nullptr);
 					SetCurrentPageHasContent(false);
 					if (!SetTool(true)) return false;
@@ -1288,6 +1297,7 @@ namespace Inkeys::UI::Bar
 					}
 					if (!fadingFrames || freeze->icon.pct.val > 0.000001)
 						return Fail("Freeze did not use the existing fade animation");
+					workspaceScope_->Set(WorkspaceScene::Desktop);
 					PublishPptSession(1, false, nullptr);
 					if (!SetTool(false) || !Settle()) return false;
 				}
@@ -1317,6 +1327,9 @@ namespace Inkeys::UI::Bar
 			bool Initialize()
 			{
 				owner_ = &barUISet;
+				workspaceScope_.reset();
+				workspaceScope_.emplace(WorkspaceScene::Desktop);
+				if (!*workspaceScope_) return Fail("workspace scene fixture initialization failed");
 				SetWhiteboardActive(false);
 				PublishPptSession(1, false, nullptr);
 				UpdateSceneMonitor(nullptr);
@@ -1676,14 +1689,14 @@ namespace Inkeys::UI::Bar
 						Report(phase, stats, false, finalLeave);
 						return true;
 					};
-				if (!runShort("RapidEnterPpt", [&] { PublishPptSession(1, true, nullptr); }, 6)) return false;
-				if (!runShort("RapidPptToWhiteboard", [&] { SetWhiteboardActive(true); }, 6)) return false;
-				if (!runShort("RapidWhiteboardToPpt", [&] { SetWhiteboardActive(false); }, 6)) return false;
-				if (!runShort("RapidFinalLeave", [&] { PublishPptSession(1, false, nullptr); }, 52)) return false;
-				if (!runShort("RapidReenterPpt", [&] { PublishPptSession(1, true, nullptr); }, 6)) return false;
-				if (!runShort("RapidLeaveBeforeReenter", [&] { PublishPptSession(1, false, nullptr); }, 6)) return false;
-				if (!runShort("RapidReenterDuringLeave", [&] { PublishPptSession(1, true, nullptr); }, 6)) return false;
-				if (!runShort("RapidFinalLeaveAfterReenter", [&] { PublishPptSession(1, false, nullptr); }, 52)) return false;
+				if (!runShort("RapidEnterPpt", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); PublishPptSession(1, true, nullptr); }, 6)) return false;
+				if (!runShort("RapidPptToWhiteboard", [&] { workspaceScope_->Set(WorkspaceScene::Whiteboard); SetWhiteboardActive(true); }, 6)) return false;
+				if (!runShort("RapidWhiteboardToPpt", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); SetWhiteboardActive(false); }, 6)) return false;
+				if (!runShort("RapidFinalLeave", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, 52)) return false;
+				if (!runShort("RapidReenterPpt", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); PublishPptSession(1, true, nullptr); }, 6)) return false;
+				if (!runShort("RapidLeaveBeforeReenter", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, 6)) return false;
+				if (!runShort("RapidReenterDuringLeave", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); PublishPptSession(1, true, nullptr); }, 6)) return false;
+				if (!runShort("RapidFinalLeaveAfterReenter", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, 52)) return false;
 				return SetTool(false) && Settle();
 			}
 
@@ -1697,8 +1710,10 @@ namespace Inkeys::UI::Bar
 					~RestoreAnimation() { BarUiAnimationEnabled = enabled; }
 				} restoreAnimation;
 				BarUiAnimationEnabled = false;
+				workspaceScope_->Set(WorkspaceScene::Presentation);
 				PublishPptSession(1, true, nullptr);
 				if (!Settle()) return false;
+				workspaceScope_->Set(WorkspaceScene::Desktop);
 				PublishPptSession(1, false, nullptr);
 				if (!Step("AnimationsOffLeave", nullptr, 0, false)) return false;
 				if (std::abs(owner_->BottomDockPresentedSnapshot().mainCenterScreenY - desktopY)
@@ -1713,6 +1728,7 @@ namespace Inkeys::UI::Bar
 			std::ofstream& samples_;
 			std::string caseName_;
 			BarUISetClass* owner_ = nullptr;
+			std::optional<Inkeys::Testing::WorkspaceSceneScope> workspaceScope_;
 			Inkeys::Display::MonitorInfo monitor_{};
 			std::function<Pipeline::FrameResult(const Pipeline::FrameContext&)> mainFrame_;
 			std::optional<WorkspaceCenteringUlw> presentedUlw_, attemptedUlw_;
