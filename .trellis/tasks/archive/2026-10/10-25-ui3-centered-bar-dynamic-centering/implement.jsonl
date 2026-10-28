@@ -1,0 +1,8 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认当前 UI3 生产边界和渲染线程所有权。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵守逐帧居中、动画批次、viewport、dirty 和呈现事务合同。"}
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"保持 PPT/Whiteboard 进入退出与桌面基线恢复语义。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"按完整 Solution 和本机原生架构验证。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对布局、动画、坐标和窗口呈现边界。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md","reason":"遵守共享逐帧不变量并补足验证证据。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/centering-investigation.md","reason":"实现前阅读居中直接根因、历史演变和具体修复边界。"}
+{"file": ".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/resume-audit.md", "reason": "接力复核、Freeze 隐藏前驱退场、最终完整无窗口验证和 GUI 待授权"}

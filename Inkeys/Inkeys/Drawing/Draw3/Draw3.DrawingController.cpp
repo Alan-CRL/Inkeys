@@ -4874,6 +4874,49 @@ namespace Inkeys::Drawing::Draw3
 		CheckTailInputDiagnosticContract(check);
 		failures += RunEraserIdleWakeProductionProbe();
 		failures += RunHostWorkspaceTransitionInputProductionProbe();
+		{
+			constexpr int64_t frequency = 1000;
+			constexpr int64_t upQpc = 100;
+			LaserTrailLifecycle lifecycle;
+			BeginLaserContact(lifecycle);
+			EndLaserContact(lifecycle, upQpc);
+			LaserTrailPhase frameInitialPhase = lifecycle.phase;
+			int coverageClearCount = 0;
+			RECT stableBounds{ 1, 2, 30, 40 };
+			RECT liveBounds{ 5, 6, 50, 60 };
+			std::vector<int> strokeLayers{ 1 };
+			const auto retireFinalExpiry = [&]
+			{
+				if (!LaserTrailExpiredThisFrame(frameInitialPhase, lifecycle.phase)) return;
+				++coverageClearCount;
+				stableBounds = {};
+				liveBounds = {};
+				strokeLayers.clear();
+			};
+			const float firstOpacity = EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency, frequency, 1.0);
+			retireFinalExpiry();
+			check(lifecycle.phase == LaserTrailPhase::Fade && firstOpacity == 1.0f &&
+				coverageClearCount == 0 && strokeLayers.size() == 1,
+				"first Fade evaluation retains the final-frame laser resources");
+			(void)EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency * 2, frequency, 1.0);
+			retireFinalExpiry();
+			check(lifecycle.phase == LaserTrailPhase::Inactive && coverageClearCount == 1 &&
+				strokeLayers.empty() && stableBounds.left == stableBounds.right &&
+				liveBounds.left == liveBounds.right,
+				"second evaluation expiry retires coverage bounds and stroke layers immediately");
+			frameInitialPhase = lifecycle.phase; // 下一帧重新采样帧首相位。
+			(void)EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency * 2, frequency, 1.0);
+			retireFinalExpiry();
+			check(coverageClearCount == 1, "next frame does not repeat final laser expiry cleanup");
+			BeginLaserContact(lifecycle);
+			check(EvaluateLaserTrailOpacity(lifecycle,
+				upQpc + frequency * 2 + 1, frequency, 1.0) == 1.0f &&
+				lifecycle.phase == LaserTrailPhase::Active && coverageClearCount == 1,
+				"new laser Down retains the existing Active semantics");
+		}
 		ContactInputCoordinator input;
 		WindowController window;
 		const auto snapshot = [](ContactPhase phase)
@@ -15256,8 +15299,6 @@ namespace Inkeys::Drawing::Draw3
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				animationQpc.QuadPart, qpcFrequency, animationLaserHold);
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
-			const bool laserExpired = previousLaserPhase != LaserTrailPhase::Inactive &&
-				laserLifecycle.phase == LaserTrailPhase::Inactive;
 			const bool laserFadeActive = laserLifecycle.phase == LaserTrailPhase::Fade;
 			bool laserOpacityChanged =
 				std::abs(previousLaserOpacity - laserOpacity) > 0.0001f;
@@ -15312,22 +15353,12 @@ namespace Inkeys::Drawing::Draw3
 				// 最后一帧瞬态内容结束后做全帧 ULW 校验，不能按局部脏区推断窗口已净。
 				forceFullPresent = true;
 			}
-			if (laserOpacityChanged)
+			if (laserOpacityChanged ||
+				LaserTrailExpiredThisFrame(previousLaserPhase, laserLifecycle.phase))
 			{
+				// 即使末段 opacity 变化低于阈值，首次过期也不能在最终清理前进入 idle。
 				UnionRectInPlace(frameDirty, laserStableBounds);
 				UnionRectInPlace(frameDirty, laserLiveBounds);
-			}
-			if (laserExpired)
-			{
-				if (metricsState_) metricsState_->ObserveLaserExpiry(laserStableBounds, laserLiveBounds,
-					previousLaserParticleBounds, currentLaserParticleBounds);
-				UnionRectInPlace(frameDirty, laserStableBounds);
-				UnionRectInPlace(frameDirty, laserLiveBounds);
-				renderer_.ClearAllLaserCoverage();
-				laserStableBounds = {};
-				laserLiveBounds = {};
-				laserStrokeLayers.clear();
-				laserCoverageMode = LaserCoverageMode::Inactive;
 			}
 			if (active.empty())
 			{
@@ -15633,6 +15664,21 @@ namespace Inkeys::Drawing::Draw3
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
 			laserOpacityChanged = laserOpacityChanged ||
 				std::abs(preInputLaserOpacity - laserOpacity) > 0.0001f;
+			const bool laserExpired = LaserTrailExpiredThisFrame(
+				previousLaserPhase, laserLifecycle.phase);
+			if (laserExpired)
+			{
+				// 第二次求值也可能进入 Inactive；按本帧最终边沿只清理一次。
+				if (metricsState_) metricsState_->ObserveLaserExpiry(laserStableBounds, laserLiveBounds,
+					previousLaserParticleBounds, currentLaserParticleBounds);
+				UnionRectInPlace(frameDirty, laserStableBounds);
+				UnionRectInPlace(frameDirty, laserLiveBounds);
+				renderer_.ClearAllLaserCoverage();
+				laserStableBounds = {};
+				laserLiveBounds = {};
+				laserStrokeLayers.clear();
+				laserCoverageMode = LaserCoverageMode::Inactive;
+			}
 			// Up 后同帧新 Down 可能刚完成旧批次 Bake；必须在本帧基础合成前消费该 dirty。
 			UnionRectInPlace(frameDirty, pendingLaserBakeDirty);
 			pendingLaserBakeDirty = {};

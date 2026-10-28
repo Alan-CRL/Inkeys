@@ -273,6 +273,16 @@ namespace Inkeys::UI::Bar
 		return std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
 	}
 
+	// 世界端点先扣除同帧原点与连续直移量，不能让固定目标随 HWND 一起移动。
+	[[nodiscard]] inline double ResolveBarBottomDockWorldTargetDip(
+		double worldPx, double originPx, double translationPx, double zoom) noexcept
+	{
+		if (!std::isfinite(worldPx) || !std::isfinite(originPx) || !std::isfinite(translationPx))
+			return std::numeric_limits<double>::quiet_NaN();
+		const double local = (worldPx - originPx - translationPx) / NormalizeBarBottomDockZoom(zoom);
+		return std::isfinite(local) ? local : std::numeric_limits<double>::quiet_NaN();
+	}
+
 	[[nodiscard]] inline double ScaleBarDragGrabOffsetForZoom(
 		double screenOffset, double oldZoom, double newZoom) noexcept
 	{
@@ -835,6 +845,80 @@ namespace Inkeys::UI::Bar
 		}
 	};
 
+	struct BarBottomDockGrabAnchor
+	{
+		double normalizedY = 0.5;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockGrabAnchor ResolveBarBottomDockGrabAnchor(
+		const BarBottomDockVerticalMapping& mapping, double rootYDip,
+		double actualHeightDip, double pointerScreenY, double screenOriginY,
+		double translationY, double zoom) noexcept
+	{
+		if (!std::isfinite(actualHeightDip) || actualHeightDip <= 0.0
+			|| !std::isfinite(rootYDip) || !std::isfinite(pointerScreenY)) return {};
+		const double logical = mapping.UnmapY((pointerScreenY - screenOriginY - translationY)
+			/ NormalizeBarBottomDockZoom(zoom));
+		const double normalized = (logical - rootYDip) / actualHeightDip + 0.5;
+		return { normalized, std::isfinite(normalized) };
+	}
+
+	struct BarBottomDockShiftedShape
+	{
+		double topDip = 0.0;
+		double bottomDip = 0.0;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockShiftedShape ResolveBarBottomDockShiftedShape(
+		const BarBottomDockVerticalMapping& presented,
+		double presentedOriginY, double presentedTranslationY, double presentedZoom,
+		double nextOriginY, double nextTranslationY, double nextZoom,
+		double nextTopScreenY) noexcept
+	{
+		if (!std::isfinite(nextTopScreenY)) return {};
+		const double oldZoom = NormalizeBarBottomDockZoom(presentedZoom);
+		const double zoom = NormalizeBarBottomDockZoom(nextZoom);
+		const double presentedTop = presentedOriginY + presentedTranslationY
+			+ presented.visualTopDip * oldZoom;
+		// 顶边目标只由有效输入推进；底边形变不再反向改变整形平移量。
+		const double shift = nextTopScreenY - presentedTop;
+		const double top = (nextTopScreenY - nextOriginY - nextTranslationY) / zoom;
+		const double bottom = (presentedOriginY + presentedTranslationY
+			+ presented.visualBottomDip * oldZoom + shift - nextOriginY - nextTranslationY) / zoom;
+		return { top, bottom, std::isfinite(top) && std::isfinite(bottom) && bottom > top };
+	}
+
+	struct BarBottomDockAnchoredVerticalMappingResult
+	{
+		BarBottomDockVerticalMapping mapping{};
+		double shapeOffsetDip = 0.0;
+		bool constrained = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockAnchoredVerticalMappingResult
+		ResolveBarBottomDockAnchoredVerticalMapping(
+			double baseTopDip, double baseBottomDip,
+			double desiredTopDip, double desiredBottomDip, bool pinBottom) noexcept
+	{
+		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
+		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
+			baseBottomDip = baseTopDip + 1.0;
+		if (!std::isfinite(desiredTopDip)) desiredTopDip = baseTopDip;
+		if (!std::isfinite(desiredBottomDip)) desiredBottomDip = baseBottomDip;
+		const double baseHeight = baseBottomDip - baseTopDip;
+		const double minimumHeight = baseHeight * 0.000001;
+		const bool constrained = desiredBottomDip - desiredTopDip < minimumHeight;
+		const double height = (std::max)(minimumHeight, desiredBottomDip - desiredTopDip);
+		const double bottom = desiredTopDip + height;
+		const double topOffset = desiredTopDip - baseTopDip;
+		// 高度不足时只约束底端，不能为满足底端或抓点而把顶边向上推。
+		return { { baseTopDip, baseBottomDip, desiredTopDip, bottom, height / baseHeight,
+			(baseTopDip + baseBottomDip) / 2.0 + topOffset, topOffset },
+			pinBottom ? bottom - baseBottomDip : height - baseHeight, constrained };
+	}
+
 	struct BarBottomDockHorizontalMapping
 	{
 		double baseLeftDip = 0.0;
@@ -857,6 +941,40 @@ namespace Inkeys::UI::Bar
 		}
 	};
 
+	struct BarBottomDockShiftedHorizontalShape
+	{
+		double gripOffsetDip = 0.0;
+		double farErrorDip = 0.0;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockShiftedHorizontalShape ResolveBarBottomDockShiftedHorizontalShape(
+		const BarBottomDockHorizontalMapping& presented,
+		double presentedOriginX, double presentedTranslationX, double presentedZoom,
+		double presentedGripScreenX,
+		double nextOriginX, double nextTranslationX, double nextZoom,
+		double nextGripScreenX, double nextBaseMainXDip, bool opensRight,
+		double nextFarTargetDip) noexcept
+	{
+		if (!std::isfinite(presentedOriginX) || !std::isfinite(presentedTranslationX)
+			|| !std::isfinite(presentedZoom) || presentedZoom <= 0.0
+			|| !std::isfinite(presentedGripScreenX) || !std::isfinite(presented.visualLeftDip)
+			|| !std::isfinite(presented.visualRightDip) || presented.visualRightDip <= presented.visualLeftDip
+			|| !std::isfinite(nextOriginX) || !std::isfinite(nextTranslationX)
+			|| !std::isfinite(nextZoom) || nextZoom <= 0.0 || !std::isfinite(nextGripScreenX)
+			|| !std::isfinite(nextBaseMainXDip) || !std::isfinite(nextFarTargetDip)) return {};
+		const double presentedFarDip = opensRight ? presented.visualRightDip : presented.visualLeftDip;
+		const double shift = nextGripScreenX - presentedGripScreenX;
+		// 模式交接随未显示的正常输入同移；松手使用成功抓手位置，shift 为零。
+		const double nextFarScreenX = presentedOriginX + presentedTranslationX
+			+ presentedFarDip * presentedZoom + shift;
+		const double grip = ResolveBarBottomDockWorldTargetDip(
+			nextGripScreenX, nextOriginX, nextTranslationX, nextZoom) - nextBaseMainXDip;
+		const double farError = ResolveBarBottomDockWorldTargetDip(
+			nextFarScreenX, nextOriginX, nextTranslationX, nextZoom) - nextFarTargetDip;
+		return { grip, farError, std::isfinite(grip) && std::isfinite(farError) };
+	}
+
 	struct BarBottomDockCenteredRootPlacement
 	{
 		double mainCenterDip = 0.0;
@@ -876,14 +994,16 @@ namespace Inkeys::UI::Bar
 		bool verticallyDocked, BarBottomDockCenterMode centerMode,
 		BarBottomDockPhase centerPhase, bool dragActive,
 		bool mainBarExpanded, bool centerSpringActive,
-		bool farEdgeSpringActive, bool displayTransitionActive) noexcept
+		bool farEdgeSpringActive, bool displayTransitionActive,
+		bool workspacePlacementActive) noexcept
 	{
 		return verticallyDocked
 			&& centerMode == BarBottomDockCenterMode::Centered
 			&& centerPhase == BarBottomDockPhase::Stable
 			&& !dragActive && mainBarExpanded
 			&& !centerSpringActive && !farEdgeSpringActive
-			&& !displayTransitionActive;
+			// 场景放置仅把 Y 留给 displayCenterY；普通显示过渡仍持有根 X。
+			&& (!displayTransitionActive || workspacePlacementActive);
 	}
 
 	[[nodiscard]] inline BarBottomDockCenteredRootPlacement
@@ -1425,7 +1545,8 @@ namespace Inkeys::UI::Bar
 			unsigned long long observedSerialAfter,
 			unsigned long long deferredTransitionSerial,
 			unsigned long long presentedTransitionSerial,
-			POINT latestTranslation, POINT presentedTranslation) noexcept
+			POINT latestTranslation, POINT presentedTranslation,
+			bool requireFrameTranslation = false) noexcept
 	{
 		// 尚未完成的发布无法区分普通采样与新形态，不能提交混合 tuple。
 		if ((frameTransitionSerial & 1ULL) != 0
@@ -1436,9 +1557,28 @@ namespace Inkeys::UI::Bar
 		// 首张转换位图已包含此屏障：使用配套位移，后续普通采样不能使其饥饿。
 		if (deferredTransitionSerial > presentedTransitionSerial)
 			return { frameTranslation, false };
+		// 屏幕吸附端点已按本帧直移量反算，不能再搭配较新的 HWND 位移。
+		if (requireFrameTranslation) return { frameTranslation, false };
 		return { ResolveBarBottomDockFrameTranslation(frameTransitionSerial,
 			observedSerialBefore, observedSerialAfter,
 			latestTranslation, presentedTranslation), false };
+	}
+
+	[[nodiscard]] inline bool ShouldDeferBarDirectWindowMove(
+		unsigned long long awaitedTransitionSerial,
+		unsigned long long candidateTransitionSerial,
+		unsigned long long observedSerialBefore,
+		unsigned long long observedSerialAfter,
+		unsigned long long deferredTransitionSerial,
+		unsigned long long presentedTransitionSerial) noexcept
+	{
+		// 局部门禁之外，还必须确认当前稳定 tuple 已包含所有未呈现屏障。
+		return awaitedTransitionSerial != 0
+			|| deferredTransitionSerial > presentedTransitionSerial
+			|| deferredTransitionSerial > candidateTransitionSerial
+			|| (candidateTransitionSerial & 1ULL) != 0
+			|| observedSerialBefore != candidateTransitionSerial
+			|| observedSerialAfter != candidateTransitionSerial;
 	}
 
 	[[nodiscard]] inline BarBottomDockVerticalMapping
@@ -1486,14 +1626,16 @@ namespace Inkeys::UI::Bar
 		ResolveBarBottomDockRecoveringVerticalMapping(double baseTopDip,
 			double baseBottomDip, double elasticOffsetDip,
 			double captureBottomOffsetDip = 0.0,
-		bool preserveCaptureBottomOffset = false) noexcept
+		bool preserveCaptureBottomOffset = false,
+		bool preserveElasticOffset = false) noexcept
 	{
 		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
 		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
 			baseBottomDip = baseTopDip + 1.0;
-		elasticOffsetDip = std::clamp(
-			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		elasticOffsetDip = std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0;
+		if (!preserveElasticOffset)
+			elasticOffsetDip = std::clamp(elasticOffsetDip,
+				-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
 		captureBottomOffsetDip = std::isfinite(captureBottomOffsetDip) ? captureBottomOffsetDip : 0.0;
 		// 仅成功像素的捕获初值可超出常规保护，不能在映射阶段再次截断。
 		if (!preserveCaptureBottomOffset)
@@ -1532,6 +1674,26 @@ namespace Inkeys::UI::Bar
 			/ NormalizeBarBottomDockZoom(zoom);
 		spring.positionDip = animationsEnabled && std::isfinite(offset) ? offset : 0.0;
 		spring.velocityDipPerSecond = 0.0;
+		return true;
+	}
+
+	[[nodiscard]] inline bool SeedBarBottomDockDetach(
+		BarBottomDockSpringState& spring, BarBottomDockSpringState& captureBottom,
+		BarBottomDockMode presentedMode, BarBottomDockMode nextMode,
+		double presentedBaseTopScreenY, double presentedTopScreenY, double presentedBottomScreenY,
+		double nextBaseTopScreenY, double nextBaseBottomScreenY,
+		double zoom, bool animationsEnabled) noexcept
+	{
+		if (presentedMode != BarBottomDockMode::BottomDocked
+			|| nextMode != BarBottomDockMode::Floating) return false;
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		const double elastic = (presentedTopScreenY - presentedBaseTopScreenY) / zoom;
+		// Floating 顶端由当前指针平移持有；底端跟随同一平移，保留成功帧完整高度。
+		const double normalMove = nextBaseTopScreenY - presentedTopScreenY;
+		const double capture = elastic
+			+ (presentedBottomScreenY + normalMove - nextBaseBottomScreenY) / zoom;
+		spring = { animationsEnabled && std::isfinite(elastic) ? elastic : 0.0, 0.0 };
+		captureBottom = { animationsEnabled && std::isfinite(capture) ? capture : 0.0, 0.0 };
 		return true;
 	}
 

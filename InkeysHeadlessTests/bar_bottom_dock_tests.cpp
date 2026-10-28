@@ -35,6 +35,280 @@ namespace
 		return std::abs(lhs - rhs) <= epsilon;
 	}
 
+	void TestFixedSurfaceWorldTargets()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (const double zoom : { 0.6, 1.0, 1.5, 2.0 })
+			for (const double origin : { -1920.0, 0.0, 120.0 })
+				for (const double translation : { -160.0, -80.0, 0.0, 40.0, 160.0 })
+				{
+					const double bottom = ResolveBarBottomDockWorldTargetDip(1856.0, origin, translation, zoom);
+					const double farTargetDip = ResolveBarBottomDockWorldTargetDip(1984.0, origin, translation, zoom);
+					Check(Near(origin + translation + bottom * zoom, 1856.0)
+						&& Near(origin + translation + farTargetDip * zoom, 1984.0),
+						"fixed-surface dock and far endpoints stay at world targets under continuous native movement");
+					const double captureError = 17.0, farError = -11.0;
+					Check(Near(origin + translation + (bottom + captureError) * zoom, 1856.0 + 17.0 * zoom)
+						&& Near(origin + translation + (farTargetDip + farError) * zoom, 1984.0 - 11.0 * zoom),
+						"world-relative spring errors do not absorb the native translation a second time");
+					const double top = ResolveBarBottomDockWorldTargetDip(1654.0, origin, translation, zoom);
+					const auto shape = ResolveBarBottomDockAnchoredVerticalMapping(100.0, 181.0, top, bottom, true);
+					Check(Near(origin + translation + shape.mapping.visualTopDip * zoom, 1654.0)
+						&& Near(origin + translation + shape.mapping.visualBottomDip * zoom, 1856.0),
+						"fixed-surface bottom conversion preserves the independent top rather than solving a normalized grab");
+				}
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		Check(!std::isfinite(ResolveBarBottomDockWorldTargetDip(nan, 0, 0, 1))
+			&& !std::isfinite(ResolveBarBottomDockWorldTargetDip(10, nan, 0, 1))
+			&& !std::isfinite(ResolveBarBottomDockWorldTargetDip(10, 0, nan, 1)),
+			"non-finite world coordinates cannot become a valid fixed-surface endpoint");
+		Check(Near(ResolveBarBottomDockWorldTargetDip(20, 3, 7, 0), 10.0),
+			"world conversion retains the common invalid-zoom normalization contract");
+	}
+
+	void TestFixedSurfaceFramePresentation()
+	{
+		using namespace Inkeys::UI::Bar;
+		const POINT frameTranslation{ 20, 30 }, latestTranslation{ 25, 35 }, presentedTranslation{ 22, 32 };
+		const auto pinned = ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 12, 12, 8, 10, latestTranslation, presentedTranslation, true);
+		const auto ordinary = ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 12, 12, 8, 10, latestTranslation, presentedTranslation);
+		Check(!pinned.deferred && pinned.translation.x == frameTranslation.x
+			&& pinned.translation.y == frameTranslation.y
+			&& !ordinary.deferred && ordinary.translation.x == presentedTranslation.x
+			&& ordinary.translation.y == presentedTranslation.y,
+			"fixed world geometry pairs with its own frame translation while ordinary movement retains the old policy");
+		for (const double zoom : { 0.6, 1.0, 2.0 })
+		{
+			const double bottom = ResolveBarBottomDockWorldTargetDip(1856.0, -200.0, frameTranslation.y, zoom);
+			const double farTarget = ResolveBarBottomDockWorldTargetDip(1984.0, -1200.0, frameTranslation.x, zoom);
+			Check(Near(-200.0 + pinned.translation.y + bottom * zoom, 1856.0)
+				&& Near(-1200.0 + pinned.translation.x + farTarget * zoom, 1984.0),
+				"a later ordinary pointer sample cannot displace already rasterized world targets");
+		}
+		Check(ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 11, 11, 8, 10, latestTranslation, presentedTranslation, true).deferred
+			&& ResolveBarBottomDockFramePresentation(
+				10, frameTranslation, 10, 12, 8, 10, latestTranslation, presentedTranslation, true).deferred
+			&& ResolveBarBottomDockFramePresentation(
+				10, frameTranslation, 12, 12, 12, 10, latestTranslation, presentedTranslation, true).deferred,
+			"fixed-frame pairing retains publishing and newer shape barrier rejection");
+		const auto firstBarrier = ResolveBarBottomDockFramePresentation(
+			10, frameTranslation, 12, 12, 10, 8, latestTranslation, presentedTranslation, true);
+		Check(!firstBarrier.deferred && firstBarrier.translation.x == frameTranslation.x
+			&& firstBarrier.translation.y == frameTranslation.y,
+			"fixed-frame first barrier cannot be starved by subsequent ordinary input");
+	}
+
+	void TestFixedSurfaceHorizontalHandoff()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (const bool opensRight : { false, true })
+			for (const double oldZoom : { 0.6, 1.0, 2.0 })
+				for (const double nextZoom : { 0.8, 1.0, 1.5, 2.0 })
+					for (const double inputShift : { -80.0, -2.0, 0.0, 40.0 })
+					{
+						const auto old = ResolveBarBottomDockHorizontalMapping(100.0, 400.0,
+							opensRight, 35.0, -17.0);
+						const double oldOrigin = -1200.0, oldTranslation = 37.0;
+						const double oldMain = opensRight ? 60.0 : 440.0;
+						const double oldGrip = oldOrigin + oldTranslation
+							+ (oldMain + old.rigidGripTranslationXDip) * oldZoom;
+						const double oldFar = oldOrigin + oldTranslation
+							+ (opensRight ? old.visualRightDip : old.visualLeftDip) * oldZoom;
+						const double nextOrigin = 240.0, nextTranslation = -80.0;
+						const double nextMain = 300.0, nextFarTarget = opensRight ? 900.0 : 40.0;
+						const auto next = ResolveBarBottomDockShiftedHorizontalShape(old,
+							oldOrigin, oldTranslation, oldZoom, oldGrip,
+							nextOrigin, nextTranslation, nextZoom, oldGrip + inputShift,
+							nextMain, opensRight, nextFarTarget);
+						Check(next.valid
+							&& Near(nextOrigin + nextTranslation + (nextMain + next.gripOffsetDip) * nextZoom,
+								oldGrip + inputShift)
+							&& Near(nextOrigin + nextTranslation + (nextFarTarget + next.farErrorDip) * nextZoom,
+								oldFar + inputShift),
+							"deformed horizontal handoff preserves successful grip and far pixels across origin translation and zoom");
+					}
+		const auto held = ResolveBarBottomDockHorizontalMapping(140, 500, true, 0, -30);
+		for (const double nextMain : { 100.0, 130.0 })
+		{
+			// 吸收布局或回归居中root都从同一成功图像交接，不再读取raw elastic。
+			const auto release = ResolveBarBottomDockShiftedHorizontalShape(held,
+				0, 60, 2, 260, 0, 0, 2, 260, nextMain, true, nextMain + 400);
+			const auto mapped = ResolveBarBottomDockHorizontalMapping(nextMain + 40, nextMain + 400,
+				true, release.gripOffsetDip, release.farErrorDip);
+			Check(release.valid && Near((nextMain + mapped.rigidGripTranslationXDip) * 2, 260)
+				&& Near(mapped.visualLeftDip * 2, 340) && Near(mapped.visualRightDip * 2, 1000),
+				"release canonical-root and layout-absorb paths preserve the same successful world shape");
+			if (nextMain == 130.0)
+				Check(Near(release.gripOffsetDip, 0.0),
+					"absorbed native movement is not applied again as raw release elastic");
+			const auto retry = ResolveBarBottomDockShiftedHorizontalShape(held,
+				0, 60, 2, 260, 0, 0, 2, 260, nextMain, true, nextMain + 400);
+			Check(retry.valid && Near(retry.gripOffsetDip, release.gripOffsetDip)
+				&& Near(retry.farErrorDip, release.farErrorDip),
+				"horizontal release retry reuses the successful shape without accumulating compensation");
+		}
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		Check(!ResolveBarBottomDockShiftedHorizontalShape(held, 0, 60, 2, nan,
+			0, 0, 2, 260, 100, true, 500).valid
+			&& !ResolveBarBottomDockShiftedHorizontalShape(held, 0, 60, 2, 260,
+				0, 0, 0, 260, 100, true, 500).valid
+			&& !ResolveBarBottomDockShiftedHorizontalShape(held, 0, 60, 2, 260,
+				0, 0, 2, 260, 100, true, nan).valid,
+			"invalid horizontal handoff inputs are rejected rather than publishing a mixed shape");
+	}
+
+	void TestEffectiveInputCaptureAndNormalizedGrab()
+	{
+		using namespace Inkeys::UI::Bar;
+		constexpr double zoom = 2.0, baseBottom = 912.0, baseTop = baseBottom - 81.0;
+		constexpr double oldBaseBottom = 1773.0 / zoom, oldBaseTop = oldBaseBottom - 81.0;
+		const auto old = ResolveBarBottomDockRecoveringVerticalMapping(
+			oldBaseTop, oldBaseBottom, 0.0, 0.0);
+		const double nextTopScreenY = old.visualTopDip * zoom + 47.0;
+		const auto shifted = ResolveBarBottomDockShiftedShape(old,
+			0.0, 0.0, zoom, 0.0, 0.0, zoom, nextTopScreenY);
+		Check(shifted.valid && Near(shifted.bottomDip * zoom, 1820.0),
+			"manual capture shifts the successful floating bottom by the effective 47 px input");
+		const double elastic = shifted.topDip - baseTop;
+		const double capture = shifted.bottomDip - baseBottom;
+		Check(Near(elastic, -2.0) && Near(capture, -2.0),
+			"historical rigid equal-base vector yields e=c=-2 without hard-coded constants");
+		const auto anchored = ResolveBarBottomDockAnchoredVerticalMapping(
+			baseTop, baseBottom, shifted.topDip, shifted.bottomDip, true);
+		Check(Near(anchored.mapping.visualTopDip * zoom, nextTopScreenY)
+			&& Near(anchored.mapping.visualBottomDip * zoom, 1820.0),
+			"first manual capture preserves both successful endpoints after the actual input shift");
+
+		BarBottomDockSpringState legacy;
+		(void)SeedBarBottomDockCaptureBottom(legacy, BarBottomDockMode::Floating,
+			BarBottomDockMode::BottomDocked, 1773.0, 1824.0, zoom, true);
+		Check(Near(legacy.positionDip, -25.5)
+			&& Near(1824.0 + legacy.positionDip * zoom, 1773.0),
+			"legacy absolute-bottom seed remains the historical negative witness");
+
+		for (const double ratio : { 0.0, 33.0 / 81.0, 38.0 / 81.0, 0.5, 1.0 })
+		{
+			const auto deformed = ResolveBarBottomDockRecoveringVerticalMapping(
+				200.0, 281.0, -14.0, 23.0, true, true);
+			const double root = 240.0;
+			const double logical = root + (ratio - 0.5) * 81.0;
+			const double pointer = -240.0 + deformed.MapY(logical) * 1.5 - 13.0;
+			const auto anchor = ResolveBarBottomDockGrabAnchor(deformed,
+				root, 81.0, pointer, -240.0, -13.0, 1.5);
+			Check(anchor.valid && Near(anchor.normalizedY, ratio),
+				"Down uses the last successful MapY/UnmapY and actual button height");
+			const double desiredTopScreenY = -240.0 + deformed.visualTopDip * 1.5 - 13.0 + 37.0;
+			const auto moved = ResolveBarBottomDockShiftedShape(deformed,
+				-240.0, -13.0, 1.5, 120.0, 71.0, 0.75, desiredTopScreenY);
+			const double expectedTop = (deformed.visualTopDip * 1.5 - 253.0 + 37.0 - 191.0) / 0.75;
+			const double expectedBottom = (deformed.visualBottomDip * 1.5 - 253.0 + 37.0 - 191.0) / 0.75;
+			Check(moved.valid && Near(moved.topDip, expectedTop)
+				&& Near(moved.bottomDip, expectedBottom),
+				"general capture handoff preserves deformed endpoints across origin zoom and translation");
+			for (const bool docked : { false, true })
+			{
+				const auto handoff = ResolveBarBottomDockAnchoredVerticalMapping(
+					300.0, 381.0, moved.topDip, moved.bottomDip, docked);
+				Check(Near(handoff.mapping.visualTopDip, moved.topDip)
+					&& Near(handoff.mapping.visualBottomDip, moved.bottomDip),
+					"composed handoff restores both endpoints independently of the Down grab ratio");
+			}
+		}
+		// 底端恢复不得反推顶边；同一成功形状在浮动时只改变形状偏移的含义。
+		const auto capturing = ResolveBarBottomDockAnchoredVerticalMapping(
+			300.0, 381.0, 310.0, 420.0, true);
+		const auto captured = ResolveBarBottomDockAnchoredVerticalMapping(
+			300.0, 381.0, 310.0, 430.0, true);
+		Check(Near(capturing.mapping.visualTopDip, 310.0)
+			&& Near(captured.mapping.visualTopDip, 310.0)
+			&& Near(capturing.mapping.visualBottomDip, 420.0)
+			&& Near(captured.mapping.visualBottomDip, 430.0)
+			&& Near(captured.shapeOffsetDip, 49.0) && !captured.constrained,
+			"docked bottom recovery keeps the independent top endpoint fixed");
+		const auto floating = ResolveBarBottomDockAnchoredVerticalMapping(
+			300.0, 381.0, 310.0, 430.0, false);
+		Check(Near(floating.mapping.visualTopDip, 310.0)
+			&& Near(floating.mapping.visualBottomDip, 430.0)
+			&& Near(floating.shapeOffsetDip, 39.0) && !floating.constrained,
+			"floating handoff preserves the top and stores a recoverable height offset");
+		const auto collapsed = ResolveBarBottomDockAnchoredVerticalMapping(
+			300.0, 381.0, 410.0, 390.0, false);
+		Check(collapsed.constrained && Near(collapsed.mapping.visualTopDip, 410.0)
+			&& Near(collapsed.mapping.visualBottomDip - collapsed.mapping.visualTopDip,
+				81.0 * 0.000001),
+			"negative height is constrained without moving the desired top endpoint");
+	}
+
+	void TestDirectWindowMovePresentationBarrier()
+	{
+		using namespace Inkeys::UI::Bar;
+		Check(!ShouldDeferBarDirectWindowMove(0, 12, 12, 12, 10, 10),
+			"stable tuple with all barriers presented allows direct window movement");
+		Check(ShouldDeferBarDirectWindowMove(12, 12, 12, 12, 10, 10),
+			"local awaited serial still blocks direct window movement");
+		Check(ShouldDeferBarDirectWindowMove(0, 12, 12, 12, 12, 10),
+			"global deferred barrier blocks direct movement even when local awaited is zero");
+		Check(ShouldDeferBarDirectWindowMove(0, 12, 10, 10, 10, 10),
+			"a newer global deferred serial must belong to the current tuple");
+		Check(ShouldDeferBarDirectWindowMove(0, 12, 11, 11, 10, 10)
+			&& ShouldDeferBarDirectWindowMove(0, 12, 12, 14, 10, 10)
+			&& ShouldDeferBarDirectWindowMove(0, 12, 12, 12, 14, 10),
+			"in-flight odd serial stale candidates and mismatched tuples cannot move old pixels");
+	}
+
+	void TestDetachSeedFromSuccessfulShape()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (const double oldZoom : { 1.0, 1.5 })
+			for (const double nextZoom : { 0.6, 1.0, 2.0 })
+				for (const double elastic : { -20.0, 17.0 })
+					for (const double capture : { -8.0, 45.0 })
+					{
+						const auto old = ResolveBarBottomDockVerticalMapping(10.0, 91.0, elastic, capture, true);
+						const auto oldY = [&](double y) { return -240.0 + y * oldZoom - 13.0; };
+						const double nextTop = 430.0, nextBottom = 513.0;
+						const auto nextY = [&](double y) { return 120.0 + y * nextZoom + 71.0; };
+						BarBottomDockSpringState spring{ 999.0, -700.0 }, bottom{ -999.0, 800.0 };
+						const auto seed = [&]
+						{
+							return SeedBarBottomDockDetach(spring, bottom, BarBottomDockMode::BottomDocked,
+								BarBottomDockMode::Floating, oldY(old.baseTopDip), oldY(old.visualTopDip),
+								oldY(old.visualBottomDip), nextY(nextTop), nextY(nextBottom), nextZoom, true);
+						};
+						Check(seed(), "detach seeds only the successful Docked to Floating handoff");
+						const double seededElastic = spring.positionDip, seededBottom = bottom.positionDip;
+						const auto mapped = ResolveBarBottomDockRecoveringVerticalMapping(
+							nextTop, nextBottom, spring.positionDip, bottom.positionDip, true, true);
+						const double normalMove = nextY(nextTop) - oldY(old.visualTopDip);
+						Check(Near(nextY(mapped.visualTopDip), oldY(old.visualTopDip) + normalMove)
+							&& Near(nextY(mapped.visualBottomDip), oldY(old.visualBottomDip) + normalMove),
+							"detach preserves both screen endpoints after the normal pointer translation");
+						// 失败候选的积分和速度污染不能成为下一次重试的基线。
+						(void)AdvanceBarBottomDockSpring(spring, 0.0, 1.0 / 60.0, true, true);
+						(void)AdvanceBarBottomDockSpring(bottom, 0.0, 1.0 / 60.0, true, true);
+						Check(seed() && Near(spring.positionDip, seededElastic) && Near(bottom.positionDip, seededBottom)
+							&& spring.velocityDipPerSecond == 0.0 && bottom.velocityDipPerSecond == 0.0,
+							"failed detach candidates re-seed the exact successful shape including offsets beyond 24 DIP");
+						for (unsigned frame = 0; frame < 360; ++frame)
+						{
+							(void)AdvanceBarBottomDockSpring(spring, 0.0, 1.0 / 60.0, true, true);
+							(void)AdvanceBarBottomDockSpring(bottom, 0.0, 1.0 / 60.0, true, true);
+						}
+						Check(spring.positionDip == 0.0 && bottom.positionDip == 0.0,
+							"detach uses the existing bounded spring to settle without widening the input threshold");
+					}
+		BarBottomDockSpringState spring{ 9.0, 1.0 }, bottom{ 8.0, 2.0 };
+		Check(!SeedBarBottomDockDetach(spring, bottom, BarBottomDockMode::Floating, BarBottomDockMode::Floating,
+			0, 0, 80, 0, 80, 1, true) && spring.positionDip == 9.0 && bottom.positionDip == 8.0,
+			"ordinary Floating frames do not consume a detach seed");
+		Check(SeedBarBottomDockDetach(spring, bottom, BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
+			0, -20, 80, 0, 80, 1, false) && spring.positionDip == 0 && bottom.positionDip == 0,
+			"animation-disabled detach keeps the existing immediate completion semantics");
+	}
+
 	void TestFontTargetUsesResolvedGrip()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -557,6 +831,12 @@ namespace
 
 int RunBarBottomDockTests()
 {
+	TestFixedSurfaceWorldTargets();
+	TestFixedSurfaceFramePresentation();
+	TestFixedSurfaceHorizontalHandoff();
+	TestEffectiveInputCaptureAndNormalizedGrab();
+	TestDirectWindowMovePresentationBarrier();
+	TestDetachSeedFromSuccessfulShape();
 	using namespace Inkeys::UI::Bar;
 	{
 		int restored = 0, requests = 0;
@@ -1165,40 +1445,73 @@ int RunBarBottomDockTests()
 	Check(ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			false, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Free,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Capturing, false, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, true, true,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, false,
-			false, false, false)
+			false, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			true, false, false)
+			true, false, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, true, false)
+			false, true, false, false)
 		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, true,
-			false, false, true),
+			false, false, true, false),
 		"only a stable idle centered bottom dock derives the root position");
+	Check(ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			false, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Free,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Capturing, false, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, true, true,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, false,
+			false, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			true, false, true, true)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, true),
+		"workspace placement derives only X under the same full centered ownership gate");
 	const auto centeredRight = ResolveBarBottomDockCenteredRootPlacement(
 		960.0, 80.0, 250.0, 400.0);
 	const auto centeredLeft = ResolveBarBottomDockCenteredRootPlacement(
@@ -1233,6 +1546,37 @@ int RunBarBottomDockTests()
 		&& centeredStroke.mainCenterDip <= centeredRootRange.maximumDip
 		&& !invalidCenteredRootRange.valid,
 		"centered root range conservatively reserves the full animated parent travel");
+	bool continuousWorkspaceGeometry = ShouldDeriveBarBottomDockCenteredRoot(
+		true, BarBottomDockCenterMode::Centered, BarBottomDockPhase::Stable,
+		false, true, false, false, true, true);
+	for (int index = 0; index <= 32; ++index)
+	{
+		const double stroke = static_cast<double>(index % 3);
+		const double buttonWidth = 80.0 + stroke;
+		const double barWidth = 120.0 + static_cast<double>(index) * 12.5;
+		const double offset = 50.0 + barWidth / 2.0;
+		const double monitorCenter = index % 2 ? 960.0 : -960.0;
+		const auto right = ResolveBarBottomDockCenteredRootPlacement(
+			monitorCenter, buttonWidth, offset, barWidth);
+		const auto left = ResolveBarBottomDockCenteredRootPlacement(
+			monitorCenter, buttonWidth, -offset, barWidth);
+		const auto range = ResolveBarBottomDockCenteredRootRange(
+			monitorCenter, buttonWidth, buttonWidth, -offset, offset,
+			barWidth, barWidth);
+		continuousWorkspaceGeometry &= right.valid && left.valid && range.valid
+			&& Near((right.bodyLeftDip + right.bodyRightDip) / 2.0, monitorCenter)
+			&& Near((left.bodyLeftDip + left.bodyRightDip) / 2.0, monitorCenter)
+			&& right.mainCenterDip >= range.minimumDip
+			&& right.mainCenterDip <= range.maximumDip
+			&& left.mainCenterDip >= range.minimumDip
+			&& left.mainCenterDip <= range.maximumDip;
+	}
+	Check(continuousWorkspaceGeometry
+		&& !ResolveBarBottomDockCenteredRootPlacement(960.0, 80.0,
+			std::numeric_limits<double>::infinity(), 400.0).valid
+		&& !ResolveBarBottomDockCenteredRootRange(960.0, 80.0, 80.0,
+			250.0, 250.0, -1.0, 400.0).valid,
+		"shared workspace gate keeps actual root and viewport range centered over continuous widths");
 	Check(ResolveBarBottomDockInitialMainBarSide(false, false)
 		&& ResolveBarBottomDockInitialMainBarSide(false, true)
 		&& !ResolveBarBottomDockInitialMainBarSide(true, false)

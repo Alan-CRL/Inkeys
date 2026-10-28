@@ -1,0 +1,42 @@
+{
+  "id": "ui3-bar-centering-dock-geometry",
+  "name": "ui3-bar-centering-dock-geometry",
+  "title": "UI3 底栏居中与吸附帧几何修复",
+  "description": "调查并修复居中底栏在模式切换中的水平偏移，以及底栏吸附切换的首帧跳变和提示矩形顶部裁剪；本轮形成调查与实施规划，不修改产品代码。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-25",
+  "completedAt": "2026-10-27",
+  "branch": "bugfix/cut",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "48dda087b18958ce723cb64815b230005c4a4af1",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-25-ui3-centered-bar-dynamic-centering",
+    "10-25-ui3-bottom-dock-transition-clipping"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-10-27用户明确授权完成收尾、结束相关任务并归档提交。居中子任务已归档；固定拖动实机正常。最终释放表面仅保留至恢复结束，最后idle收窗；完整ARM64构建、190次收窗及吸附/居中/输入/完整no-window均通过。最终收窗版未新做GUI验证，收窗闪动可能返回是用户接受的性能/设计取舍；不宣称系统根因或所有环境完全消闪。",
+  "meta": {
+    "verification": {
+      "software": "final_arm64_solution_bottom_dock_centering_input_worker_full_headless_passed_190_window_shrinks",
+      "gui": "dragging_user_confirmed_normal_final_idle_shrink_not_visually_retested_residual_tradeoff_accepted",
+      "report": ".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
+      "reviewReport": ".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md",
+      "fixValidationReport": ".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md",
+      "regressionReport": ".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md",
+      "liveReproductionReport": ".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md",
+      "topEdgeFixReviewReport": ".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/top-edge-fix-review-2026-10-26.md",
+      "finalClosure": "user_authorized_archive_2026_10_27_with_documented_idle_shrink_flicker_limit",
+      "finalReleaseEvidence": "TestResults/ui3-release-shrink-2026-10-27/validation-summary.json"
+    }
+  }
+}

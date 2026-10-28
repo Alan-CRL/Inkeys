@@ -125,6 +125,13 @@ export namespace Inkeys::Drawing::Draw3
 		double minimumHoldDurationSeconds = 0.0;
 	};
 
+	// 同一帧可多次求值；只在帧首到最终生命周期结果的边沿退休瞬态资源。
+	constexpr bool LaserTrailExpiredThisFrame(
+		LaserTrailPhase previous, LaserTrailPhase final) noexcept
+	{
+		return previous != LaserTrailPhase::Inactive && final == LaserTrailPhase::Inactive;
+	}
+
 	// 单 contact coverage 的批次模式；多 contact 一旦出现便锁定完整重绘。
 	enum class LaserCoverageMode : uint32_t
 	{

@@ -422,6 +422,55 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。
 - 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
+## Scenario: DComp 交接上屏屏障与 Laser 最终过期
+
+### 1. Scope / Trigger
+
+修改 Primary DComp 与 Selection ULW 输出切换、Present/ready 发布、窗口显隐交接，或 Laser 生命周期多次求值与瞬态资源清理时适用。`Present1` 返回不代表 DWM 已显示新帧；隐藏主 HWND 也不清除其最后已显示内容，过早 ready 会在重新显示时露出旧 Laser 或旧笔迹。
+
+### 2. Signatures
+
+- `TransparentPresentationController::SetOutputTarget(target)` 生成单调 output revision；`Present(dirty, presentFull, contentRevision)` 是交接屏障所有者。
+- `DCompHandoffBarrierState::{Arm,Cancel,Consume}` 记录待上屏 revision；`DrawingController::PresentFrame` 只在 `Present` 整体成功后调用 `observer_.presented`。
+- `LaserTrailExpiredThisFrame(previous, final)` 以帧首和本帧最终 `LaserTrailPhase` 判定唯一过期边沿。
+
+### 3. Contracts
+
+- 切回 Primary 时 arm 最新 revision；仅该 revision 的 DComp 全帧 `Present1` 成功后执行一次 `DwmFlush`，其成功返回后才允许 Host 发布 handoff ready。普通 DComp 帧和 ULW 不执行此等待。
+- `Present1` 失败不消费屏障；`DwmFlush` 失败必须恢复同 revision pending、不得成功 ready，并记录 target/output/content revision 与 HRESULT，沿用现有恢复。切到 ULW 或快速产生新 revision 时淘汰旧等待，不能为旧目标补 ready。
+- Laser 一帧可先在动画阶段、再在输入阶段求值。最终相位仍为 Active/Hold/Fade 时不清资源；最终进入 Inactive 时当帧清理 coverage、stable/live bounds、stroke layers 和 coverage mode，下一帧不重复。首次过期即使 opacity 增量低于 dirty 阈值，也必须 union 旧 bounds，保证不被 idle/maintenance 提前跳过。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| DComp 普通或 partial 帧 | 不调用交接屏障 |
+| 交接 Present 失败 | 不等待、不 ready，同 revision 全帧重试仍可取得屏障 |
+| `DwmFlush` 失败 | 不 ready，保留 pending 并进入恢复 |
+| DComp→ULW→DComp 快速往返 | 旧 revision 被拒绝，仅最新目标等待一次 |
+| Laser 第二次求值才 Inactive | 当帧最终清理一次 |
+| 同帧新 Down 回到 Active | 不误清旧批次，沿用既有生命周期 |
+| 末段 opacity 变化低于阈值 | 旧 bounds 仍 dirty，清理不被 idle 跳过 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：全帧 Present → DWM 上屏屏障 → ready → owner-thread 成对显隐。
+- Base：连续书写和普通 ULW 呈现保持原有无额外 `DwmFlush` 路径。
+- Bad：用固定 Sleep/重复 Present 代替同步，或只在第一次 Laser 求值后计算过期并可能永久丢失清理。
+
+### 6. Tests Required
+
+- 纯状态测试覆盖屏障成功、失败、Present 重试、普通/ULW/partial 不等待、成功后不重复和快速 revision 往返；这些只证明顺序，不冒充真实 DWM 视觉证据。
+- Laser 探针覆盖第二次求值才过期、下一帧不重复及新 Down；检查生产代码先强制旧 bounds dirty、再在最终相位后清理。
+- 完整 Solution 原生 Debug 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-control-fence-test`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`。
+- 真实桌面必须反复验证 Laser→Selection→消失→绘制及普通笔迹快速往返；未执行可见视觉验收时保持设备待验收。
+
+### 7. Wrong vs Correct
+
+Wrong：`Present1(...) == S_OK -> observer.presented(success) -> ShowWindow(primary)`；或 `laserExpired` 只在第一次相位求值后计算。
+
+Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`；Laser 用 `LaserTrailExpiredThisFrame(frameInitial, finalAfterInput)` 驱动最终清理，首次过期预先保留 dirty。
+
 ## 来源任务与验证状态
 
 - 源任务历史统一保存到 `.trellis/tasks/archive/2026-08/draw3-source/`；其中 `active/` 保留源快照的 `in_progress` 状态但不进入目标 active task 列表，原 2026-07/08 归档按月份保留。

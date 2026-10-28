@@ -1,0 +1,17 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认 UI3 生产边界、线程所有权和原生桌面前置检查。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵守居中、二维吸附、动态 viewport、脏区与 ULW 成功呈现事务合同。"}
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"保持 Desktop/PPT/Whiteboard 场景基线和恢复行为。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"使用完整 Solution 和本机原生架构构建入口，区分声明与运行验证。"}
+{"file":".trellis/spec/native-desktop/ui3-render-diagnostics.md","reason":"复用成功呈现诊断并正确界定无窗口与真实视觉验证。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查输入、渲染、窗口线程和呈现边界的坐标及失败语义。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/shared-frame-contract-and-validation.md","reason":"执行父子任务共享的逐帧几何不变量和集成验证矩阵。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/centering-investigation.md","reason":"了解动态宽度居中根因、代码边界和回归证据。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/dock-transition-clipping-investigation.md","reason":"了解吸附首帧与提示裁剪根因、代码边界和回归证据。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/handoff.md","reason":"接力时首先确认居中修改、验证证据、未完成事项和正确实施顺序。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/implementation-validation.md","reason":"保留居中实际实现、先红后绿证据、质量检查和剩余验证边界。"}
+{"file": ".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md", "reason": "最终接力、DPI/范围审计、两个子任务组合及软件/GUI 验收边界"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/review-2026-10-26.md","reason":"优先阅读最新审阅：手动捕获旧底边、真实抓点、直移测试盲区及针对性修复方案，撤回旧 software=passed 结论。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/review-fix-validation-2026-10-26.md","reason":"当前最新修复与全量验证证据，包括旧红新绿、质量审查和 359.523 秒完整 no-window 通过。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/break-loop-2026-10-26.md","reason":"理解反复修复失败的跨层合同和测试自证教训，保持后续真实视觉边界。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/regression-review-2026-10-26.md","reason":"优先阅读顶边回归、错误抓点验收和捕获 viewport 变化分析，以及 Down 预扩窗边界。"}
+{"file":".trellis/tasks/archive/2026-10/10-25-ui3-bottom-dock-transition-clipping/research/live-reproduction-2026-10-26.md","reason":"遵守原生可见窗口复现状态和复现前禁止产品修复的门禁。"}

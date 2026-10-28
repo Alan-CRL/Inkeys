@@ -545,6 +545,9 @@ struct BarBottomDockPresentedSnapshot
 	double centerElasticOffsetDip = 0.0;
 	double elasticOffsetDip = 0.0;
 	double rigidTranslationDip = 0.0;
+	double mainButtonVisibleHeightDip = 81.0;
+	bool dragActive = false; // 上次完整成功帧是否仍按住，用于松手形状交接。
+	unsigned long long dragSession = 0;
 	double zoom = 1.0;
 		POINT monitorOrigin{};
 		RECT monitorBounds{ 0, 0, 1, 1 };
@@ -761,6 +764,11 @@ public:
 				memory_order_relaxed);
 			snapshot.rigidTranslationDip =
 				bottomDockPresentedRigidTranslationDip.load(memory_order_relaxed);
+			snapshot.mainButtonVisibleHeightDip =
+				bottomDockPresentedMainButtonVisibleHeightDip.load(memory_order_relaxed);
+			snapshot.dragActive =
+				bottomDockPresentedDragActive.load(memory_order_relaxed);
+			snapshot.dragSession = bottomDockPresentedDragSession.load(memory_order_relaxed);
 			snapshot.mapping.rigidOverlayTranslationYDip =
 				snapshot.rigidTranslationDip;
 			snapshot.centerMode = bottomDockPresentedCenterMode.load(
@@ -1008,9 +1016,9 @@ protected:
 		return Inkeys::UI::Bar::FinishBarBottomDockTransition(
 			bottomDockTransitionSerial, bottomDockDeferredTransitionSerial, deferWindowMove);
 	}
-	// 调用方持有 directWindowDragMutex；直移只重基准屏幕位置，不改变已呈现位图。
+	// 调用方持有 directWindowDragMutex；screenDelta 是真实直移，layoutTranslation 是吸收的布局像素。
 	void RebaseBottomDockPresentedWindow(POINT directTranslation,
-		POINT screenDelta = {}) noexcept
+		POINT screenDelta = {}, POINT layoutTranslation = {}) noexcept
 	{
 		directWindowPresentedTranslationX.store(
 			directTranslation.x, memory_order_relaxed);
@@ -1042,6 +1050,40 @@ protected:
 			bottomDockPresentedRawBodyCenterScreenX.load(memory_order_relaxed)
 				+ screenDelta.x,
 			memory_order_relaxed);
+		const auto shift = [](auto& value, auto delta)
+			{ value.store(value.load(memory_order_relaxed) + delta, memory_order_relaxed); };
+		shift(bottomDockPresentedVisualBodyCenterScreenX, screenDelta.x);
+		if (layoutTranslation.x != 0 || layoutTranslation.y != 0)
+		{
+			const double zoom = Inkeys::UI::Bar::NormalizeBarBottomDockZoom(
+				bottomDockPresentedZoom.load(memory_order_relaxed));
+			const double dx = layoutTranslation.x / zoom, dy = layoutTranslation.y / zoom;
+			// 绝对 DIP 端点随布局平移；scale 和弹性/刚性相对偏移保持原值。
+			shift(bottomDockPresentedBaseTopDip, dy);
+			shift(bottomDockPresentedBaseBottomDip, dy);
+			shift(bottomDockPresentedVisualTopDip, dy);
+			shift(bottomDockPresentedVisualBottomDip, dy);
+			shift(bottomDockPresentedRigidGripYDip, dy);
+			shift(bottomDockPresentedBaseLeftDip, dx);
+			shift(bottomDockPresentedBaseRightDip, dx);
+			shift(bottomDockPresentedVisualLeftDip, dx);
+			shift(bottomDockPresentedVisualRightDip, dx);
+			// 提示命中是布局像素；按钮命中是绝对 DIP，两者都不是屏幕缓存。
+			shift(bottomDockIndicatorPresentedLeft, layoutTranslation.x);
+			shift(bottomDockIndicatorPresentedRight, layoutTranslation.x);
+			shift(bottomDockIndicatorPresentedTop, layoutTranslation.y);
+			shift(bottomDockIndicatorPresentedBottom, layoutTranslation.y);
+			std::lock_guard hitLock(presentedButtonHitsMutex_);
+			const auto shiftHits = [&](auto& hits)
+			{
+				for (auto& [identity, hit] : hits)
+				{
+					hit.boundsDip.left += static_cast<FLOAT>(dx); hit.boundsDip.right += static_cast<FLOAT>(dx);
+					hit.boundsDip.top += static_cast<FLOAT>(dy); hit.boundsDip.bottom += static_cast<FLOAT>(dy);
+				}
+			};
+			shiftHits(presentedButtonHits_); shiftHits(presentedVisualHits_);
+		}
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
 	// 拖动交互
@@ -1172,6 +1214,9 @@ protected:
 	atomic<double> bottomDockPresentedBodyCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedVisualBodyCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedRawBodyCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedMainButtonVisibleHeightDip = 81.0;
+	atomic<bool> bottomDockPresentedDragActive = false;
+	atomic<unsigned long long> bottomDockPresentedDragSession = 0;
 	atomic<bool> bottomDockIndicatorPresentedVisible = false;
 	atomic<bool> bottomDockIndicatorPresentedOccluding = false;
 	atomic<LONG> bottomDockIndicatorPresentedLeft = 0;
@@ -1181,6 +1226,10 @@ protected:
 	atomic<bool> bottomDockDragActive = false;
 	atomic<double> bottomDockDragRigidGripScreenX = 0.0;
 	atomic<double> bottomDockDragRigidGripScreenY = 0.0;
+	// 顶边目标独立于底端形变；与两轴状态、translation 共用发布事务。
+	atomic<double> bottomDockDragTopScreenY = 0.0;
+	atomic<bool> bottomDockDragTopAnchorValid = false;
+	atomic<unsigned long long> bottomDockDragSession = 0;
 	atomic<bool> bottomDockRecoveryActive = false;
 	atomic<unsigned long long> bottomDockTransitionSerial = 0;
 	atomic<unsigned long long> bottomDockDeferredTransitionSerial = 0;
@@ -1210,6 +1259,15 @@ namespace Inkeys::UI::Bar
 		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
 		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
 	export int RunUi3MultiTargetOffscreenBenchmark();
+	export int RunUi3WorkspaceCenteringTest();
+	export int RunUi3BottomDockTransitionTest();
+	bool RunUi3BottomDockInteractionSequence(BarUISetClass& owner,
+		const std::function<bool(const char*, POINT)>& render,
+		double downNormalizedY,
+		const std::function<BOOL(HWND, int, int)>& directMove,
+		const std::function<void(const char*)>& beforeMove = {},
+		const std::function<bool(unsigned, const char*, POINT)>& repeatRelease = {},
+		bool expandAfterClick = false);
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
