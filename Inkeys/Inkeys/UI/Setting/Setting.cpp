@@ -231,9 +231,6 @@ namespace
 	constexpr UINT SettingFrameThemeMessage = WM_APP + 0x531;
 	constexpr wchar_t SettingClientDpiProperty[] = L"Inkeys.Setting.ClientDpi";
 
-	constexpr auto DwmwaLegacyMicaEffect =
-		static_cast<DWMWINDOWATTRIBUTE>(1029);
-
 	using Inkeys::UI::Setting::SettingAccentState;
 	bool settingFrameDarkMode = false; // 仅 HWND owner 读取/更新，交互结束恢复同一主题。
 
@@ -271,7 +268,7 @@ namespace
 		if (!hwnd || !setCompositionAttribute) return false;
 
 		SettingAccentPolicy policy{};
-		// Win10 Acrylic 在拖动中反复重模糊；暂用普通 Blur，保留缓存画面的透明合成。
+		// 静止时为 Acrylic 动态模糊；仅 move/size loop 内切到普通 Blur，避免拖动中反复重模糊。
 		policy.state = Inkeys::UI::Setting::ResolveSettingAccentState(enabled,
 			settingInteractiveOperation.load(memory_order_acquire));
 		// GradientColor 使用 AABBGGRR；窗口线程消费已解析的主题快照。
@@ -296,25 +293,31 @@ namespace
 	void DisableSettingBackdrop(HWND hwnd) noexcept
 	{
 		if (!hwnd) return;
-		const DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_NONE;
-		(void)DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
-			&backdrop, sizeof(backdrop));
-		const BOOL legacyMica = FALSE;
-		(void)DwmSetWindowAttribute(hwnd, DwmwaLegacyMicaEffect,
-			&legacyMica, sizeof(legacyMica));
 		const BOOL redirectionAlpha = FALSE;
 		(void)DwmSetWindowAttribute(hwnd, DWMWA_REDIRECTIONBITMAP_ALPHA,
 			&redirectionAlpha, sizeof(redirectionAlpha));
 		SetSettingAcrylic(hwnd, false);
-		const MARGINS margins{};
-		(void)DwmExtendFrameIntoClientArea(hwnd, &margins);
+		// frame margin 属于框架几何（零侧边 frame 的阴影），撤销材质时不清除。
+	}
+
+	int settingFrameMarginTop = -1; // 仅 HWND owner 线程读写；-1 表示需重新确认。
+
+	void ApplySettingFrameMargins(HWND hwnd, bool force = false) noexcept
+	{
+		// accent 平台恢复态为零侧边 frame，需非零 margin 才保留 DWM 阴影；只扩展顶部 1 px。
+		const int top = hwnd && Inkeys::Window::UsesSettingOutsideResize()
+			&& !IsZoomed(hwnd) ? 1 : 0;
+		if (!hwnd || (!force && top == settingFrameMarginTop)) return;
+		const MARGINS margins{ 0, 0, top, 0 };
+		// 零 margin 失败（如 Win7 composition 关闭）无需逐条 WM_WINDOWPOSCHANGED 重试；composition 变化会强制重设。
+		settingFrameMarginTop = SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &margins)) || top == 0 ? top : -1;
 	}
 
 	[[nodiscard]] Inkeys::UI::Setting::BackdropMode
 		ApplySettingBackdrop(HWND hwnd, bool darkMode) noexcept
 	{
 		DisableSettingBackdrop(hwnd);
-		// Win8/8.1 不支持内部 Acrylic policy；仅 Win10 RS4+ 尝试可选材质。
+		// Win10 RS4+ 与 Win11 统一使用 accent 动态模糊；更早系统直接 Solid，不提供 Aero 回退。
 		if (!hwnd || !Inkeys::Window::IsSettingCompositionEnabled()
 			|| !Inkeys::Window::QuerySettingPlatformCapabilities().acrylic)
 			return Inkeys::UI::Setting::BackdropMode::Solid;
@@ -323,41 +326,12 @@ namespace
 			&& (highContrast.dwFlags & HCF_HIGHCONTRASTON))
 			return Inkeys::UI::Setting::BackdropMode::Solid;
 
-		const MARGINS fullClientFrame{ -1, -1, -1, -1 };
-		const BOOL redirectionAlpha = TRUE;
-		const DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW;
-		if (SUCCEEDED(DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
-			&backdrop, sizeof(backdrop)))
-			&& SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &fullClientFrame)))
-		{
-			(void)DwmSetWindowAttribute(hwnd, DWMWA_REDIRECTIONBITMAP_ALPHA,
-				&redirectionAlpha, sizeof(redirectionAlpha));
-			return Inkeys::UI::Setting::BackdropMode::Mica;
-		}
-
-		const DWM_SYSTEMBACKDROP_TYPE noBackdrop = DWMSBT_NONE;
-		(void)DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
-			&noBackdrop, sizeof(noBackdrop));
-		const BOOL legacyMica = TRUE;
-		if (SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmwaLegacyMicaEffect,
-			&legacyMica, sizeof(legacyMica)))
-			&& SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &fullClientFrame)))
-		{
-			(void)DwmSetWindowAttribute(hwnd, DWMWA_REDIRECTIONBITMAP_ALPHA,
-				&redirectionAlpha, sizeof(redirectionAlpha));
-			return Inkeys::UI::Setting::BackdropMode::Mica;
-		}
-
-		const BOOL disableLegacyMica = FALSE;
-		(void)DwmSetWindowAttribute(hwnd, DwmwaLegacyMicaEffect,
-			&disableLegacyMica, sizeof(disableLegacyMica));
-		const MARGINS noMargins{};
-		(void)DwmExtendFrameIntoClientArea(hwnd, &noMargins);
-		if (SetSettingAcrylic(hwnd, true, darkMode))
-			return Inkeys::UI::Setting::BackdropMode::Acrylic;
-
-		DisableSettingBackdrop(hwnd);
-		return Inkeys::UI::Setting::BackdropMode::Solid;
+		// 不设置系统 backdrop/Mica：其与壁纸静态合成，不随下层窗口变化。
+		const auto backdrop = Inkeys::UI::Setting::ResolveBackdropMode(
+			SetSettingAcrylic(hwnd, true, darkMode));
+		if (backdrop == Inkeys::UI::Setting::BackdropMode::Solid)
+			DisableSettingBackdrop(hwnd);
+		return backdrop;
 	}
 
 	[[nodiscard]] UINT QuerySettingDpi(HWND hwnd) noexcept
@@ -441,12 +415,214 @@ namespace
 		const COLORREF borderColor = DWMWA_COLOR_DEFAULT;
 		(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
 		const auto backdrop = ApplySettingBackdrop(hwnd, darkMode);
+		// 材质应用/撤销后重新确认框架 margin，不依赖 DWM 是否保留旧值。
+		ApplySettingFrameMargins(hwnd, true);
 		if (settingBackdropMode.exchange(backdrop, memory_order_acq_rel) != backdrop)
 		{
 			// 可选材质成功/回退后，由渲染线程统一更新表面及根背景的 alpha。
 			settingThemeSerial.fetch_add(1, memory_order_release);
 			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
 		}
+	}
+
+	// accent 平台的透明 resize 边框窗口：承接全部缩放热区（HWND 内不再有缩放命中），不绘制、不进 Window::Service。
+	// 仅 Setting HWND 线程创建、同步与销毁；owner 为 Setting，z-order 策略按 owner 链容许穿插。
+	constexpr wchar_t SettingResizeBorderClass[] = L"Inkeys.Window.SettingResizeBorder";
+	HWND settingResizeBorder = nullptr;
+	Inkeys::UI::Setting::WindowResizeBorderGeometry settingResizeBorderGeometry{};
+
+	[[nodiscard]] LRESULT SettingResizeBorderHitTest(HWND border, LPARAM lParam) noexcept
+	{
+		const HWND setting = GetWindow(border, GW_OWNER);
+		// 模态期间 Setting 被禁用，边框也不能绕过模态开始缩放；几何由同线程的最近一次同步发布。
+		if (!setting || border != settingResizeBorder || !IsWindowEnabled(setting)
+			|| IsIconic(setting) || IsZoomed(setting))
+			return HTNOWHERE;
+		using Inkeys::UI::Setting::WindowFrameHit;
+		switch (Inkeys::UI::Setting::HitTestWindowResizeBorder(settingResizeBorderGeometry,
+			GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)))
+		{
+		case WindowFrameHit::TopLeft: return HTTOPLEFT;
+		case WindowFrameHit::TopRight: return HTTOPRIGHT;
+		case WindowFrameHit::BottomLeft: return HTBOTTOMLEFT;
+		case WindowFrameHit::BottomRight: return HTBOTTOMRIGHT;
+		case WindowFrameHit::Left: return HTLEFT;
+		case WindowFrameHit::Right: return HTRIGHT;
+		case WindowFrameHit::Top: return HTTOP;
+		case WindowFrameHit::Bottom: return HTBOTTOM;
+		default: return HTNOWHERE;
+		}
+	}
+
+	LRESULT CALLBACK SettingResizeBorderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+	{
+		switch (msg)
+		{
+		case WM_NCHITTEST:
+			return SettingResizeBorderHitTest(hwnd, lParam);
+		case WM_SETCURSOR:
+		{
+			LPCWSTR cursor = nullptr;
+			switch (LOWORD(lParam))
+			{
+			case HTLEFT: case HTRIGHT: cursor = IDC_SIZEWE; break;
+			case HTTOP: case HTBOTTOM: cursor = IDC_SIZENS; break;
+			case HTTOPLEFT: case HTBOTTOMRIGHT: cursor = IDC_SIZENWSE; break;
+			case HTTOPRIGHT: case HTBOTTOMLEFT: cursor = IDC_SIZENESW; break;
+			default: break;
+			}
+			if (!cursor) break;
+			SetCursor(LoadCursorW(nullptr, cursor));
+			return TRUE;
+		}
+		case WM_MOUSEACTIVATE:
+			return MA_NOACTIVATE;
+		case WM_SHOWWINDOW:
+			// Setting 从最小化还原时系统会重新显示 owned 窗口；显隐只由 SyncSettingResizeBorder 决定，避免还原到最大化时露出。
+			if (wParam && lParam == SW_PARENTOPENING) return 0;
+			break;
+		case WM_NCLBUTTONDOWN:
+		{
+			const HWND setting = GetWindow(hwnd, GW_OWNER);
+			const auto hit = static_cast<LRESULT>(wParam);
+			// HT 八方向与 WMSZ 同序，SC_SIZE 低位按偏移得到方向。
+			static_assert(HTRIGHT - HTLEFT + WMSZ_LEFT == WMSZ_RIGHT && HTTOP - HTLEFT + WMSZ_LEFT == WMSZ_TOP
+				&& HTTOPLEFT - HTLEFT + WMSZ_LEFT == WMSZ_TOPLEFT && HTTOPRIGHT - HTLEFT + WMSZ_LEFT == WMSZ_TOPRIGHT
+				&& HTBOTTOM - HTLEFT + WMSZ_LEFT == WMSZ_BOTTOM && HTBOTTOMLEFT - HTLEFT + WMSZ_LEFT == WMSZ_BOTTOMLEFT
+				&& HTBOTTOMRIGHT - HTLEFT + WMSZ_LEFT == WMSZ_BOTTOMRIGHT);
+			// 悬停后才弹出的模态同样禁止从边框开始缩放。
+			if (!setting || !IsWindowEnabled(setting) || hit < HTLEFT || hit > HTBOTTOMRIGHT) return 0;
+			// 系统 size loop 仍在 Setting 上运行，WM_SYSCOMMAND 路径发布 Size 并切换轻量模糊。
+			(void)SetForegroundWindow(setting);
+			(void)SendMessageW(setting, WM_SYSCOMMAND,
+				SC_SIZE | static_cast<WPARAM>(hit - HTLEFT + WMSZ_LEFT), lParam);
+			return 0;
+		}
+		case WM_NCLBUTTONDBLCLK:
+		{
+			// 与原生窗口一致：双击上/下边框由 Setting 的 DefWindowProc 纵向最大化；其余方向无语义。
+			const HWND setting = GetWindow(hwnd, GW_OWNER);
+			if (setting && IsWindowEnabled(setting) && (wParam == HTTOP || wParam == HTBOTTOM))
+				(void)SendMessageW(setting, WM_NCLBUTTONDBLCLK, wParam, lParam);
+			return 0;
+		}
+		case WM_NCRBUTTONDOWN:
+		case WM_NCRBUTTONUP:
+			// 边框窗口自身没有系统菜单语义。
+			return 0;
+		case WM_NCDESTROY:
+			// owner 销毁时系统会先销毁 owned 窗口。
+			if (settingResizeBorder == hwnd)
+			{
+				settingResizeBorder = nullptr;
+				settingResizeBorderGeometry = {};
+			}
+			break;
+		default:
+			break;
+		}
+		return ::DefWindowProcW(hwnd, msg, wParam, lParam);
+	}
+
+	[[nodiscard]] bool CreateSettingResizeBorder(HWND setting) noexcept
+	{
+		static const bool registered = []() noexcept
+		{
+			WNDCLASSEXW windowClass{ sizeof(windowClass) };
+			windowClass.lpfnWndProc = SettingResizeBorderProc;
+			windowClass.hInstance = GetModuleHandleW(nullptr);
+			windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+			windowClass.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+			windowClass.lpszClassName = SettingResizeBorderClass;
+			return RegisterClassExW(&windowClass) != 0
+				|| GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+		}();
+		if (!registered) return false;
+		DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+		if (GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) exStyle |= WS_EX_TOPMOST;
+		const HWND border = CreateWindowExW(exStyle, SettingResizeBorderClass, L"", WS_POPUP,
+			0, 0, 0, 0, setting, nullptr, GetModuleHandleW(nullptr), nullptr);
+		if (!border) return false;
+		// alpha 为 0 的分层窗口不接收鼠标；1/255 的黑色不可见，同时保留命中。
+		if (!SetLayeredWindowAttributes(border, 0, 1, LWA_ALPHA))
+		{
+			DestroyWindow(border);
+			return false;
+		}
+		settingResizeBorder = border;
+		settingResizeBorderGeometry = {};
+		return true;
+	}
+
+	void HideSettingResizeBorder() noexcept
+	{
+		if (settingResizeBorder) (void)ShowWindow(settingResizeBorder, SW_HIDE);
+	}
+
+	void DestroySettingResizeBorder() noexcept
+	{
+		const HWND border = exchange(settingResizeBorder, nullptr);
+		settingResizeBorderGeometry = {};
+		if (border && IsWindow(border)) DestroyWindow(border);
+	}
+
+	void SyncSettingResizeBorder(HWND setting) noexcept
+	{
+		// 最大化/还原改变零侧边 frame 是否生效，阴影 margin 随同确认（未变化时不调用 DWM）。
+		ApplySettingFrameMargins(setting);
+		// 最小化、最大化与隐藏都没有外侧热区；Win7/8/8.1 和早期 Win10 从不创建。
+		RECT window{};
+		if (!setting || !Inkeys::Window::UsesSettingOutsideResize() || !IsWindowVisible(setting)
+			|| IsIconic(setting) || IsZoomed(setting) || !GetWindowRect(setting, &window))
+		{
+			HideSettingResizeBorder();
+			return;
+		}
+		const UINT dpi = QuerySettingDpi(setting);
+		const SIZE sizing = Inkeys::Window::QuerySettingFrameThickness(dpi);
+		const int radius = Inkeys::Window::QuerySettingPlatformCapabilities().roundedCorners
+			? Inkeys::UI::Setting::ScaleDip(Inkeys::UI::Setting::WindowCornerRadiusDip,
+				Inkeys::UI::Setting::DpiScale(dpi)) : 0;
+		const auto geometry = Inkeys::UI::Setting::ResolveWindowResizeBorderGeometry(FrameRect(window),
+			{ static_cast<int>(sizing.cx), static_cast<int>(sizing.cy),
+				static_cast<int>(sizing.cx), static_cast<int>(sizing.cy) }, radius);
+		if (geometry.Empty() || (!settingResizeBorder && !CreateSettingResizeBorder(setting)))
+		{
+			HideSettingResizeBorder();
+			return;
+		}
+		const auto& previous = settingResizeBorderGeometry;
+		// 移动只改位置；尺寸、DPI 或圆角变化才重建区域。
+		if (previous.outer.Width() != geometry.outer.Width()
+			|| previous.outer.Height() != geometry.outer.Height()
+			|| previous.excluded.left != geometry.excluded.left
+			|| previous.excluded.top != geometry.excluded.top
+			|| previous.cornerRadius != geometry.cornerRadius)
+		{
+			HRGN region = CreateRectRgn(0, 0, geometry.outer.Width(), geometry.outer.Height());
+			const auto& hole = geometry.excluded;
+			// CreateRoundRectRgn 比 CreateRectRgn 在右/下各少一像素；补偿后挖空恰为 HWND，
+			// 否则边框窗口会盖住 Setting 最右列与最下行（滚动条边缘）并返回 HTNOWHERE。
+			HRGN excluded = geometry.cornerRadius > 0
+				? CreateRoundRectRgn(hole.left, hole.top, hole.right + 1, hole.bottom + 1,
+					geometry.cornerRadius * 2, geometry.cornerRadius * 2)
+				: CreateRectRgn(hole.left, hole.top, hole.right, hole.bottom);
+			const bool combined = region && excluded
+				&& CombineRgn(region, region, excluded, RGN_DIFF) != ERROR;
+			if (excluded) DeleteObject(excluded);
+			// SetWindowRgn 成功后区域归系统所有；失败时先隐藏，下次同步重建区域。
+			if (!combined || !SetWindowRgn(settingResizeBorder, region, FALSE))
+			{
+				if (region) DeleteObject(region);
+				HideSettingResizeBorder();
+				settingResizeBorderGeometry = {};
+				return;
+			}
+		}
+		settingResizeBorderGeometry = geometry;
+		(void)SetWindowPos(settingResizeBorder, nullptr, geometry.outer.left, geometry.outer.top,
+			geometry.outer.Width(), geometry.outer.Height(),
+			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
 	}
 
 	[[nodiscard]] float QuerySettingCaptionButtonWidth(
@@ -1308,7 +1484,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		RECT& proposed = wParam
 			? reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam)->rgrc[0]
 			: *reinterpret_cast<RECT*>(lParam);
-		// 恢复态顶部仅保留 DWM 描边；最大化仍完整内缩系统 frame，与 USER32 工作区一致。
+		// 恢复态顶部仅保留 DWM 描边，accent 平台左/右/下为 0；最大化仍完整内缩系统 frame，与 USER32 工作区一致。
 		const auto client = Inkeys::UI::Setting::InsetWindowFrameRect(
 			FrameRect(proposed), QuerySettingFrameInsets(hWnd, IsZoomed(hWnd) != FALSE));
 		proposed = { client.left, client.top, client.right, client.bottom };
@@ -1326,10 +1502,12 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		OffsetRect(&client, clientOrigin.x, clientOrigin.y);
 		const LRESULT clientHit = HitTestSettingClientTitleBar(hWnd, lParam);
 		const SIZE sizing = Inkeys::Window::QuerySettingFrameThickness(QuerySettingDpi(hWnd));
+		// accent 平台热区只在窗外边框窗口；HWND 内（含 caption 顶部）不再返回缩放命中。
+		const bool insideResize = !Inkeys::Window::UsesSettingOutsideResize();
 		using Inkeys::UI::Setting::WindowFrameHit;
 		switch (Inkeys::UI::Setting::HitTestWindowFrame(FrameRect(outer), FrameRect(client),
 			GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), IsZoomed(hWnd) != FALSE,
-			static_cast<int>(sizing.cy), clientHit != HTCAPTION))
+			insideResize ? static_cast<int>(sizing.cy) : 0, clientHit != HTCAPTION, insideResize))
 		{
 		case WindowFrameHit::TopLeft: return HTTOPLEFT;
 		case WindowFrameHit::TopRight: return HTTOPRIGHT;
@@ -1434,6 +1612,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_SHOWWINDOW:
 		if (!wParam)
 		{
+			HideSettingResizeBorder();
 			// Hide 的外部意图可能已清空 operation，仍须恢复 owner 上的临时材质。
 			SetSettingInteractiveOperation(hWnd,
 				Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
@@ -1562,15 +1741,21 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				suggested->bottom - suggested->top,
 				SWP_NOZORDER | SWP_NOACTIVATE);
 		}
+		// 建议矩形可能不改尺寸，frame 厚度与圆角半径仍随 DPI 变化。
+		SyncSettingResizeBorder(hWnd);
 		return 0;
 	}
 	case WM_DWMCOMPOSITIONCHANGED:
-		// composition 开关会改变恢复态顶部 inset，立即重算而不等待用户 resize。
+		// composition 开关会改变恢复态顶部/侧边 inset，立即重算而不等待用户 resize。
 		SetWindowPos(hWnd, nullptr, 0, 0, 0, 0,
 			SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+		// DWM 重启后不保证保留旧 margin，强制重新确认阴影 margin。
+		ApplySettingFrameMargins(hWnd, true);
 		[[fallthrough]];
 	case WM_THEMECHANGED:
 	case WM_SETTINGCHANGE:
+		// 系统边框宽度等度量变化后同步外侧热区。
+		SyncSettingResizeBorder(hWnd);
 		settingThemeSerial.fetch_add(1, memory_order_release);
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
@@ -1601,11 +1786,18 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	case WM_DESTROY:
 	{
+		DestroySettingResizeBorder();
+		settingFrameMarginTop = -1;
 		SetSettingInteractiveOperation(hWnd,
 			Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
 		// 防御其他流氓软件关闭我的窗口
 		return 0;
 	}
+
+	case WM_WINDOWPOSCHANGED:
+		// 位置、尺寸、显隐与最大化/最小化都经过这里；DefWindowProc 继续派生 WM_SIZE/WM_MOVE。
+		SyncSettingResizeBorder(hWnd);
+		break;
 
 	case WM_MOVE:
 		RECT rect;
@@ -2448,7 +2640,7 @@ SettingSessionCoroutine RunSettingSession()
 						const ImVec2 origin = ImGui::GetWindowPos();
 						ImDrawList* drawList = ImGui::GetWindowDrawList();
 						entryTitleDraw=drawList;
-						// 根背景可为 Mica 透明，但 caption 始终以当前主题底色覆盖系统强调色。
+						// 根背景可为 Acrylic 透明，但 caption 始终以当前主题底色覆盖系统强调色。
 						drawList->AddRectFilled(origin,
 							{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
 							Design::PaletteForTheme(Design::IsDarkMode()).appBase);

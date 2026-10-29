@@ -1347,7 +1347,7 @@ namespace
 			const auto solid = Design::GetPalette();
 			const auto solidFluent = ImFluent::GetStyle();
 			const float styleAlpha = ImGui::GetStyle().Alpha;
-			for (auto backdrop : { BackdropMode::Mica, BackdropMode::Acrylic, BackdropMode::Solid })
+			for (auto backdrop : { BackdropMode::Acrylic, BackdropMode::Solid })
 			{
 				Design::ApplyPalette(materialDark, backdrop);
 				const auto& palette = Design::GetPalette();
@@ -1647,7 +1647,7 @@ namespace
 			for (const auto& vertex : frame.popup->DrawList->VtxBuffer)
 				if (vertex.col == opaqueBackground) { hasOpaqueFill = true; break; }
 			checks.Expect(hasOpaqueFill,
-				"actual combo popup emits opaque background vertices for Solid, Mica and Acrylic");
+				"actual combo popup emits opaque background vertices for Solid and Acrylic");
 			const auto rowMin = frame.popup->DC.CursorStartPos;
 			const float top = (std::max)(rowMin.y, bounds[1].Min.y);
 			const float bottom = (std::min)(rowMin.y + ImFluent::FluentDpx(ImFluent::GetStyle().ControlHeight), bounds[1].Max.y);
@@ -5115,7 +5115,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
 		ImGui::End();
 		ImGui::Render();
 		CheckDrawData(checks);
-		for (auto backdrop : { BackdropMode::Solid, BackdropMode::Mica, BackdropMode::Acrylic })
+		for (auto backdrop : { BackdropMode::Solid, BackdropMode::Acrylic })
 			CheckComboBoxInteraction(checks, fonts[0], scale, backdrop);
 		CheckDrawData(checks);
 		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);

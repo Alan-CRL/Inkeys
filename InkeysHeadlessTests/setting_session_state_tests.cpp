@@ -5,8 +5,12 @@
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <iostream>
+#include <iterator>
+#include <string>
 #include <thread>
 
 import Inkeys.Window;
@@ -233,8 +237,12 @@ namespace
 		{
 			const auto unknownBorder = Inkeys::Window::QuerySettingClientFrameInsets(nullptr, false, 96);
 			const auto sizing = Inkeys::Window::QuerySettingFrameThickness(96);
-			if (!Expect(unknownBorder.top == 0 && unknownBorder.left == sizing.cx
-				&& unknownBorder.right == sizing.cx && unknownBorder.bottom == sizing.cy,
+			// accent 平台恢复态左/右/下为 0，其余现代 DWM 保留完整 sizing frame。
+			const bool outsideOnly = Inkeys::Window::UsesSettingOutsideResize();
+			if (!Expect(unknownBorder.top == 0 && unknownBorder.left == (outsideOnly ? 0 : sizing.cx)
+				&& unknownBorder.right == (outsideOnly ? 0 : sizing.cx)
+				&& unknownBorder.bottom == (outsideOnly ? 0 : sizing.cy)
+				&& outsideOnly == Inkeys::Window::QuerySettingPlatformCapabilities().acrylic,
 				"production frame query without a supported DWM border never substitutes SM_CYBORDER")) ++failures;
 		}
 
@@ -297,16 +305,17 @@ namespace
 		using namespace Inkeys::Window;
 		using namespace Inkeys::UI::Setting;
 		int failures = 0;
-		struct PlatformCase { DWORD major, minor, build; bool legacy, alwaysDwm, acrylic; };
-		for (const auto& version : { PlatformCase{ 6, 1, 7601, true, false, false },
-			PlatformCase{ 6, 2, 9200, false, true, false }, PlatformCase{ 6, 3, 9600, false, true, false },
-			PlatformCase{ 10, 0, 10240, false, true, false }, PlatformCase{ 10, 0, 17133, false, true, false },
-			PlatformCase{ 10, 0, 17134, false, true, true }, PlatformCase{ 10, 0, 19045, false, true, true },
-			PlatformCase{ 10, 0, 22000, false, true, true }, PlatformCase{ 10, 0, 26100, false, true, true } })
+		struct PlatformCase { DWORD major, minor, build; bool legacy, alwaysDwm, acrylic, rounded; };
+		for (const auto& version : { PlatformCase{ 6, 1, 7601, true, false, false, false },
+			PlatformCase{ 6, 2, 9200, false, true, false, false }, PlatformCase{ 6, 3, 9600, false, true, false, false },
+			PlatformCase{ 10, 0, 10240, false, true, false, false }, PlatformCase{ 10, 0, 17133, false, true, false, false },
+			PlatformCase{ 10, 0, 17134, false, true, true, false }, PlatformCase{ 10, 0, 19045, false, true, true, false },
+			PlatformCase{ 10, 0, 21999, false, true, true, false },
+			PlatformCase{ 10, 0, 22000, false, true, true, true }, PlatformCase{ 10, 0, 26100, false, true, true, true } })
 		{
 			const auto platform = ResolveSettingPlatformCapabilities(version.major, version.minor, version.build);
 			if (!Expect(platform.legacyFrame == version.legacy && platform.compositionAlwaysEnabled == version.alwaysDwm
-				&& platform.acrylic == version.acrylic,
+				&& platform.acrylic == version.acrylic && platform.roundedCorners == version.rounded,
 				"Windows 7, 8, 8.1 and Windows 10 build boundaries select only available Settings capabilities")) ++failures;
 			for (const bool succeeded : { false, true }) for (const bool enabled : { false, true })
 				if (!Expect(ResolveSettingCompositionEnabled(platform, succeeded, enabled)
@@ -339,6 +348,202 @@ namespace
 			&& !MatchesSettingModalWake(true, true, 0, 0)
 			&& !IsSettingImGuiInputMessage(Inkeys::Window::MessageDispatch::SettingCancelModalMessage, 17, 0),
 			"modal wake requires the current Settings HWND, owner and generation, independently of running state")) ++failures;
+		return failures;
+	}
+
+	int CheckSettingResizeBorder()
+	{
+		using namespace Inkeys::UI::Setting;
+		int failures = 0;
+		for (const int framePixels : { 8, 10, 12, 16 })
+			for (const int visibleBorder : { 0, 1 })
+			{
+				// accent 平台：恢复态左/右/下零 frame，HWND 矩形即可见内容；顶部、最大化与非 accent 不变。
+				const WindowFrameInsets sizing{ framePixels, framePixels, framePixels, framePixels };
+				const auto accent = ResolveVisibleWindowFrameInsets(sizing, false, true, visibleBorder, true, true);
+				const auto accentMaximized = ResolveVisibleWindowFrameInsets(sizing, true, true, visibleBorder, true, true);
+				const auto classic = ResolveVisibleWindowFrameInsets(sizing, false, false, visibleBorder, true, true);
+				const auto modern = ResolveVisibleWindowFrameInsets(sizing, false, true, visibleBorder);
+				if (!Expect(accent.left == 0 && accent.right == 0 && accent.bottom == 0
+					&& accent.top == modern.top && accent.top == visibleBorder
+					&& accentMaximized.left == framePixels && accentMaximized.top == framePixels
+					&& accentMaximized.right == framePixels && accentMaximized.bottom == framePixels
+					&& classic.left == framePixels && classic.top == framePixels
+					&& classic.right == framePixels && classic.bottom == framePixels
+					&& modern.left == framePixels && modern.right == framePixels && modern.bottom == framePixels,
+					"accent restored frame zeroes only side and bottom insets; top, maximized and non-accent stay native")) ++failures;
+
+				// HWND 内不返回任何缩放命中，包括原 caption 顶部带与四角；非 accent 仍保留原内侧热区。
+				const WindowFrameRect window{ -1600, -900, -600, -200 };
+				const auto client = InsetWindowFrameRect(window, accent);
+				const int f = framePixels;
+				bool noInsideResize = true;
+				for (const int x : { window.left, window.left + 1, -1100, window.right - 2, window.right - 1 })
+					for (const int y : { window.top, window.top + 1, window.top + f - 1, -550, window.bottom - 2, window.bottom - 1 })
+						for (const bool protect : { false, true })
+							noInsideResize &= HitTestWindowFrame(window, client, x, y, false, 0, protect, false)
+								== WindowFrameHit::Client;
+				if (!Expect(noInsideResize
+					&& HitTestWindowFrame(window, client, window.left - 1, -550, false, 0, false, false) == WindowFrameHit::Outside
+					&& HitTestWindowFrame(window, client, -1100, window.bottom, false, 0, false, false) == WindowFrameHit::Outside
+					&& HitTestWindowFrame(window, client, window.left, window.top, true, 0, false, false) == WindowFrameHit::Client
+					&& HitTestWindowFrame(window, client, -1100, window.top, false, f) == WindowFrameHit::Top,
+					"accent main window never answers inside resize hits; legacy inside grips are unchanged")) ++failures;
+				for (int x = client.right - 32; x < client.right; ++x)
+					for (const int y : { client.top + 32, -550, client.bottom - 1 })
+						if (!Expect(HitTestWindowFrame(window, client, x, y, false, 0, false, false) == WindowFrameHit::Client,
+							"accent window keeps the whole scrollbar track as client")) ++failures;
+
+				// 边框窗口挖空的正是 HWND 矩形，热区全部在可见边缘外侧。
+				const auto border = ResolveWindowResizeBorderGeometry(window, sizing, 0);
+				const WindowFrameRect hole{ border.outer.left + border.excluded.left, border.outer.top + border.excluded.top,
+					border.outer.left + border.excluded.right, border.outer.top + border.excluded.bottom };
+				if (!Expect(SameFrameRect(hole, window)
+					&& SameFrameRect(border.outer, ExpandWindowFrameRect(window, sizing)),
+					"resize border hole equals the visible HWND rect and extends one sizing frame outside")) ++failures;
+				struct HitCase { int x; int y; WindowFrameHit expected; };
+				const HitCase hits[]{
+					{ window.left - 1, -550, WindowFrameHit::Left },
+					{ window.left - f, -550, WindowFrameHit::Left },
+					{ window.right, -550, WindowFrameHit::Right },
+					{ window.right + f - 1, -550, WindowFrameHit::Right },
+					{ -1100, window.top - 1, WindowFrameHit::Top },
+					{ -1100, window.top - f, WindowFrameHit::Top },
+					{ -1100, window.bottom, WindowFrameHit::Bottom },
+					{ -1100, window.bottom + f - 1, WindowFrameHit::Bottom },
+					{ window.left - f, window.top - f, WindowFrameHit::TopLeft },
+					{ window.right + f - 1, window.top - f, WindowFrameHit::TopRight },
+					{ window.left - f, window.bottom + f - 1, WindowFrameHit::BottomLeft },
+					{ window.right + f - 1, window.bottom + f - 1, WindowFrameHit::BottomRight },
+					// 角区沿边延伸一个热区宽度，与原生窗口的角抓取手感一致。
+					{ window.left - 1, window.top + f - 1, WindowFrameHit::TopLeft },
+					{ window.left - 1, window.top + f, WindowFrameHit::Left },
+					{ window.left + f - 1, window.top - 1, WindowFrameHit::TopLeft },
+					{ window.left + f, window.top - 1, WindowFrameHit::Top },
+					{ window.right, window.bottom - 1, WindowFrameHit::BottomRight },
+					{ window.left - f - 1, -550, WindowFrameHit::Outside },
+					{ window.right + f, -550, WindowFrameHit::Outside },
+					{ -1100, window.top - f - 1, WindowFrameHit::Outside },
+					{ -1100, window.bottom + f, WindowFrameHit::Outside },
+					{ window.left, window.top, WindowFrameHit::Outside },
+					{ -1100, -550, WindowFrameHit::Outside },
+				};
+				for (const auto& hit : hits)
+					if (!Expect(HitTestWindowResizeBorder(border, hit.x, hit.y) == hit.expected,
+						"outside resize border classifies all eight directions around the visible edge")) ++failures;
+			}
+
+		// 边框窗口几何：外框各扩一个 frame 宽度，区域挖掉 HWND，圆角平台按圆角挖空。
+		{
+			const WindowFrameRect window{ -1600, -900, -600, -200 };
+			const auto square = ResolveWindowResizeBorderGeometry(window, { 8, 9, 8, 9 }, 0);
+			if (!Expect(SameFrameRect(square.outer, { -1608, -909, -592, -191 })
+				&& SameFrameRect(square.excluded, { 8, 9, 1008, 709 }) && square.cornerRadius == 0
+				&& square.band.top == 9 && square.band.left == 8 && !square.Empty()
+				&& square.Contains(window.left - 1, -550) && square.Contains(window.right, -550)
+				&& square.Contains(-1100, window.top - 1) && square.Contains(-1100, window.bottom)
+				&& square.Contains(square.outer.left, square.outer.top)
+				&& square.Contains(square.outer.right - 1, square.outer.bottom - 1)
+				&& !square.Contains(window.left, window.top) && !square.Contains(window.right - 1, window.bottom - 1)
+				&& !square.Contains(-1100, -550)
+				&& !square.Contains(square.outer.right, -550) && !square.Contains(-1100, square.outer.top - 1),
+				"square resize border covers only the expanded ring around the HWND")) ++failures;
+			const auto rounded = ResolveWindowResizeBorderGeometry(window, { 8, 8, 8, 8 }, 8);
+			if (!Expect(rounded.cornerRadius == 8
+				&& rounded.Contains(window.left, window.top) && rounded.Contains(window.right - 1, window.top)
+				&& rounded.Contains(window.left, window.bottom - 1) && rounded.Contains(window.right - 1, window.bottom - 1)
+				&& rounded.Contains(window.left + 1, window.top + 1)
+				&& !rounded.Contains(window.left + 3, window.top + 3)
+				&& !rounded.Contains(window.left + 8, window.top) && !rounded.Contains(window.left, window.top + 8)
+				&& !rounded.Contains(-1100, -550)
+				&& HitTestWindowResizeBorder(rounded, window.left, window.top) == WindowFrameHit::TopLeft
+				&& HitTestWindowResizeBorder(rounded, window.right - 1, window.bottom - 1) == WindowFrameHit::BottomRight
+				&& HitTestWindowResizeBorder(rounded, window.left + 3, window.top + 3) == WindowFrameHit::Outside,
+				"rounded resize border takes the cut corners as corner hits but never the rounded interior")) ++failures;
+			const auto wideRadius = ResolveWindowResizeBorderGeometry(window, { 8, 8, 8, 8 }, 12);
+			if (!Expect(HitTestWindowResizeBorder(wideRadius, window.left - 1, window.top + 11) == WindowFrameHit::TopLeft
+				&& HitTestWindowResizeBorder(wideRadius, window.left - 1, window.top + 12) == WindowFrameHit::Left,
+				"corner grip is never shorter than the rounded corner")) ++failures;
+			const auto clamped = ResolveWindowResizeBorderGeometry({ 0, 0, 40, 20 }, { -4, 8, 8, 8 }, 100);
+			if (!Expect(clamped.cornerRadius == 10 && clamped.outer.left == 0 && clamped.excluded.left == 0
+				&& clamped.band.left == 0 && ResolveWindowResizeBorderGeometry(window, {}, 8).Empty(),
+				"resize border clamps radius and negative thickness; zero thickness yields no border")) ++failures;
+		}
+
+		// 区域与命中一致：边框像素都返回缩放命中，HWND 内像素都不是缩放命中。
+		for (const int framePixels : { 8, 12 })
+			for (const int visibleBorder : { 0, 1 })
+				for (const int radius : { 0, 8 })
+				{
+					const WindowFrameInsets sizing{ framePixels, framePixels, framePixels, framePixels };
+					const auto frame = ResolveVisibleWindowFrameInsets(sizing, false, true, visibleBorder, true, true);
+					const WindowFrameRect window{ -300, 40, 20, 260 };
+					const auto client = InsetWindowFrameRect(window, frame);
+					const auto border = ResolveWindowResizeBorderGeometry(window, sizing, radius);
+					bool consistent = true;
+					for (int y = border.outer.top; y < border.outer.bottom && consistent; ++y)
+						for (int x = border.outer.left; x < border.outer.right; ++x)
+						{
+							const auto borderHit = HitTestWindowResizeBorder(border, x, y);
+							const bool covered = border.Contains(x, y);
+							if (covered == (borderHit == WindowFrameHit::Outside || borderHit == WindowFrameHit::Client)
+								|| (window.Contains(x, y) && !covered
+									&& HitTestWindowFrame(window, client, x, y, false, 0, false, false) != WindowFrameHit::Client))
+							{
+								consistent = false;
+								break;
+							}
+						}
+					if (!Expect(consistent, "every resize border pixel answers a resize hit and the HWND answers none")) ++failures;
+				}
+		return failures;
+	}
+
+	[[nodiscard]] std::string ReadRepositorySource(const std::filesystem::path& relative)
+	{
+		// 优先按测试源码位置定位仓库；从其他工作目录运行时向上搜索。
+		namespace fs = std::filesystem;
+		fs::path source = fs::path(__FILE__).parent_path().parent_path() / relative;
+		if (!fs::exists(source))
+			for (auto root = fs::current_path(); !root.empty(); root = root.parent_path())
+			{
+				if (fs::exists(root / relative)) { source = root / relative; break; }
+				if (root == root.parent_path()) break;
+			}
+		std::ifstream file(source, std::ios::binary);
+		return { std::istreambuf_iterator<char>(file), {} };
+	}
+
+	int CheckSettingBackdropSourceContract()
+	{
+		// headless 不创建 Setting HWND，源级审计生产 backdrop 与 resize 边框窗口接线。
+		int failures = 0;
+		const auto setting = ReadRepositorySource("Inkeys/Inkeys/UI/Setting/Setting.cpp");
+		const auto window = ReadRepositorySource("Inkeys/Inkeys/Window/Window.cpp")
+			+ ReadRepositorySource("Inkeys/Inkeys/Window/Window.cppm");
+		if (!Expect(!setting.empty() && !window.empty(), "production Setting/Window sources are available for the backdrop audit"))
+			return failures + 1;
+		const auto contains = [&](const char* text) { return setting.find(text) != std::string::npos; };
+		if (!Expect(!contains("DWMWA_SYSTEMBACKDROP_TYPE") && !contains("DWMSBT_") && !contains("(1029)")
+			&& !contains("DwmEnableBlurBehindWindow"),
+			"Setting active path uses no system backdrop, legacy Mica attribute or Aero blur-behind")) ++failures;
+		if (!Expect(contains("\"SetWindowCompositionAttribute\")") && !contains("::SetWindowCompositionAttribute("),
+			"Setting accent policy entry is resolved dynamically only")) ++failures;
+		if (!Expect(window.find("ResizeBorder") == std::string::npos && contains("SettingResizeBorderProc")
+			&& contains("WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE"),
+			"resize border window stays a Setting-owned helper outside Window::Service")) ++failures;
+		const auto disable = setting.find("void DisableSettingBackdrop(");
+		const auto disableEnd = setting.find("\n\t}", disable);
+		if (!Expect(disable != std::string::npos && disableEnd != std::string::npos
+			&& setting.substr(disable, disableEnd - disable).find("DwmExtendFrameIntoClientArea") == std::string::npos,
+			"revoking the backdrop keeps the frame-geometry shadow margin")) ++failures;
+		const auto position = setting.find("case WM_WINDOWPOSCHANGED:");
+		const auto positionBreak = setting.find("break;", position);
+		if (!Expect(position != std::string::npos && positionBreak != std::string::npos
+			&& setting.substr(position, positionBreak - position).find("return") == std::string::npos,
+			"WM_WINDOWPOSCHANGED still reaches DefWindowProc so WM_SIZE/WM_MOVE are generated")) ++failures;
+		if (!Expect(contains("CreateRoundRectRgn(hole.left, hole.top, hole.right + 1, hole.bottom + 1"),
+			"rounded resize border hole compensates the right/bottom pixel CreateRoundRectRgn omits")) ++failures;
 		return failures;
 	}
 
@@ -506,6 +711,8 @@ int RunSettingSessionStateTests()
 	failures += CheckSettingNativeMessageRouting();
 	failures += CheckSettingPresentInputLock();
 	failures += CheckSettingPlatformCompatibility();
+	failures += CheckSettingResizeBorder();
+	failures += CheckSettingBackdropSourceContract();
 	failures += CheckLinkedPptScaleDraft();
 	{
 		using Inkeys::UI::Setting::ResolveSettingSystemMenuState;
@@ -640,15 +847,11 @@ int RunSettingSessionStateTests()
 		&& Inkeys::UI::Setting::ResolveThemeMode(true)
 		== Inkeys::UI::Setting::ThemeMode::Dark,
 		"settings resolves the saved explicit light or dark preference")) ++failures;
-	if (!Expect(Inkeys::UI::Setting::ResolveBackdropMode(true, false, true)
-		== BackdropMode::Mica
-		&& Inkeys::UI::Setting::ResolveBackdropMode(false, true, true)
-		== BackdropMode::Mica
-		&& Inkeys::UI::Setting::ResolveBackdropMode(false, false, true)
+	if (!Expect(Inkeys::UI::Setting::ResolveBackdropMode(true)
 		== BackdropMode::Acrylic
-		&& Inkeys::UI::Setting::ResolveBackdropMode(false, false, false)
+		&& Inkeys::UI::Setting::ResolveBackdropMode(false)
 		== BackdropMode::Solid,
-		"setting backdrop prefers Mica, then Acrylic, then solid fallback"))
+		"setting backdrop uses only accent dynamic blur, otherwise solid without Mica or Aero fallback"))
 		++failures;
 
 	using Inkeys::UI::Setting::StartupPreviewPreference;

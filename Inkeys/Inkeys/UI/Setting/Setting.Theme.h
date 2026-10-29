@@ -9,10 +9,10 @@ namespace Inkeys::UI::Setting
 		HighContrast,
 	};
 
+	// Acrylic 指 accent policy 的动态背景模糊；仅 Win10 RS4+/Win11 尝试，其余为 Solid。
 	enum class BackdropMode
 	{
 		Solid,
-		Mica,
 		Acrylic,
 	};
 
@@ -23,12 +23,9 @@ namespace Inkeys::UI::Setting
 	}
 
 	[[nodiscard]] inline constexpr BackdropMode ResolveBackdropMode(
-		bool systemBackdropEnabled,
-		bool legacyMicaEnabled,
 		bool acrylicEnabled) noexcept
 	{
-		if (systemBackdropEnabled || legacyMicaEnabled)
-			return BackdropMode::Mica;
+		// 不使用系统 backdrop/Mica，也不提供 Aero blur-behind 回退。
 		return acrylicEnabled ? BackdropMode::Acrylic : BackdropMode::Solid;
 	}
 }

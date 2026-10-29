@@ -894,7 +894,7 @@ namespace
 			auto full=state; Frame(&full,Away,0,true,73,true,1,solid,false);
 			if (!SubmitPrepared(checks,renderer,full,&control,solid)) break;
 			checks.Expect(!info.rootSuppressed && optimized==control,
-				"Mica/transparent backdrop, partial style alpha and partial background alpha take unchanged full-root fallback");
+				"Acrylic/transparent backdrop, partial style alpha and partial background alpha take unchanged full-root fallback");
 		}
 		ImGui::GetStyle().Alpha=originalAlpha; ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
 		std::cout<<"[HomeWARP] solid-root theme="<<(Design::IsDarkMode() ? "dark" : "light")
@@ -906,12 +906,12 @@ namespace
 		const auto originalAlpha=ImGui::GetStyle().Alpha;
 		const bool dark=Design::IsDarkMode();
 		const auto originalBackground=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
-		for (int material=0;material<6;++material)
+		for (int material=0;material<5;++material)
 		{
 			const bool solid=material!=1 && material<4;
 			// 实际分层调色板也走 GPU 捕获/重放，与纯透明根背景分别验证。
-			Design::ApplyPalette(dark, material==4 ? Inkeys::UI::Setting::BackdropMode::Mica
-				: material==5 ? Inkeys::UI::Setting::BackdropMode::Acrylic : Inkeys::UI::Setting::BackdropMode::Solid);
+			Design::ApplyPalette(dark, material==4 ? Inkeys::UI::Setting::BackdropMode::Acrylic
+				: Inkeys::UI::Setting::BackdropMode::Solid);
 			ImGui::GetStyle().Alpha=material==2 ? .6F : originalAlpha;
 			ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
 			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w=!solid ? 0 : material==3 ? .6F : originalBackground.w;
@@ -935,13 +935,13 @@ namespace
 				auto reference=state; reference.preparation={};
 				for (int warm=0;warm<3;++warm) Frame(&reference,Away,0,true,serial,false,1,solid,false);
 				if (!renderer.Submit(checks,ImGui::GetDrawData(),&full,S_OK,solid)) return;
-				checks.Expect(cached==full,"Solid/Mica/partial-alpha cached RGBA including transparent AA equals real full render exactly");
+				checks.Expect(cached==full,"Solid/Acrylic/partial-alpha cached RGBA including transparent AA equals real full render exactly");
 			}
 		}
 		Design::ApplyPalette(dark);
 		ImGui::GetStyle().Alpha=originalAlpha; ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
 		renderer.pageCache.Reset();
-		std::cout<<"[HomeWARP] cache-materials=6 phases-per-material=3 comparison=exact-RGBA\n";
+		std::cout<<"[HomeWARP] cache-materials=5 phases-per-material=3 comparison=exact-RGBA\n";
 	}
 
 	void CheckPreparedKeyboard(Checks& checks, Offscreen& renderer)
@@ -1584,7 +1584,7 @@ namespace
 				if (!renderer.Submit(checks,ImGui::GetDrawData(),&candidate,S_OK,solid,&state)) break;
 				checks.Expect(info.clearOmitted==(material==0),"only integer complete solid alpha-one coverage permits clear omission");
 				checks.Expect(renderer.counters.clears-clears==(info.clearOmitted ? 0U : 1U),"candidate either truly omits clear or executes legacy fallback");
-				checks.Expect(control==candidate,"poisoned-target clear candidate and all alpha/noninteger/partial/Mica fallbacks preserve exact whole-frame RGBA");
+				checks.Expect(control==candidate,"poisoned-target clear candidate and all alpha/noninteger/partial/transparent fallbacks preserve exact whole-frame RGBA");
 			}
 		}
 		ImGui::GetStyle().Alpha=savedAlpha; ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=savedBackground;

@@ -83,7 +83,7 @@ namespace Inkeys::UI::Setting::Design
 				ImGui_ImplDX11_RenderDrawData(&background);
 				result=ImGui_ImplDX11_GetLastResult();
 				if (FAILED(result)) { Reset(); return result; }
-				// GPU 原样复制预乘 RGBA；不经 AddImage 再混合，Mica/半透明根也不发生 double-alpha。
+				// GPU 原样复制预乘 RGBA；不经 AddImage 再混合，Acrylic/半透明根也不发生 double-alpha。
 				Microsoft::WRL::ComPtr<ID3D11Texture2D> candidate;
 				auto cacheDesc=desc; cacheDesc.Usage=D3D11_USAGE_DEFAULT;
 				cacheDesc.BindFlags=cacheDesc.CPUAccessFlags=cacheDesc.MiscFlags=0;
