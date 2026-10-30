@@ -972,3 +972,25 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Status
 
 [OK] **Completed**
+
+
+## Session 131: 修复白板形状选择窗口无法展开
+<!-- trellis-session: v=2 fp=1ef354436f1665f6 -->
+
+**Date**: 2026-10-30
+**Task**: 修复白板形状选择窗口无法展开
+**Branch**: `bugfix/mode`
+
+### Summary
+
+移除 Whiteboard 对 Geometry 面板的每帧永久清零，三态统一非 Shape、fold、按钮不可见收起规则；补充真实 PrepareMainPanels 三态回归与 Spec。ARM64 完整构建、定向离屏测试、完整 no-window 测试通过，用户确认真实三态人工验证通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3e0df72b` | fix(ui3): allow geometry panel expansion in whiteboard |
+
+### Status
+
+[OK] **Completed**
