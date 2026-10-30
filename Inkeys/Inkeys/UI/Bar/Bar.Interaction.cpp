@@ -8911,6 +8911,9 @@ bool BarUISetClass::RequestNativeDirectWindowMoveLocked(POINT translation,
 	if (!leasedPresentationRevision && !lease) return false;
 	if (nativeRevision && !ConsumeNativeDirectWindowMoveLocked(nativeRevision))
 	{
+		// 仍有效的在途移动让其自然完成；取消正在执行的候选会触发原生回滚，造成拖动抖动。
+		// 本采样回退到渲染路径，完成后由 Poll/末帧发布最新绝对目标。
+		if (service.CandidateCurrent(WindowRole::Bar, nativeDirectMoveRevision.load(memory_order_acquire))) return false;
 		CancelNativeDirectWindowMove(true);
 		if (nativeDirectMoveRevision.load(memory_order_acquire)) return false;
 	}
@@ -9140,6 +9143,38 @@ int Inkeys::UI::Bar::RunBarNativeDirectMoveTests(
 	owner.CancelNativeDirectWindowMove();owner.committedWindowScreenBoundsReady=false;
 	Check(!request({80,70},8),"ULW without complete successful frame leaves direct-move eligibility closed");
 	if(previous)SelectObject(source,previous);if(dib)DeleteObject(dib);if(source)DeleteDC(source);
+	// 生产路径的 presentationRevision 非零：仍有效的在途移动不能被后续采样取消，否则 owner 会回滚已执行的位移。
+	{
+		auto pixelLease=service.TryAcquirePresentationLease(WindowRole::Bar);
+		Check(static_cast<bool>(pixelLease),"bar lease acquired to establish a non-zero presentation revision");
+		const auto liveRevision=pixelLease?pixelLease.PixelsChanged(WindowRole::Bar):0;
+		pixelLease.Reset();
+		RECT liveBounds{};
+		Check(liveRevision&&GetWindowRect(initial->hwnd,&liveBounds),"bar live bounds readable with a non-zero revision");
+		owner.CancelNativeDirectWindowMove();
+		owner.committedWindowScreenBounds=liveBounds;owner.committedWindowScreenBoundsReady=true;
+		owner.committedWindowPresentationRevision=liveRevision;
+		owner.bottomDockTransitionSerial.store(20);owner.bottomDockDeferredTransitionSerial.store(0);owner.bottomDockPresentedTransitionSerial.store(12);
+		owner.directWindowPresentedTranslationX.store(0);owner.directWindowPresentedTranslationY.store(0);
+		const bool inFlightGate=gateOwner&&gateOwner();Check(inFlightGate,"bar in-flight fixture pauses owner");
+		bool first=false,second=true;std::uint64_t firstRevision=0;
+		{
+			std::scoped_lock lock(owner.directWindowDragMutex);
+			first=owner.RequestNativeDirectWindowMoveLocked({7,9},20,liveRevision);
+			firstRevision=owner.nativeDirectMoveRevision.load();
+			second=owner.RequestNativeDirectWindowMoveLocked({14,18},20,liveRevision);
+		}
+		Check(first&&firstRevision&&!second&&owner.nativeDirectMoveRevision.load()==firstRevision
+			&&service.CandidateCurrent(WindowRole::Bar,firstRevision),
+			"later sample leaves a still-valid in-flight bar move running instead of cancelling it");
+		if(releaseOwner)releaseOwner();
+		const RECT settled=TranslateBarWindowRect(liveBounds,{7,9});
+		const auto settleDeadline=std::chrono::steady_clock::now()+5s;
+		while(owner.nativeDirectMoveRevision.load()&&std::chrono::steady_clock::now()<settleDeadline){owner.PollNativeDirectWindowMove();std::this_thread::sleep_for(1ms);}
+		Check(!owner.nativeDirectMoveRevision.load()&&GetWindowRect(initial->hwnd,&actual)&&EqualRect(&actual,&settled)
+			&&owner.directWindowPresentedTranslationX.load()==7&&owner.directWindowPresentedTranslationY.load()==9,
+			"in-flight bar move completes at its own target without a rollback");
+	}
 	Check(service.SetBounds(WindowRole::Bar,initial->bounds),"bar fixture restores original native rectangle");
 	std::fprintf(stderr,"[BarNativeMove] failures=%d\n",failures);return failures;
 #else

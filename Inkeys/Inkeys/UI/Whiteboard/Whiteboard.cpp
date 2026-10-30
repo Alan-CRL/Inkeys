@@ -270,6 +270,13 @@ namespace Inkeys::UI::Whiteboard
 				const auto surface = service.SurfaceSnapshot(WindowRole::Freeze);
 				return current() && surface && surface->known && surface->hwnd == hwnd && surface->generation == generation;
 			};
+			// 快照 try_lock 未取到不等于窗口已被替换；ULW 之后只有明确的身份/请求失效才算失败。
+			const auto surfaceReplaced = [hwnd, generation, current, &service]
+			{
+				if (!current()) return true;
+				const auto surface = service.SurfaceSnapshot(WindowRole::Freeze);
+				return surface && (!surface->known || surface->hwnd != hwnd || surface->generation != generation);
+			};
 			const auto target = PrimaryTarget();
 			const RECT bounds = target.bounds;
 			const float scale = target.scale;
@@ -395,7 +402,7 @@ namespace Inkeys::UI::Whiteboard
 				info.hdcDst = destinationDc;
 				const bool pixelsApplied = currentSurface() && SubmitFreezeSurface(hwnd, &info, true);
 				if (pixelsApplied) presentationRevision = nativeLease.PixelsChanged(WindowRole::Freeze);
-				presented = pixelsApplied && currentSurface();
+				presented = pixelsApplied && !surfaceReplaced();
 				if (destinationDc) ReleaseDC(nullptr, destinationDc);
 				const RECT gdiModifiedRect{};
 				releaseDcHr = gdi->ReleaseDC(&gdiModifiedRect);
@@ -419,7 +426,7 @@ namespace Inkeys::UI::Whiteboard
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 			if (hiddenBackgroundTest) ++hiddenBackgroundPixelCount;
 #endif
-			if (!currentSurface() || contentRevision != backgroundState.ContentRevision()) return FrameResult::Retry;
+			if (surfaceReplaced() || contentRevision != backgroundState.ContentRevision()) return FrameResult::Retry;
 			backgroundSubmission = BackgroundSubmission{{request, hwnd, generation, presentation,
 				contentRevision, ++backgroundFrameSerial, presentationRevision}, frameContext.epoch.generation,
 				0, backgroundScene.AnimationActive()};

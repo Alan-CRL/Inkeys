@@ -2069,9 +2069,8 @@ namespace Inkeys::Window
 			lastReceipt_ = command.completion;
 			const auto completion = command.completion;
 			{
-				std::unique_lock lock(queue.mutex, std::defer_lock);
-				if (wait) lock.lock();
-				else if (!lock.try_lock()) { completion->Cancel(); return false; }
+				// 队列锁只被短临界区持有；try_lock 失败不能当作拒绝（会被协调器计为 API 故障或吞掉激活意图）。
+				std::scoped_lock lock(queue.mutex);
 				if (!running_.load(std::memory_order_acquire)) { completion->Cancel(); return false; }
 				command.intentVersion = intentVersions_[IntentIndex(command.type)][RoleIndex(command.role)]
 					.fetch_add(1, std::memory_order_acq_rel) + 1;
