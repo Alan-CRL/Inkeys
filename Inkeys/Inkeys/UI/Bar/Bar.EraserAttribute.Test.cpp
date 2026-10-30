@@ -825,6 +825,28 @@ namespace Inkeys::UI::Bar
 					"repeated Load and projection preserve all effective geometry and stable identities");
 				++matrixCases;
 			}
+			// 真实准备路径必须在三种稳定工作区保持形状面板展开，同时保留统一收起条件。
+			auto* geometryModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Geometry];
+			for(int scene:{0,1,2})
+			{
+				(void)workspaceScope.Set(scene==2 ? WorkspaceScene::Whiteboard : scene==1 ? WorkspaceScene::Presentation : WorkspaceScene::Desktop);
+				SetWhiteboardActive(scene==2);Freeze::SetWhiteboardActive(scene==2);
+				SetPptPresentationActive(scene==1);Freeze::SetPresentationActive(scene==1);
+				SetCurrentPageHasContent(true);owner.barState.fold=false;ChangeStateModeToShape();owner.UpdateRendering();
+				owner.barState.geometryAttribute=true;owner.UpdateRendering();
+				expect(owner.barState.geometryAttribute,
+					"Shape panel stays open through production preparation in Desktop, Presentation and Whiteboard");
+				ChangeStateModeToPen();owner.barState.geometryAttribute=true;owner.UpdateRendering();
+				expect(!owner.barState.geometryAttribute,"Shape panel closes when the active tool is not Shape");
+				ChangeStateModeToShape();owner.barState.fold=false;owner.UpdateRendering();
+				owner.barState.fold=true;owner.barState.geometryAttribute=true;owner.UpdateRendering();
+				expect(!owner.barState.geometryAttribute,"Shape panel closes when the main bar folds");
+				owner.barState.fold=false;owner.UpdateRendering();
+				geometryModeButton->hide=true;owner.barState.geometryAttribute=true;
+				owner.barButtonSet.PrepareMainPanels(GetStateModeSnapshot());
+				expect(!owner.barState.geometryAttribute,"Shape panel closes when its main button is invisible");
+				owner.UpdateRendering();
+			}
 			report<<"[MainPresentation] componentMatrixCases="<<matrixCases<<'\n';
 			expect(WhiteboardActive() && !HideWhiteboardSnapIndicator()
 				&& ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,true,true,true)

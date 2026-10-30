@@ -1541,6 +1541,7 @@ DrawCore(coreBrush);
 - `ResolveBarDrawButtonToggleDecision(drawAttributeOpen)` 只在 DrawAttribute 门控成功后执行。面板打开和关闭都只能改变自身显隐，不得改写 Laser、软笔、硬笔或荧光笔记忆；离开 Pen 到选择、橡皮或图形后再返回绘制，也必须恢复离开前笔型。门控拒绝的点击不得提前改变任何面板状态。
 - 主按钮、更多、粗细调节三角和笔属性三角分别使用独立通道；普通命令、粗细预设、FineDial 提交、显式关闭、浮层外点击关闭以及 Win32/HiMsg 原始消息不进入门控。
 - Headless 测试必须覆盖首次立即执行、299ms 合并、300ms 边界通过、不同通道互不阻塞、DrawAttribute 开/关不改变笔型，以及“记忆 Laser + Pen/非 Pen 顶层模式”的激活矩阵；按钮调用点另以静态审查和完整 Solution 构建确认面板 toggle 不包含笔型副作用。
+- Geometry 在 Desktop、Presentation、Whiteboard 的稳定工作区内都允许展开；`PresetHoming` 只能在非 Shape、主栏 fold 或 Geometry 主按钮不可见时统一收起，不得按 Whiteboard 每帧永久清零。workspace 转换仍由 `CollapseAuxiliaryPanels` 一次性收起，稳定后必须允许重新打开。回归测试须经过真实 `UpdateRendering → PrepareMainPanels`，同时覆盖三态展开保持和上述三类收起负例，不能只断言点击回调写入的瞬时状态。
 
 错误做法是在 `WM_LBUTTONDOWN` / HiMsg 队列层全局丢弃第二击，这会破坏“选择状态双击绘制：第一击切换工具、第二击展开属性”。正确做法是保留两次输入，仅合并第二次真正重复的展开/收起动作。
 
