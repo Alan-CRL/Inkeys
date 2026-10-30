@@ -144,6 +144,7 @@
         "PresentFailed": "显示",
         "Failed": "故障",
         "Recovering": "恢复",
+        "Loading": "加载",
         "Retry": "重试",
         "Wait": "稍候",
         "RetryCanvas": "重试画布",

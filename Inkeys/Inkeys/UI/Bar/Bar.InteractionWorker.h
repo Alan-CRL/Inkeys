@@ -139,25 +139,45 @@ namespace Inkeys::UI::Bar
 	class ButtonPointerState
 	{
 	public:
-		ButtonPointerResult Update(ButtonPointerEvent event, std::uint64_t hit) noexcept
+		ButtonPointerResult Update(ButtonPointerEvent event, std::uint64_t hit,
+			std::optional<POINT> screenPoint = std::nullopt) noexcept
 		{
 			ButtonPointerResult result{ hover_, hover_, pressed_, pressed_, 0 };
 			switch (event)
 			{
-			case ButtonPointerEvent::Down: pressed_ = hit; hover_ = 0; break;
+			case ButtonPointerEvent::Down:
+				suppressHoverUntilPointerMove_ = false;
+				pressed_ = hit; hover_ = 0; break;
 			case ButtonPointerEvent::Move:
+				if (suppressHoverUntilPointerMove_)
+				{
+					if (!screenPoint || (screenPoint->x == hoverSuppressionScreenPoint_.x
+						&& screenPoint->y == hoverSuppressionScreenPoint_.y))
+					{
+						hover_ = 0;
+						break;
+					}
+					suppressHoverUntilPointerMove_ = false;
+				}
 				if (pressed_ && hit != pressed_) pressed_ = 0;
 				hover_ = pressed_ ? 0 : hit; break;
 			case ButtonPointerEvent::Up:
 				if (pressed_ && hit == pressed_) result.activate = pressed_;
+				pressed_ = 0; hover_ = 0;
+				suppressHoverUntilPointerMove_ = screenPoint.has_value();
+				if (screenPoint) hoverSuppressionScreenPoint_ = *screenPoint;
+				break;
+			case ButtonPointerEvent::Leave: case ButtonPointerEvent::Cancel:
+				suppressHoverUntilPointerMove_ = false;
 				pressed_ = 0; hover_ = 0; break;
-			case ButtonPointerEvent::Leave: case ButtonPointerEvent::Cancel: pressed_ = 0; hover_ = 0; break;
 			}
 			result.hover = hover_; result.pressed = pressed_; return result;
 		}
-		void Reset() noexcept { hover_ = pressed_ = 0; }
+		void Reset() noexcept { hover_ = pressed_ = 0; suppressHoverUntilPointerMove_ = false; }
 	private:
 		std::uint64_t hover_ = 0, pressed_ = 0;
+		POINT hoverSuppressionScreenPoint_{};
+		bool suppressHoverUntilPointerMove_ = false;
 	};
 
 	struct SurfaceInputEvent

@@ -333,8 +333,14 @@ namespace Inkeys::UI::Bar
 		{
 			// 内容更新不得重新提交布局目标，否则普通翻页会截断正在进行的 PPT/白板转换。
 			const bool currentChanged=content.currentPage!=next.currentPage,totalChanged=content.totalPage!=next.totalPage;
-			if(currentChanged||totalChanged){
-				IncludeButton(3);pageButtons[2]->name.SetStringImmediate(next.currentPage);pageTotal.SetStringImmediate(next.totalPage);
+			const bool kindChanged=content.kind!=next.kind;
+			if(currentChanged||totalChanged||kindChanged){
+				IncludeButton(3);
+				if(content.kind==BarPageContentKind::Numeric&&next.kind==BarPageContentKind::Numeric){
+					pageButtons[2]->name.SetStringImmediate(next.currentPage);pageTotal.SetStringImmediate(next.totalPage);
+				}else{
+					pageButtons[2]->name.TransitionToString(next.currentPage);pageTotal.TransitionToString(next.totalPage);
+				}
 				if(BarPptCompactPaginationEnabled&&!next.whiteboard&&next.surface<2){
 					auto& name=pageButtons[2]->name;
 					const bool moving=!name.x.IsSame()||!name.w.IsSame()||!name.size.IsSame()
@@ -879,11 +885,12 @@ namespace Inkeys::UI::Bar
 		result.hit=Impl::HitButton(c,result.logical);
 		return result;
 	}
-	BarSurfacePointerResult BarPageSurface::ApplyPointer(BarSurfacePointerEventKind kind,BarSurfaceButtonId hit) noexcept
+	BarSurfacePointerResult BarPageSurface::ApplyPointer(BarSurfacePointerEventKind kind,BarSurfaceButtonId hit,
+		std::optional<POINT> screenPoint) noexcept
 	{
 		BarSurfacePointerResult result;
 		{std::scoped_lock lock(impl_->inputMutex);
-			const auto state=impl_->pointer.Update(static_cast<ButtonPointerEvent>(kind),hit);
+			const auto state=impl_->pointer.Update(static_cast<ButtonPointerEvent>(kind),hit,screenPoint);
 			impl_->hover=static_cast<BarSurfaceButtonId>(state.hover);impl_->pressed=static_cast<BarSurfaceButtonId>(state.pressed);
 			impl_->feedbackDirty|=state.previousHover!=state.hover||state.previousPressed!=state.pressed;
 			result={impl_->hover,impl_->pressed,static_cast<BarSurfaceButtonId>(state.activate),state.previousHover!=state.hover,state.previousPressed!=state.pressed,

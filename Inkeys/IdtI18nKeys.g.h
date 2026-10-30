@@ -147,6 +147,7 @@ inline constexpr struct I18nKeyRoot
                 const char* PresentFailed = "UI/Bar/CanvasRecovery/PresentFailed";
                 const char* Failed = "UI/Bar/CanvasRecovery/Failed";
                 const char* Recovering = "UI/Bar/CanvasRecovery/Recovering";
+                const char* Loading = "UI/Bar/CanvasRecovery/Loading";
                 const char* Retry = "UI/Bar/CanvasRecovery/Retry";
                 const char* Wait = "UI/Bar/CanvasRecovery/Wait";
                 const char* RetryCanvas = "UI/Bar/CanvasRecovery/RetryCanvas";

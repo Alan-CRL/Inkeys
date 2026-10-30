@@ -915,6 +915,11 @@ namespace Inkeys::UI::PageControl
 			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
 			if(content.whiteboard){
 				content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);
+				if(whiteboard.switching){
+					content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
+					content.currentPage=IW(I18nKey.UI.Bar.CanvasRecovery.Loading);
+					content.totalPage=IW(I18nKey.UI.Bar.CanvasRecovery.Wait);
+				}
 				content.enabled={whiteboard.previousEnabled,whiteboard.pageEnabled,whiteboard.nextEnabled};
 				content.interactive={whiteboard.previousInteractive,whiteboard.pageInteractive,whiteboard.nextInteractive};
 			}else{
@@ -922,6 +927,7 @@ namespace Inkeys::UI::PageControl
 				content.currentPage=PageNumber(ppt.currentPage,maximum);content.totalPage=L"/"+PageNumber(ppt.totalPage,maximum);
 				if (ppt.recovery.kind != PptRecovery::Kind::None)
 				{
+					content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
 					const auto& labels = I18nKey.UI.Bar.CanvasRecovery;
 					const char* key = labels.Failed;
 					switch (ppt.recovery.kind)
@@ -2642,7 +2648,7 @@ namespace Inkeys::UI::PageControl
 						state.repeatTiming = {};
 					}
 				}
-				if (logical) state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Move,static_cast<WidgetId>(event.hitButtonId));
+				if (logical) state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Move,static_cast<WidgetId>(event.hitButtonId),event.screenPoint);
 				else state.scene.PointerLeave();
 				return;
 			}
@@ -2690,7 +2696,7 @@ namespace Inkeys::UI::PageControl
 						&&(region!=PptPointerRegion::Background||event.backgroundHit);
 					const auto result = hit == Inkeys::UI::Bar::BarSurfaceNoButton
 						? Inkeys::UI::Bar::BarSurfacePointerResult{}
-						: state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Down,static_cast<WidgetId>(event.hitButtonId));
+						: state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Down,static_cast<WidgetId>(event.hitButtonId),event.screenPoint);
 					if (!result.consumed && !dragCandidate) return;
 					state.pressedWhiteboard = committed.whiteboard;state.pressedMode=committed.mode;
 					state.pressedPptSession=livePpt.layout.session;
@@ -2794,7 +2800,7 @@ namespace Inkeys::UI::PageControl
 					if (shouldInvokeClick)
 					{
 						if (const auto logical = (event.logicalPointValid?std::optional<POINT>(event.logicalPoint):std::nullopt))
-							clicked = state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Up,static_cast<WidgetId>(event.hitButtonId)).clicked;
+							clicked = state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Up,static_cast<WidgetId>(event.hitButtonId),event.screenPoint).clicked;
 						else state.scene.CancelPointer();
 					}
 					else state.scene.CancelPointer();
@@ -3444,7 +3450,7 @@ namespace Inkeys::UI::PageControl
 				case WM_CANCELMODE:case WM_CAPTURECHANGED:kind=Kind::Cancel;break;default:return;
 				}
 				// 无 HWND 提交端约定 screenPoint 是呈现位图内坐标，仍读取最近成功的真实命中帧。
-				const auto sample=scene.SamplePointer(event.screenPoint);(void)scene.ApplyPointer(kind,sample.hit);
+				const auto sample=scene.SamplePointer(event.screenPoint);(void)scene.ApplyPointer(kind,sample.hit,event.screenPoint);
 			},nullptr,+[](const Inkeys::UI::Bar::SurfaceInputEvent&,void* context){(void)static_cast<Fixture*>(context)->surface.scene.CancelPointer();},fixture.get(),false);
 		}
 		return [fixture,index,provider=std::move(provider),logicalBounds,scale,sink=std::move(sink)](const FrameContext& frame) mutable
@@ -3501,6 +3507,18 @@ namespace Inkeys::UI::PageControl
 				&&end.nextLabel==IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel)
 				&&board.nextLabel==IW(I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel),
 				"standard PPT Next/EndShow labels remain separate from whiteboard Add");
+			show.currentPage=2;show.recovery.kind=PptRecovery::Kind::Recovering;show.recovery.retryAvailable=true;
+			page.switching=true;
+			const auto recovery=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
+			const auto loading=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,show,page);
+			Check(normal.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric
+				&&board.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric
+				&&recovery.kind==Inkeys::UI::Bar::BarPageContentKind::Status
+				&&loading.kind==Inkeys::UI::Bar::BarPageContentKind::Status,
+				"page content explicitly distinguishes numeric pages from PPT recovery and whiteboard loading");
+			Check(loading.currentPage==IW(I18nKey.UI.Bar.CanvasRecovery.Loading)
+				&&loading.totalPage==IW(I18nKey.UI.Bar.CanvasRecovery.Wait),
+				"whiteboard switching projects localized Loading and Wait into both shared page slots");
 		}
 		{
 			Scene candidate;
@@ -3678,6 +3696,139 @@ namespace Inkeys::UI::PageControl
 				Check(EqualRect(&midway,&reversed),"same-frame reversal continues the current UI3 pose");
 			}
 			surface.ReleaseDeviceResources();Check(SUCCEEDED(surface.EnsureDeviceResources(epoch,w+23,h+19)),"device resources rebuild with stable button instances");
+		}
+		{
+			// 真实 Scene/DWrite 验证数字即时、状态中点过渡和打断，不读取源码或复制动画公式。
+			const bool savedAnimation=BarUiAnimationEnabled;
+			const double savedSpeed=static_cast<double>(BarUiAnimationSpeedRate);
+			BarUiAnimationEnabled=true;BarUiAnimationSpeedRate=1.0;
+			struct PageTestPixels
+			{
+				UINT width=0,height=0;RECT bounds{};std::vector<BYTE> bytes;
+				bool operator==(const PageTestPixels&) const = default;
+			};
+			const auto drawScene=[&](Scene& scene,std::chrono::steady_clock::time_point now){
+				PageTestPixels result;(void)scene.Advance(now);result.bounds=scene.PresentationBounds();
+				result.width=result.bounds.right-result.bounds.left;result.height=result.bounds.bottom-result.bounds.top;
+				if(FAILED(scene.EnsureDeviceResources(epoch,result.width,result.height))){Check(false,"page status test owns real D2D resources");return result;}
+				auto* dc=scene.DeviceContext();auto& renderer=scene.Renderer();
+				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(result.width),static_cast<FLOAT>(result.height)));
+				(void)scene.Render(dc,now);renderer.FinishFrameDrawCommands(dc);
+				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"page status test renders through the shared button transaction");
+				ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
+				if(!image||FAILED(image.As(&bitmap))){Check(false,"page status target supports readback");return result;}
+				const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+				if(FAILED(dc->CreateBitmap(bitmap->GetPixelSize(),nullptr,0,&props,&cpu))
+					||FAILED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))){Check(false,"page status pixels copy for comparison");return result;}
+				D2D1_MAPPED_RECT mapped{};if(FAILED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped))){Check(false,"page status pixels map for comparison");return result;}
+				result.bytes.resize(static_cast<std::size_t>(result.width)*result.height*4);
+				for(UINT y=0;y<result.height;++y)std::copy_n(mapped.bits+y*mapped.pitch,result.width*4,
+					result.bytes.data()+static_cast<std::size_t>(y)*result.width*4);
+				cpu->Unmap();return result;
+			};
+			const auto reference=[&](const PageContent& content,std::chrono::steady_clock::time_point now,LONG width=240){
+				Scene scene;scene.ConfigurePagination(content);scene.SetBounds({0,0,width,80},1);scene.SetOpacity(1,0);
+				return drawScene(scene,now);
+			};
+			const auto numeric=BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{});
+			auto next=numeric;next.currentPage=L"8";next.totalPage=L"/29";
+			auto finalNumber=next;finalNumber.currentPage=L"9";finalNumber.totalPage=L"/30";
+			auto cancelledNumber=finalNumber;cancelledNumber.currentPage=L"10";cancelledNumber.totalPage=L"/31";
+			auto statusPpt=ppt;statusPpt.recovery.kind=PptRecovery::Kind::Recovering;statusPpt.recovery.retryAvailable=true;
+			const auto recovery=BuildPageContent(0,WorkspaceMode::PptCompact,statusPpt,{});
+			statusPpt.recovery.kind=PptRecovery::Kind::ReadFailed;
+			const auto interruptedRecovery=BuildPageContent(0,WorkspaceMode::PptCompact,statusPpt,{});
+			Scene scene;scene.ConfigurePagination(numeric);scene.SetBounds({0,0,240,80},1);scene.SetOpacity(1,0);
+			auto time=origin+30s;(void)drawScene(scene,time);
+			scene.ConfigurePagination(next);const auto immediate=drawScene(scene,time);const auto nextReference=reference(next,time);
+			Check(immediate==nextReference&&!scene.AnimationActive(),"ordinary numeric page updates replace both text slots immediately");
+			WhiteboardState numericBoard=wb;numericBoard.switching=false;numericBoard.menu=0;
+			const auto boardNumeric=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,numericBoard);
+			auto boardNext=boardNumeric;boardNext.currentPage=L"3";boardNext.totalPage=L"/4";
+			Scene boardScene;boardScene.ConfigurePagination(boardNumeric);boardScene.SetBounds({0,0,305,80},1);boardScene.SetOpacity(1,0);
+			(void)drawScene(boardScene,time);boardScene.ConfigurePagination(boardNext);
+			Check(drawScene(boardScene,time)==reference(boardNext,time,305)&&!boardScene.AnimationActive(),
+				"ordinary whiteboard numeric updates also replace both shared text slots immediately");
+			Scene initialStatus;initialStatus.ConfigurePagination(recovery);initialStatus.SetBounds({0,0,240,80},1);initialStatus.SetOpacity(1,0);
+			Check(!initialStatus.AnimationActive(),"initial status Configure initializes both text slots without starting a content transition");
+			scene.ConfigurePagination(recovery);time+=20ms;(void)drawScene(scene,time);time+=20ms;
+			const auto beforeMiddle=drawScene(scene,time);
+			Check(beforeMiddle!=reference(recovery,time)&&scene.AnimationActive(),
+				"status entry is still transitioning the outgoing slots before the shared midpoint");
+			scene.ConfigurePagination(recovery);const auto duplicate=drawScene(scene,time);
+			Check(duplicate==beforeMiddle&&scene.AnimationActive(),"an identical status target does not restart either content timeline");
+			for(int frame=0;frame<11;++frame){time+=20ms;(void)drawScene(scene,time);}
+			Check(scene.AnimationActive(),"status entry remains active after crossing the midpoint on the original timeline");
+			scene.ConfigurePagination(finalNumber);(void)drawScene(scene,time);
+			scene.ConfigurePagination(cancelledNumber);const auto cancelled=drawScene(scene,time);
+			Check(cancelled==reference(cancelledNumber,time),
+				"the next numeric update immediately cancels an after-midpoint status exit without stale writes");
+			scene.ConfigurePagination(recovery);time+=20ms;(void)drawScene(scene,time);time+=20ms;(void)drawScene(scene,time);
+			scene.ConfigurePagination(interruptedRecovery);
+			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
+			Check(drawScene(scene,time)==reference(interruptedRecovery,time)&&!scene.AnimationActive(),
+				"before-midpoint status-to-status interruption finishes on the replacement primary and secondary text");
+			scene.ConfigurePagination(finalNumber);
+			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
+			Check(drawScene(scene,time)==reference(finalNumber,time)&&!scene.AnimationActive(),
+				"status exit uses the interruptible transition and settles on the correct final numeric slots");
+			scene.ConfigurePagination(recovery);
+			for(int frame=0;frame<12;++frame){time+=20ms;(void)drawScene(scene,time);}
+			Check(scene.AnimationActive(),"after-midpoint status content remains interruptible before the original transition finishes");
+			scene.ConfigurePagination(interruptedRecovery);
+			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
+			Check(drawScene(scene,time)==reference(interruptedRecovery,time)&&!scene.AnimationActive(),
+				"after-midpoint status-to-status interruption finishes without restoring the replaced primary or secondary text");
+			scene.ConfigurePagination(finalNumber);
+			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
+			Check(drawScene(scene,time)==reference(finalNumber,time)&&!scene.AnimationActive(),
+				"the interrupted status can still exit to stable numeric content");
+			BarUiAnimationEnabled=false;scene.ConfigurePagination(recovery);time+=20ms;
+			const auto disabledEntry=drawScene(scene,time);
+			Check(disabledEntry==reference(recovery,time),"disabled animation enters a status with final pixels in the same frame");
+			scene.ConfigurePagination(cancelledNumber);time+=20ms;
+			const auto disabledExit=drawScene(scene,time);
+			Check(disabledExit==reference(cancelledNumber,time),"disabled animation exits a status to final numeric pixels in the same frame");
+			BarUiAnimationEnabled=true;
+			for(const wchar_t* language:{L"zh-CN",L"zh-TW",L"en-US"}){
+				Check(I18n::load(1,L"JSON",language),"page status language loads from bundled resources");
+				WhiteboardState loadingState=wb;loadingState.switching=true;loadingState.menu=0;
+				const auto loading=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,loadingState);
+				Check(loading.currentPage==IW(I18nKey.UI.Bar.CanvasRecovery.Loading)
+					&&loading.totalPage==IW(I18nKey.UI.Bar.CanvasRecovery.Wait),
+					"each language projects its localized Loading and Wait resources");
+				Scene localized;localized.ConfigurePagination(loading);localized.SetBounds({0,0,305,80},1);localized.SetOpacity(1,0);
+				const auto metrics=Inkeys::UI::Bar::ResolveBarButtonVisualMetrics(Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo);
+				const auto primary=localized.Renderer().MeasureText(loading.currentPage,metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD);
+				const auto secondary=localized.Renderer().MeasureText(loading.totalPage,metrics.secondaryFontSizeDip,DWRITE_FONT_WEIGHT_NORMAL);
+				Check(primary.width>0&&primary.width<=metrics.primarySlotWidthDip+0.5F
+					&&secondary.width>0&&secondary.width<=metrics.secondarySlotWidthDip+0.5F,
+					"three-language status text fits the real primary and secondary DWrite slot widths");
+				PageTestPixels pixels;for(int frame=0;frame<30;++frame){time+=20ms;pixels=drawScene(localized,time);}
+				const auto page=localized.Layout().buttons[2].localPixels;std::array<unsigned,2> ink{};
+				for(LONG y=page.top+2;y<page.bottom-2;++y)for(LONG x=page.left+2;x<page.right-2;++x){
+					const LONG px=x-pixels.bounds.left,py=y-pixels.bounds.top;
+					if(px<0||py<0||static_cast<UINT>(px)>=pixels.width||static_cast<UINT>(py)>=pixels.height)continue;
+					const auto* pixel=pixels.bytes.data()+(static_cast<std::size_t>(py)*pixels.width+px)*4;
+					if(pixel[0]>40&&pixel[1]>40&&pixel[2]>40)++ink[y<(page.top+page.bottom)/2?0:1];
+				}
+				Check(ink[0]>3&&ink[1]>3,"three-language Loading and Wait both draw final disabled-state pixels in their shared button slots");
+			}
+			Check(I18n::load(1,L"JSON",L"zh-CN"),"page status tests restore the default language");
+			Scene pointerScene;pointerScene.ConfigurePagination(numeric);pointerScene.SetBounds({0,0,240,80},1);pointerScene.SetOpacity(1,0);
+			time+=20ms;const auto pointerBaseline=drawScene(pointerScene,time);const POINT anchor{500,600};
+			(void)pointerScene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Move,3,anchor);
+			(void)pointerScene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Down,3,anchor);
+			time+=20ms;Check(drawScene(pointerScene,time)!=pointerBaseline,"real shared press feedback changes the button pixels");
+			(void)pointerScene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Up,3,anchor);
+			(void)pointerScene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Move,3,anchor);
+			PageTestPixels released;for(int frame=0;frame<30;++frame){time+=20ms;released=drawScene(pointerScene,time);}
+			Check(released==pointerBaseline,"Up releases pressScale and a same-coordinate Move does not repaint hover");
+			(void)pointerScene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Move,3,POINT{501,600});
+			time+=20ms;Check(drawScene(pointerScene,time)!=pointerBaseline,"real pointer movement restores shared hover pixels");
+			(void)pointerScene.PointerLeave();for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(pointerScene,time);}
+			BarUiAnimationEnabled=savedAnimation;BarUiAnimationSpeedRate=savedSpeed;
 		}
 		{
 			// 真实展开帧中检查前层按钮遮挡后层，不只验证静止时彼此分离的矩形。
@@ -4507,6 +4658,28 @@ namespace Inkeys::UI::PageControl
 				[&](std::size_t item,const RECT& value){order.push_back(item);if(item==1)return false;windows[item]=value;return true;});
 			Check(!moved&&order==std::vector<std::size_t>{0,1,0}&&SameRect(windows[0],original[0]),
 				"second window failure rolls the first window back before render retry");
+			const auto releasePage=[&]{
+				auto released=Press(0,PageWidget);released.message=WM_LBUTTONUP;
+				InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(released,&registration);return released;
+			};
+			Prepare();(void)releasePage();
+			Check(!surfaces[0].scene.PointerLeave().hoverChanged,"production Down-Up without Move leaves neither hover nor pressed feedback");
+			Prepare();auto pointerEvent=releasePage();pointerEvent.message=WM_MOUSEMOVE;
+			{InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(pointerEvent,&registration);}
+			Check(!surfaces[0].scene.PointerLeave().hoverChanged,"production same-screen-coordinate Move remains suppressed after Up");
+			Prepare();pointerEvent=releasePage();pointerEvent.message=WM_MOUSEMOVE;++pointerEvent.screenPoint.x;
+			{InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(pointerEvent,&registration);}
+			Check(surfaces[0].scene.PointerLeave().hoverChanged,"production real screen movement restores hover after Up");
+			Prepare();pointerEvent=releasePage();pointerEvent.message=WM_MOUSELEAVE;
+			{InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(pointerEvent,&registration);}
+			pointerEvent.message=WM_MOUSEMOVE;
+			{InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(pointerEvent,&registration);}
+			Check(surfaces[0].scene.PointerLeave().hoverChanged,"production Leave resets the Up hover anchor");
+			Prepare();pointerEvent=releasePage();pointerEvent.message=WM_CANCELMODE;
+			{InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(pointerEvent,&registration);}
+			pointerEvent.message=WM_MOUSEMOVE;
+			{InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(pointerEvent,&registration);}
+			Check(surfaces[0].scene.PointerLeave().hoverChanged,"production Cancel resets the Up hover anchor");
 			initialized.store(false,std::memory_order_release);surfaces=std::move(savedSurfaces);groupLayoutBudget=savedBudget;
 			middleSnap=savedSnap;{std::scoped_lock lock(middleSnapRequestMutex);middleSnapRequest=savedRequest;}
 			{std::scoped_lock lock(inputSnapshotMutex);inputPresentations=savedInput;}

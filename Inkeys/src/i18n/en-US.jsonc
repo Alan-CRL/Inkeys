@@ -144,6 +144,7 @@
         "PresentFailed": "View",
         "Failed": "Error",
         "Recovering": "Busy",
+        "Loading": "Load",
         "Retry": "Retry",
         "Wait": "Wait",
         "RetryCanvas": "Retry canvas",

@@ -1813,6 +1813,17 @@ namespace Inkeys::Drawing::Draw3
 				canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
 			default: return;
 			}
+			if (command.workspace == Bridge::Workspace::Whiteboard &&
+				workspace.load(std::memory_order_acquire) == Bridge::Workspace::Whiteboard &&
+				(canvas.type == CanvasCommandType::NextPage || canvas.type == CanvasCommandType::PreviousPage))
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				// 与 PPT 页边界一致：立即关闭新 Down，并由现有 admission revision 封口旧 contact。
+				commandScenePending = true;
+				canvas.sceneClosedAdmission = true;
+				RefreshPresentationInputGateLocked();
+				PublishRuntimeRevision();
+			}
 			canvas.shortcut = std::move(command.shortcut);
 			if (!canvas.shortcut && canvas.type != CanvasCommandType::PrepareExitAutoSave)
 			{

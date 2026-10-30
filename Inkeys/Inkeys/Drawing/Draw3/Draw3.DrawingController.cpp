@@ -9379,6 +9379,7 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<WhiteboardPageState> whiteboardPages(1);
 		std::optional<std::size_t> whiteboardLoading;
 		std::uint64_t whiteboardLoadingGeneration = 0;
+		CanvasCommandType whiteboardLoadingCommand = CanvasCommandType::NextPage;
 		bool whiteboardReadFailed = false;
 		const auto whiteboardFileGuid = draw3::uink::CreateUInkGuid();
 		WhiteboardStore whiteboardStore(observer_.whiteboardRoot, [&]
@@ -9756,6 +9757,7 @@ namespace Inkeys::Drawing::Draw3
 										state.cold = false; installed = true;
 										CanvasCommand command; command.type = CanvasCommandType::SetPage; command.pageIndex = result.page;
 										command.whiteboardGeneration = whiteboardGeneration;
+										command.sceneClosedAdmission = true;
 										window_.EnqueueCanvasCommand(command);
 									}
 								}
@@ -9764,7 +9766,16 @@ namespace Inkeys::Drawing::Draw3
 					}
 					catch (...) {}
 					whiteboardReadFailed = !installed;
-					if (!installed) whiteboardLoading.reset();
+					if (!installed)
+					{
+						whiteboardLoading.reset();
+						if (observer_.commandProcessed) observer_.commandProcessed(observer_.context,
+							whiteboardLoadingCommand, currentPageIndex_, doc->Pages().size());
+						// 冷页失败仍停在原页；用原页真实 Present 回执解除本次场景准入。
+						CanvasCommand unchanged; unchanged.type = CanvasCommandType::SetPage;
+						unchanged.pageIndex = currentPageIndex_; unchanged.sceneClosedAdmission = true;
+						window_.EnqueueCanvasCommand(unchanged);
+					}
 				}
 				else
 				{
@@ -13847,7 +13858,11 @@ namespace Inkeys::Drawing::Draw3
 					shortcutResult.result = observer_.shortcutCommandAllowed && shortcutContext.available
 						? observer_.shortcutCommandAllowed(observer_.context, *command.shortcut, shortcutContext)
 						: Shortcuts::Result::Stale;
-					if (shortcutResult.result != Shortcuts::Result::Applied) continue;
+					if (shortcutResult.result != Shortcuts::Result::Applied)
+					{
+						acknowledgeUnchangedScene(command);
+						continue;
+					}
 					shortcutResult.result = Shortcuts::Result::Failed;
 				}
 				if (metricsState_) metricsState_->frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::Command);
@@ -14590,6 +14605,12 @@ namespace Inkeys::Drawing::Draw3
 					reportCommand(command.type);
 					continue;
 				}
+				struct PageCommandReadyGuard
+				{
+					const CanvasCommand& command;
+					decltype(acknowledgeUnchangedScene)& acknowledge;
+					~PageCommandReadyGuard() { acknowledge(command); }
+				} pageCommandReady{ command, acknowledgeUnchangedScene };
 				renderer_.InvalidateTrustedL2Snapshot();
 				trustedSnapshotSignatureValid = false;
 				const size_t pageCount = document_->Pages().size();
@@ -14669,9 +14690,13 @@ namespace Inkeys::Drawing::Draw3
 					{
 						whiteboardLoading = targetPageIndex;
 						whiteboardLoadingGeneration = whiteboardGeneration;
+						whiteboardLoadingCommand = command.type;
 						whiteboardReadFailed = false;
 						if (!whiteboardStore.Load(targetPageIndex, draw3::uink::UInkGuid(document_->PageAt(targetPageIndex)->PageGuid().Bytes()), whiteboardLoadingGeneration))
-						{ whiteboardLoading.reset(); whiteboardReadFailed = true; }
+						{
+							whiteboardLoading.reset(); whiteboardReadFailed = true;
+							reportCommand(command.type);
+						}
 						publishWhiteboard();
 						continue;
 					}
@@ -14711,6 +14736,11 @@ namespace Inkeys::Drawing::Draw3
 					CompositionRestorePathName(restored.path) << std::endl;
 				publishCurrentPageContent();
 				reportCommand(command.type);
+				if (command.type == CanvasCommandType::SetPage && command.whiteboardGeneration != 0)
+				{
+					// 冷页完成除内部 SetPage 外，还必须恰好结算一次最初的翻页命令。
+					reportCommand(whiteboardLoadingCommand);
+				}
 			}
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。

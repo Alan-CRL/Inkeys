@@ -93,6 +93,37 @@ namespace
 		states[2].Update(ButtonPointerEvent::Down, 11);
 		Check(states[2].Update(ButtonPointerEvent::Cancel, 11).pressed == 0, "ui3 Cancel releases pressed state");
 		Check(states[2].Update(ButtonPointerEvent::Up, 11).activate == 0, "ui3 stale Up after Cancel has no action");
+
+		ButtonPointerState clicked;
+		const POINT anchor{ 120, 240 };
+		Check(clicked.Update(ButtonPointerEvent::Move, 12, anchor).hover == 12,
+			"ui3 pointer hover starts from a real hit");
+		Check(clicked.Update(ButtonPointerEvent::Down, 12, anchor).pressed == 12,
+			"ui3 pointer Down starts a new gesture");
+		const auto released = clicked.Update(ButtonPointerEvent::Up, 12, anchor);
+		Check(released.activate == 12 && released.pressed == 0 && released.hover == 0,
+			"ui3 Up activates once and clears press and hover");
+		Check(clicked.Update(ButtonPointerEvent::Move, 12, anchor).hover == 0,
+			"ui3 same-screen-coordinate Move stays suppressed after Up");
+		Check(clicked.Update(ButtonPointerEvent::Move, 12).hover == 0,
+			"ui3 coordinate-less Move cannot accidentally rehover after an anchored Up");
+		Check(clicked.Update(ButtonPointerEvent::Move, 12, POINT{ 121, 240 }).hover == 12,
+			"ui3 real screen movement restores hover");
+		clicked.Update(ButtonPointerEvent::Down, 12, anchor);
+		clicked.Update(ButtonPointerEvent::Up, 12, anchor);
+		clicked.Update(ButtonPointerEvent::Leave, 0, anchor);
+		Check(clicked.Update(ButtonPointerEvent::Move, 12, anchor).hover == 12,
+			"ui3 Leave resets click hover suppression");
+		clicked.Update(ButtonPointerEvent::Down, 12, anchor);
+		clicked.Update(ButtonPointerEvent::Up, 12, anchor);
+		clicked.Update(ButtonPointerEvent::Cancel, 0, anchor);
+		Check(clicked.Update(ButtonPointerEvent::Move, 12, anchor).hover == 12,
+			"ui3 Cancel resets click hover suppression");
+		clicked.Update(ButtonPointerEvent::Down, 12, anchor);
+		clicked.Update(ButtonPointerEvent::Up, 12, anchor);
+		clicked.Reset();
+		Check(clicked.Update(ButtonPointerEvent::Move, 12, anchor).hover == 12,
+			"ui3 Reset clears click hover suppression");
 	}
 	struct Continuation
 	{

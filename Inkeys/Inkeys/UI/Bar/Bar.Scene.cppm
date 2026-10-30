@@ -35,8 +35,10 @@ export namespace Inkeys::UI::Bar
 
 	using BarSurfaceButtonId = std::uint32_t;
 	inline constexpr BarSurfaceButtonId BarSurfaceNoButton = 0;
+	enum class BarPageContentKind : std::uint8_t { Numeric, Status };
 	struct BarPageSurfaceContent
 	{
+		BarPageContentKind kind = BarPageContentKind::Numeric;
 		unsigned surface = 0;
 		bool whiteboard = false, switching = false, pptActive = false;
 		bool nextIsAdd = false, nextIsEndShow = false, unsaved = false;
@@ -154,7 +156,8 @@ export namespace Inkeys::UI::Bar
 		[[nodiscard]] BarSurfaceButtonId HitTest(POINT) const noexcept;
 		[[nodiscard]] BarSurfaceButtonId HitTestPresentation(POINT) const noexcept;
 		[[nodiscard]] BarSurfaceInputSample SamplePointer(POINT) const noexcept;
-		BarSurfacePointerResult ApplyPointer(BarSurfacePointerEventKind,BarSurfaceButtonId) noexcept;
+		BarSurfacePointerResult ApplyPointer(BarSurfacePointerEventKind,BarSurfaceButtonId,
+			std::optional<POINT> screenPoint = std::nullopt) noexcept;
 		BarSurfacePointerResult PointerMove(POINT) noexcept;
 		BarSurfacePointerResult PointerLeave() noexcept;
 		BarSurfacePointerResult PointerDown(POINT) noexcept;
