@@ -994,3 +994,25 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Status
 
 [OK] **Completed**
+
+
+## Session 132: 统一分页状态动画与白板立即翻页
+<!-- trellis-session: v=2 fp=9ac9e854320b28cc -->
+
+**Date**: 2026-10-30
+**Task**: 统一分页状态动画与白板立即翻页
+**Branch**: `bugfix/mode`
+
+### Summary
+
+PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字保持即时；补齐三语言与 Up 后同坐标 hover 抑制。白板翻页复用 PPT contact 封口，旧输入隔离，暖冷页真实 ready 后重开，no-op/失败回原页解锁。ARM64 构建、目标离屏、完整 no-window 和独立质量审查通过，用户确认人工验收通过。隐藏套件既有 Desktop contact/Clear 失败作为独立遗留记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `192ff6d5` | fix(ui3): unify page status transitions and whiteboard navigation |
+
+### Status
+
+[OK] **Completed**
