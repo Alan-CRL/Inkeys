@@ -52,6 +52,7 @@ namespace Inkeys::UI::Ppt
 		PositionState positions;
 		std::uint64_t publicationRevision = 0;
 		PagePresentationState pageState;
+		Inkeys::UI::PageControl::PptNavigationWaitingState navigationWaiting;
 		PptRecovery::State pageRecovery;
 		TopmostRefreshState topmostRefresh;
 		bool topmostRefreshFailureLogged = false;
@@ -131,6 +132,7 @@ namespace Inkeys::UI::Ppt
 				state.layout = ToPageLayout(positions.configuration);
 				state.targetRevision = pageState.targetRevision;
 				state.pageAckEpoch = pageState.pageAckEpoch;
+				state.navigationWaiting = navigationWaiting.current;
 				state.recovery = pageRecovery.session == positions.session ? pageRecovery : PptRecovery::State{};
 				state.publicationRevision = ++publicationRevision;
 			}
@@ -204,6 +206,7 @@ namespace Inkeys::UI::Ppt
 			(void)SavedPptComPositions();
 			publicationRevision = 0;
 			pageState = {};
+			navigationWaiting = {};
 			pageRecovery = {};
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
@@ -246,6 +249,7 @@ namespace Inkeys::UI::Ppt
 		if (!initialized.exchange(false, std::memory_order_acq_rel)) return;
 		{
 			std::scoped_lock lock(stateMutex);
+			navigationWaiting = {};
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
 		}
@@ -309,6 +313,42 @@ namespace Inkeys::UI::Ppt
 		PublishSnapshot();
 	}
 
+	void PublishNavigationWaiting(std::uint64_t session, std::uint64_t epoch, bool next) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			if (!positions.active || positions.session != session) return;
+			changed = navigationWaiting.Publish(session, epoch,
+				next ? Inkeys::UI::PageControl::PptNavigationDirection::Next
+					: Inkeys::UI::PageControl::PptNavigationDirection::Previous);
+		}
+		if (changed) PublishSnapshot();
+	}
+
+	void CompleteNavigationWaiting(std::uint64_t session, std::uint64_t epoch) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			changed = navigationWaiting.Complete(session, epoch);
+		}
+		if (changed) PublishSnapshot();
+	}
+
+	void ClearNavigationWaiting(std::uint64_t session) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			changed = navigationWaiting.Clear(session);
+		}
+		if (changed) PublishSnapshot();
+	}
+
 	void PublishCanvasRecovery(PptRecovery::State recovery) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
@@ -359,6 +399,7 @@ namespace Inkeys::UI::Ppt
 			if (changed)
 			{
 				pageState = {};
+				navigationWaiting.Clear();
 				pageRecovery = {};
 			}
 		}

@@ -42,6 +42,7 @@ export namespace Inkeys::UI::Bar
 		unsigned surface = 0;
 		bool whiteboard = false, switching = false, pptActive = false;
 		bool nextIsAdd = false, nextIsEndShow = false, unsaved = false;
+		bool navigationWaitingPrevious = false, navigationWaitingNext = false;
 		int menu = 0;
 		std::array<bool, 3> enabled{ true, true, true };
 		std::array<bool, 3> interactive{ true, true, true };

@@ -152,6 +152,8 @@ namespace PptCOM.Tests
                 h.Call("RefreshPresentationDescriptorIfNeeded", true);
                 Check((string)Json(h.Server.GetPresentationDescriptor())["status"] == "StableSlideIds",
                     "initial production owner publishes stable graph");
+                var current = (FakeNode)((FakeNode)h.Graph.Window.Properties["View"]).Properties["Slide"];
+                current.Properties["SlideID"] = 999; // 先使 fast 失效，才能到达本例的完整拓扑 busy 注入点。
                 h.Accessor.FailureStage = "slides.Item:2";
                 h.Accessor.Failure = new COMException("busy", unchecked((int)0x8001010A));
                 h.Call("RefreshPresentationDescriptorIfNeeded", true);
@@ -165,6 +167,7 @@ namespace PptCOM.Tests
                     (DateTime)h.Get("nextPresentationDescriptorRefreshUtc") > retry,
                     "busy retry is independent of stable three-second audit");
                 h.Accessor.FailureStage = null;
+                current.Properties["SlideID"] = 202;
                 h.Set("presentationDescriptorRetryUtc", DateTime.UtcNow.AddMilliseconds(-1));
                 h.Call("RefreshPresentationDescriptorIfNeeded", false);
                 Check((string)Json(h.Server.GetSlideShowState(0))["pageStatus"] == "Valid",
@@ -464,11 +467,374 @@ namespace PptCOM.Tests
             }
         }
 
+        private static FakeNode CurrentSlide(ServerHarness h)
+        {
+            return (FakeNode)((FakeNode)h.Graph.Window.Properties["View"]).Properties["Slide"];
+        }
+
+        private static FakeNode Slides(ServerHarness h)
+        {
+            return (FakeNode)h.Graph.Presentation.Properties["Slides"];
+        }
+
+        private static int ItemReadCount(ServerHarness h)
+        {
+            int count = 0;
+            foreach (string operation in h.Accessor.Operations)
+                if (operation.StartsWith("slides.Item:", StringComparison.Ordinal)) ++count;
+            return count;
+        }
+
+        private static string DescriptorStatus(ServerHarness h)
+        {
+            return (string)Json(h.Server.GetPresentationDescriptor())["status"];
+        }
+
+        private static void TestFastAndPeriodicMaintenance()
+        {
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 3 && DescriptorStatus(h) == "StableSlideIds",
+                    "initial binding performs one complete topology validation");
+
+                FakeNode current = CurrentSlide(h);
+                current.Properties["SlideIndex"] = 3;
+                current.Properties["SlideID"] = 303;
+                h.State.PageChanged();
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                var descriptor = Json(h.Server.GetPresentationDescriptor());
+                Check(ItemReadCount(h) == 0 && DescriptorStatus(h) == "StableSlideIds" &&
+                    Convert.ToInt32(descriptor["currentPage"]) == 3 &&
+                    Convert.ToInt32(descriptor["currentSlideId"]) == 303,
+                    "ordinary same-binding navigation uses fast current-page validation with zero Items");
+
+                h.Accessor.Operations.Clear();
+                h.Set("presentationDescriptorRefreshPending", 0);
+                h.Set("nextPresentationDescriptorRefreshUtc", DateTime.UtcNow.AddMilliseconds(-1));
+                h.Call("RefreshPresentationDescriptorIfNeeded", false);
+                Check(ItemReadCount(h) == 0 && DescriptorStatus(h) == "StableSlideIds",
+                    "periodic deadline alone never authorizes a full document scan");
+
+                var replacement = new FakeNode("fastReplacement");
+                foreach (var pair in h.Graph.Window.Properties) replacement.Properties[pair.Key] = pair.Value;
+                replacement.Properties["HWND"] = 0L;
+                h.Graph.Presentation.Properties["SlideShowWindow"] = replacement;
+                Check(h.Observe() && h.State.Capture().Window == 0,
+                    "same-binding replacement establishes a fresh session without a window anchor");
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                descriptor = Json(h.Server.GetPresentationDescriptor());
+                Check(ItemReadCount(h) == 0 && Convert.ToInt64(descriptor["slideShowHwnd"]) == 0 &&
+                    Convert.ToInt32(descriptor["applicationProcessId"]) == 0,
+                    "fast descriptor never inherits an old show HWND or process identity");
+                Check(h.Accessor.IsBalanced() || h.Outstanding("application") == 1,
+                    "fast/full interleaving keeps the ledger available for final owner cleanup");
+            }
+        }
+
+        private static void TestTopologyInvalidationMatrix()
+        {
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                FakeNode added = new FakeNode("item4");
+                added.Properties["SlideIndex"] = 4;
+                added.Properties["SlideID"] = 404;
+                Slides(h).Items.Add(added);
+                Slides(h).Properties["Count"] = 4;
+                h.State.PageChanged();
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 4 && DescriptorStatus(h) == "StableSlideIds",
+                    "changed page count requires and replaces the complete topology");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                CurrentSlide(h).Properties["SlideID"] = 999;
+                h.State.PageChanged();
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 3 && DescriptorStatus(h) == "PageIndexFallback" &&
+                    h.Get("stablePresentationTopology") == null,
+                    "current SlideID mismatch fully validates then safely degrades without a stable target");
+                CurrentSlide(h).Properties["SlideID"] = 202;
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 3 && DescriptorStatus(h) == "StableSlideIds",
+                    "a failed mismatch does not silently rehabilitate the suspicious cache");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                ((FakeNode)h.Graph.Window.Properties["View"]).Properties["State"] = 5;
+                h.State.PageChanged();
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 3 && DescriptorStatus(h) == "StableSlideIds" &&
+                    (string)Json(h.Server.GetSlideShowState(0))["pageStatus"] == "EndScreen",
+                    "EndScreen always requires the complete unique topology");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Call("InvalidatePresentationDescriptor");
+                long revision = (long)h.Get("presentationBindingRevision");
+                h.State.Observe(revision, true, 100);
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 3 && DescriptorStatus(h) == "StableSlideIds",
+                    "explicit invalidation discards the fast cache and performs full validation");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Accessor.FailureStage = "current.SlideID";
+                h.Accessor.Failure = new MissingMemberException("SlideID");
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 0 && DescriptorStatus(h) == "PageIndexFallback" &&
+                    h.Get("stablePresentationTopology") == null,
+                    "missing current SlideID uses the established safe fallback instead of cached stable identity");
+                h.Accessor.FailureStage = null;
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(DescriptorStatus(h) == "StableSlideIds", "full recovery follows the fallback");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Accessor.FailureStage = "current.SlideID";
+                h.Accessor.Failure = new COMException("busy", unchecked((int)0x8001010A));
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 0 && DescriptorStatus(h) == "TransientBusy" &&
+                    h.Get("stablePresentationTopology") != null,
+                    "fast busy is retryable without a second full scan or damage to the last complete cache");
+                h.Accessor.FailureStage = null;
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 0 && DescriptorStatus(h) == "StableSlideIds",
+                    "busy recovery can reuse the intact complete cache");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                CurrentSlide(h).Properties["SlideID"] = 999;
+                h.Accessor.FailureStage = "slides.Item:2";
+                h.Accessor.Failure = new COMException("busy", unchecked((int)0x8001010A));
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(DescriptorStatus(h) == "TransientBusy" &&
+                    h.Get("stablePresentationTopology") == null,
+                    "full busy never publishes partial topology or preserves a mismatched cache");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                CurrentSlide(h).Properties["SlideID"] = 999;
+                h.Accessor.FailureStage = "slides.Item:2";
+                h.Accessor.Failure = new InvalidOperationException("broken topology");
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(DescriptorStatus(h) == "PageIndexFallback" &&
+                    h.Get("stablePresentationTopology") == null &&
+                    h.Outstanding("item2") == 0 && h.Outstanding("slides") == 0,
+                    "ordinary full failure safely degrades, clears suspicious cache and releases partial acquisitions");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Call("InvalidatePresentationDescriptor");
+                long revision = (long)h.Get("presentationBindingRevision");
+                h.State.Observe(revision, true, 100);
+                h.Accessor.AfterAcquire = delegate(string name)
+                {
+                    if (name == "item2") h.State.PageChanged();
+                };
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(h.Get("stablePresentationTopology") == null &&
+                    DescriptorStatus(h) == "Unavailable",
+                    "late-generation full success cannot publish or replenish a stale topology");
+                h.Accessor.AfterAcquire = null;
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(DescriptorStatus(h) == "StableSlideIds" &&
+                    h.Get("stablePresentationTopology") != null,
+                    "only a current-generation full success replenishes the cache");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                long publishedRevision = Convert.ToInt64(Json(h.Server.GetSlideShowState(0))["stateRevision"]);
+                h.Accessor.AfterAcquire = delegate(string name)
+                {
+                    if (name == "slides") h.State.PageChanged();
+                };
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(ItemReadCount(h) == 0 &&
+                    Convert.ToInt64(Json(h.Server.GetSlideShowState(0))["stateRevision"]) == publishedRevision &&
+                    h.Get("stablePresentationTopology") != null,
+                    "late-generation fast success neither publishes nor discards the still valid complete cache");
+                h.Accessor.AfterAcquire = null;
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(DescriptorStatus(h) == "StableSlideIds",
+                    "a fresh fast generation can publish after the late candidate is rejected");
+            }
+        }
+
+        private static void TestDelayedReorderDiscovery()
+        {
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                FakeNode first = Slides(h).Items[0];
+                FakeNode third = Slides(h).Items[2];
+                first.Properties["SlideID"] = 303;
+                third.Properties["SlideID"] = 101;
+                h.State.PageChanged();
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                var descriptor = Json(h.Server.GetPresentationDescriptor());
+                var ids = (System.Collections.ArrayList)descriptor["slideIds"];
+                Check(ItemReadCount(h) == 0 && DescriptorStatus(h) == "StableSlideIds" &&
+                    Convert.ToInt32(ids[0]) == 101,
+                    "non-current background reorder uses the approved delayed-discovery fast path");
+
+                FakeNode current = CurrentSlide(h);
+                current.Properties["SlideIndex"] = 3;
+                current.Properties["SlideID"] = 101;
+                h.State.PageChanged();
+                h.Accessor.Operations.Clear();
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                descriptor = Json(h.Server.GetPresentationDescriptor());
+                ids = (System.Collections.ArrayList)descriptor["slideIds"];
+                Check(ItemReadCount(h) == 3 && DescriptorStatus(h) == "StableSlideIds" &&
+                    Convert.ToInt32(ids[0]) == 303 && Convert.ToInt32(ids[2]) == 101,
+                    "visiting a reordered index requires full validation before publishing its stable identity");
+            }
+        }
+
+        private static void TestOwnerObservesBeforeQueuedCommand()
+        {
+            using (var h = new ServerHarness())
+            {
+                var mailbox = (SlideShowOwnerMailbox)h.Get("slideShowOwner");
+                var queue = (Queue<SlideShowExitRequest>)typeof(SlideShowOwnerMailbox)
+                    .GetField("exits", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(mailbox);
+                queue.Enqueue(new SlideShowExitRequest(h.State.Capture(), SlideShowOwnerOperation.Next, true));
+                h.Set("showObservationPending", 1);
+                h.Accessor.Operations.Clear();
+                Thread service = new Thread(delegate() { h.Server.PptComService(); });
+                try
+                {
+                    service.Start();
+                    DateTime deadline = DateTime.UtcNow.AddSeconds(2);
+                    while (!h.Accessor.Operations.Contains("view.Next") && DateTime.UtcNow < deadline)
+                        Thread.Sleep(5);
+                    int observed = h.Accessor.Operations.IndexOf("view.Slide");
+                    int next = h.Accessor.Operations.IndexOf("view.Next");
+                    Check(observed >= 0 && next > observed,
+                        "real service refreshes session/page evidence before executing an already queued command");
+                }
+                finally
+                {
+                    h.Stop();
+                    service.Join(3000);
+                }
+            }
+        }
+
+        private static void TestMailboxBoundedDrain()
+        {
+            var mailbox = new SlideShowOwnerMailbox();
+            var gate = typeof(SlideShowOwnerMailbox).GetField("gate", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(mailbox);
+            var queue = (Queue<SlideShowExitRequest>)typeof(SlideShowOwnerMailbox)
+                .GetField("exits", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(mailbox);
+            Func<int> pending = delegate { lock (gate) return queue.Count; };
+            mailbox.Start();
+            Thread second = null;
+            Thread first = new Thread(delegate() { mailbox.RequestExit(1, 2000); });
+            first.Start();
+            DateTime deadline = DateTime.UtcNow.AddSeconds(2);
+            while (pending() == 0 && DateTime.UtcNow < deadline) Thread.Sleep(5);
+            Check(pending() == 1, "bounded-drain fixture queues its first request");
+            mailbox.ProcessExits(delegate(SlideShowExitRequest request)
+            {
+                second = new Thread(delegate() { mailbox.RequestExit(1, 2000); });
+                second.Start();
+                deadline = DateTime.UtcNow.AddSeconds(2);
+                while (pending() == 0 && DateTime.UtcNow < deadline) Thread.Sleep(5);
+                Check(pending() == 1, "a continuous producer enqueues during the active drain");
+                return 1;
+            });
+            Check(first.Join(2000) && pending() == 1 && second != null && !second.Join(0),
+                "a request arriving during execution is deferred so page maintenance cannot be starved");
+            mailbox.ProcessExits(delegate { return 1; });
+            Check(second != null && second.Join(2000) && pending() == 0,
+                "the next bounded drain completes the deferred request");
+            mailbox.Stop();
+        }
+
+        private static void TestOwnerCommandPriority()
+        {
+            using (var h = new ServerHarness())
+            using (var entered = new ManualResetEvent(false))
+            using (var release = new ManualResetEvent(false))
+            {
+                bool blocked = false;
+                h.Accessor.BeforeAccess = delegate(string stage)
+                {
+                    if (stage != "view.State" || blocked) return;
+                    blocked = true;
+                    entered.Set();
+                    release.WaitOne(2000);
+                };
+                int result = -2;
+                Thread service = new Thread(delegate() { h.Server.PptComService(); });
+                Thread client = null;
+                try
+                {
+                    service.Start();
+                    Check(entered.WaitOne(1000), "owner priority fixture blocks observation before maintenance");
+                    ((SlideShowOwnerMailbox)h.Get("slideShowOwner")).MaintenanceCompleted();
+                    client = new Thread(delegate() { h.Server.NextSlideShow(true); result = 1; });
+                    client.Start();
+                    Thread.Sleep(50);
+                    release.Set();
+                    Check(client.Join(3000) && result == 1, "queued Next completes on the real owner");
+                    DateTime deadline = DateTime.UtcNow.AddSeconds(2);
+                    while (!h.Accessor.Operations.Contains("slides.Item:1") &&
+                        DateTime.UtcNow < deadline) Thread.Sleep(5);
+                    int next = h.Accessor.Operations.IndexOf("view.Next");
+                    int full = h.Accessor.Operations.IndexOf("slides.Item:1");
+                    Check(next >= 0 && full >= 0 && next < full,
+                        "real service drains bounded Next before nonessential full descriptor maintenance");
+                    Check(h.Accessor.IsBalanced() || h.Outstanding("application") == 1,
+                        "command-priority run preserves acquisition/release accounting");
+                }
+                finally
+                {
+                    release.Set();
+                    h.Accessor.BeforeAccess = null;
+                    h.Stop();
+                    if (client != null) client.Join(2000);
+                    service.Join(3000);
+                }
+            }
+        }
+
         public static int Run()
         {
             TestOwnerPollingAndOwnership();
             TestBusyRetryAndMetadata();
+            TestFastAndPeriodicMaintenance();
+            TestTopologyInvalidationMatrix();
+            TestDelayedReorderDiscovery();
             TestOwnerCommandsAndCallbacks();
+            TestOwnerObservesBeforeQueuedCommand();
+            TestOwnerCommandPriority();
+            TestMailboxBoundedDrain();
             TestMailboxExecution();
             TestEventCleanupOwnership();
             TestCleanupSurvivesDiagnosticFailure();

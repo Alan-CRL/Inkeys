@@ -558,6 +558,9 @@ export namespace Inkeys::UI::Ppt
 	void PublishPageState(int currentPage, int totalPage,
 		std::uint64_t targetRevision = 0,
 		PageStateMode mode = PageStateMode::InkReady) noexcept;
+	void PublishNavigationWaiting(std::uint64_t session, std::uint64_t epoch, bool next) noexcept;
+	void CompleteNavigationWaiting(std::uint64_t session, std::uint64_t epoch) noexcept;
+	void ClearNavigationWaiting(std::uint64_t session = 0) noexcept;
 	void PublishCanvasRecovery(PptRecovery::State recovery) noexcept;
 	void ResetPositions() noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;

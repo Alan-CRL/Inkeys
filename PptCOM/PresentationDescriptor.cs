@@ -305,6 +305,131 @@ namespace PptCOM
             return "Unknown";
         }
 
+        private sealed class CurrentShowValue
+        {
+            public bool EndScreen;
+            public bool StateUnknown;
+            public bool HasCurrentSlideId;
+            public int CurrentSlideId;
+            public string FailureStatus;
+        }
+
+        private CurrentShowValue ReadCurrentShow(object slideShowWindow,
+            PresentationDescriptorValue descriptor, bool inspectState)
+        {
+            var result = new CurrentShowValue();
+            object view = null;
+            object currentSlide = null;
+            try
+            {
+                view = accessor.GetProperty(slideShowWindow, "View");
+                if (inspectState)
+                {
+                    try
+                    {
+                        int state = GetInt32(view, "State");
+                        result.EndScreen = state == 5; // ppSlideShowDone；黑屏/白屏仍是本页，不算结束。
+                        result.StateUnknown = state < 1 || state > 5;
+                    }
+                    catch (Exception exception)
+                    {
+                        // State 是可选属性。缺失时仍可用自洽 Slide 证明有效页；任何失败都不推断结束。
+                        if (IsBusy(exception)) throw;
+                    }
+                }
+                if (!result.EndScreen)
+                {
+                    currentSlide = accessor.GetProperty(view, "Slide");
+                    descriptor.currentPage = GetInt32(currentSlide, "SlideIndex");
+                    try
+                    {
+                        result.CurrentSlideId = GetInt32(currentSlide, "SlideID");
+                        result.HasCurrentSlideId = result.CurrentSlideId > 0;
+                    }
+                    catch (Exception exception)
+                    {
+                        if (IsBusy(exception)) throw;
+                        result.HasCurrentSlideId = false;
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                result.FailureStatus = IsBusy(exception) ? "TransientBusy" : "Unavailable";
+            }
+            finally
+            {
+                // 每次 object-valued COM 返回都是独立 acquisition，按子到父释放。
+                accessor.Release(currentSlide);
+                accessor.Release(view);
+            }
+            return result;
+        }
+
+        public PresentationDescriptorValue ReadFastShow(object presentation,
+            object slideShowWindow, PresentationDescriptorValue stableTopology,
+            out string pageStatus, out bool requiresFullTopology)
+        {
+            pageStatus = "Unknown";
+            requiresFullTopology = false;
+            PresentationDescriptorValue descriptor = stableTopology.Clone();
+            CurrentShowValue current = ReadCurrentShow(slideShowWindow, descriptor, true);
+            if (current.FailureStatus != null)
+            {
+                if (current.FailureStatus == "TransientBusy")
+                {
+                    descriptor.status = "TransientBusy";
+                    descriptor.currentSlideId = null;
+                    descriptor.slideIds = new int[0];
+                    return descriptor;
+                }
+                requiresFullTopology = true;
+                return descriptor;
+            }
+
+            object slides = null;
+            try
+            {
+                slides = accessor.GetProperty(presentation, "Slides");
+                descriptor.totalPage = GetInt32(slides, "Count");
+            }
+            catch (Exception exception)
+            {
+                if (IsBusy(exception))
+                {
+                    descriptor.status = "TransientBusy";
+                    descriptor.currentSlideId = null;
+                    descriptor.slideIds = new int[0];
+                    return descriptor;
+                }
+                requiresFullTopology = true;
+                return descriptor;
+            }
+            finally
+            {
+                accessor.Release(slides);
+            }
+
+            // 当前身份、页数或结束状态有一项不能由完整缓存证明，就必须回到完整校验。
+            if (current.EndScreen || descriptor.totalPage != stableTopology.totalPage ||
+                descriptor.totalPage <= 0 || descriptor.totalPage > MaximumSlides ||
+                descriptor.currentPage <= 0 || descriptor.currentPage > descriptor.totalPage ||
+                !current.HasCurrentSlideId ||
+                stableTopology.slideIds[descriptor.currentPage - 1] != current.CurrentSlideId)
+            {
+                requiresFullTopology = true;
+                descriptor.status = "Unavailable";
+                descriptor.currentSlideId = null;
+                descriptor.slideIds = new int[0];
+                return descriptor;
+            }
+
+            descriptor.currentSlideId = current.CurrentSlideId;
+            descriptor.status = "StableSlideIds";
+            pageStatus = current.StateUnknown ? "Unknown" : "Valid";
+            return ValidateIdentity(descriptor, ref pageStatus);
+        }
+
         public PresentationDescriptorValue Read(object application,
             object presentation, object slideShowWindow, long bindingRevision)
         {
@@ -368,54 +493,16 @@ namespace PptCOM
                 return descriptor;
             }
 
-            bool hasCurrentSlideId = false;
-            int currentSlideId = 0;
-            object view = null;
-            object currentSlide = null;
-            try
+            CurrentShowValue current = ReadCurrentShow(slideShowWindow, descriptor, inspectState);
+            if (current.FailureStatus != null)
             {
-                view = accessor.GetProperty(slideShowWindow, "View");
-                if (inspectState)
-                {
-                    try
-                    {
-                        int state = GetInt32(view, "State");
-                        endScreen = state == 5; // ppSlideShowDone；黑屏/白屏仍是本页，不算结束。
-                        stateUnknown = state < 1 || state > 5;
-                    }
-                    catch (Exception exception)
-                    {
-                        // State 是可选属性。缺失时仍可用自洽 Slide 证明有效页；任何失败都不推断结束。
-                        if (IsBusy(exception)) throw;
-                    }
-                }
-                if (!endScreen)
-                {
-                    currentSlide = accessor.GetProperty(view, "Slide");
-                    descriptor.currentPage = GetInt32(currentSlide, "SlideIndex");
-                    try
-                    {
-                        currentSlideId = GetInt32(currentSlide, "SlideID");
-                        hasCurrentSlideId = currentSlideId > 0;
-                    }
-                    catch (Exception exception)
-                    {
-                        if (IsBusy(exception)) throw;
-                        hasCurrentSlideId = false;
-                    }
-                }
-            }
-            catch (Exception exception)
-            {
-                descriptor.status = IsBusy(exception) ? "TransientBusy" : "Unavailable";
+                descriptor.status = current.FailureStatus;
                 return descriptor;
             }
-            finally
-            {
-                // 每次 object-valued COM 返回都是独立 acquisition，按子到父释放。
-                accessor.Release(currentSlide);
-                accessor.Release(view);
-            }
+            endScreen = current.EndScreen;
+            stateUnknown = current.StateUnknown;
+            bool hasCurrentSlideId = current.HasCurrentSlideId;
+            int currentSlideId = current.CurrentSlideId;
 
             object slides = null;
             try

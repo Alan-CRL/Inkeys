@@ -118,6 +118,7 @@ namespace
 		PptUiBusinessCommand command{};
 		PptSessionToken session{};
 		std::uint64_t requestId = 0;
+		std::uint64_t navigationEpoch = 0;
 		std::string settingsPayload;
 		PptFocusForeground focusForeground;
 		std::uint64_t inputWorkspaceEpoch = 0;
@@ -126,10 +127,24 @@ namespace
 	condition_variable pptUiBusinessCondition;
 	deque<PptUiBusinessRequest> pptUiBusinessCommands;
 	atomic_bool pptUiPageCommandOutstanding = false;
+	atomic_uint64_t pptUiNavigationEpoch = 0;
 	Inkeys::Business::PptEndShowGate pptEndShowGate;
 	constexpr auto PptPageStateCheckInterval = chrono::milliseconds(16);
 	constexpr auto PptIdleStateCheckInterval = chrono::milliseconds(100);
 	constexpr auto PptVisibilityPublishInterval = chrono::milliseconds(500);
+
+	void TracePptNavigation(const char* stage, std::uint64_t session,
+		std::uint64_t epoch, const char* direction) noexcept
+	{
+		static const bool enabled = []
+		{
+			wchar_t value[8]{};
+			return GetEnvironmentVariableW(L"INKEYS_PPT_TIMING", value, 8) > 0 && value[0] == L'1';
+		}();
+		if (enabled && IDTLogger)
+			IDTLogger->info("[PptNav] stage={} session={} epoch={} direction={}",
+				stage, session, epoch, direction);
+	}
 
 	void QueuePptUiBusinessCommand(PptUiBusinessCommand command, std::uint64_t requestId = 0,
 		const PptSessionToken* expected = nullptr, const PptFocusForeground* foreground = nullptr)
@@ -139,7 +154,13 @@ namespace
 		if (pageCommand && pptUiPageCommandOutstanding.exchange(true)) return;
 		PptUiBusinessRequest request{ command, expected ? *expected : CapturePptSession(), requestId };
 		request.focusForeground = foreground ? *foreground : CapturePptForeground();
-		if(pageCommand)request.inputWorkspaceEpoch=PptInputWorkspaceEpoch();
+		if(pageCommand)
+		{
+			request.inputWorkspaceEpoch=PptInputWorkspaceEpoch();
+			request.navigationEpoch = pptUiNavigationEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+		}
+		const auto navigationSession = request.session.localSession;
+		const auto navigationEpoch = request.navigationEpoch;
 		try
 		{
 			lock_guard lock(pptUiBusinessMutex);
@@ -156,6 +177,14 @@ namespace
 			}
 			if (requestId) Inkeys::UI::Bar::CompleteEndShowRequest(requestId);
 			return;
+		}
+		// 只在成功入队且释放业务锁后发布纯值；重复点击不会替换原 epoch。
+		if (pageCommand)
+		{
+			Inkeys::UI::Ppt::PublishNavigationWaiting(navigationSession, navigationEpoch,
+				command == PptUiBusinessCommand::Next);
+			TracePptNavigation("enqueue", navigationSession, navigationEpoch,
+				command == PptUiBusinessCommand::Next ? "next" : "previous");
 		}
 		pptUiBusinessCondition.notify_one();
 	}
@@ -860,6 +889,8 @@ void PptInfo()
 	auto EndSession = [&]
 	{
 		auto session = CapturePptSession();
+		Inkeys::UI::Ppt::ClearNavigationWaiting(session.localSession);
+		TracePptNavigation("session-clear", session.localSession, 0, "none");
 		if (!session.active) return;
 		pptControlAvailable.store(false, std::memory_order_release);
 		pptWindowControlAvailable.store(false, std::memory_order_release);
@@ -1436,10 +1467,16 @@ void PPTLinkageMain()
 			PptUiBusinessCommand command;
 			std::uint64_t request;
 			PptSessionToken session;
+			std::uint64_t navigationEpoch;
 			~CompleteRequest()
 			{
 				if (command == PptUiBusinessCommand::Previous || command == PptUiBusinessCommand::Next)
+				{
 					pptUiPageCommandOutstanding = false;
+					Inkeys::UI::Ppt::CompleteNavigationWaiting(session.localSession, navigationEpoch);
+					TracePptNavigation("complete", session.localSession, navigationEpoch,
+						command == PptUiBusinessCommand::Next ? "next" : "previous");
+				}
 				if (command == PptUiBusinessCommand::EndShow)
 				{
 					lock_guard lock(pptUiBusinessMutex);
@@ -1447,7 +1484,7 @@ void PPTLinkageMain()
 				}
 				if (request) Inkeys::UI::Bar::CompleteEndShowRequest(request);
 			}
-		} completion{ command, request.requestId, request.session };
+		} completion{ command, request.requestId, request.session, request.navigationEpoch };
 		if (!IsCurrentPptSession(request.session)) continue;
 		if (DispatchPptFocusBusinessAction(request)) continue;
 		if (command == PptUiBusinessCommand::ViewShow)

@@ -226,6 +226,7 @@ namespace PptCOM
         public readonly SlideShowObservationStamp Stamp;
         public readonly bool HasStamp;
         public readonly bool Check;
+        public long DiagnosticId;
 
         public SlideShowExitRequest(long session, SlideShowOwnerOperation operation = SlideShowOwnerOperation.ExitShow)
         {
@@ -243,6 +244,8 @@ namespace PptCOM
         }
 
         public bool IsCancelled { get { lock (gate) { return cancelled; } } }
+        public bool IsCompleted { get { lock (gate) { return completed; } } }
+        public bool HasStarted { get { lock (gate) { return executing; } } }
 
         public bool TryBeginExecution()
         {
@@ -366,7 +369,10 @@ namespace PptCOM
 
         public void ProcessExits(Func<SlideShowExitRequest, int> execute)
         {
-            while (true)
+            int remaining;
+            lock (gate) remaining = exits.Count;
+            // 每轮最多处理进入时的有界邮箱；持续新命令不能饿死页面维护。
+            for (int index = 0; index < remaining; ++index)
             {
                 SlideShowExitRequest request;
                 lock (gate)

@@ -575,6 +575,40 @@ export namespace Inkeys::UI::PageControl
 		return result;
 	}
 
+	enum class PptNavigationDirection : std::uint8_t { None, Previous, Next };
+	struct PptNavigationWaiting
+	{
+		std::uint64_t session = 0;
+		std::uint64_t epoch = 0;
+		PptNavigationDirection direction = PptNavigationDirection::None;
+		bool waiting = false;
+	};
+	struct PptNavigationWaitingState
+	{
+		PptNavigationWaiting current;
+
+		bool Publish(std::uint64_t session, std::uint64_t epoch,
+			PptNavigationDirection direction) noexcept
+		{
+			if (!session || !epoch || direction == PptNavigationDirection::None) return false;
+			if (current.waiting && current.session == session && epoch <= current.epoch) return false;
+			current = { session, epoch, direction, true };
+			return true;
+		}
+		bool Complete(std::uint64_t session, std::uint64_t epoch) noexcept
+		{
+			if (!current.waiting || current.session != session || current.epoch != epoch) return false;
+			current = {};
+			return true;
+		}
+		bool Clear(std::uint64_t session = 0) noexcept
+		{
+			if (!current.waiting || (session && current.session != session)) return false;
+			current = {};
+			return true;
+		}
+	};
+
 	struct PptState
 	{
 		std::uint64_t publicationRevision = 0;
@@ -587,10 +621,20 @@ export namespace Inkeys::UI::PageControl
 		bool longPressEnabled = false;
 		int currentPage = -1;
 		int totalPage = -1;
+		PptNavigationWaiting navigationWaiting;
 		PptLayoutState layout;
 		// 帧内派生的 UI 全局尺度；不属于用户位置/控件倍率，不参与持久化。
 		float uiScale = 0.0F;
 	};
+
+	[[nodiscard]] inline bool IsPptNavigationWaiting(
+		const PptState& state, bool next) noexcept
+	{
+		const auto& waiting = state.navigationWaiting;
+		return waiting.waiting && waiting.epoch != 0 && waiting.session == state.layout.session
+			&& waiting.direction == (next ? PptNavigationDirection::Next
+				: PptNavigationDirection::Previous);
+	}
 
 	[[nodiscard]] inline bool IsPptDragFrameOwned(
 		const PptDragCommitTracker& tracker, const PptState& frame,
@@ -764,6 +808,10 @@ export namespace Inkeys::UI::PageControl
 			&& left.longPressEnabled == right.longPressEnabled
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage
+			&& left.navigationWaiting.session == right.navigationWaiting.session
+			&& left.navigationWaiting.epoch == right.navigationWaiting.epoch
+			&& left.navigationWaiting.direction == right.navigationWaiting.direction
+			&& left.navigationWaiting.waiting == right.navigationWaiting.waiting
 			&& SameFloat(left.layout.bottomPairWidth,
 				right.layout.bottomPairWidth)
 			&& SameFloat(left.layout.bottomPairHeight,

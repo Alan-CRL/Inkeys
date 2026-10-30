@@ -912,6 +912,8 @@ namespace Inkeys::UI::PageControl
 			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
 			content.switching=whiteboard.switching;content.pptActive=ppt.presentationActive;
 			content.nextIsAdd=whiteboard.nextIsAdd;content.nextIsEndShow=IsPptEndPage(ppt.currentPage,ppt.totalPage);
+			content.navigationWaitingPrevious=!content.whiteboard&&IsPptNavigationWaiting(ppt,false);
+			content.navigationWaitingNext=!content.whiteboard&&IsPptNavigationWaiting(ppt,true);
 			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
 			if(content.whiteboard){
 				content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);
@@ -3501,8 +3503,14 @@ namespace Inkeys::UI::PageControl
 			PptState show;show.presentationActive=true;show.presentationVisible=true;show.currentPage=2;show.totalPage=5;
 			WhiteboardState page;page.nextIsAdd=true;
 			const auto normal=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
+			show.layout.session=7;show.navigationWaiting={7,11,PptNavigationDirection::Next,true};
+			const auto waiting=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
 			show.currentPage=-1;const auto end=BuildPageContent(2,WorkspaceMode::PptCompact,show,page);
 			const auto board=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,show,page);
+			Check(waiting.navigationWaitingNext&&!waiting.navigationWaitingPrevious
+				&&!board.navigationWaitingNext&&!board.navigationWaitingPrevious
+				&&waiting.currentPage==normal.currentPage&&waiting.totalPage==normal.totalPage,
+				"production PageContent maps session waits to three-dot feedback without changing page or whiteboard layout");
 			Check(normal.nextLabel==IW(I18nKey.UI.Bar.MainButtons.WhiteboardNextLabel)
 				&&end.nextLabel==IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel)
 				&&board.nextLabel==IW(I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel),

@@ -178,3 +178,62 @@ if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision(
 PageControl 的页码/UI-ready 同时要求像素事务和 Window Service 当前 candidate 的完整真实回执。固定帧命中与 damage revision 随候选捕获；旧 session/target/pageAckEpoch、workspace/publication、设备或 HWND generation 的完成不得提交后来帧。新几何/身份 native pending 期间禁止对应新输入；保留合法已准入手势不等于提前确认新页。普通 Show 不作为 promote，显式 Pointer Down 提升与可见性分开。具体 candidate/receipt 与失败矩阵见 [窗口候选合同](../native-desktop/rendering-and-ui.md#ui3-原生窗口候选与真实回执2026-10-28)。
 
 成对拖动只在当前 mask=3 的真实回执后提交；owner 与 ULW 通过 role lease/presentationRevision 互斥。最后 Move+Up 无后续消息也保留 pending 并收敛；旧像素/旧 session/旧 pair 回执不能覆盖新位置。Pointer Down 的 RequestPromotePptWindow 是独立异步事件，不受逐帧 candidate latest-wins 覆盖。
+
+## Scenario: 普通翻页快速描述符与导航等待反馈（2026-10-30）
+
+### 1. Scope / Trigger
+
+修改 `PresentationDescriptorReader`、普通/周期 descriptor 刷新、PPT owner 命令顺序或 Previous/Next 等待视觉时适用。目标是避免动态媒体和长文稿把全文稿 COM 扫描放大成秒级无响应，同时不放宽墨迹身份门。
+
+### 2. Signatures
+
+- `ReadFastShow(presentation, slideShowWindow, stableTopology, out pageStatus, out requiresFullTopology)` 只读当前 `View.State`、同次 `SlideIndex/SlideID` 和 `Slides.Count`；完整 `ReadShow` 继续负责有序全量拓扑。
+- `stablePresentationTopology` 是 owner 私有的最后一次完整 `StableSlideIds` 纯值缓存；公开 descriptor schema 与 COM ABI 不变。
+- native `PublishNavigationWaiting(session,epoch,next)`、`CompleteNavigationWaiting(session,epoch)`、`ClearNavigationWaiting(session=0)` 只发布视觉等待，不产生页回执。
+- `INKEYS_PPTCOM_TRACE=1` 开启 managed fast/full/owner 聚合诊断；`INKEYS_PPT_TIMING=1` 同时开启 native `[PptNav]` 与既有 `[PptSync]`。两者默认关闭。
+
+### 3. Contracts
+
+- fast 仅在相同有效 binding、非 EndScreen、页数一致、当前索引合法且当前 SlideID 等于缓存该索引 ID 时复用拓扑；周期到期本身不授权全量 `Slides.Item`。
+- 无缓存、binding/页数变化、当前 ID 缺失或不匹配、显式失效、EndScreen 及无法安全分类的错误必须 full 或走既有安全降级。只有当前 generation 的完整成功才能重建缓存；busy、部分读取和普通失败不得污染它。
+- 非当前页重排允许延迟发现；访问到不一致索引时，完整校验成功前不得发布该页可信墨迹目标。fast 不复用旧场 HWND/PID。
+- owner 每轮先完成最新页面/场次观察，再按进入时有界邮箱排水，最后进行非必要 descriptor 维护；不得为了命令优先使用旧 stamp 操作已变化页面，也不得让持续新命令饿死维护。
+- 等待反馈携带 session/epoch/direction；重复点击保留原 epoch，完成未翻页、换场、退出和 shutdown 必须清除或替换。三点不确定标记保留真实旧页码和布局，不参与 Draw3 ready、PageControl ack 或输入准入。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 同场普通翻页或周期 fast | 全量 `Slides.Item` 次数为 0，raw/descriptor 当前页一致后才推进 target |
+| 当前 ID 不匹配后 full busy/失败 | 可疑缓存失效，不能下轮静默复用 |
+| fast busy 后恢复 | 保留最后完整缓存；恢复 fast 仍重新核对当前页与页数 |
+| 非当前页重排后被访问 | 先 full 并验证有序唯一拓扑，再开放该页输入 |
+| 命令等待完成但页未变 | 清除等待并允许重试，不伪造页码或 ready |
+| 旧 session/epoch 完成或退出 | 不得清除新场等待；shutdown 清空全部等待 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：普通第 3→4 页 fast 只核对当前页，点击后的等待标记不替代 `descriptor_accepted → canvas_presented → page_ui_ack → input_open`。
+- Base：非当前页重排暂未改变当前 ID 时可 fast；访问受影响页时 full。
+- Bad：固定 3 秒到期就扫描全文稿；命令先于最新观察执行；full busy 仍保留不匹配缓存；用等待标记提前开放画布。
+
+### 6. Tests Required
+
+- `PptCOM.Tests` 断言 fast/周期全量 Item=0、失效矩阵、迟到 generation、非当前页重排、fast/full 释放账本及真实 service 的观察→命令→维护顺序。
+- `InkeysHeadlessTests.exe --page-control-only` 覆盖等待生命周期、生产 `BuildPageContent` 方向/session/旧页码、白板隔离及 ready 不被重置；完整 `--no-window` 另行回归。
+- 完整 `InkeysRepo.sln Debug|ARM64`、同步同次 DLL/TLB 并核对 EXE 内嵌 DLL。真实 Office 冷/暖鼠标键盘进入/离开动态媒体页须记录 fast/full 与 QPC；未运行的 WPS/版本标 NOT VERIFIED。
+
+### 7. Wrong vs Correct
+
+~~~csharp
+// Wrong：周期到期或普通翻页都重新枚举全文稿。
+candidate = presentationDescriptorReader.ReadShow(application, presentation, window, revision, out pageStatus);
+
+// Correct：先核对当前证据；只有失效或必须重建时才 full。
+candidate = presentationDescriptorReader.ReadFastShow(presentation, window, stable, out pageStatus, out requiresFull);
+if (requiresFull)
+{
+    stablePresentationTopology = null;
+    candidate = presentationDescriptorReader.ReadShow(application, presentation, window, revision, out pageStatus);
+}
+~~~

@@ -414,6 +414,64 @@ namespace
 		}
 	}
 
+	void TestNavigationWaitingLifecycle()
+	{
+		PptNavigationWaitingState waiting;
+		Check(waiting.Publish(7, 11, PptNavigationDirection::Next)
+			&& waiting.current.waiting && waiting.current.session == 7
+			&& waiting.current.epoch == 11,
+			"successful native enqueue publishes a session and epoch wait value");
+		Check(!waiting.Publish(7, 11, PptNavigationDirection::Previous)
+			&& waiting.current.direction == PptNavigationDirection::Next,
+			"duplicate click keeps the original direction and epoch");
+		PptState frame;
+		frame.layout.session = 7;
+		frame.currentPage = 2;
+		frame.totalPage = 3;
+		frame.navigationWaiting = waiting.current;
+		Check(IsPptNavigationWaiting(frame, true) && !IsPptNavigationWaiting(frame, false)
+			&& frame.currentPage == 2 && frame.totalPage == 3,
+			"waiting direction preserves the real old page and does not fabricate navigation");
+		frame.targetRevision = 44;
+		frame.pageAckEpoch = 3;
+		auto readyFrame = frame;
+		readyFrame.navigationWaiting = {};
+		PptPageCommitState commit;
+		commit.Publish(readyFrame, 0x3);
+		Check(commit.Commit(readyFrame, 0x3) && commit.acknowledged,
+			"page ready is acknowledged before independent command feedback changes");
+		commit.Publish(frame, 0x3);
+		Check(commit.acknowledged && commit.committed == 0x3 && !commit.Commit(frame, 0x3),
+			"navigation waiting neither resets nor newly completes Draw3/PageControl ready");
+		auto changed = frame;
+		++changed.navigationWaiting.epoch;
+		Check(!ArePptStatesEquivalent(frame, changed),
+			"waiting publication participates in PageControl visual invalidation");
+		Check(!waiting.Complete(7, 10) && !waiting.Complete(8, 11)
+			&& waiting.current.waiting,
+			"stale epoch and wrong session cannot clear an active wait");
+		Check(waiting.Complete(7, 11) && !waiting.current.waiting,
+			"command completion clears waiting even when the page did not change");
+		frame.navigationWaiting = waiting.current;
+		Check(!IsPptNavigationWaiting(frame, true),
+			"completed unchanged page is immediately retryable without a permanent marker");
+
+		Check(waiting.Publish(7, 12, PptNavigationDirection::Previous)
+			&& waiting.Publish(8, 1, PptNavigationDirection::Next)
+			&& waiting.current.session == 8,
+			"a new show replaces the previous session wait even with a restarted epoch");
+		Check(!waiting.Complete(7, 12) && waiting.current.session == 8
+			&& waiting.current.waiting,
+			"late completion from the old show cannot clear the new show");
+		Check(!waiting.Clear(7) && waiting.current.waiting,
+			"wrong-session exit leaves the current session untouched");
+		Check(waiting.Clear(8) && !waiting.current.waiting,
+			"session exit clears its navigation feedback");
+		Check(waiting.Publish(9, 2, PptNavigationDirection::Next)
+			&& waiting.Clear() && !waiting.current.waiting,
+			"shutdown clears any remaining navigation feedback");
+	}
+
 	void TestDragCommitHandoff()
 	{
 		PptLayoutState initial;
@@ -1803,6 +1861,7 @@ int RunPageControlTests()
 	TestCompactWidgetContracts();
 	TestNativeMouseAndDragSupplement();
 	TestEndShowContentTargets();
+	TestNavigationWaitingLifecycle();
 	TestDragCommitHandoff();
 	TestVersionedDragPublication();
 	TestInterleavedPairFrameCommit();

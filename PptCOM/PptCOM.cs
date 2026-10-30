@@ -128,6 +128,8 @@ namespace PptCOM
         private int annotationToolCache;
         private PresentationDescriptorValue presentationDescriptorCache =
             PresentationDescriptorValue.CreateStatus("Unavailable", 0);
+        // 仅 owner 持有的最后一次完整 StableSlideIds；公开 getter 仍只读 presentationDescriptorCache。
+        private PresentationDescriptorValue stablePresentationTopology;
         private long presentationBindingRevision;
         private int presentationDescriptorRefreshPending = 1;
         private DateTime nextPresentationDescriptorRefreshUtc = DateTime.MinValue;
@@ -167,6 +169,23 @@ namespace PptCOM
             presentationAccessor = accessor;
             presentationDescriptorReader = new PresentationDescriptorReader(
                 presentationAccessor, ResolveWindowProcessId, ResolveSlideShowHwnd);
+        }
+
+        private static readonly bool pptOwnerDiagnosticsEnabled =
+            string.Equals(Environment.GetEnvironmentVariable("INKEYS_PPTCOM_TRACE"), "1",
+                StringComparison.Ordinal);
+        private static long pptOwnerDiagnosticSequence;
+
+        private static void TracePptOwnerDiagnostic(string message)
+        {
+            if (!pptOwnerDiagnosticsEnabled) return;
+            try { Console.WriteLine("[PptOwner] " + message); }
+            catch { }
+        }
+
+        private static double DiagnosticMilliseconds(long started)
+        {
+            return (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
         }
 
         private static Type[] LegacyEventTypeMetadata()
@@ -293,6 +312,7 @@ namespace PptCOM
         private void InvalidatePresentationDescriptor()
         {
             long revision = Interlocked.Increment(ref presentationBindingRevision);
+            stablePresentationTopology = null;
             slideShowSession.InvalidateBinding(revision);
             PublishSlideShowLifecycle();
             lock (presentationDescriptorLock)
@@ -326,10 +346,45 @@ namespace PptCOM
                 presentationDescriptorRetryUtc = DateTime.MaxValue;
                 return;
             }
-            string pageStatus;
-            PresentationDescriptorValue candidate = presentationDescriptorReader.ReadShow(
-                (object)pptApplication, (object)pptActivePresentation,
-                (object)pptSlideShowWindow, revision, out pageStatus);
+
+            string pageStatus = "Unknown";
+            PresentationDescriptorValue stable = stablePresentationTopology;
+            bool requiresFull = stable == null || stable.bindingRevision != revision ||
+                stable.status != "StableSlideIds" || stable.slideIds == null ||
+                stable.totalPage <= 0 || stable.slideIds.Length != stable.totalPage;
+            PresentationDescriptorValue candidate = null;
+            if (!requiresFull)
+            {
+                long started = Stopwatch.GetTimestamp();
+                candidate = presentationDescriptorReader.ReadFastShow(
+                    (object)pptActivePresentation, (object)pptSlideShowWindow,
+                    stable, out pageStatus, out requiresFull);
+                TracePptOwnerDiagnostic("fast session=" + stamp.Session.ToString(CultureInfo.InvariantCulture) +
+                    " binding=" + revision.ToString(CultureInfo.InvariantCulture) +
+                    " result=" + (requiresFull ? "RequiresFull" : candidate.status) +
+                    " full=" + (requiresFull ? 1 : 0) +
+                    " ms=" + DiagnosticMilliseconds(started).ToString("F3", CultureInfo.InvariantCulture));
+            }
+            if (requiresFull)
+            {
+                // 一旦当前证据与缓存冲突，失败或 busy 的完整读取也不能让可疑缓存重新变成 fast 依据。
+                stablePresentationTopology = null;
+                long started = Stopwatch.GetTimestamp();
+                candidate = presentationDescriptorReader.ReadShow(
+                    (object)pptApplication, (object)pptActivePresentation,
+                    (object)pptSlideShowWindow, revision, out pageStatus);
+                TracePptOwnerDiagnostic("full session=" + stamp.Session.ToString(CultureInfo.InvariantCulture) +
+                    " binding=" + revision.ToString(CultureInfo.InvariantCulture) +
+                    " pages=" + candidate.totalPage.ToString(CultureInfo.InvariantCulture) +
+                    " result=" + candidate.status +
+                    " ms=" + DiagnosticMilliseconds(started).ToString("F3", CultureInfo.InvariantCulture));
+            }
+            else if (candidate != null)
+            {
+                // 同场 fast 复用拓扑，不复用可能已更新或暂时缺失的窗口锚点。
+                candidate.slideShowHwnd = stamp.Window;
+                if (stamp.Window == 0) candidate.applicationProcessId = 0;
+            }
             if (!slideShowSession.IsCurrent(stamp))
             {
                 RequestPresentationDescriptorRefresh();
@@ -349,6 +404,8 @@ namespace PptCOM
                 // 旧稳定画面由 native 保留；两个 getter 都发布本次证据，不能将旧页冒充 Valid。
                 presentationDescriptorCache = candidate.Clone();
             }
+            if (requiresFull && candidate.status == "StableSlideIds")
+                stablePresentationTopology = candidate.Clone();
             nextPresentationDescriptorRefreshUtc = now.AddSeconds(3);
             presentationDescriptorRetryUtc = candidate.status == "TransientBusy"
                 ? now.AddMilliseconds(100) : DateTime.MaxValue;
@@ -1251,9 +1308,11 @@ namespace PptCOM
             {
                 while (Thread.VolatileRead(ref *offSignal) == 0)
                 {
+                    // 先取得最新场次/页面，再让有界命令先于非必要 descriptor，避免旧 stamp 驱动新 Office 状态。
                     // 快速事件只重读绑定对象；ROT 仍保持约 500ms 慢维护，所有 root 都由本 owner 使用。
                     if (Interlocked.Exchange(ref showObservationPending, 0) != 0 &&
                         pptApplication != null && !ObserveBoundShow()) break;
+                    ProcessSlideShowExitRequests();
                     RefreshPresentationDescriptorIfNeeded(false);
                     ProcessSlideShowExitRequests();
                     int wait = slideShowOwner.MaintenanceWaitMilliseconds;
@@ -1271,7 +1330,9 @@ namespace PptCOM
                         if (pptApplication == null || pptActivePresentation == null) break;
                         Interlocked.Exchange(ref showObservationPending, 0);
                         if (!ObserveBoundShow()) break;
+                        ProcessSlideShowExitRequests();
                         RefreshPresentationDescriptorIfNeeded(false);
+                        ProcessSlideShowExitRequests();
                         RefreshSlideShowAnnotationTool();
                         ProcessSlideShowExitRequests();
                     }
@@ -1559,12 +1620,43 @@ namespace PptCOM
         {
             if (!slideShowSession.Matches(stamp.Session)) return 0;
             var request = new SlideShowExitRequest(stamp, operation, check);
+            request.DiagnosticId = Interlocked.Increment(ref pptOwnerDiagnosticSequence);
+            TracePptOwnerDiagnostic("enqueue id=" + request.DiagnosticId.ToString(CultureInfo.InvariantCulture) +
+                " session=" + stamp.Session.ToString(CultureInfo.InvariantCulture) +
+                " operation=" + operation);
             if (slideShowOwner.IsOwner)
                 return request.TryBeginExecution() ? ExecuteOwnerCommand(request) : 0;
-            return slideShowOwner.Request(request, 2000);
+            int result = slideShowOwner.Request(request, 2000);
+            if (result == -1)
+                TracePptOwnerDiagnostic((request.IsCompleted ? "wait-failed" : "timeout") +
+                    " id=" + request.DiagnosticId.ToString(CultureInfo.InvariantCulture) +
+                    " session=" + stamp.Session.ToString(CultureInfo.InvariantCulture) +
+                    " operation=" + operation + " executing=" + (request.HasStarted ? 1 : 0));
+            return result;
         }
 
         private int ExecuteOwnerCommand(SlideShowExitRequest request)
+        {
+            long started = Stopwatch.GetTimestamp();
+            TracePptOwnerDiagnostic("start id=" + request.DiagnosticId.ToString(CultureInfo.InvariantCulture) +
+                " session=" + request.Session.ToString(CultureInfo.InvariantCulture) +
+                " operation=" + request.Operation);
+            int result = -1;
+            try
+            {
+                result = ExecuteOwnerCommandCore(request);
+                return result;
+            }
+            finally
+            {
+                TracePptOwnerDiagnostic("complete id=" + request.DiagnosticId.ToString(CultureInfo.InvariantCulture) +
+                    " session=" + request.Session.ToString(CultureInfo.InvariantCulture) +
+                    " operation=" + request.Operation + " result=" + result.ToString(CultureInfo.InvariantCulture) +
+                    " ms=" + DiagnosticMilliseconds(started).ToString("F3", CultureInfo.InvariantCulture));
+            }
+        }
+
+        private int ExecuteOwnerCommandCore(SlideShowExitRequest request)
         {
             if (request.IsCancelled || !slideShowSession.Matches(request.Session) ||
                 (request.HasStamp && !slideShowSession.IsCurrent(request.Stamp))) return 0;

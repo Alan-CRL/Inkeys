@@ -376,6 +376,8 @@ namespace Inkeys::UI::Bar
 			}
 			for(std::size_t i=0;i<next.enabled.size();++i)if(content.enabled[i]!=next.enabled[i]||content.interactive[i]!=next.interactive[i])IncludeButton(static_cast<BarSurfaceButtonId>(2+i));
 			if(content.switching!=next.switching)for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
+			if(content.navigationWaitingPrevious!=next.navigationWaitingPrevious)IncludeButton(2);
+			if(content.navigationWaitingNext!=next.navigationWaitingNext)IncludeButton(4);
 			if(content.pptActive!=next.pptActive){
 				IncludeButton(7);
 				// 放映恢复时同步撤销 Minimize 的旧反馈，禁用态不能残留按压底色或释放点击。
@@ -674,6 +676,21 @@ namespace Inkeys::UI::Bar
 					return true;
 				};
 			}
+			const bool navigationWaiting=(id==2&&content.navigationWaitingPrevious)
+				||(id==4&&content.navigationWaitingNext);
+			if(navigationWaiting)options.content=[&](auto& target,auto* context,auto& item,const auto&){
+				auto* brush=target.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::TextPrimary),0.9);
+				if(!brush)return false;
+				const float z=static_cast<float>(target.GetFrameZoom());const auto r=Bounds(item.button);
+				const float radius=1.6F*z,y=static_cast<float>((r.top+11)*z);
+				// 三个无进度点仅表示命令仍在等待，不替换箭头、旧页码或 ready 状态。
+				for(int dot=0;dot<3;++dot){
+					const float x=static_cast<float>((r.right-20+dot*5)*z);
+					const auto ellipse=D2D1::Ellipse(D2D1::Point2F(x,y),radius,radius);
+					context->FillEllipse(&ellipse,brush);
+				}
+				return true;
+			};
 			DrawBarButtonVisual(renderer,dc,button,Inherit(button.button),options);
 		}
 		void DrawGroup(ID2D1DeviceContext* dc,bool child)
