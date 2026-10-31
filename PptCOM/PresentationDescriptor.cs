@@ -373,6 +373,24 @@ namespace PptCOM
             pageStatus = "Unknown";
             requiresFullTopology = false;
             PresentationDescriptorValue descriptor = stableTopology.Clone();
+            try
+            {
+                // COM identity 不随另存/首次保存改变；每次复用前读取新鲜标量，不枚举全文稿。
+                descriptor.fullName = TryGetString(presentation, "FullName");
+                descriptor.presentationName = TryGetString(presentation, "Name");
+            }
+            catch (Exception exception)
+            {
+                // 身份读取失败时不发布 clone 中的旧路径，busy 仍沿既有独立期限重试。
+                return PresentationDescriptorValue.CreateStatus(
+                    IsBusy(exception) ? "TransientBusy" : "Unavailable", stableTopology.bindingRevision);
+            }
+            if (!string.Equals(descriptor.fullName, stableTopology.fullName, StringComparison.Ordinal) ||
+                !string.Equals(descriptor.presentationName, stableTopology.presentationName, StringComparison.Ordinal))
+            {
+                requiresFullTopology = true;
+                return PresentationDescriptorValue.CreateStatus("Unavailable", stableTopology.bindingRevision);
+            }
             CurrentShowValue current = ReadCurrentShow(slideShowWindow, descriptor, true);
             if (current.FailureStatus != null)
             {

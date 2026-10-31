@@ -104,6 +104,7 @@ export namespace Inkeys::Drawing::Draw3
 		SetWhiteboardTheme,
 		WhiteboardPersistenceCompleted,
 		ShortcutFence,
+		RePresentWhiteboardPage, // 冷页失败只补原白板页呈现，不执行绝对切页。
 	};
 
 	struct CanvasCommand

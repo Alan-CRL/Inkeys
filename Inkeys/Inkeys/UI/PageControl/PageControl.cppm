@@ -586,26 +586,43 @@ export namespace Inkeys::UI::PageControl
 	struct PptNavigationWaitingState
 	{
 		PptNavigationWaiting current;
+		std::uint64_t activeSession = 0;
+		std::uint64_t completedEpoch = 0;
 
+		void BeginSession(std::uint64_t session) noexcept
+		{
+			if (!session || activeSession == session) return;
+			current = {};
+			activeSession = session;
+			completedEpoch = 0;
+		}
 		bool Publish(std::uint64_t session, std::uint64_t epoch,
 			PptNavigationDirection direction) noexcept
 		{
-			if (!session || !epoch || direction == PptNavigationDirection::None) return false;
-			if (current.waiting && current.session == session && epoch <= current.epoch) return false;
+			if (!session || session != activeSession || !epoch || epoch <= completedEpoch
+				|| direction == PptNavigationDirection::None) return false;
+			if (current.waiting && epoch <= current.epoch) return false;
 			current = { session, epoch, direction, true };
 			return true;
 		}
 		bool Complete(std::uint64_t session, std::uint64_t epoch) noexcept
 		{
-			if (!current.waiting || current.session != session || current.epoch != epoch) return false;
+			if (!session || session != activeSession || !epoch) return false;
+			// 完成可能先于锁外发布；即使尚无标记，也记住终态，拒绝迟到 Publish。
+			completedEpoch = (std::max)(completedEpoch, epoch);
+			if (!current.waiting || current.epoch != epoch) return false;
 			current = {};
 			return true;
 		}
 		bool Clear(std::uint64_t session = 0) noexcept
 		{
-			if (!current.waiting || (session && current.session != session)) return false;
+			if (session && activeSession != session) return false;
+			const bool changed = current.waiting;
 			current = {};
-			return true;
+			// 退出时退休整场；没有现存标记的在途发布也不能重新建立等待。
+			activeSession = 0;
+			completedEpoch = 0;
+			return changed;
 		}
 	};
 

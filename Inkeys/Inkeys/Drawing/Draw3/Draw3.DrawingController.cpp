@@ -82,6 +82,38 @@ namespace Inkeys::Drawing::Draw3
 			if (target >= themes.size()) themes.resize(target + 1, themes[current]);
 		}
 
+		void CompleteFailedWhiteboardPageLoad(WindowController& window,
+			const DrawingControllerRuntimeObserver& observer, CanvasCommandType original,
+			std::uint64_t generation, std::size_t page, std::size_t pageCount)
+		{
+			if (observer.commandProcessed) observer.commandProcessed(observer.context, original, page, pageCount);
+			// 失败只补原白板页呈现，不能让迟到的通用 SetPage 切换或创建其他场景页面。
+			CanvasCommand recovery;
+			recovery.type = CanvasCommandType::RePresentWhiteboardPage;
+			recovery.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Whiteboard);
+			recovery.requireSceneMatch = true;
+			recovery.whiteboardGeneration = generation;
+			recovery.pageIndex = page;
+			recovery.sceneClosedAdmission = true;
+			window.EnqueueCanvasCommand(recovery);
+		}
+
+		template <typename Present>
+		bool ApplyWhiteboardPageRecoveryCommand(const CanvasCommand& command,
+			Bridge::Workspace workspace, bool loading, bool exitPrepared, std::uint64_t generation,
+			std::size_t page, Present&& present)
+		{
+			// 失败已清空 loading；最终退出 ACK、退出重入或换页后，旧补回执必须作废。
+			if (command.type != CanvasCommandType::RePresentWhiteboardPage ||
+				!command.requireSceneMatch || !command.sceneClosedAdmission ||
+				command.workspace != static_cast<std::uint8_t>(Bridge::Workspace::Whiteboard) ||
+				workspace != Bridge::Workspace::Whiteboard || loading || exitPrepared ||
+				command.whiteboardGeneration == 0 || command.whiteboardGeneration != generation ||
+				command.pageIndex != page) return false;
+			present(command);
+			return true;
+		}
+
 		bool ApplyWhiteboardThemeCommand(const CanvasCommand& command, Bridge::Workspace workspace,
 			bool loading, std::uint64_t generation, std::size_t page, WhiteboardTheme& current,
 			std::uint64_t& revision, const DrawingControllerRuntimeObserver& observer)
@@ -6069,6 +6101,66 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
+			// 真实失败完成入队与消费函数均无 HWND；正常补呈现不再进入 SetPage 分支。
+			struct FailedLoadCapture
+			{
+				int completed = 0;
+				CanvasCommandType type = CanvasCommandType::Clear;
+				std::size_t page = 0;
+				std::size_t count = 0;
+			} failedLoad;
+			DrawingControllerRuntimeObserver failedObserver;
+			failedObserver.context = &failedLoad;
+			failedObserver.commandProcessed = [](void* context, CanvasCommandType type, std::size_t page, std::size_t count)
+			{
+				auto& capture = *static_cast<FailedLoadCapture*>(context);
+				++capture.completed; capture.type = type; capture.page = page; capture.count = count;
+			};
+			WindowController recoveryQueue;
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::NextPage, 9, 7, 10);
+			CanvasCommand recovery;
+			check(recoveryQueue.TryDequeueCanvasCommand(recovery) && !recoveryQueue.HasPendingCanvasCommand() &&
+				recovery.type == CanvasCommandType::RePresentWhiteboardPage && failedLoad.completed == 1 &&
+				failedLoad.type == CanvasCommandType::NextPage && failedLoad.page == 7 && failedLoad.count == 10,
+				"failed cold load settles the original command once and queues only original-page presentation");
+			int presentRequests = 0;
+			const auto present = [&](const CanvasCommand&) { ++presentRequests; };
+			check(ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 9, 7, present) &&
+				presentRequests == 1 && failedLoad.completed == 1,
+				"same whiteboard failure requests a genuine present without settling the page command twice");
+			for (const auto workspace : { Bridge::Workspace::Desktop, Bridge::Workspace::Presentation })
+				check(!ApplyWhiteboardPageRecoveryCommand(recovery, workspace, false, false, 9, 7, present),
+					"failed-load recovery cannot present or change a different workspace");
+			check(!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 11, 7, present),
+				"exit and reenter on the same whiteboard page retires the old recovery");
+			check(!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 9, 8, present) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, true, false, 9, 7, present) &&
+				presentRequests == 1, "page changes and another cold load cannot consume the original-page recovery");
+			CanvasCommand exit; exit.type = CanvasCommandType::SetWorkspace;
+			exit.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Desktop);
+			recoveryQueue.EnqueueCanvasCommand(exit);
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::PreviousPage, 12, 7, 10);
+			CanvasCommand queued;
+			check(recoveryQueue.TryDequeueCanvasCommand(queued) && queued.type == CanvasCommandType::SetWorkspace &&
+				recoveryQueue.TryDequeueCanvasCommand(recovery) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Desktop, false, false, 13, 0, present) &&
+				!recoveryQueue.HasPendingCanvasCommand() && presentRequests == 1 && failedLoad.completed == 2,
+				"FIFO exit ahead of failed-load recovery leaves desktop pages and its admission untouched");
+			// PersistenceCompleted 已追加恢复时，队列中更早的最终保存 ACK 也必须退休它。
+			CanvasCommand prepareExit; prepareExit.type = CanvasCommandType::PrepareExitAutoSave;
+			recoveryQueue.EnqueueCanvasCommand(prepareExit);
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::NextPage, 15, 7, 10);
+			PresentationCurrentLoadRetry exitBarrier;
+			int finalAcks = 0;
+			check(recoveryQueue.TryDequeueCanvasCommand(queued) && queued.type == CanvasCommandType::PrepareExitAutoSave,
+				"final save barrier is queued ahead of failed-load recovery");
+			ProcessPresentationExitBarrier(exitBarrier, [] {}, [&] { ++finalAcks; });
+			check(recoveryQueue.TryDequeueCanvasCommand(recovery) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false,
+					exitBarrier.ExitPrepared(), 15, 7, present) && presentRequests == 1 &&
+				failedLoad.completed == 3 && finalAcks == 1 && !recoveryQueue.HasPendingCanvasCommand(),
+				"final ACK rejects a matching late recovery without presenting or completing the original command twice");
+
 			const auto id = draw3::uink::CreateUInkGuid();
 			if (!id) return 1;
 			uint64_t nextHistoryRasterStateToken = 1000;
@@ -9769,12 +9861,8 @@ namespace Inkeys::Drawing::Draw3
 					if (!installed)
 					{
 						whiteboardLoading.reset();
-						if (observer_.commandProcessed) observer_.commandProcessed(observer_.context,
-							whiteboardLoadingCommand, currentPageIndex_, doc->Pages().size());
-						// 冷页失败仍停在原页；用原页真实 Present 回执解除本次场景准入。
-						CanvasCommand unchanged; unchanged.type = CanvasCommandType::SetPage;
-						unchanged.pageIndex = currentPageIndex_; unchanged.sceneClosedAdmission = true;
-						window_.EnqueueCanvasCommand(unchanged);
+						CompleteFailedWhiteboardPageLoad(window_, observer_, whiteboardLoadingCommand,
+							whiteboardGeneration, currentPageIndex_, doc->Pages().size());
 					}
 				}
 				else
@@ -13839,6 +13927,12 @@ namespace Inkeys::Drawing::Draw3
 				if (command.type == CanvasCommandType::WhiteboardPersistenceCompleted)
 				{
 					consumeWhiteboardCompletions();
+					continue;
+				}
+				if (command.type == CanvasCommandType::RePresentWhiteboardPage)
+				{
+					ApplyWhiteboardPageRecoveryCommand(command, activeWorkspace, whiteboardLoading.has_value(),
+						currentLoadRetry.ExitPrepared(), whiteboardGeneration, currentPageIndex_, acknowledgeUnchangedScene);
 					continue;
 				}
 				struct ShortcutCompletionGuard

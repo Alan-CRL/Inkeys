@@ -87,3 +87,46 @@
 背景渲染遵守 [UI3 原生窗口候选与真实回执](rendering-and-ui.md#ui3-原生窗口候选与真实回执2026-10-28)：成功像素等待 native ACK 时不重复整屏绘制；Invalidate 同时退休旧内容候选，同请求版本不能绕过主题/DPI/设备失效。完整 mask、frameSerial、workspaceRevision、HWND/generation 和实际矩形全部匹配后才 Prepare/ConsumeDamage；inactive 的 Hide 也必须取得精确真实回执。
 
 背景完成/inactive ACK 通过 NotifyProductWorkspaceProgress 唤醒原协调等待；Freeze ULW 与政策几何/回滚共用 try-only 呈现租约及 pixel revision。Prepare/Complete 为显式异步回执；新通知不作为 ready，也不加速原失败预算。参见 rendering-and-ui 的直移与工作区异步协调合同。
+
+## 场景：冷页读取失败的原页补呈现（2026-10-31）
+
+### 1. Scope / Trigger
+
+修改白板冷页失败、退出/重入或补 ready 命令时应用。防止失败完成后追加的通用 SetPage 在已切换工作区中切页或创建空页。
+
+### 2. Signatures
+
+- 内部 `CanvasCommandType::RePresentWhiteboardPage` 复用 `workspace/whiteboardGeneration/pageIndex/requireSceneMatch/sceneClosedAdmission`，只授权原白板页补呈现，不授权切页。
+- `CompleteFailedWhiteboardPageLoad` 结算原 Next/Previous 后排队；`ApplyWhiteboardPageRecoveryCommand` 在消费时复核身份并调用既有 `acknowledgeUnchangedScene`。
+
+### 3. Contracts
+
+- 失败先清空本次 loading，保留原页；原翻页命令只结算一次，补呈现不得重复结算。
+- 消费要求最终退出屏障尚未 `ExitPrepared`、仍为 Whiteboard、非零相同 generation、相同原页且无新 loading，并要求场景/准入标志齐备；退出重入即使回到同页，也因代次不同拒绝旧命令。
+- 通过后只走既有 stageWorkspaceReady + forceFullPresent，等待真实 Present；不得经过 SetPage、创建页面或确认其他工作区输入。
+- 不直接复用成功冷加载的 whiteboardLoading 校验：失败已 reset，该校验会错误阻断正常原页恢复。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 同场同页失败 | 原请求恰好一次终态，排队原页真实补呈现 |
+| Desktop/Presentation 或退出后重入 | 丢弃旧补呈现，不切页/增页，不确认新场景 ready |
+| 原页已变或新 loading | 拒绝旧恢复，不解除新页面输入门 |
+| 最终退出保存已 ACK / ExitPrepared | 拒绝任何补呈现，不重开 ready，不重复结算原翻页 |
+| FIFO 中退出先于补呈现 | 根据消费时场景拒绝，不依赖生成时检查 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：冷页失败仍留原页，原页真正呈现后恢复输入。
+- Base：成功冷页继续由原 SetPage + loading/generation 合同切入目标页。
+- Bad：将无场景约束的 SetPage 追加到退出命令之后，误用白板页码修改桌面。
+
+### 6. Tests Required
+
+`--draw3-whiteboard-storage-test` 使用实际 WindowController FIFO 和生产生成/消费 helper，无 HWND，覆盖同场补呈现、恰好一次终态、Desktop/PPT、退出重入、换页、新 loading、退出排在恢复前，以及实际 ProcessPresentationExitBarrier 最终 ACK 后拒绝恢复。完整 Debug|ARM64 构建及无窗口测试仍须通过；该测试不代替真实画布 Present 的 GUI 验收。
+
+### 7. Wrong vs Correct
+
+- Wrong：失败后 `SetPage(currentPage)`，仅凭入队时仍在白板就授权后续执行。
+- Correct：发送 `RePresentWhiteboardPage` 并携带原代次/原页；消费时核对后只补真实呈现。

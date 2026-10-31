@@ -1016,3 +1016,36 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 134: 修复分支审阅发现的 PPT 身份与等待及白板恢复问题
+<!-- trellis-session: v=2 fp=aa5deb0429e7136c -->
+
+**Date**: 2026-10-31
+**Task**: 修复分支审阅发现的 PPT 身份与等待及白板恢复问题
+**Branch**: `bugfix/mode`
+
+### Summary
+
+延续10-30 PPT导航任务，修复新鲜文稿身份与跨场拓扑、导航完成先到竞态、白板冷页失败跨场景及最终退出补呈现；所有允许的构建和无窗口验证通过，未commit/push，保留原实机未验项。
+
+### Main Changes
+
+- PptCOM fast使用dynamic确认FullName/Name，完整缓存按show session隔离，保持普通同场Slides.Item=0及手动COM释放。
+- 导航等待记住完成epoch，白板失败使用原场景/代次/页绑定的补呈现命令并拒绝ExitPrepared。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] managed红12→全绿；完整InkeysRepo.sln Debug|ARM64 exit0；分页exit0、白板100页exit0、完整--no-window exit0/296.42s；内嵌DLL/TLB/BOM/EOL/diff通过；独立review无未修项。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保持未提交；原任务的Office退出/重开、真实另存及等待像素验收仍未运行，不归档任务。

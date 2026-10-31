@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 132
-- **Last Active**: 2026-10-30
+- **Total Sessions**: 134
+- **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1018 | Active |
+| `journal-2.md` | ~1051 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 134 | 2026-10-31 | 修复分支审阅发现的 PPT 身份与等待及白板恢复问题 | - | `bugfix/mode` |
 | 132 | 2026-10-30 | 统一分页状态动画与白板立即翻页 | `192ff6d5` | `bugfix/mode` |
 | 131 | 2026-10-30 | 修复白板形状选择窗口无法展开 | `3e0df72b` | `bugfix/mode` |
 | 130 | 2026-10-27 | UI3 吸附释放交接与最终收窗收尾归档 | `48dda087`, `b7f237f0` | `bugfix/cut` |

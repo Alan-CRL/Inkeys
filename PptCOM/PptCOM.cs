@@ -130,6 +130,7 @@ namespace PptCOM
             PresentationDescriptorValue.CreateStatus("Unavailable", 0);
         // 仅 owner 持有的最后一次完整 StableSlideIds；公开 getter 仍只读 presentationDescriptorCache。
         private PresentationDescriptorValue stablePresentationTopology;
+        private long stablePresentationTopologySession;
         private long presentationBindingRevision;
         private int presentationDescriptorRefreshPending = 1;
         private DateTime nextPresentationDescriptorRefreshUtc = DateTime.MinValue;
@@ -313,6 +314,7 @@ namespace PptCOM
         {
             long revision = Interlocked.Increment(ref presentationBindingRevision);
             stablePresentationTopology = null;
+            stablePresentationTopologySession = 0;
             slideShowSession.InvalidateBinding(revision);
             PublishSlideShowLifecycle();
             lock (presentationDescriptorLock)
@@ -349,7 +351,9 @@ namespace PptCOM
 
             string pageStatus = "Unknown";
             PresentationDescriptorValue stable = stablePresentationTopology;
-            bool requiresFull = stable == null || stable.bindingRevision != revision ||
+            // 同一文稿结束后可另存再放映，不能仅凭 binding 沿用上一场的身份与拓扑。
+            bool requiresFull = stable == null || stablePresentationTopologySession != stamp.Session ||
+                stable.bindingRevision != revision ||
                 stable.status != "StableSlideIds" || stable.slideIds == null ||
                 stable.totalPage <= 0 || stable.slideIds.Length != stable.totalPage;
             PresentationDescriptorValue candidate = null;
@@ -405,7 +409,10 @@ namespace PptCOM
                 presentationDescriptorCache = candidate.Clone();
             }
             if (requiresFull && candidate.status == "StableSlideIds")
+            {
                 stablePresentationTopology = candidate.Clone();
+                stablePresentationTopologySession = stamp.Session;
+            }
             nextPresentationDescriptorRefreshUtc = now.AddSeconds(3);
             presentationDescriptorRetryUtc = candidate.status == "TransientBusy"
                 ? now.AddMilliseconds(100) : DateTime.MaxValue;

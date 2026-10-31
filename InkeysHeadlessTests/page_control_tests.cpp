@@ -417,6 +417,7 @@ namespace
 	void TestNavigationWaitingLifecycle()
 	{
 		PptNavigationWaitingState waiting;
+		waiting.BeginSession(7);
 		Check(waiting.Publish(7, 11, PptNavigationDirection::Next)
 			&& waiting.current.waiting && waiting.current.session == 7
 			&& waiting.current.epoch == 11,
@@ -456,8 +457,10 @@ namespace
 		Check(!IsPptNavigationWaiting(frame, true),
 			"completed unchanged page is immediately retryable without a permanent marker");
 
-		Check(waiting.Publish(7, 12, PptNavigationDirection::Previous)
-			&& waiting.Publish(8, 1, PptNavigationDirection::Next)
+		Check(waiting.Publish(7, 12, PptNavigationDirection::Previous),
+			"the next request can wait in the same show");
+		waiting.BeginSession(8);
+		Check(waiting.Publish(8, 1, PptNavigationDirection::Next)
 			&& waiting.current.session == 8,
 			"a new show replaces the previous session wait even with a restarted epoch");
 		Check(!waiting.Complete(7, 12) && waiting.current.session == 8
@@ -467,9 +470,51 @@ namespace
 			"wrong-session exit leaves the current session untouched");
 		Check(waiting.Clear(8) && !waiting.current.waiting,
 			"session exit clears its navigation feedback");
+		waiting.BeginSession(9);
 		Check(waiting.Publish(9, 2, PptNavigationDirection::Next)
 			&& waiting.Clear() && !waiting.current.waiting,
 			"shutdown clears any remaining navigation feedback");
+	}
+
+	void TestNavigationWaitingCompletionOrder()
+	{
+		PptNavigationWaitingState waiting;
+		Check(!waiting.Publish(7, 10, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 10),
+			"navigation notices cannot establish a show before session publication");
+		waiting.BeginSession(7);
+		Check(!waiting.Complete(7, 11)
+			&& !waiting.Publish(7, 11, PptNavigationDirection::Next)
+			&& !waiting.Publish(7, 10, PptNavigationDirection::Previous)
+			&& !waiting.current.waiting,
+			"completion before publish retires that request and older delayed notices");
+		Check(waiting.Publish(7, 12, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 11) && waiting.current.epoch == 12
+			&& waiting.Complete(7, 12)
+			&& !waiting.Publish(7, 12, PptNavigationDirection::Next),
+			"normal completion permits a new request but never resurrects a completed epoch");
+		waiting.BeginSession(7);
+		Check(!waiting.Publish(7, 12, PptNavigationDirection::Next),
+			"repeated publication of the same active show preserves completed epochs");
+		Check(waiting.Publish(7, 13, PptNavigationDirection::Previous)
+			&& !waiting.Complete(7, 14)
+			&& !waiting.Publish(7, 14, PptNavigationDirection::Next)
+			&& waiting.Publish(7, 15, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 13) && waiting.current.epoch == 15,
+			"interleaved requests cannot revive the completed one or clear a newer wait");
+		Check(waiting.Clear(7)
+			&& !waiting.Publish(7, 16, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 16) && !waiting.current.waiting,
+			"session exit rejects a publish already in flight even without its completion");
+		waiting.BeginSession(8);
+		Check(waiting.Publish(8, 1, PptNavigationDirection::Previous)
+			&& !waiting.Publish(7, 100, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 100) && !waiting.Clear(7)
+			&& waiting.current.session == 8 && waiting.current.epoch == 1,
+			"old-show notices cannot replace, retire or clear the new-show request");
+		Check(waiting.Complete(8, 1) && !waiting.Clear()
+			&& !waiting.Publish(8, 2, PptNavigationDirection::Next),
+			"shutdown retires the active show even when no wait marker exists");
 	}
 
 	void TestDragCommitHandoff()
@@ -1862,6 +1907,7 @@ int RunPageControlTests()
 	TestNativeMouseAndDragSupplement();
 	TestEndShowContentTargets();
 	TestNavigationWaitingLifecycle();
+	TestNavigationWaitingCompletionOrder();
 	TestDragCommitHandoff();
 	TestVersionedDragPublication();
 	TestInterleavedPairFrameCommit();

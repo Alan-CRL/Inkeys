@@ -526,11 +526,137 @@ namespace PptCOM.Tests
                 h.Accessor.Operations.Clear();
                 h.Call("RefreshPresentationDescriptorIfNeeded", true);
                 descriptor = Json(h.Server.GetPresentationDescriptor());
-                Check(ItemReadCount(h) == 0 && Convert.ToInt64(descriptor["slideShowHwnd"]) == 0 &&
+                Check(ItemReadCount(h) == 3 && Convert.ToInt64(descriptor["slideShowHwnd"]) == 0 &&
                     Convert.ToInt32(descriptor["applicationProcessId"]) == 0,
-                    "fast descriptor never inherits an old show HWND or process identity");
+                    "new session validates complete topology without inheriting an old HWND or process identity");
                 Check(h.Accessor.IsBalanced() || h.Outstanding("application") == 1,
                     "fast/full interleaving keeps the ledger available for final owner cleanup");
+            }
+        }
+
+        private static void TestFreshPresentationIdentity()
+        {
+            foreach (bool restart in new[] { false, true })
+            {
+                using (var h = new ServerHarness())
+                {
+                    h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                    long session = h.State.Capture().Session;
+                    long binding = (long)h.Get("presentationBindingRevision");
+                    if (restart)
+                    {
+                        h.Windows.Properties["Count"] = 0;
+                        Check(h.Observe(), "same binding observes the end before SaveAs");
+                    }
+                    h.Graph.Presentation.Properties["FullName"] = @"C:\Lessons\Renamed.pptx";
+                    h.Graph.Presentation.Properties["Name"] = "Renamed.pptx";
+                    if (restart)
+                    {
+                        h.Windows.Properties["Count"] = 1;
+                        Check(h.Observe() && h.State.Capture().Session > session,
+                            "reopening the same presentation establishes a new show session");
+                    }
+                    h.Accessor.Operations.Clear();
+                    h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                    var descriptor = Json(h.Server.GetPresentationDescriptor());
+                    Check((string)descriptor["fullName"] == @"C:\Lessons\Renamed.pptx" &&
+                        (string)descriptor["presentationName"] == "Renamed.pptx" &&
+                        DescriptorStatus(h) == "StableSlideIds" && ItemReadCount(h) == 3 &&
+                        (long)h.Get("presentationBindingRevision") == binding,
+                        restart ? "same-binding SaveAs between shows cannot reuse the previous document identity" :
+                            "same-session SaveAs refreshes metadata and validates topology without retiring event binding");
+                    h.Accessor.Operations.Clear();
+                    h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                    Check(ItemReadCount(h) == 0, "unchanged fresh identity returns to fast validation after SaveAs");
+                }
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Graph.Presentation.Properties["FullName"] = string.Empty;
+                h.Graph.Presentation.Properties["Name"] = "Presentation1";
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Graph.Presentation.Properties["FullName"] = @"C:\Lessons\FirstSave.pptx";
+                h.Graph.Presentation.Properties["Name"] = "FirstSave.pptx";
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                var descriptor = Json(h.Server.GetPresentationDescriptor());
+                Check((string)descriptor["fullName"] == @"C:\Lessons\FirstSave.pptx" &&
+                    (string)descriptor["presentationName"] == "FirstSave.pptx" && DescriptorStatus(h) == "StableSlideIds",
+                    "first save replaces process-local identity with the newly saved path");
+            }
+            foreach (string stage in new[] { "presentation.FullName", "presentation.Name" })
+            {
+                using (var h = new ServerHarness())
+                {
+                    h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                    h.Graph.Presentation.Properties["FullName"] = @"C:\Lessons\BusySave.pptx";
+                    h.Graph.Presentation.Properties["Name"] = "BusySave.pptx";
+                    h.Accessor.FailureStage = stage;
+                    h.Accessor.Failure = new COMException("busy", unchecked((int)0x8001010A));
+                    h.Accessor.Operations.Clear();
+                    h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                    var descriptor = Json(h.Server.GetPresentationDescriptor());
+                    Check(DescriptorStatus(h) == "TransientBusy" && (string)descriptor["fullName"] == string.Empty &&
+                        (string)Json(h.Server.GetSlideShowState(0))["pageStatus"] == "Unknown" && ItemReadCount(h) == 0,
+                        stage + " busy publishes no borrowed cached file identity and performs no full scan");
+                    h.Accessor.FailureStage = null;
+                    h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                    descriptor = Json(h.Server.GetPresentationDescriptor());
+                    Check((string)descriptor["fullName"] == @"C:\Lessons\BusySave.pptx" && DescriptorStatus(h) == "StableSlideIds",
+                        stage + " recovery publishes the fresh saved identity");
+                }
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Graph.Presentation.Properties.Remove("FullName");
+                h.Graph.Presentation.Properties.Remove("Name");
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                var descriptor = Json(h.Server.GetPresentationDescriptor());
+                Check(DescriptorStatus(h) == "Unavailable" && (string)descriptor["fullName"] == string.Empty &&
+                    (string)descriptor["presentationName"] == string.Empty && h.Get("stablePresentationTopology") == null &&
+                    Convert.ToInt32(descriptor["currentPage"]) == 2,
+                    "missing identity clears cached names and ink trust while retaining fresh basic pages");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Accessor.FailureStage = "presentation.FullName";
+                h.Accessor.Failure = new InvalidOperationException("identity read failed");
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check((string)Json(h.Server.GetPresentationDescriptor())["fullName"] == string.Empty,
+                    "ordinary identity failure cannot leave the old saved path in a trusted descriptor");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                var unexpected = new FakeNode("unexpectedIdentity");
+                h.Graph.Presentation.Properties["FullName"] = unexpected;
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check(h.Outstanding("unexpectedIdentity") == 0 && h.Accessor.ReleaseCount("unexpectedIdentity") > 0 &&
+                    (string)Json(h.Server.GetPresentationDescriptor())["fullName"] == string.Empty,
+                    "unexpected COM identity scalar is released per acquisition and never revives the cached path");
+            }
+            using (var h = new ServerHarness())
+            {
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                long publishedRevision = Convert.ToInt64(Json(h.Server.GetSlideShowState(0))["stateRevision"]);
+                h.Graph.Presentation.Properties["FullName"] = @"C:\Lessons\LateSave.pptx";
+                h.Graph.Presentation.Properties["Name"] = "LateSave.pptx";
+                bool changed = false;
+                h.Accessor.BeforeAccess = delegate(string stage)
+                {
+                    if (stage != "presentation.Name" || changed) return;
+                    changed = true;
+                    h.State.PageChanged();
+                };
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                h.Accessor.BeforeAccess = null;
+                Check(Convert.ToInt64(Json(h.Server.GetSlideShowState(0))["stateRevision"]) == publishedRevision &&
+                    h.Get("stablePresentationTopology") == null,
+                    "identity read invalidated by a late generation cannot publish or replenish the cache");
+                h.Call("RefreshPresentationDescriptorIfNeeded", true);
+                Check((string)Json(h.Server.GetPresentationDescriptor())["fullName"] == @"C:\Lessons\LateSave.pptx",
+                    "fresh generation recovers the changed identity after rejecting late work");
             }
         }
 
@@ -829,6 +955,7 @@ namespace PptCOM.Tests
             TestOwnerPollingAndOwnership();
             TestBusyRetryAndMetadata();
             TestFastAndPeriodicMaintenance();
+            TestFreshPresentationIdentity();
             TestTopologyInvalidationMatrix();
             TestDelayedReorderDiscovery();
             TestOwnerCommandsAndCallbacks();

@@ -39,7 +39,7 @@ Draw3 输入/橡皮控制台诊断仅在显式开关启用时发布：显示/EDI
 | D3D11、D2D、DWrite、DXGI | `Microsoft::WRL::ComPtr` | `IdtD2DPreparation.cpp`、`Bar.Main.cpp` |
 | 设置窗口 D3D11、DXGI、SRV | raw COM pointer + 显式 `Release`；SRV、RTV、swap chain、context、device 按依赖逆序清理 | `Setting.Base.cppm::CleanupSettingTextures/CleanupDeviceD3D` |
 | ImGui context/backends | 显式 DX11/Win32 shutdown 与 `DestroyContext` | `Setting.cpp` 的窗口线程退出路径 |
-| Office COM（C#） | 事件解绑、`ReleaseComObject`/`FinalReleaseComObject`、置 null | `PptCOM/PptCOM.cs::FullCleanup` 及 release helpers |
+| Office COM（C#） | owner 按每次取得配平 `ReleaseComObject`；raw 事件连接显式解绑，不以 GC/FinalRelease 补漏 | `PptCOM/PptCOM.cs::FullCleanup` 及 release helpers |
 | native PPT 服务 | `_com_ptr_t` 包装、`pptComSlotSm` 保护服务槽/快照 | `IdtPlug-in.cpp::Get/Set/ResetPptComSnapshot` |
 | `Graphics::DibSurface`/临时画布 | RAII 管理 HDC、DIB bitmap、旧选入对象和像素地址；容器按值拥有 | `Inkeys/Graphics/Surface.*`、`IdtDrawpad.cpp`、`IdtImage.cpp` |
 | Win32 HWND/消息 channel | `Inkeys.Window` 所属线程创建、解绑并逆序销毁；外部只持有非 owning HWND | `Inkeys/Window/Window.*`、`IdtMain.cpp` |
@@ -52,7 +52,7 @@ Draw3 输入/橡皮控制台诊断仅在显式开关启用时发布：显示/EDI
 仓库没有一条可证明适用于所有子系统的统一“七步清理顺序”。可直接确认的是各自路径：
 
 - `【直接确认】` 设置线程关闭 ImGui DX11/Win32 backend 与 context，再释放用户图片 SRV、RTV、swap chain、device context 和 device；hide/show 与 stop 路径都执行该顺序。证据为 `Setting.cpp`、`Setting.Base.cppm`。
-- `【直接确认】` `PptCOM/PptCOM.cs::FullCleanup` 解绑事件并释放 slide-show window、presentation、application；WPS 分支有额外 GC/释放处理。
+- `【直接确认】` `PptCOM/PptCOM.cs::FullCleanup` 由 owner 先失效 binding，再解绑事件并按 slide-show window、presentation、application 配平释放；PowerPoint/WPS 均禁止依赖强制 GC 或 FinalRelease 补漏，失败解绑见 PPT COM 合同。
 - `【直接确认】` `IdtMain.cpp` 的退出路径处理 COM apartment、activation context、加载模块和部分进程级 handle。
 - `【直接确认】` 多个传统线程观察 `offSignal` 或线程状态；具体等待范围和超时逻辑位于 `IdtMain.cpp` 及各线程入口。
 

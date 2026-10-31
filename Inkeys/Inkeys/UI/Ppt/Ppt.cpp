@@ -400,6 +400,7 @@ namespace Inkeys::UI::Ppt
 			{
 				pageState = {};
 				navigationWaiting.Clear();
+				if (positions.active) navigationWaiting.BeginSession(positions.session);
 				pageRecovery = {};
 			}
 		}
