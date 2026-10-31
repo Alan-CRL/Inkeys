@@ -1,0 +1,212 @@
+# 实施计划：全环境 Fluent 自绘 MessageBox
+
+## Ordered Checklist
+
+- [x] 1. 用户批准最终规划后运行 `python ./.trellis/scripts/task.py start .trellis/tasks/09-01-fluent-message-box`，加载 `trellis-before-dev` 的 Phase 2 上下文，并再次确认 worktree 中既有改动；批准前不得执行本项。
+- [x] 2. 建立 `Inkeys/Inkeys/UI/MessageBox/` 模块骨架和 `Inkeys.UI.MessageBox` 公开同步合同；在 `Inkeys.vcxproj` / `.filters` 与 `InkeysHeadlessTests.vcxproj` 中显式登记源文件，但此时不迁移任何产品调用点。
+- [x] 3. 增加 `Inkeys/src/message_box/error.png`、`resource.h` 和 `Inkeys.rc` 的 PNG resource 项；测试工程增加 `message_box_test.rc` 引用同一 PNG/ID。确认透明通道、资源 ID 唯一，资源加载失败仍允许无图标显示。
+- [x] 4. 实现并先测试无 HWND 的基础逻辑：Request 校验、按钮/default/dismiss 规范化、fallback flags/result 映射、DIP 像素取整、monitor/work-area 选择、文本/按钮布局、命中区域和超限判定。
+- [x] 5. 实现私有 GDI+ runtime 与资源 RAII：Win8+ 按次 token、Win7/探测失败的私有长生命周期 token、top-down 32-bit DIB、memory DC、字体/画刷/画笔，以及像素图标复制和 PNG -> premultiplied BGRA 解码。
+- [x] 6. 实现 Fluent 深色 renderer：上下内容分区、标题/正文/图标、闭合 `1 DIP` 内边框、separator、等宽按钮及 normal/hover/pressed/disabled/focused 状态；所有输出先绘到不透明 DIB，再在 `WM_PAINT` 中一次提交。
+- [x] 7. 实现固定尺寸 Win32 顶层窗口：标准 frame style、自绘 non-client/title、close hitbox、拖动、DWM dark/corner attributes、禁止 resize/minimize/maximize、DPI change、monitor 居中/clamp 和 Windows 7/10 API fallback。
+- [x] 8. 实现输入与结果状态机：mouse capture、capture-loss 清理、Tab/Shift+Tab、Enter/Space、统一 close command、单次结果提交及 hide-before-destroy。
+- [x] 9. 实现同步协调器：进程级单框门、thread-local reentry guard、Normal 串行、CriticalNoWait 旁路、临时 UI 线程、owner 健康探测与双阶段禁用/恢复握手，以及唯一非递归 `MessageBoxW` fallback。
+- [x] 10. 扩展 `InkeysHeadlessTests`：纯逻辑/资源测试始终可在 `--no-window` 运行；隐藏 HWND 测试覆盖 style、owner、hit-test、DPI、销毁顺序、并发与 owner 恢复；测试 build 通过宏开放窄测试钩子，生产模块不导出。
+- [x] 11. 在自绘模块与测试稳定后，逐个迁移已确认调用点：`IdtMain.cpp`、`IdtPlug-in.cpp`、`Bar.Interaction.cpp`、`Setting.cpp`、`Window.Legacy.cpp`、`Helper.CrashHandler.cpp`、`SuperTop/IdtSuperTop.cpp`；每处按设计矩阵显式传 custom/fallback policy，保留原文案和调用分支。
+- [x] 12. 静态核对 MessageBox 搜索结果：产品范围内只保留组件内部 `MessageBoxW` fallback；`Timeout`、历史未编译源码与 `IdtMain.cpp:1685-1705` 调试辅助调用保持不变。
+- [x] 13. 检查所有修改文件的原编码/CRLF、资源脚本与项目文件配对、module import 顺序和 Windows 7 可用 API 的动态解析；运行 `git diff --check`、完整 ARM64 solution 构建及无窗口/隐藏窗口测试。
+- [x] 14. 运行已授权的专用可见测试入口，自动生成限定窗口区域截图、关闭全部测试 HWND，并核对 Windows 11 ARM64 的圆角、DWM 阴影、四边边框、文本布局、图标、焦点和按钮状态；全程不使用 Computer Use。
+- [x] 15. 汇总实际验证结果和限制：明确 UI Automation provider 未实现，Windows 7/10 若未上机则仅为静态兼容覆盖；2026-09-17 用户确认人工验收通过。
+- [x] 16. 修复首次可见时序：移除组件内全部 `ShowWindow`，在 DWM/window 状态完成后用固定矩形 `SetWindowPos(SWP_SHOWWINDOW)` 建立 surface，再同步提交首帧；现代 DWM 使用 cloak 覆盖该间隔，旧系统保留无 cloak 退化。增加以 `STARTF_USESHOWWINDOW + SW_SHOWMAXIMIZED` 启动隔离测试进程的回归用例。
+- [x] 17. 用户批准本轮键盘交互规划和无 X 的 close-command 路由表；批准前不修改产品或测试源码。
+- [x] 18. 在 `DialogSession` 中分离逻辑焦点、键盘焦点视觉和 HWND 实际 focus；首帧/pointer focus 不绘制白框，Tab/Shift+Tab/Left/Right 导航后才绘制，失焦时隐藏。
+- [x] 19. 抽取 enabled-button 导航与 `ResolveCloseCommand()`；Tab 系列循环、Left/Right 到边界停止，Enter/Space 激活逻辑焦点，所有关闭入口只经同一 resolver 和现有单次提交门。
+- [x] 20. 扩展隐藏 HWND 与可见像素回归：初始无框、pointer 无框、键盘有框、Tab/Shift+Tab/Left/Right、Enter 导航前后、Space、所有 close 入口及 OK/OK-Cancel/Yes-No 路由。
+- [x] 21. 使用 ARM64 host MSBuild 构建完整 `Debug|ARM64` solution，运行 `--no-window`、MessageBox 隐藏集成与获准的专用可见截图入口；再次核对首帧、owner/topmost、DPI、资源清理和既有已知 WindowTests 基线。
+- [x] 22. 按 PRD/design 逐条复核本轮约束，记录 UI Automation 与 Windows 7/10 仍未实机验证的既有限制；2026-09-17 用户确认人工验收通过。
+- [x] 23. 在三份 JSONC 中增加 MessageBox 公共标题、按钮和运行期正文 key，修正现有语言重启文案，完成 en-US/zh-CN/zh-TW 翻译后运行 i18n sync/check。
+- [x] 24. 扩展 MessageBox Request/OwnedRequest：默认 en-US、复制可选按钮文字、按请求语言构造内置标签，并让 MessageBoxExW fallback 接收同一 LANGID。
+- [x] 25. 按请求语言选择 Segoe UI、Microsoft YaHei UI 或 Microsoft JhengHei UI 字体候选；字体缺失时保留 Segoe 回退，不引入共享 UI 字体设备。
+- [x] 26. 迁移七个正式调用文件：启动四条和 SuperTop 固定英文，其余使用生成 i18n key、语言 ID 和按钮文字；CrashHandler 使用无阻塞英文兜底。
+- [x] 27. 增加默认英文、调用方标签覆盖、fallback 语言、简中/繁中布局回归；运行 i18n check、git diff check、完整 Debug|ARM64 Solution 构建及无窗口/完整 MessageBox 测试。
+
+## Implementation Details By Step
+
+### A. Project And Resource Wiring
+
+- 新增文件遵循现有模块命名和中文关键注释规范；普通内部 helper 保持 anonymous namespace 或模块私有，不新增无必要 abstraction。
+- `Inkeys.vcxproj` 与 `.filters` 必须同步登记；测试工程直接编译同一产品源文件，避免复制实现。
+- 资源 ID 在 `resource.h` 当前编号范围内选择未占用值；`Inkeys.rc` 使用仓库既有 `PNG` 资源写法；测试 `.rc` 引用同一文件/ID，不另存第二份 PNG。
+- GDI+/DWM 依赖优先复用当前 toolchain 可用库；仅为旧系统 API 探测使用窄的动态加载包装，不引入第三方 GUI 或图像库。
+
+### B. Pure Logic First
+
+- 将所有可在无窗口环境验证的状态转换保持为纯函数，WndProc 只负责把 Win32 消息转成这些事件。
+- fallback flags 与结果映射必须可注入测试替身，自动化测试不得真的打开系统 MessageBox。
+- 布局快照至少包含 window/content/command/title/body/icon/button/close/border rect 与 fallback reason，便于精确断言四边和重叠。
+- 对窗口宽高、DPI、乘法和坐标加法执行显式溢出检查；影响对话框完整性的非法请求进入 fallback。icon 尺寸/stride/字节数非法时不得读取输入，只省略图标并继续。
+
+### C. Renderer And Window
+
+- DIB 尺寸变化时先成功创建新 surface，再替换旧 surface，避免 `WM_DPICHANGED` 失败后丢失可绘表面。
+- `BeginPaint/EndPaint` 必须成对；禁止在 paint 路径访问 Bar/Setting 状态或持有产品锁。
+- 四边框用单一闭合 geometry 和统一像素取整，不用四个独立 fill rect 猜测边界。
+- `WM_NCHITTEST`、`WM_GETMINMAXINFO` 与 `WM_SYSCOMMAND` 三层同时禁止 resize；测试覆盖边缘、角落和 caption 双击。
+- 所有失败分支保留首个 Win32/GDI+ error 供 Debug/test 诊断，Release 不增加逐帧日志。
+
+### D. Threading And Cleanup
+
+- fallback 前先恢复 owner 并释放全部自绘窗口/线程状态；已取得 admission gate 的外层协调器保持持有直到 `MessageBoxW` 返回，以维持普通调用串行。`FallbackToSystem()` 自身不得再次取锁，busy/reentry 旁路则在无锁状态直接调用。
+- 临时 UI 线程先完成 GDI+/PNG/字体/布局 preflight 并报告结果，调用线程仅在 `PreflightReady` 后禁用 owner；不得为了测量文本在调用线程创建 GDI+ 对象。
+- owner 恢复使用 scope guard，覆盖 UI thread 创建失败、HWND 创建失败、用户选择、`WM_CLOSE`、异常和测试强制退出；结果提交后的清理失败不得覆盖结果或再弹 fallback。
+- UI 线程确定结果后只 signal “hidden”，必须等调用线程 signal “owner restored” 才销毁；调用线程与 UI 线程两侧的等待都只服务 sent-message，不分派普通 posted/input 队列，避免 owner 激活恢复形成反向互锁。协调器另设超时/线程退出兜底，测试 harness 也有自动关闭 watchdog，避免失败时留下可见窗口。
+- ownerless 窗口不进入 owner 握手；若它确实取得并一直持有前台，隐藏成功后 best effort 归还显示前记录的有效前台 HWND。create-time topmost 在隐藏前先独立降为 `HWND_NOTOPMOST`，再以不改变 Z 序的调用隐藏，避免污染后续统一 topmost 管理。
+- `CriticalNoWait` 不等待 admission gate 或 owner 线程，不执行跨线程 modal disable；CrashHandler 仍可能因进程破坏直接退化为系统框，此限制写入验收。
+
+### E. Call-site Migration
+
+- `IdtMain.cpp` 四处启动早期调用不获取任何 Window/Display/Logger 服务。
+- `IdtPlug-in.cpp` 与 `Bar.Interaction.cpp` 传当前有效 `floating_window`；无效时使用各自原系统 fallback policy。
+- `Setting.cpp` 从现有 `Inkeys.Window` service 读取 `WindowRole::Setting` HWND 作为 custom owner，但 fallback owner 保持 `nullptr + MB_SYSTEMMODAL`。
+- `Window.Legacy.cpp` 故障发生于 Window Service，自绘请求不得反向调用 service。
+- `Helper.CrashHandler.cpp` 使用内置 error icon、`CriticalNoWait`、ownerless create-time topmost；系统 fallback 保留 `MB_ICONERROR`。
+- `SuperTop/IdtSuperTop.cpp` 只增加模块 import 与对应请求，不改变 token/进程启动逻辑。
+
+## Automated Validation Matrix
+
+| Layer | Required cases |
+| --- | --- |
+| Request/result | 三种按钮；合法/非法 default；dismiss enabled/disabled；close hidden；Win32 ID 映射；fallback failure |
+| Layout | 96/120/144/192 DPI；320/548 DIP 边界；标题一/两行；中英正文；zh-CN/zh-TW/en 按钮文字；0/1 icon；1/2 buttons；work-area clamp |
+| Overflow | title 第三行、正文超 756 DIP、小于最小 work area；断言 HWND 创建计数仍为 0、owner 未被禁用且完整原文进入 fallback payload |
+| Icon | 正 BGRA/透明像素；非法 stride；尺寸/字节溢出；有效/损坏 PNG；内置资源；失败后正文仍存在 |
+| Input | hover/press/release/capture lost；首帧/pointer 无焦点框；Tab 正反循环；Left/Right 边界导航；Enter/Space 激活逻辑焦点；Esc/Alt+F4/SC_CLOSE/WM_CLOSE/X 共用获批 close resolver；结果只提交一次；提交后清理失败不再 fallback |
+| HWND | owned/ownerless styles；无 resize hit-test；SC_SIZE/MAX/MIN 被拒绝；DPI rebuild；hide-before-destroy；owner enabled 恢复；owner thread sent-message 等待不分派 posted command |
+| Concurrency | 两个 Normal（含初始化失败后的系统 fallback）串行；CriticalNoWait 在 busy 时无锁直接 fallback；同线程 reentry 不取门；fallback 函数本身不操作门 |
+| Lifetime | 重复创建/关闭；内部 live-object 为 0；GDI/USER handle 回到允许波动内；无残留 UI thread/HWND |
+
+## Build And Test Commands
+
+实现完成后先定位 ARM64-host MSBuild，最终路径必须包含 `MSBuild/Current/Bin/arm64/MSBuild.exe`。构建完整 solution，超时至少 10 分钟：
+
+```powershell
+& '<ARM64-host-MSBuild.exe>' InkeysRepo.sln /m /p:Configuration=Debug /p:Platform=ARM64
+```
+
+先运行严格无窗口用例，再运行允许创建隐藏 HWND 的集成用例：
+
+```powershell
+.\Build\ARM64\Debug\InkeysHeadlessTests.exe --no-window
+.\Build\ARM64\Debug\InkeysHeadlessTests.exe
+```
+
+若实际输出目录与现有工程不同，以构建产物路径为准并在结果中写明。测试失败不得通过启动 Inkeys 主程序绕过。
+
+静态检查：
+
+```powershell
+git diff --check
+git diff --stat
+git status --short
+rg -n "MessageBox(?:W|A)?\\(" Inkeys Timeout
+```
+
+## Authorized Visible Validation
+
+可见验证只在自动化与完整构建通过后执行：
+
+```powershell
+.\Build\ARM64\Debug\InkeysHeadlessTests.exe --message-box-visual-test .\TestResults\message-box-visual
+```
+
+入口合同：
+
+- 创建本测试进程的纯色 backdrop/owner，使截图 crop 内不出现其他应用。
+- 依次显示默认 OK、Yes/No 键盘焦点、带 error icon 的代表性窗口；通过本进程 `SendMessage/PostMessage` 驱动状态。
+- 通过 screen DC 捕获窗口矩形外扩的阴影 margin，编码为 PNG；每个 case 设超时并自动关闭。
+- 自动检查图片非空、尺寸稳定、边框四边采样与 accent/背景关键色存在；随后使用本地图片查看工具目视核对，不使用 Computer Use。
+- 结束时断言测试 HWND/UI thread 数为 0；若任何窗口未自动关闭，终止专用测试进程并报告失败，不操作其他应用。
+
+视觉验收至少记录：
+
+- Windows 11 ARM64 系统版本与 DPI。
+- DWM 圆角/阴影是否存在且没有双影、裁切或异常黑边。
+- 四边 `1 DIP` 内边框是否同粗，separator 与圆角接合是否完整。
+- 标题、正文、图标、close glyph 和按钮是否无重叠/裁切。
+- normal/focus/hover/pressed 截图中的 Fluent 灰阶和青色 accent 是否符合参考图。
+- 与 `research/references/02-dark-content-dialog.png`、`03-title-icon-close.png` 对照深色结构与图标/关闭布局；`01-light-content-dialog.png` 仅对照几何，不要求浅色输出。
+
+## Risky Files And Rollback Points
+
+- `Inkeys/Inkeys/UI/MessageBox/MessageBox.Window.cpp`：WndProc、DWM 与资源销毁核心；任何 shadow 修正只能在标准 frame/minimal non-client 范围内，禁止 layered/region/helper shadow。
+- `Inkeys/Inkeys/UI/MessageBox/MessageBox.cpp`：并发门与 owner 恢复；`FallbackToSystem()` 不得自行取锁，外层已获准调用可持 admission gate 到 fallback 返回；CriticalNoWait 不得阻塞。
+- `Inkeys/Inkeys/UI/Setting/Setting.cpp`：business worker 与 Setting UI 跨线程；必须保留 owner 健康探测和完整恢复。
+- `Inkeys/Inkeys/Helper/Helper.CrashHandler.cpp`：故障路径；改动仅限替换提示入口，不增加对日志、Window Service 或 D2D 的依赖。
+- `Inkeys/Inkeys.vcxproj`、`.filters`、`Inkeys.rc`、`resource.h`：必须成组修改；缺少任一项会导致模块或资源在部分配置失效。
+- `InkeysHeadlessTests/InkeysHeadlessTests.vcxproj` 与 `message_box_test.rc`：测试宏只允许定义在测试工程，测试资源必须引用同一 PNG/ID，不能泄漏测试入口到生产构建。
+
+主要回滚点：
+
+1. 产品调用点最后迁移；在此之前新模块不改变运行时行为。
+2. 若迁移后出现故障，可逐调用点恢复原 `MessageBoxW`，模块仍可留在工程中继续测试。
+3. 若 DWM 外框不稳定，只回滚 frame/non-client 实现，不改变 Request/Result/fallback 合同。
+4. 完整撤销时按“调用点 -> 工程/资源登记 -> 模块/测试文件”逆序移除，无配置或持久化数据需要恢复。
+
+## Pre-start Gate
+
+- [x] Goal、范围、非目标和验收标准已明确。
+- [x] owner、topmost、dismiss、超长正文、图标、并发、旧系统退化和可访问性边界已确认。
+- [x] 调用点、现有初始化顺序、渲染依赖与系统 fallback 语义已调查。
+- [x] `prd.md` 已收敛，`design.md` 与 `implement.md` 已创建。
+- [x] `implement.jsonl` 与 `check.jsonl` 已写入实现/检查所需的规范和调查上下文。
+- [x] 用户已在本次最终规划摘要之后明确批准进入实现。
+- [x] 批准后已运行 `task.py start` 并加载 Phase 2 / `trellis-before-dev` 上下文。
+
+## Validation Results
+
+- `InkeysRepo.sln` 使用 VS 18 ARM64 host MSBuild、`Debug|ARM64` 完整构建通过；仅保留仓库既有的转换类 warning，MessageBox 新模块无编译错误。
+- `InkeysHeadlessTests.exe --no-window` 通过：覆盖 Request/result/fallback、三组按钮文字、96/120/144/192 DPI、自适应宽度、文本超限和透明 PNG/BGRA 输入。
+- `InkeysHeadlessTests.exe` 完整通过，覆盖固定 frame、owner 禁用/恢复、标题拖动、八方向 resize 拒绝、DPI 重建、键鼠结果、并发门、CriticalNoWait、GDI/USER 基线和残留 HWND。
+- `InkeysHeadlessTests.exe --message-box-visual-test .\\TestResults\\message-box-visual` 通过并生成 6 张限定窗口截图：OK、Yes/No focus、透明错误图标、primary hover、secondary pressed、close hover；像素断言和人工检查均通过。close hover 截图确认 `32 DIP` 命中区顶部/右侧外间距一致，`10 DIP` glyph 在命中区内居中并与标题首行中心对齐。
+- Windows 11 ARM64 上运行时读取到 DWM dark/corner 属性；标准 frame、闭合内边框和圆角结构通过。受测试桌面限制，screen-DC 不包含测试窗口，截图入口回退到 `PrintWindow`，因此外部 DWM shadow 由标准 frame/DWM 属性验证，不宣称有逐像素阴影截图证据。
+- 未实现完整 UI Automation provider；Windows 7/10 未上机，只完成动态 API、无 layered/region/helper-shadow 路径和 GDI+ 生命周期的静态兼容覆盖。
+- 基础实现已于 `da9b888e` 提交；关闭字形样式调整已于 `7c8e1dfd` 提交。
+
+## 2026-09-02 First-frame Follow-up
+
+- 根因：`ShowWindow(hwnd, SW_SHOWNORMAL)` 可能是进程第一次 `ShowWindow`；启动器提供 `STARTUPINFO.wShowWindow` 时参数会被忽略，固定尺寸 MessageBox 可被瞬时最大化。预渲染 DIB 仍只有对话框尺寸，放大后的首次客户区无法被完整覆盖，表现为原始窗体闪现或整屏异常底色。
+- 生产修复边界仅为 `MessageBox.Window.cpp` 的 reveal/hide 顺序；公开 Request/Result API、产品调用点、Fluent token、owner/topmost 与 fallback 合同不变。
+- 定向回归在独立测试子进程中把启动 show state 设为 `SW_SHOWMAXIMIZED`，并验证首帧在用户不可见的 cloak 状态完成、可见窗口保持预检尺寸且没有 pending paint；测试子进程自行提交结果并退出。
+- ARM64-host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` 转换 warning）；`InkeysHeadlessTests.exe --no-window` 通过。
+- `InkeysHeadlessTests.exe` 连续 3 轮完整通过：隔离子进程实际注入 `STARTF_USESHOWWINDOW + SW_SHOWMAXIMIZED`，验证 cloak 内首帧完成、揭示矩形未最大化且无 pending paint；同时覆盖 owner 恢复的双向 sent-message 等待、ownerless 前台归还和后续 topmost owner-tree 回归。
+- `InkeysHeadlessTests.exe --message-box-visual-test .\\TestResults\\message-box-visual` 通过；默认 OK 与 close-hover 截图人工复核确认客户区完整、圆角/四边框/阴影正常，关闭 glyph 样式与位置未回退。Windows 7/10 仍仅为静态兼容覆盖，未实际上机。
+- 最终额外完整复核中，本任务的 STARTUPINFO 首帧、owner/ownerless、资源清理和残留 HWND 用例继续全部通过；完整套件后续两个既有隐藏 Window Z 序断言失败。临时隔离的 `WindowTests` 单独运行及 `MessageBoxTests -> WindowTests` 链式运行均通过，证明失败依赖完整套件中更早的其他模块状态，不是 MessageBox 状态泄漏；Trellis 历史也确认这两条断言在仅调整关闭字形且未修改 `Inkeys.Window` 时曾原样失败。临时入口已移除，不扩大本任务去修改 Window 服务。
+
+## 2026-09-02 Button Focus Visual Follow-up
+
+- 按 WinUI 高可见焦点规范，把 accent 与 neutral 按钮原先位于内部且按按钮类型分色的焦点框，统一改为完全位于按钮外侧的 `2 DIP` 白色外框与 `1 DIP`、`#B3000000` 深色内框；总外扩为 `3 DIP`，按钮布局、命中矩形、`4 DIP` 本体圆角和 `8 DIP` 间距不变。
+- `MessageBox.Window.cpp` 使用浮点 DPI 比例计算两层 GDI+ stroke，外边界半径随 `4 DIP` 按钮圆角扩展到 `7 DIP`；未修改 normal、hover、pressed、disabled、文字、owner、topmost 或窗口生命周期路径。
+- 可见测试为 secondary focus 增加定向像素断言，分别检查按钮边界外的白色层与深色层；`PrintWindow` 回退按其实际 `(0,0)` 输出原点采样，不通过降低阈值掩盖坐标错误。
+- ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` 转换 warning）；`InkeysHeadlessTests.exe --no-window` 与 `--message-box-visual-test .\TestResults\message-box-visual` 均通过。
+- 人工复核 `01-ok.png` 与 `02-yes-no-focus.png`：primary/secondary 焦点框颜色、粗细与外扩一致，未侵入填充区或造成相邻按钮重叠。完整套件仍仅失败于此前记录的两条 `Inkeys.Window` owner-tree Z 序断言，MessageBox 用例无新增失败，本次不扩大范围修改 Window Service。
+
+## 2026-09-02 Keyboard Interaction Follow-up
+
+- 实现前代码审计：`focusedButton` 在布局阶段即指向默认按钮，`DrawButton()` 无输入模态判断而在首帧直接画白框；`VK_RETURN` 固定提交 `request->defaultResult`，`VK_SPACE` 才提交 `focusedButton`；没有 `VK_LEFT/VK_RIGHT`；Esc、Alt+F4、SC_CLOSE、WM_CLOSE 和 glyph 当时集中到 `TryDismiss()`。
+- 最小实现边界仅涉及 `MessageBox.Window.cpp` 的会话/输入/绘制状态与 `InkeysHeadlessTests/message_box_tests.cpp` 的回归用例；公开 Request/Result ABI、布局尺寸、颜色 token、产品调用点、owner/topmost、首帧 reveal 和 GDI+ 生命周期不变。
+- 用户已完成 checklist 17 的明确批准：X 隐藏时 OK-only 返回 Ok、OK/Cancel 返回 Cancel、Yes/No 默认无操作/显式返回 Dismissed；X 可见时继续采用配置的 dismissResult。
+- `DialogSession` 已分离逻辑按钮、键盘焦点视觉和 HWND 实际 focus；pointer down 在 `SetFocus` 前切换输入模态，hover 不清除键盘模态，失焦隐藏但保留索引，DPI 重建保留有效逻辑焦点。
+- Tab/Shift+Tab 通过 enabled-button helper 循环，Left/Right 复用跳过禁用项规则并在边界停止；Enter/Space 均激活逻辑焦点。Esc、Alt+F4、SC_CLOSE、WM_CLOSE 与自绘 X 全部进入 `TryCloseCommand()` 和既有单次提交门。
+- 隐藏 HWND 回归覆盖默认 Enter、Tab/Shift+Tab、左右边界、Space、pointer 更新逻辑焦点，以及五类 close 入口和三种按钮路由；完整 `InkeysHeadlessTests.exe` 本轮通过，无此前记录的 Window Z 序基线失败。
+- ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` C4267 warning）；`InkeysHeadlessTests.exe --no-window` 与完整套件均通过。
+- `--message-box-visual-test .\TestResults\message-box-keyboard` 通过并生成 7 张限定窗口截图；新增像素断言确认初始/纯 pointer 状态无白框、键盘态存在外置双层框、pointer down 清除既有键盘框、primary hover 不清除 secondary 键盘框。人工复核 `01`、`02`、`05`、`07` 无重叠、位移或异常边框。
+- 公开 Request/Result、布局/颜色 token、owner/topmost、首帧 reveal、GDI+ 生命周期和产品调用点均未改变。完整 UI Automation provider 仍不属于 MVP；Windows 7/10 本轮未上机，仍仅记录静态兼容和构建覆盖。2026-09-17 用户确认人工验收通过并同意归档。
+
+## 2026-09-02 Localization Follow-up Results
+
+- 早期四条启动提示和 SuperTop 已改为完整英文，标题、正文、默认按钮和应用名均不依赖 i18n；运行期六类提示改用 `Dialogs` 生成键和 en-US/zh-CN/zh-TW 单语言文案。
+- `Request` 默认 `en-US`，并持有调用方语言与可选按钮文字视图；`CopyRequest()` 在工作线程前复制完整快照。内置标签不再读取 thread UI language，系统回退使用 `MessageBoxExW` 和同一 `LANGID`。
+- 简中优先 `Microsoft YaHei UI`，繁中优先 `Microsoft JhengHei UI`，均保留 Segoe UI 回退；测试覆盖简中/繁中测量，并通过真实 HWND 执行繁中标题、正文与按钮绘制和销毁。
+- `pwsh ./Scripts/i18n.ps1 check` 通过：en-US 和 zh-TW 均为 `285/285` (100%)；`git diff --check` 通过，所有修改文本恢复 CRLF。
+- VS 18 ARM64 host MSBuild 的完整 `InkeysRepo.sln Debug|ARM64` 构建通过；`InkeysHeadlessTests.exe --no-window` 输出 `PASS animation correctness`。完整套件的 MessageBox 用例无失败，但仍复现任务中已记录的两条 `Inkeys.Window` owner-tree Z 序基线失败；本轮未修改 Window Service。
+- OK/Cancel 产品调用仍只在 `Result::Ok` 时执行结束放映、重启或关闭动作；系统 `IDCANCEL -> Result::Cancel`、Esc/X 取消和结果首次提交不可覆写的既有回归继续通过。

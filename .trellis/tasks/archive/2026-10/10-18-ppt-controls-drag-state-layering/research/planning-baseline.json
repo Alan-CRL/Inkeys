@@ -1,0 +1,28 @@
+{
+  "head": "13783fe7960135caaa0040672fca03eb2b9ebdae",
+  "branch": "bugfix/pptcom",
+  "feedback_version": "unconfirmed; likely 20261010b or 20261014a per user",
+  "hang_symptom": "only dragged control stops; toolbar remains usable",
+  "authorization": "planning/research documents only; no code/tests/config/spec edits, GUI/Office, commit/push",
+  "files": {
+    "Inkeys/IdtPlug-in.cpp": "d493e304fd46e35753268b55e06b0cbc1c5d8dfc3a8f33192d23b9ecc116c2b9",
+    "Inkeys/Inkeys/Business/PptSession.cpp": "9af21fedd6c7eaba446e73de24dbd873a505396f7f8b5d4d5d1f5d6d880dd865",
+    "Inkeys/Inkeys/Business/PptSession.h": "b6c9cb270fd43efd3e364c33cc83e652e50d1d6108e587006d90f149fa522b88",
+    "Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h": "caf06445fb0903cf3581db8010f6b670208967b741373fd77bb8d416262792eb",
+    "Inkeys/Inkeys/UI/Bar/Bar.Layout.cppm": "f35e32c0b536d637c9a50c9c791779ab0c3118d34a7a35c63c54e73c727272df",
+    "Inkeys/Inkeys/UI/PageControl/PageControl.cpp": "be070b31f9ae157911b81a7de83c56e6b6665c7f161241796314798b9c5e79ce",
+    "Inkeys/Inkeys/UI/PageControl/PageControl.cppm": "950614ce8c620c320156efa700f2303e6c3b12c219f6c148ff4bb7e912d4bea9",
+    "Inkeys/Inkeys/UI/Ppt/Ppt.cpp": "48fced75792d6fe711dc3ed5e66d73c80675e3bdd928aaec0aba023259f43992",
+    "Inkeys/Inkeys/UI/Ppt/Ppt.cppm": "ffdd6d19bb8f20c63e826690411f1036090301f46320bbaf53e9c78eae6bc2ce",
+    "Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.cpp": "7fef230234cfe8915a5d1ca7b84af91903bfaba5a98c09257f94663119474b83",
+    "Inkeys/Inkeys/Window/Window.CommandCompletion.h": "212f084516b4aeb8a9907ab8c73aa5f5b2a49359c96eb386675fed73da3c3aa8",
+    "Inkeys/Inkeys/Window/Window.Legacy.cpp": "5a44c6db51af6afda28f91a44d396266b00cf2b90972f8b19806ff3e551b5e0a",
+    "Inkeys/Inkeys/Window/Window.Legacy.hpp": "91f3d270219f43d7e31db025627480aa87194aee9a52e11b916ad290e343f123",
+    "Inkeys/Inkeys/Window/Window.cpp": "a6d290d2fcf914a3e366cd695811e82702a0d7fe59c549043570a82338811c70",
+    "Inkeys/Inkeys/Window/Window.cppm": "6e5dd77e48e0117119993a614f03700f88fe586925be41a32099a523a27cddd2",
+    "InkeysHeadlessTests/page_control_tests.cpp": "0023cf36a28e5e9095e2003e62a2e7a30c69315ad4e764b73ea08d6afa820e59",
+    "InkeysHeadlessTests/ppt_session_tests.cpp": "24e241e4340a651d377e860e280ad19fb08c31becb8ce7402cef98cd49332f6a",
+    "InkeysHeadlessTests/ppt_ui_tests.cpp": "25f46f3dfd340b5df209e795f246e67612a7402e85c563911f07c91e09c2971c",
+    "InkeysHeadlessTests/window_tests.cpp": "a57123659325efeef006398e49252ce89208a6ef314b423433bb30a1854f4dcf"
+  }
+}

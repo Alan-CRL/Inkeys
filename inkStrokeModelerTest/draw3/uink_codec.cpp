@@ -1290,16 +1290,6 @@ namespace draw3::uink
 				canvas.slideId = value;
 			}
 
-			const UInkWorkspace* workspace = FindWorkspace(document, canvas.workspaceGuid);
-			const bool presentation = workspace && workspace->workspaceType == 2;
-			if (presentation && !canvas.slideId)
-			{
-				canvas.presentationUnbound = true;
-				context.result.provenance.usedTemporaryIdentity = true;
-				context.Add(UInkDiagnosticCode::TemporaryIdentity,
-					UInkDiagnosticSeverity::Warning, "canvas.slideId");
-			}
-
 			if (const msgpack::object* field = FindField(object, "viewport"))
 			{
 				if (canvas.layerIndex != 0)
@@ -1328,6 +1318,18 @@ namespace draw3::uink
 				UInkExtra extra;
 				if (!ReadExtra(*field, extra, context, "canvas.extra")) return false;
 				canvas.extra = std::move(extra);
+			}
+			const UInkWorkspace* workspace = FindWorkspace(document, canvas.workspaceGuid);
+			const bool presentation = workspace && workspace->workspaceType == 2;
+			const UInkInkeysPageKind kind = InkeysPageKind(canvas.extra);
+			if (presentation && (kind == UInkInkeysPageKind::Invalid ||
+				(kind == UInkInkeysPageKind::EndScreen) == canvas.slideId.has_value()))
+			{
+				// 先读取 extra 再判定，只有精确结束页标记允许缺少真实 SlideID。
+				canvas.presentationUnbound = true;
+				context.result.provenance.usedTemporaryIdentity = true;
+				context.Add(UInkDiagnosticCode::TemporaryIdentity,
+					UInkDiagnosticSeverity::Warning, "canvas.slideId");
 			}
 			return true;
 		}

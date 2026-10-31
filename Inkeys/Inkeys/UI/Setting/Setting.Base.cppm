@@ -1,19 +1,26 @@
 module;
 
 #include "Setting.Wrap.h"
+#include "Setting.Layout.h"
 
 export module Inkeys.UI.Setting:Base;
 
 import Inkeys.UI.RenderPipeline;
 
 ImFont* ImFontMain = nullptr;
+ImFont* ImFontStrong = nullptr;
+// 新页面使用独立校准字体；旧页保留原字号/行步长直至逐页迁移。
+ImFont* ImFontDesignMain = nullptr;
+ImFont* ImFontDesignStrong = nullptr;
+ImFont* ImFontDesignIcons = nullptr;
 struct SettingSignStruct
 {
 	int width;
 	int height;
 };
-SettingSignStruct settingSign[11];
-ID3D11ShaderResourceView* TextureSettingSign[11];
+SettingSignStruct settingSign[14];
+ID3D11ShaderResourceView* TextureSettingSign[14];
+std::array<std::vector<unsigned char>, 14> settingTexturePixels;
 
 export float settingGlobalScale = 1.0f;
 
@@ -52,10 +59,21 @@ void CleanupRenderTarget()
 	}
 }
 
-bool CreateDeviceD3D(HWND hWnd,
+bool AcquireDeviceLease(const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch)
+{
+	if (!epoch.d3dDevice || !epoch.immediateContext)
+		return false;
+	g_settingDeviceLease = epoch.d3dDevice;
+	g_settingContextLease = epoch.immediateContext;
+	g_pd3dDevice = g_settingDeviceLease.Get();
+	g_pd3dDeviceContext = g_settingContextLease.Get();
+	return true;
+}
+
+bool CreatePresentation(HWND hWnd,
 	const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch)
 {
-	if (!hWnd || !epoch.d3dDevice || !epoch.immediateContext || !epoch.dxgiFactory)
+	if (!hWnd || !g_pd3dDevice || !epoch.dxgiFactory || g_pSwapChain)
 		return false;
 
 	DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
@@ -68,38 +86,33 @@ bool CreateDeviceD3D(HWND hWnd,
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
 	// Setting 只创建独立呈现资源，device/context 由唯一渲染管线借用。
-	g_settingDeviceLease = epoch.d3dDevice;
-	g_settingContextLease = epoch.immediateContext;
-	g_pd3dDevice = g_settingDeviceLease.Get();
-	g_pd3dDeviceContext = g_settingContextLease.Get();
 	const HRESULT hr = epoch.dxgiFactory->CreateSwapChain(
-		epoch.d3dDevice.Get(), &swapChainDesc, &g_pSwapChain);
+		g_pd3dDevice, &swapChainDesc, &g_pSwapChain);
 	if (FAILED(hr))
-	{
-		g_pd3dDevice = nullptr;
-		g_pd3dDeviceContext = nullptr;
-		g_settingContextLease.Reset();
-		g_settingDeviceLease.Reset();
 		return false;
-	}
 
 	if (!CreateRenderTarget())
 	{
-		CleanupDeviceD3D();
+		if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
 		return false;
 	}
 	return true;
 }
 
-void CleanupDeviceD3D()
+void CleanupPresentation()
 {
 	CleanupRenderTarget();
 	if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
+	g_SwapChainOccluded = false;
+}
+
+void CleanupDeviceD3D()
+{
+	CleanupPresentation();
 	g_pd3dDeviceContext = nullptr;
 	g_pd3dDevice = nullptr;
 	g_settingContextLease.Reset();
 	g_settingDeviceLease.Reset();
-	g_SwapChainOccluded = false;
 }
 
 HRESULT ResizeSwapChain(UINT width, UINT height)
@@ -124,64 +137,24 @@ void CleanupSettingTextures()
 	}
 }
 
-// 基础封装（历史遗留）
-void HelpMarker(const char* desc, ImVec4 tmp)
-{
-	if (!ImFontMain) return;
-	ImFontMain->Scale = 0.45f;
-	ImGui::PushFont(ImFontMain);
-	ImGui::TextColored(ImVec4(13 / 255.0f, 83 / 255.0f, 255 / 255.0f, 1.0f), "\ue90a");
-	ImGui::PopFont();
-
-	ImFontMain->Scale = 0.7f;
-	ImGui::PushFont(ImFontMain);
-	if (ImGui::IsItemHovered())
-	{
-		ImGui::PushStyleColor(ImGuiCol_PopupBg, IM_COL32(236, 241, 255, 200));
-		ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(175, 197, 255, 255));
-		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(13, 83, 255, 255));
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
-
-		ImGui::BeginTooltip();
-		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-		ImGui::TextUnformatted(desc);
-		ImGui::PopTextWrapPos();
-		ImGui::EndTooltip();
-
-		ImGui::PopStyleColor(3);
-		ImGui::PopStyleVar(1);
-	}
-	ImGui::PopFont();
-}
-void CenteredText(const char* desc, float displacement)
-{
-	float temp = ImGui::GetCursorPosY();
-	ImGui::SetCursorPosY(temp + displacement);
-	ImGui::TextUnformatted(desc);
-	ImGui::SetCursorPosY(temp);
-}
-void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
-{
-	ImGuiContext& g = *ImGui::GetCurrentContext();
-	ImGuiWindow* window = g.CurrentWindow;
-	bool hovered = false;
-	bool held = false;
-	ImGuiID id = window->GetID("##scrolldraggingoverlay");
-	ImGui::KeepAliveID(id);
-
-	ImGui::ButtonBehavior(window->Rect(), id, &hovered, &held, mouse_button);
-	if (!held && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseDown(mouse_button))
-		held = true;
-
-	if (held && delta.x != 0.0f) ImGui::SetScrollX(window, window->Scroll.x + delta.x);
-	if (held && delta.y != 0.0f) ImGui::SetScrollY(window, window->Scroll.y + delta.y);
-}
 bool LoadTextureFromMemory(const unsigned char* image_data, int width, int height, ID3D11ShaderResourceView** out_texture)
 {
 	if (!image_data || width <= 0 || height <= 0 || !out_texture || !g_pd3dDevice)
 		return false;
 
 	*out_texture = nullptr;
+	for (std::size_t textureIndex = 0; textureIndex < std::size(TextureSettingSign);
+		++textureIndex)
+	{
+		if (out_texture != &TextureSettingSign[textureIndex]) continue;
+		settingSign[textureIndex] = { width, height };
+		if (settingTexturePixels[textureIndex].data() != image_data)
+		{
+			settingTexturePixels[textureIndex].assign(image_data,
+				image_data + static_cast<std::size_t>(width) * height * 4);
+		}
+		break;
+	}
 	D3D11_TEXTURE2D_DESC textureDesc = {};
 	textureDesc.Width = static_cast<UINT>(width);
 	textureDesc.Height = static_cast<UINT>(height);
@@ -214,4 +187,23 @@ bool LoadTextureFromMemory(const unsigned char* image_data, int width, int heigh
 		return false;
 	}
 	return true;
+}
+
+bool RecreateSettingTextures()
+{
+	CleanupSettingTextures();
+	for (std::size_t index = 0; index < settingTexturePixels.size(); ++index)
+	{
+		const auto& pixels = settingTexturePixels[index];
+		if (pixels.empty()) continue;
+		if (!LoadTextureFromMemory(pixels.data(), settingSign[index].width,
+			settingSign[index].height, &TextureSettingSign[index]) && index < 12)
+			return false; // 12/13 是可选演示 atlas，重建失败只降级插图。
+	}
+	return true;
+}
+
+void CleanupSettingTextureCache()
+{
+	for (auto& pixels : settingTexturePixels) pixels.clear();
 }

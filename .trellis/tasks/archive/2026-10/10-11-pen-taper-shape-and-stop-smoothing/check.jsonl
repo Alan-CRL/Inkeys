@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Production code boundary and native verification"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Minimal diff and original encoding"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Full solution Debug ARM64 build"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 production layer ownership"}
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "Taper, endpoint admission, dwell, Up and storage invariants"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "Validation and no demo substitution"}
+{"file": ".trellis/spec/native-desktop/pen-width.md", "reason": "Continuous widths and hardware mode boundaries"}
+{"file": ".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/dwell-appearance-and-resume.md", "reason": "Previous dwell and resume root causes"}
+{"file": ".trellis/tasks/10-11-pen-taper-shape-and-stop-smoothing/research/baseline.md", "reason": "Approved plan and baseline findings"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "Approved product taper length/dwell/Up/no-HWND CLI contract; read final scenario if injection truncated"}

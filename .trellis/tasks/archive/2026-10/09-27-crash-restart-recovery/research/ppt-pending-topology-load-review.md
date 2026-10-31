@@ -1,0 +1,34 @@
+# F-039 PPT pending load 双向拓扑投影独立复审
+
+日期：2026-09-28。本人未参与 F-039 实施；本轮只读当前 `Draw3.DrawingController.cpp/.cppm` 的实际 diff、生产 completion/worker/codec 调用链与已有日志。未改产品/测试，未运行构建、CLI、Office、GUI 或性能采样。审查依据：本子任务 PRD/design/implement、`ppt-pending-topology-load-design.md`/实施报告、F-038/F-031 独立 review 与 native-desktop、PPT interop 规范。F-039 StableSlideId 同模式投影未见本补丁新增的阻断性错误；下述 cross-mode fallback 缺口仍需独立处置。
+
+## F-039 当前 diff 与值源
+
+| 合同 | 当前生产证据 | 结论 |
+| --- | --- | --- |
+| 旧 active 与 retained 统一身份 | `MaterializePresentationSlot` 在 `Draw3.DrawingController.cpp:788-839` 对 StableSlideId 先验证 latest target，再将旧 active 普通页和旧 retained 页复制到同一 `SlideID→Canvas` map；源 SlideID 必须正且唯一，所有源 page GUID 唯一，EndScreen 单独保留且不带 SlideID。 | 旧 active `{101,102}`→最新 `{101}` 时 102 留在 map，后续转 retained；旧 retained102→最新 active102 时从 map 取并 erase，不会同时保留两份。来源只在同一次 loaded snapshot 内合并，不读另一文稿 active map。 |
+| 最新 target 投影 | `:851-893` 顺序遍历最新 target.slideIds，命中移动原 Canvas，未命中新建独立 GUID/空页；旧 EndScreen 依 marker 保留，缺席则补独立空 EndScreen。`Bridge.h:133-149` 保证 `totalPages`/页 index/SlideID 数量有效；`Materialize` 另拒绝非正/重复 ID。 | 顺序变化不改变已知 SlideID 的 page GUID/笔迹；新 SlideID 不猜旧页；EndScreen 总在最新 N 的内部页槽，不当作删除的普通 Slide。GUID 随目标页重排但内容仍由原 SlideID 选择。 |
+| 普通页文档/history | `:897-961` 对每个选中的 Canvas 以原 page GUID/viewport、Strokes 建真实 `InkPage/InkCanvas` 与 `CanvasRuntimeHistory`，保持 `intervalOrdinal`，新分配 raster token；任何 stroke/footprint/history 失败返回 nullopt 而不安装半槽。 | 生产值结构而非复制的测试算法；`RunPendingPresentationTopologyLoadTest` 直接调用它。PPT 保存请求只取 history 中 visible 的笔迹，故原点与可见项在 builder 中可核。 |
+| 删除页标记与回存 | `:962-980` 对 map 剩余 old active/retained 调 `MarkPresentationCanvasRetained(:768-786)`：清旧 page-state 键、保留其它 extra、只写一个 `inkeysPageState=retained`，保留 page GUID/SlideID/strokes/interval；沿既有约定清 projected operations。F-031 `BuildPresentationSaveRequest(:648-766)` 得到同槽 retained map。 | Worker `ValidatePresentationSaveRequest` 校验 retained 标志/SlideID/marker（`PresentationAutoSave.cpp:525-535`）；export `CanonicalCanvases` 给 active+retained 重新连续编号（`uink_draw3_export.cpp:34-55`），故保留旧页原 pageIndex 与新 EndScreen 撞号不会直接进入磁盘页序。保存现有文件时按 page GUID 找 canonical、合并操作链，index 合并已知 SlideIDs（`PresentationAutoSave.cpp:578-625,745-790`）。这是静态合同，未将 F-039 新请求实际送 worker 严格读回。 |
+| PageIndexFallback | `MaterializePresentationSlot:841-850,875-879` 的非 stable 路径继续按旧 ordinal 复制，EndScreen 仍由旧 marker/缺席补空规则处理；F-039 新 SlideID map/retained 冲突门只在 stable 分支。 | 同模式 PageIndexFallback 代码路径未被本次改动重映射。**从旧 fallback 文件升级到 StableSlideId 是另一条 cross-mode 路径，见 F39-R1**。 |
+| 迟到 completion / 新 mutation | 生产 `PresentationPersistenceCompleted` 先按 key/source/topology 可复用性选 active 或 parked（`Controller:6577-6595`）；Current load 以 `latestTarget` 调本生产 materializer（`:6730-6743`）。F-038 `InstallLoadedActivePresentationSlot(:1001-1017)` 仅在 `mutationRevision==0` 成组移动 document/history/retained/file/revisions；parked 也只在其 mutation 为 0 时整体安装（`:6745-6785`）。 | F-039 的 slot 结果不能绕过 F-038 用户新笔迹拒绝门；F-031 的 parked 保存从 `slot.retainedSlides` 读，不借 active。Rebind 也按活动同源 map 后移回新 slot。真实 Office 迟到次序与 worker durable 仍未运行。 |
+
+`MarkPresentationCanvasRetained` 清除原 page-state 并补 retained marker 的做法适用于旧 active 删除页，也适用于 worker 原先按旧 target 已转 retained、但 extra 尚为 active marker 的投影结果。旧 retained102 再变 active 时，materializer 消耗其 page GUID/笔迹而不把 retained `extra` 持久放入 `InkCanvas`；下一次生产 builder 重新生成 active binding/EndScreen marker。此处没有通过强制关闭旧页或降低画质达到“通过”。
+
+## F39-R1 / P1 / 既有 cross-mode 迁移缺口：旧 page-index 冷加载升级为 StableSlideId
+
+这是本轮最重要的发布兼容风险，**并非 F-039 新引入的同模式拓扑回归**。`PresentationAutoSave.cpp:851-866` 的 `bindingUpgrade` 允许 index 旧 `bindingMode=page-index`、当前请求 target 为 StableSlideId 且页数相同的冷加载。`MakeExpectation(:560-575)` 仍按旧 index 模式要求 strict import；`uink_draw3_import.cpp:358-359,501-527` 的 fallback 源页必须没有 SlideID，导入结果也不生成 SlideID。生产 completion 随后使用当前 stable `latestTarget` 调 `MaterializePresentationSlot`（`Controller:6730-6743`）；F-039 stable 分支在 `:826-828` 对这些无 SlideID 的正常页 fail closed，`loaded` 为 nullopt，F-038 不安装，旧墨迹无法进入当前画布。活跃页通常仍是先前的空/当前状态；旧文件未因这个拒绝被直接覆盖，但不能把旧文件可读说成应用画布已恢复。
+
+H0 旧 materializer 对该输入的 `bySlideId` 为空，按 stable target 创建空白 active 页，可能安装后触发 `loadedBindingMigration → markPresentationMutation → capturePresentationAutoSave`（现行 `Controller:6736-6760` 同一顺序），并让 worker 在 `SavePresentation(:745-790)` 走既有文件替换；若请求身份满足工作区/文件校验，旧墨迹可能被空 stable 投影覆盖。这是**源码可达的条件性数据丢失风险**，未做隔离磁盘红测，不能写成用户文件已实际损坏。当前 F-039 至少把这一路从静默空页改成拒绝安装，但未满足 fallback→Stable 兼容与可见恢复。
+
+最小安全迁移合同：用隔离 UInk/index 构造旧 fallback 的 N 个依 ordinal 排列的普通页和可选独立 EndScreen，原 page GUID/笔迹/interval 各不相同；旧文件严格导入无 SlideID。只有能证明加载请求时的同一 binding/页序且 `N==completion.target.totalPages` 时，才把**`completion.target.slideIds`（请求时序）**逐项赋给旧 ordinal 页；EndScreen 保留原 marker/GUID、不赋 SlideID，旧 fallback 不得有 retained SlideID map。之后复用 F-039 的 SlideID 集合投影到**completion 时最新** target，以覆盖 pending 期间删除、恢复或重排；不能直接按最新顺序贴 ID，否则旧页的墨迹会被错认成另一页。若旧 fallback 文件跨 session 已可能重排、index/绑定没有足够证据证明 ordinal 连续性，应拒绝自动迁移并保留最后有效文件，不猜页身份。测试应同时调用 worker strict import、生产 materializer/安装/builder、实际 SaveExisting 与严格再读；旧页 x=10/20、不同 GUID、EndScreen GE，T1 `{101,102}` 后在 completion 前变 T2 `{102,101}`，断言 10/20 随原 T1 SlideID 而不是随 T2 ordinal。新 mutation 和不同 key/source 仍拒绝旧 completion。此合同需要单独设计/实现，不应在 F-039 报告中伪装已通过。
+
+## F-038/F-031 接合及测试证据
+
+- F-038 的活动安装成组迁入 retained map，F-031 的 builder/submit 以 active 或 `RetainedSlidesForSave(active,&parked)` 显式选择同槽 map；F-039 使用统一 map 后不会重新走 F-031 原先的 active map 捕获错误。F-038 review 已记录一个**既有 P2 条件性异常原子性风险**：安装 helper 在移动 document/runtime/retained 后才复制含字符串与 vector 的 latestTarget（`:1007-1013`），若分配抛异常可半安装；本轮未修改该 helper，不称其为 F-039 新回归。最小处理仍是先准备 target 副本、再无分配提交整槽，需故障注入验证。
+- F-039 测试 `RunPendingPresentationTopologyLoadTest(:2357-2513)` 直接调用生产 `MaterializePresentationSlot` 和 `BuildPresentationSaveRequest`，覆盖旧 active102 删除→retained、旧 retained102 恢复→active、两种情况下 EndScreen 独立，以及 active/retained 重复 SlideID、重复 active ID、跨组重复 GUID、非正 ID、双 EndScreen 的拒绝。其 A/B 槽交叉身份依赖 F-031 CLI；new mutation 门依赖 F-038 CLI。当前 F-039 CLI **没有**把本次 builder 请求送进 PresentationAutoSaveService/UInk 严格导入，不把静态 validator 推论冒充 worker 运行通过；也未测非零 interval 的跨拓扑 operations merge。
+- 已只读原始红 stderr 九个 FAIL；绿 stderr `TestResults/release-hardening/draw3-post-f039-debug-topology.stderr.log` 为 `PASS: two-way SlideID projection`。F-038/F-031/F-029 绿日志同目录 `draw3-post-f039-debug-{loaded,parked,desktop}.stderr.log` 分别 PASS。主 agent 的 `validation.md` 记录红 CLI exit1→绿及三项旧回归 exit0、完整 `InkeysRepo.sln Debug|ARM64` Build exit0；本 reviewer 没有重跑。独立执行目标 Controller 两文件 `git diff --check` exit0。
+
+## 未验证与发布门禁
+
+F-039 当前可静态确认同一次合法 StableSlideId loaded snapshot 在 pending 期间删除/重新出现页时，文档/retained builder 的身份选择正确；不能把它升级为 worker durable commit 或真实 Office 多文稿通过。需以隔离服务把 F-039 生产 builder 的删除/恢复请求各保存、严格读回，再验证 canonical operations 与 index 旧/新 SlideID；磁盘满/SourceChanged/index 失败保留最后有效文件。Office/WPS 异步 load 中重排/删页/恢复、EndScreen、迟到 completion、新笔迹门及 User32 实际可见性需另行真机。跨进程 PPT 自动可见恢复尚未开放。Win7 SP1+仅 KB2670838 的 `FLIP_SEQUENTIAL` 保持，Hardware FL11.0 与无 FL11.0→WARP、DComp/ULW 的实际运行证据仍缺；ARM64 Debug 构建不能外推。

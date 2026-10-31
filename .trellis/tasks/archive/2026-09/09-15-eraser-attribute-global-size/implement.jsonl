@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "输入/状态/清空合同"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Bar共享渲染和光源"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置归属和持久化"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "本轮全局配置、预览几何、Clear重做与验收合同"}

@@ -11,10 +11,14 @@ module;
 
 #include <atomic>
 #include <mutex>
+#include <memory>
 #include <optional>
 #include <utility>
 
 #include "../../../IdtFreezeFrame.h"
+#include "Whiteboard.Theme.h"
+#include "Whiteboard.BackgroundState.h"
+#include "../../Window/Window.ShellFullscreen.h"
 
 module Inkeys.UI.Whiteboard;
 
@@ -32,57 +36,49 @@ namespace Inkeys::UI::Whiteboard
 		using Client = Inkeys::UI::RenderPipeline::Client;
 		using FrameContext = Inkeys::UI::RenderPipeline::FrameContext;
 		using FrameResult = Inkeys::UI::RenderPipeline::FrameResult;
-		using Scene = Inkeys::UI::Bar::BarSurfaceScene;
+		using Scene = Inkeys::UI::Bar::BarPageSurface;
 		using WindowRole = Inkeys::Window::WindowRole;
 
 		std::atomic_bool initialized = false;
 		std::atomic_bool expandedLayoutTarget = false;
 		std::atomic_bool active = false;
-		std::atomic_bool committedBackgroundActive = false;
+		WhiteboardDetail::BackgroundState backgroundState;
 		std::mutex pageStateMutex;
 		PageStateTransaction pageTransaction;
+		std::uint32_t themeRgb = 0x123B32;
+		int themePattern = 0;
+		bool unsavedPages = false;
+		std::uint64_t pageGeneration = 0;
 		std::mutex backgroundRenderMutex;
 		Scene backgroundScene;
 		RECT configuredBackgroundScreen{};
 		float configuredBackgroundScale = 0.0F;
 		Inkeys::Display::Subscription displaySubscription;
 
-		[[nodiscard]] RECT PrimaryBounds() noexcept
+		struct BackgroundTarget { RECT bounds{}; float scale = 1.0F; };
+		std::atomic<std::shared_ptr<const BackgroundTarget>> renderedBackgroundTarget;
+		[[nodiscard]] BackgroundTarget PrimaryTarget() noexcept
 		{
+			// 尺寸和 DPI 必须来自同一显示快照；白板始终覆盖完整 rcMonitor。
 			const auto snapshot = Inkeys::Display::GetSnapshot();
 			if (const auto* monitor = snapshot ? snapshot->Primary() : nullptr)
-				return monitor->bounds;
-			return { 0, 0, GetSystemMetrics(SM_CXSCREEN),
-				GetSystemMetrics(SM_CYSCREEN) };
-		}
-
-		[[nodiscard]] float DpiScale(HWND hwnd) noexcept
-		{
-			const auto snapshot = Inkeys::Display::GetSnapshot();
-			const HMONITOR handle = hwnd
-				? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
-			const auto* monitor = snapshot
-				? (handle ? snapshot->Find(handle) : snapshot->Primary()) : nullptr;
-			if (monitor)
-			{
-				const UINT dpi = monitor->effectiveDpiX
-					? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI;
-				return static_cast<float>(dpi)
-					/ static_cast<float>(USER_DEFAULT_SCREEN_DPI);
-			}
-			return 1.0F;
-		}
-
-		[[nodiscard]] PageState PublishedPageState() noexcept
-		{
-			std::scoped_lock lock(pageStateMutex);
-			return pageTransaction.Snapshot();
+				return { monitor->bounds, static_cast<float>(monitor->effectiveDpiX
+					? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI };
+			return { {0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)}, 1.0F };
 		}
 
 		void PublishPageControlSnapshot() noexcept
 		{
-			const PageState page = PublishedPageState();
+			PageState page;
 			Inkeys::UI::PageControl::WhiteboardState state;
+			{
+				std::scoped_lock lock(pageStateMutex);
+				page = pageTransaction.Snapshot();
+				state.backgroundRgb = themeRgb;
+				state.pattern = themePattern;
+				state.unsaved = unsavedPages;
+				state.generation = pageGeneration;
+			}
 			state.expandedLayoutTarget = expandedLayoutTarget.load(
 				std::memory_order_acquire);
 			state.active = active.load(std::memory_order_acquire);
@@ -107,6 +103,9 @@ namespace Inkeys::UI::Whiteboard
 				bounds.bottom - bounds.top) / scale;
 			Inkeys::UI::Bar::BarSurfaceBackgroundSpec background;
 			background.bounds = { 0.0, 0.0, widthDip, heightDip };
+			std::uint32_t rgb; int pattern;
+			{ std::scoped_lock lock(pageStateMutex); rgb=themeRgb; pattern=themePattern; }
+			background.drawContent = [rgb, pattern](auto* dc, auto rect) { WhiteboardVisual::DrawTheme(dc,rect,rgb,pattern); };
 			background.fill = RGB(18, 59, 50);
 			background.frame = RGB(18, 59, 50);
 			background.useThemeColors = false;
@@ -114,11 +113,11 @@ namespace Inkeys::UI::Whiteboard
 			background.frameThicknessDip = 0.0;
 			background.fillOpacity = 1.0;
 			background.frameOpacity = 0.0;
-			(void)backgroundScene.Configure(background,
-				std::span<const Inkeys::UI::Bar::BarSurfaceWidgetSpec>{});
+			(void)backgroundScene.ConfigureBackground(background);
 			(void)backgroundScene.SetBounds(bounds, scale);
 			configuredBackgroundScreen = bounds;
 			configuredBackgroundScale = scale;
+			renderedBackgroundTarget.store(std::make_shared<const BackgroundTarget>(BackgroundTarget{bounds, scale}), std::memory_order_release);
 		}
 
 		[[nodiscard]] bool IsDeviceLost(HRESULT hr) noexcept
@@ -132,17 +131,41 @@ namespace Inkeys::UI::Whiteboard
 			if (!initialized.load(std::memory_order_acquire))
 				return FrameResult::Idle;
 			auto& service = Inkeys::Window::GetService();
+			const auto request = backgroundState.Desired();
+			const auto current = [request] { return initialized.load(std::memory_order_acquire)
+				&& backgroundState.Current(request); };
+			const auto surfaceCurrent = [&service](const WhiteboardDetail::BackgroundState::Surface& surface)
+			{ return surface.hwnd == service.Handle(WindowRole::Freeze) && IsWindow(surface.hwnd)
+				&& reinterpret_cast<std::uintptr_t>(GetPropW(surface.hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == surface.generation; };
+			if (const auto held = backgroundState.Held(); held && !surfaceCurrent(*held))
+			{
+				const auto generation = reinterpret_cast<std::uintptr_t>(GetPropW(held->hwnd, Inkeys::Window::Detail::WindowGenerationProperty));
+				if (!IsWindow(held->hwnd) || (generation && generation != held->generation))
+					backgroundState.RetireHeld(*held);
+				else return FrameResult::Retry; // 身份读取失败不是旧目标已经退休的凭据。
+			}
+			// 关闭确认先于最小化暂停；已经释放时不重复隐藏桌面/PPT共用 Freeze。
+			if (!request.active)
+			{
+				return WhiteboardDetail::CompleteBackgroundInactive(backgroundState, request,
+					[&](const WhiteboardDetail::BackgroundState::Surface& held)
+					{
+						const auto guard = [current, held] { return current() && held.hwnd == Inkeys::Window::GetService().Handle(WindowRole::Freeze)
+							&& reinterpret_cast<std::uintptr_t>(GetPropW(held.hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == held.generation; };
+						return guard() && service.Hide(WindowRole::Freeze, guard);
+					}) ? FrameResult::Idle : FrameResult::Retry;
+			}
+			if (service.WhiteboardWindowGroupMinimized()) return FrameResult::Idle;
 			const HWND hwnd = service.Handle(WindowRole::Freeze);
 			if (!hwnd) return FrameResult::Retry;
-			if (!active.load(std::memory_order_acquire))
-			{
-				(void)service.Hide(WindowRole::Freeze);
-				committedBackgroundActive.store(false, std::memory_order_release);
-				return FrameResult::Idle;
-			}
-
-			const RECT bounds = PrimaryBounds();
-			const float scale = DpiScale(hwnd);
+			const auto generation = reinterpret_cast<std::uintptr_t>(GetPropW(hwnd,
+				Inkeys::Window::Detail::WindowGenerationProperty));
+			if (!backgroundState.Bind(request, {hwnd, generation})) return FrameResult::Retry;
+			const auto currentSurface = [hwnd, generation, current] { return current() && Inkeys::Window::GetService().Handle(WindowRole::Freeze) == hwnd
+				&& reinterpret_cast<std::uintptr_t>(GetPropW(hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == generation; };
+			const auto target = PrimaryTarget();
+			const RECT bounds = target.bounds;
+			const float scale = target.scale;
 			RECT presentation{};
 			bool animationActive = false;
 			{
@@ -150,24 +173,40 @@ namespace Inkeys::UI::Whiteboard
 				if (!EqualRect(&configuredBackgroundScreen, &bounds)
 					|| configuredBackgroundScale != scale)
 					ConfigureBackgroundScene(bounds, scale);
+				(void)backgroundScene.Advance(frameContext.frameTime);
 				presentation = backgroundScene.PresentationBounds();
 				const UINT width = static_cast<UINT>(presentation.right
 					- presentation.left);
 				const UINT height = static_cast<UINT>(presentation.bottom
 					- presentation.top);
+				const auto previousTarget = backgroundScene.Renderer().GetTargetBitmapSize();
+				const bool resourcesRecreated = backgroundScene.Renderer().GetDeviceGeneration()
+					!= frameContext.epoch.generation || previousTarget.width != width
+					|| previousTarget.height != height;
 				const HRESULT resourceHr = backgroundScene.EnsureDeviceResources(
 					frameContext.epoch, width, height);
 				if (FAILED(resourceHr)) return IsDeviceLost(resourceHr)
 					? FrameResult::DeviceLost : FrameResult::Retry;
+				// 新位图没有旧像素，恢复窗口也必须完成一次真实提交，不能沿用空脏区。
+				if (resourcesRecreated || !backgroundState.Prepared(request.revision))
+					backgroundScene.Invalidate();
+				const RECT frameDamage = backgroundScene.PendingDamage();
+				if (IsRectEmpty(&frameDamage))
+				{
+					backgroundScene.SuspendForIdle(frameContext.frameTime);
+					return FrameResult::Idle;
+				}
 				auto* rawContext = backgroundScene.DeviceContext();
 				auto* rawGdi = backgroundScene.GdiInteropRenderTarget();
 				if (!rawContext || !rawGdi) return FrameResult::Retry;
 				ComPtr<ID2D1DeviceContext> context(rawContext);
 				ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
-				context->BeginDraw();
-				context->SetTransform(D2D1::Matrix3x2F::Identity());
-				context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
+				// 与主栏/分页采用同一绘制事务；先裁剪，成功呈现后才消费脏区。
+				backgroundScene.Renderer().BeginFrameDraw(context.Get(), D2D1::RectF(
+					static_cast<FLOAT>(frameDamage.left), static_cast<FLOAT>(frameDamage.top),
+					static_cast<FLOAT>(frameDamage.right), static_cast<FLOAT>(frameDamage.bottom)));
 				(void)backgroundScene.Render(context.Get(), frameContext.frameTime);
+				backgroundScene.Renderer().FinishFrameDrawCommands(context.Get());
 				HDC source = nullptr;
 				HRESULT getDcHr = gdi->GetDC(
 					D2D1_DC_INITIALIZE_MODE_COPY, &source);
@@ -186,7 +225,7 @@ namespace Inkeys::UI::Whiteboard
 					info.pptSrc = &sourcePoint;
 					info.hdcSrc = source;
 					info.pblend = &blend;
-					RECT dirty = backgroundScene.PendingDamage();
+					RECT dirty = frameDamage;
 					if (dirty.right <= dirty.left || dirty.bottom <= dirty.top)
 						dirty = RECT{ 0, 0, static_cast<LONG>(width),
 							static_cast<LONG>(height) };
@@ -194,13 +233,13 @@ namespace Inkeys::UI::Whiteboard
 					info.dwFlags = ULW_ALPHA;
 					HDC destinationDc = GetDC(nullptr);
 					info.hdcDst = destinationDc;
-					presented = SubmitFreezeSurface(hwnd, &info, true);
+					presented = currentSurface() && SubmitFreezeSurface(hwnd, &info, true) && currentSurface();
 					if (destinationDc) ReleaseDC(nullptr, destinationDc);
-					releaseDcHr = gdi->ReleaseDC(nullptr);
+					const RECT gdiModifiedRect{};
+					releaseDcHr = gdi->ReleaseDC(&gdiModifiedRect);
 				}
 				else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
-				const HRESULT endDrawHr = context->EndDraw();
-				backgroundScene.HandleFrameEndDrawResult(endDrawHr);
+				const HRESULT endDrawHr = backgroundScene.Renderer().EndFrameDraw(context.Get());
 				if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
 					|| IsDeviceLost(endDrawHr))
 				{
@@ -214,17 +253,23 @@ namespace Inkeys::UI::Whiteboard
 					return FrameResult::Retry;
 				}
 				animationActive = backgroundScene.AnimationActive();
+			}
+			if (!currentSurface()) return FrameResult::Retry;
+			// 新协议只准备像素/几何，最终显示由同请求 NativeComplete 确认；兼容旧无版本入口。
+			const bool boundsApplied = service.SetBounds(WindowRole::Freeze, presentation, currentSurface);
+			const bool visibleApplied = boundsApplied && (request.revision != 0 || service.Show(WindowRole::Freeze, currentSurface));
+			{
+				std::unique_lock renderLock(backgroundRenderMutex);
+				if (!visibleApplied)
+				{
+					backgroundScene.Invalidate();
+					return FrameResult::Retry;
+				}
+				backgroundScene.CommitPresented(false);
 				(void)backgroundScene.ConsumeDamage();
 			}
-			if (!active.load(std::memory_order_acquire))
-			{
-				(void)service.Hide(WindowRole::Freeze);
-				committedBackgroundActive.store(false, std::memory_order_release);
-				return FrameResult::Idle;
-			}
-			(void)service.SetBounds(WindowRole::Freeze, presentation);
-			(void)service.Show(WindowRole::Freeze);
-			committedBackgroundActive.store(true, std::memory_order_release);
+			if (!backgroundState.Prepare({request, hwnd, generation, presentation})) return FrameResult::Retry;
+			if (!animationActive) backgroundScene.SuspendForIdle(frameContext.frameTime);
 			return animationActive ? FrameResult::Continue : FrameResult::Idle;
 		}
 	}
@@ -234,7 +279,7 @@ namespace Inkeys::UI::Whiteboard
 		if (initialized.exchange(true, std::memory_order_acq_rel)) return false;
 		expandedLayoutTarget.store(false, std::memory_order_release);
 		active.store(false, std::memory_order_release);
-		committedBackgroundActive.store(false, std::memory_order_release);
+		backgroundState.Reset();
 		{
 			std::scoped_lock lock(pageStateMutex);
 			pageTransaction.Reset();
@@ -247,6 +292,8 @@ namespace Inkeys::UI::Whiteboard
 		Inkeys::UI::PageControl::SetWhiteboardCallbacks({
 			std::move(callbacks.previousPage),
 			std::move(callbacks.nextPage),
+			std::move(callbacks.closeWhiteboard),
+			std::move(callbacks.changeTheme),
 		});
 		if (!Inkeys::UI::RenderPipeline::Register(
 			Client::WhiteboardFreeze, RenderBackground))
@@ -257,10 +304,14 @@ namespace Inkeys::UI::Whiteboard
 			return false;
 		}
 		displaySubscription = Inkeys::Display::Subscribe(
-			[](Inkeys::Display::SnapshotPtr)
+			[](Inkeys::Display::SnapshotPtr snapshot)
 			{
 				if (!initialized.load(std::memory_order_acquire)) return;
-				Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze);
+				const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+				const auto rendered = renderedBackgroundTarget.load(std::memory_order_acquire);
+				const bool changed = !monitor || !rendered || !EqualRect(&monitor->bounds, &rendered->bounds)
+					|| rendered->scale != static_cast<float>(monitor->effectiveDpiX ? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI;
+				if (changed) { backgroundState.Invalidate(); Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze); }
 				Inkeys::UI::PageControl::NotifyLayoutChanged();
 			});
 		PublishPageControlSnapshot();
@@ -281,7 +332,7 @@ namespace Inkeys::UI::Whiteboard
 			backgroundScene.Reset();
 			backgroundScene.ReleaseDeviceResources();
 		}
-		committedBackgroundActive.store(false, std::memory_order_release);
+		backgroundState.Reset();
 		Inkeys::UI::PageControl::SetWhiteboardCallbacks({});
 		Inkeys::UI::PageControl::Release();
 		std::scoped_lock pageLock(pageStateMutex);
@@ -301,10 +352,11 @@ namespace Inkeys::UI::Whiteboard
 		PublishPageControlSnapshot();
 	}
 
-	void PublishActive(bool value) noexcept
+	void PublishActive(bool value, std::uint64_t revision) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
-		if (active.exchange(value, std::memory_order_acq_rel) == value) return;
+		if (!backgroundState.Publish(value, revision)) return;
+		active.store(value, std::memory_order_release);
 		PublishPageControlSnapshot();
 		Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze);
 	}
@@ -313,6 +365,28 @@ namespace Inkeys::UI::Whiteboard
 	{
 		if (initialized.load(std::memory_order_acquire))
 			Inkeys::UI::PageControl::CancelPointerCapture();
+	}
+
+	void PublishPageSnapshot(int current, int total, bool changing,
+		std::uint32_t rgb, int pattern, bool unsaved, std::uint64_t generation) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		bool themeChanged;
+		{
+			// 页码、主题和身份一次提交，禁止主题回执夹带上一页的可交互状态。
+			std::scoped_lock lock(pageStateMutex);
+			(void)pageTransaction.Publish(current, total, changing);
+			themeChanged = themeRgb != rgb || themePattern != pattern;
+			themeRgb = rgb; themePattern = pattern;
+			unsavedPages = unsaved; pageGeneration = generation;
+		}
+		if (themeChanged)
+		{
+			std::scoped_lock lock(backgroundRenderMutex);
+			configuredBackgroundScale = 0;
+		}
+		PublishPageControlSnapshot();
+		if (themeChanged) Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze);
 	}
 
 	void PublishPageState(int current, int total, bool changing) noexcept
@@ -333,8 +407,24 @@ namespace Inkeys::UI::Whiteboard
 
 	bool Active() noexcept { return active.load(std::memory_order_acquire); }
 
-	bool BackgroundMatchesActive(bool value) noexcept
+	bool BackgroundPrepared(std::uint64_t revision) noexcept
 	{
-		return committedBackgroundActive.load(std::memory_order_acquire) == value;
+		const auto frame = backgroundState.Prepared(revision);
+		return frame && frame->hwnd == Inkeys::Window::GetService().Handle(WindowRole::Freeze)
+			&& reinterpret_cast<std::uintptr_t>(GetPropW(frame->hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == frame->generation;
+	}
+
+	bool BackgroundMatchesActive(bool value, std::uint64_t revision) noexcept
+	{
+		const auto request = backgroundState.Desired();
+		if (request.active != value || (revision && request.revision != revision)) return false;
+		if (!value) return backgroundState.InactiveCommitted(request);
+		const auto frame = backgroundState.Prepared(revision);
+		if (!frame || !frame->hwnd || !IsWindowVisible(frame->hwnd) || IsIconic(frame->hwnd)) return false;
+		RECT bounds{};
+		return Inkeys::Window::GetService().Handle(WindowRole::Freeze) == frame->hwnd
+			&& reinterpret_cast<std::uintptr_t>(GetPropW(frame->hwnd, Inkeys::Window::Detail::WindowGenerationProperty)) == frame->generation
+			&& GetWindowRect(frame->hwnd, &bounds) && EqualRect(&bounds, &frame->bounds)
+			&& backgroundState.Current(frame->request);
 	}
 }

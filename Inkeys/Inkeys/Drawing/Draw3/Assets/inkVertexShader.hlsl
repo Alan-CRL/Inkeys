@@ -74,7 +74,7 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
-    if (type >= 4 && type <= 6)
+    if ((type >= 4 && type <= 6) || type == 21)
     {
         InkPoint cursor = InkData[globalBufferOffset];
         InkPoint style = InkData[globalBufferOffset + 1];
@@ -90,6 +90,8 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         output.p2 = halfSize;
         output.r1 = style.pos.x;
         output.r2 = style.pos.y;
+        // 0 保留旧光标整体透明度；正值编码独立边缘 opacity + 1。
+        output.uv = float2(style.r, 0.0);
         return output;
     }
 

@@ -453,6 +453,7 @@
     <ResourceCompile Include="inkStrokeModelerTest.rc" />
     <ResourceCompile Include="laserParticleShaders.rc" />
   </ItemGroup>
+  <Import Project="..\Inkeys\additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <!-- FXC 10.1 不接受源文件开头的 UTF-8 BOM，编译前只在中间目录生成无 BOM 副本。 -->
   <Target Name="PrepareFxcCompatibleHlsl" BeforeTargets="FxCompile"

@@ -1,0 +1,10 @@
+# 规范更新审视（2026-10-09）
+
+依据workflow Phase3.3审视本轮新知识，并同步native-desktop/rendering-and-ui.md相关Setting合同；注入预算内的spec-boundaries同步摘录。主会话不修改产品或测试，独立check核对规范与实际代码。
+
+- 中段native自动条已经扣轨道宽，额外4 DIP只为按钮间距，WorkRect/ContentRegionRect和内联子项必须共同避让，以ScrollbarY而非仅ScrollMax判当帧实际条。
+- 原ScrollWhenDraggingOnVoid正文必须保留；frame末唯一实际owner调用需要精确Popup开放态、导航门禁、CurrentWindow/InnerClipRect局部恢复，固定或父子不能重复消费。MouseDelta物理像素不再乘DPI，SetScrollTarget下一Begin生效。
+- 原控件ActiveId与库MouseDownOwned保持。UI外按下不是原hovered fallback的正向前提，分数倍率基线必须读取实际取整后的Scroll；内部MoveId出现本身不代表需要新增NoMove或原生窗口移动。
+- 默认滚动条轨道分页与thumb拖动是两种真实输入序列；测试不能把分页持续按住当thumb反向，必须释放并在实际thumb DrawData范围重新按下，同时保留分页实际位移断言。
+
+最终完整ARM64构建与正常用户完整--no-window均退出0，失败过程与修正另见implementation-validation。自动结果不等价于实际GUI/触屏/驱动验收，父子任务保持进行中，本轮不自动commit/push。

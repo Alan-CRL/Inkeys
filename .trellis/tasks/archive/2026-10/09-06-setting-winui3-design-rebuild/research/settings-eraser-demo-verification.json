@@ -1,0 +1,75 @@
+{
+  "base_commit": "16e1cf61521e035fa61b2d7b91b332e24677e81b",
+  "protected_sha256": {
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032",
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189",
+    "Inkeys/PptCOM.dll": "aea8a90053cc5b0d0912ac61c33496e29ffc03bd520404bd9322a11e8789f18f",
+    "Inkeys/PptCOM.tlb": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606",
+    ".github/workflows/build-windows.yml": "53652fd2a6267b442cf41d15857eb18b8a941d6eb62f9a2bc044baffee6fe753",
+    "Inkeys/src/setting/Home_Feedback.png": "b980e7a63e6b206b81fc0a00509f7693d097aa01595f4125a57a3a1fbc0a28a7",
+    "Inkeys/src/setting/GitHubMark.png": "0d4c235fef9efec54174a7c005fc0fe0ce2d63d35c21898ab5148587111397a9"
+  },
+  "status": "implemented_verified",
+  "design": "Precomputed handwritten ink, erasure-time atlases and 30 fps cursor table; runtime shader playback only.",
+  "gui": "No GUI/Computer Use; headless/offscreen verification only.",
+  "commit": false,
+  "push": false,
+  "parent_status": "in_progress",
+  "protected_unchanged": true,
+  "diff_check": "PASS",
+  "format_check": "28 tracked text files preserve BOM and original line-ending policy; 6 new C++ sources UTF8/CRLF; new Python generator UTF8/LF.",
+  "build": {
+    "solution": "InkeysRepo.sln",
+    "configuration": "Debug|ARM64",
+    "host": "ARM64 native MSBuild discovered by vswhere",
+    "initial_exit": 1,
+    "initial_error": "C2039 in new native Hide pause invocation: incorrect config field names; replaced unused invisible-branch arguments with constants.",
+    "final_exit": 0,
+    "final_log": "settings-eraser-demo-build-final.log",
+    "environment_note": "vcpkg applocal could not find pwsh.exe and successfully fell back to Windows PowerShell; no project/toolchain changes."
+  },
+  "tests": {
+    "command": "InkeysHeadlessTests.exe --no-window --setting-eraser-demo-only",
+    "exit": 0,
+    "settings_failures": 0,
+    "demo_failures": 0,
+    "warp_updates_per_simulated_second_at_10x": 22,
+    "warp_ms_including_completion": 129.749,
+    "max_output": "1536x432",
+    "log": "settings-eraser-demo-tests.log"
+  },
+  "i18n": {
+    "en-US": "518/518 PASS",
+    "zh-TW": "518/518 PASS"
+  },
+  "visual_review": [
+    "scene-0-light.png",
+    "scene-1-dark.png",
+    "fine-active.png",
+    "sweep-active.png",
+    "fine-result.png",
+    "fine-dark-result.png"
+  ],
+  "review": "settings-eraser-demo-review.md; final independent source recheck passed.",
+  "limits": [
+    "No GUI/Computer Use or physical Windows 7 testing.",
+    "Native route/source wiring compiled and reviewed; ImGui fixture and WARP exports do not validate actual HWND interactions.",
+    "Diameter dynamics are authored demonstration data; production speed algorithm unchanged.",
+    "Measured WARP duration is a headless workload, not GUI frame-rate measurement."
+  ],
+  "source_sha256": {
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemo.h": "6941e54057076ca8a3edc5465baa964bdd8884fc1ae82d488530c4987c4d849a",
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoGpu.h": "31c6bd12b614fbce5a48c70fc224a4e233eb5ebe21513f8f244b08b1f36b2d66",
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoGpu.cpp": "33f934d02b318643617c7a042654ea815115c1c7a5da43263822e522fe221cb6",
+    "Inkeys/Inkeys/UI/Setting/Setting.EraserDemoData.g.h": "44f86804853c5db1c27ac649fd49c5ff1f135dbbd13f399de25cdff41cf3210f",
+    "InkeysHeadlessTests/setting_eraser_demo_tests.cpp": "94adc0b0582309ef32868ab2afc861d188bfd4d1332721a82c3c6c0eae2f7cc8",
+    "InkeysHeadlessTests/setting_eraser_demo_tests.h": "7e6bae04f9147e749d183cebf8ca400a5a99c09d5f26a7f2b996c4f0a4212da4",
+    "Scripts/generate_eraser_demo.py": "569efadec8a237f28962ae47e2bc38981a156f96477b83aa1182dfc594d27818",
+    "Inkeys/src/setting/EraserDemoFine.png": "83a3c6078ea7b406d01a9499753937df1220f18e3e10ebc0b735fd50304d863a",
+    "Inkeys/src/setting/EraserDemoSweep.png": "f6fe0effdf7da3c6b3f6612f875ddf260336a69787a484d3a0835ef7e2c2063f"
+  },
+  "artifacts": {
+    "Build/ARM64/Debug/Inkeys.exe": "5c8afe3c569c979d2584213fd5bde93f23bce7a148723f6244aa0f3349d729b0",
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe": "840839bb11dd86f6d495747df46f83013607fb12f7374b29480d8fdc1fcd18fb"
+  }
+}

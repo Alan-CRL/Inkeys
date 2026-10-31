@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Native boundaries"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Window, Settings and Bar contracts"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 frame handshake; old true-exit hide superseded by user"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "Session/mode identity guards"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Build/no GUI"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-ppt-exit-setting-zorder/research/investigation.md", "reason": "User reproduction and focused evidence"}

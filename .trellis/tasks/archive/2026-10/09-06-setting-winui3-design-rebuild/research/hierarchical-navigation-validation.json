@@ -1,0 +1,276 @@
+{
+  "date": "2026-10-08",
+  "branch": "fluent",
+  "base_commit": "ff7ad583d280224a42d28158c1a565de91e7e7d8",
+  "workspace": "D:/Project/Inkeys/Repo/Inkeys",
+  "delivery": {
+    "new_branch": false,
+    "commit": false,
+    "push": false,
+    "gui": false,
+    "computer_use": false
+  },
+  "build": {
+    "native_msbuild": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+    "configuration": "Debug|ARM64",
+    "timeout_seconds": 1800,
+    "elapsed_seconds": 30.71,
+    "exit": 0,
+    "gui": false
+  },
+  "headless": {
+    "command": "Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window",
+    "exit_code": 0,
+    "result": "PASS animation correctness",
+    "hierarchy": [
+      {
+        "dpi_percent": 100,
+        "frames": 564,
+        "navigations": 20,
+        "unintended_business_actions": 0,
+        "unintended_body_actions": 0
+      },
+      {
+        "dpi_percent": 150,
+        "frames": 564,
+        "navigations": 20,
+        "unintended_business_actions": 0,
+        "unintended_body_actions": 0
+      },
+      {
+        "dpi_percent": 187.5,
+        "frames": 564,
+        "navigations": 20,
+        "unintended_business_actions": 0,
+        "unintended_body_actions": 0
+      }
+    ],
+    "hover": [
+      {
+        "dpi_percent": 100,
+        "frames": 328,
+        "samples": 315,
+        "violations": 0,
+        "worst_tolerance_error": 0.000492036
+      },
+      {
+        "dpi_percent": 187.5,
+        "frames": 328,
+        "samples": 315,
+        "violations": 0,
+        "worst_tolerance_error": 0.000492036
+      }
+    ],
+    "sizes_dip": [
+      [
+        720,
+        520
+      ],
+      [
+        960,
+        700
+      ],
+      [
+        1440,
+        900
+      ]
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "motion_rate_limits": [
+      0.1,
+      5.0
+    ],
+    "coverage": [
+      "production Shell and Pages controls with continuous ImGui DrawData",
+      "parent/chevron split hit regions",
+      "compact repeated clicks",
+      "flyout selection/outside click/release input barrier",
+      "Enter Space Up Down Left Right Escape focus",
+      "clipped child input",
+      "fixed sections and scroll reachability",
+      "reverse motion / rate changes / low FPS / animation disable / theme change",
+      "single new-page draw and vertex alpha",
+      "general draft / hidden values / startup toggle / scale slider release"
+    ]
+  },
+  "i18n": {
+    "command": "Scripts/i18n.ps1 check",
+    "en-US": "370/370 PASS",
+    "zh-TW": "370/370 PASS"
+  },
+  "encoding": {
+    ".trellis/spec/native-desktop/rendering-and-ui.md": {
+      "bom_preserved": true,
+      "crlf": 2071,
+      "bare_lf": 0
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/check.jsonl": {
+      "bom_preserved": true,
+      "crlf": 17,
+      "bare_lf": 0
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/design.md": {
+      "bom_preserved": true,
+      "crlf": 113,
+      "bare_lf": 0
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/implement.jsonl": {
+      "bom_preserved": true,
+      "crlf": 17,
+      "bare_lf": 0
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/implement.md": {
+      "bom_preserved": true,
+      "crlf": 171,
+      "bare_lf": 0
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/prd.md": {
+      "bom_preserved": true,
+      "crlf": 97,
+      "bare_lf": 0
+    },
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/task.json": {
+      "bom_preserved": true,
+      "crlf": 42,
+      "bare_lf": 0
+    },
+    ".trellis/workspace/codex/index.md": {
+      "bom_preserved": true,
+      "crlf": 83,
+      "bare_lf": 0
+    },
+    ".trellis/workspace/codex/journal-1.md": {
+      "bom_preserved": true,
+      "crlf": 1444,
+      "bare_lf": 0
+    },
+    "Inkeys/IdtI18nKeys.g.h": {
+      "bom_preserved": true,
+      "crlf": 653,
+      "bare_lf": 0
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Design.h": {
+      "bom_preserved": true,
+      "crlf": 413,
+      "bare_lf": 0
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+      "bom_preserved": true,
+      "crlf": 323,
+      "bare_lf": 0
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.h": {
+      "bom_preserved": true,
+      "crlf": 117,
+      "bare_lf": 0
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp": {
+      "bom_preserved": true,
+      "crlf": 489,
+      "bare_lf": 0
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+      "bom_preserved": true,
+      "crlf": 4269,
+      "bare_lf": 0
+    },
+    "Inkeys/src/i18n/en-US.jsonc": {
+      "bom_preserved": true,
+      "crlf": 650,
+      "bare_lf": 0
+    },
+    "Inkeys/src/i18n/zh-CN.jsonc": {
+      "bom_preserved": true,
+      "crlf": 650,
+      "bare_lf": 0
+    },
+    "Inkeys/src/i18n/zh-TW.jsonc": {
+      "bom_preserved": true,
+      "crlf": 650,
+      "bare_lf": 0
+    },
+    "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj": {
+      "bom_preserved": true,
+      "crlf": 211,
+      "bare_lf": 0
+    },
+    "InkeysHeadlessTests/setting_design_tests.cpp": {
+      "bom_preserved": true,
+      "crlf": 1867,
+      "bare_lf": 0
+    },
+    "Scripts/i18n.zh-CN.snapshot.jsonc": {
+      "bom_preserved": true,
+      "crlf": 650,
+      "bare_lf": 0
+    }
+  },
+  "unchanged_pages": {
+    "tab3": {
+      "unchanged": true,
+      "sha256": "a80a45ec484196a15727cd2883cfaeabaa230d1e495878fa5cb0756a4d538495"
+    },
+    "tab4": {
+      "unchanged": true,
+      "sha256": "387da3f70ebc89337de3a5cdc78e04d8b42fa36669416997a3bb41270690c6f7"
+    },
+    "tabComponent": {
+      "unchanged": true,
+      "sha256": "289e4a5810f77c56d3af03a5f610ca6601cfccda001a61bd57114a753f7fbe38"
+    },
+    "tab6": {
+      "unchanged": true,
+      "sha256": "8113d7b7330497c1a33646785cbabafa0d7442933c403bd5b5ab1d89c43d1d1a"
+    },
+    "tabExperimental": {
+      "unchanged": true,
+      "sha256": "1ebf918fd4ce4079268c8a94190ba547f9d990706e331ea4c17e54e1088d6135"
+    }
+  },
+  "protected_files": {
+    "checked": 13,
+    "restored": [
+      "PptCOM.Tests/obj/Release/PptCOM.Tests.csproj.AssemblyReference.cache"
+    ],
+    "all_match": true,
+    "Inkeys/IdtMain.h": {
+      "unchanged": true,
+      "sha256": "47868f5a1bad038e8f8f847ab1ce9f01239fd4a7b78a9c124d12b2b8d9ac1c34"
+    },
+    "Inkeys/PptCOM.dll": {
+      "unchanged": true,
+      "sha256": "dffb30ea3345aafff8ff07c9ed40ab284033416df590b42ac530a4d5dcfda067"
+    },
+    "Inkeys/PptCOM.tlb": {
+      "unchanged": true,
+      "sha256": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606"
+    }
+  },
+  "artifacts": {
+    "Build/ARM64/Debug/Inkeys.exe": {
+      "sha256": "4d7028f1af73886e81febf1313d1f1cb558060a064f93151f34e61ab5b42918f",
+      "bytes": 64153088
+    },
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe": {
+      "sha256": "c42ec34e08aa3bca7b7c10b9d4a5910b51ef33f36d429b78d08fb40a73a2434e",
+      "bytes": 16481792
+    }
+  },
+  "diff_check": {
+    "command": "git diff --check --ignore-submodules",
+    "result": "PASS"
+  },
+  "pending": [
+    "real mouse and screen capture acceptance",
+    "actual GUI/HWND/DX11 motion and DPI rendering",
+    "live startup / shortcut / config FIFO / crash-handler / cross-screen scale side effects",
+    "parent task session / device / performance / material acceptance"
+  ],
+  "limits": [
+    "Animation disable snaps navigation on the same frame; already drawn body adopts snapped width next frame without drawing controls twice.",
+    "Plugin internal routes and tabs retain original behavior; the new navigation fade applies to composite destination changes."
+  ]
+}

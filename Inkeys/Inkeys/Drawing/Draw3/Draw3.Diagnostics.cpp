@@ -4,10 +4,12 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
@@ -17,6 +19,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <thread>
 #include <windows.h>
 
@@ -27,16 +30,13 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		std::atomic<bool> startupEnvironmentDiagnosticsEnabled = false;
+		constexpr size_t kCursorDiagnosticCapacity = DiagnosticOutput::RecordCapacity;
+		std::atomic<bool> cursorDiagnosticsEnabled = false;
+		std::atomic<uint64_t> cursorDiagnosticSequence = 0;
 
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
-			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE); // 缓存控制台句柄，减少每帧日志开销。
-			if (!consoleHandle || consoleHandle == INVALID_HANDLE_VALUE || length == 0) return;
-			DWORD written = 0;
-			if (!WriteConsoleA(consoleHandle, text, length, &written, nullptr))
-			{
-				WriteFile(consoleHandle, text, length, &written, nullptr); // 输出被重定向时 WriteConsoleA 会失败，改用 WriteFile。
-			}
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, text, length);
 		}
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -129,8 +129,8 @@ namespace Inkeys::Drawing::Draw3
 		void WriteRtsTraceLine(const char* text, size_t length) noexcept
 		{
 			if (!text || length == 0) return;
-			std::cout.write(text, static_cast<std::streamsize>(length));
-			std::cout.flush();
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, text, static_cast<std::streamsize>(length));
+			DiagnosticOutput::Wake();
 		}
 
 		RtsContactTraceSlot* FindRtsContactSlot(
@@ -456,6 +456,101 @@ namespace Inkeys::Drawing::Draw3
 
 #endif
 
+	void SetCursorDiagnosticsEnabled(bool enabled) noexcept
+	{
+		cursorDiagnosticsEnabled.store(false, std::memory_order_release);
+		if (!enabled) return;
+		cursorDiagnosticSequence.store(0, std::memory_order_relaxed);
+		cursorDiagnosticsEnabled.store(true, std::memory_order_release);
+		RecordCursorDiagnostic("enabled schema=2 capacity=%zu rawMode=observe-existing-registration", kCursorDiagnosticCapacity);
+		const DWORD previousError = GetLastError();
+		std::array<RAWINPUTDEVICE, 32> registrations{};
+		UINT count = static_cast<UINT>(registrations.size());
+		const UINT result = GetRegisteredRawInputDevices(registrations.data(), &count, sizeof(RAWINPUTDEVICE));
+		if (result == UINT_MAX)
+			RecordCursorDiagnostic("raw-registration stage=initial known=0 error=%lu",
+				static_cast<unsigned long>(GetLastError()));
+		else
+		{
+			bool mouseRegistered = false;
+			for (UINT index = 0; index < result; ++index)
+			{
+				const auto& registration = registrations[index];
+				if (registration.usUsagePage != 0x01 || registration.usUsage != 0x02) continue;
+				mouseRegistered = true;
+				RecordCursorDiagnostic("raw-registration stage=initial known=1 active=1 hwnd=%p flags=0x%lx",
+					static_cast<void*>(registration.hwndTarget), static_cast<unsigned long>(registration.dwFlags));
+			}
+			if (!mouseRegistered) RecordCursorDiagnostic("raw-registration stage=initial known=1 active=0");
+		}
+		SetLastError(previousError);
+	}
+
+	bool CursorDiagnosticsEnabled() noexcept
+	{
+		return cursorDiagnosticsEnabled.load(std::memory_order_acquire);
+	}
+
+	void RecordCursorRawInput(LPARAM rawInputHandle) noexcept
+	{
+		if (!CursorDiagnosticsEnabled()) return;
+		const DWORD previousError = GetLastError();
+		RAWINPUTHEADER header{};
+		UINT size = sizeof(header);
+		const HRAWINPUT handle = reinterpret_cast<HRAWINPUT>(rawInputHandle);
+		if (GetRawInputData(handle, RID_HEADER, &header, &size, sizeof(header)) == UINT_MAX)
+			RecordCursorDiagnostic("raw-read stage=header ok=0 error=%lu", static_cast<unsigned long>(GetLastError()));
+		else if (header.dwType == RIM_TYPEMOUSE)
+		{
+			RAWINPUT raw{};
+			size = sizeof(raw);
+			const UINT read = GetRawInputData(handle, RID_INPUT, &raw, &size, sizeof(header));
+			if (read == UINT_MAX)
+				RecordCursorDiagnostic("raw-read stage=mouse ok=0 error=%lu", static_cast<unsigned long>(GetLastError()));
+			else if (read >= sizeof(RAWINPUTHEADER) + sizeof(RAWMOUSE))
+				RecordCursorDiagnostic("raw-mouse device=%p mode=%llu flags=0x%x dx=%ld dy=%ld buttons=0x%x data=0x%x extra=0x%lx",
+					static_cast<void*>(raw.header.hDevice), static_cast<unsigned long long>(raw.header.wParam),
+					static_cast<unsigned>(raw.data.mouse.usFlags), raw.data.mouse.lLastX, raw.data.mouse.lLastY,
+					static_cast<unsigned>(raw.data.mouse.usButtonFlags), static_cast<unsigned>(raw.data.mouse.usButtonData),
+					static_cast<unsigned long>(raw.data.mouse.ulExtraInformation));
+			else RecordCursorDiagnostic("raw-read stage=mouse ok=0 short=%u", read);
+		}
+		SetLastError(previousError);
+	}
+
+	void RecordCursorDiagnostic(const char* format, ...) noexcept
+	{
+		if (!CursorDiagnosticsEnabled() || !format || !DiagnosticOutput::Available()) return;
+		const DWORD previousError = GetLastError();
+		const uint64_t tick = GetTickCount64();
+		const DWORD thread = GetCurrentThreadId();
+		char message[320]{};
+		va_list arguments;
+		va_start(arguments, format);
+		const int length = std::vsnprintf(message, sizeof(message), format, arguments);
+		va_end(arguments);
+		if (length > 0)
+		{
+			if (static_cast<size_t>(length) >= sizeof(message))
+			{
+				constexpr char suffix[] = " [truncated]";
+				std::memcpy(message + sizeof(message) - sizeof(suffix), suffix, sizeof(suffix));
+			}
+			// 保留生产者的时间、线程与序号；唯一输出 worker 承担所有 sink 等待。
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
+				"[CURSOR_TRACE] seq=%llu tick=%llu thread=%lu %s\r\n",
+				static_cast<unsigned long long>(cursorDiagnosticSequence.fetch_add(1, std::memory_order_relaxed) + 1),
+				static_cast<unsigned long long>(tick), static_cast<unsigned long>(thread), message);
+		}
+		SetLastError(previousError);
+	}
+
+	void FlushCursorDiagnostics() noexcept
+	{
+		// 兼容原绘制线程调用；只尝试通知，不在该线程执行任何输出或 drain。
+		if (CursorDiagnosticsEnabled()) DiagnosticOutput::Wake();
+	}
+
 	double GetQpcTimeMilliseconds()
 	{
 		static LARGE_INTEGER frequency = {};
@@ -494,6 +589,8 @@ namespace Inkeys::Drawing::Draw3
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen)
 	{
 #if defined(_DEBUG)
+		// 无输出端时跳过帧计时诊断的取时与格式化。
+		if (!DiagnosticOutput::Available()) return;
 		static double nextLogTimeMs = 0.0;
 		const double nowMs = GetQpcTimeMilliseconds();
 		if (nowMs < nextLogTimeMs) return;
@@ -539,8 +636,7 @@ namespace Inkeys::Drawing::Draw3
 		buffer[used] = '\r';
 		buffer[used + 1] = '\n';
 		buffer[used + 2] = '\0';
-		WriteFastConsoleLine(buffer, static_cast<DWORD>(used + 2));
-		OutputDebugStringA(buffer);
+		DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, buffer, used + 2, true);
 	#else
 		(void)format;
 	#endif
@@ -548,13 +644,13 @@ namespace Inkeys::Drawing::Draw3
 
 	void LogHResult(const char* step, HRESULT result)
 	{
-		std::cout << step << " failed. HRESULT=0x" << std::hex
+		DiagnosticOutput::Line() << step << " failed. HRESULT=0x" << std::hex
 			<< static_cast<unsigned long>(result) << std::dec << std::endl;
 	}
 
 	void LogWin32Error(const char* step, DWORD error)
 	{
-		std::cout << step << " failed. GetLastError=" << error << std::endl;
+		DiagnosticOutput::Line() << step << " failed. GetLastError=" << error << std::endl;
 	}
 
 	const char* BoolText(BOOL value)
@@ -582,12 +678,12 @@ namespace Inkeys::Drawing::Draw3
 		const HRESULT result = DwmGetColorizationColor(&colorizationColor, &opaqueBlend);
 		if (FAILED(result))
 		{
-			std::cout << "[" << modeName << "] " << stage
+			DiagnosticOutput::Line() << "[" << modeName << "] " << stage
 				<< " DwmGetColorizationColor failed. HRESULT=0x" << std::hex
 				<< static_cast<unsigned long>(result) << std::dec << std::endl;
 			return false;
 		}
-		std::cout << "[" << modeName << "] " << stage << " DwmColorizationColor=0x"
+		DiagnosticOutput::Line() << "[" << modeName << "] " << stage << " DwmColorizationColor=0x"
 			<< std::hex << static_cast<unsigned long>(colorizationColor) << std::dec
 			<< " opaqueBlend=" << BoolText(opaqueBlend) << std::endl;
 		if (outOpaqueBlend) *outOpaqueBlend = opaqueBlend;
@@ -601,7 +697,7 @@ namespace Inkeys::Drawing::Draw3
 		RECT clientRect = {};
 		GetWindowRect(window, &windowRect); // 同时记录窗口和客户区，排查边框样式导致的尺寸偏差。
 		GetClientRect(window, &clientRect);
-		std::cout << "[" << modeName << "] " << stage
+		DiagnosticOutput::Line() << "[" << modeName << "] " << stage
 			<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
 			<< " style=0x" << static_cast<unsigned long>(GetWindowLongPtr(window, GWL_STYLE))
 			<< " exStyle=0x" << static_cast<unsigned long>(GetWindowLongPtr(window, GWL_EXSTYLE)) << std::dec
@@ -612,7 +708,7 @@ namespace Inkeys::Drawing::Draw3
 		const HRESULT result = DwmIsCompositionEnabled(&compositionEnabled);
 		if (SUCCEEDED(result))
 		{
-			std::cout << "[" << modeName << "] " << stage
+			DiagnosticOutput::Line() << "[" << modeName << "] " << stage
 				<< " DwmIsCompositionEnabled=" << BoolText(compositionEnabled) << std::endl;
 		}
 		else
@@ -624,7 +720,7 @@ namespace Inkeys::Drawing::Draw3
 
 	void LogSwapChainDescription(const char* modeName, const char* stage, const DXGI_SWAP_CHAIN_DESC1& description)
 	{
-		std::cout << "[" << modeName << "] " << stage << " swapchain desc: size="
+		DiagnosticOutput::Line() << "[" << modeName << "] " << stage << " swapchain desc: size="
 			<< description.Width << "x" << description.Height
 			<< " format=" << DxgiFormatName(description.Format) << "(" << static_cast<unsigned int>(description.Format) << ")"
 			<< " bufferCount=" << description.BufferCount
@@ -654,7 +750,7 @@ namespace Inkeys::Drawing::Draw3
 		HRESULT result = adapter->GetDesc(&description);
 		if (SUCCEEDED(result))
 		{
-			std::cout << "DXGI adapter: " << WideToUtf8(description.Description)
+			DiagnosticOutput::Line() << "DXGI adapter: " << WideToUtf8(description.Description)
 				<< " VendorId=0x" << std::hex << description.VendorId
 				<< " DeviceId=0x" << description.DeviceId
 				<< " SubSysId=0x" << description.SubSysId
@@ -672,7 +768,7 @@ namespace Inkeys::Drawing::Draw3
 		result = adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion);
 		if (SUCCEEDED(result))
 		{
-			std::cout << "DXGI adapter UMD driver version raw: high=0x" << std::hex
+			DiagnosticOutput::Line() << "DXGI adapter UMD driver version raw: high=0x" << std::hex
 				<< static_cast<unsigned long>(driverVersion.HighPart) << " low=0x"
 				<< static_cast<unsigned long>(driverVersion.LowPart) << std::dec << std::endl;
 		}

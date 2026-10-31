@@ -7,14 +7,15 @@
 | 路径 | 证据级别与职责 |
 | --- | --- |
 | `PptCOM/PptCOM.cs` | `【直接确认】` 定义 COM-visible `IPptCOMServer`/`PptCOMServer`，连接 PowerPoint/WPS、读取放映状态、控制翻页和窗口 |
-| `PptCOM/PptCOM.csproj` | `【直接确认】` .NET Framework 4.0/AnyCPU，Office Interop 引用，AfterBuild 运行 `TlbExp` 并复制 DLL/TLB |
+| `PptCOM/ComEventConnection.cs` | `【直接确认】` raw IDispatch事件sink、显式连接点/cookie及失败解绑的owner重试，不物化回调对象RCW |
+| `PptCOM/PptCOM.csproj` | `【直接确认】` .NET Framework 4.0/AnyCPU，Office Interop 引用，构建后 `ExportTlb` 生成自身输出目录 TLB，无 DLL/TLB 自动复制 |
 | `PptCOM/PptCOM.manifest` | `【直接确认】` 被 native 启动路径作为 activation-context manifest 资源/文件使用 |
 | `Inkeys/IdtMain.cpp::wWinMain` | `【直接确认】` 初始化 COM，准备 DLL/TLB/manifest，创建/激活 activation context 并加载 PptCOM DLL |
 | `Inkeys/IdtPlug-in.cpp::CheckPptCom/GetPptState/PPTLinkageMain` | `【直接确认】` `#import` TLB、创建服务、传入 native 状态地址、运行服务/控件线程和命令包装 |
-| `Inkeys/IdtPlug-in.h::PptInfoStateStruct/PptImgStruct` | `【直接确认】` native 放映状态及每页 `IMAGE` 映射 |
-| `Inkeys/IdtDrawpad.cpp` | `【直接确认】` 页码变化时保存/恢复 `PptImg`，随后更新 `PptInfoStateBuffer` |
+| `Inkeys/IdtPlug-in.h::PptInfoStateStruct/PptImgStruct` | `【直接确认】` raw 页码及 legacy DibSurface 缓存；后者不再拥有生产页事务 |
+| `Inkeys/IdtDrawpadFacade.cpp` / `Draw3.*` | `【直接确认】` 生产画布入口与文稿/SlideID slot、输入边界、成功呈现；旧 IdtDrawpad.cpp 不参与编译 |
 
-详细 ABI、生命周期和数据流见 [com-contract.md](com-contract.md)。
+详细 ABI 见 [com-contract.md](com-contract.md)；当前生产会话、位置保存、页码/输入门禁和主栏确认见 [native-session-ui3.md](native-session-ui3.md)。
 
 ## 当前端到端数据流
 
@@ -23,21 +24,24 @@ IdtMain: COM + activation context + PptCOM.dll
   → IdtPlug-in::CheckPptCom 创建 IPptCOMServer
   → Initialization(&PptInfoState.TotalPage, &CurrentPage, GetOffSignalInteropPointer())
   → PptCOM::PptComService 绑定 PowerPoint 或 WPS并写 native 页码
-  → IdtDrawpad 检测页码变化，保存/恢复 PptImg[页]
-  → 更新 PptInfoStateBuffer
+  → IPptCOMSessionState 缓存COM场次 + descriptor；基础控制与可信窗口/墨迹准入分别判定
+  → native仅为可信文稿/页/窗口投递Draw3 target；基础页码不伪造墨迹ready
+  → Draw3 收尾旧 contact、切页并成功 Present
+  → PptInfo 推进身份匹配的 PptInfoStateBuffer
   → Inkeys.UI.Ppt 把缓冲页码发布给 Inkeys.UI.PageControl 的四个共享窗口
-  → 主栏 A2 EndShow 把结束请求投递到同一 PPT 业务队列
+  → PageControl 成功提交目标页码，回执到 Draw3 后开放新输入
+  → 主栏 A2 EndShow 在业务线程确认并按会话退出；PageControl 直接退出不弹框
   → UI3 交互队列把翻页/结束等业务命令投递回 IdtPlug-in 的 PPT 业务线程
 ~~~
 
-`【直接确认】` `PptInfoStateBuffer` 不是 managed 直接写入的第二份状态；`IdtPlug-in.cpp` 注释说明它在 `DrawpadDrawing` 完成 PPT 画布加载后才同步。不能把 COM 页码、UI 缓冲页码和 `PptImg` 当成同一个变量。
-
-`【直接确认】` `PptImg` 保存的是 native EasyX `IMAGE` 页级墨迹，由画板换页逻辑读写；它不是 C# COM 对象提供的幻灯片图片。
+`【直接确认】` `PptInfoStateBuffer` 由 native 根据 Draw3 的文稿/页/会话身份和成功呈现推进；不是 managed 的第二份状态。`PptImg` 是遗留 native 缓存，不是 Office 提供的图片，也不参与当前 Draw3 页级保存。
 
 ## 当前实现与支持范围的边界
 
 - `【直接确认】` `PptCOM.cs` 有 Microsoft PowerPoint 和 WPS 的 ROT/COM、进程、窗口与清理分支，并有事件/轮询及 Office-busy 重试。
-- `【历史/兼容】` 代码和文案提及 PowerPoint 2007、WPS 2013+ 等兼容场景，只能证明实现意图或历史声明。
+- `【历史/兼容】` 产品保留PowerPoint2007、WPS2013+既有声明，2026-10-18任务重点核查PowerPoint2010/MSO14；WPP版本不等同微软MSO版本，未有对应版本实机证据不能标通过。
+- `【修改约束】` 常规COM使用dynamic，HWND和事件为已说明依据的包装例外；类型/事件接口异常但dynamic仍可用时保留核心控制和轮询。严重类型信息/IDispatch/激活失效仍可能不可用。
+- `【修改约束】` 所有权按每次COM取得而非identity/变量数配平，禁止以GC/FinalRelease补漏或杀Office作为退出验收；真实提供方关闭与下一文稿打开须单列验收。
 - `【待确认】` 本轮没有运行 Office/WPS；实际支持版本、位数、安装类型、Windows/架构组合和重连行为均不能由分支存在直接确认。
 - `【待确认】` `CheckCOM()` 返回代码常量，native 会调用并保存结果，但未找到比较或拒绝不匹配版本的逻辑；当前不能称其为已实施的版本兼容策略。
 
@@ -52,5 +56,5 @@ IdtMain: COM + activation context + PptCOM.dll
 1. 若改变 `IPptCOMServer`，同时核对 C# 接口顺序/GUID、TLB、native `#import` 调用、manifest/复制产物；不要只改一侧。
 2. 若改变 `Initialization` 或共享状态，核对 native/C# 整数宽度、地址稳定性、读写同步和退出后解引用。
 3. 若改变绑定/恢复，分别检查 PowerPoint 与 WPS、事件与轮询、busy、放映结束、文档切换和 Office 退出。
-4. 若改变页码语义，追踪 `PptInfoState → IdtDrawpad → PptImg → PptInfoStateBuffer → PPT UI`，不能只验证控件文字。
-5. 按 `AGENTS.md` 用完整 `InkeysRepo.sln` 验证 DLL/TLB 生成与复制；静态文档审计不能替代该构建。
+4. 若改变页码语义，追踪 `COM session/descriptor → native target → Draw3 Present → PptInfoStateBuffer → PPT UI commit → input ready`，不能只验证控件文字。
+5. PptCOM 独立生成 DLL/TLB，接口变更时维护者手动同步至 Inkeys，再按 `AGENTS.md` 用完整 `InkeysRepo.sln` 验证 native；静态文档审计不能替代该构建。

@@ -104,20 +104,22 @@ namespace Inkeys::UI::StartupPreview
 				mainButtonTargetWidthDip, layoutTotalWidthDip));
 	}
 
-	double ResolveStartupPreviewScale(double dpi, double barZoom) noexcept
+	double ResolveStartupPreviewScale(double dpi, double barZoom, double uiBaseScale) noexcept
 	{
 		if (!std::isfinite(dpi) || dpi <= 0.0) dpi = DefaultDpi;
 		if (!std::isfinite(barZoom)) barZoom = 1.0;
 		barZoom = std::clamp(barZoom, MinimumBarZoom, MaximumBarZoom);
 		barZoom = std::round(barZoom * 100.0) / 100.0;
-		return (dpi / DefaultDpi) * barZoom;
+		// 只裁剪用户倍率，任务栏基础量可小于 0.5。
+		return (std::isfinite(uiBaseScale) && uiBaseScale > 0.0
+			? uiBaseScale : dpi / DefaultDpi) * barZoom;
 	}
 
 	std::int32_t RoundStartupPreviewDipToPixels(
-		double dip, double dpi, double barZoom) noexcept
+		double dip, double dpi, double barZoom, double uiBaseScale) noexcept
 	{
 		if (!std::isfinite(dip) || dip <= 0.0) return 0;
-		const double pixels = dip * ResolveStartupPreviewScale(dpi, barZoom);
+		const double pixels = dip * ResolveStartupPreviewScale(dpi, barZoom, uiBaseScale);
 		const double maximum = static_cast<double>(
 			(std::numeric_limits<std::int32_t>::max)());
 		if (!std::isfinite(pixels) || pixels >= maximum)
@@ -126,13 +128,13 @@ namespace Inkeys::UI::StartupPreview
 	}
 
 	StartupPreviewPixelSize ResolveStartupPreviewPixelSize(
-		double widthDip, double dpi, double barZoom) noexcept
+		double widthDip, double dpi, double barZoom, double uiBaseScale) noexcept
 	{
 		widthDip = ResolveCachedStartupBarWidthDip(widthDip);
 		return {
-			RoundStartupPreviewDipToPixels(widthDip, dpi, barZoom),
+			RoundStartupPreviewDipToPixels(widthDip, dpi, barZoom, uiBaseScale),
 			RoundStartupPreviewDipToPixels(DefaultStartupBarHeightDip,
-				dpi, barZoom),
+				dpi, barZoom, uiBaseScale),
 		};
 	}
 
@@ -142,8 +144,9 @@ namespace Inkeys::UI::StartupPreview
 		if (!std::isfinite(width) || !std::isfinite(height)
 			|| width <= 0.0 || height <= 0.0) return {};
 		const double supportX = (std::max)(160.0, width * 0.5);
-		// Y 方向跨度来自占位高度，让高光核心保持旧版左上到右下的斜向质感。
-		return { 0.0, height * -0.5, supportX, height * 1.5, 0.0, 1.0 };
+		// 等X/Y跨度固定反光带为45度，不能让宽高比或最小像素跨度改变角度；保留原支持长度。
+		const double diagonal = std::hypot(supportX, height * 2.0) / std::sqrt(2.0);
+		return { 0.0, height * -0.5, diagonal, height * -0.5 + diagonal, 0.0, 1.0 };
 	}
 
 	ShimmerTravel ResolveShimmerTravel(

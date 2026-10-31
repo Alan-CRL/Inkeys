@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.DiagnosticOutput.h"
 #include <windows.h>
 #include <windowsx.h>
 #include <dwmapi.h>
@@ -13,16 +14,22 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <utility>
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
+
+#include "Draw3.SpeedEraser.h"
+#include "Draw3.HapticRequest.h"
+#include "Draw3.HapticDiagnostics.h"
+#include "Draw3.MouseInput.h"
+#include "../../Business/PenWidthPolicy.hpp"
 
 module Inkeys.Drawing.Draw3.window_control;
 
-#if defined(DRAW3_RTS_DIAGNOSTICS)
 import Inkeys.Drawing.Draw3.diagnostics;
-#endif
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -38,7 +45,44 @@ namespace Inkeys::Drawing::Draw3
 			TABLET_DISABLE_PRESSANDHOLD |
 			TABLET_DISABLE_PENTAPFEEDBACK |
 			TABLET_DISABLE_PENBARRELFEEDBACK |
+			// 在首个接触前固定关闭系统 Touch UI；不影响 RTS 逐触点橡皮。
+			TABLET_DISABLE_TOUCHUIFORCEOFF |
 			TABLET_DISABLE_FLICKS;
+
+		struct SystemCursorSnapshot
+		{
+			CURSORINFO info = { sizeof(CURSORINFO) };
+			bool succeeded = false;
+			DWORD error = ERROR_SUCCESS;
+		};
+
+		SystemCursorSnapshot ReadSystemCursorSnapshot() noexcept
+		{
+			const DWORD previousError = GetLastError();
+			SystemCursorSnapshot snapshot;
+			SetLastError(ERROR_SUCCESS);
+			snapshot.succeeded = GetCursorInfo(&snapshot.info) != FALSE;
+			if (!snapshot.succeeded) snapshot.error = GetLastError();
+			SetLastError(previousError);
+			return snapshot;
+		}
+
+		void RecordSystemCursorSnapshot(const char* trigger, HWND target, HWND hit,
+			bool applied, const SystemCursorSnapshot& before,
+			const SystemCursorSnapshot& after) noexcept
+		{
+			const DWORD previousError = GetLastError();
+			const DWORD targetThread = GetWindowThreadProcessId(target, nullptr);
+			const DWORD hitThread = hit ? GetWindowThreadProcessId(hit, nullptr) : 0;
+			// GetCursorInfo 是瞬时全局观测；Win7 不要求出现 Win8 才有的 SUPPRESSED 位。
+			RecordCursorDiagnostic("system-observe trigger=%s applied=%u target=%p hit=%p targetThread=%lu hitThread=%lu before={ok=%u,error=%lu,flags=0x%lx,handle=%p} after={ok=%u,error=%lu,flags=0x%lx,handle=%p}",
+				trigger ? trigger : "unknown", applied ? 1u : 0u,
+				static_cast<void*>(target), static_cast<void*>(hit), targetThread, hitThread,
+				before.succeeded ? 1u : 0u, before.error, before.info.flags,
+				static_cast<void*>(before.info.hCursor), after.succeeded ? 1u : 0u,
+				after.error, after.info.flags, static_cast<void*>(after.info.hCursor));
+			SetLastError(previousError);
+		}
 
 		using GetPointerPenInfoFunction = BOOL(WINAPI*)(
 			UINT32 pointerId, POINTER_PEN_INFO* penInfo);
@@ -46,6 +90,61 @@ namespace Inkeys::Drawing::Draw3
 			UINT32 pointerId, POINTER_INFO* pointerInfo);
 		using GetPointerTypeFunction = BOOL(WINAPI*)(
 			UINT32 pointerId, POINTER_INPUT_TYPE* pointerType);
+		using GetCurrentInputMessageSourceFunction = BOOL(WINAPI*)(
+			INPUT_MESSAGE_SOURCE* inputMessageSource);
+
+		struct InputMessageSourceSnapshot
+		{
+			INPUT_MESSAGE_DEVICE_TYPE deviceType = IMDT_UNAVAILABLE;
+			INPUT_MESSAGE_ORIGIN_ID originId = IMO_UNAVAILABLE;
+			bool apiAvailable = false;
+			bool succeeded = false;
+			DWORD error = ERROR_SUCCESS;
+		};
+
+		InputMessageSourceSnapshot CurrentInputMessageSource() noexcept
+		{
+			const DWORD previousError = GetLastError();
+			// Win7 不导出该 API；缺失时沿用 promoted 签名及 Touch barrier。
+			static const GetCurrentInputMessageSourceFunction getSource = []() noexcept
+				{
+					const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+					return user32 ? reinterpret_cast<GetCurrentInputMessageSourceFunction>(
+						GetProcAddress(user32, "GetCurrentInputMessageSource")) : nullptr;
+				}();
+			INPUT_MESSAGE_SOURCE source = {};
+			InputMessageSourceSnapshot snapshot;
+			snapshot.apiAvailable = getSource != nullptr;
+			if (getSource)
+			{
+				SetLastError(ERROR_SUCCESS);
+				snapshot.succeeded = getSource(&source) != FALSE;
+				if (snapshot.succeeded)
+				{
+					snapshot.deviceType = source.deviceType;
+					snapshot.originId = source.originId;
+				}
+				else snapshot.error = GetLastError();
+			}
+			// 诊断保留 API 原始结果，但不改变原来的来源回退或调用方 LastError。
+			SetLastError(previousError);
+			return snapshot;
+		}
+
+		void RecordMouseMessageSource(uint64_t eventId, HWND window, UINT message,
+			WPARAM wParam, LPARAM lParam, const InputMessageSourceSnapshot& source) noexcept
+		{
+			if (!eventId) return;
+			const DWORD previousError = GetLastError();
+			const DWORD sent = InSendMessageEx(nullptr);
+			RecordCursorDiagnostic("mouse-source event=%llu hwnd=%p message=0x%04x api=%u ok=%u error=%lu device=%u origin=%u sent=0x%lx wparam=0x%llx lparam=0x%llx",
+				static_cast<unsigned long long>(eventId), static_cast<void*>(window), message,
+				source.apiAvailable ? 1u : 0u, source.succeeded ? 1u : 0u,
+				static_cast<unsigned long>(source.error), static_cast<unsigned>(source.deviceType),
+				static_cast<unsigned>(source.originId), static_cast<unsigned long>(sent),
+				static_cast<unsigned long long>(wParam), static_cast<unsigned long long>(lParam));
+			SetLastError(previousError);
+		}
 
 		GetPointerTypeFunction ResolveGetPointerType() noexcept
 		{
@@ -63,10 +162,14 @@ namespace Inkeys::Drawing::Draw3
 			bool typeKnown = false;
 			POINTER_INPUT_TYPE type = PT_POINTER;
 			bool penInfoKnown = false;
+			uint32_t cursorId = 0;
 			bool positionKnown = false;
+			bool primaryKnown = false;
+			bool primary = false;
 			POINT screenPosition = {};
 			bool eraserHint = false;
 			bool inContact = false;
+			bool cancelled = false;
 		};
 
 		PointerDetails QueryPointerDetails(uint32_t pointerId) noexcept
@@ -96,6 +199,9 @@ namespace Inkeys::Drawing::Draw3
 				{
 					details.positionKnown = true;
 					details.screenPosition = pointerInfo.ptPixelLocation;
+					details.primaryKnown = true;
+					details.primary = (pointerInfo.pointerFlags & POINTER_FLAG_PRIMARY) != 0;
+					details.cancelled = (pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0;
 				}
 			}
 			if (details.type != PT_PEN || !getPointerPenInfo) return details;
@@ -103,7 +209,17 @@ namespace Inkeys::Drawing::Draw3
 			POINTER_PEN_INFO penInfo = {};
 			if (!getPointerPenInfo(pointerId, &penInfo) ||
 				penInfo.pointerInfo.pointerType != PT_PEN) return details;
+			details.cancelled = (penInfo.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0;
 			details.penInfoKnown = true;
+			// 只被动读取 tablet cursor；旧系统缺少 API 时仅省略触觉，不改输入或光标。
+			using GetPointerCursorIdFunction = BOOL(WINAPI*)(UINT32, UINT32*);
+			static const auto getPointerCursorId = []() noexcept
+			{
+				const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+				return user32 ? reinterpret_cast<GetPointerCursorIdFunction>(GetProcAddress(user32, "GetPointerCursorId")) : nullptr;
+			}();
+			UINT32 cursorId = 0;
+			if (getPointerCursorId && getPointerCursorId(pointerId, &cursorId)) details.cursorId = cursorId;
 			details.positionKnown = true;
 			details.screenPosition = penInfo.pointerInfo.ptPixelLocation;
 			details.eraserHint =
@@ -170,6 +286,7 @@ namespace Inkeys::Drawing::Draw3
 			bool realMouseTakeover, bool hide) noexcept
 		{
 			if (!hide) return "default-arrow";
+			if (authority == DrawingCursorPointerAuthority::Touch) return "touch-input";
 			if (touchPanActive && !realMouseTakeover) return "touch-pan";
 			if (authority == DrawingCursorPointerAuthority::Pen) return "pen-authority";
 			if (tool == DrawingTool::Eraser) return "eraser-tool";
@@ -211,24 +328,55 @@ namespace Inkeys::Drawing::Draw3
 			// Host generation 之间不得继承上一代异步 completion 或画布命令。
 			const std::scoped_lock lock(canvasCommandMutex_);
 			canvasCommands_.clear();
+			presentationCompletion_.reset();
+			commandsBeforePresentationCompletion_ = 0;
 		}
 		RECT client = {};
 		if (!GetClientRect(window, &client)) return false;
+		for (HANDLE& event : mouseOwnerControlEvents_)
+		{
+			event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			if (!event)
+			{
+				for (HANDLE& created : mouseOwnerControlEvents_)
+				{
+					if (created) CloseHandle(created);
+					created = nullptr;
+				}
+				return false;
+			}
+		}
+		hapticSurfaceVisible_.store(IsWindowVisible(window) != FALSE, std::memory_order_release);
+		RequestHapticPointerLeave();
 		exitRequested_.store(false, std::memory_order_release);
 		resizeRequested_.store(false, std::memory_order_release);
 		fullPresentRequested_.store(false, std::memory_order_release);
 		compositionChangedRequested_.store(false, std::memory_order_release);
 		drawingCursorRenderRequested_.store(false, std::memory_order_release);
+		systemCursorRefreshPosted_.store(false, std::memory_order_release);
 		activationAllowed_.store(false, std::memory_order_release);
 		window_.store(window, std::memory_order_release);
 		size_.width = (std::max)(0L, client.right - client.left);
 		size_.height = (std::max)(0L, client.bottom - client.top);
 		defaultCursor_ = LoadCursorW(nullptr, IDC_ARROW);
-		// RTS 多点属性必须在第一个 contact 前发布到外部 HWND。
+		cursorSystemDiagnosticKnown_ = false;
+		lastTouchMousePositionKnown_ = false;
+		cursorMouseDiagnosticEvent_ = 0;
+		// 多点和反馈策略须在首个 contact 前发布；脱离时只恢复本对象改过的属性。
+		const HANDLE previousTabletProperty = GetProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
 		const ATOM tabletPropertyAtom = GlobalAddAtom(MICROSOFT_TABLETPENSERVICE_PROPERTY);
-		(void)SetProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY,
-			reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags)));
+		SetLastError(ERROR_SUCCESS);
+		const bool tabletPropertyInstalled = SetProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY,
+			reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags))) != FALSE;
+		const DWORD tabletPropertyError = tabletPropertyInstalled ? ERROR_SUCCESS : GetLastError();
+		previousTabletInputProperty_.store(previousTabletProperty, std::memory_order_release);
+		tabletInputPropertyInstalled_.store(tabletPropertyInstalled, std::memory_order_release);
 		if (tabletPropertyAtom) GlobalDeleteAtom(tabletPropertyAtom);
+		if (!tabletPropertyInstalled)
+			LogWin32Error("Draw3.TabletInput.SetProp", tabletPropertyError ? tabletPropertyError : ERROR_GEN_FAILURE);
+		RecordCursorDiagnostic("tablet-policy phase=attach hwnd=%p flags=0x%lx installed=%u error=%lu previous=%p",
+			static_cast<void*>(window), static_cast<unsigned long>(kTabletInputFlags),
+			tabletPropertyInstalled ? 1u : 0u, tabletPropertyError, previousTabletProperty);
 		// 其余附着状态就绪后再开放 WndProc 转发，避免观察到半初始化 HWND。
 		externalWindow_.store(true, std::memory_order_release);
 		return true;
@@ -238,23 +386,46 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 先关闭新消息入口，再清理 HWND 属性和输入状态。
 		const bool wasAttached = externalWindow_.exchange(false, std::memory_order_acq_rel);
+		RequestHapticPointerLeave();
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
 			canvasCommands_.clear();
+			presentationCompletion_.reset();
+			commandsBeforePresentationCompletion_ = 0;
 		}
 		if (!wasAttached) return;
-		if (const HWND window = window_.load(std::memory_order_acquire))
-		{
-			// 外部 HWND 由 Window Service 销毁；这里只撤销 Draw3 自己写入的属性。
-			RemovePropW(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
-		}
+		RestoreTabletInputProperty(window_.load(std::memory_order_acquire));
 		inputCoordinator_.store(nullptr, std::memory_order_release);
 		activationAllowed_.store(false, std::memory_order_release);
 		penCursorSample_.Clear();
 		mouseCursorSample_.Clear();
 		cursorOwner_.store(DrawingCursorPointerAuthority::Unknown,
 			std::memory_order_release);
+		touchCursorSuppressed_.store(false, std::memory_order_release);
 		window_.store(nullptr, std::memory_order_release);
+		for (HANDLE& event : mouseOwnerControlEvents_)
+		{
+			if (event) CloseHandle(event);
+			event = nullptr;
+		}
+	}
+
+	void WindowController::RestoreTabletInputProperty(HWND window) noexcept
+	{
+		if (!tabletInputPropertyInstalled_.exchange(false, std::memory_order_acq_rel)) return;
+		const HANDLE previous = previousTabletInputProperty_.exchange(nullptr, std::memory_order_acq_rel);
+		const HANDLE installed = reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags));
+		// HWND 已销毁或宿主后来改过属性时，不撤销别人的策略；这里不拥有 HANDLE 资源。
+		if (!window || !IsWindow(window) || GetPropW(window, MICROSOFT_TABLETPENSERVICE_PROPERTY) != installed)
+			return;
+		SetLastError(ERROR_SUCCESS);
+		const bool restored = previous
+			? SetPropW(window, MICROSOFT_TABLETPENSERVICE_PROPERTY, previous) != FALSE
+			: RemovePropW(window, MICROSOFT_TABLETPENSERVICE_PROPERTY) == installed;
+		const DWORD error = restored ? ERROR_SUCCESS : GetLastError();
+		if (!restored) LogWin32Error("Draw3.TabletInput.RestoreProp", error ? error : ERROR_GEN_FAILURE);
+		RecordCursorDiagnostic("tablet-policy phase=restore hwnd=%p restored=%u error=%lu previous=%p",
+			static_cast<void*>(window), restored ? 1u : 0u, error, previous);
 	}
 
 	LRESULT WindowController::HandleExternalMessage(
@@ -264,6 +435,109 @@ namespace Inkeys::Drawing::Draw3
 			window_.load(std::memory_order_acquire) != window)
 			return DefWindowProcW(window, message, wParam, lParam);
 		return HandleWindowMessage(window, message, wParam, lParam);
+	}
+
+	void WindowController::CloseMouseInputAdmission() noexcept
+	{
+		mouseInput_.CloseAdmission();
+	}
+
+	bool WindowController::SetMouseCompatibilityEnabled(bool enabled) noexcept
+	{
+		mouseStartAllowed_.store(enabled, std::memory_order_release);
+		if (!enabled)
+		{
+			CloseMouseInputAdmission();
+			if (mouseOwnerStopped_.load(std::memory_order_acquire)) return true;
+		}
+		const HWND window = Handle();
+		if (!window || !IsWindow(window)) return false;
+		// pending start 也必须走 owner 停止握手，不能因超时前尚未执行而误认为静止。
+		if (enabled) mouseOwnerStopped_.store(false, std::memory_order_release);
+		const WPARAM operation = enabled ? Detail::kMouseInputStart : Detail::kMouseInputStop;
+		const LPARAM identity = reinterpret_cast<LPARAM>(this);
+		if (GetWindowThreadProcessId(window, nullptr) == GetCurrentThreadId())
+		{
+			if (mouseDispatchDepth_ != 0) return false;
+			return HandleExternalMessage(window, Detail::kMouseInputOwnerMessage, operation, identity) == 1;
+		}
+		const auto operationIndex = static_cast<std::size_t>(operation);
+		const HANDLE completed = mouseOwnerControlEvents_[operationIndex];
+		if (!completed || !ResetEvent(completed)) return false;
+		mouseOwnerControlSucceeded_[operationIndex].store(false, std::memory_order_release);
+		// 队列屏障不能用 SendMessage：它可能在 SetCapture 的 USER32 调用中重入，
+		// 让停止确认先于外层 WM_MOUSE 退栈。PostMessage 在 owner 取下一消息时执行。
+		if (!PostMessageW(window, Detail::kMouseInputOwnerMessage, operation, identity)) return false;
+		// 超时不是停止证明；Host 保留仍被 owner 借用的资源并走致命清理合同。
+		return WaitForSingleObject(completed, 5000) == WAIT_OBJECT_0 &&
+			mouseOwnerControlSucceeded_[operationIndex].load(std::memory_order_acquire);
+	}
+
+	void WindowController::ReleaseMouseCapture(HWND window) noexcept
+	{
+		if (GetCapture() == window) (void)ReleaseCapture();
+	}
+
+	void WindowController::CancelMouseInput(HWND window, bool captureLost) noexcept
+	{
+		LARGE_INTEGER qpc{};
+		QueryPerformanceCounter(&qpc);
+		if (auto* coordinator = inputCoordinator_.load(std::memory_order_acquire))
+		{
+			if (captureLost) mouseInput_.CaptureLost(*coordinator, qpc.QuadPart);
+			else mouseInput_.Cancel(*coordinator, qpc.QuadPart);
+		}
+		ClearMouseCursorSample();
+		ReleaseMouseCapture(window); // 状态已清，WM_CAPTURECHANGED 同步重入不会产生第二终态。
+	}
+
+	void WindowController::HandleCompatibilityMouse(HWND window, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		auto* coordinator = inputCoordinator_.load(std::memory_order_acquire);
+		if (!coordinator) return;
+		// 旧代次排队的 Down/Move/Up 均不能改变新模式，尤其旧 Up 不能结束新笔。
+		if (static_cast<LONG>(static_cast<DWORD>(GetMessageTime()) - mouseStartTick_) <= 0) return;
+		LARGE_INTEGER qpc{};
+		QueryPerformanceCounter(&qpc);
+		const float x = static_cast<float>(GET_X_LPARAM(lParam));
+		const float y = static_cast<float>(GET_Y_LPARAM(lParam));
+		const bool down = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN;
+		const bool up = message == WM_LBUTTONUP || message == WM_RBUTTONUP;
+		const auto button = message == WM_RBUTTONDOWN || message == WM_RBUTTONUP
+			? decltype(mouseInput_)::Right : decltype(mouseInput_)::Left;
+		if (down)
+		{
+			// 鼠标兜底不经过 RTS/Pointer Down，也要通知白板收起菜单。
+			NotifyCanvasContactDown();
+			if (mouseInput_.Down(*coordinator, button, x, y, qpc.QuadPart, SelectionMode()))
+			{
+				(void)SetCapture(window);
+				if (GetCapture() != window) mouseInput_.CaptureLost(*coordinator, qpc.QuadPart);
+			}
+		}
+		else if (up) mouseInput_.Up(*coordinator, button, x, y, qpc.QuadPart);
+		else if (message == WM_MOUSEMOVE)
+		{
+			const std::uint32_t held = ((wParam & MK_LBUTTON) ? decltype(mouseInput_)::Left : 0u) |
+				((wParam & MK_RBUTTON) ? decltype(mouseInput_)::Right : 0u);
+			mouseInput_.Move(*coordinator, held, x, y, qpc.QuadPart, SelectionMode());
+		}
+		if (!mouseInput_.Active()) ReleaseMouseCapture(window);
+		SetTouchCursorSuppressed(false);
+		SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
+		DrawingCursorSample sample;
+		sample.x = x;
+		sample.y = y;
+		sample.valid = true;
+		sample.inContact = mouseInput_.Active();
+		sample.qpc = qpc.QuadPart;
+		PublishMouseCursorSample(sample);
+		if (message == WM_MOUSEMOVE && !trackingMouseLeave_)
+		{
+			TRACKMOUSEEVENT tracking = { sizeof(TRACKMOUSEEVENT), TME_LEAVE, window, 0 };
+			trackingMouseLeave_ = TrackMouseEvent(&tracking) != FALSE;
+		}
 	}
 
 	HWND WindowController::Handle() const
@@ -284,11 +558,33 @@ namespace Inkeys::Drawing::Draw3
 
 	bool WindowController::TryDequeueCanvasCommand(CanvasCommand& command)
 	{
-		const std::scoped_lock lock(canvasCommandMutex_);
-		if (canvasCommands_.empty()) return false;
-		command = canvasCommands_.front();
-		canvasCommands_.pop_front();
+		bool tookCompletion = false;
+		{
+			const std::scoped_lock lock(canvasCommandMutex_);
+			if (presentationCompletion_ && commandsBeforePresentationCompletion_ == 0)
+			{
+				command = {};
+				command.type = CanvasCommandType::PresentationPersistenceCompleted;
+				command.presentationPersistenceCompletion = std::move(presentationCompletion_);
+				tookCompletion = true;
+			}
+			else
+			{
+				if (canvasCommands_.empty()) return false;
+				command = std::move(canvasCommands_.front());
+				canvasCommands_.pop_front();
+				if (presentationCompletion_) --commandsBeforePresentationCompletion_;
+			}
+		}
+		// 不持命令锁发布 wake；Host 可能仍保留下一份终态，不能依赖新输入才继续。
+		if (tookCompletion) RequestControlWake();
 		return true;
+	}
+
+	bool WindowController::HasPendingCanvasCommand() noexcept
+	{
+		const std::scoped_lock lock(canvasCommandMutex_);
+		return presentationCompletion_ || !canvasCommands_.empty();
 	}
 
 	bool WindowController::ConsumeResizeRequest(WindowSize& size)
@@ -336,7 +632,14 @@ namespace Inkeys::Drawing::Draw3
 	{
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
-			canvasCommands_.push_back(command);
+			// 尚未接受的相邻绝对目标可合并；中间的 Clear/Undo/保存屏障绝不跨越。
+			if (command.type == CanvasCommandType::SetPresentationTarget &&
+				!canvasCommands_.empty() &&
+				// 预留终态也构成 FIFO 屏障，不能把其前方目标与后方目标合并。
+				(!presentationCompletion_ || commandsBeforePresentationCompletion_ < canvasCommands_.size()) &&
+				canvasCommands_.back().type == CanvasCommandType::SetPresentationTarget)
+				canvasCommands_.back() = std::move(command);
+			else canvasCommands_.push_back(std::move(command));
 		}
 		RequestControlWake();
 	}
@@ -355,8 +658,9 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (static_cast<uint32_t>(tool) > static_cast<uint32_t>(DrawingTool::FilledRectangle))
 			return;
-		activeTool_.store(tool, std::memory_order_release);
+		const bool changed = activeTool_.exchange(tool, std::memory_order_acq_rel) != tool;
 		RequestDrawingCursorRender();
+		if (changed) QueueSystemCursorRefresh();
 		RequestControlWake();
 	}
 
@@ -369,6 +673,9 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (selectionMode_.exchange(enabled, std::memory_order_acq_rel) == enabled)
 			return;
+		// 静止切换也要清理旧瞬态并刷新本窗口光标，不等待下一条移动消息。
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
 		RequestControlWake();
 	}
 
@@ -409,28 +716,95 @@ namespace Inkeys::Drawing::Draw3
 		RequestControlWake();
 	}
 
-	void WindowController::SetProductVisualStyle(
-		uint32_t colorRgba, float widthDip) noexcept
+
+
+	void WindowController::PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept
 	{
-		if (!std::isfinite(widthDip) || widthDip <= 0.0f)
-			widthDip = 2.0f;
-		productColorRgba_.store(colorRgba, std::memory_order_release);
-		productWidthDip_.store(widthDip, std::memory_order_release);
+		SetTouchCursorSuppressed(false);
+		SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
+		PublishMouseCursorSample(sample);
+	}
+
+	void WindowController::SetEraserInputs(const SpeedEraser::InputSettings& settings)
+	{
+		{std::scoped_lock lock(speedEraserConfigMutex_);if(eraserInputs_==settings)return;eraserInputs_=settings;}
+		RequestDrawingCursorRender();RequestControlWake();
+	}
+	SpeedEraser::InputSettings WindowController::EraserInputsSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);return eraserInputs_;
+	}
+
+	void WindowController::SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale)
+	{
+		{
+			std::scoped_lock lock(speedEraserConfigMutex_);
+			if (speedEraserDisplayScale_ == scale) return;
+			speedEraserDisplayScale_ = scale;
+		}
+		RequestDrawingCursorRender();
+		RequestControlWake();
+	}
+
+	SpeedEraser::DisplayScale WindowController::SpeedEraserDisplayScaleSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);
+		return speedEraserDisplayScale_;
+	}
+
+	void WindowController::SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode)
+	{
+		{
+			std::scoped_lock lock(speedEraserConfigMutex_);
+			if (speedEraserDeviceMode_ == mode) return;
+			speedEraserDeviceMode_ = mode;
+		}
+		RequestDrawingCursorRender();
+		RequestControlWake();
+	}
+
+	SpeedEraser::DeviceMode WindowController::SpeedEraserDeviceModeSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);
+		return speedEraserDeviceMode_;
+	}
+
+	void WindowController::SetProductVisualStyle(
+		uint32_t colorRgba, double widthDip,
+		const Inkeys::Business::PenWidth::Context& context) noexcept
+	{
+		if (!Inkeys::Business::PenWidth::IsValidDip(widthDip)) widthDip = 3.0f;
+		{
+			std::scoped_lock lock(productVisualStyleMutex_);
+			productVisualStyle_ = { colorRgba, widthDip, context };
+		}
 		RequestDrawingCursorRender();
 		RequestControlWake();
 	}
 
 	ProductVisualStyle WindowController::ProductVisualStyleSnapshot() const noexcept
 	{
-		ProductVisualStyle style;
-		style.colorRgba = productColorRgba_.load(std::memory_order_acquire);
-		style.widthDip = productWidthDip_.load(std::memory_order_acquire);
-		return style;
+		std::scoped_lock lock(productVisualStyleMutex_);
+		return productVisualStyle_;
 	}
 
 	void WindowController::EnqueueCanvasCommand(CanvasCommand command)
 	{
 		QueueCanvasCommand(command);
+	}
+
+	bool WindowController::TryEnqueuePresentationCompletion(
+		const std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept
+	{
+		if (!completion) return false;
+		{
+			const std::scoped_lock lock(canvasCommandMutex_);
+			if (presentationCompletion_) return false;
+			presentationCompletion_ = completion;
+			commandsBeforePresentationCompletion_ = canvasCommands_.size();
+		}
+		RequestControlWake();
+		return true;
 	}
 
 	void WindowController::RequestExit() noexcept
@@ -444,7 +818,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!IsValidDrawingCursorAppearance(appearance))
 		{
-			std::cout << "Invalid drawing cursor appearance for tool="
+			DiagnosticOutput::Line() << "Invalid drawing cursor appearance for tool="
 				<< static_cast<uint32_t>(tool) << std::endl;
 			return false;
 		}
@@ -510,10 +884,11 @@ namespace Inkeys::Drawing::Draw3
 
 	DrawingCursorPointerAuthority WindowController::CursorOwner() const noexcept
 	{
-		if (touchPanActive_.load(std::memory_order_acquire) &&
-			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire))
-			return DrawingCursorPointerAuthority::Mouse;
-		return cursorOwner_.load(std::memory_order_acquire);
+		return ResolveDrawingCursorVisualAuthority(
+			cursorOwner_.load(std::memory_order_acquire),
+			touchCursorSuppressed_.load(std::memory_order_acquire),
+			touchPanActive_.load(std::memory_order_acquire),
+			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire));
 	}
 
 	bool WindowController::ReadPenCursorSample(DrawingCursorSample& sample) const noexcept
@@ -529,6 +904,10 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::SetTouchPanActive(bool active) noexcept
 	{
 		if (touchPanActive_.exchange(active, std::memory_order_acq_rel) == active) return;
+		RecordCursorDiagnostic("touch-pan active=%u owner=%u suppressed=%u mouseTakeover=%u",
+			active ? 1u : 0u, static_cast<unsigned>(CursorOwner()),
+			touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u,
+			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire) ? 1u : 0u);
 		if (active)
 			realMouseTakeoverDuringTouchPan_.store(false, std::memory_order_release);
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -545,17 +924,17 @@ namespace Inkeys::Drawing::Draw3
 		if (active)
 		{
 			// Hover 可能已预启动触觉；Pan 期间保留 Pen presence，但隐藏应用光标。
-			hapticPointerIdRequested_.store(false, std::memory_order_release);
-			hapticPointerLeaveRequested_.store(true, std::memory_order_release);
-			pendingHapticPointerId_.store(0, std::memory_order_relaxed);
-			pendingHapticPointerEraser_.store(false, std::memory_order_relaxed);
+			RequestHapticPointerLeave();
 			if (penSample.valid && penSample.inContact)
 				SetPenContactSuppressedForTouchPan(true);
 		}
 		else
 		{
+			const bool mouseTakeover = realMouseTakeoverDuringTouchPan_.load(
+				std::memory_order_acquire);
+			if (mouseTakeover && mouseSample.valid) SetTouchCursorSuppressed(false);
 			SetDrawingCursorOwner(ResolveDrawingCursorOwnerAfterTouchPan(
-				realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire),
+				mouseTakeover,
 				penSample.valid, mouseSample.valid));
 		}
 		RequestDrawingCursorRender();
@@ -571,10 +950,7 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::SuppressPenContactForTouchPan() noexcept
 	{
 		SetPenContactSuppressedForTouchPan(true);
-		hapticPointerIdRequested_.store(false, std::memory_order_release);
-		hapticPointerLeaveRequested_.store(true, std::memory_order_release);
-		pendingHapticPointerId_.store(0, std::memory_order_relaxed);
-		pendingHapticPointerEraser_.store(false, std::memory_order_relaxed);
+		RequestHapticPointerLeave();
 		// Pen presence 独立保留，供兼容 Mouse 判断和 Pan 结束后的 owner 恢复。
 		RequestDrawingCursorRender();
 		QueueSystemCursorRefresh();
@@ -599,7 +975,19 @@ namespace Inkeys::Drawing::Draw3
 		latestTouchInputBarrierTick_.store(barrierState, std::memory_order_release);
 		if (trackActiveContact)
 			activeTouchContactCount_.fetch_add(1u, std::memory_order_acq_rel);
-		ClearMouseCursorSample();
+		// 活动 Pan 已确认真实 Mouse 接管时，后续 Touch 指头不能清掉 Mouse 光标。
+		const bool keepMouseTakeover = touchPanActive_.load(std::memory_order_acquire) &&
+			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire);
+		if (!keepMouseTakeover)
+		{
+			SetTouchCursorSuppressed(true);
+			ClearMouseCursorSample();
+		}
+		RecordCursorDiagnostic("touch-begin tracked=%u count=%u barrier=%u keepMouse=%u owner=%u suppressed=%u",
+			trackActiveContact ? 1u : 0u,
+			activeTouchContactCount_.load(std::memory_order_acquire), touchBarrierTick,
+			keepMouseTakeover ? 1u : 0u, static_cast<unsigned>(CursorOwner()),
+			touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u);
 		// Mailbox 已经无效时 Clear 会早退；Touch Down 仍必须重新应用专用工具策略。
 		QueueSystemCursorRefresh();
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -618,6 +1006,12 @@ namespace Inkeys::Drawing::Draw3
 			count, count - 1u, std::memory_order_acq_rel, std::memory_order_acquire))
 		{
 		}
+		// Win7 终态可能另行恢复箭头；重复应用当前策略，保留 Touch 抑制等待真实输入。
+		QueueSystemCursorRefresh();
+		RecordCursorDiagnostic("touch-end count=%u owner=%u suppressed=%u",
+			activeTouchContactCount_.load(std::memory_order_acquire),
+			static_cast<unsigned>(CursorOwner()),
+			touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u);
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
 		TraceCursorState("touch-contact-end",
 			lastCursorTracePointerId_.load(std::memory_order_acquire),
@@ -641,8 +1035,7 @@ namespace Inkeys::Drawing::Draw3
 		#endif
 		if (suppressed)
 		{
-			hapticPointerIdRequested_.store(false, std::memory_order_release);
-			hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+			RequestHapticPointerLeave();
 			RequestControlWake();
 		}
 		RequestDrawingCursorRender();
@@ -652,6 +1045,7 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::PublishPenCursorSample(
 		const DrawingCursorSample& sample) noexcept
 	{
+		if (sample.valid) SetTouchCursorSuppressed(false);
 		const bool touchPanActive = touchPanActive_.load(std::memory_order_acquire);
 		const bool realMouseTakeover = realMouseTakeoverDuringTouchPan_.load(
 			std::memory_order_acquire);
@@ -671,6 +1065,10 @@ namespace Inkeys::Drawing::Draw3
 		DrawingCursorSample previous;
 		penCursorSample_.Read(previous);
 		if (!penCursorSample_.Publish(sample)) return;
+		RecordCursorDiagnostic("pen-sample contact=%u inverted=%u x=%.1f y=%.1f qpc=%lld owner=%u",
+			sample.inContact ? 1u : 0u, sample.inverted ? 1u : 0u,
+			sample.x, sample.y, static_cast<long long>(sample.qpc),
+			static_cast<unsigned>(CursorOwner()));
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
 		TraceCursorState("pen-sample", lastCursorTracePointerId_.load(
 			std::memory_order_acquire),
@@ -689,7 +1087,12 @@ namespace Inkeys::Drawing::Draw3
 		// 没有 WM_POINTER 生命周期的设备以 RTS Clear 作为本次抑制终态。
 		if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0)
 			SetPenContactSuppressedForTouchPan(false);
-		if (!penCursorSample_.Clear()) return;
+		const bool changed = penCursorSample_.Clear();
+		// Up 后 OutOfRange 可再次 Clear；即使 mailbox 已空，也要请求 owner 线程重应用策略。
+		QueueSystemCursorRefresh();
+		if (!changed) return;
+		RecordCursorDiagnostic("pen-clear owner=%u",
+			static_cast<unsigned>(CursorOwner()));
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
 		TraceCursorState("pen-sample-clear", lastCursorTracePointerId_.load(
 			std::memory_order_acquire),
@@ -698,7 +1101,6 @@ namespace Inkeys::Drawing::Draw3
 			lastCursorTracePointerTypeKnown_.load(std::memory_order_acquire));
 		#endif
 		RequestDrawingCursorRender();
-		QueueSystemCursorRefresh();
 	}
 
 	void WindowController::PublishMouseCursorSample(
@@ -707,6 +1109,9 @@ namespace Inkeys::Drawing::Draw3
 		DrawingCursorSample previous;
 		mouseCursorSample_.Read(previous);
 		if (!mouseCursorSample_.Publish(sample)) return;
+		RecordCursorDiagnostic("mouse-sample contact=%u x=%.1f y=%.1f qpc=%lld owner=%u",
+			sample.inContact ? 1u : 0u, sample.x, sample.y,
+			static_cast<long long>(sample.qpc), static_cast<unsigned>(CursorOwner()));
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
 		TraceCursorState("mouse-sample", lastCursorTracePointerId_.load(
 			std::memory_order_acquire),
@@ -722,6 +1127,8 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::ClearMouseCursorSample() noexcept
 	{
 		if (!mouseCursorSample_.Clear()) return;
+		RecordCursorDiagnostic("mouse-clear owner=%u",
+			static_cast<unsigned>(CursorOwner()));
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
 		TraceCursorState("mouse-sample-clear", lastCursorTracePointerId_.load(
 			std::memory_order_acquire),
@@ -735,11 +1142,29 @@ namespace Inkeys::Drawing::Draw3
 
 	bool WindowController::ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool penSampleValid, bool touchBarrierKnown,
-		uint32_t mouseMessageTick, uint32_t touchBarrierTick) const noexcept
+		uint32_t mouseMessageTick, uint32_t touchBarrierTick,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept
 	{
 		return Inkeys::Drawing::Draw3::ShouldIgnoreMouseCursorMessage(
 			promotedPointerMessage, ResolveGetPointerType() != nullptr,
-			penSampleValid, touchBarrierKnown, mouseMessageTick, touchBarrierTick);
+			penSampleValid, touchBarrierKnown, mouseMessageTick, touchBarrierTick,
+			inputSource);
+	}
+
+	void WindowController::RecordMouseCursorDiagnosticState(
+		uint64_t eventId, const char* phase) const noexcept
+	{
+		if (!eventId) return;
+		DrawingCursorSample mouse;
+		mouseCursorSample_.Read(mouse);
+		RecordCursorDiagnostic("mouse-state event=%llu phase=%s owner=%u persistent=%u suppressed=%u touchCount=%u mouseValid=%u mouseContact=%u x=%.1f y=%.1f pan=%u takeover=%u",
+			static_cast<unsigned long long>(eventId), phase, static_cast<unsigned>(CursorOwner()),
+			static_cast<unsigned>(cursorOwner_.load(std::memory_order_acquire)),
+			touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u,
+			activeTouchContactCount_.load(std::memory_order_acquire), mouse.valid ? 1u : 0u,
+			mouse.inContact ? 1u : 0u, mouse.x, mouse.y,
+			touchPanActive_.load(std::memory_order_acquire) ? 1u : 0u,
+			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire) ? 1u : 0u);
 	}
 
 	void WindowController::RequestDrawingCursorRender() noexcept
@@ -753,14 +1178,22 @@ namespace Inkeys::Drawing::Draw3
 		const HWND window = window_.load(std::memory_order_acquire);
 		if (!window || systemCursorRefreshPosted_.exchange(true, std::memory_order_acq_rel)) return;
 		if (!PostMessageW(window, kApplySystemCursorMessage, 0, 0))
+		{
+			const DWORD error = GetLastError();
 			systemCursorRefreshPosted_.store(false, std::memory_order_release);
+			RecordCursorDiagnostic("system-post ok=0 hwnd=%p error=%lu", static_cast<void*>(window), error);
+		}
 	}
 
 	void WindowController::SetDrawingCursorOwner(
 		DrawingCursorPointerAuthority owner) noexcept
 	{
-		if (cursorOwner_.exchange(owner,
-			std::memory_order_acq_rel) == owner) return;
+		const auto previous = cursorOwner_.exchange(owner, std::memory_order_acq_rel);
+		if (previous == owner) return;
+		RecordCursorDiagnostic("owner old=%u new=%u effective=%u suppressed=%u",
+			static_cast<unsigned>(previous), static_cast<unsigned>(owner),
+			static_cast<unsigned>(CursorOwner()),
+			touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u);
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
 		TraceCursorState("cursor-owner-change", lastCursorTracePointerId_.load(
 			std::memory_order_acquire),
@@ -768,6 +1201,19 @@ namespace Inkeys::Drawing::Draw3
 				std::memory_order_acquire)),
 			lastCursorTracePointerTypeKnown_.load(std::memory_order_acquire), true);
 		#endif
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+	}
+
+	void WindowController::SetTouchCursorSuppressed(bool suppressed) noexcept
+	{
+		const bool previous = touchCursorSuppressed_.exchange(
+			suppressed, std::memory_order_acq_rel);
+		if (previous == suppressed) return;
+		RecordCursorDiagnostic("touch-suppression old=%u new=%u effectiveOwner=%u persistentOwner=%u",
+			previous ? 1u : 0u, suppressed ? 1u : 0u,
+			static_cast<unsigned>(CursorOwner()),
+			static_cast<unsigned>(cursorOwner_.load(std::memory_order_acquire)));
 		RequestDrawingCursorRender();
 		QueueSystemCursorRefresh();
 	}
@@ -793,16 +1239,16 @@ namespace Inkeys::Drawing::Draw3
 			std::memory_order_acquire);
 		const uint32_t suppressedPointerId = suppressedPenPointerId_.load(
 			std::memory_order_acquire);
-		const uint32_t pendingHapticPointerId = pendingHapticPointerId_.load(
-			std::memory_order_acquire);
-		const bool hapticPointerIdRequested = hapticPointerIdRequested_.load(
-			std::memory_order_acquire);
-		const bool hapticPointerLeaveRequested = hapticPointerLeaveRequested_.load(
-			std::memory_order_acquire);
-		const bool mouseUsesSystemCursor = mouseUsesSystemCursor_.load(
+		const auto hapticState = hapticPointers_.Inspect();
+		const uint32_t pendingHapticPointerId = hapticState.pending.pointerId;
+		const bool hapticPointerIdRequested = pendingHapticPointerId != 0;
+		const bool hapticPointerLeaveRequested = hapticState.leave;
+		const bool selectionMode = SelectionMode();
+		const bool mouseUsesSystemCursor = selectionMode || mouseUsesSystemCursor_.load(
 			std::memory_order_acquire);
 		const bool hide = ShouldHideSystemDrawingCursor(authority,
-			tool == DrawingTool::Eraser, tool == DrawingTool::Laser,
+			!selectionMode && tool == DrawingTool::Eraser,
+			!selectionMode && tool == DrawingTool::Laser,
 			penSample.valid, mouseSample.valid, mouseUsesSystemCursor,
 			touchPanActive, realMouseTakeover);
 		DrawingCursorDiagnosticVisualState appVisual;
@@ -866,9 +1312,9 @@ namespace Inkeys::Drawing::Draw3
 				realMouseTakeover, hide));
 		if (length > 0)
 		{
-			std::cout.write(line, (std::min)(
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, (std::min)(
 				static_cast<size_t>(length), sizeof(line) - 1));
-			std::cout.flush();
+			DiagnosticOutput::Wake();
 		}
 	}
 
@@ -893,38 +1339,90 @@ namespace Inkeys::Drawing::Draw3
 			accepted ? 1u : 0u, reason ? reason : "unknown");
 		if (length > 0)
 		{
-			std::cout.write(line, (std::min)(
+			DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, (std::min)(
 				static_cast<size_t>(length), sizeof(line) - 1));
-			std::cout.flush();
+			DiagnosticOutput::Wake();
 		}
 	}
 #endif
 
-	void WindowController::ApplyWindowCursor(const char* trigger) noexcept
+	void WindowController::ApplyWindowCursor(const char* trigger, bool forceDiagnostic) noexcept
 	{
 		POINT cursorPosition = {};
 		const HWND window = window_.load(std::memory_order_acquire);
 		if (!window || !GetCursorPos(&cursorPosition)) return;
 		const HWND cursorWindow = WindowFromPoint(cursorPosition);
+		const bool diagnosticsEnabled = CursorDiagnosticsEnabled();
+		const uint64_t diagnosticTick = diagnosticsEnabled ? GetTickCount64() : 0;
+		const bool observationDue = diagnosticsEnabled && (forceDiagnostic ||
+			!cursorSystemDiagnosticKnown_ || lastCursorSystemDiagnosticHit_ != cursorWindow ||
+			diagnosticTick - lastCursorSystemDiagnosticTick_ >= 1000);
 		if (cursorWindow != window && (!cursorWindow || !IsChild(window, cursorWindow)))
+		{
+			if (diagnosticsEnabled && (observationDue || lastCursorSystemDiagnosticApplied_))
+			{
+				cursorSystemDiagnosticKnown_ = true;
+				lastCursorSystemDiagnosticHit_ = cursorWindow;
+				lastCursorSystemDiagnosticTick_ = diagnosticTick;
+				lastCursorSystemDiagnosticApplied_ = false;
+				RecordCursorDiagnostic("system-skip trigger=%s cursor=(%ld,%ld) target=%p hit=%p",
+					trigger ? trigger : "unknown", cursorPosition.x, cursorPosition.y,
+					static_cast<void*>(window), static_cast<void*>(cursorWindow));
+				const auto snapshot = ReadSystemCursorSnapshot();
+				RecordSystemCursorSnapshot(trigger, window, cursorWindow, false, snapshot, snapshot);
+			}
 			return; // 私有刷新消息不能改变其他窗口当前拥有的系统光标。
+		}
 		DrawingCursorSample penSample;
 		DrawingCursorSample mouseSample;
 		penCursorSample_.Read(penSample);
 		mouseCursorSample_.Read(mouseSample);
 		const DrawingTool tool = EffectiveDrawingCursorTool();
 		const DrawingCursorPointerAuthority authority = CursorOwner();
-		const bool mouseUsesSystemCursor =
+		const bool selectionMode = SelectionMode();
+		// 选择态只交还鼠标；白板仍显示主画布时，Pen/Touch 继续按原策略隐藏。
+		const bool mouseUsesSystemCursor = selectionMode ||
 			mouseUsesSystemCursor_.load(std::memory_order_acquire);
 		const bool touchPanActive = touchPanActive_.load(std::memory_order_acquire);
 		const bool realMouseTakeover = realMouseTakeoverDuringTouchPan_.load(
 			std::memory_order_acquire);
 		const bool hide = ShouldHideSystemDrawingCursor(
 			authority,
-			tool == DrawingTool::Eraser, tool == DrawingTool::Laser,
+			!selectionMode && tool == DrawingTool::Eraser,
+			!selectionMode && tool == DrawingTool::Laser,
 			penSample.valid, mouseSample.valid,
 			mouseUsesSystemCursor, touchPanActive, realMouseTakeover);
-		SetCursor(hide ? nullptr : defaultCursor_); // 仅影响当前 HWND，不使用全局计数式 ShowCursor。
+		uint64_t key = static_cast<uint64_t>(authority);
+		key = key * 17u + static_cast<uint64_t>(tool);
+		key = key * 17u + (hide ? 1u : 0u);
+		key = key * 17u + (penSample.valid ? 1u : 0u);
+		key = key * 17u + (mouseSample.valid ? 1u : 0u);
+		key = key * 17u + (touchPanActive ? 1u : 0u);
+		key = key * 17u + (realMouseTakeover ? 1u : 0u);
+		key = key * 17u + (selectionMode ? 1u : 0u);
+		// 仅决策/生命周期变化或每秒一次采样，不为每个鼠标包查询全局光标状态。
+		const bool observe = diagnosticsEnabled && (observationDue ||
+			!lastCursorSystemDiagnosticApplied_ || lastCursorSystemDiagnosticKey_ != key);
+		const auto before = observe ? ReadSystemCursorSnapshot() : SystemCursorSnapshot{};
+		SetCursor(hide ? nullptr : defaultCursor_); // 命中本画布时由 owner 线程应用，不使用 ShowCursor 计数。
+		if (observe)
+		{
+			const auto after = ReadSystemCursorSnapshot();
+			cursorSystemDiagnosticKnown_ = true;
+			lastCursorSystemDiagnosticKey_ = key;
+			lastCursorSystemDiagnosticHit_ = cursorWindow;
+			lastCursorSystemDiagnosticTick_ = diagnosticTick;
+			lastCursorSystemDiagnosticApplied_ = true;
+			RecordCursorDiagnostic("system trigger=%s hidden=%u tool=%u owner=%u persistent=%u touchSuppressed=%u penValid=%u mouseValid=%u pan=%u mouseTakeover=%u selection=%u cursor=(%ld,%ld)",
+				trigger ? trigger : "unknown", hide ? 1u : 0u,
+				static_cast<unsigned>(tool), static_cast<unsigned>(authority),
+				static_cast<unsigned>(cursorOwner_.load(std::memory_order_acquire)),
+				touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u,
+				penSample.valid ? 1u : 0u, mouseSample.valid ? 1u : 0u,
+				touchPanActive ? 1u : 0u, realMouseTakeover ? 1u : 0u,
+				selectionMode ? 1u : 0u, cursorPosition.x, cursorPosition.y);
+			RecordSystemCursorSnapshot(trigger, window, cursorWindow, true, before, after);
+		}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		if (cursorTraceEnabled_.load(std::memory_order_acquire))
 		{
@@ -939,12 +1437,10 @@ namespace Inkeys::Drawing::Draw3
 			decisionKey = decisionKey * 17u + (mouseUsesSystemCursor ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (touchPanActive ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (realMouseTakeover ? 1u : 0u);
-			decisionKey = decisionKey * 17u + pendingHapticPointerId_.load(
-				std::memory_order_acquire);
-			decisionKey = decisionKey * 17u + (hapticPointerIdRequested_.load(
-				std::memory_order_acquire) ? 1u : 0u);
-			decisionKey = decisionKey * 17u + (hapticPointerLeaveRequested_.load(
-				std::memory_order_acquire) ? 1u : 0u);
+			const auto hapticState = hapticPointers_.Inspect();
+			decisionKey = decisionKey * 17u + hapticState.pending.pointerId;
+			decisionKey = decisionKey * 17u + (hapticState.pending.pointerId ? 1u : 0u);
+			decisionKey = decisionKey * 17u + (hapticState.leave ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (hide ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (appVisualKnown ? 1u : 0u);
 			decisionKey = decisionKey * 17u + (appVisual.visible ? 1u : 0u);
@@ -976,9 +1472,9 @@ namespace Inkeys::Drawing::Draw3
 					penContactSuppressedForTouchPan_.load(
 						std::memory_order_acquire) ? 1u : 0u,
 					suppressedPenPointerId_.load(std::memory_order_acquire),
-					pendingHapticPointerId_.load(std::memory_order_acquire),
-					hapticPointerIdRequested_.load(std::memory_order_acquire) ? 1u : 0u,
-					hapticPointerLeaveRequested_.load(std::memory_order_acquire) ? 1u : 0u,
+					hapticState.pending.pointerId,
+					hapticState.pending.pointerId ? 1u : 0u,
+					hapticState.leave ? 1u : 0u,
 					penSample.valid ? 1u : 0u, penSample.inContact ? 1u : 0u,
 					penSample.inverted ? 1u : 0u,
 					mouseSample.valid ? 1u : 0u, mouseSample.inContact ? 1u : 0u,
@@ -991,9 +1487,9 @@ namespace Inkeys::Drawing::Draw3
 						realMouseTakeover, hide));
 				if (length > 0)
 				{
-					std::cout.write(line, (std::min)(
+					DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, (std::min)(
 						static_cast<size_t>(length), sizeof(line) - 1));
-					std::cout.flush();
+					DiagnosticOutput::Wake();
 				}
 			}
 		}
@@ -1002,18 +1498,19 @@ namespace Inkeys::Drawing::Draw3
 #endif
 	}
 
-	bool WindowController::ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint)
+	bool WindowController::ConsumeHapticPointer(Haptics::CanvasPointerRequest& request)
 	{
-		if (!hapticPointerIdRequested_.exchange(false, std::memory_order_acquire))
-			return false;
-		pointerId = pendingHapticPointerId_.load(std::memory_order_relaxed);
-		eraserHint = pendingHapticPointerEraser_.load(std::memory_order_relaxed);
-		return pointerId != 0;
+		return hapticPointers_.Take(request);
 	}
 
 	bool WindowController::ConsumeHapticPointerLeave()
 	{
-		return hapticPointerLeaveRequested_.exchange(false, std::memory_order_acquire);
+		return hapticPointers_.TakeLeave();
+	}
+
+	void WindowController::RequestHapticPointerLeave() noexcept
+	{
+		ResetHapticPointer();
 	}
 
 	bool WindowController::ExitRequested() const
@@ -1023,6 +1520,75 @@ namespace Inkeys::Drawing::Draw3
 
 	LRESULT WindowController::HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
+		if (message == Detail::kMouseInputOwnerMessage)
+		{
+			if (lParam != reinterpret_cast<LPARAM>(this) ||
+				(wParam != Detail::kMouseInputStart && wParam != Detail::kMouseInputStop)) return 0;
+			bool succeeded = false;
+			if (mouseDispatchDepth_ == 0 && wParam == Detail::kMouseInputStart)
+			{
+				if (inputCoordinator_.load(std::memory_order_acquire) &&
+					mouseStartAllowed_.load(std::memory_order_acquire) &&
+					!mouseCompatibilitySelected_.load(std::memory_order_acquire))
+				{
+					const std::uint32_t held = ((GetKeyState(VK_LBUTTON) & 0x8000) ? decltype(mouseInput_)::Left : 0u) |
+						((GetKeyState(VK_RBUTTON) & 0x8000) ? decltype(mouseInput_)::Right : 0u);
+					mouseStartTick_ = GetTickCount();
+					mouseInput_.Start(held);
+					mouseOwnerStopped_.store(false, std::memory_order_release);
+					mouseCompatibilitySelected_.store(true, std::memory_order_release);
+					succeeded = true;
+				}
+			}
+			else if (mouseDispatchDepth_ == 0 && wParam == Detail::kMouseInputStop)
+			{
+				mouseInput_.CloseAdmission();
+				CancelMouseInput(window);
+				if (GetCapture() != window)
+				{
+					mouseCompatibilitySelected_.store(false, std::memory_order_release);
+					mouseOwnerStopped_.store(true, std::memory_order_release);
+					succeeded = true;
+				}
+			}
+			// start/stop 独立事件，超时的旧 start 不能冒充后来的 stop 确认。
+			const auto operationIndex = static_cast<std::size_t>(wParam);
+			mouseOwnerControlSucceeded_[operationIndex].store(succeeded, std::memory_order_release);
+			if (mouseOwnerControlEvents_[operationIndex]) SetEvent(mouseOwnerControlEvents_[operationIndex]);
+			return succeeded ? 1 : 0;
+		}
+		const bool compatibility = mouseCompatibilitySelected_.load(std::memory_order_acquire);
+		if (compatibility)
+		{
+			// Pointer 整个生命周期交默认处理，系统提供的单点鼠标提升只走下面一条 producer。
+			if (message >= WM_NCPOINTERUPDATE && message <= WM_POINTERROUTEDRELEASED)
+				return DefWindowProcW(window, message, wParam, lParam);
+			if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
+				message == WM_RBUTTONDOWN || message == WM_RBUTTONUP || message == WM_MOUSEMOVE)
+			{
+				struct DispatchScope
+				{
+					unsigned& depth;
+					explicit DispatchScope(unsigned& value) noexcept : depth(value) { ++depth; }
+					~DispatchScope() { --depth; }
+				} dispatch(mouseDispatchDepth_);
+				HandleCompatibilityMouse(window, message, wParam, lParam);
+				return 0;
+			}
+			if (message == WM_CANCELMODE || message == WM_KILLFOCUS ||
+				(message == WM_CAPTURECHANGED && reinterpret_cast<HWND>(lParam) != window) ||
+				(message == WM_SHOWWINDOW && !wParam) ||
+				(message == WM_WINDOWPOSCHANGED && lParam &&
+					(reinterpret_cast<const WINDOWPOS*>(lParam)->flags & SWP_HIDEWINDOW)) ||
+				(message == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE) ||
+				message == WM_DESTROY || message == WM_CLOSE)
+				CancelMouseInput(window, message == WM_CAPTURECHANGED);
+			if (message == WM_DESTROY)
+			{
+				mouseInput_.CloseAdmission();
+				mouseCompatibilitySelected_.store(false, std::memory_order_release);
+			}
+		}
 		const bool gpuTransparent = gpuTransparentComposition_.load(std::memory_order_acquire); // GPU 透明模式下由 backbuffer 负责背景。
 		switch (message)
 		{
@@ -1034,7 +1600,7 @@ namespace Inkeys::Drawing::Draw3
 
 		case kApplySystemCursorMessage:
 			systemCursorRefreshPosted_.store(false, std::memory_order_release);
-			ApplyWindowCursor("posted-refresh");
+			ApplyWindowCursor("posted-refresh", true);
 			return 0;
 
 		case WM_SETCURSOR:
@@ -1046,8 +1612,22 @@ namespace Inkeys::Drawing::Draw3
 			break;
 
 		case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
-			// 显式接收 RTS 多点数据，并禁止长按/轻拂抢占普通笔输入。
+			// 与首触前的 property 使用同一策略，关闭系统触摸反馈并保留 RTS 多点。
 			return static_cast<LRESULT>(kTabletInputFlags);
+
+		case WM_POINTERCAPTURECHANGED:
+		case WM_CANCELMODE:
+			RequestHapticPointerLeave();
+			RequestControlWake();
+			if (HapticDiagnostics::Enabled())
+			{
+				hapticIngressDiagnostics_ = {};
+				HapticDiagnostics::Log("canvas_ingress", "message=%u reason=cancel_mode revision=%llu omitted_updates=%llu",
+					message, static_cast<unsigned long long>(HapticPointerRevision()),
+					static_cast<unsigned long long>(hapticIngressUpdatesOmitted_));
+				hapticIngressUpdatesOmitted_ = 0;
+			}
+			break;
 
 		case WM_POINTERLEAVE:
 		{
@@ -1060,7 +1640,8 @@ namespace Inkeys::Drawing::Draw3
 			lastCursorTracePointerTypeKnown_.store(
 				details.typeKnown, std::memory_order_release);
 #endif
-			const DrawingCursorPointerAuthority previousAuthority = CursorOwner();
+			const DrawingCursorPointerAuthority previousAuthority =
+				cursorOwner_.load(std::memory_order_acquire);
 			DrawingCursorSample penSample;
 			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
 			const bool suppressedPenPointer =
@@ -1088,12 +1669,24 @@ namespace Inkeys::Drawing::Draw3
 				realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire)));
 			if (penPointer)
 			{
-				lastHapticPenInfoPointerId_ = 0;
-				lastHapticPenInfoKnown_ = false;
-				lastHapticPenInfoEraser_ = false;
-				hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+				RequestHapticPointerLeave();
 				RequestControlWake();
 			}
+			if (HapticDiagnostics::Enabled())
+			{
+				for (auto& diagnostic : hapticIngressDiagnostics_)
+					if (diagnostic.known && diagnostic.pointerId == pointerId) diagnostic.known = false;
+				HapticDiagnostics::Log("canvas_ingress", "message=%u pointer=%u type=%u known=%d reason=pointer_leave pen=%d revision=%llu time=%ld omitted_updates=%llu",
+					message, pointerId, static_cast<unsigned>(details.type), details.typeKnown, penPointer,
+					static_cast<unsigned long long>(HapticPointerRevision()), GetMessageTime(),
+					static_cast<unsigned long long>(hapticIngressUpdatesOmitted_));
+				hapticIngressUpdatesOmitted_ = 0;
+			}
+			RecordCursorDiagnostic("pointer-leave id=%u type=%u known=%u owner=%u suppressed=%u penValid=%u",
+				pointerId, static_cast<unsigned>(details.type), details.typeKnown ? 1u : 0u,
+				static_cast<unsigned>(CursorOwner()),
+				touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u,
+				penSampleValid ? 1u : 0u);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			TraceCursorState("WM_POINTERLEAVE", pointerId, details.type,
 				details.typeKnown, true);
@@ -1105,6 +1698,7 @@ namespace Inkeys::Drawing::Draw3
 		case WM_POINTERDOWN:
 		case WM_POINTERUP:
 		{
+			if (message == WM_POINTERDOWN) NotifyCanvasContactDown();
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -1114,9 +1708,29 @@ namespace Inkeys::Drawing::Draw3
 			lastCursorTracePointerTypeKnown_.store(
 				details.typeKnown, std::memory_order_release);
 #endif
-			const DrawingCursorPointerAuthority previousAuthority = CursorOwner();
+			const DrawingCursorPointerAuthority previousAuthority =
+				cursorOwner_.load(std::memory_order_acquire);
 			const DrawingCursorPointerAuthority pointerEventType = details.typeKnown
 				? AuthorityForPointerType(details.type) : DrawingCursorPointerAuthority::Unknown;
+			if (pointerEventType == DrawingCursorPointerAuthority::Touch &&
+				details.positionKnown)
+			{
+				POINT touchClientPosition = details.screenPosition;
+				if (ScreenToClient(window, &touchClientPosition))
+				{
+					lastTouchMouseX_ = touchClientPosition.x;
+					lastTouchMouseY_ = touchClientPosition.y;
+					lastTouchMousePositionKnown_ = true;
+					lastTouchMouseDiagnosticTick_ = static_cast<uint32_t>(GetMessageTime());
+					lastTouchMouseDiagnosticPointerId_ = pointerId;
+					lastTouchMouseDiagnosticPrimary_ = details.primaryKnown
+						? (details.primary ? 2u : 1u) : 0u;
+					lastTouchMouseDiagnosticFromPointer_ = true;
+					RecordCursorDiagnostic("touch-position via=pointer id=%u primary=%u tick=%u x=%ld y=%ld",
+						pointerId, lastTouchMouseDiagnosticPrimary_, lastTouchMouseDiagnosticTick_,
+						touchClientPosition.x, touchClientPosition.y);
+				}
+			}
 			if (ShouldClearMouseCursorSampleForPointerEvent(
 				pointerEventType, message == WM_POINTERDOWN))
 			{
@@ -1131,6 +1745,8 @@ namespace Inkeys::Drawing::Draw3
 				if (pointerEventType == DrawingCursorPointerAuthority::Mouse &&
 					touchPanActive_.load(std::memory_order_acquire))
 					realMouseTakeoverDuringTouchPan_.store(true, std::memory_order_release);
+				if (pointerEventType == DrawingCursorPointerAuthority::Mouse)
+					SetTouchCursorSuppressed(false);
 				SetDrawingCursorOwner(ResolveDrawingCursorOwnerForPointerEvent(
 					previousAuthority, pointerEventType,
 					touchPanActive_.load(std::memory_order_acquire),
@@ -1173,26 +1789,91 @@ namespace Inkeys::Drawing::Draw3
 					PublishPenCursorSample(sample);
 				}
 			}
-			if ((message == WM_POINTERENTER || message == WM_POINTERDOWN) &&
-				pointerId != 0 && penPointer &&
-				!touchPanActive_.load(std::memory_order_acquire) &&
-				!penContactSuppressedForTouchPan_.load(std::memory_order_acquire))
+			if (penPointer && details.cancelled)
 			{
-				if (pointerId != lastHapticPenInfoPointerId_ || !lastHapticPenInfoKnown_)
-				{
-					lastHapticPenInfoPointerId_ = pointerId;
-					lastHapticPenInfoKnown_ = details.penInfoKnown;
-					lastHapticPenInfoEraser_ = details.penInfoKnown && details.eraserHint;
-				}
-				// Pointer 只作为触觉设备绑定/笔尾线索；RTS 仍是唯一绘制输入来源。
-				hapticPointerLeaveRequested_.store(false, std::memory_order_relaxed);
-				pendingHapticPointerId_.store(pointerId, std::memory_order_relaxed);
-				pendingHapticPointerEraser_.store(
-					lastHapticPenInfoKnown_ && lastHapticPenInfoEraser_,
-					std::memory_order_relaxed);
-				hapticPointerIdRequested_.store(true, std::memory_order_release);
+				RequestHapticPointerLeave();
 				RequestControlWake();
 			}
+			bool hapticObserved = false;
+			const bool hapticDiagnostic = HapticDiagnostics::Enabled();
+			const char* hapticReason = nullptr;
+			// 缓存原准入表达式实际读取的门禁值；-1 表示已在更早条件拒绝。
+			int hapticPan = -1, hapticSuppressed = -1;
+			if (message != WM_POINTERUP && pointerId != 0 && details.typeKnown &&
+				details.type == PT_PEN && details.penInfoKnown && !details.cancelled &&
+				!(hapticPan = touchPanActive_.load(std::memory_order_acquire)) &&
+				!(hapticSuppressed = penContactSuppressedForTouchPan_.load(std::memory_order_acquire)))
+			{
+				// 进入范围时保留 tablet cursor，RTS 普通抬笔不销毁范围身份。
+				const auto previousHapticRevision = hapticPointers_.Revision();
+				hapticObserved = hapticPointers_.Observe(pointerId, details.eraserHint,
+					message == WM_POINTERENTER || message == WM_POINTERDOWN, penInContact, details.cursorId,
+					hapticDiagnostic ? &hapticReason : nullptr);
+				if (hapticObserved || previousHapticRevision != hapticPointers_.Revision()) RequestControlWake();
+			}
+			if (hapticDiagnostic)
+			{
+				if (!hapticReason)
+					hapticReason = message == WM_POINTERUP ? "pointer_up"
+					: !pointerId ? "zero_pointer" : !details.typeKnown ? "unknown_type"
+					: details.type != PT_PEN ? "non_pen" : !details.penInfoKnown ? "no_pen_info"
+					: details.cancelled ? "cancelled" : hapticPan > 0 ? "touch_pan" : "pen_suppressed";
+				const auto revision = HapticPointerRevision();
+				const uint32_t state = static_cast<uint32_t>(details.type) |
+					(static_cast<uint32_t>(details.typeKnown) << 4) |
+					(static_cast<uint32_t>(details.penInfoKnown) << 5) |
+					(static_cast<uint32_t>(penInContact) << 6) |
+					(static_cast<uint32_t>(details.cancelled) << 7) |
+					(static_cast<uint32_t>(hapticObserved) << 8) |
+					(static_cast<uint32_t>(hapticPan + 1) << 9) |
+					(static_cast<uint32_t>(hapticSuppressed + 1) << 11);
+				auto diagnostic = std::find_if(hapticIngressDiagnostics_.begin(), hapticIngressDiagnostics_.end(),
+					[&](const auto& value) { return value.known && value.pointerId == pointerId; });
+				if (diagnostic == hapticIngressDiagnostics_.end())
+				{
+					// 末槽预留真实 Pen；满槽不淘汰旧项，避免多指交错 Update 反复变成首次。
+					const auto eligibleEnd = details.typeKnown && details.type == PT_PEN
+						? hapticIngressDiagnostics_.end() : hapticIngressDiagnostics_.end() - 1;
+					const auto free = std::find_if(hapticIngressDiagnostics_.begin(), eligibleEnd,
+						[](const auto& value) { return !value.known; });
+					if (free != eligibleEnd) diagnostic = free;
+				}
+				const bool tracked = diagnostic != hapticIngressDiagnostics_.end();
+				if (message == WM_POINTERUPDATE && !tracked)
+				{
+					if (hapticIngressUpdatesOmitted_ != (std::numeric_limits<uint64_t>::max)())
+						++hapticIngressUpdatesOmitted_;
+				}
+				else
+				{
+					// 边沿始终可见；省略计数只附到本来就要输出的日志，不额外刷屏。
+					if (message != WM_POINTERUPDATE || hapticObserved || !diagnostic->known ||
+						diagnostic->state != state || diagnostic->revision != revision ||
+						std::strcmp(diagnostic->reason, hapticReason) != 0)
+					{
+						HapticDiagnostics::Log("canvas_ingress",
+							"message=%u pointer=%u type=%u known=%d pen_info=%d contact=%d cancelled=%d pan=%d suppressed=%d observed=%d reason=%s revision=%llu time=%ld position_known=%d point=%ld,%ld omitted_updates=%llu",
+							message, pointerId, static_cast<unsigned>(details.type), details.typeKnown,
+							details.penInfoKnown, penInContact, details.cancelled, hapticPan, hapticSuppressed,
+							hapticObserved, hapticReason, static_cast<unsigned long long>(revision),
+							GetMessageTime(), details.positionKnown, details.screenPosition.x, details.screenPosition.y,
+							static_cast<unsigned long long>(hapticIngressUpdatesOmitted_));
+						hapticIngressUpdatesOmitted_ = 0;
+					}
+					if (tracked) *diagnostic = { message != WM_POINTERUP, pointerId, state, revision, hapticReason };
+				}
+			}
+			if (CursorDiagnosticsEnabled())
+				RecordCursorDiagnostic("pointer message=0x%04x id=%u type=%u known=%u positionKnown=%u x=%ld y=%ld penContact=%u eraser=%u owner=%u persistent=%u suppressed=%u touchCount=%u mouseTakeover=%u",
+					message, pointerId, static_cast<unsigned>(details.type),
+					details.typeKnown ? 1u : 0u, details.positionKnown ? 1u : 0u,
+					details.screenPosition.x, details.screenPosition.y,
+					penInContact ? 1u : 0u, details.eraserHint ? 1u : 0u,
+					static_cast<unsigned>(CursorOwner()),
+					static_cast<unsigned>(cursorOwner_.load(std::memory_order_acquire)),
+					touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u,
+					activeTouchContactCount_.load(std::memory_order_acquire),
+					realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire) ? 1u : 0u);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			const char* pointerEventName = message == WM_POINTERDOWN
 				? "WM_POINTERDOWN" : message == WM_POINTERUP
@@ -1206,21 +1887,33 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		case WM_DESTROY:
+		{
 			penCursorSample_.Clear();
 			mouseCursorSample_.Clear();
 			cursorOwner_.store(
 				DrawingCursorPointerAuthority::Unknown, std::memory_order_release);
+			touchCursorSuppressed_.store(false, std::memory_order_release);
 			touchPanActive_.store(false, std::memory_order_release);
 			realMouseTakeoverDuringTouchPan_.store(false, std::memory_order_release);
 			penContactSuppressedForTouchPan_.store(false, std::memory_order_release);
 			penCompatibilityMouseContactSuppressed_.store(false,
 				std::memory_order_release);
 			suppressedPenPointerId_.store(0, std::memory_order_release);
-			SetCursor(defaultCursor_);
-			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
+			// 销毁时也只释放当前仍命中本窗口的光标，避免覆盖下层应用的选择。
+			POINT cursorPosition = {};
+			if (GetCursorPos(&cursorPosition))
+			{
+				const HWND cursorWindow = WindowFromPoint(cursorPosition);
+				if (cursorWindow == window || (cursorWindow && IsChild(window, cursorWindow)))
+					SetCursor(defaultCursor_);
+			}
+			RestoreTabletInputProperty(window);
 			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。
 			RequestControlWake();
-			if (!externalWindow_.load(std::memory_order_acquire))
+			const bool external = externalWindow_.load(std::memory_order_acquire);
+			if (compatibility && mouseDispatchDepth_ == 0 && GetCapture() != window)
+				mouseOwnerStopped_.store(true, std::memory_order_release);
+			if (!external)
 			{
 				PostQuitMessage(0);
 				return 0;
@@ -1228,6 +1921,7 @@ namespace Inkeys::Drawing::Draw3
 			// Window Service 所在线程还负责其它 overlay HWND，不能被 Draw3
 			// 的外部窗口过程投递 WM_QUIT；交回宿主默认处理即可。
 			return DefWindowProcW(window, message, wParam, lParam);
+		}
 
 		case WM_DWMCOMPOSITIONCHANGED:
 			compositionChangedRequested_.store(true, std::memory_order_release); // DWM 状态变化交给主循环刷新 presenter。
@@ -1254,17 +1948,35 @@ namespace Inkeys::Drawing::Draw3
 			break;
 
 		case WM_SHOWWINDOW:
+			hapticSurfaceVisible_.store(wParam != 0, std::memory_order_release);
+			if (!wParam) RequestHapticPointerLeave();
+			RequestControlWake();
+			QueueSystemCursorRefresh(); // 主画布重现时静止指针也须恢复当前工具策略。
+			[[fallthrough]];
 		case WM_ACTIVATE:
 			if (gpuTransparent) RequestFullPresent(); // 窗口可见性变化后重新提交完整画布。
 			break;
 
 		case WM_WINDOWPOSCHANGED:
+		{
+			const auto* position = reinterpret_cast<const WINDOWPOS*>(lParam);
+			if (position)
+			{
+				if (position->flags & (SWP_HIDEWINDOW | SWP_SHOWWINDOW))
+				{
+					hapticSurfaceVisible_.store((position->flags & SWP_HIDEWINDOW) == 0, std::memory_order_release);
+					if (position->flags & SWP_HIDEWINDOW) RequestHapticPointerLeave();
+					RequestControlWake();
+				}
+			}
 			if (gpuTransparent)
 			{
-				const auto* position = reinterpret_cast<const WINDOWPOS*>(lParam);
 				if (!position || !(position->flags & SWP_NOMOVE) || !(position->flags & SWP_NOSIZE)) RequestFullPresent(); // 移动或尺寸变化后刷新 DWM 读取内容。
 			}
+			if (position && (position->flags & (SWP_SHOWWINDOW | SWP_HIDEWINDOW)))
+				QueueSystemCursorRefresh();
 			break;
+		}
 
 		case WM_SIZE:
 			if (wParam != SIZE_MINIMIZED)
@@ -1305,6 +2017,12 @@ namespace Inkeys::Drawing::Draw3
 			const uint32_t messageTick = static_cast<uint32_t>(GetMessageTime());
 			const ULONG_PTR extraInfo = GetMessageExtraInfo();
 			const bool promotedPointerMessage = IsPromotedPointerMouseMessage(extraInfo);
+			const auto sourceSnapshot = CurrentInputMessageSource();
+			const INPUT_MESSAGE_DEVICE_TYPE inputSource = sourceSnapshot.deviceType;
+			const uint64_t diagnosticEvent = CursorDiagnosticsEnabled()
+				? ++cursorMouseDiagnosticEvent_ : 0;
+			RecordMouseMessageSource(diagnosticEvent, window, message, wParam, lParam, sourceSnapshot);
+			RecordMouseCursorDiagnosticState(diagnosticEvent, "before");
 			const uint64_t barrierState = latestTouchInputBarrierTick_.load(
 				std::memory_order_acquire);
 			const bool touchBarrierKnown =
@@ -1312,8 +2030,32 @@ namespace Inkeys::Drawing::Draw3
 			const uint32_t touchBarrierTick = static_cast<uint32_t>(barrierState);
 			const int mouseClientX = GET_X_LPARAM(lParam);
 			const int mouseClientY = GET_Y_LPARAM(lParam);
+			if (inputSource == IMDT_TOUCH ||
+				(inputSource == IMDT_UNAVAILABLE && promotedPointerMessage &&
+					(extraInfo & 0x80u) != 0))
+			{
+				// Touch 兼容消息继续更新末点；其低位只辅助记录位置，不决定输入归属。
+				lastTouchMouseX_ = mouseClientX;
+				lastTouchMouseY_ = mouseClientY;
+				lastTouchMousePositionKnown_ = true;
+				lastTouchMouseDiagnosticTick_ = messageTick;
+				lastTouchMouseDiagnosticPointerId_ = 0;
+				lastTouchMouseDiagnosticPrimary_ = 0;
+				lastTouchMouseDiagnosticFromPointer_ = false;
+			}
 			DrawingCursorSample penSample;
 			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
+			const auto recordMouseDecision = [&](bool accepted, const char* reason) noexcept
+			{
+				if (!CursorDiagnosticsEnabled()) return;
+				RecordCursorDiagnostic("mouse event=%llu message=0x%04x accepted=%u reason=%s source=%u promoted=%u extra=0x%llx tick=%u barrier=%u known=%u x=%d y=%d buttonDown=%u buttonUp=%u",
+					static_cast<unsigned long long>(diagnosticEvent), message, accepted ? 1u : 0u, reason,
+					static_cast<unsigned>(inputSource), promotedPointerMessage ? 1u : 0u,
+					static_cast<unsigned long long>(extraInfo), messageTick,
+					touchBarrierTick, touchBarrierKnown ? 1u : 0u,
+					mouseClientX, mouseClientY, buttonDown ? 1u : 0u,
+					buttonUp ? 1u : 0u);
+			};
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			const uint32_t activeTouchContactCount = activeTouchContactCount_.load(
 				std::memory_order_acquire);
@@ -1325,40 +2067,72 @@ namespace Inkeys::Drawing::Draw3
 					accepted, reason);
 			};
 #endif
-			if (ShouldIgnoreMouseCursorMessage(promotedPointerMessage, penSampleValid,
-				touchBarrierKnown, messageTick, touchBarrierTick))
+			const auto filter = FilterMouseCursorMessage({
+				.message = message,
+				.buttonDown = buttonDown,
+				.promotedPointerMessage = promotedPointerMessage,
+				.pointerApiAvailable = ResolveGetPointerType() != nullptr,
+				.penSampleValid = penSampleValid,
+				.touchBarrierKnown = touchBarrierKnown,
+				.messageTick = messageTick,
+				.touchBarrierTick = touchBarrierTick,
+				.inputSource = inputSource,
+				.sourceQuerySucceeded = sourceSnapshot.succeeded,
+				.origin = sourceSnapshot.originId,
+				.touchSuppressed = touchCursorSuppressed_.load(std::memory_order_acquire),
+				.touchPositionKnown = lastTouchMousePositionKnown_,
+				.touchX = lastTouchMouseX_, .touchY = lastTouchMouseY_,
+				.mouseX = mouseClientX, .mouseY = mouseClientY,
+				.pointerAuthority = cursorOwner_.load(std::memory_order_acquire)
+			});
+			if (diagnosticEvent)
+				RecordCursorDiagnostic("mouse-filter event=%llu touchKnown=%u touchX=%d touchY=%d touchTick=%u touchId=%u primary=%u via=%s same=%u sourceReject=%u systemReject=%u positionReject=%u buttonBypass=%u",
+					static_cast<unsigned long long>(diagnosticEvent), lastTouchMousePositionKnown_ ? 1u : 0u,
+					lastTouchMouseX_, lastTouchMouseY_, lastTouchMouseDiagnosticTick_,
+					lastTouchMouseDiagnosticPointerId_, lastTouchMouseDiagnosticPrimary_,
+					lastTouchMouseDiagnosticFromPointer_ ? "pointer" : "compat-mouse",
+					lastTouchMousePositionKnown_ && mouseClientX == lastTouchMouseX_ &&
+						mouseClientY == lastTouchMouseY_ ? 1u : 0u,
+					filter.sourceRejected ? 1u : 0u, filter.systemRejected ? 1u : 0u,
+					filter.positionRejected ? 1u : 0u, filter.buttonBypass ? 1u : 0u);
+			if (filter.rejectionReason)
 			{
+				recordMouseDecision(false, filter.rejectionReason);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-				const bool staleQueuedMouse = touchBarrierKnown &&
-					static_cast<LONG>(messageTick - touchBarrierTick) <= 0;
-				traceMouseDecision(false, promotedPointerMessage ? "promoted-pointer" :
-					staleQueuedMouse ? "stale-touch-barrier" : "pen-compatibility-filter");
+				traceMouseDecision(false, filter.rejectionReason);
 #endif
+				RecordMouseCursorDiagnosticState(diagnosticEvent, "after");
 				break;
 			}
 			if (buttonUp && penCompatibilityMouseContactSuppressed_.exchange(
 				false, std::memory_order_acq_rel))
 			{
+				recordMouseDecision(false, "pen-compatibility-terminal");
 				if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0)
 					SetPenContactSuppressedForTouchPan(false);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				traceMouseDecision(false, "pen-compatibility-terminal");
 #endif
+				RecordMouseCursorDiagnosticState(diagnosticEvent, "after");
 				break;
 			}
 			if (penCompatibilityMouseContactSuppressed_.load(
 				std::memory_order_acquire))
 			{
+				recordMouseDecision(false, "pen-compatibility-latched");
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				traceMouseDecision(false, "pen-compatibility-latched");
 #endif
+				RecordMouseCursorDiagnosticState(diagnosticEvent, "after");
 				break;
 			}
 			if (buttonUp && ShouldSuppressMouseButtonUpCursorSample(CursorOwner()))
 			{
+				recordMouseDecision(false, "pointer-terminal-owner");
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				traceMouseDecision(false, "pointer-terminal-owner");
 #endif
+				RecordMouseCursorDiagnosticState(diagnosticEvent, "after");
 				break; // Pointer 终态后的兼容 Mouse Up 不能把已隐藏光标重新发布为 Hover。
 			}
 			LARGE_INTEGER qpc = {};
@@ -1377,6 +2151,7 @@ namespace Inkeys::Drawing::Draw3
 				penSampleValid, buttonDown, mouseX - penSample.x, mouseY - penSample.y,
 				penSampleAgeSeconds))
 			{
+				recordMouseDecision(false, "pen-compatibility-position");
 				// 没有 Pointer Down 的设备仍会提升兼容鼠标消息；只抑制反馈，不改变平移 authority。
 				penCompatibilityMouseContactSuppressed_.store(true,
 					std::memory_order_release);
@@ -1384,10 +2159,12 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				traceMouseDecision(false, "pen-compatibility-position");
 #endif
+				RecordMouseCursorDiagnosticState(diagnosticEvent, "after");
 				break;
 			}
 			if (touchPanActive_.load(std::memory_order_acquire))
 				realMouseTakeoverDuringTouchPan_.store(true, std::memory_order_release);
+			SetTouchCursorSuppressed(false);
 			SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
 			if (message == WM_MOUSEMOVE && !trackingMouseLeave_)
 			{
@@ -1401,13 +2178,17 @@ namespace Inkeys::Drawing::Draw3
 			sample.inContact = buttonDown;
 			sample.qpc = qpc.QuadPart;
 			PublishMouseCursorSample(sample);
+			lastTouchMousePositionKnown_ = false;
+			recordMouseDecision(true, "accepted-mouse");
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceMouseDecision(true, "accepted-real-mouse");
 #endif
+			RecordMouseCursorDiagnosticState(diagnosticEvent, "after");
 			break;
 		}
 
 		case WM_MOUSELEAVE:
+			mouseCanvasExitRevision_.fetch_add(1);
 		{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			const uint32_t messageTick = static_cast<uint32_t>(GetMessageTime());
@@ -1423,9 +2204,13 @@ namespace Inkeys::Drawing::Draw3
 #endif
 			trackingMouseLeave_ = false;
 			ClearMouseCursorSample();
-			if (CursorOwner() ==
+			// Touch 会暂时覆盖有效归属；离窗时仍要清除持久的 Mouse 归属。
+			if (cursorOwner_.load(std::memory_order_acquire) ==
 				DrawingCursorPointerAuthority::Mouse)
 				SetDrawingCursorOwner(DrawingCursorPointerAuthority::Unknown);
+			RecordCursorDiagnostic("mouse-leave owner=%u suppressed=%u",
+				static_cast<unsigned>(CursorOwner()),
+				touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u);
 			break;
 		}
 
@@ -1434,6 +2219,12 @@ namespace Inkeys::Drawing::Draw3
 			const uint32_t messageTick = static_cast<uint32_t>(GetMessageTime());
 			const ULONG_PTR extraInfo = GetMessageExtraInfo();
 			const bool promotedPointerMessage = IsPromotedPointerMouseMessage(extraInfo);
+			const auto sourceSnapshot = CurrentInputMessageSource();
+			const INPUT_MESSAGE_DEVICE_TYPE inputSource = sourceSnapshot.deviceType;
+			const uint64_t diagnosticEvent = CursorDiagnosticsEnabled()
+				? ++cursorMouseDiagnosticEvent_ : 0;
+			RecordMouseMessageSource(diagnosticEvent, window, message, wParam, lParam, sourceSnapshot);
+			RecordMouseCursorDiagnosticState(diagnosticEvent, "before");
 			const uint64_t barrierState = latestTouchInputBarrierTick_.load(
 				std::memory_order_acquire);
 			const bool touchBarrierKnown =
@@ -1442,13 +2233,21 @@ namespace Inkeys::Drawing::Draw3
 			DrawingCursorSample penSample;
 			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
 			const bool accepted = !ShouldIgnoreMouseCursorMessage(promotedPointerMessage,
-				penSampleValid, touchBarrierKnown, messageTick, touchBarrierTick);
+				penSampleValid, touchBarrierKnown, messageTick, touchBarrierTick,
+				inputSource);
 			if (accepted)
 			{
 				if (touchPanActive_.load(std::memory_order_acquire))
 					realMouseTakeoverDuringTouchPan_.store(true, std::memory_order_release);
+				SetTouchCursorSuppressed(false);
 				SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
 			}
+			if (CursorDiagnosticsEnabled())
+				RecordCursorDiagnostic("mouse-wheel event=%llu accepted=%u source=%u promoted=%u tick=%u barrier=%u owner=%u suppressed=%u",
+					static_cast<unsigned long long>(diagnosticEvent), accepted ? 1u : 0u, static_cast<unsigned>(inputSource),
+					promotedPointerMessage ? 1u : 0u, messageTick, touchBarrierTick,
+					static_cast<unsigned>(CursorOwner()),
+					touchCursorSuppressed_.load(std::memory_order_acquire) ? 1u : 0u);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			const bool staleQueuedMouse = touchBarrierKnown &&
 				static_cast<LONG>(messageTick - touchBarrierTick) <= 0;
@@ -1458,8 +2257,11 @@ namespace Inkeys::Drawing::Draw3
 				activeTouchContactCount_.load(std::memory_order_acquire), accepted,
 				accepted ? "accepted-real-mouse-wheel" :
 				promotedPointerMessage ? "promoted-pointer" :
-				staleQueuedMouse ? "stale-touch-barrier" : "pen-compatibility-filter");
+				staleQueuedMouse ? "stale-touch-barrier" :
+				inputSource == IMDT_TOUCH ? "source-touch" :
+				inputSource == IMDT_PEN ? "source-pen" : "pen-compatibility-filter");
 #endif
+			RecordMouseCursorDiagnosticState(diagnosticEvent, "after");
 			break;
 		}
 

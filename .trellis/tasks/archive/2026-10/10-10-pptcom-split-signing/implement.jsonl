@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "现有构建入口与本次用户批准的拆分差异"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "保持C++ module、格式与注释"}
+{"file": ".trellis/spec/ppt-interop/com-contract.md", "reason": "DLL/TLB/manifest与native import产物契约"}
+{"file": ".trellis/tasks/10-10-pptcom-split-signing/research/approved-plan.md", "reason": "最新已批准决策、失败证据及执行边界"}

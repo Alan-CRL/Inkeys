@@ -17,9 +17,16 @@ module;
 #include "Bar.DirtyRegion.h"
 #include "Bar.ThemeMaterial.h"
 #include "Bar.BottomDock.h"
+#include "Bar.MainLayoutPolicy.h"
+#include "../StartupPlacement.h"
 #include "Bar.DisplayTransition.h"
+#include "Bar.I18nFormat.h"
 #include "Bar.PresentDecision.h"
 #include "Bar.PresentationAlpha.h"
+#include "Bar.PresentationProbe.h"
+#include "Bar.Presentation.Source.h"
+#include <cstring>
+#include <bit>
 #include "Bar.WindowGeometry.h"
 #include <atomic>
 #include <cstdint>
@@ -37,6 +44,7 @@ import :Atomic;
 import :Zoom;
 import :Theme;
 
+import Inkeys.Window;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
@@ -55,6 +63,8 @@ using Inkeys::UI::Bar::ResolveBarButtonVisualMetrics;
 using Inkeys::UI::Bar::SetBarButtonPressedVisual;
 using Inkeys::UI::Bar::StopBarButtonHoverVisual;
 using Inkeys::UI::Bar::UpdateBarButtonHoverVisual;
+using Inkeys::UI::RenderPipeline::FrameStage;
+using Inkeys::UI::RenderPipeline::FrameStageTimer;
 
 namespace
 {
@@ -64,10 +74,20 @@ namespace
 			barUISet.barStyle.darkStyle ? 0.0 : 1.0, darkOpacity);
 	}
 
+	static_assert(static_cast<std::uint32_t>(BarUISetSvgEnum::GeometryAttributeBar_Close) == Inkeys::UI::Bar::Ui3SvgMapOrdinalMax);
 	std::atomic<std::uint8_t> requestedPresentationAlpha = 255;
 	std::atomic<std::uint8_t> committedPresentationAlpha = 255;
 	std::atomic<std::uint64_t> presentationAlphaRevision = 1;
 	std::atomic<std::uint32_t> presentationAlphaCommitMask = 0;
+
+	[[nodiscard]] std::uint32_t BarFrameLightFlags(
+		const BarUiFrameLightingSnapshot& lighting) noexcept
+	{
+		return (lighting.edgeLightingEnabled ? 1u : 0u)
+			| (lighting.primaryLightVisible ? 2u : 0u)
+			| (lighting.cursorLightVisible ? 4u : 0u)
+			| (lighting.cursorIntensity > 0.0001F ? 8u : 0u);
+	}
 
 	[[nodiscard]] bool PrepareInitialPresentationAlpha() noexcept
 	{
@@ -84,6 +104,12 @@ namespace
 
 namespace Inkeys::UI::Bar
 {
+	// 实现归交互 owner，复用其带代次的取消请求，避免异步 WM_CANCELMODE 误伤下一手势。
+	void RequestBarDragCancellation(unsigned long long expectedSession,
+		const std::atomic<unsigned long long>& serial,
+		const std::atomic<unsigned long long>& activeSession,
+		const std::atomic<bool>& active) noexcept;
+
 	void RequestPresentationAlpha(std::uint8_t alpha) noexcept
 	{
 		const auto previous = requestedPresentationAlpha.exchange(
@@ -241,6 +267,9 @@ enum class BarBottomDockIndicatorContentPhase
 
 struct BarRenderFrameSnapshot
 {
+	std::vector<std::shared_ptr<BarButtonClass>> mainButtons;
+	BarMoreButtonSnapshotClass moreButtons;
+	chrono::steady_clock::time_point frameTime;
 	StateModeSelectEnum stateMode = StateModeSelectEnum::IdtSelection;
 	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenSoftPen;
 	COLORREF brush1Color = RGB(0, 0, 0);
@@ -249,8 +278,13 @@ struct BarRenderFrameSnapshot
 	bool laserActive = false;
 	unsigned long long demandGeneration = 0;
 	double zoom = 1.0;
+	Inkeys::UI::Bar::BarIconOrder iconOrder = Inkeys::UI::Bar::BarIconOrder::FollowMainButton;
+	Inkeys::UI::Bar::BarExpandDirectionAdjustment directionAdjustment = Inkeys::UI::Bar::BarExpandDirectionAdjustment::WhenSpaceInsufficient;
 	double animationDtSeconds = 0.0;
 	double animationSpeedRate = 1.0;
+	bool recallIdleDismissed = false;
+	Inkeys::UI::Bar::RecallChromeView recallChrome{};
+	bool recallAnchorVisible = false;
 	int ordinal = 2;
 	Inkeys::UI::Bar::BarBottomDockMode bottomDockMode =
 		Inkeys::UI::Bar::BarBottomDockMode::BottomDocked;
@@ -268,6 +302,10 @@ struct BarRenderFrameSnapshot
 	bool bottomDockIndicatorGestureEligible = false;
 	double bottomDockDragRigidGripScreenX = 0.0;
 	double bottomDockDragRigidGripScreenY = 0.0;
+	double bottomDockDragTopScreenY = 0.0;
+	bool bottomDockDragTopAnchorValid = false;
+	unsigned long long bottomDockDragSession = 0;
+	bool bottomDockReleaseInputFlush = false;
 	POINT bottomDockTransitionTranslation{};
 	unsigned long long bottomDockTransitionSerial = 0;
 };
@@ -334,8 +372,6 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainBarSide;
 	using Inkeys::UI::Bar::ShouldDeriveBarBottomDockCenteredRoot;
 	using Inkeys::UI::Bar::ResolveBarBottomDockHorizontalMapping;
-	using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringHorizontalMapping;
-	using Inkeys::UI::Bar::ResolveBarBottomDockRebasedFarEdgeOffsetDip;
 	using Inkeys::UI::Bar::ResolveBarBottomDockMonitorCenterScreenX;
 	using Inkeys::UI::Bar::BarBottomDockCenterThresholdDip;
 	using Inkeys::UI::Bar::BarBottomDockVisualLimitDip;
@@ -358,14 +394,14 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 	};
 
 	[[nodiscard]] double CurrentBarBottomDockLine(
-		const RECT& monitorBounds, const RECT& workArea, UINT dpi) noexcept
+		const RECT& monitorBounds, const RECT& workArea, UINT dpi,
+		double desktopDockLine) noexcept
 	{
 		const double dpiScale = clamp(
 			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) /
 			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
-		const double insetDip = Inkeys::UI::Bar::WhiteboardActive()
-			? BarWhiteboardBottomInsetDip : 0.0;
-		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale);
+		const double insetDip = Inkeys::UI::Bar::SceneBottomDockInsetDip();
+		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale, desktopDockLine);
 	}
 
 enum class BarDirtyFixedVisual : BarDirtyVisualKey
@@ -377,6 +413,8 @@ enum class BarDirtyFixedVisual : BarDirtyVisualKey
 	PrimaryLight = 0xFFFF000000000005ULL,
 	CursorLight = 0xFFFF000000000006ULL,
 	DockTargetIndicator = 0xFFFF000000000007ULL,
+	EraserAttributeGroup = 0xFFFF000000000008ULL,
+	RecallAttributeGroup = 0xFFFF000000000009ULL,
 };
 
 [[nodiscard]] BarDirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
@@ -444,11 +482,11 @@ struct BarRenderLoopState
 		presentationAlpha(PrepareInitialPresentationAlpha())
 	{
 		auto range = GetBarThicknessSliderRange(
-			stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+			stateModeSnapshot.Pen.ModeSelect, barStyle.dpiZoom, stateModeSnapshot);
 		if (range.supported && range.max > range.min)
 		{
 			drawAttributeThicknessSliderNormalized.SetDirect(clamp(
-				(static_cast<double>(GetPenWidth()) - range.min)
+				(GetPenWidthMetrics(stateModeSnapshot).resolvedWidthDip - range.min)
 				/ static_cast<double>(range.max - range.min),
 				0.0, 1.0));
 			drawAttributeThicknessSliderNormalizedInitialized = true;
@@ -458,19 +496,18 @@ struct BarRenderLoopState
 				== BarThicknessPresetVisualKind::Number;
 		for (size_t index = 0; index < 3; ++index)
 		{
-			const int initialCirclePx = stateMode.laserActive
-				? GetBarLaserThicknessPresetPx(index, barStyle.dpiZoom)
+			const double initialCirclePx = stateModeSnapshot.laserActive
+				? GetBarLaserThicknessPresetPx(index, barStyle.dpiZoom, stateModeSnapshot)
 				: GetBarThicknessPresetPx(
-					stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen
+					stateModeSnapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen
 						? PenModeSelectEnum::IdtPenSoftPen
-						: stateMode.Pen.ModeSelect,
-					index, barStyle.dpiZoom);
+						: stateModeSnapshot.Pen.ModeSelect,
+					index, barStyle.dpiZoom, stateModeSnapshot);
 			drawAttributeThicknessPresetCircleDiameter[index].SetDirect(
 				static_cast<double>(initialCirclePx));
 			drawAttributeThicknessPresetNumberValues[index] = initialNumberMode
-				? GetBarThicknessPresetPx(
-					PenModeSelectEnum::IdtPenHighlighter1,
-					index, barStyle.dpiZoom)
+				? GetBarThicknessPresetMetrics(
+								PenModeSelectEnum::IdtPenHighlighter1, index, stateModeSnapshot).resolvedWidthDip
 				: initialCirclePx;
 		}
 	}
@@ -526,6 +563,9 @@ struct BarRenderLoopState
 		geometryThicknessCoarseHoverStage;
 	decltype(BarUISetClass::geometryCloseHoverStage)& geometryCloseHoverStage;
 	std::atomic<unsigned long long>& mainButtonClickPulseSerial;
+	// 初始化和逐帧更新均从模式锁内复制，绘制阶段只读本帧值。
+	StateModeClass stateModeSnapshot = GetStateModeSnapshot();
+	WorkspaceSceneSnapshot workspaceSnapshot = GetWorkspaceSceneSnapshot();
 
 	unsigned long long barDeviceResourceFailureGeneration = 0;
 	bool barPresentFailureLogged = false;
@@ -539,6 +579,10 @@ struct BarRenderLoopState
 	std::uint64_t observedPresentationAlphaRevision = 0;
 	Inkeys::UI::Bar::BarPresentMappingTracker presentMappingTracker;
 	BarWindowViewportController viewportController;
+	Inkeys::UI::Bar::BarFixedDragSurface fixedDragSurface;
+	// 以绝对屏幕像素保存成功 HWND/backing 基准；不与布局吸收一起平移。
+	Inkeys::UI::Bar::BarFixedDragSurface releasedWindowSurface;
+	unsigned long long releasedSurfaceAttemptedSession = 0;
 	POINT capacityOrigin{};
 	SIZE capacitySize{};
 	double capacityZoom = 0.0;
@@ -553,9 +597,25 @@ struct BarRenderLoopState
 	bool displayTransitionActive = false;
 	bool initialBottomDockPlacementApplied = false;
 	bool whiteboardDockPlacementPending = false;
+	bool whiteboardMinimized = false;
+	BarBottomDockCenterMode whiteboardRestoreCenterMode = BarBottomDockCenterMode::Free;
+	bool pptDockPlacementPending = false;
+	Inkeys::UI::Bar::BarWorkspaceSceneState workspaceScene;
+	BarBottomDockMode desktopDockMode = BarBottomDockMode::Floating;
+	BarBottomDockCenterMode desktopCenterMode = BarBottomDockCenterMode::Free;
+	bool desktopFold = false;
+	bool desktopSide = false;
+	bool desktopPrimarySide = false;
+	double desktopScreenX = 0.0, desktopScreenY = 0.0;
+	HMONITOR desktopMonitor = nullptr;
+	bool desktopRestorePending = false;
 	bool whiteboardDockAnimationActive = false;
+	bool taskbarDockAnimationActive = false;
+	bool taskbarDockRetargetPending = false;
+	double activeDesktopDockLine = 1.0;
+	bool activeProtectBottomEdge = false;
 	double displayCapacityZoom = 1.0;
-	BarUiValueClass displayDpiScale{ 1.0 };
+	BarUiValueClass displayUiBaseScale{ 1.0 };
 	BarUiValueClass displayCenterX{ 0.0 };
 	BarUiValueClass displayCenterY{ 0.0 };
 	BarBottomDockSpringState bottomDockSpring{};
@@ -565,7 +625,6 @@ struct BarRenderLoopState
 	BarBottomDockSpringState bottomDockCenterSpring{};
 	BarBottomDockSpringState bottomDockCenterCaptureFarEdgeSpring{};
 	bool bottomDockCenterCaptureFarEdgeActive = false;
-	bool bottomDockCenterRecoverySeeded = false;
 	double bottomDockPreviousDirectOffsetDip = 0.0;
 	double bottomDockObservedBoundsOffsetDip =
 		std::numeric_limits<double>::infinity();
@@ -594,11 +653,14 @@ struct BarRenderLoopState
 		BarBottomDockCenterMode::Centered;
 	BarBottomDockPhase bottomDockFrameCenterPhase = BarBottomDockPhase::Stable;
 	bool bottomDockFrameRecoveryActive = false;
+	bool bottomDockFrameTopAnchorValid = false;
 	bool bottomDockFrameTransitionInvalidated = false;
 	unsigned long long bottomDockFrameTransitionSerial = 0;
 	POINT bottomDockFrameTransitionTranslation{};
 	POINT committedAnchor{};
 	bool committedAnchorInitialized = false;
+	// 与 committedAnchor 同次成功保存；吸收由 anchor 差搬运，不能再单独平移一次。
+	RECT lastPresentedContentBounds{};
 	RECT cachedVisibleContentBounds{};
 	RECT cachedBottomDockElasticBaseBounds{};
 	RECT lastPresentedDebugTextBounds{};
@@ -612,6 +674,16 @@ struct BarRenderLoopState
 	bool frameRateSamplePending = false;
 	bool unclassifiedDamagePending = false;
 	unsigned long long presentAttemptFrameSerial = 0;
+	Inkeys::UI::Bar::Ui3FiniteObserver* finiteObserver = nullptr;
+	Inkeys::UI::Bar::Ui3SvgProbe* finiteSvgProbe = nullptr;
+	StateModeVersionedSnapshot finiteToolSnapshot;
+	Inkeys::UI::Bar::Ui3FiniteCandidate finiteCandidate;
+	Inkeys::UI::Bar::Ui3FiniteAccepted finiteAccepted;
+	Inkeys::UI::Bar::Ui3FixturePixelReceipt finiteReadbackReceipt;
+	Inkeys::UI::Bar::Ui3FiniteAccepted finiteReadbackGoal;
+	bool finiteReadbackAvailable = false;
+	Microsoft::WRL::ComPtr<ID2D1Bitmap1> finiteReadbackBitmap; // 保活最后成功target，拒same-address ABA。
+	unsigned long long finiteRootBatchRevision = 0, finiteDrawBatchRevision = 0, finiteSurfaceSerial = 0;
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
 	bool drawAttributeLayoutOpen = barState.drawAttribute;
@@ -633,50 +705,53 @@ struct BarRenderLoopState
 	const BarUiCurveSpecClass buttonPressCurve = BarButtonPressCurve();
 	const BarUiCurveSpecClass buttonReleaseCurve = BarButtonReleaseCurve();
 	optional<double> mainBarLayoutWidth;
-	BarUiValueClass drawAttributePenThickness{ max(0.0f, GetPenWidth()) };
+	optional<vector<BarMainButtonLayoutEntry>> mainBarLayoutSnapshot;
+	optional<Inkeys::UI::Bar::BarIconOrder> mainBarIconOrder;
+	Inkeys::UI::Bar::BarMainExpansionCache mainBarExpansionCache;
+	BarUiValueClass drawAttributePenThickness{ GetPenWidthMetrics(stateModeSnapshot).resolvedWidthDip };
 	bool drawAttributePenThicknessInitialized =
-		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+		stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtPen;
 	BarUiValueClass drawAttributePenPreviewMorph{
-		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0 };
+		stateModeSnapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0 };
 	bool drawAttributePenPreviewMorphInitialized =
-		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+		stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtPen;
 	// 激光外壳在白色核心完成曲线 morph 后再展开，退出时严格反向收缩。
 	BarUiValueClass drawAttributeLaserShellProgress{
-		stateMode.laserActive ? 1.0 : 0.0 };
+		stateModeSnapshot.laserActive ? 1.0 : 0.0 };
 	BarUiValueClass drawAttributeLaserOuterThickness{
-		GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom) };
+		GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom, stateModeSnapshot) };
 	BarUiValueClass drawAttributeLaserCoreThickness{
-		stateMode.laserActive
-			? GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom) / 3.0
-			: GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom) };
+		stateModeSnapshot.laserActive
+			? GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom, stateModeSnapshot) / 3.0
+			: GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom, stateModeSnapshot) };
 	BarUiValueClass drawAttributeLaserCoreWhiteMix{
-		stateMode.laserActive ? 1.0 : 0.0 };
-	BarLaserPreviewPhase drawAttributeLaserPhase = stateMode.laserActive
+		stateModeSnapshot.laserActive ? 1.0 : 0.0 };
+	BarLaserPreviewPhase drawAttributeLaserPhase = stateModeSnapshot.laserActive
 		? BarLaserPreviewPhase::LaserStable
 		: BarLaserPreviewPhase::NonLaserStable;
 	// 快捷按钮独立于笔形预览 morph，0=实心圆，1=荧光笔数字。
 	BarUiValueClass drawAttributeThicknessPresetNumberProgress{
 		ResolveBarThicknessPresetVisualKind(
 			ResolveBarThicknessPreviewVisualKind(
-				stateMode.Pen.ModeSelect, stateMode.laserActive))
+				stateModeSnapshot.Pen.ModeSelect, stateModeSnapshot.laserActive))
 			== BarThicknessPresetVisualKind::Number ? 1.0 : 0.0 };
 	BarThicknessPresetVisualKind drawAttributeThicknessPresetVisualKind =
 		ResolveBarThicknessPresetVisualKind(
 			ResolveBarThicknessPreviewVisualKind(
-				stateMode.Pen.ModeSelect, stateMode.laserActive));
+				stateModeSnapshot.Pen.ModeSelect, stateModeSnapshot.laserActive));
 	std::array<BarUiValueClass, 3>
 		drawAttributeThicknessPresetCircleDiameter{};
-	std::array<int, 3> drawAttributeThicknessPresetNumberValues{};
+	std::array<double, 3> drawAttributeThicknessPresetNumberValues{};
 	// 三种笔型各自保留退场进度，互切时不会把同一个视觉瞬移到新锚点。
 	std::array<BarUiValueClass, 3> drawAttributePenTypeExtensionProgress{
-		BarUiValueClass(!stateMode.laserActive
-			&& stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen
+		BarUiValueClass(!stateModeSnapshot.laserActive
+			&& stateModeSnapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen
 			? 1.0 : 0.0),
-		BarUiValueClass(!stateMode.laserActive
-			&& stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen
+		BarUiValueClass(!stateModeSnapshot.laserActive
+			&& stateModeSnapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen
 			? 1.0 : 0.0),
-		BarUiValueClass(!stateMode.laserActive
-			&& stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+		BarUiValueClass(!stateModeSnapshot.laserActive
+			&& stateModeSnapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
 			? 1.0 : 0.0),
 	};
 	BarUiValueClass drawAttributeThicknessSliderProgress{ 0.0 };
@@ -693,8 +768,8 @@ struct BarRenderLoopState
 	BarThicknessSliderRange thicknessFineDialOldRenderRange{};
 	BarThicknessSliderRange thicknessFineDialNewRenderRange{};
 	BarThicknessSliderRange thicknessFineDialLastLogicalRange =
-		GetBarThicknessSliderRange(stateMode.Pen.ModeSelect, barStyle.dpiZoom);
-	PenModeSelectEnum thicknessFineDialLastPenMode = stateMode.Pen.ModeSelect;
+		GetBarThicknessSliderRange(stateModeSnapshot.Pen.ModeSelect, barStyle.dpiZoom, stateModeSnapshot);
+	PenModeSelectEnum thicknessFineDialLastPenMode = stateModeSnapshot.Pen.ModeSelect;
 	BarUiValueClass drawAttributeThicknessSliderThumbOpacity{ 0.0 };
 	BarUiValueClass drawAttributeThicknessSliderThumbScale{ 0.75 };
 	BarUiValueClass drawAttributeThicknessSliderAccentOpacity{ 1.0 };
@@ -723,7 +798,7 @@ struct BarRenderLoopState
 	int drawAttributeThicknessPreviewMeasuredValue = -1;
 	wstring drawAttributeThicknessPreviewMeasuredText;
 	D2D1_SIZE_F drawAttributeThicknessPreviewMeasuredSize{};
-	int drawAttributeThicknessEnvelopeMeasuredValue = -1;
+	wstring drawAttributeThicknessEnvelopeMeasuredText;
 	D2D1_SIZE_F drawAttributeThicknessEnvelopeMeasuredSize{};
 	BarUiValueClass drawAttributeAnnotationPopupProgress{ 0.0 };
 	BarUiValueClass drawAttributeOverflowPopupProgress{ 0.0 };
@@ -745,9 +820,11 @@ struct BarRenderLoopState
 	BarUiValueClass drawAttributeThicknessHoldRingLockOpacity{ 1.0 };
 	BarUiValueClass drawAttributeThicknessHoldTextMix{ 0.0 };
 	D2D1_SIZE_F holdLockLabelTextSize =
-		spec.MeasureText(L"保持并固定粗细", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F colorPickerHoldTextSize =
-		spec.MeasureText(L"保持并固定颜色", 12.0, DWRITE_FONT_WEIGHT_NORMAL);
+		spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel),
+			12.0, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F colorPickerFooterTextSize =
 		spec.MeasureText(L"Ag", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F colorPickerFooterRgbValueSize =
@@ -767,18 +844,19 @@ struct BarRenderLoopState
 		wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity]
 			->content.GetVal(),
 		13.0, DWRITE_FONT_WEIGHT_NORMAL);
+	wstring annotationPopupTitleText = IW(
+		I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle);
 	D2D1_SIZE_F annotationPopupTitleSize = spec.MeasureText(
-		L"启用标注线（暂不可用）",
-		BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-	wstring annotationPopupTitleText = L"启用标注线（暂不可用）";
+		annotationPopupTitleText, BarThicknessTooltipTitleFontSize,
+		DWRITE_FONT_WEIGHT_SEMI_BOLD);
 	D2D1_SIZE_F annotationPopupBodySize = spec.MeasureText(
-		L"锁定绘制方向仅为水平、竖直或斜45°",
+		IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),
 		BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F overflowPopupTitleSize = spec.MeasureText(
-		L"墨迹粗细超出预览范围",
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),
 		BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
 	D2D1_SIZE_F overflowPopupBodySize = spec.MeasureText(
-		L"预览中的粗细可能与绘制粗细不一致。",
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),
 		BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
 	double annotationPopupWidth = ceil(max(
 		annotationPopupTitleSize.width, annotationPopupBodySize.width))
@@ -822,8 +900,49 @@ struct BarRenderLoopState
 	double mainButtonLogoBaseH = mainButtonLogo->h.tar;
 	unsigned long long handledMainButtonPulseSerial = 0;
 	Inkeys::UI::Bar::OneSecondFrameRate frameRate;
-	wstring fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
+	wstring fps = IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 };
+
+namespace Inkeys::UI::Bar
+{
+	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
+		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
+		const std::function<void(BarUiValueClass&, double)>& setPositionTarget)
+	{
+		auto* hidden = buttons.preset[static_cast<int>(hiddenPreset)];
+		if (folded || !hidden || hidden->IsVisible()) return;
+		auto* preferred = buttons.preset[static_cast<int>(anchorPreset)];
+		const int buttonCount = buttons.tot.load();
+		int hiddenIndex = -1;
+		BarButtonClass* anchor = nullptr;
+		for (int index = 0; index < buttonCount; ++index)
+		{
+			auto* candidate = buttons.buttonList.Get(index);
+			if (candidate == hidden) hiddenIndex = index;
+			if (candidate && candidate == preferred && candidate->IsVisible()) anchor = candidate;
+		}
+		if (!anchor && hiddenIndex >= 0)
+		{
+			// 首选不可见时收拢到前一有效成员；前区全空才使用后继。
+			for (int index = hiddenIndex - 1; index >= 0 && !anchor; --index)
+			{
+				auto* previous = buttons.buttonList.Get(index);
+				if (previous && previous->IsVisible()) anchor = previous;
+			}
+			for (int index = hiddenIndex + 1; index < buttonCount && !anchor; ++index)
+			{
+				auto* next = buttons.buttonList.Get(index);
+				if (next && next->IsVisible()) anchor = next;
+			}
+		}
+		if (!anchor) return;
+		// 保留原布局批次的回调曲线，显示时从来源位置展开。
+		setPositionTarget(hidden->button.x, anchor->button.x.tar);
+		setPositionTarget(hidden->button.y, anchor->button.y.tar);
+		hidden->lastDrawX = anchor->button.x.tar;
+		hidden->lastDrawY = anchor->button.y.tar;
+	}
+}
 
 [[nodiscard]] bool HasBarMainBarSideSwitchGeometryKeyframe(
 	BarRenderLoopState& state) noexcept
@@ -836,10 +955,13 @@ struct BarRenderLoopState
 class BarRenderLoopCoordinator
 {
 public:
-	explicit BarRenderLoopCoordinator(BarUISetClass& owner);
+	explicit BarRenderLoopCoordinator(BarUISetClass& owner,
+		std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present = {});
 
 	[[nodiscard]] bool Register();
 	void Unregister() noexcept;
+	[[nodiscard]] bool CaptureFixtureForCurrentOwner(const Inkeys::UI::Bar::Ui3FiniteTargetRecord&,
+		std::span<std::uint8_t>, Inkeys::UI::Bar::Ui3FixturePixelReceipt&) noexcept;
 	Inkeys::UI::RenderPipeline::FrameResult RenderFrame(
 		const Inkeys::UI::RenderPipeline::FrameContext& context);
 
@@ -849,7 +971,7 @@ private:
 	void ApplyDisplayTransition(
 		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
 	void SubmitTargetsAndLayout(
-		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
+		BarRenderLoopState& state, BarRenderFrameSnapshot& frame);
 	bool AdvanceAnimationsAndDeriveLayout(
 		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
 	void PrepareLightingAndDemand(
@@ -895,6 +1017,7 @@ private:
 			geometry.previewBottom - halfThumb);
 	}
 
+	std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present_;
 	BarUISetClass& owner_;
 	unique_ptr<BarRenderLoopState> state_;
 	BLENDFUNCTION blend_{};
@@ -936,8 +1059,91 @@ void BarUISetClass::StopRendering()
 	barRenderCoordinator.reset();
 }
 
-BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
-	: owner_(owner),
+
+bool BarRenderLoopCoordinator::CaptureFixtureForCurrentOwner(
+	const Inkeys::UI::Bar::Ui3FiniteTargetRecord& measuredEnd, std::span<std::uint8_t> destination,
+	Inkeys::UI::Bar::Ui3FixturePixelReceipt& out) noexcept
+{
+	using namespace Inkeys::UI::Bar;
+	out = {};
+	auto& state = *state_;
+	const auto receipt = state.finiteReadbackReceipt;
+	const auto& goal = state.finiteReadbackGoal;
+	constexpr std::uint64_t copyLimit = Ui3FixturePixelPayloadLimit / 2;
+	if (!state.finiteReadbackAvailable || !state.finiteSvgProbe || !state.finiteObserver
+		|| destination.empty() || destination.size() > copyLimit
+		|| receipt.generation != measuredEnd.accepted.runSerial || receipt.epoch != measuredEnd.epoch
+		|| receipt.surface != measuredEnd.surfaceSerial || receipt.committedAttempt < measuredEnd.trueBarAttemptSerial
+		|| goal.runSerial != measuredEnd.accepted.runSerial || goal.stepId != measuredEnd.accepted.stepId
+		|| goal.sourceSequence != measuredEnd.accepted.sourceSequence || goal.revision != measuredEnd.accepted.revision
+		|| !SameUi3FiniteSemanticSignature(goal.signature, measuredEnd.accepted.signature)
+		|| receipt.presentationAlpha == 0 || receipt.presentationAlpha != state.presentationAlpha.CommittedAlpha()
+		|| receipt.width == 0 || receipt.height == 0 || receipt.sourceX < 0 || receipt.sourceY < 0
+		|| state.spec.GetDeviceGeneration() != receipt.epoch
+		|| Inkeys::UI::RenderPipeline::GetDeviceEpoch().generation != receipt.epoch
+		|| state.finiteSurfaceSerial != receipt.surface
+		|| state.finiteSvgProbe->BufferMutationSerialForCurrentOwner() != receipt.bufferMutationSerial
+		|| state.finiteSvgProbe->TargetInvalidationSerialForCurrentOwner() != receipt.targetInvalidationSerial) return false;
+	const std::uint64_t stride = std::uint64_t{receipt.width} * 4;
+	if (stride > UINT32_MAX || stride > copyLimit || receipt.height > copyLimit / stride) return false;
+	const auto bytes = stride * receipt.height;
+	if (bytes > destination.size()) return false;
+	Microsoft::WRL::ComPtr<ID2D1Bitmap1> target = state.spec.GetTargetBitmap();
+	Microsoft::WRL::ComPtr<ID2D1DeviceContext> context = state.spec.GetDeviceContext();
+	if (!target || !context || target.Get() != state.finiteReadbackBitmap.Get()) return false;
+	const auto targetSize = target->GetPixelSize();
+	const auto format = target->GetPixelFormat();
+	if (format.format != DXGI_FORMAT_B8G8R8A8_UNORM || format.alphaMode != D2D1_ALPHA_MODE_PREMULTIPLIED
+		|| std::uint64_t{static_cast<std::uint32_t>(receipt.sourceX)} + receipt.width > targetSize.width
+		|| std::uint64_t{static_cast<std::uint32_t>(receipt.sourceY)} + receipt.height > targetSize.height) return false;
+	Microsoft::WRL::ComPtr<ID2D1Bitmap1> readable;
+	const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+		format, 96.0f, 96.0f);
+	if (FAILED(context->CreateBitmap(D2D1::SizeU(receipt.width, receipt.height), nullptr, 0,
+		&properties, readable.GetAddressOf()))) return false;
+	const auto source = D2D1::RectU(static_cast<std::uint32_t>(receipt.sourceX), static_cast<std::uint32_t>(receipt.sourceY),
+		static_cast<std::uint32_t>(receipt.sourceX) + receipt.width, static_cast<std::uint32_t>(receipt.sourceY) + receipt.height);
+	if (FAILED(readable->CopyFromBitmap(nullptr, target.Get(), &source))) return false;
+	D2D1_MAPPED_RECT mapped{};
+	if (FAILED(readable->Map(D2D1_MAP_OPTIONS_READ, &mapped))) return false;
+	// Map 返回的真实 pitch 也计入有界 payload，不能因 padding 偷过峰值预算。
+	const bool mappedValid = mapped.bits && mapped.pitch >= stride && mapped.pitch <= copyLimit
+		&& receipt.height <= copyLimit / mapped.pitch;
+	if (mappedValid)
+		for (std::uint32_t y = 0; y < receipt.height; ++y)
+			std::memcpy(destination.data() + static_cast<std::size_t>(stride * y),
+				mapped.bits + static_cast<std::size_t>(mapped.pitch) * y, static_cast<std::size_t>(stride));
+	const auto unmap = readable->Unmap();
+	if (!mappedValid || FAILED(unmap)) return false;
+	out = receipt; out.stride = static_cast<std::uint32_t>(stride); out.pixelBytes = bytes; out.status = 1;
+	return true;
+}
+
+namespace Inkeys::UI::Bar
+{
+	bool CaptureAuthorizedFixtureFinalBgra(const Ui3FixtureAuthorization& authorization,
+		const Ui3FiniteTargetRecord& measuredEnd, std::span<std::uint8_t> destination, Ui3FixturePixelReceipt& out) noexcept
+	{
+		out = {};
+		try
+		{
+			if (!IsAuthorizedUi3Fixture(authorization) || !AuthorizedFixtureEquivalenceReady(authorization)) return false;
+			auto* observer = ActiveUi3FiniteObserver(); Ui3FiniteTargetRecord actual;
+			// owner 门在读取 coordinator 之前，错线程不接触 plain state/GPU。
+			if (!observer || !observer->CopyCompletedOutcomeForCurrentOwner(measuredEnd.accepted.runSerial,
+				measuredEnd.accepted.stepId, measuredEnd.accepted.sourceSequence, measuredEnd.accepted.revision, actual)
+				|| actual.trueBarAttemptSerial != measuredEnd.trueBarAttemptSerial || actual.epoch != measuredEnd.epoch
+				|| actual.surfaceSerial != measuredEnd.surfaceSerial || actual.finalCommitTicks != measuredEnd.finalCommitTicks
+				|| actual.timingValid != measuredEnd.timingValid || !barRenderCoordinator) return false;
+			return barRenderCoordinator->CaptureFixtureForCurrentOwner(actual, destination, out);
+		}
+		catch (...) { return false; }
+	}
+}
+
+BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner,
+	std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present)
+	: present_(std::move(present)), owner_(owner),
 	state_(make_unique<BarRenderLoopState>(owner,
 		owner.mainButtonClickPulseSerial))
 {
@@ -957,6 +1163,8 @@ BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
 BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	BarRenderLoopState& state, BarRenderFrameSnapshot& frame)
 {
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
+	const bool hadFailureBackoff = state.presentDecision.HasFailureBackoff();
 	if (++state.presentAttemptFrameSerial == 0)
 	{
 		state.presentAttemptFrameSerial = 1;
@@ -976,12 +1184,37 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	if (state.presentationAlpha.HasDemand())
 		state.presentDecision.AddDemand({ false, false, true });
 	state.frameWorkStart = chrono::steady_clock::now();
-	frame.animationDtSeconds = state.animationClock.Tick();
+	frame.animationDtSeconds = state.animationClock.Tick(frame.frameTime);
+	if (diagnostics)
+	{
+		if (diagnostics->detailedCaptureEnabled)
+			diagnostics->presentAttemptFrameSerial = state.presentAttemptFrameSerial;
+		diagnostics->rawDtSeconds = state.animationClock.LastRawElapsedSeconds();
+		diagnostics->animationDtSeconds = frame.animationDtSeconds;
+		diagnostics->failureRecoveryReset = hadFailureBackoff
+			&& !state.presentDecision.HasFailureBackoff();
+	}
+	frame.iconOrder = Inkeys::UI::Bar::NormalizeBarIconOrder(Inkeys::config.UI.Bar.IconOrder.load());
+	frame.directionAdjustment = Inkeys::UI::Bar::NormalizeBarExpandDirectionAdjustment(
+		Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load());
 	frame.animationSpeedRate = static_cast<double>(BarUiAnimationSpeedRate);
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
 	state.spec.SetFrameZoom(frame.zoom);
 	// 绘制状态和第一光源共用同一帧快照，避免模式和颜色跨阶段混读。
+	if (state.finiteObserver)
+	{
+		state.finiteToolSnapshot = GetStateModeVersionedSnapshot();
+		state.stateModeSnapshot = state.finiteToolSnapshot.state; // raw revision 0原样保留，不造版本。
+		state.workspaceSnapshot = GetWorkspaceSceneSnapshot();
+	}
+	else
+	{
+		const auto committed = GetCommittedWorkspaceStateSnapshot();
+		state.stateModeSnapshot = committed.state;
+		state.workspaceSnapshot = committed.workspace;
+	}
+	const auto& stateMode = state.stateModeSnapshot;
 	frame.stateMode = stateMode.StateModeSelect;
 	frame.penMode = stateMode.Pen.ModeSelect;
 	frame.brush1Color = stateMode.Pen.Brush1.color;
@@ -1003,13 +1236,13 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		const RECT targetBounds = targetDisplay.bounds;
 		const RECT targetWorkArea = targetDisplay.workArea;
 		const UINT targetDpi = targetDisplay.dpi;
-		state.activeDisplayDpi = targetDpi;
 		const double targetDpiScale = clamp(
 			static_cast<double>(targetDpi ? targetDpi : USER_DEFAULT_SCREEN_DPI) /
 			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
 	const double configZoom = max(0.01,
 		static_cast<double>(state.barStyle.configZoom));
-	const double targetZoom = targetDpiScale * configZoom;
+	const double targetUiBaseScale = targetDisplay.uiBaseScale;
+	const double targetZoom = targetUiBaseScale * configZoom;
 	const bool dockLayoutLocked = frame.bottomDockLayoutLocked;
 
 	if (!state.displayTransitionInitialized)
@@ -1018,8 +1251,8 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.activeWorkArea = targetWorkArea;
 			state.activeDisplayDpi = targetDpi;
 			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-		state.displayDpiScale.SetDirect(targetDpiScale);
-		const double initialZoom = targetDpiScale * configZoom;
+		state.displayUiBaseScale.SetDirect(targetUiBaseScale);
+		const double initialZoom = targetUiBaseScale * configZoom;
 		state.displayCenterX.SetDirect(mainButton->x.val * initialZoom);
 		state.displayCenterY.SetDirect(mainButton->y.val * initialZoom);
 		state.displayCapacityZoom = initialZoom;
@@ -1041,7 +1274,17 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			: 0.0;
 		const double halfWidth = mainButton->GetW() * targetZoom / 2.0 + frameHalf;
 		const double halfHeight = mainButton->GetH() * targetZoom / 2.0 + frameHalf;
-		if (dockLayoutLocked)
+		const bool geometryUnchanged = EqualRect(&state.activeMonitorBounds, &targetBounds)
+			&& state.activeDisplayDpi == targetDpi
+			&& abs(state.displayUiBaseScale.tar - targetUiBaseScale) <= 0.000001;
+		if (geometryUnchanged)
+		{
+			// Shell 显隐只改变目标线，不重算用户 X 或把浮动栏吸到底边。
+			state.taskbarDockRetargetPending = state.taskbarDockRetargetPending
+				|| Inkeys::UI::Bar::ShouldRetargetBarTaskbarDockY(
+					state.activeDesktopDockLine, targetDisplay.desktopDockLine);
+		}
+		else if (dockLayoutLocked && !state.pptDockPlacementPending)
 		{
 			// 底栏换屏或缩放时直接重算几何，保证可见 stroke 始终贴住 dock 线。
 			const double oldScreenCenterX = state.monitorOrigin.x + oldLocalX;
@@ -1051,7 +1294,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 					mainButton->GetW() / 2.0
 						+ frameHalf / targetZoom, targetZoom);
 				const double dockLine = CurrentBarBottomDockLine(
-					targetBounds, targetWorkArea, targetDpi);
+					targetBounds, targetWorkArea, targetDpi, targetDisplay.desktopDockLine);
 				const double targetScreenCenterY = ResolveBarBottomDockCenterScreenY(
 					dockLine, state.mainButtonBaseSize,
 					mainButton->ft.has_value()
@@ -1065,7 +1308,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				targetScreenCenterX - targetBounds.left);
 			state.displayCenterY.SetDirect(
 				targetScreenCenterY - targetBounds.top);
-			state.displayDpiScale.SetDirect(targetDpiScale);
+			state.displayUiBaseScale.SetDirect(targetUiBaseScale);
 		}
 		else
 		{
@@ -1082,7 +1325,12 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.displayCenterY.SetDirect(placement.startLocalCenterY);
 			state.displayCenterX.SetTar(placement.targetLocalCenterX, 0.4);
 			state.displayCenterY.SetTar(placement.targetLocalCenterY, 0.4);
-			state.displayDpiScale.SetTar(targetDpiScale, 0.4);
+			state.displayUiBaseScale.SetTar(targetUiBaseScale, 0.4);
+		}
+		if (!geometryUnchanged)
+		{
+			state.taskbarDockAnimationActive = false;
+			state.taskbarDockRetargetPending = false;
 		}
 		state.displayCapacityZoom = max(state.displayCapacityZoom,
 			max(currentZoom, targetZoom));
@@ -1094,13 +1342,18 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	}
 	else if (dragging)
 	{
-		const double currentDpiScale = max(0.01,
-			static_cast<double>(state.displayDpiScale.val));
+		const double currentUiBaseScale = max(0.01,
+			static_cast<double>(state.displayUiBaseScale.val));
 		const bool displayChanged = serial != state.observedDisplaySerial;
 		const bool totalZoomChanged = abs(static_cast<double>(state.barStyle.zoom)
 			- targetZoom) > 0.000001;
 		if (displayChanged || totalZoomChanged)
 		{
+			const bool taskbarOnlyChange = !totalZoomChanged
+				&& Inkeys::UI::Bar::SceneBottomDockInsetDip() <= 0.0
+				&& EqualRect(&state.activeMonitorBounds, &targetBounds)
+				&& state.activeDisplayDpi == targetDpi
+				&& abs(currentUiBaseScale - targetUiBaseScale) <= 0.000001;
 			const double currentBaseCenterScreenX = state.monitorOrigin.x
 				+ state.displayCenterX.val;
 			const double currentBaseCenterScreenY = state.monitorOrigin.y
@@ -1113,11 +1366,12 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				state.activeDisplayDpi = targetDpi;
 				state.displayCenterX.SetDirect(
 					currentBaseCenterScreenX - targetBounds.left);
-				if (frame.bottomDockMode == BarBottomDockMode::BottomDocked)
+				// 单独的任务栏变化不在已按住的指针下移动 Y 基线。
+				if (frame.bottomDockMode == BarBottomDockMode::BottomDocked && !taskbarOnlyChange)
 				{
 					const double targetDockCenterScreenY =
 						ResolveBarBottomDockCenterScreenY(
-							CurrentBarBottomDockLine(targetBounds, targetWorkArea, targetDpi),
+							CurrentBarBottomDockLine(targetBounds, targetWorkArea, targetDpi, targetDisplay.desktopDockLine),
 							state.mainButtonBaseSize,
 						mainButton->ft.has_value()
 							? static_cast<double>(mainButton->ft.value().tar)
@@ -1136,10 +1390,10 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			state.unclassifiedDamagePending = true;
 			state.dirtyRegionTracker.ForceFullDamage();
 		}
-		if (abs(currentDpiScale - targetDpiScale) > 0.000001)
+		if (abs(currentUiBaseScale - targetUiBaseScale) > 0.000001)
 		{
 			// displayCenter 已是物理像素；只切换比例即可保持指针下的屏幕中心。
-			state.displayDpiScale.SetDirect(targetDpiScale);
+			state.displayUiBaseScale.SetDirect(targetUiBaseScale);
 			state.displayCapacityZoom = max(
 				state.displayCapacityZoom,
 				max(static_cast<double>(state.barStyle.zoom), targetZoom));
@@ -1148,39 +1402,104 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		}
 	}
 
+	// 显示目标与输入屏障发布同一环境；输入仍只在成功呈现后切换抓取基准。
+	state.activeMonitorBounds = targetBounds;
+	state.activeWorkArea = targetWorkArea;
+	state.activeDisplayDpi = targetDpi;
+	if (dragging && state.activeDesktopDockLine != targetDisplay.desktopDockLine)
+		state.taskbarDockRetargetPending = true;
+	state.activeDesktopDockLine = targetDisplay.desktopDockLine;
+	state.activeProtectBottomEdge = targetDisplay.protectBottomEdge;
+	const bool desktopDock = Inkeys::UI::Bar::SceneBottomDockInsetDip() <= 0.0;
+	const bool allowTaskbarAnimation = Inkeys::UI::Bar::CanAnimateBarTaskbarDockY(
+		frame.bottomDockMode == BarBottomDockMode::BottomDocked, dragging,
+		frame.bottomDockRecoveryActive || frame.bottomDockPhase != BarBottomDockPhase::Stable
+			|| frame.bottomDockCenterPhase != BarBottomDockPhase::Stable, desktopDock,
+		!state.initialBottomDockPlacementApplied || state.whiteboardDockPlacementPending
+			|| state.pptDockPlacementPending, state.whiteboardDockAnimationActive);
+	if (!allowTaskbarAnimation && state.taskbarDockAnimationActive)
+	{
+		// 起拖或恢复接管时停止旧插值；稳定后再向最新桌面线收敛。
+		const auto presented = owner_.BottomDockPresentedSnapshot();
+		const double frozenY = presented.serial != 0
+			&& EqualRect(&presented.monitorBounds, &targetBounds)
+			? presented.mainCenterScreenY - state.monitorOrigin.y - presented.directTranslation.y
+			: mainButton->y.val * max(0.01, static_cast<double>(state.barStyle.zoom));
+		// 新手势使用实际已呈现的中心，不能接管尚未上屏的动画候选。
+		state.displayCenterY.SetDirect(frozenY);
+		state.taskbarDockAnimationActive = false;
+		state.taskbarDockRetargetPending = true;
+	}
+	if (!desktopDock || frame.bottomDockMode != BarBottomDockMode::BottomDocked)
+		state.taskbarDockRetargetPending = false;
+	if (allowTaskbarAnimation && state.taskbarDockRetargetPending)
+	{
+		const double nextY = ResolveBarBottomDockCenterScreenY(
+			state.activeDesktopDockLine, state.mainButtonBaseSize,
+			mainButton->ft.has_value() ? static_cast<double>(mainButton->ft.value().tar) : 0.0,
+			state.displayUiBaseScale.val * configZoom) - state.monitorOrigin.y;
+		if (Inkeys::UI::Bar::ShouldRetargetBarTaskbarDockY(state.displayCenterY.tar, nextY))
+		{
+			// 快速反向从最后成功显示的 Y 开始，不能从尚未提交的候选帧起跳。
+			const auto presented = owner_.BottomDockPresentedSnapshot();
+			const double presentedY = presented.serial != 0
+				&& EqualRect(&presented.monitorBounds, &targetBounds)
+				? presented.mainCenterScreenY - state.monitorOrigin.y - presented.directTranslation.y
+				: static_cast<double>(state.displayCenterY.val);
+			state.taskbarDockAnimationActive = Inkeys::UI::Bar::RetargetBarTaskbarDockY(
+				state.displayCenterY, nextY, presentedY);
+		}
+		state.taskbarDockRetargetPending = false;
+	}
+
 	const BarUiAnimationAdvanceContextClass animationContext{
 		frame.animationDtSeconds, frame.animationSpeedRate,
 		true == BarUiAnimationEnabled, false };
 	if (!dragging)
 	{
 		const auto dpiResult = BarUiAdvanceAnimation(
-			state.displayDpiScale, animationContext);
+			state.displayUiBaseScale, animationContext);
 		const auto xResult = BarUiAdvanceAnimation(
 			state.displayCenterX, animationContext);
 		const auto yResult = BarUiAdvanceAnimation(
 			state.displayCenterY, animationContext);
 		state.displayTransitionActive =
 			dpiResult.active || xResult.active || yResult.active;
+		if (state.finiteObserver)
+		{
+			using Inkeys::UI::Bar::Ui3PropertyRole;
+			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dpiResult.active, state.displayUiBaseScale.IsSame());
+			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, xResult.active, state.displayCenterX.IsSame());
+			state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, yResult.active, state.displayCenterY.IsSame());
+		}
 	}
 	else
 	{
 		// 拖动期间冻结旧显示过渡，零位移基准不能在指针下继续漂移。
 		state.displayTransitionActive = false;
 	}
-	const double currentDpiScale = max(0.01,
-		static_cast<double>(state.displayDpiScale.val));
-	const double currentZoom = currentDpiScale * configZoom;
-	state.barStyle.dpiZoom = currentDpiScale;
+	const double currentUiBaseScale = max(0.01,
+		static_cast<double>(state.displayUiBaseScale.val));
+	const double currentZoom = currentUiBaseScale * configZoom;
+	// 屏幕 DIP/画笔只消费真实 DPI；UI 动画基准允许低于用户倍率下限。
+	state.barStyle.dpiZoom = targetDpiScale;
+	state.barStyle.uiBaseZoom = currentUiBaseScale;
 	state.barStyle.zoom = currentZoom;
 		if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
 			state.whiteboardDockAnimationActive = false;
+		if (state.taskbarDockAnimationActive && state.displayCenterY.IsSame())
+			state.taskbarDockAnimationActive = false;
 		if (!dragging && state.initialBottomDockPlacementApplied
 			&& !state.whiteboardDockAnimationActive
+			&& !state.taskbarDockAnimationActive
+			// 恢复仍持有 Y 时保留旧基线，稳定后再播放待处理的任务栏过渡。
+			&& !(desktopDock && state.taskbarDockRetargetPending && !allowTaskbarAnimation)
 			&& !state.whiteboardDockPlacementPending
+			&& !state.pptDockPlacementPending
 			&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
 		{
 			const double dockLine = CurrentBarBottomDockLine(
-				state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+				state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi, state.activeDesktopDockLine);
 			state.displayCenterY.SetDirect(ResolveBarBottomDockCenterScreenY(
 				dockLine, state.mainButtonBaseSize,
 				mainButton->ft.has_value()
@@ -1200,8 +1519,9 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 }
 
 void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
-	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame)
+	BarRenderLoopState& state, BarRenderFrameSnapshot& frame)
 {
+	const auto& stateMode = state.stateModeSnapshot;
 	const auto& frameDrawingState = frame;
 	const double frameZoom = frame.zoom;
 	const double animationDtSeconds = frame.animationDtSeconds;
@@ -1226,6 +1546,46 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		state.dirtyRegionTracker.ForceFullDamage();
 	}
 	state.barLightMaterial.SetTar(requestedDarkStyle ? 0.0 : 1.0, BarUiDefaultOperationDur);
+	// 捕获取消会同步等待窗口线程，必须在主栏表现锁外完成。
+	auto thicknessSliderRange = GetBarThicknessSliderRange(
+		frameDrawingState.penMode, state.barStyle.dpiZoom, stateMode);
+	bool thicknessSliderAvailable =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+			&& !stateMode.laserActive
+			&& thicknessSliderRange.supported
+			&& state.barState.drawAttribute && !state.barState.fold;
+	bool colorPickerAvailable =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+			&& state.barState.drawAttribute && !state.barState.fold;
+	if (!colorPickerAvailable
+		&& (state.barState.drawAttributeBar.colorPickerOpen
+			|| state.barState.drawAttributeBar.colorPickerPointerPressed
+			|| state.barState.drawAttributeBar.colorPickerPointerCapture))
+	{
+		// 属性栏折叠或工具失效时立即撤销命中，承载面板仍按进度完成退场。
+		CloseColorPicker(true);
+	}
+	if (!thicknessSliderAvailable
+		&& (state.barState.drawAttributeBar.thicknessSliderHover
+			|| state.barState.drawAttributeBar.thicknessSliderPinned
+			|| state.barState.drawAttributeBar.thicknessSliderPressed
+			|| state.barState.drawAttributeBar.thicknessSliderDragging
+			|| state.barState.drawAttributeBar.thicknessPreviewDragging
+			|| state.barState.drawAttributeBar.thicknessFineDialDragging
+			|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive
+			|| state.barState.drawAttributeBar
+				.thicknessFineDialActivationPreviewActive
+			|| state.barState.drawAttributeBar
+				.thicknessFineDialActivationDwellActive
+			|| static_cast<float>(state.barState.drawAttributeBar
+				.thicknessFineDialActivationPreviewProgress) > 0.0f
+			|| state.barState.drawAttributeBar.thicknessViewMode
+				!= ThicknessViewMode::Preview
+			|| state.barState.drawAttributeBar.thicknessSliderCapture))
+	{
+		// 属性栏失效时主动结束捕获，嵌套输入循环会收到一次合成抬起。
+		CloseThicknessSlider(true);
+	}
 	// 主按钮
 	{
 		double operationDur = BarUiDefaultOperationDur;
@@ -1254,6 +1614,11 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		state.mainLogoDrawingPct.SetTar(showLogoInk ? 1.0 : 0.0, operationDur);
 		unsigned long long mainButtonPulseSerial = state.mainButtonClickPulseSerial.load(std::memory_order_relaxed);
 		bool mainButtonPulse = mainButtonPulseSerial != state.handledMainButtonPulseSerial;
+		if (state.finiteObserver && mainButtonPulse)
+		{
+			if (state.finiteAccepted.stepId != 0 && state.finiteAccepted.scene == Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute)
+				state.finiteObserver->ObserveLifecycle(Inkeys::UI::Bar::Ui3FiniteLifecycleInterference);
+		}
 		if (mainButtonPulse) state.handledMainButtonPulseSerial = mainButtonPulseSerial;
 		const bool dockLayoutLocked = frame.bottomDockLayoutLocked;
 
@@ -1296,7 +1661,7 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			mainButton->n.value().SetTar(3.0, operationDur);
 
 			mainButton->pct.SetTar(
-				0.6, operationDur, nullopt, false, mainButtonPctCurveSpec);
+				BarMainButtonCollapsedFillOpacity, operationDur, nullopt, false, mainButtonPctCurveSpec);
 		}
 		else
 		{
@@ -1312,6 +1677,17 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 
 	// 主栏
 	{
+		// 仅保护主栏网格目标扫描，不跨初置/停靠/呈现；Close等副作用已在锁外归位。
+		unique_lock presentationLock(state.barButtonSet.presentationMutex);
+		state.barButtonSet.UpdateMainPresentation(state.stateModeSnapshot);
+		frame.mainButtons = state.barButtonSet.buttonList.Snapshot();
+		frame.moreButtons = state.barButtonSet.GetMoreButtonSnapshot();
+		// 锁内锁存本帧历史与锚点门禁，后续组件/工具刷新只影响下一帧。
+		frame.recallChrome = owner_.RecallChromeView();
+		const auto* recallAnchor = state.barButtonSet.preset[static_cast<int>(
+			frame.recallChrome.redoExpanded ? BarButtonPresetEnum::Redo : BarButtonPresetEnum::Recall)];
+		frame.recallAnchorVisible = recallAnchor && recallAnchor->IsVisible();
+		const auto layoutSnapshot = state.barButtonSet.MainLayoutSnapshot();
 		double operationDur = BarUiDefaultOperationDur;
 		auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
 		BarUiCurveSpecClass syncedValueCurve;
@@ -1353,23 +1729,41 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 					pct.continueTimelinePhase = syncedPctCurve.continueTimelinePhase;
 				}
 			};
+// 与下方布局共用：间隙 5，1*1 边长 32.5，使
+			// 2*1 = 两枚 1*1 + 间隙，2*2 = 两枚 2*1 + 间隙 = 四枚 1*1，且各处间隙一致。
+			constexpr double barBtnGap = BarButtonGapDip;
+			constexpr double barBtnOne = BarButtonOneSideDip;
+			constexpr double barBtnTwo = BarButtonTwoSideDip;
+			constexpr double barBtnOneStep = barBtnOne + barBtnGap; // 37.5
+			constexpr double barBtnTwoStep = barBtnTwo + barBtnGap; // 75
+		const auto mainListLayout = Inkeys::UI::Bar::ResolveBarButtonListLayout(
+			frame.mainButtons, Inkeys::UI::Bar::BarButtonListLayoutKind::Main);
+		double layoutTotalWidth = mainListLayout.width;
 		const bool dockLayoutLocked = frame.bottomDockLayoutLocked;
 		const bool centeredMainBarSideLocked =
 			frame.bottomDockMode == BarBottomDockMode::BottomDocked
 			&& frame.bottomDockCenterMode == BarBottomDockCenterMode::Centered
 			&& !state.barState.fold;
 		// 居中态由根节点位置维持联合中心，不再根据窗口 X 反复重判展开方向。
-		bool currentMainBarSide = centeredMainBarSideLocked
-			? state.mainBarLayoutSide
-			: static_cast<bool>(state.barState.widgetPosition.mainBar);
+		const auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		const Inkeys::UI::Bar::BarMainExpansionInput expansionInput{
+			static_cast<double>(state.activeMonitorBounds.left), static_cast<double>(state.activeMonitorBounds.right),
+			state.monitorOrigin.x + mainButton->x.val * frameZoom, frameZoom,
+			state.mainButtonBaseSize / 2.0, 10.0, layoutTotalWidth,
+			mainButton->ft.has_value() ? max(0.0, mainButton->ft.value().tar / 2.0) : 0.0,
+			mainBar->ft.has_value() ? max(0.0, mainBar->ft.value().tar / 2.0) : 0.0,
+			frame.directionAdjustment, Inkeys::UI::Bar::LockCenteredBarExpansion(centeredMainBarSideLocked,
+				Inkeys::UI::Bar::WhiteboardActive(), frame.directionAdjustment) || Inkeys::UI::Bar::WhiteboardDockLockActive()
+				|| state.whiteboardDockAnimationActive || state.whiteboardDockPlacementPending
+				|| state.pptDockPlacementPending || !state.initialBottomDockPlacementApplied };
+		// 完整目标宽度先于方向判定；折叠也以未来展开宽度评估，同输入沿用锁存结果。
+		bool currentMainBarSide = state.mainBarExpansionCache.Resolve(expansionInput,
+			centeredMainBarSideLocked ? state.mainBarLayoutSide
+				: static_cast<bool>(state.barState.widgetPosition.mainBar));
 		state.barState.widgetPosition.mainBar = currentMainBarSide;
 		const bool mainBarSideChanged = !state.barState.fold
 			&& currentMainBarSide != state.mainBarLayoutSide;
 		bool mainBarSideSwitch = mainBarSideChanged;
-		// 浮层展开状态直接映射到硬编码入口的选中态，复用普通按钮颜色。
-		if (auto moreButton = state.barButtonSet.GetMoreButton())
-			moreButton->localState.state = (!state.barState.fold && state.barState.moreExpanded)
-				? BarWidgetState::Selected : BarWidgetState::None;
 		state.mainBarLayoutSide = currentMainBarSide;
 		bool currentDrawAttributeSide = state.barState.widgetPosition.primaryBar;
 		const bool drawAttributeSideChanged = state.barState.drawAttribute
@@ -1410,24 +1804,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		bool geometryAttributeVisibilityChange =
 			currentGeometryAttributeOpen != state.geometryAttributeLayoutOpen;
 		state.geometryAttributeLayoutOpen = currentGeometryAttributeOpen;
-		auto thicknessSliderRange = GetBarThicknessSliderRange(
-			frameDrawingState.penMode, state.barStyle.dpiZoom);
-		bool thicknessSliderAvailable =
-			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-				&& !stateMode.laserActive
-				&& thicknessSliderRange.supported
-				&& state.barState.drawAttribute && !state.barState.fold;
-		bool colorPickerAvailable =
-			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-				&& state.barState.drawAttribute && !state.barState.fold;
-		if (!colorPickerAvailable
-			&& (state.barState.drawAttributeBar.colorPickerOpen
-				|| state.barState.drawAttributeBar.colorPickerPointerPressed
-				|| state.barState.drawAttributeBar.colorPickerPointerCapture))
-		{
-			// 属性栏折叠或工具失效时立即撤销命中，承载面板仍按进度完成退场。
-			CloseColorPicker(true);
-		}
 		// 展开/收起都保留 Popup 的 Back 回弹，几何值可短暂越过终点。
 		const BarUiCurveSpecClass colorPickerPanelCurve{
 			state.barState.drawAttributeBar.colorPickerOpen
@@ -1460,12 +1836,12 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			BarColorPickerHoldHintAnimationDur);
 		{
 			// 显示 Draw3 当前工具的最终合成透明度，不沿用 Draw2 的 130/255 常量。
-			COLORREF penColor = GetPenColor();
+			COLORREF penColor = GetPenColor(stateMode);
 			double displayR = GetRValue(penColor);
 			double displayG = GetGValue(penColor);
 			double displayB = GetBValue(penColor);
 			double displayOpacity = clamp(
-				static_cast<double>(GetEffectivePenOpacity()) * 100.0,
+				static_cast<double>(GetEffectivePenOpacity(stateMode)) * 100.0,
 				0.0, 100.0);
 			bool pickerDragging =
 				state.barState.drawAttributeBar.colorPickerPointerPressed;
@@ -1493,27 +1869,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 					displayOpacity, operationDur);
 			}
 		}
-		if (!thicknessSliderAvailable
-			&& (state.barState.drawAttributeBar.thicknessSliderHover
-				|| state.barState.drawAttributeBar.thicknessSliderPinned
-				|| state.barState.drawAttributeBar.thicknessSliderPressed
-				|| state.barState.drawAttributeBar.thicknessSliderDragging
-				|| state.barState.drawAttributeBar.thicknessPreviewDragging
-				|| state.barState.drawAttributeBar.thicknessFineDialDragging
-				|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive
-				|| state.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewActive
-				|| state.barState.drawAttributeBar
-					.thicknessFineDialActivationDwellActive
-				|| static_cast<float>(state.barState.drawAttributeBar
-					.thicknessFineDialActivationPreviewProgress) > 0.0f
-				|| state.barState.drawAttributeBar.thicknessViewMode
-					!= ThicknessViewMode::Preview
-				|| state.barState.drawAttributeBar.thicknessSliderCapture))
-		{
-			// 属性栏失效时主动结束捕获，嵌套输入循环会收到一次合成抬起。
-			CloseThicknessSlider(true);
-		}
 		ThicknessViewMode thicknessViewMode = thicknessSliderAvailable
 			? static_cast<ThicknessViewMode>(
 				state.barState.drawAttributeBar.thicknessViewMode)
@@ -1533,8 +1888,10 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			};
 		bool fineDialPenModeChanged = frameDrawingState.penMode
 			!= state.thicknessFineDialLastPenMode;
+		const bool fineDialCandidateActive =
+			state.barState.drawAttributeBar.thicknessFineDialCandidateActive;
 		if (!thicknessFineDialActive
-			|| state.barState.drawAttributeBar.thicknessFineDialCandidateActive
+			|| fineDialCandidateActive
 			|| !thicknessSliderRange.supported)
 		{
 			CancelFineDialRangeTransition();
@@ -1575,8 +1932,13 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			}
 			else CancelFineDialRangeTransition();
 		}
-		state.thicknessFineDialLastPenMode = frameDrawingState.penMode;
-		state.thicknessFineDialLastLogicalRange = thicknessSliderRange;
+		if (!fineDialCandidateActive ||
+			!fineDialPenModeChanged)
+		{
+			// 候选未取消时暂存旧量程，避免异步 PPT 笔型抢先让后续过渡消失。
+			state.thicknessFineDialLastPenMode = frameDrawingState.penMode;
+			state.thicknessFineDialLastLogicalRange = thicknessSliderRange;
+		}
 		if (state.thicknessFineDialRangeTransitionPhase
 			== ThicknessFineDialRangeTransitionPhase::RevealNewRange)
 		{
@@ -1962,19 +2324,16 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			{
 				// 真实粗细仍只在抬起提交；拖动中数字即时显示候选值，抬手后恢复普通动画。
-				double penThickness = GetBarCurrentPenThicknessVisualWidth(
-					state.barStyle.dpiZoom);
 				bool thicknessCandidateDragging =
 					state.barState.drawAttributeBar.thicknessSliderDragging
 						|| state.barState.drawAttributeBar.thicknessPreviewDragging
 						|| state.barState.drawAttributeBar
 							.thicknessFineDialCandidateActive;
-				if (thicknessCandidateDragging)
-				{
-					penThickness = max(0.0f,
-						static_cast<float>(state.barState.drawAttributeBar
-							.thicknessSliderCandidateWidth));
-				}
+				const auto previewMetrics = GetBarThicknessPreviewMetrics(stateMode,
+					thicknessCandidateDragging, static_cast<double>(state.barState
+						.drawAttributeBar.thicknessSliderCandidateWidth));
+				const double penThickness = previewMetrics.resolvedWidthDip;
+				const double visualThickness = previewMetrics.appliedCanvasWidthPx;
 				double normalPenPreviewMorph =
 					(PenModeUsesCurvedThicknessPreview(stateMode.Pen.ModeSelect)
 						? 0.0
@@ -2014,9 +2373,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						stateMode.laserActive ? 1.0 : 0.0);
 					state.drawAttributeLaserShellProgress.SetDirect(
 						stateMode.laserActive ? 1.0 : 0.0);
-					state.drawAttributeLaserOuterThickness.SetDirect(penThickness);
+					state.drawAttributeLaserOuterThickness.SetDirect(visualThickness);
 					state.drawAttributeLaserCoreThickness.SetDirect(
-						stateMode.laserActive ? penThickness / 3.0 : penThickness);
+						stateMode.laserActive ? visualThickness / 3.0 : visualThickness);
 					state.drawAttributeLaserPhase = stateMode.laserActive
 						? BarLaserPreviewPhase::LaserStable
 						: BarLaserPreviewPhase::NonLaserStable;
@@ -2042,20 +2401,25 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					{
 						if (presetNumberMode)
 							state.drawAttributeThicknessPresetNumberValues[index] =
-								GetBarThicknessPresetPx(
-									PenModeSelectEnum::IdtPenHighlighter1,
-									index, state.barStyle.dpiZoom);
+								GetBarThicknessPresetMetrics(
+								PenModeSelectEnum::IdtPenHighlighter1, index, stateMode).resolvedWidthDip;
 						else state.drawAttributeThicknessPresetCircleDiameter[index]
 							.SetDirect(static_cast<double>(stateMode.laserActive
 								? GetBarLaserThicknessPresetPx(
-									index, state.barStyle.dpiZoom)
+									index, state.barStyle.dpiZoom, stateMode)
 								: GetBarThicknessPresetPx(
 									presetCircleMode, index,
-									state.barStyle.dpiZoom)));
+									state.barStyle.dpiZoom, stateMode)));
 					}
 				}
 				else
 				{
+					if (presetNumberMode && state.drawAttributeThicknessPresetVisualKind
+						== BarThicknessPresetVisualKind::Number)
+						for (size_t index = 0; index < 3; ++index)
+							state.drawAttributeThicknessPresetNumberValues[index] =
+								GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenHighlighter1,
+									index, stateMode).resolvedWidthDip;
 					if (presetTargetKind
 						!= state.drawAttributeThicknessPresetVisualKind)
 					{
@@ -2066,9 +2430,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							// 数字进入时先锁存目标内容，淡入期间不读取实时工具值。
 							for (size_t index = 0; index < 3; ++index)
 								state.drawAttributeThicknessPresetNumberValues[index] =
-									GetBarThicknessPresetPx(
-										PenModeSelectEnum::IdtPenHighlighter1,
-										index, state.barStyle.dpiZoom);
+									GetBarThicknessPresetMetrics(
+								PenModeSelectEnum::IdtPenHighlighter1, index, stateMode).resolvedWidthDip;
 						}
 						state.drawAttributeThicknessPresetVisualKind = presetTargetKind;
 					}
@@ -2077,11 +2440,11 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						// Circle -> Number 时锁住 outgoing 圆；只有 Circle -> Circle 才改变直径。
 						if (!BarThicknessPresetRetargetsCircle(
 							state.drawAttributeThicknessPresetVisualKind)) continue;
-						const int targetCirclePx = stateMode.laserActive
+						const double targetCirclePx = stateMode.laserActive
 							? GetBarLaserThicknessPresetPx(
-								index, state.barStyle.dpiZoom)
+								index, state.barStyle.dpiZoom, stateMode)
 							: GetBarThicknessPresetPx(
-								presetCircleMode, index, state.barStyle.dpiZoom);
+								presetCircleMode, index, state.barStyle.dpiZoom, stateMode);
 						state.drawAttributeThicknessPresetCircleDiameter[index].SetTar(
 							static_cast<double>(targetCirclePx), operationDur);
 					}
@@ -2098,16 +2461,16 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							&& abs(static_cast<double>(value.val) - target)
 								<= endpointEpsilon;
 					};
-					const double laserCoreThickness = penThickness / 3.0;
+					const double laserCoreThickness = visualThickness / 3.0;
 					const bool coreAtLaserEndpoint =
 						IsTarget(state.drawAttributeLaserCoreThickness,
 							laserCoreThickness)
 						&& IsTarget(state.drawAttributeLaserOuterThickness,
-							penThickness)
+							visualThickness)
 						&& IsTarget(state.drawAttributePenPreviewMorph, 0.0)
 						&& IsTarget(state.drawAttributeLaserCoreWhiteMix, 1.0);
 					const bool coreAtNonLaserEndpoint =
-						IsTarget(state.drawAttributeLaserCoreThickness, penThickness)
+						IsTarget(state.drawAttributeLaserCoreThickness, visualThickness)
 						&& IsTarget(state.drawAttributePenPreviewMorph,
 							normalPenPreviewMorph)
 						&& IsTarget(state.drawAttributeLaserCoreWhiteMix, 0.0);
@@ -2123,24 +2486,24 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					if (targetPolicy.core
 						== BarLaserPreviewSemanticTarget::Laser)
 					{
-						state.drawAttributeLaserCoreThickness.SetTar(
-							laserCoreThickness, operationDur);
+						UpdateBarThicknessPreviewWidth(state.drawAttributeLaserCoreThickness,
+							laserCoreThickness, thicknessCandidateDragging, operationDur);
 						state.drawAttributePenPreviewMorph.SetTar(0.0, operationDur);
 						state.drawAttributeLaserCoreWhiteMix.SetTar(1.0, operationDur);
 					}
 					else if (targetPolicy.core
 						== BarLaserPreviewSemanticTarget::NonLaser)
 					{
-						state.drawAttributeLaserCoreThickness.SetTar(
-							penThickness, operationDur);
+						UpdateBarThicknessPreviewWidth(state.drawAttributeLaserCoreThickness,
+							visualThickness, thicknessCandidateDragging, operationDur);
 						state.drawAttributePenPreviewMorph.SetTar(
 							normalPenPreviewMorph, operationDur);
 						state.drawAttributeLaserCoreWhiteMix.SetTar(0.0, operationDur);
 					}
 					if (targetPolicy.outer
 						!= BarLaserPreviewSemanticTarget::Hold)
-						state.drawAttributeLaserOuterThickness.SetTar(
-							penThickness, operationDur);
+						UpdateBarThicknessPreviewWidth(state.drawAttributeLaserOuterThickness,
+							visualThickness, thicknessCandidateDragging, operationDur);
 					state.drawAttributeLaserShellProgress.SetTar(
 						targetPolicy.shellExpanded ? 1.0 : 0.0,
 						operationDur);
@@ -2148,7 +2511,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 
 				// 圆点位置按当前笔形量程归一化；笔形切换时对 0–1 做动画，不直接用旧宽度/新量程瞬算。
 				auto thicknessSliderRange = GetBarThicknessSliderRange(
-					stateMode.Pen.ModeSelect, state.barStyle.dpiZoom);
+					stateMode.Pen.ModeSelect, state.barStyle.dpiZoom, stateMode);
 				if (thicknessSliderRange.supported
 					&& thicknessSliderRange.max > thicknessSliderRange.min)
 				{
@@ -2174,68 +2537,21 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			}
 			else
 			{
+				// 离开绘制模式只重置下次进入的初始化标记；保留当前视觉随面板收拢、渐隐。
 				state.drawAttributePenThicknessInitialized = false;
 				state.drawAttributePenPreviewMorphInitialized = false;
 				state.drawAttributeThicknessSliderNormalizedInitialized = false;
-				state.drawAttributeLaserShellProgress.SetDirect(0.0);
-				state.drawAttributeLaserCoreWhiteMix.SetDirect(0.0);
-				state.drawAttributeLaserPhase = BarLaserPreviewPhase::NonLaserStable;
-				state.drawAttributeThicknessPresetNumberProgress.SetDirect(0.0);
-				state.drawAttributeThicknessPresetVisualKind =
-					BarThicknessPresetVisualKind::Circle;
-				for (size_t index = 0; index < 3; ++index)
-					state.drawAttributeThicknessPresetCircleDiameter[index]
-						.SetDirect(0.0);
 			}
 		bool mainBarFoldChange = (state.barState.fold && mainBar->x.tar != 0.0)
 			|| (!state.barState.fold && mainBar->x.tar == 0.0);
-// 与下方布局共用：间隙 5，1*1 边长 32.5，使
-			// 2*1 = 两枚 1*1 + 间隙，2*2 = 两枚 2*1 + 间隙 = 四枚 1*1，且各处间隙一致。
-			constexpr double barBtnGap = BarButtonGapDip;
-			constexpr double barBtnOne = BarButtonOneSideDip;
-			constexpr double barBtnTwo = BarButtonTwoSideDip;
-			constexpr double barBtnOneStep = barBtnOne + barBtnGap; // 37.5
-			constexpr double barBtnTwoStep = barBtnTwo + barBtnGap; // 75
-			auto CalculateButtonLayoutWidth = [&]()
-				{
-					double width = barBtnGap, xO = barBtnGap, yO = barBtnGap;
-					for (int id = 0; id < state.barButtonSet.tot; id++)
-					{
-						BarButtonClass* temp = state.barButtonSet.buttonList.Get(id);
-						if (!temp) continue;
-						if (temp->size == BarButtonSizeEnum::oneOne)
-						{
-							if (!temp->IsVisible()) continue;
-							if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnOneStep;
-							else if (xO + barBtnOneStep >= width) xO += barBtnOneStep, yO = barBtnGap;
-							else xO += barBtnOneStep;
-						}
-						else if (temp->size == BarButtonSizeEnum::twoOne)
-						{
-							if (yO > barBtnGap && xO + barBtnTwoStep > width) xO = width, yO = barBtnGap;
-							if (!temp->IsVisible()) continue;
-							if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnTwoStep;
-							else xO += barBtnTwoStep, yO = barBtnGap;
-						}
-						else if (temp->size == BarButtonSizeEnum::twoTwo)
-						{
-							if (yO > barBtnGap) yO = barBtnGap, xO = width;
-							if (temp->IsVisible()) xO += barBtnTwoStep, width += barBtnTwoStep;
-						}
-						else if (temp->size == BarButtonSizeEnum::oneTwo)
-						{
-							if (!temp->IsVisible()) continue;
-							// Divider 只结束未填满的列，不占用已有 5 DIP 间隙之外的宽度。
-							xO = width;
-							yO = barBtnGap;
-						}
-					}
-					return width;
-				};
-		double layoutTotalWidth = CalculateButtonLayoutWidth();
-		bool mainBarLayoutChange = state.mainBarLayoutWidth.has_value()
-			&& abs(layoutTotalWidth - state.mainBarLayoutWidth.value()) > 0.000001;
+		const bool iconOrderChanged = state.mainBarIconOrder.has_value()
+			&& state.mainBarIconOrder.value() != frame.iconOrder;
+		const bool buttonLayoutChanged = state.mainBarLayoutSnapshot.has_value()
+			&& layoutSnapshot != state.mainBarLayoutSnapshot.value();
+		bool mainBarLayoutChange = buttonLayoutChanged || iconOrderChanged || (state.mainBarLayoutWidth.has_value()
+			&& abs(layoutTotalWidth - state.mainBarLayoutWidth.value()) > 0.000001);
 		bool mainBarLayoutExpands = mainBarLayoutChange
+			&& state.mainBarLayoutWidth.has_value()
 			&& layoutTotalWidth > state.mainBarLayoutWidth.value();
 		// 布局变化会取代仍在运行的换边关键帧；即使某个控件目标没变，也必须从当前值重建。
 		bool interruptingMainBarSideSwitch = mainBarLayoutChange
@@ -2263,6 +2579,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				// 展开保留回弹活力；收起立即响应并在末端平稳减速到零。
 				? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseOutCubic;
 			state.mainBarTimeline.Restart(operationDur);
+			if (state.finiteObserver) ++state.finiteRootBatchRevision;
 		}
 		else if (state.mainBarTimeline.IsActive() && mainBarLayoutChange)
 		{
@@ -2271,7 +2588,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				? BarUiCurveEnum::EaseInOutCubic
 				: (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseOutCubic);
 		}
+		state.mainBarLayoutSnapshot = layoutSnapshot;
 		state.mainBarLayoutWidth = layoutTotalWidth;
+		state.mainBarIconOrder = frame.iconOrder;
 		if (state.mainBarTimeline.IsActive()) operationDur = state.mainBarTimeline.GetRemainingDuration();
 		double mainBarPhase = state.mainBarTimeline.IsActive() ? state.mainBarTimeline.GetProgress() : 0.0;
 		bool continueMainBarPhase = state.mainBarTimeline.IsActive() && mainBarPhase > 0.0
@@ -2299,8 +2618,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			mainBarPhase, true };
 		auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle, bool mirrorX = false)
 			{
-				// 左侧展开仍按正序布局，只将最终横坐标按主栏宽度镜像。
-				if (mirrorX && !state.barState.widgetPosition.mainBar) target = layoutTotalWidth - target;
+				// 列表与纵坐标保持正序，只有横坐标按用户策略镜像。
+				if (mirrorX) target = Inkeys::UI::Bar::ResolveBarMainIconX(target, layoutTotalWidth, frame.iconOrder, currentMainBarSide);
 				if (mainBarSideSwitch)
 				{
 					value.SetTar(target, operationDur, middle, true, keyframeValueCurve);
@@ -2314,585 +2633,172 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					forceRestartMainBarLayout || mainBarLayoutChange, syncedValueCurve);
 			};
 
-		// 按钮位置计算（特别操作）
-		double totalWidth = barBtnGap;
+		// 主栏与分页/More使用公共装箱，场景只决定批次镜像和折叠锚点。
+		double totalWidth = layoutTotalWidth;
 		{
-			double xO = barBtnGap, yO = barBtnGap;
-			// 控件计算的 xO 和 yO 包含自身和 右侧、下册 的空隙值 5px
-			// 统一间隙 5：1*1=32.5（正方形），两枚 1*1+间隙=2*1(70x32.5)，
-			// 两枚 2*1+间隙=2*2(70x70)，四枚 1*1 合成 2*2；两行时上/中/下间距均为 5。
-			constexpr double barBtnOneHalf = barBtnOne / 2.0; // 16.25
-			constexpr double barBtnTwoHalf = barBtnTwo / 2.0; // 35
-
-			// 两侧始终按正序计算；向左展开时由横坐标镜像实现从右向左填充。
-			auto baseRange = views::iota(0, state.barButtonSet.tot);
-			variant<decltype(baseRange), decltype(baseRange | views::reverse)> viewVariant;
-			viewVariant = baseRange;
-
-			visit([&](auto&& forRange)
+			const auto& recallChrome = frame.recallChrome;
+			for (const auto& placement : mainListLayout.placements)
+			{
+				auto* temp = placement.button.get();
+				if (!temp) continue;
+				const bool visible = !state.barState.fold && temp->IsVisible();
+				const bool divider = temp->preset == BarButtonPresetEnum::Divider;
+				const bool recallCommand = temp->preset == BarButtonPresetEnum::Recall
+					|| temp->preset == BarButtonPresetEnum::Redo;
+				const bool commandEnabled = temp->preset == BarButtonPresetEnum::Recall
+					? recallChrome.undoEnabled : recallChrome.redoEnabled;
+				const bool disabled = temp->state->state == BarWidgetState::Disable
+					|| (recallCommand && !commandEnabled);
+				const bool selected = temp->state->state == BarWidgetState::Selected;
+				const COLORREF contentColor = GetThemeColor(selected
+					? BarThemeColorEnum::Accent : BarThemeColorEnum::TextPrimary);
+				const COLORREF iconColor = GetThemeColor(selected
+					? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
+				if (state.barState.fold)
 				{
-					for (int id : forRange)
-					{
-						BarButtonClass* temp = state.barButtonSet.buttonList.Get(id);
-						if (temp == nullptr) continue;
-						if (temp->icon.color1.has_value())
-						{
-							COLORREF iconColor = temp->state->state == BarWidgetState::Selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::IconPrimary);
-							// 第一次计算或不可见时直接同步，避免 SVG 显示后才从黑色过渡。
-							if (forNum == 1 || state.barState.fold || !temp->IsVisible())
-								temp->icon.color1.value().SetDirect(iconColor);
-							else temp->icon.color1.value().SetTar(iconColor);
-							if (temp->icon.color2.has_value())
-							{
-								if (forNum == 1 || state.barState.fold || !temp->IsVisible())
-									temp->icon.color2.value().SetDirect(iconColor);
-								else temp->icon.color2.value().SetTar(iconColor);
-							}
-						}
-						if (temp->preset.load() == BarButtonPresetEnum::Divider)
-						{
-							temp->button.frameRendering = BarUiFrameRenderingEnum::PointLight;
-							temp->button.frameLightColor = BarUiFrameLightColorEnum::Frame;
-							temp->button.framePrimaryLightEnabled = false;
-							temp->button.frameCursorLightIntensityScale =
-								BarGeometryAttributeDividerCursorLightIntensity;
-						}
-						else
-						{
-							COLORREF buttonLightColor = temp->state->state == BarWidgetState::Selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::EdgeLight);
-							if (!temp->button.frame.has_value())
-								temp->button.frame = BarUiColorClass(buttonLightColor);
-							if (!temp->button.framePct.has_value())
-								temp->button.framePct = BarUiPctClass(0.0);
-							if (!temp->button.frameLightPct.has_value())
-								temp->button.frameLightPct = BarUiPctClass(0.0);
-							if (!temp->button.ft.has_value())
-								temp->button.ft = BarUiValueClass(1.0);
-							temp->button.frameRendering = BarUiFrameRenderingEnum::PointLight;
-							temp->button.framePrimaryLightEnabled = false;
-							temp->button.frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
-							temp->button.frameLightCursorLightIntensityScale =
-								BarButtonLightCursorLightIntensity;
-							if (forNum == 1 || state.barState.fold || temp->hide)
-								temp->button.frame.value().SetDirect(buttonLightColor);
-							else temp->button.frame.value().SetTar(buttonLightColor);
-							// 主栏仅让选中按钮响应第三光源，未选中按钮保持无光影。
-							bool buttonLightVisible = !state.barState.fold && !temp->hide
-								&& temp->button.enable.tar
-								&& temp->state->state != BarWidgetState::Disable
-								&& temp->state->state == BarWidgetState::Selected;
-							double buttonLightOpacity = buttonLightVisible
-								? (temp->state->emph == BarWidgetEmphasize::Pressed
-									? BarButtonPressedLightOpacity : 1.0) : 0.0;
-								temp->button.frameLightPct.value().SetTar(buttonLightOpacity, operationDur);
-						}
-						const bool colorSelector = temp->size == BarButtonSizeEnum::oneOne
-							&& temp->name.enable.tar
-							&& temp->name.content.GetTar().starts_with(L"__color");
-						if (!colorSelector)
-							Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(
-								*temp, !state.barState.fold && temp->IsVisible(),
-								temp->button.enable.tar
-									&& temp->state->state != BarWidgetState::Disable,
-								temp->state->state == BarWidgetState::Selected,
-								operationDur);
-
-						if (temp->size == BarButtonSizeEnum::oneOne)
-						{
-							const auto metrics = ResolveBarButtonVisualMetrics(
-								BarButtonVisualLayoutKind::StandardOneOne);
-							// 特殊设定：是否是颜色选择器
-							bool isColorSelector = (temp->name.enable.tar && temp->name.content.GetTar().substr(0, 7) == L"__color");
-
-							if (temp->button.enable.tar)
-							{
-								if (state.barState.fold || !temp->IsVisible())
-								{
-									if (state.barState.fold)
-									{
-										SetButtonPositionTar(temp->button.x, 40.0, 40.0);
-										SetButtonPositionTar(temp->button.y, 40.0, 40.0);
-									}
-
-									temp->button.pct.SetTar(0.0, operationDur);
-								}
-								else
-								{
-SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
-										// 1*1=32.5：两行时 top/gap/bottom 均为 5，且与 2*2 上下端对齐。
-										SetButtonPositionTar(temp->button.y, yO + barBtnOneHalf, 40.0);
-
-											if (isColorSelector) temp->button.pct.SetTar(1.0, operationDur); // 只有颜色选择器使用
-										else
-										{
-											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->button.pct.SetTar(temp->state->state == BarWidgetState::Selected ? SelectedFillOpacity(0.10) : 0.10, operationDur);
-											else if (temp->state->state == BarWidgetState::Selected) temp->button.pct.SetTar(SelectedFillOpacity(), operationDur);
-											else if (temp->hoverStage == BarButtonHoverStageEnum::None)
-												temp->button.pct.SetTar(0.0, operationDur);
-										}
-									}
-								temp->button.w.SetTar(metrics.buttonWidthDip, operationDur);
-								temp->button.h.SetTar(metrics.buttonHeightDip, operationDur);
-
-								if (!isColorSelector)
-								{
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::SelectedFill));
-									else temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::PressedFill));
-								}
-							}
-							if (temp->icon.enable.tar)
-							{
-								if (isColorSelector) temp->icon.SetWH(nullopt, 10.0); // 颜色选择器中的图标即为标识选中该颜色，所以需要较小尺寸
-								else temp->icon.SetWH(nullopt, metrics.iconSizeDip);
-
-								temp->icon.x.SetTar(metrics.iconOffsetXDip);
-								temp->icon.y.SetTar(metrics.iconOffsetYDip);
-								if (state.barState.fold || !temp->IsVisible())
-								{
-									temp->icon.pct.SetTar(0.0, operationDur);
-								}
-								else
-								{
-									temp->icon.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
-										 ? BarButtonDisabledContentOpacity : 1.0,
-									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
-								}
-							}
-							if (temp->name.enable.tar)
-							{
-								// 无法容下文字的位置
-								temp->name.pct.SetTar(0.0, operationDur);
-							}
-
-							// 记录目标绘制位置
-							temp->lastDrawX = temp->button.x.tar;
-							temp->lastDrawY = temp->button.y.tar;
-
-							if (!temp->IsVisible())
-							{
-								temp->button.pct.SetTar(0.0, operationDur);
-								temp->icon.pct.SetTar(0.0, operationDur);
-								temp->name.pct.SetTar(0.0, operationDur);
-							}
-							else
-							{
-								// 位于第一行
-								if (yO <= barBtnGap)
-								{
-									yO += barBtnOneStep;
-									totalWidth += barBtnOneStep;
-									// 只有在第一行时才增加总宽度，因为第二行没有再加的必要
-									// 如果第二行是 twoOne 或 twoTwo 的按钮，则会自动换行到更右侧
-								}
-								// 位于第二行
-								else
-								{
-									// 如果第一行是 twoOne，现在是第二行应该存在塞下第二个 1*1 的按钮的情况
-
-									if (xO + barBtnOneStep >= totalWidth)
-									{
-										// 如果当前 xO + step 超过了总宽度，则换行到更右侧
-										xO += barBtnOneStep;
-										yO = barBtnGap;
-									}
-									else
-									{
-										// 否则继续在当前行
-										xO += barBtnOneStep;
-									}
-								}
-							}
-						}
-						if (temp->size == BarButtonSizeEnum::twoOne)
-						{
-							const auto metrics = ResolveBarButtonVisualMetrics(
-								BarButtonVisualLayoutKind::StandardTwoOne);
-							if (yO > barBtnGap)
-							{
-								// 如果当前位置处于第二行，且容不下一个 2*1 的按钮，则换行到更右侧
-								if (xO + barBtnTwoStep > totalWidth)
-								{
-									xO = totalWidth;
-									yO = barBtnGap;
-								}
-							}
-
-							if (temp->button.enable.tar)
-							{
-								if (state.barState.fold || !temp->IsVisible())
-								{
-									if (state.barState.fold)
-									{
-										SetButtonPositionTar(temp->button.x, 40.0, 40.0);
-										SetButtonPositionTar(temp->button.y, 40.0, 40.0);
-									}
-
-									temp->button.pct.SetTar(0.0, operationDur);
-								}
-								else
-								{
-SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
-										// 2*1=70x32.5：与 oneOne 同网格，两行贴齐 2*2 且间隙均为 5。
-										SetButtonPositionTar(temp->button.y, yO + barBtnOneHalf, 40.0);
-
-											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->button.pct.SetTar(temp->state->state == BarWidgetState::Selected ? SelectedFillOpacity(0.10) : 0.10, operationDur);
-											else if (temp->state->state == BarWidgetState::Selected) temp->button.pct.SetTar(SelectedFillOpacity(), operationDur);
-										else if (temp->hoverStage == BarButtonHoverStageEnum::None)
-											temp->button.pct.SetTar(0.0, operationDur);
-										}
-								temp->button.w.SetTar(metrics.buttonWidthDip, operationDur);
-								temp->button.h.SetTar(metrics.buttonHeightDip, operationDur);
-
-							if (temp->state->state == BarWidgetState::Selected)
-								temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::SelectedFill));
-							else temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::PressedFill));
-							}
-							if (temp->icon.enable.tar)
-							{
-								temp->icon.SetWH(nullopt, metrics.iconSizeDip);
-
-								temp->icon.x.SetTar(metrics.iconOffsetXDip); // 靠左对齐，右侧留给文字。
-								temp->icon.y.SetTar(metrics.iconOffsetYDip);
-								if (state.barState.fold || !temp->IsVisible()) temp->icon.pct.SetTar(0.0, operationDur);
-								else
-								{
-									temp->icon.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
-										 ? BarButtonDisabledContentOpacity : 1.0,
-									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
-								}
-							}
-							if (temp->name.enable.tar)
-							{
-temp->name.x.SetTar(metrics.primaryOffsetXDip); // 右侧文字槽与共享 2x1 metrics 一致。
-									temp->name.y.SetTar(metrics.primaryOffsetYDip);
-									temp->name.w.SetTar(metrics.primarySlotWidthDip);
-									temp->name.h.SetTar(metrics.primarySlotHeightDip);
-								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
-								else temp->name.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
-										 ? BarButtonDisabledContentOpacity : 1.0,
-									 operationDur);
-
-								if (temp->state->state == BarWidgetState::Selected)
-									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
-									temp->name.size.SetTar(metrics.primaryFontSizeDip);
-							}
-
-							// 记录目标绘制位置
-							temp->lastDrawX = temp->button.x.tar;
-							temp->lastDrawY = temp->button.y.tar;
-
-							if (!temp->IsVisible())
-							{
-								temp->button.pct.SetTar(0.0, operationDur);
-								temp->icon.pct.SetTar(0.0, operationDur);
-								temp->name.pct.SetTar(0.0, operationDur);
-							}
-							else
-							{
-								// 位于第一行
-								if (yO <= barBtnGap)
-								{
-									yO += barBtnOneStep;
-									totalWidth += barBtnTwoStep;
-									// 只在第一行中增加总宽度，因为第二行没有再加的必要
-									// 第二行如果是 oneOne 的按钮，那么在超过宽度时也会自动换行到更右侧
-								}
-								// 位于第二行
-								else
-								{
-									xO += barBtnTwoStep;
-									yO = barBtnGap;
-								}
-							}
-						}
-						if (temp->size == BarButtonSizeEnum::twoTwo)
-						{
-							const auto metrics = ResolveBarButtonVisualMetrics(
-								BarButtonVisualLayoutKind::StandardTwoTwo);
-							if (yO > barBtnGap)
-							{
-								yO = barBtnGap;
-								xO = totalWidth;
-							}
-
-							if (temp->button.enable.tar)
-							{
-								if (state.barState.fold || !temp->IsVisible())
-								{
-									if (state.barState.fold)
-									{
-										SetButtonPositionTar(temp->button.x, 40.0, 40.0);
-										SetButtonPositionTar(temp->button.y, 40.0, 40.0);
-									}
-
-									temp->button.pct.SetTar(0.0, operationDur);
-								}
-								else
-								{
-SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
-								SetButtonPositionTar(temp->button.y, yO + barBtnTwoHalf, 40.0);
-
-										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->button.pct.SetTar(temp->state->state == BarWidgetState::Selected ? SelectedFillOpacity(0.10) : 0.10, operationDur);
-										else if (temp->state->state == BarWidgetState::Selected) temp->button.pct.SetTar(SelectedFillOpacity(), operationDur);
-									else if (temp->hoverStage == BarButtonHoverStageEnum::None)
-										temp->button.pct.SetTar(0.0, operationDur);
-									}
-								temp->button.w.SetTar(metrics.buttonWidthDip, operationDur);
-								temp->button.h.SetTar(metrics.buttonHeightDip, operationDur);
-
-							if (temp->state->state == BarWidgetState::Selected)
-								temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::SelectedFill));
-							else temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::PressedFill));
-							}
-							if (temp->icon.enable.tar)
-							{
-								bool enlargedGeometryIcon =
-									temp->preset == BarButtonPresetEnum::Geometry
-									&& stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
-								bool enlargedMoreIcon =
-									temp->preset == BarButtonPresetEnum::More;
-								temp->icon.SetWH(nullopt,
-									enlargedMoreIcon ? 34.0
-									: (enlargedGeometryIcon ? 34.0 : metrics.iconSizeDip));
-								temp->icon.x.SetTar(metrics.iconOffsetXDip);
-								temp->icon.y.SetTar(metrics.iconOffsetYDip);
-								if (state.barState.fold || !temp->IsVisible())
-								{
-									temp->icon.pct.SetTar(0.0, operationDur);
-								}
-								else
-								{
-									temp->icon.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
-										 ? BarButtonDisabledContentOpacity : 1.0,
-									 operationDur);
-									if (temp->state->state == BarWidgetState::Selected)
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
-								}
-							}
-							if (temp->name.enable.tar)
-							{
-temp->name.x.SetTar(metrics.primaryOffsetXDip);
-									temp->name.y.SetTar(metrics.primaryOffsetYDip);
-									temp->name.w.SetTar(metrics.primarySlotWidthDip);
-									temp->name.h.SetTar(metrics.primarySlotHeightDip);
-								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
-								else temp->name.pct.SetTar(
-									 temp->state->state == BarWidgetState::Disable
-										 ? BarButtonDisabledContentOpacity : 1.0,
-									 operationDur);
-
-								if (temp->state->state == BarWidgetState::Selected)
-									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
-								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
-
-									temp->name.size.SetTar(metrics.primaryFontSizeDip);
-							}
-
-							// 记录目标绘制位置
-							temp->lastDrawX = temp->button.x.tar;
-							temp->lastDrawY = temp->button.y.tar;
-
-							if (!temp->IsVisible())
-							{
-								temp->button.pct.SetTar(0.0, operationDur);
-								temp->icon.pct.SetTar(0.0, operationDur);
-								temp->name.pct.SetTar(0.0, operationDur);
-							}
-							else
-							{
-xO += barBtnTwoStep, yO = barBtnGap;
-									totalWidth += barBtnTwoStep;
-								}
-							}
-
-							// 特殊体质 - 分隔栏
-							if (temp->size == BarButtonSizeEnum::oneTwo)
-							{
-								if (temp->IsVisible())
-								{
-									// 小按钮留下半列时先封列；下一组从边界后的新列开始。
-									xO = totalWidth;
-									yO = barBtnGap;
-								}
-
-							if (temp->button.enable.tar)
-							{
-								if (state.barState.fold || !temp->IsVisible())
-								{
-									if (state.barState.fold)
-									{
-										SetButtonPositionTar(temp->button.x, 40.0, 40.0);
-										SetButtonPositionTar(temp->button.y, 40.0, 40.0);
-									}
-
-									temp->button.pct.SetTar(0.0, operationDur);
-									if (temp->button.frameLightPct.has_value())
-										temp->button.frameLightPct.value().SetTar(0.0, operationDur);
-								}
-								else
-								{
-									// 细线居中落在上一组末尾已有的 5 DIP 间隙内。
-SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
-								SetButtonPositionTar(temp->button.y, yO + barBtnTwoHalf, 40.0);
-									temp->button.pct.SetTar(0.30, operationDur);
-									if (temp->button.frameLightPct.has_value())
-									{
-										if (forNum == 1)
-											temp->button.frameLightPct.value().SetDirect(1.0);
-										else temp->button.frameLightPct.value().SetTar(1.0, operationDur);
-									}
-								}
-								temp->button.w.SetTar(1.0, operationDur);
-								// 布局仍按 oneTwo 封满两行，实际线长保留两端 5 DIP 留白和圆角半径。
-								temp->button.h.SetTar(50.0, operationDur);
-								if (temp->button.rw.has_value()) temp->button.rw.value().SetTar(0.5, operationDur);
-								if (temp->button.rh.has_value()) temp->button.rh.value().SetTar(0.5, operationDur);
-								if (temp->button.ft.has_value()) temp->button.ft.value().SetTar(1.0, operationDur);
-								if (temp->button.framePct.has_value()) temp->button.framePct.value().SetTar(0.0, operationDur);
-
-								const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::Divider);
-								temp->button.fill.value().SetTar(dividerColor);
-								if (temp->button.frame.has_value()) temp->button.frame.value().SetTar(dividerColor);
-							}
-							temp->icon.pct.SetDirect(0.0);
-
-							// 记录目标绘制位置
-							temp->lastDrawX = temp->button.x.tar;
-							temp->lastDrawY = temp->button.y.tar;
-
-							if (!temp->IsVisible())
-							{
-								temp->button.pct.SetTar(0.0, operationDur);
-								if (temp->button.frameLightPct.has_value())
-									temp->button.frameLightPct.value().SetTar(0.0, operationDur);
-								temp->icon.pct.SetTar(0.0, operationDur);
-								temp->name.pct.SetTar(0.0, operationDur);
-							}
-						}
-
-						// 按压倍率独立于布局批次，松手或拖出时从当前值回弹到标准大小。
-						if (temp->preset == BarButtonPresetEnum::Divider)
-						{
-							// Divider 不参与按钮状态机，但保留独立 frameLightPct 的第三光。
-							temp->hoverStage = BarButtonHoverStageEnum::None;
-							temp->state->emph = BarWidgetEmphasize::None;
-							temp->pressScale.SetDirect(1.0);
-							temp->button.pct.animateWhenDisabled = false;
-							if (temp->button.fill.has_value())
-								temp->button.fill.value().animateWhenDisabled = false;
-						}
-						else if (temp->state->emph == BarWidgetEmphasize::Pressed)
-							temp->pressScale.SetTar(BarButtonPressScale, BarUiDefaultOperationDur,
-								nullopt, false, state.buttonPressCurve);
-						else temp->pressScale.SetTar(1.0, BarUiDefaultOperationDur,
-							nullopt, false, state.buttonReleaseCurve);
-
-						// 尺寸枚举只负责选择布局，按钮及其内容统一在同一过程时间内到达新布局。
-						SyncValueDuration(temp->button.x);
-						SyncValueDuration(temp->button.y);
-						SyncValueDuration(temp->button.w);
-						SyncValueDuration(temp->button.h);
-						SyncPctDuration(temp->button.pct);
-						SyncValueDuration(temp->icon.x);
-						SyncValueDuration(temp->icon.y);
-						SyncValueDuration(temp->icon.w);
-						SyncValueDuration(temp->icon.h);
-						SyncValueDuration(temp->icon.angle);
-						SyncPctDuration(temp->icon.pct);
-						SyncValueDuration(temp->name.x);
-						SyncValueDuration(temp->name.y);
-						SyncValueDuration(temp->name.w);
-						SyncValueDuration(temp->name.h);
-						SyncValueDuration(temp->name.size);
-						SyncPctDuration(temp->name.pct);
-
-						if (mainBarSideSwitch || continueMainBarSideSwitchKeyframe)
-						{
-							// 换边中点将整个按钮组合隐藏，再从主按钮下方展开到新位置。
-							const BarUiCurveSpecClass& pctCurve = mainBarSideSwitch
-								? keyframePctCurve : continuedKeyframePctCurve;
-							temp->button.pct.SetTar(temp->button.pct.tar, operationDur, 0.0, true, pctCurve);
-							if (temp->button.frameLightPct.has_value())
-								temp->button.frameLightPct.value().SetTar(
-									temp->button.frameLightPct.value().tar, operationDur, 0.0, true, pctCurve);
-							temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true, pctCurve);
-							temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true, pctCurve);
-						}
-					}
-				}, viewVariant);
-
-			auto FindVisibleAnchor = [&](BarButtonClass* hidden, BarButtonClass* preferred)
+					SetButtonPositionTar(temp->button.x, 40.0, 40.0);
+					SetButtonPositionTar(temp->button.y, 40.0, 40.0);
+				}
+				else if (temp->IsVisible())
 				{
-					const int buttonCount = state.barButtonSet.tot.load();
-					int hiddenIndex = -1;
-					for (int index = 0; index < buttonCount; index++)
+					SetButtonPositionTar(temp->button.x, placement.x, 40.0, true);
+					SetButtonPositionTar(temp->button.y, placement.y, 40.0);
+				}
+				if (divider)
+				{
+					temp->button.w.SetTar(placement.width, operationDur);
+					temp->button.h.SetTar(placement.height, operationDur);
+					if (temp->button.rw) temp->button.rw->SetTar(0.5, operationDur);
+					if (temp->button.rh) temp->button.rh->SetTar(0.5, operationDur);
+					if (temp->button.ft) temp->button.ft->SetTar(1.0, operationDur);
+					if (temp->button.framePct) temp->button.framePct->SetTar(0.0, operationDur);
+					if (temp->button.frameLightPct) temp->button.frameLightPct->SetTar(visible ? 1.0 : 0.0, operationDur);
+					temp->button.pct.SetTar(visible ? 0.30 : 0.0, operationDur);
+					const COLORREF color = GetThemeColor(BarThemeColorEnum::Divider);
+					if (temp->button.fill) temp->button.fill->SetTar(color);
+					if (temp->button.frame) temp->button.frame->SetTar(color);
+					temp->button.frameRendering = BarUiFrameRenderingEnum::PointLight;
+					temp->button.framePrimaryLightEnabled = false;
+					temp->button.frameCursorLightIntensityScale = BarGeometryAttributeDividerCursorLightIntensity;
+					temp->icon.pct.SetDirect(0.0); temp->name.pct.SetDirect(0.0);
+				}
+				else
+				{
+					const auto kind = temp->size == BarButtonSizeEnum::oneOne
+						? BarButtonVisualLayoutKind::StandardOneOne
+						: temp->size == BarButtonSizeEnum::twoOne
+							? BarButtonVisualLayoutKind::StandardTwoOne : BarButtonVisualLayoutKind::StandardTwoTwo;
+					const bool largeIcon=temp->size==BarButtonSizeEnum::twoTwo && temp->icon.enable.tar
+						&&(temp->preset==BarButtonPresetEnum::More || (temp->preset==BarButtonPresetEnum::Geometry
+							&&stateMode.StateModeSelect==StateModeSelectEnum::IdtShape));
+					Inkeys::UI::Bar::ConfigureBarButtonVisualTargets(*temp,kind,operationDur,1.0,false,
+						largeIcon?std::optional<double>{34.0}:std::nullopt);
+					const bool colorSelector = temp->size == BarButtonSizeEnum::oneOne
+						&& temp->name.enable.tar && temp->name.content.GetTar().starts_with(L"__color");
+					if (!colorSelector)
+						Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(*temp, visible,
+							temp->button.enable.tar && !disabled, selected, operationDur);
+					else
 					{
-						BarButtonClass* candidate = state.barButtonSet.buttonList.Get(index);
-						if (candidate == hidden) hiddenIndex = index;
-						if (candidate && candidate == preferred && candidate->IsVisible()) return candidate;
+						temp->button.pct.SetTar(visible ? 1.0 : 0.0, operationDur);
+						temp->icon.SetWH(std::nullopt, 10.0);
+						temp->icon.pct.SetTar(visible ? 1.0 : 0.0, operationDur);
 					}
-					if (hiddenIndex < 0) return static_cast<BarButtonClass*>(nullptr);
+					if (temp->size == BarButtonSizeEnum::oneOne) temp->name.pct.SetTar(0.0, operationDur);
 
-					// 首选锚点不可见时，按布局距离寻找最近的有效按钮。
-					for (int distance = 1; distance < buttonCount; distance++)
+					if (forNum == 1 || state.barState.fold || !temp->IsVisible())
 					{
-						const int previousIndex = hiddenIndex - distance;
-						if (previousIndex >= 0)
-						{
-							BarButtonClass* candidate = state.barButtonSet.buttonList.Get(previousIndex);
-							if (candidate && candidate->IsVisible()) return candidate;
-						}
-
-						const int nextIndex = hiddenIndex + distance;
-						if (nextIndex < buttonCount)
-						{
-							BarButtonClass* candidate = state.barButtonSet.buttonList.Get(nextIndex);
-							if (candidate && candidate->IsVisible()) return candidate;
-						}
+						if (temp->icon.color1) temp->icon.color1->SetDirect(iconColor);
+						if (temp->icon.color2) temp->icon.color2->SetDirect(iconColor);
+						if (temp->button.frame) temp->button.frame->SetDirect(contentColor);
 					}
-					return static_cast<BarButtonClass*>(nullptr);
-				};
+				}
+				temp->lastDrawX = temp->button.x.tar;
+				temp->lastDrawY = temp->button.y.tar;
+			// 按压倍率独立于布局批次，松手或拖出时从当前值回弹到标准大小。
+			if (temp->preset == BarButtonPresetEnum::Divider)
+			{
+				// Divider 不参与按钮状态机，但保留独立 frameLightPct 的第三光。
+				temp->hoverStage = BarButtonHoverStageEnum::None;
+				temp->state->emph = BarWidgetEmphasize::None;
+				temp->pressScale.SetDirect(1.0);
+				temp->button.pct.animateWhenDisabled = false;
+				if (temp->button.fill.has_value())
+					temp->button.fill.value().animateWhenDisabled = false;
+			}
+			else if (temp->state->emph == BarWidgetEmphasize::Pressed)
+				temp->pressScale.SetTar(BarButtonPressScale, BarUiDefaultOperationDur,
+					nullopt, false, state.buttonPressCurve);
+			else temp->pressScale.SetTar(1.0, BarUiDefaultOperationDur,
+				nullopt, false, state.buttonReleaseCurve);
+
+			// 尺寸枚举只负责选择布局，按钮及其内容统一在同一过程时间内到达新布局。
+			SyncValueDuration(temp->button.x);
+			SyncValueDuration(temp->button.y);
+			SyncValueDuration(temp->button.w);
+			SyncValueDuration(temp->button.h);
+			SyncPctDuration(temp->button.pct);
+			SyncValueDuration(temp->icon.x);
+			SyncValueDuration(temp->icon.y);
+			SyncValueDuration(temp->icon.w);
+			SyncValueDuration(temp->icon.h);
+			SyncValueDuration(temp->icon.angle);
+			SyncPctDuration(temp->icon.pct);
+			SyncValueDuration(temp->name.x);
+			SyncValueDuration(temp->name.y);
+			SyncValueDuration(temp->name.w);
+			SyncValueDuration(temp->name.h);
+			SyncValueDuration(temp->name.size);
+			SyncPctDuration(temp->name.pct);
+
+			if (mainBarSideSwitch || continueMainBarSideSwitchKeyframe)
+			{
+				// 换边中点将整个按钮组合隐藏，再从主按钮下方展开到新位置。
+				const BarUiCurveSpecClass& pctCurve = mainBarSideSwitch
+					? keyframePctCurve : continuedKeyframePctCurve;
+				temp->button.pct.SetTar(temp->button.pct.tar, operationDur, 0.0, true, pctCurve);
+				if (temp->button.frameLightPct.has_value())
+					temp->button.frameLightPct.value().SetTar(
+						temp->button.frameLightPct.value().tar, operationDur, 0.0, true, pctCurve);
+				temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true, pctCurve);
+				temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true, pctCurve);
+			}
+			}
+
 			auto AnchorHiddenButton = [&](BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset)
 				{
-					BarButtonClass* hidden = state.barButtonSet.preset[static_cast<int>(hiddenPreset)];
-					if (state.barState.fold || !hidden || hidden->IsVisible()) return;
-
-					BarButtonClass* anchor = FindVisibleAnchor(
-						hidden, state.barButtonSet.preset[static_cast<int>(anchorPreset)]);
-					if (!anchor) return;
-
-					// 隐藏控件停在来源按钮中心，显示时从该位置展开。
-					SetButtonPositionTar(hidden->button.x, anchor->button.x.tar, 40.0);
-					SetButtonPositionTar(hidden->button.y, anchor->button.y.tar, 40.0);
-					hidden->lastDrawX = anchor->button.x.tar;
-					hidden->lastDrawY = anchor->button.y.tar;
+					Inkeys::UI::Bar::AnchorHiddenBarButton(state.barButtonSet, state.barState.fold,
+						hiddenPreset, anchorPreset, [&](BarUiValueClass& value, double target)
+						{ SetButtonPositionTar(value, target, 40.0); });
 				};
 			AnchorHiddenButton(BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Draw);
-			AnchorHiddenButton(BarButtonPresetEnum::Recall, BarButtonPresetEnum::Draw);
+			// 对方还可见时停在对方上；一起隐藏时锚到绘制，避免落到右侧按钮。
+			{
+				BarButtonClass* redoButton = state.barButtonSet.preset[
+					static_cast<int>(BarButtonPresetEnum::Redo)];
+				BarButtonClass* recallButton = state.barButtonSet.preset[
+					static_cast<int>(BarButtonPresetEnum::Recall)];
+				AnchorHiddenButton(BarButtonPresetEnum::Recall,
+					redoButton && redoButton->IsVisible()
+						? BarButtonPresetEnum::Redo
+						: BarButtonPresetEnum::Draw);
+				AnchorHiddenButton(BarButtonPresetEnum::Redo,
+					recallButton && recallButton->IsVisible()
+						? BarButtonPresetEnum::Recall
+						: BarButtonPresetEnum::Draw);
+			}
+			// 定格保留列表身份，复用前驱锚点与既有布局批次自动收拢。
+			AnchorHiddenButton(BarButtonPresetEnum::Freeze, BarButtonPresetEnum::Freeze);
+			// 穿透隐藏时也跟随定格列，不能保留收窄前主栏右侧的旧坐标。
+			AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze);
 			AnchorHiddenButton(BarButtonPresetEnum::EndShow, BarButtonPresetEnum::Freeze);
 		}
+		presentationLock.unlock();
 		totalWidth = layoutTotalWidth;
 		Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(owner_, totalWidth);
 		const bool whiteboardDockPlacement =
-			state.whiteboardDockPlacementPending;
+			state.whiteboardDockPlacementPending || state.pptDockPlacementPending;
 		if ((!state.initialBottomDockPlacementApplied || whiteboardDockPlacement)
 			&& state.displayTransitionInitialized)
 		{
@@ -2907,8 +2813,11 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			double mainBarFrameHalfDip = mainBar->ft.has_value()
 				? max(0.0, static_cast<double>(mainBar->ft.value().tar) / 2.0)
 				: 0.0;
+			const bool floatingStartup = !whiteboardDockPlacement
+				&& owner_.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar;
 			const bool opensRight = whiteboardDockPlacement
-				? static_cast<bool>(state.barState.widgetPosition.mainBar) : true;
+				? static_cast<bool>(state.barState.widgetPosition.mainBar)
+				: owner_.startupPlacement != Inkeys::UI::StartupPlacement::BottomRightFloating;
 			const double bodyLeftDip = opensRight
 				? -mainButton->GetW() / 2.0 - mainFrameHalfDip
 				: -mainButton->GetW() / 2.0 - 10.0 - totalWidth
@@ -2917,22 +2826,43 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				? mainButton->GetW() / 2.0 + 10.0 + totalWidth
 					+ mainBarFrameHalfDip
 				: mainButton->GetW() / 2.0 + mainFrameHalfDip;
-			const double screenCenterX =
+			double screenCenterX =
 				ResolveBarBottomDockInitialMainCenterScreenX(
 					state.activeMonitorBounds, bodyLeftDip, bodyRightDip,
 					mainButton->GetW() / 2.0 + mainFrameHalfDip,
 					placementZoom);
 				const double dockLine = CurrentBarBottomDockLine(
-					state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+					state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi, state.activeDesktopDockLine);
 				const double strokeWidthDip = max(
 				mainButton->ft.has_value()
 					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
 				mainBar->ft.has_value()
 					? static_cast<double>(mainBar->ft.value().tar) : 0.0);
-			const double screenCenterY = ResolveBarBottomDockCenterScreenY(
+			double screenCenterY = ResolveBarBottomDockCenterScreenY(
 				dockLine, state.mainButtonBaseSize,
 				strokeWidthDip, placementZoom);
+			if (!whiteboardDockPlacement)
+			{
+				// Preview 与正式主体共用可见描边包络；窗口留白由 ULW 自行管理。
+				const double visibleWidth = floatingStartup
+					? mainButton->GetW() + 2.0 * mainFrameHalfDip
+					: bodyRightDip - bodyLeftDip;
+				const RECT visible = Inkeys::UI::ResolveStartupPlacementBounds(
+					owner_.startupPlacement, state.activeMonitorBounds, state.activeWorkArea,
+					visibleWidth, state.mainButtonBaseSize + strokeWidthDip,
+					placementZoom, state.barStyle.dpiZoom, state.activeDesktopDockLine);
+				screenCenterX = floatingStartup
+					? (static_cast<double>(visible.left) + visible.right) / 2.0
+					: visible.left - bodyLeftDip * placementZoom;
+				screenCenterY = floatingStartup
+					? (static_cast<double>(visible.top) + visible.bottom) / 2.0
+					: visible.bottom - (state.mainButtonBaseSize + strokeWidthDip) * placementZoom / 2.0;
+			}
 
+			if (whiteboardDockPlacement && frame.bottomDockCenterMode == BarBottomDockCenterMode::Free)
+				screenCenterX = ClampBarBottomDockMainCenterScreenX(
+					state.monitorOrigin.x + state.displayCenterX.val, state.activeMonitorBounds,
+					mainButton->GetW() / 2.0 + mainFrameHalfDip, placementZoom);
 			if (whiteboardDockPlacement)
 			{
 				// 白板入口只在首次就位时播放 0.4s 动画，后续靠近底部仍交给原吸附状态机。
@@ -2952,13 +2882,16 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				state.displayCenterX.SetDirect(screenCenterX - state.monitorOrigin.x);
 				state.displayCenterY.SetDirect(screenCenterY - state.monitorOrigin.y);
 			}
-			state.barState.fold = false;
+			// PPT 场景不主动展开；交接期间的新收起请求仍由用户持有。
+			if (!state.pptDockPlacementPending || state.whiteboardDockPlacementPending)
+				state.barState.fold = floatingStartup;
 			if (!whiteboardDockPlacement)
-				state.barState.widgetPosition.mainBar = true;
+				state.barState.widgetPosition.mainBar = opensRight;
 			state.barState.widgetPosition.primaryBar = false;
 			if (whiteboardDockPlacement)
 			{
 				state.whiteboardDockPlacementPending = false;
+				state.pptDockPlacementPending = false;
 			}
 			state.initialBottomDockPlacementApplied = true;
 			state.unclassifiedDamagePending = true;
@@ -3032,6 +2965,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						continueDrawAttributePhase = drawAttributePhase > 0.0;
 					}
 					state.drawAttributeTimeline.Restart(operationDur);
+					if (state.finiteObserver) ++state.finiteDrawBatchRevision;
 				}
 				else if (state.drawAttributeTimeline.IsActive())
 				{
@@ -3125,16 +3059,14 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->fill.value().tar))
 						{
 							// 说明当前选中的是当前的颜色
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 2
@@ -3155,15 +3087,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 3
@@ -3184,15 +3114,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 4
@@ -3213,15 +3141,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 5
@@ -3242,15 +3168,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 6
@@ -3271,15 +3195,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 7
@@ -3300,15 +3222,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 8
@@ -3329,15 +3249,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 9
@@ -3358,15 +3276,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 10
@@ -3387,15 +3303,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 11
@@ -3416,15 +3330,13 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(1.0);
 						}
 
-						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
+						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(stateMode), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 12：圆盘始终存在，色芯和右下角绿勾只在自定义色模式中淡入。
@@ -3437,7 +3349,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
 						auto customCheck = state.svgMap[
 							BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
-						COLORREF currentColor = GetPenColor() & 0x00FFFFFF;
+						COLORREF currentColor = GetPenColor(stateMode) & 0x00FFFFFF;
 						bool customSelected = !IsBarPresetColor(currentColor);
 						bool customPressed = ReadColorPickerEntryPressed()
 							&& state.barState.drawAttribute;
@@ -3647,69 +3559,20 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							* layoutScale);
 						word->h.SetTar(BarDrawAttributePenTypeButtonHeight * layoutScale);
 						word->size.SetTar(12.0 * layoutScale);
-						if (button.enabled)
-						{
-							if (!shape->frame.has_value()) shape->frame = BarUiColorClass(GetThemeColor(BarThemeColorEnum::EdgeLight));
-							if (!shape->framePct.has_value()) shape->framePct = BarUiPctClass(0.0);
-							if (!shape->frameLightPct.has_value()) shape->frameLightPct = BarUiPctClass(0.0);
-							if (!shape->ft.has_value()) shape->ft = BarUiValueClass(1.0);
-							shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
-							shape->framePrimaryLightEnabled = false;
-							shape->frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
-							shape->frameLightCursorLightIntensityScale =
-								BarButtonLightCursorLightIntensity;
-						}
-
-						if (!state.barState.drawAttribute)
-						{
-							shape->pct.SetTar(0.0);
-							svg->pct.SetTar(0.0);
-							word->pct.SetTar(0.0);
-							if (shape->frameLightPct.has_value()) shape->frameLightPct->SetTar(0.0);
-						}
-						else
-						{
-							// 预留笔型只禁用交互与光影，图标和文字仍正常显示。
-							svg->pct.SetTar(1.0);
-							word->pct.SetTar(1.0);
-							if (!button.enabled) shape->pct.SetTar(0.0);
-							else if (button.pressed) shape->pct.SetTar(button.selected ? SelectedFillOpacity(0.10) : 0.10);
-							else if (button.selected) shape->pct.SetTar(SelectedFillOpacity());
-							else if (button.hoverStage
-								&& *button.hoverStage == BarButtonHoverStageEnum::None)
-								shape->pct.SetTar(0.0);
-							else if (!button.selected && !button.hoverStage)
-								// Laser 没有独立 hover stage，切走后必须清掉旧 selected 背景。
-								shape->pct.SetTar(0.0);
-							if (shape->frameLightPct.has_value())
-								shape->frameLightPct->SetTar(button.enabled && button.selected
-									? (button.pressed ? BarButtonPressedLightOpacity : 1.0) : 0.0);
-						}
-
-						COLORREF contentColor = button.enabled
-							? (button.selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::TextPrimary))
-							: (state.barStyle.darkStyle ? RGB(200, 200, 200)
-								: static_cast<COLORREF>(BarThemeMaterial::MixColor(
+						// 浅色禁用态从正文向表面混合，深色保留原中性灰。
+						const COLORREF contentColor=button.enabled
+							?GetThemeColor(button.selected?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary)
+							:(state.barStyle.darkStyle?RGB(200,200,200)
+								:static_cast<COLORREF>(BarThemeMaterial::MixColor(
 									GetThemeColor(BarThemeColorEnum::TextPrimary),
-									GetThemeColor(BarThemeColorEnum::Surface), 0.45)));
-						word->color.SetTar(contentColor);
-						SetDrawAttributeSvgColor(button.svg, button.enabled
-							? GetThemeColor(button.selected ? BarThemeColorEnum::Accent
-								: BarThemeColorEnum::IconPrimary) : contentColor);
-						if (button.enabled) shape->frame.value().SetTar(contentColor);
-						shape->fill.value().SetTar(button.selected
-							? GetThemeColor(BarThemeColorEnum::SelectedFill)
-							: GetThemeColor(BarThemeColorEnum::PressedFill));
+									GetThemeColor(BarThemeColorEnum::Surface),0.45)));
+						Inkeys::UI::Bar::RetargetBarFixedButtonVisual({*shape,svg.get(),word.get(),
+							button.pressScale,button.hoverStage},state.barState.drawAttribute,
+							button.enabled,button.selected,button.pressed,BarUiDefaultOperationDur,contentColor);
+						SetDrawAttributeSvgColor(button.svg,button.enabled
+							?GetThemeColor(button.selected?BarThemeColorEnum::Accent:BarThemeColorEnum::IconPrimary)
+							:contentColor);
 
-						if (button.pressScale)
-						{
-							button.pressScale->SetTar(
-								button.pressed ? BarButtonPressScale : 1.0,
-								BarUiDefaultOperationDur, nullopt, false,
-								button.pressed ? state.buttonPressCurve : state.buttonReleaseCurve);
-						}
 				}
 
 				bool extensionVisible = state.barState.drawAttribute && !state.barState.fold
@@ -3838,8 +3701,8 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				state.drawAttributeThicknessHoldExchangeProgress.val > 0.000001
 				|| state.drawAttributeThicknessHoldExchangeProgress.tar > 0.000001;
 						bool thicknessPresetMode =
-							PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect)
-							|| IsLaserThicknessPresetMode();
+							PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect, stateMode)
+							|| IsLaserThicknessPresetMode(stateMode);
 						// 预设身份由 Layout 统一判定；激光与普通笔使用各自的 canonical unit。
 						auto ConfigureThicknessButton = [&](BarUISetShapeEnum shapeType,
 							shared_ptr<BarUiWordClass> numberWord, double x, bool visible,
@@ -3960,12 +3823,15 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 					};
 for (size_t i = 0; i < 3; ++i)
 						{
-							int presetPx = stateMode.laserActive
-								? GetBarLaserThicknessPresetPx(i, state.barStyle.dpiZoom)
+							double presetPx = stateMode.laserActive
+								? GetBarLaserThicknessPresetPx(i, state.barStyle.dpiZoom, stateMode)
 								: GetBarThicknessPresetPx(
-									stateMode.Pen.ModeSelect, i, state.barStyle.dpiZoom);
+									stateMode.Pen.ModeSelect, i, state.barStyle.dpiZoom, stateMode);
 							auto numberWord = state.wordMap[presetWords[i]];
-							wstring numberText = to_wstring(presetPx);
+							wstring numberText = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
+							stateMode.laserActive ? GetBarLaserThicknessPresetDip(i, stateMode)
+							: GetBarThicknessPresetMetrics(stateMode.Pen.ModeSelect, i,
+								stateMode).resolvedWidthDip);
 							numberWord->content.SetTar(numberText);
 							ConfigureThicknessButton(presetShapes[i], numberWord,
 								BarDrawAttributeThicknessPresetStartX
@@ -3977,7 +3843,7 @@ for (size_t i = 0; i < 3; ++i)
 											+ BarDrawAttributeGap),
 								state.barState.drawAttribute && thicknessPresetMode,
 								IsBarThicknessPresetSelected(stateMode.Pen.ModeSelect,
-									i, state.barStyle.dpiZoom), *presetPresses[i],
+									i, state.barStyle.dpiZoom, stateMode), *presetPresses[i],
 								*presetHoverStages[i], *presetPressScales[i]);
 						}
 						bool adjustVisible = state.barState.drawAttribute
@@ -4027,7 +3893,7 @@ for (size_t i = 0; i < 3; ++i)
 							- BarDrawAttributeGap * 2.0)
 						* max(0.0, static_cast<double>(frameZoom));
 					bool previewOverflow = tooltipBaseVisible
-						&& static_cast<double>(GetPenWidth())
+						&& GetBarCurrentPenThicknessVisualWidth(state.barStyle.dpiZoom, stateMode)
 							> expandedPreviewCapacity + 0.001;
 					state.barState.drawAttributeBar.thicknessPreviewOverflow =
 						previewOverflow;
@@ -4210,6 +4076,7 @@ for (size_t i = 0; i < 3; ++i)
 					shape->h.SetTar(size);
 					shape->rw.value().SetTar(4.0 * drawAttributeLayoutScale);
 					shape->rh.value().SetTar(4.0 * drawAttributeLayoutScale);
+					// 描边只在此提交最终缩放目标，避免选中态分支每帧重启动画。
 					shape->ft.value().SetTar(drawAttributeLayoutScale);
 					// 填充先显现，灰边只随同一批次淡入到 18%。
 					shape->framePct.value().SetTar(
@@ -4632,8 +4499,6 @@ for (size_t i = 0; i < 3; ++i)
 					IdtAtomic<BarButtonHoverStageEnum>* hoverStage;
 					BarUiValueClass* pressScale;
 				};
-				int brushWidth = static_cast<int>(lround(max(
-					0.0f, stateMode.Pen.Brush1.width)));
 				const GeometryButtonLayout buttons[] =
 				{
 					{ BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
@@ -4655,24 +4520,24 @@ for (size_t i = 0; i < 3; ++i)
 					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessFine,
 						BarUISetWordEnum::GeometryAttributeBar_ThicknessFineNumber,
 						230.0, 65.0, 30.0, false,
-						brushWidth == GetBarThicknessPresetPx(
-							PenModeSelectEnum::IdtPenSoftPen, 0, state.barStyle.dpiZoom),
+						IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 0,
+							state.barStyle.dpiZoom, stateMode),
 						state.barState.geometryAttributeBar.thicknessFinePress,
 						&state.geometryThicknessFineHoverStage,
 						&state.geometryThicknessFinePressScale },
 					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessMedium,
 						BarUISetWordEnum::GeometryAttributeBar_ThicknessMediumNumber,
 						265.0, 65.0, 30.0, false,
-						brushWidth == GetBarThicknessPresetPx(
-							PenModeSelectEnum::IdtPenSoftPen, 1, state.barStyle.dpiZoom),
+						IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 1,
+							state.barStyle.dpiZoom, stateMode),
 						state.barState.geometryAttributeBar.thicknessMediumPress,
 						&state.geometryThicknessMediumHoverStage,
 						&state.geometryThicknessMediumPressScale },
 					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse,
 						BarUISetWordEnum::GeometryAttributeBar_ThicknessCoarseNumber,
 						300.0, 65.0, 30.0, false,
-						brushWidth == GetBarThicknessPresetPx(
-							PenModeSelectEnum::IdtPenSoftPen, 2, state.barStyle.dpiZoom),
+						IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 2,
+							state.barStyle.dpiZoom, stateMode),
 						state.barState.geometryAttributeBar.thicknessCoarsePress,
 						&state.geometryThicknessCoarseHoverStage,
 						&state.geometryThicknessCoarsePressScale },
@@ -4689,27 +4554,10 @@ for (size_t i = 0; i < 3; ++i)
 					shape->rw->SetTar(4.0 * layoutScale);
 					shape->rh->SetTar(4.0 * layoutScale);
 					shape->ft->SetTar(layoutScale);
-					shape->fill->SetTar(button.selected
-						? GetThemeColor(BarThemeColorEnum::SelectedFill)
-						: GetThemeColor(BarThemeColorEnum::PressedFill));
-					shape->frame->SetTar(button.selected
-						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::EdgeLight));
-					if (!state.barState.geometryAttribute)
-					{
-						shape->pct.SetTar(0.0);
-						shape->frameLightPct->SetTar(0.0);
-					}
-					else
-					{
-						if (button.pressed) shape->pct.SetTar(button.selected ? SelectedFillOpacity(0.10) : 0.10);
-						else if (button.selected) shape->pct.SetTar(SelectedFillOpacity());
-						else if (*button.hoverStage == BarButtonHoverStageEnum::None)
-							shape->pct.SetTar(0.0);
-						shape->frameLightPct->SetTar(button.selected
-							? (button.pressed ? BarButtonPressedLightOpacity : 1.0)
-							: 0.0);
-					}
+					Inkeys::UI::Bar::RetargetBarFixedButtonVisual({*shape,nullptr,nullptr,
+						button.pressScale,button.hoverStage},state.barState.geometryAttribute,
+						true,button.selected,button.pressed,BarUiDefaultOperationDur);
+
 					word->x.SetTar(button.x * layoutScale);
 					word->y.SetTar((button.label ? 35.0 : button.y) * layoutScale);
 					word->w.SetTar(button.size * layoutScale);
@@ -4722,20 +4570,18 @@ for (size_t i = 0; i < 3; ++i)
 						word->pct.SetTar(state.barState.geometryAttribute ? 1.0 : 0.0);
 					else
 					{
-						int presetPx = GetBarThicknessPresetPx(
+						double presetPx = GetBarThicknessPresetPx(
 							PenModeSelectEnum::IdtPenSoftPen, index - 2,
-							state.barStyle.dpiZoom);
-						word->content.SetTar(to_wstring(presetPx));
+							state.barStyle.dpiZoom, stateMode);
+						word->content.SetTar(Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
+							GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenSoftPen,
+								index - 2, stateMode).resolvedWidthDip));
 						double availableDiameter =
 							(BarGeometryAttributeThicknessButtonSize - 8.0)
 							* layoutScale * static_cast<double>(frameZoom);
 						word->pct.SetTar(state.barState.geometryAttribute
 							&& presetPx * layoutScale > availableDiameter ? 1.0 : 0.0);
 					}
-					button.pressScale->SetTar(
-						button.pressed ? BarButtonPressScale : 1.0,
-						BarUiDefaultOperationDur, nullopt, false,
-						button.pressed ? state.buttonPressCurve : state.buttonReleaseCurve);
 				}
 
 				// 面板与主栏复用同一组双色 SVG，避免两套图形风格逐渐分叉。
@@ -4966,7 +4812,6 @@ for (size_t i = 0; i < 3; ++i)
 		if (!hasButtons)
 		{
 			state.barState.moreExpanded = false;
-			if (moreButton) moreButton->localState.state = BarWidgetState::None;
 		}
 		bool open = hasButtons && state.barState.moreExpanded && !state.barState.fold;
 		bool side = state.barState.widgetPosition.primaryBar;
@@ -4982,85 +4827,12 @@ for (size_t i = 0; i < 3; ++i)
 			{ open ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseInSine,
 				open ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseInSine,
 				0.0, false });
-		struct MorePlacement
-		{
-			shared_ptr<BarButtonClass> button;
-			int column = 0;
-			int row = 0;
-			int columnSpan = 1;
-			int rowSpan = 1;
-			bool forced = false;
-		};
-		const size_t itemCount = snapshot.explicitMore.size()
-			+ snapshot.forcedOverflow.size();
-		const double packedItemCount = static_cast<double>(
-			max<size_t>(1, itemCount));
-		int columns = min(5, max(1,
-			static_cast<int>(ceil(sqrt(packedItemCount)))));
-		int subColumns = columns * 2;
-		vector<vector<bool>> occupied;
-		vector<MorePlacement> placements;
-		auto SpanFor = [](BarButtonSizeEnum size) -> pair<int, int>
-			{
-				switch (size)
-				{
-				case BarButtonSizeEnum::twoTwo: return { 2, 2 };
-				case BarButtonSizeEnum::twoOne: return { 2, 1 };
-				case BarButtonSizeEnum::oneTwo: return { 1, 2 };
-				case BarButtonSizeEnum::oneOne: return { 1, 1 };
-				}
-				return { 2, 2 };
-			};
-		auto EnsureRows = [&](int rowCount)
-			{
-				while (static_cast<int>(occupied.size()) < rowCount)
-					occupied.push_back(vector<bool>(subColumns, false));
-			};
-		auto PackGroup = [&](const vector<shared_ptr<BarButtonClass>>& buttons,
-			int startRow, bool forced) -> int
-			{
-				int usedRows = startRow;
-				for (const shared_ptr<BarButtonClass>& button : buttons)
-				{
-					if (!button) continue;
-					auto [columnSpan, rowSpan] = SpanFor(button->size);
-					bool placed = false;
-					for (int row = startRow; !placed; ++row)
-					{
-						EnsureRows(row + rowSpan);
-						for (int column = 0;
-							column + columnSpan <= subColumns; ++column)
-						{
-							bool free = true;
-							for (int y = 0; free && y < rowSpan; ++y)
-								for (int x = 0; x < columnSpan; ++x)
-									if (occupied[row + y][column + x])
-									{
-										free = false;
-										break;
-									}
-							if (!free) continue;
-							for (int y = 0; y < rowSpan; ++y)
-								for (int x = 0; x < columnSpan; ++x)
-									occupied[row + y][column + x] = true;
-							placements.push_back({ button, column, row,
-								columnSpan, rowSpan, forced });
-							usedRows = max(usedRows, row + rowSpan);
-							placed = true;
-							break;
-						}
-					}
-				}
-				return usedRows;
-			};
-		int explicitRows = PackGroup(snapshot.explicitMore, 0, false);
-		if (explicitRows % 2 != 0) ++explicitRows;
-		bool showDivider = !snapshot.explicitMore.empty()
-			&& !snapshot.forcedOverflow.empty();
-		int forcedStartRow = showDivider ? explicitRows : 0;
-		int forcedRows = PackGroup(snapshot.forcedOverflow,
-			forcedStartRow, true);
-		int totalRows = max(1, max(explicitRows, forcedRows));
+		const auto packed = Inkeys::UI::Bar::ResolveBarButtonListLayout(snapshot.explicitMore,
+			Inkeys::UI::Bar::BarButtonListLayoutKind::GroupedGrid, snapshot.forcedOverflow);
+		const auto& placements = packed.placements;
+		const int subColumns = packed.subColumns, explicitRows = packed.explicitRows,
+			totalRows = packed.totalRows;
+		const bool showDivider = packed.showDivider;
 
 		constexpr double one = BarButtonOneSideDip;
 		constexpr double step = BarButtonOneSideDip + BarButtonGapDip;
@@ -5083,6 +4855,9 @@ for (size_t i = 0; i < 3; ++i)
 		// 根面板从 More 按钮中心的紧凑态展开，和绘制属性/几何面板共享锚点语义。
 		double scale = max(0.01, BarMorePanelCompactScale
 			+ (1.0 - BarMorePanelCompactScale) * rawProgress);
+		// 字号取整只看面板最终姿态，不能追逐每帧 SetDirect 的当前展开尺寸。
+		const double fontTargetScale = max(0.01, BarMorePanelCompactScale
+			+ (1.0 - BarMorePanelCompactScale) * state.morePanelProgress.tar);
 		double logicalWindowWidth = frameZoom > 0.0
 			? static_cast<double>(state.barWindow.w) / frameZoom : panelWidth;
 		double logicalWindowHeight = frameZoom > 0.0
@@ -5194,7 +4969,7 @@ for (size_t i = 0; i < 3; ++i)
 			divider->x.val - divider->w.val / 2.0,
 			divider->y.val - divider->h.val / 2.0));
 
-		for (const MorePlacement& placement : placements)
+		for (const auto& placement : placements)
 		{
 			BarButtonClass* button = placement.button.get();
 			if (!button) continue;
@@ -5215,122 +4990,39 @@ for (size_t i = 0; i < 3; ++i)
 				+ (logicalX - panelWidth / 2.0) * scale);
 			button->button.y.SetDirect(panelCenterInMainBarY
 				+ (localCenterY - panelHeight / 2.0) * scale);
-			button->button.w.SetDirect(width * scale);
-			button->button.h.SetDirect(height * scale);
-			if (button->button.rw) button->button.rw->SetDirect(4.0 * scale);
-			if (button->button.rh) button->button.rh->SetDirect(4.0 * scale);
-			if (!button->button.frame)
-				button->button.frame = BarUiColorClass(
-					GetThemeColor(BarThemeColorEnum::TextPrimary));
-			if (!button->button.framePct) button->button.framePct = BarUiPctClass(0.0);
-			if (!button->button.frameLightPct)
-				button->button.frameLightPct = BarUiPctClass(0.0);
-			if (!button->button.ft) button->button.ft = BarUiValueClass(scale);
-			button->button.ft->SetDirect(scale);
-			button->button.frameRendering = BarUiFrameRenderingEnum::PointLight;
-			button->button.framePrimaryLightEnabled = false;
-			button->button.frameCursorLightIntensityScale =
-				BarButtonCursorLightIntensity;
-			button->button.frameLightCursorLightIntensityScale =
-				BarButtonLightCursorLightIntensity;
-			COLORREF buttonFill = button->state->state == BarWidgetState::Selected
-				? GetThemeColor(BarThemeColorEnum::SelectedFill)
-				: GetThemeColor(BarThemeColorEnum::PressedFill);
-			COLORREF buttonFrame = button->state->state == BarWidgetState::Selected
-				? GetThemeColor(BarThemeColorEnum::Accent)
-				: GetThemeColor(BarThemeColorEnum::EdgeLight);
-			if (settleHiddenButtonVisuals)
+			if (button->size == BarButtonSizeEnum::oneTwo)
 			{
-				// 隐藏时先落稳选中颜色，避免展开后才从旧颜色渐变为青色。
-				button->button.fill->SetDirect(buttonFill);
-				button->button.frame->SetDirect(buttonFrame);
-			}
-			else
-			{
-				button->button.fill->SetTar(buttonFill);
-				button->button.frame->SetTar(buttonFrame);
-			}
-			button->button.frameLightPct->SetTar(
-				open && button->state->state == BarWidgetState::Selected
-					? (button->state->emph == BarWidgetEmphasize::Pressed
-						? BarButtonPressedLightOpacity : 1.0) : 0.0);
-			if (!open)
-				button->button.pct.SetTar(0.0, BarUiDefaultOperationDur);
-			else if (button->state->emph == BarWidgetEmphasize::Pressed)
-				button->button.pct.SetTar(button->state->state == BarWidgetState::Selected
-					? SelectedFillOpacity(0.10) : 0.10, BarUiDefaultOperationDur);
-			else if (button->state->state == BarWidgetState::Selected)
-				button->button.pct.SetTar(SelectedFillOpacity(), BarUiDefaultOperationDur);
-			else if (button->hoverStage == BarButtonHoverStageEnum::None)
-				button->button.pct.SetTar(0.0, BarUiDefaultOperationDur);
-			COLORREF contentColor =
-				button->state->state == BarWidgetState::Selected
-					? GetThemeColor(BarThemeColorEnum::Accent)
-					: GetThemeColor(BarThemeColorEnum::TextPrimary);
-			const COLORREF iconColor = GetThemeColor(
-				button->state->state == BarWidgetState::Selected
-					? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
-			if (settleHiddenButtonVisuals)
-			{
-				button->icon.color1->SetDirect(iconColor);
-				if (button->icon.color2)
-					button->icon.color2->SetDirect(iconColor);
-				button->name.color.SetDirect(contentColor);
-			}
-			else
-			{
-				button->icon.color1->SetTar(iconColor);
-				if (button->icon.color2)
-					button->icon.color2->SetTar(iconColor);
-				button->name.color.SetTar(contentColor);
-			}
-			if (button->size == BarButtonSizeEnum::oneOne)
-			{
-				const auto metrics = ResolveBarButtonVisualMetrics(
-					BarButtonVisualLayoutKind::StandardOneOne);
-				button->icon.SetWH(metrics.iconSizeDip * scale,
-					metrics.iconSizeDip * scale);
-				button->icon.x.SetDirect(metrics.iconOffsetXDip * scale);
-				button->icon.y.SetDirect(metrics.iconOffsetYDip * scale);
-				button->name.pct.SetDirect(0.0);
-			}
-			else if (button->size == BarButtonSizeEnum::twoOne)
-			{
-				const auto metrics = ResolveBarButtonVisualMetrics(
-					BarButtonVisualLayoutKind::StandardTwoOne);
-				button->icon.SetWH(metrics.iconSizeDip * scale,
-					metrics.iconSizeDip * scale);
-				button->icon.x.SetDirect(metrics.iconOffsetXDip * scale);
-				button->icon.y.SetDirect(metrics.iconOffsetYDip * scale);
-				button->name.x.SetDirect(metrics.primaryOffsetXDip * scale);
-				button->name.y.SetDirect(metrics.primaryOffsetYDip * scale);
-				button->name.w.SetDirect(metrics.primarySlotWidthDip * scale);
-				button->name.h.SetDirect(metrics.primarySlotHeightDip * scale);
-				button->name.size.SetDirect(metrics.primaryFontSizeDip * scale);
-				button->name.pct.SetDirect(opacityProgress);
-			}
-			else if (button->size == BarButtonSizeEnum::twoTwo)
-			{
-				const auto metrics = ResolveBarButtonVisualMetrics(
-					BarButtonVisualLayoutKind::StandardTwoTwo);
-				button->icon.SetWH(metrics.iconSizeDip * scale,
-					metrics.iconSizeDip * scale);
-				button->icon.x.SetDirect(metrics.iconOffsetXDip * scale);
-				button->icon.y.SetDirect(metrics.iconOffsetYDip * scale);
-				button->name.x.SetDirect(metrics.primaryOffsetXDip * scale);
-				button->name.y.SetDirect(metrics.primaryOffsetYDip * scale);
-				button->name.w.SetDirect(metrics.primarySlotWidthDip * scale);
-				button->name.h.SetDirect(metrics.primarySlotHeightDip * scale);
-				button->name.size.SetDirect(metrics.primaryFontSizeDip * scale);
-				button->name.pct.SetDirect(opacityProgress);
-			}
-			else
-			{
-				button->icon.pct.SetDirect(0.0);
-				button->name.pct.SetDirect(0.0);
+				button->button.w.SetDirect(width * scale);
+				button->button.h.SetDirect(height * scale);
+				button->icon.pct.SetDirect(0.0); button->name.pct.SetDirect(0.0);
 				continue;
 			}
-			button->icon.pct.SetDirect(opacityProgress);
+			const auto kind = button->size == BarButtonSizeEnum::oneOne
+				? BarButtonVisualLayoutKind::StandardOneOne
+				: button->size == BarButtonSizeEnum::twoOne
+					? BarButtonVisualLayoutKind::StandardTwoOne : BarButtonVisualLayoutKind::StandardTwoTwo;
+			Inkeys::UI::Bar::ConfigureBarButtonVisualTargets(*button, kind,
+				BarUiDefaultOperationDur, scale, true, nullopt, fontTargetScale);
+			const bool enabled = button->state->state != BarWidgetState::Disable;
+			const bool selected = button->state->state == BarWidgetState::Selected;
+			Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(*button, open,
+				enabled, selected, BarUiDefaultOperationDur);
+			if (settleHiddenButtonVisuals)
+			{
+				button->button.fill->SetDirect(GetThemeColor(selected
+					? BarThemeColorEnum::SelectedFill : BarThemeColorEnum::PressedFill));
+				const COLORREF color = GetThemeColor(selected
+					? BarThemeColorEnum::Accent : BarThemeColorEnum::TextPrimary);
+				const COLORREF iconColor = GetThemeColor(selected
+					? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
+				button->button.frame->SetDirect(color);
+				if (button->icon.color1) button->icon.color1->SetDirect(iconColor);
+				if (button->icon.color2) button->icon.color2->SetDirect(iconColor);
+				button->name.color.SetDirect(color);
+			}
+			const double contentOpacity = opacityProgress * (enabled ? 1.0 : BarButtonDisabledContentOpacity);
+			button->icon.pct.SetDirect(contentOpacity);
+			button->name.pct.SetDirect(button->size == BarButtonSizeEnum::oneOne ? 0.0 : contentOpacity);
 			button->lastDrawX = button->button.x.val;
 			button->lastDrawY = button->button.y.val;
 		}
@@ -5341,6 +5033,8 @@ for (size_t i = 0; i < 3; ++i)
 bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame)
 {
+	const auto& stateMode = state.stateModeSnapshot;
+	const auto& frameDrawingState = frame;
 	const double frameZoom = frame.zoom;
 	const double animationDtSeconds = frame.animationDtSeconds;
 	const double currentAnimationSpeedRate = frame.animationSpeedRate;
@@ -5357,8 +5051,20 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	state.bottomDockRootLayoutChanged = false;
 	state.bottomDockFrameTransitionInvalidated = false;
 
+	using Inkeys::UI::Bar::Ui3PropertyRole;
+	Ui3PropertyRole geometryRole = Ui3PropertyRole::AttributePreview;
+	Ui3PropertyRole colorRole = Ui3PropertyRole::Feedback;
+	Ui3PropertyRole visibilityRole = Ui3PropertyRole::AttributePreview;
+	Ui3PropertyRole contentRole = Ui3PropertyRole::AttributePreview;
+	bool geometryAlsoSvg = false;
+	auto ObserveRole = [&](Ui3PropertyRole role, bool active, bool same)
+		{
+			if (state.finiteObserver && role != Ui3PropertyRole::Unspecified)
+				state.finiteObserver->ObserveProperty(role, active, same);
+		};
+	ObserveRole(Ui3PropertyRole::AttributePreview, false, true);
 	auto AdvanceAnimation = [&](auto& animation, bool forceReplace,
-		BarDirtyVisualKey dirtyKey = 0) -> void
+		BarDirtyVisualKey dirtyKey, Ui3PropertyRole role) -> void
 		{
 			const BarUiAnimationAdvanceContextClass context{
 				animationDtSeconds,
@@ -5371,25 +5077,33 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			needRendering = needRendering || result.changed || result.active;
 			if ((result.changed || result.active) && dirtyKey != 0)
 				state.dirtyRegionTracker.MarkChanged(dirtyKey);
+			if (state.finiteObserver && role != Ui3PropertyRole::Unspecified)
+			{
+				const bool same = animation.IsSame(); // 使用原advance后的实际值，不二次扫描整个图。
+				ObserveRole(role, result.active, same);
+				if (geometryAlsoSvg && role == geometryRole && role != Ui3PropertyRole::SvgSemantic) ObserveRole(Ui3PropertyRole::SvgSemantic, result.active, same);
+			}
 		};
 	auto ChangeState = [&](BarUiStateClass& target, bool forceReplace,
 		BarDirtyVisualKey dirtyKey = 0)
-		{ AdvanceAnimation(target, forceReplace, dirtyKey); };
+		{ AdvanceAnimation(target, forceReplace, dirtyKey, geometryRole); };
 	auto ChangeValue = [&](BarUiValueClass& value, bool forceReplace,
-		BarDirtyVisualKey dirtyKey = 0)
-		{ AdvanceAnimation(value, forceReplace, dirtyKey); };
+		BarDirtyVisualKey dirtyKey = 0, Ui3PropertyRole role = Ui3PropertyRole::Unspecified)
+		{ AdvanceAnimation(value, forceReplace, dirtyKey, role == Ui3PropertyRole::Unspecified ? geometryRole : role); };
 	auto ChangeColor = [&](BarUiColorClass& color, bool forceReplace,
 		BarDirtyVisualKey dirtyKey = 0)
-		{ AdvanceAnimation(color, forceReplace, dirtyKey); };
+		{ AdvanceAnimation(color, forceReplace, dirtyKey, colorRole); };
 	auto ChangePct = [&](BarUiPctClass& pct, bool forceReplace,
 		BarDirtyVisualKey dirtyKey = 0)
-		{ AdvanceAnimation(pct, forceReplace, dirtyKey); };
+		{ AdvanceAnimation(pct, forceReplace, dirtyKey, visibilityRole); };
 	auto ChangeString = [&](BarUiStringClass& stringO, bool,
-		BarDirtyVisualKey dirtyKey = 0) -> void
+		BarDirtyVisualKey dirtyKey = 0, BarUiSVGClass* svgOwner = nullptr) -> void
 		{
 			needRendering = true;
 			stringO.ApplyTar();
+			if (svgOwner) svgOwner->NotifyObservedContentValueWrite();
 			if (dirtyKey != 0) state.dirtyRegionTracker.MarkChanged(dirtyKey);
+			if (state.finiteObserver) ObserveRole(contentRole, false, stringO.IsSame());
 		};
 	const auto mainMaterialDirtyKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::MainGroup);
 	const bool barMaterialActive = !state.barLightMaterial.IsSame();
@@ -5431,6 +5145,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 // 关闭动画时拖动不会改变 val/tar，仍需每帧重绘圆点位置。
 		if (state.barState.drawAttributeBar.thicknessSliderDragging
 			|| state.barState.drawAttributeBar.thicknessSliderPressed
+			|| state.barState.drawAttributeBar.thicknessPreviewDragging
 			|| state.barState.drawAttributeBar.thicknessFineDialDragging
 			|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive)
 		{
@@ -5546,6 +5261,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		needRendering = true;
 		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 	}
+	geometryRole = visibilityRole = Ui3PropertyRole::Feedback;
 	if (!state.drawAttributeBrushPressScale.IsSame()) ChangeValue(state.drawAttributeBrushPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeSoftPenPressScale.IsSame()) ChangeValue(state.drawAttributeSoftPenPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeLaserPressScale.IsSame()) ChangeValue(state.drawAttributeLaserPressScale, false, drawAttributeDirtyKey);
@@ -5581,25 +5297,42 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	if (!state.geometryClosePressScale.IsSame())
 		ChangeValue(state.geometryClosePressScale, false, geometryAttributeDirtyKey);
 
+	auto FixedVisualContext = [&]
+	{
+		Inkeys::UI::Bar::BarButtonAnimationContext context;
+		context.dtSeconds=animationDtSeconds;context.speedRate=currentAnimationSpeedRate;
+		context.animationEnabled=BarUiAnimationEnabled;context.finiteSvgProbe=state.finiteSvgProbe!=nullptr;
+		context.observe = [&](const void* visual, Inkeys::UI::Bar::BarButtonAnimationPart,
+			Inkeys::UI::Bar::BarButtonAnimationProperty property, bool changed, bool active, bool same)
+		{
+			using Property=Inkeys::UI::Bar::BarButtonAnimationProperty;
+			const auto role=property==Property::Geometry?geometryRole:property==Property::Visibility
+				?visibilityRole:property==Property::Color?colorRole:contentRole;
+			if(changed || active)state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(visual));
+			ObserveRole(role,active,same);
+			if(geometryAlsoSvg && role==geometryRole && role!=Ui3PropertyRole::SvgSemantic)
+				ObserveRole(Ui3PropertyRole::SvgSemantic,active,same);
+		};
+		return context;
+	};
 	for (const auto& [key, val] : state.shapeMap)
 	{
-		bool forceReplace = false, change = false;
-		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
-		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
-
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
-		if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value(), forceReplace, dirtyKey), change = true;
-		if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value(), forceReplace, dirtyKey), change = true;
-		if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace, dirtyKey), change = true;
-		if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace, dirtyKey), change = true;
-		if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace, dirtyKey), change = true;
-		if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace, dirtyKey), change = true;
-		if (val->frameLightPct.has_value() && !val->frameLightPct->IsSame()) ChangePct(val->frameLightPct.value(), forceReplace, dirtyKey), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
+		geometryAlsoSvg = false;
+		geometryRole = key == BarUISetShapeEnum::MainBar ? Ui3PropertyRole::MainRootGeometry
+			: key >= BarUISetShapeEnum::DrawAttributeBar && key <= BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner
+				? (key == BarUISetShapeEnum::DrawAttributeBar ? Ui3PropertyRole::DrawRootGeometry : Ui3PropertyRole::AttributePreview)
+				: key >= BarUISetShapeEnum::MorePanel && key <= BarUISetShapeEnum::MorePanelCloseHit
+					? Ui3PropertyRole::AttributePreview : Ui3PropertyRole::Unspecified;
+		// 根/实际surface opacity属于visibility；hit背景hover不阻布局结束。
+		visibilityRole = key == BarUISetShapeEnum::MainBar || key == BarUISetShapeEnum::DrawAttributeBar
+			|| key == BarUISetShapeEnum::MorePanel || key == BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface
+			|| key == BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu || key == BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel
+			? geometryRole : Ui3PropertyRole::Feedback;
+		colorRole = Ui3PropertyRole::Feedback;
+		ObserveRole(geometryRole, false, true);
+		const auto advanced=Inkeys::UI::Bar::AdvanceBarShapeVisual(*val,FixedVisualContext());
+		const bool change=advanced.changed || advanced.active;
+		needRendering|=change;
 		if (change && key == BarUISetShapeEnum::MainBar)
 		{
 			// 主栏是所有浮层的布局根，移动时必须覆盖所有功能组的旧/新位置。
@@ -5621,13 +5354,17 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	}
 	for (const auto& [key, val] : state.superellipseMap)
 	{
+		geometryRole = Ui3PropertyRole::MainClickPulse;
+		visibilityRole = Ui3PropertyRole::MainClickPulse;
+		colorRole = Ui3PropertyRole::Feedback;
+		ObserveRole(geometryRole, false, true);
 		bool forceReplace = false, change = false;
 		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
 		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
+		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey, Ui3PropertyRole::DockDisplay), change = true;
+		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey, Ui3PropertyRole::DockDisplay), change = true;
 		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
 		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
 		if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value(), forceReplace, dirtyKey), change = true;
@@ -5647,28 +5384,28 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	}
 	for (const auto& [key, val] : state.svgMap)
 	{
-		bool forceReplace = false, change = false;;
-		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
-		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
-		if (val->AdvanceContentTransition(animationDtSeconds, currentAnimationSpeedRate))
-		{
-			needRendering = true;
-			state.dirtyRegionTracker.MarkChanged(dirtyKey);
-		}
-
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
-		if (!val->angle.IsSame()) ChangeValue(val->angle, forceReplace, dirtyKey), change = true;
-		if (!val->svg.IsSame()) ChangeString(val->svg, forceReplace, dirtyKey), change = true;
-		if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace, dirtyKey), change = true;
-		if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace, dirtyKey), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
+		const bool finiteDomain = key == BarUISetSvgEnum::logo1 || key == BarUISetSvgEnum::logoInk
+			|| (key >= BarUISetSvgEnum::DrawAttributeBar_ColorSelect1 && key <= BarUISetSvgEnum::DrawAttributeBar_ColorPickerToneMoon);
+		const bool relevant = finiteDomain && (val->enable.val || val->enable.tar || val->pct.val > 0.000001 || val->pct.tar > 0.000001);
+		geometryRole = key == BarUISetSvgEnum::logo1 || key == BarUISetSvgEnum::logoInk
+			? Ui3PropertyRole::MainClickPulse : Ui3PropertyRole::SvgSemantic;
+		if (!relevant) geometryRole = Ui3PropertyRole::Unspecified;
+		geometryAlsoSvg = relevant;
+		colorRole = visibilityRole = contentRole = relevant ? Ui3PropertyRole::SvgSemantic : Ui3PropertyRole::Unspecified;
+		ObserveRole(relevant ? Ui3PropertyRole::SvgSemantic : Ui3PropertyRole::Unspecified, false, true);
+		const auto advanced=Inkeys::UI::Bar::AdvanceBarSvgVisual(*val,FixedVisualContext());
+		needRendering|=advanced.changed || advanced.active;
+		if (state.finiteSvgProbe) val->ObserveFiniteRequirement(finiteDomain);
 	}
+	geometryAlsoSvg = false;
+	geometryRole = colorRole = visibilityRole = contentRole = Ui3PropertyRole::Unspecified;
 	for (const auto& [key, val] : state.pngMap)
 	{
+		const bool relevant = state.finiteObserver && (val->enable.val || val->enable.tar
+			|| val->pct.val > 0.000001 || val->pct.tar > 0.000001);
+		geometryRole = visibilityRole = Inkeys::UI::Bar::Ui3FinitePngLayoutRole(
+			key == BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel, relevant);
+		ObserveRole(geometryRole, false, true);
 		bool forceReplace = false, change = false;
 		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
@@ -5683,61 +5420,19 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	}
 	for (const auto& [key, val] : state.wordMap)
 	{
-		bool forceReplace = false, change = false;;
-		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
-		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
-		if (val->AdvanceContentTransition(
-			animationDtSeconds, currentAnimationSpeedRate))
-		{
-			needRendering = true;
-			state.dirtyRegionTracker.MarkChanged(dirtyKey);
-		}
-
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
-		if (!val->size.IsSame()) ChangeValue(val->size, forceReplace, dirtyKey), change = true;
-		if (!val->content.IsSame()) ChangeString(val->content, forceReplace, dirtyKey), change = true;
-		if (!val->color.IsSame()) ChangeColor(val->color, forceReplace, dirtyKey), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
+		geometryRole = key == BarUISetWordEnum::MainButton ? Ui3PropertyRole::MainClickPulse
+			: key >= BarUISetWordEnum::DrawAttributeBar_Brush1 && key < BarUISetWordEnum::GeometryAttributeBar_StraightLine
+				? Ui3PropertyRole::AttributePreview : Ui3PropertyRole::Unspecified;
+		visibilityRole = contentRole = geometryRole; colorRole = Ui3PropertyRole::Feedback;
+		ObserveRole(geometryRole, false, true);
+		const auto advanced=Inkeys::UI::Bar::AdvanceBarWordVisual(*val,FixedVisualContext());
+		needRendering|=advanced.changed || advanced.active;
 	}
-	auto UpdateHoverAnimation = [&](BarUiPctClass& hoverPct, BarUiColorClass* hoverFill,
-		IdtAtomic<BarButtonHoverStageEnum>& hoverStage, bool visible, bool hoverAllowed)
-		{
-			auto FinishHover = [&]()
-				{
-					hoverStage = BarButtonHoverStageEnum::None;
-					hoverPct.animateWhenDisabled = false;
-					if (hoverFill) hoverFill->animateWhenDisabled = false;
-				};
-			if (!visible)
-			{
-				// 隐藏时清除仍在运行的独立悬停过程，避免下次显示继承旧的渐隐灰色。
-				if (hoverStage != BarButtonHoverStageEnum::None) hoverPct.SetDirect(0.0);
-				FinishHover();
-			}
-			else if (!hoverAllowed)
-			{
-				// 选中状态继续复用同一背景层，透明度由选中动画接管。
-				FinishHover();
-			}
-			else if (hoverStage == BarButtonHoverStageEnum::Showing
-				&& hoverPct.IsSame())
-			{
-				// 快速显现完成后立即进入独立渐隐阶段，同一次进入不会重新计时。
-				hoverStage = BarButtonHoverStageEnum::Fading;
-				const BarUiCurveSpecClass hoverFadeCurve{
-					BarUiCurveEnum::EaseInSine, BarUiCurveEnum::EaseInSine, 0.0, false };
-				hoverPct.SetTar(0.0, BarButtonHoverFadeDur, nullopt, true, hoverFadeCurve);
-			}
-			else if (hoverStage == BarButtonHoverStageEnum::Fading
-				&& hoverPct.IsSame())
-			{
-				FinishHover();
-			}
-		};
+	geometryRole = colorRole = visibilityRole = contentRole = Ui3PropertyRole::Feedback;
+	auto UpdateHoverAnimation = [&](BarUiPctClass& pct, BarUiColorClass* fill,
+		IdtAtomic<BarButtonHoverStageEnum>& stage, bool visible, bool allowed)
+	{ (void)Inkeys::UI::Bar::UpdateBarButtonHoverVisual(pct, fill, stage,
+		visible, allowed, BarButtonHoverFadeDur); };
 
 	auto drawAttributeBrush = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
 	UpdateHoverAnimation(drawAttributeBrush->pct, &drawAttributeBrush->fill.value(),
@@ -5792,14 +5487,14 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 				state.drawAttributeThicknessHoldExchangeProgress.val),
 			0.0, 1.0);
 		bool thicknessPresetMode =
-			PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect)
-			|| IsLaserThicknessPresetMode();
+			PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect, stateMode)
+			|| IsLaserThicknessPresetMode(stateMode);
 		// 悬停阶段复用与布局相同的身份判断，避免 DPI 下的激光 selected 丢失。
 		for (size_t i = 0; i < 3; ++i)
 		{
 			auto shape = state.shapeMap[thicknessPresetShapes[i]];
 			bool selected = IsBarThicknessPresetSelected(
-				stateMode.Pen.ModeSelect, i, state.barStyle.dpiZoom);
+				stateMode.Pen.ModeSelect, i, state.barStyle.dpiZoom, stateMode);
 			UpdateHoverAnimation(shape->pct, &shape->fill.value(),
 				*thicknessPresetHoverStages[i],
 				state.barState.drawAttribute && thicknessPresetMode,
@@ -5872,13 +5567,11 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		&state.geometryThicknessMediumHoverStage,
 		&state.geometryThicknessCoarseHoverStage,
 	};
-	int geometryThickness = static_cast<int>(lround(max(
-		0.0f, stateMode.Pen.Brush1.width)));
 	for (size_t index = 0; index < 3; ++index)
 	{
 		auto shape = state.shapeMap[geometryThicknessShapes[index]];
-		bool selected = geometryThickness == GetBarThicknessPresetPx(
-			PenModeSelectEnum::IdtPenSoftPen, index, state.barStyle.dpiZoom);
+		bool selected = IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, index,
+							state.barStyle.dpiZoom, stateMode);
 		UpdateHoverAnimation(shape->pct, &shape->fill.value(),
 			*geometryThicknessHoverStages[index],
 			state.barState.geometryAttribute, !selected);
@@ -5889,113 +5582,48 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		&geometryClose->fill.value(), state.geometryCloseHoverStage,
 		state.barState.geometryAttribute, true);
 
-	// 主栏与更多浮层共享同一套按钮动画推进，实体不会同时出现在两处。
-	auto UpdateRegisteredButtonAnimation = [&](BarButtonClass* temp,
-		bool moreItem)
+	// 所有目标直接调用主栏抽取的实际推进逻辑；这里只映射主栏诊断和脏区身份。
+	auto AdvanceButton = [&](BarButtonClass& button, bool moreItem)
 	{
-		if (temp == nullptr) return;
-		temp->button.lightMaterial = lightMaterial;
-		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(&temp->button));
-		const auto buttonDirtyKey = GetBarDirtyVisualKey(&temp->button);
-		const auto iconDirtyKey = GetBarDirtyVisualKey(&temp->icon);
-		const auto nameDirtyKey = GetBarDirtyVisualKey(&temp->name);
-		bool isDivider = temp->preset == BarButtonPresetEnum::Divider;
-		if (isDivider)
+		button.button.lightMaterial = lightMaterial;
+		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(&button.button));
+		Inkeys::UI::Bar::BarButtonAnimationContext context;
+		context.dtSeconds = animationDtSeconds;
+		context.speedRate = currentAnimationSpeedRate;
+		context.animationEnabled = BarUiAnimationEnabled;
+		context.visible = !state.barState.fold && button.IsVisible()
+			&& (!moreItem || state.barState.moreExpanded);
+		context.hoverAllowed = button.state->state != BarWidgetState::Disable
+			&& button.state->state != BarWidgetState::Selected;
+		context.finiteSvgProbe = state.finiteSvgProbe != nullptr;
+		context.observe = [&](const void* visual, Inkeys::UI::Bar::BarButtonAnimationPart part,
+			Inkeys::UI::Bar::BarButtonAnimationProperty property, bool changed, bool active, bool same)
 		{
-			// 分隔线只推进几何/光影属性，清除旧按钮状态且不改写第三光透明度。
-			(void)StopBarButtonHoverVisual(*temp, true);
-			SetBarButtonPressedVisual(*temp, false);
-		}
-		else
-		{
-			(void)UpdateBarButtonHoverVisual(*temp,
-				!state.barState.fold && temp->IsVisible()
-					&& (!moreItem || state.barState.moreExpanded),
-				temp->state->state != BarWidgetState::Disable
-					&& temp->state->state != BarWidgetState::Selected,
-				BarButtonHoverFadeDurationSeconds);
-			if (moreItem)
+			using Part = Inkeys::UI::Bar::BarButtonAnimationPart;
+			using Property = Inkeys::UI::Bar::BarButtonAnimationProperty;
+			if (changed || active) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(visual));
+			Ui3PropertyRole role = Ui3PropertyRole::Feedback;
+			if (part == Part::Icon)
 			{
-				bool pressed = temp->state->emph == BarWidgetEmphasize::Pressed;
-				temp->pressScale.SetTar(pressed ? BarButtonPressScale : 1.0,
-					BarUiDefaultOperationDur, nullopt, false,
-					pressed ? state.buttonPressCurve : state.buttonReleaseCurve);
+				const bool relevant = button.icon.enable.val || button.icon.enable.tar
+					|| button.icon.pct.val > 0.000001 || button.icon.pct.tar > 0.000001;
+				role = relevant ? Ui3PropertyRole::SvgSemantic : Ui3PropertyRole::Unspecified;
 			}
-		}
-		if (!temp->pressScale.IsSame())
-			ChangeValue(temp->pressScale, false, buttonDirtyKey);
-
-		{
-			bool forceReplace = false, change = false;;
-			if (temp->button.forceReplace) temp->button.forceReplace = false, forceReplace = true;
-
-			if (!temp->button.enable.IsSame()) ChangeState(temp->button.enable, forceReplace, buttonDirtyKey), change = true;
-			if (!temp->button.x.IsSame()) ChangeValue(temp->button.x, forceReplace, buttonDirtyKey), change = true;
-			if (!temp->button.y.IsSame()) ChangeValue(temp->button.y, forceReplace, buttonDirtyKey), change = true;
-			if (!temp->button.w.IsSame()) ChangeValue(temp->button.w, forceReplace, buttonDirtyKey), change = true;
-			if (!temp->button.h.IsSame()) ChangeValue(temp->button.h, forceReplace, buttonDirtyKey), change = true;
-			if (temp->button.rw.has_value() && !temp->button.rw->IsSame()) ChangeValue(temp->button.rw.value(), forceReplace, buttonDirtyKey), change = true;
-			if (temp->button.rh.has_value() && !temp->button.rh->IsSame()) ChangeValue(temp->button.rh.value(), forceReplace, buttonDirtyKey), change = true;
-			if (temp->button.ft.has_value() && !temp->button.ft->IsSame()) ChangeValue(temp->button.ft.value(), forceReplace, buttonDirtyKey), change = true;
-			if (temp->button.fill.has_value() && !temp->button.fill->IsSame()) ChangeColor(temp->button.fill.value(), forceReplace, buttonDirtyKey), change = true;
-			if (temp->button.frame.has_value() && !temp->button.frame->IsSame()) ChangeColor(temp->button.frame.value(), forceReplace, buttonDirtyKey), change = true;
-			if (temp->button.framePct.has_value() && !temp->button.framePct->IsSame()) ChangePct(temp->button.framePct.value(), forceReplace, buttonDirtyKey), change = true;
-			if (temp->button.frameLightPct.has_value() && !temp->button.frameLightPct->IsSame()) ChangePct(temp->button.frameLightPct.value(), forceReplace, buttonDirtyKey), change = true;
-			if (!temp->button.pct.IsSame()) ChangePct(temp->button.pct, forceReplace, buttonDirtyKey), change = true;
-		}
-		{
-			bool forceReplace = false, change = false;;
-			if (temp->icon.forceReplace) temp->icon.forceReplace = false, forceReplace = true;
-			if (temp->icon.AdvanceContentTransition(animationDtSeconds, currentAnimationSpeedRate))
-			{
-				needRendering = true;
-				state.dirtyRegionTracker.MarkChanged(iconDirtyKey);
-			}
-
-			if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace, iconDirtyKey), change = true;
-			if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x, forceReplace, iconDirtyKey), change = true;
-			if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y, forceReplace, iconDirtyKey), change = true;
-			if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w, forceReplace, iconDirtyKey), change = true;
-			if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h, forceReplace, iconDirtyKey), change = true;
-			if (!temp->icon.angle.IsSame()) ChangeValue(temp->icon.angle, forceReplace, iconDirtyKey), change = true;
-			if (!temp->icon.svg.IsSame()) ChangeString(temp->icon.svg, forceReplace, iconDirtyKey), change = true;
-			if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value(), forceReplace, iconDirtyKey), change = true;
-			if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value(), forceReplace, iconDirtyKey), change = true;
-			if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct, forceReplace, iconDirtyKey), change = true;
-		}
-
-		{
-			bool forceReplace = false, change = false;;
-			if (temp->name.forceReplace) temp->name.forceReplace = false, forceReplace = true;
-			if (temp->name.AdvanceContentTransition(
-				animationDtSeconds, currentAnimationSpeedRate))
-			{
-				needRendering = true;
-				state.dirtyRegionTracker.MarkChanged(nameDirtyKey);
-			}
-
-			if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.x.IsSame()) ChangeValue(temp->name.x, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.y.IsSame()) ChangeValue(temp->name.y, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.w.IsSame()) ChangeValue(temp->name.w, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.h.IsSame()) ChangeValue(temp->name.h, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.size.IsSame()) ChangeValue(temp->name.size, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.content.IsSame()) ChangeString(temp->name.content, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.color.IsSame()) ChangeColor(temp->name.color, forceReplace, nameDirtyKey), change = true;
-			if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace, nameDirtyKey), change = true;
-		}
+			else if ((part == Part::Shape && property == Property::Geometry)
+				|| ((part == Part::Primary || part == Part::Secondary) && property != Property::Color))
+				role = Ui3PropertyRole::MainRootGeometry;
+			ObserveRole(role, active, same);
+		};
+		const auto advanced = Inkeys::UI::Bar::AdvanceBarButtonVisual(button, context);
+		needRendering |= advanced.changed || advanced.active;
 	};
-	for (int id = 0; id < state.barButtonSet.tot; id++)
-		UpdateRegisteredButtonAnimation(
-			state.barButtonSet.buttonList.Get(id), false);
-	BarMoreButtonSnapshotClass animatedMoreSnapshot =
-		state.barButtonSet.GetMoreButtonSnapshot();
-	for (const shared_ptr<BarButtonClass>& button :
-		animatedMoreSnapshot.explicitMore)
-		UpdateRegisteredButtonAnimation(button.get(), true);
-	for (const shared_ptr<BarButtonClass>& button :
-		animatedMoreSnapshot.forcedOverflow)
-		UpdateRegisteredButtonAnimation(button.get(), true);
+	for (const auto& button : frame.mainButtons) if (button) AdvanceButton(*button, false);
+	const auto& animatedMore = frame.moreButtons;
+	for (const auto& button : animatedMore.explicitMore) if (button) AdvanceButton(*button, true);
+	for (const auto& button : animatedMore.forcedOverflow) if (button) AdvanceButton(*button, true);
+	geometryAlsoSvg = false;
+	geometryRole = visibilityRole = Ui3PropertyRole::DockDisplay;
+	colorRole = contentRole = Ui3PropertyRole::Feedback;
 
 	{
 		auto mainButton =
@@ -6019,7 +5647,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			frame.bottomDockCenterMode, frame.bottomDockCenterPhase,
 			frame.bottomDockDragActive, !state.barState.fold,
 			centerSpringPending, centerFarEdgeSpringPending,
-			state.displayTransitionActive))
+			state.displayTransitionActive, state.whiteboardDockAnimationActive))
 		{
 			const double mainButtonStrokeDip = mainButton->ft.has_value()
 				? max(0.0, static_cast<double>(mainButton->ft->val)) : 0.0;
@@ -6081,6 +5709,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		auto previewGeometry = CalculateBarThicknessPreviewGeometry(
 			*panel, *region, regionInherit, *adjust, adjustInherit);
 		double panelScale = previewGeometry.panelScale;
+		const double fontPanelTargetScale=static_cast<double>(panel->w.tar)/BarDrawAttributeExpandedWidth;
 		double panelExpandedProgress = clamp(
 			(panelScale - BarDrawAttributeCompactScale)
 			/ (1.0 - BarDrawAttributeCompactScale), 0.0, 1.0);
@@ -6277,15 +5906,13 @@ double baseThumbDiameter =
 		if (previewGeometry.valid && popupScale > 0.000001
 			&& sliderThumb->w.val > 0.0 && sliderThumb->h.val > 0.0)
 		{
-			int previewThickness = static_cast<int>(lround(clamp(
-				static_cast<double>(state.drawAttributePenThickness.val),
-				0.0, 999.0)));
+			const auto previewTextDip = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
+				state.drawAttributePenThickness.val);
 			// 整数未变化时复用 DWrite 测量，稳定帧不重复创建 TextLayout。
-			if (previewThickness != state.drawAttributeThicknessPreviewMeasuredValue)
+			if (previewTextDip != state.drawAttributeThicknessPreviewMeasuredText)
 			{
-				state.drawAttributeThicknessPreviewMeasuredValue = previewThickness;
 				state.drawAttributeThicknessPreviewMeasuredText =
-					to_wstring(previewThickness);
+					previewTextDip;
 				state.drawAttributeThicknessPreviewMeasuredSize = state.spec.MeasureText(
 					state.drawAttributeThicknessPreviewMeasuredText,
 					BarThicknessPreviewNumberFontSize,
@@ -6301,6 +5928,7 @@ double baseThumbDiameter =
 				static_cast<double>(previewTextSize.height));
 			double circleDiameter = max(0.0,
 				static_cast<double>(state.drawAttributePenThickness.val)
+					* Inkeys::Business::PenWidth::SystemScale(stateMode.penWidthContext)
 					/ max(0.000001,
 						static_cast<double>(frameZoom)));
 			bool numberFitsInside = circleDiameter
@@ -6553,8 +6181,13 @@ double baseThumbDiameter =
 			? static_cast<PenModeSelectEnum>(static_cast<int>(
 				state.barState.drawAttributeBar.penTypeMenuAnchorMode))
 			: stateMode.Pen.ModeSelect;
-		const wstring_view annotationPopupTitle = ResolveBarAnnotationPopupTitle(
+		const auto annotationPopupTitleKind = ResolveBarAnnotationPopupTitle(
 			ResolveBarThicknessPreviewVisualKind(menuAnchorMode, false));
+		const wstring annotationPopupTitle = IW(
+			annotationPopupTitleKind
+				== BarAnnotationPopupTitleKind::FixedThicknessUnsupported
+			? I18nKey.UI.Bar.DrawAttributes.AnnotationFixedUnsupportedTitle
+			: I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle);
 		if (annotationPopupTitle != state.annotationPopupTitleText)
 		{
 			// 浮窗文案跟随打开时锁存的锚点，不跟随全局笔型跳变。
@@ -6690,6 +6323,7 @@ double baseThumbDiameter =
 				* panelScale));
 		menuFreeWord->h.SetDirect(menuRowHeight);
 		menuFreeWord->size.SetDirect(12.0 * panelScale);
+		menuFreeWord->fontTargetSize=12.0*fontPanelTargetScale;
 		menuFreeWord->pct.SetDirect(menuVisualVisible ? contentOpacity * menuOpacity : 0.0);
 		menuFreeWord->Inherit(BarUiInheritEnum::TopLeft, *panel);
 		auto menuCheck = state.svgMap[
@@ -6724,6 +6358,7 @@ double baseThumbDiameter =
 				* panelScale * menuProgress));
 		annotationLabel->h.SetDirect(menuRowHeight);
 		annotationLabel->size.SetDirect(13.0 * panelScale);
+		annotationLabel->fontTargetSize=13.0*fontPanelTargetScale;
 		annotationLabel->pct.SetDirect(annotationOpacity);
 		annotationLabel->color.SetDirect(state.barStyle.darkStyle ? RGB(160, 160, 160)
 			: MixBarUiColor(GetThemeColor(BarThemeColorEnum::TextPrimary),
@@ -6806,6 +6441,7 @@ double baseThumbDiameter =
 			holdLockLabel->w.SetDirect(holdLabelW);
 			holdLockLabel->h.SetDirect(holdLabelHeight);
 			holdLockLabel->size.SetDirect(13.0 * panelScale);
+		holdLockLabel->fontTargetSize=13.0*fontPanelTargetScale;
 			holdLockLabel->pct.SetDirect(holdHintOpacity);
 			holdLockLabel->contentScale = max(0.0, static_cast<double>(
 				state.drawAttributeThicknessHoldGroupScale.val));
@@ -6819,8 +6455,10 @@ double baseThumbDiameter =
 				clamp(static_cast<double>(
 					state.drawAttributeThicknessHoldTextMix.val), 0.0, 1.0));
 			holdLockLabel->color.SetDirect(holdTextColor);
-			holdLockLabel->content.SetVal(L"保持并固定粗细");
-			holdLockLabel->content.SetTar(L"保持并固定粗细");
+			const wstring holdThicknessLabel = IW(
+				I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel);
+			holdLockLabel->content.SetVal(holdThicknessLabel);
+			holdLockLabel->content.SetTar(holdThicknessLabel);
 
 		bool overflowInteractive =
 			state.barState.drawAttributeBar.thicknessOverflowHintPresent;
@@ -7080,6 +6718,7 @@ double closeButtonSize =
 		// 从色块锚点的紧凑态展开，放大几何变化以完整复用绘制属性窗口的回弹。
 		double pickerScale = max(0.01, BarColorPickerCompactScale
 			+ (1.0 - BarColorPickerCompactScale) * pickerProgress);
+		const double fontPickerTargetScale=max(0.01,BarColorPickerCompactScale+(1.0-BarColorPickerCompactScale)*state.drawAttributeColorPickerProgress.tar);
 		double pickerWidth = max(1.0,
 			BarColorPickerCompactWidth
 			+ (BarColorPickerPanelWidth - BarColorPickerCompactWidth)
@@ -7242,8 +6881,6 @@ double closeButtonSize =
 	double footerOuterPadding = clamp(
 		(footerHeight - state.colorPickerFooterTextSize.height * pickerScale) / 2.0,
 		0.0, footerHeight / 2.0);
-	double footerColumnGap = 6.0 * pickerScale;
-	double footerLabelValueGap = 3.0 * pickerScale;
 	double footerRgbValueW = state.colorPickerFooterRgbValueSize.width * pickerScale;
 	double footerOpacityValueW =
 		state.colorPickerFooterOpacityValueSize.width * pickerScale;
@@ -7253,6 +6890,16 @@ double closeButtonSize =
 			state.colorPickerFooterBLabelSize.width)) * pickerScale;
 	double footerOpacityLabelW =
 		state.colorPickerFooterOpacityLabelSize.width * pickerScale;
+	// 先保留四组标签和值，再把剩余宽度分配给内部与列间距，长译文不会挤入 RGB 列。
+	double footerSpacingBudget = max(0.0, pickerWidth
+		- footerOuterPadding * 2.0
+		- footerRgbLabelW * 3.0 - footerRgbValueW * 3.0
+		- footerOpacityLabelW - footerOpacityValueW);
+	double footerLabelValueGap = min(
+		3.0 * pickerScale, footerSpacingBudget / 4.0);
+	footerSpacingBudget -= footerLabelValueGap * 4.0;
+	double footerColumnGap = min(
+		6.0 * pickerScale, max(0.0, footerSpacingBudget / 2.0));
 	double footerRgbColW = footerRgbLabelW
 		+ footerLabelValueGap + footerRgbValueW;
 	double footerOpacityColW = footerOpacityLabelW
@@ -7277,6 +6924,7 @@ double closeButtonSize =
 			word.w.SetDirect(wordW);
 			word.h.SetDirect(footerHeight);
 			word.size.SetDirect(13.0 * pickerScale);
+			word.fontTargetSize=13.0*fontPickerTargetScale;
 			word.pct.SetDirect(pickerOpacity);
 			word.UpInh(BarUiInheritClass(wordX, footerTop));
 		};
@@ -7332,6 +6980,7 @@ double closeButtonSize =
 	pickerHoldWord->w.SetDirect(holdWidth - 24.0 * pickerScale);
 	pickerHoldWord->h.SetDirect(holdHeight);
 	pickerHoldWord->size.SetDirect(12.0 * pickerScale);
+	pickerHoldWord->fontTargetSize=12.0*fontPickerTargetScale;
 	pickerHoldWord->pct.SetDirect(holdOpacity);
 	COLORREF colorPickerHoldGrayColor = MixBarUiColor(
 		GetThemeColor(BarThemeColorEnum::TextPrimary),
@@ -7362,7 +7011,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		pickerPreview->fill->SetDirect(RGB(displayR, displayG, displayB));
 		}
 
-	// 抓取点直接跟手；捕获下端点和松手形变分别由独立弹簧恢复。
+	// 按住时顶边只随有效输入平移；底端捕获和松手恢复使用独立弹簧。
 	{
 		const BarBottomDockMode dockMode = frame.bottomDockMode;
 		const BarBottomDockPhase dockPhase = frame.bottomDockPhase;
@@ -7374,9 +7023,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			frame.bottomDockElasticOffsetDip,
 			-Inkeys::UI::Bar::BarBottomDockVisualLimitDip,
 			Inkeys::UI::Bar::BarBottomDockVisualLimitDip);
-		const double centerInputOffsetDip =
-			isfinite(frame.bottomDockCenterElasticOffsetDip)
-			? frame.bottomDockCenterElasticOffsetDip : 0.0;
 		const double dragRigidGripScreenY =
 			frame.bottomDockDragRigidGripScreenY;
 		const POINT frameTransitionTranslation =
@@ -7402,6 +7048,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				state.bottomDockFrameTransitionInvalidated = true;
 				return false;
 			};
+		const auto previousVerticalMapping = state.bottomDockMapping;
+		const auto previousHorizontalMapping = state.bottomDockHorizontalMapping;
 		const double previousVisualOffsetDip =
 			state.bottomDockSpring.positionDip;
 		const double previousCaptureBottomOffsetDip =
@@ -7410,74 +7058,176 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockCenterSpring.positionDip;
 		const double previousCenterCaptureFarEdgeDip =
 			state.bottomDockCenterCaptureFarEdgeSpring.positionDip;
-		bool springActive = false;
-		if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
-		{
-			state.bottomDockRecoverySeeded = false;
-			const auto dockMainButton = state.superellipseMap[
-				BarUISetSuperellipseEnum::MainButton];
-			const double dockCenterScreenY = state.monitorOrigin.y
-				+ dockMainButton->y.val * frameZoom
-				+ frameTransitionTranslation.y;
-			const double directOffsetDip =
-				ResolveBarBottomDockElasticOffsetForScreenGrip(
-					dragRigidGripScreenY, dockCenterScreenY, frameZoom);
-			if (animationDtSeconds > 0.000001)
-				state.bottomDockSpring.velocityDipPerSecond = clamp(
-					(directOffsetDip - state.bottomDockPreviousDirectOffsetDip)
-						/ animationDtSeconds,
-					-2400.0, 2400.0);
-			state.bottomDockSpring.positionDip = directOffsetDip;
-			state.bottomDockPreviousDirectOffsetDip = directOffsetDip;
-		}
-		else
-		{
-			const bool recoveryNeedsSeed =
-				(dockMode == BarBottomDockMode::BottomDocked
-					&& dockPhase == BarBottomDockPhase::Recovering)
-				|| (dockMode == BarBottomDockMode::Floating
-					&& floatingRecoveryActive);
-			if (recoveryNeedsSeed && !state.bottomDockRecoverySeeded)
-			{
-				// 输入可能在两帧之间完成捕获与脱离，恢复首帧必须直接接住最后形变量。
-				state.bottomDockSpring.positionDip = inputOffsetDip;
-				state.bottomDockPreviousDirectOffsetDip = inputOffsetDip;
-				state.bottomDockRecoverySeeded = true;
-			}
-			const auto spring = AdvanceBarBottomDockSpring(
-				state.bottomDockSpring, 0.0, animationDtSeconds,
-				true == BarUiAnimationEnabled);
-			springActive = spring.active;
-			state.bottomDockPreviousDirectOffsetDip = spring.positionDip;
-		}
 		const auto captureMainButton = state.superellipseMap[
 			BarUISetSuperellipseEnum::MainButton];
 		const double captureStrokeDip = captureMainButton->ft.has_value()
 			? max(0.0, static_cast<double>(captureMainButton->ft->val)) : 0.0;
-		const double presentedBottomScreenY = presentedDockSnapshot.monitorOrigin.y
-			+ presentedDockSnapshot.mapping.visualBottomDip * presentedDockSnapshot.zoom
-			+ presentedDockSnapshot.directTranslation.y;
-		const double nextBaseBottomScreenY = state.monitorOrigin.y
-			+ (captureMainButton->y.val + (state.mainButtonBaseSize + captureStrokeDip) / 2.0)
-				* frameZoom + frameTransitionTranslation.y;
-		const bool captureBottomJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockCaptureBottom(
-			state.bottomDockCaptureBottomSpring, presentedDockSnapshot.mode, dockMode,
-			presentedBottomScreenY, nextBaseBottomScreenY, frameZoom,
-			true == BarUiAnimationEnabled);
-		if (captureBottomJustSeeded)
-			state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
-				> BarBottomDockSettleDistanceDip;
-		bool captureBottomSpringActive = state.bottomDockCaptureBottomActive;
-		// 首个成功捕获帧保留旧下端点；跳帧和失败重试不提前消费弹簧时间。
-		if (state.bottomDockCaptureBottomActive && !captureBottomJustSeeded)
+		const double nextBaseTopDip = captureMainButton->y.val
+			- (state.mainButtonBaseSize + captureStrokeDip) / 2.0;
+		const double nextBaseBottomDip = captureMainButton->y.val
+			+ (state.mainButtonBaseSize + captureStrokeDip) / 2.0;
+		const auto presentedY = [&](double dip)
+			{ return presentedDockSnapshot.monitorOrigin.y + dip * presentedDockSnapshot.zoom
+				+ presentedDockSnapshot.directTranslation.y; };
+		bool springActive = false;
+		bool captureBottomSpringActive = false;
+		bool anchorVertical = frame.bottomDockDragTopAnchorValid;
+		Inkeys::UI::Bar::BarBottomDockAnchoredVerticalMappingResult anchoredMapping{};
+		if (anchorVertical)
 		{
-			const auto captureBottomSpring = AdvanceBarBottomDockSpring(
-				state.bottomDockCaptureBottomSpring, 0.0,
-				animationDtSeconds, true == BarUiAnimationEnabled, true);
-			captureBottomSpringActive = captureBottomSpring.active;
-			state.bottomDockCaptureBottomActive = captureBottomSpring.active;
+			const double baseHeightDip = nextBaseBottomDip - nextBaseTopDip;
+			// 窗口连续跟随输入；底端吸附目标仍在屏幕上，弹簧只保存相对此目标的误差。
+			const double bottomTargetDip = dockDragActive
+				&& dockMode == BarBottomDockMode::BottomDocked
+				? Inkeys::UI::Bar::ResolveBarBottomDockWorldTargetDip(
+					CurrentBarBottomDockLine(state.activeMonitorBounds, state.activeWorkArea,
+						state.activeDisplayDpi, state.activeDesktopDockLine),
+					state.monitorOrigin.y, frameTransitionTranslation.y, frameZoom)
+				: nextBaseBottomDip;
+			const bool verticalHandoff = presentedDockSnapshot.mode != dockMode
+				|| presentedDockSnapshot.dragSession != frame.bottomDockDragSession
+				|| presentedDockSnapshot.dragActive != dockDragActive
+				|| abs(presentedDockSnapshot.zoom - frameZoom) > 0.000001
+				|| presentedDockSnapshot.displaySerial != state.observedDisplaySerial;
+			const double targetTopScreenY = dockDragActive ? frame.bottomDockDragTopScreenY
+				: presentedY(presentedDockSnapshot.mapping.visualTopDip);
+			Inkeys::UI::Bar::BarBottomDockShiftedShape shifted;
+			if (verticalHandoff)
+			{
+				shifted = Inkeys::UI::Bar::ResolveBarBottomDockShiftedShape(
+					presentedDockSnapshot.mapping,
+					presentedDockSnapshot.monitorOrigin.y,
+					presentedDockSnapshot.directTranslation.y, presentedDockSnapshot.zoom,
+					state.monitorOrigin.y, frameTransitionTranslation.y, frameZoom,
+					targetTopScreenY);
+				if (!shifted.valid) anchorVertical = false;
+			}
+			if (anchorVertical)
+			{
+				if (verticalHandoff)
+				{
+					// 交接和松手均从成功形状播种；失败候选不能污染首次成功帧。
+					state.bottomDockSpring.positionDip = BarUiAnimationEnabled || dockDragActive
+						? shifted.topDip - nextBaseTopDip : 0.0;
+					state.bottomDockCaptureBottomSpring.positionDip = !BarUiAnimationEnabled ? 0.0
+						: dockMode == BarBottomDockMode::BottomDocked
+							? shifted.bottomDip - bottomTargetDip
+							: shifted.bottomDip - shifted.topDip - baseHeightDip;
+					state.bottomDockSpring.velocityDipPerSecond = 0.0;
+					state.bottomDockCaptureBottomSpring.velocityDipPerSecond = 0.0;
+				}
+				Inkeys::UI::Bar::BarBottomDockSpringResult topSpring{};
+				Inkeys::UI::Bar::BarBottomDockSpringResult shapeSpring{};
+				if (dockDragActive)
+					state.bottomDockSpring.positionDip = (targetTopScreenY - state.monitorOrigin.y
+						- frameTransitionTranslation.y) / frameZoom - nextBaseTopDip;
+				else if (!verticalHandoff)
+				{
+					topSpring = AdvanceBarBottomDockSpring(state.bottomDockSpring,
+						0.0, animationDtSeconds, true == BarUiAnimationEnabled, true);
+				}
+				if (!verticalHandoff)
+					shapeSpring = AdvanceBarBottomDockSpring(state.bottomDockCaptureBottomSpring,
+						0.0, animationDtSeconds, true == BarUiAnimationEnabled, true);
+				const double desiredTopDip = nextBaseTopDip + state.bottomDockSpring.positionDip;
+				const double desiredBottomDip = dockMode == BarBottomDockMode::BottomDocked
+					? bottomTargetDip + state.bottomDockCaptureBottomSpring.positionDip
+					: desiredTopDip + baseHeightDip + state.bottomDockCaptureBottomSpring.positionDip;
+				anchoredMapping = Inkeys::UI::Bar::ResolveBarBottomDockAnchoredVerticalMapping(
+					nextBaseTopDip, nextBaseBottomDip, desiredTopDip, desiredBottomDip,
+					dockMode == BarBottomDockMode::BottomDocked);
+				if (anchoredMapping.constrained)
+				{
+					// 只重基底端/高度弹簧，顶边目标不受正高度保护反推。
+					state.bottomDockCaptureBottomSpring.positionDip = dockMode == BarBottomDockMode::BottomDocked
+						? anchoredMapping.mapping.visualBottomDip - bottomTargetDip
+						: anchoredMapping.shapeOffsetDip;
+					state.bottomDockCaptureBottomSpring.velocityDipPerSecond = 0.0;
+				}
+				springActive = !dockDragActive && (topSpring.active
+					|| abs(state.bottomDockSpring.positionDip) > BarBottomDockSettleDistanceDip);
+				captureBottomSpringActive = shapeSpring.active || (BarUiAnimationEnabled
+					&& abs(state.bottomDockCaptureBottomSpring.positionDip) > BarBottomDockSettleDistanceDip);
+				if (anchoredMapping.constrained && dockDragActive) captureBottomSpringActive = false;
+				state.bottomDockCaptureBottomActive = captureBottomSpringActive;
+				state.bottomDockRecoverySeeded = !dockDragActive;
+			}
 		}
-		else if (!captureBottomJustSeeded) state.bottomDockCaptureBottomSpring.positionDip = 0.0;
+		state.bottomDockFrameTopAnchorValid = anchorVertical;
+		if (!anchorVertical)
+		{
+			const double detachHalfHeight = (state.mainButtonBaseSize + captureStrokeDip) / 2.0;
+			const bool detachJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockDetach(
+				state.bottomDockSpring, state.bottomDockCaptureBottomSpring,
+				presentedDockSnapshot.mode, dockMode,
+				presentedY(presentedDockSnapshot.mapping.baseTopDip),
+				presentedY(presentedDockSnapshot.mapping.visualTopDip),
+				presentedY(presentedDockSnapshot.mapping.visualBottomDip),
+				state.monitorOrigin.y + (captureMainButton->y.val - detachHalfHeight) * frameZoom + frameTransitionTranslation.y,
+				state.monitorOrigin.y + (captureMainButton->y.val + detachHalfHeight) * frameZoom + frameTransitionTranslation.y,
+				frameZoom, true == BarUiAnimationEnabled);
+			if (detachJustSeeded)
+			{
+				state.bottomDockRecoverySeeded = true;
+				state.bottomDockPreviousDirectOffsetDip = state.bottomDockSpring.positionDip;
+				springActive = abs(state.bottomDockSpring.positionDip) > BarBottomDockSettleDistanceDip;
+				state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
+					> BarBottomDockSettleDistanceDip;
+			}
+			else if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
+			{
+				state.bottomDockRecoverySeeded = false;
+				const double dockCenterScreenY = state.monitorOrigin.y
+					+ captureMainButton->y.val * frameZoom + frameTransitionTranslation.y;
+				const double directOffsetDip = ResolveBarBottomDockElasticOffsetForScreenGrip(
+					dragRigidGripScreenY, dockCenterScreenY, frameZoom);
+				if (animationDtSeconds > 0.000001)
+					state.bottomDockSpring.velocityDipPerSecond = clamp(
+						(directOffsetDip - state.bottomDockPreviousDirectOffsetDip)
+							/ animationDtSeconds, -2400.0, 2400.0);
+				state.bottomDockSpring.positionDip = directOffsetDip;
+				state.bottomDockPreviousDirectOffsetDip = directOffsetDip;
+			}
+			else
+			{
+				const bool recoveryNeedsSeed =
+					(dockMode == BarBottomDockMode::BottomDocked
+						&& dockPhase == BarBottomDockPhase::Recovering)
+					|| (dockMode == BarBottomDockMode::Floating && floatingRecoveryActive);
+				if (recoveryNeedsSeed && !state.bottomDockRecoverySeeded)
+				{
+					state.bottomDockSpring.positionDip = inputOffsetDip;
+					state.bottomDockPreviousDirectOffsetDip = inputOffsetDip;
+					state.bottomDockRecoverySeeded = true;
+				}
+				const auto spring = AdvanceBarBottomDockSpring(
+					state.bottomDockSpring, 0.0, animationDtSeconds,
+					true == BarUiAnimationEnabled, dockMode == BarBottomDockMode::Floating && floatingRecoveryActive);
+				springActive = spring.active;
+				state.bottomDockPreviousDirectOffsetDip = spring.positionDip;
+			}
+			const double presentedBottomScreenY = presentedY(presentedDockSnapshot.mapping.visualBottomDip);
+			const double nextBaseBottomScreenY = state.monitorOrigin.y
+				+ nextBaseBottomDip * frameZoom + frameTransitionTranslation.y;
+			const bool captureBottomJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockCaptureBottom(
+				state.bottomDockCaptureBottomSpring, presentedDockSnapshot.mode, dockMode,
+				presentedBottomScreenY, nextBaseBottomScreenY, frameZoom,
+				true == BarUiAnimationEnabled);
+			if (captureBottomJustSeeded)
+				state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
+					> BarBottomDockSettleDistanceDip;
+			captureBottomSpringActive = state.bottomDockCaptureBottomActive;
+			if (state.bottomDockCaptureBottomActive && !captureBottomJustSeeded && !detachJustSeeded)
+			{
+				const auto captureBottomSpring = AdvanceBarBottomDockSpring(
+					state.bottomDockCaptureBottomSpring, 0.0,
+					animationDtSeconds, true == BarUiAnimationEnabled, true);
+				captureBottomSpringActive = captureBottomSpring.active;
+				state.bottomDockCaptureBottomActive = captureBottomSpring.active;
+			}
+			else if (!captureBottomJustSeeded && !detachJustSeeded)
+				state.bottomDockCaptureBottomSpring.positionDip = 0.0;
+		}
 		bool indicatorTarget = ResolveBarBottomDockIndicatorTarget(
 			dockMode, dockDragActive, !state.barState.fold,
 			frame.bottomDockIndicatorGestureEligible);
@@ -7636,7 +7386,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			}
 			// 仅“底栏重新展开”允许保留自动居中请求，浮动展开不能污染后续手势。
 			owner_.bottomDockCenterAutoCaptureRequested.store(false, memory_order_release);
-			state.bottomDockCenterSpring = {};
 		}
 		else if (!dockDragActive && owner_.bottomDockCenterAutoCaptureRequested.load(
 			memory_order_acquire) && !state.mainBarTimeline.IsActive())
@@ -7657,76 +7406,68 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			}
 			owner_.bottomDockCenterAutoCaptureRequested.store(false, memory_order_release);
 		}
-		bool centerSpringActive = false;
-		if (centerMode == BarBottomDockCenterMode::Centered && dockDragActive)
+		const bool opensRight = state.barState.widgetPosition.mainBar;
+		const bool horizontalHandoff = presentedDockSnapshot.centerMode != centerMode
+			|| presentedDockSnapshot.dragSession != frame.bottomDockDragSession
+			|| presentedDockSnapshot.dragActive != dockDragActive
+			|| abs(presentedDockSnapshot.zoom - frameZoom) > 0.000001
+			|| presentedDockSnapshot.displaySerial != state.observedDisplaySerial;
+		const double targetGripScreenX = dockDragActive
+			? frame.bottomDockDragRigidGripScreenX : presentedDockSnapshot.mainCenterScreenX;
+		const double gripOffsetDip = Inkeys::UI::Bar::ResolveBarBottomDockWorldTargetDip(
+			targetGripScreenX, state.monitorOrigin.x, frameTransitionTranslation.x, frameZoom)
+			- dockMainButton->x.val;
+		const double baseFarDip = opensRight ? mainBarRightDip : mainBarLeftDip;
+		double farTargetDip = baseFarDip + (dockDragActive || horizontalHandoff
+			? gripOffsetDip : state.bottomDockCenterSpring.positionDip);
+		if (centerMode == BarBottomDockCenterMode::Centered)
 		{
-			state.bottomDockCenterRecoverySeeded = false;
-			// 从同帧屏幕抓手反推刚性位移，包含像素舍入而不截断 40 DIP 捕获带。
-			state.bottomDockCenterSpring.positionDip =
-				(frame.bottomDockDragRigidGripScreenX - state.monitorOrigin.x
-					- frameTransitionTranslation.x) / frameZoom - dockMainButton->x.val;
+			const auto placement = ResolveBarBottomDockCenteredRootPlacement(
+				monitorCenterLocalDip, dockMainButton->w.val + strokeWidthDip,
+				dockMainBar->x.val, dockMainBar->w.val + mainBarStrokeDip);
+			if (placement.valid)
+				farTargetDip = opensRight ? placement.bodyRightDip : placement.bodyLeftDip;
 		}
-		else
+		if (horizontalHandoff)
 		{
-			if ((centerPhase == BarBottomDockPhase::Detaching
-				|| centerPhase == BarBottomDockPhase::Recovering)
-				&& !state.bottomDockCenterRecoverySeeded)
+			// Down、换形态和松手首帧只播种；重试仍从同一成功像素反解，不能二次吸收 raw elastic。
+			const auto shifted = Inkeys::UI::Bar::ResolveBarBottomDockShiftedHorizontalShape(
+				presentedDockSnapshot.horizontalMapping,
+				presentedDockSnapshot.monitorOrigin.x, presentedDockSnapshot.directTranslation.x,
+				presentedDockSnapshot.zoom, presentedDockSnapshot.mainCenterScreenX,
+				state.monitorOrigin.x, frameTransitionTranslation.x, frameZoom,
+				targetGripScreenX, dockMainButton->x.val, opensRight, farTargetDip);
+			if (shifted.valid)
 			{
-				state.bottomDockCenterSpring.positionDip = centerInputOffsetDip;
-				state.bottomDockCenterRecoverySeeded = true;
+				state.bottomDockCenterSpring = { BarUiAnimationEnabled || dockDragActive
+					? shifted.gripOffsetDip : 0.0, 0.0 };
+				state.bottomDockCenterCaptureFarEdgeSpring = { BarUiAnimationEnabled
+					? shifted.farErrorDip : 0.0, 0.0 };
 			}
+		}
+		bool centerSpringActive = false;
+		if (dockDragActive)
+			state.bottomDockCenterSpring.positionDip = gripOffsetDip;
+		else if (!horizontalHandoff)
 			centerSpringActive = AdvanceBarBottomDockSpring(
 				state.bottomDockCenterSpring, 0.0, animationDtSeconds,
 				true == BarUiAnimationEnabled, true).active;
-		}
-		const auto& presentedCenterSnapshot = presentedDockSnapshot;
-		bool centerFarEdgeJustSeeded = false;
-		if (presentedCenterSnapshot.centerMode != centerMode)
-		{
-			// 两种方向的切换都从最后成功呈现远端重基准，失败帧不会污染连续性。
-			const bool opensRight = state.barState.widgetPosition.mainBar;
-			const double presentedFarEdgeDip = opensRight
-				? presentedCenterSnapshot.horizontalMapping.visualRightDip
-				: presentedCenterSnapshot.horizontalMapping.visualLeftDip;
-			const double nextBaseFarEdgeDip = opensRight
-				? mainBarRightDip : mainBarLeftDip;
-			state.bottomDockCenterCaptureFarEdgeSpring.positionDip =
-				ResolveBarBottomDockRebasedFarEdgeOffsetDip(
-					presentedFarEdgeDip,
-					presentedCenterSnapshot.directTranslation.x,
-					frameTransitionTranslation.x,
-					nextBaseFarEdgeDip, frameZoom);
-			state.bottomDockCenterCaptureFarEdgeSpring.velocityDipPerSecond = 0.0;
-			state.bottomDockCenterCaptureFarEdgeActive = abs(
-				state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
-				> BarBottomDockSettleDistanceDip;
-			centerFarEdgeJustSeeded = true;
-		}
+		centerSpringActive = !dockDragActive && (centerSpringActive
+			|| abs(state.bottomDockCenterSpring.positionDip) > BarBottomDockSettleDistanceDip);
+		if (centerMode == BarBottomDockCenterMode::Free)
+			farTargetDip = baseFarDip + state.bottomDockCenterSpring.positionDip;
 		bool centerCaptureFarEdgeActive = false;
-		if (state.bottomDockCenterCaptureFarEdgeActive
-			&& !centerFarEdgeJustSeeded)
-		{
-			const auto captureFarEdge = AdvanceBarBottomDockSpring(
-				state.bottomDockCenterCaptureFarEdgeSpring, 0.0,
-				animationDtSeconds, true == BarUiAnimationEnabled, true);
-			centerCaptureFarEdgeActive = captureFarEdge.active;
-			state.bottomDockCenterCaptureFarEdgeActive =
-				captureFarEdge.active;
-		}
-		else if (centerFarEdgeJustSeeded)
-			centerCaptureFarEdgeActive =
-				state.bottomDockCenterCaptureFarEdgeActive;
-		else state.bottomDockCenterCaptureFarEdgeSpring.positionDip = 0.0;
-		const bool opensRight = state.barState.widgetPosition.mainBar;
-		state.bottomDockHorizontalMapping = centerMode
-			== BarBottomDockCenterMode::Centered
-			? ResolveBarBottomDockHorizontalMapping(
-				mainBarLeftDip, mainBarRightDip, opensRight,
-				state.bottomDockCenterSpring.positionDip,
-				state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
-			: ResolveBarBottomDockRecoveringHorizontalMapping(
-				mainBarLeftDip, mainBarRightDip, opensRight,
-				state.bottomDockCenterCaptureFarEdgeSpring.positionDip);
+		if (!horizontalHandoff)
+			centerCaptureFarEdgeActive = AdvanceBarBottomDockSpring(
+				state.bottomDockCenterCaptureFarEdgeSpring, 0.0, animationDtSeconds,
+				true == BarUiAnimationEnabled, true).active;
+		state.bottomDockCenterCaptureFarEdgeActive = centerCaptureFarEdgeActive
+			|| abs(state.bottomDockCenterCaptureFarEdgeSpring.positionDip) > BarBottomDockSettleDistanceDip;
+		centerCaptureFarEdgeActive = state.bottomDockCenterCaptureFarEdgeActive;
+		state.bottomDockHorizontalMapping = ResolveBarBottomDockHorizontalMapping(
+			mainBarLeftDip, mainBarRightDip, opensRight,
+			state.bottomDockCenterSpring.positionDip,
+			farTargetDip - baseFarDip + state.bottomDockCenterCaptureFarEdgeSpring.positionDip);
 		if (!state.barState.fold)
 		{
 			BarButtonClass* rigidAnchorButton = nullptr;
@@ -7751,15 +7492,16 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		}
 		state.bottomDockFrameCenterMode = centerMode;
 		state.bottomDockFrameCenterPhase = centerPhase;
-		state.bottomDockMapping = dockMode == BarBottomDockMode::BottomDocked
-			? ResolveBarBottomDockVerticalMapping(
-				baseTopDip, baseBottomDip,
-				state.bottomDockSpring.positionDip,
-				state.bottomDockCaptureBottomSpring.positionDip, true)
-			: ResolveBarBottomDockRecoveringVerticalMapping(
-				baseTopDip, baseBottomDip,
-				state.bottomDockSpring.positionDip,
-				state.bottomDockCaptureBottomSpring.positionDip, true);
+		state.bottomDockMapping = anchorVertical ? anchoredMapping.mapping
+			: dockMode == BarBottomDockMode::BottomDocked
+				? ResolveBarBottomDockVerticalMapping(
+					baseTopDip, baseBottomDip,
+					state.bottomDockSpring.positionDip,
+					state.bottomDockCaptureBottomSpring.positionDip, true)
+				: ResolveBarBottomDockRecoveringVerticalMapping(
+					baseTopDip, baseBottomDip,
+					state.bottomDockSpring.positionDip,
+					state.bottomDockCaptureBottomSpring.positionDip, true, true);
 		state.bottomDockVisualActive = springActive
 			|| captureBottomSpringActive
 			|| abs(state.bottomDockSpring.positionDip) > 0.000001
@@ -7767,8 +7509,17 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| centerSpringActive
 			|| centerCaptureFarEdgeActive
 			|| abs(state.bottomDockCenterSpring.positionDip) > 0.000001
+			|| abs(state.bottomDockHorizontalMapping.visualLeftDip - mainBarLeftDip) > 0.000001
+			|| abs(state.bottomDockHorizontalMapping.visualRightDip - mainBarRightDip) > 0.000001
 			|| state.bottomDockRootLayoutChanged;
-		const bool visualChanged = abs(previousVisualOffsetDip
+		const bool mappingChanged = abs(previousVerticalMapping.visualTopDip
+			- state.bottomDockMapping.visualTopDip) > 0.000001
+			|| abs(previousVerticalMapping.visualBottomDip - state.bottomDockMapping.visualBottomDip) > 0.000001
+			|| abs(previousHorizontalMapping.visualLeftDip - state.bottomDockHorizontalMapping.visualLeftDip) > 0.000001
+			|| abs(previousHorizontalMapping.visualRightDip - state.bottomDockHorizontalMapping.visualRightDip) > 0.000001
+			|| abs(previousHorizontalMapping.rigidGripTranslationXDip
+				- state.bottomDockHorizontalMapping.rigidGripTranslationXDip) > 0.000001;
+		const bool visualChanged = mappingChanged || abs(previousVisualOffsetDip
 			- state.bottomDockSpring.positionDip) > 0.000001
 			|| abs(previousCaptureBottomOffsetDip
 				- state.bottomDockCaptureBottomSpring.positionDip) > 0.000001
@@ -7807,7 +7558,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			const bool clearFloatingRecovery =
 				dockMode == BarBottomDockMode::Floating
 				&& owner_.bottomDockRecoveryActive.load(memory_order_acquire);
-			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery)
+			const bool clearTopAnchor = frame.bottomDockDragTopAnchorValid;
+			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery || clearTopAnchor)
 			{
 				// 阶段收敛也属于两轴 tuple，必须在同一偶数 serial 中发布。
 				if (!TryBeginFrameTransition()) return true;
@@ -7819,13 +7571,19 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 						BarBottomDockPhase::Stable, memory_order_relaxed);
 				if (clearFloatingRecovery)
 					owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
+				if (clearTopAnchor)
+				{
+					owner_.bottomDockDragTopAnchorValid.store(false, memory_order_relaxed);
+					state.bottomDockFrameTopAnchorValid = false;
+				}
 				state.bottomDockFrameTransitionSerial = owner_.FinishBottomDockTransition();
+				// 阶段刚收敛时至少再消费一帧，不能让待处理任务栏目标随零形变一起 idle。
+				if (state.taskbarDockRetargetPending) needRendering = true;
 			}
 			state.bottomDockFramePhase = BarBottomDockPhase::Stable;
 			if (!centerSpringActive && !centerCaptureFarEdgeActive)
 			{
 				state.bottomDockFrameCenterPhase = BarBottomDockPhase::Stable;
-				state.bottomDockCenterRecoverySeeded = false;
 			}
 			if (clearFloatingRecovery)
 			{
@@ -7853,9 +7611,50 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 	state.drawAttributeTimeline.Advance(animationDtSeconds, currentAnimationSpeedRate);
 	state.geometryAttributeTimeline.Advance(
 		animationDtSeconds, currentAnimationSpeedRate);
+	if (state.finiteObserver)
+	{
+		using namespace Inkeys::UI::Bar;
+		state.finiteObserver->ObserveProperty(Ui3PropertyRole::MainRootGeometry,
+			state.mainBarTimeline.IsActive(), !state.mainBarTimeline.IsActive());
+		state.finiteObserver->ObserveProperty(Ui3PropertyRole::DrawRootGeometry,
+			state.drawAttributeTimeline.IsActive(), !state.drawAttributeTimeline.IsActive());
+		const bool dockPending = state.bottomDockVisualActive || state.bottomDockFrameRecoveryActive
+			|| state.bottomDockFramePhase != BarBottomDockPhase::Stable
+			|| state.bottomDockFrameCenterPhase != BarBottomDockPhase::Stable;
+		const bool springPending = abs(state.bottomDockSpring.velocityDipPerSecond) > 0.000001
+			|| abs(state.bottomDockCaptureBottomSpring.velocityDipPerSecond) > 0.000001
+			|| abs(state.bottomDockCenterSpring.velocityDipPerSecond) > 0.000001
+			|| abs(state.bottomDockCenterCaptureFarEdgeSpring.velocityDipPerSecond) > 0.000001;
+		state.finiteObserver->ObserveProperty(Ui3PropertyRole::DockDisplay, dockPending || springPending,
+			!dockPending && !springPending && state.displayCenterX.IsSame() && state.displayCenterY.IsSame() && state.displayUiBaseScale.IsSame());
+		const bool unsupported = state.barState.drawAttributeBar.thicknessFineDialPhysicsActive
+			|| state.barState.drawAttributeBar.thicknessFineDialDragging
+			|| state.barState.drawAttributeBar.colorPickerPointerCapture;
+		state.finiteObserver->ObserveLifecycle((dockPending ? Ui3FiniteLifecycleDockPending : 0u)
+			| (state.displayTransitionActive ? Ui3FiniteLifecycleDisplayPending : 0u)
+			| (!state.initialBottomDockPlacementApplied ? Ui3FiniteLifecycleInitialPending : 0u)
+			| (unsupported ? Ui3FiniteLifecycleUnsupportedGesture : 0u));
+	}
 
-
-	return needRendering;
+	const bool eraserChanged = owner_.eraserAttribute.Advance(owner_, animationDtSeconds,
+		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
+		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
+		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
+		frame.bottomDockDragActive,
+		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser);
+	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
+	const bool recallIdleDismissed = frame.recallIdleDismissed;
+	const bool recallChanged = owner_.recallAttribute.Advance(owner_, frame.recallChrome, frame.recallAnchorVisible, animationDtSeconds,
+		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
+		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
+		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
+		frame.bottomDockDragActive);
+	if (recallChanged || recallIdleDismissed) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
+	return needRendering || eraserChanged || recallChanged || recallIdleDismissed;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(
@@ -7864,15 +7663,22 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 {
 	const auto& frameDrawingState = frame;
 	const double animationDtSeconds = frame.animationDtSeconds;
-	bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
+	// Down 即使外观不变也必须先提交预留表面，不能让 idle demand 把准备帧吞掉。
+	bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false)
+		|| (frame.bottomDockDragActive && !state.fixedDragSurface.Matches(
+			frame.bottomDockDragSession, state.observedDisplaySerial, frame.zoom));
 	bool needBorderLightingRendering = false;
 	{
 		// Laser 记忆在离开 Pen 后仍保留，图形光效不能把它误当作活动笔色。
 		const bool drawingLaser = Inkeys::Business::IsLaserToolActive(
 			frameDrawingState.stateMode == StateModeSelectEnum::IdtPen,
 			frameDrawingState.laserActive);
+		// 光源与本帧几何消费同一稳定 tuple，不拼接 live 或旧成功呈现的位移。
+		const POINT layoutScreenOrigin{
+			state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y };
 		needBorderLightingRendering = state.spec.PrepareFrameLighting(
-			animationDtSeconds,
+			animationDtSeconds, layoutScreenOrigin,
 			static_cast<int>(frameDrawingState.stateMode),
 			static_cast<int>(drawingLaser
 				? PenModeSelectEnum::IdtPenSoftPen : frameDrawingState.penMode),
@@ -7882,6 +7688,8 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	// 主栏独占两路光源状态机；跨 HWND Surface 只消费最终屏幕坐标快照。
 	{
 		const auto lighting = state.spec.SnapshotFrameLighting();
+		if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
+			diagnostics->lightFlags = BarFrameLightFlags(lighting);
 		const POINT directTranslation{
 			owner_.directWindowDragTranslationX.load(memory_order_acquire),
 			owner_.directWindowDragTranslationY.load(memory_order_acquire) };
@@ -7901,7 +7709,7 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		sharedLighting.primaryVisible = lighting.primaryLightVisible;
 		sharedLighting.cursorVisible = lighting.cursorLightVisible;
 		sharedLighting.edgeLightingEnabled = lighting.edgeLightingEnabled;
-		Inkeys::UI::Bar::BarSurfaceScene::PublishSharedLighting(sharedLighting);
+		Inkeys::UI::Bar::BarPageSurface::PublishSharedLighting(sharedLighting);
 	}
 	bool sustainRendering = true == BarAtomic::sustainFlag;
 	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
@@ -7980,6 +7788,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	UPDATELAYEREDWINDOWINFO& ulwi,
 	const Inkeys::UI::RenderPipeline::FrameContext& context)
 {
+	const auto& stateMode = state.stateModeSnapshot;
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
+	FrameStageTimer dirtyAndPrepareTimer(diagnostics, FrameStage::DirtyAndPrepare);
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
 	const auto& frameDrawingState = frame;
@@ -7997,13 +7808,29 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	{
 
 		const auto& epoch = context.epoch;
+		const bool hadFailureBackoff = state.presentDecision.HasFailureBackoff();
 		state.presentDecision.ObserveDeviceGeneration(epoch.generation);
+		if (diagnostics && hadFailureBackoff
+			&& !state.presentDecision.HasFailureBackoff())
+			diagnostics->failureRecoveryReset = true;
 		const bool deviceGenerationChanged =
 			epoch.generation != state.spec.GetDeviceGeneration();
 		const D2D1_SIZE_U previousTargetSize =
 			state.spec.GetTargetBitmapSize();
 
-		// 容量相对主按钮锚点移动；同尺寸拖动只改变映射，不重建 D2D/GDI 资源。
+		const bool fixedDragGeometry = frame.bottomDockDragActive && state.fixedDragSurface.Matches(
+			frame.bottomDockDragSession, state.observedDisplaySerial, frameZoom);
+		// 松手恢复结束后交回原有 idle 收窗；预留表面不能常驻，否则扩大下层绘制负担。
+		if (ShouldSettleBarWindowViewport(state.debugFrameSleepLatch.IsPending(), frame.bottomDockDragActive)
+			|| !state.releasedWindowSurface.Matches(
+				state.releasedSurfaceAttemptedSession, state.observedDisplaySerial, frameZoom))
+			state.releasedWindowSurface.Reset();
+		const bool fixedReleaseGeometry = !frame.bottomDockDragActive
+			&& state.releasedWindowSurface.Matches(state.releasedSurfaceAttemptedSession, state.observedDisplaySerial, frameZoom);
+		const bool fixedSurfaceGeometry = fixedDragGeometry || fixedReleaseGeometry;
+		const POINT releasedLayoutOffset{ -state.monitorOrigin.x - state.bottomDockFrameTransitionTranslation.x,
+			-state.monitorOrigin.y - state.bottomDockFrameTransitionTranslation.y };
+		// Down 成功后整个手势复用同一存储原点和容量，不按吸附模式重算 source。
 		auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 		auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
 		const POINT frameAnchor{
@@ -8053,20 +7880,27 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				* capacityPlanningZoom)) * 2),
 			max<LONG>(1, static_cast<LONG>(ceil(verticalCapacityDip
 				* capacityPlanningZoom)) * 2) };
-		const bool capacityEpochChanged = !state.capacityOriginInitialized
+		const bool capacityEpochChanged = !fixedSurfaceGeometry && (!state.capacityOriginInitialized
 			|| requestedCapacity.cx > state.capacitySize.cx
-			|| requestedCapacity.cy > state.capacitySize.cy;
-		if (!state.capacityOriginInitialized)
-			state.capacitySize = requestedCapacity;
+			|| requestedCapacity.cy > state.capacitySize.cy);
+		if (fixedReleaseGeometry)
+		{
+			state.capacitySize = state.releasedWindowSurface.CapacitySize();
+			const POINT origin = state.releasedWindowSurface.CapacityOrigin();
+			state.capacityOrigin = { origin.x + releasedLayoutOffset.x, origin.y + releasedLayoutOffset.y };
+		}
+		else if (fixedDragGeometry)
+		{
+			state.capacitySize = state.fixedDragSurface.CapacitySize();
+			state.capacityOrigin = state.fixedDragSurface.CapacityOrigin();
+		}
 		else
 		{
 			state.capacitySize.cx = max(state.capacitySize.cx, requestedCapacity.cx);
 			state.capacitySize.cy = max(state.capacitySize.cy, requestedCapacity.cy);
+			state.capacityOrigin = { frameAnchor.x - state.capacitySize.cx / 2,
+				frameAnchor.y - state.capacitySize.cy / 2 };
 		}
-		const POINT nextCapacityOrigin{
-			frameAnchor.x - state.capacitySize.cx / 2,
-			frameAnchor.y - state.capacitySize.cy / 2 };
-		state.capacityOrigin = nextCapacityOrigin;
 		state.capacityOriginInitialized = true;
 		state.capacityZoom = capacityPlanningZoom;
 
@@ -8097,10 +7931,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				? IW(I18nKey.UI.Bar.BottomDock.Mode)
 				: state.bottomDockIndicatorWord.content.GetVal();
 		IDWriteTextFormat* dockModeTextFormat = state.barMedia.formatCache->GetFormat(
-			L"HarmonyOS Sans SC", static_cast<FLOAT>(
+			state.spec.GetFontFamily(), static_cast<FLOAT>(
 				BarButtonTwoTwoLabelFontSizeDip * frameZoom),
 			context.assets.fontCollection.Get(), DWRITE_FONT_WEIGHT_BOLD,
-			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, L"zh-cn",
+			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+			state.spec.GetTextLocale(),
 			DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 		auto MeasureDockText = [&](const wstring& text)
 			{
@@ -8287,6 +8122,17 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		dockModeReservationTextSize.width = max(
 			dockModeReservationTextSize.width,
 			desiredDockModeTextSize.width);
+		if (frame.bottomDockDragActive && !fixedDragGeometry)
+		{
+			// Down 隐藏提示时也预留两种文案，后续换模式不再扩窗。
+			const auto centeredTextSize = MeasureDockText(IW(I18nKey.UI.Bar.BottomDock.Mode)
+				+ L" · " + IW(I18nKey.UI.Bar.BottomDock.Centered));
+			const auto freeTextSize = MeasureDockText(IW(I18nKey.UI.Bar.BottomDock.Mode));
+			dockModeReservationTextSize.width = max({ dockModeReservationTextSize.width,
+				centeredTextSize.width, freeTextSize.width });
+			dockModeReservationTextSize.height = max({ dockModeReservationTextSize.height,
+				centeredTextSize.height, freeTextSize.height });
+		}
 		const auto dockTargetIndicatorReservationGeometry =
 			ResolveBarBottomDockIndicatorGeometry(
 				MapIndicatorGripHorizontal(dockMainButtonVisibleBounds),
@@ -8304,7 +8150,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					{ first.minimum, first.maximum },
 					{ second.minimum, second.maximum });
 			};
-		const double maximumIndicatorScale = max(0.0,
+		const double maximumIndicatorScale = max(
+			frame.bottomDockDragActive && !fixedDragGeometry
+				? BarUiGetCurveExtrema(BarUiCurveEnum::EaseOutBack).maximum : 0.0,
 			ValueRange(state.bottomDockTargetIndicatorProgress).maximum);
 		const double indicatorGaussianOutsetDip = max(
 			BarUiEdgeLightingEnabled ? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0,
@@ -8370,8 +8218,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			customCheck->Inherit(BarUiInheritEnum::TopLeft, *customSwatch);
 		}
 
-		const RECT windowBounds = RECT(
-			0, 0, state.barWindow.w, state.barWindow.h);
+		RECT windowBounds = RECT(0, 0, state.barWindow.w, state.barWindow.h);
+		if (frame.bottomDockDragActive || fixedReleaseGeometry)
+			UnionBarWindowRect(windowBounds, RECT{ state.capacityOrigin.x, state.capacityOrigin.y,
+				state.capacityOrigin.x + state.capacitySize.cx, state.capacityOrigin.y + state.capacitySize.cy });
+		// 存储脏区允许越屏；UI 定位仍使用真实 barWindow/工作区，二者不能混用。
 		state.dirtyRegionTracker.BeginFrame(windowBounds);
 		if ((state.presentDecision.NeedsFullDirty() && !alphaOnlyDemand)
 			|| state.unclassifiedDamagePending)
@@ -8400,6 +8251,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.eraserAttribute.Changed()
+			|| owner_.recallAttribute.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributePenThickness.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
@@ -8559,6 +8412,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			IncludeShapeBounds(mainBar, BottomDockBoundsTransform::Body);
 			IncludeShapeBounds(drawAttribute, BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(geometryAttribute, BottomDockBoundsTransform::Rigid);
+			IncludeVisibleBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+			IncludeVisibleBounds(owner_.recallAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanel],
 				BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanelDivider],
@@ -9145,6 +9000,20 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						cursorLightInfluence));
 		}
 
+		const RECT eraserBounds = TransformBottomDockBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+		const auto eraserKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup);
+		state.dirtyRegionTracker.Observe(eraserKey, eraserBounds);
+		if (observePrimaryLight) BarRenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
+			IntersectBarWindowRect(eraserBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
+		if (observeCursorLight) BarRenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
+			IntersectBarWindowRect(eraserBounds, cursorLightInfluence));
+		const RECT recallBounds = TransformBottomDockBounds(owner_.recallAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+		const auto recallKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup);
+		state.dirtyRegionTracker.Observe(recallKey, recallBounds);
+		if (observePrimaryLight) BarRenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
+			IntersectBarWindowRect(recallBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
+		if (observeCursorLight) BarRenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
+			IntersectBarWindowRect(recallBounds, cursorLightInfluence));
 		if (observeMainGroup)
 			state.dirtyRegionTracker.Observe(mainGroupKey, mainGroupBounds);
 		if (observeDrawAttributeGroup)
@@ -9174,15 +9043,33 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		{
 			double debugTextX = mainButton->inhX;
 			double debugTextY = mainButton->inhY + mainButton->GetH();
+			const D2D1_SIZE_F debugTextSize = state.spec.MeasureText(
+				state.fps, 12.0, DWRITE_FONT_WEIGHT_NORMAL);
+			const double availableWidthDip = max(
+				1.0, static_cast<double>(state.barWindow.w) / frameZoom);
+			const double availableHeightDip = max(
+				1.0, static_cast<double>(state.barWindow.h) / frameZoom);
+			const double debugTextWidth = min(
+				availableWidthDip,
+				max(1.0, ceil(static_cast<double>(debugTextSize.width)) + 8.0));
+			const double debugTextHeight = min(
+				availableHeightDip,
+				max(20.0, ceil(static_cast<double>(debugTextSize.height))));
+			// 下方空间不足时翻到主按钮上方，最后仍钳制在当前显示器内。
+			if (debugTextY + debugTextHeight > availableHeightDip)
+				debugTextY = mainButton->inhY - debugTextHeight;
+			debugTextY = clamp(debugTextY, 0.0,
+				max(0.0, availableHeightDip - debugTextHeight));
 			double debugTextLeft = debugTextAlignToLeft
-				? debugTextX : debugTextX + mainButton->GetW() - 300.0;
-			double debugTextRight = debugTextAlignToLeft
-				? debugTextX + 300.0 : debugTextX + mainButton->GetW();
+				? debugTextX : debugTextX + mainButton->GetW() - debugTextWidth;
+			debugTextLeft = clamp(debugTextLeft, 0.0,
+				max(0.0, availableWidthDip - debugTextWidth));
+			double debugTextRight = debugTextLeft + debugTextWidth;
 			debugTextLayoutRect = D2D1::RectF(
 				static_cast<FLOAT>(debugTextLeft * frameZoom),
 				static_cast<FLOAT>(debugTextY * frameZoom),
 				static_cast<FLOAT>(debugTextRight * frameZoom),
-				static_cast<FLOAT>((debugTextY + 20.0) * frameZoom));
+				static_cast<FLOAT>((debugTextY + debugTextHeight) * frameZoom));
 			currentDebugTextBounds = RECT(
 				static_cast<LONG>(debugTextLayoutRect.left),
 				static_cast<LONG>(debugTextLayoutRect.top),
@@ -9199,8 +9086,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			BarBottomDockCenterThresholdDip,
 			abs(state.bottomDockHorizontalMapping.rigidGripTranslationXDip),
 			abs(state.bottomDockCenterCaptureFarEdgeSpring.positionDip) });
-		const double verticalDockOutsetDip = BarBottomDockVisualLimitDip
-			+ abs(state.bottomDockCaptureBottomSpring.positionDip);
+		const double verticalDockOutsetDip = max(BarBottomDockVisualLimitDip,
+			abs(state.bottomDockSpring.positionDip)) + abs(state.bottomDockCaptureBottomSpring.positionDip);
 		const bool reserveBottomDockCapacity =
 			frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
@@ -9213,59 +9100,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			UnionBarWindowRect(capacityContentBounds,
 				ResolveBarBottomDockCapacityEnvelope(
 					bottomDockElasticBaseBounds, frameZoom, horizontalDockOutsetDip, verticalDockOutsetDip));
-		const auto capacityDecision = ResolveBarWindowCapacity(
-			state.capacitySize, frameAnchor, capacityContentBounds,
-			layoutBounds, 2);
-		state.capacityOrigin = capacityDecision.origin;
-		state.capacitySize = capacityDecision.size;
-		HRESULT ensureDeviceResourcesHr = state.spec.EnsureDeviceResources(epoch,
-			static_cast<UINT32>(state.capacitySize.cx),
-			static_cast<UINT32>(state.capacitySize.cy));
-		if (FAILED(ensureDeviceResourcesHr))
-		{
-			state.dirtyRegionTracker.RetainForRetry(true);
-			state.presentDecision.RequireFullDirtyRetry();
-			state.presentDecision.RecordFailure(
-				Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
-				epoch.generation, frameDemandGeneration,
-				state.presentAttemptFrameSerial);
-			if (state.barDeviceResourceFailureGeneration != epoch.generation)
-			{
-				state.barDeviceResourceFailureGeneration = epoch.generation;
-				if (IDTLogger) IDTLogger->error(
-					"[BarUISetClass::Rendering] 切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
-					static_cast<unsigned int>(ensureDeviceResourcesHr));
-			}
-			if (Inkeys::UI::Bar::IsBarSharedDeviceLost(ensureDeviceResourcesHr))
-			{
-				// 共享 device 错误必须交给唯一调度线程切换 epoch，不能只让 Bar 自旋重试。
-				state.spec.DiscardDeviceResources();
-				return BarRenderLoopStageResult::DeviceLost;
-			}
-			return BarRenderLoopStageResult::Continue;
-		}
-		const bool targetSizeChanged =
-			previousTargetSize.width != static_cast<UINT32>(state.capacitySize.cx)
-			|| previousTargetSize.height != static_cast<UINT32>(state.capacitySize.cy);
-		if (deviceGenerationChanged || targetSizeChanged)
-		{
-			state.barDeviceResourceFailureGeneration = 0;
-			state.presentDecision.ResetFailureRecovery();
-			state.presentDecision.RequireFullDirtyRetry();
-			state.dirtyRegionTracker.ForceFullDamage();
-		}
-		ID2D1DeviceContext* barDeviceContext = state.spec.GetDeviceContext();
-		ID2D1GdiInteropRenderTarget* barGdiInterop =
-			state.spec.GetGdiInteropRenderTarget();
-		// 保持当前 present 所借用的 D2D/GDI COM 对象存活到 EndDraw 完成。
-		Microsoft::WRL::ComPtr<ID2D1DeviceContext> barDeviceContextLease(
-			barDeviceContext);
-		Microsoft::WRL::ComPtr<ID2D1GdiInteropRenderTarget> barGdiInteropLease(
-			barGdiInterop);
-		barDeviceContext = barDeviceContextLease.Get();
-		barGdiInterop = barGdiInteropLease.Get();
-		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
-			state.unclassifiedDamagePending);
 		const bool reserveThicknessInteractionEnvelope =
 			state.barState.drawAttributeBar.thicknessSliderCapture
 			|| state.barState.drawAttributeBar.thicknessSliderPressed
@@ -9290,6 +9124,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.eraserAttribute.Changed()
+			|| owner_.recallAttribute.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
 			|| !state.drawAttributeLaserOuterThickness.IsSame()
@@ -9404,7 +9240,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				state.bottomDockFrameCenterMode,
 				state.bottomDockFrameCenterPhase,
 				frame.bottomDockDragActive, !state.barState.fold,
-				false, false, state.displayTransitionActive))
+				false, false, state.displayTransitionActive, state.whiteboardDockAnimationActive))
 			{
 				const auto mainButtonWidth = ValueRange(mainButton->w);
 				const auto mainButtonStroke = mainButton->ft.has_value()
@@ -9512,7 +9348,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				!= BarThicknessPreviewReservationMode::None)
 			{
 				const auto range = GetBarThicknessSliderRange(
-					frameDrawingState.penMode, state.barStyle.dpiZoom);
+					frameDrawingState.penMode, state.barStyle.dpiZoom, stateMode);
 				const auto sliderThumb = state.shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderThumb];
 				const auto popupSurface = state.shapeMap[
@@ -9537,20 +9373,21 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 							? static_cast<double>(range.max)
 							: max(0.0, ValueRange(
 								state.drawAttributePenThickness).maximum);
-						const int measuredThickness = static_cast<int>(lround(clamp(
-							maximumThickness, 0.0, 999.0)));
-						if (state.drawAttributeThicknessEnvelopeMeasuredValue
-							!= measuredThickness)
+						const auto measuredThicknessText = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
+							maximumThickness);
+						if (state.drawAttributeThicknessEnvelopeMeasuredText != measuredThicknessText)
 						{
-							state.drawAttributeThicknessEnvelopeMeasuredValue = measuredThickness;
+							// 缓存按实际整数文字更新，合法大值不能共用旧测量键。
+							state.drawAttributeThicknessEnvelopeMeasuredText = measuredThicknessText;
 							state.drawAttributeThicknessEnvelopeMeasuredSize =
-								state.spec.MeasureText(to_wstring(measuredThickness),
+								state.spec.MeasureText(measuredThicknessText,
 									BarThicknessPreviewNumberFontSize,
 									DWRITE_FONT_WEIGHT_BOLD);
 						}
 						const D2D1_SIZE_F maximumTextSize =
 							state.drawAttributeThicknessEnvelopeMeasuredSize;
 						const double circleDiameter = maximumThickness
+							* Inkeys::Business::PenWidth::SystemScale(stateMode.penWidthContext)
 							/ max(0.000001, static_cast<double>(frameZoom));
 						const double textWidth = max(1.0,
 							static_cast<double>(maximumTextSize.width));
@@ -9702,8 +9539,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					predictedEnvelope, frameZoom, horizontalDockOutsetDip, verticalDockOutsetDip);
 			}
 			UnionBarWindowRect(predictedEnvelope, currentContentBounds);
-			predictedEnvelope = IntersectBarWindowRect(
-				predictedEnvelope, layoutBounds);
+			if (!frame.bottomDockDragActive && !fixedReleaseGeometry)
+				predictedEnvelope = IntersectBarWindowRect(predictedEnvelope, layoutBounds);
 		}
 		POINT viewportTranslation{};
 		if (state.committedAnchorInitialized)
@@ -9713,14 +9550,173 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		}
 		const bool settleViewport = ShouldSettleBarWindowViewport(
 			state.debugFrameSleepLatch.IsPending(), frame.bottomDockDragActive);
-		const BarWindowViewportDecision viewportDecision =
-			state.viewportController.Resolve(
+		RECT candidateViewport{};
+		if (fixedReleaseGeometry)
+			candidateViewport = TranslateBarWindowRect(state.releasedWindowSurface.Viewport(), releasedLayoutOffset);
+		else if (fixedDragGeometry)
+			candidateViewport = state.fixedDragSurface.Viewport();
+		else if (frame.bottomDockDragActive)
+		{
+			const double captureScale = static_cast<double>(state.activeDisplayDpi)
+				/ USER_DEFAULT_SCREEN_DPI / frameZoom;
+			const auto presented = owner_.BottomDockPresentedSnapshot();
+			const RECT successfulContentSeed = presented.displaySerial == state.observedDisplaySerial
+				&& abs(presented.zoom - frameZoom) <= 0.000001
+				? TranslateBarWindowRect(state.lastPresentedContentBounds, viewportTranslation) : RECT{};
+			candidateViewport = Inkeys::UI::Bar::ResolveBarFixedDragEnvelope(
+				currentContentBounds, predictedEnvelope,
+				// 只为成功可见内容加预留，旧透明 viewport 不能再次 padding，否则每次 Down 都会扩窗。
+				successfulContentSeed,
+				frameZoom, 2.0 * max(horizontalDockOutsetDip, BarBottomDockCenterThresholdDip * captureScale),
+				verticalDockOutsetDip + Inkeys::UI::Bar::BarBottomDockThresholdDip * captureScale,
+				viewportPadding);
+		}
+		else
+			candidateViewport = state.viewportController.Resolve(
 				currentContentBounds, predictedEnvelope, layoutBounds,
-				viewportPadding, settleViewport, viewportTranslation);
-		const RECT candidateViewport = viewportDecision.viewport;
+				viewportPadding, settleViewport, viewportTranslation).viewport;
+		const bool protectBottomEdge = !frame.bottomDockDragActive && !fixedReleaseGeometry && state.activeProtectBottomEdge
+			&& Inkeys::UI::Bar::SceneBottomDockInsetDip() <= 0.0;
+		candidateViewport = Inkeys::UI::Bar::ClipBarViewportForTaskbarEdge(
+			candidateViewport, state.monitorOrigin, state.bottomDockFrameTransitionTranslation,
+			state.activeMonitorBounds.bottom, protectBottomEdge);
+
+		if (Inkeys::UI::Bar::IsBarWindowRectEmpty(candidateViewport))
+		{
+			// 失效的越屏位移没有可提交区域；等待新的输入/显示唤醒，不能零尺寸 ULW 热重试。
+			state.presentationAlpha.CompleteAttempt(false);
+			state.dirtyRegionTracker.RetainForRetry(true);
+			state.presentDecision.RequireVisualRetry();
+			state.barMedia.formatCache->Clean();
+			state.animationClock.SuspendForIdle();
+			return BarRenderLoopStageResult::Idle;
+		}
+		if (!fixedSurfaceGeometry)
+		{
+			RECT storageBounds = layoutBounds;
+			if (frame.bottomDockDragActive) UnionBarWindowRect(storageBounds, candidateViewport);
+			const auto capacityDecision = ResolveBarWindowCapacity(
+				state.capacitySize, frameAnchor, capacityContentBounds,
+				storageBounds, 2, candidateViewport);
+			state.capacityOrigin = capacityDecision.origin;
+			state.capacitySize = capacityDecision.size;
+		}
+		// 完整几何先决定容量；资源创建仍在实际绘制前，Resources 是准备父段的子段。
+		FrameStageTimer resourcesTimer(diagnostics, FrameStage::Resources);
+		HRESULT ensureDeviceResourcesHr = state.spec.EnsureDeviceResources(epoch,
+			static_cast<UINT32>(state.capacitySize.cx),
+			static_cast<UINT32>(state.capacitySize.cy));
+		resourcesTimer.Stop();
+		if (state.finiteObserver)
+		{
+			const auto size = state.spec.GetTargetBitmapSize();
+			if (SUCCEEDED(ensureDeviceResourcesHr) && (state.finiteSurfaceSerial == 0 || deviceGenerationChanged
+				|| size.width != previousTargetSize.width || size.height != previousTargetSize.height))
+				++state.finiteSurfaceSerial;
+			if (FAILED(ensureDeviceResourcesHr))
+				state.finiteObserver->ObserveLifecycle(Inkeys::UI::Bar::Ui3FiniteLifecycleTargetLost);
+		}
+		if (diagnostics)
+		{
+			const auto targetSize = state.spec.GetTargetBitmapSize();
+			diagnostics->resourceResult = ensureDeviceResourcesHr;
+			diagnostics->presentFailed = FAILED(ensureDeviceResourcesHr);
+			diagnostics->capacitySize = state.capacitySize;
+			diagnostics->targetSize = { static_cast<LONG>(targetSize.width),
+				static_cast<LONG>(targetSize.height) };
+			diagnostics->displayCapacityZoom = state.displayCapacityZoom;
+		}
+		if (FAILED(ensureDeviceResourcesHr))
+		{
+			state.dirtyRegionTracker.RetainForRetry(true);
+			state.presentDecision.RequireFullDirtyRetry();
+			state.presentDecision.RecordFailure(
+				Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
+				epoch.generation, frameDemandGeneration,
+				state.presentAttemptFrameSerial);
+			if (state.barDeviceResourceFailureGeneration != epoch.generation)
+			{
+				state.barDeviceResourceFailureGeneration = epoch.generation;
+				if (IDTLogger) IDTLogger->error(
+					"[BarUISetClass::Rendering] 切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
+					static_cast<unsigned int>(ensureDeviceResourcesHr));
+			}
+			if (Inkeys::UI::Bar::IsBarSharedDeviceLost(ensureDeviceResourcesHr))
+			{
+				// 共享 device 错误必须交给唯一调度线程切换 epoch，不能只让 Bar 自旋重试。
+				state.spec.DiscardDeviceResources();
+				return BarRenderLoopStageResult::DeviceLost;
+			}
+			return BarRenderLoopStageResult::Continue;
+		}
+		const bool targetSizeChanged =
+			previousTargetSize.width != static_cast<UINT32>(state.capacitySize.cx)
+			|| previousTargetSize.height != static_cast<UINT32>(state.capacitySize.cy);
+		if (deviceGenerationChanged || targetSizeChanged)
+		{
+			state.barDeviceResourceFailureGeneration = 0;
+			if (diagnostics && state.presentDecision.HasFailureBackoff())
+				diagnostics->failureRecoveryReset = true;
+			state.presentDecision.ResetFailureRecovery();
+			state.presentDecision.RequireFullDirtyRetry();
+			state.dirtyRegionTracker.ForceFullDamage();
+		}
+		ID2D1DeviceContext* barDeviceContext = state.spec.GetDeviceContext();
+		ID2D1GdiInteropRenderTarget* barGdiInterop =
+			state.spec.GetGdiInteropRenderTarget();
+		// 保持当前 present 所借用的 D2D/GDI COM 对象存活到 EndDraw 完成。
+		Microsoft::WRL::ComPtr<ID2D1DeviceContext> barDeviceContextLease(
+			barDeviceContext);
+		Microsoft::WRL::ComPtr<ID2D1GdiInteropRenderTarget> barGdiInteropLease(
+			barGdiInterop);
+		barDeviceContext = barDeviceContextLease.Get();
+		barGdiInterop = barGdiInteropLease.Get();
+		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
+			state.unclassifiedDamagePending);
 		const POINT candidateSource{
 			candidateViewport.left - state.capacityOrigin.x,
 			candidateViewport.top - state.capacityOrigin.y };
+		if (diagnostics)
+		{
+			diagnostics->viewport = candidateViewport;
+			diagnostics->source = candidateSource;
+		}
+		const auto targetBitmapSize = state.spec.GetTargetBitmapSize();
+		const bool candidateGeometryValid = Inkeys::UI::Bar::IsBarWindowSourceContained(
+			candidateSource, SIZE{ candidateViewport.right - candidateViewport.left, candidateViewport.bottom - candidateViewport.top },
+			SIZE{ static_cast<LONG>(targetBitmapSize.width), static_cast<LONG>(targetBitmapSize.height) })
+			&& Inkeys::UI::Bar::ContainsBarWindowRect(candidateViewport,
+				(frame.bottomDockDragActive || fixedReleaseGeometry) ? dockTargetIndicatorEnvelopeBounds
+					: IntersectBarWindowRect(dockTargetIndicatorEnvelopeBounds, layoutBounds))
+			&& (!fixedSurfaceGeometry || Inkeys::UI::Bar::ContainsBarWindowRect(candidateViewport, currentContentBounds));
+		if (!candidateGeometryValid)
+		{
+			if (fixedReleaseGeometry || frame.bottomDockReleaseInputFlush)
+			{
+				// Up 后展开可能超出旧 held 表面；撤销后由下一帧正常吸收未提交位移，不能取消已结束的手势。
+				if (frame.bottomDockReleaseInputFlush) state.fixedDragSurface.Reset();
+				// 布局超出保留表面时重准备；attempted session 防止未成功 Up 帧反复捕获旧表面。
+				state.releasedWindowSurface.Reset();
+				state.presentationAlpha.CompleteAttempt(false);
+				state.dirtyRegionTracker.RetainForRetry(true);
+				state.presentDecision.RequireVisualRetry();
+				state.barMedia.formatCache->Clean();
+				return BarRenderLoopStageResult::Continue;
+			}
+			// 未预见的外部布局增大应结束手势再归位，不能 held 扩窗或无限重试同一越界帧。
+			if (fixedDragGeometry) Inkeys::UI::Bar::RequestBarDragCancellation(
+				frame.bottomDockDragSession, owner_.bottomDockTransitionSerial,
+				owner_.bottomDockDragSession, owner_.bottomDockDragActive);
+			// 禁止钳 source 后呈现裁剪帧；保留成功快照并沿既有资源失败退避重算。
+			state.presentationAlpha.CompleteAttempt(false);
+			state.dirtyRegionTracker.RetainForRetry(true);
+			state.presentDecision.RequireVisualRetry();
+			state.presentDecision.RecordFailure(Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
+				epoch.generation, frameDemandGeneration, state.presentAttemptFrameSerial);
+			if (diagnostics) { diagnostics->resourceResult = E_INVALIDARG; diagnostics->presentFailed = true; }
+			state.barMedia.formatCache->Clean();
+			return BarRenderLoopStageResult::Continue;
+		}
 		const BarPresentMappingTuple candidatePresentMapping{
 			candidateSource,
 			SIZE{ candidateViewport.right - candidateViewport.left,
@@ -9783,7 +9779,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			// alpha-only demand 只要求整窗 ULW，不虚构业务 scene dirty。
 			if (!alphaOnlyDemand)
 			{
-				state.dirtyRegionTracker.ForceFullDamage();
+				// 这里只扩大绘制范围；晚置全脏会在提交时丢失未观察对象的旧边界。
 				businessDirty = candidateViewport;
 			}
 			presentDirty = candidateViewport;
@@ -9810,6 +9806,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.bottomDockMapping.visualTopDip
 			- state.bottomDockMapping.baseTopDip
 				* state.bottomDockMapping.scaleY) * frameZoom);
+		const double fontBodyTargetY = Inkeys::UI::Bar::ResolveBarBottomDockFontTargetScale(
+			state.bottomDockMapping,frame.bottomDockMode==BarBottomDockMode::BottomDocked && frame.bottomDockDragActive);
 		const D2D1_MATRIX_3X2_F bodyTransform =
 			D2D1::Matrix3x2F::Scale(bodyScaleX, bodyScaleY)
 			* D2D1::Matrix3x2F::Translation(bodyTranslationX, bodyTranslationY)
@@ -9852,6 +9850,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					state.spec.frameCursorLight,
 					D2D1::SizeF(state.spec.frameCursorLightRadius,
 						state.spec.frameCursorLightRadius));
+				state.spec.SetFontTargetScale(1.0);
 				barDeviceContext->SetTransform(baseTransform);
 			};
 		auto SetBodyTransform = [&]()
@@ -9861,6 +9860,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						static_cast<FLOAT>(bodyCursorLight.centerY)),
 					D2D1::SizeF(static_cast<FLOAT>(bodyCursorLight.radiusX),
 						static_cast<FLOAT>(bodyCursorLight.radiusY)));
+				state.spec.SetFontTargetScale(fontBodyTargetY);
 				barDeviceContext->SetTransform(bodyTransform);
 			};
 		auto SetGripTransform = [&]()
@@ -9870,6 +9870,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						static_cast<FLOAT>(gripCursorLight.centerY)),
 					D2D1::SizeF(static_cast<FLOAT>(gripCursorLight.radiusX),
 						static_cast<FLOAT>(gripCursorLight.radiusY)));
+				state.spec.SetFontTargetScale(fontBodyTargetY);
 				barDeviceContext->SetTransform(gripTransform);
 			};
 		auto SetRigidTransform = [&]()
@@ -9879,17 +9880,43 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						static_cast<FLOAT>(rigidCursorLight.centerY)),
 					D2D1::SizeF(static_cast<FLOAT>(rigidCursorLight.radiusX),
 						static_cast<FLOAT>(rigidCursorLight.radiusY)));
+				state.spec.SetFontTargetScale(1.0);
 				barDeviceContext->SetTransform(rigidTransform);
 			};
 		SetBaseTransform();
-		barDeviceContext->BeginDraw();
-		state.spec.PushFrameDirtyClip(barDeviceContext, presentDirtyRect);
+		if (state.finiteObserver)
+		{
+			const auto ticks = diagnostics && diagnostics->detailedCaptureEnabled
+				? chrono::steady_clock::now().time_since_epoch().count() : 0;
+			state.finiteCandidate = state.finiteObserver->SettleCandidate(state.finiteSurfaceSerial,
+				static_cast<std::uint32_t>(candidateViewport.right - candidateViewport.left),
+				static_cast<std::uint32_t>(candidateViewport.bottom - candidateViewport.top), ticks);
+		}
+		if (state.finiteSvgProbe)
+		{
+			Inkeys::UI::Bar::Ui3SvgFrameTarget target;
+			target.revision = state.finiteCandidate.accepted.revision; target.epoch = epoch.generation;
+			target.surfaceSerial = state.finiteSurfaceSerial; target.frameAttemptSerial = state.presentAttemptFrameSerial;
+			target.width = state.finiteCandidate.targetWidth; target.height = state.finiteCandidate.targetHeight;
+			const auto backing = state.spec.GetTargetBitmapSize(); target.backingWidth = backing.width; target.backingHeight = backing.height;
+			target.dpi = state.finiteCandidate.renderDpi; target.windowAlpha = alphaAttempt.alpha;
+			target.zoomBits = std::bit_cast<std::uint64_t>(frameZoom);
+			const float viewport[4]{ static_cast<float>(candidateSource.x), static_cast<float>(candidateSource.y),
+				static_cast<float>(candidateSource.x + target.width), static_cast<float>(candidateSource.y + target.height) };
+			for (unsigned i = 0; i < 4; ++i) target.viewportBits[i] = std::bit_cast<std::uint32_t>(viewport[i]);
+			state.finiteSvgProbe->BeginBackingWrite(barDeviceContext, target);
+		}
+		dirtyAndPrepareTimer.Stop();
+		FrameStageTimer drawTimer(diagnostics, FrameStage::Draw);
+		if (state.finiteObserver)
+		{
+			state.finiteReadbackAvailable = false;
+			state.finiteReadbackBitmap.Reset();
+		}
+		state.spec.BeginFrameDraw(barDeviceContext, presentDirtyRect);
 
 		// 清除背景
 		{
-			D2D1_COLOR_F clearColor = Inkeys::Color::ConvertToD2dColor(RGBA(0, 0, 0, 0));
-			// 全局 dirty clip 已经同时覆盖旧、新边界，Clear 不再触碰其余全屏位图。
-			barDeviceContext->Clear(&clearColor);
 
 			// TODO 绘制纯白全透明警告用户开启 aero
 			auto obj = BarUISetWordEnum::BackgroundWarning;
@@ -10096,39 +10123,15 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					};
 					auto panel = state.shapeMap[
 						BarUISetShapeEnum::DrawAttributeBar];
-					for (const auto& button : penTypeButtons)
+					for(const auto& button:penTypeButtons)
 					{
-						auto shape = state.shapeMap[button.shape];
-						BarUiInheritClass shapeInherit =
-							shape->Inherit(TopLeft, *panel);
-							double pressScale = button.pressScale
-								? static_cast<double>(button.pressScale->val) : 1.0;
-							if (!isfinite(pressScale) || pressScale <= 0.0) pressScale = 1.0;
-
-							D2D1_MATRIX_3X2_F originalTransform;
-							barDeviceContext->GetTransform(&originalTransform);
-							bool transformChanged = abs(pressScale - 1.0) > 0.000001;
-							if (transformChanged)
-							{
-								// 与主栏一致，整个图文按钮围绕背景中心缩放。
-								FLOAT centerX = static_cast<FLOAT>(
-									(shapeInherit.x + shape->w.val / 2.0) * frameZoom);
-								FLOAT centerY = static_cast<FLOAT>(
-									(shapeInherit.y + shape->h.val / 2.0) * frameZoom);
-								D2D1_MATRIX_3X2_F scaleTransform = D2D1::Matrix3x2F::Scale(
-									static_cast<FLOAT>(pressScale), static_cast<FLOAT>(pressScale),
-									D2D1::Point2F(centerX, centerY));
-								barDeviceContext->SetTransform(scaleTransform * originalTransform);
-							}
-
-							state.spec.Shape(barDeviceContext, *shape, shapeInherit);
-							state.spec.Svg(barDeviceContext, *state.svgMap[button.svg],
-								state.svgMap[button.svg]->Inherit(Left, *shape));
-						state.spec.Word(barDeviceContext, *state.wordMap[button.word],
-							state.wordMap[button.word]->Inherit(TopLeft, *shape),
-							DWRITE_FONT_WEIGHT_NORMAL,
-							DWRITE_TEXT_ALIGNMENT_LEADING);
-						if (transformChanged) barDeviceContext->SetTransform(originalTransform);
+						auto shape=state.shapeMap[button.shape];
+						auto icon=state.svgMap[button.svg];auto word=state.wordMap[button.word];
+						Inkeys::UI::Bar::BarButtonVisualInheritance inherit{
+							shape->Inherit(TopLeft,*panel),icon->Inherit(Left,*shape),
+							word->Inherit(TopLeft,*shape),std::nullopt};
+						Inkeys::UI::Bar::DrawBarFixedButtonVisual(state.spec,barDeviceContext,
+							{*shape,icon.get(),word.get(),button.pressScale},inherit);
 					}
 
 					// 选中且具备能力的笔型在右侧显示独立扩展入口。
@@ -10426,9 +10429,21 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								previewClip.right > previewClip.left
 								&& previewClip.bottom > previewClip.top;
 							if (previewClipPushed)
+							{
 								barDeviceContext->PushAxisAlignedClip(
 									previewClip,
 									D2D1_ANTIALIAS_MODE_ALIASED);
+								if (state.finiteSvgProbe)
+								{
+									D2D1_MATRIX_3X2_F matrix; barDeviceContext->GetTransform(&matrix);
+									const float rect[4]{ previewClip.left, previewClip.top, previewClip.right, previewClip.bottom };
+									const float transform[6]{ matrix._11, matrix._12, matrix._21, matrix._22, matrix._31, matrix._32 };
+									std::uint32_t rectBits[4], transformBits[6];
+									for (unsigned i = 0; i < 4; ++i) rectBits[i] = std::bit_cast<std::uint32_t>(rect[i]);
+									for (unsigned i = 0; i < 6; ++i) transformBits[i] = std::bit_cast<std::uint32_t>(transform[i]);
+									Inkeys::UI::Bar::ObserveUi3SvgClipPush(barDeviceContext, rectBits, transformBits);
+								}
+							}
 
 							// 彩色外壳先画，芯层后画；进度为 0 时外壳与芯等宽而被完全遮住。
 							auto DrawLaserOverlay = [&]()
@@ -10475,7 +10490,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											+ (width / 2.0F - roundRadius) * sliderProgress);
 										D2D1_ROUNDED_RECT roundedLayer{
 											layerRect, roundRadius, roundRadius };
-										barDeviceContext->FillRoundedRectangle(
+										(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillRoundedRectangle(
 											&roundedLayer, brush);
 										return;
 									}
@@ -10493,7 +10508,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									{
 										D2D1_ROUNDED_RECT fallback{
 											layerRect, width / 2.0F, width / 2.0F };
-										barDeviceContext->FillRoundedRectangle(&fallback, brush);
+										(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillRoundedRectangle(&fallback, brush);
 									}
 									else
 									{
@@ -10506,7 +10521,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 												* D2D1::Matrix3x2F::Translation(startX, centerY);
 											barDeviceContext->SetTransform(
 												unitTransform * originalTransform);
-											barDeviceContext->DrawGeometry(
+											(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawGeometry(
 												path, brush, width, strokeStyle);
 										}
 									}
@@ -10545,7 +10560,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									D2D1_ROUNDED_RECT fallback{
 										fallbackRect, previewThickness / 2.0F,
 										previewThickness / 2.0F };
-									barDeviceContext->FillRoundedRectangle(
+									(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillRoundedRectangle(
 										&fallback, solidBrush);
 								};
 								if (span <= 0.001F)
@@ -10558,7 +10573,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									auto strokeStyle =
 										state.spec.GetThicknessPreviewStrokeStyle();
 									if (abs(signedAmplitude) <= 0.001F && strokeStyle)
-										barDeviceContext->DrawLine(
+										(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 											D2D1::Point2F(startX, centerY),
 											D2D1::Point2F(endX, centerY),
 											solidBrush, previewThickness, strokeStyle);
@@ -10574,7 +10589,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 													startX, centerY);
 											barDeviceContext->SetTransform(
 												unitTransform * originalTransform);
-											barDeviceContext->DrawGeometry(
+											(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawGeometry(
 												path, solidBrush, previewThickness,
 												strokeStyle);
 										}
@@ -10626,12 +10641,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									: static_cast<ID2D1Brush*>(solidBrush);
 								if (previewBrush)
 								{
-									barDeviceContext->FillRoundedRectangle(
+									(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillRoundedRectangle(
 										&roundedPreview, previewBrush);
 								}
 							}
 							if (previewClipPushed)
-								barDeviceContext->PopAxisAlignedClip();
+								(Inkeys::UI::Bar::ObserveUi3SvgClipPop(barDeviceContext), barDeviceContext)->PopAxisAlignedClip();
 
 							// Dial 不可见时在这里直接跳过投影、tick 和文字缓存查询。
 							double activationPreviewOpacity = clamp(
@@ -10651,7 +10666,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 							if (fineDialOpacity > 0.000001)
 							{
 							auto logicalRange = GetBarThicknessSliderRange(
-								frameDrawingState.penMode, state.barStyle.dpiZoom);
+								frameDrawingState.penMode, state.barStyle.dpiZoom, stateMode);
 							bool rangeTransitionActive =
 								state.thicknessFineDialRangeTransitionPhase
 									!= ThicknessFineDialRangeTransitionPhase::Idle;
@@ -10679,7 +10694,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											* panelAnimationScale);
 								double unitTravelLogical =
 									ResolveThicknessFineDialUnitTravel(
-										trackTravelLogical, state.barStyle.dpiZoom);
+										trackTravelLogical, state.barStyle.dpiZoom, stateMode);
 								double availableHalfWidth = max(0.0,
 									fineGeometry.availableHalfWidth
 										- 6.0 * panelAnimationScale);
@@ -10701,10 +10716,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								// 发布程序化动画的当帧视觉值，后续抓取可从当前角度接管。
 								if (!candidateActive && isfinite(liveVisualValue))
 									state.barState.drawAttributeBar.thicknessFineDialVisualWidth =
-										static_cast<float>(liveVisualValue);
+										liveVisualValue;
 								if (!isfinite(liveVisualValue))
 									liveVisualValue = clamp(
-										static_cast<double>(GetPenWidth()),
+										GetPenWidthMetrics(stateMode).resolvedWidthDip,
 										static_cast<double>(logicalRange.min),
 										static_cast<double>(logicalRange.max));
 								double visualValue = liveVisualValue;
@@ -10722,10 +10737,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								}
 									double visibleValueRadius =
 										BarThicknessFineDialThetaLimit / angularStep;
-								int firstTick = max(renderRange.min,
+								int firstTick = max(static_cast<int>(ceil(renderRange.min)),
 										static_cast<int>(ceil(
 											visualValue - visibleValueRadius)));
-								int lastTick = min(renderRange.max,
+								int lastTick = min(static_cast<int>(floor(renderRange.max)),
 										static_cast<int>(floor(
 											visualValue + visibleValueRadius)));
 									if (lastTick - firstTick + 1
@@ -10733,13 +10748,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									{
 										int centerTick = static_cast<int>(
 											lround(visualValue));
-									firstTick = max(renderRange.min,
+									firstTick = max(static_cast<int>(ceil(renderRange.min)),
 											centerTick
 												- BarThicknessFineDialVisibleTickLimit / 2);
-									lastTick = min(renderRange.max,
+									lastTick = min(static_cast<int>(floor(renderRange.max)),
 											firstTick
 												+ BarThicknessFineDialVisibleTickLimit - 1);
-									firstTick = max(renderRange.min,
+									firstTick = max(static_cast<int>(ceil(renderRange.min)),
 											lastTick
 												- BarThicknessFineDialVisibleTickLimit + 1);
 									}
@@ -10810,10 +10825,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 													* uiZoom));
 											if (segment > 0)
 											{
-												barDeviceContext->DrawLine(
+												(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 													previousTop, nextTop,
 													envelopeBrush, max(0.5F, 0.7F * uiZoom));
-												barDeviceContext->DrawLine(
+												(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 													previousBottom, nextBottom,
 													envelopeBrush, max(0.5F, 0.7F * uiZoom));
 											}
@@ -10902,7 +10917,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											state.spec.GetFrameSolidColorBrush(
 												barDeviceContext, tickColor,
 												tickOpacity))
-											barDeviceContext->DrawLine(
+											(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 												D2D1::Point2F(
 													static_cast<FLOAT>(tickX * uiZoom),
 													static_cast<FLOAT>((tickCenterY
@@ -10920,7 +10935,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											&& selectionProgress > 0.000001)
 										{
 											auto* label = state.spec.GetThicknessFineDialLabelLayout(
-												tick, uiZoom);
+												tick, uiZoom, barDeviceContext);
 											if (label && label->layout
 												&& labelCandidateCount
 													< labelCandidates.size())
@@ -10957,7 +10972,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											barDeviceContext, tickColor,
 											candidate.opacity))
 										{
-											barDeviceContext->DrawTextLayout(
+											(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawTextLayout(
 												candidate.origin, candidate.layout,
 												labelBrush,
 												D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -10974,7 +10989,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 											double centerLength =
 											(BarThicknessFineDialMajorTickLengthDip + 3.0)
 											* panelAnimationScale;
-										barDeviceContext->DrawLine(
+										(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 											D2D1::Point2F(
 												static_cast<FLOAT>(dialCenterX * uiZoom),
 												static_cast<FLOAT>((dialCenterY
@@ -11018,7 +11033,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 													centerYPixel - selectorGap
 														- selectorHeight)
 												* originalTransform);
-											barDeviceContext->FillGeometry(
+											(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillGeometry(
 												selector, centerBrush);
 											barDeviceContext->SetTransform(
 												D2D1::Matrix3x2F::Scale(
@@ -11028,7 +11043,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 													centerYPixel + selectorGap
 														+ selectorHeight)
 												* originalTransform);
-											barDeviceContext->FillGeometry(
+											(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillGeometry(
 												selector, centerBrush);
 											barDeviceContext->SetTransform(
 												originalTransform);
@@ -11061,9 +11076,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay,
 								&state.drawAttributeThicknessAdjustPressScale, -1 },
 						};
-						int displayedThickness = static_cast<int>(lround(clamp(
-							static_cast<double>(state.drawAttributePenThickness.val),
-							0.0, 999.0)));
+						double displayedThickness = state.drawAttributePenThickness.val;
 						for (const auto& button : thicknessButtons)
 						{
 							auto shape = state.shapeMap[button.shape];
@@ -11074,7 +11087,7 @@ bool presetButton = button.presetIndex >= 0;
 									? state.wordMap[button.numberWord] : nullptr;
 				bool adjustVisible =
 					PenModeUsesThicknessPresets(
-						stateMode.Pen.ModeSelect) && !stateMode.laserActive;
+						stateMode.Pen.ModeSelect, stateMode) && !stateMode.laserActive;
 							double presetNumberProgress = clamp(static_cast<double>(
 								state.drawAttributeThicknessPresetNumberProgress.val),
 								0.0, 1.0);
@@ -11108,6 +11121,7 @@ bool presetButton = button.presetIndex >= 0;
 									* originalTransform);
 							}
 
+							BarUIRendering::FontTargetScope fontPress(state.spec,button.pressScale->tar,button.pressScale->dur);
 							state.spec.Shape(barDeviceContext, *shape, shapeInherit);
 							if (!presetButton)
 							{
@@ -11130,18 +11144,18 @@ bool presetButton = button.presetIndex >= 0;
 							double circleOpacity = buttonOpacity
 									* presetOpacity.circleOpacity;
 									numberWord->contentPct = numberOpacity;
-									int lockedNumberPx =
+									double lockedNumberDip =
 										state.drawAttributeThicknessPresetNumberValues[
 											button.presetIndex];
-									int circlePx = max(1, static_cast<int>(lround(
+									double circlePx = max(0.0, static_cast<double>(
 										state.drawAttributeThicknessPresetCircleDiameter[
-											button.presetIndex].val)));
+											button.presetIndex].val));
 									if (numberOpacity > 0.000001)
 									{
 										// 淡出期间继续使用旧内容，避免先跳成新笔型数字。
 										if (numberWord)
 										{
-											wstring numberText = to_wstring(lockedNumberPx);
+											wstring numberText = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(lockedNumberDip);
 											numberWord->content.SetVal(numberText);
 											numberWord->content.SetTar(numberText);
 											numberWord->color.SetDirect(buttonColor);
@@ -11173,14 +11187,18 @@ bool presetButton = button.presetIndex >= 0;
 											D2D1_ELLIPSE ellipse = D2D1::Ellipse(
 												D2D1::Point2F(centerX, centerY),
 												diameter / 2.0f, diameter / 2.0f);
-											barDeviceContext->FillEllipse(
+											(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillEllipse(
 												&ellipse, buttonBrush);
 													if (!presetVisualTransition
 														&& static_cast<FLOAT>(circlePx
 														* panelAnimationScale) > innerDiameter)
 													{
-														// 填满时用黑白高对比数字保留真实设备像素值。
-														wstring numberText = to_wstring(circlePx);
+														// 填满时用黑白高对比数字展示四舍五入粗细。
+														wstring numberText = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
+															stateMode.laserActive
+																? GetBarLaserThicknessPresetDip(button.presetIndex, stateMode)
+																: GetBarThicknessPresetMetrics(stateMode.Pen.ModeSelect,
+																	button.presetIndex, stateMode).resolvedWidthDip);
 												numberWord->content.SetVal(numberText);
 												numberWord->content.SetTar(numberText);
 												numberWord->color.SetDirect(
@@ -11198,7 +11216,9 @@ bool presetButton = button.presetIndex >= 0;
 						}
 
 						wstring thicknessText =
-							L"粗细 " + to_wstring(displayedThickness);
+							Inkeys::UI::Bar::Detail::FormatWidthDipText(
+							IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
+							displayedThickness);
 						thicknessDisplay->content.SetVal(thicknessText);
 						thicknessDisplay->content.SetTar(thicknessText);
 						state.spec.Word(barDeviceContext, *thicknessDisplay,
@@ -11250,42 +11270,16 @@ bool presetButton = button.presetIndex >= 0;
 					FLOAT uiZoom = static_cast<FLOAT>(frameZoom);
 					ID2D1StrokeStyle* roundStrokeStyle =
 						state.spec.GetRoundStrokeStyle();
-					for (const auto& button : shapeButtons)
+					for(const auto& button:shapeButtons)
 					{
-						auto shape = state.shapeMap[button.shape];
-						auto word = state.wordMap[button.word];
-						BarUiInheritClass shapeInherit =
-							shape->Inherit(TopLeft, *panel);
-						double pressScale = button.pressScale->val;
-						if (!isfinite(pressScale) || pressScale <= 0.0)
-							pressScale = 1.0;
-						D2D1_MATRIX_3X2_F originalTransform;
-						barDeviceContext->GetTransform(&originalTransform);
-						bool transformChanged = abs(pressScale - 1.0) > 0.000001;
-						if (transformChanged)
-						{
-							FLOAT centerX = static_cast<FLOAT>(
-								(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
-							FLOAT centerY = static_cast<FLOAT>(
-								(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
-							barDeviceContext->SetTransform(
-								D2D1::Matrix3x2F::Scale(
-									static_cast<FLOAT>(pressScale),
-									static_cast<FLOAT>(pressScale),
-									D2D1::Point2F(centerX, centerY))
-								* originalTransform);
-						}
-
-						state.spec.Shape(barDeviceContext, *shape, shapeInherit);
-						auto icon = state.svgMap[button.icon];
-						state.spec.Svg(barDeviceContext, *icon,
-							icon->Inherit(TopLeft, *panel));
-						state.spec.Word(barDeviceContext, *word,
-							word->Inherit(TopLeft, *panel),
-							DWRITE_FONT_WEIGHT_NORMAL,
-							DWRITE_TEXT_ALIGNMENT_CENTER);
-						if (transformChanged)
-							barDeviceContext->SetTransform(originalTransform);
+						auto shape=state.shapeMap[button.shape];
+						auto icon=state.svgMap[button.icon];auto word=state.wordMap[button.word];
+						Inkeys::UI::Bar::BarButtonVisualInheritance inherit{
+							shape->Inherit(TopLeft,*panel),icon->Inherit(TopLeft,*panel),
+							word->Inherit(TopLeft,*panel),std::nullopt};
+						Inkeys::UI::Bar::DrawBarFixedButtonVisual(state.spec,barDeviceContext,
+							{*shape,icon.get(),word.get(),button.pressScale},inherit,
+							DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_CENTER);
 					}
 
 					const BarUISetShapeEnum thicknessShapes[] =
@@ -11349,9 +11343,9 @@ bool presetButton = button.presetIndex >= 0;
 						ID2D1SolidColorBrush* contentBrush =
 							state.spec.GetFrameSolidColorBrush(barDeviceContext,
 								contentColor, contentOpacity);
-						int presetPx = GetBarThicknessPresetPx(
+						double presetPx = GetBarThicknessPresetPx(
 							PenModeSelectEnum::IdtPenSoftPen, index,
-							state.barStyle.dpiZoom);
+							state.barStyle.dpiZoom, stateMode);
 						if (contentBrush && contentOpacity > 0.000001F
 							&& uiZoom > 0.0F)
 						{
@@ -11375,11 +11369,11 @@ bool presetButton = button.presetIndex >= 0;
 									D2D1::Point2F(centerX, centerY),
 									previewThickness / 2.0F,
 									previewThickness / 2.0F);
-								barDeviceContext->FillEllipse(&ellipse, contentBrush);
+								(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillEllipse(&ellipse, contentBrush);
 							}
 							else
 							{
-								barDeviceContext->DrawLine(
+								(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 									D2D1::Point2F(centerX - halfDiagonal,
 										centerY + halfDiagonal),
 									D2D1::Point2F(centerX + halfDiagonal,
@@ -11435,6 +11429,11 @@ bool presetButton = button.presetIndex >= 0;
 					state.spec.SetFrameDiffuseMaskGeometryScale(1.0);
 				}
 
+				// 橡皮与撤回属性都先画，主栏随后覆盖其重叠区域。
+				SetRigidTransform();
+				owner_.eraserAttribute.Draw(state.spec, barDeviceContext);
+				owner_.recallAttribute.Draw(state.spec, barDeviceContext);
+
 				// More 必须先画、主栏后画，收拢部分才会从主栏下层自然出现。
 				auto DrawMainBar = [&]()
 				{
@@ -11445,15 +11444,19 @@ bool presetButton = button.presetIndex >= 0;
 							state.shapeMap[obj]->inhX, state.shapeMap[obj]->inhY),
 						&state.current, true);
 
-					for (int id = 0; id < state.barButtonSet.tot; id++)
+					// 退场按钮先画，收拢时由仍可见的前驱覆盖，不改变列表与命中顺序。
+					for (const bool visible : { false, true })
 					{
-						BarButtonClass* temp = state.barButtonSet.buttonList.Get(id);
-						if (temp == nullptr) continue;
-
-						BarUiInheritClass buttonInherit = temp->button.Inherit(
-							CenterFromTopLeft, *state.shapeMap[BarUISetShapeEnum::MainBar]);
-						DrawBarButtonVisual(state.spec, barDeviceContext,
-							*temp, buttonInherit);
+						size_t layoutIndex = 0;
+						for (const auto& button : frame.mainButtons)
+						{
+							if (!button) continue;
+							const bool frameVisible = state.mainBarLayoutSnapshot->at(layoutIndex++).visible;
+							if (frameVisible != visible) continue;
+							const auto inherit = button->button.Inherit(CenterFromTopLeft,
+								*state.shapeMap[BarUISetShapeEnum::MainBar]);
+							DrawBarButtonVisual(state.spec, barDeviceContext, *button, inherit);
+						}
 					}
 				};
 
@@ -11647,25 +11650,25 @@ bool presetButton = button.presetIndex >= 0;
 			{
 				// 属性栏可见期间保留两档完整字号，浮窗首帧只做缓存查询。
 				state.barMedia.formatCache->GetFormat(
-					L"HarmonyOS Sans SC",
+					state.spec.GetFontFamily(),
 					static_cast<FLOAT>(
 						BarThicknessTooltipTitleFontSize * frameZoom),
 					context.assets.fontCollection.Get(),
 					DWRITE_FONT_WEIGHT_SEMI_BOLD,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
-					L"zh-cn",
+					state.spec.GetTextLocale(),
 					DWRITE_TEXT_ALIGNMENT_LEADING,
 					DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 				state.barMedia.formatCache->GetFormat(
-					L"HarmonyOS Sans SC",
+					state.spec.GetFontFamily(),
 					static_cast<FLOAT>(
 						BarThicknessTooltipBodyFontSize * frameZoom),
 					context.assets.fontCollection.Get(),
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
-					L"zh-cn",
+					state.spec.GetTextLocale(),
 					DWRITE_TEXT_ALIGNMENT_LEADING,
 					DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 			}
@@ -11676,7 +11679,7 @@ bool presetButton = button.presetIndex >= 0;
 					BarUISetShapeEnum closeHitType,
 					BarUISetSvgEnum closeSvgType,
 					BarUISetShapeEnum anchorBadgeType,
-					BarUiValueClass& closePressScale)
+					BarUiValueClass& closePressScale, const BarUiValueClass& popupProgress)
 				{
 					auto popup = state.shapeMap[popupShapeType];
 					auto popupTitle = state.wordMap[popupTitleType];
@@ -11763,7 +11766,10 @@ bool presetButton = button.presetIndex >= 0;
 								static_cast<FLOAT>(anchorX * frameZoom),
 								static_cast<FLOAT>(anchorY * frameZoom)))
 						* originalTransform);
-					// 文字和 SVG 使用完整尺寸资源再整体缩放，避免动画每帧创建新字号格式。
+					BarUIRendering::FontTargetScope fontPopup(state.spec,popupProgress.tar,popupProgress.dur);
+					// 原始几何继续整体缩放，文字只把源进度的静止目标交给修正动画。
+					popupTitle->fontTargetSize=BarThicknessTooltipTitleFontSize;
+					popupBody->fontTargetSize=BarThicknessTooltipBodyFontSize;
 					state.spec.Word(barDeviceContext, *popupTitle,
 						BarUiInheritClass(
 							UnscaleCoordinate(titleInherit.x, anchorX),
@@ -11882,10 +11888,14 @@ bool presetButton = button.presetIndex >= 0;
 				freeLineRow->Inherit(TopLeft, *panel));
 			state.spec.Svg(barDeviceContext, *menuCheck,
 				menuCheck->Inherit(TopLeft, *panel));
+			{
+			BarUIRendering::FontTargetScope fontPress(state.spec,
+				state.drawAttributePenTypeFreeLinePressScale.tar,state.drawAttributePenTypeFreeLinePressScale.dur);
 			state.spec.Word(barDeviceContext, *freeLineWord,
 				freeLineWord->Inherit(TopLeft, *panel),
 				DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_TEXT_ALIGNMENT_LEADING);
+			}
 			barDeviceContext->SetTransform(menuTransform);
 
 			auto annotationLabel = state.wordMap[
@@ -11906,7 +11916,7 @@ bool presetButton = button.presetIndex >= 0;
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge,
-				state.drawAttributeOverflowClosePressScale);
+				state.drawAttributeOverflowClosePressScale,state.drawAttributeOverflowPopupProgress);
 			// 菜单内 [?] 的帮助 Tooltip 始终位于其他绘制属性浮层之上。
 			DrawThicknessPopup(
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
@@ -11915,7 +11925,7 @@ bool presetButton = button.presetIndex >= 0;
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
-				state.drawAttributeAnnotationClosePressScale);
+				state.drawAttributeAnnotationClosePressScale,state.drawAttributeAnnotationPopupProgress);
 			};
 
 			// 静止保持提示：圆环在左、文字在右；锁定后圆环淡出，文字可保留并变白。
@@ -12067,7 +12077,7 @@ bool presetButton = button.presetIndex >= 0;
 					if (hueBrush)
 					{
 						hueBrush->SetOpacity(static_cast<FLOAT>(pickerOpacity));
-						barDeviceContext->FillRoundedRectangle(
+						(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillRoundedRectangle(
 							&roundedPalette, hueBrush);
 						double darkMix = clamp(static_cast<double>(
 							state.drawAttributeColorPickerToneMix.val), 0.0, 1.0);
@@ -12083,13 +12093,13 @@ bool presetButton = button.presetIndex >= 0;
 							barDeviceContext, false,
 							farPoint, nearPoint,
 							static_cast<FLOAT>(pickerOpacity * (1.0 - darkMix)));
-						if (lightBrush) barDeviceContext->FillRoundedRectangle(
+						if (lightBrush) (Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillRoundedRectangle(
 							&roundedPalette, lightBrush);
 						auto darkBrush = state.spec.GetColorPickerToneGradientBrush(
 							barDeviceContext, true,
 							nearPoint, farPoint,
 							static_cast<FLOAT>(pickerOpacity * darkMix));
-						if (darkBrush) barDeviceContext->FillRoundedRectangle(
+						if (darkBrush) (Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillRoundedRectangle(
 							&roundedPalette, darkBrush);
 					}
 
@@ -12110,11 +12120,11 @@ bool presetButton = button.presetIndex >= 0;
 						if (auto markerShadow = state.spec.GetFrameSolidColorBrush(
 							barDeviceContext, RGB(0, 0, 0),
 							pickerOpacity * 0.72))
-							barDeviceContext->DrawEllipse(&outer, markerShadow,
+							(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawEllipse(&outer, markerShadow,
 								static_cast<FLOAT>(3.0 * pickerGeometryScale) * uiZoom);
 						if (auto markerBrush = state.spec.GetFrameSolidColorBrush(
 							barDeviceContext, RGB(255, 255, 255), pickerOpacity))
-							barDeviceContext->DrawEllipse(&outer, markerBrush,
+							(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawEllipse(&outer, markerBrush,
 								static_cast<FLOAT>(1.5 * pickerGeometryScale) * uiZoom);
 					}
 
@@ -12206,11 +12216,11 @@ bool presetButton = button.presetIndex >= 0;
 								(closeHit->inhY + closeHit->h.val / 2.0) * uiZoom);
 							FLOAT half = max(1.0F * uiZoom, static_cast<FLOAT>(
 								closeHit->w.val * uiZoom * glyphScale * 0.5F));
-						barDeviceContext->DrawLine(
+						(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 							D2D1::Point2F(centerX - half, centerY - half),
 							D2D1::Point2F(centerX + half, centerY + half),
 							closeBrush, max(1.0F, 1.6F * uiZoom));
-						barDeviceContext->DrawLine(
+						(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
 							D2D1::Point2F(centerX + half, centerY - half),
 							D2D1::Point2F(centerX - half, centerY + half),
 							closeBrush, max(1.0F, 1.6F * uiZoom));
@@ -12311,7 +12321,9 @@ bool presetButton = button.presetIndex >= 0;
 							state.drawAttributeThicknessPreviewPopupAnchor.y
 								* static_cast<FLOAT>(frameZoom)))
 					* originalTransform);
-				// 数字始终使用完整字号格式，仅通过整体变换完成展开和位置迁移。
+				BarUIRendering::FontTargetScope fontPopup(state.spec,state.drawAttributeThicknessPreviewPopupProgress.tar,
+					state.drawAttributeThicknessPreviewPopupProgress.dur);
+				// 数字保持原始整体变换轨迹，字号修正只追随其静止目标。
 				state.spec.Word(barDeviceContext, *popupNumber,
 					BarUiInheritClass(
 						state.drawAttributeThicknessPreviewNumberRect.left,
@@ -12349,7 +12361,7 @@ bool presetButton = button.presetIndex >= 0;
 						if (!brush) return;
 						D2D1_ELLIPSE ellipse = D2D1::Ellipse(
 							thumbCenter, radius, radius);
-						barDeviceContext->FillEllipse(&ellipse, brush);
+						(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillEllipse(&ellipse, brush);
 					};
 				COLORREF surfaceColor = panel->fill.has_value()
 					? static_cast<COLORREF>(panel->fill.value().val)
@@ -12463,13 +12475,22 @@ bool presetButton = button.presetIndex >= 0;
 					static_cast<FLOAT>(dockTargetIndicatorScale) * textScale,
 					static_cast<FLOAT>(dockTargetIndicatorScale) * textScale,
 					indicatorCenter) * originalTransform);
+				BarUIRendering::FontTargetScope fontIndicator(state.spec,
+					state.bottomDockTargetIndicatorProgress.tar,
+					state.bottomDockTargetIndicatorProgress.dur);
+				IDWriteTextFormat* drawTextFormat = state.barMedia.formatCache->GetFormat(
+					state.spec.GetFontFamily(), state.spec.ResolveWordFontSize(barDeviceContext,state.bottomDockIndicatorWord,
+						BarButtonTwoTwoLabelFontSizeDip * frameZoom,BarButtonTwoTwoLabelFontSizeDip),
+					context.assets.fontCollection.Get(), DWRITE_FONT_WEIGHT_BOLD,
+					DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, state.spec.GetTextLocale(),
+					DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 				if (auto textBrush = state.spec.GetFrameSolidColorBrush(
 					barDeviceContext,
 					GetThemeColor(BarThemeColorEnum::TextPrimary),
-					textOpacity))
-					barDeviceContext->DrawTextW(dockModeLabel.c_str(),
+					textOpacity); textBrush && drawTextFormat)
+					(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawTextW(dockModeLabel.c_str(),
 						static_cast<UINT32>(dockModeLabel.size()),
-						dockModeTextFormat, indicatorTextRect, textBrush,
+						drawTextFormat, indicatorTextRect, textBrush,
 						D2D1_DRAW_TEXT_OPTIONS_CLIP);
 				barDeviceContext->SetTransform(originalTransform);
 			}
@@ -12482,13 +12503,13 @@ bool presetButton = button.presetIndex >= 0;
 
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
-				L"HarmonyOS Sans SC",
-				12.0F * tarZoom,
+				state.spec.GetFontFamily(),
+				state.spec.ResolveFontSize(barDeviceContext, 12.0F * tarZoom, 12.0),
 				context.assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL,
-				L"zh-cn",
+				state.spec.GetTextLocale(),
 				debugTextAlignToLeft
 					? DWRITE_TEXT_ALIGNMENT_LEADING
 					: DWRITE_TEXT_ALIGNMENT_TRAILING,
@@ -12508,7 +12529,7 @@ bool presetButton = button.presetIndex >= 0;
 			BarRenderingAttribute::UnionRectInPlace(state.current, tmp);
 
 			// 5. 绘制文本
-			if (pBrush && pTextFormat) barDeviceContext->DrawTextW(
+			if (pBrush && pTextFormat) (Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawTextW(
 				content.c_str(),           // text
 				(UINT32)content.length(),  // text length
 				pTextFormat.Get(),         // format
@@ -12547,7 +12568,7 @@ bool presetButton = button.presetIndex >= 0;
 					barDeviceContext, frame, 1.0);
 
 			if (borderBrush)
-				barDeviceContext->DrawRoundedRectangle(
+				(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawRoundedRectangle(
 					&roundedRect, borderBrush, debugFrameWidth);
 
 			// 蓝框直接表示本次 ULW 的 HWND 边界，内缩半像素避免右/下边被裁切。
@@ -12561,12 +12582,15 @@ bool presetButton = button.presetIndex >= 0;
 				state.spec.GetFrameSolidColorBrush(
 					barDeviceContext, RGB(0, 120, 255), debugFrameWidth);
 			if (windowBrush)
-				barDeviceContext->DrawRoundedRectangle(
+				(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawRoundedRectangle(
 					&windowRect, windowBrush, debugFrameWidth);
 		}
 
 		// Windows 7 Platform Update 要求 GetDC 时 Clip/Layer 栈为空。
-		state.spec.PopFrameDirtyClip(barDeviceContext);
+		state.spec.FinishFrameDrawCommands(barDeviceContext);
+		if (state.finiteSvgProbe && state.finiteObserver)
+			state.finiteCandidate = state.finiteObserver->FinalizeResources(state.finiteCandidate, state.finiteSvgProbe->FinishDrawing());
+		drawTimer.Stop();
 		HRESULT getDcHr = E_POINTER;
 		BOOL updateLayeredWindowSucceeded = FALSE;
 		DWORD updateLayeredWindowError = ERROR_SUCCESS;
@@ -12575,8 +12599,28 @@ bool presetButton = button.presetIndex >= 0;
 		SIZE presentedSize{};
 		POINT directTranslation{};
 		bool deferWindowPresentation = false;
+		bool taskbarEdgePresentationDeferred = false;
+		bool sourcePresentationDeferred = false;
+		FrameStageTimer presentLockTimer(diagnostics, FrameStage::PresentLockWait);
 		Inkeys::UI::Bar::BarWindowPresentationTransaction directDragTransaction(
 			owner_.directWindowDragMutex, owner_.committedWindowScreenBoundsReady);
+		presentLockTimer.Stop();
+		struct ReleaseFlushOwnership
+		{
+			std::atomic<BarDirectWindowDragPhase>& phase;
+			bool owned = false;
+			~ReleaseFlushOwnership()
+			{
+				if (owned) phase.store(BarDirectWindowDragPhase::Idle, memory_order_release);
+			}
+		} releaseFlushOwnership{ owner_.directWindowDragPhase };
+		if (frame.bottomDockReleaseInputFlush)
+		{
+			// 末笔提交到成功发布期间挡住新 Down；不能让它拿旧抓点后再被旧帧移动。
+			BarDirectWindowDragPhase expected = BarDirectWindowDragPhase::Idle;
+			releaseFlushOwnership.owned = owner_.directWindowDragPhase.compare_exchange_strong(
+				expected, BarDirectWindowDragPhase::Absorbing, memory_order_acq_rel, memory_order_acquire);
+		}
 		{
 			// 脏区更新
 			RECT target = BarLayoutToClientRect(
@@ -12610,6 +12654,7 @@ bool presetButton = button.presetIndex >= 0;
 				owner_.bottomDockDeferredTransitionSerial.load(memory_order_relaxed);
 			const auto presentedTransitionSerial =
 				owner_.bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
+			std::atomic_thread_fence(std::memory_order_acquire);
 			const auto transitionSerialAfter =
 				owner_.bottomDockTransitionSerial.load(memory_order_acquire);
 			const auto framePresentation = ResolveBarBottomDockFramePresentation(
@@ -12617,20 +12662,40 @@ bool presetButton = button.presetIndex >= 0;
 				state.bottomDockFrameTransitionTranslation,
 				transitionSerialBefore, transitionSerialAfter,
 				deferredTransitionSerial, presentedTransitionSerial,
-				latestDirectTranslation, presentedDirectTranslation);
-			deferWindowPresentation = framePresentation.deferred;
+				latestDirectTranslation, presentedDirectTranslation,
+				frame.bottomDockReleaseInputFlush || fixedReleaseGeometry || (frame.bottomDockDragActive && (state.bottomDockFrameMode == BarBottomDockMode::BottomDocked
+					|| state.bottomDockFrameCenterMode == BarBottomDockCenterMode::Centered)));
+			deferWindowPresentation = framePresentation.deferred
+				|| (frame.bottomDockReleaseInputFlush && (!releaseFlushOwnership.owned
+					|| transitionSerialBefore != state.bottomDockFrameTransitionSerial
+					|| transitionSerialAfter != state.bottomDockFrameTransitionSerial));
+			// 固定世界端点已按 frameT 画入，后来的普通采样不能替换成另一 T；纯浮动仍可直移旧位图。
 			directTranslation = framePresentation.translation;
 			presentedDestination = {
 				state.monitorOrigin.x + candidateViewport.left + directTranslation.x,
 				state.monitorOrigin.y + candidateViewport.top + directTranslation.y };
+			// 直移可在绘制期间变化；新位移若越过保护行，整帧重试后重新裁剪 source/size。
+			const RECT candidateWindow{ presentedDestination.x, presentedDestination.y,
+				presentedDestination.x + candidateWidth, presentedDestination.y + candidateHeight };
+			taskbarEdgePresentationDeferred = candidateHeight <= 0
+				|| !Inkeys::UI::Bar::IsBarWindowAboveTaskbarEdge(candidateWindow,
+					state.activeMonitorBounds.bottom, protectBottomEdge);
+			deferWindowPresentation = deferWindowPresentation || taskbarEdgePresentationDeferred;
 			POINT ptSrc = candidateSource;
 			presentedSize = { candidateWidth, candidateHeight };
+			const auto finalTargetSize = state.spec.GetTargetBitmapSize();
+			sourcePresentationDeferred = !Inkeys::UI::Bar::IsBarWindowSourceContained(
+				ptSrc, presentedSize, SIZE{ static_cast<LONG>(finalTargetSize.width), static_cast<LONG>(finalTargetSize.height) });
+			deferWindowPresentation = deferWindowPresentation || sourcePresentationDeferred;
 			if (!deferWindowPresentation && barGdiInterop)
 			{
 				// GetDC 自带必要的 D2D 提交，避免在此之前再做一次重复 Flush。
 				HDC hdc = nullptr;
+				if (diagnostics) diagnostics->presentAttempted = true;
+				FrameStageTimer getDcTimer(diagnostics, FrameStage::GetDC);
 				getDcHr = barGdiInterop->GetDC(
 					D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
+				getDcTimer.Stop();
 				if (SUCCEEDED(getDcHr) && hdc)
 				{
 					ulwi.pptDst = &presentedDestination;
@@ -12638,30 +12703,55 @@ bool presetButton = button.presetIndex >= 0;
 					ulwi.pptSrc = &ptSrc;
 					ulwi.hdcSrc = hdc;
 					ulwi.prcDirty = forceFullWindowReplacement ? nullptr : &target;
+					if (diagnostics) diagnostics->ulwAttempted = true;
+					FrameStageTimer ulwTimer(diagnostics, FrameStage::ULW);
 					updateLayeredWindowSucceeded =
-						UpdateLayeredWindowIndirect(floating_window, &ulwi);
+						present_ ? present_(ulwi) : UpdateLayeredWindowIndirect(floating_window, &ulwi);
 					if (!updateLayeredWindowSucceeded)
 						updateLayeredWindowError = GetLastError();
 					else directDragTransaction.WindowUpdated();
-					releaseDcHr = barGdiInterop->ReleaseDC(nullptr);
+					ulwTimer.Stop();
+					// ULW 只读取源 DC；这里没有通过 GDI 修改像素。
+					const RECT gdiModifiedRect{};
+					FrameStageTimer releaseDcTimer(diagnostics, FrameStage::ReleaseDC);
+					releaseDcHr = barGdiInterop->ReleaseDC(&gdiModifiedRect);
+					releaseDcTimer.Stop();
 				}
 				else if (SUCCEEDED(getDcHr)) getDcHr = E_POINTER;
 			}
 		}
 
-		HRESULT endDrawHr = barDeviceContext->EndDraw();
-		state.spec.HandleFrameEndDrawResult(endDrawHr);
+		FrameStageTimer endDrawTimer(diagnostics, FrameStage::EndDraw);
+		HRESULT endDrawHr = state.spec.EndFrameDraw(barDeviceContext);
+		endDrawTimer.Stop();
+		if (diagnostics)
+		{
+			diagnostics->presentDeferred = deferWindowPresentation;
+			diagnostics->endDrawResult = endDrawHr;
+			if (!deferWindowPresentation)
+			{
+				diagnostics->getDcResult = getDcHr;
+				diagnostics->releaseDcResult = releaseDcHr;
+				diagnostics->ulwError = updateLayeredWindowError;
+				diagnostics->ulwSucceeded = updateLayeredWindowSucceeded != FALSE;
+			}
+			else diagnostics->presentFailed = sourcePresentationDeferred || FAILED(endDrawHr);
+		}
 		if (deferWindowPresentation)
 		{
 			// 更新的形态已取代此位图；EndDraw 仍成对结束，但不消费任何成功快照。
 			state.presentationAlpha.CompleteAttempt(false);
 			state.dirtyRegionTracker.RetainForRetry(true);
-			state.presentDecision.RequireFullDirtyRetry();
+			if (taskbarEdgePresentationDeferred || sourcePresentationDeferred) state.presentDecision.RequireVisualRetry();
+			else state.presentDecision.RequireFullDirtyRetry();
 			if (FAILED(endDrawHr))
 				state.presentDecision.RecordFailure(
 					Inkeys::UI::Bar::BarPresentFailureClass::EndDraw,
 					epoch.generation, frameDemandGeneration,
 					state.presentAttemptFrameSerial);
+			if (sourcePresentationDeferred && SUCCEEDED(endDrawHr))
+				state.presentDecision.RecordFailure(Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
+					epoch.generation, frameDemandGeneration, state.presentAttemptFrameSerial);
 			const bool deviceLost = Inkeys::UI::Bar::IsBarSharedDeviceLost(endDrawHr);
 			if (endDrawHr == D2DERR_RECREATE_TARGET || deviceLost)
 				state.spec.DiscardDeviceResources();
@@ -12675,11 +12765,23 @@ bool presetButton = button.presetIndex >= 0;
 				releaseDcHr,
 				endDrawHr,
 				state.current);
+		const bool recoveringFailure = state.presentDecision.HasFailureBackoff();
 		const auto presentCompletion = state.presentDecision.CompleteAttempt(
 			presentAttempt,
 			epoch.generation, frameDemandGeneration,
 			state.presentAttemptFrameSerial);
+		if (diagnostics)
+		{
+			// 四 API 结束并由决策确认后，先记录戳再发布成功快照。
+			Inkeys::UI::RenderPipeline::StampBarCommit(diagnostics,
+				presentCompletion.IsCommitted(), state.presentAttemptFrameSerial, epoch.generation);
+			diagnostics->presentCommitted = presentCompletion.IsCommitted();
+			diagnostics->presentFailed = !presentCompletion.IsCommitted();
+			diagnostics->failureRecoveryReset |= recoveringFailure
+				&& !state.presentDecision.HasFailureBackoff();
+		}
 		state.presentationAlpha.CompleteAttempt(presentCompletion.IsCommitted());
+		if (state.finiteSvgProbe) state.finiteSvgProbe->CompleteAttempt(presentCompletion.IsCommitted());
 		if (presentCompletion.IsCommitted())
 		{
 			const auto alpha = state.presentationAlpha.CommittedAlpha();
@@ -12692,10 +12794,19 @@ bool presetButton = button.presetIndex >= 0;
 		}
 		if (presentCompletion.IsCommitted())
 		{
+			owner_.PreparePresentedButtonHits();
 			state.barPresentFailureLogged = false;
 			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
 			state.dirtyRegionTracker.CommitPresented();
 			state.viewportController.Commit(candidateViewport);
+			if (frame.bottomDockDragActive)
+			{
+				(void)state.fixedDragSurface.Freeze(frame.bottomDockDragSession,
+					state.observedDisplaySerial, frameZoom, candidateViewport, state.capacityOrigin, state.capacitySize);
+				// 新 Down 完整成功后才退休旧释放表面；准备失败不能让随后的 Up 重新归位闪动。
+				state.releasedWindowSurface.Reset();
+			}
+			else state.fixedDragSurface.Reset();
 			state.presentMappingTracker.CommitPresented(candidatePresentMapping);
 			const RECT committedWindowScreenBounds{
 				presentedDestination.x, presentedDestination.y,
@@ -12722,6 +12833,8 @@ bool presetButton = button.presetIndex >= 0;
 			// 映射与指示器命中统一发布，失败帧不得推进任一成功快照。
 			owner_.bottomDockPresentedMappingSerial.fetch_add(
 				1, memory_order_acq_rel);
+			// 奇数版本先于本次成功呈现的各项映射写入。
+			std::atomic_thread_fence(std::memory_order_release);
 			owner_.bottomDockPresentedMode.store(
 				state.bottomDockFrameMode, memory_order_relaxed);
 			owner_.bottomDockPresentedPhase.store(
@@ -12745,6 +12858,13 @@ bool presetButton = button.presetIndex >= 0;
 			owner_.bottomDockPresentedRigidTranslationDip.store(
 				state.bottomDockMapping.rigidOverlayTranslationYDip,
 				memory_order_relaxed);
+			owner_.bottomDockPresentedMainButtonVisibleHeightDip.store(
+				dockMainButtonVisibleBounds.bottomDip - dockMainButtonVisibleBounds.topDip,
+				memory_order_relaxed);
+			owner_.bottomDockPresentedDragActive.store(
+				frame.bottomDockDragActive && state.bottomDockFrameTopAnchorValid, memory_order_relaxed);
+			owner_.bottomDockPresentedDragSession.store(
+				frame.bottomDockDragSession, memory_order_relaxed);
 			owner_.bottomDockPresentedCenterMode.store(
 				state.bottomDockFrameCenterMode, memory_order_relaxed);
 			owner_.bottomDockPresentedCenterPhase.store(
@@ -12792,6 +12912,10 @@ bool presetButton = button.presetIndex >= 0;
 				state.activeWorkArea.right, memory_order_relaxed);
 			owner_.bottomDockPresentedWorkAreaBottom.store(
 				state.activeWorkArea.bottom, memory_order_relaxed);
+			owner_.bottomDockPresentedDesktopDockLine.store(
+				state.activeDesktopDockLine, memory_order_relaxed);
+			owner_.bottomDockPresentedProtectBottomEdge.store(
+				state.activeProtectBottomEdge, memory_order_relaxed);
 			owner_.bottomDockPresentedDisplayDpi.store(
 				state.activeDisplayDpi, memory_order_relaxed);
 			owner_.bottomDockPresentedDisplaySerial.store(
@@ -12867,6 +12991,10 @@ bool presetButton = button.presetIndex >= 0;
 				dockTargetIndicatorHitBounds.right, memory_order_relaxed);
 			owner_.bottomDockIndicatorPresentedBottom.store(
 				dockTargetIndicatorHitBounds.bottom, memory_order_relaxed);
+			// 命中与坐标映射共同发布；输入前后校验 serial，不能拼接旧映射和新按钮。
+			owner_.PublishPresentedButtonHits();
+			owner_.eraserAttribute.CommitPresented();
+			owner_.recallAttribute.CommitPresented();
 			owner_.bottomDockPresentedMappingSerial.fetch_add(
 				1, memory_order_release);
 			// 第三光源接受区也只消费完整成功事务对应的几何。
@@ -12877,6 +13005,7 @@ bool presetButton = button.presetIndex >= 0;
 				static_cast<LONG>(lround(mainButton->x.val * frameZoom)),
 				static_cast<LONG>(lround(mainButton->y.val * frameZoom)) };
 			state.committedAnchorInitialized = true;
+			state.lastPresentedContentBounds = currentContentBounds;
 			state.lastPresentedDebugTextBounds = debugModeEnabled
 				? currentDebugTextBounds : RECT{};
 			state.lastPresentedDebugFrameBounds = debugModeEnabled
@@ -12887,9 +13016,57 @@ bool presetButton = button.presetIndex >= 0;
 			(void)state.debugFrameSleepLatch.CommitPresented();
 			state.frameRateSamplePending = debugFrameRateEnabled;
 			state.unclassifiedDamagePending = false;
+			if (state.finiteObserver)
+			{
+				Inkeys::UI::Bar::Ui3FiniteCommitIdentity identity;
+				identity.epoch = epoch.generation;
+				identity.surfaceSerial = state.finiteSurfaceSerial;
+				identity.frameAttemptSerial = state.presentAttemptFrameSerial;
+				identity.anchorMappingSerial = owner_.bottomDockPresentedMappingSerial.load(memory_order_acquire);
+				identity.targetWidth = static_cast<std::uint32_t>(presentedSize.cx);
+				identity.targetHeight = static_cast<std::uint32_t>(presentedSize.cy);
+				const double mainX = owner_.bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed);
+				const double mainY = owner_.bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed);
+				identity.mainAnchorBits[0] = std::bit_cast<std::uint64_t>(mainX);
+				identity.mainAnchorBits[1] = std::bit_cast<std::uint64_t>(mainY);
+				if (auto* draw = state.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Draw)])
+				{
+					const double x = state.monitorOrigin.x + state.bottomDockHorizontalMapping.MapX(
+						draw->button.inhX + draw->button.w.val / 2.0) * frameZoom + directTranslation.x;
+					const double y = state.monitorOrigin.y + state.bottomDockMapping.MapY(
+						draw->button.inhY + draw->button.h.val / 2.0) * frameZoom + directTranslation.y;
+					identity.drawAnchorBits[0] = std::bit_cast<std::uint64_t>(x);
+					identity.drawAnchorBits[1] = std::bit_cast<std::uint64_t>(y);
+					identity.anchorsValid = isfinite(mainX) && isfinite(mainY) && isfinite(x) && isfinite(y)
+						&& state.presentationAlpha.CommittedAlpha() != 0;
+				}
+				const bool timed = diagnostics && diagnostics->detailedCaptureEnabled && diagnostics->hasBarCommitStamp
+					&& diagnostics->barAttemptSerial == state.presentAttemptFrameSerial && diagnostics->barCommitEpoch == epoch.generation;
+				(void)state.finiteObserver->CompleteAttempt(state.finiteCandidate, true, timed,
+					timed ? diagnostics->barCommitTicks : 0, identity);
+				if (state.finiteSvgProbe)
+				{
+					// 仅锁存刚结束的真实四 API 事务；功能读回与目标完成时间分别记录。
+					state.finiteReadbackReceipt = {};
+					auto& receipt = state.finiteReadbackReceipt;
+					receipt.generation = state.finiteCandidate.accepted.runSerial;
+					receipt.committedAttempt = identity.frameAttemptSerial;
+					receipt.epoch = identity.epoch; receipt.surface = identity.surfaceSerial;
+					receipt.width = identity.targetWidth; receipt.height = identity.targetHeight;
+					receipt.sourceX = candidateSource.x; receipt.sourceY = candidateSource.y;
+					receipt.presentationAlpha = alphaAttempt.alpha;
+					receipt.bufferMutationSerial = state.finiteSvgProbe->BufferMutationSerialForCurrentOwner();
+					receipt.targetInvalidationSerial = state.finiteSvgProbe->TargetInvalidationSerialForCurrentOwner();
+					state.finiteReadbackBitmap = state.spec.GetTargetBitmap();
+					state.finiteReadbackGoal = state.finiteCandidate.accepted;
+					state.finiteReadbackAvailable = true;
+				}
+			}
 		}
 		else
 		{
+			if (state.finiteObserver)
+				(void)state.finiteObserver->CompleteAttempt(state.finiteCandidate, false, false, 0);
 			state.dirtyRegionTracker.RetainForRetry(true);
 			if (!state.barPresentFailureLogged && IDTLogger)
 				IDTLogger->error(
@@ -12917,7 +13094,7 @@ bool presetButton = button.presetIndex >= 0;
 	else
 	{
 		// 共享调度器负责唯一休眠点，客户端只报告本窗口已经 idle。
-		state.animationClock.Rebase();
+		state.animationClock.SuspendForIdle();
 		return BarRenderLoopStageResult::Idle;
 	}
 
@@ -12941,16 +13118,17 @@ void BarRenderLoopCoordinator::PaceFrame(
 		const auto averages = state.frameRate.Tick(activeFrameTime, frameEnd);
 		if (averages.updated)
 		{
-			state.fps = format(
-				L"帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
+			state.fps = Inkeys::UI::Bar::Detail::FormatFrameRateText(
+				IW(I18nKey.UI.Bar.Diagnostics.FrameRateFormat),
 				averages.actualFramesPerSecond,
-				averages.unlimitedFramesPerSecond);
+				averages.unlimitedFramesPerSecond,
+				IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable));
 		}
 	}
 	else if (!debugFrameRateEnabled)
 	{
 		state.frameRate.Reset(frameEnd);
-		state.fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
+		state.fps = IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 	}
 	state.frameRateSamplePending = false;
 }
@@ -12958,16 +13136,21 @@ void BarRenderLoopCoordinator::PaceFrame(
 bool BarRenderLoopCoordinator::Register()
 {
 	if (offSignal) return false;
-	return Inkeys::UI::RenderPipeline::Register(
+	const bool registered = Inkeys::UI::RenderPipeline::Register(
 		Inkeys::UI::RenderPipeline::Client::Bar,
 		[this](const Inkeys::UI::RenderPipeline::FrameContext& context)
 		{ return RenderFrame(context); });
+	if (registered)
+		if (auto* observer = Inkeys::UI::Bar::ActiveUi3FiniteObserver()) observer->NotifyRegistered();
+	return registered;
 }
 
 void BarRenderLoopCoordinator::Unregister() noexcept
 {
 	Inkeys::UI::RenderPipeline::Unregister(
 		Inkeys::UI::RenderPipeline::Client::Bar);
+	// 同步Unregister保证该render producer已静止；不在这里碰Interaction普通ledger。
+	if (state_ && state_->finiteObserver) state_->finiteObserver->SealAfterRenderStopped();
 }
 
 Inkeys::UI::RenderPipeline::FrameResult
@@ -12975,86 +13158,296 @@ BarRenderLoopCoordinator::RenderFrame(
 	const Inkeys::UI::RenderPipeline::FrameContext& context)
 {
 	using Inkeys::UI::RenderPipeline::FrameResult;
+	using Inkeys::UI::Bar::Ui3FiniteDiagnosticStage;
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
+	if (diagnostics) diagnostics->barSampled = true;
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
 	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
+	if (state.spec.UpdateFontRenderingPolicy(
+		Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))
+	{
+		// 策略变化必须产生真实视觉损伤，轻唤醒本身不足以重画静止主栏。
+		state.unclassifiedDamagePending = true;
+		state.presentDecision.RequireVisualRetry();
+	}
+	state.finiteObserver = Inkeys::UI::Bar::ActiveUi3FiniteObserver();
+	state.finiteSvgProbe = state.finiteObserver ? state.finiteObserver->SvgProbe() : nullptr;
+	Inkeys::UI::Bar::SvgObservationScope svgObservation(state.finiteSvgProbe,
+		diagnostics && diagnostics->detailedCaptureEnabled);
+	if (state.finiteObserver)
+	{
+		Inkeys::UI::Bar::Ui3FiniteAccepted accepted;
+		const bool stable = state.finiteObserver->SnapshotAccepted(accepted); // Wake之前只读一次publication。
+		state.finiteAccepted = accepted;
+		const auto nextAttempt = state.presentAttemptFrameSerial == (std::numeric_limits<unsigned long long>::max)()
+			? 1ULL : state.presentAttemptFrameSerial + 1ULL;
+		state.finiteObserver->BeginFrame(accepted, context.epoch.generation, nextAttempt,
+			!stable && state.finiteObserver->InitialPublicationOnly());
+		if (state.finiteSvgProbe) state.finiteSvgProbe->BeginFrame(accepted.revision, context.epoch.generation, nextAttempt);
+	}
+	// 早退不补帧/不确认完成，observer寿命由所有owner的真实join保障。
+	struct FiniteFrameExit
+	{
+		Inkeys::UI::Bar::Ui3FiniteObserver* observer;
+		void Stage(Ui3FiniteDiagnosticStage stage) noexcept { if (observer) observer->ObserveDiagnosticStage(stage); }
+		FrameResult Finish(FrameResult result) noexcept
+		{
+			if (observer) observer->NoteDiagnosticFrameExit(static_cast<std::uint32_t>(result));
+			return result;
+		}
+		~FiniteFrameExit() { if (observer) observer->AbortFrame(Inkeys::UI::Bar::Ui3FiniteStatus::ResourceUnverified); }
+	} finiteExit{ state.finiteObserver };
+	struct SvgFrameExit
+	{
+		Inkeys::UI::Bar::Ui3SvgProbe* probe;
+		~SvgFrameExit() { if (probe) probe->CompleteAttempt(false); }
+	} svgExit{ state.finiteSvgProbe };
+	// 所有早退都只采样既有恢复状态，不改变退避或动画时钟。
+	struct FailureDiagnosticsScope
+	{
+		Inkeys::UI::RenderPipeline::FrameDiagnostics* diagnostics;
+		const Inkeys::UI::Bar::BarPresentDecision& decision;
+		~FailureDiagnosticsScope()
+		{
+			if (!diagnostics) return;
+			diagnostics->failureCount = decision.ConsecutiveFailureCount();
+			diagnostics->retryDelayFrames = decision.RetryDelayFrames();
+			diagnostics->nextRetryFrame = decision.NextRetryFrame();
+		}
+	} failureDiagnostics{ diagnostics, state.presentDecision };
+	if (diagnostics)
+	{
+		const auto targetSize = state.spec.GetTargetBitmapSize();
+		diagnostics->targetSize = { static_cast<LONG>(targetSize.width),
+			static_cast<LONG>(targetSize.height) };
+		diagnostics->capacitySize = state.capacitySize;
+		diagnostics->displayCapacityZoom = state.displayCapacityZoom;
+		diagnostics->zoom = static_cast<double>(state.barStyle.zoom);
+		diagnostics->lightFlags = BarFrameLightFlags(state.spec.SnapshotFrameLighting());
+		if (state.viewportController.Initialized())
+		{
+			diagnostics->viewport = state.viewportController.Committed();
+			diagnostics->source = { diagnostics->viewport.left - state.capacityOrigin.x,
+				diagnostics->viewport.top - state.capacityOrigin.y };
+		}
+	}
 	BarRenderFrameSnapshot frame;
+	frame.frameTime = context.frameTime;
 	frame.ordinal = frameOrdinal_;
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::WakeAndSnapshot);
+	FrameStageTimer wakeAndSnapshotTimer(diagnostics, FrameStage::WakeAndSnapshot);
 	if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop)
-		return FrameResult::Idle;
+		return finiteExit.Finish(FrameResult::Idle);
+	wakeAndSnapshotTimer.Stop();
 	if (state.presentDecision.HasFailureBackoff()
 		&& !state.presentDecision.CanAttemptPresent(state.presentAttemptFrameSerial))
-		return FrameResult::Retry;
+	{
+		if (diagnostics) diagnostics->backoffSkipped = true;
+		return finiteExit.Finish(FrameResult::Retry);
+	}
 	BarDirectWindowDragPhase expectedPhase = BarDirectWindowDragPhase::Idle;
 	const bool directTranslationPending =
 		owner_.directWindowDragTranslationX.load(memory_order_acquire) != 0
 		|| owner_.directWindowDragTranslationY.load(memory_order_acquire) != 0;
-	if (directTranslationPending
+	const bool releasePending = !owner_.bottomDockDragActive.load(memory_order_acquire)
+		&& owner_.BottomDockPresentedSnapshot().dragActive;
+	unsigned long long releaseFlushSession = 0, releaseFlushSerial = 0;
+	if (releasePending)
+	{
+		// 只在释放交接采样一次几何锁；最后正常位移未提交时，先沿原 held 表面完成它。
+		FrameStageTimer releaseFlushLockTimer(diagnostics, FrameStage::PresentLockWait);
+		lock_guard directDragLock(owner_.directWindowDragMutex);
+		releaseFlushLockTimer.Stop();
+		const auto presented = owner_.BottomDockPresentedSnapshot();
+		const auto serial = owner_.bottomDockTransitionSerial.load(memory_order_acquire);
+		const POINT pending{ owner_.directWindowDragTranslationX.load(memory_order_acquire),
+			owner_.directWindowDragTranslationY.load(memory_order_acquire) };
+		if (owner_.directWindowDragPhase.load(memory_order_acquire) == BarDirectWindowDragPhase::Idle
+			&& !owner_.bottomDockDragActive.load(memory_order_acquire) && !(serial & 1ULL)
+			&& presented.dragActive && presented.dragSession == owner_.bottomDockDragSession.load(memory_order_acquire)
+			&& state.fixedDragSurface.Matches(presented.dragSession, state.observedDisplaySerial, frame.zoom)
+			&& (pending.x != owner_.directWindowPresentedTranslationX.load(memory_order_acquire)
+				|| pending.y != owner_.directWindowPresentedTranslationY.load(memory_order_acquire)))
+		{
+			releaseFlushSession = presented.dragSession;
+			releaseFlushSerial = serial;
+		}
+	}
+	const bool releaseInputFlush = releaseFlushSession != 0;
+	if (!releaseInputFlush && (directTranslationPending || releasePending)
 		&& owner_.directWindowDragPhase.compare_exchange_strong(
 		expectedPhase, BarDirectWindowDragPhase::Absorbing,
 		memory_order_acq_rel, memory_order_acquire))
 	{
+		FrameStageTimer directDragLockTimer(diagnostics, FrameStage::PresentLockWait);
 		lock_guard directDragLock(owner_.directWindowDragMutex);
+		directDragLockTimer.Stop();
 		const POINT presentedBeforeAbsorb{
 			owner_.directWindowPresentedTranslationX.load(memory_order_acquire),
 			owner_.directWindowPresentedTranslationY.load(memory_order_acquire) };
+		if (!owner_.bottomDockDragActive.load(memory_order_acquire))
+		{
+			const auto presented = owner_.BottomDockPresentedSnapshot();
+			if (presented.dragActive && state.releasedSurfaceAttemptedSession != presented.dragSession
+				&& state.fixedDragSurface.Matches(presented.dragSession, state.observedDisplaySerial, frame.zoom)
+				&& owner_.committedWindowScreenBoundsReady)
+			{
+				// 在吸收前接住实际成功窗口（含 Floating 直移）；UI 的规范 root 仍走原恢复链。
+				state.releasedSurfaceAttemptedSession = presented.dragSession;
+				const RECT window = owner_.committedWindowScreenBounds;
+				const POINT source = state.fixedDragSurface.Source();
+				state.releasedWindowSurface.Reset();
+				(void)state.releasedWindowSurface.Freeze(presented.dragSession, state.observedDisplaySerial, frame.zoom,
+					window, POINT{ window.left - source.x, window.top - source.y }, state.fixedDragSurface.CapacitySize());
+			}
+		}
 		const POINT translation{
 			owner_.directWindowDragTranslationX.exchange(0, memory_order_acq_rel),
 			owner_.directWindowDragTranslationY.exchange(0, memory_order_acq_rel) };
-		if (translation.x != 0 || translation.y != 0)
+		auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
+		const double zoom = max(0.000001, frame.zoom);
+		const double oldMainX = mainButton->x.val, oldMainY = mainButton->y.val;
+		double nextMainX = oldMainX + static_cast<double>(translation.x) / zoom;
+		double nextMainY = oldMainY + static_cast<double>(translation.y) / zoom;
+		if (owner_.bottomDockMode.load(memory_order_acquire) == BarBottomDockMode::BottomDocked)
 		{
-			auto mainButton = state.superellipseMap[
-				BarUISetSuperellipseEnum::MainButton];
-			const double zoom = max(0.000001, frame.zoom);
-			mainButton->x.SetDirect(mainButton->x.val
-				+ static_cast<double>(translation.x) / zoom);
-			mainButton->y.SetDirect(mainButton->y.val
-				+ static_cast<double>(translation.y) / zoom);
-			if (state.displayTransitionInitialized)
+			const double stroke = mainButton->ft.has_value() ? max(0.0, static_cast<double>(mainButton->ft->val)) : 0.0;
+			nextMainY = (CurrentBarBottomDockLine(state.activeMonitorBounds, state.activeWorkArea,
+				state.activeDisplayDpi, state.activeDesktopDockLine) - state.monitorOrigin.y) / zoom
+				- (state.mainButtonBaseSize + stroke) / 2.0;
+			if (!state.barState.fold && owner_.bottomDockCenterMode.load(memory_order_acquire)
+				== BarBottomDockCenterMode::Centered)
 			{
-				// 用户直拖优先于尚未结束的位置动画，松手后从实际主按钮中心继续。
-				state.displayCenterX.SetDirect(mainButton->x.val * zoom);
-				state.displayCenterY.SetDirect(mainButton->y.val * zoom);
+				const double barStroke = mainBar->ft.has_value() ? max(0.0, static_cast<double>(mainBar->ft->val)) : 0.0;
+				const auto placement = ResolveBarBottomDockCenteredRootPlacement(
+					(ResolveBarBottomDockMonitorCenterScreenX(state.activeMonitorBounds) - state.monitorOrigin.x) / zoom,
+					mainButton->w.val + stroke, mainBar->x.val, mainBar->w.val + barStroke);
+				if (placement.valid) nextMainX = placement.mainCenterDip;
 			}
-			owner_.barState.PositionUpdate(zoom);
-			// 纯整栏平移不需要擦除旧屏幕坐标，快照先平移到新的布局域。
-			state.dirtyRegionTracker.TranslateCommitted(translation);
-			state.cachedVisibleContentBounds = TranslateBarWindowRect(
-				state.cachedVisibleContentBounds, translation);
-			state.lastPresentedDebugTextBounds = TranslateBarWindowRect(
-				state.lastPresentedDebugTextBounds, translation);
-			state.lastPresentedDebugFrameBounds = TranslateBarWindowRect(
-				state.lastPresentedDebugFrameBounds, translation);
-			state.lastPresentedDebugWindowBounds = TranslateBarWindowRect(
-				state.lastPresentedDebugWindowBounds, translation);
-			state.unclassifiedDamagePending = true;
 		}
+		const POINT layoutTranslation{ static_cast<LONG>(lround((nextMainX - oldMainX) * zoom)),
+			static_cast<LONG>(lround((nextMainY - oldMainY) * zoom)) };
+		mainButton->x.SetDirect(nextMainX);
+		mainButton->y.SetDirect(nextMainY);
+		if (state.displayTransitionInitialized)
+		{
+			state.displayCenterX.SetDirect(nextMainX * zoom);
+			state.displayCenterY.SetDirect(nextMainY * zoom);
+		}
+		owner_.barState.PositionUpdate(zoom);
+		// 规范 root 与成功像素分别重基准，首张恢复帧由成功形状播种，不能再加一次手势位移。
+		state.dirtyRegionTracker.TranslateCommitted(layoutTranslation);
+		state.cachedVisibleContentBounds = TranslateBarWindowRect(state.cachedVisibleContentBounds, layoutTranslation);
+		state.lastPresentedDebugTextBounds = TranslateBarWindowRect(state.lastPresentedDebugTextBounds, layoutTranslation);
+		state.lastPresentedDebugFrameBounds = TranslateBarWindowRect(state.lastPresentedDebugFrameBounds, layoutTranslation);
+		state.lastPresentedDebugWindowBounds = TranslateBarWindowRect(state.lastPresentedDebugWindowBounds, layoutTranslation);
+		state.unclassifiedDamagePending = true;
+		state.presentDecision.RequireVisualRetry();
+
 		// ULW 可能尚未追上目标位移；保留实际 HWND 相对新布局的坐标补偿。
 		const POINT presentedAfterAbsorb =
 			ResolveBarDirectWindowTranslationAfterAbsorb(
-				presentedBeforeAbsorb, translation);
-		owner_.RebaseBottomDockPresentedWindow(presentedAfterAbsorb);
+				presentedBeforeAbsorb, layoutTranslation);
+		owner_.RebaseBottomDockPresentedWindow(presentedAfterAbsorb, {}, layoutTranslation);
 		owner_.directWindowDragPhase.store(
 			BarDirectWindowDragPhase::Idle, memory_order_release);
 	}
-	if (Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest())
+	BarDirectWindowDragPhase expectedScenePhase = BarDirectWindowDragPhase::Idle;
+	if (state.initialBottomDockPlacementApplied && !releaseInputFlush
+		&& !owner_.bottomDockDragActive.load(memory_order_acquire)
+		&& owner_.directWindowDragPhase.compare_exchange_strong(expectedScenePhase,
+			BarDirectWindowDragPhase::Absorbing, memory_order_acq_rel, memory_order_acquire))
 	{
-		// 模式和几何作为同一事务发布；布局阶段在完整主栏宽度可用后求居中目标。
-		owner_.BeginBottomDockTransition();
-		owner_.bottomDockMode.store(
-			BarBottomDockMode::BottomDocked, memory_order_relaxed);
-		owner_.bottomDockPhase.store(
-			BarBottomDockPhase::Stable, memory_order_relaxed);
-		owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
-		owner_.bottomDockCenterMode.store(
-			BarBottomDockCenterMode::Centered, memory_order_relaxed);
-		owner_.bottomDockCenterPhase.store(
-			BarBottomDockPhase::Stable, memory_order_relaxed);
-		owner_.bottomDockCenterElasticOffsetDip.store(0.0,
-			memory_order_relaxed);
-		owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
-		(void)owner_.FinishBottomDockTransition(true);
-		state.whiteboardDockPlacementPending = true;
+		// 与 Seek 的起拖 CAS 使用同一交接协议；失败时保留尚未消费的场景边沿。
+		lock_guard directDragLock(owner_.directWindowDragMutex);
+		(void)Inkeys::UI::Bar::ConsumePptSceneTransition();
+		(void)Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest();
+		using namespace Inkeys::UI::Bar;
+		const auto workspace = state.workspaceSnapshot;
+		const auto transition = state.workspaceScene.Update(workspace.committed == WorkspaceScene::Whiteboard,
+			workspace.committed == WorkspaceScene::Presentation);
+		if (transition != BarWorkspaceTransition::Keep)
+		{
+			state.releasedWindowSurface.Reset();
+			if (state.taskbarDockAnimationActive)
+				state.displayCenterY.SetDirect(state.displayCenterY.val);
+			state.taskbarDockAnimationActive = false;
+			state.taskbarDockRetargetPending = false;
+			// 返回动画未完成又进入工作区时，仍保留首次进入前的桌面基线。
+			if (transition == BarWorkspaceTransition::Enter && !state.whiteboardDockAnimationActive)
+			{
+				state.desktopDockMode = owner_.bottomDockMode.load(memory_order_acquire);
+				state.desktopCenterMode = owner_.bottomDockCenterMode.load(memory_order_acquire);
+				state.desktopFold = state.barState.fold;
+				state.desktopSide = state.barState.widgetPosition.mainBar;
+				state.desktopPrimarySide = state.barState.widgetPosition.primaryBar;
+				state.desktopScreenX = state.monitorOrigin.x + state.displayCenterX.val;
+				state.desktopScreenY = state.monitorOrigin.y + state.displayCenterY.val;
+				state.desktopMonitor = MonitorFromPoint(POINT{ static_cast<LONG>(state.desktopScreenX),
+					static_cast<LONG>(state.desktopScreenY) }, MONITOR_DEFAULTTONEAREST);
+			}
+			state.pptDockPlacementPending = false;
+			state.whiteboardDockPlacementPending = false;
+			if (transition == BarWorkspaceTransition::Leave)
+			{
+				owner_.BeginBottomDockTransition();
+				owner_.bottomDockMode.store(state.desktopDockMode, memory_order_relaxed);
+				owner_.bottomDockCenterMode.store(state.desktopCenterMode, memory_order_relaxed);
+				owner_.bottomDockPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
+				owner_.bottomDockCenterPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
+				owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
+				owner_.bottomDockCenterElasticOffsetDip.store(0.0, memory_order_relaxed);
+				owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
+				(void)owner_.FinishBottomDockTransition(true);
+				state.barState.fold = state.desktopFold;
+				state.barState.widgetPosition.mainBar = state.desktopSide;
+				state.barState.widgetPosition.primaryBar = state.desktopPrimarySide;
+				state.mainBarLayoutSide = state.desktopSide;
+				UpdateSceneMonitor(state.desktopMonitor);
+				state.desktopRestorePending = true;
+			}
+			else if (ShouldPlaceBarWorkspaceDock(state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire)))
+			{
+				// 仅已有展开底栏跟随场景屏幕；普通底栏保留横向位置及展开方向。
+				if (Inkeys::UI::Bar::WhiteboardActive()) UpdateSceneMonitor(nullptr);
+				else UpdatePptSceneMonitor(PptPresentationWindow());
+				state.pptDockPlacementPending = true;
+			}
+			state.bottomDockSpring = {};
+			state.bottomDockCenterSpring = {};
+			state.bottomDockCaptureBottomSpring = {};
+			state.bottomDockCenterCaptureFarEdgeSpring = {};
+			state.unclassifiedDamagePending = true;
+			state.presentDecision.RequireVisualRetry();
+		}
+		const bool minimized = workspace.committed == WorkspaceScene::Whiteboard && workspace.committedMinimized;
+		if (state.whiteboardMinimized != minimized)
+		{
+			state.releasedWindowSurface.Reset();
+			if (state.taskbarDockAnimationActive)
+				state.displayCenterY.SetDirect(state.displayCenterY.val);
+			state.taskbarDockAnimationActive = false;
+			state.taskbarDockRetargetPending = false;
+			// 暂停/恢复只移动现有底栏，桌面快照仍由上面的工作区状态机独占。
+			if (ShouldPlaceBarWorkspaceDock(state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire))
+				&& transition != BarWorkspaceTransition::Leave)
+			{
+				owner_.BeginBottomDockTransition();
+				if (minimized)
+					state.whiteboardRestoreCenterMode = owner_.bottomDockCenterMode.load(memory_order_relaxed);
+				owner_.bottomDockCenterMode.store(minimized ? BarBottomDockCenterMode::Centered
+					: state.whiteboardRestoreCenterMode, memory_order_relaxed);
+				(void)owner_.FinishBottomDockTransition(true);
+				state.pptDockPlacementPending = true;
+			}
+			// 即使浮动或折叠也必须提交按钮内容变化，不能等待下一次悬停或翻页。
+			state.unclassifiedDamagePending = true;
+			state.presentDecision.RequireVisualRetry();
+			state.whiteboardMinimized = minimized;
+		}
+		owner_.directWindowDragPhase.store(BarDirectWindowDragPhase::Idle, memory_order_release);
 	}
 	// 底栏形态、抓取点和直移必须整帧共用同一偶数 serial，
 	// 显示过渡、布局和 ULW 不能各自读取不同时刻的原子值。
@@ -13083,54 +13476,162 @@ BarRenderLoopCoordinator::RenderFrame(
 			owner_.bottomDockDragRigidGripScreenX.load(memory_order_relaxed);
 		frame.bottomDockDragRigidGripScreenY =
 			owner_.bottomDockDragRigidGripScreenY.load(memory_order_relaxed);
+		frame.bottomDockDragTopScreenY =
+			owner_.bottomDockDragTopScreenY.load(memory_order_relaxed);
+		frame.bottomDockDragTopAnchorValid =
+			owner_.bottomDockDragTopAnchorValid.load(memory_order_relaxed);
+		frame.bottomDockDragSession = owner_.bottomDockDragSession.load(memory_order_relaxed);
 		frame.bottomDockTransitionTranslation = POINT{
 			owner_.directWindowDragTranslationX.load(memory_order_relaxed),
 			owner_.directWindowDragTranslationY.load(memory_order_relaxed) };
+		std::atomic_thread_fence(std::memory_order_acquire);
 		if (owner_.bottomDockTransitionSerial.load(memory_order_acquire)
 			== frame.bottomDockTransitionSerial) break;
+	}
+	if (releaseInputFlush)
+	{
+		state.presentDecision.RequireVisualRetry();
+		if (owner_.directWindowDragPhase.load(memory_order_acquire) != BarDirectWindowDragPhase::Idle
+			|| frame.bottomDockDragActive || frame.bottomDockDragSession != releaseFlushSession
+			|| frame.bottomDockTransitionSerial != releaseFlushSerial)
+			return finiteExit.Finish(FrameResult::Retry);
+		// 仅本帧延续 held 呈现，不改真实指针状态或成功快照；四 API 成功后下一帧才吸收 Up。
+		frame.bottomDockDragActive = true;
+		frame.bottomDockReleaseInputFlush = true;
 	}
 	if (ShouldDeferBarBottomDockReleaseHandoff(
 		frame.bottomDockDragActive,
 		expectedPhase == BarDirectWindowDragPhase::Dragging,
-		directTranslationPending))
+		directTranslationPending || releasePending))
 	{
 		// 松手 tuple 已发布但直移所有权尚未交接，下一帧必须先吸收再布局。
-		return FrameResult::Retry;
+		if (diagnostics) diagnostics->presentDeferred = true;
+		return finiteExit.Finish(FrameResult::Retry);
 	}
 	frame.bottomDockLayoutLocked =
 		frame.bottomDockMode == BarBottomDockMode::BottomDocked
 		|| frame.bottomDockRecoveryActive;
 	if (!state.initialBottomDockPlacementApplied)
 	{
-		const bool initialSide = ResolveBarBottomDockInitialMainBarSide(
-			state.whiteboardDockPlacementPending,
-			state.barState.widgetPosition.mainBar);
+		const bool initialSide = !state.whiteboardDockPlacementPending
+			&& owner_.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar
+			? owner_.startupPlacement == Inkeys::UI::StartupPlacement::BottomLeftFloating
+			: ResolveBarBottomDockInitialMainBarSide(
+				state.whiteboardDockPlacementPending, state.barState.widgetPosition.mainBar);
 		// 首次方向缓存先于 PositionUpdate 建立，避免桌面默认侧或白板既有侧被覆盖。
 		state.barState.widgetPosition.mainBar = initialSide;
 		state.mainBarLayoutSide = initialSide;
 	}
+	if (diagnostics) diagnostics->animationAdvanced = true;
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::DisplayTransition);
+	FrameStageTimer displayTransitionTimer(diagnostics, FrameStage::DisplayTransition);
 	ApplyDisplayTransition(state, frame);
+	if (state.desktopRestorePending)
+	{
+		// 显示器消失时使用发布快照的回退屏，钳制位置到可见范围。
+		const auto main = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		const double zoom = max(0.000001, static_cast<double>(state.barStyle.zoom));
+		const double half = main->GetW() * zoom / 2.0;
+		const double x = clamp(state.desktopScreenX, state.activeWorkArea.left + half,
+			max(state.activeWorkArea.left + half, state.activeWorkArea.right - half));
+		const double y = clamp(state.desktopScreenY, state.activeWorkArea.top + half,
+			max(state.activeWorkArea.top + half, state.activeWorkArea.bottom - half));
+		state.displayCenterX.SetDirect(x - state.monitorOrigin.x);
+		// ApplyDisplayTransition 可能已写入桌面目标；返回动画必须从最后成功显示的 Y 接续。
+		const auto presented = owner_.BottomDockPresentedSnapshot();
+		state.displayCenterY.SetDirect(presented.serial != 0
+			? presented.mainCenterScreenY - state.monitorOrigin.y - presented.directTranslation.y
+			: main->y.val * zoom);
+		if (BarUiAnimationEnabled) state.displayCenterY.SetTar(y - state.monitorOrigin.y, 0.4);
+		else state.displayCenterY.SetDirect(y - state.monitorOrigin.y);
+		main->x.SetDirect((x - state.monitorOrigin.x) / zoom);
+		main->y.SetDirect(state.displayCenterY.val / zoom);
+		// 复用场景 Y 所有权，避免下一帧吸附归位截断动画；居中 X 仍按当前宽度反推。
+		state.whiteboardDockAnimationActive = !state.displayCenterY.IsSame();
+		state.displayTransitionActive = state.whiteboardDockAnimationActive;
+		state.desktopRestorePending = false;
+	}
+
+	displayTransitionTimer.Stop();
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
+	const bool fontPending = state.spec.FontAnimationsActive();
 	state.spec.SetFrameZoom(frame.zoom);
+	state.spec.BeginFontFrame(frame.frameTime,
+		{frame.animationDtSeconds,frame.animationSpeedRate,static_cast<bool>(BarUiAnimationEnabled),false},
+		static_cast<double>(state.displayUiBaseScale.tar)*static_cast<double>(state.barStyle.configZoom));
+	if (fontPending) { state.unclassifiedDamagePending = true; state.presentDecision.RequireVisualRetry(); }
+	if (diagnostics)
+	{
+		diagnostics->zoom = frame.zoom;
+		diagnostics->displayCapacityZoom = state.displayCapacityZoom;
+	}
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::SubmitTargetsAndLayout);
+	FrameStageTimer submitTargetsTimer(diagnostics, FrameStage::SubmitTargetsAndLayout);
+	// 先结算业务期限并统一表现，再按本帧工具扫描目标宽度，避免到期帧使用旧几何。
+	frame.recallIdleDismissed = owner_.AdvanceRecallChromeIdle(0.0);
+	state.barButtonSet.PrepareMainPanels(state.stateModeSnapshot);
 	SubmitTargetsAndLayout(state, frame);
+	if (state.finiteObserver)
+	{
+		auto signature = owner_.ReadFiniteSignature(state.finiteToolSnapshot);
+		// 原Display阶段已锁存实际targetDisplay.dpi；初始publication0也必须使用同一帧值。
+		if (signature.dpi != state.activeDisplayDpi) signature.validMask &= ~std::uint64_t{32};
+		signature.mainSide = state.mainBarLayoutSide ? 1u : 0u;
+		signature.flags = (signature.flags & ~0x700u)
+			| Inkeys::UI::Bar::BarMainLayoutSignatureFlags(frame.iconOrder, frame.directionAdjustment);
+		signature.primarySide = state.drawAttributeLayoutSide ? 1u : 0u;
+		const auto ticks = diagnostics && diagnostics->detailedCaptureEnabled
+			? chrono::steady_clock::now().time_since_epoch().count() : 0;
+		(void)state.finiteObserver->MarkConsumed(signature, state.finiteRootBatchRevision,
+			state.finiteDrawBatchRevision, ticks);
+		// Fit 在 Submit 中可能改 zoom，本帧仍按旧 frame.zoom 绘制，不能冻结混合签名。
+		if (state.finiteObserver->InitialPublicationOnly()
+			&& frame.zoom != static_cast<double>(state.barStyle.zoom))
+			state.finiteObserver->ObserveLifecycle(Inkeys::UI::Bar::Ui3FiniteLifecycleInitialPending);
+		if (!state.finiteSvgProbe) state.finiteObserver->ObserveResources({}); // 无真实B3 producer仍保守拒证。
+	}
+	submitTargetsTimer.Stop();
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::AdvanceAnimationsAndDeriveLayout);
+	FrameStageTimer advanceAnimationsTimer(diagnostics, FrameStage::AdvanceAnimationsAndDeriveLayout);
 	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame)
 		|| state.displayTransitionActive;
+	advanceAnimationsTimer.Stop();
 	if (state.bottomDockFrameTransitionInvalidated)
 	{
 		// 旧候选不能确认新输入的屏障，下一帧重新消费完整状态。
 		state.dirtyRegionTracker.RetainForRetry(true);
 		state.presentDecision.RequireVisualRetry();
-		return FrameResult::Retry;
+		if (diagnostics) diagnostics->presentDeferred = true;
+		return finiteExit.Finish(FrameResult::Retry);
 	}
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::PrepareLightingAndDemand);
+	FrameStageTimer lightingAndDemandTimer(diagnostics, FrameStage::PrepareLightingAndDemand);
 	PrepareLightingAndDemand(state, frame, needRendering);
+	lightingAndDemandTimer.Stop();
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::DirtyAndPrepare);
 	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_, context);
-	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Idle;
-	if (result == BarRenderLoopStageResult::DeviceLost) return FrameResult::DeviceLost;
-	if (result == BarRenderLoopStageResult::Idle) return FrameResult::Idle;
-	if (result == BarRenderLoopStageResult::Continue) return FrameResult::Retry;
+	if (result == BarRenderLoopStageResult::Stop) return finiteExit.Finish(FrameResult::Idle);
+	if (result == BarRenderLoopStageResult::DeviceLost) return finiteExit.Finish(FrameResult::DeviceLost);
+	if (result == BarRenderLoopStageResult::Idle) return finiteExit.Finish(FrameResult::Idle);
+	if (result == BarRenderLoopStageResult::Continue) return finiteExit.Finish(FrameResult::Retry);
 	PaceFrame(state, frameOrdinal_);
 	frameOrdinal_ = 2;
-	return FrameResult::Continue;
+	return finiteExit.Finish(FrameResult::Continue);
 }
 // 渲染更新：状态更新 + 通知计算并渲染
+
+namespace Inkeys::UI::Bar
+{
+	std::function<Inkeys::UI::RenderPipeline::FrameResult(
+		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
+		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present)
+	{
+		// 测试只替换最终窗口提交端；目标、动画、GetDC、事务确认均运行实际协调器。
+		// owner 必须活到调度器停止且此回调销毁之后。
+		if (!present) return {};
+		auto coordinator = std::make_shared<BarRenderLoopCoordinator>(owner, std::move(present));
+		return [coordinator](const Inkeys::UI::RenderPipeline::FrameContext& frame)
+		{ return coordinator->RenderFrame(frame); };
+	}
+}

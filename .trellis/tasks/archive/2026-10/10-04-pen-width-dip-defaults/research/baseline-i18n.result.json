@@ -1,0 +1,12 @@
+{
+  "command": [
+    "pwsh",
+    "-NoProfile",
+    "-File",
+    "Scripts/i18n.ps1",
+    "check"
+  ],
+  "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
+  "exit": 0,
+  "seconds": 1.1149866999985534
+}

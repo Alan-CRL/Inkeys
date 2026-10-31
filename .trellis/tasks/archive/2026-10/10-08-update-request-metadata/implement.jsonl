@@ -1,0 +1,5 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Native desktop scope and quality checks"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"Keep Config schema and legacy update channel ownership"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Minimal diff, module conventions, locks and comments"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Solution Debug ARM64 verification and dependencies"}
+{"file":".trellis/tasks/archive/2026-10/10-08-update-request-metadata/research/h-binding.md","reason":"H live/fixed binding, output flags, copy and source lock contracts"}

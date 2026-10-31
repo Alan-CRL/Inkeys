@@ -1,0 +1,11 @@
+{"file":".trellis/spec/native/index.md","reason":"复核修改边界、编码格式、构建与运行检查项。"}
+{"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/release-tail-thin-coverage.md","reason":"复核当前追加修复，不把旧HLSL禁止范围或持续按住的时间规则套到物理Up。"}
+{"file":".trellis/spec/shaders/index.md","reason":"复核薄线覆盖、MAX/MIN/预乘、实际GPU像素回读及四个shader资源链。"}
+{"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/dwell-appearance-and-resume.md","reason":"复核显示老化、恢复解锁、长停模型时间预算及真实逐帧验收，避免重复前轮假阳性。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"复核 down/move/idle/up、重复点、完整 ARM64 构建和人工验证要求。"}
+{"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/root-cause.md","reason":"复核 model convergence、synthetic time ordering、失败降级和重复点风险。"}
+{"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/git-regression-analysis.md","reason":"复核停笔折返、Up 延伸相对历史行为的回归边界。"}
+{"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/modeler-stop-up-semantics.md","reason":"复核内部模型推进与可见几何接纳分离、终点平面约束和有界 scratch。"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"复核产品输入主链、ordinary Pen 范围与无窗口 headless 验证。"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"复核产品 Draw3 ownership、固定模型 ABI 和完整产品构建。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"复核 InkeysRepo.sln Debug|ARM64 的强制构建入口。"}

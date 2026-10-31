@@ -1,0 +1,24 @@
+{
+  "controller": {
+    "path": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Inkeys\\Inkeys\\Drawing\\Draw3\\Draw3.DrawingController.cpp",
+    "sha256": "124f50c48845dc80dfe218f555a5362080e7dcead53525096accf1f2b6510650"
+  },
+  "host": {
+    "path": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Inkeys\\Inkeys\\Drawing\\Draw3\\Draw3.Host.cpp",
+    "sha256": "a6f07154f05f794c4fb23de327167a8dd6a3955382b0d8154b1b2c1d2615fb68"
+  },
+  "fragments": {
+    "gate": {
+      "line": 753,
+      "sha256": "07313eaee53509d6dc00cef390a1234d511175be26dcf4b8018dfdcb7ccbb5cb"
+    },
+    "completion_failure_branch": {
+      "line": 12061,
+      "sha256": "cd4a0a544b018c50b927171c9e7d101311af11811ba378ba71ba5a4211437d8f"
+    },
+    "host_target_condition": {
+      "line": 1294,
+      "sha256": "eb03ea1f105de4c61c71c8b81484d9c338d2c95dacba4f32b74f8fce1e23718b"
+    }
+  }
+}

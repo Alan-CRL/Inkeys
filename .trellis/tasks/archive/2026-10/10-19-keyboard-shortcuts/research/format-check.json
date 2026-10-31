@@ -1,0 +1,198 @@
+[
+  {
+    "file": ".trellis/spec/native-desktop/index.md",
+    "bom": false,
+    "crlf": 57,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/IdtI18nKeys.g.h",
+    "bom": false,
+    "crlf": 695,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/IdtState.cpp",
+    "bom": true,
+    "crlf": 2120,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/IdtState.h",
+    "bom": true,
+    "crlf": 231,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys.vcxproj",
+    "bom": false,
+    "crlf": 1422,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.cpp",
+    "bom": false,
+    "crlf": 238,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h",
+    "bom": true,
+    "crlf": 277,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.ContactInput.cpp",
+    "bom": true,
+    "crlf": 1232,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.ContactInput.cppm",
+    "bom": true,
+    "crlf": 278,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp",
+    "bom": true,
+    "crlf": 14694,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cppm",
+    "bom": true,
+    "crlf": 180,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.cpp",
+    "bom": false,
+    "crlf": 2396,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h",
+    "bom": false,
+    "crlf": 405,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Product.cpp",
+    "bom": false,
+    "crlf": 274,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm",
+    "bom": true,
+    "crlf": 350,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/Other/Other.Config.cppm",
+    "bom": false,
+    "crlf": 631,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/UI/Bar/Bar.Initialization.cpp",
+    "bom": true,
+    "crlf": 1275,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/UI/Bar/Bar.Interaction.cpp",
+    "bom": false,
+    "crlf": 7881,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/UI/Bar/Bar.Main.cppm",
+    "bom": true,
+    "crlf": 1134,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "bom": false,
+    "crlf": 9029,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/src/i18n/en-US.jsonc",
+    "bom": false,
+    "crlf": 692,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/src/i18n/zh-CN.jsonc",
+    "bom": false,
+    "crlf": 692,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Inkeys/src/i18n/zh-TW.jsonc",
+    "bom": false,
+    "crlf": 692,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
+    "bom": false,
+    "crlf": 219,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "InkeysHeadlessTests/animation_tests.cpp",
+    "bom": true,
+    "crlf": 1723,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "InkeysHeadlessTests/draw3_bridge_tests.cpp",
+    "bom": false,
+    "crlf": 830,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "InkeysHeadlessTests/draw3_contact_tests.cpp",
+    "bom": false,
+    "crlf": 1421,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  },
+  {
+    "file": "Scripts/i18n.zh-CN.snapshot.jsonc",
+    "bom": false,
+    "crlf": 692,
+    "lfOnly": 0,
+    "gitEol": "i/lf    w/crlf  attr/text=auto        "
+  }
+]

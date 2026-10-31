@@ -45,11 +45,125 @@
       {
         "Mode": "Bottom bar mode",
         "Centered": "Centered"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "Clear",
+        "ClearCanvasHint": "Clear annotations on this canvas",
+        "AutomaticLabel": "Auto size",
+        "SensitivityLabel": "Sensitivity",
+        "LowLabel": "Low",
+        "MediumLabel": "Medium",
+        "HighLabel": "High",
+        "SmallSize": "Small",
+        "MediumSize": "Medium",
+        "LargeSize": "Large",
+        "BaseSizeHint": "Base size when automatic sizing is enabled",
+        "MixedHint": "Devices use different settings\nClick to enable automatic sizing for all",
+        "SettingsHint": "Automatic size settings are not available yet"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "Select",
+        "SelectClearLabel": "Select\n(Clear)",
+        "ClickThroughLabel": "Click-\nthrough",
+        "MoveLabel": "Move",
+        "DrawLabel": "Draw",
+        "LaserLabel": "Laser",
+        "HighlighterLabel": "Highlight",
+        "HardPenLabel": "Hard Pen",
+        "SoftPenLabel": "Soft Pen",
+        "EraserLabel": "Erase",
+        "AreaEraserLabel": "Area Erase",
+        "GeometryLabel": "Shapes",
+        "RectangleLabel": "Rectangle",
+        "StraightLineLabel": "Line",
+        "UndoLabel": "Undo",
+        "RedoLabel": "Redo",
+        "ClearLabel": "Clear",
+        "WhiteboardWindowTitle": "Inkeys Whiteboard",
+        "WhiteboardPreviousLabel": "Previous",
+        "WhiteboardNextLabel": "Next",
+        "WhiteboardAddPageLabel": "Add page",
+        "WhiteboardLabel": "Board",
+        "ResumeWhiteboardLabel": "Resume",
+        "CloseWhiteboardLabel": "Close",
+        "ReturnToShowLabel": "Resume",
+        "MinimizeWhiteboardLabel": "Minimize whiteboard",
+        "WhiteboardThemeLabel": "Theme",
+        "WhiteboardBackgroundColorLabel": "Background color",
+        "WhiteboardBackgroundStyleLabel": "Background style",
+        "WhiteboardBlankLabel": "Blank",
+        "WhiteboardDotsLabel": "Dots",
+        "WhiteboardGridLabel": "Grid",
+        "WhiteboardUnsavedLabel": "Some pages are not saved",
+        "FreezeLabel": "Lock",
+        "EndPresentationLabel": "End Show",
+        "SettingsLabel": "Settings",
+        "MoreLabel": "More"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "Brush",
+        "LaserLabel": "Laser Pen",
+        "HighlighterLabel": "Highlighter",
+        "HardPenLabel": "Hard Pen",
+        "SoftPenLabel": "Soft Pen",
+        "FreeLineLabel": "Freehand",
+        "AnnotationLineLabel": "Annotation",
+        "HoldThicknessLabel": "Hold to lock size",
+        "ThicknessFormat": "Size {}",
+        "AnnotationUnavailableTitle": "Annotation is not available yet",
+        "AnnotationFixedUnsupportedTitle": "Annotation with fixed size is not supported yet",
+        "AnnotationDescription": "Lock the drawing direction to horizontal, vertical, or 45° diagonal",
+        "ThicknessOverflowTitle": "Ink size exceeds the preview",
+        "ThicknessOverflowBody": "The preview size may differ from the drawn ink."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "Line",
+        "RectangleLabel": "Rect."
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "Opacity",
+        "HoldColorLabel": "Hold to lock color"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "Frame rate: {:.2f} FPS | Unlimited: {:.2f} FPS",
+        "FrameRateUnavailable": "Frame rate: -- FPS | Unlimited: -- FPS"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "Bind",
+        "ReadFailed": "Read",
+        "PresentFailed": "View",
+        "Failed": "Error",
+        "Recovering": "Busy",
+        "Retry": "Retry",
+        "Wait": "Wait",
+        "RetryCanvas": "Retry canvas",
+        "ProtectedHint": "The document order or identity changed. Existing ink is protected. Restore the original document state, then retry.",
+        "RecoveryHint": "Canvas recovery is incomplete. Retrying will preserve ink protection."
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys cannot display the transparent background correctly.\n\nExecutable properties -> disable simplified color mode\nWindows 7 users: enable the Aero theme\n\nContact the developer from the Options home page.\nRestart Inkeys and try again."
       }
     }
   },
   "Dialogs":
   {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "The whiteboard window transition did not finish. Automatic retries have stopped. Click the whiteboard button on the main toolbar again to cancel this transition, or retry from the Drawing page in Settings.",
+      "Return": "Exiting the whiteboard did not finish. Automatic retries have stopped. Click the whiteboard button on the main toolbar again to return to the whiteboard, or retry from the Drawing page in Settings.",
+      "Primary": "Switching between the desktop and presentation workspaces did not finish. Automatic retries have stopped. Retry from the Drawing page in Settings."
+    },
     "Common":
     {
       "TipsTitle": "Inkeys Tips",
@@ -61,7 +175,7 @@
     },
     "EndPresentation":
     {
-      "Body": "You are currently in drawing mode. Ending the presentation will clear the canvas.\nEnd the presentation?"
+      "Body": "End the current slide show?"
     },
     "WindowCreationFailed":
     {
@@ -83,15 +197,109 @@
   "SettingsUI":
   {
     "N": "智绘教Inkeys Options",
+    "Design":
+    {
+      "NavigationTitle": "Settings",
+      "SwitchToDark": "Switch to dark theme",
+      "SwitchToLight": "Switch to light theme",
+      "Preferences": "Preferences",
+      "SupportGroup": "Support and maintenance",
+      "Experimental": "Experimental options",
+      "HomeWelcome": "Welcome to Inkeys3",
+      "HeroTitle": "Fluid ink. Beautiful motion.",
+      "HeroJoin": " ",
+      "HeroDescription": "Screen annotation that feels as good as it looks.",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "This program is licensed under the ",
+      "HomeLicenseSuffix": ".",
+      "HomeRedistribution": "Anyone can view, modify, and distribute this code.",
+      "HomeOpenSourceTitle": "Open source and free, made for you",
+      "HomeRepositoryPrefix": "Inkeys code is hosted on ",
+      "HomeRepositoryJoin": " and ",
+      "HomeRepositorySuffix": ".",
+      "HomeStarAction": "Star on GitHub",
+      "HomeSponsorAction": "Sponsor Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "Customize writing",
+      "Tutorial": "Getting started",
+      "Explore": "Recommended settings",
+      "DrawDescription": "Ink and eraser options",
+      "AppearanceDescription": "Animations, lighting and main bar scale",
+      "PresetDescription": "Your favorite pens, ready to use",
+      "PluginDescription": "Connect presentation and classroom tools",
+      "CommonSettings": "Common settings",
+      "GeneralDescription": "Operation mode, toolbar arrangement and startup",
+      "ShortcutsDescription": "Shortcuts for global actions and annotation editing",
+      "DisplayLanguage": "Display language",
+      "Improve": "Help improve Inkeys",
+      "Contact": "Contact the developer",
+      "TermsOfUse": "Terms of use",
+      "Website": "Website",
+      "StartupSection": "Startup",
+      "AppearanceSection": "Appearance",
+      "BehaviorSection": "Behavior",
+      "CompatibilitySection": "Compatibility",
+      "GeneralBasic": "Basic",
+      "GeneralAppearance": "Appearance and animations",
+      "GeneralInteraction": "Behavior & safety",
+      "GeneralStorage": "Storage and configuration",
+      "OperationModeSection": "Operation mode",
+      "IconArrangementSection": "Icon arrangement",
+      "AnimationSection": "Animations",
+      "LightingSection": "Lighting",
+      "ScalingSection": "Scaling",
+      "WindowBehaviorSection": "Window behavior",
+      "SafetyRecoverySection": "Safety and recovery",
+      "ShortcutGlobalSection": "Global actions",
+      "ShortcutEditingSection": "Annotation editing",
+      "ShortcutAuxiliarySection": "Additional actions",
+      "GeneralSubtitle": "Startup, interface size and everyday preferences.",
+      "EdgeLighting": "Enable edge lighting",
+      "EdgeLightingDescription": "When off, keep the basic border without point or soft lighting.",
+      "TopWindowSummary": "How often the window stays on top while not drawing.",
+      "TopWindowDetails": "Details",
+      "AvoidFullscreenSummary": "Restart required. Avoid full screen when not drawing or in click-through mode.",
+      "AvoidFullscreenDetails": "Usage notes",
+      "Enabled": "On",
+      "Disabled": "Off",
+      "ClickToCopy": "Click to copy",
+      "Copied": "Copied"
+    },
     "Home":
     {
       "N": "Home",
       "Prompt": "This is a preview version of Inkeys 3 and does not represent the final quality.",
       "Developer": "智绘教Inkeys Developer",
-      "Group": "Github Discussions",
+      "Group": "GitHub Discussions",
       "GroupE": "Inkeys/discussions",
       "BilibiliChannel": "Bilibili Channel",
       "FeedBack": "Feedback / Suggestions"
+    },
+    "Feedback":
+    {
+      "N": "Feedback",
+      "Description": "Report problems or suggest improvements to help improve Inkeys.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Report problems or suggest improvements on GitHub for public discussion and tracking."
+      },
+      "Questionnaire":
+      {
+        "N": "Feedback questionnaire",
+        "E": "Use the feedback questionnaire to report a problem or suggest an improvement."
+      },
+      "Qr":
+      {
+        "N": "Scan to send feedback",
+        "E": "Scan the QR code to report problems or suggest improvements through the questionnaire."
+      },
+      "ContactSection": "Community and developer contact",
+      "CommunityDescription": "Discuss problems or suggestions with the community on GitHub Discussions.",
+      "ContactDescription": "Email the developer with problems or suggestions.",
+      "AuthorQQ": "Developer QQ"
     },
     "Language":
     {
@@ -122,8 +330,8 @@
       "CanvasSave":
       {
         "N": "Canvas History",
-        "Enable": "Enable canvas history",
-        "EnableE": "Save canvases in the 'ScreenShot' folder for Super Restore.",
+        "Enable": "Enable desktop canvas auto-save",
+        "EnableE": "Automatically save a non-empty desktop canvas when it is cleared or when the app exits, so it can be restored from canvas history.",
         "SaveTime":
         {
           "N": "Keep duration",
@@ -219,11 +427,57 @@
     "Regular":
     {
       "N": "General",
+      "SelectAndClickThrough":
+      {
+        "N": "Select and Click-through",
+        "Combined": "Combined",
+        "Separate": "Separate",
+        "CombinedDescription": "Use Select to operate your computer with no ink displayed or with ink kept visible.",
+        "SeparateDescription": "Use Select to clear ink and operate your computer, or Click-through to interact with underlying windows while keeping ink visible.",
+        "ClickThrough": "Click-through",
+        "ClickThroughDescription": "Keep ink visible while allowing clicks and touch input to pass through the annotation layer to the windows underneath."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Main toolbar icon order",
+        "FollowMainButton": "Follow main button",
+        "FollowMainButtonReverse": "Follow main button (reverse)",
+        "LeftToRight": "Left to right",
+        "RightToLeft": "Right to left"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Main toolbar expansion direction",
+        "Centerline": "Screen centerline",
+        "WhenSpaceInsufficient": "When space is insufficient"
+      },
+      "AutoCollapse":
+      {
+        "N": "Auto-collapse",
+        "Drawing": "Collapse the toolbar when drawing",
+        "Erasing": "Collapse the toolbar when erasing",
+        "Dragging": "Collapse the toolbar when dragging it",
+        "OutsideClick": "Collapse the toolbar when clicking outside in Select or Click-through mode",
+        "Description": "Drawing includes pens, shapes, and the laser pointer. Bottom-docked mode includes centered docking. Outside clicks exclude the toolbar and its menus, properties, and pop-up panels.",
+        "Off": "Off",
+        "NonBottom": "When not bottom-docked",
+        "Always": "Always"
+      },
       "StartUp":
       {
         "N": "Startup",
         "AutoStart": "Auto start on login",
         "AutoStartE": "Launch 智绘教Inkeys when the user logs in.",
+        "LoadingAnimation": "Startup loading animation",
+        "LoadingAnimationE": "Show the loading animation the next time Inkeys starts.",
+        "SettingEntryAnimation":
+        {
+          "N": "Settings opening animation",
+          "E": "Control how the Settings opening animation behaves.",
+          "Off": "Off",
+          "First": "First launch",
+          "Always": "Always"
+        },
         "Link":
         {
           "N": "Create Desktop Shortcut",
@@ -234,6 +488,14 @@
       "Appearance":
       {
         "N": "Appearance",
+        "AnimationEnable": "Enable animations",
+        "AnimationEnableE": "When disabled, animations in the UI3 main bar and Settings navigation and pages complete immediately.",
+        "AnimationRate": "Animation rate",
+        "AnimationRateE": "Adjust animations in the UI3 main bar and Settings from 0.1x to 5.0x.",
+        "EdgeLighting": "Edge lighting",
+        "EdgeLightingE": "When disabled, only the basic border remains; point lights and soft glow effects are turned off.",
+        "DynamicEdgeLighting": "Dynamic edge lighting",
+        "DynamicEdgeLightingE": "The lighting dynamically follows the pointer position.",
         "Theme":
         {
           "N": "Bar Theme",
@@ -241,16 +503,18 @@
           "Dark": "Dark Mode",
           "Light": "Light Mode"
         },
+        "TaskbarScaleBase":
+        {
+          "N": "Taskbar scale base",
+          "E": "At 100%: base is 48 DIP; actual follows taskbar size.",
+          "Off": "Off",
+          "Base": "Taskbar base size",
+          "Actual": "Actual taskbar size"
+        },
         "BarZoom":
         {
           "N": "Bar UI Scale",
-          "E": "Adjust the main bar and button scale in real time.",
-          "Ind": "{:.2f}x scale"
-        },
-        "SettingUIScale":
-        {
-          "N": "Options UI Scale",
-          "E": "[Restart Required] Higher scale uses more memory.",
+          "E": "Adjust the bar, buttons and PPT controls in real time.",
           "Ind": "{:.2f}x scale"
         }
       },
@@ -280,8 +544,6 @@
       "Tentative":
       {
         "N": "Experimental Options",
-        "AvoidFulScreen": "Avoid Fullscreen",
-        "AvoidFulScreenE": "[Restart Required] Prevents fullscreen in non-draw/penetrate modes; may help taskbar issues and reduce topmost failures.",
         "SafeMode":
         {
           "N": "Crash Safe Mode",
@@ -296,87 +558,149 @@
     "Draw":
     {
       "N": "Drawing",
+      "Haptics":
+      {
+        "N": "Pen Haptic Feedback",
+        "Drawing": "Haptic Feedback While Drawing",
+        "Buttons": "Button Haptic Feedback"
+      },
+      "Cursor":
+      {
+        "N": "Cursor",
+        "Description": "The mouse option applies only to soft and hard pens. Highlighters always preview width; shapes use the system cursor. The default pen cursor is circular. Screen pens have no highlighted edges; pen tablets and unrecognized pens have highlighted edges.",
+        "MouseStyle": "Mouse",
+        "PenStyle": "Pen",
+        "DefaultStyle": "Default cursor",
+        "DrawingStyle": "Pen-shaped cursor"
+      },
       "Effect":
       {
         "N": "Drawing Performance",
         "Device":
         {
-          "N": "Input Device",
-          "E": "Optimize for selected device.",
-          "Touch": "Touch Screen",
-          "MousePen": "Mouse, Pen, or Graphics Tablet"
+          "N": "Choose an interaction mode",
+          "Touch": "Large-Screen Touch Mode",
+          "MousePen": "Desktop Mode",
+          "TouchE": "For writing and interacting directly on large touchscreens in classrooms, meeting rooms, and similar settings.",
+          "MousePenE": "For PCs, tablets, and mouse-operated large displays, with mouse, pen, graphics tablet, or touch input."
         }
       },
-      "AIDraw":
+      "Touch":
       {
-        "N": "Smart Drawing",
-        "PenUp": "Straighten line on pen lift",
-        "PenUpE": "Recommended for classroom all-in-one devices.",
-        "PenStay": "Straighten on hold",
-        "PenStayE": "Hold for 1s after drawing to straighten line.",
-        "EndpointAdsorption": "Endpoint Snapping",
-        "EndpointAdsorptionE": "Line and rectangle ends snap when pen lifts."
-      },
-      "DrawBehavior":
-      {
-        "N": "Drawing Behavior",
-        "SoomthWriting": "Smooth out strokes when pen lifted"
-      },
-      "RubberThickness":
-      {
-        "N": "Eraser Thickness",
-        "Calc":
+        "N": "Touch",
+        "InterruptedStrokeReconnect":
         {
-          "N": "Thickness Calculation",
-          "E": "If device doesn't support, will try the next mode.",
-          "Mode1": "Fixed",
-          "Mode2": "By Speed",
-          "Mode3": "By Pressure"
+          "N": "Reconnect interrupted strokes",
+          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
         }
       },
-      "Tentative":
+      "Eraser":
       {
-        "N": "Experimental",
-        "HideCursor": "Hide touch cursor while drawing (BETA)",
-        "HideCursorE": "Hides white touch dot on canvas. Shows mouse/pen cursor again when detected."
-      }
-    },
-    "Performance":
-    {
-      "N": "Performance",
-      "DrawMode":
-      {
-        "N": "Draw Performance",
-        "Prepare":
+        "N": "Eraser",
+        "Automatic": "Enable speed-sensitive eraser",
+        "SpeedEraser":
         {
-          "N": "Touch Prepare",
-          "E": "More fingers = faster start, but uses more memory.",
-          "Ind": "{:d} fingers"
+          "DemoFineTitle": "Precise erasing",
+          "DemoFineDescription": "Slowly erase the construction line while keeping nearby labels and edges intact.",
+          "DemoSweepTitle": "Clear larger areas",
+          "DemoSweepDescription": "Repeated strokes gradually widen the eraser to clear large areas faster.",
+          "EntryDescription": "Intelligently adjust eraser size to match your drawing intent",
+          "Introduction": "Uses device dimensions, input devices, and movement to infer your erasing intent and adjust the eraser size dynamically.",
+          "BasicSettings": "Basic settings",
+          "EnabledDevices": "Enabled devices",
+          "FineControl": "Fine control",
+          "SizeWarningTitle": "Reliable screen dimensions are unavailable",
+          "SizeWarningDescription": "The current drawing screen lacks reliable physical dimensions. Touch and screen pens will use DPI estimates, so eraser size may not match your erasing intent."
         },
-        "SuperDraw": "Extreme Performance Drawing (BETA)",
-        "SuperDrawE": "For powerful CPUs only! Removes canvas render interval in draw mode. Extra resource usage only while drawing. Turn off if lag detected."
+        "Input":
+        {
+          "MouseLeft": "Left mouse button",
+          "MouseRight": "Right mouse button",
+          "Touch": "Touch",
+          "PenTip": "Pen tip",
+          "PenTail": "Pen eraser"
+        },
+        "Kind":
+        {
+          "Fixed": "Fixed thickness",
+          "Speed": "Speed-sensitive eraser"
+        },
+        "ResponseFor": "Speed response device",
+        "Response":
+        {
+          "Auto": "Auto-detect",
+          "ScreenPen": "Screen pen",
+          "Digitizer": "Graphics tablet"
+        },
+        "TouchArea":
+        {
+          "N": "Contact-area assistance for the touch speed eraser",
+          "E": "Keeps the eraser slightly wider than your finger so it does not cover the eraser cursor. Not recommended for large displays."
+        }
       }
     },
     "Preset":
     {
       "N": "Presets",
-      "Memory":
+      "StartupPlacement":
       {
-        "N": "Memory",
-        "Thickness": "Remember last pen width",
-        "ThicknessE": "Pen/highlighter width on startup matches last exit.",
-        "Color": "Remember last pen color",
-        "ColorE": "Pen/highlighter color on startup matches last exit."
+        "N": "Position after startup",
+        "E": "The centered bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button. Changes take effect the next time Inkeys starts.",
+        "CenteredBottomBar": "Centered bottom bar",
+        "BottomLeftFloating": "Bottom-left floating window",
+        "BottomRightFloating": "Bottom-right floating window"
+      }
+    },
+    "Experimental":
+    {
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "Allow interface fonts to render at fractional pixel sizes",
+          "E": "When off, stationary font sizes in the main bar and controls are truncated to whole pixels. Scaling and transition animations remain smooth. Applies immediately."
+        }
       },
-      "Preset":
+      "Draw3":
       {
-        "N": "Presets (if memory is off)",
-        "AutoThickness": "Auto adapt width",
-        "AutoThicknessE": "Set recommended pen width based on screen resolution/size at launch. (Current pen: {}px; Highlighter: {}px)",
-        "Pen": "Pen width preset",
-        "PenInd": "{} px",
-        "Highlighter": "Highlighter width preset",
-        "HighlighterInd": "{} px"
+        "HardwareAcceleration":
+        {
+          "N": "Enable drawing hardware acceleration",
+          "E": "Use the GPU to draw the canvas. Try disabling this to use software rendering if drawing is incorrect or very slow. Restart Inkeys to apply."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Enable Zhaoxin compatibility mode",
+          "E": "Use a compatible upload path on Zhaoxin GPUs. Other GPUs are unaffected. Disable to compare drawing performance. Restart Inkeys to apply."
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "Test pen haptic feedback",
+          "E": "Restart the app after enabling to log pen input, button requests, and haptic device send results."
+        },
+        "TouchArea":
+        {
+          "N": "Input and eraser diagnostics console output",
+          "E": "On the next launch, output rate-limited snapshots of display EDID, resolution and DPI, touch area, input coordinates, device type, and eraser size."
+        },
+        "PptCOM":
+        {
+          "N": "PptCOM console output",
+          "E": "Output PptCOM diagnostics to the console on the next launch."
+        },
+        "Draw3":
+        {
+          "N": "Draw3 console output",
+          "E": "Output Draw3 device and driver information to the console on the next launch."
+        },
+        "Cursor":
+        {
+          "N": "Cursor diagnostics",
+          "E": "Output cursor input ownership and rendered visuals to the console on the next launch."
+        }
       }
     },
     "PlugIn":
@@ -396,10 +720,8 @@
         "BasicLogic":
         {
           "N": "Basic Logic",
-          "InkFixation": "Fix ink to its page",
-          "InkFixationE": "Each PPT page will have its own independent canvas, similar to the native pen feature in PowerPoint. Navigating to another page will not clear the ink drawn on previous pages; you can return to a previous page to continue drawing.",
           "LoadPage": "Show loading page",
-          "LoadPageE": "Includes the plugin logo, tips, etc., and is shown only once per PPT file."
+          "LoadPageE": "This feature is disabled. PPT loading pages are no longer shown."
         },
         "WidgetDisplay":
         {
@@ -486,7 +808,29 @@
     "HotKey":
     {
       "N": "Hotkeys",
-      "E": "Global Hotkeys:\nCtrl + Win + Alt: Switch select/draw mode\n\nIn Draw Mode:\nCtrl + Q: Freeze\nCtrl + E: Penetrate\nCtrl + Z: Undo/Super Restore\n\nOther/custom hotkeys coming soon."
+      "E": "These fixed combinations can be enabled individually. Custom bindings are not available yet.\nExcept for the global toggle, shortcuts apply only while annotating. Settings text input and modal dialogs take priority. In Select or Click-through mode, the current application receives them.\nThe global toggle remains active during normal settings editing. App modal dialogs pause its action while keeping the combination reserved. AltGr may overlap Ctrl + Alt on international keyboards; disable the global toggle if needed.\nKeyboard shortcuts do not take over PowerPoint navigation.",
+      "ToggleAnnotationN": "Global annotation toggle",
+      "ToggleAnnotationE": "Switch between annotation and Select. Combined style keeps ink when entering Select; Separate style clears the current page first. Returning restores the last annotation tool, without restoring Freeze.",
+      "UndoN": "Undo",
+      "UndoE": "Undo on the current page. Hold to repeat. An empty history never sends Undo to the application underneath.",
+      "RedoYN": "Redo",
+      "RedoYE": "Redo on the current page. Hold to repeat. This combination and Ctrl + Shift + Z have independent switches.",
+      "RedoShiftZN": "Redo (alternate)",
+      "RedoShiftZE": "The same Redo action as Ctrl + Y, with its own enable switch.",
+      "ClearN": "Clear current page",
+      "ClearE": "The first press clears and keeps the tool, even on an empty page. Keep Ctrl held, release Delete, then press Delete again to enter Select in either style. Holding Delete does not count twice. New strokes or other actions reset this sequence.",
+      "FreezeN": "Freeze",
+      "FreezeE": "Toggle screen Freeze. Unavailable in PowerPoint and Whiteboard workspaces. When unavailable, the combination still does not reach the application underneath.",
+      "Registering": "Registering the global toggle",
+      "Disabling": "Disabling the global toggle",
+      "UnregisterFailed": "Global toggle unregistration failed; the combination remains reserved",
+      "Registered": "Global toggle is active",
+      "Disabled": "Global toggle is disabled",
+      "NotRunning": "Keyboard service is not running",
+      "RegisterFailed": "Global toggle registration failed; another program may be using it",
+      "SynchronizationPending": "Synchronizing key state. Release keys in a normal-permission window, then retry.",
+      "HookReady": "Annotation shortcuts are ready",
+      "HookFailed": "Keyboard hook is not installed; annotation shortcuts are unavailable"
     },
     "Community":
     {

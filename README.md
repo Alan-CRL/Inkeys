@@ -104,6 +104,7 @@
 | **[efficient/libcuckoo](https://github.com/efficient/libcuckoo)** | 参见库内 LICENSE / 说明文件 | Copyright (C) 2013, Carnegie Mellon University and Intel Corporation |
 | **[gabime/spdlog](https://github.com/gabime/spdlog)** | MIT License | Copyright (c) 2016 Gabi Melman. |
 | **[google/ink-stroke-modeler](https://github.com/google/ink-stroke-modeler)** | Apache License 2.0 |  |
+| **[lukaasm/ImFluent](https://github.com/lukaasm/ImFluent)** | MIT License | Copyright (c) 2026 lukaasm |
 | **[martinus/unordered_dense](https://github.com/martinus/unordered_dense)** | MIT License | Copyright (c) 2022 Martin Leitner-Ankerl |
 | **[mohabouje/WinToast](https://github.com/mohabouje/WinToast)** | MIT License | Copyright (C) 2016–2023 WinToast v1.3.0 - Mohammed Boujemaoui <mohabouje@gmail.com> |
 | **[Neargye/magic_enum](https://github.com/Neargye/magic_enum)** | MIT License | Copyright (c) 2019 - 2024 Daniil Goncharov |

@@ -1,0 +1,9 @@
+{
+  "command": [
+    "Build/ARM64/Debug/Inkeys.exe",
+    "--draw3-loaded-retained-install-test"
+  ],
+  "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
+  "exit": 0,
+  "seconds": 0.08600330000081158
+}

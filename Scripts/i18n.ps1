@@ -272,7 +272,8 @@ function Sync-Node {
 
 	if ($BaseNode -is [string]) {
 		$targetValue = if ($TargetNode -is [string]) { [string]$TargetNode } else { $null }
-		if (-not ($TargetNode -is [string]) -or [string]::IsNullOrEmpty($targetValue)) {
+		# 基准本身为空的连接符允许显式空翻译；缺少节点仍需要翻译。
+		if (-not ($TargetNode -is [string]) -or ([string]::IsNullOrEmpty($targetValue) -and $BaseNode -ne '')) {
 			return Get-NeedTranslationValue -BaseValue $BaseNode
 		}
 
@@ -535,7 +536,7 @@ function Compare-Language {
 		}
 
 		$targetValue = [string]$targetMap[$key]
-		if ([string]::IsNullOrEmpty($targetValue)) {
+		if ([string]::IsNullOrEmpty($targetValue) -and $baseMap[$key] -ne '') {
 			$unfinished.Add([pscustomobject]@{
 					Key = $key
 					Reason = 'Empty'
@@ -585,7 +586,17 @@ function Compare-Language {
 
 		$baseNewlineCount = Get-NewlineCount -Value $baseMap[$key]
 		$targetNewlineCount = Get-NewlineCount -Value $targetValue
-		if ($baseNewlineCount -ne $targetNewlineCount) {
+		# 两枚主栏长标签按语言排版为一行或两行；其他文案继续严格匹配换行。
+		$allowsLocalizedLineBreak = $key -in @(
+			'UI/Bar/MainButtons/SelectClearLabel',
+			'UI/Bar/MainButtons/ClickThroughLabel'
+		)
+		$hasNewlineMismatch = if ($allowsLocalizedLineBreak) {
+			$baseNewlineCount -gt 1 -or $targetNewlineCount -gt 1
+		} else {
+			$baseNewlineCount -ne $targetNewlineCount
+		}
+		if ($hasNewlineMismatch) {
 			$newlineMismatch.Add([pscustomobject]@{
 					Key = $key
 					Base = $baseNewlineCount

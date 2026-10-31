@@ -49,10 +49,124 @@ inline constexpr struct I18nKeyRoot
                 const char* Mode = "UI/Bar/BottomDock/Mode";
                 const char* Centered = "UI/Bar/BottomDock/Centered";
             } BottomDock{};
+            struct Node__UI__Bar__EraserAttributes
+            {
+                const char* ClearCanvasLabel = "UI/Bar/EraserAttributes/ClearCanvasLabel";
+                const char* ClearCanvasHint = "UI/Bar/EraserAttributes/ClearCanvasHint";
+                const char* AutomaticLabel = "UI/Bar/EraserAttributes/AutomaticLabel";
+                const char* SensitivityLabel = "UI/Bar/EraserAttributes/SensitivityLabel";
+                const char* LowLabel = "UI/Bar/EraserAttributes/LowLabel";
+                const char* MediumLabel = "UI/Bar/EraserAttributes/MediumLabel";
+                const char* HighLabel = "UI/Bar/EraserAttributes/HighLabel";
+                const char* SmallSize = "UI/Bar/EraserAttributes/SmallSize";
+                const char* MediumSize = "UI/Bar/EraserAttributes/MediumSize";
+                const char* LargeSize = "UI/Bar/EraserAttributes/LargeSize";
+                const char* BaseSizeHint = "UI/Bar/EraserAttributes/BaseSizeHint";
+                const char* MixedHint = "UI/Bar/EraserAttributes/MixedHint";
+                const char* SettingsHint = "UI/Bar/EraserAttributes/SettingsHint";
+            } EraserAttributes{};
+            struct Node__UI__Bar__MainButtons
+            {
+                const char* SelectLabel = "UI/Bar/MainButtons/SelectLabel";
+                const char* SelectClearLabel = "UI/Bar/MainButtons/SelectClearLabel";
+                const char* ClickThroughLabel = "UI/Bar/MainButtons/ClickThroughLabel";
+                const char* MoveLabel = "UI/Bar/MainButtons/MoveLabel";
+                const char* DrawLabel = "UI/Bar/MainButtons/DrawLabel";
+                const char* LaserLabel = "UI/Bar/MainButtons/LaserLabel";
+                const char* HighlighterLabel = "UI/Bar/MainButtons/HighlighterLabel";
+                const char* HardPenLabel = "UI/Bar/MainButtons/HardPenLabel";
+                const char* SoftPenLabel = "UI/Bar/MainButtons/SoftPenLabel";
+                const char* EraserLabel = "UI/Bar/MainButtons/EraserLabel";
+                const char* AreaEraserLabel = "UI/Bar/MainButtons/AreaEraserLabel";
+                const char* GeometryLabel = "UI/Bar/MainButtons/GeometryLabel";
+                const char* RectangleLabel = "UI/Bar/MainButtons/RectangleLabel";
+                const char* StraightLineLabel = "UI/Bar/MainButtons/StraightLineLabel";
+                const char* UndoLabel = "UI/Bar/MainButtons/UndoLabel";
+                const char* RedoLabel = "UI/Bar/MainButtons/RedoLabel";
+                const char* ClearLabel = "UI/Bar/MainButtons/ClearLabel";
+                const char* WhiteboardWindowTitle = "UI/Bar/MainButtons/WhiteboardWindowTitle";
+                const char* WhiteboardPreviousLabel = "UI/Bar/MainButtons/WhiteboardPreviousLabel";
+                const char* WhiteboardNextLabel = "UI/Bar/MainButtons/WhiteboardNextLabel";
+                const char* WhiteboardAddPageLabel = "UI/Bar/MainButtons/WhiteboardAddPageLabel";
+                const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
+                const char* ResumeWhiteboardLabel = "UI/Bar/MainButtons/ResumeWhiteboardLabel";
+                const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";
+                const char* ReturnToShowLabel = "UI/Bar/MainButtons/ReturnToShowLabel";
+                const char* MinimizeWhiteboardLabel = "UI/Bar/MainButtons/MinimizeWhiteboardLabel";
+                const char* WhiteboardThemeLabel = "UI/Bar/MainButtons/WhiteboardThemeLabel";
+                const char* WhiteboardBackgroundColorLabel = "UI/Bar/MainButtons/WhiteboardBackgroundColorLabel";
+                const char* WhiteboardBackgroundStyleLabel = "UI/Bar/MainButtons/WhiteboardBackgroundStyleLabel";
+                const char* WhiteboardBlankLabel = "UI/Bar/MainButtons/WhiteboardBlankLabel";
+                const char* WhiteboardDotsLabel = "UI/Bar/MainButtons/WhiteboardDotsLabel";
+                const char* WhiteboardGridLabel = "UI/Bar/MainButtons/WhiteboardGridLabel";
+                const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
+                const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
+                const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
+                const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
+                const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
+            } MainButtons{};
+            struct Node__UI__Bar__DrawAttributes
+            {
+                const char* BrushLabel = "UI/Bar/DrawAttributes/BrushLabel";
+                const char* LaserLabel = "UI/Bar/DrawAttributes/LaserLabel";
+                const char* HighlighterLabel = "UI/Bar/DrawAttributes/HighlighterLabel";
+                const char* HardPenLabel = "UI/Bar/DrawAttributes/HardPenLabel";
+                const char* SoftPenLabel = "UI/Bar/DrawAttributes/SoftPenLabel";
+                const char* FreeLineLabel = "UI/Bar/DrawAttributes/FreeLineLabel";
+                const char* AnnotationLineLabel = "UI/Bar/DrawAttributes/AnnotationLineLabel";
+                const char* HoldThicknessLabel = "UI/Bar/DrawAttributes/HoldThicknessLabel";
+                const char* ThicknessFormat = "UI/Bar/DrawAttributes/ThicknessFormat";
+                const char* AnnotationUnavailableTitle = "UI/Bar/DrawAttributes/AnnotationUnavailableTitle";
+                const char* AnnotationFixedUnsupportedTitle = "UI/Bar/DrawAttributes/AnnotationFixedUnsupportedTitle";
+                const char* AnnotationDescription = "UI/Bar/DrawAttributes/AnnotationDescription";
+                const char* ThicknessOverflowTitle = "UI/Bar/DrawAttributes/ThicknessOverflowTitle";
+                const char* ThicknessOverflowBody = "UI/Bar/DrawAttributes/ThicknessOverflowBody";
+            } DrawAttributes{};
+            struct Node__UI__Bar__GeometryAttributes
+            {
+                const char* StraightLineLabel = "UI/Bar/GeometryAttributes/StraightLineLabel";
+                const char* RectangleLabel = "UI/Bar/GeometryAttributes/RectangleLabel";
+            } GeometryAttributes{};
+            struct Node__UI__Bar__ColorPicker
+            {
+                const char* RedChannelLabel = "UI/Bar/ColorPicker/RedChannelLabel";
+                const char* GreenChannelLabel = "UI/Bar/ColorPicker/GreenChannelLabel";
+                const char* BlueChannelLabel = "UI/Bar/ColorPicker/BlueChannelLabel";
+                const char* OpacityLabel = "UI/Bar/ColorPicker/OpacityLabel";
+                const char* HoldColorLabel = "UI/Bar/ColorPicker/HoldColorLabel";
+            } ColorPicker{};
+            struct Node__UI__Bar__Diagnostics
+            {
+                const char* FrameRateFormat = "UI/Bar/Diagnostics/FrameRateFormat";
+                const char* FrameRateUnavailable = "UI/Bar/Diagnostics/FrameRateUnavailable";
+            } Diagnostics{};
+            struct Node__UI__Bar__CanvasRecovery
+            {
+                const char* Conflict = "UI/Bar/CanvasRecovery/Conflict";
+                const char* ReadFailed = "UI/Bar/CanvasRecovery/ReadFailed";
+                const char* PresentFailed = "UI/Bar/CanvasRecovery/PresentFailed";
+                const char* Failed = "UI/Bar/CanvasRecovery/Failed";
+                const char* Recovering = "UI/Bar/CanvasRecovery/Recovering";
+                const char* Retry = "UI/Bar/CanvasRecovery/Retry";
+                const char* Wait = "UI/Bar/CanvasRecovery/Wait";
+                const char* RetryCanvas = "UI/Bar/CanvasRecovery/RetryCanvas";
+                const char* ProtectedHint = "UI/Bar/CanvasRecovery/ProtectedHint";
+                const char* RecoveryHint = "UI/Bar/CanvasRecovery/RecoveryHint";
+            } CanvasRecovery{};
+            struct Node__UI__Bar__Errors
+            {
+                const char* TransparentBackgroundWarning = "UI/Bar/Errors/TransparentBackgroundWarning";
+            } Errors{};
         } Bar{};
     } UI{};
     struct Node__Dialogs
     {
+        struct Node__Dialogs__WorkspaceTransitionFailure
+        {
+            const char* Whiteboard = "Dialogs/WorkspaceTransitionFailure/Whiteboard";
+            const char* Return = "Dialogs/WorkspaceTransitionFailure/Return";
+            const char* Primary = "Dialogs/WorkspaceTransitionFailure/Primary";
+        } WorkspaceTransitionFailure{};
         struct Node__Dialogs__Common
         {
             const char* TipsTitle = "Dialogs/Common/TipsTitle";
@@ -86,6 +200,76 @@ inline constexpr struct I18nKeyRoot
     struct Node__SettingsUI
     {
         const char* N = "SettingsUI/N";
+        struct Node__SettingsUI__Design
+        {
+            const char* NavigationTitle = "SettingsUI/Design/NavigationTitle";
+            const char* SwitchToDark = "SettingsUI/Design/SwitchToDark";
+            const char* SwitchToLight = "SettingsUI/Design/SwitchToLight";
+            const char* Preferences = "SettingsUI/Design/Preferences";
+            const char* SupportGroup = "SettingsUI/Design/SupportGroup";
+            const char* Experimental = "SettingsUI/Design/Experimental";
+            const char* HomeWelcome = "SettingsUI/Design/HomeWelcome";
+            const char* HeroTitle = "SettingsUI/Design/HeroTitle";
+            const char* HeroJoin = "SettingsUI/Design/HeroJoin";
+            const char* HeroDescription = "SettingsUI/Design/HeroDescription";
+            const char* HomeCopyright = "SettingsUI/Design/HomeCopyright";
+            const char* HomeLicensePrefix = "SettingsUI/Design/HomeLicensePrefix";
+            const char* HomeLicenseSuffix = "SettingsUI/Design/HomeLicenseSuffix";
+            const char* HomeRedistribution = "SettingsUI/Design/HomeRedistribution";
+            const char* HomeOpenSourceTitle = "SettingsUI/Design/HomeOpenSourceTitle";
+            const char* HomeRepositoryPrefix = "SettingsUI/Design/HomeRepositoryPrefix";
+            const char* HomeRepositoryJoin = "SettingsUI/Design/HomeRepositoryJoin";
+            const char* HomeRepositorySuffix = "SettingsUI/Design/HomeRepositorySuffix";
+            const char* HomeStarAction = "SettingsUI/Design/HomeStarAction";
+            const char* HomeSponsorAction = "SettingsUI/Design/HomeSponsorAction";
+            const char* HomeLicenseName = "SettingsUI/Design/HomeLicenseName";
+            const char* HomeGitHubName = "SettingsUI/Design/HomeGitHubName";
+            const char* HomeGitCodeName = "SettingsUI/Design/HomeGitCodeName";
+            const char* DrawAction = "SettingsUI/Design/DrawAction";
+            const char* Tutorial = "SettingsUI/Design/Tutorial";
+            const char* Explore = "SettingsUI/Design/Explore";
+            const char* DrawDescription = "SettingsUI/Design/DrawDescription";
+            const char* AppearanceDescription = "SettingsUI/Design/AppearanceDescription";
+            const char* PresetDescription = "SettingsUI/Design/PresetDescription";
+            const char* PluginDescription = "SettingsUI/Design/PluginDescription";
+            const char* CommonSettings = "SettingsUI/Design/CommonSettings";
+            const char* GeneralDescription = "SettingsUI/Design/GeneralDescription";
+            const char* ShortcutsDescription = "SettingsUI/Design/ShortcutsDescription";
+            const char* DisplayLanguage = "SettingsUI/Design/DisplayLanguage";
+            const char* Improve = "SettingsUI/Design/Improve";
+            const char* Contact = "SettingsUI/Design/Contact";
+            const char* TermsOfUse = "SettingsUI/Design/TermsOfUse";
+            const char* Website = "SettingsUI/Design/Website";
+            const char* StartupSection = "SettingsUI/Design/StartupSection";
+            const char* AppearanceSection = "SettingsUI/Design/AppearanceSection";
+            const char* BehaviorSection = "SettingsUI/Design/BehaviorSection";
+            const char* CompatibilitySection = "SettingsUI/Design/CompatibilitySection";
+            const char* GeneralBasic = "SettingsUI/Design/GeneralBasic";
+            const char* GeneralAppearance = "SettingsUI/Design/GeneralAppearance";
+            const char* GeneralInteraction = "SettingsUI/Design/GeneralInteraction";
+            const char* GeneralStorage = "SettingsUI/Design/GeneralStorage";
+            const char* OperationModeSection = "SettingsUI/Design/OperationModeSection";
+            const char* IconArrangementSection = "SettingsUI/Design/IconArrangementSection";
+            const char* AnimationSection = "SettingsUI/Design/AnimationSection";
+            const char* LightingSection = "SettingsUI/Design/LightingSection";
+            const char* ScalingSection = "SettingsUI/Design/ScalingSection";
+            const char* WindowBehaviorSection = "SettingsUI/Design/WindowBehaviorSection";
+            const char* SafetyRecoverySection = "SettingsUI/Design/SafetyRecoverySection";
+            const char* ShortcutGlobalSection = "SettingsUI/Design/ShortcutGlobalSection";
+            const char* ShortcutEditingSection = "SettingsUI/Design/ShortcutEditingSection";
+            const char* ShortcutAuxiliarySection = "SettingsUI/Design/ShortcutAuxiliarySection";
+            const char* GeneralSubtitle = "SettingsUI/Design/GeneralSubtitle";
+            const char* EdgeLighting = "SettingsUI/Design/EdgeLighting";
+            const char* EdgeLightingDescription = "SettingsUI/Design/EdgeLightingDescription";
+            const char* TopWindowSummary = "SettingsUI/Design/TopWindowSummary";
+            const char* TopWindowDetails = "SettingsUI/Design/TopWindowDetails";
+            const char* AvoidFullscreenSummary = "SettingsUI/Design/AvoidFullscreenSummary";
+            const char* AvoidFullscreenDetails = "SettingsUI/Design/AvoidFullscreenDetails";
+            const char* Enabled = "SettingsUI/Design/Enabled";
+            const char* Disabled = "SettingsUI/Design/Disabled";
+            const char* ClickToCopy = "SettingsUI/Design/ClickToCopy";
+            const char* Copied = "SettingsUI/Design/Copied";
+        } Design{};
         struct Node__SettingsUI__Home
         {
             const char* N = "SettingsUI/Home/N";
@@ -96,6 +280,30 @@ inline constexpr struct I18nKeyRoot
             const char* BilibiliChannel = "SettingsUI/Home/BilibiliChannel";
             const char* FeedBack = "SettingsUI/Home/FeedBack";
         } Home{};
+        struct Node__SettingsUI__Feedback
+        {
+            const char* N = "SettingsUI/Feedback/N";
+            const char* Description = "SettingsUI/Feedback/Description";
+            struct Node__SettingsUI__Feedback__Issues
+            {
+                const char* N = "SettingsUI/Feedback/Issues/N";
+                const char* E = "SettingsUI/Feedback/Issues/E";
+            } Issues{};
+            struct Node__SettingsUI__Feedback__Questionnaire
+            {
+                const char* N = "SettingsUI/Feedback/Questionnaire/N";
+                const char* E = "SettingsUI/Feedback/Questionnaire/E";
+            } Questionnaire{};
+            struct Node__SettingsUI__Feedback__Qr
+            {
+                const char* N = "SettingsUI/Feedback/Qr/N";
+                const char* E = "SettingsUI/Feedback/Qr/E";
+            } Qr{};
+            const char* ContactSection = "SettingsUI/Feedback/ContactSection";
+            const char* CommunityDescription = "SettingsUI/Feedback/CommunityDescription";
+            const char* ContactDescription = "SettingsUI/Feedback/ContactDescription";
+            const char* AuthorQQ = "SettingsUI/Feedback/AuthorQQ";
+        } Feedback{};
         struct Node__SettingsUI__Language
         {
             const char* N = "SettingsUI/Language/N";
@@ -222,11 +430,57 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Regular
         {
             const char* N = "SettingsUI/Regular/N";
+            struct Node__SettingsUI__Regular__SelectAndClickThrough
+            {
+                const char* N = "SettingsUI/Regular/SelectAndClickThrough/N";
+                const char* Combined = "SettingsUI/Regular/SelectAndClickThrough/Combined";
+                const char* Separate = "SettingsUI/Regular/SelectAndClickThrough/Separate";
+                const char* CombinedDescription = "SettingsUI/Regular/SelectAndClickThrough/CombinedDescription";
+                const char* SeparateDescription = "SettingsUI/Regular/SelectAndClickThrough/SeparateDescription";
+                const char* ClickThrough = "SettingsUI/Regular/SelectAndClickThrough/ClickThrough";
+                const char* ClickThroughDescription = "SettingsUI/Regular/SelectAndClickThrough/ClickThroughDescription";
+            } SelectAndClickThrough{};
+            struct Node__SettingsUI__Regular__ToolbarIconOrder
+            {
+                const char* N = "SettingsUI/Regular/ToolbarIconOrder/N";
+                const char* FollowMainButton = "SettingsUI/Regular/ToolbarIconOrder/FollowMainButton";
+                const char* FollowMainButtonReverse = "SettingsUI/Regular/ToolbarIconOrder/FollowMainButtonReverse";
+                const char* LeftToRight = "SettingsUI/Regular/ToolbarIconOrder/LeftToRight";
+                const char* RightToLeft = "SettingsUI/Regular/ToolbarIconOrder/RightToLeft";
+            } ToolbarIconOrder{};
+            struct Node__SettingsUI__Regular__ToolbarExpansionDirection
+            {
+                const char* N = "SettingsUI/Regular/ToolbarExpansionDirection/N";
+                const char* Centerline = "SettingsUI/Regular/ToolbarExpansionDirection/Centerline";
+                const char* WhenSpaceInsufficient = "SettingsUI/Regular/ToolbarExpansionDirection/WhenSpaceInsufficient";
+            } ToolbarExpansionDirection{};
+            struct Node__SettingsUI__Regular__AutoCollapse
+            {
+                const char* N = "SettingsUI/Regular/AutoCollapse/N";
+                const char* Drawing = "SettingsUI/Regular/AutoCollapse/Drawing";
+                const char* Erasing = "SettingsUI/Regular/AutoCollapse/Erasing";
+                const char* Dragging = "SettingsUI/Regular/AutoCollapse/Dragging";
+                const char* OutsideClick = "SettingsUI/Regular/AutoCollapse/OutsideClick";
+                const char* Description = "SettingsUI/Regular/AutoCollapse/Description";
+                const char* Off = "SettingsUI/Regular/AutoCollapse/Off";
+                const char* NonBottom = "SettingsUI/Regular/AutoCollapse/NonBottom";
+                const char* Always = "SettingsUI/Regular/AutoCollapse/Always";
+            } AutoCollapse{};
             struct Node__SettingsUI__Regular__StartUp
             {
                 const char* N = "SettingsUI/Regular/StartUp/N";
                 const char* AutoStart = "SettingsUI/Regular/StartUp/AutoStart";
                 const char* AutoStartE = "SettingsUI/Regular/StartUp/AutoStartE";
+                const char* LoadingAnimation = "SettingsUI/Regular/StartUp/LoadingAnimation";
+                const char* LoadingAnimationE = "SettingsUI/Regular/StartUp/LoadingAnimationE";
+                struct Node__SettingsUI__Regular__StartUp__SettingEntryAnimation
+                {
+                    const char* N = "SettingsUI/Regular/StartUp/SettingEntryAnimation/N";
+                    const char* E = "SettingsUI/Regular/StartUp/SettingEntryAnimation/E";
+                    const char* Off = "SettingsUI/Regular/StartUp/SettingEntryAnimation/Off";
+                    const char* First = "SettingsUI/Regular/StartUp/SettingEntryAnimation/First";
+                    const char* Always = "SettingsUI/Regular/StartUp/SettingEntryAnimation/Always";
+                } SettingEntryAnimation{};
                 struct Node__SettingsUI__Regular__StartUp__Link
                 {
                     const char* N = "SettingsUI/Regular/StartUp/Link/N";
@@ -237,6 +491,14 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Regular__Appearance
             {
                 const char* N = "SettingsUI/Regular/Appearance/N";
+                const char* AnimationEnable = "SettingsUI/Regular/Appearance/AnimationEnable";
+                const char* AnimationEnableE = "SettingsUI/Regular/Appearance/AnimationEnableE";
+                const char* AnimationRate = "SettingsUI/Regular/Appearance/AnimationRate";
+                const char* AnimationRateE = "SettingsUI/Regular/Appearance/AnimationRateE";
+                const char* EdgeLighting = "SettingsUI/Regular/Appearance/EdgeLighting";
+                const char* EdgeLightingE = "SettingsUI/Regular/Appearance/EdgeLightingE";
+                const char* DynamicEdgeLighting = "SettingsUI/Regular/Appearance/DynamicEdgeLighting";
+                const char* DynamicEdgeLightingE = "SettingsUI/Regular/Appearance/DynamicEdgeLightingE";
                 struct Node__SettingsUI__Regular__Appearance__Theme
                 {
                     const char* N = "SettingsUI/Regular/Appearance/Theme/N";
@@ -244,18 +506,20 @@ inline constexpr struct I18nKeyRoot
                     const char* Dark = "SettingsUI/Regular/Appearance/Theme/Dark";
                     const char* Light = "SettingsUI/Regular/Appearance/Theme/Light";
                 } Theme{};
+                struct Node__SettingsUI__Regular__Appearance__TaskbarScaleBase
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/TaskbarScaleBase/N";
+                    const char* E = "SettingsUI/Regular/Appearance/TaskbarScaleBase/E";
+                    const char* Off = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Off";
+                    const char* Base = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Base";
+                    const char* Actual = "SettingsUI/Regular/Appearance/TaskbarScaleBase/Actual";
+                } TaskbarScaleBase{};
                 struct Node__SettingsUI__Regular__Appearance__BarZoom
                 {
                     const char* N = "SettingsUI/Regular/Appearance/BarZoom/N";
                     const char* E = "SettingsUI/Regular/Appearance/BarZoom/E";
                     const char* Ind = "SettingsUI/Regular/Appearance/BarZoom/Ind";
                 } BarZoom{};
-                struct Node__SettingsUI__Regular__Appearance__SettingUIScale
-                {
-                    const char* N = "SettingsUI/Regular/Appearance/SettingUIScale/N";
-                    const char* E = "SettingsUI/Regular/Appearance/SettingUIScale/E";
-                    const char* Ind = "SettingsUI/Regular/Appearance/SettingUIScale/Ind";
-                } SettingUIScale{};
             } Appearance{};
             struct Node__SettingsUI__Regular__Behavior
             {
@@ -283,8 +547,6 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Regular__Tentative
             {
                 const char* N = "SettingsUI/Regular/Tentative/N";
-                const char* AvoidFulScreen = "SettingsUI/Regular/Tentative/AvoidFulScreen";
-                const char* AvoidFulScreenE = "SettingsUI/Regular/Tentative/AvoidFulScreenE";
                 struct Node__SettingsUI__Regular__Tentative__SafeMode
                 {
                     const char* N = "SettingsUI/Regular/Tentative/SafeMode/N";
@@ -299,89 +561,151 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Draw
         {
             const char* N = "SettingsUI/Draw/N";
+            struct Node__SettingsUI__Draw__Haptics
+            {
+                const char* N = "SettingsUI/Draw/Haptics/N";
+                const char* Drawing = "SettingsUI/Draw/Haptics/Drawing";
+                const char* Buttons = "SettingsUI/Draw/Haptics/Buttons";
+            } Haptics{};
+            struct Node__SettingsUI__Draw__Cursor
+            {
+                const char* N = "SettingsUI/Draw/Cursor/N";
+                const char* Description = "SettingsUI/Draw/Cursor/Description";
+                const char* MouseStyle = "SettingsUI/Draw/Cursor/MouseStyle";
+                const char* PenStyle = "SettingsUI/Draw/Cursor/PenStyle";
+                const char* DefaultStyle = "SettingsUI/Draw/Cursor/DefaultStyle";
+                const char* DrawingStyle = "SettingsUI/Draw/Cursor/DrawingStyle";
+            } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {
                 const char* N = "SettingsUI/Draw/Effect/N";
                 struct Node__SettingsUI__Draw__Effect__Device
                 {
                     const char* N = "SettingsUI/Draw/Effect/Device/N";
-                    const char* E = "SettingsUI/Draw/Effect/Device/E";
                     const char* Touch = "SettingsUI/Draw/Effect/Device/Touch";
                     const char* MousePen = "SettingsUI/Draw/Effect/Device/MousePen";
+                    const char* TouchE = "SettingsUI/Draw/Effect/Device/TouchE";
+                    const char* MousePenE = "SettingsUI/Draw/Effect/Device/MousePenE";
                 } Device{};
             } Effect{};
-            struct Node__SettingsUI__Draw__AIDraw
+            struct Node__SettingsUI__Draw__Touch
             {
-                const char* N = "SettingsUI/Draw/AIDraw/N";
-                const char* PenUp = "SettingsUI/Draw/AIDraw/PenUp";
-                const char* PenUpE = "SettingsUI/Draw/AIDraw/PenUpE";
-                const char* PenStay = "SettingsUI/Draw/AIDraw/PenStay";
-                const char* PenStayE = "SettingsUI/Draw/AIDraw/PenStayE";
-                const char* EndpointAdsorption = "SettingsUI/Draw/AIDraw/EndpointAdsorption";
-                const char* EndpointAdsorptionE = "SettingsUI/Draw/AIDraw/EndpointAdsorptionE";
-            } AIDraw{};
-            struct Node__SettingsUI__Draw__DrawBehavior
-            {
-                const char* N = "SettingsUI/Draw/DrawBehavior/N";
-                const char* SoomthWriting = "SettingsUI/Draw/DrawBehavior/SoomthWriting";
-            } DrawBehavior{};
-            struct Node__SettingsUI__Draw__RubberThickness
-            {
-                const char* N = "SettingsUI/Draw/RubberThickness/N";
-                struct Node__SettingsUI__Draw__RubberThickness__Calc
+                const char* N = "SettingsUI/Draw/Touch/N";
+                struct Node__SettingsUI__Draw__Touch__InterruptedStrokeReconnect
                 {
-                    const char* N = "SettingsUI/Draw/RubberThickness/Calc/N";
-                    const char* E = "SettingsUI/Draw/RubberThickness/Calc/E";
-                    const char* Mode1 = "SettingsUI/Draw/RubberThickness/Calc/Mode1";
-                    const char* Mode2 = "SettingsUI/Draw/RubberThickness/Calc/Mode2";
-                    const char* Mode3 = "SettingsUI/Draw/RubberThickness/Calc/Mode3";
-                } Calc{};
-            } RubberThickness{};
-            struct Node__SettingsUI__Draw__Tentative
+                    const char* N = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/N";
+                    const char* E = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/E";
+                } InterruptedStrokeReconnect{};
+            } Touch{};
+            struct Node__SettingsUI__Draw__Eraser
             {
-                const char* N = "SettingsUI/Draw/Tentative/N";
-                const char* HideCursor = "SettingsUI/Draw/Tentative/HideCursor";
-                const char* HideCursorE = "SettingsUI/Draw/Tentative/HideCursorE";
-            } Tentative{};
+                const char* N = "SettingsUI/Draw/Eraser/N";
+                const char* Automatic = "SettingsUI/Draw/Eraser/Automatic";
+                struct Node__SettingsUI__Draw__Eraser__SpeedEraser
+                {
+                    const char* DemoFineTitle = "SettingsUI/Draw/Eraser/SpeedEraser/DemoFineTitle";
+                    const char* DemoFineDescription = "SettingsUI/Draw/Eraser/SpeedEraser/DemoFineDescription";
+                    const char* DemoSweepTitle = "SettingsUI/Draw/Eraser/SpeedEraser/DemoSweepTitle";
+                    const char* DemoSweepDescription = "SettingsUI/Draw/Eraser/SpeedEraser/DemoSweepDescription";
+                    const char* EntryDescription = "SettingsUI/Draw/Eraser/SpeedEraser/EntryDescription";
+                    const char* Introduction = "SettingsUI/Draw/Eraser/SpeedEraser/Introduction";
+                    const char* BasicSettings = "SettingsUI/Draw/Eraser/SpeedEraser/BasicSettings";
+                    const char* EnabledDevices = "SettingsUI/Draw/Eraser/SpeedEraser/EnabledDevices";
+                    const char* FineControl = "SettingsUI/Draw/Eraser/SpeedEraser/FineControl";
+                    const char* SizeWarningTitle = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningTitle";
+                    const char* SizeWarningDescription = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningDescription";
+                } SpeedEraser{};
+                struct Node__SettingsUI__Draw__Eraser__Input
+                {
+                    const char* MouseLeft = "SettingsUI/Draw/Eraser/Input/MouseLeft";
+                    const char* MouseRight = "SettingsUI/Draw/Eraser/Input/MouseRight";
+                    const char* Touch = "SettingsUI/Draw/Eraser/Input/Touch";
+                    const char* PenTip = "SettingsUI/Draw/Eraser/Input/PenTip";
+                    const char* PenTail = "SettingsUI/Draw/Eraser/Input/PenTail";
+                } Input{};
+                struct Node__SettingsUI__Draw__Eraser__Kind
+                {
+                    const char* Fixed = "SettingsUI/Draw/Eraser/Kind/Fixed";
+                    const char* Speed = "SettingsUI/Draw/Eraser/Kind/Speed";
+                } Kind{};
+                const char* ResponseFor = "SettingsUI/Draw/Eraser/ResponseFor";
+                struct Node__SettingsUI__Draw__Eraser__Response
+                {
+                    const char* Auto = "SettingsUI/Draw/Eraser/Response/Auto";
+                    const char* ScreenPen = "SettingsUI/Draw/Eraser/Response/ScreenPen";
+                    const char* Digitizer = "SettingsUI/Draw/Eraser/Response/Digitizer";
+                } Response{};
+                struct Node__SettingsUI__Draw__Eraser__TouchArea
+                {
+                    const char* N = "SettingsUI/Draw/Eraser/TouchArea/N";
+                    const char* E = "SettingsUI/Draw/Eraser/TouchArea/E";
+                } TouchArea{};
+            } Eraser{};
         } Draw{};
-        struct Node__SettingsUI__Performance
-        {
-            const char* N = "SettingsUI/Performance/N";
-            struct Node__SettingsUI__Performance__DrawMode
-            {
-                const char* N = "SettingsUI/Performance/DrawMode/N";
-                struct Node__SettingsUI__Performance__DrawMode__Prepare
-                {
-                    const char* N = "SettingsUI/Performance/DrawMode/Prepare/N";
-                    const char* E = "SettingsUI/Performance/DrawMode/Prepare/E";
-                    const char* Ind = "SettingsUI/Performance/DrawMode/Prepare/Ind";
-                } Prepare{};
-                const char* SuperDraw = "SettingsUI/Performance/DrawMode/SuperDraw";
-                const char* SuperDrawE = "SettingsUI/Performance/DrawMode/SuperDrawE";
-            } DrawMode{};
-        } Performance{};
         struct Node__SettingsUI__Preset
         {
             const char* N = "SettingsUI/Preset/N";
-            struct Node__SettingsUI__Preset__Memory
+            struct Node__SettingsUI__Preset__StartupPlacement
             {
-                const char* N = "SettingsUI/Preset/Memory/N";
-                const char* Thickness = "SettingsUI/Preset/Memory/Thickness";
-                const char* ThicknessE = "SettingsUI/Preset/Memory/ThicknessE";
-                const char* Color = "SettingsUI/Preset/Memory/Color";
-                const char* ColorE = "SettingsUI/Preset/Memory/ColorE";
-            } Memory{};
-            struct Node__SettingsUI__Preset__Preset
-            {
-                const char* N = "SettingsUI/Preset/Preset/N";
-                const char* AutoThickness = "SettingsUI/Preset/Preset/AutoThickness";
-                const char* AutoThicknessE = "SettingsUI/Preset/Preset/AutoThicknessE";
-                const char* Pen = "SettingsUI/Preset/Preset/Pen";
-                const char* PenInd = "SettingsUI/Preset/Preset/PenInd";
-                const char* Highlighter = "SettingsUI/Preset/Preset/Highlighter";
-                const char* HighlighterInd = "SettingsUI/Preset/Preset/HighlighterInd";
-            } Preset{};
+                const char* N = "SettingsUI/Preset/StartupPlacement/N";
+                const char* E = "SettingsUI/Preset/StartupPlacement/E";
+                const char* CenteredBottomBar = "SettingsUI/Preset/StartupPlacement/CenteredBottomBar";
+                const char* BottomLeftFloating = "SettingsUI/Preset/StartupPlacement/BottomLeftFloating";
+                const char* BottomRightFloating = "SettingsUI/Preset/StartupPlacement/BottomRightFloating";
+            } StartupPlacement{};
         } Preset{};
+        struct Node__SettingsUI__Experimental
+        {
+            struct Node__SettingsUI__Experimental__UI3
+            {
+                struct Node__SettingsUI__Experimental__UI3__AllowFractionalFontSize
+                {
+                    const char* N = "SettingsUI/Experimental/UI3/AllowFractionalFontSize/N";
+                    const char* E = "SettingsUI/Experimental/UI3/AllowFractionalFontSize/E";
+                } AllowFractionalFontSize{};
+            } UI3{};
+            struct Node__SettingsUI__Experimental__Draw3
+            {
+                struct Node__SettingsUI__Experimental__Draw3__HardwareAcceleration
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/HardwareAcceleration/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/HardwareAcceleration/E";
+                } HardwareAcceleration{};
+                struct Node__SettingsUI__Experimental__Draw3__ZhaoxinCompatibility
+                {
+                    const char* N = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/N";
+                    const char* E = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/E";
+                } ZhaoxinCompatibility{};
+            } Draw3{};
+            struct Node__SettingsUI__Experimental__ConsoleOutput
+            {
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Haptics
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Haptics/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Haptics/E";
+                } Haptics{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__TouchArea
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/TouchArea/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/TouchArea/E";
+                } TouchArea{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__PptCOM
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/PptCOM/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/PptCOM/E";
+                } PptCOM{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Draw3
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Draw3/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Draw3/E";
+                } Draw3{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Cursor
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Cursor/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Cursor/E";
+                } Cursor{};
+            } ConsoleOutput{};
+        } Experimental{};
         struct Node__SettingsUI__PlugIn
         {
             const char* N = "SettingsUI/PlugIn/N";
@@ -399,8 +723,6 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__PlugIn__PPTHelper__BasicLogic
                 {
                     const char* N = "SettingsUI/PlugIn/PPTHelper/BasicLogic/N";
-                    const char* InkFixation = "SettingsUI/PlugIn/PPTHelper/BasicLogic/InkFixation";
-                    const char* InkFixationE = "SettingsUI/PlugIn/PPTHelper/BasicLogic/InkFixationE";
                     const char* LoadPage = "SettingsUI/PlugIn/PPTHelper/BasicLogic/LoadPage";
                     const char* LoadPageE = "SettingsUI/PlugIn/PPTHelper/BasicLogic/LoadPageE";
                 } BasicLogic{};
@@ -490,6 +812,28 @@ inline constexpr struct I18nKeyRoot
         {
             const char* N = "SettingsUI/HotKey/N";
             const char* E = "SettingsUI/HotKey/E";
+            const char* ToggleAnnotationN = "SettingsUI/HotKey/ToggleAnnotationN";
+            const char* ToggleAnnotationE = "SettingsUI/HotKey/ToggleAnnotationE";
+            const char* UndoN = "SettingsUI/HotKey/UndoN";
+            const char* UndoE = "SettingsUI/HotKey/UndoE";
+            const char* RedoYN = "SettingsUI/HotKey/RedoYN";
+            const char* RedoYE = "SettingsUI/HotKey/RedoYE";
+            const char* RedoShiftZN = "SettingsUI/HotKey/RedoShiftZN";
+            const char* RedoShiftZE = "SettingsUI/HotKey/RedoShiftZE";
+            const char* ClearN = "SettingsUI/HotKey/ClearN";
+            const char* ClearE = "SettingsUI/HotKey/ClearE";
+            const char* FreezeN = "SettingsUI/HotKey/FreezeN";
+            const char* FreezeE = "SettingsUI/HotKey/FreezeE";
+            const char* Registering = "SettingsUI/HotKey/Registering";
+            const char* Disabling = "SettingsUI/HotKey/Disabling";
+            const char* UnregisterFailed = "SettingsUI/HotKey/UnregisterFailed";
+            const char* Registered = "SettingsUI/HotKey/Registered";
+            const char* Disabled = "SettingsUI/HotKey/Disabled";
+            const char* NotRunning = "SettingsUI/HotKey/NotRunning";
+            const char* RegisterFailed = "SettingsUI/HotKey/RegisterFailed";
+            const char* SynchronizationPending = "SettingsUI/HotKey/SynchronizationPending";
+            const char* HookReady = "SettingsUI/HotKey/HookReady";
+            const char* HookFailed = "SettingsUI/HotKey/HookFailed";
         } HotKey{};
         struct Node__SettingsUI__Community
         {

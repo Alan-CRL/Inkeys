@@ -1,0 +1,382 @@
+# 画布等待、诊断输出与设置输入边界
+
+本合同来自 `10-14-canvas-freeze-investigation` 及四个修复子任务。四项分别有确定的触发条件；不能由修复这些缺陷推定所有“UI 可操作而画布无响应”的用户现场具有相同根因。运行结果与平台边界见任务的验证报告。
+
+## F1：Draw3 标准流诊断不得阻塞绘制与 RTS
+
+### 1. Scope / Trigger
+
+修改 Draw3/RTS 的 stdout、stderr 诊断、配对 debugger mirror、控制台初始化或主程序诊断输出器的退出时适用。真实 UInk/索引保存和显式开启的独立尾轨迹文件协议不属于可丢弃诊断。
+
+### 2. Signatures
+
+生产实现为 `Draw3.DiagnosticOutput.h/.cpp`，命名空间 `Inkeys::Drawing::Draw3::DiagnosticOutput`：
+
+- `Available(Stream = Stream::Output, bool mirror = false) noexcept`。
+- `Write(Stream, const char*, size_t, bool mirror = false)`、`Text`、`Printf`、定长 RAII `Line` 和 `Wake`。
+- 唯一串行 owner 持有 `Session`，调用 `Start()`、`Stop()`、`Snapshot()`；`StopResult` 为 `Disabled / Stopped / IsolatedPending`。
+- 早退命令 `Inkeys.exe --draw3-diagnostic-output-test`，严格要求只有该参数；harness 关闭或多余参数返回 2，不启动 GUI。固定 helper fixture 必须在 harness 关闭时不参与编译。
+
+### 3. Contracts
+
+- 生产者只尝试路由与队列锁，不执行外部 I/O、阻塞取锁或同步 fallback。固定 `RecordCapacity=1024`、`TextCapacity=4096`；满、争用、关闭时可以丢弃诊断，不能影响业务准入。
+- `Printf/Line` 及 Cursor/FrameTiming 在格式化前检查目的端可用性；其他已审入口按诊断开关可先做定长预格式化，再由 `Write/Text` 检查接纳，不宣称全部调用点在无 sink 时无格式化开销。`Line` 用本地定长缓冲，长记录标记 `[truncated]`。API 保留调用线程的 `GetLastError`。Cursor 重新启用可重置序号；序号标识生产事件，不保证跨线程取号顺序等于入队顺序。
+- 唯一独立 worker 持有标准句柄副本，在队列锁外写原 stdout/stderr；原配对 mirror 也由该 worker 执行。部分写继续，零进度/断管/错误禁用对应端并更新接纳掩码，其他端仍可用；本 Session 不自动重连坏端。没有任何可用端且无 debugger 时不建立 worker。
+- Snapshot 区分 accepted/written/full/contention/closing/truncated/sinkErrors 等；存活的停读端恢复读取后可输出统一 drop 摘要。truncated 仅计统一输出器自己的截断，上游 Cursor 320 字节截断有独立文本标记；不可用端的入口早退也不全计入 closing，零计数不能证明所有上游事件/文本完整。不能把 lossy 日志当成完整事件链。
+- `Stop` 从首次进入起共享同一个 1000ms 绝对期限，最多 100ms drain，再重复 `CancelSynchronousIo` 和短等待。`ERROR_NOT_FOUND` 不证明后续没有 I/O，必须覆盖最后检查与实际提交之间的窗口。
+- 只有路由解除且真实 worker signaled 后才释放 state/event。超期只保留一份不引用 Draw3、HWND、COM 或 owner 栈的独立状态，禁止第二 worker，不无限 join、不 `TerminateThread`。普通 15 秒退出监督或测试父进程强杀不算正常 Stop 通过。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| stdout/stderr pipe 读端存活但停止读取 | 阻塞只发生在诊断 worker；生产者有界返回，队列不增长到固定容量之外 |
+| 无目的端或初始化失败 | 不发布半初始化路由；重复 Stop 安全 |
+| 单端损坏 | 禁用该端，其他端继续，不在业务线程补写 |
+| 首次取消早于实际 WriteFile | 后续取消仍能结束真实 pipe 写入 |
+| 无法取消的外部 I/O | `IsolatedPending`，独立状态保活，后续启动被拒绝 |
+
+### 5. Good / Base / Bad Cases
+
+Good：停读管道时仍能画出新笔迹并正常退出。Base：普通文件与畅通管道保持目的流和文本字段。Bad：把同步 `cout` 换成绘制线程排空的队列，最终仍在同一绘制线程调用 WriteFile。
+
+### 6. Tests Required
+
+真实生产自检覆盖双目的端、实际 pipe 背压、恢复、部分写、四生产者饱和、断管、取消提交间隙、隔离和 GetLastError；实际 Cursor/HRESULT/PptTiming helper 进入同一生产输出器，并在普通文件中核对字段；真实 pipe 背压由独立用例覆盖。完整产品另验证停读时新墨迹、工具、Clear、设置响应与自然关闭；普通 console/QuickEdit、真实触摸/笔及 Win7 分别记录。所有直接编译迁移源的消费者必须链接同一实现，当前包括 Inkeys、InkeysHeadlessTests、inkStrokeModelerTestTests。
+
+### 7. Wrong vs Correct
+
+Wrong：RTS 入队，绘制线程 Flush 时同步写控制台；Stop 第一次取消返回 NOT_FOUND 就永久 join。Correct：业务线程只发布定长记录，唯一输出 worker 承担外部 I/O；按同一绝对期限重复取消并保留无法结束的独立状态。
+
+## F2：PPT 已提交 UInk 的暂时不可读必须保留 IoError
+
+### 1. Scope / Trigger
+
+修改当前进程 PPT 冷 slot 加载、严格导入、worker completion 或重试闸门时适用；与 [PPT slot 存储合同](draw3-integration.md#scenario-ppt-三态-slotuink-自动保存与当前进程恢复) 一起使用。
+
+### 2. Signatures
+
+`PresentationAutoSaveService` 的真实 Load worker 调用 `ReadUInkFile`；产品复用既有 current-load retry helpers 和 CLI `--draw3-ppt-current-load-retry-test`、`--draw3-pending-topology-load-test`，不新增无限重试入口或用户配置。
+
+### 3. Contracts
+
+- `ReadUInkFile` 返回 `IoError` 时，completion 保留 `IoError`；不能因没有 snapshot 将它先变成 `SourceChanged`，也不能当作不存在文件并安装空白画布。
+- 只有该分类修正先于原有严格校验。源/key、workspace、文稿/页身份、revision、格式和导入检查继续按各自原语义处理；foreign session 仍按既有独立 storage track 策略隔离，不能简化成所有 foreign 一律拒绝。
+- 当前目标自动重试沿用四次预算及 250/500/1000/2000ms 退避。目标/代次变化、退出与迟到 completion 的原门控保持；Loaded 且已有恢复点的路径在真实 materialize/install 成功前不提前开放准入；已严格确认 NotFound 的独立空槽仍按原语义初始化，无需虚构一次 materialize。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 已选中提交文件临时共享冲突 | IoError 进入有限重试；解除占用后同目标恢复原墨迹 |
+| source/key/workspace/revision 或内容严格校验不符 | 保持原拒绝/隔离语义，不因新分支安装错误数据 |
+| 四次预算用尽 | 保持原耗尽语义，不自动无限尝试 |
+| 目标、generation 改变或 PrepareExit | 不让旧 completion 改动新目标 |
+
+### 5. Good / Base / Bad Cases
+
+Good：短暂独占读取冲突解除后恢复已保存笔迹。Base：未修改的 warm slot 与正常 cold load 行为保持。Bad：将任何无 snapshot 情形都标记为 SourceChanged，使暂时 I/O 错误直接进入 manualOnly。
+
+### 6. Tests Required
+
+生产 CLI 必须用真实 worker 保存非空 UInk、真实不共享文件句柄制造失败、真实 completion 驱动既有重试并 materialize/install，核对原笔迹；保留预算、目标/代次/退出用例，覆盖 source/key、workspace、revision、坏 header 和截断 tail。既有 `--presentation-autosave-only` 另验证 foreign track/旧文件保护；文件回归不代替真实 Office/WPS 联动。
+
+### 7. Wrong vs Correct
+
+Wrong：`IoError -> snapshot == null -> SourceChanged -> manualOnly`。Correct：先保留 IoError，其余结果继续原严格检查，成功后才安装对应目标数据。
+
+## F3：橡皮 idle 交接必须保留下一次有效 Move
+
+### 1. Scope / Trigger
+
+修改 SpeedEraser 静止判定、coordinator Move mailbox、活动等待、deadline 或重启复位时适用。默认活动 Move 仍允许覆盖合并，不改成每 packet 内核通知。
+
+### 2. Signatures
+
+- `ContactInputCoordinator::ArmIdleMoveWake()`、`DisarmIdleMoveWake()`。
+- `PublishMove(...) noexcept`、`TryReadSnapshot(...)`、`CaptureWakeGeneration()`、`WaitForWake(observedGeneration, timeoutMilliseconds)`。
+- Controller 的生产 `EraserContactsIdle`、`WaitForEraserIdle` 同时被 Run 和 `--draw3-control-fence-test` 的确定性回归调用。
+
+### 3. Contracts
+
+- 单消费者在决定 idle 后先 arm；使用每个仍有效 runtime 的真实 mailbox sequence 与 `lastConsumedSequence` 复查，终态、失效 handle 或不稳定快照均返回外层重读，不能入无限等待。
+- 成功发布且路由匹配的 Move 以 `acq_rel exchange(false)` 消费一次订阅，再调用既有 `SignalWake`。非法/被拒 Move 不消费订阅；无订阅的普通 Move 不额外唤醒。
+- 等待沿用本帧消费前保存的 `frameWakeGeneration`，不能在复查后重新捕获代次吞掉通知。arm/disarm 同样为配对的 RMW；有 deadline 的 idle 分支也走该握手。
+- RAII 在正常返回、退出和异常时 disarm；Reset 只能在原生产者与消费者均已停止的边界清除订阅。Up/Cancel/control、接触面积和重连语义保持。
+
+### 4. Validation & Error Matrix
+
+| Move 到达窗口 | 必须保留的证据 |
+| --- | --- |
+| 最后消费后、arm 前 | arm 后真实 sequence 复查发现变化 |
+| arm 后、复查前 | 一次通知与 sequence 至少一路保留 |
+| 复查后、实际 wait 前 | 帧初 generation 仍能发现已发通知 |
+| 已进入 WaitForWake 且尚未返回 | 通知唤醒，不依赖 Up 或额外 control |
+
+### 5. Good / Base / Bad Cases
+
+Good：按住橡皮直到收敛，继续 Move 即继续擦除。Base：持续移动时仍合并 mailbox，不每包 SetEvent。Bad：等待固定 generation，但 Move 永远只覆盖 mailbox，必须 Up 或其他窗口控制命令才能恢复。
+
+### 6. Tests Required
+
+生产 helper 用 Touch/Pen/MouseLeft/MouseRight × 四个交接窗口 × 有/无 deadline 共 32 组，验证共享 idle helper 的通知协议（测试 deadline 为传入的人工 2000ms），不能替代完整 Run/Host/GPU 或真实 area/reconnect deadline 计算；第四窗口以 WaitForWake 进入计数及短时间未返回确认，不声称进行了内核阻塞采样。成功条件不能依赖 Up 或隐藏 Host 注入附加的 ControlWake；另测 deadline、退出、异常、终态及失效 handle。headless 覆盖无订阅、一次订阅、burst、多接触、拒收/隔离与 Reset。逻辑设备枚举测试不等于真实触摸/笔硬件验收。
+
+### 7. Wrong vs Correct
+
+Wrong：复查后捕获新的 generation，再等待；或任何 Move 都发内核通知。Correct：一次 arm、复查真实已消费序号、等待帧初 generation，离开等待即 disarm。
+
+## F4：设置隐藏必须结束原生捕获和旧 ImGui 输入会话
+
+### 1. Scope / Trigger
+
+修改 Setting 的 Hide/HideAll、快速重开、WM_SHOWWINDOW、捕获与 session 生命周期时适用；保持 [Setting 统一渲染与业务队列](rendering-and-ui.md#setting-统一渲染与业务队列合同) 的线程所有权。
+
+### 2. Signatures
+
+`Window::Service` 的 Setting owner-thread 隐藏事务；`SessionState::SetVisible(bool)`、`InvalidateSession()`、`Resolve(epoch, hasResident, hasPresentation)`、`InputResetSerial()`、`ConsumeInputReset(serial)`、`CommitEpoch(epoch)`、`ReleaseResident()`；Setting WndProc 的早期 `WM_CAPTURECHANGED`、`WM_SHOWWINDOW(FALSE)` 分支。
+
+### 3. Contracts
+
+- Hide、HideAll 与 Show 遇到 shutdown 的回退均在真实 HWND owner thread 检查 `GetCapture() == settingHwnd` 才 `ReleaseCapture()`；helper 不主动释放其他 HWND 的捕获，不全局取消 Draw3/RTS contact。可见 owned Setting 的原生 `SW_HIDE` 可能因系统激活切换取消同输入队列捕获，测试须与同条件原生隐藏对照；已经隐藏后重复 Hide 则必须保留其他 HWND 后来获得的新捕获。
+- ReleaseCapture 可同步重入 WM_CAPTURECHANGED，该消息在 ImGui guard 前返回。原生隐藏消息也在该 guard 前处理，只用短状态锁 InvalidateSession，锁外请求 Settings 帧，不新增 owner 等待 render 的边。
+- 逻辑 Hide 锁存失效；Show 和旧帧 CommitEpoch 不能清掉。迟到的实际 native Hide 也失效当前 session，但不覆盖更晚的逻辑 Show 意图。
+- 输入失效通过独立序号传递：原渲染 owner 清理 IO 队列、键鼠与 ActiveId，并经 Win32 backend 的按键释放路径清除内部掩码，再消费本次观察的序号。后到的 Hide 留待下一帧，普通隐藏仍保留 context/backend/字体/SRV；呈现和设备资源按常驻会话合同管理。不在 HWND owner 直接改 ImGui 全局 IO。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 内容区 Down，按住时 Alt+F4，再正常 Up | 隐藏后不再捕获；同位置工具点击立即生效 |
+| 捕获已经转移其他 HWND | 隐藏设置不释放其他窗口的捕获 |
+| Hide→Show 合并或旧 Resolve 后才 Hide | 输入状态必须清理，旧 Commit 或旧输入序号不能吞掉新失效 |
+| 新会话已建立，旧 FIFO native Hide 才到达 | 再次失效输入，保留更新的 Show 意图 |
+| 退出时按住或重复 Hide | 幂等清理，不新增跨线程等待 |
+
+### 5. Good / Base / Bad Cases
+
+Good：按住设置时关闭仍能点选橡皮，重开首次点击正常。Base：普通 X、resize、occlusion、epoch 和正常退出语义保持。Bad：只在非 owner 的 Setting::Hide 线程调用 ReleaseCapture，或只修捕获而复用旧 backend 的按下状态。
+
+### 6. Tests Required
+
+真实 SessionState 头文件回归覆盖锁存与全部交错。默认 `InkeysHeadlessTests.exe` 的真实 WindowService 测试须出现 `PASS setting capture ownership`，验证 owner/其他 HWND/HideAll/shutdown；`--no-window` 不运行该捕获测试。完整产品另走内容区 Down→Alt+F4→Up→同位置工具点击，检查实际 capture、新线、重开首次点击、正常 X 和按住退出；独立 probe WndProc 不代替完整 Settings/ImGui 验收。
+
+### 7. Wrong vs Correct
+
+Wrong：owner 持 ImGui 锁清 IO，或 Show 直接清失效而复用旧 session。Correct：owner 只结束自己的捕获并发布失效，原渲染线程清理旧输入并消费观察到的序号；常驻会话不为 Hide/Show 重建。
+
+
+## PPT 暂停恢复、目标应用与存储等待（2026-10-17）
+
+### 1. Scope / Trigger
+
+修改 PptInfo raw/descriptor 消费、Bridge target 去重、Host 暂停门或 PPT 存储锁时应用。运行验证边界见父任务本轮报告；不由组件通过推定真实 Office/WPS 或全部用户现场已解决。
+
+### 2. Signatures
+
+- `Business::PptTargetCache::Update(descriptorChanged, descriptor, trustedPage, trustedEndScreen, session)` 与 `Current()`：已观察状态与成功应用目标分别记账。
+- `Business::MatchesPptPageUi(target, session, revision, page, total)`：同一生产回执匹配逻辑供 PptInfo 与 headless 调用。
+- `StateBridge::RequirePresentationTargetRefresh(expected)`：仅标记当前完整 ready identity；下一次有效 `PublishPresentationTarget` 分配新 revision。
+- `PresentationAutoSave` 的 `NamedMutexGuard::Acquire` 单次等待上限 1000ms；Save/Load 继续使用既有 `IoError` completion。
+
+### 3. Contracts
+
+- raw 与 descriptor 暂时不一致时保留 pending，不能因为 observed revision 已前进就丢掉目标更新。只有成功解析可信目标才清 pending；失败或旧 target 仍 pending 时不能作为可信目标发布。清缓存、会话变化和 legacy 路径保持重算。
+- 页码 UI 必须使用已接受 target 的 pageIndex/totalPages，不能拼接另一次 raw 读数。Slide 和 EndScreen 身份仍严格区分。
+- 暂停清 UI-ready 并标记当前 target 待刷新；重复暂停幂等。恢复后的同页发布取得新 targetRevision，经过现有 Controller、成功 Present、PageControl 提交再开门。旧暂停/旧 ack 不可命中新代；不得直接设 ready 或绕过未初始化槽保护。
+- 锁序保持 productCallMutex → presentationTargetMutex → bridge mutex，无 bridge 持锁向 Host 回调。暂时闭门本身不重启 Host/RTS。
+- PPT 存储未取得命名锁时不读取或写入索引，不返回 NotFound；按 IoError 返回原请求身份，让既有有界重试推进。WAIT_ABANDONED 是成功取得锁，照常释放；只有真正取得锁才 ReleaseMutex。
+- 1000ms 是一次锁获取上限，不是整个磁盘 I/O、队列 drain 或进程退出期限。重试耗尽仍保留未读墨迹保护，不以空白覆盖旧内容。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| raw=A、descriptor=B，下一轮 raw=B、无新 envelope | 目标最终应用 B，正常 heartbeat 不重复生成 revision |
+| 解析失败、未知页、快速跳页/结束页 | 保留 pending，后续可信最新状态可收敛，旧身份不能可写 |
+| 同页暂停占位被 UI 合并 | 恢复目标版本变化，真实新回执可以发送；旧 ack 拒绝 |
+| refresh 后无效目标发布 | 失败不消耗待刷新状态；后续有效发布仍换 revision |
+| 活着的外部 owner 长期持有 PPT root 锁 | Save/Load 有限返回 IoError；后续请求可恢复，不写空白 |
+| 重试预算耗尽/身份冲突/损坏文件 | 继续安全停写；不能把数据保护解除冒充修复 |
+
+### 5. Good / Base / Bad Cases
+
+Good：同 descriptor revision 下 raw 追上后应用目标；同页恢复用新 revision 取得新 UI 确认。Base：未暂停的等价 heartbeat 仍去重。Bad：每个观察循环强制发新版本造成永远追不上，或超时后直接安装空白文稿。
+
+### 6. Tests Required
+
+`InkeysHeadlessTests --no-window` 直接执行生产 cache/resolver/Bridge/回执谓词，覆盖到达顺序、重复观察、快速变化、失败后重算、拓扑、EndScreen、场次及 refresh 生命周期。`inkStrokeModelerTestTests --presentation-autosave-only` 通过真实 worker 和隔离 root 的命名锁覆盖 Save→Load 队头阻塞、超时无快照、释放后旧墨迹可读；原始无限等待必须令该测试失败且能安全清理。完整 Debug|ARM64 solution 编译。真实 Office/WPS、Host/GPU/PageControl 时序另验；禁止窗口期间不得执行默认 HWND suite。
+
+### 7. Wrong vs Correct
+
+Wrong：把 observedStateRevision 推进当作 target 已应用；暂停清 ready 后复用 UI 已确认过的 revision；对跨进程索引锁无限等待。
+
+Correct：目标应用有独立 pending 状态；暂停后的可信发布产生新 revision 并等待真实完成；锁获取超时传播 IoError，同时维持墨迹安全准入。
+
+## Setting 附加的排序补充
+
+`PrepareSettingZOrder` 在根刷新后，通过 Setting owner 的 `RaiseOwnedSetting` 命令补齐带内顺序，不显示或激活窗口，不单独赋予 TOPMOST。实际 band 失配时从当前有效根继承并读回核验，随后执行 `HWND_TOP | SWP_NOOWNERZORDER | SWP_NOACTIVATE`。仍核验 owner、band、Setting 在两块画布之上以及 shutdown 拒绝；失败保留原附加回滚。Setting 线程不得同步等待 Overlay 根刷新。仅附加时正确不够：设置显示后再次 RootRefresh 也必须保持可点击，详见下节。2026-10-17 的“仅编译、根三项未解决”是历史验证状态，当前结果以父任务 final-validation-20261018.md 为准。
+
+## PPT 已接受请求的终态交接与 Desktop 索引锁（2026-10-18）
+
+### 1. Scope / Trigger
+
+修改 PPT Save/Load 接受、worker 完成发布、Host 转交 CanvasCommand 或 Desktop 索引锁时使用。PPT 终态所有权保证不扩展到全部产品分配/GPU/Office 异常。
+
+### 2. Signatures
+
+`PresentationAutoSaveService::SubmitSave/SubmitLoad/TryTakeCompletion`；`WindowController::TryEnqueuePresentationCompletion` 与现有命令消费；`Host::Impl::DrainPresentationCompletions`；生产 CLI `--draw3-ppt-completion-delivery-test` 仅在既有 presentation harness 开关中编译并在正常 GUI 初始化前分派。
+
+### 3. Contracts
+
+- 在返回 Accepted 前预留工作链表节点、shared completion 及原请求完整身份；分配失败在接受前返回 Invalid。原 ReplacedPending 的相邻 Save 合并语义保留，不承诺被主动取代 Save 各有一个终态。
+- worker 的工作链表也是 service 成员；MSVC 空 std::list 的 sentinel 可能分配，不能出队后再临时创建链表。处理失败把预留终态改为同身份 IoError，不能丢失 loadKind/pageGuid/intervalOrdinal/slotGeneration。
+- 完成发布用同一节点 splice；共享取出不分配。Host 保留尚未交付的 shared completion，只有 WindowController 成功接受才释放。
+- 专用单槽终态与普通命令按接受时位置合并为同一 FIFO；后续目标不能跨终态合并，终态消费后发 wake 推进下一项，不依赖新输入。Detach/重启清槽与计数；Host 待交付状态仅在绘制 owner join 后重置。
+- Desktop root+date 命名锁和 PPT root 锁单次获取均为 1000ms；失败返回既有错误终态，未取得锁不得触碰索引。WAIT_ABANDONED 表示成功取得并须释放。此上限不等于整个磁盘 I/O、队列 drain 或退出期限。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 接受前节点/身份/shared 分配失败 | Invalid；不留下 accepted 请求 |
+| 已接受 Current/PreviousInterval 在 worker 抛异常 | 原完整身份 IoError；旧非空墨迹文件不变 |
+| 完成发布和共享取出时实际 operator new 故障已 armed | 不发生分配、不丢终态 |
+| 专用终态槽已满 | Host 保留下一项，消费前项后的 wake 可继续推进 |
+| 普通命令/目标命令跨终态 | 原 FIFO 保持，目标不跨终态合并 |
+| Desktop 索引锁由活线程长期占用 | worker 有限失败；释放后重试成功，索引与文件一致 |
+
+### 5. Good / Base / Bad Cases
+
+Good：已接受 Load 在处理异常后仍收到同身份失败，释放占用后恢复原墨迹。Base：普通成功读写、目标去重与拒收保护保持。Bad：先从 service 丢弃终态，再 make_shared/deque push，异常后 Controller 永久保留 loadPending；或超时直接视为 NotFound。
+
+### 6. Tests Required
+
+既有 `--presentation-autosave-only` 覆盖实际 operator new 注入和旧文件保护；`--desktop-autosave-only` 覆盖真实 worker 索引锁超时和释放后成功；生产 completion CLI 执行真实 Host drain、WindowController FIFO、wake 与重启，额外参数返回2且不得启动GUI。完整 Debug|ARM64 solution 验证非 DRAW3_TESTING 产品路径。真实 PowerPoint 翻页/暂停/结束页/重入另验；组件通过不能代替设备现场证明。
+
+### 7. Wrong vs Correct
+
+Wrong：用成功计数或 worker 已处理来推定 Controller 已收到终态；捕获异常只记日志后继续。Correct：接受前预留终态所有权，处理失败保留原身份，worker→Host→命令入口每一步显式转交且不丢失。
+
+
+## Overlay 根 band 与 owned Setting 的周期刷新（2026-10-18）
+
+### 1. Scope / Trigger
+
+修改 Window Service 的 RefreshTopmost、Setting 附加、PPT 提升或白板窗口策略时应用。Windows 原生返回成功不等于整个 owner 树已达到所需 band 和相对顺序。
+
+### 2. Signatures
+
+`WindowService::PrepareSettingZOrder`、`CommandType::RefreshTopmost/RaiseOwnedSetting`；`InkeysHeadlessTests --window-contract-only` 精确单参时执行与默认完整套件相同的真实 HWND 合同；其他参数保持既有分派。
+
+### 3. Contracts
+
+- 显式 TOPMOST/NOTOPMOST 只施加于当前 OverlayRoot。策略仍是 overlayTopmost 且非 whiteboard；普通/白板模式不得被周期刷新提升为置顶。
+- 根调用后读回实际 band。实际不匹配才进行有限的根校正与原生传播；不得改成无界重试或每帧无限等待。
+- Desktop/PPT 正常刷新按 Freeze、Presentation、Drawpad、原相对顺序的四个 PPT 窗、Bar 补齐基础 owner 顺序。白板保留 Bar 的全局位置，只将越过期望前驱的 PPT 相对下调，包含隐藏 Middle；不得因后台无法全局抬顶而阻止进入。实际遗漏的基础节点从同一有效根继承 band，再读回核验；不逐节点显式设置 MOST，不操作任意 IME/驱动辅助窗。
+- 已知基础组用有限 EnumWindows 快照核验 owner、band、相对顺序；跨操作保留 HWND+generation，每次相对写入后重新采样。Desktop/PPT 正常刷新保留外部连续性要求；白板及纯 Z 物理恢复只核验内部合同，允许外部窗口穿插。四个 PPT 保留原相对顺序，显式 Promote 仅改变目标子序列；缺失目标或代际改变必须失败，不能边重排边遍历全局窗口链。
+- Desktop/PPT 正常刷新中基础节点的 HWND_TOP 保留原生 owner 联动，不能使用 NOOWNERZORDER 把 Drawpad 推到已显示 owned Setting 之上。白板及场景物理交接的内部排序仅使用带 NOACTIVATE|NOOWNERZORDER 的相对插入；基础 owner 链反转时按子到父将错位 owner 下移，再执行 PPT 相对下调，不能只修 Bar/PPT 而让基础链永久读回失败。无 Bar 时用首个 PPT 作锚，不能以 owner 为锚把 owned PPT 放到其下方。Setting 不加入白板排序写入；band 继承步骤与 Setting 自身带内 Raise 保持原合同。
+- 不为 Overlay 刷新增加等待 Setting 的命令，避免与 Setting 等待根的原合同形成环。原生同步消息边界仍由真实 HWND/产品 GUI 验证。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 根 API 成功但实际 band 未变 | 有限校正并读回；失败返回错误 |
+| 根已正确但原生传播遗漏基础节点 | 从同根继承并核验基础节点，完整树仍需严格验证 |
+| 预先置顶 owner、Most/普通切换、PPT 提升后刷新 | owner 连续、全部 band 正确、PPT 原相对顺序保持 |
+| Setting 隐藏附加、Show/Reshow 后再次根刷新 | owner=Drawpad、设置高于两画布；实际内容点击可达 |
+| 白板 Enter/Leave 后强制外部刷新 | 保持普通 band 与完整 owner 顺序 |
+| 独立同 PID 非 owned 窗插入 | Desktop/PPT 正常刷新连续性检查失败；白板/物理 Z 恢复允许外部穿插，内部 owner/band/顺序仍严格 |
+
+### 5. Good / Base / Bad Cases
+
+Good：设置经过周期刷新后仍能获取自身 capture，隐藏后新笔迹继续。Base：普通/白板仍走原生 Bar owner 联动。Bad：只检查 root 样式；只检查 Setting 刚显示时；用 NOOWNER 的逐窗 TOP 将画布推到设置上方。
+
+### 6. Tests Required
+
+保留原 11 项失败断言的意图，补全基础树/Setting band 与 owner 顺序、PPT 提升和白板生命周期。Desktop/PPT 正常刷新连续性只允许确属该 owner 树的辅助窗，并有独立同 PID 窗负例；白板必须覆盖 continuous=true 但隐藏 Middle 高于 Bar 的现场序列及后台拒绝 Bar 全局 TOP，验证真实生产相对排序 helper。capture 用真实可见 SW_HIDE 对照和已隐藏重复 Hide 对照，不能要求 Win32 原生隐藏从不取消别窗捕获。最终清理探针后重建，运行重复专项、默认全套及真实设置/Explorer/PPT/按住退出。无窗口测试不能代替这些 GUI 边界。
+
+### 7. Wrong vs Correct
+
+Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只因旧断言失败便删掉 owner/capture 合同。Correct：读取实际状态、保留严格全树检查、用原生对照区分错误假设，再以最终产品点击与墨迹验证收尾。
+## 纯层级命令的恢复写集（2026-10-27）
+
+- RefreshTopmost、PromotePpt、SetOverlayTopmost、SetOverlayFullscreen 在任何公共逐窗 FRAMECHANGED/CanvasPolicy/Show 之前分流到纯 Z 恢复；仅令 canvas=false 不足以隔离。
+- 保存固定 HWND/generation、owner/band、原 PPT 兄弟序；仅对应 Set 命令恢复其 topmost 或 fullscreen 政策，不写 mode/minimized、几何、显隐、region、激活或其他 ex-style。PPT 原序恢复仍须满足 Bar>PPT，不能恢复已知非法前态。
+- 真实物理恢复失败继续保留唯一责任；原命令过期不能阻止必要回滚，也不能将失败改成成功或因超时丢弃屏障。后到 Hide/穿透、窗口退休/新代际和停机保护保持，Shell 只发布最新绝对状态。
+- 纯 Z 多次失败/恢复无窗口回归调用生产 helper，禁止 Hide/Show/FRAMECHANGED/CanvasPolicy/几何写入；完整 mode/Canvas 事务仍保留原成对策略与严格恢复。私有 dispatch 的早分流接线须另做源码审查，不能用 helper 动态测试冒充完整 Service 执行或 GUI 通过。
+
+## 场景准入与白板交接（2026-10-24）
+
+### Scope / Trigger
+
+修改主画布穿透、PPT/白板场景发布、CPU 文稿切换、成功呈现回执或 UI-ready 准入时适用。用户报告“白板往返后恢复”不能单独证明线程死锁或某个现场根因。
+
+### Signatures / Ownership
+
+- `Window::Service::SetClickThrough(role, enabled, stillDesired={})` 在窗口 owner 内核对实际样式并应用；`Window.CanvasPolicy.h` 的生产策略保留未完成的 FRAMECHANGED。调用方不得用共享 HWND/布尔缓存替代真实样式。
+- `PublishProductWorkspace`、`PublishProductPresentationTarget`、`ClearProductPresentationTarget` 的可选 guard 在共享 `productCallMutex` 内执行，与白板权威发布使用同一提交边界。
+- `PptSceneWorkspaceEpoch()` 仅允许 Inactive / Exiting 且没有白板进入意图的偶数 epoch 发布完整 PPT 场景；既有 `PptInputWorkspaceEpoch()` 继续在整个白板事务期间拒绝业务输入。UI 显隐仍依照白板事务，不把场景恢复权限当成控件交互权限。
+- `PresentationSceneNeedsReady()` 包含已有 commandScenePending；`TryLatchPresentationUiReady()` 只锁存当前精确身份的真实 UI commit。Host 在 presentationTargetMutex 内调用，最终 gate 仍需 CPU、UI、加载、停止及事务条件全部满足。
+- 绘制 owner 的 `requestedWorkspace` 与 `requestedPresentationTargetRevision` 只记录最后实际入队的场景，不由旧 ready 回写；`PresentationSceneNeedsDispatch()` 同时核对已呈现工作区与最后请求，返回原场景也能退休过期请求。
+- `CanvasCommand::requireSceneMatch` 仅为普通业务绑定接受时的 workspace/target；最终 PrepareExit 不受其阻塞。
+
+### Contracts
+
+1. 稳定态窗口样式失败保留现有 250ms 协调重试。guard 失效不应用旧期望；样式位已写但 FRAMECHANGED 失败时，下次即使读到相同位也必须完成刷新。成功必须读取实际结果，不能用入队/函数缓存推断。同 role 的样式调用尚未退栈时，嵌套请求只能报告未完成并保留重试，不能在旧写位之前提前确认新相位；applying 状态以 RAII 退栈，仅在 owner 停止后重置。
+2. 白板 Entering/Exiting 保留当前意图，等待时发现 Bridge 偏离应重新收敛。迟到 PPT Desktop/target/clear 必须在提交点拒绝；完整白板往返不能让旧 epoch 复活。所有 desired 写入维护同一 epoch，包括功能关闭路径。PPT 退出后的工具收尾仍受非白板事务限制，在真实退出边沿先采严格 input epoch 再采工具 revision，提交时在白板意图锁与模式锁内核验；不得使用尾部晚采样的场景 epoch。PPT 调用方必须先拒绝 epoch=0（参数默认0保留其它 revision-only 调用语义）；窗口/产品同步必须在锁外。
+3. `SwitchPresentationCpuSlot` 的完整拓扑候选、运行时/文档页数及目标页校验在权威 swap 前完成；候选失败不消耗旧文稿、target、历史 fallback。target 相等本身不表示完整切换成功；same-target 回执和业务检查也必须检查实际页及完整文档。
+4. PreviousInterval 活动终态（成功或失败）解除加载后，只有已初始化且完整有效的活动 CPU 场景可以 stage 其实际 target；停放槽不替活动场景回 ready。补发回执须推动实际 Present，仍只在成功呈现路径 publish，不能硬填 Bridge 期望身份。
+5. CPU 场景应用失败只保留一份最新待重试场景，250/500/1000/2000ms 封顶退避，并合并 Run idle deadline。新场景/最终退出取消旧责任；最新意图返回已经呈现的原工作区时，也必须根据最后请求下发恢复命令，不能只比较 Host 已呈现值。它与既有 current-load 四次 I/O 预算独立，不能重置或放宽文件保护。
+6. 正常业务维持既有 FIFO。若场景前缀因故障未完整应用，绑定该场景的 Clear/Undo 等普通业务明确失败，不能落到其他文稿或随重试重复执行；记录非阻塞取消诊断，并报告 processed 终态，避免页面控制方无限等待计数。最终退出 ACK 必须可达。
+7. UI 与 CPU 的 ready 到达顺序可以交换。真实 UI commit 先到则独立保存，commandScenePending 或 CPU 未成功呈现仍保持关闸；旧 session/target、暂停和其他 workspace 的回执不能恢复旧目标。
+8. 准入原因日志只在条件变化时发布到既有非阻塞诊断输出器，不记录文稿路径/标题。`reasons` 位为：1 停止、2 场景交接、4 白板加载、8 缺可信 PPT target、16 CPU 身份未就绪、32 暂停、64 UI 身份未就绪、128 正在离开 PPT、256 消费者 fatal、512 显式恢复状态。日志不是完整可靠事件流。
+
+### Validation / Failure Matrix
+
+| 条件 | 必须行为 |
+|---|---|
+| 穿透请求交错、旧 guard、一次写入/FRAMECHANGED 失败 | 最新意图收敛；失败保留刷新责任；不依赖白板往返恢复 |
+| 旧 PPT 发布越过白板进入/完整往返 | 提交点拒绝旧 epoch；Exiting 恢复最新完整目标 |
+| same/parked lane 重绑失败、候选页数不一致 | 权威 CPU/旧墨迹不变；同 target 不能伪造成功；资源恢复后稳定目标可重试 |
+| PreviousInterval 成功/失败，切走/切回，active/parked | 当前有效活动目标在真实 Present 后 ready；旧页/停放 completion 不确认别的场景 |
+| 一次 UI commit 遇到短暂 CPU 未就绪 | 回执保留，CPU 恢复后无须 UI 重发或工作区切换即可开放 |
+| 桌面 no-op 仍欠 commandScenePending | 补一次成功呈现回执并清理债务 |
+| Desktop/Whiteboard → 失败或未 ready 的 PPT → 原工作区 | 即使 Host 仍报告原工作区，也发恢复命令；旧场景重试退休，不等待过期文稿的加载 |
+| PPT 退出尾部遇到白板 Exiting、进入意图或完整往返 | 场景恢复权限不能授权工具切换；旧 workspace epoch 即使工具 revision 未变也必须拒绝 |
+| 持续无效文档/损坏/身份冲突/停止 | 保持保护，不能伪造空白或超时开放输入 |
+
+复用现有 no-window CanvasPolicy/桥接回归与 `--draw3-fallback-stable-lane-test` 生产 CLI；无窗口提取探针只证明其实际生产块及模型，不代替完整模块编译或 Win32/Office/GPU 端到端验证。完整构建遵守根 AGENTS 的 solution、Debug|ARM64、ARM64 原生 MSBuild 与 Path/PATH 环境规范。GUI/隐藏 HWND 测试仍须用户明确授权。
+
+## 场景保护、窗口期限与人工恢复（2026-10-24）
+
+### Scope / Signatures
+
+适用于拓扑冲突、输入消费者 fatal、窗口跨线程命令、Shell 全屏通知、设置业务取消、外部组件管道和画布恢复 UI。生产接口为 `CanvasRecoveryState`、`Host::RetryCanvasRecovery`、`RetryProductCanvasRecovery`、`ContactInputCoordinator::SetConsumerFatal`，以及 Window 的 `CommandReceipt` 和带 `stillDesired` 的白板窗口模式/Overlay 策略命令。
+
+### Contracts
+
+1. 拓扑冲突不再提交无 target、未初始化的空白活动槽。保留原 lane、页历史及存储身份，明确发布 `ProtectedConflict`。只有真实 Current load 已严格证明 NotFound，且整 lane 无墨迹、undo/redo、retained、排队保存或未决加载时，才可退休并分配新 generation；新槽仍须正常 Load/Present，不能继承旧 initialized/ready。
+2. fatal 消费者是独立单调门，与普通场景、shortcut 准入作 OR。常规 PublishState、工作区切换、UI-ready、解除 shortcut 和手动重试均不能清除；只有真实生命周期 Reset 可以清除。保留旧 CPU 数据与已结束/仍在途线程的实际所有权。
+3. 恢复状态按请求的 workspace/完整 PPT identity 归属。Host 保留最后实际 Controller 报告并按最新期望投影；消费前合并的目标往返不能丢故障，投影为 None 也不等于实际 owner 已恢复。Host revision 跨同实例 Reset 保持单调。重试必须携带当前完整状态并在 Product/Host 提交边界再次校验。旧场景、旧错误、停止中、fatal 或失效白板 epoch 不得接受重试。current-load 普通同目标重发不能重置四次预算，显式有效 token 才可重新尝试。
+4. 场景准备/呈现连续失败进入可见恢复状态，平台期 attempts 封顶、等价发布去重，避免后台重试不断使 UI token 失效。加载未决时保留 load 故障归属。保留最新场景的后台恢复责任；本次新建 Recovering 时同场景 no-op 也取得实际 stage/Present 责任，不能留下无帧触发的恢复债务。真实成功 Present 才可发布 ready 和清除对应状态。
+5. PPT 故障文本不是普通数字的 UI-ready。错误状态参与渲染和输入呈现身份，Down/Move/Up 及重试均拒绝旧 token；正常数字重新真实呈现后才允许 ACK。设置绘图页提供同一 token 的有序重试入口。受保护失败不能靠超时或按钮解除墨迹准入。
+6. 白板 Exiting 遇到当前目标的受保护失败，可在实际隐藏两画布后结束窗口/UI 交接，保留工具栏/分页恢复入口；不能伪造 firstFrame、content revision 或 UI-ready。普通恢复中的场景仍等待真实帧，窗口 guard 在物理提交处校验相位和 epoch。已停止的 fatal 消费者仅凭完整故障令牌允许隐藏/穿透清理，不依赖 Running 再次为真；Reset 后旧清理失效，停止态清理保持 250ms cadence。
+7. 跨线程同步窗口命令默认 1500ms，区分 Queued/Executing/Committed/Rejected/Expired/Cancelled。停止等待不表示操作未发生；在途失效后由 owner 撤回物理副作用，撤回失败保留唯一恢复责任并阻止新事务越过。周期刷新合并排队责任；同 owner 重入不能越过未完成原生写入提前报成功。原生最小化/恢复的同次 WM_SIZE 确认不得建立新 intent 使外层命令自我失效。恢复屏障期间只允许按 HWND generation 锁存的隐藏/开启穿透覆盖，旧 snapshot 与 CanvasPolicy 不能撤销；Show/关闭穿透仍须通过屏障并真实成功。白板 minimized 时被抑制的 Freeze SetBounds/Show 必须 Rejected，不能未执行便报告成功；恢复后由既有背景唤醒重新提交并读回 RECT、visible 和非 iconic。原生 SetWindowPos/owner 联动仍可能同步进入其他窗口过程，期限不能抢占这些系统调用。
+8. Shell 全屏 COM 只在独立 worker 中调用，持有私有共享状态，按 HWND generation/thread/process 和最新版本过滤；不借用 Service 或 owner 栈。普通 overlay 根与白板 Freeze/Drawpad 使用固定有界目标批次和同一 revision，重复 HWND 去重；白板两面激活仅使该邮箱失效，最小化/退出的最新 FALSE 必须补偿迟到旧 TRUE，不能由旧批次确认新状态。停止/过期尝试 COM 取消，无法结束时仅保留固定一组后台状态，不启动第二组；窗口样式成功不依赖 Explorer 返回。窗口 owner 的 stderr/debug 诊断使用既有非阻塞输出与固定缓冲 UTF-8 转换，不在恢复路径回退同步写流。
+9. Setting Stop 先传播取消到活动弹窗，再排空已接纳的持久化，未开始的外部操作不继续启动。QuickDraw pipe connect/read/write 观察同一 stop token，join 不持有状态锁。取消后最多等 250ms；未完成的 OVERLAPPED、句柄和 buffer 独立保活，最多四项、每项 64KiB，有隔离项就拒绝新请求，真实完成后可回收。不得用栈 buffer 或静态析构释放内核仍引用的地址。
+10. Bar 属性捕获 Start 只确认原生 Down 签发的逻辑票据；不跨线程 SendMessage 等待窗口。Stop/Cancel 与异步原生释放绑定精确票据，先取消后迟到 Start 不得复活，旧释放不能碰新 Down，投递失败保留释放责任。
+
+### Validation / Limits
+
+`InkeysHeadlessTests --no-window` 覆盖 fatal 门、恢复身份/ACK、有限命令回执、混合 band 快照，以及真实 pipe 读写、取消和固定容量隔离；实际 HWND band/owner 传播仍属于明确授权后的窗口合同测试。现有生产 CLI `--draw3-fallback-stable-lane-test`、`--draw3-ppt-current-load-retry-test`、`--draw3-pending-topology-load-test`、`--draw3-control-fence-test`、`--state-mode-production-test`、`--ui3-input-worker-test` 与严格早退的 `--setting-business-cancellation-test` 验证产品路径。
+
+不得把上述检查宣称为所有 Win32/COM/GPU/磁盘调用永不挂起的证明。Host Start/Stop 的最终保存、WhiteboardStore drain、GPU Map 和真实 join 仍保留资源所有权；不通过超时析构、借用 Host 的 detached thread 或提前启动第二实例逃离。最终退出沿用既有进程监督，真实 Office/WPS、桌面 z-order 与设备现场另行验收。
+
+## 场景窗口政策与恢复写集（2026-10-27）
+
+- 同一工作区政策以Prepare原生回执→Render/Host/UI实际ACK→Complete原生回执交错推进。owner返回消息循环，不持协调/窗口锁等待渲染。目标输出身份改变必须重准备，不能用旧帧完成新几何。
+- Prepare/Complete绑定同政策版本和捕获的Freeze/主辅表面身份、实际几何与目标显示上下文；Display全局generation变化只触发相关事实重验，无关任务栏/别屏变化不应直接使政策失败。
+- 内部保留撤全屏→离开白板样式→返回band/穿透顺序，只写实际需要变化的字段。全局刷新、Setting带内Raise与Shell worker仍独立，失败不撤销已完成workspace。
+- 新场景政策恢复只处理其实际修改对象，不恢复Bar/PPT无关几何/显隐。补偿绑定旧HWND/generation/region/property，不得重新按当前role取新pair执行旧CanvasPolicy；同owner重入、取消后在途回执和安全覆盖保持真实责任。
+- 不相交的Bar/PPT几何与capture取消可继续；普通Show/关穿透/新政策仍不得越过旧Canvas恢复。设置页的协调故障重试使用点击时捕获的当前workspace失败版本，不能伪装成Host CanvasRecovery token，也不能旧按钮重试新请求。

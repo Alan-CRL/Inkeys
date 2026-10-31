@@ -6,6 +6,7 @@ module;
 #include <Windows.h>
 
 #include "../../../IdtAtomic.h"
+#include "Bar.FontSize.h"
 
 #include <algorithm>
 #include <atomic>
@@ -13,7 +14,6 @@ module;
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <string_view>
 #include <utility>
 
 export module Inkeys.UI.Bar.Animation;
@@ -238,12 +238,18 @@ export
 		}
 	}
 
-	inline wstring_view ResolveBarAnnotationPopupTitle(
+	enum class BarAnnotationPopupTitleKind : uint8_t
+	{
+		Unavailable,
+		FixedThicknessUnsupported,
+	};
+
+	inline BarAnnotationPopupTitleKind ResolveBarAnnotationPopupTitle(
 		BarThicknessPreviewVisualKind anchorKind) noexcept
 	{
 		return anchorKind == BarThicknessPreviewVisualKind::SoftPen
-			? L"标注线（粗细固定，暂未支持）"
-			: L"启用标注线（暂不可用）";
+			? BarAnnotationPopupTitleKind::FixedThicknessUnsupported
+			: BarAnnotationPopupTitleKind::Unavailable;
 	}
 
 	// Laser 预览的阶段只由当前视觉端点决定，反向时不重置任何动画值。
@@ -613,16 +619,10 @@ export
 			if (!active) return result;
 
 			double currentDuration = duration;
-			if (!isfinite(currentDuration) || currentDuration <= 0.0)
-			{
-				result.progress = 1.0;
-				result.reachedKeyframe = !keyframeTriggered;
-				result.finished = true;
-				progress = 1.0;
-				keyframeTriggered = true;
-				active = false;
-				return result;
-			}
+			// 关闭动画时内容关键帧也须在本帧提交，不能因 idle 首帧 dt=0 留一帧旧图标。
+			if (!static_cast<bool>(BarUiAnimationEnabled)
+				|| !isfinite(currentDuration) || currentDuration <= 0.0)
+				return FinishLocked();
 			if (!isfinite(dt) || dt <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0)
 				return result;
 
@@ -640,6 +640,20 @@ export
 				result.finished = true;
 				active = false;
 			}
+			return result;
+		}
+		BarUiKeyframeTimelineResultClass FinishLocked()
+		{
+			BarUiKeyframeTimelineResultClass result;
+			result.generation = generation;
+			result.progress = clamp(progress, 0.0, 1.0);
+			if (!active) return result;
+			result.progress = 1.0;
+			result.reachedKeyframe = !keyframeTriggered;
+			result.finished = true;
+			progress = 1.0;
+			keyframeTriggered = true;
+			active = false;
 			return result;
 		}
 		void CopyStateLocked(const BarUiKeyframeTimelineClass& other)
@@ -1075,4 +1089,52 @@ export
 		BarUiColorClass& color, const BarUiAnimationAdvanceContextClass& context);
 	BarUiAnimationAdvanceResultClass BarUiAdvanceAnimation(
 		BarUiPctClass& pct, const BarUiAnimationAdvanceContextClass& context);
+
+	// 字号只投影静止目标；固定状态保存连续修正轨迹，不改原始 size/几何动画。
+	class BarUiFontCorrectionClass
+	{
+	public:
+		double Resolve(double targetPixels, bool allowFractional, std::uint64_t frame,
+			const BarUiAnimationAdvanceContextClass& context, double duration)
+		{
+			changed_ = false;
+			if (!std::isfinite(targetPixels) || targetPixels < 0.0) return value_.val;
+			// 退出的原始几何目标为 0 时无需再把修正系数压到 0，重新打开仍沿原曲线。
+			double target = value_.tar;
+			if (targetPixels == 0.0) { target = value_.val; sourceTarget_ = -1.0; }
+			else if (!initialized_ || targetPixels != sourceTarget_ || allowFractional != sourceAllow_)
+			{
+				target = Inkeys::UI::Bar::Detail::ResolveBarFontCorrectionTarget(targetPixels,allowFractional);
+				sourceTarget_ = targetPixels; sourceAllow_ = allowFractional;
+			}
+			const double before = value_.val;
+			if (!initialized_ || forceNext_ || !context.animationEnabled || context.forceReplace)
+			{
+				value_.SetDirect(target); initialized_ = true; forceNext_ = false;
+			}
+			else value_.SetTar(target, std::isfinite(duration) && duration > 0.0
+				? duration : static_cast<double>(BarUiDefaultOperationDur));
+			if (!advanced_ || frame != frame_)
+			{
+				if (!value_.IsSame() && (context.forceReplace || !context.animationEnabled || context.dtSeconds > 0.0))
+					(void)BarUiAdvanceAnimation(value_, context);
+				frame_ = frame; advanced_ = true;
+			}
+			changed_ = before != static_cast<double>(value_.val);
+			return value_.val;
+		}
+		void Reset() noexcept { initialized_ = false; advanced_ = false; }
+		void ForceNext() noexcept { forceNext_ = true; }
+		bool Active() { return initialized_ && !value_.IsSame(); }
+		bool Changed() const noexcept { return changed_; }
+		double Current() const noexcept { return value_.val; }
+		double Target() const noexcept { return value_.tar; }
+	private:
+		BarUiValueClass value_{1.0, BarUiValueModeEnum::Linear};
+		std::uint64_t frame_ = 0;
+		double sourceTarget_ = -1.0;
+		bool sourceAllow_ = false;
+		bool initialized_ = false, advanced_ = false, forceNext_ = false, changed_ = false;
+	};
+
 }

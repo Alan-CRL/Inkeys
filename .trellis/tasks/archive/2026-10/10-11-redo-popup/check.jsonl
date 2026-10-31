@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "质量门与回归边界"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "动画布局验证矩阵"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小变更与编码规范"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Motion复用检查"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Bar到Draw3跨层检查"}
+{"file": ".trellis/tasks/10-11-redo-popup/research/fix-history-20261012.md", "reason": "独立复核真实点击路径和延时/颜色回归"}
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "检查真实历史边界及GPU恢复事务"}

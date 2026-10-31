@@ -1,0 +1,4 @@
+actual bodies: counters=0, zoom=1, shapes=15, FillOpacityMask_calls=136
+actual bodies: counters=0, zoom=1.3, shapes=15, FillOpacityMask_calls=376
+actual bodies: counters=1, zoom=1, shapes=15, FillOpacityMask_calls=136
+actual bodies: counters=1, zoom=1.3, shapes=15, FillOpacityMask_calls=376

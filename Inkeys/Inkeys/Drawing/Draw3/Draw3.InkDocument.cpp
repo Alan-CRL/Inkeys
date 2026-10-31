@@ -52,8 +52,19 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	InkStroke::InkStroke(StoredInkStyle style,
-		std::vector<StoredInkPoint> points) noexcept
-		: style_(style), points_(std::move(points)) {}
+		std::vector<StoredInkPoint> points, std::optional<size_t> debugTailSegmentStart) noexcept
+		: style_(style), points_(std::move(points))
+	{
+		if (style_.inkType == StoredInkType::Pen && debugTailSegmentStart &&
+			*debugTailSegmentStart + 1 > *debugTailSegmentStart &&
+			*debugTailSegmentStart + 1 < points_.size())
+			debugTailSegmentStart_ = debugTailSegmentStart;
+	}
+
+	std::optional<size_t> InkStroke::DebugTailSegmentStart() const noexcept
+	{
+		return debugTailSegmentStart_;
+	}
 
 	const StoredInkStyle& InkStroke::Style() const noexcept
 	{

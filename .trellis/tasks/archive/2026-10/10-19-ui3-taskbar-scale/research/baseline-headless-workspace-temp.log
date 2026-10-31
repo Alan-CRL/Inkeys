@@ -1,0 +1,364 @@
+[WindowCommandCompletion] failures=0
+Config metadata tests: 0 failures
+[PptWaitBoundary] synthetic samples=8 old_basis_mean_ms=61.2615 captured_basis_mean_ms=0.0263125
+[ASYNC01] premise=1 command_wakes=2 consumed_commands=2 ingress_pending=0 bridge_pending=0 leftover_sequence=0 free_reservations=258
+[ASYNC01Deferred] premise=1 kind=0 reset=0 terminal=2 observed=4 deferred_visible=1 free_reservations=258 result=1
+[ASYNC01Deferred] premise=1 kind=1 reset=0 terminal=2 observed=3 deferred_visible=1 free_reservations=258 result=1
+[ASYNC01Deferred] premise=1 kind=1 reset=0 terminal=3 observed=3 deferred_visible=1 free_reservations=258 result=1
+[ASYNC01Deferred] premise=1 kind=2 reset=0 terminal=2 observed=2 deferred_visible=1 free_reservations=258 result=1
+[ASYNC01Deferred] premise=1 kind=0 reset=1 terminal=2 observed=1 deferred_visible=1 free_reservations=258 result=1
+[ASYNC01Deferred] premise=1 kind=1 reset=1 terminal=2 observed=1 deferred_visible=1 free_reservations=258 result=1
+[ASYNC01Deferred] premise=1 kind=2 reset=1 terminal=2 observed=1 deferred_visible=1 free_reservations=258 result=1
+[Draw3RtsStartup] PASS (production orchestration/gates; no COM provider or HWND)
+PASS Draw3 mouse input lifecycle and stop interleaving
+[FineLatency] model=IndirectDip unit=DIP/s release=0.2 standard-minus-0.5=1.184
+[FineHighBaseline] IndirectDip DIP/s 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624
+[FineLatency] model=IndirectDip unit=DIP/s release=0.2 standard-minus-0.5=1.184
+[FineHighBaseline] IndirectDip DIP/s 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624
+[FineLatency] model=ScreenPenHybrid unit=DIP/s release=0.2 standard-minus-0.5=1.184
+[FineHighBaseline] ScreenPenHybrid DIP/s 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624
+[FineLatency] model=ScreenPenHybrid unit=mm/s release=0.2 standard-minus-0.5=1.184
+[FineHighBaseline] ScreenPenHybrid mm/s 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624
+[FineLatency] model=DirectTouch unit=DIP/s release=0.2 standard-minus-0.5=1.184
+[FineHighBaseline] DirectTouch DIP/s 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624
+[FineLatency] model=DirectTouch unit=mm/s release=0.2 standard-minus-0.5=1.184
+[FineHighBaseline] DirectTouch mm/s 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624 1126170624
+[FineQuantized] cases=1728 worstPeakToPeakDIP=0 heldExits=0 enterToMinimumPlus0.5=0.72 recoverToStandardMinus0.5=1.184 failures=0
+[HoldTrace] D:\Project\Inkeys\Repo\Inkeys\.trellis\.runtime\ui3-taskbar-scale-test-temp\inkeys-hold-pulse-DirectTouch.csv frames=799
+[HoldPulse] model=DirectTouch warm=160 after2=33.7127 after3=32 end=32 endTarget=84.2591 endCap=32
+[HoldDuty] model=DirectTouch highMs=20 lowMs=80 maxEvidenceMs=27.4249 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=20 lowMs=120 maxEvidenceMs=20.9893 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=20 lowMs=200 maxEvidenceMs=15.3111 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=20 lowMs=400 maxEvidenceMs=10.8798 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=20 lowMs=800 maxEvidenceMs=8.71581 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=40 lowMs=80 maxEvidenceMs=78.0571 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=40 lowMs=120 maxEvidenceMs=62.4738 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=40 lowMs=200 maxEvidenceMs=46.2783 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=40 lowMs=400 maxEvidenceMs=33.1367 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=40 lowMs=800 maxEvidenceMs=27.1632 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=80 lowMs=80 maxEvidenceMs=145.069 end=93.4265 cap=89.3438
+[HoldDuty] model=DirectTouch highMs=80 lowMs=120 maxEvidenceMs=122.734 end=57.386 cap=32.3743
+[HoldDuty] model=DirectTouch highMs=80 lowMs=200 maxEvidenceMs=99.187 end=32.5286 cap=33.208
+[HoldDuty] model=DirectTouch highMs=80 lowMs=400 maxEvidenceMs=74.9689 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=80 lowMs=800 maxEvidenceMs=63.0745 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=100 lowMs=80 maxEvidenceMs=167.425 end=143.001 cap=97.9986
+[HoldDuty] model=DirectTouch highMs=100 lowMs=120 maxEvidenceMs=145.538 end=98.5133 cap=52.5097
+[HoldDuty] model=DirectTouch highMs=100 lowMs=200 maxEvidenceMs=119.702 end=34.7918 cap=32
+[HoldDuty] model=DirectTouch highMs=100 lowMs=400 maxEvidenceMs=93.5982 end=32 cap=32
+[HoldDuty] model=DirectTouch highMs=100 lowMs=800 maxEvidenceMs=79.8709 end=32 cap=32
+[NewDownGrowth] model=DirectTouch q1Delta=11.178 q1RateBPerS=1.39724 q2Delta=47.6614 q2RateBPerS=5.95768 q3Delta=54.585 q3RateBPerS=6.82312 q4Delta=22.1978 q4RateBPerS=2.77472 maxFrameDelta=2.74293 maxFrameRateBPerS=8.57165
+[HoldTrace] D:\Project\Inkeys\Repo\Inkeys\.trellis\.runtime\ui3-taskbar-scale-test-temp\inkeys-hold-pulse-ScreenPenHybrid.csv frames=799
+[HoldPulse] model=ScreenPenHybrid warm=160 after2=32 after3=32 end=32 endTarget=44.2973 endCap=32
+[HoldDuty] model=ScreenPenHybrid highMs=20 lowMs=80 maxEvidenceMs=40.2855 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=20 lowMs=120 maxEvidenceMs=30.5348 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=20 lowMs=200 maxEvidenceMs=21.9897 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=20 lowMs=400 maxEvidenceMs=15.0536 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=20 lowMs=800 maxEvidenceMs=11.5513 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=40 lowMs=80 maxEvidenceMs=98.7649 end=35.3733 cap=32.0001
+[HoldDuty] model=ScreenPenHybrid highMs=40 lowMs=120 maxEvidenceMs=78.3519 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=40 lowMs=200 maxEvidenceMs=57.3291 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=40 lowMs=400 maxEvidenceMs=39.9773 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=40 lowMs=800 maxEvidenceMs=31.4072 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=80 lowMs=80 maxEvidenceMs=172.739 end=123.937 cap=118.932
+[HoldDuty] model=ScreenPenHybrid highMs=80 lowMs=120 maxEvidenceMs=145.19 end=48.7993 cap=38.7809
+[HoldDuty] model=ScreenPenHybrid highMs=80 lowMs=200 maxEvidenceMs=115.459 end=33.4465 cap=38.4537
+[HoldDuty] model=ScreenPenHybrid highMs=80 lowMs=400 maxEvidenceMs=85.0597 end=32.1724 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=80 lowMs=800 maxEvidenceMs=68.7617 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=100 lowMs=80 maxEvidenceMs=197.413 end=159.705 cap=131.757
+[HoldDuty] model=ScreenPenHybrid highMs=100 lowMs=120 maxEvidenceMs=170.309 end=115.547 cap=74.5016
+[HoldDuty] model=ScreenPenHybrid highMs=100 lowMs=200 maxEvidenceMs=138.18 end=34.9302 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=100 lowMs=400 maxEvidenceMs=104.974 end=32 cap=32
+[HoldDuty] model=ScreenPenHybrid highMs=100 lowMs=800 maxEvidenceMs=86.4081 end=32 cap=32
+[NewDownGrowth] model=ScreenPenHybrid q1Delta=13.7993 q1RateBPerS=1.72491 q2Delta=65.3489 q2RateBPerS=8.16861 q3Delta=36.5359 q3RateBPerS=4.56699 q4Delta=9.6434 q4RateBPerS=1.20543 maxFrameDelta=3.01628 maxFrameRateBPerS=9.42588
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=50 actualMs=50 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=50 evidenceEndMs=26.2508 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=80 actualMs=79.1667 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=79.1667 evidenceEndMs=52.1364 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=100 actualMs=100 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=100 evidenceEndMs=69.349 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=120 actualMs=120.833 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=120.833 evidenceEndMs=85.5669 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=150 actualMs=150 warmDIP=32 warmEvidenceMs=0 endDIP=32.0119 endCapDIP=32.3454 pulsePeakDIP=32.0119 pulsePeakMs=150 afterPeakDIP=32.0119 afterPeakMs=150 evidenceEndMs=106.71 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=200 actualMs=200 warmDIP=32 warmEvidenceMs=0 endDIP=32.8015 endCapDIP=43.475 pulsePeakDIP=32.8015 pulsePeakMs=200 afterPeakDIP=32.8015 afterPeakMs=200 evidenceEndMs=139.097 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=250 actualMs=250 warmDIP=32 warmEvidenceMs=0 endDIP=35.7614 endCapDIP=68.1514 pulsePeakDIP=35.7614 pulsePeakMs=250 afterPeakDIP=35.7614 afterPeakMs=250 evidenceEndMs=167.173 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=300 actualMs=300 warmDIP=32 warmEvidenceMs=0 endDIP=41.3048 endCapDIP=102.485 pulsePeakDIP=41.3048 pulsePeakMs=300 afterPeakDIP=41.3048 afterPeakMs=300 evidenceEndMs=191.511 to1.25BMs=291.667 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=500 actualMs=500 warmDIP=32 warmEvidenceMs=0 endDIP=82.0935 endCapDIP=160 pulsePeakDIP=82.0935 pulsePeakMs=500 afterPeakDIP=82.0935 afterPeakMs=500 evidenceEndMs=240 to1.25BMs=291.667 to2BMs=420.833 to90TargetMs=-1
+[WarmBurst] model=IndirectDip unit=DIP/s fast=2850 requestedMs=1000 actualMs=1000 warmDIP=32 warmEvidenceMs=0 endDIP=153.322 endCapDIP=160 pulsePeakDIP=153.322 pulsePeakMs=1000 afterPeakDIP=153.322 afterPeakMs=1000 evidenceEndMs=240 to1.25BMs=291.667 to2BMs=420.833 to90TargetMs=854.167
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=50 actualMs=50 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=50 evidenceEndMs=37.4812 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=80 actualMs=79.1667 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=79.1667 evidenceEndMs=62.4689 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=100 actualMs=100 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=100 evidenceEndMs=79.0844 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=120 actualMs=120.833 warmDIP=32 warmEvidenceMs=0 endDIP=32.1423 endCapDIP=34.2134 pulsePeakDIP=32.1423 pulsePeakMs=120.833 afterPeakDIP=32.1423 afterPeakMs=120.833 evidenceEndMs=94.7398 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=150 actualMs=150 warmDIP=32 warmEvidenceMs=0 endDIP=33.0491 endCapDIP=44.6608 pulsePeakDIP=33.0491 pulsePeakMs=150 afterPeakDIP=33.0491 afterPeakMs=150 evidenceEndMs=115.149 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=200 actualMs=200 warmDIP=32 warmEvidenceMs=0 endDIP=38.0394 endCapDIP=81.368 pulsePeakDIP=38.0394 pulsePeakMs=200 afterPeakDIP=38.0394 afterPeakMs=200 evidenceEndMs=146.413 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=250 actualMs=250 warmDIP=32 warmEvidenceMs=0 endDIP=46.5392 endCapDIP=130.92 pulsePeakDIP=46.5392 pulsePeakMs=250 afterPeakDIP=46.5392 afterPeakMs=250 evidenceEndMs=173.515 to1.25BMs=216.667 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=300 actualMs=300 warmDIP=32 warmEvidenceMs=0 endDIP=57.198 endCapDIP=159.529 pulsePeakDIP=57.198 pulsePeakMs=300 afterPeakDIP=57.198 afterPeakMs=300 evidenceEndMs=197.009 to1.25BMs=216.667 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=500 actualMs=500 warmDIP=32 warmEvidenceMs=0 endDIP=112.005 endCapDIP=160 pulsePeakDIP=112.005 pulsePeakMs=500 afterPeakDIP=112.005 afterPeakMs=500 evidenceEndMs=200 to1.25BMs=216.667 to2BMs=329.167 to90TargetMs=-1
+[WarmBurst] model=ScreenPenHybrid unit=mm/s fast=525 requestedMs=1000 actualMs=1000 warmDIP=32 warmEvidenceMs=0 endDIP=157.386 endCapDIP=160 pulsePeakDIP=157.386 pulsePeakMs=1000 afterPeakDIP=157.386 afterPeakMs=1000 evidenceEndMs=200 to1.25BMs=216.667 to2BMs=329.167 to90TargetMs=704.167
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=50 actualMs=50 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=50 evidenceEndMs=35.1419 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=80 actualMs=79.1667 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=79.1667 evidenceEndMs=59.6798 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=100 actualMs=100 warmDIP=32 warmEvidenceMs=0 endDIP=32 endCapDIP=32 pulsePeakDIP=32 pulsePeakMs=0 afterPeakDIP=32 afterPeakMs=100 evidenceEndMs=75.8024 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=120 actualMs=120.833 warmDIP=32 warmEvidenceMs=0 endDIP=32.0547 endCapDIP=33.7305 pulsePeakDIP=32.0547 pulsePeakMs=120.833 afterPeakDIP=32.0547 afterPeakMs=120.833 evidenceEndMs=90.8434 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=150 actualMs=150 warmDIP=32 warmEvidenceMs=0 endDIP=32.8963 endCapDIP=45.5068 pulsePeakDIP=32.8963 pulsePeakMs=150 afterPeakDIP=32.8963 afterPeakMs=150 evidenceEndMs=110.221 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=200 actualMs=200 warmDIP=32 warmEvidenceMs=0 endDIP=37.957 endCapDIP=89.4494 pulsePeakDIP=37.957 pulsePeakMs=200 afterPeakDIP=37.957 afterPeakMs=200 evidenceEndMs=139.355 to1.25BMs=-1 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=250 actualMs=250 warmDIP=32 warmEvidenceMs=0 endDIP=46.4412 endCapDIP=143.305 pulsePeakDIP=46.4412 pulsePeakMs=250 afterPeakDIP=46.4412 afterPeakMs=250 evidenceEndMs=164.017 to1.25BMs=216.667 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=300 actualMs=300 warmDIP=32 warmEvidenceMs=0 endDIP=57.0738 endCapDIP=160 pulsePeakDIP=57.0738 pulsePeakMs=300 afterPeakDIP=57.0738 afterPeakMs=300 evidenceEndMs=180 to1.25BMs=216.667 to2BMs=-1 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=500 actualMs=500 warmDIP=32 warmEvidenceMs=0 endDIP=108.05 endCapDIP=160 pulsePeakDIP=108.05 pulsePeakMs=500 afterPeakDIP=108.05 afterPeakMs=500 evidenceEndMs=180 to1.25BMs=216.667 to2BMs=329.167 to90TargetMs=-1
+[WarmBurst] model=DirectTouch unit=mm/s fast=375 requestedMs=1000 actualMs=1000 warmDIP=32 warmEvidenceMs=0 endDIP=155.941 endCapDIP=160 pulsePeakDIP=155.941 pulsePeakMs=1000 afterPeakDIP=155.941 afterPeakMs=1000 evidenceEndMs=180 to1.25BMs=216.667 to2BMs=329.167 to90TargetMs=745.833
+[TouchScene] classroom physical-mm/s speed=100 reference=32 controllerTarget=32 actual=32 evidence=0
+[TouchScene] classroom physical-mm/s speed=200 reference=32 controllerTarget=32 actual=32 evidence=0
+[TouchScene] classroom physical-mm/s speed=270 reference=32 controllerTarget=32 actual=32 evidence=0
+[TouchScene] classroom physical-mm/s speed=300 reference=32 controllerTarget=32 actual=32 evidence=0
+[TouchScene] classroom physical-mm/s speed=322 reference=32 controllerTarget=32 actual=32 evidence=0
+[TouchScene] classroom physical-mm/s speed=400 reference=32.4157 controllerTarget=32.4156 actual=32.4156 evidence=0.121437
+[TouchScene] classroom physical-mm/s speed=432.376 reference=33.1135 controllerTarget=33.1135 actual=33.1135 evidence=0.123819
+[TouchScene] classroom physical-mm/s speed=600 reference=42.1589 controllerTarget=42.1586 actual=42.1586 evidence=0.150827
+[TouchScene] classroom physical-mm/s speed=800 reference=67.1536 controllerTarget=67.1524 actual=67.1525 evidence=0.18
+[TouchScene] classroom physical-mm/s speed=1000 reference=109.404 controllerTarget=109.401 actual=109.401 evidence=0.18
+[TouchScene] classroom physical-mm/s speed=1300 reference=160 controllerTarget=160 actual=160 evidence=0.18
+[WarmBurstRates] cases=240 worstEndDifferencePct=0.590517
+[TouchProfile] synthetic widthCm=28 weight=0 enter=90 exit=60 large=250 ordinaryDIP=32 clearDIP=160
+[TouchProfile] synthetic widthCm=40 weight=0.0232908 enter=96.0556 exit=64.4252 large=274.455 ordinaryDIP=32 clearDIP=160
+[TouchProfile] synthetic widthCm=55 weight=0.169225 enter=133.998 exit=92.1527 large=427.686 ordinaryDIP=32 clearDIP=160
+[TouchProfile] synthetic widthCm=70 weight=0.398361 enter=193.574 exit=135.689 large=668.279 ordinaryDIP=32 clearDIP=160
+[TouchProfile] synthetic widthCm=90 weight=0.730583 enter=279.952 exit=198.811 large=1017.11 ordinaryDIP=32 clearDIP=160
+[TouchProfile] synthetic widthCm=120 weight=1 enter=350 exit=250 large=1300 ordinaryDIP=32 clearDIP=160
+[TouchProfile] synthetic widthCm=139 weight=1 enter=350 exit=250 large=1300 ordinaryDIP=32 clearDIP=160
+[TouchProfile] synthetic widthCm=200 weight=1 enter=350 exit=250 large=1300 ordinaryDIP=32 clearDIP=160
+[SpeedEraserNoise] hz=60 diameter=160 evidence=0.24
+[SpeedEraserNoise] hz=125 diameter=160 evidence=0.24
+[SpeedEraserNoise] hz=240 diameter=160 evidence=0.24
+[SpeedEraserNoise] hz=1000 diameter=160 evidence=0.24
+[R7BaselineFine] 24.1595 16.5505 16 16
+[EntryGap] entry=MouseLeft dpi=96 gap=0 upPx=160 downPx=160
+[EntryGap] entry=MouseLeft dpi=96 gap=0.02 upPx=160 downPx=160
+[EntryGap] entry=MouseLeft dpi=96 gap=0.05 upPx=160 downPx=160
+[EntryGap] entry=MouseLeft dpi=96 gap=0.1 upPx=160 downPx=160
+[EntryGap] entry=MouseLeft dpi=96 gap=0.2 upPx=160 downPx=160
+[EntryGap] entry=MouseLeft dpi=96 gap=0.5 upPx=160 downPx=66.5661
+[EntryGap] entry=MouseLeft dpi=96 gap=2 upPx=160 downPx=32
+[EntryGap] entry=MouseLeft dpi=144 gap=0 upPx=240 downPx=240
+[EntryGap] entry=MouseLeft dpi=144 gap=0.02 upPx=240 downPx=240
+[EntryGap] entry=MouseLeft dpi=144 gap=0.05 upPx=240 downPx=240
+[EntryGap] entry=MouseLeft dpi=144 gap=0.1 upPx=240 downPx=240
+[EntryGap] entry=MouseLeft dpi=144 gap=0.2 upPx=240 downPx=240
+[EntryGap] entry=MouseLeft dpi=144 gap=0.5 upPx=240 downPx=99.8492
+[EntryGap] entry=MouseLeft dpi=144 gap=2 upPx=240 downPx=48
+[EntryGap] entry=MouseLeft dpi=192 gap=0 upPx=320 downPx=320
+[EntryGap] entry=MouseLeft dpi=192 gap=0.02 upPx=320 downPx=320
+[EntryGap] entry=MouseLeft dpi=192 gap=0.05 upPx=320 downPx=320
+[EntryGap] entry=MouseLeft dpi=192 gap=0.1 upPx=320 downPx=320
+[EntryGap] entry=MouseLeft dpi=192 gap=0.2 upPx=320 downPx=320
+[EntryGap] entry=MouseLeft dpi=192 gap=0.5 upPx=320 downPx=133.132
+[EntryGap] entry=MouseLeft dpi=192 gap=2 upPx=320 downPx=64
+[EntryGap] entry=MouseRight dpi=96 gap=0 upPx=160 downPx=160
+[EntryGap] entry=MouseRight dpi=96 gap=0.02 upPx=160 downPx=160
+[EntryGap] entry=MouseRight dpi=96 gap=0.05 upPx=160 downPx=160
+[EntryGap] entry=MouseRight dpi=96 gap=0.1 upPx=160 downPx=160
+[EntryGap] entry=MouseRight dpi=96 gap=0.2 upPx=160 downPx=160
+[EntryGap] entry=MouseRight dpi=96 gap=0.5 upPx=160 downPx=66.5661
+[EntryGap] entry=MouseRight dpi=96 gap=2 upPx=160 downPx=32
+[EntryGap] entry=MouseRight dpi=144 gap=0 upPx=240 downPx=240
+[EntryGap] entry=MouseRight dpi=144 gap=0.02 upPx=240 downPx=240
+[EntryGap] entry=MouseRight dpi=144 gap=0.05 upPx=240 downPx=240
+[EntryGap] entry=MouseRight dpi=144 gap=0.1 upPx=240 downPx=240
+[EntryGap] entry=MouseRight dpi=144 gap=0.2 upPx=240 downPx=240
+[EntryGap] entry=MouseRight dpi=144 gap=0.5 upPx=240 downPx=99.8492
+[EntryGap] entry=MouseRight dpi=144 gap=2 upPx=240 downPx=48
+[EntryGap] entry=MouseRight dpi=192 gap=0 upPx=320 downPx=320
+[EntryGap] entry=MouseRight dpi=192 gap=0.02 upPx=320 downPx=320
+[EntryGap] entry=MouseRight dpi=192 gap=0.05 upPx=320 downPx=320
+[EntryGap] entry=MouseRight dpi=192 gap=0.1 upPx=320 downPx=320
+[EntryGap] entry=MouseRight dpi=192 gap=0.2 upPx=320 downPx=320
+[EntryGap] entry=MouseRight dpi=192 gap=0.5 upPx=320 downPx=133.132
+[EntryGap] entry=MouseRight dpi=192 gap=2 upPx=320 downPx=64
+[EntryGap] entry=PenTip dpi=96 gap=0 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTip dpi=96 gap=0.02 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTip dpi=96 gap=0.05 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTip dpi=96 gap=0.1 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTip dpi=96 gap=0.2 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTip dpi=96 gap=0.5 upPx=152.339 downPx=51.1235
+[EntryGap] entry=PenTip dpi=96 gap=2 upPx=152.339 downPx=32
+[EntryGap] entry=PenTip dpi=144 gap=0 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTip dpi=144 gap=0.02 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTip dpi=144 gap=0.05 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTip dpi=144 gap=0.1 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTip dpi=144 gap=0.2 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTip dpi=144 gap=0.5 upPx=195.385 downPx=69.2703
+[EntryGap] entry=PenTip dpi=144 gap=2 upPx=195.385 downPx=48
+[EntryGap] entry=PenTip dpi=192 gap=0 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTip dpi=192 gap=0.02 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTip dpi=192 gap=0.05 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTip dpi=192 gap=0.1 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTip dpi=192 gap=0.2 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTip dpi=192 gap=0.5 upPx=234.185 downPx=87.3084
+[EntryGap] entry=PenTip dpi=192 gap=2 upPx=234.185 downPx=64
+[EntryGap] entry=PenTail dpi=96 gap=0 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTail dpi=96 gap=0.02 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTail dpi=96 gap=0.05 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTail dpi=96 gap=0.1 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTail dpi=96 gap=0.2 upPx=152.339 downPx=152.339
+[EntryGap] entry=PenTail dpi=96 gap=0.5 upPx=152.339 downPx=51.1235
+[EntryGap] entry=PenTail dpi=96 gap=2 upPx=152.339 downPx=32
+[EntryGap] entry=PenTail dpi=144 gap=0 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTail dpi=144 gap=0.02 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTail dpi=144 gap=0.05 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTail dpi=144 gap=0.1 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTail dpi=144 gap=0.2 upPx=195.385 downPx=195.385
+[EntryGap] entry=PenTail dpi=144 gap=0.5 upPx=195.385 downPx=69.2703
+[EntryGap] entry=PenTail dpi=144 gap=2 upPx=195.385 downPx=48
+[EntryGap] entry=PenTail dpi=192 gap=0 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTail dpi=192 gap=0.02 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTail dpi=192 gap=0.05 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTail dpi=192 gap=0.1 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTail dpi=192 gap=0.2 upPx=234.185 downPx=234.185
+[EntryGap] entry=PenTail dpi=192 gap=0.5 upPx=234.185 downPx=87.3084
+[EntryGap] entry=PenTail dpi=192 gap=2 upPx=234.185 downPx=64
+[LowBandChangedReplay] 1 96 1 1107067558 1100280814 1103663895 1105957566 1123288459 1123472954 1124100404 1126064238 1098944215 1098907648 1098907648 1126170624 1123146190 1119275378 1107503839
+[LowBandChangedReplay] 1 96 0 1107067558 1100280814 1103663895 1105957566 1123288459 1123472954 1124100404 1126064238 1098944215 1098907648 1098907648 1126170624 1123146190 1119275378 1107503839
+[LowBandChangedReplay] 1 144 1 1111319036 1105161701 1108766289 1110486542 1127679016 1127817387 1128308174 1131253925 1103156802 1103101952 1103101952 1131413504 1127572314 1124669205 1111801934
+[LowBandChangedReplay] 1 144 0 1111319036 1105161701 1108766289 1110486542 1127679016 1127817387 1128308174 1131253925 1103156802 1103101952 1103101952 1131413504 1127572314 1124669205 1111801934
+[LowBandChangedReplay] 1 192 1 1115456166 1108669422 1112052503 1114346174 1131677067 1131861562 1132489012 1134452846 1107332823 1107296256 1107296256 1134559232 1131534798 1127663986 1115892447
+[LowBandChangedReplay] 1 192 0 1115456166 1108669422 1112052503 1114346174 1131677067 1131861562 1132489012 1134452846 1107332823 1107296256 1107296256 1134559232 1131534798 1127663986 1115892447
+[LowBandChangedReplay] 3 96 1 1107067558 1100280814 1103607109 1108105410 1124948140 1125003550 1125438287 1126138049 1099009420 1098907648 1098907648 1126170624 1123146190 1119275378 1107384786
+[LowBandChangedReplay] 3 96 0 1107067558 1100280814 1103607109 1108105410 1124948140 1125003550 1125438287 1126138049 1099009420 1098907648 1098907648 1126170624 1123146190 1119275378 1107384786
+[LowBandChangedReplay] 3 144 1 1111319036 1105161701 1108723699 1112704291 1127736101 1127796458 1128404093 1129104498 1103199581 1103101952 1103101952 1131413504 1127572314 1124669205 1111623355
+[LowBandChangedReplay] 3 144 0 1111319036 1105161701 1108723699 1112704291 1127736101 1127796458 1128404093 1129104498 1103199581 1103101952 1103101952 1131413504 1127572314 1124669205 1111623355
+[LowBandChangedReplay] 3 192 1 1115456166 1108669422 1111995717 1116494018 1130250106 1130314455 1131022134 1131742450 1107329542 1107296256 1107296256 1134559232 1131534798 1127663986 1115773394
+[LowBandChangedReplay] 3 192 0 1115456166 1108669422 1111995717 1116494018 1130250106 1130314455 1131022134 1131742450 1107329542 1107296256 1107296256 1134559232 1131534798 1127663986 1115773394
+[TouchAreaConversion] synthetic metadata cases completed
+[R7AreaRate] 0.598204%
+[R7Touch] speed=10 mm/s target=16 final=16 permission=-1 t32=-1 t64=-1 t96=-1
+[R7Touch] speed=30 mm/s target=32 final=32 permission=-1 t32=1.624 t64=-1 t96=-1
+[R7Touch] speed=60 mm/s target=32 final=32 permission=-1 t32=1.599 t64=-1 t96=-1
+[R7Touch] speed=90 mm/s target=32 final=32 permission=-1 t32=1.591 t64=-1 t96=-1
+[R7Touch] speed=120 mm/s target=37.124 final=37.124 permission=0.303 t32=0.608 t64=-1 t96=-1
+[R7Touch] speed=180 mm/s target=83.1423 final=83.1426 permission=0.163 t32=0.349 t64=0.632 t96=-1
+[R7Touch] speed=250 mm/s target=160 final=160 permission=0.121 t32=0.3 t64=0.47 t96=0.591
+[R7Touch] speed=350 mm/s target=160 final=160 permission=0.113 t32=0.292 t64=0.462 t96=0.583
+[SpeedEraser] worst sample/frame deviation=4.61275% idle drop at 500ms=58.5217% failures=0
+family,width,height,dpi,preset,resolvedDip,idealCanvasPx,appliedCanvasPx,integerAdapterPx
+Brush,1920,1080,96,0,1,1,1,1
+Highlighter,1920,1080,96,0,16,16,16,16
+Brush,1920,1080,96,1,3,3,3,3
+Highlighter,1920,1080,96,1,24,24,24,24
+Brush,1920,1080,96,2,6,6,6,6
+Highlighter,1920,1080,96,2,36,36,36,36
+Brush,1920,1080,120,0,1,1.25,1.25,1
+Highlighter,1920,1080,120,0,16,20,20,20
+Brush,1920,1080,120,1,3,3.75,3.75,4
+Highlighter,1920,1080,120,1,24,30,30,30
+Brush,1920,1080,120,2,6,7.5,7.5,8
+Highlighter,1920,1080,120,2,36,45,45,45
+Brush,1920,1080,144,0,1,1.5,1.5,2
+Highlighter,1920,1080,144,0,16,24,24,24
+Brush,1920,1080,144,1,3,4.5,4.5,5
+Highlighter,1920,1080,144,1,24,36,36,36
+Brush,1920,1080,144,2,6,9,9,9
+Highlighter,1920,1080,144,2,36,54,54,54
+Brush,1920,1080,192,0,1,2,2,2
+Highlighter,1920,1080,192,0,16,32,32,32
+Brush,1920,1080,192,1,3,6,6,6
+Highlighter,1920,1080,192,1,24,48,48,48
+Brush,1920,1080,192,2,6,12,12,12
+Highlighter,1920,1080,192,2,36,72,72,72
+Brush,1920,1080,264,0,1,2.75,2.75,3
+Highlighter,1920,1080,264,0,16,44,44,44
+Brush,1920,1080,264,1,3,8.25,8.25,8
+Highlighter,1920,1080,264,1,24,66,66,66
+Brush,1920,1080,264,2,6,16.5,16.5,17
+Highlighter,1920,1080,264,2,36,99,99,99
+Brush,1920,1080,96,0,2,2,2,2
+Highlighter,1920,1080,96,0,16,16,16,16
+Brush,1920,1080,96,1,4,4,4,4
+Highlighter,1920,1080,96,1,24,24,24,24
+Brush,1920,1080,96,2,6,6,6,6
+Highlighter,1920,1080,96,2,36,36,36,36
+Brush,1920,1080,120,0,1.6000000000000001,2,2,2
+Highlighter,1920,1080,120,0,12.800000000000001,16,16,16
+Brush,1920,1080,120,1,3.2000000000000002,4,4,4
+Highlighter,1920,1080,120,1,19.199999999999999,24,24,24
+Brush,1920,1080,120,2,4.7999999999999998,6,6,6
+Highlighter,1920,1080,120,2,28.800000000000001,36,36,36
+Brush,1920,1080,144,0,1.3333333333333333,2,2,2
+Highlighter,1920,1080,144,0,10.666666666666666,16,16,16
+Brush,1920,1080,144,1,2.6666666666666665,4,4,4
+Highlighter,1920,1080,144,1,16,24,24,24
+Brush,1920,1080,144,2,4,6,6,6
+Highlighter,1920,1080,144,2,24,36,36,36
+Brush,1920,1080,192,0,1,2,2,2
+Highlighter,1920,1080,192,0,8,16,16,16
+Brush,1920,1080,192,1,2,4,4,4
+Highlighter,1920,1080,192,1,12,24,24,24
+Brush,1920,1080,192,2,3,6,6,6
+Highlighter,1920,1080,192,2,18,36,36,36
+Brush,1920,1080,264,0,0.72727272727272729,2,2,2
+Highlighter,1920,1080,264,0,5.8181818181818183,16,16,16
+Brush,1920,1080,264,1,1.4545454545454546,4,4,4
+Highlighter,1920,1080,264,1,8.7272727272727266,24,24,24
+Brush,1920,1080,264,2,2.1818181818181817,6,6,6
+Highlighter,1920,1080,264,2,13.090909090909092,36,36,36
+Brush,2560,1440,96,0,2.6666666666666665,2.6666666666666665,2.6666666666666665,3
+Highlighter,2560,1440,96,0,21.333333333333332,21.333333333333332,21.333333333333332,21
+Brush,2560,1440,96,1,5.333333333333333,5.333333333333333,5.333333333333333,5
+Highlighter,2560,1440,96,1,32,32,32,32
+Brush,2560,1440,96,2,8,8,8,8
+Highlighter,2560,1440,96,2,48,48,48,48
+Brush,2560,1440,120,0,2.1333333333333333,2.6666666666666665,2.6666666666666665,3
+Highlighter,2560,1440,120,0,17.066666666666666,21.333333333333332,21.333333333333332,21
+Brush,2560,1440,120,1,4.2666666666666666,5.333333333333333,5.333333333333333,5
+Highlighter,2560,1440,120,1,25.600000000000001,32,32,32
+Brush,2560,1440,120,2,6.4000000000000004,8,8,8
+Highlighter,2560,1440,120,2,38.399999999999999,48,48,48
+Brush,2560,1440,144,0,1.7777777777777777,2.6666666666666665,2.6666666666666665,3
+Highlighter,2560,1440,144,0,14.222222222222221,21.333333333333332,21.333333333333332,21
+Brush,2560,1440,144,1,3.5555555555555554,5.333333333333333,5.333333333333333,5
+Highlighter,2560,1440,144,1,21.333333333333332,32,32,32
+Brush,2560,1440,144,2,5.333333333333333,8,8,8
+Highlighter,2560,1440,144,2,32,48,48,48
+Brush,2560,1440,192,0,1.3333333333333333,2.6666666666666665,2.6666666666666665,3
+Highlighter,2560,1440,192,0,10.666666666666666,21.333333333333332,21.333333333333332,21
+Brush,2560,1440,192,1,2.6666666666666665,5.333333333333333,5.333333333333333,5
+Highlighter,2560,1440,192,1,16,32,32,32
+Brush,2560,1440,192,2,4,8,8,8
+Highlighter,2560,1440,192,2,24,48,48,48
+Brush,2560,1440,264,0,0.96969696969696961,2.6666666666666665,2.6666666666666665,3
+Highlighter,2560,1440,264,0,7.7575757575757569,21.333333333333332,21.333333333333332,21
+Brush,2560,1440,264,1,1.9393939393939392,5.333333333333333,5.333333333333333,5
+Highlighter,2560,1440,264,1,11.636363636363637,32,32,32
+Brush,2560,1440,264,2,2.9090909090909092,8,8,8
+Highlighter,2560,1440,264,2,17.454545454545453,48,48,48
+Brush,3840,2160,96,0,4,4,4,4
+Highlighter,3840,2160,96,0,32,32,32,32
+Brush,3840,2160,96,1,8,8,8,8
+Highlighter,3840,2160,96,1,48,48,48,48
+Brush,3840,2160,96,2,12,12,12,12
+Highlighter,3840,2160,96,2,72,72,72,72
+Brush,3840,2160,120,0,3.2000000000000002,4,4,4
+Highlighter,3840,2160,120,0,25.600000000000001,32,32,32
+Brush,3840,2160,120,1,6.4000000000000004,8,8,8
+Highlighter,3840,2160,120,1,38.399999999999999,48,48,48
+Brush,3840,2160,120,2,9.5999999999999996,12,12,12
+Highlighter,3840,2160,120,2,57.600000000000001,72,72,72
+Brush,3840,2160,144,0,2.6666666666666665,4,4,4
+Highlighter,3840,2160,144,0,21.333333333333332,32,32,32
+Brush,3840,2160,144,1,5.333333333333333,8,8,8
+Highlighter,3840,2160,144,1,32,48,48,48
+Brush,3840,2160,144,2,8,12,12,12
+Highlighter,3840,2160,144,2,48,72,72,72
+Brush,3840,2160,192,0,2,4,4,4
+Highlighter,3840,2160,192,0,16,32,32,32
+Brush,3840,2160,192,1,4,8,8,8
+Highlighter,3840,2160,192,1,24,48,48,48
+Brush,3840,2160,192,2,6,12,12,12
+Highlighter,3840,2160,192,2,36,72,72,72
+Brush,3840,2160,264,0,1.4545454545454546,4,4,4
+Highlighter,3840,2160,264,0,11.636363636363637,32,32,32
+Brush,3840,2160,264,1,2.9090909090909092,8,8,8
+Highlighter,3840,2160,264,1,17.454545454545453,48,48,48
+Brush,3840,2160,264,2,4.3636363636363633,12,12,12
+Highlighter,3840,2160,264,2,26.181818181818183,72,72,72
+pen-width policy and codec: PASS
+[EraserSensitivity] source=1 low/medium/high=48.177631378173828/71.554412841796875/106.27402496337891
+[EraserSensitivity] source=3 low/medium/high=51.461063385009766/71.554481506347656/99.493507385253906
+[EraserSensitivity] source=4 low/medium/high=53.7764892578125/71.554283142089844/95.209197998046875
+[EraserMotion] openingPeak=1.0444444444444443 closingPeak=1.0444444444444445
+[EraserAttribute] layouts=216 failures=0
+[RecallMotion] openingPeak=1.0444444444444443 closingPeak=1.0444444444444445
+[RecallAttribute] failures=0
+PASS animation correctness

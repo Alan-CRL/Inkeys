@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include "../Inkeys/Inkeys/Business/PenToolState.hpp"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 import Inkeys.UI.Bar.ToggleClickCoalescer;
 
@@ -105,6 +106,29 @@ namespace
 			"empty Selection click is a no-op");
 	}
 
+	void TestEraserAttributeClearReturnMode()
+	{
+		using Kind = Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind;
+		Check(ResolveEraserClearReturnMode(Kind::None) ==
+			BarEraserClearReturnMode::Drawing,
+			"missing stroke history returns to Drawing");
+		Check(ResolveEraserClearReturnMode(Kind::Drawing) ==
+			BarEraserClearReturnMode::Drawing,
+			"drawing stroke returns to Drawing");
+		Check(ResolveEraserClearReturnMode(Kind::Shape) ==
+			BarEraserClearReturnMode::Shape,
+			"shape stroke returns to Shape");
+		Check(ResolveEraserClearReturnMode(Kind::Eraser) ==
+			BarEraserClearReturnMode::Eraser,
+			"eraser stroke keeps Eraser");
+		Check(ResolveEraserClearReturnMode(Kind::Eraser, true) ==
+			BarEraserClearReturnMode::Selection,
+			"selection entry takes priority even after an eraser stroke");
+		Check(ResolveEraserClearReturnMode(Kind::Shape, true) ==
+			BarEraserClearReturnMode::Selection,
+			"selection entry takes priority over the last shape stroke");
+	}
+
 	void TestRememberedLaserOnlyActivatesInPenMode()
 	{
 		using Inkeys::Business::IsLaserToolActive;
@@ -137,6 +161,7 @@ int RunToggleClickCoalescerTests()
 	TestNonMonotonicTimeStartsNewWindow();
 	TestDrawButtonToggleNeverChangesPenType();
 	TestClearButtonStateMachine();
+	TestEraserAttributeClearReturnMode();
 	TestRememberedLaserOnlyActivatesInPenMode();
 	TestLaserUsesIndependentColorState();
 	return failureCount;

@@ -1,0 +1,3 @@
+HEAD: 2f87fe69d2f7680eac1e477723937b6ee5bd251c
+Branch: feature/eraser
+Existing modified Inkeys/PptCOM.dll SHA256: 779908b2acc9f37241a4c59c36822685e87a07c4bc886bde22d9d167e68fe117

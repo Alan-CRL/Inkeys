@@ -1,5 +1,7 @@
 # Quality and Validation
 
+本页构建命令与 `inkStrokeModelerTestTests` / `--metrics-output` / `--strict-metrics` 指向独立 demo。集成后的 `Inkeys/Inkeys/Drawing/Draw3/` 必须使用 [主产品构建合同](../native-desktop/build-and-compatibility.md) 与 [Draw3 集成合同](../native-desktop/draw3-integration.md)：完整 `InkeysRepo.sln Debug|原生架构`，真实主产品 CLI/Host、严格 Headless 与 PptCOM 分开验证。旧 demo 的固定 landing 阈值不是首发性能验收门，不能用它的成功替代生产成功 Present、Move/Up、工具与恢复证据。
+
 ## Scope Discipline
 
 - 只修改任务要求的最小范围。
@@ -47,7 +49,7 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 构建日志需要同时证明 C++ 编译和两个 Shader 编译成功；只看到最终 EXE 存在，不能替代对 Shader 构建/资源链的检查。
 
-仓库内 ink stroke modeler 预编译库使用 Release ABI。Debug 配置必须保留调试信息/非优化构建，但以 `/MT`、`NDEBUG` 链接；改回 `/MTd`、`_DEBUG` 会产生 `_ITERATOR_DEBUG_LEVEL` 和运行库不匹配。该约束适用于主工程和直接链接真实模块源码的测试工程。
+Ink Stroke Modeler/Abseil消费保持Release ABI：Debug自有代码保留调试信息/非优化，以 /MT、NDEBUG 链接，不能改回 /MTd、_DEBUG。2026-10-12批准的源码迁移对共享13个上游Modeler TU及阶段2独立本地扩展保持旧MinSizeRel优化；Abseil按最新授权固定vcpkg20250512.1#0同包头/Release MT库，专用C++20且必须数值/性能对照，详见native-desktop/draw3-integration固定ABI合同。InkeysHeadlessTests MTd不直接消费该依赖。
 
 原生窗口宿主不需要文件级 `WholeProgramOptimization` 例外。Release 必须继续使用项目级 `/GL/LTCG`，并通过启动测试确认 `WS_EX_NOREDIRECTIONBITMAP` 直接进入 `CreateWindowExW`。
 

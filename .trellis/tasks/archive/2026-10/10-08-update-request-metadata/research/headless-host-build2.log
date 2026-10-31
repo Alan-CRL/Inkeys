@@ -1,0 +1,174 @@
+Build started 2026/10/8 8:43:46.
+Logging verbosity is set to: Normal.
+     1>Project "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj" on node 1 (default targets).
+     1>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Touching "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\InkeysHe.8FBAA5F4.tlog\unsuccessfulbuild".
+       SetModuleDependencies:
+         Scanning sources for module dependencies...
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\CL.exe /c /I"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\..\Inkeys\additional" /I"D:\Project\Inkeys\Repo\Inkeys-draw\VcpkgInstalled\Arm64\arm64-windows-static-v143\include" /ifcSearchDir "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /ZI /JMC /nologo /W4 /WX- /diagnostics:column /sdl /FS /Od /Oy- /D _CRT_SECURE_NO_WARNINGS /D INKEYS_MESSAGE_BOX_TESTING /D DRAW3_CONTACT_TESTING /D _ARM64_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE=1 /D _UNICODE /D UNICODE /Gm- /EHsc /RTC1 /MTd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /ifcOutput "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.ifc" /scanDependencies "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fo"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.obj" /Fd"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\vc143.pdb" /sourceDependencies "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /external:W4 /Gd /interface /analyze- /FC /errorReport:queue /utf-8  /TP ..\Inkeys\Inkeys\Other\Other.Config.cppm
+         Other.Config.cppm
+       ClCompile:
+         Compiling...
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\CL.exe /c /I"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\..\Inkeys\additional" /I"D:\Project\Inkeys\Repo\Inkeys-draw\VcpkgInstalled\Arm64\arm64-windows-static-v143\include" /ifcSearchDir "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /reference "Inkeys.UI.Bar.Metrics=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Bar.Metrics.cppm.ifc" /ZI /JMC /nologo /W4 /WX- /diagnostics:column /sdl /FS /Od /Oy- /D _CRT_SECURE_NO_WARNINGS /D INKEYS_MESSAGE_BOX_TESTING /D DRAW3_CONTACT_TESTING /D _ARM64_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE=1 /D _UNICODE /D UNICODE /Gm- /EHsc /RTC1 /MTd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /ifcOutput "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.ifc" /Fo"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.obj" /Fd"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\vc143.pdb" /sourceDependencies "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.ifc.d.json" /external:W4 /Gd /interface /analyze- /FC /errorReport:queue /utf-8  /TP ..\Inkeys\Inkeys\Other\Other.Config.cppm
+         Other.Config.cppm
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+         
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\CL.exe /c /I"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\..\Inkeys\additional" /I"D:\Project\Inkeys\Repo\Inkeys-draw\VcpkgInstalled\Arm64\arm64-windows-static-v143\include" /ifcSearchDir "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /reference "Inkeys.Other.Config=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.ifc" /reference "Inkeys.Conv.Text=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Conv.Text.cppm.ifc" /reference "Inkeys.UI.Bar.Metrics=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Bar.Metrics.cppm.ifc" /ZI /JMC /nologo /W4 /WX- /diagnostics:column /sdl /FS /Od /Oy- /D INKEYS_MESSAGE_BOX_TESTING /D DRAW3_CONTACT_TESTING /D _ARM64_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE=1 /D _UNICODE /D UNICODE /Gm- /EHsc /RTC1 /MTd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /ifcOutput "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fo"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fd"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\vc143.pdb" /sourceDependencies "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\.d.json" /external:W4 /Gd /TP /analyze- /FC /errorReport:queue /utf-8 config_metadata_tests.cpp
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\CL.exe /c /I"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\..\Inkeys\additional" /I"D:\Project\Inkeys\Repo\Inkeys-draw\VcpkgInstalled\Arm64\arm64-windows-static-v143\include" /ifcSearchDir "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /reference "Inkeys.Other.Config=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.ifc" /reference "Inkeys.Conv.Text=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Conv.Text.cppm.ifc" /reference "Inkeys.UI.Bar.Metrics=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Bar.Metrics.cppm.ifc" /ZI /JMC /nologo /W4 /WX- /diagnostics:column /sdl /FS /Od /Oy- /D _CRT_SECURE_NO_WARNINGS /D INKEYS_MESSAGE_BOX_TESTING /D DRAW3_CONTACT_TESTING /D _ARM64_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE=1 /D _UNICODE /D UNICODE /Gm- /EHsc /RTC1 /MTd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /ifcOutput "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fo"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fd"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\vc143.pdb" /sourceDependencies "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\.d.json" /external:W4 /Gd /TP /analyze- /FC /errorReport:queue /utf-8 ..\Inkeys\Inkeys\Other\Other.Config.cpp
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\CL.exe /c /I"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\..\Inkeys\additional" /I"D:\Project\Inkeys\Repo\Inkeys-draw\VcpkgInstalled\Arm64\arm64-windows-static-v143\include" /ifcSearchDir "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /reference "Inkeys.Drawing.Draw3.contact_input=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Draw3.ContactInput.cppm.ifc" /reference "Inkeys.Other.Config=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.ifc" /reference "Inkeys.UI.Bar.Metrics=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Bar.Metrics.cppm.ifc" /ZI /JMC /nologo /W4 /WX- /diagnostics:column /sdl /FS /Od /Oy- /D INKEYS_MESSAGE_BOX_TESTING /D DRAW3_CONTACT_TESTING /D _ARM64_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE=1 /D _UNICODE /D UNICODE /Gm- /EHsc /RTC1 /MTd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /ifcOutput "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fo"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fd"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\vc143.pdb" /sourceDependencies "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\.d.json" /external:W4 /Gd /TP /analyze- /FC /errorReport:queue /utf-8 speed_eraser_tests.cpp
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\CL.exe /c /I"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\..\Inkeys\additional" /I"D:\Project\Inkeys\Repo\Inkeys-draw\VcpkgInstalled\Arm64\arm64-windows-static-v143\include" /ifcSearchDir "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /reference "Inkeys.Other.Config=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Other.Config.cppm.ifc" /reference "Inkeys.UI.StartupPreview=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\StartupPreview.cppm.ifc" /reference "Inkeys.UI.Bar.Metrics=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Bar.Metrics.cppm.ifc" /reference "Inkeys.Startup.Progress=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\Startup.Progress.cppm.ifc" /reference "Inkeys.UI.StartupPreview.State=D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\StartupPreview.State.cppm.ifc" /ZI /JMC /nologo /W4 /WX- /diagnostics:column /sdl /FS /Od /Oy- /D INKEYS_MESSAGE_BOX_TESTING /D DRAW3_CONTACT_TESTING /D _ARM64_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE=1 /D _UNICODE /D UNICODE /Gm- /EHsc /RTC1 /MTd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /ifcOutput "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fo"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\\" /Fd"D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\vc143.pdb" /sourceDependencies "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\Cache\ARM64\Debug\.d.json" /external:W4 /Gd /TP /analyze- /FC /errorReport:queue /utf-8 startup_preview_state_tests.cpp
+         speed_eraser_tests.cpp
+         config_metadata_tests.cpp
+         Other.Config.cpp
+         startup_preview_state_tests.cpp
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1383,14): warning C4456: declaration of 'hover' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1292,13):
+             see declaration of 'hover'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1597,14): warning C4456: declaration of 'contact' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1295,13):
+             see declaration of 'contact'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1698,14): warning C4456: declaration of 'x' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1256,9):
+             see declaration of 'x'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1768,14): warning C4456: declaration of 'area' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1066,13):
+             see declaration of 'area'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1785,14): warning C4456: declaration of 'x' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1256,9):
+             see declaration of 'x'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1787,14): warning C4456: declaration of 'area' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1066,13):
+             see declaration of 'area'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1793,14): warning C4456: declaration of 'rotated' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1119,15):
+             see declaration of 'rotated'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1794,14): warning C4456: declaration of 'rotatedConfig' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+             D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1121,13):
+             see declaration of 'rotatedConfig'
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,63): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,51): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,59): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,49): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,61): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,50): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(2068,44): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(261,15): error C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(298,15): error C4996: '_wfopen': This function or variable may be unsafe. Consider using _wfopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         (compiling source file 'config_metadata_tests.cpp')
+         
+     1>D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(297,1): warning C4702: unreachable code [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+     1>Done Building Project "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj" (default targets) -- FAILED.
+
+Build FAILED.
+
+       "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj" (default target) (1) ->
+       (ClCompile target) -> 
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1383,14): warning C4456: declaration of 'hover' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1597,14): warning C4456: declaration of 'contact' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1698,14): warning C4456: declaration of 'x' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1768,14): warning C4456: declaration of 'area' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1785,14): warning C4456: declaration of 'x' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1787,14): warning C4456: declaration of 'area' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1793,14): warning C4456: declaration of 'rotated' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1794,14): warning C4456: declaration of 'rotatedConfig' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,63): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,51): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,59): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,49): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,61): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,50): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(2068,44): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\speed_eraser_tests.cpp(297,1): warning C4702: unreachable code [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+
+
+       "D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj" (default target) (1) ->
+       (ClCompile target) -> 
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(261,15): error C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+         D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(298,15): error C4996: '_wfopen': This function or variable may be unsafe. Consider using _wfopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+
+    34 Warning(s)
+    2 Error(s)
+
+Time Elapsed 00:00:15.02

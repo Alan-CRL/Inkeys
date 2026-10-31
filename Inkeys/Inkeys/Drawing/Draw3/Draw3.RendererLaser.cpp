@@ -160,12 +160,9 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const size_t remaining = drawPoints.size() - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), drawPoints.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(InkPoint)), 0, D3D11_MAP_WRITE_DISCARD))) return -1;
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
-			std::memcpy(mapped.pData, drawPoints.data() + startIndex,
-				batchCount * sizeof(InkPoint));
-			context->Unmap(inkDataBuffer.Get(), 0);
 
 			if (FAILED(context->Map(globalCB.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
@@ -276,11 +273,11 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
-	void InkRenderer::ResolveLaserStrokeCoverage(
+	bool InkRenderer::ResolveLaserStrokeCoverage(
 		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
 	{
-		if (!laserStrokeCoverage.srv) return;
-		DrawLaserRectPass(dstRTV, rect, opacity, 8.0f,
+		if (!laserStrokeCoverage.srv) return false;
+		return DrawLaserRectPass(dstRTV, rect, opacity, 8.0f,
 			laserStrokeCoverage.srv.Get(), 7, operatorResolveBlendState.Get());
 	}
 
@@ -293,18 +290,18 @@ namespace Inkeys::Drawing::Draw3
 			laserLiveCoverage.srv.Get(), 9);
 	}
 
-	void InkRenderer::ResolveLaserCompositedColor(
+	bool InkRenderer::ResolveLaserCompositedColor(
 		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
 	{
-		if (!laserCompositedColor.srv) return;
-		DrawLaserRectPass(dstRTV, rect, opacity, 11.0f,
+		if (!laserCompositedColor.srv) return false;
+		return DrawLaserRectPass(dstRTV, rect, opacity, 11.0f,
 			laserCompositedColor.srv.Get(), 6, operatorResolveBlendState.Get());
 	}
 
-	void InkRenderer::ClearLaserCoverageRect(RECT rect)
+	bool InkRenderer::ClearLaserCoverageRect(RECT rect)
 	{
-		if (!laserStrokeCoverage.rtv) return;
-		DrawLaserRectPass(laserStrokeCoverage.rtv.Get(), rect, 1.0f,
+		if (!laserStrokeCoverage.rtv) return false;
+		return DrawLaserRectPass(laserStrokeCoverage.rtv.Get(), rect, 1.0f,
 			12.0f, nullptr, 0, nullptr);
 	}
 
@@ -353,12 +350,10 @@ namespace Inkeys::Drawing::Draw3
 		while (startIndex < dots.size())
 		{
 			const size_t batchCount = std::min(dots.size() - startIndex, kMaxBufferCapacity);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), dots.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(LaserDot)), 0, D3D11_MAP_WRITE_DISCARD))) return;
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
-				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
-			std::memcpy(mapped.pData, dots.data() + startIndex,
-				batchCount * sizeof(LaserDot));
-			context->Unmap(inkDataBuffer.Get(), 0);
+
 			if (FAILED(context->Map(globalCB.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);

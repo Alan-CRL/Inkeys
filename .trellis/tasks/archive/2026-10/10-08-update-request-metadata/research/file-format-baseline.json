@@ -1,0 +1,32 @@
+{
+  "Inkeys/Inkeys/Other/Other.Config.cppm": {
+    "bom": false,
+    "crlf": 539,
+    "lf": 539
+  },
+  "Inkeys/Inkeys/Other/Other.Config.cpp": {
+    "bom": false,
+    "crlf": 929,
+    "lf": 929
+  },
+  "Inkeys/Inkeys/Net/Net.Update.Download.cpp": {
+    "bom": false,
+    "crlf": 229,
+    "lf": 229
+  },
+  "InkeysHeadlessTests/startup_preview_state_tests.cpp": {
+    "bom": false,
+    "crlf": 444,
+    "lf": 444
+  },
+  "InkeysHeadlessTests/animation_tests.cpp": {
+    "bom": true,
+    "crlf": 1703,
+    "lf": 1703
+  },
+  "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj": {
+    "bom": false,
+    "crlf": 192,
+    "lf": 192
+  }
+}

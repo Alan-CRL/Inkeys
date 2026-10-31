@@ -1,7 +1,9 @@
 module;
 
 #include "../../IdtMain.h"
+#include "../../PptSettingsPersistence.h"
 
+#include <atomic>
 #include <initializer_list>
 #include <sstream>
 #include <string_view>
@@ -15,6 +17,9 @@ import Inkeys.Conv.Text;
 
 namespace
 {
+	constexpr LONGLONG kMaxConfigFileBytes = 16LL * 1024 * 1024;
+	constinit std::atomic_bool defaultLargeScreenDevice{ false };
+
 	template <typename T>
 	inline constexpr bool InkeysConfigDependentFalseV = false;
 
@@ -39,36 +44,6 @@ namespace
 				0,
 				NULL,
 				OPEN_EXISTING,
-				FILE_ATTRIBUTE_NORMAL,
-				NULL
-			);
-
-			if (*hFile != INVALID_HANDLE_VALUE) return true;
-			if (time >= 3) return false;
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		}
-
-		return false;
-	}
-
-	bool OccupyConfigFileForWrite(HANDLE* hFile, const std::wstring& filePath)
-	{
-		std::filesystem::path directoryPath = std::filesystem::path(filePath).parent_path();
-		if (!std::filesystem::exists(directoryPath))
-		{
-			std::error_code ec;
-			std::filesystem::create_directories(directoryPath, ec);
-		}
-
-		for (int time = 1; time <= 5; time++)
-		{
-			*hFile = CreateFileW(
-				filePath.c_str(),
-				GENERIC_READ | GENERIC_WRITE,
-				0,
-				NULL,
-				OPEN_ALWAYS,
 				FILE_ATTRIBUTE_NORMAL,
 				NULL
 			);
@@ -274,6 +249,28 @@ namespace
 		static Json::Value ToJson(const std::wstring& value)
 		{
 			return Json::Value(utf16ToUtf8(value));
+		}
+	};
+
+	template <>
+	struct JsonValueCodec<Inkeys::WhiteboardThemePreference, void>
+	{
+		static bool TryRead(const Json::Value& value, Inkeys::WhiteboardThemePreference& result)
+		{
+			if (!value.isObject() || !value.isMember("BackgroundRgb") || !value.isMember("Pattern")) return false;
+			const auto& rgb = value["BackgroundRgb"]; const auto& pattern = value["Pattern"];
+			const auto integer = [](const Json::Value& item)
+			{ return item.type() == Json::intValue || item.type() == Json::uintValue; };
+			// 严验原始整数类型与范围；浮点、布尔、超宽或缺项都回退整个主题。
+			if (!integer(rgb) || !rgb.isUInt() || rgb.asUInt() > 0xFFFFFF
+				|| !integer(pattern) || !pattern.isUInt() || pattern.asUInt() > 2) return false;
+			result = { rgb.asUInt(), pattern.asUInt() }; return true;
+		}
+		static Json::Value ToJson(const Inkeys::WhiteboardThemePreference& value)
+		{
+			Json::Value result(Json::objectValue);
+			result["BackgroundRgb"] = value.backgroundRgb; result["Pattern"] = value.pattern;
+			return result;
 		}
 	};
 
@@ -545,6 +542,12 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			AssignConfigValue(value, defaultValue);
 		}
 
+		template <typename T>
+		void HandleHiddenValue(const char*, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>&, bool, bool, const char*)
+		{
+			// H 只用于输出，不从文件或默认值覆盖来源。
+		}
+
 	private:
 		const std::vector<std::string>& selectedPaths;
 		std::vector<std::string> groupPath;
@@ -567,7 +570,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
+		void HandleValue(const char* name, T& value, const T& defaultValue, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!canReadFromDocument && !includeWriteOnly) return;
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
@@ -575,10 +578,77 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			const Json::Value* jsonValue = TryGetValueAtPath(root, groupPath, name);
 			if (!jsonValue) return;
 
+			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
+			{
+				if (JoinPath(groupPath, name) == "UI.Bar.SelectAndClickThroughMode")
+				{
+					// 仅整数 1 启用分离式；类型错误、越界及未知值统一回到合并式。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
+
+				if (JoinPath(groupPath, name) == "UI.Bar.StartupPlacement")
+				{
+					// 启动位置只接受整数 0..2；非法类型或超宽整数不能窄化成有效位置。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : 0;
+					return;
+				}
+
+				const auto path = JoinPath(groupPath, name);
+				if (path == "UI.Bar.UseTaskbarHeightAsScaleBase")
+				{
+					// 旧开关 true 必须保留真实任务栏量，不能隐式转成新增的基础量模式 1。
+					if (jsonValue->isBool())
+					{
+						value = jsonValue->asBool() ? 2 : 0;
+						return;
+					}
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
+				if (groupPath.size() == 3 && groupPath[0] == "UI"
+					&& groupPath[1] == "Bar" && groupPath[2] == "AutoCollapse")
+				{
+					// 新策略独立使用 schema 默认值；先验类型与宽度，不能将旧布尔或超宽整数窄化。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
+
+				if (path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.PenStyle")
+				{
+					// 两种类型只接受整数 0/1；非法值各自恢复系统/圆形默认，不能强转成笔形。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
+				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")
+				{
+					// 先验证 JSON 整数类型与范围，避免超宽整数窄化后成为合法选项。
+					const bool iconOrder = path == "UI.Bar.IconOrder";
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= (iconOrder ? 3 : 1) ? candidate : (iconOrder ? 0 : 1);
+					return;
+				}
+			}
+
 			T loadedValue{};
 			if (!JsonValueCodec<T>::TryRead(*jsonValue, loadedValue)) return;
 
 			AssignConfigValue(value, loadedValue);
+		}
+
+		template <typename T>
+		void HandleHiddenValue(const char*, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>&, bool, bool, const char*)
+		{
+			// H 只用于输出，不从文件或默认值覆盖来源。
 		}
 
 	private:
@@ -611,6 +681,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			parent[name] = JsonValueCodec<T>::ToJson(value);
 		}
 
+		template <typename T>
+		void HandleHiddenValue(const char* name, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>& value, bool writeFile, bool, const char*)
+		{
+			Json::Value& parent = EnsureObjectPath(root, groupPath);
+			// 关闭输出时不取来源快照，不占用来源锁。
+			Json::Value snapshot;
+			if (writeFile) snapshot = JsonValueCodec<T>::ToJson(value.Snapshot());
+			Inkeys::ConfigDetail::WriteHiddenConfigValue(parent, name, snapshot, writeFile);
+		}
+
 	private:
 		Json::Value& root;
 		std::vector<std::string> groupPath;
@@ -635,13 +715,17 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			if (uploadMode != Inkeys::ConfigUploadMode::Upload) return;
 
 			std::string valueText = JsonValueToUploadText(JsonValueCodec<T>::ToJson(value));
-			MakeUploadTextSingleLine(valueText);
-			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
+			AppendUploadText(name, std::move(valueText), uploadName);
+		}
 
-			result += StringToUrlencode(keyText);
-			result += '=';
-			result += StringToUrlencode(valueText);
-			result += ';';
+		template <typename T>
+		void HandleHiddenValue(const char* name, Inkeys::ConfigDetail::ConfigReadOnlyValue<T>& value, bool, bool writeReferer, const char* uploadName)
+		{
+			if (!writeReferer) return;
+			T snapshot = value.Snapshot();
+			std::string valueText = JsonValueToUploadText(JsonValueCodec<T>::ToJson(snapshot));
+			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
+			Inkeys::ConfigDetail::AppendConfigUploadValue(result, keyText, std::move(valueText), writeReferer, JoinPath(groupPath, name) == "Info.UserId");
 		}
 
 		const std::string& GetResult() const
@@ -650,9 +734,48 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 		}
 
 	private:
+		void AppendUploadText(const char* name, std::string valueText, const char* uploadName)
+		{
+			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
+			Inkeys::ConfigDetail::AppendConfigUploadValue(result, keyText, std::move(valueText), true);
+		}
+
 		std::string result;
 		std::vector<std::string> groupPath;
 	};
+}
+
+namespace Inkeys::ConfigDetail
+{
+	void SetDefaultLargeScreenDevice(bool largeScreen) noexcept
+	{
+		defaultLargeScreenDevice.store(largeScreen, std::memory_order_relaxed);
+	}
+
+	bool GetDefaultLargeScreenDevice() noexcept
+	{
+		return defaultLargeScreenDevice.load(std::memory_order_relaxed);
+	}
+
+	void WriteHiddenConfigValue(Json::Value& parent, const char* name, const Json::Value& value, bool writeFile)
+	{
+		// AutoClean 关闭时也不能保留明确禁止输出的已知 H 键。
+		if (writeFile) parent[name] = value;
+		else parent.removeMember(name);
+	}
+
+	void AppendConfigUploadValue(std::string& result, const std::string& key, std::string value, bool writeReferer, bool stripGuidBraces)
+	{
+		if (!writeReferer) return;
+		// 只规范化发送副本，磁盘和来源中的 GUID 仍保留花括号。
+		if (stripGuidBraces)
+			std::erase_if(value, [](char ch) { return ch == '{' || ch == '}'; });
+		MakeUploadTextSingleLine(value);
+		result += StringToUrlencode(key);
+		result += '=';
+		result += StringToUrlencode(value);
+		result += ';';
+	}
 }
 
 namespace Inkeys
@@ -683,6 +806,25 @@ namespace Inkeys
 	bool Config::Write()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
+		if (!hasLoadedDocument && !hasReadAllDocument)
+		{
+			const std::wstring path = GetFilePath();
+			const DWORD attributes = GetFileAttributesW(path.c_str());
+			if (attributes != INVALID_FILE_ATTRIBUTES)
+			{
+				// 已存在但坏/超限/不可读的配置不能被默认值覆盖。
+				Json::Value existing;
+				if (!LoadDocumentOnly(existing)) return false;
+				loadedDocument = existing;
+				hasLoadedDocument = true;
+			}
+			else
+			{
+				const DWORD error = GetLastError();
+				if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+					return false;
+			}
+		}
 		const bool autoCleanEnabled = LoadConfigValue(this->Config.AutoClean);
 
 		Json::Value baseRoot = Json::Value(Json::objectValue);
@@ -714,6 +856,11 @@ namespace Inkeys
 
 		Json::Value outputRoot = autoCleanEnabled ? Json::Value(Json::objectValue) : baseRoot;
 		OverlayDocument(outputRoot);
+		// 边缘已改为输入设备固定策略；即使保留未知键，也不再写回已退役的三个开关。
+		auto& cursorNode = outputRoot["Drawing"]["Cursor"];
+		cursorNode.removeMember("MouseHighlightEdge");
+		cursorNode.removeMember("ScreenPenHighlightEdge");
+		cursorNode.removeMember("DigitizerHighlightEdge");
 
 		if (!WriteDocumentToFile(GetFilePath(), outputRoot)) return false;
 
@@ -722,6 +869,13 @@ namespace Inkeys
 		readAllDocument = outputRoot;
 		hasReadAllDocument = true;
 		return true;
+	}
+
+	bool Config::SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept
+	{
+		if (backgroundRgb > 0xFFFFFF || pattern > 2) return false;
+		const WhiteboardThemePreference next{ backgroundRgb, pattern };
+		return Drawing.Whiteboard.DefaultTheme.exchange(next) != next;
 	}
 
 	std::string Config::GetUploadInfo()
@@ -880,7 +1034,9 @@ namespace Inkeys
 			return false;
 		}
 
-		if (fileSize.QuadPart > static_cast<LONGLONG>(MAXDWORD))
+		if (fileSize.QuadPart <= 0 ||
+			fileSize.QuadPart > kMaxConfigFileBytes ||
+			fileSize.QuadPart > static_cast<LONGLONG>(MAXDWORD))
 		{
 			UnOccupyConfigFile(&fileHandle);
 			return false; // 文件过大
@@ -911,46 +1067,25 @@ namespace Inkeys
 
 		std::istringstream jsonContentStream(jsonContent);
 		Json::CharReaderBuilder readerBuilder;
+		readerBuilder["stackLimit"] = 64;
 		std::string jsonErr;
 
-		if (!Json::parseFromStream(readerBuilder, jsonContentStream, &outRoot, &jsonErr)) return false;
-		return true;
+		try
+		{
+			return Json::parseFromStream(readerBuilder, jsonContentStream,
+				&outRoot, &jsonErr) && outRoot.isObject();
+		}
+		catch (...) { return false; }
 	}
 
 	bool Config::WriteDocumentToFile(const std::wstring& filePath, const Json::Value& root)
 	{
-		HANDLE fileHandle = NULL;
-		if (!OccupyConfigFileForWrite(&fileHandle, filePath))
-		{
-			UnOccupyConfigFile(&fileHandle);
-			return false;
-		}
-
-		if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-		{
-			UnOccupyConfigFile(&fileHandle);
-			return false;
-		}
-
-		if (!SetEndOfFile(fileHandle))
-		{
-			UnOccupyConfigFile(&fileHandle);
-			return false;
-		}
-
 		Json::StreamWriterBuilder writerBuilder;
 		writerBuilder["indentation"] = "\t";
 		std::string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, root);
-
-		DWORD bytesWritten = 0;
-		if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) ||
-			bytesWritten != jsonContent.size())
-		{
-			UnOccupyConfigFile(&fileHandle);
+		if (jsonContent.empty() || jsonContent.size() >
+			static_cast<std::size_t>(kMaxConfigFileBytes))
 			return false;
-		}
-
-		UnOccupyConfigFile(&fileHandle);
-		return true;
+		return Inkeys::PptSettings::WriteAtomically(filePath, jsonContent);
 	}
 }

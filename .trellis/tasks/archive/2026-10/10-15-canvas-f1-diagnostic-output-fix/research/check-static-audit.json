@@ -1,0 +1,160 @@
+{
+  "formats": [
+    {
+      "path": "Inkeys/IdtMain.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys.vcxproj",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys.vcxproj.filters",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Diagnostics.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.GraphicsInitialization.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.HapticFeedback.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.PptTiming.h",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Product.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Renderer.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.RendererPrimitives.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.TransparentPresentation.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "inkStrokeModelerTestTests/inkStrokeModelerTestTests.vcxproj",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    },
+    {
+      "path": "inkStrokeModelerTestTests/inkStrokeModelerTestTests.vcxproj.filters",
+      "bom_preserved": true,
+      "current_crlf": true,
+      "git_blob_crlf": false
+    }
+  ],
+  "registered_projects_and_filters": [
+    {
+      "path": "Inkeys/Inkeys.vcxproj",
+      "diagnostic_source_count": 1
+    },
+    {
+      "path": "Inkeys/Inkeys.vcxproj.filters",
+      "diagnostic_source_count": 1
+    },
+    {
+      "path": "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
+      "diagnostic_source_count": 1
+    },
+    {
+      "path": "inkStrokeModelerTestTests/inkStrokeModelerTestTests.vcxproj",
+      "diagnostic_source_count": 1
+    },
+    {
+      "path": "inkStrokeModelerTestTests/inkStrokeModelerTestTests.vcxproj.filters",
+      "diagnostic_source_count": 1
+    }
+  ],
+  "git_diff_check": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "git_core_autocrlf": "true",
+  "format_evidence_note": "Git blobs are normalized LF; original on-disk format preservation relies on captured pre-edit bytes. Current worktree files are CRLF, with BOM matching normalized HEAD.",
+  "static_audit": "pass"
+}

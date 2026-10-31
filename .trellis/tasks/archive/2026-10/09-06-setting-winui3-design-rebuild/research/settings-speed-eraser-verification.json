@@ -1,0 +1,57 @@
+{
+  "base_commit": "16e1cf61521e035fa61b2d7b91b332e24677e81b",
+  "protected_sha256": {
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032",
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189",
+    "Inkeys/PptCOM.dll": "aea8a90053cc5b0d0912ac61c33496e29ffc03bd520404bd9322a11e8789f18f",
+    "Inkeys/PptCOM.tlb": "c652b5dd0603576033b2e0d15869be103f23ffdcaa2a1984e53f3b6a14dba606",
+    ".github/workflows/build-windows.yml": "53652fd2a6267b442cf41d15857eb18b8a941d6eb62f9a2bc044baffee6fe753",
+    "Inkeys/src/setting/Home_Feedback.png": "b980e7a63e6b206b81fc0a00509f7693d097aa01595f4125a57a3a1fbc0a28a7",
+    "Inkeys/src/setting/GitHubMark.png": "0d4c235fef9efec54174a7c005fc0fe0ce2d63d35c21898ab5148587111397a9"
+  },
+  "images": "Deferred by user; no illustration generated or added this round.",
+  "gui": "Not authorized; only headless verification.",
+  "status": "implemented_and_verified_images_deferred",
+  "build": {
+    "solution": "InkeysRepo.sln",
+    "configuration": "Debug|ARM64",
+    "host": "native ARM64 MSBuild discovered with vswhere",
+    "initial_exit": 1,
+    "initial_error": "MSVC linker LNK1000 / Internal error during IncrBuildImage, exception C0000005",
+    "recovery": "Preserved Build/ARM64/Debug/Inkeys.ilk as Inkeys.settings-speed-eraser-stale.ilk and reran the same solution configuration; no source/project/toolchain workaround.",
+    "final_exit": 0,
+    "final_log": "settings-speed-eraser-build-final.log",
+    "compile_log": "settings-speed-eraser-build.log"
+  },
+  "tests": {
+    "command": "InkeysHeadlessTests.exe --no-window --setting-eraser-only",
+    "exit": 0,
+    "settings_failures": 0,
+    "speed_failures": 0,
+    "attribute_failures": 0,
+    "physical_scale_cases": 34,
+    "settings_layout_combinations": 84,
+    "attribute_layouts": 216,
+    "log": "settings-speed-eraser-tests.log"
+  },
+  "i18n": {
+    "en-US": "514/514 PASS",
+    "zh-TW": "514/514 PASS"
+  },
+  "review": "settings-speed-eraser-review.md; no unresolved findings",
+  "limits": [
+    "No GUI/Computer Use/real Windows 7 or physical hardware validation.",
+    "Native settings entry wiring and shared UI3 setter reviewed in source; CPU fixture does not link Setting.cpp.",
+    "Illustrations deliberately deferred by user; no generated imagery or resource changes."
+  ],
+  "commit": false,
+  "push": false,
+  "parent_status": "in_progress",
+  "artifacts": {
+    "Build/ARM64/Debug/Inkeys.exe": "d2dc5aa1987dc805a9410310c2e0fbc861063a66440fa88ae7362ba370d981da",
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe": "89844fae271c5476a08976ae012437e9e085e4145719ea435e5346b17cbe213b"
+  },
+  "protected_unchanged": true,
+  "diff_check": "PASS",
+  "text_format_check": "21 tracked text files preserve UTF-8/BOM/CRLF; no unrelated line-ending diff."
+}

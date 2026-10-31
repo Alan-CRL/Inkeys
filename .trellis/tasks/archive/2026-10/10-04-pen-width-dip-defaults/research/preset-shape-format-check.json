@@ -1,0 +1,18 @@
+{
+  "head": "f8054a227174707a984291d875b4fcc6fadf605f",
+  "baseline_dirty_count": 41,
+  "preexisting_changed": [],
+  "format": [
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.Layout.cppm",
+      "bom_preserved": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.Interaction.cpp",
+      "bom_preserved": true,
+      "bareLF": 0
+    }
+  ],
+  "diff_check_exit": 0
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "sha256_normalization": "CRLF to LF; preserve original UTF-8 bytes and BOM",
+  "extension": "terminal_tail_reconstructor",
+  "upstream_change": false,
+  "opt_in": true,
+  "geometry_only": true,
+  "files": [
+    {
+      "path": "terminal_tail_reconstructor.h",
+      "sha256": "034123eaf6d8080094f6e9814ab63af55229e70e5cd40d3a5d3f686137d87019"
+    },
+    {
+      "path": "terminal_tail_reconstructor.cc",
+      "sha256": "1c03f11037af4d39ab5f8d7a454be67c47b246e8a7be26dcebd673052c0e82fd"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "桌面产品边界"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "模块、并发及格式"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "RTS与鼠标合同"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Host生命周期"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "失败清理监督"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "设备偏好配置/三语言一致性"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "结构化上传/环形head/合成资源合同"}

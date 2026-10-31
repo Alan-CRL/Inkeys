@@ -1,0 +1,54 @@
+{
+  "console_bindings": {
+    "touch-area": {
+      "binding_id_i18n_saved_field_unchanged": true,
+      "located_in_debug_case": true
+    },
+    "ppt-com": {
+      "binding_id_i18n_saved_field_unchanged": true,
+      "located_in_debug_case": true
+    },
+    "draw3": {
+      "binding_id_i18n_saved_field_unchanged": true,
+      "located_in_debug_case": true
+    },
+    "cursor": {
+      "binding_id_i18n_saved_field_unchanged": true,
+      "located_in_debug_case": true
+    }
+  },
+  "fifo_save_preserved": true,
+  "ui_preprocessor_guards": {
+    "RenderDebugButton": {
+      "file": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+      "line": 2257,
+      "conditional_stack": []
+    },
+    "##console-touch-area": {
+      "file": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+      "line": 3621,
+      "conditional_stack": []
+    },
+    "##console-ppt-com": {
+      "file": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+      "line": 3624,
+      "conditional_stack": []
+    },
+    "##console-draw3": {
+      "file": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+      "line": 3627,
+      "conditional_stack": []
+    },
+    "##console-cursor": {
+      "file": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+      "line": 3630,
+      "conditional_stack": []
+    },
+    "##setting-debug": {
+      "file": "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp",
+      "line": 65,
+      "conditional_stack": []
+    }
+  },
+  "release_visibility": "Static source audit confirms Debug entry and four console controls have no IDT_RELEASE gate; this does not claim a release product build."
+}

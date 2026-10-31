@@ -14,7 +14,7 @@ Win32 window message
   -> InkRenderer CPU buffers and operator layers
   -> HLSL coverage/operator output
   -> L2/backbuffer
-  -> DirectComposition/DWM/ULW presenter
+  -> DirectComposition/ULW presenter
 ```
 
 对每条边界确认：
@@ -41,11 +41,17 @@ Win32 window message
 ### Owner WndProc to render/presentation thread
 
 - owner WndProc 不得阻塞等待一个可能被渲染线程持有、且渲染线程又可能同步等待 owner 执行 Window Service 提交的锁。PageControl 直移只能 `try_lock`；每个候选先发布 latest-wins 绝对布局，锁忙或窗口移动失败时保留 pending 并显式请求 pair render，下一条输入或渲染兜底都必须收敛到最新绝对目标，不能假定一定还有后续 `WM_MOUSEMOVE`。
-- PageControl 纯平移成功只顺序移动成对 HWND、推进内部 bounds/mailbox revision 并同步第三光源接受区；不得调用 `Scene::SetBounds`、制造 visual damage 或请求渲染。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
-- `ReleaseCapture` 会同步重入 `WM_CAPTURECHANGED`。PageControl 的 `WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
+- PageControl 普通拖动纯平移成功只顺序移动成对 HWND、推进内部 bounds/mailbox revision 并同步第三光源接受区；不得调用 `Scene::SetBounds`、制造 visual damage 或请求渲染；中轴吸附的短促 Y 动画中间直移仅发布过期帧屏障、不确认最终 pair，并显式请求续帧，实际几何到位后才提交。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
+- `SetCapture` 转移旧 capture 与 `ReleaseCapture` 都可能同步重入 `WM_CAPTURECHANGED`。PageControl Down 必须先在锁外完成旧 capture 清退，再在短锁内复核并建立新 gesture/tracker；不可把捕获简单挪到新 tracker 已建立之后，否则旧 Cancel 会回滚同 pair 新状态。`WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
 - 透明 presentation margin 与共享圆角背景之外的像素必须继续返回 `HTTRANSPARENT`。PPT 的“非按钮背景可拖动”只覆盖实际背景 shape，不等于整个矩形 HWND 都可接收输入。
 
 依据：`PageControlWindowProc`、`PptDragCommitTracker`、`RenderSurface`、`Window::Service::ApplyCancelPointerCapture`、`BarSurfaceScene::HitTestBackground`。
+
+### COM 属性成为跨层准入条件时
+
+- [ ] 常规生产读取是否真正使用dynamic，只有有依据的成员才保留包装例外？比较真实提供方的dynamic、强类型/vtable及受限成员能力；字典FakeAccessor不能证明COM binder和旧版提供方均支持。
+- [ ] native新增非零HWND、PID、页身份条件时，是否只限制确需该身份的墨迹/OS功能，而没有把dynamic仍可用的基础控制一起关掉？基础页码不能伪造画布ready，未知窗口不凭唯一标题补成强身份。
+- [ ] 每笔COM返回是否独立单次释放或明确转移，避免同identity漏配平和列表alias双释放？命令的View/Navigation与部分事件连接也要计入；GC/FinalRelease不能让错误账本变绿。
 
 ### Event-backed two-stage state publication
 
@@ -69,6 +75,8 @@ Win32 window message
 
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。
 - 最新 snapshot 覆盖采样改变了速度采样节奏；每份真实速度只滤波一次，第一份速度不得回写已可见起笔，半径仍需时间/距离双限速。
+- 停笔分别核对模型位置/速度、可见端点与模拟笔锋老化；不新增点时显示时间仍须推进，冻结后的长时间差不能直接成为下一次模型积分。见 [普通笔停笔合同](../native/runtime-and-rendering.md#scenario-普通笔停笔模型收敛与冻结)。
+- 恢复测试必须经过真实帧入口与 L0 半径构建；只检查模型末点或在不推进帧的空循环中断言点数，不证明停笔/续画视觉正确。
 - 活动 contact 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
 - Up 收尾是否只从确认真实点生成 Stored Stroke；Pen 是否烘入 taper、去重连接点并排除 prediction/time。
 - 荧光笔固定矩形的 8:1 half size、0.25px 去重、sweep coverage 和 dirty bounds 必须一起检查。
@@ -100,7 +108,8 @@ Win32 window message
 - 窗口创建链必须按 `ShouldPreconfigureNoRedirectionBitmap -> WindowController 独立窗口线程 -> CreateWindowExW -> DComp ConfigureWindow` 检查；不能只看 presenter 初始化阶段。
 - `WS_EX_NOREDIRECTIONBITMAP` 是 DComp 的创建期窗口契约。创建后缺失时记录并回退，不用 `SetWindowLongPtr` 补设。
 - 修改窗口线程、创建样式或 `.vcxproj` 时必须比较 Debug/Release，并验证初始化事件、`GWLP_USERDATA` 路由和关闭等待都能完成。
-- 所有适配器统一按 DirectComposition、DWM extended frame、ULW 初始化；厂商、架构或 OS 标签本身不能改变顺序。
+- 首发自动候选顺序为 DirectComposition、ULW；两种 DWM 透明模式禁用，强制请求也须拒绝。厂商、架构或 OS 标签本身不能改变顺序。
+- Windows 7 SP1 + 仅 KB2670838 的项目实测支持 `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL`；保持 FLIP 交换链，不因公开文档描述差异自行回退到 bitblt。硬件 FL11.0 有/无及 WARP 的实际呈现须分别验证。
 - 每次新模式尝试前清理上一模式的 presenter、renderer 和 swapchain 状态。
 - GPU 路径保留真透明 alpha；仅 ULW CPU 输出副本叠加 `1/255` alpha 命中测试底层。
 - presenter 初始化成功只证明 API/资源链可用，不证明桌面合成后的可见 alpha 正确；新增适配器或呈现路径时必须在真实桌面背景上验证透明结果。

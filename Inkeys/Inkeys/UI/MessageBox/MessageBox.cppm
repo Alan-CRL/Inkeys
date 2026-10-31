@@ -12,6 +12,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <stop_token>
 #include <vector>
 
 // Windows.h 会把 MessageBox 定义成 A/W 宏；模块名和命名空间必须保持稳定。
@@ -87,6 +88,8 @@ export namespace Inkeys::UI::MessageBox
 
 	struct FallbackPolicy
 	{
+		// 需要明确确认的业务可选择失败关闭，不能再弹系统框继续执行。
+		bool enabled = true;
 		HWND owner = nullptr;
 		SystemModality modality = SystemModality::Application;
 		SystemIcon icon = SystemIcon::None;
@@ -117,6 +120,8 @@ export namespace Inkeys::UI::MessageBox
 		bool ownerlessTopmostAtCreation = false;
 		Reliability reliability = Reliability::Normal;
 		FallbackPolicy fallback{};
+		// 可取消请求必须使用自绘窗口；失败时不降级到不可取消的系统模态框。
+		std::stop_token cancellation{};
 	};
 
 	[[nodiscard]] Request MakeOkRequest(
@@ -126,6 +131,7 @@ export namespace Inkeys::UI::MessageBox
 	[[nodiscard]] Request MakeYesNoRequest(
 		const wchar_t* title, const wchar_t* body) noexcept;
 	[[nodiscard]] Result Show(const Request& request) noexcept;
+	[[nodiscard]] bool IsShowing() noexcept;
 }
 
 #ifdef INKEYS_MESSAGE_BOX_TESTING
@@ -171,6 +177,8 @@ export namespace Inkeys::UI::MessageBox::Test
 	};
 
 	[[nodiscard]] bool Validate(const Request& request) noexcept;
+	[[nodiscard]] bool VerifyCancellationAdmission() noexcept;
+	[[nodiscard]] bool VerifyDialogHideOwnerPolicy() noexcept;
 	[[nodiscard]] UINT ResolveFallbackFlags(const Request& request) noexcept;
 	[[nodiscard]] Result MapSystemResult(Buttons buttons, int value) noexcept;
 	[[nodiscard]] int ScaleDip(int dip, UINT dpi) noexcept;
@@ -229,6 +237,7 @@ namespace Inkeys::UI::MessageBox::Detail
 		bool ownerlessTopmostAtCreation = false;
 		FallbackPolicy fallback{};
 		OwnedIcon icon{};
+		std::stop_token cancellation{};
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 		Test::Automation automation{};
 #endif

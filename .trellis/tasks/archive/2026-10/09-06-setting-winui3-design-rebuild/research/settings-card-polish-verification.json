@@ -1,0 +1,120 @@
+{
+  "format": {
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+      "bom": false,
+      "crlf": 4754
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.h": {
+      "bom": false,
+      "crlf": 247
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+      "bom": false,
+      "crlf": 996
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.h": {
+      "bom": false,
+      "crlf": 132
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp": {
+      "bom": false,
+      "crlf": 1566
+    },
+    "Inkeys/IdtI18nKeys.g.h": {
+      "bom": false,
+      "crlf": 847
+    },
+    "Inkeys/src/i18n/zh-CN.jsonc": {
+      "bom": false,
+      "crlf": 844
+    },
+    "Inkeys/src/i18n/zh-TW.jsonc": {
+      "bom": false,
+      "crlf": 844
+    },
+    "Inkeys/src/i18n/en-US.jsonc": {
+      "bom": false,
+      "crlf": 844
+    },
+    "Scripts/i18n.zh-CN.snapshot.jsonc": {
+      "bom": false,
+      "crlf": 844
+    },
+    "InkeysHeadlessTests/setting_design_tests.cpp": {
+      "bom": false,
+      "crlf": 4758
+    },
+    "Inkeys/Inkeys.rc": {
+      "bom": false,
+      "crlf": 382
+    },
+    "Inkeys/Inkeys.vcxproj": {
+      "bom": false,
+      "crlf": 1447
+    },
+    "Inkeys/Inkeys.vcxproj.filters": {
+      "bom": false,
+      "crlf": 2674
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Base.cppm": {
+      "bom": false,
+      "crlf": 209
+    },
+    "InkeysHeadlessTests/animation_tests.cpp": {
+      "bom": true,
+      "crlf": 1762
+    },
+    "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp": {
+      "bom": false,
+      "crlf": 592
+    }
+  },
+  "protected": {
+    "Inkeys/src/setting/Home_Feedback.png": "b980e7a63e6b206b81fc0a00509f7693d097aa01595f4125a57a3a1fbc0a28a7",
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkPixelShader.cso": "c23556a1103308c123fd8937da0b6e28639d1e302b3be6c68c314be7b62c4032",
+    "Inkeys/Inkeys/Drawing/Draw3/Assets/inkVertexShader.cso": "79ef240a3c6a322f20cb1ba2ceac1e5ce5c7f61a28bf53b53edbc9bb1656c189",
+    ".github/workflows/build-windows.yml": "53652fd2a6267b442cf41d15857eb18b8a941d6eb62f9a2bc044baffee6fe753"
+  },
+  "full_solution_debug_arm64_exit_code": 0,
+  "final_build_log": "settings-card-polish-build-qr.log",
+  "focused_card_and_feedback_exit_code": 0,
+  "focused_log": "settings-card-polish-qr-tests.log",
+  "focused_home_feedback_cases": 84,
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "en-US"
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "dpis": [
+    1,
+    1.25,
+    1.5,
+    2,
+    1.875,
+    3,
+    4
+  ],
+  "widths_dip": [
+    360,
+    900
+  ],
+  "i18n_translated": 507,
+  "i18n_total": 507,
+  "ci_signal1_matches_HEAD": true,
+  "github_png_sha256": "0d4c235fef9efec54174a7c005fc0fe0ce2d63d35c21898ab5148587111397a9",
+  "compiled_exe_sha256": "d4e0f3302310c774027f4946038924194e2562e7f8040066f203c2e3079e8eb4",
+  "compiled_github_and_qr_png_bytes_present": true,
+  "compiled_ppt_dll_bytes_preserved": true,
+  "compiled_ci_fixture_values_absent": true,
+  "compiled_localized_terms_urls_present": true,
+  "gui_or_real_links_opened": false,
+  "system_clipboard_modified": false,
+  "settings_headless_status": "passed",
+  "settings_headless_log": "settings-card-polish-settings-final-tests.log",
+  "settings_headless_exit_code": 0,
+  "diff_check_exit_code": 0
+}

@@ -31,6 +31,9 @@
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{c74d4d04-f81c-42fe-8d90-7042ba3bb8a0}</ProjectGuid>
     <RootNamespace>Inkeys</RootNamespace>
+    <!-- 独立构建仍使用仓库根输出目录；显式宿主选择优先，ARM64 沿用原生默认值。 -->
+    <SolutionDir Condition="'$(SolutionDir)'=='' or '$(SolutionDir)'=='*Undefined*'">$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..'))</SolutionDir>
+    <PreferredToolArchitecture Condition="'$(PreferredToolArchitecture)'=='' and ('$(PROCESSOR_ARCHITECTURE)'=='AMD64' or '$(PROCESSOR_ARCHITEW6432)'=='AMD64')">x64</PreferredToolArchitecture>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -75,6 +78,13 @@
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup>
+    <!-- 发布默认不编译内嵌 Harness；测试构建可显式传入 true。 -->
+    <EnableUi3PresentationHarness Condition="'$(EnableUi3PresentationHarness)'=='' and '$(Configuration)'=='Debug'">true</EnableUi3PresentationHarness>
+    <EnableUi3PresentationHarness Condition="'$(EnableUi3PresentationHarness)'==''">false</EnableUi3PresentationHarness>
+    <Ui3PresentationHarnessDefinition Condition="'$(EnableUi3PresentationHarness)'=='true'">1</Ui3PresentationHarnessDefinition>
+    <Ui3PresentationHarnessDefinition Condition="'$(Ui3PresentationHarnessDefinition)'==''">0</Ui3PresentationHarnessDefinition>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -168,12 +178,12 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=$(Ui3PresentationHarnessDefinition);WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -189,7 +199,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -208,12 +218,12 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=$(Ui3PresentationHarnessDefinition);WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -230,7 +240,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -249,11 +259,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=$(Ui3PresentationHarnessDefinition);WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -269,7 +279,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -286,11 +296,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=$(Ui3PresentationHarnessDefinition);WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -308,7 +318,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -325,12 +335,12 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=$(Ui3PresentationHarnessDefinition);WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -348,7 +358,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -366,11 +376,11 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>
       </SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>INKEYS_ENABLE_UI3_PRESENTATION_HARNESS=$(Ui3PresentationHarnessDefinition);WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -389,10 +399,10 @@
       <OptimizeReferences>
       </OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VcpkgInstalledDir)$(VcpkgTriplet)\lib\*.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -404,16 +414,29 @@
 	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.ThemeMaterial.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h" />
+	<ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h" />
+	<ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h" />
+	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
 	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
 	<ClInclude Include="Inkeys\Business\PenToolState.hpp" />
+	<ClInclude Include="Inkeys\Business\PenWidthPolicy.hpp" />
+	<ClInclude Include="Inkeys\Business\PenWidthPreferences.hpp" />
 	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.A2.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapseInteraction.h" />
+    <ClInclude Include="Inkeys\Input\MouseHook.Transport.h" />
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.h" />
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.Transport.h" />
+    <ClInclude Include="Inkeys\Business\PptSessionToken.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h" />
+    <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
@@ -436,14 +459,12 @@
     <ClInclude Include="additional\imgui\imgui_impl_win32.h" />
     <ClInclude Include="additional\imgui\imgui_internal.h" />
     <ClInclude Include="additional\imgui\imgui_offset_rect.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_math.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_palette.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_presets.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_renderer.h" />
     <ClInclude Include="additional\imgui\imstb_rectpack.h" />
     <ClInclude Include="additional\imgui\imstb_textedit.h" />
     <ClInclude Include="additional\imgui\imstb_truetype.h" />
+    <ClInclude Include="additional\imfluent\imfluent.h" />
+    <ClInclude Include="additional\imfluent\imfluent_icons.h" />
+    <ClInclude Include="additional\imfluent\imfluent_internal.h" />
     <ClInclude Include="additional\stbimage\stb_image.h" />
     <ClInclude Include="additional\stbimage\stb_image_resize.h" />
     <ClInclude Include="additional\stbimage\stb_image_write.h" />
@@ -459,6 +480,15 @@
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.InteractionWorker.h" />
+    <ClInclude Include="Inkeys\Input\UiPointerInput.h" />
+    <ClInclude Include="Inkeys\Window\Window.MessageDispatch.h" />
+    <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h" />
+    <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h" />
+    <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h" />
+    <ClInclude Include="Inkeys\Helper\FailedCleanupRealCases.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationProbe.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.Presentation.Source.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtStart.h" />
@@ -466,12 +496,38 @@
     <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoData.g.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HapticRequest.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.Haptics.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RtsStartup.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
+    <ClInclude Include="Inkeys\Business\PptSession.h" />
+    <ClInclude Include="PptSettingsPersistence.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h" />
+    <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
@@ -832,7 +888,9 @@
 	<ClCompile Include="Inkeys\Business\ComponentActions.cpp" />
 	<ClCompile Include="Inkeys\Business\ComponentActions.cppm" />
 	<ClCompile Include="Inkeys\Business\LegacyDrawState.cpp" />
+	<ClCompile Include="Inkeys\Input\UiPointerInput.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cpp" />
+	<ClCompile Include="Inkeys\Input\KeyboardShortcuts.cpp" />
 	<ClCompile Include="Inkeys\Input\MouseHook.cppm" />
 	<ClCompile Include="Inkeys\Message\Message.cpp" />
 	<ClCompile Include="Inkeys\Message\Message.cppm" />
@@ -874,11 +932,8 @@
     <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="additional\imgui\imgui_tables.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_palette.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp" />
     <ClCompile Include="additional\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="additional\imfluent\imfluent.cpp" />
     <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />
     <ClCompile Include="additional\ziputils\unzip.cpp" />
     <ClCompile Include="additional\ziputils\zip.cpp" />
@@ -907,6 +962,9 @@
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
+    <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp" />
+    <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp" />
+    <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
@@ -939,9 +997,21 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MultiTarget.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallChrome.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeMotion.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttribute.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationProbe.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp" />
@@ -955,7 +1025,13 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
     <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
-    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">INKEYS_SETTING_ENTRY_PROFILE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm" />
@@ -974,6 +1050,8 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_codec.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cppm"><CompileAs>CompileAsCppModule</CompileAs></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -990,6 +1068,8 @@
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cpp" />
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cppm"><CompileAs>CompileAsCppModule</CompileAs></ClCompile>
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp" />
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -998,6 +1078,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -1054,6 +1135,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.StrokeGeometry.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cppm">
@@ -1066,8 +1148,12 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
+    <ClCompile Include="Inkeys\Business\PptSession.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -1075,43 +1161,14 @@
   </ItemGroup>
   <ItemGroup>
 	<Image Include="src\message_box\error.png" />
-    <Image Include="src\bug.png" />
-    <Image Include="src\choice.png" />
-    <Image Include="src\choose.png" />
-    <Image Include="src\choose_clear.png" />
     <Image Include="src\ClassIsland.png" />
-    <Image Include="src\curve.png" />
-    <Image Include="src\endshow.png" />
-    <Image Include="src\freeze-frame.png" />
-    <Image Include="src\gwxq.png" />
-    <Image Include="src\highlighter_brush.png" />
-    <Image Include="src\home.png" />
-    <Image Include="src\i18n\Home1_en-US.png" />
-    <Image Include="src\i18n\Home1_zh-CN.png" />
-    <Image Include="src\i18n\Home2_en-US.png" />
-    <Image Include="src\i18n\Home2_zh-CN.png" />
     <Image Include="src\icon.ico" />
-    <Image Include="src\icon.png" />
-    <Image Include="src\info.png" />
     <Image Include="src\IslandCaller.png" />
-    <Image Include="src\left.png" />
-    <Image Include="src\line.png" />
-    <Image Include="src\more.png" />
-    <Image Include="src\ms_ppt.png" />
     <Image Include="src\NamePicker.png" />
-    <Image Include="src\option.png" />
-    <Image Include="src\paint_brush.png" />
-    <Image Include="src\perspective.png" />
-    <Image Include="src\pin.png" />
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
     <Image Include="src\PluginFlag3.png" />
     <Image Include="src\PluginFlag4.png" />
-    <Image Include="src\ppt\arrow_down.png" />
-    <Image Include="src\ppt\arrow_left.png" />
-    <Image Include="src\ppt\arrow_right.png" />
-    <Image Include="src\ppt\arrow_up.png" />
-    <Image Include="src\ppt\end_show.png" />
     <Image Include="src\quick\altf4.png" />
     <Image Include="src\quick\control.png" />
     <Image Include="src\quick\desktop.png" />
@@ -1119,47 +1176,26 @@
     <Image Include="src\quick\keyboardesc.png" />
     <Image Include="src\quick\lockworkstation.png" />
     <Image Include="src\quick\taskmgr.png" />
-    <Image Include="src\rectangle.png" />
-    <Image Include="src\right.png" />
-    <Image Include="src\rubber.png" />
-    <Image Include="src\scale.png" />
     <Image Include="src\SecRandom.png" />
-    <Image Include="src\seewo_camera.png" />
-    <Image Include="src\setting\Community-picture.png" />
-    <Image Include="src\setting\Home1_en-US.png" />
-    <Image Include="src\setting\Home1_zh-CN.png" />
-    <Image Include="src\setting\Home1_zh-TW.png" />
-    <Image Include="src\setting\Home2_en-US.png" />
-    <Image Include="src\setting\Home2_zh-CN.png" />
-    <Image Include="src\setting\Home2_zh-TW.png" />
-    <Image Include="src\setting\Home_Backgroung.png" />
     <Image Include="src\setting\Home_Feedback.png" />
-    <Image Include="src\setting\Profile-picture.png" />
+    <Image Include="src\setting\GitHubMark.png" />
+    <Image Include="src\setting\EraserDemoFine.png" />
+    <Image Include="src\setting\EraserDemoSweep.png" />
     <Image Include="src\setting\Profile_Picture.png" />
     <Image Include="src\setting\SettingSponsor.png" />
-    <Image Include="src\sign.png" />
-    <Image Include="src\sign1.png" />
-    <Image Include="src\sign2.png" />
     <Image Include="src\sign3.png" />
-    <Image Include="src\sign4.png" />
-    <Image Include="src\sign5.png" />
-    <Image Include="src\skin\dragon.png" />
-    <Image Include="src\skin\dragon_background.png" />
-    <Image Include="src\skin\dragon_sign.png" />
-    <Image Include="src\tick.png" />
-    <Image Include="src\undo.png" />
-    <Image Include="src\weather\png00001.png" />
-    <Image Include="src\weather\weather3.png" />
-    <Image Include="src\wps_wpp.png" />
-    <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
 	<None Include="IdtFloating.cpp" />
 	<None Include="IdtFloating.h" />
 	<None Include="IdtWindow.cpp" />
 	<None Include="IdtWindow.h" />
+	<None Include="additional\imfluent\LICENSE" />
+	<None Include="additional\imfluent\UPSTREAM.md" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
     <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli" />
     <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl" />
@@ -1177,7 +1213,6 @@
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
-    <None Include="src\ui1.bin" />
     <None Include="src\UI\barBrush1.svg" />
     <None Include="src\UI\barBrush2.svg" />
     <None Include="src\UI\barPaintBrush.svg" />
@@ -1185,8 +1220,19 @@
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
+    <None Include="src\UI\barAutoEraser.svg" />
+    <None Include="src\UI\barShapeStraightLine.svg" />
+    <None Include="src\UI\barShapeRectangle.svg" />
+    <None Include="src\UI\color\colorSun.svg" />
+    <None Include="src\UI\color\colorMoon.svg" />
+    <None Include="src\UI\barMore.svg" />
+    <None Include="src\UI\barMinimize.svg" />
+    <None Include="src\UI\barPalette.svg" />
+    <None Include="src\UI\barEndShow.svg" />
+    <None Include="src\UI\barAdd.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barWhiteboard.svg" />
+    <None Include="src\UI\barMenu.svg" />
     <None Include="src\UI\barDismiss.svg" />
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />
@@ -1206,19 +1252,10 @@
     <None Include="src\UI\logo1.svg" />
     <None Include="src\UI\logo2.svg" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\PptCOM\PptCOM.csproj">
-      <Project>{66f84848-5c28-4398-80d7-78f6189fc442}</Project>
-    </ProjectReference>
-  </ItemGroup>
+  <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\PptCOM\PptCOM.csproj">
-      <Project>{404f6e99-a0ca-45b2-8caa-a2d819da8eff}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
   </ItemGroup>
@@ -1235,17 +1272,37 @@
   <ItemGroup>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
@@ -1255,17 +1312,17 @@
     </FxCompile>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
@@ -1337,9 +1394,13 @@
   </Target>
   <!-- FXC 10.1 不接受 BOM；只在中间目录生成 Draw3 的无 BOM 副本。 -->
   <Target Name="PrepareDraw3FxcCompatibleHlsl" BeforeTargets="FxCompile"
-          Inputs="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl"
-          Outputs="$(IntDir)fxc_utf8\draw3\ink.hlsli;$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl;$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
+          Inputs="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl"
+          Outputs="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h;$(IntDir)fxc_utf8\draw3\ink.hlsli;$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl;$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
     <MakeDir Directories="$(IntDir)fxc_utf8\draw3" />
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcEraserVisualLines" />
+    </ReadLinesFromFile>
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h" Lines="@(_Draw3FxcEraserVisualLines)" Overwrite="true" Encoding="ASCII" />
     <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli">
       <Output TaskParameter="Lines" ItemName="_Draw3FxcInkLines" />
     </ReadLinesFromFile>

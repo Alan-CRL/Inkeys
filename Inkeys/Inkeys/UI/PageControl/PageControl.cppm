@@ -5,6 +5,8 @@ module;
 #endif
 
 #include <windows.h>
+#include "../../Business/PptSessionToken.h"
+#include "../Ppt/Ppt.Recovery.h"
 
 #include <algorithm>
 #include <array>
@@ -15,6 +17,9 @@ module;
 #include <string_view>
 
 export module Inkeys.UI.PageControl;
+
+import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys::UI::PageControl
 {
@@ -94,10 +99,10 @@ export namespace Inkeys::UI::PageControl
 	}
 
 	[[nodiscard]] constexpr bool ShouldKeepPptLongPressTracking(
-		bool repeatEnabled, bool captureOwned,
+		bool repeatEnabled, bool sessionOwned,
 		bool sameDirectionHit) noexcept
 	{
-		return repeatEnabled && captureOwned && sameDirectionHit;
+		return repeatEnabled && sessionOwned && sameDirectionHit;
 	}
 
 	[[nodiscard]] constexpr bool ShouldTriggerPptLongPressRepeat(
@@ -131,6 +136,7 @@ export namespace Inkeys::UI::PageControl
 		std::uint32_t id = 0;
 		bool active = false;
 		bool primary = false;
+		std::uintptr_t source = 0;
 	};
 
 	enum class PageControlTouchMessage : std::uint8_t
@@ -153,7 +159,8 @@ export namespace Inkeys::UI::PageControl
 		ResolvePageControlTouchSample(
 			PageControlTouchLockState current, std::uint32_t id,
 			bool down, bool move, bool up, bool primary,
-			bool batchHasPrimary, bool fallbackLocked) noexcept
+			bool batchHasPrimary, bool fallbackLocked,
+			std::uintptr_t source = 0) noexcept
 	{
 		PageControlTouchDecision result{ current,
 			PageControlTouchMessage::None, false, fallbackLocked };
@@ -162,14 +169,15 @@ export namespace Inkeys::UI::PageControl
 		// 某些触摸驱动不提供 PRIMARY，此时一批只允许首个 DOWN 兜底接管。
 		if (down && (primary || canLockFallback))
 		{
-			if (result.state.active && result.state.id != id)
+			if (result.state.active
+				&& (result.state.id != id || result.state.source != source))
 			{
 				result.state = {};
 				result.cancelPrevious = true;
 			}
 			if (!result.state.active)
 			{
-				result.state = { id, true, primary };
+				result.state = { id, true, primary, source };
 				result.message = PageControlTouchMessage::Down;
 				if (!primary) result.fallbackLocked = true;
 			}
@@ -177,6 +185,7 @@ export namespace Inkeys::UI::PageControl
 
 		const bool canTranslate = result.state.active
 			&& result.state.id == id
+			&& result.state.source == source
 			&& (primary || !result.state.primary || !batchHasPrimary);
 		if (result.message == PageControlTouchMessage::None
 			&& move && canTranslate)
@@ -194,9 +203,13 @@ export namespace Inkeys::UI::PageControl
 	}
 
 	[[nodiscard]] constexpr bool ShouldAcceptPageControlClientHit(
-		WorkspaceMode mode, bool backgroundHit, bool widgetHit) noexcept
+		WorkspaceMode mode, bool backgroundHit, bool widgetHit,
+		bool inputLocked = false, bool menuOpen = false) noexcept
 	{
 		if (!backgroundHit) return false;
+		// 锁定的是操作，不是可见面板的遮挡；过渡帧点击不能穿透落笔。
+		if (mode == WorkspaceMode::WhiteboardExpanded && (inputLocked || menuOpen)) return true;
+		if (inputLocked) return false;
 		const auto policy = ResolveWorkspaceInputPolicy(mode);
 		return policy.drag || (policy.click && widgetHit);
 	}
@@ -263,15 +276,18 @@ export namespace Inkeys::UI::PageControl
 		return vertical ? (next ? 180.0 : 0.0) : (next ? 90.0 : -90.0);
 	}
 
-	inline constexpr double PptCompactLongSideDip = 165.0;
-	inline constexpr double PptCompactShortSideDip = 42.5;
-	inline constexpr double PptDragHandleSlotDip = 10.0;
-	inline constexpr double PptArrowButtonSideDip = 32.5;
-	inline constexpr double PptPageButtonLongSideDip = 70.0;
-	inline constexpr double PageControlGapDip = 5.0;
-	inline constexpr double WhiteboardWidthDip = 230.0;
-	inline constexpr double WhiteboardHeightDip = 80.0;
-	inline constexpr double WhiteboardButtonSideDip = 70.0;
+	inline constexpr double PptCompactLongSideDip = BarPptCompactLongSideDip;
+	inline constexpr double PptCompactShortSideDip = BarPptCompactShortSideDip;
+	inline constexpr double PptControlLongSideDip = BarPptPaginationLongSideDip;
+	inline constexpr double PptControlShortSideDip = BarPptPaginationShortSideDip;
+	inline constexpr double PptDragHandleSlotDip = BarPaginationDragHandleSlotDip;
+	inline constexpr double PptArrowButtonSideDip = BarPptCompactPaginationEnabled ? BarButtonOneSideDip : BarButtonTwoSideDip;
+	inline constexpr double PptPageButtonLongSideDip = BarButtonTwoSideDip;
+	inline constexpr double PageControlGapDip = BarButtonGapDip;
+	inline constexpr double WhiteboardWidthDip = BarWhiteboardPaginationWidthDip;
+	inline constexpr double WhiteboardLeftWidthDip = BarWhiteboardPaginationLeftWidthDip;
+	inline constexpr double WhiteboardHeightDip = BarWhiteboardPaginationHeightDip;
+	inline constexpr double WhiteboardButtonSideDip = BarButtonTwoSideDip;
 
 	enum class PptWidgetRole : std::uint8_t
 	{
@@ -320,6 +336,17 @@ export namespace Inkeys::UI::PageControl
 		return dx * 2 >= width || dy * 2 >= height;
 	}
 
+	[[nodiscard]] constexpr bool ShouldStartPptDragOnRelease(
+		WorkspaceMode mode, PptPointerRegion region,
+		bool dragging, bool dragPending, POINT start, POINT current,
+		int thresholdWidth, int thresholdHeight) noexcept
+	{
+		if (!ResolveWorkspaceInputPolicy(mode).drag || !CanStartPptDrag(region))
+			return false;
+		return dragging || (dragPending && HasExceededPptDragThreshold(
+			start, current, thresholdWidth, thresholdHeight));
+	}
+
 	struct DipRect
 	{
 		double left = 0.0;
@@ -352,7 +379,13 @@ export namespace Inkeys::UI::PageControl
 		DipRect previous{};
 		DipRect page{};
 		DipRect next{};
-		if (vertical)
+		if (!BarPptCompactPaginationEnabled)
+		{
+			const auto geometry=Inkeys::UI::Bar::ResolveBarPptStandardPaginationGeometry(vertical,right);
+			const auto rect=[](const auto& r){return DipRect{r.left,r.top,r.right,r.bottom};};
+			drag=rect(geometry.drag);previous=rect(geometry.previous);page=rect(geometry.page);next=rect(geometry.next);
+		}
+		else if (vertical)
 		{
 			drag = { 5.0, 5.0, 37.5, 15.0 };
 			previous = { 5.0, 15.0, 37.5, 47.5 };
@@ -377,16 +410,19 @@ export namespace Inkeys::UI::PageControl
 			PptWidgetContract{ PptWidgetRole::DragHandle, drag,
 				false, false, true, false, false, false, false, false },
 			PptWidgetContract{ PptWidgetRole::Previous, previous,
-				false, true, false, false, true, true, false, false },
+				!BarPptCompactPaginationEnabled, true, false, false, true, true, false, false },
 			PptWidgetContract{ PptWidgetRole::Page, page,
 				true, true, true, true, true, true, true, true },
 			PptWidgetContract{ PptWidgetRole::Next, next,
-				false, true, false, false, true, true, false, false },
+				!BarPptCompactPaginationEnabled, true, false, false, true, true, false, false },
 		};
 	}
 
 	struct PptLayoutState
 	{
+		std::uint64_t session = 0;
+		std::uint64_t epoch = 0;
+		std::array<std::uint64_t, 2> pairVersions{};
 		float bottomPairWidth = 0.0F;
 		float bottomPairHeight = 0.0F;
 		float middlePairWidth = 0.0F;
@@ -495,7 +531,7 @@ export namespace Inkeys::UI::PageControl
 	{
 		if (!tracker.ownsLayout) return {};
 		tracker.released = true;
-		tracker.persistencePending = persist && tracker.layout.rememberPosition;
+		tracker.persistencePending = persist && tracker.revision != 0; // 这里确认运行期交接，不代表写盘。
 		const PptDragReleaseResult result{
 			tracker.layout,
 			tracker.revision,
@@ -541,11 +577,150 @@ export namespace Inkeys::UI::PageControl
 
 	struct PptState
 	{
+		std::uint64_t publicationRevision = 0;
+		std::uint64_t targetRevision = 0;
+		std::uint64_t pageAckEpoch = 0;
+		PptRecovery::State recovery;
+		// 白板期间放映控件不可见，但场次仍存活；菜单可用性不能由可见位推断。
+		bool presentationActive = false;
 		bool presentationVisible = false;
 		bool longPressEnabled = false;
 		int currentPage = -1;
 		int totalPage = -1;
 		PptLayoutState layout;
+		// 帧内派生的 UI 全局尺度；不属于用户位置/控件倍率，不参与持久化。
+		float uiScale = 0.0F;
+	};
+
+	[[nodiscard]] inline bool IsPptDragFrameOwned(
+		const PptDragCommitTracker& tracker, const PptState& frame,
+		std::size_t surfaceIndex) noexcept
+	{
+		if (surfaceIndex >= 4 || !tracker.ownsLayout
+			|| tracker.layout.session != frame.layout.session
+			|| tracker.layout.epoch != frame.layout.epoch) return false;
+		const std::size_t pair = surfaceIndex / 2;
+		if (tracker.layout.pairVersions[pair] != frame.layout.pairVersions[pair])
+			return false;
+		return pair == 0
+			? tracker.layout.bottomPairWidth == frame.layout.bottomPairWidth
+				&& tracker.layout.bottomPairHeight == frame.layout.bottomPairHeight
+				&& tracker.layout.bottomPairScale == frame.layout.bottomPairScale
+			: tracker.layout.middlePairWidth == frame.layout.middlePairWidth
+				&& tracker.layout.middlePairHeight == frame.layout.middlePairHeight
+				&& tracker.layout.middlePairScale == frame.layout.middlePairScale;
+	}
+
+	[[nodiscard]] inline bool IsPptDragGeometryAtTarget(
+		const RECT& actualBounds, float actualScale,
+		const RECT& targetBounds, float targetScale) noexcept
+	{
+		// 几何使用已拟合并舍入的像素矩形，不能把插值中间帧当作最终提交。
+		return actualBounds.left == targetBounds.left
+			&& actualBounds.top == targetBounds.top
+			&& actualBounds.right == targetBounds.right
+			&& actualBounds.bottom == targetBounds.bottom
+			&& std::isfinite(actualScale) && std::isfinite(targetScale)
+			&& std::abs(actualScale - targetScale) <= 0.0001F;
+	}
+
+	[[nodiscard]] inline bool MarkPptDragFrameCommitted(PptDragCommitTracker& tracker,
+		const PptState& frame, std::size_t surfaceIndex) noexcept
+	{
+		if (surfaceIndex >= 4 || tracker.layout.session != frame.layout.session
+			|| tracker.layout.epoch != frame.layout.epoch) return false;
+		return MarkPptDragSurfaceCommitted(tracker, frame.layout.pairVersions[surfaceIndex / 2],
+			static_cast<std::uint8_t>(1U << (surfaceIndex % 2)));
+	}
+
+	[[nodiscard]] inline bool MergePptPublication(const PptState& current,
+		PptState& incoming) noexcept
+	{
+		if (incoming.layout.session < current.layout.session) return false;
+		if (incoming.layout.session == current.layout.session
+			&& (incoming.layout.epoch < current.layout.epoch
+				|| (incoming.publicationRevision != 0
+					&& incoming.publicationRevision < current.publicationRevision))) return false;
+		if (incoming.layout.session == current.layout.session
+			&& incoming.layout.epoch == current.layout.epoch)
+		{
+			if (incoming.layout.pairVersions[0] < current.layout.pairVersions[0])
+			{
+				incoming.layout.bottomPairWidth = current.layout.bottomPairWidth;
+				incoming.layout.bottomPairHeight = current.layout.bottomPairHeight;
+				incoming.layout.pairVersions[0] = current.layout.pairVersions[0];
+			}
+			if (incoming.layout.pairVersions[1] < current.layout.pairVersions[1])
+			{
+				incoming.layout.middlePairWidth = current.layout.middlePairWidth;
+				incoming.layout.middlePairHeight = current.layout.middlePairHeight;
+				incoming.layout.pairVersions[1] = current.layout.pairVersions[1];
+			}
+		}
+		return true;
+	}
+
+	struct PptPageCommitState
+	{
+		std::uint64_t session = 0;
+		std::uint64_t target = 0;
+		int current = -1;
+		int total = -1;
+		std::uint64_t pageAckEpoch = 0;
+		std::uint8_t required = 0;
+		std::uint8_t committed = 0;
+		bool acknowledged = false;
+		std::uint8_t presentedPpt = 0;
+		std::uint8_t pendingPptPresentation = 0;
+		PptRecovery::State recovery;
+
+		void BeginSurface(std::uint8_t mask) noexcept
+		{
+			pendingPptPresentation |= mask;
+		}
+
+		void FinishSurface(std::uint8_t mask, bool visiblePpt) noexcept
+		{
+			pendingPptPresentation &= static_cast<std::uint8_t>(~mask);
+			if (visiblePpt) presentedPpt |= mask;
+			else presentedPpt &= static_cast<std::uint8_t>(~mask);
+		}
+
+		void Publish(const PptState& state, std::uint8_t visibleMask) noexcept
+		{
+			if (session != state.layout.session || target != state.targetRevision
+				|| current != state.currentPage || total != state.totalPage
+				|| pageAckEpoch != state.pageAckEpoch || recovery != state.recovery)
+			{
+				const auto visible = presentedPpt;
+				const auto pending = pendingPptPresentation;
+				*this = { state.layout.session, state.targetRevision,
+					state.currentPage, state.totalPage, state.pageAckEpoch };
+				presentedPpt = visible;
+				pendingPptPresentation = pending;
+				recovery = state.recovery;
+			}
+			// 隐藏目标不是 HWND 已隐藏；淡出旧数字或未完成的呈现仍须交接。
+			const auto requiredMask = static_cast<std::uint8_t>(visibleMask
+				| presentedPpt | pendingPptPresentation);
+			committed &= static_cast<std::uint8_t>(~(requiredMask & ~required));
+			required = requiredMask;
+		}
+
+		bool Commit(const PptState& state, std::uint8_t mask) noexcept
+		{
+			if (session != state.layout.session || target != state.targetRevision
+				|| current != state.currentPage || total != state.totalPage
+				|| pageAckEpoch != state.pageAckEpoch || recovery != state.recovery
+				|| state.recovery.kind != PptRecovery::Kind::None || state.recovery.revision != 0) return false;
+			committed |= mask;
+			if (acknowledged || session == 0 || target == 0
+				|| current == 0 || current < -1 || total <= 0 ||
+				(committed & required) != required)
+				return false;
+			acknowledged = true;
+			return true;
+		}
 	};
 
 	struct WhiteboardState
@@ -563,6 +738,11 @@ export namespace Inkeys::UI::PageControl
 		bool nextInteractive = true;
 		bool nextIsAdd = false;
 		bool switching = false;
+		std::uint64_t generation = 0;
+		std::uint32_t backgroundRgb = 0x123B32;
+		int pattern = 0;
+		bool unsaved = false;
+		int menu = 0;
 	};
 
 	[[nodiscard]] inline bool ArePptStatesEquivalent(
@@ -573,7 +753,14 @@ export namespace Inkeys::UI::PageControl
 				return first == second
 					|| (std::isnan(first) && std::isnan(second));
 			};
-		return left.presentationVisible == right.presentationVisible
+		return left.targetRevision == right.targetRevision
+			&& left.pageAckEpoch == right.pageAckEpoch
+			&& left.recovery == right.recovery
+			&& left.layout.session == right.layout.session
+			&& left.layout.epoch == right.layout.epoch
+			&& left.layout.pairVersions == right.layout.pairVersions
+			&& left.presentationActive == right.presentationActive
+			&& left.presentationVisible == right.presentationVisible
 			&& left.longPressEnabled == right.longPressEnabled
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage
@@ -608,7 +795,10 @@ export namespace Inkeys::UI::PageControl
 			&& left.nextEnabled == right.nextEnabled
 			&& left.nextInteractive == right.nextInteractive
 			&& left.nextIsAdd == right.nextIsAdd
-			&& left.switching == right.switching;
+			&& left.switching == right.switching
+			&& left.generation == right.generation
+			&& left.backgroundRgb == right.backgroundRgb && left.pattern == right.pattern
+			&& left.unsaved == right.unsaved && left.menu == right.menu;
 	}
 
 	struct PptCallbacks
@@ -617,13 +807,17 @@ export namespace Inkeys::UI::PageControl
 		std::function<void()> nextPage;
 		std::function<void()> viewShow;
 		std::function<void()> endShow;
-		std::function<void(PptLayoutState)> persistPosition;
+		std::function<void(std::size_t, PptLayoutState)> commitPosition;
+		std::function<void(std::uint64_t, std::uint64_t, int, int, std::uint64_t)> pagePresented;
+		std::function<void(PptRecovery::State)> retryCanvas;
 	};
 
 	struct WhiteboardCallbacks
 	{
 		std::function<void()> previousPage;
 		std::function<void()> nextPage;
+		std::function<void()> closeWhiteboard;
+		std::function<void(std::uint32_t, int, std::uint64_t, int)> changeTheme;
 	};
 
 	struct ResolvedSurfaceLayout
@@ -635,10 +829,27 @@ export namespace Inkeys::UI::PageControl
 		bool vertical = false;
 	};
 
+	// 配置范围只约束输入；已完成屏幕/资源适配的乘积不能再套用输入范围。
 	[[nodiscard]] inline float NormalizeScale(float scale) noexcept
 	{
 		if (!std::isfinite(scale) || scale <= 0.0F) return 1.0F;
-		return std::clamp(scale, 1.0F / 128.0F, 4.0F);
+		return (std::max)(scale, 1.0F / 65536.0F);
+	}
+
+	[[nodiscard]] inline float NormalizeDpiScale(float scale) noexcept
+	{
+		return std::clamp(NormalizeScale(scale), 0.5F, 4.0F);
+	}
+
+	[[nodiscard]] inline float NormalizeRuntimeControlScale(float scale) noexcept
+	{
+		return (std::min)(NormalizeScale(scale), 3.0F);
+	}
+
+	[[nodiscard]] inline float ResolvePptUiScale(float dpiScale, float uiScale) noexcept
+	{
+		return std::isfinite(uiScale) && uiScale > 0.0F
+			? NormalizeScale(uiScale) : NormalizeDpiScale(dpiScale);
 	}
 
 	struct PptDragPresentationTarget
@@ -724,17 +935,18 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] inline WorkspaceMode ResolveWorkspaceMode(
 		Surface surface, const PptState& ppt,
-		const WhiteboardState& whiteboard) noexcept
+		const WhiteboardState& whiteboard, bool whiteboardMinimized = false) noexcept
 	{
+		if (whiteboard.active && whiteboardMinimized) return WorkspaceMode::Hidden;
 		const bool bottom = surface == Surface::BottomLeft
 			|| surface == Surface::BottomRight;
 		if (whiteboard.expandedLayoutTarget)
 			return bottom ? WorkspaceMode::WhiteboardExpanded
 				: WorkspaceMode::Hidden;
-		if (!ppt.presentationVisible) return WorkspaceMode::Hidden;
-		if (bottom && ppt.layout.showBottomPair)
-			return WorkspaceMode::PptCompact;
-		if (!bottom && ppt.layout.showMiddlePair)
+		// 白板事务只暂时遮挡放映；共享底栏由场次事实保活，不经历隐藏/重新淡入。
+		if (bottom) return ppt.presentationActive && ppt.layout.showBottomPair
+			? WorkspaceMode::PptCompact : WorkspaceMode::Hidden;
+		if (ppt.presentationVisible && ppt.layout.showMiddlePair)
 			return WorkspaceMode::PptCompact;
 		return WorkspaceMode::Hidden;
 	}
@@ -807,12 +1019,38 @@ export namespace Inkeys::UI::PageControl
 	{
 		SIZE size{ 1, 1 };
 		bool changed = false;
+		bool fits = true;
 	};
+
+	struct PageControlSurfaceBudget
+	{
+		float presentationOutsetDip = 10.0F;
+		unsigned bitmapLimit = 16384;
+	};
+
+	[[nodiscard]] inline PageControlSurfaceBudget ResolvePageControlGroupBudget(
+		const std::array<PageControlSurfaceBudget, 4>& surfaces,
+		std::uint8_t visibleMask) noexcept
+	{
+		PageControlSurfaceBudget group;
+		for (std::size_t index = 0; index < surfaces.size(); ++index)
+		{
+			if ((visibleMask & (1U << index)) == 0) continue;
+			group.presentationOutsetDip = (std::max)(
+				group.presentationOutsetDip, surfaces[index].presentationOutsetDip);
+			group.bitmapLimit = (std::min)(group.bitmapLimit,
+				(std::max)(1U, surfaces[index].bitmapLimit));
+		}
+		return group;
+	}
 
 	[[nodiscard]] inline StableBackingResolution ResolveStableBackingSize(
 		SIZE current, SIZE presentation, SIZE targetContent,
-		LONG currentOutset, double currentScale, double targetScale) noexcept
+		LONG currentOutset, double currentScale, double targetScale,
+		unsigned bitmapLimit = 16384) noexcept
 	{
+		const LONG limit = static_cast<LONG>((std::max)(1U,
+			(std::min)(bitmapLimit, 16384U)));
 		current.cx = (std::max)(1L, current.cx);
 		current.cy = (std::max)(1L, current.cy);
 		presentation.cx = (std::max)(1L, presentation.cx);
@@ -828,12 +1066,27 @@ export namespace Inkeys::UI::PageControl
 			static_cast<double>(currentOutset)
 				* (std::max)(1.0, targetScale / currentScale)));
 		const SIZE resolved{
-			(std::max)({ current.cx, presentation.cx,
-				targetContent.cx + targetOutset * 2 }),
-			(std::max)({ current.cy, presentation.cy,
-				targetContent.cy + targetOutset * 2 }),
+			(std::min)(limit, (std::max)({ current.cx, presentation.cx,
+				targetContent.cx + targetOutset * 2 })),
+			(std::min)(limit, (std::max)({ current.cy, presentation.cy,
+				targetContent.cy + targetOutset * 2 })),
 		};
-		return { resolved, resolved.cx != current.cx || resolved.cy != current.cy };
+		return { resolved, resolved.cx != current.cx || resolved.cy != current.cy,
+			presentation.cx <= limit && presentation.cy <= limit
+			&& targetContent.cx + targetOutset * 2 <= limit
+			&& targetContent.cy + targetOutset * 2 <= limit };
+	}
+
+	[[nodiscard]] inline LONG ResolvePageControlBottomInsetPixels(float dpiScale) noexcept
+	{
+		// PPT/白板底边距是屏幕 DIP，不随主栏 UI 倍率或 PPT 局部倍率扩大。
+		return static_cast<LONG>(std::lround(PageControlGapDip * NormalizeDpiScale(dpiScale)));
+	}
+
+	[[nodiscard]] inline LONG ResolvePageControlVisibleBottomOffsetPixels(double heightDip, float scale) noexcept
+	{
+		// 公共背景的描边以轮廓线为中心；布局锚定可见外沿，不能按透明 HWND 包络留边。
+		return static_cast<LONG>(std::ceil((heightDip + BarButtonFrameThicknessDip / 2.0) * scale));
 	}
 
 	[[nodiscard]] inline ResolvedSurfaceLayout ResolveSurfaceLayout(
@@ -847,21 +1100,21 @@ export namespace Inkeys::UI::PageControl
 			|| surface == Surface::MiddleRight;
 		const bool left = surface == Surface::BottomLeft
 			|| surface == Surface::MiddleLeft;
-		const float normalizedDpi = NormalizeScale(dpiScale);
-		float scale = normalizedDpi;
+		// 所有分页 UI 共用主栏全局尺度；白板只隔离 PPT 的局部倍率与位置。
+		float scale = ResolvePptUiScale(dpiScale, ppt.uiScale);
 		double widthDip = result.vertical
-			? PptCompactShortSideDip : PptCompactLongSideDip;
+			? PptControlShortSideDip : PptControlLongSideDip;
 		double heightDip = result.vertical
-			? PptCompactLongSideDip : PptCompactShortSideDip;
+			? PptControlLongSideDip : PptControlShortSideDip;
 		if (result.mode == WorkspaceMode::WhiteboardExpanded)
 		{
-			widthDip = WhiteboardWidthDip;
+			widthDip = surface == Surface::BottomLeft ? WhiteboardLeftWidthDip : WhiteboardWidthDip;
 			heightDip = WhiteboardHeightDip;
 		}
 		else if (result.vertical)
-			scale *= NormalizeScale(ppt.layout.middlePairScale);
+			scale *= NormalizeRuntimeControlScale(ppt.layout.middlePairScale);
 		else
-			scale *= NormalizeScale(ppt.layout.bottomPairScale);
+			scale *= NormalizeRuntimeControlScale(ppt.layout.bottomPairScale);
 		result.scale = scale;
 		const LONG width = (std::max)(1L,
 			static_cast<LONG>(std::lround(widthDip * scale)));
@@ -877,7 +1130,8 @@ export namespace Inkeys::UI::PageControl
 			// Whiteboard 始终锚定左右下角，不读取或继承 PPT 用户位置。
 			x = left ? monitor.left + edge
 				: monitor.right - edge - width;
-			y = monitor.bottom - edge - height;
+			y = monitor.bottom - ResolvePageControlBottomInsetPixels(dpiScale)
+				- ResolvePageControlVisibleBottomOffsetPixels(heightDip, scale);
 		}
 		else if (result.vertical)
 		{
@@ -898,7 +1152,8 @@ export namespace Inkeys::UI::PageControl
 				ppt.layout.bottomPairHeight));
 			x = left ? monitor.left + edge + offsetX
 				: monitor.right - edge - offsetX - width;
-			y = monitor.bottom - edge - offsetY - height;
+			y = monitor.bottom - ResolvePageControlBottomInsetPixels(dpiScale) - offsetY
+				- ResolvePageControlVisibleBottomOffsetPixels(heightDip, scale);
 		}
 		result.logicalBounds = RECT{ x, y, x + width, y + height };
 		return result;
@@ -915,7 +1170,7 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] inline PptLayoutState ClampPageControlLayout(
 		Surface moved, const RECT& monitor, float dpiScale,
-		PptLayoutState layout) noexcept
+		PptLayoutState layout, float uiScale = 0.0F) noexcept
 	{
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
@@ -925,29 +1180,30 @@ export namespace Inkeys::UI::PageControl
 			|| moved == Surface::BottomRight;
 		if (bottom)
 		{
-			const float scale = NormalizeScale(dpiScale)
-				* NormalizeScale(layout.bottomPairScale);
-			const double controlWidth = PptCompactLongSideDip;
-			const double controlHeight = PptCompactShortSideDip;
+			const float scale = ResolvePptUiScale(dpiScale, uiScale)
+				* NormalizeRuntimeControlScale(layout.bottomPairScale);
+			const double controlWidth = PptControlLongSideDip;
+			const double controlHeight = PptControlShortSideDip;
 			layout.bottomPairWidth = (std::clamp)(layout.bottomPairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
 					- static_cast<float>((controlWidth + PageControlGapDip) * scale)));
 			layout.bottomPairHeight = (std::clamp)(layout.bottomPairHeight,
 				0.0F, (std::max)(0.0F, height
-					- static_cast<float>((controlHeight
-						+ PageControlGapDip * 2.0) * scale)));
+					- static_cast<float>(ResolvePageControlVisibleBottomOffsetPixels(controlHeight, scale))
+					- static_cast<float>(PageControlGapDip * scale)
+					- static_cast<float>(ResolvePageControlBottomInsetPixels(dpiScale))));
 		}
 		else
 		{
-			const float scale = NormalizeScale(dpiScale)
-				* NormalizeScale(layout.middlePairScale);
+			const float scale = ResolvePptUiScale(dpiScale, uiScale)
+				* NormalizeRuntimeControlScale(layout.middlePairScale);
 			layout.middlePairWidth = (std::clamp)(layout.middlePairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
-					- static_cast<float>((PptCompactShortSideDip
+					- static_cast<float>((PptControlShortSideDip
 						+ PageControlGapDip) * scale)));
 			const float verticalLimit = (std::max)(0.0F,
 				height / 2.0F - static_cast<float>(
-					(PptCompactLongSideDip / 2.0
+					(PptControlLongSideDip / 2.0
 						+ PageControlGapDip) * scale));
 			layout.middlePairHeight = (std::clamp)(layout.middlePairHeight,
 				-verticalLimit, verticalLimit);
@@ -975,42 +1231,141 @@ export namespace Inkeys::UI::PageControl
 		return false;
 	}
 
-	[[nodiscard]] inline PptState ResolveRuntimePageControlLayout(
-		const RECT& monitor, float dpiScale, PptState ppt) noexcept
+	struct PptDragCandidateResult
 	{
-		if (!ppt.presentationVisible) return ppt;
-		const float normalizedDpi = NormalizeScale(dpiScale);
+		PptLayoutState layout;
+		bool clamped = false;
+		bool collisionRejected = false;
+		bool centerSnapped = false;
+		bool centerBlocked = false;
+	};
+
+	[[nodiscard]] inline PptDragCandidateResult ResolvePptDragCandidate(
+		Surface moved, const RECT& monitor, float dpiScale,
+		const PptState& ppt, PptLayoutState candidate,
+		const PptLayoutState& feasible, double centerSnapDistanceDip) noexcept
+	{
+		const bool bottom = moved == Surface::BottomLeft
+			|| moved == Surface::BottomRight;
+		PptDragCandidateResult result{ ppt.layout };
+		// 原始采样只提供当前 pair 的位置；边界/障碍始终使用本帧实际布局倍率。
+		auto currentCandidate = ppt.layout;
+		if (bottom)
+		{
+			currentCandidate.bottomPairWidth = candidate.bottomPairWidth;
+			currentCandidate.bottomPairHeight = candidate.bottomPairHeight;
+		}
+		else
+		{
+			currentCandidate.middlePairWidth = candidate.middlePairWidth;
+			currentCandidate.middlePairHeight = candidate.middlePairHeight;
+		}
+		const auto clamped = ClampPageControlLayout(moved, monitor, dpiScale, currentCandidate, ppt.uiScale);
+		result.clamped = bottom
+			? candidate.bottomPairWidth != clamped.bottomPairWidth
+				|| candidate.bottomPairHeight != clamped.bottomPairHeight
+			: candidate.middlePairWidth != clamped.middlePairWidth
+				|| candidate.middlePairHeight != clamped.middlePairHeight;
+		if (bottom)
+		{
+			result.layout.bottomPairWidth = clamped.bottomPairWidth;
+			result.layout.bottomPairHeight = clamped.bottomPairHeight;
+		}
+		else
+		{
+			result.layout.middlePairWidth = clamped.middlePairWidth;
+			result.layout.middlePairHeight = clamped.middlePairHeight;
+		}
+		const LONG gap = static_cast<LONG>(std::lround(
+			PageControlGapDip * NormalizeDpiScale(dpiScale)));
+		auto Collides = [&](const PptLayoutState& layout)
+		{
+			PptState next = ppt;
+			next.layout = layout;
+			return PageControlGroupsOverlap(monitor, dpiScale, next, gap);
+		};
+		// 只在用户采样时吸附；两轴额外距离共用屏幕 DIP，不含现有间隙和控件倍率。
+		if (!bottom && std::isfinite(centerSnapDistanceDip)
+			&& centerSnapDistanceDip >= 0.0
+			&& std::abs(result.layout.middlePairHeight)
+				<= centerSnapDistanceDip * NormalizeDpiScale(dpiScale)
+			&& result.layout.middlePairWidth
+				<= centerSnapDistanceDip * NormalizeDpiScale(dpiScale))
+		{
+			auto centered = result.layout;
+			centered.middlePairHeight = 0.0F;
+			if (!Collides(centered))
+			{
+				result.layout = centered;
+				result.centerSnapped = true;
+				return result;
+			}
+			result.centerBlocked = true;
+		}
+		if (Collides(result.layout))
+		{
+			result.collisionRejected = true;
+			if (bottom)
+			{
+				result.layout.bottomPairWidth = feasible.bottomPairWidth;
+				result.layout.bottomPairHeight = feasible.bottomPairHeight;
+			}
+			else
+			{
+				result.layout.middlePairWidth = feasible.middlePairWidth;
+				result.layout.middlePairHeight = feasible.middlePairHeight;
+			}
+		}
+		return result;
+	}
+
+	[[nodiscard]] inline PptState ResolveRuntimePageControlLayout(
+		const RECT& monitor, float dpiScale, PptState ppt,
+		float presentationOutsetDip = 10.0F, unsigned bitmapLimit = 16384) noexcept
+	{
+		const bool bottomVisible = ppt.presentationActive && ppt.layout.showBottomPair;
+		const bool middleVisible = ppt.presentationVisible && ppt.layout.showMiddlePair;
+		if (!bottomVisible && !middleVisible) return ppt;
+		const float normalizedDpi = ResolvePptUiScale(dpiScale, ppt.uiScale);
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
 		const float height = static_cast<float>((std::max)(1L,
 			monitor.bottom - monitor.top));
 		const LONG gap = static_cast<LONG>(std::lround(
-			PageControlGapDip * normalizedDpi));
-		const bool bottomVisible = ppt.layout.showBottomPair;
-		const bool middleVisible = ppt.layout.showMiddlePair;
+			PageControlGapDip * NormalizeDpiScale(dpiScale)));
 
-		auto FitScale = [&](bool visible, double controlWidth,
+		auto FitScale = [&](bool visible, bool bottom, double controlWidth,
 			double controlHeight, float& userScale)
 		{
 			if (!visible) return;
 			const float maximum = (std::min)(
 				width / static_cast<float>((controlWidth + PageControlGapDip) * 2.0
 					* normalizedDpi),
-				height / static_cast<float>((controlHeight
-					+ PageControlGapDip * 2.0) * normalizedDpi));
-			userScale = (std::min)(NormalizeScale(userScale),
-				(std::max)(1.0F / 128.0F, maximum));
+				// 底部可见高度包含半个共享描边，并为其向外取整预留至多一像素。
+				bottom ? (std::max)(0.0F, height - static_cast<float>(ResolvePageControlBottomInsetPixels(dpiScale)) - 1.0F)
+					/ static_cast<float>((controlHeight + PageControlGapDip + BarButtonFrameThicknessDip / 2.0) * normalizedDpi)
+					: height / static_cast<float>((controlHeight + PageControlGapDip * 2.0) * normalizedDpi));
+			const float resourceMaximum = static_cast<float>((std::max)(1U, bitmapLimit) - 1U)
+				/ static_cast<float>((std::max)(controlWidth, controlHeight)
+					+ 2.0 * presentationOutsetDip) / normalizedDpi;
+			const float screenMaximum = (std::min)(
+				width / static_cast<float>((controlWidth + 2.0 * presentationOutsetDip)
+					* 2.0 * normalizedDpi),
+				height / static_cast<float>((controlHeight + 2.0 * presentationOutsetDip)
+					* normalizedDpi));
+			userScale = (std::min)({ std::clamp(NormalizeScale(userScale), 0.5F, 3.0F),
+				maximum, screenMaximum, resourceMaximum });
 		};
-		FitScale(bottomVisible, PptCompactLongSideDip,
-			PptCompactShortSideDip, ppt.layout.bottomPairScale);
-		FitScale(middleVisible, PptCompactShortSideDip,
-			PptCompactLongSideDip, ppt.layout.middlePairScale);
+		FitScale(bottomVisible, true, PptControlLongSideDip,
+			PptControlShortSideDip, ppt.layout.bottomPairScale);
+		FitScale(middleVisible, false, PptControlShortSideDip,
+			PptControlLongSideDip, ppt.layout.middlePairScale);
 		if (bottomVisible)
 			ppt.layout = ClampPageControlLayout(Surface::BottomLeft,
-				monitor, normalizedDpi, ppt.layout);
+				monitor, dpiScale, ppt.layout, ppt.uiScale);
 		if (middleVisible)
 			ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-				monitor, normalizedDpi, ppt.layout);
+				monitor, dpiScale, ppt.layout, ppt.uiScale);
 
 		auto TryNearest = [](float start, float minimum, float maximum,
 			auto&& invalid, float& resolved)
@@ -1043,11 +1398,11 @@ export namespace Inkeys::UI::PageControl
 			for (int attempt = 0; attempt < 24; ++attempt)
 			{
 				ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, normalizedDpi, ppt.layout);
+					monitor, dpiScale, ppt.layout, ppt.uiScale);
 				PptLayoutState upper = ppt.layout;
 				upper.middlePairHeight = height;
 				upper = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, normalizedDpi, upper);
+					monitor, dpiScale, upper, ppt.uiScale);
 				const float limit = upper.middlePairHeight;
 				float resolved = ppt.layout.middlePairHeight;
 				const bool found = TryNearest(ppt.layout.middlePairHeight,
@@ -1056,15 +1411,15 @@ export namespace Inkeys::UI::PageControl
 						PptState next = ppt;
 						next.layout.middlePairHeight = candidate;
 						return PageControlGroupsOverlap(
-							monitor, normalizedDpi, next, gap);
+							monitor, dpiScale, next, gap);
 					}, resolved);
 				if (found)
 				{
 					ppt.layout.middlePairHeight = resolved;
 					break;
 				}
-				if (ppt.layout.middlePairScale <= 1.0F / 128.0F) break;
-				ppt.layout.middlePairScale = (std::max)(1.0F / 128.0F,
+				if (ppt.layout.middlePairScale <= 1.0F / 65536.0F) break;
+				ppt.layout.middlePairScale = (std::max)(1.0F / 65536.0F,
 					ppt.layout.middlePairScale * 0.75F);
 			}
 		}
@@ -1088,15 +1443,37 @@ export namespace Inkeys::UI::PageControl
 		return visibleBounds;
 	}
 
+	// 复用产品 Scene/布局的无 HWND 离屏回归；由已有 UI 离屏入口调用。
+	int RunOffscreenTests();
+	// 独立命令入口：屏外真实四 HWND、ULW 与 Window Service 提交回归。
+	int RunHiddenWindowTests();
 	bool Acquire();
 	void Release() noexcept;
 	[[nodiscard]] WNDPROC WindowProc() noexcept;
 	void SetPptCallbacks(PptCallbacks callbacks);
+	void FlushPositionCommits();
 	void SetWhiteboardCallbacks(WhiteboardCallbacks callbacks);
 	void PublishPptState(const PptState& state) noexcept;
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept;
-	void QueuePptWheel(short delta) noexcept;
+	[[nodiscard]] bool CanAcceptPptWheel(const Business::PptSessionToken& session) noexcept;
+	void ConsumePptWheel(const Business::PptSessionToken& session,
+		std::uint64_t routeGeneration, short delta) noexcept;
+	void ResetWheelInput() noexcept;
+	void DrainLocalWheel() noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;
 	void NotifyLayoutChanged() noexcept;
+	[[nodiscard]] std::uint64_t WhiteboardMenuEpoch() noexcept;
+	bool RequestWhiteboardMenuDismiss(std::uint64_t expectedEpoch = 0, std::uintptr_t expectedForeground = 0) noexcept;
 	void CancelPointerCapture() noexcept;
+	struct OffscreenSnapshot
+	{
+		PptState ppt;
+		WhiteboardState whiteboard;
+	};
+	// 与产品共用内容投影、脏区和 GetDC 事务，仅替换最后的 HWND 提交。
+	[[nodiscard]] std::function<Inkeys::UI::RenderPipeline::FrameResult(
+		const Inkeys::UI::RenderPipeline::FrameContext&)>
+		CreatePageControlOffscreenRenderCallback(unsigned index,
+			std::function<OffscreenSnapshot()> provider,RECT logicalBounds,float scale,
+			std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink,HWND inputIdentity=nullptr);
 }

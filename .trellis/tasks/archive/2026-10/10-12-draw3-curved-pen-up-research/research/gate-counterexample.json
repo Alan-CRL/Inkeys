@@ -1,0 +1,49 @@
+{
+  "scope": "Pure geometry counterexample only; not real modeler/device execution",
+  "source": ".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/release-tail-thin-coverage.md:17",
+  "points": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      8.0,
+      -1.0
+    ],
+    [
+      9.7,
+      -0.3
+    ],
+    [
+      9.96,
+      -0.2
+    ],
+    [
+      10.0,
+      0.0
+    ]
+  ],
+  "endpoint_distances_px": [
+    10.0,
+    2.23606797749979,
+    0.424264068711929,
+    0.20396078054371122,
+    0.0
+  ],
+  "endpoint_axis_projections_px": [
+    -10.0,
+    -2.0,
+    -0.3000000000000007,
+    -0.03999999999999915,
+    0.0
+  ],
+  "segment_angles_degrees": [
+    -7.125016348901798,
+    22.38013505195958,
+    21.037511025421697,
+    78.69006752598003
+  ],
+  "terminal_angle_jump_degrees": 57.65255650055833,
+  "monotone_endpoint_distance": true,
+  "no_endpoint_plane_overshoot": true
+}

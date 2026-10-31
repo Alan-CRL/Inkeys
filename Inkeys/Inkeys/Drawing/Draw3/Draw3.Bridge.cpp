@@ -1,4 +1,5 @@
 #include "Draw3.Bridge.h"
+#include "Draw3.Shortcut.h"
 
 #include <algorithm>
 
@@ -14,8 +15,10 @@ namespace Inkeys::Drawing::Draw3::Bridge
 				left.presentationName == right.presentationName &&
 				left.provider == right.provider && left.bindingToken == right.bindingToken &&
 				left.slideIds == right.slideIds && left.slideId == right.slideId &&
+				left.pageKind == right.pageKind &&
 				left.pageIndex == right.pageIndex && left.totalPages == right.totalPages &&
 				left.bindingRevision == right.bindingRevision &&
+				left.sessionRevision == right.sessionRevision &&
 				left.processLocalIdentity == right.processLocalIdentity;
 		}
 	}
@@ -39,6 +42,10 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			state.presentationTarget = state_.presentationTarget;
 		else if (state.workspace != Workspace::Presentation)
 			state.presentationTarget.reset();
+		const bool sceneChanged = state.workspace != state_.workspace ||
+			state.hasPage != state_.hasPage || (state.hasPage && state.page != state_.page) ||
+			state.presentationTarget != state_.presentationTarget;
+		state.shortcutIntentEpoch = state_.shortcutIntentEpoch + (sceneChanged ? 1 : 0);
 		state.revision = state_.revision + 1;
 		state_ = state;
 	}
@@ -50,6 +57,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		const bool clearPage = workspace != Workspace::Presentation;
 		if (state_.workspace == workspace && (!clearPage || !state_.hasPage))
 			return false;
+		++state_.shortcutIntentEpoch;
 		state_.workspace = workspace;
 		if (clearPage)
 		{
@@ -66,23 +74,14 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 		if (changed) *changed = false;
 		if (target.key.IsZero() || target.sourceIdentity.empty() ||
-			target.totalPages == 0 ||
-			target.totalPages > kMaximumPresentationPages ||
-			target.pageIndex >= target.totalPages)
-			return std::nullopt;
-		if (target.bindingMode == SlideBindingMode::StableSlideId)
-		{
-			if (!target.slideId || target.slideIds.size() != target.totalPages ||
-				target.slideIds[target.pageIndex] != *target.slideId)
-				return std::nullopt;
-		}
-		else if (target.slideId || !target.slideIds.empty()) return std::nullopt;
+			!ValidPresentationPage(target)) return std::nullopt;
 
 		std::scoped_lock lock(mutex_);
 		if (!running_) return std::nullopt;
 		if (state_.workspace == Workspace::Presentation && state_.presentationTarget)
 		{
-			if (SamePresentationTargetIgnoringRevision(*state_.presentationTarget, target))
+			if (targetRefreshRequired_ != ReadyIdentityFor(*state_.presentationTarget) &&
+				SamePresentationTargetIgnoringRevision(*state_.presentationTarget, target))
 				return state_.presentationTarget->targetRevision;
 		}
 		if (nextTargetRevision_ == 0) nextTargetRevision_ = 1;
@@ -94,14 +93,25 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			state_.page = published->pageIndex;
 			state_.hasPage = true;
 			state_.presentationTarget = std::move(published);
+			targetRefreshRequired_.reset();
 		}
 		catch (...)
 		{
 			return std::nullopt;
 		}
+		++state_.shortcutIntentEpoch;
 		++state_.revision;
 		if (changed) *changed = true;
 		return state_.presentationTarget->targetRevision;
+	}
+
+	bool StateBridge::RequirePresentationTargetRefresh(const PresentationReadyIdentity& expected) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_ || state_.workspace != Workspace::Presentation || !state_.presentationTarget ||
+			ReadyIdentityFor(*state_.presentationTarget) != expected) return false;
+		targetRefreshRequired_ = expected;
+		return true;
 	}
 
 	bool StateBridge::ClearPresentationTarget() noexcept
@@ -110,6 +120,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		if (!running_) return false;
 		if (state_.workspace == Workspace::Presentation &&
 			!state_.presentationTarget && !state_.hasPage) return false;
+		++state_.shortcutIntentEpoch;
 		state_.workspace = Workspace::Presentation;
 		state_.presentationTarget.reset();
 		state_.page = 0;
@@ -131,7 +142,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		// 尚未准备好的能力保留显式空接口，产品入口可据此隐藏。
 		if (type == CommandType::Save || type == CommandType::SuperRecovery ||
 			type == CommandType::AutoStraighten || type == CommandType::InputTest ||
-			type == CommandType::PrepareExitAutoSave)
+			type == CommandType::PrepareExitAutoSave || type == CommandType::ShortcutFence)
 			return CommandResult::Unsupported;
 		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
 		try
@@ -147,6 +158,53 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		{
 			return CommandResult::QueueFull;
 		}
+		return CommandResult::Accepted;
+	}
+
+	CommandResult StateBridge::PublishWhiteboardTheme(WhiteboardTheme theme,
+		std::uint64_t generation, std::size_t page) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return CommandResult::NotRunning;
+		if (state_.workspace != Workspace::Whiteboard || !ValidWhiteboardTheme(theme))
+			return CommandResult::Unsupported;
+		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
+		try
+		{
+			Command command{ CommandType::SetWhiteboardTheme, nextSequence_, state_.workspace };
+			command.whiteboardTheme = theme;
+			command.whiteboardGeneration = generation;
+			command.whiteboardPage = page;
+			commands_.push_back(std::move(command));
+			++nextSequence_;
+			return CommandResult::Accepted;
+		}
+		catch (...) { return CommandResult::QueueFull; }
+	}
+
+	CommandResult StateBridge::PublishShortcut(CommandType type,
+		std::shared_ptr<const Shortcuts::Request> request) noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return CommandResult::NotRunning;
+		if (!request || (type != CommandType::Clear && type != CommandType::Undo &&
+			type != CommandType::Redo && type != CommandType::ShortcutFence)) return CommandResult::Unsupported;
+		const auto presentation = state_.presentationTarget
+			? std::optional(ReadyIdentityFor(*state_.presentationTarget)) : std::nullopt;
+		// 与入队共锁核验触发时身份，绝不把旧快捷键重绑定到最新页面。
+		if (request->scope.intentEpoch != state_.shortcutIntentEpoch ||
+			request->scope.workspace != state_.workspace ||
+			request->scope.presentation != presentation) return CommandResult::NotRunning;
+		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
+		try
+		{
+			Command command{ type, nextSequence_, state_.workspace };
+			command.presentationTarget = state_.presentationTarget;
+			command.shortcut = std::move(request);
+			commands_.push_back(std::move(command));
+			++nextSequence_;
+		}
+		catch (...) { return CommandResult::QueueFull; }
 		return CommandResult::Accepted;
 	}
 
@@ -171,8 +229,9 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		commands_.clear();
 		finalCommand_.reset();
 		nextSequence_ = 1;
-		nextTargetRevision_ = 1;
+		// Host 重启也不复用目标编号，避免旧 UI/ready completion 命中新一代。
 		state_ = {};
+		targetRefreshRequired_.reset();
 		running_ = true;
 	}
 

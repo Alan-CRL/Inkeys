@@ -1,0 +1,10 @@
+
+  Scanning sources for module dependencies...
+  setting_session_state_tests.cpp
+  setting_design_tests.cpp
+  Setting.Controls.cpp
+  Compiling...
+  Setting.Controls.cpp
+  setting_session_state_tests.cpp
+  setting_design_tests.cpp
+  InkeysHeadlessTests.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\Build\ARM64\Debug\InkeysHeadlessTests.exe

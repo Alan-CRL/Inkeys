@@ -1,0 +1,29 @@
+{
+  "id": "setting-fluent2-responsive-ui",
+  "name": "setting-fluent2-responsive-ui",
+  "title": "Setting Fluent2 响应式界面迁移",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-13",
+  "completedAt": "2026-10-08",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "superseded_by": "09-06-setting-winui3-design-rebuild",
+    "handover_date": "2026-10-08"
+  }
+}

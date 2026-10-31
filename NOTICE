@@ -28,6 +28,10 @@ Component: google/ink-stroke-modeler (https://github.com/google/ink-stroke-model
 License: Apache License 2.0
 Copyright / Notes: 
 
+Component: lukaasm/ImFluent (https://github.com/lukaasm/ImFluent)
+License: MIT License
+Copyright / Notes: Copyright (c) 2026 lukaasm
+
 Component: martinus/unordered_dense (https://github.com/martinus/unordered_dense)
 License: MIT License
 Copyright / Notes: Copyright (c) 2022 Martin Leitner-Ankerl

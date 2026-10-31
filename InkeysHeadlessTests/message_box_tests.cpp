@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <stop_token>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -168,6 +169,12 @@ namespace
 			"invalid fallback owner normalizes to null");
 		Check(invalidOwnerCapture.language == invalidForFallback.language,
 			"system fallback preserves the request language");
+		auto failClosed = invalidForFallback;
+		failClosed.fallback.enabled = false;
+		Check(MessageBoxTest::ShowAutomated(failClosed,
+			invalidOwnerAutomation) == Result::Failed
+			&& invalidOwnerCapture.calls == 1,
+			"confirmation failure never reaches a second affirmative system dialog");
 
 		auto requiredOwner = MakeOkRequest(L"Owner", L"Owner is required here.");
 		requiredOwner.requireOwner = true;
@@ -1529,6 +1536,15 @@ int RunMessageBoxTests(bool runWindowTests)
 	TestRequestAndResultContracts();
 	TestLabelsAndScaling();
 	TestPreflightWithoutWindow();
+	Check(MessageBoxTest::VerifyCancellationAdmission(), "cancelled admission returns without waiting for another dialog");
+	Check(MessageBoxTest::VerifyDialogHideOwnerPolicy(), "dialog cleanup enables and returns foreground to owner before hiding without stealing external focus");
+	std::stop_source stop;
+	Request cancelled; cancelled.fallback.enabled = false; cancelled.cancellation = stop.get_token();
+	stop.request_stop();
+	Check(Show(cancelled) == Result::Dismissed && !IsShowing(), "pre-cancelled request has no dialog or fallback");
+	std::stop_source pendingStop;
+	Request cancellableFailure; cancellableFailure.cancellation = pendingStop.get_token();
+	Check(Show(cancellableFailure) == Result::Failed && !IsShowing(), "cancellable invalid request never opens system fallback");
 	if (runWindowTests)
 	{
 		TestStartupShowStateCannotMaximizeDialog();

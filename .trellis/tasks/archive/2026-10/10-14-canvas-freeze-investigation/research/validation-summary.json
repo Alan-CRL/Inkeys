@@ -1,0 +1,87 @@
+{
+  "head": "5d319bbf5c520dec97dcb37ad2fcc7e26d029bbb",
+  "head_exe_sha256": "9316b86f5d08f0135b8e583fe490211fbcfb59f1c5c0fa055a3abea8865347fd",
+  "preexisting_exe_sha256": "c1ae753dd96b5ac77b539854bd8fef0990d48c8695271a2cdae5c9e11dc2ddde",
+  "solution_initial_exit": 1,
+  "solution_shared_provider_exit": 0,
+  "headless_exit": 0,
+  "head_gui_status": "completed: baseline and repeatable stdout backpressure experiment",
+  "pipe_backpressure": {
+    "pid": 16544,
+    "repeated_triggers": 2,
+    "draw_thread": 5192,
+    "stack_samples": 3,
+    "wait": "ZwWriteFile -> KERNELBASE WriteFile",
+    "source_candidate": "Draw3.Diagnostics.cpp:55",
+    "settings_navigation": "responsive",
+    "same_process_read_resume": "drawing resumed",
+    "target_cleanup_exit": 1,
+    "cleanup_exit_reason": "probe deliberately terminated its owned child"
+  },
+  "input_wake_probe": {
+    "compile_exit": 0,
+    "run_exit": 0,
+    "failures": 0,
+    "scope": "real ContactInput/SpeedEraser + extracted controller loop; Touch; Up recovers"
+  },
+  "presentation_load_probe": {
+    "compile_exit": 0,
+    "run_exit": 0,
+    "failures": 0,
+    "final_warnings": 0,
+    "scope": "real product worker/UInk/Bridge + extracted controller/Host gates; no HWND"
+  },
+  "product_source_changes": false,
+  "incident_root_cause": "unconfirmed",
+  "cleanup": "no remaining isolated Inkeys/probe processes; preserved Explorer of unconfirmed ownership",
+  "window_investigation": {
+    "report": "research/window-interaction-investigation.md",
+    "console_off_gui_pid": 29472,
+    "normal_mouse_sequences": 3,
+    "F4": {
+      "trigger": "Settings mouse down -> Alt+F4 Hide -> normal Up",
+      "hidden_capture": "0x50e06",
+      "toolbar_click": "blocked",
+      "new_mouse_ink": "succeeded",
+      "recovery": "same-process WM_CANCELMODE to Settings; same toolbar click succeeded"
+    },
+    "owner_probe": {
+      "compile_exit": 0,
+      "run_exit": 0,
+      "residual_hidden_capture_cases": 1,
+      "owner_completed": 200,
+      "topmost_completed": 200,
+      "failures": 0
+    },
+    "rts_probe": {
+      "compile_exit": 0,
+      "mouse_trials": 9,
+      "touch_trials": 9,
+      "each_downs": 4,
+      "each_ups": 4,
+      "rts_errors": 0,
+      "injection_errors": 0,
+      "scope": "independent real OS/RTS; excludes production decoder/controller/render"
+    },
+    "full_product_touch": {
+      "console_off_pid": 29988,
+      "diagnostic_pid": 872,
+      "injection_api_success": true,
+      "new_touch_ink": false,
+      "mouse_control": "succeeded",
+      "pointer_touch": "Down/Move/Up observed",
+      "rts_touch_arrival": "absent from contiguous seq1-458; later records dropped",
+      "window_flow_verdict": "not tested; baseline unavailable"
+    },
+    "new_confirmed_canvas_deadlock": false
+  },
+  "third_round_quality": {
+    "task_context_validation": "passed; implement/check 4 entries each",
+    "task_text_files_checked": 37,
+    "python_ast_json_jsonl": "passed",
+    "whitespace_check": "passed; original EOL formats preserved",
+    "product_diff": "empty",
+    "evidence_cross_review": "completed; Explorer close request wording narrowed",
+    "remaining_test_processes": 0
+  }
+}

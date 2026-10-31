@@ -1,0 +1,39 @@
+# F-041 Controller 半边：旧 fallback 与新 Stable 独立槽
+
+日期：2026-09-28。阶段 1 设计与纯策略门已完成；完整双 lane 业务仍待 Storage Service 双轨红→绿。共享接口已经由主 agent 在 `ppt-f041-storage-controller-contract.md` 确认：实际物理 `PresentationStorageTrack`、request/completion opaque `slotGeneration` 原值 echo、Save 成败带请求 fileGuid、Load 仅严格 Loaded 带已验证 GUID。Controller 不修改 Storage owner 的 `.cppm/.cpp`。依据是用户已选“旧 page-index PPT 文件保留，新 StableSlideId 会话独立保存”，`ppt-fallback-new-session-design.md`（已按 F-044 schema v2/物理版本修订）、当前生产 Controller/Presentation/AutoSave、F-029/F-031/F-038/F-039 的保存和加载辅助函数。无 GUI/Office/用户数据运行证据。
+
+## 现有错误链和最小边界
+
+`TargetIdentityFor` 对有效绝对路径以规范路径生成 source/key，**不把 bindingMode 加入 key**；process-local source 则包含 PID/provider/HWND/bindingRevision（`Draw3.Presentation.cpp:151-181`）。因此同路径 fallback→Stable 通常确实同 key，process-local 同次 binding 也可能同 key；不同 process-local binding 可能本来就不同 key。`CanUpgradePresentationBindingByOrdinal` 目前只凭同 key/source、同页数与可用 SlideID 返回 true（`:368-387`），`CanReusePresentationDocumentSlot` 在末尾调用它（`:389-422`）。Controller 的 `SetPresentationTarget` 因同 key 认为可复用同一 active/parked `document_/history/fileGuid/workspaceGuid`，沿旧页 ordinal 把 target 换成 Stable 并推进 mutation（`Draw3.DrawingController.cpp:6948-7024`）。旧 UInk 完全没有可靠 SlideID 对应凭证；Stable `{202,101}` 与 fallback 页 0/1 的顺序关系不可证明，旧点可能被错贴，且新 Stable Save 命中旧 base index 与旧 GUID。仅令 `CanReuse` 返回 false 会走现有 `topologyConflict→isolatedPresentationSlot`，其中 `activePresentationKey` 置空、`activePresentationTarget` reset（`:6964-7009`）；这既不能保存新 Stable，也不能回读 sidecar。
+
+目前 `presentationSlots` 只以 `PresentationKey` 为 key（`:2933`），活动文稿在 `document_`，对应 map 节点通常为空；`swapActiveDocument` 一次性交换 document、runtimes、retained、target、fileGuid 和三 revision/load flags（`:5884-5898`）。Save completion 只凭同 key 加宽松 `CanReuse` 判断活动/停放，加载 completion 也复用该判断（`:6694-6917`）；迟到 fallback completion 可能命中新 Stable 或在简化拒绝后被直接丢弃。退出/fatal 最终保存只扫 active 与 `presentationSlots`（`:6011-6077`）。这三处必须作为同一状态事务修改。
+
+## 推荐槽位合同：以 logical key + binding mode 分 lane
+
+最小变更优先把 parked PPT map 键改为 `(PresentationKey, SlideBindingMode)`，保留目前的一个 active 文档/设备/线程；不引入第二 Host 或第二渲染线程。同 source/key 可同时有一个 page-index parked 槽与一个 Stable parked 槽。每个 `DrawingDocumentSlot` 仍整体拥有 document、history、retained、target、fileGuid、mutation/queued/committed 和 load state；建议增单调 `slotGeneration`（0 仅表示未分配）并与 active 字段随 `swapActiveDocument` 同步。`parkedActiveSlot()` 必须取活动 target 的 mode lane；如果 target 不存在则仅走既有 isolated 槽。所有 `try_emplace/find/erase`、退出/fatal 扫描、保存失败重试、迟到 Save/Load/PreviousInterval 回调按 lane+generation 路由，不能再只按 key。
+
+同 key 的 fallback→Stable 与 Stable→fallback 都属于跨 lane 切换，不进入 `CanUpgrade...`；同 mode 的真正翻页仍复用原槽，Stable 有序 SlideID 重排仍走 F-039 的旧 target→新 target 重映射，保留 deleted 页 retained。此合同只把**两种模式**隔离；它没有将每次 Office 放映都强制生成新 Stable 文件（该范围未被用户选定）。`CanUpgradePresentationBindingByOrdinal` 的产品策略应变为不可自动升级，并修改旧 Headless 断言，不能用更名保留旧 ordinal 行为。`ShouldPersistLoadedPresentationBindingMigration` 当前仍把 Stable target+fallback UInk 当可持久化迁移；Storage 不应再把 fallback UInk 给 Stable Load，Controller 也应拒绝任何这种错误 completion，不沿旧迁移分支保存。
+
+### 强保证切换顺序
+
+1. 在绘制线程现有 `active.empty()`/canvas command 边界处理目标；先按旧 target 试图提交旧 fallback dirty 快照，**接受入队只更新 queued，不能冒充 durable**。F-045 已建立命令/新 Down 边界，活动旧接触必须自然 Up/Cancel 并完成模型提交。
+2. 在动权威 active 槽前拷贝目标、准备新 mode lane 节点、生成完整新空 `InkCanvasCollection` 和 `N+1` 个独立页/runtimes（含 EndScreen 内部页），并准备所有可能分配的容器。`TryCreateInkGuid/TryAppendBlankPage` 失败、配置不合法或其它分配失败时保持旧 active 文档/可见状态；不得先 swap 后才分配。旧 fallback 的 workspace/page GUID 与新 Stable 各页 GUID 必须不同；新 Stable `fileGuid` 不从旧槽搬入，首个 Save 产生全新 fileGuid，Storage 对跨轨 GUID 冲突再 fail closed。
+3. 只在候选完整后把旧 active 整组 `swapActiveDocument` 停入 fallback lane，再把候选 Stable 整组换入 active；保留 source slot 的旧 target、file/revisions/retained。新 Stable 空槽初始 `mutation=queued=committed=0`、`loadPending=false`、无旧 fallback 墨迹。设 `currentPageIndex=target.pageIndex`：最后真实页是 `N-1` 且有 SlideID，EndScreen 独立 index `N`、无 SlideID、独立 pageGuid；不能把结束页当最后真实页。
+4. 新 lane 的第一次 `SubmitLoad(Stable)` 只由 worker 选 `presentation/slide-id/` 或已有 Stable base，旧 fallback base 不能被导入。`Loaded` 通过 F-038 的成组 materialize/install，`NotFound` 表示新空 Stable 可等待成功 Present 后 ready。`IoError/SourceChanged/CrossProcessConflictDeferred` 应保持无法宣称已恢复/可安全保存的状态，允许后续显式重试；不能像当前 generic completion 路径那样对任意非 Loaded 都设 `persistenceInitialized=true` 并展示空画布。若 Load 请求无法接受，同样不发布假的 ready。
+5. 已提交且无待办的旧 fallback 可按原 `ShouldEvictPresentationSlot` 释放 CPU slot，**不能删除旧 base index/UInk**。dirty、已接受未完成、失败或 load-pending 的旧槽必须留在 mode lane；若后续重新进入 fallback 且同绑定可复用/严格加载旧 base，不强制把旧墨迹拷到 Stable。旧 Save 失败时重置该 lane queued 到 committed，保留 dirty 与 Clear fallback；不在错误回调内无限自动重试。退出/fatal 最终扫描两 lane，15 秒强制退出只保留已 durable 旧恢复点。
+
+### completion 身份和迟到事件
+
+`Completion.target.key` 与 mode 能区分 fallback/Stable，但不能区分同 lane 后续重建代次；建议 Save/Load request 各带 Controller 生成的 opaque `slotGeneration`，worker 对 Committed/Loaded/NotFound/失败均原样 echo，Save completion 再带请求 snapshot 的 `fileGuid` 与实际 `storageTrack`，Load 成功携带已验证文件 GUID/track。Controller 先核 lane+generation，Save 再核 fileGuid、mutationRevision/clearPageGuid+intervalOrdinal，才更新三 revision/释放 fallback；Load 仅对仍 loadPending 且 generation/目标身份匹配的槽安装。旧 fallback 的迟到 completion 永不改变新 Stable active；若已安全淘汰则可丢弃观察结果，不写入另一 lane。`PreviousInterval` 必须带原旧 pageGuid、ordinal 和 generation，迟到结果只能更新旧 lane 或明确忽略，不能跨 EndScreen/Stable 页。Storage worker 必须先冻结 track 选择/回执字段；当前 `.cppm:101-115` 未有这些字段，本阶段不擅改它。
+
+如果 Storage 不提供 opaque generation，也至少需在 Controller 保存接受请求时维护 `(targetRevision, bindingMode, fileGuid/loadKind/pageGuid)`→slot 映射并在 latest-wins 替换时清理；这种旁路表更复杂，优先直接 echo generation。Storage 的 `pendingIndexEntries` 与 latest-wins queue 必须按 track+source/file 身份分开，详见 `ppt-fallback-new-session-design.md`；Controller lane 分离无法补救 worker 跨轨替换。
+
+## 无窗口红→绿与依赖
+
+阶段 1 早期 CLI probe `RunFallbackStableControllerIsolationProbe` 直接调用生产 `CanUpgradePresentationBindingByOrdinal/CanReusePresentationDocumentSlot`：同 key/source、旧 fallback 两页与新 Stable `{202,101}` 两页时两者都必须 **false**。旧代码完整 Debug|ARM64 Solution Build exit 0，`Start-Process -WindowStyle Hidden -PassThru` 精确 pid63852 exit 2，stderr 两条为 `fallback cannot be upgraded to Stable by ordinal` 与 `require separate document lanes`（`f041-controller-policy-red-*`）。仅 `Draw3.Presentation.cpp::CanUpgradePresentationBindingByOrdinal` 改恒 false、保留同 mode 复用后，完整 Debug|ARM64 Solution Build exit 0，显式 pid23912 exit 0（`sr05-sr06-f041-policy-green-build-debug-arm64.log`、`f041-controller-policy-green-explicit.*`）。`DrawingController.cpp/.cppm` 只加该 probe，未动最终槽切换/回执。此红→绿**只证明策略门**；当前 SetPresentationTarget 遇到跨 mode 会落在无保存身份的 isolated path，尚不可运行产品 GUI/宣称 F-041 完成。旧 `InkeysHeadlessTests/presentation_descriptor_tests.cpp:142-160` 仍期待 ordinal 升级，须按用户决策同步改断言；不能以纯策略绿灯替代完整 Headless 回归。
+
+Storage API 冻结后，应把 Controller 的跨 lane 切换提成生产窄 helper，no-HWND probe 调同一 helper，并用真实 document/page GUID 与注入分配失败验证：fallback 活动两笔、EndScreen 有内容→Stable 反序空 N+1 页/全新 GUID；旧 fallback dirty/pending slot 可独立等待 Save completion；Stable 首笔只属于新 lane；迟到 fallback Save/Load/PreviousInterval 无法更新 Stable；新空槽生成失败保持旧 active；重复相同 target 幂等不生成第三份；返回 fallback 只回旧 lane。再做 F-029/F-031/F-038/F-039/fatal 最终扫描回归，Storage 独立 service 红→绿、主 Solution Debug/Release 与独立 diff review。无窗口探针不证明真实 Office/RTS、GPU Present 或 Win7 SP1+仅 KB2670838 的 FLIP/DComp/ULW 组合。
+
+为使该 probe 真正穿过生产逻辑，建议把当前 Run 内的 `createBlankSlot` 与 `swapActiveDocument` 抽为同文件窄 helper（接收现有 active 字段引用、`DrawingDocumentSlot` 与 raster token allocator），Run 和 probe 共用；不复制一套“正确”交换算法。跨 mode 的 helper 应先准备目标拷贝、新空槽及两个 map node，再做不抛异常的成组 swap；失败注入仅让准备阶段返回失败，不在任何真实用户文件或 HWND 上试。当前 `RunParkedPresentationRetainedSaveTest`/`RunPresentationLoadedRetainedInstallTest`/`RunPendingPresentationTopologyLoadTest` 分别验证 F-031/F-038/F-039 的部分内存合同，但均没有执行 `(key,mode)` map 与迟到 completion 路由；必须新增覆盖这一实际共享 helper 的反例。`RunParkedDesktopExitAutoSaveTest` 仍要确保 PPT lane 改动不使停放 Desktop 源被误选。
+
+**实施依赖**：Storage owner 冻结 completion `storageTrack/fileGuid/slotGeneration` 与失败状态语义 → Controller owner 实施 mode lane/策略门/回执路由 → 主 agent 接 CLI/串行 Build/Test/更新 Headless 旧 ordinal 测试与规范 → 独立 reviewer 复审最终 diff。当前阶段仅研究与策略红测，不修改 `PresentationAutoSave`、Host/ContactInput/WindowControl、IdtMain/工程或父账本。

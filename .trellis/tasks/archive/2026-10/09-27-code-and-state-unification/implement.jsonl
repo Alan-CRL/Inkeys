@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Module and state conventions"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse checks before new helpers"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/architecture-and-validation.md", "reason": "Production state call chain"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "Input mode and ink ownership"}

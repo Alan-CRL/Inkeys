@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native/index.md", "reason": "demo/test原生规范入口"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "最小修改、第三方provenance、CRT和无窗口验证"}
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "主产品规范入口"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "主solution/native MSBuild/v143和Win7导入边界"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "已批准的源码Modeler+vcpkg Abseil ABI合同"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层与复用边界"}
+{"file": ".trellis/tasks/archive/2026-10/10-12-modeler-source-build-baseline/research/vcpkg-provider.md", "reason": "固定vcpkg版本、同包头/Release库、C++20/ABI与验收门"}

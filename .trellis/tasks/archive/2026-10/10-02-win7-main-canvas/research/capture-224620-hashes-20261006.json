@@ -1,0 +1,32 @@
+[
+  {
+    "path": "G:\\Inkeys\\Inkeys-Win7-OneClick-x64-Release\\Inkeys-Win7-OneClick-x64-Release\\20261005-224620-271\\console.stderr.txt",
+    "bytes": 29408,
+    "sha256": "230621FF3A2C65579722E44BC1FCD2C3CE13A162E73FF13EB1F440FE9433E91D"
+  },
+  {
+    "path": "G:\\Inkeys\\Inkeys-Win7-OneClick-x64-Release\\Inkeys-Win7-OneClick-x64-Release\\20261005-224620-271\\console.stdout.txt",
+    "bytes": 518542,
+    "sha256": "D7562B4F1539CAA33DA38E178B7FF006D74C7EEC79A924030CDC7CA5C16AF917"
+  },
+  {
+    "path": "G:\\Inkeys\\Inkeys-Win7-OneClick-x64-Release\\Inkeys-Win7-OneClick-x64-Release\\20261005-224620-271\\identity.txt",
+    "bytes": 737,
+    "sha256": "72D2A2E7B1A066F57F91E8AC0FD0D942B8C623F13A0DCC925C1F9EB87A5B2ECB"
+  },
+  {
+    "path": "G:\\Inkeys\\Inkeys-Win7-OneClick-x64-Release\\Inkeys-Win7-OneClick-x64-Release\\20261005-224620-271\\idt1791211582954.log",
+    "bytes": 38814,
+    "sha256": "87875C38AD2B43D13EC1E3662622209E35DBAC46BD8C5EAA5D62D66EB11D7E85"
+  },
+  {
+    "path": "G:\\Inkeys\\Inkeys-Win7-OneClick-x64-Release\\Inkeys-Win7-OneClick-x64-Release\\20261005-224620-271\\pixel-test.stderr.txt",
+    "bytes": 16545,
+    "sha256": "33C539A9A8F887BB34D2C87C62B66CAC56B7C586BFB245F62F9A12A95BD10E49"
+  },
+  {
+    "path": "G:\\Inkeys\\Inkeys-Win7-OneClick-x64-Release\\Inkeys-Win7-OneClick-x64-Release\\20261005-224620-271\\pixel-test.stdout.txt",
+    "bytes": 1301,
+    "sha256": "BCCB12AB4ACA9FCADB4E98014149EB22FDD5DECB84AD6BD767A709E1BF85B141"
+  }
+]

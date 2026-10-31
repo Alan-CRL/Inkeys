@@ -1,0 +1,33 @@
+{
+  "id": "ui3-centered-bar-dynamic-centering",
+  "name": "ui3-centered-bar-dynamic-centering",
+  "title": "UI3 居中底栏动态宽度居中修复",
+  "description": "调查并修复居中底栏在竖直移动与主栏宽度同时变化时未保持主栏水平中心对齐屏幕中心的问题。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-25",
+  "completedAt": "2026-10-26",
+  "branch": "bugfix/cut",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "bc49366733da3e36bc191f1ce7a4dae83021d0f6",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-25-ui3-bar-centering-dock-geometry",
+  "relatedFiles": [],
+  "notes": "2026-10-26 按用户明确要求完成并归档居中移动子任务。退出PPT竖直0.4秒动画已恢复，动态水平居中保留；完整ARM64构建、增强workspace-centering及底栏19组合离屏通过，代码提交bc493667。真实PPT GUI未自动验证，保留记录边界。吸附闪动为独立活动子任务，仍保持开启；未推送。",
+  "meta": {
+    "verification": {
+      "software": "workspace_leave_y_animation_build_and_offscreen_passed",
+      "gui": "ppt_leave_vertical_animation_pending_manual_validation",
+      "report": ".trellis/tasks/archive/2026-10/10-25-ui3-bar-centering-dock-geometry/research/final-integration-validation.md",
+      "workspaceReturnReport": ".trellis/tasks/archive/2026-10/10-25-ui3-centered-bar-dynamic-centering/research/workspace-return-animation-2026-10-26.md"
+    }
+  }
+}

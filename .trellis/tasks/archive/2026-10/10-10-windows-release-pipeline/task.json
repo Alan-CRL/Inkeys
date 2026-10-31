@@ -1,0 +1,29 @@
+{
+  "id": "windows-release-pipeline",
+  "name": "windows-release-pipeline",
+  "title": "Win32 Harness 修复与 Windows 发布流水线拆分",
+  "description": "修复 Win32 Harness 内存耗尽，拆分 PptCOM 与 Inkeys 发布构建。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-10",
+  "completedAt": "2026-10-10",
+  "branch": "dev",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-10-win32-harness-build",
+    "10-10-pptcom-split-signing"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地实现与质量门通过；DLL/TLB继续跟踪且手动维护，收尾完整Rebuild后已同步并核对哈希。用户已授权本次commit；未push、未触发远程workflow、未执行GUI。Windows2022三架构发布留待Actions验收。",
+  "meta": {}
+}

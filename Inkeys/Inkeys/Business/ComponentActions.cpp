@@ -16,6 +16,7 @@ namespace
 	std::mutex quickDrawMutex;
 	std::jthread quickDrawThread;
 	std::atomic_bool quickDrawRunning = false;
+	bool quickDrawStopping = false;
 
 	void OpenComponentUri(const wchar_t* uri)
 	{
@@ -29,19 +30,27 @@ namespace
 
 	void OpenSecRandomQuickDrawAsync()
 	{
-		std::scoped_lock lock(quickDrawMutex);
-		if (quickDrawRunning.load(std::memory_order_acquire))
-			return;
-		if (quickDrawThread.joinable())
-			quickDrawThread.join();
-
-		quickDrawRunning.store(true, std::memory_order_release);
-		quickDrawThread = std::jthread([]
+		std::jthread retired;
 		{
-			Inkeys::SecRandom::OpenQuickDraw();
-			quickDrawRunning.store(false, std::memory_order_release);
-		});
+			std::scoped_lock lock(quickDrawMutex);
+			if (quickDrawStopping || quickDrawRunning.load(std::memory_order_acquire)) return;
+			retired = std::move(quickDrawThread);
+			quickDrawRunning.store(true, std::memory_order_release);
+			try
+			{
+				quickDrawThread = std::jthread([](std::stop_token token)
+				{
+					try { (void)Inkeys::SecRandom::OpenQuickDraw(nullptr, 5000, token); }
+					catch (...) {} // 外部组件失败不能使业务线程终止进程。
+					quickDrawRunning.store(false, std::memory_order_release);
+				});
+			}
+			catch (...) { quickDrawRunning.store(false, std::memory_order_release); throw; }
+		}
+		// 已完成的旧线程也在状态锁外 join；停止入口可随时取得锁并请求取消新线程。
+		if (retired.joinable()) retired.join();
 	}
+
 }
 
 namespace Inkeys::Business
@@ -120,12 +129,15 @@ namespace Inkeys::Business
 
 	void ShutdownComponentActions()
 	{
-		std::scoped_lock lock(quickDrawMutex);
-		if (quickDrawThread.joinable())
+		std::jthread stopping;
 		{
-			quickDrawThread.request_stop();
-			quickDrawThread.join();
+			std::scoped_lock lock(quickDrawMutex);
+			quickDrawStopping = true;
+			stopping = std::move(quickDrawThread);
 		}
+		// 管道等待观察同一个 token；不在 mutex 内等待线程或取消回调。
+		stopping.request_stop();
+		if (stopping.joinable()) stopping.join();
 		quickDrawRunning.store(false, std::memory_order_release);
 	}
 }

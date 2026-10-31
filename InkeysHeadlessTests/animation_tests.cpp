@@ -8,6 +8,8 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <crtdbg.h>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -18,6 +20,8 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.FontSize.h"
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.Metrics;
@@ -26,33 +30,58 @@ int RunWakeSignalTests();
 int RunPresentDecisionTests();
 int RunSurfaceTests();
 int RunMessageTests();
+int RunUi3InputTests();
 int RunWindowTests();
+int RunWindowCommandCompletionTests();
+int RunCanvasPolicyTests();
+int RunWindowExitVisibilityTests();
 int RunMessageBoxTests(bool runWindowTests);
 int RunMessageBoxVisualTests(const char* outputDirectory);
 int RunMessageBoxFirstFrameChildTest();
 int RunDirtyRegionTests();
 int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
+int RunDraw3ContactInputBenchmarks();
+int RunUpdateSecurityTests();
 int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
 int RunStartupProgressTests();
 int RunStartupPreviewStateTests();
+int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
 int RunBarThemeTests();
 int RunBarLogoTests();
 int RunBarLogoProfileExport(const char* outputPath);
 int RunBarThemePaletteExport(const char* outputPath);
+int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
+int RunSettingEraserDemoTests();
+int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false);
 int RunPptUiTests();
+int RunPptSessionTests();
 int RunPageControlTests();
 int RunWhiteboardUiTests();
 int RunFreezeStateTests();
+int RunMagnifierCoordinatorTests();
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
+int RunDraw3HapticTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
+int RunDraw3RtsStartupTests();
+int RunDraw3MouseInputTests();
+int RunSpeedEraserTests();
+int RunPenWidthTests();
+int RunEraserAttributeTests();
+int RunRecallAttributeTests();
 int RunPresentationDescriptorTests();
+int RunUiPointerTests();
+int RunAutoCollapseTests();
+int RunKeyboardShortcutConfigTests();
+int RunKeyboardShortcutInputTests();
+int RunAutoCollapseInteractionTests();
+int RunMouseHookTransportTests();
 
 namespace
 {
@@ -69,6 +98,109 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestFontPixelSizes()
+	{
+		using Inkeys::UI::Bar::Detail::ResolveBarFontCorrectionTarget;
+		Check(Near(ResolveBarFontCorrectionTarget(7.8,false)*7.8,7.0),
+			"48 DIP target truncates 7.8px without rounding to 8px");
+		for(const double target:{0.1,0.9,1.0,7.8,13.0,48.25})
+		{
+			const double c=ResolveBarFontCorrectionTarget(target,false);
+			Check(c>=0.0 && c<=1.0 && Near(target*c,std::floor(target)),"target coefficient never enlarges stationary text");
+			Check(ResolveBarFontCorrectionTarget(target,true)==1.0,"allow preference keeps original target");
+		}
+		for(const double invalid:{0.0,-1.0,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::infinity()})
+			Check(ResolveBarFontCorrectionTarget(invalid,false)==0.0,"invalid font target is rejected");
+
+		BarUiValueClass raw(13.0);
+		BarUiFontCorrectionClass c;
+		std::uint64_t serial=1;
+		const auto sample=[&](double dt,bool allow=false){
+			const BarUiAnimationAdvanceContextClass frame{dt,1.0,true,false};
+			if(!raw.IsSame())(void)BarUiAdvanceAnimation(raw,frame);
+			return static_cast<double>(raw.val)*0.6*c.Resolve(raw.tar*0.6,allow,serial++,frame,0.4);
+		};
+		Check(Near(sample(0),7.0),"font correction starts at the projected stationary endpoint");
+		raw.SetTar(15.0,0.4);
+		double previous=7.0;int fractional=0;
+		for(int tick=0;tick<100;++tick)
+		{
+			const double pixel=sample(0.005);
+			fractional+=std::abs(pixel-std::round(pixel))>0.00001;
+			Check(std::abs(pixel-previous)<0.1,"font size trajectory stays continuous through its final frame");
+			previous=pixel;
+		}
+		Check(fractional>30 && Near(previous,9.0) && !c.Active() && raw.tar==15.0,
+			"intermediate font sizes stay fractional and converge without changing raw target");
+		Check(Near(sample(0),previous),"first idle font frame has no additional floor jump");
+		raw.SetTar(13.0,0.4);for(int tick=0;tick<30;++tick)(void)sample(0.004);
+		const double before=static_cast<double>(raw.val)*0.6*c.Current();
+		raw.SetTar(11.7,0.4);
+		Check(Near(sample(0),before),"mid-animation retarget preserves the current visible font at zero dt");
+		const auto sameSerial=serial++;
+		const BarUiAnimationAdvanceContextClass frame{0.01,1.0,true,false};
+		const double first=c.Resolve(11.7*0.6,false,sameSerial,frame,0.4);
+		Check(c.Resolve(11.7*0.6,false,sameSerial,frame,0.4)==first,"same-frame duplicate text draw never advances twice");
+		for(int tick=0;tick<160;++tick){raw.SetTar(11.7,0.4);(void)sample(0.005);}
+		Check(Near(static_cast<double>(raw.val)*0.6*c.Current(),7.0)&&!c.Active(),
+			"repeated nominal targets do not restart correction or source animation");
+		raw.SetTar(13.0,0.4,12.0,true);
+		(void)c.Resolve(7.8,false,serial++,{0,1,true,false},0.4);
+		Check(raw.hasMiddleV&&raw.middleV==12.0&&raw.tar==13.0,"font correction preserves raw two-segment animation metadata");
+		const double kept=c.Current();
+		Check(c.Resolve(0.0,false,serial++,{0,1,true,false},0.4)==kept,
+			"zero geometry exit preserves coefficient instead of forcing an extra collapse");
+		(void)c.Resolve(7.8,false,serial++,{0,1,false,false},0.4);
+		Check(Near(c.Current()*7.8,7.0)&&!c.Active(),"disabled animations directly land on the same projected target");
+		(void)c.Resolve(7.8,true,serial++,{0,1,true,false},0.4);
+		Check(Near(c.Current()*7.8,7.0)&&c.Active(),"enabling fractional fonts retargets from the current coefficient");
+		c.ForceNext();(void)c.Resolve(7.8,true,serial++,{0,1,true,false},0.4);
+		Check(c.Current()==1.0&&!c.Active(),"force replacement directly restores the allowed target");
+	}
+
+	void TestLocalizedFormatFallbacks()
+	{
+		using Inkeys::UI::Bar::Detail::FormatFrameRateText;
+		using Inkeys::UI::Bar::Detail::FormatThicknessText;
+
+		Check(FormatThicknessText(L"Size {}", 42) == L"Size 42",
+			"localized thickness format");
+		Check(FormatThicknessText(L"Size {", 42) == L"42",
+			"localized thickness malformed fallback");
+		using Inkeys::UI::Bar::Detail::FormatWidthDipNumber;
+		using Inkeys::UI::Bar::Detail::FormatWidthDipText;
+		using Inkeys::UI::Bar::Detail::StepFineDialDip;
+		Check(FormatWidthDipText(L"Size {}", 3.0) == L"Size 3",
+			"exact integer width label without unit");
+		Check(FormatWidthDipNumber(1.9393939393939394) == L"2",
+			"fractional classroom width label rounds for display");
+		Check(FormatWidthDipNumber(4.5) == L"5"
+			&& FormatWidthDipNumber(4.49) == L"4",
+			"width display rounds positive half upward");
+		Check(FormatWidthDipNumber(65535.999) == L"65536",
+			"large fractional width label rounds safely");
+		Check(FormatWidthDipNumber(0.36) == L"1",
+			"sub-one width label never displays zero");
+		Check(FormatWidthDipNumber(std::numeric_limits<double>::quiet_NaN()) == L"1"
+			&& FormatWidthDipNumber(std::numeric_limits<double>::infinity()) == L"1"
+			&& FormatWidthDipNumber(-1.0) == L"1",
+			"invalid width label uses safe display fallback");
+		Check(FormatWidthDipText(L"broken {", 1.9393939393939394) == L"2",
+			"malformed width translation retains integer without unit");
+		const double fineOrigin = 1.9393939393939394;
+		Check(Near(StepFineDialDip(fineOrigin, fineOrigin, 0.1, 30.0), fineOrigin),
+			"FineDial entering fractional value preserves origin");
+		Check(Near(StepFineDialDip(fineOrigin, fineOrigin + 0.5, 0.1, 30.0), fineOrigin + 1.0)
+			&& Near(StepFineDialDip(fineOrigin, fineOrigin - 0.5, 0.1, 30.0), fineOrigin - 1.0),
+			"FineDial half-step directions preserve origin fraction");
+		Check(FormatFrameRateText(L"{:.1f}/{:.1f}", 60.0, 120.0,
+			L"Unavailable") == L"60.0/120.0",
+			"localized frame rate format");
+		Check(FormatFrameRateText(L"{:.1f}/{:.1f", 60.0, 120.0,
+			L"Unavailable") == L"Unavailable",
+			"localized frame rate malformed fallback");
 	}
 
 	void TestSharedBarButtonRuntime()
@@ -307,13 +439,13 @@ namespace
 			"old and new pen extension visuals cross fade together");
 		Check(ResolveBarAnnotationPopupTitle(
 			BarThicknessPreviewVisualKind::SoftPen)
-				== L"标注线（粗细固定，暂未支持）"
+				== BarAnnotationPopupTitleKind::FixedThicknessUnsupported
 			&& ResolveBarAnnotationPopupTitle(
 				BarThicknessPreviewVisualKind::HardPen)
-				== L"启用标注线（暂不可用）"
+				== BarAnnotationPopupTitleKind::Unavailable
 			&& ResolveBarAnnotationPopupTitle(
 				BarThicknessPreviewVisualKind::Highlighter)
-				== L"启用标注线（暂不可用）",
+				== BarAnnotationPopupTitleKind::Unavailable,
 			"annotation popup title follows its latched pen anchor");
 
 		auto phase = BarLaserPreviewPhase::NonLaserStable;
@@ -704,6 +836,19 @@ namespace
 		auto immediate = immediateContentTransition.Advance(0.01, 1.0);
 		Check(immediate.reachedKeyframe && immediate.finished,
 			"zero-duration content transition applies immediately");
+		BarUiKeyframeTimelineClass disabledContentTransition;
+		disabledContentTransition.Start(1.0, 0.5);
+		const auto idleContent = disabledContentTransition.Advance(0.0, 1.0e12);
+		Check(!idleContent.finished && disabledContentTransition.IsActive(),
+			"zero-time idle frame preserves enabled content transition");
+		const bool previousAnimationEnabled = BarUiAnimationEnabled;
+		BarUiAnimationEnabled = false;
+		const auto disabledContent = disabledContentTransition.Advance(0.0, 1.0e12);
+		BarUiAnimationEnabled = previousAnimationEnabled;
+		Check(disabledContent.reachedKeyframe && disabledContent.finished
+			&& Near(disabledContent.progress, 1.0)
+			&& !disabledContentTransition.IsActive(),
+			"disabled content transition commits its keyframe on the idle wake");
 	}
 
 	void TestCenteredHiddenButtonRejoinsLayoutBatch()
@@ -748,6 +893,51 @@ namespace
 						Check(Near((root.bodyLeftDip + root.bodyRightDip) / 2.0, 960.0),
 							"hidden child retarget keeps the visible union exactly centered");
 					}
+				}
+	}
+
+	void TestColorSwatchThicknessFollowsPanelScale()
+	{
+		// 使用真实动画模块验证单一最终目标；RenderLoop 的目标来源另做静态审查。
+		constexpr double expandedWidth = 370.0;
+		constexpr double compactWidth = 60.0;
+		constexpr std::array<double, 6> unevenSteps{ 0.008, 0.029, 0.05, 0.011, 0.022, 0.017 };
+		for (bool initiallyOpen : { true, false })
+			for (bool reverseMidway : { false, true })
+				for (bool uneven : { false, true })
+				{
+					BarUiValueClass panelWidth(initiallyOpen ? expandedWidth : compactWidth);
+					BarUiValueClass thickness(panelWidth.val / expandedWidth);
+					BarUiTimelineClass timeline;
+					timeline.Restart(0.4);
+					bool opening = !initiallyOpen;
+					for (int frame = 0; frame < 90; ++frame)
+					{
+						if (reverseMidway && frame == 8)
+						{
+							opening = !opening;
+							timeline.Restart(0.4);
+						}
+						const double targetWidth = opening ? expandedWidth : compactWidth;
+						const auto curve = opening
+							? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
+						const double phase = timeline.GetProgress();
+						const BarUiCurveSpecClass curveSpec{ curve, curve, phase, phase > 0.0 };
+						const double remaining = timeline.GetRemainingDuration();
+						// 同目标重复提交不重启，改变目标时从当前比例续接同一批次。
+						panelWidth.SetTar(targetWidth, remaining, std::nullopt, false, curveSpec);
+						thickness.SetTar(targetWidth / expandedWidth,
+							remaining, std::nullopt, false, curveSpec);
+						const double dt = uneven ? unevenSteps[frame % unevenSteps.size()] : 1.0 / 60.0;
+						const BarUiAnimationAdvanceContextClass context{ dt, 1.0, true, false };
+						if (!panelWidth.IsSame()) BarUiAdvanceAnimation(panelWidth, context);
+						if (!thickness.IsSame()) BarUiAdvanceAnimation(thickness, context);
+						timeline.Advance(dt, 1.0);
+						Check(Near(thickness.val / (panelWidth.val / expandedWidth), 1.0),
+							"single swatch thickness target preserves panel scale through back easing and reversal");
+					}
+					Check(panelWidth.IsSame() && thickness.IsSame() && !timeline.IsActive(),
+						"swatch and panel settle together without sustaining hidden animation");
 				}
 	}
 
@@ -832,6 +1022,53 @@ namespace
 			quantized, BarUiAnimationAdvanceContextClass{ 0.0001, 1.0, true, false });
 		Check(!quantizedFrame.changed && quantizedFrame.active,
 			"quantized color remains scheduled when the pixel value is unchanged");
+
+		// 休眠后的首帧 dt 为零，数值、颜色和透明度都不能瞬间落到目标。
+		BarUiValueClass idleValue(0.0);
+		idleValue.SetTar(10.0, 1.0);
+		auto idleValueFrame = BarUiAdvanceAnimation(idleValue,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idleValueFrame.changed && idleValueFrame.active
+			&& Near(idleValue.val, 0.0) && Near(idleValue.progress, 0.0),
+			"zero-time wake preserves the pending value animation");
+		BarUiColorClass idleColor(RGB(0, 0, 0));
+		idleColor.SetTar(RGB(255, 255, 255), 1.0);
+		auto idleColorFrame = BarUiAdvanceAnimation(idleColor,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idleColorFrame.changed && idleColorFrame.active
+			&& idleColor.val == RGB(0, 0, 0) && Near(idleColor.progress, 0.0),
+			"zero-time wake preserves the pending color animation");
+		BarUiPctClass idlePct(0.0);
+		idlePct.SetTar(1.0, 1.0);
+		auto idlePctFrame = BarUiAdvanceAnimation(idlePct,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idlePctFrame.changed && idlePctFrame.active
+			&& Near(idlePct.val, 0.0) && Near(idlePct.progress, 0.0),
+			"zero-time wake preserves the pending opacity animation");
+		BarUiAdvanceAnimation(idleValue,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		BarUiAdvanceAnimation(idleColor,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		BarUiAdvanceAnimation(idlePct,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		Check(Near(idleValue.val, 5.0) && idleColor.val == RGB(128, 128, 128)
+			&& Near(idlePct.val, 0.7071067811865476),
+			"animations resume their original trajectory after the zero-time wake");
+		BarUiValueClass disabledIdleValue(0.0);
+		disabledIdleValue.SetTar(10.0, 1.0);
+		BarUiColorClass disabledIdleColor(RGB(0, 0, 0));
+		disabledIdleColor.SetTar(RGB(255, 255, 255), 1.0);
+		BarUiPctClass disabledIdlePct(0.0);
+		disabledIdlePct.SetTar(1.0, 1.0);
+		const BarUiAnimationAdvanceContextClass disabledIdleContext{ 0.0,
+			1.0e12, false, false };
+		Check(!BarUiAdvanceAnimation(disabledIdleValue, disabledIdleContext).active
+			&& !BarUiAdvanceAnimation(disabledIdleColor, disabledIdleContext).active
+			&& !BarUiAdvanceAnimation(disabledIdlePct, disabledIdleContext).active
+			&& Near(disabledIdleValue.val, 10.0)
+			&& disabledIdleColor.val == RGB(255, 255, 255)
+			&& Near(disabledIdlePct.val, 1.0),
+			"animation-disabled targets replace immediately even on an idle wake");
 
 		BarUiColorClass disabledHover(RGB(0, 0, 0));
 		disabledHover.animateWhenDisabled = true;
@@ -1469,8 +1706,18 @@ namespace
 
 int main(int argc, char** argv)
 {
+	// 窗口契约可单独复跑，避免定位 USER32 交错时重复耗时的算法矩阵。
+	if (argc == 2 && std::string_view(argv[1]) == "--window-contract-only")
+		return RunWindowTests();
 	bool benchmark = false;
+	bool penWidthOnly = false;
+	bool settingHomeOnly = false;
+	bool settingCopyOnly = false;
+	bool settingEraserOnly = false;
+	bool settingEraserDemoOnly = false;
+	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
+	bool exitVisibilityGateOnly = false;
 	bool messageBoxFirstFrameChild = false;
 	const char* messageBoxVisualOutput = nullptr;
 	const char* barThemePaletteOutput = nullptr;
@@ -1479,9 +1726,16 @@ int main(int argc, char** argv)
 	{
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
+		penWidthOnly |= argument == "--pen-width-only";
+		settingHomeOnly |= argument == "--setting-home-only";
+		settingCopyOnly |= argument == "--setting-copy-only";
+		settingEraserOnly |= argument == "--setting-eraser-only";
+		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
+		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
 		runWindowTests &= argument != "--no-window";
+		exitVisibilityGateOnly |= argument == "--exit-visibility-gate-test";
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
 		if (argument == "--bar-logo-profile-output" && index + 1 < argc)
@@ -1493,14 +1747,53 @@ int main(int argc, char** argv)
 		return RunBarLogoProfileExport(barLogoProfileOutput);
 	if (barThemePaletteOutput)
 		return RunBarThemePaletteExport(barThemePaletteOutput);
+	if (penWidthOnly) return RunPenWidthTests();
 	if (messageBoxFirstFrameChild)
 		return RunMessageBoxFirstFrameChildTest();
 	if (messageBoxVisualOutput)
 		return RunMessageBoxVisualTests(messageBoxVisualOutput);
+	if (draw3ContactBenchmark)
+		return RunDraw3ContactInputBenchmarks();
+	if (exitVisibilityGateOnly)
+		return RunWindowExitVisibilityTests();
+
+	if (!runWindowTests)
+	{
+		// 无窗口模式下第三方断言也只写 stderr，不弹出 CRT 或系统错误对话框。
+		SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+		_set_error_mode(_OUT_TO_STDERR);
+		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#ifdef _DEBUG
+		for (const int report : { _CRT_WARN, _CRT_ERROR, _CRT_ASSERT })
+		{
+			_CrtSetReportMode(report, _CRTDBG_MODE_FILE);
+			_CrtSetReportFile(report, _CRTDBG_FILE_STDERR);
+		}
+#endif
+	}
+
+	if (settingEraserDemoOnly)
+	{
+		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
+		std::cout << "[SettingEraserDemo] settings=" << settings << " demo=" << demo << '\n';
+		return settings + demo == 0 ? 0 : 1;
+	}
+	if (settingEraserOnly)
+	{
+		const int settings = RunSettingDesignTests(false, true);
+		const int speed = RunSpeedEraserTests(), attributes = RunEraserAttributeTests();
+		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << '\n';
+		return settings + speed + attributes == 0 ? 0 : 1;
+	}
+	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
+	if (settingHomeOnly) return RunSettingDesignTests()==0 ? 0 : 1;
 
 	TestCurvesAndTimelines();
+	TestLocalizedFormatFallbacks();
+	TestFontPixelSizes();
 	TestSharedBarButtonRuntime();
 	TestBarThicknessVisualTransitions();
+	TestColorSwatchThicknessFollowsPanelScale();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
 	TestConcurrentAnimationPublication();
@@ -1508,7 +1801,10 @@ int main(int argc, char** argv)
 	failureCount += RunPresentDecisionTests();
 	failureCount += RunSurfaceTests();
 	failureCount += RunMessageTests();
+	failureCount += RunUi3InputTests();
 	failureCount += RunMessageBoxTests(runWindowTests);
+	failureCount += RunWindowCommandCompletionTests();
+	failureCount += RunCanvasPolicyTests();
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
 	failureCount += RunWindowGeometryTests();
@@ -1517,20 +1813,40 @@ int main(int argc, char** argv)
 	failureCount += RunRenderSchedulerTests();
 	failureCount += RunStartupProgressTests();
 	failureCount += RunStartupPreviewStateTests();
+	failureCount += RunConfigMetadataTests();
 	failureCount += RunBarPresentationAlphaTests();
 	failureCount += RunBarThemeTests();
 	failureCount += RunBarLogoTests();
+	failureCount += RunUi3HarnessDisabledTests();
 	failureCount += RunSettingSessionStateTests();
+	failureCount += RunSettingDesignTests();
+	failureCount += RunSettingEraserDemoTests();
 	failureCount += RunPptUiTests();
+	failureCount += RunPptSessionTests();
 	failureCount += RunPageControlTests();
 	failureCount += RunWhiteboardUiTests();
 	failureCount += RunFreezeStateTests();
+	failureCount += RunMagnifierCoordinatorTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();
+	failureCount += RunDraw3HapticTests();
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
+	failureCount += RunDraw3RtsStartupTests();
+	failureCount += RunDraw3MouseInputTests();
+	failureCount += RunUpdateSecurityTests();
+	failureCount += RunSpeedEraserTests();
+	failureCount += RunPenWidthTests();
+	failureCount += RunEraserAttributeTests();
+	failureCount += RunRecallAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
+	failureCount += RunUiPointerTests();
+	failureCount += RunAutoCollapseTests();
+	failureCount += RunKeyboardShortcutConfigTests();
+	failureCount += RunKeyboardShortcutInputTests();
+	failureCount += RunAutoCollapseInteractionTests();
+	failureCount += RunMouseHookTransportTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

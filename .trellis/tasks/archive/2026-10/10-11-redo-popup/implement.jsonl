@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "UI3 Bar任务入口与修改前检查"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "橡皮属性布局动画互斥唯一参照"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++命名模块注释与并发最小变更"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3 Bar渲染线程动画时钟与调度"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 Host命令与UndoRedo边界"}
+{"file": ".trellis/spec/guides/index.md", "reason": "复用与跨层思考触发器"}
+{"file": ".trellis/tasks/10-11-redo-popup/research/fix-history-20261012.md", "reason": "本轮历史需求、末步时序、5秒保护与颜色目标根因"}
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "本轮Draw3 Clear区间UndoRedo完整链"}

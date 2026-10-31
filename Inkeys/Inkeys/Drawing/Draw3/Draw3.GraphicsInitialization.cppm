@@ -24,8 +24,10 @@ export namespace Inkeys::Drawing::Draw3
 		D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
 	};
 
-	// 初始化 D3D11 设备，硬件设备失败时自动回退到 WARP。
-	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources);
+	// 关闭硬件加速时直接使用 WARP；开启时保留硬件失败自动回退。
+	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources, bool enableHardwareAcceleration = true);
+	// 仅验证生产设备选择与回退顺序，不创建窗口或实际 D3D 设备。
+	int RunGraphicsDeviceSelectionTest() noexcept;
 	// 统一识别必须销毁并重建 D3D 设备的 DXGI 返回值。
 	bool IsGraphicsDeviceLostError(HRESULT result) noexcept;
 }

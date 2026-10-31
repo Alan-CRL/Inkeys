@@ -1,0 +1,9 @@
+{
+  "command": [
+    "Build/ARM64/Debug/Inkeys.exe",
+    "--bar-eraser-offscreen-test"
+  ],
+  "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw",
+  "exit": 0,
+  "seconds": 29.931955500000186
+}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "CPU GPU layout and blend review"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "Draw3 verification boundary"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Production Draw3 owner contract"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/architecture-and-validation.md", "reason": "Integrated performance boundaries"}

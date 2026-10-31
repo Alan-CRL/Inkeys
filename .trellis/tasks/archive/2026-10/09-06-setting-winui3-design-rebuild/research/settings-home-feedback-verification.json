@@ -1,0 +1,23 @@
+{
+  "full_solution_debug_arm64_exit_code": 0,
+  "i18n_translated": 504,
+  "i18n_total": 504,
+  "cleared_ci_metadata_matches_head": true,
+  "workflow_and_preexisting_shaders_unchanged": true,
+  "utf8_bom_and_crlf_preserved": true,
+  "compiled_ci_fixture_values_absent": true,
+  "existing_ppt_dll_resource_preserved": true,
+  "compiled_exe_sha256": "6a50cd76472ba29f23a2c01847a1fc3bcd934ee4f320eca8988bdc60bdf1d4e2",
+  "settings_headless_status": "passed",
+  "settings_headless_exit_code": 0,
+  "settings_headless_command": "InkeysHeadlessTests.exe --no-window --setting-home-only",
+  "home_feedback_layout_cases": 36,
+  "real_feedback_actions_tested": [
+    "Issues",
+    "Questionnaire",
+    "Community",
+    "Contact"
+  ],
+  "diff_check_exit_code": 0,
+  "gui_or_real_external_links_opened": false
+}

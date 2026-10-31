@@ -1,4 +1,4 @@
-﻿# CPU/GPU Contracts
+# CPU/GPU Contracts
 
 ## Structured Buffers
 
@@ -11,6 +11,8 @@ float2 position + float radius + float time = 16 bytes
 ```
 
 C++ 用 `static_assert(sizeof(InkPoint) == 16)`，D3D buffer 的 `StructureByteStride` 使用 `sizeof(InkPoint)`，HLSL 在 `t0` 读取。
+
+`t0 InkData` 保持结构化 SRV 布局。默认动态上传；当实际 Hardware adapter VendorId=0x1D17 且启动快照 EnableZhaoxinCompatibility=true 时，ink/highlighter 大资源为 DEFAULT+CPUAccessFlags0，逐批 offset0、按实际有效字节 UpdateSubresource，VS globalBufferOffset=0。非兆芯、开关关闭和 WARP 保留动态上传。`D3D11_MAP_WRITE_NO_OVERWRITE` 对这种缓冲区是 D3D11.1 可选设备能力，不能仅凭 FL11.0 或 Platform Update 假定可用；renderer 初始化时查询 `D3D11_FEATURE_D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，查询失败按不支持处理。支持时保持现有环形写入/越界 DISCARD；不支持时每批 `WRITE_DISCARD` 并把 `m_bufferHead` 与 VS `globalBufferOffset` 同步置零，普通笔和 Shape 都适用。荧光笔及 Laser 的现有 DISCARD 路径不因该门禁改动。Win7 SP1+仅 KB2670838 的 Hardware FL11.0/WARP 两格仍需真机验证，不得以 Win11 WARP 测试替代。
 
 ### ShapePrimitive
 
@@ -217,6 +219,8 @@ History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。�
 
 ## Geometry And Bounds
 
+普通圆笔的亚像素 AA 另见下方“Thin Round Ink Coverage”；不得用 SDF 导数下限或最小几何半径代替有限宽度覆盖。
+
 - VS 为圆胶囊和荧光笔固定矩形 sweep 生成覆盖形状的 quad/AABB。
 - PS 使用 signed distance 与 `fwidth`/`smoothstep` 做抗锯齿；高亮 sweep 的零等值线由 X/Y/线段法线半平面交集确定。
 - CPU dirty bounds 必须至少覆盖 VS 生成范围；当前普遍预留 2px 几何扩展和 3px bounds padding。
@@ -225,6 +229,54 @@ History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。�
 - Laser shape `7` 的 `InkPoint.r` 是彩色实体外半径。96 DPI 基准实体半径为 2.5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 5px；压力只改变实体/白芯/散射比例，不改变 5px 漫反射。PS 必须复用实体 signed distance，以平方曲线令 coverage 在实体边界为 1、5px 外缘为 0；同色系高光只混合 diffuse RGB，禁止通过额外 source-over 层抬高渐变 alpha。VS、PS、Hover/Touch `LaserDot.radius`、粒子外壳锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
 - 普通笔零长度或一端圆包含另一端时退化为较大端点圆；高亮零长度退化为固定竖直矩形。
 - `InkPoint` 中出现 NaN 时 PS discard；CPU 仍应避免生成非有限输入。
+
+## Scenario: Thin Round Ink Coverage
+
+### 1. Scope / Trigger
+
+仅适用于 `globalShapeType == 0` 的绘制 operator。调整薄线 AA 时必须同步两侧 PS 并进行实际着色器离屏回读；橡皮、Laser、解析形状和 cursor 保持各自覆盖规则。
+
+### 2. Signatures
+
+`InkPoint`/`PS_INPUT`/`GlobalShaderConstants` 布局不变。薄线计算输入为胶囊 SDF 距离 `d` 与最近生成圆半径 `r`，输出标量 coverage，继续进入既有预乘 Add/Retain。
+
+### 3. Contracts
+
+- 对 abs 距离使用 `fwidth(d)` 会在像素 quad 横跨细线中心时相消，不能用它作为薄线唯一像素尺度。
+- `C(s)=1-smoothstep(-0.75,0.75,s)`；薄线 coverage=`saturate(C(d)-C(d+2*r))`。局部半径<=0.5px 使用该值，0.5–1px 平滑过渡，>=1px 保持原 AA。
+- 薄线距离/最近生成圆使用 PS 的 `SV_Position.xy` 真实像素中心；OBB 的 `pixPos` 插值会受栅格顶点量化影响，不能让几何分段改变薄线取样位置。旧 AA 的坐标/导数规则保持不变。
+- 半径由 uneven capsule 的实际最近生成圆确定，包含圆/零长先处理；侧边插值不得用不匹配的简单纵向投影代替，也不能在退化法线处除零。
+- 几何半径不变；零宽透明。Add/MAX、Retain/MIN 与预乘输出不变，禁止叠加混合掩盖接缝。保留 VS 2px、CPU 3px padding。
+- 恒宽长线连续积分覆盖宽度随2r变化；BGRA8量化、采样相位与圆帽距离滤波近似必须在报告中区分，不声称任意短胶囊的严格二维面积积分。
+
+### 4. Validation & Error Matrix
+
+| 输入 | 预期 |
+|---|---|
+| 零半径绘制 | coverage=0，不残留最低宽度灰线 |
+| 浅斜细线跨 quad 中心 | 不因 SDF 导数归零而形成异常透明断口 |
+| r=0.5/1px 附近 | 两种 AA 平滑交接，不出现宽度台阶 |
+| 零长或端点圆包含 | 使用较大生成圆，避免除零/NaN |
+| 同一几何重复绘制 | MAX/MIN 幂等，不重复加深 |
+| 非绘制 type0 或其他 shape | 保持原覆盖和 operator 行为 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：0.1px浅斜线以亚像素覆盖连续呈现，确认点半径和文档宽度不变。
+- Base：常规粗笔保持原 AA，端帽按同一距离滤波近似。
+- Bad：把半径钳到0.5px、只给fwidth加下限，或把MAX换成加法。
+
+### 6. Tests Required
+
+实际D3D绘制并回读BGRA8 Add/R16 Retain：直径0/.05/.1/.25/.5/1/2/4px、水平/浅斜/45/90度、XY 1/8px相位；检查主轴截面、有效积分宽度、分段/整段、重复、L0/L1拆分、变半径、圆帽、包含圆和零长。检查红色黑底/黑色白底预乘合成，误差预算应包含1/255量化而非随失败任意放宽。
+
+半径<=0.5px 的等宽共线分段保持严格量化误差对照。过渡/粗线不能把旧导数 AA 自带的图元分段差异误判为新回归：用未改动的 Erase coverage 实测各图元旧 AA，再结合有限宽度计算与指定 blend 权重逐像素对照。L0/L1 合成必须与同一分段几何一次绘制一致；这不等同于断言旧 AA 对任意几何细分完全不变。
+
+### 7. Wrong vs Correct
+
+Wrong：`alpha = smoothstep(... max(fwidth(d), epsilon) ...)` 是薄线唯一覆盖；或 `r=max(r,0.5)`。
+
+Correct：`thin=C(d)-C(d+2*r)`，以固定屏幕像素滤波同时计入两侧边缘，再在0.5–1px半径范围与既有AA平滑交接。
 
 ## Scenario: Ordered Multi-Laser Composition
 
@@ -387,3 +439,10 @@ if (snapshot.hasActive || snapshot.expiredAny || !requests.empty()) {
 if (snapshot.hasActive || !requests.empty()) particleSystem.Draw();
 // Step 内只绑定一次 UAV：update -> emit(request 0..N) -> 统一解绑。
 ```
+
+## 合成矩形独立上传（2026-10-15）
+
+- ApplyOperatorLayers 使用专用256B DYNAMIC structured buffer/SRV，stride16，WRITE_DISCARD仅写两个InkPoint共32B，合成时绑定原t0，offset0；不更改shader或混合公式。
+- 合成不得更新inkDataBuffer或重置m_bufferHead。所有成功的动态ink上传（含Laser/Cursor DISCARD）统一维护已用范围末端；DrawStroke/Shape必须先保存起始offset再上传，避免把更新后的head作为VS起始offset或重复推进。
+- DEFAULT UpdateSubresource 返回void，更新后通过设备状态检查识别失败；不将其伪装成Map结果，设备失效沿用现有设备/呈现失败链。
+- RunRendererUploadValidation 是明确无HWND/swapchain的产品上传/合成离屏读回验证；三种动态DISCARD/动态追加/DEFAULT结果、非同步update/Draw、工具交错与跨容量批次都应核验。它不能代替实机RTS/Present视觉验证。

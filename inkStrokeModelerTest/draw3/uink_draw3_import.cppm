@@ -28,6 +28,7 @@ export namespace draw3::uink
 		std::vector<int32_t> slideIds;
 		std::vector<int32_t> knownSlideIds;
 		uint32_t pageCount = 0;
+		bool allowEndScreen = false;
 	};
 
 	enum class Draw3UInkImportStatus : uint8_t
@@ -47,6 +48,8 @@ export namespace draw3::uink
 	};
 
 	UInkExtra MakeInkeysBindingExtra(Draw3UInkImportBindingMode mode);
+	// 为同文稿的独立结束页附加唯一标记，不生成虚假的 Office SlideID。
+	UInkExtra MakeInkeysEndScreenExtra(Draw3UInkImportBindingMode mode);
 	bool HasInkeysBindingExtra(const std::optional<UInkExtra>& extra,
 		Draw3UInkImportBindingMode mode) noexcept;
 	bool HasInkeysPageStateExtra(const std::optional<UInkExtra>& extra,

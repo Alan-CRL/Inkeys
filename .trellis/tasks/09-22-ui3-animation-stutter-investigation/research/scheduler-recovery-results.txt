@@ -1,0 +1,10 @@
+persistent_failure wall_s=2.066667 advanced_s=0.133333 attempts=8 skipped=116 serials=1,2,4,8,16,32,64,124,
+advance_300ms_while_failing wall_s=12.066667 advanced_s=0.300000
+notified_failure attempts=124 last_delay=1 failure_count=1 advanced_s=2.066667
+idle_wake current_order_dt_s=0.050000 after_wake_rebase_dt_s=0.002000
+new_epoch_gate old_gate_blocks=1 early_epoch_observation_unblocks=1
+long_frame raw_s=0.016667 used_s=0.016667 speed_ratio=1.000000
+long_frame raw_s=0.050000 used_s=0.050000 speed_ratio=1.000000
+long_frame raw_s=0.100000 used_s=0.050000 speed_ratio=0.500000
+long_frame raw_s=0.200000 used_s=0.050000 speed_ratio=0.250000
+PASS: production failure-decision assertions; documented clock model assertions

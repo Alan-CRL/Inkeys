@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"检查未改变窗口 owner、topmost、焦点、任务栏、捕获尺寸与一像素策略。"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"检查失败不会继续显示或虚假提交，日志准确去重且停止顺序安全。"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"检查跨线程数据不再使用普通变量且没有以 atomic 替代业务顺序。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"检查完整 Solution 的 Debug ARM64 构建。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"核对生产路径测试、Headless 结果与真实视觉验收边界。"}
+{"file":".trellis/tasks/09-21-freeze-capture-exclusion-hybrid-gpu/prd.md","reason":"逐项核对本轮目标、边界和验收条件。"}
+{"file":".trellis/tasks/09-21-freeze-capture-exclusion-hybrid-gpu/design.md","reason":"检查唯一入口、版本语义、失败恢复和排除列表设计均落地。"}

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Window/Display/UI3生产边界与质量检查"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "呈现/输入所有权、白板锚点及场景次序"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "既有ARM64 solution构建与兼容目标"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PPT主栏进退与5真实屏幕DIP规则不变"}
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "CenteredBottomBar预览/真实边框一致"}
+{"file": ".trellis/tasks/archive/2026-10/10-19-ui3-taskbar-dock-adaptation/research/taskbar-observation.md", "reason": "Shell通知、轻量采样与失败恢复证据"}
+{"file": ".trellis/tasks/archive/2026-10/10-19-ui3-taskbar-dock-adaptation/research/dock-geometry.md", "reason": "Bar几何、输入交接与Y动画写者"}
+{"file": ".trellis/tasks/archive/2026-10/10-19-ui3-taskbar-dock-adaptation/research/bottom-edge-hit.md", "reason": "Bar底行呈现/直移与输入证据；旧画布A/B范围已被最新研究取代"}

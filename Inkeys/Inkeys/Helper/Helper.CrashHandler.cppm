@@ -21,6 +21,10 @@ public:
 	static void SetFlag(int initialState = 0);
 	static void IsSecond(bool initialState = false);
 
+	// 仅由继承父进程句柄验真的无 GUI 测试子进程设置；正式默认 Disabled。
+	enum class IsolatedUefTestMode : unsigned char { Disabled, StallAfterDumpOpen, ManualHoldAfterReport, ReportDiskFullOnce };
+	static void SetIsolatedUefTestMode(IsolatedUefTestMode mode) noexcept;
+
 	static void Shutdown();
 
 private:
@@ -56,15 +60,12 @@ private:
 // Helper
 export void CloseProgram()
 {
-	// 先同步移除可见界面，再继续后台清理，让关闭操作立即获得视觉反馈。
-	(void)Inkeys::Window::GetService().HideAllUserWindows();
-	CrashHandler::Shutdown();
 	SetOffSignal(1);
+	// 退出意图先发布；窗口 owner 卡住时只排队隐藏，不能阻住主清理/看门狗。
+	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 }
 export void RestartProgram()
 {
-	// 隐藏失败不能阻止重启信号继续发布。
-	(void)Inkeys::Window::GetService().HideAllUserWindows();
-	CrashHandler::Shutdown();
 	SetOffSignal(2);
+	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 }
