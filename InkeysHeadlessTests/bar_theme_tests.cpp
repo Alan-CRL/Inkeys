@@ -85,16 +85,23 @@ namespace
 
 	void TestRolesAndEndpoints()
 	{
-		Check(LightColor(ColorRole::Surface) == Rgb(244, 246, 247), "cool mist-white surface");
-		Check(LightColor(ColorRole::IconPrimary) == Rgb(83, 97, 106), "graphite ordinary icons");
-		Check(LightColor(ColorRole::TextPrimary) == Rgb(61, 71, 77), "soft primary text");
-		Check(LightColor(ColorRole::Accent) == Rgb(0, 111, 104), "deep teal selected content");
-		Check(LightColor(ColorRole::SelectedFill) == Rgb(215, 238, 234), "pale teal selected plate");
-		Check(LightColor(ColorRole::SurfaceFrame) == LightColor(ColorRole::IconPrimary)
-			&& LightColor(ColorRole::Divider) == LightColor(ColorRole::IconPrimary)
-			&& LightColor(ColorRole::EdgeLight) == LightColor(ColorRole::IconPrimary)
-			&& LightColor(ColorRole::Accent) != LightColor(ColorRole::SelectedFill),
-			"flat frame, dividers and edge reflection share the graphite endpoint by role");
+		Check(LightColor(ColorRole::Surface) == Rgb(246, 249, 249), "celadon mist-white surface");
+		Check(LightColor(ColorRole::IconPrimary) == Rgb(67, 87, 90), "teal-tinted graphite icons");
+		Check(LightColor(ColorRole::TextPrimary) == Rgb(36, 54, 58), "teal-tinted primary text");
+		Check(LightColor(ColorRole::Accent) == Rgb(0, 122, 115), "celadon accent shares the Dark cyan hue");
+		Check(LightColor(ColorRole::SelectedFill) == Rgb(0, 163, 153), "translucent celadon selected plate");
+		Check(LightColor(ColorRole::EdgeLight) == Rgb(60, 200, 190), "Light edge reflection is a pale accent tint");
+		// 浅色表面上的文字/图标/选中内容需保持可读对比度；边缘光必须与边框分属不同色调。
+		const Color surface = LightColor(ColorRole::Surface);
+		Check(ContrastRatio(LightColor(ColorRole::TextPrimary), surface) >= 7.0
+			&& ContrastRatio(LightColor(ColorRole::IconPrimary), surface) >= 4.5
+			&& ContrastRatio(LightColor(ColorRole::Accent), surface) >= 4.5,
+			"Light content roles remain readable on the surface");
+		Check(LightColor(ColorRole::EdgeLight) != LightColor(ColorRole::SurfaceFrame)
+			&& LightColor(ColorRole::Divider) != LightColor(ColorRole::IconPrimary)
+			&& RelativeLuminance(LightColor(ColorRole::EdgeLight))
+				> RelativeLuminance(LightColor(ColorRole::SurfaceFrame)),
+			"edge light tints the frame instead of darkening it into a raised outline");
 
 		const auto dark = Resolve(0.0, darkSurface, darkFrame);
 		Check(dark.surface == darkSurface && dark.surfaceFrame == darkFrame
@@ -109,30 +116,36 @@ namespace
 			"folded Dark preserves the existing material and Point Light endpoint");
 		const auto light = Resolve(1.0, darkSurface, darkFrame);
 		Check(light.surface == LightColor(ColorRole::Surface)
-			&& light.surfaceFrame == LightColor(ColorRole::IconPrimary)
-			&& light.edgeLight == LightColor(ColorRole::IconPrimary)
-			&& Near(0.8 * light.fillOpacityScale, 0.8)
+			&& light.surfaceFrame == LightColor(ColorRole::SurfaceFrame)
+			&& light.edgeLight == LightColor(ColorRole::EdgeLight)
+			&& Near(light.fillOpacityScale, 1.0)
 			&& Near(light.frameOpacityScale, 1.0),
-			"expanded Light preserves base opacity and uses a flat graphite frame");
+			"expanded Light keeps the object frame opacity and a flat 1 DIP frame");
+		Check(Near(BarMainBarFillOpacity * LightResidentSurfaceOpacityScale, 0.68),
+			"resident Light surfaces are more transparent than the Dark 80% endpoint");
 		Check(Near(light.cursorLightIntensityScale, 0.85)
 			&& Near(light.primaryLightRadiusScale, LightPrimaryRadiusScale)
 			&& Near(light.cursorLightRadiusScale, LightCursorRadiusScale)
-			&& Near(light.diffuseFrameOpacity, 0.02)
-			&& Near(light.diffusePenOpacity, 0.02)
+			&& Near(light.diffuseFrameOpacity, LightFrameDiffuseOpacity)
+			&& Near(light.diffusePenOpacity, LightPenDiffuseOpacity)
+			&& light.diffuseFrameOpacity < dark.diffuseFrameOpacity
 			&& Near(light.keyShadowOpacity, 0.0)
 			&& Near(light.ambientShadowOpacity, 0.0)
 			&& Near(light.highlightOpacity, 0.0),
-			"Light uses compact edge light without raised shadows or highlight");
-		Check(Near(BarMainBarFrameOpacity * light.lightIntensity, 0.18)
-			&& Near(BarMainBarFrameOpacity * light.cursorLightIntensityScale, 0.153),
-			"Light main bar uses visible 18% primary and 15.3% cursor edge peaks");
+			"Light uses a soft tinted glow without raised shadows or highlight");
+		Check(Near(BarMainBarFrameOpacity * light.lightIntensity, 0.27)
+			&& Near(BarMainBarFrameOpacity * light.lightIntensity
+				* light.cursorLightIntensityScale, 0.2295),
+			"Light main bar uses visible 27% primary and 23% cursor edge peaks");
 		Check(Near(Mix(BarButtonCursorLightIntensity,
 			BarButtonLightCursorLightIntensity, 0.0), 0.30)
 			&& Near(Mix(BarButtonCursorLightIntensity,
 				BarButtonLightCursorLightIntensity, 1.0), 0.40),
 			"selected button cursor scale keeps Dark 0.30 and Light 0.40 endpoints");
 		Check(Near(SelectedFillOpacity(0.0), 0.20)
-			&& Near(SelectedFillOpacity(1.0), 1.0), "selected plate keeps distinct Dark/Light opacity");
+			&& Near(SelectedFillOpacity(1.0), 0.14)
+			&& Near(SelectedFillOpacity(1.0, BarButtonPressedOpacity), 0.07),
+			"selected plate stays a translucent accent tint at both endpoints");
 	}
 
 	void TestFullMaterialInterpolation()
@@ -154,7 +167,7 @@ namespace
 				<= SurfaceShadowOutsetDip
 				&& material.ambientShadowRadiusDip + std::abs(material.ambientShadowOffsetYDip)
 				<= SurfaceShadowOutsetDip, "shadow draw footprint stays within shared dirty/viewport outset");
-			Check(Near(SelectedFillOpacity(weight), 0.20 + 0.80 * weight),
+			Check(Near(SelectedFillOpacity(weight), 0.20 - 0.06 * weight),
 				"selected plate changes continuously with material");
 		}
 		Check(SameMaterial(Resolve(-1.0, darkSurface, darkFrame), dark)
@@ -192,9 +205,9 @@ namespace
 						"primary diffuse glow uses current material strengths");
 					if (weight == 1.0)
 					{
-						Check(cursor.color == LightColor(ColorRole::IconPrimary)
+						Check(cursor.color == LightColor(ColorRole::EdgeLight)
 							&& Near(cursor.penColorBlend, 0.0),
-							"Light cursor reflection remains fixed graphite");
+							"Light cursor reflection remains the fixed accent tint");
 						if (drawingBlend == 1.0)
 							Check(ContrastRatio(primary.color,
 								LightColor(ColorRole::Surface)) >= 1.99,

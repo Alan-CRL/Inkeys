@@ -12441,6 +12441,7 @@ bool presetButton = button.presetIndex >= 0;
 			indicatorShape.frameLightPct = BarUiPctClass(
 				BarMainBarFrameOpacity * dockTargetIndicatorOpacity);
 			indicatorShape.themeSurface = true;
+			indicatorShape.lightFillOpacityScale = BarThemeMaterial::LightResidentSurfaceOpacityScale;
 			indicatorShape.lightMaterial = state.barLightMaterial.val;
 			indicatorShape.frameRendering = BarUiFrameRenderingEnum::PointLight;
 			indicatorShape.frameLightColor =

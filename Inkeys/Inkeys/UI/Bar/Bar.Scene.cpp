@@ -188,7 +188,8 @@ namespace Inkeys::UI::Bar
 			paginationMembers=pagination.Snapshot();
 			buttonRow.assign(paginationMembers.begin()+1,paginationMembers.end());
 			const COLORREF surface=GetThemeColor(BarThemeColorEnum::Surface);appliedSurfaceColor=surface;
-			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,BarMainBarFillOpacity,BarMainBarFrameOpacity);
+			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,
+				GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity),BarMainBarFrameOpacity);
 			InitializeShape(menu,MenuBounds,surface,BarMainBarCornerRadiusDip,0.95,BarMainBarFrameOpacity);
 			InitializeShape(theme,ThemeBounds,surface,BarMainBarCornerRadiusDip,0.95,BarMainBarFrameOpacity);
 			InitializeShape(divider,{350,-116,570,-115},GetThemeColor(BarThemeColorEnum::SurfaceFrame),0.5,0.30);
@@ -585,6 +586,8 @@ namespace Inkeys::UI::Bar
 				for(auto* shape:{&root,&menu,&theme})if(shape!=&root||!backgroundOnly||background.useThemeColors){
 					shape->fill->SetTar(surface);shape->frame->SetTar(border);
 				}
+				// 分页常驻底板与主栏同样随主题调整透明度；仅背景模式沿用调用方给定值。
+				if(!backgroundOnly)root.pct.SetTar(GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity));
 				divider.fill->SetTar(border);dragHandle.fill->SetTar(border);
 				pageTotal.color.SetTar(text);unsaved.color.SetTar(text);for(auto& word:headings)word.color.SetTar(text);
 				appliedSurfaceColor=surface;

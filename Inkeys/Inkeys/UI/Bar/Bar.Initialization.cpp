@@ -1311,8 +1311,12 @@ namespace Inkeys::UI::Bar
 			shape->fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
 			shape->frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
 		}
+		// 主栏与主按钮常驻在课件上方，浅色端额外降低填充透明度；弹出面板保持原值。
+		barUISet.shapeMap[BarUISetShapeEnum::MainBar]->lightFillOpacityScale =
+			BarThemeMaterial::LightResidentSurfaceOpacityScale;
 		auto mainButton = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 		mainButton->themeSurface = true;
+		mainButton->lightFillOpacityScale = BarThemeMaterial::LightResidentSurfaceOpacityScale;
 		mainButton->lightMaterial = barUISet.barState.fold ? 0.0 : lightMaterial;
 		mainButton->fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
 		mainButton->frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));

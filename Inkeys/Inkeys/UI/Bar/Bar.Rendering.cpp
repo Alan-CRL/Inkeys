@@ -2861,7 +2861,8 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 		{
 			COLORREF fill = shape.themeSurface ? material.surface
 				: static_cast<COLORREF>(shape.fill.value().val);
-			double fillPct = tarPct * (shape.themeSurface ? material.fillOpacityScale : 1.0);
+			double fillPct = tarPct * (shape.themeSurface ? material.fillOpacityScale
+				* BarThemeMaterial::Mix(1.0, shape.lightFillOpacityScale, material.lightWeight) : 1.0);
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, fillPct);
 			if (!fillBrush) return false;
@@ -3021,7 +3022,8 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 		{
 			COLORREF fill = superellipse.themeSurface ? material.surface
 				: static_cast<COLORREF>(superellipse.fill.value().val);
-			double fillPct = tarPct * (superellipse.themeSurface ? material.fillOpacityScale : 1.0);
+			double fillPct = tarPct * (superellipse.themeSurface ? material.fillOpacityScale
+				* BarThemeMaterial::Mix(1.0, superellipse.lightFillOpacityScale, material.lightWeight) : 1.0);
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, fillPct);
 			if (!fillBrush) return false;

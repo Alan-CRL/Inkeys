@@ -144,6 +144,14 @@ export COLORREF GetThemeColor(BarThemeColorEnum color, int alpha = 255)
 	return GetThemeColor(currentBarThemeStyle->darkStyle, color, alpha);
 }
 
+// 常驻表面（主栏、分页）的填充透明度；浅色端更透，弹出面板不使用此函数。
+export double GetThemeResidentSurfaceOpacity(double darkOpacity)
+{
+	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
+	return darkStyle ? darkOpacity
+		: darkOpacity * BarThemeMaterial::LightResidentSurfaceOpacityScale;
+}
+
 export COLORREF GetPresetColor(BarThemePresetColorEnum preset, int alpha = 255)
 {
 	COLORREF color = RGB(255, 255, 255);

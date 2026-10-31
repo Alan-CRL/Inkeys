@@ -256,6 +256,7 @@ public:
 	// 渲染线程逐对象发布当前材质权重，主按钮收展不能改变其他浮层。
 	double lightMaterial = 0.0; // 0=原深色，1=浅色
 	bool themeSurface = false; // 只有表面启用材质填充、静态阴影和顶部高光
+	double lightFillOpacityScale = 1.0; // 浅色端填充透明度比例，仅常驻表面小于 1
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
@@ -294,6 +295,7 @@ public:
 	// 颜色、透明度、静态及动态光效共用同一个连续权重。
 	double lightMaterial = 0.0; // 0=原深色，1=浅色
 	bool themeSurface = false;
+	double lightFillOpacityScale = 1.0; // 浅色端填充透明度比例，仅常驻表面小于 1
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;

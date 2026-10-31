@@ -123,8 +123,8 @@ namespace
 			}
 		}
 		const auto lightNeutral = Resolve(1.0, 0.0, colors[0]);
-		Check(lightNeutral.penFill == RGB(83, 97, 106)
-			&& lightNeutral.screenFill == RGB(186, 195, 200)
+		Check(lightNeutral.penFill == RGB(67, 87, 90)
+			&& lightNeutral.screenFill == RGB(196, 207, 207)
 			&& Near(lightNeutral.screenOpacity, 0.65), "Light non-drawing defaults use neutral theme colors");
 		for (const double invalid : { std::numeric_limits<double>::quiet_NaN(),
 			std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity() })

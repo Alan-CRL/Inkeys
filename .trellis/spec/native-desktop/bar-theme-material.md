@@ -20,15 +20,17 @@ namespace BarThemeMaterial {
 
 主按钮外观使用 `Bar.LogoAppearance.h` 中的 `BarLogoAppearance::Snapshot`、`Resolve(lightWeight, drawingWeight, actualPenColor)` 和 `ApplyAttributes(snapshot, setter)`。`BarUiSVGClass::mainLogoAppearance` 保存当前输入，`cMainLogoAppearance` 仅在位图创建成功后记录缓存快照。
 
-`BarUiShapeClass` 与 `BarUiSuperellipseClass` 使用 `double lightMaterial` 和 `bool themeSurface`。前者为当前连续材质权重；后者表明这个对象需要主题表面配色。PointLight 对象可用独立的 Dark/Light 鼠标光倍率端点。
+`BarUiShapeClass` 与 `BarUiSuperellipseClass` 使用 `double lightMaterial`、`bool themeSurface` 和 `double lightFillOpacityScale`。前者为当前连续材质权重；`themeSurface` 表明这个对象需要主题表面配色；`lightFillOpacityScale` 是浅色端填充透明度比例，只有常驻表面（主栏、主按钮、底部吸附指示）设为 `LightResidentSurfaceOpacityScale=0.85`。PointLight 对象可用独立的 Dark/Light 鼠标光倍率端点。不经材质系统的独立 Surface（分页）用 `GetThemeResidentSurfaceOpacity()` 取得同一常驻透明度。
 
 ## 3. Contracts
 
 - `lightMaterial=0` 为旧深色端点，`1` 为浅色端点；非法/非有限权重按策略归一。主按钮在浅色主栏展开时到达 1，折叠成独立入口时到达 0。所有颜色、透明度比例、静态阴影/高光和动态光参数消费同一个 current 权重，不能在 draw 中直接按 fold 目标跳变。
 - 主题背景存储显式 Dark 表面/边框作为端点，并保留原始动画 pct/framePct；renderer 解析完整材质并应用透明度比例。普通按钮不是 themeSurface，它们使用独立图标、文字、底板角色，lightMaterial 只改变其边缘光。
-- Light 角色为 Surface `#F4F6F7`、IconPrimary `#53616A`、TextPrimary `#3D474D`、Accent `#006F68`、SelectedFill `#D7EEEA`。SurfaceFrame、Divider、EdgeLight 保持独立角色，但当前 Light 端点均为 `#53616A`；对象原有透明度负责把边框和分隔线降到适当强度。
-- Light themeSurface 不放大对象原有 fill/frame pct，基础外框保持单层 1 DIP；不绘制顶部高光或 key/ambient 多圈阴影，PointLight diffuse 不高于 `0.02`。Dark 端点保持旧数值。
-- `DrawPointLightFrame` 的基础描边、第一光源和第三光源分别解析。Light 第一光默认蓝灰，绘制时跟随当前笔色；低对比笔色只在光影显示阶段向 IconPrimary 校正到约 `2:1`，不得写回真实 RGB。Light 第三光固定 IconPrimary，不消费笔色换色淡出；Dark 两路光源恢复原颜色行为。Light 第一/第三光半径约为 `360/200 DIP`，主栏峰值约为 `18%/15.3%`，选中按钮第三光倍率从 Dark `0.30` 连续到 Light `0.40`。
+- Light「青瓷」角色：Surface `#F6F9F9`、IconPrimary `#43575A`、TextPrimary `#24363A`、Accent `#007A73`（与 Dark `#58FFEC` 同色相）、SelectedFill `#00A399`、EdgeLight `#3CC8BE`。中性灰均掺入少量主题青。SurfaceFrame `#68787A`、Divider `#869495`、PressedFill `#A0B8B8` 为预混色：在对象原有透明度（边框 18%、分隔线 30%、悬停 18%/按下 10%）下分别得到约 12%/16%/8% 的深青灰观感，使不经材质系统的面板也能一致。
+- Light 选中底与 Dark 同为半透明主题色，透明度为 Dark 值乘 `LightSelectedFillOpacityScale=0.70`（选中 `0.20→0.14`，按下选中 `0.10→0.07`）；不得使用不透明色卡。显式 `fillOverride` 的客户端保持原透明度。
+- 常驻表面 Light 填充透明度为 Dark 的 `0.85` 倍（主栏 `0.80→0.68`），减少对课件文字的遮挡；弹出面板（属性栏、菜单、提示）保持原透明度。基础外框保持单层 1 DIP 且全周等宽；不绘制顶部高光或 key/ambient 多圈阴影。Dark 端点保持旧数值。
+- 边缘光与边框必须分属不同色调：Light 边缘光为浅主题青，只给边框着色，禁止与边框/图标共用深灰（叠加后会局部压暗、加粗，形成一侧投影般的立体边）。PointLight diffuse Light 为 `0.08/0.06`（边框/笔色），低于 Dark `0.30/0.20`。
+- `DrawPointLightFrame` 的基础描边、第一光源和第三光源分别解析。Light 第一光默认浅主题青，绘制时跟随当前笔色；低对比笔色只在光影显示阶段向 IconPrimary 校正到约 `2:1`，不得写回真实 RGB。Light 第三光固定浅主题青，不消费笔色换色淡出；Dark 两路光源恢复原颜色行为。Light 第一/第三光半径约为 `360/200 DIP`，光强为 Dark 的 `1.5` 倍，主栏峰值约为 `27%/23%`，选中按钮第三光倍率从 Dark `0.30` 连续到 Light `0.40`。
 - dirty、viewport 和自绘面板外扩继续使用覆盖最大 Dark 半径/旧阴影的保守上界；缩小 Light 光源时不得同步缩小到无法覆盖主题过渡中间帧。EdgeLighting 总开关与 Dynamic 门禁语义保持不变。
 - 主题目标只来自 `Experimental.Inkeys3.UI3.ThemeMode`：`1` 为 Dark、`2` 为 Light，其余值归一到 Dark。启动与设置页均调用 `SetThemeMode()` 发布原子目标并唤醒渲染；`WM_THEMECHANGED` 不覆盖用户选择，不逐帧读配置或注册表。
 - 收展使用已有时间轴和 current/target 语义；中途反向从当前值重新定向，关闭动画直接到一致端点，材质单独变化同样产生 dirty 并续帧。其他控件和显式 Dark 的分页客户端不继承主按钮的折叠权重。
@@ -45,7 +47,7 @@ namespace BarThemeMaterial {
 | 关闭动画 | 全部材质通道同帧到正确端点 |
 | Dark 普通表面 | 保留旧数值和鼠标光强；无新增浅色阴影 |
 | EdgeLighting 关闭 | 基础扁平边框继续绘制；第一和第三 PointLight 停止，dirty 范围仍安全 |
-| Light 非绘制/绘制状态 | 第一光从蓝灰连续切换到对比度合格的笔色；第三光始终为蓝灰 |
+| Light 非绘制/绘制状态 | 第一光从浅主题青连续切换到对比度合格的笔色；第三光始终为浅主题青 |
 | 白/浅黄笔 | 完整笔形有细外轮廓，内部断口透明、无横向黑边 |
 | 自定义色/工具切换 | Light screen 中性，Dark 保留原渐变；真实 RGB 不写回 UI 显示处理 |
 | 非绘制模式 | 深浅端点均为默认中性样式，与记住的笔色无关 |
@@ -59,7 +61,7 @@ namespace BarThemeMaterial {
 
 ## 6. Tests Required
 
-直接测试生产策略的 Light/Dark 端点与 0.25/0.5/0.75 中间值、全通道有限/连续变化、原始表面透明度、单层边框、无静态立体阴影、第一/第三光独立颜色、`360/200 DIP` 半径、`18%/15.3%` 主栏峰值、按钮 `0.30→0.40` 倍率、浅色笔对比度和真实色隔离；用生产动画属性验证反向与关闭动画。对生产 ApplyAttributes 输出加工后的同一 SVG 做离屏检查：Dark 与 4478887c 原 logo1+Frame94 组合对照；Light 验证黑、白、浅黄、红、蓝、自定义色整笔 RGB、screen 中性及断口无描边；绘制态/非绘制态和过渡中点必须覆盖。
+直接测试生产策略的 Light/Dark 端点与 0.25/0.5/0.75 中间值、全通道有限/连续变化、常驻表面 `0.68` 透明度、Light 内容角色对比度（文字 ≥7、图标/主题色 ≥4.5）、边缘光亮于边框且不同色、半透明选中底、单层边框、无静态立体阴影、第一/第三光独立颜色、`360/200 DIP` 半径、`27%/23%` 主栏峰值、按钮 `0.30→0.40` 倍率、浅色笔对比度和真实色隔离；用生产动画属性验证反向与关闭动画。对生产 ApplyAttributes 输出加工后的同一 SVG 做离屏检查：Dark 与 4478887c 原 logo1+Frame94 组合对照；Light 验证黑、白、浅黄、红、蓝、自定义色整笔 RGB、screen 中性及断口无描边；绘制态/非绘制态和过渡中点必须覆盖。
 
 完整 ARM64 host MSBuild 构建 `InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64`，并运行 `InkeysHeadlessTests.exe --no-window`。实际桌面光影、白色文档覆盖和真实鼠标过渡属于另外的 GUI 验收；未执行时如实说明。
 
