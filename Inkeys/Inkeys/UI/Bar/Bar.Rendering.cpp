@@ -35,6 +35,7 @@ import :Button;
 import :Format;
 import :RenderingAttribute;
 import :Layout;
+import :Theme;
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.RenderPipeline;
@@ -2525,19 +2526,21 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing;
 	double penColorBlend = useDrawingLightTransition
 		? clamp(frameDrawingPenColorBlend, 0.0, 1.0) : 0.0;
+	// 边缘光基色始终取本对象实际绘制的边框色，深浅两端同一规则：
+	// 表面/分隔线为灰，选中按钮为主题青，绘制时再向笔色过渡。
+	auto lightingMaterial = material;
+	lightingMaterial.edgeLight = color;
 	const auto primaryLighting = BarThemeMaterial::ResolveLighting(
-		material, frameDrawingPenColor, penColorBlend);
+		lightingMaterial, frameDrawingPenColor, penColorBlend);
 	const auto cursorLighting = BarThemeMaterial::ResolveCursorLighting(
-		material, frameDrawingPenColor, penColorBlend);
+		lightingMaterial, frameDrawingPenColor, penColorBlend);
 	FLOAT primaryLightOpacity = sourceLightOpacity;
 	FLOAT cursorLightOpacity = sourceLightOpacity;
 	if (useDrawingLightTransition)
 	{
 		const double drawingOpacity = clamp(frameDrawingLightOpacity, 0.0, 1.0);
 		primaryLightOpacity *= static_cast<FLOAT>(drawingOpacity);
-		// 鼠标光在 Light 端不再依赖笔色，因此退出绘制时保持稳定。
-		cursorLightOpacity *= static_cast<FLOAT>(BarThemeMaterial::Mix(
-			drawingOpacity, 1.0, material.lightWeight));
+		cursorLightOpacity *= static_cast<FLOAT>(drawingOpacity);
 	}
 	primaryLightOpacity *= static_cast<FLOAT>(primaryLighting.intensity);
 	cursorLightOpacity *= static_cast<FLOAT>(cursorLighting.intensity);
@@ -2862,7 +2865,10 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			COLORREF fill = shape.themeSurface ? material.surface
 				: static_cast<COLORREF>(shape.fill.value().val);
 			double fillPct = tarPct * (shape.themeSurface ? material.fillOpacityScale
-				* BarThemeMaterial::Mix(1.0, shape.lightFillOpacityScale, material.lightWeight) : 1.0);
+				* (shape.residentSurface
+					? BarThemeMaterial::ResidentFillOpacityScale(material.lightWeight,
+						shape.lightFillOpacityScale, GetThemeResidentBackgroundOpacityOverride())
+					: BarThemeMaterial::Mix(1.0, shape.lightFillOpacityScale, material.lightWeight)) : 1.0);
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, fillPct);
 			if (!fillBrush) return false;
@@ -3023,7 +3029,10 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			COLORREF fill = superellipse.themeSurface ? material.surface
 				: static_cast<COLORREF>(superellipse.fill.value().val);
 			double fillPct = tarPct * (superellipse.themeSurface ? material.fillOpacityScale
-				* BarThemeMaterial::Mix(1.0, superellipse.lightFillOpacityScale, material.lightWeight) : 1.0);
+				* (superellipse.residentSurface
+					? BarThemeMaterial::ResidentFillOpacityScale(material.lightWeight,
+						superellipse.lightFillOpacityScale, GetThemeResidentBackgroundOpacityOverride())
+					: BarThemeMaterial::Mix(1.0, superellipse.lightFillOpacityScale, material.lightWeight)) : 1.0);
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, fillPct);
 			if (!fillBrush) return false;
@@ -3102,7 +3111,8 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 	double tarH = baseH * contentScale;
 	double tarX = baseX + (baseW - tarW) / 2.0;
 	double tarY = baseY + (baseH - tarH) / 2.0;
-	double tarPct = clamp(static_cast<double>(svg.pct.val) * contentPct, 0.0, 1.0);
+	double tarPct = clamp(static_cast<double>(svg.pct.val) * contentPct
+		* residentContentOpacity, 0.0, 1.0);
 
 	// 尺寸与内容缩放动画只改变目标矩形，SVG 位图尽量复用到稳定帧。
 	ComPtr<ID2D1Bitmap> d2dBitmap;
@@ -3270,7 +3280,8 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	if (tarSize <= 0.0) return false;
 	tarX = centerX - tarW / 2.0;
 	tarY = centerY - tarH / 2.0;
-	double tarPct = word.pct.val * contentPct; // 布局透明度与内容切换透明度相乘
+	// 布局透明度、内容切换透明度与常驻内容透明度相乘
+	double tarPct = word.pct.val * contentPct * residentContentOpacity;
 	const auto layoutRect = D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY),
 		static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
 	if (!ShouldDrawFrameBounds(deviceContext, layoutRect, BarRenderingAttribute::dirtyAntialiasPadding)) return false;

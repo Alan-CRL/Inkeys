@@ -250,6 +250,8 @@
       "AnimationSection": "Animations",
       "LightingSection": "Lighting",
       "ScalingSection": "Scaling",
+      "ThemeSection": "Theme",
+      "OpacitySection": "Opacity",
       "WindowBehaviorSection": "Window behavior",
       "SafetyRecoverySection": "Safety and recovery",
       "ShortcutGlobalSection": "Global actions",
@@ -496,6 +498,22 @@
         "EdgeLightingE": "When disabled, only the basic border remains; point lights and soft glow effects are turned off.",
         "DynamicEdgeLighting": "Dynamic edge lighting",
         "DynamicEdgeLightingE": "The lighting dynamically follows the pointer position.",
+        "ResetDefault": "Reset to default",
+        "SettingTheme":
+        {
+          "N": "Settings theme",
+          "E": "Switch the Settings window between dark and light. Stays in sync with the title bar toggle."
+        },
+        "BackgroundOpacity":
+        {
+          "N": "Bar background opacity",
+          "E": "Adjust the background opacity of the main bar, main button and page controls. Pop-up panels are not affected."
+        },
+        "ContentOpacity":
+        {
+          "N": "Bar content opacity",
+          "E": "Adjust the opacity of icons and text on the main bar, main button and page controls."
+        },
         "Theme":
         {
           "N": "Bar Theme",

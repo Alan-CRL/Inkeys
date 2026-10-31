@@ -33,29 +33,33 @@ namespace BarThemeMaterial
 		DockTarget,
 	};
 
-	// 「青瓷」浅色：主题色与深色 #58FFEC 同色相，中性灰均掺入少量主题青。
-	// 边框/分隔线/悬停底为预混色，在对象原有透明度下得到约 12%/16%/8% 的观感，
-	// 因此不依赖材质系统的独立面板（橡皮、撤销、分页）也能取得一致结果。
+	// 「青瓷」浅色：主题色与深色 #58FFEC 同色相，只用于强调、选中底和边缘光；
+	// 中性灰为冷石墨灰（色相约 207°、低饱和），避免低饱和青绿灰显脏。
+	// 边框/分隔线/悬停底为预混色，在对象原有透明度下得到约 12%/16%/8% 的观感；
+	// 浅色表面边框另按 LightFrameOpacityScale 加深，不依赖材质系统的独立面板（橡皮、撤销、分页）
+	// 通过 GetThemeSurfaceFrameOpacity 取得同一结果。
 	constexpr Color LightColor(ColorRole role) noexcept
 	{
 		switch (role)
 		{
-		case ColorRole::Surface: return Rgb(246, 249, 249);
-		case ColorRole::SurfaceFrame: return Rgb(104, 120, 122);
-		case ColorRole::IconPrimary: return Rgb(67, 87, 90);
-		case ColorRole::TextPrimary: return Rgb(36, 54, 58);
-		case ColorRole::Accent: return Rgb(0, 122, 115);
+		case ColorRole::Surface: return Rgb(247, 248, 250);
+		case ColorRole::SurfaceFrame: return Rgb(107, 114, 120);
+		case ColorRole::IconPrimary: return Rgb(71, 77, 82);
+		case ColorRole::TextPrimary: return Rgb(34, 39, 43);
+		// 选中文字压在同色半透明底上，加深到在深色背景下仍约 4.9:1。
+		case ColorRole::Accent: return Rgb(0, 98, 92);
 		case ColorRole::SelectedFill: return Rgb(0, 163, 153);
-		case ColorRole::PressedFill: return Rgb(160, 184, 184);
-		case ColorRole::SubtleFill: return Rgb(214, 226, 225);
-		case ColorRole::SwatchFrame: return Rgb(169, 188, 187);
-		case ColorRole::Divider: return Rgb(134, 148, 149);
-		case ColorRole::EdgeLight: return Rgb(60, 200, 190);
-		case ColorRole::ShadowKey: return Rgb(36, 54, 58);
-		case ColorRole::ShadowAmbient: return Rgb(67, 87, 90);
+		case ColorRole::PressedFill: return Rgb(174, 180, 186);
+		case ColorRole::SubtleFill: return Rgb(221, 225, 229);
+		case ColorRole::SwatchFrame: return Rgb(180, 185, 190);
+		case ColorRole::Divider: return Rgb(138, 144, 150);
+		// 边缘光与 Dark 一致取边框色，不再使用独立的浅青。
+		case ColorRole::EdgeLight: return Rgb(107, 114, 120);
+		case ColorRole::ShadowKey: return Rgb(34, 39, 43);
+		case ColorRole::ShadowAmbient: return Rgb(71, 77, 82);
 		case ColorRole::TopHighlight: return Rgb(255, 255, 255);
 		case ColorRole::DockTarget: return Rgb(0, 120, 212);
-		default: return Rgb(36, 54, 58);
+		default: return Rgb(34, 39, 43);
 		}
 	}
 
@@ -70,14 +74,49 @@ namespace BarThemeMaterial
 	}
 
 	// 浅色选中底与深色同为半透明主题色，只按比例降低，避免实色卡片压住背景。
-	inline constexpr double LightSelectedFillOpacityScale = 0.70;
-	// 主栏、主按钮和分页这类常驻表面在浅色端更透，减少对课件文字的遮挡；弹出面板不受影响。
-	inline constexpr double LightResidentSurfaceOpacityScale = 0.85;
+	inline constexpr double LightSelectedFillOpacityScale = 0.60;
+	// 主栏、主按钮和分页这类常驻表面在浅色端更实：半透明浅底压在深色背景上会混成脏灰，
+	// 0.80 × 1.10 = 0.88 让深色背景下图标仍有约 5.7:1 对比度；弹出面板不受影响。
+	inline constexpr double LightResidentSurfaceOpacityScale = 1.10;
+	// 浅色表面外缘在浅背景上几乎与背景同亮，单层边框按比例加深（0.18 → 约 0.32）。
+	inline constexpr double LightFrameOpacityScale = 1.75;
+	// 浅色底上 0.30 的禁用内容只剩约 1.5:1，提高到约 2:1 仍明显区别于可用态。
+	inline constexpr double DarkDisabledContentOpacity = 0.30;
+	inline constexpr double LightDisabledContentOpacity = 0.45;
+
+	// 主栏展开时的 Dark 常驻填充透明度；其他常驻表面按与它的比例同步缩放。
+	inline constexpr double ResidentBaseFillOpacity = 0.80;
+
+	// 常驻表面填充比例：用户设置的绝对透明度优先（>0），否则为主题默认（Light 端 ×1.10）。
+	inline double ResidentFillOpacityScale(double lightWeight, double lightScale,
+		double absoluteOpacity) noexcept
+	{
+		if (std::isfinite(absoluteOpacity) && absoluteOpacity > 0.0)
+			return std::clamp(absoluteOpacity, 0.0, 1.0) / ResidentBaseFillOpacity;
+		return Mix(1.0, lightScale, lightWeight);
+	}
+
+	// 设置页显示的主题默认值：Dark 0.80、Light 0.88。
+	inline double DefaultResidentFillOpacity(double lightWeight) noexcept
+	{
+		return ResidentBaseFillOpacity
+			* ResidentFillOpacityScale(lightWeight, LightResidentSurfaceOpacityScale, 0.0);
+	}
 
 	inline double SelectedFillOpacity(double lightWeight, double darkOpacity = 0.20) noexcept
 	{
 		const double dark = ClampWeight(darkOpacity);
 		return Mix(dark, dark * LightSelectedFillOpacityScale, lightWeight);
+	}
+
+	inline double FrameOpacity(double lightWeight, double darkOpacity) noexcept
+	{
+		return Mix(darkOpacity, darkOpacity * LightFrameOpacityScale, lightWeight);
+	}
+
+	inline double DisabledContentOpacity(double lightWeight) noexcept
+	{
+		return Mix(DarkDisabledContentOpacity, LightDisabledContentOpacity, lightWeight);
 	}
 
 	inline Color MixColor(Color dark, Color light, double lightWeight) noexcept
@@ -98,10 +137,12 @@ namespace BarThemeMaterial
 	inline constexpr double DarkPenDiffuseOpacity = 0.20;
 	inline constexpr double LightFrameDiffuseOpacity = 0.08;
 	inline constexpr double LightPenDiffuseOpacity = 0.06;
-	// 浅色边缘光为主题青，只在浅底上着色；强度略高于深色以保持相近的可见度。
+	// 浅色边缘光沿用对象边框色；强度略高于深色以保持相近的可见度。
 	inline constexpr double LightEdgeLightIntensity = 1.5;
 	inline constexpr double LightPrimaryRadiusScale = 360.0 / 480.0;
 	inline constexpr double LightCursorRadiusScale = 200.0 / 240.0;
+	// WinUI 3 Slider Thumb 外圈：ControlElevationBorder 约 6%~16% 黑，取 12% 石墨灰。
+	inline constexpr double LightSliderThumbBorderOpacity = 0.12;
 
 	struct Material
 	{
@@ -137,10 +178,12 @@ namespace BarThemeMaterial
 		result.lightWeight = weight;
 		result.surface = MixColor(darkSurface, LightColor(ColorRole::Surface), weight);
 		result.surfaceFrame = MixColor(darkFrame, LightColor(ColorRole::SurfaceFrame), weight);
-		// 填充透明度比例由常驻表面自行选择；边框沿用原透明度和 1 DIP 等宽描边。
+		// 填充透明度比例由常驻表面自行选择；边框保持 1 DIP 单层，浅色端按比例加深。
 		result.fillOpacityScale = 1.0;
-		result.frameOpacityScale = 1.0;
-		result.edgeLight = MixColor(darkFrame, LightColor(ColorRole::EdgeLight), weight);
+		result.frameOpacityScale = Mix(1.0, LightFrameOpacityScale, weight);
+		// 边缘光与 Dark 同规则：未绘制时取对象自身边框色（表面/分隔线为灰，选中按钮为主题青），
+		// 绘制时再向笔色过渡；renderer 会用实际绘制的边框色覆盖此默认值。
+		result.edgeLight = result.surfaceFrame;
 		result.lightIntensity = Mix(1.0, LightEdgeLightIntensity, weight);
 		result.cursorLightIntensityScale = Mix(1.0, 0.85, weight);
 		result.primaryLightRadiusScale = Mix(1.0, LightPrimaryRadiusScale, weight);
@@ -234,10 +277,13 @@ namespace BarThemeMaterial
 		Color penColor, double drawingPenBlend) noexcept
 	{
 		Lighting result;
-		// Dark 保留随笔色变化；进入 Light 后连续收敛为固定主题青。
-		result.penColorBlend = ClampWeight(drawingPenBlend)
-			* (1.0 - material.lightWeight);
-		result.color = MixColor(material.edgeLight, penColor,
+		// 深浅一致：鼠标光同样随笔色变化；浅色端只把低对比笔色校正到可见，不写回真实 RGB。
+		result.penColorBlend = ClampWeight(drawingPenBlend);
+		Color visiblePenColor = penColor;
+		if (result.penColorBlend > 0.0 && material.lightWeight > 0.0)
+			visiblePenColor = MixColor(penColor,
+				CorrectLightPenColor(penColor), material.lightWeight);
+		result.color = MixColor(material.edgeLight, visiblePenColor,
 			result.penColorBlend);
 		result.intensity = material.lightIntensity
 			* material.cursorLightIntensityScale;

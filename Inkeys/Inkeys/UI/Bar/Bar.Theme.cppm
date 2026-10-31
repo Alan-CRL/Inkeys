@@ -144,12 +144,48 @@ export COLORREF GetThemeColor(BarThemeColorEnum color, int alpha = 255)
 	return GetThemeColor(currentBarThemeStyle->darkStyle, color, alpha);
 }
 
-// 常驻表面（主栏、分页）的填充透明度；浅色端更透，弹出面板不使用此函数。
+static_assert(BarThemeMaterial::ResidentBaseFillOpacity == BarMainBarFillOpacity,
+	"resident opacity policy and main bar metric must share the Dark baseline");
+
+// 用户设置的常驻背景绝对透明度（0~1）；0 表示跟随主题默认。读取渲染线程已应用的值。
+export double GetThemeResidentBackgroundOpacityOverride()
+{
+	return currentBarThemeStyle
+		? static_cast<double>(currentBarThemeStyle->backgroundOpacity) / 100.0 : 0.0;
+}
+
+// 设置页显示与重置用的主题默认常驻背景透明度：Dark 0.80、Light 0.88。
+export double GetThemeDefaultResidentBackgroundOpacity(bool darkStyle)
+{
+	return BarThemeMaterial::DefaultResidentFillOpacity(darkStyle ? 0.0 : 1.0);
+}
+
+// 常驻内容（主栏/主按钮/分页上的图标与文字）透明度倍率，弹出面板不使用。
+export double GetThemeResidentContentOpacity()
+{
+	return currentBarThemeStyle
+		? static_cast<double>(currentBarThemeStyle->contentOpacity) / 100.0 : 1.0;
+}
+
+// 常驻表面（主栏、分页）的填充透明度；浅色端更实以免在深色背景上发灰，弹出面板不使用此函数。
 export double GetThemeResidentSurfaceOpacity(double darkOpacity)
 {
 	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
-	return darkStyle ? darkOpacity
-		: darkOpacity * BarThemeMaterial::LightResidentSurfaceOpacityScale;
+	return darkOpacity * BarThemeMaterial::ResidentFillOpacityScale(darkStyle ? 0.0 : 1.0,
+		BarThemeMaterial::LightResidentSurfaceOpacityScale, GetThemeResidentBackgroundOpacityOverride());
+}
+
+// 不经材质系统的独立表面（橡皮、撤销、分页）用它取得与材质表面一致的边框透明度。
+export double GetThemeSurfaceFrameOpacity(double darkOpacity)
+{
+	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
+	return BarThemeMaterial::FrameOpacity(darkStyle ? 0.0 : 1.0, darkOpacity);
+}
+
+export double GetThemeDisabledContentOpacity()
+{
+	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
+	return BarThemeMaterial::DisabledContentOpacity(darkStyle ? 0.0 : 1.0);
 }
 
 export COLORREF GetPresetColor(BarThemePresetColorEnum preset, int alpha = 255)

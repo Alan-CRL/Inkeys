@@ -100,7 +100,7 @@ void BarEraserAttributePanel::Initialize()
 		shape->Initialization(0,0,0,0,BarMainBarCornerRadiusDip,BarMainBarCornerRadiusDip,BarButtonFrameThicknessDip,
 			GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 		shape->enable.Initialization(true);shape->pct.SetDirect(BarDrawAttributeSurfaceOpacity);
-		shape->framePct.emplace(BarMainBarFrameOpacity);shape->frameLightPct.emplace(BarMainBarFrameOpacity);
+		shape->framePct.emplace(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));shape->frameLightPct.emplace(BarMainBarFrameOpacity);
 		shape->frameRendering=BarUiFrameRenderingEnum::PointLight;shape->frameLightColor=BarUiFrameLightColorEnum::PenWhenDrawing;
 	}
 	const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
@@ -167,6 +167,7 @@ void BarEraserAttributePanel::ConfigureSurface(BarUiShapeClass& surface,EraserAt
 	Place(surface,rect);surface.rw->SetDirect(BarMainBarCornerRadiusDip*scale);surface.rh->SetDirect(BarMainBarCornerRadiusDip*scale);
 	surface.ft->SetDirect(BarButtonFrameThicknessDip*scale);
 	surface.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));surface.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	surface.framePct->SetDirect(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 }
 
 bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double speed,double zoom,UINT dpi,

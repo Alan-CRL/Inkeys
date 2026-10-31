@@ -1942,7 +1942,7 @@ namespace Inkeys::UI::Bar
 		if(parts.pressScale)parts.pressScale->SetTar(pressed?BarButtonPressScale:1.0,
 			static_cast<double>(BarUiDefaultOperationDur),std::nullopt,false,
 			pressed?BarButtonPressCurve():BarButtonReleaseCurve());
-		const double opacity=visible?(enabled?1.0:BarButtonDisabledContentOpacity):0.0;
+		const double opacity=visible?(enabled?1.0:BarThemeMaterial::DisabledContentOpacity(lightWeight)):0.0;
 		const COLORREF content=contentOverride.value_or(GetThemeColor(selected
 			?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary));
 		const COLORREF iconContent=contentOverride.value_or(GetThemeColor(selected

@@ -250,6 +250,8 @@
       "AnimationSection": "動畫",
       "LightingSection": "光源",
       "ScalingSection": "縮放",
+      "ThemeSection": "主題",
+      "OpacitySection": "透明度",
       "WindowBehaviorSection": "視窗行為",
       "SafetyRecoverySection": "安全與復原",
       "ShortcutGlobalSection": "全域操作",
@@ -496,6 +498,22 @@
         "EdgeLightingE": "關閉後僅保留基礎邊框，停用點光與柔光效果。",
         "DynamicEdgeLighting": "動態邊緣光影",
         "DynamicEdgeLightingE": "光影將動態跟隨游標位置",
+        "ResetDefault": "還原預設",
+        "SettingTheme":
+        {
+          "N": "設定主題",
+          "E": "切換設定視窗的深色或淺色外觀，與標題列切換按鈕同步。"
+        },
+        "BackgroundOpacity":
+        {
+          "N": "主列背景透明度",
+          "E": "調整主列、主按鈕與分頁的背景不透明度；彈出面板不受影響。"
+        },
+        "ContentOpacity":
+        {
+          "N": "主列內容透明度",
+          "E": "調整主列、主按鈕與分頁上圖示和文字的不透明度。"
+        },
         "Theme":
         {
           "N": "主欄主題",

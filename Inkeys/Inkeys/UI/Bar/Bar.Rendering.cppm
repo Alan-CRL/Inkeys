@@ -166,6 +166,11 @@ public:
 	{
 		return frameZoom;
 	}
+	// 常驻内容（主栏/主按钮/分页的图标与文字）透明度倍率；调用方在绘制完常驻内容后恢复为 1。
+	void SetResidentContentOpacity(double opacity) noexcept
+	{
+		residentContentOpacity = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+	}
 	HRESULT EnsureDeviceResources(const Ui3RenderDeviceEpoch& epoch,
 		UINT32 targetWidth, UINT32 targetHeight);
 	[[nodiscard]] ID2D1DeviceContext* GetDeviceContext() const noexcept
@@ -454,6 +459,7 @@ protected:
 	unsigned long long frameDiffuseExactMaskUseSerial = 0;
 	unsigned long long frameDiffuseExactMaskPromotionFrameSerial = 0;
 	double frameZoom = 1.0;
+	double residentContentOpacity = 1.0;
 	bool frameDirtyClipActive = false;
 	D2D1_RECT_F frameDirtyClipRect{};
 	D2D1_RECT_F frameDirtyClipDeviceRect{};

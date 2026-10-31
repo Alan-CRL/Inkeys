@@ -1545,6 +1545,19 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		state.unclassifiedDamagePending = true;
 		state.dirtyRegionTracker.ForceFullDamage();
 	}
+	{
+		// 常驻透明度只改变绘制倍率，不经动画；变化时整幅重画，避免局部脏区残留旧透明度。
+		const int requestedBackground = state.barStyle.requestedBackgroundOpacity.load(std::memory_order_acquire);
+		const int requestedContent = state.barStyle.requestedContentOpacity.load(std::memory_order_acquire);
+		if (requestedBackground != state.barStyle.backgroundOpacity
+			|| requestedContent != state.barStyle.contentOpacity)
+		{
+			state.barStyle.backgroundOpacity = requestedBackground;
+			state.barStyle.contentOpacity = requestedContent;
+			state.unclassifiedDamagePending = true;
+			state.dirtyRegionTracker.ForceFullDamage();
+		}
+	}
 	state.barLightMaterial.SetTar(requestedDarkStyle ? 0.0 : 1.0, BarUiDefaultOperationDur);
 	// 捕获取消会同步等待窗口线程，必须在主栏表现锁外完成。
 	auto thicknessSliderRange = GetBarThicknessSliderRange(
@@ -5020,7 +5033,7 @@ for (size_t i = 0; i < 3; ++i)
 				if (button->icon.color2) button->icon.color2->SetDirect(iconColor);
 				button->name.color.SetDirect(color);
 			}
-			const double contentOpacity = opacityProgress * (enabled ? 1.0 : BarButtonDisabledContentOpacity);
+			const double contentOpacity = opacityProgress * (enabled ? 1.0 : GetThemeDisabledContentOpacity());
 			button->icon.pct.SetDirect(contentOpacity);
 			button->name.pct.SetDirect(button->size == BarButtonSizeEnum::oneOne ? 0.0 : contentOpacity);
 			button->lastDrawX = button->button.x.val;
@@ -11445,6 +11458,8 @@ bool presetButton = button.presetIndex >= 0;
 						&state.current, true);
 
 					// 退场按钮先画，收拢时由仍可见的前驱覆盖，不改变列表与命中顺序。
+					// 主栏图标/文字属于常驻内容，受用户内容透明度控制；选中底板等形状不受影响。
+					state.spec.SetResidentContentOpacity(GetThemeResidentContentOpacity());
 					for (const bool visible : { false, true })
 					{
 						size_t layoutIndex = 0;
@@ -11458,6 +11473,7 @@ bool presetButton = button.presetIndex >= 0;
 							DrawBarButtonVisual(state.spec, barDeviceContext, *button, inherit);
 						}
 					}
+					state.spec.SetResidentContentOpacity(1.0);
 				};
 
 				// 更多按钮保留主栏局部坐标，浮层自身仍只按上下展开方向翻转物理行。
@@ -11541,7 +11557,10 @@ bool presetButton = button.presetIndex >= 0;
 					// Logo 与主按钮共用刚性水平抓手，只叠加既有竖向果冻。
 					SetGripTransform();
 					auto obj = BarUISetSvgEnum::logo1;
+						// 主按钮 Logo 同属常驻内容。
+						state.spec.SetResidentContentOpacity(GetThemeResidentContentOpacity());
 						state.spec.Svg(barDeviceContext, *state.svgMap[obj], state.svgMap[obj]->Inherit(Center, *state.superellipseMap[BarUISetSuperellipseEnum::MainButton]));
+						state.spec.SetResidentContentOpacity(1.0);
 					}
 				}
 				// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
@@ -12380,18 +12399,21 @@ bool presetButton = button.presetIndex >= 0;
 						BarThemeColorEnum::Surface),
 					GetThemeColor(BarThemeModeEnum::Dark,
 						BarThemeColorEnum::TextPrimary), 0.20);
+				// Light 端按 WinUI 3 Slider Thumb：ControlSolidFillColorDefault 纯白底，
+				// 外圈为 ControlElevationBorder 的细描边（约 6%~16% 黑，取 12% 石墨灰）。
+				const COLORREF lightOuterFillColor = RGB(255, 255, 255);
+				const COLORREF lightOuterFrameColor = MixBarUiColor(
+					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface),
+					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::TextPrimary),
+					BarThemeMaterial::LightSliderThumbBorderOpacity);
 				COLORREF outerFillColor = MixBarUiColor(
-					darkOuterFillColor,
-					GetThemeColor(BarThemeModeEnum::Light,
-						BarThemeColorEnum::Surface), lightWeight);
+					darkOuterFillColor, lightOuterFillColor, lightWeight);
 				const COLORREF darkOuterFrameColor = MixBarUiColor(
 					darkOuterFillColor,
 					GetThemeColor(BarThemeModeEnum::Dark,
 						BarThemeColorEnum::TextPrimary), 0.12);
 				COLORREF outerFrameColor = MixBarUiColor(
-					darkOuterFrameColor,
-					GetThemeColor(BarThemeModeEnum::Light,
-						BarThemeColorEnum::SurfaceFrame), lightWeight);
+					darkOuterFrameColor, lightOuterFrameColor, lightWeight);
 				FillThumbCircle(outerFrameColor, thumbRadius);
 				FillThumbCircle(outerFillColor,
 					max(0.0F, thumbRadius - static_cast<FLOAT>(
@@ -12442,6 +12464,7 @@ bool presetButton = button.presetIndex >= 0;
 				BarMainBarFrameOpacity * dockTargetIndicatorOpacity);
 			indicatorShape.themeSurface = true;
 			indicatorShape.lightFillOpacityScale = BarThemeMaterial::LightResidentSurfaceOpacityScale;
+			indicatorShape.residentSurface = true;
 			indicatorShape.lightMaterial = state.barLightMaterial.val;
 			indicatorShape.frameRendering = BarUiFrameRenderingEnum::PointLight;
 			indicatorShape.frameLightColor =

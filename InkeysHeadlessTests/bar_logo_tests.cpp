@@ -123,9 +123,9 @@ namespace
 			}
 		}
 		const auto lightNeutral = Resolve(1.0, 0.0, colors[0]);
-		Check(lightNeutral.penFill == RGB(67, 87, 90)
-			&& lightNeutral.screenFill == RGB(196, 207, 207)
-			&& Near(lightNeutral.screenOpacity, 0.65), "Light non-drawing defaults use neutral theme colors");
+		Check(lightNeutral.penFill == RGB(71, 77, 82)
+			&& lightNeutral.screenFill == RGB(71, 77, 82)
+			&& Near(lightNeutral.screenOpacity, 0.22), "Light non-drawing defaults use neutral theme colors");
 		for (const double invalid : { std::numeric_limits<double>::quiet_NaN(),
 			std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity() })
 		{

@@ -1283,6 +1283,8 @@ namespace Inkeys::UI::Bar
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
 	export void SetThemeMode(int themeMode) noexcept;
+	// 背景百分比 0 表示跟随主题默认；调用方负责先按配置规则归一。
+	export void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;

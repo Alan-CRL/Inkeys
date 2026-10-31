@@ -351,6 +351,18 @@ namespace Inkeys::UI::Bar
 			barUISet.UpdateRendering(false);
 	}
 
+	void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept
+	{
+		const bool backgroundChanged = barUISet.barStyle.requestedBackgroundOpacity.exchange(
+			backgroundPercent, std::memory_order_acq_rel) != backgroundPercent;
+		const bool contentChanged = barUISet.barStyle.requestedContentOpacity.exchange(
+			contentPercent, std::memory_order_acq_rel) != contentPercent;
+		if (!backgroundChanged && !contentChanged) return;
+		// 主栏帧首应用目标值；分页表面复用同一份已应用值，需要单独唤醒。
+		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
+	}
+
 	void SetDebugOptions(bool enable, bool showFrameRate)
 	{
 		BarUiDebugModeEnabled = enable;

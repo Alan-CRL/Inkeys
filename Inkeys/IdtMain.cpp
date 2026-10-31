@@ -2918,9 +2918,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.UI3.ThemeMode);
 			// 非法或旧配置统一收敛到可持久化的深色模式 1。
 			config.Experimental.Inkeys3.UI3.ThemeMode = themeMode;
+			// 常驻透明度：背景 0 跟随主题默认，其余与内容一起收敛到 30~100。
+			const int backgroundOpacity = Inkeys::NormalizeResidentBackgroundOpacity(
+				config.Experimental.Inkeys3.UI3.BackgroundOpacity);
+			const int contentOpacity = Inkeys::NormalizeResidentContentOpacity(
+				config.Experimental.Inkeys3.UI3.ContentOpacity);
+			config.Experimental.Inkeys3.UI3.BackgroundOpacity = backgroundOpacity;
+			config.Experimental.Inkeys3.UI3.ContentOpacity = contentOpacity;
 			if (!config.Write() && IDTLogger)
 				IDTLogger->warn("[主线程][IdtMain] main.json 写回失败，保留现存配置文件");
 			Inkeys::UI::Bar::SetThemeMode(themeMode);
+			Inkeys::UI::Bar::SetResidentOpacity(backgroundOpacity, contentOpacity);
 			Inkeys::UI::Bar::SetAnimationOptions(
 				static_cast<bool>(config.Experimental.Inkeys3.UI3.Animation.Enable),
 				animationSpeedRate);

@@ -23,12 +23,13 @@ namespace BarLogoAppearance
 		const double drawing = ClampWeight(drawingWeight);
 		const double ink = drawing * (1.0 - light);
 		// 深色保留白色笔底及原渐变；浅色才把真实 RGB 填入整笔。
-		// 浅色非绘制态笔身使用图标色，屏幕为掺青的浅灰，与主栏图标同一色系。
+		// 浅色非绘制态笔身使用图标色；屏幕为图标色 0.22，任何背景下都比表面深约 1.4:1，
+		// 笔身对屏幕仍不低于 4.5:1。深浅两端恰好共用 0.22，只在颜色上过渡。
 		return {
 			MixColor(Rgb(255, 255, 255), MixColor(LightColor(ColorRole::IconPrimary), actualPenColor, drawing), light),
-			MixColor(Rgb(255, 255, 255), Rgb(196, 207, 207), light),
+			MixColor(Rgb(255, 255, 255), LightColor(ColorRole::IconPrimary), light),
 			ink > 0.0 ? actualPenColor & 0x00FFFFFFU : 0U,
-			Mix(0.22, 0.65, light), ink, 0.85 * light
+			0.22, ink, 0.85 * light
 		};
 	}
 

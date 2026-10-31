@@ -2149,6 +2149,11 @@ SettingSessionCoroutine RunSettingSession()
 		bool BarZoomSavePending = false;
 		int ThemeMode = Inkeys::NormalizeThemeMode(
 			Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode);
+		int BackgroundOpacity = Inkeys::NormalizeResidentBackgroundOpacity(
+			Inkeys::config.Experimental.Inkeys3.UI3.BackgroundOpacity);
+		int ContentOpacity = Inkeys::NormalizeResidentContentOpacity(
+			Inkeys::config.Experimental.Inkeys3.UI3.ContentOpacity);
+		bool ResidentOpacitySavePending = false;
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
@@ -2281,11 +2286,12 @@ SettingSessionCoroutine RunSettingSession()
 		auto commitGeneralSliders = [&]()
 		{
 			// 导航可能使拖动控件下一帧不再渲染，离页时仍完成已有的释放保存合同。
-			if (BarZoomSavePending || Experimental.Inkeys3.AnimationSpeedSavePending)
+			if (BarZoomSavePending || Experimental.Inkeys3.AnimationSpeedSavePending || ResidentOpacitySavePending)
 			{
 				QueueConfigWrite();
 				BarZoomSavePending = false;
 				Experimental.Inkeys3.AnimationSpeedSavePending = false;
+				ResidentOpacitySavePending = false;
 			}
 		};
 		auto navigateTo = [&](Design::NavigationDestination requested)
@@ -3073,6 +3079,13 @@ SettingSessionCoroutine RunSettingSession()
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
 					draft.settingEntryAnimation = setlist.settingEntryAnimation;
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
+					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
+					// 背景未自定义时显示当前主栏主题的默认值；内容透明度直接显示保存值。
+					draft.backgroundOpacityDefault = static_cast<float>(GetThemeDefaultResidentBackgroundOpacity(
+						Inkeys::ThemeModeUsesDarkStyle(ThemeMode)));
+					draft.backgroundOpacity = BackgroundOpacity == Inkeys::ResidentBackgroundOpacityThemeDefault
+						? draft.backgroundOpacityDefault : static_cast<float>(BackgroundOpacity) / 100.0F;
+					draft.contentOpacity = static_cast<float>(ContentOpacity) / 100.0F;
 					// 每帧冻结本页偏好，页面只产出事件，运行时通知仍留在既有 FIFO 业务域。
 					draft.selectMode = GetSelectAndClickThroughMode();
 					const int iconOrder = Inkeys::config.UI.Bar.IconOrder.load();
@@ -3154,6 +3167,43 @@ SettingSessionCoroutine RunSettingSession()
 								Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode = ThemeMode;
 								Inkeys::UI::Bar::SetThemeMode(ThemeMode);
 								QueueConfigWrite();
+							}
+						}
+						if (events.settingThemeModeChanged)
+						{
+							const bool settingDark = draft.settingThemeMode == 0;
+							if (setlist.settingDarkMode != settingDark)
+							{
+								// 与标题栏切换按钮同一路径：下一帧先换色，不重建 atlas/device。
+								setlist.settingDarkMode = settingDark;
+								WriteSetting();
+								settingThemeSerial.fetch_add(1, memory_order_release);
+								Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+							}
+						}
+						{
+							int nextBackground = BackgroundOpacity;
+							if (events.backgroundOpacityReset)
+								nextBackground = Inkeys::ResidentBackgroundOpacityThemeDefault;
+							else if (events.backgroundOpacityChanged)
+								nextBackground = Inkeys::NormalizeResidentBackgroundOpacity(
+									static_cast<int>(lround(draft.backgroundOpacity * 100.0F)));
+							const int nextContent = Inkeys::NormalizeResidentContentOpacity(
+								static_cast<int>(lround(draft.contentOpacity * 100.0F)));
+							if (nextBackground != BackgroundOpacity || nextContent != ContentOpacity)
+							{
+								// 拖动中实时预览，松手或点击重置后再持久化。
+								BackgroundOpacity = nextBackground;
+								ContentOpacity = nextContent;
+								Inkeys::config.Experimental.Inkeys3.UI3.BackgroundOpacity = BackgroundOpacity;
+								Inkeys::config.Experimental.Inkeys3.UI3.ContentOpacity = ContentOpacity;
+								Inkeys::UI::Bar::SetResidentOpacity(BackgroundOpacity, ContentOpacity);
+								ResidentOpacitySavePending = true;
+							}
+							if (ResidentOpacitySavePending && !events.backgroundOpacityActive && !events.contentOpacityActive)
+							{
+								QueueConfigWrite();
+								ResidentOpacitySavePending = false;
 							}
 						}
 						if (events.startupPreviewChanged

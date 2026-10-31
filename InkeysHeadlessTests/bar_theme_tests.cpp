@@ -85,23 +85,32 @@ namespace
 
 	void TestRolesAndEndpoints()
 	{
-		Check(LightColor(ColorRole::Surface) == Rgb(246, 249, 249), "celadon mist-white surface");
-		Check(LightColor(ColorRole::IconPrimary) == Rgb(67, 87, 90), "teal-tinted graphite icons");
-		Check(LightColor(ColorRole::TextPrimary) == Rgb(36, 54, 58), "teal-tinted primary text");
-		Check(LightColor(ColorRole::Accent) == Rgb(0, 122, 115), "celadon accent shares the Dark cyan hue");
+		Check(LightColor(ColorRole::Surface) == Rgb(247, 248, 250), "cool neutral white surface");
+		Check(LightColor(ColorRole::IconPrimary) == Rgb(71, 77, 82), "cool graphite icons");
+		Check(LightColor(ColorRole::TextPrimary) == Rgb(34, 39, 43), "cool graphite primary text");
+		{
+			// 中性灰偏冷蓝而非青绿：蓝 ≥ 绿 ≥ 红，低饱和青绿灰会显脏。
+			const auto cool = [](Color color) {
+				const auto r = color & 0xFFU, g = (color >> 8) & 0xFFU, b = (color >> 16) & 0xFFU;
+				return b >= g && g >= r;
+			};
+			Check(cool(LightColor(ColorRole::IconPrimary)) && cool(LightColor(ColorRole::TextPrimary))
+				&& cool(LightColor(ColorRole::SurfaceFrame)) && cool(LightColor(ColorRole::Divider))
+				&& cool(LightColor(ColorRole::PressedFill)) && cool(LightColor(ColorRole::Surface)),
+				"Light neutral roles stay cool graphite instead of teal-tinted gray");
+		}
+		Check(LightColor(ColorRole::Accent) == Rgb(0, 98, 92), "deep celadon accent shares the Dark cyan hue");
 		Check(LightColor(ColorRole::SelectedFill) == Rgb(0, 163, 153), "translucent celadon selected plate");
-		Check(LightColor(ColorRole::EdgeLight) == Rgb(60, 200, 190), "Light edge reflection is a pale accent tint");
-		// 浅色表面上的文字/图标/选中内容需保持可读对比度；边缘光必须与边框分属不同色调。
+		Check(LightColor(ColorRole::EdgeLight) == LightColor(ColorRole::SurfaceFrame),
+			"Light edge light uses the gray frame color like Dark instead of a separate cyan");
+		// 浅色表面上的文字/图标/选中内容需保持可读对比度。
 		const Color surface = LightColor(ColorRole::Surface);
 		Check(ContrastRatio(LightColor(ColorRole::TextPrimary), surface) >= 7.0
 			&& ContrastRatio(LightColor(ColorRole::IconPrimary), surface) >= 4.5
 			&& ContrastRatio(LightColor(ColorRole::Accent), surface) >= 4.5,
 			"Light content roles remain readable on the surface");
-		Check(LightColor(ColorRole::EdgeLight) != LightColor(ColorRole::SurfaceFrame)
-			&& LightColor(ColorRole::Divider) != LightColor(ColorRole::IconPrimary)
-			&& RelativeLuminance(LightColor(ColorRole::EdgeLight))
-				> RelativeLuminance(LightColor(ColorRole::SurfaceFrame)),
-			"edge light tints the frame instead of darkening it into a raised outline");
+		Check(LightColor(ColorRole::Divider) != LightColor(ColorRole::IconPrimary),
+			"dividers keep their own lighter gray role");
 
 		const auto dark = Resolve(0.0, darkSurface, darkFrame);
 		Check(dark.surface == darkSurface && dark.surfaceFrame == darkFrame
@@ -117,12 +126,32 @@ namespace
 		const auto light = Resolve(1.0, darkSurface, darkFrame);
 		Check(light.surface == LightColor(ColorRole::Surface)
 			&& light.surfaceFrame == LightColor(ColorRole::SurfaceFrame)
-			&& light.edgeLight == LightColor(ColorRole::EdgeLight)
+			&& light.edgeLight == light.surfaceFrame
 			&& Near(light.fillOpacityScale, 1.0)
-			&& Near(light.frameOpacityScale, 1.0),
-			"expanded Light keeps the object frame opacity and a flat 1 DIP frame");
-		Check(Near(BarMainBarFillOpacity * LightResidentSurfaceOpacityScale, 0.68),
-			"resident Light surfaces are more transparent than the Dark 80% endpoint");
+			&& Near(light.frameOpacityScale, LightFrameOpacityScale)
+			&& Near(BarMainBarFrameOpacity * light.frameOpacityScale, 0.315)
+			&& Near(FrameOpacity(1.0, BarMainBarFrameOpacity), 0.315)
+			&& Near(FrameOpacity(0.0, BarMainBarFrameOpacity), BarMainBarFrameOpacity)
+			&& Near(Resolve(0.5, darkSurface, darkFrame).frameOpacityScale,
+				(1.0 + LightFrameOpacityScale) / 2.0),
+			"expanded Light keeps a flat 1 DIP frame with a continuously deepened opacity");
+		Check(Near(BarMainBarFillOpacity * LightResidentSurfaceOpacityScale, 0.88),
+			"resident Light surfaces are more opaque than the Dark 80% endpoint");
+		Check(Near(DisabledContentOpacity(0.0), 0.30)
+			&& Near(DisabledContentOpacity(1.0), 0.45)
+			&& Near(DisabledContentOpacity(0.5), 0.375),
+			"disabled content keeps Dark 0.30 and stays recognizable at Light 0.45");
+		{
+			// 常驻浅色表面压在深色课件上时仍需可读：图标与选中内容均不低于 4.5:1。
+			const Color darkBackground = Rgb(30, 30, 30);
+			const Color resident = MixColor(darkBackground, LightColor(ColorRole::Surface),
+				BarMainBarFillOpacity * LightResidentSurfaceOpacityScale);
+			const Color selectedPlate = MixColor(resident, LightColor(ColorRole::SelectedFill),
+				SelectedFillOpacity(1.0));
+			Check(ContrastRatio(LightColor(ColorRole::IconPrimary), resident) >= 4.5
+				&& ContrastRatio(LightColor(ColorRole::Accent), selectedPlate) >= 4.5,
+				"Light resident surface stays readable over a dark background");
+		}
 		Check(Near(light.cursorLightIntensityScale, 0.85)
 			&& Near(light.primaryLightRadiusScale, LightPrimaryRadiusScale)
 			&& Near(light.cursorLightRadiusScale, LightCursorRadiusScale)
@@ -143,8 +172,8 @@ namespace
 				BarButtonLightCursorLightIntensity, 1.0), 0.40),
 			"selected button cursor scale keeps Dark 0.30 and Light 0.40 endpoints");
 		Check(Near(SelectedFillOpacity(0.0), 0.20)
-			&& Near(SelectedFillOpacity(1.0), 0.14)
-			&& Near(SelectedFillOpacity(1.0, BarButtonPressedOpacity), 0.07),
+			&& Near(SelectedFillOpacity(1.0), 0.12)
+			&& Near(SelectedFillOpacity(1.0, BarButtonPressedOpacity), 0.06),
 			"selected plate stays a translucent accent tint at both endpoints");
 	}
 
@@ -167,7 +196,7 @@ namespace
 				<= SurfaceShadowOutsetDip
 				&& material.ambientShadowRadiusDip + std::abs(material.ambientShadowOffsetYDip)
 				<= SurfaceShadowOutsetDip, "shadow draw footprint stays within shared dirty/viewport outset");
-			Check(Near(SelectedFillOpacity(weight), 0.20 - 0.06 * weight),
+			Check(Near(SelectedFillOpacity(weight), 0.20 - 0.08 * weight),
 				"selected plate changes continuously with material");
 		}
 		Check(SameMaterial(Resolve(-1.0, darkSurface, darkFrame), dark)
@@ -196,18 +225,19 @@ namespace
 						"primary light follows the current pen role");
 					Check(Near(cursor.intensity, material.lightIntensity
 						* material.cursorLightIntensityScale)
-						&& Near(cursor.penColorBlend,
-							drawingBlend * (1.0 - material.lightWeight)),
-						"cursor light continuously drops pen tint toward Light");
+						&& Near(cursor.penColorBlend, drawingBlend),
+						"cursor light follows the pen color at both endpoints like Dark");
 					Check(Near(primary.diffuseOpacity,
 						material.diffuseFrameOpacity * (1.0 - drawingBlend)
 							+ material.diffusePenOpacity * drawingBlend),
 						"primary diffuse glow uses current material strengths");
 					if (weight == 1.0)
 					{
-						Check(cursor.color == LightColor(ColorRole::EdgeLight)
-							&& Near(cursor.penColorBlend, 0.0),
-							"Light cursor reflection remains the fixed accent tint");
+						Check(cursor.color == primary.color,
+							"Light cursor and primary lights share the frame/pen color rule");
+						if (drawingBlend == 0.0)
+							Check(primary.color == material.edgeLight,
+								"Light non-drawing light stays the frame gray");
 						if (drawingBlend == 1.0)
 							Check(ContrastRatio(primary.color,
 								LightColor(ColorRole::Surface)) >= 1.99,
@@ -226,8 +256,19 @@ namespace
 			&& Near(reference.diffuseOpacity, independent.diffuseOpacity),
 			"changing stored border/background cannot affect resolved primary light");
 		Check(ResolveCursorLighting(material, Rgb(255, 0, 0), 1.0).color
-			== ResolveCursorLighting(material, Rgb(0, 80, 255), 1.0).color,
-			"Light cursor color is independent from the selected pen");
+			!= ResolveCursorLighting(material, Rgb(0, 80, 255), 1.0).color,
+			"Light cursor color follows the selected pen like Dark");
+		{
+			// renderer 以实际边框色覆盖 edgeLight：选中按钮为主题青，分隔线为灰。
+			auto selected = Resolve(1.0, darkSurface, darkFrame);
+			selected.edgeLight = LightColor(ColorRole::Accent);
+			auto divider = selected;
+			divider.edgeLight = LightColor(ColorRole::Divider);
+			Check(ResolveLighting(selected, Rgb(255, 0, 0), 0.0).color == LightColor(ColorRole::Accent)
+				&& ResolveCursorLighting(selected, Rgb(255, 0, 0), 0.0).color == LightColor(ColorRole::Accent)
+				&& ResolveLighting(divider, Rgb(255, 0, 0), 0.0).color == LightColor(ColorRole::Divider),
+				"Light edge light takes each object's own frame color");
+		}
 		const auto dark = Resolve(0.0, darkSurface, darkFrame);
 		Check(ResolveLighting(dark, Rgb(232, 64, 0), 1.0).color == Rgb(232, 64, 0)
 			&& ResolveLighting(dark, Rgb(232, 64, 0), 0.0).color == darkFrame
@@ -328,6 +369,51 @@ namespace
 			"ThemeMode Dark survives the configuration snapshot codec");
 	}
 
+	void TestResidentOpacityPolicy()
+	{
+		// 配置：背景 0 = 跟随主题默认，其余与内容透明度收敛到 30~100。
+		Inkeys::Config configSnapshot;
+		Check(configSnapshot.Experimental.Inkeys3.UI3.BackgroundOpacity
+				== Inkeys::ResidentBackgroundOpacityThemeDefault
+			&& configSnapshot.Experimental.Inkeys3.UI3.ContentOpacity
+				== Inkeys::ResidentContentOpacityDefault,
+			"resident opacity schema defaults to theme background and opaque content");
+		Check(Inkeys::NormalizeResidentBackgroundOpacity(0) == 0
+			&& Inkeys::NormalizeResidentBackgroundOpacity(-5) == 30
+			&& Inkeys::NormalizeResidentBackgroundOpacity(12) == 30
+			&& Inkeys::NormalizeResidentBackgroundOpacity(64) == 64
+			&& Inkeys::NormalizeResidentBackgroundOpacity(140) == 100,
+			"background opacity keeps the theme-default sentinel and clamps to 30~100");
+		Check(Inkeys::NormalizeResidentContentOpacity(0) == 30
+			&& Inkeys::NormalizeResidentContentOpacity(75) == 75
+			&& Inkeys::NormalizeResidentContentOpacity(101) == 100,
+			"content opacity clamps to 30~100");
+
+		// 渲染：默认值保持主题端点；用户值为展开主栏的绝对透明度，其余常驻表面按比例同步。
+		Check(Near(DefaultResidentFillOpacity(0.0), 0.80)
+			&& Near(DefaultResidentFillOpacity(1.0), 0.88),
+			"theme default resident background is Dark 80% and Light 88%");
+		for (const double weight : samples)
+			Check(Near(ResidentFillOpacityScale(weight, LightResidentSurfaceOpacityScale, 0.0),
+				Mix(1.0, LightResidentSurfaceOpacityScale, weight)),
+				"resident fill follows the theme scale when no override is set");
+		for (const double weight : samples)
+		{
+			Check(Near(BarMainBarFillOpacity
+					* ResidentFillOpacityScale(weight, LightResidentSurfaceOpacityScale, 0.30), 0.30)
+				&& Near(BarMainBarFillOpacity
+					* ResidentFillOpacityScale(weight, LightResidentSurfaceOpacityScale, 1.0), 1.0),
+				"user background opacity is absolute for the expanded main bar at every material weight");
+			Check(Near(BarMainButtonCollapsedFillOpacity
+					* ResidentFillOpacityScale(weight, LightResidentSurfaceOpacityScale, 0.40),
+				0.40 * BarMainButtonCollapsedFillOpacity / BarMainBarFillOpacity),
+				"collapsed resident surfaces keep their ratio to the main bar");
+		}
+		Check(Near(ResidentFillOpacityScale(1.0, LightResidentSurfaceOpacityScale,
+				std::numeric_limits<double>::quiet_NaN()), LightResidentSurfaceOpacityScale),
+			"invalid override falls back to the theme default");
+	}
+
 	std::string HexColor(Color color)
 	{
 		std::ostringstream value;
@@ -347,6 +433,7 @@ int RunBarThemeTests()
 	TestTrueAndDisplayPenColors();
 	TestAnimationReversalAndDisabled();
 	TestThemeModeConfigPolicy();
+	TestResidentOpacityPolicy();
 	return failures;
 }
 
