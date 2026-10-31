@@ -972,3 +972,33 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Status
 
 [OK] **Completed**
+
+
+## Session 133: 修复重连接触身份残留并完成人工验收
+<!-- trellis-session: v=2 fp=323ace0df79f6509 -->
+
+**Date**: 2026-10-31
+**Task**: 修复重连接触身份残留并完成人工验收
+**Branch**: `bugfix/ink`
+
+### Summary
+
+同步重连接管的输入与手势身份；生产回归红17→绿0，Debug ARM64和Release x64构建及审查通过；用户人工验证通过，任务归档，待合并dev。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74b8d3cb` | fix(ink): synchronize touch identity on stroke reconnect |
+
+### Testing
+
+- [OK] Debug ARM64 / Release x64完整构建通过；control-fence红17绿0；人工验证通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 审阅bugfix/ink相对dev的差异，用户自行决定合并；不自动push/merge
