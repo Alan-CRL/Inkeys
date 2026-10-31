@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "RTS contact lifecycle and reconnect invariants"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Minimal diff, Chinese comments, encoding and concurrency"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Full native solution and no-window validation"}
+{"file": ".trellis/tasks/10-31-ink-reconnect-contact-identity/research/evidence.md", "reason": "Four field occurrences and exact root cause"}
