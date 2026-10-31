@@ -2360,6 +2360,14 @@ namespace Inkeys::Drawing::Draw3
 				handle.record->ContactId();
 		}
 
+		void AdoptReconnectedContact(RuntimeStroke& runtime, ContactHandle handle) noexcept
+		{
+			// 同步新接触的手势归属，避免抬笔清理旧 key 后残留可复用的 contact ID。
+			runtime.handle = handle;
+			runtime.touchGestureKey = runtime.metricDeviceType == InputDeviceType::Touch
+				? CanvasTouchKey(handle) : 0;
+		}
+
 		bool SetShapeVisualEndpoint(
 			RuntimeShapeState& shape, DirectX::XMFLOAT2 endpoint) noexcept
 		{
@@ -4862,6 +4870,155 @@ namespace Inkeys::Drawing::Draw3
 		return failures;
 	}
 
+	int RunReconnectContactIdentityProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&failures](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3ReconnectIdentity] FAIL: %s\n", name);
+		};
+		// 使用真实 route 和 FSM；接管调用与生产重连成功分支共用，不能在测试里补写 key。
+		for (const uint32_t contactId : { 2u, 10u, 4u, 6u })
+		{
+			ContactInputCoordinator input;
+			CanvasTouchGestureState gestures;
+			RuntimeStroke runtime(1.0f);
+			runtime.metricDeviceType = InputDeviceType::Touch;
+			constexpr uint32_t tablet = 0xF531;
+			int64_t qpc = 100;
+			const auto down = [&](uint32_t id)
+			{
+				ContactSnapshot snapshot{};
+				snapshot.position = { 10.0f, 10.0f };
+				snapshot.qpc = qpc += 50;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record)
+				{
+					check(false, "Touch Down enters the real coordinator");
+					return ContactHandle{};
+				}
+				return ContactHandle{ record, record->Generation() };
+			};
+			const auto registerTouch = [&](ContactHandle handle)
+			{
+				return gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition;
+			};
+			const auto up = [&](ContactHandle handle, uint64_t gestureKey)
+			{
+				ContactSnapshot terminal{};
+				terminal.position = { 20.0f, 20.0f };
+				terminal.qpc = qpc += 50;
+				check(input.PublishUp(tablet, handle.record->ContactId(), terminal),
+					"Touch Up closes the current physical route");
+				check(input.TryReadSnapshot(handle, terminal) && terminal.phase == ContactPhase::Up,
+					"Touch terminal retains the exact handle generation");
+				gestures.OnTouchUp(gestureKey);
+			};
+			const auto first = down(1);
+			if (!first.record) continue;
+			check(registerTouch(first) == CanvasTouchDisposition::Draw, "ordinary Touch begins drawing");
+			runtime.handle = first;
+			runtime.touchGestureKey = CanvasTouchKey(first);
+			up(runtime.handle, runtime.touchGestureKey);
+			check(gestures.ContactCount() == 0, "ordinary Touch Up retires its gesture identity");
+			const auto reconnect = down(contactId);
+			if (!reconnect.record) continue;
+			check(registerTouch(reconnect) == CanvasTouchDisposition::Draw, "reconnecting Touch registers the new identity");
+			input.Recycle(runtime.handle);
+			AdoptReconnectedContact(runtime, reconnect);
+			const auto unrelated = down(100);
+			if (!unrelated.record) continue;
+			check(registerTouch(unrelated) == CanvasTouchDisposition::Draw, "unrelated Touch remains independently drawable");
+			const uint64_t unrelatedKey = CanvasTouchKey(unrelated);
+			up(runtime.handle, runtime.touchGestureKey);
+			check(gestures.ContactCount() == 1 && gestures.HasContact(unrelatedKey),
+				"reconnected Up retires only the adopted identity and preserves another Touch");
+			input.Recycle(runtime.handle);
+			up(unrelated, unrelatedKey);
+			input.Recycle(unrelated);
+			const auto reused = down(contactId);
+			if (!reused.record) continue;
+			check(reused.record == first.record && reused.generation != first.generation,
+				"regression reuses a real coordinator slot in a new generation");
+			check(registerTouch(reused) == CanvasTouchDisposition::Draw,
+				"same contact ID draws after reconnected Up instead of gesture suppression");
+			up(reused, CanvasTouchKey(reused));
+			input.Recycle(reused);
+			check(gestures.ContactCount() == 0, "all physical Touch contacts finish without stale identities");
+		}
+		{
+			// 连续接管复用同一条 RuntimeStroke，每段真实 Up 都应清掉当段身份。
+			ContactInputCoordinator input;
+			CanvasTouchGestureState gestures;
+			RuntimeStroke runtime(1.0f);
+			runtime.metricDeviceType = InputDeviceType::Touch;
+			int64_t qpc = 1000;
+			for (const uint32_t id : { 1u, 2u, 3u, 4u, 2u, 3u, 4u })
+			{
+				ContactSnapshot snapshot{};
+				snapshot.position = { 10.0f, 10.0f };
+				snapshot.qpc = qpc += 50;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(0xF532, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record)
+				{ check(false, "chained contact enters coordinator"); break; }
+				const ContactHandle handle{ record, record->Generation() };
+				check(gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition ==
+					CanvasTouchDisposition::Draw, "chained reconnect and subsequent ID reuse remain drawable");
+				if (runtime.handle.record)
+				{
+					input.Recycle(runtime.handle);
+					AdoptReconnectedContact(runtime, handle);
+				}
+				else
+				{
+					runtime.handle = handle;
+					runtime.touchGestureKey = CanvasTouchKey(handle);
+				}
+				snapshot.qpc = qpc += 50;
+				check(input.PublishUp(0xF532, id, snapshot), "chained Up closes adopted physical contact");
+				gestures.OnTouchUp(runtime.touchGestureKey);
+				check(gestures.ContactCount() == 0, "chained Up leaves no prior reconnect identity");
+			}
+			input.Recycle(runtime.handle);
+		}
+		{
+			// 笔尾橡皮也允许重连，但不能取得 Touch 手势身份或清掉其它接触。
+			ContactInputCoordinator input;
+			CanvasTouchGestureState gestures;
+			RuntimeStroke runtime(1.0f);
+			runtime.metricDeviceType = InputDeviceType::Pen;
+			runtime.tool = DrawingTool::Eraser;
+			runtime.invertedCursor = true;
+			check(IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)),
+				"non-Touch fixture uses the supported inverted Pen eraser reconnect path");
+			gestures.OnTouchDown(0xF53300000001ULL, 100, 1000, false, true);
+			ContactSnapshot snapshot{};
+			snapshot.position = { 10.0f, 10.0f };
+			snapshot.qpc = 100;
+			snapshot.isInvertedCursor = true;
+			ContactRecord* record = nullptr;
+			if (input.PublishDown(0xF534, 2, InputDeviceType::Pen, snapshot) && input.TryDequeue(record) && record)
+			{
+				const ContactHandle handle{ record, record->Generation() };
+				AdoptReconnectedContact(runtime, handle);
+				check(runtime.handle.record == handle.record && runtime.handle.generation == handle.generation &&
+					runtime.touchGestureKey == 0 && gestures.HasContact(0xF53300000001ULL),
+					"inverted Pen adopts its input handle without owning or clearing Touch gestures");
+				snapshot.qpc = 150;
+				check(input.PublishUp(0xF534, 2, snapshot), "non-Touch adopted Up closes route");
+				input.Recycle(handle);
+			}
+			else check(false, "non-Touch contact enters coordinator");
+		}
+		if (failures == 0)
+			std::fputs("[Draw3ReconnectIdentity] PASS: reused contact IDs, chained handoff and isolated Touch ownership\n", stderr);
+		return failures;
+	}
+
 	int RunDraw3ControlFenceProductionProbe() noexcept
 	{
 		int failures = 0;
@@ -4872,6 +5029,7 @@ namespace Inkeys::Drawing::Draw3
 			std::fprintf(stderr, "[Draw3ControlFence] FAIL: %s\n", name);
 		};
 		CheckTailInputDiagnosticContract(check);
+		failures += RunReconnectContactIdentityProductionProbe();
 		failures += RunEraserIdleWakeProductionProbe();
 		failures += RunHostWorkspaceTransitionInputProductionProbe();
 		{
@@ -10909,7 +11067,7 @@ namespace Inkeys::Drawing::Draw3
 								reconnectRuntime->stroke.realPoints.size() > metricsRealBefore);
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
-						reconnectRuntime->handle = handle;
+						AdoptReconnectedContact(*reconnectRuntime, handle);
 						BeginTailInputDiagnostic(*reconnectRuntime, down, true,
 							reconnectRuntime->stroke.tailInputDiagnostic.enabled);
 						reconnectRuntime->lastSpeedSnapshot = down;

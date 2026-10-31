@@ -707,3 +707,37 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 ### 7. Wrong vs Correct
 - Wrong：`pointAge -> radius立即回到base -> 粗端帽覆盖旧细尾`；或`ApplyTaper(previousL0DrawPoints)`累计缩放。
 - Correct：`原笔锋范围 -> 原始半径 + 弧长 -> 压缩有效长度 -> 整段SmoothStep -> 公切线安全 -> 新/旧L0 dirty`。
+
+
+## Scenario: 重连接管的输入与手势身份同步（2026-10-31）
+
+### 1. Scope / Trigger
+成功断笔重连会复用 RuntimeStroke；修改接管、Touch 终态或 contact ID 复用路径时适用。现场 v4 的四次重连均在同一 contact ID 下一次复用时出现整笔 gesture_suppressed。
+
+### 2. Signatures
+- Controller 内部 `AdoptReconnectedContact(RuntimeStroke&, ContactHandle) noexcept` 是成功重连的身份赋值接缝。
+- `CanvasTouchKey(handle)` 使用 tablet context/contact ID；`CanvasTouchGestureState::OnTouchUp(key)` 必须收到当前物理接触的 key。
+
+### 3. Contracts
+- 新 Down 在匹配重连前已登记自己的手势身份；接管必须同时更新 runtime.handle 和 runtime.touchGestureKey，Touch 取新 handle 的 key，非 Touch 保持0。
+- 旧接触的 Up 已退休其手势 key；保留原先旧 slot Recycle、模型续接和样本赋值顺序。新 Up 只清理新 key，不能 Reset 整个 FSM 或误删其它活动触点。
+- 不放宽重复 key 防护，不改变80ms重连判据，也不以 generation 全局改造手势身份来掩盖缺失的终态清理。
+
+### 4. Validation & Error Matrix
+| 条件 | 必须结果 |
+| --- | --- |
+| 普通独立 Touch | Draw，Up 退休自身 key |
+| A.Up 后 B 成功接管 | B.Up 清理 B；B 的 ID 再次复用仍 Draw |
+| 连续重连与循环 ID | 各段 Up 均无身份残留 |
+| 存在另一活动 Touch | 只退休当前接触，另一触点仍登记且可绘制 |
+| 倒置笔橡皮续接 | 接管输入 handle，手势 key 仍为0 |
+
+### 5. Good / Base / Bad Cases
+Good：输入 handle 与手势 key 一起迁移。Base：普通笔画和模型/重连匹配不变。Bad：只换 handle 导致 Up 清旧 key，或清空 FSM 影响其它手指。
+
+### 6. Tests Required
+现有 `Inkeys.exe --draw3-control-fence-test` 通过真实 coordinator/FSM 与生产共用接管接缝覆盖 ID2/10/4/6、slot generation复用、连续续接、多指隔离和倒置笔橡皮。回归必须在旧行为下失败，再验证修复后通过；完整 `InkeysRepo.sln Debug|ARM64`。现场触屏和可见GUI结果另行验证。
+
+### 7. Wrong vs Correct
+Wrong：`runtime.handle = next`，保留旧 touchGestureKey。
+Correct：成功接管调用 `AdoptReconnectedContact`，将当前物理接触的输入和手势身份一并更新。
