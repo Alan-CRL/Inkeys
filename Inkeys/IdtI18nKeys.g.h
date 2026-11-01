@@ -565,6 +565,11 @@ inline constexpr struct I18nKeyRoot
                     const char* Mode4 = "SettingsUI/Regular/Tentative/SafeMode/Mode4";
                     const char* Note = "SettingsUI/Regular/Tentative/SafeMode/Note";
                 } SafeMode{};
+                struct Node__SettingsUI__Regular__Tentative__AllowMultipleInstances
+                {
+                    const char* N = "SettingsUI/Regular/Tentative/AllowMultipleInstances/N";
+                    const char* E = "SettingsUI/Regular/Tentative/AllowMultipleInstances/E";
+                } AllowMultipleInstances{};
             } Tentative{};
         } Regular{};
         struct Node__SettingsUI__Draw

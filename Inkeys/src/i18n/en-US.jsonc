@@ -561,6 +561,11 @@
           "Mode3": "Let system handle",
           "Mode4": "Quit directly",
           "Note": "Errors during startup still display a prompt."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "Allow multiple instances",
+          "E": "Allow multiple instances to run from this installation folder. Turning this off prevents additional instances from starting without closing those already running."
         }
       }
     },

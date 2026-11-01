@@ -81,6 +81,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Helper/ShutdownSupervisor.h"
 #include "Inkeys/Net/UpdatePathSafety.h"
 #include "Launch/IdtLaunchState.h"
+#include "Launch/IdtSingleInstance.h"
 #include "SuperTop/IdtSuperTop.h"
 
 #include <atomic>
@@ -634,6 +635,24 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: expanded JSON replaced the last readable file\n", stderr);
 				return 1;
 			}
+			stage = "single instance startup preference";
+			for (const char* value : { "false", "true", "0", "1", "\"true\"", "null", "[]", "{}" })
+			{
+				const std::string json=std::string("{\"Config\":{\"AllowMultipleInstances\":")+value+"}}";
+				Inkeys::Config policy;
+				if (!writeBytes(mainConfig,json) || !policy.ReadMini({"Config.AllowMultipleInstances"},true)
+					|| policy.Config.AllowMultipleInstances != (strcmp(value,"true")==0) || readBytes(mainConfig)!=json) return 1;
+			}
+			Inkeys::Config emptyPolicy;
+			if (!writeBytes(mainConfig,"{}") || !emptyPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| emptyPolicy.Config.AllowMultipleInstances) return 1;
+			const std::string legacyPolicy=R"({"Config":{"AllowMultipleInstances":true},"UI":{"Bar":{"ButtonLayout":[]}}})";
+			if (!writeBytes(mainConfig,legacyPolicy) || !emptyPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| !emptyPolicy.Config.AllowMultipleInstances || readBytes(mainConfig)!=legacyPolicy) return 1;
+			emptyPolicy.Config.AllowMultipleInstances=false;
+			Inkeys::Config restoredPolicy;
+			if (!emptyPolicy.Write() || !restoredPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| restoredPolicy.Config.AllowMultipleInstances) return 1;
 			stage = "touch reconnect configuration";
 			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
 			Inkeys::Config reconnectDefaults;
@@ -1645,6 +1664,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
 
+	int singleInstanceTestResult = 0;
+	if (Inkeys::Launch::TryRunTests(singleInstanceTestResult)) return singleInstanceTestResult;
+
 	// 进程级 owner 兜住启动失败返回；Host/RTS 退出后才停止独立输出器。
 	Inkeys::Drawing::Draw3::DiagnosticOutput::Session draw3DiagnosticOutput;
 	bool pptComConsoleOutputEnabled = false;
@@ -1733,7 +1755,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				cout << utf16ToUtf8(commandLine) << endl;
 
-				if (commandLine == L"-Restart") LaunchState::restart = true;
+				if (commandLine.rfind(Inkeys::Launch::HandoffPrefix, 0) == 0) addCommandLine = false;
+				else if (commandLine == L"-Restart") LaunchState::restart = true;
 				else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
 				else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
 				else if (commandLine == L"-SuperTopComplete") superTopComplete = true, addCommandLine = false;
@@ -1754,40 +1777,32 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		}
 
-	#ifdef IDT_RELEASE
-		// 重启 helper 已等待旧进程真正结束；-Restart/-CrashTry 仍需正常单实例门。
-		if (!LaunchState::warnTry && !superTopComplete)
+		// 内部接力先验真并等待精确父进程；普通参数不再豁免单实例门。
+		if (!isolatedStartupFailure)
 		{
-			wstring currentExeDirectory = GetCurrentExeDirectory();
+			const int handoff = Inkeys::Launch::Adopt();
+			if (handoff < 0)
 			{
-				wstringstream result;
-				for (wchar_t ch : currentExeDirectory)
-				{
-					if (ch < 128 && ch != L'\\' && ch != L':' && ch != L';' && ch != L'"') result << ch;
-					else if (ch < 128) result << L'_';
-					else result << L"U" << std::hex << std::uppercase << static_cast<int>(ch);
-				}
-				currentExeDirectory = result.str();
+				ShowStartupMessage(L"Inkeys could not validate the startup handoff. The existing instance has been preserved.");
+				return 0;
 			}
-
-			wstring mutexName = L"Inkeys_" + currentExeDirectory;
-			if (mutexName.length() > 255) mutexName = mutexName.substr(0, 255);
-
-			launchMutex = CreateMutexW(
-				NULL,           // 默认安全属性
-				TRUE,           // 请求立即拥有所有权 (bInitialOwner = TRUE)
-				mutexName.c_str()    // 唯一的互斥体名称
-			);
-
-			DWORD lastError = GetLastError();
-			if (launchMutex != NULL && lastError == ERROR_ALREADY_EXISTS)
+			Inkeys::Config startupPolicy;
+			const auto ownRoot = GetCurrentExeDirectory();
+			const auto savedPath = globalPath;
+			if (handoff > 0) globalPath = Inkeys::Launch::logicalRoot + L"\\";
+			(void)startupPolicy.ReadMini({ "Config.AllowMultipleInstances" }, true);
+			globalPath = savedPath;
+			// Adopt已在Ready前完成全部准入，不能在旧进程退出后再次否决。
+			const auto admission = handoff > 0 ? Inkeys::Launch::Admission::Accepted
+				: Inkeys::Launch::Acquire(ownRoot, startupPolicy.Config.AllowMultipleInstances);
+			if (admission != Inkeys::Launch::Admission::Accepted)
 			{
-				ShowStartupMessage(L"Inkeys is already running. If no Inkeys window is visible, end the existing Inkeys process and open it again.");
-
+				ShowStartupMessage(admission == Inkeys::Launch::Admission::Duplicate
+					? L"Inkeys is already running from this installation directory."
+					: L"Inkeys could not establish its startup protection. Check directory and process permissions.");
 				return 0;
 			}
 		}
-	#endif
 		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
 	}
 	// 崩溃助手初始化
@@ -1958,8 +1973,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
 
-				int times;
-				for (times = 0; times <= 20; times++)
+				int times = 0;
+				for (; !Inkeys::Launch::adopted && times <= 20; times++)
 				{
 					if (!old_name.empty())
 					{
@@ -1975,6 +1990,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					this_thread::sleep_for(chrono::milliseconds(100));
 				}
 				if (times > 20) goto fail;
+				// 兼容旧更新器直接拉起的安装包：只有现有指令/哈希已验真且旧进程退出后才绑定安装根。
+				if (!Inkeys::Launch::adopted)
+				{
+					const auto root = filesystem::path(main_path).lexically_normal().wstring();
+					Inkeys::Config policy; const auto savedPath = globalPath; globalPath = main_path;
+					(void)policy.ReadMini({ "Config.AllowMultipleInstances" }, true); globalPath = savedPath;
+					if (Inkeys::Launch::Acquire(root, policy.Config.AllowMultipleInstances) != Inkeys::Launch::Admission::Accepted)
+					{
+						ShowStartupMessage(L"Inkeys is already running or updating from this installation directory.");
+						return 0; // 准入被拒绝不能删除另一条有效更新指令或启动回滚。
+					}
+				}
 
 				bool rollbackSafe = true;
 				const bool launched = [&]() -> bool
@@ -2027,9 +2054,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 							if (hadTarget) filesystem::remove(backupPath, ec);
 							return false;
 						}
-						const HINSTANCE result = ShellExecuteW(
-							nullptr, nullptr, target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-						if (reinterpret_cast<INT_PTR>(result) > 32) return true;
+						if (Inkeys::Launch::StartReplacement(target)) return true;
 						// 启动失败时回滚本次替换；备份在启动成功后仍保留供人工恢复。
 						if (hadTarget)
 							rollbackSafe = MoveFileExW(backupPath, target.c_str(),
@@ -2078,9 +2103,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						});
 					if (fallbackName.empty()) break;
 					triedNames[triedCount++] = fallbackName;
-					const HINSTANCE result = ShellExecuteW(nullptr, nullptr,
-						(main_path + fallbackName).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-					if (reinterpret_cast<INT_PTR>(result) > 32) return 0;
+					if (!Inkeys::Launch::Equal(Inkeys::Launch::logicalRoot, filesystem::path(main_path).lexically_normal().wstring()))
+					{
+						Inkeys::Config policy; const auto savedPath = globalPath; globalPath = main_path;
+						(void)policy.ReadMini({ "Config.AllowMultipleInstances" }, true); globalPath = savedPath;
+						if (Inkeys::Launch::Acquire(main_path, policy.Config.AllowMultipleInstances) != Inkeys::Launch::Admission::Accepted) return 0;
+					}
+					const auto fallbackPath = main_path + fallbackName;
+					if (Inkeys::Launch::StartReplacement(fallbackPath)) return 0;
 					// 用户取消提升后不能再悄悄尝试另一份旧程序。
 					if (GetLastError() == ERROR_CANCELLED) return 0;
 				}
@@ -2227,8 +2257,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				if (flag)
 				{
-					HINSTANCE hInst = ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
-					if ((INT_PTR)hInst > 32) return 0;
+					if (Inkeys::Launch::StartReplacement(globalPath + path)) return 0;
 					flag = false;
 				}
 			}

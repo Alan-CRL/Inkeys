@@ -905,6 +905,9 @@ namespace Inkeys::UI::Setting::Design
 				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) },
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
+			events.allowMultipleInstancesChanged = ToggleRow("allow-multiple-instances",
+				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.E).c_str(), "\ue7f4", draft.allowMultipleInstances);
 		}
 		if (section == GeneralSection::Shortcuts)
 		{

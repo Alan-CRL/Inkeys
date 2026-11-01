@@ -255,6 +255,7 @@ namespace Inkeys::UI::Setting::Design
 		std::string shortcutGlobalStatus, shortcutHookStatus;
 		bool shortcutStatusWarning = false;
 		int settingEntryAnimation = 1;
+		bool allowMultipleInstances = false;
 	};
 
 	struct GeneralEvents
@@ -268,6 +269,7 @@ namespace Inkeys::UI::Setting::Design
 		bool topIntervalChanged = false;
 		bool rightClickCloseChanged = false;
 		bool safetyModeChanged = false;
+		bool allowMultipleInstancesChanged = false;
 		bool startupPreviewChanged = false;
 		bool settingEntryAnimationChanged = false;
 		bool animationChanged = false;

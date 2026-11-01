@@ -1,0 +1,104 @@
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  Scanning sources for module dependencies...
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM\bin\Release\PptCOM.dll
+  Scanning sources for module dependencies...
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM\bin\Release\PptCOM.tlb'
+  IdtPlug-in.cpp
+  ShutdownSupervisor.cpp
+  InkeysHeadlessTests.vcxproj -> D:\Project\Inkeys\Repo\Inkeys-draw\Build\ARM64\Debug\InkeysHeadlessTests.exe
+  Setting.cpp
+  IdtFreezeFrame.cpp
+  IdtMain.cpp
+  IdtState.cpp
+  IdtSuperTop.cpp
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Compiling...
+  IdtFreezeFrame.cpp
+  IdtPlug-in.cpp
+  ShutdownSupervisor.cpp
+  IdtSuperTop.cpp
+  Setting.cpp
+  IdtMain.cpp
+  IdtState.cpp
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+  (compiling source file 'IdtFreezeFrame.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+  
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+  (compiling source file 'SuperTop/IdtSuperTop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'SuperTop/IdtSuperTop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'SuperTop/IdtSuperTop.cpp')
+  
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1813,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1813,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1847,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1847,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1881,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1881,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1915,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1915,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1950,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1950,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1984,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(1984,74): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(2011,99): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(2011,74): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(2043,101): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Setting\Setting.cpp(2043,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\IdtMain.cpp(3089,26): warning C4244: '=': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\IdtMain.cpp(3089,26): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\IdtMain.cpp(3089,26): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\IdtMain.cpp(3089,26): warning C4244:             _Ty=float [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\IdtMain.cpp(3089,26): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys.vcxproj]
+  Inkeys.vcxproj -> D:\Project\Inkeys\Repo\Inkeys-draw\Build\ARM64\Debug\Inkeys.exe
+  'pwsh.exe' is not recognized as an internal or external command,
+  operable program or batch file.

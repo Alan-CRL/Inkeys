@@ -1,0 +1,28 @@
+{
+  "id": "single-instance-safe-relaunch",
+  "name": "single-instance-safe-relaunch",
+  "title": "恢复防重复启动与安全启动交接",
+  "description": "恢复默认防重复启动，在通用安全中增加允许重复启动开关，并保证更新、重启和超级置顶三段式的正常启动交接。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": "setting/performance",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "已实现；完整Debug ARM64构建、协议与installer正负fixture、监督器接力、配置、token与General专项通过。真实GUI/UAC/Win7/跨架构运行未测；待用户决定提交与归档。",
+  "meta": {
+    "validation_result": "native_headless_passed_gui_not_run"
+  }
+}

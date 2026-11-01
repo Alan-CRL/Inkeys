@@ -2851,10 +2851,11 @@ namespace
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
 			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false;
-			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false;
+			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false;
 		};
 		ImGuiWindow* host = nullptr;
-		int modeChanges = 0, entryAnimationChanges = 0; std::array<int, 6> shortcutChanges{};
+		int modeChanges = 0, entryAnimationChanges = 0, multipleInstanceChanges = 0; std::array<int, 6> shortcutChanges{};
+		checks.Expect(!draft.allowMultipleInstances, "multiple-instance preference is disabled in the initial general draft");
 		auto draw = [&](Design::GeneralSection section, ImVec2 mouse, bool down)
 		{
 			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
@@ -2875,12 +2876,14 @@ namespace
 			frame.operation = rowSeen("##选择与穿透"); frame.layout = rowSeen("主栏图标顺序") && rowSeen("主栏展开方向调整");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
 			frame.entryAnimation = rowSeen("setting-entry-animation");
+			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
 			ImGui::PushID(5); frame.shortcuts = rowSeen("##启用固定快捷键"); ImGui::PopID();
 			for (const auto& vertex : host->DrawList->VtxBuffer)
 				if (vertex.col == Design::GetPalette().notice[0]) ++frame.blueVertices;
 			modeChanges += frame.events.selectModeChanged ? 1 : 0;
 			entryAnimationChanges += frame.events.settingEntryAnimationChanged ? 1 : 0;
+			multipleInstanceChanges += frame.events.allowMultipleInstancesChanged ? 1 : 0;
 			for (int item = 0; item < 6; ++item) shortcutChanges[item] += frame.events.shortcutsChanged[item] ? 1 : 0;
 			ImGui::PopID(); ImFluent::PopFont(); ImGui::End(); ImGui::Render();
 			frame.vertices = ImGui::GetDrawData()->TotalVtxCount;
@@ -2890,7 +2893,7 @@ namespace
 			return !events.startupChanged && !events.createShortcut && !events.shortcutOptions
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
-				&& !events.safetyModeChanged && !events.startupPreviewChanged && !events.animationChanged
+				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.animationChanged
 				&& !events.animationRateActive && !events.dynamicEdgeLightingChanged
 				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
@@ -2909,14 +2912,15 @@ namespace
 				&& frame.shortcuts == (section == Design::GeneralSection::Shortcuts)
 				&& frame.startupPreview == (section == Design::GeneralSection::Appearance)
 				&& frame.entryAnimation == (section == Design::GeneralSection::Appearance)
-				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom,
+				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom
+				&& frame.allowMultipleInstances == (section == Design::GeneralSection::Interaction),
 				"general rows stay in their pages with the new entry-animation mode and no separate Settings zoom");
 			if (section == Design::GeneralSection::Basic)
 				checks.Expect(frame.blueVertices > 0, "actual operation-mode explanation draws the themed blue informational card");
 			checks.Expect(draft.startup && Near(draft.barZoom, 1.37F) && draft.settingEntryAnimation == 1
 				&& !draft.edgeLighting && draft.topInterval == 5 && draft.rightClickClose && draft.safetyMode == 2
 				&& !draft.startupPreview && !draft.animation && Near(draft.animationRate, 4.7F) && draft.dynamicEdgeLighting
-				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0,
+				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0 && !draft.allowMultipleInstances,
 				"page filtering and conditional hidden controls preserve every resident draft value");
 		}
 		auto focus = [&](Design::GeneralSection section, const char* row, const char* control, int item = -1) {
@@ -2952,6 +2956,17 @@ namespace
 		checks.Expect(draft.settingEntryAnimation == 2 && entryAnimationChanges == 1
 			&& draft.startupPreview && !draft.animation && Near(draft.barZoom, 1.37F),
 			"opening-animation combo commits one persistent choice independently of startup preview and the animation switch");
+		// 真实安全页控件往返切换，只产生其保存事件，不影响教学安全模式或其他偏好。
+		draw(Design::GeneralSection::Interaction, outside, false);
+		focus(Design::GeneralSection::Interaction, "allow-multiple-instances", "##toggle");
+		chord(Design::GeneralSection::Interaction, ImGuiKey_Space);
+		checks.Expect(draft.allowMultipleInstances && multipleInstanceChanges == 1 && draft.safetyMode == 2,
+			"actual safety-page switch enables multiple instances with one independent event");
+		draw(Design::GeneralSection::Interaction, outside, false);
+		focus(Design::GeneralSection::Interaction, "allow-multiple-instances", "##toggle");
+		chord(Design::GeneralSection::Interaction, ImGuiKey_Space);
+		checks.Expect(!draft.allowMultipleInstances && multipleInstanceChanges == 2 && draft.safetyMode == 2,
+			"actual safety-page switch disables future extra instances without changing the safety selection");
 		draw(Design::GeneralSection::Shortcuts, outside, false);
 		focus(Design::GeneralSection::Shortcuts, "##启用固定快捷键", "##toggle", 5);
 		chord(Design::GeneralSection::Shortcuts, ImGuiKey_Space);
@@ -5384,7 +5399,7 @@ namespace
 	}
 }
 
-int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly)
+int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly)
 {
 	Checks checks;
 	CheckSettingOpenNavigation(checks);
@@ -5419,6 +5434,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly)
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
+		if (generalOnly && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
 		ImGuiSession session;
 		ClipboardProbe settingsClipboard;
 		ImGui::GetStyle().FontScaleDpi = scale;
@@ -5447,6 +5463,16 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly)
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
+		if (generalOnly)
+		{
+			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			{
+				checks.Expect(LoadNavigationLabels(fontDirectory, language), "general-only tests load actual language resources");
+				const bool traditional = std::strcmp(language, "zh-TW") == 0;
+				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+			}
+			continue;
+		}
 		if (attentionOnly)
 		{
 			CheckSettingAttentionRows(checks,fonts,scale);

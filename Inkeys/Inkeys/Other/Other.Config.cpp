@@ -807,10 +807,10 @@ namespace Inkeys
 		return readOk;
 	}
 
-	bool Config::ReadMini(std::initializer_list<std::string_view> paths)
+	bool Config::ReadMini(std::initializer_list<std::string_view> paths, bool readOnly)
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
-		return ReadImpl(NormalizePaths(paths));
+		return ReadImpl(NormalizePaths(paths), readOnly);
 	}
 
 	bool Config::Write()
@@ -906,7 +906,7 @@ namespace Inkeys
 		ApplyDefaults(std::vector<std::string>{});
 	}
 
-	bool Config::ReadImpl(const std::vector<std::string>& paths)
+	bool Config::ReadImpl(const std::vector<std::string>& paths, bool readOnly)
 	{
 		ApplyDefaults(paths);
 
@@ -920,7 +920,8 @@ namespace Inkeys
 
 		// 先迁移旧单数组，再套用文档，避免新区默认值挡住拆分结果。
 		// 直接写回完整迁移文档；不能依赖 Bar 后续恰好再次规范化 A1/A2。
-		if (TryMigrateLegacyBarButtonLayout(parsedRoot))
+		// 只读启动检查不能为了布局兼容而改写配置文件。
+		if (!readOnly && TryMigrateLegacyBarButtonLayout(parsedRoot))
 			(void)WriteDocumentToFile(GetFilePath(), parsedRoot);
 		ApplyDocument(parsedRoot, paths);
 		loadedDocument = parsedRoot;

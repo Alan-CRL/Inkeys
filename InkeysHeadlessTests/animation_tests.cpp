@@ -52,7 +52,7 @@ int RunBarPresentationAlphaTests();
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunSettingEraserDemoTests();
-int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false, bool attentionOnly = false);
+int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false, bool attentionOnly = false, bool generalOnly = false);
 int RunPptUiTests();
 int RunPptSessionTests();
 int RunPageControlTests();
@@ -1710,6 +1710,7 @@ int main(int argc, char** argv)
 	bool settingHomeOnly = false;
 	bool settingCopyOnly = false;
 	bool settingAttentionOnly = false;
+	bool settingGeneralOnly = false;
 	bool settingEraserOnly = false;
 	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
@@ -1725,6 +1726,7 @@ int main(int argc, char** argv)
 		settingHomeOnly |= argument == "--setting-home-only";
 		settingCopyOnly |= argument == "--setting-copy-only";
 		settingAttentionOnly |= argument == "--setting-attention-only";
+		settingGeneralOnly |= argument == "--setting-general-only";
 		settingEraserOnly |= argument == "--setting-eraser-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
@@ -1773,6 +1775,7 @@ int main(int argc, char** argv)
 		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << '\n';
 		return settings + speed + attributes == 0 ? 0 : 1;
 	}
+	if (settingGeneralOnly) return RunSettingDesignTests(false,false,false,true)==0 ? 0 : 1;
 	if (settingAttentionOnly) return RunSettingDesignTests(false,false,true)==0 ? 0 : 1;
 	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
 	if (settingHomeOnly) return RunSettingDesignTests()==0 ? 0 : 1;

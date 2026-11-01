@@ -8,6 +8,7 @@ import Inkeys.UI.MessageBox;
 #include "../IdtOther.h"
 #include "../Launch/IdtLaunchState.h"
 #include "IdtToken.h"
+#include "../Launch/IdtSingleInstance.h"
 
 #include <tlhelp32.h>
 #include <stdexcept>
@@ -174,6 +175,7 @@ void SurperTopMain(wstring lpCmdLine)
 	int usePermission = 0; // 0 使用自身；1 使用 PID；2 降权使用普通用户
 	DWORD inkeysPid = 0;
 	wstring readyEventName;
+	std::uintptr_t leaseValue = 0;
 
 	cout << utf16ToUtf8(lpCmdLine) << endl;
 
@@ -226,6 +228,11 @@ void SurperTopMain(wstring lpCmdLine)
 					catch (const out_of_range&) {}
 					catch (const invalid_argument&) {}
 				}
+			}
+			else if (commandLine.rfind(L"-InstanceLease=", 0) == 0)
+			{
+				try { leaseValue = static_cast<std::uintptr_t>(std::stoull(commandLine.substr(15))); }
+				catch (...) { return; }
 			}
 			else if (commandLine.rfind(L"-ReadyEvent=", 0) == 0)
 				readyEventName = commandLine.substr(12);
@@ -304,9 +311,14 @@ void SurperTopMain(wstring lpCmdLine)
 
 	// 启动新进程
 
-	wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopComplete " + inkeysCmdLine;
+	// helper先持有根实例的占位，暂停final中再显式复制，整个三段式不释放后重抢。
+	if (!parentProcess || !leaseValue || !Inkeys::Launch::CopyParentPresence(parentProcess.get(),
+		reinterpret_cast<HANDLE>(leaseValue), GetCurrentExeDirectory())) return;
+	Inkeys::Launch::Handoff handoff;
+	if (!handoff.Valid()) return;
+	wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopComplete " + inkeysCmdLine + L" " + handoff.Arguments();
 	if (!UiAccess::RunToken::RunTokenProgram(inkeysToken, param,
-		readyEvent ? parentProcess.get() : nullptr, readyEvent.get(), acceptedEvent.get()))
+		readyEvent ? parentProcess.get() : nullptr, readyEvent.get(), acceptedEvent.get(), &handoff))
 	{
 		cout << "RunTokenProgram Fail" << endl;
 		// 旧实例仍存活时由它统一提示并降级；避免超时 helper 再弹出第二份提示。
@@ -359,6 +371,7 @@ void LaunchSurperTop(wstring cmdLine)
 	launchLine += L"-UiAccess=" + useUiAccess + L" ";
 	launchLine += L"-Permission=" + usePermission + L" ";
 	launchLine += L"-Pid=" + pid + L" ";
+	launchLine += L"-InstanceLease=" + std::to_wstring(reinterpret_cast<std::uintptr_t>(Inkeys::Launch::presence.Get())) + L" ";
 	launchLine += L"-ReadyEvent=" + readyEventName;
 	launchLine += L"*";
 

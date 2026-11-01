@@ -3071,6 +3071,7 @@ SettingSessionCoroutine RunSettingSession()
 						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
 					draft.settingEntryAnimation = setlist.settingEntryAnimation;
+					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
 					// 每帧冻结本页偏好，页面只产出事件，运行时通知仍留在既有 FIFO 业务域。
 					draft.selectMode = GetSelectAndClickThroughMode();
 					const int iconOrder = Inkeys::config.UI.Bar.IconOrder.load();
@@ -3231,6 +3232,12 @@ SettingSessionCoroutine RunSettingSession()
 							WriteSetting();
 							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
+					}
+					if (events.allowMultipleInstancesChanged)
+					{
+						// 只保存后续启动的准入偏好，不影响或关闭已经运行的实例。
+						Inkeys::config.Config.AllowMultipleInstances = draft.allowMultipleInstances;
+						QueueConfigWrite();
 					}
 					if (events.selectModeChanged && SetSelectAndClickThroughMode(draft.selectMode))
 						QueueConfigWrite();

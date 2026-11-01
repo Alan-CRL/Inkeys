@@ -337,6 +337,7 @@ namespace Inkeys::ConfigDetail
 #define INKEYS_CONFIG_SCHEMA(GROUP, X, H) \
 	GROUP(Config, \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoClean, false) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowMultipleInstances, false) \
 	) \
 	GROUP(Info, \
 		H(true, true, "id", std::wstring, UserId, &::userId) \
@@ -486,7 +487,8 @@ namespace Inkeys
 		Inkeys::Config& operator=(const Inkeys::Config& other);
 
 		bool ReadAll();
-		bool ReadMini(std::initializer_list<std::string_view> paths);
+		// 启动准入可只读所选偏好，禁止兼容布局迁移写盘。
+		bool ReadMini(std::initializer_list<std::string_view> paths, bool readOnly = false);
 		bool Write();
 		bool SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept;
 		std::string GetUploadInfo();
@@ -517,7 +519,7 @@ namespace Inkeys
 			#undef INKEYS_CONFIG_TRAVERSE_H_VALUE
 		}
 
-bool ReadImpl(const std::vector<std::string>& paths);
+bool ReadImpl(const std::vector<std::string>& paths, bool readOnly = false);
 			void ApplyDefaults(const std::vector<std::string>& paths);
 			void ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths, bool includeWriteOnly = false);
 			void OverlayDocument(Json::Value& root);
