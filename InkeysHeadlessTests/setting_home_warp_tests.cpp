@@ -906,15 +906,21 @@ namespace
 		const auto originalAlpha=ImGui::GetStyle().Alpha;
 		const bool dark=Design::IsDarkMode();
 		const auto originalBackground=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
-		for (int material=0;material<5;++material)
+		for (int material=0;material<6;++material)
 		{
 			const bool solid=material!=1 && material<4;
-			// 实际分层调色板也走 GPU 捕获/重放，与纯透明根背景分别验证。
-			Design::ApplyPalette(dark, material==4 ? Inkeys::UI::Setting::BackdropMode::Acrylic
+			// 实际分层调色板也走 GPU 捕获/重放，与纯透明根背景分别验证；material 5 为生产半透明配置：
+			// 零 clear + ApplyPalette 保留的 alpha 204 根 AppBase。
+			Design::ApplyPalette(dark, material>=4 ? Inkeys::UI::Setting::BackdropMode::Acrylic
 				: Inkeys::UI::Setting::BackdropMode::Solid);
 			ImGui::GetStyle().Alpha=material==2 ? .6F : originalAlpha;
-			ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
-			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w=!solid ? 0 : material==3 ? .6F : originalBackground.w;
+			if (material!=5)
+			{
+				ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
+				ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w=!solid ? 0 : material==3 ? .6F : originalBackground.w;
+			}
+			else checks.Expect(ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w>0 && ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w<1,
+				"production translucent material keeps a partial-alpha root AppBase");
 			Design::HomeMotionState state; const std::uint64_t serial=80+material;
 			for (int frame=0;frame<8 && !state.preparation.revealReady;++frame)
 			{
@@ -941,7 +947,7 @@ namespace
 		Design::ApplyPalette(dark);
 		ImGui::GetStyle().Alpha=originalAlpha; ImGui::GetStyle().Colors[ImGuiCol_WindowBg]=originalBackground;
 		renderer.pageCache.Reset();
-		std::cout<<"[HomeWARP] cache-materials=5 phases-per-material=3 comparison=exact-RGBA\n";
+		std::cout<<"[HomeWARP] cache-materials=6 phases-per-material=3 comparison=exact-RGBA\n";
 	}
 
 	void CheckPreparedKeyboard(Checks& checks, Offscreen& renderer)

@@ -102,7 +102,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
-		NavigationState& state, NavigationDestination selected)
+		NavigationState& state, NavigationDestination selected, bool translucentBackdrop)
 	{
 		selected = NormalizeDestination(selected);
 		const auto& pane = geometry.pane;
@@ -213,7 +213,7 @@ namespace Inkeys::UI::Setting::Design
 		// 侧栏只在 pane 外层铺一次直角底色，嵌套 child 不再叠色。半透明材质下平铺时由根窗口统一铺底；
 		// 窄窗覆盖正文时改用不透明主题底色，避免正文文字透出。
 		const bool overlaysContent = geometry.pane.right > geometry.content.left + 0.5F;
-		ImGui::PushStyleColor(ImGuiCol_ChildBg, !IsTranslucentBackdrop() ? AppBase
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, !translucentBackdrop ? AppBase
 			: overlaysContent ? PaletteForTheme(IsDarkMode()).appBase : IM_COL32(0, 0, 0, 0));
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0.0F, Pixels(RowGap) });

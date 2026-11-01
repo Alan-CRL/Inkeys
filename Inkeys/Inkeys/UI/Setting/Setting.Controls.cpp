@@ -92,7 +92,6 @@ namespace Inkeys::UI::Setting::Design
 		};
 		Palette activePalette = lightPalette;
 		bool activeDarkMode = false;
-		bool activeTranslucent = false;
 
 		float rowAnimationDelta = 0.0F, rowAnimationRate = 1.0F;
 		bool rowAnimationsEnabled = false;
@@ -180,7 +179,6 @@ namespace Inkeys::UI::Setting::Design
 	const Palette& PaletteForTheme(bool darkMode) noexcept { return darkMode ? darkPalette : lightPalette; }
 	const Palette& GetPalette() noexcept { return activePalette; }
 	bool IsDarkMode() noexcept { return activeDarkMode; }
-	bool IsTranslucentBackdrop() noexcept { return activeTranslucent; }
 
 	float Pixels(float dip) { return dip * ImGui::GetStyle().FontScaleDpi; }
 
@@ -1549,7 +1547,6 @@ namespace Inkeys::UI::Setting::Design
 		// 只在帧边界换色；SetAccentColor 会重建 preset，项目 token 最后覆盖。
 		activeDarkMode = ResolveThemeMode(darkMode) == ThemeMode::Dark;
 		activePalette = PaletteForTheme(activeDarkMode);
-		activeTranslucent = backdrop != BackdropMode::Solid;
 		// 只让原生材质参与大表面合成；纯色回退及前景、描边保持原样。
 		if (backdrop != BackdropMode::Solid)
 		{

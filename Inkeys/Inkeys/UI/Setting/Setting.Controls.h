@@ -32,8 +32,6 @@ namespace Inkeys::UI::Setting::Design
 	[[nodiscard]] const Palette& PaletteForTheme(bool darkMode) noexcept;
 	[[nodiscard]] const Palette& GetPalette() noexcept;
 	[[nodiscard]] bool IsDarkMode() noexcept;
-	// 当前帧是否启用原生半透明材质（非 Solid）；标题栏、侧栏与正文共用根窗口一层底色。
-	[[nodiscard]] bool IsTranslucentBackdrop() noexcept;
 
 	// 别名绑定同一份稳定存储，既有行 API 的默认参数也会读取当前主题。
 	extern const ImU32& AppBase;

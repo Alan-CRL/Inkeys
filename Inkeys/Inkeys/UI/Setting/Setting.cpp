@@ -2510,6 +2510,7 @@ SettingSessionCoroutine RunSettingSession()
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 			ImDrawList* entryRootDraw=nullptr; ImDrawList* entryTitleDraw=nullptr;
+			std::pair<int,int> captionMaskVertices{ 0, 0 }; // 半透明 caption 占位在 entryTitleDraw 中的顶点区间。
 			bool entryRootSuppressed=false;
 			bool eraserDemoVisited=false;
 			Design::FrameSubmissionKey submissionKey;
@@ -2637,17 +2638,13 @@ SettingSessionCoroutine RunSettingSession()
 						ImDrawList* drawList = ImGui::GetWindowDrawList();
 						entryTitleDraw=drawList;
 						// Solid 用主题底色铺满 caption；半透明材质下与侧栏、正文共用根窗口的同一层底色，
-						// 仅开屏期间与正文遮罩同色同不透明度，避免标题栏透出遮罩下的帧。
-						const float captionOpacity=!transparentBackdrop ? 1.0F
-							: homeMotion.EntryActive() ? Design::ResolveHomeEntryPose(homeMotion).opacity : 0.0F;
-						if (captionOpacity>0.0F)
-						{
-							const ImU32 captionFill=Design::PaletteForTheme(Design::IsDarkMode()).appBase;
-							drawList->AddRectFilled(origin,
-								{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
-								(captionFill & ~IM_COL32_A_MASK)
-								| (static_cast<ImU32>(std::round(captionOpacity*255.0F))<<IM_COL32_A_SHIFT));
-						}
+						// 仅开屏期间与正文遮罩同色同不透明度。开屏状态在本帧稍后才推进，先占位，
+						// 帧末按遮罩颜色回填顶点，避免首帧标题栏透出遮罩下的画面。
+						captionMaskVertices={ drawList->VtxBuffer.Size, drawList->VtxBuffer.Size };
+						drawList->AddRectFilled(origin,
+							{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
+							Design::PaletteForTheme(Design::IsDarkMode()).appBase);
+						if (transparentBackdrop) captionMaskVertices.second=drawList->VtxBuffer.Size;
 						const bool active = settingWindowActive.load(memory_order_acquire);
 						const ImRect iconBounds = ToImRect(titleBarGeometry.icon, origin);
 						if (TextureSettingSign[0])
@@ -4516,7 +4513,8 @@ SettingSessionCoroutine RunSettingSession()
 					static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
 				ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha,1.0F);
 				ImGui::BeginDisabled(entryInputBlock);
-				const auto navigationAction = Design::RenderNavigationPane(navigationGeometry, navigationState, destination);
+				const auto navigationAction = Design::RenderNavigationPane(navigationGeometry, navigationState, destination,
+					transparentBackdrop);
 				ImGui::EndDisabled();
 				ImGui::PopStyleVar();
 				ImFluent::PopFont();
@@ -4536,6 +4534,13 @@ SettingSessionCoroutine RunSettingSession()
 				{ commitGeneralSliders(); Inkeys::UI::Setting::Hide(); CloseProgram(); }
 				}
 				Design::RenderHomeEntryOverlay(homeMotion);
+				if (entryTitleDraw)
+				{
+					// 与遮罩同帧同色：未播放时 alpha 为 0，整块占位不可见。
+					const ImU32 mask=Design::HomeEntryMaskColor(homeMotion);
+					for (int vertex=captionMaskVertices.first;vertex<captionMaskVertices.second;++vertex)
+						entryTitleDraw->VtxBuffer[vertex].col=mask;
+				}
 
 				ImGui::End();
 			}
