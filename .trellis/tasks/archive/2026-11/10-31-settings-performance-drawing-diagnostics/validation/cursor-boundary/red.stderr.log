@@ -1,0 +1,3 @@
+[CopyButtonLastItemError] window=##copy-last-item-root/##setting-page-content_BD7E2C19 message=Code uses SetCursorPos()/SetCursorScreenPos() to extend window/parent boundaries.
+Please submit an item e.g. Dummy() afterwards in order to grow window/parent boundaries.
+Assertion failed: (0) && "Code uses SetCursorPos()/SetCursorScreenPos() to extend window/parent boundaries.\nPlease submit an item e.g. Dummy() afterwards in order to grow window/parent boundaries.", file D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\additional\imgui\imgui.cpp, line 10837
