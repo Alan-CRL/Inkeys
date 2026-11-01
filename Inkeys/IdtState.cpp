@@ -1170,8 +1170,9 @@ bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings&
 		for (size_t index = 0; index < fields.size(); ++index) *fields[index] = normalized.tools[index];
 		// 与既有橡皮相同，在短锁内捕获并排队保存；不执行磁盘或窗口调用。
 		Inkeys::UI::Setting::RequestConfigWrite();
+		// 偏好更新与 Host 发布同锁排序，避免旧快照覆盖较新的设置。
+		Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(normalized);
 	}
-	Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(normalized);
 	return true;
 }
 
@@ -1180,7 +1181,11 @@ namespace { void ResolveWidthSlotsLocked(); }
 void SyncDraw3State()
 {
 	if (Inkeys::UI::Setting::DeferDraw3SyncIfRendering()) return;
-	Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
+	{
+		// 读取到发布期间保持偏好锁，与设置线程的更新使用同一顺序。
+		std::scoped_lock lock(palmEraserPreferencesMutex);
+		Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(ReadPalmEraserPreferencesLocked());
+	}
     // 设备更新必须在同锁内只改设备字段，避免用旧显示快照覆盖新的目标 DPI。
     {
         std::scoped_lock lock(stateModeTransitionMutex);
