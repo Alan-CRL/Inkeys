@@ -616,10 +616,16 @@ namespace
 				return;
 			}
 		}
-		settingResizeBorderGeometry = geometry;
-		(void)SetWindowPos(settingResizeBorder, nullptr, geometry.outer.left, geometry.outer.top,
+		if (!SetWindowPos(settingResizeBorder, nullptr, geometry.outer.left, geometry.outer.top,
 			geometry.outer.Width(), geometry.outer.Height(),
-			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_SHOWWINDOW))
+		{
+			// 移动/显示失败后不能沿用旧位置的热区，下次同步重新确认。
+			HideSettingResizeBorder();
+			settingResizeBorderGeometry = {};
+			return;
+		}
+		settingResizeBorderGeometry = geometry;
 	}
 
 	[[nodiscard]] float QuerySettingCaptionButtonWidth(
@@ -1509,10 +1515,14 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				{ static_cast<int>(sizing.cx), static_cast<int>(sizing.cy),
 					static_cast<int>(sizing.cx), static_cast<int>(sizing.cy) })
 			: FrameRect(client);
+		const auto actualClient = FrameRect(client);
+		// 只保护实际标题栏控件，正文的 HTCLIENT 不能屏蔽回退后的侧边/底边缩放。
+		const bool protectTitleControl = clientHit != HTCAPTION
+			&& GET_Y_LPARAM(lParam) < client.top + Inkeys::UI::Setting::TitleBarHeightDip * settingGlobalScale;
 		using Inkeys::UI::Setting::WindowFrameHit;
 		switch (Inkeys::UI::Setting::HitTestWindowFrame(FrameRect(outer), hitClient,
 			GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), IsZoomed(hWnd) != FALSE,
-			insideResize ? static_cast<int>(sizing.cy) : 0, clientHit != HTCAPTION, insideResize))
+			insideResize ? static_cast<int>(sizing.cy) : 0, protectTitleControl, insideResize, &actualClient))
 		{
 		case WindowFrameHit::TopLeft: return HTTOPLEFT;
 		case WindowFrameHit::TopRight: return HTTOPRIGHT;

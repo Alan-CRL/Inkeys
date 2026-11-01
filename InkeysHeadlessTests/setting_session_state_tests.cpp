@@ -415,6 +415,23 @@ namespace
 					&& HitTestWindowFrame(window, fallbackClient, window.left + f, window.top + f, false, f, true) == WindowFrameHit::Client,
 					"fallback keeps interior content and caption controls as client")) ++failures;
 
+				// 真实标题栏几何横跨回退 frame：检查每个控件顶沿与左右边缘，而非仅中心。
+				const float scale = static_cast<float>(framePixels) / 8.0F;
+				const auto fallbackTitle = ResolveTitleBarGeometry(static_cast<float>(client.Width()), scale,
+					46.0F * scale, 100.0F * scale, 120.0F * scale);
+				for (const auto& control : { fallbackTitle.icon, fallbackTitle.themeToggle, fallbackTitle.feedback,
+					fallbackTitle.debug, fallbackTitle.version, fallbackTitle.minimize, fallbackTitle.maximize, fallbackTitle.close })
+					for (const int x : { client.left + static_cast<int>(std::ceil(control.left)),
+						client.left + static_cast<int>(std::ceil(control.right)) - 1 })
+						if (control.Width() > 0.0F && !Expect(HitTestWindowFrame(window, fallbackClient, x,
+							client.top + static_cast<int>(std::ceil(control.top)), false, f, true, true, &client)
+							== WindowFrameHit::Client, "fallback preserves complete real caption control edges")) ++failures;
+				for (const auto& hit : fallbackHits)
+					if (!Expect(HitTestWindowFrame(window, fallbackClient, hit.x, hit.y, false, f, false, true, &client)
+						== hit.expected, "unprotected caption and content retain all eight fallback grips")) ++failures;
+				if (!Expect(HitTestWindowFrame(window, fallbackClient, window.right, client.top, false, f, true, true, &client)
+					== WindowFrameHit::Outside, "control protection cannot extend outside the window")) ++failures;
+
 				// 边框窗口挖空的正是 HWND 矩形，热区全部在可见边缘外侧。
 				const auto border = ResolveWindowResizeBorderGeometry(window, sizing, 0);
 				const WindowFrameRect hole{ border.outer.left + border.excluded.left, border.outer.top + border.excluded.top,

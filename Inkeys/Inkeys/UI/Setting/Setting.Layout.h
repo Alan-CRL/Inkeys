@@ -170,10 +170,14 @@ namespace Inkeys::UI::Setting
 	[[nodiscard]] inline WindowFrameHit HitTestWindowFrame(
 		const WindowFrameRect& outer, const WindowFrameRect& client,
 		int x, int y, bool maximized, int topResizePixels = 0,
-		bool protectClientControl = false, bool insideResize = true) noexcept
+		bool protectClientControl = false, bool insideResize = true,
+		const WindowFrameRect* controlClient = nullptr) noexcept
 	{
 		if (!outer.Contains(x, y)) return WindowFrameHit::Outside;
 		if (maximized || !insideResize) return WindowFrameHit::Client;
+		// 回退缩放矩形可小于真实客户区；控件保护仍按真实客户区判断。
+		if (protectClientControl && (controlClient ? *controlClient : client).Contains(x, y))
+			return WindowFrameHit::Client;
 		// 仅空白 caption 顶部可补足缩放高度；按钮和其余客户区始终优先。
 		const int topLimit = (std::max)(client.top, outer.top + topResizePixels);
 		if (client.Contains(x, y) && (protectClientControl || y >= topLimit))
