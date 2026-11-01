@@ -2599,8 +2599,18 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::PushStyleColor(ImGuiCol_Border,
 					Widgets::Color(ImFluentCol_SurfaceStrokeDefault));
 				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
+				// 根背景与描边跟随系统窗口外形：仅 Win11 恢复态为圆角；Win7/8/8.1/10 与最大化均为直角，
+				// 否则直角窗口的四角会露出圆角外的透明/模糊底。
+				const auto platform = Inkeys::Window::QuerySettingPlatformCapabilities();
+				const bool roundedRoot = platform.roundedCorners && !IsZoomed(setting_window);
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding,
+					roundedRoot ? ImGui::GetStyle().WindowRounding : 0.0F);
+				// 自绘描边只用于零侧边 frame 的 accent 平台（Win10 RS4+/Win11）；Win7/8/8.1 保留系统 sizing frame，
+				// DWM 外框即边界，再画一圈会在系统框内重复。
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize,
+					platform.acrylic ? ImGui::GetStyle().WindowBorderSize : 0.0F);
 				ImGui::Begin("主窗口", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);//开始绘制窗口
-				ImGui::PopStyleVar();
+				ImGui::PopStyleVar(3);
 				ImGui::PopStyleColor();
 				entryRootDraw=ImGui::GetWindowDrawList();
 
