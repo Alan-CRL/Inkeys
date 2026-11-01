@@ -1483,3 +1483,93 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Next Steps
 
 - 本任务结束，无需继续当前测试；后续性能或退出问题如需处理另行明确范围。
+
+
+## Session 150: 实现延迟一秒显示的页码环形加载指示器
+<!-- trellis-session: v=2 fp=7c0ad4ed936019ec -->
+
+**Date**: 2026-11-01
+**Task**: 实现延迟一秒显示的页码环形加载指示器
+**Branch**: `bugfix/mode`
+
+### Summary
+
+按批准方案将Page三点替换为主题灰轨道/文字色圆角弧，绝对连续1000ms门槛、非线性渐显/退场和旋转；复用InputWorker deadline不延迟空转，隐藏/会话退休，未改数字/错误/ACK/Office COM。
+
+### Main Changes
+
+- 新增纯值motion/deadline helper及Scene缓存几何/双色brush/自有stroke，独立视觉续帧；全局设置唤醒Ppt，真实无手势worker及离屏回归，更新规范与验收记录。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立check修正同frame false→true与装饰stroke失败日志；完整Debug|ARM64 exit0/43.16s，page-control/PPT/production InputWorker/真实像素全exit0；内嵌及managed源/DLL/TLB未变，PrepareOnly main/deploy SHA相同，UTF8/CRLF/diff通过，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口短加载/原慢3→4各看一次，核对一秒后出现、颜色尺寸与显隐旋转，正常退出；未提交/归档，不涉及PPT性能优化。
+
+
+## Session 151: 按人工反馈放大细线环并改为半秒显示
+<!-- trellis-session: v=2 fp=c758c5ec64f7137f -->
+
+**Date**: 2026-11-01
+**Task**: 按人工反馈放大细线环并改为半秒显示
+**Branch**: `bugfix/mode`
+
+### Summary
+
+小环外半径4→6DIP，track1→.6/arc2→1.2，显示门槛500ms；位置、旋转一秒及180/140ms显隐保持，统一Style用于路径/绘制/AA损伤。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立check补非空glyph守卫；完整Debug ARM64 exit0，499/500状态和实际像素/最大字形/partial/尾帧均exit0，无遮字保留原锚点；COM/资源与配置SHA未变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户短测新尺寸细线与半秒显示，未commit/push/归档。
+
+
+## Session 152: 环形加载指示器验收提交与归档
+<!-- trellis-session: v=2 fp=6b7cf26ffabbb2a1 -->
+
+**Date**: 2026-11-01
+**Task**: 环形加载指示器验收提交与归档
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认最终改动生效并批准结束提交。500ms延迟、外半径6DIP、track.6/arc1.2及显隐旋转已验收；工作commit后归档当前任务。旧PPT性能不属于本任务，不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `47dd6314` | feat(ppt): add delayed animated loading ring to page badge |
+
+### Testing
+
+- [OK] 最终全范围gate PASS，复用完整ARM64/定向/worker/实际像素与用户确认；最新204632入口仍running，仅作为版本确认，不宣称退出/密封。源码未变，diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 当前任务完成，活动指针清除；后续视觉调整另行明确范围。
