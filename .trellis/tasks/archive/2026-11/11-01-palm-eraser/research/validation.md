@@ -15,15 +15,15 @@
 
 | 验证 | 结果 | 证据/范围 |
 | --- | --- | --- |
-| 完整InkeysRepo.sln Debug\|ARM64 | exit0，0错误，3分10.47秒 | [构建日志](../../../.runtime/palm-eraser/solution-debug-arm64.log)，原生ARM64 MSBuild；PptCOM/Tests、Inkeys及Headless均构建 |
-| Headless目标先行构建 | exit0，0错误 | [日志](../../../.runtime/palm-eraser/headless-debug-arm64-unsandboxed.log)，先排除设置/策略/配置编译问题 |
+| 完整InkeysRepo.sln Debug\|ARM64 | exit0，0错误，3分10.47秒 | [构建日志](../../../../../.runtime/palm-eraser/solution-debug-arm64.log)，原生ARM64 MSBuild；PptCOM/Tests、Inkeys及Headless均构建 |
+| Headless目标先行构建 | exit0，0错误 | [日志](../../../../../.runtime/palm-eraser/headless-debug-arm64-unsandboxed.log)，先排除设置/策略/配置编译问题 |
 | InkeysHeadlessTests --no-window --setting-eraser-only | exit0 | 末行settings=0 speed=0 attributes=0 palm=0，Palm策略129项0失败；真实ImGui输入/三语/多DPI/像素预览 |
-| InkeysHeadlessTests --no-window | exit0，PASS animation correctness | [全量日志](../../../.runtime/palm-eraser/headless-all-no-window.log)，含更新后的129项策略与设置回归 |
-| Inkeys --draw3-palm-eraser-test | 真实进程exit0 | [stderr](../../../.runtime/palm-eraser/palm-production-stderr.log)，生产CPU转换、精确所有权、观察准入、截止、真实模型接续；无GPU/HWND |
-| Inkeys --config-boundary-test | 真实进程exit0 | [stderr](../../../.runtime/palm-eraser/config-boundary-stderr.log)，真实ReadAll/Mini/写盘/严格类型/宽整数/赋值/Reset/NoUpload、七工具及缺省大屏EDID失败下DIP激活 |
-| Inkeys --draw3-control-fence-test | 真实进程exit0 | [stderr](../../../.runtime/palm-eraser/control-fence-stderr.log)，真实续接/终态复用、四设备四竞争窗口/截止/idle唤醒、工作区准入 |
-| Inkeys --draw3-parked-desktop-exit-test | 真实进程exit0 | [stderr](../../../.runtime/palm-eraser/draw3-parked-desktop-exit-test-stderr.log)，生产CPU封存/退出快照、真实模型生命周期/失败清理及内容proof |
-| Inkeys --draw3-whiteboard-storage-test | 真实进程exit0 | [stderr](../../../.runtime/palm-eraser/draw3-whiteboard-storage-test-stderr.log)，100页、缓存引用释放、冷Undo/Redo、主题、旧代淘汰和失败 |
+| InkeysHeadlessTests --no-window | exit0，PASS animation correctness | [全量日志](../../../../../.runtime/palm-eraser/headless-all-no-window.log)，含更新后的129项策略与设置回归 |
+| Inkeys --draw3-palm-eraser-test | 真实进程exit0 | [stderr](../../../../../.runtime/palm-eraser/palm-production-stderr.log)，生产CPU转换、精确所有权、观察准入、截止、真实模型接续；无GPU/HWND |
+| Inkeys --config-boundary-test | 真实进程exit0 | [stderr](../../../../../.runtime/palm-eraser/config-boundary-stderr.log)，真实ReadAll/Mini/写盘/严格类型/宽整数/赋值/Reset/NoUpload、七工具及缺省大屏EDID失败下DIP激活 |
+| Inkeys --draw3-control-fence-test | 真实进程exit0 | [stderr](../../../../../.runtime/palm-eraser/control-fence-stderr.log)，真实续接/终态复用、四设备四竞争窗口/截止/idle唤醒、工作区准入 |
+| Inkeys --draw3-parked-desktop-exit-test | 真实进程exit0 | [stderr](../../../../../.runtime/palm-eraser/draw3-parked-desktop-exit-test-stderr.log)，生产CPU封存/退出快照、真实模型生命周期/失败清理及内容proof |
+| Inkeys --draw3-whiteboard-storage-test | 真实进程exit0 | [stderr](../../../../../.runtime/palm-eraser/draw3-whiteboard-storage-test-stderr.log)，100页、缓存引用释放、冷Undo/Redo、主题、旧代淘汰和失败 |
 | Scripts/i18n.ps1 check | 通过 | en-US与zh-TW各590/590，中文基准及生成头/snapshot同步 |
 | 格式/范围 | 通过 | git diff --check、project XML解析；22个原文件BOM/UTF-8/CRLF与baseline一致，新源码保持CRLF |
 
@@ -59,9 +59,9 @@ Windows GUI子系统的早期CLI用Start-Process -WindowStyle Hidden -Wait -Pass
 
 | 最终验证 | 结果与证据 |
 | --- | --- |
-| 完整InkeysRepo.sln Debug ARM64 | exit0，0错误，17.08秒；[最终构建日志](../../../.runtime/palm-eraser/ui-feedback-build-final.log)。现有第三方6条warning；本轮新增索引符号warning已修正 |
-| 完整InkeysHeadlessTests --no-window | exit0，PASS animation correctness，6分11.74秒；[完整日志](../../../.runtime/palm-eraser/ui-feedback-all-no-window.log)。含真实ImGui多语言/主题/DPI、4比例与实际描边/空心/控件操作、位置顺序、七工具、超宽查看、137项Palm策略及原有回归 |
-| Inkeys --config-boundary-test | 真正进程exit0；[日志](../../../.runtime/palm-eraser/ui-feedback-config-stderr.log)，全量/Mini/写入/赋值/默认/非法类型及10..400范围 |
+| 完整InkeysRepo.sln Debug ARM64 | exit0，0错误，17.08秒；[最终构建日志](../../../../../.runtime/palm-eraser/ui-feedback-build-final.log)。现有第三方6条warning；本轮新增索引符号warning已修正 |
+| 完整InkeysHeadlessTests --no-window | exit0，PASS animation correctness，6分11.74秒；[完整日志](../../../../../.runtime/palm-eraser/ui-feedback-all-no-window.log)。含真实ImGui多语言/主题/DPI、4比例与实际描边/空心/控件操作、位置顺序、七工具、超宽查看、137项Palm策略及原有回归 |
+| Inkeys --config-boundary-test | 真正进程exit0；[日志](../../../../../.runtime/palm-eraser/ui-feedback-config-stderr.log)，全量/Mini/写入/赋值/默认/非法类型及10..400范围 |
 | i18n check、任务context、格式 | 三语590/590；5+5条context校验通过，UTF8/BOM/CRLF保持，git diff --check通过 |
 | 独立审查 | [审查记录](ui-feedback-review.md)，本轮全部产品/策略/配置/测试diff；无未解决问题 |
 
@@ -84,9 +84,9 @@ Windows GUI子系统的早期CLI用Start-Process -WindowStyle Hidden -Wait -Pass
 
 | 验证 | 实际结果 |
 | --- | --- |
-| 完整InkeysRepo.sln Debug ARM64 | exit0，0错误，1分00.41秒；[构建日志](../../../.runtime/palm-eraser/size-feedback-build.log)，94条现有范围warning，未通过修改无关代码清零 |
-| InkeysHeadlessTests --no-window --setting-eraser-only | exit0，1分12.47秒；settings=0、speed=0、attributes=0、palm=0；Palm144项0失败。[日志](../../../.runtime/palm-eraser/size-feedback-settings-tests.log) |
-| Inkeys --config-boundary-test | 真实进程exit0；验证1/9/10/24/25/100/400配置往返、非法类型和范围；[日志](../../../.runtime/palm-eraser/size-feedback-config-stderr.log) |
+| 完整InkeysRepo.sln Debug ARM64 | exit0，0错误，1分00.41秒；[构建日志](../../../../../.runtime/palm-eraser/size-feedback-build.log)，94条现有范围warning，未通过修改无关代码清零 |
+| InkeysHeadlessTests --no-window --setting-eraser-only | exit0，1分12.47秒；settings=0、speed=0、attributes=0、palm=0；Palm144项0失败。[日志](../../../../../.runtime/palm-eraser/size-feedback-settings-tests.log) |
+| Inkeys --config-boundary-test | 真实进程exit0；验证1/9/10/24/25/100/400配置往返、非法类型和范围；[日志](../../../../../.runtime/palm-eraser/size-feedback-config-stderr.log) |
 | i18n/格式/context/独立审查 | en-US与zh-TW各592/592；生成头及中文snapshot同步；git diff --check、5+5条context通过；13个本轮源码/资源与本轮开始快照BOM/UTF8/CRLF一致；[独立审查](ui-feedback-review.md) |
 
 专项真实DrawData覆盖四比例cm/px文本（标准i后的Caption字形）、可信1/100/400%、估算携带旧cm参考仍只显示px、未发布无提示、蓝框与实际child InnerRect居中、1%小图、超宽滚动、真实比例/滑块1%/重置输入及无偏好额外写盘。提示参与原行自适应测高，未修改全局Controls。
@@ -106,8 +106,8 @@ Setting.cpp每帧只读现有两个配置原子到draft，ToggleRow复用标准n
 
 | 验证 | 实际结果 |
 | --- | --- |
-| 完整InkeysRepo.sln Debug ARM64 | exit0，0错误，2分02.87秒；[构建日志](../../../.runtime/palm-eraser/parallel-note-build.log)，85条现有范围warning，未做无关清零 |
-| --no-window --setting-eraser-only | exit0，1分52.95秒；settings=0、speed=0、attributes=0、palm=0，144项Palm策略0失败；[日志](../../../.runtime/palm-eraser/parallel-note-settings-tests.log) |
+| 完整InkeysRepo.sln Debug ARM64 | exit0，0错误，2分02.87秒；[构建日志](../../../../../.runtime/palm-eraser/parallel-note-build.log)，85条现有范围warning，未做无关清零 |
+| --no-window --setting-eraser-only | exit0，1分52.95秒；settings=0、speed=0、attributes=0、palm=0，144项Palm策略0失败；[日志](../../../../../.runtime/palm-eraser/parallel-note-settings-tests.log) |
 | 提示专项 | 复用真实i/Caption字形验证16组master/parallel/global/laser状态，含显示/隐藏、全局优先、无编辑事件及布尔偏好保留；沿现有三语/主题/DPI矩阵运行 |
 | i18n/格式/审查 | en-US和zh-TW各594/594，生成header及中文snapshot同步；9个本轮代码/资源保持基线UTF8/BOM/CRLF；diff --check及5+5条context通过；[审查记录](ui-feedback-review.md)无未解决问题 |
 
