@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 152
+- **Total Sessions**: 153
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1575 | Active |
+| `journal-2.md` | ~1638 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,9 +30,11 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 153 | 2026-11-01 | Setting translucent shell: WinUI 3 single-layer material | `1922b699`, `652f4409`, `f99e94f8` | `bugfix/settingui` |
 | 152 | 2026-11-01 | 环形加载指示器验收提交与归档 | `47dd6314` | `bugfix/mode` |
 | 151 | 2026-11-01 | 按人工反馈放大细线环并改为半秒显示 | - | `bugfix/mode` |
 | 150 | 2026-11-01 | 实现延迟一秒显示的页码环形加载指示器 | - | `bugfix/mode` |
+| 149 | 2026-11-01 | 手掌橡皮人工验收与任务收尾 | `4a9caa11`, `b5dd13bb` | `feature/erase` |
 | 148 | 2026-11-01 | 按用户决定结束并归档PPT调查任务 | `7e649000` | `bugfix/mode` |
 | 147 | 2026-11-01 | 页码右上角进度角标与数字即时更新实机通过 | - | `bugfix/mode` |
 | 146 | 2026-11-01 | 恢复进度三点移至页码右上并修复正常数字动画 | - | `bugfix/mode` |
@@ -47,7 +49,9 @@
 | 137 | 2026-11-01 | 实现 ROT 导航让出与确定性清理修复 | - | `bugfix/mode` |
 | 136 | 2026-11-01 | 细分 Observe 读取与释放并准备安全调度定位 | - | `bugfix/mode` |
 | 135 | 2026-11-01 | 准备 PPT 导航分段诊断与人工采集入口 | - | `bugfix/mode` |
+| 135 | 2026-11-01 | 设置性能、绘图控制与画布诊断完成归档 | `ead40db9` | `setting/performance` |
 | 134 | 2026-10-31 | 修复分支审阅发现的 PPT 身份与等待及白板恢复问题 | - | `bugfix/mode` |
+| 133 | 2026-10-31 | 修复重连接触身份残留并完成人工验收 | `74b8d3cb` | `bugfix/ink` |
 | 132 | 2026-10-30 | 统一分页状态动画与白板立即翻页 | `192ff6d5` | `bugfix/mode` |
 | 131 | 2026-10-30 | 修复白板形状选择窗口无法展开 | `3e0df72b` | `bugfix/mode` |
 | 130 | 2026-10-27 | UI3 吸附释放交接与最终收窗收尾归档 | `48dda087`, `b7f237f0` | `bugfix/cut` |

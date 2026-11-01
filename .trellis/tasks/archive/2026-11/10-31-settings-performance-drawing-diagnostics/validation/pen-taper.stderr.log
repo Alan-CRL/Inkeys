@@ -1,0 +1,23 @@
+[Draw3TailTrace] enabled=0 inverse=0
+[Draw3TailArc] radius=30 duration=0.15 dwell=0.0 points=89 raw=20 repaired=0
+[Draw3TailArc] radius=30 duration=0.15 dwell=0.2 points=91 raw=1 repaired=0
+[Draw3TailArc] radius=30 duration=0.60 dwell=0.0 points=303 raw=21 repaired=0
+[Draw3TailArc] radius=30 duration=0.60 dwell=0.2 points=306 raw=1 repaired=0
+[Draw3TailArc] radius=30 duration=2.00 dwell=0.0 points=974 raw=21 repaired=0
+[Draw3TailArc] radius=30 duration=2.00 dwell=0.2 points=978 raw=1 repaired=0
+[Draw3TailCompleteBenchmark] prefix=0 rounds=30 median_ms=0.072800 p95_ms=0.092400 input=88 output=89 diagnostics_io=off
+[Draw3TailCompleteBenchmark] prefix=1000 rounds=30 median_ms=0.483450 p95_ms=0.498400 input=1088 output=1089 diagnostics_io=off
+[Draw3TailArc] radius=300 duration=0.15 dwell=0.0 points=88 raw=20 repaired=1
+[Draw3TailArc] radius=300 duration=0.15 dwell=0.2 points=91 raw=1 repaired=0
+[Draw3TailArc] radius=300 duration=0.60 dwell=0.0 points=306 raw=21 repaired=0
+[Draw3TailArc] radius=300 duration=0.60 dwell=0.2 points=306 raw=1 repaired=0
+[Draw3TailArc] radius=300 duration=2.00 dwell=0.0 points=976 raw=21 repaired=0
+[Draw3TailArc] radius=300 duration=2.00 dwell=0.2 points=978 raw=1 repaired=0
+[Draw3TailArc] radius=1000 duration=0.15 dwell=0.0 points=88 raw=20 repaired=1
+[Draw3TailArc] radius=1000 duration=0.15 dwell=0.2 points=91 raw=1 repaired=0
+[Draw3TailArc] radius=1000 duration=0.60 dwell=0.0 points=306 raw=21 repaired=1
+[Draw3TailArc] radius=1000 duration=0.60 dwell=0.2 points=306 raw=1 repaired=0
+[Draw3TailArc] radius=1000 duration=2.00 dwell=0.0 points=978 raw=21 repaired=0
+[Draw3TailArc] radius=1000 duration=2.00 dwell=0.2 points=978 raw=1 repaired=0
+[Draw3PenTaper] modelCases=72 resumeCases=36 maxSettleMs=166.667 maxOutputs=19
+[Draw3PenTaper] assertions=334120 failures=0

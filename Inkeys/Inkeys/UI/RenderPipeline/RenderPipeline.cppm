@@ -306,6 +306,8 @@ export namespace Inkeys::UI::RenderPipeline
 			DeviceRecoveryCallback deviceRecovery = {},
 			ControlCallback controlCallback = {});
 		void Stop() noexcept;
+		// 共享界面仅支持 30/60；非法值恢复 60，空闲时不制造渲染请求。
+		void SetFrameRate(int framesPerSecond) noexcept;
 		[[nodiscard]] bool Register(Client client, RenderCallback callback);
 		// 返回时该客户端已没有正在执行的回调；不得从该客户端自己的回调中调用。
 		void Unregister(Client client) noexcept;
@@ -350,6 +352,7 @@ export namespace Inkeys::UI::RenderPipeline
 	void Request(ClientMask mask) noexcept;
 	[[nodiscard]] bool PostControl(ControlTask task);
 	void WakeForStop() noexcept;
+	void SetFrameRate(int framesPerSecond) noexcept;
 	[[nodiscard]] bool SetDiagnosticsSink(DiagnosticsSink sink);
 	[[nodiscard]] bool ConfigureRawCapture(std::size_t capacity = 32768);
 	[[nodiscard]] std::optional<RawCaptureReport> TakeRawCapture() noexcept;

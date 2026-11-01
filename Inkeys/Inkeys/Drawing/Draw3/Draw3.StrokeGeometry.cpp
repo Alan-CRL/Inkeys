@@ -905,7 +905,9 @@ namespace Inkeys::Drawing::Draw3
 		{
 			scratch = stroke.realPoints;
 			size_t completedBoundary = stroke.hasCommittedGeometry && !scratch.empty() ? std::min(stroke.committedIndex,scratch.size()-1) : 0;
-			changedSegment = FitCompletedPenGeometry(stroke, scratch, completedBoundary, trace);
+			// 只控制异常尾段重算，正常笔锋、公切线和真实 Up 收尾仍走原路径。
+			if (stroke.penTailCorrectionEnabled)
+				changedSegment = FitCompletedPenGeometry(stroke, scratch, completedBoundary, trace);
 			if (!scratch.empty())
 			{
 				const size_t tailStart = stroke.hasCommittedGeometry
@@ -1235,11 +1237,15 @@ namespace Inkeys::Drawing::Draw3
 				check( cache.tailRawCount == 1, "local finalization contract"); // 断触续接不丢历史，但新输入淘汰过期物理窗口。
 				RecordPenTailRawInput(cache, {202,0}, 1.2);
 				check( cache.tailRawCount == 1 && cache.tailRawSamples[0].position.x == 202, "local finalization contract");
+				cache.predictionMode = InkPredictionMode::Disabled;
+				cache.penTailCorrectionEnabled = false;
 				cache.tailInputDiagnostic.enabled = true;
 				cache.tailInputDiagnostic.snapshots = 5; cache.tailInputDiagnostic.generation = 7;
 				cache.tailInputDiagnostic.upStatus = 0;
 				cache.Reset(5, 100, StrokeWidthMode::Fixed);
 				check( cache.tailRawCount == 0 && cache.tailModelBoundaryCount == 0, "reset clears bounded model/raw history");
+				check(cache.predictionMode == kActivePredictionMode && cache.penTailCorrectionEnabled,
+					"pooled Reset clears prior drawing options");
 				check(!cache.tailInputDiagnostic.enabled && !cache.tailInputDiagnostic.snapshots &&
 					!cache.tailInputDiagnostic.generation && cache.tailInputDiagnostic.upStatus == -1, "reset clears diagnostic provenance");
 				for (bool assisted : {false, true})
@@ -1271,6 +1277,18 @@ namespace Inkeys::Drawing::Draw3
 					std::vector<InkPoint> baseline;
 					const auto baselineStored = finalizeBaseline(stroke,style,0,baseline);
 					check(baselineStored && samePoints(original,baseline), "unfitted completion baseline preserves input");
+					stroke.penTailCorrectionEnabled = false;
+					const auto uncorrected = FinalizeStoredStroke(stroke,style,0,scratch);
+					check(uncorrected && samePoints(scratch,baseline), "disabled correction keeps unfitted completion geometry");
+					std::vector<InkPoint> taperedBaseline, uncorrectedTaper;
+					stroke.penTailCorrectionEnabled = true;
+					const auto normalTaper = finalizeBaseline(stroke,style,.055,taperedBaseline);
+					stroke.penTailCorrectionEnabled = false;
+					const auto disabledTaper = FinalizeStoredStroke(stroke,style,.055,uncorrectedTaper);
+					check(normalTaper && disabledTaper && samePoints(taperedBaseline,uncorrectedTaper),
+						"disabled correction retains normal taper and tangency");
+					stroke.penTailCorrectionEnabled = true;
+
 					const auto stored = FinalizeStoredStroke(stroke,style,0,scratch);
 					check(stored && geometryChanged(scratch,baseline), "normal-color finalization actually changes positions");
 					check(stored && storedMatches(*stored,style,scratch), "normal stored style and geometry are exact");
@@ -1679,18 +1697,10 @@ namespace Inkeys::Drawing::Draw3
 						for (const auto mode : { StrokeWidthMode::Fixed, StrokeWidthMode::SimulatedPressure })
 						{
 							++modelCases;
-							auto config = CreateStrokeModelConfiguration(96);
-							config.timingProfile = ink_prediction_detail::GetStrokeTimingProfile(profileId);
+							auto config = CreateStrokeModelConfiguration(96, profileId);
 							const auto& profile = config.timingProfile;
 							const double frame = 1.0 / profile.target_fps;
-							config.modelParams.sampling_params.min_output_rate = profile.min_output_rate;
-							config.modelParams.wobble_smoother_params.timeout = ink::stroke_model::Duration(profile.wobble_timeout_seconds);
-							config.kalmanPredictorParams.prediction_interval = ink::stroke_model::Duration(profile.prediction_interval_seconds);
-							config.kalmanPredictorParams.max_time_samples = profile.kalman_max_time_samples;
-							config.kalmanPredictorParams.confidence_params.desired_number_of_samples = profile.kalman_desired_number_of_samples;
-							if (prediction == InkPredictionMode::Disabled) config.modelParams.prediction_params = ink::stroke_model::DisabledPredictorParams{};
-							else if (prediction == InkPredictionMode::StrokeEnd) config.modelParams.prediction_params = ink::stroke_model::StrokeEndPredictorParams{};
-							else config.modelParams.prediction_params = config.kalmanPredictorParams;
+							ApplyPredictionMode(config.modelParams, config.kalmanPredictorParams, prediction);
 							const float diameter = speed < 100 ? 3.25f : speed < 1000 ? 6.0f : 16.0f;
 							ActiveStroke stroke(diameter, config.expectedSpeed, mode);
 							stroke.useDisplayTime = true;
@@ -1839,6 +1849,8 @@ namespace Inkeys::Drawing::Draw3
 	void ActiveStroke::Reset(float baseDiameter, float expectedSpeed,
 		StrokeWidthMode widthModeValue, bool highlighterValue)
 	{
+		predictionMode = kActivePredictionMode;
+		penTailCorrectionEnabled = true;
 		tailInputDiagnostic = {}; // 运行时复用不得保留上一接触的输入归属或计数。
 		modeledResults.clear();
 		modelScratch.clear();

@@ -154,12 +154,10 @@ namespace Inkeys::UI::Setting
 		AcrylicBlurBehind = 4,
 	};
 
-	[[nodiscard]] constexpr SettingAccentState ResolveSettingAccentState(
-		bool enabled, InteractiveWindowOperation operation) noexcept
+	// 静止与 move/size 统一 BlurBehind：Acrylic/Blur 切换会改变底色明暗，着色由根窗口 AppBase 负责。
+	[[nodiscard]] constexpr SettingAccentState ResolveSettingAccentState(bool enabled) noexcept
 	{
-		if (!enabled) return SettingAccentState::Disabled;
-		return operation == InteractiveWindowOperation::None
-			? SettingAccentState::AcrylicBlurBehind : SettingAccentState::BlurBehind;
+		return enabled ? SettingAccentState::BlurBehind : SettingAccentState::Disabled;
 	}
 
 	[[nodiscard]] constexpr bool IsSettingImGuiInputMessage(

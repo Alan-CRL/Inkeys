@@ -4861,6 +4861,12 @@ namespace Inkeys::Window
 		return ResolveSettingCompositionEnabled(platform, SUCCEEDED(result), enabled != FALSE);
 	}
 
+	bool UsesSettingOutsideResize() noexcept
+	{
+		// 只看平台能力：高对比度或 accent 调用失败时几何不变，NCCALCSIZE 不读跨线程状态。
+		return QuerySettingPlatformCapabilities().acrylic && IsSettingCompositionEnabled();
+	}
+
 	RECT QuerySettingClientFrameInsets(HWND hwnd, bool maximized, UINT dpi) noexcept
 	{
 		if (!dpi && hwnd)
@@ -4888,10 +4894,12 @@ namespace Inkeys::Window
 				visibleBorder = dwmBorder;
 		}
 		// Win7 Aero 保留四周 sizing frame；现代 DWM 只在恢复态收薄顶部，经典外框保持原样。
+		// accent 平台恢复态左/右/下为 0，HWND 矩形与可见内容对齐，缩放热区移到窗外边框窗口。
 		const auto frame = Inkeys::UI::Setting::ResolveVisibleWindowFrameInsets(
 			{ static_cast<int>(sizing.cx), static_cast<int>(sizing.cy),
 				static_cast<int>(sizing.cx), static_cast<int>(sizing.cy) },
-			maximized, compositionEnabled != FALSE, static_cast<int>(visibleBorder), !UsesLegacySettingFrame());
+			maximized, compositionEnabled != FALSE, static_cast<int>(visibleBorder), !UsesLegacySettingFrame(),
+			UsesSettingOutsideResize());
 		return { frame.left, frame.top, frame.right, frame.bottom };
 	}
 

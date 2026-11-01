@@ -51,7 +51,6 @@ namespace Inkeys::UI::RenderPipeline
 		};
 
 		constexpr auto ClientCount = static_cast<std::size_t>(Client::Count);
-		constexpr auto FrameInterval = std::chrono::nanoseconds(16'666'667);
 		constexpr std::array<Client, ClientCount> DispatchOrder{
 			Client::Bar,
 			Client::StartupPreview,
@@ -606,6 +605,7 @@ namespace Inkeys::UI::RenderPipeline
 		std::atomic_bool stopRequested = false;
 		std::atomic_bool controlRequested = false;
 		std::atomic_bool running = false;
+		std::atomic_int frameRate = 60;
 	};
 
 	Scheduler::Scheduler() : impl_(new Impl) {}
@@ -614,6 +614,11 @@ namespace Inkeys::UI::RenderPipeline
 	{
 		delete impl_;
 		impl_ = nullptr;
+	}
+
+	void Scheduler::SetFrameRate(int framesPerSecond) noexcept
+	{
+		if (impl_) impl_->frameRate.store(framesPerSecond == 30 ? 30 : 60, std::memory_order_release);
 	}
 
 	bool Scheduler::Start(ContextProvider contextProvider,
@@ -703,7 +708,7 @@ namespace Inkeys::UI::RenderPipeline
 					};
 				ClientMask pending = takeRequested();
 				bool recoveryPending = false;
-				auto nextDeadline = std::chrono::steady_clock::now();
+				auto previousFrame = std::chrono::steady_clock::time_point{};
 				while (!impl_->stopRequested.load(std::memory_order_acquire))
 				{
 					pending |= takeControl();
@@ -735,6 +740,10 @@ namespace Inkeys::UI::RenderPipeline
 						if (pending == 0) continue;
 					}
 
+					// 每批读取同一共享节拍；切档从上批时间重算，不改变各客户端的续帧/休眠语义。
+					const int frameRate = impl_->frameRate.load(std::memory_order_acquire);
+					const auto interval = std::chrono::nanoseconds((1'000'000'000LL + frameRate - 1) / frameRate);
+					const auto nextDeadline = previousFrame + interval;
 					const auto now = std::chrono::steady_clock::now();
 					if (now < nextDeadline)
 					{
@@ -745,7 +754,7 @@ namespace Inkeys::UI::RenderPipeline
 							std::this_thread::sleep_until(nextDeadline);
 					}
 					const auto frameTime = std::chrono::steady_clock::now();
-					nextDeadline = frameTime + FrameInterval;
+					previousFrame = frameTime;
 					pending |= takeRequested();
 
 					ContextProvider contextProvider;
@@ -1264,6 +1273,7 @@ namespace Inkeys::UI::RenderPipeline
 	void Request(ClientMask mask) noexcept { scheduler.Request(mask); }
 	bool PostControl(ControlTask task) { return scheduler.PostControl(std::move(task)); }
 	void WakeForStop() noexcept { scheduler.WakeForStop(); }
+	void SetFrameRate(int framesPerSecond) noexcept { scheduler.SetFrameRate(framesPerSecond); }
 	bool ConfigureRawCapture(std::size_t capacity) { return scheduler.ConfigureRawCapture(capacity); }
 	std::optional<RawCaptureReport> TakeRawCapture() noexcept { return scheduler.TakeRawCapture(); }
 	bool SetDiagnosticsSink(DiagnosticsSink sink) { return scheduler.SetDiagnosticsSink(std::move(sink)); }

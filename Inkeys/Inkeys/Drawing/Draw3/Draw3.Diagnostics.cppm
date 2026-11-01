@@ -94,6 +94,18 @@ export namespace Inkeys::Drawing::Draw3
 	void RecordCursorRawInput(LPARAM rawInputHandle) noexcept;
 	// 兼容调用点：只尝试唤醒输出线程，不等待队列或 sink。
 	void FlushCursorDiagnostics() noexcept;
+	// 设置页的只读摘要使用完整 SDK 名称；纯值格式化不查询设备或改变日志格式。
+	std::string FormatDiagnosticFeatureLevel(D3D_FEATURE_LEVEL value);
+	std::string FormatDiagnosticFormat(DXGI_FORMAT value);
+	std::string FormatDiagnosticSwapEffect(DXGI_SWAP_EFFECT value);
+	std::string FormatDiagnosticAlphaMode(DXGI_ALPHA_MODE value);
+	std::string FormatDiagnosticScaling(DXGI_SCALING value);
+	std::string FormatDiagnosticSwapChainFlags(UINT flags);
+	std::string FormatDiagnosticSampleDesc(DXGI_SAMPLE_DESC value);
+	std::string FormatDiagnosticHResult(HRESULT value);
+	std::string FormatDiagnosticSwapChain(const DXGI_SWAP_CHAIN_DESC1& value, bool waitable);
+	std::string FormatDiagnosticRtsAttempt(const char* profile, const char* stage, HRESULT result);
+	int RunDiagnosticFormattingProductionTest() noexcept;
 	// 输出 HRESULT 失败信息。
 	void LogHResult(const char* step, HRESULT result);
 	// 输出 Win32 错误码。

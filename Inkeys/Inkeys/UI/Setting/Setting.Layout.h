@@ -21,6 +21,8 @@ namespace Inkeys::UI::Setting
 	inline constexpr float TitleBarVersionPaddingDip = 12.0F;
 	inline constexpr float TitleBarMinimumDragWidthDip = 96.0F;
 	inline constexpr float PageMaximumWidthDip = 920.0F;
+	// Win11 默认窗口圆角半径（DWMWCP_DEFAULT），按 DPI 缩放；数值待实机确认。
+	inline constexpr float WindowCornerRadiusDip = 8.0F;
 
 	struct LayoutRect
 	{
@@ -89,13 +91,18 @@ namespace Inkeys::UI::Setting
 		TopLeft, TopRight, BottomLeft, BottomRight,
 	};
 
+	// outsideResizeOnly 为 accent 平台：恢复态左/右/下不保留 sizing frame，使 HWND 矩形即可见内容，
+	// accent 模糊不再溢出；缩放热区全部由窗外的 resize 边框窗口承担。
 	[[nodiscard]] inline WindowFrameInsets ResolveVisibleWindowFrameInsets(
 		WindowFrameInsets sizingFrame, bool maximized, bool compositionEnabled,
-		int visibleBorderPixels, bool useThinTopBorder = true) noexcept
+		int visibleBorderPixels, bool useThinTopBorder = true,
+		bool outsideResizeOnly = false) noexcept
 	{
 		// 仅现代 DWM 收薄恢复态顶部；旧 Aero 的四边 frame 必须完整保留。
 		if (!maximized && compositionEnabled && useThinTopBorder)
 			sizingFrame.top = std::clamp(visibleBorderPixels, 0, sizingFrame.top);
+		if (!maximized && compositionEnabled && outsideResizeOnly)
+			sizingFrame.left = sizingFrame.right = sizingFrame.bottom = 0;
 		return sizingFrame;
 	}
 
@@ -159,13 +166,18 @@ namespace Inkeys::UI::Setting
 		limits.ptMinTrackSize.y = minimum.height;
 	}
 
+	// insideResize 为 false 时（accent 平台）HWND 内不返回任何缩放命中，热区只在窗外边框窗口。
 	[[nodiscard]] inline WindowFrameHit HitTestWindowFrame(
 		const WindowFrameRect& outer, const WindowFrameRect& client,
 		int x, int y, bool maximized, int topResizePixels = 0,
-		bool protectClientControl = false) noexcept
+		bool protectClientControl = false, bool insideResize = true,
+		const WindowFrameRect* controlClient = nullptr) noexcept
 	{
 		if (!outer.Contains(x, y)) return WindowFrameHit::Outside;
-		if (maximized) return WindowFrameHit::Client;
+		if (maximized || !insideResize) return WindowFrameHit::Client;
+		// 回退缩放矩形可小于真实客户区；控件保护仍按真实客户区判断。
+		if (protectClientControl && (controlClient ? *controlClient : client).Contains(x, y))
+			return WindowFrameHit::Client;
 		// 仅空白 caption 顶部可补足缩放高度；按钮和其余客户区始终优先。
 		const int topLimit = (std::max)(client.top, outer.top + topResizePixels);
 		if (client.Contains(x, y) && (protectClientControl || y >= topLimit))
@@ -183,6 +195,84 @@ namespace Inkeys::UI::Setting
 		if (left) return WindowFrameHit::Left;
 		if (right) return WindowFrameHit::Right;
 		return WindowFrameHit::Client;
+	}
+
+	// 透明 resize 边框窗口：外框为 Setting HWND 四周各扩展一个 sizing frame 宽度；
+	// 区域挖掉 HWND 本身（圆角平台按圆角挖空），accent 模糊因此不会进入边框窗口。
+	struct WindowResizeBorderGeometry
+	{
+		WindowFrameRect outer;     // 屏幕坐标。
+		WindowFrameRect excluded;  // 相对 outer 左上角，即 SetWindowRgn 的坐标系。
+		WindowFrameInsets band;    // 四边外侧热区宽度。
+		int cornerRadius = 0;      // 挖空矩形的圆角半径；0 为直角。
+
+		[[nodiscard]] bool Empty() const noexcept
+		{
+			return outer.Width() <= excluded.Width() && outer.Height() <= excluded.Height();
+		}
+
+		// 与 CreateRectRgn(outer) - CreateRoundRectRgn(excluded, 2r, 2r) 对应的像素中心判定。
+		[[nodiscard]] bool Contains(int screenX, int screenY) const noexcept
+		{
+			if (!outer.Contains(screenX, screenY)) return false;
+			const int x = screenX - outer.left;
+			const int y = screenY - outer.top;
+			if (!excluded.Contains(x, y)) return true;
+			const int radius = (std::min)(cornerRadius,
+				(std::min)(excluded.Width(), excluded.Height()) / 2);
+			if (radius <= 0) return false;
+			const double px = x + 0.5;
+			const double py = y + 0.5;
+			const double cx = px < excluded.left + radius ? excluded.left + radius
+				: px > excluded.right - radius ? excluded.right - radius : px;
+			const double cy = py < excluded.top + radius ? excluded.top + radius
+				: py > excluded.bottom - radius ? excluded.bottom - radius : py;
+			const double dx = px - cx;
+			const double dy = py - cy;
+			return dx * dx + dy * dy > static_cast<double>(radius) * radius;
+		}
+	};
+
+	[[nodiscard]] inline WindowResizeBorderGeometry ResolveWindowResizeBorderGeometry(
+		const WindowFrameRect& window, const WindowFrameInsets& thickness,
+		int cornerRadius) noexcept
+	{
+		const WindowFrameInsets extension{ (std::max)(0, thickness.left),
+			(std::max)(0, thickness.top), (std::max)(0, thickness.right),
+			(std::max)(0, thickness.bottom) };
+		WindowResizeBorderGeometry result;
+		result.band = extension;
+		result.outer = ExpandWindowFrameRect(window, extension);
+		result.excluded = { extension.left, extension.top,
+			extension.left + (std::max)(0, window.Width()),
+			extension.top + (std::max)(0, window.Height()) };
+		result.cornerRadius = std::clamp(cornerRadius, 0,
+			(std::min)(result.excluded.Width(), result.excluded.Height()) / 2);
+		return result;
+	}
+
+	// 边框窗口的命中：角区沿边延伸一个热区宽度（不小于圆角半径），圆角切掉的像素也归最近的角。
+	[[nodiscard]] inline WindowFrameHit HitTestWindowResizeBorder(
+		const WindowResizeBorderGeometry& geometry, int x, int y) noexcept
+	{
+		if (!geometry.Contains(x, y)) return WindowFrameHit::Outside;
+		const WindowFrameRect window{ geometry.outer.left + geometry.excluded.left,
+			geometry.outer.top + geometry.excluded.top,
+			geometry.outer.left + geometry.excluded.right,
+			geometry.outer.top + geometry.excluded.bottom };
+		const bool left = x < window.left + (std::max)(geometry.cornerRadius, geometry.band.left);
+		const bool right = x >= window.right - (std::max)(geometry.cornerRadius, geometry.band.right);
+		const bool top = y < window.top + (std::max)(geometry.cornerRadius, geometry.band.top);
+		const bool bottom = y >= window.bottom - (std::max)(geometry.cornerRadius, geometry.band.bottom);
+		if (top && left) return WindowFrameHit::TopLeft;
+		if (top && right) return WindowFrameHit::TopRight;
+		if (bottom && left) return WindowFrameHit::BottomLeft;
+		if (bottom && right) return WindowFrameHit::BottomRight;
+		if (y < window.top) return WindowFrameHit::Top;
+		if (y >= window.bottom) return WindowFrameHit::Bottom;
+		if (x < window.left) return WindowFrameHit::Left;
+		if (x >= window.right) return WindowFrameHit::Right;
+		return WindowFrameHit::Outside;
 	}
 
 	enum class NavigationLayout

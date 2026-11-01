@@ -83,6 +83,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Helper/ShutdownSupervisor.h"
 #include "Inkeys/Net/UpdatePathSafety.h"
 #include "Launch/IdtLaunchState.h"
+#include "Launch/IdtSingleInstance.h"
 #include "SuperTop/IdtSuperTop.h"
 
 #include <atomic>
@@ -667,6 +668,24 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: expanded JSON replaced the last readable file\n", stderr);
 				return 1;
 			}
+			stage = "single instance startup preference";
+			for (const char* value : { "false", "true", "0", "1", "\"true\"", "null", "[]", "{}" })
+			{
+				const std::string json=std::string("{\"Config\":{\"AllowMultipleInstances\":")+value+"}}";
+				Inkeys::Config policy;
+				if (!writeBytes(mainConfig,json) || !policy.ReadMini({"Config.AllowMultipleInstances"},true)
+					|| policy.Config.AllowMultipleInstances != (strcmp(value,"true")==0) || readBytes(mainConfig)!=json) return 1;
+			}
+			Inkeys::Config emptyPolicy;
+			if (!writeBytes(mainConfig,"{}") || !emptyPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| emptyPolicy.Config.AllowMultipleInstances) return 1;
+			const std::string legacyPolicy=R"({"Config":{"AllowMultipleInstances":true},"UI":{"Bar":{"ButtonLayout":[]}}})";
+			if (!writeBytes(mainConfig,legacyPolicy) || !emptyPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| !emptyPolicy.Config.AllowMultipleInstances || readBytes(mainConfig)!=legacyPolicy) return 1;
+			emptyPolicy.Config.AllowMultipleInstances=false;
+			Inkeys::Config restoredPolicy;
+			if (!emptyPolicy.Write() || !restoredPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| restoredPolicy.Config.AllowMultipleInstances) return 1;
 			stage = "touch reconnect configuration";
 			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
 			Inkeys::Config reconnectDefaults;
@@ -687,6 +706,46 @@ namespace
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
 					return 1;
 				}
+			}
+			stage = "performance and general drawing preferences";
+			Inkeys::Config drawingDefaults;
+			if (!writeBytes(mainConfig, "{}") || !drawingDefaults.ReadAll() ||
+				drawingDefaults.UI.FrameRate != 60 || drawingDefaults.Drawing.FrameRate != 120 ||
+				!drawingDefaults.Drawing.MultiTouchEnabled || !drawingDefaults.Drawing.PenTailCorrectionEnabled ||
+				drawingDefaults.Drawing.InkPredictionMode != 2 || drawingDefaults.Drawing.Laser.MultiTouchEnabled ||
+				drawingDefaults.Drawing.Laser.ParticlesEnabled) return 1;
+			for (const int frameRate : { 30, 60, 120, 240 })
+				for (const int prediction : { 0, 1, 2 })
+				{
+					drawingDefaults.UI.FrameRate = frameRate == 30 ? 30 : 60;
+					drawingDefaults.Drawing.FrameRate = frameRate;
+					drawingDefaults.Drawing.InkPredictionMode = prediction;
+					drawingDefaults.Drawing.MultiTouchEnabled = false;
+					drawingDefaults.Drawing.PenTailCorrectionEnabled = prediction != 0;
+					drawingDefaults.Drawing.Laser.MultiTouchEnabled = true;
+					drawingDefaults.Drawing.Laser.ParticlesEnabled = prediction == 1;
+					Inkeys::Config restoredDrawing;
+					if (!drawingDefaults.Write() || !restoredDrawing.ReadAll() ||
+						restoredDrawing.UI.FrameRate.load() != drawingDefaults.UI.FrameRate.load() ||
+						restoredDrawing.Drawing.FrameRate != frameRate || restoredDrawing.Drawing.InkPredictionMode != prediction ||
+						restoredDrawing.Drawing.MultiTouchEnabled || !restoredDrawing.Drawing.Laser.MultiTouchEnabled ||
+						restoredDrawing.Drawing.PenTailCorrectionEnabled.load() != (prediction != 0) ||
+						restoredDrawing.Drawing.Laser.ParticlesEnabled.load() != (prediction == 1)) return 1;
+				}
+			// 全局关闭不清除激光子偏好；类型错误和超宽整数不能变成合法的离散选项。
+			for (const char* invalid : { "true", "false", "30.0", "\"60\"", "-1", "0", "90", "4294967326", "18446744073709551615" })
+			{
+				const auto json = std::string("{\"UI\":{\"FrameRate\":") + invalid +
+					"},\"Drawing\":{\"FrameRate\":" + invalid + "}}";
+				Inkeys::Config invalidDrawing;
+				if (!writeBytes(mainConfig, json) || !invalidDrawing.ReadAll() ||
+					invalidDrawing.UI.FrameRate != 60 || invalidDrawing.Drawing.FrameRate != 120) return 1;
+			}
+			for (const char* invalid : { "true", "false", "1.0", "\"2\"", "-1", "3", "4294967298", "18446744073709551615" })
+			{
+				Inkeys::Config invalidPrediction;
+				if (!writeBytes(mainConfig, std::string("{\"Drawing\":{\"InkPredictionMode\":") + invalid + "}}") ||
+					!invalidPrediction.ReadAll() || invalidPrediction.Drawing.InkPredictionMode != 2) return 1;
 			}
 			stage = "whiteboard theme preference";
 			Inkeys::Config themeConfig;
@@ -773,6 +832,94 @@ namespace
 				{
 					std::fputs("[ConfigBoundary] FAIL: non-bool Draw3 device preferences were accepted\n", stderr);
 					return 1;
+				}
+			}
+			stage = "palm eraser configuration";
+			{
+				using PalmSettings = Inkeys::Drawing::Draw3::PalmEraser::Settings;
+				struct RestorePalmDeviceDefault final
+				{
+					bool previous = Inkeys::ConfigDetail::GetDefaultLargeScreenDevice();
+					~RestorePalmDeviceDefault() { Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(previous); }
+				} restorePalmDefault;
+				const auto palmSnapshot = [](const Inkeys::Config& value)
+				{
+					const auto& saved = value.Drawing.PalmEraser;
+					PalmSettings result;
+					result.enabled = saved.Enabled.load(); result.thresholdPercent = saved.ThresholdPercent.load();
+					result.recognitionWindowMs = saved.RecognitionWindowMs.load();
+					result.parallelWriting = saved.ParallelWriting.load();
+					result.tools = { saved.Tools.Pen.load(), saved.Tools.HardPen.load(), saved.Tools.Highlighter.load(),
+						saved.Tools.Laser.load(), saved.Tools.Eraser.load(), saved.Tools.Shape.load(), saved.Tools.Brush.load() };
+					return result;
+				};
+				const auto requirePalm = [](bool condition, const char* check)
+				{
+					if (!condition) std::fprintf(stderr, "[ConfigBoundary] FAIL: PalmEraser %s\n", check);
+					return condition;
+				};
+				for (const bool largeScreen : { false, true })
+				{
+					Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(largeScreen);
+					PalmSettings defaults; defaults.enabled = largeScreen;
+					Inkeys::Config fresh, mini;
+					if (!requirePalm(writeBytes(mainConfig, "{}") && fresh.ReadAll()
+						&& mini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(fresh) == defaults
+						&& palmSnapshot(mini) == defaults, "frozen device defaults/ReadMini")) return 1;
+					// 缺省大屏即使没有 EDID 仍开启，并用用户确认的100×100系统DIP阈值。
+					Inkeys::Drawing::Draw3::SpeedEraser::DisplayScale noEdid;
+					noEdid.monitor = 1; noEdid.pixelWidth = 1920; noEdid.pixelHeight = 1080;
+					noEdid.logicalOutputKnown = true;
+					const auto fallbackScale = Inkeys::Drawing::Draw3::PalmEraser::ResolvePreviewScale(noEdid);
+					Inkeys::Drawing::Draw3::PalmEraser::State fallbackState;
+					fallbackState.Begin(palmSnapshot(fresh), fallbackScale,
+						Inkeys::Drawing::Draw3::PalmEraser::ToolCategory::Pen, 1000, 1000);
+					(void)fallbackState.Observe({100,100,100,100,
+						Inkeys::Drawing::Draw3::SpeedEraser::ContactAreaUnits::CanvasPixels}, 1050);
+					if (!requirePalm(fallbackScale.available && fallbackScale.estimated
+						&& fallbackState.active == largeScreen, "EDID loss preserves frozen device default and DIP recognition")) return 1;
+					for (const int window : { 100, 150, 250, 500 }) for (const int percent : { 1, 9, 10, 24, 25, 100, 400 })
+					{
+						auto& saved = fresh.Drawing.PalmEraser;
+						saved.Enabled = !largeScreen; saved.ThresholdPercent = percent;
+						saved.RecognitionWindowMs = window; saved.ParallelWriting = window != 250;
+						const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
+							&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
+						for (size_t index = 0; index < fields.size(); ++index) *fields[index] = (index + window + percent) % 2 == 0;
+						const auto expected = palmSnapshot(fresh);
+						Inkeys::Config restored, partial;
+						partial.UI.FrameRate = 30;
+						if (!requirePalm(fresh.Write() && restored.ReadAll()
+							&& partial.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(restored) == expected
+							&& palmSnapshot(partial) == expected && partial.UI.FrameRate == 30,
+							"valid values and seven tools roundtrip")) return 1;
+						Inkeys::Config copied, assigned; copied = restored; assigned = restored;
+						if (!requirePalm(palmSnapshot(copied) == expected && palmSnapshot(assigned) == expected
+							&& restored.GetUploadInfo().find("PalmEraser") == std::string::npos,
+							"copy/assignment/NoUpload")) return 1;
+						copied.ResetToDefaults();
+						if (!requirePalm(palmSnapshot(copied) == defaults, "reset and Brush default")) return 1;
+					}
+					// 类型和宽整数必须在窄化前拒绝，不能把低32位误读为100或150。
+					for (const char* key : { "ThresholdPercent", "RecognitionWindowMs" })
+						for (const char* invalid : { "true", "false", "250.0", "\"250\"", "-1", "0", "401",
+							"4294967396", "4294967446", "18446744073709551615", "null", "{}", "[]" })
+						{
+							const auto json = std::string("{\"Drawing\":{\"PalmEraser\":{\"") + key + "\":" + invalid + "}}}";
+							Inkeys::Config invalidAll, invalidMini;
+							if (!requirePalm(writeBytes(mainConfig, json) && invalidAll.ReadAll()
+								&& invalidMini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(invalidAll) == defaults
+								&& palmSnapshot(invalidMini) == defaults, "strict integer type/range fallback")) return 1;
+						}
+					for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+					{
+						const auto json = std::string("{\"Drawing\":{\"PalmEraser\":{\"Enabled\":") + invalid
+							+ ",\"ParallelWriting\":" + invalid + ",\"Tools\":{\"Brush\":" + invalid + "}}}}";
+						Inkeys::Config invalidAll, invalidMini;
+						if (!requirePalm(writeBytes(mainConfig, json) && invalidAll.ReadAll()
+							&& invalidMini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(invalidAll) == defaults
+							&& palmSnapshot(invalidMini) == defaults, "strict bool fallback")) return 1;
+					}
 				}
 			}
 			stage = "taskbar scale device defaults";
@@ -1510,6 +1657,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenTaperProductionProbe(); });
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-palm-eraser-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPalmEraserProductionProbe(); });
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-width-test") == 0)
 		{
 			LocalFree(arguments);
@@ -1638,6 +1791,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
 
+	int singleInstanceTestResult = 0;
+	if (Inkeys::Launch::TryRunTests(singleInstanceTestResult)) return singleInstanceTestResult;
+
 	// 只在正常入口预热诊断静态对象；不输出、不取时钟，监督/测试早期模式保持原路径。
 	ShutdownTrace::WarmUp();
 	Inkeys::Business::PptWaitTrace::Prepare();
@@ -1730,7 +1886,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				cout << utf16ToUtf8(commandLine) << endl;
 
-				if (commandLine == L"-Restart") LaunchState::restart = true;
+				if (commandLine.rfind(Inkeys::Launch::HandoffPrefix, 0) == 0) addCommandLine = false;
+				else if (commandLine == L"-Restart") LaunchState::restart = true;
 				else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
 				else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
 				else if (commandLine == L"-SuperTopComplete") superTopComplete = true, addCommandLine = false;
@@ -1751,40 +1908,32 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		}
 
-	#ifdef IDT_RELEASE
-		// 重启 helper 已等待旧进程真正结束；-Restart/-CrashTry 仍需正常单实例门。
-		if (!LaunchState::warnTry && !superTopComplete)
+		// 内部接力先验真并等待精确父进程；普通参数不再豁免单实例门。
+		if (!isolatedStartupFailure)
 		{
-			wstring currentExeDirectory = GetCurrentExeDirectory();
+			const int handoff = Inkeys::Launch::Adopt();
+			if (handoff < 0)
 			{
-				wstringstream result;
-				for (wchar_t ch : currentExeDirectory)
-				{
-					if (ch < 128 && ch != L'\\' && ch != L':' && ch != L';' && ch != L'"') result << ch;
-					else if (ch < 128) result << L'_';
-					else result << L"U" << std::hex << std::uppercase << static_cast<int>(ch);
-				}
-				currentExeDirectory = result.str();
+				ShowStartupMessage(L"Inkeys could not validate the startup handoff. The existing instance has been preserved.");
+				return 0;
 			}
-
-			wstring mutexName = L"Inkeys_" + currentExeDirectory;
-			if (mutexName.length() > 255) mutexName = mutexName.substr(0, 255);
-
-			launchMutex = CreateMutexW(
-				NULL,           // 默认安全属性
-				TRUE,           // 请求立即拥有所有权 (bInitialOwner = TRUE)
-				mutexName.c_str()    // 唯一的互斥体名称
-			);
-
-			DWORD lastError = GetLastError();
-			if (launchMutex != NULL && lastError == ERROR_ALREADY_EXISTS)
+			Inkeys::Config startupPolicy;
+			const auto ownRoot = GetCurrentExeDirectory();
+			const auto savedPath = globalPath;
+			if (handoff > 0) globalPath = Inkeys::Launch::logicalRoot + L"\\";
+			(void)startupPolicy.ReadMini({ "Config.AllowMultipleInstances" }, true);
+			globalPath = savedPath;
+			// Adopt已在Ready前完成全部准入，不能在旧进程退出后再次否决。
+			const auto admission = handoff > 0 ? Inkeys::Launch::Admission::Accepted
+				: Inkeys::Launch::Acquire(ownRoot, startupPolicy.Config.AllowMultipleInstances);
+			if (admission != Inkeys::Launch::Admission::Accepted)
 			{
-				ShowStartupMessage(L"Inkeys is already running. If no Inkeys window is visible, end the existing Inkeys process and open it again.");
-
+				ShowStartupMessage(admission == Inkeys::Launch::Admission::Duplicate
+					? L"Inkeys is already running from this installation directory."
+					: L"Inkeys could not establish its startup protection. Check directory and process permissions.");
 				return 0;
 			}
 		}
-	#endif
 		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
 	}
 	// 崩溃助手初始化
@@ -1955,8 +2104,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
 
-				int times;
-				for (times = 0; times <= 20; times++)
+				int times = 0;
+				for (; !Inkeys::Launch::adopted && times <= 20; times++)
 				{
 					if (!old_name.empty())
 					{
@@ -1972,6 +2121,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					this_thread::sleep_for(chrono::milliseconds(100));
 				}
 				if (times > 20) goto fail;
+				// 兼容旧更新器直接拉起的安装包：只有现有指令/哈希已验真且旧进程退出后才绑定安装根。
+				if (!Inkeys::Launch::adopted)
+				{
+					const auto root = filesystem::path(main_path).lexically_normal().wstring();
+					Inkeys::Config policy; const auto savedPath = globalPath; globalPath = main_path;
+					(void)policy.ReadMini({ "Config.AllowMultipleInstances" }, true); globalPath = savedPath;
+					if (Inkeys::Launch::Acquire(root, policy.Config.AllowMultipleInstances) != Inkeys::Launch::Admission::Accepted)
+					{
+						ShowStartupMessage(L"Inkeys is already running or updating from this installation directory.");
+						return 0; // 准入被拒绝不能删除另一条有效更新指令或启动回滚。
+					}
+				}
 
 				bool rollbackSafe = true;
 				const bool launched = [&]() -> bool
@@ -2024,9 +2185,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 							if (hadTarget) filesystem::remove(backupPath, ec);
 							return false;
 						}
-						const HINSTANCE result = ShellExecuteW(
-							nullptr, nullptr, target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-						if (reinterpret_cast<INT_PTR>(result) > 32) return true;
+						if (Inkeys::Launch::StartReplacement(target)) return true;
 						// 启动失败时回滚本次替换；备份在启动成功后仍保留供人工恢复。
 						if (hadTarget)
 							rollbackSafe = MoveFileExW(backupPath, target.c_str(),
@@ -2075,9 +2234,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						});
 					if (fallbackName.empty()) break;
 					triedNames[triedCount++] = fallbackName;
-					const HINSTANCE result = ShellExecuteW(nullptr, nullptr,
-						(main_path + fallbackName).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-					if (reinterpret_cast<INT_PTR>(result) > 32) return 0;
+					if (!Inkeys::Launch::Equal(Inkeys::Launch::logicalRoot, filesystem::path(main_path).lexically_normal().wstring()))
+					{
+						Inkeys::Config policy; const auto savedPath = globalPath; globalPath = main_path;
+						(void)policy.ReadMini({ "Config.AllowMultipleInstances" }, true); globalPath = savedPath;
+						if (Inkeys::Launch::Acquire(main_path, policy.Config.AllowMultipleInstances) != Inkeys::Launch::Admission::Accepted) return 0;
+					}
+					const auto fallbackPath = main_path + fallbackName;
+					if (Inkeys::Launch::StartReplacement(fallbackPath)) return 0;
 					// 用户取消提升后不能再悄悄尝试另一份旧程序。
 					if (GetLastError() == ERROR_CANCELLED) return 0;
 				}
@@ -2224,8 +2388,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				if (flag)
 				{
-					HINSTANCE hInst = ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
-					if ((INT_PTR)hInst > 32) return 0;
+					if (Inkeys::Launch::StartReplacement(globalPath + path)) return 0;
 					flag = false;
 				}
 			}
@@ -2892,7 +3055,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			Inkeys::UI::RenderPipeline::SetFrameRate(config.UI.FrameRate);
+			// 偏好在 Host 创建绘制线程前发布；后续每笔锁存，启动预览不改变画布参数。
+			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
+				config.Drawing.MultiTouchEnabled, config.Drawing.PenTailCorrectionEnabled,
+				config.Drawing.InkPredictionMode.load());
+			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(
+				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
@@ -3530,6 +3701,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		draw3StartOptions.frameRate = configOnce.Drawing.FrameRate;
 		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
 		draw3StartOptions.enableHardwareAcceleration =
 			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;

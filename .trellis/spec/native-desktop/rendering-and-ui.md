@@ -1611,7 +1611,17 @@ void Setting::Toggle();
 bool Setting::IsVisible() noexcept;
 WNDPROC Setting::WindowProc() noexcept;
 FrameResult RenderSettingFrame(const FrameContext&);
-BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acrylic) noexcept;
+BackdropMode ResolveBackdropMode(bool acrylic) noexcept;
+WindowFrameHit HitTestWindowFrame(const WindowFrameRect& outer, const WindowFrameRect& client,
+    int x, int y, bool maximized, int topResizePixels = 0,
+    bool protectClientControl = false, bool insideResize = true) noexcept;
+WindowFrameInsets ResolveVisibleWindowFrameInsets(WindowFrameInsets sizingFrame, bool maximized,
+    bool compositionEnabled, int visibleBorderPixels, bool useThinTopBorder = true,
+    bool outsideResizeOnly = false) noexcept;
+WindowResizeBorderGeometry ResolveWindowResizeBorderGeometry(
+    const WindowFrameRect& window, const WindowFrameInsets& thickness, int cornerRadius) noexcept;
+WindowFrameHit HitTestWindowResizeBorder(const WindowResizeBorderGeometry&, int x, int y) noexcept;
+bool Window::UsesSettingOutsideResize() noexcept;
 ~~~
 
 #### 3. Contracts
@@ -1624,8 +1634,11 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 - 初始化、字体/设备重建、纹理/缓冲上传、Present/probe/resize 失败时，在释放 device lease 前读取 `GetDeviceRemovedReason()`，与原资源 HRESULT 分别记录；FAILED 的移除原因（含 HUNG/INVALID_CALL）必须交给唯一共享管线恢复 epoch，不能反复重试旧设备。诊断按 stage/code/reason/epoch 去重；VB Map 成功后 IB Map 失败也必须 Unmap VB。
 - `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。WinUI 3 设置壳层按客户区逻辑 DIP 判定：`>=900` 使用宽窗偏好（默认展开），`<900` 显示紧凑轨道并以覆盖方式展开。`Setting.Layout.h` 的旧三档 helper 暂留历史调用/测试；产品新壳层以 `Setting.Design.h::NavigationState` 为准。
 - Setting 主题由 `ResolveThemeMode(bool settingDarkMode)` 解析独立偏好；默认 Light，显式 true 使用 Dark。系统主题消息可唤醒样式刷新，但不覆盖用户选择；配置和帧边界换色合同见下文“Setting 实时浅深主题合同”。
-- Setting 背景能力顺序固定为 Win11 `DWMWA_SYSTEMBACKDROP_TYPE/DWMSBT_MAINWINDOW`、旧 Win11 Mica attribute 1029、动态解析的 Win10 `SetWindowCompositionAttribute` Acrylic、Solid。每次应用先撤销旧状态；DWM composition 关闭、属性/API 缺失或调用失败都必须继续级联并最终无错误回到 Solid，不能让可选视觉效果阻断 Initialize/Show。Win8/8.1 明确使用 Solid；仅真实 Win10 RS4/1803（build 17134）及以后系统尝试 Acrylic，不能把函数可动态解析等同于支持内部 Acrylic 状态。高对比度开启时保持 Solid，不改变用户设置配色。
-- 只有实际启用 Mica/Acrylic 后，才把 ImFluent `SolidBgBase`、ImGui `WindowBg` 与 D3D clear alpha 设为透明；Solid 必须使用当前主题的不透明背景；自绘标题栏始终单独填充不透明 `Design::AppBase`，避免透明根背景露出系统强调色。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 backdrop/margins/Acrylic 并发布 Solid。Acrylic 在原生 move/size loop 内临时使用较轻的 BlurBehind，退出后恢复；主题重应用必须尊重交互状态，取消/隐藏不得遗留临时模式。Mica/Solid 不参与该切换，不逐条 WM_MOVE 重设材质，不直接关闭透明合成后留下发黑的缓存 RGB。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
+- Setting 背景只有两种状态：Acrylic（动态解析 `SetWindowCompositionAttribute` 的 accent policy 动态背景模糊，实时反映下层窗口）与 Solid。Win10 RS4/1803（build 17134）及以后与 Win11 使用同一 accent 路径；Win7、Win8/8.1 与更早 Win10 一律 Solid，不提供 `DwmEnableBlurBehindWindow` 等 Aero 回退，也不能把函数可动态解析等同于支持内部 Acrylic 状态。不设置 `DWMWA_SYSTEMBACKDROP_TYPE`/`DWMSBT_*` 或旧 Mica attribute 1029：系统 backdrop 与壁纸静态合成，且在本窗口不可见。每次应用先撤销旧状态；DWM composition 关闭、API 缺失或调用失败都无错误回到 Solid，不能让可选视觉效果阻断 Initialize/Show。高对比度开启时保持 Solid，不改变用户设置配色。不读取系统“透明效果”开关。
+- 只有实际启用 Acrylic 后，才把 ImFluent `SolidBgBase` 与 D3D clear alpha 设为透明；ImGui `WindowBg` 保留半透明 `AppBase`，作为标题栏、侧栏与正文唯一的一层底色（WinUI 3 NavigationView 样式）：半透明下标题栏不再单独铺不透明底色，正文 child 不铺 `PageSurface`，平铺侧栏 pane 不自铺底色，仅窄窗覆盖正文时用不透明主题 appBase；侧栏 pane 为直角且嵌套 child 不继承 `ChildBg`。根窗口 `WindowRounding` 跟随系统窗口外形：仅 Win11（`roundedCorners`）恢复态保留圆角，Win7/8/8.1/10 与最大化为直角；根描边只在零侧边 frame 的 accent 平台（`acrylic`，Win10 RS4+/Win11）绘制，Win7/8/8.1 由系统 sizing frame 作边界，不再自绘一圈。Solid 必须使用当前主题的不透明背景，标题栏仍单独填充不透明 appBase。accent 在静止、move/size 与主题重应用时统一使用 `ACCENT_ENABLE_BLURBEHIND`（`ResolveSettingAccentState(enabled)`），交互状态只记录不重设 DWM，避免 Acrylic/Blur 切换造成底色跳变；着色由 `AppBase` 一层负责（旧 Acrylic `0xCC` tint 再叠 80% `AppBase` 只剩约 4% 透出，实测 Win11 静止近纯色）。开屏保留原不透明主题色遮罩与截图复用；半透明下标题栏在开屏期间按同一 `pose.opacity` 铺不透明主题 appBase，与遮罩同色，不透出遮罩下的帧，遮罩淡出后回到根窗口半透明底色。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 accent 与透明状态并发布 Solid；frame margin 属于框架几何，撤销材质时不清除。不逐条 WM_MOVE 重设材质，不直接关闭透明合成后留下发黑的缓存 RGB。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
+- accent 模糊覆盖整个 HWND 矩形，因此 accent 平台（`Window::UsesSettingOutsideResize()`：`acrylic` 能力为 true 且 composition 开启，只看平台能力，不看 accent 是否成功或高对比度）恢复态的 `QuerySettingClientFrameInsets` 左/右/下为 0，顶部维持现状（Win10 为 0，Win11 为 DWM 可见描边），使 HWND 矩形即可见内容；最大化与非 accent 平台的 frame 不变，Setting 创建与 `WM_GETMINMAXINFO` 复用同一函数。Setting 自身 `WM_NCHITTEST` 仅在外部边框 HWND 存在、可见且几何非空时关闭窗口内缩放（`insideResize=false`，含原 caption 顶部内侧带）；边框创建、区域设置或显示失败时，使用完整 `QuerySettingFrameThickness` 内缩的命中 client 恢复四边/四角缩放，不能复用零侧边的可见 client。正常外侧模式下标题栏拖动、按钮和客户区不变；缩放热区全部在窗外，由 Setting HWND 线程在 `ImGuiWndProc` 内创建的透明 resize 边框窗口承担。它是 `WS_POPUP` + `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，owner 为 Setting，常量 alpha 为 1（alpha 0 的分层窗口不参与命中），不创建 swap chain、不绘制、不进入 `Window::Service`；`Service` 的 z-order 快照按 owner 链容许其穿插。矩形为 Setting 窗口四周各扩展 `QuerySettingFrameThickness`，区域用 `ResolveWindowResizeBorderGeometry` 挖掉 Setting 矩形（即可见内容）；Win11（build 22000+，`roundedCorners` 能力）按 8 DIP 圆角挖空，切掉的角像素归边框窗口并返回对应角命中，半径待实机确认。
+- 零侧边 frame 需非零 frame margin 才保留 DWM 阴影：accent 平台恢复态以 `DwmExtendFrameIntoClientArea` 只扩展顶部 1 px，最大化与非 accent 平台为 0。margin 由框架几何在 HWND 线程维护：材质应用/撤销后、`WM_DWMCOMPOSITIONCHANGED` 时强制重设，`WM_WINDOWPOSCHANGED`（最大化/还原）按缓存确认；`DisableSettingBackdrop` 不清除它。
+- 边框窗口的 `WM_NCHITTEST` 使用最近一次同步的几何调用 `HitTestWindowResizeBorder`：四边返回对应边命中，角区沿边延伸一个 sizing frame 宽度（不小于圆角半径）；Setting 最大化、最小化或被模态禁用时返回 `HTNOWHERE`。`WM_NCLBUTTONDOWN` 再次确认 Setting 未被模态禁用（`HT*` 与 `WMSZ_*` 同序，由 `static_assert` 锁定偏移映射），先把 Setting 设为前台，再向 Setting 同步发送 `WM_SYSCOMMAND(SC_SIZE | WMSZ_*)`，系统 size loop 与 `InteractiveWindowOperation::Size`/轻量模糊切换仍在 Setting 上执行；`WM_SETCURSOR` 按方向设置缩放光标。Setting 的 `WM_WINDOWPOSCHANGED`、`WM_DPICHANGED` 与系统度量消息同步位置、尺寸和区域（仅尺寸/DPI/圆角变化重建区域）；隐藏、最小化、最大化时隐藏它，并忽略 Setting 还原时系统发来的 `SW_PARENTOPENING`，显隐只由同步函数决定；`WM_DESTROY` 销毁它。圆角挖空用 `CreateRoundRectRgn` 时右/下各补 1 px（该 API 比 `CreateRectRgn` 少一列一行），否则边框窗口会盖住 Setting 最右列与最下行并吞掉点击。Win7/8/8.1 与早期 Win10 从不创建。
 - Setting 新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
 - 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。标题栏复用同一主题并提供实时切换按钮；更新状态和检查操作仍只在版本页呈现。
 - 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；普通 I/O worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
@@ -1646,11 +1659,14 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 | 可见时 generation 变化 | 重建 backend device objects、图片 SRV、swap chain 和 RTV；失败路径不遗留半成品 |
 | DPI 或用户倍率变化 | 消费 font rebuild serial 并重建图集；用户倍率先限制到 `[1.0, 2.0]` |
 | Windows 明暗或高对比状态变化 | 可重应用 resident style，保持 SettingDarkMode 的显式偏好 |
-| system backdrop 成功 | 发布 Mica，启用全客户区 frame/透明根背景与 clear |
-| system backdrop 失败、legacy Mica 成功 | 发布 Mica，其他行为与现代属性一致 |
-| 两种 Mica 均失败、动态 Acrylic 成功 | 发布 Acrylic，不把它记录为原生 Mica |
-| DWM 关闭、API 缺失或全部失败 | 撤销可选属性和透明状态，继续使用 Solid；不得返回初始化/呈现错误 |
-| `WM_DWMCOMPOSITIONCHANGED` | 重新执行能力级联；若能力消失，从透明背景恢复不透明 Solid |
+| Win10 build >= 17134 或 Win11，accent 成功 | 发布 Acrylic，启用透明根背景与 clear；不设置系统 backdrop/Mica |
+| Win7/8/8.1 或 Win10 < 17134 | 直接 Solid，不尝试 Aero blur-behind，不创建 resize 边框窗口，frame 几何不变 |
+| accent 平台开启高对比度 | Solid；resize 边框窗口仍按平台能力存在，热区几何不变 |
+| DWM 关闭、API 缺失或 accent 失败 | 撤销 accent 和透明状态，继续使用 Solid；不得返回初始化/呈现错误 |
+| `WM_DWMCOMPOSITIONCHANGED` | 重新应用；若能力消失，从透明背景恢复不透明 Solid |
+| accent 平台恢复态鼠标位于 HWND 外侧一个 sizing frame 宽度内 | 边框窗口返回对应边/角命中，按下后在 Setting 上启动系统 size loop；双击上/下边框转发给 Setting 由系统纵向最大化，其余方向双击无操作；HWND 内不返回缩放命中 |
+| accent 平台最大化/还原 | 最大化时完整内缩、margin 0、边框窗口隐藏；还原后零侧边、顶部 1 px margin、边框窗口重新显示 |
+| 最大化、最小化或隐藏 | 边框窗口隐藏，且命中不返回外侧缩放 |
 | 业务命令完成 | 发布不可变 completion snapshot 并只请求 Settings |
 | 退出时 FIFO 尚有配置写盘 | 排空后 join，不得 request_stop 后清空未执行命令 |
 | Bar 在 Setting drain 前观察到 `offSignal` | Bar 返回 `Idle`，不得以 `Stop` 提前结束共享线程 |
@@ -1664,7 +1680,7 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 #### 6. Tests Required
 
 - Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点，以及显式 false/true 分别解析为 Light/Dark；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
-- Headless 覆盖 backdrop 优先级与 Solid fallback；静态审计 Windows 10 Acrylic 入口只能动态解析，透明 clear 必须由已发布的非 Solid 状态门控。
+- Headless 覆盖 `ResolveBackdropMode` 只区分 Acrylic/Solid、平台能力的 Win10 17134 与 Win11 22000 边界、`ResolveVisibleWindowFrameInsets` 的 accent 零侧边与最大化/非 accent 不变、主窗口 `insideResize=false` 不返回缩放命中而旧内侧热区不变、`HitTestWindowResizeBorder` 外侧八方向与角区延伸，以及边框几何（挖空即 HWND 矩形、圆角、钳制）与“边框像素都是缩放命中、HWND 像素都不是”。`CheckSettingBackdropSourceContract` 源级审计 accent 入口只能动态解析，Setting 活动路径不出现 `DWMWA_SYSTEMBACKDROP_TYPE`、`DWMSBT_`、attribute 1029 与 `DwmEnableBlurBehindWindow`，边框窗口不进入 `Window::Service`，`DisableSettingBackdrop` 不清 frame margin，`WM_WINDOWPOSCHANGED` 继续交给 `DefWindowProc`，圆角区域补偿右/下像素；透明 clear 必须由已发布的非 Solid 状态门控。真实模糊对齐、圆角、阴影、缩放手感与 Snap 只能 GUI 实机验收。
 - 动态 atlas 故障回归复用生产 DX11 后端与无 HWND FL11.0 WARP：真实非法纹理尺寸失败、两阶段 OOM/移除错误的明确故障注入、截图式 NULL/部分资源重复清理、Map 失败撤销及 backend 重建后的真实像素恢复。注入的 HRESULT 不能冒充实际 WARP device removal，独立离屏设备通过不能替代共享 native 窗口现场验证。
 - 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
 - Setting 页面样式迁移需静态审计导航/content、SplitView、Card/SettingsCard、ScrollView/WrapPanel/StackPanel 的 Begin/End 配对；产品路径不得重新引入 `imgui_toggle`、页面级原生 ImGui Button/Combo/Slider/Toggle 或 `ImFluent::ShowDemoWindow()`。
@@ -1690,11 +1706,11 @@ ReleasePresentation();
 ~~~
 
 ~~~cpp
-// Wrong：属性失败后仍透明清屏，旧系统会显示黑色或不可读背景。
+// Wrong：先透明清屏，再设置 Win11 系统 backdrop；它与壁纸静态合成，失败时旧系统还会显示黑色背景。
 SetTransparentClear(true);
 DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &type, sizeof(type));
 
-// Correct：先按能力级联，只有成功发布非 Solid 后才透明清屏。
+// Correct：Win10/11 只尝试 accent 动态模糊，成功发布非 Solid 后才透明清屏。
 const BackdropMode mode = ApplySettingBackdrop(hwnd);
 settingBackdropMode.store(mode);
 SetTransparentClear(mode != BackdropMode::Solid);
@@ -1821,7 +1837,7 @@ RECT Window::QuerySettingClientFrameInsets(HWND hwnd = nullptr, bool maximized =
 WindowFrameRect InsetWindowFrameRect(const WindowFrameRect&, const WindowFrameInsets&) noexcept;
 WindowFrameHit HitTestWindowFrame(const WindowFrameRect& outer, const WindowFrameRect& client,
     int x, int y, bool maximized, int topResizePixels = 0,
-    bool protectClientControl = false) noexcept;
+    bool protectClientControl = false, bool insideResize = true) noexcept;
 WindowFrameRect ResolveWindowFrameCreationCorrection(const WindowFrameRect& requestedClient,
     const WindowFrameRect& actualOuter, const WindowFrameSize& actualClient,
     const WindowFrameRect& workArea) noexcept;
@@ -1855,9 +1871,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Setting owner attach 与 owned Show 必须立即完成根/相对层级并核验位于两块画布上方，不能只设置 GW_OWNER 后等周期刷新。不独立执行 HWND_TOPMOST；根策略造成的 WS_EX_TOPMOST 传播允许变化，其余应用样式保持。重复 owner且实际层级正确时幂等；刷新失败返回 false 保留重试。Setting owner-thread 不得同步等待 overlay 命令造成 USER32 互等，正常业务/状态协调线程在 Setting 命令完成后进行根刷新。
 - 主栏设置按钮调用统一 `UI::Setting::Toggle()`：隐藏时显示并激活；已显示但真实 Setting HWND 不是前台线程的焦点窗口时，只重新提交 Setting `Show` 命令以 restore/foreground/active/focus；仅在已显示且前台窗口与真实焦点 HWND 都是 Setting 时隐藏。Bar 保持 `WS_EX_NOACTIVATE`，只读取焦点状态，不得从 Bar 输入线程直接调用 `ShowWindow`、`SetForegroundWindow`、`SetActiveWindow` 或 `SetFocus`。
 - Setting 创建时 owner 为 null，运行时 owner 遵守发布分支的受控切换；style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；保留 caption/sizing/system menu 的标准桌面窗口语义，自绘内容替换原生标题区域。ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口保留箭头光标、大小图标和任务栏按钮，普通关闭映射 Hide，只有进程退出时销毁 HWND。WindowSpec 宽高表示客户区，创建时只外扩真实 sizing frame，不重复加入原生 caption 高度，outer rect 夹紧到工作区。
-- Setting 的 sizing frame 仍由 QuerySettingFrameThickness 按系统 DPI 查询，不乘用户 UI 倍率；创建/NCCALCSIZE 用 QuerySettingClientFrameInsets 决定客户区内缩。DWM 合成判断复用不依赖 manifest 的真实版本能力：Win8 起始终开启，Win7 才查询实际开关；不能因缺少 supportedOS 清单得到的兼容 FALSE 走错外框分支。DWM 开启且恢复态时，只有 top 使用 DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 的实际可见描边，左右/下仍保留完整系统 sizing frame；最大化或 composition 关闭时四边都保持完整 frame。现代 DWM 的可见边框属性不可用时，恢复态 top 回退为 0，不改变左右/下 sizing frame；Win10 不能以 SM_CYBORDER 的 1px 代替可见顶部，否则 DWM 会在自绘窗口外额外画出完整系统标题栏。Win7 仍走原四边 sizing frame，不改变其他窗口角色。DWM 顶部没有左右/下边那段不可见外扩，不能把完整 sizing 高度画成标题栏上方宽带。composition 改变后立即 FRAMECHANGED。自绘标题栏/图标/caption cell/glyph 仍为 32/16/46/10 DIP。
+- Setting 的 sizing frame 仍由 QuerySettingFrameThickness 按系统 DPI 查询，不乘用户 UI 倍率；创建/NCCALCSIZE 用 QuerySettingClientFrameInsets 决定客户区内缩。DWM 合成判断复用不依赖 manifest 的真实版本能力：Win8 起始终开启，Win7 才查询实际开关；不能因缺少 supportedOS 清单得到的兼容 FALSE 走错外框分支。DWM 开启且恢复态时，只有 top 使用 DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 的实际可见描边；左右/下在 accent 平台（Win10 RS4+/Win11）为 0，其余现代 DWM 仍保留完整系统 sizing frame；最大化或 composition 关闭时四边都保持完整 frame。现代 DWM 的可见边框属性不可用时，恢复态 top 回退为 0；Win10 不能以 SM_CYBORDER 的 1px 代替可见顶部，否则 DWM 会在自绘窗口外额外画出完整系统标题栏。Win7 仍走原四边 sizing frame，不改变其他窗口角色。DWM 顶部没有左右/下边那段不可见外扩，不能把完整 sizing 高度画成标题栏上方宽带。composition 改变后立即 FRAMECHANGED。自绘标题栏/图标/caption cell/glyph 仍为 32/16/46/10 DIP。
 - 创建前尚无 HWND，现代 DWM 的顶部估算为 0，可能与创建后的实际 DWM 描边不同。只在 Setting 的首次 FRAMECHANGED 后读取实际 outer/client 差，用 ResolveWindowFrameCreationCorrection 恢复请求的客户区尺寸；对应创建校正必须显式由 IsSetting 门控，不能因 Setting/Freeze 共用图标初始化块而对 Freeze 发 FRAMECHANGED 或套用设置尺寸校正，并按原请求中心和当前工作区夹紧；仅尺寸确有差异时校正一次。不用猜测分数 DPI 下 DWM 的取整，不修改其他窗口角色或最大化字段。
-- WM_NCPAINT/WM_NCACTIVATE 保持默认处理。NCHITTEST 使用实际 screen-space outer/client：只有空白 HTCAPTION 的最上方允许补足系统 sizing 高度，外侧顶角同样保持完整可操作高度；先保护 close/max/min、主题、Debug、版本和系统菜单的整个客户区矩形，其余 client（特别是右侧 scrollbar）不增加 resize 区。左右/下的 resize 仍完全位于 client 外；最大化不返回 resize，outer 外返回 HTNOWHERE。caption button 仍投递标准 WM_SYSCOMMAND，关闭映射 Hide。
+- WM_NCPAINT/WM_NCACTIVATE 保持默认处理。NCHITTEST 使用实际 screen-space outer/client：只有空白 HTCAPTION 的最上方允许补足系统 sizing 高度，外侧顶角同样保持完整可操作高度；先保护 close/max/min、主题、Debug、版本和系统菜单的整个客户区矩形，其余 client（特别是右侧 scrollbar）不增加 resize 区。左右/下的 resize 仍完全位于 client 外；最大化不返回 resize，outer 外返回 HTNOWHERE。accent 平台恢复态 HWND 内不返回任何 resize（含顶部补足带），四边与四角热区由窗外透明 resize 边框窗口承担，见 Setting 会话合同。caption button 仍投递标准 WM_SYSCOMMAND，关闭映射 Hide。
 - 系统 modal loop 使用原子 `None/Move/Size` 状态：`WM_NCLBUTTONDOWN` 根据 `HTCAPTION`/八方向 hit 分类，`WM_SYSCOMMAND` 补充 `SC_MOVE/SC_SIZE` 键盘路径，未知 `WM_ENTERSIZEMOVE` 默认为 Size。只有 Move 允许 Settings 回调在 swap-chain 操作与 Present 前返回 `Idle`；Size 中的每个非最小化 `WM_SIZE` 都覆盖 latest resize 并 `Request(Settings)`，渲染线程按自身节拍执行 `ResizeBuffers -> Render -> Present`。`WM_EXITSIZEMOVE`、Hide/Shutdown 清除状态并保证最终请求。Setting Hide/HideAll 入队及 Stop 还需投递原生交互取消唤醒，不能只设置仅外层消息泵读取的事件；owner 校验当前 HWND/线程/代际及实际 move/size 状态后才取消，不在 WndProc 重入 Drain。仅 Setting 外层泵在每次 DispatchMessage 退栈后处理已置位的命令事件，避免唤醒先于 modal 入口时丢责任；唤醒不等于 Hide 已成功，不取消其他 HWND 的捕获。
 - RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧依次为 32 DIP 主题、问题反馈、Debug Bug 按钮，再接 caption cells。反馈路由到 Feedback=15 专用页并提供本地化悬停提示，Debug 路由到现有调试页；两入口在 IDT_RELEASE 始终可见，主题/Debug 保留无提示行为，交互和选中使用 subtle fill。新增反馈槽只让版本/主题向左让位，caption 位置保持。空间不足先隐藏版本并让标题文字让位；正常 720-DIP 最小窗保留至少 96 DIP 拖拽区，工作区小于最小尺寸时保留三入口和原 caption、拖动区以剩余物理预算为限（360 DIP 示例剩余 62 DIP）。版本、相邻主题/反馈/Debug/caption glyph 使用同一 TextPrimary，active=1.0/inactive=0.55 保持；关闭 hover/pressed 为 critical red，其余为 Fluent subtle fill。
 - 默认客户区约 960×700 DIP；WM_GETMINMAXINFO 只经 ApplyWindowFrameMinimumTrack 修改约 720×520 DIP client 加一次系统 frame 的最小 track size，工作区过小时限制到可用尺寸。USER32 预填的 ptMaxPosition/ptMaxSize/ptMaxTrackSize 保持不变：它们使用 primary-monitor 协议，系统会向实际显示器补偿，不能直接回填目标 workarea 尺寸导致二次放大。标准 overlapped style 的默认最大化保留任务栏；WM_DPICHANGED 接受建议矩形并保留该 HWND 最新客户区 DPI；缺 GetDpiForWindow 的 Win8.1 必须优先使用这份消息 DPI，再回退 Display 对应监视器/系统 DPI，不能让全系统 LOGPIXELSX 覆盖跨屏后的最小客户区及标题栏比例。旧 PMv1 的原生非客户区 sizing frame 仍由旧系统度量查询，不手动乘客户区 DPI。Hide/Show 在进程内保留 bounds/最大化状态。
@@ -1874,7 +1890,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | 动态重建窗口 | 当前 `activeSpec` 决定 cleanup；不得调用旧 spec 的 `destroyed` |
 | Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
 | Setting 传入旧 popup 或 overlay style | Service 强制归一化为 WS_OVERLAPPEDWINDOW 普通 app window |
-| 指针位于 Setting 边角/边缘 | 恢复态返回对应 resize；仅顶部空白 caption 可补足 sizing 高度，标题控件优先保护；最大化不返回 resize |
+| 指针位于 Setting 边角/边缘 | 恢复态返回对应 resize；仅顶部空白 caption 可补足 sizing 高度，标题控件优先保护；最大化不返回 resize。accent 平台改由窗外边框窗口返回，HWND 内无 resize |
 | 指针位于右侧 scrollbar 整个轨道 | 始终 client，不被 resize 热区截走 |
 | 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
 | 指针位于版本 RightHeader / 主题 / 反馈 / Debug按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色 / Feedback 页 / 调试页，不触发窗口拖动 |
@@ -2303,7 +2319,7 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 - 动态atlas的Build不代表真实字号/语言字形已预热。生产会话先在不透明覆盖下生成完整页与导航，两个不同全帧backend+Present成功且字体事务就绪后才推进书写；准备尝试有六帧预算，失败回滚该帧时间并沿原HRESULT Retry/DeviceLost路径收束，不能形成永久加载遮罩。完全不透明且值键稳定时暂停底层页/导航生成；当前帧DrawData只保留root标题栏clip、titlebar与foreground，Textures队列仍交生产DX11后端。书写完成（WritingEnd）后仍保持完全不透明，至少两个成功完整布局帧且当帧layoutReady后，先提交不含foreground的真实主页/导航，再CopyResource到同设备单份临时纹理，最后绘制唯一遮罩/字标。捕获成功与字体事务就绪后才发布revealReady。Hold后段、渐退和归位暂停正文/导航CPU生成，Clear后CopySubresourceRegion原样回写客户内容，再提交标题栏/foreground；不能用AddImage再次混合预乘RGBA。终态前在缓存遮挡下恢复至少两个真实child布局帧且layoutReady，再恢复正常整页并释放缓存。不得跨帧保存裸DrawList、ImFontBaked或旧字体UV。
 - 主页Pending/Playing完整准备、截图及终态恢复帧向外层BeginScrollChild传settleScrollbarLayout=true，native在Begin前使用完整8 DIP轨道/2 DIPpadding/三态alpha，Finish依据实际ScrollbarY写回value/target/start/progress的0或1。只沿当帧父子窗口标记继承给嵌套正文，不影响其他窗口和后续普通帧；无溢出不保留退出装饰或空白。缺席后的160ms条宽补间会改变WorkRect和hero目标，不能把过渡宽度截进缓存。默认false保持正常滚动条显隐动效，不用AlwaysVerticalScrollbar或额外等待帧掩盖。NoInputs仍只按导航阻断/取消首帧决定，不能为了视觉一致解除输入屏障。
 - CompleteHomeEntryLayout仅递归当前真正提交的正文子树，在outer EndChild前按vendored CalcWindowContentSizes的collapsed/hidden保留、ContentSizeExplicit及ImTrunc64规则检查当前ContentSize与ContentSizeIdeal是否消费本帧CursorMax/IdealMax测量；不能把字体准备或固定两帧等同于nested AutoResize尺寸稳定。Begin每帧清layoutReady，失败/key/cache失效撤销；实际GPU捕获和revealReady发布均检查该帧ready。恢复同样至少两次成功提交且ready；capture/restore各自六次不收敛则收束动画，不能永久遮挡或靠猜测增加固定暖帧常量。准备期间不消费书写/归位时间。
-- 活动主页入场且Solid backdrop、style.Alpha和WindowBg.w精确为1、RGB有限且在0..1时，可以SetNextWindowBgAlpha(0)省去已由同色不透明Clear建立的根背景填充。根Begin前读取同份backdrop/WindowBg快照供门禁和最终Clear；保留原flags、外框、caption、child与输入。不能使用会同时删除外框的NoBackground；Mica/Acrylic、部分alpha或静态终态保持旧路径。必须在真实同色Solid clear下对浅深八阶段full/suppressed精确RGBA及title/border比对，并单独报告透明/部分alpha回退与配对性能，不能将Solid收益推广至Mica。
+- 活动主页入场且Solid backdrop、style.Alpha和WindowBg.w精确为1、RGB有限且在0..1时，可以SetNextWindowBgAlpha(0)省去已由同色不透明Clear建立的根背景填充。根Begin前读取同份backdrop/WindowBg快照供门禁和最终Clear；保留原flags、外框、caption、child与输入。不能使用会同时删除外框的NoBackground；Acrylic、部分alpha或静态终态保持旧路径。必须在真实同色Solid clear下对浅深八阶段full/suppressed精确RGBA及title/border比对，并单独报告透明/部分alpha回退与配对性能，不能将Solid收益推广至Acrylic。
 - HomeEntryFrameKey涵盖客户/内容矩形、FramebufferScale、DIP倍率、字体/atlas身份与序号、语言、主题、设备epoch、atlas UniqueID及尺寸、backdrop透明模式和style.Alpha/WindowBg RGBA五个材质值；任一变化撤销缓存并强制完整页准备并重验实际可见包络，同次Show不重播。弹层/真实输入取消时使用完整页并保留取消帧屏障，普通Tab/点击/滚动不因快路径失效。隐藏/最小化/遮挡继续复用既有调度和时钟重基准，临时页面纹理仅由设置共享渲染线程持有；Hide、尺寸/字体/epoch切换、输入取消、终态和失败均撤销，清理须能从RenderSettingFrame同步执行，不能依赖隐藏协程恢复。无新线程、timer或额外帧请求。
 - CPU侧仍逐帧NewFrame、布局、输入、tooltip/menu延迟、caret、下载文字轮询与动画时钟；最终DrawData精确等于上次成功呈现时，可在Clear之前跳过cache copy/backend/Present，但必须返回Continue。不能从连续两帧相同推导整个设置客户端Idle；共享FrameInterval和Present策略保持。准备/捕获/恢复由RequiresHomeEntrySubmission强制实际提交，skip不调用CompleteHomeEntryFrame或虚增暖帧成功。
 - FrameSubmissionCache单帧存储预算1MiB，只存顶点/索引和命令实际渲染字段的值；ImDrawVert无padding须static_assert，命令逐字段比较ClipRect/GetTexID/VtxOffset/IdxOffset/ElemCount，不比较命令padding，不靠hash。FrameSubmissionKey含HomeEntryFrameKey、clear RGBA、Show/Hide/主题serial、target RTV和页面cache revision。只有backend成功且真实Present==S_OK后ConfirmPresented；热duplicate只memcmp，不复制/扩容，超预算或分配失败回退提交。callback、非OK纹理事务、输入、旧backend失败和所有入场准备事务强制提交；device removed沿旧恢复路径。旧backend Map错误不能在RenderDrawData重置LastResult之前反复提前退出。失败/occluded/Hide/resize/fonts/主题/epoch/teardown撤销基准。
@@ -2362,13 +2378,13 @@ bool ConsumeSettingHomeReset(uint64_t resetSerial, uint64_t& consumed,
 ## 设置原生材质表面合同
 
 ### 1. Scope / Trigger
-修改 Setting 主题、大表面透明度、浮层或主页缓存时适用；不将 ImFluent 壁纸 backdrop 接入已有原生 Mica/Acrylic。
+修改 Setting 主题、大表面透明度、浮层或主页缓存时适用；不将 ImFluent 壁纸 backdrop 接入已有 accent Acrylic。
 
 ### 2. Signatures
 `Design::ApplyPalette(bool darkMode = false, BackdropMode backdrop = BackdropMode::Solid)` 仅在渲染线程帧边界调用。默认参数保持旧的纯色调用语义。
 
 ### 3. Contracts
-Solid 原样复制 `PaletteForTheme`。原生 Mica/Acrylic 仅改变 appBase/pageSurface/card/cardSecondary alpha 为 204/230/245/245，RGB、文字、图标、按钮边框、焦点和全局 style.Alpha 保持不变。标题栏和菜单/弹出层使用基础实色；特别是 ComboBox 与上游 flyout 局部覆盖的 SolidBgQuarternary 必须不透明，不能仅保证全局 PopupBg。正文直接使用材质化 PageSurface。
+Solid 原样复制 `PaletteForTheme`。accent 材质下 appBase/pageSurface alpha 为 204/230，card/cardSecondary/stroke 取 WinUI 3 CardBackgroundFillColorDefault/Secondary 与 CardStrokeColorDefault（浅色白 179、246 灰 128、黑 15；深色白 13、白 8、黑 25），heroFill/featureTint/avatarFill alpha 179，subtleHover/subtlePressed 换成 WinUI SubtleFill（浅色黑 9/6，深色白 15/10，导航选中呈淡灰而非不透明亮白）；控件填充沿用 ImFluent 预设的 WinUI 值；其余 RGB、文字、图标、按钮边框、焦点和全局 style.Alpha 保持不变。标题栏和菜单/弹出层使用基础实色；特别是 ComboBox 与上游 flyout 局部覆盖的 SolidBgQuarternary 必须不透明，不能仅保证全局 PopupBg。半透明下正文不铺 PageSurface，与侧栏、标题栏共用根窗口 AppBase。
 
 ### 4. Validation & Error Matrix
 原生材质成功或回退后更新 settingThemeSerial，由渲染线程重新调色并使提交缓存失效；主页 key 的 dark/backdrop/material 区分当前帧。材质不可用时恢复完整纯色填充，不沿用旧 alpha。不得降低整个控件透明度模拟材质。
@@ -2377,7 +2393,7 @@ Solid 原样复制 `PaletteForTheme`。原生 Mica/Acrylic 仅改变 appBase/pag
 Good：浅深主题下大表面透出原生材质，浮层可读；Base：Solid 与原配色完全一致；Bad：只改 PopupBg，但 ComboBox 局部覆盖仍使用半透明 PageSurface token。
 
 ### 6. Tests Required
-现有 DPI 夹具覆盖三个背景模式、RGB/alpha、前景边框不变、实际 popup 填充、材质与纯色往返；离屏 WARP 对真实 Mica/Acrylic 调色板执行缓存重放与完整渲染 RGBA 比较。完整 Debug ARM64 solution 与 --no-window --setting-home-only；GUI 仅在用户明确授权时运行。
+现有 DPI 夹具覆盖 Acrylic/Solid 两个背景模式、RGB/alpha、前景边框不变、实际 popup 填充、材质与纯色往返；离屏 WARP 对真实 Acrylic 调色板执行缓存重放与完整渲染 RGBA 比较。完整 Debug ARM64 solution 与 --no-window --setting-home-only；GUI 仅在用户明确授权时运行。
 
 ### 7. Wrong vs Correct
 Wrong：`SolidBgQuarternary = GetPalette().pageSurface`，浮层随正文变透明。Correct：该 token 保持 `PaletteForTheme(IsDarkMode()).pageSurface`，正文仍用材质化表面。

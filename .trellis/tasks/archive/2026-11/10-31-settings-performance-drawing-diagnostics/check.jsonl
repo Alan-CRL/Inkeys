@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "共享调度器、Settings UI 与空闲边界"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "RTS/Mouse 单一 producer 与多指准入"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置键兼容、白名单、国际化验收"}
+{"file": ".trellis/tasks/archive/2026-11/10-31-settings-performance-drawing-diagnostics/research/draw3-controls-and-canvas-info.md", "reason": "核实粒子真实生效边界和ignored Touch终态回收"}
+{"file": ".trellis/tasks/archive/2026-11/10-31-settings-performance-drawing-diagnostics/research/settings-and-frame-rates.md", "reason": "核实共享界面统一限频与画布整套profile"}
+{"file": ".trellis/tasks/archive/2026-11/10-31-settings-performance-drawing-diagnostics/research/general-drawing-options.md", "reason": "新落笔/断触接续/全部Predict门禁及正式文案验收"}
+{"file": ".trellis/spec/native/terminal-tail-reconstruction.md", "reason": "关闭只跳过完成态拟合，保留正常笔锋/Up/原子回退"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "复核公开接口、每笔锁存、真实回退信息与验证边界"}

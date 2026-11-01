@@ -133,7 +133,7 @@ namespace Inkeys::UI::Setting::Design
 		LayoutRect parentBounds, chevronBounds, flyoutBounds;
 		std::array<LayoutRect, GeneralSectionCount> childBounds{}, flyoutChildBounds{};
 		std::array<LayoutRect, 4> footerBounds{};
-		std::array<LayoutRect, 6> middleBounds{};
+		std::array<LayoutRect, 7> middleBounds{};
 		std::uint32_t parentItemId = 0;
 		std::uint32_t childFocusId = 0;
 		std::uint32_t childWindowItemId = 0;
@@ -263,7 +263,7 @@ namespace Inkeys::UI::Setting::Design
 
 	inline constexpr float NavigationRowHeight = 36.0F;
 	inline constexpr float NavigationSeparatorBand = 12.0F;
-	inline constexpr size_t NavigationMiddleItemCount = 6;
+	inline constexpr size_t NavigationMiddleItemCount = 7;
 
 	struct NavigationPaneGeometry
 	{
@@ -418,7 +418,7 @@ namespace Inkeys::UI::Setting::Design
 
 	struct MultilineRowGeometry
 	{
-		LayoutRect title, description, icon, action;
+		LayoutRect title, description, icon, action, note;
 		float height = 72.0F;
 	};
 
@@ -461,6 +461,23 @@ namespace Inkeys::UI::Setting::Design
 		result.height = (std::max)(72.0F, (std::max)({ result.description.bottom,
 			result.title.bottom, result.action.bottom, result.icon.bottom }) + measure.padding);
 		return result;
+	}
+
+	// 注意事项随说明一起退让；无提示直接返回旧算法，避免改变既有行的任何几何。
+	[[nodiscard]] inline MultilineRowGeometry ResolveRowWithNote(const RowMeasure& measure,
+		float titleHeight, float descriptionHeight, float inlineDescriptionHeight,
+		float noteHeight, float inlineNoteHeight, float reveal) noexcept
+	{
+		if (!(noteHeight > 0.0F))
+			return ResolveMultilineRowLayout(measure, titleHeight, descriptionHeight, inlineDescriptionHeight, reveal);
+		const float gap = descriptionHeight > 0.0F ? 4.0F : 0.0F;
+		const float inlineGap = inlineDescriptionHeight > 0.0F ? 4.0F : 0.0F;
+		auto row = ResolveMultilineRowLayout(measure, titleHeight, descriptionHeight + gap + noteHeight,
+			inlineDescriptionHeight + inlineGap + inlineNoteHeight, reveal);
+		row.note = { row.description.left, row.description.bottom - noteHeight,
+			row.description.right, row.description.bottom };
+		row.description.bottom = row.description.top + descriptionHeight;
+		return row;
 	}
 
 }

@@ -226,6 +226,36 @@ namespace Inkeys::UI::Setting::Design
 
 	namespace
 	{
+		float InfoTextInset(ImFluentTextStyle style) { return Pixels(Metrics(style).lineHeight + 6.0F); }
+
+		float InfoTextHeight(const char* text, float widthPixels, ImFluentTextStyle style)
+		{
+			if (!text || !*text) return 0.0F;
+			return (std::max)(Pixels(Metrics(style).lineHeight),
+				TextHeight(text, (std::max)(1.0F, widthPixels - InfoTextInset(style)), style));
+		}
+
+		void InfoTextAt(const char* text, ImVec2 position, float widthPixels, ImFluentTextStyle style)
+		{
+			if (!text || !*text) return;
+			const auto metrics = Metrics(style);
+			const float slot = Pixels(metrics.lineHeight), inset = InfoTextInset(style);
+			ImFluent::DrawIcon("\uf167", position, { position.x + slot, position.y + slot }, metrics.size, Accent);
+			TextAt(text, { position.x + inset, position.y }, (std::max)(1.0F, widthPixels - inset), style, TextPrimary);
+		}
+	}
+
+	void InfoText(const char* text, ImFluentTextStyle style)
+	{
+		if (!text || !*text) return;
+		const auto position = ImGui::GetCursorScreenPos();
+		const float width = ImGui::GetContentRegionAvail().x;
+		InfoTextAt(text, position, width, style);
+		ImGui::Dummy({ width, InfoTextHeight(text, width, style) });
+	}
+
+	namespace
+	{
 		bool DragEligible(ImGuiWindow* window, const NavigationState& state, bool submitted)
 		{
 			if (!window || (submitted ? !window->Active : !window->WasActive) || window->Hidden
@@ -547,8 +577,14 @@ namespace Inkeys::UI::Setting::Design
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
-		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline)
+		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note)
 	{
+		// 只有普通说明之外的补充才画 i；单独一段前提仍按原说明排版和着色。
+		if ((!description || !*description) && note && *note)
+		{
+			description = note;
+			note = nullptr;
+		}
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		const auto measure = MeasureRow(width / Pixels(1.0F), actionWidthDip,
@@ -566,7 +602,7 @@ namespace Inkeys::UI::Setting::Design
 		tween.start = storage->GetFloat(startId);
 		tween.progress = storage->GetFloat(progressId);
 		const int frame = ImGui::GetFrameCount(), previousFrame = storage->GetInt(frameId, -2);
-		const bool hasDescription = description && *description;
+		const bool hasDescription = (description && *description) || (note && *note);
 		const float threshold = DescriptionMinimumWidth
 			+ (tween.target > 0.5F ? DescriptionWidthHysteresis : 0.0F);
 		// 图片内容行可固定说明在左列，避免窄窗通用退让把文字排到二维码下方。
@@ -585,8 +621,11 @@ namespace Inkeys::UI::Setting::Design
 		const float inlineDescriptionHeight = TextHeight(description, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
 		const float descriptionHeight = TextHeight(description,
 			Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
-		const auto row = ResolveMultilineRowLayout(measure, titleHeight / Pixels(1.0F),
-			descriptionHeight / Pixels(1.0F), inlineDescriptionHeight / Pixels(1.0F), tween.value);
+		const float noteHeight = InfoTextHeight(note, Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
+		const float inlineNoteHeight = InfoTextHeight(note, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
+		const auto row = ResolveRowWithNote(measure, titleHeight / Pixels(1.0F),
+			descriptionHeight / Pixels(1.0F), inlineDescriptionHeight / Pixels(1.0F),
+			noteHeight / Pixels(1.0F), inlineNoteHeight / Pixels(1.0F), tween.value);
 		// 整行占位同时登记尾部间隙，最后一行后直接 EndChild 也不会越过内容边界。
 		ImGui::Dummy({ width, Pixels(row.height + RowGap) });
 		ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -596,6 +635,8 @@ namespace Inkeys::UI::Setting::Design
 			Pixels(row.title.Width()));
 		TextAt(description, { origin.x + Pixels(row.description.left), origin.y + Pixels(row.description.top) },
 			Pixels(row.description.Width()), ImFluentTextStyle_Caption, TextSecondary);
+		InfoTextAt(note, { origin.x + Pixels(row.note.left), origin.y + Pixels(row.note.top) },
+			Pixels(row.note.Width()), ImFluentTextStyle_Caption);
 		// PNG 默认保留原色，单色透明图案可由调用方显式指定前景色。
 		if (iconTexture)
 			draw->AddImage(iconTexture,
@@ -644,6 +685,22 @@ namespace Inkeys::UI::Setting::Design
 	{
 		ControlFontScope font;
 		return ImFluent::Button(label, ResolveButtonSize(label, size));
+	}
+
+	bool CopyButton(const char* id, const char* label, const char* text)
+	{
+		if (ImGui::GetCurrentWindow()->SkipItems) return false;
+		const float available = (std::max)(1.0F, ImGui::GetContentRegionAvail().x);
+		const float width = (std::min)(available, Pixels(ButtonWidth(label)));
+		const float offset = available - width;
+		// 布局缩进不把按钮尾部间距标为新内容；Indent(0)代表默认缩进，必须跳过。
+		if (offset > 0.0F) ImGui::Indent(offset);
+		ImGui::PushID(id);
+		const bool pressed = Button(label, { width, Pixels(ControlHeight) });
+		if (pressed) ImGui::SetClipboardText(text ? text : "");
+		ImGui::PopID();
+		if (offset > 0.0F) ImGui::Unindent(offset);
+		return pressed;
 	}
 
 	bool AccentButton(const char* label, const ImVec2& size)
@@ -1381,7 +1438,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value)
+		const char* glyph, bool& value, const char* note)
 	{
 		const float labelWidth = (std::max)(TextWidth(stateOn.c_str()), TextWidth(stateOff.c_str()));
 		bool changed = false;
@@ -1390,24 +1447,24 @@ namespace Inkeys::UI::Setting::Design
 			{
 				changed = ToggleAction(bounds, value);
 				TextAt(value ? stateOn.c_str() : stateOff.c_str(), { bounds.left, bounds.top }, labelWidth);
-			});
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
 		return changed;
 	}
 
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items)
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note)
 	{
 		float width = 160.0F;
 		for (const auto& item : items)
 			width = (std::max)(width, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
 		bool changed = false;
 		SettingRow(id, title, description, glyph, (std::min)(320.0F, width), ControlHeight,
-			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); });
+			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note);
 		return changed;
 	}
 
 	bool SliderRow(const char* id, const char* title, const char* description,
-		const char* glyph, float& value, float minimum, float maximum, bool& active, const char* format)
+		const char* glyph, float& value, float minimum, float maximum, bool& active, const char* format, const char* note)
 	{
 		bool changed = false;
 		active = false;
@@ -1421,12 +1478,12 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::SetNextItemWidth((std::max)(Pixels(24.0F), bounds.Width() - numberWidth - Pixels(12.0F)));
 				changed = Slider("##slider", &value, minimum, maximum, format);
 				active = ImGui::IsItemActive();
-			});
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
 		return changed;
 	}
 
 	bool SliderIntRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, int minimum, int maximum, bool& active, const char* format)
+		const char* glyph, int& value, int minimum, int maximum, bool& active, const char* format, const char* note)
 	{
 		bool changed = false;
 		active = false;
@@ -1440,12 +1497,12 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::SetNextItemWidth((std::max)(Pixels(24.0F), bounds.Width() - numberWidth - Pixels(12.0F)));
 				changed = SliderInt("##slider", &value, minimum, maximum, format);
 				active = ImGui::IsItemActive();
-			});
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
 		return changed;
 	}
 
 	bool ButtonRow(const char* id, const char* title, const char* description,
-		const char* glyph, const char* label, bool accent)
+		const char* glyph, const char* label, bool accent, const char* note)
 	{
 		bool clicked = false;
 		SettingRow(id, title, description, glyph, ButtonWidth(label), ControlHeight,
@@ -1454,12 +1511,12 @@ namespace Inkeys::UI::Setting::Design
 				const std::string stableLabel = std::string(label) + "###action";
 				clicked = accent ? AccentButton(stableLabel.c_str(), { bounds.Width(), bounds.Height() })
 					: Button(stableLabel.c_str(), { bounds.Width(), bounds.Height() });
-			});
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
 		return clicked;
 	}
 
 	int ButtonGroupRow(const char* id, const char* title, const char* description,
-		const char* glyph, std::initializer_list<ButtonSpec> buttons)
+		const char* glyph, std::initializer_list<ButtonSpec> buttons, const char* note)
 	{
 		std::vector<float> widths;
 		for (const auto& button : buttons) widths.push_back(ButtonWidth(button.label.c_str()));
@@ -1485,18 +1542,18 @@ namespace Inkeys::UI::Setting::Design
 					if (pressed) clicked = static_cast<int>(index);
 					++index;
 				}
-			});
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
 		return clicked;
 	}
 
-	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph, ImTextureID iconTexture, ImU32 iconTint)
+	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph, ImTextureID iconTexture, ImU32 iconTint, const char* note)
 	{
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		SettingRow(id, title, description, glyph, 24.0F, 24.0F, [&](const LayoutRect& bounds)
 			{
 				ImFluent::DrawIcon("\ue76c", { bounds.left, bounds.top }, { bounds.right, bounds.bottom }, 12.0F, TextSecondary);
-			}, Card, Stroke, iconTexture, iconTint);
+			}, Card, Stroke, iconTexture, iconTint, false, note);
 		const ImVec2 next = ImGui::GetCursorScreenPos();
 		ImGui::SetCursorScreenPos(origin);
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
@@ -1555,8 +1612,17 @@ namespace Inkeys::UI::Setting::Design
 			};
 			activePalette.appBase = alpha(activePalette.appBase, 204);
 			activePalette.pageSurface = alpha(activePalette.pageSurface, 230);
-			activePalette.card = alpha(activePalette.card, 245);
-			activePalette.cardSecondary = alpha(activePalette.cardSecondary, 245);
+			// 卡片与描边按 WinUI 3 CardBackgroundFillColor/CardStrokeColor 取值；控件直接沿用 ImFluent 预设的同名 WinUI 值。
+			activePalette.card = activeDarkMode ? IM_COL32(255, 255, 255, 13) : IM_COL32(255, 255, 255, 179);
+			activePalette.cardSecondary = activeDarkMode ? IM_COL32(255, 255, 255, 8) : IM_COL32(246, 246, 246, 128);
+			activePalette.stroke = activeDarkMode ? IM_COL32(0, 0, 0, 25) : IM_COL32(0, 0, 0, 15);
+			// 主页横幅、功能卡与头像底是带色卡片，取与浅色卡片相同的 70% 不透明度。
+			activePalette.heroFill = alpha(activePalette.heroFill, 179);
+			for (auto& tint : activePalette.featureTint) tint = alpha(tint, 179);
+			activePalette.avatarFill = alpha(activePalette.avatarFill, 179);
+			// 与 WinUI SubtleFill 一致：半透明叠色随材质变深/变浅，选中项不再是不透明亮白块。
+			activePalette.subtleHover = activeDarkMode ? IM_COL32(255, 255, 255, 15) : IM_COL32(0, 0, 0, 9);
+			activePalette.subtlePressed = activeDarkMode ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 6);
 		}
 		ImFluent::SetThemePreset(activeDarkMode ? ImFluentThemePreset_Dark : ImFluentThemePreset_Light);
 		ImFluent::SetAccentColor(ImColor(Accent));

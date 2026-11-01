@@ -1,0 +1,5 @@
+[FrameSubmission] snapshot-budget=1048576 exact-fields=17 invalidation-keys=12
+[SettingAttention] scale=1 frames=362
+[00363] [imgui-error] (current settings: Assert=1, Log=1, Tooltip=1)
+[00363] [imgui-error] In window '##copy-last-item-root/##setting-page-content_BD7E2C19': Code uses SetCursorPos()/SetCursorScreenPos() to extend window/parent boundaries.
+Please submit an item e.g. Dummy() afterwards in order to grow window/parent boundaries.

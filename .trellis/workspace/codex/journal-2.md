@@ -984,12 +984,25 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Summary
 
 移除 Whiteboard 对 Geometry 面板的每帧永久清零，三态统一非 Shape、fold、按钮不可见收起规则；补充真实 PrepareMainPanels 三态回归与 Spec。ARM64 完整构建、定向离屏测试、完整 no-window 测试通过，用户确认真实三态人工验证通过。
+## Session 153: Setting translucent shell: WinUI 3 single-layer material
+<!-- trellis-session: v=2 fp=2ed0f1c684bd0b35 -->
+
+**Date**: 2026-11-01
+**Task**: Setting translucent shell: WinUI 3 single-layer material
+**Branch**: `bugfix/settingui`
+
+### Summary
+
+Win11 blur only showed while dragging: accent 0xCC tint plus 80% AppBase left ~4% show-through. Accent now always BlurBehind; root AppBase is the single layer for caption/sidebar/content; cards and colour blocks use WinUI 3 alphas; nav selection uses SubtleFill grey. Fixed sidebar seams/stacked fills, opaque caption during entry mask (patched end-of-frame), pane uses frame backdrop snapshot, cache test covers production translucent root. Root rounding only on Win11 restored; self-drawn border only on Win10 RS4+/Win11. Verified by user on Win10 and Win11.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
 | `3e0df72b` | fix(ui3): allow geometry panel expansion in whiteboard |
+| `1922b699` | fix(setting): render the translucent Setting window as one WinUI 3 layer |
+| `652f4409` | fix(setting): sync translucent caption and pane with the frame state |
+| `f99e94f8` | fix(setting): match the root window shape to the system frame |
 
 ### Status
 
@@ -1287,6 +1300,16 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Summary
 
 用户明确授权提交当前改动；代码/脚本/测试/spec及任务研究已提交555ba5ce。最终全范围审查复用各轮通过证据，修正文档AC7过时表述为反馈通过、性能仍待处理。
+## Session 133: 修复重连接触身份残留并完成人工验收
+<!-- trellis-session: v=2 fp=323ace0df79f6509 -->
+
+**Date**: 2026-10-31
+**Task**: 修复重连接触身份残留并完成人工验收
+**Branch**: `bugfix/ink`
+
+### Summary
+
+同步重连接管的输入与手势身份；生产回归红17→绿0，Debug ARM64和Release x64构建及审查通过；用户人工验证通过，任务归档，待合并dev。
 
 ### Git Commits
 
@@ -1297,6 +1320,11 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Testing
 
 - [OK] 既有完整ARM64/managed/定向/真实离屏及用户等待反馈通过；本轮源码未变化，不重跑矩阵，git diff --check通过。
+| `74b8d3cb` | fix(ink): synchronize touch identity on stroke reconnect |
+
+### Testing
+
+- [OK] Debug ARM64 / Release x64完整构建通过；control-fence红17绿0；人工验证通过
 
 ### Status
 
@@ -1465,6 +1493,23 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Summary
 
 当前视觉修复、诊断和规范已提交，用户明确授权结束当前任务并归档至archive/2026-11。保留性能长尾、旧退出/CP及版本未验残余，不伪改未通过验收；只归档当前任务，不push。
+- 审阅bugfix/ink相对dev的差异，用户自行决定合并；不自动push/merge
+
+
+## Session 135: 设置性能、绘图控制与画布诊断完成归档
+<!-- trellis-session: v=2 fp=079ae463ac39198e -->
+
+**Date**: 2026-11-01
+**Task**: 设置性能、绘图控制与画布诊断完成归档
+**Branch**: `setting/performance`
+
+### Summary
+
+完成性能页、绘图选项、设置提示与诊断复制；修复末项复制按钮触发的 ImGui 边界断言，并归档任务。
+
+### Main Changes
+
+- 实现独立界面与画布帧率、逐笔绘图设置、激光笔约束、完整画布诊断及复制按钮。
 
 ### Git Commits
 
@@ -1475,6 +1520,11 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Testing
 
 - [OK] 最终跨chunk gate PASS，复用完整ARM64/定向/真实离屏/171213人工PASS；差异检查通过。归档55跟踪文件，本地9个忽略证据保持本地不纳入Git。
+| `ead40db9` | feat(settings): add performance controls and canvas diagnostics |
+
+### Testing
+
+- [OK] 完整 solution Debug ARM64 构建通过；attention/copy 无窗口回归通过。历史 HomeWARP 检查限制见归档验证报告，未运行 GUI。
 
 ### Status
 
@@ -1556,6 +1606,17 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 
 用户确认最终改动生效并批准结束提交。500ms延迟、外半径6DIP、track.6/arc1.2及显隐旋转已验收；工作commit后归档当前任务。旧PPT性能不属于本任务，不push。
 
+## Session 149: 手掌橡皮人工验收与任务收尾
+<!-- trellis-session: v=2 fp=3bc1a963a3b6d63f -->
+
+**Date**: 2026-11-01
+**Task**: 手掌橡皮人工验收与任务收尾
+**Branch**: `feature/erase`
+
+### Summary
+
+完成手掌橡皮设置与1%倍率、实尺预览、边擦边写条件i提示；用户人工验收通过。ARM64完整构建/无窗口验证/i18n通过，最终默认路径构建0错误；清理三个临时程序目录并归档任务。
+
 ### Git Commits
 
 | Hash | Message |
@@ -1565,6 +1626,8 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Testing
 
 - [OK] 最终全范围gate PASS，复用完整ARM64/定向/worker/实际像素与用户确认；最新204632入口仍running，仅作为版本确认，不宣称退出/密封。源码未变，diff检查通过。
+| `4a9caa11` | feat(settings): refine palm eraser configuration and previews |
+| `b5dd13bb` | chore(trellis): archive verified palm eraser task |
 
 ### Status
 

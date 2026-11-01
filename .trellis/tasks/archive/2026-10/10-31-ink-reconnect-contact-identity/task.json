@@ -1,0 +1,34 @@
+{
+  "id": "ink-reconnect-contact-identity",
+  "name": "ink-reconnect-contact-identity",
+  "title": "修复重连后接触身份残留导致整笔丢失",
+  "description": "基于 v4 现场日志修复 Draw3 重连成功后 touchGestureKey 未随 handle 迁移的问题，并增加无窗口生产路径回归。",
+  "status": "completed",
+  "dev_type": "bugfix",
+  "scope": "draw3",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": "2026-10-31",
+  "branch": "bugfix/ink",
+  "base_branch": "dev",
+  "worktree_path": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+  "commit": "74b8d3cb3fe195dcdfa0ba2227faa7f2a581bf22",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp",
+    ".trellis/spec/native-desktop/input-and-ink.md"
+  ],
+  "notes": "用户人工验证通过，已授权提交、结束及归档；自动化红17→绿0、Debug ARM64/Release x64构建、独立审查及修复包校验均通过。",
+  "meta": {
+    "validation": "passed",
+    "implementation_complete": true,
+    "fix_commit_authorized": true,
+    "manual_validation": "passed by user"
+  }
+}

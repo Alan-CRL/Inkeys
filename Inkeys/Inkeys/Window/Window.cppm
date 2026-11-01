@@ -48,12 +48,15 @@ export namespace Inkeys::Window
 		bool legacyFrame = true;
 		bool compositionAlwaysEnabled = false;
 		bool acrylic = false;
+		// Win11 默认圆角；仅用于 resize 边框窗口挖空主窗口外角。
+		bool roundedCorners = false;
 	};
 	[[nodiscard]] constexpr SettingPlatformCapabilities ResolveSettingPlatformCapabilities(
 		DWORD major, DWORD minor, DWORD build) noexcept
 	{
 		const bool modernDwm = major > 6 || (major == 6 && minor >= 2);
-		return { !modernDwm, modernDwm, major > 10 || (major == 10 && build >= 17134) };
+		return { !modernDwm, modernDwm, major > 10 || (major == 10 && build >= 17134),
+			major > 10 || (major == 10 && build >= 22000) };
 	}
 	[[nodiscard]] constexpr bool ResolveSettingCompositionEnabled(
 		SettingPlatformCapabilities platform, bool querySucceeded, bool queriedEnabled) noexcept
@@ -62,6 +65,8 @@ export namespace Inkeys::Window
 	}
 	[[nodiscard]] SettingPlatformCapabilities QuerySettingPlatformCapabilities() noexcept;
 	[[nodiscard]] bool IsSettingCompositionEnabled() noexcept;
+	// accent 平台（Win10 RS4+/Win11 且 composition 开启）：零侧边 frame，缩放热区只在窗外。
+	[[nodiscard]] bool UsesSettingOutsideResize() noexcept;
 	[[nodiscard]] bool IsSettingModalWakeCurrent(HWND hwnd, std::uintptr_t generation) noexcept;
 	// RECT 四字段表示正向 inset；客户区和 resize 热区分别使用各自的度量。
 	[[nodiscard]] RECT QuerySettingClientFrameInsets(HWND hwnd = nullptr,
