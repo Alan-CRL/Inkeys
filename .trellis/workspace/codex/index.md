@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 135
+- **Total Sessions**: 149
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1034 | Active |
+| `journal-2.md` | ~1057 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 149 | 2026-11-01 | 手掌橡皮人工验收与任务收尾 | `4a9caa11`, `b5dd13bb` | `feature/erase` |
 | 135 | 2026-11-01 | 设置性能、绘图控制与画布诊断完成归档 | `ead40db9` | `setting/performance` |
 | 133 | 2026-10-31 | 修复重连接触身份残留并完成人工验收 | `74b8d3cb` | `bugfix/ink` |
 | 130 | 2026-10-27 | UI3 吸附释放交接与最终收窗收尾归档 | `48dda087`, `b7f237f0` | `bugfix/cut` |

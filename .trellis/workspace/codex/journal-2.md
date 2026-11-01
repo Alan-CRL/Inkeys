@@ -1032,3 +1032,26 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Status
 
 [OK] **Completed**
+
+
+## Session 149: 手掌橡皮人工验收与任务收尾
+<!-- trellis-session: v=2 fp=3bc1a963a3b6d63f -->
+
+**Date**: 2026-11-01
+**Task**: 手掌橡皮人工验收与任务收尾
+**Branch**: `feature/erase`
+
+### Summary
+
+完成手掌橡皮设置与1%倍率、实尺预览、边擦边写条件i提示；用户人工验收通过。ARM64完整构建/无窗口验证/i18n通过，最终默认路径构建0错误；清理三个临时程序目录并归档任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4a9caa11` | feat(settings): refine palm eraser configuration and previews |
+| `b5dd13bb` | chore(trellis): archive verified palm eraser task |
+
+### Status
+
+[OK] **Completed**
