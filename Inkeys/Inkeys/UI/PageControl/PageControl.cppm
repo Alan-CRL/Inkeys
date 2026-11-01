@@ -635,6 +635,8 @@ export namespace Inkeys::UI::PageControl
 		// 白板期间放映控件不可见，但场次仍存活；菜单可用性不能由可见位推断。
 		bool presentationActive = false;
 		bool presentationVisible = false;
+		// 仅表示已观测到页面仍在准备；不授权输入，也不等同最终UI/Draw3回执。
+		bool pagePreparing = false;
 		bool longPressEnabled = false;
 		int currentPage = -1;
 		int totalPage = -1;
@@ -643,6 +645,12 @@ export namespace Inkeys::UI::PageControl
 		// 帧内派生的 UI 全局尺度；不属于用户位置/控件倍率，不参与持久化。
 		float uiScale = 0.0F;
 	};
+
+	[[nodiscard]] inline bool IsPptPagePreparing(const PptState& state) noexcept
+	{
+		return state.pagePreparing && state.presentationActive && state.presentationVisible
+			&& state.layout.session != 0 && state.recovery.kind == PptRecovery::Kind::None;
+	}
 
 	[[nodiscard]] inline bool IsPptNavigationWaiting(
 		const PptState& state, bool next) noexcept
@@ -822,6 +830,7 @@ export namespace Inkeys::UI::PageControl
 			&& left.layout.pairVersions == right.layout.pairVersions
 			&& left.presentationActive == right.presentationActive
 			&& left.presentationVisible == right.presentationVisible
+			&& left.pagePreparing == right.pagePreparing
 			&& left.longPressEnabled == right.longPressEnabled
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage

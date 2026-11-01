@@ -2,6 +2,7 @@ module;
 
 #include <windows.h>
 #include "Ppt.Recovery.h"
+#include "../../../PptWaitingDiagnostics.h"
 
 #include <atomic>
 #include <cwchar>
@@ -56,6 +57,22 @@ namespace Inkeys::UI::Ppt
 		PptRecovery::State pageRecovery;
 		TopmostRefreshState topmostRefresh;
 		bool topmostRefreshFailureLogged = false;
+
+		namespace WaitTrace=Inkeys::Business::PptWaitTrace;
+		// 调用方持有原stateMutex；只拷贝已有纯值，不增加业务锁或窗口读取。
+		WaitTrace::Fields WaitingFields(std::uint64_t session=0,std::uint64_t epoch=0,unsigned direction=0) noexcept
+		{
+			WaitTrace::Fields value;if(!WaitTrace::Enabled())return value;
+			value.session=session?session:navigationWaiting.current.session;
+			value.epoch=epoch?epoch:navigationWaiting.current.epoch;
+			value.direction=direction?direction:static_cast<unsigned>(navigationWaiting.current.direction);
+			value.positionSession=positions.session;value.activeSession=navigationWaiting.activeSession;
+			value.activeEpoch=navigationWaiting.current.epoch;value.completedEpoch=navigationWaiting.completedEpoch;
+			value.layoutSession=positions.session;value.layoutEpoch=positions.epoch;value.publication=publicationRevision;
+			value.flags=WaitTrace::Initialized|(positions.active?WaitTrace::PositionActive:0)
+				|(navigationWaiting.current.waiting?WaitTrace::Waiting:0)|(topmostRefresh.presentationVisible?WaitTrace::Visible:0);
+			return value;
+		}
 
 		void LogTopmostRefreshState(bool recovered) noexcept
 		{
@@ -134,7 +151,14 @@ namespace Inkeys::UI::Ppt
 				state.pageAckEpoch = pageState.pageAckEpoch;
 				state.navigationWaiting = navigationWaiting.current;
 				state.recovery = pageRecovery.session == positions.session ? pageRecovery : PptRecovery::State{};
+				// 与旧页码和过滤后的同场recovery取同一快照；命令返回不能代替真实页面准备完成。
+				state.pagePreparing = state.presentationActive && state.presentationVisible && state.layout.session != 0
+					&& pageState.mode == PageStateMode::Pending && state.recovery.kind == PptRecovery::Kind::None;
 				state.publicationRevision = ++publicationRevision;
+				auto waitFields=WaitingFields();
+				if(state.pagePreparing){waitFields.flags|=WaitTrace::Preparing;waitFields.session=state.layout.session;
+					waitFields.epoch=0;waitFields.direction=0;} // 通用准备没有命令epoch，不借用已完成请求。
+				WaitTrace::Capture(WaitTrace::Stage::Snapshot,waitFields,WaitTrace::Result::Accepted);
 			}
 			Inkeys::UI::PageControl::PublishPptState(state);
 		}
@@ -315,14 +339,21 @@ namespace Inkeys::UI::Ppt
 
 	void PublishNavigationWaiting(std::uint64_t session, std::uint64_t epoch, bool next) noexcept
 	{
-		if (!initialized.load(std::memory_order_acquire)) return;
+		if (!initialized.load(std::memory_order_acquire)) {
+			WaitTrace::Fields fields;fields.session=session;fields.epoch=epoch;fields.direction=next?2:1;
+			WaitTrace::Capture(WaitTrace::Stage::Publish,fields,WaitTrace::Result::Uninitialized);return;
+		}
 		bool changed = false;
 		{
 			std::scoped_lock lock(stateMutex);
-			if (!positions.active || positions.session != session) return;
+			if (!positions.active || positions.session != session) {
+				WaitTrace::Capture(WaitTrace::Stage::Publish,WaitingFields(session,epoch,next?2:1),WaitTrace::Result::PositionMismatch);return;
+			}
 			changed = navigationWaiting.Publish(session, epoch,
 				next ? Inkeys::UI::PageControl::PptNavigationDirection::Next
 					: Inkeys::UI::PageControl::PptNavigationDirection::Previous);
+			WaitTrace::Capture(WaitTrace::Stage::Publish,WaitingFields(session,epoch,next?2:1),
+				changed?WaitTrace::Result::Accepted:WaitTrace::Result::TrackerRejected);
 		}
 		if (changed) PublishSnapshot();
 	}
@@ -334,6 +365,8 @@ namespace Inkeys::UI::Ppt
 		{
 			std::scoped_lock lock(stateMutex);
 			changed = navigationWaiting.Complete(session, epoch);
+			WaitTrace::Capture(WaitTrace::Stage::Complete,WaitingFields(session,epoch),
+				changed?WaitTrace::Result::Accepted:WaitTrace::Result::Unchanged);
 		}
 		if (changed) PublishSnapshot();
 	}
@@ -344,7 +377,9 @@ namespace Inkeys::UI::Ppt
 		bool changed = false;
 		{
 			std::scoped_lock lock(stateMutex);
+			const auto fields=WaitingFields(session);
 			changed = navigationWaiting.Clear(session);
+			WaitTrace::Capture(WaitTrace::Stage::Clear,fields,changed?WaitTrace::Result::Accepted:WaitTrace::Result::Unchanged);
 		}
 		if (changed) PublishSnapshot();
 	}
@@ -399,6 +434,7 @@ namespace Inkeys::UI::Ppt
 			if (changed)
 			{
 				pageState = {};
+				WaitTrace::Capture(WaitTrace::Stage::Session,WaitingFields(),WaitTrace::Result::Reset);
 				navigationWaiting.Clear();
 				if (positions.active) navigationWaiting.BeginSession(positions.session);
 				pageRecovery = {};

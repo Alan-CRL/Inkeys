@@ -141,3 +141,27 @@
 ## 2026-10-31 审阅修复设计补充
 
 本轮批准设计见 [审阅修复计划](research/review-fixes-plan.md)：分离新鲜身份与可复用拓扑并隔离放映场次；等待状态记住完成 epoch 以处理乱序；白板失败补呈现绑定原场景/代次/页面并消费时复核。公开 COM ABI/schema、COM owner、输入/真实呈现门禁均保持原合同。
+
+## 2026-11-01 分段诊断设计
+
+用户已批准设计并准备。数值协议、QPC关联、阶段、输出和文件所有权见 research/navigation-perf-plan-20261101.md。跨层不改ABI，COM封送线程改变时只做唯一时间区间关联。
+
+## 2026-11-01 Observe精确定位设计
+
+用户已要求准确定位并执行，dynamic/确定性COM释放为硬约束。先补既有调用子阶段计时与分析展示，人工采样后据证据收窄调度修复；不盲目跳过校验。方案和文件边界见 [observe-substage-plan-20261101.md](research/observe-substage-plan-20261101.md)。AI不操控GUI、不自动提交。
+
+## 2026-11-01 细分实测后的最小ROT修复
+
+用户已批准执行。新数据表明Observe为多个慢COM查询累计；先按 [rot-yield-fix-plan-20261101.md](research/rot-yield-fix-plan-20261101.md) 实施健康binding下ROT安全取消/一次让出公平预算，保留原完整Observe与全部COM释放/墨迹准入，不同时重写观察逻辑。
+
+## 2026-11-01 正常退出超时定位
+
+修复版用户正常退出触发0xE1430016，退出验收不通过。先按 [normal-exit-trace-plan-20261101.md](research/normal-exit-trace-plan-20261101.md) 包裹原清理阶段、保持行为和COM释放；AI不操控GUI、不修改退出策略，不把问题直接归为COM泄漏。
+
+## 2026-11-01 等待标记不可见的边界定位
+
+最新长等待实机三点不可见，静态代码尚不足证明单一根因。按 [navigation-wait-trace-plan-20261101.md](research/navigation-wait-trace-plan-20261101.md) 只补Ppt发布→PageControl合并/配置/绘制/真实呈现的固定数值证据；默认关闭，渲染线程无I/O/分配/等待，停产后flush，不改PptCOM或UI/页码/ready行为。准备验证通过后交用户少量操作采样，不重复同版大矩阵。
+
+## 2026-11-01 用户澄清后的页面准备提示修复
+
+三点实际出现，但随命令Complete提前消失；后续raw/descriptor失配及Draw3/UI ACK阶段仍Pending。按 [page-preparation-wait-fix-plan-20261101.md](research/page-preparation-wait-fix-plan-20261101.md) 独立投影真实Pending为通用准备提示，原命令tracker/水位、COM和输入ready门均不改，不引入soft TTL或猜测完成。

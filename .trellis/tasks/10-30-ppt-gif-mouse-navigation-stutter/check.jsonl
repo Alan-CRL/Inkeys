@@ -7,3 +7,10 @@
 {"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"审查诊断默认关闭和错误处理"}
 {"file":".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/investigation.md","reason":"核对修复是否针对实测根因并保留验证边界"}
 {"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/review-fixes-plan.md", "reason": "本轮已批准三项审阅修复的范围、合同、文件所有权和验收"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/navigation-perf-plan-20261101.md", "reason": "本轮获批分段诊断协议、阶段、所有权和用户测试交接合同"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/observe-substage-plan-20261101.md", "reason": "用户最新批准的Observe细分定位/安全调度设计及dynamic释放硬约束"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/rot-yield-fix-plan-20261101.md", "reason": "细分实测后已批准最小ROT让出修复、逐笔释放与公平约束"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/normal-exit-trace-plan-20261101.md", "reason": "用户确认正常退出失败后的最小阶段定位/COM释放与LastError约束"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/navigation-wait-trace-plan-20261101.md", "reason": "本轮等待标记不可见的最小诊断合同"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/normal-exit-trace-results-20261101.md", "reason": "最新实测退出成功但性能与三点仍失败"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-preparation-wait-fix-plan-20261101.md", "reason": "用户澄清后实际Pending页面准备提示的最小行为修复合同"}

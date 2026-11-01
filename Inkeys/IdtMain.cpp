@@ -49,6 +49,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
 #include "Inkeys/UI/StartupPlacement.h"
 #include "PptSettingsPersistence.h"
+#include "ShutdownProgressTrace.h"
+#include "PptWaitingDiagnostics.h"
 #include "resource.h"
 #include <array>
 #include <cstdio>
@@ -338,18 +340,30 @@ namespace
 	}
 }
 
+namespace ShutdownTrace = Inkeys::Shutdown::ProgressTrace;
+
 void SetOffSignal(int signal)
 {
 	if (signal != 1 && signal != 2) return;
 	// 首次请求决定关闭或重启；先建立独立监督，再进入任何可能卡住的清理。
 	if (InterlockedCompareExchange(&offSignalInterop,
 		static_cast<LONG>(signal), 0) != 0) return;
+	// Arm 前只取纯值时刻，不写日志；不能让诊断 I/O 抢在独立退出保护之前。
+	auto* preArmRecorder = ShutdownTrace::PreparedRecorder();
+	const auto acceptedTrace = ShutdownTrace::Capture(preArmRecorder, "set-off");
+	const auto windowTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-window-begin");
 	Inkeys::Window::GetService().BeginShutdown();
+	const auto windowEnd = ShutdownTrace::CaptureEnd(preArmRecorder, windowTrace);
+	const auto armTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-arm");
 	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
 		signal == 2 ? Inkeys::Shutdown::Intent::Restart
 		: Inkeys::Shutdown::Intent::Close);
 	const DWORD supervisorError = GetLastError();
+	const auto armEnd = ShutdownTrace::CaptureEnd(preArmRecorder, armTrace, "returned",
+		static_cast<long>(supervisorError));
+	const auto publishTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-publish");
 	offSignal.store(signal, std::memory_order_release);
+	const auto publishEnd = ShutdownTrace::CaptureEnd(preArmRecorder, publishTrace);
 	if (supervisor == Inkeys::Shutdown::ArmResult::Failed)
 	{
 		// 首次普通owner的合法Arm已双失败，当前线程接管原截止，先于任何隐藏/日志/清理等待。
@@ -358,17 +372,36 @@ void SetOffSignal(int signal)
 			signal == 2 ? Inkeys::Shutdown::Intent::Restart
 			: Inkeys::Shutdown::Intent::Close);
 	}
-	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
+	// Failed 接管仍先于任何输出；Arm 若未返回，本轮缓冲记录不会假装已经写出。
+	auto& shutdownRecorder = ShutdownTrace::DefaultRecorder();
+	ShutdownTrace::Begin(shutdownRecorder, acceptedTrace);
+	ShutdownTrace::Scope acceptedScope(shutdownRecorder, acceptedTrace);
+	ShutdownTrace::Begin(shutdownRecorder, windowTrace); ShutdownTrace::Emit(shutdownRecorder, windowEnd);
+	ShutdownTrace::Begin(shutdownRecorder, armTrace); ShutdownTrace::Emit(shutdownRecorder, armEnd);
+	ShutdownTrace::Begin(shutdownRecorder, publishTrace); ShutdownTrace::Emit(shutdownRecorder, publishEnd);
+	{
+		ShutdownTrace::Scope trace("set-off-hide");
+		(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
+	}
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
-	Inkeys::UI::RenderPipeline::WakeForStop();
+	{
+		ShutdownTrace::Scope trace("set-off-wake");
+		Inkeys::UI::RenderPipeline::WakeForStop();
+	}
 	if (supervisor == Inkeys::Shutdown::ArmResult::FallbackArmed && IDTLogger)
 		IDTLogger->warn("[退出监督] 外部监督未建立；自身15秒退场已启动，不能保证重启，错误码={}",
 			supervisorError);
 	else if (supervisor != Inkeys::Shutdown::ArmResult::Armed && IDTLogger)
 		IDTLogger->error("[退出监督] 15 秒保护未建立，错误码={}", supervisorError);
 	// 受控退出清理期异常不应再由未处理异常过滤器误判为普通崩溃。
-	CrashHandler::Shutdown();
-	StopMagnifierCoordinator();
+	{
+		ShutdownTrace::Scope trace("set-off-crash-handler");
+		CrashHandler::Shutdown();
+	}
+	{
+		ShutdownTrace::Scope trace("set-off-magnifier");
+		StopMagnifierCoordinator();
+	}
 }
 
 namespace Inkeys::Shutdown
@@ -1604,6 +1637,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
+
+	// 只在正常入口预热诊断静态对象；不输出、不取时钟，监督/测试早期模式保持原路径。
+	ShutdownTrace::WarmUp();
+	Inkeys::Business::PptWaitTrace::Prepare();
 
 	// 进程级 owner 兜住启动失败返回；Host/RTS 退出后才停止独立输出器。
 	Inkeys::Drawing::Draw3::DiagnosticOutput::Session draw3DiagnosticOutput;
@@ -3786,29 +3823,33 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		Inkeys::UI::StartupPreview::Stop();
 		break;
 	}
+	ShutdownTrace::Scope shutdownTrace("main-shutdown");
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
-	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
-	Inkeys::UI::StartupPreview::Stop();
-	if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
-	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
-	if (freezeFrameThread.joinable()) freezeFrameThread.join();
-	if (stateMonitoringThread.joinable()) stateMonitoringThread.join();
-	if (magnifierThread.joinable()) magnifierThread.join();
-	if (pptLinkageThread.joinable()) pptLinkageThread.join();
-	if (topWindowThread.joinable()) topWindowThread.join();
+	{ ShutdownTrace::Scope trace("main-topmost-observer"); Inkeys::Window::GetService().SetTopmostRefreshObserver({}); }
+	{ ShutdownTrace::Scope trace("main-startup-preview"); Inkeys::UI::StartupPreview::Stop(); }
+	if (whiteboardFeatureEnabled) { ShutdownTrace::Scope trace("main-whiteboard"); Inkeys::UI::Whiteboard::Shutdown(); }
+	if (ui3InitializationThread.joinable()) { ShutdownTrace::Scope trace("main-join-ui3-initialization"); ui3InitializationThread.join(); }
+	if (freezeFrameThread.joinable()) { ShutdownTrace::Scope trace("main-join-freeze"); freezeFrameThread.join(); }
+	if (stateMonitoringThread.joinable()) { ShutdownTrace::Scope trace("main-join-state"); stateMonitoringThread.join(); }
+	if (magnifierThread.joinable()) { ShutdownTrace::Scope trace("main-join-magnifier"); magnifierThread.join(); }
+	if (pptLinkageThread.joinable()) { ShutdownTrace::Scope trace("main-join-ppt"); pptLinkageThread.join(); }
+	if (topWindowThread.joinable()) { ShutdownTrace::Scope trace("main-join-top-window"); topWindowThread.join(); }
 	// 先停止 Draw3 设备/RTS，再由 Window Service 销毁其拥有的 Drawpad HWND。
-	Inkeys::Drawing::Draw3::StopProduct();
+	{ ShutdownTrace::Scope trace("main-stop-draw3"); Inkeys::Drawing::Draw3::StopProduct(); }
 	// 先停止主题变更生产者，再排空最后的配置 FIFO；窗口服务/渲染管线仍在，供 Setting 完成释放。
-	Inkeys::UI::Setting::Shutdown();
-	Inkeys::Window::GetService().StopAndJoin();
-	Inkeys::UI::RenderPipeline::Shutdown();
-	displaySubscription.Reset();
-	Inkeys::Display::Shutdown();
-	(void)draw3DiagnosticOutput.Stop();
+	{ ShutdownTrace::Scope trace("main-setting"); Inkeys::UI::Setting::Shutdown(); }
+	{ ShutdownTrace::Scope trace("main-window"); Inkeys::Window::GetService().StopAndJoin(); }
+	{ ShutdownTrace::Scope trace("main-render-pipeline"); Inkeys::UI::RenderPipeline::Shutdown(); }
+	// 上述UI3初始化/input、state、PPT已join，配置/窗口/渲染已排空；此前只保存数值。
+	Inkeys::Business::PptWaitTrace::FlushAfterProducersJoined();
+	{ ShutdownTrace::Scope trace("main-display-subscription"); displaySubscription.Reset(); }
+	{ ShutdownTrace::Scope trace("main-display"); Inkeys::Display::Shutdown(); }
+	{ ShutdownTrace::Scope trace("main-diagnostic-output"); (void)draw3DiagnosticOutput.Stop(); }
 
-	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
+	{ ShutdownTrace::Scope trace("main-status-log"); IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束"); }
 
 	{
+		ShutdownTrace::Scope trace("main-thread-status-wait");
 		using namespace Inkeys::Thread;
 
 		int WaitingCount = 0;
@@ -3822,22 +3863,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 反初始化 COM 环境
 	{
-		if (pptComModule) FreeLibrary(pptComModule);
-		if (actCtxActivated) DeactivateActCtx(0, ulCookie);
-		if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
-		if (SUCCEEDED(comInitializeResult)) CoUninitialize();
+		ShutdownTrace::Scope trace("main-com-cleanup");
+		if (pptComModule) { ShutdownTrace::Scope step("main-free-ppt-module"); FreeLibrary(pptComModule); }
+		if (actCtxActivated) { ShutdownTrace::Scope step("main-deactivate-context"); DeactivateActCtx(0, ulCookie); }
+		if (hActCtx != INVALID_HANDLE_VALUE) { ShutdownTrace::Scope step("main-release-context"); ReleaseActCtx(hActCtx); }
+		if (SUCCEEDED(comInitializeResult)) { ShutdownTrace::Scope step("main-com-uninitialize"); CoUninitialize(); }
 
-		IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成");
+		{ ShutdownTrace::Scope step("main-com-log"); IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成"); }
 	}
 	// 释放互斥体
 	if (launchMutex)
 	{
 		// ReleaseMutex(hMutex); // 调用 CloseHandle 通常就够了，因为我们是创建者且未等待它
+		ShutdownTrace::Scope trace("main-launch-mutex");
 		CloseHandle(launchMutex);
 		launchMutex = NULL;
 	}
 
-	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
+	{ ShutdownTrace::Scope trace("main-finished-log"); IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序"); }
 
 	return developerModeExitCode;
 }

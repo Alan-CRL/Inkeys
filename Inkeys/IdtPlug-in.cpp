@@ -51,6 +51,8 @@ import Inkeys.Startup.Progress;
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PptTiming.h"
 #include "Inkeys/Business/PptSession.h"
+#include "PptNavigationDiagnostics.h"
+#include "ShutdownProgressTrace.h"
 
 #ifdef MessageBox
 #undef MessageBox
@@ -73,6 +75,19 @@ namespace
 	using Inkeys::Business::PptFocusRequest;
 	using Inkeys::Business::PptFocusForeground;
 	using Inkeys::Business::PptFocusState;
+	namespace PptPerf = Inkeys::Business::PptPerf;
+	void WritePptPerfEvent(const PptPerf::Event& value)
+	{
+		if (!IDTLogger) return;
+		char line[512]{};
+		const int count = PptPerf::Format(line, sizeof(line), value);
+		if (count) IDTLogger->info("{}", std::string_view(line, static_cast<std::size_t>(count)));
+	}
+	PptPerf::Recorder& PptPerfRecorder() noexcept
+	{
+		static PptPerf::Recorder recorder(PptPerf::Enabled(), WritePptPerfEvent);
+		return recorder;
+	}
 	// 仅初始化前生产探针使用，替换外部 HWND/COM 副作用；正常启动始终为空。
 	struct PptFocusTestHooks
 	{
@@ -122,6 +137,8 @@ namespace
 		std::string settingsPayload;
 		PptFocusForeground focusForeground;
 		std::uint64_t inputWorkspaceEpoch = 0;
+		PptPerf::Stamp perfRequest;
+		PptPerf::Stamp perfQueue;
 	};
 	mutex pptUiBusinessMutex;
 	condition_variable pptUiBusinessCondition;
@@ -151,7 +168,12 @@ namespace
 	{
 		const bool pageCommand = command == PptUiBusinessCommand::Previous ||
 			command == PptUiBusinessCommand::Next;
-		if (pageCommand && pptUiPageCommandOutstanding.exchange(true)) return;
+		if (pageCommand && pptUiPageCommandOutstanding.exchange(true))
+		{
+			PptPerfRecorder().Instant("native-discard", { 0, 0, 0,
+				command == PptUiBusinessCommand::Next ? "Next" : "Previous" }, "outstanding");
+			return;
+		}
 		PptUiBusinessRequest request{ command, expected ? *expected : CapturePptSession(), requestId };
 		request.focusForeground = foreground ? *foreground : CapturePptForeground();
 		if(pageCommand)
@@ -161,11 +183,26 @@ namespace
 		}
 		const auto navigationSession = request.session.localSession;
 		const auto navigationEpoch = request.navigationEpoch;
+		if (pageCommand)
+		{
+			const PptPerf::Context context{ 0, navigationSession, navigationEpoch,
+				command == PptUiBusinessCommand::Next ? "Next" : "Previous" };
+			request.perfRequest = PptPerfRecorder().Capture("native-request", context);
+		}
+		const auto perfRequest = request.perfRequest;
+		PptPerf::Stamp perfQueue;
 		try
 		{
 			lock_guard lock(pptUiBusinessMutex);
 			if (command == PptUiBusinessCommand::EndShow && !pptEndShowGate.TryBegin(request.session)) return;
 			pptUiBusinessCommands.push_back(std::move(request));
+			if (perfRequest.span)
+			{
+				// 只在成功 push 后取入队时刻，生产者锁等待不能算成队列驻留；锁内不写日志。
+				auto queued = perfRequest.context; queued.parent = perfRequest.span;
+				perfQueue = PptPerfRecorder().Capture("native-queue", queued);
+				pptUiBusinessCommands.back().perfQueue = perfQueue;
+			}
 		}
 		catch (...)
 		{
@@ -176,8 +213,13 @@ namespace
 				pptEndShowGate.Complete(request.session);
 			}
 			if (requestId) Inkeys::UI::Bar::CompleteEndShowRequest(requestId);
+			PptPerfRecorder().Begin(perfRequest);
+			PptPerfRecorder().End(perfRequest, "enqueue-error");
 			return;
 		}
+		// 只保存纯值 begin 时刻；日志必须在释放业务锁后写，允许消费者先写出 end。
+		PptPerfRecorder().Begin(perfRequest);
+		PptPerfRecorder().Begin(perfQueue);
 		// 只在成功入队且释放业务锁后发布纯值；重复点击不会替换原 epoch。
 		if (pageCommand)
 		{
@@ -459,15 +501,21 @@ bool ExitPptSlideShowAnnotationTool(const IPptCOMServerPtr& pptCom)
 
 	return ret;
 }
+namespace ShutdownTrace = Inkeys::Shutdown::ProgressTrace;
+
 void GetPptState()
 {
 	Inkeys::Thread::StatusGuard guard("GetPptState");
+	ShutdownTrace::Scope workerTrace("ppt-state-worker");
 
 	while (!offSignal)
 	{
 		if (!CheckPptCom())
 		{
-			ResetPptComSnapshot();
+			{
+				ShutdownTrace::Scope trace("ppt-check-failed-reset");
+				ResetPptComSnapshot();
+			}
 			PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
 
 			for (int i = 0; i <= 20 && !offSignal; i++)
@@ -481,7 +529,11 @@ void GetPptState()
 
 		try
 		{
-			if (pptCom != nullptr) tmp = pptCom->PptComService();
+			if (pptCom != nullptr)
+			{
+				ShutdownTrace::Scope trace("ppt-managed-service");
+				tmp = pptCom->PptComService();
+			}
 		}
 		catch (_com_error err)
 		{
@@ -491,7 +543,10 @@ void GetPptState()
 		}
 
 		PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
-		ResetPptComSnapshot();
+		{
+			ShutdownTrace::Scope trace("ppt-service-snapshot-reset");
+			ResetPptComSnapshot();
+		}
 
 		if (tmp <= 0)
 		{
@@ -504,14 +559,22 @@ void GetPptState()
 void NextPptSlides(int check)
 {
 	auto pptCom = GetPptComSnapshot();
-	if (pptCom == nullptr) return;
+	if (pptCom == nullptr)
+	{
+		PptPerfRecorder().Instant("native-discard", PptPerf::current, "no-server");
+		return;
+	}
 
 	try
 	{
+		PptPerf::Scope callTrace(PptPerfRecorder(), "native-com", PptPerf::current, PptPerf::current.parent != 0);
 		pptCom->NextSlideShow((bool)(check == -1));
+		// void 接口只证明已返回，不能将 managed 超时/拒绝冒充 Office 执行成功。
+		callTrace.Result("returned");
 	}
-	catch (_com_error)
+	catch (_com_error error)
 	{
+		PptPerfRecorder().Instant("native-com-error", PptPerf::current, "com-error", error.Error());
 	}
 
 	return;
@@ -519,14 +582,22 @@ void NextPptSlides(int check)
 void PreviousPptSlides()
 {
 	auto pptCom = GetPptComSnapshot();
-	if (pptCom == nullptr) return;
+	if (pptCom == nullptr)
+	{
+		PptPerfRecorder().Instant("native-discard", PptPerf::current, "no-server");
+		return;
+	}
 
 	try
 	{
+		PptPerf::Scope callTrace(PptPerfRecorder(), "native-com", PptPerf::current, PptPerf::current.parent != 0);
 		pptCom->PreviousSlideShow();
+		// void 接口只证明已返回，不能将 managed 超时/拒绝冒充 Office 执行成功。
+		callTrace.Result("returned");
 	}
-	catch (_com_error)
+	catch (_com_error error)
 	{
+		PptPerfRecorder().Instant("native-com-error", PptPerf::current, "com-error", error.Error());
 	}
 
 	return;
@@ -608,21 +679,36 @@ namespace
 	}
 	bool FocusPptSession(const PptFocusRequest& request)
 	{
+		PptPerf::Scope focusTrace(PptPerfRecorder(), "native-focus", PptPerf::current, PptPerf::current.parent != 0);
 		const auto state = CapturePptFocusState(request.session);
-		if (!Inkeys::Business::CanFocusPptSession(request, state)) return false;
-		if (state.foreground.window == request.session.showWindow) return true;
-		if (!IsCurrentPptSession(request.session)) return false;
+		if (!Inkeys::Business::CanFocusPptSession(request, state))
+		{
+			focusTrace.Result("not-allowed");
+			return false;
+		}
+		if (state.foreground.window == request.session.showWindow)
+		{
+			focusTrace.Result("already-foreground");
+			return true;
+		}
+		if (!IsCurrentPptSession(request.session))
+		{
+			focusTrace.Result("stale-session");
+			return false;
+		}
 		if (pptFocusTestHooks)
 		{
 			++pptFocusTestHooks->activations;
 			pptFocusTestHooks->state.foreground = {
 				request.session.showWindow, request.session.processId };
+			focusTrace.Result("test");
 			return true;
 		}
 		const HWND target = reinterpret_cast<HWND>(request.session.showWindow);
 		(void)SetForegroundWindow(target);
 		const bool focused = GetForegroundWindow() == target;
 		if (!focused && IDTLogger) IDTLogger->debug("[PPT] foreground handoff denied session={}", request.session.localSession);
+		focusTrace.Result(focused ? "focused" : "denied");
 		return focused;
 	}
 	bool FocusPptSession(const PptSessionToken& token)
@@ -638,10 +724,18 @@ namespace
 		const auto command = request.command;
 		if (command != PptUiBusinessCommand::Focus && command != PptUiBusinessCommand::Previous
 			&& command != PptUiBusinessCommand::Next) return false;
-		if (!IsCurrentPptSession(request.session)) return true;
+		if (!IsCurrentPptSession(request.session))
+		{
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "stale-session");
+			return true;
+		}
 		// 已排队的翻页不能跨白板意图往返；只约束 page action，不误退有效的显式焦点请求。
 		if(command!=PptUiBusinessCommand::Focus && (!request.inputWorkspaceEpoch
-			|| request.inputWorkspaceEpoch!=PptInputWorkspaceEpoch()))return true;
+			|| request.inputWorkspaceEpoch!=PptInputWorkspaceEpoch()))
+		{
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "workspace-rejected");
+			return true;
+		}
 		if (command == PptUiBusinessCommand::Previous)
 		{
 			if (pptFocusTestHooks) ++pptFocusTestHooks->previous;
@@ -652,6 +746,8 @@ namespace
 			if (pptFocusTestHooks) ++pptFocusTestHooks->next;
 			else NextPptSlides(PptInfoState.CurrentPage);
 		}
+		else if (command == PptUiBusinessCommand::Next)
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "no-page");
 		// Down/Up、Move 与长按不会改变前台身份；不得用 LastInput 变化取消正常翻页交接。
 		(void)FocusPptSession(PptFocusRequest{ request.session, request.focusForeground });
 		return true;
@@ -1443,6 +1539,7 @@ void PPTLinkageMain()
 	while (!offSignal)
 	{
 		PptUiBusinessRequest request{};
+		PptPerf::Event dequeued;
 		{
 			unique_lock lock(pptUiBusinessMutex);
 			pptUiBusinessCondition.wait_for(lock, chrono::milliseconds(100), []
@@ -1453,7 +1550,16 @@ void PPTLinkageMain()
 			if (pptUiBusinessCommands.empty()) continue;
 			request = pptUiBusinessCommands.front();
 			pptUiBusinessCommands.pop_front();
+			dequeued = PptPerfRecorder().CaptureEnd(request.perfQueue, "dequeued");
 		}
+		PptPerfRecorder().Emit(dequeued);
+		PptPerf::Scope requestTrace(PptPerfRecorder(), request.perfRequest);
+		requestTrace.Result("native-completed");
+		PptPerf::Context context = request.perfRequest.context;
+		context.parent = request.perfRequest.span;
+		PptPerf::Scope businessTrace(PptPerfRecorder(), "native-business", context, request.perfRequest.span != 0);
+		context.parent = businessTrace.Id();
+		PptPerf::ContextScope perfContext(context);
 		const auto command = request.command;
 
 		// 模态框和 COM 在业务线程执行；不得持有渲染、Scene 或窗口提交锁。
@@ -1476,6 +1582,7 @@ void PPTLinkageMain()
 					Inkeys::UI::Ppt::CompleteNavigationWaiting(session.localSession, navigationEpoch);
 					TracePptNavigation("complete", session.localSession, navigationEpoch,
 						command == PptUiBusinessCommand::Next ? "next" : "previous");
+					PptPerfRecorder().Instant("native-complete", PptPerf::current, "native-return");
 				}
 				if (command == PptUiBusinessCommand::EndShow)
 				{
@@ -1485,8 +1592,17 @@ void PPTLinkageMain()
 				if (request) Inkeys::UI::Bar::CompleteEndShowRequest(request);
 			}
 		} completion{ command, request.requestId, request.session, request.navigationEpoch };
-		if (!IsCurrentPptSession(request.session)) continue;
-		if (DispatchPptFocusBusinessAction(request)) continue;
+		if (!IsCurrentPptSession(request.session))
+		{
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "stale-session");
+			businessTrace.Result("discarded");
+			continue;
+		}
+		if (DispatchPptFocusBusinessAction(request))
+		{
+			businessTrace.Result("handled");
+			continue;
+		}
 		if (command == PptUiBusinessCommand::ViewShow)
 		{
 			ViewPptShow();
@@ -1542,29 +1658,44 @@ void PPTLinkageMain()
 		if (!exited && IDTLogger) IDTLogger->warn("[PPT] exit request was not accepted");
 
 	}
-	Inkeys::UI::Bar::SetEndShowRequestCallback({});
-	Inkeys::UI::Bar::SetBusinessFocusCallback({});
+	ShutdownTrace::Scope shutdownTrace("ppt-linkage-shutdown");
+	{
+		ShutdownTrace::Scope trace("ppt-clear-callbacks");
+		Inkeys::UI::Bar::SetEndShowRequestCallback({});
+		Inkeys::UI::Bar::SetBusinessFocusCallback({});
+	}
 	// 先让观察线程发布真实会话结束，再排空最终不可变保存请求。
-	if (infoThread.joinable()) infoThread.join();
-	Inkeys::UI::Ppt::Shutdown();
+	if (infoThread.joinable()) { ShutdownTrace::Scope trace("ppt-join-info"); infoThread.join(); }
+	{ ShutdownTrace::Scope trace("ppt-ui-shutdown"); Inkeys::UI::Ppt::Shutdown(); }
 	deque<PptUiBusinessRequest> remaining;
 	{
-		lock_guard lock(pptUiBusinessMutex);
-		remaining.swap(pptUiBusinessCommands);
-		pptUiPageCommandOutstanding = false;
-		pptEndShowGate.Reset();
+		// 诊断输出在队列锁外，不能把日志 I/O 塞进业务临界区。
+		ShutdownTrace::Scope trace("ppt-drain-business");
+		{
+			lock_guard lock(pptUiBusinessMutex);
+			remaining.swap(pptUiBusinessCommands);
+			pptUiPageCommandOutstanding = false;
+			pptEndShowGate.Reset();
+		}
+		for (const auto& request : remaining)
+		{
+			PptPerfRecorder().End(request.perfQueue, "shutdown");
+			PptPerfRecorder().End(request.perfRequest, "shutdown");
+			if (request.command == PptUiBusinessCommand::PersistSettings)
+				(void)WritePptComSettingJson(request.settingsPayload);
+		}
 	}
-	for (const auto& request : remaining)
-		if (request.command == PptUiBusinessCommand::PersistSettings)
-			(void)WritePptComSettingJson(request.settingsPayload);
 
 	int i = 1;
-	for (; i <= 5; i++)
 	{
-		using namespace Inkeys::Thread;
+		ShutdownTrace::Scope trace("ppt-service-status-wait");
+		for (; i <= 5; i++)
+		{
+			using namespace Inkeys::Thread;
 
-		if (!GetStatus("GetPptState") && !GetStatus("PptInfo")) break;
-		this_thread::sleep_for(chrono::milliseconds(500));
+			if (!GetStatus("GetPptState") && !GetStatus("PptInfo")) break;
+			this_thread::sleep_for(chrono::milliseconds(500));
+		}
 	}
 }
 

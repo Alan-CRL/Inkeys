@@ -160,3 +160,54 @@ Wrong：前一batch只画8ms，下一次开始31ms，仍因绘制小于16.67ms�
 候选计时仅在 `SetCandidateDiagnosticsEnabled(true)` 时采集；默认关闭不为诊断格式化/写盘。提交期限使用的生产时钟与诊断读钟分开。`completedTicks` 为 owner 实际完成的软件时刻，不是 UI 消费时刻、GPU完成或 DWM 光学显示。队列深度必须为实际固定邮箱占用，短锁争用不能伪造峰值。A/B 保存双方 EXE SHA-256、metadata、原始 CSV 和真实进程退出码；原基线缺少新增时刻列时明确缺口，不事后把 callback proxy 当作旧原生成功间隔。
 
 P3 候选回执的 error 保存首个原生失败，rollbackError 独立保存恢复失败；不能在回滚后才用 GetLastError 推测原始阶段。lease 延后是正常 pending，不计为真实 HWND 失败。P4 progress notification 不等于窗口成功或 UI-ready，失败预算只按原有时间尺度和实际进展推进。
+
+## Scenario: PPT 导航等待的有限数值链路（2026-11-01）
+
+### 1. Scope / Trigger
+
+用户在秒级导航中看不到三点，而业务enqueue/complete均正常时，用独立等待边界定位。PptNav enqueue仅证明Publish调用经过，不证明等待被UI接受或像素已提交；同页等待的真实绘制必须单独验证。
+
+### 2. Signatures
+
+内部 `Inkeys/PptWaitingDiagnostics.h`，命名空间 `Inkeys::Business::PptWaitTrace`：`Prepare()`、`Capture(Stage, Fields, Result)`、`DrawScope`、`FlushAfterProducersJoined()`。复用 `INKEYS_PPT_PERF=1`，默认关闭；正常入口在所有producer启动前Prepare，早期CLI测试不自动启用。
+
+输出独立 `[PptWait] v=1 event=record`：ordinal/pid/tid/qpc/frequency、stage/result、session/epoch/direction/surface/mode、position_session/active_session/active_epoch/completed_epoch、layout_session/layout_epoch、publication/previous_publication、model_revision/previous_model_revision、candidate/frame/attempt/pixel_revision/scene_serial、flags/branches/dots/hr/error。stage固定为publish-decision、ppt-snapshot、complete-decision、clear-decision、session-reset、model-decision、scene-configure、render-attempt、scene-draw、pixels-result、native-receipt；所有payload为原有纯数值，不记录文稿/路径/墨迹/原始地址。
+
+末尾 `event=summary sealed=1` 包含pid/capacity/seen/retained/dropped/invalid/output_errors；固定capacity=16384，seen=retained+dropped，invalid为retained中的无效时钟或pid/tid样本数。该协议与PptPerf span独立，不能把输出顺序当时间顺序。
+
+### 3. Contracts
+
+- Prepare仅显式开关启用时分配固定数组，默认关闭不分配、不读新时钟、不写采样槽；普通无等待snapshot/model/configure过滤。多producer原子认领独立槽，满后不扩容或覆盖，只增加dropped。认领不等于写完，不能并发读取尚在生产的槽。
+- 状态锁内和render callback只复制既有数值/取时间并写独立槽；无格式化、文件/pipe输出、同步logger、任意sink、分配、新锁/等待或新渲染请求。诊断动作保存自身入口LastError，不跨业务操作恢复旧错误。TLS仅属于本次DrawScope，与导航TLS分离；nested/null scope须屏蔽outer并LIFO恢复。
+- 原主退出顺序已完成UI3交互join及尾部business drain、state/PPT/PptInfo joins、Setting/Window/RenderPipeline停止后，才退休prepared入口并格式化输出借用stderr；退休开关不代替真实join，不新增日志线程/等待，storage保留至进程结束。
+- 命令链路面向非零导航epoch（生产从1递增），无效0请求不作为导航采样；Preparing=1024明确标记独立页面准备，此类session使用真实layout.session、epoch=direction=0，不归到旧命令。Snapshot/Model/Draw/Receipt须一致允许该类，model不得用published旧请求回填；Session/Clear生命周期可另记。Publish记录原拒绝条件/水位及会话；model记录原merge结果/revision；配置记录实际scene状态；scene-draw在原Render边界结束采样，branches/dots仅计原三点分支/FillEllipse调用，不证明成功像素。通用准备可同时出现branches2/dots6（两个按钮各三点），不混为单按钮六点；Preparing=false后的generic-only记录可能按epoch门过滤，缺失属unknown，不作为input-ready。
+- 同一DrawScope的attempt在实际pixelsSubmitted时随私有completedPixels→pending.pixels传到原native receipt；receipt从该pending快照取身份，不借后来model或TLS背书旧帧。无damage复用attempt=0，不能伪造本次绘制。空Success、Retry、DeviceLost、候选失效及receipt拒绝分别保留；软件呈现成功仍不是DWM/光学可见证据。
+- 关闭/崩溃或15秒兜底前未flush没有summary，属于incomplete，不是“没有等待”。掉样/invalid/输出失败使相应关联unknown；缺少阶段不能填0或当通过。诊断不改页码、等待、ready/输入或COM访问/释放。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 默认关闭或早期CLI未Prepare | 无新读钟/采样/分配，原渲染与结果不变 |
+| 非零导航epoch的Publish会话/水位不符或model旧revision | 记录原拒绝值，不为诊断修改接受规则 |
+| 实际三点分支未走/brush失败/Draw未调用 | 分别保留branches/dots/flags，不宣称已显示 |
+| Preparing=1024、epoch0 | 作为通用页面准备，session和model独立关联，不回填旧request；清除后无记录属unknown |
+| 多producer/容量满/无效时钟 | join后数值可核，保留前缀、dropped和invalid分母 |
+| 空Success/延后/失败→恢复 | 不冒充新像素；恢复关联实际attempt和pending receipt |
+| 输出抛错/无效stderr/强退无summary | 不影响业务/LastError；记录输出失败或判incomplete |
+
+### 5. Good / Base / Bad Cases
+
+Good：同一session/epoch追踪接受→model→scene→实际点调用→同attempt像素及receipt，核对零掉样后再定位消失边界。Base：关闭采样仍保持原UI/COM行为，旧页码等真实结果。Bad：只看enqueue称三点已画、用callback-end或后来snapshot当旧帧成功、在渲染线程写stderr、只设置env而测试入口从未Prepare就称on/off等价。
+
+### 6. Tests Required
+
+`InkeysHeadlessTests.exe --ppt-session-only` 验证defaultoff零采样、nested/null恢复、同attempt点/像素、固定槽溢出、四producer真实join、invalid分母和异常输出/LastError。既有 `Inkeys.exe --bar-eraser-offscreen-test` 的PageControl fixture覆盖四surface×100/150/200%×Previous/Next，同页等待对应按钮BGRA变化、另一方向与页码不变、partial=full、complete恢复；明确启用局部recorder且记录非空/单按钮三次点调用，验证on/off BGRA一致；通用准备还验证epoch0/direction0、双按钮六次点调用、命令Complete后旧页Pending持续、InkReady新页/BasicControl target0清点与partial/full一致。读回失败/空bytes必须短路后续region读取。
+
+完整Debug|ARM64 Solution及上述无窗口测试验证软件合同；真实Office/Window receipt/光学可见性仍由用户新样本单列，不由离屏测试通过推导。PptCOM源/DLL/TLB此轮保持，核对EXE内嵌资源；PrepareOnly不启动GUI或改配置。
+
+### 7. Wrong vs Correct
+
+Wrong：在DrawButton里格式化WriteFile，或者看到FillEllipse三次便称用户看到了三点。
+
+Correct：DrawScope内仅记纯值；正常退出producer真实join后输出，并用原pending.pixels的attempt关联receipt。先核capacity/invalid，再结合用户观察区分模型、绘制、软件提交和光学可见边界。

@@ -476,6 +476,48 @@ namespace
 			"shutdown clears any remaining navigation feedback");
 	}
 
+	void TestPagePreparingVisualState()
+	{
+		PptState frame;frame.layout.session=7;frame.presentationActive=true;frame.presentationVisible=true;
+		frame.currentPage=3;frame.totalPage=5;frame.targetRevision=44;frame.pageAckEpoch=3;
+		Check(!frame.pagePreparing&&!IsPptPagePreparing(frame),"page preparation feedback defaults off");
+		const auto original=frame;frame.pagePreparing=true;
+		Check(IsPptPagePreparing(frame)&&!ArePptStatesEquivalent(original,frame)
+			&&frame.currentPage==3&&frame.targetRevision==44&&frame.pageAckEpoch==3,
+			"preparation alone invalidates the visual state without changing page or ready identity");
+		PptPageCommitState committed;committed.Publish(original,0x3);
+		Check(committed.Commit(original,0x3),"ordinary ready transaction can complete before visual preparation changes");
+		committed.Publish(frame,0x3);
+		Check(committed.acknowledged&&!committed.Commit(frame,0x3),
+			"visual preparation neither resets nor authorizes a page ready acknowledgement");
+		PptNavigationWaitingState command;command.BeginSession(7);command.Publish(7,11,PptNavigationDirection::Next);
+		frame.navigationWaiting=command.current;command.Complete(7,11);frame.navigationWaiting=command.current;
+		Check(IsPptPagePreparing(frame)&&!IsPptNavigationWaiting(frame,true)
+			&&!command.Publish(7,11,PptNavigationDirection::Next),
+			"completed command retires its epoch while independent real preparation remains visible");
+		Check(command.Publish(7,12,PptNavigationDirection::Previous),"another command retains its original tracker during preparation");
+		frame.navigationWaiting=command.current;
+		Check(IsPptPagePreparing(frame)&&IsPptNavigationWaiting(frame,false)
+			&&frame.navigationWaiting.epoch==12,"preparation does not replace the new command direction or epoch");
+		command.Complete(7,12);frame.navigationWaiting=command.current;frame.pagePreparing=false;
+		Check(!IsPptPagePreparing(frame)&&!IsPptNavigationWaiting(frame,false),
+			"same-page or no-op completion does not invent a target-change wait");
+		frame.pagePreparing=true;frame.presentationVisible=false;
+		Check(!IsPptPagePreparing(frame),"hidden PPT does not show generic preparation");
+		frame.presentationVisible=true;frame.presentationActive=false;
+		Check(!IsPptPagePreparing(frame),"retired PPT does not show generic preparation");
+		frame.presentationActive=true;frame.layout.session=0;
+		Check(!IsPptPagePreparing(frame),"generic preparation requires an established local session");
+		frame.layout.session=7;frame.recovery.kind=decltype(frame.recovery.kind)::ReadFailed;
+		Check(!IsPptPagePreparing(frame),"same-show recovery keeps its own feedback instead of generic preparation");
+		Inkeys::UI::Ppt::PagePresentationState source;
+		source.Publish(3,5,44,Inkeys::UI::Ppt::PageStateMode::InkReady);const auto oldEpoch=source.pageAckEpoch;
+		source.Publish(3,5,44,Inkeys::UI::Ppt::PageStateMode::Pending);
+		Check(!source.CanAcknowledge(3,5,44,oldEpoch),"an old ready acknowledgement cannot complete a later Pending page");
+		source.Publish(3,5,0,Inkeys::UI::Ppt::PageStateMode::BasicControl);
+		Check(!source.CanAcknowledge(3,5,0,source.pageAckEpoch),"BasicControl still cannot manufacture an ink-ready acknowledgement");
+	}
+
 	void TestNavigationWaitingCompletionOrder()
 	{
 		PptNavigationWaitingState waiting;
@@ -1908,6 +1950,7 @@ int RunPageControlTests()
 	TestEndShowContentTargets();
 	TestNavigationWaitingLifecycle();
 	TestNavigationWaitingCompletionOrder();
+	TestPagePreparingVisualState();
 	TestDragCommitHandoff();
 	TestVersionedDragPublication();
 	TestInterleavedPairFrameCommit();

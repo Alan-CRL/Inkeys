@@ -357,3 +357,50 @@ LogFailure(); JoinOwner(); failure.BeginKnownFailure();
 - 完整Debug|ARM64 Solution、--no-window及初始化前--ui3-input-worker-test；不启动GUI/隐藏HWND时，不声称已完成实际桌面Z序或弹窗点击验收。
 
 - 2026-10-25实机反馈证明仅保留band不足：不能先隐藏活动弹窗，再由后台线程按旧ownerWasForeground快照补前台。关闭时按弹窗实际前台归属判断；不显示/还原已隐藏或最小化owner，不激活WS_EX_NOACTIVATE窗口，用户已切走或生命周期取消时不抢焦点。操作序列回归明确要求Enable→Foreground→Hide，不以最终enabled正确代替中途焦点未落到下层的证明。
+
+## Scenario: 正常退出分阶段诊断（2026-11-01）
+
+### 1. Scope / Trigger
+
+用户正常菜单/设置退出却由15秒监督兜底终止时，先定位阶段，不凭0xE1430016推断helper创建失败或COM泄漏。该退出码只说明fallback截止触发；主函数末尾日志缺失也不能证明卡在某个join。
+
+### 2. Signatures
+
+- 开关沿用进程启动 `INKEYS_PPT_PERF=1`，默认关闭。
+- native独立前缀 `[ShutdownTrace] v=1 source=native pid tid qpc frequency span event=begin|end stage result error`；`Inkeys::Shutdown::ProgressTrace`复用公开PptPerf POD/Recorder core，但有独立跨TU inline Recorder/序号与formatter/rawstderr，不动导航TLS。
+- managed沿用PptPerf协议，阶段为`shutdown-managed-finally/mailbox-stop/retired-events/retired-event-retry/retired-event-wait`及`cleanup-final/cleanup-rebind`，子项`cleanup-invalidate/annotation-reset/unbind/event-deactivate/event-disconnect/event-retire/release-window/release-presentation/release-application/reset-roots/reset-pages/message-before/message-after`，各词使用完整shutdown-或cleanup-前缀。
+
+### 3. Contracts
+
+- 在正常wWinMain所有早期模式返回后、owner线程启动前WarmUp Recorder，不输出或取时钟。Arm前只能通过已准备的constinit原子指针捕获POD；未预热路径不初始化静态对象，返回空stamp。
+- 接纳意图、BeginShutdown、Arm和发布信号的数值暂存；Arm与GetLastError紧邻，Failed原不返回截止接管先于全部输出。Arm返回且原失败守护之后才输出缓冲记录；不得为了观察削弱“先独立监督”合同。
+- Arm若永不返回，前段没有持久化marker是明确限制；不通过新的日志等待/IPC/退出码/延长超时绕过。原退出顺序、join条件/次数、15秒截止和helper策略均保持。
+- LastErrorGuard只分别保护诊断构造/析构或一次捕获/输出当刻，不能跨整个业务操作恢复旧错误码；业务内设定B后，诊断析构仍须保留B。默认关闭不格式化/读QPC，首次环境读取与静态准备也保持错误码。
+- 仅原生stderr小型数字输出，不依赖可能已停用的IDTLogger，不创建可见控制台，不关闭借用标准句柄。输出失败不抛、不增加COM/窗口查询。
+- native阶段覆盖set-off、main-shutdown及原join/组件/COM卸载、PPTLinkage/info/PptShutdown/原GetPptState等待与服务槽reset；managed只包原finally、事件断连/退役和window→presentation→application逐笔释放，actualdynamic、借用/转移、IErrorInfo与所有finally保持，无GC/FinalRelease。
+- stage end只说明被包裹步骤返回，不说明进程已正常退出。必须同时核对采集manifest exit_code/exitstatus；日志缺失或未结束只能作为定位证据，不据此自动归因某资源。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 要求 |
+| --- | --- |
+| 开关关闭/未预热Arm前 | 无格式化/QPC/输出/冷静态初始化，不延后监督建立 |
+| 业务调用设置新LastError | 诊断前后保存该新值，不恢复业务前旧值 |
+| sink抛错/标准错误句柄无效 | 不穿透业务或改变错误码，缺记录不冒充完成 |
+| managed CP busy/永久拒绝 | 原退役lease/重试/返回保持，不能为日志强制释放 |
+| 退出码E1430016 | 退出验收失败，分别查最后native/managed阶段，不推断helper或GC |
+
+### 5. Good / Base / Bad Cases
+
+- Good：先Arm，后写阶段；同一次正常退出可区分main-join-ppt、Setting/Window/RP或cleanup-event-disconnect等未返回区间。
+- Base：Arm前无法安全写出的数据只在返回后回放，QPC仍是实际时刻。
+- Bad：在SetOffSignal首次接纳后先写文件、用一个Scope生命周期LastErrorGuard抹掉业务错误、将main-shutdown end当exit0或改长超时掩盖卡住。
+
+### 6. Tests Required
+
+Native无窗口helper覆盖cold flag/Recorder准备、未预热空capture、禁用零clock/sink、嵌套/异常闭合、原始错误A→业务B→析构仍B、throwingsink/invalidstderr；原PPT定向回归须通过。Managed final/rebind与servicefinally、CP成功/busy/保留lease、六种trace on/off原操作/释放/状态等价、throwingwriter/IErrorInfo/配对。完整Debug|ARM64、TLB/内嵌DLL核对、PrepareOnly无GUI不改配置；真实正常退出另由用户同一路径复测。
+
+### 7. Wrong vs Correct
+
+- Wrong：为定位Arm先输出begin，或借新诊断改变15秒超时以让采集显示exit0。
+- Correct：预热后的POD捕获先留内存，原监督返回后输出，依原退出码和完整阶段链判断。

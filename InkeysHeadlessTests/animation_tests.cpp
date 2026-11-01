@@ -1704,6 +1704,9 @@ int main(int argc, char** argv)
 {
 	if (argc == 2 && std::string_view(argv[1]) == "--page-control-only")
 		return RunPageControlTests();
+	// PPT解析与诊断协议均为纯值/无窗口测试，可独立定位请求时序。
+	if (argc == 2 && std::string_view(argv[1]) == "--ppt-session-only")
+		return RunPptSessionTests();
 	// 窗口契约可单独复跑，避免定位 USER32 交错时重复耗时的算法矩阵。
 	if (argc == 2 && std::string_view(argv[1]) == "--window-contract-only")
 		return RunWindowTests();

@@ -63,3 +63,70 @@
 - [x] managed 构建测试、DLL/TLB 交接、完整 Debug|ARM64 solution 与相关无窗口测试。
 - [x] 独立质量审查、最小 diff/BOM/EOL、更新规范与本轮验证记录。
 本轮用户未授权 commit/push；留存未提交修改和原实机未验边界。
+
+## 2026-11-01 分段诊断实施
+
+用户已批准设计并准备。- [x] managed/native分段诊断与对应回归。
+- [x] 一键采集、离线分析与PrepareOnly/解析自测。
+- [x] 独立review、managed构建测试、DLL/TLB交接、完整Debug|ARM64和无窗口验证。
+- [x] 交接用户人工测试；AI不操控桌面、不commit/push。
+
+诊断版准备验证见 [navigation-perf-validation-20261101.md](research/navigation-perf-validation-20261101.md)，人工操作见 [navigation-perf-handoff-20261101.md](research/navigation-perf-handoff-20261101.md)。
+
+用户已完成分段采样，捕获1.356s Previous与1.144s Next，主要空档为managed邮箱等待ROT/observe等owner维护；详情见 [navigation-perf-results-20261101.md](research/navigation-perf-results-20261101.md)。调度修复尚未实施，原像素/Office退出验收保留。
+
+## 2026-11-01 Observe精确定位执行
+
+用户已要求准确定位并执行，dynamic/确定性COM释放为硬约束。先补既有调用子阶段计时与分析展示，人工采样后据证据收窄调度修复；不盲目跳过校验。方案和文件边界见 [observe-substage-plan-20261101.md](research/observe-substage-plan-20261101.md)。AI不操控GUI、不自动提交。
+
+- [x] Observe既有读取/释放子阶段、16个开关等价场景、分析器子阶段树与旧日志兼容。
+- [x] managed构建/测试、完整Debug|ARM64、DLL/TLB/内嵌产物、PrepareOnly与独立COM释放审查。
+- [x] 用户细分版人工采样并据成员耗时收窄实施ROT安全让出；完整Observe长尾仍待后续解决。
+
+本阶段结果见 [observe-substage-validation-20261101.md](research/observe-substage-validation-20261101.md)，人工步骤见 [observe-substage-handoff-20261101.md](research/observe-substage-handoff-20261101.md)。
+
+## 2026-11-01 细分实测后的最小ROT修复
+
+用户已批准执行。新数据表明Observe为多个慢COM查询累计；先按 [rot-yield-fix-plan-20261101.md](research/rot-yield-fix-plan-20261101.md) 实施健康binding下ROT安全取消/一次让出公平预算，保留原完整Observe与全部COM释放/墨迹准入，不同时重写观察逻辑。
+
+- [x] ROT安全检查点Deferred、partial winner取消、一次让出公平预算与原动态/释放保持。
+- [x] 实际scanner/系统边界/真实bindctx释放、资格/公平性/旧请求拒绝回归，独立审查、完整solution/DLL/TLB/PrepareOnly。
+- [x] 用户修复版人工性能/退出采样；导航长尾未通过，原正常退出触发兜底，不能据已采样标修复验收通过。
+
+结果见 [rot-yield-validation-20261101.md](research/rot-yield-validation-20261101.md)，操作见 [rot-yield-handoff-20261101.md](research/rot-yield-handoff-20261101.md)。
+
+## 2026-11-01 正常退出超时定位
+
+修复版用户正常退出触发0xE1430016，退出验收不通过。先按 [normal-exit-trace-plan-20261101.md](research/normal-exit-trace-plan-20261101.md) 包裹原清理阶段、保持行为和COM释放；AI不操控GUI、不修改退出策略，不把问题直接归为COM泄漏。
+
+- [x] 用户确认正常退出失败；独立性能/退出证据分析，不将整体测试标通过。
+- [x] native/managed默认关闭退出阶段、Arm-first/LastError/COM约束、完整solution与core/PPT定向/PrepareOnly/资源哈希验证。
+- [x] 用户同路径正常退出采样：本轮code0、所有退出阶段闭合；旧故障未复现，尚不能定位或宣称修复。
+
+准备验证见 [normal-exit-trace-validation-20261101.md](research/normal-exit-trace-validation-20261101.md)，操作见 [normal-exit-trace-handoff-20261101.md](research/normal-exit-trace-handoff-20261101.md)。
+
+本轮数据与用户三点不可见反馈见 [normal-exit-trace-results-20261101.md](research/normal-exit-trace-results-20261101.md)。导航仍存在1.239秒邮箱排队与1.637秒总长尾，继续调查等待渲染链路和Observe现场proof/详细刷新分界；无新产品修改，不追加无依据退出修复。
+
+## 2026-11-01 等待标记不可见的边界定位
+
+最新长等待实机三点不可见，静态代码尚不足证明单一根因。按 [navigation-wait-trace-plan-20261101.md](research/navigation-wait-trace-plan-20261101.md) 只补Ppt发布→PageControl合并/配置/绘制/真实呈现的固定数值证据；默认关闭，渲染线程无I/O/分配/等待，停产后flush，不改PptCOM或UI/页码/ready行为。准备验证通过后交用户少量操作采样，不重复同版大矩阵。
+
+- [x] 等待发布/合并/配置/实际点绘制/像素/原pending回执有限数值记录，真实停产后输出。
+- [x] 24组合实际像素、明确启用recorder的BGRA等价、并发/overflow/TLS/LastError回归与独立审查。
+- [x] 最终完整ARM64 solution、PPT定向/离屏、managed源/DLL/TLB/内嵌哈希、PrepareOnly/真实配置SHA检查。
+- [ ] 用户新版短测，按接受→model→绘制→真实提交证据修实际消失边界；本轮不标已修复。
+
+结果见 [navigation-wait-trace-validation-20261101.md](research/navigation-wait-trace-validation-20261101.md)，短测见 [navigation-wait-trace-handoff-20261101.md](research/navigation-wait-trace-handoff-20261101.md)。
+
+## 2026-11-01 用户澄清后的页面准备提示修复
+
+三点实际出现，但随命令Complete提前消失；后续raw/descriptor失配及Draw3/UI ACK阶段仍Pending。按 [page-preparation-wait-fix-plan-20261101.md](research/page-preparation-wait-fix-plan-20261101.md) 独立投影真实Pending为通用准备提示，原命令tracker/水位、COM和输入ready门均不改，不引入soft TTL或猜测完成。
+
+- [x] 页面准备pagePreparing同快照投影、状态比较及PPT双向generic三点；原command/ready/COM不变。
+- [x] Complete后Pending真实像素/新页同帧去点/BasicControl target0/trace启停等价与原水位、旧ACK回归。
+- [x] 独立review、完整ARM64（新测试限定名修正后exit0）、page-control/PPT定向、离屏、managed/内嵌哈希与PrepareOnly配置不变。
+- [x] 用户第3→4短测确认真正Pending阶段三点正常保留/清除，1744记录零掉样并有同attempt软件证据；性能长尾和旧退出未知仍单列。
+
+结果见 [page-preparation-wait-fix-validation-20261101.md](research/page-preparation-wait-fix-validation-20261101.md)，操作见 [page-preparation-wait-fix-handoff-20261101.md](research/page-preparation-wait-fix-handoff-20261101.md)。
+
+用户反馈与本轮数据见 [page-preparation-wait-manual-results-20261101.md](research/page-preparation-wait-manual-results-20261101.md)。等待反馈验收通过，不再重复该项测试；实际延迟未消除，任务保持in_progress。

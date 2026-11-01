@@ -19,6 +19,7 @@ module;
 #include "../../../IdtState.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../Ppt/Ppt.Recovery.h"
+#include "../../../PptWaitingDiagnostics.h"
 #include "../Bar/Bar.BottomDock.h"
 #include "../../Drawing/Draw3/Draw3.PptTiming.h"
 #include "../../Input/UiPointerInput.h"
@@ -66,6 +67,19 @@ namespace Inkeys::UI::PageControl
 	namespace
 	{
 		using namespace std::chrono_literals;
+		namespace WaitTrace=Inkeys::Business::PptWaitTrace;
+		WaitTrace::Fields WaitingFields(const PptState& ppt,int surface=-1,std::uint64_t revision=0) noexcept
+		{
+			WaitTrace::Fields fields;if(!WaitTrace::Enabled())return fields;
+			fields.session=ppt.navigationWaiting.session;fields.epoch=ppt.navigationWaiting.epoch;
+			fields.direction=static_cast<unsigned>(ppt.navigationWaiting.direction);fields.surface=surface;
+			if(IsPptPagePreparing(ppt)){fields.session=ppt.layout.session;fields.epoch=0;fields.direction=0;fields.flags|=WaitTrace::Preparing;}
+			fields.layoutSession=ppt.layout.session;fields.layoutEpoch=ppt.layout.epoch;
+			fields.publication=ppt.publicationRevision;fields.revision=revision;
+			fields.flags|=(ppt.navigationWaiting.waiting?WaitTrace::Waiting:0)|(ppt.presentationVisible?WaitTrace::Visible:0)
+				|(ppt.presentationActive?WaitTrace::PositionActive:0);return fields;
+		}
+
 		struct LocalWheelRequest
 		{
 			Business::PptSessionToken session;
@@ -912,8 +926,10 @@ namespace Inkeys::UI::PageControl
 			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
 			content.switching=whiteboard.switching;content.pptActive=ppt.presentationActive;
 			content.nextIsAdd=whiteboard.nextIsAdd;content.nextIsEndShow=IsPptEndPage(ppt.currentPage,ppt.totalPage);
-			content.navigationWaitingPrevious=!content.whiteboard&&IsPptNavigationWaiting(ppt,false);
-			content.navigationWaitingNext=!content.whiteboard&&IsPptNavigationWaiting(ppt,true);
+			// 已观测的页面Pending独立于命令outstanding，通用准备不猜测上/下页方向。
+			const bool pagePreparing=IsPptPagePreparing(ppt);
+			content.navigationWaitingPrevious=!content.whiteboard&&(pagePreparing||IsPptNavigationWaiting(ppt,false));
+			content.navigationWaitingNext=!content.whiteboard&&(pagePreparing||IsPptNavigationWaiting(ppt,true));
 			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
 			if(content.whiteboard){
 				content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);
@@ -1174,8 +1190,12 @@ namespace Inkeys::UI::PageControl
 			if(!state.sceneConfigured || modeChanged || state.observedRevision!=revision){
 				const bool animate=modeChanged&&ShouldAnimateWorkspaceLayout(SurfaceFor(index),state.configuredMode,visualMode,state.targetVisible);
 				if(!state.scene.ConfigurePagination(BuildPageContent(index,visualMode,ppt,whiteboard),animate?LayoutTransitionDurationSeconds():0)){
-					failedStage="pagination-configure";return false;
+					failedStage="pagination-configure";
+					auto fields=WaitingFields(ppt,static_cast<int>(index),revision);fields.mode=static_cast<unsigned>(visualMode);
+					WaitTrace::Capture(WaitTrace::Stage::Configure,fields,WaitTrace::Result::ConfigureFailed);return false;
 				}
+				auto fields=WaitingFields(ppt,static_cast<int>(index),revision);fields.mode=static_cast<unsigned>(visualMode);
+				WaitTrace::Capture(WaitTrace::Stage::Configure,fields,WaitTrace::Result::Configured);
 				// 相同文字的新业务修订仍须经过成功提交，不能仅更新输入身份就提前确认页面。
 				if(!state.scene.IsInvalidated())state.forceFullPresentation=true;
 				if(!state.sceneConfigured){state.scene.SetHooks({{},[index]{RequestSurface(index);}});state.scene.SetOpacity(0,0);}
@@ -1253,6 +1273,8 @@ namespace Inkeys::UI::PageControl
 			bool deferred = false;
 			bool pixelsSubmitted = false;
 			std::uint64_t presentationRevision = 0;
+			// 只关联本次实际像素提交的诊断attempt；无damage复用不得冒充本次画点。
+			std::uint64_t waitingAttempt = 0;
 		};
 
 		[[nodiscard]] PresentSceneResult PresentScene(std::size_t index,
@@ -1373,7 +1395,9 @@ namespace Inkeys::UI::PageControl
 			state.scene.Renderer().BeginFrameDraw(context.Get(),D2D1::RectF(
 				static_cast<FLOAT>(presentDirty.left),static_cast<FLOAT>(presentDirty.top),
 				static_cast<FLOAT>(presentDirty.right),static_cast<FLOAT>(presentDirty.bottom)));
+			WaitTrace::DrawStarted();
 			(void)state.scene.Render(context.Get(),frameContext.frameTime);
+			WaitTrace::DrawFinished();
 			// 本帧新启动的字号修正也必须接回调度，不能等下一次外部事件。
 			result.continueRendering |= state.scene.Renderer().FontAnimationsActive();
 			if (showDebugFrames)
@@ -2108,11 +2132,22 @@ namespace Inkeys::UI::PageControl
 		{
 			auto& pending = nativeFrames[index];
 			if (!pending.revision) return false;
+			const auto receiptTrace=[&](WaitTrace::Result result){
+				if(!WaitTrace::Enabled()||(!pending.snapshot.ppt.navigationWaiting.epoch&&!IsPptPagePreparing(pending.snapshot.ppt)))return;
+				auto fields=WaitingFields(pending.snapshot.ppt,static_cast<int>(index),pending.snapshot.revision);
+				fields.candidate=pending.revision;fields.frame=pending.candidate.frameSerial;fields.sceneSerial=pending.sceneSerial;
+				fields.attempt=pending.pixels.waitingAttempt;
+				fields.pixelRevision=pending.pixels.presentationRevision;fields.mode=static_cast<unsigned>(pending.mode);
+				if(pending.shouldShow)fields.flags|=WaitTrace::ShouldShow;
+				if(pending.pixels.pixelsSubmitted)fields.flags|=WaitTrace::PixelsSubmitted;
+				WaitTrace::Capture(WaitTrace::Stage::NativeReceipt,fields,result);
+			};
 			std::unique_lock renderLock(renderTransactionMutex, std::try_to_lock);
 			if (!renderLock.owns_lock()) return false;
 			auto& state = surfaces[index];
 			if (!NativeFrameIdentityCurrent(pending, snapshot, context, native, monitor, dpiScale, uiScale, directRevision))
 			{
+				receiptTrace(WaitTrace::Result::CandidateStale);
 				CancelNativeSurfaceFrame(index);
 				state.forceFullPresentation = true;
 				return false;
@@ -2121,7 +2156,7 @@ namespace Inkeys::UI::PageControl
 			if (!receipt)
 			{
 				if (!Inkeys::Window::GetService().CandidateCurrent(Roles[index], pending.revision))
-				{ CancelNativeSurfaceFrame(index); state.forceFullPresentation = true; }
+				{ receiptTrace(WaitTrace::Result::CandidateStale);CancelNativeSurfaceFrame(index); state.forceFullPresentation = true; }
 				return false;
 			}
 			auto receiptLease = Inkeys::Window::GetService().TryAcquirePresentationLease(Roles[index]);
@@ -2144,6 +2179,7 @@ namespace Inkeys::UI::PageControl
 				state.forceFullPresentation = true;
 				state.windowCommitFailureActive = true;
 				if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics()) diagnostics->presentFailed = true;
+				receiptTrace(WaitTrace::Result::ReceiptRejected);
 				TraceSurfaceStage(index, "window-receipt", E_FAIL, receipt->error,
 					pending.snapshot, monitor, dpiScale, pending.budget, pending.target, pending.presentation);
 				CancelNativeSurfaceFrame(index);
@@ -2156,6 +2192,7 @@ namespace Inkeys::UI::PageControl
 			std::unique_lock inputCommitLock(inputSnapshotMutex);
 			if (!state.scene.CommitPresentationCandidate(pending.sceneSerial, pending.shouldShow && !pending.inputLocked))
 			{
+				receiptTrace(WaitTrace::Result::CandidateStale);
 				CancelNativeSurfaceFrame(index); state.forceFullPresentation = true; return false;
 			}
 			if (pending.pixels.pixelsSubmitted)
@@ -2197,6 +2234,7 @@ namespace Inkeys::UI::PageControl
 					hiddenTestLastSuccessfulPresent[index] = now;
 				}
 			}
+			receiptTrace(WaitTrace::Result::ReceiptCommitted);
 			confirmedNativeFrames[index] = pending;
 			const auto acknowledged = pending.snapshot.ppt;
 			const auto mask = pending.pptFrame ? static_cast<std::uint8_t>(1U << index) : std::uint8_t{};
@@ -2479,11 +2517,18 @@ namespace Inkeys::UI::PageControl
 					CancelNativeSurfaceFrame(index);
 					const auto presentStarted = hiddenWindowPerformanceTiming
 						? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+					auto waitFields=WaitingFields(renderSnapshot.ppt,static_cast<int>(index),renderSnapshot.revision);
+					waitFields.mode=static_cast<unsigned>(state.configuredMode);
+					WaitTrace::DrawScope waitDraw(waitFields);
 					const auto presentResult = PresentScene(index, state, hwnd,
 						frameContext, presentation, backing.size,
 						forceFullReplacement,
 						debugEnabled.load(std::memory_order_acquire),
 						keepAnimating, nullptr, frameDirectMoveRevision, renderSnapshot.revision);
+					waitDraw.Pixels(presentResult.status==PresentStatus::Success
+						?(presentResult.pixelsSubmitted?WaitTrace::Result::Submitted:WaitTrace::Result::NoPixels)
+						:(presentResult.status==PresentStatus::DeviceLost?WaitTrace::Result::DeviceLost:WaitTrace::Result::Retry),
+						presentResult.pixelsSubmitted,presentResult.presentationRevision,presentResult.failureHr,presentResult.failureError);
 					if (hiddenWindowPerformanceTiming)
 						hiddenWindowPerformanceTiming->presentSceneMs += std::chrono::duration<double, std::milli>(
 							std::chrono::steady_clock::now() - presentStarted).count();
@@ -2493,6 +2538,7 @@ namespace Inkeys::UI::PageControl
 					if (presentStatus == PresentStatus::Success)
 					{
 						completedPixels=presentResult;completedPresentation=presentationSize;completedBacking=backing.size;
+						completedPixels.waitingAttempt=presentResult.pixelsSubmitted?waitDraw.Id():0;
 						pixelsSubmitted=presentResult.pixelsSubmitted;
 					}
 					else
@@ -3505,6 +3551,24 @@ namespace Inkeys::UI::PageControl
 			const auto normal=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
 			show.layout.session=7;show.navigationWaiting={7,11,PptNavigationDirection::Next,true};
 			const auto waiting=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
+			auto preparing=show;preparing.pagePreparing=true;preparing.navigationWaiting={};
+			const auto generic=BuildPageContent(0,WorkspaceMode::PptCompact,preparing,page);
+			const auto genericBoard=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,preparing,page);
+			Check(generic.navigationWaitingNext&&generic.navigationWaitingPrevious
+				&&generic.currentPage==waiting.currentPage&&generic.totalPage==waiting.totalPage
+				&&!genericBoard.navigationWaitingNext&&!genericBoard.navigationWaitingPrevious,
+				"real page preparation shows both arrows while preserving old digits and whiteboard isolation");
+			for(const int boundary:{0,1,2}){
+				auto excluded=preparing;
+				if(boundary==0)excluded.presentationVisible=false;
+				if(boundary==1)excluded.presentationActive=false;
+				if(boundary==2)excluded.recovery.kind=PptRecovery::Kind::Recovering;
+				const auto content=BuildPageContent(0,WorkspaceMode::PptCompact,excluded,page);
+				Check(!content.navigationWaitingNext&&!content.navigationWaitingPrevious,
+					"hidden, exited and recovering pages suppress generic preparation feedback");
+				if(boundary==2)Check(content.kind==Inkeys::UI::Bar::BarPageContentKind::Status,
+					"recovery keeps its existing status text and retry presentation");
+			}
 			show.currentPage=-1;const auto end=BuildPageContent(2,WorkspaceMode::PptCompact,show,page);
 			const auto board=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,show,page);
 			Check(waiting.navigationWaitingNext&&!waiting.navigationWaitingPrevious
@@ -3715,13 +3779,16 @@ namespace Inkeys::UI::PageControl
 				UINT width=0,height=0;RECT bounds{};std::vector<BYTE> bytes;
 				bool operator==(const PageTestPixels&) const = default;
 			};
-			const auto drawScene=[&](Scene& scene,std::chrono::steady_clock::time_point now){
+			const auto drawScene=[&](Scene& scene,std::chrono::steady_clock::time_point now,bool full=true){
 				PageTestPixels result;(void)scene.Advance(now);result.bounds=scene.PresentationBounds();
 				result.width=result.bounds.right-result.bounds.left;result.height=result.bounds.bottom-result.bounds.top;
 				if(FAILED(scene.EnsureDeviceResources(epoch,result.width,result.height))){Check(false,"page status test owns real D2D resources");return result;}
 				auto* dc=scene.DeviceContext();auto& renderer=scene.Renderer();
-				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(result.width),static_cast<FLOAT>(result.height)));
-				(void)scene.Render(dc,now);renderer.FinishFrameDrawCommands(dc);
+				const auto damage=full?RECT{0,0,static_cast<LONG>(result.width),static_cast<LONG>(result.height)}:scene.PendingDamage();
+				renderer.BeginFrameDraw(dc,D2D1::RectF(static_cast<FLOAT>(damage.left),static_cast<FLOAT>(damage.top),
+					static_cast<FLOAT>(damage.right),static_cast<FLOAT>(damage.bottom)));
+				WaitTrace::DrawStarted();
+				(void)scene.Render(dc,now);WaitTrace::DrawFinished();renderer.FinishFrameDrawCommands(dc);
 				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"page status test renders through the shared button transaction");
 				ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
 				if(!image||FAILED(image.As(&bitmap))){Check(false,"page status target supports readback");return result;}
@@ -3739,6 +3806,85 @@ namespace Inkeys::UI::PageControl
 				Scene scene;scene.ConfigurePagination(content);scene.SetBounds({0,0,width,80},1);scene.SetOpacity(1,0);
 				return drawScene(scene,now);
 			};
+			// 真实像素而非只测bool：同页等待必须只改变方向按钮，局部脏区与整幅重画一致。
+			for(std::size_t index=0;index<4;++index)for(const float scale:{1.0F,1.5F,2.0F})
+			for(const auto direction:{PptNavigationDirection::Previous,PptNavigationDirection::Next}){
+				auto frame=ppt;frame.currentPage=3;frame.layout.session=7;frame.navigationWaiting={};
+				const auto normal=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+				const LONG width=static_cast<LONG>(std::lround((index<2?PptControlLongSideDip:PptControlShortSideDip)*scale));
+				const LONG height=static_cast<LONG>(std::lround((index<2?PptControlShortSideDip:PptControlLongSideDip)*scale));
+				Scene waitingScene;waitingScene.ConfigurePagination(normal);waitingScene.SetBounds({0,0,width,height},scale);waitingScene.SetOpacity(1,0);
+				const auto now=origin+25s;const auto plain=drawScene(waitingScene,now);
+				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
+				frame.navigationWaiting={7,11,direction,true};
+				const auto content=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+				waitingScene.ConfigurePagination(content);const auto partial=drawScene(waitingScene,now,false);
+				Scene fullScene;fullScene.ConfigurePagination(content);fullScene.SetBounds({0,0,width,height},scale);fullScene.SetOpacity(1,0);
+				Check(partial==drawScene(fullScene,now),"waiting partial damage equals a full redraw on all four surfaces and scales");
+				// 明确启用局部recorder，避免早期离屏入口未Prepare而形成“两次都off”的假对照。
+				WaitTrace::Record samples[8];WaitTrace::Recorder recorder(samples,8);
+				WaitTrace::Fields traceFields;traceFields.session=7;traceFields.epoch=11;traceFields.direction=static_cast<unsigned>(direction);
+				traceFields.surface=static_cast<int>(index);traceFields.flags=WaitTrace::Waiting|WaitTrace::Offscreen;
+				PageTestPixels traced;
+				{ WaitTrace::DrawScope trace(traceFields,&recorder);traced=drawScene(fullScene,now); }
+				const auto sampleCounts=recorder.AfterProducersJoined();
+				Check(traced==partial&&sampleCounts.retained==2&&sampleCounts.invalid==0
+					&&samples[1].stage==WaitTrace::Stage::Draw&&samples[1].fields.dots==3&&samples[1].fields.branches==1,
+					"enabled waiting draw capture records the actual three ellipses without changing BGRA pixels");
+				const auto region=[&](const PageTestPixels& pixels,RECT bounds){
+					std::vector<BYTE> values;
+					if(pixels.bytes.size()!=static_cast<std::size_t>(pixels.width)*pixels.height*4)return values;
+					for(LONG y=bounds.top;y<bounds.bottom;++y)for(LONG x=bounds.left;x<bounds.right;++x){
+						const LONG row=y-pixels.bounds.top,column=x-pixels.bounds.left;
+						if(row<0||column<0||row>=static_cast<LONG>(pixels.height)||column>=static_cast<LONG>(pixels.width))continue;
+						const auto offset=(static_cast<std::size_t>(row)*pixels.width+column)*4;
+						values.insert(values.end(),pixels.bytes.begin()+offset,pixels.bytes.begin()+offset+4);
+					}return values;
+				};
+				const auto geometry=waitingScene.Layout();
+				const auto target=direction==PptNavigationDirection::Next?NextWidget:PreviousWidget;
+				const auto other=direction==PptNavigationDirection::Next?PreviousWidget:NextWidget;
+				Check(region(plain,geometry.buttons[target-1].localPixels)!=region(partial,geometry.buttons[target-1].localPixels),
+					"pending navigation paints visible pixels inside the corresponding arrow button");
+				Check(region(plain,geometry.buttons[other-1].localPixels)==region(partial,geometry.buttons[other-1].localPixels)
+					&&region(plain,geometry.buttons[PageWidget-1].localPixels)==region(partial,geometry.buttons[PageWidget-1].localPixels),
+					"waiting does not alter the opposite arrow or the actual old page number");
+				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();waitingScene.ConfigurePagination(normal);
+				Check(drawScene(waitingScene,now,false)==plain,"completion removes the waiting pixels with ordinary partial damage");
+				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
+				// command已Complete，真实Pending仍保留3/N：两侧通用三点继续，不沿用旧epoch/方向。
+				frame.navigationWaiting={};frame.pagePreparing=true;
+				const auto preparing=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+				waitingScene.ConfigurePagination(preparing);const auto preparingPartial=drawScene(waitingScene,now,false);
+				fullScene.ConfigurePagination(preparing);const auto preparingFull=drawScene(fullScene,now);
+				Check(preparingPartial==preparingFull
+					&&region(plain,geometry.buttons[PreviousWidget-1].localPixels)!=region(preparingPartial,geometry.buttons[PreviousWidget-1].localPixels)
+					&&region(plain,geometry.buttons[NextWidget-1].localPixels)!=region(preparingPartial,geometry.buttons[NextWidget-1].localPixels)
+					&&region(plain,geometry.buttons[PageWidget-1].localPixels)==region(preparingPartial,geometry.buttons[PageWidget-1].localPixels),
+					"after command completion real Pending paints both arrows, preserves old 3/N and matches full redraw");
+				WaitTrace::Record preparationSamples[8];WaitTrace::Recorder preparationRecorder(preparationSamples,8);
+				traceFields.epoch=0;traceFields.direction=0;traceFields.flags=WaitTrace::Preparing|WaitTrace::Offscreen;
+				{ WaitTrace::DrawScope trace(traceFields,&preparationRecorder);traced=drawScene(fullScene,now); }
+				Check(traced==preparingPartial&&preparationRecorder.AfterProducersJoined().retained==2
+					&&preparationSamples[1].fields.epoch==0&&preparationSamples[1].fields.direction==0
+					&&preparationSamples[1].fields.dots==6&&preparationSamples[1].fields.branches==2,
+					"generic epoch-zero preparation records six actual ellipses without changing BGRA");
+				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
+				frame.pagePreparing=false;frame.currentPage=4;
+				const auto ready=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+				waitingScene.ConfigurePagination(ready);const auto readyPartial=drawScene(waitingScene,now,false);
+				fullScene.ConfigurePagination(ready);
+				Check(readyPartial==drawScene(fullScene,now)
+					&&region(plain,geometry.buttons[PreviousWidget-1].localPixels)==region(readyPartial,geometry.buttons[PreviousWidget-1].localPixels)
+					&&region(plain,geometry.buttons[NextWidget-1].localPixels)==region(readyPartial,geometry.buttons[NextWidget-1].localPixels)
+					&&region(plain,geometry.buttons[PageWidget-1].localPixels)!=region(readyPartial,geometry.buttons[PageWidget-1].localPixels),
+					"the new ready 4/N and removal of both preparation indicators share one successful partial frame");
+				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();waitingScene.ConfigurePagination(preparing);
+				(void)drawScene(waitingScene,now,false);waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
+				frame.currentPage=3;frame.targetRevision=0; // BasicControl无需等待不存在的墨迹target/ACK。
+				waitingScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));
+				Check(drawScene(waitingScene,now,false)==plain,"BasicControl clears real preparation pixels even with target zero and unchanged page");
+			}
 			const auto numeric=BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{});
 			auto next=numeric;next.currentPage=L"8";next.totalPage=L"/29";
 			auto finalNumber=next;finalNumber.currentPage=L"9";finalNumber.totalPage=L"/30";
@@ -5643,7 +5789,15 @@ namespace Inkeys::UI::PageControl
 		{
 			std::scoped_lock dragLock(dragCommitMutex);
 			std::scoped_lock snapshotLock(snapshotMutex);
-			if (!MergePptPublication(publishedPpt, merged)) return;
+			auto waitFields=WaitingFields(merged,-1,publishedRevision.load(std::memory_order_relaxed));
+			if(WaitTrace::Enabled()){
+				waitFields.previousPublication=publishedPpt.publicationRevision;waitFields.previousRevision=waitFields.revision;
+				if(!waitFields.epoch&&!(waitFields.flags&WaitTrace::Preparing)){waitFields.session=publishedPpt.navigationWaiting.session;waitFields.epoch=publishedPpt.navigationWaiting.epoch;
+					waitFields.direction=static_cast<unsigned>(publishedPpt.navigationWaiting.direction);}
+			}
+			if (!MergePptPublication(publishedPpt, merged)) {
+				WaitTrace::Capture(WaitTrace::Stage::Model,waitFields,WaitTrace::Result::MergeRejected);return;
+			}
 			if (merged.layout.session != publishedPpt.layout.session
 				|| merged.layout.epoch != publishedPpt.layout.epoch)
 			{
@@ -5655,6 +5809,9 @@ namespace Inkeys::UI::PageControl
 			changed = !ArePptStatesEquivalent(publishedPpt, merged);
 			publishedPpt = merged;
 			if (changed) publishedRevision.fetch_add(1, std::memory_order_release);
+			if(changed)waitFields.flags|=WaitTrace::Changed;
+			waitFields.revision=publishedRevision.load(std::memory_order_relaxed);
+			WaitTrace::Capture(WaitTrace::Stage::Model,waitFields,changed?WaitTrace::Result::Accepted:WaitTrace::Result::Unchanged);
 		}
 		AcknowledgePage(merged, 0);
 		if (changed) RequestAll();
