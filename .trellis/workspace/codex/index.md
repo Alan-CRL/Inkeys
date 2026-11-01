@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 134
-- **Last Active**: 2026-10-31
+- **Total Sessions**: 142
+- **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1051 | Active |
+| `journal-2.md` | ~1307 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,14 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 142 | 2026-11-01 | 提交PPT等待反馈修复与诊断阶段成果 | `555ba5ce` | `bugfix/mode` |
+| 141 | 2026-11-01 | 页面准备三点提示实机验收通过 | - | `bugfix/mode` |
+| 140 | 2026-11-01 | 修复命令完成后页面准备阶段三点提前消失 | - | `bugfix/mode` |
+| 139 | 2026-11-01 | 复核正常退出并准备等待可见性链路诊断 | - | `bugfix/mode` |
+| 138 | 2026-11-01 | 记录正常退出超时并准备分阶段定位 | - | `bugfix/mode` |
+| 137 | 2026-11-01 | 实现 ROT 导航让出与确定性清理修复 | - | `bugfix/mode` |
+| 136 | 2026-11-01 | 细分 Observe 读取与释放并准备安全调度定位 | - | `bugfix/mode` |
+| 135 | 2026-11-01 | 准备 PPT 导航分段诊断与人工采集入口 | - | `bugfix/mode` |
 | 134 | 2026-10-31 | 修复分支审阅发现的 PPT 身份与等待及白板恢复问题 | - | `bugfix/mode` |
 | 132 | 2026-10-30 | 统一分页状态动画与白板立即翻页 | `192ff6d5` | `bugfix/mode` |
 | 131 | 2026-10-30 | 修复白板形状选择窗口无法展开 | `3e0df72b` | `bugfix/mode` |

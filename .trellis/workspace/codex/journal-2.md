@@ -1049,3 +1049,259 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Next Steps
 
 - 保持未提交；原任务的Office退出/重开、真实另存及等待像素验收仍未运行，不归档任务。
+
+
+## Session 135: 准备 PPT 导航分段诊断与人工采集入口
+<!-- trellis-session: v=2 fp=1d5cd4efd679ea95 -->
+
+**Date**: 2026-11-01
+**Task**: 准备 PPT 导航分段诊断与人工采集入口
+**Branch**: `bugfix/mode`
+
+### Summary
+
+针对1228ms Previous请求与141ms owner执行之间的未归因时间，增加默认关闭QPC诊断、精确入队出队、COM及focus边界和采集分析脚本；构建/定向/解析检查通过，交用户人工测试，未commit/push。
+
+### Main Changes
+
+- INKEYS_PPT_PERF=1：native/managed数值span、精确邮箱与维护阶段，无额外COM读取、无ABI/所有权/调度变更。
+- 一键入口固定本工作区产物、拒绝旧实例/标记缺失/内嵌DLL不一致；子进程环境与流采集不改配置或执行策略。分析器保持unknown与源/线程身份，不重复累加。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Managed构建/core与stderr开关探针通过；完整Debug|ARM64最终exit0；--ppt-session-only exit0；分析器10项通过；PrepareOnly无GUI且配置哈希不变；TLB/内嵌DLL/BOM/EOL/diff通过，独立审查无未修项。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户运行Scripts/Start-PptNavigationDiagnostic.cmd测试3↔4控件及键盘，重点Previous；退出Inkeys后读取新采集目录分析1.23s，AI不操控桌面、不自动提交。
+
+
+## Session 136: 细分 Observe 读取与释放并准备安全调度定位
+<!-- trellis-session: v=2 fp=fa9fd12e35e781fe -->
+
+**Date**: 2026-11-01
+**Task**: 细分 Observe 读取与释放并准备安全调度定位
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户要求准确定位并执行，先在已证实的ROT/Observe排队上补原有成员和释放子阶段。保持dynamic/逐次COM所有权、分支和调度不变；构建/等价测试通过，等待用户新采样后实施有证据的最小调度修复。
+
+### Main Changes
+
+- 仅PptCOM.cs原有Observe与共享getter包裹默认关闭span；16场景比较开关前后原操作序列、次数、释放账本和场次状态。分析器新增维护树和unknown/残余统计。
+- 只读安全调度研究明确pending条件基线、轮询/missingCount/HWND、ROT释放边界与墨迹准入不能跳过；不是把cached stamp当freshproof。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Managed Release|AnyCPU及全部core通过；完整InkeysRepo.sln Debug|ARM64 exit0/5.90秒；分析器17项和旧v1 1577/749/19兼容通过；TLB/内嵌DLL/PrepareOnly/配置不变/BOM/EOL/diff及独立COM审查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户用原一键入口做3↔4控件约5轮重点Previous；AI不操控桌面、不自动提交，读新子阶段后继续安全调度修复。
+
+
+## Session 137: 实现 ROT 导航让出与确定性清理修复
+<!-- trellis-session: v=2 fp=83701d00fa07f0fb -->
+
+**Date**: 2026-11-01
+**Task**: 实现 ROT 导航让出与确定性清理修复
+**Branch**: `bugfix/mode`
+
+### Summary
+
+依据已实测ROT+Observe累计排队，健康绑定下pending导航可在安全检查点取消ROT，先完整释放再原Observe/排水；最多一次让出避免饿死。dynamic、RCW逐笔释放、ABI、2s和墨迹门禁保持，待用户人工验证收益。
+
+### Main Changes
+
+- 扫描Deferred明确清partialbest/优先级并走所有finally；保留defaultHRESULT/out及释放系统边界，安全scanner诊断不再抛错 orphanwinner。两成员经既有actualdynamicaccessor，未增反射/typedwrapper/GC/FinalRelease。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 实际scanner所有检查点、重复/multiplewinner、失败outnonnull/异常/throwingwriter、真实BindCtx成功释放、资格与公平性、真实client unwind→fullObserve→单次Invoke/旧请求拒绝全过；defaultHarness隔离用户ROT。Managed和完整Debug|ARM64 exit0，TLB字节一致，内嵌DLL351A5292...一致，PrepareOnly配置哈希不变，独立检查无未修项。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户一键入口控件3↔4约8–10轮重点Previous，比较rot-deferred/forced及队列；已进入COM与完整Observe耗时仍有边界，不自动提交或归档。
+
+
+## Session 138: 记录正常退出超时并准备分阶段定位
+<!-- trellis-session: v=2 fp=de1a6af1c64b16b2 -->
+
+**Date**: 2026-11-01
+**Task**: 记录正常退出超时并准备分阶段定位
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认正常菜单/设置退出却触发E1430016，退出验收失败。ROT让出路径实际生效但单轮性能无稳定改善结论；增加默认关闭native/managed清理标记定位，保持原15秒/Arm-first/释放/调度不变，交用户同路径退出采样。
+
+### Main Changes
+
+- ShutdownTrace独立前缀/跨TURecorder，预热PODpreArm缓冲、Failed接管先输出、LastError瞬时保护；主线程/PPTLinkage/service及managedfinal/CP/roots阶段。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Managed构建+全部core及6启停清理等价/IErrorInfo案例通过；完整Debug|ARM64 exit0/23.43秒/0error；PPT定向exit0，TLB/内嵌DLL1061DDF5...一致；PrepareOnly无GUI/配置SHA不变，BOM/EOL/diff及独立检查通过。初轮ADL限定名源码错误已单行修正。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原一键入口按同样菜单/设置正常退出一次，保持原PPT环境；AI不操控桌面，不推断helper失败/COM泄漏，不自动commit或归档。
+
+
+## Session 139: 复核正常退出并准备等待可见性链路诊断
+<!-- trellis-session: v=2 fp=708cb771d5e95a9c -->
+
+**Date**: 2026-11-01
+**Task**: 复核正常退出并准备等待可见性链路诊断
+**Branch**: `bugfix/mode`
+
+### Summary
+
+135913实测正常exit0但导航仍有1.637秒长尾、邮箱1.239秒；用户确认三点不可见。未猜测修改COM或partial-proof，准备固定数值UI等待链路及真实像素回归，交用户短测。
+
+### Main Changes
+
+- 默认关闭16384槽PptWait，发布/合并/配置/真实三点/完整像素/pending回执同attempt，所有producer真实join后统一输出；本轮PptCOM源/DLL/TLB未变。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立review与CRLF/diff通过；完整Debug|ARM64 exit0/17.76秒/0error，PPT定向与24组合真实离屏及明确启用采样的BGRA等价exit0；DLL/内嵌一致，PrepareOnly实际main/deploy SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口控件3↔4出现一两次明显等待后正常菜单/设置退出以flush；读取新链路定位三点消失边界。性能/可见性尚未修复，旧退出超时根因未知，不归档、不提交。
+
+
+## Session 140: 修复命令完成后页面准备阶段三点提前消失
+<!-- trellis-session: v=2 fp=2da06aa159b0654f -->
+
+**Date**: 2026-11-01
+**Task**: 修复命令完成后页面准备阶段三点提前消失
+**Branch**: `bugfix/mode`
+
+### Summary
+
+144216零掉样采样及用户澄清确认三点正常出现但随COM/native命令Complete提前消失，后续Pending/页码准备仍约2秒。已独立投影真实Pending为双向通用准备提示，保留旧数字和原安全门。
+
+### Main Changes
+
+- Ppt同快照过滤recovery后投影pagePreparing，PageControl状态比较/双方向OR；generic PptWait Preparing1024 epoch0不借旧请求，原命令水位/COM/ready不变。同步规范及验证/手测交接。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立review与CRLF/diff通过；新增测试枚举限定名修正后完整Debug|ARM64 exit0，page-control-only/ppt-session-only/实际24组合扩展像素和启停等价exit0；PptCOM源/DLL/TLB/内嵌未变，PrepareOnly main/deploy SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口仅第3→4一次，核对真正Pending阻塞时三点保留、新页码成功显示同帧去点，正常退出收集。实际延迟未缩短、旧退出超时及CP末次是否清零未知仍保留，不提交/归档。
+
+
+## Session 141: 页面准备三点提示实机验收通过
+<!-- trellis-session: v=2 fp=953db167425effc2 -->
+
+**Date**: 2026-11-01
+**Task**: 页面准备三点提示实机验收通过
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认第3→4页面准备时三点正常保留和清除，修复版152235采样1744记录零掉样，同attempt generic六点软件链与反馈一致。等待反馈验收通过，停止重复此项矩阵。
+
+### Main Changes
+
+- 更新人工结果、PRD AC4与实现清单；本轮只读日志及文档，无新产品代码。任务保留性能长尾与旧退出未知，不归档。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 分析器exit0/13请求/0issues，8 Next最大42.3125ms、5 Previous最大1012.3007ms；Preparing107真实draw/95同attempt新像素显示receipt，45退出span闭合、exit0，主清理1001.898ms。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 剩余Previous邮箱855.8518ms主要是完整Observe781.0943ms与维护74.7354ms；实际延迟仍未修复，后续单独评估。PptCOM/安全门未变，未提交/归档，不追加人工三点测试。
+
+
+## Session 142: 提交PPT等待反馈修复与诊断阶段成果
+<!-- trellis-session: v=2 fp=96f99141369a20a0 -->
+
+**Date**: 2026-11-01
+**Task**: 提交PPT等待反馈修复与诊断阶段成果
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户明确授权提交当前改动；代码/脚本/测试/spec及任务研究已提交555ba5ce。最终全范围审查复用各轮通过证据，修正文档AC7过时表述为反馈通过、性能仍待处理。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `555ba5ce` | fix(ppt): preserve preparation feedback and trace navigation delays |
+
+### Testing
+
+- [OK] 既有完整ARM64/managed/定向/真实离屏及用户等待反馈通过；本轮源码未变化，不重跑矩阵，git diff --check通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留in_progress任务与实际延迟/旧退出未知，不归档、不push；会话日志单独提交。
