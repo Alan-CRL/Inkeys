@@ -748,6 +748,12 @@
         "E": "Use system composition to display the canvas on supported devices, with automatic compatibility fallback when unavailable."
       }
     },
+    "Linkage":
+    {
+      "N": "Linkage",
+      "PPT": "PPT Linkage",
+      "CoreVersion": "Core version {}"
+    },
     "Experimental":
     {
       "UI3":
@@ -826,7 +832,11 @@
           "N": "Widget Display",
           "BottomBoth": "Show bottom-side widgets",
           "MiddleBoth": "Show middle-side widgets",
-          "BottomMiddle": "Show bottom main bar widget"
+          "BottomMiddle": "Show bottom main bar widget",
+          "IdleFade": "Fade when idle",
+          "IdleFadeE": "During a slideshow, page widgets become more transparent after a period without interaction or after turning pages with a presenter or keyboard, so they cover less content. Hover, click or drag to restore them.",
+          "IdleFadeOff": "Off",
+          "IdleFadeSeconds": "{} s"
         },
         "WidgetPosition":
         {

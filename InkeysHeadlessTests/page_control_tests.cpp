@@ -1941,6 +1941,36 @@ namespace
 			"PPT drag clamp uses its active standard geometry without inheriting whiteboard width");
 	}
 
+	void TestPptIdleFadePolicy()
+	{
+		using Clock = std::chrono::steady_clock;
+		const auto activity = Clock::time_point(std::chrono::seconds(100));
+		PptIdleFadeInput input{ 10, true, false, false, activity, activity + std::chrono::milliseconds(9999) };
+		const auto waiting = ResolvePptIdleFade(input);
+		input.now = activity + std::chrono::seconds(10);
+		const auto expired = ResolvePptIdleFade(input);
+		Check(!waiting.dimmed && waiting.wake == activity + std::chrono::seconds(10)
+			&& expired.dimmed && expired.wake == Clock::time_point::max(),
+			"idle fade waits for the configured timeout and then dims without another wake");
+		auto engaged = input; engaged.engaged = true;
+		auto disabled = input; disabled.timeoutSeconds = 0;
+		auto hidden = input; hidden.eligible = false;
+		Check(!ResolvePptIdleFade(engaged).dimmed && !ResolvePptIdleFade(disabled).dimmed
+			&& !ResolvePptIdleFade(hidden).dimmed
+			&& ResolvePptIdleFade(disabled).wake == Clock::time_point::max(),
+			"hover/press, the off option and hidden or whiteboard surfaces stay opaque");
+		auto external = input; external.now = activity; external.externalTurn = true;
+		auto externalEngaged = external; externalEngaged.engaged = true;
+		Check(ResolvePptIdleFade(external).dimmed && !ResolvePptIdleFade(externalEngaged).dimmed,
+			"an external page turn dims immediately unless the surface is being used");
+		Check(IsPptExternalPageTurn(7, 3, 7, 4, false) && !IsPptExternalPageTurn(7, 3, 7, 4, true)
+			&& !IsPptExternalPageTurn(7, 3, 8, 4, false) && !IsPptExternalPageTurn(7, -1, 7, 4, false)
+			&& !IsPptExternalPageTurn(7, 3, 7, 3, false) && !IsPptExternalPageTurn(0, 3, 0, 4, false),
+			"only same-session page changes outside the control grace window count as external turns");
+		PptState left, right; right.idleFadeSeconds = 5;
+		Check(!ArePptStatesEquivalent(left, right), "idle fade timeout changes republish the PPT state");
+	}
+
 	void TestA2ProjectionAndMigration()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -2039,5 +2069,6 @@ int RunPageControlTests()
 	TestDirtyInvalidationDeduplication();
 	TestRuntimeCollisionFallback();
 	TestA2ProjectionAndMigration();
+	TestPptIdleFadePolicy();
 	return failureCount;
 }

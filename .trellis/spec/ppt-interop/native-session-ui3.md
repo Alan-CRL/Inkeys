@@ -398,3 +398,27 @@ Wrong：直接覆写控制currentPage为旧3，或把正常恢复进度当文字
 Correct：保留control4+Pending，视觉override3+Page角标；只有实际ready发布更新数字，故障控制与纯显示分离。
 
 当前Page角标已由旧三点更新为持续等待满500ms后出现的环形指示器；左右方向共用原角落、数字/控制/ACK语义不变，旧三点计数仅历史样本。实际视觉/调度契约见rendering-and-ui.md“Page右上角延迟环形指示器”。
+
+## Scenario: 翻页控件闲置淡化与“联动”设置页（2026-11-02）
+
+### 1. Scope / Trigger
+修改四个PPT翻页控件透明度、外部翻页识别、`PPTHelper.IdleFadeSeconds`或设置“联动”页时适用。
+
+### 2. Signatures
+- `config.PlugIn.PPTHelper.IdleFadeSeconds: IdtAtomic<int>=10`，NoUpload；UI选项0(关闭)/5/10/15/30，非列表值显示为10秒但不改写。
+- `PptState.idleFadeSeconds`由`Ppt::PublishSnapshot`写入，参与`ArePptStatesEquivalent`；设置变更调用`Ppt::NotifyConfigurationChanged(ConfigGroup::IdleFade)`仅重发快照。
+- `PageControl.cppm`：`ResolvePptIdleFade`、`IsPptExternalPageTurn`、`PptIdleFadeOpacity=0.4`、`PptControlNavigationGrace=3s`。
+- 设置：`PageId::Linkage=17`/`settingTabEnum::tabLinkage`，侧栏在“性能”下；`NavigationState::middleBounds`长度必须等于`NavigationMiddleItemCount`（static_assert）。
+
+### 3. Contracts
+- Scene透明度目标=可见?(淡化?0.4:1):0，只在`ConfigureSurface`渲染线程设置；显隐沿用工作区过渡，淡出0.5s、恢复0.15s。淡化不改变命中。
+- 每个控件独立：进入可见即重置为不透明并计时；真实鼠标悬停(非touch/非指针合成)与接受的按下视为占用；Leave/Up/Cancel/CaptureChanged重新计时。`InvokeDirection`登记控件翻页并重新计时。
+- 外部翻页=同场次页码变化且距控件翻页超过宽限；递增全局序号，所有未占用控件立即淡化，交互消费序号后恢复。新场次重置全部计时。白板模式复用的底部控件不淡化。
+- 输入worker/发布线程只写原子信号；截止时间经`idleDeadlines`在`PageControlInputTick`唤醒渲染，生命周期结束清为max。
+
+### 4. Tests Required
+`InkeysHeadlessTests --no-window`的`TestPptIdleFadePolicy`；侧栏条目数变化须同步`setting_design_tests`中的中段高度与按下标点击的行。
+
+### 5. Wrong vs Correct
+Wrong：在LL键盘钩子识别PgDn等键触发淡化，或在显隐分支外直接`SetOpacity(1)`覆盖淡化。
+Correct：由页码外部变化统一覆盖翻页笔/键盘/滚轮，透明度只经`opacityTarget`单点决策。

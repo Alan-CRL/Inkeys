@@ -548,6 +548,8 @@ export namespace Inkeys::UI::Ppt
 		BottomPair,
 		MiddlePair,
 		ExitShow,
+		// 只重新发布快照，供翻页控件读取闲置淡化时长。
+		IdleFade,
 		All,
 	};
 

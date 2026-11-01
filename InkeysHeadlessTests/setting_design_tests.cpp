@@ -191,10 +191,10 @@ namespace
 					checks.Expect(Near(regions.footer.bottom - regions.footerItems[3].bottom, 8)
 						&& Near(regions.footer.Height(), 184),
 						"footer ends after close action with only its original bottom inset and no debug reservation");
-					checks.Expect(Near(regions.middleContentHeight, 276)
+					checks.Expect(Near(regions.middleContentHeight, 316)
 						&& Near(regions.top.Height() + regions.middle.Height() + regions.footer.Height(), pane.Height())
 						&& (size.y != 520 || regions.middleContentHeight > regions.middle.Height()),
-						"remaining height alone budgets the seven-root middle with overflow at minimum size");
+						"remaining height alone budgets the eight-root middle with overflow at minimum size");
 				}
 		const auto shortPane = Design::ResolveNavigationPaneGeometry(248, 240);
 		checks.Expect(!shortPane.fits && Near(shortPane.middle.Height(), 0)
@@ -4065,7 +4065,7 @@ namespace
 				"scrolling during a tab transition translates the actual blue bar without restarting its progress");
 		}
 		click(state.middleBounds[3]); frame = draw(outside, false);
-		checks.Expect(selected.page == PageId::Plugins && state.indicatorY.Active() && state.indicatorY.progress == 0
+		checks.Expect(selected.page == PageId::Linkage && state.indicatorY.Active() && state.indicatorY.progress == 0
 			&& Near(state.indicatorY.start * scale, indicatorCenter(frame), 0.75F),
 			"reversing the tab selection starts from the current rendered blue-bar position");
 		frame = idle(12); expectAttached(frame, state.middleBounds[3]);
@@ -4152,17 +4152,17 @@ namespace
 				checks.Expect(state.overlayOpen && state.Expanded() && !frame.indicatorDrawn,
 					"debug page can reopen the narrow overlay without destination synchronization closing it");
 			}
-			frame = click(state.middleBounds[3]);
+			frame = click(state.middleBounds[4]);
 			checks.Expect(selected.page == PageId::Plugins && !state.indicatorY.Active(),
 				"return from debug binds the selected row directly instead of sliding from an old blue-bar anchor");
-			frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
+			frame = draw(outside, false); expectAttached(frame, state.middleBounds[4]);
 			selected = { PageId::Draw }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
 			checks.Expect(state.indicatorY.Active() == animated,
 				"ordinary destinations resume their configured blue-bar transition after leaving debug");
 			selected = { PageId::Debug }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
 			checks.Expect(!frame.indicatorDrawn && !state.indicatorY.Active(), "rapid reversal to debug suppresses blue-bar motion immediately");
 			selected = { PageId::Plugins }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
-			expectAttached(frame, state.middleBounds[3]);
+			expectAttached(frame, state.middleBounds[4]);
 		}
 		// 紧凑轨道的真实模态子菜单不能吞掉标题栏 Debug；它只继续隔离正文。
 		animated = true; size = ImVec2(960, 700); state.desktopCompact = true; state.overlayOpen = false;

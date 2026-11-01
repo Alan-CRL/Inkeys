@@ -641,6 +641,8 @@ export namespace Inkeys::UI::PageControl
 		bool numericPageOverride = false;
 		int displayedCurrentPage = -1, displayedTotalPage = -1;
 		bool longPressEnabled = false;
+		// 闲置淡化时长（秒），0 表示关闭；来自 PPTHelper.IdleFadeSeconds 的发布快照。
+		int idleFadeSeconds = 0;
 		int currentPage = -1;
 		int totalPage = -1;
 		PptNavigationWaiting navigationWaiting;
@@ -648,6 +650,50 @@ export namespace Inkeys::UI::PageControl
 		// 帧内派生的 UI 全局尺度；不属于用户位置/控件倍率，不参与持久化。
 		float uiScale = 0.0F;
 	};
+
+	// 闲置淡化只叠加在显隐透明度之上；淡化后仍保持可命中。
+	inline constexpr double PptIdleFadeOpacity = 0.4;
+	inline constexpr double PptIdleFadeOutSeconds = 0.5;
+	inline constexpr double PptIdleFadeInSeconds = 0.15;
+	inline constexpr int PptIdleFadeMaximumSeconds = 3600;
+	// 控件发起翻页后，该时长内的页码变化视为控件自身结果，不触发外部翻页淡化。
+	inline constexpr std::chrono::milliseconds PptControlNavigationGrace{ 3000 };
+
+	struct PptIdleFadeInput
+	{
+		int timeoutSeconds = 0;
+		bool eligible = false;
+		bool engaged = false;
+		bool externalTurn = false;
+		std::chrono::steady_clock::time_point activity{};
+		std::chrono::steady_clock::time_point now{};
+	};
+
+	struct PptIdleFadeDecision
+	{
+		bool dimmed = false;
+		std::chrono::steady_clock::time_point wake = std::chrono::steady_clock::time_point::max();
+	};
+
+	[[nodiscard]] constexpr PptIdleFadeDecision ResolvePptIdleFade(
+		const PptIdleFadeInput& input) noexcept
+	{
+		if (!input.eligible || input.timeoutSeconds <= 0 || input.engaged) return {};
+		if (input.externalTurn) return { true };
+		const auto deadline = input.activity + std::chrono::seconds(
+			(std::min)(input.timeoutSeconds, PptIdleFadeMaximumSeconds));
+		if (input.now >= deadline) return { true };
+		return { false, deadline };
+	}
+
+	[[nodiscard]] constexpr bool IsPptExternalPageTurn(
+		std::uint64_t previousSession, int previousPage,
+		std::uint64_t session, int page, bool controlNavigationRecent) noexcept
+	{
+		return session != 0 && session == previousSession
+			&& previousPage >= 0 && page >= 0 && page != previousPage
+			&& !controlNavigationRecent;
+	}
 
 	[[nodiscard]] inline bool IsPptPagePreparing(const PptState& state) noexcept
 	{
@@ -839,6 +885,7 @@ export namespace Inkeys::UI::PageControl
 			&& left.displayedCurrentPage == right.displayedCurrentPage
 			&& left.displayedTotalPage == right.displayedTotalPage
 			&& left.longPressEnabled == right.longPressEnabled
+			&& left.idleFadeSeconds == right.idleFadeSeconds
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage
 			&& left.navigationWaiting.session == right.navigationWaiting.session

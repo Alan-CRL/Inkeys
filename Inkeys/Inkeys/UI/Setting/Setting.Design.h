@@ -133,7 +133,7 @@ namespace Inkeys::UI::Setting::Design
 		LayoutRect parentBounds, chevronBounds, flyoutBounds;
 		std::array<LayoutRect, GeneralSectionCount> childBounds{}, flyoutChildBounds{};
 		std::array<LayoutRect, 4> footerBounds{};
-		std::array<LayoutRect, 7> middleBounds{};
+		std::array<LayoutRect, 8> middleBounds{};
 		std::uint32_t parentItemId = 0;
 		std::uint32_t childFocusId = 0;
 		std::uint32_t childWindowItemId = 0;
@@ -263,7 +263,8 @@ namespace Inkeys::UI::Setting::Design
 
 	inline constexpr float NavigationRowHeight = 36.0F;
 	inline constexpr float NavigationSeparatorBand = 12.0F;
-	inline constexpr size_t NavigationMiddleItemCount = 7;
+	inline constexpr size_t NavigationMiddleItemCount = 8;
+	static_assert(std::tuple_size_v<decltype(NavigationState::middleBounds)> == NavigationMiddleItemCount);
 
 	struct NavigationPaneGeometry
 	{

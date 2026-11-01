@@ -748,6 +748,12 @@
         "E": "在支持的设备上使用系统合成显示画布，不可用时自动使用兼容方式。"
       }
     },
+    "Linkage":
+    {
+      "N": "联动",
+      "PPT": "PPT 联动",
+      "CoreVersion": "核心版本 {}"
+    },
     "Experimental":
     {
       "UI3":
@@ -826,7 +832,11 @@
           "N": "控件显示",
           "BottomBoth": "显示底部两侧控件",
           "MiddleBoth": "显示中部两侧控件",
-          "BottomMiddle": "显示底部主栏控件"
+          "BottomMiddle": "显示底部主栏控件",
+          "IdleFade": "闲置时自动淡化",
+          "IdleFadeE": "放映中一段时间未操作，或使用翻页笔、键盘翻页后，翻页控件会变得更透明以减少遮挡；悬停、点击或拖动时恢复。",
+          "IdleFadeOff": "关闭",
+          "IdleFadeSeconds": "{} 秒"
         },
         "WidgetPosition":
         {

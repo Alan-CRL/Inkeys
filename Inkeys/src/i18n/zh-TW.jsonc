@@ -748,6 +748,12 @@
         "E": "在支援的裝置上使用系統合成顯示畫布，無法使用時自動改用相容方式。"
       }
     },
+    "Linkage":
+    {
+      "N": "聯動",
+      "PPT": "PPT 聯動",
+      "CoreVersion": "核心版本 {}"
+    },
     "Experimental":
     {
       "UI3":
@@ -826,7 +832,11 @@
           "N": "控製項顯示",
           "BottomBoth": "顯示底部兩側控製項",
           "MiddleBoth": "顯示中部兩側控製項",
-          "BottomMiddle": "顯示底部主欄控製項"
+          "BottomMiddle": "顯示底部主欄控製項",
+          "IdleFade": "閒置時自動淡化",
+          "IdleFadeE": "放映中一段時間未操作，或使用簡報筆、鍵盤翻頁後，翻頁控製項會變得更透明以減少遮擋；懸停、點擊或拖曳時恢復。",
+          "IdleFadeOff": "關閉",
+          "IdleFadeSeconds": "{} 秒"
         },
         "WidgetPosition":
         {

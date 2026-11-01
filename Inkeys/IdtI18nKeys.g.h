@@ -751,6 +751,12 @@ inline constexpr struct I18nKeyRoot
                 const char* E = "SettingsUI/Performance/DirectComposition/E";
             } DirectComposition{};
         } Performance{};
+        struct Node__SettingsUI__Linkage
+        {
+            const char* N = "SettingsUI/Linkage/N";
+            const char* PPT = "SettingsUI/Linkage/PPT";
+            const char* CoreVersion = "SettingsUI/Linkage/CoreVersion";
+        } Linkage{};
         struct Node__SettingsUI__Experimental
         {
             struct Node__SettingsUI__Experimental__UI3
@@ -830,6 +836,10 @@ inline constexpr struct I18nKeyRoot
                     const char* BottomBoth = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/BottomBoth";
                     const char* MiddleBoth = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/MiddleBoth";
                     const char* BottomMiddle = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/BottomMiddle";
+                    const char* IdleFade = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFade";
+                    const char* IdleFadeE = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeE";
+                    const char* IdleFadeOff = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeOff";
+                    const char* IdleFadeSeconds = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeSeconds";
                 } WidgetDisplay{};
                 struct Node__SettingsUI__PlugIn__PPTHelper__WidgetPosition
                 {

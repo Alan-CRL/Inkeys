@@ -2472,6 +2472,7 @@ SettingSessionCoroutine RunSettingSession()
 
 		int settingTab = 0;
 		int settingPlugInTab = 0;
+		int settingLinkageTab = 0;
 		Design::DrawingSubpage drawingSubpage = Design::DrawingSubpage::Overview;
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
@@ -2599,6 +2600,7 @@ SettingSessionCoroutine RunSettingSession()
 					tabExperimental,
 					tabFeedback = 15,
 					tabPerformance = 16,
+					tabLinkage = 17,
 				};
 				enum settingPlugInTabEnum
 				{
@@ -2818,6 +2820,7 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::PushID(settingTab);
 				// 插件/绘制详情及通用子页各自保存滚动状态，标签翻译不参与窗口标识。
 				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab
+					: settingTab == settingTabEnum::tabLinkage ? settingLinkageTab
 					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
 					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0);
 				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
@@ -3783,13 +3786,6 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						Design::PageHeader(IA(I18nKey.SettingsUI.PlugIn.N).c_str());
 						Design::PageContentStart();
-						const string pptStatus = pptComVersion.substr(0, 7) == L"Error: "
-							? IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError)
-							: utf16ToUtf8(pptComVersion);
-						renderPluginOverviewCard("ppt-helper",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(), pptStatus,
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str(), 5,
-							settingPlugInTabEnum::tabPlug2, IA(I18nKey.SettingsUI.PlugIn.PPTHelper.SupportNote).c_str());
 						renderPluginOverviewCard("super-top",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(), "20260202a",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.E).c_str(), 10,
@@ -3803,220 +3799,6 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.N).c_str(), "20250223a",
 							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.E).c_str(), 6,
 							settingPlugInTabEnum::tabPlug3);
-						break;
-					}
-
-					case settingPlugInTabEnum::tabPlug2:
-					{
-						const string pptVersionText = pptComVersion.substr(0, 7) == L"Error: "
-							? IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError)
-							: utf16ToUtf8(pptComVersion);
-						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
-							pptVersionText.c_str());
-						if (pptComVersion.substr(0, 7) == L"Error: ")
-						{
-							const string error = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Error)
-								+ utf16ToUtf8(pptComVersion);
-							Design::Notice("##ppt-version-error",
-								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError).c_str(),
-								error.c_str(),
-								ImFluentInfoSeverity_Warning);
-						}
-						if (Design::Notice("##ppt-setup-notice",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tip).c_str(),
-							ImFluentInfoSeverity_Informational,
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
-							ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-com",
-								nullptr, nullptr, SW_SHOW);
-						if (pptComSetlist.setAdmin)
-						{
-							if (Design::Notice("##ppt-admin-notice",
-								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
-								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Warn).c_str(),
-								ImFluentInfoSeverity_Warning,
-								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
-								ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-admin",
-									nullptr, nullptr, SW_SHOW);
-						}
-
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.N).c_str());
-						// 加载页已停用，仅保留说明，不向用户提供失效的开关。
-						Design::SettingRow("##ppt-loading-screen",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE).c_str(),
-							"\ue895", 0.0F, 0.0F, [](const auto&) {});
-
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N).c_str());
-						renderToggleCard("##ppt-bottom-pair",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth).c_str(),
-							nullptr, "\ue90e", ShowBottomBoth, [&](bool value)
-							{
-								pptComSetlist.showBottomBoth = value;
-								PptComWriteSetting();
-								Inkeys::UI::Ppt::NotifyConfigurationChanged(
-									Inkeys::UI::Ppt::ConfigGroup::BottomPair);
-							});
-						renderToggleCard("##ppt-middle-pair",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth).c_str(),
-							nullptr, "\ue90c", ShowMiddleBoth, [&](bool value)
-							{
-								pptComSetlist.showMiddleBoth = value;
-								PptComWriteSetting();
-								Inkeys::UI::Ppt::NotifyConfigurationChanged(
-									Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
-							});
-
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.N).c_str());
-						{
-							if (Design::ButtonRow("##ppt-reset-position",
-								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset).c_str(),
-								nullptr, "\ue777",
-								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str()))
-							{
-								Inkeys::UI::Ppt::ResetPositions();
-								PptComWriteSetting();
-							}
-						}
-						renderToggleCard("##ppt-remember-position",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember).c_str(),
-							nullptr, "\ue8f1", MemoryWidgetPosition, [&](bool value)
-							{
-								pptComSetlist.memoryWidgetPosition = value;
-								PptComWriteSetting();
-							});
-
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.N).c_str());
-						bool anyScaleActive = false;
-						bool bottomSyncEnabled = false;
-						bool middleSyncEnabled = false;
-						bool bottomEdited = false;
-						bool middleEdited = false;
-						const auto renderScaleCard = [&](const char* id, const char* title,
-							float& value, bool& unified, bool& syncEnabled, bool& edited)
-							{
-								const string resetLabel = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset);
-								const string syncLabel = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync);
-								const string indicator = vformat(
-									IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind),
-									make_format_args(value));
-								const float resetWidth = Design::ButtonWidth(resetLabel.c_str());
-								const float syncWidth = Design::ButtonWidth(syncLabel.c_str());
-								const float requestedWidth = max(240.0F, resetWidth + syncWidth + 8.0F);
-								const auto measure = Design::MeasureRow(ImGui::GetContentRegionAvail().x / Design::Pixels(1.0F),
-									requestedWidth, 72.0F);
-								const bool wrapButtons = resetWidth + syncWidth + 8.0F > measure.actionWidth;
-								Design::SettingRow(id, title, indicator.c_str(), "\ue9a6", requestedWidth,
-									wrapButtons ? 112.0F : 72.0F, [&](const Inkeys::UI::Setting::LayoutRect& bounds)
-									{
-										// 活动状态在slider提交后立刻捕获，后续按钮不能覆盖松手保存判定。
-										ImGui::SetNextItemWidth(bounds.Width());
-										edited = Design::Slider("##scale", &value, 0.5F, 3.0F, "%.2f");
-										value = round(value * 100.0F) / 100.0F;
-										anyScaleActive = anyScaleActive || ImGui::IsItemActive();
-										const float actualResetWidth = min(bounds.Width(), Design::Pixels(resetWidth));
-										const float actualSyncWidth = min(bounds.Width(), Design::Pixels(syncWidth));
-										const float resetX = wrapButtons ? bounds.right - actualResetWidth
-											: bounds.right - actualResetWidth - Design::Pixels(8.0F) - actualSyncWidth;
-										ImGui::SetCursorScreenPos({ resetX, bounds.top + Design::Pixels(40.0F) });
-										if (Design::Button((resetLabel + "###reset").c_str(), { actualResetWidth, Design::Pixels(32.0F) }))
-										{
-											value = 1.0F;
-											edited = true;
-										}
-										ImGui::SetCursorScreenPos({ bounds.right - actualSyncWidth,
-											bounds.top + Design::Pixels(wrapButtons ? 80.0F : 40.0F) });
-										const bool previousUnified = unified;
-										Design::ToggleButton((syncLabel + "###sync").c_str(), &unified,
-											{ actualSyncWidth, Design::Pixels(32.0F) });
-										syncEnabled = !previousUnified && unified;
-									});
-							};
-						renderScaleCard("##ppt-bottom-scale",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth).c_str(),
-							BottomSideBothWidgetScale, BottomSideBothWidgetScaleUnifie,
-							bottomSyncEnabled, bottomEdited);
-						renderScaleCard("##ppt-middle-scale",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth).c_str(),
-							MiddleSideBothWidgetScale, MiddleSideBothWidgetScaleUnifie,
-							middleSyncEnabled, middleEdited);
-
-						const auto linkedScale = Inkeys::UI::Setting::ResolveLinkedPptScaleDraft(
-							{ BottomSideBothWidgetScale, MiddleSideBothWidgetScale,
-								BottomSideBothWidgetScaleUnifie, MiddleSideBothWidgetScaleUnifie },
-							bottomEdited, middleEdited, bottomSyncEnabled, middleSyncEnabled);
-						BottomSideBothWidgetScale = linkedScale.bottom;
-						MiddleSideBothWidgetScale = linkedScale.middle;
-						// 发布版拖动/重置/同步立即应用；写盘只在所有滑块松手后进入 FIFO。
-						if (pptComSetlist.bottomSideBothWidgetScale != BottomSideBothWidgetScale)
-						{
-							pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
-							Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::BottomPair);
-						}
-						if (pptComSetlist.middleSideBothWidgetScale != MiddleSideBothWidgetScale)
-						{
-							pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
-							Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
-						}
-						if (!anyScaleActive)
-						{
-							if (BottomSideBothWidgetScaleRecord != BottomSideBothWidgetScale)
-							{
-								pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
-								BottomSideBothWidgetScaleRecord = BottomSideBothWidgetScale;
-								PptComWriteSetting();
-								Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::BottomPair);
-							}
-							if (MiddleSideBothWidgetScaleRecord != MiddleSideBothWidgetScale)
-							{
-								pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
-								MiddleSideBothWidgetScaleRecord = MiddleSideBothWidgetScale;
-								PptComWriteSetting();
-								Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
-							}
-						}
-
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.N).c_str());
-						bool autoTakeOver = Inkeys::config.PlugIn.PPTHelper.AutoTakeOver;
-						renderToggleCard("##ppt-auto-takeover",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE).c_str(),
-							"\ue8f9", autoTakeOver, [&](bool value)
-							{
-								Inkeys::config.PlugIn.PPTHelper.AutoTakeOver = value;
-								QueueConfigWrite();
-							});
-						bool autoTakeOverOnce = Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce;
-						renderToggleCard("##ppt-auto-takeover-once",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE).c_str(),
-							"\ue8ed", autoTakeOverOnce, [&](bool value)
-							{
-								Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce = value;
-								QueueConfigWrite();
-							});
-						bool autoTakeOverExpand = Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand;
-						renderToggleCard("##ppt-auto-takeover-expand",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand).c_str(),
-							nullptr, "\ue976", autoTakeOverExpand, [&](bool value)
-							{
-								Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand = value;
-								QueueConfigWrite();
-							});
-						bool enableLongPress =
-							Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
-						renderToggleCard("##ppt-long-press",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress).c_str(),
-							nullptr, "\ue815", enableLongPress, [&](bool value)
-							{
-								Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress = value;
-								QueueConfigWrite();
-							});
 						break;
 					}
 
@@ -4317,6 +4099,276 @@ SettingSessionCoroutine RunSettingSession()
 						"在 ClassIsland 当前没有加载课表时，此组件不起作用。", "\ue70f",
 						ComponentShortcutButtonLinkageClassislandClassswap,
 						setlist.component.shortcutButton.linkage.classislandClassswap);
+					break;
+				}
+				// 联动
+				case settingTabEnum::tabLinkage:
+				{
+					const auto renderLinkageHeader = [&](const char* title, const char* subtitle)
+						{
+							if (Design::IconButton("##linkage-back", "\ue72b"))
+								settingLinkageTab = 0;
+							Design::PageHeader(title, subtitle);
+							Design::PageContentStart();
+						};
+					const auto renderToggleCard = [&](const char* id, const char* title,
+						const char* description, const char* glyph, bool& value, auto&& changed, const char* note = nullptr)
+						{
+							if (Design::ToggleRow(id, title, description, glyph, value, note))
+								changed(value);
+						};
+
+					switch (settingLinkageTab)
+					{
+					case 0:
+					{
+						Design::PageHeader(IA(I18nKey.SettingsUI.Linkage.N).c_str());
+						Design::PageContentStart();
+						// 沿用插件概览卡片与 PluginFlag 纹理；版本号只在详情页显示。
+						if (Design::NavigationRow("ppt-linkage", IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str(), nullptr,
+							(ImTextureID)(intptr_t)TextureSettingSign[5], IM_COL32_WHITE,
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.SupportNote).c_str()))
+							settingLinkageTab = 1;
+						break;
+					}
+
+					case 1:
+					{
+						string pptVersion = utf16ToUtf8(pptComVersion);
+						const string pptVersionText = pptComVersion.substr(0, 7) == L"Error: "
+							? IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError)
+							: vformat(IA(I18nKey.SettingsUI.Linkage.CoreVersion), make_format_args(pptVersion));
+						renderLinkageHeader(IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
+							pptVersionText.c_str());
+						if (pptComVersion.substr(0, 7) == L"Error: ")
+						{
+							const string error = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Error)
+								+ utf16ToUtf8(pptComVersion);
+							Design::Notice("##ppt-version-error",
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError).c_str(),
+								error.c_str(),
+								ImFluentInfoSeverity_Warning);
+						}
+						if (Design::Notice("##ppt-setup-notice",
+							IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tip).c_str(),
+							ImFluentInfoSeverity_Informational,
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
+							ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-com",
+								nullptr, nullptr, SW_SHOW);
+						if (pptComSetlist.setAdmin)
+						{
+							if (Design::Notice("##ppt-admin-notice",
+								IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Warn).c_str(),
+								ImFluentInfoSeverity_Warning,
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
+								ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-admin",
+									nullptr, nullptr, SW_SHOW);
+						}
+
+						Design::SectionHeader(
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.N).c_str());
+						// 加载页已停用，仅保留说明，不向用户提供失效的开关。
+						Design::SettingRow("##ppt-loading-screen",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE).c_str(),
+							"\ue895", 0.0F, 0.0F, [](const auto&) {});
+
+						Design::SectionHeader(
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N).c_str());
+						renderToggleCard("##ppt-bottom-pair",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth).c_str(),
+							nullptr, "\ue90e", ShowBottomBoth, [&](bool value)
+							{
+								pptComSetlist.showBottomBoth = value;
+								PptComWriteSetting();
+								Inkeys::UI::Ppt::NotifyConfigurationChanged(
+									Inkeys::UI::Ppt::ConfigGroup::BottomPair);
+							});
+						renderToggleCard("##ppt-middle-pair",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth).c_str(),
+							nullptr, "\ue90c", ShowMiddleBoth, [&](bool value)
+							{
+								pptComSetlist.showMiddleBoth = value;
+								PptComWriteSetting();
+								Inkeys::UI::Ppt::NotifyConfigurationChanged(
+									Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
+							});
+						const int idleFadeOptions[]{ 0, 5, 10, 15, 30 };
+						const int idleFadeSeconds = Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds.load();
+						int idleFadeIndex = 2;
+						for (int option = 0; option < 5; ++option)
+							if (idleFadeOptions[option] == idleFadeSeconds) idleFadeIndex = option;
+						std::vector<std::string> idleFadeItems{
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFadeOff) };
+						for (int option = 1; option < 5; ++option)
+							idleFadeItems.push_back(vformat(
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFadeSeconds),
+								make_format_args(idleFadeOptions[option])));
+						if (Design::ComboRow("##ppt-idle-fade",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFade).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFadeE).c_str(),
+							"\ue7b3", idleFadeIndex, idleFadeItems))
+						{
+							Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds = idleFadeOptions[idleFadeIndex];
+							QueueConfigWrite();
+							Inkeys::UI::Ppt::NotifyConfigurationChanged(
+								Inkeys::UI::Ppt::ConfigGroup::IdleFade);
+						}
+
+						Design::SectionHeader(
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.N).c_str());
+						{
+							if (Design::ButtonRow("##ppt-reset-position",
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset).c_str(),
+								nullptr, "\ue777",
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str()))
+							{
+								Inkeys::UI::Ppt::ResetPositions();
+								PptComWriteSetting();
+							}
+						}
+						renderToggleCard("##ppt-remember-position",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember).c_str(),
+							nullptr, "\ue8f1", MemoryWidgetPosition, [&](bool value)
+							{
+								pptComSetlist.memoryWidgetPosition = value;
+								PptComWriteSetting();
+							});
+
+						Design::SectionHeader(
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.N).c_str());
+						bool anyScaleActive = false;
+						bool bottomSyncEnabled = false;
+						bool middleSyncEnabled = false;
+						bool bottomEdited = false;
+						bool middleEdited = false;
+						const auto renderScaleCard = [&](const char* id, const char* title,
+							float& value, bool& unified, bool& syncEnabled, bool& edited)
+							{
+								const string resetLabel = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset);
+								const string syncLabel = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync);
+								const string indicator = vformat(
+									IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind),
+									make_format_args(value));
+								const float resetWidth = Design::ButtonWidth(resetLabel.c_str());
+								const float syncWidth = Design::ButtonWidth(syncLabel.c_str());
+								const float requestedWidth = max(240.0F, resetWidth + syncWidth + 8.0F);
+								const auto measure = Design::MeasureRow(ImGui::GetContentRegionAvail().x / Design::Pixels(1.0F),
+									requestedWidth, 72.0F);
+								const bool wrapButtons = resetWidth + syncWidth + 8.0F > measure.actionWidth;
+								Design::SettingRow(id, title, indicator.c_str(), "\ue9a6", requestedWidth,
+									wrapButtons ? 112.0F : 72.0F, [&](const Inkeys::UI::Setting::LayoutRect& bounds)
+									{
+										// 活动状态在slider提交后立刻捕获，后续按钮不能覆盖松手保存判定。
+										ImGui::SetNextItemWidth(bounds.Width());
+										edited = Design::Slider("##scale", &value, 0.5F, 3.0F, "%.2f");
+										value = round(value * 100.0F) / 100.0F;
+										anyScaleActive = anyScaleActive || ImGui::IsItemActive();
+										const float actualResetWidth = min(bounds.Width(), Design::Pixels(resetWidth));
+										const float actualSyncWidth = min(bounds.Width(), Design::Pixels(syncWidth));
+										const float resetX = wrapButtons ? bounds.right - actualResetWidth
+											: bounds.right - actualResetWidth - Design::Pixels(8.0F) - actualSyncWidth;
+										ImGui::SetCursorScreenPos({ resetX, bounds.top + Design::Pixels(40.0F) });
+										if (Design::Button((resetLabel + "###reset").c_str(), { actualResetWidth, Design::Pixels(32.0F) }))
+										{
+											value = 1.0F;
+											edited = true;
+										}
+										ImGui::SetCursorScreenPos({ bounds.right - actualSyncWidth,
+											bounds.top + Design::Pixels(wrapButtons ? 80.0F : 40.0F) });
+										const bool previousUnified = unified;
+										Design::ToggleButton((syncLabel + "###sync").c_str(), &unified,
+											{ actualSyncWidth, Design::Pixels(32.0F) });
+										syncEnabled = !previousUnified && unified;
+									});
+							};
+						renderScaleCard("##ppt-bottom-scale",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth).c_str(),
+							BottomSideBothWidgetScale, BottomSideBothWidgetScaleUnifie,
+							bottomSyncEnabled, bottomEdited);
+						renderScaleCard("##ppt-middle-scale",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth).c_str(),
+							MiddleSideBothWidgetScale, MiddleSideBothWidgetScaleUnifie,
+							middleSyncEnabled, middleEdited);
+
+						const auto linkedScale = Inkeys::UI::Setting::ResolveLinkedPptScaleDraft(
+							{ BottomSideBothWidgetScale, MiddleSideBothWidgetScale,
+								BottomSideBothWidgetScaleUnifie, MiddleSideBothWidgetScaleUnifie },
+							bottomEdited, middleEdited, bottomSyncEnabled, middleSyncEnabled);
+						BottomSideBothWidgetScale = linkedScale.bottom;
+						MiddleSideBothWidgetScale = linkedScale.middle;
+						// 发布版拖动/重置/同步立即应用；写盘只在所有滑块松手后进入 FIFO。
+						if (pptComSetlist.bottomSideBothWidgetScale != BottomSideBothWidgetScale)
+						{
+							pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
+							Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::BottomPair);
+						}
+						if (pptComSetlist.middleSideBothWidgetScale != MiddleSideBothWidgetScale)
+						{
+							pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
+							Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
+						}
+						if (!anyScaleActive)
+						{
+							if (BottomSideBothWidgetScaleRecord != BottomSideBothWidgetScale)
+							{
+								pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
+								BottomSideBothWidgetScaleRecord = BottomSideBothWidgetScale;
+								PptComWriteSetting();
+								Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::BottomPair);
+							}
+							if (MiddleSideBothWidgetScaleRecord != MiddleSideBothWidgetScale)
+							{
+								pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
+								MiddleSideBothWidgetScaleRecord = MiddleSideBothWidgetScale;
+								PptComWriteSetting();
+								Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
+							}
+						}
+
+						Design::SectionHeader(
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.N).c_str());
+						bool autoTakeOver = Inkeys::config.PlugIn.PPTHelper.AutoTakeOver;
+						renderToggleCard("##ppt-auto-takeover",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE).c_str(),
+							"\ue8f9", autoTakeOver, [&](bool value)
+							{
+								Inkeys::config.PlugIn.PPTHelper.AutoTakeOver = value;
+								QueueConfigWrite();
+							});
+						bool autoTakeOverOnce = Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce;
+						renderToggleCard("##ppt-auto-takeover-once",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnce).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverOnceE).c_str(),
+							"\ue8ed", autoTakeOverOnce, [&](bool value)
+							{
+								Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce = value;
+								QueueConfigWrite();
+							});
+						bool autoTakeOverExpand = Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand;
+						renderToggleCard("##ppt-auto-takeover-expand",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverExpand).c_str(),
+							nullptr, "\ue976", autoTakeOverExpand, [&](bool value)
+							{
+								Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand = value;
+								QueueConfigWrite();
+							});
+						bool enableLongPress =
+							Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
+						renderToggleCard("##ppt-long-press",
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress).c_str(),
+							nullptr, "\ue815", enableLongPress, [&](bool value)
+							{
+								Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress = value;
+								QueueConfigWrite();
+							});
+						break;
+					}
+					}
 					break;
 				}
 				case settingTabEnum::tabPerformance:
@@ -4688,6 +4740,7 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					navigateTo(navigationAction.destination);
 					if (settingTab == settingTabEnum::tab4) settingPlugInTab = settingPlugInTabEnum::tabPlug1;
+					if (settingTab == settingTabEnum::tabLinkage) settingLinkageTab = 0;
 					if (settingTab == settingTabEnum::tab3)
 						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
 				}

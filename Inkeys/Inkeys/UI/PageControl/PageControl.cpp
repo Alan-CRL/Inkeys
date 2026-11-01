@@ -242,6 +242,8 @@ namespace Inkeys::UI::PageControl
 			bool sceneConfigured = false;
 			bool lightingSubscribed = false;
 			bool targetVisible = false;
+			// 最近一次交给 Scene 的透明度目标（显隐 × 闲置淡化）。
+			double opacityTarget = 0.0;
 			bool inputLocked = true;
 			bool borderCursorPointerInside = false;
 			bool dragging = false;
@@ -414,6 +416,17 @@ namespace Inkeys::UI::PageControl
 		std::array<InputPresentation,4> inputPresentations;
 		std::atomic_uint64_t inputLifecycle=1;
 		std::array<Inkeys::UI::Bar::PageLoadingDeadline,4> loadingDeadlines;
+		// 闲置淡化信号跨输入 worker、发布线程与渲染线程；渲染线程只读后决定 Scene 透明度。
+		struct IdleFadeSignals
+		{
+			std::atomic<std::int64_t> activity{ 0 };
+			std::atomic_bool hovered{ false }, pressed{ false }, dimmed{ false };
+			std::atomic_uint64_t consumedExternalTurn{ 0 };
+		};
+		std::array<IdleFadeSignals,4> idleFade;
+		std::array<Inkeys::UI::Bar::PageLoadingDeadline,4> idleDeadlines;
+		std::atomic_uint64_t externalTurnSerial{ 0 };
+		std::atomic<std::int64_t> lastControlNavigation{ 0 };
 		struct InputRegistrationContext {std::size_t index=0;std::uint64_t generation=0;};
 		// 旧 registration 的取消回调可能晚到，代次和内存均保留到共享 worker 排空。
 		std::vector<std::unique_ptr<InputRegistrationContext>> inputContexts;
@@ -564,6 +577,35 @@ namespace Inkeys::UI::PageControl
 		void RequestSurface(std::size_t index) noexcept
 		{
 			Inkeys::UI::RenderPipeline::Request(Clients[index]);
+		}
+
+		// 交互重新计时并撤销外部翻页淡化；已淡化时立即请求恢复帧。
+		void MarkIdleActivity(std::size_t index,
+			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) noexcept
+		{
+			if (index >= idleFade.size()) return;
+			auto& signals = idleFade[index];
+			signals.activity.store(now.time_since_epoch().count(), std::memory_order_release);
+			signals.consumedExternalTurn.store(externalTurnSerial.load(std::memory_order_acquire),
+				std::memory_order_release);
+			if (signals.dimmed.load(std::memory_order_acquire)) RequestSurface(index);
+		}
+
+		// 悬停/按下期间不淡化；结束时重新计时并请求一帧以发布新的唤醒截止。
+		void SetIdleEngaged(std::size_t index, std::atomic_bool IdleFadeSignals::* flag, bool engaged) noexcept
+		{
+			if (index >= idleFade.size()) return;
+			if ((idleFade[index].*flag).exchange(engaged, std::memory_order_acq_rel) == engaged) return;
+			MarkIdleActivity(index);
+			if (!engaged) RequestSurface(index);
+		}
+
+		void ResetIdleFade(std::size_t index, std::chrono::steady_clock::time_point now) noexcept
+		{
+			if (index >= idleFade.size()) return;
+			idleFade[index].hovered.store(false, std::memory_order_release);
+			idleFade[index].pressed.store(false, std::memory_order_release);
+			MarkIdleActivity(index, now);
 		}
 
 		[[nodiscard]] constexpr std::size_t DragPairIndex(
@@ -863,7 +905,12 @@ namespace Inkeys::UI::PageControl
 					}
 				}
 			}
-			if (callback) callback();
+			if (!callback) return;
+			// 先登记控件发起的翻页，随后的页码发布不能被误判为翻页笔/键盘翻页。
+			const auto now = std::chrono::steady_clock::now();
+			lastControlNavigation.store(now.time_since_epoch().count(), std::memory_order_release);
+			MarkIdleActivity(surfaceIndex, now);
+			callback();
 		}
 
 		void InvokePptPreview(PptRecovery::State pressedRecovery = {})
@@ -1218,7 +1265,7 @@ namespace Inkeys::UI::PageControl
 				WaitTrace::Capture(WaitTrace::Stage::Configure,fields,WaitTrace::Result::Configured);
 				// 相同文字的新业务修订仍须经过成功提交，不能仅更新输入身份就提前确认页面。
 				if(!state.scene.IsInvalidated())state.forceFullPresentation=true;
-				if(!state.sceneConfigured){state.scene.SetHooks({{},[index]{RequestSurface(index);}});state.scene.SetOpacity(0,0);}
+				if(!state.sceneConfigured){state.scene.SetHooks({{},[index]{RequestSurface(index);}});state.scene.SetOpacity(0,0);state.opacityTarget=0;}
 			}
 			if(index>=2){
 				MiddleSnapRequest request;{std::scoped_lock lock(middleSnapRequestMutex);request=middleSnapRequest;}
@@ -1243,7 +1290,24 @@ namespace Inkeys::UI::PageControl
 			const bool entering=!wasVisible&&state.targetVisible;
 			if(!state.bounds.initialized&&entering&&index>=2)
 				RetargetBounds(state.bounds,ResolveHiddenSurfaceBounds(SurfaceFor(index),monitor,target.logicalBounds),target.scale,false,now);
-			if(state.targetVisible!=wasVisible){state.scene.SetOpacity(state.targetVisible?1:0,LayoutTransitionDurationSeconds());}
+			if(entering)ResetIdleFade(index,now); // 每次进入可见都从不透明开始计时。
+			{
+				auto& signals=idleFade[index];
+				const auto fade=ResolvePptIdleFade({ppt.idleFadeSeconds,
+					state.targetVisible&&desiredMode==WorkspaceMode::PptCompact,
+					signals.hovered.load(std::memory_order_acquire)||signals.pressed.load(std::memory_order_acquire),
+					signals.consumedExternalTurn.load(std::memory_order_acquire)!=externalTurnSerial.load(std::memory_order_acquire),
+					std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(signals.activity.load(std::memory_order_acquire))),now});
+				signals.dimmed.store(fade.dimmed,std::memory_order_release);
+				if(idleDeadlines[index].Publish(fade.wake))Inkeys::UI::Bar::WakeInteractionWorker();
+				// 显隐沿用工作区过渡；闲置淡化只在可见时叠加，淡出慢、恢复快。
+				const double opacity=state.targetVisible?(fade.dimmed?PptIdleFadeOpacity:1.0):0.0;
+				if(opacity!=state.opacityTarget){
+					state.scene.SetOpacity(opacity,state.targetVisible!=wasVisible?LayoutTransitionDurationSeconds()
+						:fade.dimmed?PptIdleFadeOutSeconds:PptIdleFadeInSeconds);
+					state.opacityTarget=opacity;
+				}
+			}
 			const bool settleDragPosition = dragPositionOwned && wasVisible && state.targetVisible
 				&& !modeChanged && desiredMode == WorkspaceMode::PptCompact && state.bounds.initialized
 				&& std::abs(state.bounds.scale - target.scale) <= 0.0001
@@ -2647,8 +2711,9 @@ namespace Inkeys::UI::PageControl
                 ||registration->generation!=inputLifecycle.load(std::memory_order_acquire)
                 ||registration->index>=loadingDeadlines.size())return std::chrono::steady_clock::time_point::max();
             bool due=false;const auto deadline=loadingDeadlines[registration->index].Consume(now,due);
-            if(due)RequestSurface(registration->index); // 只唤醒，Scene按最新loading/session重新判定。
-            return (std::min)(deadline,PageControlLongPressTick(now,context));
+            bool idleDue=false;const auto idleDeadline=idleDeadlines[registration->index].Consume(now,idleDue);
+            if(due||idleDue)RequestSurface(registration->index); // 只唤醒，Scene按最新loading/session重新判定。
+            return (std::min)({deadline,idleDeadline,PageControlLongPressTick(now,context)});
         }
 		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context);
 		void PageControlInputEvent(const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context)
@@ -2670,6 +2735,9 @@ namespace Inkeys::UI::PageControl
 				return;
 			}
 			const auto committed=InputSnapshot(index);
+			if(message==WM_LBUTTONUP||message==WM_CANCELMODE||message==WM_CAPTURECHANGED)
+				SetIdleEngaged(index,&IdleFadeSignals::pressed,false);
+			if(message==WM_MOUSELEAVE||message==WM_CANCELMODE)SetIdleEngaged(index,&IdleFadeSignals::hovered,false);
 			if(message==WM_LBUTTONDOWN&&event.captureTicket)state.pressedCaptureTicket=event.captureTicket;
 			if((message==WM_KEYDOWN&&wParam==VK_ESCAPE)||message==WM_CANCELMODE||message==WM_CAPTURECHANGED)CloseWhiteboardMenu();
 			if (message == WM_MOUSEMOVE)
@@ -2683,6 +2751,9 @@ namespace Inkeys::UI::PageControl
 				const POINT screen=event.screenPoint;
 
 				if (!committed.visible || committed.locked) return;
+				// 只有真实鼠标悬停算作停留；触摸/笔合成的移动在抬起后不会收到 Leave。
+				if (!event.touch && !Inkeys::Message::IsPointerGeneratedMouseMessage(message, event.extraInfo))
+					SetIdleEngaged(index, &IdleFadeSignals::hovered, true);
 				if (ShouldNotifyPageControlCursorEntered(
 					state.borderCursorPointerInside, event.touch,
 					Inkeys::Message::IsPointerGeneratedMouseMessage(
@@ -2784,6 +2855,7 @@ namespace Inkeys::UI::PageControl
 					state.pressedPptLayoutEpoch=livePpt.layout.epoch;
 					state.pressedPptRecovery=committed.pptRecovery;
 					state.pointerActive=true;state.dragRegion=region;
+					SetIdleEngaged(index,&IdleFadeSignals::pressed,true);
 					if(index>=2){PublishMiddleSnapRequest({},false,{});RequestDragPair(1);}
 
 					promotePpt = committed.mode == WorkspaceMode::PptCompact;
@@ -5767,6 +5839,7 @@ namespace Inkeys::UI::PageControl
 			inputContexts.clear();
 		}
 		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
+		for(auto& deadline:idleDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		initialized.store(true, std::memory_order_release);
 		const auto lifecycle=inputLifecycle.fetch_add(1,std::memory_order_acq_rel)+1;
 		for(std::size_t index=0;index<Roles.size();++index){
@@ -5816,6 +5889,7 @@ namespace Inkeys::UI::PageControl
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
 		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
+		for(auto& deadline:idleDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		whiteboardMenuEpoch.store(0,std::memory_order_release);
 		Inkeys::Input::KeyboardShortcuts::PublishWhiteboardMenuEpoch(0);
 		for(const auto role:Roles)Inkeys::UI::Bar::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
@@ -5829,6 +5903,7 @@ namespace Inkeys::UI::PageControl
 			Inkeys::UI::RenderPipeline::Unregister(client);
 		// 已运行回调也已排空，清掉它们最后一次可能发布的截止时间。
 		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
+		for(auto& deadline:idleDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		auto& service = Inkeys::Window::GetService();
 		for (std::size_t pair = 0; pair < nativePairMoves.size(); ++pair) CancelNativePairMove(pair);
 		for (std::size_t index = 0; index < Roles.size(); ++index)
@@ -5915,6 +5990,17 @@ namespace Inkeys::UI::PageControl
 				directMoveRevision.fetch_add(1, std::memory_order_release);
 			}
 			PreserveOwnedDragLayouts(merged);
+			{
+				// 非控件发起的页码变化（翻页笔/键盘/滚轮/PPT内点击）立即淡化四个控件；新场次从不透明开始。
+				const auto now = std::chrono::steady_clock::now();
+				const std::chrono::steady_clock::time_point controlNavigation{ std::chrono::steady_clock::duration(
+					lastControlNavigation.load(std::memory_order_acquire)) };
+				if (IsPptExternalPageTurn(publishedPpt.layout.session, publishedPpt.currentPage,
+					merged.layout.session, merged.currentPage, now - controlNavigation < PptControlNavigationGrace))
+					externalTurnSerial.fetch_add(1, std::memory_order_acq_rel);
+				else if (merged.layout.session != publishedPpt.layout.session)
+					for (std::size_t index = 0; index < idleFade.size(); ++index) MarkIdleActivity(index, now);
+			}
 			changed = !ArePptStatesEquivalent(publishedPpt, merged);
 			publishedPpt = merged;
 			if (changed) publishedRevision.fetch_add(1, std::memory_order_release);

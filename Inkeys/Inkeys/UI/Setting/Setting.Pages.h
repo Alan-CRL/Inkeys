@@ -14,7 +14,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		Home = 0, Language = 1, Build = 2, Configuration = 3, General = 4,
 		Draw = 5, Plugins = 8, Components = 9,
-		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14, Feedback = 15, Performance = 16,
+		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14, Feedback = 15, Performance = 16, Linkage = 17,
 	};
 
 	struct NavigationDestination

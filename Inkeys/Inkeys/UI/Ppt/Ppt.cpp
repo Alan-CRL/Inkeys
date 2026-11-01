@@ -145,6 +145,7 @@ namespace Inkeys::UI::Ppt
 				state.presentationVisible = topmostRefresh.presentationVisible;
 				state.longPressEnabled =
 					Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
+				state.idleFadeSeconds = Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds;
 				state.currentPage = pageState.currentPage;
 				state.totalPage = pageState.totalPage;
 				state.layout = ToPageLayout(positions.configuration);
