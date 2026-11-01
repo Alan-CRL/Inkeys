@@ -200,7 +200,7 @@ PageControl 的页码/UI-ready 同时要求像素事务和 Window Service 当前
 - owner 每轮先完成最新页面/场次观察，再按进入时有界邮箱排水，最后进行非必要 descriptor 维护；不得为了命令优先使用旧 stamp 操作已变化页面，也不得让持续新命令饿死维护。
 - 命令等待反馈携带 session/epoch/direction；重复点击保留原 epoch，完成未翻页、换场、退出和 shutdown 必须清除或替换。三点不确定标记保留真实旧页码和布局，不参与 Draw3 ready、PageControl ack 或输入准入。`PptNavigationWaitingState.BeginSession` 只由真实场次发布建立活动身份；`Complete` 即使早于 `Publish` 也记录同场完成 epoch，迟到/旧发布不得复活等待；`Clear` 退休场次，无标记时也拒绝在途旧发布。
 
-- 页面准备从Ppt同一stateMutex快照投影：positions Active、PPT Visible、非零session、PageStateMode::Pending，且按当前session过滤后的recovery为None。pagePreparing进ArePptStatesEquivalent，保持同数字模式切换的重绘；BuildPageContent在PPT准备阶段两个箭头显示通用三点，OR原命令方向等待，不借旧方向/epoch。白板明确隔离，错误/重试保留原文案。
+- 页面准备从Ppt同一stateMutex快照投影：positions Active、PPT Visible、非零session、PageStateMode::Pending或Recovering进度，且按当前session过滤后的recovery为None或Recovering。pagePreparing进ArePptStatesEquivalent，保持同数字模式切换的重绘；BuildPageContent在PPT准备阶段提供方向标记，由Scene合并为页码区域右上角单组三点，OR原命令方向等待，不借旧方向/epoch。白板明确隔离，错误/重试保留原文案。
 - InkReady/BasicControl使pagePreparing为false，清点与新页码由同一成功UI事务显示；false不证明Draw3最终ACK/输入已开放。原target/Present/UI ack门、命令水位与single-flight均不变。命令Complete后到首次Pending尚无忙证据的区间不补假进度，不用TTL或等待target变化来猜同页动画/no-op；键盘触发真实Pending同样可显示准备点。
 
 ### 4. Validation & Error Matrix
@@ -213,7 +213,7 @@ PageControl 的页码/UI-ready 同时要求像素事务和 Window Service 当前
 | 同 binding 另存/首次保存/结束后重放 | 重新确认 FullName/Name，新 session 首次完整验证；旧文件身份不得进入新目标 |
 | 非当前页重排后被访问 | 先 full 并验证有序唯一拓扑，再开放该页输入 |
 | 命令完成但页未变/同页动画/no-op | 清除命令等待并允许重试；仅真实Pending保留通用准备点，不伪造页码/ready或永久等待换页 |
-| 命令已Complete、raw/descriptor失配或新页未呈现 | 原Pending保留旧数字，两个导航按钮显示通用三点；恢复InkReady/BasicControl同帧去点 |
+| 命令已Complete、raw/descriptor失配或新页未呈现 | 原Pending保留旧数字，页码区域右上角显示单组三点；恢复InkReady/BasicControl同帧去点 |
 | HWND0 BasicControl/同场recovery/白板隐藏 | 不等待不存在的墨迹ACK；错误/重试和白板语义优先，不残留通用PPT点 |
 | 导航 Complete 先于 Publish | 记住终态并拒绝该 epoch 及更旧发布，不能留下永久等待 |
 | 旧 session/epoch 完成或退出 | 不得清除新场等待；shutdown 清空全部等待 |
@@ -248,8 +248,9 @@ if (requiresFull)
 ~~~cpp
 // 同一发布快照先过滤recovery，再投影真实Pending；视觉不生成ready。
 state.pagePreparing = state.presentationActive && state.presentationVisible
-    && state.layout.session != 0 && pageState.mode == PageStateMode::Pending
-    && state.recovery.kind == PptRecovery::Kind::None;
+    && state.layout.session != 0
+    && (pageState.mode == PageStateMode::Pending || state.recovery.kind == PptRecovery::Kind::Recovering)
+    && (state.recovery.kind == PptRecovery::Kind::None || state.recovery.kind == PptRecovery::Kind::Recovering);
 content.navigationWaitingPrevious = !content.whiteboard
     && (IsPptPagePreparing(ppt) || IsPptNavigationWaiting(ppt, false));
 content.navigationWaitingNext = !content.whiteboard
@@ -362,3 +363,36 @@ Managed既有dynamic/释放账本、启用/禁用、writer异常、IErrorInfo、
 - Correct：所有新增return均在其合法释放scope内，先取消winner选择，再由原finally逐笔清理；返回owner后才观察/排水。
 
 等待不可见时，业务enqueue不证明UI接受/绘制/提交；默认关闭的PptWait固定数值链路与同attempt/pending回执证据合同见 [UI3 Render Diagnostics](../native-desktop/ui3-render-diagnostics.md#scenario-ppt-导航等待的有限数值链路2026-11-01)。该诊断不改COM/场次/页码/ready；离屏三点像素通过不能替代用户实机可见性验收。
+
+## Scenario: 恢复进度页码角标与稳定数字（2026-11-01）
+
+### 1. Scope / Trigger
+正常新目标也会发布Recovering；进度不应使数字进入Status文字动画。前后翻页和准备共用页码右上角三点，不在箭头上画。
+
+### 2. Signatures
+Ppt私有StablePageNumbers::Observe(session,current,total,mode)；PptState新增numericPageOverride/displayedCurrentPage/displayedTotalPage（默认无override）。字段仅用于显示，不进入COM/wire schema。
+
+### 3. Contracts
+- Recovering保留原非None控制状态，PptInfo强制Pending/target0、Ppt PagePresented拒绝、Host输入门、Retry资格全不改变。只有内容分类改为Numeric+Preparing；真正Conflict/ReadFailed/PresentFailed/Failed保留Status文案与Retry，Recovering期间中心原不可交互规则保留。白板switching文字不变。
+- 同stateMutex快照先过滤同场recovery；Pending或Recovering使用明确视觉override。稳定缓存只在实际PublishPageState的合法InkReady/BasicControl数字更新，初始化/换场/退场清除；无缓存显示-/-，不能fallback到未来控制数字。Recovering先到旧InkReady与None先到仍Pending都不能泄露未来数字。
+- currentPage/totalPage/target/pageAckEpoch仍是原控制身份；显示override只生成文字并参与equivalence，不授权ACK、输入或改变EndShow判别。真实Ready/Basic取消override，更新数字与去点同帧。
+- Scene把任一navigationWaiting方向合并到Page(id3)局部右上角，中心y=top+7DIP、x=right-20/-15/-10DIP，半径1.6DIP，按原scale变换；不改布局/字号，角标包络与主次文字槽分离，Arrow无点。waiting变更损伤Page区域，清除不留残影；每面仅3点/1branch。
+
+### 4. Validation & Error Matrix
+| 条件 | 必须行为 |
+| --- | --- |
+| control4/Pending或Recovering、稳定显示3 | 仍显示3和角标，控制4/target0/ACK不变 |
+| 初次无稳定值 | -/-与准备角标，不能提前展示目标数字 |
+| InkReady4或BasicControl | 同帧显示实际数字并清准备角标，原UI/input门保持 |
+| 真正错误/冲突/可重试 | 原文字/动作保持，不能清恢复态绕过Pending |
+| 左/右翻页方向切换 | 同一Page角标位置，箭头像素不因等待变化 |
+
+### 5. Good / Base / Bad Cases
+Good：Recovering前后Numeric即时，旧页数字在准备中保持，之后真实新数字同帧替换。Base：默认无视觉override的旧构造仍沿原currentPage。Bad：把Recovering清None止动画、用未来目标数字填画面、为去点提前ACK、把缓存显示值用于业务。
+
+### 6. Tests Required
+page-control-only覆盖缓存合法ready/basic/EndScreen/换场重置、显示与控制隔离、旧ACK与EndShow语义；真实离屏覆盖四surface三倍率、左右方向同角标/箭头不变/数字本体不遮/partial=full/清除、9999与999槽包络，control4显示3的双乱序快照及Ready4同帧去点。旧Recovering0/20ms复现改成不再Status/不动画；真实ReadFailed/Conflict状态过渡保留，数值采样启停BGRA等价。
+
+### 7. Wrong vs Correct
+Wrong：直接覆写控制currentPage为旧3，或把正常恢复进度当文字Status。
+Correct：保留control4+Pending，视觉override3+Page角标；只有实际ready发布更新数字，故障控制与纯显示分离。

@@ -518,6 +518,37 @@ namespace
 		Check(!source.CanAcknowledge(3,5,0,source.pageAckEpoch),"BasicControl still cannot manufacture an ink-ready acknowledgement");
 	}
 
+	void TestStableNumericDisplay()
+	{
+		using namespace Inkeys::UI::Ppt;
+		StablePageNumbers numbers;
+		numbers.Observe(7,4,56,PageStateMode::Pending);
+		Check(numbers.currentPage==-1&&numbers.totalPage==-1,"initial Pending has no invented stable display number");
+		numbers.Observe(7,3,56,PageStateMode::InkReady);numbers.Observe(7,4,56,PageStateMode::Pending);
+		Check(numbers.currentPage==3&&numbers.totalPage==56,"future recovery target four cannot replace the last stable third page");
+		PptState frame;frame.layout.session=7;frame.presentationActive=frame.presentationVisible=true;
+		frame.currentPage=4;frame.totalPage=56;frame.targetRevision=0;frame.pageAckEpoch=2;
+		frame.recovery.kind=decltype(frame.recovery.kind)::Recovering;frame.pagePreparing=true;
+		frame.numericPageOverride=true;frame.displayedCurrentPage=numbers.currentPage;frame.displayedTotalPage=numbers.totalPage;
+		Check(IsPptPagePreparing(frame)&&frame.currentPage==4&&frame.targetRevision==0,
+			"numeric progress leaves recovery and its control identity intact");
+		const auto control=frame;auto changed=frame;changed.displayedCurrentPage=2;
+		Check(!ArePptStatesEquivalent(frame,changed)&&frame.pageAckEpoch==control.pageAckEpoch,
+			"visual display override participates in rendering without modifying acknowledgement epochs");
+		PptPageCommitState committed;committed.Publish(frame,0x3);
+		Check(!committed.Commit(frame,0x3),"numeric Recovering cannot acknowledge the old or target canvas page");
+		numbers.Observe(7,4,56,PageStateMode::InkReady);
+		Check(numbers.currentPage==4,"only a real ready publication can advance the cached visible number");
+		numbers.Observe(7,-1,56,PageStateMode::InkReady);numbers.Observe(7,1,56,PageStateMode::Pending);
+		Check(numbers.currentPage==-1&&numbers.totalPage==56,"a prepared end screen remains a valid stable display while the next target is Pending");
+		numbers.Observe(8,2,4,PageStateMode::Pending);
+		Check(numbers.session==8&&numbers.currentPage==-1&&numbers.totalPage==-1,"new sessions cannot borrow stable digits from the previous show");
+		numbers.Observe(8,2,4,PageStateMode::BasicControl);
+		Check(numbers.currentPage==2&&numbers.totalPage==4,"basic control numbers are stable without a nonzero ink target");
+		numbers={};
+		Check(numbers.session==0&&numbers.currentPage==-1&&numbers.totalPage==-1,"session exit or initialize resets all stable numeric display data");
+	}
+
 	void TestNavigationWaitingCompletionOrder()
 	{
 		PptNavigationWaitingState waiting;
@@ -1951,6 +1982,7 @@ int RunPageControlTests()
 	TestNavigationWaitingLifecycle();
 	TestNavigationWaitingCompletionOrder();
 	TestPagePreparingVisualState();
+	TestStableNumericDisplay();
 	TestDragCommitHandoff();
 	TestVersionedDragPublication();
 	TestInterleavedPairFrameCommit();

@@ -157,6 +157,20 @@ export namespace Inkeys::UI::Ppt
 		int totalPage = -1;
 	};
 	enum class PageStateMode : std::uint8_t { Pending, BasicControl, InkReady };
+	// 只缓存同场最近已准备好的纯数字；Pending中的目标数字不能提前成为可见页码。
+	struct StablePageNumbers
+	{
+		std::uint64_t session = 0;
+		int currentPage = -1, totalPage = -1;
+		constexpr void Observe(std::uint64_t nextSession,int current,int total,PageStateMode mode) noexcept
+		{
+			if(session!=nextSession){*this={};session=nextSession;}
+			if(!session||mode==PageStateMode::Pending||total<=0
+				|| (current!=-1&&(current<=0||current>total)))return;
+			currentPage=current;totalPage=total;
+		}
+	};
+
 	struct PagePresentationState
 	{
 		int currentPage = -1;

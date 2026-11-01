@@ -165,3 +165,11 @@
 ## 2026-11-01 用户澄清后的页面准备提示修复
 
 三点实际出现，但随命令Complete提前消失；后续raw/descriptor失配及Draw3/UI ACK阶段仍Pending。按 [page-preparation-wait-fix-plan-20261101.md](research/page-preparation-wait-fix-plan-20261101.md) 独立投影真实Pending为通用准备提示，原命令tracker/水位、COM和输入ready门均不改，不引入soft TTL或猜测完成。
+
+## 2026-11-01 页码动画最小复现与取证
+
+用户同意按 [page-number-animation-repro-plan-20261101.md](research/page-number-animation-repro-plan-20261101.md) 先复现短Status返回Numeric，并准备默认关闭的实际内容策略数值记录；不改变动画决策、不恢复文字替代三点、不改COM/ready，不操作GUI或自动提交。
+
+## 2026-11-01 恢复进度与页码角标
+
+用户已批准准备/恢复进行中使用三点，并指定左右翻页均在页码区域右上角一处显示。按 [page-badge-progress-fix-plan-20261101.md](research/page-badge-progress-fix-plan-20261101.md) 只改显示投影，保留真实故障/重试文字及控制恢复态；Pending/Recovering保持同场稳定显示数字，不能用目标页提前替代。原COM/业务currentPage/ACK/Host门不变，不自动提交。

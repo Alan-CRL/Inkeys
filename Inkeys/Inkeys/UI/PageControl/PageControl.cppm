@@ -637,6 +637,9 @@ export namespace Inkeys::UI::PageControl
 		bool presentationVisible = false;
 		// 仅表示已观测到页面仍在准备；不授权输入，也不等同最终UI/Draw3回执。
 		bool pagePreparing = false;
+		// 只供数字文本显示；业务命令、target和ACK始终使用原currentPage/totalPage。
+		bool numericPageOverride = false;
+		int displayedCurrentPage = -1, displayedTotalPage = -1;
 		bool longPressEnabled = false;
 		int currentPage = -1;
 		int totalPage = -1;
@@ -649,7 +652,8 @@ export namespace Inkeys::UI::PageControl
 	[[nodiscard]] inline bool IsPptPagePreparing(const PptState& state) noexcept
 	{
 		return state.pagePreparing && state.presentationActive && state.presentationVisible
-			&& state.layout.session != 0 && state.recovery.kind == PptRecovery::Kind::None;
+			&& state.layout.session != 0
+			&& (state.recovery.kind == PptRecovery::Kind::None || state.recovery.kind == PptRecovery::Kind::Recovering);
 	}
 
 	[[nodiscard]] inline bool IsPptNavigationWaiting(
@@ -831,6 +835,9 @@ export namespace Inkeys::UI::PageControl
 			&& left.presentationActive == right.presentationActive
 			&& left.presentationVisible == right.presentationVisible
 			&& left.pagePreparing == right.pagePreparing
+			&& left.numericPageOverride == right.numericPageOverride
+			&& left.displayedCurrentPage == right.displayedCurrentPage
+			&& left.displayedTotalPage == right.displayedTotalPage
 			&& left.longPressEnabled == right.longPressEnabled
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage

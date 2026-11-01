@@ -330,6 +330,30 @@ namespace Inkeys::UI::Bar
 			slot(pageButtons[2]->name.w,(std::max)(1.0F,pagePrimaryWidth));slot(pageTotal.w,(std::max)(1.0F,pageSecondaryWidth));
 			slot(pageButtons[2]->name.x,-pageSecondaryWidth/2);slot(pageTotal.x,pagePrimaryWidth/2);
 		}
+		Inkeys::Business::PptWaitTrace::Fields ContentObservationBefore(long oldKind,const BarPageSurfaceContent& next,
+			Inkeys::Business::PptWaitTrace::ContentPolicy policy,unsigned changes)
+		{
+			namespace Trace=Inkeys::Business::PptWaitTrace;Trace::Fields value;
+			if(!Trace::contentSample)return value;
+			value=Trace::contentSample->fields;value.oldKind=oldKind;value.newKind=static_cast<long>(next.kind);
+			value.contentPolicy=static_cast<unsigned>(policy);value.contentChanges=changes;
+			value.flags&=~Trace::AnimationEnabled;
+			if(static_cast<bool>(BarUiAnimationEnabled))value.flags|=Trace::AnimationEnabled;
+			// 公开原子数值仅作setter前/后观察；不读取可能复制字符串的val/target，也不猜中点。
+			value.primaryScaleBefore=Trace::ContentMilli(static_cast<double>(pageButtons[2]->name.contentScale));
+			value.primaryPctBefore=Trace::ContentMilli(static_cast<double>(pageButtons[2]->name.contentPct));
+			value.secondaryScaleBefore=Trace::ContentMilli(static_cast<double>(pageTotal.contentScale));
+			value.secondaryPctBefore=Trace::ContentMilli(static_cast<double>(pageTotal.contentPct));return value;
+		}
+		void CompleteContentObservation(Inkeys::Business::PptWaitTrace::Fields value,bool primary,bool secondary)
+		{
+			namespace Trace=Inkeys::Business::PptWaitTrace;if(!Trace::contentSample)return;
+			value.setterChanges=(primary?1U:0U)|(secondary?2U:0U);
+			value.primaryScaleAfter=Trace::ContentMilli(static_cast<double>(pageButtons[2]->name.contentScale));
+			value.primaryPctAfter=Trace::ContentMilli(static_cast<double>(pageButtons[2]->name.contentPct));
+			value.secondaryScaleAfter=Trace::ContentMilli(static_cast<double>(pageTotal.contentScale));
+			value.secondaryPctAfter=Trace::ContentMilli(static_cast<double>(pageTotal.contentPct));Trace::CaptureContentPolicy(value);
+		}
 		void UpdateContent(const BarPageSurfaceContent& next)
 		{
 			// 内容更新不得重新提交布局目标，否则普通翻页会截断正在进行的 PPT/白板转换。
@@ -337,11 +361,17 @@ namespace Inkeys::UI::Bar
 			const bool kindChanged=content.kind!=next.kind;
 			if(currentChanged||totalChanged||kindChanged){
 				IncludeButton(3);
-				if(content.kind==BarPageContentKind::Numeric&&next.kind==BarPageContentKind::Numeric){
-					pageButtons[2]->name.SetStringImmediate(next.currentPage);pageTotal.SetStringImmediate(next.totalPage);
+				const bool immediate=content.kind==BarPageContentKind::Numeric&&next.kind==BarPageContentKind::Numeric;
+				const auto observation=ContentObservationBefore(static_cast<long>(content.kind),next,
+					immediate?Inkeys::Business::PptWaitTrace::ContentPolicy::Immediate:Inkeys::Business::PptWaitTrace::ContentPolicy::Animated,
+					(currentChanged?1U:0U)|(totalChanged?2U:0U)|(kindChanged?4U:0U));
+				bool primaryChanged,secondaryChanged;
+				if(immediate){
+					primaryChanged=pageButtons[2]->name.SetStringImmediate(next.currentPage);secondaryChanged=pageTotal.SetStringImmediate(next.totalPage);
 				}else{
-					pageButtons[2]->name.TransitionToString(next.currentPage);pageTotal.TransitionToString(next.totalPage);
+					primaryChanged=pageButtons[2]->name.TransitionToString(next.currentPage);secondaryChanged=pageTotal.TransitionToString(next.totalPage);
 				}
+				CompleteContentObservation(observation,primaryChanged,secondaryChanged);
 				if(BarPptCompactPaginationEnabled&&!next.whiteboard&&next.surface<2){
 					auto& name=pageButtons[2]->name;
 					const bool moving=!name.x.IsSame()||!name.w.IsSame()||!name.size.IsSame()
@@ -377,8 +407,8 @@ namespace Inkeys::UI::Bar
 			}
 			for(std::size_t i=0;i<next.enabled.size();++i)if(content.enabled[i]!=next.enabled[i]||content.interactive[i]!=next.interactive[i])IncludeButton(static_cast<BarSurfaceButtonId>(2+i));
 			if(content.switching!=next.switching)for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
-			if(content.navigationWaitingPrevious!=next.navigationWaitingPrevious)IncludeButton(2);
-			if(content.navigationWaitingNext!=next.navigationWaitingNext)IncludeButton(4);
+			if((content.navigationWaitingPrevious||content.navigationWaitingNext)
+				!=(next.navigationWaitingPrevious||next.navigationWaitingNext))IncludeButton(3);
 			if(content.pptActive!=next.pptActive){
 				IncludeButton(7);
 				// 放映恢复时同步撤销 Minimize 的旧反馈，禁用态不能残留按压底色或释放点击。
@@ -443,9 +473,11 @@ namespace Inkeys::UI::Bar
 			ConfigureButton(*pageButtons[2],standard?BarButtonVisualLayoutKind::PageTwoTwo:
 				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal),rects[2],L"",L"",0,duration,direct);
 			// 页码属于状态输出：不沿文字切换动画延迟页身份。
-			pageButtons[2]->name.SetStringImmediate(next.currentPage);
+			const auto observation=ContentObservationBefore(-1,next,Inkeys::Business::PptWaitTrace::ContentPolicy::Initial,0);
+			const bool primaryChanged=pageButtons[2]->name.SetStringImmediate(next.currentPage);
 			pageButtons[2]->name.enable.Initialization(true);
-			pageTotal.SetStringImmediate(next.totalPage);
+			const bool secondaryChanged=pageTotal.SetStringImmediate(next.totalPage);
+			CompleteContentObservation(observation,primaryChanged,secondaryChanged);
 			const auto metrics=ResolveBarButtonVisualMetrics(standard?BarButtonVisualLayoutKind::PageTwoTwo:
 				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal));
 			const auto slot=[&](auto& value,double target){if(direct)value.SetDirect(target);else value.SetTar(target,duration);};
@@ -677,15 +709,14 @@ namespace Inkeys::UI::Bar
 					return true;
 				};
 			}
-			const bool navigationWaiting=(id==2&&content.navigationWaitingPrevious)
-				||(id==4&&content.navigationWaitingNext);
+			const bool navigationWaiting=id==3&&(content.navigationWaitingPrevious||content.navigationWaitingNext);
 			if(navigationWaiting)options.content=[&](auto& target,auto* context,auto& item,const auto&){
 				auto* brush=target.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::TextPrimary),0.9);
 				Inkeys::Business::PptWaitTrace::DotBrush(brush!=nullptr);
 				if(!brush)return false;
 				const float z=static_cast<float>(target.GetFrameZoom());const auto r=Bounds(item.button);
-				const float radius=1.6F*z,y=static_cast<float>((r.top+11)*z);
-				// 三个无进度点表示命令等待或页面准备，不替换箭头、旧页码或 ready 状态。
+				const float radius=1.6F*z,y=static_cast<float>((r.top+7)*z);
+				// 前后翻页共用页码右上角角标；位于文字上方，不改箭头、数字或ready语义。
 				for(int dot=0;dot<3;++dot){
 					const float x=static_cast<float>((r.right-20+dot*5)*z);
 					const auto ellipse=D2D1::Ellipse(D2D1::Point2F(x,y),radius,radius);

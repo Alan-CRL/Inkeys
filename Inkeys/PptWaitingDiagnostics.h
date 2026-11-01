@@ -2,15 +2,19 @@
 
 #include "PptNavigationDiagnostics.h"
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <new>
 
 namespace Inkeys::Business::PptWaitTrace
 {
 	// 渲染线程仅认领独立数值槽；只有全部 producer 真正停止后才可读取/输出。
-	enum class Stage : unsigned { Publish, Snapshot, Complete, Clear, Session, Model, Configure, RenderAttempt, Draw, Pixels, NativeReceipt };
+	enum class Stage : unsigned { Publish, Snapshot, Complete, Clear, Session, Model, Configure, RenderAttempt, Draw, Pixels, NativeReceipt, ContentPolicy };
 	enum class Result : unsigned { Accepted, Uninitialized, PositionMismatch, TrackerRejected, Unchanged, Reset, MergeRejected, Configured, ConfigureFailed, Drawn, NotDrawn, Submitted, NoPixels, Retry, DeviceLost, ReceiptCommitted, ReceiptRejected, CandidateStale };
-	enum Flag : unsigned { Initialized=1, PositionActive=2, Waiting=4, Visible=8, Changed=16, PixelsSubmitted=32, ShouldShow=64, DrawInvoked=128, BrushFailed=256, Offscreen=512, Preparing=1024 };
+	enum Flag : unsigned { Initialized=1, PositionActive=2, Waiting=4, Visible=8, Changed=16, PixelsSubmitted=32, ShouldShow=64, DrawInvoked=128, BrushFailed=256, Offscreen=512, Preparing=1024, AnimationEnabled=2048 };
+	// 策略仅说明选择的原分支；setterChanges另记原setter是否返回true，不把选择当作重启。
+	enum class ContentPolicy : unsigned { Unknown, Initial, Immediate, Animated };
 	struct Fields
 	{
 		std::uint64_t session=0, epoch=0, positionSession=0, activeSession=0, activeEpoch=0, completedEpoch=0;
@@ -20,6 +24,11 @@ namespace Inkeys::Business::PptWaitTrace
 		unsigned direction=0, mode=0, flags=0, branches=0, dots=0;
 		long hr=0;
 		unsigned long error=0;
+		unsigned recoveryKind=0, contentPolicy=0, contentChanges=0, setterChanges=0;
+		int contentCurrentPage=-1,contentTotalPage=-1;
+		long oldKind=-1, newKind=-1;
+		long primaryScaleBefore=-1,primaryPctBefore=-1,secondaryScaleBefore=-1,secondaryPctBefore=-1;
+		long primaryScaleAfter=-1,primaryPctAfter=-1,secondaryScaleAfter=-1,secondaryPctAfter=-1;
 	};
 	struct Record
 	{
@@ -86,7 +95,7 @@ namespace Inkeys::Business::PptWaitTrace
 	}
 	inline void Capture(Stage stage, Fields fields, Result result) noexcept
 	{
-		if(!fields.epoch&&!(fields.flags&Preparing)&&stage!=Stage::Session&&stage!=Stage::Clear)return;
+		if(!fields.epoch&&!(fields.flags&Preparing)&&stage!=Stage::Session&&stage!=Stage::Clear&&stage!=Stage::ContentPolicy)return;
 		if(auto* recorder=Current())recorder->Capture(stage,fields,result);
 	}
 	inline const char* StageName(Stage value) noexcept
@@ -94,7 +103,7 @@ namespace Inkeys::Business::PptWaitTrace
 		switch(value){case Stage::Publish:return "publish-decision";case Stage::Snapshot:return "ppt-snapshot";case Stage::Complete:return "complete-decision";
 		case Stage::Clear:return "clear-decision";case Stage::Session:return "session-reset";case Stage::Model:return "model-decision";
 		case Stage::Configure:return "scene-configure";case Stage::RenderAttempt:return "render-attempt";case Stage::Draw:return "scene-draw";
-		case Stage::Pixels:return "pixels-result";case Stage::NativeReceipt:return "native-receipt";}return "unknown";
+		case Stage::Pixels:return "pixels-result";case Stage::NativeReceipt:return "native-receipt";case Stage::ContentPolicy:return "content-policy";}return "unknown";
 	}
 	inline const char* ResultName(Result value) noexcept
 	{
@@ -108,9 +117,10 @@ namespace Inkeys::Business::PptWaitTrace
 	inline int Format(char* line,std::size_t size,const Record& record,std::uint64_t ordinal) noexcept
 	{
 		const auto& f=record.fields;
-		const int n=std::snprintf(line,size,"[PptWait] v=1 event=record ordinal=%llu pid=%lu tid=%lu qpc=%lld frequency=%lld stage=%s result=%s session=%llu epoch=%llu direction=%u surface=%d mode=%u position_session=%llu active_session=%llu active_epoch=%llu completed_epoch=%llu layout_session=%llu layout_epoch=%llu publication=%llu previous_publication=%llu model_revision=%llu previous_model_revision=%llu candidate=%llu frame=%llu attempt=%llu pixel_revision=%llu scene_serial=%llu flags=%u branches=%u dots=%u hr=%ld error=%lu\n",
+		const int n=std::snprintf(line,size,"[PptWait] v=1 event=record ordinal=%llu pid=%lu tid=%lu qpc=%lld frequency=%lld stage=%s result=%s session=%llu epoch=%llu direction=%u surface=%d mode=%u position_session=%llu active_session=%llu active_epoch=%llu completed_epoch=%llu layout_session=%llu layout_epoch=%llu publication=%llu previous_publication=%llu model_revision=%llu previous_model_revision=%llu candidate=%llu frame=%llu attempt=%llu pixel_revision=%llu scene_serial=%llu flags=%u branches=%u dots=%u hr=%ld error=%lu recovery_kind=%u content_policy=%u old_kind=%ld new_kind=%ld content_target_changes=%u setter_changes=%u content_current_page=%d content_total_page=%d primary_scale_before_milli=%ld primary_pct_before_milli=%ld secondary_scale_before_milli=%ld secondary_pct_before_milli=%ld primary_scale_after_milli=%ld primary_pct_after_milli=%ld secondary_scale_after_milli=%ld secondary_pct_after_milli=%ld\n",
 			static_cast<unsigned long long>(ordinal),record.pid,record.tid,static_cast<long long>(record.qpc),static_cast<long long>(record.frequency),StageName(record.stage),ResultName(record.result),
-			static_cast<unsigned long long>(f.session),static_cast<unsigned long long>(f.epoch),f.direction,f.surface,f.mode,static_cast<unsigned long long>(f.positionSession),static_cast<unsigned long long>(f.activeSession),static_cast<unsigned long long>(f.activeEpoch),static_cast<unsigned long long>(f.completedEpoch),static_cast<unsigned long long>(f.layoutSession),static_cast<unsigned long long>(f.layoutEpoch),static_cast<unsigned long long>(f.publication),static_cast<unsigned long long>(f.previousPublication),static_cast<unsigned long long>(f.revision),static_cast<unsigned long long>(f.previousRevision),static_cast<unsigned long long>(f.candidate),static_cast<unsigned long long>(f.frame),static_cast<unsigned long long>(f.attempt),static_cast<unsigned long long>(f.pixelRevision),static_cast<unsigned long long>(f.sceneSerial),f.flags,f.branches,f.dots,f.hr,f.error);
+			static_cast<unsigned long long>(f.session),static_cast<unsigned long long>(f.epoch),f.direction,f.surface,f.mode,static_cast<unsigned long long>(f.positionSession),static_cast<unsigned long long>(f.activeSession),static_cast<unsigned long long>(f.activeEpoch),static_cast<unsigned long long>(f.completedEpoch),static_cast<unsigned long long>(f.layoutSession),static_cast<unsigned long long>(f.layoutEpoch),static_cast<unsigned long long>(f.publication),static_cast<unsigned long long>(f.previousPublication),static_cast<unsigned long long>(f.revision),static_cast<unsigned long long>(f.previousRevision),static_cast<unsigned long long>(f.candidate),static_cast<unsigned long long>(f.frame),static_cast<unsigned long long>(f.attempt),static_cast<unsigned long long>(f.pixelRevision),static_cast<unsigned long long>(f.sceneSerial),f.flags,f.branches,f.dots,f.hr,f.error,f.recoveryKind,f.contentPolicy,f.oldKind,f.newKind,f.contentChanges,f.setterChanges,f.contentCurrentPage,f.contentTotalPage,
+			f.primaryScaleBefore,f.primaryPctBefore,f.secondaryScaleBefore,f.secondaryPctBefore,f.primaryScaleAfter,f.primaryPctAfter,f.secondaryScaleAfter,f.secondaryPctAfter);
 		return n>0&&static_cast<std::size_t>(n)<size?n:0;
 	}
 	using Output=bool(*)(const char*,std::size_t);
@@ -122,7 +132,7 @@ namespace Inkeys::Business::PptWaitTrace
 	inline std::uint64_t FlushAfterProducersJoined(Recorder& recorder,Output output=RawOutput) noexcept
 	{
 		LastErrorGuard guard;
-		std::uint64_t errors=0;const auto counts=recorder.AfterProducersJoined();char line[1024];
+		std::uint64_t errors=0;const auto counts=recorder.AfterProducersJoined();char line[2048];
 		const auto write=[&](int n){try {if(n<=0||!output||!output(line,static_cast<std::size_t>(n)))++errors;}catch(...){++errors;}};
 		for(std::uint64_t i=0;i<counts.retained;++i)write(Format(line,sizeof(line),recorder.AtAfterProducersJoined(static_cast<std::size_t>(i)),i+1));
 		const int n=std::snprintf(line,sizeof(line),"[PptWait] v=1 event=summary sealed=1 pid=%lu capacity=%llu seen=%llu retained=%llu dropped=%llu invalid=%llu output_errors=%llu\n",GetCurrentProcessId(),static_cast<unsigned long long>(recorder.Capacity()),static_cast<unsigned long long>(counts.seen),static_cast<unsigned long long>(counts.retained),static_cast<unsigned long long>(counts.dropped),static_cast<unsigned long long>(counts.invalid),static_cast<unsigned long long>(errors));
@@ -133,6 +143,39 @@ namespace Inkeys::Business::PptWaitTrace
 		// 只有真实join之后才退休入口；不能用此exchange代替等待producer完成。
 		if(auto* recorder=prepared.exchange(nullptr,std::memory_order_acq_rel))
 			(void)FlushAfterProducersJoined(*recorder);
+	}
+
+	inline long ContentMilli(double value) noexcept
+	{
+		if(!std::isfinite(value)||value<0||value>static_cast<double>((std::numeric_limits<long>::max)())/1000.0)return -1;
+		return static_cast<long>(std::llround(value*1000.0));
+	}
+	struct ContentSample { Recorder* recorder=nullptr;Fields fields; };
+	inline thread_local ContentSample* contentSample=nullptr;
+	class ContentScope
+	{
+	public:
+		explicit ContentScope(Fields fields,Recorder* recorder=Current()) noexcept
+		{
+			if(!recorder||!recorder->Enabled()||!fields.session||fields.surface<0){
+				if(contentSample){previous_=contentSample;contentSample=nullptr;restore_=true;}return;
+			}
+			sample_.recorder=recorder;sample_.fields=fields;
+			// 内容观察独立于导航或通用准备，不借用它们的epoch、方向或TLS。
+			sample_.fields.epoch=0;sample_.fields.direction=0;sample_.fields.attempt=0;
+			sample_.fields.flags&=~(Waiting|Preparing);
+			previous_=contentSample;contentSample=&sample_;restore_=true;
+		}
+		~ContentScope() noexcept { if(restore_)contentSample=previous_; }
+		ContentScope(const ContentScope&)=delete;ContentScope& operator=(const ContentScope&)=delete;
+	private:
+		ContentSample sample_;ContentSample* previous_=nullptr;bool restore_=false;
+	};
+	inline void CaptureContentPolicy(Fields fields) noexcept
+	{
+		if(!contentSample)return;
+		fields.epoch=0;fields.direction=0;fields.attempt=0;
+		contentSample->recorder->Capture(Stage::ContentPolicy,fields,Result::Accepted);
 	}
 
 	struct DrawSample { Recorder* recorder=nullptr;Fields fields;bool invoked=false,ended=false; };

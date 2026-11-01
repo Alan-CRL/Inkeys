@@ -71,10 +71,55 @@ int RunPptSessionTests()
 			"full waiting buffer retains the prefix and reports loss instead of overwriting a failure with recovery");
 		SetLastError(902);const auto errors=Wait::FlushAfterProducersJoined(recorder,WaitOutputThrows);
 		check(errors==5&&GetLastError()==902,"waiting export failures cannot escape or overwrite caller LastError");
-		char text[1024];const int n=Wait::Format(text,sizeof(text),slots[2],3);
+		char text[2048];const int n=Wait::Format(text,sizeof(text),slots[2],3);
 		check(n>0&&std::string(text).find("pixel_revision=23")!=std::string::npos
 			&&std::string(text).find("stage=pixels-result result=submitted")!=std::string::npos,
 			"waiting records export immutable numeric identity and exact software boundary");
+		// 内容policy与导航/Draw TLS独立，scope只给出当前配置的纯值身份，不采字符串。
+		Wait::Fields contentFields=fields;contentFields.surface=0;contentFields.revision=41;
+		const auto beforeMutedClock=perfClockCalls;
+		{ Wait::ContentScope muted(contentFields,&disabled);Wait::CaptureContentPolicy(contentFields); }
+		check(Wait::contentSample==nullptr&&disabled.AfterProducersJoined().seen==0&&perfClockCalls==beforeMutedClock,
+			"disabled content policy context neither records nor leaks TLS");
+		Wait::Record policies[8];Wait::Recorder policyRecorder(policies,8,clock);const auto beforePolicyClock=perfClockCalls;
+		{
+			Wait::ContentScope outer(contentFields,&policyRecorder);
+			check(Wait::contentSample&&Wait::contentSample->fields.epoch==0&&Wait::contentSample->fields.direction==0,
+				"content policy context cannot borrow the navigation epoch or direction");
+			auto sample=Wait::contentSample->fields;sample.contentPolicy=static_cast<unsigned>(Wait::ContentPolicy::Animated);
+			sample.oldKind=0;sample.newKind=1;sample.setterChanges=3;Wait::CaptureContentPolicy(sample);
+			{ Wait::ContentScope muted(contentFields,nullptr);Wait::CaptureContentPolicy(sample);
+			  check(Wait::contentSample==nullptr,"nested null content context masks the outer configuration"); }
+			{ auto other=contentFields;other.session=8;other.revision=42;Wait::ContentScope inner(other,&policyRecorder);
+			  Wait::CaptureContentPolicy(Wait::contentSample->fields); }
+			Wait::CaptureContentPolicy(Wait::contentSample->fields);
+		}
+		check(policyRecorder.AfterProducersJoined().retained==3&&perfClockCalls-beforePolicyClock==3
+			&&policies[0].stage==Wait::Stage::ContentPolicy&&policies[0].fields.setterChanges==3
+			&&policies[1].fields.session==8&&policies[2].fields.session==7
+			&&policies[2].fields.revision==41&&Wait::contentSample==nullptr&&Wait::drawSample==nullptr,
+			"content policy samples preserve nested snapshot identity and actual setter results without cross-TLS leakage");
+		check(Wait::ContentMilli(1.0)==1000&&Wait::ContentMilli(-1.0)==-1
+			&&Wait::ContentMilli((std::numeric_limits<double>::quiet_NaN)())==-1
+			&&Wait::ContentMilli((std::numeric_limits<double>::infinity)())==-1,
+			"content scale and opacity retain explicit unknown values instead of fabricating finite measurements");
+		auto maximal=policies[0];auto& maxFields=maximal.fields;
+		for(auto* value:{&maxFields.session,&maxFields.epoch,&maxFields.positionSession,&maxFields.activeSession,&maxFields.activeEpoch,
+			&maxFields.completedEpoch,&maxFields.layoutSession,&maxFields.layoutEpoch,&maxFields.publication,&maxFields.previousPublication,
+			&maxFields.revision,&maxFields.previousRevision,&maxFields.candidate,&maxFields.frame,&maxFields.attempt,&maxFields.pixelRevision,&maxFields.sceneSerial})
+			*value=(std::numeric_limits<std::uint64_t>::max)();
+		for(auto* value:{&maxFields.direction,&maxFields.mode,&maxFields.flags,&maxFields.branches,&maxFields.dots,&maxFields.recoveryKind,
+			&maxFields.contentPolicy,&maxFields.contentChanges,&maxFields.setterChanges})*value=(std::numeric_limits<unsigned>::max)();
+		for(auto* value:{&maxFields.hr,&maxFields.oldKind,&maxFields.newKind,&maxFields.primaryScaleBefore,&maxFields.primaryPctBefore,
+			&maxFields.secondaryScaleBefore,&maxFields.secondaryPctBefore,&maxFields.primaryScaleAfter,&maxFields.primaryPctAfter,
+			&maxFields.secondaryScaleAfter,&maxFields.secondaryPctAfter})*value=(std::numeric_limits<long>::min)();
+		maxFields.error=(std::numeric_limits<unsigned long>::max)();maxFields.surface=(std::numeric_limits<int>::min)();
+		maxFields.contentCurrentPage=maxFields.contentTotalPage=(std::numeric_limits<int>::min)();
+		maximal.pid=maximal.tid=(std::numeric_limits<unsigned long>::max)();maximal.qpc=maximal.frequency=(std::numeric_limits<std::int64_t>::max)();
+		const auto maximalLength=Wait::Format(text,sizeof(text),maximal,(std::numeric_limits<std::uint64_t>::max)());
+		check(maximalLength>0&&maximalLength<static_cast<int>(sizeof(text))
+			&&std::string(text).find("secondary_pct_after_milli=")!=std::string::npos,
+			"the complete maximum-width numeric content record fits the fixed 2048 byte export buffer");
 		Wait::Record invalidSlot[1];Wait::Recorder invalid(invalidSlot,1,{WaitInvalidClock,PerfFrequency,PerfProcess,PerfThread});
 		invalid.Capture(Wait::Stage::Publish,fields,Wait::Result::Accepted);
 		check(invalid.AfterProducersJoined().retained==1&&invalid.AfterProducersJoined().invalid==1,

@@ -79,3 +79,7 @@
 ## 2026-11-01 页面准备提示实机验收
 
 用户已明确确认修复版三点正常保留与清除，AC4通过。当前13请求最长命令仍1.012秒、首个3→4 Pending约1.615秒，实际性能不标修好；AC7整体性能证据/其他原未验边界仍保留。详见 [page-preparation-wait-manual-results-20261101.md](research/page-preparation-wait-manual-results-20261101.md)。
+
+## 2026-11-01 恢复进度与页码角标
+
+用户已批准准备/恢复进行中使用三点，并指定左右翻页均在页码区域右上角一处显示。按 [page-badge-progress-fix-plan-20261101.md](research/page-badge-progress-fix-plan-20261101.md) 只改显示投影，保留真实故障/重试文字及控制恢复态；Pending/Recovering保持同场稳定显示数字，不能用目标页提前替代。原COM/业务currentPage/ACK/Host门不变，不自动提交。

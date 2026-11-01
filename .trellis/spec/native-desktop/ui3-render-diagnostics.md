@@ -180,7 +180,7 @@ P3 候选回执的 error 保存首个原生失败，rollbackError 独立保存�
 - Prepare仅显式开关启用时分配固定数组，默认关闭不分配、不读新时钟、不写采样槽；普通无等待snapshot/model/configure过滤。多producer原子认领独立槽，满后不扩容或覆盖，只增加dropped。认领不等于写完，不能并发读取尚在生产的槽。
 - 状态锁内和render callback只复制既有数值/取时间并写独立槽；无格式化、文件/pipe输出、同步logger、任意sink、分配、新锁/等待或新渲染请求。诊断动作保存自身入口LastError，不跨业务操作恢复旧错误。TLS仅属于本次DrawScope，与导航TLS分离；nested/null scope须屏蔽outer并LIFO恢复。
 - 原主退出顺序已完成UI3交互join及尾部business drain、state/PPT/PptInfo joins、Setting/Window/RenderPipeline停止后，才退休prepared入口并格式化输出借用stderr；退休开关不代替真实join，不新增日志线程/等待，storage保留至进程结束。
-- 命令链路面向非零导航epoch（生产从1递增），无效0请求不作为导航采样；Preparing=1024明确标记独立页面准备，此类session使用真实layout.session、epoch=direction=0，不归到旧命令。Snapshot/Model/Draw/Receipt须一致允许该类，model不得用published旧请求回填；Session/Clear生命周期可另记。Publish记录原拒绝条件/水位及会话；model记录原merge结果/revision；配置记录实际scene状态；scene-draw在原Render边界结束采样，branches/dots仅计原三点分支/FillEllipse调用，不证明成功像素。通用准备可同时出现branches2/dots6（两个按钮各三点），不混为单按钮六点；Preparing=false后的generic-only记录可能按epoch门过滤，缺失属unknown，不作为input-ready。
+- 命令链路面向非零导航epoch（生产从1递增），无效0请求不作为导航采样；Preparing=1024明确标记独立页面准备，此类session使用真实layout.session、epoch=direction=0，不归到旧命令。Snapshot/Model/Draw/Receipt须一致允许该类，model不得用published旧请求回填；Session/Clear生命周期可另记。Publish记录原拒绝条件/水位及会话；model记录原merge结果/revision；配置记录实际scene状态；scene-draw在原Render边界结束采样，branches/dots仅计原三点分支/FillEllipse调用，不证明成功像素。通用准备当前为branches1/dots3（单个页码角标）；旧版本双按钮branches2/dots6只作历史样本；Preparing=false后的generic-only记录可能按epoch门过滤，缺失属unknown，不作为input-ready。
 - 同一DrawScope的attempt在实际pixelsSubmitted时随私有completedPixels→pending.pixels传到原native receipt；receipt从该pending快照取身份，不借后来model或TLS背书旧帧。无damage复用attempt=0，不能伪造本次绘制。空Success、Retry、DeviceLost、候选失效及receipt拒绝分别保留；软件呈现成功仍不是DWM/光学可见证据。
 - 关闭/崩溃或15秒兜底前未flush没有summary，属于incomplete，不是“没有等待”。掉样/invalid/输出失败使相应关联unknown；缺少阶段不能填0或当通过。诊断不改页码、等待、ready/输入或COM访问/释放。
 
@@ -202,7 +202,7 @@ Good：同一session/epoch追踪接受→model→scene→实际点调用→同at
 
 ### 6. Tests Required
 
-`InkeysHeadlessTests.exe --ppt-session-only` 验证defaultoff零采样、nested/null恢复、同attempt点/像素、固定槽溢出、四producer真实join、invalid分母和异常输出/LastError。既有 `Inkeys.exe --bar-eraser-offscreen-test` 的PageControl fixture覆盖四surface×100/150/200%×Previous/Next，同页等待对应按钮BGRA变化、另一方向与页码不变、partial=full、complete恢复；明确启用局部recorder且记录非空/单按钮三次点调用，验证on/off BGRA一致；通用准备还验证epoch0/direction0、双按钮六次点调用、命令Complete后旧页Pending持续、InkReady新页/BasicControl target0清点与partial/full一致。读回失败/空bytes必须短路后续region读取。
+`InkeysHeadlessTests.exe --ppt-session-only` 验证defaultoff零采样、nested/null恢复、同attempt点/像素、固定槽溢出、四producer真实join、invalid分母和异常输出/LastError。既有 `Inkeys.exe --bar-eraser-offscreen-test` 的PageControl fixture覆盖四surface×100/150/200%×Previous/Next，同页等待对应按钮BGRA变化、另一方向与页码不变、partial=full、complete恢复；明确启用局部recorder且记录非空/单按钮三次点调用，验证on/off BGRA一致；通用准备还验证epoch0/direction0、单Page角标三次点调用、命令Complete后旧页Pending持续、InkReady新页/BasicControl target0清点与partial/full一致。读回失败/空bytes必须短路后续region读取。
 
 完整Debug|ARM64 Solution及上述无窗口测试验证软件合同；真实Office/Window receipt/光学可见性仍由用户新样本单列，不由离屏测试通过推导。PptCOM源/DLL/TLB此轮保持，核对EXE内嵌资源；PrepareOnly不启动GUI或改配置。
 
@@ -211,3 +211,47 @@ Good：同一session/epoch追踪接受→model→scene→实际点调用→同at
 Wrong：在DrawButton里格式化WriteFile，或者看到FillEllipse三次便称用户看到了三点。
 
 Correct：DrawScope内仅记纯值；正常退出producer真实join后输出，并用原pending.pixels的attempt关联receipt。先核capacity/invalid，再结合用户观察区分模型、绘制、软件提交和光学可见边界。
+
+## Scenario: 页码内容策略的窄取证（2026-11-01）
+
+### 1. Scope / Trigger
+
+普通数字应即时更新但用户偶发看到数字缩小/淡出时，先区分实际Numeric/Status策略，不把三点准备或逻辑kind当作已显示状态。此采样不改变动画策略，不将离屏可达机制当现场根因。
+
+### 2. Signatures
+
+内部PptWait新增`ContentScope(Fields, Recorder*=Current())`、`CaptureContentPolicy(Fields)`；独立stage=`content-policy`，仍用INKEYS_PPT_PERF与原固定16384槽、真实join后stderr导出。PageControl仅为实际PPT配置调用提供同快照session/layout/publication/model/surface/recovery/currentPage/totalPage；白板不借PPT身份。
+
+### 3. Contracts
+
+- ContentScope是独立TLS，强制epoch=direction=attempt=0、去Waiting/Preparing标记；无导航等待也可记录，禁止归到旧命令。null/无效/白板scope屏蔽outer并LIFO恢复；默认off零新clock/记录/格式化/分配。
+- Scene在content=next前记录old_kind/new_kind（0 Numeric、1 Status、-1未知），content_policy为0未知/1 Initial/2 Immediate/3 Animated；content_target_changes bit1主、bit2次表示旧/新逻辑目标字符串变化，不等于跨Status的数字值变化。content_current_page/content_total_page是原PptState数字，保留-1语义而非猜错误。
+- setter_changes同样bit1/bit2，记录原setter返回true；Animated分支返回false可能幂等，不能把分支选择当实际重启。原setter调用顺序/次数/分支不变，初次Configure单独Initial。
+- primary/secondary_scale/pct_before/after_milli为公开数值的千分值，非法或未采=-1；仅代表setter前后，不证明timeline是否active/已过中点/文字已提交。AnimationEnabled=2048记录当时开关，之后开关或速度变化仍可能影响实际推进。禁止为诊断读取可能复制wstring的GetVal/GetTar或增加public文字API。
+- 新字段仅content-policy有解释，其他stage默认值不能当文字状态。格式化仅停产后进行，固定输出buffer2048；max字段测试防截断，输出失败与掉样仍unknown。render无I/O/任意sink/新wait/heap/COM获取，不输出具体文字/路径。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 普通Numeric→Numeric | 原两槽Immediate，记录实际选择/返回值，不启动新策略 |
+| Status相关 | 保留原Animated；记录选择及返回位，不称已光学显示 |
+| 无等待/无Preparing的PPT内容变化 | ContentPolicy独立epoch0捕获，不被原等待门误过滤 |
+| 白板/null/nested | 不借外层PPT session；LIFO恢复，原Draw/navigation TLS不变 |
+| 字段非法/超长/容量满 | 数值unknown或显式错误/掉样，不填0冒充证据 |
+
+### 5. Good / Base / Bad Cases
+
+Good：实际Scene hook在local ContentScope产生记录，逐帧BGRA与无采样同轨迹一致，再用现场同session/model的类型轨迹核对。Base：关采样仍完全使用原策略。Bad：只手工Capture测试称hook覆盖；early CLI没Prepare却称两次开关等价；把scope记录当像素提交或将scale/pct当精确中点。
+
+### 6. Tests Required
+
+历史短Recovering误入Status的像素复现见任务repro-results；当前回归为Recovering保持Numeric/Immediate无动画，同值不重启，真实ReadFailed/Conflict的Status动画另验。local Recorder+实际Scene hook验证策略/返回位/epoch0及逐帧BGRA等价，PPT定向验证关闭/nested/未知值/2048最大格式；完整ARM64和171213人工通过。历史Animated观察断言不作为修复后规范。
+
+### 7. Wrong vs Correct
+
+Wrong：因有三点或零Recovery日志便断定没有Status，或因选了Animated便称用户屏幕发生动画。
+
+Correct：记录真实Scene策略、原setter返回、同快照数字与前后数值；结合用户观察和实际帧边界判定，缺乏timeline/提交证据时明确unknown。
+
+当前角标显示合同已改为每面Page右上角一组3点/1branch，旧双箭头6点/2branch仅为历史样本；方向仍是业务事实，不作为两个视觉marker。content-policy的content_current_page/total_page取实际视觉override后数字，控制currentPage另有身份语义，不能互换。详见PPT规范“恢复进度页码角标与稳定数字”。

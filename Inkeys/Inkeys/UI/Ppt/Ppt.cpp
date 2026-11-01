@@ -53,6 +53,7 @@ namespace Inkeys::UI::Ppt
 		PositionState positions;
 		std::uint64_t publicationRevision = 0;
 		PagePresentationState pageState;
+		StablePageNumbers stablePageNumbers;
 		Inkeys::UI::PageControl::PptNavigationWaitingState navigationWaiting;
 		PptRecovery::State pageRecovery;
 		TopmostRefreshState topmostRefresh;
@@ -153,7 +154,14 @@ namespace Inkeys::UI::Ppt
 				state.recovery = pageRecovery.session == positions.session ? pageRecovery : PptRecovery::State{};
 				// 与旧页码和过滤后的同场recovery取同一快照；命令返回不能代替真实页面准备完成。
 				state.pagePreparing = state.presentationActive && state.presentationVisible && state.layout.session != 0
-					&& pageState.mode == PageStateMode::Pending && state.recovery.kind == PptRecovery::Kind::None;
+					&& (pageState.mode == PageStateMode::Pending || state.recovery.kind == PptRecovery::Kind::Recovering)
+					&& (state.recovery.kind == PptRecovery::Kind::None || state.recovery.kind == PptRecovery::Kind::Recovering);
+				// 保留控制/ACK页码；恢复或Pending仅覆写数字文本，恢复清除先到也不能泄露未来目标页。
+				state.numericPageOverride = state.presentationActive
+					&& (pageState.mode == PageStateMode::Pending || state.recovery.kind == PptRecovery::Kind::Recovering);
+				if(state.numericPageOverride&&stablePageNumbers.session==positions.session){
+					state.displayedCurrentPage=stablePageNumbers.currentPage;state.displayedTotalPage=stablePageNumbers.totalPage;
+				}
 				state.publicationRevision = ++publicationRevision;
 				auto waitFields=WaitingFields();
 				if(state.pagePreparing){waitFields.flags|=WaitTrace::Preparing;waitFields.session=state.layout.session;
@@ -230,6 +238,7 @@ namespace Inkeys::UI::Ppt
 			(void)SavedPptComPositions();
 			publicationRevision = 0;
 			pageState = {};
+			stablePageNumbers = {};
 			navigationWaiting = {};
 			pageRecovery = {};
 			topmostRefresh = {};
@@ -274,6 +283,7 @@ namespace Inkeys::UI::Ppt
 		{
 			std::scoped_lock lock(stateMutex);
 			navigationWaiting = {};
+			stablePageNumbers = {};
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
 		}
@@ -333,6 +343,8 @@ namespace Inkeys::UI::Ppt
 		{
 			std::scoped_lock lock(stateMutex);
 			pageState.Publish(current, total, target, mode);
+			// 只有真实页面发布的InkReady/BasicControl更新缓存；Snapshot/recovery通知不反向授予可信数字。
+			if(positions.active)stablePageNumbers.Observe(positions.session,current,total,mode);
 		}
 		PublishSnapshot();
 	}
@@ -434,6 +446,7 @@ namespace Inkeys::UI::Ppt
 			if (changed)
 			{
 				pageState = {};
+				stablePageNumbers = {};
 				WaitTrace::Capture(WaitTrace::Stage::Session,WaitingFields(),WaitTrace::Result::Reset);
 				navigationWaiting.Clear();
 				if (positions.active) navigationWaiting.BeginSession(positions.session);

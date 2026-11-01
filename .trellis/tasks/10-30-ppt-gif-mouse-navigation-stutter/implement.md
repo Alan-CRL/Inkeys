@@ -130,3 +130,25 @@
 结果见 [page-preparation-wait-fix-validation-20261101.md](research/page-preparation-wait-fix-validation-20261101.md)，操作见 [page-preparation-wait-fix-handoff-20261101.md](research/page-preparation-wait-fix-handoff-20261101.md)。
 
 用户反馈与本轮数据见 [page-preparation-wait-manual-results-20261101.md](research/page-preparation-wait-manual-results-20261101.md)。等待反馈验收通过，不再重复该项测试；实际延迟未消除，任务保持in_progress。
+
+## 2026-11-01 页码动画最小复现与取证
+
+用户同意按 [page-number-animation-repro-plan-20261101.md](research/page-number-animation-repro-plan-20261101.md) 先复现短Status返回Numeric，并准备默认关闭的实际内容策略数值记录；不改变动画决策、不恢复文字替代三点、不改COM/ready，不操作GUI或自动提交。
+
+- [x] 页码短Status机制真实离屏复现及PPT内容policy默认关闭数字采样，保持原动画策略。
+- [x] 独立审查、完整ARM64/定向/真实跨module hook与采样BGRA等价、内嵌/配置SHA验证。
+- [x] 163049已完成现场取证并定因，随后修复并获171213人工通过。
+
+结果见 [page-number-animation-capture-validation-20261101.md](research/page-number-animation-capture-validation-20261101.md)。
+
+## 2026-11-01 恢复进度与页码角标
+
+用户已批准准备/恢复进行中使用三点，并指定左右翻页均在页码区域右上角一处显示。按 [page-badge-progress-fix-plan-20261101.md](research/page-badge-progress-fix-plan-20261101.md) 只改显示投影，保留真实故障/重试文字及控制恢复态；Pending/Recovering保持同场稳定显示数字，不能用目标页提前替代。原COM/业务currentPage/ACK/Host门不变，不自动提交。
+
+- [x] Recovering视觉进度与控制态分离、稳定数字override与Page右上角单角标。
+- [x] 独立check、完整ARM64、两组定向和真实离屏/旧ACK/缓存/最大位数/启停BGRA回归、哈希/PrepareOnly配置不变。
+- [x] 用户短测确认无问题；171213样本433记录零掉样，16条Numeric→Numeric即时策略，实际每面3点/1branch，正常exit0。
+
+结果见 [page-badge-progress-fix-validation-20261101.md](research/page-badge-progress-fix-validation-20261101.md)。
+
+本轮人工验收见 [page-badge-progress-manual-results-20261101.md](research/page-badge-progress-manual-results-20261101.md)，视觉修复通过，性能及原未验边界仍保留。

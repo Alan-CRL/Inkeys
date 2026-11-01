@@ -14,3 +14,6 @@
 {"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/navigation-wait-trace-plan-20261101.md", "reason": "本轮等待标记不可见的最小诊断合同"}
 {"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/normal-exit-trace-results-20261101.md", "reason": "最新实测退出成功但性能与三点仍失败"}
 {"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-preparation-wait-fix-plan-20261101.md", "reason": "用户澄清后实际Pending页面准备提示的最小行为修复合同"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-number-animation-code-investigation-20261101.md", "reason": "本轮页码偶发动画的已证候选与用户批准的最小复现/取证边界"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-number-animation-repro-plan-20261101.md", "reason": "本轮页码偶发动画的已证候选与用户批准的最小复现/取证边界"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-badge-progress-fix-plan-20261101.md", "reason": "用户明确批准进度显示分类与页码右上角角标，含保持稳定显示数字的安全边界"}
