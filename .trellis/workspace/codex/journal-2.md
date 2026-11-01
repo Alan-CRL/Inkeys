@@ -1002,3 +1002,33 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Next Steps
 
 - 审阅bugfix/ink相对dev的差异，用户自行决定合并；不自动push/merge
+
+
+## Session 135: 设置性能、绘图控制与画布诊断完成归档
+<!-- trellis-session: v=2 fp=079ae463ac39198e -->
+
+**Date**: 2026-11-01
+**Task**: 设置性能、绘图控制与画布诊断完成归档
+**Branch**: `setting/performance`
+
+### Summary
+
+完成性能页、绘图选项、设置提示与诊断复制；修复末项复制按钮触发的 ImGui 边界断言，并归档任务。
+
+### Main Changes
+
+- 实现独立界面与画布帧率、逐笔绘图设置、激光笔约束、完整画布诊断及复制按钮。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ead40db9` | feat(settings): add performance controls and canvas diagnostics |
+
+### Testing
+
+- [OK] 完整 solution Debug ARM64 构建通过；attention/copy 无窗口回归通过。历史 HomeWARP 检查限制见归档验证报告，未运行 GUI。
+
+### Status
+
+[OK] **Completed**
