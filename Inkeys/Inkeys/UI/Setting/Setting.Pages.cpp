@@ -2,6 +2,7 @@
 #include "Setting.HomeBrand.h"
 #include "imfluent/imfluent_internal.h"
 #include <cstring>
+#include <format>
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
@@ -601,22 +602,14 @@ namespace Inkeys::UI::Setting::Design
 		const float width = ImGui::GetContentRegionAvail().x;
 		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
 		const float innerWidth = (std::max)(1.0F, width - padding * 2.0F);
-		const auto introduction = IA(palm.Introduction);
-		const float introductionHeight = TextHeight(introduction.c_str(), innerWidth);
-		const float cardHeight = std::ceil(introductionHeight + padding * 2.0F);
-		ImGui::SetNextWindowSizeConstraints({ 0, cardHeight }, { FLT_MAX, cardHeight });
-		ImGui::SetNextWindowContentSize({ 0, introductionHeight });
-		if (BeginCard("##palm-eraser-introduction", { width, cardHeight })) Text(introduction.c_str());
-		EndCard();
-		events.enabledChanged = ToggleRow("##palm-eraser-enabled", IA(palm.Enabled).c_str(),
-			nullptr, "\ue7c9", draft.enabled);
 		if (draft.physicalSizeWarning)
 		{
-			PageContentStart();
 			Notice("##palm-eraser-size-warning", IA(palm.SizeWarningTitle).c_str(),
 				IA(palm.SizeWarningDescription).c_str(), ImFluentInfoSeverity_Warning);
 		}
 		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.BasicSettings).c_str());
+		events.enabledChanged = ToggleRow("##palm-eraser-enabled", IA(palm.Enabled).c_str(),
+			nullptr, "\ue7c9", draft.enabled);
 		constexpr std::array<int, 4> windows{ 100, 150, 250, 500 };
 		const auto found = std::find(windows.begin(), windows.end(), draft.recognitionWindowMs);
 		int windowIndex = found == windows.end() ? 1 : static_cast<int>(found - windows.begin());
@@ -624,6 +617,26 @@ namespace Inkeys::UI::Setting::Design
 			IA(palm.RecognitionWindowDescription).c_str(), "\ue823", windowIndex,
 			{ "100ms", "150ms" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), "250ms", "500ms" });
 		if (events.recognitionWindowChanged) draft.recognitionWindowMs = windows[windowIndex];
+
+		const std::array<const char*, 4> ratios{ "1:1", "4:3", "2:1", "1:2" };
+		constexpr std::array<double, 4> aspects{ 1, 4.0 / 3.0, 2, .5 };
+		// 比例只属于当前页面；切换比例不改变手掌阈值或触发配置保存。
+		auto* pageStorage = ImGui::GetStateStorage();
+		const auto ratioStateId = ImGui::GetID("##palm-eraser-preview-ratio-state");
+		int ratioIndex = std::clamp(pageStorage->GetInt(ratioStateId, 0), 0, 3);
+		const double noteArea = draft.referenceAreaPixels * draft.thresholdPercent / 100.0;
+		std::string thresholdNote;
+		if (std::isfinite(noteArea) && noteArea > 0)
+		{
+			const double widthPx = std::sqrt(noteArea * aspects[ratioIndex]), heightPx = std::sqrt(noteArea / aspects[ratioIndex]);
+			const double areaCm2 = draft.referenceAreaCm2 * draft.thresholdPercent / 100.0;
+			if (!draft.previewEstimated && std::isfinite(areaCm2) && areaCm2 > 0)
+			{
+				const double widthCm = std::sqrt(areaCm2 * aspects[ratioIndex]), heightCm = std::sqrt(areaCm2 / aspects[ratioIndex]);
+				thresholdNote = std::vformat(IA(palm.ThresholdSizePhysical), std::make_format_args(widthCm, heightCm, widthPx, heightPx));
+			}
+			else thresholdNote = std::vformat(IA(palm.ThresholdSizePixels), std::make_format_args(widthPx, heightPx));
+		}
 
 		const auto reset = IA(I18nKey.Operate.Reset);
 		const float resetWidth = ButtonWidth(reset.c_str()), numberWidth = 40.0F;
@@ -640,7 +653,7 @@ namespace Inkeys::UI::Setting::Design
 				const float buttonLeft = bounds.right - Pixels(resetWidth);
 				ImGui::SetCursorScreenPos({ sliderLeft, bounds.top });
 				ImGui::SetNextItemWidth((std::max)(1.0F, (resetBelow ? bounds.right : buttonLeft - Pixels(ControlSpacing)) - sliderLeft));
-				events.thresholdChanged = SliderInt("##slider", &draft.thresholdPercent, 25, 400, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+				events.thresholdChanged = SliderInt("##slider", &draft.thresholdPercent, 1, 400, "%d%%", ImGuiSliderFlags_AlwaysClamp);
 				ImGui::SetCursorScreenPos({ buttonLeft, bounds.top + (resetBelow ? Pixels(ControlHeight + ControlSpacing) : 0) });
 				if (Button((reset + "###reset").c_str(), { Pixels(resetWidth), Pixels(ControlHeight) }))
 				{
@@ -648,7 +661,7 @@ namespace Inkeys::UI::Setting::Design
 					events.thresholdChanged |= draft.thresholdPercent != 100;
 					draft.thresholdPercent = 100;
 				}
-			});
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, thresholdNote.c_str());
 
 		const double area = draft.referenceAreaPixels * draft.thresholdPercent / 100.0;
 		const bool available = std::isfinite(area) && area > 0;
@@ -658,32 +671,12 @@ namespace Inkeys::UI::Setting::Design
 		const float titleHeight = TextHeight(previewTitle.c_str(), innerWidth, ImFluentTextStyle_BodyStrong);
 		const float descriptionHeight = TextHeight(previewDescription.c_str(), innerWidth, ImFluentTextStyle_Caption);
 		const float headingHeight = titleHeight + Pixels(8) + descriptionHeight;
-		std::array<ImVec2, 3> sizes{}, positions{};
-		std::array<float, 3> itemWidths{};
-		const std::array<const char*, 3> ratios{ "1:1", "2:1", "1:2" };
-		float canvasWidth = 0, canvasHeight = 0;
-		if (available)
-		{
-			// 图形直接使用绘制输出像素；只有文字和留白跟随设置 UI 的 DPI/字体倍率。
-			sizes = { ImVec2(static_cast<float>(std::sqrt(area)), static_cast<float>(std::sqrt(area))),
-				ImVec2(static_cast<float>(std::sqrt(area * 2)), static_cast<float>(std::sqrt(area / 2))),
-				ImVec2(static_cast<float>(std::sqrt(area / 2)), static_cast<float>(std::sqrt(area * 2))) };
-			float x = 0, y = 0, rowHeight = 0;
-			for (int index = 0; index < 3; ++index)
-			{
-				itemWidths[index] = (std::max)(sizes[index].x, TextWidth(ratios[index], ImFluentTextStyle_Caption));
-				if (x > 0 && x + Pixels(16) + itemWidths[index] > innerWidth)
-				{
-					y += rowHeight + Pixels(16); x = 0; rowHeight = 0;
-				}
-				if (x > 0) x += Pixels(16);
-				positions[index] = { x, y };
-				rowHeight = (std::max)(rowHeight, sizes[index].y + Pixels(8)
-					+ TextHeight(ratios[index], itemWidths[index], ImFluentTextStyle_Caption));
-				x += itemWidths[index]; canvasWidth = (std::max)(canvasWidth, x);
-			}
-			canvasHeight = std::ceil(y + rowHeight);
-		}
+		const ImVec2 size = available ? ImVec2(static_cast<float>(std::sqrt(area * aspects[ratioIndex])),
+			static_cast<float>(std::sqrt(area / aspects[ratioIndex]))) : ImVec2();
+		const float comboWidth = Pixels(112), inset = 2.0F;
+		// 图形直接使用绘制输出像素；下拉悬浮于左上角，不挤占或换行图形。
+		const float canvasWidth = (std::max)(size.x + inset * 2, comboWidth);
+		const float canvasHeight = (std::max)(size.y + inset * 2, Pixels(ControlHeight));
 		const float scrollReserve = canvasWidth > innerWidth ? Pixels(ScrollbarTrackSize + ScrollbarPadding) : 0;
 		const float previewHeight = headingHeight + (available ? Pixels(16) + canvasHeight + scrollReserve : 0);
 		const float previewCardHeight = std::ceil(previewHeight + padding * 2);
@@ -707,20 +700,19 @@ namespace Inkeys::UI::Setting::Design
 					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar))
 				{
 					const auto top = ImGui::GetCursorScreenPos();
-					for (int index = 0; index < 3; ++index)
-					{
-						const ImVec2 start(top.x + positions[index].x + (itemWidths[index] - sizes[index].x) * .5F,
-							top.y + positions[index].y);
-						ImGui::GetWindowDrawList()->AddRectFilled(start, { start.x + sizes[index].x, start.y + sizes[index].y }, GetPalette().textDisabled);
-						const float labelWidth = TextWidth(ratios[index], ImFluentTextStyle_Caption);
-						TextAt(ratios[index], { top.x + positions[index].x + (itemWidths[index] - labelWidth) * .5F,
-							start.y + sizes[index].y + Pixels(8) }, labelWidth, ImFluentTextStyle_Caption, TextSecondary);
-					}
+					const ImVec2 start(top.x + (std::max)(inset, (innerWidth - size.x) * .5F), top.y + inset);
+					ImGui::GetWindowDrawList()->AddRect(start, { start.x + size.x, start.y + size.y },
+						Accent, Pixels(8), 0, 2.0F);
+					// 后绘制控件，使其可遮挡边框；恢复游标后仅按整个预览包络占位。
+					ImGui::SetCursorScreenPos(top); ImGui::SetNextItemWidth(comboWidth);
+					if (ComboBox("##palm-eraser-preview-ratio", &ratioIndex, ratios.data(), static_cast<int>(ratios.size())))
+						pageStorage->SetInt(ratioStateId, ratioIndex);
+					ImGui::SetCursorScreenPos(top);
 					ImGui::Dummy({ canvasWidth, canvasHeight });
 				}
 				ImGui::EndChild(); ImGui::PopStyleVar(3);
 			}
-			// 完整高度始终进入外层页面滚动；单个超宽示例只在预览块横向查看。
+			// 完整高度始终进入外层页面滚动；超宽示例只在预览块横向查看。
 			ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, previewHeight });
 		}
 		EndCard();
@@ -734,8 +726,15 @@ namespace Inkeys::UI::Setting::Design
 			{ IA(I18nKey.UI.Bar.MainButtons.GeometryLabel), &draft.tools[5], &events.toolsChanged[5] },
 			{ IA(pen.BrushLabel), &draft.tools[6], &events.toolsChanged[6] } });
 		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
+		std::string parallelNote;
+		// 全局多指关闭时优先说明；提示不依赖手掌总开关，也不替用户修改其他偏好。
+		if (draft.parallelWriting)
+		{
+			if (!draft.multiTouchEnabled) parallelNote = IA(palm.ParallelWritingMultiTouchNote);
+			else if (!draft.laserMultiTouchEnabled) parallelNote = IA(palm.ParallelWritingLaserMultiTouchNote);
+		}
 		events.parallelWritingChanged = ToggleRow("##palm-eraser-parallel", IA(palm.ParallelWriting).c_str(),
-			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting);
+			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting, parallelNote.c_str());
 		return events;
 	}
 

@@ -603,7 +603,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					// 先验证原始整数类型和宽度，禁止浮点、布尔或超宽整数窄化成合法偏好。
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
-					const bool accepted = path == "Drawing.PalmEraser.ThresholdPercent" ? candidate >= 25 && candidate <= 400
+					const bool accepted = path == "Drawing.PalmEraser.ThresholdPercent" ? candidate >= 1 && candidate <= 400
 						: candidate == 100 || candidate == 150 || candidate == 250 || candidate == 500;
 					value = accepted ? candidate : defaultValue.load();
 					return;

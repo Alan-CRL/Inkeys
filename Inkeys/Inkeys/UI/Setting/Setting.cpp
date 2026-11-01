@@ -3288,9 +3288,14 @@ SettingSessionCoroutine RunSettingSession()
 						draft.recognitionWindowMs = preferences.recognitionWindowMs;
 						draft.thresholdPercent = preferences.thresholdPercent;
 						draft.parallelWriting = preferences.parallelWriting;
+						draft.multiTouchEnabled = Inkeys::config.Drawing.MultiTouchEnabled.load();
+						draft.laserMultiTouchEnabled = Inkeys::config.Drawing.Laser.MultiTouchEnabled.load();
 						draft.tools = preferences.tools;
 						// 预览与识别读取同一已应用绘图输出，不使用设置窗口所在屏幕的 DPI。
 						draft.referenceAreaPixels = Palm::ThresholdAreaPixels(reference, scale);
+						// 仅可信物理映射可显示厘米；DPI 回退仍只显示像素，避免把估算当实尺。
+						if (scale.available && !scale.estimated)
+							draft.referenceAreaCm2 = draft.referenceAreaPixels * scale.mmPerPixelX * scale.mmPerPixelY / 100.0;
 						draft.previewEstimated = scale.estimated;
 						draft.physicalSizeWarning = display.monitor != 0 && scale.available && scale.estimated;
 						const auto events = Design::RenderPalmEraser(draft);

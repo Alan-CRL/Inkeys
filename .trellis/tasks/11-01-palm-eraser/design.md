@@ -32,7 +32,7 @@ RTS/鼠标归一化 → 既有ContactInputCoordinator
 | 项目 | 本期值/规则 |
 | --- | --- |
 | 默认物理面积 | 可信标尺25cm²，即2500mm²；EDID失效仍可用，回退100×100系统DIP，即10000DIP² |
-| 倍率 | 按面积25%–400%，整数百分比，重置100% |
+| 倍率 | 按面积1%–400%，整数百分比，重置100% |
 | 时间窗口 | 100/150/250/500ms，默认150ms（推荐） |
 | 宽高比例 | max(w,h)/min(w,h) ≤ 3.5，按已验证画布像素跨度判断 |
 | 最终尺寸统计 | 本窗口已消费有效面积的最大值；不采用平均，不随之后重压呼吸 |
@@ -100,7 +100,7 @@ RTS/鼠标归一化 → 既有ContactInputCoordinator
 | 字段（拟定命名） | 默认/合法值 |
 | --- | --- |
 | Enabled | bool；ConfigDetail::GetDefaultLargeScreenDevice()冻结缺省 |
-| ThresholdPercent | int；100，范围25..400 |
+| ThresholdPercent | int；100，范围1..400 |
 | RecognitionWindowMs | int；150，仅100/150/250/500 |
 | ParallelWriting | bool；true |
 | Tools.Pen/HardPen/Highlighter/Laser/Eraser/Shape/Brush | 七个bool，全部true |
@@ -111,11 +111,11 @@ RTS/鼠标归一化 → 既有ContactInputCoordinator
 
 详情页沿用DrawingSubpage，新增PalmEraser独立child ID、正文过渡/滚动恢复、顶部返回箭头和PageHeader；不加根侧栏路由。入口紧跟笔速橡皮。页面草稿/一次事件与原生配置/Host发布分离：
 
-1. 介绍与总开关。
-2. 物理标尺不可信时的条件Warning，与笔速页同款；Host未发布不伪报EDID损坏，提示不因总开关关闭而消失。
+1. 物理标尺不可信时的条件Warning紧随页标题，与笔速页同款；Host未发布不伪报EDID损坏，提示不因总开关关闭而消失。
+2. 基本设置首项为总开关。
 3. 识别时间窗口ComboRow，150ms（推荐），其余100/250/500ms；三语推荐后缀。
-4. 阈值倍率滑块25%–400%及同条目重置按钮，仅重置倍率到100%，不重置其他字段。
-5. 内联灰色实尺预览块，见第9节。
+4. 阈值倍率滑块1%–400%及同条目重置按钮，仅重置倍率到100%，不重置其他字段。
+5. 内联主题色圆角单图描边实尺预览块，见第9节。
 6. 常驻可勾选的七工具CheckboxGroup，刷子同样可编辑并保存，没有灰色禁用占位，也不新增刷子选择功能。Shape统一覆盖现有几何工具。
 7. 精细控制“启用边擦边写”，默认开，说明按用户纠正的手掌橡皮文案。多指准入独立生效，不因隐藏/禁用UI把已保存偏好清空。
 
@@ -123,13 +123,14 @@ RTS/鼠标归一化 → 既有ContactInputCoordinator
 
 ## 9. 实尺预览
 
-使用当前绘图屏幕已应用标尺和同一面积阈值解析。可信时Apx = 2500×倍率/(mmPerPixelX×mmPerPixelY)；失效回退时Apx = 10000×倍率/(dipPerPixelX×dipPerPixelY)，不依赖EDID有效位阻止显示。三种等面积像素示例：
+使用当前绘图屏幕已应用标尺和同一面积阈值解析。可信时Apx = 2500×倍率/(mmPerPixelX×mmPerPixelY)；失效回退时Apx = 10000×倍率/(dipPerPixelX×dipPerPixelY)，不依赖EDID有效位阻止显示。四种可选等面积像素示例，默认1:1：
 
 - 1:1：宽高sqrt(Apx)。
+- 4:3：宽sqrt(4Apx/3)，高sqrt(3Apx/4)。
 - 2:1：宽sqrt(2Apx)，高sqrt(Apx/2)。
 - 1:2：宽sqrt(Apx/2)，高sqrt(2Apx)。
 
-图形宽高直接用物理像素绘制，不乘设置UI的Pixels()/DPI/字体倍率；文本和留白仍用正常UI缩放。空间不足换行，单个示例仍超宽时仅预览块可横向查看，不缩小图形冒充1:1。预览完整高度参与外层页面布局。
+图形宽高直接用物理像素绘制，不乘设置UI的Pixels()/DPI/字体倍率；文本和留白仍用正常UI缩放。左上角比例下拉悬浮覆盖边框且不占用图形布局空间，示例超宽时仅预览块可横向查看，不缩小图形冒充1:1。预览完整高度参与外层页面布局。
 
 设置窗位于另一台屏幕时仍显示当前绘图输出所对应的像素阈值，明确目标屏幕/像素口径，不能声称两台屏幕具有相同厘米效果。DPI回退标为估算；显示快照未就绪时不绘制虚构的实尺。
 
@@ -141,3 +142,20 @@ RTS/鼠标归一化 → 既有ContactInputCoordinator
 - 真实硬件触摸面积可能缺失或抖动，DPI估算可能偏离物理尺寸；本期用倍率和Warning处理。没有用户授权不启动GUI，硬件手感不以无窗口测试冒充。
 - 新逻辑被Enabled旁路时，保持原绘制/橡皮路径；不修改公共文档格式，可回退本功能配置/代码。失败路径优先保留原可收尾几何与旧候选，不能产生半转换。
 - 最终检查包含编码/EOL与minimal diff；构建主产品必须用完整InkeysRepo.sln Debug|ARM64、原生ARM64 MSBuild、同PowerShell invocation的PATH规整，至少5分钟预算。
+
+
+## 人工反馈修订边界（2026-11-01）
+
+仅调整Setting.Pages.cpp的页面结构和实尺预览：去介绍、警告移至标题后、总开关移至基本设置首项；单图主题色圆角描边，左上角悬浮比例选择（默认1:1，可选4:3/2:1/1:2），比例仅为页面状态。保持原像素面积和超宽横向查看。倍率1..400同步纯策略归一化、配置严格读入、滑块与相应边界测试；默认/重置仍100。同步三语预览文案和相关spec，不修改识别/渲染/接续算法。
+
+用户补充：比例下拉保留原控件透明度，允许矩形边框透出，不添加不透明遮挡底色。
+
+
+## 第二轮反馈修改边界（2026-11-01）
+
+仅在Setting页面/draft/原生只读显示快照接入可信参考cm²，复用SettingRow note绘制i和自适应高度。cm与px同用页面比例、当前倍率；可信物理面积从当前像素参考面积与mm/px乘积导出，不把DPI估算当cm。说明三语精简。蓝框以可用宽水平居中，溢出仍原像素横滚，下拉维持预览左上悬浮。倍率1..400同步已有策略/配置及边界测试，其他识别与存储不改。验证使用现有Solution Debug/ARM64及设置专项无窗口测试，不运行GUI，不重新跑无关基准。
+
+
+## 条件提示修改边界
+
+仅Setting.cpp每帧从现有Drawing.MultiTouchEnabled和Drawing.Laser.MultiTouchEnabled复制只读布尔到PalmEraserDraft；RenderPalmEraser按parallelWriting && (!multiTouchEnabled || !laserMultiTouchEnabled)选本地化note，global关闭优先。复用ToggleRow现有note，不改Controller/配置/保存或通用Controls，三语与既有无窗口测试同步。

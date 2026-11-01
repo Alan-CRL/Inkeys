@@ -72,12 +72,12 @@ int RunPalmEraserTests()
 		expect(Palm::RestoreRecognitionWindowMs(value) == value, "recognition preset roundtrip");
 	for (int value : { -1, 0, 99, 151, 1000, std::numeric_limits<int>::max() })
 		expect(Palm::RestoreRecognitionWindowMs(value) == 150, "invalid recognition window restores recommendation");
-	for (int value : { 25, 100, 400 })
+	for (int value : { 1, 9, 10, 24, 25, 100, 400 })
 	{
 		settings.thresholdPercent = value;
 		expect(Palm::NormalizeSettings(settings).thresholdPercent == value, "valid area multiplier remains unchanged");
 	}
-	for (int value : { -1, 0, 24, 401, std::numeric_limits<int>::max() })
+	for (int value : { -1, 0, 401, std::numeric_limits<int>::max() })
 	{
 		settings.thresholdPercent = value;
 		expect(Palm::NormalizeSettings(settings).thresholdPercent == 100, "invalid area multiplier restores default");
@@ -86,7 +86,7 @@ int RunPalmEraserTests()
 	settings.enabled = true;
 	const Palm::Scale unitScale{ 1, 1, true, false };
 	expect(Near(Palm::ThresholdAreaPixels(settings, unitScale), 2500), "25 square centimeters is 2500 square millimeters");
-	for (int percent : { 25, 100, 400 })
+	for (int percent : { 1, 10, 25, 100, 400 })
 	{
 		settings.thresholdPercent = percent;
 		expect(Near(Palm::ThresholdAreaPixels(settings, unitScale), percent * 25.0), "multiplier scales area, not linear width");
@@ -138,6 +138,33 @@ int RunPalmEraserTests()
 	expect(Near(Palm::ThresholdAreaPixels(settings, dpi144), 22500), "150 percent system scaling converts 100 DIP to 150 pixels");
 	settings.thresholdPercent = 25;
 	expect(Near(Palm::ThresholdAreaPixels(settings, dpi144), 5625), "DPI fallback multiplier changes area rather than side length");
+	settings.thresholdPercent = 10;
+	expect(Near(Palm::ThresholdAreaPixels(settings, dpi144), 2250), "10 percent DIP fallback uses one tenth of system-scaled reference area");
+	// 新下限必须参与真实识别，不能只在界面或配置中保留下来。
+	Palm::State lowThreshold;
+	lowThreshold.Begin(settings, unitScale, Palm::ToolCategory::Pen, 1000, 1000);
+	lowThreshold.Observe(Area(10, 24), 1000);
+	expect(!lowThreshold.active, "10 percent physical threshold rejects area below 250 square millimeters");
+	lowThreshold.Observe(Area(10, 25), 1050);
+	expect(lowThreshold.active && Near(lowThreshold.maximumAreaPx, 250), "10 percent physical threshold activates at exact area boundary");
+	lowThreshold.Begin(settings, dpi96, Palm::ToolCategory::Pen, 1000, 1000);
+	lowThreshold.Observe(Area(20, 49), 1000);
+	expect(!lowThreshold.active, "10 percent DIP threshold rejects area below 1000 square DIP");
+	lowThreshold.Observe(Area(20, 50), 1050);
+	expect(lowThreshold.active && Near(lowThreshold.maximumAreaPx, 1000), "10 percent DIP threshold activates at exact area boundary");
+	settings.thresholdPercent = 1;
+	expect(Near(Palm::ThresholdAreaPixels(settings, dpi144), 225), "1 percent DIP fallback retains system scaling");
+	// 1% 下限同样参与实际识别，cm 和系统 DIP 两条标尺均按面积缩放。
+	lowThreshold.Begin(settings, unitScale, Palm::ToolCategory::Pen, 1000, 1000);
+	lowThreshold.Observe(Area(5, 4), 1000);
+	expect(!lowThreshold.active, "1 percent physical threshold rejects area below 25 square millimeters");
+	lowThreshold.Observe(Area(5, 5), 1050);
+	expect(lowThreshold.active && Near(lowThreshold.maximumAreaPx, 25), "1 percent physical threshold activates at exact area boundary");
+	lowThreshold.Begin(settings, dpi96, Palm::ToolCategory::Pen, 1000, 1000);
+	lowThreshold.Observe(Area(10, 9), 1000);
+	expect(!lowThreshold.active, "1 percent DIP threshold rejects area below 100 square DIP");
+	lowThreshold.Observe(Area(10, 10), 1050);
+	expect(lowThreshold.active && Near(lowThreshold.maximumAreaPx, 100), "1 percent DIP threshold activates at exact area boundary");
 	settings.thresholdPercent = 100;
 	Palm::State fallbackPalm;
 	fallbackPalm.Begin(settings, dpi96, Palm::ToolCategory::Pen, 1000, 1000);

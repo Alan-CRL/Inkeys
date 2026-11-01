@@ -845,7 +845,7 @@ namespace
 						Inkeys::Drawing::Draw3::SpeedEraser::ContactAreaUnits::CanvasPixels}, 1050);
 					if (!requirePalm(fallbackScale.available && fallbackScale.estimated
 						&& fallbackState.active == largeScreen, "EDID loss preserves frozen device default and DIP recognition")) return 1;
-					for (const int window : { 100, 150, 250, 500 }) for (const int percent : { 25, 100, 400 })
+					for (const int window : { 100, 150, 250, 500 }) for (const int percent : { 1, 9, 10, 24, 25, 100, 400 })
 					{
 						auto& saved = fresh.Drawing.PalmEraser;
 						saved.Enabled = !largeScreen; saved.ThresholdPercent = percent;
@@ -869,7 +869,7 @@ namespace
 					}
 					// 类型和宽整数必须在窄化前拒绝，不能把低32位误读为100或150。
 					for (const char* key : { "ThresholdPercent", "RecognitionWindowMs" })
-						for (const char* invalid : { "true", "false", "250.0", "\"250\"", "-1", "0", "24", "401",
+						for (const char* invalid : { "true", "false", "250.0", "\"250\"", "-1", "0", "401",
 							"4294967396", "4294967446", "18446744073709551615", "null", "{}", "[]" })
 						{
 							const auto json = std::string("{\"Drawing\":{\"PalmEraser\":{\"") + key + "\":" + invalid + "}}}";

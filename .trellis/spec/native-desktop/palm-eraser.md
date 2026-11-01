@@ -11,6 +11,7 @@
 - `PalmEraser::State::{Begin,Observe,Advance,End}`：可在副本上观察，转换准备成功后由owner提交。
 - `Host::{SetPalmEraserOptions,PalmEraserOptions}`发布/复制期望值；PumpBridgeState在绘制owner应用Controller，不能借设置渲染线程跨线程操作Controller。
 - `PalmEraserPreferencesSnapshot()`、`SetPalmEraserPreference(Settings)->bool`为产品设置入口；setter自行调用既有RequestConfigWrite冻结保存，页面不能再排一次。
+- `PalmEraserDraft::{referenceAreaPixels,referenceAreaCm2}`都是100%参考面积；前者来自实际像素阈值，后者仅在可信物理标尺下由px²×mm/px×mm/px÷100得到，不写入配置。
 - `Design::RenderPalmEraser(PalmEraserDraft&)->PalmEraserEvents`；`RenderDrawingEraserEntries`提供现有笔速入口及其下方手掌入口。
 - `RunPalmEraserProductionProbe()`通过早期`--draw3-palm-eraser-test`运行生产共享CPU helper，不创建HWND。
 
@@ -18,7 +19,7 @@
 
 ### 配置、标尺与定尺
 
-- main.json的`Drawing.PalmEraser`为NoUpload：Enabled冻结大屏默认开/其他关；ThresholdPercent整数25..400、默认100；RecognitionWindowMs只允许100/150/250/500、默认150；ParallelWriting默认true；Tools七项bool默认全true。先校验JSON原类型和整数宽度，不能用窄化后的值识别合法字段。
+- main.json的`Drawing.PalmEraser`为NoUpload：Enabled冻结大屏默认开/其他关；ThresholdPercent整数1..400、默认100；RecognitionWindowMs只允许100/150/250/500、默认150；ParallelWriting默认true；Tools七项bool默认全true。先校验JSON原类型和整数宽度，不能用窄化后的值识别合法字段。
 - 缺省大屏分类复用ConfigDetail::GetDefaultLargeScreenDevice，与用户保存的PaintDevice、换屏或EDID当前可用位分开。EDID失效不关闭已启用功能，也不覆盖保存的开关。
 - 可信显示物理映射/有效现有标定用25cm²=2500mm²；不可用时改用100×100系统DIP=10000DIP²。两者都按面积乘ThresholdPercent/100。估算路径用`dipPerPixelX/Y`换画布像素，100DIP在100%/150%系统缩放分别对应100/150px，不把系统DIP再乘设置UI缩放。
 - 实际InputDeviceType必须是Touch，明确TouchPad/Mouse/Pen不能识别；旧来源Unknown只允许保守DIP回退。面积必须已有CanvasPixels元数据、宽高有限且为正、max/min≤3.5，不能靠压力/DPI猜未知面积单位。
@@ -40,9 +41,10 @@
 ### 设置详情
 
 - 新绘制子页PalmEraser紧跟笔速橡皮入口，复用子页PushID/导航/返回/滚动；不增加根侧栏或改变笔速齿轮的打开目标。
-- 介绍/总开关→条件Warning→窗口下拉→面积倍率及同条目重置→灰色像素预览→七工具勾选→精细控制。150ms显示推荐后缀；reset只改倍率，关总开关仍可编辑偏好。
+- 页标题→条件Warning→基本设置（首项总开关）→窗口下拉→面积倍率及同条目重置→像素预览→七工具勾选→精细控制；无介绍块。150ms显示推荐后缀；reset只改倍率，关总开关仍可编辑偏好。
+- 边擦边写行的标准i仅在ParallelWriting=true且全局多指或激光多指关闭时显示。读取Drawing.MultiTouchEnabled及Drawing.Laser.MultiTouchEnabled的当帧只读draft，不改变偏好；全局关闭优先提示全部无法生效，否则只提示激光笔下无法生效。两个多指均开或边擦边写关时无提示，不额外受手掌总开关影响。
 - Brush现在可勾选且保存，默认true；无Brush工具选择功能不意味着把偏好灰显。Shape统一映射已有几何工具，工具类别不按DrawingTool枚举位置推断。
-- 预览与识别同用已应用绘图输出快照；根据同一阈值计算等面积1:1、2:1、1:2矩形，图形直接用像素，文字留白正常UI缩放。窄窗换行，单个超宽可横向查看；不能缩小伪装实尺。说明区分可信25cm²与估算10000DIP²，以及跨屏实际厘米差异。
+- 预览与识别同用已应用绘图输出快照；根据同一阈值显示单个主题accent色圆角矩形描边（不填充），默认1:1；左上角悬浮Combo可选1:1、4:3、2:1、1:2。比例是页面状态，不写入偏好；Combo悬浮于边框上方，不挤占矩形布局或换行；按用户确认保留原控件透明度，允许边框透出，不另加不透明底色。图形直接用像素，文字留白正常UI缩放；边框未撑满时独立水平居中，下拉仍在预览左上角，超宽可横向查看；不能缩小伪装实尺。阈值说明仅保留调倍率的用户说明；下方复用标准SettingRow note显示i及当前比例/倍率的cm×cm和px×px。可信物理面积由同一参考像素面积乘mm/px的面积换算给draft；估算仅px，未发布不虚构尺寸。
 - Warning以已应用Palm预览scale.available/estimated和已发布monitor判定，EDID失败明确仍可使用；未发布不伪报故障。预览横向-only子视图局部使用ImGui::BeginChild及既有DIP scrollbar样式，避免通用纵向补间将横轨压为零；不改全局Controls。
 
 ## 4. Validation & Error Matrix
@@ -71,7 +73,8 @@
 
 ## 6. Tests Required
 
-- `InkeysHeadlessTests.exe --no-window --setting-eraser-only`：真实ImGui入口/控件、三语/主题/窄宽/DPI、Brush可编辑、窗口推荐、只重置倍率、预览顶点等面积与像素独立性、策略/现有橡皮回归。
+- `InkeysHeadlessTests.exe --no-window --setting-eraser-only`：真实ImGui入口/控件、三语/主题/窄宽/DPI、Brush可编辑、窗口推荐、只重置倍率、预览顶点等面积与像素独立性、未满宽居中/超宽横滚、标准i尺寸提示的可信/估算/不可用分支与四种比例、1%下限、策略/现有橡皮回归。
+- 页面顺序断言用真实控件矩形/Warning背景DrawData，并结合标题与分组源码顺序；Design::TextAt直接AddText不进入ImGui日志，不能把日志缺项当作界面缺项。
 - `InkeysHeadlessTests.exe --no-window`全范围回归；纯策略单独可用`--palm-eraser-only`，覆盖2500mm²/10000DIP²、倍率、系统缩放、无面积/比例/时间边界、状态锁存及pool复用。
 - 产品早期`--draw3-palm-eraser-test`：生产CPU转换/失败回滚、各原工具、擦除旧点保留、观察only/邻域/单指、真实续接身份和模型失败、Laser强制收尾、四档model profile的长空档Move/Up。该probe不是完整Run或GPU像素/硬件证据。
 - `--config-boundary-test`：真实Config ReadAll/ReadMini/写盘/赋值/Reset/NoUpload、非法类型/宽整数、冻结大屏与EDID失效下DIP识别；不增加Config复制构造绕过shared_mutex。

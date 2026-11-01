@@ -241,9 +241,11 @@ namespace Inkeys::UI::Setting::Design
 		bool enabled = false;
 		int recognitionWindowMs = 150, thresholdPercent = 100;
 		bool parallelWriting = true;
+		// 每帧只读的多指偏好，只控制说明提示，不写回手掌设置。
+		bool multiTouchEnabled = true, laserMultiTouchEnabled = true;
 		std::array<bool, 7> tools{ true, true, true, true, true, true, true };
 		// 来自绘制输出已应用标尺的 100% 面积；页面本帧调倍率即可同步预览。
-		double referenceAreaPixels = 0;
+		double referenceAreaPixels = 0, referenceAreaCm2 = 0;
 		bool previewEstimated = false, physicalSizeWarning = false;
 	};
 	struct PalmEraserEvents

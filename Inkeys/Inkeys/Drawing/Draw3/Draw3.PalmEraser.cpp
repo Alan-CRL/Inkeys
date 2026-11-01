@@ -22,7 +22,7 @@ namespace Inkeys::Drawing::Draw3::PalmEraser
 
 	Settings NormalizeSettings(Settings settings) noexcept
 	{
-		if (settings.thresholdPercent < 25 || settings.thresholdPercent > 400) settings.thresholdPercent = 100;
+		if (settings.thresholdPercent < 1 || settings.thresholdPercent > 400) settings.thresholdPercent = 100;
 		settings.recognitionWindowMs = RestoreRecognitionWindowMs(settings.recognitionWindowMs);
 		return settings;
 	}

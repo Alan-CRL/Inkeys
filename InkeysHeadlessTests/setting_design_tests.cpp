@@ -24,6 +24,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <format>
 #include <iostream>
 #include <iterator>
 #include <string>
@@ -2631,10 +2632,17 @@ namespace
 		for (const bool dark : { false, true }) for (const float width : { 360.0F, 900.0F })
 		{
 			ApplyPalette(dark); NavigationState navigation; PalmEraserDraft draft;
-			draft.referenceAreaPixels = 40000;
+			draft.referenceAreaPixels = 40000; draft.referenceAreaCm2 = 25;
+			const auto& palmKeys = I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
+			auto physicalNote = [&](double cmWidth, double cmHeight, double pxWidth, double pxHeight) {
+				return std::vformat(IA(palmKeys.ThresholdSizePhysical), std::make_format_args(cmWidth, cmHeight, pxWidth, pxHeight)); };
+			auto pixelNote = [&](double pxWidth, double pxHeight) {
+				return std::vformat(IA(palmKeys.ThresholdSizePixels), std::make_format_args(pxWidth, pxHeight)); };
+			std::string expectedNote = physicalNote(5, 5, 200, 200);
 			ImGuiWindow* page = nullptr; ImGuiWindow* tools = nullptr; ImGuiWindow* preview = nullptr; ImGuiWindow* shapes = nullptr;
 			struct Frame { PalmEraserEvents events; bool enabled = false, window = false, threshold = false, parallel = false, warning = false;
-				int warningVertices = 0; std::vector<ImRect> rectangles; std::string loggedText; };
+				int warningVertices = 0, outlineVertices = 0; bool centerFilled = false, introduction = false, noteVisible = false, noteMatches = false; std::vector<ImRect> rectangles; std::string loggedText;
+				ImRect warningBounds{ { FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX } }; };
 			std::array<int, 7> toolEdits{}; int enabledEdits = 0, windowEdits = 0, thresholdEdits = 0, resetEvents = 0, parallelEdits = 0, backEvents = 0;
 			auto noEdits = [](const PalmEraserEvents& events) {
 				return !events.back && !events.enabledChanged && !events.recognitionWindowChanged && !events.thresholdChanged
@@ -2665,18 +2673,64 @@ namespace
 				};
 				tools = child(page, "##palm-eraser-tools"); preview = child(page, "##palm-eraser-preview");
 				shapes = child(preview, "##palm-eraser-preview-shapes");
-				// 读取实际灰色矩形的四个顶点，不能以测试自己重算的布局代替生产 DrawData。
-				if (shapes) for (int index = 0; index + 3 < shapes->DrawList->VtxBuffer.Size; ++index)
+				frame.introduction = child(page, "##palm-eraser-introduction") != nullptr;
+				// 从真实描边顶点恢复路径中心线，排除抗锯齿外沿，不把测试重算尺寸当作绘制证据。
+				if (shapes)
 				{
-					const auto* vertices = shapes->DrawList->VtxBuffer.Data + index;
-					if (vertices[0].col != GetPalette().textDisabled || vertices[1].col != vertices[0].col
-						|| vertices[2].col != vertices[0].col || vertices[3].col != vertices[0].col) continue;
-					ImRect rect(vertices[0].pos, vertices[0].pos);
-					for (int vertex = 1; vertex < 4; ++vertex) rect.Add(vertices[vertex].pos);
-					frame.rectangles.push_back(rect); index += 3;
+					auto* list = shapes->DrawList; const ImU32 rgb = GetPalette().accent & ~IM_COL32_A_MASK;
+					int first = 0; while (first < list->VtxBuffer.Size && (list->VtxBuffer[first].col & ~IM_COL32_A_MASK) != rgb) ++first;
+					int last = first; while (last < list->VtxBuffer.Size && (list->VtxBuffer[last].col & ~IM_COL32_A_MASK) == rgb) ++last;
+					const bool textured = (list->Flags & ImDrawListFlags_AntiAliasedLinesUseTex) != 0;
+					const int stride = textured ? 2 : 4;
+					if (last - first >= stride * 4)
+					{
+						ImRect rect({ FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX });
+						for (int index = first; index + stride <= last; index += stride)
+						{
+							const auto& one = list->VtxBuffer[index + (textured ? 0 : 1)].pos;
+							const auto& two = list->VtxBuffer[index + (textured ? 1 : 2)].pos;
+							rect.Add({ (one.x + two.x) * .5F, (one.y + two.y) * .5F });
+						}
+						rect.Expand(.5F); frame.rectangles.push_back(rect); frame.outlineVertices = last - first;
+						for (const auto& command : list->CmdBuffer)
+							for (unsigned index = command.IdxOffset; index + 2 < command.IdxOffset + command.ElemCount; index += 3)
+							{
+								const int one = static_cast<int>(command.VtxOffset + list->IdxBuffer[index]);
+								const int two = static_cast<int>(command.VtxOffset + list->IdxBuffer[index + 1]);
+								const int three = static_cast<int>(command.VtxOffset + list->IdxBuffer[index + 2]);
+								if (one >= first && one < last && two >= first && two < last && three >= first && three < last)
+									frame.centerFilled |= ImTriangleContainsPoint(list->VtxBuffer[one].pos, list->VtxBuffer[two].pos,
+										list->VtxBuffer[three].pos, rect.GetCenter());
+
+							}
+					}
 				}
+				// 复用标准 i 字形定位；其后紧跟 Caption 正文，校验本帧期望提示的真实字形。
+				ImGui::PushFont(icons, CaptionText.size);
+				const auto* info = ImGui::GetFontBaked()->FindGlyphNoFallback(static_cast<ImWchar>(0xf167));
+				int noteStart = -1;
+				if (info) for (int index = 0; index + 3 < page->DrawList->VtxBuffer.Size; ++index)
+				{
+					const auto& one = page->DrawList->VtxBuffer[index]; const auto& three = page->DrawList->VtxBuffer[index + 2];
+					if (one.col == Accent && one.uv.x == info->U0 && one.uv.y == info->V0 && three.uv.x == info->U1 && three.uv.y == info->V1)
+					{ noteStart = index + 4; break; }
+				}
+				ImGui::PopFont(); frame.noteVisible = noteStart >= 0; frame.noteMatches = frame.noteVisible && !expectedNote.empty();
+				ImFluent::PushFont(ImFluentTextStyle_Caption);
+				for (const char* cursor = expectedNote.c_str(); *cursor && frame.noteMatches;)
+				{
+					unsigned codepoint; cursor += ImTextCharFromUtf8(&codepoint, cursor, nullptr);
+					const auto* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
+					if (!glyph || !glyph->Visible) continue;
+					if (noteStart + 3 >= page->DrawList->VtxBuffer.Size) { frame.noteMatches = false; break; }
+					const auto& one = page->DrawList->VtxBuffer[noteStart]; const auto& three = page->DrawList->VtxBuffer[noteStart + 2];
+					frame.noteMatches = one.col == TextPrimary && three.col == TextPrimary && one.uv.x == glyph->U0 && one.uv.y == glyph->V0
+						&& three.uv.x == glyph->U1 && three.uv.y == glyph->V1; noteStart += 4;
+				}
+				ImFluent::PopFont();
 				for (const auto& vertex : page->DrawList->VtxBuffer)
-					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Warning]) ++frame.warningVertices;
+					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Warning])
+					{ ++frame.warningVertices; frame.warningBounds.Add(vertex.pos); }
 				for (int index = 0; index < 7; ++index) toolEdits[index] += frame.events.toolsChanged[index] ? 1 : 0;
 				enabledEdits += frame.events.enabledChanged ? 1 : 0; windowEdits += frame.events.recognitionWindowChanged ? 1 : 0;
 				thresholdEdits += frame.events.thresholdChanged ? 1 : 0; resetEvents += frame.events.thresholdReset ? 1 : 0;
@@ -2684,6 +2738,11 @@ namespace
 				ImFluent::PopFont(); ImGui::End(); ApplyDragScrolling(navigation); ImGui::Render();
 				checks.Expect(GImGui->ErrorCountCurrentFrame == 0, "actual palm page completes without ImGui layout or stack errors");
 				return frame;
+			};
+			auto checkCentered = [&](const Frame& frame) {
+				if (shapes && frame.rectangles.size() == 1 && frame.rectangles[0].GetWidth() + 4 <= shapes->InnerRect.GetWidth())
+					checks.Expect(Near(frame.rectangles[0].GetCenter().x, shapes->InnerRect.GetCenter().x, .05F),
+						"the raw-pixel outline is horizontally centered whenever it fits the actual preview viewport");
 			};
 			auto controlId = [&](const char* row, const char* control) { return ImHashStr(control, 0, ImHashStr(row, 0, page->ID)); };
 			auto focusRect = [&](ImGuiWindow* owner, ImGuiID id) {
@@ -2708,22 +2767,40 @@ namespace
 				"palm UI defaults keep the recommended window, 100 percent, parallel writing and all seven tools");
 			checks.Expect(frame.enabled && frame.window && frame.threshold && frame.parallel && tools && preview && shapes,
 				"all palm preferences and preview are present while the master switch is disabled");
-			checks.Expect(frame.rectangles.size() == 3, "palm preview submits three actual gray rectangles");
-			if (frame.rectangles.size() == 3)
+			checks.Expect(!frame.introduction, "palm detail removes the introduction card");
+			checks.Expect(frame.noteVisible && frame.noteMatches, "trusted threshold note draws the standard i and current centimeters plus pixels");
+			checkCentered(frame);
+			checks.Expect(frame.rectangles.size() == 1 && frame.outlineVertices > 16 && !frame.centerFilled,
+				"palm preview submits one rounded theme-accent outline with an empty center");
+			if (frame.rectangles.size() == 1)
+				checks.Expect(Near(frame.rectangles[0].GetWidth(), 200, .01F) && Near(frame.rectangles[0].GetHeight(), 200, .01F),
+					"default 1:1 preview keeps raw 200 pixel dimensions independent of UI DPI and font scale");
+			const auto masterRect = focusRect(page, controlId("##palm-eraser-enabled", "##toggle"));
+			const auto windowRect = focusRect(page, controlId("##palm-eraser-window", "##select"));
+			checks.Expect(masterRect.GetHeight() > 0 && windowRect.GetHeight() > 0 && masterRect.Max.y < windowRect.Min.y,
+				"the master toggle precedes the recognition-window row in the actual page layout");
+			// 四种比例都读真实描边；切换页面状态不改变阈值面积或派发设置事件。
+			for (int index = 0; index < 4; ++index)
 			{
-				const std::array<float, 3> ratios{ 1, 2, .5F };
-				for (int index = 0; index < 3; ++index)
-				{
-					const auto& rect = frame.rectangles[index];
-					checks.Expect(Near(rect.GetWidth() * rect.GetHeight(), 40000, 2)
-						&& Near(rect.GetWidth() / rect.GetHeight(), ratios[index], .001F),
-						"real preview rectangles retain equal raw pixel areas and 1:1, 2:1, 1:2 ratios across UI DPI");
-				}
-				checks.Expect(Near(frame.rectangles[0].GetWidth(), 200, .01F), "UI DPI and font scaling do not multiply palm preview pixels");
-				if (scale == 1 && width < 500)
-					checks.Expect(frame.rectangles[1].Min.y > frame.rectangles[0].Max.y,
-						"narrow palm preview wraps examples instead of shrinking their pixel dimensions");
+				page->StateStorage.SetInt(page->GetID("##palm-eraser-preview-ratio-state"), index);
+				const std::array<std::array<double, 4>, 4> dimensions{ std::array<double, 4>{ 5, 5, 200, 200 },
+					{ 5.77, 4.33, 231, 173 }, { 7.07, 3.54, 283, 141 }, { 3.54, 7.07, 141, 283 } };
+				const auto& values = dimensions[index]; expectedNote = physicalNote(values[0], values[1], values[2], values[3]);
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				const float ratios[]{ 1, 4.0F / 3, 2, .5F };
+				checkCentered(frame);
+				checks.Expect(frame.noteMatches, "centimeter and pixel threshold text follows each selected preview ratio");
+				checks.Expect(frame.rectangles.size() == 1 && noEdits(frame.events), "ratio preview is singular and does not edit preferences");
+				if (frame.rectangles.size() == 1)
+					checks.Expect(Near(frame.rectangles[0].GetWidth() * frame.rectangles[0].GetHeight(), 40000, 2)
+						&& Near(frame.rectangles[0].GetWidth() / frame.rectangles[0].GetHeight(), ratios[index], .001F),
+						"actual 1:1, 4:3, 2:1 and 1:2 outlines retain equal raw pixel areas at every UI DPI");
 			}
+			page->StateStorage.SetInt(page->GetID("##palm-eraser-preview-ratio-state"), 0); expectedNote = physicalNote(5, 5, 200, 200); frame = draw(outside, false);
+			const auto ratioRect = focusRect(shapes, shapes ? shapes->GetID("##palm-eraser-preview-ratio") : 0);
+			checks.Expect(frame.rectangles.size() == 1 && shapes && Near(ratioRect.Min.x + shapes->Scroll.x, shapes->InnerRect.Min.x, .01F)
+				&& Near(ratioRect.Min.y + 2, frame.rectangles[0].Min.y, .01F),
+				"ratio dropdown remains at the preview top-left independently of the centered outline");
 			checks.Expect(preview && tools && tools->Pos.y >= preview->Pos.y + preview->Size.y
 				&& preview->ScrollMax.y < 1 && tools->ScrollMax.y < 1 && shapes && shapes->ScrollMax.y < 1,
 				"preview height belongs to the full page and tools follow without inner vertical scrolling");
@@ -2741,31 +2818,76 @@ namespace
 			}
 			for (bool enabled : { false, true })
 			{
-				draft.enabled = enabled; draft.physicalSizeWarning = true; frame = draw(outside, false);
+				draft.enabled = enabled; draft.physicalSizeWarning = true;
+				const auto masterBelowWarning = focusRect(page, controlId("##palm-eraser-enabled", "##toggle"));
+				frame = draw(outside, false);
+				checks.Expect(!frame.warningBounds.IsInverted() && frame.warningBounds.Max.y < masterBelowWarning.Min.y,
+					"the untrusted-size warning is above the master toggle in the actual page layout");
 				checks.Expect(frame.warning && frame.warningVertices > 0 && frame.window && frame.threshold && frame.parallel && noEdits(frame.events),
 					"palm physical-scale warning and editable preferences do not depend on the master switch");
 				draft.physicalSizeWarning = false; frame = draw(outside, false);
 				checks.Expect(!frame.warning && frame.warningVertices == 0, "trusted scale removes the palm warning without an edit");
 			}
-			draft.enabled = false; draft.referenceAreaPixels = 0; frame = draw(outside, false);
-			checks.Expect(!shapes && frame.rectangles.empty() && noEdits(frame.events), "unpublished scale shows no fabricated actual-size preview");
-			// 绘图输出 150% 系统 DPI 的 100×100 DIP 回退应为 150×150px，设置 UI 的倍率不能再次相乘。
-			draft.referenceAreaPixels = 22500; draft.previewEstimated = true; draft.physicalSizeWarning = true;
-			for (int percentage : { 25, 100, 400 })
+			for (int percentage : { 1, 100, 400 })
 			{
 				draft.thresholdPercent = percentage;
+				const double sideCm = percentage == 1 ? .5 : percentage == 100 ? 5 : 10;
+				const double sidePx = percentage == 1 ? 20 : percentage == 100 ? 200 : 400;
+				expectedNote = physicalNote(sideCm, sideCm, sidePx, sidePx);
 				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
-				checks.Expect(frame.rectangles.size() == 3 && frame.warning && frame.warningVertices > 0 && noEdits(frame.events),
+				checks.Expect(frame.noteMatches, "trusted size note follows the current 1, 100 and 400 percent area multiplier");
+				checkCentered(frame);
+			}
+			draft.thresholdPercent = 100;
+			draft.enabled = false; draft.referenceAreaPixels = 0; frame = draw(outside, false);
+			checks.Expect(!shapes && frame.rectangles.empty() && !frame.noteVisible && noEdits(frame.events), "unpublished scale shows no fabricated preview or threshold dimensions");
+			// 暂无面积预览时仅有并行提示的 i；复用真实字形检查覆盖两种说明及全局优先级。
+			for (bool master : { false, true }) for (bool parallel : { false, true })
+			for (bool multiTouch : { false, true }) for (bool laserMultiTouch : { false, true })
+			{
+				draft.enabled = master; draft.parallelWriting = parallel;
+				draft.multiTouchEnabled = multiTouch; draft.laserMultiTouchEnabled = laserMultiTouch;
+				const bool shouldShow = parallel && (!multiTouch || !laserMultiTouch);
+				expectedNote = !shouldShow ? "" : IA(!multiTouch ? palmKeys.ParallelWritingMultiTouchNote : palmKeys.ParallelWritingLaserMultiTouchNote);
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				checks.Expect(frame.noteVisible == shouldShow && (!shouldShow || frame.noteMatches),
+					"parallel-writing note follows both multi-touch flags, prioritizes global drawing and ignores the palm master switch");
+				checks.Expect(noEdits(frame.events) && draft.enabled == master && draft.parallelWriting == parallel
+					&& draft.multiTouchEnabled == multiTouch && draft.laserMultiTouchEnabled == laserMultiTouch,
+					"conditional parallel-writing guidance never edits any preference");
+			}
+			draft.enabled = false; draft.parallelWriting = true; draft.multiTouchEnabled = true; draft.laserMultiTouchEnabled = true;
+			// 绘图输出 150% 系统 DPI 的 100×100 DIP 回退应为 150×150px，设置 UI 的倍率不能再次相乘。
+			draft.referenceAreaPixels = 22500; draft.previewEstimated = true; draft.physicalSizeWarning = true;
+			for (int percentage : { 1, 100, 400 })
+			{
+				draft.thresholdPercent = percentage;
+				const double sidePx = percentage == 1 ? 15 : percentage == 100 ? 150 : 300; expectedNote = pixelNote(sidePx, sidePx);
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				checks.Expect(frame.rectangles.size() == 1 && frame.warning && frame.warningVertices > 0 && noEdits(frame.events),
 					"untrusted physical scale retains a usable system-DIP preview and warning while the master switch is off");
-				if (frame.rectangles.size() == 3)
+				checks.Expect(frame.noteVisible && frame.noteMatches, "estimated scale shows only actual pixel dimensions even if a stale centimeter reference exists");
+				checkCentered(frame);
+				if (frame.rectangles.size() == 1)
 					checks.Expect(Near(frame.rectangles[0].GetWidth(), 150 * std::sqrt(percentage / 100.0F), .01F)
 						&& Near(frame.rectangles[0].GetHeight(), frame.rectangles[0].GetWidth(), .01F),
 						"system-DIP fallback scales area percentage once and remains independent of settings UI DPI");
 			}
-			draft.thresholdPercent = 100; draft.physicalSizeWarning = false; draw(outside, false);
+			draft.thresholdPercent = 100; draft.physicalSizeWarning = false; expectedNote = pixelNote(150, 150); draw(outside, false);
 			CheckDrawData(checks);
 			if (!exerciseInput || dark || width < 500) continue;
 
+			for (int index : { 1, 2, 3, 0 })
+			{
+				focusRect(shapes, shapes->GetID("##palm-eraser-preview-ratio")); chord(ImGuiKey_F4); chord(ImGuiKey_Home);
+				for (int step = 0; step < index; ++step) chord(ImGuiKey_DownArrow);
+				chord(ImGuiKey_Enter); frame = draw(outside, false);
+				const float ratios[]{ 1, 4.0F / 3, 2, .5F };
+				checks.Expect(page->StateStorage.GetInt(page->GetID("##palm-eraser-preview-ratio-state"), 0) == index
+					&& frame.rectangles.size() == 1 && Near(frame.rectangles[0].GetWidth() / frame.rectangles[0].GetHeight(), ratios[index], .001F)
+					&& noEdits(frame.events) && enabledEdits == 0 && thresholdEdits == 0 && windowEdits == 0,
+					"all real ratio choices persist across reconstructed frames without saving palm preferences");
+			}
 			// 通过真实鼠标和键盘操作生产控件；Brush 与其他六项完全相同。
 			for (int index = 0; index < 7; ++index)
 			{
@@ -2789,7 +2911,7 @@ namespace
 			}
 			const auto slider = focusRect(page, controlId("##palm-eraser-threshold", "##slider"));
 			clickAt({ slider.Min.x + 1, slider.GetCenter().y });
-			checks.Expect(draft.thresholdPercent == 25 && thresholdEdits == 1, "real palm threshold slider reaches 25 percent");
+			checks.Expect(draft.thresholdPercent == 1 && thresholdEdits == 1, "real palm threshold slider reaches 1 percent");
 			clickAt({ slider.Max.x - 1, slider.GetCenter().y });
 			checks.Expect(draft.thresholdPercent == 400 && thresholdEdits == 2, "real palm threshold slider reaches 400 percent");
 			const auto resetRect = focusRect(page, controlId("##palm-eraser-threshold", "###reset"));
@@ -2814,14 +2936,14 @@ namespace
 			for (int pass = 0; pass < 3; ++pass) frame = draw(outside, false, false, true);
 			checks.Expect(shapes && shapes->ScrollbarX && shapes->ScrollMax.x > 0 && shapes->ScrollMax.y < 1
 				&& shapes->ScrollbarSizes.y >= Pixels(ScrollbarTrackSize) - 1
-				&& preview && preview->ScrollMax.x == 0 && preview->ScrollMax.y < 1 && frame.rectangles.size() == 3,
+				&& preview && preview->ScrollMax.x == 0 && preview->ScrollMax.y < 1 && frame.rectangles.size() == 1,
 				"an oversized palm example is horizontally scrollable without adding vertical or whole-page horizontal scrolling");
-			if (shapes && frame.rectangles.size() == 3)
+			if (shapes && frame.rectangles.size() == 1)
 			{
 				const float rawWidth = frame.rectangles[0].GetWidth();
 				const float lastScroll = shapes->ScrollMax.x;
 				ImGui::SetScrollX(shapes, lastScroll); frame = draw(outside, false);
-				checks.Expect(shapes->Scroll.x > 0 && frame.rectangles.size() == 3 && Near(frame.rectangles[0].GetWidth(), rawWidth, .01F),
+				checks.Expect(shapes->Scroll.x > 0 && frame.rectangles.size() == 1 && Near(frame.rectangles[0].GetWidth(), rawWidth, .01F),
 					"horizontal viewing preserves the original raw-pixel threshold dimensions");
 			}
 			CheckDrawData(checks);

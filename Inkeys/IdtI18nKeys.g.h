@@ -677,11 +677,15 @@ inline constexpr struct I18nKeyRoot
                     const char* RecognitionWindowDescription = "SettingsUI/Draw/Eraser/PalmEraser/RecognitionWindowDescription";
                     const char* Threshold = "SettingsUI/Draw/Eraser/PalmEraser/Threshold";
                     const char* ThresholdDescription = "SettingsUI/Draw/Eraser/PalmEraser/ThresholdDescription";
+                    const char* ThresholdSizePhysical = "SettingsUI/Draw/Eraser/PalmEraser/ThresholdSizePhysical";
+                    const char* ThresholdSizePixels = "SettingsUI/Draw/Eraser/PalmEraser/ThresholdSizePixels";
                     const char* PreviewTitle = "SettingsUI/Draw/Eraser/PalmEraser/PreviewTitle";
                     const char* PreviewDescription = "SettingsUI/Draw/Eraser/PalmEraser/PreviewDescription";
                     const char* PreviewEstimated = "SettingsUI/Draw/Eraser/PalmEraser/PreviewEstimated";
                     const char* PreviewUnavailable = "SettingsUI/Draw/Eraser/PalmEraser/PreviewUnavailable";
                     const char* EnabledTools = "SettingsUI/Draw/Eraser/PalmEraser/EnabledTools";
+                    const char* ParallelWritingMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingMultiTouchNote";
+                    const char* ParallelWritingLaserMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingLaserMultiTouchNote";
                     const char* ParallelWriting = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWriting";
                     const char* ParallelWritingDescription = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingDescription";
                 } PalmEraser{};

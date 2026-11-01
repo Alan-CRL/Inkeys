@@ -21,10 +21,11 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "本期实现与完整ARM64 Debug/无窗口验证完成。2026-11-01用户要求提交当前改动，人工测试稍后；本次授权不覆盖后续新增改动，未push。结果见research/validation.md，保留任务供人工验收。",
+  "notes": "2026-11-01用户确认人工验证通过并授权结束任务和提交。最终默认路径完整ARM64 Debug Solution构建exit0/0warning/0error；三个临时验证输出目录已清理，保留Build/ARM64/Debug。APS额外变动不纳入本任务提交；不push。",
   "meta": {
     "implementation_complete": true,
     "headless_verification_passed": true,
-    "hardware_gui_verified": false
+    "hardware_gui_verified": true,
+    "manual_verification_user_reported": true
   }
 }
