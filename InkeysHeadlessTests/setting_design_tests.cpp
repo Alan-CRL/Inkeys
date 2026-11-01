@@ -1352,20 +1352,33 @@ namespace
 				Design::ApplyPalette(materialDark, backdrop);
 				const auto& palette = Design::GetPalette();
 				const bool material = backdrop != BackdropMode::Solid;
-				const ImU32 surfaces[]{ palette.appBase, palette.pageSurface, palette.card, palette.cardSecondary };
-				const ImU32 bases[]{ solid.appBase, solid.pageSurface, solid.card, solid.cardSecondary };
-				const ImU32 alphas[]{ 204, 230, 245, 245 };
-				for (int i = 0; i < 4; ++i)
+				const ImU32 surfaces[]{ palette.appBase, palette.pageSurface, palette.heroFill, palette.featureTint[0], palette.avatarFill };
+				const ImU32 bases[]{ solid.appBase, solid.pageSurface, solid.heroFill, solid.featureTint[0], solid.avatarFill };
+				const ImU32 alphas[]{ 204, 230, 179, 179, 179 };
+				for (int i = 0; i < 5; ++i)
 					checks.Expect((surfaces[i] & ~IM_COL32_A_MASK) == (bases[i] & ~IM_COL32_A_MASK)
 						&& (surfaces[i] >> IM_COL32_A_SHIFT) == (material ? alphas[i] : 255),
 						"native material changes only surface alpha; Solid restores exact opaque RGB");
+				// WinUI 3 CardBackgroundFillColor/CardStrokeColor/SubtleFill；Solid 恢复原不透明 token。
+				const ImU32 winUi[]{ materialDark ? IM_COL32(255, 255, 255, 13) : IM_COL32(255, 255, 255, 179),
+					materialDark ? IM_COL32(255, 255, 255, 8) : IM_COL32(246, 246, 246, 128),
+					materialDark ? IM_COL32(0, 0, 0, 25) : IM_COL32(0, 0, 0, 15),
+					materialDark ? IM_COL32(255, 255, 255, 15) : IM_COL32(0, 0, 0, 9),
+					materialDark ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 6) };
+				const ImU32 tokens[]{ palette.card, palette.cardSecondary, palette.stroke, palette.subtleHover, palette.subtlePressed };
+				const ImU32 solidTokens[]{ solid.card, solid.cardSecondary, solid.stroke, solid.subtleHover, solid.subtlePressed };
+				for (int i = 0; i < 5; ++i)
+					checks.Expect(tokens[i] == (material ? winUi[i] : solidTokens[i]),
+						"native material uses WinUI 3 card, stroke and subtle fills; Solid restores opaque tokens");
 				checks.Expect(palette.textPrimary == solid.textPrimary && palette.textSecondary == solid.textSecondary
-					&& palette.textDisabled == solid.textDisabled && palette.stroke == solid.stroke
+					&& palette.textDisabled == solid.textDisabled
 					&& palette.accent == solid.accent && ImGui::GetStyle().Alpha == styleAlpha,
-					"material preserves readable foregrounds, strokes and global style alpha");
+					"material preserves readable foregrounds and global style alpha");
 				for (int i = 0; i < ImFluentCol_COUNT; ++i)
 				{
 					if (i == ImFluentCol_CardBgDefault || i == ImFluentCol_CardBgSecondary
+						|| i == ImFluentCol_CardStrokeDefault || i == ImFluentCol_CardStrokeSolid
+						|| i == ImFluentCol_SubtleFillSecondary || i == ImFluentCol_SubtleFillTertiary
 						|| i == ImFluentCol_SolidBgBase) continue;
 					checks.Expect(ImGui::ColorConvertFloat4ToU32(ImFluent::GetStyle().Colors[i])
 						== ImGui::ColorConvertFloat4ToU32(solidFluent.Colors[i]),

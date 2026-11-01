@@ -268,26 +268,22 @@ namespace
 		if (!hwnd || !setCompositionAttribute) return false;
 
 		SettingAccentPolicy policy{};
-		// 静止时为 Acrylic 动态模糊；仅 move/size loop 内切到普通 Blur，避免拖动中反复重模糊。
-		policy.state = Inkeys::UI::Setting::ResolveSettingAccentState(enabled,
-			settingInteractiveOperation.load(memory_order_acquire));
-		// GradientColor 使用 AABBGGRR；窗口线程消费已解析的主题快照。
-		policy.gradientColor = enabled ? (darkMode ? 0xCC202020U : 0xCCF7F7F7U) : 0U;
+		// 静止与拖动/缩放统一用普通 BlurBehind：Acrylic 与 Blur 来回切换会让底色明暗跳变，
+		// 且 Acrylic 在 move loop 中重模糊较重。着色由根窗口 AppBase 一层负责。
+		policy.state = Inkeys::UI::Setting::ResolveSettingAccentState(enabled);
+		// GradientColor 使用 AABBGGRR；BlurBehind 下不参与着色，仅保留极淡主题色作兼容默认值。
+		policy.gradientColor = enabled ? (darkMode ? 0x10202020U : 0x10F7F7F7U) : 0U;
 		SettingWindowCompositionAttributeData data{};
 		data.data = &policy;
 		data.size = sizeof(policy);
 		return setCompositionAttribute(hwnd, &data) != FALSE;
 	}
 
-	void SetSettingInteractiveOperation(HWND hwnd,
-		Inkeys::UI::Setting::InteractiveWindowOperation operation, bool refreshBackdrop = false) noexcept
+	void SetSettingInteractiveOperation(HWND,
+		Inkeys::UI::Setting::InteractiveWindowOperation operation) noexcept
 	{
-		const auto previous = settingInteractiveOperation.exchange(operation, memory_order_acq_rel);
-		// 仅入口/退出及取消收尾改材质；WM_MOVE/NCHITTEST 不触发 DWM 重设。
-		if ((previous != operation || refreshBackdrop)
-			&& !settingSessionShouldStop.load(memory_order_acquire)
-			&& settingBackdropMode.load(memory_order_acquire) == Inkeys::UI::Setting::BackdropMode::Acrylic)
-			(void)SetSettingAcrylic(hwnd, true, settingFrameDarkMode);
+		// 材质在拖动/缩放与静止时保持同一方案，交互状态只记录、不重设 DWM accent。
+		settingInteractiveOperation.store(operation, memory_order_release);
 	}
 
 	void DisableSettingBackdrop(HWND hwnd) noexcept
@@ -387,8 +383,8 @@ namespace
 		Design::ApplyScrollbars();
 		if (backdrop != Inkeys::UI::Setting::BackdropMode::Solid)
 		{
+			// 根窗口保留半透明 AppBase 作为标题栏、侧栏与正文唯一的一层底色；ImFluent 表面不再重复铺。
 			ImFluent::GetStyle().Colors[ImFluentCol_SolidBgBase].w = 0.0F;
-			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 0.0F;
 		}
 		if (hwnd)
 		{
@@ -1613,9 +1609,9 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		if (!wParam)
 		{
 			HideSettingResizeBorder();
-			// Hide 的外部意图可能已清空 operation，仍须恢复 owner 上的临时材质。
+			// Hide 的外部意图可能已清空 operation，这里统一复位交互状态。
 			SetSettingInteractiveOperation(hWnd,
-				Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
+				Inkeys::UI::Setting::InteractiveWindowOperation::None);
 			{
 				lock_guard stateLock(settingStateMutex);
 				// FIFO 的原生 Hide 可晚于 Show；清旧输入但保留最新显隐意图。
@@ -1635,7 +1631,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_CANCELMODE:
 		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
 		SetSettingInteractiveOperation(hWnd,
-			Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
+			Inkeys::UI::Setting::InteractiveWindowOperation::None);
 		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
 		break;
 	case WM_NCACTIVATE:
@@ -1718,7 +1714,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	case WM_EXITSIZEMOVE:
 		SetSettingInteractiveOperation(hWnd,
-			Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
+			Inkeys::UI::Setting::InteractiveWindowOperation::None);
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		return 0;
@@ -1789,7 +1785,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		DestroySettingResizeBorder();
 		settingFrameMarginTop = -1;
 		SetSettingInteractiveOperation(hWnd,
-			Inkeys::UI::Setting::InteractiveWindowOperation::None, true);
+			Inkeys::UI::Setting::InteractiveWindowOperation::None);
 		// 防御其他流氓软件关闭我的窗口
 		return 0;
 	}
@@ -2640,10 +2636,18 @@ SettingSessionCoroutine RunSettingSession()
 						const ImVec2 origin = ImGui::GetWindowPos();
 						ImDrawList* drawList = ImGui::GetWindowDrawList();
 						entryTitleDraw=drawList;
-						// 根背景可为 Acrylic 透明，但 caption 始终以当前主题底色覆盖系统强调色。
-						drawList->AddRectFilled(origin,
-							{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
-							Design::PaletteForTheme(Design::IsDarkMode()).appBase);
+						// Solid 用主题底色铺满 caption；半透明材质下与侧栏、正文共用根窗口的同一层底色，
+						// 仅开屏期间与正文遮罩同色同不透明度，避免标题栏透出遮罩下的帧。
+						const float captionOpacity=!transparentBackdrop ? 1.0F
+							: homeMotion.EntryActive() ? Design::ResolveHomeEntryPose(homeMotion).opacity : 0.0F;
+						if (captionOpacity>0.0F)
+						{
+							const ImU32 captionFill=Design::PaletteForTheme(Design::IsDarkMode()).appBase;
+							drawList->AddRectFilled(origin,
+								{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
+								(captionFill & ~IM_COL32_A_MASK)
+								| (static_cast<ImU32>(std::round(captionOpacity*255.0F))<<IM_COL32_A_SHIFT));
+						}
 						const bool active = settingWindowActive.load(memory_order_acquire);
 						const ImRect iconBounds = ToImRect(titleBarGeometry.icon, origin);
 						if (TextureSettingSign[0])
@@ -2776,7 +2780,9 @@ SettingSessionCoroutine RunSettingSession()
 				if (!skipEntryBackground)
 				{
 				ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
-				ImGui::PushStyleColor(ImGuiCol_ChildBg, Inkeys::UI::Setting::Design::PageSurface);
+				// 半透明材质下正文与侧栏同底（WinUI NavigationView 样式），只有卡片浮在其上。
+				ImGui::PushStyleColor(ImGuiCol_ChildBg, transparentBackdrop ? IM_COL32(0, 0, 0, 0)
+					: Inkeys::UI::Setting::Design::PageSurface);
 				ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0F);
 				ImGui::BeginDisabled(blockContentInput);
 				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,

@@ -573,16 +573,10 @@ namespace
 			&& !IsSettingImGuiInputMessage(WM_KEYDOWN, 256, 0),
 			"cursor and device notifications synchronize only backend-supported parameter branches")) ++failures;
 
-		using Op = InteractiveWindowOperation;
-		for (const auto operation : { Op::Move, Op::Size })
-		{
-			// 同一策略也用于 loop 中的主题重应用；取消、隐藏和 EXIT 都回到 None。
-			if (!Expect(ResolveSettingAccentState(true, Op::None) == SettingAccentState::AcrylicBlurBehind
-				&& ResolveSettingAccentState(true, operation) == SettingAccentState::BlurBehind
-				&& ResolveSettingAccentState(false, operation) == SettingAccentState::Disabled
-				&& ResolveSettingAccentState(true, Op::None) == SettingAccentState::AcrylicBlurBehind,
-				"Acrylic move/size and theme reapplication use light blur; exit restores Acrylic and disabled stays disabled")) ++failures;
-		}
+		// 静止、move/size 与主题重应用共用同一 accent，交互前后底色不跳变。
+		if (!Expect(ResolveSettingAccentState(true) == SettingAccentState::BlurBehind
+			&& ResolveSettingAccentState(false) == SettingAccentState::Disabled,
+			"enabled accent always uses BlurBehind so rest and move/size look identical; disabled stays disabled")) ++failures;
 		return failures;
 	}
 
