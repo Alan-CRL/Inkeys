@@ -695,7 +695,7 @@ namespace Inkeys::UI::Setting::Design
 			}
 			if (draft.enabled[2])
 				events.touchAreaChanged = ToggleRow("##eraser-touch-area", IA(eraser.TouchArea.N).c_str(),
-					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea);
+					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea, IA(eraser.TouchArea.Note).c_str());
 		}
 		return events;
 	}
@@ -801,7 +801,8 @@ namespace Inkeys::UI::Setting::Design
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
 				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) });
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) },
+				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
 			const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
 			const std::string create = IA(I18nKey.Operate.Create);
 			const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
@@ -827,7 +828,8 @@ namespace Inkeys::UI::Setting::Design
 			}
 			events.startupPreviewChanged = ToggleRow("startup-preview",
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview);
+				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
+				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
 			events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
@@ -883,7 +885,8 @@ namespace Inkeys::UI::Setting::Design
 			events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
 				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
-				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) });
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) },
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
 		}
 		if (section == GeneralSection::Shortcuts)
 		{
@@ -906,7 +909,7 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::PushID(item);
 				const std::string shortcutTitle = names[item] + "  (" + combinations[item] + ")";
 				events.shortcutsChanged[item] = ToggleRow("##启用固定快捷键", shortcutTitle.c_str(), descriptions[item].c_str(),
-					"\ue765", draft.shortcuts[item]);
+					"\ue765", draft.shortcuts[item], item == 5 ? IA(I18nKey.SettingsUI.HotKey.FreezeNote).c_str() : nullptr);
 				ImGui::PopID();
 			}
 		}

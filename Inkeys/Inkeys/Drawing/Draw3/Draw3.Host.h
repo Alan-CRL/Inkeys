@@ -276,6 +276,7 @@ namespace Inkeys::Drawing::Draw3
 		// 启动时按值捕获；呈现回退与设备丢失后的恢复沿用本代偏好。
 		bool enableHardwareAcceleration = true;
 		bool enableZhaoxinCompatibility = true;
+		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -406,6 +407,8 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 只复制初始化/恢复边界发布的文本，不在设置线程访问图形或 RTS 对象。
+		std::string CanvasInformation() const;
 		bool RetryCanvasRecovery(const CanvasRecoveryState& expected,
 			const std::function<bool()>& stillDesired = {}) noexcept;
 		// 异步 UI 起笔通知只验证场景/生命周期；短笔结束后同场景仍有效。
@@ -414,6 +417,8 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
 		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
+		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
+		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;

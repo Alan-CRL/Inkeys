@@ -598,6 +598,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (path == "UI.FrameRate" || path == "Drawing.FrameRate" || path == "Drawing.InkPredictionMode")
+				{
+					// 离散选项先验整数类型和宽度，避免布尔、浮点或超宽值窄化成有效档位。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const bool accepted = path == "Drawing.InkPredictionMode" ? candidate >= 0 && candidate <= 2
+						: candidate == 30 || candidate == 60 || (path == "Drawing.FrameRate" && (candidate == 120 || candidate == 240));
+					value = accepted ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "UI.Bar.UseTaskbarHeightAsScaleBase")
 				{
 					// 旧开关 true 必须保留真实任务栏量，不能隐式转成新增的基础量模式 1。

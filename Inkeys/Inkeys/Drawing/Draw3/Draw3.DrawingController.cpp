@@ -72,6 +72,39 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		struct GeneralDrawingOptionsSnapshot
+		{
+			bool multiTouchEnabled = true;
+			bool penTailCorrectionEnabled = true;
+			InkPredictionMode predictionMode = kActivePredictionMode;
+		};
+
+		uint32_t EncodeGeneralDrawingOptions(bool multiTouch, bool tailCorrection,
+			InkPredictionMode prediction) noexcept
+		{
+			if (prediction != InkPredictionMode::Disabled && prediction != InkPredictionMode::StrokeEnd &&
+				prediction != InkPredictionMode::Kalman) prediction = kActivePredictionMode;
+			return static_cast<uint32_t>(multiTouch) | (static_cast<uint32_t>(tailCorrection) << 1) |
+				(static_cast<uint32_t>(prediction) << 2);
+		}
+
+		GeneralDrawingOptionsSnapshot DecodeGeneralDrawingOptions(uint32_t encoded) noexcept
+		{
+			return { (encoded & 1u) != 0, (encoded & 2u) != 0,
+				static_cast<InkPredictionMode>((encoded >> 2) & 3u) };
+		}
+
+		ink::stroke_model::StrokeModelParams LatchStrokeDrawingOptions(ActiveStroke& stroke,
+			const StrokeModelConfiguration& configuration, bool eraser,
+			const GeneralDrawingOptionsSnapshot& options)
+		{
+			stroke.penTailCorrectionEnabled = options.penTailCorrectionEnabled;
+			stroke.predictionMode = eraser ? InkPredictionMode::Disabled : options.predictionMode;
+			auto params = configuration.modelParams;
+			ApplyPredictionMode(params, configuration.kalmanPredictorParams, stroke.predictionMode);
+			return params;
+		}
+
 		std::vector<WhiteboardTheme> InitializeWhiteboardThemes(const DrawingControllerRuntimeObserver& observer)
 		{
 			return {ValidWhiteboardTheme(observer.whiteboardDefaultTheme) ? observer.whiteboardDefaultTheme : WhiteboardTheme{}};
@@ -3545,6 +3578,33 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
+		bool IgnoreAdditionalTouch(ContactInputCoordinator& input, ContactHandle handle,
+			InputDeviceType deviceType, bool hasActiveTouchContact, bool multiTouchEnabled) noexcept
+		{
+			if (deviceType != InputDeviceType::Touch || !hasActiveTouchContact || multiTouchEnabled) return false;
+			// producer 仍持有 route，必须等它发布 Up/Cancel 自回收，不能提前复用槽。
+			input.DiscardUntilTerminal(handle);
+			return true;
+		}
+
+		struct IgnoreIndependentTouchDiscard
+		{
+			void operator()() const noexcept {}
+		};
+
+		template<class AfterDiscard = IgnoreIndependentTouchDiscard>
+		bool RejectIndependentTouch(ContactInputCoordinator& input, CanvasTouchGestureState& gestures,
+			ContactHandle handle, InputDeviceType deviceType, bool hasActiveTouchContact, bool multiTouchEnabled,
+			AfterDiscard afterDiscard = {}) noexcept
+		{
+			// Discard 后 producer 可完成终态并复用 record；必须先保存本次已登记的身份。
+			const uint64_t registeredKey = CanvasTouchKey(handle);
+			if (!IgnoreAdditionalTouch(input, handle, deviceType, hasActiveTouchContact, multiTouchEnabled)) return false;
+			afterDiscard(); // 默认空操作，生产回归在这里精确复现终态/槽复用交错。
+			gestures.OnTouchUp(registeredKey);
+			return true;
+		}
+
 		bool IgnoreAdditionalLaserTouch(ContactInputCoordinator& input, ContactHandle handle,
 			DrawingTool batchTool, InputDeviceType deviceType,
 			bool hasActiveLaserTouchContact, bool laserMultiTouchEnabled) noexcept
@@ -3898,6 +3958,38 @@ namespace Inkeys::Drawing::Draw3
 				runtime.invertedCursor,
 				runtime.suppressPressure
 			};
+		}
+
+		double QpcDeltaSeconds(int64_t newer, int64_t older, int64_t frequency);
+
+		InterruptedStrokeReconnectResult EvaluateRuntimeReconnectCandidate(const RuntimeStroke& candidate,
+			InterruptedStrokeReconnectIdentity downIdentity, const ContactSnapshot& down,
+			int64_t qpcFrequency, float dpiScale) noexcept
+		{
+			// 新偏好不改变旧笔的宽度身份；算法与生产原有候选判定保持一致。
+			downIdentity.widthMode = candidate.stroke.widthMode;
+			if (!AreInterruptedStrokeReconnectIdentitiesCompatible(ReconnectIdentity(candidate), downIdentity))
+			{
+				InterruptedStrokeReconnectResult result;
+				result.rejectReason = InterruptedStrokeReconnectRejectReason::IdentityMismatch;
+				result.gapMilliseconds = QpcDeltaSeconds(down.qpc, candidate.deferredUpSnapshot.qpc, qpcFrequency) * 1000.0;
+				result.distance = std::hypot(down.position.x - candidate.deferredUpSnapshot.position.x,
+					down.position.y - candidate.deferredUpSnapshot.position.y);
+				return result;
+			}
+			const double gapSeconds = QpcDeltaSeconds(down.qpc, candidate.deferredUpSnapshot.qpc, qpcFrequency);
+			const auto motion = ResolveInterruptedStrokeReconnectMotion(candidate.reconnectPredictedResults,
+				candidate.stroke.realPoints, candidate.reconnectDirection, candidate.filteredInputSpeed,
+				candidate.lastModelInputTime, gapSeconds, dpiScale);
+			return EvaluateInterruptedStrokeReconnect({
+				.previousPosition = candidate.deferredUpSnapshot.position,
+				.previousUpQpc = candidate.deferredUpSnapshot.qpc,
+				.newPosition = down.position,
+				.newDownQpc = down.qpc,
+				.qpcFrequency = qpcFrequency,
+				.dpiScale = dpiScale,
+				.motion = motion
+			});
 		}
 
 		bool HasPhysicalContact(const std::vector<RuntimeStroke*>& active) noexcept
@@ -4870,9 +4962,168 @@ namespace Inkeys::Drawing::Draw3
 		return failures;
 	}
 
-	int RunReconnectContactIdentityProductionProbe() noexcept
+	int RunIndependentTouchDiscardIdentityProductionProbe() noexcept
 	{
 		int failures = 0;
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3TouchDiscardIdentity] FAIL: %s\n", label); }
+		};
+		for (bool cancelled : { false, true })
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			CanvasTouchGestureState gestures;
+			constexpr uint32_t tablet = 0xF536;
+			const auto down = [&](uint32_t id)
+			{
+				ContactSnapshot snapshot{}; snapshot.position = { 10, 0 }; snapshot.qpc = 100;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record) { check(false, "real Down reaches consumer"); return ContactHandle{}; }
+				const ContactHandle handle{ record, record->Generation() };
+				gestures.OnTouchDown(CanvasTouchKey(handle), 100, 1000, false, true);
+				return handle;
+			};
+			const auto rejected = down(1), other = down(2);
+			if (!rejected.record || !other.record) continue;
+			const uint64_t oldKey = CanvasTouchKey(rejected), otherKey = CanvasTouchKey(other);
+			ContactSnapshot terminal{}; terminal.position = { 12, 0 }; terminal.qpc = 150;
+			check(RejectIndependentTouch(input, gestures, rejected, InputDeviceType::Touch, true, false, [&]() noexcept
+				{
+					// 这段是确定性的 producer 交错：被隔离接触结束后，同址槽换成新的身份。
+					if (cancelled) input.PublishCancelled(tablet, 1, terminal);
+					else input.PublishUp(tablet, 1, terminal);
+					ContactSnapshot next{}; next.position = { 20, 0 }; next.qpc = 160;
+					check(input.PublishDown(tablet, 3, InputDeviceType::Touch, next), "new producer route reuses retired capacity");
+				}), "independent Touch is rejected after reconnect failed");
+			ContactRecord* replacement = nullptr;
+			while (input.TryDequeue(replacement) && !replacement) input.AcknowledgeControlWake();
+			const bool dequeued = replacement != nullptr;
+			const ContactHandle reused{ replacement, replacement ? replacement->Generation() : 0 };
+			check(dequeued && reused.record == rejected.record && reused.generation != rejected.generation &&
+				CanvasTouchKey(reused) != oldKey, "producer replaced old record identity before gesture retirement");
+			check(!gestures.HasContact(oldKey) && gestures.HasContact(otherKey) && gestures.ContactCount() == 1,
+				"retirement uses captured old key and preserves unrelated gesture");
+			if (dequeued)
+			{
+				gestures.OnTouchDown(CanvasTouchKey(reused), 160, 1000, false, true);
+				input.PublishUp(tablet, 3, terminal); gestures.OnTouchUp(CanvasTouchKey(reused)); input.Recycle(reused);
+			}
+			input.PublishUp(tablet, 2, terminal); gestures.OnTouchUp(otherKey); input.Recycle(other);
+			check(gestures.ContactCount() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
+				"producer identity race leaves no gesture or slot residue");
+		}
+		if (!failures) std::fputs("[Draw3TouchDiscardIdentity] PASS: captured key survives Up/Cancel and same-slot reuse\n", stderr);
+		return failures;
+	}
+
+	int RunSingleTouchReconnectAdmissionProductionProbe() noexcept
+	{
+		int failures = RunIndependentTouchDiscardIdentityProductionProbe();
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3SingleTouchReconnect] FAIL: %s\n", label); }
+		};
+		// A/B 已准入，A 真实 Up 后待续接；关闭多指不能将 A 的新物理接触误判成第三笔。
+		for (int scenario = 0; scenario < 5; ++scenario)
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			CanvasTouchGestureState gestures;
+			const auto config = CreateStrokeModelConfiguration(96);
+			RuntimeStroke candidate(config.expectedSpeed);
+			candidate.metricDeviceType = InputDeviceType::Touch;
+			candidate.selectedTool = candidate.tool = DrawingTool::Pen;
+			ResetNominalStroke(candidate, 5, config, StrokeWidthMode::Fixed);
+			const auto params = LatchStrokeDrawingOptions(candidate.stroke, config, false,
+				DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(true, true, InkPredictionMode::Disabled)));
+			check(candidate.stroke.modeler.Reset(params).ok(), "A uses its original predictor model");
+			const auto modelInput = [](ink::stroke_model::Input::EventType event, float x, double time)
+			{
+				return ink::stroke_model::Input{ .event_type = event, .position = { x, 0 },
+					.time = ink::stroke_model::Time(time), .pressure = 1, .tilt = 1.57079632679f, .orientation = 0 };
+			};
+			check(candidate.stroke.modeler.Update(modelInput(ink::stroke_model::Input::EventType::kDown, 0, 0),
+				candidate.stroke.modeledResults).ok(), "A real model receives Down");
+			for (int sample = 1; sample <= 12; ++sample)
+				check(candidate.stroke.modeler.Update(modelInput(ink::stroke_model::Input::EventType::kMove,
+					5.0f * sample, .01 * sample), candidate.stroke.modeledResults).ok(), "A real model receives Move");
+			AppendNewModeledPoints(candidate.stroke);
+			constexpr uint32_t tablet = 0xF535;
+			const auto down = [&](uint32_t id, float x, int64_t qpc)
+			{
+				ContactSnapshot snapshot{}; snapshot.position = { x, 0 }; snapshot.qpc = qpc;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record) { check(false, "real Touch route enters coordinator"); return ContactHandle{}; }
+				const ContactHandle handle{ record, record->Generation() };
+				check(gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition ==
+					CanvasTouchDisposition::Draw, "physical Down registers its exact drawing gesture");
+				return handle;
+			};
+			const auto a = down(1, 0, 1000), b = down(2, 200, 1001);
+			if (!a.record || !b.record) continue;
+			candidate.handle = a; candidate.touchGestureKey = CanvasTouchKey(a);
+			ContactSnapshot terminal{}; terminal.position = { 60, 0 }; terminal.qpc = 1120;
+			check(input.PublishUp(tablet, 1, terminal) && input.TryReadSnapshot(a, terminal), "A physical Up remains available for reconnect");
+			gestures.OnTouchUp(candidate.touchGestureKey);
+			candidate.awaitingReconnect = true; candidate.deferredUpSnapshot = terminal;
+			candidate.reconnectDirection = { 1, 0 }; candidate.filteredInputSpeed = 500;
+			candidate.lastModelInputTime = .12;
+			const auto changed = DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(false, false, InkPredictionMode::Kalman));
+			const auto c = down(3, scenario == 2 ? 5000.0f : 70.0f, scenario == 3 ? 1240 : 1140);
+			if (!c.record) continue;
+			const ContactSnapshot cDown = c.record->DownSnapshot();
+			auto identity = ReconnectIdentity(candidate);
+			if (scenario == 1) identity.selectedTool = static_cast<uint32_t>(DrawingTool::Highlighter);
+			const auto result = EvaluateRuntimeReconnectCandidate(candidate, identity, cDown, 1000, 1);
+			check(result.matched == (scenario == 0 || scenario == 4), "only compatible in-range candidate actually matches");
+			bool adopted = false;
+			if (result.matched)
+			{
+				// 与生产一样，匹配还必须经过真实模型 Update 成功，失败不能冒充已续接。
+				const auto status = candidate.stroke.modeler.Update(modelInput(ink::stroke_model::Input::EventType::kMove,
+					cDown.position.x, scenario == 4 ? .11 : .14), candidate.stroke.modeledResults);
+				check(status.ok() == (scenario != 4), "model continuation failure cannot bypass independent-stroke gate");
+				if (status.ok())
+				{
+					input.Recycle(candidate.handle);
+					AdoptReconnectedContact(candidate, c);
+					candidate.awaitingReconnect = false;
+					ClearPenTerminalState(candidate.stroke);
+					adopted = true;
+				}
+			}
+			const bool rejected = !adopted && RejectIndependentTouch(input, gestures, c,
+				InputDeviceType::Touch, true, changed.multiTouchEnabled);
+			check(adopted == (scenario == 0) && rejected == (scenario != 0), "successful reconnect precedes rejection of independent Touch");
+			check(gestures.ContactCount() == (adopted ? 2u : 1u) && gestures.HasContact(CanvasTouchKey(b)),
+				"rejected identity retires exactly once while B remains registered");
+			ContactSnapshot bSnapshot;
+			check(input.TryReadSnapshot(b, bSnapshot) && bSnapshot.phase == ContactPhase::Down &&
+				candidate.stroke.predictionMode == InkPredictionMode::Disabled && candidate.stroke.penTailCorrectionEnabled,
+				"B and A original Down options survive changed general preferences");
+			ContactSnapshot cSnapshot;
+			check(input.TryReadSnapshot(c, cSnapshot) == adopted, "only successful reconnect retains its producer route");
+			terminal.qpc = cDown.qpc + 10;
+			if (scenario % 2 == 0) input.PublishUp(tablet, 3, terminal);
+			else input.PublishCancelled(tablet, 3, terminal);
+			if (adopted) gestures.OnTouchUp(candidate.touchGestureKey);
+			input.Recycle(c); input.Recycle(a);
+			check(gestures.ContactCount() == 1 && input.DiagnosticsSnapshot().occupiedSlots == 1,
+				"reconnected or rejected C terminal retires without consuming a slot");
+			input.PublishUp(tablet, 2, terminal); gestures.OnTouchUp(CanvasTouchKey(b)); input.Recycle(b);
+			check(gestures.ContactCount() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
+				"all routes and gesture identities retire after the regression");
+		}
+		if (!failures) std::fputs("[Draw3SingleTouchReconnect] PASS: actual match/model handoff and independent-touch rejection\n", stderr);
+		return failures;
+	}
+
+	int RunReconnectContactIdentityProductionProbe() noexcept
+	{
+		int failures = RunSingleTouchReconnectAdmissionProductionProbe();
 		const auto check = [&failures](bool condition, const char* name)
 		{
 			if (condition) return;
@@ -6544,9 +6795,91 @@ namespace Inkeys::Drawing::Draw3
 		return failures ? 1 : 0;
 	}
 
-	int RunIgnoredLaserTouchProductionTest() noexcept
+	int RunGeneralDrawingOptionsProductionTest() noexcept
 	{
 		int failures = 0;
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3GeneralOptions] FAIL: %s\n", label); }
+		};
+		{
+			// 不 Attach/Initialize/Run：真实能力所有者仅配置 CPU 状态，不创建 HWND 或设备。
+			ContactInputCoordinator input;
+			WindowController window;
+			InkRenderer renderer;
+			TransparentPresentationController presentation;
+			auto configuration = CreateStrokeModelConfiguration(96);
+			configuration.laserParticlesEnabled = true;
+			DrawingController controller(input, window, renderer, presentation, configuration);
+			check(!window.Handle() && !controller.GetLaserParticlesEnabled(),
+				"particle startup request cannot enable disabled product capability");
+			const auto wakeBefore = input.CaptureWakeGeneration();
+			const bool pendingBefore = input.HasPendingWork();
+			for (bool request : { true, true, false, false, true })
+			{
+				controller.SetLaserParticlesEnabled(request);
+				check(!controller.GetLaserParticlesEnabled() && input.CaptureWakeGeneration() == wakeBefore &&
+					input.HasPendingWork() == pendingBefore,
+					"particle setter stays disabled without redundant control wake");
+			}
+		}
+		for (const auto [profileId, fps] : {
+			std::pair{ StrokeTimingProfileId::Fps30, 30.0 }, std::pair{ StrokeTimingProfileId::Fps60, 60.0 },
+			std::pair{ StrokeTimingProfileId::Fps120, 120.0 }, std::pair{ StrokeTimingProfileId::Fps240, 240.0 } })
+		{
+			const auto config = CreateStrokeModelConfiguration(96, profileId);
+			check(config.timingProfile.target_fps == fps && config.modelParams.sampling_params.min_output_rate ==
+				config.timingProfile.min_output_rate, "frame profile constructs the matching whole model configuration");
+		}
+		check(CreateStrokeModelConfiguration(96, static_cast<StrokeTimingProfileId>(99)).timingProfile.target_fps == 120.0,
+			"invalid frame profile retains 120 fps default");
+		const auto config = CreateStrokeModelConfiguration(96);
+		for (const auto mode : { InkPredictionMode::Disabled, InkPredictionMode::StrokeEnd, InkPredictionMode::Kalman })
+			for (bool tailCorrection : { false, true })
+			{
+				uint32_t desired = EncodeGeneralDrawingOptions(true, tailCorrection, mode);
+				ActiveStroke oldStroke(5, config.expectedSpeed), nextStroke(5, config.expectedSpeed);
+				const auto params = LatchStrokeDrawingOptions(oldStroke, config, false, DecodeGeneralDrawingOptions(desired));
+				check(oldStroke.modeler.Reset(params).ok(), "per-stroke selected predictor resets");
+				const auto input = [](ink::stroke_model::Input::EventType event, float x, double time)
+				{
+					return ink::stroke_model::Input{ .event_type = event, .position = { x, 0 },
+						.time = ink::stroke_model::Time(time), .pressure = 1, .tilt = 1.57079632679f, .orientation = 0 };
+				};
+				check(oldStroke.modeler.Update(input(ink::stroke_model::Input::EventType::kDown, 0, 0), oldStroke.modeledResults).ok(),
+					"selected predictor accepts Down");
+				const auto nextMode = mode == InkPredictionMode::Disabled ? InkPredictionMode::Kalman : InkPredictionMode::Disabled;
+				desired = EncodeGeneralDrawingOptions(false, !tailCorrection, nextMode);
+				const auto nextParams = LatchStrokeDrawingOptions(nextStroke, config, false, DecodeGeneralDrawingOptions(desired));
+				check(nextStroke.modeler.Reset(nextParams).ok() && nextStroke.predictionMode == nextMode &&
+					nextStroke.penTailCorrectionEnabled != tailCorrection, "next independent stroke receives new options");
+				ClearPenTerminalState(oldStroke); // 真实接续只清终态，不得重读全局希望值。
+				check(oldStroke.predictionMode == mode && oldStroke.penTailCorrectionEnabled == tailCorrection,
+					"active and reconnected stroke retain Down options");
+				for (int sample = 1; sample <= 12; ++sample)
+					check(oldStroke.modeler.Update(input(ink::stroke_model::Input::EventType::kMove,
+						3.0f * sample, .005 * sample), oldStroke.modeledResults).ok(),
+						"old stroke continues after next stroke changed options");
+				if (oldStroke.predictionMode != InkPredictionMode::Disabled)
+					check(oldStroke.modeler.Predict(oldStroke.predictedResults).ok() && !oldStroke.predictedResults.empty(),
+						"enabled predictor produces real modeled output");
+				else check(oldStroke.predictedResults.empty(), "disabled stroke does not request prediction");
+				check(oldStroke.modeler.Update(input(ink::stroke_model::Input::EventType::kUp, 40, .07), oldStroke.modeledResults).ok(),
+					"all prediction modes retain normal real Up completion");
+				ActiveStroke eraser(5, config.expectedSpeed);
+				const auto eraserParams = LatchStrokeDrawingOptions(eraser, config, true, DecodeGeneralDrawingOptions(desired));
+				check(eraser.predictionMode == InkPredictionMode::Disabled && eraser.modeler.Reset(eraserParams).ok(),
+					"eraser retains disabled prediction independently of user mode");
+			}
+		const auto invalid = DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(true, true, static_cast<InkPredictionMode>(99)));
+		check(invalid.predictionMode == InkPredictionMode::Kalman, "invalid predictor falls back to precise mode");
+		if (!failures) std::fputs("[Draw3GeneralOptions] PASS: profiles, per-stroke options and real model lifecycle\n", stderr);
+		return failures;
+	}
+
+	int RunIgnoredLaserTouchProductionTest() noexcept
+	{
+		int failures = RunGeneralDrawingOptionsProductionTest();
 		const auto check = [&](bool condition, const char* label)
 		{
 			if (condition) return;
@@ -6579,7 +6912,8 @@ namespace Inkeys::Drawing::Draw3
 		const ContactHandle first = dequeueContact();
 		if (!first) return 1;
 		ContactSnapshot firstBeforeBatch;
-		check(!IgnoreAdditionalLaserTouch(input, first, DrawingTool::Laser,
+		check(!IgnoreAdditionalTouch(input, first, InputDeviceType::Touch, false, false) &&
+			!IgnoreAdditionalLaserTouch(input, first, DrawingTool::Laser,
 			InputDeviceType::Touch, false, false) &&
 			input.TryReadSnapshot(first, firstBeforeBatch),
 			"first Laser Touch is admitted when no prior touch is active");
@@ -6612,13 +6946,16 @@ namespace Inkeys::Drawing::Draw3
 			if (index == 0)
 			{
 				ContactSnapshot enabledSnapshot;
-				check(!IgnoreAdditionalLaserTouch(input, ignored, DrawingTool::Laser,
+				check(!IgnoreAdditionalTouch(input, ignored, InputDeviceType::Touch, true, true) &&
+					!IgnoreAdditionalLaserTouch(input, ignored, DrawingTool::Laser,
 					InputDeviceType::Touch, true, true) &&
 					input.TryReadSnapshot(ignored, enabledSnapshot),
 					"multi-touch enabled keeps the second Touch route");
 			}
-			allIgnoredRetired &= IgnoreAdditionalLaserTouch(input, ignored,
-				DrawingTool::Laser, InputDeviceType::Touch, true, false);
+			// 同一真实 coordinator 同时覆盖原激光门禁与新增全工具 Touch 门禁。
+			allIgnoredRetired &= index % 2 == 0
+				? IgnoreAdditionalLaserTouch(input, ignored, DrawingTool::Laser, InputDeviceType::Touch, true, false)
+				: IgnoreAdditionalTouch(input, ignored, InputDeviceType::Touch, true, false);
 			ContactSnapshot abandoned;
 			allIgnoredRetired &= !input.TryReadSnapshot(ignored, abandoned);
 			const ContactPhase terminal = index % 2 == 0
@@ -6651,6 +6988,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			ContactSnapshot visible;
 			check(!IgnoreAdditionalLaserTouch(input, ordinary, tool, device, true, false) &&
+				(device == InputDeviceType::Touch || !IgnoreAdditionalTouch(input, ordinary, device, true, false)) &&
 				input.TryReadSnapshot(ordinary, visible), label);
 			input.PublishUp(tablet, contactId, sample(65.0f, ContactPhase::Up));
 			input.Recycle(ordinary);
@@ -9106,7 +9444,7 @@ namespace Inkeys::Drawing::Draw3
 		interruptedStrokeReconnectEnabled_(configuration_.interruptedStrokeReconnectEnabled),
 		drawingCursorDuringContactEnabled_(configuration_.drawingCursorDuringContactEnabled),
 		translucentInkCursorEnabled_(configuration_.translucentInkCursorEnabled),
-		laserParticlesEnabled_(configuration_.laserParticlesEnabled),
+		laserParticlesEnabled_(false), // 产品暂禁用粒子，兼容配置中的 true 不能绕过能力门禁。
 		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
@@ -9227,10 +9565,19 @@ namespace Inkeys::Drawing::Draw3
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
 
-	void DrawingController::SetLaserParticlesEnabled(bool enabled) noexcept
+	void DrawingController::SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
+		InkPredictionMode predictionMode) noexcept
 	{
-		laserParticlesEnabled_.store(enabled, std::memory_order_release);
-		input_.PublishControlWake();
+		const uint32_t next = EncodeGeneralDrawingOptions(multiTouchEnabled, penTailCorrectionEnabled, predictionMode);
+		if (generalDrawingOptions_.exchange(next, std::memory_order_acq_rel) != next)
+			input_.PublishControlWake(); // 只发布后续落笔偏好，不修改任何活动模型。
+	}
+
+	void DrawingController::SetLaserParticlesEnabled(bool /*enabled*/) noexcept
+	{
+		// 兼容入口保留，但当前产品拒绝任何启用请求；仅真实关闭变化才唤醒清理。
+		if (laserParticlesEnabled_.exchange(false, std::memory_order_acq_rel))
+			input_.PublishControlWake();
 	}
 
 	bool DrawingController::GetLaserParticlesEnabled() const noexcept
@@ -10606,6 +10953,26 @@ namespace Inkeys::Drawing::Draw3
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const InputDeviceType deviceType = handle.record->DeviceType();
+				const auto generalOptions = DecodeGeneralDrawingOptions(
+					generalDrawingOptions_.load(std::memory_order_acquire));
+				bool hasActiveTouch = false;
+				if (deviceType == InputDeviceType::Touch)
+				{
+					bool hasActiveLaserTouch = false, hasBatch = false;
+					DrawingTool touchBatchTool = window_.ActiveTool();
+					for (const RuntimeStroke* candidate : active)
+					{
+						if (!candidate || candidate->ended || candidate->awaitingReconnect ||
+							!runtimeContactPhysicallyLive(*candidate)) continue;
+						if (!hasBatch) { touchBatchTool = candidate->selectedTool; hasBatch = true; }
+						if (candidate->metricDeviceType != InputDeviceType::Touch) continue;
+						hasActiveTouch = true;
+						hasActiveLaserTouch |= candidate->selectedTool == DrawingTool::Laser;
+					}
+					// Laser 不参加断触接续，可在登记手势前拒收；通用新笔门禁须等真实接续尝试结束。
+					if (IgnoreAdditionalLaserTouch(input_, handle, touchBatchTool, deviceType, hasActiveLaserTouch,
+						laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire))) return false;
+				}
 				if (deviceType == InputDeviceType::Pen && haptics_)
 				{
 					// RTS 和 Pointer 共用 tablet cursor 身份；不依赖 RTS 接管期间缺席的 Pointer Down。
@@ -10740,7 +11107,6 @@ namespace Inkeys::Drawing::Draw3
 				auto batchEraserPolicy=observedEraserPolicy;
 				bool hasSpeedEraserBatchContact = false;
 				bool hasActiveBatchContact = false;
-				bool hasActiveLaserTouchContact = false;
 				for (RuntimeStroke* activeRuntime : active)
 				{
 					if (activeRuntime && !activeRuntime->cancelled && !hasSpeedEraserBatchContact)
@@ -10776,15 +11142,8 @@ namespace Inkeys::Drawing::Draw3
 								activeRuntime->eraserWidthModeRevision;
 						}
 						hasActiveBatchContact = true;
-						hasActiveLaserTouchContact = hasActiveLaserTouchContact ||
-							(activeRuntime->selectedTool == DrawingTool::Laser &&
-								activeRuntime->metricDeviceType == InputDeviceType::Touch);
 					}
 				}
-				if (IgnoreAdditionalLaserTouch(input_, handle, batchTool, deviceType,
-					hasActiveLaserTouchContact,
-					laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire)))
-					return false; // 关闭多指时忽略后续 Touch，保留第一根手指的完整生命周期。
 				const bool selectedToolSupportsOverride =
 					batchTool == DrawingTool::Pen || batchTool == DrawingTool::HardPen ||
 					batchTool == DrawingTool::Highlighter ||
@@ -10848,51 +11207,8 @@ namespace Inkeys::Drawing::Draw3
 					for (RuntimeStroke* candidate : active)
 					{
 						if (!candidate || !candidate->awaitingReconnect || candidate->ended) continue;
-						InterruptedStrokeReconnectIdentity candidateDownIdentity = downIdentity;
-						// C 在候选窗口内切换时，候选仍按原批次宽度模式续接。
-						candidateDownIdentity.widthMode = candidate->stroke.widthMode;
-						if (!AreInterruptedStrokeReconnectIdentitiesCompatible(
-							ReconnectIdentity(*candidate), candidateDownIdentity))
-						{
-							if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
-							{
-								if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
-									diagnosticRuntime->deferredUpSnapshot.qpc)
-								{
-									diagnosticRuntime = candidate;
-									diagnosticResult = {};
-									diagnosticResult.rejectReason =
-										InterruptedStrokeReconnectRejectReason::IdentityMismatch;
-									diagnosticResult.gapMilliseconds = QpcDeltaSeconds(
-										down.qpc, candidate->deferredUpSnapshot.qpc, qpcFrequency) * 1000.0;
-									diagnosticResult.distance = std::hypot(
-										down.position.x - candidate->deferredUpSnapshot.position.x,
-										down.position.y - candidate->deferredUpSnapshot.position.y);
-								}
-							}
-							continue;
-						}
-						const double gapSeconds = QpcDeltaSeconds(
-							down.qpc, candidate->deferredUpSnapshot.qpc, qpcFrequency);
-						const InterruptedStrokeReconnectMotion motion =
-							ResolveInterruptedStrokeReconnectMotion(
-								candidate->reconnectPredictedResults,
-								candidate->stroke.realPoints,
-								candidate->reconnectDirection,
-								candidate->filteredInputSpeed,
-								candidate->lastModelInputTime,
-								gapSeconds,
-								reconnectDpiScale);
-						const InterruptedStrokeReconnectResult result =
-							EvaluateInterruptedStrokeReconnect({
-								.previousPosition = candidate->deferredUpSnapshot.position,
-								.previousUpQpc = candidate->deferredUpSnapshot.qpc,
-								.newPosition = down.position,
-								.newDownQpc = down.qpc,
-								.qpcFrequency = qpcFrequency,
-								.dpiScale = reconnectDpiScale,
-								.motion = motion
-							});
+						const auto result = EvaluateRuntimeReconnectCandidate(*candidate, downIdentity,
+							down, qpcFrequency, reconnectDpiScale);
 						if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 						{
 							if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
@@ -11151,6 +11467,13 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
+				// 真实匹配且模型接续成功已在上方接管返回；失败/不匹配才按新独立笔判定。
+				if (RejectIndependentTouch(input_, touchGesture, handle, deviceType,
+					hasActiveTouch, generalOptions.multiTouchEnabled))
+				{
+					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					return false;
+				}
 				RuntimeStroke* runtime = acquireStroke();
 				if (!runtime)
 				{
@@ -11242,8 +11565,9 @@ namespace Inkeys::Drawing::Draw3
 				ResetNominalStroke(*runtime, baseDiameter, configuration_, widthMode);
 				runtime->stroke.useDisplayTime = (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen);
 				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
-				const auto& modelParams = runtime->tool == DrawingTool::Eraser
-					? eraserModelParams : strokeModelParams;
+				// 成功断触接续已在上方返回，只有真正新笔才锁存此时偏好。
+				const auto modelParams = LatchStrokeDrawingOptions(runtime->stroke, configuration_,
+					runtime->tool == DrawingTool::Eraser, generalOptions);
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(modelParams); }); !status.ok())
 				{
@@ -11814,7 +12138,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						runtime.reconnectPredictedResults.clear();
 						if (runtime.tool != DrawingTool::Eraser &&
-							kActivePredictionMode != InkPredictionMode::Disabled)
+							runtime.stroke.predictionMode != InkPredictionMode::Disabled)
 						{
 							// 同帧新 Down 会在渲染前出队，因此候选创建时必须先冻结最新 prediction。
 							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
@@ -15914,7 +16238,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						stroke.predictedResults.clear();
 						if (!runtime->shape.rawFallbackRequired &&
-							kActivePredictionMode != InkPredictionMode::Disabled)
+							stroke.predictionMode != InkPredictionMode::Disabled)
 						{
 							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
 								metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(
@@ -15953,7 +16277,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!runtime->ended)
 					{
 						stroke.predictedResults.clear();
-						if (kActivePredictionMode != InkPredictionMode::Disabled)
+						if (stroke.predictionMode != InkPredictionMode::Disabled)
 						{
 							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
 								metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(
@@ -16130,7 +16454,7 @@ namespace Inkeys::Drawing::Draw3
 								runtime->reconnectPredictedResults.end());
 					}
 					else if (!eraser && !stroke.endpointAdmission.active &&
-						kActivePredictionMode != InkPredictionMode::Disabled)
+						stroke.predictionMode != InkPredictionMode::Disabled)
 					{
 						if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
 							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(stroke.predictedResults); }); !status.ok())

@@ -348,6 +348,7 @@ namespace Inkeys::ConfigDetail
 		H(true, true, "ch", std::string, UpdateChannel, ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex)) \
 	) \
 GROUP(UI, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 60) \
 			GROUP(Bar, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom2, 1.0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, UseTaskbarHeightAsScaleBase, ConfigDetail::GetDefaultLargeScreenDevice() ? 1 : 0) \
@@ -377,6 +378,14 @@ GROUP(UI, \
 		) \
 	) \
 	GROUP(Drawing, \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 120) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, true) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTailCorrectionEnabled, true) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InkPredictionMode, 2) \
+		GROUP(Laser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParticlesEnabled, false) \
+		) \
 		GROUP(Whiteboard, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<WhiteboardThemePreference>, DefaultTheme, WhiteboardThemePreference{}) \
 		) \

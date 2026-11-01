@@ -655,6 +655,46 @@ namespace
 					return 1;
 				}
 			}
+			stage = "performance and general drawing preferences";
+			Inkeys::Config drawingDefaults;
+			if (!writeBytes(mainConfig, "{}") || !drawingDefaults.ReadAll() ||
+				drawingDefaults.UI.FrameRate != 60 || drawingDefaults.Drawing.FrameRate != 120 ||
+				!drawingDefaults.Drawing.MultiTouchEnabled || !drawingDefaults.Drawing.PenTailCorrectionEnabled ||
+				drawingDefaults.Drawing.InkPredictionMode != 2 || drawingDefaults.Drawing.Laser.MultiTouchEnabled ||
+				drawingDefaults.Drawing.Laser.ParticlesEnabled) return 1;
+			for (const int frameRate : { 30, 60, 120, 240 })
+				for (const int prediction : { 0, 1, 2 })
+				{
+					drawingDefaults.UI.FrameRate = frameRate == 30 ? 30 : 60;
+					drawingDefaults.Drawing.FrameRate = frameRate;
+					drawingDefaults.Drawing.InkPredictionMode = prediction;
+					drawingDefaults.Drawing.MultiTouchEnabled = false;
+					drawingDefaults.Drawing.PenTailCorrectionEnabled = prediction != 0;
+					drawingDefaults.Drawing.Laser.MultiTouchEnabled = true;
+					drawingDefaults.Drawing.Laser.ParticlesEnabled = prediction == 1;
+					Inkeys::Config restoredDrawing;
+					if (!drawingDefaults.Write() || !restoredDrawing.ReadAll() ||
+						restoredDrawing.UI.FrameRate.load() != drawingDefaults.UI.FrameRate.load() ||
+						restoredDrawing.Drawing.FrameRate != frameRate || restoredDrawing.Drawing.InkPredictionMode != prediction ||
+						restoredDrawing.Drawing.MultiTouchEnabled || !restoredDrawing.Drawing.Laser.MultiTouchEnabled ||
+						restoredDrawing.Drawing.PenTailCorrectionEnabled.load() != (prediction != 0) ||
+						restoredDrawing.Drawing.Laser.ParticlesEnabled.load() != (prediction == 1)) return 1;
+				}
+			// 全局关闭不清除激光子偏好；类型错误和超宽整数不能变成合法的离散选项。
+			for (const char* invalid : { "true", "false", "30.0", "\"60\"", "-1", "0", "90", "4294967326", "18446744073709551615" })
+			{
+				const auto json = std::string("{\"UI\":{\"FrameRate\":") + invalid +
+					"},\"Drawing\":{\"FrameRate\":" + invalid + "}}";
+				Inkeys::Config invalidDrawing;
+				if (!writeBytes(mainConfig, json) || !invalidDrawing.ReadAll() ||
+					invalidDrawing.UI.FrameRate != 60 || invalidDrawing.Drawing.FrameRate != 120) return 1;
+			}
+			for (const char* invalid : { "true", "false", "1.0", "\"2\"", "-1", "3", "4294967298", "18446744073709551615" })
+			{
+				Inkeys::Config invalidPrediction;
+				if (!writeBytes(mainConfig, std::string("{\"Drawing\":{\"InkPredictionMode\":") + invalid + "}}") ||
+					!invalidPrediction.ReadAll() || invalidPrediction.Drawing.InkPredictionMode != 2) return 1;
+			}
 			stage = "whiteboard theme preference";
 			Inkeys::Config themeConfig;
 			if (!themeConfig.SetWhiteboardThemeDefault(0xE5E7EB,2) || !themeConfig.Write()) return 1;
@@ -2855,6 +2895,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			Inkeys::UI::RenderPipeline::SetFrameRate(config.UI.FrameRate);
+			// 偏好在 Host 创建绘制线程前发布；后续每笔锁存，启动预览不改变画布参数。
+			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
+				config.Drawing.MultiTouchEnabled, config.Drawing.PenTailCorrectionEnabled,
+				config.Drawing.InkPredictionMode.load());
+			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(
+				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
@@ -3493,6 +3540,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		draw3StartOptions.frameRate = configOnce.Drawing.FrameRate;
 		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
 		draw3StartOptions.enableHardwareAcceleration =
 			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;

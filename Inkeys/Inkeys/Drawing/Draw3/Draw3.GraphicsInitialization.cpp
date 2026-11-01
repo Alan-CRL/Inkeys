@@ -207,6 +207,7 @@ namespace Inkeys::Drawing::Draw3
 				return 1;
 			}
 		}
+		if (RunDiagnosticFormattingProductionTest() != 0) return 1;
 		std::fputs("[Draw3DevicePolicy] PASS: direct WARP, hardware preference and failure fallback\n", stderr);
 		return 0;
 	}

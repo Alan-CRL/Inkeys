@@ -168,6 +168,45 @@ int RunRenderSchedulerTests()
 	using namespace std::chrono_literals;
 	using Inkeys::UI::RenderPipeline::Scheduler;
 	int failures = 0;
+	{
+		Scheduler scheduler;
+		std::mutex mutex;
+		std::condition_variable condition;
+		std::array<std::vector<std::chrono::steady_clock::time_point>, 3> frames;
+		const std::array clients{ Client::Bar, Client::PptBottomLeft, Client::Settings };
+		std::atomic_int callbacks = 0;
+		scheduler.SetFrameRate(30);
+		for (std::size_t index = 0; index < clients.size(); ++index)
+			(void)scheduler.Register(clients[index], [&, index](const auto& context)
+				{
+					std::scoped_lock lock(mutex);
+					frames[index].push_back(context.frameTime);
+					++callbacks;
+					if (index == 0 && frames[index].size() == 2) scheduler.SetFrameRate(60);
+					if (index == 0 && frames[index].size() == 3) scheduler.SetFrameRate(0);
+					if (index == 0 && frames[index].size() == 4) scheduler.SetFrameRate(30);
+					condition.notify_all();
+					return frames[index].size() < 5 ? FrameResult::Continue : FrameResult::Idle;
+				});
+		(void)scheduler.Start();
+		scheduler.Request(Mask(Client::Bar) | Mask(Client::PptBottomLeft) | Mask(Client::Settings));
+		{
+			std::unique_lock lock(mutex);
+			const bool completed = condition.wait_for(lock, 2s, [&] { return frames[2].size() >= 5; });
+			bool paced = completed;
+			for (const auto& clientFrames : frames)
+				paced = paced && clientFrames.size() == 5 && clientFrames[1] - clientFrames[0] >= 30ms
+					&& clientFrames[2] - clientFrames[1] >= 15ms && clientFrames[3] - clientFrames[2] >= 15ms
+					&& clientFrames[4] - clientFrames[3] >= 30ms;
+			if (!Expect(paced, "shared clients switch 30 to 60 and back to 30, invalid rate restores 60")) ++failures;
+			if (!Expect(frames[0] == frames[1] && frames[1] == frames[2],
+				"bar page controls and settings share the same batch clock")) ++failures;
+		}
+		scheduler.SetFrameRate(30);
+		std::this_thread::sleep_for(80ms);
+		scheduler.Stop();
+		if (!Expect(callbacks.load() == 15, "changing frame rate does not wake idle clients")) ++failures;
+	}
 	DispatchState state;
 	state.Request(Mask(Client::PptBottomLeft));
 	state.Request(Mask(Client::PptMiddleRight));

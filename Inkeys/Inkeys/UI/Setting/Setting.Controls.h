@@ -50,6 +50,8 @@ namespace Inkeys::UI::Setting::Design
 		ImFluentTextStyle style = ImFluentTextStyle_Body, ImU32 color = TextPrimary);
 	void Text(const char* text, ImFluentTextStyle style = ImFluentTextStyle_Body,
 		ImU32 color = TextPrimary);
+	// 轻量注意事项，与说明同字号；蓝色信息图标及正常前景色文字自动换行。
+	void InfoText(const char* text, ImFluentTextStyle style = ImFluentTextStyle_Caption);
 	void PageHeader(const char* title, const char* description = nullptr);
 	void SectionHeader(const char* title);
 	void PageContentStart();
@@ -61,13 +63,15 @@ namespace Inkeys::UI::Setting::Design
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,
 		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0,
-		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false);
+		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr);
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
 
 	// 控件字体和自然宽度集中在此；size 是物理像素，行测量参数是 DIP。
 	bool Button(const char* label, const ImVec2& size = ImVec2(0, 0));
+	// 信息块下方的标准复制按钮；复制完整文本，下一项回到原左边缘。
+	bool CopyButton(const char* id, const char* label, const char* text);
 	bool AccentButton(const char* label, const ImVec2& size = ImVec2(0, 0));
 	bool AccentNavigationItem(const char* id, const char* label, bool selected,
 		const char* glyph, bool compact);
@@ -109,17 +113,17 @@ namespace Inkeys::UI::Setting::Design
 	void SetStateLabels(const char* onText, const char* offText);
 	void SetCopyLabels(const char* prompt, const char* copied);
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value);
+		const char* glyph, bool& value, const char* note = nullptr);
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items);
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr);
 	bool SliderRow(const char* id, const char* title, const char* description,
 		const char* glyph, float& value, float minimum, float maximum,
-		bool& active, const char* format = "%.2f");
+		bool& active, const char* format = "%.2f", const char* note = nullptr);
 	bool SliderIntRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, int minimum, int maximum,
-		bool& active, const char* format = "%d");
+		bool& active, const char* format = "%d", const char* note = nullptr);
 	bool ButtonRow(const char* id, const char* title, const char* description,
-		const char* glyph, const char* label, bool accent = false);
+		const char* glyph, const char* label, bool accent = false, const char* note = nullptr);
 	struct ButtonSpec
 	{
 		const char* id;
@@ -128,9 +132,9 @@ namespace Inkeys::UI::Setting::Design
 		bool disabled = false;
 	};
 	int ButtonGroupRow(const char* id, const char* title, const char* description,
-		const char* glyph, std::initializer_list<ButtonSpec> buttons);
+		const char* glyph, std::initializer_list<ButtonSpec> buttons, const char* note = nullptr);
 	bool NavigationRow(const char* id, const char* title, const char* description,
-		const char* glyph, ImTextureID iconTexture = 0, ImU32 iconTint = IM_COL32_WHITE);
+		const char* glyph, ImTextureID iconTexture = 0, ImU32 iconTint = IM_COL32_WHITE, const char* note = nullptr);
 	bool Notice(const char* id, const char* title, const char* description,
 		ImFluentInfoSeverity severity = ImFluentInfoSeverity_Informational,
 		const char* actionLabel = nullptr);
