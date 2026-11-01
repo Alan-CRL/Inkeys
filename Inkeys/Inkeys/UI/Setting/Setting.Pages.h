@@ -163,6 +163,8 @@ namespace Inkeys::UI::Setting::Design
 	HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
 	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip);
 	void RenderHomeEntryOverlay(const HomeMotionState& state);
+	// 开屏遮罩当前颜色（主题 AppBase RGB，alpha 为遮罩不透明度）；未播放时 alpha 为 0。
+	[[nodiscard]] ImU32 HomeEntryMaskColor(const HomeMotionState& state);
 	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
 		float styleAlpha, ImVec4 windowBackground) noexcept;
 	HomeEntryFrameKey MakeHomeEntryFrameKey(ImVec4 contentBounds, float gutter, std::uint64_t epoch,
@@ -317,8 +319,9 @@ namespace Inkeys::UI::Setting::Design
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha);
 	HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
 	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section = GeneralSection::Basic);
+	// translucentBackdrop 取调用方本帧 backdrop 快照，与根清屏/标题栏/正文同源。
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
-		NavigationState& state, NavigationDestination selected);
+		NavigationState& state, NavigationDestination selected, bool translucentBackdrop = false);
 	// >=0 是 PageId；-1 无事件，-2 社区，-3 重启，-4 退出。
 	int RenderNavigationPane(const ShellGeometry& geometry,
 		NavigationState& state, int selectedPage);

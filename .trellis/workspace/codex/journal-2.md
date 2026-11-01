@@ -974,6 +974,30 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 [OK] **Completed**
 
 
+## Session 153: Setting translucent shell: WinUI 3 single-layer material
+<!-- trellis-session: v=2 fp=2ed0f1c684bd0b35 -->
+
+**Date**: 2026-11-01
+**Task**: Setting translucent shell: WinUI 3 single-layer material
+**Branch**: `bugfix/settingui`
+
+### Summary
+
+Win11 blur only showed while dragging: accent 0xCC tint plus 80% AppBase left ~4% show-through. Accent now always BlurBehind; root AppBase is the single layer for caption/sidebar/content; cards and colour blocks use WinUI 3 alphas; nav selection uses SubtleFill grey. Fixed sidebar seams/stacked fills, opaque caption during entry mask (patched end-of-frame), pane uses frame backdrop snapshot, cache test covers production translucent root. Root rounding only on Win11 restored; self-drawn border only on Win10 RS4+/Win11. Verified by user on Win10 and Win11.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1922b699` | fix(setting): render the translucent Setting window as one WinUI 3 layer |
+| `652f4409` | fix(setting): sync translucent caption and pane with the frame state |
+| `f99e94f8` | fix(setting): match the root window shape to the system frame |
+
+### Status
+
+[OK] **Completed**
+
+
 ## Session 133: 修复重连接触身份残留并完成人工验收
 <!-- trellis-session: v=2 fp=323ace0df79f6509 -->
 

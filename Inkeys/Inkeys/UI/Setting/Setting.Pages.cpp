@@ -452,6 +452,12 @@ namespace Inkeys::UI::Setting::Design
 		return true;
 	}
 
+	ImU32 HomeEntryMaskColor(const HomeMotionState& state)
+	{
+		const float opacity=state.EntryActive() ? ResolveHomeEntryPose(state).opacity : 0.0F;
+		return (AppBase & ~IM_COL32_A_MASK)|(static_cast<ImU32>(std::round(opacity*255))<<IM_COL32_A_SHIFT);
+	}
+
 	void RenderHomeEntryOverlay(const HomeMotionState& state)
 	{
 		if (!state.EntryActive()) return;
@@ -459,11 +465,7 @@ namespace Inkeys::UI::Setting::Design
 		const auto bounds=state.clientContent;
 		draw->PushClipRect({bounds.x,bounds.y},{bounds.z,bounds.w},false);
 		if (pose.opacity>0)
-		{
-			const ImU32 solid=AppBase;
-			draw->AddRectFilled({bounds.x,bounds.y},{bounds.z,bounds.w},
-				(solid & ~IM_COL32_A_MASK)|(static_cast<ImU32>(std::round(pose.opacity*255))<<IM_COL32_A_SHIFT));
-		}
+			draw->AddRectFilled({bounds.x,bounds.y},{bounds.z,bounds.w},HomeEntryMaskColor(state));
 		const int firstVertex=draw->VtxBuffer.Size;
 		HomeBrand::DrawWriting(draw,pose.origin,pose.width,IsDarkMode(),pose.writing);
 		if (state.fadeOnly)

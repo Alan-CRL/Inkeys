@@ -1612,8 +1612,17 @@ namespace Inkeys::UI::Setting::Design
 			};
 			activePalette.appBase = alpha(activePalette.appBase, 204);
 			activePalette.pageSurface = alpha(activePalette.pageSurface, 230);
-			activePalette.card = alpha(activePalette.card, 245);
-			activePalette.cardSecondary = alpha(activePalette.cardSecondary, 245);
+			// 卡片与描边按 WinUI 3 CardBackgroundFillColor/CardStrokeColor 取值；控件直接沿用 ImFluent 预设的同名 WinUI 值。
+			activePalette.card = activeDarkMode ? IM_COL32(255, 255, 255, 13) : IM_COL32(255, 255, 255, 179);
+			activePalette.cardSecondary = activeDarkMode ? IM_COL32(255, 255, 255, 8) : IM_COL32(246, 246, 246, 128);
+			activePalette.stroke = activeDarkMode ? IM_COL32(0, 0, 0, 25) : IM_COL32(0, 0, 0, 15);
+			// 主页横幅、功能卡与头像底是带色卡片，取与浅色卡片相同的 70% 不透明度。
+			activePalette.heroFill = alpha(activePalette.heroFill, 179);
+			for (auto& tint : activePalette.featureTint) tint = alpha(tint, 179);
+			activePalette.avatarFill = alpha(activePalette.avatarFill, 179);
+			// 与 WinUI SubtleFill 一致：半透明叠色随材质变深/变浅，选中项不再是不透明亮白块。
+			activePalette.subtleHover = activeDarkMode ? IM_COL32(255, 255, 255, 15) : IM_COL32(0, 0, 0, 9);
+			activePalette.subtlePressed = activeDarkMode ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 6);
 		}
 		ImFluent::SetThemePreset(activeDarkMode ? ImFluentThemePreset_Dark : ImFluentThemePreset_Light);
 		ImFluent::SetAccentColor(ImColor(Accent));

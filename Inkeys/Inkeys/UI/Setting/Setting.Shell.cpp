@@ -102,7 +102,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
-		NavigationState& state, NavigationDestination selected)
+		NavigationState& state, NavigationDestination selected, bool translucentBackdrop)
 	{
 		selected = NormalizeDestination(selected);
 		const auto& pane = geometry.pane;
@@ -211,11 +211,17 @@ namespace Inkeys::UI::Setting::Design
 		const auto fixedFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 		const auto childFlags = ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened;
 		ImGui::SetCursorPos({ Pixels(pane.left), Pixels(pane.top) });
-		ImGui::PushStyleColor(ImGuiCol_ChildBg, AppBase);
+		// 侧栏只在 pane 外层铺一次直角底色，嵌套 child 不再叠色。半透明材质下平铺时由根窗口统一铺底；
+		// 窄窗覆盖正文时改用不透明主题底色，避免正文文字透出。
+		const bool overlaysContent = geometry.pane.right > geometry.content.left + 0.5F;
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, !translucentBackdrop ? AppBase
+			: overlaysContent ? PaletteForTheme(IsDarkMode()).appBase : IM_COL32(0, 0, 0, 0));
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0.0F, Pixels(RowGap) });
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0F);
 		ImGui::BeginChild("##settings-pane", { Pixels(pane.Width()), Pixels(pane.Height()) },
 			ImGuiChildFlags_NavFlattened, fixedFlags);
+		ImGui::PopStyleVar(); ImGui::PopStyleColor();
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { Pixels(4.0F), 0.0F });
 
 		// 顶部固定区与底部固定区先测量，中段承担全部树形列表滚动。
@@ -448,7 +454,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 		ImGui::EndChild();
 		ImGui::PopStyleVar(); ImGui::EndChild();
-		ImGui::PopStyleVar(2); ImGui::PopStyleColor();
+		ImGui::PopStyleVar(2);
 		if (toggled) state.Toggle();
 		if (result.kind != NavigationActionKind::None)
 		{
