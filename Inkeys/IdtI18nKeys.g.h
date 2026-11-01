@@ -665,6 +665,26 @@ inline constexpr struct I18nKeyRoot
                     const char* SizeWarningTitle = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningTitle";
                     const char* SizeWarningDescription = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningDescription";
                 } SpeedEraser{};
+                struct Node__SettingsUI__Draw__Eraser__PalmEraser
+                {
+                    const char* N = "SettingsUI/Draw/Eraser/PalmEraser/N";
+                    const char* EntryDescription = "SettingsUI/Draw/Eraser/PalmEraser/EntryDescription";
+                    const char* Introduction = "SettingsUI/Draw/Eraser/PalmEraser/Introduction";
+                    const char* Enabled = "SettingsUI/Draw/Eraser/PalmEraser/Enabled";
+                    const char* SizeWarningTitle = "SettingsUI/Draw/Eraser/PalmEraser/SizeWarningTitle";
+                    const char* SizeWarningDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeWarningDescription";
+                    const char* RecognitionWindow = "SettingsUI/Draw/Eraser/PalmEraser/RecognitionWindow";
+                    const char* RecognitionWindowDescription = "SettingsUI/Draw/Eraser/PalmEraser/RecognitionWindowDescription";
+                    const char* Threshold = "SettingsUI/Draw/Eraser/PalmEraser/Threshold";
+                    const char* ThresholdDescription = "SettingsUI/Draw/Eraser/PalmEraser/ThresholdDescription";
+                    const char* PreviewTitle = "SettingsUI/Draw/Eraser/PalmEraser/PreviewTitle";
+                    const char* PreviewDescription = "SettingsUI/Draw/Eraser/PalmEraser/PreviewDescription";
+                    const char* PreviewEstimated = "SettingsUI/Draw/Eraser/PalmEraser/PreviewEstimated";
+                    const char* PreviewUnavailable = "SettingsUI/Draw/Eraser/PalmEraser/PreviewUnavailable";
+                    const char* EnabledTools = "SettingsUI/Draw/Eraser/PalmEraser/EnabledTools";
+                    const char* ParallelWriting = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWriting";
+                    const char* ParallelWritingDescription = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingDescription";
+                } PalmEraser{};
                 struct Node__SettingsUI__Draw__Eraser__Input
                 {
                     const char* MouseLeft = "SettingsUI/Draw/Eraser/Input/MouseLeft";

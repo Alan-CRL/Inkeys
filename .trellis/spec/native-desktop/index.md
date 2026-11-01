@@ -25,6 +25,7 @@
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
 - [eraser-attributes.md](eraser-attributes.md)：UI3橡皮属性、全局尺寸/灵敏度、五入口事务及Clear回撤/重做合同。
+- [palm-eraser.md](palm-eraser.md)：面积识别、10000系统DIP²回退、临时工具转换、并行/邻域、断触接续及设置实尺合同。
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
 - [draw3-cursors.md](draw3-cursors.md)：鼠标/笔类型选择、荧光笔独立预览与设备固定高亮、始终隐藏 Touch 与 Win7 生命周期边界。
 - [single-instance-and-startup-handoff.md](single-instance-and-startup-handoff.md)：目录单实例、多开偏好、更新/重启与SuperTop连续占位交接。

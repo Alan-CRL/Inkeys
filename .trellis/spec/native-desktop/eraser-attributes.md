@@ -103,7 +103,7 @@ Correct：保持342 DIP自然布局、正常5/16 DIP留白和真实控件尺寸�
 
 ## 8. 笔速橡皮设置详情页
 
-- 绘制主页面按绘图设备、橡皮擦、光标、触摸、笔触觉排列；橡皮擦分类仅提供“笔速橡皮”整行入口。`DrawingSubpage::Overview/SpeedEraser` 是绘制内部状态，不能占用已退休根路由；每个子页用稳定的独立 content child ID 保留滚动。`NavigateDrawingSubpage` 只在子页实际变化时重启现有正文过渡，侧栏仍选中 Draw；点击侧栏绘制或主页绘制入口回 Overview。
+- 绘制主页面按绘图设备、橡皮擦、光标、触摸、笔触觉排列；橡皮擦分类提供“笔速橡皮”及其下方“手掌橡皮”整行入口；后者详见[palm-eraser.md](palm-eraser.md)。`DrawingSubpage::Overview/SpeedEraser/PalmEraser` 是绘制内部状态，不能占用已退休根路由；每个子页用稳定的独立 content child ID 保留滚动。`NavigateDrawingSubpage` 只在子页实际变化时重启现有正文过渡，侧栏仍选中 Draw；点击侧栏绘制或主页绘制入口回 Overview。
 - `RenderSpeedEraser(SpeedEraserDraft&, const EraserDemoPresenter& = {}) -> SpeedEraserEvents` 只生成界面与一次编辑事件。原生层每帧读一份 `EraserPreferencesSnapshot`，复用现有 setter；`SetGlobalEraserPreference` 已自行排队保存，不额外重复 QueueConfigWrite；设备与面积事件沿用设置页队列。
 - 灵敏度复用 UI3 三档键和同一配置。总开关关闭仍允许编辑灵敏度和五设备偏好；复选勾选=Speed/取消=Fixed。笔尖/笔尾计算方式仅在总开关开启且对应入口启用时显示，隐藏不改变保存值；Win7 去除 Auto 后仍保存 1/2 稳定枚举，不能写可见下标 0/1。接触面积辅助仅在总开关开启且触摸入口勾选时显示；三个精细项均无可见项时，整个精细控制分类隐藏。隐藏不修改设备计算方式或面积辅助的保存值。
 - 设备复选组为常驻展开的标题条与内联区，共用现有 `BeginCard` / `DrawCardSurface` 单外框和1物理像素分隔线；按真实标题/文字尺寸与DIP预算选择两列或一列，不引入内滚动或新配置。顶部返回箭头后使用现有PageHeader显示“笔速橡皮”标题，无副标题、版本或返回文字链接。

@@ -18,6 +18,7 @@ module;
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Drawing/Draw3/Draw3.PalmEraser.h"
 #include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "../../Window/Window.MessageDispatch.h"
@@ -3275,6 +3276,39 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
+					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
+					{
+						namespace Palm = Inkeys::Drawing::Draw3::PalmEraser;
+						auto preferences = PalmEraserPreferencesSnapshot();
+						const auto display = Inkeys::Drawing::Draw3::ProductHost().EraserDisplayScaleSnapshot();
+						const auto scale = Palm::ResolvePreviewScale(display);
+						auto reference = preferences; reference.thresholdPercent = 100;
+						Design::PalmEraserDraft draft;
+						draft.enabled = preferences.enabled;
+						draft.recognitionWindowMs = preferences.recognitionWindowMs;
+						draft.thresholdPercent = preferences.thresholdPercent;
+						draft.parallelWriting = preferences.parallelWriting;
+						draft.tools = preferences.tools;
+						// 预览与识别读取同一已应用绘图输出，不使用设置窗口所在屏幕的 DPI。
+						draft.referenceAreaPixels = Palm::ThresholdAreaPixels(reference, scale);
+						draft.previewEstimated = scale.estimated;
+						draft.physicalSizeWarning = display.monitor != 0 && scale.available && scale.estimated;
+						const auto events = Design::RenderPalmEraser(draft);
+						if (events.back)
+							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
+						if (events.enabledChanged || events.recognitionWindowChanged || events.thresholdChanged
+							|| events.parallelWritingChanged || std::any_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool changed) { return changed; }))
+						{
+							preferences.enabled = draft.enabled;
+							preferences.recognitionWindowMs = draft.recognitionWindowMs;
+							preferences.thresholdPercent = draft.thresholdPercent;
+							preferences.parallelWriting = draft.parallelWriting;
+							preferences.tools = draft.tools;
+							// 偏好入口统一发布 Host 并冻结写盘，页面不重复排队保存。
+							SetPalmEraserPreference(preferences);
+						}
+						break;
+					}
 					if (drawingSubpage == Design::DrawingSubpage::SpeedEraser)
 					{
 						namespace Eraser = Inkeys::Drawing::Draw3::SpeedEraser;
@@ -3416,9 +3450,7 @@ SettingSessionCoroutine RunSettingSession()
 					}
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
-					if (Design::NavigationRow("##speed-eraser-entry", IA(I18nKey.SettingsUI.Draw.Eraser.Kind.Speed).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
-						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
+					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
 					auto& cursor = Inkeys::config.Drawing.Cursor;

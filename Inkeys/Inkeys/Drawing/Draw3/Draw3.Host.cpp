@@ -458,6 +458,9 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic_uint32_t laserOptions = 0;
 		uint32_t appliedGeneralDrawingOptions = UINT32_MAX;
 		uint32_t appliedLaserOptions = UINT32_MAX;
+		mutable std::mutex palmEraserOptionsMutex;
+		PalmEraser::Settings palmEraserOptions;
+		std::optional<PalmEraser::Settings> appliedPalmEraserOptions;
 		std::atomic_bool drawingHapticsEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
@@ -1690,6 +1693,13 @@ namespace Inkeys::Drawing::Draw3
 				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
 			if (drawing)
 			{
+				PalmEraser::Settings palmOptions;
+				{ std::scoped_lock lock(palmEraserOptionsMutex); palmOptions = palmEraserOptions; }
+				if (!appliedPalmEraserOptions || *appliedPalmEraserOptions != palmOptions)
+				{
+					drawing->SetPalmEraserOptions(palmOptions);
+					appliedPalmEraserOptions = palmOptions;
+				}
 				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
 				if (general != appliedGeneralDrawingOptions)
 				{
@@ -2152,6 +2162,7 @@ namespace Inkeys::Drawing::Draw3
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
 							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
+							appliedPalmEraserOptions.reset();
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -2799,6 +2810,23 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (particlesEnabled ? 2u : 0u);
 		if (impl_->laserOptions.exchange(next, std::memory_order_acq_rel) != next)
 			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetPalmEraserOptions(const PalmEraser::Settings& options)
+	{
+		const auto normalized = PalmEraser::NormalizeSettings(options);
+		{
+			std::scoped_lock lock(impl_->palmEraserOptionsMutex);
+			if (impl_->palmEraserOptions == normalized) return;
+			impl_->palmEraserOptions = normalized;
+		}
+		// 只发布期望快照，Controller 仍只由绘制 owner 访问。
+		(void)impl_->input.PublishControlWake();
+	}
+	PalmEraser::Settings Host::PalmEraserOptions() const
+	{
+		std::scoped_lock lock(impl_->palmEraserOptionsMutex);
+		return impl_->palmEraserOptions;
 	}
 
 	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)

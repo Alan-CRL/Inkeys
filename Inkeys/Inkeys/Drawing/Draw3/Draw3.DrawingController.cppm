@@ -18,6 +18,7 @@
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
@@ -63,6 +64,8 @@ export namespace Inkeys::Drawing::Draw3
 	int RunPresentationCurrentLoadRetryProbe() noexcept;
 	// 无 HWND：复用 Run 的 ingress 批次函数验证命令屏障前后不吞新 Down。
 	int RunDraw3ControlFenceProductionProbe() noexcept;
+	// 无 HWND：复用生产手掌转换、邻域准入与接续身份接缝。
+	int RunPalmEraserProductionProbe() noexcept;
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
 	int RunDraw3ContentProofProductionProbe() noexcept;
 	int RunWhiteboardStorageProductionTest() noexcept;
@@ -125,6 +128,8 @@ export namespace Inkeys::Drawing::Draw3
 			InkPredictionMode predictionMode) noexcept;
 		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
 		void SetInvertedPenEraserEnabled(bool enabled) noexcept;
+		// 由 Host 绘制 owner 应用；每个新独立触点再锁存。
+		void SetPalmEraserOptions(const PalmEraser::Settings& options) noexcept;
 		bool GetInvertedPenEraserEnabled() const noexcept;
 		void SetDrawingHapticsEnabled(bool enabled) noexcept { drawingHapticsEnabled_ = enabled; }
 		// 即时控制 Touch 断触修正；关闭时已有候选会立即按正常 Up 收尾。
@@ -176,6 +181,7 @@ export namespace Inkeys::Drawing::Draw3
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		// 位0/1为多指/尾修正，位2..3为预测模式；默认开/开/Kalman。
 		std::atomic<uint32_t> generalDrawingOptions_ = 11;
+		PalmEraser::Settings palmEraserOptions_;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;

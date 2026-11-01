@@ -203,7 +203,8 @@ namespace Inkeys::UI::Setting::Design
 		}
 	};
 
-	enum class DrawingSubpage : int { Overview, SpeedEraser };
+	enum class DrawingSubpage : int { Overview, SpeedEraser, PalmEraser };
+	DrawingSubpage RenderDrawingEraserEntries(DrawingSubpage current);
 
 	inline void NavigateDrawingSubpage(NavigationState& navigation, DrawingSubpage& current,
 		DrawingSubpage requested) noexcept
@@ -234,6 +235,24 @@ namespace Inkeys::UI::Setting::Design
 		bool touchAreaChanged = false;
 	};
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter = {});
+
+	struct PalmEraserDraft
+	{
+		bool enabled = false;
+		int recognitionWindowMs = 150, thresholdPercent = 100;
+		bool parallelWriting = true;
+		std::array<bool, 7> tools{ true, true, true, true, true, true, true };
+		// 来自绘制输出已应用标尺的 100% 面积；页面本帧调倍率即可同步预览。
+		double referenceAreaPixels = 0;
+		bool previewEstimated = false, physicalSizeWarning = false;
+	};
+	struct PalmEraserEvents
+	{
+		bool back = false, enabledChanged = false, recognitionWindowChanged = false;
+		bool thresholdChanged = false, thresholdReset = false, parallelWritingChanged = false;
+		std::array<bool, 7> toolsChanged{};
+	};
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
 
 	struct GeneralDraft
 	{

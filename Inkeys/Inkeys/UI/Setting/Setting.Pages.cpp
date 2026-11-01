@@ -579,6 +579,166 @@ namespace Inkeys::UI::Setting::Design
 		return action;
 	}
 
+	DrawingSubpage RenderDrawingEraserEntries(DrawingSubpage current)
+	{
+		const auto& eraser = I18nKey.SettingsUI.Draw.Eraser;
+		if (NavigationRow("##speed-eraser-entry", IA(eraser.Kind.Speed).c_str(),
+			IA(eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
+			current = DrawingSubpage::SpeedEraser;
+		if (NavigationRow("##palm-eraser-entry", IA(eraser.PalmEraser.N).c_str(),
+			IA(eraser.PalmEraser.EntryDescription).c_str(), "\ue7c9"))
+			current = DrawingSubpage::PalmEraser;
+		return current;
+	}
+
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft)
+	{
+		PalmEraserEvents events;
+		const auto& palm = I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
+		events.back = IconButton("##palm-eraser-back", "\ue72b");
+		PageHeader(IA(palm.N).c_str());
+		PageContentStart();
+		const float width = ImGui::GetContentRegionAvail().x;
+		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
+		const float innerWidth = (std::max)(1.0F, width - padding * 2.0F);
+		const auto introduction = IA(palm.Introduction);
+		const float introductionHeight = TextHeight(introduction.c_str(), innerWidth);
+		const float cardHeight = std::ceil(introductionHeight + padding * 2.0F);
+		ImGui::SetNextWindowSizeConstraints({ 0, cardHeight }, { FLT_MAX, cardHeight });
+		ImGui::SetNextWindowContentSize({ 0, introductionHeight });
+		if (BeginCard("##palm-eraser-introduction", { width, cardHeight })) Text(introduction.c_str());
+		EndCard();
+		events.enabledChanged = ToggleRow("##palm-eraser-enabled", IA(palm.Enabled).c_str(),
+			nullptr, "\ue7c9", draft.enabled);
+		if (draft.physicalSizeWarning)
+		{
+			PageContentStart();
+			Notice("##palm-eraser-size-warning", IA(palm.SizeWarningTitle).c_str(),
+				IA(palm.SizeWarningDescription).c_str(), ImFluentInfoSeverity_Warning);
+		}
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.BasicSettings).c_str());
+		constexpr std::array<int, 4> windows{ 100, 150, 250, 500 };
+		const auto found = std::find(windows.begin(), windows.end(), draft.recognitionWindowMs);
+		int windowIndex = found == windows.end() ? 1 : static_cast<int>(found - windows.begin());
+		events.recognitionWindowChanged = ComboRow("##palm-eraser-window", IA(palm.RecognitionWindow).c_str(),
+			IA(palm.RecognitionWindowDescription).c_str(), "\ue823", windowIndex,
+			{ "100ms", "150ms" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), "250ms", "500ms" });
+		if (events.recognitionWindowChanged) draft.recognitionWindowMs = windows[windowIndex];
+
+		const auto reset = IA(I18nKey.Operate.Reset);
+		const float resetWidth = ButtonWidth(reset.c_str()), numberWidth = 40.0F;
+		const float actionWidth = numberWidth + 12.0F + 120.0F + ControlSpacing + resetWidth;
+		const auto measure = MeasureRow(width / Pixels(1), actionWidth, ControlHeight);
+		const bool resetBelow = measure.actionWidth < numberWidth + 12.0F + 24.0F + ControlSpacing + resetWidth;
+		// 滑块和重置属于同一条目；极窄时只在条目内部换行，不增加独立重置卡片。
+		SettingRow("##palm-eraser-threshold", IA(palm.Threshold).c_str(), IA(palm.ThresholdDescription).c_str(),
+			"\ue7c9", actionWidth, resetBelow ? ControlHeight * 2 + ControlSpacing : ControlHeight,
+			[&](const LayoutRect& bounds) {
+				char percentage[24]; ImFormatString(percentage, IM_ARRAYSIZE(percentage), "%d%%", draft.thresholdPercent);
+				TextAt(percentage, { bounds.left, bounds.top + Pixels(6) }, Pixels(numberWidth));
+				const float sliderLeft = bounds.left + Pixels(numberWidth + 12);
+				const float buttonLeft = bounds.right - Pixels(resetWidth);
+				ImGui::SetCursorScreenPos({ sliderLeft, bounds.top });
+				ImGui::SetNextItemWidth((std::max)(1.0F, (resetBelow ? bounds.right : buttonLeft - Pixels(ControlSpacing)) - sliderLeft));
+				events.thresholdChanged = SliderInt("##slider", &draft.thresholdPercent, 25, 400, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SetCursorScreenPos({ buttonLeft, bounds.top + (resetBelow ? Pixels(ControlHeight + ControlSpacing) : 0) });
+				if (Button((reset + "###reset").c_str(), { Pixels(resetWidth), Pixels(ControlHeight) }))
+				{
+					events.thresholdReset = true;
+					events.thresholdChanged |= draft.thresholdPercent != 100;
+					draft.thresholdPercent = 100;
+				}
+			});
+
+		const double area = draft.referenceAreaPixels * draft.thresholdPercent / 100.0;
+		const bool available = std::isfinite(area) && area > 0;
+		const auto previewTitle = IA(palm.PreviewTitle);
+		const auto previewDescription = IA(!available ? palm.PreviewUnavailable
+			: draft.previewEstimated ? palm.PreviewEstimated : palm.PreviewDescription);
+		const float titleHeight = TextHeight(previewTitle.c_str(), innerWidth, ImFluentTextStyle_BodyStrong);
+		const float descriptionHeight = TextHeight(previewDescription.c_str(), innerWidth, ImFluentTextStyle_Caption);
+		const float headingHeight = titleHeight + Pixels(8) + descriptionHeight;
+		std::array<ImVec2, 3> sizes{}, positions{};
+		std::array<float, 3> itemWidths{};
+		const std::array<const char*, 3> ratios{ "1:1", "2:1", "1:2" };
+		float canvasWidth = 0, canvasHeight = 0;
+		if (available)
+		{
+			// 图形直接使用绘制输出像素；只有文字和留白跟随设置 UI 的 DPI/字体倍率。
+			sizes = { ImVec2(static_cast<float>(std::sqrt(area)), static_cast<float>(std::sqrt(area))),
+				ImVec2(static_cast<float>(std::sqrt(area * 2)), static_cast<float>(std::sqrt(area / 2))),
+				ImVec2(static_cast<float>(std::sqrt(area / 2)), static_cast<float>(std::sqrt(area * 2))) };
+			float x = 0, y = 0, rowHeight = 0;
+			for (int index = 0; index < 3; ++index)
+			{
+				itemWidths[index] = (std::max)(sizes[index].x, TextWidth(ratios[index], ImFluentTextStyle_Caption));
+				if (x > 0 && x + Pixels(16) + itemWidths[index] > innerWidth)
+				{
+					y += rowHeight + Pixels(16); x = 0; rowHeight = 0;
+				}
+				if (x > 0) x += Pixels(16);
+				positions[index] = { x, y };
+				rowHeight = (std::max)(rowHeight, sizes[index].y + Pixels(8)
+					+ TextHeight(ratios[index], itemWidths[index], ImFluentTextStyle_Caption));
+				x += itemWidths[index]; canvasWidth = (std::max)(canvasWidth, x);
+			}
+			canvasHeight = std::ceil(y + rowHeight);
+		}
+		const float scrollReserve = canvasWidth > innerWidth ? Pixels(ScrollbarTrackSize + ScrollbarPadding) : 0;
+		const float previewHeight = headingHeight + (available ? Pixels(16) + canvasHeight + scrollReserve : 0);
+		const float previewCardHeight = std::ceil(previewHeight + padding * 2);
+		ImGui::SetNextWindowSizeConstraints({ 0, previewCardHeight }, { FLT_MAX, previewCardHeight });
+		ImGui::SetNextWindowContentSize({ 0, previewHeight });
+		if (BeginCard("##palm-eraser-preview", { width, previewCardHeight }))
+		{
+			const auto origin = ImGui::GetCursorScreenPos();
+			TextAt(previewTitle.c_str(), origin, innerWidth, ImFluentTextStyle_BodyStrong);
+			TextAt(previewDescription.c_str(), { origin.x, origin.y + titleHeight + Pixels(8) }, innerWidth,
+				ImFluentTextStyle_Caption, TextSecondary);
+			if (available)
+			{
+				ImGui::SetCursorScreenPos({ origin.x, origin.y + headingHeight + Pixels(16) });
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+				// 通用滚动补间只跟随纵向溢出；此处固定横轨，避免开启动画时轨道被压成零。
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, Pixels(ScrollbarTrackSize));
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarPadding, Pixels(ScrollbarPadding));
+				ImGui::SetNextWindowContentSize({ canvasWidth, canvasHeight });
+				if (ImGui::BeginChild("##palm-eraser-preview-shapes", { innerWidth, canvasHeight + scrollReserve },
+					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar))
+				{
+					const auto top = ImGui::GetCursorScreenPos();
+					for (int index = 0; index < 3; ++index)
+					{
+						const ImVec2 start(top.x + positions[index].x + (itemWidths[index] - sizes[index].x) * .5F,
+							top.y + positions[index].y);
+						ImGui::GetWindowDrawList()->AddRectFilled(start, { start.x + sizes[index].x, start.y + sizes[index].y }, GetPalette().textDisabled);
+						const float labelWidth = TextWidth(ratios[index], ImFluentTextStyle_Caption);
+						TextAt(ratios[index], { top.x + positions[index].x + (itemWidths[index] - labelWidth) * .5F,
+							start.y + sizes[index].y + Pixels(8) }, labelWidth, ImFluentTextStyle_Caption, TextSecondary);
+					}
+					ImGui::Dummy({ canvasWidth, canvasHeight });
+				}
+				ImGui::EndChild(); ImGui::PopStyleVar(3);
+			}
+			// 完整高度始终进入外层页面滚动；单个超宽示例只在预览块横向查看。
+			ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, previewHeight });
+		}
+		EndCard();
+		const auto& pen = I18nKey.UI.Bar.DrawAttributes;
+		CheckboxGroup("##palm-eraser-tools", IA(palm.EnabledTools).c_str(), "\uedc6", {
+			{ IA(pen.SoftPenLabel), &draft.tools[0], &events.toolsChanged[0] },
+			{ IA(pen.HardPenLabel), &draft.tools[1], &events.toolsChanged[1] },
+			{ IA(pen.HighlighterLabel), &draft.tools[2], &events.toolsChanged[2] },
+			{ IA(pen.LaserLabel), &draft.tools[3], &events.toolsChanged[3] },
+			{ IA(I18nKey.UI.Centre.Eraser), &draft.tools[4], &events.toolsChanged[4] },
+			{ IA(I18nKey.UI.Bar.MainButtons.GeometryLabel), &draft.tools[5], &events.toolsChanged[5] },
+			{ IA(pen.BrushLabel), &draft.tools[6], &events.toolsChanged[6] } });
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
+		events.parallelWritingChanged = ToggleRow("##palm-eraser-parallel", IA(palm.ParallelWriting).c_str(),
+			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting);
+		return events;
+	}
+
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter)
 	{
 		SpeedEraserEvents events;

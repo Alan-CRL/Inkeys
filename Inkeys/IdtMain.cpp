@@ -801,6 +801,94 @@ namespace
 					return 1;
 				}
 			}
+			stage = "palm eraser configuration";
+			{
+				using PalmSettings = Inkeys::Drawing::Draw3::PalmEraser::Settings;
+				struct RestorePalmDeviceDefault final
+				{
+					bool previous = Inkeys::ConfigDetail::GetDefaultLargeScreenDevice();
+					~RestorePalmDeviceDefault() { Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(previous); }
+				} restorePalmDefault;
+				const auto palmSnapshot = [](const Inkeys::Config& value)
+				{
+					const auto& saved = value.Drawing.PalmEraser;
+					PalmSettings result;
+					result.enabled = saved.Enabled.load(); result.thresholdPercent = saved.ThresholdPercent.load();
+					result.recognitionWindowMs = saved.RecognitionWindowMs.load();
+					result.parallelWriting = saved.ParallelWriting.load();
+					result.tools = { saved.Tools.Pen.load(), saved.Tools.HardPen.load(), saved.Tools.Highlighter.load(),
+						saved.Tools.Laser.load(), saved.Tools.Eraser.load(), saved.Tools.Shape.load(), saved.Tools.Brush.load() };
+					return result;
+				};
+				const auto requirePalm = [](bool condition, const char* check)
+				{
+					if (!condition) std::fprintf(stderr, "[ConfigBoundary] FAIL: PalmEraser %s\n", check);
+					return condition;
+				};
+				for (const bool largeScreen : { false, true })
+				{
+					Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(largeScreen);
+					PalmSettings defaults; defaults.enabled = largeScreen;
+					Inkeys::Config fresh, mini;
+					if (!requirePalm(writeBytes(mainConfig, "{}") && fresh.ReadAll()
+						&& mini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(fresh) == defaults
+						&& palmSnapshot(mini) == defaults, "frozen device defaults/ReadMini")) return 1;
+					// 缺省大屏即使没有 EDID 仍开启，并用用户确认的100×100系统DIP阈值。
+					Inkeys::Drawing::Draw3::SpeedEraser::DisplayScale noEdid;
+					noEdid.monitor = 1; noEdid.pixelWidth = 1920; noEdid.pixelHeight = 1080;
+					noEdid.logicalOutputKnown = true;
+					const auto fallbackScale = Inkeys::Drawing::Draw3::PalmEraser::ResolvePreviewScale(noEdid);
+					Inkeys::Drawing::Draw3::PalmEraser::State fallbackState;
+					fallbackState.Begin(palmSnapshot(fresh), fallbackScale,
+						Inkeys::Drawing::Draw3::PalmEraser::ToolCategory::Pen, 1000, 1000);
+					(void)fallbackState.Observe({100,100,100,100,
+						Inkeys::Drawing::Draw3::SpeedEraser::ContactAreaUnits::CanvasPixels}, 1050);
+					if (!requirePalm(fallbackScale.available && fallbackScale.estimated
+						&& fallbackState.active == largeScreen, "EDID loss preserves frozen device default and DIP recognition")) return 1;
+					for (const int window : { 100, 150, 250, 500 }) for (const int percent : { 25, 100, 400 })
+					{
+						auto& saved = fresh.Drawing.PalmEraser;
+						saved.Enabled = !largeScreen; saved.ThresholdPercent = percent;
+						saved.RecognitionWindowMs = window; saved.ParallelWriting = window != 250;
+						const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
+							&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
+						for (size_t index = 0; index < fields.size(); ++index) *fields[index] = (index + window + percent) % 2 == 0;
+						const auto expected = palmSnapshot(fresh);
+						Inkeys::Config restored, partial;
+						partial.UI.FrameRate = 30;
+						if (!requirePalm(fresh.Write() && restored.ReadAll()
+							&& partial.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(restored) == expected
+							&& palmSnapshot(partial) == expected && partial.UI.FrameRate == 30,
+							"valid values and seven tools roundtrip")) return 1;
+						Inkeys::Config copied, assigned; copied = restored; assigned = restored;
+						if (!requirePalm(palmSnapshot(copied) == expected && palmSnapshot(assigned) == expected
+							&& restored.GetUploadInfo().find("PalmEraser") == std::string::npos,
+							"copy/assignment/NoUpload")) return 1;
+						copied.ResetToDefaults();
+						if (!requirePalm(palmSnapshot(copied) == defaults, "reset and Brush default")) return 1;
+					}
+					// 类型和宽整数必须在窄化前拒绝，不能把低32位误读为100或150。
+					for (const char* key : { "ThresholdPercent", "RecognitionWindowMs" })
+						for (const char* invalid : { "true", "false", "250.0", "\"250\"", "-1", "0", "24", "401",
+							"4294967396", "4294967446", "18446744073709551615", "null", "{}", "[]" })
+						{
+							const auto json = std::string("{\"Drawing\":{\"PalmEraser\":{\"") + key + "\":" + invalid + "}}}";
+							Inkeys::Config invalidAll, invalidMini;
+							if (!requirePalm(writeBytes(mainConfig, json) && invalidAll.ReadAll()
+								&& invalidMini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(invalidAll) == defaults
+								&& palmSnapshot(invalidMini) == defaults, "strict integer type/range fallback")) return 1;
+						}
+					for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+					{
+						const auto json = std::string("{\"Drawing\":{\"PalmEraser\":{\"Enabled\":") + invalid
+							+ ",\"ParallelWriting\":" + invalid + ",\"Tools\":{\"Brush\":" + invalid + "}}}}";
+						Inkeys::Config invalidAll, invalidMini;
+						if (!requirePalm(writeBytes(mainConfig, json) && invalidAll.ReadAll()
+							&& invalidMini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(invalidAll) == defaults
+							&& palmSnapshot(invalidMini) == defaults, "strict bool fallback")) return 1;
+					}
+				}
+			}
 			stage = "taskbar scale device defaults";
 			struct RestoreDeviceDefault final
 			{
@@ -1535,6 +1623,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenTaperProductionProbe(); });
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-palm-eraser-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPalmEraserProductionProbe(); });
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-width-test") == 0)
 		{
@@ -2932,6 +3026,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(
 				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(

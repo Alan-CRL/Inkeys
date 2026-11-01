@@ -2619,6 +2619,216 @@ namespace
 		ApplyPalette(false);
 	}
 
+	void CheckPalmEraserPage(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons,
+		float scale, bool exerciseInput)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto oldFlags = io.ConfigFlags;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue; const auto oldSize = io.DisplaySize;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		for (const bool dark : { false, true }) for (const float width : { 360.0F, 900.0F })
+		{
+			ApplyPalette(dark); NavigationState navigation; PalmEraserDraft draft;
+			draft.referenceAreaPixels = 40000;
+			ImGuiWindow* page = nullptr; ImGuiWindow* tools = nullptr; ImGuiWindow* preview = nullptr; ImGuiWindow* shapes = nullptr;
+			struct Frame { PalmEraserEvents events; bool enabled = false, window = false, threshold = false, parallel = false, warning = false;
+				int warningVertices = 0; std::vector<ImRect> rectangles; std::string loggedText; };
+			std::array<int, 7> toolEdits{}; int enabledEdits = 0, windowEdits = 0, thresholdEdits = 0, resetEvents = 0, parallelEdits = 0, backEvents = 0;
+			auto noEdits = [](const PalmEraserEvents& events) {
+				return !events.back && !events.enabledChanged && !events.recognitionWindowChanged && !events.thresholdChanged
+					&& !events.thresholdReset && !events.parallelWritingChanged
+					&& std::none_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool value) { return value; });
+			};
+			auto draw = [&](ImVec2 mouse, bool down, bool captureText = false, bool animated = false) {
+				io.DisplaySize = { (width + 32) * scale, 3200 * scale };
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(animated ? .05F : 0, animated, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##palm-eraser-page-cpu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				page = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				if (captureText) ImGui::LogToBuffer();
+				Frame frame; frame.events = RenderPalmEraser(draft);
+				if (captureText) { frame.loggedText = GImGui->LogBuffer.c_str(); ImGui::LogFinish(); }
+				auto rowSeen = [&](const char* id) {
+					ImGui::PushID(id); const auto stamp = ImGui::GetID("##description-frame"); ImGui::PopID();
+					return ImGui::GetStateStorage()->GetInt(stamp, -1) == ImGui::GetFrameCount();
+				};
+				frame.enabled = rowSeen("##palm-eraser-enabled"); frame.window = rowSeen("##palm-eraser-window");
+				frame.threshold = rowSeen("##palm-eraser-threshold"); frame.parallel = rowSeen("##palm-eraser-parallel");
+				frame.warning = rowSeen("##palm-eraser-size-warning");
+				auto child = [&](ImGuiWindow* owner, const char* id) -> ImGuiWindow* {
+					if (owner) for (auto* candidate : GImGui->Windows)
+						if (candidate->Active && candidate->ParentWindow == owner && candidate->ChildId == owner->GetID(id)) return candidate;
+					return nullptr;
+				};
+				tools = child(page, "##palm-eraser-tools"); preview = child(page, "##palm-eraser-preview");
+				shapes = child(preview, "##palm-eraser-preview-shapes");
+				// 读取实际灰色矩形的四个顶点，不能以测试自己重算的布局代替生产 DrawData。
+				if (shapes) for (int index = 0; index + 3 < shapes->DrawList->VtxBuffer.Size; ++index)
+				{
+					const auto* vertices = shapes->DrawList->VtxBuffer.Data + index;
+					if (vertices[0].col != GetPalette().textDisabled || vertices[1].col != vertices[0].col
+						|| vertices[2].col != vertices[0].col || vertices[3].col != vertices[0].col) continue;
+					ImRect rect(vertices[0].pos, vertices[0].pos);
+					for (int vertex = 1; vertex < 4; ++vertex) rect.Add(vertices[vertex].pos);
+					frame.rectangles.push_back(rect); index += 3;
+				}
+				for (const auto& vertex : page->DrawList->VtxBuffer)
+					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Warning]) ++frame.warningVertices;
+				for (int index = 0; index < 7; ++index) toolEdits[index] += frame.events.toolsChanged[index] ? 1 : 0;
+				enabledEdits += frame.events.enabledChanged ? 1 : 0; windowEdits += frame.events.recognitionWindowChanged ? 1 : 0;
+				thresholdEdits += frame.events.thresholdChanged ? 1 : 0; resetEvents += frame.events.thresholdReset ? 1 : 0;
+				parallelEdits += frame.events.parallelWritingChanged ? 1 : 0; backEvents += frame.events.back ? 1 : 0;
+				ImFluent::PopFont(); ImGui::End(); ApplyDragScrolling(navigation); ImGui::Render();
+				checks.Expect(GImGui->ErrorCountCurrentFrame == 0, "actual palm page completes without ImGui layout or stack errors");
+				return frame;
+			};
+			auto controlId = [&](const char* row, const char* control) { return ImHashStr(control, 0, ImHashStr(row, 0, page->ID)); };
+			auto focusRect = [&](ImGuiWindow* owner, ImGuiID id) {
+				if (!owner) { checks.Expect(false, "palm eraser controls keep a live owner"); return ImRect{}; }
+				ImGui::FocusWindow(owner); ImGui::SetNavID(id, ImGuiNavLayer_Main, owner->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(outside, false);
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "actual palm eraser item registers navigation");
+				return ImGui::WindowRectRelToAbs(owner, owner->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			auto clickAt = [&](ImVec2 point) {
+				draw(point, false); draw(point, true); const auto frame = draw(point, false); draw(outside, false); return frame;
+			};
+			auto click = [&](const ImRect& rect) { return clickAt(rect.GetCenter()); };
+			auto chord = [&](ImGuiKey key) { io.AddKeyEvent(key, true); draw(outside, false); io.AddKeyEvent(key, false); draw(outside, false); };
+			Frame frame;
+			for (int pass = 0; pass < 3; ++pass) { frame = draw(outside, false); checks.Expect(noEdits(frame.events), "idle palm page never dispatches edits"); }
+			const auto logged = draw(outside, false, true);
+			checks.Expect(logged.loggedText.find("150ms" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix)) != std::string::npos,
+				"real palm combo renders 150ms with the localized recommended suffix");
+			checks.Expect(!draft.enabled && draft.recognitionWindowMs == 150 && draft.thresholdPercent == 100 && draft.parallelWriting
+				&& std::all_of(draft.tools.begin(), draft.tools.end(), [](bool enabled) { return enabled; }),
+				"palm UI defaults keep the recommended window, 100 percent, parallel writing and all seven tools");
+			checks.Expect(frame.enabled && frame.window && frame.threshold && frame.parallel && tools && preview && shapes,
+				"all palm preferences and preview are present while the master switch is disabled");
+			checks.Expect(frame.rectangles.size() == 3, "palm preview submits three actual gray rectangles");
+			if (frame.rectangles.size() == 3)
+			{
+				const std::array<float, 3> ratios{ 1, 2, .5F };
+				for (int index = 0; index < 3; ++index)
+				{
+					const auto& rect = frame.rectangles[index];
+					checks.Expect(Near(rect.GetWidth() * rect.GetHeight(), 40000, 2)
+						&& Near(rect.GetWidth() / rect.GetHeight(), ratios[index], .001F),
+						"real preview rectangles retain equal raw pixel areas and 1:1, 2:1, 1:2 ratios across UI DPI");
+				}
+				checks.Expect(Near(frame.rectangles[0].GetWidth(), 200, .01F), "UI DPI and font scaling do not multiply palm preview pixels");
+				if (scale == 1 && width < 500)
+					checks.Expect(frame.rectangles[1].Min.y > frame.rectangles[0].Max.y,
+						"narrow palm preview wraps examples instead of shrinking their pixel dimensions");
+			}
+			checks.Expect(preview && tools && tools->Pos.y >= preview->Pos.y + preview->Size.y
+				&& preview->ScrollMax.y < 1 && tools->ScrollMax.y < 1 && shapes && shapes->ScrollMax.y < 1,
+				"preview height belongs to the full page and tools follow without inner vertical scrolling");
+			std::array<ImRect, 7> choices;
+			for (int index = 0; index < 7; ++index)
+				choices[index] = focusRect(tools, tools ? ImHashStr("###device", 0, tools->GetID(index)) : 0);
+			if (tools) for (int index = 0; index < 7; ++index)
+			{
+				checks.Expect(choices[index].GetWidth() > 0 && choices[index].GetHeight() > 0
+					&& choices[index].Min.x >= tools->Pos.x && choices[index].Max.x <= tools->Pos.x + tools->Size.x
+					&& choices[index].Min.y >= tools->Pos.y && choices[index].Max.y <= tools->Pos.y + tools->Size.y,
+					"all seven localized tool checkboxes fit their actual card including Brush");
+				for (int other = index + 1; other < 7; ++other)
+					checks.Expect(!choices[index].Overlaps(choices[other]), "palm tool hit rectangles do not overlap");
+			}
+			for (bool enabled : { false, true })
+			{
+				draft.enabled = enabled; draft.physicalSizeWarning = true; frame = draw(outside, false);
+				checks.Expect(frame.warning && frame.warningVertices > 0 && frame.window && frame.threshold && frame.parallel && noEdits(frame.events),
+					"palm physical-scale warning and editable preferences do not depend on the master switch");
+				draft.physicalSizeWarning = false; frame = draw(outside, false);
+				checks.Expect(!frame.warning && frame.warningVertices == 0, "trusted scale removes the palm warning without an edit");
+			}
+			draft.enabled = false; draft.referenceAreaPixels = 0; frame = draw(outside, false);
+			checks.Expect(!shapes && frame.rectangles.empty() && noEdits(frame.events), "unpublished scale shows no fabricated actual-size preview");
+			// 绘图输出 150% 系统 DPI 的 100×100 DIP 回退应为 150×150px，设置 UI 的倍率不能再次相乘。
+			draft.referenceAreaPixels = 22500; draft.previewEstimated = true; draft.physicalSizeWarning = true;
+			for (int percentage : { 25, 100, 400 })
+			{
+				draft.thresholdPercent = percentage;
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				checks.Expect(frame.rectangles.size() == 3 && frame.warning && frame.warningVertices > 0 && noEdits(frame.events),
+					"untrusted physical scale retains a usable system-DIP preview and warning while the master switch is off");
+				if (frame.rectangles.size() == 3)
+					checks.Expect(Near(frame.rectangles[0].GetWidth(), 150 * std::sqrt(percentage / 100.0F), .01F)
+						&& Near(frame.rectangles[0].GetHeight(), frame.rectangles[0].GetWidth(), .01F),
+						"system-DIP fallback scales area percentage once and remains independent of settings UI DPI");
+			}
+			draft.thresholdPercent = 100; draft.physicalSizeWarning = false; draw(outside, false);
+			CheckDrawData(checks);
+			if (!exerciseInput || dark || width < 500) continue;
+
+			// 通过真实鼠标和键盘操作生产控件；Brush 与其他六项完全相同。
+			for (int index = 0; index < 7; ++index)
+			{
+				const auto before = draft.tools; const auto edited = click(focusRect(tools, ImHashStr("###device", 0, tools->GetID(index))));
+				checks.Expect(!draft.tools[index] && toolEdits[index] == 1 && edited.events.toolsChanged[index] && !draft.enabled,
+					"each tool including Brush is editable once while palm erasing is disabled");
+				for (int other = 0; other < 7; ++other) if (other != index)
+					checks.Expect(draft.tools[other] == before[other] && !edited.events.toolsChanged[other], "tool edit preserves every other palm preference");
+			}
+			click(focusRect(tools, ImHashStr("###device", 0, tools->GetID(6))));
+			checks.Expect(draft.tools[6] && toolEdits[6] == 2, "Brush can be re-enabled with its own stored draft value");
+			int edits = 0;
+			for (int index : { 0, 2, 3, 1 })
+			{
+				focusRect(page, controlId("##palm-eraser-window", "##select")); chord(ImGuiKey_F4); chord(ImGuiKey_Home);
+				for (int step = 0; step < index; ++step) chord(ImGuiKey_DownArrow);
+				chord(ImGuiKey_Enter); ++edits;
+				const int windows[]{ 100, 150, 250, 500 };
+				checks.Expect(draft.recognitionWindowMs == windows[index] && windowEdits == edits && !draft.enabled,
+					"all four real recognition choices commit stable millisecond values exactly once");
+			}
+			const auto slider = focusRect(page, controlId("##palm-eraser-threshold", "##slider"));
+			clickAt({ slider.Min.x + 1, slider.GetCenter().y });
+			checks.Expect(draft.thresholdPercent == 25 && thresholdEdits == 1, "real palm threshold slider reaches 25 percent");
+			clickAt({ slider.Max.x - 1, slider.GetCenter().y });
+			checks.Expect(draft.thresholdPercent == 400 && thresholdEdits == 2, "real palm threshold slider reaches 400 percent");
+			const auto resetRect = focusRect(page, controlId("##palm-eraser-threshold", "###reset"));
+			checks.Expect(std::abs(resetRect.GetCenter().y - slider.GetCenter().y) <= scale,
+				"threshold slider and reset button occupy the same setting row");
+			click(focusRect(page, controlId("##palm-eraser-parallel", "##toggle")));
+			const auto savedTools = draft.tools; const int savedWindow = draft.recognitionWindowMs;
+			click(resetRect);
+			checks.Expect(draft.thresholdPercent == 100 && resetEvents == 1 && thresholdEdits == 3 && !draft.enabled
+				&& !draft.parallelWriting && parallelEdits == 1 && draft.tools == savedTools && draft.recognitionWindowMs == savedWindow,
+				"reset changes only the area percentage while retaining parallel writing, tools, window and master preferences");
+			const auto master = click(focusRect(page, controlId("##palm-eraser-enabled", "##toggle")));
+			checks.Expect(draft.enabled && enabledEdits == 1 && master.window && master.threshold && master.parallel && draft.tools == savedTools,
+				"master activation retains every editable palm preference");
+			const auto back = focusRect(page, controlId("##palm-eraser-back", "##icon")); click(back);
+			checks.Expect(backEvents == 1 && back.Min.y <= page->Pos.y + page->WindowPadding.y + scale,
+				"palm detail uses the existing top back-arrow control and emits one navigation event");
+			checks.Expect(noEdits(draw(outside, false).events), "settled palm controls never repeat edit events");
+
+			// 单例超宽仍保持原像素大小，只有这一预览视图产生横向滚动。
+			draft.thresholdPercent = 100; draft.referenceAreaPixels = std::pow(width * scale * 1.25F, 2);
+			for (int pass = 0; pass < 3; ++pass) frame = draw(outside, false, false, true);
+			checks.Expect(shapes && shapes->ScrollbarX && shapes->ScrollMax.x > 0 && shapes->ScrollMax.y < 1
+				&& shapes->ScrollbarSizes.y >= Pixels(ScrollbarTrackSize) - 1
+				&& preview && preview->ScrollMax.x == 0 && preview->ScrollMax.y < 1 && frame.rectangles.size() == 3,
+				"an oversized palm example is horizontally scrollable without adding vertical or whole-page horizontal scrolling");
+			if (shapes && frame.rectangles.size() == 3)
+			{
+				const float rawWidth = frame.rectangles[0].GetWidth();
+				const float lastScroll = shapes->ScrollMax.x;
+				ImGui::SetScrollX(shapes, lastScroll); frame = draw(outside, false);
+				checks.Expect(shapes->Scroll.x > 0 && frame.rectangles.size() == 3 && Near(frame.rectangles[0].GetWidth(), rawWidth, .01F),
+					"horizontal viewing preserves the original raw-pixel threshold dimensions");
+			}
+			CheckDrawData(checks);
+		}
+		io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle; io.DisplaySize = oldSize; ApplyPalette(false);
+	}
+
 	void CheckSpeedEraserDemoPage(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		using namespace Design;
@@ -2796,11 +3006,12 @@ namespace
 		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 		NavigationState navigation; navigation.animationsEnabled = true;
 		NotifyNavigationDestination(navigation, { PageId::Draw });
-		DrawingSubpage subpage = DrawingSubpage::Overview; SpeedEraserDraft draft;
+		DrawingSubpage subpage = DrawingSubpage::Overview; SpeedEraserDraft draft; PalmEraserDraft palm;
+		palm.referenceAreaPixels = 40000;
 		auto& io = ImGui::GetIO(); const auto oldSize = io.DisplaySize;
-		auto draw = [&](DrawingSubpage requested, float scroll = -1.0F) {
+		auto draw = [&](DrawingSubpage requested, float scroll = -1.0F, ImVec2 mouse = ImVec2(-100, -100), bool down = false) {
 			NavigateDrawingSubpage(navigation, subpage, requested);
-			io.DisplaySize = { 960 * scale, 700 * scale }; io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			io.DisplaySize = { 960 * scale, 700 * scale }; io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
 			ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(0, false, 1);
 			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
 			ImGui::Begin("##drawing-detail-scroll", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
@@ -2809,7 +3020,12 @@ namespace
 			BeginScrollChild("##setting-content", { 640 * scale, 400 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding);
 			auto* host = ImGui::GetCurrentWindow();
 			if (subpage == DrawingSubpage::SpeedEraser) (void)RenderSpeedEraser(draft);
-			else ImGui::Dummy({ 1, 1600 * scale });
+			else if (subpage == DrawingSubpage::PalmEraser) (void)RenderPalmEraser(palm);
+			else
+			{
+				NavigateDrawingSubpage(navigation, subpage, RenderDrawingEraserEntries(subpage));
+				ImGui::Dummy({ 1, 1600 * scale });
+			}
 			if (scroll >= 0) ImGui::SetScrollY(scroll);
 			ImGui::EndChild(); ImGui::PopID(); ImGui::PopID(); ImGui::End();
 			ApplyDragScrolling(navigation); ImGui::Render(); return host;
@@ -2829,12 +3045,44 @@ namespace
 		auto* revisited = draw(DrawingSubpage::SpeedEraser);
 		checks.Expect(revisited == detail && storedDetail > 0 && Near(revisited->Scroll.y, storedDetail),
 			"reopening eraser detail preserves its own scroll position independently");
+		auto* palmDetail = draw(DrawingSubpage::PalmEraser);
+		checks.Expect(palmDetail != detail && palmDetail != overview && Near(palmDetail->Scroll.y, 0)
+			&& navigation.contentPage == static_cast<int>(PageId::Draw),
+			"palm detail has a third stable child identity without changing the drawing sidebar selection");
+		draw(DrawingSubpage::PalmEraser, 120 * scale); palmDetail = draw(DrawingSubpage::PalmEraser);
+		const float storedPalm = palmDetail->Scroll.y;
+		checks.Expect(draw(DrawingSubpage::SpeedEraser) == detail && Near(detail->Scroll.y, storedDetail),
+			"opening palm detail does not overwrite speed eraser scroll state");
+		checks.Expect(draw(DrawingSubpage::Overview) == overview && Near(overview->Scroll.y, storedOverview),
+			"returning from palm detail restores overview scroll state");
+		checks.Expect(draw(DrawingSubpage::PalmEraser) == palmDetail && storedPalm > 0 && Near(palmDetail->Scroll.y, storedPalm),
+			"palm detail restores its own real scroll position on re-entry");
 		AdvanceNavigationAnimations(navigation, .05F, true, 1); const float reveal = navigation.contentReveal.value;
 		NavigateDrawingSubpage(navigation, subpage, subpage);
 		checks.Expect(Near(navigation.contentReveal.value, reveal), "same drawing subpage does not restart its transition");
 		navigation.animationsEnabled = false;
 		NavigateDrawingSubpage(navigation, subpage, DrawingSubpage::Overview);
 		checks.Expect(Near(navigation.contentReveal.value, 1), "drawing detail navigation respects disabled animations");
+		// 入口也直接回放生产控件，核对 Speed 后紧跟 Palm，而非复制文案/命中公式。
+		draw(DrawingSubpage::Overview, 0); overview = draw(DrawingSubpage::Overview);
+		auto entryRect = [&](const char* entry) {
+			const auto id = ImHashStr("##navigate", 0, overview->GetID(entry));
+			ImGui::FocusWindow(overview); ImGui::SetNavID(id, ImGuiNavLayer_Main, overview->NavRootFocusScopeId, ImRect{});
+			draw(DrawingSubpage::Overview);
+			checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "eraser overview entry registers its actual stable navigation item");
+			return ImGui::WindowRectRelToAbs(overview, overview->NavRectRel[ImGuiNavLayer_Main]);
+		};
+		const auto speedEntry = entryRect("##speed-eraser-entry"), palmEntry = entryRect("##palm-eraser-entry");
+		checks.Expect(palmEntry.Min.y > speedEntry.Max.y && Near(palmEntry.Min.x, speedEntry.Min.x, 1)
+			&& Near(palmEntry.GetWidth(), speedEntry.GetWidth(), 1), "palm entry immediately follows speed eraser with matching row geometry");
+		for (const auto target : { DrawingSubpage::PalmEraser, DrawingSubpage::SpeedEraser })
+		{
+			const auto point = (target == DrawingSubpage::PalmEraser ? palmEntry : speedEntry).GetCenter();
+			draw(DrawingSubpage::Overview, -1, point); draw(DrawingSubpage::Overview, -1, point, true);
+			draw(DrawingSubpage::Overview, -1, point);
+			checks.Expect(subpage == target && navigation.contentPage == static_cast<int>(PageId::Draw), "actual overview row click navigates to its drawing child");
+			draw(DrawingSubpage::Overview);
+		}
 		io.DisplaySize = oldSize;
 	}
 
@@ -5488,6 +5736,8 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				const bool traditional = std::strcmp(language, "zh-TW") == 0;
 				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale,
 					scale == 1.0F || scale == 1.875F);
+				CheckPalmEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale,
+					scale == 1.0F || scale == 1.875F);
 				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 			}
 			if (scale == 1.0F || scale == 1.875F) CheckDrawingSubpageScroll(checks, fonts[0], fonts[1], fonts.back(), scale);
@@ -5560,6 +5810,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				const bool traditional = std::strcmp(language, "zh-TW") == 0;
 				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale, scale == 1.0F);
+				CheckPalmEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale, scale == 1.0F);
 				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckCicdAndSponsorContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckHomeFeedbackContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);

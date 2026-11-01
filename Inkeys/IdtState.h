@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PalmEraser.h"
 
 #include "IdtMain.h"
 
@@ -229,6 +230,8 @@ void SyncDraw3State();
 void InitializeEraserInputPreferences();
 Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot();
 void SetGlobalEraserPreference(int baseDiameterDip = -1, int sensitivity = -1, int automatic = -1);
+Inkeys::Drawing::Draw3::PalmEraser::Settings PalmEraserPreferencesSnapshot();
+bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings& options);
 bool AutomaticPenResponseAvailable() noexcept;
 int EraserWidthPreference(int entry);
 int EraserPenResponsePreference(int entry);

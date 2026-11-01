@@ -410,6 +410,21 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTipResponse, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTailResponse, -1) \
 		) \
+		GROUP(PalmEraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, ConfigDetail::GetDefaultLargeScreenDevice()) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThresholdPercent, 100) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RecognitionWindowMs, 150) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParallelWriting, true) \
+			GROUP(Tools, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, HardPen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Highlighter, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Laser, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Eraser, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Shape, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Brush, true) \
+			) \
+		) \
 	) \
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \

@@ -6,6 +6,7 @@
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 
@@ -419,6 +420,8 @@ namespace Inkeys::Drawing::Draw3
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
 		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
+		void SetPalmEraserOptions(const PalmEraser::Settings& options);
+		PalmEraser::Settings PalmEraserOptions() const;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;

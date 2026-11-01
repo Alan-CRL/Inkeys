@@ -662,6 +662,26 @@
           "SizeWarningTitle": "Reliable screen dimensions are unavailable",
           "SizeWarningDescription": "The current drawing screen lacks reliable physical dimensions. Touch and screen pens will use DPI estimates, so eraser size may not match your erasing intent."
         },
+        "PalmEraser":
+        {
+          "N": "Palm eraser",
+          "EntryDescription": "Erase with a broad touch without switching tools",
+          "Introduction": "Place your palm on the screen to erase without switching tools. Its size is determined during the recognition window; lifting your palm keeps your original tool selected.",
+          "Enabled": "Enable palm eraser",
+          "SizeWarningTitle": "Reliable screen dimensions unavailable",
+          "SizeWarningDescription": "The current drawing screen has no reliable physical dimensions. Palm erasing is still available, using a base area threshold of 100×100 system DIPs. Its physical size may vary; adjust the percentage to suit your screen.",
+          "RecognitionWindow": "Recognition window",
+          "RecognitionWindowDescription": "Recognize your palm and determine its size within this time after touch begins. Erasing starts as soon as the conditions are met.",
+          "Threshold": "Touch area threshold",
+          "ThresholdDescription": "At 100%, the reference area is 25cm² with reliable physical dimensions, or 100×100 system DIPs otherwise. Increase the percentage to reduce accidental activation, or decrease it for easier palm recognition.",
+          "PreviewTitle": "Touch area examples (current drawing screen)",
+          "PreviewDescription": "The three gray shapes have equal areas, shown at the pixel threshold of the current drawing screen. Their physical size may differ when viewed on another screen.",
+          "PreviewEstimated": "These estimated pixel thresholds use a base area of 100×100 system DIPs and the current percentage on the drawing screen. The three gray shapes have equal areas; their physical size may vary.",
+          "PreviewUnavailable": "The current drawing screen's scale is unavailable, so area examples cannot be shown yet.",
+          "EnabledTools": "Applicable tools",
+          "ParallelWriting": "Enable writing while erasing",
+          "ParallelWritingDescription": "Activating the palm eraser leaves other input uninterrupted, so drawing can continue. (For two or more people writing together.)"
+        },
         "Input":
         {
           "MouseLeft": "Left mouse button",
