@@ -24,6 +24,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <format>
 #include <iostream>
 #include <iterator>
 #include <string>
@@ -190,10 +191,10 @@ namespace
 					checks.Expect(Near(regions.footer.bottom - regions.footerItems[3].bottom, 8)
 						&& Near(regions.footer.Height(), 184),
 						"footer ends after close action with only its original bottom inset and no debug reservation");
-					checks.Expect(Near(regions.middleContentHeight, 236)
+					checks.Expect(Near(regions.middleContentHeight, 276)
 						&& Near(regions.top.Height() + regions.middle.Height() + regions.footer.Height(), pane.Height())
 						&& (size.y != 520 || regions.middleContentHeight > regions.middle.Height()),
-						"remaining height alone budgets the six-root middle with overflow at minimum size");
+						"remaining height alone budgets the seven-root middle with overflow at minimum size");
 				}
 		const auto shortPane = Design::ResolveNavigationPaneGeometry(248, 240);
 		checks.Expect(!shortPane.fits && Near(shortPane.middle.Height(), 0)
@@ -343,6 +344,185 @@ namespace
 		checks.Expect(!textOnlyRow.stacked && textOnlyRow.text.left < smallRow.text.left
 			&& textOnlyRow.text.Width() > smallRow.text.Width(),
 			"text-only rows reclaim icon and action space");
+	}
+
+	void CheckSettingAttentionRows(Checks& checks, const std::array<ImFont*, 5>& fonts, float scale)
+	{
+		const char* descriptions[]{ "调整窗口在桌面上的显示方式，保持书写与操作连贯。",
+			"調整視窗在桌面上的顯示方式，保持書寫與操作連貫。",
+			"Choose how the window stays visible while you write and interact with other applications." };
+		const char* notes[]{ "重新启动软件后生效。启用此功能前，请确认当前账户已获得访问该位置的权限，并妥善保存尚未备份的文件。",
+			"重新啟動軟體後生效。啟用此功能前，請確認目前帳戶已取得存取該位置的權限，並妥善儲存尚未備份的檔案。",
+			"Restart the application to apply this change. Make sure your account can access this location and save any files that have not been backed up." };
+		int frames = 0;
+		for (int language = 0; language < 3; ++language)
+		for (bool dark : { false, true })
+		{
+			Design::BindTextFonts(fonts[language == 1 ? 2 : 0], fonts[language == 1 ? 3 : 1]);
+			ImFluent::SetIconFont(fonts.back()); Design::ApplyPalette(dark);
+			struct Sample { float height = 0, reveal = 0; LayoutRect action, note; };
+			auto draw = [&](float width, const char* description, const char* note, bool animate) {
+				const bool noteIsDescription = (!description || !*description) && note && *note;
+				const char* displayedDescription = noteIsDescription ? note : description;
+				const char* extraNote = noteIsDescription ? nullptr : note;
+				Design::ConfigureRowAnimations(1.0F / 60, animate, 1);
+				auto& io = ImGui::GetIO(); io.DisplaySize = { 1600 * scale, 1800 * scale }; io.DeltaTime = 1.0F / 60;
+				io.AddMousePosEvent(-1000,-1000); io.AddMouseButtonEvent(0,false);
+				ImGui::NewFrame(); ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize({width*scale,1600*scale});
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
+				ImGui::Begin("##attention-layout",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar);
+				ImGui::PopStyleVar(); ImGui::PushID(language * 2 + dark);
+				const ImVec2 origin = ImGui::GetCursorScreenPos();
+				const float actualWidth = ImGui::GetContentRegionAvail().x / scale;
+				const auto measure = Design::MeasureRow(actualWidth,180,32);
+				const int firstVertex = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+				int endText = firstVertex, calls = 0; Sample sample;
+				Design::SettingRow("attention", "Screen drawing", description,"\ue713",180,32,
+					[&](const LayoutRect& bounds) { ++calls; sample.action=bounds; endText=ImGui::GetWindowDrawList()->VtxBuffer.Size;
+						ImGui::Dummy({bounds.Width(),bounds.Height()}); }, Design::Card,Design::Stroke,0,IM_COL32_WHITE,false,note);
+				ImGui::PushID("attention"); sample.reveal=ImGui::GetStateStorage()->GetFloat(ImGui::GetID("##description-value")); ImGui::PopID();
+				const auto noteHeight = [&](float widthDip) {
+					return extraNote && *extraNote ? (std::max)(Design::CaptionText.lineHeight,
+						Design::TextHeight(extraNote,(std::max)(1.0F,(widthDip-Design::CaptionText.lineHeight-6)*scale),ImFluentTextStyle_Caption)/scale) : 0.0F;
+				};
+				const float descHeight = Design::TextHeight(displayedDescription,Design::DescriptionWidth(measure,sample.reveal)*scale,ImFluentTextStyle_Caption)/scale;
+				const float inlineDescHeight = Design::TextHeight(displayedDescription,measure.textWidth*scale,ImFluentTextStyle_Caption)/scale;
+				const float titleHeight = Design::TextHeight("Screen drawing",measure.textWidth*scale)/scale;
+				const auto geometry = Design::ResolveRowWithNote(measure,titleHeight,descHeight,inlineDescHeight,
+					noteHeight(Design::DescriptionWidth(measure,sample.reveal)),noteHeight(measure.textWidth),sample.reveal);
+				sample.height=geometry.height;
+				const auto physical = [&](LayoutRect rect) { return LayoutRect{origin.x+rect.left*scale,origin.y+rect.top*scale,
+					origin.x+rect.right*scale,origin.y+rect.bottom*scale}; };
+				sample.note=physical(geometry.note);
+				const LayoutRect card{0,0,actualWidth,geometry.height};
+				checks.Expect(calls==1 && SameRect(sample.action,physical(geometry.action)),"attention row submits its action once at measured bounds");
+				checks.Expect(Contains(card,geometry.title)&&Contains(card,geometry.description)&&Contains(card,geometry.action),"attention row contains all original regions");
+				checks.Expect(Disjoint(geometry.title,geometry.action)&&Disjoint(geometry.description,geometry.action),"attention description motion avoids the action");
+				checks.Expect(Near(ImGui::GetCursorScreenPos().y,origin.y+(geometry.height+Design::RowGap)*scale,1),"following cursor includes the full note and gap");
+				if (!extraNote || !*extraNote)
+				{
+					const auto before = Design::ResolveMultilineRowLayout(measure,titleHeight,descHeight,inlineDescHeight,sample.reveal);
+					checks.Expect(Near(before.height,geometry.height)&&SameRect(before.title,geometry.title)&&SameRect(before.description,geometry.description)
+						&&SameRect(before.action,geometry.action)&&SameRect(before.icon,geometry.icon),"no extra note preserves exact ordinary-description geometry");
+					if (noteIsDescription)
+					{
+						int descriptionVertices = 0, informationVertices = 0, expectedGlyphs = 0;
+						const auto* list = ImGui::GetWindowDrawList();
+						for (int i = firstVertex; i < endText; ++i)
+						{
+							descriptionVertices += list->VtxBuffer[i].col == Design::TextSecondary;
+							informationVertices += list->VtxBuffer[i].col == Design::Accent;
+						}
+						ImFluent::PushFont(ImFluentTextStyle_Caption);
+						for (const char* cursor = displayedDescription; *cursor;)
+						{
+							unsigned int codepoint; cursor += ImTextCharFromUtf8(&codepoint,cursor,nullptr);
+							const auto* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
+							if (codepoint >= 32 && glyph && glyph->Visible) ++expectedGlyphs;
+						}
+						ImFluent::PopFont();
+						checks.Expect(informationVertices == 0 && descriptionVertices == expectedGlyphs * 4,
+							"standalone prerequisite emits its complete ordinary-description text without an information glyph");
+					}
+				}
+				else
+				{
+					checks.Expect(Contains(card,geometry.note)&&Disjoint(geometry.note,geometry.action)&&Disjoint(geometry.note,geometry.title)
+						&&Disjoint(geometry.note,geometry.description),"wrapped note stays below explanation and outside action throughout reflow");
+					const float inset=(Design::CaptionText.lineHeight+6)*scale;
+					LayoutRect iconInk{FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX}; int icons=0, textVertices=0;
+					const auto* list=ImGui::GetWindowDrawList();
+					for(int i=firstVertex;i<endText;++i)
+					{
+						const auto& vertex=list->VtxBuffer[i];
+						if(vertex.col==Design::Accent)
+						{
+							++icons; iconInk.left=(std::min)(iconInk.left,vertex.pos.x); iconInk.right=(std::max)(iconInk.right,vertex.pos.x);
+							iconInk.top=(std::min)(iconInk.top,vertex.pos.y); iconInk.bottom=(std::max)(iconInk.bottom,vertex.pos.y);
+						}
+						if(vertex.col==Design::TextPrimary && vertex.pos.y>=sample.note.top-0.5F && vertex.pos.x>=sample.note.left+inset-1)
+						{
+							++textVertices;
+							checks.Expect(vertex.pos.x<=sample.note.right+1 && vertex.pos.y<=sample.note.bottom+1,"actual normal-color note glyph stays inside wrapped allocation");
+						}
+					}
+					int expectedGlyphs=0;
+					ImFluent::PushFont(ImFluentTextStyle_Caption);
+					for(const char* cursor=extraNote;*cursor;)
+					{
+						unsigned int codepoint; cursor+=ImTextCharFromUtf8(&codepoint,cursor,nullptr);
+						const auto* glyph=ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
+						if(codepoint>=32 && glyph && glyph->Visible)++expectedGlyphs;
+					}
+					ImFluent::PopFont();
+					ImGui::PushFont(fonts.back(),Design::CaptionText.size);
+					const auto* info=ImGui::GetFontBaked()->FindGlyphNoFallback(static_cast<ImWchar>(0xf167));
+					const float iconWidth=info?info->X1-info->X0:0,iconHeight=info?info->Y1-info->Y0:0;
+					ImGui::PopFont();
+					checks.Expect(icons==4 && Near(iconInk.Width(),iconWidth,0.6F)&&Near(iconInk.Height(),iconHeight,0.6F),"one blue information glyph uses the Caption icon size");
+					checks.Expect(textVertices==expectedGlyphs*4 && iconInk.right<=sample.note.left+inset,"note emits every localized glyph once in normal foreground beside the information icon");
+				}
+				const float nextTop=ImGui::GetCursorScreenPos().y;
+				Design::SettingRow("following","Following row",nullptr,nullptr,80,32,[&](const LayoutRect& bounds){
+					checks.Expect(bounds.top>=nextTop,"next real control starts after note allocation"); ImGui::Dummy({bounds.Width(),bounds.Height()}); });
+				ImGui::PopID(); ImGui::End(); ImGui::Render(); CheckDrawData(checks); ++frames;
+				return sample;
+			};
+			for(float width:{900.0F,500.0F,320.0F})
+			for(const char* description:{descriptions[language],"",static_cast<const char*>(nullptr)})
+			{
+				const auto plain=draw(width,description,nullptr,false),empty=draw(width,description,"",false);
+				checks.Expect(Near(plain.height,empty.height)&&SameRect(plain.action,empty.action),"empty note does not reserve hidden space");
+				const auto noted=draw(width,description,notes[language],false);
+				checks.Expect(noted.height>=plain.height,"long localized content contributes measured height");
+				if (!description || !*description)
+				{
+					const auto ordinary = draw(width,notes[language],nullptr,false);
+					checks.Expect(Near(noted.height,ordinary.height)&&SameRect(noted.action,ordinary.action),
+						"note without description has the same real row geometry as a normal description");
+				}
+			}
+			draw(900,descriptions[language],notes[language],false);
+			bool intermediate=false;
+			for(float width:{500.0F,900.0F})
+			for(int frame=0;frame<12;++frame)
+			{
+				const auto sample=draw(width,descriptions[language],notes[language],true);
+				intermediate|=sample.reveal>0 && sample.reveal<1;
+			}
+			checks.Expect(intermediate,"note and explanation participate in live description movement");
+		}
+		// 逐个调用公开封装，确保note透传；没有后台、窗口或渲染设备。
+		Design::BindTextFonts(fonts[0],fonts[1]); ImFluent::SetIconFont(fonts.back()); Design::ApplyPalette(false);
+		for(int kind=0;kind<7;++kind)
+		{
+			float heights[2]{};
+			for(int withNote=0;withNote<2;++withNote)
+			{
+				Design::ConfigureRowAnimations(0,false,1); ImGui::NewFrame(); ImGui::SetNextWindowPos({0,0});ImGui::SetNextWindowSize({900*scale,1000*scale});
+				ImGui::Begin("##attention-wrappers",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+				bool toggle=false,active=false;int selected=0,integer=2;float value=2;const char* note=withNote?"Restart the application to apply this change.":nullptr;
+				const float top=ImGui::GetCursorScreenPos().y;
+				switch(kind)
+				{
+				case 0: Design::ToggleRow("toggle","Title","Explanation","\ue713",toggle,note);break;
+				case 1: Design::ComboRow("combo","Title","Explanation","\ue713",selected,{"Option one","Option two"},note);break;
+				case 2: Design::SliderRow("slider","Title","Explanation","\ue713",value,0,5,active,"%.1f",note);break;
+				case 3: Design::SliderIntRow("integer","Title","Explanation","\ue713",integer,0,5,active,"%d",note);break;
+				case 4: Design::ButtonRow("button","Title","Explanation","\ue713","Apply",false,note);break;
+				case 5: Design::ButtonGroupRow("buttons","Title","Explanation","\ue713",{{"first","Apply"},{"second","Reset"}},note);break;
+				case 6: Design::NavigationRow("navigation","Title","Explanation","\ue713",0,IM_COL32_WHITE,note);break;
+				}
+				heights[withNote]=ImGui::GetCursorScreenPos().y-top;
+				const float infoTop=ImGui::GetCursorScreenPos().y;
+				Design::InfoText(""); checks.Expect(Near(infoTop,ImGui::GetCursorScreenPos().y),"empty group information emits no layout item");
+				Design::InfoText(note);checks.Expect(!withNote || ImGui::GetCursorScreenPos().y>infoTop,"group information shares automatic measured layout");
+				ImGui::End();ImGui::Render();CheckDrawData(checks);++frames;
+			}
+			checks.Expect(heights[1]>heights[0],"public setting-row wrapper reserves its optional note");
+		}
+		Design::ApplyPalette(false);Design::ConfigureRowAnimations(0,false,1);
+		std::cout<<"[SettingAttention] scale="<<scale<<" frames="<<frames<<'\n';
 	}
 
 	void CheckMultilineRowAnimations(Checks& checks, const std::array<ImFont*, 5>& fonts,
@@ -1794,8 +1974,175 @@ namespace
 	}
 
 
+	void CheckCopyButtonAtWindowEnd(Checks& checks, ImFont* regular, ImFont* strong, float scale)
+	{
+		Design::BindTextFonts(regular, strong);
+		auto& io = ImGui::GetIO(); const auto previousDisplay = io.DisplaySize;
+		auto* context = ImGui::GetCurrentContext();
+		const auto previousCallback = context->ErrorCallback;
+		void* previousUserData = context->ErrorCallbackUserData;
+		const bool previousAssert = io.ConfigErrorRecoveryEnableAssert, previousTooltip = io.ConfigErrorRecoveryEnableTooltip;
+		std::vector<std::string> errors;
+		context->ErrorCallbackUserData = &errors;
+		context->ErrorCallback = [](ImGuiContext* ctx, void* data, const char* message) {
+			static_cast<std::vector<std::string>*>(data)->emplace_back(message);
+			std::cerr << "[CopyButtonLastItemError] window=" << (ctx->CurrentWindow ? ctx->CurrentWindow->Name : "NULL")
+				<< " message=" << message << '\n';
+		};
+		const std::string label = IA(I18nKey.Operate.Copy);
+		int frames = 0, clipped = 0, scrolled = 0, exactWidth = 0, narrowWidth = 0;
+		for (int kind : { 1, 0, 2, 3 }) for (int widthCase = 0; widthCase < 3; ++widthCase)
+		for (float outerIndent : { 0.0F, 16.0F }) for (int pass = 0; pass < 4; ++pass)
+		{
+			io.DisplaySize = { 900 * scale, 600 * scale }; io.DeltaTime = 1.0F / 60;
+			io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			ImGui::NewFrame();
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 8 * scale, 8 * scale });
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 4 * scale, 7.5F * scale });
+			const float naturalWidth = Design::Pixels(Design::ButtonWidth(label.c_str()));
+			const float width = widthCase == 0 ? 320 * scale : widthCase == 1 ? naturalWidth : naturalWidth * .5F;
+			ImGui::SetNextWindowPos({ 0, 0 });
+			ImGui::SetNextWindowSize({ kind == 3 ? width + (outerIndent + 16) * scale : 640 * scale, 400 * scale });
+			ImGui::Begin("##copy-last-item-root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			ImGui::PushID(kind * 100 + widthCase * 10 + static_cast<int>(outerIndent));
+			if (kind != 3)
+			{
+				ImGui::SetNextWindowScroll({ 0, kind == 1 ? 200 * scale : 0 });
+				ImGui::BeginChild("##setting-page-content", { width + (outerIndent + 16) * scale, kind == 0 ? 0 : 100 * scale },
+					ImGuiChildFlags_AlwaysUseWindowPadding | (kind == 0 ? ImGuiChildFlags_AutoResizeY : 0), ImGuiWindowFlags_NoScrollbar);
+			}
+			auto* host = ImGui::GetCurrentWindow();
+			if (outerIndent > 0) ImGui::Indent(outerIndent * scale);
+			if (kind == 1 || kind == 2) ImGui::Dummy({ 0, 220 * scale });
+			const ImVec2 origin = ImGui::GetCursorScreenPos();
+			const float available = ImGui::GetContentRegionAvail().x;
+			ImGui::PushID("tail-copy"); const ImGuiID expectedId = ImGui::GetID(label.c_str()); ImGui::PopID();
+			Design::CopyButton("tail-copy", label.c_str(), "完整中文诊断\n最后一项立即结束窗口");
+			if (!host->SkipItems)
+			{
+				const auto button = GImGui->LastItemData.Rect;
+				checks.Expect(ImGui::GetItemID() == expectedId && Near(button.GetHeight(), Design::Pixels(Design::ControlHeight), 1),
+					"last-item copy preserves the real standard button ID and size");
+				checks.Expect(Near(button.Max.x, origin.x + available, 1) && Near(ImGui::GetCursorScreenPos().x, origin.x, .01F),
+					"last-item copy aligns right and restores normal or outer-indented left origin");
+				checks.Expect(Near(ImGui::GetCursorScreenPos().y,
+					ImTrunc(origin.y + button.GetHeight() + ImGui::GetStyle().ItemSpacing.y), .01F),
+					"last-item copy advances by one standard button and one native item spacing");
+				clipped += !button.Overlaps(host->InnerClipRect); scrolled += host->Scroll.y > 0;
+				exactWidth += Near(available, naturalWidth, .01F); narrowWidth += available < naturalWidth - 1;
+			}
+			if (outerIndent > 0) ImGui::Unindent(outerIndent * scale);
+			// CopyButton是真正末项；此后不提交Dummy、标题或其他item来掩盖未登记的尾部位置。
+			if (kind != 3) ImGui::EndChild();
+			ImGui::PopID(); ImGui::End();
+			checks.Expect(context->ErrorCountCurrentFrame == 0 && errors.empty(),
+				"copy as the last child/root item closes through real ImGui EndChild/End without errors");
+			ImGui::PopStyleVar(2); ImGui::Render(); CheckDrawData(checks); ++frames;
+		}
+		checks.Expect(clipped > 0 && scrolled > 0 && exactWidth > 0 && narrowWidth > 0,
+			"last-item copy covers clipped/scrolled children and exact/narrow control widths");
+		checks.Expect(io.ConfigErrorRecoveryEnableAssert == previousAssert && io.ConfigErrorRecoveryEnableTooltip == previousTooltip,
+			"last-item regression leaves native assertion and tooltip diagnostics enabled as configured");
+		context->ErrorCallback = previousCallback; context->ErrorCallbackUserData = previousUserData;
+		io.DisplaySize = previousDisplay;
+		std::cout << "[CopyButtonWindowEnd] scale=" << scale << " frames=" << frames << " errors=" << errors.size() << '\n';
+	}
+
+	void CheckDiagnosticCopyButtons(Checks& checks, ImFont* regular, ImFont* strong, float scale)
+	{
+		CheckCopyButtonAtWindowEnd(checks, regular, strong, scale);
+		ClipboardProbe clipboard;
+		Design::BindTextFonts(regular, strong);
+		auto& io = ImGui::GetIO();
+		const auto previousDisplay = io.DisplaySize;
+		const bool previousTrickle = io.ConfigInputTrickleEventQueue, previousDark = Design::IsDarkMode();
+		io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		const std::string label = IA(I18nKey.Operate.Copy);
+		const char* ids[]{ "##copy-canvas-information", "##copy-display-edid" };
+		int frames = 0;
+		for (bool dark : { false, true }) for (float width : { 260.0F, 640.0F })
+		{
+			Design::ApplyPalette(dark);
+			std::array<std::string, 2> text{
+				"画布初始化信息\n设备：硬件GPU\n交换链：DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL\n输入：RealTimeStylus",
+				"EDID (Extended Display Identification Data)\n活动拓扑：扩展 | 监视器数量：4" };
+			for (int line = 1; line <= 18; ++line)
+				text[0] += "\n中文长行诊断 " + std::to_string(line) + "：保持当前帧的完整缓存文本，不截断为屏幕可见部分。";
+			for (int monitor = 1; monitor <= 4; ++monitor)
+				text[1] += "\n\n显示器 " + std::to_string(monitor)
+					+ "：中文显示器完整名称 | DPI (X/Y): 192 × 192 | EDID 已解析，物理尺寸与原始状态全部保留。";
+			struct Frame
+			{
+				std::array<ImRect, 2> card{}, button{};
+				std::array<ImGuiID, 2> id{};
+				ImRect clip;
+				float scroll = 0;
+			};
+			auto draw = [&](ImVec2 mouse, bool down, float scroll)
+			{
+				io.DisplaySize = { (width + 32) * scale, 400 * scale }; io.DeltaTime = 1.0F / 60;
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame();
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::SetNextWindowScroll({ 0, scroll });
+				ImGui::Begin("##diagnostic-copy-buttons", nullptr, ImGuiWindowFlags_NoDecoration
+					| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+				Frame frame; auto* page = ImGui::GetCurrentWindow();
+				frame.scroll = page->Scroll.y; frame.clip = page->InnerClipRect;
+				for (int block = 0; block < 2; ++block)
+				{
+					// 卡片各自隔离；复制按钮放在相同父作用域，检验helper的id参数本身有效。
+					ImGui::PushID(block); Design::RenderEdidCard(text[block].c_str());
+					frame.card[block] = GImGui->LastItemData.Rect; ImGui::PopID();
+					const ImVec2 origin = ImGui::GetCursorScreenPos();
+					const float right = origin.x + ImGui::GetContentRegionAvail().x;
+					const float expectedWidth = (std::min)(ImGui::GetContentRegionAvail().x, Design::Pixels(Design::ButtonWidth(label.c_str())));
+					Design::CopyButton(ids[block], label.c_str(), text[block].c_str());
+					frame.button[block] = GImGui->LastItemData.Rect; frame.id[block] = ImGui::GetItemID();
+					checks.Expect(Near(frame.button[block].GetWidth(), expectedWidth, 1)
+						&& Near(frame.button[block].GetHeight(), Design::Pixels(Design::ControlHeight), 1)
+						&& Near(frame.button[block].Max.x, right, 1) && frame.button[block].Min.y >= frame.card[block].Max.y,
+						"diagnostic copy is a standard 32 DIP button below its block and aligned to its right edge");
+					checks.Expect(Near(ImGui::GetCursorScreenPos().x, origin.x, .01F),
+						"copy helper restores the original left cursor without rewinding vertical layout");
+					Design::Text("后续标题", ImFluentTextStyle_BodyStrong);
+					checks.Expect(Near(GImGui->LastItemData.Rect.Min.x, origin.x, .01F)
+						&& GImGui->LastItemData.Rect.Min.y >= frame.button[block].Max.y,
+						"the following title remains left aligned and below the copy button");
+				}
+				checks.Expect(frame.id[0] && frame.id[1] && frame.id[0] != frame.id[1],
+					"same-label diagnostic copy buttons have independent identities");
+				ImGui::Dummy({ 0, 200 * scale });
+				ImGui::End(); ImGui::Render(); CheckDrawData(checks); ++frames;
+				return frame;
+			};
+			auto frame = draw(outside, false, 0);
+			for (int warm = 0; warm < 3; ++warm) frame = draw(outside, false, 0);
+			auto copy = [&](int block)
+			{
+				const float scroll = (std::max)(0.0F, frame.scroll + frame.button[block].Min.y - 80 * scale);
+				for (int warm = 0; warm < 3; ++warm) frame = draw(outside, false, scroll);
+				const ImVec2 point = frame.button[block].GetCenter();
+				checks.Expect(frame.clip.Contains(point) && frame.card[block].Min.y < frame.clip.Min.y,
+					"copy remains usable while the beginning of a long diagnostic block is outside the viewport");
+				const auto before = clipboard.values.size();
+				frame = draw(point, false, scroll); frame = draw(point, true, scroll); frame = draw(point, false, scroll);
+				checks.Expect(clipboard.values.size() == before + 1 && clipboard.values.back() == text[block],
+					"real standard-button click copies the entire current UTF-8 diagnostic string through the fake clipboard");
+			};
+			copy(0); copy(1);
+			text[0] += "\n当前帧新增中文诊断：复制更新后的完整内容。";
+			frame = draw(outside, false, frame.scroll); copy(0);
+		}
+		io.DisplaySize = previousDisplay; io.ConfigInputTrickleEventQueue = previousTrickle;
+		Design::ApplyPalette(previousDark);
+		std::cout << "[DiagnosticCopyButtons] scale=" << scale << " frames=" << frames << '\n';
+	}
+
 	void CheckCopyAndCardPolish(Checks& checks, ImFont* regular, ImFont* strong, float scale)
 	{
+		CheckDiagnosticCopyButtons(checks, regular, strong, scale);
 		ClipboardProbe clipboard; Design::BindTextFonts(regular, strong);
 		auto& io = ImGui::GetIO(); const auto display = io.DisplaySize;
 		const bool oldTrickle = io.ConfigInputTrickleEventQueue, oldDark = Design::IsDarkMode();
@@ -2286,6 +2633,337 @@ namespace
 		ApplyPalette(false);
 	}
 
+	void CheckPalmEraserPage(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons,
+		float scale, bool exerciseInput)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto oldFlags = io.ConfigFlags;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue; const auto oldSize = io.DisplaySize;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		for (const bool dark : { false, true }) for (const float width : { 360.0F, 900.0F })
+		{
+			ApplyPalette(dark); NavigationState navigation; PalmEraserDraft draft;
+			draft.referenceAreaPixels = 40000; draft.referenceAreaCm2 = 25;
+			const auto& palmKeys = I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
+			auto physicalNote = [&](double cmWidth, double cmHeight, double pxWidth, double pxHeight) {
+				return std::vformat(IA(palmKeys.ThresholdSizePhysical), std::make_format_args(cmWidth, cmHeight, pxWidth, pxHeight)); };
+			auto pixelNote = [&](double pxWidth, double pxHeight) {
+				return std::vformat(IA(palmKeys.ThresholdSizePixels), std::make_format_args(pxWidth, pxHeight)); };
+			std::string expectedNote = physicalNote(5, 5, 200, 200);
+			ImGuiWindow* page = nullptr; ImGuiWindow* tools = nullptr; ImGuiWindow* preview = nullptr; ImGuiWindow* shapes = nullptr;
+			struct Frame { PalmEraserEvents events; bool enabled = false, window = false, threshold = false, parallel = false, warning = false;
+				int warningVertices = 0, outlineVertices = 0; bool centerFilled = false, introduction = false, noteVisible = false, noteMatches = false; std::vector<ImRect> rectangles; std::string loggedText;
+				ImRect warningBounds{ { FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX } }; };
+			std::array<int, 7> toolEdits{}; int enabledEdits = 0, windowEdits = 0, thresholdEdits = 0, resetEvents = 0, parallelEdits = 0, backEvents = 0;
+			auto noEdits = [](const PalmEraserEvents& events) {
+				return !events.back && !events.enabledChanged && !events.recognitionWindowChanged && !events.thresholdChanged
+					&& !events.thresholdReset && !events.parallelWritingChanged
+					&& std::none_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool value) { return value; });
+			};
+			auto draw = [&](ImVec2 mouse, bool down, bool captureText = false, bool animated = false) {
+				io.DisplaySize = { (width + 32) * scale, 3200 * scale };
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(animated ? .05F : 0, animated, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##palm-eraser-page-cpu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				page = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				if (captureText) ImGui::LogToBuffer();
+				Frame frame; frame.events = RenderPalmEraser(draft);
+				if (captureText) { frame.loggedText = GImGui->LogBuffer.c_str(); ImGui::LogFinish(); }
+				auto rowSeen = [&](const char* id) {
+					ImGui::PushID(id); const auto stamp = ImGui::GetID("##description-frame"); ImGui::PopID();
+					return ImGui::GetStateStorage()->GetInt(stamp, -1) == ImGui::GetFrameCount();
+				};
+				frame.enabled = rowSeen("##palm-eraser-enabled"); frame.window = rowSeen("##palm-eraser-window");
+				frame.threshold = rowSeen("##palm-eraser-threshold"); frame.parallel = rowSeen("##palm-eraser-parallel");
+				frame.warning = rowSeen("##palm-eraser-size-warning");
+				auto child = [&](ImGuiWindow* owner, const char* id) -> ImGuiWindow* {
+					if (owner) for (auto* candidate : GImGui->Windows)
+						if (candidate->Active && candidate->ParentWindow == owner && candidate->ChildId == owner->GetID(id)) return candidate;
+					return nullptr;
+				};
+				tools = child(page, "##palm-eraser-tools"); preview = child(page, "##palm-eraser-preview");
+				shapes = child(preview, "##palm-eraser-preview-shapes");
+				frame.introduction = child(page, "##palm-eraser-introduction") != nullptr;
+				// 从真实描边顶点恢复路径中心线，排除抗锯齿外沿，不把测试重算尺寸当作绘制证据。
+				if (shapes)
+				{
+					auto* list = shapes->DrawList; const ImU32 rgb = GetPalette().accent & ~IM_COL32_A_MASK;
+					int first = 0; while (first < list->VtxBuffer.Size && (list->VtxBuffer[first].col & ~IM_COL32_A_MASK) != rgb) ++first;
+					int last = first; while (last < list->VtxBuffer.Size && (list->VtxBuffer[last].col & ~IM_COL32_A_MASK) == rgb) ++last;
+					const bool textured = (list->Flags & ImDrawListFlags_AntiAliasedLinesUseTex) != 0;
+					const int stride = textured ? 2 : 4;
+					if (last - first >= stride * 4)
+					{
+						ImRect rect({ FLT_MAX, FLT_MAX }, { -FLT_MAX, -FLT_MAX });
+						for (int index = first; index + stride <= last; index += stride)
+						{
+							const auto& one = list->VtxBuffer[index + (textured ? 0 : 1)].pos;
+							const auto& two = list->VtxBuffer[index + (textured ? 1 : 2)].pos;
+							rect.Add({ (one.x + two.x) * .5F, (one.y + two.y) * .5F });
+						}
+						rect.Expand(.5F); frame.rectangles.push_back(rect); frame.outlineVertices = last - first;
+						for (const auto& command : list->CmdBuffer)
+							for (unsigned index = command.IdxOffset; index + 2 < command.IdxOffset + command.ElemCount; index += 3)
+							{
+								const int one = static_cast<int>(command.VtxOffset + list->IdxBuffer[index]);
+								const int two = static_cast<int>(command.VtxOffset + list->IdxBuffer[index + 1]);
+								const int three = static_cast<int>(command.VtxOffset + list->IdxBuffer[index + 2]);
+								if (one >= first && one < last && two >= first && two < last && three >= first && three < last)
+									frame.centerFilled |= ImTriangleContainsPoint(list->VtxBuffer[one].pos, list->VtxBuffer[two].pos,
+										list->VtxBuffer[three].pos, rect.GetCenter());
+
+							}
+					}
+				}
+				// 复用标准 i 字形定位；其后紧跟 Caption 正文，校验本帧期望提示的真实字形。
+				ImGui::PushFont(icons, CaptionText.size);
+				const auto* info = ImGui::GetFontBaked()->FindGlyphNoFallback(static_cast<ImWchar>(0xf167));
+				int noteStart = -1;
+				if (info) for (int index = 0; index + 3 < page->DrawList->VtxBuffer.Size; ++index)
+				{
+					const auto& one = page->DrawList->VtxBuffer[index]; const auto& three = page->DrawList->VtxBuffer[index + 2];
+					if (one.col == Accent && one.uv.x == info->U0 && one.uv.y == info->V0 && three.uv.x == info->U1 && three.uv.y == info->V1)
+					{ noteStart = index + 4; break; }
+				}
+				ImGui::PopFont(); frame.noteVisible = noteStart >= 0; frame.noteMatches = frame.noteVisible && !expectedNote.empty();
+				ImFluent::PushFont(ImFluentTextStyle_Caption);
+				for (const char* cursor = expectedNote.c_str(); *cursor && frame.noteMatches;)
+				{
+					unsigned codepoint; cursor += ImTextCharFromUtf8(&codepoint, cursor, nullptr);
+					const auto* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
+					if (!glyph || !glyph->Visible) continue;
+					if (noteStart + 3 >= page->DrawList->VtxBuffer.Size) { frame.noteMatches = false; break; }
+					const auto& one = page->DrawList->VtxBuffer[noteStart]; const auto& three = page->DrawList->VtxBuffer[noteStart + 2];
+					frame.noteMatches = one.col == TextPrimary && three.col == TextPrimary && one.uv.x == glyph->U0 && one.uv.y == glyph->V0
+						&& three.uv.x == glyph->U1 && three.uv.y == glyph->V1; noteStart += 4;
+				}
+				ImFluent::PopFont();
+				for (const auto& vertex : page->DrawList->VtxBuffer)
+					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Warning])
+					{ ++frame.warningVertices; frame.warningBounds.Add(vertex.pos); }
+				for (int index = 0; index < 7; ++index) toolEdits[index] += frame.events.toolsChanged[index] ? 1 : 0;
+				enabledEdits += frame.events.enabledChanged ? 1 : 0; windowEdits += frame.events.recognitionWindowChanged ? 1 : 0;
+				thresholdEdits += frame.events.thresholdChanged ? 1 : 0; resetEvents += frame.events.thresholdReset ? 1 : 0;
+				parallelEdits += frame.events.parallelWritingChanged ? 1 : 0; backEvents += frame.events.back ? 1 : 0;
+				ImFluent::PopFont(); ImGui::End(); ApplyDragScrolling(navigation); ImGui::Render();
+				checks.Expect(GImGui->ErrorCountCurrentFrame == 0, "actual palm page completes without ImGui layout or stack errors");
+				return frame;
+			};
+			auto checkCentered = [&](const Frame& frame) {
+				if (shapes && frame.rectangles.size() == 1 && frame.rectangles[0].GetWidth() + 4 <= shapes->InnerRect.GetWidth())
+					checks.Expect(Near(frame.rectangles[0].GetCenter().x, shapes->InnerRect.GetCenter().x, .05F),
+						"the raw-pixel outline is horizontally centered whenever it fits the actual preview viewport");
+			};
+			auto controlId = [&](const char* row, const char* control) { return ImHashStr(control, 0, ImHashStr(row, 0, page->ID)); };
+			auto focusRect = [&](ImGuiWindow* owner, ImGuiID id) {
+				if (!owner) { checks.Expect(false, "palm eraser controls keep a live owner"); return ImRect{}; }
+				ImGui::FocusWindow(owner); ImGui::SetNavID(id, ImGuiNavLayer_Main, owner->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(outside, false);
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "actual palm eraser item registers navigation");
+				return ImGui::WindowRectRelToAbs(owner, owner->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			auto clickAt = [&](ImVec2 point) {
+				draw(point, false); draw(point, true); const auto frame = draw(point, false); draw(outside, false); return frame;
+			};
+			auto click = [&](const ImRect& rect) { return clickAt(rect.GetCenter()); };
+			auto chord = [&](ImGuiKey key) { io.AddKeyEvent(key, true); draw(outside, false); io.AddKeyEvent(key, false); draw(outside, false); };
+			Frame frame;
+			for (int pass = 0; pass < 3; ++pass) { frame = draw(outside, false); checks.Expect(noEdits(frame.events), "idle palm page never dispatches edits"); }
+			const auto logged = draw(outside, false, true);
+			checks.Expect(logged.loggedText.find("150ms" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix)) != std::string::npos,
+				"real palm combo renders 150ms with the localized recommended suffix");
+			checks.Expect(!draft.enabled && draft.recognitionWindowMs == 150 && draft.thresholdPercent == 100 && draft.parallelWriting
+				&& std::all_of(draft.tools.begin(), draft.tools.end(), [](bool enabled) { return enabled; }),
+				"palm UI defaults keep the recommended window, 100 percent, parallel writing and all seven tools");
+			checks.Expect(frame.enabled && frame.window && frame.threshold && frame.parallel && tools && preview && shapes,
+				"all palm preferences and preview are present while the master switch is disabled");
+			checks.Expect(!frame.introduction, "palm detail removes the introduction card");
+			checks.Expect(frame.noteVisible && frame.noteMatches, "trusted threshold note draws the standard i and current centimeters plus pixels");
+			checkCentered(frame);
+			checks.Expect(frame.rectangles.size() == 1 && frame.outlineVertices > 16 && !frame.centerFilled,
+				"palm preview submits one rounded theme-accent outline with an empty center");
+			if (frame.rectangles.size() == 1)
+				checks.Expect(Near(frame.rectangles[0].GetWidth(), 200, .01F) && Near(frame.rectangles[0].GetHeight(), 200, .01F),
+					"default 1:1 preview keeps raw 200 pixel dimensions independent of UI DPI and font scale");
+			const auto masterRect = focusRect(page, controlId("##palm-eraser-enabled", "##toggle"));
+			const auto windowRect = focusRect(page, controlId("##palm-eraser-window", "##select"));
+			checks.Expect(masterRect.GetHeight() > 0 && windowRect.GetHeight() > 0 && masterRect.Max.y < windowRect.Min.y,
+				"the master toggle precedes the recognition-window row in the actual page layout");
+			// 四种比例都读真实描边；切换页面状态不改变阈值面积或派发设置事件。
+			for (int index = 0; index < 4; ++index)
+			{
+				page->StateStorage.SetInt(page->GetID("##palm-eraser-preview-ratio-state"), index);
+				const std::array<std::array<double, 4>, 4> dimensions{ std::array<double, 4>{ 5, 5, 200, 200 },
+					{ 5.77, 4.33, 231, 173 }, { 7.07, 3.54, 283, 141 }, { 3.54, 7.07, 141, 283 } };
+				const auto& values = dimensions[index]; expectedNote = physicalNote(values[0], values[1], values[2], values[3]);
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				const float ratios[]{ 1, 4.0F / 3, 2, .5F };
+				checkCentered(frame);
+				checks.Expect(frame.noteMatches, "centimeter and pixel threshold text follows each selected preview ratio");
+				checks.Expect(frame.rectangles.size() == 1 && noEdits(frame.events), "ratio preview is singular and does not edit preferences");
+				if (frame.rectangles.size() == 1)
+					checks.Expect(Near(frame.rectangles[0].GetWidth() * frame.rectangles[0].GetHeight(), 40000, 2)
+						&& Near(frame.rectangles[0].GetWidth() / frame.rectangles[0].GetHeight(), ratios[index], .001F),
+						"actual 1:1, 4:3, 2:1 and 1:2 outlines retain equal raw pixel areas at every UI DPI");
+			}
+			page->StateStorage.SetInt(page->GetID("##palm-eraser-preview-ratio-state"), 0); expectedNote = physicalNote(5, 5, 200, 200); frame = draw(outside, false);
+			const auto ratioRect = focusRect(shapes, shapes ? shapes->GetID("##palm-eraser-preview-ratio") : 0);
+			checks.Expect(frame.rectangles.size() == 1 && shapes && Near(ratioRect.Min.x + shapes->Scroll.x, shapes->InnerRect.Min.x, .01F)
+				&& Near(ratioRect.Min.y + 2, frame.rectangles[0].Min.y, .01F),
+				"ratio dropdown remains at the preview top-left independently of the centered outline");
+			checks.Expect(preview && tools && tools->Pos.y >= preview->Pos.y + preview->Size.y
+				&& preview->ScrollMax.y < 1 && tools->ScrollMax.y < 1 && shapes && shapes->ScrollMax.y < 1,
+				"preview height belongs to the full page and tools follow without inner vertical scrolling");
+			std::array<ImRect, 7> choices;
+			for (int index = 0; index < 7; ++index)
+				choices[index] = focusRect(tools, tools ? ImHashStr("###device", 0, tools->GetID(index)) : 0);
+			if (tools) for (int index = 0; index < 7; ++index)
+			{
+				checks.Expect(choices[index].GetWidth() > 0 && choices[index].GetHeight() > 0
+					&& choices[index].Min.x >= tools->Pos.x && choices[index].Max.x <= tools->Pos.x + tools->Size.x
+					&& choices[index].Min.y >= tools->Pos.y && choices[index].Max.y <= tools->Pos.y + tools->Size.y,
+					"all seven localized tool checkboxes fit their actual card including Brush");
+				for (int other = index + 1; other < 7; ++other)
+					checks.Expect(!choices[index].Overlaps(choices[other]), "palm tool hit rectangles do not overlap");
+			}
+			for (bool enabled : { false, true })
+			{
+				draft.enabled = enabled; draft.physicalSizeWarning = true;
+				const auto masterBelowWarning = focusRect(page, controlId("##palm-eraser-enabled", "##toggle"));
+				frame = draw(outside, false);
+				checks.Expect(!frame.warningBounds.IsInverted() && frame.warningBounds.Max.y < masterBelowWarning.Min.y,
+					"the untrusted-size warning is above the master toggle in the actual page layout");
+				checks.Expect(frame.warning && frame.warningVertices > 0 && frame.window && frame.threshold && frame.parallel && noEdits(frame.events),
+					"palm physical-scale warning and editable preferences do not depend on the master switch");
+				draft.physicalSizeWarning = false; frame = draw(outside, false);
+				checks.Expect(!frame.warning && frame.warningVertices == 0, "trusted scale removes the palm warning without an edit");
+			}
+			for (int percentage : { 1, 100, 400 })
+			{
+				draft.thresholdPercent = percentage;
+				const double sideCm = percentage == 1 ? .5 : percentage == 100 ? 5 : 10;
+				const double sidePx = percentage == 1 ? 20 : percentage == 100 ? 200 : 400;
+				expectedNote = physicalNote(sideCm, sideCm, sidePx, sidePx);
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				checks.Expect(frame.noteMatches, "trusted size note follows the current 1, 100 and 400 percent area multiplier");
+				checkCentered(frame);
+			}
+			draft.thresholdPercent = 100;
+			draft.enabled = false; draft.referenceAreaPixels = 0; frame = draw(outside, false);
+			checks.Expect(!shapes && frame.rectangles.empty() && !frame.noteVisible && noEdits(frame.events), "unpublished scale shows no fabricated preview or threshold dimensions");
+			// 暂无面积预览时仅有并行提示的 i；复用真实字形检查覆盖两种说明及全局优先级。
+			for (bool master : { false, true }) for (bool parallel : { false, true })
+			for (bool multiTouch : { false, true }) for (bool laserMultiTouch : { false, true })
+			{
+				draft.enabled = master; draft.parallelWriting = parallel;
+				draft.multiTouchEnabled = multiTouch; draft.laserMultiTouchEnabled = laserMultiTouch;
+				const bool shouldShow = parallel && (!multiTouch || !laserMultiTouch);
+				expectedNote = !shouldShow ? "" : IA(!multiTouch ? palmKeys.ParallelWritingMultiTouchNote : palmKeys.ParallelWritingLaserMultiTouchNote);
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				checks.Expect(frame.noteVisible == shouldShow && (!shouldShow || frame.noteMatches),
+					"parallel-writing note follows both multi-touch flags, prioritizes global drawing and ignores the palm master switch");
+				checks.Expect(noEdits(frame.events) && draft.enabled == master && draft.parallelWriting == parallel
+					&& draft.multiTouchEnabled == multiTouch && draft.laserMultiTouchEnabled == laserMultiTouch,
+					"conditional parallel-writing guidance never edits any preference");
+			}
+			draft.enabled = false; draft.parallelWriting = true; draft.multiTouchEnabled = true; draft.laserMultiTouchEnabled = true;
+			// 绘图输出 150% 系统 DPI 的 100×100 DIP 回退应为 150×150px，设置 UI 的倍率不能再次相乘。
+			draft.referenceAreaPixels = 22500; draft.previewEstimated = true; draft.physicalSizeWarning = true;
+			for (int percentage : { 1, 100, 400 })
+			{
+				draft.thresholdPercent = percentage;
+				const double sidePx = percentage == 1 ? 15 : percentage == 100 ? 150 : 300; expectedNote = pixelNote(sidePx, sidePx);
+				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
+				checks.Expect(frame.rectangles.size() == 1 && frame.warning && frame.warningVertices > 0 && noEdits(frame.events),
+					"untrusted physical scale retains a usable system-DIP preview and warning while the master switch is off");
+				checks.Expect(frame.noteVisible && frame.noteMatches, "estimated scale shows only actual pixel dimensions even if a stale centimeter reference exists");
+				checkCentered(frame);
+				if (frame.rectangles.size() == 1)
+					checks.Expect(Near(frame.rectangles[0].GetWidth(), 150 * std::sqrt(percentage / 100.0F), .01F)
+						&& Near(frame.rectangles[0].GetHeight(), frame.rectangles[0].GetWidth(), .01F),
+						"system-DIP fallback scales area percentage once and remains independent of settings UI DPI");
+			}
+			draft.thresholdPercent = 100; draft.physicalSizeWarning = false; expectedNote = pixelNote(150, 150); draw(outside, false);
+			CheckDrawData(checks);
+			if (!exerciseInput || dark || width < 500) continue;
+
+			for (int index : { 1, 2, 3, 0 })
+			{
+				focusRect(shapes, shapes->GetID("##palm-eraser-preview-ratio")); chord(ImGuiKey_F4); chord(ImGuiKey_Home);
+				for (int step = 0; step < index; ++step) chord(ImGuiKey_DownArrow);
+				chord(ImGuiKey_Enter); frame = draw(outside, false);
+				const float ratios[]{ 1, 4.0F / 3, 2, .5F };
+				checks.Expect(page->StateStorage.GetInt(page->GetID("##palm-eraser-preview-ratio-state"), 0) == index
+					&& frame.rectangles.size() == 1 && Near(frame.rectangles[0].GetWidth() / frame.rectangles[0].GetHeight(), ratios[index], .001F)
+					&& noEdits(frame.events) && enabledEdits == 0 && thresholdEdits == 0 && windowEdits == 0,
+					"all real ratio choices persist across reconstructed frames without saving palm preferences");
+			}
+			// 通过真实鼠标和键盘操作生产控件；Brush 与其他六项完全相同。
+			for (int index = 0; index < 7; ++index)
+			{
+				const auto before = draft.tools; const auto edited = click(focusRect(tools, ImHashStr("###device", 0, tools->GetID(index))));
+				checks.Expect(!draft.tools[index] && toolEdits[index] == 1 && edited.events.toolsChanged[index] && !draft.enabled,
+					"each tool including Brush is editable once while palm erasing is disabled");
+				for (int other = 0; other < 7; ++other) if (other != index)
+					checks.Expect(draft.tools[other] == before[other] && !edited.events.toolsChanged[other], "tool edit preserves every other palm preference");
+			}
+			click(focusRect(tools, ImHashStr("###device", 0, tools->GetID(6))));
+			checks.Expect(draft.tools[6] && toolEdits[6] == 2, "Brush can be re-enabled with its own stored draft value");
+			int edits = 0;
+			for (int index : { 0, 2, 3, 1 })
+			{
+				focusRect(page, controlId("##palm-eraser-window", "##select")); chord(ImGuiKey_F4); chord(ImGuiKey_Home);
+				for (int step = 0; step < index; ++step) chord(ImGuiKey_DownArrow);
+				chord(ImGuiKey_Enter); ++edits;
+				const int windows[]{ 100, 150, 250, 500 };
+				checks.Expect(draft.recognitionWindowMs == windows[index] && windowEdits == edits && !draft.enabled,
+					"all four real recognition choices commit stable millisecond values exactly once");
+			}
+			const auto slider = focusRect(page, controlId("##palm-eraser-threshold", "##slider"));
+			clickAt({ slider.Min.x + 1, slider.GetCenter().y });
+			checks.Expect(draft.thresholdPercent == 1 && thresholdEdits == 1, "real palm threshold slider reaches 1 percent");
+			clickAt({ slider.Max.x - 1, slider.GetCenter().y });
+			checks.Expect(draft.thresholdPercent == 400 && thresholdEdits == 2, "real palm threshold slider reaches 400 percent");
+			const auto resetRect = focusRect(page, controlId("##palm-eraser-threshold", "###reset"));
+			checks.Expect(std::abs(resetRect.GetCenter().y - slider.GetCenter().y) <= scale,
+				"threshold slider and reset button occupy the same setting row");
+			click(focusRect(page, controlId("##palm-eraser-parallel", "##toggle")));
+			const auto savedTools = draft.tools; const int savedWindow = draft.recognitionWindowMs;
+			click(resetRect);
+			checks.Expect(draft.thresholdPercent == 100 && resetEvents == 1 && thresholdEdits == 3 && !draft.enabled
+				&& !draft.parallelWriting && parallelEdits == 1 && draft.tools == savedTools && draft.recognitionWindowMs == savedWindow,
+				"reset changes only the area percentage while retaining parallel writing, tools, window and master preferences");
+			const auto master = click(focusRect(page, controlId("##palm-eraser-enabled", "##toggle")));
+			checks.Expect(draft.enabled && enabledEdits == 1 && master.window && master.threshold && master.parallel && draft.tools == savedTools,
+				"master activation retains every editable palm preference");
+			const auto back = focusRect(page, controlId("##palm-eraser-back", "##icon")); click(back);
+			checks.Expect(backEvents == 1 && back.Min.y <= page->Pos.y + page->WindowPadding.y + scale,
+				"palm detail uses the existing top back-arrow control and emits one navigation event");
+			checks.Expect(noEdits(draw(outside, false).events), "settled palm controls never repeat edit events");
+
+			// 单例超宽仍保持原像素大小，只有这一预览视图产生横向滚动。
+			draft.thresholdPercent = 100; draft.referenceAreaPixels = std::pow(width * scale * 1.25F, 2);
+			for (int pass = 0; pass < 3; ++pass) frame = draw(outside, false, false, true);
+			checks.Expect(shapes && shapes->ScrollbarX && shapes->ScrollMax.x > 0 && shapes->ScrollMax.y < 1
+				&& shapes->ScrollbarSizes.y >= Pixels(ScrollbarTrackSize) - 1
+				&& preview && preview->ScrollMax.x == 0 && preview->ScrollMax.y < 1 && frame.rectangles.size() == 1,
+				"an oversized palm example is horizontally scrollable without adding vertical or whole-page horizontal scrolling");
+			if (shapes && frame.rectangles.size() == 1)
+			{
+				const float rawWidth = frame.rectangles[0].GetWidth();
+				const float lastScroll = shapes->ScrollMax.x;
+				ImGui::SetScrollX(shapes, lastScroll); frame = draw(outside, false);
+				checks.Expect(shapes->Scroll.x > 0 && frame.rectangles.size() == 1 && Near(frame.rectangles[0].GetWidth(), rawWidth, .01F),
+					"horizontal viewing preserves the original raw-pixel threshold dimensions");
+			}
+			CheckDrawData(checks);
+		}
+		io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle; io.DisplaySize = oldSize; ApplyPalette(false);
+	}
+
 	void CheckSpeedEraserDemoPage(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		using namespace Design;
@@ -2380,24 +3058,11 @@ namespace
 				const auto action = navigation.Consume(request, session.IsVisible(), session.ShowSerial(), session.HideSerial(),
 					ShouldPlaySettingEntryAnimation(mode, session.ShowSerial()));
 				checks.Expect(session.ShowSerial() == opening && request.opening
-					&& action == ((mode == 2 || (mode == 1 && opening == 1)) ? Action::Home : Action::SpeedEraser),
+					&& action == Action::SpeedEraser
+					&& navigation.fadeOnly == (mode == 2 || (mode == 1 && opening == 1)),
 					"eraser entry uses the real Show count for off/first/always policies");
 				session.SetVisible(false);
 			}
-		}
-		for (const auto terminal : { Design::HomeMotionState::Entry::Finished, Design::HomeMotionState::Entry::Skipped })
-		{
-			SessionState session; Design::SettingOpenNavigation navigation; Design::HomeMotionState motion;
-			session.RequestShow(SettingOpenTarget::SpeedEraser);
-			checks.Expect(navigation.Consume(session.GetOpenRequest(), true, session.ShowSerial(), session.HideSerial(), true) == Action::Home
-				&& !navigation.Complete(motion, true), "new eraser opening waits for this Show's entry rather than an old terminal state");
-			Design::ConfigureHomeMotion(motion, true, session.ShowSerial(), 0, true, 1);
-			checks.Expect(!navigation.Complete(motion, true), "pending entry preparation retains the eraser destination");
-			motion.entry = Design::HomeMotionState::Entry::Playing;
-			checks.Expect(!navigation.Complete(motion, true), "playing entry does not navigate underneath the overlay");
-			motion.entry = terminal;
-			checks.Expect(navigation.Complete(motion, true) && !navigation.Complete(motion, true),
-				"completed/cancelled or dimension-skipped entry hands off to eraser exactly once");
 		}
 		SessionState session; Design::SettingOpenNavigation navigation; Design::HomeMotionState motion;
 		auto consume = [&](bool entryAllowed = true) {
@@ -2409,21 +3074,65 @@ namespace
 			"visible eraser shortcut activates and navigates directly without a new Show or replay");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
 		session.RequestShow(SettingOpenTarget::Current);
-		checks.Expect(consume() == Action::None && !navigation.pending, "newer ordinary Show cancels a delayed eraser route");
+		checks.Expect(consume() == Action::None && !navigation.fadeOnly, "newer ordinary Show cancels a delayed eraser route");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
 		const auto stale = session.GetOpenRequest();
 		session.SetVisible(false);
-		checks.Expect(consume() == Action::None && !navigation.pending, "Hide cancels an unfinished eraser entry");
+		checks.Expect(consume() == Action::None && !navigation.fadeOnly, "Hide cancels an unfinished eraser entry");
 		session.RequestShow(SettingOpenTarget::Current); (void)consume();
 		checks.Expect(navigation.Consume(stale, true, session.ShowSerial(), session.HideSerial(), true) == Action::None,
 			"a stale route cannot cross Hide/Show identities");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser);
 		checks.Expect(consume(false) == Action::SpeedEraser, "disabled animations route directly even when the entry policy allows playback");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
-		Design::ConfigureHomeMotion(motion, true, session.ShowSerial(), 0, true, 1);
-		Design::FinishHomeEntry(motion);
-		checks.Expect(!navigation.Complete(motion, false) && !navigation.Complete(motion, true),
-			"explicit navigation away prevents a delayed eraser jump");
+		Design::ConfigureHomeMotion(motion, false, session.ShowSerial(), 0, true, 1, true, true, navigation.fadeOnly);
+		checks.Expect(motion.entry == Design::HomeMotionState::Entry::Pending && motion.fadeOnly,
+			"detail entry starts without rendering Home");
+		Design::ConfigureHomeMotion(motion, false, session.ShowSerial(), 0, true, 1);
+		checks.Expect(!motion.EntryActive(), "leaving the target cancels the overlay without a delayed route");
+	}
+
+	void CheckSpeedEraserEntry(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular,strong); ImFluent::SetIconFont(icons);
+		HomeMotionState motion; SpeedEraserDraft draft;
+		auto& io=ImGui::GetIO(); const auto oldSize=io.DisplaySize;
+		io.DisplaySize={960*scale,700*scale};
+		ImVec2 start{}; float width=0; bool sawFade=false;
+		for (int frame=0;frame<130;++frame)
+		{
+			io.AddMousePosEvent(-100,-100); io.AddMouseButtonEvent(0,false); ImGui::NewFrame();
+			ConfigureHomeMotion(motion,false,1,1.0F/60,true,1,true,true,true);
+			ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##eraser-first-frame",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+			ConfigureHomeEntryViewport(motion,{0,32*scale,960*scale,700*scale},{0,32*scale,960*scale,700*scale});
+			ConfigureRowAnimations(0,false,1);
+			(void)RenderSpeedEraser(draft);
+			const auto pose=ResolveHomeEntryPose(motion);
+			if (frame==0)
+			{
+				start=pose.origin; width=pose.width;
+				checks.Expect(motion.EntryActive() && ImGui::GetCurrentWindow()->DC.CursorMaxPos.y>0,
+					"first detail frame renders the actual eraser page under the writing overlay");
+			}
+			if (motion.EntryActive())
+			{
+				checks.Expect(Near(pose.origin.x,start.x) && Near(pose.origin.y,start.y) && Near(pose.width,width),
+					"detail entry keeps the lettering position and size throughout writing and fade");
+				sawFade|=pose.opacity>0 && pose.opacity<1;
+				if (motion.entryElapsed<=HomeEntryTiming::WritingEnd)
+					checks.Expect(pose.opacity==1,"detail remains opaque until lettering completes");
+			}
+			auto* foreground=ImGui::GetForegroundDrawList(); const int first=foreground->VtxBuffer.Size;
+			RenderHomeEntryOverlay(motion);
+			for (int i=first;i<foreground->VtxBuffer.Size;++i)
+				checks.Expect(((foreground->VtxBuffer[i].col>>IM_COL32_A_SHIFT)&0xff)<=std::round(255*pose.opacity),
+					"both lettering and cover fade together over the target page");
+			ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+		}
+		checks.Expect(sawFade && motion.entries==1 && !motion.EntryActive(),"detail entry fades once then finishes without docking");
+		io.DisplaySize=oldSize;
 	}
 
 	void CheckDrawingSubpageScroll(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
@@ -2432,11 +3141,12 @@ namespace
 		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 		NavigationState navigation; navigation.animationsEnabled = true;
 		NotifyNavigationDestination(navigation, { PageId::Draw });
-		DrawingSubpage subpage = DrawingSubpage::Overview; SpeedEraserDraft draft;
+		DrawingSubpage subpage = DrawingSubpage::Overview; SpeedEraserDraft draft; PalmEraserDraft palm;
+		palm.referenceAreaPixels = 40000;
 		auto& io = ImGui::GetIO(); const auto oldSize = io.DisplaySize;
-		auto draw = [&](DrawingSubpage requested, float scroll = -1.0F) {
+		auto draw = [&](DrawingSubpage requested, float scroll = -1.0F, ImVec2 mouse = ImVec2(-100, -100), bool down = false) {
 			NavigateDrawingSubpage(navigation, subpage, requested);
-			io.DisplaySize = { 960 * scale, 700 * scale }; io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			io.DisplaySize = { 960 * scale, 700 * scale }; io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
 			ImGui::NewFrame(); BeginDragScrolling(navigation); ConfigureRowAnimations(0, false, 1);
 			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
 			ImGui::Begin("##drawing-detail-scroll", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
@@ -2445,7 +3155,12 @@ namespace
 			BeginScrollChild("##setting-content", { 640 * scale, 400 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding);
 			auto* host = ImGui::GetCurrentWindow();
 			if (subpage == DrawingSubpage::SpeedEraser) (void)RenderSpeedEraser(draft);
-			else ImGui::Dummy({ 1, 1600 * scale });
+			else if (subpage == DrawingSubpage::PalmEraser) (void)RenderPalmEraser(palm);
+			else
+			{
+				NavigateDrawingSubpage(navigation, subpage, RenderDrawingEraserEntries(subpage));
+				ImGui::Dummy({ 1, 1600 * scale });
+			}
 			if (scroll >= 0) ImGui::SetScrollY(scroll);
 			ImGui::EndChild(); ImGui::PopID(); ImGui::PopID(); ImGui::End();
 			ApplyDragScrolling(navigation); ImGui::Render(); return host;
@@ -2465,12 +3180,44 @@ namespace
 		auto* revisited = draw(DrawingSubpage::SpeedEraser);
 		checks.Expect(revisited == detail && storedDetail > 0 && Near(revisited->Scroll.y, storedDetail),
 			"reopening eraser detail preserves its own scroll position independently");
+		auto* palmDetail = draw(DrawingSubpage::PalmEraser);
+		checks.Expect(palmDetail != detail && palmDetail != overview && Near(palmDetail->Scroll.y, 0)
+			&& navigation.contentPage == static_cast<int>(PageId::Draw),
+			"palm detail has a third stable child identity without changing the drawing sidebar selection");
+		draw(DrawingSubpage::PalmEraser, 120 * scale); palmDetail = draw(DrawingSubpage::PalmEraser);
+		const float storedPalm = palmDetail->Scroll.y;
+		checks.Expect(draw(DrawingSubpage::SpeedEraser) == detail && Near(detail->Scroll.y, storedDetail),
+			"opening palm detail does not overwrite speed eraser scroll state");
+		checks.Expect(draw(DrawingSubpage::Overview) == overview && Near(overview->Scroll.y, storedOverview),
+			"returning from palm detail restores overview scroll state");
+		checks.Expect(draw(DrawingSubpage::PalmEraser) == palmDetail && storedPalm > 0 && Near(palmDetail->Scroll.y, storedPalm),
+			"palm detail restores its own real scroll position on re-entry");
 		AdvanceNavigationAnimations(navigation, .05F, true, 1); const float reveal = navigation.contentReveal.value;
 		NavigateDrawingSubpage(navigation, subpage, subpage);
 		checks.Expect(Near(navigation.contentReveal.value, reveal), "same drawing subpage does not restart its transition");
 		navigation.animationsEnabled = false;
 		NavigateDrawingSubpage(navigation, subpage, DrawingSubpage::Overview);
 		checks.Expect(Near(navigation.contentReveal.value, 1), "drawing detail navigation respects disabled animations");
+		// 入口也直接回放生产控件，核对 Speed 后紧跟 Palm，而非复制文案/命中公式。
+		draw(DrawingSubpage::Overview, 0); overview = draw(DrawingSubpage::Overview);
+		auto entryRect = [&](const char* entry) {
+			const auto id = ImHashStr("##navigate", 0, overview->GetID(entry));
+			ImGui::FocusWindow(overview); ImGui::SetNavID(id, ImGuiNavLayer_Main, overview->NavRootFocusScopeId, ImRect{});
+			draw(DrawingSubpage::Overview);
+			checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "eraser overview entry registers its actual stable navigation item");
+			return ImGui::WindowRectRelToAbs(overview, overview->NavRectRel[ImGuiNavLayer_Main]);
+		};
+		const auto speedEntry = entryRect("##speed-eraser-entry"), palmEntry = entryRect("##palm-eraser-entry");
+		checks.Expect(palmEntry.Min.y > speedEntry.Max.y && Near(palmEntry.Min.x, speedEntry.Min.x, 1)
+			&& Near(palmEntry.GetWidth(), speedEntry.GetWidth(), 1), "palm entry immediately follows speed eraser with matching row geometry");
+		for (const auto target : { DrawingSubpage::PalmEraser, DrawingSubpage::SpeedEraser })
+		{
+			const auto point = (target == DrawingSubpage::PalmEraser ? palmEntry : speedEntry).GetCenter();
+			draw(DrawingSubpage::Overview, -1, point); draw(DrawingSubpage::Overview, -1, point, true);
+			draw(DrawingSubpage::Overview, -1, point);
+			checks.Expect(subpage == target && navigation.contentPage == static_cast<int>(PageId::Draw), "actual overview row click navigates to its drawing child");
+			draw(DrawingSubpage::Overview);
+		}
 		io.DisplaySize = oldSize;
 	}
 
@@ -2487,10 +3234,11 @@ namespace
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
 			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false;
-			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false;
+			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false;
 		};
 		ImGuiWindow* host = nullptr;
-		int modeChanges = 0, entryAnimationChanges = 0; std::array<int, 6> shortcutChanges{};
+		int modeChanges = 0, entryAnimationChanges = 0, multipleInstanceChanges = 0; std::array<int, 6> shortcutChanges{};
+		checks.Expect(!draft.allowMultipleInstances, "multiple-instance preference is disabled in the initial general draft");
 		auto draw = [&](Design::GeneralSection section, ImVec2 mouse, bool down)
 		{
 			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
@@ -2511,12 +3259,14 @@ namespace
 			frame.operation = rowSeen("##选择与穿透"); frame.layout = rowSeen("主栏图标顺序") && rowSeen("主栏展开方向调整");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
 			frame.entryAnimation = rowSeen("setting-entry-animation");
+			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
 			ImGui::PushID(5); frame.shortcuts = rowSeen("##启用固定快捷键"); ImGui::PopID();
 			for (const auto& vertex : host->DrawList->VtxBuffer)
 				if (vertex.col == Design::GetPalette().notice[0]) ++frame.blueVertices;
 			modeChanges += frame.events.selectModeChanged ? 1 : 0;
 			entryAnimationChanges += frame.events.settingEntryAnimationChanged ? 1 : 0;
+			multipleInstanceChanges += frame.events.allowMultipleInstancesChanged ? 1 : 0;
 			for (int item = 0; item < 6; ++item) shortcutChanges[item] += frame.events.shortcutsChanged[item] ? 1 : 0;
 			ImGui::PopID(); ImFluent::PopFont(); ImGui::End(); ImGui::Render();
 			frame.vertices = ImGui::GetDrawData()->TotalVtxCount;
@@ -2526,7 +3276,7 @@ namespace
 			return !events.startupChanged && !events.createShortcut && !events.shortcutOptions
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
-				&& !events.safetyModeChanged && !events.startupPreviewChanged && !events.animationChanged
+				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.animationChanged
 				&& !events.animationRateActive && !events.dynamicEdgeLightingChanged
 				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
@@ -2545,14 +3295,15 @@ namespace
 				&& frame.shortcuts == (section == Design::GeneralSection::Shortcuts)
 				&& frame.startupPreview == (section == Design::GeneralSection::Appearance)
 				&& frame.entryAnimation == (section == Design::GeneralSection::Appearance)
-				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom,
+				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom
+				&& frame.allowMultipleInstances == (section == Design::GeneralSection::Interaction),
 				"general rows stay in their pages with the new entry-animation mode and no separate Settings zoom");
 			if (section == Design::GeneralSection::Basic)
 				checks.Expect(frame.blueVertices > 0, "actual operation-mode explanation draws the themed blue informational card");
 			checks.Expect(draft.startup && Near(draft.barZoom, 1.37F) && draft.settingEntryAnimation == 1
 				&& !draft.edgeLighting && draft.topInterval == 5 && draft.rightClickClose && draft.safetyMode == 2
 				&& !draft.startupPreview && !draft.animation && Near(draft.animationRate, 4.7F) && draft.dynamicEdgeLighting
-				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0,
+				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0 && !draft.allowMultipleInstances,
 				"page filtering and conditional hidden controls preserve every resident draft value");
 		}
 		auto focus = [&](Design::GeneralSection section, const char* row, const char* control, int item = -1) {
@@ -2588,6 +3339,17 @@ namespace
 		checks.Expect(draft.settingEntryAnimation == 2 && entryAnimationChanges == 1
 			&& draft.startupPreview && !draft.animation && Near(draft.barZoom, 1.37F),
 			"opening-animation combo commits one persistent choice independently of startup preview and the animation switch");
+		// 真实安全页控件往返切换，只产生其保存事件，不影响教学安全模式或其他偏好。
+		draw(Design::GeneralSection::Interaction, outside, false);
+		focus(Design::GeneralSection::Interaction, "allow-multiple-instances", "##toggle");
+		chord(Design::GeneralSection::Interaction, ImGuiKey_Space);
+		checks.Expect(draft.allowMultipleInstances && multipleInstanceChanges == 1 && draft.safetyMode == 2,
+			"actual safety-page switch enables multiple instances with one independent event");
+		draw(Design::GeneralSection::Interaction, outside, false);
+		focus(Design::GeneralSection::Interaction, "allow-multiple-instances", "##toggle");
+		chord(Design::GeneralSection::Interaction, ImGuiKey_Space);
+		checks.Expect(!draft.allowMultipleInstances && multipleInstanceChanges == 2 && draft.safetyMode == 2,
+			"actual safety-page switch disables future extra instances without changing the safety selection");
 		draw(Design::GeneralSection::Shortcuts, outside, false);
 		focus(Design::GeneralSection::Shortcuts, "##启用固定快捷键", "##toggle", 5);
 		chord(Design::GeneralSection::Shortcuts, ImGuiKey_Space);
@@ -2777,7 +3539,10 @@ namespace
 				checks.Expect(separated, "all production middle roots, arrows and inline children leave the actual scrollbar hit track and gap clear");
 				checks.Expect(Near(state.middleBounds.back().right, frame.list->ContentRegionRect.Max.x, 1),
 					"navigation hit rectangles use the same current-frame available width with or without the scrollbar");
-				if (frame.list->ScrollbarY && track.GetWidth() > 0.0F)
+				// 亚像素入场和被裁掉的宿主尚无可见thumb，稳定及可见过渡帧仍核对实际DrawData。
+				if (frame.list->ScrollbarY && !frame.list->Hidden && !frame.list->SkipItems
+					&& track.GetWidth() >= 1.0F && track.GetHeight() >= 1.0F
+					&& track.Overlaps(frame.list->OuterRectClipped))
 				{
 					unsigned alpha = 0;
 					for (auto* list : ImGui::GetDrawData()->CmdLists) for (const auto& vertex : list->VtxBuffer)
@@ -2852,6 +3617,12 @@ namespace
 		checks.Expect(state.parentBounds.Width() > 0 && state.chevronBounds.Width() > 0
 			&& Disjoint(state.parentBounds, state.chevronBounds),
 			"actual parent label and chevron have separate hit rectangles");
+		// 新性能根项追加独立路由，不能借用已退役的页面编号。
+		const int beforePerformance = navigations;
+		click(state.middleBounds[2]); frame = idle();
+		checks.Expect(selected.page == PageId::Performance && navigations == beforePerformance + 1,
+			"performance root between drawing and plugins routes to its independent page");
+		selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected); frame = idle();
 		const int beforeArrow = navigations;
 		click(state.chevronBounds); frame = idle();
 		checks.Expect(state.generalExpanded && navigations == beforeArrow && selected.page == PageId::Home,
@@ -3105,18 +3876,18 @@ namespace
 			{
 				const LayoutRect visible{ frame.list->InnerClipRect.Min.x, frame.list->InnerClipRect.Min.y,
 					frame.list->InnerClipRect.Max.x, frame.list->InnerClipRect.Max.y };
-				if (!Contains(visible, state.middleBounds[5]))
+				if (!Contains(visible, state.middleBounds.back()))
 					std::cerr << "[HierarchyScroll] scale=" << scale << " size=" << size.x << 'x' << size.y
 						<< " expanded=" << expanded << " narrow=" << state.narrow << " overlay=" << state.overlayOpen
 						<< " scroll=" << frame.scroll << '/' << frame.maximumScroll
 						<< " content=" << frame.list->ContentSize.y << " inner=" << frame.list->InnerRect.GetHeight()
 						<< " cursorMax=" << frame.list->DC.CursorMaxPos.y << " pos=" << frame.list->Pos.y
 						<< " clip=" << visible.left << ',' << visible.top << ',' << visible.right << ',' << visible.bottom
-						<< " last=" << state.middleBounds[5].left << ',' << state.middleBounds[5].top << ','
-						<< state.middleBounds[5].right << ',' << state.middleBounds[5].bottom << '\n';
-				checks.Expect(Contains(visible, state.middleBounds[5]), "last real software-version root is fully visible at the scroll end");
+						<< " last=" << state.middleBounds.back().left << ',' << state.middleBounds.back().top << ','
+						<< state.middleBounds.back().right << ',' << state.middleBounds.back().bottom << '\n';
+				checks.Expect(Contains(visible, state.middleBounds.back()), "last real software-version root is fully visible at the scroll end");
 			}
-			const int before = navigations; click(state.middleBounds[5]); frame = idle();
+			const int before = navigations; click(state.middleBounds.back()); frame = idle();
 			checks.Expect(selected.page == PageId::Version && navigations == before + 1,
 				"software version remains reachable through the final root at every size/mode/theme");
 			requestedScroll = -1;
@@ -3266,19 +4037,19 @@ namespace
 		// 原684帧合同保持，追加真实滚轮与蓝条顶点回归；不另写一套导航或动画公式。
 		size = ImVec2(960, 520); state.Resize(size.x); state.desktopCompact = false;
 		state.generalExpanded = false; animated = false; dark = false; rate = 1; requestedScroll = 0;
-		frame = idle(); requestedScroll = -1; click(state.middleBounds[2]); frame = idle();
-		animated = true; frame = idle(12); expectAttached(frame, state.middleBounds[2]);
+		frame = idle(); requestedScroll = -1; click(state.middleBounds[3]); frame = idle();
+		animated = true; frame = idle(12); expectAttached(frame, state.middleBounds[3]);
 		const ImVec2 wheelPoint(frame.list->InnerClipRect.Max.x - 2, frame.list->InnerClipRect.Min.y + 20 * scale);
 		frame = draw(wheelPoint, false);
 		for (float wheel : { -0.2F, -0.2F, 0.2F, 0.2F })
 		{
-			const float previousRow = rowCenter(state.middleBounds[2]), previousBar = indicatorCenter(frame), previousScroll = frame.scroll;
+			const float previousRow = rowCenter(state.middleBounds[3]), previousBar = indicatorCenter(frame), previousScroll = frame.scroll;
 			io.AddMouseWheelEvent(0, wheel); frame = draw(wheelPoint, false);
 			checks.Expect(std::abs(frame.scroll - previousScroll) > 0.1F,
 				"real mouse wheel moves the selected middle row in both scrolling directions");
-			checks.Expect(Near(indicatorCenter(frame) - previousBar, rowCenter(state.middleBounds[2]) - previousRow, 0.75F),
+			checks.Expect(Near(indicatorCenter(frame) - previousBar, rowCenter(state.middleBounds[3]) - previousRow, 0.75F),
 				"selected blue bar and its real row move by the same scroll delta in the same frame");
-			expectAttached(frame, state.middleBounds[2]);
+			expectAttached(frame, state.middleBounds[3]);
 		}
 		click(state.middleBounds[1]); frame = draw(outside, false);
 		checks.Expect(selected.page == PageId::Draw && state.indicatorY.Active() && state.indicatorY.progress == 0,
@@ -3293,18 +4064,18 @@ namespace
 				&& frame.indicatorDrawn && Near(indicatorCenter(frame), state.indicatorY.value * scale, 0.75F),
 				"scrolling during a tab transition translates the actual blue bar without restarting its progress");
 		}
-		click(state.middleBounds[2]); frame = draw(outside, false);
+		click(state.middleBounds[3]); frame = draw(outside, false);
 		checks.Expect(selected.page == PageId::Plugins && state.indicatorY.Active() && state.indicatorY.progress == 0
 			&& Near(state.indicatorY.start * scale, indicatorCenter(frame), 0.75F),
 			"reversing the tab selection starts from the current rendered blue-bar position");
-		frame = idle(12); expectAttached(frame, state.middleBounds[2]);
+		frame = idle(12); expectAttached(frame, state.middleBounds[3]);
 		// click返回帧仍画旧锚点，首个新目的地帧同时滚动，验证跨锚点的起点补偿。
 		frame = click(state.middleBounds[1]);
-		const float oldAnchorRow = rowCenter(state.middleBounds[2]), oldAnchorBar = indicatorCenter(frame), oldAnchorScroll = frame.scroll;
+		const float oldAnchorRow = rowCenter(state.middleBounds[3]), oldAnchorBar = indicatorCenter(frame), oldAnchorScroll = frame.scroll;
 		io.AddMouseWheelEvent(0, -0.1F); frame = draw(wheelPoint, false);
 		checks.Expect(selected.page == PageId::Draw && std::abs(frame.scroll - oldAnchorScroll) > 0.1F
 			&& state.indicatorY.progress == 0 && state.indicatorY.Active() && frame.indicatorDrawn
-			&& Near(state.indicatorY.start * scale, oldAnchorBar + rowCenter(state.middleBounds[2]) - oldAnchorRow, 0.75F)
+			&& Near(state.indicatorY.start * scale, oldAnchorBar + rowCenter(state.middleBounds[3]) - oldAnchorRow, 0.75F)
 			&& Near(indicatorCenter(frame), state.indicatorY.start * scale, 0.75F)
 			&& Near(state.indicatorY.target * scale, rowCenter(state.middleBounds[1]), 0.75F),
 			"a real tab change and wheel in the same frame compensate the old anchor scroll before starting the new transition");
@@ -3327,11 +4098,11 @@ namespace
 		checks.Expect(state.indicatorItemId == changedClippedAnchor && state.indicatorY.progress >= 0.99F,
 			"revealing a destination changed outside the clip retains its completed transition");
 		expectAttached(frame, state.middleBounds[1]);
-		size = ImVec2(960, 700); frame = idle(); click(state.middleBounds[2]); frame = idle(12);
-		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[2]);
+		size = ImVec2(960, 700); frame = idle(); click(state.middleBounds[3]); frame = idle(12);
+		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
 		checks.Expect(state.groupReveal.Active() && !state.indicatorY.Active(),
 			"expanding another group moves the same selected row and blue bar together without an extra lag");
-		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[2]);
+		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
 		frame = idle(12); animated = false;
 		auto sameVisibleColor = [](ImVec4 a, ImVec4 b) { return Near(a.x, b.x, 0.02F)
 			&& Near(a.y, b.y, 0.02F) && Near(a.z, b.z, 0.02F); };
@@ -3381,17 +4152,17 @@ namespace
 				checks.Expect(state.overlayOpen && state.Expanded() && !frame.indicatorDrawn,
 					"debug page can reopen the narrow overlay without destination synchronization closing it");
 			}
-			frame = click(state.middleBounds[2]);
+			frame = click(state.middleBounds[3]);
 			checks.Expect(selected.page == PageId::Plugins && !state.indicatorY.Active(),
 				"return from debug binds the selected row directly instead of sliding from an old blue-bar anchor");
-			frame = draw(outside, false); expectAttached(frame, state.middleBounds[2]);
+			frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
 			selected = { PageId::Draw }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
 			checks.Expect(state.indicatorY.Active() == animated,
 				"ordinary destinations resume their configured blue-bar transition after leaving debug");
 			selected = { PageId::Debug }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
 			checks.Expect(!frame.indicatorDrawn && !state.indicatorY.Active(), "rapid reversal to debug suppresses blue-bar motion immediately");
 			selected = { PageId::Plugins }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
-			expectAttached(frame, state.middleBounds[2]);
+			expectAttached(frame, state.middleBounds[3]);
 		}
 		// 紧凑轨道的真实模态子菜单不能吞掉标题栏 Debug；它只继续隔离正文。
 		animated = true; size = ImVec2(960, 700); state.desktopCompact = true; state.overlayOpen = false;
@@ -3475,9 +4246,17 @@ namespace
 			size = ImVec2(mode == 2 ? 720.0F : 960.0F, 600); state.Resize(size.x);
 			state.desktopCompact = mode == 1; state.overlayOpen = mode == 2;
 			selected = { PageId::Home }; state.generalExpanded = false; frame = idle(4);
-			checks.Expect(frame.list && !frame.list->ScrollbarY && Near(frame.maximumScroll, 0), "collapsed navigation hides the vertical bar when its real middle fits");
+			// 根项增加后原600-DIP夹具也可能溢出，显隐应由实际行范围与可用高度决定。
+			auto middleOverflows = [&]() {
+				const float contentHeight = std::ceil(state.middleBounds.back().bottom) + 1.0F
+					- state.middleBounds.front().top + frame.list->WindowPadding.y * 2.0F;
+				return contentHeight > frame.list->InnerRect.GetHeight();
+			};
+			checks.Expect(frame.list && frame.list->ScrollbarY == middleOverflows(),
+				"collapsed navigation scrollbar follows actual root extent and available middle height");
 			state.generalExpanded = true; frame = idle(4);
-			checks.Expect(frame.list->ScrollbarY == state.Expanded(), "expanding the real inline group shows the bar only in expanded and overlay modes");
+			checks.Expect(frame.list->ScrollbarY == middleOverflows(),
+				"inline expansion scrollbar follows actual content overflow in every pane mode");
 			size.y = 520; frame = idle(4);
 			checks.Expect(frame.list->ScrollbarY && frame.maximumScroll > 0, "minimum-height navigation overflows in every pane mode");
 			const auto gapTrack = ImGui::GetWindowScrollbarRect(frame.list, ImGuiAxis_Y);
@@ -4879,15 +5658,16 @@ namespace
 					ImGui::SetNextWindowScroll(ImVec2(0, pass == 2 ? maximumScroll : 0));
 					begin("middle", regions.middle, false);
 					int lastVertices = 0;
-					for (int i = 0; i < 6; ++i) {
+					for (int i = 0; i < static_cast<int>(Design::NavigationMiddleItemCount); ++i) {
 						ImGui::PushID(i); const int first = ImGui::GetWindowDrawList()->VtxBuffer.Size;
-						ImFluent::NavItemEx("item", "Middle page", i == 5, nullptr, !expanded);
-						if (i == 5) lastVertices = ImGui::GetWindowDrawList()->VtxBuffer.Size - first;
+						const bool last = i + 1 == static_cast<int>(Design::NavigationMiddleItemCount);
+						ImFluent::NavItemEx("item", "Middle page", last, nullptr, !expanded);
+						if (last) lastVertices = ImGui::GetWindowDrawList()->VtxBuffer.Size - first;
 						ImGui::PopID();
 					}
 					if (pass == 1) maximumScroll = ImGui::GetScrollMaxY();
 					if (pass == 2) checks.Expect(lastVertices > 0 && Near(ImGui::GetScrollY(), maximumScroll, 1.0F)
-						&& (size.y != 520 || maximumScroll > 0), "actual middle child scroll reaches the sixth root entry at minimum size"); end();
+						&& (size.y != 520 || maximumScroll > 0), "actual middle child scroll reaches the final root entry at minimum size"); end();
 					begin("footer", regions.footer, true);
 					const auto footerOrigin = ImGui::GetWindowPos();
 					for (int i = 0; i < 4; ++i) {
@@ -4920,8 +5700,8 @@ namespace
 
 	void CheckSidebarIconSet(Checks& checks, ImFont* icons, float scale)
 	{
-		constexpr std::array<ImWchar, 14> codes{ 0xE80F, 0xF2B7, 0xE7B8, 0xEE56,
-			0xE74C, 0xE70B, 0xE765, 0xEC4A, 0xE81E, 0xE946, 0xE716, 0xE789, 0xE72C, 0xE711 };
+		constexpr std::array<ImWchar, 15> codes{ 0xE80F, 0xF2B7, 0xE7B8, 0xEE56,
+			0xE74C, 0xE70B, 0xE765, 0xE9D9, 0xEC4A, 0xE81E, 0xE946, 0xE716, 0xE789, 0xE72C, 0xE711 };
 		ImFluent::SetIconFont(icons);
 		for (std::size_t index = 0; index < codes.size(); ++index)
 		{
@@ -5002,7 +5782,7 @@ namespace
 	}
 }
 
-int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
+int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly)
 {
 	Checks checks;
 	CheckSettingOpenNavigation(checks);
@@ -5037,6 +5817,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
+		if (generalOnly && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
 		ImGuiSession session;
 		ClipboardProbe settingsClipboard;
 		ImGui::GetStyle().FontScaleDpi = scale;
@@ -5065,13 +5846,32 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
+		if (generalOnly)
+		{
+			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			{
+				checks.Expect(LoadNavigationLabels(fontDirectory, language), "general-only tests load actual language resources");
+				const bool traditional = std::strcmp(language, "zh-TW") == 0;
+				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+			}
+			continue;
+		}
+		if (attentionOnly)
+		{
+			CheckSettingAttentionRows(checks,fonts,scale);
+			CheckDiagnosticCopyButtons(checks,fonts[0],fonts[1],scale);
+			continue;
+		}
 		if (eraserOnly)
 		{
+			CheckSpeedEraserEntry(checks,fonts[0],fonts[1],fonts.back(),scale);
 			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
 			{
 				checks.Expect(LoadNavigationLabels(fontDirectory, language), "speed eraser page loads actual localized resources");
 				const bool traditional = std::strcmp(language, "zh-TW") == 0;
 				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale,
+					scale == 1.0F || scale == 1.875F);
+				CheckPalmEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale,
 					scale == 1.0F || scale == 1.875F);
 				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 			}
@@ -5132,6 +5932,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
 			CheckComboBoxInteraction(checks, fonts[0], scale, backdrop);
 		CheckDrawData(checks);
 		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);
+		CheckSettingAttentionRows(checks,fonts,scale);
 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);
 		CheckEdidCard(checks, fonts[0], fonts[1], scale);
 		CheckHomeBrandDesign(checks, fonts, fontDirectory, scale);
@@ -5144,6 +5945,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly)
 				const bool traditional = std::strcmp(language, "zh-TW") == 0;
 				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale, scale == 1.0F);
+				CheckPalmEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale, scale == 1.0F);
 				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckCicdAndSponsorContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
 				CheckHomeFeedbackContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);

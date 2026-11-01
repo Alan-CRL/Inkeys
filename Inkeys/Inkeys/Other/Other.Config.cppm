@@ -337,6 +337,7 @@ namespace Inkeys::ConfigDetail
 #define INKEYS_CONFIG_SCHEMA(GROUP, X, H) \
 	GROUP(Config, \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoClean, false) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowMultipleInstances, false) \
 	) \
 	GROUP(Info, \
 		H(true, true, "id", std::wstring, UserId, &::userId) \
@@ -348,6 +349,7 @@ namespace Inkeys::ConfigDetail
 		H(true, true, "ch", std::string, UpdateChannel, ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex)) \
 	) \
 GROUP(UI, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 60) \
 			GROUP(Bar, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom2, 1.0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, UseTaskbarHeightAsScaleBase, ConfigDetail::GetDefaultLargeScreenDevice() ? 1 : 0) \
@@ -377,6 +379,14 @@ GROUP(UI, \
 		) \
 	) \
 	GROUP(Drawing, \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 120) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, true) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTailCorrectionEnabled, true) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InkPredictionMode, 2) \
+		GROUP(Laser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParticlesEnabled, false) \
+		) \
 		GROUP(Whiteboard, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<WhiteboardThemePreference>, DefaultTheme, WhiteboardThemePreference{}) \
 		) \
@@ -399,6 +409,21 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTail, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTipResponse, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTailResponse, -1) \
+		) \
+		GROUP(PalmEraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, ConfigDetail::GetDefaultLargeScreenDevice()) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThresholdPercent, 100) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RecognitionWindowMs, 150) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParallelWriting, true) \
+			GROUP(Tools, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, HardPen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Highlighter, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Laser, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Eraser, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Shape, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Brush, true) \
+			) \
 		) \
 	) \
 	GROUP(Experimental, \
@@ -477,7 +502,8 @@ namespace Inkeys
 		Inkeys::Config& operator=(const Inkeys::Config& other);
 
 		bool ReadAll();
-		bool ReadMini(std::initializer_list<std::string_view> paths);
+		// 启动准入可只读所选偏好，禁止兼容布局迁移写盘。
+		bool ReadMini(std::initializer_list<std::string_view> paths, bool readOnly = false);
 		bool Write();
 		bool SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept;
 		std::string GetUploadInfo();
@@ -508,7 +534,7 @@ namespace Inkeys
 			#undef INKEYS_CONFIG_TRAVERSE_H_VALUE
 		}
 
-bool ReadImpl(const std::vector<std::string>& paths);
+bool ReadImpl(const std::vector<std::string>& paths, bool readOnly = false);
 			void ApplyDefaults(const std::vector<std::string>& paths);
 			void ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths, bool includeWriteOnly = false);
 			void OverlayDocument(Json::Value& root);

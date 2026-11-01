@@ -996,3 +996,86 @@ Win11 blur only showed while dragging: accent 0xCC tint plus 80% AppBase left ~4
 ### Status
 
 [OK] **Completed**
+
+
+## Session 133: 修复重连接触身份残留并完成人工验收
+<!-- trellis-session: v=2 fp=323ace0df79f6509 -->
+
+**Date**: 2026-10-31
+**Task**: 修复重连接触身份残留并完成人工验收
+**Branch**: `bugfix/ink`
+
+### Summary
+
+同步重连接管的输入与手势身份；生产回归红17→绿0，Debug ARM64和Release x64构建及审查通过；用户人工验证通过，任务归档，待合并dev。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74b8d3cb` | fix(ink): synchronize touch identity on stroke reconnect |
+
+### Testing
+
+- [OK] Debug ARM64 / Release x64完整构建通过；control-fence红17绿0；人工验证通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 审阅bugfix/ink相对dev的差异，用户自行决定合并；不自动push/merge
+
+
+## Session 135: 设置性能、绘图控制与画布诊断完成归档
+<!-- trellis-session: v=2 fp=079ae463ac39198e -->
+
+**Date**: 2026-11-01
+**Task**: 设置性能、绘图控制与画布诊断完成归档
+**Branch**: `setting/performance`
+
+### Summary
+
+完成性能页、绘图选项、设置提示与诊断复制；修复末项复制按钮触发的 ImGui 边界断言，并归档任务。
+
+### Main Changes
+
+- 实现独立界面与画布帧率、逐笔绘图设置、激光笔约束、完整画布诊断及复制按钮。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ead40db9` | feat(settings): add performance controls and canvas diagnostics |
+
+### Testing
+
+- [OK] 完整 solution Debug ARM64 构建通过；attention/copy 无窗口回归通过。历史 HomeWARP 检查限制见归档验证报告，未运行 GUI。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 149: 手掌橡皮人工验收与任务收尾
+<!-- trellis-session: v=2 fp=3bc1a963a3b6d63f -->
+
+**Date**: 2026-11-01
+**Task**: 手掌橡皮人工验收与任务收尾
+**Branch**: `feature/erase`
+
+### Summary
+
+完成手掌橡皮设置与1%倍率、实尺预览、边擦边写条件i提示；用户人工验收通过。ARM64完整构建/无窗口验证/i18n通过，最终默认路径构建0错误；清理三个临时程序目录并归档任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4a9caa11` | feat(settings): refine palm eraser configuration and previews |
+| `b5dd13bb` | chore(trellis): archive verified palm eraser task |
+
+### Status
+
+[OK] **Completed**

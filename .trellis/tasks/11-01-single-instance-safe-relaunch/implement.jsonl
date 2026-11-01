@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "启动状态与句柄归属"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "退出监督、重启、错误和资源合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "早期配置读取与三语言生成链"}
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "最终SuperTop之后的启动边界"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "设置页通用条目合同"}
+{"file": ".trellis/tasks/11-01-single-instance-safe-relaunch/research/startup-chain.md", "reason": "Inkeys2与当前启动交接直接证据"}
+{"file": ".trellis/spec/native-desktop/single-instance-and-startup-handoff.md", "reason": "已实现的准入、固定wire、连续占位、双Ready与兼容能力三态合同"}

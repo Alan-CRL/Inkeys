@@ -214,6 +214,7 @@ BEGIN
             VALUE "InternalName", "Inkeys"
             VALUE "LegalCopyright", "Copyright © 2023-2026 AlanCRL(陈润林) 工作室"
             VALUE "ProductName", "Inkeys"
+            VALUE "StartupHandoffProtocol", "1"
         END
     END
     BLOCK "VarFileInfo"

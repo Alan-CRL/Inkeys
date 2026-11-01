@@ -52,7 +52,7 @@ int RunBarPresentationAlphaTests();
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunSettingEraserDemoTests();
-int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false);
+int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false, bool attentionOnly = false, bool generalOnly = false);
 int RunPptUiTests();
 int RunPptSessionTests();
 int RunPageControlTests();
@@ -68,6 +68,7 @@ int RunDraw3ContactInputTests();
 int RunDraw3RtsStartupTests();
 int RunDraw3MouseInputTests();
 int RunSpeedEraserTests();
+int RunPalmEraserTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
 int RunRecallAttributeTests();
@@ -1709,7 +1710,10 @@ int main(int argc, char** argv)
 	bool penWidthOnly = false;
 	bool settingHomeOnly = false;
 	bool settingCopyOnly = false;
+	bool settingAttentionOnly = false;
+	bool settingGeneralOnly = false;
 	bool settingEraserOnly = false;
+	bool palmEraserOnly = false;
 	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
@@ -1723,7 +1727,10 @@ int main(int argc, char** argv)
 		penWidthOnly |= argument == "--pen-width-only";
 		settingHomeOnly |= argument == "--setting-home-only";
 		settingCopyOnly |= argument == "--setting-copy-only";
+		settingAttentionOnly |= argument == "--setting-attention-only";
+		settingGeneralOnly |= argument == "--setting-general-only";
 		settingEraserOnly |= argument == "--setting-eraser-only";
+		palmEraserOnly |= argument == "--palm-eraser-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
@@ -1758,6 +1765,7 @@ int main(int argc, char** argv)
 #endif
 	}
 
+	if (palmEraserOnly) return RunPalmEraserTests() == 0 ? 0 : 1;
 	if (settingEraserDemoOnly)
 	{
 		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
@@ -1768,9 +1776,12 @@ int main(int argc, char** argv)
 	{
 		const int settings = RunSettingDesignTests(false, true);
 		const int speed = RunSpeedEraserTests(), attributes = RunEraserAttributeTests();
-		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << '\n';
-		return settings + speed + attributes == 0 ? 0 : 1;
+		const int palm = RunPalmEraserTests();
+		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << " palm=" << palm << '\n';
+		return settings + speed + attributes + palm == 0 ? 0 : 1;
 	}
+	if (settingGeneralOnly) return RunSettingDesignTests(false,false,false,true)==0 ? 0 : 1;
+	if (settingAttentionOnly) return RunSettingDesignTests(false,false,true)==0 ? 0 : 1;
 	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
 	if (settingHomeOnly) return RunSettingDesignTests()==0 ? 0 : 1;
 
@@ -1821,6 +1832,7 @@ int main(int argc, char** argv)
 	failureCount += RunDraw3MouseInputTests();
 	failureCount += RunUpdateSecurityTests();
 	failureCount += RunSpeedEraserTests();
+	failureCount += RunPalmEraserTests();
 	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunRecallAttributeTests();

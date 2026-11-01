@@ -1,0 +1,28 @@
+[SingleInstanceCase] --single-instance-test-parent exit=0 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=10 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=0 read=1
+[SingleInstanceCase] --single-instance-test-probe allow exit=0 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=10 read=1
+[SingleInstanceCase] --single-instance-test-child --inkeys-startup-handoff=Local\Inkeys.Handoff.invalid exit=30 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=0 read=1
+[SingleInstanceCase] concurrent admissions=0/1
+[SingleInstanceCase] before capability ok=1
+[SingleInstanceCapability] resource=1 entry=1 bytes=604 copied=604 error=0
+[SingleInstanceCapability] current=1 offset=486/532 error=0
+[SingleInstanceCapability] unknown write=0 protocol=1 expected=2 error=5
+[SingleInstanceCapability] absent write=0 protocol=1 expected=0 error=5
+[SingleInstanceCapability] current write=0 protocol=1 expected=1 error=5
+[SingleInstanceTrace] parent Acquire code=0 error=0
+[SingleInstanceTrace] parent Handoff.Valid code=1 error=183
+[SingleInstanceTrace] parent Publish code=1 error=183
+[SingleInstanceTrace] parent Resume code=1 error=183
+[SingleInstanceTrace] parent Ready code=1 error=183
+[SingleInstanceTrace] child Adopt code=1 error=183
+[SingleInstanceTrace] parent Acquire code=0 error=183
+[SingleInstanceTrace] parent Handoff.Valid code=1 error=183
+[SingleInstanceTrace] parent Publish code=1 error=183
+[SingleInstanceTrace] parent Resume code=1 error=183
+[SingleInstanceTrace] parent Ready code=1 error=183
+[SingleInstanceTrace] child Adopt code=1 error=183
+[SingleInstanceTrace] child Adopt code=4294967295 error=183
+[SingleInstance] exact-parent handoff, presence lifetime, allow-to-deny, forged packet: FAIL

@@ -43,7 +43,7 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 
 自动按钮只绘制一个90×70 BarButtonClass，body/arrow命中宽为70/20并共享Hover、按压及整体缩放；内部1 DIP分割线与主栏Divider等高并垂直居中，复用当前外框色和PointLight，选中时与外框同步Accent。右侧箭头复用绘制属性笔类型入口的`barThicknessAdjust` SVG、菜单方向和0/180度目标角，展开、收起及中途反向均通过同一动画值收敛。菜单打开不改自动选中态。专用barAutoEraser.svg使用主题占位色和路径A，不依赖字体或修改通用barEraser.svg。
 
-菜单182.5×90逻辑单位，两行结构：标题/设置齿轮、三段等宽选项。齿轮支持鼠标/笔/触摸点击及键盘导航，调用 Setting::ShowSpeedEraser，经同一 Show 业务 FIFO 在 HWND owner 线程恢复并激活设置窗口。目标及 Show/Hide 身份在状态锁内同批发布，只由设置渲染线程消费；已显示时直接进入绘制/笔速橡皮，不用 Toggle。隐藏打开且原开屏策略允许时，先复用主页开屏，完成/尺寸跳过/输入取消后一次性交接到详情；总动画关闭或开屏机会已消耗则直接进入。Hide、较新普通 Show 或主动离开主页取消迟到交接，不增加配置或补播机会。标题保持既有左对齐X，其30 DIP标题行在浮窗顶部至三个灵敏度按钮上沿之间垂直居中。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
+菜单182.5×90逻辑单位，两行结构：标题/设置齿轮、三段等宽选项。齿轮支持鼠标/笔/触摸点击及键盘导航，调用 Setting::ShowSpeedEraser，经同一 Show 业务 FIFO 在 HWND owner 线程恢复并激活设置窗口。目标及 Show/Hide 身份在状态锁内同批发布，只由设置渲染线程消费；已显示时直接进入绘制/笔速橡皮，不用 Toggle。隐藏打开时，渲染 owner 在首帧排布前就选中笔速橡皮详情，首帧预热和开屏截图也必须来自该页。原开屏策略允许时复用书写覆盖层：艺术字写完后原地渐隐，字形与遮罩一起淡出，不播放主页横幅归位或先到主页再跳转；总动画关闭或开屏机会已消耗则直接进入。Hide、较新普通 Show 或主动离开详情立即收束，不增加配置或补播机会。标题保持既有左对齐X，其30 DIP标题行在浮窗顶部至三个灵敏度按钮上沿之间垂直居中。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
 
 正常空间clear.centerX=主栏擦除centerX，panel按非对称侧组分别延伸，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。直拖锁存期间使用上一份已稳定局部布局输入、panel/menu方向和工作区，不能因临时越界重新避让或翻边；松手吸收HWND位移时，必须按当前锚点把锁存的`main / anchor / work`整体重基准，旧侧收拢到透明中点前继续使用该工作区，不能先被新工作区的Resolve/Fit夹取。之后才消费当前目标方向，并沿收拢→紧凑态→换边→展开动画交接。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。橡皮主面板和菜单均在Main Bar之前绘制，重叠像素由主栏覆盖。
 
@@ -103,7 +103,7 @@ Correct：保持342 DIP自然布局、正常5/16 DIP留白和真实控件尺寸�
 
 ## 8. 笔速橡皮设置详情页
 
-- 绘制主页面按绘图设备、橡皮擦、光标、触摸、笔触觉排列；橡皮擦分类仅提供“笔速橡皮”整行入口。`DrawingSubpage::Overview/SpeedEraser` 是绘制内部状态，不能占用已退休根路由；每个子页用稳定的独立 content child ID 保留滚动。`NavigateDrawingSubpage` 只在子页实际变化时重启现有正文过渡，侧栏仍选中 Draw；点击侧栏绘制或主页绘制入口回 Overview。
+- 绘制主页面按绘图设备、橡皮擦、光标、触摸、笔触觉排列；橡皮擦分类提供“笔速橡皮”及其下方“手掌橡皮”整行入口；后者详见[palm-eraser.md](palm-eraser.md)。`DrawingSubpage::Overview/SpeedEraser/PalmEraser` 是绘制内部状态，不能占用已退休根路由；每个子页用稳定的独立 content child ID 保留滚动。`NavigateDrawingSubpage` 只在子页实际变化时重启现有正文过渡，侧栏仍选中 Draw；点击侧栏绘制或主页绘制入口回 Overview。
 - `RenderSpeedEraser(SpeedEraserDraft&, const EraserDemoPresenter& = {}) -> SpeedEraserEvents` 只生成界面与一次编辑事件。原生层每帧读一份 `EraserPreferencesSnapshot`，复用现有 setter；`SetGlobalEraserPreference` 已自行排队保存，不额外重复 QueueConfigWrite；设备与面积事件沿用设置页队列。
 - 灵敏度复用 UI3 三档键和同一配置。总开关关闭仍允许编辑灵敏度和五设备偏好；复选勾选=Speed/取消=Fixed。笔尖/笔尾计算方式仅在总开关开启且对应入口启用时显示，隐藏不改变保存值；Win7 去除 Auto 后仍保存 1/2 稳定枚举，不能写可见下标 0/1。接触面积辅助仅在总开关开启且触摸入口勾选时显示；三个精细项均无可见项时，整个精细控制分类隐藏。隐藏不修改设备计算方式或面积辅助的保存值。
 - 设备复选组为常驻展开的标题条与内联区，共用现有 `BeginCard` / `DrawCardSurface` 单外框和1物理像素分隔线；按真实标题/文字尺寸与DIP预算选择两列或一列，不引入内滚动或新配置。顶部返回箭头后使用现有PageHeader显示“笔速橡皮”标题，无副标题、版本或返回文字链接。

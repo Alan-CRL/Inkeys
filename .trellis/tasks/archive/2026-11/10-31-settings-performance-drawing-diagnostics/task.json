@@ -1,0 +1,28 @@
+{
+  "id": "settings-performance-drawing-diagnostics",
+  "name": "settings-performance-drawing-diagnostics",
+  "title": "设置性能页、绘制开关与画布调测信息",
+  "description": "新增性能页与帧率设置，接入通用绘图的多指、抬笔修正、墨迹预测及激光笔选项，并在软件调测页展示真实画布初始化信息。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "settings",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": "2026-11-01",
+  "branch": "setting/performance",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "ead40db92f1357d1a6e61a2aa713b61a88e0cbb4",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "validation_result": "cursor_boundary_passed"
+  }
+}

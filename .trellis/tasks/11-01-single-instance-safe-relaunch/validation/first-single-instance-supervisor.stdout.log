@@ -1,0 +1,61 @@
+shutdown-supervisor old_pid=70608 exit_code=77 elapsed_ms=79 restart_count=0
+shutdown-supervisor natural-close PASS
+shutdown-supervisor old_pid=88104 exit_code=44 elapsed_ms=15 restart_count=0
+shutdown-supervisor restart-continuous-lease FAIL
+shutdown-supervisor old_pid=79528 exit_code=77 elapsed_ms=110 restart_count=1
+shutdown-supervisor natural-restart PASS
+shutdown-supervisor old_pid=84136 exit_code=77 elapsed_ms=125 restart_count=1
+shutdown-supervisor crash-restart-natural PASS
+shutdown-supervisor old_pid=87440 exit_code=3779264533 elapsed_ms=2937 restart_count=1
+shutdown-supervisor forced-restart PASS
+shutdown-supervisor old_pid=88680 exit_code=3779264533 elapsed_ms=2968 restart_count=1
+shutdown-supervisor crash-restart-forced PASS
+shutdown-supervisor old_pid=11920 exit_code=3779264534 elapsed_ms=2954 restart_count=0
+shutdown-supervisor duplicate-request PASS
+shutdown-supervisor old_pid=82772 exit_code=88 elapsed_ms=0 restart_count=0
+shutdown-supervisor wrong-parent-pid PASS
+shutdown-supervisor old_pid=79040 exit_code=3779264534 elapsed_ms=5953 restart_count=0
+shutdown-supervisor manual-pending-close-wins PASS
+shutdown-supervisor old_pid=49568 exit_code=77 elapsed_ms=9547 restart_count=1
+shutdown-supervisor late-death-restart PASS
+shutdown-supervisor old_pid=75592 exit_code=3779264534 elapsed_ms=2984 restart_count=0
+shutdown-supervisor fallback-create-failure-close PASS
+shutdown-supervisor old_pid=57836 exit_code=3779264534 elapsed_ms=3016 restart_count=0
+shutdown-supervisor fallback-create-failure-restart PASS
+shutdown-supervisor old_pid=70356 exit_code=3779264534 elapsed_ms=5937 restart_count=0
+shutdown-supervisor fallback-handshake-failure PASS
+shutdown-supervisor old_pid=84516 exit_code=3779264534 elapsed_ms=2953 restart_count=0
+shutdown-supervisor fallback-helper-early-exit PASS
+shutdown-supervisor malformed-handshake PASS
+shutdown-supervisor quoted-unicode-path PASS
+shutdown-supervisor real_uef_old_pid=80296 exit_code=3779313665 authorized=1 dump=1 dump_bytes=53242194 report=1 report_bytes=573 pending_dump=0 early_restart=0 restart_count=1
+shutdown-supervisor real-uef-auto-restart PASS
+shutdown-supervisor real_uef_old_pid=10356 exit_code=3779264535 authorized=1 dump=0 dump_bytes=0 report=0 report_bytes=0 pending_dump=1 early_restart=0 restart_count=0
+shutdown-supervisor manual-uef-report-deadline PASS
+shutdown-supervisor real_uef_old_pid=80328 exit_code=3779313665 authorized=1 dump=1 dump_bytes=53215854 report=1 report_bytes=573 pending_dump=0 early_restart=0 restart_count=0
+shutdown-supervisor manual-uef-cancel-hold PASS
+shutdown-supervisor real_uef_old_pid=87144 exit_code=3779264535 authorized=1 dump=0 dump_bytes=0 report=0 report_bytes=0 pending_dump=1 early_restart=0 restart_count=0
+shutdown-supervisor no-restart-uef-report-deadline PASS
+shutdown-supervisor real_uef_old_pid=33448 exit_code=3779313665 authorized=1 dump=1 dump_bytes=53225826 report=1 report_bytes=573 pending_dump=0 early_restart=0 restart_count=1
+shutdown-supervisor report-disk-full-preserves-dump PASS
+shutdown-supervisor real_uef_old_pid=62272 exit_code=3779264535 authorized=1 dump=0 dump_bytes=0 report=0 report_bytes=0 pending_dump=1 early_restart=0 restart_count=0
+shutdown-supervisor auto-lost-intent-report-deadline PASS
+shutdown-supervisor old_pid=80296 exit_code=3779264534 elapsed_ms=14937 restart_count=0
+shutdown-supervisor forced-close-15-seconds PASS
+shutdown-supervisor failed_arm_old_pid=32488 exit_code=3779264536 old_dead=1 authorized=1 elapsed_ms=15031 arm_result=2 arm_state=3 arm_error=5 deadline_tick=108820859 failed_tick=108805859 remaining_ms=15000 failure_to_death_ms=15031 cleanup_entered=0 durable=1 restart_count=0 wrong_identity=0
+shutdown-supervisor failed-arm-create-close PASS
+shutdown-supervisor failed_arm_old_pid=85768 exit_code=3779264537 old_dead=1 authorized=1 elapsed_ms=15109 arm_result=2 arm_state=3 arm_error=5 deadline_tick=108836750 failed_tick=108821750 remaining_ms=15000 failure_to_death_ms=15109 cleanup_entered=0 durable=1 restart_count=0 wrong_identity=0
+shutdown-supervisor failed-arm-create-restart PASS
+shutdown-supervisor failed_arm_old_pid=87004 exit_code=3779264536 old_dead=1 authorized=1 elapsed_ms=15047 arm_result=2 arm_state=3 arm_error=6 deadline_tick=108853531 failed_tick=108838625 remaining_ms=14906 failure_to_death_ms=14953 cleanup_entered=0 durable=1 restart_count=0 wrong_identity=0
+shutdown-supervisor failed-arm-handshake-close PASS
+shutdown-supervisor failed_arm_old_pid=86812 exit_code=3779264537 old_dead=1 authorized=1 elapsed_ms=15046 arm_result=2 arm_state=3 arm_error=6 deadline_tick=108869125 failed_tick=108854218 remaining_ms=14907 failure_to_death_ms=14953 cleanup_entered=0 durable=1 restart_count=0 wrong_identity=0
+shutdown-supervisor failed-arm-handshake-restart PASS
+shutdown-supervisor failed_arm_old_pid=85640 exit_code=3779264536 old_dead=1 authorized=1 elapsed_ms=15047 arm_result=2 arm_state=3 arm_error=5 deadline_tick=108884687 failed_tick=108875703 remaining_ms=8984 failure_to_death_ms=9031 cleanup_entered=0 durable=1 restart_count=0 wrong_identity=0
+shutdown-supervisor failed-arm-consumed-deadline PASS
+shutdown-supervisor failed_arm_old_pid=80128 exit_code=3779264536 old_dead=1 authorized=1 elapsed_ms=16532 arm_result=2 arm_state=3 arm_error=5 deadline_tick=108900796 failed_tick=108902296 remaining_ms=0 failure_to_death_ms=32 cleanup_entered=0 durable=1 restart_count=0 wrong_identity=0
+shutdown-supervisor failed-arm-expired-deadline PASS
+shutdown-supervisor failed_arm_old_pid=83704 exit_code=84 old_dead=1 authorized=0 elapsed_ms=0 arm_result=4294967295 arm_state=4294967295 arm_error=4294967295 deadline_tick=0 failed_tick=0 remaining_ms=4294967295 failure_to_death_ms=4294967295 cleanup_entered=0 durable=0 restart_count=0 wrong_identity=1
+shutdown-supervisor failed-arm-exact-parent-rejection PASS
+shutdown-supervisor old_pid=80696 exit_code=83 elapsed_ms=0 restart_count=0
+shutdown-supervisor failed-arm-no-inherited-handles PASS
+shutdown-supervisor failed-arm-cases PASS

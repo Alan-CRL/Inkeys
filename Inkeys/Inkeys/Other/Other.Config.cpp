@@ -598,6 +598,26 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (path == "Drawing.PalmEraser.ThresholdPercent" || path == "Drawing.PalmEraser.RecognitionWindowMs")
+				{
+					// 先验证原始整数类型和宽度，禁止浮点、布尔或超宽整数窄化成合法偏好。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const bool accepted = path == "Drawing.PalmEraser.ThresholdPercent" ? candidate >= 1 && candidate <= 400
+						: candidate == 100 || candidate == 150 || candidate == 250 || candidate == 500;
+					value = accepted ? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "UI.FrameRate" || path == "Drawing.FrameRate" || path == "Drawing.InkPredictionMode")
+				{
+					// 离散选项先验整数类型和宽度，避免布尔、浮点或超宽值窄化成有效档位。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const bool accepted = path == "Drawing.InkPredictionMode" ? candidate >= 0 && candidate <= 2
+						: candidate == 30 || candidate == 60 || (path == "Drawing.FrameRate" && (candidate == 120 || candidate == 240));
+					value = accepted ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "UI.Bar.UseTaskbarHeightAsScaleBase")
 				{
 					// 旧开关 true 必须保留真实任务栏量，不能隐式转成新增的基础量模式 1。
@@ -797,10 +817,10 @@ namespace Inkeys
 		return readOk;
 	}
 
-	bool Config::ReadMini(std::initializer_list<std::string_view> paths)
+	bool Config::ReadMini(std::initializer_list<std::string_view> paths, bool readOnly)
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
-		return ReadImpl(NormalizePaths(paths));
+		return ReadImpl(NormalizePaths(paths), readOnly);
 	}
 
 	bool Config::Write()
@@ -896,7 +916,7 @@ namespace Inkeys
 		ApplyDefaults(std::vector<std::string>{});
 	}
 
-	bool Config::ReadImpl(const std::vector<std::string>& paths)
+	bool Config::ReadImpl(const std::vector<std::string>& paths, bool readOnly)
 	{
 		ApplyDefaults(paths);
 
@@ -910,7 +930,8 @@ namespace Inkeys
 
 		// 先迁移旧单数组，再套用文档，避免新区默认值挡住拆分结果。
 		// 直接写回完整迁移文档；不能依赖 Bar 后续恰好再次规范化 A1/A2。
-		if (TryMigrateLegacyBarButtonLayout(parsedRoot))
+		// 只读启动检查不能为了布局兼容而改写配置文件。
+		if (!readOnly && TryMigrateLegacyBarButtonLayout(parsedRoot))
 			(void)WriteDocumentToFile(GetFilePath(), parsedRoot);
 		ApplyDocument(parsedRoot, paths);
 		loadedDocument = parsedRoot;

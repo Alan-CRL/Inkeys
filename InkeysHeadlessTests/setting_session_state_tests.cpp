@@ -394,6 +394,27 @@ namespace
 						if (!Expect(HitTestWindowFrame(window, client, x, y, false, 0, false, false) == WindowFrameHit::Client,
 							"accent window keeps the whole scrollbar track as client")) ++failures;
 
+				// 外部边框不可用时，零侧边的可见 client 不能直接用于缩放命中。
+				const auto fallbackClient = InsetWindowFrameRect(window, sizing);
+				struct FallbackHit { int x; int y; WindowFrameHit expected; };
+				const FallbackHit fallbackHits[]{
+					{ window.left, -550, WindowFrameHit::Left },
+					{ window.right - 1, -550, WindowFrameHit::Right },
+					{ -1100, window.top, WindowFrameHit::Top },
+					{ -1100, window.bottom - 1, WindowFrameHit::Bottom },
+					{ window.left, window.top, WindowFrameHit::TopLeft },
+					{ window.right - 1, window.top, WindowFrameHit::TopRight },
+					{ window.left, window.bottom - 1, WindowFrameHit::BottomLeft },
+					{ window.right - 1, window.bottom - 1, WindowFrameHit::BottomRight },
+				};
+				for (const auto& hit : fallbackHits)
+					if (!Expect(HitTestWindowFrame(window, fallbackClient, hit.x, hit.y, false, f, true) == hit.expected
+						&& HitTestWindowFrame(window, fallbackClient, hit.x, hit.y, true, f, true) == WindowFrameHit::Client,
+						"unavailable outside border restores all eight inside grips only while restored")) ++failures;
+				if (!Expect(HitTestWindowFrame(window, fallbackClient, -1100, -550, false, f, true) == WindowFrameHit::Client
+					&& HitTestWindowFrame(window, fallbackClient, window.left + f, window.top + f, false, f, true) == WindowFrameHit::Client,
+					"fallback keeps interior content and caption controls as client")) ++failures;
+
 				// 边框窗口挖空的正是 HWND 矩形，热区全部在可见边缘外侧。
 				const auto border = ResolveWindowResizeBorderGeometry(window, sizing, 0);
 				const WindowFrameRect hole{ border.outer.left + border.excluded.left, border.outer.top + border.excluded.top,
@@ -532,6 +553,13 @@ namespace
 		if (!Expect(window.find("ResizeBorder") == std::string::npos && contains("SettingResizeBorderProc")
 			&& contains("WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE"),
 			"resize border window stays a Setting-owned helper outside Window::Service")) ++failures;
+		if (!Expect(contains("const bool outsideResize = usesOutsideResize && settingResizeBorder")
+			&& contains("IsWindowVisible(settingResizeBorder) && !settingResizeBorderGeometry.Empty()")
+			&& contains("const bool insideResize = !outsideResize;")
+			&& contains("const auto hitClient = insideResize && usesOutsideResize")
+			&& contains("InsetWindowFrameRect(FrameRect(outer),")
+			&& contains("HitTestWindowFrame(FrameRect(outer), hitClient,"),
+			"production hit testing requires a usable outside border or restores a full inside sizing frame")) ++failures;
 		const auto disable = setting.find("void DisableSettingBackdrop(");
 		const auto disableEnd = setting.find("\n\t}", disable);
 		if (!Expect(disable != std::string::npos && disableEnd != std::string::npos

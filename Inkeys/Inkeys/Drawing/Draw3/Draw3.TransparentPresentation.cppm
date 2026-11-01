@@ -7,6 +7,7 @@
 #include <dxgi1_2.h>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <windows.h>
 
 #include "../../Helper/FailedCleanupDeadline.h"
@@ -42,6 +43,9 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		void* context = nullptr;
 		SetWindowStyleCallback setExtendedStyleFlags = nullptr;
+		// 绘制 owner 低频发布实际初始化结果，UI 只读取 Host 缓存。
+		void* informationContext = nullptr;
+		void (*informationChanged)(void*, const std::string&) noexcept = nullptr;
 	};
 
 	struct TransparentPresentationOptions

@@ -1,0 +1,31 @@
+{
+  "id": "palm-eraser",
+  "name": "palm-eraser",
+  "title": "手掌橡皮与并行擦写",
+  "description": "为 Draw3 规划按触摸面积激活的手掌橡皮、并行擦写与设置详情页。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": "2026-11-01",
+  "branch": "feature/erase",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "4a9caa11",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-01用户确认人工验证通过并授权结束任务和提交。最终默认路径完整ARM64 Debug Solution构建exit0/0warning/0error；三个临时验证输出目录已清理，保留Build/ARM64/Debug。APS额外变动不纳入本任务提交；不push。",
+  "meta": {
+    "implementation_complete": true,
+    "headless_verification_passed": true,
+    "hardware_gui_verified": true,
+    "manual_verification_user_reported": true
+  }
+}

@@ -1,0 +1,5 @@
+[Draw3TouchDiscardIdentity] PASS: captured key survives Up/Cancel and same-slot reuse
+[Draw3SingleTouchReconnect] PASS: actual match/model handoff and independent-touch rejection
+[Draw3ReconnectIdentity] PASS: reused contact IDs, chained handoff and isolated Touch ownership
+[Draw3EraserIdleWake] PASS: four device paths, four race windows, deadlines and idle lifecycle
+[Draw3WorkspaceTransition] PASS: epoch fence, owner ACK, independent reasons and real contact drain
