@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 142
+- **Total Sessions**: 148
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1307 | Active |
+| `journal-2.md` | ~1485 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,12 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 148 | 2026-11-01 | 按用户决定结束并归档PPT调查任务 | `7e649000` | `bugfix/mode` |
+| 147 | 2026-11-01 | 页码右上角进度角标与数字即时更新实机通过 | - | `bugfix/mode` |
+| 146 | 2026-11-01 | 恢复进度三点移至页码右上并修复正常数字动画 | - | `bugfix/mode` |
+| 145 | 2026-11-01 | 现场确认正常页面准备误走文字状态动画 | - | `bugfix/mode` |
+| 144 | 2026-11-01 | 复现页码短状态动画并准备窄策略取证 | - | `bugfix/mode` |
+| 143 | 2026-11-01 | 调查PPT数字页码偶发文字过渡 | - | `bugfix/mode` |
 | 142 | 2026-11-01 | 提交PPT等待反馈修复与诊断阶段成果 | `555ba5ce` | `bugfix/mode` |
 | 141 | 2026-11-01 | 页面准备三点提示实机验收通过 | - | `bugfix/mode` |
 | 140 | 2026-11-01 | 修复命令完成后页面准备阶段三点提前消失 | - | `bugfix/mode` |

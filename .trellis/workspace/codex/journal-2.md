@@ -1305,3 +1305,181 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Next Steps
 
 - 保留in_progress任务与实际延迟/旧退出未知，不归档、不push；会话日志单独提交。
+
+
+## Session 143: 调查PPT数字页码偶发文字过渡
+<!-- trellis-session: v=2 fp=30eb4d505fbe38d1 -->
+
+**Date**: 2026-11-01
+**Task**: 调查PPT数字页码偶发文字过渡
+**Branch**: `bugfix/mode`
+
+### Summary
+
+确认历史与现规范要求Numeric到Numeric当前/总页数即时更新，现分支仍在。找到短暂Status未达中点即回Numeric可重开两槽动画的可达候选，尚缺现场kind/timeline证据；保留用户偏好的三点。
+
+### Main Changes
+
+- 只新增研究和任务记录，未改产品、测试或规范；解释普通PPT三点与白板switching/PPT recovery文字分工。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 只读源码、归档任务、trellis mem与既有测试覆盖核对；未构建或运行GUI，未将静态可达候选当现场定因。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 先补精确状态/动画选择轨迹或最小离屏场景确认，再决定仅取消未显现状态回数字的过渡；不全局禁用语义动画、不自动恢复文字或提交。
+
+
+## Session 144: 复现页码短状态动画并准备窄策略取证
+<!-- trellis-session: v=2 fp=3a34e73b8976a411 -->
+
+**Date**: 2026-11-01
+**Task**: 复现页码短状态动画并准备窄策略取证
+**Branch**: `bugfix/mode`
+
+### Summary
+
+0/20ms短Status未显示即返回数字可复现主次槽动画，普通Numeric仍直接更新。准备默认关闭content-policy同快照数值采样，不改动画策略、三点或COM，等真实偶发样本定因。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整Debug|ARM64 exit0/26.21秒，PPT定向与真实离屏/实际hook及采样BGRA等价exit0；独立check、UTF8/CRLF/diff、DLL/TLB/内嵌不变、PrepareOnly配置SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口遇一次数字缩小/淡出，记页码方向后正常退出；现场没有kind轨迹前不称定因，不提交/改策略。
+
+
+## Session 145: 现场确认正常页面准备误走文字状态动画
+<!-- trellis-session: v=2 fp=6f9fd712287745fe -->
+
+**Date**: 2026-11-01
+**Task**: 现场确认正常页面准备误走文字状态动画
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认3→4基本都有缩小淡出；163049样本912零掉样，现场Recovering被映射Status后返回Numeric，实际重启两槽。右下70.8269ms，总页数56未变。正常新目标也会发布Recovering，说明不是纯数字即时分支失效。
+
+### Main Changes
+
+- 只读调查并记录确认根因与安全显示修复边界，不改产品策略、COM或ready；建议保留恢复控制态、进度统一三点、失败/冲突/重试结果保留文字，不直接投影None。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 正确EXE1EB8...、exit0；原始policy/kind/setter变化与Gate新目标2一致。未把scale/pct当中点或状态文字已显示，未将7个surface配对当7次翻页；本轮无新build/GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 按独立显示策略设计最小修复，保留Pending/target0/错误与重试控制；当前仅调查，未提交。
+
+
+## Session 146: 恢复进度三点移至页码右上并修复正常数字动画
+<!-- trellis-session: v=2 fp=5be7ac66ecc01a37 -->
+
+**Date**: 2026-11-01
+**Task**: 恢复进度三点移至页码右上并修复正常数字动画
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户批准Recovering显示进度而非文字Status，保留错误与Retry。合并前后翻页三点到Page右上单角标，同session稳定数字override防目标页提前显示；所有控制current/ACK/Host恢复门及COM不变。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立review与UTF8/CRLF/diff通过，完整Debug|ARM64 exit0/49.69秒，page-control/PPT定向及实际24组合离屏/数字即时/缓存/旧ACK/最大字宽/partial与启停BGRA exit0；managed源/DLL/TLB/内嵌未变，PrepareOnly配置SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口3→4及返回一次，确认数字不缩淡、Page右上角标与清除；正常退出收集。未提交，性能长尾仍保留。
+
+
+## Session 147: 页码右上角进度角标与数字即时更新实机通过
+<!-- trellis-session: v=2 fp=5f04cab3df6147e0 -->
+
+**Date**: 2026-11-01
+**Task**: 页码右上角进度角标与数字即时更新实机通过
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户短测无问题。171213正确修复版433记录零掉样，16条内容策略均Numeric到Numeric即时，55条画点均3点1branch，正常exit0；本轮视觉修复验收通过。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 已核对manifest/hash/密封计数/content-policy/画点与45个闭合退出span，主清理954.7201ms；无新代码/build/GUI/commit。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 无需重复本轮视觉测试；未提交，任务保留性能长尾与原未验边界，不自动归档。
+
+
+## Session 148: 按用户决定结束并归档PPT调查任务
+<!-- trellis-session: v=2 fp=253114265447731b -->
+
+**Date**: 2026-11-01
+**Task**: 按用户决定结束并归档PPT调查任务
+**Branch**: `bugfix/mode`
+
+### Summary
+
+当前视觉修复、诊断和规范已提交，用户明确授权结束当前任务并归档至archive/2026-11。保留性能长尾、旧退出/CP及版本未验残余，不伪改未通过验收；只归档当前任务，不push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7e649000` | fix(ppt): keep recovery progress numeric and anchor waiting dots to page |
+
+### Testing
+
+- [OK] 最终跨chunk gate PASS，复用完整ARM64/定向/真实离屏/171213人工PASS；差异检查通过。归档55跟踪文件，本地9个忽略证据保持本地不纳入Git。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本任务结束，无需继续当前测试；后续性能或退出问题如需处理另行明确范围。
