@@ -2359,10 +2359,9 @@ SettingSessionCoroutine RunSettingSession()
 			{
 				navigateTo({ Design::PageId::Home }); resetHomeScroll = true;
 			}
-			if (openAction == Design::SettingOpenNavigation::Action::SpeedEraser
-				|| openNavigation.Complete(homeMotion, destination.page == Design::PageId::Home))
+			if (openAction == Design::SettingOpenNavigation::Action::SpeedEraser)
 			{
-				// 导航只由渲染 owner 消费；有开屏时等原流程结束，再交接到目标子页。
+				// 在首帧正文排布前选中详情；开屏缓存从一开始就是目标页。
 				navigateTo({ Design::PageId::Draw });
 				Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 				settingFrameSubmission.Reset();
@@ -2565,7 +2564,9 @@ SettingSessionCoroutine RunSettingSession()
 				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
 					!blockContentInput && settingWindowActive.load(memory_order_acquire),
-					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial));
+					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
+					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
+					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
 				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				blockContentInput|=entryInputBlock;
 				const auto& contentGeometry = shellGeometry.content;

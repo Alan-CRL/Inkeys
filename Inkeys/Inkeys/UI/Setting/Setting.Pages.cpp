@@ -231,6 +231,12 @@ namespace Inkeys::UI::Setting::Design
 		pose.origin=state.entryStart; pose.width=state.entryStartWidth; pose.opacity=1;
 		pose.writing=time>=HomeEntryTiming::WritingEnd ? 1.0F
 			: std::clamp((time-HomeEntryTiming::Wait)/HomeEntryTiming::Writing,0.0F,1.0F);
+		// 详情入口写完即原地渐隐；主页仍保留停留与归位。
+		if (state.fadeOnly)
+		{
+			pose.opacity=1-HomeBrand::Smooth(std::clamp((time-HomeEntryTiming::WritingEnd)/HomeEntryTiming::Dock,0.0F,1.0F));
+			return pose;
+		}
 		// 六笔完全写好后保持 600ms；1.90s 前不透出界面、不移动字标。
 		if (time<=HomeEntryTiming::DockStart) return pose;
 		const float phase=std::clamp((time-HomeEntryTiming::DockStart)/HomeEntryTiming::Dock,0.0F,1.0F), u=HomeBrand::Smooth(phase), v=1-u;
@@ -253,11 +259,14 @@ namespace Inkeys::UI::Setting::Design
 		return pose;
 	}
 
+	namespace { void ResolveHomeEntryLayout(HomeMotionState& state); }
+
 	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip)
 	{
 		state.clientContent=clientContent; state.contentClip=contentClip;
 		state.viewportReady=clientContent.z>clientContent.x && clientContent.w>clientContent.y
 			&& contentClip.z>contentClip.x && contentClip.w>contentClip.y;
+		if (state.fadeOnly) ResolveHomeEntryLayout(state);
 	}
 
 	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
@@ -303,7 +312,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 		if (!allowFreeze) { FinishHomeEntry(state); return false; }
 		if (!prep.ready || !state.EntryActive()) return false;
-		const float next=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
+		const float next=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
 		if (!prep.revealReady && next>=HomeEntryTiming::WritingEnd)
 		{
 			// 书写完成后仍保持不透明：至少两次完整排布且 native 已消费当前测量后，再截无字标页。
@@ -311,14 +320,14 @@ namespace Inkeys::UI::Setting::Design
 			state.entryElapsed=(std::max)(state.entryElapsed,HomeEntryTiming::WritingEnd);
 			return false;
 		}
-		if (next>=HomeEntryTiming::Total && !prep.restoreReady)
+		if (next>=state.EntryTotal() && !prep.restoreReady)
 		{
 			// 终态前在缓存遮挡下恢复真实 child，至少两帧且尺寸就绪才解除遮挡。
 			prep.restorePending=true;
 			return false;
 		}
 		state.entryElapsed=next;
-		if (next>=HomeEntryTiming::Total) { FinishHomeEntry(state); return false; }
+		if (next>=state.EntryTotal()) { FinishHomeEntry(state); return false; }
 		// style alpha 非 1 时蒙版未真正不透明；截图就绪前仍需绘制实际底层。
 		if (!prep.revealReady && key.material[0]!=1) return false;
 		prep.skipBackground=true; prep.fullFrame=false; ++prep.skippedFrames;
@@ -454,7 +463,15 @@ namespace Inkeys::UI::Setting::Design
 			draw->AddRectFilled({bounds.x,bounds.y},{bounds.z,bounds.w},
 				(solid & ~IM_COL32_A_MASK)|(static_cast<ImU32>(std::round(pose.opacity*255))<<IM_COL32_A_SHIFT));
 		}
+		const int firstVertex=draw->VtxBuffer.Size;
 		HomeBrand::DrawWriting(draw,pose.origin,pose.width,IsDarkMode(),pose.writing);
+		if (state.fadeOnly)
+			for (int i=firstVertex;i<draw->VtxBuffer.Size;++i)
+			{
+				auto& color=draw->VtxBuffer[i].col;
+				const auto alpha=static_cast<ImU32>(std::round(((color>>IM_COL32_A_SHIFT)&0xff)*pose.opacity));
+				color=(color & ~IM_COL32_A_MASK)|(alpha<<IM_COL32_A_SHIFT);
+			}
 		draw->PopClipRect();
 	}
 
@@ -483,8 +500,8 @@ namespace Inkeys::UI::Setting::Design
 				state.brandOrigin.x,state.brandOrigin.y,state.brandWidth,HomeBrand::Height(state.brandWidth),dpi};
 			if (state.entryLayoutValidated && state.entryLayoutKey==key)
 			{
-				if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
-				if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
+				if (!state.preparation.managed) state.entryElapsed=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
+				if (state.entryElapsed>=state.EntryTotal()) FinishHomeEntry(state);
 				return;
 			}
 			state.entryLayoutKey=key; state.entryLayoutValidated=true;
@@ -495,9 +512,10 @@ namespace Inkeys::UI::Setting::Design
 				return origin.x-margin>=rect.x && origin.y-margin>=rect.y
 					&& origin.x+size.x+margin<=rect.z && origin.y+size.y+margin<=rect.w;
 			};
-			bool fits=contains(state.contentClip,state.heroOrigin,state.heroSize,0);
+			bool fits=state.fadeOnly || contains(state.contentClip,state.heroOrigin,state.heroSize,0);
 			// 在同一真实布局上验证完整曲线包络；首帧 AutoResize clip 未测量也不影响前景覆盖。
 			HomeMotionState probe; probe.entry=HomeMotionState::Entry::Playing;
+			probe.fadeOnly=state.fadeOnly;
 			probe.brandOrigin=state.brandOrigin; probe.brandWidth=state.brandWidth;
 			probe.entryStart=state.entryStart; probe.entryStartWidth=state.entryStartWidth;
 			for (int i=0;fits && i<=64;++i)
@@ -511,8 +529,8 @@ namespace Inkeys::UI::Setting::Design
 			{
 				state.entry=HomeMotionState::Entry::Playing; state.entryElapsed=0; ++state.entries;
 			}
-			else if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
-			if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
+			else if (!state.preparation.managed) state.entryElapsed=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
+			if (state.entryElapsed>=state.EntryTotal()) FinishHomeEntry(state);
 		}
 	}
 

@@ -107,6 +107,8 @@ namespace Inkeys::UI::Setting::Design
 		Entry entry = Entry::Idle;
 		bool home = false, enabled = true, pointerAllowed = true, brandVisible = false, heroVisible = false;
 		bool viewportReady = false;
+		bool fadeOnly = false; // 详情入口只原地渐隐，不向主页横幅归位。
+		[[nodiscard]] float EntryTotal() const noexcept { return fadeOnly ? HomeEntryTiming::WritingEnd + HomeEntryTiming::Dock : HomeEntryTiming::Total; }
 		bool entryLayoutValidated = false;
 		std::array<float,17> entryLayoutKey{};
 		float delta = 0, x = 0, y = 0, entryElapsed = 0;
@@ -133,9 +135,11 @@ namespace Inkeys::UI::Setting::Design
 	}
 	// 仅真实 Hide→Show 序号触发；内部返回主页和普通激活不能重播。
 	inline void ConfigureHomeMotion(HomeMotionState& state, bool home, std::uint64_t showSerial,
-		float delta, bool enabled, float rate, bool pointerAllowed = true, bool entryAllowed = true) noexcept
+		float delta, bool enabled, float rate, bool pointerAllowed = true, bool entryAllowed = true, bool fadeOnly = false) noexcept
 	{
 		const bool enter=state.showSerial!=showSerial;
+		state.fadeOnly=fadeOnly;
+		home |= fadeOnly;
 		state.home=home; state.showSerial=showSerial; state.enabled=enabled; state.pointerAllowed=pointerAllowed;
 		state.delta=enabled && std::isfinite(delta) && std::isfinite(rate)
 			? std::clamp(delta,0.0F,.05F)*std::clamp(rate,.1F,5.0F) : 0;
@@ -182,29 +186,20 @@ namespace Inkeys::UI::Setting::Design
 	{
 		enum class Action { None, Home, SpeedEraser };
 		std::uint64_t consumed = 0, showSerial = 0, hideSerial = 0;
-		bool pending = false;
+		bool fadeOnly = false;
 
 		Action Consume(const SettingOpenRequest& request, bool visible,
 			std::uint64_t currentShow, std::uint64_t currentHide, bool entryAllowed) noexcept
 		{
-			if (!visible || showSerial != currentShow || hideSerial != currentHide) pending = false;
+			if (!visible || showSerial != currentShow || hideSerial != currentHide) fadeOnly = false;
 			if (request.serial == consumed) return Action::None;
-			consumed = request.serial; pending = false;
+			consumed = request.serial; fadeOnly = false;
 			if (!visible || request.showSerial != currentShow || request.hideSerial != currentHide
 				|| request.target != SettingOpenTarget::SpeedEraser) return Action::None;
 			showSerial = currentShow; hideSerial = currentHide;
-			pending = request.opening && entryAllowed;
-			return pending ? Action::Home : Action::SpeedEraser;
-		}
-
-		bool Complete(const HomeMotionState& motion, bool home) noexcept
-		{
-			if (!home) pending = false;
-			if (!pending || motion.showSerial != showSerial || motion.EntryActive()
-				|| motion.entry == HomeMotionState::Entry::Pending) return false;
-			// 完成、尺寸跳过或输入取消均只交接一次，不重播或补偿首次机会。
-			pending = false;
-			return true;
+			// 首帧就选中目标页，开屏只覆盖其上，不再等待主页动画后跳转。
+			fadeOnly = request.opening && entryAllowed;
+			return Action::SpeedEraser;
 		}
 	};
 

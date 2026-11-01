@@ -2713,24 +2713,11 @@ namespace
 				const auto action = navigation.Consume(request, session.IsVisible(), session.ShowSerial(), session.HideSerial(),
 					ShouldPlaySettingEntryAnimation(mode, session.ShowSerial()));
 				checks.Expect(session.ShowSerial() == opening && request.opening
-					&& action == ((mode == 2 || (mode == 1 && opening == 1)) ? Action::Home : Action::SpeedEraser),
+					&& action == Action::SpeedEraser
+					&& navigation.fadeOnly == (mode == 2 || (mode == 1 && opening == 1)),
 					"eraser entry uses the real Show count for off/first/always policies");
 				session.SetVisible(false);
 			}
-		}
-		for (const auto terminal : { Design::HomeMotionState::Entry::Finished, Design::HomeMotionState::Entry::Skipped })
-		{
-			SessionState session; Design::SettingOpenNavigation navigation; Design::HomeMotionState motion;
-			session.RequestShow(SettingOpenTarget::SpeedEraser);
-			checks.Expect(navigation.Consume(session.GetOpenRequest(), true, session.ShowSerial(), session.HideSerial(), true) == Action::Home
-				&& !navigation.Complete(motion, true), "new eraser opening waits for this Show's entry rather than an old terminal state");
-			Design::ConfigureHomeMotion(motion, true, session.ShowSerial(), 0, true, 1);
-			checks.Expect(!navigation.Complete(motion, true), "pending entry preparation retains the eraser destination");
-			motion.entry = Design::HomeMotionState::Entry::Playing;
-			checks.Expect(!navigation.Complete(motion, true), "playing entry does not navigate underneath the overlay");
-			motion.entry = terminal;
-			checks.Expect(navigation.Complete(motion, true) && !navigation.Complete(motion, true),
-				"completed/cancelled or dimension-skipped entry hands off to eraser exactly once");
 		}
 		SessionState session; Design::SettingOpenNavigation navigation; Design::HomeMotionState motion;
 		auto consume = [&](bool entryAllowed = true) {
@@ -2742,21 +2729,65 @@ namespace
 			"visible eraser shortcut activates and navigates directly without a new Show or replay");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
 		session.RequestShow(SettingOpenTarget::Current);
-		checks.Expect(consume() == Action::None && !navigation.pending, "newer ordinary Show cancels a delayed eraser route");
+		checks.Expect(consume() == Action::None && !navigation.fadeOnly, "newer ordinary Show cancels a delayed eraser route");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
 		const auto stale = session.GetOpenRequest();
 		session.SetVisible(false);
-		checks.Expect(consume() == Action::None && !navigation.pending, "Hide cancels an unfinished eraser entry");
+		checks.Expect(consume() == Action::None && !navigation.fadeOnly, "Hide cancels an unfinished eraser entry");
 		session.RequestShow(SettingOpenTarget::Current); (void)consume();
 		checks.Expect(navigation.Consume(stale, true, session.ShowSerial(), session.HideSerial(), true) == Action::None,
 			"a stale route cannot cross Hide/Show identities");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser);
 		checks.Expect(consume(false) == Action::SpeedEraser, "disabled animations route directly even when the entry policy allows playback");
 		session.SetVisible(false); session.RequestShow(SettingOpenTarget::SpeedEraser); (void)consume();
-		Design::ConfigureHomeMotion(motion, true, session.ShowSerial(), 0, true, 1);
-		Design::FinishHomeEntry(motion);
-		checks.Expect(!navigation.Complete(motion, false) && !navigation.Complete(motion, true),
-			"explicit navigation away prevents a delayed eraser jump");
+		Design::ConfigureHomeMotion(motion, false, session.ShowSerial(), 0, true, 1, true, true, navigation.fadeOnly);
+		checks.Expect(motion.entry == Design::HomeMotionState::Entry::Pending && motion.fadeOnly,
+			"detail entry starts without rendering Home");
+		Design::ConfigureHomeMotion(motion, false, session.ShowSerial(), 0, true, 1);
+		checks.Expect(!motion.EntryActive(), "leaving the target cancels the overlay without a delayed route");
+	}
+
+	void CheckSpeedEraserEntry(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular,strong); ImFluent::SetIconFont(icons);
+		HomeMotionState motion; SpeedEraserDraft draft;
+		auto& io=ImGui::GetIO(); const auto oldSize=io.DisplaySize;
+		io.DisplaySize={960*scale,700*scale};
+		ImVec2 start{}; float width=0; bool sawFade=false;
+		for (int frame=0;frame<130;++frame)
+		{
+			io.AddMousePosEvent(-100,-100); io.AddMouseButtonEvent(0,false); ImGui::NewFrame();
+			ConfigureHomeMotion(motion,false,1,1.0F/60,true,1,true,true,true);
+			ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##eraser-first-frame",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+			ConfigureHomeEntryViewport(motion,{0,32*scale,960*scale,700*scale},{0,32*scale,960*scale,700*scale});
+			ConfigureRowAnimations(0,false,1);
+			(void)RenderSpeedEraser(draft);
+			const auto pose=ResolveHomeEntryPose(motion);
+			if (frame==0)
+			{
+				start=pose.origin; width=pose.width;
+				checks.Expect(motion.EntryActive() && ImGui::GetCurrentWindow()->DC.CursorMaxPos.y>0,
+					"first detail frame renders the actual eraser page under the writing overlay");
+			}
+			if (motion.EntryActive())
+			{
+				checks.Expect(Near(pose.origin.x,start.x) && Near(pose.origin.y,start.y) && Near(pose.width,width),
+					"detail entry keeps the lettering position and size throughout writing and fade");
+				sawFade|=pose.opacity>0 && pose.opacity<1;
+				if (motion.entryElapsed<=HomeEntryTiming::WritingEnd)
+					checks.Expect(pose.opacity==1,"detail remains opaque until lettering completes");
+			}
+			auto* foreground=ImGui::GetForegroundDrawList(); const int first=foreground->VtxBuffer.Size;
+			RenderHomeEntryOverlay(motion);
+			for (int i=first;i<foreground->VtxBuffer.Size;++i)
+				checks.Expect(((foreground->VtxBuffer[i].col>>IM_COL32_A_SHIFT)&0xff)<=std::round(255*pose.opacity),
+					"both lettering and cover fade together over the target page");
+			ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+		}
+		checks.Expect(sawFade && motion.entries==1 && !motion.EntryActive(),"detail entry fades once then finishes without docking");
+		io.DisplaySize=oldSize;
 	}
 
 	void CheckDrawingSubpageScroll(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
@@ -5424,6 +5455,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly)
 		}
 		if (eraserOnly)
 		{
+			CheckSpeedEraserEntry(checks,fonts[0],fonts[1],fonts.back(),scale);
 			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
 			{
 				checks.Expect(LoadNavigationLabels(fontDirectory, language), "speed eraser page loads actual localized resources");
