@@ -3,6 +3,9 @@ import Inkeys.Conv.Text;
 
 #include "IdtI18n.h"
 #include <filesystem>
+#include <format>
+#include <iostream>
+#include "IdtI18nKeys.g.h"
 
 namespace
 {
@@ -20,9 +23,9 @@ namespace
 
 	bool loadJsonContentFromResource(const wstring& path, const wstring& lang, string& jsonContent)
 	{
-		int resNum = 245;
-		if (lang == L"en-US") resNum = 246;
-		else if (lang == L"zh-TW") resNum = 275;
+		const auto* locale = Inkeys::Localization::FindLocale(lang);
+		if (!locale) return false;
+		const UINT resNum = locale->resource;
 
 		HRSRC hRes = FindResourceW(NULL, MAKEINTRESOURCE(resNum), path.c_str());
 		if (!hRes) return false;
@@ -64,11 +67,8 @@ namespace
 
 	LANGID toLanguageId(const wstring& language) noexcept
 	{
-		if (language == L"zh-CN")
-			return MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
-		if (language == L"zh-TW")
-			return MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
-		return MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+		const auto* locale = Inkeys::Localization::FindLocale(language);
+		return locale ? locale->language : Inkeys::Localization::Locales[0].language;
 	}
 }
 
@@ -172,6 +172,17 @@ LANGID I18n::languageId() noexcept
 	}
 }
 
+const Inkeys::Localization::Locale& I18n::locale() noexcept
+{
+	try
+	{
+		shared_lock<shared_mutex> lock(i18nMutex);
+		if (const auto* locale = Inkeys::Localization::FindLocale(identifying)) return *locale;
+	}
+	catch (...) {}
+	return Inkeys::Localization::Locales[0];
+}
+
 bool I18n::tryLanguageId(LANGID& output) noexcept
 {
 	try
@@ -217,3 +228,95 @@ void IdtTest::PrintI18nMap()
 
 	cout << "-------- End --------" << endl;
 }
+
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+int IdtTest::RunI18nLocaleTests()
+{
+	// 无窗口入口直接验证内嵌资源和真实格式化，不能经过生产的异常兜底。
+	int failures = 0;
+	auto expect = [&](bool ok, const char* why)
+		{
+			if (!ok) { ++failures; std::cerr << "[I18n] FAIL " << why << '\n'; }
+		};
+	using namespace Inkeys::Localization;
+	expect(std::wstring_view(LocaleForIndex(0).code) == L"en-US"
+		&& std::wstring_view(LocaleForIndex(1).code) == L"zh-CN"
+		&& std::wstring_view(LocaleForIndex(2).code) == L"zh-TW", "saved legacy language indices keep their meaning");
+	expect(!IsValidIndex(-1) && !IsValidIndex(11) && &LocaleForIndex(99) == &Locales[0], "invalid saved index uses English without rewriting configuration");
+	expect(IndexForSystemLanguage(MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SINGAPORE)) == 1
+		&& IndexForSystemLanguage(MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_MACAU)) == 2
+		&& IndexForSystemLanguage(MAKELANGID(LANG_FRENCH, SUBLANG_FRENCH_CANADIAN)) == 0,
+		"uncovered regions keep the previous startup fallback");
+	for (std::size_t index = 0; index < Locales.size(); ++index)
+	{
+		const auto& locale = Locales[index];
+		expect(IndexForSystemLanguage(locale.language) == static_cast<int>(index), "first-install system language maps to its exact supported region");
+		const auto label = NativeLabel(locale);
+		expect(label.find(locale.codeUtf8) != std::string::npos
+			&& (label.find("Beta") != std::string::npos) == (index != 1), "native language label includes code and the required Beta status");
+		if (!I18n::load(1, L"JSON", locale.code))
+		{
+			expect(false, locale.codeUtf8); continue;
+		}
+		expect(I18n::languageId() == locale.language && I18n::isIdentifying(locale.code), "actual resource load publishes the matching LANGID and language");
+		std::string json;
+		expect(loadJsonContentFromResource(L"JSON", locale.code, json), "embedded language resource is present");
+		Json::CharReaderBuilder reader;
+		Json::Value root;
+		std::string errors;
+		std::istringstream stream(Inkeys::Json::removeJsoncComments(json));
+		expect(Json::parseFromStream(reader, stream, &root, &errors), "embedded JSONC parses");
+		expect(root["Language"].isString() && root["Language"].asString() == locale.codeUtf8
+			&& IA(I18nKey.Language) == locale.codeUtf8,
+			"resource contents and published translation identify the actual requested locale");
+		auto complete = [&](auto&& self, const Json::Value& node) -> bool
+			{
+				if (node.isString()) return node.asString().find("[[Need translation: ") != 0;
+				for (const auto& member : node.getMemberNames()) if (!self(self, node[member])) return false;
+				return node.isObject();
+			};
+		expect(complete(complete, root), "embedded translation has no unfinished markers");
+		auto formatted = [&](const char* key, const char* number, auto&... arguments)
+			{
+				try
+				{
+					const auto text = I18n::getA(key);
+					expect(!text.empty(), key);
+					const auto result = std::vformat(text, std::make_format_args(arguments...));
+					expect(result.find(number) != std::string::npos, key);
+				}
+				catch (const std::format_error&) { expect(false, key); }
+			};
+		int thickness = 17;
+		std::string number = "17";
+		double actual = 12.5, unlimited = 63.25, width = 2.5, height = 3.75, pxWidth = 125, pxHeight = 225;
+		float scale = 1.25F;
+		IdtAtomic<int> downloadSourceLine{ 42 };
+		formatted(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat, "17", thickness);
+		formatted(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat, "17", number);
+		formatted(I18nKey.UI.Bar.Diagnostics.FrameRateFormat, "12.50", actual, unlimited);
+		formatted(I18nKey.SettingsUI.Regular.Appearance.BarZoom.Ind, "1.25", scale);
+		formatted(I18nKey.SettingsUI.Draw.Eraser.PalmEraser.ThresholdSizePhysical, "2.50", width, height, pxWidth, pxHeight);
+		formatted(I18nKey.SettingsUI.Draw.Eraser.PalmEraser.ThresholdSizePixels, "125", pxWidth, pxHeight);
+		formatted(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind, "1.25", scale);
+		formatted(I18nKey.SettingsUI.Update.Downloading, "42", downloadSourceLine);
+		try
+		{
+			const std::wstring wideNumber = L"17";
+			expect(std::vformat(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat), std::make_wformat_args(wideNumber)).find(wideNumber) != std::wstring::npos,
+				"actual wide string width formatting preserves its argument");
+			const auto frameRate = std::vformat(IW(I18nKey.UI.Bar.Diagnostics.FrameRateFormat), std::make_wformat_args(actual, unlimited));
+			expect(frameRate.find(L"12.50") != std::wstring::npos && frameRate.find(L"63.25") != std::wstring::npos,
+				"actual wide frame-rate formatting preserves both typed numeric arguments");
+		}
+		catch (const std::format_error&) { expect(false, "wide UI format syntax and argument types"); }
+		const auto recall = IW(I18nKey.UI.Operate.Recall);
+		expect(recall.find(L'%') == std::wstring::npos && recall.size() + 18 < 100,
+			"legacy swprintf label cannot introduce conversions or overflow its fixed timestamp buffer");
+		std::cout << "[I18n] checked " << locale.codeUtf8 << '\n';
+	}
+	expect(!I18n::load(1, L"JSON", L"unsupported-test-language"), "unknown embedded locale fails instead of silently labeling Chinese as another language");
+	std::cout << "[I18n] failures=" << failures << '\n';
+	return failures ? 1 : 0;
+}
+#endif

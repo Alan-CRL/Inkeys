@@ -1,0 +1,128 @@
+[
+  {
+    "after": "Board",
+    "locale": "en-US",
+    "before": "Whiteboard",
+    "key": "UI/Bar/MainButtons/WhiteboardLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Annot. line",
+    "locale": "en-US",
+    "before": "Annotation line",
+    "key": "UI/Bar/DrawAttributes/AnnotationLineLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "閉じる",
+    "locale": "ja-JP",
+    "before": "白板を閉じる",
+    "key": "UI/Bar/MainButtons/CloseWhiteboardLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "固定",
+    "locale": "ja-JP",
+    "before": "画面固定",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "消去・選択",
+    "locale": "ja-JP",
+    "before": "選択\n（消去）",
+    "key": "UI/Bar/MainButtons/SelectClearLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "透過",
+    "locale": "ja-JP",
+    "before": "操作透過",
+    "key": "UI/Bar/MainButtons/ClickThroughLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "レーザー",
+    "locale": "ja-JP",
+    "before": "レーザーポインター",
+    "key": "UI/Bar/DrawAttributes/LaserLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "고정",
+    "locale": "ko-KR",
+    "before": "화면고정",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "비우고 선택",
+    "locale": "ko-KR",
+    "before": "선택\n(지우기)",
+    "key": "UI/Bar/MainButtons/SelectClearLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "통과",
+    "locale": "ko-KR",
+    "before": "입력통과",
+    "key": "UI/Bar/MainButtons/ClickThroughLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Laisser\npasser",
+    "locale": "fr-FR",
+    "before": "Clics\npassants",
+    "key": "UI/Bar/MainButtons/ClickThroughLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Fixieren",
+    "locale": "de-DE",
+    "before": "Einfrieren",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Fijar",
+    "locale": "es-ES",
+    "before": "Congelar",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Fechar",
+    "locale": "pt-BR",
+    "before": "Fechar lousa",
+    "key": "UI/Bar/MainButtons/CloseWhiteboardLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Fixar",
+    "locale": "pt-BR",
+    "before": "Congelar",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Laser",
+    "locale": "pt-BR",
+    "before": "Apontador laser",
+    "key": "UI/Bar/DrawAttributes/LaserLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Retâng.",
+    "locale": "pt-BR",
+    "before": "Retângulo",
+    "key": "UI/Bar/GeometryAttributes/RectangleLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  },
+  {
+    "after": "Линия",
+    "locale": "ru-RU",
+    "before": "Линия пометок",
+    "key": "UI/Bar/DrawAttributes/AnnotationLineLabel",
+    "reason": "真实DWrite固定文字槽测量后采用语义准确的紧凑标签；不改按钮网格或操作。"
+  }
+]

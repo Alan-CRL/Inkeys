@@ -378,6 +378,9 @@
     <ClInclude Include="IdtI18n.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="IdtI18nLocales.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="IdtStart.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -2504,6 +2507,18 @@
       <Filter>资源文件</Filter>
     </Font>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansJP-Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansJP-Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansKR-Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansKR-Bold.ttf">
       <Filter>资源文件</Filter>
     </Font>
     <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Regular.ttf">

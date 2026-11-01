@@ -18,7 +18,7 @@
 - [keyboard-shortcuts.md](keyboard-shortcuts.md)：固定快捷键、按压归属、启动同步、条件画布命令与清空选择事务。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [canvas-freeze-boundaries.md](canvas-freeze-boundaries.md)：Draw3 标准流隔离、PPT IoError 有限重试、橡皮 idle Move 握手与 Setting 隐藏输入会话。
-- [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
+- [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、十一语言映射、国际化生成链与字体资源归属。
 - [settings-performance-and-drawing.md](settings-performance-and-drawing.md)：性能页、两套帧率、通用绘图每笔锁存和画布初始化信息合同。
 - [settings-attention-notes.md](settings-attention-notes.md)：设置说明下的信息提示、响应式测高、文案分离与无窗口专项。
 - [pen-haptics.md](pen-haptics.md)：笔触觉 Host 注入、设备绑定、UI3 接触凭据、失败回退与无窗口验证合同。

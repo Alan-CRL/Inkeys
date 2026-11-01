@@ -1,3 +1,9 @@
 #include "../Inkeys/resource.h"
 
 IDR_MESSAGE_BOX_ERROR PNG "../Inkeys/src/message_box/error.png"
+
+// 日/韩无窗口排版使用与产品相同的私有字体资源。
+IDR_NOTO_JP_REGULAR TTF "../Inkeys/src/ttf/NotoSansJP-Regular.ttf"
+IDR_NOTO_JP_BOLD TTF "../Inkeys/src/ttf/NotoSansJP-Bold.ttf"
+IDR_NOTO_KR_REGULAR TTF "../Inkeys/src/ttf/NotoSansKR-Regular.ttf"
+IDR_NOTO_KR_BOLD TTF "../Inkeys/src/ttf/NotoSansKR-Bold.ttf"

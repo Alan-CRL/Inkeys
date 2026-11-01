@@ -8,6 +8,8 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <map>
+#include <tuple>
 
 export module Inkeys.UI.Bar:Rendering;
 
@@ -98,9 +100,11 @@ public:
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, const BarUiInheritClass& inh);
-	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
+	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER, bool fitButtonLabel = false);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
+	double FitButtonLabelFontSize(const wstring& content, double fontSize, double width, double height,
+		DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_BOLD);
 	void ConfigureLocalizedTypography();
 	bool UpdateFontRenderingPolicy(bool allowFractional) noexcept;
 	[[nodiscard]] FLOAT ResolveFontSize(ID2D1DeviceContext* context, double fontSize, double nominalTarget = -1.0);
@@ -501,6 +505,8 @@ protected:
 	BarUiFontCorrectionClass directFontCorrection, fineDialFontCorrection;
 	wstring fontFamily = L"HarmonyOS Sans SC";
 	wstring textLocale = L"zh-cn";
+	using ButtonLabelFitKey = std::tuple<wstring,double,double,double,unsigned>;
+	std::map<ButtonLabelFitKey,double> buttonLabelFitCache;
 	SuperellipseGeometryCacheClass superellipseGeometryCache;
 	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;

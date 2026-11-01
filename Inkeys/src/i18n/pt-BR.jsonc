@@ -1,0 +1,1079 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "pt-BR",
+  "Widget":
+  {
+    "LnkName": "Inkeys (Anotações na tela)"
+  },
+  "Operate":
+  {
+    "Reset": "Redefinir",
+    "Repair": "Reparar",
+    "Copy": "Copiar",
+    "Create": "Criar"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "Selecionar",
+      "SelectClean": "Selecionar (limpar)",
+      "Pen": "Caneta",
+      "Eraser": "Borracha",
+      "Options": "Opções"
+    },
+    "Pen":
+    {
+      "Pen": "Caneta",
+      "Highlighter": "Marca-texto",
+      "Thinkness": "Espes-\nsura",
+      "Write": "Escrever",
+      "Line": "Reta",
+      "Square": "Retângulo"
+    },
+    "Operate":
+    {
+      "Revoke": "Desfazer",
+      "Recall": "Restaurar",
+      "Freeze": "Congelar",
+      "Pierce": "Passagem de cliques"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "Barra inferior",
+        "Centered": "Centralizada"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "Limpar",
+        "ClearCanvasHint": "Limpar as anotações desta tela de desenho",
+        "AutomaticLabel": "Tamanho auto.",
+        "SensitivityLabel": "Sensibilidade",
+        "LowLabel": "Baixa",
+        "MediumLabel": "Média",
+        "HighLabel": "Alta",
+        "SmallSize": "Pequeno",
+        "MediumSize": "Médio",
+        "LargeSize": "Grande",
+        "BaseSizeHint": "Tamanho de referência no ajuste automático",
+        "MixedHint": "Os dispositivos têm configurações diferentes\nClique para ativar o tamanho automático em todos",
+        "SettingsHint": "As opções de tamanho automático ainda não estão disponíveis"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "Selecionar",
+        "SelectClearLabel": "Selecionar\n(limpar)",
+        "ClickThroughLabel": "Passar\ncliques",
+        "MoveLabel": "Arrastar",
+        "DrawLabel": "Desenhar",
+        "LaserLabel": "Laser",
+        "HighlighterLabel": "Realçar",
+        "HardPenLabel": "Rígida",
+        "SoftPenLabel": "Suave",
+        "EraserLabel": "Borracha",
+        "AreaEraserLabel": "Por área",
+        "GeometryLabel": "Formas",
+        "RectangleLabel": "Retângulo",
+        "StraightLineLabel": "Reta",
+        "UndoLabel": "Desfazer",
+        "RedoLabel": "Refazer",
+        "ClearLabel": "Limpar",
+        "WhiteboardWindowTitle": "Lousa do Inkeys",
+        "WhiteboardPreviousLabel": "Anterior",
+        "WhiteboardNextLabel": "Próxima",
+        "WhiteboardAddPageLabel": "Adicionar",
+        "WhiteboardLabel": "Lousa",
+        "ResumeWhiteboardLabel": "À lousa",
+        "CloseWhiteboardLabel": "Fechar",
+        "ReturnToShowLabel": "Ao slide",
+        "MinimizeWhiteboardLabel": "Minimizar lousa",
+        "WhiteboardThemeLabel": "Tema",
+        "WhiteboardBackgroundColorLabel": "Cor de fundo",
+        "WhiteboardBackgroundStyleLabel": "Estilo do fundo",
+        "WhiteboardBlankLabel": "Liso",
+        "WhiteboardDotsLabel": "Pontos",
+        "WhiteboardGridLabel": "Grade",
+        "WhiteboardUnsavedLabel": "Há páginas não salvas",
+        "FreezeLabel": "Fixar",
+        "EndPresentationLabel": "Encerrar",
+        "SettingsLabel": "Opções",
+        "MoreLabel": "Mais"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "Arquivos",
+        "TaskManagerLabel": "Tarefas",
+        "ControlPanelLabel": "Controle",
+        "ShowDesktopLabel": "Área trab.",
+        "LockScreenLabel": "Bloquear",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "Sortear",
+        "ClassIslandSettingsLabel": "Config. CI",
+        "ClassIslandProfileLabel": "Perfis",
+        "ClassIslandSwapLabel": "Mudar aula"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "Pincel",
+        "LaserLabel": "Laser",
+        "HighlighterLabel": "Marca-texto",
+        "HardPenLabel": "Caneta rígida",
+        "SoftPenLabel": "Caneta suave",
+        "FreeLineLabel": "Traço livre",
+        "AnnotationLineLabel": "Linha guia",
+        "HoldThicknessLabel": "Mantenha pressionado para fixar a espessura",
+        "ThicknessFormat": "Espessura {}",
+        "AnnotationUnavailableTitle": "A linha guia ainda não está disponível",
+        "AnnotationFixedUnsupportedTitle": "A linha guia com espessura fixa ainda não é compatível",
+        "AnnotationDescription": "Restringir o traço às direções horizontal, vertical ou diagonal de 45°",
+        "ThicknessOverflowTitle": "A espessura excede a área de prévia",
+        "ThicknessOverflowBody": "A espessura na prévia pode diferir do traço desenhado."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "Reta",
+        "RectangleLabel": "Retâng."
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "Opacidade",
+        "HoldColorLabel": "Mantenha pressionado para fixar a cor"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "Quadros: {:.2f} FPS | Sem limite: {:.2f} FPS",
+        "FrameRateUnavailable": "Quadros: -- FPS | Sem limite: -- FPS"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "Conflito",
+        "ReadFailed": "Leitura",
+        "PresentFailed": "Exibição",
+        "Failed": "Erro",
+        "Recovering": "Restaurando",
+        "Loading": "Carregando",
+        "Retry": "Tentar",
+        "Wait": "Aguarde",
+        "RetryCanvas": "Tentar a tela de desenho novamente",
+        "ProtectedHint": "A ordem das páginas ou a identidade do documento mudou. Os traços existentes estão protegidos. Restaure o documento ao estado original e tente novamente.",
+        "RecoveryHint": "A restauração da tela de desenho não foi concluída. Tentar novamente mantém a proteção dos traços."
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "O Inkeys não consegue exibir o fundo transparente corretamente.\n\nClique com o botão direito em Inkeys.exe, abra ‘Propriedades → Compatibilidade’ e desmarque ‘Modo de cores reduzidas’.\nNo Windows 7, ative um tema Aero.\n\nReinicie o Inkeys e tente novamente.\nSe o problema persistir, contate o desenvolvedor pela página inicial das opções."
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "A transição para a janela da lousa não foi concluída. As tentativas automáticas foram interrompidas. Clique novamente no botão da lousa na barra principal para cancelar esta transição ou tente pela página Desenho nas opções.",
+      "Return": "A saída da lousa não foi concluída. As tentativas automáticas foram interrompidas. Clique novamente no botão da lousa na barra principal para voltar à lousa ou tente pela página Desenho nas opções.",
+      "Primary": "A alternância entre as áreas de trabalho e de apresentação não foi concluída. As tentativas automáticas foram interrompidas. Tente novamente pela página Desenho nas opções."
+    },
+    "Common":
+    {
+      "TipsTitle": "Aviso do Inkeys",
+      "ErrorTitle": "Erro do Inkeys",
+      "OK": "OK",
+      "Cancel": "Cancelar",
+      "Yes": "Sim",
+      "No": "Não"
+    },
+    "EndPresentation":
+    {
+      "Body": "Encerrar a apresentação de slides atual?"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "O Inkeys foi encerrado inesperadamente porque não foi possível criar uma janela do programa ou sua criação foi bloqueada. Reinicie o Inkeys e tente novamente. (#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "O módulo de atualização automática não foi iniciado, o que indica que esta não é uma versão oficial.\nAcesse ‘Versão do programa’ e selecione ‘Reparar o programa’."
+    },
+    "CloseInkeys":
+    {
+      "Body": "Encerrar o Inkeys?"
+    },
+    "Crash":
+    {
+      "Body": "O Inkeys encontrou um problema. Selecione OK para reiniciar o Inkeys e tentar restaurar o trabalho."
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Opções do Inkeys",
+    "Design":
+    {
+      "NavigationTitle": "Opções",
+      "SwitchToDark": "Mudar para o tema escuro",
+      "SwitchToLight": "Mudar para o tema claro",
+      "Preferences": "Preferências",
+      "RecommendedSuffix": " (Recomendado)",
+      "SupportGroup": "Suporte e manutenção",
+      "Experimental": "Opções experimentais",
+      "HomeWelcome": "Boas-vindas ao Inkeys3",
+      "HeroTitle": "Traços fluidos. Movimentos elegantes.",
+      "HeroJoin": " ",
+      "HeroDescription": "Anotações na tela que dão gosto de usar.",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "Este programa é distribuído sob a licença ",
+      "HomeLicenseSuffix": ".",
+      "HomeRedistribution": "Qualquer pessoa pode consultar, modificar e redistribuir este código conforme os termos da GPLv3.",
+      "HomeOpenSourceTitle": "Código aberto e gratuito, feito para você",
+      "HomeRepositoryPrefix": "O código do Inkeys está hospedado no ",
+      "HomeRepositoryJoin": " e no ",
+      "HomeRepositorySuffix": ".",
+      "HomeStarAction": "Dar uma estrela ao projeto",
+      "HomeSponsorAction": "Apoiar o Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "Ajustar a experiência de escrita",
+      "Tutorial": "Como usar",
+      "Explore": "Opções recomendadas",
+      "DrawDescription": "Traços e borracha",
+      "AppearanceDescription": "Animações, iluminação e escala da barra",
+      "PresetDescription": "Suas canetas favoritas, sempre à mão",
+      "PluginDescription": "Conectar ferramentas de apresentação e ensino",
+      "CommonSettings": "Opções mais usadas",
+      "GeneralDescription": "Modo de operação, disposição da barra e inicialização",
+      "ShortcutsDescription": "Atalhos globais e de edição de anotações",
+      "DisplayLanguage": "Idioma de exibição",
+      "Improve": "Ajude a melhorar o Inkeys",
+      "Contact": "Contatar o desenvolvedor",
+      "TermsOfUse": "Termos de uso",
+      "Website": "Site oficial",
+      "StartupSection": "Inicialização",
+      "AppearanceSection": "Aparência",
+      "BehaviorSection": "Comportamento",
+      "CompatibilitySection": "Compatibilidade",
+      "GeneralBasic": "Básico",
+      "GeneralAppearance": "Aparência e animações",
+      "GeneralInteraction": "Comportamento e segurança",
+      "GeneralStorage": "Armazenamento e configuração",
+      "OperationModeSection": "Modo de operação",
+      "IconArrangementSection": "Disposição dos ícones",
+      "AnimationSection": "Animações",
+      "LightingSection": "Iluminação",
+      "ScalingSection": "Escala",
+      "WindowBehaviorSection": "Comportamento das janelas",
+      "SafetyRecoverySection": "Segurança e restauração",
+      "ShortcutGlobalSection": "Ações globais",
+      "ShortcutEditingSection": "Edição de anotações",
+      "ShortcutAuxiliarySection": "Ações auxiliares",
+      "GeneralSubtitle": "Inicialização, tamanho da interface e preferências do dia a dia.",
+      "EdgeLighting": "Ativar iluminação das bordas",
+      "EdgeLightingDescription": "Quando desativada, mantém apenas a borda básica, sem luzes pontuais ou suaves.",
+      "TopWindowSummary": "Define com que frequência a janela volta ao topo quando você não está desenhando.",
+      "TopWindowDetails": "Detalhes",
+      "AvoidFullscreenSummary": "Requer reinicialização. Evita ocupar a tela inteira fora do desenho ou no modo de passagem de cliques.",
+      "AvoidFullscreenDetails": "Notas de uso",
+      "Enabled": "Ativado",
+      "Disabled": "Desativado",
+      "ClickToCopy": "Clique para copiar",
+      "Copied": "Copiado",
+      "RestartRequired": "Reinicie o Inkeys para aplicar.",
+      "NextStartupRequired": "A alteração será aplicada na próxima inicialização do Inkeys."
+    },
+    "Home":
+    {
+      "N": "Início",
+      "Prompt": "Esta é uma prévia do Inkeys 3 e não representa a qualidade final.",
+      "Developer": "Desenvolvedor do Inkeys",
+      "Group": "GitHub Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Canal no Bilibili",
+      "FeedBack": "Problemas e sugestões"
+    },
+    "Feedback":
+    {
+      "N": "Comentários",
+      "Description": "Relate problemas ou sugira melhorias para ajudar a aprimorar o Inkeys.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Relate problemas ou sugira melhorias no GitHub para discussão e acompanhamento públicos."
+      },
+      "Questionnaire":
+      {
+        "N": "Questionário de comentários",
+        "E": "Use o questionário para relatar problemas ou sugerir melhorias."
+      },
+      "Qr":
+      {
+        "N": "Escanear para enviar comentários",
+        "E": "Escaneie o código QR para relatar problemas ou sugestões pelo questionário."
+      },
+      "ContactSection": "Comunidade e contato com o desenvolvedor",
+      "CommunityDescription": "Converse com a comunidade sobre problemas ou sugestões no GitHub Discussions.",
+      "ContactDescription": "Envie problemas ou sugestões ao desenvolvedor por e-mail.",
+      "AuthorQQ": "QQ do desenvolvedor"
+    },
+    "Language":
+    {
+      "N": "Idioma",
+      "UI":
+      {
+        "N": "Idioma da interface",
+        "Select": "Selecionar idioma",
+        "SelectE": "Defina o idioma de exibição da interface.",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "É necessário reiniciar o Inkeys para aplicar o idioma por completo. Reiniciar agora?",
+        "SelectNote": "Reinicie o Inkeys para aplicar o idioma por completo."
+      }
+    },
+    "Configuration":
+    {
+      "N": "Configuração e armazenamento",
+      "Clean":
+      {
+        "N": "Limpeza da configuração",
+        "Enable": "Ativar limpeza",
+        "EnableE": "Remove opções ausentes do modelo de configuração da versão atual ao iniciar ou salvar.",
+        "EnableNote": "Após voltar a uma versão anterior e atualizar novamente, ou importar uma configuração, algumas opções podem ser perdidas e voltar aos valores padrão."
+      },
+      "CanvasSave":
+      {
+        "N": "Salvar tela de desenho",
+        "Enable": "Salvar automaticamente o desenho da área de trabalho",
+        "EnableE": "Ao limpar o desenho da área de trabalho ou sair do programa, salva automaticamente as telas com conteúdo para restauração posterior pelo histórico.",
+        "SaveTime":
+        {
+          "N": "Prazo de retenção",
+          "E": "Remove o histórico de desenhos vencidos durante a inicialização, após o prazo definido.",
+          "1d": "1 dia",
+          "3d": "3 dias",
+          "5d": "5 dias",
+          "10d": "10 dias",
+          "30d": "30 dias",
+          "Never": "Nunca remover"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "Versão do programa",
+      "ManualUpdate":
+      {
+        "N": "Há uma nova versão disponível",
+        "ManualUpdate": "Atualizar manualmente"
+      },
+      "LimitUpdate":
+      {
+        "N": "Atualização automática bloqueada.\n\nOs requisitos de compatibilidade do sistema mudaram e a nova versão pode não iniciar após a atualização. Confira os detalhes para verificar se o sistema atende aos requisitos e baixe a atualização manualmente. O reparo deste canal também ficará indisponível por enquanto.",
+        "Info": "Detalhes"
+      },
+      "Inkeys3Update":
+      {
+        "N": "O Inkeys3 foi lançado oficialmente!\n\nUse o botão abaixo para saber mais sobre o Inkeys3. O reparo do canal atual ficará indisponível por enquanto.",
+        "Download": "Atualizar agora"
+      },
+      "VersionTip": "A arquitetura do programa é diferente da arquitetura do sistema, o que pode reduzir o desempenho e prejudicar o uso. Em ‘Reparar o programa’, ative ‘Corrigir a arquitetura ao reparar’ ou selecione a arquitetura de destino na parte inferior da página e execute o reparo.",
+      "Info":
+      {
+        "N": "Informações da versão",
+        "ReleaseVersion": "Versão publicada",
+        "ReleaseDate": "Data de publicação",
+        "ReleaseArch": "Arquiteturas do programa e do sistema:",
+        "ReleaseTag": "Compilação de lançamento (RELEASE)",
+        "DebugTag": "Compilação de depuração (DEBUG)",
+        "ManualBuild": "Compilação manual",
+        "AutoBuild": "Compilação automática (CI/CD)",
+        "CICDInfo": "Detalhes da compilação automática"
+      },
+      "UserInfo":
+      {
+        "N": "Informações do usuário",
+        "CopyUserId": "Copiar ID do usuário",
+        "UserId": "ID do usuário"
+      },
+      "Repair":
+      {
+        "N": "Reparo do programa",
+        "RepairSoftware": "Reparar o programa",
+        "RepairSoftwareE": "Reinstalar a versão mais recente do canal selecionado",
+        "RepairArch": "Corrigir a arquitetura ao reparar"
+      },
+      "Update":
+      {
+        "N": "Preferências de atualização",
+        "AutoUpate": "Atualizar automaticamente (sem avisos)",
+        "ChannelTip": "O canal Estável (LTS) oferece as versões estáveis mais recentes e é recomendado para o uso diário.\nO canal Prévia (Insider) oferece versões de teste, com menor estabilidade, que podem gerar alertas de segurança.\nO canal Inicial (Canary) oferece versões iniciais do Inkeys 3 e não é recomendado para o uso diário.",
+        "Channel":
+        {
+          "N": "Canal de atualização de destino",
+          "LTS": "Estável (LTS)",
+          "Insider": "Prévia (Insider)",
+          "Canary": "Inicial (Canary)"
+        },
+        "Arch":
+        {
+          "N": "Arquitetura de destino",
+          "E": "Atenção: selecionar uma arquitetura diferente da do sistema pode impedir a inicialização ou causar perda significativa de desempenho.",
+          "64": "64 bits",
+          "32": "32 bits",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "Estado da versão"
+    },
+    "CICD":
+    {
+      "N": "Detalhes da compilação automática",
+      "Repository": "Repositório de compilação",
+      "Branch": "Branch de compilação",
+      "Submitter": "Autor do commit",
+      "BuildTime": "Data da compilação",
+      "BuildSystem": "Sistema de compilação",
+      "BuildSystemVersion": "Versão do sistema de compilação",
+      "RunnerImageSystem": "Sistema da imagem do executor",
+      "RunnerImageVersion": "Versão da imagem do executor",
+      "MSBuildVersion": "Versão do MSBuild"
+    },
+    "Regular":
+    {
+      "N": "Geral",
+      "SelectAndClickThrough":
+      {
+        "N": "Seleção e passagem de cliques",
+        "Combined": "Unificado",
+        "Separate": "Separado",
+        "CombinedDescription": "Use ‘Selecionar’ para operar o computador tanto sem traços quanto mantendo os traços na tela.",
+        "SeparateDescription": "‘Selecionar’ limpa os traços para operar o computador; ‘Passagem de cliques’ mantém os traços e permite operar a janela abaixo.",
+        "ClickThrough": "Passagem de cliques",
+        "ClickThroughDescription": "Mantém os traços na tela e deixa os cliques e toques atravessarem a camada de anotações para operar a janela abaixo."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Ordem dos ícones da barra principal",
+        "FollowMainButton": "Seguir o botão principal",
+        "FollowMainButtonReverse": "Seguir o botão principal (inverso)",
+        "LeftToRight": "Da esquerda para a direita",
+        "RightToLeft": "Da direita para a esquerda"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Direção de expansão da barra",
+        "Centerline": "Linha central da tela",
+        "WhenSpaceInsufficient": "Apenas se faltar espaço"
+      },
+      "AutoCollapse":
+      {
+        "N": "Recolher automaticamente",
+        "Drawing": "Recolher a barra ao desenhar",
+        "Erasing": "Recolher a barra ao apagar",
+        "Dragging": "Recolher a barra ao arrastá-la",
+        "OutsideClick": "Recolher ao clicar fora nos modos Selecionar ou Passagem de cliques",
+        "Description": "Desenho inclui caneta, formas e laser. O modo de barra inferior inclui a barra centralizada. A barra, seus menus, atributos e painéis flutuantes não contam como área externa.",
+        "Off": "Desativado",
+        "NonBottom": "Fora do modo de barra inferior",
+        "Always": "Sempre"
+      },
+      "StartUp":
+      {
+        "N": "Inicialização automática e comportamento ao iniciar",
+        "AutoStart": "Iniciar ao entrar no Windows",
+        "AutoStartE": "Inicia o Inkeys automaticamente quando o usuário atual entra no Windows.",
+        "LoadingAnimation": "Animação de inicialização",
+        "LoadingAnimationE": "Exibe uma animação de carregamento durante a inicialização do Inkeys.",
+        "SettingEntryAnimation":
+        {
+          "N": "Animação de abertura das opções",
+          "E": "Define quando exibir a animação de abertura das opções",
+          "Off": "Desativada",
+          "First": "Apenas na primeira vez",
+          "Always": "Sempre"
+        },
+        "Link":
+        {
+          "N": "Criar atalho na área de trabalho",
+          "E": "Para corrigir nomes ou criar atalhos automaticamente, acesse ‘Mais opções’.",
+          "More": "Mais opções"
+        }
+      },
+      "Appearance":
+      {
+        "N": "Aparência",
+        "AnimationEnable": "Ativar animações",
+        "AnimationEnableE": "Quando desativadas, as animações de navegação e de páginas das opções e da barra UI3 terminam imediatamente.",
+        "AnimationRate": "Velocidade das animações",
+        "AnimationRateE": "Ajusta a velocidade das animações da barra UI3 e das opções entre 0,1× e 5,0×.",
+        "EdgeLighting": "Iluminação das bordas",
+        "EdgeLightingE": "Quando desativada, mantém apenas a borda básica, sem luzes pontuais ou suaves.",
+        "DynamicEdgeLighting": "Iluminação dinâmica das bordas",
+        "DynamicEdgeLightingE": "A iluminação acompanha a posição do ponteiro",
+        "Theme":
+        {
+          "N": "Tema",
+          "E": "Selecione ‘Recomendado’ para aplicar automaticamente o tema recomendado atualmente pela equipe.",
+          "Skip1": "Recomendado",
+          "Skip2": "Padrão",
+          "Skip3": "Relógio minimalista",
+          "Skip4": "Ano do Cavalo"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "Referência de escala da barra de tarefas",
+          "E": "Em 100%, o tamanho-base tem altura fixa de 48 DIP; o tamanho real acompanha a espessura da barra de tarefas.",
+          "Off": "Desativada",
+          "Base": "Tamanho-base da barra de tarefas",
+          "Actual": "Tamanho real da barra de tarefas"
+        },
+        "BarZoom":
+        {
+          "N": "Escala da barra principal",
+          "E": "Ajusta em tempo real a escala da barra principal, dos botões e dos controles de PPT.",
+          "Ind": "Escala de {:.2f}×"
+        }
+      },
+      "Behavior":
+      {
+        "N": "Outros comportamentos",
+        "TopWindow":
+        {
+          "N": "Intervalo para manter no topo",
+          "E": "Fora do modo de desenho, traz a janela ao topo neste intervalo, pausando durante os traços. Intervalos menores reduzem a interferência de outras janelas, mas usam mais CPU. Se outras janelas continuarem cobrindo o Inkeys, experimente o complemento SuperTop.",
+          "100ms": "Muito curto (100 ms)",
+          "500ms": "Curto (500 ms)",
+          "1s": "Um pouco curto (1 s)",
+          "3s": "Médio (3 s)",
+          "5s": "Um pouco longo (5 s)",
+          "10s": "Longo (10 s)",
+          "30s": "Muito longo (30 s)"
+        },
+        "RightClickClose": "Encerrar ao clicar com o botão direito no ícone principal",
+        "RightClickCloseE": "Uma caixa de confirmação será exibida.",
+        "DrawingRetract": "Recolher a barra ao desenhar com a caneta",
+        "ErasingRetract": "Recolher a barra ao usar a borracha",
+        "DraggingRetract": "Recolher a barra ao arrastá-la",
+        "CheckingRetract": "Recolher ao clicar fora",
+        "CheckingRetractE": "Aplica-se apenas a cliques fora da barra principal nos modos Selecionar ou Passagem de cliques."
+      },
+      "Tentative":
+      {
+        "N": "Opções experimentais",
+        "SafeMode":
+        {
+          "N": "Tratamento de falhas",
+          "E": "Define a ação a executar se o Inkeys falhar.",
+          "Mode1": "Avisar e reiniciar",
+          "Mode2": "Reiniciar sem aviso",
+          "Mode3": "Usar o tratamento de falhas do sistema",
+          "Mode4": "Encerrar imediatamente",
+          "Note": "Erros durante a inicialização continuam sendo avisados."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "Permitir várias instâncias",
+          "E": "Permite executar várias instâncias a partir da mesma pasta de instalação. Desativar impede novas instâncias, sem afetar as que já estão em execução."
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "Desenho",
+      "General":
+      {
+        "N": "Geral",
+        "MultiTouch":
+        {
+          "N": "Desenhar com vários dedos",
+          "E": "Permite escrever ou desenhar com vários dedos ao mesmo tempo. Quando desativado, aceita apenas um dedo."
+        },
+        "PenTailCorrection":
+        {
+          "N": "Correção do fim do traço",
+          "E": "Reduz dobras bruscas no final do traço ao levantar a caneta, deixando o acabamento mais natural."
+        },
+        "InkPrediction":
+        {
+          "N": "Previsão dos traços",
+          "E": "Reduz a sensação de atraso ao escrever. O modo Preciso prevê o movimento seguinte; o modo Rápido completa o traço até a entrada mais recente. Quando desativado, não desenha traços previstos.",
+          "Precise": "Preciso",
+          "Fast": "Rápido",
+          "Disabled": "Desativado"
+        }
+      },
+      "Laser":
+      {
+        "N": "Apontador laser",
+        "MultiTouch":
+        {
+          "N": "Laser com vários dedos",
+          "E": "BETA: permite usar o apontador laser com vários dedos ao mesmo tempo."
+        },
+        "Particles":
+        {
+          "N": "Partículas do laser",
+          "E": "BETA: exibe partículas ao redor do trajeto do laser."
+        }
+      },
+      "Haptics":
+      {
+        "N": "Resposta tátil da caneta",
+        "Drawing": "Resposta tátil ao desenhar",
+        "Buttons": "Resposta tátil dos botões"
+      },
+      "Cursor":
+      {
+        "N": "Ponteiro",
+        "Description": "As opções do mouse afetam apenas as canetas suave e rígida. O marca-texto sempre mostra a espessura, e as formas usam o ponteiro do sistema. O ponteiro padrão da caneta é circular. Canetas na tela não realçam a borda do ponteiro; mesas digitalizadoras e canetas não identificadas realçam.",
+        "MouseStyle": "Mouse",
+        "PenStyle": "Caneta",
+        "DefaultStyle": "Ponteiro padrão",
+        "DrawingStyle": "Ponteiro em forma de caneta"
+      },
+      "Effect":
+      {
+        "N": "Ambiente de desenho",
+        "Device":
+        {
+          "N": "Selecionar modo de interação",
+          "Touch": "Modo de toque em tela grande",
+          "MousePen": "Modo de área de trabalho",
+          "TouchE": "Para salas de aula, reuniões e outros ambientes com escrita e operação direta em telas grandes sensíveis ao toque.",
+          "MousePenE": "Para computadores pessoais, tablets e telas grandes operadas por mouse, com suporte a mouse, caneta, mesa digitalizadora e toque."
+        }
+      },
+      "Touch":
+      {
+        "N": "Toque",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Reconectar traços interrompidos",
+          "E": "Ao escrever por toque, se o contato se perder brevemente e retornar na mesma direção, tenta unir os dois trechos em um só traço. Quando desativado, cada retirada encerra o traço atual."
+        }
+      },
+      "Eraser":
+      {
+        "N": "Borracha",
+        "Automatic": "Ativar borracha por velocidade",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "Apagar com precisão",
+          "DemoFineDescription": "Apague devagar ao longo da guia para preservar marcas e linhas próximas.",
+          "DemoSweepTitle": "Apagar áreas grandes",
+          "DemoSweepDescription": "Ao apagar continuamente em movimentos de ida e volta, a borracha aumenta para limpar grandes áreas mais rápido.",
+          "EntryDescription": "Ajusta a espessura da borracha conforme a intenção de apagar",
+          "Introduction": "Considera o tamanho da tela, o dispositivo de entrada e o movimento para inferir a intenção e ajustar dinamicamente o tamanho da borracha.",
+          "BasicSettings": "Opções básicas",
+          "EnabledDevices": "Dispositivos habilitados",
+          "FineControl": "Ajuste fino",
+          "SizeWarningTitle": "Não foi possível obter um tamanho de tela confiável",
+          "SizeWarningDescription": "Sem dimensões físicas confiáveis da tela de desenho, o toque e a caneta na tela usam uma estimativa por DPI. O tamanho da borracha pode não corresponder à intenção."
+        },
+        "PalmEraser":
+        {
+          "N": "Borracha com a palma",
+          "EntryDescription": "Apague com uma área grande de toque sem trocar de ferramenta",
+          "Introduction": "Encoste a palma na tela para apagar sem trocar de ferramenta. O tamanho da borracha é definido durante a janela de reconhecimento após o contato. Ao retirar a mão, a ferramenta original continua selecionada.",
+          "Enabled": "Ativar borracha com a palma",
+          "SizeWarningTitle": "Não foi possível obter um tamanho de tela confiável",
+          "SizeWarningDescription": "Sem dimensões físicas confiáveis da tela de desenho, a borracha com a palma usa 100×100 DIP do sistema como área de referência do limite. Ela continua disponível, mas o tamanho em centímetros pode variar. Ajuste o multiplicador conforme o uso.",
+          "RecognitionWindow": "Janela de reconhecimento",
+          "RecognitionWindowDescription": "Após o contato, reconhece a palma e define o tamanho dentro deste período. Começa a apagar assim que as condições forem atendidas.",
+          "Threshold": "Limite da área de toque",
+          "ThresholdDescription": "Aumentar o multiplicador reduz reconhecimentos acidentais; diminuir facilita reconhecer a palma.",
+          "ThresholdSizePhysical": "Limite atual: {:.2f}cm × {:.2f}cm ({:.0f}px × {:.0f}px)",
+          "ThresholdSizePixels": "Limite atual: {:.0f}px × {:.0f}px",
+          "PreviewTitle": "Exemplo da área de toque (tela de desenho atual)",
+          "PreviewDescription": "A área dentro da borda mostra o limite em pixels da tela de desenho atual. Altere a proporção da prévia para conferir. Em outra tela, o tamanho físico pode ser diferente.",
+          "PreviewEstimated": "O limite em pixels é estimado a partir da área-base de 100×100 DIP do sistema e do multiplicador atual. Altere a proporção da prévia para conferir; o tamanho físico pode variar.",
+          "PreviewUnavailable": "As informações de dimensão da tela de desenho ainda não estão disponíveis para mostrar um exemplo da área.",
+          "EnabledTools": "Ferramentas compatíveis",
+          "ParallelWritingMultiTouchNote": "O desenho com vários dedos está desativado. Não é possível apagar e escrever ao mesmo tempo.",
+          "ParallelWritingLaserMultiTouchNote": "O laser com vários dedos está desativado. Não é possível apagar e escrever ao mesmo tempo com o laser.",
+          "ParallelWriting": "Permitir apagar e escrever ao mesmo tempo",
+          "ParallelWritingDescription": "A borracha com a palma não interrompe outras entradas, permitindo continuar desenhando. Útil quando duas ou mais pessoas escrevem ao mesmo tempo."
+        },
+        "Input":
+        {
+          "MouseLeft": "Botão esquerdo do mouse",
+          "MouseRight": "Botão direito do mouse",
+          "Touch": "Toque",
+          "PenTip": "Ponta da caneta",
+          "PenTail": "Extremidade traseira da caneta"
+        },
+        "Kind":
+        {
+          "Fixed": "Espessura fixa",
+          "Speed": "Borracha por velocidade"
+        },
+        "ResponseFor": "Resposta à velocidade para",
+        "Response":
+        {
+          "Auto": "Detecção automática",
+          "ScreenPen": "Caneta na tela",
+          "Digitizer": "Mesa digitalizadora"
+        },
+        "TouchArea":
+        {
+          "N": "Ajuste por área de contato na borracha por velocidade ao toque",
+          "E": "Mantém a borracha um pouco maior que o dedo para que ele não esconda o ponteiro.",
+          "Note": "Não é recomendado em telas grandes."
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "Predefinições",
+      "StartupPlacement":
+      {
+        "N": "Posição inicial",
+        "E": "A barra inferior centralizada inicia expandida. As janelas flutuantes nos cantos inferiores mostram apenas o botão principal.",
+        "CenteredBottomBar": "Barra inferior centralizada",
+        "BottomLeftFloating": "Flutuante no canto inferior esquerdo",
+        "BottomRightFloating": "Flutuante no canto inferior direito"
+      }
+    },
+    "Performance":
+    {
+      "N": "Desempenho",
+      "FrameRateSection": "Taxa de quadros",
+      "InterfaceFrameRate":
+      {
+        "N": "Taxa de quadros da interface",
+        "E": "Ajusta a fluidez da barra principal, das opções e dos controles de navegação. Uma taxa menor reduz o uso de recursos. A alteração é imediata."
+      },
+      "CanvasFrameRate":
+      {
+        "N": "Taxa de quadros do desenho",
+        "E": "Ajusta a frequência de atualização da tela ao escrever. Taxas maiores deixam os traços mais fluidos, mas consomem mais recursos."
+      },
+      "RenderingSection": "Renderização e compatibilidade",
+      "DirectComposition":
+      {
+        "N": "Priorizar DirectComposition",
+        "E": "Usa a composição do sistema para exibir a tela de desenho nos dispositivos compatíveis. Se indisponível, usa automaticamente o método de compatibilidade."
+      }
+    },
+    "Experimental":
+    {
+      "N": "Laboratório",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "Permitir tamanhos fracionários de fonte na interface",
+          "E": "Quando desativado, arredonda para baixo o tamanho em pixels das fontes da barra e dos controles em repouso. As animações de escala e transição continuam suaves. A alteração é imediata."
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Ativar aceleração de desenho por hardware",
+          "E": "Usa a GPU para acelerar o desenho. Quando desativada, usa renderização por software.",
+          "Note": "Tente desativar se houver falhas de desenho ou lentidão intensa. Reinicie o Inkeys para aplicar."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Ativar compatibilidade com dispositivos Zhaoxin",
+          "E": "Usa um método compatível de envio de dados em GPUs Zhaoxin, sem afetar outras GPUs. Desative para comparar o desempenho de desenho."
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "Diagnóstico da resposta tátil da caneta",
+          "E": "Registra entradas da caneta, solicitações dos botões e resultados enviados ao dispositivo tátil para ajudar a identificar a ausência de vibração."
+        },
+        "TouchArea":
+        {
+          "N": "Diagnóstico de entrada e borracha no console",
+          "E": "Exibe amostras com frequência limitada de EDID, resolução e DPI do monitor, área de toque, coordenadas de entrada, tipo de dispositivo e tamanho da borracha."
+        },
+        "PptCOM":
+        {
+          "N": "Saída do PptCOM no console",
+          "E": "Envia informações de diagnóstico do PptCOM ao console."
+        },
+        "Draw3":
+        {
+          "N": "Saída do Draw3 no console",
+          "E": "Envia informações dos dispositivos e drivers do Draw3 ao console."
+        },
+        "Cursor":
+        {
+          "N": "Depuração do ponteiro",
+          "E": "Envia ao console a origem da entrada do ponteiro e o resultado real da renderização."
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "Complementos",
+      "PPTHelper":
+      {
+        "N": "Assistente de PPT 3 Lite",
+        "E": "Exibe botões de apresentação e de caneta durante a apresentação de slides. Cada página tem sua própria tela de desenho, mantendo os traços vinculados a ela. Não afeta as funções originais nem o uso de dispositivos externos.",
+        "VersionError": "Versão desconhecida (erro do complemento)",
+        "Solve": "Solução",
+        "Sync": "Ajustar em conjunto",
+        "Reset": "Redefinir",
+        "Tip": "Para detectar a apresentação corretamente, o Inkeys e o PowerPoint/WPS devem executar com o mesmo nível de permissão. Se o problema persistir, consulte a solução.",
+        "Warn": "O PowerPoint/WPS está configurado para sempre executar como administrador. O Inkeys também precisa dessas permissões para detectar o processo da apresentação e ativar a integração PPT. Se não quiser executar sempre o apresentador como administrador, consulte a solução.",
+        "Error": "Não foi possível carregar o complemento. O .NET Framework 4.x pode não estar instalado ou o ambiente COM do sistema pode ter um problema.\nDetalhes: ",
+        "BasicLogic":
+        {
+          "N": "Comportamento básico",
+          "LoadPage": "Mostrar página de carregamento",
+          "LoadPageE": "Este recurso está desativado. As páginas de carregamento de PPT não são mais exibidas."
+        },
+        "WidgetDisplay":
+        {
+          "N": "Exibição dos controles",
+          "BottomBoth": "Mostrar controles nos dois cantos inferiores",
+          "MiddleBoth": "Mostrar controles no meio das duas laterais",
+          "BottomMiddle": "Mostrar controles da barra principal inferior"
+        },
+        "WidgetPosition":
+        {
+          "N": "Posição dos controles",
+          "Reset": "Redefinir posições dos controles",
+          "Remember": "Lembrar posições dos controles"
+        },
+        "WidgetScale":
+        {
+          "N": "Escala dos controles",
+          "Ind": "Escala de {:.2f}×",
+          "Page":
+          {
+            "BottomSideBoth": "Escala dos controles nos dois cantos inferiores",
+            "MiddleSideBoth": "Escala dos controles no meio das laterais"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "Escala dos controles da barra principal inferior"
+          }
+        },
+        "Tentative":
+        {
+          "N": "Opções experimentais",
+          "CloseWpp": "Permitir encerrar processos de apresentação WPP presos ou órfãos",
+          "CloseWppE": "Reinicie o Inkeys para aplicar. Tenta encerrar processos WPP que permanecem após sair da apresentação no WPS, facilitando a detecção da próxima apresentação.",
+          "AutoTakeOver": "Assumir as anotações da apresentação",
+          "AutoTakeOverE": "Ao detectar as anotações nativas do PPT, ativa o desenho no Inkeys e desativa as anotações nativas do PPT.",
+          "AutoTakeOverOnce": "Assumir no máximo uma vez por apresentação",
+          "AutoTakeOverOnceE": "Evita assumir repetidamente quando as anotações nativas do PPT são necessárias.",
+          "AutoTakeOverExpand": "Expandir a barra principal após assumir",
+          "EnablePageButtonLongPress": "Navegar continuamente ao manter o botão de página pressionado"
+        },
+        "SupportNote": "Compatível com Microsoft PowerPoint 2007 ou posterior e Kingsoft WPS 2013 ou posterior."
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "Usa UIAccess para exibir as janelas do Inkeys sobre interfaces do sistema e janelas de aplicativos compatíveis.",
+        "Warn": "O complemento SuperTop está em Beta e pode apresentar instabilidade.\nAo iniciar, o programa executa a si mesmo novamente para solicitar elevação de privilégios e depois inicia uma nova instância.\nEsse processo pode falhar; executar como administrador pode afetar a integração PPT.\nSe aparecer um aviso do UAC, confira a origem do programa e o fornecedor antes de autorizar.\nSe o software de segurança emitir um alerta, confira a origem do arquivo e a assinatura, sem simplesmente desativar a proteção.",
+        "Capability":
+        {
+          "N": "Recursos básicos",
+          "SuperTop": "Ativar SuperTop",
+          "SuperTopE1": "O programa usa uma inicialização em três etapas para manter as janelas no topo.\n(Ativo no momento)",
+          "SuperTopE2": "O programa usa uma inicialização em três etapas para manter as janelas no topo.\n(Inativo no momento)",
+          "Indicator": "Indicador do SuperTop",
+          "IndicatorE": "Exibe um alfinete no canto superior direito do ícone principal quando o SuperTop está ativo.",
+          "SuperTopNote": "Reinicie o Inkeys para aplicar. A ativação durante a inicialização pode falhar."
+        },
+        "SupportNote": "Compatível apenas com Windows 8 ou posterior."
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "Em equipamentos de ensino integrados, algumas lousas digitais não permitem fechar diretamente suas ferramentas flutuantes de caneta. Várias ferramentas na área de trabalho podem confundir o professor e interromper as anotações. O DesktopDrawpadBlocker ajuda a reduzir esse problema.",
+        "LicenseTitle": "Plugin de código aberto GPLv3",
+        "LicenseDescription": "Este plugin só pode ser usado para aprendizado, troca de informações e pesquisa, sendo vedados outros usos.\nO DesktopDrawpadBlocker, assistente que bloqueia janelas flutuantes de programas semelhantes, é um software de código aberto publicado sob a licença GPLv3.\nEstá disponível no repositório GitHub: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nEsperamos que o programa seja útil, mas não oferecemos qualquer garantia de qualidade.\nAo usar este plugin, você aceita este acordo e assume a responsabilidade pelos efeitos e consequências do uso.",
+        "UseSection": "Uso do plugin",
+        "EnableTitle": "Ativar plugin",
+        "EnableDescription": "No modo padrão, o plugin é iniciado e encerrado junto com o Inkeys.",
+        "GeneralSection": "Opções gerais",
+        "AdministratorTitle": "Executar plugin como administrador",
+        "AdministratorDescription": "Ao alterar esta opção, aguarde a resposta do plugin.",
+        "IntervalTitle": "Intervalo de bloqueio",
+        "IntervalDescription": "Intervalos menores bloqueiam novas janelas mais rapidamente, mas consomem mais recursos de CPU.",
+        "IntervalShort": "Curto (500 ms)",
+        "IntervalMediumShort": "Um pouco curto (1 s)",
+        "IntervalMedium": "Médio (3 s)",
+        "IntervalMediumLong": "Um pouco longo (5 s)",
+        "IntervalLong": "Longo (10 s)",
+        "PrecisionSection": "Controle detalhado",
+        "Seewo3Title": "Janela flutuante de caneta de 希沃白板3",
+        "Seewo5Title": "Janela flutuante de caneta de 希沃白板5",
+        "Seewo5CTitle": "Janela flutuante de caneta de 希沃轻白板 (5C)",
+        "PincoSidebarTitle": "Barra lateral de 希沃品课教师端",
+        "PincoDrawingTitle": "Janela flutuante de caneta de 希沃品课教师端",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "Ferramentas de PPT de 希沃课堂助手",
+        "YiouTitle": "Janela flutuante de caneta de 欧帝白板",
+        "AiClassTitle": "Janela flutuante de caneta do AiClass",
+        "ClassInXTitle": "Janela flutuante de caneta do ClassIn X",
+        "IntelligentClassTitle": "Janela flutuante de caneta de 天喻教育云互动课堂",
+        "ChangYan4Title": "Janela flutuante de caneta de 畅言智慧课堂4.0",
+        "ChangYan5Title": "Janela flutuante de caneta de 畅言智慧课堂5.0",
+        "Iclass30SidebarTitle": "Barra lateral de C30智能教学",
+        "Iclass30DrawingTitle": "Janela flutuante de caneta de C30智能教学",
+        "SeewoDesktopSidebarTitle": "Barra lateral de 希沃桌面",
+        "SeewoDesktopDrawingTitle": "Janela flutuante de caneta de 希沃桌面",
+        "IncludesPptNote": "Inclui os controles do PPT.",
+        "RestoresWhiteboardNote": "Inclui os controles do PPT e restauração automática no modo quadro branco.",
+        "WindowTrackingNote": "Inclui os controles do PPT, restauração automática no modo quadro branco e rastreamento de janelas.",
+        "SeewoDesktopVersionsNote": "Compatível com 1.0/2.0/2.5/3.0, nas edições de ensino básico e superior.",
+        "AdministratorNote": "Requer que o DDB execute com privilégios de administrador."
+      },
+      "LnkHelper":
+      {
+        "N": "Assistente de atalhos",
+        "E": "Verifica ao iniciar se os atalhos existentes do Inkeys continuam válidos. As atualizações podem mudar o nome do executável e invalidar atalhos. Também pode criar um atalho na área de trabalho se ele ainda não existir.",
+        "Capability":
+        {
+          "N": "Recursos básicos",
+          "FixLnk": "Corrigir destino e nome dos atalhos da área de trabalho",
+          "FixLnkE": "Corrige os atalhos existentes da área de trabalho ao iniciar. É recomendado, pois as atualizações automáticas podem mudar o nome do executável e invalidá-los."
+        },
+        "Expansion":
+        {
+          "N": "Opções adicionais",
+          "CreateLnk": "Criar atalho na área de trabalho",
+          "CreateLnkE": "Cria um atalho na área de trabalho se ainda não houver um."
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "Componentes",
+      "SoftwareSection": "Aplicativos",
+      "SystemSection": "Sistema",
+      "KeyboardSection": "Simulação de teclado",
+      "RollCallSection": "Sorteadores de nomes",
+      "ClassIslandSection": "Integração com o ClassIsland",
+      "ExplorerTitle": "Abrir Explorador de Arquivos",
+      "TaskManagerTitle": "Abrir Gerenciador de Tarefas",
+      "ControlPanelTitle": "Abrir Painel de Controle",
+      "ShowDesktopTitle": "Mostrar área de trabalho",
+      "LockScreenTitle": "Bloquear tela",
+      "EscapeTitle": "Pressionar Esc",
+      "AltF4Title": "Pressionar Alt+F4",
+      "IslandCaller1Title": "IslandCaller 1: sorteio de nomes",
+      "IslandCaller2Title": "IslandCaller 2: sortear um nome",
+      "SecRandom1Title": "SecRandom 1: sorteio rápido",
+      "SecRandom2Title": "SecRandom 2: sorteio rápido",
+      "SecRandom2CompatTitle": "SecRandom 2: sorteio rápido (compatível)",
+      "NamePickerTitle": "NamePicker: sorteio de nomes",
+      "ClassIslandSettingsTitle": "Configurações do ClassIsland",
+      "ClassIslandProfileTitle": "Editar perfil do ClassIsland",
+      "ClassIslandSwapTitle": "Trocar aula rapidamente no ClassIsland",
+      "IslandCallerRequirement": "Requer o plugin IslandCaller no ClassIsland e o registro do protocolo de URL do ClassIsland.",
+      "SecRandomUrlRequirement": "Requer o registro do protocolo de URL do SecRandom.",
+      "SecRandomIpcRequirement": "Requer o registro do protocolo IPC do SecRandom.",
+      "NamePickerRequirement": "Requer o registro do protocolo de URL do NamePicker.",
+      "ClassIslandProtocolNote": "Registre o protocolo de navegação por URL nas configurações do ClassIsland.",
+      "ClassIslandSwapNote": "Este componente não tem efeito quando o ClassIsland não tem uma grade de aulas carregada."
+    },
+    "HotKey":
+    {
+      "N": "Atalhos de teclado",
+      "E": "As combinações fixas abaixo podem ser ativadas individualmente. Ainda não é possível personalizá-las.\nExceto pela alternância global, os atalhos só funcionam durante as anotações. A entrada de texto nas opções e os diálogos modais têm prioridade. Nos modos Selecionar ou Passagem de cliques, o aplicativo atual os recebe.\nA alternância global continua ativa durante a edição normal das opções. Nos diálogos modais do Inkeys, a ação é suspensa, mas a combinação continua reservada. AltGr pode coincidir com Ctrl + Alt; desative a alternância global se necessário.\nOs atalhos não assumem a navegação de slides do PPT.",
+      "ToggleAnnotationN": "Alternância global de anotações",
+      "ToggleAnnotationE": "Alterna entre anotar e Selecionar. O modo Unificado mantém os traços ao selecionar; o modo Separado limpa a página atual primeiro. Ao voltar, restaura a última ferramenta de anotação, sem restaurar o congelamento.",
+      "UndoN": "Desfazer",
+      "UndoE": "Desfaz operações na página atual. Mantenha pressionado para repetir. Mesmo sem histórico, não envia Desfazer ao aplicativo abaixo.",
+      "RedoYN": "Refazer",
+      "RedoYE": "Refaz operações na página atual. Mantenha pressionado para repetir. Esta combinação e Ctrl + Shift + Z podem ser ativadas separadamente.",
+      "RedoShiftZN": "Refazer (alternativo)",
+      "RedoShiftZE": "Executa a mesma ação de Refazer de Ctrl + Y, com uma opção de ativação própria.",
+      "ClearN": "Limpar a página atual",
+      "ClearE": "O primeiro acionamento limpa e mantém a ferramenta, sem entrar em Selecionar mesmo numa página vazia. Mantenha Ctrl pressionado, solte Delete e pressione Delete de novo para selecionar nos dois modos. Manter Delete pressionado não conta duas vezes. Novos traços ou outras ações reiniciam essa sequência.",
+      "FreezeN": "Congelar",
+      "FreezeE": "Ativa ou desativa o congelamento da tela.",
+      "Registering": "Registrando a alternância global",
+      "Disabling": "Desativando a alternância global",
+      "UnregisterFailed": "Falha ao cancelar o registro da alternância global; a combinação continua reservada",
+      "Registered": "Alternância global ativa",
+      "Disabled": "Alternância global desativada",
+      "NotRunning": "O serviço de teclado ainda não está em execução",
+      "RegisterFailed": "Falha ao registrar a alternância global; outro programa pode estar usando a combinação",
+      "SynchronizationPending": "Sincronizando o estado das teclas. Mude para uma janela sem privilégios elevados, solte as teclas e tente novamente.",
+      "HookReady": "Os atalhos de anotação estão prontos",
+      "HookFailed": "O interceptador de teclado não foi instalado; os atalhos de anotação estão indisponíveis",
+      "FreezeNote": "Indisponível nas áreas de PPT e lousa. Mesmo indisponível, a combinação não é enviada ao aplicativo abaixo."
+    },
+    "Community":
+    {
+      "N": "Comunidade"
+    },
+    "Sponsor":
+    {
+      "N": "Apoie o Inkeys",
+      "Thanks": "Após apoiar o projeto, você pode contatar o desenvolvedor para incluir seu apelido e o valor da contribuição na página da comunidade, como agradecimento."
+    },
+    "RestartSoftware":
+    {
+      "N": "Reiniciar"
+    },
+    "ExitSoftware":
+    {
+      "N": "Sair"
+    },
+    "DebugSoftware":
+    {
+      "N": "Depurar",
+      "RenderingSection": "Depuração da renderização UI3",
+      "DirtyRegions":
+      {
+        "N": "Depuração das áreas alteradas",
+        "E": "Mostra os limites das áreas alteradas realmente enviadas pelo UI3 em cada quadro."
+      },
+      "FrameRate":
+      {
+        "N": "Mostrar taxa de quadros",
+        "E": "Atualiza a cada segundo a taxa média do segundo anterior e a taxa sem espera."
+      },
+      "ConsoleSection": "Saída no console",
+      "CanvasInformation": "Informações de inicialização do desenho",
+      "DisplayInformation": "Monitores e EDID"
+    },
+    "Update":
+    {
+      "Check": "Verificar atualizações",
+      "Channel":
+      {
+        "LTS": "Canal Estável",
+        "Insider": "Canal Prévia",
+        "Dev": "Canal de Desenvolvimento",
+        "Canary": "Canal Inicial",
+        "Other": "Outro canal"
+      },
+      "NotStarted": "A verificação de atualizações não foi iniciada",
+      "ObtainInformation": "Obtendo informações da nova versão",
+      "InformationFail": "Falha ao obter informações da nova versão",
+      "InformationDamage": "As informações baixadas da versão estão corrompidas",
+      "InformationUnStandardized": "O formato das informações da versão é inválido",
+      "Downloading": "Baixando atualização (rota {})",
+      "DownloadFail": "Falha ao baixar a versão mais recente",
+      "DownloadDamage": "O arquivo baixado está corrompido",
+      "Restart": "Reinicie para atualizar para a versão mais recente",
+      "Latest": "O programa já está atualizado",
+      "Newer": "Esta versão é mais nova que a última versão oficial",
+      "New": "Há uma nova versão disponível",
+      "Repair": "Tentar reparar",
+      "ManualDownload": "Baixar a versão mais recente manualmente",
+      "UpdateNow": "Atualizar agora"
+    }
+  }
+}

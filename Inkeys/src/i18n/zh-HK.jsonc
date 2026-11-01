@@ -1,0 +1,1079 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "zh-HK",
+  "Widget":
+  {
+    "LnkName": "Inkeys（屏幕批註工具）"
+  },
+  "Operate":
+  {
+    "Reset": "重設",
+    "Repair": "修復",
+    "Copy": "複製",
+    "Create": "建立"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "選取",
+      "SelectClean": "選取(清空)",
+      "Pen": "畫筆",
+      "Eraser": "擦膠",
+      "Options": "選項"
+    },
+    "Pen":
+    {
+      "Pen": "畫筆",
+      "Highlighter": "螢光筆",
+      "Thinkness": "粗\n幼",
+      "Write": "書寫",
+      "Line": "直線",
+      "Square": "矩形"
+    },
+    "Operate":
+    {
+      "Revoke": "復原",
+      "Recall": "超級還原",
+      "Freeze": "定格",
+      "Pierce": "穿透"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "底欄模式",
+        "Centered": "置中"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "清空",
+        "ClearCanvasHint": "清空目前畫布上的批註",
+        "AutomaticLabel": "自動粗幼",
+        "SensitivityLabel": "靈敏度",
+        "LowLabel": "低",
+        "MediumLabel": "中",
+        "HighLabel": "高",
+        "SmallSize": "小號",
+        "MediumSize": "中號",
+        "LargeSize": "大號",
+        "BaseSizeHint": "自動模式時作為基礎大小",
+        "MixedHint": "各裝置的設定不同\n按一下為所有裝置啟用自動粗幼",
+        "SettingsHint": "自動粗幼設定，暫未開放"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "選取",
+        "SelectClearLabel": "選取(清空)",
+        "ClickThroughLabel": "穿透",
+        "MoveLabel": "拖動",
+        "DrawLabel": "繪製",
+        "LaserLabel": "鐳射筆",
+        "HighlighterLabel": "螢光筆",
+        "HardPenLabel": "硬筆",
+        "SoftPenLabel": "軟筆",
+        "EraserLabel": "擦膠",
+        "AreaEraserLabel": "範圍擦膠",
+        "GeometryLabel": "幾何",
+        "RectangleLabel": "矩形",
+        "StraightLineLabel": "直線",
+        "UndoLabel": "復原",
+        "RedoLabel": "重做",
+        "ClearLabel": "清空",
+        "WhiteboardWindowTitle": "Inkeys 白板",
+        "WhiteboardPreviousLabel": "上一頁",
+        "WhiteboardNextLabel": "下一頁",
+        "WhiteboardAddPageLabel": "加頁",
+        "WhiteboardLabel": "白板",
+        "ResumeWhiteboardLabel": "返回白板",
+        "CloseWhiteboardLabel": "關閉白板",
+        "ReturnToShowLabel": "返回放映",
+        "MinimizeWhiteboardLabel": "最小化白板",
+        "WhiteboardThemeLabel": "主題樣式",
+        "WhiteboardBackgroundColorLabel": "背景顏色",
+        "WhiteboardBackgroundStyleLabel": "背景樣式",
+        "WhiteboardBlankLabel": "空白",
+        "WhiteboardDotsLabel": "點陣",
+        "WhiteboardGridLabel": "網格",
+        "WhiteboardUnsavedLabel": "部分頁面未儲存",
+        "FreezeLabel": "定格",
+        "EndPresentationLabel": "結束放映",
+        "SettingsLabel": "設定",
+        "MoreLabel": "更多"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "檔案",
+        "TaskManagerLabel": "工作管理",
+        "ControlPanelLabel": "控制台",
+        "ShowDesktopLabel": "桌面",
+        "LockScreenLabel": "鎖定",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "隨機點名",
+        "ClassIslandSettingsLabel": "CI 設定",
+        "ClassIslandProfileLabel": "課表檔案",
+        "ClassIslandSwapLabel": "快速換課"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "筆刷",
+        "LaserLabel": "鐳射筆",
+        "HighlighterLabel": "螢光筆",
+        "HardPenLabel": "硬筆",
+        "SoftPenLabel": "軟筆",
+        "FreeLineLabel": "自由線",
+        "AnnotationLineLabel": "標註線",
+        "HoldThicknessLabel": "按住以鎖定粗幼",
+        "ThicknessFormat": "粗幼 {}",
+        "AnnotationUnavailableTitle": "標註線暫時無法使用",
+        "AnnotationFixedUnsupportedTitle": "標註線尚未支援固定粗幼",
+        "AnnotationDescription": "將繪製方向鎖定為水平、垂直或斜 45°",
+        "ThicknessOverflowTitle": "墨跡粗幼超出預覽範圍",
+        "ThicknessOverflowBody": "預覽粗幼可能與實際繪製粗幼不同。"
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "直線",
+        "RectangleLabel": "矩形"
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "透明度",
+        "HoldColorLabel": "按住以鎖定顏色"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "幀率: {:.2f} FPS | 無上限: {:.2f} FPS",
+        "FrameRateUnavailable": "幀率: -- FPS | 無上限: -- FPS"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "衝突",
+        "ReadFailed": "讀取",
+        "PresentFailed": "顯示",
+        "Failed": "故障",
+        "Recovering": "還原",
+        "Loading": "載入",
+        "Retry": "重試",
+        "Wait": "稍候",
+        "RetryCanvas": "重試畫布",
+        "ProtectedHint": "文件的頁面次序或識別資料已變更，墨跡已受保護。請恢復原來的文件狀態後重試。",
+        "RecoveryHint": "畫布尚未完成還原。重試仍會保護原有墨跡。"
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys 無法正常顯示透明背景。\n\n請在 Inkeys.exe 上按右鍵，開啟「內容 → 兼容性」，取消勾選「簡化的色彩模式」。\nWindows 7 用戶請啟用 Aero 主題。\n\n重新啟動 Inkeys 後再試。\n如問題持續，請在設定首頁聯絡開發者。"
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "白板視窗切換未完成，已停止自動重試。可再次點擊主欄的白板按鈕取消本次切換，或前往設定的繪圖頁重試。",
+      "Return": "退出白板未完成，已停止自動重試。可再次點擊主欄的白板按鈕返回白板，或前往設定的繪圖頁重試。",
+      "Primary": "桌面與放映工作區切換未完成，已停止自動重試。請前往設定的繪圖頁重試。"
+    },
+    "Common":
+    {
+      "TipsTitle": "Inkeys 提示",
+      "ErrorTitle": "Inkeys 錯誤",
+      "OK": "確定",
+      "Cancel": "取消",
+      "Yes": "是",
+      "No": "否"
+    },
+    "EndPresentation":
+    {
+      "Body": "確定要結束目前的投影片放映嗎？"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys 意外結束：程式視窗建立失敗或遭到攔截。請重新啟動 Inkeys 後再試一次。(#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "自動更新模組尚未啟動，表示目前並非官方發行版本。\n請前往「軟件版本」，選擇「修復軟件」。"
+    },
+    "CloseInkeys":
+    {
+      "Body": "確定要關閉 Inkeys 嗎？"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys 發生問題。選擇「確定」以重新啟動 Inkeys 並嘗試復原。"
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Inkeys 選項",
+    "Design":
+    {
+      "NavigationTitle": "設定",
+      "SwitchToDark": "切換為深色主題",
+      "SwitchToLight": "切換為淺色主題",
+      "Preferences": "偏好設定",
+      "RecommendedSuffix": "（推薦）",
+      "SupportGroup": "支援與維護",
+      "Experimental": "實驗選項",
+      "HomeWelcome": "歡迎使用 Inkeys3",
+      "HeroTitle": "讓屏幕上的書寫行雲流水，",
+      "HeroJoin": "",
+      "HeroDescription": "讓每一次操作都賞心悅目。",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL(陳潤林) 工作室",
+      "HomeLicensePrefix": "本程式遵循 ",
+      "HomeLicenseSuffix": " 開源授權條款。",
+      "HomeRedistribution": "任何人均可按 GPLv3 授權條款，檢視、修改及再分發本專案的程式碼。",
+      "HomeOpenSourceTitle": "開源且免費，為你而造",
+      "HomeRepositoryPrefix": "Inkeys 的程式碼託管於 ",
+      "HomeRepositoryJoin": " 與 ",
+      "HomeRepositorySuffix": "。",
+      "HomeStarAction": "為儲存庫加上 Star",
+      "HomeSponsorAction": "贊助 Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "調整書寫體驗",
+      "Tutorial": "使用指南",
+      "Explore": "推薦設定",
+      "DrawDescription": "筆跡與擦膠",
+      "AppearanceDescription": "動畫、光影與主欄縮放",
+      "PresetDescription": "常用畫筆，隨時取用",
+      "PluginDescription": "連接簡報與課堂工具",
+      "CommonSettings": "常用設定",
+      "GeneralDescription": "操作模式、主欄排列與啟動方式",
+      "ShortcutsDescription": "全域操作與批註編輯快捷鍵",
+      "DisplayLanguage": "顯示語言",
+      "Improve": "一起完善 Inkeys",
+      "Contact": "聯絡作者",
+      "TermsOfUse": "使用條款",
+      "Website": "官方網站",
+      "StartupSection": "啟動",
+      "AppearanceSection": "外觀",
+      "BehaviorSection": "操作習慣",
+      "CompatibilitySection": "兼容性",
+      "GeneralBasic": "基本",
+      "GeneralAppearance": "外觀與動畫",
+      "GeneralInteraction": "行為與安全",
+      "GeneralStorage": "儲存與設定",
+      "OperationModeSection": "操作模式",
+      "IconArrangementSection": "圖示排列",
+      "AnimationSection": "動畫",
+      "LightingSection": "光源",
+      "ScalingSection": "縮放",
+      "WindowBehaviorSection": "視窗行為",
+      "SafetyRecoverySection": "安全與復原",
+      "ShortcutGlobalSection": "全域操作",
+      "ShortcutEditingSection": "批註編輯",
+      "ShortcutAuxiliarySection": "輔助操作",
+      "GeneralSubtitle": "啟動方式、介面大小與日常使用偏好。",
+      "EdgeLighting": "啟用邊緣光影",
+      "EdgeLightingDescription": "關閉後僅保留基本邊框，停用點光與柔光效果。",
+      "TopWindowSummary": "設定非繪圖狀態下將視窗重新置頂的頻率。",
+      "TopWindowDetails": "詳細說明",
+      "AvoidFullscreenSummary": "需要重新啟動軟件。非繪製與穿透模式下避免佔滿屏幕。",
+      "AvoidFullscreenDetails": "適用說明",
+      "Enabled": "開",
+      "Disabled": "關",
+      "ClickToCopy": "點擊複製",
+      "Copied": "已複製",
+      "RestartRequired": "重新啟動軟件後生效。",
+      "NextStartupRequired": "變更將於下次啟動時生效。"
+    },
+    "Home":
+    {
+      "N": "主頁",
+      "Prompt": "此版本為 Inkeys 3 預覽版本，不代表最終品質。",
+      "Developer": "Inkeys 創始開發者",
+      "Group": "GitHub 討論區",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Bilibili 宣傳頻道",
+      "FeedBack": "問題／建議"
+    },
+    "Feedback":
+    {
+      "N": "意見反映",
+      "Description": "提交問題或建議，協助改善 Inkeys。",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "在 GitHub 提交問題或建議，方便公開追蹤與交流。"
+      },
+      "Questionnaire":
+      {
+        "N": "問卷意見",
+        "E": "填寫問卷，反映使用時遇到的問題或提出改善建議。"
+      },
+      "Qr":
+      {
+        "N": "掃碼反映意見",
+        "E": "掃描 QR 碼，透過問卷反映問題或建議。"
+      },
+      "ContactSection": "交流與聯絡作者",
+      "CommunityDescription": "在 GitHub 討論區交流使用時遇到的問題或改善建議。",
+      "ContactDescription": "透過電郵向作者反映問題或建議。",
+      "AuthorQQ": "作者 QQ"
+    },
+    "Language":
+    {
+      "N": "語言",
+      "UI":
+      {
+        "N": "介面語言",
+        "Select": "選擇語言",
+        "SelectE": "設定介面使用的顯示語言。",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "語言變更需要重新啟動 Inkeys 才能完全生效。是否立即重新啟動？",
+        "SelectNote": "重新啟動軟件後完全生效。"
+      }
+    },
+    "Configuration":
+    {
+      "N": "設定與儲存",
+      "Clean":
+      {
+        "N": "設定清理",
+        "Enable": "啟用設定清理",
+        "EnableE": "啟動及儲存設定時，刪除目前版本設定範本以外的多餘項目。",
+        "EnableNote": "軟件降級再升級或匯入設定後，部分設定項可能遺失並恢復為預設值。"
+      },
+      "CanvasSave":
+      {
+        "N": "畫布儲存",
+        "Enable": "啟用桌面畫布自動儲存",
+        "EnableE": "清空桌面畫布或結束軟件時，自動儲存非空畫布，供後續從歷史畫布還原。",
+        "SaveTime":
+        {
+          "N": "歷史畫布保留期",
+          "E": "超過設定時長後，在啟動時清除過期的歷史畫布。",
+          "1d": "1天",
+          "3d": "3天",
+          "5d": "5天",
+          "10d": "10天",
+          "30d": "30天",
+          "Never": "從不清理"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "軟件版本",
+      "ManualUpdate":
+      {
+        "N": "發現軟件新版本",
+        "ManualUpdate": "手動更新"
+      },
+      "LimitUpdate":
+      {
+        "N": "自動更新已被封鎖！\n\n新版的系統兼容性需求已有所調整，我們已封鎖自動更新，因為自動更新後軟件可能無法啟動。請先查看詳細資訊，確認您的系統環境是否符合要求，並手動下載與更新軟件。需要注意的是，目前通道的修復功能將暫時無法使用。",
+        "Info": "詳細資訊"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3 已正式發布！\n\n您可以透過下方按鈕進一步了解 Inkeys3 的相關資訊。需要注意的是，目前通道的修復功能將暫時無法使用。",
+        "Download": "立即更新"
+      },
+      "VersionTip": "偵測到軟件架構與系統架構不相符，可能降低效能並影響使用體驗。請在下方「軟件修復」中啟用「修復時修正軟件架構」，或手動選擇目標架構後進行修復。",
+      "Info":
+      {
+        "N": "版本資訊",
+        "ReleaseVersion": "軟件發布版本",
+        "ReleaseDate": "軟件發布時間",
+        "ReleaseArch": "軟件及系統架構：",
+        "ReleaseTag": "發行組建（RELEASE）",
+        "DebugTag": "偵錯組建（DEBUG）",
+        "ManualBuild": "此版本為手動組建",
+        "AutoBuild": "此版本為自動組建(CI/CD) ",
+        "CICDInfo": "自動組建詳細資訊"
+      },
+      "UserInfo":
+      {
+        "N": "用戶資訊",
+        "CopyUserId": "複製用戶ID",
+        "UserId": "用戶ID"
+      },
+      "Repair":
+      {
+        "N": "軟件修復",
+        "RepairSoftware": "修復軟件",
+        "RepairSoftwareE": "重新安裝軟件至所選通道的最新版本",
+        "RepairArch": "修復時修正軟件架構"
+      },
+      "Update":
+      {
+        "N": "更新偏好",
+        "AutoUpate": "自動更新（不顯示通知）",
+        "ChannelTip": "正式通道（LTS）：最新穩定版本，建議日常使用。\n預覽通道（Insider）：預覽版本，穩定性可能較低，安全軟件可能發出警告。\n早期通道（Canary）：Inkeys 3 早期版本，不建議日常使用。",
+        "Channel":
+        {
+          "N": "目標更新通道",
+          "LTS": "正式通道(LTS)",
+          "Insider": "預覽通道(Insider)",
+          "Canary": "早期通道(Canary)"
+        },
+        "Arch":
+        {
+          "N": "目標更新架構",
+          "E": "注意：與現在系統不一致的架構可能會導致軟件無法啟動或嚴重效能問題。",
+          "64": "64 位元",
+          "32": "32 位元",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "版本狀態"
+    },
+    "CICD":
+    {
+      "N": "自動組建詳細資訊",
+      "Repository": "組建倉庫",
+      "Branch": "組建分支",
+      "Submitter": "組建提交者",
+      "BuildTime": "組建時間",
+      "BuildSystem": "組建系統",
+      "BuildSystemVersion": "組建系統版本",
+      "RunnerImageSystem": "執行器映像系統",
+      "RunnerImageVersion": "執行器映像版本",
+      "MSBuildVersion": "MSBuild 版本"
+    },
+    "Regular":
+    {
+      "N": "通用",
+      "SelectAndClickThrough":
+      {
+        "N": "選取與穿透",
+        "Combined": "合併式",
+        "Separate": "分離式",
+        "CombinedDescription": "以「選取」統一操作電腦，適用於沒有墨跡及保留墨跡兩種狀態。",
+        "SeparateDescription": "「選取」會先清空墨跡再操作電腦；「穿透」則保留墨跡，操作下方視窗。",
+        "ClickThrough": "穿透",
+        "ClickThroughDescription": "保留屏幕上的墨跡，讓點擊與觸控穿過註記層，操作下方視窗。"
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "主欄圖示順序",
+        "FollowMainButton": "跟隨主按鈕",
+        "FollowMainButtonReverse": "跟隨主按鈕（反向）",
+        "LeftToRight": "從左到右",
+        "RightToLeft": "從右到左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "主欄展開方向調整",
+        "Centerline": "屏幕中線",
+        "WhenSpaceInsufficient": "空間不足時"
+      },
+      "AutoCollapse":
+      {
+        "N": "自動收起",
+        "Drawing": "繪製時收起主欄",
+        "Erasing": "擦除時收起主欄",
+        "Dragging": "拖動主欄時收起主欄",
+        "OutsideClick": "選取或穿透模式下點擊欄外時收起主欄",
+        "Description": "繪製包含畫筆、形狀和鐳射筆；底欄模式包含置中底欄。欄外點擊不包含主欄及其選單、屬性和彈出面板。",
+        "Off": "關閉",
+        "NonBottom": "非底欄模式時",
+        "Always": "任何時候"
+      },
+      "StartUp":
+      {
+        "N": "開機自動執行與啟動行為",
+        "AutoStart": "開機自動啟動",
+        "AutoStartE": "目前用戶登入 Windows 時自動啟動 Inkeys。",
+        "LoadingAnimation": "啟動載入動畫",
+        "LoadingAnimationE": "顯示軟件啟動過程中的載入動畫。",
+        "SettingEntryAnimation":
+        {
+          "N": "設定介面開屏動畫",
+          "E": "控制設定介面開屏動畫行為",
+          "Off": "關閉",
+          "First": "首次啟動時",
+          "Always": "始終"
+        },
+        "Link":
+        {
+          "N": "建立桌面捷徑",
+          "E": "可修正現有捷徑名稱或建立新捷徑。請選擇「更多選項」進行設定。",
+          "More": "更多選項"
+        }
+      },
+      "Appearance":
+      {
+        "N": "外觀樣式",
+        "AnimationEnable": "啟用動畫",
+        "AnimationEnableE": "關閉後，UI3 主欄與設定介面的導覽及頁面動畫將立即完成。",
+        "AnimationRate": "動畫速率",
+        "AnimationRateE": "調整 UI3 主欄與設定介面的動畫速率，範圍為 0.1x–5.0x。",
+        "EdgeLighting": "邊緣光影",
+        "EdgeLightingE": "關閉後僅保留基礎邊框，停用點光與柔光效果。",
+        "DynamicEdgeLighting": "動態邊緣光影",
+        "DynamicEdgeLightingE": "光影將動態跟隨游標位置",
+        "Theme":
+        {
+          "N": "主題",
+          "E": "選擇「推薦皮膚」後，系統會自動套用官方目前推薦的主題樣式。",
+          "Skip1": "推薦皮膚",
+          "Skip2": "預設皮膚",
+          "Skip3": "極簡時鐘",
+          "Skip4": "馬年賀歲"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "工作列縮放基準",
+          "E": "縮放為 100% 時，「工作列基礎量」固定高 48 DIP；「工作列實際量」則按工作列厚度調整。",
+          "Off": "關閉",
+          "Base": "工作列基礎量",
+          "Actual": "工作列真實量"
+        },
+        "BarZoom":
+        {
+          "N": "主欄 UI 縮放",
+          "E": "即時調整主欄、按鈕和 PPT 控制項的縮放比例。",
+          "Ind": "{:.2f} 倍縮放"
+        }
+      },
+      "Behavior":
+      {
+        "N": "其他行為",
+        "TopWindow":
+        {
+          "N": "置頂間隔",
+          "E": "非繪圖模式下，按此間隔將視窗重新置頂；書寫時暫停。縮短間隔可減少其他視窗遮擋，但會增加 CPU 用量。如持續受到干擾，可嘗試使用「外掛程式 → 超級置頂」。",
+          "100ms": "極短(100ms)",
+          "500ms": "短(500ms)",
+          "1s": "較短(1s)",
+          "3s": "中等(3s)",
+          "5s": "較長(5s)",
+          "10s": "長(10s)",
+          "30s": "極長(30s)"
+        },
+        "RightClickClose": "右鍵點擊主圖標關閉程式",
+        "RightClickCloseE": "將會跳出一個確認提示框。",
+        "DrawingRetract": "使用畫筆時收起主欄",
+        "ErasingRetract": "使用擦膠時收起主欄",
+        "DraggingRetract": "拖動主欄時收起主欄",
+        "CheckingRetract": "點擊主欄外區域時收起",
+        "CheckingRetractE": "僅於選取模式或穿透下，點擊非主欄區時生效。"
+      },
+      "Tentative":
+      {
+        "N": "實驗選項",
+        "SafeMode":
+        {
+          "N": "程式崩潰處理方式",
+          "E": "軟件發生崩潰錯誤時執行的操作。",
+          "Mode1": "彈窗提示並重啟軟件",
+          "Mode2": "靜默重啟軟件",
+          "Mode3": "交給系統崩潰過濾器處理",
+          "Mode4": "直接關閉軟件",
+          "Note": "啟動過程發生錯誤時仍會顯示提示。"
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "允許軟件重複啟動",
+          "E": "允許從同一安裝資料夾同時執行多個程式實例。關閉後只會阻止新增實例，已執行的實例不受影響。"
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "繪圖",
+      "General":
+      {
+        "N": "通用",
+        "MultiTouch":
+        {
+          "N": "多指繪圖",
+          "E": "允許多個手指同時書寫或繪圖。關閉後，僅回應單指繪圖。"
+        },
+        "PenTailCorrection":
+        {
+          "N": "收筆筆鋒修正",
+          "E": "減少抬筆時筆跡末端的突兀折線，使收筆更自然。"
+        },
+        "InkPrediction":
+        {
+          "N": "墨跡預測",
+          "E": "減輕書寫時筆跡的延遲感。精準模式預估後續走勢，快速模式將筆跡補繪至最近的輸入位置；關閉後不補繪預測筆跡。",
+          "Precise": "精準",
+          "Fast": "快速",
+          "Disabled": "關閉"
+        }
+      },
+      "Laser":
+      {
+        "N": "鐳射筆",
+        "MultiTouch":
+        {
+          "N": "多指鐳射筆",
+          "E": "BETA：允許多個手指同時使用鐳射筆。"
+        },
+        "Particles":
+        {
+          "N": "鐳射筆粒子效果",
+          "E": "BETA：在鐳射筆軌跡周圍顯示粒子效果。"
+        }
+      },
+      "Haptics":
+      {
+        "N": "手寫筆觸覺反饋",
+        "Drawing": "繪製時震動反饋",
+        "Buttons": "按鈕震動反饋"
+      },
+      "Cursor":
+      {
+        "N": "游標",
+        "Description": "滑鼠選項僅影響軟筆和硬筆；螢光筆始終預覽粗幼，形狀使用系統游標。筆的預設游標為圓形。屏幕筆關閉邊緣高亮，繪圖板和無法辨識的筆開啟邊緣高亮。",
+        "MouseStyle": "滑鼠",
+        "PenStyle": "筆",
+        "DefaultStyle": "預設游標",
+        "DrawingStyle": "筆形游標"
+      },
+      "Effect":
+      {
+        "N": "繪圖環境",
+        "Device":
+        {
+          "N": "選擇互動模式",
+          "Touch": "大屏幕觸控模式",
+          "MousePen": "桌面互動模式",
+          "TouchE": "適用於課室、會議室等場合，直接在大型觸控屏幕上書寫及操作。",
+          "MousePenE": "適用於個人電腦、平板及以滑鼠操作的大屏幕，兼顧滑鼠、觸控筆、繪圖板及觸控操作。"
+        }
+      },
+      "Touch":
+      {
+        "N": "觸控",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "斷觸接續",
+          "E": "觸控書寫時，若屏幕短暫失去接觸後又沿原方向恢復，將嘗試把兩段筆跡接成一筆，減少斷線。關閉後，每次抬起都會結束目前筆畫。"
+        }
+      },
+      "Eraser":
+      {
+        "N": "擦膠",
+        "Automatic": "啟用筆速擦膠",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "精細擦除",
+          "DemoFineDescription": "沿輔助線緩慢擦除，保留鄰近的標記和線段。",
+          "DemoSweepTitle": "大範圍擦除",
+          "DemoSweepDescription": "連續往返擦除時逐漸增粗，更快清除大片筆跡。",
+          "EntryDescription": "根據繪製意圖智能調整擦膠粗幼",
+          "Introduction": "結合裝置尺寸、輸入裝置及移動資料，智能判斷擦除意圖，動態調整擦膠大小。",
+          "BasicSettings": "基本設定",
+          "EnabledDevices": "啟用裝置",
+          "FineControl": "精細控制",
+          "SizeWarningTitle": "無法取得可靠的屏幕尺寸",
+          "SizeWarningDescription": "目前繪製屏幕缺少可信的實體尺寸，觸控與屏幕筆將使用 DPI 估算，擦膠大小可能與擦除意圖不符。"
+        },
+        "PalmEraser":
+        {
+          "N": "手掌擦膠",
+          "EntryDescription": "用大面積觸控直接擦除，無須切換工具",
+          "Introduction": "用手掌接觸屏幕，即可在不切換工具的情況下擦除。擦膠大小在接觸後的辨識時段內決定，抬起後仍保留原來的工具。",
+          "Enabled": "啟用手掌擦膠",
+          "SizeWarningTitle": "無法取得可靠的屏幕尺寸",
+          "SizeWarningDescription": "目前繪圖屏幕缺少可信的實體尺寸，手掌擦膠仍可使用，將改用 100×100 系統 DIP 作為基礎面積閾值。實際厘米大小可能不同，可按體驗調整倍率。",
+          "RecognitionWindow": "辨識時段",
+          "RecognitionWindowDescription": "接觸屏幕後，在這段時間內辨識手掌並決定大小；符合條件即開始擦除。",
+          "Threshold": "觸控面積閾值",
+          "ThresholdDescription": "提高倍率可減少誤觸，降低倍率更容易辨識手掌。",
+          "ThresholdSizePhysical": "目前閾值：{:.2f}cm × {:.2f}cm（{:.0f}px × {:.0f}px）",
+          "ThresholdSizePixels": "目前閾值：{:.0f}px × {:.0f}px",
+          "PreviewTitle": "觸控面積範例（目前繪圖屏幕）",
+          "PreviewDescription": "框內面積代表目前繪圖屏幕的像素閾值，可切換預覽比例查看。在其他屏幕上，實際厘米大小可能不同。",
+          "PreviewEstimated": "以下按 100×100 系統 DIP 的基礎面積及目前倍率，顯示估算的像素閾值。可切換預覽比例，實際厘米大小可能不同。",
+          "PreviewUnavailable": "目前繪圖屏幕的標尺尚不可用，暫時無法顯示面積範例。",
+          "EnabledTools": "適用工具",
+          "ParallelWritingMultiTouchNote": "多指繪圖已關閉，邊擦邊寫無法生效。",
+          "ParallelWritingLaserMultiTouchNote": "多指鐳射筆已關閉，邊擦邊寫在鐳射筆下無法生效。",
+          "ParallelWriting": "啟用邊擦邊寫",
+          "ParallelWritingDescription": "啟用手掌擦膠時不會中斷其他輸入，繪圖可以繼續進行。（適用於雙人或多人書寫時）"
+        },
+        "Input":
+        {
+          "MouseLeft": "滑鼠左鍵",
+          "MouseRight": "滑鼠右鍵",
+          "Touch": "觸控",
+          "PenTip": "筆（筆尖）",
+          "PenTail": "筆尾"
+        },
+        "Kind":
+        {
+          "Fixed": "固定粗幼",
+          "Speed": "筆速擦膠"
+        },
+        "ResponseFor": "筆速回應的適用裝置",
+        "Response":
+        {
+          "Auto": "自動識別",
+          "ScreenPen": "屏幕筆",
+          "Digitizer": "繪圖板"
+        },
+        "TouchArea":
+        {
+          "N": "適用於觸控筆速擦膠的接觸面積輔助",
+          "E": "使擦膠粗幼始終略大於手指，避免手指遮住擦膠游標。",
+          "Note": "不建議大屏幕裝置啟用。"
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "預設組合",
+      "StartupPlacement":
+      {
+        "N": "啟動後位置",
+        "E": "置中的底欄啟動後會展開主欄；左下角或右下角的浮動視窗僅顯示主按鈕。",
+        "CenteredBottomBar": "置中底欄",
+        "BottomLeftFloating": "左下角懸浮視窗",
+        "BottomRightFloating": "右下角懸浮視窗"
+      }
+    },
+    "Performance":
+    {
+      "N": "效能",
+      "FrameRateSection": "幀率",
+      "InterfaceFrameRate":
+      {
+        "N": "介面幀率",
+        "E": "調整主欄、設定和翻頁控制項的流暢度。較低幀率可降低資源使用量，修改後立即生效。"
+      },
+      "CanvasFrameRate":
+      {
+        "N": "畫布幀率",
+        "E": "調整書寫時畫布的更新頻率。較高幀率可使筆跡更流暢，同時增加資源使用量。"
+      },
+      "RenderingSection": "渲染與兼容性",
+      "DirectComposition":
+      {
+        "N": "優先使用 DirectComposition",
+        "E": "在支援的裝置上使用系統合成顯示畫布，無法使用時自動改用兼容方式。"
+      }
+    },
+    "Experimental":
+    {
+      "N": "實驗室",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "允許介面字型以非整數像素尺寸渲染",
+          "E": "關閉時，主欄和控制項靜止狀態的字型像素尺寸向下取整；縮放及轉場動畫仍連續變化。立即生效。"
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "啟用繪圖硬件加速",
+          "E": "使用顯示卡加速畫布繪製，關閉後使用軟件繪製。",
+          "Note": "出現繪製異常或嚴重卡頓時可嘗試關閉；重新啟動軟件後生效。"
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "為兆芯裝置啟用兼容模式",
+          "E": "在兆芯 GPU 上使用兼容上傳方案，其他 GPU 不受影響。可關閉此項比較繪製效能。"
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "手寫筆觸覺反饋診斷輸出",
+          "E": "輸出手寫筆輸入、按鈕請求及觸覺裝置傳送結果，協助定位沒有震動的原因。"
+        },
+        "TouchArea":
+        {
+          "N": "輸入與擦膠診斷輸出",
+          "E": "輸出顯示器 EDID、解像度與 DPI，以及觸控面積、輸入座標、裝置類型和擦膠尺寸的限頻快照。"
+        },
+        "PptCOM":
+        {
+          "N": "PptCOM 主控台輸出",
+          "E": "向主控台輸出 PptCOM 診斷資訊。"
+        },
+        "Draw3":
+        {
+          "N": "Draw3 主控台輸出",
+          "E": "向主控台輸出 Draw3 裝置與驅動程式環境。"
+        },
+        "Cursor":
+        {
+          "N": "游標偵錯資訊",
+          "E": "向主控台輸出游標輸入歸屬與實際繪製結果。"
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "外掛程式",
+      "PPTHelper":
+      {
+        "N": "PPT 簡報助手 3 Lite",
+        "E": "在投影片放映時提供簡報控制按鈕與畫筆控制按鈕。每頁有獨立畫布，讓筆跡固定在對應頁面上，不影響原有功能及外接裝置的使用。",
+        "VersionError": "版本號未知（外掛程式發生錯誤）",
+        "Solve": "解決方案",
+        "Sync": "同步調節",
+        "Reset": "重設",
+        "Tip": "使用外掛程式時，請確保 Inkeys 與 PowerPoint/WPS 的執行權限相同，以便正確偵測放映程序；如有問題，請參閱解決方案。",
+        "Warn": "偵測到 PowerPoint/WPS 已設定為一律以系統管理員身份開啟。Inkeys 亦需使用相同權限，才能辨識放映程序並啟用 PPT 連動。如不想讓簡報軟件一律以系統管理員身份執行，請參閱解決方案。",
+        "Error": "外掛程式載入失敗，可能是未安裝 .NET Framework 4.x 或 COM 環境出現異常。\n詳細資料：",
+        "BasicLogic":
+        {
+          "N": "基礎邏輯",
+          "LoadPage": "顯示載入頁面",
+          "LoadPageE": "此功能已停用，不再顯示 PPT 載入頁面。"
+        },
+        "WidgetDisplay":
+        {
+          "N": "控制項顯示",
+          "BottomBoth": "顯示底部兩側控制項",
+          "MiddleBoth": "顯示中部兩側控制項",
+          "BottomMiddle": "顯示底部主欄控制項"
+        },
+        "WidgetPosition":
+        {
+          "N": "控制項位置",
+          "Reset": "重設控制項位置",
+          "Remember": "記憶控制項位置"
+        },
+        "WidgetScale":
+        {
+          "N": "控制項縮放",
+          "Ind": "{:.2f} 倍縮放",
+          "Page":
+          {
+            "BottomSideBoth": "底部兩側控制項縮放",
+            "MiddleSideBoth": "中部兩側控制項縮放"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "底部主欄控制項縮放"
+          }
+        },
+        "Tentative":
+        {
+          "N": "實驗選項",
+          "CloseWpp": "允許關閉殘留的 WPP 簡報程序",
+          "CloseWppE": "重新啟動軟件後生效。嘗試關閉 WPS 結束放映後殘留的 WPP 程序，協助偵測下一次放映。",
+          "AutoTakeOver": "接管放映批註",
+          "AutoTakeOverE": "在識別到開啟了 PPT 原生批註後，將開啟軟件內繪製模式，並關閉 PPT 原生批註。",
+          "AutoTakeOverOnce": "每次放映至多接管一次",
+          "AutoTakeOverOnceE": "避免在確實需要使用 PPT 原生批註時反覆接管。",
+          "AutoTakeOverExpand": "接管成功時展開主欄",
+          "EnablePageButtonLongPress": "啟用翻頁按鈕長按翻頁"
+        },
+        "SupportNote": "支援 Microsoft PowerPoint 2007 或更新版本，以及 Kingsoft WPS 2013 或更新版本。"
+      },
+      "SuperTop":
+      {
+        "N": "超級置頂",
+        "E": "使用 UIAccess 讓視窗顯示在受支援的系統介面及應用程式視窗上方。",
+        "Warn": "超級置頂外掛程式處於 Beta 階段，可能不穩定。\n軟件啟動時會重新執行自身以要求提升權限，再啟動新實例。\n此過程可能失敗；若程式以系統管理員權限執行，PPT 連動可能受到影響。\n權限提升可能出現 UAC 提示；請確認程式來源與發行者後再允許。\n若安全軟件發出警告，請核對檔案來源與簽章，勿直接停用防護。",
+        "Capability":
+        {
+          "N": "基礎功能",
+          "SuperTop": "超級置頂",
+          "SuperTopE1": "軟件透過三段式啟動進行置頂。\n（目前已經超級置頂）",
+          "SuperTopE2": "軟件透過三段式啟動進行置頂。\n（目前尚未超級置頂）",
+          "Indicator": "超級置頂指示器",
+          "IndicatorE": "軟件成功被超級置頂時，在主圖示右上角顯示一個大頭針。",
+          "SuperTopNote": "重新啟動軟件後生效；啟動過程中可能出現置頂失敗。"
+        },
+        "SupportNote": "僅支援 Windows 8 及以上系統。"
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "同類軟件浮動視窗攔截助手 3 Lite",
+        "E": "在教學一體機上，一些白板軟件的桌面懸浮窗畫筆功能不能直接關閉，桌面會出現多家畫筆工具的懸浮窗。這容易導致老師混用不同的工具而無法繼續批註，嚴重影響了教學效率，於是 DesktopDrawpadBlocker 應運而生。",
+        "LicenseTitle": "GPLv3 開放原始碼外掛程式",
+        "LicenseDescription": "此外掛程式僅供學習交流及研究使用，不得用於其他用途。\n同類軟件浮動視窗攔截助手（DesktopDrawpadBlocker）是根據 GPLv3 授權發佈的開放原始碼軟件。\n發佈於 GitHub 儲存庫：https://github.com/Alan-CRL/DesktopDrawpadBlocker\n我們希望此程式有用，但不提供任何品質保證。\n使用此外掛程式即視為同意此協議，並須自行承擔所產生的後果及影響。",
+        "UseSection": "使用外掛程式",
+        "EnableTitle": "啟用外掛程式",
+        "EnableDescription": "在預設模式下，外掛程式會隨 Inkeys 啟動及關閉。",
+        "GeneralSection": "一般選項",
+        "AdministratorTitle": "以管理員身份啟動外掛程式",
+        "AdministratorDescription": "變更此設定時，需等待外掛程式回應。",
+        "IntervalTitle": "攔截間隔",
+        "IntervalDescription": "較短的間隔能更快攔截出現的視窗，但會使用更多 CPU 資源。",
+        "IntervalShort": "短（500 毫秒）",
+        "IntervalMediumShort": "稍短（1 秒）",
+        "IntervalMedium": "中等（3 秒）",
+        "IntervalMediumLong": "稍長（5 秒）",
+        "IntervalLong": "長（10 秒）",
+        "PrecisionSection": "詳細控制",
+        "Seewo3Title": "希沃白板3 桌面畫筆浮動視窗",
+        "Seewo5Title": "希沃白板5 桌面畫筆浮動視窗",
+        "Seewo5CTitle": "希沃轻白板（5C）桌面畫筆浮動視窗",
+        "PincoSidebarTitle": "希沃品课教师端 側欄浮動視窗",
+        "PincoDrawingTitle": "希沃品课教师端 桌面畫筆浮動視窗",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 PPT 小工具",
+        "YiouTitle": "欧帝白板 桌面畫筆浮動視窗",
+        "AiClassTitle": "AiClass 桌面畫筆浮動視窗",
+        "ClassInXTitle": "ClassIn X 桌面畫筆浮動視窗",
+        "IntelligentClassTitle": "天喻教育云互动课堂 桌面畫筆浮動視窗",
+        "ChangYan4Title": "畅言智慧课堂4.0 桌面畫筆浮動視窗",
+        "ChangYan5Title": "畅言智慧课堂5.0 桌面畫筆浮動視窗",
+        "Iclass30SidebarTitle": "C30智能教学 側欄浮動視窗",
+        "Iclass30DrawingTitle": "C30智能教学 桌面畫筆浮動視窗",
+        "SeewoDesktopSidebarTitle": "希沃桌面 側欄浮動視窗",
+        "SeewoDesktopDrawingTitle": "希沃桌面 桌面畫筆浮動視窗",
+        "IncludesPptNote": "包括 PPT 控制項。",
+        "RestoresWhiteboardNote": "包括 PPT 控制項，並支援在白板模式自動還原。",
+        "WindowTrackingNote": "包括 PPT 控制項，支援在白板模式自動還原及視窗追蹤。",
+        "SeewoDesktopVersionsNote": "適用於 1.0/2.0/2.5/3.0 的普教版及高教版。",
+        "AdministratorNote": "需要 DDB 管理員權限。"
+      },
+      "LnkHelper":
+      {
+        "N": "捷徑維護助手",
+        "E": "在程式啟動時確保現有 Inkeys 捷徑有效。程式更新可能變更檔案名稱，造成捷徑失效。也可選擇在桌面沒有 Inkeys 捷徑時建立一個。",
+        "Capability":
+        {
+          "N": "基礎功能",
+          "FixLnk": "修正桌面捷徑指向和名稱",
+          "FixLnkE": "軟件啟動時將修正桌面已經存在的軟件捷徑。軟件自動更新後可能會改變檔案名，推薦開啟。"
+        },
+        "Expansion":
+        {
+          "N": "擴充選項",
+          "CreateLnk": "建立桌面捷徑",
+          "CreateLnkE": "當桌面不存在軟件的捷徑時，則建立一個。"
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "元件",
+      "SoftwareSection": "軟件",
+      "SystemSection": "系統",
+      "KeyboardSection": "模擬鍵盤",
+      "RollCallSection": "點名工具",
+      "ClassIslandSection": "ClassIsland 聯動",
+      "ExplorerTitle": "開啟檔案總管",
+      "TaskManagerTitle": "開啟工作管理員",
+      "ControlPanelTitle": "開啟控制台",
+      "ShowDesktopTitle": "顯示桌面",
+      "LockScreenTitle": "鎖定螢幕",
+      "EscapeTitle": "按下 Esc",
+      "AltF4Title": "按下 Alt+F4",
+      "IslandCaller1Title": "IslandCaller 1 隨機點名",
+      "IslandCaller2Title": "IslandCaller 2 單人點名",
+      "SecRandom1Title": "SecRandom 1 閃抽",
+      "SecRandom2Title": "SecRandom 2 閃抽",
+      "SecRandom2CompatTitle": "SecRandom 2 閃抽（兼容）",
+      "NamePickerTitle": "NamePicker 隨機點名",
+      "ClassIslandSettingsTitle": "ClassIsland 應用程式設定",
+      "ClassIslandProfileTitle": "ClassIsland 課表檔案編輯",
+      "ClassIslandSwapTitle": "ClassIsland 快速換課",
+      "IslandCallerRequirement": "需要安裝 ClassIsland 的 IslandCaller 外掛程式，並註冊 ClassIsland URL 通訊協定。",
+      "SecRandomUrlRequirement": "需要註冊 SecRandom URL 通訊協定。",
+      "SecRandomIpcRequirement": "需要註冊 SecRandom IPC 通訊協定。",
+      "NamePickerRequirement": "需要註冊 NamePicker URL 通訊協定。",
+      "ClassIslandProtocolNote": "需要在 ClassIsland 應用程式設定中註冊 URL 導覽通訊協定。",
+      "ClassIslandSwapNote": "ClassIsland 未載入課表時，此元件不會生效。"
+    },
+    "HotKey":
+    {
+      "N": "快捷鍵",
+      "E": "目前僅提供以下固定組合，可分別開啟或關閉，暫不支援自訂。\n除全域批註切換外，其餘快捷鍵僅在批註狀態有效；設定文字輸入與模態對話框優先。選取或穿透狀態下交由目前應用程式處理。\n全域批註切換在設定一般編輯期間仍生效；應用程式模態對話框期間暫停動作，但仍保留該組合。國際鍵盤的 AltGr 可能與 Ctrl + Alt 衝突，可單獨關閉全域批註切換。\n鍵盤快捷鍵不接管 PPT 翻頁。",
+      "ToggleAnnotationN": "全域批註切換",
+      "ToggleAnnotationE": "在批註與選取之間切換。合併式進入選取時保留墨跡；分離式則先清空目前頁面。返回時還原最近使用的批註工具，不還原定格狀態。",
+      "UndoN": "復原",
+      "UndoE": "復原目前頁面的操作，按住可連續復原。沒有可復原內容時也不會復原下層應用程式。",
+      "RedoYN": "重做",
+      "RedoYE": "重做目前頁面的操作，按住可連續重做。此組合與 Ctrl + Shift + Z 可獨立開關。",
+      "RedoShiftZN": "重做（另一組合）",
+      "RedoShiftZE": "與 Ctrl + Y 執行相同的重做操作，可單獨開啟或關閉。",
+      "ClearN": "清空目前頁面",
+      "ClearE": "第一次按下會清空畫布並保留目前工具，空白頁亦不會進入選取。保持按住 Ctrl，放開 Delete 後再按一次，即可在兩種模式下進入選取。長按 Delete 不算兩次；期間新增筆跡或執行其他操作，會重設這個按鍵次序。",
+      "FreezeN": "定格",
+      "FreezeE": "切換屏幕定格。",
+      "Registering": "正在註冊全域批註切換",
+      "Disabling": "正在關閉全域批註切換",
+      "UnregisterFailed": "全域批註切換取消註冊失敗，該組合仍被保留",
+      "Registered": "全域批註切換已生效",
+      "Disabled": "全域批註切換已關閉",
+      "NotRunning": "鍵盤服務尚未執行",
+      "RegisterFailed": "全域批註切換註冊失敗，組合可能被其他程式占用",
+      "SynchronizationPending": "正在同步按鍵狀態。請切換至未提升權限的視窗，放開按鍵後重試。",
+      "HookReady": "批註快捷鍵已就緒",
+      "HookFailed": "鍵盤鉤子未安裝，批註快捷鍵不可用",
+      "FreezeNote": "PPT 和白板工作區無法使用；無法使用時不會觸發下層應用程式的同名快捷鍵。"
+    },
+    "Community":
+    {
+      "N": "社區名片"
+    },
+    "Sponsor":
+    {
+      "N": "贊助我們",
+      "Thanks": "贊助後可聯絡作者，將你的暱稱及贊助金額加入社區名片，以表謝意。"
+    },
+    "RestartSoftware":
+    {
+      "N": "重啟軟件"
+    },
+    "ExitSoftware":
+    {
+      "N": "關閉軟件"
+    },
+    "DebugSoftware":
+    {
+      "N": "除錯軟件",
+      "RenderingSection": "UI3 渲染除錯",
+      "DirtyRegions":
+      {
+        "N": "重繪區域除錯",
+        "E": "顯示 UI3 每幀實際提交的重繪區域邊界。"
+      },
+      "FrameRate":
+      {
+        "N": "顯示幀率",
+        "E": "每秒更新上一秒的平均幀率及無等待幀率。"
+      },
+      "ConsoleSection": "主控台輸出",
+      "CanvasInformation": "畫布初始化資訊",
+      "DisplayInformation": "顯示器與 EDID"
+    },
+    "Update":
+    {
+      "Check": "檢查更新",
+      "Channel":
+      {
+        "LTS": "正式通道",
+        "Insider": "預覽通道",
+        "Dev": "開發通道",
+        "Canary": "早期通道",
+        "Other": "其他通道"
+      },
+      "NotStarted": "新版本檢查未啟動",
+      "ObtainInformation": "取得新版本資訊中",
+      "InformationFail": "下載版本資訊失敗",
+      "InformationDamage": "下載版本資訊損壞",
+      "InformationUnStandardized": "下載版本資訊不符合規範",
+      "Downloading": "正在下載新版本（線路{}）",
+      "DownloadFail": "下載最新版軟件失敗",
+      "DownloadDamage": "下載最新版軟件損壞",
+      "Restart": "重啟軟件升級至最新版",
+      "Latest": "軟件已為最新版",
+      "Newer": "目前版本較官方最新發布版本新",
+      "New": "發現軟件新版本",
+      "Repair": "嘗試修復",
+      "ManualDownload": "手動下載最新版",
+      "UpdateNow": "更新到最新版本"
+    }
+  }
+}

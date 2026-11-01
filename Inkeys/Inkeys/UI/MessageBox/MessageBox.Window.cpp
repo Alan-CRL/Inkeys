@@ -8,6 +8,7 @@ module;
 #endif
 #include <Windows.h>
 #include <Windowsx.h>
+#include "../../../resource.h"
 #include <dwmapi.h>
 #include <objidl.h>
 #include <gdiplus.h>
@@ -455,11 +456,15 @@ namespace Inkeys::UI::MessageBox::Detail
 
 		[[nodiscard]] bool ResolveFontFamily(const FontCandidate* candidates,
 			std::size_t count, std::unique_ptr<FontFamily>& family,
-			INT& style)
+			INT& style, PrivateFontCollection* privateFonts = nullptr)
 		{
 			for (std::size_t index = 0; index < count; ++index)
 			{
-				auto next = std::make_unique<FontFamily>(candidates[index].family);
+				auto next = privateFonts
+					? std::make_unique<FontFamily>(candidates[index].family, privateFonts)
+					: std::make_unique<FontFamily>(candidates[index].family);
+				if (next->GetLastStatus() != Ok && privateFonts)
+					next = std::make_unique<FontFamily>(candidates[index].family);
 				if (next->GetLastStatus() != Ok
 					|| !next->IsStyleAvailable(candidates[index].style)) continue;
 				family = std::move(next);
@@ -467,6 +472,27 @@ namespace Inkeys::UI::MessageBox::Detail
 				return true;
 			}
 			return false;
+		}
+
+		[[nodiscard]] std::unique_ptr<PrivateFontCollection> LoadLocalizedFonts(LANGID language)
+		{
+			const bool japanese = PRIMARYLANGID(language) == LANG_JAPANESE;
+			if (!japanese && PRIMARYLANGID(language) != LANG_KOREAN) return {};
+			auto fonts = std::make_unique<PrivateFontCollection>();
+			const UINT resources[] = { japanese ? IDR_NOTO_JP_REGULAR : IDR_NOTO_KR_REGULAR,
+				japanese ? IDR_NOTO_JP_BOLD : IDR_NOTO_KR_BOLD };
+			for (const UINT id : resources)
+			{
+				const auto module = GetModuleHandleW(nullptr);
+				const auto resource = FindResourceW(module, MAKEINTRESOURCEW(id), L"TTF");
+				if (!resource) return {}; // 极早期故障/独立宿主仍可走系统字体回退。
+				const DWORD size = SizeofResource(module, resource);
+				const auto loaded = LoadResource(module, resource);
+				const auto data = loaded ? LockResource(loaded) : nullptr;
+				if (!data || size > static_cast<DWORD>(std::numeric_limits<INT>::max())
+					|| fonts->AddMemoryFont(data, static_cast<INT>(size)) != Ok) return {};
+			}
+			return fonts;
 		}
 
 		template<class PositionWindow>
@@ -525,6 +551,8 @@ namespace Inkeys::UI::MessageBox::Detail
 			RECT workArea{};
 			HMONITOR monitor = nullptr;
 			std::unique_ptr<Bitmap> icon;
+			// 私有集合须晚于引用它的 FontFamily 释放，资源内存由 EXE 持有。
+			std::unique_ptr<PrivateFontCollection> localizedFonts;
 			std::unique_ptr<FontFamily> titleFontFamily;
 			std::unique_ptr<FontFamily> bodyFontFamily;
 			INT titleFontStyle = FontStyleRegular;
@@ -756,6 +784,8 @@ namespace Inkeys::UI::MessageBox::Detail
 				Bitmap measureBitmap(1, 1, PixelFormat32bppPARGB);
 				Graphics graphics(&measureBitmap);
 				graphics.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
+				if (!titleFontFamily && !localizedFonts)
+					localizedFonts = LoadLocalizedFonts(request->language);
 				if (!titleFontFamily)
 				{
 					const bool traditionalChinese = PRIMARYLANGID(request->language)
@@ -775,6 +805,12 @@ namespace Inkeys::UI::MessageBox::Detail
 						{ L"Microsoft YaHei", FontStyleBold },
 						{ L"Segoe UI", FontStyleBold },
 					};
+					const FontCandidate japaneseCandidates[]{
+						{ L"Noto Sans JP", FontStyleBold }, { L"Yu Gothic UI", FontStyleBold },
+						{ L"Meiryo UI", FontStyleBold }, { L"MS Gothic", FontStyleRegular }, { L"Segoe UI", FontStyleBold } };
+					const FontCandidate koreanCandidates[]{
+						{ L"Noto Sans KR", FontStyleBold }, { L"Malgun Gothic", FontStyleBold },
+						{ L"Gulim", FontStyleRegular }, { L"Segoe UI", FontStyleBold } };
 					const FontCandidate latinCandidates[]{
 						{ L"Segoe UI Variable Display Semibold", FontStyleRegular },
 						{ L"Segoe UI Semibold", FontStyleRegular },
@@ -794,8 +830,18 @@ namespace Inkeys::UI::MessageBox::Detail
 						candidates = simplifiedCandidates;
 						candidateCount = _countof(simplifiedCandidates);
 					}
+					else if (PRIMARYLANGID(request->language) == LANG_JAPANESE)
+					{
+						candidates = japaneseCandidates;
+						candidateCount = _countof(japaneseCandidates);
+					}
+					else if (PRIMARYLANGID(request->language) == LANG_KOREAN)
+					{
+						candidates = koreanCandidates;
+						candidateCount = _countof(koreanCandidates);
+					}
 					if (!ResolveFontFamily(candidates, candidateCount,
-						titleFontFamily, titleFontStyle)) return false;
+						titleFontFamily, titleFontStyle, localizedFonts.get())) return false;
 				}
 				if (!bodyFontFamily)
 				{
@@ -816,6 +862,12 @@ namespace Inkeys::UI::MessageBox::Detail
 						{ L"Microsoft YaHei", FontStyleRegular },
 						{ L"Segoe UI", FontStyleRegular },
 					};
+					const FontCandidate japaneseCandidates[]{
+						{ L"Noto Sans JP", FontStyleRegular }, { L"Yu Gothic UI", FontStyleRegular },
+						{ L"Meiryo UI", FontStyleRegular }, { L"MS Gothic", FontStyleRegular }, { L"Segoe UI", FontStyleRegular } };
+					const FontCandidate koreanCandidates[]{
+						{ L"Noto Sans KR", FontStyleRegular }, { L"Malgun Gothic", FontStyleRegular },
+						{ L"Gulim", FontStyleRegular }, { L"Segoe UI", FontStyleRegular } };
 					const FontCandidate latinCandidates[]{
 						{ L"Segoe UI Variable Text", FontStyleRegular },
 						{ L"Segoe UI", FontStyleRegular },
@@ -832,8 +884,18 @@ namespace Inkeys::UI::MessageBox::Detail
 						candidates = simplifiedCandidates;
 						candidateCount = _countof(simplifiedCandidates);
 					}
+					else if (PRIMARYLANGID(request->language) == LANG_JAPANESE)
+					{
+						candidates = japaneseCandidates;
+						candidateCount = _countof(japaneseCandidates);
+					}
+					else if (PRIMARYLANGID(request->language) == LANG_KOREAN)
+					{
+						candidates = koreanCandidates;
+						candidateCount = _countof(koreanCandidates);
+					}
 					if (!ResolveFontFamily(candidates, candidateCount,
-						bodyFontFamily, bodyFontStyle)) return false;
+						bodyFontFamily, bodyFontStyle, localizedFonts.get())) return false;
 				}
 				Font titleFont(titleFontFamily.get(),
 					static_cast<REAL>(ScaleDipValue(20, dpi)), titleFontStyle, UnitPixel);

@@ -1636,3 +1636,37 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Next Steps
 
 - 当前任务完成，活动指针清除；后续视觉调整另行明确范围。
+
+
+## Session 154: 十一语言国际化扩展与翻译修正完成
+<!-- trellis-session: v=2 fp=c1e03ff837b8acbf -->
+
+**Date**: 2026-11-02
+**Task**: 十一语言国际化扩展与翻译修正完成
+**Branch**: `feature/i18n`
+
+### Summary
+
+完成原三语审查修正、新增八种语言与Noto JP/KR嵌入，十一语各679条；真实format、DWrite离屏和完整无窗口回归通过，交付451项三语变更Markdown。无GUI、commit、push或归档。
+
+### Main Changes
+
+- 十一语言稳定元数据、旧索引兼容、首次系统语言匹配及母语名/代码/Beta列表。
+- 补齐84个活动UI key，处理主栏局部拟合及赞助长文可见字形居中/高度。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64使用ARM64原生MSBuild：exit0；最终增量10.15秒。
+- [OK] 真实嵌入/typedformat exit0；DWrite/组件离屏exit0；完整--no-window exit0/338.72秒且stderr空；679全语言check及编码/字形覆盖通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留当前任务及未提交改动供用户审阅；明细见任务translation-changes.md和validation.md。

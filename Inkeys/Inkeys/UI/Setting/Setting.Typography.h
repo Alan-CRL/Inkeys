@@ -29,6 +29,17 @@ namespace Inkeys::UI::Setting::Design
 		return config;
 	}
 
+	[[nodiscard]] inline ImFontConfig NotoFontConfig(float rasterizerDensity)
+	{
+		ImFontConfig config;
+		config.OversampleH = 1;
+		config.OversampleV = 1;
+		config.RasterizerDensity = rasterizerDensity;
+		config.FontDataOwnedByAtlas = false;
+		// Noto 使用自身 em 与基线，不套用 Harmony 的字面放大校正。
+		return config;
+	}
+
 	[[nodiscard]] inline ImFontConfig IconFontConfig(float rasterizerDensity)
 	{
 		ImFontConfig config;

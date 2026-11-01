@@ -475,6 +475,7 @@
     <ClInclude Include="IdtGuid.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtI18n.h" />
+    <ClInclude Include="IdtI18nLocales.h" />
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
@@ -1266,6 +1267,10 @@
     <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Regular.ttf" />
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
     <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
+    <Font Include="src\ttf\NotoSansJP-Regular.ttf" />
+    <Font Include="src\ttf\NotoSansJP-Bold.ttf" />
+    <Font Include="src\ttf\NotoSansKR-Regular.ttf" />
+    <Font Include="src\ttf\NotoSansKR-Bold.ttf" />
     <Font Include="src\ttf\icomoon.ttf" />
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
   </ItemGroup>

@@ -758,6 +758,8 @@ void BarButtonSetClass::PresetInitialization()
 
 void BarButtonSetClass::RegisterBuiltInComponents()
 {
+	const auto& componentText = I18nKey.SettingsUI.Component;
+	const auto& componentLabels = I18nKey.UI.Bar.Components;
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
 	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
 
@@ -826,101 +828,101 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		"Component.ShortcutButton.Appliance.Explorer",
 		"component.shortcutButton.appliance.explorer",
 		[] { return setlist.component.shortcutButton.appliance.explorer; },
-		L"软件", L"启动 文件资源管理器", L"文件管理器", L"CustomizeIco4",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.ExplorerTitle).c_str(), IW(componentLabels.ExplorerLabel).c_str(), L"CustomizeIco4",
 		BuiltInComponentAction::Explorer);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Taskmgr",
 		"component.shortcutButton.appliance.taskmgr",
 		[] { return setlist.component.shortcutButton.appliance.taskmgr; },
-		L"软件", L"启动 任务管理器", L"任务管理器", L"CustomizeIco9",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.TaskManagerTitle).c_str(), IW(componentLabels.TaskManagerLabel).c_str(), L"CustomizeIco9",
 		BuiltInComponentAction::TaskManager);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Control",
 		"component.shortcutButton.appliance.control",
 		[] { return setlist.component.shortcutButton.appliance.control; },
-		L"软件", L"启动 控制面板", L"控制面板", L"CustomizeIco7",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.ControlPanelTitle).c_str(), IW(componentLabels.ControlPanelLabel).c_str(), L"CustomizeIco7",
 		BuiltInComponentAction::ControlPanel);
 
 	registerComponent(
 		"Component.ShortcutButton.System.Desktop",
 		"component.shortcutButton.system.desktop",
 		[] { return setlist.component.shortcutButton.system.desktop; },
-		L"系统", L"显示桌面", L"显示桌面", L"CustomizeIco3",
+		IW(componentText.SystemSection).c_str(), IW(componentText.ShowDesktopTitle).c_str(), IW(componentLabels.ShowDesktopLabel).c_str(), L"CustomizeIco3",
 		BuiltInComponentAction::ShowDesktop);
 	registerComponent(
 		"Component.ShortcutButton.System.LockWorkStation",
 		"component.shortcutButton.system.lockWorkStation",
 		[] { return setlist.component.shortcutButton.system.lockWorkStation; },
-		L"系统", L"锁屏", L"锁屏", L"CustomizeIco8",
+		IW(componentText.SystemSection).c_str(), IW(componentText.LockScreenTitle).c_str(), IW(componentLabels.LockScreenLabel).c_str(), L"CustomizeIco8",
 		BuiltInComponentAction::LockWorkStation);
 
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.Keyboardesc",
 		"component.shortcutButton.keyboard.keyboardesc",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardesc; },
-		L"键盘", L"ESC 键", L"ESC键", L"CustomizeIco5",
+		IW(componentText.KeyboardSection).c_str(), IW(componentText.EscapeTitle).c_str(), IW(componentLabels.EscapeLabel).c_str(), L"CustomizeIco5",
 		BuiltInComponentAction::Escape);
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.KeyboardAltF4",
 		"component.shortcutButton.keyboard.keyboardAltF4",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardAltF4; },
-		L"键盘", L"Alt+F4", L"Alt+F4", L"CustomizeIco6",
+		IW(componentText.KeyboardSection).c_str(), IW(componentText.AltF4Title).c_str(), L"Alt+F4", L"CustomizeIco6",
 		BuiltInComponentAction::AltF4);
 
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller1",
 		"component.shortcutButton.rollCall.IslandCaller1",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller1; },
-		L"随机点名", L"IslandCaller 1", L"随机点名", L"CustomizeIco2",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco2",
 		BuiltInComponentAction::IslandCaller);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller2",
 		"component.shortcutButton.rollCall.IslandCaller2",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller2; },
-		L"随机点名", L"IslandCaller 2", L"随机点名", L"CustomizeIco2",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco2",
 		BuiltInComponentAction::IslandCallerSimple);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom1",
 		"component.shortcutButton.rollCall.SecRandom1",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom1; },
-		L"随机点名", L"SecRandom 1", L"随机点名", L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco10",
 		BuiltInComponentAction::SecRandomDirect);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2",
 		"component.shortcutButton.rollCall.SecRandom2",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2; },
-		L"随机点名", L"SecRandom 2", L"随机点名", L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco10",
 		BuiltInComponentAction::SecRandomQuickDraw);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2Compat",
 		"component.shortcutButton.rollCall.SecRandom2Compat",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2Compat; },
-		L"随机点名", L"SecRandom 2 兼容", L"随机点名", L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2CompatTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco10",
 		BuiltInComponentAction::SecRandomQuickDrawCompat);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.NamePicker",
 		"component.shortcutButton.rollCall.NamePicker",
 		[] { return setlist.component.shortcutButton.rollCall.NamePicker; },
-		L"随机点名", L"NamePicker", L"随机点名", L"CustomizeIco11",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.NamePickerTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco11",
 		BuiltInComponentAction::NamePicker);
 
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandSettings",
 		"component.shortcutButton.linkage.classislandSettings",
 		[] { return setlist.component.shortcutButton.linkage.classislandSettings; },
-		L"联动", L"ClassIsland 设置", L"CI设置", L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSettingsTitle).c_str(), IW(componentLabels.ClassIslandSettingsLabel).c_str(), L"CustomizeIco1",
 		BuiltInComponentAction::ClassIslandSettings);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandProfile",
 		"component.shortcutButton.linkage.classislandProfile",
 		[] { return setlist.component.shortcutButton.linkage.classislandProfile; },
-		L"联动", L"档案编辑", L"档案编辑", L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandProfileTitle).c_str(), IW(componentLabels.ClassIslandProfileLabel).c_str(), L"CustomizeIco1",
 		BuiltInComponentAction::ClassIslandProfile);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandClassswap",
 		"component.shortcutButton.linkage.classislandClassswap",
 		[] { return setlist.component.shortcutButton.linkage.classislandClassswap; },
-		L"联动", L"快速换课", L"快速换课", L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSwapTitle).c_str(), IW(componentLabels.ClassIslandSwapLabel).c_str(), L"CustomizeIco1",
 		BuiltInComponentAction::ClassIslandClassSwap);
 }
 
@@ -2123,7 +2125,7 @@ namespace Inkeys::UI::Bar
 					visualInheritance) || rendered;
 			rendered = renderer.Word(deviceContext, button.name,
 				visualInheritance.primary,
-				options.primaryWeight, options.primaryAlignment) || rendered;
+				options.primaryWeight, options.primaryAlignment, true) || rendered;
 			if (options.secondary && visualInheritance.secondary)
 				rendered = renderer.Word(deviceContext, *options.secondary,
 					*visualInheritance.secondary,

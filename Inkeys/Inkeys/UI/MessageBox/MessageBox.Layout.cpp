@@ -127,7 +127,17 @@ namespace Inkeys::UI::MessageBox::Detail
 		}
 		if (PRIMARYLANGID(language) == LANG_CHINESE)
 			return { L"确定", L"取消", L"是", L"否" };
-		return { L"OK", L"Cancel", L"Yes", L"No" };
+		switch (PRIMARYLANGID(language))
+		{
+		case LANG_JAPANESE: return { L"OK", L"キャンセル", L"はい", L"いいえ" };
+		case LANG_KOREAN: return { L"확인", L"취소", L"예", L"아니요" };
+		case LANG_FRENCH: return { L"OK", L"Annuler", L"Oui", L"Non" };
+		case LANG_GERMAN: return { L"OK", L"Abbrechen", L"Ja", L"Nein" };
+		case LANG_SPANISH: return { L"Aceptar", L"Cancelar", L"Sí", L"No" };
+		case LANG_PORTUGUESE: return { L"OK", L"Cancelar", L"Sim", L"Não" };
+		case LANG_RUSSIAN: return { L"ОК", L"Отмена", L"Да", L"Нет" };
+		default: return { L"OK", L"Cancel", L"Yes", L"No" };
+		}
 	}
 
 	int BuildButtonSpecs(Buttons buttons, const ButtonLabelSet& labels,
