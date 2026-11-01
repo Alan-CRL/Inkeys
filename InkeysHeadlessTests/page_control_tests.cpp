@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.PageLoadingIndicator.h"
 #include "../Inkeys/Inkeys/Input/UiPointerInput.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 
@@ -18,6 +19,38 @@ import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar.Metrics;
 import Inkeys.UI.Bar.SurfaceLayout;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.Bar.Animation;
+
+namespace {
+int TestPageLoadingRingClock()
+{
+    using namespace std::chrono_literals;using Inkeys::UI::Bar::PageLoadingIndicator;
+    PageLoadingIndicator state;const auto begin=PageLoadingIndicator::Time{}+10s;int failures=0;
+    const auto expect=[&](bool value,const char* message){if(!value){++failures;std::cerr<<"FAIL "<<message<<'\n';}};
+    const auto curve=+[](bool entering,double t){return BarUiApplyCurve(entering?BarUiCurveEnum::EaseOutCubic:BarUiCurveEnum::EaseInCubic,t);};
+    const auto step=[&](auto now,bool loading,double dt=0,bool animations=true,std::uint64_t session=7,bool visible=true){state.Advance(now,session,visible,loading,dt,1,animations,curve);};
+    step(begin,true);expect(state.WakeDeadline()==begin+500ms&&!state.NeedsFrames(true),"delay idles with exact monotonic deadline");
+    step(begin+499ms,true,.05);expect(state.opacity==0,"499ms remains invisible despite animation dt");
+    step(begin+500ms,true);expect(state.moving&&state.opacity==0,"idle dt-zero threshold retains entering demand");
+    step(begin+550ms,true,.05);expect(state.opacity>0&&state.opacity<1,"public cubic entry interpolates alpha and scale");
+    const auto before=state.opacity;step(begin+550ms,false);expect(state.opacity==before&&state.moving,"entry cancellation retargets from current opacity");
+    step(begin+580ms,false,.03);const auto leaving=state.opacity;
+    step(begin+580ms,true);expect(state.opacity==leaving&&state.WakeDeadline()==begin+1080ms,"new wait during leaving gets its own deadline without restarting old fade");
+    step(begin+800ms,true,.05);step(begin+900ms,true,.05);step(begin+1000ms,true,.05);
+    expect(state.opacity==0&&!state.NeedsFrames(true),"old exit finishes while new hidden wait remains pending");
+    step(begin+1080ms,true,0,false);expect(state.opacity==1&&!state.NeedsFrames(false)&&state.angle==0,"animation off still respects absolute gate and statically idles");
+    step(begin+1100ms,true,.02);expect(std::abs(state.angle-7.2)<.000001&&state.opacity==1,"reenabling animation preserves one-second rotation without a new delay");
+    step(begin+1120ms,true,0,true,8);expect(state.opacity==0&&state.WakeDeadline()==begin+1620ms,"session change retires old ring and starts a fresh gate");
+    step(begin+1500ms,true,0,true,8,false);expect(state.opacity==0&&state.WakeDeadline()==PageLoadingIndicator::Time::max(),"hidden state cancels ring and deadline");
+    step(begin+4s,true);step(begin+4499ms,false);step(begin+4500ms,false);expect(state.opacity==0,"cancellation just before expiry never flashes later");
+    Inkeys::UI::Bar::PageLoadingDeadline deadline;bool due=false;
+    deadline.Publish(begin+500ms);expect(deadline.Consume(begin+499ms,due)==begin+500ms&&!due,"worker does not consume a future deadline");
+    deadline.Publish(begin+2s);expect(deadline.Consume(begin+500ms,due)==begin+2s&&!due,"replaced deadline cannot wake on the old expiry");
+    deadline.Publish(PageLoadingIndicator::Time::max());expect(deadline.Consume(begin+3s,due)==PageLoadingIndicator::Time::max()&&!due,"cancelled deadline cannot resurrect");
+    deadline.Publish(begin+4s);deadline.Consume(begin+4s,due);expect(due,"deadline is consumed at equality");deadline.Consume(begin+5s,due);expect(!due,"deadline wake occurs only once");
+    return failures;
+}
+}
 
 namespace
 {
@@ -1974,6 +2007,7 @@ namespace
 
 int RunPageControlTests()
 {
+	failureCount+=TestPageLoadingRingClock();
 	TestSharedButtonInheritance();
 	TestSharedSurfaceLightingMapping();
 	TestCompactWidgetContracts();

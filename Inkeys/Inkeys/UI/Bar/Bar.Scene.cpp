@@ -10,6 +10,8 @@ module;
 #include <utility>
 #include <windows.h>
 #include "Bar.DirtyRegion.h"
+#include "Bar.PageLoadingIndicator.h"
+#include <wrl/client.h>
 #include "../../../PptWaitingDiagnostics.h"
 #include "Bar.InteractionWorker.h"
 #include "../Whiteboard/Whiteboard.Theme.h"
@@ -134,6 +136,12 @@ namespace Inkeys::UI::Bar
 		float pagePrimaryWidth=0,pageSecondaryWidth=0;
 		BarUiPctClass opacity{1};
 		BarPageSurfaceContent content;
+		PageLoadingIndicator indicator;
+		bool indicatorAllowed=true,indicatorInputDirty=true,indicatorAnimations=true,ringAttempted=false,ringFailed=false;
+		Microsoft::WRL::ComPtr<ID2D1PathGeometry> ringArc;
+		Microsoft::WRL::ComPtr<ID2D1StrokeStyle> ringStroke;
+		Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> ringTrack,ringForeground;
+		RECT ringDamage{};
 		BarSurfaceBackgroundSpec background;
 		BarSurfaceHooks hooks;
 		RECT logical{0,0,1,1},presentation{0,0,1,1},damage{};
@@ -356,6 +364,13 @@ namespace Inkeys::UI::Bar
 		}
 		void UpdateContent(const BarPageSurfaceContent& next)
 		{
+			// 同帧false→true也必须退休旧等待；只清截止事实，当前显隐值留给下一Advance连续退场。
+			if((content.navigationWaitingPrevious||content.navigationWaitingNext)
+				&&!(next.navigationWaitingPrevious||next.navigationWaitingNext)){
+				indicator.requested=false;indicator.deadline=PageLoadingIndicator::Time::max();
+			}
+			indicatorInputDirty|=content.loadingSession!=next.loadingSession
+				||(content.navigationWaitingPrevious||content.navigationWaitingNext)!=(next.navigationWaitingPrevious||next.navigationWaitingNext);
 			// 内容更新不得重新提交布局目标，否则普通翻页会截断正在进行的 PPT/白板转换。
 			const bool currentChanged=content.currentPage!=next.currentPage,totalChanged=content.totalPage!=next.totalPage;
 			const bool kindChanged=content.kind!=next.kind;
@@ -407,8 +422,7 @@ namespace Inkeys::UI::Bar
 			}
 			for(std::size_t i=0;i<next.enabled.size();++i)if(content.enabled[i]!=next.enabled[i]||content.interactive[i]!=next.interactive[i])IncludeButton(static_cast<BarSurfaceButtonId>(2+i));
 			if(content.switching!=next.switching)for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
-			if((content.navigationWaitingPrevious||content.navigationWaitingNext)
-				!=(next.navigationWaitingPrevious||next.navigationWaitingNext))IncludeButton(3);
+
 			if(content.pptActive!=next.pptActive){
 				IncludeButton(7);
 				// 放映恢复时同步撤销 Minimize 的旧反馈，禁用态不能残留按压底色或释放点击。
@@ -425,6 +439,7 @@ namespace Inkeys::UI::Bar
 		void Configure(const BarPageSurfaceContent& next,double duration)
 		{
 			if(initialized&&!backgroundOnly&&content.surface==next.surface&&content.whiteboard==next.whiteboard){UpdateContent(next);return;}
+			indicatorInputDirty=true;
 			const bool direct=!initialized || duration<=0;
 			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0,standard=wb||!BarPptCompactPaginationEnabled;
 			for(std::size_t i=0;i<pageButtons.size();++i){
@@ -606,7 +621,7 @@ namespace Inkeys::UI::Bar
 		{
 			// 相同 frameTime 或隐藏后恢复也先处理字号策略，不能被 idle 早退吞掉。
 			if(renderer.UpdateFontRenderingPolicy(Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))FullDamage();
-			if(frameSeen&&now==previousFrame)return active||renderer.FontAnimationsActive();
+			if(frameSeen&&now==previousFrame&&!indicatorInputDirty&&indicatorAnimations==static_cast<bool>(BarUiAnimationEnabled))return active||renderer.FontAnimationsActive();
 			const bool fontPending=renderer.FontAnimationsActive();
 			if(fontPending)FullDamage();
 			Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
@@ -619,6 +634,23 @@ namespace Inkeys::UI::Bar
 			const double speed=(std::max)(0.01,static_cast<double>(BarUiAnimationSpeedRate));
 			const BarUiAnimationAdvanceContextClass frame{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
 			renderer.BeginFontFrame(now,frame,fontTargetScale>0?fontTargetScale:scale);
+            indicatorInputDirty=false;indicatorAnimations=frame.animationEnabled;
+            const auto episode=indicator.episode,indicatorSession=indicator.session;
+            const bool indicatorChanged=indicator.Advance(now,content.loadingSession,
+                indicatorAllowed&&!backgroundOnly&&!content.whiteboard,
+                content.navigationWaitingPrevious||content.navigationWaitingNext,dt,speed,frame.animationEnabled,
+                [](bool entering,double t){return BarUiApplyCurve(entering?BarUiCurveEnum::EaseOutCubic:BarUiCurveEnum::EaseInCubic,t);});
+            if((episode!=indicator.episode||indicatorSession!=indicator.session)&&ringFailed){
+                ringArc.Reset();ringStroke.Reset();ringTrack.Reset();ringForeground.Reset();ringFailed=false;ringAttempted=false;
+            }
+            if(indicatorChanged){
+                Include(ringDamage);const auto r=Bounds(pageButtons[2]->button);
+                constexpr auto reach=PageLoadingStyle::OuterRadius+PageLoadingStyle::AntialiasOutset;
+                const auto current=Pixels({r.right-PageLoadingStyle::FromRight-reach,r.top+PageLoadingStyle::FromTop-reach,
+                    r.right-PageLoadingStyle::FromRight+reach,r.top+PageLoadingStyle::FromTop+reach},scale);
+                Include(current);ringDamage=indicator.opacity>0?current:RECT{};
+            }
+
 			active=fontPending;bool changed=false,panelsChanged=false;
 			const auto surface=GetThemeColor(BarThemeColorEnum::Surface);
 			if(appliedSurfaceColor!=surface){
@@ -709,22 +741,46 @@ namespace Inkeys::UI::Bar
 					return true;
 				};
 			}
-			const bool navigationWaiting=id==3&&(content.navigationWaitingPrevious||content.navigationWaitingNext);
-			if(navigationWaiting)options.content=[&](auto& target,auto* context,auto& item,const auto&){
-				auto* brush=target.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::TextPrimary),0.9);
-				Inkeys::Business::PptWaitTrace::DotBrush(brush!=nullptr);
-				if(!brush)return false;
-				const float z=static_cast<float>(target.GetFrameZoom());const auto r=Bounds(item.button);
-				const float radius=1.6F*z,y=static_cast<float>((r.top+7)*z);
-				// 前后翻页共用页码右上角角标；位于文字上方，不改箭头、数字或ready语义。
-				for(int dot=0;dot<3;++dot){
-					const float x=static_cast<float>((r.right-20+dot*5)*z);
-					const auto ellipse=D2D1::Ellipse(D2D1::Point2F(x,y),radius,radius);
-					context->FillEllipse(&ellipse,brush);
-					Inkeys::Business::PptWaitTrace::DotIssued();
-				}
-				return true;
-			};
+            if(id==3&&indicator.opacity>0&&!ringFailed)options.content=[&](auto& target,auto* context,auto& item,const auto&){
+                // 固定弧只在冷路径创建；装饰失败不改变数字提交或业务恢复状态。
+                if(!ringAttempted){
+                    ringAttempted=true;Microsoft::WRL::ComPtr<ID2D1Factory> factory;context->GetFactory(factory.GetAddressOf());
+                    Microsoft::WRL::ComPtr<ID2D1PathGeometry> arc;Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+                    HRESULT hr=factory?factory->CreatePathGeometry(arc.GetAddressOf()):E_FAIL;
+                    if(SUCCEEDED(hr))hr=arc->Open(sink.GetAddressOf());
+                    if(SUCCEEDED(hr)){
+                        sink->BeginFigure(D2D1::Point2F(0,-PageLoadingStyle::Radius),D2D1_FIGURE_BEGIN_HOLLOW);
+                        sink->AddArc(D2D1::ArcSegment(D2D1::Point2F(PageLoadingStyle::ArcEndX,PageLoadingStyle::ArcEndY),D2D1::SizeF(PageLoadingStyle::Radius,PageLoadingStyle::Radius),0,D2D1_SWEEP_DIRECTION_CLOCKWISE,D2D1_ARC_SIZE_LARGE));
+                        sink->EndFigure(D2D1_FIGURE_END_OPEN);hr=sink->Close();
+                    }
+                    // 指示器私有描边同弧/brush一起缓存；失败不走共享helper的同步logger，也可按新等待重试。
+                    Microsoft::WRL::ComPtr<ID2D1StrokeStyle> stroke;
+                    if(SUCCEEDED(hr)){
+                        const auto properties=D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND,D2D1_CAP_STYLE_ROUND,
+                            D2D1_CAP_STYLE_ROUND,D2D1_LINE_JOIN_ROUND,10.0F,D2D1_DASH_STYLE_SOLID,0.0F);
+                        hr=factory->CreateStrokeStyle(properties,nullptr,0,stroke.GetAddressOf());
+                    }
+                    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> track,foreground;
+                    if(SUCCEEDED(hr))hr=context->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0),track.GetAddressOf());
+                    if(SUCCEEDED(hr))hr=context->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0),foreground.GetAddressOf());
+                    if(SUCCEEDED(hr)){ringArc=std::move(arc);ringStroke=std::move(stroke);ringTrack=std::move(track);ringForeground=std::move(foreground);}else ringFailed=true;
+                }
+                auto* stroke=ringStroke.Get();
+                auto* track=ringTrack.Get();auto* foreground=ringForeground.Get();
+                const auto color=[&](COLORREF value){return D2D1::ColorF(GetRValue(value)/255.0F,GetGValue(value)/255.0F,GetBValue(value)/255.0F,static_cast<FLOAT>(indicator.opacity));};
+                if(track)track->SetColor(color(GetThemeColor(BarThemeColorEnum::SurfaceFrame)));
+                if(foreground)foreground->SetColor(color(GetThemeColor(BarThemeColorEnum::TextPrimary)));
+                if(ringFailed||!ringArc||!stroke||!track||!foreground){ringFailed=true;return true;}
+                D2D1_MATRIX_3X2_F original;context->GetTransform(&original);
+                const auto r=Bounds(item.button);const float z=static_cast<float>(target.GetFrameZoom());
+                const float zoom=z*static_cast<float>(indicator.scale);
+                // 外包络与损伤共用style参数；用户调参不改页码布局或字号。
+                context->SetTransform(D2D1::Matrix3x2F::Rotation(static_cast<FLOAT>(indicator.angle))*D2D1::Matrix3x2F::Scale(zoom,zoom)
+                    *D2D1::Matrix3x2F::Translation(static_cast<FLOAT>((r.right-PageLoadingStyle::FromRight)*z),static_cast<FLOAT>((r.top+PageLoadingStyle::FromTop)*z))*original);
+                context->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(0,0),PageLoadingStyle::Radius,PageLoadingStyle::Radius),track,PageLoadingStyle::TrackWidth);
+                context->DrawGeometry(ringArc.Get(),foreground,PageLoadingStyle::ArcWidth,stroke);
+                context->SetTransform(original);return true;
+            };
 			DrawBarButtonVisual(renderer,dc,button,Inherit(button.button),options);
 		}
 		void DrawGroup(ID2D1DeviceContext* dc,bool child)
@@ -836,6 +892,7 @@ namespace Inkeys::UI::Bar
 	}
 	void BarPageSurface::ReleaseDeviceResources() noexcept
 	{
+		impl_->ringArc.Reset();impl_->ringStroke.Reset();impl_->ringTrack.Reset();impl_->ringForeground.Reset();impl_->ringAttempted=false;impl_->ringFailed=false;
 		impl_->renderer.DiscardDeviceResources();for(BarSurfaceButtonId id=1;id<=17;++id){impl_->Button(id).icon.ResetCache();impl_->Button(id).pngIcon.ResetCache();}
 		impl_->FullDamage();
 	}
@@ -866,7 +923,7 @@ namespace Inkeys::UI::Bar
 	LONG BarPageSurface::PresentationOutsetPixels() const noexcept{return impl_->Outset();}
 	HRESULT BarPageSurface::EnsureDeviceResources(const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch,UINT w,UINT h)
 	{
-		if(impl_->renderer.GetDeviceGeneration()!=epoch.generation){for(BarSurfaceButtonId id=1;id<=17;++id)impl_->Button(id).icon.ResetCache();}
+		if(impl_->renderer.GetDeviceGeneration()!=epoch.generation){impl_->ringArc.Reset();impl_->ringStroke.Reset();impl_->ringTrack.Reset();impl_->ringForeground.Reset();impl_->ringAttempted=false;impl_->ringFailed=false;for(BarSurfaceButtonId id=1;id<=17;++id)impl_->Button(id).icon.ResetCache();}
 		return impl_->renderer.EnsureDeviceResources(epoch,w,h);
 	}
 	ID2D1DeviceContext* BarPageSurface::DeviceContext() const noexcept{return impl_->renderer.GetDeviceContext();}
@@ -956,6 +1013,16 @@ namespace Inkeys::UI::Bar
 	bool BarPageSurface::Advance(std::chrono::steady_clock::time_point now) noexcept{return impl_->Advance(now);}
 	void BarPageSurface::SuspendForIdle(std::chrono::steady_clock::time_point now) noexcept{impl_->animationClock.SuspendForIdle(now);}
 	bool BarPageSurface::AnimationActive() const noexcept{return impl_->active||impl_->renderer.FontAnimationsActive();}
+    void BarPageSurface::SetLoadingIndicatorVisible(bool visible) noexcept
+    {
+        if(impl_->indicatorAllowed!=visible)impl_->indicatorInputDirty=true;
+        impl_->indicatorAllowed=visible;
+        if(!visible){if(impl_->indicator.opacity>0)impl_->Include(impl_->ringDamage);impl_->ringDamage={};impl_->indicator.Reset();}
+    }
+    bool BarPageSurface::LoadingIndicatorAnimationActive() const noexcept
+    {return impl_->indicatorAllowed&&!impl_->ringFailed&&impl_->indicator.NeedsFrames(static_cast<bool>(BarUiAnimationEnabled));}
+    std::chrono::steady_clock::time_point BarPageSurface::LoadingIndicatorDeadline() const noexcept
+    {return impl_->indicatorAllowed?impl_->indicator.WakeDeadline():std::chrono::steady_clock::time_point::max();}
 	bool BarPageSurface::PopupAnimationActive() const noexcept{return impl_->menuMotion.Active()||impl_->themeMotion.Active();}
 	BarSurfaceRenderResult BarPageSurface::Render(ID2D1DeviceContext* dc,std::chrono::steady_clock::time_point now)
 	{

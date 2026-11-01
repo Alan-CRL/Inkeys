@@ -40,6 +40,7 @@ export namespace Inkeys::UI::Bar
 	{
 		BarPageContentKind kind = BarPageContentKind::Numeric;
 		unsigned surface = 0;
+		std::uint64_t loadingSession = 0;
 		bool whiteboard = false, switching = false, pptActive = false;
 		bool nextIsAdd = false, nextIsEndShow = false, unsaved = false;
 		bool navigationWaitingPrevious = false, navigationWaitingNext = false;
@@ -168,6 +169,9 @@ export namespace Inkeys::UI::Bar
 		void SuspendForIdle(std::chrono::steady_clock::time_point) noexcept;
 		[[nodiscard]] bool AnimationActive() const noexcept;
 		[[nodiscard]] bool PopupAnimationActive() const noexcept;
+		void SetLoadingIndicatorVisible(bool) noexcept;
+		[[nodiscard]] bool LoadingIndicatorAnimationActive() const noexcept;
+		[[nodiscard]] std::chrono::steady_clock::time_point LoadingIndicatorDeadline() const noexcept;
 		BarSurfaceRenderResult Render(ID2D1DeviceContext*, std::chrono::steady_clock::time_point);
 	private:
 		struct Impl;

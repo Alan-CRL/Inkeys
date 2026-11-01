@@ -13,6 +13,7 @@ module;
 #include <wrl/client.h>
 
 #include "../Bar/Bar.DirtyRegion.h"
+#include "../Bar/Bar.PageLoadingIndicator.h"
 #include "../Bar/Bar.InteractionWorker.h"
 #include "../Whiteboard/Whiteboard.Theme.h"
 #include "../../../IdtI18n.h"
@@ -412,6 +413,7 @@ namespace Inkeys::UI::PageControl
 		std::mutex inputSnapshotMutex;
 		std::array<InputPresentation,4> inputPresentations;
 		std::atomic_uint64_t inputLifecycle=1;
+		std::array<Inkeys::UI::Bar::PageLoadingDeadline,4> loadingDeadlines;
 		struct InputRegistrationContext {std::size_t index=0;std::uint64_t generation=0;};
 		// 旧 registration 的取消回调可能晚到，代次和内存均保留到共享 worker 排空。
 		std::vector<std::unique_ptr<InputRegistrationContext>> inputContexts;
@@ -923,6 +925,7 @@ namespace Inkeys::UI::PageControl
 		{
 			PageContent content;
 			content.surface=static_cast<unsigned>(index);
+			content.loadingSession=ppt.layout.session;
 			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
 			content.switching=whiteboard.switching;content.pptActive=ppt.presentationActive;
 			content.nextIsAdd=whiteboard.nextIsAdd;content.nextIsEndShow=IsPptEndPage(ppt.currentPage,ppt.totalPage);
@@ -1256,7 +1259,9 @@ namespace Inkeys::UI::PageControl
 				RetargetBounds(state.bounds,target.logicalBounds,target.scale,animateBounds,now);
 			}
 			AdvanceBounds(state.bounds,now);
+			state.scene.SetLoadingIndicatorVisible(state.targetVisible&&visualMode==WorkspaceMode::PptCompact);
 			(void)state.scene.Advance(now);
+			if(loadingDeadlines[index].Publish(state.scene.LoadingIndicatorDeadline()))Inkeys::UI::Bar::WakeInteractionWorker();
 			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,
 				(state.bounds.active||state.scene.Geometry().layoutAnimating)&&!settleDragPosition,WhiteboardWorkspaceSwitching(whiteboard));
 			if(!ApplyCurrentSceneBounds(state)){failedStage="pagination-bounds";return false;}
@@ -1366,7 +1371,7 @@ namespace Inkeys::UI::PageControl
 			const bool businessDamagePending =
 				!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(businessDamage);
 			if(!businessDamagePending&&!forceFullReplacement&&!lifecycleRendering
-				&&!state.scene.AnimationActive()&&!state.debugFrameSleepLatch.IsPending()&&!state.debugOverlayRefreshPending){
+				&&!state.scene.AnimationActive()&&!state.scene.LoadingIndicatorAnimationActive()&&!state.debugFrameSleepLatch.IsPending()&&!state.debugOverlayRefreshPending){
 				result.status=PresentStatus::Success;return result;
 			}
 			const bool retryingNonSleepVisual =
@@ -1374,7 +1379,7 @@ namespace Inkeys::UI::PageControl
 					showDebugFrames, businessDamagePending, forceFullReplacement,
 					state.debugFrameSleepLatch.IsPending());
 			const bool hasActiveRendering = lifecycleRendering
-				|| state.scene.AnimationActive() || retryingNonSleepVisual;
+				|| state.scene.AnimationActive() || state.scene.LoadingIndicatorAnimationActive() || retryingNonSleepVisual;
 			const bool finalIdleFrame = state.debugFrameSleepLatch.Update(
 				showDebugFrames, hasActiveRendering);
 			// 最终绿框就在当前帧提交，成功后应直接休眠，不能再唤醒一帧红框。
@@ -2288,7 +2293,7 @@ namespace Inkeys::UI::PageControl
 				{
 					if (!service.CandidateCurrent(Roles[pair[0]], pending.nativeRevision)) { retire(); return PairMoveProgress::None; }
 					(void)surfaces[index].scene.Advance(context.frameTime);
-					return surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive()
+					return surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive()||surfaces[index].scene.LoadingIndicatorAnimationActive()
 						? PairMoveProgress::None : PairMoveProgress::Pending;
 				}
 				auto lease = service.TryAcquirePresentationLease(Roles[pair[0]], Roles[pair[1]]);
@@ -2339,7 +2344,7 @@ namespace Inkeys::UI::PageControl
 			const bool requiresFrame = pending.snapMoving || pending.released;
 			if (!pending.observingMask) pending = {};
 			(void)surfaces[index].scene.Advance(context.frameTime);
-			const bool visual = requiresFrame || surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive();
+			const bool visual = requiresFrame || surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive()||surfaces[index].scene.LoadingIndicatorAnimationActive();
 			if (!visual) surfaces[index].scene.SuspendForIdle(context.frameTime);
 			pairLock.unlock(); renderLock.unlock();
 			FlushCommittedDrag(pairIndex);
@@ -2430,7 +2435,7 @@ namespace Inkeys::UI::PageControl
 				}
 				(void)state.scene.Advance(frameContext.frameTime);
 				const auto& pendingAfterAdvance = nativeFrames[index];
-				if (pendingAfterAdvance.revision && !pendingAfterAdvance.keepAnimating
+				if (pendingAfterAdvance.revision && !pendingAfterAdvance.keepAnimating&&!state.scene.LoadingIndicatorAnimationActive()
 					&& NativeFrameIdentityCurrent(pendingAfterAdvance, renderSnapshot, frameContext,
 						*native, monitor, dpiScale, uiScale, frameDirectMoveRevision)
 					&& state.scene.IsPresentationCandidateCurrent(pendingAfterAdvance.sceneSerial))
@@ -2495,7 +2500,7 @@ namespace Inkeys::UI::PageControl
 					&& transitionDeadlineActive;
 				keepAnimating = ShouldContinuePageControlFrame(
 					state.targetVisible, transitionDeadlineActive,
-					state.bounds.active || (MiddleSnapMatches(index,ppt,target) && middleSnap.active), state.scene.AnimationActive(),
+					state.bounds.active || (MiddleSnapMatches(index,ppt,target) && middleSnap.active), state.scene.AnimationActive()||state.scene.LoadingIndicatorAnimationActive(),
 					false);
 				shouldShow = ShouldKeepPageControlWindowVisible(
 					state.targetVisible, exitTransitionActive);
@@ -2634,6 +2639,17 @@ namespace Inkeys::UI::PageControl
 			return now-std::chrono::milliseconds(tick>=event.tick?(std::min)(tick-event.tick,0x7fffffffULL):0);
 		}
 
+        std::chrono::steady_clock::time_point PageControlLongPressTick(std::chrono::steady_clock::time_point,void*);
+        std::chrono::steady_clock::time_point PageControlInputTick(std::chrono::steady_clock::time_point now,void* context)
+        {
+            const auto* registration=static_cast<InputRegistrationContext*>(context);
+            if(!registration||!initialized.load(std::memory_order_acquire)
+                ||registration->generation!=inputLifecycle.load(std::memory_order_acquire)
+                ||registration->index>=loadingDeadlines.size())return std::chrono::steady_clock::time_point::max();
+            bool due=false;const auto deadline=loadingDeadlines[registration->index].Consume(now,due);
+            if(due)RequestSurface(registration->index); // 只唤醒，Scene按最新loading/session重新判定。
+            return (std::min)(deadline,PageControlLongPressTick(now,context));
+        }
 		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context);
 		void PageControlInputEvent(const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context)
 		{
@@ -2995,7 +3011,7 @@ namespace Inkeys::UI::PageControl
 			}
 		}
 
-		std::chrono::steady_clock::time_point PageControlInputTick(std::chrono::steady_clock::time_point now,void* context)
+		std::chrono::steady_clock::time_point PageControlLongPressTick(std::chrono::steady_clock::time_point now,void* context)
 		{
 			const auto* registration=static_cast<InputRegistrationContext*>(context);
 			if(!registration||!initialized.load(std::memory_order_acquire)
@@ -3523,7 +3539,7 @@ namespace Inkeys::UI::PageControl
 			if(index>=4||!provider||!sink)return FrameResult::Idle;
 			const auto snapshot=provider();
 			const auto mode=ResolveWorkspaceMode(SurfaceFor(index),snapshot.ppt,snapshot.whiteboard);
-			if(mode==WorkspaceMode::Hidden){fixture->surface.scene.SuspendForIdle(frame.frameTime);return FrameResult::Idle;}
+			if(mode==WorkspaceMode::Hidden){fixture->surface.scene.SetLoadingIndicatorVisible(false);fixture->surface.scene.SuspendForIdle(frame.frameTime);return FrameResult::Idle;}
 			auto& state=fixture->surface;
 			if(!fixture->configured||!ArePptStatesEquivalent(fixture->last.ppt,snapshot.ppt)
 				||!AreWhiteboardStatesEquivalent(fixture->last.whiteboard,snapshot.whiteboard)){
@@ -3534,6 +3550,7 @@ namespace Inkeys::UI::PageControl
 				if(!state.scene.IsInvalidated())state.forceFullPresentation=true;
 				fixture->last=snapshot;fixture->configured=true;
 			}
+			state.scene.SetLoadingIndicatorVisible(mode==WorkspaceMode::PptCompact);
 			(void)state.scene.Advance(frame.frameTime);
 			const RECT presentation=state.scene.PresentationBounds();
 			const SIZE size{presentation.right-presentation.left,presentation.bottom-presentation.top};
@@ -3542,10 +3559,10 @@ namespace Inkeys::UI::PageControl
 				||state.committedPresentationSize.cx!=size.cx||state.committedPresentationSize.cy!=size.cy
 				||state.backingCapacity.cx!=capacity.cx||state.backingCapacity.cy!=capacity.cy;
 			state.backingCapacity=capacity;
-			if(!full&&!state.scene.IsInvalidated()&&!state.scene.AnimationActive()){
+			if(!full&&!state.scene.IsInvalidated()&&!state.scene.AnimationActive()&&!state.scene.LoadingIndicatorAnimationActive()){
 				state.scene.SuspendForIdle(frame.frameTime);return FrameResult::Idle;
 			}
-			const auto result=PresentScene(index,state,nullptr,frame,presentation,capacity,full,false,state.scene.AnimationActive(),&sink);
+			const auto result=PresentScene(index,state,nullptr,frame,presentation,capacity,full,false,state.scene.AnimationActive()||state.scene.LoadingIndicatorAnimationActive(),&sink);
 			if(result.status!=PresentStatus::Success){state.forceFullPresentation=true;
 				return result.status==PresentStatus::DeviceLost?FrameResult::DeviceLost:FrameResult::Retry;}
 			state.scene.CommitPresented(!snapshot.whiteboard.switching);(void)state.scene.ConsumeDamage();
@@ -3560,6 +3577,16 @@ namespace Inkeys::UI::PageControl
 	{
 		int failures=0;
 		const auto Check=[&](bool valid,const char* why){if(!valid){++failures;std::fprintf(stderr,"[PageControlUI3] FAIL %s\n",why);}};
+        {
+            // 用真正PageControlInputTick验证无长按早退仍保留视觉deadline。
+            const bool previous=initialized.exchange(true);const auto saved=loadingDeadlines[0].ticks.load();
+            const auto press=surfaces[0].pressStarted,repeat=surfaces[0].lastRepeat;
+            surfaces[0].pressStarted={};surfaces[0].lastRepeat={};
+            const auto now=std::chrono::steady_clock::now();const auto due=now+std::chrono::seconds(10);
+            loadingDeadlines[0].Publish(due);InputRegistrationContext registration{0,inputLifecycle.load()};
+            Check(PageControlInputTick(now,&registration)==due,"real PageControl input tick preserves visual deadline with no pointer or long press");
+            loadingDeadlines[0].ticks.store(saved);surfaces[0].pressStarted=press;surfaces[0].lastRepeat=repeat;initialized.store(previous);
+        }
 		constexpr std::array<std::uint32_t,6> expectedColors{0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
 		Check(WhiteboardVisual::ThemeColors==expectedColors,"palette row order is green, navy, black then white, light gray, ivory");
 		{
@@ -3837,165 +3864,132 @@ namespace Inkeys::UI::PageControl
 				Scene scene;scene.ConfigurePagination(content);scene.SetBounds({0,0,width,80},1);scene.SetOpacity(1,0);
 				return drawScene(scene,now);
 			};
-			// 四个surface/三倍率都复用页码右上角的一处角标；箭头和数字本体不能被污染。
-			for(std::size_t index=0;index<4;++index)for(const float scale:{1.0F,1.5F,2.0F})
-			for(const auto direction:{PptNavigationDirection::Previous,PptNavigationDirection::Next}){
-				auto frame=ppt;frame.currentPage=3;frame.layout.session=7;frame.navigationWaiting={};
-				const auto normal=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
-				const LONG width=static_cast<LONG>(std::lround((index<2?PptControlLongSideDip:PptControlShortSideDip)*scale));
-				const LONG height=static_cast<LONG>(std::lround((index<2?PptControlShortSideDip:PptControlLongSideDip)*scale));
-				Scene waitingScene;waitingScene.ConfigurePagination(normal);waitingScene.SetBounds({0,0,width,height},scale);waitingScene.SetOpacity(1,0);
-				const auto now=origin+25s;const auto plain=drawScene(waitingScene,now);
-				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
-				frame.navigationWaiting={7,11,direction,true};
-				const auto content=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
-				waitingScene.ConfigurePagination(content);const auto partial=drawScene(waitingScene,now,false);
-				Scene fullScene;fullScene.ConfigurePagination(content);fullScene.SetBounds({0,0,width,height},scale);fullScene.SetOpacity(1,0);
-				Check(partial==drawScene(fullScene,now),"page badge partial damage equals a full redraw on all four surfaces and scales");
-				const auto geometry=waitingScene.Layout();const auto page=geometry.buttons[PageWidget-1].localPixels;
-				const RECT badge{page.right-static_cast<LONG>(std::ceil(24*scale)),page.top+static_cast<LONG>(std::floor(3*scale)),
-					page.right-static_cast<LONG>(std::floor(6*scale)),page.top+static_cast<LONG>(std::ceil(9*scale+1.5F))};
-				const auto region=[&](const PageTestPixels& pixels,RECT bounds,bool omitBadge=false){
-					std::vector<BYTE> values;if(pixels.bytes.size()!=static_cast<std::size_t>(pixels.width)*pixels.height*4)return values;
-					for(LONG y=bounds.top;y<bounds.bottom;++y)for(LONG x=bounds.left;x<bounds.right;++x){
-						if(omitBadge&&x>=badge.left&&x<badge.right&&y>=badge.top&&y<badge.bottom)continue;
-						const LONG row=y-pixels.bounds.top,column=x-pixels.bounds.left;
-						if(row<0||column<0||row>=static_cast<LONG>(pixels.height)||column>=static_cast<LONG>(pixels.width))continue;
-						const auto offset=(static_cast<std::size_t>(row)*pixels.width+column)*4;
-						values.insert(values.end(),pixels.bytes.begin()+offset,pixels.bytes.begin()+offset+4);
-					}return values;
-				};
-				Check(region(plain,badge)!=region(partial,badge)&&region(plain,page,true)==region(partial,page,true)
-					&&region(plain,geometry.buttons[PreviousWidget-1].localPixels)==region(partial,geometry.buttons[PreviousWidget-1].localPixels)
-					&&region(plain,geometry.buttons[NextWidget-1].localPixels)==region(partial,geometry.buttons[NextWidget-1].localPixels),
-					"a single top-right page badge changes only its reserved area, leaving both arrows and numeric slots unchanged");
-				WaitTrace::Record samples[8];WaitTrace::Recorder recorder(samples,8);
-				WaitTrace::Fields traceFields;traceFields.session=7;traceFields.epoch=11;traceFields.direction=static_cast<unsigned>(direction);
-				traceFields.surface=static_cast<int>(index);traceFields.flags=WaitTrace::Waiting|WaitTrace::Offscreen;
-				PageTestPixels traced;{ WaitTrace::DrawScope trace(traceFields,&recorder);traced=drawScene(fullScene,now); }
-				Check(traced==partial&&recorder.AfterProducersJoined().retained==2&&samples[1].fields.dots==3&&samples[1].fields.branches==1,
-					"enabled direction capture records exactly one three-dot page badge without changing pixels");
-				auto opposite=frame;opposite.navigationWaiting.direction=direction==PptNavigationDirection::Next?PptNavigationDirection::Previous:PptNavigationDirection::Next;
-				fullScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,opposite,{}));
-				Check(drawScene(fullScene,now)==partial,"previous and next share exactly the same page badge position");
-				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();waitingScene.ConfigurePagination(normal);
-				Check(drawScene(waitingScene,now,false)==plain,"completion removes the page badge with ordinary partial damage");
-				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
-				// 控制态已是未来4，但恢复/Pending只显示同场稳定3，且不授权点击或ACK。
-				frame.navigationWaiting={};frame.pagePreparing=true;frame.currentPage=4;frame.targetRevision=0;
-				frame.numericPageOverride=true;frame.displayedCurrentPage=3;frame.displayedTotalPage=frame.totalPage;
-				frame.recovery.kind=PptRecovery::Kind::Recovering;
-				const auto preparing=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
-				waitingScene.ConfigurePagination(preparing);const auto preparingPartial=drawScene(waitingScene,now,false);
-				fullScene.ConfigurePagination(preparing);
-				Check(preparingPartial==drawScene(fullScene,now)&&preparingPartial==partial
-					&&preparing.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric&&!preparing.interactive[1]
-					&&frame.currentPage==4&&frame.targetRevision==0,
-					"Recovering keeps old 3/N plus one badge while future control page 4 remains Pending and noninteractive");
-				WaitTrace::Record preparationSamples[8];WaitTrace::Recorder preparationRecorder(preparationSamples,8);
-				traceFields.epoch=0;traceFields.direction=0;traceFields.flags=WaitTrace::Preparing|WaitTrace::Offscreen;
-				{ WaitTrace::DrawScope trace(traceFields,&preparationRecorder);traced=drawScene(fullScene,now); }
-				Check(traced==preparingPartial&&preparationRecorder.AfterProducersJoined().retained==2
-					&&preparationSamples[1].fields.epoch==0&&preparationSamples[1].fields.direction==0
-					&&preparationSamples[1].fields.dots==3&&preparationSamples[1].fields.branches==1,
-					"generic preparation records one badge with epoch-zero identity and identical BGRA");
-				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();frame.recovery={};
-				waitingScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));
-				Check(drawScene(waitingScene,now,false)==preparingPartial,"clearing recovery before ready retains the old Pending digits and badge");
-				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
-				frame.pagePreparing=false;frame.numericPageOverride=false;
-				const auto ready=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
-				waitingScene.ConfigurePagination(ready);const auto readyPartial=drawScene(waitingScene,now,false);
-				fullScene.ConfigurePagination(ready);
-				Check(readyPartial==drawScene(fullScene,now)&&region(readyPartial,badge)==region(plain,badge)
-					&&region(plain,page,true)!=region(readyPartial,page,true),
-					"ready 4/N and clean badge removal share one successful partial frame");
-				waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();waitingScene.ConfigurePagination(preparing);
-				(void)drawScene(waitingScene,now,false);waitingScene.CommitPresented();(void)waitingScene.ConsumeDamage();
-				frame.currentPage=3;frame.targetRevision=0;
-				waitingScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));
-				Check(drawScene(waitingScene,now,false)==plain,"BasicControl clears the badge with target zero and unchanged page");
-				// 最大有效位数也不能让角标覆盖文字；只检查实际像素，不改字号或布局。
-				frame.currentPage=frame.totalPage=index<2?9999:999;
-				const auto maximum=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
-				fullScene.ConfigurePagination(maximum);const auto maxPlain=drawScene(fullScene,now);
-				frame.pagePreparing=true;fullScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));
-				const auto maxBadge=drawScene(fullScene,now);
-				const auto metrics=Inkeys::UI::Bar::ResolveBarButtonVisualMetrics(Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo);
-				const double primaryTop=page.top+(page.bottom-page.top)/2.0+(metrics.primaryOffsetYDip-metrics.primarySlotHeightDip/2)*scale;
-				const double secondaryTop=page.top+(page.bottom-page.top)/2.0+(metrics.secondaryOffsetYDip-metrics.secondarySlotHeightDip/2)*scale;
-				Check(region(maxPlain,page,true)==region(maxBadge,page,true)&&region(maxPlain,badge)!=region(maxBadge,badge)
-					&&badge.bottom<=primaryTop&&badge.bottom<=secondaryTop,
-					"the reserved badge envelope stays above both text slots even for maximum numeric digit widths");
-			}
-			// 原短Recovering复现改为回归：进度始终Numeric，返回3/4都即时；真实失败的Status动画另测。
-			for(const int leadMs:{0,20})for(const int returnedPage:{3,4}){
-				auto frame=ppt;frame.currentPage=3;frame.totalPage=56;frame.navigationWaiting={};frame.pagePreparing=false;
-				const auto startContent=BuildPageContent(0,WorkspaceMode::PptCompact,frame,{});
-				auto recoveryFrame=frame;recoveryFrame.currentPage=returnedPage;recoveryFrame.targetRevision=0;
-				recoveryFrame.recovery.kind=PptRecovery::Kind::Recovering;recoveryFrame.pagePreparing=true;
-				recoveryFrame.numericPageOverride=true;recoveryFrame.displayedCurrentPage=3;recoveryFrame.displayedTotalPage=56;
-				const auto progress=BuildPageContent(0,WorkspaceMode::PptCompact,recoveryFrame,{});
-				Check(progress.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric&&progress.currentPage==L"3"&&progress.totalPage==L"/56"
-					&&!progress.interactive[1]&&recoveryFrame.currentPage==returnedPage&&recoveryFrame.targetRevision==0,
-					"Recovering progress is numeric while the original future control target and retry block remain intact");
-				Scene interrupted,control,untraced;
-				for(auto* candidate:{&interrupted,&control,&untraced}){
-					candidate->ConfigurePagination(startContent);candidate->SetBounds({0,0,240,80},1);candidate->SetOpacity(1,0);
-				}
-				auto stamp=origin+45s;const auto original=drawScene(interrupted,stamp);(void)drawScene(control,stamp);(void)drawScene(untraced,stamp);
-				WaitTrace::Record contentSamples[4];WaitTrace::Recorder contentRecorder(contentSamples,4);
-				WaitTrace::Fields contentFields;contentFields.session=contentFields.layoutSession=7;
-				contentFields.surface=0;contentFields.mode=static_cast<unsigned>(WorkspaceMode::PptCompact);
-				contentFields.layoutEpoch=2;contentFields.publication=11;contentFields.revision=13;
-				contentFields.flags=WaitTrace::PositionActive|WaitTrace::Visible|WaitTrace::Offscreen;contentFields.contentTotalPage=56;
-				const auto configureObserved=[&](const PageContent& next,int current,unsigned recoveryKind){
-					auto fields=contentFields;fields.contentCurrentPage=current;fields.recoveryKind=recoveryKind;
-					{WaitTrace::ContentScope scope(fields,&contentRecorder);interrupted.ConfigurePagination(next);}
-					untraced.ConfigurePagination(next);
-				};
-				const auto page=interrupted.Layout().buttons[PageWidget-1].localPixels;
-				const auto metrics=Inkeys::UI::Bar::ResolveBarButtonVisualMetrics(Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo);
-				const double centre=(page.top+page.bottom)/2.0;
-				const LONG split=static_cast<LONG>(std::lround(centre+(metrics.primaryOffsetYDip+metrics.primarySlotHeightDip/2
-					+metrics.secondaryOffsetYDip-metrics.secondarySlotHeightDip/2)/2));
-				const auto difference=[&](const PageTestPixels& left,const PageTestPixels& right){
-					std::array<std::size_t,2> counts{};
-					const bool valid=left.width==right.width&&left.height==right.height&&SameRect(left.bounds,right.bounds)
-						&&left.bytes.size()==static_cast<std::size_t>(left.width)*left.height*4&&left.bytes.size()==right.bytes.size();
-					Check(valid,"number regression compares complete real BGRA frames");if(!valid)return counts;
-					for(LONG y=page.top+2;y<page.bottom-2;++y)for(LONG x=page.left+2;x<page.right-2;++x){
-						if(x>=page.right-24&&y<page.top+11)continue; // 独立角标不属于数字主/次文字槽。
-						const LONG row=y-left.bounds.top,column=x-left.bounds.left;
-						if(row<0||column<0||row>=static_cast<LONG>(left.height)||column>=static_cast<LONG>(left.width))continue;
-						const auto offset=(static_cast<std::size_t>(row)*left.width+column)*4;
-						for(unsigned channel=0;channel<4;++channel)counts[y<split?0:1]+=left.bytes[offset+channel]!=right.bytes[offset+channel];
-					}return counts;
-				};
-				configureObserved(progress,3,static_cast<unsigned>(recoveryFrame.recovery.kind));stamp+=std::chrono::milliseconds(leadMs);
-				const auto beforeReturn=drawScene(interrupted,stamp);(void)drawScene(control,stamp);
-				Check(beforeReturn==drawScene(untraced,stamp),"enabled content capture preserves progress BGRA");
-				const auto oldDifference=difference(beforeReturn,original);
-				Check(oldDifference[0]==0&&oldDifference[1]==0&&!interrupted.AnimationActive(),
-					"0ms or 20ms Recovering keeps both numeric slots unscaled and unfaded");
-				frame.currentPage=returnedPage;const auto returned=BuildPageContent(0,WorkspaceMode::PptCompact,frame,{});
-				for(int tick=0;tick<=40;++tick){
-					if(tick)stamp+=20ms;
-					configureObserved(returned,returnedPage,static_cast<unsigned>(frame.recovery.kind));control.ConfigurePagination(returned);
-					const auto observed=drawScene(interrupted,stamp),numericControl=drawScene(control,stamp);
-					Check(observed==drawScene(untraced,stamp)&&observed==numericControl&&!interrupted.AnimationActive(),
-						"Recovering to the same or next number is immediate and remains identical under unchanged heartbeats");
-				}
-				const auto contentCounts=contentRecorder.AfterProducersJoined();
-				Check(contentCounts.retained==(returnedPage==4?1U:0U)&&contentCounts.dropped==0&&contentCounts.invalid==0,
-					"progress does not create Status policies or repeated heartbeat transitions");
-				if(returnedPage==4)Check(contentSamples[0].stage==WaitTrace::Stage::ContentPolicy
-					&&contentSamples[0].fields.oldKind==0&&contentSamples[0].fields.newKind==0
-					&&contentSamples[0].fields.contentPolicy==static_cast<unsigned>(WaitTrace::ContentPolicy::Immediate)
-					&&contentSamples[0].fields.setterChanges==1&&contentSamples[0].fields.contentCurrentPage==4
-					&&contentSamples[0].fields.contentTotalPage==56&&contentSamples[0].fields.epoch==0&&contentSamples[0].fields.direction==0,
-					"actual policy hooks confirm Numeric immediate update while unchanged /56 does not restart");
-			}
+            {
+                // 现有离屏控制器也要保留到期首帧dt0的视觉续帧，而非只验证Scene手工Tick。
+                OffscreenSnapshot snapshot;snapshot.ppt=ppt;snapshot.ppt.presentationActive=true;snapshot.ppt.presentationVisible=true;
+                snapshot.ppt.layout.session=77;snapshot.ppt.layout.showBottomPair=true;snapshot.ppt.layout.showMiddlePair=false;
+                std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink=[](const auto&){return TRUE;};
+                auto callback=CreatePageControlOffscreenRenderCallback(0,[&]{return snapshot;},{0,0,240,80},1,sink);
+                FrameContext context;context.epoch=epoch;context.frameTime=origin+22s;
+                (void)callback(context);snapshot.ppt.navigationWaiting={77,1,PptNavigationDirection::Next,true};
+                (void)callback(context);context.frameTime+=499ms;Check(callback(context)==FrameResult::Idle,"offscreen controller can idle before loading deadline");
+                context.frameTime+=1ms;Check(callback(context)==FrameResult::Continue,"offscreen controller continues dt-zero entry at loading deadline");
+                context.frameTime+=20ms;Check(callback(context)==FrameResult::Continue,"offscreen controller advances visible ring after threshold");
+                snapshot.ppt.presentationVisible=false;snapshot.ppt.presentationActive=false;context.frameTime+=20ms;Check(callback(context)==FrameResult::Idle,"offscreen hidden controller retires the spinner");
+            }
+            // 短等待无像素，长等待的环只改变角标区；四面/三倍率/两个方向共用真实Scene。
+            for(std::size_t index=0;index<4;++index)for(const float scale:{1.0F,1.5F,2.0F})
+            for(const auto direction:{PptNavigationDirection::Previous,PptNavigationDirection::Next}){
+                auto frame=ppt;frame.currentPage=3;frame.layout.session=7;frame.navigationWaiting={};
+                const auto normal=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+                const LONG width=static_cast<LONG>(std::lround((index<2?PptControlLongSideDip:PptControlShortSideDip)*scale));
+                const LONG height=static_cast<LONG>(std::lround((index<2?PptControlShortSideDip:PptControlLongSideDip)*scale));
+                const auto begin=origin+25s;
+                Scene partialScene,fullScene;
+                for(auto* scene:{&partialScene,&fullScene}){scene->ConfigurePagination(normal);scene->SetBounds({0,0,width,height},scale);scene->SetOpacity(1,0);}
+                const auto plain=drawScene(partialScene,begin);(void)drawScene(fullScene,begin);
+                partialScene.CommitPresented();(void)partialScene.ConsumeDamage();
+                frame.navigationWaiting={7,11,direction,true};const auto loading=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+                partialScene.ConfigurePagination(loading);fullScene.ConfigurePagination(loading);
+                Check(drawScene(partialScene,begin,false)==plain,"ring delay begins without a pixel flash");(void)drawScene(fullScene,begin);
+                Check(partialScene.LoadingIndicatorDeadline()==begin+500ms&&!partialScene.LoadingIndicatorAnimationActive(),"delay uses an absolute deadline and can idle");
+                Check(drawScene(partialScene,begin+499ms)==plain,"loading shorter than 500ms remains invisible");
+                (void)drawScene(fullScene,begin+499ms);(void)drawScene(partialScene,begin+500ms);(void)drawScene(fullScene,begin+500ms);
+                Check(partialScene.LoadingIndicatorAnimationActive(),"threshold dt-zero frame keeps entering motion alive");
+                PageTestPixels ring;
+                for(int step=1;step<=12;++step){
+                    const auto stamp=begin+500ms+step*20ms;
+                    ring=drawScene(partialScene,stamp,false);Check(ring==drawScene(fullScene,stamp),"animated ring partial damage equals full redraw");
+                    partialScene.CommitPresented();(void)partialScene.ConsumeDamage();
+                }
+                Check(ring!=plain&&!partialScene.AnimationActive()&&partialScene.LoadingIndicatorAnimationActive(),"ring renders and rotates without becoming layout or exit animation");
+                const auto geometry=partialScene.Layout();const auto page=geometry.buttons[PageWidget-1].localPixels;
+                constexpr auto reach=Inkeys::UI::Bar::PageLoadingStyle::OuterRadius+Inkeys::UI::Bar::PageLoadingStyle::AntialiasOutset;
+                const auto centerX=page.right-Inkeys::UI::Bar::PageLoadingStyle::FromRight*scale;
+                const auto centerY=page.top+Inkeys::UI::Bar::PageLoadingStyle::FromTop*scale;
+                const RECT badge{static_cast<LONG>(std::floor(centerX-reach*scale)),static_cast<LONG>(std::floor(centerY-reach*scale)),
+                    static_cast<LONG>(std::ceil(centerX+reach*scale)),static_cast<LONG>(std::ceil(centerY+reach*scale))};
+                const auto region=[&](const PageTestPixels& pixels,RECT bounds,bool omit=false){
+                    std::vector<BYTE> bytes;if(pixels.bytes.size()!=static_cast<std::size_t>(pixels.width)*pixels.height*4)return bytes;
+                    for(LONG y=bounds.top;y<bounds.bottom;++y)for(LONG x=bounds.left;x<bounds.right;++x){
+                        if(omit&&x>=badge.left&&x<badge.right&&y>=badge.top&&y<badge.bottom)continue;
+                        const auto row=y-pixels.bounds.top,col=x-pixels.bounds.left;
+                        if(row<0||col<0||row>=static_cast<LONG>(pixels.height)||col>=static_cast<LONG>(pixels.width))continue;
+                        const auto offset=(static_cast<std::size_t>(row)*pixels.width+col)*4;bytes.insert(bytes.end(),pixels.bytes.begin()+offset,pixels.bytes.begin()+offset+4);
+                    }return bytes;
+                };
+                Check(region(ring,page,true)==region(plain,page,true)&&region(ring,badge)!=region(plain,badge),"small ring stays in the page corner without touching numeric glyphs");
+                for(const auto id:{PreviousWidget,NextWidget})Check(region(ring,geometry.buttons[id-1].localPixels)==region(plain,geometry.buttons[id-1].localPixels),"ring never paints on direction arrows");
+                const auto rotated=drawScene(partialScene,begin+800ms);Check(rotated!=ring,"rotation changes actual foreground arc pixels");
+                partialScene.ReleaseDeviceResources();const auto restored=drawScene(partialScene,begin+800ms);Check(restored==rotated,"device resource rebuild preserves waiting phase and arc pixels");
+                // 真实Scene同帧看到false→true：新段重等500ms，旧环仍从当前值退场，不能冻结或沿用旧门槛。
+                (void)drawScene(fullScene,begin+800ms);fullScene.ConfigurePagination(normal);fullScene.ConfigurePagination(loading);
+                Check(drawScene(fullScene,begin+800ms)==rotated&&fullScene.LoadingIndicatorDeadline()==begin+1300ms,
+                    "same-frame restart preserves current ring pixels and starts a fresh 500ms gate");
+                for(int step=1;step<=10;++step)(void)drawScene(fullScene,begin+800ms+step*20ms,false);
+                Check(drawScene(fullScene,begin+1000ms)==plain&&!fullScene.LoadingIndicatorAnimationActive()
+                    &&fullScene.LoadingIndicatorDeadline()==begin+1300ms,
+                    "old ring fade completes while the restarted loading segment stays independently delayed");
+                partialScene.ConfigurePagination(normal);(void)drawScene(partialScene,begin+800ms);
+                for(int step=1;step<=10;++step)(void)drawScene(partialScene,begin+800ms+step*20ms,false);
+                Check(drawScene(partialScene,begin+1000ms)==plain&&!partialScene.LoadingIndicatorAnimationActive(),"exit clears final ring pixels and becomes idle");
+                // 同场未来控制页不得影响恢复中的已就绪数字；ready仍通过原mode/ACK链。
+                frame.navigationWaiting={};frame.pagePreparing=true;frame.currentPage=4;frame.targetRevision=0;
+                frame.numericPageOverride=true;frame.displayedCurrentPage=3;frame.displayedTotalPage=frame.totalPage;frame.recovery.kind=PptRecovery::Kind::Recovering;
+                const auto preparing=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+                Check(preparing.currentPage==normal.currentPage&&preparing.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric&&!preparing.interactive[1],"loading ring keeps stable digits and recovery interaction semantics");
+                partialScene.ConfigurePagination(preparing);(void)drawScene(partialScene,begin+2s);
+                const auto stablePreparing=drawScene(partialScene,begin+2s);
+                frame.recovery={};partialScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));
+                Check(drawScene(partialScene,begin+2s)==stablePreparing,"None before InkReady retains the stable numeric override");
+                frame.pagePreparing=false;frame.numericPageOverride=false;
+                const auto ready=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+                partialScene.ConfigurePagination(ready);const auto readyPixels=drawScene(partialScene,begin+2100ms);
+                Scene readyReference;readyReference.ConfigurePagination(ready);readyReference.SetBounds({0,0,width,height},scale);readyReference.SetOpacity(1,0);
+                Check(readyPixels==drawScene(readyReference,begin+2100ms),"ready numbers replace stable display immediately without a loading-content transition");
+                partialScene.SetLoadingIndicatorVisible(false);Check(partialScene.LoadingIndicatorDeadline()==std::chrono::steady_clock::time_point::max()&&!partialScene.LoadingIndicatorAnimationActive(),"hidden surface retires ring demand and deadline");
+                // 禁动画仍等待500ms；最大数字的实际像素不应被环触及。
+                BarUiAnimationEnabled=false;frame.navigationWaiting={};frame.pagePreparing=false;frame.numericPageOverride=false;frame.recovery={};
+                frame.currentPage=frame.totalPage=index<2?9999:999;
+                const auto maximum=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+                Scene maxScene;maxScene.ConfigurePagination(maximum);maxScene.SetBounds({0,0,width,height},scale);maxScene.SetOpacity(1,0);
+                const auto maxPlain=drawScene(maxScene,begin+4s);frame.pagePreparing=true;
+                maxScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));(void)drawScene(maxScene,begin+4s);
+                Check(drawScene(maxScene,begin+4499ms)==maxPlain,"disabled animation never bypasses the loading threshold");
+                const auto maxRing=drawScene(maxScene,begin+4500ms);
+                Check(region(maxPlain,page,true)==region(maxRing,page,true)&&region(maxPlain,badge)!=region(maxRing,badge)
+                    &&!maxScene.LoadingIndicatorAnimationActive(),"static themed ring fits maximum numeric slots and idles");
+                auto emptyNumbers=maximum;emptyNumbers.currentPage=L"";emptyNumbers.totalPage=L"";
+                Scene emptyScene;emptyScene.ConfigurePagination(emptyNumbers);emptyScene.SetBounds({0,0,width,height},scale);emptyScene.SetOpacity(1,0);
+                const auto blank=drawScene(emptyScene,begin+4500ms);
+                const auto plainGlyphs=region(maxPlain,page),blankGlyphs=region(blank,page),ringGlyphs=region(maxRing,page);
+                const auto validImage=[](const PageTestPixels& pixels){
+                    if(!pixels.width||!pixels.height||pixels.width>(std::numeric_limits<std::size_t>::max)()/4/pixels.height)return false;
+                    return static_cast<std::int64_t>(pixels.bounds.right)-pixels.bounds.left==pixels.width
+                        &&static_cast<std::int64_t>(pixels.bounds.bottom)-pixels.bounds.top==pixels.height
+                        &&pixels.bytes.size()==static_cast<std::size_t>(pixels.width)*pixels.height*4;
+                };
+                // 空图或未画出数字不能作为“不遮字”的证据；三幅图须是同尺寸完整像素，且确有字形ink。
+                bool glyphsUnchanged=validImage(maxPlain)&&validImage(blank)&&validImage(maxRing)
+                    &&SameRect(maxPlain.bounds,blank.bounds)&&SameRect(maxPlain.bounds,maxRing.bounds)
+                    &&!plainGlyphs.empty()&&plainGlyphs.size()==blankGlyphs.size()&&plainGlyphs.size()==ringGlyphs.size();
+                std::size_t inkPixels=0;
+                for(std::size_t i=0;glyphsUnchanged&&i+3<plainGlyphs.size();i+=4){
+                    bool ink=false;for(std::size_t c=0;c<4;++c)ink|=plainGlyphs[i+c]!=blankGlyphs[i+c];
+                    if(ink){++inkPixels;for(std::size_t c=0;c<4;++c)glyphsUnchanged&=plainGlyphs[i+c]==ringGlyphs[i+c];}
+                }
+                Check(glyphsUnchanged&&inkPixels>0,"larger progress ring never overwrites actual maximum-width numeric glyph pixels");
+                if(scale==2.0F){
+                    const auto pixels=region(maxRing,badge);
+                    const auto containsColor=[&](COLORREF color){for(std::size_t i=0;i+3<pixels.size();i+=4)
+                        if(pixels[i]==GetBValue(color)&&pixels[i+1]==GetGValue(color)&&pixels[i+2]==GetRValue(color)&&pixels[i+3]==255)return true;return false;};
+                    Check(containsColor(GetThemeColor(BarThemeColorEnum::TextPrimary)),"thin foreground retains the theme text color with the shared renderer");
+                }
+                maxScene.ConfigurePagination(maximum);Check(drawScene(maxScene,begin+4500ms)==maxPlain,"disabled animation hides the ring immediately with clean pixels");
+                BarUiAnimationEnabled=true;
+
+            }
+
 			const auto numeric=BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{});
 			auto next=numeric;next.currentPage=L"8";next.totalPage=L"/29";
 			auto finalNumber=next;finalNumber.currentPage=L"9";finalNumber.totalPage=L"/30";
@@ -5772,6 +5766,7 @@ namespace Inkeys::UI::PageControl
 				inputPresentations={};for(auto& surface:surfaces)surface=SurfaceState{};groupLayoutBudget={};middleSnap={};}
 			inputContexts.clear();
 		}
+		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		initialized.store(true, std::memory_order_release);
 		const auto lifecycle=inputLifecycle.fetch_add(1,std::memory_order_acq_rel)+1;
 		for(std::size_t index=0;index<Roles.size();++index){
@@ -5820,6 +5815,7 @@ namespace Inkeys::UI::PageControl
 		}
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
+		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		whiteboardMenuEpoch.store(0,std::memory_order_release);
 		Inkeys::Input::KeyboardShortcuts::PublishWhiteboardMenuEpoch(0);
 		for(const auto role:Roles)Inkeys::UI::Bar::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
@@ -5831,6 +5827,8 @@ namespace Inkeys::UI::PageControl
 		displaySubscription.Reset();
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
+		// 已运行回调也已排空，清掉它们最后一次可能发布的截止时间。
+		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		auto& service = Inkeys::Window::GetService();
 		for (std::size_t pair = 0; pair < nativePairMoves.size(); ++pair) CancelNativePairMove(pair);
 		for (std::size_t index = 0; index < Roles.size(); ++index)

@@ -2706,3 +2706,39 @@ Good：最后一次 Up 由完整回执吸收；背景完成直接唤醒协调器
 Wrong：`if (PublishCandidate(move)) CommitDragPairDirect();` 或 `if (wake) CommitWorkspace();`。
 
 Correct：发布后保留 pending，非阻塞读取完整匹配回执；仅最终所有像素、窗口、业务身份和输入 fence 条件成立时提交原状态机。
+
+## Scenario: Page 右上角延迟环形指示器（2026-11-01）
+
+### 1. Scope / Trigger
+PPT方向等待或Pending/Recovering进度由单Page角标表达，替代旧三点；加载事实/稳定数字/故障文字和业务门不变。短加载不显示，持续满0.5秒才入场。
+
+### 2. Signatures
+内部Bar.PageLoadingIndicator.h的PageLoadingIndicator::Advance(steady now,session,allowed,loading,dt,speed,animations,Curve)，WakeDeadline/NeedsFrames；稳定PageLoadingDeadline::Publish/Consume。BarPageSurface提供SetLoadingIndicatorVisible、LoadingIndicatorAnimationActive、LoadingIndicatorDeadline；BarPageSurfaceContent.loadingSession仅用于视觉退休。
+
+### 3. Contracts
+- 门槛使用绝对steady frameTime，重复true不重置；false边沿即退休requested/deadline，即使同frameTime先false再true也算新段，保留当前显隐值连续退场。新段重新500ms，499ms不显示；不把clamp/idle dt累加为墙钟。
+- 入180ms EaseOutCubic、退140ms EaseInCubic，opacity0..1/scale .75..1无超调；循环250度圆头弧顺时针约1秒一圈，使用原速度。global off显隐即时、固定静态弧，门槛仍0.5秒；SetAnimationOptions请求PptPageMask唤醒Idle静态环，不常驻轮询。
+- 最大外径约12DIP、中心Page局部right-15/top+6.5，track半径5.4线宽0.6用SurfaceFrame，前景同半径线宽1.2用TextPrimary；最大包络及AA余量不碰数字，原scale统一。私有缓存arc/双色brush/圆头stroke，避免ContentSolidBrush单可变brush别名；不逐帧CreatePathGeometry/Open sink，绘后恢复transform。
+- 装饰资源失败只跳过环，不返回页码失败/不升级CanvasRecovery；失败latch按session/新段/epoch有界恢复，失败时不持续空动画回调。场景释放/epoch重建配平四类ComPtr；不调用共享GetRoundStrokeStyle失败日志路径。
+- 延迟期Scene无视觉需求可Idle；render发布/取消per-surface原子deadline并WakeInteractionWorker，原SurfaceInputTick在LongPress早退前合并，worker到期只RequestSurface，Scene复核最新状态。mailbox.Revision在Pump前观察避免丢wake；initialized/generation/注册注销和清槽保护旧回调，不跨线程访问Scene/D2D，不增线程/timer/Scheduler API。
+- 可见进退场/旋转以独立LoadingIndicatorAnimationActive请求帧，不混入旧AnimationActive的窗口保留资格或input锁；隐藏/白板/session变更退休。所有原生/离屏early Idle、PresentScene续帧与SuspendForIdle都须含独立视觉需求，到期dt0/opacity0首帧也继续；退场末帧损伤旧角标后Idle。
+- 每帧仅角标最大包络及旧尾帧损伤，不无条件损伤整个数字槽。数字普通更新仍Immediate，真实错误/Retry/旧ACK/COM控制不变。旧PptWait dots字段不伪造环的3点，dots=0不能推断环未显示。
+
+### 4. Validation & Error Matrix
+| 条件 | 必须行为 |
+| --- | --- |
+| 499/500ms及dt0 | 门槛前无像素，到期保留入场需求；全局off也不提前 |
+| 同目标、方向变、同帧false→true | true不重计，真实false新段重计且旧视觉连续 |
+| 延迟取消/隐藏/session/注销/过期wake | 不闪现或访问已毁Scene，不留旧窗口/空续帧 |
+| 设备重建/装饰创建失败 | 配平/降级，数字ACK不受影响，有界重试 |
+| 静态环全局重启 | 设置请求唤醒，旋转恢复，不依赖鼠标 |
+
+### 5. Good / Base / Bad Cases
+Good：无Pointer Down也由真实worker deadline唤醒，真实callback在500ms dt0后Continue，partial与full相等。Base：短等待整段无环/数字像素不变。Bad：60Hz空画等0.5秒、无限spin延长ShouldKeepWindowVisible、失去同帧false边沿、资源失败阻塞画布。
+
+### 6. Tests Required
+page-control-only验证纯生产helper499/500/idle/dt0/重启/session/off与原子替换；ui3-input-worker-test用真实注册/WaitUntil验证无手势到期/取消/注销；bar-eraser-offscreen-test验证实际PageControlInputTick无长按、实际callback到期Continue、四面三倍率/灰白像素/最大数字不遮/旋转/显隐/partial清除/epoch重建/globalOff静态，以及同frameTime快速重启。完整InkeysRepo.sln Debug|ARM64和PPT协议回归；GUI交用户，不扩大Office支持。
+
+### 7. Wrong vs Correct
+Wrong：用动画dt数满1秒、沿共享Animated标记让窗口不退场，或借装饰初始化失败修改页面状态。
+Correct：绝对deadline+原worker唤醒，独立视觉需求/本地缓存资源/实际像素和生命周期验证，所有业务门保持。

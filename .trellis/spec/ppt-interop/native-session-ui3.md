@@ -396,3 +396,5 @@ page-control-only覆盖缓存合法ready/basic/EndScreen/换场重置、显示�
 ### 7. Wrong vs Correct
 Wrong：直接覆写控制currentPage为旧3，或把正常恢复进度当文字Status。
 Correct：保留control4+Pending，视觉override3+Page角标；只有实际ready发布更新数字，故障控制与纯显示分离。
+
+当前Page角标已由旧三点更新为持续等待满500ms后出现的环形指示器；左右方向共用原角落、数字/控制/ACK语义不变，旧三点计数仅历史样本。实际视觉/调度契约见rendering-and-ui.md“Page右上角延迟环形指示器”。

@@ -330,6 +330,7 @@ namespace Inkeys::UI::Bar
 		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
 		if (!enable) RequestBarBorderCursorSuspend();
 		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 
 	void SetEdgeLightingOptions(bool enable, bool dynamic)

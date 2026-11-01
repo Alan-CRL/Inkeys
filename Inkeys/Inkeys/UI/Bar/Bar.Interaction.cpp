@@ -26,6 +26,7 @@ module;
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
 #include "Bar.InteractionWorker.h"
+#include "Bar.PageLoadingIndicator.h"
 #include <type_traits>
 #include <thread>
 #include <cstring>
@@ -2663,6 +2664,26 @@ namespace Inkeys::UI::Bar
 				if (scope)
 				{
 					check(!CreateOffscreenInteractionWorker(), "second-interaction-owner-rejected");
+                    {
+                        // 没有Pointer Down也必须沿生产worker的deadline等待唤醒。
+                        struct DeadlineProbe { PageLoadingDeadline deadline;std::mutex mutex;std::condition_variable wake;unsigned calls=0; } probe;
+                        const auto deadlineTick=+[](InteractionClock::time_point now,void* opaque){
+                            auto& p=*static_cast<DeadlineProbe*>(opaque);bool due=false;const auto next=p.deadline.Consume(now,due);
+                            if(due){std::lock_guard lock(p.mutex);++p.calls;p.wake.notify_all();}return next;
+                        };
+                        const auto noInput=+[](const SurfaceInputEvent&,void*){};
+                        const auto window=reinterpret_cast<HWND>(0x101);
+                        check(RegisterInteractionSurface(window,11,noInput,deadlineTick,nullptr,&probe,false),"loading-deadline-registers-without-a-pointer");
+                        probe.deadline.Publish(InteractionClock::now()+std::chrono::milliseconds(40));WakeInteractionWorker();
+                        {std::unique_lock lock(probe.mutex);check(probe.wake.wait_for(lock,std::chrono::seconds(1),[&]{return probe.calls==1;}),"worker-wakes-loading-deadline-without-gesture");}
+                        probe.deadline.Publish(InteractionClock::now()+std::chrono::seconds(10));
+                        probe.deadline.Publish(InteractionClock::time_point::max());WakeInteractionWorker();
+                        {std::unique_lock lock(probe.mutex);check(!probe.wake.wait_for(lock,std::chrono::milliseconds(60),[&]{return probe.calls!=1;}),"cancelled-loading-deadline-does-not-fire");}
+                        probe.deadline.Publish(InteractionClock::now()+std::chrono::milliseconds(100));WakeInteractionWorker();
+                        UnregisterInteractionSurface(window);check(DrainInteractionSurfaceCallbacks(),"loading-deadline-callbacks-drain-before-context-destruction");
+                        {std::unique_lock lock(probe.mutex);check(!probe.wake.wait_for(lock,std::chrono::milliseconds(140),[&]{return probe.calls!=1;}),"unregistered-loading-deadline-cannot-wake-old-generation");}
+                    }
+
 					struct WakeProbe { std::mutex mutex; std::condition_variable wake; unsigned calls = 0; } wakeProbe;
 					const auto input = +[](const SurfaceInputEvent&, void* value)
 					{
