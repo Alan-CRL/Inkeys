@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 130
-- **Last Active**: 2026-10-27
+- **Total Sessions**: 153
+- **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~974 | Active |
+| `journal-2.md` | ~998 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 153 | 2026-11-01 | Setting translucent shell: WinUI 3 single-layer material | `1922b699`, `652f4409`, `f99e94f8` | `bugfix/settingui` |
 | 130 | 2026-10-27 | UI3 吸附释放交接与最终收窗收尾归档 | `48dda087`, `b7f237f0` | `bugfix/cut` |
 | 129 | 2026-10-25 | Draw3 DComp 交接与激光过期修复 | `dffdd2ac` | `bugfix/cut` |
 | 128 | 2026-10-25 | 设置视觉重建与笔速橡皮精修验收归档 | `bc494cd384d783b39156aba77dbbf8f5f2f769cc`, `e4beb2ca8cf83bb1fad12ae466daec812add58cf` | `fluent` |
