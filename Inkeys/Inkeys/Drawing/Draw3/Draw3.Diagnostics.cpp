@@ -17,6 +17,8 @@
 #include <dwmapi.h>
 #include <dxgi1_2.h>
 #include <iomanip>
+#include <initializer_list>
+#include <sstream>
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -257,6 +259,200 @@ namespace Inkeys::Drawing::Draw3
 			default: return "OTHER";
 			}
 		}
+	}
+
+	namespace
+	{
+		struct DiagnosticConstant { UINT value; const char* name; };
+		std::string DiagnosticHex(UINT value)
+		{
+			char text[11]{};
+			std::snprintf(text, sizeof(text), "0x%08X", value);
+			return text;
+		}
+		std::string DiagnosticEnum(UINT value, const char* type,
+			std::initializer_list<DiagnosticConstant> names, bool hex = false)
+		{
+			std::string name = std::string("未知 ") + type;
+			for (const auto& item : names) if (item.value == value) { name = item.name; break; }
+			return name + " (" + (hex ? DiagnosticHex(value) : std::to_string(value)) + ")";
+		}
+	}
+
+	std::string FormatDiagnosticFeatureLevel(D3D_FEATURE_LEVEL value)
+	{
+		return DiagnosticEnum(static_cast<UINT>(value), "D3D_FEATURE_LEVEL", {
+			{D3D_FEATURE_LEVEL_1_0_CORE,"D3D_FEATURE_LEVEL_1_0_CORE"},
+			{D3D_FEATURE_LEVEL_9_1,"D3D_FEATURE_LEVEL_9_1"},{D3D_FEATURE_LEVEL_9_2,"D3D_FEATURE_LEVEL_9_2"},
+			{D3D_FEATURE_LEVEL_9_3,"D3D_FEATURE_LEVEL_9_3"},{D3D_FEATURE_LEVEL_10_0,"D3D_FEATURE_LEVEL_10_0"},
+			{D3D_FEATURE_LEVEL_10_1,"D3D_FEATURE_LEVEL_10_1"},{D3D_FEATURE_LEVEL_11_0,"D3D_FEATURE_LEVEL_11_0"},
+			{D3D_FEATURE_LEVEL_11_1,"D3D_FEATURE_LEVEL_11_1"},{D3D_FEATURE_LEVEL_12_0,"D3D_FEATURE_LEVEL_12_0"},
+			{D3D_FEATURE_LEVEL_12_1,"D3D_FEATURE_LEVEL_12_1"},{D3D_FEATURE_LEVEL_12_2,"D3D_FEATURE_LEVEL_12_2"}}, true);
+	}
+
+	std::string FormatDiagnosticFormat(DXGI_FORMAT value)
+	{
+		return DiagnosticEnum(static_cast<UINT>(value), "DXGI_FORMAT", {
+			{DXGI_FORMAT_UNKNOWN,"DXGI_FORMAT_UNKNOWN"},{DXGI_FORMAT_B8G8R8A8_UNORM,"DXGI_FORMAT_B8G8R8A8_UNORM"},
+			{DXGI_FORMAT_R8G8B8A8_UNORM,"DXGI_FORMAT_R8G8B8A8_UNORM"},{DXGI_FORMAT_R10G10B10A2_UNORM,"DXGI_FORMAT_R10G10B10A2_UNORM"},
+			{DXGI_FORMAT_R16G16B16A16_FLOAT,"DXGI_FORMAT_R16G16B16A16_FLOAT"},{DXGI_FORMAT_B8G8R8X8_UNORM,"DXGI_FORMAT_B8G8R8X8_UNORM"},
+			{DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,"DXGI_FORMAT_R8G8B8A8_UNORM_SRGB"},{DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,"DXGI_FORMAT_B8G8R8A8_UNORM_SRGB"},
+			{DXGI_FORMAT_B8G8R8X8_UNORM_SRGB,"DXGI_FORMAT_B8G8R8X8_UNORM_SRGB"}});
+	}
+
+	std::string FormatDiagnosticSwapEffect(DXGI_SWAP_EFFECT value)
+	{
+		return DiagnosticEnum(static_cast<UINT>(value), "DXGI_SWAP_EFFECT", {
+			{DXGI_SWAP_EFFECT_DISCARD,"DXGI_SWAP_EFFECT_DISCARD"},{DXGI_SWAP_EFFECT_SEQUENTIAL,"DXGI_SWAP_EFFECT_SEQUENTIAL"},
+			{DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,"DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL"},{DXGI_SWAP_EFFECT_FLIP_DISCARD,"DXGI_SWAP_EFFECT_FLIP_DISCARD"}});
+	}
+
+	std::string FormatDiagnosticAlphaMode(DXGI_ALPHA_MODE value)
+	{
+		return DiagnosticEnum(static_cast<UINT>(value), "DXGI_ALPHA_MODE", {
+			{DXGI_ALPHA_MODE_UNSPECIFIED,"DXGI_ALPHA_MODE_UNSPECIFIED"},{DXGI_ALPHA_MODE_PREMULTIPLIED,"DXGI_ALPHA_MODE_PREMULTIPLIED"},
+			{DXGI_ALPHA_MODE_STRAIGHT,"DXGI_ALPHA_MODE_STRAIGHT"},{DXGI_ALPHA_MODE_IGNORE,"DXGI_ALPHA_MODE_IGNORE"},
+			{static_cast<UINT>(DXGI_ALPHA_MODE_FORCE_DWORD),"DXGI_ALPHA_MODE_FORCE_DWORD"}});
+	}
+
+	std::string FormatDiagnosticScaling(DXGI_SCALING value)
+	{
+		return DiagnosticEnum(static_cast<UINT>(value), "DXGI_SCALING", {
+			{DXGI_SCALING_STRETCH,"DXGI_SCALING_STRETCH"},{DXGI_SCALING_NONE,"DXGI_SCALING_NONE"},
+			{DXGI_SCALING_ASPECT_RATIO_STRETCH,"DXGI_SCALING_ASPECT_RATIO_STRETCH"}});
+	}
+
+	std::string FormatDiagnosticSwapChainFlags(UINT flags)
+	{
+		if (flags == 0) return "无标志 (0x00000000)";
+		constexpr DiagnosticConstant names[]{
+			{DXGI_SWAP_CHAIN_FLAG_NONPREROTATED,"DXGI_SWAP_CHAIN_FLAG_NONPREROTATED"},
+			{DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH,"DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH"},
+			{DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE,"DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE"},
+			{DXGI_SWAP_CHAIN_FLAG_RESTRICTED_CONTENT,"DXGI_SWAP_CHAIN_FLAG_RESTRICTED_CONTENT"},
+			{DXGI_SWAP_CHAIN_FLAG_RESTRICT_SHARED_RESOURCE_DRIVER,"DXGI_SWAP_CHAIN_FLAG_RESTRICT_SHARED_RESOURCE_DRIVER"},
+			{DXGI_SWAP_CHAIN_FLAG_DISPLAY_ONLY,"DXGI_SWAP_CHAIN_FLAG_DISPLAY_ONLY"},
+			{DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,"DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT"},
+			{DXGI_SWAP_CHAIN_FLAG_FOREGROUND_LAYER,"DXGI_SWAP_CHAIN_FLAG_FOREGROUND_LAYER"},
+			{DXGI_SWAP_CHAIN_FLAG_FULLSCREEN_VIDEO,"DXGI_SWAP_CHAIN_FLAG_FULLSCREEN_VIDEO"},
+			{DXGI_SWAP_CHAIN_FLAG_YUV_VIDEO,"DXGI_SWAP_CHAIN_FLAG_YUV_VIDEO"},
+			{DXGI_SWAP_CHAIN_FLAG_HW_PROTECTED,"DXGI_SWAP_CHAIN_FLAG_HW_PROTECTED"},
+			{DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING,"DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING"},
+			{DXGI_SWAP_CHAIN_FLAG_RESTRICTED_TO_ALL_HOLOGRAPHIC_DISPLAYS,"DXGI_SWAP_CHAIN_FLAG_RESTRICTED_TO_ALL_HOLOGRAPHIC_DISPLAYS"}};
+		UINT unknown = flags;
+		std::string text;
+		for (const auto& item : names) if ((flags & item.value) != 0)
+		{
+			if (!text.empty()) text += " | ";
+			text += item.name; unknown &= ~item.value;
+		}
+		// 保留未来 SDK/驱动返回的未知位，不把未知值误写成已知常量或零。
+		if (unknown != 0) { if (!text.empty()) text += " | "; text += "未知位 " + DiagnosticHex(unknown); }
+		return text + " (" + DiagnosticHex(flags) + ")";
+	}
+
+	std::string FormatDiagnosticSampleDesc(DXGI_SAMPLE_DESC value)
+	{
+		return "Count=" + std::to_string(value.Count) + ", Quality=" + std::to_string(value.Quality) +
+			(value.Count == 1 && value.Quality == 0 ? "（无 MSAA）" : "");
+	}
+
+	std::string FormatDiagnosticHResult(HRESULT value)
+	{
+		const char* name = "未知 HRESULT";
+		switch (value)
+		{
+		case S_OK: name="S_OK"; break; case S_FALSE: name="S_FALSE"; break;
+		case E_FAIL: name="E_FAIL"; break; case E_ABORT: name="E_ABORT"; break;
+		case E_NOTIMPL: name="E_NOTIMPL"; break; case E_NOINTERFACE: name="E_NOINTERFACE"; break;
+		case E_POINTER: name="E_POINTER"; break; case E_HANDLE: name="E_HANDLE"; break;
+		case E_INVALIDARG: name="E_INVALIDARG"; break; case E_OUTOFMEMORY: name="E_OUTOFMEMORY"; break;
+		case E_ACCESSDENIED: name="E_ACCESSDENIED"; break; case E_PENDING: name="E_PENDING"; break;
+		case E_UNEXPECTED: name="E_UNEXPECTED"; break; case REGDB_E_CLASSNOTREG: name="REGDB_E_CLASSNOTREG"; break;
+		case CO_E_NOTINITIALIZED: name="CO_E_NOTINITIALIZED"; break; case RPC_E_CHANGED_MODE: name="RPC_E_CHANGED_MODE"; break;
+		case RPC_E_WRONG_THREAD: name="RPC_E_WRONG_THREAD"; break; case RPC_E_DISCONNECTED: name="RPC_E_DISCONNECTED"; break;
+		case RPC_E_CALL_REJECTED: name="RPC_E_CALL_REJECTED"; break; case RPC_E_SERVERCALL_RETRYLATER: name="RPC_E_SERVERCALL_RETRYLATER"; break;
+		case DXGI_STATUS_OCCLUDED: name="DXGI_STATUS_OCCLUDED"; break;
+		case DXGI_ERROR_INVALID_CALL: name="DXGI_ERROR_INVALID_CALL"; break; case DXGI_ERROR_NOT_FOUND: name="DXGI_ERROR_NOT_FOUND"; break;
+		case DXGI_ERROR_MORE_DATA: name="DXGI_ERROR_MORE_DATA"; break; case DXGI_ERROR_UNSUPPORTED: name="DXGI_ERROR_UNSUPPORTED"; break;
+		case DXGI_ERROR_DEVICE_REMOVED: name="DXGI_ERROR_DEVICE_REMOVED"; break; case DXGI_ERROR_DEVICE_HUNG: name="DXGI_ERROR_DEVICE_HUNG"; break;
+		case DXGI_ERROR_DEVICE_RESET: name="DXGI_ERROR_DEVICE_RESET"; break; case DXGI_ERROR_WAS_STILL_DRAWING: name="DXGI_ERROR_WAS_STILL_DRAWING"; break;
+		case DXGI_ERROR_DRIVER_INTERNAL_ERROR: name="DXGI_ERROR_DRIVER_INTERNAL_ERROR"; break;
+		case DXGI_ERROR_NOT_CURRENTLY_AVAILABLE: name="DXGI_ERROR_NOT_CURRENTLY_AVAILABLE"; break;
+		}
+		return std::string(name) + " (" + DiagnosticHex(static_cast<UINT>(value)) + ")";
+	}
+
+	std::string FormatDiagnosticSwapChain(const DXGI_SWAP_CHAIN_DESC1& value, bool waitable)
+	{
+		std::ostringstream text;
+		text << "交换链尺寸：" << value.Width << " × " << value.Height << "  缓冲数：" << value.BufferCount
+			<< "\n格式：" << FormatDiagnosticFormat(value.Format) << "\nSwapEffect：" << FormatDiagnosticSwapEffect(value.SwapEffect)
+			<< "\nAlphaMode：" << FormatDiagnosticAlphaMode(value.AlphaMode) << "\nScaling：" << FormatDiagnosticScaling(value.Scaling)
+			<< "\n采样（DXGI_SAMPLE_DESC）：" << FormatDiagnosticSampleDesc(value.SampleDesc) << "\nFlags：" << FormatDiagnosticSwapChainFlags(value.Flags)
+			<< "\n帧延迟控制：" << (waitable ? "Waitable（最大排队帧数 1）" : "普通交换链") << "\n";
+		return text.str();
+	}
+
+	std::string FormatDiagnosticRtsAttempt(const char* profile, const char* stage, HRESULT result)
+	{
+		const std::string label = profile && std::strcmp(profile,"BasicXY") == 0 ? "RTS 基础 X/Y 状态" :
+			profile && std::strcmp(profile,"Extended") == 0 ? "RTS 扩展状态" : std::string("RTS ") + (profile ? profile : "未知") + " 状态";
+		std::string text = label + "：" + (SUCCEEDED(result) ? "就绪" : "失败");
+		if (FAILED(result)) text += std::string("（阶段：") + (stage ? stage : "未知") + "）";
+		return text + "，HRESULT：" + FormatDiagnosticHResult(result) + "\n";
+	}
+
+	int RunDiagnosticFormattingProductionTest() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr,"[Draw3DiagnosticFormatting] FAIL: %s\n",label); }
+		};
+		check(FormatDiagnosticFeatureLevel(D3D_FEATURE_LEVEL_11_1) == "D3D_FEATURE_LEVEL_11_1 (0x0000B100)","feature level has full SDK name and real value");
+		check(FormatDiagnosticFeatureLevel(static_cast<D3D_FEATURE_LEVEL>(0x1234)) == "未知 D3D_FEATURE_LEVEL (0x00001234)","unknown feature level preserves its value");
+		check(FormatDiagnosticFormat(DXGI_FORMAT_B8G8R8A8_UNORM) == "DXGI_FORMAT_B8G8R8A8_UNORM (87)","BGRA format is fully named");
+		check(FormatDiagnosticFormat(DXGI_FORMAT_R8G8B8A8_UNORM) == "DXGI_FORMAT_R8G8B8A8_UNORM (28)","alternate common swapchain format is fully named");
+		check(FormatDiagnosticFormat(static_cast<DXGI_FORMAT>(777)) == "未知 DXGI_FORMAT (777)","unknown DXGI format is not relabeled as known");
+		check(FormatDiagnosticSwapEffect(DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL) == "DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL (3)","swap effect is fully named");
+		check(FormatDiagnosticSwapEffect(static_cast<DXGI_SWAP_EFFECT>(99)) == "未知 DXGI_SWAP_EFFECT (99)","unknown swap effect preserves its value");
+		check(FormatDiagnosticAlphaMode(DXGI_ALPHA_MODE_PREMULTIPLIED) == "DXGI_ALPHA_MODE_PREMULTIPLIED (1)","alpha mode is fully named");
+		check(FormatDiagnosticAlphaMode(static_cast<DXGI_ALPHA_MODE>(99)) == "未知 DXGI_ALPHA_MODE (99)","unknown alpha mode preserves its value");
+		check(FormatDiagnosticScaling(DXGI_SCALING_STRETCH) == "DXGI_SCALING_STRETCH (0)","scaling is fully named");
+		check(FormatDiagnosticScaling(static_cast<DXGI_SCALING>(99)) == "未知 DXGI_SCALING (99)","unknown scaling preserves its value");
+		check(FormatDiagnosticSwapChainFlags(0) == "无标志 (0x00000000)","zero flags do not invent an SDK NONE constant");
+		check(FormatDiagnosticSwapChainFlags(DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) ==
+			"DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT (0x00000040)","waitable flag has its complete name");
+		check(FormatDiagnosticSwapChainFlags(DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | 0x80000000u) ==
+			"DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | 未知位 0x80000000 (0x80000044)","combined flags retain names, unknown bits and total value");
+		check(FormatDiagnosticSampleDesc({1,0}) == "Count=1, Quality=0（无 MSAA）","single sample explicitly identifies no MSAA");
+		check(FormatDiagnosticSampleDesc({4,2}) == "Count=4, Quality=2" && FormatDiagnosticSampleDesc({1,2}).find("无 MSAA") == std::string::npos,
+			"sample quality is not mistaken for a sample count or silently normalized");
+		check(FormatDiagnosticHResult(S_OK) == "S_OK (0x00000000)" && FormatDiagnosticHResult(E_NOINTERFACE) == "E_NOINTERFACE (0x80004002)","success and failure HRESULT share symbolic eight-digit format");
+		check(FormatDiagnosticHResult(DXGI_ERROR_DEVICE_REMOVED) == "DXGI_ERROR_DEVICE_REMOVED (0x887A0005)","device errors keep their SDK symbol");
+		check(FormatDiagnosticHResult(static_cast<HRESULT>(0x81234567u)) == "未知 HRESULT (0x81234567)","unmapped HRESULT keeps all original bits");
+		check(FormatDiagnosticRtsAttempt("Extended","ready",S_OK) == "RTS 扩展状态：就绪，HRESULT：S_OK (0x00000000)\n","successful RTS attempt localizes its state and readiness");
+		check(FormatDiagnosticRtsAttempt("BasicXY","input_configuration",E_FAIL) == "RTS 基础 X/Y 状态：失败（阶段：input_configuration），HRESULT：E_FAIL (0x80004005)\n",
+			"failed RTS attempt retains its exact stage and result");
+		DXGI_SWAP_CHAIN_DESC1 value{};
+		value.Width=3840; value.Height=2160; value.BufferCount=2; value.Format=DXGI_FORMAT_B8G8R8A8_UNORM;
+		value.SwapEffect=DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL; value.AlphaMode=DXGI_ALPHA_MODE_PREMULTIPLIED;
+		value.Scaling=DXGI_SCALING_STRETCH; value.SampleDesc={1,0}; value.Flags=DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+		const auto actual = FormatDiagnosticSwapChain(value,true);
+		for (const char* expected : {"3840 × 2160", "缓冲数：2", "DXGI_FORMAT_B8G8R8A8_UNORM (87)",
+			"DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL (3)", "DXGI_ALPHA_MODE_PREMULTIPLIED (1)", "DXGI_SCALING_STRETCH (0)",
+			"Count=1, Quality=0（无 MSAA）", "DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT (0x00000040)", "Waitable"})
+			check(actual.find(expected) != std::string::npos,"combined production summary uses the real supplied description");
+		value.Format=static_cast<DXGI_FORMAT>(777); value.SwapEffect=static_cast<DXGI_SWAP_EFFECT>(99);
+		value.AlphaMode=static_cast<DXGI_ALPHA_MODE>(99); value.Scaling=static_cast<DXGI_SCALING>(99);
+		value.SampleDesc={4,2}; value.Flags=0x80000000u;
+		const auto unknown = FormatDiagnosticSwapChain(value,false);
+		for (const char* expected : {"未知 DXGI_FORMAT (777)","未知 DXGI_SWAP_EFFECT (99)","未知 DXGI_ALPHA_MODE (99)",
+			"未知 DXGI_SCALING (99)","Count=4, Quality=2","未知位 0x80000000 (0x80000000)","普通交换链"})
+			check(unknown.find(expected) != std::string::npos,"summary retains unknown metadata instead of substituting startup defaults");
+		if (!failures) std::fputs("[Draw3DiagnosticFormatting] PASS: SDK names, flags, samples, HRESULT and RTS summaries\n",stderr);
+		return failures == 0 ? 0 : 1;
 	}
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)

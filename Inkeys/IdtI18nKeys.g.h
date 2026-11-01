@@ -206,6 +206,7 @@ inline constexpr struct I18nKeyRoot
             const char* SwitchToDark = "SettingsUI/Design/SwitchToDark";
             const char* SwitchToLight = "SettingsUI/Design/SwitchToLight";
             const char* Preferences = "SettingsUI/Design/Preferences";
+            const char* RecommendedSuffix = "SettingsUI/Design/RecommendedSuffix";
             const char* SupportGroup = "SettingsUI/Design/SupportGroup";
             const char* Experimental = "SettingsUI/Design/Experimental";
             const char* HomeWelcome = "SettingsUI/Design/HomeWelcome";
@@ -269,6 +270,8 @@ inline constexpr struct I18nKeyRoot
             const char* Disabled = "SettingsUI/Design/Disabled";
             const char* ClickToCopy = "SettingsUI/Design/ClickToCopy";
             const char* Copied = "SettingsUI/Design/Copied";
+            const char* RestartRequired = "SettingsUI/Design/RestartRequired";
+            const char* NextStartupRequired = "SettingsUI/Design/NextStartupRequired";
         } Design{};
         struct Node__SettingsUI__Home
         {
@@ -319,6 +322,7 @@ inline constexpr struct I18nKeyRoot
                     const char* zh_TW = "SettingsUI/Language/UI/Language/zh-TW";
                 } Language{};
                 const char* Warn = "SettingsUI/Language/UI/Warn";
+                const char* SelectNote = "SettingsUI/Language/UI/SelectNote";
             } UI{};
         } Language{};
         struct Node__SettingsUI__Configuration
@@ -329,6 +333,7 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/Configuration/Clean/N";
                 const char* Enable = "SettingsUI/Configuration/Clean/Enable";
                 const char* EnableE = "SettingsUI/Configuration/Clean/EnableE";
+                const char* EnableNote = "SettingsUI/Configuration/Clean/EnableNote";
             } Clean{};
             struct Node__SettingsUI__Configuration__CanvasSave
             {
@@ -413,6 +418,7 @@ inline constexpr struct I18nKeyRoot
                     const char* Arm64 = "SettingsUI/Version/Update/Arch/Arm64";
                 } Arch{};
             } Update{};
+            const char* StatusTitle = "SettingsUI/Version/StatusTitle";
         } Version{};
         struct Node__SettingsUI__CICD
         {
@@ -557,12 +563,54 @@ inline constexpr struct I18nKeyRoot
                     const char* Mode2 = "SettingsUI/Regular/Tentative/SafeMode/Mode2";
                     const char* Mode3 = "SettingsUI/Regular/Tentative/SafeMode/Mode3";
                     const char* Mode4 = "SettingsUI/Regular/Tentative/SafeMode/Mode4";
+                    const char* Note = "SettingsUI/Regular/Tentative/SafeMode/Note";
                 } SafeMode{};
+                struct Node__SettingsUI__Regular__Tentative__AllowMultipleInstances
+                {
+                    const char* N = "SettingsUI/Regular/Tentative/AllowMultipleInstances/N";
+                    const char* E = "SettingsUI/Regular/Tentative/AllowMultipleInstances/E";
+                } AllowMultipleInstances{};
             } Tentative{};
         } Regular{};
         struct Node__SettingsUI__Draw
         {
             const char* N = "SettingsUI/Draw/N";
+            struct Node__SettingsUI__Draw__General
+            {
+                const char* N = "SettingsUI/Draw/General/N";
+                struct Node__SettingsUI__Draw__General__MultiTouch
+                {
+                    const char* N = "SettingsUI/Draw/General/MultiTouch/N";
+                    const char* E = "SettingsUI/Draw/General/MultiTouch/E";
+                } MultiTouch{};
+                struct Node__SettingsUI__Draw__General__PenTailCorrection
+                {
+                    const char* N = "SettingsUI/Draw/General/PenTailCorrection/N";
+                    const char* E = "SettingsUI/Draw/General/PenTailCorrection/E";
+                } PenTailCorrection{};
+                struct Node__SettingsUI__Draw__General__InkPrediction
+                {
+                    const char* N = "SettingsUI/Draw/General/InkPrediction/N";
+                    const char* E = "SettingsUI/Draw/General/InkPrediction/E";
+                    const char* Precise = "SettingsUI/Draw/General/InkPrediction/Precise";
+                    const char* Fast = "SettingsUI/Draw/General/InkPrediction/Fast";
+                    const char* Disabled = "SettingsUI/Draw/General/InkPrediction/Disabled";
+                } InkPrediction{};
+            } General{};
+            struct Node__SettingsUI__Draw__Laser
+            {
+                const char* N = "SettingsUI/Draw/Laser/N";
+                struct Node__SettingsUI__Draw__Laser__MultiTouch
+                {
+                    const char* N = "SettingsUI/Draw/Laser/MultiTouch/N";
+                    const char* E = "SettingsUI/Draw/Laser/MultiTouch/E";
+                } MultiTouch{};
+                struct Node__SettingsUI__Draw__Laser__Particles
+                {
+                    const char* N = "SettingsUI/Draw/Laser/Particles/N";
+                    const char* E = "SettingsUI/Draw/Laser/Particles/E";
+                } Particles{};
+            } Laser{};
             struct Node__SettingsUI__Draw__Haptics
             {
                 const char* N = "SettingsUI/Draw/Haptics/N";
@@ -617,6 +665,30 @@ inline constexpr struct I18nKeyRoot
                     const char* SizeWarningTitle = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningTitle";
                     const char* SizeWarningDescription = "SettingsUI/Draw/Eraser/SpeedEraser/SizeWarningDescription";
                 } SpeedEraser{};
+                struct Node__SettingsUI__Draw__Eraser__PalmEraser
+                {
+                    const char* N = "SettingsUI/Draw/Eraser/PalmEraser/N";
+                    const char* EntryDescription = "SettingsUI/Draw/Eraser/PalmEraser/EntryDescription";
+                    const char* Introduction = "SettingsUI/Draw/Eraser/PalmEraser/Introduction";
+                    const char* Enabled = "SettingsUI/Draw/Eraser/PalmEraser/Enabled";
+                    const char* SizeWarningTitle = "SettingsUI/Draw/Eraser/PalmEraser/SizeWarningTitle";
+                    const char* SizeWarningDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeWarningDescription";
+                    const char* RecognitionWindow = "SettingsUI/Draw/Eraser/PalmEraser/RecognitionWindow";
+                    const char* RecognitionWindowDescription = "SettingsUI/Draw/Eraser/PalmEraser/RecognitionWindowDescription";
+                    const char* Threshold = "SettingsUI/Draw/Eraser/PalmEraser/Threshold";
+                    const char* ThresholdDescription = "SettingsUI/Draw/Eraser/PalmEraser/ThresholdDescription";
+                    const char* ThresholdSizePhysical = "SettingsUI/Draw/Eraser/PalmEraser/ThresholdSizePhysical";
+                    const char* ThresholdSizePixels = "SettingsUI/Draw/Eraser/PalmEraser/ThresholdSizePixels";
+                    const char* PreviewTitle = "SettingsUI/Draw/Eraser/PalmEraser/PreviewTitle";
+                    const char* PreviewDescription = "SettingsUI/Draw/Eraser/PalmEraser/PreviewDescription";
+                    const char* PreviewEstimated = "SettingsUI/Draw/Eraser/PalmEraser/PreviewEstimated";
+                    const char* PreviewUnavailable = "SettingsUI/Draw/Eraser/PalmEraser/PreviewUnavailable";
+                    const char* EnabledTools = "SettingsUI/Draw/Eraser/PalmEraser/EnabledTools";
+                    const char* ParallelWritingMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingMultiTouchNote";
+                    const char* ParallelWritingLaserMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingLaserMultiTouchNote";
+                    const char* ParallelWriting = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWriting";
+                    const char* ParallelWritingDescription = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingDescription";
+                } PalmEraser{};
                 struct Node__SettingsUI__Draw__Eraser__Input
                 {
                     const char* MouseLeft = "SettingsUI/Draw/Eraser/Input/MouseLeft";
@@ -641,6 +713,7 @@ inline constexpr struct I18nKeyRoot
                 {
                     const char* N = "SettingsUI/Draw/Eraser/TouchArea/N";
                     const char* E = "SettingsUI/Draw/Eraser/TouchArea/E";
+                    const char* Note = "SettingsUI/Draw/Eraser/TouchArea/Note";
                 } TouchArea{};
             } Eraser{};
         } Draw{};
@@ -656,6 +729,27 @@ inline constexpr struct I18nKeyRoot
                 const char* BottomRightFloating = "SettingsUI/Preset/StartupPlacement/BottomRightFloating";
             } StartupPlacement{};
         } Preset{};
+        struct Node__SettingsUI__Performance
+        {
+            const char* N = "SettingsUI/Performance/N";
+            const char* FrameRateSection = "SettingsUI/Performance/FrameRateSection";
+            struct Node__SettingsUI__Performance__InterfaceFrameRate
+            {
+                const char* N = "SettingsUI/Performance/InterfaceFrameRate/N";
+                const char* E = "SettingsUI/Performance/InterfaceFrameRate/E";
+            } InterfaceFrameRate{};
+            struct Node__SettingsUI__Performance__CanvasFrameRate
+            {
+                const char* N = "SettingsUI/Performance/CanvasFrameRate/N";
+                const char* E = "SettingsUI/Performance/CanvasFrameRate/E";
+            } CanvasFrameRate{};
+            const char* RenderingSection = "SettingsUI/Performance/RenderingSection";
+            struct Node__SettingsUI__Performance__DirectComposition
+            {
+                const char* N = "SettingsUI/Performance/DirectComposition/N";
+                const char* E = "SettingsUI/Performance/DirectComposition/E";
+            } DirectComposition{};
+        } Performance{};
         struct Node__SettingsUI__Experimental
         {
             struct Node__SettingsUI__Experimental__UI3
@@ -672,6 +766,7 @@ inline constexpr struct I18nKeyRoot
                 {
                     const char* N = "SettingsUI/Experimental/Draw3/HardwareAcceleration/N";
                     const char* E = "SettingsUI/Experimental/Draw3/HardwareAcceleration/E";
+                    const char* Note = "SettingsUI/Experimental/Draw3/HardwareAcceleration/Note";
                 } HardwareAcceleration{};
                 struct Node__SettingsUI__Experimental__Draw3__ZhaoxinCompatibility
                 {
@@ -767,6 +862,7 @@ inline constexpr struct I18nKeyRoot
                     const char* AutoTakeOverExpand = "SettingsUI/PlugIn/PPTHelper/Tentative/AutoTakeOverExpand";
                     const char* EnablePageButtonLongPress = "SettingsUI/PlugIn/PPTHelper/Tentative/EnablePageButtonLongPress";
                 } Tentative{};
+                const char* SupportNote = "SettingsUI/PlugIn/PPTHelper/SupportNote";
             } PPTHelper{};
             struct Node__SettingsUI__PlugIn__SuperTop
             {
@@ -781,7 +877,9 @@ inline constexpr struct I18nKeyRoot
                     const char* SuperTopE2 = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopE2";
                     const char* Indicator = "SettingsUI/PlugIn/SuperTop/Capability/Indicator";
                     const char* IndicatorE = "SettingsUI/PlugIn/SuperTop/Capability/IndicatorE";
+                    const char* SuperTopNote = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopNote";
                 } Capability{};
+                const char* SupportNote = "SettingsUI/PlugIn/SuperTop/SupportNote";
             } SuperTop{};
             struct Node__SettingsUI__PlugIn__DesktopDrawpadBlocker
             {
@@ -836,6 +934,7 @@ inline constexpr struct I18nKeyRoot
             const char* SynchronizationPending = "SettingsUI/HotKey/SynchronizationPending";
             const char* HookReady = "SettingsUI/HotKey/HookReady";
             const char* HookFailed = "SettingsUI/HotKey/HookFailed";
+            const char* FreezeNote = "SettingsUI/HotKey/FreezeNote";
         } HotKey{};
         struct Node__SettingsUI__Community
         {
@@ -856,6 +955,7 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__DebugSoftware
         {
             const char* N = "SettingsUI/DebugSoftware/N";
+            const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
         } DebugSoftware{};
         struct Node__SettingsUI__Update
         {

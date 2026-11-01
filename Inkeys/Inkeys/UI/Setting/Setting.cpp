@@ -18,6 +18,7 @@ module;
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Drawing/Draw3/Draw3.PalmEraser.h"
 #include "../../Input/KeyboardShortcuts.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "../../Window/Window.MessageDispatch.h"
@@ -2359,10 +2360,9 @@ SettingSessionCoroutine RunSettingSession()
 			{
 				navigateTo({ Design::PageId::Home }); resetHomeScroll = true;
 			}
-			if (openAction == Design::SettingOpenNavigation::Action::SpeedEraser
-				|| openNavigation.Complete(homeMotion, destination.page == Design::PageId::Home))
+			if (openAction == Design::SettingOpenNavigation::Action::SpeedEraser)
 			{
-				// 导航只由渲染 owner 消费；有开屏时等原流程结束，再交接到目标子页。
+				// 在首帧正文排布前选中详情；开屏缓存从一开始就是目标页。
 				navigateTo({ Design::PageId::Draw });
 				Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 				settingFrameSubmission.Reset();
@@ -2391,6 +2391,7 @@ SettingSessionCoroutine RunSettingSession()
 					tab9,
 					tabExperimental,
 					tabFeedback = 15,
+					tabPerformance = 16,
 				};
 				enum settingPlugInTabEnum
 				{
@@ -2564,7 +2565,9 @@ SettingSessionCoroutine RunSettingSession()
 				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
 					!blockContentInput && settingWindowActive.load(memory_order_acquire),
-					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial));
+					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
+					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
+					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
 				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				blockContentInput|=entryInputBlock;
 				const auto& contentGeometry = shellGeometry.content;
@@ -2698,7 +2701,7 @@ SettingSessionCoroutine RunSettingSession()
 						if (Design::ComboRow("##language-ui",
 							IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
 							IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774",
-							SelectLanguage, languages)
+							SelectLanguage, languages, IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str())
 							&& previousLanguage != SelectLanguage
 							&& setlist.selectLanguage != SelectLanguage)
 						{
@@ -2722,7 +2725,7 @@ SettingSessionCoroutine RunSettingSession()
 						Design::ToggleRow("##configuration-clean",
 							IA(I18nKey.SettingsUI.Configuration.Clean.Enable).c_str(),
 							IA(I18nKey.SettingsUI.Configuration.Clean.EnableE).c_str(), "\ue74d",
-							ConfigurationSetting.Enable);
+							ConfigurationSetting.Enable, IA(I18nKey.SettingsUI.Configuration.Clean.EnableNote).c_str());
 						if (Inkeys::config.Config.AutoClean != ConfigurationSetting.Enable)
 						{
 							Inkeys::config.Config.AutoClean = ConfigurationSetting.Enable;
@@ -2798,7 +2801,7 @@ SettingSessionCoroutine RunSettingSession()
 							QueueInformation(I18n::getWOr(I18nKey.Dialogs.UpdateModuleUnavailable.Body,
 								L"The automatic update module is not active, which indicates that this is not an official release.\nGo to Software Version and select Repair Software."));
 						};
-						Design::Notice("##update-status", IA(I18nKey.SettingsUI.Version.Update.N).c_str(), status.c_str(), severity);
+						Design::Notice("##update-status", IA(I18nKey.SettingsUI.Version.StatusTitle).c_str(), status.c_str(), severity);
 						const string check = IA(I18nKey.SettingsUI.Update.Check);
 						const string manual = IA(I18nKey.SettingsUI.Update.ManualDownload);
 						if (updateState == UpdateNotStarted)
@@ -3069,6 +3072,7 @@ SettingSessionCoroutine RunSettingSession()
 						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
 					draft.settingEntryAnimation = setlist.settingEntryAnimation;
+					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
 					// 每帧冻结本页偏好，页面只产出事件，运行时通知仍留在既有 FIFO 业务域。
 					draft.selectMode = GetSelectAndClickThroughMode();
 					const int iconOrder = Inkeys::config.UI.Bar.IconOrder.load();
@@ -3230,6 +3234,12 @@ SettingSessionCoroutine RunSettingSession()
 							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
 					}
+					if (events.allowMultipleInstancesChanged)
+					{
+						// 只保存后续启动的准入偏好，不影响或关闭已经运行的实例。
+						Inkeys::config.Config.AllowMultipleInstances = draft.allowMultipleInstances;
+						QueueConfigWrite();
+					}
 					if (events.selectModeChanged && SetSelectAndClickThroughMode(draft.selectMode))
 						QueueConfigWrite();
 					if (events.iconOrderChanged || events.expansionDirectionChanged)
@@ -3266,6 +3276,44 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
+					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
+					{
+						namespace Palm = Inkeys::Drawing::Draw3::PalmEraser;
+						auto preferences = PalmEraserPreferencesSnapshot();
+						const auto display = Inkeys::Drawing::Draw3::ProductHost().EraserDisplayScaleSnapshot();
+						const auto scale = Palm::ResolvePreviewScale(display);
+						auto reference = preferences; reference.thresholdPercent = 100;
+						Design::PalmEraserDraft draft;
+						draft.enabled = preferences.enabled;
+						draft.recognitionWindowMs = preferences.recognitionWindowMs;
+						draft.thresholdPercent = preferences.thresholdPercent;
+						draft.parallelWriting = preferences.parallelWriting;
+						draft.multiTouchEnabled = Inkeys::config.Drawing.MultiTouchEnabled.load();
+						draft.laserMultiTouchEnabled = Inkeys::config.Drawing.Laser.MultiTouchEnabled.load();
+						draft.tools = preferences.tools;
+						// 预览与识别读取同一已应用绘图输出，不使用设置窗口所在屏幕的 DPI。
+						draft.referenceAreaPixels = Palm::ThresholdAreaPixels(reference, scale);
+						// 仅可信物理映射可显示厘米；DPI 回退仍只显示像素，避免把估算当实尺。
+						if (scale.available && !scale.estimated)
+							draft.referenceAreaCm2 = draft.referenceAreaPixels * scale.mmPerPixelX * scale.mmPerPixelY / 100.0;
+						draft.previewEstimated = scale.estimated;
+						draft.physicalSizeWarning = display.monitor != 0 && scale.available && scale.estimated;
+						const auto events = Design::RenderPalmEraser(draft);
+						if (events.back)
+							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
+						if (events.enabledChanged || events.recognitionWindowChanged || events.thresholdChanged
+							|| events.parallelWritingChanged || std::any_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool changed) { return changed; }))
+						{
+							preferences.enabled = draft.enabled;
+							preferences.recognitionWindowMs = draft.recognitionWindowMs;
+							preferences.thresholdPercent = draft.thresholdPercent;
+							preferences.parallelWriting = draft.parallelWriting;
+							preferences.tools = draft.tools;
+							// 偏好入口统一发布 Host 并冻结写盘，页面不重复排队保存。
+							SetPalmEraserPreference(preferences);
+						}
+						break;
+					}
 					if (drawingSubpage == Design::DrawingSubpage::SpeedEraser)
 					{
 						namespace Eraser = Inkeys::Drawing::Draw3::SpeedEraser;
@@ -3373,10 +3421,41 @@ SettingSessionCoroutine RunSettingSession()
 						}
 					}
 
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.General.N).c_str());
+					auto& drawingOptions = Inkeys::config.Drawing;
+					bool multiTouchEnabled = drawingOptions.MultiTouchEnabled;
+					bool penTailCorrectionEnabled = drawingOptions.PenTailCorrectionEnabled;
+					const int savedPredictionMode = drawingOptions.InkPredictionMode.load();
+					// 下拉框按用户习惯排列，不能直接把索引当成内部预测模式。
+					int predictionIndex = savedPredictionMode == 0 ? 2 : savedPredictionMode == 1 ? 1 : 0;
+					const bool multiTouchChanged = Design::ToggleRow("##draw-multi-touch",
+						IA(I18nKey.SettingsUI.Draw.General.MultiTouch.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.General.MultiTouch.E).c_str(), "\ue7c9", multiTouchEnabled);
+					const bool penTailCorrectionChanged = Design::ToggleRow("##draw-pen-tail-correction",
+						IA(I18nKey.SettingsUI.Draw.General.PenTailCorrection.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.General.PenTailCorrection.E).c_str(), "\uedc6", penTailCorrectionEnabled);
+					const bool predictionChanged = Design::ComboRow("##draw-ink-prediction",
+						IA(I18nKey.SettingsUI.Draw.General.InkPrediction.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.General.InkPrediction.E).c_str(), "\ue768", predictionIndex,
+						{ IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Precise) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+							IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Fast),
+							IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Disabled) });
+					if (multiTouchChanged || penTailCorrectionChanged || predictionChanged)
+					{
+						const int predictionModes[]{ 2, 1, 0 };
+						const int predictionMode = predictionModes[predictionIndex];
+						drawingOptions.MultiTouchEnabled = multiTouchEnabled;
+						drawingOptions.PenTailCorrectionEnabled = penTailCorrectionEnabled;
+						drawingOptions.InkPredictionMode = predictionMode;
+						auto& host = Inkeys::Drawing::Draw3::ProductHost();
+						host.SetGeneralDrawingOptions(multiTouchEnabled, penTailCorrectionEnabled, predictionMode);
+						// 隐藏只停用激光多指，不覆盖保存的子项偏好。
+						host.SetLaserOptions(drawingOptions.Laser.MultiTouchEnabled.load(), false);
+						QueueConfigWrite();
+					}
+
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
-					if (Design::NavigationRow("##speed-eraser-entry", IA(I18nKey.SettingsUI.Draw.Eraser.Kind.Speed).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
-						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
+					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
 					auto& cursor = Inkeys::config.Drawing.Cursor;
@@ -3393,6 +3472,24 @@ SettingSessionCoroutine RunSettingSession()
 						SyncDraw3State();
 						QueueConfigWrite();
 					}
+
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
+					bool laserMultiTouchEnabled = drawingOptions.Laser.MultiTouchEnabled;
+					const bool laserMultiTouchChanged = multiTouchEnabled
+						&& Design::ToggleRow("##draw-laser-multi-touch", IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.E).c_str(), "\ue7c9", laserMultiTouchEnabled);
+					if (laserMultiTouchChanged)
+					{
+						drawingOptions.Laser.MultiTouchEnabled = laserMultiTouchEnabled;
+						Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laserMultiTouchEnabled, false);
+						QueueConfigWrite();
+					}
+					// 粒子效果暂不可用，仅保留说明，不提供启用入口。
+					ImGui::BeginDisabled();
+					Design::SettingRow("##draw-laser-particles", IA(I18nKey.SettingsUI.Draw.Laser.Particles.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Laser.Particles.E).c_str(), "\ue734", 0.0F, 0.0F,
+						[](const Inkeys::UI::Setting::LayoutRect&) {});
+					ImGui::EndDisabled();
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
 					bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
@@ -3439,7 +3536,7 @@ SettingSessionCoroutine RunSettingSession()
 						};
 					const auto renderPluginOverviewCard = [&](const char* id,
 						const char* title, const string& status, const char* description,
-						int iconIndex, int target)
+						int iconIndex, int target, const char* note = nullptr)
 						{
 							string overviewDescription = status;
 							if (!overviewDescription.empty() && description && *description)
@@ -3447,13 +3544,13 @@ SettingSessionCoroutine RunSettingSession()
 							if (description) overviewDescription += description;
 							// 沿用 Inkeys2 的四个 PluginFlag PNG 及原有纹理索引。
 							if (Design::NavigationRow(id, title, overviewDescription.c_str(), nullptr,
-								(ImTextureID)(intptr_t)TextureSettingSign[iconIndex]))
+								(ImTextureID)(intptr_t)TextureSettingSign[iconIndex], IM_COL32_WHITE, note))
 								settingPlugInTab = target;
 						};
 					const auto renderToggleCard = [&](const char* id, const char* title,
-						const char* description, const char* glyph, bool& value, auto&& changed)
+						const char* description, const char* glyph, bool& value, auto&& changed, const char* note = nullptr)
 						{
-							if (Design::ToggleRow(id, title, description, glyph, value))
+							if (Design::ToggleRow(id, title, description, glyph, value, note))
 								changed(value);
 						};
 
@@ -3469,11 +3566,11 @@ SettingSessionCoroutine RunSettingSession()
 						renderPluginOverviewCard("ppt-helper",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(), pptStatus,
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str(), 5,
-							settingPlugInTabEnum::tabPlug2);
+							settingPlugInTabEnum::tabPlug2, IA(I18nKey.SettingsUI.PlugIn.PPTHelper.SupportNote).c_str());
 						renderPluginOverviewCard("super-top",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(), "20260202a",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.E).c_str(), 10,
-							settingPlugInTabEnum::tabSuperTop);
+							settingPlugInTabEnum::tabSuperTop, IA(I18nKey.SettingsUI.PlugIn.SuperTop.SupportNote).c_str());
 						renderPluginOverviewCard("ddb",
 							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str(),
 							utf16ToUtf8(ddbInteractionSetList.DdbEdition),
@@ -3720,7 +3817,7 @@ SettingSessionCoroutine RunSettingSession()
 							{
 								setlist.plugInSetting.superTop.enable = value;
 								WriteSetting();
-							});
+							}, IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopNote).c_str());
 						// 指示器继续使用已有配置，只展示说明，不在此改写实际值。
 						Design::SettingRow("##super-top-indicator",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str(),
@@ -3790,7 +3887,7 @@ SettingSessionCoroutine RunSettingSession()
 
 						Design::SectionHeader("常规选项");
 						renderToggleCard("##ddb-admin", "以管理员身份启动插件",
-							"切换后软件将阻塞至多拦截间隔的秒数，以等待插件的响应。", "\ue72e",
+							"切换时需等待插件响应。", "\ue72e",
 							Ddb.RunAsAdmin, [&](bool value)
 							{
 								ddbInteractionSetList.runAsAdmin = value;
@@ -3834,6 +3931,7 @@ SettingSessionCoroutine RunSettingSession()
 							const char* title;
 							const char* description;
 							bool* value;
+							const char* note = nullptr;
 						};
 						const DdbInterceptRow interceptRows[] = {
 							{ "##ddb-seewo3", "希沃白板3 桌面画笔悬浮窗", nullptr,
@@ -3857,22 +3955,22 @@ SettingSessionCoroutine RunSettingSession()
 							{ "##ddb-classinx", "ClassIn X 桌面画笔悬浮窗", nullptr,
 								&Ddb.intercept.ClassInXFloating },
 							{ "##ddb-intelligent-class", "天喻教育云互动课堂 桌面画笔悬浮窗", "包括PPT控件。", &Ddb.intercept.IntelligentClassFloating },
-							{ "##ddb-changyan4", "畅言智慧课堂4.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。需要DDB管理员权限。",
-								&Ddb.intercept.ChangYanFloating },
-							{ "##ddb-changyan5", "畅言智慧课堂5.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。需要DDB管理员权限。",
-								&Ddb.intercept.ChangYan5Floating },
-							{ "##ddb-iclass30-sidebar", "C30智能教学 侧栏悬浮窗", "需要DDB管理员。", &Ddb.intercept.Iclass30SidebarFloating },
-							{ "##ddb-iclass30-drawing", "C30智能教学 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复，支持窗口追踪。需要DDB管理员权限。",
-								&Ddb.intercept.Iclass30Floating },
-							{ "##ddb-seewo-desktop-sidebar", "希沃桌面 侧栏悬浮窗", "需要DDB管理员。1.0/2.0/2.5/3.0 普教版/高教版 通用",
-								&Ddb.intercept.SeewoDesktopSideBarFloating },
-							{ "##ddb-seewo-desktop-drawing", "希沃桌面 桌面画笔悬浮窗", "需要DDB管理员。1.0/2.0/2.5/3.0 普教版/高教版 通用",
-								&Ddb.intercept.SeewoDesktopDrawingFloating }
+							{ "##ddb-changyan4", "畅言智慧课堂4.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。",
+								&Ddb.intercept.ChangYanFloating, "需要DDB管理员权限。" },
+							{ "##ddb-changyan5", "畅言智慧课堂5.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。",
+								&Ddb.intercept.ChangYan5Floating, "需要DDB管理员权限。" },
+							{ "##ddb-iclass30-sidebar", "C30智能教学 侧栏悬浮窗", "需要DDB管理员权限。", &Ddb.intercept.Iclass30SidebarFloating },
+							{ "##ddb-iclass30-drawing", "C30智能教学 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复，支持窗口追踪。",
+								&Ddb.intercept.Iclass30Floating, "需要DDB管理员权限。" },
+							{ "##ddb-seewo-desktop-sidebar", "希沃桌面 侧栏悬浮窗", "1.0/2.0/2.5/3.0 普教版/高教版 通用",
+								&Ddb.intercept.SeewoDesktopSideBarFloating, "需要DDB管理员权限。" },
+							{ "##ddb-seewo-desktop-drawing", "希沃桌面 桌面画笔悬浮窗", "1.0/2.0/2.5/3.0 普教版/高教版 通用",
+								&Ddb.intercept.SeewoDesktopDrawingFloating, "需要DDB管理员权限。" }
 						};
 						bool interceptChanged = false;
 						for (const auto& row : interceptRows)
 						{
-							if (Design::ToggleRow(row.id, row.title, row.description, "\uecaa", *row.value))
+							if (Design::ToggleRow(row.id, row.title, row.description, "\uecaa", *row.value, row.note))
 								interceptChanged = true;
 						}
 						if (interceptChanged)
@@ -3998,29 +4096,58 @@ SettingSessionCoroutine RunSettingSession()
 						setlist.component.shortcutButton.linkage.classislandClassswap);
 					break;
 				}
-				case settingTabEnum::tabExperimental:
+				case settingTabEnum::tabPerformance:
 				{
-					Design::PageHeader("实验室");
-					Design::SectionHeader("Inkeys3");
-					// 两项均只保存下次启动的设备偏好，不重建当前绘图设备。
+					Design::PageHeader(IA(I18nKey.SettingsUI.Performance.N).c_str());
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Performance.FrameRateSection).c_str());
+					int interfaceFrameIndex = Inkeys::config.UI.FrameRate.load() == 30 ? 0 : 1;
+					if (Design::ComboRow("##interface-frame-rate", IA(I18nKey.SettingsUI.Performance.InterfaceFrameRate.N).c_str(),
+						IA(I18nKey.SettingsUI.Performance.InterfaceFrameRate.E).c_str(), "\ue9d9", interfaceFrameIndex,
+						{ "30 FPS", "60 FPS" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix) }))
+					{
+						const int frameRate = interfaceFrameIndex == 0 ? 30 : 60;
+						Inkeys::config.UI.FrameRate = frameRate;
+						Inkeys::UI::RenderPipeline::SetFrameRate(frameRate);
+						QueueConfigWrite();
+					}
+					const int canvasFrameRates[]{ 30, 60, 120, 240 };
+					const int canvasFrameRate = Inkeys::config.Drawing.FrameRate.load();
+					int canvasFrameIndex = canvasFrameRate == 30 ? 0 : canvasFrameRate == 60 ? 1 : canvasFrameRate == 240 ? 3 : 2;
+					if (Design::ComboRow("##canvas-frame-rate", IA(I18nKey.SettingsUI.Performance.CanvasFrameRate.N).c_str(),
+						IA(I18nKey.SettingsUI.Performance.CanvasFrameRate.E).c_str(), "\ue9d9", canvasFrameIndex,
+						{ "30 FPS", "60 FPS", "120 FPS" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), "240 FPS" },
+						IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+					{
+						Inkeys::config.Drawing.FrameRate = canvasFrameRates[canvasFrameIndex];
+						QueueConfigWrite();
+					}
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Performance.RenderingSection).c_str());
+					// 三项均只保存下次启动的设备偏好，不重建当前绘图设备。
 					if (Design::ToggleRow("##draw3-hardware", IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableHardwareAcceleration))
+						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableHardwareAcceleration,
+						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.Note).c_str()))
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = Experimental.Inkeys3.EnableHardwareAcceleration;
 						QueueConfigWrite();
 					}
-					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableZhaoxinCompatibility))
-					{
-						Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = Experimental.Inkeys3.EnableZhaoxinCompatibility;
-						QueueConfigWrite();
-					}
-					if (Design::ToggleRow("##experimental-dcomp", "在支持的设备上启动 DComp",
-						"重启软件后生效；关闭后使用 ULW 进行测试。", "\ue7f4", Experimental.Inkeys3.EnableDirectComposition))
+					if (Design::ToggleRow("##experimental-dcomp", IA(I18nKey.SettingsUI.Performance.DirectComposition.N).c_str(),
+						IA(I18nKey.SettingsUI.Performance.DirectComposition.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableDirectComposition, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition = Experimental.Inkeys3.EnableDirectComposition;
 						QueueConfigWrite();
 					}
+					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableZhaoxinCompatibility, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = Experimental.Inkeys3.EnableZhaoxinCompatibility;
+						QueueConfigWrite();
+					}
+					break;
+				}
+				case settingTabEnum::tabExperimental:
+				{
+					Design::PageHeader("实验室");
+					Design::SectionHeader("Inkeys3");
 
 					Experimental.Inkeys3.AllowFractionalFontSize =
 						Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
@@ -4083,7 +4210,8 @@ SettingSessionCoroutine RunSettingSession()
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)
 					{
-						if (Design::ToggleRow(id, title, description, "\ue756", value))
+						if (Design::ToggleRow(id, title, description, "\ue756", value,
+							IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
 						{
 							saved = value;
 							QueueConfigWrite();
@@ -4229,18 +4357,26 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::Separator();ImGui::Spacing();
 					}
 #endif
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.CanvasInformation).c_str());
+					const auto canvasInformation = Inkeys::Drawing::Draw3::ProductHost().CanvasInformation();
+					// 复用只读文本卡片的测量排版，独立ID避免与下方EDID卡片共享状态。
+					ImGui::PushID("canvas-initialization");
+					Design::RenderEdidCard(canvasInformation.c_str());
+					Design::CopyButton("##copy-canvas-information", IA(I18nKey.Operate.Copy).c_str(), canvasInformation.c_str());
+					ImGui::PopID();
+
 					Design::SectionHeader("显示器与 EDID");
-					std::string edidText;
+					std::string edidText = "EDID (Extended Display Identification Data)\n";
 					if (!displaySnapshot)
 					{
-						edidText = "显示快照不可用";
+						edidText += "显示快照不可用";
 					}
 					else
 					{
 						std::wstring summary = L"活动拓扑：";
 						summary += Inkeys::Display::DisplayTopologyText(displaySnapshot->topology);
 						summary += L" | 监视器数量：" + std::to_wstring(displaySnapshot->monitors.size());
-						edidText = utf16ToUtf8(summary);
+						edidText += utf16ToUtf8(summary);
 
 						for (std::size_t monitorIndex = 0; monitorIndex < displaySnapshot->monitors.size(); ++monitorIndex)
 						{
@@ -4262,7 +4398,7 @@ SettingSessionCoroutine RunSettingSession()
 							line += L" | Windows " + windowsMonitor;
 							line += L" | " + std::to_wstring(monitor.pixelWidth) + L"x" +
 								std::to_wstring(monitor.pixelHeight) + L" px";
-							line += L" | DPI " + std::to_wstring(monitor.effectiveDpiX) + L"x" +
+							line += L" | DPI (X/Y): " + std::to_wstring(monitor.effectiveDpiX) + L" × " +
 								std::to_wstring(monitor.effectiveDpiY);
 							if (monitor.physicalSize.available)
 							{
@@ -4282,6 +4418,7 @@ SettingSessionCoroutine RunSettingSession()
 						}
 					}
 					Design::RenderEdidCard(edidText.c_str());
+					Design::CopyButton("##copy-display-edid", IA(I18nKey.Operate.Copy).c_str(), edidText.c_str());
 
 					break;
 				}

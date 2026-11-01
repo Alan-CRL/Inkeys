@@ -2,6 +2,7 @@
 #include "Setting.HomeBrand.h"
 #include "imfluent/imfluent_internal.h"
 #include <cstring>
+#include <format>
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
@@ -231,6 +232,12 @@ namespace Inkeys::UI::Setting::Design
 		pose.origin=state.entryStart; pose.width=state.entryStartWidth; pose.opacity=1;
 		pose.writing=time>=HomeEntryTiming::WritingEnd ? 1.0F
 			: std::clamp((time-HomeEntryTiming::Wait)/HomeEntryTiming::Writing,0.0F,1.0F);
+		// 详情入口写完即原地渐隐；主页仍保留停留与归位。
+		if (state.fadeOnly)
+		{
+			pose.opacity=1-HomeBrand::Smooth(std::clamp((time-HomeEntryTiming::WritingEnd)/HomeEntryTiming::Dock,0.0F,1.0F));
+			return pose;
+		}
 		// 六笔完全写好后保持 600ms；1.90s 前不透出界面、不移动字标。
 		if (time<=HomeEntryTiming::DockStart) return pose;
 		const float phase=std::clamp((time-HomeEntryTiming::DockStart)/HomeEntryTiming::Dock,0.0F,1.0F), u=HomeBrand::Smooth(phase), v=1-u;
@@ -253,11 +260,14 @@ namespace Inkeys::UI::Setting::Design
 		return pose;
 	}
 
+	namespace { void ResolveHomeEntryLayout(HomeMotionState& state); }
+
 	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip)
 	{
 		state.clientContent=clientContent; state.contentClip=contentClip;
 		state.viewportReady=clientContent.z>clientContent.x && clientContent.w>clientContent.y
 			&& contentClip.z>contentClip.x && contentClip.w>contentClip.y;
+		if (state.fadeOnly) ResolveHomeEntryLayout(state);
 	}
 
 	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
@@ -303,7 +313,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 		if (!allowFreeze) { FinishHomeEntry(state); return false; }
 		if (!prep.ready || !state.EntryActive()) return false;
-		const float next=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
+		const float next=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
 		if (!prep.revealReady && next>=HomeEntryTiming::WritingEnd)
 		{
 			// 书写完成后仍保持不透明：至少两次完整排布且 native 已消费当前测量后，再截无字标页。
@@ -311,14 +321,14 @@ namespace Inkeys::UI::Setting::Design
 			state.entryElapsed=(std::max)(state.entryElapsed,HomeEntryTiming::WritingEnd);
 			return false;
 		}
-		if (next>=HomeEntryTiming::Total && !prep.restoreReady)
+		if (next>=state.EntryTotal() && !prep.restoreReady)
 		{
 			// 终态前在缓存遮挡下恢复真实 child，至少两帧且尺寸就绪才解除遮挡。
 			prep.restorePending=true;
 			return false;
 		}
 		state.entryElapsed=next;
-		if (next>=HomeEntryTiming::Total) { FinishHomeEntry(state); return false; }
+		if (next>=state.EntryTotal()) { FinishHomeEntry(state); return false; }
 		// style alpha 非 1 时蒙版未真正不透明；截图就绪前仍需绘制实际底层。
 		if (!prep.revealReady && key.material[0]!=1) return false;
 		prep.skipBackground=true; prep.fullFrame=false; ++prep.skippedFrames;
@@ -454,7 +464,15 @@ namespace Inkeys::UI::Setting::Design
 			draw->AddRectFilled({bounds.x,bounds.y},{bounds.z,bounds.w},
 				(solid & ~IM_COL32_A_MASK)|(static_cast<ImU32>(std::round(pose.opacity*255))<<IM_COL32_A_SHIFT));
 		}
+		const int firstVertex=draw->VtxBuffer.Size;
 		HomeBrand::DrawWriting(draw,pose.origin,pose.width,IsDarkMode(),pose.writing);
+		if (state.fadeOnly)
+			for (int i=firstVertex;i<draw->VtxBuffer.Size;++i)
+			{
+				auto& color=draw->VtxBuffer[i].col;
+				const auto alpha=static_cast<ImU32>(std::round(((color>>IM_COL32_A_SHIFT)&0xff)*pose.opacity));
+				color=(color & ~IM_COL32_A_MASK)|(alpha<<IM_COL32_A_SHIFT);
+			}
 		draw->PopClipRect();
 	}
 
@@ -483,8 +501,8 @@ namespace Inkeys::UI::Setting::Design
 				state.brandOrigin.x,state.brandOrigin.y,state.brandWidth,HomeBrand::Height(state.brandWidth),dpi};
 			if (state.entryLayoutValidated && state.entryLayoutKey==key)
 			{
-				if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
-				if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
+				if (!state.preparation.managed) state.entryElapsed=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
+				if (state.entryElapsed>=state.EntryTotal()) FinishHomeEntry(state);
 				return;
 			}
 			state.entryLayoutKey=key; state.entryLayoutValidated=true;
@@ -495,9 +513,10 @@ namespace Inkeys::UI::Setting::Design
 				return origin.x-margin>=rect.x && origin.y-margin>=rect.y
 					&& origin.x+size.x+margin<=rect.z && origin.y+size.y+margin<=rect.w;
 			};
-			bool fits=contains(state.contentClip,state.heroOrigin,state.heroSize,0);
+			bool fits=state.fadeOnly || contains(state.contentClip,state.heroOrigin,state.heroSize,0);
 			// 在同一真实布局上验证完整曲线包络；首帧 AutoResize clip 未测量也不影响前景覆盖。
 			HomeMotionState probe; probe.entry=HomeMotionState::Entry::Playing;
+			probe.fadeOnly=state.fadeOnly;
 			probe.brandOrigin=state.brandOrigin; probe.brandWidth=state.brandWidth;
 			probe.entryStart=state.entryStart; probe.entryStartWidth=state.entryStartWidth;
 			for (int i=0;fits && i<=64;++i)
@@ -511,8 +530,8 @@ namespace Inkeys::UI::Setting::Design
 			{
 				state.entry=HomeMotionState::Entry::Playing; state.entryElapsed=0; ++state.entries;
 			}
-			else if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
-			if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
+			else if (!state.preparation.managed) state.entryElapsed=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
+			if (state.entryElapsed>=state.EntryTotal()) FinishHomeEntry(state);
 		}
 	}
 
@@ -559,6 +578,164 @@ namespace Inkeys::UI::Setting::Design
 		if (BeginCard("##cicd-details", { width, height })) Text(details.c_str());
 		EndCard();
 		return action;
+	}
+
+	DrawingSubpage RenderDrawingEraserEntries(DrawingSubpage current)
+	{
+		const auto& eraser = I18nKey.SettingsUI.Draw.Eraser;
+		if (NavigationRow("##speed-eraser-entry", IA(eraser.Kind.Speed).c_str(),
+			IA(eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
+			current = DrawingSubpage::SpeedEraser;
+		if (NavigationRow("##palm-eraser-entry", IA(eraser.PalmEraser.N).c_str(),
+			IA(eraser.PalmEraser.EntryDescription).c_str(), "\ue7c9"))
+			current = DrawingSubpage::PalmEraser;
+		return current;
+	}
+
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft)
+	{
+		PalmEraserEvents events;
+		const auto& palm = I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
+		events.back = IconButton("##palm-eraser-back", "\ue72b");
+		PageHeader(IA(palm.N).c_str());
+		PageContentStart();
+		const float width = ImGui::GetContentRegionAvail().x;
+		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
+		const float innerWidth = (std::max)(1.0F, width - padding * 2.0F);
+		if (draft.physicalSizeWarning)
+		{
+			Notice("##palm-eraser-size-warning", IA(palm.SizeWarningTitle).c_str(),
+				IA(palm.SizeWarningDescription).c_str(), ImFluentInfoSeverity_Warning);
+		}
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.BasicSettings).c_str());
+		events.enabledChanged = ToggleRow("##palm-eraser-enabled", IA(palm.Enabled).c_str(),
+			nullptr, "\ue7c9", draft.enabled);
+		constexpr std::array<int, 4> windows{ 100, 150, 250, 500 };
+		const auto found = std::find(windows.begin(), windows.end(), draft.recognitionWindowMs);
+		int windowIndex = found == windows.end() ? 1 : static_cast<int>(found - windows.begin());
+		events.recognitionWindowChanged = ComboRow("##palm-eraser-window", IA(palm.RecognitionWindow).c_str(),
+			IA(palm.RecognitionWindowDescription).c_str(), "\ue823", windowIndex,
+			{ "100ms", "150ms" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), "250ms", "500ms" });
+		if (events.recognitionWindowChanged) draft.recognitionWindowMs = windows[windowIndex];
+
+		const std::array<const char*, 4> ratios{ "1:1", "4:3", "2:1", "1:2" };
+		constexpr std::array<double, 4> aspects{ 1, 4.0 / 3.0, 2, .5 };
+		// 比例只属于当前页面；切换比例不改变手掌阈值或触发配置保存。
+		auto* pageStorage = ImGui::GetStateStorage();
+		const auto ratioStateId = ImGui::GetID("##palm-eraser-preview-ratio-state");
+		int ratioIndex = std::clamp(pageStorage->GetInt(ratioStateId, 0), 0, 3);
+		const double noteArea = draft.referenceAreaPixels * draft.thresholdPercent / 100.0;
+		std::string thresholdNote;
+		if (std::isfinite(noteArea) && noteArea > 0)
+		{
+			const double widthPx = std::sqrt(noteArea * aspects[ratioIndex]), heightPx = std::sqrt(noteArea / aspects[ratioIndex]);
+			const double areaCm2 = draft.referenceAreaCm2 * draft.thresholdPercent / 100.0;
+			if (!draft.previewEstimated && std::isfinite(areaCm2) && areaCm2 > 0)
+			{
+				const double widthCm = std::sqrt(areaCm2 * aspects[ratioIndex]), heightCm = std::sqrt(areaCm2 / aspects[ratioIndex]);
+				thresholdNote = std::vformat(IA(palm.ThresholdSizePhysical), std::make_format_args(widthCm, heightCm, widthPx, heightPx));
+			}
+			else thresholdNote = std::vformat(IA(palm.ThresholdSizePixels), std::make_format_args(widthPx, heightPx));
+		}
+
+		const auto reset = IA(I18nKey.Operate.Reset);
+		const float resetWidth = ButtonWidth(reset.c_str()), numberWidth = 40.0F;
+		const float actionWidth = numberWidth + 12.0F + 120.0F + ControlSpacing + resetWidth;
+		const auto measure = MeasureRow(width / Pixels(1), actionWidth, ControlHeight);
+		const bool resetBelow = measure.actionWidth < numberWidth + 12.0F + 24.0F + ControlSpacing + resetWidth;
+		// 滑块和重置属于同一条目；极窄时只在条目内部换行，不增加独立重置卡片。
+		SettingRow("##palm-eraser-threshold", IA(palm.Threshold).c_str(), IA(palm.ThresholdDescription).c_str(),
+			"\ue7c9", actionWidth, resetBelow ? ControlHeight * 2 + ControlSpacing : ControlHeight,
+			[&](const LayoutRect& bounds) {
+				char percentage[24]; ImFormatString(percentage, IM_ARRAYSIZE(percentage), "%d%%", draft.thresholdPercent);
+				TextAt(percentage, { bounds.left, bounds.top + Pixels(6) }, Pixels(numberWidth));
+				const float sliderLeft = bounds.left + Pixels(numberWidth + 12);
+				const float buttonLeft = bounds.right - Pixels(resetWidth);
+				ImGui::SetCursorScreenPos({ sliderLeft, bounds.top });
+				ImGui::SetNextItemWidth((std::max)(1.0F, (resetBelow ? bounds.right : buttonLeft - Pixels(ControlSpacing)) - sliderLeft));
+				events.thresholdChanged = SliderInt("##slider", &draft.thresholdPercent, 1, 400, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SetCursorScreenPos({ buttonLeft, bounds.top + (resetBelow ? Pixels(ControlHeight + ControlSpacing) : 0) });
+				if (Button((reset + "###reset").c_str(), { Pixels(resetWidth), Pixels(ControlHeight) }))
+				{
+					events.thresholdReset = true;
+					events.thresholdChanged |= draft.thresholdPercent != 100;
+					draft.thresholdPercent = 100;
+				}
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, thresholdNote.c_str());
+
+		const double area = draft.referenceAreaPixels * draft.thresholdPercent / 100.0;
+		const bool available = std::isfinite(area) && area > 0;
+		const auto previewTitle = IA(palm.PreviewTitle);
+		const auto previewDescription = IA(!available ? palm.PreviewUnavailable
+			: draft.previewEstimated ? palm.PreviewEstimated : palm.PreviewDescription);
+		const float titleHeight = TextHeight(previewTitle.c_str(), innerWidth, ImFluentTextStyle_BodyStrong);
+		const float descriptionHeight = TextHeight(previewDescription.c_str(), innerWidth, ImFluentTextStyle_Caption);
+		const float headingHeight = titleHeight + Pixels(8) + descriptionHeight;
+		const ImVec2 size = available ? ImVec2(static_cast<float>(std::sqrt(area * aspects[ratioIndex])),
+			static_cast<float>(std::sqrt(area / aspects[ratioIndex]))) : ImVec2();
+		const float comboWidth = Pixels(112), inset = 2.0F;
+		// 图形直接使用绘制输出像素；下拉悬浮于左上角，不挤占或换行图形。
+		const float canvasWidth = (std::max)(size.x + inset * 2, comboWidth);
+		const float canvasHeight = (std::max)(size.y + inset * 2, Pixels(ControlHeight));
+		const float scrollReserve = canvasWidth > innerWidth ? Pixels(ScrollbarTrackSize + ScrollbarPadding) : 0;
+		const float previewHeight = headingHeight + (available ? Pixels(16) + canvasHeight + scrollReserve : 0);
+		const float previewCardHeight = std::ceil(previewHeight + padding * 2);
+		ImGui::SetNextWindowSizeConstraints({ 0, previewCardHeight }, { FLT_MAX, previewCardHeight });
+		ImGui::SetNextWindowContentSize({ 0, previewHeight });
+		if (BeginCard("##palm-eraser-preview", { width, previewCardHeight }))
+		{
+			const auto origin = ImGui::GetCursorScreenPos();
+			TextAt(previewTitle.c_str(), origin, innerWidth, ImFluentTextStyle_BodyStrong);
+			TextAt(previewDescription.c_str(), { origin.x, origin.y + titleHeight + Pixels(8) }, innerWidth,
+				ImFluentTextStyle_Caption, TextSecondary);
+			if (available)
+			{
+				ImGui::SetCursorScreenPos({ origin.x, origin.y + headingHeight + Pixels(16) });
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+				// 通用滚动补间只跟随纵向溢出；此处固定横轨，避免开启动画时轨道被压成零。
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, Pixels(ScrollbarTrackSize));
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarPadding, Pixels(ScrollbarPadding));
+				ImGui::SetNextWindowContentSize({ canvasWidth, canvasHeight });
+				if (ImGui::BeginChild("##palm-eraser-preview-shapes", { innerWidth, canvasHeight + scrollReserve },
+					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar))
+				{
+					const auto top = ImGui::GetCursorScreenPos();
+					const ImVec2 start(top.x + (std::max)(inset, (innerWidth - size.x) * .5F), top.y + inset);
+					ImGui::GetWindowDrawList()->AddRect(start, { start.x + size.x, start.y + size.y },
+						Accent, Pixels(8), 0, 2.0F);
+					// 后绘制控件，使其可遮挡边框；恢复游标后仅按整个预览包络占位。
+					ImGui::SetCursorScreenPos(top); ImGui::SetNextItemWidth(comboWidth);
+					if (ComboBox("##palm-eraser-preview-ratio", &ratioIndex, ratios.data(), static_cast<int>(ratios.size())))
+						pageStorage->SetInt(ratioStateId, ratioIndex);
+					ImGui::SetCursorScreenPos(top);
+					ImGui::Dummy({ canvasWidth, canvasHeight });
+				}
+				ImGui::EndChild(); ImGui::PopStyleVar(3);
+			}
+			// 完整高度始终进入外层页面滚动；超宽示例只在预览块横向查看。
+			ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, previewHeight });
+		}
+		EndCard();
+		const auto& pen = I18nKey.UI.Bar.DrawAttributes;
+		CheckboxGroup("##palm-eraser-tools", IA(palm.EnabledTools).c_str(), "\uedc6", {
+			{ IA(pen.SoftPenLabel), &draft.tools[0], &events.toolsChanged[0] },
+			{ IA(pen.HardPenLabel), &draft.tools[1], &events.toolsChanged[1] },
+			{ IA(pen.HighlighterLabel), &draft.tools[2], &events.toolsChanged[2] },
+			{ IA(pen.LaserLabel), &draft.tools[3], &events.toolsChanged[3] },
+			{ IA(I18nKey.UI.Centre.Eraser), &draft.tools[4], &events.toolsChanged[4] },
+			{ IA(I18nKey.UI.Bar.MainButtons.GeometryLabel), &draft.tools[5], &events.toolsChanged[5] },
+			{ IA(pen.BrushLabel), &draft.tools[6], &events.toolsChanged[6] } });
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
+		std::string parallelNote;
+		// 全局多指关闭时优先说明；提示不依赖手掌总开关，也不替用户修改其他偏好。
+		if (draft.parallelWriting)
+		{
+			if (!draft.multiTouchEnabled) parallelNote = IA(palm.ParallelWritingMultiTouchNote);
+			else if (!draft.laserMultiTouchEnabled) parallelNote = IA(palm.ParallelWritingLaserMultiTouchNote);
+		}
+		events.parallelWritingChanged = ToggleRow("##palm-eraser-parallel", IA(palm.ParallelWriting).c_str(),
+			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting, parallelNote.c_str());
+		return events;
 	}
 
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter)
@@ -695,7 +872,7 @@ namespace Inkeys::UI::Setting::Design
 			}
 			if (draft.enabled[2])
 				events.touchAreaChanged = ToggleRow("##eraser-touch-area", IA(eraser.TouchArea.N).c_str(),
-					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea);
+					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea, IA(eraser.TouchArea.Note).c_str());
 		}
 		return events;
 	}
@@ -801,7 +978,8 @@ namespace Inkeys::UI::Setting::Design
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
 				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) });
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) },
+				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
 			const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
 			const std::string create = IA(I18nKey.Operate.Create);
 			const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
@@ -827,7 +1005,8 @@ namespace Inkeys::UI::Setting::Design
 			}
 			events.startupPreviewChanged = ToggleRow("startup-preview",
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview);
+				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
+				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
 			events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
@@ -883,7 +1062,11 @@ namespace Inkeys::UI::Setting::Design
 			events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
 				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
-				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) });
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) },
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
+			events.allowMultipleInstancesChanged = ToggleRow("allow-multiple-instances",
+				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.E).c_str(), "\ue7f4", draft.allowMultipleInstances);
 		}
 		if (section == GeneralSection::Shortcuts)
 		{
@@ -906,7 +1089,7 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::PushID(item);
 				const std::string shortcutTitle = names[item] + "  (" + combinations[item] + ")";
 				events.shortcutsChanged[item] = ToggleRow("##启用固定快捷键", shortcutTitle.c_str(), descriptions[item].c_str(),
-					"\ue765", draft.shortcuts[item]);
+					"\ue765", draft.shortcuts[item], item == 5 ? IA(I18nKey.SettingsUI.HotKey.FreezeNote).c_str() : nullptr);
 				ImGui::PopID();
 			}
 		}

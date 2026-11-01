@@ -1,0 +1,8 @@
+[FrameSubmission] snapshot-budget=1048576 exact-fields=17 invalidation-keys=12
+[SettingAttention] scale=1 frames=362
+[SettingAttention] scale=1.25 frames=362
+[SettingAttention] scale=1.5 frames=362
+[SettingAttention] scale=2 frames=362
+[SettingAttention] scale=1.875 frames=362
+[SettingAttention] scale=3 frames=362
+[SettingAttention] scale=4 frames=362

@@ -151,9 +151,10 @@ namespace Inkeys::UI::Setting::Design
 		const std::array middleEntries{
 			Entry{ PageId::General, I18nKey.SettingsUI.Regular.N, "\ue713" },
 			Entry{ PageId::Draw, I18nKey.SettingsUI.Draw.N, "\uee56" },
+			Entry{ PageId::Performance, I18nKey.SettingsUI.Performance.N, "\uec4a" },
 			Entry{ PageId::Plugins, I18nKey.SettingsUI.PlugIn.N, "\ue74c" },
 			Entry{ PageId::Components, I18nKey.SettingsUI.Component.N, "\ue70b" },
-			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\uec4a" },
+			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\ue9d9" },
 			Entry{ PageId::Version, I18nKey.SettingsUI.Version.N, "\ue946" }
 		};
 		const std::array childKeys{ I18nKey.SettingsUI.Design.GeneralBasic,

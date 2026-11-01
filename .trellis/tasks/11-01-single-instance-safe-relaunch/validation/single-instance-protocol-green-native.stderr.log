@@ -1,0 +1,15 @@
+[SingleInstanceCase] --single-instance-test-parent exit=0 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=10 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=0 read=1
+[SingleInstanceCase] --single-instance-test-probe allow exit=0 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=10 read=1
+[SingleInstanceCase] --single-instance-test-child --inkeys-startup-handoff=Local\Inkeys.Handoff.invalid exit=30 read=1
+[SingleInstanceCase] --single-instance-test-probe exit=0 read=1
+[SingleInstanceCase] concurrent admissions=0/1
+[SingleInstanceCase] before capability ok=1
+[SingleInstanceCapability] resource=1 entry=1 bytes=604 copied=604 error=0
+[SingleInstanceCapability] current=1 offset=486/532 error=0
+[SingleInstanceCapability] unknown write=1 protocol=2 expected=2 error=0
+[SingleInstanceCapability] absent write=1 protocol=0 expected=0 error=0
+[SingleInstanceCapability] current write=1 protocol=1 expected=1 error=0
+[SingleInstance] exact-parent handoff, presence lifetime, allow-to-deny, forged packet: PASS

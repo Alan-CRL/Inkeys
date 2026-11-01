@@ -507,6 +507,7 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PalmEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
@@ -1134,6 +1135,7 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PalmEraser.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.StrokeGeometry.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cppm">

@@ -2484,6 +2484,7 @@ namespace Inkeys::Drawing::Draw3
 		bool initialized = false;
 		bool basicPacketDescription = false;
 		RtsStartup::AttemptResult startupResult;
+		std::string startupInformation;
 		// 只保护诊断借用与插件释放；不把诊断锁带入 RTS callback 或 COM 调用。
 		mutable std::mutex diagnosticsMutex;
 		StylusSyncPlugin* diagnosticsPlugin = nullptr;
@@ -2514,6 +2515,7 @@ namespace Inkeys::Drawing::Draw3
 			failedCleanup.BeginKnownFailure();
 			return false;
 		}
+		impl_->startupInformation.clear();
 		const bool initialized = RtsStartup::InitializeWithFallback(failedCleanup,
 			[&](RtsStartup::PacketProfile profile, Shutdown::FailedCleanupSignal signal)
 			{
@@ -2525,6 +2527,13 @@ namespace Inkeys::Drawing::Draw3
 			[&](RtsStartup::PacketProfile profile, const RtsStartup::AttemptResult& outcome)
 			{
 				const bool basic = profile == RtsStartup::PacketProfile::BasicXY;
+				// 最多两次初始化尝试；记录失败阶段，不依赖控制台开关。
+				try
+				{
+					impl_->startupInformation += FormatDiagnosticRtsAttempt(RtsStartup::ProfileName(profile),
+						RtsStartup::StageName(outcome.stage), outcome.result);
+				}
+				catch (...) {} // 诊断分配失败不改变输入后端选择。
 				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 					"[RTS] attempt=%u profile=%s stage=%s hr=0x%08lx initialized=%d cleanup=%s\n",
 					basic ? 2u : 1u, RtsStartup::ProfileName(profile), RtsStartup::StageName(outcome.stage),
@@ -2533,6 +2542,11 @@ namespace Inkeys::Drawing::Draw3
 		// 成功实例不能继续借用已取消的 attempt signal。
 		if (initialized) impl_->failedCleanup = failedCleanup;
 		return initialized;
+	}
+
+	std::string RealTimeStylusInput::StartupInformation() const
+	{
+		return impl_->startupInformation;
 	}
 
 	bool RealTimeStylusInput::InitializeAttempt(HWND window, ContactInputCoordinator& coordinator,

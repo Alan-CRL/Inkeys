@@ -200,9 +200,12 @@ namespace Inkeys::Drawing::Draw3
 		return DecodeInputWidthModeSettings(encoded_.load(std::memory_order_acquire));
 	}
 
-	StrokeModelConfiguration CreateStrokeModelConfiguration(int dpiX)
+	StrokeModelConfiguration CreateStrokeModelConfiguration(int dpiX, StrokeTimingProfileId profileId)
 	{
-		const StrokeTimingProfile timingProfile = ink_prediction_detail::GetStrokeTimingProfile(kActiveStrokeTimingProfileId);
+		if (profileId != StrokeTimingProfileId::Fps30 && profileId != StrokeTimingProfileId::Fps60 &&
+			profileId != StrokeTimingProfileId::Fps120 && profileId != StrokeTimingProfileId::Fps240)
+			profileId = kActiveStrokeTimingProfileId;
+		const StrokeTimingProfile timingProfile = ink_prediction_detail::GetStrokeTimingProfile(profileId);
 		const float dpiScale = std::max(static_cast<float>(dpiX) / 96.0f, 0.1f);
 		const float expectedSpeed = 500.0f * dpiScale; // DPI 越高，像素速度按比例放大。
 		ink::stroke_model::KalmanPredictorParams kalmanParams;
@@ -244,9 +247,9 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	void ApplyPredictionMode(ink::stroke_model::StrokeModelParams& params,
-		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams)
+		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams, InkPredictionMode mode)
 	{
-		switch (kActivePredictionMode)
+		switch (mode)
 		{
 		case InkPredictionMode::Disabled:
 			params.prediction_params = ink::stroke_model::DisabledPredictorParams{}; // 完全不输出预测点，便于对比延迟。
