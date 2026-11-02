@@ -46,7 +46,7 @@
 
 360个候选场景全部不高于原版；最小余量82,635字节，最大节省251,417,861字节（239.77MiB）。较大的高DPI收益来自消除重复密度和RGBA通道，不代表普通窗口都会节省同样数值。基准CSV单列每个场景的分配峰值及图集帧峰值；生产热切换验证的是最多旧atlas与一个候选atlas共存、成功/失败后释放旧或候选资源的结构性边界，并未量测每次生产切换的字节峰值。基准上下文销毁后，跟踪的ImGui/FreeType分配残留为0。
 
-完整数据：[页面矩阵](../../../Build/setting-fonts/pages/page-metrics.csv)。
+完整数据：[页面矩阵](../../../../../Build/setting-fonts/pages/page-metrics.csv)。
 
 ## 性能
 
@@ -65,11 +65,11 @@
 
 两组复核未重现稳定退化。EN100 CPU生成median约0.257–0.276ms、后端调用约0.056–0.070ms，等待占大部分；CN200 CPU约0.325–0.359ms、后端约0.081–0.092ms。保留原始波动数据，不只选取最快一次。
 
-原始数据：[完整字体基准](../../../Build/setting-fonts/benchmark/metrics.csv)、[EN100 ABBA](../../../Build/setting-fonts/benchmark/en100-abba.csv)、[CN200 ABBA](../../../Build/setting-fonts/benchmark/cn200-abba.csv)。
+原始数据：[完整字体基准](../../../../../Build/setting-fonts/benchmark/metrics.csv)、[EN100 ABBA](../../../../../Build/setting-fonts/benchmark/en100-abba.csv)、[CN200 ABBA](../../../../../Build/setting-fonts/benchmark/cn200-abba.csv)。
 
 ## 图像与复现
 
-[简中100%基本页](../../../Build/setting-fonts/pages/zh-CN-100-dark-1-freetype.png) · [日文100%基本页](../../../Build/setting-fonts/pages/ja-JP-100-dark-1-freetype.png) · [韩文200%基本页](../../../Build/setting-fonts/pages/ko-KR-200-dark-1-freetype.png)
+[简中100%基本页](../../../../../Build/setting-fonts/pages/zh-CN-100-dark-1-freetype.png) · [日文100%基本页](../../../../../Build/setting-fonts/pages/ja-JP-100-dark-1-freetype.png) · [韩文200%基本页](../../../../../Build/setting-fonts/pages/ko-KR-200-dark-1-freetype.png)
 
 同目录的`-stb.png`为固定旧配置对照，`-freetype.png`为当前候选；完整覆盖11语言100/150/200%，另含简中/日/韩/英文125/187.5/400%。图像来自真实生产控件与DX11离屏，未自动打开应用GUI。
 
@@ -93,7 +93,7 @@ Build/ARM64/Debug/Inkeys.exe --bar-eraser-offscreen-test
 
 矩阵字体配置二进制SHA256：`651C265C13BC3F01C2486B66B8B0F01C73EDAC9CB01DAAE9D82BBFAA7E7645D2`。
 
-修复赞助边界后的完整功能测试SHA256：`71C72B8983DF3AA9780B35E9A523F3C9C4E0183448092873DCED88B7B216C112`。其后仅增加测试端ABBA计量，随后仅恢复两文件原始无BOM编码（正文/CRLF未改），最终编译通过。当前测试二进制SHA256：`B9935931544EC4A7CF0A8CCDF2DA907A18216B6D05E52A62CC4FBE6FEC88502D`；产品SHA256：`4513BCD91AFCE7E98A68AADD152C032C4A32431C5F15E15A60566DE4CB5412FA`。
+修复赞助边界后的完整功能测试SHA256：`71C72B8983DF3AA9780B35E9A523F3C9C4E0183448092873DCED88B7B216C112`。其后仅增加测试端ABBA计量，随后仅恢复两文件原始无BOM编码（正文/CRLF未改），最终编译通过。图标微调前的测试二进制SHA256：`B9935931544EC4A7CF0A8CCDF2DA907A18216B6D05E52A62CC4FBE6FEC88502D`；产品SHA256：`4513BCD91AFCE7E98A68AADD152C032C4A32431C5F15E15A60566DE4CB5412FA`。
 
 ## 用户验收与最终微调（2026-11-02）
 用户已查看并确认效果符合预期，授权提交与结束任务。按要求仅隐藏语言说明前的信息图标，保留立即生效文字及其他说明图标；测量/绘制与两个现有夹具同步。审查通过；最终完整Solution Debug ARM64增量构建40.01s、现有无窗口设置专项18.18s均exit0。此前完整矩阵和核心功能回归证据保持有效，历史PNG仍含验收前的信息图标。助手没有启动GUI，未获push授权。

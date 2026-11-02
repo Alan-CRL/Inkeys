@@ -2,6 +2,6 @@
 {"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"十一语言映射、嵌入字体、资源与翻译合同"}
 {"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"既有工程、vcpkg和无窗口验证边界，构建以根AGENTS为准"}
 {"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"最小修改、编码格式、线程和生命周期约束"}
-{"file":".trellis/tasks/11-02-settings-dynamic-fonts/research/initial-findings.md","reason":"固定1.92.7源码证据及已确认的范围/资源决策"}
-{"file":".trellis/tasks/11-02-settings-dynamic-fonts/research/contract-review.md","reason":"预审发现的atlas注册/销毁、纹理队列与真实内存计量边界"}
-{"file":".trellis/tasks/11-02-settings-dynamic-fonts/research/messagebox-callsite-audit.md","reason":"排队提示及其他跨线程调用的语言快照一致性"}
+{"file":".trellis/tasks/archive/2026-11/11-02-settings-dynamic-fonts/research/initial-findings.md","reason":"固定1.92.7源码证据及已确认的范围/资源决策"}
+{"file":".trellis/tasks/archive/2026-11/11-02-settings-dynamic-fonts/research/contract-review.md","reason":"预审发现的atlas注册/销毁、纹理队列与真实内存计量边界"}
+{"file":".trellis/tasks/archive/2026-11/11-02-settings-dynamic-fonts/research/messagebox-callsite-audit.md","reason":"排队提示及其他跨线程调用的语言快照一致性"}
