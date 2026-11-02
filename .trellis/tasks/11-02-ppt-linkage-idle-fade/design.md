@@ -9,7 +9,7 @@
 
 ## B. 配置
 
-- `Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds`：`IdtAtomic<int>`，NoUpload，默认 10；0 表示关闭。设置下拉映射 {0,5,10,15,30}，非法值显示为最接近的“10 秒”并保持读入值不被改写，直到用户选择。
+- `Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds`：`IdtAtomic<int>`，NoUpload，默认 10；0 表示关闭。设置下拉映射 {0,5,10,15,30}，读盘只接受这些整数，其他值回退 10（审阅后修正）。
 - 变更后 `QueueConfigWrite()` + `Ppt::NotifyConfigurationChanged(ConfigGroup::IdleFade)`（新增枚举值，只重新发布快照）。
 
 ## C. 数据流

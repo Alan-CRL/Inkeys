@@ -244,6 +244,8 @@ namespace Inkeys::UI::PageControl
 			bool targetVisible = false;
 			// 最近一次交给 Scene 的透明度目标（显隐 × 闲置淡化）。
 			double opacityTarget = 0.0;
+			// 上一帧是否处于可淡化的 PPT 可见态；白板→PPT 时底部控件不经过隐藏也须重新计时。
+			bool idleEligible = false;
 			bool inputLocked = true;
 			bool borderCursorPointerInside = false;
 			bool dragging = false;
@@ -579,7 +581,7 @@ namespace Inkeys::UI::PageControl
 			Inkeys::UI::RenderPipeline::Request(Clients[index]);
 		}
 
-		// 交互重新计时并撤销外部翻页淡化；已淡化时立即请求恢复帧。
+		// 交互重新计时并撤销外部翻页淡化，并请求一帧重新决策。
 		void MarkIdleActivity(std::size_t index,
 			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) noexcept
 		{
@@ -588,7 +590,8 @@ namespace Inkeys::UI::PageControl
 			signals.activity.store(now.time_since_epoch().count(), std::memory_order_release);
 			signals.consumedExternalTurn.store(externalTurnSerial.load(std::memory_order_acquire),
 				std::memory_order_release);
-			if (signals.dimmed.load(std::memory_order_acquire)) RequestSurface(index);
+			// 渲染线程可能正基于旧活动时间决定淡化；无条件请求一帧，避免悬停下仍停在淡化态。
+			RequestSurface(index);
 		}
 
 		// 悬停/按下期间不淡化；结束时重新计时并请求一帧以发布新的唤醒截止。
@@ -1290,11 +1293,13 @@ namespace Inkeys::UI::PageControl
 			const bool entering=!wasVisible&&state.targetVisible;
 			if(!state.bounds.initialized&&entering&&index>=2)
 				RetargetBounds(state.bounds,ResolveHiddenSurfaceBounds(SurfaceFor(index),monitor,target.logicalBounds),target.scale,false,now);
-			if(entering)ResetIdleFade(index,now); // 每次进入可见都从不透明开始计时。
 			{
+				// 每次进入可淡化的 PPT 可见态（含从白板返回）都从不透明开始计时。
+				const bool idleEligible=state.targetVisible&&desiredMode==WorkspaceMode::PptCompact;
+				if(idleEligible&&!state.idleEligible)ResetIdleFade(index,now);
+				state.idleEligible=idleEligible;
 				auto& signals=idleFade[index];
-				const auto fade=ResolvePptIdleFade({ppt.idleFadeSeconds,
-					state.targetVisible&&desiredMode==WorkspaceMode::PptCompact,
+				const auto fade=ResolvePptIdleFade({ppt.idleFadeSeconds,idleEligible,
 					signals.hovered.load(std::memory_order_acquire)||signals.pressed.load(std::memory_order_acquire),
 					signals.consumedExternalTurn.load(std::memory_order_acquire)!=externalTurnSerial.load(std::memory_order_acquire),
 					std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(signals.activity.load(std::memory_order_acquire))),now});
@@ -3495,6 +3500,10 @@ namespace Inkeys::UI::PageControl
 			if(message==WM_MOUSEWHEEL){
 				const auto input=InputSnapshot(index);
 				if(input.visible&&!input.locked&&!input.nativePending&&ResolveWorkspaceInputPolicy(input.mode).wheel){
+					// 控件上的滚轮属于控件交互：登记控件翻页并恢复该控件，不触发外部翻页淡化。
+					const auto now=std::chrono::steady_clock::now();
+					lastControlNavigation.store(now.time_since_epoch().count(),std::memory_order_release);
+					MarkIdleActivity(index,now);
 					// 在 HWND producer 固定 token/代次，排队期间切换会话只能丢弃旧输入。
 					EnqueueLocalWheel(GET_WHEEL_DELTA_WPARAM(wParam));
 					Inkeys::UI::Bar::WakeInteractionWorker();
@@ -3651,13 +3660,13 @@ namespace Inkeys::UI::PageControl
 		const auto Check=[&](bool valid,const char* why){if(!valid){++failures;std::fprintf(stderr,"[PageControlUI3] FAIL %s\n",why);}};
         {
             // 用真正PageControlInputTick验证无长按早退仍保留视觉deadline。
-            const bool previous=initialized.exchange(true);const auto saved=loadingDeadlines[0].ticks.load();
+            const bool previous=initialized.exchange(true);const auto saved=loadingDeadlines[0].ticks.load();const auto savedIdle=idleDeadlines[0].ticks.exchange(0);
             const auto press=surfaces[0].pressStarted,repeat=surfaces[0].lastRepeat;
             surfaces[0].pressStarted={};surfaces[0].lastRepeat={};
             const auto now=std::chrono::steady_clock::now();const auto due=now+std::chrono::seconds(10);
             loadingDeadlines[0].Publish(due);InputRegistrationContext registration{0,inputLifecycle.load()};
             Check(PageControlInputTick(now,&registration)==due,"real PageControl input tick preserves visual deadline with no pointer or long press");
-            loadingDeadlines[0].ticks.store(saved);surfaces[0].pressStarted=press;surfaces[0].lastRepeat=repeat;initialized.store(previous);
+            loadingDeadlines[0].ticks.store(saved);idleDeadlines[0].ticks.store(savedIdle);surfaces[0].pressStarted=press;surfaces[0].lastRepeat=repeat;initialized.store(previous);
         }
 		constexpr std::array<std::uint32_t,6> expectedColors{0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
 		Check(WhiteboardVisual::ThemeColors==expectedColors,"palette row order is green, navy, black then white, light gray, ivory");
