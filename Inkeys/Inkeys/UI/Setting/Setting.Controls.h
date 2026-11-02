@@ -67,6 +67,12 @@ namespace Inkeys::UI::Setting::Design
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
+	// 数值 + 滑块 + 末尾“重置默认”图标按钮；format 为空时按百分比显示。
+	// 返回滑块是否改变；点击重置只置位 reset，由调用方写回默认值。行宽需比普通滑块多留 44 DIP。
+	inline constexpr float SliderResetExtraWidthDip = 44.0F;
+	bool SliderResetAction(const LayoutRect& bounds, float& value, float minimum,
+		float maximum, bool& active, bool& reset, const char* resetTooltip,
+		const char* format = nullptr);
 
 	// 控件字体和自然宽度集中在此；size 是物理像素，行测量参数是 DIP。
 	bool Button(const char* label, const ImVec2& size = ImVec2(0, 0));

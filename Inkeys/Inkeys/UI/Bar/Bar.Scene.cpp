@@ -133,6 +133,7 @@ namespace Inkeys::UI::Bar
 		BarUIRendering renderer;
 		BarUiFrameLightingSnapshot drawingLighting;
 		COLORREF appliedSurfaceColor=CLR_INVALID;
+		double appliedResidentFillOpacity=-1,appliedResidentContentOpacity=-1;
 		float pagePrimaryWidth=0,pageSecondaryWidth=0;
 		BarUiPctClass opacity{1};
 		BarPageSurfaceContent content;
@@ -198,9 +199,10 @@ namespace Inkeys::UI::Bar
 			paginationMembers=pagination.Snapshot();
 			buttonRow.assign(paginationMembers.begin()+1,paginationMembers.end());
 			const COLORREF surface=GetThemeColor(BarThemeColorEnum::Surface);appliedSurfaceColor=surface;
-			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,BarMainBarFillOpacity,BarMainBarFrameOpacity);
-			InitializeShape(menu,MenuBounds,surface,BarMainBarCornerRadiusDip,0.95,BarMainBarFrameOpacity);
-			InitializeShape(theme,ThemeBounds,surface,BarMainBarCornerRadiusDip,0.95,BarMainBarFrameOpacity);
+			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,
+				GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity),GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
+			InitializeShape(menu,MenuBounds,surface,BarMainBarCornerRadiusDip,0.95,GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
+			InitializeShape(theme,ThemeBounds,surface,BarMainBarCornerRadiusDip,0.95,GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 			InitializeShape(divider,{350,-116,570,-115},GetThemeColor(BarThemeColorEnum::SurfaceFrame),0.5,0.30);
 			InitializeShape(dragHandle,{5,5,7,25},GetThemeColor(BarThemeColorEnum::SurfaceFrame),1,0.72);
 			for(auto& button:pageButtons) InitializeButton(*button);
@@ -656,12 +658,26 @@ namespace Inkeys::UI::Bar
 			if(appliedSurfaceColor!=surface){
 				// 普通表面跟随主栏样式，预览内部颜色仍由页面主题独立控制。
 				const auto text=GetThemeColor(BarThemeColorEnum::TextPrimary),border=GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+				const double frameOpacity=GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity);
 				for(auto* shape:{&root,&menu,&theme})if(shape!=&root||!backgroundOnly||background.useThemeColors){
 					shape->fill->SetTar(surface);shape->frame->SetTar(border);
+					if(shape!=&root||!backgroundOnly)shape->framePct->SetTar(frameOpacity);
 				}
+				// 分页常驻底板与主栏同样随主题调整透明度；仅背景模式沿用调用方给定值。
+				if(!backgroundOnly)root.pct.SetTar(GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity));
 				divider.fill->SetTar(border);dragHandle.fill->SetTar(border);
 				pageTotal.color.SetTar(text);unsaved.color.SetTar(text);for(auto& word:headings)word.color.SetTar(text);
 				appliedSurfaceColor=surface;
+			}
+			{
+				// 用户常驻透明度变化：分页底板跟随主栏绝对值，图标/文字倍率在绘制时读取，均需整幅重画。
+				const double residentFill=GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity);
+				const double residentContent=GetThemeResidentContentOpacity();
+				if(residentFill!=appliedResidentFillOpacity||residentContent!=appliedResidentContentOpacity){
+					if(appliedResidentFillOpacity>=0&&!backgroundOnly)root.pct.SetTar(residentFill);
+					if(appliedResidentContentOpacity>=0)FullDamage();
+					appliedResidentFillOpacity=residentFill;appliedResidentContentOpacity=residentContent;
+				}
 			}
 			const auto advance=[&](auto& value){
 				if(frame.animationEnabled&&dt<=0&&!value.IsSame()){active=true;return;}
@@ -1054,8 +1070,11 @@ namespace Inkeys::UI::Bar
 				SetShapeBounds(p.dragHandle,{EraserRectCenterX(r)-(vertical?1:10),EraserRectCenterY(r)-(vertical?10:1),
 					EraserRectCenterX(r)+(vertical?1:10),EraserRectCenterY(r)+(vertical?10:1)},0,true);p.DrawShape(dc,p.dragHandle);
 			}
+			// 分页按钮图标/文字属于常驻内容；菜单与主题浮层不受影响。
+			p.renderer.SetResidentContentOpacity(GetThemeResidentContentOpacity());
 			for(const auto id:p.paginationDrawOrder)p.DrawButton(dc,id);
 			if(p.content.whiteboard&&p.content.surface==0&&p.content.unsaved)p.renderer.Word(dc,p.unsaved,{5,-32},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
+			p.renderer.SetResidentContentOpacity(1.0);
 		}
 		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);
 		p.renderer.SetFrameLightingSnapshot(p.drawingLighting);

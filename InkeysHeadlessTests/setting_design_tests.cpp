@@ -3366,7 +3366,8 @@ namespace
 			"actual appearance page reveals dynamic lighting, keeps rate in experimental options, and preserves stored values");
 		draft.animation = false; draft.edgeLighting = false;
 		const auto appearance = draw(Design::GeneralSection::Appearance, outside, false);
-		const ImVec2 slider(appearance.lastItem.left + appearance.lastItem.Width() * 0.75F,
+		// 末项是缩放行的“恢复默认”按钮，滑块紧挨在它左侧。
+		const ImVec2 slider(appearance.lastItem.left - 40.0F * scale,
 			(appearance.lastItem.top + appearance.lastItem.bottom) / 2);
 		draw(Design::GeneralSection::Appearance, slider, false);
 		const auto dragging = draw(Design::GeneralSection::Appearance, slider, true);
@@ -3375,6 +3376,13 @@ namespace
 			&& draft.barZoom >= .5F && draft.barZoom <= 2 && !Near(draft.barZoom, 1.37F)
 			&& draft.settingEntryAnimation == 2,
 			"the remaining appearance scale slider preserves main-bar drag/release behavior");
+		const ImVec2 reset((appearance.lastItem.left + appearance.lastItem.right) / 2,
+			(appearance.lastItem.top + appearance.lastItem.bottom) / 2);
+		draw(Design::GeneralSection::Appearance, reset, false);
+		draw(Design::GeneralSection::Appearance, reset, true);
+		const auto resetDone = draw(Design::GeneralSection::Appearance, reset, false);
+		checks.Expect(Near(draft.barZoom, 1.0F) && resetDone.events.barZoomChanged && !resetDone.events.barZoomActive,
+			"the scale reset button restores 100% through the normal change event");
 		io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 	}
@@ -5700,6 +5708,20 @@ namespace
 			}
 	}
 
+	void CheckAppearanceIconSet(Checks& checks, ImFont* icons)
+	{
+		// 外观页行图标与“恢复默认”按钮：主题、透明度、动画速率与缩放分区使用的全部码位。
+		constexpr std::array<ImWchar, 10> codes{ 0xE790, 0xE771, 0xEF1F, 0xE8A9,
+			0xE768, 0xEC4A, 0xE72C, 0xE706, 0xE737, 0xE9A6 };
+		ImGui::PushFont(icons, Design::NavigationGlyphSize);
+		for (const ImWchar code : codes)
+		{
+			const auto* found = ImGui::GetFontBaked()->FindGlyphNoFallback(code);
+			checks.Expect(found && found->Visible, "all appearance page glyphs exist in the bundled icon font");
+		}
+		ImGui::PopFont();
+	}
+
 	void CheckSidebarIconSet(Checks& checks, ImFont* icons, float scale)
 	{
 		constexpr std::array<ImWchar, 15> codes{ 0xE80F, 0xF2B7, 0xE7B8, 0xEE56,
@@ -5909,6 +5931,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		CheckMeasuredRows(checks, fonts[0], scale);
 		CheckNativeControls(checks, fonts[0], fonts.back(), scale);
 		CheckSidebarIconSet(checks, fonts.back(), scale);
+		CheckAppearanceIconSet(checks, fonts.back());
 		CheckSettingRows(checks, fonts[0], fonts.back(), scale);
 		CheckControlTypography(checks, fonts[0], scale);
 		CheckButtonGroupGeometry(checks);

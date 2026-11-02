@@ -412,6 +412,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
 	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.ThemeMaterial.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h" />
 	<ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h" />
 	<ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h" />
 	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />

@@ -252,6 +252,8 @@
       "AnimationSection": "动画",
       "LightingSection": "光源",
       "ScalingSection": "缩放",
+      "ThemeSection": "主题",
+      "OpacitySection": "透明度",
       "WindowBehaviorSection": "窗口行为",
       "SafetyRecoverySection": "安全与恢复",
       "ShortcutGlobalSection": "全局操作",
@@ -503,14 +505,28 @@
         "EdgeLightingE": "关闭后仅保留基础边框，停用点光与柔光效果。",
         "DynamicEdgeLighting": "动态边缘光影",
         "DynamicEdgeLightingE": "光影将动态跟随光标位置",
+        "ResetDefault": "恢复默认",
+        "SettingTheme":
+        {
+          "N": "设置主题",
+          "E": "切换设置窗口的深色或浅色外观，与标题栏切换按钮同步。"
+        },
+        "BackgroundOpacity":
+        {
+          "N": "主栏背景透明度",
+          "E": "调整主栏、主按钮与分页的背景不透明度；弹出面板不受影响。"
+        },
+        "ContentOpacity":
+        {
+          "N": "主栏内容透明度",
+          "E": "调整主栏、主按钮与分页上图标和文字的不透明度。"
+        },
         "Theme":
         {
-          "N": "主题",
-          "E": "选择“推荐皮肤”将会根据官方推荐皮肤自动更换。",
-          "Skip1": "推荐皮肤",
-          "Skip2": "默认皮肤",
-          "Skip3": "极简时钟",
-          "Skip4": "马年迎新"
+          "N": "主栏主题",
+          "E": "切换主栏的深色或浅色外观，修改后立即生效。",
+          "Dark": "深色模式",
+          "Light": "浅色模式"
         },
         "TaskbarScaleBase":
         {

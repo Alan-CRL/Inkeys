@@ -15,6 +15,7 @@ module;
 #include "Bar.Presentation.Source.h"
 #include "Bar.InteractionWorker.h"
 #include "Bar.Haptics.h"
+#include "Bar.ThemeMaterial.h"
 
 #include <d2d1_1.h>
 #include <algorithm>
@@ -213,12 +214,12 @@ BarMoreButtonSnapshotClass BarButtonSetClass::GetMoreButtonSnapshot() const
 void BarButtonSetClass::PresetInitialization()
 {
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
-	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
 
 	// 分隔线
 	{
 		BarButtonClass* obj = new BarButtonClass;
-		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::Divider);
 		{
 			obj->size = BarButtonSizeEnum::oneTwo;
 			obj->preset = BarButtonPresetEnum::Divider;
@@ -759,7 +760,7 @@ void BarButtonSetClass::PresetInitialization()
 void BarButtonSetClass::RegisterBuiltInComponents()
 {
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
-	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
 
 	auto registerComponent = [&](const char* id,
 		const char* legacyField,
@@ -1920,26 +1921,34 @@ namespace Inkeys::UI::Bar
 		shape.frameRendering=BarUiFrameRenderingEnum::PointLight;
 		shape.framePrimaryLightEnabled=false;
 		shape.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
+		shape.frameLightCursorLightIntensityScale=BarButtonLightCursorLightIntensity;
 		shape.frame->SetTar(frameColor);
+		// 主题选中底色在浅色端为不透明浅青色；显式配色的客户端保持原透明度。
+		const double lightWeight=barUISet.barStyle.darkStyle?0.0:1.0;
 		if(!visible)shape.pct.SetTar(0.0,duration);
-		else if(pressed)shape.pct.SetTar(BarButtonPressedOpacity,duration);
-		else if(selected)shape.pct.SetTar(0.20,duration);
+		else if(pressed)shape.pct.SetTar(selected&&!fillOverride
+			?BarThemeMaterial::SelectedFillOpacity(lightWeight,BarButtonPressedOpacity)
+			:BarButtonPressedOpacity,duration);
+		else if(selected)shape.pct.SetTar(fillOverride?0.20
+			:BarThemeMaterial::SelectedFillOpacity(lightWeight),duration);
 		else if(!parts.hoverStage || *parts.hoverStage==BarButtonHoverStageEnum::None)
 			shape.pct.SetTar(0.0,duration);
 		shape.fill->SetTar(fillOverride.value_or(GetThemeColor(selected
-			?BarThemeColorEnum::Accent:BarThemeColorEnum::PressedFill)));
+			?BarThemeColorEnum::SelectedFill:BarThemeColorEnum::PressedFill)));
 		shape.frameLightPct->SetTar(visible && enabled && selected
 			?(pressed?BarButtonPressedLightOpacity:1.0):0.0,duration);
 		if(parts.pressScale)parts.pressScale->SetTar(pressed?BarButtonPressScale:1.0,
 			static_cast<double>(BarUiDefaultOperationDur),std::nullopt,false,
 			pressed?BarButtonPressCurve():BarButtonReleaseCurve());
-		const double opacity=visible?(enabled?1.0:BarButtonDisabledContentOpacity):0.0;
+		const double opacity=visible?(enabled?1.0:BarThemeMaterial::DisabledContentOpacity(lightWeight)):0.0;
 		const COLORREF content=contentOverride.value_or(GetThemeColor(selected
 			?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary));
+		const COLORREF iconContent=contentOverride.value_or(GetThemeColor(selected
+			?BarThemeColorEnum::Accent:BarThemeColorEnum::IconPrimary));
 		if(parts.icon)
 		{
 			parts.icon->pct.SetTar(iconVisible?opacity:0.0,BarButtonHoverTransitionDuration);
-			if(parts.icon->color1)parts.icon->color1->SetTar(content);
+			if(parts.icon->color1)parts.icon->color1->SetTar(iconContent);
 		}
 		if(parts.primary)
 		{
@@ -1957,7 +1966,7 @@ namespace Inkeys::UI::Bar
 			&button.pressScale,&button.hoverStage},visible,enabled,selected,
 			button.state->emph==BarWidgetEmphasize::Pressed,duration,content,iconVisible,fill,frame);
 		if(button.icon.color2)button.icon.color2->SetTar(content.value_or(GetThemeColor(selected
-			?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary)));
+			?BarThemeColorEnum::Accent:BarThemeColorEnum::IconPrimary)));
 	}
 
 	BarButtonVisualInheritance PrepareBarButtonVisualInheritance(

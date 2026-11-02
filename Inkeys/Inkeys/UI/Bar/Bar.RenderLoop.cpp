@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "Bar.LogoAppearance.h"
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtI18n.h"
@@ -10,9 +11,11 @@ module;
 #include <wrl/client.h>
 #include "../../../IdtDraw.h"
 #include "../../Business/LegacyDrawState.hpp"
+#include "../../Business/PenToolState.hpp"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
+#include "Bar.ThemeMaterial.h"
 #include "Bar.BottomDock.h"
 #include "Bar.MainLayoutPolicy.h"
 #include "../StartupPlacement.h"
@@ -65,6 +68,12 @@ using Inkeys::UI::RenderPipeline::FrameStageTimer;
 
 namespace
 {
+	[[nodiscard]] double SelectedFillOpacity(double darkOpacity = 0.20) noexcept
+	{
+		return BarThemeMaterial::SelectedFillOpacity(
+			barUISet.barStyle.darkStyle ? 0.0 : 1.0, darkOpacity);
+	}
+
 	static_assert(static_cast<std::uint32_t>(BarUISetSvgEnum::GeometryAttributeBar_Close) == Inkeys::UI::Bar::Ui3SvgMapOrdinalMax);
 	std::atomic<std::uint8_t> requestedPresentationAlpha = 255;
 	std::atomic<std::uint8_t> committedPresentationAlpha = 255;
@@ -265,6 +274,8 @@ struct BarRenderFrameSnapshot
 	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenSoftPen;
 	COLORREF brush1Color = RGB(0, 0, 0);
 	COLORREF highlighterColor = RGB(0, 0, 0);
+	COLORREF laserColor = RGB(0, 0, 0);
+	bool laserActive = false;
 	unsigned long long demandGeneration = 0;
 	double zoom = 1.0;
 	Inkeys::UI::Bar::BarIconOrder iconOrder = Inkeys::UI::Bar::BarIconOrder::FollowMainButton;
@@ -683,8 +694,13 @@ struct BarRenderLoopState
 	BarUiTimelineClass geometryAttributeTimeline;
 	BarUiValueClass morePanelProgress{ 0.0 };
 	BarUiValueClass morePanelOpacity{ 0.0 };
-	int mainLogoInkColorSource = -1;
-	bool mainLogoInkCarriesHighlighterHistory = false;
+	// 主按钮独立于其他浮层；收展仅改变这一个材质权重。
+	BarUiValueClass mainButtonLightMaterial{ barStyle.darkStyle || barState.fold ? 0.0 : 1.0 };
+	BarUiColorClass mainLogoPenColor{ GetPenColor() };
+	BarUiPctClass mainLogoDrawingPct{ 0.0 };
+	bool mainLogoColorInitialized = false;
+	bool mainLogoCarriesNonBrushColor = false;
+	BarUiValueClass barLightMaterial{ barStyle.darkStyle ? 0.0 : 1.0 };
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 	const BarUiCurveSpecClass buttonPressCurve = BarButtonPressCurve();
 	const BarUiCurveSpecClass buttonReleaseCurve = BarButtonReleaseCurve();
@@ -1203,6 +1219,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	frame.penMode = stateMode.Pen.ModeSelect;
 	frame.brush1Color = stateMode.Pen.Brush1.color;
 	frame.highlighterColor = stateMode.Pen.Highlighter1.color;
+	frame.laserColor = stateMode.Pen.Laser.color;
+	frame.laserActive = stateMode.laserActive;
 
 	return BarRenderLoopStageResult::Proceed;
 }
@@ -1509,6 +1527,38 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 	const double animationDtSeconds = frame.animationDtSeconds;
 	const double currentAnimationSpeedRate = frame.animationSpeedRate;
 	const int forNum = frame.ordinal;
+	const bool requestedDarkStyle = state.barStyle.requestedDarkStyle.load(std::memory_order_acquire);
+	if (requestedDarkStyle != state.barStyle.darkStyle)
+	{
+		state.barStyle.darkStyle = requestedDarkStyle;
+		// 仅在主题消息后补齐初始化型文字/图标；选中态在下方按正常状态覆盖。
+		for (auto& [key, word] : state.wordMap)
+			word->color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
+		for (auto& [key, svg] : state.svgMap)
+		{
+			if (key == BarUISetSvgEnum::logo1
+				|| (key >= BarUISetSvgEnum::DrawAttributeBar_ColorSelect1
+					&& key <= BarUISetSvgEnum::DrawAttributeBar_ColorSelect11)) continue;
+			if (svg->color1) svg->color1->SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
+			if (svg->color2) svg->color2->SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
+		}
+		state.unclassifiedDamagePending = true;
+		state.dirtyRegionTracker.ForceFullDamage();
+	}
+	{
+		// 常驻透明度只改变绘制倍率，不经动画；变化时整幅重画，避免局部脏区残留旧透明度。
+		const int requestedBackground = state.barStyle.requestedBackgroundOpacity.load(std::memory_order_acquire);
+		const int requestedContent = state.barStyle.requestedContentOpacity.load(std::memory_order_acquire);
+		if (requestedBackground != state.barStyle.backgroundOpacity
+			|| requestedContent != state.barStyle.contentOpacity)
+		{
+			state.barStyle.backgroundOpacity = requestedBackground;
+			state.barStyle.contentOpacity = requestedContent;
+			state.unclassifiedDamagePending = true;
+			state.dirtyRegionTracker.ForceFullDamage();
+		}
+	}
+	state.barLightMaterial.SetTar(requestedDarkStyle ? 0.0 : 1.0, BarUiDefaultOperationDur);
 	// 捕获取消会同步等待窗口线程，必须在主栏表现锁外完成。
 	auto thicknessSliderRange = GetBarThicknessSliderRange(
 		frameDrawingState.penMode, state.barStyle.dpiZoom, stateMode);
@@ -1553,7 +1603,28 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 	{
 		double operationDur = BarUiDefaultOperationDur;
 		auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-		auto mainButtonInk = state.svgMap[BarUISetSvgEnum::logoInk];
+		const bool pen = frameDrawingState.stateMode == StateModeSelectEnum::IdtPen;
+		const bool geometry = frameDrawingState.stateMode == StateModeSelectEnum::IdtShape;
+		const bool showLogoInk = BarLogoAppearance::IsDrawingMode(pen, geometry);
+		// 图形始终取 Brush1，活动笔才允许选激光/荧光颜色源。
+		const auto slot = geometry ? Inkeys::Business::PenColorStateSlot::Brush
+			: Inkeys::Business::ResolvePenColorStateSlot(pen && frameDrawingState.laserActive,
+				frameDrawingState.penMode == PenModeSelectEnum::IdtPenHighlighter1);
+		const COLORREF penColor = slot == Inkeys::Business::PenColorStateSlot::Laser
+			? frameDrawingState.laserColor
+			: (slot == Inkeys::Business::PenColorStateSlot::Highlighter
+				? frameDrawingState.highlighterColor : frameDrawingState.brush1Color);
+		const bool geometryTakingOver = geometry && state.mainLogoCarriesNonBrushColor;
+		// 保留普通换色的 current 接续；图形接管时清掉非 Brush 历史，避免串色。
+		if (!state.mainLogoColorInitialized || geometryTakingOver)
+			state.mainLogoPenColor.SetDirect(penColor);
+		else state.mainLogoPenColor.SetTar(penColor, operationDur);
+		state.mainLogoColorInitialized = true;
+		if (geometryTakingOver) state.mainLogoCarriesNonBrushColor = false;
+		else if (slot != Inkeys::Business::PenColorStateSlot::Brush)
+			state.mainLogoCarriesNonBrushColor = true;
+		else if (state.mainLogoPenColor.IsSame()) state.mainLogoCarriesNonBrushColor = false;
+		state.mainLogoDrawingPct.SetTar(showLogoInk ? 1.0 : 0.0, operationDur);
 		unsigned long long mainButtonPulseSerial = state.mainButtonClickPulseSerial.load(std::memory_order_relaxed);
 		bool mainButtonPulse = mainButtonPulseSerial != state.handledMainButtonPulseSerial;
 		if (state.finiteObserver && mainButtonPulse)
@@ -1573,8 +1644,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			mainButton->h.SetDirect(state.mainButtonBaseSize);
 			state.mainButtonLogo->w.SetDirect(state.mainButtonLogoBaseW);
 			state.mainButtonLogo->h.SetDirect(state.mainButtonLogoBaseH);
-			mainButtonInk->w.SetDirect(state.mainButtonLogoBaseW);
-			mainButtonInk->h.SetDirect(state.mainButtonLogoBaseH);
 		}
 		else if (mainButtonPulse)
 		{
@@ -1587,10 +1656,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 				state.mainButtonLogoBaseW * state.mainButtonScale, true, mainButtonPulseCurve);
 			state.mainButtonLogo->h.SetTar(state.mainButtonLogoBaseH, operationDur,
 				state.mainButtonLogoBaseH * state.mainButtonScale, true, mainButtonPulseCurve);
-			mainButtonInk->w.SetTar(state.mainButtonLogoBaseW, operationDur,
-				state.mainButtonLogoBaseW * state.mainButtonScale, true, mainButtonPulseCurve);
-			mainButtonInk->h.SetTar(state.mainButtonLogoBaseH, operationDur,
-				state.mainButtonLogoBaseH * state.mainButtonScale, true, mainButtonPulseCurve);
 		}
 		else
 		{
@@ -1598,8 +1663,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			mainButton->h.SetTar(state.mainButtonBaseSize, operationDur);
 			state.mainButtonLogo->w.SetTar(state.mainButtonLogoBaseW, operationDur);
 			state.mainButtonLogo->h.SetTar(state.mainButtonLogoBaseH, operationDur);
-			mainButtonInk->w.SetTar(state.mainButtonLogoBaseW, operationDur);
-			mainButtonInk->h.SetTar(state.mainButtonLogoBaseH, operationDur);
 		}
 
 		BarUiCurveEnum mainButtonPctCurve = state.barState.fold
@@ -1620,56 +1683,11 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			mainButton->pct.SetTar(
 				0.8, operationDur, nullopt, false, mainButtonPctCurveSpec);
 		}
-		state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->fill.value().SetTar(
-			GetThemeColor(BarThemeColorEnum::Surface), operationDur);
-		state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->frame.value().SetTar(
-			GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
-
-		// 主按钮底图随深浅色切换，着色层跟随当前画笔颜色。
-		{
-			static optional<bool> lastMainLogoDarkStyle;
-			bool currentMainLogoDarkStyle = state.barStyle.darkStyle;
-			if (!lastMainLogoDarkStyle.has_value() || lastMainLogoDarkStyle.value() != currentMainLogoDarkStyle)
-			{
-				state.svgMap[BarUISetSvgEnum::logo1]->SetTarFromResource(L"UI", currentMainLogoDarkStyle ? L"logo1" : L"logo2");
-				lastMainLogoDarkStyle = currentMainLogoDarkStyle;
-			}
-			// 着色层和底图同尺寸，贴合修正交给 SVG 路径本身处理。
-			bool showLogoInk = frameDrawingState.stateMode
-				== StateModeSelectEnum::IdtPen
-				|| frameDrawingState.stateMode == StateModeSelectEnum::IdtShape;
-			COLORREF logoInkColor = frameDrawingState.stateMode
-				== StateModeSelectEnum::IdtShape
-				? frameDrawingState.brush1Color
-				: (frameDrawingState.penMode
-					== PenModeSelectEnum::IdtPenHighlighter1
-					? frameDrawingState.highlighterColor
-					: frameDrawingState.brush1Color);
-			int logoInkColorSource = frameDrawingState.stateMode
-				== StateModeSelectEnum::IdtShape
-				? static_cast<int>(PenModeSelectEnum::IdtPenSoftPen)
-				: static_cast<int>(frameDrawingState.penMode);
-			bool logoInkUsesHighlighter = logoInkColorSource
-				== static_cast<int>(PenModeSelectEnum::IdtPenHighlighter1);
-			bool geometryTakingOverHighlighter = frameDrawingState.stateMode
-				== StateModeSelectEnum::IdtShape
-				&& state.mainLogoInkCarriesHighlighterHistory;
-			if (state.mainLogoInkColorSource < 0 || geometryTakingOverHighlighter)
-				mainButtonInk->color1.value().SetDirect(logoInkColor);
-			else mainButtonInk->color1.value().SetTar(
-				logoInkColor, operationDur);
-			state.mainLogoInkColorSource = logoInkColorSource;
-			if (geometryTakingOverHighlighter)
-				state.mainLogoInkCarriesHighlighterHistory = false;
-			else if (logoInkUsesHighlighter)
-				state.mainLogoInkCarriesHighlighterHistory = true;
-			else if (state.mainLogoInkCarriesHighlighterHistory
-				&& mainButtonInk->color1.value().IsSame())
-				state.mainLogoInkCarriesHighlighterHistory = false;
-			// 显隐继续共用 UI3 动画时钟；颜色源切换不允许污染 Geometry。
-			mainButtonInk->pct.SetTar(showLogoInk ? 1.0 : 0.0, operationDur);
-		}
+		// 表面保留深色基值，颜色、透明度和光影全部由 lightMaterial 统一解析。
+		mainButton->fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
+		mainButton->frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
 	}
+
 	// 主栏
 	{
 		// 仅保护主栏网格目标扫描，不跨初置/停靠/呈现；Close等副作用已在锁外归位。
@@ -2601,6 +2619,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			mainBarPhase, continueMainBarPhase };
 		syncedPctCurve = { syncedMainBarPctCurve, syncedMainBarPctCurve,
 			mainBarPhase, continueMainBarPhase };
+		// 与收展批次同帧提交、同帧推进；反向从当前权重接续，不重播或等待终点。
+		state.mainButtonLightMaterial.SetTar(
+			state.barStyle.darkStyle || state.barState.fold ? 0.0 : 1.0,
+			operationDur, nullopt, false, syncedPctCurve);
 		const BarUiCurveSpecClass continuedKeyframeValueCurve{
 			BarUiCurveEnum::EaseInCubic, BarUiCurveEnum::EaseOutBack,
 			mainBarPhase, true };
@@ -2643,6 +2665,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				const bool selected = temp->state->state == BarWidgetState::Selected;
 				const COLORREF contentColor = GetThemeColor(selected
 					? BarThemeColorEnum::Accent : BarThemeColorEnum::TextPrimary);
+				const COLORREF iconColor = GetThemeColor(selected
+					? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
 				if (state.barState.fold)
 				{
 					SetButtonPositionTar(temp->button.x, 40.0, 40.0);
@@ -2663,7 +2687,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					if (temp->button.framePct) temp->button.framePct->SetTar(0.0, operationDur);
 					if (temp->button.frameLightPct) temp->button.frameLightPct->SetTar(visible ? 1.0 : 0.0, operationDur);
 					temp->button.pct.SetTar(visible ? 0.30 : 0.0, operationDur);
-					const COLORREF color = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+					const COLORREF color = GetThemeColor(BarThemeColorEnum::Divider);
 					if (temp->button.fill) temp->button.fill->SetTar(color);
 					if (temp->button.frame) temp->button.frame->SetTar(color);
 					temp->button.frameRendering = BarUiFrameRenderingEnum::PointLight;
@@ -2686,7 +2710,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						&& temp->name.enable.tar && temp->name.content.GetTar().starts_with(L"__color");
 					if (!colorSelector)
 						Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(*temp, visible,
-							temp->button.enable.tar && !disabled, selected, operationDur, contentColor);
+							temp->button.enable.tar && !disabled, selected, operationDur);
 					else
 					{
 						temp->button.pct.SetTar(visible ? 1.0 : 0.0, operationDur);
@@ -2697,8 +2721,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 
 					if (forNum == 1 || state.barState.fold || !temp->IsVisible())
 					{
-						if (temp->icon.color1) temp->icon.color1->SetDirect(contentColor);
-						if (temp->icon.color2) temp->icon.color2->SetDirect(contentColor);
+						if (temp->icon.color1) temp->icon.color1->SetDirect(iconColor);
+						if (temp->icon.color2) temp->icon.color2->SetDirect(iconColor);
 						if (temp->button.frame) temp->button.frame->SetDirect(contentColor);
 					}
 				}
@@ -3440,9 +3464,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					for (auto wordType : pickerThemeWords)
 						state.wordMap[wordType]->color.SetTar(
 							GetThemeColor(BarThemeColorEnum::TextPrimary), operationDur);
-					// 太阳/月亮图标随主题文字色变化。
+					// 太阳/月亮图标使用独立图标角色。
 					COLORREF pickerToneIconColor =
-						GetThemeColor(BarThemeColorEnum::TextPrimary);
+						GetThemeColor(BarThemeColorEnum::IconPrimary);
 					if (forNum == 1 || !state.barState.drawAttribute)
 					{
 						state.svgMap[
@@ -3548,13 +3572,19 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							* layoutScale);
 						word->h.SetTar(BarDrawAttributePenTypeButtonHeight * layoutScale);
 						word->size.SetTar(12.0 * layoutScale);
+						// 浅色禁用态从正文向表面混合，深色保留原中性灰。
 						const COLORREF contentColor=button.enabled
 							?GetThemeColor(button.selected?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary)
-							:RGB(200,200,200);
+							:(state.barStyle.darkStyle?RGB(200,200,200)
+								:static_cast<COLORREF>(BarThemeMaterial::MixColor(
+									GetThemeColor(BarThemeColorEnum::TextPrimary),
+									GetThemeColor(BarThemeColorEnum::Surface),0.45)));
 						Inkeys::UI::Bar::RetargetBarFixedButtonVisual({*shape,svg.get(),word.get(),
 							button.pressScale,button.hoverStage},state.barState.drawAttribute,
 							button.enabled,button.selected,button.pressed,BarUiDefaultOperationDur,contentColor);
-						SetDrawAttributeSvgColor(button.svg,contentColor);
+						SetDrawAttributeSvgColor(button.svg,button.enabled
+							?GetThemeColor(button.selected?BarThemeColorEnum::Accent:BarThemeColorEnum::IconPrimary)
+							:contentColor);
 
 				}
 
@@ -3653,9 +3683,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					thicknessDivider->rh->SetTar(BarUiDividerRadius * layoutScale);
 					thicknessDivider->ft->SetTar(layoutScale);
 					thicknessDivider->fill->SetTar(
-						GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+						GetThemeColor(BarThemeColorEnum::Divider));
 					thicknessDivider->frame->SetTar(
-						GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+						GetThemeColor(BarThemeColorEnum::Divider));
 					thicknessDivider->pct.SetTar(state.barState.drawAttribute ? 0.30 : 0.0);
 					thicknessDivider->framePct->SetTar(0.0);
 					thicknessDivider->frameLightPct->SetTar(
@@ -3704,11 +3734,14 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							shape->rw.value().SetTar(4.0 * layoutScale);
 							shape->rh.value().SetTar(4.0 * layoutScale);
 							shape->fill.value().SetTar(selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
+								? GetThemeColor(BarThemeColorEnum::SelectedFill)
 								: GetThemeColor(BarThemeColorEnum::PressedFill));
+							// Dark 保留原边缘光端点，Light 才切换为石墨图标色。
 							shape->frame.value().SetTar(selected
 								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::TextPrimary));
+								: GetThemeColor(state.barStyle.darkStyle
+									? BarThemeColorEnum::EdgeLight
+									: BarThemeColorEnum::IconPrimary));
 
 							if (!visible)
 							{
@@ -3727,13 +3760,13 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							}
 							else
 							{
-								double shapeOpacity = pressed ? 0.10
-									: (selected ? 0.20 : 0.0);
+								double shapeOpacity = pressed ? (selected ? SelectedFillOpacity(0.10) : 0.10)
+									: (selected ? SelectedFillOpacity() : 0.0);
 								if (thicknessControlsExchangeDirect)
 									shape->pct.SetDirect(
 										shapeOpacity * thicknessControlOpacity);
-								else if (pressed) shape->pct.SetTar(0.10);
-								else if (selected) shape->pct.SetTar(0.20);
+								else if (pressed) shape->pct.SetTar(selected ? SelectedFillOpacity(0.10) : 0.10);
+								else if (selected) shape->pct.SetTar(SelectedFillOpacity());
 								else if (hoverStage == BarButtonHoverStageEnum::None
 									|| thicknessControlOpacity < 0.999999)
 									shape->pct.SetTar(0.0);
@@ -3854,7 +3887,7 @@ for (size_t i = 0; i < 3; ++i)
 								state.barState.drawAttributeBar.thicknessViewMode
 									!= ThicknessViewMode::Preview
 									? GetThemeColor(BarThemeColorEnum::Accent)
-									: GetThemeColor(BarThemeColorEnum::TextPrimary);
+									: GetThemeColor(BarThemeColorEnum::IconPrimary);
 					if (forNum == 1 || !state.barState.drawAttribute)
 						thicknessAdjustColor.SetDirect(thicknessAdjustTargetColor);
 					else thicknessAdjustColor.SetTar(thicknessAdjustTargetColor);
@@ -4028,20 +4061,21 @@ for (size_t i = 0; i < 3; ++i)
 					state.svgMap[
 						BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo]
 						->color1.value().SetTar(
-							RGB(200, 200, 200), operationDur);
+							state.barStyle.darkStyle ? RGB(200, 200, 200)
+								: GetThemeColor(BarThemeColorEnum::IconPrimary), operationDur);
 					state.svgMap[
 						BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo]
 						->color1.value().SetTar(
-							RGB(255, 255, 255), operationDur);
+							GetThemeColor(BarThemeColorEnum::IconPrimary), operationDur);
 					state.svgMap[
 						BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose]
 						->color1.value().SetTar(
-							GetThemeColor(BarThemeColorEnum::TextPrimary),
+							GetThemeColor(BarThemeColorEnum::IconPrimary),
 							operationDur);
 					state.svgMap[
 						BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose]
 						->color1.value().SetTar(
-							GetThemeColor(BarThemeColorEnum::TextPrimary),
+							GetThemeColor(BarThemeColorEnum::IconPrimary),
 							operationDur);
 				}
 
@@ -4575,7 +4609,7 @@ for (size_t i = 0; i < 3; ++i)
 					icon->SetWH(28.0 * layoutScale, 28.0 * layoutScale);
 					COLORREF iconColor = button.selected
 						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::TextPrimary);
+						: GetThemeColor(BarThemeColorEnum::IconPrimary);
 					icon->color1->SetTar(iconColor);
 					icon->color2->SetTar(iconColor);
 					icon->pct.SetTar(state.barState.geometryAttribute
@@ -4609,7 +4643,7 @@ for (size_t i = 0; i < 3; ++i)
 				closeSvg->y.SetTar(11.0 * layoutScale);
 				closeSvg->SetWH(18.0 * layoutScale, 18.0 * layoutScale);
 				closeSvg->color1->SetTar(
-					GetThemeColor(BarThemeColorEnum::TextPrimary));
+					GetThemeColor(BarThemeColorEnum::IconPrimary));
 				closeSvg->pct.SetTar(state.barState.geometryAttribute ? 1.0 : 0.0);
 
 				auto divider = state.shapeMap[
@@ -4621,8 +4655,8 @@ for (size_t i = 0; i < 3; ++i)
 				divider->rw->SetTar(BarUiDividerRadius * layoutScale);
 				divider->rh->SetTar(BarUiDividerRadius * layoutScale);
 				divider->ft->SetTar(layoutScale);
-				divider->fill->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				divider->frame->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				divider->fill->SetTar(GetThemeColor(BarThemeColorEnum::Divider));
+				divider->frame->SetTar(GetThemeColor(BarThemeColorEnum::Divider));
 				divider->pct.SetTar(state.barState.geometryAttribute ? 0.30 : 0.0);
 				divider->framePct->SetTar(0.0);
 				divider->frameLightPct->SetTar(state.barState.geometryAttribute ? 1.0 : 0.0);
@@ -4923,7 +4957,7 @@ for (size_t i = 0; i < 3; ++i)
 		closeSvg->x.SetDirect(close->x.val);
 		closeSvg->y.SetDirect(close->y.val);
 		closeSvg->SetWH(18.0 * scale, 18.0 * scale);
-		closeSvg->color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
+		closeSvg->color1->SetDirect(GetThemeColor(BarThemeColorEnum::IconPrimary));
 		closeSvg->pct.SetDirect(opacityProgress);
 		closeSvg->UpInh(BarUiInheritClass(
 			closeSvg->x.val - closeSvg->w.val / 2.0,
@@ -4989,15 +5023,17 @@ for (size_t i = 0; i < 3; ++i)
 			if (settleHiddenButtonVisuals)
 			{
 				button->button.fill->SetDirect(GetThemeColor(selected
-					? BarThemeColorEnum::Accent : BarThemeColorEnum::PressedFill));
+					? BarThemeColorEnum::SelectedFill : BarThemeColorEnum::PressedFill));
 				const COLORREF color = GetThemeColor(selected
 					? BarThemeColorEnum::Accent : BarThemeColorEnum::TextPrimary);
+				const COLORREF iconColor = GetThemeColor(selected
+					? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
 				button->button.frame->SetDirect(color);
-				if (button->icon.color1) button->icon.color1->SetDirect(color);
-				if (button->icon.color2) button->icon.color2->SetDirect(color);
+				if (button->icon.color1) button->icon.color1->SetDirect(iconColor);
+				if (button->icon.color2) button->icon.color2->SetDirect(iconColor);
 				button->name.color.SetDirect(color);
 			}
-			const double contentOpacity = opacityProgress * (enabled ? 1.0 : BarButtonDisabledContentOpacity);
+			const double contentOpacity = opacityProgress * (enabled ? 1.0 : GetThemeDisabledContentOpacity());
 			button->icon.pct.SetDirect(contentOpacity);
 			button->name.pct.SetDirect(button->size == BarButtonSizeEnum::oneOne ? 0.0 : contentOpacity);
 			button->lastDrawX = button->button.x.val;
@@ -5082,6 +5118,43 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			if (dirtyKey != 0) state.dirtyRegionTracker.MarkChanged(dirtyKey);
 			if (state.finiteObserver) ObserveRole(contentRole, false, stringO.IsSame());
 		};
+	const auto mainMaterialDirtyKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::MainGroup);
+	const bool barMaterialActive = !state.barLightMaterial.IsSame();
+	if (barMaterialActive)
+	{
+		ChangeValue(state.barLightMaterial, false, mainMaterialDirtyKey);
+		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+		state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
+		state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
+		state.dirtyRegionTracker.MarkChanged(dockTargetIndicatorDirtyKey);
+	}
+	if (!state.mainButtonLightMaterial.IsSame())
+		ChangeValue(state.mainButtonLightMaterial, false, mainMaterialDirtyKey);
+	const double lightMaterial = BarThemeMaterial::ClampWeight(state.barLightMaterial.val);
+	for (auto& [key, shape] : state.shapeMap)
+	{
+		shape->lightMaterial = lightMaterial;
+		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(shape.get()));
+		if (!shape->themeSurface) continue;
+		shape->fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
+		shape->frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
+	}
+	const double mainLightMaterial = BarThemeMaterial::ClampWeight(state.mainButtonLightMaterial.val);
+	state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->lightMaterial = mainLightMaterial;
+	const auto logoDirtyKey = GetBarDirtyVisualKey(state.mainButtonLogo.get());
+	if (!state.mainLogoPenColor.IsSame())
+		ChangeColor(state.mainLogoPenColor, false, logoDirtyKey);
+	if (!state.mainLogoDrawingPct.IsSame())
+		ChangePct(state.mainLogoDrawingPct, false, logoDirtyKey);
+	const auto appearance = BarLogoAppearance::Resolve(mainLightMaterial,
+		state.mainLogoDrawingPct.val, state.mainLogoPenColor.val);
+	if (state.mainButtonLogo->mainLogoAppearance != appearance)
+	{
+		state.mainButtonLogo->mainLogoAppearance = appearance;
+		needRendering = true;
+		state.dirtyRegionTracker.MarkChanged(logoDirtyKey);
+	}
+
 // 关闭动画时拖动不会改变 val/tar，仍需每帧重绘圆点位置。
 		if (state.barState.drawAttributeBar.thicknessSliderDragging
 			|| state.barState.drawAttributeBar.thicknessSliderPressed
@@ -5525,6 +5598,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	// 所有目标直接调用主栏抽取的实际推进逻辑；这里只映射主栏诊断和脏区身份。
 	auto AdvanceButton = [&](BarButtonClass& button, bool moreItem)
 	{
+		button.button.lightMaterial = lightMaterial;
+		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(&button.button));
 		Inkeys::UI::Bar::BarButtonAnimationContext context;
 		context.dtSeconds = animationDtSeconds;
 		context.speedRate = currentAnimationSpeedRate;
@@ -5820,9 +5895,13 @@ double baseThumbDiameter =
 			selectedPenTypeShape && selectedPenTypeShape->frame.has_value()
 				? static_cast<COLORREF>(selectedPenTypeShape->frame->val)
 				: GetThemeColor(BarThemeColorEnum::TextPrimary));
+		const COLORREF extensionDividerColor = static_cast<COLORREF>(
+			BarThemeMaterial::MixColor(extensionColor,
+				BarThemeMaterial::LightColor(
+					BarThemeMaterial::ColorRole::Divider), lightMaterial));
 		extensionArrow->color1.value().SetDirect(extensionColor);
-		extensionDivider->fill->SetDirect(extensionColor);
-		extensionDivider->frame->SetDirect(extensionColor);
+		extensionDivider->fill->SetDirect(extensionDividerColor);
+		extensionDivider->frame->SetDirect(extensionDividerColor);
 		extensionArrow->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 		// 浮窗始终从 Thumb 锚点等比展开；完整布局独立计算，保证圆和文字不被裁切。
@@ -6010,9 +6089,9 @@ double baseThumbDiameter =
 			popupSurface->rh->SetDirect(4.0 * popupScale);
 			popupSurface->ft->SetDirect(popupScale);
 			popupSurface->fill->SetDirect(
-				GetThemeColor(BarThemeColorEnum::Surface));
+				GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
 			popupSurface->frame->SetDirect(
-				GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
 			popupSurface->pct.SetDirect(
 				BarDrawAttributeSurfaceOpacity * popupOpacity);
 			popupSurface->framePct->SetDirect(
@@ -6034,7 +6113,16 @@ double baseThumbDiameter =
 			popupCircle->h.SetDirect(circleDiameter * popupScale);
 			popupCircle->rw->SetDirect(circleDiameter * popupScale / 2.0);
 			popupCircle->rh->SetDirect(circleDiameter * popupScale / 2.0);
-			popupCircle->fill->SetDirect(RGB(255, 255, 255));
+			// 粗细圆点跟随主栏图标角色，并沿主题材质权重连续换色。
+			const double lightWeight = BarThemeMaterial::ClampWeight(
+				state.barLightMaterial.val);
+			const COLORREF popupCircleColor = MixBarUiColor(
+				GetThemeColor(BarThemeModeEnum::Dark,
+					BarThemeColorEnum::IconPrimary),
+				GetThemeColor(BarThemeModeEnum::Light,
+					BarThemeColorEnum::IconPrimary),
+				lightWeight);
+			popupCircle->fill->SetDirect(popupCircleColor);
 			popupCircle->pct.SetDirect(popupOpacity);
 			popupCircle->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
@@ -6050,9 +6138,22 @@ double baseThumbDiameter =
 				BarThicknessPreviewNumberFontSize);
 			popupNumber->content.SetVal(previewText);
 			popupNumber->content.SetTar(previewText);
+			// 数字的内外颜色都用同一材质权重插值，避免过渡中突然翻转黑白。
+			const COLORREF popupNumberOutsideColor = MixBarUiColor(
+				GetThemeColor(BarThemeModeEnum::Dark,
+					BarThemeColorEnum::TextPrimary),
+				GetThemeColor(BarThemeModeEnum::Light,
+					BarThemeColorEnum::TextPrimary),
+				lightWeight);
+			const COLORREF popupNumberInsideColor = MixBarUiColor(
+				GetBarReadableTextColor(GetThemeColor(BarThemeModeEnum::Dark,
+					BarThemeColorEnum::IconPrimary)),
+				GetBarReadableTextColor(GetThemeColor(BarThemeModeEnum::Light,
+					BarThemeColorEnum::IconPrimary)),
+				lightWeight);
 			popupNumber->color.SetDirect(MixBarUiColor(
-				GetThemeColor(BarThemeColorEnum::TextPrimary),
-				RGB(0, 0, 0), numberInsideProgress));
+				popupNumberOutsideColor, popupNumberInsideColor,
+				numberInsideProgress));
 			popupNumber->pct.SetDirect(popupOpacity);
 
 			state.drawAttributeThicknessPreviewNumberRect = D2D1::RectF(
@@ -6272,7 +6373,9 @@ double baseThumbDiameter =
 		annotationLabel->size.SetDirect(13.0 * panelScale);
 		annotationLabel->fontTargetSize=13.0*fontPanelTargetScale;
 		annotationLabel->pct.SetDirect(annotationOpacity);
-		annotationLabel->color.SetDirect(RGB(160, 160, 160));
+		annotationLabel->color.SetDirect(state.barStyle.darkStyle ? RGB(160, 160, 160)
+			: MixBarUiColor(GetThemeColor(BarThemeColorEnum::TextPrimary),
+				GetThemeColor(BarThemeColorEnum::Surface), 0.35));
 		annotationLabel->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 		double annotationInfoX = menuLeft + menuDrawWidth - menuPadding
@@ -7579,6 +7682,10 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 			frame.bottomDockDragSession, state.observedDisplaySerial, frame.zoom));
 	bool needBorderLightingRendering = false;
 	{
+		// Laser 记忆在离开 Pen 后仍保留，图形光效不能把它误当作活动笔色。
+		const bool drawingLaser = Inkeys::Business::IsLaserToolActive(
+			frameDrawingState.stateMode == StateModeSelectEnum::IdtPen,
+			frameDrawingState.laserActive);
 		// 光源与本帧几何消费同一稳定 tuple，不拼接 live 或旧成功呈现的位移。
 		const POINT layoutScreenOrigin{
 			state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
@@ -7586,8 +7693,9 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		needBorderLightingRendering = state.spec.PrepareFrameLighting(
 			animationDtSeconds, layoutScreenOrigin,
 			static_cast<int>(frameDrawingState.stateMode),
-			static_cast<int>(frameDrawingState.penMode),
-			frameDrawingState.brush1Color,
+			static_cast<int>(drawingLaser
+				? PenModeSelectEnum::IdtPenSoftPen : frameDrawingState.penMode),
+			drawingLaser ? frameDrawingState.laserColor : frameDrawingState.brush1Color,
 			frameDrawingState.highlighterColor);
 	}
 	// 主栏独占两路光源状态机；跨 HWND Surface 只消费最终屏幕坐标快照。
@@ -7789,6 +7897,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			mainButton->x.val - mainButton->w.val / 2.0,
 			mainButton->y.val - mainButton->h.val / 2.0));
 		mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
+		state.mainButtonLogo->Inherit(BarUiInheritEnum::Center, *mainButton);
 		const double mainButtonStroke = mainButton->ft.has_value()
 			? max(0.0, static_cast<double>(mainButton->ft->val)) : 0.0;
 		const double mainBarStroke = mainBar->ft.has_value()
@@ -8023,8 +8132,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			frame.bottomDockDragActive && !fixedDragGeometry
 				? BarUiGetCurveExtrema(BarUiCurveEnum::EaseOutBack).maximum : 0.0,
 			ValueRange(state.bottomDockTargetIndicatorProgress).maximum);
-		const double indicatorGaussianOutsetDip = BarUiEdgeLightingEnabled
-			? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0;
+		const double indicatorGaussianOutsetDip = max(
+			BarUiEdgeLightingEnabled ? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0,
+			BarThemeMaterial::SurfaceShadowOutsetDip);
 		const RECT dockTargetIndicatorEnvelopeBounds =
 			ResolveBarBottomDockIndicatorVisualEnvelope(
 				dockTargetIndicatorReservationGeometry, maximumIndicatorScale,
@@ -8739,8 +8849,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			for (const auto& [visual, svg] : state.svgMap)
 			{
 				const int ordinal = static_cast<int>(visual);
-				const bool mainVisual = visual == BarUISetSvgEnum::logo1
-					|| visual == BarUISetSvgEnum::logoInk;
+				const bool mainVisual = visual == BarUISetSvgEnum::logo1;
 				const bool moreVisual = visual == BarUISetSvgEnum::MorePanelClose;
 				const bool drawVisual = ordinal >= static_cast<int>(
 					BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
@@ -9081,6 +9190,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						&& hasPossibleLightSource;
 					if (pointLightVisible)
 						frameWidth += BarRenderingAttribute::pointLightDiffuseExtraWidth;
+					if (root->themeSurface)
+						frameWidth = max(frameWidth, BarThemeMaterial::SurfaceShadowOutsetDip);
 					const bool visible = enabled
 						&& ((root->fill.has_value() && objectOpacity > 0.0)
 							|| visibleFrame);
@@ -9332,10 +9443,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 							&& (popupSurface->framePrimaryLightEnabled
 								|| (BarUiDynamicEdgeLightingEnabled
 									&& popupSurface->frameCursorLightIntensityScale > 0.0));
+						const double fullPopupOutsetDip = max(
+							maximumPopupScale + (fullPointLightVisible
+								? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0),
+							popupSurface->themeSurface ? BarThemeMaterial::SurfaceShadowOutsetDip : 0.0);
 						const LONG fullPopupOutset = static_cast<LONG>(ceil(
-							(maximumPopupScale + (fullPointLightVisible
-								? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0))
-							* frameZoom)) + BarRenderingAttribute::dirtyAntialiasPadding;
+							fullPopupOutsetDip * frameZoom)) + BarRenderingAttribute::dirtyAntialiasPadding;
 						const LONG maximumPopupOutset = max(
 							extent.outset, fullPopupOutset);
 						const double baseThumbDiameter =
@@ -10112,9 +10225,15 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						COLORREF color = anchorShape->frame.has_value()
 							? static_cast<COLORREF>(anchorShape->frame->val)
 							: GetThemeColor(BarThemeColorEnum::TextPrimary);
+						const COLORREF dividerColor = static_cast<COLORREF>(
+							BarThemeMaterial::MixColor(color,
+								BarThemeMaterial::LightColor(
+									BarThemeMaterial::ColorRole::Divider),
+								BarThemeMaterial::ClampWeight(
+									state.barLightMaterial.val)));
 						extensionArrow->color1->SetDirect(color);
-						extensionDivider->fill->SetDirect(color);
-						extensionDivider->frame->SetDirect(color);
+						extensionDivider->fill->SetDirect(dividerColor);
+						extensionDivider->frame->SetDirect(dividerColor);
 						bool currentVisual = visual.mode == stateMode.Pen.ModeSelect
 							&& !stateMode.laserActive;
 						if (currentVisual && abs(extensionScale - 1.0) > 0.000001)
@@ -10669,7 +10788,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									COLORREF tickColor = MixBarUiColor(
 										GetThemeColor(BarThemeColorEnum::TextPrimary),
 										GetThemeColor(BarThemeColorEnum::Surface), 0.52);
-									COLORREF centerColor = RGB(255, 255, 255);
+									COLORREF centerColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
 
 									// 两条固定分段 envelope 只暗示圆柱外缘，不引入 effect 或逐帧资源。
 									if (auto envelopeBrush =
@@ -10980,7 +11099,7 @@ bool presetButton = button.presetIndex >= 0;
 							double buttonOpacity = presetButton
 								? static_cast<double>(numberWord->pct.val)
 								: (adjustVisible ? contentOpacity : 0.0);
-							// 圆点读取 Shape 的当前边框色，跟随白色到青色的已有颜色动画。
+							// 圆点读取 Shape 的当前边框色，跟随图标色到青色的已有颜色动画。
 							COLORREF buttonColor = shape->frame.value().val;
 
 							double pressScale = button.pressScale->val;
@@ -11328,6 +11447,8 @@ bool presetButton = button.presetIndex >= 0;
 						&state.current, true);
 
 					// 退场按钮先画，收拢时由仍可见的前驱覆盖，不改变列表与命中顺序。
+					// 主栏图标/文字属于常驻内容，受用户内容透明度控制；选中底板等形状不受影响。
+					state.spec.SetResidentContentOpacity(GetThemeResidentContentOpacity());
 					for (const bool visible : { false, true })
 					{
 						size_t layoutIndex = 0;
@@ -11341,6 +11462,7 @@ bool presetButton = button.presetIndex >= 0;
 							DrawBarButtonVisual(state.spec, barDeviceContext, *button, inherit);
 						}
 					}
+					state.spec.SetResidentContentOpacity(1.0);
 				};
 
 				// 更多按钮保留主栏局部坐标，浮层自身仍只按上下展开方向翻转物理行。
@@ -11424,7 +11546,10 @@ bool presetButton = button.presetIndex >= 0;
 					// Logo 与主按钮共用刚性水平抓手，只叠加既有竖向果冻。
 					SetGripTransform();
 					auto obj = BarUISetSvgEnum::logo1;
+						// 主按钮 Logo 同属常驻内容。
+						state.spec.SetResidentContentOpacity(GetThemeResidentContentOpacity());
 						state.spec.Svg(barDeviceContext, *state.svgMap[obj], state.svgMap[obj]->Inherit(Center, *state.superellipseMap[BarUISetSuperellipseEnum::MainButton]));
+						state.spec.SetResidentContentOpacity(1.0);
 					}
 				}
 				// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
@@ -11522,13 +11647,6 @@ bool presetButton = button.presetIndex >= 0;
 						UnionPngBounds(state.current, &temp->pngIcon);
 					else UnionSvgBounds(state.current, &temp->icon);
 					UnionWordBounds(state.current, &temp->name);
-				}
-				{
-					auto obj = BarUISetSvgEnum::logoInk;
-					static_assert(static_cast<int>(BarUISetSvgEnum::logo1) == 0 && static_cast<int>(BarUISetSvgEnum::logoInk) == 1);
-					if (state.finiteSvgProbe) state.finiteSvgProbe->DeclareMainLogoInkComposition(barDeviceContext,
-						state.svgMap[BarUISetSvgEnum::logo1].get(), state.svgMap[obj].get());
-					state.spec.Svg(barDeviceContext, *state.svgMap[obj], state.svgMap[obj]->Inherit(Center, *state.superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 				}
 			}
 		{ /**/ }
@@ -12095,7 +12213,7 @@ bool presetButton = button.presetIndex >= 0;
 						BarUiInheritClass(closeHit->inhX, closeHit->inhY));
 					if (auto closeBrush = state.spec.GetFrameSolidColorBrush(
 						barDeviceContext,
-						GetThemeColor(BarThemeColorEnum::TextPrimary),
+						GetThemeColor(BarThemeColorEnum::IconPrimary),
 						pickerOpacity))
 					{
 // 相对此前 2/3 再减半为 1/3；去掉固定内缩与下限，避免小尺寸被夹回原观感。
@@ -12256,8 +12374,6 @@ bool presetButton = button.presetIndex >= 0;
 				COLORREF surfaceColor = panel->fill.has_value()
 					? static_cast<COLORREF>(panel->fill.value().val)
 					: GetThemeColor(BarThemeColorEnum::Surface);
-				COLORREF textColor = GetThemeColor(
-					BarThemeColorEnum::TextPrimary);
 				COLORREF accentColor = GetThemeColor(
 					BarThemeColorEnum::Accent);
 				double accentOpacity = clamp(static_cast<double>(
@@ -12265,12 +12381,28 @@ bool presetButton = button.presetIndex >= 0;
 					0.0, 1.0);
 				COLORREF centerColor = MixBarUiColor(
 					surfaceColor, accentColor, accentOpacity);
-				COLORREF outerFillColor = state.barStyle.darkStyle
-					? MixBarUiColor(surfaceColor, textColor, 0.20)
-					: surfaceColor;
+				const double lightWeight = BarThemeMaterial::ClampWeight(
+					state.barLightMaterial.val);
+				const COLORREF darkOuterFillColor = MixBarUiColor(
+					GetThemeColor(BarThemeModeEnum::Dark,
+						BarThemeColorEnum::Surface),
+					GetThemeColor(BarThemeModeEnum::Dark,
+						BarThemeColorEnum::TextPrimary), 0.20);
+				// Light 端按 WinUI 3 Slider Thumb：ControlSolidFillColorDefault 纯白底，
+				// 外圈为 ControlElevationBorder 的细描边（约 6%~16% 黑，取 12% 石墨灰）。
+				const COLORREF lightOuterFillColor = RGB(255, 255, 255);
+				const COLORREF lightOuterFrameColor = MixBarUiColor(
+					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface),
+					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::TextPrimary),
+					BarThemeMaterial::LightSliderThumbBorderOpacity);
+				COLORREF outerFillColor = MixBarUiColor(
+					darkOuterFillColor, lightOuterFillColor, lightWeight);
+				const COLORREF darkOuterFrameColor = MixBarUiColor(
+					darkOuterFillColor,
+					GetThemeColor(BarThemeModeEnum::Dark,
+						BarThemeColorEnum::TextPrimary), 0.12);
 				COLORREF outerFrameColor = MixBarUiColor(
-					outerFillColor, textColor,
-					state.barStyle.darkStyle ? 0.12 : 0.16);
+					darkOuterFrameColor, lightOuterFrameColor, lightWeight);
 				FillThumbCircle(outerFrameColor, thumbRadius);
 				FillThumbCircle(outerFillColor,
 					max(0.0F, thumbRadius - static_cast<FLOAT>(
@@ -12310,8 +12442,8 @@ bool presetButton = button.presetIndex >= 0;
 				BarBottomDockIndicatorCornerRadiusDip * dockTargetIndicatorScale,
 				BarBottomDockIndicatorCornerRadiusDip * dockTargetIndicatorScale,
 				BarButtonFrameThicknessDip * dockTargetIndicatorScale,
-				GetThemeColor(BarThemeColorEnum::Surface),
-				GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface),
+				GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
 			indicatorShape.enable.Initialization(true);
 			indicatorShape.pct.Initialization(
 				BarMainBarFillOpacity * dockTargetIndicatorOpacity);
@@ -12319,6 +12451,10 @@ bool presetButton = button.presetIndex >= 0;
 				BarMainBarFrameOpacity * dockTargetIndicatorOpacity);
 			indicatorShape.frameLightPct = BarUiPctClass(
 				BarMainBarFrameOpacity * dockTargetIndicatorOpacity);
+			indicatorShape.themeSurface = true;
+			indicatorShape.lightFillOpacityScale = BarThemeMaterial::LightResidentSurfaceOpacityScale;
+			indicatorShape.residentSurface = true;
+			indicatorShape.lightMaterial = state.barLightMaterial.val;
 			indicatorShape.frameRendering = BarUiFrameRenderingEnum::PointLight;
 			indicatorShape.frameLightColor =
 				BarUiFrameLightColorEnum::PenWhenDrawing;

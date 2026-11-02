@@ -279,6 +279,11 @@ namespace Inkeys::UI::Setting::Design
 		bool shortcutStatusWarning = false;
 		int settingEntryAnimation = 1;
 		bool allowMultipleInstances = false;
+		int themeMode = 0; // 0=深色，1=浅色；配置值映射在 Setting.cpp 完成。
+		int settingThemeMode = 1; // 设置窗口自身配色，选项顺序与主栏主题一致：0=深色，1=浅色。
+		// 常驻透明度为绝对值（0.30~1.00）；背景默认值随主栏主题变化，供显示与重置。
+		float backgroundOpacity = 0.80F, backgroundOpacityDefault = 0.80F;
+		float contentOpacity = 1.0F;
 	};
 
 	struct GeneralEvents
@@ -299,6 +304,10 @@ namespace Inkeys::UI::Setting::Design
 		bool dynamicEdgeLightingChanged = false;
 		bool startupPlacementChanged = false;
 		bool taskbarScaleBaseChanged = false;
+		bool themeModeChanged = false;
+		bool settingThemeModeChanged = false;
+		bool backgroundOpacityChanged = false, backgroundOpacityActive = false, backgroundOpacityReset = false;
+		bool contentOpacityChanged = false, contentOpacityActive = false;
 		bool selectModeChanged = false, iconOrderChanged = false, expansionDirectionChanged = false;
 		std::array<bool, 4> autoCollapseChanged{};
 		std::array<bool, 6> shortcutsChanged{};

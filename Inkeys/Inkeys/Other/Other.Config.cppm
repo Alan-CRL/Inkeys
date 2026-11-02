@@ -19,6 +19,39 @@ import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys
 {
+	inline constexpr int ThemeModeDark = 1;
+	inline constexpr int ThemeModeLight = 2;
+
+	// 主题配置只接受 1/2；旧配置缺失或异常值统一回退深色。
+	constexpr int NormalizeThemeMode(int themeMode) noexcept
+	{
+		return themeMode == ThemeModeLight ? ThemeModeLight : ThemeModeDark;
+	}
+
+	constexpr bool ThemeModeUsesDarkStyle(int themeMode) noexcept
+	{
+		return NormalizeThemeMode(themeMode) == ThemeModeDark;
+	}
+
+	// 常驻表面透明度（百分比）：背景 0 表示跟随主题默认值，其余与内容透明度均限制在 30~100。
+	inline constexpr int ResidentOpacityMinimumPercent = 30;
+	inline constexpr int ResidentOpacityMaximumPercent = 100;
+	inline constexpr int ResidentBackgroundOpacityThemeDefault = 0;
+	inline constexpr int ResidentContentOpacityDefault = 100;
+
+	constexpr int NormalizeResidentBackgroundOpacity(int percent) noexcept
+	{
+		if (percent == ResidentBackgroundOpacityThemeDefault) return percent;
+		if (percent < ResidentOpacityMinimumPercent) return ResidentOpacityMinimumPercent;
+		return percent > ResidentOpacityMaximumPercent ? ResidentOpacityMaximumPercent : percent;
+	}
+
+	constexpr int NormalizeResidentContentOpacity(int percent) noexcept
+	{
+		if (percent < ResidentOpacityMinimumPercent) return ResidentOpacityMinimumPercent;
+		return percent > ResidentOpacityMaximumPercent ? ResidentOpacityMaximumPercent : percent;
+	}
+
 	enum class ConfigUploadMode
 	{
 		NoUpload,
@@ -443,6 +476,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
 			) \
 			GROUP(UI3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThemeMode, ThemeModeDark) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BackgroundOpacity, ResidentBackgroundOpacityThemeDefault) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ContentOpacity, ResidentContentOpacityDefault) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowFractionalFontSize, false) \
 				GROUP(StartupPreview, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \

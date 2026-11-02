@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include "Bar.ThemeMaterial.h"
 
 export module Inkeys.UI.Bar:Rendering;
 
@@ -27,8 +28,8 @@ constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderCursorLightRadius = 240.0;
 constexpr double BarBorderLightIntensity = 1.0;
-constexpr double BarBorderFrameDiffuseOpacity = 0.30;
-constexpr double BarBorderPenDiffuseOpacity = 0.20;
+constexpr double BarBorderFrameDiffuseOpacity = BarThemeMaterial::DarkFrameDiffuseOpacity;
+constexpr double BarBorderPenDiffuseOpacity = BarThemeMaterial::DarkPenDiffuseOpacity;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
 
@@ -164,6 +165,11 @@ public:
 	[[nodiscard]] double GetFrameZoom() const noexcept
 	{
 		return frameZoom;
+	}
+	// 常驻内容（主栏/主按钮/分页的图标与文字）透明度倍率；调用方在绘制完常驻内容后恢复为 1。
+	void SetResidentContentOpacity(double opacity) noexcept
+	{
+		residentContentOpacity = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
 	}
 	HRESULT EnsureDeviceResources(const Ui3RenderDeviceEpoch& epoch,
 		UINT32 targetWidth, UINT32 targetHeight);
@@ -326,7 +332,8 @@ protected:
 
 	// 返回强引用，避免缓存扩容或换 epoch 时使当前帧仍在使用的 brush 失效。
 	ComPtr<ID2D1RadialGradientBrush> GetFrameGradientBrush(
-		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
+		ID2D1DeviceContext* deviceContext, COLORREF color,
+		BarBorderLightSourceEnum lightSource, FLOAT radiusScale = 1.0F);
 	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
 	ID2D1LinearGradientBrush* GetThicknessPreviewGradientBrush(
@@ -381,11 +388,19 @@ protected:
 		const D2D1_RECT_F& geometryBounds,
 		ID2D1RadialGradientBrush* brush, FLOAT opacity);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
+		const BarThemeMaterial::Material& material,
 		BarUiFrameLightColorEnum frameLightColor,
 		bool primaryLightEnabled, double cursorLightIntensityScale,
+		double lightCursorLightIntensityScale,
 		double baseFramePct, double lightPct, FLOAT strokeWidth,
 		const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry, int geometryVariantQuarter = 0);
+	void DrawSurfaceMaterialShadows(ID2D1DeviceContext* deviceContext,
+		const BarThemeMaterial::Material& material, double opacity,
+		const D2D1_ROUNDED_RECT* roundedRect, ID2D1Geometry* geometry);
+	void DrawSurfaceMaterialHighlight(ID2D1DeviceContext* deviceContext,
+		const BarThemeMaterial::Material& material, double opacity,
+		const D2D1_ROUNDED_RECT* roundedRect, ID2D1Geometry* geometry);
 
 	ComPtr<ID2D1DeviceContext> deviceContext;
 	ComPtr<ID2D1Bitmap1> targetBitmap;
@@ -444,6 +459,7 @@ protected:
 	unsigned long long frameDiffuseExactMaskUseSerial = 0;
 	unsigned long long frameDiffuseExactMaskPromotionFrameSerial = 0;
 	double frameZoom = 1.0;
+	double residentContentOpacity = 1.0;
 	bool frameDirtyClipActive = false;
 	D2D1_RECT_F frameDirtyClipRect{};
 	D2D1_RECT_F frameDirtyClipDeviceRect{};
@@ -476,6 +492,8 @@ protected:
 	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
 	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
+	ComPtr<ID2D1LinearGradientBrush> surfaceHighlightBrush;
+	bool surfaceHighlightUnavailable = false;
 	array<ThicknessPreviewGradientBrushCacheClass, 64>
 		thicknessPreviewGradientBrushCache{};
 	std::uint64_t thicknessPreviewGradientUseSerial = 0;

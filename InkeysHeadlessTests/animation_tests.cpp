@@ -49,6 +49,10 @@ int RunStartupProgressTests();
 int RunStartupPreviewStateTests();
 int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
+int RunBarThemeTests();
+int RunBarLogoTests();
+int RunBarLogoProfileExport(const char* outputPath);
+int RunBarThemePaletteExport(const char* outputPath);
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunSettingEraserDemoTests();
@@ -1725,6 +1729,8 @@ int main(int argc, char** argv)
 	bool exitVisibilityGateOnly = false;
 	bool messageBoxFirstFrameChild = false;
 	const char* messageBoxVisualOutput = nullptr;
+	const char* barThemePaletteOutput = nullptr;
+	const char* barLogoProfileOutput = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
@@ -1744,7 +1750,15 @@ int main(int argc, char** argv)
 		exitVisibilityGateOnly |= argument == "--exit-visibility-gate-test";
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
+		if (argument == "--bar-logo-profile-output" && index + 1 < argc)
+			barLogoProfileOutput = argv[++index];
+		if (argument == "--bar-theme-palette-output" && index + 1 < argc)
+			barThemePaletteOutput = argv[++index];
 	}
+	if (barLogoProfileOutput)
+		return RunBarLogoProfileExport(barLogoProfileOutput);
+	if (barThemePaletteOutput)
+		return RunBarThemePaletteExport(barThemePaletteOutput);
 	if (penWidthOnly) return RunPenWidthTests();
 	if (messageBoxFirstFrameChild)
 		return RunMessageBoxFirstFrameChildTest();
@@ -1817,6 +1831,8 @@ int main(int argc, char** argv)
 	failureCount += RunStartupPreviewStateTests();
 	failureCount += RunConfigMetadataTests();
 	failureCount += RunBarPresentationAlphaTests();
+	failureCount += RunBarThemeTests();
+	failureCount += RunBarLogoTests();
 	failureCount += RunUi3HarnessDisabledTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunSettingDesignTests();

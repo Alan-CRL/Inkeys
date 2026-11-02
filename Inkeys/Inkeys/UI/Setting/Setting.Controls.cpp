@@ -681,6 +681,26 @@ namespace Inkeys::UI::Setting::Design
 		return changed;
 	}
 
+	bool SliderResetAction(const LayoutRect& bounds, float& value, float minimum,
+		float maximum, bool& active, bool& reset, const char* resetTooltip, const char* format)
+	{
+		char output[64];
+		if (format) ImFormatString(output, IM_ARRAYSIZE(output), format, value);
+		else ImFormatString(output, IM_ARRAYSIZE(output), "%d%%", static_cast<int>(std::round(value * 100.0F)));
+		const float numberWidth = (std::min)(Pixels(72.0F), (std::max)(Pixels(40.0F), TextWidth(output)));
+		const float resetSize = Pixels(ControlHeight);
+		const float gap = Pixels(12.0F);
+		TextAt(output, { bounds.left, bounds.top + Pixels(6.0F) }, numberWidth);
+		ImGui::SetCursorScreenPos({ bounds.left + numberWidth + gap, bounds.top });
+		ImGui::SetNextItemWidth((std::max)(Pixels(24.0F), bounds.Width() - numberWidth - resetSize - gap * 2.0F));
+		const bool changed = Slider("##slider", &value, minimum, maximum, format ? format : "%.2f");
+		active = ImGui::IsItemActive();
+		ImGui::SetCursorScreenPos({ bounds.right - resetSize, bounds.top });
+		reset = IconButton("##reset", "\xee\x9c\xac", { resetSize, resetSize });
+		if (resetTooltip && ImGui::IsItemHovered()) ImFluent::SetItemTooltip("%s", resetTooltip);
+		return changed;
+	}
+
 	bool Button(const char* label, const ImVec2& size)
 	{
 		ControlFontScope font;

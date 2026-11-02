@@ -6,6 +6,7 @@ module;
 #include <wrl/client.h>
 
 #include <functional>
+#include "Bar.LogoAppearance.h"
 #include "Bar.PresentationProbe.h"
 
 export module Inkeys.UI.Bar:UI;
@@ -252,11 +253,17 @@ public:
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
 	optional<BarUiPctClass> frameLightPct; // 仅点光边框使用的独立透明度
+	// 渲染线程逐对象发布当前材质权重，主按钮收展不能改变其他浮层。
+	double lightMaterial = 0.0; // 0=原深色，1=浅色
+	bool themeSurface = false; // 只有表面启用材质填充、静态阴影和顶部高光
+	double lightFillOpacityScale = 1.0; // 浅色端填充透明度比例，仅常驻表面不为 1
+	bool residentSurface = false; // 常驻表面（主栏、主按钮、吸附指示）：填充受用户背景透明度控制
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
 	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
 	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
+	double frameLightCursorLightIntensityScale = -1.0; // >=0 时作为浅色端点，保持 Dark 原倍率
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -286,11 +293,17 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	// 颜色、透明度、静态及动态光效共用同一个连续权重。
+	double lightMaterial = 0.0; // 0=原深色，1=浅色
+	bool themeSurface = false;
+	double lightFillOpacityScale = 1.0; // 浅色端填充透明度比例，仅常驻表面不为 1
+	bool residentSurface = false; // 常驻表面（主栏、主按钮、吸附指示）：填充受用户背景透明度控制
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
 	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
 	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
+	double frameLightCursorLightIntensityScale = -1.0; // >=0 时作为浅色端点，保持 Dark 原倍率
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass
@@ -335,6 +348,8 @@ public:
 	// color2 -> rgba(9,0,2,0)
 
 public:
+	// 仅主 Logo 启用；设备缓存重建保留当前外观输入。
+	optional<BarLogoAppearance::Snapshot> mainLogoAppearance, cMainLogoAppearance;
 	// SVG 内容
 	BarUiStringClass svg;
 	Microsoft::WRL::ComPtr<ID2D1Bitmap> cacheBitmap;

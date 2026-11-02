@@ -416,6 +416,7 @@ enum class BarUISetSuperellipseEnum : int
 enum class BarUISetSvgEnum : int
 {
 	logo1,
+	// 着色层已并入 logo1 外观；保留序号供 UI3 SVG 诊断探针稳定映射，不再创建对象。
 	logoInk,
 	MorePanelClose,
 
@@ -1304,6 +1305,9 @@ namespace Inkeys::UI::Bar
 	export PresentationAlphaDiagnostics SnapshotPresentationAlphaDiagnostics() noexcept;
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
+	export void SetThemeMode(int themeMode) noexcept;
+	// 背景百分比 0 表示跟随主题默认；调用方负责先按配置规则归一。
+	export void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;

@@ -79,7 +79,7 @@ void BarRecallAttributePanel::Initialize()
 	surface_.Initialization(0, 0, 0, 0, BarMainBarCornerRadiusDip, BarMainBarCornerRadiusDip, BarButtonFrameThicknessDip,
 		GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	surface_.enable.Initialization(true); surface_.pct.SetDirect(BarDrawAttributeSurfaceOpacity);
-	surface_.framePct.emplace(BarMainBarFrameOpacity); surface_.frameLightPct.emplace(BarMainBarFrameOpacity);
+	surface_.framePct.emplace(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity)); surface_.frameLightPct.emplace(BarMainBarFrameOpacity);
 	surface_.frameRendering = BarUiFrameRenderingEnum::PointLight; surface_.frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 	// 内置 Redo 与主栏 70x70 同一套 StandardTwoTwo 视觉：圆角/边框/图标/文字/光源全复用。
 	const auto metrics = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
@@ -107,6 +107,7 @@ void BarRecallAttributePanel::ConfigureSurface(BarUiShapeClass& surface, RecallA
 	Place(surface, rect); surface.rw->SetDirect(BarMainBarCornerRadiusDip * scale); surface.rh->SetDirect(BarMainBarCornerRadiusDip * scale);
 	surface.ft->SetDirect(BarButtonFrameThicknessDip * scale);
 	surface.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface)); surface.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	surface.framePct->SetDirect(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 }
 
 bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeView& chrome,

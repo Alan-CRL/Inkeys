@@ -255,6 +255,8 @@ inline constexpr struct I18nKeyRoot
             const char* AnimationSection = "SettingsUI/Design/AnimationSection";
             const char* LightingSection = "SettingsUI/Design/LightingSection";
             const char* ScalingSection = "SettingsUI/Design/ScalingSection";
+            const char* ThemeSection = "SettingsUI/Design/ThemeSection";
+            const char* OpacitySection = "SettingsUI/Design/OpacitySection";
             const char* WindowBehaviorSection = "SettingsUI/Design/WindowBehaviorSection";
             const char* SafetyRecoverySection = "SettingsUI/Design/SafetyRecoverySection";
             const char* ShortcutGlobalSection = "SettingsUI/Design/ShortcutGlobalSection";
@@ -506,14 +508,28 @@ inline constexpr struct I18nKeyRoot
                 const char* EdgeLightingE = "SettingsUI/Regular/Appearance/EdgeLightingE";
                 const char* DynamicEdgeLighting = "SettingsUI/Regular/Appearance/DynamicEdgeLighting";
                 const char* DynamicEdgeLightingE = "SettingsUI/Regular/Appearance/DynamicEdgeLightingE";
+                const char* ResetDefault = "SettingsUI/Regular/Appearance/ResetDefault";
+                struct Node__SettingsUI__Regular__Appearance__SettingTheme
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/SettingTheme/N";
+                    const char* E = "SettingsUI/Regular/Appearance/SettingTheme/E";
+                } SettingTheme{};
+                struct Node__SettingsUI__Regular__Appearance__BackgroundOpacity
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/BackgroundOpacity/N";
+                    const char* E = "SettingsUI/Regular/Appearance/BackgroundOpacity/E";
+                } BackgroundOpacity{};
+                struct Node__SettingsUI__Regular__Appearance__ContentOpacity
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/ContentOpacity/N";
+                    const char* E = "SettingsUI/Regular/Appearance/ContentOpacity/E";
+                } ContentOpacity{};
                 struct Node__SettingsUI__Regular__Appearance__Theme
                 {
                     const char* N = "SettingsUI/Regular/Appearance/Theme/N";
                     const char* E = "SettingsUI/Regular/Appearance/Theme/E";
-                    const char* Skip1 = "SettingsUI/Regular/Appearance/Theme/Skip1";
-                    const char* Skip2 = "SettingsUI/Regular/Appearance/Theme/Skip2";
-                    const char* Skip3 = "SettingsUI/Regular/Appearance/Theme/Skip3";
-                    const char* Skip4 = "SettingsUI/Regular/Appearance/Theme/Skip4";
+                    const char* Dark = "SettingsUI/Regular/Appearance/Theme/Dark";
+                    const char* Light = "SettingsUI/Regular/Appearance/Theme/Light";
                 } Theme{};
                 struct Node__SettingsUI__Regular__Appearance__TaskbarScaleBase
                 {

@@ -4352,7 +4352,7 @@ namespace Inkeys::UI::PageControl
 						if(contrast<180)continue;
 						const auto part=pixel%width<28?0U:1U;++ink[part];
 						for(int channel=0;channel<3;++channel){
-							const double expected=normal[background+channel]+(int(normal[offset+channel])-normal[background+channel])*BarButtonDisabledContentOpacity;
+							const double expected=normal[background+channel]+(int(normal[offset+channel])-normal[background+channel])*GetThemeDisabledContentOpacity();
 							error[part]+=std::abs(disabled[offset+channel]-expected);
 						}
 					}

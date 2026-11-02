@@ -992,8 +992,34 @@ namespace Inkeys::UI::Setting::Design
 		}
 		if (section == GeneralSection::Appearance)
 		{
-			SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
 			const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
+			const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
+			const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+			const std::vector<std::string> themeOptions{ IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Dark),
+				IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Light) };
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.ThemeSection).c_str());
+			// 主栏主题只影响 UI3 Bar；设置窗口配色单独选择，与标题栏切换按钮共用同一偏好。
+			events.themeModeChanged = ComboRow("##主栏主题", IA(I18nKey.SettingsUI.Regular.Appearance.Theme.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.Theme.E).c_str(), "\ue790", draft.themeMode, themeOptions);
+			events.settingThemeModeChanged = ComboRow("##设置主题", IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.E).c_str(), "\ue771", draft.settingThemeMode, themeOptions);
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.OpacitySection).c_str());
+			// 只作用于常驻的主栏、主按钮与分页；弹出面板保持原透明度以保证可读。
+			SettingRow("bar-background-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.E).c_str(), "\uef1f", resetSliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { events.backgroundOpacityChanged = SliderResetAction(bounds, draft.backgroundOpacity,
+					0.30F, 1.00F, events.backgroundOpacityActive, events.backgroundOpacityReset, resetLabel.c_str()); });
+			if (events.backgroundOpacityReset) draft.backgroundOpacity = draft.backgroundOpacityDefault;
+			bool contentOpacityReset = false;
+			SettingRow("bar-content-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.E).c_str(), "\ue8a9", resetSliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { events.contentOpacityChanged = SliderResetAction(bounds, draft.contentOpacity,
+					0.30F, 1.00F, events.contentOpacityActive, contentOpacityReset, resetLabel.c_str()); });
+			if (contentOpacityReset) { draft.contentOpacity = 1.0F; events.contentOpacityChanged = true; }
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
 			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
 			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
@@ -1022,9 +1048,12 @@ namespace Inkeys::UI::Setting::Design
 				{ IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Off),
 				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Base),
 				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Actual) });
+			bool barZoomReset = false;
 			SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", sliderWidth, 32.0F,
-				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderAction(bounds, draft.barZoom, 0.50F, 2.00F, events.barZoomActive); });
+				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", resetSliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderResetAction(bounds, draft.barZoom, 0.50F, 2.00F,
+					events.barZoomActive, barZoomReset, resetLabel.c_str()); });
+			if (barZoomReset) { draft.barZoom = 1.0F; events.barZoomChanged = true; }
 		}
 		if (section == GeneralSection::Interaction)
 		{

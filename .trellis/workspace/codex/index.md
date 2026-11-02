@@ -160,6 +160,8 @@
 | 15 | 2026-09-22 | UI3 i18n 格式串异常防护 | `0409256f` | `feature/ui3-i18n` |
 | 14 | 2026-09-22 | 收敛桌面定格 Magnification 链路 | `ba14ddd6`, `7df93730` | `bugfix/settingui` |
 | 13 | 2026-09-17 | Archive completed August and September tasks | `43d59ec3`, `fafa7009`, `9266a4ab`, `d272f888`, `3308faec` | `feature/eraser` |
+| 12 | 2026-09-11 | 修正主按钮统一 SVG 与绘制态指示 | - | `theme` |
+| 11 | 2026-09-11 | Bar 浅色主题与完整收展材质 | - | `theme` |
 | 10 | 2026-09-10 | 采用用户认可的底栏基线并结案 | `24efcde4` | `draw` |
 | 9 | 2026-09-09 | 底栏捕获旧帧误确认与果冻起点修复 | - | `draw` |
 | 8 | 2026-09-09 | 主栏底栏显示续修与回归验证 | - | `draw` |
