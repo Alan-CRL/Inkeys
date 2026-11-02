@@ -1,0 +1,102 @@
+[
+  {
+    "locale": "de-DE",
+    "keys": 679,
+    "sha256": "0e61cd55821b7c3f197d32f1289e5c9622521daa2b4a39e287cd31e387e05b95"
+  },
+  {
+    "locale": "en-GB",
+    "keys": 679,
+    "sha256": "71d54cc7c7b8a3797672395ed667ec1c328a317a55c3670f1f26e9c39bc221ed"
+  },
+  {
+    "locale": "en-US",
+    "keys": 679,
+    "sha256": "3b770c8439fc783407aa8f8aae75ad5c1d150f78e131530e12592d8e0a87898c"
+  },
+  {
+    "locale": "es-ES",
+    "keys": 679,
+    "sha256": "d972263d80cf276ac4724268c06637c9105d7bd8152b87a2d4b02982be9c8dc9"
+  },
+  {
+    "locale": "es-MX",
+    "keys": 679,
+    "sha256": "64e1a45d7eae261252c19b8254beb2d6a3d910bbb373cadb3d59efb4f4ef9cb4"
+  },
+  {
+    "locale": "fr-FR",
+    "keys": 679,
+    "sha256": "00b981d69403dcd3eb809d134e48d2fbe8d31ec18c07847b1c7c070677aaaccd"
+  },
+  {
+    "locale": "id-ID",
+    "keys": 679,
+    "sha256": "9a6233468bf5d4c315354b231dbafaa07df312c09851539ccddba00d5413cd8e"
+  },
+  {
+    "locale": "it-IT",
+    "keys": 679,
+    "sha256": "37f7b208597b42ac8b181388444ea875d7feae3abc7f83bffc6b4fc1a516022f"
+  },
+  {
+    "locale": "ja-JP",
+    "keys": 679,
+    "sha256": "779efda89dc5d7e19b99935fb3d1a0703194156c5ccc11140aa1b977ca65e7cc"
+  },
+  {
+    "locale": "ko-KR",
+    "keys": 679,
+    "sha256": "4dc6354c0264ab662a052b5e8f60dd43f48eb3916ec23d8ffc6fe4c4942ef5fa"
+  },
+  {
+    "locale": "pl-PL",
+    "keys": 679,
+    "sha256": "83dc3d311e928d29eb226d296b090676469827e9cd61b927f5960be825c071d5"
+  },
+  {
+    "locale": "pt-BR",
+    "keys": 679,
+    "sha256": "17dc591f2703ddeee2b8b109e52c2ce7196ed8f88d53566fc44296ff1155ae28"
+  },
+  {
+    "locale": "ro-RO",
+    "keys": 679,
+    "sha256": "b962e456b1cd9f86da29329fc3a6f6d474d801ebb41dc144874931fc9a144fd6"
+  },
+  {
+    "locale": "ru-RU",
+    "keys": 679,
+    "sha256": "81709757169079315607fca82015aa62de2650e0ee430a6c010d19a1521bbbbe"
+  },
+  {
+    "locale": "tr-TR",
+    "keys": 679,
+    "sha256": "0922c746cf653bf1c73c6a69901d5540287b59390c56b71fba9e0517de3e073d"
+  },
+  {
+    "locale": "uk-UA",
+    "keys": 679,
+    "sha256": "131c10c9546c73e0fac949c03fa1d9eb97e417d0e4f844863d4f12b029a1878c"
+  },
+  {
+    "locale": "vi-VN",
+    "keys": 679,
+    "sha256": "7ac95df144019f9d7e5e478ae4cb0b30401db54d9f4763350153e7dbdc15f32b"
+  },
+  {
+    "locale": "zh-CN",
+    "keys": 679,
+    "sha256": "9b61f2ed42854ac0214403317067a7db2c75f3ed85eccedb44a5fb2fd62f7015"
+  },
+  {
+    "locale": "zh-HK",
+    "keys": 679,
+    "sha256": "23750721719aaddc3d17e8aa1cd9f25b31accec6f45cc88961f0535a1e72132f"
+  },
+  {
+    "locale": "zh-TW",
+    "keys": 679,
+    "sha256": "2ffec253097d2c48a426ba0759473dc06bf2c219fbd753bb9a8b3cd918c3c877"
+  }
+]

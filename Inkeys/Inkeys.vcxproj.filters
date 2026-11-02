@@ -2444,6 +2444,33 @@
     <None Include="src\i18n\zh-TW.jsonc">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\i18n\id-ID.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\vi-VN.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\tr-TR.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\it-IT.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\pl-PL.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\uk-UA.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\es-MX.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\ro-RO.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\en-GB.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="IdtFloating.cpp">
       <Filter>源文件</Filter>
     </None>

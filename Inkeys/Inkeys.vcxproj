@@ -1216,6 +1216,15 @@
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
+    <None Include="src\i18n\id-ID.jsonc" />
+    <None Include="src\i18n\vi-VN.jsonc" />
+    <None Include="src\i18n\tr-TR.jsonc" />
+    <None Include="src\i18n\it-IT.jsonc" />
+    <None Include="src\i18n\pl-PL.jsonc" />
+    <None Include="src\i18n\uk-UA.jsonc" />
+    <None Include="src\i18n\es-MX.jsonc" />
+    <None Include="src\i18n\ro-RO.jsonc" />
+    <None Include="src\i18n\en-GB.jsonc" />
     <None Include="src\UI\barBrush1.svg" />
     <None Include="src\UI\barBrush2.svg" />
     <None Include="src\UI\barPaintBrush.svg" />

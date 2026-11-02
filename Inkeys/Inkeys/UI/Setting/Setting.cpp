@@ -2033,6 +2033,15 @@ void DisposeSettingAtlas(ImFontAtlas* atlas)
     settingFrameSubmission.Reset();
     return true;
 }
+// 生产帧边界和无窗口回归共用同一决策，避免同字族切换误重建图集。
+[[nodiscard]] bool ApplyPreparedSettingLanguage(const Inkeys::Localization::Locale& locale,
+    I18n::PreparedLanguage& prepared, bool rebuildFonts)
+{
+    const auto& current = I18n::locale();
+    return locale.regularFont == current.regularFont && locale.boldFont == current.boldFont && !rebuildFonts
+        ? I18n::commit(std::move(prepared)) : ReplaceSettingFonts(locale, &prepared);
+}
+
 SettingSessionCoroutine RunSettingSession()
 {
 	// 设置 I/O 等业务投递 FIFO worker；确认的退出意图直接建立 15 秒保护。
@@ -2989,17 +2998,19 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						vector<string> languages;
 						languages.reserve(Inkeys::Localization::Locales.size());
-						for (const auto& locale : Inkeys::Localization::Locales)
-							languages.emplace_back(Inkeys::Localization::NativeLabel(locale));
+						for (const int index : Inkeys::Localization::DisplayOrder)
+							languages.emplace_back(Inkeys::Localization::NativeLabel(Inkeys::Localization::Locales[index]));
 						SelectLanguage = settingPendingLanguage >= 0 ? settingPendingLanguage : setlist.selectLanguage;
-						const int previousLanguage = SelectLanguage;
+						// Combo 行号只用于展示，发布和保存仍使用稳定的语言索引。
+						int displayLanguage = Inkeys::Localization::DisplayIndexForLocale(SelectLanguage);
+						const int previousLanguage = displayLanguage;
 						if (Design::ComboRow("##language-ui",
 							IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
 							IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774",
-							SelectLanguage, languages)
-							&& previousLanguage != SelectLanguage)
+							displayLanguage, languages)
+							&& previousLanguage != displayLanguage)
 						{
-							settingPendingLanguage = SelectLanguage;
+							settingPendingLanguage = Inkeys::Localization::LocaleIndexForDisplay(displayLanguage);
 						}
 					}
 					break;
@@ -5073,8 +5084,7 @@ namespace
             I18n::PreparedLanguage prepared;
             lock_guard imguiLock(settingImguiMutex);
             if (I18n::prepare(1, L"JSON", locale.code, prepared)
-                && ((locale.regularFont == I18n::locale().regularFont && locale.boldFont == I18n::locale().boldFont
-                    && !decision.rebuildFonts) ? I18n::commit(std::move(prepared)) : ReplaceSettingFonts(locale, &prepared)))
+                && ApplyPreparedSettingLanguage(locale, prepared, decision.rebuildFonts))
             {
                 settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
                 Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
@@ -5463,7 +5473,11 @@ namespace Inkeys::UI::Setting
                     {
                         I18n::PreparedLanguage next;
                         check(I18n::prepare(1,L"JSON",locale.code,next),"prepare language");
-                        check(ReplaceSettingFonts(locale,&next),"stage upload and commit");
+                        auto* previousAtlas = ImGui::GetIO().Fonts;
+                        const auto& current = I18n::locale();
+                        const bool reuse = cycle != 0 && locale.regularFont == current.regularFont && locale.boldFont == current.boldFont;
+                        check(ApplyPreparedSettingLanguage(locale,next,cycle == 0),"production font decision stages or reuses and commits");
+                        check((ImGui::GetIO().Fonts == previousAtlas) == reuse,"same-family locale reuses atlas while rebuild replaces it");
                         draw(); draw();
                         check(GImGui==originalContext && persistent==ImGui::FindWindowByName("font-lifecycle###persistent")
                             && persistent->StateStorage.GetInt(17)==1234,"context/window storage retained");

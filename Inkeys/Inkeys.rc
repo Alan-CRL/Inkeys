@@ -259,6 +259,24 @@ IDR_PT_BR               JSON                    "src\\i18n\\pt-BR.jsonc"
 
 IDR_RU_RU               JSON                    "src\\i18n\\ru-RU.jsonc"
 
+IDR_ID_ID               JSON                    "src\\i18n\\id-ID.jsonc"
+
+IDR_VI_VN               JSON                    "src\\i18n\\vi-VN.jsonc"
+
+IDR_TR_TR               JSON                    "src\\i18n\\tr-TR.jsonc"
+
+IDR_IT_IT               JSON                    "src\\i18n\\it-IT.jsonc"
+
+IDR_PL_PL               JSON                    "src\\i18n\\pl-PL.jsonc"
+
+IDR_UK_UA               JSON                    "src\\i18n\\uk-UA.jsonc"
+
+IDR_ES_MX               JSON                    "src\\i18n\\es-MX.jsonc"
+
+IDR_RO_RO               JSON                    "src\\i18n\\ro-RO.jsonc"
+
+IDR_EN_GB               JSON                    "src\\i18n\\en-GB.jsonc"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

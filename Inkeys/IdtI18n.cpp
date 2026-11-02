@@ -295,10 +295,22 @@ int IdtTest::RunI18nLocaleTests()
 	I18n::TextSnapshot failed = original;
 	expect(!I18n::capture({"invalid.key"}, failed, true) && failed.language == original.language && failed.text == original.text,
 		"failed capture preserves complete fallback snapshot");
-	expect(std::wstring_view(LocaleForIndex(0).code) == L"en-US"
-		&& std::wstring_view(LocaleForIndex(1).code) == L"zh-CN"
-		&& std::wstring_view(LocaleForIndex(2).code) == L"zh-TW", "saved legacy language indices keep their meaning");
-	expect(!IsValidIndex(-1) && !IsValidIndex(11) && &LocaleForIndex(99) == &Locales[0], "invalid saved index uses English without rewriting configuration");
+	constexpr std::array<std::wstring_view, 20> expectedCodes{
+		L"en-US", L"zh-CN", L"zh-TW", L"zh-HK", L"ja-JP", L"ko-KR", L"fr-FR", L"de-DE", L"es-ES", L"pt-BR", L"ru-RU",
+		L"id-ID", L"vi-VN", L"tr-TR", L"it-IT", L"pl-PL", L"uk-UA", L"es-MX", L"ro-RO", L"en-GB" };
+	constexpr std::array<int, 20> expectedDisplay{7,19,0,8,17,6,11,14,4,5,15,9,18,10,13,16,12,1,3,2};
+	expect(Locales.size() == expectedCodes.size() && DisplayOrder == expectedDisplay, "twenty locales keep stable saved indices and code-sorted display order");
+	for (int index = 0; index < static_cast<int>(expectedCodes.size()); ++index)
+	{
+		expect(std::wstring_view(LocaleForIndex(index).code) == expectedCodes[index], "saved language index keeps its exact identity");
+		expect(LocaleIndexForDisplay(DisplayIndexForLocale(index)) == index, "every saved selection round trips through the menu row");
+		for (int other = 0; other < index; ++other)
+			expect(Locales[index].language != Locales[other].language && Locales[index].resource != Locales[other].resource,
+				"locale LANGIDs and embedded JSON resources are unique");
+	}
+	expect(IsValidIndex(19) && !IsValidIndex(-1) && !IsValidIndex(20) && &LocaleForIndex(99) == &Locales[0], "invalid saved index uses English without rewriting configuration");
+	expect(DisplayIndexForLocale(-1) == 2 && LocaleIndexForDisplay(-1) == 0 && LocaleIndexForDisplay(20) == 0,
+		"invalid selection falls back to English rather than the first sorted row");
 	expect(IndexForSystemLanguage(MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SINGAPORE)) == 1
 		&& IndexForSystemLanguage(MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_MACAU)) == 2
 		&& IndexForSystemLanguage(MAKELANGID(LANG_FRENCH, SUBLANG_FRENCH_CANADIAN)) == 0,

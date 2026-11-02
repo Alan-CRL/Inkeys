@@ -810,6 +810,15 @@ namespace
 			std::cerr << "  face=" << face << " size=" << metrics.size
 				<< " scale=" << scale << " bounds=[" << top << ',' << bottom
 				<< "] padding=" << linePadding << " line=" << metrics.lineHeight * scale << '\n';
+		// 特征字母须有真实字形；其重音越过名义行框并不等于被实际控件裁切。
+		bool accentsAvailable = true;
+		for (const auto point : U"ĐđĂăÂâÊêÔôƠơƯưẮằẶẤầẬẾềỆỐồỘỚờỢỨừỰỔỞĞğİıŞşĄąĆćĘęŁłŃńÓóŚśŹźŻżÎîȘșȚțҐґЄєІіЇї")
+		{
+			if (point == U'\0') continue;
+			const auto* glyph = baked->FindGlyphNoFallback(static_cast<ImWchar>(point));
+			accentsAvailable &= glyph && glyph->Visible && glyph->X1 > glyph->X0 && glyph->Y1 > glyph->Y0;
+		}
+		checks.Expect(accentsAvailable, "semantic caption, control, body and title sizes retain all added locale accent glyphs");
 		const auto* fullWidth = baked->FindGlyphNoFallback(L'中');
 		// stb保留连续advance；FreeType hinting会把advance取整到栅格像素，另含26.6字号请求精度。
 		const bool hinted = ImGui::GetIO().Fonts->FontLoader == ImGuiFreeType::GetFontLoader();
@@ -957,6 +966,80 @@ namespace
 			bounds.bottom = (std::max)(bounds.bottom, vertex.pos.y);
 		}
 		return bounds;
+	}
+
+	void CheckVietnameseCaptionClipping(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto previousSize = io.DisplaySize;
+		const bool previousDark = Design::IsDarkMode();
+		const struct { std::string title, description; ImWchar point; } samples[]{
+			{ IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTop), IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1), 0x1ee8 },
+			{ IA(I18nKey.SettingsUI.Version.Update.Channel.N), IA(I18nKey.SettingsUI.Version.Update.ChannelTip), 0x1ed4 },
+			{ IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N), IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E), 0x1ede } };
+		for (const bool dark : { false, true }) for (const float width : { 360.0F, 620.0F })
+		for (int kind = 0; kind < 3; ++kind)
+		{
+			Design::ApplyPalette(dark); Design::ConfigureRowAnimations(0, false, 1);
+			io.DisplaySize = { (width + 32) * scale, 900 * scale };
+			io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##vietnamese-caption-clipping", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			ImFluent::PushFont(ImFluentTextStyle_Body);
+			auto* list = ImGui::GetWindowDrawList(); const int first = list->VtxBuffer.Size;
+			const auto origin = ImGui::GetCursorScreenPos(); const auto& sample = samples[kind];
+			if (kind == 0)
+			{
+				bool value = false;
+				Design::ToggleRow("##vi-toggle-caption", sample.title.c_str(), sample.description.c_str(), "\ue718", value);
+			}
+			else if (kind == 1)
+				Design::Notice("##vi-notice-caption", sample.title.c_str(), sample.description.c_str(), ImFluentInfoSeverity_Informational);
+			else
+				Design::SettingRow("##vi-row-caption", sample.title.c_str(), sample.description.c_str(), "\ue737", 0, 0, [](const LayoutRect&) {});
+			const float bottom = ImGui::GetCursorScreenPos().y - Design::Pixels(Design::RowGap);
+			ImFluent::PushFont(ImFluentTextStyle_Caption);
+			auto* baked = ImGui::GetFontBaked(); const float glyphScale = ImGui::GetFontSize() / baked->Size;
+			const auto* found = baked->FindGlyphNoFallback(sample.point); const ImFontGlyph glyph = found ? *found : ImFontGlyph{};
+			checks.Expect(found && Near(ImGui::GetFontSize(), Design::CaptionText.size * scale, 0.501F),
+				"actual Vietnamese row explanations keep the semantic Caption12 size");
+			ImFluent::PopFont(); ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+			bool emitted = false, complete = true;
+			// 匹配实际完整字图四角，再用引用该字图的绘制命令clip检查GPU裁切。
+			for (int index = first; index + 3 < list->VtxBuffer.Size; ++index)
+			{
+				const auto* quad = &list->VtxBuffer[index];
+				if (!found || quad[0].col != Design::TextSecondary
+					|| quad[0].uv.x != glyph.U0 || quad[0].uv.y != glyph.V0
+					|| quad[1].uv.x != glyph.U1 || quad[1].uv.y != glyph.V0
+					|| quad[2].uv.x != glyph.U1 || quad[2].uv.y != glyph.V1
+					|| quad[3].uv.x != glyph.U0 || quad[3].uv.y != glyph.V1) continue;
+				emitted = true;
+				complete &= Near(quad[1].pos.x - quad[0].pos.x, (glyph.X1 - glyph.X0) * glyphScale, 0.1F)
+					&& Near(quad[3].pos.y - quad[0].pos.y, (glyph.Y1 - glyph.Y0) * glyphScale, 0.1F)
+					&& quad[0].pos.y >= origin.y && quad[2].pos.y <= bottom;
+				bool referenced = false;
+				for (const auto& command : list->CmdBuffer)
+				{
+					if (command.UserCallback) continue;
+					bool usesQuad = false;
+					for (unsigned int at = command.IdxOffset; at < command.IdxOffset + command.ElemCount; ++at)
+					{
+						const auto vertex = command.VtxOffset + list->IdxBuffer[at];
+						usesQuad |= vertex >= static_cast<unsigned>(index) && vertex < static_cast<unsigned>(index + 4);
+					}
+					if (!usesQuad) continue;
+					referenced = true;
+					complete &= quad[0].pos.x >= command.ClipRect.x && quad[0].pos.y >= command.ClipRect.y
+						&& quad[2].pos.x <= command.ClipRect.z && quad[2].pos.y <= command.ClipRect.w;
+				}
+				complete &= referenced;
+			}
+			checks.Expect(emitted && complete, "actual Vietnamese Caption accents retain full glyph quads inside their row and submitted clip");
+			if (!emitted || !complete) std::cerr << "[VietnameseCaption] kind=" << kind << " scale=" << scale
+				<< " width=" << width << " dark=" << dark << " codepoint=" << sample.point << " emitted=" << emitted << " complete=" << complete << '\n';
+		}
+		io.DisplaySize = previousSize; Design::ApplyPalette(previousDark);
 	}
 
 	LayoutRect VertexBounds(ImDrawList* list, int first, ImU32 color = 0, bool filterColor = false)
@@ -5807,7 +5890,7 @@ namespace
 	{
 		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 		std::vector<std::string> labels;
-		for (const auto& locale : Inkeys::Localization::Locales) labels.emplace_back(Inkeys::Localization::NativeLabel(locale));
+		for (const int index : Inkeys::Localization::DisplayOrder) labels.emplace_back(Inkeys::Localization::NativeLabel(Inkeys::Localization::Locales[index]));
 		auto& io = ImGui::GetIO(); const auto previousSize = io.DisplaySize;
 		for (float width : { 360.0F, 620.0F })
 		{
@@ -5818,10 +5901,27 @@ namespace
 			for (const auto& label : labels)
 				checks.Expect(Design::ControlTextWidth(label.c_str()) / scale + 48.0F <= 320.5F,
 					"native name, locale code and Beta fit the language selector including its arrow reserve");
-			int selected = 9;
+			// 新语导航回归；旧语既有文案不在本次扩展中重译。
+			bool addedLocale = false;
+			for (std::size_t index = 11; index < Inkeys::Localization::Locales.size(); ++index)
+				addedLocale |= I18n::isIdentifying(Inkeys::Localization::Locales[index].code);
+			// 扣除child左右留白、图标/间距及尾部内边距，保持生产字号。
+			if (addedLocale) for (const auto* key : { I18nKey.SettingsUI.Home.N, I18nKey.SettingsUI.Language.N,
+				I18nKey.SettingsUI.Regular.N, I18nKey.SettingsUI.Draw.N, I18nKey.SettingsUI.Performance.N,
+				I18nKey.SettingsUI.PlugIn.N, I18nKey.SettingsUI.Component.N, I18nKey.SettingsUI.Design.Experimental,
+				I18nKey.SettingsUI.Version.N })
+			{
+				const float reserve = key == I18nKey.SettingsUI.Regular.N ? Design::NavigationRowHeight : 0.0F;
+				const float available = Design::Pixels(Design::OpenPaneWidth - 8.0F - 44.0F - 8.0F - reserve);
+				const auto text = IA(key);
+				const bool fits = ImGui::CalcTextSize(text.c_str()).x <= available + 0.5F;
+				checks.Expect(fits, "localized expanded navigation labels fit their actual text clips");
+				if (!fits) std::cerr << "[LocaleNavigation] " << key << " text=" << text << " available=" << available << '\n';
+			}
+			int selected = Inkeys::Localization::DisplayIndexForLocale(9);
 			Design::ComboRow("##language-ui", IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
 				IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels);
-			checks.Expect(selected == 9, "actual eleven-language combo renders without changing saved preference");
+			checks.Expect(Inkeys::Localization::LocaleIndexForDisplay(selected) == 9, "sorted twenty-language combo renders without changing saved preference");
 			for (ImFont* font : { regular, strong })
 			{
 				ImGui::PushFont(font, Design::BodyText.size);
@@ -5845,6 +5945,58 @@ namespace
 				ImGui::PopFont();
 			}
 			ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+		}
+		if (scale == 1.0F && I18n::isIdentifying(L"en-US"))
+		{
+			// 用真实按键选择排序后的菜单项，不能只用索引往返代替控件提交。
+			const auto previousFlags = io.ConfigFlags;
+			const bool previousTrickle = io.ConfigInputTrickleEventQueue;
+			io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+			io.ConfigInputTrickleEventQueue = false;
+			io.DisplaySize = { 640, 900 };
+			int selected = Inkeys::Localization::DisplayIndexForLocale(9), saved = 9, requested = -1, changes = 0;
+			ImGuiWindow* host = nullptr; ImGuiID comboId = 0, popupId = 0;
+			auto draw = [&] {
+				io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+				ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##sorted-locale-selection", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				host = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				ImGui::PushID("##language-choice"); comboId = ImGui::GetID("##select"); ImGui::PopID();
+				popupId = ImHashStr("##fl_cb_popup", 0, comboId);
+				if (Design::ComboRow("##language-choice", IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
+					IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels))
+				{
+					requested = Inkeys::Localization::LocaleIndexForDisplay(selected);
+					saved = requested; ++changes;
+				}
+				ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+				return ImGui::IsPopupOpen(popupId, ImGuiPopupFlags_AnyPopupLevel);
+			};
+			auto key = [&](ImGuiKey value) {
+				io.AddKeyEvent(value, true); draw(); io.AddKeyEvent(value, false); draw(); draw(); return draw();
+			};
+			draw(); draw(); draw();
+			const struct { int row; int index; const wchar_t* code; } targets[]{
+				{ 0, 7, L"de-DE" }, { 1, 19, L"en-GB" }, { 2, 0, L"en-US" }, { 19, 2, L"zh-TW" } };
+			for (const auto& target : targets)
+			{
+				const int before = changes, oldSaved = saved;
+				ImGui::FocusWindow(host);
+				ImGui::SetNavID(comboId, ImGuiNavLayer_Main, host->NavRootFocusScopeId, ImRect({ 0, 0 }, { 100, 32 }));
+				GImGui->NavCursorVisible = true;
+				checks.Expect(key(ImGuiKey_F4), "real F4 opens the sorted language ComboRow");
+				key(target.row == 19 ? ImGuiKey_End : ImGuiKey_Home);
+				if (target.row != 19) for (int row = 0; row < target.row; ++row) key(ImGuiKey_DownArrow);
+				checks.Expect(saved == oldSaved && changes == before, "popup navigation never saves an uncommitted language");
+				const bool open = key(ImGuiKey_Enter);
+				checks.Expect(!open && selected == target.row && changes == before + 1,
+					"real Enter commits the chosen sorted row exactly once");
+				checks.Expect(requested == target.index && saved == target.index
+					&& std::wstring_view(Inkeys::Localization::LocaleForIndex(requested).code) == target.code,
+					"sorted row requests and saves the expected stable language identity");
+			}
+			if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0, true);
+			io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
 		}
 		io.DisplaySize = previousSize;
 	}
@@ -6150,7 +6302,7 @@ namespace
 			GetEnvironmentVariableA("INKEYS_FONT_PAGE_SCALE",scaleFilter,32);
 			if(localeFilter[0] && code!=localeFilter) continue;
 			if(scaleFilter[0] && std::to_string(static_cast<int>(scale*100))!=scaleFilter) continue;
-			if((scale==1.25F || scale==1.875F || scale==4) && code!="zh-CN" && code!="ja-JP" && code!="ko-KR" && code!="en-US") continue;
+			if(scale==4 && code!="zh-CN" && code!="ja-JP" && code!="ko-KR" && code!="en-US") continue;
 			const int primary=locale.regularFont==IDR_NOTO_JP_REGULAR?4:locale.regularFont==IDR_NOTO_KR_REGULAR?6:locale.regularFont==IDR_TTF3?2:0;
 			for(bool dark:{false,true}) for(bool candidate:{false,true})
 			{
@@ -6205,7 +6357,7 @@ namespace
 					const bool fixed120=(code=="en-US" && scale==1) || (code=="ja-JP" && scale==2);
 					bool stopStable=false; int stableSamples=0; float previousBody=-1;
 					size_t boundary24=0; std::vector<size_t> previousFingerprint,boundaryFingerprint;
-					const int savedSelection=static_cast<int>(&locale-Inkeys::Localization::Locales.data()); int selection=savedSelection;
+					const int savedSelection=static_cast<int>(&locale-Inkeys::Localization::Locales.data()); int selection=Inkeys::Localization::DisplayIndexForLocale(savedSelection);
 					ImGuiID languagePopup=0; ImGuiWindow* popupWindow=nullptr;
 					bool sawPopup=false,sawTop=false,sawBottom=false,sawClosed=false;
 					io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue=false; float measuredTop=0,measuredBottom=0,measuredAdvance=0,measuredBody=0,metricSize=0; int missingMetricGlyphs=0;
@@ -6239,7 +6391,7 @@ namespace
 						{
 							Design::PageHeader(IA(I18nKey.SettingsUI.Language.N).c_str());
 							Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
-							std::vector<std::string> labels; for(const auto& item:Inkeys::Localization::Locales) labels.emplace_back(Inkeys::Localization::NativeLabel(item));
+							std::vector<std::string> labels; for(const int index:Inkeys::Localization::DisplayOrder) labels.emplace_back(Inkeys::Localization::NativeLabel(Inkeys::Localization::Locales[index]));
 							auto* languageHost=ImGui::GetCurrentWindow(); ImGui::PushID("##language");
 							const ImGuiID comboId=ImGui::GetID("##select"); ImGui::PopID();
 							languagePopup=ImHashStr("##fl_cb_popup",0,comboId);
@@ -6253,7 +6405,7 @@ namespace
 							for(const auto& popup:GImGui->OpenPopupStack) if(popup.PopupId==languagePopup && popup.Window && popup.Window->Active) popupWindow=popup.Window;
 							if(popupWindow) { sawPopup=true; sawTop|=popupWindow->Scroll.y<=1; sawBottom|=popupWindow->Scroll.y>=popupWindow->ScrollMax.y-1; }
 							if(sawPopup && !ImGui::IsPopupOpen(languagePopup,ImGuiPopupFlags_AnyPopupLevel)) sawClosed=true;
-							checks.Expect(selection==savedSelection,"opening and scrolling language popup never changes selected language");
+							checks.Expect(Inkeys::Localization::LocaleIndexForDisplay(selection)==savedSelection,"opening and scrolling sorted language popup never changes selected language");
 							if(page==0 && frame==44) {
 								const ImFontBaked* baked=nullptr;
 								if(io.Fonts->Builder) for(const auto& entry:io.Fonts->Builder->BakedMap.Data) {
@@ -6554,6 +6706,8 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "reorganized settings load actual language resources");
 				const auto fontIndex = localeFontIndex(locale);
 				CheckLocaleTextAndSelector(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				if (std::strcmp(locale.codeUtf8, "vi-VN") == 0)
+					CheckVietnameseCaptionClipping(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckLocalizedComponentAndPluginRows(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckSpeedEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);

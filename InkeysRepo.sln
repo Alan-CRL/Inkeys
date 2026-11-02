@@ -29,6 +29,15 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "I18n", "I18n", "{01FF294F-F
 		Inkeys\src\i18n\es-ES.jsonc = Inkeys\src\i18n\es-ES.jsonc
 		Inkeys\src\i18n\pt-BR.jsonc = Inkeys\src\i18n\pt-BR.jsonc
 		Inkeys\src\i18n\ru-RU.jsonc = Inkeys\src\i18n\ru-RU.jsonc
+		Inkeys\src\i18n\id-ID.jsonc = Inkeys\src\i18n\id-ID.jsonc
+		Inkeys\src\i18n\vi-VN.jsonc = Inkeys\src\i18n\vi-VN.jsonc
+		Inkeys\src\i18n\tr-TR.jsonc = Inkeys\src\i18n\tr-TR.jsonc
+		Inkeys\src\i18n\it-IT.jsonc = Inkeys\src\i18n\it-IT.jsonc
+		Inkeys\src\i18n\pl-PL.jsonc = Inkeys\src\i18n\pl-PL.jsonc
+		Inkeys\src\i18n\uk-UA.jsonc = Inkeys\src\i18n\uk-UA.jsonc
+		Inkeys\src\i18n\es-MX.jsonc = Inkeys\src\i18n\es-MX.jsonc
+		Inkeys\src\i18n\ro-RO.jsonc = Inkeys\src\i18n\ro-RO.jsonc
+		Inkeys\src\i18n\en-GB.jsonc = Inkeys\src\i18n\en-GB.jsonc
 	EndProjectSection
 EndProject
 Global

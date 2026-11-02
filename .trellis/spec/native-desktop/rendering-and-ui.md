@@ -2803,11 +2803,12 @@ Correct：绝对deadline+原worker唤醒，独立视觉需求/本地缓存资源
 
 ### 6. Tests Required
 
-- 保留独立stb基线，生产FT配置共用；11语言、浅深、整数/分数倍率，字号/基线/墨迹/换行与真实控件裁切。
+- 保留独立stb基线，生产FT配置共用；20语言、浅深、整数/分数倍率，字号/基线/墨迹/换行与真实控件裁切。
+- 公共校准样本保持原严格行框阈值；新增特征字母另查覆盖和实际字号。语义行框不是最终scissor，重音overhang须经真实Caption控件完整字图UV/尺寸、行区域和引用该字图的ImDrawCmd::ClipRect验证；不能只据字形超出16DIP行框就缩字或移全局基线。
 - 实际四角色+Legacy图标+标题栏字体集、真实Combo打开/滚动/关闭、页面往返后测量。统计ImGui/FT requested live allocations与全部存活GPU纹理；CPU图集是ImGui分配子集，不能重复相加。GPU以实际resource desc计R8/RGBA字节，WARP不是独立显存；进程/驱动额外开销不伪称已精确计量。
 - 指标采样只能查询已有bake/glyph，不用FindGlyphNoFallback等按需加载API污染被测工作负载。冷字体注册/Build与冷首帧、暖态median/p95分别报告。
 - 真WARP创建/偏移更新/回退分配失败重试；相同Alpha8数据RGBA↔R8全图像素一致，图片/AA线/noop/外部PS/cached raw ID均覆盖。原始RGBA黑透明padding与Alpha8白覆盖差异单列，不能混作R8转换误差。
-- 真实生产替换11语言多轮、过期候选和FT/DX11故障，旧context状态保留、新atlas错误恢复、资源不随轮次增长。无GUI结果不替代实机窗口/其他平台验收，具体通过与限制留在任务记录。
+- 真实生产替换/同字族复用20语言多轮、过期候选和FT/DX11故障，旧context状态保留、新atlas错误恢复、资源不随轮次增长。无GUI结果不替代实机窗口/其他平台验收，具体通过与限制留在任务记录。
 
 ### 7. Wrong vs Correct
 

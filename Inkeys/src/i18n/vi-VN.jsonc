@@ -1,0 +1,1079 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "vi-VN",
+  "Widget":
+  {
+    "LnkName": "Inkeys (Công cụ chú thích màn hình)"
+  },
+  "Operate":
+  {
+    "Reset": "Đặt lại",
+    "Repair": "Sửa chữa",
+    "Copy": "Sao chép",
+    "Create": "Tạo"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "Chọn",
+      "SelectClean": "Chọn (Xóa)",
+      "Pen": "Bút",
+      "Eraser": "Tẩy",
+      "Options": "Tùy chọn"
+    },
+    "Pen":
+    {
+      "Pen": "Bút",
+      "Highlighter": "Bút nhớ dòng",
+      "Thinkness": "Độ\ndày",
+      "Write": "Viết",
+      "Line": "Đường thẳng",
+      "Square": "Chữ nhật"
+    },
+    "Operate":
+    {
+      "Revoke": "Hoàn tác",
+      "Recall": "Khôi phục",
+      "Freeze": "Đóng băng",
+      "Pierce": "Nhấp xuyên"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "Chế độ thanh dưới",
+        "Centered": "Căn giữa"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "Xóa",
+        "ClearCanvasHint": "Xóa chú thích trên trang vẽ này",
+        "AutomaticLabel": "Cỡ tự động",
+        "SensitivityLabel": "Độ nhạy",
+        "LowLabel": "Thấp",
+        "MediumLabel": "Vừa",
+        "HighLabel": "Cao",
+        "SmallSize": "Nhỏ",
+        "MediumSize": "Vừa",
+        "LargeSize": "Lớn",
+        "BaseSizeHint": "Cỡ cơ bản khi bật cỡ tự động",
+        "MixedHint": "Các thiết bị dùng thiết lập khác nhau\nNhấp để bật cỡ tự động cho tất cả",
+        "SettingsHint": "Thiết lập cỡ tự động chưa khả dụng"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "Chọn",
+        "SelectClearLabel": "Chọn\n(Xóa)",
+        "ClickThroughLabel": "Nhấp\nxuyên",
+        "MoveLabel": "Kéo",
+        "DrawLabel": "Vẽ",
+        "LaserLabel": "Laser",
+        "HighlighterLabel": "Đánh dấu",
+        "HardPenLabel": "Bút nét đều",
+        "SoftPenLabel": "Bút nét mềm",
+        "EraserLabel": "Tẩy",
+        "AreaEraserLabel": "Tẩy vùng",
+        "GeometryLabel": "Hình học",
+        "RectangleLabel": "Chữ nhật",
+        "StraightLineLabel": "Đường thẳng",
+        "UndoLabel": "Hoàn tác",
+        "RedoLabel": "Làm lại",
+        "ClearLabel": "Xóa hết",
+        "WhiteboardWindowTitle": "Bảng trắng Inkeys",
+        "WhiteboardPreviousLabel": "Trước",
+        "WhiteboardNextLabel": "Sau",
+        "WhiteboardAddPageLabel": "Thêm trang",
+        "WhiteboardLabel": "Bảng",
+        "ResumeWhiteboardLabel": "Về bảng",
+        "CloseWhiteboardLabel": "Đóng",
+        "ReturnToShowLabel": "Về trình chiếu",
+        "MinimizeWhiteboardLabel": "Thu nhỏ bảng trắng",
+        "WhiteboardThemeLabel": "Chủ đề",
+        "WhiteboardBackgroundColorLabel": "Màu nền",
+        "WhiteboardBackgroundStyleLabel": "Kiểu nền",
+        "WhiteboardBlankLabel": "Trống",
+        "WhiteboardDotsLabel": "Chấm",
+        "WhiteboardGridLabel": "Lưới",
+        "WhiteboardUnsavedLabel": "Một số trang chưa được lưu",
+        "FreezeLabel": "Giữ",
+        "EndPresentationLabel": "Kết thúc",
+        "SettingsLabel": "Thiết lập",
+        "MoreLabel": "Thêm"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "Tệp",
+        "TaskManagerLabel": "Tác vụ",
+        "ControlPanelLabel": "Điều khiển",
+        "ShowDesktopLabel": "Màn hình",
+        "LockScreenLabel": "Khóa",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "Chọn tên",
+        "ClassIslandSettingsLabel": "Thiết lập CI",
+        "ClassIslandProfileLabel": "Hồ sơ",
+        "ClassIslandSwapLabel": "Đổi tiết"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "Cọ",
+        "LaserLabel": "Bút laser",
+        "HighlighterLabel": "Bút nhớ dòng",
+        "HardPenLabel": "Bút nét đều",
+        "SoftPenLabel": "Bút nét mềm",
+        "FreeLineLabel": "Nét tự do",
+        "AnnotationLineLabel": "Nét ghi chú",
+        "HoldThicknessLabel": "Giữ để khóa độ dày",
+        "ThicknessFormat": "Độ dày {}",
+        "AnnotationUnavailableTitle": "Đường chú thích chưa khả dụng",
+        "AnnotationFixedUnsupportedTitle": "Chưa hỗ trợ đường chú thích có độ dày cố định",
+        "AnnotationDescription": "Giới hạn hướng vẽ theo chiều ngang, dọc hoặc chéo 45°",
+        "ThicknessOverflowTitle": "Nét mực dày hơn vùng xem trước",
+        "ThicknessOverflowBody": "Độ dày xem trước có thể khác với nét vẽ thực tế."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "Đường",
+        "RectangleLabel": "Chữ nhật"
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "Độ mờ",
+        "HoldColorLabel": "Giữ để khóa màu"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "FPS: {:.2f} | Không giới hạn: {:.2f}",
+        "FrameRateUnavailable": "FPS: -- | Không giới hạn: --"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "Xung đột",
+        "ReadFailed": "Đọc",
+        "PresentFailed": "Hiển thị",
+        "Failed": "Lỗi",
+        "Recovering": "Khôi phục",
+        "Loading": "Tải",
+        "Retry": "Thử lại",
+        "Wait": "Chờ",
+        "RetryCanvas": "Thử lại trang vẽ",
+        "ProtectedHint": "Thứ tự hoặc danh tính tài liệu đã thay đổi. Nét mực hiện có được bảo vệ. Hãy khôi phục trạng thái tài liệu ban đầu rồi thử lại.",
+        "RecoveryHint": "Chưa khôi phục xong trang vẽ. Thử lại vẫn giữ nguyên cơ chế bảo vệ nét mực."
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys không thể hiển thị nền trong suốt đúng cách.\n\nNhấp chuột phải vào Inkeys.exe, mở Thuộc tính → Tương thích rồi bỏ chọn Chế độ màu giảm.\nTrên Windows 7, hãy bật chủ đề Aero.\n\nKhởi động lại Inkeys rồi thử lại.\nNếu vẫn gặp lỗi, hãy liên hệ nhà phát triển từ trang chủ Thiết lập."
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "Chưa chuyển xong cửa sổ bảng trắng. Đã dừng tự động thử lại. Nhấp lại nút bảng trắng trên thanh chính để hủy lần chuyển này, hoặc thử lại từ trang Vẽ trong Thiết lập.",
+      "Return": "Chưa thoát xong bảng trắng. Đã dừng tự động thử lại. Nhấp lại nút bảng trắng trên thanh chính để quay về bảng trắng, hoặc thử lại từ trang Vẽ trong Thiết lập.",
+      "Primary": "Chưa chuyển xong giữa không gian làm việc màn hình và trình chiếu. Đã dừng tự động thử lại. Hãy thử lại từ trang Vẽ trong Thiết lập."
+    },
+    "Common":
+    {
+      "TipsTitle": "Thông báo Inkeys",
+      "ErrorTitle": "Lỗi Inkeys",
+      "OK": "OK",
+      "Cancel": "Hủy",
+      "Yes": "Có",
+      "No": "Không"
+    },
+    "EndPresentation":
+    {
+      "Body": "Kết thúc trình chiếu hiện tại?"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys đã thoát bất ngờ do không thể tạo cửa sổ chương trình hoặc cửa sổ bị chặn. Hãy khởi động lại Inkeys rồi thử lại. (#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "Mô-đun cập nhật tự động chưa hoạt động, cho thấy đây không phải bản phát hành chính thức.\nMở Phiên bản phần mềm rồi chọn Sửa chữa phần mềm."
+    },
+    "CloseInkeys":
+    {
+      "Body": "Đóng Inkeys?"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys đã gặp sự cố. Chọn OK để khởi động lại Inkeys và thử khôi phục."
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Tùy chọn Inkeys",
+    "Design":
+    {
+      "NavigationTitle": "Thiết lập",
+      "SwitchToDark": "Chuyển sang giao diện tối",
+      "SwitchToLight": "Chuyển sang giao diện sáng",
+      "Preferences": "Tùy chỉnh",
+      "RecommendedSuffix": " (Khuyên dùng)",
+      "SupportGroup": "Hỗ trợ và bảo trì",
+      "Experimental": "Tùy chọn thử nghiệm",
+      "HomeWelcome": "Chào mừng đến với Inkeys3",
+      "HeroTitle": "Nét mực mượt mà. Chuyển động tinh tế.",
+      "HeroJoin": " ",
+      "HeroDescription": "Chú thích màn hình vừa đẹp mắt, vừa dễ dùng.",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "Chương trình này được cấp phép theo ",
+      "HomeLicenseSuffix": ".",
+      "HomeRedistribution": "Theo các điều khoản GPLv3, bất kỳ ai cũng có thể xem, sửa đổi và phân phối lại mã nguồn dự án này.",
+      "HomeOpenSourceTitle": "Mã nguồn mở, miễn phí, dành cho bạn",
+      "HomeRepositoryPrefix": "Mã nguồn Inkeys được lưu trữ trên ",
+      "HomeRepositoryJoin": " và ",
+      "HomeRepositorySuffix": ".",
+      "HomeStarAction": "Gắn sao trên GitHub",
+      "HomeSponsorAction": "Tài trợ Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "Tùy chỉnh trải nghiệm viết",
+      "Tutorial": "Hướng dẫn sử dụng",
+      "Explore": "Thiết lập khuyên dùng",
+      "DrawDescription": "Nét mực và tẩy",
+      "AppearanceDescription": "Hiệu ứng, ánh sáng và tỷ lệ thanh chính",
+      "PresetDescription": "Bút thường dùng, luôn sẵn sàng",
+      "PluginDescription": "Kết nối công cụ trình chiếu và lớp học",
+      "CommonSettings": "Thiết lập thường dùng",
+      "GeneralDescription": "Chế độ thao tác, bố trí thanh công cụ và khởi động",
+      "ShortcutsDescription": "Phím tắt cho thao tác toàn cục và chỉnh sửa chú thích",
+      "DisplayLanguage": "Ngôn ngữ hiển thị",
+      "Improve": "Cùng cải thiện Inkeys",
+      "Contact": "Liên hệ tác giả",
+      "TermsOfUse": "Điều khoản sử dụng",
+      "Website": "Trang web chính thức",
+      "StartupSection": "Khởi động",
+      "AppearanceSection": "Giao diện",
+      "BehaviorSection": "Hành vi",
+      "CompatibilitySection": "Tương thích",
+      "GeneralBasic": "Cơ bản",
+      "GeneralAppearance": "Giao diện và hiệu ứng",
+      "GeneralInteraction": "Hành vi và an toàn",
+      "GeneralStorage": "Lưu trữ và cấu hình",
+      "OperationModeSection": "Chế độ thao tác",
+      "IconArrangementSection": "Bố trí biểu tượng",
+      "AnimationSection": "Hiệu ứng",
+      "LightingSection": "Ánh sáng",
+      "ScalingSection": "Tỷ lệ",
+      "WindowBehaviorSection": "Hành vi cửa sổ",
+      "SafetyRecoverySection": "An toàn và khôi phục",
+      "ShortcutGlobalSection": "Thao tác toàn cục",
+      "ShortcutEditingSection": "Chỉnh sửa chú thích",
+      "ShortcutAuxiliarySection": "Thao tác phụ",
+      "GeneralSubtitle": "Cách khởi động, cỡ giao diện và tùy chỉnh hằng ngày.",
+      "EdgeLighting": "Bật ánh sáng viền",
+      "EdgeLightingDescription": "Khi tắt, chỉ giữ viền cơ bản, không có hiệu ứng ánh sáng điểm hoặc ánh sáng dịu.",
+      "TopWindowSummary": "Tần suất Inkeys đưa cửa sổ lên trên cùng khi không vẽ.",
+      "TopWindowDetails": "Chi tiết",
+      "AvoidFullscreenSummary": "Cần khởi động lại. Tránh chiếm toàn màn hình khi không vẽ hoặc ở chế độ nhấp xuyên.",
+      "AvoidFullscreenDetails": "Lưu ý sử dụng",
+      "Enabled": "Bật",
+      "Disabled": "Tắt",
+      "ClickToCopy": "Nhấp để sao chép",
+      "Copied": "Đã sao chép",
+      "RestartRequired": "Khởi động lại Inkeys để áp dụng.",
+      "NextStartupRequired": "Thay đổi có hiệu lực từ lần khởi động Inkeys tiếp theo."
+    },
+    "Home":
+    {
+      "N": "Trang chủ",
+      "Prompt": "Đây là bản xem trước của Inkeys 3, chưa thể hiện chất lượng cuối cùng.",
+      "Developer": "Nhà phát triển sáng lập Inkeys",
+      "Group": "GitHub Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Kênh Bilibili",
+      "FeedBack": "Báo lỗi / Góp ý"
+    },
+    "Feedback":
+    {
+      "N": "Phản hồi",
+      "Description": "Báo lỗi hoặc góp ý để giúp cải thiện Inkeys.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Báo lỗi hoặc góp ý trên GitHub để mọi người cùng trao đổi và theo dõi."
+      },
+      "Questionnaire":
+      {
+        "N": "Phiếu phản hồi",
+        "E": "Dùng phiếu phản hồi để báo lỗi hoặc đề xuất cải tiến."
+      },
+      "Qr":
+      {
+        "N": "Quét mã để phản hồi",
+        "E": "Quét mã QR để báo lỗi hoặc góp ý qua phiếu phản hồi."
+      },
+      "ContactSection": "Cộng đồng và liên hệ tác giả",
+      "CommunityDescription": "Trao đổi vấn đề hoặc góp ý với cộng đồng trên GitHub Discussions.",
+      "ContactDescription": "Gửi email cho tác giả để báo lỗi hoặc góp ý.",
+      "AuthorQQ": "QQ của tác giả"
+    },
+    "Language":
+    {
+      "N": "Ngôn ngữ",
+      "UI":
+      {
+        "N": "Ngôn ngữ giao diện",
+        "Select": "Chọn ngôn ngữ",
+        "SelectE": "Ngôn ngữ hiển thị của giao diện.",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "Thay đổi ngôn ngữ có hiệu lực ngay, không cần khởi động lại Inkeys.",
+        "SelectNote": "Có hiệu lực ngay. Không cần khởi động lại."
+      }
+    },
+    "Configuration":
+    {
+      "N": "Cấu hình và lưu trữ",
+      "Clean":
+      {
+        "N": "Dọn cấu hình",
+        "Enable": "Bật dọn cấu hình",
+        "EnableE": "Khi khởi động hoặc lưu, xóa các mục không thuộc mẫu cấu hình của phiên bản hiện tại.",
+        "EnableNote": "Sau khi hạ rồi nâng cấp phiên bản hoặc nhập cấu hình, một số tùy chọn có thể bị mất và trở về mặc định."
+      },
+      "CanvasSave":
+      {
+        "N": "Lưu trang vẽ",
+        "Enable": "Tự động lưu trang vẽ màn hình",
+        "EnableE": "Tự động lưu trang vẽ màn hình có nét mực khi xóa hết hoặc thoát ứng dụng, để có thể khôi phục từ lịch sử trang vẽ.",
+        "SaveTime":
+        {
+          "N": "Thời gian giữ lịch sử",
+          "E": "Khi khởi động, xóa trang vẽ đã lưu quá thời gian giữ đã chọn.",
+          "1d": "1 ngày",
+          "3d": "3 ngày",
+          "5d": "5 ngày",
+          "10d": "10 ngày",
+          "30d": "30 ngày",
+          "Never": "Không bao giờ xóa"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "Phiên bản phần mềm",
+      "ManualUpdate":
+      {
+        "N": "Có phiên bản mới",
+        "ManualUpdate": "Cập nhật thủ công"
+      },
+      "LimitUpdate":
+      {
+        "N": "Đã chặn cập nhật tự động!\n\nYêu cầu tương thích hệ thống của phiên bản mới đã thay đổi. Cập nhật tự động bị chặn vì phần mềm có thể không khởi động được sau khi cập nhật. Hãy xem thông tin chi tiết, xác nhận hệ thống đáp ứng yêu cầu mới rồi tải về và cập nhật thủ công. Chức năng sửa chữa trên kênh hiện tại sẽ tạm thời không khả dụng.",
+        "Info": "Thông tin chi tiết"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3 đã chính thức ra mắt!\n\nDùng nút bên dưới để tìm hiểu thêm về Inkeys3. Chức năng sửa chữa trên kênh hiện tại sẽ tạm thời không khả dụng.",
+        "Download": "Cập nhật ngay"
+      },
+      "VersionTip": "Kiến trúc ứng dụng không khớp với hệ thống, có thể làm giảm hiệu năng. Trong Sửa chữa phần mềm bên dưới, bật “Sửa kiến trúc khi sửa chữa” hoặc chọn kiến trúc đích thủ công trước khi sửa.",
+      "Info":
+      {
+        "N": "Thông tin phiên bản",
+        "ReleaseVersion": "Phiên bản phát hành:",
+        "ReleaseDate": "Ngày phát hành:",
+        "ReleaseArch": "Kiến trúc ứng dụng và hệ thống",
+        "ReleaseTag": "Bản dựng phát hành (RELEASE)",
+        "DebugTag": "Bản dựng gỡ lỗi (DEBUG)",
+        "ManualBuild": "Bản dựng thủ công",
+        "AutoBuild": "Bản dựng tự động (CI/CD)",
+        "CICDInfo": "Chi tiết bản dựng"
+      },
+      "UserInfo":
+      {
+        "N": "Thông tin người dùng",
+        "CopyUserId": "Sao chép ID người dùng",
+        "UserId": "ID người dùng"
+      },
+      "Repair":
+      {
+        "N": "Sửa chữa phần mềm",
+        "RepairSoftware": "Sửa chữa",
+        "RepairSoftwareE": "Cài lại phiên bản mới nhất trên kênh đã chọn",
+        "RepairArch": "Sửa kiến trúc khi sửa chữa"
+      },
+      "Update":
+      {
+        "N": "Tùy chỉnh cập nhật",
+        "AutoUpate": "Cập nhật tự động (im lặng)",
+        "ChannelTip": "Ổn định (LTS): bản ổn định mới nhất, khuyên dùng hằng ngày.\nInsider: bản xem trước; có thể kém ổn định hơn và bị phần mềm bảo mật cảnh báo.\nCanary: bản dựng Inkeys 3 giai đoạn đầu, không khuyên dùng hằng ngày.",
+        "Channel":
+        {
+          "N": "Kênh cập nhật",
+          "LTS": "Kênh ổn định (LTS)",
+          "Insider": "Kênh Insider",
+          "Canary": "Kênh Canary"
+        },
+        "Arch":
+        {
+          "N": "Kiến trúc đích",
+          "E": "Cảnh báo: Kiến trúc không khớp với hệ thống có thể khiến Inkeys không khởi động được hoặc gặp vấn đề hiệu năng nghiêm trọng.",
+          "64": "64 bit",
+          "32": "32 bit",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "Trạng thái phiên bản"
+    },
+    "CICD":
+    {
+      "N": "Chi tiết bản dựng",
+      "Repository": "Kho mã nguồn",
+      "Branch": "Nhánh",
+      "Submitter": "Người gửi mã",
+      "BuildTime": "Thời gian dựng",
+      "BuildSystem": "Hệ thống dựng",
+      "BuildSystemVersion": "Phiên bản hệ thống dựng",
+      "RunnerImageSystem": "Hệ điều hành ảnh bộ chạy",
+      "RunnerImageVersion": "Phiên bản ảnh bộ chạy",
+      "MSBuildVersion": "Phiên bản MSBuild"
+    },
+    "Regular":
+    {
+      "N": "Chung",
+      "SelectAndClickThrough":
+      {
+        "N": "Chọn và nhấp xuyên",
+        "Combined": "Kết hợp",
+        "Separate": "Tách biệt",
+        "CombinedDescription": "Dùng Chọn để thao tác trên máy tính, dù không có nét mực hay vẫn giữ nét mực hiển thị.",
+        "SeparateDescription": "Dùng Chọn để xóa nét mực rồi thao tác trên máy tính, hoặc Nhấp xuyên để thao tác với cửa sổ bên dưới mà vẫn giữ nét mực hiển thị.",
+        "ClickThrough": "Nhấp xuyên",
+        "ClickThroughDescription": "Giữ nét mực hiển thị, đồng thời cho thao tác nhấp và chạm xuyên qua lớp chú thích đến cửa sổ bên dưới."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Thứ tự biểu tượng thanh chính",
+        "FollowMainButton": "Theo nút chính",
+        "FollowMainButtonReverse": "Theo nút chính (đảo ngược)",
+        "LeftToRight": "Trái sang phải",
+        "RightToLeft": "Phải sang trái"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Hướng mở rộng thanh chính",
+        "Centerline": "Trục giữa màn hình",
+        "WhenSpaceInsufficient": "Khi không đủ chỗ"
+      },
+      "AutoCollapse":
+      {
+        "N": "Tự động thu gọn",
+        "Drawing": "Thu gọn thanh khi vẽ",
+        "Erasing": "Thu gọn thanh khi tẩy",
+        "Dragging": "Thu gọn thanh khi kéo",
+        "OutsideClick": "Thu gọn thanh khi nhấp bên ngoài ở chế độ Chọn hoặc Nhấp xuyên",
+        "Description": "Vẽ gồm bút, hình và laser. Chế độ thanh dưới bao gồm ghim giữa. Nhấp bên ngoài không bao gồm thanh chính cùng menu, thuộc tính và bảng bật lên của thanh.",
+        "Off": "Tắt",
+        "NonBottom": "Khi không ghim dưới",
+        "Always": "Luôn luôn"
+      },
+      "StartUp":
+      {
+        "N": "Khởi động",
+        "AutoStart": "Tự chạy khi đăng nhập",
+        "AutoStartE": "Tự chạy Inkeys khi người dùng hiện tại đăng nhập Windows.",
+        "LoadingAnimation": "Hiệu ứng tải khi khởi động",
+        "LoadingAnimationE": "Hiển thị hiệu ứng tải khi Inkeys khởi động.",
+        "SettingEntryAnimation":
+        {
+          "N": "Hiệu ứng mở Thiết lập",
+          "E": "Điều chỉnh cách phát hiệu ứng mở Thiết lập.",
+          "Off": "Tắt",
+          "First": "Lần mở đầu tiên",
+          "Always": "Luôn luôn"
+        },
+        "Link":
+        {
+          "N": "Tạo lối tắt màn hình",
+          "E": "Sửa tên lối tắt hiện có hoặc tạo lối tắt mới. Chọn Tùy chọn khác để thiết lập.",
+          "More": "Tùy chọn khác"
+        }
+      },
+      "Appearance":
+      {
+        "N": "Giao diện",
+        "AnimationEnable": "Bật hiệu ứng",
+        "AnimationEnableE": "Khi tắt, hiệu ứng trên thanh chính UI3 và trong điều hướng, trang Thiết lập sẽ hoàn tất ngay.",
+        "AnimationRate": "Tốc độ hiệu ứng",
+        "AnimationRateE": "Điều chỉnh tốc độ hiệu ứng trên thanh chính UI3 và Thiết lập từ 0.1x đến 5.0x.",
+        "EdgeLighting": "Ánh sáng viền",
+        "EdgeLightingE": "Khi tắt, chỉ giữ viền cơ bản; tắt ánh sáng điểm và ánh sáng dịu.",
+        "DynamicEdgeLighting": "Ánh sáng viền động",
+        "DynamicEdgeLightingE": "Ánh sáng di chuyển theo vị trí con trỏ.",
+        "Theme":
+        {
+          "N": "Chủ đề",
+          "E": "Chọn Giao diện khuyên dùng để tự động áp dụng chủ đề hiện được đề xuất chính thức.",
+          "Skip1": "Giao diện khuyên dùng",
+          "Skip2": "Giao diện mặc định",
+          "Skip3": "Đồng hồ tối giản",
+          "Skip4": "Năm Ngọ"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "Cơ sở tỷ lệ thanh tác vụ",
+          "E": "Ở tỷ lệ 100%, Cỡ cơ sở thanh tác vụ đặt chiều cao thanh chính cố định là 48 DIP; Cỡ thực thanh tác vụ điều chỉnh theo độ dày thanh tác vụ.",
+          "Off": "Tắt",
+          "Base": "Cỡ cơ sở thanh tác vụ",
+          "Actual": "Cỡ thực thanh tác vụ"
+        },
+        "BarZoom":
+        {
+          "N": "Tỷ lệ giao diện thanh chính",
+          "E": "Điều chỉnh ngay tỷ lệ thanh chính, nút và điều khiển PPT.",
+          "Ind": "Tỷ lệ {:.2f}x"
+        }
+      },
+      "Behavior":
+      {
+        "N": "Hành vi",
+        "TopWindow":
+        {
+          "N": "Chu kỳ đưa lên trên",
+          "E": "Khi không vẽ, Inkeys đưa cửa sổ lên trên cùng theo chu kỳ đã chọn; tạm dừng khi đặt bút xuống. Chu kỳ ngắn giúp giảm che khuất bởi cửa sổ khác nhưng có thể tăng mức dùng CPU. Nếu cần, hãy thử tiện ích SuperTop.",
+          "100ms": "Rất ngắn (100ms)",
+          "500ms": "Ngắn (500ms)",
+          "1s": "Khá ngắn (1 s)",
+          "3s": "Vừa (3s)",
+          "5s": "Khá dài (5 s)",
+          "10s": "Dài (10s)",
+          "30s": "Rất dài (30s)"
+        },
+        "RightClickClose": "Nhấp chuột phải biểu tượng chính để thoát Inkeys",
+        "RightClickCloseE": "Hiển thị hộp thoại xác nhận.",
+        "DrawingRetract": "Thu gọn thanh chính khi vẽ",
+        "ErasingRetract": "Thu gọn thanh chính khi tẩy",
+        "DraggingRetract": "Thu gọn thanh chính khi kéo",
+        "CheckingRetract": "Thu gọn khi nhấp ngoài thanh chính",
+        "CheckingRetractE": "Chỉ áp dụng khi nhấp ngoài thanh chính trong chế độ Chọn hoặc Nhấp xuyên."
+      },
+      "Tentative":
+      {
+        "N": "Tùy chọn thử nghiệm",
+        "SafeMode":
+        {
+          "N": "Xử lý sự cố",
+          "E": "Chọn thao tác khi ứng dụng gặp sự cố.",
+          "Mode1": "Hiện thông báo lỗi và khởi động lại",
+          "Mode2": "Khởi động lại im lặng",
+          "Mode3": "Để hệ thống xử lý",
+          "Mode4": "Thoát ngay",
+          "Note": "Lỗi khi khởi động vẫn hiển thị thông báo."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "Cho phép chạy nhiều bản",
+          "E": "Cho phép chạy nhiều bản từ thư mục cài đặt hiện tại. Tắt tùy chọn sẽ ngăn mở thêm bản mới nhưng không đóng các bản đang chạy."
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "Vẽ",
+      "General":
+      {
+        "N": "Chung",
+        "MultiTouch":
+        {
+          "N": "Vẽ bằng nhiều ngón",
+          "E": "Viết hoặc vẽ bằng nhiều ngón tay cùng lúc. Khi tắt, chỉ nhận nét vẽ bằng một ngón."
+        },
+        "PenTailCorrection":
+        {
+          "N": "Chỉnh nét cuối khi nhấc bút",
+          "E": "Giảm các đoạn gấp đột ngột ở cuối nét khi nhấc bút, giúp nét kết thúc tự nhiên hơn."
+        },
+        "InkPrediction":
+        {
+          "N": "Dự đoán nét mực",
+          "E": "Giảm cảm giác trễ nét khi viết. Chế độ Chính xác dự đoán hướng tiếp theo; chế độ Nhanh bổ sung nét đến vị trí đầu vào mới nhất. Tắt sẽ không vẽ nét dự đoán.",
+          "Precise": "Chính xác",
+          "Fast": "Nhanh",
+          "Disabled": "Tắt"
+        }
+      },
+      "Laser":
+      {
+        "N": "Bút laser",
+        "MultiTouch":
+        {
+          "N": "Laser nhiều ngón",
+          "E": "BETA: Dùng bút laser bằng nhiều ngón tay cùng lúc."
+        },
+        "Particles":
+        {
+          "N": "Hạt hiệu ứng laser",
+          "E": "BETA: Hiển thị các hạt xung quanh vệt laser."
+        }
+      },
+      "Haptics":
+      {
+        "N": "Phản hồi xúc giác bút",
+        "Drawing": "Rung khi vẽ",
+        "Buttons": "Rung nút bấm"
+      },
+      "Cursor":
+      {
+        "N": "Con trỏ",
+        "Description": "Tùy chọn chuột chỉ áp dụng cho bút nét mềm và nét đều. Bút nhớ dòng luôn xem trước độ dày; công cụ hình dùng con trỏ hệ thống. Con trỏ bút mặc định là hình tròn. Tắt viền sáng cho bút màn hình, bật cho bảng vẽ và bút không nhận diện được.",
+        "MouseStyle": "Chuột",
+        "PenStyle": "Bút",
+        "DefaultStyle": "Con trỏ mặc định",
+        "DrawingStyle": "Con trỏ hình bút"
+      },
+      "Effect":
+      {
+        "N": "Môi trường vẽ",
+        "Device":
+        {
+          "N": "Chọn chế độ tương tác",
+          "Touch": "Chế độ cảm ứng màn hình lớn",
+          "MousePen": "Chế độ máy tính",
+          "TouchE": "Dành cho việc viết và thao tác trực tiếp trên màn hình cảm ứng lớn trong lớp học, phòng họp và các môi trường tương tự.",
+          "MousePenE": "Dành cho máy tính, máy tính bảng và màn hình lớn dùng chuột; hỗ trợ chuột, bút, bảng vẽ và cảm ứng."
+        }
+      },
+      "Touch":
+      {
+        "N": "Cảm ứng",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Nối nét bị ngắt",
+          "E": "Khi mất tiếp xúc ngắn rồi tiếp tục theo hướng cũ, ứng dụng sẽ thử nối hai phần thành một nét để giảm đứt đoạn. Khi tắt, mỗi lần nhấc ngón tay sẽ kết thúc nét hiện tại."
+        }
+      },
+      "Eraser":
+      {
+        "N": "Tẩy",
+        "Automatic": "Bật tẩy theo tốc độ",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "Tẩy chính xác",
+          "DemoFineDescription": "Tẩy chậm theo đường phụ, giữ nguyên các nhãn và đoạn thẳng gần đó.",
+          "DemoSweepTitle": "Tẩy vùng lớn",
+          "DemoSweepDescription": "Tẩy qua lại liên tục sẽ tăng dần cỡ tẩy để xóa vùng nét lớn nhanh hơn.",
+          "EntryDescription": "Tự điều chỉnh cỡ tẩy theo ý định thao tác",
+          "Introduction": "Kết hợp kích thước thiết bị, thiết bị đầu vào và chuyển động để suy đoán ý định tẩy và tự điều chỉnh cỡ tẩy.",
+          "BasicSettings": "Thiết lập cơ bản",
+          "EnabledDevices": "Thiết bị được bật",
+          "FineControl": "Điều khiển chi tiết",
+          "SizeWarningTitle": "Không có kích thước màn hình đáng tin cậy",
+          "SizeWarningDescription": "Không có kích thước vật lý đáng tin cậy của màn hình vẽ hiện tại. Cảm ứng và bút màn hình sẽ dùng ước lượng DPI nên cỡ tẩy có thể không đúng ý định."
+        },
+        "PalmEraser":
+        {
+          "N": "Tẩy bằng lòng bàn tay",
+          "EntryDescription": "Tẩy bằng vùng chạm lớn mà không đổi công cụ",
+          "Introduction": "Đặt lòng bàn tay lên màn hình để tẩy mà không đổi công cụ. Cỡ tẩy được xác định trong khoảng nhận diện sau khi chạm; khi nhấc tay, công cụ ban đầu vẫn được chọn.",
+          "Enabled": "Bật tẩy bằng lòng bàn tay",
+          "SizeWarningTitle": "Không có kích thước màn hình đáng tin cậy",
+          "SizeWarningDescription": "Không có kích thước vật lý đáng tin cậy của màn hình vẽ hiện tại. Vẫn có thể tẩy bằng lòng bàn tay với ngưỡng diện tích cơ sở 100×100 DIP hệ thống. Kích thước thực có thể khác; hãy điều chỉnh tỷ lệ cho phù hợp với màn hình.",
+          "RecognitionWindow": "Khoảng thời gian nhận diện",
+          "RecognitionWindowDescription": "Nhận diện lòng bàn tay và xác định cỡ trong khoảng thời gian này sau khi bắt đầu chạm. Bắt đầu tẩy ngay khi đủ điều kiện.",
+          "Threshold": "Ngưỡng diện tích chạm",
+          "ThresholdDescription": "Tăng tỷ lệ để giảm kích hoạt nhầm, hoặc giảm để dễ nhận diện lòng bàn tay hơn.",
+          "ThresholdSizePhysical": "Ngưỡng hiện tại: {:.2f}cm × {:.2f}cm ({:.0f}px × {:.0f}px)",
+          "ThresholdSizePixels": "Ngưỡng hiện tại: {:.0f}px × {:.0f}px",
+          "PreviewTitle": "Ví dụ diện tích chạm (màn hình vẽ hiện tại)",
+          "PreviewDescription": "Vùng trong viền biểu thị ngưỡng điểm ảnh của màn hình vẽ hiện tại. Đổi tỷ lệ xem trước để xem các hình dạng khác. Kích thước vật lý có thể khác trên màn hình khác.",
+          "PreviewEstimated": "Ngưỡng điểm ảnh ước lượng này dùng diện tích cơ sở 100×100 DIP hệ thống và tỷ lệ hiện tại. Chọn tỷ lệ để đổi hình dạng; kích thước vật lý có thể khác.",
+          "PreviewUnavailable": "Chưa có thước đo của màn hình vẽ hiện tại nên chưa thể hiển thị ví dụ diện tích.",
+          "EnabledTools": "Công cụ áp dụng",
+          "ParallelWritingMultiTouchNote": "Đã tắt vẽ nhiều ngón nên không thể vừa viết vừa tẩy.",
+          "ParallelWritingLaserMultiTouchNote": "Đã tắt laser nhiều ngón nên không thể vừa viết vừa tẩy với bút laser.",
+          "ParallelWriting": "Bật vừa viết vừa tẩy",
+          "ParallelWritingDescription": "Bật tẩy bằng lòng bàn tay không ngắt các đầu vào khác nên vẫn có thể vẽ tiếp. (Dành cho hai hoặc nhiều người cùng viết.)"
+        },
+        "Input":
+        {
+          "MouseLeft": "Nút chuột trái",
+          "MouseRight": "Nút chuột phải",
+          "Touch": "Cảm ứng",
+          "PenTip": "Đầu bút",
+          "PenTail": "Đuôi bút"
+        },
+        "Kind":
+        {
+          "Fixed": "Độ dày cố định",
+          "Speed": "Tẩy theo tốc độ"
+        },
+        "ResponseFor": "Phản hồi tốc độ áp dụng cho",
+        "Response":
+        {
+          "Auto": "Tự nhận diện",
+          "ScreenPen": "Bút màn hình",
+          "Digitizer": "Bảng vẽ"
+        },
+        "TouchArea":
+        {
+          "N": "Hỗ trợ diện tích tiếp xúc cho tẩy cảm ứng theo tốc độ",
+          "E": "Giữ cỡ tẩy hơi lớn hơn ngón tay để ngón tay không che con trỏ tẩy.",
+          "Note": "Không khuyên bật trên thiết bị màn hình lớn."
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "Thiết lập sẵn",
+      "StartupPlacement":
+      {
+        "N": "Vị trí sau khi khởi động",
+        "E": "Thanh dưới ở giữa mở sẵn. Cửa sổ nổi góc dưới trái hoặc phải chỉ hiện nút chính.",
+        "CenteredBottomBar": "Thanh dưới ở giữa",
+        "BottomLeftFloating": "Cửa sổ nổi dưới trái",
+        "BottomRightFloating": "Cửa sổ nổi dưới phải"
+      }
+    },
+    "Performance":
+    {
+      "N": "Hiệu năng",
+      "FrameRateSection": "Tốc độ khung hình",
+      "InterfaceFrameRate":
+      {
+        "N": "Tốc độ khung hình giao diện",
+        "E": "Điều chỉnh độ mượt của thanh chính, Thiết lập và điều khiển trang. Tốc độ khung hình thấp hơn giúp giảm dùng tài nguyên. Có hiệu lực ngay."
+      },
+      "CanvasFrameRate":
+      {
+        "N": "Tốc độ khung hình trang vẽ",
+        "E": "Điều chỉnh tần suất làm mới trang vẽ khi viết. Tốc độ khung hình cao hơn giúp nét mượt hơn nhưng dùng nhiều tài nguyên hơn."
+      },
+      "RenderingSection": "Kết xuất và tương thích",
+      "DirectComposition":
+      {
+        "N": "Ưu tiên DirectComposition",
+        "E": "Dùng cơ chế tổng hợp của hệ thống để hiển thị trang vẽ trên thiết bị hỗ trợ, tự chuyển sang cách tương thích khi không khả dụng."
+      }
+    },
+    "Experimental":
+    {
+      "N": "Phòng thử nghiệm",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "Cho phép phông giao diện dùng cỡ điểm ảnh lẻ",
+          "E": "Khi tắt, cỡ chữ trên thanh chính và điều khiển ở trạng thái đứng yên được làm tròn xuống điểm ảnh nguyên. Hiệu ứng phóng và chuyển tiếp vẫn mượt. Có hiệu lực ngay."
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Bật tăng tốc phần cứng khi vẽ",
+          "E": "Dùng GPU để vẽ trang vẽ; khi tắt sẽ dùng kết xuất phần mềm.",
+          "Note": "Thử tắt nếu nét vẽ bị lỗi hoặc rất chậm. Khởi động lại Inkeys để áp dụng."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Bật chế độ tương thích Zhaoxin",
+          "E": "Dùng đường tải lên tương thích cho GPU Zhaoxin. GPU khác không bị ảnh hưởng. Tắt để so sánh hiệu năng vẽ."
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "Chẩn đoán phản hồi xúc giác bút",
+          "E": "Ghi đầu vào bút, yêu cầu nút và kết quả gửi đến thiết bị xúc giác để tìm nguyên nhân không rung."
+        },
+        "TouchArea":
+        {
+          "N": "Đầu ra bảng điều khiển chẩn đoán đầu vào và tẩy",
+          "E": "Xuất ảnh chụp trạng thái có giới hạn tần suất về EDID, độ phân giải và DPI màn hình, diện tích chạm, tọa độ đầu vào, loại thiết bị và cỡ tẩy."
+        },
+        "PptCOM":
+        {
+          "N": "Đầu ra bảng điều khiển PptCOM",
+          "E": "Xuất thông tin chẩn đoán PptCOM ra bảng điều khiển."
+        },
+        "Draw3":
+        {
+          "N": "Đầu ra bảng điều khiển Draw3",
+          "E": "Xuất thông tin thiết bị và trình điều khiển Draw3 ra bảng điều khiển."
+        },
+        "Cursor":
+        {
+          "N": "Chẩn đoán con trỏ",
+          "E": "Xuất nguồn sở hữu đầu vào con trỏ và hình ảnh đã vẽ ra bảng điều khiển."
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "Tiện ích",
+      "PPTHelper":
+      {
+        "N": "Trợ lý trình chiếu PPT 3 Lite",
+        "E": "Cung cấp nút điều khiển trình chiếu và bút trong khi trình chiếu. Mỗi trang có vùng vẽ riêng để nét mực gắn với trang. Không ảnh hưởng chức năng sẵn có hay thiết bị ngoài.",
+        "VersionError": "Không rõ phiên bản (lỗi tiện ích)",
+        "Solve": "Giải pháp",
+        "Sync": "Điều chỉnh đồng bộ",
+        "Reset": "Đặt lại",
+        "Tip": "Chạy Inkeys và PowerPoint/WPS với cùng mức quyền để nhận diện tiến trình trình chiếu. Nếu vẫn gặp lỗi, hãy xem giải pháp.",
+        "Warn": "Phát hiện PowerPoint/WPS được đặt luôn chạy với quyền quản trị viên. Inkeys cũng cần quyền quản trị viên để nhận diện tiến trình trình chiếu và bật liên kết PPT. Nếu không muốn phần mềm trình chiếu luôn chạy với quyền quản trị viên, hãy xem giải pháp.",
+        "Error": "Không tải được tiện ích. Có thể chưa cài .NET Framework 4.x hoặc môi trường COM gặp lỗi.\nChi tiết: ",
+        "BasicLogic":
+        {
+          "N": "Lô-gic cơ bản",
+          "LoadPage": "Hiện trang tải",
+          "LoadPageE": "Chức năng này đã ngừng dùng, không còn hiển thị trang tải PPT."
+        },
+        "WidgetDisplay":
+        {
+          "N": "Hiển thị điều khiển",
+          "BottomBoth": "Hiện điều khiển ở hai góc dưới",
+          "MiddleBoth": "Hiện điều khiển ở giữa hai bên",
+          "BottomMiddle": "Hiện điều khiển trên thanh dưới"
+        },
+        "WidgetPosition":
+        {
+          "N": "Vị trí điều khiển",
+          "Reset": "Đặt lại vị trí điều khiển",
+          "Remember": "Ghi nhớ vị trí điều khiển"
+        },
+        "WidgetScale":
+        {
+          "N": "Tỷ lệ điều khiển",
+          "Ind": "Tỷ lệ {:.2f}x",
+          "Page":
+          {
+            "BottomSideBoth": "Tỷ lệ điều khiển hai góc dưới",
+            "MiddleSideBoth": "Tỷ lệ điều khiển giữa hai bên"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "Tỷ lệ điều khiển thanh dưới"
+          }
+        },
+        "Tentative":
+        {
+          "N": "Tùy chọn thử nghiệm",
+          "CloseWpp": "Cho phép đóng tiến trình trình chiếu WPP bị treo hoặc còn sót",
+          "CloseWppE": "Cần khởi động lại. Thử đóng tiến trình WPP còn sót sau khi kết thúc trình chiếu WPS để cải thiện nhận diện lần trình chiếu tiếp theo.",
+          "AutoTakeOver": "Tiếp quản chú thích trình chiếu",
+          "AutoTakeOverE": "Khi phát hiện chú thích gốc PPT được bật, chuyển sang chế độ vẽ của Inkeys và tắt chú thích gốc PPT.",
+          "AutoTakeOverOnce": "Tiếp quản tối đa một lần mỗi lượt trình chiếu",
+          "AutoTakeOverOnceE": "Tránh tiếp quản lặp lại khi người dùng thực sự cần chú thích gốc PPT.",
+          "AutoTakeOverExpand": "Mở rộng thanh chính sau khi tiếp quản thành công",
+          "EnablePageButtonLongPress": "Bật chuyển trang khi giữ nút điều hướng"
+        },
+        "SupportNote": "Hỗ trợ Microsoft PowerPoint 2007 trở lên và Kingsoft WPS 2013 trở lên."
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "Dùng UIAccess để hiển thị cửa sổ trên giao diện hệ thống và cửa sổ ứng dụng được hỗ trợ.",
+        "Warn": "Tiện ích SuperTop đang ở giai đoạn Beta và có thể chưa ổn định.\nKhi khởi động, Inkeys tự chạy lại để yêu cầu nâng quyền rồi mở một bản mới.\nQuá trình này có thể thất bại; chạy với quyền quản trị viên có thể ảnh hưởng liên kết PPT.\nNâng quyền có thể hiện thông báo UAC. Hãy kiểm tra nguồn và nhà phát hành trước khi cho phép.\nNếu phần mềm bảo mật cảnh báo, hãy kiểm tra nguồn và chữ ký tệp, không tắt bảo vệ ngay.",
+        "Capability":
+        {
+          "N": "Khả năng cơ bản",
+          "SuperTop": "Bật SuperTop",
+          "SuperTopE1": "Ứng dụng dùng quy trình khởi động ba giai đoạn để giữ cửa sổ trên cùng.\n(SuperTop đang hoạt động)",
+          "SuperTopE2": "Ứng dụng dùng quy trình khởi động ba giai đoạn để giữ cửa sổ trên cùng.\n(SuperTop chưa hoạt động)",
+          "Indicator": "Chỉ báo SuperTop",
+          "IndicatorE": "Hiện biểu tượng ghim ở góc trên phải biểu tượng chính khi bật thành công.",
+          "SuperTopNote": "Khởi động lại Inkeys để áp dụng. Việc đưa cửa sổ lên trên cùng có thể thất bại khi khởi động."
+        },
+        "SupportNote": "Yêu cầu Windows 8 trở lên."
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "Trên máy tính tích hợp dùng trong lớp học, một số phần mềm bảng trắng không cho tắt trực tiếp thanh bút nổi, khiến nhiều công cụ vẽ cùng xuất hiện trên màn hình. Giáo viên dễ dùng lẫn công cụ, không thể tiếp tục chú thích và ảnh hưởng việc giảng dạy. DesktopDrawpadBlocker được tạo ra để giải quyết vấn đề này.",
+        "LicenseTitle": "Tiện ích mã nguồn mở GPLv3",
+        "LicenseDescription": "Tiện ích chỉ dành cho học tập, trao đổi và nghiên cứu; không được dùng cho mục đích khác.\nDesktopDrawpadBlocker là phần mềm mã nguồn mở phát hành theo giấy phép GPLv3.\nĐược công bố trên GitHub: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nChúng tôi mong chương trình hữu ích nhưng không bảo đảm về chất lượng.\nNgười dùng tự chịu trách nhiệm về tác động và hậu quả khi dùng tiện ích; việc sử dụng đồng nghĩa chấp nhận thỏa thuận này.",
+        "UseSection": "Sử dụng tiện ích",
+        "EnableTitle": "Bật tiện ích",
+        "EnableDescription": "Ở chế độ mặc định, tiện ích mở và đóng cùng Inkeys.",
+        "GeneralSection": "Tùy chọn chung",
+        "AdministratorTitle": "Chạy tiện ích với quyền quản trị viên",
+        "AdministratorDescription": "Chờ tiện ích phản hồi khi đổi thiết lập này.",
+        "IntervalTitle": "Chu kỳ chặn",
+        "IntervalDescription": "Chu kỳ ngắn chặn cửa sổ mới xuất hiện nhanh hơn nhưng dùng nhiều CPU hơn.",
+        "IntervalShort": "Ngắn (500 ms)",
+        "IntervalMediumShort": "Khá ngắn (1 s)",
+        "IntervalMedium": "Vừa (3 s)",
+        "IntervalMediumLong": "Khá dài (5 s)",
+        "IntervalLong": "Dài (10 s)",
+        "PrecisionSection": "Điều khiển chi tiết",
+        "Seewo3Title": "希沃白板3 — cửa sổ bút màn hình",
+        "Seewo5Title": "希沃白板5 — cửa sổ bút màn hình",
+        "Seewo5CTitle": "希沃轻白板（5C） — cửa sổ bút màn hình",
+        "PincoSidebarTitle": "希沃品课教师端 — thanh bên nổi",
+        "PincoDrawingTitle": "希沃品课教师端 — cửa sổ bút màn hình",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 — công cụ PPT",
+        "YiouTitle": "欧帝白板 — cửa sổ bút màn hình",
+        "AiClassTitle": "AiClass — cửa sổ bút màn hình",
+        "ClassInXTitle": "ClassIn X — cửa sổ bút màn hình",
+        "IntelligentClassTitle": "天喻教育云互动课堂 — cửa sổ bút màn hình",
+        "ChangYan4Title": "畅言智慧课堂4.0 — cửa sổ bút màn hình",
+        "ChangYan5Title": "畅言智慧课堂5.0 — cửa sổ bút màn hình",
+        "Iclass30SidebarTitle": "C30智能教学 — thanh bên nổi",
+        "Iclass30DrawingTitle": "C30智能教学 — cửa sổ bút màn hình",
+        "SeewoDesktopSidebarTitle": "希沃桌面 — thanh bên nổi",
+        "SeewoDesktopDrawingTitle": "希沃桌面 — cửa sổ bút màn hình",
+        "IncludesPptNote": "Bao gồm điều khiển PPT.",
+        "RestoresWhiteboardNote": "Bao gồm điều khiển PPT. Hỗ trợ tự khôi phục khi ở chế độ bảng trắng.",
+        "WindowTrackingNote": "Bao gồm điều khiển PPT. Hỗ trợ tự khôi phục ở chế độ bảng trắng và theo dõi cửa sổ.",
+        "SeewoDesktopVersionsNote": "Dùng cho phiên bản 1.0/2.0/2.5/3.0, cả bản giáo dục phổ thông và đại học.",
+        "AdministratorNote": "Cần quyền quản trị viên cho DDB."
+      },
+      "LnkHelper":
+      {
+        "N": "Trợ lý lối tắt",
+        "E": "Đảm bảo lối tắt Inkeys hiện có vẫn hợp lệ khi khởi động, vì cập nhật có thể đổi tên tệp chương trình khiến lối tắt hỏng. Có thể tạo lối tắt màn hình nếu chưa có.",
+        "Capability":
+        {
+          "N": "Khả năng cơ bản",
+          "FixLnk": "Sửa đích và tên lối tắt màn hình",
+          "FixLnkE": "Sửa lối tắt màn hình hiện có khi khởi động. Khuyên bật vì cập nhật tự động có thể đổi tên tệp chương trình làm hỏng lối tắt."
+        },
+        "Expansion":
+        {
+          "N": "Tùy chọn bổ sung",
+          "CreateLnk": "Tạo lối tắt màn hình",
+          "CreateLnkE": "Tạo lối tắt trên màn hình nếu chưa có."
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "Thành phần",
+      "SoftwareSection": "Ứng dụng",
+      "SystemSection": "Hệ thống",
+      "KeyboardSection": "Mô phỏng bàn phím",
+      "RollCallSection": "Công cụ gọi tên",
+      "ClassIslandSection": "Liên kết ClassIsland",
+      "ExplorerTitle": "Mở Trình khám phá tệp",
+      "TaskManagerTitle": "Mở Trình quản lý tác vụ",
+      "ControlPanelTitle": "Mở Bảng điều khiển",
+      "ShowDesktopTitle": "Hiện màn hình nền",
+      "LockScreenTitle": "Khóa màn hình",
+      "EscapeTitle": "Nhấn Esc",
+      "AltF4Title": "Nhấn Alt+F4",
+      "IslandCaller1Title": "IslandCaller 1: gọi tên ngẫu nhiên",
+      "IslandCaller2Title": "IslandCaller 2: gọi một người",
+      "SecRandom1Title": "SecRandom 1: chọn nhanh",
+      "SecRandom2Title": "SecRandom 2: chọn nhanh",
+      "SecRandom2CompatTitle": "SecRandom 2: chọn nhanh (tương thích)",
+      "NamePickerTitle": "NamePicker: tên ngẫu nhiên",
+      "ClassIslandSettingsTitle": "Thiết lập ClassIsland",
+      "ClassIslandProfileTitle": "Trình sửa hồ sơ ClassIsland",
+      "ClassIslandSwapTitle": "Đổi tiết nhanh ClassIsland",
+      "IslandCallerRequirement": "Cần cài tiện ích IslandCaller trong ClassIsland và đăng ký giao thức URL ClassIsland.",
+      "SecRandomUrlRequirement": "Cần đăng ký giao thức URL SecRandom.",
+      "SecRandomIpcRequirement": "Cần đăng ký giao thức IPC SecRandom.",
+      "NamePickerRequirement": "Cần đăng ký giao thức URL NamePicker.",
+      "ClassIslandProtocolNote": "Đăng ký giao thức điều hướng URL trong thiết lập ClassIsland.",
+      "ClassIslandSwapNote": "Thành phần này không có tác dụng khi ClassIsland chưa tải thời khóa biểu."
+    },
+    "HotKey":
+    {
+      "N": "Phím tắt",
+      "E": "Có thể bật riêng từng tổ hợp cố định dưới đây; chưa hỗ trợ tùy chỉnh phím.\nNgoài bật/tắt chú thích toàn cục, phím tắt chỉ có hiệu lực khi chú thích. Nhập văn bản trong Thiết lập và hộp thoại phương thức được ưu tiên. Ở chế độ Chọn hoặc Nhấp xuyên, ứng dụng hiện tại nhận phím.\nBật/tắt toàn cục vẫn hoạt động khi chỉnh sửa thông thường trong Thiết lập. Hộp thoại phương thức của ứng dụng tạm dừng thao tác nhưng vẫn giữ tổ hợp phím. AltGr trên bàn phím quốc tế có thể trùng Ctrl + Alt; hãy tắt riêng chức năng toàn cục nếu cần.\nPhím tắt không tiếp quản chuyển trang PowerPoint.",
+      "ToggleAnnotationN": "Bật/tắt chú thích toàn cục",
+      "ToggleAnnotationE": "Chuyển giữa chú thích và Chọn. Kiểu Kết hợp giữ nét mực khi vào Chọn; kiểu Tách biệt xóa trang hiện tại trước. Khi quay lại, khôi phục công cụ chú thích gần nhất nhưng không khôi phục Đóng băng.",
+      "UndoN": "Hoàn tác",
+      "UndoE": "Hoàn tác trên trang hiện tại. Giữ để lặp lại. Khi lịch sử trống, không gửi Hoàn tác đến ứng dụng bên dưới.",
+      "RedoYN": "Làm lại",
+      "RedoYE": "Làm lại trên trang hiện tại. Giữ để lặp lại. Tổ hợp này và Ctrl + Shift + Z có công tắc riêng.",
+      "RedoShiftZN": "Làm lại (tổ hợp khác)",
+      "RedoShiftZE": "Cùng thao tác Làm lại như Ctrl + Y, có thể bật hoặc tắt riêng.",
+      "ClearN": "Xóa trang hiện tại",
+      "ClearE": "Lần nhấn đầu xóa trang và giữ công cụ, kể cả trang trống. Giữ Ctrl, thả Delete rồi nhấn Delete lần nữa để vào Chọn ở cả hai kiểu. Giữ Delete không tính là hai lần. Nét mới hoặc thao tác khác sẽ đặt lại chuỗi này.",
+      "FreezeN": "Đóng băng",
+      "FreezeE": "Bật hoặc tắt đóng băng màn hình.",
+      "Registering": "Đang đăng ký bật/tắt toàn cục",
+      "Disabling": "Đang tắt chức năng toàn cục",
+      "UnregisterFailed": "Hủy đăng ký toàn cục thất bại; tổ hợp vẫn được giữ",
+      "Registered": "Bật/tắt toàn cục đã hoạt động",
+      "Disabled": "Bật/tắt toàn cục đã tắt",
+      "NotRunning": "Dịch vụ bàn phím chưa chạy",
+      "RegisterFailed": "Đăng ký toàn cục thất bại; có thể chương trình khác đang dùng tổ hợp",
+      "SynchronizationPending": "Đang đồng bộ trạng thái phím. Hãy chuyển sang cửa sổ không nâng quyền, thả các phím rồi thử lại.",
+      "HookReady": "Phím tắt chú thích đã sẵn sàng",
+      "HookFailed": "Chưa cài móc bàn phím; phím tắt chú thích không khả dụng",
+      "FreezeNote": "Không khả dụng trong không gian PPT và bảng trắng. Khi không khả dụng, tổ hợp không được chuyển đến ứng dụng bên dưới."
+    },
+    "Community":
+    {
+      "N": "Cộng đồng"
+    },
+    "Sponsor":
+    {
+      "N": "Tài trợ",
+      "Thanks": "Sau khi tài trợ, bạn có thể liên hệ tác giả để thêm biệt danh và số tiền đóng góp vào thẻ cộng đồng như lời cảm ơn."
+    },
+    "RestartSoftware":
+    {
+      "N": "Khởi động lại"
+    },
+    "ExitSoftware":
+    {
+      "N": "Thoát"
+    },
+    "DebugSoftware":
+    {
+      "N": "Công cụ gỡ lỗi",
+      "RenderingSection": "Chẩn đoán kết xuất UI3",
+      "DirtyRegions":
+      {
+        "N": "Chẩn đoán vùng thay đổi",
+        "E": "Hiển thị ranh giới vùng thay đổi thực sự được gửi trong mỗi khung hình UI3."
+      },
+      "FrameRate":
+      {
+        "N": "Hiện tốc độ khung hình",
+        "E": "Mỗi giây cập nhật tốc độ khung hình trung bình và không chờ của giây trước."
+      },
+      "ConsoleSection": "Đầu ra bảng điều khiển",
+      "CanvasInformation": "Thông tin khởi tạo trang vẽ",
+      "DisplayInformation": "Màn hình và EDID"
+    },
+    "Update":
+    {
+      "Check": "Kiểm tra cập nhật",
+      "Channel":
+      {
+        "LTS": "Kênh ổn định",
+        "Insider": "Kênh Insider",
+        "Dev": "Kênh phát triển",
+        "Canary": "Kênh Canary",
+        "Other": "Kênh khác"
+      },
+      "NotStarted": "Chưa bắt đầu kiểm tra cập nhật",
+      "ObtainInformation": "Đang lấy thông tin cập nhật",
+      "InformationFail": "Không lấy được thông tin cập nhật",
+      "InformationDamage": "Thông tin cập nhật đã tải bị hỏng",
+      "InformationUnStandardized": "Thông tin cập nhật không hợp lệ",
+      "Downloading": "Đang tải bản cập nhật (Tuyến {})",
+      "DownloadFail": "Tải xuống thất bại",
+      "DownloadDamage": "Tệp cập nhật đã tải bị hỏng",
+      "Restart": "Khởi động lại để cập nhật bản mới nhất",
+      "Latest": "Đang dùng bản mới nhất",
+      "Newer": "Phiên bản hiện tại mới hơn bản phát hành chính thức mới nhất",
+      "New": "Đã tìm thấy phiên bản mới",
+      "Repair": "Thử sửa chữa",
+      "ManualDownload": "Tải thủ công",
+      "UpdateNow": "Cập nhật ngay"
+    }
+  }
+}

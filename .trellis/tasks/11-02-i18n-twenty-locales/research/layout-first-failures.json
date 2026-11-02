@@ -1,0 +1,281 @@
+[
+  {
+    "locale": "id-ID",
+    "stage": "compact",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "fontSize": "9.5",
+    "measured": "40x12",
+    "slot": "37x32.5",
+    "text": "Bekukan"
+  },
+  {
+    "locale": "id-ID",
+    "stage": "geometry",
+    "key": "UI/Bar/GeometryAttributes/RectangleLabel",
+    "fontSize": "11",
+    "measured": "59x14",
+    "slot": "50x0",
+    "text": "Persegi pjg."
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "component",
+    "key": "UI/Bar/Components/RollCallLabel",
+    "fontSize": "10.2917",
+    "measured": "74x13",
+    "slot": "70x25",
+    "text": "Gọi ngẫu nhiên"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "component",
+    "key": "UI/Bar/Components/RollCallLabel",
+    "fontSize": "10.2917",
+    "measured": "74x13",
+    "slot": "70x25",
+    "text": "Gọi ngẫu nhiên"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "component",
+    "key": "UI/Bar/Components/RollCallLabel",
+    "fontSize": "10.2917",
+    "measured": "74x13",
+    "slot": "70x25",
+    "text": "Gọi ngẫu nhiên"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "component",
+    "key": "UI/Bar/Components/RollCallLabel",
+    "fontSize": "10.2917",
+    "measured": "74x13",
+    "slot": "70x25",
+    "text": "Gọi ngẫu nhiên"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "component",
+    "key": "UI/Bar/Components/RollCallLabel",
+    "fontSize": "10.2917",
+    "measured": "74x13",
+    "slot": "70x25",
+    "text": "Gọi ngẫu nhiên"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "component",
+    "key": "UI/Bar/Components/RollCallLabel",
+    "fontSize": "10.2917",
+    "measured": "74x13",
+    "slot": "70x25",
+    "text": "Gọi ngẫu nhiên"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "compact",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "fontSize": "9.5",
+    "measured": "51x12",
+    "slot": "37x32.5",
+    "text": "Đóng băng"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/AnnotationLineLabel",
+    "fontSize": "12",
+    "measured": "91x15",
+    "slot": "80x0",
+    "text": "Đường chú thích"
+  },
+  {
+    "locale": "vi-VN",
+    "stage": "geometry",
+    "key": "UI/Bar/GeometryAttributes/StraightLineLabel",
+    "fontSize": "11",
+    "measured": "67x14",
+    "slot": "50x0",
+    "text": "Đường thẳng"
+  },
+  {
+    "locale": "tr-TR",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/HardPenLabel",
+    "fontSize": "12",
+    "measured": "84x15",
+    "slot": "80x0",
+    "text": "Sert uçlu kalem"
+  },
+  {
+    "locale": "tr-TR",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/SoftPenLabel",
+    "fontSize": "12",
+    "measured": "111x15",
+    "slot": "80x0",
+    "text": "Yumuşak uçlu kalem"
+  },
+  {
+    "locale": "tr-TR",
+    "stage": "geometry",
+    "key": "UI/Bar/GeometryAttributes/RectangleLabel",
+    "fontSize": "11",
+    "measured": "57x14",
+    "slot": "50x0",
+    "text": "Dikdörtgen"
+  },
+  {
+    "locale": "it-IT",
+    "stage": "component",
+    "key": "UI/Bar/Components/ClassIslandSwapLabel",
+    "fontSize": "10.2917",
+    "measured": "74x13",
+    "slot": "70x25",
+    "text": "Cambia lezione"
+  },
+  {
+    "locale": "it-IT",
+    "stage": "fixed",
+    "key": "UI/Bar/MainButtons/ReturnToShowLabel",
+    "fontSize": "10.2917",
+    "measured": "91x13",
+    "slot": "70x25",
+    "text": "Alla presentazione"
+  },
+  {
+    "locale": "it-IT",
+    "stage": "compact",
+    "key": "UI/Bar/MainButtons/WhiteboardLabel",
+    "fontSize": "9.5",
+    "measured": "39x12",
+    "slot": "37x32.5",
+    "text": "Lavagna"
+  },
+  {
+    "locale": "it-IT",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/SoftPenLabel",
+    "fontSize": "12",
+    "measured": "83x15",
+    "slot": "80x0",
+    "text": "Penna morbida"
+  },
+  {
+    "locale": "it-IT",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/AnnotationLineLabel",
+    "fontSize": "12",
+    "measured": "115x15",
+    "slot": "80x0",
+    "text": "Linea di annotazione"
+  },
+  {
+    "locale": "pl-PL",
+    "stage": "short",
+    "key": "UI/Bar/MainButtons/ClickThroughLabel",
+    "fontSize": "8.5",
+    "measured": "38x21",
+    "slot": "37x32.5",
+    "text": "Przepuść\\nkliknięcia"
+  },
+  {
+    "locale": "pl-PL",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/LaserLabel",
+    "fontSize": "12",
+    "measured": "102x15",
+    "slot": "80x0",
+    "text": "Wskaźnik laserowy"
+  },
+  {
+    "locale": "pl-PL",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/HardPenLabel",
+    "fontSize": "12",
+    "measured": "122x15",
+    "slot": "80x0",
+    "text": "Pióro o stałej grubości"
+  },
+  {
+    "locale": "pl-PL",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/SoftPenLabel",
+    "fontSize": "12",
+    "measured": "97x15",
+    "slot": "80x0",
+    "text": "Pióro pędzelkowe"
+  },
+  {
+    "locale": "uk-UA",
+    "stage": "fixed",
+    "key": "UI/Bar/MainButtons/EndPresentationLabel",
+    "fontSize": "10.2917",
+    "measured": "72x13",
+    "slot": "70x25",
+    "text": "Кінець показу"
+  },
+  {
+    "locale": "uk-UA",
+    "stage": "compact",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "fontSize": "9.5",
+    "measured": "50x12",
+    "slot": "37x32.5",
+    "text": "Стоп-кадр"
+  },
+  {
+    "locale": "uk-UA",
+    "stage": "short",
+    "key": "UI/Bar/MainButtons/ClickThroughLabel",
+    "fontSize": "9.5",
+    "measured": "42x12",
+    "slot": "37x32.5",
+    "text": "Наскрізь"
+  },
+  {
+    "locale": "uk-UA",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/AnnotationLineLabel",
+    "fontSize": "12",
+    "measured": "85x15",
+    "slot": "80x0",
+    "text": "Лінія позначки"
+  },
+  {
+    "locale": "uk-UA",
+    "stage": "geometry",
+    "key": "UI/Bar/GeometryAttributes/RectangleLabel",
+    "fontSize": "11",
+    "measured": "71x14",
+    "slot": "50x0",
+    "text": "Прямокутник"
+  },
+  {
+    "locale": "ro-RO",
+    "stage": "compact",
+    "key": "UI/Bar/MainButtons/FreezeLabel",
+    "fontSize": "9.5",
+    "measured": "44x12",
+    "slot": "37x32.5",
+    "text": "Înghețare"
+  },
+  {
+    "locale": "ro-RO",
+    "stage": "pen-menu",
+    "key": "UI/Bar/DrawAttributes/AnnotationLineLabel",
+    "fontSize": "12",
+    "measured": "83x15",
+    "slot": "80x0",
+    "text": "Linie de marcaj"
+  },
+  {
+    "locale": "ro-RO",
+    "stage": "geometry",
+    "key": "UI/Bar/GeometryAttributes/RectangleLabel",
+    "fontSize": "11",
+    "measured": "57x14",
+    "slot": "50x0",
+    "text": "Dreptunghi"
+  }
+]

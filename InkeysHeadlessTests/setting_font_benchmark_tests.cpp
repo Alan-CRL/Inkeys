@@ -63,7 +63,16 @@ namespace
 		{"ja-JP",4,"設定 言語を選択 インターフェイスの表示言語を設定します。"}, {"ko-KR",6,"설정 표시 언어를 선택하세요 화면에 표시되는 텍스트입니다."},
 		{"fr-FR",0,"Paramètres Sélection et clics traversants Écran français"}, {"de-DE",0,"Einstellungen Auswahl und Durchklicken Größe überprüfen"},
 		{"es-ES",0,"Configuración Selección y clics a través Tamaño de lápiz"}, {"pt-BR",0,"Configurações Seleção e passagem de cliques Anotações"},
-		{"ru-RU",0,"Настройки Выбор языка Размер пера Настройки интерфейса"}
+		{"ru-RU",0,"Настройки Выбор языка Размер пера Настройки интерфейса"},
+		{"id-ID",0,"Pengaturan Pilih bahasa Ukuran pena"},
+		{"vi-VN",0,"Cài đặt Tiếng Việt Đđ Ăă Ââ Êê Ôô Ơơ Ưư ẮằẶẤầẬẾềỆỐồỘỚờỢỨừỰ"},
+		{"tr-TR",0,"Ayarlar Türkçe Ğğ İı Şş Öö Üü"},
+		{"it-IT",0,"Impostazioni Italiano ÀÈÉÌÒÙ àèéìòù"},
+		{"pl-PL",0,"Ustawienia Polski ĄąĆćĘęŁłŃńÓóŚśŹźŻż"},
+		{"uk-UA",0,"Налаштування Українська ҐґЄєІіЇї"},
+		{"es-MX",0,"Configuración Español México Tamaño de pluma"},
+		{"ro-RO",0,"Setări Română ĂăÂâÎîȘșȚț"},
+		{"en-GB",0,"Settings Colour Centred Customise £"}
 	};
 	// 不调用生产配置构造旧基线，避免候选改动让A/B同时改变。
 	ImFontConfig Baseline(float scale, bool noto, bool design, bool primaryNoto)
@@ -272,7 +281,7 @@ int RunSettingFontBenchmarkTests()
 		if(filter[0] && std::string(filter)!=locale.name) continue;
 		char scaleFilter[16]{};GetEnvironmentVariableA("INKEYS_FONT_BENCHMARK_SCALE",scaleFilter,16);
 		if(scaleFilter[0] && std::to_string(static_cast<int>(scale*100))!=scaleFilter) continue;
-		if((scale==1.25F || scale==1.875F || scale==4) && locale.primary==0 && std::string(locale.name)!="zh-CN" && std::string(locale.name)!="en-US") continue;
+		if(scale==4 && locale.primary==0 && std::string(locale.name)!="zh-CN" && std::string(locale.name)!="en-US") continue;
 		for(bool dark:{true,false})
 		{
 			// 长时间吞吐只取代表字族；其他组合仍真实渲染、计量和读回。
