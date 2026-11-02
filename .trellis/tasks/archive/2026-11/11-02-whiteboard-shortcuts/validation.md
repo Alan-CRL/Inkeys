@@ -28,3 +28,4 @@
 - 本次工作改动已按明确路径暂存；`git commit` 沿用已有 `commit.gpgsign=true` 与 SSH 签名配置。
 - 1Password `op-ssh-sign.exe` 返回 `failed to fill whole buffer`，Git 退出 128：`fatal: failed to write commit object`。未产生新提交。
 - 首次失败后按仓库规则停止提交，未关闭签名或采用无签名绕过；用户随后确认已完成签名授权，接续提交与归档。
+- 授权恢复后工作提交成功：`7f37a527c39829b93fac1a3667aba9bd3c1ee6cf`，沿用原 SSH 签名配置。
