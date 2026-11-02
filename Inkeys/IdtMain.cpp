@@ -1703,6 +1703,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		LocalFree(arguments);
 		return result;
 	}
+	// 资源与真实格式化验证在任何配置、互斥体和产品 UI 初始化前退出。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--i18n-locales-test", -1, TRUE) == CSTR_EQUAL)
+	{
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		return IdtTest::RunI18nLocaleTests();
+#else
+		return 2;
+#endif
+	}
 	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--pptcom-resource-verification-test", -1, TRUE) == CSTR_EQUAL)
@@ -3014,34 +3024,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 
 			{
-				// 获取系统默认语言标识符
-				LANGID langId = GetUserDefaultUILanguage();
-				// 获取主语言标识符
-				WORD primaryLangId = PRIMARYLANGID(langId);
-				// 获取子语言标识符
-				WORD subLangId = SUBLANGID(langId);
-
-				// 检查是否为中文
-				if (primaryLangId == LANG_CHINESE)
-				{
-					switch (subLangId) {
-					case SUBLANG_CHINESE_SIMPLIFIED:
-					case SUBLANG_CHINESE_SINGAPORE:
-					{
-						setlist.selectLanguage = 1;
-						break;
-					}
-
-					case SUBLANG_CHINESE_TRADITIONAL:
-					case SUBLANG_CHINESE_HONGKONG:
-					case SUBLANG_CHINESE_MACAU:
-					{
-						setlist.selectLanguage = 2;
-						break;
-					}
-					}
-				}
-				else setlist.selectLanguage = 0;
+				// 首次启动先精确匹配支持的地区，已有配置仍由 ReadSetting 保持。
+				setlist.selectLanguage = Inkeys::Localization::IndexForSystemLanguage(GetUserDefaultUILanguage());
 			}
 			{
 				// 用户保存的 PaintDevice 稍后仍可覆盖；缩放开关只使用启动时冻结的设备缺省。
@@ -3209,7 +3193,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		// 非法语言值仅在本次运行中回退英语，避免覆盖用户磁盘配置。
-		if (setlist.selectLanguage < 0 || setlist.selectLanguage > 2)
+		if (!Inkeys::Localization::IsValidIndex(setlist.selectLanguage))
 			setlist.selectLanguage = 0;
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
@@ -3239,9 +3223,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// I18N初始化
 	{
 		// 默认以 zh-CN 作为完整兜底语言，再叠加配置指定的语言
-		if (setlist.selectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
-		else if (setlist.selectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
-		else I18n::load(1, L"JSON", L"en-US");
+		I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(setlist.selectLanguage).code);
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 		ReportStartupMilestoneForManualTest(
@@ -3387,6 +3369,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			fontResourceIDs.emplace_back(IDR_TTF7); // HarmonyOS Sans SC Bold
 			fontResourceIDs.emplace_back(IDR_TTF3); // HarmonyOS Sans TC
 			fontResourceIDs.emplace_back(IDR_TTF8); // HarmonyOS Sans TC Bold
+			fontResourceIDs.emplace_back(IDR_NOTO_JP_REGULAR);
+			fontResourceIDs.emplace_back(IDR_NOTO_JP_BOLD);
+			fontResourceIDs.emplace_back(IDR_NOTO_KR_REGULAR);
+			fontResourceIDs.emplace_back(IDR_NOTO_KR_BOLD);
 
 			IdtFontFileLoader::IsLoaderInitialized();
 			IdtFontCollectionLoader::IsLoaderInitialized();

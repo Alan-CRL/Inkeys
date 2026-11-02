@@ -19,7 +19,7 @@ struct SetListStruct
 	int selectLanguage;
 	// en-US 0
 	// zh-CN 1
-	// zh-TW 2
+	// zh-TW 2；新增地区索引参见 IdtI18nLocales.h，既有值不迁移。
 
 	bool startUp;
 

@@ -1112,10 +1112,14 @@ namespace
 			ImGui::Begin("##sponsor-thanks-fixture", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
 			auto* draw = ImGui::GetWindowDrawList(); const auto textOrigin = ImGui::GetCursorScreenPos();
 			const int first = draw->VtxBuffer.Size;
-			Design::RenderSponsorThanks("感谢支持感谢支持感谢支持感谢支持感谢支持感谢支持感谢支持感谢支持", widthDip * scale);
+			Design::RenderSponsorThanks(IA(I18nKey.SettingsUI.Sponsor.Thanks).c_str(), widthDip * scale);
 			const auto box = LayoutRect{ ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y,
 				ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y };
 			const auto ink = VertexBounds(draw, first, Design::TextPrimary, true);
+			if (!(ink.Width() > 0 && Contains(box, ink) && Near(box.Width(), widthDip * scale, 1)))
+				std::cerr << "[SponsorBounds] " << IA(I18nKey.Language) << " width=" << widthDip << " scale=" << scale
+					<< " box=" << box.left << "," << box.top << "," << box.right << "," << box.bottom
+					<< " ink=" << ink.left << "," << ink.top << "," << ink.right << "," << ink.bottom << '\n';
 			checks.Expect(ink.Width() > 0 && Contains(box, ink) && Near(box.Width(), widthDip * scale, 1),
 				"sponsor thanks uses primary body text and reserves all wrapped ink below its image card");
 			std::array<LayoutRect, 16> lines; std::array<bool, 16> used{};
@@ -1132,6 +1136,10 @@ namespace
 			int lineCount = 0;
 			for (size_t line = 0; line < lines.size(); ++line) if (used[line])
 			{
+				if (!Near((lines[line].left + lines[line].right) * .5F, textOrigin.x + widthDip * scale * .5F, 2.5F * scale))
+					std::cerr << "[SponsorLine] " << IA(I18nKey.Language) << " width=" << widthDip << " scale=" << scale
+						<< " line=" << line << " ink=" << lines[line].left << "," << lines[line].right
+						<< " center=" << textOrigin.x + widthDip * scale * .5F << '\n';
 				++lineCount; checks.Expect(Near((lines[line].left + lines[line].right) * .5F,
 					textOrigin.x + widthDip * scale * .5F, 2.5F * scale), "each actual sponsor thanks line is horizontally centered");
 			}
@@ -5806,6 +5814,297 @@ namespace
 	}
 }
 
+namespace
+{
+	void CheckLocaleTextAndSelector(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		std::vector<std::string> labels;
+		for (const auto& locale : Inkeys::Localization::Locales) labels.emplace_back(Inkeys::Localization::NativeLabel(locale));
+		auto& io = ImGui::GetIO(); const auto previousSize = io.DisplaySize;
+		for (float width : { 360.0F, 620.0F })
+		{
+			io.DisplaySize = { (width + 32) * scale, 900 * scale };
+			ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##all-locale-text", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			ImFluent::PushFont(ImFluentTextStyle_Body);
+			for (const auto& label : labels)
+				checks.Expect(Design::ControlTextWidth(label.c_str()) / scale + 48.0F <= 320.5F,
+					"native name, locale code and Beta fit the language selector including its arrow reserve");
+			int selected = 9;
+			Design::ComboRow("##language-ui", IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
+				IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels,
+				IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str());
+			checks.Expect(selected == 9, "actual eleven-language combo renders without changing saved preference");
+			for (ImFont* font : { regular, strong })
+			{
+				ImGui::PushFont(font, Design::BodyText.size);
+				auto* baked = ImGui::GetFontBaked();
+				auto checkText = [&](const std::string& text, const char* key)
+					{
+						const char* cursor = text.c_str(); const char* end = cursor + text.size();
+						while (cursor < end)
+						{
+							unsigned int point = 0; const int length = ImTextCharFromUtf8(&point, cursor, end);
+							if (length <= 0) break;
+							cursor += length;
+							if (point < 32 || point == 0xfe0f) continue;
+							const auto* glyph = baked->FindGlyphNoFallback(static_cast<ImWchar>(point));
+							if (!glyph) std::cerr << "[LocaleGlyph] " << key << " U+" << std::hex << point << std::dec << '\n';
+							checks.Expect(glyph != nullptr, "real regular and bold ImGui faces have every localized and mixed-selector glyph");
+						}
+					};
+				for (const auto& [key, text] : I18n::i18n) checkText(text, key.c_str());
+				for (const auto& label : labels) checkText(label, "language selector");
+				ImGui::PopFont();
+			}
+			ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+		}
+		io.DisplaySize = previousSize;
+	}
+}
+
+namespace
+{
+	void CheckLocalizedComponentAndPluginRows(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular,strong);ImFluent::SetIconFont(icons);
+		Design::ConfigureRowAnimations(0,false,1);
+		const auto& c=I18nKey.SettingsUI.Component;
+		const auto& d=I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker;
+		const struct {const char* title;const char* description=nullptr;const char* note=nullptr;} rows[]{
+			{c.ExplorerTitle},{c.TaskManagerTitle},{c.ControlPanelTitle},{c.ShowDesktopTitle},{c.LockScreenTitle},
+			{c.EscapeTitle},{c.AltF4Title},{c.IslandCaller1Title,c.IslandCallerRequirement},
+			{c.IslandCaller2Title,c.IslandCallerRequirement},{c.SecRandom1Title,c.SecRandomUrlRequirement},
+			{c.SecRandom2Title,c.SecRandomIpcRequirement},{c.SecRandom2CompatTitle,c.SecRandomUrlRequirement},
+			{c.NamePickerTitle,c.NamePickerRequirement},{c.ClassIslandSettingsTitle},{c.ClassIslandProfileTitle},
+			{c.ClassIslandSwapTitle,c.ClassIslandSwapNote},
+			{d.EnableTitle,d.EnableDescription},{d.AdministratorTitle,d.AdministratorDescription},
+			{d.Seewo3Title},{d.Seewo5Title},{d.Seewo5CTitle},{d.PincoSidebarTitle},
+			{d.PincoDrawingTitle,d.IncludesPptNote},{d.SeewoPptTitle},{d.IwbAssistantTitle},
+			{d.YiouTitle,d.IncludesPptNote},{d.AiClassTitle},{d.ClassInXTitle},{d.IntelligentClassTitle,d.IncludesPptNote},
+			{d.ChangYan4Title,d.RestoresWhiteboardNote,d.AdministratorNote},
+			{d.ChangYan5Title,d.RestoresWhiteboardNote,d.AdministratorNote},
+			{d.Iclass30SidebarTitle,d.AdministratorNote},{d.Iclass30DrawingTitle,d.WindowTrackingNote,d.AdministratorNote},
+			{d.SeewoDesktopSidebarTitle,d.SeewoDesktopVersionsNote,d.AdministratorNote},
+			{d.SeewoDesktopDrawingTitle,d.SeewoDesktopVersionsNote,d.AdministratorNote}
+		};
+		auto& io=ImGui::GetIO();const auto previousSize=io.DisplaySize;
+		for(float width:{360.0F,620.0F})
+		{
+			auto drawRow=[&](const char* key,const std::function<void()>& render)
+			{
+				io.DisplaySize={(width+32)*scale,2400*scale};
+				io.AddMousePosEvent(-100,-100);io.AddMouseButtonEvent(0,false);
+				ImGui::NewFrame();ImGui::SetNextWindowPos({0,0});ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::SetNextWindowScroll({0,0});
+				ImGui::Begin("##localized-component-plugin-row",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+				ImFluent::PushFont(ImFluentTextStyle_Body);
+				const auto origin=ImGui::GetCursorScreenPos();const float contentWidth=ImGui::GetContentRegionAvail().x;
+				auto* draw=ImGui::GetWindowDrawList();const int first=draw->VtxBuffer.Size;
+				render();
+				const LayoutRect bounds{origin.x,origin.y,origin.x+contentWidth,ImGui::GetCursorScreenPos().y};
+				for(const auto color:{Design::TextPrimary,Design::TextSecondary})
+				{
+					const auto ink=VertexBounds(draw,first,color,true);
+					if(ink.left==FLT_MAX)continue;
+					const bool contained=Contains(bounds,ink);
+					if(!contained)std::cerr<<"[LocaleRow] "<<IA(I18nKey.Language)<<" key="<<key<<" width="<<width<<" scale="<<scale<<'\n';
+					checks.Expect(contained,"localized component/plugin row reserves all title, description and note ink");
+				}
+				ImFluent::PopFont();ImGui::End();ImGui::Render();CheckDrawData(checks);
+			};
+			for(const auto& row:rows)
+			{
+				const auto title=IA(row.title),description=row.description?IA(row.description):std::string{},note=row.note?IA(row.note):std::string{};
+				bool value=false;
+				drawRow(row.title,[&]{Design::ToggleRow("##localized-toggle",title.c_str(),row.description?description.c_str():nullptr,"\uecaa",value,row.note?note.c_str():nullptr);});
+				checks.Expect(!value,"localized component/plugin copy audit never changes an option");
+			}
+			const auto licenseTitle=IA(d.LicenseTitle),licenseBody=IA(d.LicenseDescription);
+			drawRow(d.LicenseDescription,[&]{Design::Notice("##localized-license",licenseTitle.c_str(),licenseBody.c_str(),ImFluentInfoSeverity_Warning);});
+			const auto classIslandBody=IA(c.ClassIslandProtocolNote);
+			drawRow(c.ClassIslandProtocolNote,[&]{Design::Notice("##localized-classisland","ClassIsland",classIslandBody.c_str(),ImFluentInfoSeverity_Informational);});
+			const auto intervalTitle=IA(d.IntervalTitle),intervalDescription=IA(d.IntervalDescription);
+			const std::vector<std::string> intervals{IA(d.IntervalShort),IA(d.IntervalMediumShort),IA(d.IntervalMedium),IA(d.IntervalMediumLong),IA(d.IntervalLong)};
+			int selected=3;
+			drawRow(d.IntervalTitle,[&]{Design::ComboRow("##localized-ddb-interval",intervalTitle.c_str(),intervalDescription.c_str(),"\ue916",selected,intervals);});
+			checks.Expect(selected==3,"localized DDB interval audit keeps the selected value");
+		}
+		io.DisplaySize=previousSize;
+	}
+}
+
+namespace
+{
+	void CheckNotoFontCalibration(Checks& checks, std::array<FontData,9>& sources,
+		const std::filesystem::path& fontDirectory)
+	{
+		const auto output=fontDirectory.parent_path().parent_path().parent_path()/"Build/setting-fonts";
+		for (float scale:{1.0F,1.5F,2.0F})
+		{
+			// 与普通CPU回放隔离；真实后端必须先于任何模拟纹理ID运行。
+			ImGuiSession session;
+			ImGui::GetStyle().FontScaleDpi=scale;
+			Design::ApplyPalette(true);
+			struct Faces {const char* name;const char* locale;ImFont* design[2]{};ImFont* legacy[2]{};bool before=false;};
+			std::array<Faces,5> faces{{
+				{"zh-CN reference","zh-CN"},{"ja-JP before","ja-JP",{},{},true},
+				{"ja-JP calibrated","ja-JP"},{"ko-KR before","ko-KR",{},{},true},
+				{"ko-KR calibrated","ko-KR"}}};
+			auto addFace=[&](std::size_t primary,bool design,bool before)
+			{
+				ImFont* font=nullptr;
+				auto add=[&](std::size_t source,bool merge)
+				{
+					const bool noto=source>=4;
+					auto config=before
+						? design && !noto ? Design::HarmonyFontConfig(scale) : Design::LegacyFontConfig(scale)
+						: Design::TextFontConfig(scale,noto,design?Design::TextFontRole::Design:Design::TextFontRole::Legacy,primary>=4);
+					config.MergeMode=merge;
+					auto* result=ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[source].bytes.data(),
+						static_cast<int>(sources[source].bytes.size()),Design::FontReferenceSize,&config);
+					if (!merge) font=result;
+					checks.Expect(result!=nullptr,"calibration loads actual regular/bold and fallback font assets");
+				};
+				add(primary,false);
+				for (std::size_t fallback=primary%2;fallback<8;fallback+=2)
+					if (fallback!=primary) add(fallback,true);
+				return font;
+			};
+			for (std::size_t col=0;col<faces.size();++col)
+			{
+				const std::size_t primary=col==0?0:col<=2?4:6;
+				for (std::size_t weight=0;weight<2;++weight)
+				{
+					faces[col].design[weight]=addFace(primary+weight,true,faces[col].before);
+					faces[col].legacy[weight]=addFace(primary+weight,false,faces[col].before);
+				}
+			}
+			auto iconConfig=Design::IconFontConfig(scale);
+			ImFont* icons=ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),
+				static_cast<int>(sources.back().bytes.size()),Design::FontReferenceSize,&iconConfig);
+			ImGui::GetIO().FontDefault=faces[0].design[0];
+			auto drawComparison=[&]
+			{
+				ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+				ImGui::Begin("##font-calibration-comparison",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoMove);
+				for (std::size_t col=0;col<faces.size();++col)
+				{
+					auto& face=faces[col];const float x=(16+198*col)*scale,width=180*scale;
+					ImGui::SetCursorScreenPos({x,18*scale});
+					// 各列拥有真实独立content起点；SectionHeader的ItemSize不能把X重置到整张图左侧。
+					ImGui::BeginChild(static_cast<ImGuiID>(2000+col),{width,1000*scale},ImGuiChildFlags_None,
+						ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+					Design::BindTextFonts(faces[0].design[0],faces[0].design[1]);
+					Design::TextAt(face.name,{x,18*scale},width,ImFluentTextStyle_Caption,Design::TextSecondary);
+					Design::BindTextFonts(face.design[0],face.design[1]);ImFluent::SetIconFont(icons);
+					Design::TextAt("設定",{x,58*scale},width,ImFluentTextStyle_Title,Design::TextPrimary);
+					Design::TextAt("Inkeys 100%",{x,112*scale},width,ImFluentTextStyle_Subtitle,Design::TextPrimary);
+					Design::TextAt("設定 言語 基本",{x,160*scale},width,ImFluentTextStyle_Body,Design::TextPrimary);
+					Design::TextAt("Inkeys Agpqy 100%",{x,195*scale},width,ImFluentTextStyle_Body,Design::TextPrimary);
+					Design::TextAt("课 日本語 한국어",{x,225*scale},width,ImFluentTextStyle_Body,Design::TextPrimary);
+					checks.Expect(LoadNavigationLabels(fontDirectory,face.locale),"font preview loads real localized interface text");
+					ImGui::SetCursorScreenPos({x,255*scale});ImGui::PushItemWidth(width);
+					Design::PageHeader(IA(I18nKey.SettingsUI.Language.N).c_str());
+					ImGui::SetCursorScreenPos({x,325*scale});
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
+					auto descriptionOrigin=ImGui::GetCursorScreenPos();descriptionOrigin.y+=4*scale;
+					Design::TextAt(IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(),{x,descriptionOrigin.y},width,
+						ImFluentTextStyle_Body,Design::TextSecondary);
+					ImGui::SetCursorScreenPos({x,470*scale});
+					bool value=true;
+					// 实际控件放入与每列相同宽度的child，避免借用整张图的正文预算。
+					ImGui::BeginChild(static_cast<ImGuiID>(100+col),{width,230*scale},ImGuiChildFlags_None,ImGuiWindowFlags_NoSavedSettings);
+					Design::ToggleRow("##font-preview-toggle",IA(I18nKey.SettingsUI.Design.EdgeLighting).c_str(),
+						IA(I18nKey.SettingsUI.Design.EdgeLightingDescription).c_str(),"\ue774",value);
+					ImGui::EndChild();ImGui::PopItemWidth();
+					Design::BindTextFonts(faces[0].design[0],faces[0].design[1]);
+					Design::TextAt("Legacy / caption",{x,735*scale},width,ImFluentTextStyle_Caption,Design::TextSecondary);
+					for (int weight=0;weight<2;++weight)
+					{
+						ImGui::PushFont(face.legacy[weight],20);
+						ImGui::GetWindowDrawList()->AddText({x,(775+50*weight)*scale},Design::TextPrimary,"Inkeys 設定 100%");
+						ImGui::PopFont();
+					}
+					ImGui::EndChild();
+					if (col!=0) ImGui::GetWindowDrawList()->AddLine({x-8*scale,16*scale},{x-8*scale,900*scale},IM_COL32(90,90,90,160));
+				}
+				ImGui::End();
+			};
+			const auto file=output/("noto-calibration-"+std::to_string(static_cast<int>(scale*100))+".png");
+			checks.failures+=SaveSettingFontComparison(file,scale,drawComparison);
+
+			ImGui::NewFrame();ImGui::SetNextWindowPos({0,0});ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+			ImGui::Begin("##font-calibration-bounds",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+			auto measure=[&](ImFont* font,float size,const char* text)
+			{
+				auto* draw=ImGui::GetWindowDrawList();const int first=draw->VtxBuffer.Size;
+				ImGui::PushFont(font,size);draw->AddText({30*scale,70*scale},Design::TextPrimary,text);ImGui::PopFont();
+				return VertexBounds(draw,first,Design::TextPrimary,true);
+			};
+			float oldInk[2][2][2]{},referenceInk[2][2][2]{};
+			for (bool design:{false,true}) for (int weight=0;weight<2;++weight)
+				for (float size:{12.0F,13.0F,14.0F,20.0F,28.0F,40.0F})
+					// 字号用共享汉字及无下伸部的大写/数字作锚；不同字族g/q造型不应被当作字号失配。
+					for (const char* text:{"設定言語","H 100%"})
+					{
+						const auto reference=measure(design?faces[0].design[weight]:faces[0].legacy[weight],size,text);
+						for (int col:{2,4})
+						{
+							const auto actual=measure(design?faces[col].design[weight]:faces[col].legacy[weight],size,text);
+							const auto old=measure(design?faces[col-1].design[weight]:faces[col-1].legacy[weight],size,text);
+							const float ratio=actual.Height()/reference.Height(),oldRatio=old.Height()/reference.Height();
+							// 小字号glyph quad含栅格边距；仅容许一物理像素差，不按DPI放宽。
+							const bool matched=(ratio>=0.90F && ratio<=1.10F)
+								|| std::abs(actual.Height()-reference.Height())<=1.0F;
+							const bool aligned=std::abs(actual.bottom-reference.bottom)<=2.0F*scale;
+							if (!matched || !aligned) std::cerr<<"[NotoCalibration] "<<faces[col].locale<<" design="<<design<<" weight="<<weight
+								<<" size="<<size<<" scale="<<scale<<" text="<<text<<" ratio="<<ratio<<" oldratio="<<oldRatio<<" reference="<<reference.top<<','<<reference.bottom
+								<<" actual="<<actual.top<<','<<actual.bottom<<'\n';
+							checks.Expect(matched,"real calibrated Noto glyphs match the reference ink height, including a lower size bound");
+							checks.Expect(aligned,"real Noto glyph baselines remain aligned with the matching Harmony role");
+							// 累加真实ink，避免小字号两端各一像素取整让单个负对照偶然接近基准。
+							oldInk[design][weight][col/2-1]+=old.Height();
+							referenceInk[design][weight][col/2-1]+=reference.Height();
+						}
+					}
+			for (int design=0;design<2;++design) for(int weight=0;weight<2;++weight) for(int language=0;language<2;++language)
+			{
+				const float oldRatio=oldInk[design][weight][language]/referenceInk[design][weight][language];
+				std::cout<<"[NotoNegativeControl] design="<<design<<" weight="<<weight<<" language="<<language<<" scale="<<scale<<" oldratio="<<oldRatio<<'\n';
+				checks.Expect(oldRatio<(design?0.85F:0.92F),"aggregate real uncalibrated Noto exposes the original size regression");
+			}
+			for (int col:{2,4}) for(bool design:{false,true}) for(int weight=0;weight<2;++weight)
+			{
+				auto* font=design?faces[col].design[weight]:faces[col].legacy[weight];
+				const auto capital=measure(font,14,"H"),descender=measure(font,14,"Hgq");
+				checks.Expect(descender.bottom>capital.bottom,"calibrated real Noto preserves Latin descenders in each role and weight");
+			}
+			// 「课」在 JP/KR 中缺字；「한국어」在 Harmony 中缺字，检查真实合并后的同排基线。
+			for (bool design:{false,true}) for (int weight=0;weight<2;++weight)
+				for (float size:{14.0F,28.0F,40.0F})
+				{
+					const auto harmony=measure(design?faces[0].design[weight]:faces[0].legacy[weight],size,"课");
+					for (int col:{2,4})
+					{
+						const auto actual=measure(design?faces[col].design[weight]:faces[col].legacy[weight],size,"课");
+						checks.Expect(std::abs(actual.top-harmony.top)<=1.25F*scale && std::abs(actual.bottom-harmony.bottom)<=1.25F*scale,
+							"Harmony fallback keeps matching ink size and baseline inside calibrated Noto");
+					}
+					const auto korean=measure(design?faces[4].design[weight]:faces[4].legacy[weight],size,"한국어");
+					const auto mixed=measure(design?faces[0].design[weight]:faces[0].legacy[weight],size,"한국어");
+					checks.Expect(std::abs(mixed.top-korean.top)<=1.25F*scale && std::abs(mixed.bottom-korean.bottom)<=1.25F*scale,
+						"Korean fallback keeps matching ink size and baseline inside unchanged Harmony");
+				}
+			ImGui::End();ImGui::Render();CheckDrawData(checks);
+			std::cout<<"[NotoCalibration] scale="<<scale<<" output="<<file.string()<<" failures="<<checks.failures<<'\n';
+		}
+		checks.Expect(LoadNavigationLabels(fontDirectory),"calibration restores Chinese fixtures after its independent contexts");
+	}
+}
+
+
 int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly)
 {
 	Checks checks;
@@ -5820,11 +6119,15 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		return checks.failures;
 	}
 	checks.Expect(LoadNavigationLabels(fontDirectory), "actual navigation loads bundled Chinese label fixtures");
-	std::array<FontData, 5> sources{ {
+	std::array<FontData, 9> sources{ {
 		{ "HarmonyOS_Sans_SC_Regular.ttf", {} },
 		{ "HarmonyOS_SansSC_Bold.ttf", {} },
 		{ "HarmonyOS_Sans_TC_Regular.ttf", {} },
 		{ "HarmonyOS_SansTC_Bold.ttf", {} },
+		{ "NotoSansJP-Regular.ttf", {} },
+		{ "NotoSansJP-Bold.ttf", {} },
+		{ "NotoSansKR-Regular.ttf", {} },
+		{ "NotoSansKR-Bold.ttf", {} },
 		{ "Segoe Fluent Icons.ttf", {} },
 	} };
 	for (auto& source : sources)
@@ -5838,6 +6141,8 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		}
 	}
 
+	if (!eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
+
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
@@ -5846,37 +6151,46 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		ClipboardProbe settingsClipboard;
 		ImGui::GetStyle().FontScaleDpi = scale;
 		ImGui::GetIO().DisplaySize = ImVec2(1440.0F * scale, 1000.0F * scale);
-		std::array<ImFont*, 5> fonts{};
+		std::array<ImFont*, 8> localeFonts{};
 		bool loaded = true;
-		for (std::size_t index = 0; index < sources.size(); ++index)
+		for (std::size_t index = 0; index < localeFonts.size(); ++index)
 		{
-			auto config = index == sources.size() - 1
-				? Design::IconFontConfig(scale) : Design::HarmonyFontConfig(scale);
-			fonts[index] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-				sources[index].bytes.data(), static_cast<int>(sources[index].bytes.size()),
-				Design::FontReferenceSize, &config);
-			loaded &= fonts[index] != nullptr;
-			if (index == 2 || index == 3)
+			auto config = Design::TextFontConfig(scale,index>=4,Design::TextFontRole::Design,index>=4);
+			localeFonts[index] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+				sources[index].bytes.data(), static_cast<int>(sources[index].bytes.size()), Design::FontReferenceSize, &config);
+			loaded &= localeFonts[index] != nullptr;
+			// 与产品一致：主语言字形先占位，其余同字重的 SC/TC/JP/KR 仅补缺。
+			for (std::size_t fallback = index % 2; fallback < localeFonts.size(); fallback += 2)
 			{
-				// 产品的繁体主字库后合并简体回退；验证相同组合，不能误把合法回退当缺字。
+				if (fallback == index) continue;
+				config = Design::TextFontConfig(scale,fallback>=4,Design::TextFontRole::Design,index>=4);
 				config.MergeMode = true;
-				auto& fallback = sources[index - 2];
-				loaded &= ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-					fallback.bytes.data(), static_cast<int>(fallback.bytes.size()),
-					Design::FontReferenceSize, &config) != nullptr;
+				loaded &= ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[fallback].bytes.data(),
+					static_cast<int>(sources[fallback].bytes.size()), Design::FontReferenceSize, &config) != nullptr;
 			}
 		}
+		auto iconConfig = Design::IconFontConfig(scale);
+		ImFont* icons = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),
+			static_cast<int>(sources.back().bytes.size()), Design::FontReferenceSize, &iconConfig);
+		loaded &= icons != nullptr;
+		std::array<ImFont*, 5> fonts{ localeFonts[0], localeFonts[1], localeFonts[2], localeFonts[3], icons };
+		auto localeFontIndex = [](const Inkeys::Localization::Locale& locale) -> std::size_t
+			{
+				if (locale.regularFont == IDR_NOTO_JP_REGULAR) return 4;
+				if (locale.regularFont == IDR_NOTO_KR_REGULAR) return 6;
+				return locale.regularFont == IDR_TTF3 ? 2 : 0;
+			};
 		checks.Expect(loaded, "actual bundled font sources load into ImGui");
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
 		if (generalOnly)
 		{
-			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			for (const auto& locale : Inkeys::Localization::Locales)
 			{
-				checks.Expect(LoadNavigationLabels(fontDirectory, language), "general-only tests load actual language resources");
-				const bool traditional = std::strcmp(language, "zh-TW") == 0;
-				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "general-only tests load actual language resources");
+				const auto fontIndex = localeFontIndex(locale);
+				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			continue;
 		}
@@ -5889,27 +6203,27 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		if (eraserOnly)
 		{
 			CheckSpeedEraserEntry(checks,fonts[0],fonts[1],fonts.back(),scale);
-			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			for (const auto& locale : Inkeys::Localization::Locales)
 			{
-				checks.Expect(LoadNavigationLabels(fontDirectory, language), "speed eraser page loads actual localized resources");
-				const bool traditional = std::strcmp(language, "zh-TW") == 0;
-				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale,
+				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "speed eraser page loads actual localized resources");
+				const auto fontIndex = localeFontIndex(locale);
+				CheckSpeedEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale,
 					scale == 1.0F || scale == 1.875F);
-				CheckPalmEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale,
+				CheckPalmEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale,
 					scale == 1.0F || scale == 1.875F);
-				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+				CheckSpeedEraserDemoPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			if (scale == 1.0F || scale == 1.875F) CheckDrawingSubpageScroll(checks, fonts[0], fonts[1], fonts.back(), scale);
 			continue;
 		}
 		if (copyOnly)
 		{
-			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			for (const auto& locale : Inkeys::Localization::Locales)
 			{
-				checks.Expect(LoadNavigationLabels(fontDirectory, language), "copy polish loads actual localized resources");
-				const bool traditional = std::strcmp(language, "zh-TW") == 0;
-				CheckCopyAndCardPolish(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], scale);
-				CheckHomeFeedbackContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
+				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "copy polish loads actual localized resources");
+				const auto fontIndex = localeFontIndex(locale);
+				CheckCopyAndCardPolish(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], scale);
+				CheckHomeFeedbackContent(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			continue;
 		}
@@ -5964,17 +6278,19 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		if (scale==1.0F || scale==1.875F) CheckHomeMotion(checks,fonts[0],fonts[1],fonts.back(),scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 		{
-			for (const char* language : { "zh-CN", "zh-TW", "en-US" })
+			for (const auto& locale : Inkeys::Localization::Locales)
 			{
-				checks.Expect(LoadNavigationLabels(fontDirectory, language), "reorganized settings load actual language resources");
-				const bool traditional = std::strcmp(language, "zh-TW") == 0;
-				CheckGeneralSections(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
-				CheckSpeedEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale, scale == 1.0F);
-				CheckPalmEraserPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale, scale == 1.0F);
-				CheckSpeedEraserDemoPage(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
-				CheckCicdAndSponsorContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
-				CheckHomeFeedbackContent(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], fonts.back(), scale);
-				CheckCopyAndCardPolish(checks, fonts[traditional ? 2 : 0], fonts[traditional ? 3 : 1], scale);
+				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "reorganized settings load actual language resources");
+				const auto fontIndex = localeFontIndex(locale);
+				CheckLocaleTextAndSelector(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckLocalizedComponentAndPluginRows(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckSpeedEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
+				CheckPalmEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
+				CheckSpeedEraserDemoPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckCicdAndSponsorContent(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckHomeFeedbackContent(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckCopyAndCardPolish(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], scale);
 			}
 			checks.Expect(LoadNavigationLabels(fontDirectory), "reorganized settings restore default language fixtures");
 		}

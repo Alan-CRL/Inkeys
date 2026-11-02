@@ -1,0 +1,422 @@
+[
+  {
+    "path": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 553,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 607,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": ".trellis/spec/native-desktop/index.md",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 65,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 65,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": ".trellis/workspace/codex/index.md",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 179,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 180,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": ".trellis/workspace/codex/journal-2.md",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 1638,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1672,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/IdtConfiguration.h",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 324,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 324,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/IdtI18n.cpp",
+    "before": {
+      "encoding": "utf-8-sig",
+      "crlf": 219,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8-sig",
+      "crlf": 322,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/IdtI18n.h",
+    "before": {
+      "encoding": "utf-8-sig",
+      "crlf": 48,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8-sig",
+      "crlf": 53,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/IdtI18nKeys.g.h",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 989,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1082,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/IdtMain.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 4085,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 4071,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys.rc",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 351,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 375,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys.vcxproj",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 1429,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1434,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys.vcxproj.filters",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 2721,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 2736,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Bar/Bar.Button.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 2533,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 2535,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp",
+    "before": {
+      "encoding": "utf-8-sig",
+      "crlf": 2966,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8-sig",
+      "crlf": 3099,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Bar/Bar.Rendering.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 3226,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 3266,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Bar/Bar.Rendering.cppm",
+    "before": {
+      "encoding": "utf-8-sig",
+      "crlf": 511,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8-sig",
+      "crlf": 517,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/MessageBox/MessageBox.Layout.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 160,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 170,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/MessageBox/MessageBox.Window.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 1931,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1993,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 1324,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1363,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Typography.h",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 43,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 54,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 5330,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 5319,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/resource.h",
+    "before": {
+      "encoding": "utf-8-sig",
+      "crlf": 93,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8-sig",
+      "crlf": 106,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/src/i18n/en-US.jsonc",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 986,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1079,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/src/i18n/zh-CN.jsonc",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 986,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1079,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Inkeys/src/i18n/zh-TW.jsonc",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 986,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1079,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "InkeysHeadlessTests/message_box_test.rc",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 3,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 9,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "InkeysHeadlessTests/message_box_tests.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 1711,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1738,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "InkeysHeadlessTests/setting_design_tests.cpp",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 5967,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 6111,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "InkeysRepo.sln",
+    "before": {
+      "encoding": "utf-8-sig",
+      "crlf": 82,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8-sig",
+      "crlf": 90,
+      "bare_lf": 0
+    },
+    "pass": true
+  },
+  {
+    "path": "Scripts/i18n.zh-CN.snapshot.jsonc",
+    "before": {
+      "encoding": "utf-8",
+      "crlf": 986,
+      "bare_lf": 0
+    },
+    "after": {
+      "encoding": "utf-8",
+      "crlf": 1079,
+      "bare_lf": 0
+    },
+    "pass": true
+  }
+]

@@ -2,12 +2,13 @@
 
 #include "IdtMain.h"
 #include <shared_mutex>
+#include "IdtI18nLocales.h"
 
 // i18n 维护说明：
 // 1. 新增或调整翻译 key 时，请先修改 `Inkeys/src/i18n/zh-CN.jsonc`；
 //    `zh-CN` 是 schema 来源，也是运行时默认兜底语言。
 // 2. 修改完成后运行 `pwsh ./Scripts/i18n.ps1 sync`，
-//    让 `en-US.jsonc` / `zh-TW.jsonc` 同步结构、补上 `[[Need translation: ...]]` 标记，并更新 `Scripts/i18n.zh-CN.snapshot.jsonc` 与 `Inkeys/IdtI18nKeys.g.h`。
+//    让所有非基准语言 JSONC 同步结构、补上 `[[Need translation: ...]]` 标记，并更新 `Scripts/i18n.zh-CN.snapshot.jsonc` 与 `Inkeys/IdtI18nKeys.g.h`。
 // 3. 非默认语言里未完成的项使用 "" 或 `[[Need translation: ...]]` 标记，运行时会自动回退到 `zh-CN`。
 // 4. 提交前运行 `pwsh ./Scripts/i18n.ps1 check`，
 //    校验未完成翻译进度、key 集、占位符、换行数量和顺序是否一致。
@@ -22,6 +23,9 @@
 namespace IdtTest
 {
 	void PrintI18nMap();
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	int RunI18nLocaleTests();
+#endif
 }
 
 class I18n
@@ -36,6 +40,7 @@ public:
 	static wstring getWOr(const char* key, const wchar_t* fallback);
 	static bool tryGetW(const char* key, wstring& output) noexcept;
 	static LANGID languageId() noexcept;
+	static const Inkeys::Localization::Locale& locale() noexcept;
 	static bool tryLanguageId(LANGID& output) noexcept;
 	static bool isIdentifying(const wchar_t* lang);
 

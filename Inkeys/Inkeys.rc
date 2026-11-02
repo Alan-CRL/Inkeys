@@ -162,6 +162,14 @@ IDR_TTF7                TTF                     "src\\ttf\\HarmonyOS_SansSC_Bold
 
 IDR_TTF8                TTF                     "src\\ttf\\HarmonyOS_SansTC_Bold.ttf"
 
+IDR_NOTO_JP_REGULAR     TTF                     "src\\ttf\\NotoSansJP-Regular.ttf"
+
+IDR_NOTO_JP_BOLD        TTF                     "src\\ttf\\NotoSansJP-Bold.ttf"
+
+IDR_NOTO_KR_REGULAR     TTF                     "src\\ttf\\NotoSansKR-Regular.ttf"
+
+IDR_NOTO_KR_BOLD        TTF                     "src\\ttf\\NotoSansKR-Bold.ttf"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -234,6 +242,22 @@ IDR_ZH_CN               JSON                    "src\\i18n\\zh-CN.jsonc"
 IDR_EN_US               JSON                    "src\\i18n\\en-US.jsonc"
 
 IDR_ZH_TW               JSON                    "src\\i18n\\zh-TW.jsonc"
+
+IDR_ZH_HK               JSON                    "src\\i18n\\zh-HK.jsonc"
+
+IDR_JA_JP               JSON                    "src\\i18n\\ja-JP.jsonc"
+
+IDR_KO_KR               JSON                    "src\\i18n\\ko-KR.jsonc"
+
+IDR_FR_FR               JSON                    "src\\i18n\\fr-FR.jsonc"
+
+IDR_DE_DE               JSON                    "src\\i18n\\de-DE.jsonc"
+
+IDR_ES_ES               JSON                    "src\\i18n\\es-ES.jsonc"
+
+IDR_PT_BR               JSON                    "src\\i18n\\pt-BR.jsonc"
+
+IDR_RU_RU               JSON                    "src\\i18n\\ru-RU.jsonc"
 
 
 /////////////////////////////////////////////////////////////////////////////

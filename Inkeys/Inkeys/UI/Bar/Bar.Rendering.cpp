@@ -290,17 +290,11 @@ FLOAT BarUIRendering::ResolveAnimatedFontSize(ID2D1DeviceContext* context, doubl
 
 void BarUIRendering::ConfigureLocalizedTypography()
 {
-	// 繁体字形使用 TC 资源；英语沿用 SC 字体但交给 DWrite 英语 locale 排版。
-	if (I18n::isIdentifying(L"zh-TW"))
-	{
-		fontFamily = L"HarmonyOS Sans TC";
-		textLocale = L"zh-tw";
-	}
-	else
-	{
-		fontFamily = L"HarmonyOS Sans SC";
-		textLocale = I18n::isIdentifying(L"en-US") ? L"en-us" : L"zh-cn";
-	}
+	// 字体族与 locale 使用同一语言快照，日/韩不再走简中字形。
+	const auto& locale = I18n::locale();
+	fontFamily = locale.fontFamily;
+	textLocale = locale.code;
+	buttonLabelFitCache.clear();
 	// 离屏测试会在同一进程切换语言，数字布局缓存也必须跟随字体族失效。
 	for (auto& cached : thicknessFineDialLabelCache) cached = {};
 	thicknessFineDialLabelUseSerial = 0;
@@ -3254,7 +3248,7 @@ bool BarUIRendering::Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, 
 	if (transformChanged) deviceContext->SetTransform(originalTransform);
 	return true;
 }
-bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight, DWRITE_TEXT_ALIGNMENT textAlign)
+bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight, DWRITE_TEXT_ALIGNMENT textAlign, bool fitButtonLabel)
 {
 	// 判断是否启用
 	if (!deviceContext || word.enable.val == false) return false;
@@ -3263,6 +3257,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	if (word.w.val <= 0 || word.h.val <= 0) return false;
 	double contentPct = clamp(static_cast<double>(word.contentPct), 0.0, 1.0);
 	if (word.pct.val <= 0.0 || contentPct <= 0.0) return false;
+	const wstring tarContent = word.content.GetVal();
 
 	// 初始化绘制量
 	double tarZoom = frameZoom;
@@ -3276,7 +3271,21 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	double centerY = tarY + tarH / 2.0;
 	tarW *= contentScale;
 	tarH *= contentScale;
-	tarSize = ResolveWordFontSize(deviceContext, word, tarSize * contentScale);
+	// 只对按钮主标签拟合；按最终几何计算比例，避免动画逐帧改变名义字号目标。
+	double labelFit = 1.0, fittedTarget = -1.0;
+	if (fitButtonLabel)
+	{
+		const double nominal = word.fontTargetSize >= 0.0 ? static_cast<double>(word.fontTargetSize) : static_cast<double>(word.size.tar);
+		const double sourceTarget = static_cast<double>(word.size.tar);
+		if (nominal > 0.0 && sourceTarget > 0.0)
+		{
+			const double targetScale = nominal / sourceTarget;
+			fittedTarget = FitButtonLabelFontSize(tarContent,nominal,
+				static_cast<double>(word.w.tar)*targetScale,static_cast<double>(word.h.tar)*targetScale,fontWeight);
+			labelFit = fittedTarget / nominal;
+		}
+	}
+	tarSize = ResolveWordFontSize(deviceContext, word, tarSize * contentScale * labelFit, fittedTarget);
 	if (tarSize <= 0.0) return false;
 	tarX = centerX - tarW / 2.0;
 	tarY = centerY - tarH / 2.0;
@@ -3286,9 +3295,6 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
 	if (!ShouldDrawFrameBounds(deviceContext, layoutRect, BarRenderingAttribute::dirtyAntialiasPadding)) return false;
 	if (!GetTypographyCache()) return false;
-
-	// Word 控件改为存入 wstring
-	wstring tarContent = word.content.GetVal();
 
 	// 获取样式
 	IDWriteTextFormat* textFormat = nullptr;
@@ -3341,6 +3347,40 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	}
 
 	return true;
+}
+
+double BarUIRendering::FitButtonLabelFontSize(const wstring& content, double fontSize,
+	double width, double height, DWRITE_FONT_WEIGHT weight)
+{
+	if (content.empty() || !std::isfinite(fontSize) || !std::isfinite(width) || !std::isfinite(height)
+		|| fontSize <= 0.0 || width <= 0.0 || height <= 0.0) return fontSize;
+	const ButtonLabelFitKey key{content,fontSize,width,height,static_cast<unsigned>(weight)};
+	if (const auto found=buttonLabelFitCache.find(key);found!=buttonLabelFitCache.end()) return found->second;
+	auto fits=[&](double size)
+	{
+		const auto measured=MeasureText(content,size,weight);
+		return measured.width>0 && measured.height>0 && measured.width<=width && measured.height<=height;
+	};
+	double result=fontSize;
+	if (!fits(fontSize))
+	{
+		// 保留可读性下限：12-DIP 单行至少 9.5，既有 9-DIP 双行至少 8.5；比例随缩放一致。
+		const double minimum=fontSize*(content.find(L'\n')!=wstring::npos ? 8.5/9.0 : 9.5/12.0);
+		result=minimum;
+		if (fits(minimum))
+		{
+			double upper=fontSize;
+			for (int step=0;step<12;++step)
+			{
+				const double middle=(result+upper)*0.5;
+				if (fits(middle)) result=middle; else upper=middle;
+			}
+		}
+	}
+	// 只缓存有限的语言/文字/固定槽组合，正文和动态数字不进入此路径。
+	if (buttonLabelFitCache.size()>=64) buttonLabelFitCache.clear();
+	buttonLabelFitCache.emplace(key,result);
+	return result;
 }
 
 D2D1_SIZE_F BarUIRendering::MeasureText(

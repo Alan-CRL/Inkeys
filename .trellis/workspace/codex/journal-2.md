@@ -1653,6 +1653,78 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 
 - 稳定白板恢复快捷键，保留过渡与最小化门禁；分页淡出冻结内容以消除闪烁。
 - 动画速率迁入实验选项，保留配置键、实时预览和松手/离页保存，更新现有布局回归。
+## Session 154: 十一语言国际化扩展与翻译修正完成
+<!-- trellis-session: v=2 fp=c1e03ff837b8acbf -->
+
+**Date**: 2026-11-02
+**Task**: 十一语言国际化扩展与翻译修正完成
+**Branch**: `feature/i18n`
+
+### Summary
+
+完成原三语审查修正、新增八种语言与Noto JP/KR嵌入，十一语各679条；真实format、DWrite离屏和完整无窗口回归通过，交付451项三语变更Markdown。无GUI、commit、push或归档。
+
+### Main Changes
+
+- 十一语言稳定元数据、旧索引兼容、首次系统语言匹配及母语名/代码/Beta列表。
+- 补齐84个活动UI key，处理主栏局部拟合及赞助长文可见字形居中/高度。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64使用ARM64原生MSBuild：exit0；最终增量10.15秒。
+- [OK] 真实嵌入/typedformat exit0；DWrite/组件离屏exit0；完整--no-window exit0/338.72秒且stderr空；679全语言check及编码/字形覆盖通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留当前任务及未提交改动供用户审阅；明细见任务translation-changes.md和validation.md。
+
+
+## Session 155: 日韩Noto设置字体校准完成
+<!-- trellis-session: v=2 fp=743089a5c45b0906 -->
+
+**Date**: 2026-11-02
+**Task**: 日韩Noto设置字体校准完成
+**Branch**: `feature/i18n`
+
+### Summary
+
+Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/图标/字体资产和翻译保持。三DPI真实对照、设置专项与完整无窗口回归通过。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug|ARM64完整Solution exit0/12.88s；设置专项exit0/10.96s；完整--no-window exit0/358.22s且stderr空。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留未提交改动，用户重新启动新构建试用日/韩；任务继续，不自动归档。
+
+
+## Session 156: 国际化任务验收归档
+<!-- trellis-session: v=2 fp=19a12eb14892cf4c -->
+
+**Date**: 2026-11-02
+**Task**: 国际化任务验收归档
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认字体校准生效，授权结束、归档、提交和Push。已归档i18n-eight-locales；原三语451项对照及Noto校准验证保留在archive/2026-11。修复归档后文档链接，推送feature/i18n。
 
 ### Git Commits
 
@@ -1664,6 +1736,8 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 
 - [OK] 完整 InkeysRepo.sln Debug|ARM64 原生 MSBuild 构建通过；正常权限完整 headless --no-window 退出 0。
 - [OK] 状态生产测试、分页离屏回归、i18n check 与 diff check 均通过；未进行 GUI 测试。
+| `e5f0574e` | feat(i18n): add eight locales and fix translations and layouts |
+| `f6194712` | fix(i18n): calibrate Noto settings typography |
 
 ### Status
 

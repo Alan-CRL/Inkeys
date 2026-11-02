@@ -2,6 +2,7 @@
 #include "Setting.HomeBrand.h"
 #include "imfluent/imfluent_internal.h"
 #include <cstring>
+#include <cfloat>
 #include <format>
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
@@ -882,10 +883,48 @@ namespace Inkeys::UI::Setting::Design
 	void RenderSponsorThanks(const char* text, float widthPixels)
 	{
 		const float width = (std::max)(1.0F, widthPixels);
-		const auto layout = MeasureInline({ { text } }, width, ImFluentTextStyle_Body, true);
+		auto layout = MeasureInline({ { text } }, width, ImFluentTextStyle_Body, true);
+		const auto origin = ImGui::GetCursorScreenPos();
+		ImFluent::PushFont(ImFluentTextStyle_Body);
+		const float size = ImGui::GetFontSize(), lineHeight = Pixels(BodyText.lineHeight);
+		auto* baked = ImGui::GetFontBaked();
+		const float glyphScale = size / baked->Size;
+		float top = 0.0F, bottom = layout.height;
+		for (auto& fragment : layout.fragments)
+		{
+			// 换行尾部空白和字形左右边距不属于可见文字，不能用 advance 宽度作视觉居中。
+			while (!fragment.text.empty() && (fragment.text.back() == ' ' || fragment.text.back() == '\t')) fragment.text.pop_back();
+			float advance = 0.0F, left = FLT_MAX, right = -FLT_MAX, inkTop = FLT_MAX, inkBottom = -FLT_MAX;
+			const char* cursor = fragment.text.c_str(); const char* end = cursor + fragment.text.size();
+			while (cursor < end)
+			{
+				unsigned int point = 0; const int length = ImTextCharFromUtf8(&point, cursor, end);
+				if (length <= 0) break;
+				cursor += length;
+				const auto* glyph = baked->FindGlyph(static_cast<ImWchar>(point));
+				if (glyph->Visible)
+				{
+					left = (std::min)(left, advance + glyph->X0 * glyphScale);
+					right = (std::max)(right, advance + glyph->X1 * glyphScale);
+					inkTop = (std::min)(inkTop, glyph->Y0 * glyphScale);
+					inkBottom = (std::max)(inkBottom, glyph->Y1 * glyphScale);
+				}
+				advance += glyph->AdvanceX * glyphScale;
+			}
+			if (left == FLT_MAX) continue;
+			fragment.x = (width - (right - left)) * 0.5F - left;
+			fragment.width = advance;
+			const float drawY = std::round(origin.y + fragment.y + (lineHeight - size) * 0.5F) - origin.y;
+			top = (std::min)(top, drawY + inkTop);
+			bottom = (std::max)(bottom, drawY + inkBottom);
+		}
+		// 与 DrawInline 的像素取整一致，完整登记变音符号和下伸部的真实高度。
+		const float shift = std::ceil(-top);
+		for (auto& fragment : layout.fragments) fragment.y += shift;
+		layout.height = std::ceil(bottom + shift);
+		ImFluent::PopFont();
 		HomeAction ignored = HomeAction::None;
-		// 复用逐行居中换行，正文色跟随浅深主题，图片卡片之外仍登记完整文字高度。
-		DrawInline("##sponsor-thanks", layout, ImGui::GetCursorScreenPos(), ImFluentTextStyle_Body, TextPrimary, ignored);
+		DrawInline("##sponsor-thanks", layout, origin, ImFluentTextStyle_Body, TextPrimary, ignored);
 		ImGui::Dummy({ width, layout.height });
 	}
 

@@ -39,6 +39,7 @@ import Inkeys.UI.PageControl;
 import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
+import Inkeys.Conv.Text;
 
 extern const double BarGeometryAttributeShapeButtonSize;
 extern const double BarThicknessTooltipPadding;
@@ -56,6 +57,38 @@ namespace Inkeys::UI::Bar
 		const RECT& logicalBounds, LONG presentationOutset) noexcept;
 	namespace
 	{
+		class MissingGlyphProbe final : public IDWriteTextRenderer
+		{
+		public:
+			bool missing = false;
+			HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** output) override
+			{
+				if (!output) return E_POINTER;
+				*output = nullptr;
+				if (id != __uuidof(IUnknown) && id != __uuidof(IDWriteTextRenderer)
+					&& id != __uuidof(IDWritePixelSnapping)) return E_NOINTERFACE;
+				*output = static_cast<IDWriteTextRenderer*>(this); return S_OK;
+			}
+			ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
+			ULONG STDMETHODCALLTYPE Release() override { return 1; }
+			HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(void*, BOOL* disabled) override
+			{ *disabled = TRUE; return S_OK; }
+			HRESULT STDMETHODCALLTYPE GetCurrentTransform(void*, DWRITE_MATRIX* matrix) override
+			{ *matrix = { 1, 0, 0, 1, 0, 0 }; return S_OK; }
+			HRESULT STDMETHODCALLTYPE GetPixelsPerDip(void*, FLOAT* pixels) override
+			{ *pixels = 1; return S_OK; }
+			HRESULT STDMETHODCALLTYPE DrawGlyphRun(void*, FLOAT, FLOAT, DWRITE_MEASURING_MODE,
+				const DWRITE_GLYPH_RUN* run, const DWRITE_GLYPH_RUN_DESCRIPTION*, IUnknown*) override
+			{
+				for (UINT32 index = 0; index < run->glyphCount; ++index)
+					missing |= run->glyphIndices[index] == 0;
+				return S_OK;
+			}
+			HRESULT STDMETHODCALLTYPE DrawUnderline(void*, FLOAT, FLOAT, const DWRITE_UNDERLINE*, IUnknown*) override { return S_OK; }
+			HRESULT STDMETHODCALLTYPE DrawStrikethrough(void*, FLOAT, FLOAT, const DWRITE_STRIKETHROUGH*, IUnknown*) override { return S_OK; }
+			HRESULT STDMETHODCALLTYPE DrawInlineObject(void*, FLOAT, FLOAT, IDWriteInlineObject*, BOOL, BOOL, IUnknown*) override { return S_OK; }
+		};
+
 		class WhiteboardButtonStyleFixture : public BarButtonSetClass
 		{
 		public:
@@ -164,7 +197,8 @@ namespace Inkeys::UI::Bar
 		if(FAILED(com))return 2;
 		if(FAILED(RenderPipeline::Initialize())){CoUninitialize();return 3;}
 		IdtFontFileLoader::IsLoaderInitialized();IdtFontCollectionLoader::IsLoaderInitialized();
-		const std::array<UINT,4> fonts{IDR_TTF1,IDR_TTF7,IDR_TTF3,IDR_TTF8};
+		const std::array<UINT,8> fonts{IDR_TTF1,IDR_TTF7,IDR_TTF3,IDR_TTF8,
+			IDR_NOTO_JP_REGULAR,IDR_NOTO_JP_BOLD,IDR_NOTO_KR_REGULAR,IDR_NOTO_KR_BOLD};
 		const HRESULT fontCollectionHr=RenderPipeline::InitializeFontCollection(
 			IdtFontFileLoader::GetLoader(),IdtFontCollectionLoader::GetLoader(),fonts);
 		std::filesystem::create_directories(L"Build/eraser-b");
@@ -1119,19 +1153,16 @@ namespace Inkeys::UI::Bar
 			b->name.pct.SetDirect(1);b->icon.pct.SetDirect(1);
 		}
 		std::filesystem::create_directories(L"Build/eraser-b/visuals");
-		struct LocalizedBarCase{const wchar_t* language;const wchar_t* fileTag;const wchar_t* family;const wchar_t* locale;};
-		const std::array localizedBarCases{
-			LocalizedBarCase{L"zh-CN",L"zh-cn",L"HarmonyOS Sans SC",L"zh-cn"},
-			LocalizedBarCase{L"zh-TW",L"zh-tw",L"HarmonyOS Sans TC",L"zh-tw"},
-			LocalizedBarCase{L"en-US",L"en-us",L"HarmonyOS Sans SC",L"en-us"}};
-		const std::array<const char*,21> fixedLabelKeys{
+
+		const std::array<const char*,23> fixedLabelKeys{
 			I18nKey.UI.Bar.MainButtons.SelectLabel,I18nKey.UI.Bar.MainButtons.MoveLabel,
 			I18nKey.UI.Bar.MainButtons.DrawLabel,I18nKey.UI.Bar.MainButtons.LaserLabel,
 			I18nKey.UI.Bar.MainButtons.HighlighterLabel,I18nKey.UI.Bar.MainButtons.HardPenLabel,
 			I18nKey.UI.Bar.MainButtons.SoftPenLabel,I18nKey.UI.Bar.MainButtons.EraserLabel,
 			I18nKey.UI.Bar.MainButtons.AreaEraserLabel,I18nKey.UI.Bar.MainButtons.GeometryLabel,
 			I18nKey.UI.Bar.MainButtons.RectangleLabel,I18nKey.UI.Bar.MainButtons.StraightLineLabel,
-			I18nKey.UI.Bar.MainButtons.UndoLabel,I18nKey.UI.Bar.MainButtons.ClearLabel,
+			I18nKey.UI.Bar.MainButtons.UndoLabel,I18nKey.UI.Bar.MainButtons.RedoLabel,
+			I18nKey.UI.Bar.MainButtons.ReturnToShowLabel,I18nKey.UI.Bar.MainButtons.ClearLabel,
 			I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel,
 			I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel,
 			I18nKey.UI.Bar.MainButtons.FreezeLabel,I18nKey.UI.Bar.MainButtons.EndPresentationLabel,
@@ -1141,11 +1172,45 @@ namespace Inkeys::UI::Bar
 			I18nKey.UI.Bar.DrawAttributes.HighlighterLabel,I18nKey.UI.Bar.DrawAttributes.HardPenLabel,
 			I18nKey.UI.Bar.DrawAttributes.SoftPenLabel,I18nKey.UI.Bar.DrawAttributes.FreeLineLabel,
 			I18nKey.UI.Bar.DrawAttributes.AnnotationLineLabel};
-		for(const auto& language:localizedBarCases)
+		for(const auto& language:Inkeys::Localization::Locales)
 		{
-			expect(I18n::load(1,L"JSON",language.language),"bar language loads for layout audit");
+			expect(I18n::load(1,L"JSON",language.code),"bar language loads for layout audit");
 			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
-			expect(owner.spec.GetFontFamily()==language.family && owner.spec.GetTextLocale()==language.locale,
+			report << "[I18nLayout] " << language.codeUtf8 << '\n';
+			auto reportBounds = [&](const char* key, const wstring& text, double fontSize,
+				D2D1_SIZE_F bounds, double maxWidth, double maxHeight, const char* stage)
+			{
+				auto printable = utf16ToUtf8(text);
+				for (size_t offset = 0; (offset = printable.find('\n', offset)) != string::npos; offset += 2)
+					printable.replace(offset, 1, "\\n");
+				report << "[I18nBounds] " << language.codeUtf8 << " stage=" << stage
+					<< " key=" << key << " font=" << fontSize << " measured=" << bounds.width << 'x' << bounds.height
+					<< " slot=" << maxWidth << 'x' << maxHeight << " text=" << printable << '\n';
+			};
+			ComPtr<IDWriteTextFormat> localizedFormat;
+			const auto factory = RenderPipeline::DWriteFactory();
+			const auto collection = RenderPipeline::FontCollection();
+			const HRESULT formatHr = factory->CreateTextFormat(language.fontFamily, collection.Get(),
+				DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+				13.0F, language.code, &localizedFormat);
+			expect(SUCCEEDED(formatHr), "actual selected family creates a localized DWrite format");
+			if (localizedFormat)
+			{
+				for (const auto& [key, value] : I18n::i18n)
+				{
+					if (value.empty()) continue;
+					const auto text = I18n::getW(key);
+					ComPtr<IDWriteTextLayout> layout;
+					MissingGlyphProbe probe;
+					const bool created = SUCCEEDED(factory->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()),
+						localizedFormat.Get(), 16000.0F, 16000.0F, &layout));
+					const bool complete = created && SUCCEEDED(layout->Draw(nullptr, &probe, 0, 0)) && !probe.missing;
+					if (!complete) report << "[I18nGlyph] " << language.codeUtf8 << ' ' << key << '\n';
+					expect(complete, "actual DWrite glyph runs contain no missing characters");
+				}
+			}
+
+			expect(owner.spec.GetFontFamily()==language.fontFamily && owner.spec.GetTextLocale()==language.code,
 				"localized font family and DWrite locale match language");
 			{
 				WhiteboardButtonStyleFixture style;
@@ -1177,66 +1242,132 @@ namespace Inkeys::UI::Bar
 				expect(button->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel),
 					"inactive whiteboard ignores a stale minimized flag");
 			}
+			// 独立注册表模拟每种语言的冷启动，验证真实组件标签与元数据而非模板副本。
+			BarButtonSetClass localizedComponents;
+			localizedComponents.RegisterBuiltInComponents();
+			const struct { const char* id; const char* category; const char* title; const char* label; } componentCases[]{
+				{ "Component.ShortcutButton.Appliance.Explorer", I18nKey.SettingsUI.Component.SoftwareSection, I18nKey.SettingsUI.Component.ExplorerTitle, I18nKey.UI.Bar.Components.ExplorerLabel },
+				{ "Component.ShortcutButton.Appliance.Taskmgr", I18nKey.SettingsUI.Component.SoftwareSection, I18nKey.SettingsUI.Component.TaskManagerTitle, I18nKey.UI.Bar.Components.TaskManagerLabel },
+				{ "Component.ShortcutButton.Appliance.Control", I18nKey.SettingsUI.Component.SoftwareSection, I18nKey.SettingsUI.Component.ControlPanelTitle, I18nKey.UI.Bar.Components.ControlPanelLabel },
+				{ "Component.ShortcutButton.System.Desktop", I18nKey.SettingsUI.Component.SystemSection, I18nKey.SettingsUI.Component.ShowDesktopTitle, I18nKey.UI.Bar.Components.ShowDesktopLabel },
+				{ "Component.ShortcutButton.System.LockWorkStation", I18nKey.SettingsUI.Component.SystemSection, I18nKey.SettingsUI.Component.LockScreenTitle, I18nKey.UI.Bar.Components.LockScreenLabel },
+				{ "Component.ShortcutButton.Keyboard.Keyboardesc", I18nKey.SettingsUI.Component.KeyboardSection, I18nKey.SettingsUI.Component.EscapeTitle, I18nKey.UI.Bar.Components.EscapeLabel },
+				{ "Component.ShortcutButton.Keyboard.KeyboardAltF4", I18nKey.SettingsUI.Component.KeyboardSection, I18nKey.SettingsUI.Component.AltF4Title, nullptr },
+				{ "Component.ShortcutButton.RollCall.IslandCaller1", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.IslandCaller1Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.IslandCaller2", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.IslandCaller2Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.SecRandom1", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.SecRandom1Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.SecRandom2", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.SecRandom2Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.SecRandom2Compat", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.SecRandom2CompatTitle, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.NamePicker", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.NamePickerTitle, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.Linkage.ClassislandSettings", I18nKey.SettingsUI.Component.ClassIslandSection, I18nKey.SettingsUI.Component.ClassIslandSettingsTitle, I18nKey.UI.Bar.Components.ClassIslandSettingsLabel },
+				{ "Component.ShortcutButton.Linkage.ClassislandProfile", I18nKey.SettingsUI.Component.ClassIslandSection, I18nKey.SettingsUI.Component.ClassIslandProfileTitle, I18nKey.UI.Bar.Components.ClassIslandProfileLabel },
+				{ "Component.ShortcutButton.Linkage.ClassislandClassswap", I18nKey.SettingsUI.Component.ClassIslandSection, I18nKey.SettingsUI.Component.ClassIslandSwapTitle, I18nKey.UI.Bar.Components.ClassIslandSwapLabel },
+			};
+			for(const auto& componentCase:componentCases)
+			{
+				BarButtonRegistrationClass registration;
+				const bool found=localizedComponents.TryGetRegistration(componentCase.id,registration) && registration.button;
+				expect(found,"actual built-in component registers in each locale");
+				if(!found)continue;
+				const auto text=registration.button->name.content.GetTar();
+				expect(text==(componentCase.label?IW(componentCase.label):L"Alt+F4")
+					&& registration.categoryName==IW(componentCase.category) && registration.settingsName==IW(componentCase.title),
+					"actual component label and settings metadata use the selected locale");
+				const double fontSize=owner.spec.FitButtonLabelFontSize(text,metrics.primaryFontSizeDip,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip);
+				const auto bounds=owner.spec.MeasureText(text,fontSize,DWRITE_FONT_WEIGHT_BOLD);
+				if(bounds.width>metrics.primarySlotWidthDip+0.5f)reportBounds(componentCase.label?componentCase.label:componentCase.id,text,fontSize,bounds,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,"component");
+				expect(bounds.width<=metrics.primarySlotWidthDip+0.5f,"localized component fits its unchanged toolbar slot");
+			}
 			for(const auto* key:fixedLabelKeys)
-				expect(owner.spec.MeasureText(IW(key),metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=metrics.primarySlotWidthDip+0.5f,
-					"localized fixed label fits the existing 70 DIP slot");
+			{
+				const auto text=IW(key);
+				const double fontSize=owner.spec.FitButtonLabelFontSize(text,metrics.primaryFontSizeDip,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip);
+				const auto bounds=owner.spec.MeasureText(text,fontSize,DWRITE_FONT_WEIGHT_BOLD);
+				const bool fits=bounds.width<=metrics.primarySlotWidthDip+0.5f;
+				if(!fits)reportBounds(key,text,fontSize,bounds,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,"fixed");
+				expect(fits,"localized fixed label fits the existing 70 DIP slot");
+			}
 			for(const auto* key:{I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.FreezeLabel})
-				expect(owner.spec.MeasureText(IW(key),twoOneMetrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=twoOneMetrics.primarySlotWidthDip+0.5f,
-					"localized Whiteboard and Freeze labels fit the existing 37 DIP slot");
+			{
+				const auto text=IW(key);
+				const double fontSize=owner.spec.FitButtonLabelFontSize(text,twoOneMetrics.primaryFontSizeDip,twoOneMetrics.primarySlotWidthDip,twoOneMetrics.primarySlotHeightDip);
+				const auto bounds=owner.spec.MeasureText(text,fontSize,DWRITE_FONT_WEIGHT_BOLD);
+				const bool fits=bounds.width<=twoOneMetrics.primarySlotWidthDip+0.5f;
+				if(!fits)reportBounds(key,text,fontSize,bounds,twoOneMetrics.primarySlotWidthDip,twoOneMetrics.primarySlotHeightDip,"compact");
+				expect(fits,"localized Whiteboard and Freeze labels fit the existing 37 DIP slot");
+			}
 			for(const auto preset:{BarButtonPresetEnum::Select,BarButtonPresetEnum::Pierce})
 			{
 				auto* b=owner.barButtonSet.preset[(int)preset];
-				auto label=IW(preset==BarButtonPresetEnum::Select ? I18nKey.UI.Bar.MainButtons.SelectClearLabel
-					: I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
+				const auto* key=preset==BarButtonPresetEnum::Select ? I18nKey.UI.Bar.MainButtons.SelectClearLabel
+					: I18nKey.UI.Bar.MainButtons.ClickThroughLabel;
+				auto label=IW(key);
 				// 直接测量真实语言资源，不在测试里重复生产代码的英文改写。
-				expect(std::count(label.begin(),label.end(),L'\n')==(I18n::isIdentifying(L"en-US")?1:0),
-					"localized Select Clear and Click-through resources keep English two-line and Chinese single-line labels");
+				expect(std::count(label.begin(),label.end(),L'\n')<=1,
+					"localized short labels keep the resource contract of at most two lines");
 				b->name.SetStringImmediate(label);b->TransitionContent(L"",label);
 				for(const auto kind:{BarButtonVisualLayoutKind::StandardTwoTwo,BarButtonVisualLayoutKind::StandardTwoOne})
 				{
 					if(preset==BarButtonPresetEnum::Select && kind==BarButtonVisualLayoutKind::StandardTwoOne)continue;
 					const auto slot=ResolveBarButtonVisualMetrics(kind);
-					const auto measured=owner.spec.MeasureText(label,b->LabelFontSize(slot.primaryFontSizeDip),DWRITE_FONT_WEIGHT_BOLD);
-					expect(measured.width>0 && measured.width<=slot.primarySlotWidthDip+0.5f &&
-						measured.height>0 && measured.height<=slot.primarySlotHeightDip+0.5f,
-						"Select Clear and Click-through three-language DWrite bounds fit original slots");
-					if(label.find(L'\n')!=wstring::npos)
+					const double fittedSize=owner.spec.FitButtonLabelFontSize(label,b->LabelFontSize(slot.primaryFontSizeDip),slot.primarySlotWidthDip,slot.primarySlotHeightDip);
+					const auto measured=owner.spec.MeasureText(label,fittedSize,DWRITE_FONT_WEIGHT_BOLD);
+					const bool fits=measured.width>0 && measured.width<=slot.primarySlotWidthDip+0.5f &&
+						measured.height>0 && measured.height<=slot.primarySlotHeightDip+0.5f;
+					if(!fits)reportBounds(key,label,fittedSize,measured,slot.primarySlotWidthDip,slot.primarySlotHeightDip,"short");
+					expect(fits,"localized Select Clear and Click-through DWrite bounds fit original slots");
+					// 只有 Select 在短标签与清空标签之间换字；Pierce 实际只保持同一穿透文案。
+					if(label.find(L'\n')!=wstring::npos && preset==BarButtonPresetEnum::Select)
 					{
 						// 真实换字过渡的中点前后都测量当前字号，防止目标文案提前裁切。
 						BarButtonClass transitioning(*b);
-						transitioning.name.SetStringImmediate(L"Select");
+						const auto shortLabel=IW(I18nKey.UI.Bar.MainButtons.SelectLabel);
+						transitioning.name.SetStringImmediate(shortLabel);
 						transitioning.name.size.SetDirect(slot.primaryFontSizeDip);
 						transitioning.TransitionContent(L"",label);
 						for(const double dt:{0.0,0.19,0.02,0.05,0.5})
 						{
 							transitioning.name.AdvanceContentTransition(dt,1.0);
-							const auto bounds=owner.spec.MeasureText(transitioning.name.content.GetVal(),
-								transitioning.name.size.val,DWRITE_FONT_WEIGHT_BOLD);
-							expect(bounds.width<=slot.primarySlotWidthDip+0.5f && bounds.height<=slot.primarySlotHeightDip+0.5f,
-								"incoming multiline label fits before, at and after the transparent midpoint");
+							const double currentSize=owner.spec.FitButtonLabelFontSize(transitioning.name.content.GetVal(),transitioning.name.size.val,slot.primarySlotWidthDip,slot.primarySlotHeightDip);
+							const auto bounds=owner.spec.MeasureText(transitioning.name.content.GetVal(),currentSize,DWRITE_FONT_WEIGHT_BOLD);
+							const bool transitionFits=bounds.width<=slot.primarySlotWidthDip+0.5f && bounds.height<=slot.primarySlotHeightDip+0.5f;
+							if(!transitionFits)reportBounds(key,transitioning.name.content.GetVal(),currentSize,bounds,slot.primarySlotWidthDip,slot.primarySlotHeightDip,"transition");
+							expect(transitionFits,"incoming multiline label fits before, at and after the transparent midpoint");
 						}
-						transitioning.TransitionContent(L"",L"Select");
+						transitioning.TransitionContent(L"",shortLabel);
 						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==9.0,
 							"outgoing multiline label keeps compact font until content changes");
 						transitioning.name.AdvanceContentTransition(1.0,1.0);
 						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==slot.primaryFontSizeDip,
 							"short label restores standard font after content transition");
 					}
+					else if(preset==BarButtonPresetEnum::Pierce)
+					{
+						BarButtonClass stable(*b);stable.name.SetStringImmediate(label);
+						expect(!stable.TransitionContent(L"",label),"Pierce keeps its actual localized content when refreshed");
+					}
 				}
 			}
 			updateLocalizedPresetLabels();
 			for(const auto* key:penMenuLabelKeys)
-				expect(owner.spec.MeasureText(IW(key),12.0,DWRITE_FONT_WEIGHT_NORMAL).width<=80.5f,
-					"localized pen menu label fits its measured text slot");
+			{
+				const auto text=IW(key);const auto bounds=owner.spec.MeasureText(text,12.0,DWRITE_FONT_WEIGHT_NORMAL);
+				if(bounds.width>80.5f)reportBounds(key,text,12.0,bounds,80.0,0.0,"pen-menu");
+				expect(bounds.width<=80.5f,"localized pen menu label fits its measured text slot");
+			}
 			for(const auto* key:{I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel,I18nKey.UI.Bar.GeometryAttributes.RectangleLabel})
-				expect(owner.spec.MeasureText(IW(key),11.0,DWRITE_FONT_WEIGHT_NORMAL).width<=BarGeometryAttributeShapeButtonSize,
-					"localized geometry label fits its button");
+			{
+				const auto text=IW(key);const auto bounds=owner.spec.MeasureText(text,11.0,DWRITE_FONT_WEIGHT_NORMAL);
+				if(bounds.width>BarGeometryAttributeShapeButtonSize)reportBounds(key,text,11.0,bounds,BarGeometryAttributeShapeButtonSize,0.0,"geometry");
+				expect(bounds.width<=BarGeometryAttributeShapeButtonSize,"localized geometry label fits its button");
+			}
 			const auto annotationBody=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),BarThicknessTooltipBodyFontSize,DWRITE_FONT_WEIGHT_NORMAL);
 			const auto overflowBody=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),BarThicknessTooltipBodyFontSize,DWRITE_FONT_WEIGHT_NORMAL);
 			for(const auto* key:{I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle,I18nKey.UI.Bar.DrawAttributes.AnnotationFixedUnsupportedTitle})
 			{
 				const auto title=owner.spec.MeasureText(IW(key),BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
 				const double width=std::ceil((std::max)(title.width,annotationBody.width))+BarThicknessTooltipPadding*2+BarThicknessTooltipCloseReserve;
+				if(!(width>0 && width<=1000))reportBounds(key,IW(key),BarThicknessTooltipTitleFontSize,title,1000,0,"annotation-popup");
 				expect(width>0 && width<=1000,"localized annotation popup expands within the offscreen work area");
 			}
 			const auto annotationTitleText=IW(I18nKey.UI.Bar.DrawAttributes.AnnotationFixedUnsupportedTitle);
@@ -1249,6 +1380,7 @@ namespace Inkeys::UI::Bar
 			const auto overflowTitle=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
 			const double overflowWidth=std::ceil((std::max)(overflowTitle.width,overflowBody.width))+BarThicknessTooltipPadding*2+BarThicknessTooltipCloseReserve;
 			const double overflowHeight=std::ceil(overflowTitle.height+BarThicknessTooltipLineGap+overflowBody.height)+BarThicknessTooltipPadding*2;
+			if(!(overflowWidth>0 && overflowWidth<=1000))reportBounds(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle,overflowTitleText,BarThicknessTooltipTitleFontSize,overflowTitle,1000,0,"overflow-popup");
 			expect(overflowWidth>0 && overflowWidth<=1000,"localized overflow popup expands within the offscreen work area");
 			const double rgbLabelWidth=(std::max)({owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel),13.0).width,
 				owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel),13.0).width,
@@ -1257,6 +1389,7 @@ namespace Inkeys::UI::Bar
 			const double opacityLabelWidth=owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0).width;
 			const double opacityValueWidth=owner.spec.MeasureText(L"100%",13.0).width;
 			const double footerRequiredWidth=(rgbLabelWidth+rgbValueWidth)*3+opacityLabelWidth+opacityValueWidth+4*3.0+2*6.0+10.0;
+			if(footerRequiredWidth>BarColorPickerPanelWidth)reportBounds(I18nKey.UI.Bar.ColorPicker.OpacityLabel,IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0,D2D1::SizeF(static_cast<float>(footerRequiredWidth),0),BarColorPickerPanelWidth,0,"color-footer");
 			expect(footerRequiredWidth<=BarColorPickerPanelWidth,"localized color footer keeps RGB and opacity columns separate");
 
 			for(const double zoom:{0.65,1.0,1.5})
@@ -1318,7 +1451,7 @@ namespace Inkeys::UI::Bar
 					drawAuditText(footerValues[i],footerLabelX[i]+labelWidth+footerLabelGap,footerTop,valueWidth,footerHeight,13);
 				}
 				expect(SUCCEEDED(dc->EndDraw()),"localized fixed bar renders");
-				const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"bar-i18n-"+std::wstring(language.fileTag)+L"-"+std::to_wstring(static_cast<int>(zoom*100))+L".png");
+				const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"bar-i18n-"+std::wstring(language.code)+L"-"+std::to_wstring(static_cast<int>(zoom*100))+L".png");
 				expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"localized fixed bar PNG readback");
 			}
 		}

@@ -1881,28 +1881,34 @@ void SettingWindowBegin()
 	ImGui::GetStyle().FontScaleDpi = settingGlobalScale;
 
 	static constexpr ImWchar excludedGlyphs[] = { 0xe81e, 0xe81e, 0 };
-	const bool traditionalChinese = I18n::isIdentifying(L"zh-TW");
-	auto addTextFace = [&](UINT primaryResource, UINT fallbackResource,
-		ImFont** result)
+	const auto& locale = I18n::locale();
+	const std::array<UINT, 4> regularFallbacks{
+		IDR_TTF1, IDR_TTF3, IDR_NOTO_JP_REGULAR, IDR_NOTO_KR_REGULAR };
+	const std::array<UINT, 4> strongFallbacks{
+		IDR_TTF7, IDR_TTF8, IDR_NOTO_JP_BOLD, IDR_NOTO_KR_BOLD };
+	auto addTextFace = [&](UINT primaryResource, const auto& fallbacks,
+		bool design, ImFont** result)
 		{
-			ImFontConfig textConfig;
-			textConfig.OversampleH = 1;
-			textConfig.OversampleV = 1;
-			textConfig.RasterizerDensity = settingGlobalScale;
-			textConfig.FontDataOwnedByAtlas = false;
-			textConfig.GlyphExcludeRanges = excludedGlyphs;
-			if (!AddSettingFontResource(primaryResource, 30.0F,
-				&textConfig, result))
-				return false;
-
-			if (traditionalChinese)
-			{
-				// 繁体字库后合并简体字形，保持完整的中文回退。
-				textConfig.MergeMode = true;
-				if (!AddSettingFontResource(fallbackResource, 30.0F,
-					&textConfig))
-					return false;
-			}
+			const bool notoPrimary = primaryResource == IDR_NOTO_JP_REGULAR || primaryResource == IDR_NOTO_JP_BOLD
+				|| primaryResource == IDR_NOTO_KR_REGULAR || primaryResource == IDR_NOTO_KR_BOLD;
+			auto add = [&](UINT resource, bool merge)
+				{
+					const bool noto = resource == IDR_NOTO_JP_REGULAR || resource == IDR_NOTO_JP_BOLD
+						|| resource == IDR_NOTO_KR_REGULAR || resource == IDR_NOTO_KR_BOLD;
+					using namespace Inkeys::UI::Setting::Design;
+					// 每个合并源按自己的字族和角色校准，旧 Harmony 脸保持原始尺度。
+					auto config = TextFontConfig(settingGlobalScale, noto,
+						design ? TextFontRole::Design : TextFontRole::Legacy, notoPrimary);
+					config.GlyphExcludeRanges = excludedGlyphs;
+					config.MergeMode = merge;
+					return AddSettingFontResource(resource,
+						Inkeys::UI::Setting::Design::FontReferenceSize, &config, merge ? nullptr : result);
+				};
+			if (!add(primaryResource, false)) return false;
+			// 主语言先占字形，其他字库仅补缺；语言页在任何当前语言下都含日/韩母语名。
+			for (const UINT resource : fallbacks)
+				if (resource != primaryResource && !add(resource, true)) return false;
+			if (design) return true;
 
 			ImFontConfig iconConfig;
 			iconConfig.OversampleH = 1;
@@ -1912,31 +1918,14 @@ void SettingWindowBegin()
 			iconConfig.GlyphOffset.y = 10.0F;
 			iconConfig.PixelSnapH = true;
 			iconConfig.MergeMode = true;
-			if (!AddSettingFontResource(257U, 36.0F, &iconConfig))
-				return false;
+			if (!AddSettingFontResource(IDR_TTF2, 36.0F, &iconConfig)) return false;
 			iconConfig.GlyphOffset.y = 4.0F;
-			return AddSettingFontResource(262U, 32.0F, &iconConfig);
+			return AddSettingFontResource(IDR_TTF4, 32.0F, &iconConfig);
 		};
-
-	const UINT regularResource = traditionalChinese ? 258U : 198U;
-	const UINT strongResource = traditionalChinese ? 298U : 297U;
-	if (!addTextFace(regularResource, 198U, &ImFontMain)
-		|| !addTextFace(strongResource, 297U, &ImFontStrong))
-		return false;
-
-	// 校准字体仅绑定新 Shell/Home/General，避免改变旧页 TextWrapped 的行距。
-	auto addDesignFace = [&](UINT resource, UINT fallback, ImFont** result)
-		{
-			auto config = Inkeys::UI::Setting::Design::HarmonyFontConfig(settingGlobalScale);
-			if (!AddSettingFontResource(resource,
-				Inkeys::UI::Setting::Design::FontReferenceSize, &config, result)) return false;
-			if (!traditionalChinese) return true;
-			config.MergeMode = true;
-			return AddSettingFontResource(fallback,
-				Inkeys::UI::Setting::Design::FontReferenceSize, &config);
-		};
-	if (!addDesignFace(regularResource, 198U, &ImFontDesignMain)
-		|| !addDesignFace(strongResource, 297U, &ImFontDesignStrong)) return false;
+	if (!addTextFace(locale.regularFont, regularFallbacks, false, &ImFontMain)
+		|| !addTextFace(locale.boldFont, strongFallbacks, false, &ImFontStrong)
+		|| !addTextFace(locale.regularFont, regularFallbacks, true, &ImFontDesignMain)
+		|| !addTextFace(locale.boldFont, strongFallbacks, true, &ImFontDesignStrong)) return false;
 	auto designIconConfig = Inkeys::UI::Setting::Design::IconFontConfig(settingGlobalScale);
 	if (!AddSettingFontResource(257U, Inkeys::UI::Setting::Design::FontReferenceSize,
 		&designIconConfig, &ImFontDesignIcons)) return false;
@@ -2927,11 +2916,10 @@ SettingSessionCoroutine RunSettingSession()
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
 
 					{
-						vector<string> languages{
-							IA(I18nKey.SettingsUI.Language.UI.Language.en_US),
-							IA(I18nKey.SettingsUI.Language.UI.Language.zh_CN),
-							IA(I18nKey.SettingsUI.Language.UI.Language.zh_TW)
-						};
+						vector<string> languages;
+						languages.reserve(Inkeys::Localization::Locales.size());
+						for (const auto& locale : Inkeys::Localization::Locales)
+							languages.emplace_back(Inkeys::Localization::NativeLabel(locale));
 						const int previousLanguage = SelectLanguage;
 						if (Design::ComboRow("##language-ui",
 							IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
@@ -2942,9 +2930,7 @@ SettingSessionCoroutine RunSettingSession()
 						{
 							setlist.selectLanguage = SelectLanguage;
 							WriteSetting();
-							if (SelectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
-							else if (SelectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
-							else I18n::load(1, L"JSON", L"en-US");
+							I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(SelectLanguage).code);
 							QueueConfirmRestart(IW(I18nKey.SettingsUI.Language.UI.Warn));
 						}
 					}
@@ -3915,18 +3901,19 @@ SettingSessionCoroutine RunSettingSession()
 
 					case settingPlugInTabEnum::tabPlugDDB:
 					{
+						const auto& ddb = I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker;
 						renderPluginHeader(
 							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str(),
 							utf16ToUtf8(ddbInteractionSetList.DdbEdition).c_str(),
 							L"https://github.com/Alan-CRL/DesktopDrawpadBlocker");
 						Design::Notice("##ddb-license-notice",
-							"GPLv3 开源插件",
-							"插件仅供学习交流和研究使用，不得用于其他任何用途。\n同类软件悬浮窗拦截助手(DesktopDrawpadBlocker)是依据 GPLv3 许可协议发布的开源软件。\n并在 Github 仓库得到发布：https://github.com/Alan-CRL/DesktopDrawpadBlocker\n我们发布这款程序，希望它有用，但不承诺任何质量保证责任。\n用户在使用该插件时，需自行承担由此产生的后果和影响，使用插件则视为同意此协议。",
+							IA(ddb.LicenseTitle).c_str(),
+							IA(ddb.LicenseDescription).c_str(),
 							ImFluentInfoSeverity_Warning);
 
-						Design::SectionHeader("使用插件");
-						renderToggleCard("##ddb-enable", "启用插件",
-							"默认模式下插件随软件开启和关闭。", "\ue7ba",
+						Design::SectionHeader(IA(ddb.UseSection).c_str());
+						renderToggleCard("##ddb-enable", IA(ddb.EnableTitle).c_str(),
+							IA(ddb.EnableDescription).c_str(), "\ue7ba",
 							Ddb.Enable, [&](bool value)
 							{
 								ddbInteractionSetList.enable = value;
@@ -3942,9 +3929,9 @@ SettingSessionCoroutine RunSettingSession()
 								QueueBusiness(std::move(command));
 							});
 
-						Design::SectionHeader("常规选项");
-						renderToggleCard("##ddb-admin", "以管理员身份启动插件",
-							"切换时需等待插件响应。", "\ue72e",
+						Design::SectionHeader(IA(ddb.GeneralSection).c_str());
+						renderToggleCard("##ddb-admin", IA(ddb.AdministratorTitle).c_str(),
+							IA(ddb.AdministratorDescription).c_str(), "\ue72e",
 							Ddb.RunAsAdmin, [&](bool value)
 							{
 								ddbInteractionSetList.runAsAdmin = value;
@@ -3963,11 +3950,11 @@ SettingSessionCoroutine RunSettingSession()
 										: (ddbInteractionSetList.sleepTime == 10000 ? 4 : 3)));
 							const int previousIntervalIndex = intervalIndex;
 							vector<string> intervals{
-								"短（500ms）", "较短（1s）", "中等（3s）", "较长（5s）", "长（10s）"
+								IA(ddb.IntervalShort), IA(ddb.IntervalMediumShort), IA(ddb.IntervalMedium), IA(ddb.IntervalMediumLong), IA(ddb.IntervalLong)
 							};
 							if (Design::ComboRow("##ddb-interval",
-								"拦截间隔",
-								"更短的间隔可以更快拦截出现的窗口，但会占用更多的CPU资源。", "\ue916",
+								IA(ddb.IntervalTitle).c_str(),
+								IA(ddb.IntervalDescription).c_str(), "\ue916",
 								intervalIndex, intervals)
 								&& previousIntervalIndex != intervalIndex)
 							{
@@ -3981,7 +3968,7 @@ SettingSessionCoroutine RunSettingSession()
 							}
 						}
 
-						Design::SectionHeader("精确控制");
+						Design::SectionHeader(IA(ddb.PrecisionSection).c_str());
 						struct DdbInterceptRow
 						{
 							const char* id;
@@ -3990,44 +3977,48 @@ SettingSessionCoroutine RunSettingSession()
 							bool* value;
 							const char* note = nullptr;
 						};
+						// 数组保存稳定 key，不能保存临时译文的 c_str 指针。
 						const DdbInterceptRow interceptRows[] = {
-							{ "##ddb-seewo3", "希沃白板3 桌面画笔悬浮窗", nullptr,
+							{ "##ddb-seewo3", ddb.Seewo3Title, nullptr,
 								&Ddb.intercept.SeewoWhiteboard3Floating },
-							{ "##ddb-seewo5", "希沃白板5 桌面画笔悬浮窗", nullptr,
+							{ "##ddb-seewo5", ddb.Seewo5Title, nullptr,
 								&Ddb.intercept.SeewoWhiteboard5Floating },
-							{ "##ddb-seewo5c", "希沃轻白板（5C） 桌面画笔悬浮窗", nullptr,
+							{ "##ddb-seewo5c", ddb.Seewo5CTitle, nullptr,
 								&Ddb.intercept.SeewoWhiteboard5CFloating },
-							{ "##ddb-pinco-sidebar", "希沃品课教师端 侧栏悬浮窗", nullptr,
+							{ "##ddb-pinco-sidebar", ddb.PincoSidebarTitle, nullptr,
 								&Ddb.intercept.SeewoPincoSideBarFloating },
-							{ "##ddb-pinco-drawing", "希沃品课教师端 桌面画笔悬浮窗", "包括PPT控件。",
+							{ "##ddb-pinco-drawing", ddb.PincoDrawingTitle, ddb.IncludesPptNote,
 								&Ddb.intercept.SeewoPincoDrawingFloating },
-							{ "##ddb-seewo-ppt", "希沃PPT小工具", nullptr,
+							{ "##ddb-seewo-ppt", ddb.SeewoPptTitle, nullptr,
 								&Ddb.intercept.SeewoPPTFloating },
-							{ "##ddb-iwb-assistant", "希沃课堂助手 PPT小工具", nullptr,
+							{ "##ddb-iwb-assistant", ddb.IwbAssistantTitle, nullptr,
 								&Ddb.intercept.SeewoIwbAssistantFloating },
-							{ "##ddb-yiou", "欧帝白板 桌面画笔悬浮窗", "包括PPT控件。",
+							{ "##ddb-yiou", ddb.YiouTitle, ddb.IncludesPptNote,
 								&Ddb.intercept.YiouBoardFloating },
-							{ "##ddb-aiclass", "AiClass 桌面画笔悬浮窗", nullptr,
+							{ "##ddb-aiclass", ddb.AiClassTitle, nullptr,
 								&Ddb.intercept.AiClassFloating },
-							{ "##ddb-classinx", "ClassIn X 桌面画笔悬浮窗", nullptr,
+							{ "##ddb-classinx", ddb.ClassInXTitle, nullptr,
 								&Ddb.intercept.ClassInXFloating },
-							{ "##ddb-intelligent-class", "天喻教育云互动课堂 桌面画笔悬浮窗", "包括PPT控件。", &Ddb.intercept.IntelligentClassFloating },
-							{ "##ddb-changyan4", "畅言智慧课堂4.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。",
-								&Ddb.intercept.ChangYanFloating, "需要DDB管理员权限。" },
-							{ "##ddb-changyan5", "畅言智慧课堂5.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。",
-								&Ddb.intercept.ChangYan5Floating, "需要DDB管理员权限。" },
-							{ "##ddb-iclass30-sidebar", "C30智能教学 侧栏悬浮窗", "需要DDB管理员权限。", &Ddb.intercept.Iclass30SidebarFloating },
-							{ "##ddb-iclass30-drawing", "C30智能教学 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复，支持窗口追踪。",
-								&Ddb.intercept.Iclass30Floating, "需要DDB管理员权限。" },
-							{ "##ddb-seewo-desktop-sidebar", "希沃桌面 侧栏悬浮窗", "1.0/2.0/2.5/3.0 普教版/高教版 通用",
-								&Ddb.intercept.SeewoDesktopSideBarFloating, "需要DDB管理员权限。" },
-							{ "##ddb-seewo-desktop-drawing", "希沃桌面 桌面画笔悬浮窗", "1.0/2.0/2.5/3.0 普教版/高教版 通用",
-								&Ddb.intercept.SeewoDesktopDrawingFloating, "需要DDB管理员权限。" }
+							{ "##ddb-intelligent-class", ddb.IntelligentClassTitle, ddb.IncludesPptNote, &Ddb.intercept.IntelligentClassFloating },
+							{ "##ddb-changyan4", ddb.ChangYan4Title, ddb.RestoresWhiteboardNote,
+								&Ddb.intercept.ChangYanFloating, ddb.AdministratorNote },
+							{ "##ddb-changyan5", ddb.ChangYan5Title, ddb.RestoresWhiteboardNote,
+								&Ddb.intercept.ChangYan5Floating, ddb.AdministratorNote },
+							{ "##ddb-iclass30-sidebar", ddb.Iclass30SidebarTitle, ddb.AdministratorNote, &Ddb.intercept.Iclass30SidebarFloating },
+							{ "##ddb-iclass30-drawing", ddb.Iclass30DrawingTitle, ddb.WindowTrackingNote,
+								&Ddb.intercept.Iclass30Floating, ddb.AdministratorNote },
+							{ "##ddb-seewo-desktop-sidebar", ddb.SeewoDesktopSidebarTitle, ddb.SeewoDesktopVersionsNote,
+								&Ddb.intercept.SeewoDesktopSideBarFloating, ddb.AdministratorNote },
+							{ "##ddb-seewo-desktop-drawing", ddb.SeewoDesktopDrawingTitle, ddb.SeewoDesktopVersionsNote,
+								&Ddb.intercept.SeewoDesktopDrawingFloating, ddb.AdministratorNote }
 						};
 						bool interceptChanged = false;
 						for (const auto& row : interceptRows)
 						{
-							if (Design::ToggleRow(row.id, row.title, row.description, "\uecaa", *row.value, row.note))
+							const auto title = IA(row.title);
+							const auto description = row.description ? IA(row.description) : string{};
+							const auto note = row.note ? IA(row.note) : string{};
+							if (Design::ToggleRow(row.id, title.c_str(), row.description ? description.c_str() : nullptr, "\uecaa", *row.value, row.note ? note.c_str() : nullptr))
 								interceptChanged = true;
 						}
 						if (interceptChanged)
@@ -4061,7 +4052,8 @@ SettingSessionCoroutine RunSettingSession()
 
 				case settingTabEnum::tabComponent:
 				{
-					Design::PageHeader("组件");
+					const auto& component = I18nKey.SettingsUI.Component;
+					Design::PageHeader(IA(component.N).c_str());
 					auto renderComponentToggle = [&](const char* id, const char* title,
 						const char* description, const char* glyph, bool& value, auto& stored)
 					{
@@ -4078,77 +4070,77 @@ SettingSessionCoroutine RunSettingSession()
 						Design::SectionHeader(title);
 					};
 
-					componentSection("软件");
-					renderComponentToggle("component-explorer", "启动 文件资源管理器", nullptr,
+					componentSection(IA(component.SoftwareSection).c_str());
+					renderComponentToggle("component-explorer", IA(component.ExplorerTitle).c_str(), nullptr,
 						"\ue838", ComponentShortcutButtonApplianceExplorer,
 						setlist.component.shortcutButton.appliance.explorer);
-					renderComponentToggle("component-taskmgr", "启动 任务管理器", nullptr,
+					renderComponentToggle("component-taskmgr", IA(component.TaskManagerTitle).c_str(), nullptr,
 						"\ue9d9", ComponentShortcutButtonApplianceTaskmgr,
 						setlist.component.shortcutButton.appliance.taskmgr);
-					renderComponentToggle("component-control", "启动 控制面板", nullptr,
+					renderComponentToggle("component-control", IA(component.ControlPanelTitle).c_str(), nullptr,
 						"\ue713", ComponentShortcutButtonApplianceControl,
 						setlist.component.shortcutButton.appliance.control);
 
-					componentSection("系统");
-					renderComponentToggle("component-desktop", "显示 桌面", nullptr,
+					componentSection(IA(component.SystemSection).c_str());
+					renderComponentToggle("component-desktop", IA(component.ShowDesktopTitle).c_str(), nullptr,
 						"\ue7f4", ComponentShortcutButtonSystemDesktop,
 						setlist.component.shortcutButton.system.desktop);
-					renderComponentToggle("component-lock", "锁屏", nullptr,
+					renderComponentToggle("component-lock", IA(component.LockScreenTitle).c_str(), nullptr,
 						"\ue72e", ComponentShortcutButtonSystemLockWorkStation,
 						setlist.component.shortcutButton.system.lockWorkStation);
 
-					componentSection("键盘模拟");
-					renderComponentToggle("component-escape", "按下 ESC", nullptr,
+					componentSection(IA(component.KeyboardSection).c_str());
+					renderComponentToggle("component-escape", IA(component.EscapeTitle).c_str(), nullptr,
 						"\ue765", ComponentShortcutButtonKeyboardKeyboardesc,
 						setlist.component.shortcutButton.keyboard.keyboardesc);
-					renderComponentToggle("component-alt-f4", "按下 Alt+F4", nullptr,
+					renderComponentToggle("component-alt-f4", IA(component.AltF4Title).c_str(), nullptr,
 						"\ue765", ComponentShortcutButtonKeyboardKeyboardAltF4,
 						setlist.component.shortcutButton.keyboard.keyboardAltF4);
 
-					componentSection("点名器");
+					componentSection(IA(component.RollCallSection).c_str());
 					renderComponentToggle("component-island-caller-1",
-						"IslandCaller 1 随机点名",
-						"需要安装 ClassIsland 插件 IslandCaller，并需要 ClassIsland 注册 Url 协议。",
+						IA(component.IslandCaller1Title).c_str(),
+						IA(component.IslandCallerRequirement).c_str(),
 						"\ue716", ComponentShortcutButtonRollCallIslandCaller1,
 						setlist.component.shortcutButton.rollCall.IslandCaller1);
 					renderComponentToggle("component-island-caller-2",
-						"IslandCaller 2 单人点名",
-						"需要安装 ClassIsland 插件 IslandCaller，并需要 ClassIsland 注册 Url 协议。",
+						IA(component.IslandCaller2Title).c_str(),
+						IA(component.IslandCallerRequirement).c_str(),
 						"\ue716", ComponentShortcutButtonRollCallIslandCaller2,
 						setlist.component.shortcutButton.rollCall.IslandCaller2);
-					renderComponentToggle("component-sec-random-1", "SecRandom 1 闪抽",
-						"需要 SecRandom 注册 Url 协议。", "\ue716",
+					renderComponentToggle("component-sec-random-1", IA(component.SecRandom1Title).c_str(),
+						IA(component.SecRandomUrlRequirement).c_str(), "\ue716",
 						ComponentShortcutButtonRollCallSecRandom1,
 						setlist.component.shortcutButton.rollCall.SecRandom1);
-					renderComponentToggle("component-sec-random-2", "SecRandom 2 闪抽",
-						"需要 SecRandom 注册 Ipc 协议。", "\ue716",
+					renderComponentToggle("component-sec-random-2", IA(component.SecRandom2Title).c_str(),
+						IA(component.SecRandomIpcRequirement).c_str(), "\ue716",
 						ComponentShortcutButtonRollCallSecRandom2,
 						setlist.component.shortcutButton.rollCall.SecRandom2);
 					renderComponentToggle("component-sec-random-compat",
-						"SecRandom 2 闪抽（兼容）", "需要 SecRandom 注册 Url 协议。", "\ue716",
+						IA(component.SecRandom2CompatTitle).c_str(), IA(component.SecRandomUrlRequirement).c_str(), "\ue716",
 						ComponentShortcutButtonRollCallSecRandom2Compat,
 						setlist.component.shortcutButton.rollCall.SecRandom2Compat);
-					renderComponentToggle("component-name-picker", "NamePicker 随机点名",
-						"需要 NamePicker 注册 Url 协议。", "\ue716",
+					renderComponentToggle("component-name-picker", IA(component.NamePickerTitle).c_str(),
+						IA(component.NamePickerRequirement).c_str(), "\ue716",
 						ComponentShortcutButtonRollCallNamePicker,
 						setlist.component.shortcutButton.rollCall.NamePicker);
 
-					componentSection("ClassIsland 联动");
+					componentSection(IA(component.ClassIslandSection).c_str());
 					Design::Notice("##classisland-protocol-notice",
 						"ClassIsland",
-						"需要在 ClassIsland 应用设置 中注册 Url 导航协议。",
+						IA(component.ClassIslandProtocolNote).c_str(),
 						ImFluentInfoSeverity_Informational);
 					renderComponentToggle("component-classisland-settings",
-						"ClassIsland 应用设置", nullptr, "\ue713",
+						IA(component.ClassIslandSettingsTitle).c_str(), nullptr, "\ue713",
 						ComponentShortcutButtonLinkageClassislandSettings,
 						setlist.component.shortcutButton.linkage.classislandSettings);
 					renderComponentToggle("component-classisland-profile",
-						"ClassIsland 档案编辑", nullptr, "\ue70f",
+						IA(component.ClassIslandProfileTitle).c_str(), nullptr, "\ue70f",
 						ComponentShortcutButtonLinkageClassislandProfile,
 						setlist.component.shortcutButton.linkage.classislandProfile);
 					renderComponentToggle("component-classisland-swap",
-						"ClassIsland 快速换课",
-						"在 ClassIsland 当前没有加载课表时，此组件不起作用。", "\ue70f",
+						IA(component.ClassIslandSwapTitle).c_str(),
+						IA(component.ClassIslandSwapNote).c_str(), "\ue70f",
 						ComponentShortcutButtonLinkageClassislandClassswap,
 						setlist.component.shortcutButton.linkage.classislandClassswap);
 					break;
@@ -4473,7 +4465,7 @@ SettingSessionCoroutine RunSettingSession()
 				}
 				case settingTabEnum::tabExperimental:
 				{
-					Design::PageHeader("实验室");
+					Design::PageHeader(IA(I18nKey.SettingsUI.Experimental.N).c_str());
 					Design::SectionHeader("Inkeys3");
 
 					// 仅迁移入口：沿用动画开关、实时预览与松手/离页保存，不改配置键。
@@ -4533,29 +4525,29 @@ SettingSessionCoroutine RunSettingSession()
 							{ imageWidth, imageWidth * sponsorAspect });
 					}
 					Design::EndCard();
-					Design::RenderSponsorThanks("成功赞助后，可以联系作者将您的昵称和赞助的金额添加到社区名片中以表示感谢。", sponsorWidth);
+					Design::RenderSponsorThanks(IA(I18nKey.SettingsUI.Sponsor.Thanks).c_str(), sponsorWidth);
 					break;
 				}
 				case settingTabEnum::tab9:
 				{
 					Design::PageHeader(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str());
-					Design::SectionHeader("UI3 渲染调试");
-					if (Design::ToggleRow("##experimental-dirty-debug", "脏区调试",
-						"显示 UI3 每帧实际提交的脏区边界。", "\ue90f", Experimental.Inkeys3.DebugMode))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.RenderingSection).c_str());
+					if (Design::ToggleRow("##experimental-dirty-debug", IA(I18nKey.SettingsUI.DebugSoftware.DirtyRegions.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.DirtyRegions.E).c_str(), "\ue90f", Experimental.Inkeys3.DebugMode))
 					{
 						Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable = Experimental.Inkeys3.DebugMode;
 						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
 						QueueConfigWrite();
 					}
 					if (Experimental.Inkeys3.DebugMode
-						&& Design::ToggleRow("##experimental-frame-rate", "显示帧率",
-							"每秒更新上一秒平均帧率和无等待帧率。", "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
+						&& Design::ToggleRow("##experimental-frame-rate", IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.N).c_str(),
+							IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.E).c_str(), "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
 					{
 						Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate = Experimental.Inkeys3.ShowFrameRate;
 						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
 						QueueConfigWrite();
 					}
-					Design::SectionHeader("控制台输出");
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)
 					{
@@ -4714,7 +4706,7 @@ SettingSessionCoroutine RunSettingSession()
 					Design::CopyButton("##copy-canvas-information", IA(I18nKey.Operate.Copy).c_str(), canvasInformation.c_str());
 					ImGui::PopID();
 
-					Design::SectionHeader("显示器与 EDID");
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.DisplayInformation).c_str());
 					std::string edidText = "EDID (Extended Display Identification Data)\n";
 					if (!displaySnapshot)
 					{

@@ -18,6 +18,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "I18n", "I18n", "{01FF294F-F
 		Inkeys\IdtI18nKeys.g.h = Inkeys\IdtI18nKeys.g.h
 		Inkeys\src\i18n\zh-CN.jsonc = Inkeys\src\i18n\zh-CN.jsonc
 		Inkeys\src\i18n\zh-TW.jsonc = Inkeys\src\i18n\zh-TW.jsonc
+		Inkeys\src\i18n\zh-HK.jsonc = Inkeys\src\i18n\zh-HK.jsonc
+		Inkeys\src\i18n\ja-JP.jsonc = Inkeys\src\i18n\ja-JP.jsonc
+		Inkeys\src\i18n\ko-KR.jsonc = Inkeys\src\i18n\ko-KR.jsonc
+		Inkeys\src\i18n\fr-FR.jsonc = Inkeys\src\i18n\fr-FR.jsonc
+		Inkeys\src\i18n\de-DE.jsonc = Inkeys\src\i18n\de-DE.jsonc
+		Inkeys\src\i18n\es-ES.jsonc = Inkeys\src\i18n\es-ES.jsonc
+		Inkeys\src\i18n\pt-BR.jsonc = Inkeys\src\i18n\pt-BR.jsonc
+		Inkeys\src\i18n\ru-RU.jsonc = Inkeys\src\i18n\ru-RU.jsonc
 	EndProjectSection
 EndProject
 Global

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认只修改活动产品路径，保留兼容和平台边界。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"检查生成头/快照一致、连接符及换行例外、旧索引与配置合同。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核验既有Solution ARM64构建、退出码及无窗口证据；不把环境失败当代码错误。"}
+{"file":".trellis/spec/guides/index.md","reason":"交叉审查每项回到真实数据源和消费者验证，避免沿用报告误判。"}
+{"file":".trellis/tasks/11-01-i18n-eight-locales/research/report-audit.md","reason":"逐项核对116项最终结果、已批准地区化保留和品牌规则。"}
+{"file":".trellis/tasks/11-01-i18n-eight-locales/research/locale-pipeline.md","reason":"覆盖十一语言资源/字体/混合列表/实际格式化与显示测量，不以脚本PASS代替类型安全。"}
+{"file":".trellis/tasks/11-01-i18n-eight-locales/research/font-sources.md","reason":"核验字体来源/授权/哈希、静态格式、加载与字形测量。"}

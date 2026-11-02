@@ -81,11 +81,24 @@
 #define IDR_SETTING_ERASER_DEMO_SWEEP    308
 #define IDR_SETTING_ERASER_DEMO_PS       309
 
+#define IDR_ZH_HK                        310
+#define IDR_JA_JP                        311
+#define IDR_KO_KR                        312
+#define IDR_FR_FR                        313
+#define IDR_DE_DE                        314
+#define IDR_ES_ES                        315
+#define IDR_PT_BR                        316
+#define IDR_RU_RU                        317
+#define IDR_NOTO_JP_REGULAR              318
+#define IDR_NOTO_JP_BOLD                 319
+#define IDR_NOTO_KR_REGULAR              320
+#define IDR_NOTO_KR_BOLD                 321
+
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        310
+#define _APS_NEXT_RESOURCE_VALUE        322
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101

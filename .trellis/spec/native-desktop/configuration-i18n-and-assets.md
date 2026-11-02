@@ -305,7 +305,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | 路径 | `【直接确认】`的角色 |
 | --- | --- |
 | `Inkeys/src/i18n/zh-CN.jsonc` | 基准语言 |
-| `Inkeys/src/i18n/zh-TW.jsonc`、`en-US.jsonc` | 其他语言 |
+| `Inkeys/src/i18n/*.jsonc`（除zh-CN） | 当前其他十种语言，脚本自动枚举 |
 | `Scripts/i18n.ps1` | `check`/`sync` 工具 |
 | `Scripts/i18n.zh-CN.snapshot.jsonc` | 基准语言同步快照 |
 | `Inkeys/IdtI18nKeys.g.h` | `sync` 生成的 key header |
@@ -317,8 +317,66 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 `【直接确认】` 本地化连接符允许有意空串：仅当基准节点本身为 `""` 时，目标语言显式 `""` 通过 `sync/check`（例如中文 HeroJoin，英文对应空格）。缺失或非字符串节点、非空基准的空翻译、明确待翻译标记及基准变更仍沿用原校验；不得把所有空翻译一律视为完成。
 
-实验选项的控制台诊断由旧 `SettingsUI/Experimental/ConsoleOutput/TouchArea` 文案键和 `Experimental.Inkeys3.ConsoleOutput.TouchArea` 保存键继续承载；扩大输出内容时只更新三语言可见名称/说明，不改键以保留已有用户选择。
+实验选项的控制台诊断由旧 `SettingsUI/Experimental/ConsoleOutput/TouchArea` 文案键和 `Experimental.Inkeys3.ConsoleOutput.TouchArea` 保存键继续承载；扩大输出内容时只更新全部支持语言的可见名称/说明，不改键以保留已有用户选择。
 
+### 十一语言身份、字体与验证合同（2026-11-02）
+
+#### 1. Scope / Trigger
+
+新增地区语言、改变语言选择/资源/字体、修改带格式参数的译文或处理固定文字槽时适用；当前活动UI包括主栏/更多/组件、设置及DDB详情、白板/分页、MessageBox。原始诊断数据、初始化前故障兜底和已证实不可达旧UI不因资源扩展而恢复或改动。
+
+#### 2. Signatures
+
+- `Inkeys/IdtI18nLocales.h`：`Locales`、`IsValidIndex(int)`、`LocaleForIndex(int)`、`FindLocale(std::wstring_view)`、`IndexForSystemLanguage(LANGID)`、`NativeLabel(const Locale&)`。
+- `I18n::load(1, L"JSON", code)`、`I18n::languageId()`、`I18n::locale()`；元数据包含实际JSON resource、LANGID、Regular/Bold资源及字体族。
+- `BarUIRendering::FitButtonLabelFontSize(content, fontSize, width, height, weight)`；`Word(..., bool fitButtonLabel = false)`默认不变，仅主标签开启；拟合比例同时作用于当前字面与fontCorrection的名义目标。
+- `Setting::Design::TextFontConfig(rasterizerDensity, notoSource, TextFontRole role, notoPrimary)`：共享设置字体profile，区分源字族尺度、主字族基线和Legacy/Design角色。
+- Debug harness入口 `Inkeys.exe --i18n-locales-test`，在配置/单实例/产品UI初始化前返回；另复用 `--bar-eraser-offscreen-test`、`InkeysHeadlessTests.exe --no-window`。
+
+#### 3. Contracts
+
+- 传统 `deploy.json/SelectLanguage` 保持 `0=en-US,1=zh-CN,2=zh-TW`；追加 `3=zh-HK,4=ja-JP,5=ko-KR,6=fr-FR,7=de-DE,8=es-ES,9=pt-BR,10=ru-RU`。不能为下拉排序重排保存索引或迁移到main.json。
+- 未保存选择时精确匹配新增地区，已有ReadSetting偏好优先；新加坡/澳门中文及未覆盖地区保持旧回退。非法值仅本次回退英语；未知嵌入代码加载失败，不能拿中文资源却记录为另一个语言。
+- 列表显示母语名称、语言码及Beta，只有zh-CN不含Beta；通用品牌/新快捷方式zh-CN使用智绘教Inkeys，其余Inkeys，主页既定地区化标题/标语/版权例外保留。社区沿zh-CN→QQ、其余→GitHub分流。
+- 新语言须同时进入JSONC、RC/resource、Locales及必要工程/Solution展示项；脚本自动枚举其他JSONC，无需另加语言白名单。所有叶子完整翻译，不能把品牌/母语菜单/原生软件专名等有意同值误判为漏译。
+- Noto Sans JP/KR采用固定官方来源的静态TrueType Regular/Bold，保留OFL与来源哈希；DWrite资源集合、ImGui普通/粗体/Design脸及MessageBox独立GDI+路径分别验证。主语言字形优先，SC/TC/JP/KR同字重合并仅补缺，保证任何当前语言下的母语列表可读；Noto不套Harmony光学校正。
+- 选择后沿用重启完整生效合同，不新增全程序热切换保证。组件注册保存字符串副本；DDB等跨帧表存稳定key，每帧取文案，不能保存临时`IA(...).c_str()`。
+- 脚本token正则只验证字面/顺序，不能证明std::format语法和参数类型。真实模板测试须使用生产参数类型（含IdtAtomic<int>下载线路、字符串笔宽与浮点指标），绕开生产异常兜底；兼容swprintf消费者另查百分号和固定缓冲边界。
+- 设置Noto Design以1.448×TextOpticalScale（当前约1.40456）、Legacy以1.448/1.213（约1.193735）校准stb的hhea归一化；Harmony Design和Legacy原配置保持。merged字形共用primary的baked.Ascent，因此ExtraSizeScale按source字族，GlyphOffset按primary字族及role，不可分别给fallback套自身基线；图标、名义字号、行框和FontScaleDpi不随此补偿改变。
+- 固定主栏/组件网格不因翻译扩张；短标签可在不误导操作的前提下精炼，必要局部适配必须让生产绘制与测量共用实际字体/几何。SelectClear/ClickThrough仅各自允许0或1个换行，其他资源继续按基准严格检查。
+
+#### 4. Validation & Error Matrix
+
+| 输入/条件 | 必须结果 |
+| --- | --- |
+| 旧0/1/2保存值，新3..10或未保存精确系统地区 | 保持旧值含义，新值/首次匹配选择正确，保存偏好不被系统覆盖 |
+| 非法索引/未知嵌入代码 | 前者内存回退英语；后者load失败且不伪造语言身份 |
+| 资源ID错配 | 根Language、实际查询Language与请求code不符时测试失败 |
+| 内嵌/合并字体缺字或真实槽溢出 | DWrite glyph-run/ImGui glyph及严格边界测试报具体locale/key/尺寸，不以RC条目存在或全局缩字冒作通过 |
+| std::format说明符/类型不合法、兼容printf意外转换 | 真实模板专项失败，不允许靠fallback字符串隐藏异常 |
+| 目标语言处于空串/待译标记 | 除基准自身为空的连接符外，check失败；发布资源不能靠中文fallback代替完整翻译 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：新增语言先登记共享元数据、内嵌资源及实际字体，补齐全部当前key后运行三类无窗口验证。
+- Base：旧配置仍0/1/2，改变显示名称或新增语言不会改写原选择。
+- Bad：只增加下拉或JSONC，让启动上限仍为2；只跑token比较；在测量里使用生产绘制没有的字体/字号；把Pierce伪造成Select标签转换验证不存在的生产路径。
+
+#### 6. Tests Required
+
+十一语JSONC完整性/同序/token/换行；真实EXE资源Language与LANGID/索引/首次地区及Beta；所有活动格式模板的实际类型；DWrite实际glyph-run与37/70DIP槽、菜单/组件/提示；ImGui常规/粗体混合母语列表及窄/宽窗/不同倍率的真实组件、DDB、赞助长文；MessageBox默认按钮及私有字体。按用户要求完整Debug|ARM64 Solution构建后执行，无GUI/Computer Use授权时不声称真实桌面/触控/其他系统已验收。改已有文件时比较检出字节格式（本仓库core.autocrlf=true），不能把Git内部LF误当原工作区换行。
+
+设置字体校准必须以真实字体共同汉字/H/数字的字面上下界和基线验证，并独立保留descender完整性、Noto主→Harmony缺字和Harmony主→Hangul混排基线；旧Noto profile用跨字号聚合负对照，防止仅“不溢出”放过整体过小。位图quad的小字号量化允许相对±10%或绝对≤1设备像素，不把该像素容差随DPI放大；同页真实ImGui离屏对照覆盖100/150/200%，不等同于GUI实机验收。
+
+#### 7. Wrong vs Correct
+
+```cpp
+// Wrong：列表已有新语种，实际加载仍退回英语。
+if (selection == 1) I18n::load(1, L"JSON", L"zh-CN");
+else I18n::load(1, L"JSON", L"en-US");
+// Correct：启动、选择、资源和字体共用稳定语言身份。
+I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(selection).code);
+```
 ### 生成键标识符与 Win32 宏合同
 
 #### 1. Scope / Trigger
