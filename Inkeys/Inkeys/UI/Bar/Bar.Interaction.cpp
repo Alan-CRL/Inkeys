@@ -1708,9 +1708,9 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		}
 	}
 
-	bool SetInteractionPenColor(COLORREF color, bool save = true)
+	bool SetInteractionPenColor(COLORREF color, bool save = true, std::uint64_t revision = 0)
 	{
-		const bool accepted = SetPenColor(color, false);
+		const bool accepted = SetPenColorIfRevision(color, revision ? revision : barPointerModeRevision, false);
 		if (accepted && save) RequestInteractionMemorySave();
 		return accepted;
 	}
@@ -3636,7 +3636,7 @@ public:
 				< 0.000001, "slider-to-fine-dial-retains-real-slider-adjustment");
 			widthSnapshot.StateModeSelect = StateModeSelectEnum::IdtShape;
 			widthSnapshot.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeRectangle1;
-			widthSnapshot.Shape.Rectangle1.widthSelection = { Source::Preset, Preset::Thick, 3.0 };
+			widthSnapshot.Pen.Brush1.widthSelection = { Source::Preset, Preset::Thick, 3.0 };
 			require(IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 2, 1.0,
 				widthSnapshot) && !IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen,
 				1, 1.0, widthSnapshot), "bar-shape-selected-uses-shape-slot");
@@ -3729,10 +3729,9 @@ public:
 						const auto untouched = shape == ShapeModeSelectEnum::IdtShapeRectangle1
 							? explicitSnapshot.Shape.StraightLine1.widthSelection : explicitSnapshot.Shape.Rectangle1.widthSelection;
 						require(GetPenWidthSelection(explicitSnapshot).source == Source::ExplicitDip
-							&& explicitSnapshot.Pen.Brush1.widthSelection.explicitDip == 9.25
-							&& untouched.source == otherSelection.source && untouched.preset == otherSelection.preset
-							&& untouched.explicitDip == otherSelection.explicitDip,
-							"bar-shape-highlight-preserves-independent-slots");
+							&& explicitSnapshot.Pen.Brush1.widthSelection.explicitDip == brushPreset.resolvedWidthDip
+							&& untouched.source == Source::ExplicitDip && untouched.explicitDip == brushPreset.resolvedWidthDip,
+							"bar-shape-highlight-shares-brush-and-all-shapes");
 					}
 				}
 			}
@@ -4764,8 +4763,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			}
 		}
 
+	std::uint64_t colorPickerKeyboardRevision = 0;
 	void ApplyColorPickerPoint(double markerX, double markerY,
-		bool setMemory)
+		bool setMemory, std::uint64_t revision = 0)
 		{
 			if (markerX < 0.0 || markerX > 1.0)
 				markerX = markerX - floor(markerX);
@@ -4779,7 +4779,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			barState.drawAttributeBar.colorPickerMarkerY =
 				static_cast<float>(markerY);
 			barState.drawAttributeBar.colorPickerMarkerVisible = true;
-			SetInteractionPenColor(Inkeys::Color::SetAlphaR(color, 255), setMemory);
+			SetInteractionPenColor(Inkeys::Color::SetAlphaR(color, 255), setMemory, revision);
 		}
 
 	void ProjectCurrentColorPickerPoint()
@@ -4818,12 +4818,14 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				if ((downMask & keyMask) != 0 && nextMask == 0)
 				{
 					// 最后一个移动键抬起才持久化，系统重复按下不会写配置。
-					SetInteractionPenColor(GetPenColor(), true);
+					if (colorPickerKeyboardRevision == StateModeTransitionRevision()) RequestInteractionMemorySave();
 					UpdateRendering();
 				}
 				return;
 			}
 
+			if (!downMask) colorPickerKeyboardRevision = StateModeTransitionRevision();
+			if (colorPickerKeyboardRevision != StateModeTransitionRevision()) return;
 			auto palette = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPalette];
 			if (!palette || palette->w.val <= 0.0 || palette->h.val <= 0.0)
@@ -4848,7 +4850,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			case VK_DOWN: case 'S': markerY += verticalStep; break;
 			default: break;
 			}
-			ApplyColorPickerPoint(markerX, markerY, false);
+			ApplyColorPickerPoint(markerX, markerY, false, colorPickerKeyboardRevision);
 			barState.drawAttributeBar.colorPickerKeyboardDownMask =
 				downMask | keyMask;
 			UpdateRendering();

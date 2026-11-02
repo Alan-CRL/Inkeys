@@ -491,6 +491,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
 		mutable std::mutex whiteboardMutex;
+		Bridge::WhiteboardStyleToken whiteboardStyle;
+		bool whiteboardStylePending = false;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		std::atomic_bool whiteboardLoadPending = false;
@@ -808,7 +810,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto desired = bridge.Snapshot();
 			const auto expected = desired.presentationTarget
 				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget)) : std::nullopt;
-			return workspaceTransitionPending || inputStopping.load(std::memory_order_acquire) ||
+			return whiteboardStylePending || workspaceTransitionPending || inputStopping.load(std::memory_order_acquire) ||
 				input.ConsumerFatal() || CanvasRecoveryBlocksAdmission(recovery,
 					recoveryReportAvailable ? &reportedRecovery : nullptr) ||
 				shortcutSelectionHandoffPending || commandScenePending ||
@@ -884,6 +886,7 @@ namespace Inkeys::Drawing::Draw3
 			if (inputStopping.load(std::memory_order_acquire)) reasons |= 1u;
 			if (commandScenePending) reasons |= 2u;
 			if (workspaceTransitionPending) reasons |= 1024u;
+			if (desired.workspace == Bridge::Workspace::Whiteboard && whiteboardStylePending) reasons |= 2048u;
 			if (input.ConsumerFatal()) reasons |= 256u;
 			if (CanvasRecoveryBlocksAdmission(recovery,
 				recoveryReportAvailable ? &reportedRecovery : nullptr)) reasons |= 512u;
@@ -955,6 +958,7 @@ namespace Inkeys::Drawing::Draw3
 			selectionMode.store(true, std::memory_order_release);
 			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
 			whiteboardLoadPending.store(false, std::memory_order_release);
+			whiteboardStyle = {}; whiteboardStylePending = false;
 			{
 				std::scoped_lock lock(presentationTargetMutex);
 				readyPresentationTarget.reset();
@@ -1201,7 +1205,15 @@ namespace Inkeys::Drawing::Draw3
 		{
 			auto* self = static_cast<Impl*>(context);
 			{
-				std::scoped_lock lock(self->whiteboardMutex);
+				std::scoped_lock lock(self->presentationTargetMutex, self->whiteboardMutex);
+				Bridge::WhiteboardStyleToken token{ self->acceptedStrokes.HostGeneration(), generation, page, theme.backgroundRgb, self->whiteboardStyle.serial };
+				if (!pending && token != self->whiteboardStyle)
+				{
+					// 在回执对外可见前关住新Down；同页主题修改也必须有独立身份。
+					++token.serial;
+					self->whiteboardStyle = token;
+					self->whiteboardStylePending = true;
+				}
 				self->whiteboardTheme = theme;
 				self->whiteboardGeneration = generation;
 				self->whiteboardLoadPending.store(pending, std::memory_order_release);
@@ -1212,10 +1224,6 @@ namespace Inkeys::Drawing::Draw3
 				self->whiteboardContentRevision = contentVersion;
 				self->whiteboardCanUndo = self->canUndo.load(std::memory_order_acquire);
 				self->whiteboardCanRedo = self->canRedo.load(std::memory_order_acquire);
-			}
-			{
-				// 白板冷加载与 PPT、快捷键租约各自关门，恢复只更新基础准入。
-				std::scoped_lock lock(self->presentationTargetMutex);
 				self->RefreshPresentationInputGateLocked();
 			}
 			self->PublishRuntimeRevision();
@@ -1821,6 +1829,12 @@ namespace Inkeys::Drawing::Draw3
 				preferencesChanged = appliedProductRevision != state.revision || appliedTool != state.tool;
 				appliedProductRevision = state.revision;
 				appliedTool = state.tool;
+				// 清本次样式原因不能释放其他工作区/加载/恢复门。
+				if (state.workspace != Bridge::Workspace::Whiteboard)
+					whiteboardStylePending = false;
+				else if (state.whiteboardStyle == whiteboardStyle && state.whiteboardStyle.hostGeneration != 0)
+					whiteboardStylePending = false;
+				RefreshPresentationInputGateLocked();
 			}
 			if (selectionChanged || preferencesChanged) PublishRuntimeRevision();
 		}
@@ -2603,6 +2617,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
 		{
 			std::scoped_lock lock(impl_->whiteboardMutex);
+			snapshot.whiteboardStyle = impl_->whiteboardStyle;
 			snapshot.whiteboardTheme = impl_->whiteboardTheme;
 			snapshot.whiteboardGeneration = impl_->whiteboardGeneration;
 			snapshot.whiteboardLoadPending = impl_->whiteboardLoadPending;
@@ -2621,7 +2636,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				snapshot.currentPageIndex = impl_->whiteboardPageIndex;
 				snapshot.pageCount = impl_->whiteboardPageCount;
-				snapshot.whiteboardTheme = impl_->whiteboardTheme;
+				snapshot.whiteboardStyle = impl_->whiteboardStyle;
+			snapshot.whiteboardTheme = impl_->whiteboardTheme;
 				snapshot.whiteboardGeneration = impl_->whiteboardGeneration;
 				snapshot.whiteboardLoadPending = impl_->whiteboardLoadPending;
 				snapshot.whiteboardUnsaved = impl_->whiteboardUnsaved;
@@ -3147,6 +3163,19 @@ namespace Inkeys::Drawing::Draw3
 			check(state.input.AdmissionBlocked() &&
 				host.SetWorkspaceTransitionPending(restoreEpoch, false, firstRun.hostGeneration) &&
 				!state.input.AdmissionBlocked(), "only matching restore retirement reopens otherwise ready Pen admission");
+			// 实际观察入口、Bridge快照和owner应用确认组成完整无窗口样式门回归。
+			Host::Impl::ObserveWhiteboard(&state, {0xffffff, WhiteboardPattern::Blank}, 41, false, false, 0, 1, false, 0);
+			check(state.whiteboardStylePending && state.input.AdmissionBlocked(), "theme closes Down before business observes it");
+			const auto lightStyle = host.RuntimeSnapshot().whiteboardStyle;
+			Host::Impl::ObserveWhiteboard(&state, {0, WhiteboardPattern::Blank}, 41, false, false, 0, 1, false, 0);
+			whiteboard.whiteboardStyle = lightStyle; host.PublishState(whiteboard); state.PumpBridgeState();
+			check(state.whiteboardStylePending && state.input.AdmissionBlocked(), "same-page old-theme ACK cannot release new style");
+			whiteboard.whiteboardStyle = host.RuntimeSnapshot().whiteboardStyle;
+			state.whiteboardLoadPending.store(true, std::memory_order_release);
+			host.PublishState(whiteboard); state.PumpBridgeState();
+			check(!state.whiteboardStylePending && state.input.AdmissionBlocked(), "style ACK preserves independent cold-load gate");
+			Host::Impl::ObserveWhiteboard(&state, {0, WhiteboardPattern::Blank}, 41, false, false, 0, 1, false, 0);
+			check(!state.whiteboardStylePending && !state.input.AdmissionBlocked(), "same-theme repeat is idempotent after matching application");
 			host.PublishState(desktop); state.PumpBridgeState();
 			Host::Impl::ObserveWorkspace(&state, Bridge::Workspace::Desktop, 0, 1, nullptr);
 			inkShortcut.scope.workspace = Bridge::Workspace::Desktop;

@@ -1079,3 +1079,35 @@ Win11 blur only showed while dragging: accent 0xCC tint plus 80% AppBase left ~4
 ### Status
 
 [OK] **Completed**
+
+
+## Session 160: 共享画笔样式与跨场景颜色粗细
+<!-- trellis-session: v=2 fp=d111c6766a9c5cfa -->
+
+**Date**: 2026-11-02
+**Task**: 共享画笔样式与跨场景颜色粗细
+**Branch**: `bugfix/color`
+
+### Summary
+
+完成Brush三范围颜色、三组全局宽度与荧光激光全局颜色；白板主题token与owner应用ACK同步；数位板R2暂缓等待日志。
+
+### Main Changes
+
+- 共享样式、工作区投影、颜色版本校验和主题后主栏刷新
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug ARM64、四个生产探针、headless --no-window通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 等待高漫M6数位板主栏点击日志，R2输入过滤未改；未commit/push

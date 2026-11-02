@@ -1,0 +1,7 @@
+{"reason":"生产工程边界与无GUI验证规则","file":".trellis/spec/native-desktop/index.md"}
+{"reason":"状态锁、快照、revision与文件格式","file":".trellis/spec/native-desktop/cpp-conventions.md"}
+{"reason":"Selection/Context/持久化合同；独立形状槽由本任务PRD替代","file":".trellis/spec/native-desktop/pen-width.md"}
+{"reason":"工作区交接、页主题和失败边界；宽色隔离由本任务PRD替代","file":".trellis/spec/native-desktop/whiteboard.md"}
+{"reason":"恢复、启动和直接字段消费者","file":".trellis/tasks/11-02-shape-style-tablet-bar/research/state-lifecycle.md"}
+{"reason":"主题权威与翻页/冷加载同步风险","file":".trellis/tasks/11-02-shape-style-tablet-bar/research/style-scope-and-whiteboard-theme.md"}
+{"reason":"最终用户范围优先于历史独立槽和工作区样式隔离建议；含设计执行文件导航","file":".trellis/tasks/11-02-shape-style-tablet-bar/research/final-scope.md"}

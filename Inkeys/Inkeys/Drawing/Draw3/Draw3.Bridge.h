@@ -227,8 +227,19 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		NotRunning
 	};
 
+	struct WhiteboardStyleToken
+	{
+		std::uint64_t hostGeneration = 0;
+		std::uint64_t generation = 0;
+		std::size_t page = 0;
+		std::uint32_t backgroundRgb = 0;
+		std::uint64_t serial = 0; // 同页 A→B→A 仍须拒绝第一份 A 的回执。
+		bool operator==(const WhiteboardStyleToken&) const = default;
+	};
+
 	struct ProductState
 	{
+		WhiteboardStyleToken whiteboardStyle;
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
 		double widthDip = 2.0;
