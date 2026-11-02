@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 156
+- **Total Sessions**: 159
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1723 | Active |
+| `journal-2.md` | ~1791 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 159 | 2026-11-02 | 验收并归档设置字体与语言热切换 | `6a8fd4ea` | `feature/i18n` |
+| 158 | 2026-11-02 | Setting FreeType、动态图集与语言热切换 | - | `feature/i18n` |
 | 156 | 2026-11-02 | 国际化任务验收归档 | `e5f0574e`, `f6194712` | `feature/i18n` |
 | 155 | 2026-11-02 | 日韩Noto设置字体校准完成 | - | `feature/i18n` |
 | 154 | 2026-11-02 | 十一语言国际化扩展与翻译修正完成 | - | `feature/i18n` |

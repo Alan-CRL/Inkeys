@@ -1721,3 +1721,71 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 158: Setting FreeType、动态图集与语言热切换
+<!-- trellis-session: v=2 fp=1a5f5577cebd48df -->
+
+**Date**: 2026-11-02
+**Task**: Setting FreeType、动态图集与语言热切换
+**Branch**: `feature/i18n`
+
+### Summary
+
+完成固定 ImGui 1.92.7 的 SettingUI FreeType/Alpha8+R8、像素基线对齐及全自有界面语言即时刷新；核心自动验证通过，等待用户原生观感验收。
+
+### Main Changes
+
+- FreeType仅用于Setting；Bar/PPT继续DWrite，旧消息框保持快照；移除语言重启提示。
+- 360页面候选均满足可计量稳态预算，真实字号/字重与布局回归通过；更新规范及完整验证报告。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug ARM64最终构建、完整无窗口342.39s、720行页面矩阵、R8像素/回调/失败恢复、33轮字体生命周期、i18n格式与并发快照均通过。
+- [OK] 字体性能ABBA未重现稳定暖态退化；冷初始化成本与额外Bar culled=0诊断明确保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户检查实际设置窗口清晰度、字号字重及语言切换；确认后再按明确授权提交/归档，不自动push。
+
+
+## Session 159: 验收并归档设置字体与语言热切换
+<!-- trellis-session: v=2 fp=90d50e32ad2b9711 -->
+
+**Date**: 2026-11-02
+**Task**: 验收并归档设置字体与语言热切换
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认效果符合预期；仅移除语言即时生效说明的信息图标并保留文字，完成验证、签名提交及任务归档。
+
+### Main Changes
+
+- 主改动6a8fd4ea，任务归档ce95bea8；仅处理当前任务，未push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6a8fd4ea` | feat(settings): improve font rendering and live language switching |
+
+### Testing
+
+- [OK] 最终微调完整Debug ARM64构建40.01s、无窗口设置专项18.18s通过；此前完整功能与360候选页面预算证据保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务completed；额外主栏culling诊断作为独立观察保留在归档报告。
