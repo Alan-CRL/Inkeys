@@ -1698,3 +1698,26 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Next Steps
 
 - 保留未提交改动，用户重新启动新构建试用日/韩；任务继续，不自动归档。
+
+
+## Session 156: 国际化任务验收归档
+<!-- trellis-session: v=2 fp=19a12eb14892cf4c -->
+
+**Date**: 2026-11-02
+**Task**: 国际化任务验收归档
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认字体校准生效，授权结束、归档、提交和Push。已归档i18n-eight-locales；原三语451项对照及Noto校准验证保留在archive/2026-11。修复归档后文档链接，推送feature/i18n。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5f0574e` | feat(i18n): add eight locales and fix translations and layouts |
+| `f6194712` | fix(i18n): calibrate Noto settings typography |
+
+### Status
+
+[OK] **Completed**

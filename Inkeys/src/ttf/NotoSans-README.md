@@ -22,4 +22,4 @@ independent of the application's build dependencies.
 
 The task's `research/build_noto_static.py` reproduces the files;
 `research/noto-font-manifest.json` records source and output SHA-256 hashes, sizes,
-weights and names under `.trellis/tasks/11-01-i18n-eight-locales/`.
+weights and names under `.trellis/tasks/archive/2026-11/11-01-i18n-eight-locales/`.

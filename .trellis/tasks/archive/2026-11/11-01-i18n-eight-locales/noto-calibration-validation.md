@@ -15,9 +15,9 @@
 
 真实ImGui DX11/WARP离屏图（无HWND），五列依次为中文基准、日文校准前/后、韩文校准前/后：
 
-- [100%](../../../Build/setting-fonts/noto-calibration-100.png)
-- [150%](../../../Build/setting-fonts/noto-calibration-150.png)
-- [200%](../../../Build/setting-fonts/noto-calibration-200.png)
+- [100%](../../../../../Build/setting-fonts/noto-calibration-100.png)
+- [150%](../../../../../Build/setting-fonts/noto-calibration-150.png)
+- [200%](../../../../../Build/setting-fonts/noto-calibration-200.png)
 
 图中包含共同字样、混合回退、实际PageHeader/SectionHeader/ToggleRow和Legacy caption字样。所有对照均保留真实400/700字重，未试Harmony日文。
 
