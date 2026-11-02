@@ -122,6 +122,10 @@ constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
 constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
 
 std::atomic_uint BarCanvasDrawingActivityCount = 0;
+// 每次 0→1 落笔递增；窗口线程按序号消费，短笔画在消息到达前结束也不会被丢弃。
+std::atomic_uint64_t BarCanvasDrawingStartSerial{ 0 };
+// 仅 Bar 窗口线程读写。
+std::uint64_t BarCanvasDrawingHandledStartSerial = 0;
 std::atomic_uint64_t BarAutoCollapseNativeDownSerial{ 0 };
 // 消息线程拥有入口按压态，渲染线程只通过只读接口取得缩放目标。
 IdtAtomic<bool> BarColorPickerEntryPressed = false;
@@ -8728,8 +8732,10 @@ void BarUISetClass::HandleBorderCursorGraceTimeout(HWND hWnd)
 void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
 {
 	if (!hWnd || !started) return;
-	if (started && BarCanvasDrawingActivityCount.load(std::memory_order_acquire) == 0)
-		return;
+	// 不以当前 count 复核：Draw3 同帧即可回落到 0，点按/短划的 Started 会被误当作过期。
+	const auto startSerial = BarCanvasDrawingStartSerial.load(std::memory_order_acquire);
+	if (startSerial == BarCanvasDrawingHandledStartSerial) return;
+	BarCanvasDrawingHandledStartSerial = startSerial;
 
 	// 落笔后 Redo 不可用：先清锁存，再收起浮窗，避免收起路径又收成 2×1。
 	ClearRecallForDrawing();
@@ -10146,9 +10152,12 @@ namespace Inkeys::UI::Bar
 	void NotifyCanvasDrawingStarted()
 	{
 		// 只在首个并发笔迹进入时通知窗口线程，避免每个采样或多指笔迹重复切换状态。
-		if (BarCanvasDrawingActivityCount.fetch_add(1, std::memory_order_acq_rel) == 0
-			&& !offSignal && floating_window)
-			PostMessage(floating_window, BarCanvasDrawingActivityMessage, 1, 0);
+		if (BarCanvasDrawingActivityCount.fetch_add(1, std::memory_order_acq_rel) == 0)
+		{
+			BarCanvasDrawingStartSerial.fetch_add(1, std::memory_order_acq_rel);
+			if (!offSignal && floating_window)
+				PostMessage(floating_window, BarCanvasDrawingActivityMessage, 1, 0);
+		}
 	}
 
 	void NotifyCanvasDrawingEnded()
