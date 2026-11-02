@@ -1636,3 +1636,35 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Next Steps
 
 - 当前任务完成，活动指针清除；后续视觉调整另行明确范围。
+
+
+## Session 157: 白板快捷键、分页过渡与动画速率设置收尾
+<!-- trellis-session: v=2 fp=157c4639d2ed8eba -->
+
+**Date**: 2026-11-02
+**Task**: 白板快捷键、分页过渡与动画速率设置收尾
+**Branch**: `bugfix/mode`
+
+### Summary
+
+接续并完成白板快捷键与白板/PPT分页过渡修复，将动画速率移至实验选项，完成无窗口验证和任务归档。
+
+### Main Changes
+
+- 稳定白板恢复快捷键，保留过渡与最小化门禁；分页淡出冻结内容以消除闪烁。
+- 动画速率迁入实验选项，保留配置键、实时预览和松手/离页保存，更新现有布局回归。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f37a527` | fix(ui3): restore whiteboard shortcuts and stabilize page transitions |
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 原生 MSBuild 构建通过；正常权限完整 headless --no-window 退出 0。
+- [OK] 状态生产测试、分页离屏回归、i18n check 与 diff check 均通过；未进行 GUI 测试。
+
+### Status
+
+[OK] **Completed**
