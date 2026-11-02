@@ -4547,6 +4547,17 @@ SettingSessionCoroutine RunSettingSession()
 						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
 						QueueConfigWrite();
 					}
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Section).c_str());
+					// 只发布调试命令；条目和动画由主栏渲染线程独占，计数读取其原子快照。
+					const int statusAction = Design::ButtonGroupRow("##status-indicator-debug",
+						IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.E).c_str(), "\ue946", {
+							{ "add", IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Add), false,
+								Inkeys::UI::Bar::StatusIndicatorCount() >= 25 },
+							{ "remove", IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Remove), false,
+								Inkeys::UI::Bar::DebugStatusIndicatorCount() == 0 } });
+					if (statusAction == 0) Inkeys::UI::Bar::DebugAddRandomStatusIndicator();
+					else if (statusAction == 1) Inkeys::UI::Bar::DebugRemoveStatusIndicator();
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)

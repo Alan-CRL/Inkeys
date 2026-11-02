@@ -1070,6 +1070,14 @@
         "N": "Bildrate anzeigen",
         "E": "Einmal pro Sekunde die durchschnittliche und unbegrenzte Bildrate der vorherigen Sekunde aktualisieren."
       },
+      "StatusIndicator":
+      {
+        "Section": "Statusanzeigen",
+        "N": "Statusanzeigen testen",
+        "E": "Zufällige Testzustände hinzufügen oder entfernen, um Animationen, lange Texte und Fortschrittsringe zu prüfen.",
+        "Add": "Zufälligen Status hinzufügen",
+        "Remove": "Einen Status entfernen"
+      },
       "ConsoleSection": "Konsolenausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",
       "DisplayInformation": "Bildschirme und EDID"

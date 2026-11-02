@@ -12,6 +12,9 @@
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "Bar.StatusIndicator.h"
+#include <deque>
+#include <map>
 #include "Bar.InteractionWorker.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../StartupPlacement.h"
@@ -83,6 +86,56 @@ protected:
 // 前向声明
 class BarUISetClass;
 class BarRenderLoopCoordinator;
+
+// 渲染线程唯一持有模型；交互线程只读已呈现几何并发布命令。
+class BarStatusIndicatorPanel
+{
+public:
+	bool Advance(BarUISetClass&, double dt, double speed, double zoom, bool drawing);
+	void Layout(const Inkeys::UI::Bar::StatusIndicatorLayoutInput&, double zoom);
+	void Draw(BarUIRendering&, ID2D1DeviceContext*, const BarUiSuperellipseClass&, double lightMaterial);
+	void CommitPresented();
+	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled, bool contactPointer, bool* accepted);
+	bool ResetPointerFeedback();
+	std::chrono::steady_clock::time_point PollDeadline(std::chrono::steady_clock::time_point);
+	RECT Bounds() const;
+	RECT OverflowBounds() const;
+	bool Active() const noexcept { return model_.NeedsFrames() || feedbackActive_; }
+	bool Changed() const noexcept { return changed_; }
+	int RunOffscreenTest(BarUISetClass&);
+private:
+	Inkeys::UI::Bar::StatusIndicatorModel model_;
+	Inkeys::UI::Bar::StatusIndicatorLayout layout_;
+	Inkeys::UI::Bar::StatusIndicatorLayoutInput input_;
+	struct Presented
+	{
+	 struct Hit { Inkeys::UI::Bar::StatusIndicatorEntryLayout geometry; bool expanded=false; };
+	 std::vector<Hit> entries;
+	 double zoom=1;
+	};
+	mutable std::mutex presentedMutex_;
+	Presented presented_;
+	Inkeys::UI::Bar::ButtonPointerState pointer_;
+	std::atomic<std::int64_t> deadlineTicks_{0};
+	std::uint64_t hovered_=0,pressed_=0;
+	struct HoverVisual
+	{
+		BarUiPctClass pct{0};BarUiColorClass fill{RGB(127,127,127)};
+		IdtAtomic<BarButtonHoverStageEnum> stage=BarButtonHoverStageEnum::None;
+		bool entered=false;
+	};
+	std::map<std::uint64_t,HoverVisual> hover_;
+	std::map<std::uint64_t,BarUiValueClass> press_;
+	std::array<BarUiSVGClass,7> icons_;
+	std::map<std::uint64_t,BarUiWordClass> words_;
+	std::vector<std::pair<std::uint64_t,double>> simulated_;
+	Microsoft::WRL::ComPtr<ID2D1PathGeometry> ringGeometry_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	std::array<double,3> ringKey_{};
+	unsigned long long deviceGeneration_=0;
+	double zoom_=1,simulatedSampleAt_=0;
+	bool initialized_=false,feedbackActive_=false,changed_=false;
+};
 
 class BarEraserAttributePanel
 {
@@ -450,6 +503,13 @@ enum class BarUISetSvgEnum : int
 	GeometryAttributeBar_StraightLine,
 	GeometryAttributeBar_Rectangle,
 	GeometryAttributeBar_Close,
+	StatusSlideshow,
+	StatusPin,
+	StatusNewVersion,
+	StatusStar,
+	StatusBell,
+	StatusInfo,
+	StatusBolt,
 };
 enum class BarUISetPngEnum : int
 {
@@ -625,6 +685,7 @@ public:
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
+	BarStatusIndicatorPanel statusIndicator;
 	BarRecallAttributePanel recallAttribute;
 	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
 	std::mutex recallChromeMutex;
@@ -1308,6 +1369,19 @@ namespace Inkeys::UI::Bar
 	export void SetThemeMode(int themeMode) noexcept;
 	// 背景百分比 0 表示跟随主题默认；调用方负责先按配置规则归一。
 	export void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept;
+	export using ::Inkeys::UI::Bar::StatusIndicatorKind;
+	export using ::Inkeys::UI::Bar::StatusIndicatorLifetime;
+	export using ::Inkeys::UI::Bar::StatusIndicatorAction;
+	export using ::Inkeys::UI::Bar::StatusIndicatorIcon;
+	export using ::Inkeys::UI::Bar::StatusIndicatorSpec;
+	export void PublishStatusIndicator(const StatusIndicatorSpec&);
+	export void RetireStatusIndicator(std::uint64_t key);
+	export void PublishStatusIndicatorProgress(std::uint64_t key,float progress,bool complete);
+	export void SetStatusIndicatorOptions(bool enable,bool ppt,bool superTop,bool newVersion);
+	export void DebugAddRandomStatusIndicator();
+	export void DebugRemoveStatusIndicator();
+	export std::size_t StatusIndicatorCount() noexcept;
+	export std::size_t DebugStatusIndicatorCount() noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;

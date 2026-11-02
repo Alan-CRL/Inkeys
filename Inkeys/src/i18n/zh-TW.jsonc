@@ -1070,6 +1070,14 @@
         "N": "顯示影格率",
         "E": "每秒更新前一秒的平均影格率與無等待影格率。"
       },
+      "StatusIndicator":
+      {
+        "Section": "狀態指示器",
+        "N": "測試狀態指示器",
+        "E": "新增或刪除隨機測試狀態，檢查動畫、長文字與進度環。",
+        "Add": "新增隨機狀態",
+        "Remove": "刪除一個狀態"
+      },
       "ConsoleSection": "主控台輸出",
       "CanvasInformation": "畫布初始化資訊",
       "DisplayInformation": "顯示器與 EDID"

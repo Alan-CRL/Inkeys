@@ -170,6 +170,7 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <ClCompile Include="auto_collapse_interaction_tests.cpp" />
+    <ClCompile Include="status_indicator_tests.cpp" />
     <ClCompile Include="keyboard_shortcut_config_tests.cpp">
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -236,6 +237,7 @@
   </ItemGroup>
 	<ItemGroup>
 	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
+	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.StatusIndicator.h" />
 	  <ResourceCompile Include="message_box_test.rc" />
 	  <ResourceCompile Include="setting_home_warp_tests.rc">
 	    <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

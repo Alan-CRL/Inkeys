@@ -532,4 +532,5 @@ protected:
 
 	friend class BarUISetClass;
 	friend class BarRenderLoopCoordinator;
+	friend class BarStatusIndicatorPanel;
 };

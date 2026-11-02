@@ -1073,6 +1073,14 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/FrameRate/N";
                 const char* E = "SettingsUI/DebugSoftware/FrameRate/E";
             } FrameRate{};
+            struct Node__SettingsUI__DebugSoftware__StatusIndicator
+            {
+                const char* Section = "SettingsUI/DebugSoftware/StatusIndicator/Section";
+                const char* N = "SettingsUI/DebugSoftware/StatusIndicator/N";
+                const char* E = "SettingsUI/DebugSoftware/StatusIndicator/E";
+                const char* Add = "SettingsUI/DebugSoftware/StatusIndicator/Add";
+                const char* Remove = "SettingsUI/DebugSoftware/StatusIndicator/Remove";
+            } StatusIndicator{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";

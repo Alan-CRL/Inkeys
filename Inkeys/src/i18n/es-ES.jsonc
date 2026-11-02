@@ -1070,6 +1070,14 @@
         "N": "Mostrar frecuencia de fotogramas",
         "E": "Actualizar cada segundo las frecuencias media y sin límite del segundo anterior."
       },
+      "StatusIndicator":
+      {
+        "Section": "Indicadores de estado",
+        "N": "Probar indicadores de estado",
+        "E": "Añade o elimina estados de prueba aleatorios para comprobar las animaciones, los textos largos y los anillos de progreso.",
+        "Add": "Añadir estado aleatorio",
+        "Remove": "Eliminar un estado"
+      },
       "ConsoleSection": "Salida de consola",
       "CanvasInformation": "Información de inicialización del lienzo",
       "DisplayInformation": "Pantallas y EDID"

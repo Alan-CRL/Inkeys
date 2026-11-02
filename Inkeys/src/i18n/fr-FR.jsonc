@@ -1070,6 +1070,14 @@
         "N": "Afficher la fréquence d’images",
         "E": "Mettre à jour chaque seconde les fréquences moyenne et sans limite de la seconde précédente."
       },
+      "StatusIndicator":
+      {
+        "Section": "Indicateurs d’état",
+        "N": "Tester les indicateurs d’état",
+        "E": "Ajoutez ou supprimez des états de test aléatoires pour vérifier les animations, les textes longs et les anneaux de progression.",
+        "Add": "Ajouter un état aléatoire",
+        "Remove": "Supprimer un état"
+      },
       "ConsoleSection": "Sortie console",
       "CanvasInformation": "Informations d’initialisation du canevas",
       "DisplayInformation": "Écrans et EDID"

@@ -1070,6 +1070,14 @@
         "N": "显示帧率",
         "E": "每秒更新上一秒平均帧率和无等待帧率。"
       },
+      "StatusIndicator":
+      {
+        "Section": "状态指示器",
+        "N": "测试状态指示器",
+        "E": "添加或删除随机测试状态，检查动画、长文字与进度环。",
+        "Add": "添加随机状态",
+        "Remove": "删除一个状态"
+      },
       "ConsoleSection": "控制台输出",
       "CanvasInformation": "画布初始化信息",
       "DisplayInformation": "显示器与 EDID"

@@ -1004,6 +1004,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.StatusIndicator.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RecallChrome.cppm" />
@@ -1224,6 +1225,13 @@
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barAutoEraser.svg" />
+    <None Include="src\UI\barStatusSlideshow.svg" />
+    <None Include="src\UI\barStatusPin.svg" />
+    <None Include="src\UI\barStatusNewVersion.svg" />
+    <None Include="src\UI\barStatusStar.svg" />
+    <None Include="src\UI\barStatusBell.svg" />
+    <None Include="src\UI\barStatusInfo.svg" />
+    <None Include="src\UI\barStatusBolt.svg" />
     <None Include="src\UI\barShapeStraightLine.svg" />
     <None Include="src\UI\barShapeRectangle.svg" />
     <None Include="src\UI\color\colorSun.svg" />

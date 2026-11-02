@@ -2759,3 +2759,53 @@ page-control-only验证纯生产helper499/500/idle/dt0/重启/session/off与原�
 ### 7. Wrong vs Correct
 Wrong：用动画dt数满1秒、沿共享Animated标记让窗口不退场，或借装饰初始化失败修改页面状态。
 Correct：绝对deadline+原worker唤醒，独立视觉需求/本地缓存资源/实际像素和生命周期验证，所有业务门保持。
+
+## 主栏状态指示器发布与呈现合同（2026-11-02，阶段 1–3）
+
+### 1. Scope / Trigger
+UI3 主按钮的状态胶囊、圆形轨道、Fan 展开、指示环/进度环及设置调试入口适用。纯策略在 `Bar.StatusIndicator.h`，生产接线在同名 `.cpp`；正式 PPT/超级置顶/更新源、配置迁移和版本页直达尚属任务后续阶段，不因接口存在而视为接入完成。
+
+### 2. Signatures
+- `PublishStatusIndicator(const StatusIndicatorSpec&)`、`RetireStatusIndicator(uint64_t)`、`PublishStatusIndicatorProgress(uint64_t,float,bool)`、`SetStatusIndicatorOptions(bool,bool,bool,bool)`；均经 Bar Main 分区导出。
+- `DebugAddRandomStatusIndicator()`、`DebugRemoveStatusIndicator()`、`StatusIndicatorCount()`、`DebugStatusIndicatorCount()`；计数为原子快照，删除计数只含未退场的持久调试项。
+- `StatusIndicatorModel::{Advance,NeedsFrames,WakeDeadline}`；`BarStatusIndicatorPanel::{Advance,Layout,Draw,CommitPresented,Pointer,PollDeadline}`。
+
+### 3. Contracts
+- 任意发布线程只把值型命令加入 mutex 队列并唤醒；渲染线程消费命令，独占模型、文本/图标和 D2D 缓存；输入 worker 只读成功呈现的几何快照并发布命令，不直接写模型/设备。
+- 同 key 更新不重放出现；最多 25 项，调试添加必须在 render drain 再核对容量。关闭类型时保留持久注册，重新启用直接以收起态出现；通知不进入常驻轨道。
+- 仅最前展开项计真实 3s，队尾不偷跑计时；动画关闭/速率仅影响过渡。胶囊整体宽度上限为主按钮宽减 4 DIP（80 时为 76），文字为 11 DIP 粗体；测量与绘制使用同一字体，长文在 3s 内滚完。
+- 普通指示环随可读队首，绘制模式隐藏环但保留状态；进度环在下载周期内单调化，完成后 3s 淡出。模拟下载只推进一个进度 owner，不能每帧轮换 key 重置进度。
+- 正常胶囊/圆形夹在不含指示器贡献的 baseBounds；Fan 允许越界，首帧保留完整回弹/选中文本包络并遵守既有 viewport/capacity/dirty 事务，收起尾段清除旧像素。
+- Fan 内注销/过滤/驱逐持久状态时，先冻结旧弧容量与各项槽位并启动收起，归零后再释放；不能先用新数量重算离散角度而瞬移。普通圆形轨道继续使用实时补位弹簧。
+- 指示器和主按钮使用同一 Grip 变换，命中做同源逆映射；只有完整呈现成功才 CommitPresented。hover/press 复用既有按钮曲线、驻留淡出与抬手后等待移动的抑制，笔反馈只在真实接受点发送。
+- NeedsFrames 只为仍在变化/滚动/呼吸的视觉续帧；绝对截止经已有交互 worker 唤醒，不增线程。发布后首帧前就被过滤/收起的项，必须清掉未初始化槽位标记，避免永久续帧。
+
+### 4. Validation & Error Matrix
+| 条件 | 必须结果 |
+| --- | --- |
+| 同 key 发布 / 类型关闭再打开 | 更新字段但不重放；恢复为圆形 |
+| 首帧前过滤或点击收起 | 动画落定后 NeedsFrames=false，无永久忙循环 |
+| 新圆形加入/旧项删除 | 新右旧左、按收起顺序堆叠，空位动画补齐 |
+| 两条模拟下载重叠 / 线路进度回零 | 单一 owner 正常推进；同周期显示不回退 |
+| Fan 打开/关闭、呈现失败 | 首帧包络足够；旧命中快照保留至成功 |
+| 仅有稳态圆形 | 不持续请求帧，仅等待真实事件或截止 |
+
+### 5. Good / Base / Bad Cases
+- Good：设置页只入队，渲染 owner 在同帧更新布局/dirty，完整成功后发布命中。
+- Base：没有状态时不扩大窗口、不维持动画帧。
+- Bad：设置线程改模型；以布局候选提前确认命中；给多个 key 每帧写单个进度状态；把 snapStack 留在已隐藏条目上。
+
+### 6. Tests Required
+- `status_indicator_tests.cpp` 直接覆盖生产纯模型的去重、过滤、25 上限、队首计时、轨道补位、正常边界/Fan 镜像、滚动、进度、绘制门禁与首帧前取消后的 idle。
+- 完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window`、生产 Bar 离屏专项、11 语言 `i18n.ps1 check`、原编码/EOL 与 `git diff --check`。
+- 鼠标/笔/触摸、真实桌面透明度/光影和动画观感仍需人工验收；离屏通过不能替代设备与 HWND 视觉证据。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：输入线程直接修改渲染模型，候选布局即成为可点击区域。
+model.ClickDocked(key, now);
+presented = candidate;
+// Correct：输入发布值型命令；渲染 owner 推进，完整呈现成功后才确认快照。
+Queue(clickCommand);
+if (completePresentationSucceeded) statusIndicator.CommitPresented();
+```

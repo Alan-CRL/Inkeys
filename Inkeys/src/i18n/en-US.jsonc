@@ -1070,6 +1070,14 @@
         "N": "Show frame rate",
         "E": "Update the previous second’s average and uncapped frame rates once per second."
       },
+      "StatusIndicator":
+      {
+        "Section": "Status indicators",
+        "N": "Test status indicators",
+        "E": "Add or remove random test states to check animations, long text and progress rings.",
+        "Add": "Add random state",
+        "Remove": "Remove one state"
+      },
       "ConsoleSection": "Console output",
       "CanvasInformation": "Canvas initialization information",
       "DisplayInformation": "Displays and EDID"

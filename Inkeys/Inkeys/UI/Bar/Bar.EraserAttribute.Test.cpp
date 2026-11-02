@@ -1077,6 +1077,10 @@ namespace Inkeys::UI::Bar
 		auto root=std::make_shared<BarUiSuperellipseClass>(100,430,BarMainButtonWidthDip,BarMainButtonHeightDip,3.0,
 			BarButtonFrameThicknessDip,GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 		root->enable.Initialization(true);owner.superellipseMap[BarUISetSuperellipseEnum::MainButton]=root;
+		expect(owner.statusIndicator.RunOffscreenTest(owner)==0,"status indicator command/render/presented hit/Fan/progress production paths");
+		std::filesystem::create_directories(L"Build/eraser-b/status-indicator");
+		expect(SUCCEEDED(SaveEraserTestPng(owner.spec.GetDeviceContext(),owner.spec.GetTargetBitmap(),
+			L"Build/eraser-b/status-indicator/fan.png")),"status indicator Fan PNG");
 		auto main=std::make_shared<BarUiShapeClass>(230,0,BarDefaultMainBarLayoutWidthDip,BarMainBarHeightDip,
 			BarMainBarCornerRadiusDip,BarMainBarCornerRadiusDip,BarButtonFrameThicknessDip,
 			GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
