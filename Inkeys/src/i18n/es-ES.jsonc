@@ -332,8 +332,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "El cambio de idioma requiere reiniciar para aplicarse por completo. ¿Reiniciar Inkeys ahora?",
-        "SelectNote": "Reinicia Inkeys para aplicar por completo el cambio de idioma."
+        "Warn": "El cambio de idioma se aplica de inmediato. No es necesario reiniciar.",
+        "SelectNote": "Se aplica de inmediato, sin reiniciar."
       }
     },
     "Configuration":

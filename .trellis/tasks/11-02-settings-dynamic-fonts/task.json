@@ -1,0 +1,30 @@
+{
+  "id": "settings-dynamic-fonts",
+  "name": "settings-dynamic-fonts",
+  "title": "设置字体清晰度与语言即时切换",
+  "description": "基于固定 ImGui 1.92.7 规划 FreeType 与动态字体渲染，在保持字号字重排版的同时改善清晰度、控制内存与性能，并支持无重启语言及字体切换",
+  "status": "in_progress",
+  "dev_type": "native-desktop",
+  "scope": "settings-fonts-and-live-i18n",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "feature/i18n",
+  "base_branch": "feature/i18n",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-02用户确认效果符合预期，语言说明只去掉i图标并保留文字；最终小改动审查、完整Debug ARM64增量构建40.01s和设置专项18.18s通过。用户授权提交并结束归档本任务，未授权push；额外Bar culling观察已披露。",
+  "meta": {
+    "implementation_complete": true,
+    "automated_validation": "core_passed_with_separate_bar_benchmark_observation",
+    "user_accepted": true
+  }
+}

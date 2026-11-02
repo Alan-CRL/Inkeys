@@ -332,8 +332,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "語言變更需要重新啟動 Inkeys 才能完全生效。是否立即重新啟動？",
-        "SelectNote": "重新啟動軟體後完全生效。"
+        "Warn": "語言變更立即生效，無需重新啟動 Inkeys。",
+        "SelectNote": "立即生效，無需重新啟動。"
       }
     },
     "Configuration":

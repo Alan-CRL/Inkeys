@@ -345,6 +345,7 @@ BARADD                  UI                      "src\\UI\\barAdd.svg"
 //
 
 IDR_SHADERS1            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Assets\\ImGui\\imgui_ps.cso"
+IDR_SETTING_IMGUI_ALPHA_PS            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Assets\\ImGui\\imgui_alpha_ps.cso"
 
 IDR_SETTING_ERASER_DEMO_PS            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Assets\\ImGui\\imgui_eraser_demo_ps.cso"
 

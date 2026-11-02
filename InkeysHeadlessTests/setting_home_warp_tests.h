@@ -10,4 +10,6 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons);
 
 // 独立 ImGui 上下文、首次 CPU atlas 模拟前使用；真实 DX11/WARP，无 HWND。
 int SaveSettingFontComparison(const std::filesystem::path& path, float scale,
-    const std::function<void()>& draw);
+    const std::function<void()>& draw, int warmFrames = 3,
+    const std::function<void()>& afterSubmit = {},
+    const std::function<bool()>& stopAfterSubmit = {});

@@ -228,19 +228,19 @@ namespace Inkeys::UI::Setting::Design
 	{
 		float InfoTextInset(ImFluentTextStyle style) { return Pixels(Metrics(style).lineHeight + 6.0F); }
 
-		float InfoTextHeight(const char* text, float widthPixels, ImFluentTextStyle style)
+		float InfoTextHeight(const char* text, float widthPixels, ImFluentTextStyle style, bool showIcon = true)
 		{
 			if (!text || !*text) return 0.0F;
 			return (std::max)(Pixels(Metrics(style).lineHeight),
-				TextHeight(text, (std::max)(1.0F, widthPixels - InfoTextInset(style)), style));
+				TextHeight(text, (std::max)(1.0F, widthPixels - (showIcon ? InfoTextInset(style) : 0.0F)), style));
 		}
 
-		void InfoTextAt(const char* text, ImVec2 position, float widthPixels, ImFluentTextStyle style)
+		void InfoTextAt(const char* text, ImVec2 position, float widthPixels, ImFluentTextStyle style, bool showIcon = true)
 		{
 			if (!text || !*text) return;
 			const auto metrics = Metrics(style);
-			const float slot = Pixels(metrics.lineHeight), inset = InfoTextInset(style);
-			ImFluent::DrawIcon("\uf167", position, { position.x + slot, position.y + slot }, metrics.size, Accent);
+			const float slot = Pixels(metrics.lineHeight), inset = showIcon ? InfoTextInset(style) : 0.0F;
+			if (showIcon) ImFluent::DrawIcon("\uf167", position, { position.x + slot, position.y + slot }, metrics.size, Accent);
 			TextAt(text, { position.x + inset, position.y }, (std::max)(1.0F, widthPixels - inset), style, TextPrimary);
 		}
 	}
@@ -577,7 +577,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
-		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note)
+		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note, bool showNoteIcon)
 	{
 		// 只有普通说明之外的补充才画 i；单独一段前提仍按原说明排版和着色。
 		if ((!description || !*description) && note && *note)
@@ -621,8 +621,8 @@ namespace Inkeys::UI::Setting::Design
 		const float inlineDescriptionHeight = TextHeight(description, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
 		const float descriptionHeight = TextHeight(description,
 			Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
-		const float noteHeight = InfoTextHeight(note, Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
-		const float inlineNoteHeight = InfoTextHeight(note, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
+		const float noteHeight = InfoTextHeight(note, Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption, showNoteIcon);
+		const float inlineNoteHeight = InfoTextHeight(note, Pixels(measure.textWidth), ImFluentTextStyle_Caption, showNoteIcon);
 		const auto row = ResolveRowWithNote(measure, titleHeight / Pixels(1.0F),
 			descriptionHeight / Pixels(1.0F), inlineDescriptionHeight / Pixels(1.0F),
 			noteHeight / Pixels(1.0F), inlineNoteHeight / Pixels(1.0F), tween.value);
@@ -636,7 +636,7 @@ namespace Inkeys::UI::Setting::Design
 		TextAt(description, { origin.x + Pixels(row.description.left), origin.y + Pixels(row.description.top) },
 			Pixels(row.description.Width()), ImFluentTextStyle_Caption, TextSecondary);
 		InfoTextAt(note, { origin.x + Pixels(row.note.left), origin.y + Pixels(row.note.top) },
-			Pixels(row.note.Width()), ImFluentTextStyle_Caption);
+			Pixels(row.note.Width()), ImFluentTextStyle_Caption, showNoteIcon);
 		// PNG 默认保留原色，单色透明图案可由调用方显式指定前景色。
 		if (iconTexture)
 			draw->AddImage(iconTexture,
@@ -1452,14 +1452,14 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items, const char* note)
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note, bool showNoteIcon)
 	{
 		float width = 160.0F;
 		for (const auto& item : items)
 			width = (std::max)(width, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
 		bool changed = false;
 		SettingRow(id, title, description, glyph, (std::min)(320.0F, width), ControlHeight,
-			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note);
+			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note, showNoteIcon);
 		return changed;
 	}
 

@@ -23,6 +23,7 @@ struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11SamplerState;
 struct ID3D11Buffer;
+struct ID3D11PixelShader;
 
 // Follow "Getting Started" link and check examples/ folder to learn about using backends!
 IMGUI_IMPL_API bool     ImGui_ImplDX11_Init(ID3D11Device* device, ID3D11DeviceContext* device_context);
@@ -41,12 +42,13 @@ IMGUI_IMPL_API void     ImGui_ImplDX11_InvalidateDeviceObjects();
 // (Advanced) Use e.g. if you need to precisely control the timing of texture updates (e.g. for staged rendering), by setting ImDrawData::Textures = nullptr to handle this manually.
 IMGUI_IMPL_API void     ImGui_ImplDX11_UpdateTexture(ImTextureData* tex);
 
-#ifdef INKEYS_IMGUI_DX11_TESTING
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
 // 仅无窗口测试可注入一次故障；产品编译不含这些入口或状态。
 enum ImGui_ImplDX11_TestFailure { ImGui_ImplDX11_TestFailure_None, ImGui_ImplDX11_TestFailure_Texture,
-    ImGui_ImplDX11_TestFailure_TextureView, ImGui_ImplDX11_TestFailure_IndexMap };
+    ImGui_ImplDX11_TestFailure_TextureView, ImGui_ImplDX11_TestFailure_IndexMap, ImGui_ImplDX11_TestFailure_TextureConversion, ImGui_ImplDX11_TestFailure_TextureUpdate };
 struct ID3D11Texture2D;
 struct ID3D11ShaderResourceView;
+IMGUI_IMPL_API void ImGui_ImplDX11_TestForceRgbaAlpha(bool force);
 IMGUI_IMPL_API void ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure stage, long result);
 IMGUI_IMPL_API void ImGui_ImplDX11_TestPublishPartialTexture(ImTextureData* tex, ID3D11Texture2D* texture);
 #endif
@@ -61,6 +63,8 @@ struct ImGui_ImplDX11_RenderState
     ID3D11SamplerState*     SamplerLinear;
     ID3D11SamplerState*     SamplerNearest;
     ID3D11Buffer*           VertexConstantBuffer;
+    ID3D11PixelShader*      PixelShader;
+    ID3D11PixelShader*      AlphaPixelShader;
 };
 
 #endif // #ifndef IMGUI_DISABLE

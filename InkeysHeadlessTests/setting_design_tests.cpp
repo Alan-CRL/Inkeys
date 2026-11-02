@@ -2,6 +2,10 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <d3d11.h>
+#include <wrl/client.h>
+#include <unordered_map>
+#include <cstdlib>
 
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Design.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Typography.h"
@@ -807,10 +811,17 @@ namespace
 				<< " scale=" << scale << " bounds=[" << top << ',' << bottom
 				<< "] padding=" << linePadding << " line=" << metrics.lineHeight * scale << '\n';
 		const auto* fullWidth = baked->FindGlyphNoFallback(L'中');
-		// 全角 advance 原为 1 em；小幅光学校准只作用于字面，行框仍保持语义字号。
-		checks.Expect(fullWidth && Near(fullWidth->AdvanceX,
-			size * Design::TextOpticalScale, size * 0.025F),
-			"full-width Chinese advance follows the optical em without double scaling");
+		// stb保留连续advance；FreeType hinting会把advance取整到栅格像素，另含26.6字号请求精度。
+		const bool hinted = ImGui::GetIO().Fonts->FontLoader == ImGuiFreeType::GetFontLoader();
+		const float density = baked->RasterizerDensity * font->Sources[0]->RasterizerDensity;
+		const float advanceTolerance = hinted ? (0.5F + 1.0F / 64.0F) / density : size * 0.025F;
+		const float opticalAdvance = size * Design::TextOpticalScale;
+		const bool matchingAdvance = fullWidth && Near(fullWidth->AdvanceX, opticalAdvance, advanceTolerance);
+		if (!matchingAdvance) std::cerr << "[FontAdvance] face=" << face << " size=" << size << " scale=" << scale
+			<< " expected=" << opticalAdvance << " actual=" << (fullWidth ? fullWidth->AdvanceX : -1)
+			<< " tolerance=" << advanceTolerance << " density=" << density << '\n';
+		checks.Expect(matchingAdvance,
+			"full-width Chinese advance follows the optical em with only loader-specific raster rounding");
 		const auto* capital = baked->FindGlyphNoFallback(L'A');
 		const auto* descender = baked->FindGlyphNoFallback(L'g');
 		checks.Expect(capital && descender && descender->Y1 > capital->Y1,
@@ -5810,7 +5821,7 @@ namespace
 			int selected = 9;
 			Design::ComboRow("##language-ui", IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
 				IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels,
-				IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str());
+				IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str(), false);
 			checks.Expect(selected == 9, "actual eleven-language combo renders without changing saved preference");
 			for (ImFont* font : { regular, strong })
 			{
@@ -5913,6 +5924,15 @@ namespace
 
 namespace
 {
+	// 固定cf4d9120的stb基线；生产FreeType调参不能同步移动负对照。
+	ImFontConfig FrozenStbFontConfig(float scale, bool noto, bool design, bool primaryNoto)
+	{
+		ImFontConfig config; config.OversampleH=config.OversampleV=1;
+		config.FontDataOwnedByAtlas=false; config.RasterizerDensity=scale;
+		config.ExtraSizeScale=noto?(design?1.448F*.97F:1.448F/1.213F):(design?1.213F*.97F:1.0F);
+		config.GlyphOffset.y=30*((design?.025F:0)-(primaryNoto?1160.0F/1448.0F-928.0F/1213.0F:0));
+		return config;
+	}
 	void CheckNotoFontCalibration(Checks& checks, std::array<FontData,9>& sources,
 		const std::filesystem::path& fontDirectory)
 	{
@@ -5935,8 +5955,8 @@ namespace
 				{
 					const bool noto=source>=4;
 					auto config=before
-						? design && !noto ? Design::HarmonyFontConfig(scale) : Design::LegacyFontConfig(scale)
-						: Design::TextFontConfig(scale,noto,design?Design::TextFontRole::Design:Design::TextFontRole::Legacy,primary>=4);
+						? FrozenStbFontConfig(scale,false,design && !noto,false)
+						: FrozenStbFontConfig(scale,noto,design,primary>=4);
 					config.MergeMode=merge;
 					auto* result=ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[source].bytes.data(),
 						static_cast<int>(sources[source].bytes.size()),Design::FontReferenceSize,&config);
@@ -6081,7 +6101,273 @@ namespace
 }
 
 
-int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly)
+namespace
+{
+	struct PageAllocationMeter
+	{
+		std::unordered_map<void*, size_t> sizes;
+		size_t live = 0, peak = 0;
+		void Add(void* p, size_t bytes) { if (p) { sizes.emplace(p, bytes); live += bytes; peak = (std::max)(peak, live); } }
+		void Remove(void* p) { auto it = sizes.find(p); if (it != sizes.end()) { live -= it->second; sizes.erase(it); } }
+	};
+	struct PageAllocationScope
+	{
+		ImGuiMemAllocFunc oldAlloc{}; ImGuiMemFreeFunc oldFree{}; void* oldUser{};
+		PageAllocationMeter imgui, freetype;
+		PageAllocationScope()
+		{
+			ImGui::GetAllocatorFunctions(&oldAlloc, &oldFree, &oldUser);
+			ImGui::SetAllocatorFunctions([](size_t n, void* u) -> void* { auto& a = *static_cast<PageAllocationScope*>(u); void* p = a.oldAlloc(n, a.oldUser); a.imgui.Add(p, n); return p; },
+				[](void* p, void* u) { auto& a = *static_cast<PageAllocationScope*>(u); a.imgui.Remove(p); a.oldFree(p, a.oldUser); }, this);
+			// FreeType独立统计，不再经ImGui allocator，避免重复计数。
+			ImGuiFreeType::SetAllocatorFunctions([](size_t n, void* u) -> void* { void* p = std::malloc(n); static_cast<PageAllocationMeter*>(u)->Add(p,n); return p; },
+				[](void* p, void* u) { static_cast<PageAllocationMeter*>(u)->Remove(p); std::free(p); }, &freetype);
+		}
+		~PageAllocationScope()
+		{
+			ImGuiFreeType::SetAllocatorFunctions([](size_t n, void*) -> void* { return ImGui::MemAlloc(n); }, [](void* p, void*) { ImGui::MemFree(p); }, nullptr);
+			ImGui::SetAllocatorFunctions(oldAlloc, oldFree, oldUser);
+		}
+	};
+	void CheckFreeTypeRealPages(Checks& checks, std::array<FontData,9>& sources,
+		const std::filesystem::path& directory)
+	{
+		const auto output=directory.parent_path().parent_path().parent_path()/"Build/setting-fonts/pages";
+		std::filesystem::create_directories(output);
+		std::ofstream csv(output/"page-metrics.csv");
+		std::unordered_map<std::string,size_t> baselineBytes;
+		FontData legacySymbols{ "icomoon.ttf", {} };
+		std::ifstream symbolStream(directory/legacySymbols.name,std::ios::binary);
+		legacySymbols.bytes.assign(std::istreambuf_iterator<char>(symbolStream),{});
+		checks.Expect(!legacySymbols.bytes.empty(),"load actual legacy merged symbol font");
+		if(legacySymbols.bytes.empty()) return;
+		csv<<"locale,scale,dark,page,loader,cpu_atlas_bytes,gpu_atlas_logical_bytes,glyph_top,glyph_bottom,glyph_advance,body_height,metric_size,metric_missing_glyphs,imgui_live_including_cpu_atlas,ft_live,total_runtime_without_common_sources,actual_warm_frames,stable_samples,fixed_120,boundary24_total,plateau24_matches_final\n";
+		for(const auto& locale:Inkeys::Localization::Locales)
+		for(float scale:{1.0F,1.25F,1.5F,1.875F,2.0F,4.0F})
+		{
+			const std::string code=locale.codeUtf8;
+			char localeFilter[32]{},scaleFilter[32]{};
+			GetEnvironmentVariableA("INKEYS_FONT_PAGE_LOCALE",localeFilter,32);
+			GetEnvironmentVariableA("INKEYS_FONT_PAGE_SCALE",scaleFilter,32);
+			if(localeFilter[0] && code!=localeFilter) continue;
+			if(scaleFilter[0] && std::to_string(static_cast<int>(scale*100))!=scaleFilter) continue;
+			if((scale==1.25F || scale==1.875F || scale==4) && code!="zh-CN" && code!="ja-JP" && code!="ko-KR" && code!="en-US") continue;
+			const int primary=locale.regularFont==IDR_NOTO_JP_REGULAR?4:locale.regularFont==IDR_NOTO_KR_REGULAR?6:locale.regularFont==IDR_TTF3?2:0;
+			for(bool dark:{false,true}) for(bool candidate:{false,true})
+			{
+				PageAllocationScope allocations; ImGuiSession session; auto& io=ImGui::GetIO();
+				if(candidate) { Design::ConfigureFreeTypeAtlas(*io.Fonts);char snap[4]{};GetEnvironmentVariableA("INKEYS_FONT_SNAP_BASELINE",snap,4);if(snap[0]=='1')io.Fonts->FontLoaderFlags|=ImGuiFreeTypeLoaderFlags_SnapAscentToPixelGrid; }
+				ImGui::GetStyle().FontScaleDpi=scale; Design::ApplyPalette(dark);
+				ImFont* faces[4]{};
+				static constexpr ImWchar excluded[]{0xe81e,0xe81e,0};
+				for(int role=0;role<4;++role)
+				{
+					const int weight=role%2; const bool design=role>=2;
+					auto add=[&](int source,bool merge) {
+						auto config=candidate?Design::FreeTypeTextFontConfig(source>=4,design?Design::TextFontRole::Design:Design::TextFontRole::Legacy,primary>=4):FrozenStbFontConfig(scale,source>=4,design,primary>=4);
+						config.MergeMode=merge; config.GlyphExcludeRanges=excluded;
+						return io.Fonts->AddFontFromMemoryTTF(sources[source].bytes.data(),static_cast<int>(sources[source].bytes.size()),30,&config);
+					};
+					faces[role]=add(primary+weight,false);
+					for(int source=weight;source<8;source+=2) if(source!=primary+weight) add(source,true);
+					if(!design)
+					{
+						ImFontConfig merge; merge.OversampleH=merge.OversampleV=1; merge.RasterizerDensity=scale;
+						merge.FontDataOwnedByAtlas=false; merge.PixelSnapH=true; merge.MergeMode=true;
+						merge.FontLoader=ImFontAtlasGetFontLoaderForStbTruetype(); merge.GlyphOffset.y=10;
+						io.Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),static_cast<int>(sources.back().bytes.size()),36,&merge);
+						merge.GlyphOffset.y=4;
+						io.Fonts->AddFontFromMemoryTTF(legacySymbols.bytes.data(),static_cast<int>(legacySymbols.bytes.size()),32,&merge);
+					}
+				}
+				auto iconConfig=Design::IconFontConfig(scale); iconConfig.FontLoader=ImFontAtlasGetFontLoaderForStbTruetype();
+				ImFont* icons=io.Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),static_cast<int>(sources.back().bytes.size()),30,&iconConfig);
+				io.FontDefault=faces[0]; ImFluent::SetIconFont(icons);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Caption,faces[0],12);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body,faces[0],14);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong,faces[1],14);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Subtitle,faces[1],20);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Title,faces[1],28);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_TitleLarge,faces[1],40);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Display,faces[1],68);
+				// 与生产DX11初始化后的动态atlas合同一致，避免独立夹具误走legacy预烘焙。
+				io.Fonts->RendererHasTextures=true;
+				checks.Expect(io.Fonts->Build(),"initialize exact resident four-role atlas before first frame");
+				checks.Expect(io.Fonts->RendererHasTextures,"real page initialization stays on dynamic texture path");
+				checks.Expect(LoadNavigationLabels(directory,locale.codeUtf8),"real page snapshot loads actual locale");
+				for(int page=0;page<4;++page)
+				{
+					Design::NavigationState navigation; navigation.Resize(1000);
+					const auto destination=Design::NormalizeDestination({(page==0 || page==3)?Design::PageId::Language:page==1?Design::PageId::General:Design::PageId::Home});
+					Design::NotifyNavigationDestination(navigation,destination);
+					const auto shell=Design::ResolveShellGeometry(1000,1100,navigation);
+					Design::GeneralDraft draft{}; int frame=0;
+					const int interactionFrames=page==0?44:0, targetFrames=interactionFrames+120;
+					const bool fixed120=(code=="en-US" && scale==1) || (code=="ja-JP" && scale==2);
+					bool stopStable=false; int stableSamples=0; float previousBody=-1;
+					size_t boundary24=0; std::vector<size_t> previousFingerprint,boundaryFingerprint;
+					const int savedSelection=static_cast<int>(&locale-Inkeys::Localization::Locales.data()); int selection=savedSelection;
+					ImGuiID languagePopup=0; ImGuiWindow* popupWindow=nullptr;
+					bool sawPopup=false,sawTop=false,sawBottom=false,sawClosed=false;
+					io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue=false; float measuredTop=0,measuredBottom=0,measuredAdvance=0,measuredBody=0,metricSize=0; int missingMetricGlyphs=0;
+					const auto filename=code+"-"+std::to_string(static_cast<int>(scale*100))+(dark?"-dark":"-light")+"-"+std::to_string(page)+(candidate?"-freetype.png":"-stb.png");
+					checks.failures+=SaveSettingFontComparison(output/filename,scale,[&] {
+						Design::ConfigureRowAnimations(0,false,1);
+						ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
+						ImGui::Begin("##font-real-page",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoMove);
+						// 标题与版本确实绘制Legacy脸；不能只增加未使用的角色来抬高基线预算。
+						Design::BindTextFonts(faces[0],faces[1]);
+						ImFluent::PushFont(ImFluentTextStyle_Caption);
+						const auto title=IA(I18nKey.SettingsUI.N); const char* version="3.0.0-dev.12112";
+						const auto geometry=ResolveTitleBarGeometry(1000*scale,scale,46*scale,ImGui::CalcTextSize(title.c_str()).x,ImGui::CalcTextSize(version).x);
+						const float titleX=geometry.icon.right+TitleBarContentSpacingDip*scale;
+						const ImVec4 clip{titleX,0,geometry.identity.right,geometry.height};
+						ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(),ImGui::GetFontSize(),{titleX,(geometry.height-ImGui::GetFontSize())*.5F},Design::TextPrimary,title.c_str(),nullptr,0,&clip);
+						const auto versionSize=ImGui::CalcTextSize(version);
+						if(geometry.versionVisible) ImGui::GetWindowDrawList()->AddText({geometry.version.left+(geometry.version.Width()-versionSize.x)*.5F,geometry.version.top+(geometry.version.Height()-versionSize.y)*.5F},Design::TextPrimary,version);
+						ImFluent::PopFont();
+						ImGui::PushFont(faces[0],TitleBarCaptionGlyphSizeDip);
+						ImGui::GetWindowDrawList()->AddText({geometry.minimize.left+12*scale,10*scale},Design::TextPrimary,"\xee\xa4\xa1");
+						ImGui::GetWindowDrawList()->AddText({geometry.maximize.left+12*scale,10*scale},Design::TextPrimary,"\xee\xa4\xa2");
+						ImGui::GetWindowDrawList()->AddText({geometry.close.left+12*scale,10*scale},Design::TextPrimary,"\xee\xa2\xbb");
+						ImGui::PopFont();
+						Design::BindTextFonts(faces[2],faces[3]);
+						ImFluent::PushFont(ImFluentTextStyle_Body);
+						ImGui::SetCursorPos({(shell.content.left+24)*scale,64*scale});
+						Design::BeginScrollChild("##font-page-body",{(shell.content.Width()-48)*scale,1000*scale});
+						const float beginY=ImGui::GetCursorScreenPos().y;
+						if(page==0 || page==3)
+						{
+							Design::PageHeader(IA(I18nKey.SettingsUI.Language.N).c_str());
+							Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
+							std::vector<std::string> labels; for(const auto& item:Inkeys::Localization::Locales) labels.emplace_back(Inkeys::Localization::NativeLabel(item));
+							auto* languageHost=ImGui::GetCurrentWindow(); ImGui::PushID("##language");
+							const ImGuiID comboId=ImGui::GetID("##select"); ImGui::PopID();
+							languagePopup=ImHashStr("##fl_cb_popup",0,comboId);
+							Design::ComboRow("##language",IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(),"\ue774",selection,labels,IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str(), false);
+							if(page==0 && frame==2) {
+								ImGui::FocusWindow(languageHost);
+								ImGui::SetNavID(comboId,ImGuiNavLayer_Main,languageHost->NavRootFocusScopeId,ImRect({0,0},{100*scale,32*scale}));
+								GImGui->NavCursorVisible=true;
+							}
+							popupWindow=nullptr;
+							for(const auto& popup:GImGui->OpenPopupStack) if(popup.PopupId==languagePopup && popup.Window && popup.Window->Active) popupWindow=popup.Window;
+							if(popupWindow) { sawPopup=true; sawTop|=popupWindow->Scroll.y<=1; sawBottom|=popupWindow->Scroll.y>=popupWindow->ScrollMax.y-1; }
+							if(sawPopup && !ImGui::IsPopupOpen(languagePopup,ImGuiPopupFlags_AnyPopupLevel)) sawClosed=true;
+							checks.Expect(selection==savedSelection,"opening and scrolling language popup never changes selected language");
+							if(page==0 && frame==44) {
+								const ImFontBaked* baked=nullptr;
+								if(io.Fonts->Builder) for(const auto& entry:io.Fonts->Builder->BakedMap.Data) {
+									const auto* item=static_cast<const ImFontBaked*>(entry.val_p);
+									if(item && !item->WantDestroy && item->OwnerFont==faces[2] && item->Size==ImGui::GetRoundedFontSize(Design::ControlText.size*scale)) { baked=item;break; }
+								}
+								checks.Expect(baked!=nullptr,"popup created actual Control13 bake");
+								for(const auto& label:labels) {
+									const char* cursor=label.c_str(); const char* end=cursor+label.size();
+									while(cursor<end) { unsigned int point=0; int length=ImTextCharFromUtf8(&point,cursor,end); if(length<=0) break; cursor+=length; if(point<=32) continue;
+										bool present=false; if(baked) for(const auto& glyph:baked->Glyphs) if(glyph.Codepoint==point) { present=true; break; }
+										// 只检查已生成Glyphs，不调用FindGlyph触发补字而掩盖未访问列表。
+										checks.Expect(present,"native language popup really rasterized every visible selector character at Control13");
+									}
+								}
+							}
+						}
+						else if(page==1) (void)Design::RenderGeneral(draft,Design::GeneralSection::Basic);
+						else
+						{
+							// 静态主页不传入入场motion，不能在不透明开屏遮罩下错误判定字体已稳定。
+							(void)Design::RenderHome({0,1,"3.0.0",0,0,1},nullptr);
+						}
+						const float bodyHeight=ImGui::GetCursorScreenPos().y-beginY;
+						++frame;
+						{
+							// 只观察真实下拉框已烘焙的Control字形；测量不得扩容字体缓存或改变内存基线。
+							metricSize=ImGui::GetRoundedFontSize(Design::ControlText.size*scale);
+							const ImFontBaked* observed=nullptr;
+							if(io.Fonts->Builder) for(const auto& entry:io.Fonts->Builder->BakedMap.Data)
+							{
+								const auto* candidateBake=static_cast<const ImFontBaked*>(entry.val_p);
+								if(candidateBake && !candidateBake->WantDestroy && candidateBake->OwnerFont==faces[2]
+									&& candidateBake->Size==metricSize) { observed=candidateBake; break; }
+							}
+							float top=FLT_MAX,bottom=-FLT_MAX,advance=0;missingMetricGlyphs=0;
+							for(ImWchar point:{ImWchar('H'),ImWchar('g'),ImWchar(0x4e2d),ImWchar(0xd55c)})
+							{
+								const ImFontGlyph* glyph=nullptr;
+								if(observed) for(const auto& bakedGlyph:observed->Glyphs)
+									if(bakedGlyph.Codepoint==point){glyph=&bakedGlyph;break;}
+								if(!glyph){++missingMetricGlyphs;continue;}
+								top=(std::min)(top,glyph->Y0);bottom=(std::max)(bottom,glyph->Y1);advance+=glyph->AdvanceX;
+							}
+							measuredTop=top==FLT_MAX?0:top;measuredBottom=bottom==-FLT_MAX?0:bottom;
+							measuredAdvance=advance;measuredBody=bodyHeight;
+						}
+						ImGui::EndChild();
+						(void)Design::RenderNavigationPane(shell,navigation,destination);
+						ImFluent::PopFont(); Design::BindTextFonts(faces[0],faces[1]); ImGui::End();
+					},targetFrames,[&] {
+						// 事件通过真实ImGui队列进入下一帧，不直接调用OpenPopup或绘制名字替身。
+						if(page==0) {
+							if(frame==3 || frame==42) io.AddKeyEvent(ImGuiKey_F4,true);
+							if(frame==4 || frame==43) io.AddKeyEvent(ImGuiKey_F4,false);
+							if((frame==8 || frame==24) && popupWindow) {
+								const auto center=popupWindow->InnerRect.GetCenter(); io.AddMousePosEvent(center.x,center.y);
+							}
+							if(frame==10) io.AddMouseWheelEvent(0,-30);
+							if(frame==26) io.AddMouseWheelEvent(0,30);
+							if(frame==44) io.AddMousePosEvent(-100,-100);
+						}
+						checks.Expect(!ImGuiFreeType::HasFontLoadFailure(io.Fonts),"all page submissions reject late fallback font initialization failure");
+						size_t cpu=0,gpu=0; bool texturesReady=true;
+						std::vector<size_t> fingerprint{allocations.imgui.live,allocations.freetype.live,static_cast<size_t>(io.Fonts->Fonts.Size),static_cast<size_t>(io.Fonts->Sources.Size)};
+						for(const auto* texture:io.Fonts->TexList)
+						{
+							texturesReady &= texture->Status==ImTextureStatus_OK || texture->Status==ImTextureStatus_Destroyed;
+							fingerprint.insert(fingerprint.end(),{size_t(texture->Width),size_t(texture->Height),size_t(texture->Status),size_t(texture->Format)});
+							if(texture->Pixels) cpu+=size_t(texture->Width)*texture->Height*texture->BytesPerPixel;
+							if(texture->TexID!=ImTextureID_Invalid)
+							{
+								auto* srv=reinterpret_cast<ID3D11ShaderResourceView*>(texture->TexID);
+								Microsoft::WRL::ComPtr<ID3D11Resource> resource; srv->GetResource(&resource);
+								Microsoft::WRL::ComPtr<ID3D11Texture2D> actual;
+								if(SUCCEEDED(resource.As(&actual))) { D3D11_TEXTURE2D_DESC desc{}; actual->GetDesc(&desc); gpu+=size_t(desc.Width)*desc.Height*(desc.Format==DXGI_FORMAT_R8_UNORM?1:4); }
+							}
+						}
+						const auto total=allocations.imgui.live+allocations.freetype.live+gpu;
+						fingerprint.push_back(gpu);
+						if(io.Fonts->Builder) for(const auto& entry:io.Fonts->Builder->BakedMap.Data) {
+							const auto* baked=static_cast<const ImFontBaked*>(entry.val_p);
+							if(!baked) continue;
+							fingerprint.insert(fingerprint.end(),{reinterpret_cast<size_t>(baked->OwnerFont),size_t(baked->Size*1000),size_t(baked->RasterizerDensity*1000),size_t(baked->Glyphs.Size),size_t(baked->WantDestroy)});
+						}
+						const bool visited=page!=0 || (sawPopup && sawTop && sawBottom && sawClosed && !ImGui::IsPopupOpen(languagePopup,ImGuiPopupFlags_AnyPopupLevel));
+						const int warmFrames=frame-interactionFrames;
+						if(warmFrames>0 && visited && texturesReady && fingerprint==previousFingerprint && measuredBody==previousBody) ++stableSamples;
+						else stableSamples=(warmFrames>0 && visited && texturesReady)?1:0;
+						previousFingerprint=fingerprint; previousBody=measuredBody;
+						if(warmFrames==24) { boundary24=total;boundaryFingerprint=fingerprint; }
+						const bool stable=warmFrames>=24 && stableSamples>=8 && visited && texturesReady;
+						if(frame!=targetFrames && !(stable && !fixed120)) return;
+						stopStable=true;
+						checks.Expect(stable,"actual page reaches eight identical post-submit samples after minimum24 warm frames within120");
+						checks.Expect(visited,"real popup visitation completes before steady page budget");
+						if(page==0) std::cout<<"[LanguagePopupVisit] "<<code<<" scale="<<scale<<" candidate="<<candidate<<" open="<<sawPopup<<" top="<<sawTop<<" bottom="<<sawBottom<<" closed="<<sawClosed<<'\n';
+						if(fixed120) std::cout<<"[PagePlateau24vs120] "<<code<<" scale="<<scale<<" page="<<page<<" candidate="<<candidate<<" total24="<<boundary24<<" total120="<<total<<" fingerprintEqual="<<(boundaryFingerprint==fingerprint)<<'\n';
+						const auto budgetKey=code+std::to_string(scale)+std::to_string(dark)+std::to_string(page);
+						if(!candidate) baselineBytes[budgetKey]=total;
+						else {
+							if(total>baselineBytes.at(budgetKey)) std::cerr<<"[PageFontBudget] "<<budgetKey<<" old="<<baselineBytes.at(budgetKey)<<" new="<<total<<'\n';
+							checks.Expect(total<=baselineBytes.at(budgetKey),"same warmed actual page font runtime memory does not exceed stb baseline");
+						}
+						csv<<code<<','<<scale<<','<<dark<<','<<page<<','<<(candidate?"freetype":"stb")<<','<<cpu<<','<<gpu<<','<<measuredTop<<','<<measuredBottom<<','<<measuredAdvance<<','<<measuredBody<<','<<metricSize<<','<<missingMetricGlyphs<<','<<allocations.imgui.live<<','<<allocations.freetype.live<<','<<total<<','<<warmFrames<<','<<stableSamples<<','<<fixed120<<','<<boundary24<<','<<(boundaryFingerprint==fingerprint)<<'\n'; csv.flush();
+					},[&] {return stopStable;});
+				}
+			}
+		}
+		checks.Expect(LoadNavigationLabels(directory),"real page snapshots restore default locale");
+	}
+}
+int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly, bool fontPagesOnly)
 {
 	Checks checks;
 	CheckSettingOpenNavigation(checks);
@@ -6117,13 +6403,22 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		}
 	}
 
-	if (!eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
+	char warpFilter[4]{};
+	const bool warpOnly=GetEnvironmentVariableA("INKEYS_FONT_WARP_ONLY",warpFilter,4)!=0;
+	char focusedPages[32]{};
+	if(fontPagesOnly || GetEnvironmentVariableA("INKEYS_FONT_PAGE_LOCALE",focusedPages,32))
+	{
+		CheckFreeTypeRealPages(checks,sources,fontDirectory);
+		return checks.failures;
+	}
+	if (!warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
 
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
 		if (generalOnly && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
 		ImGuiSession session;
+		Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
 		ClipboardProbe settingsClipboard;
 		ImGui::GetStyle().FontScaleDpi = scale;
 		ImGui::GetIO().DisplaySize = ImVec2(1440.0F * scale, 1000.0F * scale);
@@ -6131,7 +6426,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		bool loaded = true;
 		for (std::size_t index = 0; index < localeFonts.size(); ++index)
 		{
-			auto config = Design::TextFontConfig(scale,index>=4,Design::TextFontRole::Design,index>=4);
+			auto config = Design::FreeTypeTextFontConfig(index>=4,Design::TextFontRole::Design,index>=4);
 			localeFonts[index] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
 				sources[index].bytes.data(), static_cast<int>(sources[index].bytes.size()), Design::FontReferenceSize, &config);
 			loaded &= localeFonts[index] != nullptr;
@@ -6139,13 +6434,14 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			for (std::size_t fallback = index % 2; fallback < localeFonts.size(); fallback += 2)
 			{
 				if (fallback == index) continue;
-				config = Design::TextFontConfig(scale,fallback>=4,Design::TextFontRole::Design,index>=4);
+				config = Design::FreeTypeTextFontConfig(fallback>=4,Design::TextFontRole::Design,index>=4);
 				config.MergeMode = true;
 				loaded &= ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[fallback].bytes.data(),
 					static_cast<int>(sources[fallback].bytes.size()), Design::FontReferenceSize, &config) != nullptr;
 			}
 		}
 		auto iconConfig = Design::IconFontConfig(scale);
+		iconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
 		ImFont* icons = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),
 			static_cast<int>(sources.back().bytes.size()), Design::FontReferenceSize, &iconConfig);
 		loaded &= icons != nullptr;
@@ -6160,6 +6456,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
+		if(warpOnly) return checks.failures+RunSettingHomeWarpProbe(fonts[0],fonts[1],fonts.back());
 		if (generalOnly)
 		{
 			for (const auto& locale : Inkeys::Localization::Locales)

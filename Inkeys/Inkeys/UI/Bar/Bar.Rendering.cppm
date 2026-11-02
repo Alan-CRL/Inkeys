@@ -106,6 +106,7 @@ public:
 	double FitButtonLabelFontSize(const wstring& content, double fontSize, double width, double height,
 		DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_BOLD);
 	void ConfigureLocalizedTypography();
+	bool RefreshLocalizedTypography();
 	bool UpdateFontRenderingPolicy(bool allowFractional) noexcept;
 	[[nodiscard]] FLOAT ResolveFontSize(ID2D1DeviceContext* context, double fontSize, double nominalTarget = -1.0);
 	[[nodiscard]] FLOAT ResolveWordFontSize(ID2D1DeviceContext* context, const BarUiWordClass& word,
@@ -503,6 +504,7 @@ protected:
 	bool fontTargetTransformReady = false;
 	BarUiAnimationAdvanceContextClass fontFrameContext;
 	BarUiFontCorrectionClass directFontCorrection, fineDialFontCorrection;
+	std::uint64_t localeRevision = 0;
 	wstring fontFamily = L"HarmonyOS Sans SC";
 	wstring textLocale = L"zh-cn";
 	using ButtonLabelFitKey = std::tuple<wstring,double,double,double,unsigned>;

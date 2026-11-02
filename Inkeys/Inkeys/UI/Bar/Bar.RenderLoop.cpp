@@ -13076,6 +13076,84 @@ BarRenderLoopCoordinator::RenderFrame(
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
 	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
+	if (state.spec.RefreshLocalizedTypography())
+	{
+		// 语言只更换文案与度量，不重新初始化交互和业务状态。
+		state.barButtonSet.RefreshLocalizedText();
+		if (auto it = state.wordMap.find(BarUISetWordEnum::BackgroundWarning); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.Errors.TransparentBackgroundWarning));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerG); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerB); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Brush2); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.BrushLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Laser); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.LaserLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Highlight1); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.HighlighterLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Brush1); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.HardPenLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_SoftPen); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.SoftPenLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_PenTypeMenuFreeLine); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.FreeLineLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationLineLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessHoldLockLabel); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::GeometryAttributeBar_StraightLine); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::GeometryAttributeBar_Rectangle); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.GeometryAttributes.RectangleLabel));
+		state.holdLockLabelTextSize =
+			state.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerHoldTextSize =
+			state.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel),
+			12.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterTextSize =
+			state.spec.MeasureText(L"Ag", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterRgbValueSize =
+			state.spec.MeasureText(L"255", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterOpacityValueSize =
+			state.spec.MeasureText(L"100%", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterRLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb]->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterGLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerG]->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterBLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerB]->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterOpacityLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity]
+			->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.annotationPopupTitleText = IW(
+			I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle);
+		state.annotationPopupTitleSize = state.spec.MeasureText(
+			state.annotationPopupTitleText, BarThicknessTooltipTitleFontSize,
+			DWRITE_FONT_WEIGHT_SEMI_BOLD);
+		state.annotationPopupBodySize = state.spec.MeasureText(
+			IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),
+			BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+		state.overflowPopupTitleSize = state.spec.MeasureText(
+			IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),
+			BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+		state.overflowPopupBodySize = state.spec.MeasureText(
+			IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),
+			BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+		state.annotationPopupWidth = ceil(max(
+			state.annotationPopupTitleSize.width, state.annotationPopupBodySize.width))
+			+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
+		state.annotationPopupHeight = ceil(state.annotationPopupTitleSize.height
+			+ BarThicknessTooltipLineGap + state.annotationPopupBodySize.height)
+			+ BarThicknessTooltipPadding * 2.0;
+		state.overflowPopupWidth = ceil(max(
+			state.overflowPopupTitleSize.width, state.overflowPopupBodySize.width))
+			+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
+		state.overflowPopupHeight = ceil(state.overflowPopupTitleSize.height
+			+ BarThicknessTooltipLineGap + state.overflowPopupBodySize.height)
+			+ BarThicknessTooltipPadding * 2.0;
+		state.unclassifiedDamagePending = true;
+		state.presentDecision.RequireVisualRetry();
+	}
 	if (state.spec.UpdateFontRenderingPolicy(
 		Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))
 	{

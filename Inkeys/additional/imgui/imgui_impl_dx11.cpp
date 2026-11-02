@@ -65,6 +65,8 @@ struct ImGui_ImplDX11_Texture
 {
     ID3D11Texture2D*            pTexture;
     ID3D11ShaderResourceView*   pTextureView;
+    ImGui_ImplDX11_Texture*     Next;
+    bool                       AlphaR8;
 };
 
 struct ImGui_ImplDX11_Data
@@ -78,6 +80,10 @@ struct ImGui_ImplDX11_Data
     ID3D11InputLayout*          pInputLayout;
     ID3D11Buffer*               pVertexConstantBuffer;
     ID3D11PixelShader*          pPixelShader;
+    ID3D11PixelShader*          pAlphaPixelShader;
+    ImGui_ImplDX11_Texture*     Textures;
+    bool                       SupportsR8;
+    bool                       ForceRgbaAlpha;
     ID3D11SamplerState*         pTexSamplerLinear;
     ID3D11SamplerState*         pTexSamplerNearest;
     ID3D11RasterizerState*      pRasterizerState;
@@ -86,7 +92,7 @@ struct ImGui_ImplDX11_Data
     int                         VertexBufferSize;
     int                         IndexBufferSize;
     HRESULT                     LastResult;
-#ifdef INKEYS_IMGUI_DX11_TESTING
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
     ImGui_ImplDX11_TestFailure   TestFailure;
     HRESULT                     TestResult;
 #endif
@@ -121,7 +127,7 @@ long ImGui_ImplDX11_GetLastResult()
     return bd ? bd->LastResult : E_FAIL;
 }
 
-#ifdef INKEYS_IMGUI_DX11_TESTING
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
 void ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure stage, long result)
 {
     ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
@@ -147,6 +153,13 @@ void ImGui_ImplDX11_TestPublishPartialTexture(ImTextureData* tex, ID3D11Texture2
 #endif
 
 // Functions
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
+void ImGui_ImplDX11_TestForceRgbaAlpha(bool force)
+{
+    ImGui_ImplDX11_GetBackendData()->ForceRgbaAlpha = force;
+}
+#endif
+
 static void ImGui_ImplDX11_SetupRenderState(const ImDrawData* draw_data, ID3D11DeviceContext* device_ctx)
 {
     ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
@@ -216,7 +229,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     ID3D11DeviceContext* device = bd->pd3dDeviceContext;
     // NewFrame 的资源创建失败时不提交残缺状态，下次 NewFrame 再按原调度重试。
     if (!bd->pVertexShader || !bd->pInputLayout || !bd->pVertexConstantBuffer || !bd->pPixelShader
-        || !bd->pBlendState || !bd->pRasterizerState || !bd->pDepthStencilState
+        || !bd->pAlphaPixelShader || !bd->pBlendState || !bd->pRasterizerState || !bd->pDepthStencilState
         || !bd->pTexSamplerLinear || !bd->pTexSamplerNearest)
     {
         if (FAILED(bd->LastResult) || !ImGui_ImplDX11_CreateDeviceObjects()) return;
@@ -268,7 +281,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     if (!ImGui_ImplDX11_CheckResult(device->Map(bd->pVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &vtx_resource)))
         return;
     HRESULT index_map_result = S_OK;
-#ifdef INKEYS_IMGUI_DX11_TESTING
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
     index_map_result = ImGui_ImplDX11_TestResult(ImGui_ImplDX11_TestFailure_IndexMap);
 #endif
     if (SUCCEEDED(index_map_result)) index_map_result = device->Map(bd->pIB, 0, D3D11_MAP_WRITE_DISCARD, 0, &idx_resource);
@@ -346,8 +359,12 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     render_state.SamplerLinear = bd->pTexSamplerLinear;
     render_state.SamplerNearest = bd->pTexSamplerNearest;
     render_state.VertexConstantBuffer = bd->pVertexConstantBuffer;
+    render_state.PixelShader = bd->pPixelShader;
+    render_state.AlphaPixelShader = bd->pAlphaPixelShader;
     platform_io.Renderer_RenderState = &render_state;
 
+    bool automaticPixelShader = true;
+    ID3D11PixelShader* selectedPixelShader = bd->pPixelShader;
     // Render command lists
     // (Because we merged all buffers into a single one, we maintain our own offset into them)
     int global_idx_offset = 0;
@@ -365,9 +382,21 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
                 // User callback, registered via ImDrawList::AddCallback()
                 // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
                 if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
+                {
                     ImGui_ImplDX11_SetupRenderState(draw_data, device);
+                    automaticPixelShader = true;
+                    selectedPixelShader = bd->pPixelShader;
+                }
                 else
+                {
                     pcmd->UserCallback(draw_list, pcmd);
+                    // 无操作/采样器回调不改变着色策略；只有外部PS接管后才停止自动选择。
+                    ID3D11PixelShader* active = nullptr;
+                    device->PSGetShader(&active, nullptr, nullptr);
+                    automaticPixelShader = active == bd->pPixelShader || active == bd->pAlphaPixelShader;
+                    selectedPixelShader = active;
+                    if (active) active->Release();
+                }
             }
             else
             {
@@ -383,6 +412,15 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
 
                 // Bind texture, Draw
                 ID3D11ShaderResourceView* texture_srv = (ID3D11ShaderResourceView*)pcmd->GetTexID();
+                if (automaticPixelShader)
+                {
+                    // 按SRV身份识别，兼容缓存DrawData只保存裸TexID的路径。
+                    bool alpha = false;
+                    for (auto* owned = bd->Textures; owned; owned = owned->Next)
+                        if (owned->pTextureView == texture_srv) { alpha = owned->AlphaR8; break; }
+                    auto* shader = alpha ? bd->pAlphaPixelShader : bd->pPixelShader;
+                    if (shader != selectedPixelShader) { device->PSSetShader(shader, nullptr, 0); selectedPixelShader = shader; }
+                }
                 device->PSSetShaderResources(0, 1, &texture_srv);
                 device->DrawIndexed(pcmd->ElemCount, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset);
             }
@@ -418,6 +456,9 @@ static void ImGui_ImplDX11_DestroyTexture(ImTextureData* tex)
     {
         IM_ASSERT(backend_tex->pTextureView == (ID3D11ShaderResourceView*)(intptr_t)tex->TexID);
         // 可撤销旧版本遗留的空/半成品资源，重复清理不会重复 Release。
+        auto** link = &ImGui_ImplDX11_GetBackendData()->Textures;
+        while (*link && *link != backend_tex) link = &(*link)->Next;
+        if (*link) *link = backend_tex->Next;
         if (backend_tex->pTextureView) backend_tex->pTextureView->Release();
         if (backend_tex->pTexture) backend_tex->pTexture->Release();
         IM_DELETE(backend_tex);
@@ -429,6 +470,26 @@ static void ImGui_ImplDX11_DestroyTexture(ImTextureData* tex)
     tex->SetStatus(ImTextureStatus_Destroyed);
 }
 
+// 临时展开缓冲允许失败；失败不消费纹理状态，下一帧可重试。
+struct ImGui_ImplDX11_AlphaExpansion
+{
+    ImU32* Data = nullptr;
+    int Size = 0;
+    ~ImGui_ImplDX11_AlphaExpansion() { IM_FREE(Data); }
+    bool resize(int count)
+    {
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
+        if (!ImGui_ImplDX11_CheckResult(ImGui_ImplDX11_TestResult(ImGui_ImplDX11_TestFailure_TextureConversion))) return false;
+#endif
+        Data = static_cast<ImU32*>(IM_ALLOC(size_t(count) * sizeof(ImU32)));
+        if (!Data) return ImGui_ImplDX11_CheckResult(E_OUTOFMEMORY);
+        Size = count;
+        return true;
+    }
+    bool empty() const { return Data == nullptr; }
+    ImU32& operator[](int index) { return Data[index]; }
+};
+
 void ImGui_ImplDX11_UpdateTexture(ImTextureData* tex)
 {
     ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
@@ -438,8 +499,17 @@ void ImGui_ImplDX11_UpdateTexture(ImTextureData* tex)
         // Create and upload new texture to graphics system
         //IMGUI_DEBUG_LOG("UpdateTexture #%03d: WantCreate %dx%d\n", tex->UniqueID, tex->Width, tex->Height);
         IM_ASSERT(tex->TexID == ImTextureID_Invalid && tex->BackendUserData == nullptr);
-        IM_ASSERT(tex->Format == ImTextureFormat_RGBA32);
-        unsigned int* pixels = (unsigned int*)tex->GetPixels();
+        IM_ASSERT(tex->Format == ImTextureFormat_RGBA32 || tex->Format == ImTextureFormat_Alpha8);
+        // 单通道覆盖率直接上传R8；不支持该格式的设备保留RGBA展开回退。
+        const bool alphaR8 = tex->Format == ImTextureFormat_Alpha8 && bd->SupportsR8 && !bd->ForceRgbaAlpha;
+        ImGui_ImplDX11_AlphaExpansion converted;
+        if (tex->Format == ImTextureFormat_Alpha8 && !alphaR8)
+        {
+            if (!converted.resize(tex->Width * tex->Height)) return;
+            const auto* alpha = static_cast<const unsigned char*>(tex->GetPixels());
+            for (int i = 0; i < converted.Size; ++i) converted[i] = 0x00ffffffU | (ImU32(alpha[i]) << 24);
+        }
+        const void* pixels = converted.empty() ? tex->GetPixels() : converted.Data;
         ImGui_ImplDX11_Texture* backend_tex = IM_NEW(ImGui_ImplDX11_Texture)();
 
         // Create texture
@@ -449,17 +519,17 @@ void ImGui_ImplDX11_UpdateTexture(ImTextureData* tex)
         desc.Height = (UINT)tex->Height;
         desc.MipLevels = 1;
         desc.ArraySize = 1;
-        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.Format = alphaR8 ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.SampleDesc.Count = 1;
         desc.Usage = D3D11_USAGE_DEFAULT;
         desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
         desc.CPUAccessFlags = 0;
         D3D11_SUBRESOURCE_DATA subResource;
         subResource.pSysMem = pixels;
-        subResource.SysMemPitch = desc.Width * 4;
+        subResource.SysMemPitch = desc.Width * (alphaR8 ? 1 : 4);
         subResource.SysMemSlicePitch = 0;
         HRESULT result = S_OK;
-#ifdef INKEYS_IMGUI_DX11_TESTING
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
         result = ImGui_ImplDX11_TestResult(ImGui_ImplDX11_TestFailure_Texture);
 #endif
         if (SUCCEEDED(result)) result = bd->pd3dDevice->CreateTexture2D(&desc, &subResource, &backend_tex->pTexture);
@@ -474,11 +544,11 @@ void ImGui_ImplDX11_UpdateTexture(ImTextureData* tex)
         // Create texture view
         D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
         ZeroMemory(&srvDesc, sizeof(srvDesc));
-        srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        srvDesc.Format = desc.Format;
         srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
         srvDesc.Texture2D.MipLevels = desc.MipLevels;
         srvDesc.Texture2D.MostDetailedMip = 0;
-#ifdef INKEYS_IMGUI_DX11_TESTING
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
         result = ImGui_ImplDX11_TestResult(ImGui_ImplDX11_TestFailure_TextureView);
 #endif
         if (SUCCEEDED(result)) result = bd->pd3dDevice->CreateShaderResourceView(backend_tex->pTexture, &srvDesc, &backend_tex->pTextureView);
@@ -491,6 +561,9 @@ void ImGui_ImplDX11_UpdateTexture(ImTextureData* tex)
             return; // SRV 失败也撤销本次 texture，禁止发布半成品。
         }
 
+        backend_tex->AlphaR8 = alphaR8;
+        backend_tex->Next = bd->Textures;
+        bd->Textures = backend_tex;
         // Store identifiers
         tex->SetTexID((ImTextureID)(intptr_t)backend_tex->pTextureView);
         tex->SetStatus(ImTextureStatus_OK);
@@ -508,10 +581,28 @@ void ImGui_ImplDX11_UpdateTexture(ImTextureData* tex)
             return;
         }
         IM_ASSERT(backend_tex->pTextureView == (ID3D11ShaderResourceView*)(intptr_t)tex->TexID);
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
+        if (!ImGui_ImplDX11_CheckResult(ImGui_ImplDX11_TestResult(ImGui_ImplDX11_TestFailure_TextureUpdate))) return;
+#endif
         for (ImTextureRect& r : tex->Updates)
         {
             D3D11_BOX box = { (UINT)r.x, (UINT)r.y, (UINT)0, (UINT)(r.x + r.w), (UINT)(r.y + r .h), (UINT)1 };
-            bd->pd3dDeviceContext->UpdateSubresource(backend_tex->pTexture, 0, &box, tex->GetPixelsAt(r.x, r.y), (UINT)tex->GetPitch(), 0);
+            ImGui_ImplDX11_AlphaExpansion converted;
+            const void* pixels = tex->GetPixelsAt(r.x, r.y);
+            UINT pitch = (UINT)tex->GetPitch();
+            if (tex->Format == ImTextureFormat_Alpha8 && !backend_tex->AlphaR8)
+            {
+                // 只展开本次脏矩形，转换缓冲在提交后释放，不扩大字体稳态内存。
+                if (!converted.resize(r.w * r.h)) return;
+                for (int y = 0; y < r.h; ++y)
+                {
+                    const auto* alpha = static_cast<const unsigned char*>(tex->GetPixelsAt(r.x, r.y + y));
+                    for (int x = 0; x < r.w; ++x) converted[y * r.w + x] = 0x00ffffffU | (ImU32(alpha[x]) << 24);
+                }
+                pixels = converted.Data;
+                pitch = r.w * sizeof(ImU32);
+            }
+            bd->pd3dDeviceContext->UpdateSubresource(backend_tex->pTexture, 0, &box, pixels, pitch, 0);
         }
         // UpdateSubresource 无 HRESULT；确认设备仍有效后才能消费更新请求。
         if (!ImGui_ImplDX11_CheckResult(bd->pd3dDevice->GetDeviceRemovedReason())) return;
@@ -588,6 +679,16 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         ImGui_ImplDX11_InvalidateDeviceObjects();
         return false;
     }
+    const void* alpha_shader_data = nullptr;
+    SIZE_T alpha_shader_size = 0;
+    if (!load_embedded_shader(IDR_SETTING_IMGUI_ALPHA_PS, &alpha_shader_data, &alpha_shader_size))
+    { ImGui_ImplDX11_CheckResult(E_FAIL); ImGui_ImplDX11_InvalidateDeviceObjects(); return false; }
+    if (!ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreatePixelShader(alpha_shader_data, alpha_shader_size, nullptr, &bd->pAlphaPixelShader)))
+    { ImGui_ImplDX11_InvalidateDeviceObjects(); return false; }
+    UINT support = 0;
+    bd->SupportsR8 = SUCCEEDED(bd->pd3dDevice->CheckFormatSupport(DXGI_FORMAT_R8_UNORM, &support))
+        && (support & (D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE))
+        == (D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE);
     // [Inkeys] 自定义结束
 
     // Create the blending setup
@@ -675,6 +776,7 @@ void    ImGui_ImplDX11_InvalidateDeviceObjects()
     if (bd->pBlendState)            { bd->pBlendState->Release(); bd->pBlendState = nullptr; }
     if (bd->pDepthStencilState)     { bd->pDepthStencilState->Release(); bd->pDepthStencilState = nullptr; }
     if (bd->pRasterizerState)       { bd->pRasterizerState->Release(); bd->pRasterizerState = nullptr; }
+    if (bd->pAlphaPixelShader)      { bd->pAlphaPixelShader->Release(); bd->pAlphaPixelShader = nullptr; }
     if (bd->pPixelShader)           { bd->pPixelShader->Release(); bd->pPixelShader = nullptr; }
     if (bd->pVertexConstantBuffer)  { bd->pVertexConstantBuffer->Release(); bd->pVertexConstantBuffer = nullptr; }
     if (bd->pInputLayout)           { bd->pInputLayout->Release(); bd->pInputLayout = nullptr; }

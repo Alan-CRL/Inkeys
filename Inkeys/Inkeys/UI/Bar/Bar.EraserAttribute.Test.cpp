@@ -628,6 +628,25 @@ namespace Inkeys::UI::Bar
 			&& freezeModeButton->size==BarButtonSizeEnum::twoOne
 			&& selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
 			"setting mode updates compact buttons while tool and empty content stay unchanged");
+		// 在工具状态不变时切语言，必须绕过旧styleKey缓存且保留按钮身份。
+		for (const auto& language : Inkeys::Localization::Locales)
+		{
+			expect(I18n::load(1,L"JSON",language.code),"load live language while drawing in separate mode");
+			owner.barButtonSet.RefreshLocalizedText();
+			owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
+			expect(selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel)
+				&& selectModeButton->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+				"active separate-mode label updates without tool change");
+			selectModeButton->name.AdvanceContentTransition(0.1,1.0);
+			expect(selectModeButton->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+				"old text fade cannot resurrect previous language after immediate switch");
+			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
+				&& pierceModeButton->size==BarButtonSizeEnum::twoOne && freezeModeButton->size==BarButtonSizeEnum::twoOne,
+				"live language preserves drawing mode and compact paired buttons");
+			expectStableButtons();
+		}
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"restore locale after live state labels");
+		owner.barButtonSet.RefreshLocalizedText();owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
 		// 复用设置的真实组件同步链；业务 key 不变时不能覆写分离式的有效半高网格。
 		owner.barButtonSet.RegisterBuiltInComponents();
 		const bool savedExplorer=setlist.component.shortcutButton.appliance.explorer;
@@ -1175,7 +1194,12 @@ namespace Inkeys::UI::Bar
 		for(const auto& language:Inkeys::Localization::Locales)
 		{
 			expect(I18n::load(1,L"JSON",language.code),"bar language loads for layout audit");
-			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
+			expect(owner.spec.RefreshLocalizedTypography(),"new locale revision refreshes typography without device recreation");
+			owner.barButtonSet.RefreshLocalizedText();
+			expect(owner.barButtonSet.GetMoreButton()->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.MoreLabel),
+				"production label refresh updates More in place");
+			expect(!owner.spec.RefreshLocalizedTypography(),"consumed locale revision does not invalidate every frame");
+			updateLocalizedPresetLabels();
 			report << "[I18nLayout] " << language.codeUtf8 << '\n';
 			auto reportBounds = [&](const char* key, const wstring& text, double fontSize,
 				D2D1_SIZE_F bounds, double maxWidth, double maxHeight, const char* stage)

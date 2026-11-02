@@ -332,8 +332,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "The language change requires a restart to take full effect. Restart Inkeys now?",
-        "SelectNote": "Restart Inkeys for the language change to take full effect."
+        "Warn": "Language changes apply immediately. No restart is needed.",
+        "SelectNote": "Applies immediately. No restart required."
       }
     },
     "Configuration":

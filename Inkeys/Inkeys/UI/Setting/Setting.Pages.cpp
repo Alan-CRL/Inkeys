@@ -883,12 +883,25 @@ namespace Inkeys::UI::Setting::Design
 	void RenderSponsorThanks(const char* text, float widthPixels)
 	{
 		const float width = (std::max)(1.0F, widthPixels);
-		auto layout = MeasureInline({ { text } }, width, ImFluentTextStyle_Body, true);
 		const auto origin = ImGui::GetCursorScreenPos();
 		ImFluent::PushFont(ImFluentTextStyle_Body);
 		const float size = ImGui::GetFontSize(), lineHeight = Pixels(BodyText.lineHeight);
 		auto* baked = ImGui::GetFontBaked();
 		const float glyphScale = size / baked->Size;
+		// 换行按advance，但真实字图可越过advance；为两端墨迹和居中取整各留半物理像素。
+		float leftOverhang = 0.0F, rightOverhang = 0.0F;
+		const char* scan = text; const char* textEnd = text + std::strlen(text);
+		while (scan < textEnd)
+		{
+			unsigned int point = 0; const int length = ImTextCharFromUtf8(&point, scan, textEnd);
+			if (length <= 0) break;
+			scan += length;
+			const auto* glyph = baked->FindGlyph(static_cast<ImWchar>(point));
+			if (!glyph->Visible) continue;
+			leftOverhang = (std::max)(leftOverhang, -glyph->X0 * glyphScale);
+			rightOverhang = (std::max)(rightOverhang, (glyph->X1 - glyph->AdvanceX) * glyphScale);
+		}
+		auto layout = MeasureInline({ { text } }, (std::max)(1.0F, width - leftOverhang - rightOverhang - 1.0F), ImFluentTextStyle_Body, true);
 		float top = 0.0F, bottom = layout.height;
 		for (auto& fragment : layout.fragments)
 		{

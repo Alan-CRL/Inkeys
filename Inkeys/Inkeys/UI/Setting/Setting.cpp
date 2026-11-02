@@ -23,6 +23,7 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "../../Window/Window.MessageDispatch.h"
 #include "Setting.SessionState.h"
+#include "imgui/misc/freetype/imgui_freetype.h"
 #include "../StartupPlacement.h"
 #include "Setting.Pages.h"
 #include "Setting.HomeEntryCache.h"
@@ -923,6 +924,7 @@ namespace
 		bool flag = false;
 		bool secondaryFlag = false;
 		int showCommand = SW_SHOW;
+		I18n::TextSnapshot dialogText;
 	};
 
 	class SettingBusinessQueue
@@ -1054,13 +1056,11 @@ namespace
 				[[fallthrough]];
 			case SettingBusinessKind::Information:
 			{
-				const auto title = I18n::getWOr(
-					I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
-				const auto okLabel = I18n::getWOr(
-					I18nKey.Dialogs.Common.OK, L"OK");
+				const auto& title = command.dialogText.text[0];
+				const auto& okLabel = command.dialogText.text[1];
 				auto request = Inkeys::UI::MessageBox::MakeOkRequest(
 					title.c_str(), command.text.c_str());
-				request.language = I18n::languageId();
+				request.language = command.dialogText.language;
 				request.cancellation = token;
 				request.labels.ok = okLabel.c_str();
 				request.owner = Inkeys::Window::GetService().Handle(
@@ -1073,15 +1073,12 @@ namespace
 			}
 			case SettingBusinessKind::ConfirmRestart:
 			{
-				const auto title = I18n::getWOr(
-					I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
-				const auto okLabel = I18n::getWOr(
-					I18nKey.Dialogs.Common.OK, L"OK");
-				const auto cancelLabel = I18n::getWOr(
-					I18nKey.Dialogs.Common.Cancel, L"Cancel");
+				const auto& title = command.dialogText.text[0];
+				const auto& okLabel = command.dialogText.text[1];
+				const auto& cancelLabel = command.dialogText.text[2];
 				auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
 					title.c_str(), command.text.c_str());
-				request.language = I18n::languageId();
+				request.language = command.dialogText.language;
 				request.cancellation = token;
 				request.labels.ok = okLabel.c_str();
 				request.labels.cancel = cancelLabel.c_str();
@@ -1228,6 +1225,15 @@ namespace
 
 	void QueueBusiness(SettingBusinessCommand command)
 	{
+		// 同一渲染帧入队的正文与公共文案冻结在一起；worker 不再读取后来的语言。
+		if (command.dialogText.text.size() < 3 && (command.kind == SettingBusinessKind::Information
+			|| command.kind == SettingBusinessKind::ConfirmRestart
+			|| command.kind == SettingBusinessKind::WorkspaceTransitionFailureNotice))
+		{
+			command.dialogText.text = { L"Inkeys Tips", L"OK", L"Cancel" };
+			(void)I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.Common.OK,
+				I18nKey.Dialogs.Common.Cancel }, command.dialogText);
+		}
 		// 在生产者线程冻结配置内容，worker 只消费 owned payload 并执行 I/O。
 		switch (command.kind)
 		{
@@ -1868,66 +1874,9 @@ void SettingWindowBegin()
 	return font != nullptr;
 }
 
-[[nodiscard]] bool RebuildSettingFonts()
+void BindSettingFonts()
 {
 	ImGuiIO& io = ImGui::GetIO();
-	io.Fonts->Clear();
-	ImFontMain = nullptr;
-	ImFontStrong = nullptr;
-	ImFontDesignMain = nullptr;
-	ImFontDesignStrong = nullptr;
-	ImFontDesignIcons = nullptr;
-	ImGui::GetStyle().FontScaleDpi = settingGlobalScale;
-
-	static constexpr ImWchar excludedGlyphs[] = { 0xe81e, 0xe81e, 0 };
-	const auto& locale = I18n::locale();
-	const std::array<UINT, 4> regularFallbacks{
-		IDR_TTF1, IDR_TTF3, IDR_NOTO_JP_REGULAR, IDR_NOTO_KR_REGULAR };
-	const std::array<UINT, 4> strongFallbacks{
-		IDR_TTF7, IDR_TTF8, IDR_NOTO_JP_BOLD, IDR_NOTO_KR_BOLD };
-	auto addTextFace = [&](UINT primaryResource, const auto& fallbacks,
-		bool design, ImFont** result)
-		{
-			const bool notoPrimary = primaryResource == IDR_NOTO_JP_REGULAR || primaryResource == IDR_NOTO_JP_BOLD
-				|| primaryResource == IDR_NOTO_KR_REGULAR || primaryResource == IDR_NOTO_KR_BOLD;
-			auto add = [&](UINT resource, bool merge)
-				{
-					const bool noto = resource == IDR_NOTO_JP_REGULAR || resource == IDR_NOTO_JP_BOLD
-						|| resource == IDR_NOTO_KR_REGULAR || resource == IDR_NOTO_KR_BOLD;
-					using namespace Inkeys::UI::Setting::Design;
-					// 每个合并源按自己的字族和角色校准，旧 Harmony 脸保持原始尺度。
-					auto config = TextFontConfig(settingGlobalScale, noto,
-						design ? TextFontRole::Design : TextFontRole::Legacy, notoPrimary);
-					config.GlyphExcludeRanges = excludedGlyphs;
-					config.MergeMode = merge;
-					return AddSettingFontResource(resource,
-						Inkeys::UI::Setting::Design::FontReferenceSize, &config, merge ? nullptr : result);
-				};
-			if (!add(primaryResource, false)) return false;
-			// 主语言先占字形，其他字库仅补缺；语言页在任何当前语言下都含日/韩母语名。
-			for (const UINT resource : fallbacks)
-				if (resource != primaryResource && !add(resource, true)) return false;
-			if (design) return true;
-
-			ImFontConfig iconConfig;
-			iconConfig.OversampleH = 1;
-			iconConfig.OversampleV = 1;
-			iconConfig.RasterizerDensity = settingGlobalScale;
-			iconConfig.FontDataOwnedByAtlas = false;
-			iconConfig.GlyphOffset.y = 10.0F;
-			iconConfig.PixelSnapH = true;
-			iconConfig.MergeMode = true;
-			if (!AddSettingFontResource(IDR_TTF2, 36.0F, &iconConfig)) return false;
-			iconConfig.GlyphOffset.y = 4.0F;
-			return AddSettingFontResource(IDR_TTF4, 32.0F, &iconConfig);
-		};
-	if (!addTextFace(locale.regularFont, regularFallbacks, false, &ImFontMain)
-		|| !addTextFace(locale.boldFont, strongFallbacks, false, &ImFontStrong)
-		|| !addTextFace(locale.regularFont, regularFallbacks, true, &ImFontDesignMain)
-		|| !addTextFace(locale.boldFont, strongFallbacks, true, &ImFontDesignStrong)) return false;
-	auto designIconConfig = Inkeys::UI::Setting::Design::IconFontConfig(settingGlobalScale);
-	if (!AddSettingFontResource(257U, Inkeys::UI::Setting::Design::FontReferenceSize,
-		&designIconConfig, &ImFontDesignIcons)) return false;
 	ImFluent::SetIconFont(ImFontDesignIcons);
 
 	io.FontDefault = ImFontMain;
@@ -1946,10 +1895,144 @@ void SettingWindowBegin()
 		ImFontStrong, 40.0F);
 	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Display,
 		ImFontStrong, 68.0F);
+}
+
+static int settingPendingLanguage = -1;
+
+[[nodiscard]] bool RebuildSettingFonts(const Inkeys::Localization::Locale& locale = I18n::locale())
+{
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Clear();
+	io.Fonts->SetFontLoader(ImGuiFreeType::GetFontLoader());
+	ImFontMain = nullptr;
+	ImFontStrong = nullptr;
+	ImFontDesignMain = nullptr;
+	ImFontDesignStrong = nullptr;
+	ImFontDesignIcons = nullptr;
+	ImGui::GetStyle().FontScaleDpi = settingGlobalScale;
+
+	static constexpr ImWchar excludedGlyphs[] = { 0xe81e, 0xe81e, 0 };
+	const std::array<UINT, 4> regularFallbacks{
+		IDR_TTF1, IDR_TTF3, IDR_NOTO_JP_REGULAR, IDR_NOTO_KR_REGULAR };
+	const std::array<UINT, 4> strongFallbacks{
+		IDR_TTF7, IDR_TTF8, IDR_NOTO_JP_BOLD, IDR_NOTO_KR_BOLD };
+	auto addTextFace = [&](UINT primaryResource, const auto& fallbacks,
+		bool design, ImFont** result)
+		{
+			const bool notoPrimary = primaryResource == IDR_NOTO_JP_REGULAR || primaryResource == IDR_NOTO_JP_BOLD
+				|| primaryResource == IDR_NOTO_KR_REGULAR || primaryResource == IDR_NOTO_KR_BOLD;
+			auto add = [&](UINT resource, bool merge)
+				{
+					const bool noto = resource == IDR_NOTO_JP_REGULAR || resource == IDR_NOTO_JP_BOLD
+						|| resource == IDR_NOTO_KR_REGULAR || resource == IDR_NOTO_KR_BOLD;
+					using namespace Inkeys::UI::Setting::Design;
+					// 每个合并源按自己的字族和角色校准，旧 Harmony 脸保持原始尺度。
+					auto config = FreeTypeTextFontConfig(noto,
+						design ? TextFontRole::Design : TextFontRole::Legacy, notoPrimary);
+					config.GlyphExcludeRanges = excludedGlyphs;
+					config.MergeMode = merge;
+					return AddSettingFontResource(resource,
+						Inkeys::UI::Setting::Design::FontReferenceSize, &config, merge ? nullptr : result);
+				};
+			if (!add(primaryResource, false)) return false;
+			// 主语言先占字形，其他字库仅补缺；语言页在任何当前语言下都含日/韩母语名。
+			for (const UINT resource : fallbacks)
+				if (resource != primaryResource && !add(resource, true)) return false;
+			if (design) return true;
+
+			ImFontConfig iconConfig;
+			iconConfig.OversampleH = 1;
+			iconConfig.OversampleV = 1;
+			iconConfig.RasterizerDensity = settingGlobalScale;
+			iconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
+			iconConfig.FontDataOwnedByAtlas = false;
+			iconConfig.GlyphOffset.y = 10.0F;
+			iconConfig.PixelSnapH = true;
+			iconConfig.MergeMode = true;
+			if (!AddSettingFontResource(IDR_TTF2, 36.0F, &iconConfig)) return false;
+			iconConfig.GlyphOffset.y = 4.0F;
+			return AddSettingFontResource(IDR_TTF4, 32.0F, &iconConfig);
+		};
+	if (!addTextFace(locale.regularFont, regularFallbacks, false, &ImFontMain)
+		|| !addTextFace(locale.boldFont, strongFallbacks, false, &ImFontStrong)
+		|| !addTextFace(locale.regularFont, regularFallbacks, true, &ImFontDesignMain)
+		|| !addTextFace(locale.boldFont, strongFallbacks, true, &ImFontDesignStrong)) return false;
+	auto designIconConfig = Inkeys::UI::Setting::Design::IconFontConfig(settingGlobalScale);
+	designIconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
+	if (!AddSettingFontResource(257U, Inkeys::UI::Setting::Design::FontReferenceSize,
+		&designIconConfig, &ImFontDesignIcons)) return false;
+	BindSettingFonts();
 	// 先初始化 resident atlas；动态字体的真实字号/字形仍在遮罩下首帧准备。
 	return io.Fonts->Build();
 }
 
+// 所有调用都在帧边界；旧 atlas 的纹理必须先释放，再撤销队列/注册和元数据。
+void DisposeSettingAtlas(ImFontAtlas* atlas)
+{
+    auto& textures = ImGui::GetPlatformIO().Textures;
+    for (auto* texture : atlas->TexList)
+    {
+        if (texture->BackendUserData)
+        {
+            texture->SetStatus(ImTextureStatus_WantDestroy);
+            texture->UnusedFrames = 1;
+            ImGui_ImplDX11_UpdateTexture(texture);
+        }
+        textures.find_erase(texture);
+    }
+    ImGui::UnregisterFontAtlas(atlas);
+    atlas->OwnerContext = nullptr;
+    IM_DELETE(atlas);
+}
+
+[[nodiscard]] bool ReplaceSettingFonts(const Inkeys::Localization::Locale& locale,
+    I18n::PreparedLanguage* language = nullptr)
+{
+    auto& io = ImGui::GetIO();
+    ImFontAtlas* previous = io.Fonts;
+    const std::array<ImFont*, 5> saved{ ImFontMain, ImFontStrong,
+        ImFontDesignMain, ImFontDesignStrong, ImFontDesignIcons };
+    const float previousScale = ImGui::GetStyle().FontScaleDpi;
+    ImFontAtlas* candidate = nullptr;
+    try { candidate = IM_NEW(ImFontAtlas)(); } catch (...) { return false; }
+    candidate->OwnerContext = GImGui;
+    candidate->RendererHasTextures = true;
+    ImGui::RegisterFontAtlas(candidate);
+    io.Fonts = candidate;
+    bool ready = false;
+    try
+    {
+        ready = RebuildSettingFonts(locale);
+        if (ready) ImGui::SetCurrentFont(ImFontMain, 14.0F, 0.0F);
+        if (ready)
+        {
+            for (auto* texture : candidate->TexList)
+            {
+                ImGui_ImplDX11_UpdateTexture(texture);
+                if (texture->Status != ImTextureStatus_OK) { ready = false; break; }
+            }
+        }
+        if (ready) ready = !ImGuiFreeType::HasFontLoadFailure(candidate);
+        if (ready && language) ready = I18n::commit(std::move(*language));
+    }
+    catch (...) { ready = false; }
+    if (!ready)
+    {
+        io.Fonts = previous;
+        ImFontMain = saved[0]; ImFontStrong = saved[1];
+        ImFontDesignMain = saved[2]; ImFontDesignStrong = saved[3]; ImFontDesignIcons = saved[4];
+        ImGui::GetStyle().FontScaleDpi = previousScale;
+        BindSettingFonts();
+        ImGui::SetCurrentFont(ImFontMain, 14.0F, 0.0F);
+        DisposeSettingAtlas(candidate);
+        return false;
+    }
+    // 当前帧尚未 NewFrame，撤销上一帧图集引用；窗口/导航状态保持原 context。
+    DisposeSettingAtlas(previous);
+    settingHomeEntryCache.Reset();
+    settingFrameSubmission.Reset();
+    return true;
+}
 SettingSessionCoroutine RunSettingSession()
 {
 	// 设置 I/O 等业务投递 FIFO worker；确认的退出意图直接建立 15 秒保护。
@@ -2908,18 +2991,16 @@ SettingSessionCoroutine RunSettingSession()
 						languages.reserve(Inkeys::Localization::Locales.size());
 						for (const auto& locale : Inkeys::Localization::Locales)
 							languages.emplace_back(Inkeys::Localization::NativeLabel(locale));
+						SelectLanguage = settingPendingLanguage >= 0 ? settingPendingLanguage : setlist.selectLanguage;
 						const int previousLanguage = SelectLanguage;
+						// 语言即时生效说明保留正文，仅省去前置的信息图标。
 						if (Design::ComboRow("##language-ui",
 							IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
 							IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774",
-							SelectLanguage, languages, IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str())
-							&& previousLanguage != SelectLanguage
-							&& setlist.selectLanguage != SelectLanguage)
+							SelectLanguage, languages, IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str(), false)
+							&& previousLanguage != SelectLanguage)
 						{
-							setlist.selectLanguage = SelectLanguage;
-							WriteSetting();
-							I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(SelectLanguage).code);
-							QueueConfirmRestart(IW(I18nKey.SettingsUI.Language.UI.Warn));
+							settingPendingLanguage = SelectLanguage;
 						}
 					}
 					break;
@@ -4714,6 +4795,16 @@ SettingSessionCoroutine RunSettingSession()
 			ImFluent::PopFluentStyle();
 			ImGui::EndFrame();
 			ImGui::Render();
+            if (ImGuiFreeType::HasFontLoadFailure(io.Fonts))
+            {
+                // 缺字回退可能已进入缓存：禁止Present该帧，下一安全帧必须替换整张atlas。
+                { lock_guard stateLock(settingStateMutex); settingSessionState.QueueFontRebuild(); }
+                settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
+                Design::CompleteHomeEntryFrame(homeMotion,false,false);
+                settingFrameResult = ResolveSettingResourceFailure("FreeTypeLoad", E_FAIL);
+                co_await suspend_always{};
+                continue;
+            }
 			Design::FilterHomeEntryDrawData(homeMotion,ImGui::GetDrawData(),entryRootDraw,entryTitleDraw,ImGui::GetForegroundDrawList());
 			const float clearColor[4] = {
 				transparentBackdrop ? 0.0F : clearColorValue.x * clearColorValue.w,
@@ -4976,12 +5067,35 @@ namespace
 			settingSessionState.CommitEpoch(context.epoch.generation);
 		}
 
+        if (settingPendingLanguage >= 0 && !settingSession.Done())
+        {
+            const int target = std::exchange(settingPendingLanguage, -1);
+            const auto& locale = Inkeys::Localization::LocaleForIndex(target);
+            I18n::PreparedLanguage prepared;
+            lock_guard imguiLock(settingImguiMutex);
+            if (I18n::prepare(1, L"JSON", locale.code, prepared)
+                && ((locale.regularFont == I18n::locale().regularFont && locale.boldFont == I18n::locale().boldFont
+                    && !decision.rebuildFonts) ? I18n::commit(std::move(prepared)) : ReplaceSettingFonts(locale, &prepared)))
+            {
+                settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
+                Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
+                Inkeys::UI::Setting::Design::ApplyScrollbars();
+                // 语言 revision 不会自行唤醒 idle 客户端；可见表面须主动提交新文案。
+                Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+                Inkeys::UI::PageControl::NotifyLayoutChanged();
+                setlist.selectLanguage = target;
+                QueueWriteSetting();
+                lock_guard stateLock(settingStateMutex);
+                settingSessionState.QueueFontRebuild();
+                fontRebuildSerial = settingSessionState.FontRebuildSerial();
+                settingSessionState.ConsumeFontRebuild(fontRebuildSerial);
+                decision.rebuildFonts = false;
+            }
+        }
 		if (decision.rebuildFonts && !settingSession.Done())
 		{
 			lock_guard imguiLock(settingImguiMutex);
-			ImGui_ImplDX11_InvalidateDeviceObjects();
-			if (!RebuildSettingFonts()
-				|| !ImGui_ImplDX11_CreateDeviceObjects())
+			if (!ReplaceSettingFonts(I18n::locale()))
 				return pauseNavigationClock(ResolveSettingResourceFailure("RebuildFonts", ImGui_ImplDX11_GetLastResult()));
 			Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
 			Inkeys::UI::Setting::Design::ApplyScrollbars();
@@ -5106,8 +5220,15 @@ namespace Inkeys::UI::Setting
 		notice.workspaceFailureRevision = revision;
 		const auto key = whiteboardTarget ? I18nKey.Dialogs.WorkspaceTransitionFailure.Whiteboard :
 			whiteboardInvolved ? I18nKey.Dialogs.WorkspaceTransitionFailure.Return : I18nKey.Dialogs.WorkspaceTransitionFailure.Primary;
-		notice.text = I18n::getWOr(key,
-			L"工作区切换未完成，已停止自动重试。请前往设置的绘图页重试。");
+		// 此入口可由业务线程调用，正文也必须与按钮/字族在同一读锁下冻结。
+		if (I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.Common.OK,
+			I18nKey.Dialogs.Common.Cancel, key }, notice.dialogText))
+			notice.text = notice.dialogText.text[3];
+		else
+		{
+			notice.dialogText.text = { L"Inkeys Tips", L"OK", L"Cancel" };
+			notice.text = L"The workspace transition failed. Automatic retries have stopped. Retry from the Drawing settings page.";
+		}
 		QueueBusiness(std::move(notice));
 	}
 
@@ -5267,6 +5388,123 @@ WNDPROC SettingWindowProc() noexcept
 
 namespace Inkeys::UI::Setting
 {
+    int RunFontLifecycleProductionTest() noexcept
+    {
+        int failures = 0;
+        auto check = [&](bool value, const char* label) { if (!value) { ++failures; std::fprintf(stderr, "[font-lifecycle] %s\n", label); } };
+        ID3D11Device* device = nullptr; ID3D11DeviceContext* context = nullptr;
+        ID3D11Texture2D* target = nullptr; ID3D11RenderTargetView* view = nullptr;
+        const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
+        if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, &level, 1,
+            D3D11_SDK_VERSION, &device, nullptr, &context))) return 1;
+        D3D11_TEXTURE2D_DESC desc{}; desc.Width = 900; desc.Height = 600; desc.MipLevels = desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+        if (FAILED(device->CreateTexture2D(&desc, nullptr, &target))
+            || FAILED(device->CreateRenderTargetView(target, nullptr, &view)))
+        {
+            if (target) target->Release(); context->Release(); device->Release(); return 1;
+        }
+        ImGui::CreateContext(); ImGui::GetIO().IniFilename = nullptr;
+        ImGui::GetIO().DisplaySize = { 900,600 }; ImGui::GetIO().DeltaTime = 1.0F/60.0F;
+        bool backend = ImGui_ImplDX11_Init(device, context);
+        try
+        {
+            check(backend, "backend initialization");
+            if (backend && I18n::load(1,L"JSON",L"zh-CN") && RebuildSettingFonts())
+            {
+                auto draw = [&](bool expectedFailure = false)
+                {
+                    ImGui_ImplDX11_NewFrame(); ImGui::NewFrame();
+                    ImGui::Begin("font-lifecycle###persistent");
+                    if (ImGui::GetFrameCount() == 1) ImGui::GetStateStorage()->SetInt(17,1234);
+                    ImGui::PushFont(ImFontDesignMain,14.0F);
+                    ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Language.UI.Select).c_str());
+                    ImGui::PopFont(); ImGui::End(); ImGui::Render();
+                    context->OMSetRenderTargets(1,&view,nullptr);
+                    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+                    check(expectedFailure ? FAILED(ImGui_ImplDX11_GetLastResult()) : SUCCEEDED(ImGui_ImplDX11_GetLastResult()),"rendered dynamic glyph upload/result");
+                };
+                draw();
+                auto* persistent = ImGui::FindWindowByName("font-lifecycle###persistent");
+                const auto* originalContext = GImGui;
+                // 真正的补缺字号分配失败不能伪装为“不含此字”；cmap查询本身不分配字号。
+                auto* testAtlas=ImGui::GetIO().Fonts;
+                auto resource=FindResourceW(GetModuleHandleW(nullptr),MAKEINTRESOURCEW(IDR_NOTO_KR_REGULAR),L"TTF");
+                void* koreanData=LockResource(LoadResource(GetModuleHandleW(nullptr),resource));
+                ImFontConfig* koreanSource=nullptr;
+                for (auto& source : testAtlas->Sources)
+                    if (source.MergeMode && source.FontData==koreanData) { koreanSource=&source; break; }
+                check(koreanSource!=nullptr,"find real Korean fallback source");
+                if (koreanSource)
+                {
+                    const auto* loader=ImGuiFreeType::GetFontLoader();
+                    auto* unvisitedSize=ImFontDesignMain->GetFontBaked(17.0F);
+                    bool failAllocation=true;
+                    ImGuiFreeType::SetAllocatorFunctions(+[](size_t size,void* state)->void*
+                    {
+                        auto& fail=*static_cast<bool*>(state);
+                        if (fail) { fail=false; return nullptr; }
+                        return ImGui::MemAlloc(size);
+                    },+[](void* memory,void*) { ImGui::MemFree(memory); },&failAllocation);
+                    check(!loader->FontSrcContainsGlyph(testAtlas,koreanSource,0xD800)
+                        && failAllocation && !ImGuiFreeType::HasFontLoadFailure(testAtlas),"genuinely absent glyph is not loader failure");
+                    check(loader->FontSrcContainsGlyph(testAtlas,koreanSource,0xAC00)
+                        && failAllocation && !ImGuiFreeType::HasFontLoadFailure(testAtlas),"coverage probe does not allocate size");
+                    check(unvisitedSize->FindGlyphNoFallback(0xAC00)==nullptr
+                        && !failAllocation && ImGuiFreeType::HasFontLoadFailure(testAtlas),"first merged FT size allocation failure is sticky");
+                    ImGuiFreeType::SetAllocatorFunctions(+[](size_t size,void*)->void* { return ImGui::MemAlloc(size); },
+                        +[](void* memory,void*) { ImGui::MemFree(memory); });
+                    check(ReplaceSettingFonts(I18n::locale()) && !ImGuiFreeType::HasFontLoadFailure(ImGui::GetIO().Fonts),
+                        "new atlas recovers from poisoned lookup state");
+                    draw();
+                }
+                for (int cycle=0; cycle<3; ++cycle)
+                    for (const auto& locale : Inkeys::Localization::Locales)
+                    {
+                        I18n::PreparedLanguage next;
+                        check(I18n::prepare(1,L"JSON",locale.code,next),"prepare language");
+                        check(ReplaceSettingFonts(locale,&next),"stage upload and commit");
+                        draw(); draw();
+                        check(GImGui==originalContext && persistent==ImGui::FindWindowByName("font-lifecycle###persistent")
+                            && persistent->StateStorage.GetInt(17)==1234,"context/window storage retained");
+                        check(GImGui->FontAtlases.Size==1,"single registered active atlas after retirement");
+                    }
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
+                I18n::PreparedLanguage uploadFailure;
+                check(I18n::prepare(1,L"JSON",L"ja-JP",uploadFailure),"prepare upload failure");
+                auto* retainedAtlas=ImGui::GetIO().Fonts;
+                const auto retainedRevision=I18n::revision();
+                ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure_Texture,E_OUTOFMEMORY);
+                check(!ReplaceSettingFonts(Inkeys::Localization::LocaleForIndex(4),&uploadFailure),"candidate upload fails");
+                check(ImGui::GetIO().Fonts==retainedAtlas && I18n::revision()==retainedRevision,
+                    "upload failure retains prior language/font");
+                draw();
+                // 发布后的设备纹理重建仍走原失败/重试合同，不把失败 DrawData 交给 Present。
+                ImGui_ImplDX11_InvalidateDeviceObjects();
+                ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure_Texture,E_OUTOFMEMORY);
+                draw(true); draw();
+                check(I18n::revision()==retainedRevision,"postcommit backend retry does not republish locale");
+#endif
+                I18n::PreparedLanguage stale;
+                check(I18n::prepare(1,L"JSON",L"ja-JP",stale),"prepare failure fixture");
+                --stale.baseRevision;
+                auto* before = ImGui::GetIO().Fonts; const auto revision=I18n::revision();
+                check(!ReplaceSettingFonts(Inkeys::Localization::LocaleForIndex(4),&stale),"stale publication rejects staged atlas");
+                check(ImGui::GetIO().Fonts==before && I18n::revision()==revision && GImGui->FontAtlases.Size==1,
+                    "failed candidate preserves prior atlas and language");
+                draw();
+            }
+            else check(false,"initial language/fonts");
+        }
+        catch (...) { check(false,"unexpected exception"); }
+        if (backend) ImGui_ImplDX11_Shutdown();
+        ImFluent::ResetContext(); ImGui::DestroyContext();
+        ImFontMain=nullptr; ImFontStrong=nullptr; ImFontDesignMain=nullptr; ImFontDesignStrong=nullptr; ImFontDesignIcons=nullptr;
+        view->Release(); target->Release(); context->Release(); device->Release();
+        std::printf("[font-lifecycle] failures=%d\n",failures);
+        return failures ? 1 : 0;
+    }
 	int RunBusinessCancellationProductionTest() noexcept
 	{
 		if (settingInitialized.load() || Inkeys::Window::GetService().Running()) return 2;

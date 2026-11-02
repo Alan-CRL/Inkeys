@@ -52,7 +52,7 @@ int RunBarPresentationAlphaTests();
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunSettingEraserDemoTests();
-int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false, bool attentionOnly = false, bool generalOnly = false);
+int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false, bool attentionOnly = false, bool generalOnly = false, bool fontPagesOnly = false);
 int RunPptUiTests();
 int RunPptSessionTests();
 int RunPageControlTests();
@@ -1701,6 +1701,8 @@ namespace
 	}
 }
 
+int RunSettingFontBenchmarkTests();
+
 int main(int argc, char** argv)
 {
 	if (argc == 2 && std::string_view(argv[1]) == "--page-control-only")
@@ -1711,12 +1713,16 @@ int main(int argc, char** argv)
 	// 窗口契约可单独复跑，避免定位 USER32 交错时重复耗时的算法矩阵。
 	if (argc == 2 && std::string_view(argv[1]) == "--window-contract-only")
 		return RunWindowTests();
+	if ((argc == 2 && std::string_view(argv[1]) == "--setting-font-benchmark-only")
+		|| (argc == 3 && std::string_view(argv[2]) == "--setting-font-benchmark-only"))
+		return RunSettingFontBenchmarkTests();
 	bool benchmark = false;
 	bool penWidthOnly = false;
 	bool settingHomeOnly = false;
 	bool settingCopyOnly = false;
 	bool settingAttentionOnly = false;
 	bool settingGeneralOnly = false;
+	bool settingFontPagesOnly = false;
 	bool settingEraserOnly = false;
 	bool palmEraserOnly = false;
 	bool settingEraserDemoOnly = false;
@@ -1734,6 +1740,7 @@ int main(int argc, char** argv)
 		settingCopyOnly |= argument == "--setting-copy-only";
 		settingAttentionOnly |= argument == "--setting-attention-only";
 		settingGeneralOnly |= argument == "--setting-general-only";
+		settingFontPagesOnly |= argument == "--setting-font-pages-only";
 		settingEraserOnly |= argument == "--setting-eraser-only";
 		palmEraserOnly |= argument == "--palm-eraser-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
@@ -1785,6 +1792,7 @@ int main(int argc, char** argv)
 		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << " palm=" << palm << '\n';
 		return settings + speed + attributes + palm == 0 ? 0 : 1;
 	}
+	if (settingFontPagesOnly) return RunSettingDesignTests(false,false,false,false,true)==0 ? 0 : 1;
 	if (settingGeneralOnly) return RunSettingDesignTests(false,false,false,true)==0 ? 0 : 1;
 	if (settingAttentionOnly) return RunSettingDesignTests(false,false,true)==0 ? 0 : 1;
 	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
