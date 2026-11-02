@@ -69,4 +69,4 @@ Harmony SC/TC 常规和粗体的九语关键字符样本 cmap 预检查无缺失
 
 ## 实施验收记录
 
-以上本次范围验收已完成，详见validation.md与translation-review.md。旧俄语既有侧栏超宽按最小修改规则单列，不包含在本次新九语导航修正中。实现与验证已完成，用户已确认改动生效并授权提交、结束；最终提交及归档状态记录于task.json，未授权push。
+以上本次范围验收已完成，详见validation.md与translation-review.md。旧俄语既有侧栏超宽按最小修改规则单列，不包含在本次新九语导航修正中。实现与验证已完成，用户已验收，功能改动已提交且任务已归档；提交记录见task.json，未push。
