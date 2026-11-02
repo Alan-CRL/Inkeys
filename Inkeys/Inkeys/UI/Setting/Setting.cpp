@@ -2993,11 +2993,10 @@ SettingSessionCoroutine RunSettingSession()
 							languages.emplace_back(Inkeys::Localization::NativeLabel(locale));
 						SelectLanguage = settingPendingLanguage >= 0 ? settingPendingLanguage : setlist.selectLanguage;
 						const int previousLanguage = SelectLanguage;
-						// 语言即时生效说明保留正文，仅省去前置的信息图标。
 						if (Design::ComboRow("##language-ui",
 							IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
 							IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774",
-							SelectLanguage, languages, IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str(), false)
+							SelectLanguage, languages)
 							&& previousLanguage != SelectLanguage)
 						{
 							settingPendingLanguage = SelectLanguage;

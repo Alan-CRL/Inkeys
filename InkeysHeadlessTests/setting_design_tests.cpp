@@ -5820,8 +5820,7 @@ namespace
 					"native name, locale code and Beta fit the language selector including its arrow reserve");
 			int selected = 9;
 			Design::ComboRow("##language-ui", IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
-				IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels,
-				IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str(), false);
+				IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels);
 			checks.Expect(selected == 9, "actual eleven-language combo renders without changing saved preference");
 			for (ImFont* font : { regular, strong })
 			{
@@ -6244,7 +6243,7 @@ namespace
 							auto* languageHost=ImGui::GetCurrentWindow(); ImGui::PushID("##language");
 							const ImGuiID comboId=ImGui::GetID("##select"); ImGui::PopID();
 							languagePopup=ImHashStr("##fl_cb_popup",0,comboId);
-							Design::ComboRow("##language",IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(),"\ue774",selection,labels,IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str(), false);
+							Design::ComboRow("##language",IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(),"\ue774",selection,labels);
 							if(page==0 && frame==2) {
 								ImGui::FocusWindow(languageHost);
 								ImGui::SetNavID(comboId,ImGuiNavLayer_Main,languageHost->NavRootFocusScopeId,ImRect({0,0},{100*scale,32*scale}));

@@ -325,7 +325,7 @@
       {
         "N": "界面语言",
         "Select": "选择语言",
-        "SelectE": "设置界面使用的显示语言。",
+        "SelectE": "界面使用的显示语言。",
         "Language":
         {
           "en-US": "English · en-US · Beta",
