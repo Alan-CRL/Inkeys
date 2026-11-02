@@ -15,18 +15,29 @@
   "branch": "feature/i18n",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "e5f0574e",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-11-02 用户批准实施。已完成11语言x679条、Noto JP/KR静态Regular/Bold、元数据/初始匹配/Beta列表及活动UI补漏/局部排版。最终完整Debug|ARM64 build5 exit0；真实资源/format exit0；DWrite离屏exit0；完整--no-window exit0/338.72s且stderr空。原三语451变化见translation-changes.md；验证见validation.md。无GUI/commit/push/归档，保留当前任务供用户审阅。",
+  "notes": "2026-11-02 用户批准实施。已完成11语言x679条、Noto JP/KR静态Regular/Bold、元数据/初始匹配/Beta列表及活动UI补漏/局部排版。最终完整Debug|ARM64 build5 exit0；真实资源/format exit0；DWrite离屏exit0；完整--no-window exit0/338.72s且stderr空。原三语451变化见translation-changes.md；验证见validation.md。无GUI/commit/push/归档，保留当前任务供用户审阅。 2026-11-02 用户选择日/韩均先试Noto，暂不试Harmony日文，开始设置字体family/role校准及实际字面对照回归；不自动commit或结束任务。 用户已确认字体校准生效，授权结束任务、归档、提交并Push当前分支。",
   "meta": {
     "implementation_complete": true,
     "validation_complete": true,
     "locale_count": 11,
     "keys_per_locale": 679,
-    "translation_change_rows": 451
+    "translation_change_rows": 451,
+    "font_calibration": {
+      "selection": "Noto JP/KR",
+      "approved": "2026-11-02",
+      "state": "validated_for_trial",
+      "scope": "Settings family/role scale and baseline; preserve Harmony, DWrite bar, weights, geometry",
+      "build_exit": 0,
+      "focused_exit": 0,
+      "headless_exit": 0,
+      "headless_seconds": 358.22
+    },
+    "user_accepted": true
   }
 }

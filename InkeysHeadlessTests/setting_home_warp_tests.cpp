@@ -5,6 +5,7 @@
 #include <d3d11.h>
 #include <d3d11shader.h>
 #include <d3dcompiler.h>
+#include <wincodec.h>
 #include <wrl/client.h>
 
 #include "setting_home_warp_tests.h"
@@ -29,6 +30,8 @@
 #include <vector>
 
 #pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "ole32.lib")
 
 namespace
 {
@@ -97,6 +100,7 @@ namespace
 		ComPtr<ID3D11Texture2D> target, staging;
 		ComPtr<ID3D11RenderTargetView> view;
 		bool initialized = false;
+		UINT targetWidth = Width, targetHeight = Height;
 		Design::HomeEntryPageCache pageCache;
 		Design::FrameSubmissionCache submittedFrame;
 		struct Counters { std::uint64_t submissions=0, skips=0, clears=0, copies=0, captures=0; } counters;
@@ -138,7 +142,7 @@ namespace
 			D3D11_QUERY_DESC query{D3D11_QUERY_EVENT,0};
 			if (!checks.Result(device->CreateQuery(&query,completed.GetAddressOf()),"create bounded render completion query")) return false;
 			D3D11_TEXTURE2D_DESC desc{};
-			desc.Width = Width; desc.Height = Height; desc.MipLevels = desc.ArraySize = 1;
+			desc.Width = targetWidth; desc.Height = targetHeight; desc.MipLevels = desc.ArraySize = 1;
 			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
 			desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
 			if (!checks.Result(device->CreateTexture2D(&desc, nullptr, target.GetAddressOf()), "create offscreen target")
@@ -168,7 +172,7 @@ namespace
 			const auto color=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
 			Design::FrameSubmissionKey key;
 			key.output=state && state->preparation.keyValid ? state->preparation.key
-				: Design::MakeHomeEntryFrameKey({0,Design::Pixels(32),static_cast<float>(Width),static_cast<float>(Height)},0,
+				: Design::MakeHomeEntryFrameKey({0,Design::Pixels(32),static_cast<float>(targetWidth),static_cast<float>(targetHeight)},0,
 					1,1,0,ImGui::GetIO().Fonts->Fonts[0],nullptr,nullptr,solidClear ? 1 : 0);
 			key.clear={solidClear ? color.x*color.w : 0,solidClear ? color.y*color.w : 0,
 				solidClear ? color.z*color.w : 0,solidClear ? color.w : 0};
@@ -184,10 +188,10 @@ namespace
 			if (!checks.Result(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"complete separate correctness readback")) return false;
 			if (pixels)
 			{
-				pixels->resize(static_cast<size_t>(Width)*Height);
-				for (UINT row=0;row<Height;++row)
-					std::memcpy(pixels->data()+static_cast<size_t>(row)*Width,
-						static_cast<const char*>(mapped.pData)+static_cast<size_t>(row)*mapped.RowPitch,Width*4);
+				pixels->resize(static_cast<size_t>(targetWidth)*targetHeight);
+				for (UINT row=0;row<targetHeight;++row)
+					std::memcpy(pixels->data()+static_cast<size_t>(row)*targetWidth,
+						static_cast<const char*>(mapped.pData)+static_cast<size_t>(row)*mapped.RowPitch,targetWidth*4);
 			}
 			context->Unmap(staging.Get(),0); return true;
 		}
@@ -1646,6 +1650,57 @@ namespace
 		else std::cout<<" rate-label=CPU-callback-only-no-display-FPS";
 		std::cout<<'\n';
 	}
+}
+
+int SaveSettingFontComparison(const std::filesystem::path& path, float scale,
+	const std::function<void()>& draw)
+{
+	Checks checks;
+	const HRESULT apartment=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
+	if (!checks.Expect(SUCCEEDED(apartment) || apartment==RPC_E_CHANGED_MODE,"font preview initializes WIC apartment")) return checks.failures;
+	{
+		Offscreen renderer;
+		renderer.targetWidth=static_cast<UINT>(1000*scale);
+		renderer.targetHeight=static_cast<UINT>(1100*scale);
+		if (renderer.Initialize(checks))
+		{
+			auto& io=ImGui::GetIO(); io.DisplaySize={static_cast<float>(renderer.targetWidth),static_cast<float>(renderer.targetHeight)};
+			io.DisplayFramebufferScale={1,1}; io.AddMousePosEvent(Away.x,Away.y);
+			Pixels pixels;
+			// 真实后端处理动态字形纹理，不能用 CPU 夹具的模拟 TexID 生成样张。
+			for (int frame=0;frame<3;++frame)
+			{
+				ImGui_ImplDX11_NewFrame(); ImGui::NewFrame(); draw(); ImGui::Render();
+				if (!renderer.Submit(checks,ImGui::GetDrawData(),&pixels)) break;
+			}
+			if (!pixels.empty())
+			{
+				std::filesystem::create_directories(path.parent_path());
+				ComPtr<IWICImagingFactory> factory; ComPtr<IWICStream> stream;
+				ComPtr<IWICBitmapEncoder> encoder; ComPtr<IWICBitmapFrameEncode> image; ComPtr<IPropertyBag2> options;
+				if (checks.Result(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(factory.GetAddressOf())),"create font preview PNG factory")
+					&& checks.Result(factory->CreateStream(stream.GetAddressOf()),"create font preview PNG stream")
+					&& checks.Result(stream->InitializeFromFilename(path.c_str(),GENERIC_WRITE),"open font preview PNG")
+					&& checks.Result(factory->CreateEncoder(GUID_ContainerFormatPng,nullptr,encoder.GetAddressOf()),"create font preview PNG encoder")
+					&& checks.Result(encoder->Initialize(stream.Get(),WICBitmapEncoderNoCache),"initialize font preview encoder")
+					&& checks.Result(encoder->CreateNewFrame(image.GetAddressOf(),options.GetAddressOf()),"create font preview image")
+					&& checks.Result(image->Initialize(options.Get()),"initialize font preview image")
+					&& checks.Result(image->SetSize(renderer.targetWidth,renderer.targetHeight),"size font preview image"))
+				{
+					WICPixelFormatGUID format=GUID_WICPixelFormat32bppBGRA;
+					if (checks.Result(image->SetPixelFormat(&format),"set font preview pixel format")
+						&& checks.Expect(IsEqualGUID(format,GUID_WICPixelFormat32bppBGRA),"PNG accepts BGRA font preview"))
+					{
+						for (auto& pixel:pixels) pixel=(pixel&0xff00ff00u)|((pixel&0x00ff0000u)>>16)|((pixel&0x000000ffu)<<16);
+						checks.Result(image->WritePixels(renderer.targetHeight,renderer.targetWidth*4,static_cast<UINT>(pixels.size()*4),reinterpret_cast<BYTE*>(pixels.data())),"write actual font preview pixels");
+						checks.Result(image->Commit(),"commit font preview frame"); checks.Result(encoder->Commit(),"commit font preview PNG");
+					}
+				}
+			}
+		}
+	}
+	if (SUCCEEDED(apartment)) CoUninitialize();
+	return checks.failures;
 }
 
 int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)

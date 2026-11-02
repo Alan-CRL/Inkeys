@@ -1,5 +1,9 @@
 # 执行计划
 
+## 当前后续阶段：Noto设置字体校准
+
+用户已选Noto路线，暂不试Harmony日文。修改边界是Setting.Typography.h中的family/role profile、Setting.cpp字体加载选择及实际字体测试/离屏输出；不改主栏、字体资产、翻译和全局几何。先由implement子代理以研究中的等em值实现，量化并校准基线/字面；再独立check。主会话统一完整Debug|ARM64 Solution编译和--no-window验证，查看离屏图；无GUI/commit/任务结束。新测试必须检查“字面过小”而非只查上界，保留原布局断言，不用假字体或抄一份产品缩放公式代替实际glyph/DrawData。
+
 2026-11-02用户批准最终规划并要求开始实施；补充三语文案前后变化Markdown报告。实施前先保存原文件字节快照，最终按实际资源差异生成对照表。
 
 ## 实施顺序

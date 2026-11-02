@@ -1,0 +1,37 @@
+[
+  {
+    "file": "Inkeys/Inkeys/UI/Setting/Setting.Typography.h",
+    "encoding": "UTF-8",
+    "bom_preserved": true,
+    "eol": "CRLF",
+    "pass": true
+  },
+  {
+    "file": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "encoding": "UTF-8",
+    "bom_preserved": true,
+    "eol": "CRLF",
+    "pass": true
+  },
+  {
+    "file": "InkeysHeadlessTests/setting_design_tests.cpp",
+    "encoding": "UTF-8",
+    "bom_preserved": true,
+    "eol": "CRLF",
+    "pass": true
+  },
+  {
+    "file": "InkeysHeadlessTests/setting_home_warp_tests.cpp",
+    "encoding": "UTF-8",
+    "bom_preserved": true,
+    "eol": "CRLF",
+    "pass": true
+  },
+  {
+    "file": "InkeysHeadlessTests/setting_home_warp_tests.h",
+    "encoding": "UTF-8",
+    "bom_preserved": true,
+    "eol": "CRLF",
+    "pass": true
+  }
+]

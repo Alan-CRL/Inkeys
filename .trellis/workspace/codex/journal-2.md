@@ -1670,3 +1670,31 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Next Steps
 
 - 保留当前任务及未提交改动供用户审阅；明细见任务translation-changes.md和validation.md。
+
+
+## Session 155: 日韩Noto设置字体校准完成
+<!-- trellis-session: v=2 fp=743089a5c45b0906 -->
+
+**Date**: 2026-11-02
+**Task**: 日韩Noto设置字体校准完成
+**Branch**: `feature/i18n`
+
+### Summary
+
+Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/图标/字体资产和翻译保持。三DPI真实对照、设置专项与完整无窗口回归通过。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug|ARM64完整Solution exit0/12.88s；设置专项exit0/10.96s；完整--no-window exit0/358.22s且stderr空。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留未提交改动，用户重新启动新构建试用日/韩；任务继续，不自动归档。

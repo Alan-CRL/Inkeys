@@ -69,3 +69,17 @@
 ## 完成状态
 
 2026-11-02：实现及自动验证完成，AC1–AC8全部满足本任务约定的静态/无窗口验收范围；详见 `validation.md`。十一种语言各679条，原三语变更对照451项。保留未提交改动供用户审阅，不执行commit、push或归档。
+
+## 后续：日/韩设置字体校准（2026-11-02）
+
+用户在e5f0574e提交后提供真实截图，要求修正日/韩设置页偏小偏细，并已选择“都先试用Noto，HarmonyOS Sans日文先不管”。本阶段保留Noto JP/KR及400/700字重，只校准设置页，不做Harmony日文候选。
+
+- F1：按字体家族及Legacy/Design角色区分配置。中文及其他Harmony脸、名义字号/行框/图标/DPI几何保持；避免将Noto补偿误用到Legacy Harmony。
+- F2：以实测字体度量推导的Noto Design 1.40456、Legacy 1.193735为起点，检查实际ImGui字面及基线；Regular/Bold与全部同角色fallback都使用正确profile。
+- F3：保留正常的DWrite主栏、字体文件、资源映射和语言文本；不改全局FontScaleDpi，不伪粗体，不切后端。
+- F4：补真实ImGui的尺寸/基线/Regular与Strong层次回归和离屏对照图，覆盖中文基准、Noto日/韩、混合脚本、旧/新设置角色及不同DPI；现有十一语布局与无窗口回归继续通过。
+- F5：本阶段不自动commit/push，不结束或归档任务，不启动交互GUI。
+
+验收：日/韩字面在共同样本上与中文基准接近且基线稳定，不再只有“不溢出”的单向约束；旧Harmony配置不变，所有现有边界/字形/行为测试通过，并交付可查看的真实字体离屏样张。详见研究 `settings-font-next-plan.md`、`settings-font-pipeline-analysis.md`。
+
+本阶段已实现并通过全部自动验证，进入试用；见 noto-calibration-validation.md。未提交、未结束或归档任务。

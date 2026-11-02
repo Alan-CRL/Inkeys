@@ -1888,13 +1888,16 @@ void SettingWindowBegin()
 	auto addTextFace = [&](UINT primaryResource, const auto& fallbacks,
 		bool design, ImFont** result)
 		{
+			const bool notoPrimary = primaryResource == IDR_NOTO_JP_REGULAR || primaryResource == IDR_NOTO_JP_BOLD
+				|| primaryResource == IDR_NOTO_KR_REGULAR || primaryResource == IDR_NOTO_KR_BOLD;
 			auto add = [&](UINT resource, bool merge)
 				{
 					const bool noto = resource == IDR_NOTO_JP_REGULAR || resource == IDR_NOTO_JP_BOLD
 						|| resource == IDR_NOTO_KR_REGULAR || resource == IDR_NOTO_KR_BOLD;
-					auto config = design && !noto
-						? Inkeys::UI::Setting::Design::HarmonyFontConfig(settingGlobalScale)
-						: Inkeys::UI::Setting::Design::NotoFontConfig(settingGlobalScale);
+					using namespace Inkeys::UI::Setting::Design;
+					// 每个合并源按自己的字族和角色校准，旧 Harmony 脸保持原始尺度。
+					auto config = TextFontConfig(settingGlobalScale, noto,
+						design ? TextFontRole::Design : TextFontRole::Legacy, notoPrimary);
 					config.GlyphExcludeRanges = excludedGlyphs;
 					config.MergeMode = merge;
 					return AddSettingFontResource(resource,

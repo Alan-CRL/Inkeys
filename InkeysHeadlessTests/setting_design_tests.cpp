@@ -5911,6 +5911,176 @@ namespace
 	}
 }
 
+namespace
+{
+	void CheckNotoFontCalibration(Checks& checks, std::array<FontData,9>& sources,
+		const std::filesystem::path& fontDirectory)
+	{
+		const auto output=fontDirectory.parent_path().parent_path().parent_path()/"Build/setting-fonts";
+		for (float scale:{1.0F,1.5F,2.0F})
+		{
+			// 与普通CPU回放隔离；真实后端必须先于任何模拟纹理ID运行。
+			ImGuiSession session;
+			ImGui::GetStyle().FontScaleDpi=scale;
+			Design::ApplyPalette(true);
+			struct Faces {const char* name;const char* locale;ImFont* design[2]{};ImFont* legacy[2]{};bool before=false;};
+			std::array<Faces,5> faces{{
+				{"zh-CN reference","zh-CN"},{"ja-JP before","ja-JP",{},{},true},
+				{"ja-JP calibrated","ja-JP"},{"ko-KR before","ko-KR",{},{},true},
+				{"ko-KR calibrated","ko-KR"}}};
+			auto addFace=[&](std::size_t primary,bool design,bool before)
+			{
+				ImFont* font=nullptr;
+				auto add=[&](std::size_t source,bool merge)
+				{
+					const bool noto=source>=4;
+					auto config=before
+						? design && !noto ? Design::HarmonyFontConfig(scale) : Design::LegacyFontConfig(scale)
+						: Design::TextFontConfig(scale,noto,design?Design::TextFontRole::Design:Design::TextFontRole::Legacy,primary>=4);
+					config.MergeMode=merge;
+					auto* result=ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[source].bytes.data(),
+						static_cast<int>(sources[source].bytes.size()),Design::FontReferenceSize,&config);
+					if (!merge) font=result;
+					checks.Expect(result!=nullptr,"calibration loads actual regular/bold and fallback font assets");
+				};
+				add(primary,false);
+				for (std::size_t fallback=primary%2;fallback<8;fallback+=2)
+					if (fallback!=primary) add(fallback,true);
+				return font;
+			};
+			for (std::size_t col=0;col<faces.size();++col)
+			{
+				const std::size_t primary=col==0?0:col<=2?4:6;
+				for (std::size_t weight=0;weight<2;++weight)
+				{
+					faces[col].design[weight]=addFace(primary+weight,true,faces[col].before);
+					faces[col].legacy[weight]=addFace(primary+weight,false,faces[col].before);
+				}
+			}
+			auto iconConfig=Design::IconFontConfig(scale);
+			ImFont* icons=ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),
+				static_cast<int>(sources.back().bytes.size()),Design::FontReferenceSize,&iconConfig);
+			ImGui::GetIO().FontDefault=faces[0].design[0];
+			auto drawComparison=[&]
+			{
+				ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+				ImGui::Begin("##font-calibration-comparison",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoMove);
+				for (std::size_t col=0;col<faces.size();++col)
+				{
+					auto& face=faces[col];const float x=(16+198*col)*scale,width=180*scale;
+					ImGui::SetCursorScreenPos({x,18*scale});
+					// 各列拥有真实独立content起点；SectionHeader的ItemSize不能把X重置到整张图左侧。
+					ImGui::BeginChild(static_cast<ImGuiID>(2000+col),{width,1000*scale},ImGuiChildFlags_None,
+						ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+					Design::BindTextFonts(faces[0].design[0],faces[0].design[1]);
+					Design::TextAt(face.name,{x,18*scale},width,ImFluentTextStyle_Caption,Design::TextSecondary);
+					Design::BindTextFonts(face.design[0],face.design[1]);ImFluent::SetIconFont(icons);
+					Design::TextAt("設定",{x,58*scale},width,ImFluentTextStyle_Title,Design::TextPrimary);
+					Design::TextAt("Inkeys 100%",{x,112*scale},width,ImFluentTextStyle_Subtitle,Design::TextPrimary);
+					Design::TextAt("設定 言語 基本",{x,160*scale},width,ImFluentTextStyle_Body,Design::TextPrimary);
+					Design::TextAt("Inkeys Agpqy 100%",{x,195*scale},width,ImFluentTextStyle_Body,Design::TextPrimary);
+					Design::TextAt("课 日本語 한국어",{x,225*scale},width,ImFluentTextStyle_Body,Design::TextPrimary);
+					checks.Expect(LoadNavigationLabels(fontDirectory,face.locale),"font preview loads real localized interface text");
+					ImGui::SetCursorScreenPos({x,255*scale});ImGui::PushItemWidth(width);
+					Design::PageHeader(IA(I18nKey.SettingsUI.Language.N).c_str());
+					ImGui::SetCursorScreenPos({x,325*scale});
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
+					auto descriptionOrigin=ImGui::GetCursorScreenPos();descriptionOrigin.y+=4*scale;
+					Design::TextAt(IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(),{x,descriptionOrigin.y},width,
+						ImFluentTextStyle_Body,Design::TextSecondary);
+					ImGui::SetCursorScreenPos({x,470*scale});
+					bool value=true;
+					// 实际控件放入与每列相同宽度的child，避免借用整张图的正文预算。
+					ImGui::BeginChild(static_cast<ImGuiID>(100+col),{width,230*scale},ImGuiChildFlags_None,ImGuiWindowFlags_NoSavedSettings);
+					Design::ToggleRow("##font-preview-toggle",IA(I18nKey.SettingsUI.Design.EdgeLighting).c_str(),
+						IA(I18nKey.SettingsUI.Design.EdgeLightingDescription).c_str(),"\ue774",value);
+					ImGui::EndChild();ImGui::PopItemWidth();
+					Design::BindTextFonts(faces[0].design[0],faces[0].design[1]);
+					Design::TextAt("Legacy / caption",{x,735*scale},width,ImFluentTextStyle_Caption,Design::TextSecondary);
+					for (int weight=0;weight<2;++weight)
+					{
+						ImGui::PushFont(face.legacy[weight],20);
+						ImGui::GetWindowDrawList()->AddText({x,(775+50*weight)*scale},Design::TextPrimary,"Inkeys 設定 100%");
+						ImGui::PopFont();
+					}
+					ImGui::EndChild();
+					if (col!=0) ImGui::GetWindowDrawList()->AddLine({x-8*scale,16*scale},{x-8*scale,900*scale},IM_COL32(90,90,90,160));
+				}
+				ImGui::End();
+			};
+			const auto file=output/("noto-calibration-"+std::to_string(static_cast<int>(scale*100))+".png");
+			checks.failures+=SaveSettingFontComparison(file,scale,drawComparison);
+
+			ImGui::NewFrame();ImGui::SetNextWindowPos({0,0});ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+			ImGui::Begin("##font-calibration-bounds",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+			auto measure=[&](ImFont* font,float size,const char* text)
+			{
+				auto* draw=ImGui::GetWindowDrawList();const int first=draw->VtxBuffer.Size;
+				ImGui::PushFont(font,size);draw->AddText({30*scale,70*scale},Design::TextPrimary,text);ImGui::PopFont();
+				return VertexBounds(draw,first,Design::TextPrimary,true);
+			};
+			float oldInk[2][2][2]{},referenceInk[2][2][2]{};
+			for (bool design:{false,true}) for (int weight=0;weight<2;++weight)
+				for (float size:{12.0F,13.0F,14.0F,20.0F,28.0F,40.0F})
+					// 字号用共享汉字及无下伸部的大写/数字作锚；不同字族g/q造型不应被当作字号失配。
+					for (const char* text:{"設定言語","H 100%"})
+					{
+						const auto reference=measure(design?faces[0].design[weight]:faces[0].legacy[weight],size,text);
+						for (int col:{2,4})
+						{
+							const auto actual=measure(design?faces[col].design[weight]:faces[col].legacy[weight],size,text);
+							const auto old=measure(design?faces[col-1].design[weight]:faces[col-1].legacy[weight],size,text);
+							const float ratio=actual.Height()/reference.Height(),oldRatio=old.Height()/reference.Height();
+							// 小字号glyph quad含栅格边距；仅容许一物理像素差，不按DPI放宽。
+							const bool matched=(ratio>=0.90F && ratio<=1.10F)
+								|| std::abs(actual.Height()-reference.Height())<=1.0F;
+							const bool aligned=std::abs(actual.bottom-reference.bottom)<=2.0F*scale;
+							if (!matched || !aligned) std::cerr<<"[NotoCalibration] "<<faces[col].locale<<" design="<<design<<" weight="<<weight
+								<<" size="<<size<<" scale="<<scale<<" text="<<text<<" ratio="<<ratio<<" oldratio="<<oldRatio<<" reference="<<reference.top<<','<<reference.bottom
+								<<" actual="<<actual.top<<','<<actual.bottom<<'\n';
+							checks.Expect(matched,"real calibrated Noto glyphs match the reference ink height, including a lower size bound");
+							checks.Expect(aligned,"real Noto glyph baselines remain aligned with the matching Harmony role");
+							// 累加真实ink，避免小字号两端各一像素取整让单个负对照偶然接近基准。
+							oldInk[design][weight][col/2-1]+=old.Height();
+							referenceInk[design][weight][col/2-1]+=reference.Height();
+						}
+					}
+			for (int design=0;design<2;++design) for(int weight=0;weight<2;++weight) for(int language=0;language<2;++language)
+			{
+				const float oldRatio=oldInk[design][weight][language]/referenceInk[design][weight][language];
+				std::cout<<"[NotoNegativeControl] design="<<design<<" weight="<<weight<<" language="<<language<<" scale="<<scale<<" oldratio="<<oldRatio<<'\n';
+				checks.Expect(oldRatio<(design?0.85F:0.92F),"aggregate real uncalibrated Noto exposes the original size regression");
+			}
+			for (int col:{2,4}) for(bool design:{false,true}) for(int weight=0;weight<2;++weight)
+			{
+				auto* font=design?faces[col].design[weight]:faces[col].legacy[weight];
+				const auto capital=measure(font,14,"H"),descender=measure(font,14,"Hgq");
+				checks.Expect(descender.bottom>capital.bottom,"calibrated real Noto preserves Latin descenders in each role and weight");
+			}
+			// 「课」在 JP/KR 中缺字；「한국어」在 Harmony 中缺字，检查真实合并后的同排基线。
+			for (bool design:{false,true}) for (int weight=0;weight<2;++weight)
+				for (float size:{14.0F,28.0F,40.0F})
+				{
+					const auto harmony=measure(design?faces[0].design[weight]:faces[0].legacy[weight],size,"课");
+					for (int col:{2,4})
+					{
+						const auto actual=measure(design?faces[col].design[weight]:faces[col].legacy[weight],size,"课");
+						checks.Expect(std::abs(actual.top-harmony.top)<=1.25F*scale && std::abs(actual.bottom-harmony.bottom)<=1.25F*scale,
+							"Harmony fallback keeps matching ink size and baseline inside calibrated Noto");
+					}
+					const auto korean=measure(design?faces[4].design[weight]:faces[4].legacy[weight],size,"한국어");
+					const auto mixed=measure(design?faces[0].design[weight]:faces[0].legacy[weight],size,"한국어");
+					checks.Expect(std::abs(mixed.top-korean.top)<=1.25F*scale && std::abs(mixed.bottom-korean.bottom)<=1.25F*scale,
+						"Korean fallback keeps matching ink size and baseline inside unchanged Harmony");
+				}
+			ImGui::End();ImGui::Render();CheckDrawData(checks);
+			std::cout<<"[NotoCalibration] scale="<<scale<<" output="<<file.string()<<" failures="<<checks.failures<<'\n';
+		}
+		checks.Expect(LoadNavigationLabels(fontDirectory),"calibration restores Chinese fixtures after its independent contexts");
+	}
+}
+
+
 int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly)
 {
 	Checks checks;
@@ -5947,6 +6117,8 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		}
 	}
 
+	if (!eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
+
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
@@ -5959,7 +6131,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		bool loaded = true;
 		for (std::size_t index = 0; index < localeFonts.size(); ++index)
 		{
-			auto config = index >= 4 ? Design::NotoFontConfig(scale) : Design::HarmonyFontConfig(scale);
+			auto config = Design::TextFontConfig(scale,index>=4,Design::TextFontRole::Design,index>=4);
 			localeFonts[index] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
 				sources[index].bytes.data(), static_cast<int>(sources[index].bytes.size()), Design::FontReferenceSize, &config);
 			loaded &= localeFonts[index] != nullptr;
@@ -5967,7 +6139,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			for (std::size_t fallback = index % 2; fallback < localeFonts.size(); fallback += 2)
 			{
 				if (fallback == index) continue;
-				config = fallback >= 4 ? Design::NotoFontConfig(scale) : Design::HarmonyFontConfig(scale);
+				config = Design::TextFontConfig(scale,fallback>=4,Design::TextFontRole::Design,index>=4);
 				config.MergeMode = true;
 				loaded &= ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[fallback].bytes.data(),
 					static_cast<int>(sources[fallback].bytes.size()), Design::FontReferenceSize, &config) != nullptr;

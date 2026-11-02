@@ -16,6 +16,18 @@ namespace Inkeys::UI::Setting::Design
 	inline constexpr float FontReferenceSize = 30.0F;
 	inline constexpr float TextOpticalScale = 0.97F;
 
+	enum class TextFontRole { Legacy, Design };
+
+	[[nodiscard]] inline ImFontConfig LegacyFontConfig(float rasterizerDensity)
+	{
+		ImFontConfig config;
+		config.OversampleH = 1;
+		config.OversampleV = 1;
+		config.RasterizerDensity = rasterizerDensity;
+		config.FontDataOwnedByAtlas = false;
+		return config;
+	}
+
 	[[nodiscard]] inline ImFontConfig HarmonyFontConfig(float rasterizerDensity)
 	{
 		ImFontConfig config;
@@ -29,14 +41,28 @@ namespace Inkeys::UI::Setting::Design
 		return config;
 	}
 
-	[[nodiscard]] inline ImFontConfig NotoFontConfig(float rasterizerDensity)
+	[[nodiscard]] inline ImFontConfig NotoFontConfig(float rasterizerDensity,
+		TextFontRole role = TextFontRole::Design)
 	{
-		ImFontConfig config;
-		config.OversampleH = 1;
-		config.OversampleV = 1;
-		config.RasterizerDensity = rasterizerDensity;
-		config.FontDataOwnedByAtlas = false;
-		// Noto 使用自身 em 与基线，不套用 Harmony 的字面放大校正。
+		auto config = LegacyFontConfig(rasterizerDensity);
+		const bool design = role == TextFontRole::Design;
+		// stb 按 hhea 跨度归一化；Noto 的 1448 与 Harmony 的 1213 需分别对齐同一 em。
+		config.ExtraSizeScale = design ? 1.448F * TextOpticalScale : 1.448F / 1.213F;
+		// ExtraSizeScale 不改变 baked Ascent，按两字体基线比值差作角色内补偿。
+		constexpr float baselineDifference = 1160.0F / 1448.0F - 928.0F / 1213.0F;
+		config.GlyphOffset.y = FontReferenceSize * ((design ? 0.025F : 0.0F) - baselineDifference);
+		return config;
+	}
+
+	[[nodiscard]] inline ImFontConfig TextFontConfig(float rasterizerDensity, bool notoSource,
+		TextFontRole role, bool notoPrimary)
+	{
+		const bool design = role == TextFontRole::Design;
+		auto config = notoSource ? NotoFontConfig(rasterizerDensity, role)
+			: design ? HarmonyFontConfig(rasterizerDensity) : LegacyFontConfig(rasterizerDensity);
+		// merged 字形共用主脸 baked Ascent；尺度按源字族，基线偏移必须按主字族。
+		config.GlyphOffset.y = notoPrimary ? NotoFontConfig(rasterizerDensity, role).GlyphOffset.y
+			: design ? HarmonyFontConfig(rasterizerDensity).GlyphOffset.y : 0.0F;
 		return config;
 	}
 
