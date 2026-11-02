@@ -253,6 +253,8 @@ void RequestWhiteboardActive(bool active) noexcept;
 bool WhiteboardRequested() noexcept;
 bool WhiteboardActive() noexcept;
 bool WhiteboardTransactionActive() noexcept;
+// 仅进入/退出过渡（阶段非稳定或请求与稳定阶段不一致）；稳定打开的白板不算。
+bool WhiteboardSwitching() noexcept;
 // 0 表示白板事务期间不可准入；非零身份仅随白板意图切换，普通翻页不退休它。
 std::uint64_t PptInputWorkspaceEpoch() noexcept;
 // 仅场景事实允许在 Exiting 提前恢复；业务输入仍等待完整离场。

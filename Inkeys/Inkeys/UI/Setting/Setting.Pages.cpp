@@ -997,14 +997,6 @@ namespace Inkeys::UI::Setting::Design
 			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
 			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
-			// 总开关只控制可见性，隐藏子项时保留它们的保存值。
-			if (draft.animation)
-			{
-				SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
-					IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", draft.animationRate,
-					0.1F, 5.0F, events.animationRateActive, "%.1fx");
-				draft.animationRate = round(draft.animationRate * 10.0F) / 10.0F;
-			}
 			events.startupPreviewChanged = ToggleRow("startup-preview",
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,

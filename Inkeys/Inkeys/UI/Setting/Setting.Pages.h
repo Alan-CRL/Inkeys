@@ -296,7 +296,6 @@ namespace Inkeys::UI::Setting::Design
 		bool startupPreviewChanged = false;
 		bool settingEntryAnimationChanged = false;
 		bool animationChanged = false;
-		bool animationRateActive = false;
 		bool dynamicEdgeLightingChanged = false;
 		bool startupPlacementChanged = false;
 		bool taskbarScaleBaseChanged = false;

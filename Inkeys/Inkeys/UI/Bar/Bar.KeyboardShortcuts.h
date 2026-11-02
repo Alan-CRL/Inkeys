@@ -202,7 +202,8 @@ namespace
 						Backend::UpdateUi();
 					}
 				}
-				else if (GetSelectAndClickThroughMode() == 1)
+				// 与主栏选择按钮一致：白板内分离式也不先清空。
+				else if (GetSelectAndClickThroughMode() == 1 && !::WhiteboardActive())
 				{
 					if (!BeginClear(intent, true, true))
 					{
@@ -302,9 +303,12 @@ namespace
 			const HWND active = reinterpret_cast<HWND>(nextForeground);
 			const bool nextTextInput = setting && (active == setting || IsChild(setting, active));
 			const bool hardModal = offSignal || Inkeys::UI::MessageBox::IsShowing();
-			const bool nextModal = hardModal || WhiteboardTransactionActive();
+			const bool whiteboardMinimized = ::WhiteboardActive()
+				&& Inkeys::Window::GetService().WhiteboardWindowGroupMinimized();
+			// 稳定白板按普通批注处理；仅进入/退出过渡与最小化期间暂停并交还系统。
+			const bool nextModal = hardModal || WhiteboardSwitching() || whiteboardMinimized;
 			const bool nextWhiteboardMenuInput = !hardModal && !nextTextInput && ::WhiteboardActive()
-				&& !Inkeys::Window::GetService().WhiteboardWindowGroupMinimized();
+				&& !whiteboardMinimized;
 			const bool changedScene = initialized && next.scope != context.scope;
 			const bool changedRoute = initialized && (foreground != nextForeground ||
 				textInput != nextTextInput || modal != nextModal ||
@@ -353,6 +357,8 @@ namespace
 		}
 		void Stop() { Retire(); initialized = false; }
 		static int ProductionTest() noexcept;
+		// 调用方先把白板布置为稳定 Active；验证 X 与按钮一致且分离式不清空。
+		static int WhiteboardProductionTest() noexcept;
 	};
 	// 无窗口探针复用同一个 owner/回执槽，仅把 Host 异步边界替换为可控完成点。
 	struct BarShortcutTestBackend
@@ -634,6 +640,51 @@ namespace
 				require(Backend::menuDismisses==1,"menu-escape-rejects-retired-service");
 			}
 			std::fputs("[ShortcutBusinessProduction] PASS: owner roundtrip, named clear, double Delete, leases, cancellation\n", stderr);
+			return 0;
+		}
+		catch (const char* check)
+		{ std::fprintf(stderr, "[ShortcutBusinessProduction] FAIL: %s\n", check); }
+		catch (...) { std::fputs("[ShortcutBusinessProduction] FAIL: exception\n", stderr); }
+		return 1;
+	}
+
+	template<class Backend>
+	int BarKeyboardShortcutOwner<Backend>::WhiteboardProductionTest() noexcept
+	{
+		try
+		{
+			const auto require = [](bool ok, const char* check) { if (!ok) throw check; };
+			require(::WhiteboardActive() && !WhiteboardSwitching(), "whiteboard-probe-is-stable-active");
+			const auto previousStyle = GetSelectAndClickThroughMode();
+			(void)SetSelectAndClickThroughMode(1);
+			Backend::Reset();
+			ChangeStateModeToPen();
+			BarKeyboardShortcutOwner owner;
+			owner.context = Backend::Capture();
+			owner.lifecycle = owner.configGeneration = owner.foreground = 1;
+			owner.ownRevision = StateModeTransitionRevision();
+			owner.initialized = true;
+			Keyboard::Intent intent;
+			intent.command = Command::ToggleAnnotation;
+			intent.lifecycle = intent.serviceGeneration = intent.configGeneration = intent.foreground = 1;
+			intent.modeRevision = StateModeTransitionRevision();
+			intent.sceneScope = owner.scene;
+			intent.contextGeneration = owner.generation;
+			intent.pressId = 1;
+			intent.ctrlSessionId = intent.gestureGeneration = intent.interruptionGeneration = 1;
+			owner.queue.push_back(intent);
+			owner.Drain();
+			require(GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection
+				&& Backend::clears == 0 && !owner.pending.request,
+				"whiteboard-separated-x-selects-without-clear-like-button");
+			intent.pressId = 2;
+			intent.modeRevision = StateModeTransitionRevision();
+			owner.queue.push_back(intent);
+			owner.Drain();
+			require(GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen && Backend::clears == 0,
+				"whiteboard-x-restores-annotation");
+			(void)SetSelectAndClickThroughMode(previousStyle);
+			std::fputs("[ShortcutBusinessProduction] PASS: whiteboard X roundtrip without clear\n", stderr);
 			return 0;
 		}
 		catch (const char* check)

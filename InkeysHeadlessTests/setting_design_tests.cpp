@@ -3234,7 +3234,7 @@ namespace
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
 			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false;
-			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false;
+			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false;
 		};
 		ImGuiWindow* host = nullptr;
 		int modeChanges = 0, entryAnimationChanges = 0, multipleInstanceChanges = 0; std::array<int, 6> shortcutChanges{};
@@ -3258,7 +3258,7 @@ namespace
 			};
 			frame.operation = rowSeen("##选择与穿透"); frame.layout = rowSeen("主栏图标顺序") && rowSeen("主栏展开方向调整");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
-			frame.entryAnimation = rowSeen("setting-entry-animation");
+			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
 			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
 			ImGui::PushID(5); frame.shortcuts = rowSeen("##启用固定快捷键"); ImGui::PopID();
@@ -3277,7 +3277,7 @@ namespace
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
 				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.animationChanged
-				&& !events.animationRateActive && !events.dynamicEdgeLightingChanged
+				&& !events.dynamicEdgeLightingChanged
 				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
 				&& std::none_of(events.autoCollapseChanged.begin(), events.autoCollapseChanged.end(), [](bool value) { return value; })
@@ -3360,8 +3360,10 @@ namespace
 		draft.animation = true; draft.edgeLighting = true;
 		draw(Design::GeneralSection::Appearance, outside, false);
 		const auto shown = draw(Design::GeneralSection::Appearance, outside, false);
-		checks.Expect(shown.height > hidden.height + 100 * scale && draft.dynamicEdgeLighting && Near(draft.animationRate, 4.7F),
-			"actual appearance page reveals rate and dynamic-light controls without resetting their stored values");
+		// 动画速率已迁到实验选项；外观页只增加动态光影行，并保留原速率。
+		checks.Expect(shown.height > hidden.height + 40 * scale && !shown.animationRate
+			&& draft.dynamicEdgeLighting && Near(draft.animationRate, 4.7F),
+			"actual appearance page reveals dynamic lighting, keeps rate in experimental options, and preserves stored values");
 		draft.animation = false; draft.edgeLighting = false;
 		const auto appearance = draw(Design::GeneralSection::Appearance, outside, false);
 		const ImVec2 slider(appearance.lastItem.left + appearance.lastItem.Width() * 0.75F,

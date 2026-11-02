@@ -422,3 +422,20 @@ Correct：保留control4+Pending，视觉override3+Page角标；只有实际read
 ### 5. Wrong vs Correct
 Wrong：在LL键盘钩子识别PgDn等键触发淡化，或在显隐分支外直接`SetOpacity(1)`覆盖淡化。
 Correct：由页码外部变化统一覆盖翻页笔/键盘/滚轮，透明度只经`opacityTarget`单点决策。
+
+## Scenario: 翻页控件进入/退出淡变期间冻结内容（2026-11-02）
+
+### 1. Scope / Trigger
+修改 `ConfigureSurface` 内容重建条件、`BuildPageContent` 的白板 switching 映射，或宿主白板工作区交接的页状态发布时适用。
+
+### 2. Contracts
+- 控件进入隐藏（`desiredMode==Hidden` 且已配置）后不再按新发布重建内容，保留离场前的文字、启用状态与 switching 外观；被跳过的修订不写入 `observedRevision`，重新可见时按最新发布重建。
+- 白板 `switching` 仅在稳定白板内（`!::WhiteboardSwitching()`）映射为“加载中/请稍候”和禁用外观；工作区进入/退出期间宿主置 switching 只锁输入（`WhiteboardWorkspaceSwitching`/输入快照），不改变可见内容。
+- 根因：宿主在交接时依次发布 `PublishExpandedLayoutTarget`、`PublishPageState(...,true)`、`PublishPageState(...,false)`；PPT 结束同时发布 page=-1。旧逻辑在淡入/淡出途中逐次重建内容，文字在页码/加载中间切换、按钮在启用/禁用间往返，表现为文字闪烁与背景渐变来回。
+
+### 3. Tests Required
+`Inkeys.exe --bar-eraser-offscreen-test`（PageControl `RunOffscreenTests`）的分步工作区场景：白板进入/退出、PPT 开始/结束四段整体透明度单调，且淡出期间 `configuredContent` 文字/switching 与正文尺寸不变。
+
+### 4. Wrong vs Correct
+Wrong：隐藏后仍对每次发布 `ConfigurePagination`，或把交接期 switching 直接当作页面加载状态。
+Correct：淡出冻结最后可见内容；交接期 switching 只作输入门禁。

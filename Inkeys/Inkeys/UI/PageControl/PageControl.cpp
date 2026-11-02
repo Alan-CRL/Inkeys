@@ -246,6 +246,8 @@ namespace Inkeys::UI::PageControl
 			double opacityTarget = 0.0;
 			// 上一帧是否处于可淡化的 PPT 可见态；白板→PPT 时底部控件不经过隐藏也须重新计时。
 			bool idleEligible = false;
+			// 最近一次交给 Scene 的分页内容；淡出期间保持不变。
+			PageContent configuredContent{};
 			bool inputLocked = true;
 			bool borderCursorPointerInside = false;
 			bool dragging = false;
@@ -977,7 +979,9 @@ namespace Inkeys::UI::PageControl
 			content.surface=static_cast<unsigned>(index);
 			content.loadingSession=ppt.layout.session;
 			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
-			content.switching=whiteboard.switching;content.pptActive=ppt.presentationActive;
+			// 工作区交接期间宿主也会置 switching；它只锁输入，不能把淡入/淡出中的页码换成“加载中”再换回。
+			const bool pageSwitching=whiteboard.switching&&!::WhiteboardSwitching();
+			content.switching=pageSwitching;content.pptActive=ppt.presentationActive;
 			content.nextIsAdd=whiteboard.nextIsAdd;content.nextIsEndShow=IsPptEndPage(ppt.currentPage,ppt.totalPage);
 			// 已观测的页面Pending独立于命令outstanding，通用准备不猜测上/下页方向。
 			const bool pagePreparing=IsPptPagePreparing(ppt);
@@ -986,7 +990,7 @@ namespace Inkeys::UI::PageControl
 			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
 			if(content.whiteboard){
 				content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);
-				if(whiteboard.switching){
+				if(pageSwitching){
 					content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
 					content.currentPage=IW(I18nKey.UI.Bar.CanvasRecovery.Loading);
 					content.totalPage=IW(I18nKey.UI.Bar.CanvasRecovery.Wait);
@@ -1244,7 +1248,9 @@ namespace Inkeys::UI::PageControl
 			const auto visualMode=desiredMode==WorkspaceMode::Hidden
 				?(state.sceneConfigured?state.configuredMode:WorkspaceMode::PptCompact):desiredMode;
 			const bool modeChanged=state.sceneConfigured&&state.configuredMode!=visualMode;
-			if(!state.sceneConfigured || modeChanged || state.observedRevision!=revision){
+			// 淡出期间保留离场前内容：退场后的页码/加载状态不能在渐隐途中改写文字与按钮外观。
+			const bool fadingOut=state.sceneConfigured&&desiredMode==WorkspaceMode::Hidden;
+			if(!state.sceneConfigured || modeChanged || (!fadingOut&&state.observedRevision!=revision)){
 				const bool animate=modeChanged&&ShouldAnimateWorkspaceLayout(SurfaceFor(index),state.configuredMode,visualMode,state.targetVisible);
 				WaitTrace::Fields contentFields;
 				if(WaitTrace::Enabled()&&visualMode==WorkspaceMode::PptCompact){
@@ -1258,7 +1264,8 @@ namespace Inkeys::UI::PageControl
 				// 仅包本次真实PPT配置；白板/无效上下文屏蔽外层，不能套用其PPT场次。
 				bool configured;
 				{ WaitTrace::ContentScope contentTrace(contentFields);
-				  configured=state.scene.ConfigurePagination(BuildPageContent(index,visualMode,ppt,whiteboard),animate?LayoutTransitionDurationSeconds():0); }
+				  state.configuredContent=BuildPageContent(index,visualMode,ppt,whiteboard);
+				  configured=state.scene.ConfigurePagination(state.configuredContent,animate?LayoutTransitionDurationSeconds():0); }
 				if(!configured){
 					failedStage="pagination-configure";
 					auto fields=WaitingFields(ppt,static_cast<int>(index),revision);fields.mode=static_cast<unsigned>(visualMode);
@@ -1334,7 +1341,8 @@ namespace Inkeys::UI::PageControl
 			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,
 				(state.bounds.active||state.scene.Geometry().layoutAnimating)&&!settleDragPosition,WhiteboardWorkspaceSwitching(whiteboard));
 			if(!ApplyCurrentSceneBounds(state)){failedStage="pagination-bounds";return false;}
-			state.sceneConfigured=true;state.configuredMode=visualMode;state.observedRevision=revision;state.renderedWhiteboard=whiteboard;
+			// 被冻结的修订不记为已观测，重新可见时按最新发布重建内容。
+			state.sceneConfigured=true;state.configuredMode=visualMode;if(!fadingOut)state.observedRevision=revision;state.renderedWhiteboard=whiteboard;
 			return true;
 		}
 
@@ -4746,7 +4754,7 @@ namespace Inkeys::UI::PageControl
 			{
 				// 按产品分步发布工作区事实，直接走 ConfigureSurface/Scene/PresentScene；只替换最终 HWND sink。
 				Prepare();auto show=baseline;WhiteboardState board;bool minimized=false,blockResources=false;
-				auto stamp=origin+3s;unsigned morphFrames=0,submittedFrames=0;
+				auto stamp=origin+3s;unsigned morphFrames=0,submittedFrames=0;bool sessionEntering=false;
 				std::array<const void*,5> identities{};
 				for(std::size_t i=0;i<identities.size();++i)identities[i]=surfaces[0].scene.Layout().buttons[i].identity;
 				const auto publishShow=[&]{++show.publicationRevision;PublishPptState(show);};
@@ -4768,7 +4776,7 @@ namespace Inkeys::UI::PageControl
 							Check(body.right-body.left==static_cast<LONG>(std::lround(geometry.bodyBounds.Width()*state.bounds.scale))
 								&&body.bottom-body.top==static_cast<LONG>(std::lround(geometry.bodyBounds.Height()*state.bounds.scale)),
 								"bottom adapter dimensions come from the same current Scene body instead of another width animation");
-							if(show.presentationActive&&show.layout.showBottomPair&&!minimized){
+							if(show.presentationActive&&show.layout.showBottomPair&&!minimized&&!sessionEntering){
 								Check(state.targetVisible&&geometry.opacity==1&&geometry.fillOpacity==BarMainBarFillOpacity,
 									"shared live bottom never fades through a delayed visibility or workspace publication gap");
 								if(index==0&&geometry.bodyBounds.Width()>240&&geometry.bodyBounds.Width()<305)++morphFrames;
@@ -4844,6 +4852,36 @@ namespace Inkeys::UI::PageControl
 				minimized=false;tick();settle();board.active=board.expandedLayoutTarget=false;publishBoard();settle();
 				Check(!surfaces[0].targetVisible&&!surfaces[0].scene.AnimationActive()&&surfaces[0].scene.Geometry().opacity==0,
 					"closing standalone whiteboard completes its normal fade and retires without a live PPT session");
+				// 进入/退出的整体透明度必须单调；淡出期间保留离场前的文字和正文尺寸，不能按退场后的状态重排。
+				const auto monotonic=[&](bool rising,const char* why,const std::function<void(int)>& during={}){
+					std::array<double,4> last{};std::array<double,4> width{};std::array<std::uint64_t,4> layout{};
+					std::array<std::pair<std::wstring,std::wstring>,4> texts;std::array<bool,4> switching{};
+					for(std::size_t i=0;i<surfaces.size();++i){const auto g=surfaces[i].scene.Geometry();last[i]=g.opacity;width[i]=g.bodyBounds.Width();layout[i]=g.layoutRevision;
+						texts[i]={surfaces[i].configuredContent.currentPage,surfaces[i].configuredContent.totalPage};switching[i]=surfaces[i].configuredContent.switching;}
+					bool ok=true,stable=true;for(int frame=0;frame<40;++frame){if(during)during(frame);tick();for(std::size_t i=0;i<surfaces.size();++i){
+						const auto g=surfaces[i].scene.Geometry();const double value=g.opacity;
+						if(rising?value+1e-9<last[i]:value>last[i]+1e-9){ok=false;std::fprintf(stderr,"[PageControlHidden] opacity surface=%zu frame=%d %.4f->%.4f\n",i,frame,last[i],value);}
+						const auto& content=surfaces[i].configuredContent;
+						if(!rising&&value>0&&(content.currentPage!=texts[i].first||content.totalPage!=texts[i].second||content.switching!=switching[i])){stable=false;
+							std::fprintf(stderr,"[PageControlHidden] fading text changed surface=%zu frame=%d\n",i,frame);}
+						if(!rising&&value>0&&(g.bodyBounds.Width()!=width[i]||g.layoutRevision!=layout[i])){stable=false;
+							std::fprintf(stderr,"[PageControlHidden] fading content changed surface=%zu frame=%d width %.1f->%.1f layout %llu->%llu\n",
+								i,frame,width[i],g.bodyBounds.Width(),static_cast<unsigned long long>(layout[i]),static_cast<unsigned long long>(g.layoutRevision));}
+						last[i]=value;width[i]=g.bodyBounds.Width();layout[i]=g.layoutRevision;}}
+					Check(ok,why);Check(stable,"fading-out page controls keep their last visible content and body size");};
+				board.active=board.expandedLayoutTarget=true;board.currentPage=3;board.totalPage=12;publishBoard();
+				monotonic(true,"standalone whiteboard entry fades in monotonically");
+				// 退出时宿主随即发布保存中的页状态；淡出不能把它换成“加载中”。
+				board.active=board.expandedLayoutTarget=false;publishBoard();
+				monotonic(false,"standalone whiteboard exit fades out monotonically",[&](int frame){
+					if(frame==2){board.switching=true;publishBoard();}if(frame==6){board.switching=false;board.currentPage=board.totalPage=0;publishBoard();}});
+				board={};publishBoard();settle();
+				show.presentationActive=show.presentationVisible=true;show.layout.showMiddlePair=true;show.currentPage=12;show.totalPage=120;publishShow();
+				// 新场次从隐藏淡入是正常显示过程，不属于“共享底栏中途不淡化”的场景。
+				sessionEntering=true;monotonic(true,"PPT show start fades all four controls in monotonically");sessionEntering=false;
+				// 真实结束同时撤销页码；淡出中的数字不能变成“-/-”。
+				show.presentationActive=show.presentationVisible=false;show.currentPage=show.totalPage=-1;publishShow();
+				monotonic(false,"PPT show end fades all four controls out monotonically");
 			}
 			for(const UINT dpi:{96U,144U})for(const int taskbarThickness:{24,48,96})
 			for(const float localScale:{1.0F,1.5F})for(const float savedOffset:{0.0F,37.0F}){

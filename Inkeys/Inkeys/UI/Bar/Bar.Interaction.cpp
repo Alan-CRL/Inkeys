@@ -71,6 +71,11 @@ int Inkeys::UI::Bar::RunKeyboardShortcutBusinessProductionTest() noexcept
 {
 	return BarKeyboardShortcutOwner<BarShortcutTestBackend>::ProductionTest();
 }
+
+int Inkeys::UI::Bar::RunKeyboardShortcutWhiteboardProductionTest() noexcept
+{
+	return BarKeyboardShortcutOwner<BarShortcutTestBackend>::WhiteboardProductionTest();
+}
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarThicknessTooltipHoverGraceMs = 100;

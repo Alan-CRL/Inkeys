@@ -3390,25 +3390,12 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 						}
 						Experimental.Inkeys3.AnimationEnable = draft.animation;
-						Experimental.Inkeys3.AnimationSpeedRate = draft.animationRate;
 						if (events.animationChanged)
 						{
 							if (!draft.animation) Design::SnapNavigationAnimations(navigationState);
 							Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable = draft.animation;
 							Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
 							QueueConfigWrite();
-						}
-						if (draft.animation && fabs(draft.animationRate - static_cast<float>(
-							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001F)
-						{
-							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate = static_cast<double>(draft.animationRate);
-							Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
-							Experimental.Inkeys3.AnimationSpeedSavePending = true;
-						}
-						if (!events.animationRateActive && Experimental.Inkeys3.AnimationSpeedSavePending)
-						{
-							QueueConfigWrite();
-							Experimental.Inkeys3.AnimationSpeedSavePending = false;
 						}
 						Experimental.Inkeys3.DynamicEdgeLighting = draft.dynamicEdgeLighting;
 						if (events.dynamicEdgeLightingChanged)
@@ -4423,6 +4410,28 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					Design::PageHeader("实验室");
 					Design::SectionHeader("Inkeys3");
+
+					// 仅迁移入口：沿用动画开关、实时预览与松手/离页保存，不改配置键。
+					bool animationRateActive = false;
+					if (Experimental.Inkeys3.AnimationEnable)
+					{
+						Design::SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
+							IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", Experimental.Inkeys3.AnimationSpeedRate,
+							0.1F, 5.0F, animationRateActive, "%.1fx");
+						auto& rate = Experimental.Inkeys3.AnimationSpeedRate;
+						rate = round(rate * 10.0F) / 10.0F;
+						if (fabs(rate - static_cast<float>(Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001F)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate = static_cast<double>(rate);
+							Inkeys::UI::Bar::SetAnimationOptions(Experimental.Inkeys3.AnimationEnable, rate);
+							Experimental.Inkeys3.AnimationSpeedSavePending = true;
+						}
+					}
+					if (!animationRateActive && Experimental.Inkeys3.AnimationSpeedSavePending)
+					{
+						QueueConfigWrite();
+						Experimental.Inkeys3.AnimationSpeedSavePending = false;
+					}
 
 					Experimental.Inkeys3.AllowFractionalFontSize =
 						Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();

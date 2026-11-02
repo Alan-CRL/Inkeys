@@ -1588,10 +1588,11 @@ DrawCore(coreBrush);
 
 `【合理推断】` 设置 UI 的局部改动应复用 `Setting.Widgets`、`Setting.Wrap` 及现有字体/纹理路径；普通设置功能不得顺带更换 device、swap-chain、shader 或 SRV 所有权。
 
-### Setting 外观条件卡片约定
+### Setting 动画速率与条件卡片约定
 
+- “动画速率”位于实验选项页，沿用 `Experimental.Inkeys3.UI3.Animation.SpeedRate` 与原 i18n 键；范围 0.1–5.0、按 0.1 取整，实时同步 Bar，松手、离页或隐藏时保存。动画总开关仍在常规外观页。
 - “动画速率”只在 `Experimental.Inkeys3.UI3.Animation.Enable=true` 时显示；“动态边缘光影”只在 `Experimental.Inkeys3.UI3.EdgeLighting.Enable=true` 时显示。隐藏只影响布局，不得覆盖 `SpeedRate` 或 `EdgeLighting.Dynamic` 的持久化值。
-- 两个条件设置行的渲染门禁必须读取同一份帧开始 draft；Fluent Design 按实际行内容自然累计高度，不恢复旧固定坐标容器的 `4 + 条件项` 高度预算。隐藏仅改变布局，不覆盖保存值，避免同一帧混用切换前后的 bool。
+- 条件设置行的渲染门禁必须读取所在页面本帧的设置快照；Fluent Design 按实际行内容自然累计高度，不恢复旧固定坐标容器的 `4 + 条件项` 高度预算。隐藏仅改变布局，不覆盖保存值，避免同一帧混用切换前后的 bool。
 - 用户可见标题走 i18n；改标题时保持不可见 ImGui ID 稳定，避免无必要地重置控件身份。
 
 ### Setting 统一渲染与业务队列合同

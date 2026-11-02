@@ -1491,6 +1491,15 @@ bool WhiteboardTransactionActive() noexcept
 		WhiteboardPhase::Inactive);
 }
 
+bool WhiteboardSwitching() noexcept
+{
+	if (!IsWhiteboardFeatureEnabled()) return false;
+	const auto phase = whiteboardPhase.load(std::memory_order_acquire);
+	const bool desired = whiteboardDesired.load(std::memory_order_acquire);
+	return phase == WhiteboardPhase::Entering || phase == WhiteboardPhase::Exiting
+		|| desired != (phase == WhiteboardPhase::Active);
+}
+
 std::uint64_t PptInputWorkspaceEpoch() noexcept
 {
 	const auto epoch=whiteboardInputEpoch.load(std::memory_order_acquire);
@@ -2095,8 +2104,9 @@ bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
 {
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
+		// 稳定白板与主栏按钮一致允许往返；只在进入/退出过渡中拒绝。
 		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision ||
-			WhiteboardTransactionActive()) return false;
+			WhiteboardSwitching()) return false;
 		if (restoreAnnotation)
 		{
 			if (!IsComputerInteractionMode(stateMode.StateModeSelect)) return false;
@@ -3191,6 +3201,32 @@ int RunStateModeProductionTest() noexcept
 			}
 		}
 		require(Inkeys::UI::Bar::RunKeyboardShortcutBusinessProductionTest() == 0, "shortcut-business-owner");
+		stage = "shortcut-whiteboard";
+		{
+			// 稳定白板与主栏按钮一致允许往返；进入/退出过渡仍拒绝。
+			setProbePhase(WhiteboardPhase::Active);
+			require(WhiteboardTransactionActive() && !WhiteboardSwitching(), "stable-whiteboard-is-not-switching");
+			ChangeStateModeToPen();
+			auto board = GetStateModeVersionedSnapshot();
+			require(ChangeStateModeForShortcutIfRevision(false, board.revision, Inkeys::UI::Freeze::Snapshot().revision)
+				&& GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+				"stable-whiteboard-shortcut-selects");
+			require(ChangeStateModeForShortcutIfRevision(true, StateModeTransitionRevision(),
+				Inkeys::UI::Freeze::Snapshot().revision)
+				&& GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen,
+				"stable-whiteboard-shortcut-restores");
+			require(Inkeys::UI::Bar::RunKeyboardShortcutWhiteboardProductionTest() == 0, "shortcut-whiteboard-owner");
+			for (const auto phase : { WhiteboardPhase::Entering, WhiteboardPhase::Exiting })
+			{
+				setProbePhase(phase);
+				board = GetStateModeVersionedSnapshot();
+				require(WhiteboardSwitching() && !ChangeStateModeForShortcutIfRevision(false, board.revision,
+					Inkeys::UI::Freeze::Snapshot().revision) && StateModeTransitionRevision() == board.revision,
+					"whiteboard-transition-rejects-shortcut");
+			}
+			setProbePhase(WhiteboardPhase::Inactive);
+			require(!WhiteboardSwitching(), "inactive-whiteboard-is-not-switching");
+		}
 		(void)SetSelectAndClickThroughMode(1);
 		Inkeys::UI::Freeze::SetPresentationActive(true);
 		require(ChangeStateModeToClickThrough(), "ppt-clickthrough-still-available");
