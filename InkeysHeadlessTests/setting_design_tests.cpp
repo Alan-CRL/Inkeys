@@ -3197,10 +3197,10 @@ namespace
 		checks.Expect(cursorDetail != detail && cursorDetail != palmDetail && cursorDetail != overview
 			&& Near(cursorDetail->Scroll.y, 0) && navigation.contentPage == static_cast<int>(PageId::Draw),
 			"cursor page has its own stable child identity under the drawing sidebar destination");
-		cursorDraft.mouse = 9; cursorDraft.touch = -3; cursorDraft.screenPen = 7; cursorDraft.tablet = 4; cursorDraft.highlightMode = 8;
+		cursorDraft.mouse = 9; cursorDraft.touch = -3; cursorDraft.screenPen = 7; cursorDraft.tablet = 5;
 		cursorDraft.injectedAvailable = false;
 		draw(DrawingSubpage::Cursor);
-		checks.Expect(cursorDraft.mouse == 3 && cursorDraft.touch == 0 && cursorDraft.screenPen == 2 && cursorDraft.tablet == 2,
+		checks.Expect(cursorDraft.mouse == 4 && cursorDraft.touch == 0 && cursorDraft.screenPen == 4 && cursorDraft.tablet == 4,
 			"cursor page clamps every device selection to that device's legal style range");
 		draw(DrawingSubpage::PalmEraser);
 		AdvanceNavigationAnimations(navigation, .05F, true, 1); const float reveal = navigation.contentReveal.value;

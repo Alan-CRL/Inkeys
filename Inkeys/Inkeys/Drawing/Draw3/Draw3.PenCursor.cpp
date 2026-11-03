@@ -27,6 +27,39 @@ namespace Inkeys::Drawing::Draw3
 		std::mutex drawingCursorTraceMutex;
 		DrawingCursorDiagnosticVisualState drawingCursorDiagnosticVisual = {};
 
+		// 把设备样式应用到软/硬笔的光标外观：不改变热点，只改变几何与描边。
+		// Arrow 为自绘的白底黑边箭头（鼠标设备的 Arrow 是真实系统光标，不经过这里）。
+		void ApplyCursorStyle(DrawingCursorAppearance& appearance, CursorStyle style, float scale) noexcept
+		{
+			if (style == CursorStyle::Arrow)
+			{
+				appearance.shape = DrawingCursorShape::Arrow;
+				appearance.width = kCursorArrowWidthDip * scale;
+				appearance.height = kCursorArrowHeightDip * scale;
+				appearance.centerOffsetX = appearance.width * 0.5f;
+				appearance.centerOffsetY = appearance.height * 0.5f;
+				appearance.red = appearance.green = appearance.blue = 1.0f;
+				appearance.opacity = 1.0f;
+				appearance.fillAlpha = 1.0f;
+				appearance.outlineWidth = 1.0f * scale;
+				appearance.outlineOpacity = 1.0f;
+				appearance.outlineRed = appearance.outlineGreen = appearance.outlineBlue = 0.0f;
+				return;
+			}
+			if (IsPenCursorStyle(style))
+			{
+				appearance.shape = DrawingCursorShape::PenIcon;
+				appearance.width = appearance.height = kCursorPenIconDip * scale;
+				appearance.centerOffsetX = appearance.width * 0.5f;
+				appearance.centerOffsetY = appearance.height * 0.5f;
+			}
+			const bool highlight = IsHighlightedCursorStyle(style);
+			appearance.outlineWidth = (highlight ? kCursorHighlightEdgeDip : kCursorPlainEdgeDip) * scale;
+			appearance.outlineOpacity = highlight ? 1.0f : appearance.opacity * appearance.fillAlpha;
+			appearance.outlineRed = appearance.outlineGreen = appearance.outlineBlue =
+				highlight ? 0.96f : 184.0f / 255.0f;
+		}
+
 		bool FloatEqual(float left, float right) noexcept
 		{
 			return std::abs(left - right) <= 0.0001f;
@@ -290,7 +323,7 @@ namespace Inkeys::Drawing::Draw3
 		bool penIconAllowed, float dpiScale) noexcept
 	{
 		if (productSettings)
-			mouseUsesSystemCursor = productSettings->mouseStyle == MouseCursorStyle::System;
+			mouseUsesSystemCursor = productSettings->mouse == CursorStyle::Arrow;
 		DrawingCursorVisual visual;
 		const DrawingCursorSample* sample = SelectPrimarySample(
 			penSample, mouseSample, pointerAuthority);
@@ -341,37 +374,22 @@ namespace Inkeys::Drawing::Draw3
 				? std::clamp(dpiScale, 0.25f, 8.0f) : 1.0f;
 			// 设备行：鼠标 / 屏幕笔 / 数位板（含 Unknown、Conflict 与开关开启的注入鼠标）。
 			const bool mouseRow = !pen && !tabletMouse;
-			bool useIcon = false, highlightDot = false;
-			if (mouseRow)
+			const CursorStyle style = mouseRow ? productSettings->mouse
+				: screenPen ? productSettings->screenPen : productSettings->tablet;
+			if (penIconAllowed)
 			{
-				useIcon = productSettings->mouseStyle == MouseCursorStyle::Drawing;
-				highlightDot = productSettings->mouseStyle == MouseCursorStyle::HighlightDot;
+				// 设备样式只作用于软/硬笔；荧光笔矩形、图形圆形和其它工具保持原几何与原高亮规则。
+				ApplyCursorStyle(visual.appearance, style, scale);
 			}
 			else
 			{
-				const PenCursorStyle style = screenPen ? productSettings->screenPenStyle : productSettings->tabletStyle;
-				useIcon = style == PenCursorStyle::PenIcon;
-				highlightDot = style == PenCursorStyle::HighlightDot;
+				const bool highlight = !screenPen;
+				visual.appearance.outlineWidth = (highlight ? kCursorHighlightEdgeDip : kCursorPlainEdgeDip) * scale;
+				visual.appearance.outlineOpacity = highlight ? 1.0f :
+					visual.appearance.opacity * visual.appearance.fillAlpha;
+				visual.appearance.outlineRed = visual.appearance.outlineGreen =
+					visual.appearance.outlineBlue = highlight ? 0.96f : 184.0f / 255.0f;
 			}
-			// 类型选择只允许改变软/硬笔，荧光笔矩形和图形圆形保持原几何与原高亮规则。
-			bool highlight;
-			if (!penIconAllowed) highlight = !screenPen;
-			else if (highlightDot) highlight = true;
-			else highlight = IsCursorEdgeHighlighted(mouseRow ? CursorDevice::Mouse
-				: screenPen ? CursorDevice::ScreenPen : CursorDevice::Tablet, productSettings->penHighlight, useIcon);
-			if (penIconAllowed && useIcon)
-			{
-				visual.appearance.shape = DrawingCursorShape::PenIcon;
-				visual.appearance.width = visual.appearance.height = kCursorPenIconDip * scale;
-				visual.appearance.centerOffsetX = visual.appearance.width * 0.5f;
-				visual.appearance.centerOffsetY = visual.appearance.height * 0.5f;
-			}
-			visual.appearance.outlineWidth = (highlight ? 1.25f : 0.5f) * scale;
-			visual.appearance.outlineOpacity = highlight ? 1.0f :
-				visual.appearance.opacity * visual.appearance.fillAlpha;
-			const float outline = highlight ? 0.96f : 184.0f / 255.0f;
-			visual.appearance.outlineRed = visual.appearance.outlineGreen =
-				visual.appearance.outlineBlue = outline;
 		}
 		else if (pen && !eraser && !translucentInkCursorEnabled &&
 			visual.appearance.opacity >= 1.0f)
@@ -605,11 +623,11 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
-		const DrawingCursorAppearance& penAppearance, TouchCursorStyle style,
+		const DrawingCursorAppearance& penAppearance, CursorStyle style,
 		float dpiScale) noexcept
 	{
 		DrawingCursorVisual visual;
-		if (style == TouchCursorStyle::None || !std::isfinite(x) || !std::isfinite(y) ||
+		if (style == CursorStyle::None || !std::isfinite(x) || !std::isfinite(y) ||
 			!IsValidDrawingCursorAppearance(penAppearance)) return visual;
 		const float scale = std::isfinite(dpiScale) && dpiScale > 0.0f
 			? std::clamp(dpiScale, 0.25f, 8.0f) : 1.0f;
@@ -617,21 +635,7 @@ namespace Inkeys::Drawing::Draw3
 		visual.x = x;
 		visual.y = y;
 		visual.appearance = penAppearance;
-		// 触摸是直接在屏幕上操作的设备，只有“高亮小圆点”使用高亮描边。
-		const bool highlight = style == TouchCursorStyle::HighlightDot;
-		if (style == TouchCursorStyle::PenIcon)
-		{
-			visual.appearance.shape = DrawingCursorShape::PenIcon;
-			visual.appearance.width = visual.appearance.height = kCursorPenIconDip * scale;
-			visual.appearance.centerOffsetX = visual.appearance.width * 0.5f;
-			visual.appearance.centerOffsetY = visual.appearance.height * 0.5f;
-		}
-		visual.appearance.outlineWidth = (highlight ? 1.25f : 0.5f) * scale;
-		visual.appearance.outlineOpacity = highlight ? 1.0f :
-			visual.appearance.opacity * visual.appearance.fillAlpha;
-		const float outline = highlight ? 0.96f : 184.0f / 255.0f;
-		visual.appearance.outlineRed = visual.appearance.outlineGreen =
-			visual.appearance.outlineBlue = outline;
+		ApplyCursorStyle(visual.appearance, style, scale);
 		if (!IsValidDrawingCursorAppearance(visual.appearance)) visual.visible = false;
 		return visual;
 	}

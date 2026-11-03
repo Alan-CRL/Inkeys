@@ -257,10 +257,10 @@ namespace Inkeys::UI::Setting::Design
 		std::array<bool, 7> toolsChanged{};
 	};
 	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
-	// 光标专页草稿：四个设备下拉与高亮模式直接使用 Draw3 枚举值作为下拉索引。
+	// 光标专页草稿：四个设备各自的下拉项索引（触摸首项为“无光标”，其余设备首项为“鼠标”）。
 	struct CursorPageDraft
 	{
-		int mouse = 0, touch = 0, screenPen = 0, tablet = 0, highlightMode = 1;
+		int mouse = 0, touch = 0, screenPen = 0, tablet = 0;
 		bool injectedMouse = false;
 		bool injectedAvailable = true;
 	};
@@ -268,7 +268,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		bool back = false;
 		bool mouse = false, touch = false, screenPen = false, tablet = false;
-		bool highlightMode = false, injectedMouse = false;
+		bool injectedMouse = false;
 	};
 	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
 

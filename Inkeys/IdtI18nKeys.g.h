@@ -645,20 +645,13 @@ inline constexpr struct I18nKeyRoot
                 } Tablet{};
                 struct Node__SettingsUI__Draw__Cursor__Style
                 {
-                    const char* System = "SettingsUI/Draw/Cursor/Style/System";
                     const char* None = "SettingsUI/Draw/Cursor/Style/None";
-                    const char* Circle = "SettingsUI/Draw/Cursor/Style/Circle";
-                    const char* PenIcon = "SettingsUI/Draw/Cursor/Style/PenIcon";
+                    const char* Arrow = "SettingsUI/Draw/Cursor/Style/Arrow";
+                    const char* Pen = "SettingsUI/Draw/Cursor/Style/Pen";
+                    const char* HighlightPen = "SettingsUI/Draw/Cursor/Style/HighlightPen";
+                    const char* Dot = "SettingsUI/Draw/Cursor/Style/Dot";
                     const char* HighlightDot = "SettingsUI/Draw/Cursor/Style/HighlightDot";
                 } Style{};
-                struct Node__SettingsUI__Draw__Cursor__PenHighlight
-                {
-                    const char* N = "SettingsUI/Draw/Cursor/PenHighlight/N";
-                    const char* E = "SettingsUI/Draw/Cursor/PenHighlight/E";
-                    const char* Off = "SettingsUI/Draw/Cursor/PenHighlight/Off";
-                    const char* DigitizerOnly = "SettingsUI/Draw/Cursor/PenHighlight/DigitizerOnly";
-                    const char* Always = "SettingsUI/Draw/Cursor/PenHighlight/Always";
-                } PenHighlight{};
                 struct Node__SettingsUI__Draw__Cursor__InjectedMouse
                 {
                     const char* N = "SettingsUI/Draw/Cursor/InjectedMouse/N";

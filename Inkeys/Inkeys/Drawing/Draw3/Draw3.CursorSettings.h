@@ -4,98 +4,133 @@
 
 namespace Inkeys::Drawing::Draw3
 {
-	// 取值 0/1 与旧版两个下拉保持一致，使旧配置无需转换即可被读取。
-	// Circle 即界面上的“小圆点”（随笔宽的圆形预览）；HighlightDot 为固定高亮描边的变体。
-	enum class MouseCursorStyle : std::uint8_t { System = 0, Drawing = 1, Circle = 2, HighlightDot = 3 };
-	enum class PenCursorStyle : std::uint8_t { Circle = 0, PenIcon = 1, HighlightDot = 2 };
-	// 触摸默认无光标，且“无光标”只属于触摸。
-	enum class TouchCursorStyle : std::uint8_t { None = 0, Circle = 1, PenIcon = 2, HighlightDot = 3 };
-	// 只控制屏幕笔/数位板圆形与画笔图标的外描边；小圆点的两个变体和鼠标不受其影响。
-	enum class PenHighlightMode : std::uint8_t { Off = 0, DigitizerOnly = 1, Always = 2 };
+	// 所有设备共用同一组样式；“无光标”只对触摸有效。
+	// Arrow 对鼠标是真实系统光标；对屏幕笔/数位板/触摸则由 Draw3 自绘同形状的箭头。
+	enum class CursorStyle : std::uint8_t
+	{
+		None = 0,
+		Arrow = 1,
+		Pen = 2,
+		HighlightPen = 3,
+		Dot = 4,
+		HighlightDot = 5
+	};
+
+	enum class CursorDevice : std::uint8_t { Mouse, Touch, ScreenPen, Tablet };
 
 	// 只保存可选视觉；系统触摸光标始终隐藏，不进入用户配置。
 	struct CursorSettings
 	{
-		MouseCursorStyle mouseStyle = MouseCursorStyle::System;
-		PenCursorStyle screenPenStyle = PenCursorStyle::Circle;
-		PenCursorStyle tabletStyle = PenCursorStyle::Circle;
-		TouchCursorStyle touchStyle = TouchCursorStyle::None;
-		PenHighlightMode penHighlight = PenHighlightMode::DigitizerOnly;
+		CursorStyle mouse = CursorStyle::Arrow;
+		CursorStyle touch = CursorStyle::None;
+		CursorStyle screenPen = CursorStyle::Dot;
+		CursorStyle tablet = CursorStyle::HighlightDot;
 		// 非 Windows Ink 数位板以“驱动注入的鼠标”到达；开启后按数位板行处理。
 		bool injectedMouseAsTablet = false;
 		friend bool operator==(const CursorSettings&, const CursorSettings&) = default;
 	};
 
-	constexpr MouseCursorStyle RestoreMouseCursorStyle(int value) noexcept
-	{
-		return value >= 0 && value <= 3 ? static_cast<MouseCursorStyle>(value) : MouseCursorStyle::System;
-	}
-
-	constexpr PenCursorStyle RestorePenCursorStyle(int value) noexcept
-	{
-		return value >= 0 && value <= 2 ? static_cast<PenCursorStyle>(value) : PenCursorStyle::Circle;
-	}
-
-	constexpr TouchCursorStyle RestoreTouchCursorStyle(int value) noexcept
-	{
-		return value >= 0 && value <= 3 ? static_cast<TouchCursorStyle>(value) : TouchCursorStyle::None;
-	}
-
-	constexpr PenHighlightMode RestorePenHighlightMode(int value) noexcept
-	{
-		return value >= 0 && value <= 2 ? static_cast<PenHighlightMode>(value) : PenHighlightMode::DigitizerOnly;
-	}
-
 	// 光标设置页预览与实际渲染共用的外观常量，避免两处漂移。
 	inline constexpr float kCursorPenIconDip = 24.0f;
+	inline constexpr float kCursorArrowWidthDip = 12.0f;
+	inline constexpr float kCursorArrowHeightDip = 19.0f;
 	inline constexpr float kCursorHighlightEdgeDip = 1.25f;
 	inline constexpr float kCursorPlainEdgeDip = 0.5f;
 
-	enum class CursorDevice : std::uint8_t { Mouse, Touch, ScreenPen, Tablet };
+	constexpr bool IsPenCursorStyle(CursorStyle style) noexcept
+	{
+		return style == CursorStyle::Pen || style == CursorStyle::HighlightPen;
+	}
 
-	// 小圆点与画笔光标的外描边是否高亮（高亮小圆点恒高亮，不走此函数）：
-	// 鼠标的画笔图标高亮、小圆点普通；触摸不高亮；笔设备按高亮模式。
-	// Unknown/Conflict 笔与开启识别的注入鼠标按数位板行处理。
-	constexpr bool IsCursorEdgeHighlighted(CursorDevice device, PenHighlightMode mode, bool penIcon) noexcept
+	constexpr bool IsDotCursorStyle(CursorStyle style) noexcept
+	{
+		return style == CursorStyle::Dot || style == CursorStyle::HighlightDot;
+	}
+
+	// 高亮变体使用固定高亮描边；其余使用普通描边（鼠标系统光标/箭头不使用该描边）。
+	constexpr bool IsHighlightedCursorStyle(CursorStyle style) noexcept
+	{
+		return style == CursorStyle::HighlightPen || style == CursorStyle::HighlightDot;
+	}
+
+	constexpr CursorStyle DefaultCursorStyle(CursorDevice device) noexcept
 	{
 		switch (device)
 		{
-		case CursorDevice::Mouse: return penIcon;
-		case CursorDevice::Touch: return false;
-		case CursorDevice::ScreenPen: return mode == PenHighlightMode::Always;
-		default: return mode != PenHighlightMode::Off;
+		case CursorDevice::Mouse: return CursorStyle::Arrow;
+		case CursorDevice::Touch: return CursorStyle::None;
+		case CursorDevice::ScreenPen: return CursorStyle::Dot;
+		default: return CursorStyle::HighlightDot;
 		}
 	}
 
-	// 屏幕笔/数位板键为 -1 表示沿用旧版单一“笔”类型（只有 0/1 合法）。
-	constexpr PenCursorStyle RestoreDevicePenCursorStyle(int deviceValue, int legacyPenValue) noexcept
+	constexpr bool IsCursorStyleValueValid(CursorDevice device, int value) noexcept
 	{
-		return deviceValue >= 0 ? RestorePenCursorStyle(deviceValue)
-			: (legacyPenValue == 1 ? PenCursorStyle::PenIcon : PenCursorStyle::Circle);
+		return value >= 0 && value <= 5 && (value != 0 || device == CursorDevice::Touch);
 	}
 
-	// Controller 用一个原子字发布完整设置：mouse2 | screenPen2 | tablet2 | touch3 | highlight2 | injected1 | valid1。
-	inline constexpr std::uint32_t kCursorSettingsValidBit = 1u << 12;
+	constexpr CursorStyle RestoreCursorStyle(CursorDevice device, int value) noexcept
+	{
+		return IsCursorStyleValueValid(device, value) ? static_cast<CursorStyle>(value) : DefaultCursorStyle(device);
+	}
+
+	// 旧版只有“鼠标/笔”两个下拉：鼠标 1 为（高亮的）画笔光标，笔 1 为画笔光标。
+	constexpr CursorStyle LegacyCursorStyle(CursorDevice device, int legacyMouseValue, int legacyPenValue) noexcept
+	{
+		switch (device)
+		{
+		case CursorDevice::Mouse: return legacyMouseValue == 1 ? CursorStyle::HighlightPen : CursorStyle::Arrow;
+		case CursorDevice::Touch: return CursorStyle::None;
+		case CursorDevice::ScreenPen: return legacyPenValue == 1 ? CursorStyle::Pen : CursorStyle::Dot;
+		default: return legacyPenValue == 1 ? CursorStyle::HighlightPen : CursorStyle::HighlightDot;
+		}
+	}
+
+	// 设备键为 -1（或非法）表示沿用旧版配置/默认值。
+	constexpr CursorStyle RestoreDeviceCursorStyle(CursorDevice device, int configured,
+		int legacyMouseValue, int legacyPenValue) noexcept
+	{
+		return IsCursorStyleValueValid(device, configured) ? static_cast<CursorStyle>(configured)
+			: LegacyCursorStyle(device, legacyMouseValue, legacyPenValue);
+	}
+
+	// 设置页下拉：触摸有“无光标”作为首项，其它设备从“鼠标”开始。
+	constexpr int CursorStyleToItemIndex(CursorDevice device, CursorStyle style) noexcept
+	{
+		return static_cast<int>(style) - (device == CursorDevice::Touch ? 0 : 1);
+	}
+
+	constexpr CursorStyle CursorStyleFromItemIndex(CursorDevice device, int index) noexcept
+	{
+		const int value = index + (device == CursorDevice::Touch ? 0 : 1);
+		return RestoreCursorStyle(device, value);
+	}
+
+	constexpr int CursorStyleItemCount(CursorDevice device) noexcept
+	{
+		return device == CursorDevice::Touch ? 6 : 5;
+	}
+
+	// Controller 用一个原子字发布完整设置：mouse3 | touch3 | screenPen3 | tablet3 | injected1 | valid1。
+	inline constexpr std::uint32_t kCursorSettingsValidBit = 1u << 13;
 
 	constexpr std::uint32_t PackCursorSettings(const CursorSettings& s) noexcept
 	{
-		return static_cast<std::uint32_t>(s.mouseStyle)
-			| (static_cast<std::uint32_t>(s.screenPenStyle) << 2)
-			| (static_cast<std::uint32_t>(s.tabletStyle) << 4)
-			| (static_cast<std::uint32_t>(s.touchStyle) << 6)
-			| (static_cast<std::uint32_t>(s.penHighlight) << 9)
-			| (s.injectedMouseAsTablet ? 1u << 11 : 0u)
+		return static_cast<std::uint32_t>(s.mouse)
+			| (static_cast<std::uint32_t>(s.touch) << 3)
+			| (static_cast<std::uint32_t>(s.screenPen) << 6)
+			| (static_cast<std::uint32_t>(s.tablet) << 9)
+			| (s.injectedMouseAsTablet ? 1u << 12 : 0u)
 			| kCursorSettingsValidBit;
 	}
 
 	constexpr CursorSettings UnpackCursorSettings(std::uint32_t bits) noexcept
 	{
 		return CursorSettings{
-			RestoreMouseCursorStyle(static_cast<int>(bits & 3u)),
-			RestorePenCursorStyle(static_cast<int>((bits >> 2) & 3u)),
-			RestorePenCursorStyle(static_cast<int>((bits >> 4) & 3u)),
-			RestoreTouchCursorStyle(static_cast<int>((bits >> 6) & 7u)),
-			RestorePenHighlightMode(static_cast<int>((bits >> 9) & 3u)),
-			((bits >> 11) & 1u) != 0 };
+			RestoreCursorStyle(CursorDevice::Mouse, static_cast<int>(bits & 7u)),
+			RestoreCursorStyle(CursorDevice::Touch, static_cast<int>((bits >> 3) & 7u)),
+			RestoreCursorStyle(CursorDevice::ScreenPen, static_cast<int>((bits >> 6) & 7u)),
+			RestoreCursorStyle(CursorDevice::Tablet, static_cast<int>((bits >> 9) & 7u)),
+			((bits >> 12) & 1u) != 0 };
 	}
 }

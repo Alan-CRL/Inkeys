@@ -515,14 +515,16 @@ namespace
 		state.eraserInputs = ReadEraserPreferences();
 		// 光标偏好和当前工具一起发布；设置线程不直接访问绘制对象或 HWND。
 		const auto& cursor = Inkeys::config.Drawing.Cursor;
-		state.cursorSettings.mouseStyle = Inkeys::Drawing::Draw3::RestoreMouseCursorStyle(cursor.MouseStyle.load());
-		const int legacyPenStyle = cursor.PenStyle.load();
-		state.cursorSettings.screenPenStyle = Inkeys::Drawing::Draw3::RestoreDevicePenCursorStyle(
-			cursor.ScreenPenStyle.load(), legacyPenStyle);
-		state.cursorSettings.tabletStyle = Inkeys::Drawing::Draw3::RestoreDevicePenCursorStyle(
-			cursor.TabletStyle.load(), legacyPenStyle);
-		state.cursorSettings.touchStyle = Inkeys::Drawing::Draw3::RestoreTouchCursorStyle(cursor.TouchStyle.load());
-		state.cursorSettings.penHighlight = Inkeys::Drawing::Draw3::RestorePenHighlightMode(cursor.PenHighlightMode.load());
+		namespace CursorModel = Inkeys::Drawing::Draw3;
+		const int legacyMouseStyle = cursor.MouseStyle.load(), legacyPenStyle = cursor.PenStyle.load();
+		state.cursorSettings.mouse = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::Mouse, cursor.Mouse.load(), legacyMouseStyle, legacyPenStyle);
+		state.cursorSettings.touch = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::Touch, cursor.Touch.load(), legacyMouseStyle, legacyPenStyle);
+		state.cursorSettings.screenPen = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::ScreenPen, cursor.ScreenPen.load(), legacyMouseStyle, legacyPenStyle);
+		state.cursorSettings.tablet = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::Tablet, cursor.Tablet.load(), legacyMouseStyle, legacyPenStyle);
 		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));

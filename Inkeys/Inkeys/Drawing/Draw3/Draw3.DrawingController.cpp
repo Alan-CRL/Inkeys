@@ -4652,31 +4652,31 @@ namespace Inkeys::Drawing::Draw3
 			using namespace Inkeys::Business::PenWidth;
 			WindowController window; // 不附着 HWND，不初始化 Host/RTS/GPU。
 			{
-				const CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
-				const auto expectCursorProjection = [&](MouseCursorStyle expected)
+				const CursorSettings raw{}; // 默认：鼠标系统光标
+				const auto expectCursorProjection = [&](CursorStyle expected)
 				{
 					const auto effective = ResolveCursorSettingsForDrawingTool(window.EffectiveDrawingCursorTool(), raw);
-					window.SetMouseUsesSystemCursor(effective.mouseStyle == MouseCursorStyle::System);
-					check(effective.mouseStyle == expected &&
-						window.GetMouseUsesSystemCursor() == (expected == MouseCursorStyle::System) &&
-						effective.screenPenStyle == PenCursorStyle::PenIcon && raw.mouseStyle == MouseCursorStyle::System,
+					window.SetMouseUsesSystemCursor(effective.mouse == CursorStyle::Arrow);
+					check(effective.mouse == expected &&
+						window.GetMouseUsesSystemCursor() == (expected == CursorStyle::Arrow) &&
+						effective.screenPen == raw.screenPen && raw.mouse == CursorStyle::Arrow,
 						"actual-tool cursor projection preserves raw preferences and synchronizes the Window policy");
 				};
 				// 使用真实 Window 的活动工具锁存/释放，不创建 contact、HWND 或新测试入口。
 				window.SetActiveDrawingCursorTool(DrawingTool::Highlighter);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::SolidLine);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveDrawingCursorTool(DrawingTool::SolidLine);
 				window.SetActiveTool(DrawingTool::Highlighter);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.ClearActiveDrawingCursorTool();
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::HardPen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::Pen);
 			}
 			const auto configuration = CreateStrokeModelConfiguration(96);
@@ -10018,7 +10018,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		const CursorSettings effective = ResolveCursorSettingsForDrawingTool(
 			window_.EffectiveDrawingCursorTool(), settings);
-		const bool system = effective.mouseStyle == MouseCursorStyle::System;
+		const bool system = effective.mouse == CursorStyle::Arrow;
 		const bool systemChanged = window_.GetMouseUsesSystemCursor() != system;
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
@@ -13372,7 +13372,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// 同一实际工具投影同时控制系统箭头和应用预览，不能用新选择覆盖活动笔画。
 				cursorSettings = ResolveCursorSettingsForDrawingTool(cursorTool, cursorSettings);
-				window_.SetMouseUsesSystemCursor(cursorSettings.mouseStyle == MouseCursorStyle::System);
+				window_.SetMouseUsesSystemCursor(cursorSettings.mouse == CursorStyle::Arrow);
 			}
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -13474,7 +13474,7 @@ namespace Inkeys::Drawing::Draw3
 					continue;
 				}
 				// 触摸落笔光标：仅软/硬笔，逐接触各一个；荧光笔、形状等保持无光标。
-				if (cursorSettingsValid && cursorSettings.touchStyle != TouchCursorStyle::None &&
+				if (cursorSettingsValid && cursorSettings.touch != CursorStyle::None &&
 					runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
 					runtime->metricDeviceType == InputDeviceType::Touch &&
 					(runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen))
@@ -13482,7 +13482,7 @@ namespace Inkeys::Drawing::Draw3
 					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
 					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
 						snapshot.position.x, snapshot.position.y,
-						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touchStyle,
+						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touch,
 						ProductTargetScale(runtime->visualStyle));
 					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
 					continue;

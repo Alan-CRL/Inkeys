@@ -357,23 +357,20 @@ int RunConfigMetadataTests()
 		"frozen cursor snapshot keeps both captured types independently");
 	check(cursorConfig.GetUploadInfo() == cursorUpload, "cursor type preferences are not uploaded");
 
-	// 按设备光标：新键独立校验、旧 PenStyle 仅在新键缺失时继承、往返保留。
+	// 按设备光标：四个设备键独立校验；-1/非法/不属于该设备（非触摸的“无光标”）一律为 -1，由读取方回落旧配置或默认值。
 	{
-		struct DeviceKey { const char* name; IdtAtomic<int>* value; int defaultValue; int maximum; bool inheritable; };
+		struct DeviceKey { const char* name; IdtAtomic<int>* value; int firstValid; };
 		Inkeys::Config deviceConfig;
 		auto& deviceCursor = deviceConfig.Drawing.Cursor;
 		const DeviceKey deviceKeys[] = {
-			{ "ScreenPenStyle", &deviceCursor.ScreenPenStyle, -1, 2, true },
-			{ "TabletStyle", &deviceCursor.TabletStyle, -1, 2, true },
-			{ "TouchStyle", &deviceCursor.TouchStyle, 0, 3, false },
-			{ "PenHighlightMode", &deviceCursor.PenHighlightMode, 1, 2, false } };
+			{ "Mouse", &deviceCursor.Mouse, 1 }, { "Touch", &deviceCursor.Touch, 0 },
+			{ "ScreenPen", &deviceCursor.ScreenPen, 1 }, { "Tablet", &deviceCursor.Tablet, 1 } };
+		check(!deviceCursor.InjectedMouseAsTablet.load(), "injected tablet detection defaults off");
 		for (const auto& key : deviceKeys)
 		{
 			const std::string devicePath = std::string("Drawing.Cursor.") + key.name;
-			check(key.value->load() == key.defaultValue && !deviceCursor.InjectedMouseAsTablet.load(),
-				"per-device cursor keys default to inherit/no cursor/digitizer-only and injected detection off");
-			const int firstValid = key.inheritable ? -1 : 0;
-			for (int valid = firstValid; valid <= key.maximum; ++valid)
+			check(key.value->load() == -1, "per-device cursor keys default to inherit");
+			for (int valid = key.firstValid; valid <= 5; ++valid)
 			{
 				Json::Value validDocument(Json::objectValue);
 				validDocument["Drawing"]["Cursor"][key.name] = valid;
@@ -382,32 +379,30 @@ int RunConfigMetadataTests()
 				check(deviceConfig.ReadMini({ devicePath }) && key.value->load() == valid,
 					"every legal per-device cursor value is accepted");
 			}
-			std::vector<Json::Value> invalidValues{ Json::Value(key.maximum + 1), Json::Value(-2), Json::Value(true),
+			std::vector<Json::Value> invalidValues{ Json::Value(6), Json::Value(-2), Json::Value(true),
 				Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)), Json::Value(Json::arrayValue) };
-			if (!key.inheritable) invalidValues.push_back(Json::Value(-1));
+			if (key.firstValid == 1) invalidValues.push_back(Json::Value(0));
 			for (const Json::Value& invalid : invalidValues)
 			{
 				Json::Value invalidDocument(Json::objectValue);
 				invalidDocument["Drawing"]["Cursor"][key.name] = invalid;
 				writeModeDocument(invalidDocument);
 				*key.value = 2;
-				check(deviceConfig.ReadMini({ devicePath }) && key.value->load() == key.defaultValue,
-					"illegal per-device cursor values restore that key's default without coercion");
+				check(deviceConfig.ReadMini({ devicePath }) && key.value->load() == -1,
+					"illegal per-device cursor values fall back to inherit without coercion");
 			}
 		}
-		deviceCursor.MouseStyle = 3;
-		deviceCursor.ScreenPenStyle = 2;
-		deviceCursor.TabletStyle = 1;
-		deviceCursor.TouchStyle = 3;
-		deviceCursor.PenHighlightMode = 2;
+		deviceCursor.Mouse = 5;
+		deviceCursor.Touch = 3;
+		deviceCursor.ScreenPen = 4;
+		deviceCursor.Tablet = 2;
 		deviceCursor.InjectedMouseAsTablet = true;
 		check(deviceConfig.Write(), "write the full per-device cursor selection");
 		Inkeys::Config deviceRestarted;
 		auto& restoredCursor = deviceRestarted.Drawing.Cursor;
-		check(deviceRestarted.ReadAll() && restoredCursor.MouseStyle.load() == 3 &&
-			restoredCursor.ScreenPenStyle.load() == 2 && restoredCursor.TabletStyle.load() == 1 &&
-			restoredCursor.TouchStyle.load() == 3 && restoredCursor.PenHighlightMode.load() == 2 &&
-			restoredCursor.InjectedMouseAsTablet.load(),
+		check(deviceRestarted.ReadAll() && restoredCursor.Mouse.load() == 5 &&
+			restoredCursor.Touch.load() == 3 && restoredCursor.ScreenPen.load() == 4 &&
+			restoredCursor.Tablet.load() == 2 && restoredCursor.InjectedMouseAsTablet.load(),
 			"restart restores every per-device cursor selection");
 		check(deviceConfig.GetUploadInfo() == cursorUpload, "per-device cursor preferences are not uploaded");
 	}

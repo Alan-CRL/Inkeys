@@ -3502,30 +3502,32 @@ SettingSessionCoroutine RunSettingSession()
 					if (drawingSubpage == Design::DrawingSubpage::Cursor)
 					{
 						namespace Cursor = Inkeys::Drawing::Draw3;
+						using Cursor::CursorDevice;
 						auto& cursor = Inkeys::config.Drawing.Cursor;
-						const int legacyPenStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
+						const int legacyMouseStyle = cursor.MouseStyle.load(), legacyPenStyle = cursor.PenStyle.load();
+						const auto deviceStyle = [&](CursorDevice device, int configured) {
+							return Cursor::RestoreDeviceCursorStyle(device, configured, legacyMouseStyle, legacyPenStyle);
+						};
 						static const bool injectedSourceAvailable = GetProcAddress(
 							GetModuleHandleW(L"user32.dll"), "GetCurrentInputMessageSource") != nullptr;
 						Design::CursorPageDraft draft;
-						draft.mouse = static_cast<int>(Cursor::RestoreMouseCursorStyle(cursor.MouseStyle.load()));
-						draft.touch = static_cast<int>(Cursor::RestoreTouchCursorStyle(cursor.TouchStyle.load()));
-						draft.screenPen = static_cast<int>(Cursor::RestoreDevicePenCursorStyle(cursor.ScreenPenStyle.load(), legacyPenStyle));
-						draft.tablet = static_cast<int>(Cursor::RestoreDevicePenCursorStyle(cursor.TabletStyle.load(), legacyPenStyle));
-						draft.highlightMode = static_cast<int>(Cursor::RestorePenHighlightMode(cursor.PenHighlightMode.load()));
+						draft.mouse = Cursor::CursorStyleToItemIndex(CursorDevice::Mouse, deviceStyle(CursorDevice::Mouse, cursor.Mouse.load()));
+						draft.touch = Cursor::CursorStyleToItemIndex(CursorDevice::Touch, deviceStyle(CursorDevice::Touch, cursor.Touch.load()));
+						draft.screenPen = Cursor::CursorStyleToItemIndex(CursorDevice::ScreenPen, deviceStyle(CursorDevice::ScreenPen, cursor.ScreenPen.load()));
+						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
 						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
 						draft.injectedAvailable = injectedSourceAvailable;
 						const auto events = Design::RenderCursorPage(draft);
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
-						if (events.mouse || events.touch || events.screenPen || events.tablet
-							|| events.highlightMode || events.injectedMouse)
+						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse)
 						{
-							// 只写被改动的设备；未改动的屏幕笔/数位板继续沿用旧版“笔”类型。
-							if (events.mouse) cursor.MouseStyle = draft.mouse;
-							if (events.touch) cursor.TouchStyle = draft.touch;
-							if (events.screenPen) cursor.ScreenPenStyle = draft.screenPen;
-							if (events.tablet) cursor.TabletStyle = draft.tablet;
-							if (events.highlightMode) cursor.PenHighlightMode = draft.highlightMode;
+							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
+							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
+							if (events.mouse) cursor.Mouse = styleValue(CursorDevice::Mouse, draft.mouse);
+							if (events.touch) cursor.Touch = styleValue(CursorDevice::Touch, draft.touch);
+							if (events.screenPen) cursor.ScreenPen = styleValue(CursorDevice::ScreenPen, draft.screenPen);
+							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
 							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
 							SyncDraw3State();
 							QueueConfigWrite();

@@ -20,7 +20,8 @@ export namespace Inkeys::Drawing::Draw3
 		Circle,
 		Rectangle,
 		EraserGripCircle,
-		PenIcon
+		PenIcon,
+		Arrow
 	};
 
 	// 描述应用内瞬态光标外观；颜色分量使用 [0,1]，尺寸使用画布像素。
@@ -264,7 +265,7 @@ export namespace Inkeys::Drawing::Draw3
 		const DrawingCursorAppearance& eraserAppearance) noexcept;
 	// 触摸接触点的软/硬笔光标；None 不生成 visual，由调用方逐接触调用，抬起后随 runtime 消失。
 	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
-		const DrawingCursorAppearance& penAppearance, TouchCursorStyle style,
+		const DrawingCursorAppearance& penAppearance, CursorStyle style,
 		float dpiScale = 1.0f) noexcept;
 	// 计算包含 1px AA 和 shader quad padding 的画布内脏区。
 	RECT DrawingCursorVisualBounds(const DrawingCursorVisual& visual,
