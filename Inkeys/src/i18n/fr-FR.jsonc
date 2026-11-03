@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "Le changement de langue nécessite un redémarrage pour être entièrement appliqué. Redémarrer Inkeys maintenant ?",
-        "SelectNote": "Redémarrez Inkeys pour appliquer entièrement la nouvelle langue."
+        "Warn": "Le changement de langue est immédiat. Aucun redémarrage nécessaire.",
+        "SelectNote": "Application immédiate, sans redémarrage."
       }
     },
     "Configuration":
@@ -536,8 +536,8 @@
         },
         "Theme":
         {
-          "N": "Thème",
-          "E": "Choisissez Habillage recommandé pour appliquer automatiquement le thème actuellement recommandé par l’équipe.",
+          "N": "Thème de la barre",
+          "E": "Bascule la barre entre l’apparence sombre et claire. Les modifications s’appliquent immédiatement.",
           "Dark": "Mode sombre",
           "Light": "Mode clair"
         },

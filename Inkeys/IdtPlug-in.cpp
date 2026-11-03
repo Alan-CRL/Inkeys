@@ -1617,12 +1617,14 @@ void PPTLinkageMain()
 				if (IDTLogger) IDTLogger->warn("[PPT] confirmed exit unavailable: session capability missing");
 				continue;
 			}
-			const auto title = IW(I18nKey.Dialogs.Common.TipsTitle);
-			const auto body = IW(I18nKey.Dialogs.EndPresentation.Body);
+			I18n::TextSnapshot localized;
+			if (!I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.EndPresentation.Body }, localized)) continue;
+			const auto& title = localized.text[0];
+			const auto& body = localized.text[1];
 			auto dialog = Inkeys::UI::MessageBox::MakeOkCancelRequest(title.c_str(), body.c_str());
 			dialog.defaultResult = Inkeys::UI::MessageBox::Result::Cancel;
 			dialog.dismissResult = Inkeys::UI::MessageBox::Result::Cancel;
-			dialog.language = I18n::languageId();
+			dialog.language = localized.language;
 			dialog.fallback.enabled = false;
 			dialog.owner = Inkeys::Window::GetService().Handle(Inkeys::Window::WindowRole::Bar);
 			dialog.requireOwner = true;

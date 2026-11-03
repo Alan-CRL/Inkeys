@@ -1,0 +1,1105 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "tr-TR",
+  "Widget":
+  {
+    "LnkName": "Inkeys (Ekran Açıklama Aracı)"
+  },
+  "Operate":
+  {
+    "Reset": "Sıfırla",
+    "Repair": "Onar",
+    "Copy": "Kopyala",
+    "Create": "Oluştur"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "Seç",
+      "SelectClean": "Seç (Temizle)",
+      "Pen": "Kalem",
+      "Eraser": "Silgi",
+      "Options": "Seçenekler"
+    },
+    "Pen":
+    {
+      "Pen": "Kalem",
+      "Highlighter": "Vurgulayıcı",
+      "Thinkness": "Kalın\nlık",
+      "Write": "Yaz",
+      "Line": "Çizgi",
+      "Square": "Dikdörtgen"
+    },
+    "Operate":
+    {
+      "Revoke": "Geri al",
+      "Recall": "Geri yükle",
+      "Freeze": "Dondur",
+      "Pierce": "Tıklama geçişi"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "Alt çubuk modu",
+        "Centered": "Ortala"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "Temizle",
+        "ClearCanvasHint": "Bu tuvaldeki açıklamaları temizle",
+        "AutomaticLabel": "Otomatik boyut",
+        "SensitivityLabel": "Duyarlılık",
+        "LowLabel": "Düşük",
+        "MediumLabel": "Orta",
+        "HighLabel": "Yüksek",
+        "SmallSize": "Küçük",
+        "MediumSize": "Orta",
+        "LargeSize": "Büyük",
+        "BaseSizeHint": "Otomatik boyut açıkken temel boyut",
+        "MixedHint": "Cihaz ayarları farklı\nTümünde otomatik boyutu açmak için tıklayın",
+        "SettingsHint": "Otomatik boyut ayarları henüz kullanılamıyor"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "Seç",
+        "SelectClearLabel": "Seç\n(Temizle)",
+        "ClickThroughLabel": "Tıklama\ngeçişi",
+        "MoveLabel": "Taşı",
+        "DrawLabel": "Çiz",
+        "LaserLabel": "Lazer",
+        "HighlighterLabel": "Vurgula",
+        "HardPenLabel": "Sert uç",
+        "SoftPenLabel": "Yumuşak uç",
+        "EraserLabel": "Sil",
+        "AreaEraserLabel": "Alan sil",
+        "GeometryLabel": "Şekiller",
+        "RectangleLabel": "Dikdörtgen",
+        "StraightLineLabel": "Çizgi",
+        "UndoLabel": "Geri al",
+        "RedoLabel": "Yinele",
+        "ClearLabel": "Temizle",
+        "WhiteboardWindowTitle": "Inkeys Beyaz Tahta",
+        "WhiteboardPreviousLabel": "Önceki",
+        "WhiteboardNextLabel": "Sonraki",
+        "WhiteboardAddPageLabel": "Sayfa ekle",
+        "WhiteboardLabel": "Tahta",
+        "ResumeWhiteboardLabel": "Tahtaya dön",
+        "CloseWhiteboardLabel": "Kapat",
+        "ReturnToShowLabel": "Gösteriye dön",
+        "MinimizeWhiteboardLabel": "Beyaz tahtayı simge durumuna küçült",
+        "WhiteboardThemeLabel": "Tema",
+        "WhiteboardBackgroundColorLabel": "Arka plan rengi",
+        "WhiteboardBackgroundStyleLabel": "Arka plan deseni",
+        "WhiteboardBlankLabel": "Boş",
+        "WhiteboardDotsLabel": "Noktalı",
+        "WhiteboardGridLabel": "Izgara",
+        "WhiteboardUnsavedLabel": "Bazı sayfalar kaydedilmedi",
+        "FreezeLabel": "Dondur",
+        "EndPresentationLabel": "Bitir",
+        "SettingsLabel": "Ayarlar",
+        "MoreLabel": "Diğer"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "Dosyalar",
+        "TaskManagerLabel": "Görevler",
+        "ControlPanelLabel": "Denetim",
+        "ShowDesktopLabel": "Masaüstü",
+        "LockScreenLabel": "Kilitle",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "İsim seç",
+        "ClassIslandSettingsLabel": "CI ayarları",
+        "ClassIslandProfileLabel": "Profiller",
+        "ClassIslandSwapLabel": "Ders değiştir"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "Fırça",
+        "LaserLabel": "Lazer kalem",
+        "HighlighterLabel": "Vurgulayıcı",
+        "HardPenLabel": "Sert uç",
+        "SoftPenLabel": "Yumuşak uç",
+        "FreeLineLabel": "Serbest çizim",
+        "AnnotationLineLabel": "İşaret çizgisi",
+        "HoldThicknessLabel": "Kalınlığı kilitlemek için basılı tutun",
+        "ThicknessFormat": "Kalınlık {}",
+        "AnnotationUnavailableTitle": "İşaret çizgisi henüz kullanılamıyor",
+        "AnnotationFixedUnsupportedTitle": "Sabit kalınlıklı işaret çizgisi henüz desteklenmiyor",
+        "AnnotationDescription": "Çizim yönünü yatay, dikey veya 45° çapraz olarak kilitle",
+        "ThicknessOverflowTitle": "Mürekkep kalınlığı önizlemeyi aşıyor",
+        "ThicknessOverflowBody": "Önizlemedeki kalınlık çizilen mürekkepten farklı olabilir."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "Çizgi",
+        "RectangleLabel": "Dikdört."
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "Opaklık",
+        "HoldColorLabel": "Rengi kilitlemek için basılı tutun"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "FPS: {:.2f} | Sınırsız: {:.2f}",
+        "FrameRateUnavailable": "FPS: -- | Sınırsız: --"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "Çakışma",
+        "ReadFailed": "Okuma",
+        "PresentFailed": "Görüntü",
+        "Failed": "Hata",
+        "Recovering": "Kurtarılıyor",
+        "Loading": "Yükle",
+        "Retry": "Yeniden dene",
+        "Wait": "Bekleyin",
+        "RetryCanvas": "Tuvali yeniden dene",
+        "ProtectedHint": "Belgenin sırası veya kimliği değişti. Mevcut mürekkep korunuyor. Belgeyi önceki durumuna döndürüp yeniden deneyin.",
+        "RecoveryHint": "Tuval kurtarma tamamlanmadı. Yeniden denemek mürekkep korumasını devre dışı bırakmaz."
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys saydam arka planını düzgün görüntüleyemiyor.\n\nInkeys.exe dosyasına sağ tıklayın, Özellikler → Uyumluluk bölümünü açıp Azaltılmış renk modu seçeneğini kaldırın.\nWindows 7'de Aero temasını etkinleştirin.\n\nInkeys'i yeniden başlatıp tekrar deneyin.\nSorun sürerse Ayarlar ana sayfasından geliştiriciyle iletişime geçin."
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "Beyaz tahta penceresine geçiş tamamlanmadı. Otomatik yeniden denemeler durduruldu. Geçişi iptal etmek için ana araç çubuğundaki beyaz tahta düğmesine yeniden tıklayın veya Ayarlar'daki Çizim sayfasından tekrar deneyin.",
+      "Return": "Beyaz tahtadan çıkış tamamlanmadı. Otomatik yeniden denemeler durduruldu. Tahtaya dönmek için ana araç çubuğundaki beyaz tahta düğmesine yeniden tıklayın veya Ayarlar'daki Çizim sayfasından tekrar deneyin.",
+      "Primary": "Masaüstü ve sunu çalışma alanları arasında geçiş tamamlanmadı. Otomatik yeniden denemeler durduruldu. Ayarlar'daki Çizim sayfasından tekrar deneyin."
+    },
+    "Common":
+    {
+      "TipsTitle": "Inkeys Bilgi",
+      "ErrorTitle": "Inkeys Hatası",
+      "OK": "Tamam",
+      "Cancel": "İptal",
+      "Yes": "Evet",
+      "No": "Hayır"
+    },
+    "EndPresentation":
+    {
+      "Body": "Geçerli slayt gösterisi sonlandırılsın mı?"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Program penceresi oluşturulamadığı veya engellendiği için Inkeys beklenmedik biçimde kapandı. Inkeys'i yeniden başlatıp tekrar deneyin. (#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "Otomatik güncelleme modülü etkin değil; bu sürümün resmi bir yayın olmadığını gösterir.\nYazılım Sürümü bölümüne gidip Yazılımı Onar'ı seçin."
+    },
+    "CloseInkeys":
+    {
+      "Body": "Inkeys kapatılsın mı?"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys bir sorunla karşılaştı. Inkeys'i yeniden başlatıp kurtarmayı denemek için Tamam'ı seçin."
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Inkeys Seçenekleri",
+    "Design":
+    {
+      "NavigationTitle": "Ayarlar",
+      "SwitchToDark": "Koyu temaya geç",
+      "SwitchToLight": "Açık temaya geç",
+      "Preferences": "Tercihler",
+      "RecommendedSuffix": " (Önerilen)",
+      "SupportGroup": "Destek ve bakım",
+      "Experimental": "Deneysel seçenekler",
+      "HomeWelcome": "Inkeys3'e hoş geldiniz",
+      "HeroTitle": "Akıcı mürekkep. Zarif hareket.",
+      "HeroJoin": " ",
+      "HeroDescription": "Göründüğü kadar iyi hissettiren ekran açıklamaları.",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "Bu programın lisansı: ",
+      "HomeLicenseSuffix": ".",
+      "HomeRedistribution": "GPLv3 koşulları kapsamında herkes bu projenin kodunu inceleyebilir, değiştirebilir ve yeniden dağıtabilir.",
+      "HomeOpenSourceTitle": "Açık kaynaklı ve ücretsiz, sizin için",
+      "HomeRepositoryPrefix": "Inkeys kodunun barındırıldığı yerler: ",
+      "HomeRepositoryJoin": " ve ",
+      "HomeRepositorySuffix": ".",
+      "HomeStarAction": "GitHub'da yıldız ver",
+      "HomeSponsorAction": "Inkeys'e destek ol",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "Yazma deneyimini özelleştir",
+      "Tutorial": "Başlangıç kılavuzu",
+      "Explore": "Önerilen ayarlar",
+      "DrawDescription": "Mürekkep ve silgi seçenekleri",
+      "AppearanceDescription": "Animasyon, aydınlatma ve ana çubuk ölçeği",
+      "PresetDescription": "Sık kullandığınız kalemler elinizin altında",
+      "PluginDescription": "Sunu ve sınıf araçlarını bağlayın",
+      "CommonSettings": "Sık kullanılan ayarlar",
+      "GeneralDescription": "İşlem modu, araç çubuğu düzeni ve başlangıç",
+      "ShortcutsDescription": "Genel işlemler ve açıklama düzenleme kısayolları",
+      "DisplayLanguage": "Görüntüleme dili",
+      "Improve": "Inkeys'i geliştirmeye yardımcı olun",
+      "Contact": "Geliştiriciyle iletişim",
+      "TermsOfUse": "Kullanım koşulları",
+      "Website": "Resmi web sitesi",
+      "StartupSection": "Başlangıç",
+      "AppearanceSection": "Görünüm",
+      "BehaviorSection": "Davranış",
+      "CompatibilitySection": "Uyumluluk",
+      "GeneralBasic": "Temel",
+      "GeneralAppearance": "Görünüm ve animasyonlar",
+      "GeneralInteraction": "Davranış ve güvenlik",
+      "GeneralStorage": "Depolama ve yapılandırma",
+      "OperationModeSection": "İşlem modu",
+      "IconArrangementSection": "Simge düzeni",
+      "AnimationSection": "Animasyonlar",
+      "LightingSection": "Aydınlatma",
+      "ScalingSection": "Ölçek",
+      "ThemeSection": "Tema",
+      "OpacitySection": "Opaklık",
+      "WindowBehaviorSection": "Pencere davranışı",
+      "SafetyRecoverySection": "Güvenlik ve kurtarma",
+      "ShortcutGlobalSection": "Genel işlemler",
+      "ShortcutEditingSection": "Açıklama düzenleme",
+      "ShortcutAuxiliarySection": "Ek işlemler",
+      "GeneralSubtitle": "Başlangıç, arayüz boyutu ve günlük kullanım tercihleri.",
+      "EdgeLighting": "Kenar aydınlatmasını aç",
+      "EdgeLightingDescription": "Kapalıyken noktasal ve yumuşak aydınlatma kullanılmaz, yalnızca temel kenarlık kalır.",
+      "TopWindowSummary": "Çizim yapılmıyorken Inkeys'in penceresini ne sıklıkla yeniden üste getireceği.",
+      "TopWindowDetails": "Ayrıntılar",
+      "AvoidFullscreenSummary": "Yeniden başlatma gerekir. Çizim yapılmıyorken veya tıklama geçişi modunda tam ekranı kullanma.",
+      "AvoidFullscreenDetails": "Kullanım notları",
+      "Enabled": "Açık",
+      "Disabled": "Kapalı",
+      "ClickToCopy": "Kopyalamak için tıklayın",
+      "Copied": "Kopyalandı",
+      "RestartRequired": "Uygulamak için Inkeys'i yeniden başlatın.",
+      "NextStartupRequired": "Değişiklikler Inkeys bir sonraki başlatıldığında uygulanır."
+    },
+    "Home":
+    {
+      "N": "Ana sayfa",
+      "Prompt": "Bu, Inkeys 3'ün önizleme sürümüdür; nihai kaliteyi yansıtmaz.",
+      "Developer": "Inkeys Kurucu Geliştiricisi",
+      "Group": "GitHub Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Bilibili Kanalı",
+      "FeedBack": "Sorun / Öneri"
+    },
+    "Feedback":
+    {
+      "N": "Geri bildirim",
+      "Description": "Inkeys'i geliştirmek için sorunları bildirin veya önerilerinizi paylaşın.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Herkese açık tartışma ve takip için GitHub'da sorun bildirin veya öneride bulunun."
+      },
+      "Questionnaire":
+      {
+        "N": "Geri bildirim anketi",
+        "E": "Sorun bildirmek veya iyileştirme önermek için geri bildirim anketini kullanın."
+      },
+      "Qr":
+      {
+        "N": "Geri bildirim için tarayın",
+        "E": "Anket üzerinden sorun veya öneri göndermek için QR kodunu tarayın."
+      },
+      "ContactSection": "Topluluk ve geliştirici iletişimi",
+      "CommunityDescription": "Sorun ve önerileri GitHub Discussions topluluğunda tartışın.",
+      "ContactDescription": "Sorun ve önerilerinizi geliştiriciye e-postayla iletin.",
+      "AuthorQQ": "Geliştiricinin QQ hesabı"
+    },
+    "Language":
+    {
+      "N": "Dil",
+      "UI":
+      {
+        "N": "Arayüz dili",
+        "Select": "Dil seçin",
+        "SelectE": "Arayüzde kullanılan görüntüleme dili.",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "Dil değişiklikleri hemen uygulanır. Inkeys'i yeniden başlatmanız gerekmez.",
+        "SelectNote": "Hemen uygulanır. Yeniden başlatma gerekmez."
+      }
+    },
+    "Configuration":
+    {
+      "N": "Yapılandırma ve depolama",
+      "Clean":
+      {
+        "N": "Yapılandırma temizliği",
+        "Enable": "Temizliği etkinleştir",
+        "EnableE": "Başlatırken veya kaydederken geçerli sürümün yapılandırma şablonunda bulunmayan seçenekleri kaldırın.",
+        "EnableNote": "Sürümü düşürüp yeniden yükselttikten veya yapılandırma içe aktardıktan sonra bazı seçenekler kaybolup varsayılanlara dönebilir."
+      },
+      "CanvasSave":
+      {
+        "N": "Tuval kaydetme",
+        "Enable": "Masaüstü tuvalini otomatik kaydet",
+        "EnableE": "Masaüstü tuvali temizlenirken veya uygulamadan çıkılırken, boş olmayan tuvali geçmişten kurtarılabilmesi için otomatik kaydedin.",
+        "SaveTime":
+        {
+          "N": "Geçmişi saklama süresi",
+          "E": "Başlangıçta seçilen saklama süresinden eski tuvalleri silin.",
+          "1d": "1 gün",
+          "3d": "3 gün",
+          "5d": "5 gün",
+          "10d": "10 gün",
+          "30d": "30 gün",
+          "Never": "Hiçbir zaman silme"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "Yazılım sürümü",
+      "ManualUpdate":
+      {
+        "N": "Yeni sürüm var",
+        "ManualUpdate": "Elle güncelle"
+      },
+      "LimitUpdate":
+      {
+        "N": "Otomatik güncelleme engellendi!\n\nYeni sürümün sistem uyumluluk gereksinimleri değişti. Güncellemeden sonra yazılım başlatılamayabileceği için otomatik güncelleme engellendi. Ayrıntıları inceleyip sisteminizin yeni gereksinimleri karşıladığını doğrulayın, ardından yazılımı elle indirip güncelleyin. Geçerli kanaldaki onarma özelliği geçici olarak kullanılamayacaktır.",
+        "Info": "Ayrıntılar"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3 resmen yayımlandı!\n\nInkeys3 hakkında bilgi almak için aşağıdaki düğmeyi kullanabilirsiniz. Geçerli kanaldaki onarma özelliği geçici olarak kullanılamayacaktır.",
+        "Download": "Şimdi güncelle"
+      },
+      "VersionTip": "Uygulama mimarisi sisteminizle eşleşmiyor; bu, performansı düşürebilir. Aşağıdaki Yazılım Onarma bölümünde “Onarırken mimariyi düzelt” seçeneğini açın veya onarmadan önce hedef mimariyi elle seçin.",
+      "Info":
+      {
+        "N": "Sürüm bilgisi",
+        "ReleaseVersion": "Yayın sürümü:",
+        "ReleaseDate": "Yayın tarihi:",
+        "ReleaseArch": "Uygulama ve sistem mimarileri",
+        "ReleaseTag": "Yayın derlemesi (RELEASE)",
+        "DebugTag": "Hata ayıklama derlemesi (DEBUG)",
+        "ManualBuild": "Elle derlendi",
+        "AutoBuild": "Otomatik derlendi (CI/CD)",
+        "CICDInfo": "Derleme ayrıntıları"
+      },
+      "UserInfo":
+      {
+        "N": "Kullanıcı bilgisi",
+        "CopyUserId": "Kullanıcı kimliğini kopyala",
+        "UserId": "Kullanıcı kimliği"
+      },
+      "Repair":
+      {
+        "N": "Yazılım onarma",
+        "RepairSoftware": "Onar",
+        "RepairSoftwareE": "Seçilen kanaldaki en son sürümü yeniden yükleyin",
+        "RepairArch": "Onarırken mimariyi düzelt"
+      },
+      "Update":
+      {
+        "N": "Güncelleme tercihleri",
+        "AutoUpate": "Otomatik güncelleme (sessiz)",
+        "ChannelTip": "Kararlı (LTS): en son kararlı yayın; günlük kullanım için önerilir.\nInsider: önizleme yayınları; daha az kararlı olabilir ve güvenlik yazılımı uyarı verebilir.\nCanary: erken Inkeys 3 derlemeleri; günlük kullanım için önerilmez.",
+        "Channel":
+        {
+          "N": "Güncelleme kanalı",
+          "LTS": "Kararlı kanal (LTS)",
+          "Insider": "Insider kanalı",
+          "Canary": "Canary kanalı"
+        },
+        "Arch":
+        {
+          "N": "Hedef mimari",
+          "E": "Uyarı: Sisteminizle eşleşmeyen bir hedef mimari, Inkeys'in başlatılamamasına veya ciddi performans sorunlarına yol açabilir.",
+          "64": "64 bit",
+          "32": "32 bit",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "Sürüm durumu"
+    },
+    "CICD":
+    {
+      "N": "Derleme ayrıntıları",
+      "Repository": "Depo",
+      "Branch": "Dal",
+      "Submitter": "Gönderen",
+      "BuildTime": "Derleme zamanı",
+      "BuildSystem": "Derleme sistemi",
+      "BuildSystemVersion": "Derleme sistemi sürümü",
+      "RunnerImageSystem": "Çalıştırıcı görüntüsü sistemi",
+      "RunnerImageVersion": "Çalıştırıcı görüntüsü sürümü",
+      "MSBuildVersion": "MSBuild sürümü"
+    },
+    "Regular":
+    {
+      "N": "Genel",
+      "SelectAndClickThrough":
+      {
+        "N": "Seçim ve tıklama geçişi",
+        "Combined": "Birleşik",
+        "Separate": "Ayrı",
+        "CombinedDescription": "Mürekkep yokken veya mürekkebi görünür tutarken bilgisayarı kullanmak için Seç'i kullanın.",
+        "SeparateDescription": "Mürekkebi temizleyip bilgisayarı kullanmak için Seç'i, mürekkep görünürken alttaki pencerelerle etkileşim kurmak için Tıklama geçişi'ni kullanın.",
+        "ClickThrough": "Tıklama geçişi",
+        "ClickThroughDescription": "Mürekkep görünür kalırken tıklama ve dokunmaları açıklama katmanından alttaki pencerelere geçirin."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Ana araç çubuğu simge sırası",
+        "FollowMainButton": "Ana düğmeyi izle",
+        "FollowMainButtonReverse": "Ana düğmeyi izle (ters)",
+        "LeftToRight": "Soldan sağa",
+        "RightToLeft": "Sağdan sola"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Ana araç çubuğunun açılma yönü",
+        "Centerline": "Ekran orta çizgisi",
+        "WhenSpaceInsufficient": "Alan yetersiz olduğunda"
+      },
+      "AutoCollapse":
+      {
+        "N": "Otomatik daralt",
+        "Drawing": "Çizerken araç çubuğunu daralt",
+        "Erasing": "Silerken araç çubuğunu daralt",
+        "Dragging": "Araç çubuğunu taşırken daralt",
+        "OutsideClick": "Seçim veya Tıklama geçişi modunda dışarıya tıklayınca daralt",
+        "Description": "Çizim; kalemleri, şekilleri ve lazeri kapsar. Alta sabitleme modu, ortalanmış sabitlemeyi de içerir. Dışarıya tıklama, araç çubuğunu ve menü, özellik ve açılır panellerini kapsamaz.",
+        "Off": "Kapalı",
+        "NonBottom": "Alta sabitlenmediğinde",
+        "Always": "Her zaman"
+      },
+      "StartUp":
+      {
+        "N": "Başlangıç davranışı",
+        "AutoStart": "Oturum açıldığında başlat",
+        "AutoStartE": "Geçerli kullanıcı Windows'ta oturum açtığında Inkeys'i başlatın.",
+        "LoadingAnimation": "Başlangıç yükleme animasyonu",
+        "LoadingAnimationE": "Inkeys başlatılırken yükleme animasyonunu gösterin.",
+        "SettingEntryAnimation":
+        {
+          "N": "Ayarları açma animasyonu",
+          "E": "Ayarlar açılış animasyonunun davranışını belirleyin.",
+          "Off": "Kapalı",
+          "First": "İlk açılışta",
+          "Always": "Her zaman"
+        },
+        "Link":
+        {
+          "N": "Masaüstü kısayolu oluştur",
+          "E": "Mevcut kısayolların adını düzeltin veya yeni kısayol oluşturun. Yapılandırmak için Diğer seçenekler'i seçin.",
+          "More": "Diğer seçenekler"
+        }
+      },
+      "Appearance":
+      {
+        "N": "Görünüm",
+        "AnimationEnable": "Animasyonları aç",
+        "AnimationEnableE": "Kapalıyken UI3 ana çubuğu ile Ayarlar gezinme ve sayfa animasyonları hemen tamamlanır.",
+        "AnimationRate": "Animasyon hızı",
+        "AnimationRateE": "UI3 ana çubuğu ve Ayarlar animasyonlarını 0.1x–5.0x arasında ayarlayın.",
+        "EdgeLighting": "Kenar aydınlatması",
+        "EdgeLightingE": "Kapalıyken yalnızca temel kenarlık kalır; noktasal ışıklar ve yumuşak parlama kapatılır.",
+        "DynamicEdgeLighting": "Dinamik kenar aydınlatması",
+        "DynamicEdgeLightingE": "Aydınlatma, işaretçinin konumunu dinamik olarak izler.",
+        "ResetDefault": "Varsayılana sıfırla",
+        "SettingTheme":
+        {
+          "N": "Ayarlar teması",
+          "E": "Ayarlar penceresini koyu ve açık görünüm arasında değiştirir; başlık çubuğundaki düğmeyle eşitlenir."
+        },
+        "BackgroundOpacity":
+        {
+          "N": "Çubuk arka plan opaklığı",
+          "E": "Ana araç çubuğu, ana düğme ve sayfa denetimlerinin arka plan opaklığını ayarlar. Açılır paneller etkilenmez."
+        },
+        "ContentOpacity":
+        {
+          "N": "Çubuk içerik opaklığı",
+          "E": "Ana araç çubuğu, ana düğme ve sayfa denetimlerindeki simge ve metinlerin opaklığını ayarlar."
+        },
+        "Theme":
+        {
+          "N": "Çubuk teması",
+          "E": "Ana araç çubuğunu koyu ve açık görünüm arasında değiştirir. Değişiklikler hemen uygulanır.",
+          "Dark": "Koyu mod",
+          "Light": "Açık mod"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "Görev çubuğu ölçek tabanı",
+          "E": "%100 ölçekte Görev çubuğu temel boyutu ana çubuk yüksekliğini 48 DIP olarak sabitler; Gerçek görev çubuğu boyutu ise görev çubuğunun kalınlığını izler.",
+          "Off": "Kapalı",
+          "Base": "Görev çubuğu temel boyutu",
+          "Actual": "Gerçek görev çubuğu boyutu"
+        },
+        "BarZoom":
+        {
+          "N": "Ana çubuk arayüz ölçeği",
+          "E": "Ana çubuk, düğmeler ve PPT denetimlerinin ölçeğini anında ayarlayın.",
+          "Ind": "{:.2f}x ölçek"
+        }
+      },
+      "Behavior":
+      {
+        "N": "Davranış",
+        "TopWindow":
+        {
+          "N": "Üste getirme aralığı",
+          "E": "Çizim yapılmıyorken Inkeys, seçilen aralıklarla penceresini yeniden üste getirir; kalem ekrana değdiğinde duraklar. Kısa aralıklar diğer pencerelerin engellemesini azaltabilir ancak CPU kullanımını artırabilir. Gerekirse SuperTop eklentisini deneyin.",
+          "100ms": "Çok kısa (100ms)",
+          "500ms": "Kısa (500ms)",
+          "1s": "Biraz kısa (1 s)",
+          "3s": "Orta (3s)",
+          "5s": "Biraz uzun (5 s)",
+          "10s": "Uzun (10s)",
+          "30s": "Çok uzun (30s)"
+        },
+        "RightClickClose": "Inkeys'ten çıkmak için ana simgeye sağ tıklayın",
+        "RightClickCloseE": "Onay iletişim kutusu gösterilir.",
+        "DrawingRetract": "Çizerken ana araç çubuğunu daralt",
+        "ErasingRetract": "Silerken ana araç çubuğunu daralt",
+        "DraggingRetract": "Ana araç çubuğunu taşırken daralt",
+        "CheckingRetract": "Ana araç çubuğunun dışına tıklayınca daralt",
+        "CheckingRetractE": "Yalnızca Seçim veya Tıklama geçişi modunda ana araç çubuğunun dışına tıklandığında uygulanır."
+      },
+      "Tentative":
+      {
+        "N": "Deneysel seçenekler",
+        "SafeMode":
+        {
+          "N": "Çökme davranışı",
+          "E": "Uygulama çöktüğünde yapılacak işlemi seçin.",
+          "Mode1": "Hata iletisi göster ve yeniden başlat",
+          "Mode2": "Sessizce yeniden başlat",
+          "Mode3": "Sistem işlesin",
+          "Mode4": "Doğrudan çık",
+          "Note": "Başlangıç sırasında oluşan hatalar yine de bildirilir."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "Birden çok örneğe izin ver",
+          "E": "Bu kurulum klasöründen aynı anda birden çok örnek çalıştırılmasına izin verin. Kapatıldığında çalışan örnekler kapanmaz, yalnızca yeni örneklerin başlaması engellenir."
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "Çizim",
+      "General":
+      {
+        "N": "Genel",
+        "MultiTouch":
+        {
+          "N": "Çok parmakla çizim",
+          "E": "Birden fazla parmakla aynı anda yazın veya çizin. Kapalıyken yalnızca tek parmakla çizim kabul edilir."
+        },
+        "PenTailCorrection":
+        {
+          "N": "Kalem kalkışında uç düzeltme",
+          "E": "Daha doğal bir bitiş için kalem kaldırılırken çizginin ucundaki ani kırılmaları azaltın."
+        },
+        "InkPrediction":
+        {
+          "N": "Mürekkep tahmini",
+          "E": "Yazarken görünen mürekkep gecikmesini azaltın. Hassas modu sonraki hareketi tahmin eder; Hızlı modu mürekkebi en son girdi konumuna uzatır. Kapalı seçeneği tahmini mürekkebi devre dışı bırakır.",
+          "Precise": "Hassas",
+          "Fast": "Hızlı",
+          "Disabled": "Kapalı"
+        }
+      },
+      "Laser":
+      {
+        "N": "Lazer işaretçi",
+        "MultiTouch":
+        {
+          "N": "Çok parmakla lazer",
+          "E": "BETA: Lazer işaretçiyi birden fazla parmakla aynı anda kullanın."
+        },
+        "Particles":
+        {
+          "N": "Lazer parçacıkları",
+          "E": "BETA: Lazer izinin etrafında parçacıklar gösterin."
+        }
+      },
+      "Haptics":
+      {
+        "N": "Kalem dokunsal geri bildirimi",
+        "Drawing": "Çizerken titreşim",
+        "Buttons": "Düğme titreşimi"
+      },
+      "Cursor":
+      {
+        "N": "İmleç",
+        "Description": "Fare seçeneği yalnızca yumuşak ve sert uçlu kalemleri etkiler. Vurgulayıcı her zaman kalınlığı önizler; şekiller sistem imlecini kullanır. Varsayılan kalem imleci daireseldir. İmleç kenar vurgusu ekran kalemlerinde kapalı, grafik tabletlerde ve tanınmayan kalemlerde açıktır.",
+        "MouseStyle": "Fare",
+        "PenStyle": "Kalem",
+        "DefaultStyle": "Varsayılan imleç",
+        "DrawingStyle": "Kalem biçimli imleç"
+      },
+      "Effect":
+      {
+        "N": "Çizim ortamı",
+        "Device":
+        {
+          "N": "Etkileşim modu seçin",
+          "Touch": "Büyük ekran dokunmatik modu",
+          "MousePen": "Masaüstü modu",
+          "TouchE": "Sınıf, toplantı odası ve benzeri ortamlardaki büyük dokunmatik ekranlara doğrudan yazmak ve etkileşim kurmak için.",
+          "MousePenE": "Bilgisayarlar, tabletler ve fareyle kullanılan büyük ekranlarda fare, kalem, grafik tablet veya dokunmayla kullanım için."
+        }
+      },
+      "Touch":
+      {
+        "N": "Dokunma",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Kesilen çizgileri birleştir",
+          "E": "Dokunma kısa süreli kesilip aynı yönde devam ederse uygulama, boşlukları azaltmak için iki parçayı tek çizgide birleştirmeyi dener. Kapalıyken parmağı kaldırmak çizgiyi bitirir."
+        }
+      },
+      "Eraser":
+      {
+        "N": "Silgi",
+        "Automatic": "Hıza duyarlı silgiyi aç",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "Hassas silme",
+          "DemoFineDescription": "Yakındaki etiket ve kenarları koruyarak yardımcı çizgiyi yavaşça silin.",
+          "DemoSweepTitle": "Geniş alanları temizle",
+          "DemoSweepDescription": "Art arda ileri geri hareketler silgiyi kademeli genişleterek büyük alanları daha hızlı temizler.",
+          "EntryDescription": "Silgi boyutunu çizim amacınıza göre akıllıca ayarlayın",
+          "Introduction": "Silgi boyutunu dinamik ayarlamak için cihaz boyutları, girdi cihazı ve hareketten silme amacınızı çıkarır.",
+          "BasicSettings": "Temel ayarlar",
+          "EnabledDevices": "Etkin cihazlar",
+          "FineControl": "Hassas denetim",
+          "SizeWarningTitle": "Güvenilir ekran boyutları alınamıyor",
+          "SizeWarningDescription": "Geçerli çizim ekranının güvenilir fiziksel boyutları yok. Dokunma ve ekran kalemleri DPI tahminlerini kullanacağından silgi boyutu amacınıza uymayabilir."
+        },
+        "PalmEraser":
+        {
+          "N": "Avuç içi silgisi",
+          "EntryDescription": "Araç değiştirmeden geniş bir dokunuşla silin",
+          "Introduction": "Araç değiştirmeden silmek için avucunuzu ekrana koyun. Silgi boyutu, temas sonrası algılama süresinde belirlenir; elinizi kaldırdığınızda önceki araç seçili kalır.",
+          "Enabled": "Avuç içi silgisini aç",
+          "SizeWarningTitle": "Güvenilir ekran boyutları alınamıyor",
+          "SizeWarningDescription": "Geçerli çizim ekranının güvenilir fiziksel boyutları yok. Avuç içi silgisi, 100×100 sistem DIP temel alan eşiğiyle kullanılabilir. Fiziksel boyut değişebilir; yüzdeyi ekranınıza göre ayarlayın.",
+          "RecognitionWindow": "Algılama süresi",
+          "RecognitionWindowDescription": "Dokunma başladıktan sonra bu süre içinde avucunuzu algılar ve boyutunu belirler. Koşullar sağlanınca silme hemen başlar.",
+          "Threshold": "Dokunma alanı eşiği",
+          "ThresholdDescription": "Yanlış etkinleşmeyi azaltmak için yüzdeyi artırın; avuç algılamayı kolaylaştırmak için azaltın.",
+          "ThresholdSizePhysical": "Geçerli eşik: {:.2f}cm × {:.2f}cm ({:.0f}px × {:.0f}px)",
+          "ThresholdSizePixels": "Geçerli eşik: {:.0f}px × {:.0f}px",
+          "PreviewTitle": "Dokunma alanı örnekleri (geçerli çizim ekranı)",
+          "PreviewDescription": "Çerçeveli alan, geçerli çizim ekranının piksel eşiğini gösterir. Farklı oranları görmek için önizleme oranını değiştirin. Fiziksel boyutu başka ekranlarda farklı olabilir.",
+          "PreviewEstimated": "Tahmini piksel eşiği, 100×100 sistem DIP temel alanını ve geçerli yüzdeyi kullanır. Şekli değiştirmek için bir oran seçin; fiziksel boyut değişebilir.",
+          "PreviewUnavailable": "Geçerli çizim ekranının ölçeği alınamadığından alan örnekleri henüz gösterilemiyor.",
+          "EnabledTools": "Geçerli araçlar",
+          "ParallelWritingMultiTouchNote": "Çoklu dokunmayla çizim kapalı; silerken yazma kullanılamaz.",
+          "ParallelWritingLaserMultiTouchNote": "Çoklu dokunmayla lazer kapalı; lazer kalemle silerken yazma kullanılamaz.",
+          "ParallelWriting": "Silerken yazmayı aç",
+          "ParallelWritingDescription": "Avuç içi silgisi etkinleştiğinde diğer girdiler kesilmez, çizim devam edebilir. (Birlikte yazan iki veya daha fazla kişi için.)"
+        },
+        "Input":
+        {
+          "MouseLeft": "Sol fare düğmesi",
+          "MouseRight": "Sağ fare düğmesi",
+          "Touch": "Dokunma",
+          "PenTip": "Kalem ucu",
+          "PenTail": "Kalem silgisi"
+        },
+        "Kind":
+        {
+          "Fixed": "Sabit kalınlık",
+          "Speed": "Hıza duyarlı silgi"
+        },
+        "ResponseFor": "Hız duyarlılığının uygulandığı cihaz",
+        "Response":
+        {
+          "Auto": "Otomatik algıla",
+          "ScreenPen": "Ekran kalemi",
+          "Digitizer": "Grafik tablet"
+        },
+        "TouchArea":
+        {
+          "N": "Dokunmatik hıza duyarlı silgi için temas alanı desteği",
+          "E": "Parmağın imleci kapatmaması için silgiyi parmaktan biraz geniş tutun.",
+          "Note": "Büyük ekranlı cihazlarda önerilmez."
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "Ön ayarlar",
+      "StartupPlacement":
+      {
+        "N": "Başlangıç konumu",
+        "E": "Ortalanmış alt çubuk açık başlar. Sol ve sağ alt köşedeki kayan pencereler yalnızca ana düğmeyi gösterir.",
+        "CenteredBottomBar": "Ortalanmış alt çubuk",
+        "BottomLeftFloating": "Sol altta kayan pencere",
+        "BottomRightFloating": "Sağ altta kayan pencere"
+      }
+    },
+    "Performance":
+    {
+      "N": "Performans",
+      "FrameRateSection": "Kare hızı",
+      "InterfaceFrameRate":
+      {
+        "N": "Arayüz kare hızı",
+        "E": "Araç çubuğu, Ayarlar ve sayfa denetimlerinin akıcılığını ayarlayın. Düşük kare hızları kaynak kullanımını azaltabilir. Değişiklik hemen uygulanır."
+      },
+      "CanvasFrameRate":
+      {
+        "N": "Tuval kare hızı",
+        "E": "Yazarken tuvalin yenilenme sıklığını ayarlayın. Yüksek kare hızları mürekkebi akıcı kılarken daha fazla kaynak kullanabilir."
+      },
+      "RenderingSection": "İşleme ve uyumluluk",
+      "DirectComposition":
+      {
+        "N": "DirectComposition'ı tercih et",
+        "E": "Desteklenen cihazlarda tuvali göstermek için sistem birleştirmesini kullanın; kullanılamıyorsa uyumluluk yöntemine otomatik geçilir."
+      }
+    },
+    "Linkage":
+    {
+      "N": "Bağlantı",
+      "PPT": "PPT bağlantısı",
+      "CoreVersion": "Çekirdek sürümü {}"
+    },
+    "Experimental":
+    {
+      "N": "Laboratuvar",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "Arayüz yazı tiplerinde kesirli piksel boyutlarına izin ver",
+          "E": "Kapalıyken ana çubuk ve denetimlerin durağan yazı boyutları tam piksele aşağı yuvarlanır. Ölçekleme ve geçiş animasyonları akıcı kalır. Hemen uygulanır."
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Çizim donanım hızlandırmasını aç",
+          "E": "Tuvali çizmek için GPU'yu kullanın; kapalıyken yazılımla çizilir.",
+          "Note": "Çizim hatalıysa veya çok yavaşsa kapatmayı deneyin. Uygulamak için Inkeys'i yeniden başlatın."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Zhaoxin uyumluluk modunu aç",
+          "E": "Zhaoxin GPU'larda uyumlu yükleme yolunu kullanın. Diğer GPU'lar etkilenmez. Çizim performansını karşılaştırmak için kapatın."
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "Kalem dokunsal geri bildirim tanılaması",
+          "E": "Titreşim eksikliğini tanılamak için kalem girdisini, düğme isteklerini ve dokunsal cihaza gönderim sonuçlarını kaydedin."
+        },
+        "TouchArea":
+        {
+          "N": "Girdi ve silgi tanılama konsol çıktısı",
+          "E": "Ekran EDID, çözünürlük ve DPI, dokunma alanı, girdi koordinatları, cihaz türü ve silgi boyutunun hız sınırlamalı anlık görüntülerini yazdırın."
+        },
+        "PptCOM":
+        {
+          "N": "PptCOM konsol çıktısı",
+          "E": "PptCOM tanılamasını konsola yazdırın."
+        },
+        "Draw3":
+        {
+          "N": "Draw3 konsol çıktısı",
+          "E": "Draw3 cihaz ve sürücü bilgilerini konsola yazdırın."
+        },
+        "Cursor":
+        {
+          "N": "İmleç tanılaması",
+          "E": "İmleç girdisi sahipliğini ve çizilen görüntüyü konsola yazdırın."
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "Eklentiler",
+      "PPTHelper":
+      {
+        "N": "PPT Sunu Yardımcısı 3 Lite",
+        "E": "Slayt gösterisi sırasında sunu ve kalem denetim düğmeleri sunar. Her sayfanın ayrı tuvali sayesinde mürekkep açıklamaları sayfaya sabitlenir. Mevcut işlevleri veya harici cihazları etkilemez.",
+        "VersionError": "Bilinmeyen sürüm (eklenti hatası)",
+        "Solve": "Çözüm",
+        "Sync": "Eşzamanlı ayarla",
+        "Reset": "Sıfırla",
+        "Tip": "Slayt gösterisi işleminin algılanabilmesi için Inkeys ve PowerPoint/WPS'yi aynı yetki düzeyinde çalıştırın. Sorun sürerse çözüme bakın.",
+        "Warn": "PowerPoint/WPS'nin her zaman yönetici olarak çalıştırılacak şekilde ayarlandığı algılandı. Slayt gösterisini algılamak ve PPT bütünleştirmesini açmak için Inkeys de yönetici yetkisiyle çalışmalıdır. Sunu yazılımını her zaman yönetici olarak çalıştırmak istemiyorsanız çözüme bakın.",
+        "Error": "Eklenti yüklenemedi. .NET Framework 4.x eksik veya COM ortamı kullanılamıyor olabilir.\nAyrıntılar: ",
+        "BasicLogic":
+        {
+          "N": "Temel mantık",
+          "LoadPage": "Yükleme sayfasını göster",
+          "LoadPageE": "Bu özellik devre dışı. PPT yükleme sayfaları artık gösterilmiyor."
+        },
+        "WidgetDisplay":
+        {
+          "N": "Denetim görünümü",
+          "BottomBoth": "Denetimleri iki alt köşede göster",
+          "MiddleBoth": "Denetimleri iki yanda ortada göster",
+          "BottomMiddle": "Denetimleri alt araç çubuğunda göster",
+          "IdleFade": "Boştayken soldur",
+          "IdleFadeE": "Sunum sırasında bir süre etkileşim olmadığında veya sunum kumandası ya da klavyeyle sayfa çevrildikten sonra sayfa denetimleri daha az içerik kapatmak için daha saydam olur. Üzerine gelmek, tıklamak veya sürüklemek onları geri getirir.",
+          "IdleFadeOff": "Kapalı",
+          "IdleFadeSeconds": "{} sn"
+        },
+        "WidgetPosition":
+        {
+          "N": "Denetim konumu",
+          "Reset": "Denetim konumlarını sıfırla",
+          "Remember": "Denetim konumlarını hatırla"
+        },
+        "WidgetScale":
+        {
+          "N": "Denetim ölçeği",
+          "Ind": "{:.2f}x ölçek",
+          "Page":
+          {
+            "BottomSideBoth": "Alt köşe denetim ölçeği",
+            "MiddleSideBoth": "Yan orta denetim ölçeği"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "Alt çubuk denetim ölçeği"
+          }
+        },
+        "Tentative":
+        {
+          "N": "Deneysel seçenekler",
+          "CloseWpp": "Takılı kalan WPP sunu işlemlerinin kapatılmasına izin ver",
+          "CloseWppE": "Yeniden başlatma gerekir. Sonraki gösterinin algılanmasını iyileştirmek için WPS gösterisinden sonra kalan WPP işlemlerini kapatmayı dener.",
+          "AutoTakeOver": "Sunu mürekkep açıklamalarını devral",
+          "AutoTakeOverE": "PPT'nin yerleşik açıklamaları algılandığında uygulamanın çizim moduna geçer ve PPT'nin yerleşik açıklamalarını kapatır.",
+          "AutoTakeOverOnce": "Her gösteride en fazla bir kez devral",
+          "AutoTakeOverOnceE": "PPT'nin yerleşik açıklamalarına ihtiyaç olduğunda tekrar tekrar devralmayı önler.",
+          "AutoTakeOverExpand": "Devralma başarılı olduğunda ana çubuğu aç",
+          "EnablePageButtonLongPress": "Gezinme düğmelerine basılı tutarak sayfa çevirmeyi aç"
+        },
+        "SupportNote": "Microsoft PowerPoint 2007 ve üzerini, Kingsoft WPS 2013 ve üzerini destekler."
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "Pencereyi desteklenen sistem arayüzü ve uygulama pencerelerinin üzerinde göstermek için UIAccess kullanın.",
+        "Warn": "SuperTop eklentisi Beta aşamasındadır ve kararsız olabilir.\nBaşlangıçta Inkeys yetki yükseltme istemek için kendini yeniden çalıştırır, ardından yeni bir örnek başlatır.\nBu işlem başarısız olabilir; yönetici yetkisiyle çalışmak PPT bütünleştirmesini etkileyebilir.\nYetki yükseltme UAC istemi açabilir. İzin vermeden önce kaynağı ve yayıncıyı doğrulayın.\nGüvenlik yazılımı uyarırsa korumayı kapatmak yerine dosyanın kaynağını ve imzasını kontrol edin.",
+        "Capability":
+        {
+          "N": "Temel özellikler",
+          "SuperTop": "SuperTop'ı aç",
+          "SuperTopE1": "Uygulama, pencerelerini üstte tutmak için üç aşamalı başlatma kullanır.\n(SuperTop etkin)",
+          "SuperTopE2": "Uygulama, pencerelerini üstte tutmak için üç aşamalı başlatma kullanır.\n(SuperTop etkin değil)",
+          "Indicator": "SuperTop göstergesi",
+          "IndicatorE": "Başarıyla etkinleştirildiğinde ana simgenin sağ üst köşesinde raptiye gösterir.",
+          "SuperTopNote": "Uygulamak için Inkeys'i yeniden başlatın. Başlangıçta üste getirme işlemi başarısız olabilir."
+        },
+        "SupportNote": "Windows 8 veya üzeri gerektirir."
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "Eğitim amaçlı hepsi bir arada cihazlarda bazı beyaz tahta yazılımlarının kayan kalem çubuğu doğrudan kapatılamaz ve masaüstünde birden çok çizim aracı görünür. Öğretmenlerin araçları karıştırıp açıklama yapmaya devam edememesi dersleri aksatır. DesktopDrawpadBlocker bu nedenle geliştirildi.",
+        "LicenseTitle": "GPLv3 açık kaynak eklentisi",
+        "LicenseDescription": "Bu eklenti yalnızca öğrenme, tartışma ve araştırma içindir; başka amaçlarla kullanılamaz.\nDesktopDrawpadBlocker, GPLv3 lisansıyla yayımlanan açık kaynak yazılımdır.\nGitHub adresi: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nProgramın faydalı olmasını umuyoruz ancak kalite garantisi vermiyoruz.\nKullanıcılar eklentinin sonuç ve etkilerinden sorumludur; kullanım bu sözleşmenin kabulü anlamına gelir.",
+        "UseSection": "Eklentiyi kullanma",
+        "EnableTitle": "Eklentiyi aç",
+        "EnableDescription": "Varsayılan modda eklenti Inkeys ile başlar ve durur.",
+        "GeneralSection": "Genel seçenekler",
+        "AdministratorTitle": "Eklentiyi yönetici olarak çalıştır",
+        "AdministratorDescription": "Bu ayarı değiştirirken eklentinin yanıt vermesini bekleyin.",
+        "IntervalTitle": "Engelleme aralığı",
+        "IntervalDescription": "Kısa aralıklar yeni pencereleri daha çabuk engeller ancak daha fazla CPU kullanır.",
+        "IntervalShort": "Kısa (500 ms)",
+        "IntervalMediumShort": "Biraz kısa (1 s)",
+        "IntervalMedium": "Orta (3 s)",
+        "IntervalMediumLong": "Biraz uzun (5 s)",
+        "IntervalLong": "Uzun (10 s)",
+        "PrecisionSection": "Ayrıntılı denetim",
+        "Seewo3Title": "希沃白板3 — masaüstü kalem penceresi",
+        "Seewo5Title": "希沃白板5 — masaüstü kalem penceresi",
+        "Seewo5CTitle": "希沃轻白板（5C） — masaüstü kalem penceresi",
+        "PincoSidebarTitle": "希沃品课教师端 — kayan kenar çubuğu",
+        "PincoDrawingTitle": "希沃品课教师端 — masaüstü kalem penceresi",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 — PPT araçları",
+        "YiouTitle": "欧帝白板 — masaüstü kalem penceresi",
+        "AiClassTitle": "AiClass — masaüstü kalem penceresi",
+        "ClassInXTitle": "ClassIn X — masaüstü kalem penceresi",
+        "IntelligentClassTitle": "天喻教育云互动课堂 — masaüstü kalem penceresi",
+        "ChangYan4Title": "畅言智慧课堂4.0 — masaüstü kalem penceresi",
+        "ChangYan5Title": "畅言智慧课堂5.0 — masaüstü kalem penceresi",
+        "Iclass30SidebarTitle": "C30智能教学 — kayan kenar çubuğu",
+        "Iclass30DrawingTitle": "C30智能教学 — masaüstü kalem penceresi",
+        "SeewoDesktopSidebarTitle": "希沃桌面 — kayan kenar çubuğu",
+        "SeewoDesktopDrawingTitle": "希沃桌面 — masaüstü kalem penceresi",
+        "IncludesPptNote": "PPT denetimlerini içerir.",
+        "RestoresWhiteboardNote": "PPT denetimlerini içerir. Beyaz tahta modunda otomatik geri yüklemeyi destekler.",
+        "WindowTrackingNote": "PPT denetimlerini içerir. Beyaz tahta modunda otomatik geri yüklemeyi ve pencere takibini destekler.",
+        "SeewoDesktopVersionsNote": "Genel ve yükseköğretim için 1.0/2.0/2.5/3.0 sürümlerinde çalışır.",
+        "AdministratorNote": "DDB yönetici yetkisi gerektirir."
+      },
+      "LnkHelper":
+      {
+        "N": "Kısayol yardımcısı",
+        "E": "Güncellemeler program dosyasının adını değiştirip kısayolları bozabileceği için başlangıçta mevcut Inkeys kısayollarının geçerliliğini sağlar. İstenirse masaüstünde yoksa bir kısayol oluşturur.",
+        "Capability":
+        {
+          "N": "Temel özellikler",
+          "FixLnk": "Masaüstü kısayol hedefini ve adını düzelt",
+          "FixLnkE": "Başlangıçta mevcut masaüstü kısayollarını düzeltir. Otomatik güncellemeler dosya adını değiştirip kısayolu bozabildiği için önerilir."
+        },
+        "Expansion":
+        {
+          "N": "Ek seçenekler",
+          "CreateLnk": "Masaüstü kısayolu oluştur",
+          "CreateLnkE": "Masaüstünde yoksa kısayol oluşturur."
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "Bileşenler",
+      "SoftwareSection": "Uygulamalar",
+      "SystemSection": "Sistem",
+      "KeyboardSection": "Klavye benzetimi",
+      "RollCallSection": "İsim seçiciler",
+      "ClassIslandSection": "ClassIsland bütünleştirmesi",
+      "ExplorerTitle": "Dosya Gezgini'ni aç",
+      "TaskManagerTitle": "Görev Yöneticisi'ni aç",
+      "ControlPanelTitle": "Denetim Masası'nı aç",
+      "ShowDesktopTitle": "Masaüstünü göster",
+      "LockScreenTitle": "Ekranı kilitle",
+      "EscapeTitle": "Esc tuşuna bas",
+      "AltF4Title": "Alt+F4 tuşlarına bas",
+      "IslandCaller1Title": "IslandCaller 1: rastgele isim seç",
+      "IslandCaller2Title": "IslandCaller 2: tek isim seç",
+      "SecRandom1Title": "SecRandom 1: hızlı seçim",
+      "SecRandom2Title": "SecRandom 2: hızlı seçim",
+      "SecRandom2CompatTitle": "SecRandom 2: hızlı seçim (uyumlu)",
+      "NamePickerTitle": "NamePicker: rastgele isim",
+      "ClassIslandSettingsTitle": "ClassIsland ayarları",
+      "ClassIslandProfileTitle": "ClassIsland profil düzenleyicisi",
+      "ClassIslandSwapTitle": "ClassIsland hızlı ders değiştirme",
+      "IslandCallerRequirement": "ClassIsland'da IslandCaller eklentisini ve ClassIsland URL protokolünün kaydını gerektirir.",
+      "SecRandomUrlRequirement": "SecRandom URL protokolünün kaydını gerektirir.",
+      "SecRandomIpcRequirement": "SecRandom IPC protokolünün kaydını gerektirir.",
+      "NamePickerRequirement": "NamePicker URL protokolünün kaydını gerektirir.",
+      "ClassIslandProtocolNote": "ClassIsland ayarlarında URL gezinme protokolünü kaydedin.",
+      "ClassIslandSwapNote": "ClassIsland'da ders programı yüklü değilken bu bileşen çalışmaz."
+    },
+    "HotKey":
+    {
+      "N": "Kısayol tuşları",
+      "E": "Aşağıdaki sabit birleşimler ayrı ayrı açılabilir; özel atama henüz yoktur.\nGenel açıklama geçişi dışında kısayollar yalnızca açıklama yaparken etkindir. Ayarlardaki metin girişi ve modal iletişim kutuları önceliklidir. Seçim veya Tıklama geçişi modunda tuşları geçerli uygulama alır.\nGenel geçiş, Ayarlar'daki normal düzenleme sırasında etkin kalır. Uygulamanın modal iletişim kutuları işlemi duraklatır ancak tuş birleşimini ayırmaya devam eder. Uluslararası klavyelerde AltGr, Ctrl + Alt ile çakışabilir; gerekirse genel geçişi kapatın.\nKlavye kısayolları PowerPoint gezinmesini devralmaz.",
+      "ToggleAnnotationN": "Genel açıklama geçişi",
+      "ToggleAnnotationE": "Açıklama ve Seçim arasında geçiş yapar. Birleşik biçimde Seçim'e girerken mürekkep korunur; Ayrı biçimde önce geçerli sayfa temizlenir. Geri dönerken son açıklama aracı geri yüklenir, Dondur geri yüklenmez.",
+      "UndoN": "Geri al",
+      "UndoE": "Geçerli sayfada geri alın. Tekrarlamak için basılı tutun. Geçmiş boşken alttaki uygulamaya Geri al gönderilmez.",
+      "RedoYN": "Yinele",
+      "RedoYE": "Geçerli sayfada yineleyin. Tekrarlamak için basılı tutun. Bu birleşim ve Ctrl + Shift + Z ayrı açılıp kapatılabilir.",
+      "RedoShiftZN": "Yinele (alternatif)",
+      "RedoShiftZE": "Ctrl + Y ile aynı Yinele işlemini yapar; ayrı etkinleştirme seçeneği vardır.",
+      "ClearN": "Geçerli sayfayı temizle",
+      "ClearE": "İlk basış sayfayı temizler ve aracı korur; sayfa boşken de Seçim'e geçmez. Ctrl'yi basılı tutun, Delete'i bırakıp yeniden basın; her iki biçimde de Seçim'e geçilir. Delete'i basılı tutmak iki basış sayılmaz. Yeni çizgi veya başka işlem bu diziyi sıfırlar.",
+      "FreezeN": "Dondur",
+      "FreezeE": "Ekran dondurmayı açıp kapatır.",
+      "Registering": "Genel geçiş kaydediliyor",
+      "Disabling": "Genel geçiş kapatılıyor",
+      "UnregisterFailed": "Genel geçiş kaydı kaldırılamadı; tuş birleşimi ayrılmış durumda",
+      "Registered": "Genel geçiş etkin",
+      "Disabled": "Genel geçiş kapalı",
+      "NotRunning": "Klavye hizmeti çalışmıyor",
+      "RegisterFailed": "Genel geçiş kaydedilemedi; başka bir program kullanıyor olabilir",
+      "SynchronizationPending": "Tuş durumu eşitleniyor. Yetkisi yükseltilmemiş bir pencereye geçin, tuşları bırakıp yeniden deneyin.",
+      "HookReady": "Açıklama kısayolları hazır",
+      "HookFailed": "Klavye kancası kurulu değil; açıklama kısayolları kullanılamaz",
+      "FreezeNote": "PPT ve beyaz tahta çalışma alanlarında kullanılamaz. Kullanılamadığında tuş birleşimi alttaki uygulamaya iletilmez."
+    },
+    "Community":
+    {
+      "N": "Topluluk"
+    },
+    "Sponsor":
+    {
+      "N": "Bize destek olun",
+      "Thanks": "Destek verdikten sonra teşekkür amacıyla takma adınızın ve katkınızın topluluk kartına eklenmesi için geliştiriciyle iletişime geçebilirsiniz."
+    },
+    "RestartSoftware":
+    {
+      "N": "Yeniden başlat"
+    },
+    "ExitSoftware":
+    {
+      "N": "Çıkış"
+    },
+    "DebugSoftware":
+    {
+      "N": "Hata ayıklama araçları",
+      "RenderingSection": "UI3 işleme tanılaması",
+      "DirtyRegions":
+      {
+        "N": "Değişen bölge tanılaması",
+        "E": "Her UI3 karesinde gerçekten gönderilen değişen bölgelerin sınırlarını gösterin."
+      },
+      "FrameRate":
+      {
+        "N": "Kare hızını göster",
+        "E": "Önceki saniyenin ortalama ve beklemesiz kare hızını saniyede bir güncelleyin."
+      },
+      "ConsoleSection": "Konsol çıktısı",
+      "CanvasInformation": "Tuval başlatma bilgisi",
+      "DisplayInformation": "Ekranlar ve EDID"
+    },
+    "Update":
+    {
+      "Check": "Güncellemeleri denetle",
+      "Channel":
+      {
+        "LTS": "Kararlı kanal",
+        "Insider": "Insider kanalı",
+        "Dev": "Geliştirme kanalı",
+        "Canary": "Canary kanalı",
+        "Other": "Diğer kanal"
+      },
+      "NotStarted": "Güncelleme denetimi başlamadı",
+      "ObtainInformation": "Güncelleme bilgisi alınıyor",
+      "InformationFail": "Güncelleme bilgisi alınamadı",
+      "InformationDamage": "İndirilen güncelleme bilgisi bozuk",
+      "InformationUnStandardized": "Geçersiz güncelleme bilgisi",
+      "Downloading": "Güncelleme indiriliyor (Hat {})",
+      "DownloadFail": "İndirme başarısız",
+      "DownloadDamage": "İndirilen güncelleme dosyası bozuk",
+      "Restart": "En son sürüme güncellemek için yeniden başlatın",
+      "Latest": "Zaten güncel",
+      "Newer": "Geçerli sürüm en son resmi yayından daha yeni",
+      "New": "Yeni sürüm bulundu",
+      "Repair": "Onarmayı dene",
+      "ManualDownload": "Elle indir",
+      "UpdateNow": "Şimdi güncelle"
+    }
+  }
+}

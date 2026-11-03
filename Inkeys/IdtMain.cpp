@@ -1713,6 +1713,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		return 2;
 #endif
 	}
+	// 字体事务只使用无 HWND WARP，必须早于所有产品窗口初始化。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--setting-font-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+	{
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		return Inkeys::UI::Setting::RunFontLifecycleProductionTest();
+#else
+		return 2;
+#endif
+	}
 	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--pptcom-resource-verification-test", -1, TRUE) == CSTR_EQUAL)

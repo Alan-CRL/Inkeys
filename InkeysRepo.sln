@@ -10,6 +10,9 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PptCOM.Tests", "PptCOM.Tests\PptCOM.Tests.csproj", "{A8D9F94F-787C-4673-90DA-A55D2F6B5B58}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "InkeysHeadlessTests", "InkeysHeadlessTests\InkeysHeadlessTests.vcxproj", "{8FBAA5F4-9985-4D8D-B2EC-7639F96077D0}"
+	ProjectSection(ProjectDependencies) = postProject
+		{C74D4D04-F81C-42FE-8D90-7042BA3BB8A0} = {C74D4D04-F81C-42FE-8D90-7042BA3BB8A0}
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "I18n", "I18n", "{01FF294F-FEED-47F7-8DAC-2E1108D7E8F6}"
 	ProjectSection(SolutionItems) = preProject
@@ -26,6 +29,15 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "I18n", "I18n", "{01FF294F-F
 		Inkeys\src\i18n\es-ES.jsonc = Inkeys\src\i18n\es-ES.jsonc
 		Inkeys\src\i18n\pt-BR.jsonc = Inkeys\src\i18n\pt-BR.jsonc
 		Inkeys\src\i18n\ru-RU.jsonc = Inkeys\src\i18n\ru-RU.jsonc
+		Inkeys\src\i18n\id-ID.jsonc = Inkeys\src\i18n\id-ID.jsonc
+		Inkeys\src\i18n\vi-VN.jsonc = Inkeys\src\i18n\vi-VN.jsonc
+		Inkeys\src\i18n\tr-TR.jsonc = Inkeys\src\i18n\tr-TR.jsonc
+		Inkeys\src\i18n\it-IT.jsonc = Inkeys\src\i18n\it-IT.jsonc
+		Inkeys\src\i18n\pl-PL.jsonc = Inkeys\src\i18n\pl-PL.jsonc
+		Inkeys\src\i18n\uk-UA.jsonc = Inkeys\src\i18n\uk-UA.jsonc
+		Inkeys\src\i18n\es-MX.jsonc = Inkeys\src\i18n\es-MX.jsonc
+		Inkeys\src\i18n\ro-RO.jsonc = Inkeys\src\i18n\ro-RO.jsonc
+		Inkeys\src\i18n\en-GB.jsonc = Inkeys\src\i18n\en-GB.jsonc
 	EndProjectSection
 EndProject
 Global

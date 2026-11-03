@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Setting.Design.h"
+#include "Setting.Motion.h"
 #include "Setting.Theme.h"
 #include "Setting.Typography.h"
 #include "imfluent/imfluent.h"
@@ -12,7 +13,7 @@
 namespace Inkeys::UI::Setting::Design
 {
 	// 入场完整准备帧可固定到 native 终态条宽；当前帧嵌套 child 同步，普通页面仍保留出现/消失动效。
-	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0, ImGuiWindowFlags flags = 0, bool resetToTop = false, bool settleScrollbarLayout = false);
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0, ImGuiWindowFlags flags = 0, bool resetToTop = false, bool settleScrollbarLayout = false, bool stableBodyLayout = false, float visualAlpha = 1.0F, PageMotionState* motion = nullptr);
 	bool BeginScrollPopupModal(const char* id, ImGuiWindowFlags flags);
 
 	// 主题语义色集中在同一张表；页面只选择角色，不自行判断明暗。
@@ -63,7 +64,7 @@ namespace Inkeys::UI::Setting::Design
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,
 		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0,
-		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr);
+		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr, bool showNoteIcon = true);
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
@@ -121,7 +122,7 @@ namespace Inkeys::UI::Setting::Design
 	bool ToggleRow(const char* id, const char* title, const char* description,
 		const char* glyph, bool& value, const char* note = nullptr);
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr);
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true);
 	bool SliderRow(const char* id, const char* title, const char* description,
 		const char* glyph, float& value, float minimum, float maximum,
 		bool& active, const char* format = "%.2f", const char* note = nullptr);

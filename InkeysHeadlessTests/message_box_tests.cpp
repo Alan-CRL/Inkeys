@@ -224,6 +224,24 @@ namespace
 			const auto labels = MessageBoxTest::ResolveLabels(sample.language);
 			Check(labels.cancel == sample.cancel && labels.yes == sample.yes, "new locale default button captions match the requested language");
 		}
+		const struct { LANGID language; const wchar_t* ok; const wchar_t* cancel; const wchar_t* yes; const wchar_t* no; } added[]{
+			{ 0x0421, L"OK", L"Batal", L"Ya", L"Tidak" },
+			{ 0x042a, L"OK", L"Hủy", L"Có", L"Không" },
+			{ 0x041f, L"Tamam", L"İptal", L"Evet", L"Hayır" },
+			{ 0x0410, L"OK", L"Annulla", L"Sì", L"No" },
+			{ 0x0415, L"OK", L"Anuluj", L"Tak", L"Nie" },
+			{ 0x0422, L"Гаразд", L"Скасувати", L"Так", L"Ні" },
+			{ 0x0418, L"OK", L"Anulare", L"Da", L"Nu" },
+			{ 0x080a, L"Aceptar", L"Cancelar", L"Sí", L"No" }, { 0x0809, L"OK", L"Cancel", L"Yes", L"No" } };
+		for (const auto& sample : added)
+		{
+			const auto labels = MessageBoxTest::ResolveLabels(sample.language);
+			Check(labels.ok == sample.ok && labels.cancel == sample.cancel && labels.yes == sample.yes && labels.no == sample.no,
+				"all added language and region default buttons match their requested locale");
+			auto custom = MakeOkCancelRequest(L"Title", L"Body"); custom.language = sample.language; custom.labels.ok = L"Custom";
+			const auto resolved = MessageBoxTest::ResolveRequestLabels(custom);
+			Check(resolved.ok == L"Custom" && resolved.cancel == sample.cancel, "custom button retains localized default for the other button");
+		}
 		const auto defaultLabels = MessageBoxTest::ResolveRequestLabels(
 			MakeOkRequest(L"Title", L"Body"));
 		Check(defaultLabels.ok == L"OK" && defaultLabels.cancel == L"Cancel",
@@ -280,11 +298,12 @@ namespace
 		Check(traditionalProbe.succeeded && traditionalProbe.buttonCount == 2,
 			"traditional Chinese request resolves fonts and layout");
 
-		// 实际 GDI+ 测量覆盖十一种按钮译文；日/韩从与产品相同的内嵌私有 TTF 取字。
+		// 实际 GDI+ 测量覆盖二十种按钮译文；日/韩从与产品相同的内嵌私有 TTF 取字。
 		for (const auto& locale : Inkeys::Localization::Locales)
 		{
 			const auto labels = MessageBoxTest::ResolveLabels(locale.language);
-			auto localized = MakeOkCancelRequest(labels.ok.c_str(), labels.cancel.c_str());
+			const std::wstring body = labels.cancel + L" · Đđ Ắặ Ệộ Ứự Ğğ İı Şş Ąą Ęę Łł Șș Țț Ґґ Єє Іі Її";
+			auto localized = MakeOkCancelRequest(labels.ok.c_str(), body.c_str());
 			localized.language = locale.language;
 			for (const UINT dpi : { 96u, 144u, 192u })
 			{
@@ -292,7 +311,7 @@ namespace
 					MessageBoxTest::ScaleDip(320, dpi), MessageBoxTest::ScaleDip(900, dpi));
 				Check(probe.succeeded && probe.buttonCount == 2
 					&& probe.width == MessageBoxTest::ScaleDip(320, dpi),
-					"eleven-language dialog labels fit the minimum width at each DPI without a window");
+					"twenty-language dialog labels fit the minimum width at each DPI without a window");
 			}
 		}
 

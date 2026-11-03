@@ -268,6 +268,7 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t pressedCaptureTicket=0;
 			PptKeyboardRepeatTiming repeatTiming{};
 			std::uint64_t observedRevision = 0;
+			std::uint64_t localeRevision = 0;
 			WhiteboardState renderedWhiteboard;
 			WhiteboardState pressedWhiteboard;
 			WorkspaceMode pressedMode=WorkspaceMode::Hidden;
@@ -1248,9 +1249,10 @@ namespace Inkeys::UI::PageControl
 			const auto visualMode=desiredMode==WorkspaceMode::Hidden
 				?(state.sceneConfigured?state.configuredMode:WorkspaceMode::PptCompact):desiredMode;
 			const bool modeChanged=state.sceneConfigured&&state.configuredMode!=visualMode;
-			// 淡出期间保留离场前内容：退场后的页码/加载状态不能在渐隐途中改写文字与按钮外观。
+			// 淡出期间保留离场前内容：退场后的页码/加载状态与语言都不能在渐隐途中改写文字与按钮外观。
 			const bool fadingOut=state.sceneConfigured&&desiredMode==WorkspaceMode::Hidden;
-			if(!state.sceneConfigured || modeChanged || (!fadingOut&&state.observedRevision!=revision)){
+			const auto languageRevision = I18n::revision();
+			if(!state.sceneConfigured || modeChanged || (!fadingOut&&(state.observedRevision!=revision || state.localeRevision!=languageRevision))){
 				const bool animate=modeChanged&&ShouldAnimateWorkspaceLayout(SurfaceFor(index),state.configuredMode,visualMode,state.targetVisible);
 				WaitTrace::Fields contentFields;
 				if(WaitTrace::Enabled()&&visualMode==WorkspaceMode::PptCompact){
@@ -1341,8 +1343,8 @@ namespace Inkeys::UI::PageControl
 			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,
 				(state.bounds.active||state.scene.Geometry().layoutAnimating)&&!settleDragPosition,WhiteboardWorkspaceSwitching(whiteboard));
 			if(!ApplyCurrentSceneBounds(state)){failedStage="pagination-bounds";return false;}
-			// 被冻结的修订不记为已观测，重新可见时按最新发布重建内容。
-			state.sceneConfigured=true;state.configuredMode=visualMode;if(!fadingOut)state.observedRevision=revision;state.renderedWhiteboard=whiteboard;
+			// 被冻结的修订不记为已观测，重新可见时按最新发布与语言重建内容。
+			state.sceneConfigured=true;state.configuredMode=visualMode;if(!fadingOut){state.observedRevision=revision;state.localeRevision=languageRevision;}state.renderedWhiteboard=whiteboard;
 			return true;
 		}
 
@@ -4751,6 +4753,27 @@ namespace Inkeys::UI::PageControl
 					if(mapped.bits[static_cast<std::size_t>(y)*mapped.pitch+column*4+3])last=y;
 				cpu->Unmap();return last>=0?std::optional<LONG>(submitted.top+last+1):std::nullopt;
 			};
+			{
+				// 业务 revision 不变时仍通过真实 ConfigureSurface 更新四个分页 renderer。
+				Prepare();
+				const auto fixedRevision=publishedRevision.load();
+				for(const auto& locale:Inkeys::Localization::Locales){
+					Check(I18n::load(1,L"JSON",locale.code),"pagination hot locale loads");
+					for(std::size_t index=0;index<surfaces.size();++index){
+						auto& state=surfaces[index];const auto priorGeneration=state.scene.PresentedGeneration();
+						const auto target=ResolveSurfaceLayout(SurfaceFor(index),monitor,1.0F,baseline,{});
+						const char* failed=nullptr;
+						Check(ConfigureSurface(index,WorkspaceMode::PptCompact,baseline,{},monitor,target,
+							fixedRevision,time,false,failed),"production pagination config consumes language-only revision");
+						Check(state.localeRevision==I18n::revision() && state.observedRevision==fixedRevision
+							&& state.scene.Renderer().GetFontFamily()==locale.fontFamily,
+							"all pagination renderers switch family without business revision");
+						Check(state.scene.IsInvalidated() && state.scene.PresentedGeneration()==priorGeneration,
+							"locale change marks visual damage but does not commit input prematurely");
+					}
+				}
+				Check(I18n::load(1,L"JSON",L"zh-CN"),"restore pagination test locale");
+			}
 			{
 				// 按产品分步发布工作区事实，直接走 ConfigureSurface/Scene/PresentScene；只替换最终 HWND sink。
 				Prepare();auto show=baseline;WhiteboardState board;bool minimized=false,blockResources=false;

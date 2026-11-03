@@ -630,21 +630,13 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 		wstring body = L"Inkeys encountered a problem. Select OK to restart Inkeys and try to recover.";
 		wstring okLabel = L"OK";
 		LANGID language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
-		wstring localizedTitle;
-		wstring localizedBody;
-		wstring localizedOk;
-		LANGID localizedLanguage = language;
-		// 崩溃路径仅在 i18n 读锁可立即获取时整组切换，否则保持完整英文回退。
-		if (I18n::tryLanguageId(localizedLanguage)
-			&& I18n::tryGetW(I18nKey.Dialogs.Common.ErrorTitle,
-				localizedTitle)
-			&& I18n::tryGetW(I18nKey.Dialogs.Crash.Body, localizedBody)
-			&& I18n::tryGetW(I18nKey.Dialogs.Common.OK, localizedOk))
+		I18n::TextSnapshot localized;
+		// 崩溃路径只尝试一次读锁，整组语言/文案必须来自同一快照。
+		if (I18n::capture({ I18nKey.Dialogs.Common.ErrorTitle, I18nKey.Dialogs.Crash.Body,
+			I18nKey.Dialogs.Common.OK }, localized, true))
 		{
-			title = move(localizedTitle);
-			body = move(localizedBody);
-			okLabel = move(localizedOk);
-			language = localizedLanguage;
+			title = move(localized.text[0]); body = move(localized.text[1]);
+			okLabel = move(localized.text[2]); language = localized.language;
 		}
 		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
 			title.c_str(), body.c_str());

@@ -327,15 +327,15 @@
       {
         "N": "界面语言",
         "Select": "选择语言",
-        "SelectE": "设置界面使用的显示语言。",
+        "SelectE": "界面使用的显示语言。",
         "Language":
         {
           "en-US": "English · en-US · Beta",
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "语言更改需要重启 Inkeys 才能完全生效。是否立即重启？",
-        "SelectNote": "重启软件后完全生效。"
+        "Warn": "语言更改立即生效，无需重启 Inkeys。",
+        "SelectNote": "立即生效，无需重启。"
       }
     },
     "Configuration":

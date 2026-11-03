@@ -516,6 +516,12 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
@@ -1751,6 +1757,9 @@
     <ClCompile Include="additional\imgui\imgui.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
+    <ClCompile Include="additional\imgui\misc\freetype\imgui_freetype.cpp">
+      <Filter>头文件\Additional\Imgui</Filter>
+    </ClCompile>
     <ClCompile Include="additional\imgui\imgui_draw.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
@@ -2432,6 +2441,9 @@
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.cso">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </None>
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
@@ -2442,6 +2454,33 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\i18n\zh-TW.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\id-ID.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\vi-VN.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\tr-TR.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\it-IT.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\pl-PL.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\uk-UA.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\es-MX.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\ro-RO.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\en-GB.jsonc">
       <Filter>资源文件</Filter>
     </None>
     <None Include="IdtFloating.cpp">
@@ -2541,6 +2580,9 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.hlsl">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </FxCompile>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.hlsl">

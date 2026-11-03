@@ -844,7 +844,7 @@ namespace Inkeys::UI::Bar
 	{
 		Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
 			Inkeys::UI::RenderPipeline::FrameStage::SubmitTargetsAndLayout);
-		impl_->Configure(content,duration);impl_->RefreshGeometry();return true;
+		if (impl_->renderer.RefreshLocalizedTypography()) impl_->FullDamage(); impl_->Configure(content,duration);impl_->RefreshGeometry();return true;
 	}
 	bool BarPageSurface::ConfigureBackground(const BarSurfaceBackgroundSpec& background)
 	{

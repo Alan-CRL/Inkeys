@@ -1,0 +1,68 @@
+[
+  {
+    "font": "HarmonyOS_Sans_SC_Regular.ttf",
+    "bytes": 8430912,
+    "colorTables": [
+      "COLR",
+      "CPAL",
+      "SVG "
+    ]
+  },
+  {
+    "font": "HarmonyOS_SansSC_Bold.ttf",
+    "bytes": 8327680,
+    "colorTables": [
+      "COLR",
+      "CPAL",
+      "SVG "
+    ]
+  },
+  {
+    "font": "HarmonyOS_Sans_TC_Regular.ttf",
+    "bytes": 4142456,
+    "colorTables": [
+      "COLR",
+      "CPAL",
+      "SVG "
+    ]
+  },
+  {
+    "font": "HarmonyOS_SansTC_Bold.ttf",
+    "bytes": 4116116,
+    "colorTables": [
+      "COLR",
+      "CPAL",
+      "SVG "
+    ]
+  },
+  {
+    "font": "NotoSansJP-Regular.ttf",
+    "bytes": 5766884,
+    "colorTables": []
+  },
+  {
+    "font": "NotoSansJP-Bold.ttf",
+    "bytes": 5761680,
+    "colorTables": []
+  },
+  {
+    "font": "NotoSansKR-Regular.ttf",
+    "bytes": 6224868,
+    "colorTables": []
+  },
+  {
+    "font": "NotoSansKR-Bold.ttf",
+    "bytes": 6222712,
+    "colorTables": []
+  },
+  {
+    "font": "Segoe Fluent Icons.ttf",
+    "bytes": 408752,
+    "colorTables": []
+  },
+  {
+    "font": "icomoon.ttf",
+    "bytes": 4884,
+    "colorTables": []
+  }
+]

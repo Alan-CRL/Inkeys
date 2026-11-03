@@ -49,7 +49,7 @@ using Inkeys::UI::Bar::ResolveBarClearClickAction;
 using Inkeys::UI::Bar::ResolveBarDrawButtonToggleDecision;
 
 bool BarButtonClass::TransitionContent(
-	const wstring& iconResourceName, const wstring& label)
+	const wstring& iconResourceName, const wstring& label, bool immediateLabel)
 {
 	// 先缩到新标签所需字号，再在透明中点换字；换回短标签前保留小字号。
 	if (preset == BarButtonPresetEnum::Select || preset == BarButtonPresetEnum::Pierce)
@@ -60,7 +60,8 @@ bool BarButtonClass::TransitionContent(
 	bool changed = false;
 	if (iconKind == BarButtonIconKindEnum::Svg && !iconResourceName.empty())
 		changed |= icon.TransitionToResource(L"UI", iconResourceName);
-	changed |= name.TransitionToString(label);
+	// 跨字族切换不能在新字体下等待旧语言文字的淡出中点。
+	changed |= immediateLabel ? name.SetStringImmediate(label) : name.TransitionToString(label);
 	return changed;
 }
 
@@ -957,7 +958,7 @@ vector<BarMainButtonLayoutEntry> BarButtonSetClass::MainLayoutSnapshot()
 			result.push_back({ button, button->size.load(), button->IsVisible() });
 	return result;
 }
-void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateMode)
+void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateMode, bool immediateLabel)
 {
 	if (!preset[(int)BarButtonPresetEnum::Draw]) return;
 	// 所有动态网格共用这一组输入，内容缓存不能短路几何投影。
@@ -1054,14 +1055,127 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	// 长标签换行由语言资源指定，翻译调整不再依赖英文原文匹配。
 	auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
 		: IW(separate && !selection ? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
-	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label);
-	UpdateDrawButtonStyle(stateMode);
+	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label, immediateLabel);
+	UpdateDrawButtonStyle(stateMode, immediateLabel);
 	UpdateWhiteboardButtonStyle(whiteboard,
-		Inkeys::Window::GetService().WhiteboardWindowGroupMinimized());
-	UpdateEraserButtonStyle(stateMode);
-	UpdateGeometryButtonStyle(stateMode);
+		Inkeys::Window::GetService().WhiteboardWindowGroupMinimized(), immediateLabel);
+	UpdateEraserButtonStyle(stateMode, immediateLabel);
+	UpdateGeometryButtonStyle(stateMode, immediateLabel);
 }
-void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::RefreshLocalizedText()
+{
+	lock_guard lock(presentationMutex);
+	// 原位替换文字，不重建按钮或丢失按压/工具状态。
+	if (auto* button = preset[(int)BarButtonPresetEnum::Recall]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.UndoLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::Clean]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.ClearLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::Freeze]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.FreezeLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::EndShow]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::Setting]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.SettingsLabel));
+	if (moreButton) moreButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.MoreLabel));
+	if (mainRedoButton) mainRedoButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.RedoLabel));
+	drawButtonStyleKey = -1; eraserButtonStyleKey = -1; geometryButtonStyleKey = -1;
+	unique_lock registrationsLock(registrationMutex);
+	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Explorer"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SoftwareSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ExplorerTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ExplorerLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Taskmgr"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SoftwareSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.TaskManagerTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.TaskManagerLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Control"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SoftwareSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ControlPanelTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ControlPanelLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.System.Desktop"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SystemSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ShowDesktopTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ShowDesktopLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.System.LockWorkStation"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SystemSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.LockScreenTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.LockScreenLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Keyboard.Keyboardesc"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.KeyboardSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.EscapeTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.EscapeLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Keyboard.KeyboardAltF4"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.KeyboardSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.AltF4Title);
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.IslandCaller1"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.IslandCaller1Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.IslandCaller2"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.IslandCaller2Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.SecRandom1"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.SecRandom1Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.SecRandom2"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.SecRandom2Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.SecRandom2Compat"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.SecRandom2CompatTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.NamePicker"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.NamePickerTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Linkage.ClassislandSettings"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.ClassIslandSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ClassIslandSettingsTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ClassIslandSettingsLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Linkage.ClassislandProfile"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.ClassIslandSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ClassIslandProfileTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ClassIslandProfileLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Linkage.ClassislandClassswap"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.ClassIslandSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ClassIslandSwapTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ClassIslandSwapLabel));
+	}
+	registrationsLock.unlock();
+	// 复用当前业务状态投影，立即替换动态文案而不重新触发工具动作。
+	ApplyMainPresentationLocked(GetStateModeSnapshot(), true);
+}
+
+void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
@@ -1085,17 +1199,17 @@ void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
 			: (highlighter ? IW(I18nKey.UI.Bar.MainButtons.HighlighterLabel)
 				: (hardPen ? IW(I18nKey.UI.Bar.MainButtons.HardPenLabel)
 					: IW(I18nKey.UI.Bar.MainButtons.SoftPenLabel))))
-			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel));
+			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel), immediateLabel);
 	drawButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized)
+void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized, bool immediateLabel)
 {
 	auto whiteboard = preset[(int)BarButtonPresetEnum::Whiteboard];
 	if (!whiteboard) return;
 	if (auto* pierce = preset[(int)BarButtonPresetEnum::Pierce])
 	{
 		auto label = IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
-		pierce->TransitionContent(L"barPierce", label);
+		pierce->TransitionContent(L"barPierce", label, immediateLabel);
 	}
 	const bool resume = active && minimized;
 	whiteboard->TransitionContent(active && !resume ? L"barDismiss" : L"barWhiteboard",
@@ -1103,9 +1217,9 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized)
 			: active ? (Inkeys::UI::Bar::PptPresentationActive()
 				? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
 				: IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel))
-				: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
+				: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel), immediateLabel);
 }
-void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
@@ -1119,10 +1233,10 @@ void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
 	button->TransitionContent(
 		L"barEraser", selected
 			? IW(I18nKey.UI.Bar.MainButtons.AreaEraserLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel));
+			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel), immediateLabel);
 	eraserButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
@@ -1142,7 +1256,7 @@ void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMod
 		? IW(I18nKey.UI.Bar.MainButtons.GeometryLabel)
 		: (rectangle ? IW(I18nKey.UI.Bar.MainButtons.RectangleLabel)
 			: IW(I18nKey.UI.Bar.MainButtons.StraightLineLabel));
-	button->TransitionContent(resourceName, label);
+	button->TransitionContent(resourceName, label, immediateLabel);
 	geometryButtonStyleKey = styleKey;
 }
 

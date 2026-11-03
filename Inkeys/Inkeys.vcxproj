@@ -199,7 +199,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -240,7 +240,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -279,7 +279,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -318,7 +318,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -358,7 +358,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -399,7 +399,7 @@
       <OptimizeReferences>
       </OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(VcpkgInstalledDir)$(VcpkgTriplet)\lib\*.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;$(VcpkgInstalledDir)$(VcpkgTriplet)\lib\*.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -500,6 +500,8 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h" />
@@ -931,6 +933,7 @@
     <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp" />
     <ClCompile Include="additional\imgui\imgui.cpp" />
     <ClCompile Include="additional\imgui\imgui_draw.cpp" />
+    <ClCompile Include="additional\imgui\misc\freetype\imgui_freetype.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="additional\imgui\imgui_tables.cpp" />
@@ -1198,6 +1201,7 @@
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
     <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli" />
@@ -1216,6 +1220,15 @@
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
+    <None Include="src\i18n\id-ID.jsonc" />
+    <None Include="src\i18n\vi-VN.jsonc" />
+    <None Include="src\i18n\tr-TR.jsonc" />
+    <None Include="src\i18n\it-IT.jsonc" />
+    <None Include="src\i18n\pl-PL.jsonc" />
+    <None Include="src\i18n\uk-UA.jsonc" />
+    <None Include="src\i18n\es-MX.jsonc" />
+    <None Include="src\i18n\ro-RO.jsonc" />
+    <None Include="src\i18n\en-GB.jsonc" />
     <None Include="src\UI\barBrush1.svg" />
     <None Include="src\UI\barBrush2.svg" />
     <None Include="src\UI\barPaintBrush.svg" />
@@ -1278,6 +1291,26 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>

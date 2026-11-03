@@ -6155,17 +6155,15 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				{
 					co_await RunInteractionBusiness([cancellation = InteractionBusinessCancellation()]() -> bool
 					{
-					const auto title = I18n::getWOr(
-						I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
-					const auto body = I18n::getWOr(
-						I18nKey.Dialogs.CloseInkeys.Body, L"Close Inkeys?");
-					const auto okLabel = I18n::getWOr(
-						I18nKey.Dialogs.Common.OK, L"OK");
-					const auto cancelLabel = I18n::getWOr(
-						I18nKey.Dialogs.Common.Cancel, L"Cancel");
+					I18n::TextSnapshot localized;
+					if (!I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.CloseInkeys.Body,
+						I18nKey.Dialogs.Common.OK, I18nKey.Dialogs.Common.Cancel }, localized))
+						localized.text = { L"Inkeys Tips", L"Close Inkeys?", L"OK", L"Cancel" };
+					const auto& title = localized.text[0]; const auto& body = localized.text[1];
+					const auto& okLabel = localized.text[2]; const auto& cancelLabel = localized.text[3];
 					auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
 						title.c_str(), body.c_str());
-					request.language = I18n::languageId();
+					request.language = localized.language;
 					request.cancellation = cancellation;
 					request.labels.ok = okLabel.c_str();
 					request.labels.cancel = cancelLabel.c_str();

@@ -2,6 +2,10 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <d3d11.h>
+#include <wrl/client.h>
+#include <unordered_map>
+#include <cstdlib>
 
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Design.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Typography.h"
@@ -806,11 +810,27 @@ namespace
 			std::cerr << "  face=" << face << " size=" << metrics.size
 				<< " scale=" << scale << " bounds=[" << top << ',' << bottom
 				<< "] padding=" << linePadding << " line=" << metrics.lineHeight * scale << '\n';
+		// 特征字母须有真实字形；其重音越过名义行框并不等于被实际控件裁切。
+		bool accentsAvailable = true;
+		for (const auto point : U"ĐđĂăÂâÊêÔôƠơƯưẮằẶẤầẬẾềỆỐồỘỚờỢỨừỰỔỞĞğİıŞşĄąĆćĘęŁłŃńÓóŚśŹźŻżÎîȘșȚțҐґЄєІіЇї")
+		{
+			if (point == U'\0') continue;
+			const auto* glyph = baked->FindGlyphNoFallback(static_cast<ImWchar>(point));
+			accentsAvailable &= glyph && glyph->Visible && glyph->X1 > glyph->X0 && glyph->Y1 > glyph->Y0;
+		}
+		checks.Expect(accentsAvailable, "semantic caption, control, body and title sizes retain all added locale accent glyphs");
 		const auto* fullWidth = baked->FindGlyphNoFallback(L'中');
-		// 全角 advance 原为 1 em；小幅光学校准只作用于字面，行框仍保持语义字号。
-		checks.Expect(fullWidth && Near(fullWidth->AdvanceX,
-			size * Design::TextOpticalScale, size * 0.025F),
-			"full-width Chinese advance follows the optical em without double scaling");
+		// stb保留连续advance；FreeType hinting会把advance取整到栅格像素，另含26.6字号请求精度。
+		const bool hinted = ImGui::GetIO().Fonts->FontLoader == ImGuiFreeType::GetFontLoader();
+		const float density = baked->RasterizerDensity * font->Sources[0]->RasterizerDensity;
+		const float advanceTolerance = hinted ? (0.5F + 1.0F / 64.0F) / density : size * 0.025F;
+		const float opticalAdvance = size * Design::TextOpticalScale;
+		const bool matchingAdvance = fullWidth && Near(fullWidth->AdvanceX, opticalAdvance, advanceTolerance);
+		if (!matchingAdvance) std::cerr << "[FontAdvance] face=" << face << " size=" << size << " scale=" << scale
+			<< " expected=" << opticalAdvance << " actual=" << (fullWidth ? fullWidth->AdvanceX : -1)
+			<< " tolerance=" << advanceTolerance << " density=" << density << '\n';
+		checks.Expect(matchingAdvance,
+			"full-width Chinese advance follows the optical em with only loader-specific raster rounding");
 		const auto* capital = baked->FindGlyphNoFallback(L'A');
 		const auto* descender = baked->FindGlyphNoFallback(L'g');
 		checks.Expect(capital && descender && descender->Y1 > capital->Y1,
@@ -946,6 +966,80 @@ namespace
 			bounds.bottom = (std::max)(bounds.bottom, vertex.pos.y);
 		}
 		return bounds;
+	}
+
+	void CheckVietnameseCaptionClipping(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto previousSize = io.DisplaySize;
+		const bool previousDark = Design::IsDarkMode();
+		const struct { std::string title, description; ImWchar point; } samples[]{
+			{ IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTop), IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1), 0x1ee8 },
+			{ IA(I18nKey.SettingsUI.Version.Update.Channel.N), IA(I18nKey.SettingsUI.Version.Update.ChannelTip), 0x1ed4 },
+			{ IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N), IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E), 0x1ede } };
+		for (const bool dark : { false, true }) for (const float width : { 360.0F, 620.0F })
+		for (int kind = 0; kind < 3; ++kind)
+		{
+			Design::ApplyPalette(dark); Design::ConfigureRowAnimations(0, false, 1);
+			io.DisplaySize = { (width + 32) * scale, 900 * scale };
+			io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+			ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##vietnamese-caption-clipping", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			ImFluent::PushFont(ImFluentTextStyle_Body);
+			auto* list = ImGui::GetWindowDrawList(); const int first = list->VtxBuffer.Size;
+			const auto origin = ImGui::GetCursorScreenPos(); const auto& sample = samples[kind];
+			if (kind == 0)
+			{
+				bool value = false;
+				Design::ToggleRow("##vi-toggle-caption", sample.title.c_str(), sample.description.c_str(), "\ue718", value);
+			}
+			else if (kind == 1)
+				Design::Notice("##vi-notice-caption", sample.title.c_str(), sample.description.c_str(), ImFluentInfoSeverity_Informational);
+			else
+				Design::SettingRow("##vi-row-caption", sample.title.c_str(), sample.description.c_str(), "\ue737", 0, 0, [](const LayoutRect&) {});
+			const float bottom = ImGui::GetCursorScreenPos().y - Design::Pixels(Design::RowGap);
+			ImFluent::PushFont(ImFluentTextStyle_Caption);
+			auto* baked = ImGui::GetFontBaked(); const float glyphScale = ImGui::GetFontSize() / baked->Size;
+			const auto* found = baked->FindGlyphNoFallback(sample.point); const ImFontGlyph glyph = found ? *found : ImFontGlyph{};
+			checks.Expect(found && Near(ImGui::GetFontSize(), Design::CaptionText.size * scale, 0.501F),
+				"actual Vietnamese row explanations keep the semantic Caption12 size");
+			ImFluent::PopFont(); ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+			bool emitted = false, complete = true;
+			// 匹配实际完整字图四角，再用引用该字图的绘制命令clip检查GPU裁切。
+			for (int index = first; index + 3 < list->VtxBuffer.Size; ++index)
+			{
+				const auto* quad = &list->VtxBuffer[index];
+				if (!found || quad[0].col != Design::TextSecondary
+					|| quad[0].uv.x != glyph.U0 || quad[0].uv.y != glyph.V0
+					|| quad[1].uv.x != glyph.U1 || quad[1].uv.y != glyph.V0
+					|| quad[2].uv.x != glyph.U1 || quad[2].uv.y != glyph.V1
+					|| quad[3].uv.x != glyph.U0 || quad[3].uv.y != glyph.V1) continue;
+				emitted = true;
+				complete &= Near(quad[1].pos.x - quad[0].pos.x, (glyph.X1 - glyph.X0) * glyphScale, 0.1F)
+					&& Near(quad[3].pos.y - quad[0].pos.y, (glyph.Y1 - glyph.Y0) * glyphScale, 0.1F)
+					&& quad[0].pos.y >= origin.y && quad[2].pos.y <= bottom;
+				bool referenced = false;
+				for (const auto& command : list->CmdBuffer)
+				{
+					if (command.UserCallback) continue;
+					bool usesQuad = false;
+					for (unsigned int at = command.IdxOffset; at < command.IdxOffset + command.ElemCount; ++at)
+					{
+						const auto vertex = command.VtxOffset + list->IdxBuffer[at];
+						usesQuad |= vertex >= static_cast<unsigned>(index) && vertex < static_cast<unsigned>(index + 4);
+					}
+					if (!usesQuad) continue;
+					referenced = true;
+					complete &= quad[0].pos.x >= command.ClipRect.x && quad[0].pos.y >= command.ClipRect.y
+						&& quad[2].pos.x <= command.ClipRect.z && quad[2].pos.y <= command.ClipRect.w;
+				}
+				complete &= referenced;
+			}
+			checks.Expect(emitted && complete, "actual Vietnamese Caption accents retain full glyph quads inside their row and submitted clip");
+			if (!emitted || !complete) std::cerr << "[VietnameseCaption] kind=" << kind << " scale=" << scale
+				<< " width=" << width << " dark=" << dark << " codepoint=" << sample.point << " emitted=" << emitted << " complete=" << complete << '\n';
+		}
+		io.DisplaySize = previousSize; Design::ApplyPalette(previousDark);
 	}
 
 	LayoutRect VertexBounds(ImDrawList* list, int first, ImU32 color = 0, bool filterColor = false)
@@ -2233,6 +2327,91 @@ namespace
 		}
 		io.DisplaySize = display; io.ConfigInputTrickleEventQueue = oldTrickle;
 		style.HoverDelayShort = shortDelay; style.HoverDelayNormal = normalDelay; style.HoverStationaryDelay = stationary; Design::ApplyPalette(oldDark);
+	}
+
+	void CheckAnimatedColorEndpoints(Checks& checks, ImFont* regular, float scale)
+	{
+		auto& io = ImGui::GetIO();
+		const auto previousDisplay = io.DisplaySize;
+		const float previousDelta = io.DeltaTime;
+		const bool previousTrickle = io.ConfigInputTrickleEventQueue, previousDark = Design::IsDarkMode();
+		io.DisplaySize = { 600 * scale, 300 * scale }; io.ConfigInputTrickleEventQueue = false;
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
+		const ImVec2 outside(-100, -100);
+		int frames = 0, caseId = 0;
+		for (auto backdrop : { BackdropMode::Solid, BackdropMode::Acrylic })
+		for (bool dark : { false, true }) for (int hz : { 30, 60, 120, 240 })
+		{
+			Design::ApplyPalette(dark, backdrop); io.DeltaTime = 1.0F / hz; ++caseId;
+			std::array<ImRect, 3> bounds{};
+			std::array<int, 3> activations{};
+			auto draw = [&](ImVec2 mouse, bool down, bool submit = true, bool transparentButton = false) {
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##animated-color-endpoints", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				ImGui::PushID(caseId);
+				auto* list = ImGui::GetWindowDrawList();
+				std::array<int, 3> first{}, last{};
+				if (submit) for (int kind = 0; kind < 3; ++kind)
+				{
+					ImGui::SetCursorScreenPos({ 20 * scale, (20 + kind * 64) * scale });
+					first[kind] = list->VtxBuffer.Size;
+					bool pressed = false;
+					if (kind < 2) pressed = ImFluent::NavItemEx(kind ? "selected" : "idle", "Navigation", kind == 1, nullptr, false);
+					else
+					{
+						if (transparentButton)
+						{
+							ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
+							ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, IM_COL32(255, 255, 255, 179));
+						}
+						pressed = ImFluent::Button("Button", { 240 * scale, 32 * scale });
+						if (transparentButton) ImFluent::PopStyleColor(2);
+					}
+					activations[kind] += pressed ? 1 : 0;
+					bounds[kind] = GImGui->LastItemData.Rect; last[kind] = list->VtxBuffer.Size;
+				}
+				ImGui::PopID(); ImGui::End(); ImGui::Render(); ++frames;
+				std::array<FlatSample, 3> result{};
+				if (submit) for (int kind = 0; kind < 3; ++kind)
+					result[kind] = SampleFlatDrawData({ bounds[kind].Min.x + bounds[kind].GetWidth() * .62F + .37F,
+						bounds[kind].Min.y + 4.61F * scale }, list, first[kind], last[kind], Design::AppBase);
+				return result;
+			};
+			auto frame = draw(outside, false); frame = draw(outside, false);
+			const auto nav = bounds[0].GetCenter(), button = bounds[2].GetCenter();
+			const int settleFrames = static_cast<int>(std::ceil(.8F * hz));
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(nav, false);
+			const auto hover = ImFluent::GetColorU32(ImFluentCol_SubtleFillSecondary);
+			checks.Expect(frame[0].fill == hover && frame[1].fill == hover,
+				"real navigation hover and persistent selection reach exact theme fill endpoints at every frame rate");
+			draw(nav, true); frame = draw(nav, false);
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false);
+			checks.Expect((frame[0].fill & IM_COL32_A_MASK) == 0 && frame[1].fill == hover && activations[0] == 1,
+				"hover/press/release then leave removes every alpha unit from unselected navigation without clearing selection");
+			if ((frame[0].fill & IM_COL32_A_MASK) != 0) std::cerr << "[ColorEndpoint] hz=" << hz << " dark=" << dark
+				<< " backdrop=" << static_cast<int>(backdrop) << " residual-alpha=" << (frame[0].fill >> IM_COL32_A_SHIFT) << '\n';
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(button, false);
+			checks.Expect(frame[2].fill == ImFluent::GetColorU32(ImFluentCol_ControlFillSecondary),
+				"ordinary button sharing the color animator reaches its exact hover endpoint");
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false);
+			checks.Expect(frame[2].fill == ImFluent::GetColorU32(ImFluentCol_ControlFillDefault),
+				"ordinary button sharing the color animator returns to its exact default endpoint");
+			// 中途反向后仍到达端点；缺席后重提不能继承旧的半透明尾帧。
+			draw(nav, false); draw(outside, false); draw(nav, true); draw(outside, false);
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false);
+			checks.Expect((frame[0].fill & IM_COL32_A_MASK) == 0, "rapidly reversed navigation color still reaches the transparent endpoint");
+			draw(nav, false); draw(outside, false, false); frame = draw(outside, false);
+			checks.Expect((frame[0].fill & IM_COL32_A_MASK) == 0, "navigation reappearing after a missing frame resets directly to its real target");
+			// 使用真实按钮验证透明黑到浅色的可见中间帧，防止端点修复回退为普通RGBA插值。
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false, true, true);
+			frame = draw(button, false, true, true);
+			checks.Expect((frame[2].fill & IM_COL32_A_MASK) != 0 && (frame[2].fill & ~IM_COL32_A_MASK) == (IM_COL32_WHITE & ~IM_COL32_A_MASK),
+				"transparent-to-light button interpolation keeps visible RGB white instead of darkening the alpha ramp");
+		}
+		io.DisplaySize = previousDisplay; io.DeltaTime = previousDelta; io.ConfigInputTrickleEventQueue = previousTrickle;
+		Design::ApplyPalette(previousDark);
+		std::cout << "[ColorEndpoint] scale=" << scale << " cases=" << caseId << " frames=" << frames << '\n';
 	}
 
 	void CheckAnimatedColors(Checks& checks, ImFont* regular, float scale)
@@ -4683,6 +4862,400 @@ namespace
 	}
 
 
+
+	void CheckPageMotionOffscreen(Checks& checks, const std::array<FontData, 9>& sources, float scale)
+	{
+		// 每份样张独立context，真实DX11上传动态字体；不复用CPU回放的模拟TexID。
+		for (bool dark : { false, true })
+			for (int scene = 0; scene < 7; ++scene)
+			{
+				ImGuiSession session;
+				Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
+				ImGui::GetStyle().FontScaleDpi = scale;
+				std::array<ImFont*, 2> fonts{};
+				for (int weight = 0; weight < 2; ++weight)
+				{
+					auto config = Design::FreeTypeTextFontConfig(false, Design::TextFontRole::Design, false);
+					fonts[weight] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+						const_cast<char*>(sources[weight].bytes.data()), static_cast<int>(sources[weight].bytes.size()),
+						Design::FontReferenceSize, &config);
+				}
+				auto iconConfig = Design::IconFontConfig(scale);
+				iconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
+				auto* icons = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+					const_cast<char*>(sources.back().bytes.data()), static_cast<int>(sources.back().bytes.size()),
+					Design::FontReferenceSize, &iconConfig);
+				ImGui::GetIO().FontDefault = fonts[0];
+				Design::BindTextFonts(fonts[0], fonts[1]); ImFluent::SetIconFont(icons); Design::ApplyPalette(dark);
+				Design::PageMotionState motion; Design::PageTransitionState transition;
+				bool sawOldExit = false, sawNewEntry = false;
+				Design::GeneralDraft draft{}; draft.animation = true; draft.animationRate = 1;
+				draft.edgeLighting = scene != 2;
+				int frame = 0;
+				const int capture = scene == 0 ? 12 : scene == 1 ? 30 : scene == 4 ? 20 : scene == 6 ? 78 : 65;
+				const auto path = std::filesystem::path("Build/settingui-style-motion/visual")
+					/ (std::string(scene == 4 ? "home-" : "appearance-") + (dark ? "dark-" : "light-")
+						+ std::to_string(static_cast<int>(scale * 100)) + "-" + std::to_string(scene) + ".png");
+				const auto failures = SaveSettingFontComparison(path, scale, [&] {
+					++frame;
+					if (frame == 60 && (scene == 2 || scene == 3)) draft.edgeLighting = scene == 2;
+					Design::ConfigureRowAnimations(1.0F / 60, true, 1);
+					ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+					ImGui::Begin("##motion-warp-root", nullptr, ImGuiWindowFlags_NoDecoration
+						| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+					const Design::PageRoute requested{scene >= 5 && frame >= 60 ? 15 : 4, 0};
+					const auto displayed = transition.Resolve(requested, 1.0F / 60, true, 1);
+					if (transition.Holding()) sawOldExit = displayed.page == 4;
+					if (displayed.page == 15) sawNewEntry = true;
+					Design::ConfigurePageMotion(motion, static_cast<std::uint64_t>(displayed.page), false, false, 0, transition.Holding());
+					if (transition.Holding()) Design::SuppressDepartingPageInput(motion);
+					ImGui::SetCursorPos({ 40 * scale, 40 * scale });
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
+					Design::BeginScrollChild("##motion-warp-body", { 860 * scale, 850 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
+						transition.Holding() ? ImGuiWindowFlags_NoInputs : 0, false, false, true,
+						Design::PageScrollbarAlpha(motion) * transition.Opacity(), &motion);
+					ImGui::PopStyleVar(); Design::BeginPageMotion(motion);
+					Design::BeginScrollChild("##motion-warp-page", { ImGui::GetContentRegionAvail().x, 0 }, ImGuiChildFlags_AutoResizeY);
+					if (scene == 4)
+						checks.Expect(Design::RenderHome({}) == Design::HomeAction::None,
+							"actual WARP home entry performs no synthetic navigation");
+					else if (displayed.page == 15)
+						checks.Expect(Design::RenderFeedback(0, 1.0F, 0) == Design::FeedbackAction::None,
+							"new feedback page is rendered only after outgoing route commit");
+					else
+					{
+						const auto events = Design::RenderGeneral(draft, Design::GeneralSection::Appearance);
+						checks.Expect(!events.edgeLightingChanged && !events.animationChanged,
+							"actual WARP appearance capture performs no synthetic configuration action");
+					}
+					if (transition.Holding()) Design::ApplyContentAlpha(ImGui::GetCurrentWindow(), transition.Opacity());
+					ImGui::EndChild(); Design::EndPageMotion(); ImGui::EndChild(); ImGui::End();
+				}, capture);
+				checks.Expect(failures == 0, "real WARP renders page entry and conditional reveal without HWND");
+				if (scene == 5) checks.Expect(sawOldExit && !sawNewEntry, "GPU departure sample still renders original page rather than requested new content");
+				if (scene == 6) checks.Expect(sawOldExit && sawNewEntry, "GPU sequence commits and fades new content after original page departure");
+				std::cout << "[PageMotionOffscreen] " << path.string() << " frames=" << frame << " failures=" << failures << '\n';
+			}
+	}
+
+	void CheckPageAndConditionalMotion(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); ApplyPalette(false);
+		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
+		PageMotionState motion;
+		std::uint64_t route = 1;
+		bool animated = true, opening = false, departing = false, longPage = false, visible = false, nested = true;
+		bool generalPage = false, conditionAtBottom = false, focusRootNextFrame = false;
+		float bodyWidth = 700.0F; std::uint64_t layoutRevision = 0;
+		GeneralDraft general{}; general.animation = true; general.animationRate = 1.0F;
+		float requestedScroll = -1.0F;
+		int actions = 0, frames = 0;
+		const ImVec2 outside(-100, -100);
+		struct Frame
+		{
+			ImGuiWindow* owner = nullptr;
+			float width = 0, firstY = 0, firstDrawY = 0, after = 0, scroll = 0;
+			unsigned firstAlpha = 0, secondAlpha = 0, afterAlpha = 0;
+			ImRect action;
+			std::string retained; ImGuiID firstAction = 0;
+		};
+		auto draw = [&](ImVec2 mouse, bool down, float wheel = 0.0F) {
+			io.DisplaySize = { 960 * scale, 700 * scale }; io.DeltaTime = 1.0F / 60;
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+			if (wheel != 0) io.AddMouseWheelEvent(0, wheel);
+			ImGui::NewFrame(); ConfigureRowAnimations(io.DeltaTime, animated, 1.0F);
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##motion-production-root", nullptr, ImGuiWindowFlags_NoDecoration
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+			if (focusRootNextFrame)
+			{
+				ImGui::FocusWindow(ImGui::GetCurrentWindow());
+				ImGui::NavInitWindow(ImGui::GetCurrentWindow(), true);
+				focusRootNextFrame = false;
+			}
+			ConfigurePageMotion(motion, route, opening, false, layoutRevision, departing);
+			if (departing) SuppressDepartingPageInput(motion);
+			ImGui::SetCursorPos({ 40 * scale, 40 * scale });
+			ImGui::PushID(static_cast<int>(route));
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
+			BeginScrollChild("##motion-body", { bodyWidth * scale, 360 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
+				departing ? ImGuiWindowFlags_NoInputs : 0, false, false, true, PageScrollbarAlpha(motion), &motion);
+			ImGui::PopStyleVar(); Frame frame; frame.owner = ImGui::GetCurrentWindow();
+			if (requestedScroll >= 0) { ImGui::SetScrollY(requestedScroll); requestedScroll = -1; }
+			BeginPageMotion(motion);
+			frame.width = ImGui::GetContentRegionAvail().x;
+			BeginScrollChild("##motion-page", { frame.width, 0 }, ImGuiChildFlags_AutoResizeY);
+			auto* body = ImGui::GetCurrentWindow();
+			if (generalPage)
+			{
+				const auto events = RenderGeneral(general, GeneralSection::Appearance);
+				checks.Expect(!events.edgeLightingChanged && !events.dynamicEdgeLightingChanged,
+					"actual appearance motion does not manufacture UI events during layout");
+			}
+			else
+			{
+				frame.firstY = ImGui::GetCursorScreenPos().y;
+				auto cardAlpha = [&](int first, float* top) {
+					unsigned alpha = 0;
+					for (int i = first; i < body->DrawList->VtxBuffer.Size; ++i)
+					{
+						const auto& vertex = body->DrawList->VtxBuffer[i];
+						if ((vertex.col & ~IM_COL32_A_MASK) != (Card & ~IM_COL32_A_MASK)) continue;
+						alpha = (std::max)(alpha, vertex.col >> IM_COL32_A_SHIFT);
+						if (top) *top = (std::min)(*top, vertex.pos.y);
+					}
+					return alpha;
+				};
+				int first = body->DrawList->VtxBuffer.Size;
+				actions += ButtonRow("##motion-first", "First", "A real setting row", nullptr, "Action");
+				frame.action = GImGui->LastItemData.Rect; frame.firstAction = GImGui->LastItemData.ID; frame.firstDrawY = FLT_MAX;
+				frame.firstAlpha = cardAlpha(first, &frame.firstDrawY);
+				first = body->DrawList->VtxBuffer.Size;
+				ButtonRow("##motion-second", "Second", nullptr, nullptr, "Action");
+				frame.secondAlpha = cardAlpha(first, nullptr);
+				auto extraRows = [&] {
+					if (longPage) for (int row = 0; row < 14; ++row)
+					{
+						ImGui::PushID(row);
+						ButtonRow("##motion-extra", "More", nullptr, nullptr, "Action");
+						ImGui::PopID();
+					}
+				};
+				if (conditionAtBottom) extraRows();
+				if (ConditionalBlock block{"##motion-condition", visible}; block)
+				{
+					frame.retained = block.RetainText("title", visible ? "Dynamic" : "");
+					Notice("##motion-warning", frame.retained.c_str(), "Condition changes the real occupied height");
+					if (ConditionalBlock inner{"##motion-nested", nested}; inner)
+						ButtonRow("##motion-detail", "Detail", nullptr, nullptr, "Action");
+				}
+				frame.after = ImGui::GetCursorScreenPos().y;
+				first = body->DrawList->VtxBuffer.Size;
+				ButtonRow("##motion-after", "After", nullptr, nullptr, "Action");
+				frame.afterAlpha = cardAlpha(first, nullptr);
+				if (!conditionAtBottom) extraRows();
+			}
+			ImGui::EndChild(); EndPageMotion(); frame.scroll = frame.owner->Scroll.y;
+			ImGui::EndChild(); ImGui::PopID(); ImGui::End(); ImGui::Render(); ++frames;
+			CheckDrawData(checks);
+			checks.Expect(frame.owner->ScrollMax.x == 0 && frame.owner->Scroll.x == 0 && !frame.owner->ScrollbarX,
+				"stable body gutter never manufactures horizontal scroll range or movement");
+			return frame;
+		};
+		auto idle = [&](int count = 1) { Frame f; for (int i = 0; i < count; ++i) f = draw(outside, false); return f; };
+		auto frame = idle(); const float width = frame.width;
+		checks.Expect(frame.firstAlpha == 0 && frame.secondAlpha == 0,
+			"new actual page begins with invisible card geometry while terminal layout is already available");
+		frame = idle(6);
+		checks.Expect(frame.firstAlpha > frame.secondAlpha && frame.secondAlpha > 0
+			&& frame.firstDrawY > frame.firstY && frame.firstDrawY < frame.firstY + 12 * scale,
+			"real setting cards overlap their nonlinear upward entry in visual order without moving item layout");
+		frame = idle(9);
+		const float slowerDrawY = frame.firstDrawY; const unsigned slowerAlpha = frame.firstAlpha;
+		frame = idle(7);
+		checks.Expect(Near(frame.firstDrawY, frame.firstY, 1) && frame.firstAlpha > 0 && frame.firstAlpha < 255,
+			"position reaches its endpoint while the slower opacity curve still has a visible tail");
+		frame = idle(24);
+		checks.Expect(frame.firstAlpha == 255 && Near(frame.firstDrawY, frame.firstY, 1),
+			"real card entry reaches exact stable geometry and alpha");
+		checks.Expect(slowerDrawY > frame.firstDrawY + 0.01F && slowerAlpha < 255,
+			"slower entry still moves after previous220ms measured against actual final AA geometry");
+		auto reachFirstAction = [&](bool enterChildren) {
+			const auto previousNavFlags = io.ConfigFlags; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+			focusRootNextFrame = true; frame = idle();
+			bool reached = GImGui->NavId == frame.firstAction;
+			for (int attempt = 0; attempt < 12 && !reached; ++attempt)
+			{
+				io.AddKeyEvent(ImGuiKey_Tab, true); frame = idle();
+				io.AddKeyEvent(ImGuiKey_Tab, false); frame = idle();
+				reached = GImGui->NavId == frame.firstAction;
+				bool childAnchor = false;
+				for (auto* window : GImGui->Windows)
+					childAnchor |= window->Active && window->ParentWindow == GImGui->NavWindow && window->ChildId == GImGui->NavId;
+				// 非NavFlattened子容器是原生导航锚点，Enter进入后再Tab到其真实控件。
+				if (!reached && enterChildren && childAnchor)
+				{
+					io.AddKeyEvent(ImGuiKey_Enter, true); frame = idle();
+					io.AddKeyEvent(ImGuiKey_Enter, false); frame = idle();
+					reached = GImGui->NavId == frame.firstAction;
+				}
+			}
+			io.ConfigFlags = previousNavFlags;
+			return reached;
+		};
+		const bool baselineTabOnly = reachFirstAction(false);
+		const bool baselineKeyboard = reachFirstAction(true);
+		checks.Expect(baselineKeyboard, "baseline real keyboard navigation enters native child containers and reaches the first action");
+		++route; frame = idle(8);
+		const float frozenY = frame.firstDrawY; const unsigned frozenAlpha = frame.firstAlpha;
+		departing = true; frame = idle(4);
+		checks.Expect(Near(frame.firstDrawY, frozenY, 0.01F) && frame.firstAlpha == frozenAlpha,
+			"departing page freezes its actual partially entered pose instead of flashing fully opaque");
+		const int beforeDepartureClick = actions;
+		const ImVec2 oldAction = frame.action.GetCenter();
+		draw(oldAction, false); draw(oldAction, true); draw(oldAction, false);
+		checks.Expect(actions == beforeDepartureClick, "fading old content retains its normal palette but cannot execute a mouse action");
+		// 使用真实旧正文窗口校验键盘/ActiveID归属，只撤销旧正文，不碰同级导航。
+		ImGuiWindow* oldBody = frame.owner;
+		ImGui::SetActiveID(ImHashStr("##departing-active"), oldBody);
+		GImGui->NavWindow = oldBody; GImGui->NavId = GImGui->NavActivateId = ImHashStr("##departing-nav");
+		SuppressDepartingPageInput(motion);
+		checks.Expect(GImGui->ActiveId == 0 && GImGui->NavActivateId == 0 && GImGui->NavId == 0,
+			"old body active and queued keyboard activation are removed without synthetic key events");
+		ImGuiWindow* sibling = oldBody->ParentWindow;
+		const ImGuiID siblingId = ImHashStr("##caption-or-sidebar-active");
+		ImGui::SetActiveID(siblingId, sibling); GImGui->NavWindow = sibling; GImGui->NavActivateId = siblingId;
+		SuppressDepartingPageInput(motion);
+		checks.Expect(GImGui->ActiveId == siblingId && GImGui->NavActivateId == siblingId,
+			"departure does not suppress sibling caption or navigation interaction");
+		ImGui::ClearActiveID(); GImGui->NavActivateId = 0;
+		departing = false; ++route; frame = idle(50);
+		const bool afterDepartureKeyboard = reachFirstAction(true);
+		checks.Expect(afterDepartureKeyboard, "new page keyboard navigation remains reachable after outgoing input ownership is cleared");
+		std::cout << "[PageKeyboard] scale=" << scale << " baseline-tab=" << baselineTabOnly
+			<< " baseline-child-activation=" << baselineKeyboard << " after-departure=" << afterDepartureKeyboard << '\n';
+		visible = false; ++route; frame = idle(3);
+		unsigned previousAlpha = frame.afterAlpha; visible = true;
+		for (int i = 0; i < 16; ++i)
+		{
+			frame = idle();
+			checks.Expect(frame.afterAlpha >= previousAlpha, "async preceding block insertion cannot make an existing entering card fade backwards");
+			previousAlpha = frame.afterAlpha;
+		}
+		visible = false; frame = idle(34);
+		const auto generation = motion.generation;
+		idle(); checks.Expect(motion.generation == generation && motion.elapsed >= PageMotionTiming::Total,
+			"repeated current-route notifications do not replay page entry");
+		longPage = true; ++route;
+		bool sawRail = false;
+		for (int i = 0; i < 50; ++i)
+		{
+			frame = idle(); sawRail |= frame.owner->ScrollbarY;
+			checks.Expect(Near(frame.width, width, 1), "short-to-long page keeps the exact body width from first visible frame through scrollbar reveal");
+			if (i < 32) checks.Expect(PageScrollbarAlpha(motion) == 0, "vertical thumb waits for all visible blocks to settle");
+		}
+		checks.Expect(sawRail && frame.owner->ScrollMax.y > 0 && PageScrollbarAlpha(motion) == 1,
+			"long real page has a scrollable full rail after entry completes");
+		io.AddMouseWheelEvent(-1.0F, 0.0F); frame = draw({200 * scale, 200 * scale}, false); idle();
+		checks.Expect(frame.owner->Scroll.x == 0 && frame.owner->ScrollMax.x == 0,
+			"real horizontal wheel cannot displace a stable vertical-only body");
+		++route; frame = idle(); frame = idle(3);
+		const ImVec2 click = frame.action.GetCenter();
+		draw(click, false); frame = draw(click, true);
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total && frame.firstAlpha == 255,
+			"first real pointer press immediately settles entry before registering actionable items");
+		draw(click, false);
+		checks.Expect(actions == 1, "same pointer action is executed exactly once without swallowing or synthetic replay");
+		++route; idle();
+		frame = draw({ 200 * scale, 200 * scale }, false, -1);
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total, "real wheel input immediately settles page motion");
+		idle(2); requestedScroll = 240 * scale; frame = idle(3);
+		const float saved = frame.scroll; ++route; idle(2); --route; frame = idle(3);
+		checks.Expect(Near(frame.scroll, saved, 1), "returning route replays motion but retains its own existing scroll position");
+		opening = true; ++route; idle(3); opening = false; frame = idle();
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total && frame.firstAlpha == 255,
+			"special home opening hands off to stable content without appending another entry");
+		animated = false; longPage = false; visible = false; ++route; frame = idle(5);
+		const float baseAfter = frame.after;
+		checks.Expect(!frame.owner->ScrollbarY && Near(frame.width, width, 1),
+			"short settled page has no fake scrollbar and no extra rail column");
+		animated = true; visible = true;
+		bool partial = false; float previousAfter = baseAfter;
+		for (int i = 0; i < 14; ++i)
+		{
+			frame = idle(); partial |= frame.after > baseAfter + 1 && i < 8;
+			checks.Expect(frame.after >= previousAfter - 1, "conditional insertion smoothly pushes subsequent actual rows downward");
+			previousAfter = frame.after;
+		}
+		const float fullAfter = frame.after;
+		checks.Expect(partial && fullAfter > baseAfter + 50 * scale, "conditional content has intermediate occupied heights and a full measured endpoint");
+		visible = false; frame = idle();
+		checks.Expect(frame.retained == "Dynamic", "disappearing status retains its displayed text while fading out");
+		previousAfter = frame.after;
+		for (int i = 0; i < 14; ++i)
+		{
+			frame = idle();
+			checks.Expect(frame.after <= previousAfter + 1, "conditional removal smoothly pulls actual following rows upward");
+			previousAfter = frame.after;
+		}
+		checks.Expect(Near(frame.after, baseAfter, 1), "conditional removal reaches exact zero occupied height including final fade frame");
+		visible = true; idle(3); visible = false; idle(2); visible = true; frame = idle();
+		checks.Expect(frame.after > baseAfter && frame.after < fullAfter,
+			"rapid conditional reversal continues from its visible height instead of snapping to endpoints");
+		animated = false; frame = idle();
+		checks.Expect(Near(frame.after, fullAfter, 1), "disabling global animations immediately settles conditional layout");
+		animated = true; longPage = true; visible = true; ++route; frame = idle(50);
+		requestedScroll = 500 * scale; frame = idle(3);
+		const float anchoredAfter = frame.after; visible = false;
+		for (int i = 0; i < 14; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, anchoredAfter, 1.5F), "a conditional block entirely above the viewport preserves the following visible content anchor");
+		}
+		// 条件块在底部可见区域内变化，必须在Begin前补偿，不能靠上方块的局部修正通过。
+		conditionAtBottom = true; visible = false; ++route; idle(50);
+		requestedScroll = 100000 * scale; frame = idle(3);
+		const float bottomAfter = frame.after; visible = true;
+		for (int i = 0; i < 15; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, bottomAfter, 1), "visible bottom insertion preserves the exact footer anchor in the same frame");
+		}
+		visible = false;
+		for (int i = 0; i < 15; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, bottomAfter, 1), "visible bottom removal preserves its footer anchor through the zero-height tail");
+		}
+		visible = true; idle(14); nested = false;
+		for (int i = 0; i < 15; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, bottomAfter, 1), "nested bottom visibility uses one predicted parent extent without double compensation");
+		}
+		const auto layoutGeneration = motion.generation; bodyWidth = 640;
+		frame = idle(2);
+		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= PageMotionTiming::Total && frame.scroll >= 0,
+			"body resize invalidates old extent without replaying navigation or invalid scroll");
+		const float previousScale = ImGui::GetStyle().FontScaleDpi;
+		ImGui::GetStyle().FontScaleDpi *= 1.125F; ++layoutRevision; frame = idle(2);
+		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= PageMotionTiming::Total && frame.scroll >= 0,
+			"font scale and language-layout revision remeasure geometry without another entry");
+		ImGui::GetStyle().FontScaleDpi = previousScale; bodyWidth = 700; nested = true;
+		++route; frame = idle(3);
+		checks.Expect(frame.owner->ScrollbarY && PageScrollbarAlpha(motion) == 0, "actual long page has a native track before its visual reveal");
+		const ImVec2 railPress = ImGui::GetWindowScrollbarRect(frame.owner, ImGuiAxis_Y).GetCenter();
+		draw(railPress, false); frame = draw(railPress, true);
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total && PageScrollbarAlpha(motion) == 1,
+			"pressing the invisible native rail settles and reveals it before the same native press is consumed");
+		draw(railPress, false); conditionAtBottom = false;
+		++route; io.AddKeyEvent(ImGuiKey_DownArrow, true); idle();
+		idle(19);
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total, "held navigation-key repeat settles active page entry when it actually repeats");
+		io.AddKeyEvent(ImGuiKey_DownArrow, false); idle();
+		// 经过实际页面Renderer，不以测试中的独立条件块冒充产品接入。
+		generalPage = true; general.edgeLighting = false; ++route; idle(50);
+		general.edgeLighting = true; idle(14);
+		bool retainedState = false;
+		for (const auto& [id, value] : motion.conditions)
+			retainedState |= value.generation == motion.generation && value.reveal.value == 1 && value.height > 0;
+		checks.Expect(retainedState, "actual RenderGeneral appearance uses persistent conditional motion state");
+		general.edgeLighting = false; idle(14);
+		HomeMotionState home; home.entry = HomeMotionState::Entry::Pending;
+		checks.Expect(!HomeEntryChromeVisible(home), "opening preparation suppresses optional titlebar actions");
+		home.entry = HomeMotionState::Entry::Playing;
+		for (bool fadeOnly : { false, true })
+		{
+			home.fadeOnly = fadeOnly;
+			const float boundary = fadeOnly ? HomeEntryTiming::WritingEnd + HomeEntryTiming::Dock : HomeEntryTiming::SettleStart;
+			home.entryElapsed = boundary - .001F; checks.Expect(!HomeEntryChromeVisible(home), "optional chrome remains hidden until mask fade finishes");
+			home.entryElapsed = boundary; checks.Expect(HomeEntryChromeVisible(home), "optional chrome becomes available exactly at mask fade completion");
+		}
+		FinishHomeEntry(home); checks.Expect(HomeEntryChromeVisible(home), "opening cancellation or completion restores optional chrome");
+		std::cout << "[PageConditionalMotion] scale=" << scale << " frames=" << frames << " actions=" << actions << '\n';
+	}
+
 	void CheckHomeScrollFollowup(Checks& checks, ImFont* regular, ImFont* strong, float scale)
 	{
 		Design::BindTextFonts(regular, strong); Design::ApplyPalette(false);
@@ -5175,8 +5748,8 @@ namespace
 	void CheckHomeEntryPreparation(Checks& checks)
 	{
 		using Timing=Design::HomeEntryTiming;
-		checks.Expect(Near(Timing::Total,2.66F) && Near(Timing::Writing,1.06F) && Near(Timing::Hold,.6F),
-			"one shared timing definition doubles complete entrance, writing and opaque hold");
+		checks.Expect(Near(Timing::Total,1.98F) && Near(Timing::Writing,.90F) && Near(Timing::Hold,.32F),
+			"one shared timing definition keeps the brisk entrance, writing and opaque hold");
 		Design::HomeMotionState state; Design::HomeEntryFrameKey key;
 		key.geometry={1000,1100,1,1,200,32,1000,1100,20,1}; key.epoch=1; key.fontSerial=1;
 		state.home=true; state.showSerial=1; state.entry=Design::HomeMotionState::Entry::Playing;
@@ -5404,17 +5977,17 @@ namespace
 		const auto start=Design::ResolveHomeEntryPose(motion);
 		for (float time : {1.30F,1.60F,1.898F})
 		{
-			motion.entryElapsed=time; frame(outside); const auto pose=Design::ResolveHomeEntryPose(motion);
+			motion.entryElapsed=HomeEntryPhaseTime(time); frame(outside); const auto pose=Design::ResolveHomeEntryPose(motion);
 			checks.Expect(pose.writing==1 && pose.opacity==1 && pose.origin.x==start.origin.x && pose.origin.y==start.origin.y
-				&& pose.width==start.width,"all six strokes complete before exact 600ms opaque centre hold");
+				&& pose.width==start.width,"all six strokes complete before the exact opaque centre hold");
 		}
-		motion.entryElapsed=2.16F; frame(outside); const auto curve=Design::ResolveHomeEntryPose(motion);
+		motion.entryElapsed=HomeEntryPhaseTime(2.16F); frame(outside); const auto curve=Design::ResolveHomeEntryPose(motion);
 		const ImVec2 a(start.origin.x+start.width*.5F,start.origin.y+Design::HomeBrand::Height(start.width)*.5F);
 		const ImVec2 b(motion.brandOrigin.x+motion.brandWidth*.5F,motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)*.5F);
 		const ImVec2 c(curve.origin.x+curve.width*.5F,curve.origin.y+Design::HomeBrand::Height(curve.width)*.5F);
 		const float deviation=std::abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))/std::hypot(b.x-a.x,b.y-a.y);
 		checks.Expect(curve.opacity>0 && curve.opacity<1 && deviation>scale,"dock fades and follows a real spatial curve away from straight interpolation");
-		motion.entryElapsed=.50F;
+		motion.entryElapsed=HomeEntryPhaseTime(.50F);
 		delta=.02F; rate=1; frame(outside);
 		const auto openingRebuilds=motion.cache.rebuilds; const auto openingBounds=motion.buttonBounds;
 		for (int i=0;i<8;++i) frame(outside);
@@ -5820,7 +6393,7 @@ namespace
 	{
 		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 		std::vector<std::string> labels;
-		for (const auto& locale : Inkeys::Localization::Locales) labels.emplace_back(Inkeys::Localization::NativeLabel(locale));
+		for (const int index : Inkeys::Localization::DisplayOrder) labels.emplace_back(Inkeys::Localization::NativeLabel(Inkeys::Localization::Locales[index]));
 		auto& io = ImGui::GetIO(); const auto previousSize = io.DisplaySize;
 		for (float width : { 360.0F, 620.0F })
 		{
@@ -5831,11 +6404,27 @@ namespace
 			for (const auto& label : labels)
 				checks.Expect(Design::ControlTextWidth(label.c_str()) / scale + 48.0F <= 320.5F,
 					"native name, locale code and Beta fit the language selector including its arrow reserve");
-			int selected = 9;
+			// 新语导航回归；旧语既有文案不在本次扩展中重译。
+			bool addedLocale = false;
+			for (std::size_t index = 11; index < Inkeys::Localization::Locales.size(); ++index)
+				addedLocale |= I18n::isIdentifying(Inkeys::Localization::Locales[index].code);
+			// 扣除child左右留白、图标/间距及尾部内边距，保持生产字号。
+			if (addedLocale) for (const auto* key : { I18nKey.SettingsUI.Home.N, I18nKey.SettingsUI.Language.N,
+				I18nKey.SettingsUI.Regular.N, I18nKey.SettingsUI.Draw.N, I18nKey.SettingsUI.Performance.N,
+				I18nKey.SettingsUI.PlugIn.N, I18nKey.SettingsUI.Component.N, I18nKey.SettingsUI.Design.Experimental,
+				I18nKey.SettingsUI.Version.N })
+			{
+				const float reserve = key == I18nKey.SettingsUI.Regular.N ? Design::NavigationRowHeight : 0.0F;
+				const float available = Design::Pixels(Design::OpenPaneWidth - 8.0F - 44.0F - 8.0F - reserve);
+				const auto text = IA(key);
+				const bool fits = ImGui::CalcTextSize(text.c_str()).x <= available + 0.5F;
+				checks.Expect(fits, "localized expanded navigation labels fit their actual text clips");
+				if (!fits) std::cerr << "[LocaleNavigation] " << key << " text=" << text << " available=" << available << '\n';
+			}
+			int selected = Inkeys::Localization::DisplayIndexForLocale(9);
 			Design::ComboRow("##language-ui", IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
-				IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels,
-				IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str());
-			checks.Expect(selected == 9, "actual eleven-language combo renders without changing saved preference");
+				IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels);
+			checks.Expect(Inkeys::Localization::LocaleIndexForDisplay(selected) == 9, "sorted twenty-language combo renders without changing saved preference");
 			for (ImFont* font : { regular, strong })
 			{
 				ImGui::PushFont(font, Design::BodyText.size);
@@ -5859,6 +6448,58 @@ namespace
 				ImGui::PopFont();
 			}
 			ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+		}
+		if (scale == 1.0F && I18n::isIdentifying(L"en-US"))
+		{
+			// 用真实按键选择排序后的菜单项，不能只用索引往返代替控件提交。
+			const auto previousFlags = io.ConfigFlags;
+			const bool previousTrickle = io.ConfigInputTrickleEventQueue;
+			io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+			io.ConfigInputTrickleEventQueue = false;
+			io.DisplaySize = { 640, 900 };
+			int selected = Inkeys::Localization::DisplayIndexForLocale(9), saved = 9, requested = -1, changes = 0;
+			ImGuiWindow* host = nullptr; ImGuiID comboId = 0, popupId = 0;
+			auto draw = [&] {
+				io.AddMousePosEvent(-100, -100); io.AddMouseButtonEvent(0, false);
+				ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##sorted-locale-selection", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				host = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				ImGui::PushID("##language-choice"); comboId = ImGui::GetID("##select"); ImGui::PopID();
+				popupId = ImHashStr("##fl_cb_popup", 0, comboId);
+				if (Design::ComboRow("##language-choice", IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
+					IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774", selected, labels))
+				{
+					requested = Inkeys::Localization::LocaleIndexForDisplay(selected);
+					saved = requested; ++changes;
+				}
+				ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+				return ImGui::IsPopupOpen(popupId, ImGuiPopupFlags_AnyPopupLevel);
+			};
+			auto key = [&](ImGuiKey value) {
+				io.AddKeyEvent(value, true); draw(); io.AddKeyEvent(value, false); draw(); draw(); return draw();
+			};
+			draw(); draw(); draw();
+			const struct { int row; int index; const wchar_t* code; } targets[]{
+				{ 0, 7, L"de-DE" }, { 1, 19, L"en-GB" }, { 2, 0, L"en-US" }, { 19, 2, L"zh-TW" } };
+			for (const auto& target : targets)
+			{
+				const int before = changes, oldSaved = saved;
+				ImGui::FocusWindow(host);
+				ImGui::SetNavID(comboId, ImGuiNavLayer_Main, host->NavRootFocusScopeId, ImRect({ 0, 0 }, { 100, 32 }));
+				GImGui->NavCursorVisible = true;
+				checks.Expect(key(ImGuiKey_F4), "real F4 opens the sorted language ComboRow");
+				key(target.row == 19 ? ImGuiKey_End : ImGuiKey_Home);
+				if (target.row != 19) for (int row = 0; row < target.row; ++row) key(ImGuiKey_DownArrow);
+				checks.Expect(saved == oldSaved && changes == before, "popup navigation never saves an uncommitted language");
+				const bool open = key(ImGuiKey_Enter);
+				checks.Expect(!open && selected == target.row && changes == before + 1,
+					"real Enter commits the chosen sorted row exactly once");
+				checks.Expect(requested == target.index && saved == target.index
+					&& std::wstring_view(Inkeys::Localization::LocaleForIndex(requested).code) == target.code,
+					"sorted row requests and saves the expected stable language identity");
+			}
+			if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0, true);
+			io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
 		}
 		io.DisplaySize = previousSize;
 	}
@@ -5937,6 +6578,15 @@ namespace
 
 namespace
 {
+	// 固定cf4d9120的stb基线；生产FreeType调参不能同步移动负对照。
+	ImFontConfig FrozenStbFontConfig(float scale, bool noto, bool design, bool primaryNoto)
+	{
+		ImFontConfig config; config.OversampleH=config.OversampleV=1;
+		config.FontDataOwnedByAtlas=false; config.RasterizerDensity=scale;
+		config.ExtraSizeScale=noto?(design?1.448F*.97F:1.448F/1.213F):(design?1.213F*.97F:1.0F);
+		config.GlyphOffset.y=30*((design?.025F:0)-(primaryNoto?1160.0F/1448.0F-928.0F/1213.0F:0));
+		return config;
+	}
 	void CheckNotoFontCalibration(Checks& checks, std::array<FontData,9>& sources,
 		const std::filesystem::path& fontDirectory)
 	{
@@ -5959,8 +6609,8 @@ namespace
 				{
 					const bool noto=source>=4;
 					auto config=before
-						? design && !noto ? Design::HarmonyFontConfig(scale) : Design::LegacyFontConfig(scale)
-						: Design::TextFontConfig(scale,noto,design?Design::TextFontRole::Design:Design::TextFontRole::Legacy,primary>=4);
+						? FrozenStbFontConfig(scale,false,design && !noto,false)
+						: FrozenStbFontConfig(scale,noto,design,primary>=4);
 					config.MergeMode=merge;
 					auto* result=ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[source].bytes.data(),
 						static_cast<int>(sources[source].bytes.size()),Design::FontReferenceSize,&config);
@@ -6105,7 +6755,273 @@ namespace
 }
 
 
-int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly)
+namespace
+{
+	struct PageAllocationMeter
+	{
+		std::unordered_map<void*, size_t> sizes;
+		size_t live = 0, peak = 0;
+		void Add(void* p, size_t bytes) { if (p) { sizes.emplace(p, bytes); live += bytes; peak = (std::max)(peak, live); } }
+		void Remove(void* p) { auto it = sizes.find(p); if (it != sizes.end()) { live -= it->second; sizes.erase(it); } }
+	};
+	struct PageAllocationScope
+	{
+		ImGuiMemAllocFunc oldAlloc{}; ImGuiMemFreeFunc oldFree{}; void* oldUser{};
+		PageAllocationMeter imgui, freetype;
+		PageAllocationScope()
+		{
+			ImGui::GetAllocatorFunctions(&oldAlloc, &oldFree, &oldUser);
+			ImGui::SetAllocatorFunctions([](size_t n, void* u) -> void* { auto& a = *static_cast<PageAllocationScope*>(u); void* p = a.oldAlloc(n, a.oldUser); a.imgui.Add(p, n); return p; },
+				[](void* p, void* u) { auto& a = *static_cast<PageAllocationScope*>(u); a.imgui.Remove(p); a.oldFree(p, a.oldUser); }, this);
+			// FreeType独立统计，不再经ImGui allocator，避免重复计数。
+			ImGuiFreeType::SetAllocatorFunctions([](size_t n, void* u) -> void* { void* p = std::malloc(n); static_cast<PageAllocationMeter*>(u)->Add(p,n); return p; },
+				[](void* p, void* u) { static_cast<PageAllocationMeter*>(u)->Remove(p); std::free(p); }, &freetype);
+		}
+		~PageAllocationScope()
+		{
+			ImGuiFreeType::SetAllocatorFunctions([](size_t n, void*) -> void* { return ImGui::MemAlloc(n); }, [](void* p, void*) { ImGui::MemFree(p); }, nullptr);
+			ImGui::SetAllocatorFunctions(oldAlloc, oldFree, oldUser);
+		}
+	};
+	void CheckFreeTypeRealPages(Checks& checks, std::array<FontData,9>& sources,
+		const std::filesystem::path& directory)
+	{
+		const auto output=directory.parent_path().parent_path().parent_path()/"Build/setting-fonts/pages";
+		std::filesystem::create_directories(output);
+		std::ofstream csv(output/"page-metrics.csv");
+		std::unordered_map<std::string,size_t> baselineBytes;
+		FontData legacySymbols{ "icomoon.ttf", {} };
+		std::ifstream symbolStream(directory/legacySymbols.name,std::ios::binary);
+		legacySymbols.bytes.assign(std::istreambuf_iterator<char>(symbolStream),{});
+		checks.Expect(!legacySymbols.bytes.empty(),"load actual legacy merged symbol font");
+		if(legacySymbols.bytes.empty()) return;
+		csv<<"locale,scale,dark,page,loader,cpu_atlas_bytes,gpu_atlas_logical_bytes,glyph_top,glyph_bottom,glyph_advance,body_height,metric_size,metric_missing_glyphs,imgui_live_including_cpu_atlas,ft_live,total_runtime_without_common_sources,actual_warm_frames,stable_samples,fixed_120,boundary24_total,plateau24_matches_final\n";
+		for(const auto& locale:Inkeys::Localization::Locales)
+		for(float scale:{1.0F,1.25F,1.5F,1.875F,2.0F,4.0F})
+		{
+			const std::string code=locale.codeUtf8;
+			char localeFilter[32]{},scaleFilter[32]{};
+			GetEnvironmentVariableA("INKEYS_FONT_PAGE_LOCALE",localeFilter,32);
+			GetEnvironmentVariableA("INKEYS_FONT_PAGE_SCALE",scaleFilter,32);
+			if(localeFilter[0] && code!=localeFilter) continue;
+			if(scaleFilter[0] && std::to_string(static_cast<int>(scale*100))!=scaleFilter) continue;
+			if(scale==4 && code!="zh-CN" && code!="ja-JP" && code!="ko-KR" && code!="en-US") continue;
+			const int primary=locale.regularFont==IDR_NOTO_JP_REGULAR?4:locale.regularFont==IDR_NOTO_KR_REGULAR?6:locale.regularFont==IDR_TTF3?2:0;
+			for(bool dark:{false,true}) for(bool candidate:{false,true})
+			{
+				PageAllocationScope allocations; ImGuiSession session; auto& io=ImGui::GetIO();
+				if(candidate) { Design::ConfigureFreeTypeAtlas(*io.Fonts);char snap[4]{};GetEnvironmentVariableA("INKEYS_FONT_SNAP_BASELINE",snap,4);if(snap[0]=='1')io.Fonts->FontLoaderFlags|=ImGuiFreeTypeLoaderFlags_SnapAscentToPixelGrid; }
+				ImGui::GetStyle().FontScaleDpi=scale; Design::ApplyPalette(dark);
+				ImFont* faces[4]{};
+				static constexpr ImWchar excluded[]{0xe81e,0xe81e,0};
+				for(int role=0;role<4;++role)
+				{
+					const int weight=role%2; const bool design=role>=2;
+					auto add=[&](int source,bool merge) {
+						auto config=candidate?Design::FreeTypeTextFontConfig(source>=4,design?Design::TextFontRole::Design:Design::TextFontRole::Legacy,primary>=4):FrozenStbFontConfig(scale,source>=4,design,primary>=4);
+						config.MergeMode=merge; config.GlyphExcludeRanges=excluded;
+						return io.Fonts->AddFontFromMemoryTTF(sources[source].bytes.data(),static_cast<int>(sources[source].bytes.size()),30,&config);
+					};
+					faces[role]=add(primary+weight,false);
+					for(int source=weight;source<8;source+=2) if(source!=primary+weight) add(source,true);
+					if(!design)
+					{
+						ImFontConfig merge; merge.OversampleH=merge.OversampleV=1; merge.RasterizerDensity=scale;
+						merge.FontDataOwnedByAtlas=false; merge.PixelSnapH=true; merge.MergeMode=true;
+						merge.FontLoader=ImFontAtlasGetFontLoaderForStbTruetype(); merge.GlyphOffset.y=10;
+						io.Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),static_cast<int>(sources.back().bytes.size()),36,&merge);
+						merge.GlyphOffset.y=4;
+						io.Fonts->AddFontFromMemoryTTF(legacySymbols.bytes.data(),static_cast<int>(legacySymbols.bytes.size()),32,&merge);
+					}
+				}
+				auto iconConfig=Design::IconFontConfig(scale); iconConfig.FontLoader=ImFontAtlasGetFontLoaderForStbTruetype();
+				ImFont* icons=io.Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),static_cast<int>(sources.back().bytes.size()),30,&iconConfig);
+				io.FontDefault=faces[0]; ImFluent::SetIconFont(icons);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Caption,faces[0],12);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body,faces[0],14);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong,faces[1],14);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Subtitle,faces[1],20);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Title,faces[1],28);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_TitleLarge,faces[1],40);
+				ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Display,faces[1],68);
+				// 与生产DX11初始化后的动态atlas合同一致，避免独立夹具误走legacy预烘焙。
+				io.Fonts->RendererHasTextures=true;
+				checks.Expect(io.Fonts->Build(),"initialize exact resident four-role atlas before first frame");
+				checks.Expect(io.Fonts->RendererHasTextures,"real page initialization stays on dynamic texture path");
+				checks.Expect(LoadNavigationLabels(directory,locale.codeUtf8),"real page snapshot loads actual locale");
+				for(int page=0;page<4;++page)
+				{
+					Design::NavigationState navigation; navigation.Resize(1000);
+					const auto destination=Design::NormalizeDestination({(page==0 || page==3)?Design::PageId::Language:page==1?Design::PageId::General:Design::PageId::Home});
+					Design::NotifyNavigationDestination(navigation,destination);
+					const auto shell=Design::ResolveShellGeometry(1000,1100,navigation);
+					Design::GeneralDraft draft{}; int frame=0;
+					const int interactionFrames=page==0?44:0, targetFrames=interactionFrames+120;
+					const bool fixed120=(code=="en-US" && scale==1) || (code=="ja-JP" && scale==2);
+					bool stopStable=false; int stableSamples=0; float previousBody=-1;
+					size_t boundary24=0; std::vector<size_t> previousFingerprint,boundaryFingerprint;
+					const int savedSelection=static_cast<int>(&locale-Inkeys::Localization::Locales.data()); int selection=Inkeys::Localization::DisplayIndexForLocale(savedSelection);
+					ImGuiID languagePopup=0; ImGuiWindow* popupWindow=nullptr;
+					bool sawPopup=false,sawTop=false,sawBottom=false,sawClosed=false;
+					io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue=false; float measuredTop=0,measuredBottom=0,measuredAdvance=0,measuredBody=0,metricSize=0; int missingMetricGlyphs=0;
+					const auto filename=code+"-"+std::to_string(static_cast<int>(scale*100))+(dark?"-dark":"-light")+"-"+std::to_string(page)+(candidate?"-freetype.png":"-stb.png");
+					checks.failures+=SaveSettingFontComparison(output/filename,scale,[&] {
+						Design::ConfigureRowAnimations(0,false,1);
+						ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
+						ImGui::Begin("##font-real-page",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoMove);
+						// 标题与版本确实绘制Legacy脸；不能只增加未使用的角色来抬高基线预算。
+						Design::BindTextFonts(faces[0],faces[1]);
+						ImFluent::PushFont(ImFluentTextStyle_Caption);
+						const auto title=IA(I18nKey.SettingsUI.N); const char* version="3.0.0-dev.12112";
+						const auto geometry=ResolveTitleBarGeometry(1000*scale,scale,46*scale,ImGui::CalcTextSize(title.c_str()).x,ImGui::CalcTextSize(version).x);
+						const float titleX=geometry.icon.right+TitleBarContentSpacingDip*scale;
+						const ImVec4 clip{titleX,0,geometry.identity.right,geometry.height};
+						ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(),ImGui::GetFontSize(),{titleX,(geometry.height-ImGui::GetFontSize())*.5F},Design::TextPrimary,title.c_str(),nullptr,0,&clip);
+						const auto versionSize=ImGui::CalcTextSize(version);
+						if(geometry.versionVisible) ImGui::GetWindowDrawList()->AddText({geometry.version.left+(geometry.version.Width()-versionSize.x)*.5F,geometry.version.top+(geometry.version.Height()-versionSize.y)*.5F},Design::TextPrimary,version);
+						ImFluent::PopFont();
+						ImGui::PushFont(faces[0],TitleBarCaptionGlyphSizeDip);
+						ImGui::GetWindowDrawList()->AddText({geometry.minimize.left+12*scale,10*scale},Design::TextPrimary,"\xee\xa4\xa1");
+						ImGui::GetWindowDrawList()->AddText({geometry.maximize.left+12*scale,10*scale},Design::TextPrimary,"\xee\xa4\xa2");
+						ImGui::GetWindowDrawList()->AddText({geometry.close.left+12*scale,10*scale},Design::TextPrimary,"\xee\xa2\xbb");
+						ImGui::PopFont();
+						Design::BindTextFonts(faces[2],faces[3]);
+						ImFluent::PushFont(ImFluentTextStyle_Body);
+						ImGui::SetCursorPos({(shell.content.left+24)*scale,64*scale});
+						Design::BeginScrollChild("##font-page-body",{(shell.content.Width()-48)*scale,1000*scale});
+						const float beginY=ImGui::GetCursorScreenPos().y;
+						if(page==0 || page==3)
+						{
+							Design::PageHeader(IA(I18nKey.SettingsUI.Language.N).c_str());
+							Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
+							std::vector<std::string> labels; for(const int index:Inkeys::Localization::DisplayOrder) labels.emplace_back(Inkeys::Localization::NativeLabel(Inkeys::Localization::Locales[index]));
+							auto* languageHost=ImGui::GetCurrentWindow(); ImGui::PushID("##language");
+							const ImGuiID comboId=ImGui::GetID("##select"); ImGui::PopID();
+							languagePopup=ImHashStr("##fl_cb_popup",0,comboId);
+							Design::ComboRow("##language",IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(),"\ue774",selection,labels);
+							if(page==0 && frame==2) {
+								ImGui::FocusWindow(languageHost);
+								ImGui::SetNavID(comboId,ImGuiNavLayer_Main,languageHost->NavRootFocusScopeId,ImRect({0,0},{100*scale,32*scale}));
+								GImGui->NavCursorVisible=true;
+							}
+							popupWindow=nullptr;
+							for(const auto& popup:GImGui->OpenPopupStack) if(popup.PopupId==languagePopup && popup.Window && popup.Window->Active) popupWindow=popup.Window;
+							if(popupWindow) { sawPopup=true; sawTop|=popupWindow->Scroll.y<=1; sawBottom|=popupWindow->Scroll.y>=popupWindow->ScrollMax.y-1; }
+							if(sawPopup && !ImGui::IsPopupOpen(languagePopup,ImGuiPopupFlags_AnyPopupLevel)) sawClosed=true;
+							checks.Expect(Inkeys::Localization::LocaleIndexForDisplay(selection)==savedSelection,"opening and scrolling sorted language popup never changes selected language");
+							if(page==0 && frame==44) {
+								const ImFontBaked* baked=nullptr;
+								if(io.Fonts->Builder) for(const auto& entry:io.Fonts->Builder->BakedMap.Data) {
+									const auto* item=static_cast<const ImFontBaked*>(entry.val_p);
+									if(item && !item->WantDestroy && item->OwnerFont==faces[2] && item->Size==ImGui::GetRoundedFontSize(Design::ControlText.size*scale)) { baked=item;break; }
+								}
+								checks.Expect(baked!=nullptr,"popup created actual Control13 bake");
+								for(const auto& label:labels) {
+									const char* cursor=label.c_str(); const char* end=cursor+label.size();
+									while(cursor<end) { unsigned int point=0; int length=ImTextCharFromUtf8(&point,cursor,end); if(length<=0) break; cursor+=length; if(point<=32) continue;
+										bool present=false; if(baked) for(const auto& glyph:baked->Glyphs) if(glyph.Codepoint==point) { present=true; break; }
+										// 只检查已生成Glyphs，不调用FindGlyph触发补字而掩盖未访问列表。
+										checks.Expect(present,"native language popup really rasterized every visible selector character at Control13");
+									}
+								}
+							}
+						}
+						else if(page==1) (void)Design::RenderGeneral(draft,Design::GeneralSection::Basic);
+						else
+						{
+							// 静态主页不传入入场motion，不能在不透明开屏遮罩下错误判定字体已稳定。
+							(void)Design::RenderHome({0,1,"3.0.0",0,0,1},nullptr);
+						}
+						const float bodyHeight=ImGui::GetCursorScreenPos().y-beginY;
+						++frame;
+						{
+							// 只观察真实下拉框已烘焙的Control字形；测量不得扩容字体缓存或改变内存基线。
+							metricSize=ImGui::GetRoundedFontSize(Design::ControlText.size*scale);
+							const ImFontBaked* observed=nullptr;
+							if(io.Fonts->Builder) for(const auto& entry:io.Fonts->Builder->BakedMap.Data)
+							{
+								const auto* candidateBake=static_cast<const ImFontBaked*>(entry.val_p);
+								if(candidateBake && !candidateBake->WantDestroy && candidateBake->OwnerFont==faces[2]
+									&& candidateBake->Size==metricSize) { observed=candidateBake; break; }
+							}
+							float top=FLT_MAX,bottom=-FLT_MAX,advance=0;missingMetricGlyphs=0;
+							for(ImWchar point:{ImWchar('H'),ImWchar('g'),ImWchar(0x4e2d),ImWchar(0xd55c)})
+							{
+								const ImFontGlyph* glyph=nullptr;
+								if(observed) for(const auto& bakedGlyph:observed->Glyphs)
+									if(bakedGlyph.Codepoint==point){glyph=&bakedGlyph;break;}
+								if(!glyph){++missingMetricGlyphs;continue;}
+								top=(std::min)(top,glyph->Y0);bottom=(std::max)(bottom,glyph->Y1);advance+=glyph->AdvanceX;
+							}
+							measuredTop=top==FLT_MAX?0:top;measuredBottom=bottom==-FLT_MAX?0:bottom;
+							measuredAdvance=advance;measuredBody=bodyHeight;
+						}
+						ImGui::EndChild();
+						(void)Design::RenderNavigationPane(shell,navigation,destination);
+						ImFluent::PopFont(); Design::BindTextFonts(faces[0],faces[1]); ImGui::End();
+					},targetFrames,[&] {
+						// 事件通过真实ImGui队列进入下一帧，不直接调用OpenPopup或绘制名字替身。
+						if(page==0) {
+							if(frame==3 || frame==42) io.AddKeyEvent(ImGuiKey_F4,true);
+							if(frame==4 || frame==43) io.AddKeyEvent(ImGuiKey_F4,false);
+							if((frame==8 || frame==24) && popupWindow) {
+								const auto center=popupWindow->InnerRect.GetCenter(); io.AddMousePosEvent(center.x,center.y);
+							}
+							if(frame==10) io.AddMouseWheelEvent(0,-30);
+							if(frame==26) io.AddMouseWheelEvent(0,30);
+							if(frame==44) io.AddMousePosEvent(-100,-100);
+						}
+						checks.Expect(!ImGuiFreeType::HasFontLoadFailure(io.Fonts),"all page submissions reject late fallback font initialization failure");
+						size_t cpu=0,gpu=0; bool texturesReady=true;
+						std::vector<size_t> fingerprint{allocations.imgui.live,allocations.freetype.live,static_cast<size_t>(io.Fonts->Fonts.Size),static_cast<size_t>(io.Fonts->Sources.Size)};
+						for(const auto* texture:io.Fonts->TexList)
+						{
+							texturesReady &= texture->Status==ImTextureStatus_OK || texture->Status==ImTextureStatus_Destroyed;
+							fingerprint.insert(fingerprint.end(),{size_t(texture->Width),size_t(texture->Height),size_t(texture->Status),size_t(texture->Format)});
+							if(texture->Pixels) cpu+=size_t(texture->Width)*texture->Height*texture->BytesPerPixel;
+							if(texture->TexID!=ImTextureID_Invalid)
+							{
+								auto* srv=reinterpret_cast<ID3D11ShaderResourceView*>(texture->TexID);
+								Microsoft::WRL::ComPtr<ID3D11Resource> resource; srv->GetResource(&resource);
+								Microsoft::WRL::ComPtr<ID3D11Texture2D> actual;
+								if(SUCCEEDED(resource.As(&actual))) { D3D11_TEXTURE2D_DESC desc{}; actual->GetDesc(&desc); gpu+=size_t(desc.Width)*desc.Height*(desc.Format==DXGI_FORMAT_R8_UNORM?1:4); }
+							}
+						}
+						const auto total=allocations.imgui.live+allocations.freetype.live+gpu;
+						fingerprint.push_back(gpu);
+						if(io.Fonts->Builder) for(const auto& entry:io.Fonts->Builder->BakedMap.Data) {
+							const auto* baked=static_cast<const ImFontBaked*>(entry.val_p);
+							if(!baked) continue;
+							fingerprint.insert(fingerprint.end(),{reinterpret_cast<size_t>(baked->OwnerFont),size_t(baked->Size*1000),size_t(baked->RasterizerDensity*1000),size_t(baked->Glyphs.Size),size_t(baked->WantDestroy)});
+						}
+						const bool visited=page!=0 || (sawPopup && sawTop && sawBottom && sawClosed && !ImGui::IsPopupOpen(languagePopup,ImGuiPopupFlags_AnyPopupLevel));
+						const int warmFrames=frame-interactionFrames;
+						if(warmFrames>0 && visited && texturesReady && fingerprint==previousFingerprint && measuredBody==previousBody) ++stableSamples;
+						else stableSamples=(warmFrames>0 && visited && texturesReady)?1:0;
+						previousFingerprint=fingerprint; previousBody=measuredBody;
+						if(warmFrames==24) { boundary24=total;boundaryFingerprint=fingerprint; }
+						const bool stable=warmFrames>=24 && stableSamples>=8 && visited && texturesReady;
+						if(frame!=targetFrames && !(stable && !fixed120)) return;
+						stopStable=true;
+						checks.Expect(stable,"actual page reaches eight identical post-submit samples after minimum24 warm frames within120");
+						checks.Expect(visited,"real popup visitation completes before steady page budget");
+						if(page==0) std::cout<<"[LanguagePopupVisit] "<<code<<" scale="<<scale<<" candidate="<<candidate<<" open="<<sawPopup<<" top="<<sawTop<<" bottom="<<sawBottom<<" closed="<<sawClosed<<'\n';
+						if(fixed120) std::cout<<"[PagePlateau24vs120] "<<code<<" scale="<<scale<<" page="<<page<<" candidate="<<candidate<<" total24="<<boundary24<<" total120="<<total<<" fingerprintEqual="<<(boundaryFingerprint==fingerprint)<<'\n';
+						const auto budgetKey=code+std::to_string(scale)+std::to_string(dark)+std::to_string(page);
+						if(!candidate) baselineBytes[budgetKey]=total;
+						else {
+							if(total>baselineBytes.at(budgetKey)) std::cerr<<"[PageFontBudget] "<<budgetKey<<" old="<<baselineBytes.at(budgetKey)<<" new="<<total<<'\n';
+							checks.Expect(total<=baselineBytes.at(budgetKey),"same warmed actual page font runtime memory does not exceed stb baseline");
+						}
+						csv<<code<<','<<scale<<','<<dark<<','<<page<<','<<(candidate?"freetype":"stb")<<','<<cpu<<','<<gpu<<','<<measuredTop<<','<<measuredBottom<<','<<measuredAdvance<<','<<measuredBody<<','<<metricSize<<','<<missingMetricGlyphs<<','<<allocations.imgui.live<<','<<allocations.freetype.live<<','<<total<<','<<warmFrames<<','<<stableSamples<<','<<fixed120<<','<<boundary24<<','<<(boundaryFingerprint==fingerprint)<<'\n'; csv.flush();
+					},[&] {return stopStable;});
+				}
+			}
+		}
+		checks.Expect(LoadNavigationLabels(directory),"real page snapshots restore default locale");
+	}
+}
+int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bool generalOnly, bool fontPagesOnly)
 {
 	Checks checks;
 	CheckSettingOpenNavigation(checks);
@@ -6141,13 +7057,25 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		}
 	}
 
-	if (!eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
+	char motionFilter[4]{};
+	const bool motionOnly = GetEnvironmentVariableA("INKEYS_SETTING_MOTION_ONLY", motionFilter, 4) != 0;
+	char warpFilter[4]{};
+	const bool warpOnly=GetEnvironmentVariableA("INKEYS_FONT_WARP_ONLY",warpFilter,4)!=0;
+	char focusedPages[32]{};
+	if(fontPagesOnly || GetEnvironmentVariableA("INKEYS_FONT_PAGE_LOCALE",focusedPages,32))
+	{
+		CheckFreeTypeRealPages(checks,sources,fontDirectory);
+		return checks.failures;
+	}
+	if (!motionOnly && !warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
 
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
 		if (generalOnly && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
+		if (motionOnly && scale != 1.0F && scale != 1.875F) continue;
 		ImGuiSession session;
+		Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
 		ClipboardProbe settingsClipboard;
 		ImGui::GetStyle().FontScaleDpi = scale;
 		ImGui::GetIO().DisplaySize = ImVec2(1440.0F * scale, 1000.0F * scale);
@@ -6155,7 +7083,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		bool loaded = true;
 		for (std::size_t index = 0; index < localeFonts.size(); ++index)
 		{
-			auto config = Design::TextFontConfig(scale,index>=4,Design::TextFontRole::Design,index>=4);
+			auto config = Design::FreeTypeTextFontConfig(index>=4,Design::TextFontRole::Design,index>=4);
 			localeFonts[index] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
 				sources[index].bytes.data(), static_cast<int>(sources[index].bytes.size()), Design::FontReferenceSize, &config);
 			loaded &= localeFonts[index] != nullptr;
@@ -6163,13 +7091,14 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			for (std::size_t fallback = index % 2; fallback < localeFonts.size(); fallback += 2)
 			{
 				if (fallback == index) continue;
-				config = Design::TextFontConfig(scale,fallback>=4,Design::TextFontRole::Design,index>=4);
+				config = Design::FreeTypeTextFontConfig(fallback>=4,Design::TextFontRole::Design,index>=4);
 				config.MergeMode = true;
 				loaded &= ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources[fallback].bytes.data(),
 					static_cast<int>(sources[fallback].bytes.size()), Design::FontReferenceSize, &config) != nullptr;
 			}
 		}
 		auto iconConfig = Design::IconFontConfig(scale);
+		iconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
 		ImFont* icons = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(sources.back().bytes.data(),
 			static_cast<int>(sources.back().bytes.size()), Design::FontReferenceSize, &iconConfig);
 		loaded &= icons != nullptr;
@@ -6184,6 +7113,22 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
+		if(warpOnly) return checks.failures+RunSettingHomeWarpProbe(fonts[0],fonts[1],fonts.back());
+		if (motionOnly)
+		{
+			char captureMotion[4]{};
+			if (GetEnvironmentVariableA("INKEYS_SETTING_MOTION_SNAPSHOTS", captureMotion, 4))
+				CheckPageMotionOffscreen(checks, sources, scale);
+			CheckPageAndConditionalMotion(checks, fonts[0], fonts[1], fonts.back(), scale);
+			if (scale == 1.0F)
+			{
+				// 额外覆盖非整数padding，避免先截断两侧padding而制造亚像素横向范围。
+				ImGui::GetStyle().FontScaleDpi = 1.2F;
+				CheckPageAndConditionalMotion(checks, fonts[0], fonts[1], fonts.back(), 1.2F);
+				ImGui::GetStyle().FontScaleDpi = scale;
+			}
+			continue;
+		}
 		if (generalOnly)
 		{
 			for (const auto& locale : Inkeys::Localization::Locales)
@@ -6276,6 +7221,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		CheckEdidCard(checks, fonts[0], fonts[1], scale);
 		CheckHomeBrandDesign(checks, fonts, fontDirectory, scale);
 		if (scale==1.0F || scale==1.875F) CheckHomeMotion(checks,fonts[0],fonts[1],fonts.back(),scale);
+		if (scale==1.0F || scale==1.875F) CheckPageAndConditionalMotion(checks,fonts[0],fonts[1],fonts.back(),scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 		{
 			for (const auto& locale : Inkeys::Localization::Locales)
@@ -6283,6 +7229,8 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "reorganized settings load actual language resources");
 				const auto fontIndex = localeFontIndex(locale);
 				CheckLocaleTextAndSelector(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				if (std::strcmp(locale.codeUtf8, "vi-VN") == 0)
+					CheckVietnameseCaptionClipping(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckLocalizedComponentAndPluginRows(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckSpeedEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
@@ -6302,7 +7250,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
 			CheckHomeScrollFollowup(checks, fonts[0], fonts[1], scale);
 		}
-		if (scale == 1.0F || scale == 1.875F) CheckAnimatedColors(checks, fonts[0], scale);
+		if (scale == 1.0F || scale == 1.875F) { CheckAnimatedColors(checks, fonts[0], scale); CheckAnimatedColorEndpoints(checks, fonts[0], scale); }
 	}
 	return checks.failures;
 }

@@ -291,6 +291,8 @@ FLOAT BarUIRendering::ResolveAnimatedFontSize(ID2D1DeviceContext* context, doubl
 void BarUIRendering::ConfigureLocalizedTypography()
 {
 	// 字体族与 locale 使用同一语言快照，日/韩不再走简中字形。
+	// 先捕获版本；并发提交最多导致下一帧再刷新，不能将旧字族标成新版本。
+	localeRevision = I18n::revision();
 	const auto& locale = I18n::locale();
 	fontFamily = locale.fontFamily;
 	textLocale = locale.code;
@@ -298,6 +300,13 @@ void BarUIRendering::ConfigureLocalizedTypography()
 	// 离屏测试会在同一进程切换语言，数字布局缓存也必须跟随字体族失效。
 	for (auto& cached : thicknessFineDialLabelCache) cached = {};
 	thicknessFineDialLabelUseSerial = 0;
+}
+
+bool BarUIRendering::RefreshLocalizedTypography()
+{
+	if (localeRevision == I18n::revision()) return false;
+	ConfigureLocalizedTypography();
+	return true;
 }
 
 HRESULT BarUIRendering::EnsureDeviceResources(

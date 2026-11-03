@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "É necessário reiniciar o Inkeys para aplicar o idioma por completo. Reiniciar agora?",
-        "SelectNote": "Reinicie o Inkeys para aplicar o idioma por completo."
+        "Warn": "A mudança de idioma é aplicada imediatamente. Não é necessário reiniciar.",
+        "SelectNote": "Aplicação imediata, sem reiniciar."
       }
     },
     "Configuration":
@@ -536,8 +536,8 @@
         },
         "Theme":
         {
-          "N": "Tema",
-          "E": "Selecione ‘Recomendado’ para aplicar automaticamente o tema recomendado atualmente pela equipe.",
+          "N": "Tema da barra principal",
+          "E": "Alterna a barra principal entre a aparência escura e clara. As alterações são aplicadas imediatamente.",
           "Dark": "Modo escuro",
           "Light": "Modo claro"
         },

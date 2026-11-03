@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 157
+- **Total Sessions**: 161
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1723 | Active |
+| `journal-2.md` | ~1826 | Active |
 | `journal-1.md` | ~2579 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 161 | 2026-11-02 | 二十语言扩展验收提交与归档 | `100fda717084aeac1e3b377c24b141d9412a118a`, `ef05d1b6d8d74f7c8996174520fbc31ddbec313b` | `feature/i18n` |
+| 159 | 2026-11-02 | 验收并归档设置字体与语言热切换 | `6a8fd4ea` | `feature/i18n` |
+| 158 | 2026-11-02 | Setting FreeType、动态图集与语言热切换 | - | `feature/i18n` |
 | 157 | 2026-11-02 | 白板快捷键、分页过渡与动画速率设置收尾 | `7f37a527` | `bugfix/mode` |
 | 156 | 2026-11-02 | 国际化任务验收归档 | `e5f0574e`, `f6194712` | `feature/i18n` |
 | 155 | 2026-11-02 | 日韩Noto设置字体校准完成 | - | `feature/i18n` |

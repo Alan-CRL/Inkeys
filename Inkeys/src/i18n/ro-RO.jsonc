@@ -1,0 +1,1105 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "ro-RO",
+  "Widget":
+  {
+    "LnkName": "Inkeys (instrument de adnotare pe ecran)"
+  },
+  "Operate":
+  {
+    "Reset": "Resetare",
+    "Repair": "Reparare",
+    "Copy": "Copiere",
+    "Create": "Creare"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "Selectare",
+      "SelectClean": "Selectare (golire)",
+      "Pen": "Creion",
+      "Eraser": "Radieră",
+      "Options": "Opțiuni"
+    },
+    "Pen":
+    {
+      "Pen": "Creion",
+      "Highlighter": "Evidențiator",
+      "Thinkness": "Grosime\nlinie",
+      "Write": "Scriere",
+      "Line": "Linie",
+      "Square": "Dreptunghi"
+    },
+    "Operate":
+    {
+      "Revoke": "Anulare",
+      "Recall": "Restabilire",
+      "Freeze": "Înghețare",
+      "Pierce": "Clicuri prin fereastră"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "Mod bară inferioară",
+        "Centered": "Centrat"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "Golire",
+        "ClearCanvasHint": "Șterge adnotările de pe această pânză",
+        "AutomaticLabel": "Dim. automată",
+        "SensitivityLabel": "Sensibilitate",
+        "LowLabel": "Mică",
+        "MediumLabel": "Medie",
+        "HighLabel": "Mare",
+        "SmallSize": "Mică",
+        "MediumSize": "Medie",
+        "LargeSize": "Mare",
+        "BaseSizeHint": "Dimensiunea de bază în modul automat",
+        "MixedHint": "Dispozitivele au setări diferite\nApăsați pentru dimensiune automată pe toate",
+        "SettingsHint": "Setările dimensiunii automate nu sunt încă disponibile"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "Selectare",
+        "SelectClearLabel": "Selectare\n(golire)",
+        "ClickThroughLabel": "Prin\nfereastră",
+        "MoveLabel": "Mutare",
+        "DrawLabel": "Desen",
+        "LaserLabel": "Laser",
+        "HighlighterLabel": "Evidențiere",
+        "HardPenLabel": "Stilou",
+        "SoftPenLabel": "Pensulă",
+        "EraserLabel": "Ștergere",
+        "AreaEraserLabel": "Ștergere zonă",
+        "GeometryLabel": "Forme",
+        "RectangleLabel": "Dreptunghi",
+        "StraightLineLabel": "Linie",
+        "UndoLabel": "Anulare",
+        "RedoLabel": "Refacere",
+        "ClearLabel": "Golire",
+        "WhiteboardWindowTitle": "Tablă Inkeys",
+        "WhiteboardPreviousLabel": "Înapoi",
+        "WhiteboardNextLabel": "Înainte",
+        "WhiteboardAddPageLabel": "Adăugare",
+        "WhiteboardLabel": "Tablă",
+        "ResumeWhiteboardLabel": "La tablă",
+        "CloseWhiteboardLabel": "Închidere",
+        "ReturnToShowLabel": "La prezentare",
+        "MinimizeWhiteboardLabel": "Minimizare tablă",
+        "WhiteboardThemeLabel": "Temă",
+        "WhiteboardBackgroundColorLabel": "Culoare fundal",
+        "WhiteboardBackgroundStyleLabel": "Stil fundal",
+        "WhiteboardBlankLabel": "Gol",
+        "WhiteboardDotsLabel": "Puncte",
+        "WhiteboardGridLabel": "Grilă",
+        "WhiteboardUnsavedLabel": "Unele pagini nu sunt salvate",
+        "FreezeLabel": "Îngheț",
+        "EndPresentationLabel": "Încheiere",
+        "SettingsLabel": "Setări",
+        "MoreLabel": "Mai multe"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "Fișiere",
+        "TaskManagerLabel": "Activități",
+        "ControlPanelLabel": "Control",
+        "ShowDesktopLabel": "Desktop",
+        "LockScreenLabel": "Blocare",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "Nume aleator",
+        "ClassIslandSettingsLabel": "Setări CI",
+        "ClassIslandProfileLabel": "Profiluri",
+        "ClassIslandSwapLabel": "Schimb oră"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "Pensulă",
+        "LaserLabel": "Indicator laser",
+        "HighlighterLabel": "Evidențiator",
+        "HardPenLabel": "Peniță rigidă",
+        "SoftPenLabel": "Peniță moale",
+        "FreeLineLabel": "Linie liberă",
+        "AnnotationLineLabel": "Linie marcaj",
+        "HoldThicknessLabel": "Țineți apăsat pentru a fixa grosimea",
+        "ThicknessFormat": "Grosime {}",
+        "AnnotationUnavailableTitle": "Liniile de marcaj nu sunt încă disponibile",
+        "AnnotationFixedUnsupportedTitle": "Liniile de marcaj cu grosime fixă nu sunt încă acceptate",
+        "AnnotationDescription": "Limitează direcția la orizontală, verticală sau diagonală la 45°",
+        "ThicknessOverflowTitle": "Grosimea cernelii depășește previzualizarea",
+        "ThicknessOverflowBody": "Grosimea previzualizată poate diferi de cea desenată."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "Linie",
+        "RectangleLabel": "Dreptun."
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "Opacitate",
+        "HoldColorLabel": "Țineți apăsat pentru a fixa culoarea"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "FPS: {:.2f} | Nelimitat: {:.2f}",
+        "FrameRateUnavailable": "FPS: -- | Nelimitat: --"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "Conflict",
+        "ReadFailed": "Citire",
+        "PresentFailed": "Afișare",
+        "Failed": "Eroare",
+        "Recovering": "Restabilire",
+        "Loading": "Încărcare",
+        "Retry": "Reîncercare",
+        "Wait": "Așteptați",
+        "RetryCanvas": "Reîncearcă pânza",
+        "ProtectedHint": "Ordinea paginilor sau identitatea documentului s-a schimbat. Cerneala existentă este protejată. Restabiliți starea inițială a documentului, apoi reîncercați.",
+        "RecoveryHint": "Restabilirea pânzei este incompletă. Reîncercarea păstrează protecția cernelii."
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys nu poate afișa corect fundalul transparent.\n\nFaceți clic dreapta pe Inkeys.exe, deschideți Proprietăți → Compatibilitate și debifați „Mod culoare redusă”.\nÎn Windows 7, activați o temă Aero.\n\nReporniți Inkeys și încercați din nou.\nDacă problema persistă, contactați dezvoltatorul din pagina principală a setărilor."
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "Trecerea la fereastra tablei nu s-a încheiat; reîncercările automate s-au oprit. Apăsați din nou butonul tablei din bara principală pentru a anula trecerea sau reîncercați din pagina Desen a setărilor.",
+      "Return": "Ieșirea din tablă nu s-a încheiat; reîncercările automate s-au oprit. Apăsați din nou butonul tablei din bara principală pentru a reveni la tablă sau reîncercați din pagina Desen a setărilor.",
+      "Primary": "Comutarea între spațiul desktop și cel de prezentare nu s-a încheiat; reîncercările automate s-au oprit. Reîncercați din pagina Desen a setărilor."
+    },
+    "Common":
+    {
+      "TipsTitle": "Mesaj Inkeys",
+      "ErrorTitle": "Eroare Inkeys",
+      "OK": "OK",
+      "Cancel": "Anulare",
+      "Yes": "Da",
+      "No": "Nu"
+    },
+    "EndPresentation":
+    {
+      "Body": "Încheiați expunerea de diapozitive curentă?"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys s-a închis neașteptat: fereastra programului nu a putut fi creată sau a fost blocată. Reporniți Inkeys și încercați din nou. (#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "Modulul de actualizare automată nu este activ, ceea ce indică o versiune neoficială.\nAccesați Versiunea programului și alegeți Reparare program."
+    },
+    "CloseInkeys":
+    {
+      "Body": "Închideți Inkeys?"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys a întâmpinat o problemă. Selectați OK pentru a reporni Inkeys și a încerca restabilirea."
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Opțiuni Inkeys",
+    "Design":
+    {
+      "NavigationTitle": "Setări",
+      "SwitchToDark": "Comutare la tema întunecată",
+      "SwitchToLight": "Comutare la tema luminoasă",
+      "Preferences": "Preferințe",
+      "RecommendedSuffix": " (recomandat)",
+      "SupportGroup": "Asistență și întreținere",
+      "Experimental": "Opțiuni experimentale",
+      "HomeWelcome": "Bun venit în Inkeys3",
+      "HeroTitle": "Scriere cursivă pe ecran.",
+      "HeroJoin": " ",
+      "HeroDescription": "Fiecare gest, o plăcere.",
+      "HomeCopyright": "Copyright © 2023-2026 Studioul AlanCRL (Chen Runlin / Chen Yunlam)",
+      "HomeLicensePrefix": "Acest program este distribuit sub licența ",
+      "HomeLicenseSuffix": ".",
+      "HomeRedistribution": "În condițiile GPLv3, oricine poate consulta, modifica și redistribui codul acestui proiect.",
+      "HomeOpenSourceTitle": "Cu sursă deschisă și gratuit, creat pentru dvs.",
+      "HomeRepositoryPrefix": "Codul Inkeys este găzduit pe ",
+      "HomeRepositoryJoin": " și ",
+      "HomeRepositorySuffix": ".",
+      "HomeStarAction": "Acordă o stea pe GitHub",
+      "HomeSponsorAction": "Susține Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "Personalizare scriere",
+      "Tutorial": "Primii pași",
+      "Explore": "Setări recomandate",
+      "DrawDescription": "Opțiuni pentru cerneală și radieră",
+      "AppearanceDescription": "Animații, iluminare și scara barei principale",
+      "PresetDescription": "Creioanele preferate, mereu la îndemână",
+      "PluginDescription": "Conectați instrumentele pentru prezentări și lecții",
+      "CommonSettings": "Setări uzuale",
+      "GeneralDescription": "Mod de operare, aranjarea barei și pornire",
+      "ShortcutsDescription": "Comenzi rapide pentru acțiuni globale și editarea adnotărilor",
+      "DisplayLanguage": "Limbă de afișare",
+      "Improve": "Ajutați la îmbunătățirea Inkeys",
+      "Contact": "Contactați dezvoltatorul",
+      "TermsOfUse": "Condiții de utilizare",
+      "Website": "Site oficial",
+      "StartupSection": "Pornire",
+      "AppearanceSection": "Aspect",
+      "BehaviorSection": "Comportament",
+      "CompatibilitySection": "Compatibilitate",
+      "GeneralBasic": "De bază",
+      "GeneralAppearance": "Aspect și animații",
+      "GeneralInteraction": "Comportament și siguranță",
+      "GeneralStorage": "Stocare și configurare",
+      "OperationModeSection": "Mod de operare",
+      "IconArrangementSection": "Aranjarea pictogramelor",
+      "AnimationSection": "Animații",
+      "LightingSection": "Iluminare",
+      "ScalingSection": "Scalare",
+      "ThemeSection": "Temă",
+      "OpacitySection": "Opacitate",
+      "WindowBehaviorSection": "Comportamentul ferestrei",
+      "SafetyRecoverySection": "Siguranță și restabilire",
+      "ShortcutGlobalSection": "Acțiuni globale",
+      "ShortcutEditingSection": "Editarea adnotărilor",
+      "ShortcutAuxiliarySection": "Acțiuni auxiliare",
+      "GeneralSubtitle": "Pornire, dimensiunea interfeței și preferințe zilnice.",
+      "EdgeLighting": "Activare iluminare margini",
+      "EdgeLightingDescription": "Când este dezactivată, rămâne doar chenarul simplu, fără iluminare punctuală sau difuză.",
+      "TopWindowSummary": "Cât de des Inkeys își readuce fereastra în prim-plan când nu desenați.",
+      "TopWindowDetails": "Detalii",
+      "AvoidFullscreenSummary": "Necesită repornire. Evită ocuparea întregului ecran în afara desenării și în modul clicuri prin fereastră.",
+      "AvoidFullscreenDetails": "Note de utilizare",
+      "Enabled": "Activat",
+      "Disabled": "Dezactivat",
+      "ClickToCopy": "Apăsați pentru copiere",
+      "Copied": "Copiat",
+      "RestartRequired": "Reporniți Inkeys pentru aplicare.",
+      "NextStartupRequired": "Modificările intră în vigoare la următoarea pornire Inkeys."
+    },
+    "Home":
+    {
+      "N": "Acasă",
+      "Prompt": "Aceasta este o versiune preliminară Inkeys 3 și nu reflectă calitatea versiunii finale.",
+      "Developer": "Dezvoltator Inkeys",
+      "Group": "Discuții pe GitHub",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Canal Bilibili",
+      "FeedBack": "Probleme / sugestii"
+    },
+    "Feedback":
+    {
+      "N": "Feedback",
+      "Description": "Raportați probleme sau propuneți îmbunătățiri pentru Inkeys.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Raportați probleme sau sugestii pe GitHub pentru discuții și urmărire publică."
+      },
+      "Questionnaire":
+      {
+        "N": "Chestionar de feedback",
+        "E": "Folosiți chestionarul pentru a raporta o problemă sau a propune o îmbunătățire."
+      },
+      "Qr":
+      {
+        "N": "Scanați pentru feedback",
+        "E": "Scanați codul QR pentru a raporta probleme sau sugestii prin chestionar."
+      },
+      "ContactSection": "Comunitate și contact cu dezvoltatorul",
+      "CommunityDescription": "Discutați probleme și sugestii cu comunitatea pe GitHub Discussions.",
+      "ContactDescription": "Trimiteți dezvoltatorului un e-mail cu probleme sau sugestii.",
+      "AuthorQQ": "QQ dezvoltator"
+    },
+    "Language":
+    {
+      "N": "Limbă",
+      "UI":
+      {
+        "N": "Limba interfeței",
+        "Select": "Selectare limbă",
+        "SelectE": "Limba utilizată pentru afișarea interfeței.",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "Limba se schimbă imediat. Nu trebuie să reporniți Inkeys.",
+        "SelectNote": "Se aplică imediat, fără repornire."
+      }
+    },
+    "Configuration":
+    {
+      "N": "Configurare și stocare",
+      "Clean":
+      {
+        "N": "Curățarea configurației",
+        "Enable": "Activare curățare",
+        "EnableE": "La pornire și salvare, elimină opțiunile care nu fac parte din șablonul de configurare al versiunii curente.",
+        "EnableNote": "După revenirea la o versiune veche și actualizarea din nou sau după importul configurației, unele opțiuni se pot pierde și pot reveni la valorile implicite."
+      },
+      "CanvasSave":
+      {
+        "N": "Salvarea pânzei",
+        "Enable": "Salvare automată a pânzei desktop",
+        "EnableE": "Salvează automat pânza desktop care nu este goală la golire sau la ieșire, pentru a o putea restabili ulterior din istoric.",
+        "SaveTime":
+        {
+          "N": "Perioada de păstrare a istoricului",
+          "E": "La pornire, șterge pânzele salvate mai vechi decât perioada aleasă.",
+          "1d": "1 zi",
+          "3d": "3 zile",
+          "5d": "5 zile",
+          "10d": "10 zile",
+          "30d": "30 de zile",
+          "Never": "Nu șterge niciodată"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "Versiunea programului",
+      "ManualUpdate":
+      {
+        "N": "Versiune nouă disponibilă",
+        "ManualUpdate": "Actualizare manuală"
+      },
+      "LimitUpdate":
+      {
+        "N": "Actualizarea automată a fost blocată!\n\nCerințele de compatibilitate s-au schimbat în noua versiune. Actualizarea automată a fost blocată deoarece programul ar putea să nu mai pornească. Consultați detaliile, verificați dacă sistemul îndeplinește noile cerințe, apoi descărcați și actualizați manual programul. Funcția de reparare din canalul curent este temporar indisponibilă.",
+        "Info": "Detalii"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3 a fost lansat oficial!\n\nApăsați butonul de mai jos pentru a afla mai multe despre Inkeys3. Funcția de reparare din canalul curent este temporar indisponibilă.",
+        "Download": "Actualizare acum"
+      },
+      "VersionTip": "Arhitectura programului nu corespunde sistemului, ceea ce poate reduce performanța. În secțiunea Reparare program de mai jos, activați „Corectarea arhitecturii la reparare” sau selectați manual arhitectura țintă înainte de reparare.",
+      "Info":
+      {
+        "N": "Informații despre versiune",
+        "ReleaseVersion": "Versiune lansată",
+        "ReleaseDate": "Data lansării",
+        "ReleaseArch": "Arhitectura programului și a sistemului",
+        "ReleaseTag": "Compilare de lansare (RELEASE)",
+        "DebugTag": "Compilare de depanare (DEBUG)",
+        "ManualBuild": "Compilare manuală",
+        "AutoBuild": "Compilare automată (CI/CD)",
+        "CICDInfo": "Detalii compilare"
+      },
+      "UserInfo":
+      {
+        "N": "Informații utilizator",
+        "CopyUserId": "Copiere ID utilizator",
+        "UserId": "ID utilizator"
+      },
+      "Repair":
+      {
+        "N": "Reparare program",
+        "RepairSoftware": "Reparare program",
+        "RepairSoftwareE": "Reinstalează cea mai recentă versiune din canalul selectat",
+        "RepairArch": "Corectarea arhitecturii la reparare"
+      },
+      "Update":
+      {
+        "N": "Preferințe de actualizare",
+        "AutoUpate": "Actualizare automată (silențioasă)",
+        "ChannelTip": "Stabil (LTS): cea mai recentă versiune stabilă, recomandată pentru utilizarea zilnică.\nInsider: versiuni preliminare; stabilitatea poate fi mai redusă, iar programele de securitate pot emite alerte.\nCanary: versiuni timpurii Inkeys 3, nerecomandate pentru utilizarea zilnică.",
+        "Channel":
+        {
+          "N": "Canal de actualizare",
+          "LTS": "Canal stabil (LTS)",
+          "Insider": "Canal Insider",
+          "Canary": "Canal Canary"
+        },
+        "Arch":
+        {
+          "N": "Arhitectură țintă",
+          "E": "Atenție: o arhitectură care nu corespunde sistemului poate împiedica pornirea Inkeys sau poate cauza probleme grave de performanță.",
+          "64": "64 de biți",
+          "32": "32 de biți",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "Starea versiunii"
+    },
+    "CICD":
+    {
+      "N": "Detalii compilare",
+      "Repository": "Depozit",
+      "Branch": "Ramură",
+      "Submitter": "Autor commit",
+      "BuildTime": "Ora compilării",
+      "BuildSystem": "Sistem de compilare",
+      "BuildSystemVersion": "Versiunea sistemului de compilare",
+      "RunnerImageSystem": "Sistemul imaginii executorului",
+      "RunnerImageVersion": "Versiunea imaginii executorului",
+      "MSBuildVersion": "Versiune MSBuild"
+    },
+    "Regular":
+    {
+      "N": "General",
+      "SelectAndClickThrough":
+      {
+        "N": "Selectare și clicuri prin fereastră",
+        "Combined": "Combinat",
+        "Separate": "Separat",
+        "CombinedDescription": "Folosiți Selectare pentru a opera computerul fără cerneală afișată sau cu cerneala păstrată pe ecran.",
+        "SeparateDescription": "Selectare golește cerneala și permite operarea computerului; Clicuri prin fereastră păstrează cerneala și permite interacțiunea cu ferestrele de dedesubt.",
+        "ClickThrough": "Clicuri prin fereastră",
+        "ClickThroughDescription": "Păstrează cerneala vizibilă și permite clicurilor și atingerilor să treacă prin stratul de adnotare către ferestrele de dedesubt."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Ordinea pictogramelor din bara principală",
+        "FollowMainButton": "După butonul principal",
+        "FollowMainButtonReverse": "După butonul principal (invers)",
+        "LeftToRight": "De la stânga la dreapta",
+        "RightToLeft": "De la dreapta la stânga"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Direcția de extindere a barei principale",
+        "Centerline": "Linia mediană a ecranului",
+        "WhenSpaceInsufficient": "Când spațiul este insuficient"
+      },
+      "AutoCollapse":
+      {
+        "N": "Restrângere automată",
+        "Drawing": "Restrânge bara în timpul desenării",
+        "Erasing": "Restrânge bara în timpul ștergerii",
+        "Dragging": "Restrânge bara când o trageți",
+        "OutsideClick": "Restrânge bara la clic în exterior în modul Selectare sau Clicuri prin fereastră",
+        "Description": "Desenarea include creioane, forme și indicatorul laser. Modul inferior include și bara centrată. Clicurile în exterior nu includ bara, meniurile, proprietățile și panourile sale pop-up.",
+        "Off": "Dezactivat",
+        "NonBottom": "În afara modului inferior",
+        "Always": "Întotdeauna"
+      },
+      "StartUp":
+      {
+        "N": "Pornire și comportament inițial",
+        "AutoStart": "Pornire automată la conectare",
+        "AutoStartE": "Pornește Inkeys când utilizatorul curent se conectează la Windows.",
+        "LoadingAnimation": "Animație la pornire",
+        "LoadingAnimationE": "Afișează animația de încărcare la pornirea Inkeys.",
+        "SettingEntryAnimation":
+        {
+          "N": "Animație de deschidere a setărilor",
+          "E": "Controlează când se redă animația de deschidere a setărilor.",
+          "Off": "Dezactivată",
+          "First": "La prima pornire",
+          "Always": "Întotdeauna"
+        },
+        "Link":
+        {
+          "N": "Creare comandă rapidă pe desktop",
+          "E": "Corectați numele comenzilor rapide existente sau creați una nouă. Selectați Mai multe opțiuni pentru configurare.",
+          "More": "Mai multe opțiuni"
+        }
+      },
+      "Appearance":
+      {
+        "N": "Aspect",
+        "AnimationEnable": "Activare animații",
+        "AnimationEnableE": "Când sunt dezactivate, animațiile barei principale UI3, navigării și paginilor de setări se încheie imediat.",
+        "AnimationRate": "Viteză animații",
+        "AnimationRateE": "Ajustează viteza animațiilor din bara principală UI3 și din setări între 0.1x–5.0x.",
+        "EdgeLighting": "Iluminare margini",
+        "EdgeLightingE": "Când este dezactivată, rămâne doar chenarul simplu, fără lumini punctuale sau strălucire difuză.",
+        "DynamicEdgeLighting": "Iluminare dinamică a marginilor",
+        "DynamicEdgeLightingE": "Iluminarea urmărește dinamic poziția indicatorului.",
+        "ResetDefault": "Restabilire implicită",
+        "SettingTheme":
+        {
+          "N": "Tema setărilor",
+          "E": "Comută fereastra de setări între aspectul întunecat și cel luminos; sincronizat cu butonul din bara de titlu."
+        },
+        "BackgroundOpacity":
+        {
+          "N": "Opacitatea fundalului barei",
+          "E": "Ajustează opacitatea fundalului barei principale, a butonului principal și a comenzilor de pagină. Panourile pop-up nu sunt afectate."
+        },
+        "ContentOpacity":
+        {
+          "N": "Opacitatea conținutului barei",
+          "E": "Ajustează opacitatea pictogramelor și a textului de pe bara principală, butonul principal și comenzile de pagină."
+        },
+        "Theme":
+        {
+          "N": "Tema barei",
+          "E": "Comută bara principală între aspectul întunecat și cel luminos. Modificările se aplică imediat.",
+          "Dark": "Mod întunecat",
+          "Light": "Mod luminos"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "Scalare după bara de activități",
+          "E": "La scara de 100%, dimensiunea de bază fixează înălțimea barei principale la 48 DIP; dimensiunea reală urmărește grosimea barei de activități.",
+          "Off": "Dezactivat",
+          "Base": "Dimensiunea de bază a barei",
+          "Actual": "Dimensiunea reală a barei"
+        },
+        "BarZoom":
+        {
+          "N": "Scara interfeței barei",
+          "E": "Ajustează în timp real scara barei, a butoanelor și a comenzilor PPT.",
+          "Ind": "Scară {:.2f}x"
+        }
+      },
+      "Behavior":
+      {
+        "N": "Alte comportamente",
+        "TopWindow":
+        {
+          "N": "Interval de readucere în față",
+          "E": "Când nu desenați, Inkeys își readuce fereastra deasupra celorlalte la intervalul ales; operația se suspendă la contactul creionului. Intervalele mai scurte reduc interferența altor ferestre, dar pot crește utilizarea CPU. La nevoie, încercați extensia SuperTop.",
+          "100ms": "Foarte scurt (100ms)",
+          "500ms": "Scurt (500ms)",
+          "1s": "Destul de scurt (1s)",
+          "3s": "Mediu (3s)",
+          "5s": "Destul de lung (5s)",
+          "10s": "Lung (10s)",
+          "30s": "Foarte lung (30s)"
+        },
+        "RightClickClose": "Ieșire din Inkeys la clic dreapta pe pictograma principală",
+        "RightClickCloseE": "Se afișează o casetă de confirmare.",
+        "DrawingRetract": "Restrânge bara principală în timpul desenării",
+        "ErasingRetract": "Restrânge bara principală în timpul ștergerii",
+        "DraggingRetract": "Restrânge bara principală când o trageți",
+        "CheckingRetract": "Restrânge la clic în afara barei principale",
+        "CheckingRetractE": "Se aplică numai clicurilor în afara barei principale, în modul Selectare sau Clicuri prin fereastră."
+      },
+      "Tentative":
+      {
+        "N": "Opțiuni experimentale",
+        "SafeMode":
+        {
+          "N": "Gestionarea căderilor",
+          "E": "Alegeți acțiunea la o cădere a programului.",
+          "Mode1": "Afișează eroarea și repornește",
+          "Mode2": "Repornire silențioasă",
+          "Mode3": "Lasă sistemul să gestioneze",
+          "Mode4": "Închide direct",
+          "Note": "Erorile la pornire afișează totuși un mesaj."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "Permite mai multe instanțe",
+          "E": "Permite rularea mai multor instanțe din acest folder de instalare. Dezactivarea împiedică pornirea altora noi, fără a le închide pe cele care rulează deja."
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "Desen",
+      "General":
+      {
+        "N": "General",
+        "MultiTouch":
+        {
+          "N": "Desenare cu mai multe degete",
+          "E": "Permite scrierea sau desenarea simultană cu mai multe degete. Când este dezactivată, se acceptă doar desenarea cu un singur deget."
+        },
+        "PenTailCorrection":
+        {
+          "N": "Corectarea capătului la ridicarea creionului",
+          "E": "Reduce frângerile bruște de la sfârșitul trăsăturii când ridicați creionul, pentru o încheiere mai naturală."
+        },
+        "InkPrediction":
+        {
+          "N": "Predicția cernelii",
+          "E": "Reduce întârzierea vizibilă a scrierii. Modul Precis estimează mișcarea următoare; modul Rapid extinde cerneala până la ultima poziție de intrare. Dezactivarea elimină cerneala anticipată.",
+          "Precise": "Precis",
+          "Fast": "Rapid",
+          "Disabled": "Dezactivat"
+        }
+      },
+      "Laser":
+      {
+        "N": "Indicator laser",
+        "MultiTouch":
+        {
+          "N": "Laser cu mai multe degete",
+          "E": "BETA: permite folosirea indicatorului laser cu mai multe degete simultan."
+        },
+        "Particles":
+        {
+          "N": "Particule pentru indicatorul laser",
+          "E": "BETA: afișează particule în jurul urmei laserului."
+        }
+      },
+      "Haptics":
+      {
+        "N": "Feedback haptic al creionului",
+        "Drawing": "Vibrații în timpul desenării",
+        "Buttons": "Vibrații la butoane"
+      },
+      "Cursor":
+      {
+        "N": "Cursor",
+        "Description": "Opțiunea pentru mouse se aplică doar penițelor moi și rigide. Evidențiatorul arată mereu grosimea, iar formele folosesc cursorul de sistem. Cursorul implicit al creionului este circular. Evidențierea marginii este dezactivată pentru creioanele de ecran și activată pentru tablete grafice și creioane nerecunoscute.",
+        "MouseStyle": "Mouse",
+        "PenStyle": "Creion",
+        "DefaultStyle": "Cursor implicit",
+        "DrawingStyle": "Cursor în formă de creion"
+      },
+      "Effect":
+      {
+        "N": "Mediu de desenare",
+        "Device":
+        {
+          "N": "Alegeți modul de interacțiune",
+          "Touch": "Mod tactil pentru ecran mare",
+          "MousePen": "Mod desktop",
+          "TouchE": "Pentru scriere și interacțiune directă pe ecrane tactile mari în săli de clasă, de ședințe și spații similare.",
+          "MousePenE": "Pentru PC-uri, tablete și ecrane mari operate cu mouse-ul, cu intrare de la mouse, creion, tabletă grafică sau atingere."
+        }
+      },
+      "Touch":
+      {
+        "N": "Atingere",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Reconectarea trăsăturilor întrerupte",
+          "E": "Dacă atingerea se întrerupe scurt și reia aceeași direcție, programul încearcă să unească cele două segmente într-o singură trăsătură, reducând golurile. Când opțiunea este dezactivată, ridicarea degetului încheie trăsătura."
+        }
+      },
+      "Eraser":
+      {
+        "N": "Radieră",
+        "Automatic": "Activare radieră sensibilă la viteză",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "Ștergere precisă",
+          "DemoFineDescription": "Ștergeți lent linia auxiliară, păstrând intacte marcajele și segmentele din apropiere.",
+          "DemoSweepTitle": "Ștergere pe suprafețe mari",
+          "DemoSweepDescription": "Mișcările repetate înainte și înapoi lărgesc treptat radiera pentru a șterge mai repede suprafețe mari.",
+          "EntryDescription": "Ajustează inteligent dimensiunea radierei după intenția de ștergere",
+          "Introduction": "Folosește dimensiunile dispozitivului, tipul intrării și mișcarea pentru a deduce intenția de ștergere și a ajusta dinamic dimensiunea radierei.",
+          "BasicSettings": "Setări de bază",
+          "EnabledDevices": "Dispozitive activate",
+          "FineControl": "Control fin",
+          "SizeWarningTitle": "Dimensiunile fizice ale ecranului nu sunt fiabile",
+          "SizeWarningDescription": "Ecranul de desenare curent nu are dimensiuni fizice fiabile. Atingerile și creioanele de ecran folosesc estimări DPI, astfel că dimensiunea radierei poate să nu corespundă intenției dvs."
+        },
+        "PalmEraser":
+        {
+          "N": "Radieră cu palma",
+          "EntryDescription": "Ștergeți cu o atingere amplă, fără a schimba instrumentul",
+          "Introduction": "Așezați palma pe ecran pentru a șterge fără schimbarea instrumentului. Dimensiunea radierei se stabilește în intervalul de recunoaștere după contact; ridicarea palmei păstrează instrumentul inițial selectat.",
+          "Enabled": "Activare radieră cu palma",
+          "SizeWarningTitle": "Dimensiunile fizice ale ecranului nu sunt fiabile",
+          "SizeWarningDescription": "Ecranul de desenare curent nu are dimensiuni fizice fiabile. Ștergerea cu palma rămâne disponibilă, cu un prag de bază de 100×100 DIP de sistem. Dimensiunea fizică poate varia; ajustați procentul după experiența de utilizare.",
+          "RecognitionWindow": "Interval de recunoaștere",
+          "RecognitionWindowDescription": "În acest interval de la începutul atingerii se recunoaște palma și se stabilește dimensiunea. Ștergerea începe imediat ce sunt îndeplinite condițiile.",
+          "Threshold": "Prag al suprafeței de contact",
+          "ThresholdDescription": "Măriți procentul pentru a reduce activările accidentale sau micșorați-l pentru recunoașterea mai ușoară a palmei.",
+          "ThresholdSizePhysical": "Prag curent: {:.2f}cm × {:.2f}cm ({:.0f}px × {:.0f}px)",
+          "ThresholdSizePixels": "Prag curent: {:.0f}px × {:.0f}px",
+          "PreviewTitle": "Exemple de suprafețe de contact (ecranul de desenare curent)",
+          "PreviewDescription": "Suprafața conturată arată pragul în pixeli al ecranului de desenare curent. Schimbați raportul previzualizării pentru a vedea alte proporții. Dimensiunea fizică poate diferi pe alt ecran.",
+          "PreviewEstimated": "Acest prag estimat în pixeli folosește suprafața de bază de 100×100 DIP de sistem și procentul curent. Selectați un raport pentru a schimba forma; dimensiunea reală în centimetri poate varia.",
+          "PreviewUnavailable": "Scara ecranului de desenare curent nu este disponibilă, deci exemplele de suprafață nu pot fi afișate încă.",
+          "EnabledTools": "Instrumente vizate",
+          "ParallelWritingMultiTouchNote": "Desenarea cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu poate funcționa.",
+          "ParallelWritingLaserMultiTouchNote": "Intrarea laser cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu funcționează pentru laser.",
+          "ParallelWriting": "Activare scriere în timpul ștergerii",
+          "ParallelWritingDescription": "Activarea radierei cu palma nu întrerupe alte intrări, astfel că desenarea poate continua. (Pentru două sau mai multe persoane care scriu împreună.)"
+        },
+        "Input":
+        {
+          "MouseLeft": "Butonul stâng al mouse-ului",
+          "MouseRight": "Butonul drept al mouse-ului",
+          "Touch": "Atingere",
+          "PenTip": "Creion (vârf)",
+          "PenTail": "Radiera creionului"
+        },
+        "Kind":
+        {
+          "Fixed": "Grosime fixă",
+          "Speed": "Radieră sensibilă la viteză"
+        },
+        "ResponseFor": "Sensibilitatea la viteză se aplică pentru",
+        "Response":
+        {
+          "Auto": "Detectare automată",
+          "ScreenPen": "Creion de ecran",
+          "Digitizer": "Tabletă grafică"
+        },
+        "TouchArea":
+        {
+          "N": "Asistență după suprafața de contact pentru radiera tactilă sensibilă la viteză",
+          "E": "Menține radiera puțin mai lată decât degetul, astfel încât degetul să nu ascundă cursorul.",
+          "Note": "Nerecomandat pentru dispozitive cu ecran mare."
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "Presetări",
+      "StartupPlacement":
+      {
+        "N": "Poziție după pornire",
+        "E": "Bara inferioară centrată pornește extinsă. Ferestrele flotante din colțurile de jos arată doar butonul principal.",
+        "CenteredBottomBar": "Bară inferioară centrată",
+        "BottomLeftFloating": "Fereastră flotantă în stânga jos",
+        "BottomRightFloating": "Fereastră flotantă în dreapta jos"
+      }
+    },
+    "Performance":
+    {
+      "N": "Performanță",
+      "FrameRateSection": "Rată de cadre",
+      "InterfaceFrameRate":
+      {
+        "N": "Rata de cadre a interfeței",
+        "E": "Ajustează fluiditatea barei, setărilor și comenzilor de paginare. O rată mai mică poate reduce consumul de resurse. Modificările se aplică imediat."
+      },
+      "CanvasFrameRate":
+      {
+        "N": "Rata de cadre a pânzei",
+        "E": "Ajustează frecvența actualizării pânzei în timpul scrierii. Ratele mai mari pot face cerneala mai fluidă, dar consumă mai multe resurse."
+      },
+      "RenderingSection": "Randare și compatibilitate",
+      "DirectComposition":
+      {
+        "N": "Preferă DirectComposition",
+        "E": "Folosește compoziția sistemului pentru afișarea pânzei pe dispozitive compatibile; dacă nu este disponibilă, trece automat la modul de compatibilitate."
+      }
+    },
+    "Linkage":
+    {
+      "N": "Integrare",
+      "PPT": "Integrare PPT",
+      "CoreVersion": "Versiune nucleu {}"
+    },
+    "Experimental":
+    {
+      "N": "Laborator",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "Permite dimensiuni de font în fracțiuni de pixel",
+          "E": "Când opțiunea este dezactivată, fonturile statice din bara principală și comenzi sunt trunchiate la pixeli întregi. Scalarea și animațiile de tranziție rămân fluide. Se aplică imediat."
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Activare accelerare hardware pentru desen",
+          "E": "Folosește GPU-ul pentru desenarea pânzei; când este dezactivată, randarea se face software.",
+          "Note": "Încercați dezactivarea dacă desenarea este incorectă sau foarte lentă. Reporniți Inkeys pentru aplicare."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Activare mod de compatibilitate Zhaoxin",
+          "E": "Folosește o cale de încărcare compatibilă pe GPU-urile Zhaoxin. Celelalte GPU-uri nu sunt afectate. Dezactivați pentru a compara performanța desenării."
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "Diagnosticare feedback haptic al creionului",
+          "E": "Înregistrează intrarea creionului, solicitările butoanelor și rezultatele trimise către dispozitivul haptic pentru diagnosticarea lipsei vibrațiilor."
+        },
+        "TouchArea":
+        {
+          "N": "Diagnosticare intrare și radieră în consolă",
+          "E": "Afișează instantanee cu frecvență limitată despre EDID, rezoluție și DPI, suprafața de contact, coordonatele intrării, tipul dispozitivului și dimensiunea radierei."
+        },
+        "PptCOM":
+        {
+          "N": "Ieșire PptCOM în consolă",
+          "E": "Afișează diagnosticarea PptCOM în consolă."
+        },
+        "Draw3":
+        {
+          "N": "Ieșire Draw3 în consolă",
+          "E": "Afișează în consolă informații despre dispozitivele și driverele Draw3."
+        },
+        "Cursor":
+        {
+          "N": "Diagnosticare cursor",
+          "E": "Afișează în consolă sursa intrării cursorului și rezultatul randat efectiv."
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "Extensii",
+      "PPTHelper":
+      {
+        "N": "Asistent de prezentări PPT 3 Lite",
+        "E": "Oferă comenzi pentru prezentare și creion în timpul expunerii. Fiecare diapozitiv are o pânză proprie, astfel încât adnotările rămân pe pagina lor. Nu afectează funcțiile existente sau dispozitivele externe.",
+        "VersionError": "Versiune necunoscută (eroare extensie)",
+        "Solve": "Soluție",
+        "Sync": "Sincronizare ajustări",
+        "Reset": "Resetare",
+        "Tip": "Pentru detectarea procesului de prezentare, rulați Inkeys și PowerPoint/WPS cu același nivel de privilegii. Dacă apar probleme, consultați soluția.",
+        "Warn": "PowerPoint/WPS este configurat să ruleze întotdeauna ca administrator. Pentru a detecta procesul de prezentare și a activa integrarea PPT, Inkeys trebuie să ruleze tot ca administrator. Dacă nu doriți acest comportament pentru programul de prezentări, consultați soluția.",
+        "Error": "Extensia nu s-a putut încărca. Este posibil să lipsească .NET Framework 4.x sau să existe o problemă cu mediul COM.\nDetalii:",
+        "BasicLogic":
+        {
+          "N": "Logică de bază",
+          "LoadPage": "Afișare pagină de încărcare",
+          "LoadPageE": "Această funcție este dezactivată. Paginile de încărcare PPT nu se mai afișează."
+        },
+        "WidgetDisplay":
+        {
+          "N": "Afișare comenzi",
+          "BottomBoth": "Comenzi în ambele colțuri de jos",
+          "MiddleBoth": "Comenzi pe ambele laturi la mijloc",
+          "BottomMiddle": "Comenzi în bara principală de jos",
+          "IdleFade": "Estompare la inactivitate",
+          "IdleFadeE": "În timpul prezentării, comenzile de pagină devin mai transparente după o perioadă fără interacțiune sau după schimbarea paginii cu un prezentator ori cu tastatura, pentru a acoperi mai puțin conținut. Treceți cu cursorul, faceți clic sau trageți pentru a le restabili.",
+          "IdleFadeOff": "Dezactivat",
+          "IdleFadeSeconds": "{} s"
+        },
+        "WidgetPosition":
+        {
+          "N": "Poziția comenzilor",
+          "Reset": "Resetarea poziției comenzilor",
+          "Remember": "Memorarea poziției comenzilor"
+        },
+        "WidgetScale":
+        {
+          "N": "Scara comenzilor",
+          "Ind": "Scară {:.2f}x",
+          "Page":
+          {
+            "BottomSideBoth": "Scara comenzilor din colțurile de jos",
+            "MiddleSideBoth": "Scara comenzilor laterale"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "Scara comenzilor din bara de jos"
+          }
+        },
+        "Tentative":
+        {
+          "N": "Opțiuni experimentale",
+          "CloseWpp": "Permite închiderea proceselor WPP blocate sau rămase active",
+          "CloseWppE": "Necesită repornire. Încearcă să închidă procesele WPP rămase după o prezentare WPS, pentru a îmbunătăți detectarea următoarei prezentări.",
+          "AutoTakeOver": "Preluarea adnotărilor din prezentare",
+          "AutoTakeOverE": "Când detectează adnotările native PPT, trece la modul de desenare Inkeys și dezactivează adnotările PPT.",
+          "AutoTakeOverOnce": "Preluare cel mult o dată pe prezentare",
+          "AutoTakeOverOnceE": "Evită preluarea repetată când sunt necesare intenționat adnotările native PPT.",
+          "AutoTakeOverExpand": "Extinde bara după preluarea reușită",
+          "EnablePageButtonLongPress": "Răsfoire prin menținerea apăsată a butoanelor"
+        },
+        "SupportNote": "Acceptă Microsoft PowerPoint 2007 sau mai nou și Kingsoft WPS 2013 sau mai nou."
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "Folosește UIAccess pentru a afișa fereastra deasupra interfețelor de sistem și ferestrelor de aplicații acceptate.",
+        "Warn": "Extensia SuperTop este în stadiul Beta și poate fi instabilă.\nLa pornire, Inkeys se relansează pentru a cere privilegii ridicate, apoi pornește o instanță nouă.\nProcesul poate eșua; rularea ca administrator poate afecta integrarea PPT.\nPoate apărea o solicitare UAC. Verificați sursa și editorul înainte de a permite operația.\nDacă programul de securitate emite o alertă, verificați sursa și semnătura fișierului, fără a dezactiva protecția.",
+        "Capability":
+        {
+          "N": "Funcții de bază",
+          "SuperTop": "Activare SuperTop",
+          "SuperTopE1": "Programul folosește o pornire în trei etape pentru a rămâne deasupra celorlalte ferestre.\n(SuperTop este activ)",
+          "SuperTopE2": "Programul folosește o pornire în trei etape pentru a rămâne deasupra celorlalte ferestre.\n(SuperTop nu este activ)",
+          "Indicator": "Indicator SuperTop",
+          "IndicatorE": "Afișează o pioneză în colțul din dreapta sus al pictogramei principale când SuperTop se activează cu succes.",
+          "SuperTopNote": "Reporniți Inkeys pentru aplicare; activarea SuperTop poate eșua la pornire."
+        },
+        "SupportNote": "Necesită Windows 8 sau mai nou."
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "Pe sistemele educaționale integrate, unele programe de tablă nu permit dezactivarea panoului flotant de desen. Astfel, pe desktop apar instrumente de desen diferite, pe care profesorii le pot confunda, nemaiputând continua adnotarea. DesktopDrawpadBlocker a fost creat pentru această problemă.",
+        "LicenseTitle": "Extensie cu sursă deschisă GPLv3",
+        "LicenseDescription": "Extensia este destinată exclusiv învățării, schimbului de experiență și cercetării; utilizarea în alte scopuri nu este permisă.\nDesktopDrawpadBlocker este un program cu sursă deschisă, distribuit sub licența GPLv3.\nPublicat pe GitHub: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nSperăm ca programul să fie util, dar nu oferim nicio garanție privind calitatea.\nUtilizatorii răspund pentru efectele și consecințele utilizării extensiei; folosirea ei implică acceptarea acestor condiții.",
+        "UseSection": "Utilizarea extensiei",
+        "EnableTitle": "Activare extensie",
+        "EnableDescription": "În modul implicit, extensia pornește și se oprește odată cu Inkeys.",
+        "GeneralSection": "Opțiuni generale",
+        "AdministratorTitle": "Rulare extensie ca administrator",
+        "AdministratorDescription": "La schimbarea setării, așteptați răspunsul extensiei.",
+        "IntervalTitle": "Interval de blocare",
+        "IntervalDescription": "Intervalele mai scurte blochează mai repede ferestrele noi, dar consumă mai multe resurse CPU.",
+        "IntervalShort": "Scurt (500ms)",
+        "IntervalMediumShort": "Destul de scurt (1s)",
+        "IntervalMedium": "Mediu (3s)",
+        "IntervalMediumLong": "Destul de lung (5s)",
+        "IntervalLong": "Lung (10s)",
+        "PrecisionSection": "Control detaliat",
+        "Seewo3Title": "希沃白板3 — fereastră de creion pe desktop",
+        "Seewo5Title": "希沃白板5 — fereastră de creion pe desktop",
+        "Seewo5CTitle": "希沃轻白板（5C） — fereastră de creion pe desktop",
+        "PincoSidebarTitle": "希沃品课教师端 — bară laterală flotantă",
+        "PincoDrawingTitle": "希沃品课教师端 — fereastră de creion pe desktop",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 — instrumente PPT",
+        "YiouTitle": "欧帝白板 — fereastră de creion pe desktop",
+        "AiClassTitle": "AiClass — fereastră de creion pe desktop",
+        "ClassInXTitle": "ClassIn X — fereastră de creion pe desktop",
+        "IntelligentClassTitle": "天喻教育云互动课堂 — fereastră de creion pe desktop",
+        "ChangYan4Title": "畅言智慧课堂4.0 — fereastră de creion pe desktop",
+        "ChangYan5Title": "畅言智慧课堂5.0 — fereastră de creion pe desktop",
+        "Iclass30SidebarTitle": "C30智能教学 — bară laterală flotantă",
+        "Iclass30DrawingTitle": "C30智能教学 — fereastră de creion pe desktop",
+        "SeewoDesktopSidebarTitle": "希沃桌面 — bară laterală flotantă",
+        "SeewoDesktopDrawingTitle": "希沃桌面 — fereastră de creion pe desktop",
+        "IncludesPptNote": "Include comenzi PPT.",
+        "RestoresWhiteboardNote": "Include comenzi PPT. Acceptă restabilirea automată în modul tablă.",
+        "WindowTrackingNote": "Include comenzi PPT. Acceptă restabilirea automată în modul tablă și urmărirea ferestrelor.",
+        "SeewoDesktopVersionsNote": "Funcționează cu versiunile 1.0/2.0/2.5/3.0 pentru învățământul general și superior",
+        "AdministratorNote": "Necesită privilegii de administrator pentru DDB."
+      },
+      "LnkHelper":
+      {
+        "N": "Asistent pentru comenzi rapide",
+        "E": "Verifică la pornire dacă comenzile rapide Inkeys existente sunt valide. Actualizările pot schimba numele fișierului programului și pot invalida comenzile rapide. Opțional, creează una pe desktop dacă nu există.",
+        "Capability":
+        {
+          "N": "Funcții de bază",
+          "FixLnk": "Corectarea țintei și numelui comenzii rapide",
+          "FixLnkE": "La pornire, corectează comenzile rapide existente pe desktop. Recomandat, deoarece actualizarea automată poate schimba numele fișierului și poate invalida comanda rapidă."
+        },
+        "Expansion":
+        {
+          "N": "Opțiuni suplimentare",
+          "CreateLnk": "Creare comandă rapidă pe desktop",
+          "CreateLnkE": "Creează o comandă rapidă pe desktop dacă nu există deja."
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "Componente",
+      "SoftwareSection": "Aplicații",
+      "SystemSection": "Sistem",
+      "KeyboardSection": "Simulare tastatură",
+      "RollCallSection": "Selectoare de nume",
+      "ClassIslandSection": "Integrare ClassIsland",
+      "ExplorerTitle": "Deschidere Explorer",
+      "TaskManagerTitle": "Deschidere Manager de activități",
+      "ControlPanelTitle": "Deschidere Panou de control",
+      "ShowDesktopTitle": "Afișare desktop",
+      "LockScreenTitle": "Blocare ecran",
+      "EscapeTitle": "Apăsare Esc",
+      "AltF4Title": "Apăsare Alt+F4",
+      "IslandCaller1Title": "IslandCaller 1: nume aleatoriu",
+      "IslandCaller2Title": "IslandCaller 2: alege un nume",
+      "SecRandom1Title": "SecRandom 1: alegere rapidă",
+      "SecRandom2Title": "SecRandom 2: alegere rapidă",
+      "SecRandom2CompatTitle": "SecRandom 2: alegere rapidă (compatibil)",
+      "NamePickerTitle": "NamePicker: nume aleatoriu",
+      "ClassIslandSettingsTitle": "Setări ClassIsland",
+      "ClassIslandProfileTitle": "Editor de profiluri ClassIsland",
+      "ClassIslandSwapTitle": "Schimbare rapidă a orei ClassIsland",
+      "IslandCallerRequirement": "Necesită extensia IslandCaller în ClassIsland și înregistrarea protocolului URL ClassIsland.",
+      "SecRandomUrlRequirement": "Necesită înregistrarea protocolului URL SecRandom.",
+      "SecRandomIpcRequirement": "Necesită înregistrarea protocolului IPC SecRandom.",
+      "NamePickerRequirement": "Necesită înregistrarea protocolului URL NamePicker.",
+      "ClassIslandProtocolNote": "Înregistrați protocolul de navigare URL din setările ClassIsland.",
+      "ClassIslandSwapNote": "Componenta nu are efect dacă în ClassIsland nu este încărcat un orar."
+    },
+    "HotKey":
+    {
+      "N": "Comenzi rapide de la tastatură",
+      "E": "Sunt disponibile doar combinațiile fixe de mai jos, care pot fi activate separat. Combinațiile personalizate nu sunt încă acceptate.\nCu excepția comutării globale, comenzile funcționează doar în modul de adnotare. Introducerea textului în setări și dialogurile modale au prioritate. În modul Selectare sau Clicuri prin fereastră, combinațiile sunt gestionate de aplicația curentă.\nComutarea globală rămâne activă la editarea obișnuită a setărilor. Dialogurile modale ale programului îi suspendă acțiunea, dar păstrează combinația rezervată. AltGr poate intra în conflict cu Ctrl + Alt pe tastaturile internaționale; dezactivați separat comutarea globală dacă este necesar.\nComenzile rapide nu preiau navigarea PowerPoint.",
+      "ToggleAnnotationN": "Comutare globală a adnotării",
+      "ToggleAnnotationE": "Comută între adnotare și Selectare. Modul Combinat păstrează cerneala; modul Separat golește mai întâi pagina curentă. Revenirea restabilește ultimul instrument de adnotare, fără înghețarea ecranului.",
+      "UndoN": "Anulare",
+      "UndoE": "Anulează o acțiune pe pagina curentă. Țineți apăsat pentru repetare. Un istoric gol nu trimite Anulare către aplicația de dedesubt.",
+      "RedoYN": "Refacere",
+      "RedoYE": "Reface o acțiune pe pagina curentă. Țineți apăsat pentru repetare. Această combinație și Ctrl + Shift + Z se activează independent.",
+      "RedoShiftZN": "Refacere (alternativă)",
+      "RedoShiftZE": "Aceeași acțiune Refacere ca la Ctrl + Y, cu activare separată.",
+      "ClearN": "Golire pagină curentă",
+      "ClearE": "Prima apăsare golește pagina și păstrează instrumentul, chiar dacă pagina este goală. Mențineți Ctrl apăsat, eliberați Delete și apăsați-l din nou pentru Selectare în ambele moduri. Menținerea Delete nu se consideră două apăsări; trăsăturile noi sau alte acțiuni resetează secvența.",
+      "FreezeN": "Înghețare",
+      "FreezeE": "Activează sau dezactivează înghețarea ecranului.",
+      "Registering": "Se înregistrează comutarea globală",
+      "Disabling": "Se dezactivează comutarea globală",
+      "UnregisterFailed": "Eliminarea înregistrării a eșuat; combinația rămâne rezervată",
+      "Registered": "Comutarea globală este activă",
+      "Disabled": "Comutarea globală este dezactivată",
+      "NotRunning": "Serviciul de tastatură nu rulează încă",
+      "RegisterFailed": "Înregistrarea comutării globale a eșuat; combinația poate fi folosită de alt program",
+      "SynchronizationPending": "Se sincronizează starea tastelor. Treceți la o fereastră fără privilegii ridicate, eliberați tastele și reîncercați.",
+      "HookReady": "Comenzile rapide de adnotare sunt pregătite",
+      "HookFailed": "Hook-ul de tastatură nu este instalat; comenzile de adnotare sunt indisponibile",
+      "FreezeNote": "Indisponibil în spațiile PPT și tablă. Când funcția nu este disponibilă, combinația nu este trimisă aplicației de dedesubt."
+    },
+    "Community":
+    {
+      "N": "Comunitate"
+    },
+    "Sponsor":
+    {
+      "N": "Susțineți-ne",
+      "Thanks": "După sponsorizare, puteți contacta autorul pentru a adăuga pseudonimul și suma contribuției pe cardul comunității, în semn de mulțumire."
+    },
+    "RestartSoftware":
+    {
+      "N": "Repornire"
+    },
+    "ExitSoftware":
+    {
+      "N": "Ieșire"
+    },
+    "DebugSoftware":
+    {
+      "N": "Instrumente de depanare",
+      "RenderingSection": "Diagnosticare randare UI3",
+      "DirtyRegions":
+      {
+        "N": "Diagnosticarea regiunilor modificate",
+        "E": "Afișează limitele regiunilor modificate trimise efectiv în fiecare cadru UI3."
+      },
+      "FrameRate":
+      {
+        "N": "Afișare rată de cadre",
+        "E": "Actualizează o dată pe secundă rata medie și rata fără așteptare din secunda precedentă."
+      },
+      "ConsoleSection": "Ieșire în consolă",
+      "CanvasInformation": "Informații despre inițializarea pânzei",
+      "DisplayInformation": "Monitoare și EDID"
+    },
+    "Update":
+    {
+      "Check": "Căutare actualizări",
+      "Channel":
+      {
+        "LTS": "Canal stabil",
+        "Insider": "Canal Insider",
+        "Dev": "Canal de dezvoltare",
+        "Canary": "Canal Canary",
+        "Other": "Alt canal"
+      },
+      "NotStarted": "Căutarea actualizărilor nu a început",
+      "ObtainInformation": "Se obțin informații despre actualizare",
+      "InformationFail": "Obținerea informațiilor de actualizare a eșuat",
+      "InformationDamage": "Informațiile de actualizare descărcate sunt corupte",
+      "InformationUnStandardized": "Format nevalid al informațiilor de actualizare",
+      "Downloading": "Se descarcă actualizarea (sursa {})",
+      "DownloadFail": "Descărcarea actualizării a eșuat",
+      "DownloadDamage": "Fișierul de actualizare descărcat este corupt",
+      "Restart": "Reporniți pentru actualizare la cea mai recentă versiune",
+      "Latest": "Programul este la zi",
+      "Newer": "Versiunea curentă este mai nouă decât ultima versiune oficială",
+      "New": "S-a găsit o versiune nouă",
+      "Repair": "Încercați repararea",
+      "ManualDownload": "Descărcare manuală",
+      "UpdateNow": "Actualizare acum"
+    }
+  }
+}

@@ -219,6 +219,45 @@ namespace Inkeys::UI::Setting
 		}
 	}
 
+	// 生产与无 HWND 资源回放共用同一事务；只有已有有效 RTV 的同尺寸请求可直接复用。
+	template<class Release, class Resize, class Create>
+	HRESULT ResizeSettingPresentation(UINT width, UINT height, UINT currentWidth, UINT currentHeight,
+		bool hasRenderTarget, Release&& release, Resize&& resize, Create&& create)
+	{
+		if (hasRenderTarget && width == currentWidth && height == currentHeight) return S_OK;
+		std::forward<Release>(release)();
+		const HRESULT result = std::forward<Resize>(resize)();
+		if (FAILED(result)) return result;
+		return std::forward<Create>(create)() ? S_OK : E_FAIL;
+	}
+
+	// 仅 HWND owner 持有；等价主题通知不拆装材质，真正失效由原生消息显式撤销。
+	class SettingBackdropState
+	{
+	public:
+		void Invalidate() noexcept { valid_ = false; }
+		[[nodiscard]] std::uint64_t ApplicationSerial() const noexcept { return applicationSerial_; }
+		template<class Enable, class Disable>
+		bool Apply(std::uintptr_t window, bool eligible, bool darkMode,
+			Enable&& enable, Disable&& disable)
+		{
+			if (valid_ && window_ == window && eligible_ == eligible && darkMode_ == darkMode)
+				return enabled_;
+			window_ = window; eligible_ = eligible; darkMode_ = darkMode;
+			++applicationSerial_;
+			// 修改已启用的同类 accent 直接覆盖；先 Disabled 再启用会产生中间透明帧。
+			enabled_ = eligible && std::forward<Enable>(enable)();
+			if (!enabled_) std::forward<Disable>(disable)();
+			// 启用失败不确认成功状态，后续主题/能力通知仍可重试。
+			valid_ = !eligible || enabled_;
+			return enabled_;
+		}
+	private:
+		std::uintptr_t window_ = 0;
+		std::uint64_t applicationSerial_ = 0;
+		bool valid_ = false, eligible_ = false, darkMode_ = false, enabled_ = false;
+	};
+
 	struct ResizeSnapshot
 	{
 		std::uint64_t serial = 0;
@@ -285,7 +324,8 @@ namespace Inkeys::UI::Setting
 		void SetOccluded(bool occluded) noexcept { occluded_ = occluded; }
 		void QueueResize(std::uint32_t width, std::uint32_t height) noexcept
 		{
-			if (!width || !height) return;
+			// 相同目标不制造新的资源事务；未消费/失败的原 serial 仍保留待重试。
+			if (!width || !height || (width == resizeWidth_ && height == resizeHeight_)) return;
 			++resizeSerial_;
 			resizeWidth_ = width;
 			resizeHeight_ = height;
