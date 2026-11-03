@@ -605,7 +605,7 @@ namespace Inkeys::UI::Setting::Design
 		const float width = ImGui::GetContentRegionAvail().x;
 		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
 		const float innerWidth = (std::max)(1.0F, width - padding * 2.0F);
-		if (draft.physicalSizeWarning)
+		if (ConditionalBlock block{"##palm-size-visibility", draft.physicalSizeWarning}; block)
 		{
 			Notice("##palm-eraser-size-warning", IA(palm.SizeWarningTitle).c_str(),
 				IA(palm.SizeWarningDescription).c_str(), ImFluentInfoSeverity_Warning);
@@ -829,7 +829,7 @@ namespace Inkeys::UI::Setting::Design
 			ImGui::Dummy({ innerWidth, contentHeight });
 		}
 		EndCard();
-		if (draft.physicalSizeWarning)
+		if (ConditionalBlock block{"##speed-size-visibility", draft.physicalSizeWarning}; block)
 		{
 			PageContentStart();
 			Notice("##speed-eraser-size-warning", IA(speed.SizeWarningTitle).c_str(),
@@ -854,7 +854,8 @@ namespace Inkeys::UI::Setting::Design
 			{ entries[4], &draft.enabled[4], &events.enabledChanged[4] } });
 
 		// 显示条件只跟随本帧开关与设备选择，隐藏时保留原有精细偏好。
-		if (draft.automaticEnabled && (draft.enabled[2] || draft.enabled[3] || draft.enabled[4]))
+		if (ConditionalBlock block{"##eraser-fine-visibility",
+			draft.automaticEnabled && (draft.enabled[2] || draft.enabled[3] || draft.enabled[4])}; block)
 		{
 			SectionHeader(IA(speed.FineControl).c_str());
 			const std::vector<std::string> responses{ IA(eraser.Response.Auto),
@@ -864,16 +865,18 @@ namespace Inkeys::UI::Setting::Design
 			for (int pen = 0; pen < 2; ++pen)
 			{
 				const int entry = pen + 3;
-				if (!draft.enabled[entry]) continue;
 				ImGui::PushID(entry);
-				int response = std::clamp(draft.penResponses[pen], first, 2) - first;
-				events.penResponseChanged[pen] = ComboRow("##eraser-response", entries[entry].c_str(),
-					IA(eraser.ResponseFor).c_str(), "\uedc6", response, availableResponses);
-				// Win7 隐藏 Auto 项后仍返回稳定枚举，只在用户真正选择时更新草稿。
-				if (events.penResponseChanged[pen]) draft.penResponses[pen] = response + first;
+				if (ConditionalBlock responseBlock{"##eraser-response-visibility", draft.enabled[entry]}; responseBlock)
+				{
+					int response = std::clamp(draft.penResponses[pen], first, 2) - first;
+					events.penResponseChanged[pen] = ComboRow("##eraser-response", entries[entry].c_str(),
+						IA(eraser.ResponseFor).c_str(), "\uedc6", response, availableResponses);
+					// Win7 隐藏 Auto 项后仍返回稳定枚举，只在用户真正选择时更新草稿。
+					if (events.penResponseChanged[pen]) draft.penResponses[pen] = response + first;
+				}
 				ImGui::PopID();
 			}
-			if (draft.enabled[2])
+			if (ConditionalBlock touchBlock{"##eraser-touch-visibility", draft.enabled[2]}; touchBlock)
 				events.touchAreaChanged = ToggleRow("##eraser-touch-area", IA(eraser.TouchArea.N).c_str(),
 					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea, IA(eraser.TouchArea.Note).c_str());
 		}
@@ -882,6 +885,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void RenderSponsorThanks(const char* text, float widthPixels)
 	{
+		PageBlockScope motion("##sponsor-thanks-motion");
 		const float width = (std::max)(1.0F, widthPixels);
 		const auto origin = ImGui::GetCursorScreenPos();
 		ImFluent::PushFont(ImFluentTextStyle_Body);
@@ -1050,7 +1054,7 @@ namespace Inkeys::UI::Setting::Design
 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
 			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
 			// 总开关只控制可见性，隐藏子项时保留它们的保存值。
-			if (draft.animation)
+			if (ConditionalBlock block{"##animation-rate-visibility", draft.animation}; block)
 			{
 				SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
 					IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", draft.animationRate,
@@ -1071,7 +1075,7 @@ namespace Inkeys::UI::Setting::Design
 			SectionHeader(IA(I18nKey.SettingsUI.Design.LightingSection).c_str());
 			events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
-			if (draft.edgeLighting)
+			if (ConditionalBlock block{"##edge-lighting-visibility", draft.edgeLighting}; block)
 				events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
@@ -1125,9 +1129,13 @@ namespace Inkeys::UI::Setting::Design
 		if (section == GeneralSection::Shortcuts)
 		{
 			Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.HotKey.E).c_str());
-			if (!draft.shortcutGlobalStatus.empty() || !draft.shortcutHookStatus.empty())
-				Notice("##hotkey-status", draft.shortcutGlobalStatus.c_str(), draft.shortcutHookStatus.c_str(),
+			if (ConditionalBlock block{"##hotkey-status-visibility",
+				!draft.shortcutGlobalStatus.empty() || !draft.shortcutHookStatus.empty()}; block)
+			{
+				Notice("##hotkey-status", block.RetainText("title", draft.shortcutGlobalStatus.c_str()),
+					block.RetainText("description", draft.shortcutHookStatus.c_str()),
 					draft.shortcutStatusWarning ? ImFluentInfoSeverity_Warning : ImFluentInfoSeverity_Informational);
+			}
 			const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
 			const std::string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
 				IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
@@ -1154,6 +1162,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		HomeAction action = HomeAction::None;
 		const auto& palette = GetPalette();
+		PageBlockScope heroMotion("##home-hero-motion");
 		PageHeader(IA(I18nKey.SettingsUI.Home.N).c_str(), IA(I18nKey.SettingsUI.Design.HomeWelcome).c_str());
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(20.0F));
 		const ImVec2 heroOrigin = ImGui::GetCursorScreenPos();
@@ -1193,6 +1202,7 @@ namespace Inkeys::UI::Setting::Design
 				&& ImRect(heroOrigin,{heroOrigin.x+width,heroOrigin.y+heroHeight}).Overlaps(clip);
 			motion->brandOrigin={heroOrigin.x+(width-brandWidth)*.5F,heroOrigin.y+top}; motion->brandWidth=brandWidth;
 			ResolveHomeEntryLayout(*motion);
+			if (motion->entry == HomeMotionState::Entry::Skipped) ResumeSkippedPageOpening();
 		}
 		DrawHomeBrand(draw,{heroOrigin.x+(width-brandWidth)*.5F,heroOrigin.y+top},brandWidth,motion);
 		float y=heroOrigin.y+top+brandHeight+Pixels(32);
@@ -1212,6 +1222,7 @@ namespace Inkeys::UI::Setting::Design
 		if (HomeIconButton("##home-sponsor",sponsor.c_str(),"\ueb51",
 			{buttonsInline ? bx+buttonWidth+Pixels(12) : bx,y+Pixels(buttonsInline ? 0.0F : 44.0F)},buttonWidth,true,motion)) action=HomeAction::Support;
 
+		heroMotion.Finish();
 		const ImVec2 copyrightOrigin(heroOrigin.x,heroOrigin.y+heroHeight+Pixels(16));
 		const std::string copyrightText = IA(I18nKey.SettingsUI.Design.HomeCopyright);
 		const std::string redistribution = IA(I18nKey.SettingsUI.Design.HomeRedistribution);
@@ -1221,7 +1232,9 @@ namespace Inkeys::UI::Setting::Design
 			{IA(I18nKey.SettingsUI.Design.HomeLicenseSuffix)}},copyWidth,ImFluentTextStyle_Caption,true);
 		const float redistributionHeight = TextHeight(redistribution.c_str(),copyWidth,ImFluentTextStyle_Caption);
 		const float copyrightBlockHeight = copyrightHeight+Pixels(4)+license.height+Pixels(2)+redistributionHeight;
-		ImGui::SetCursorScreenPos(copyrightOrigin); ImGui::Dummy({width,copyrightBlockHeight});
+		ImGui::SetCursorScreenPos(copyrightOrigin);
+		PageBlockScope copyrightMotion("##home-copyright-motion");
+		ImGui::Dummy({width,copyrightBlockHeight});
 		const ImVec2 copyrightAfter = ImGui::GetCursorScreenPos();
 		y=copyrightOrigin.y;
 		CenteredCopy(copyrightText.c_str(),{copyrightOrigin.x+inset,y},copyWidth,ImFluentTextStyle_Body,TextPrimary,action);
@@ -1230,6 +1243,7 @@ namespace Inkeys::UI::Setting::Design
 		y+=license.height+Pixels(2);
 		CenteredCopy(redistribution.c_str(),{copyrightOrigin.x+inset,y},copyWidth,ImFluentTextStyle_Caption,TextSecondary,action);
 		ImGui::SetCursorScreenPos({copyrightAfter.x,copyrightAfter.y+Pixels(24)});
+		copyrightMotion.Finish();
 
 		SectionHeader(IA(I18nKey.SettingsUI.Design.Explore).c_str());
 		struct Feature { const char* title; const char* description; const char* icon; HomeAction action; ImU32 tint; ImU32 ink; };
@@ -1250,6 +1264,7 @@ namespace Inkeys::UI::Setting::Design
 				featureOrigin.y + (featureColumns ? 0.0F : static_cast<float>(index) * (featureHeight + Pixels(8.0F))));
 			ImGui::PushID(static_cast<int>(index));
 			ImGui::SetCursorScreenPos(origin);
+			PageBlockScope featureMotion("##home-feature-motion");
 			if (Button("##feature", { featureWidth, featureHeight })) action = feature.action;
 			AllowContentDrag();
 			draw->AddRectFilled({ origin.x + 1.0F, origin.y + 1.0F }, { origin.x + featureWidth - 1.0F, origin.y + Pixels(84.0F) }, feature.tint, Pixels(4.0F));
@@ -1278,6 +1293,7 @@ namespace Inkeys::UI::Setting::Design
 			const float descriptionHeight = TextHeight(description, copyWidth, ImFluentTextStyle_Caption);
 			const float height = (std::max)(Pixels(60.0F), titleHeight + descriptionHeight + Pixels(24.0F));
 			ImGui::PushID(id);
+			PageBlockScope entryMotion("##home-common-motion");
 			if (Button("##entry", { entryWidth, height })) action = target;
 			AllowContentDrag();
 			ImFluent::DrawIcon(icon, { origin.x + Pixels(12.0F), origin.y }, { origin.x + Pixels(40.0F), origin.y + height }, 20.0F, TextPrimary);
@@ -1357,6 +1373,7 @@ namespace Inkeys::UI::Setting::Design
 		const float authorBottom = ImGui::GetItemRectMax().y;
 		ImGui::SetCursorScreenPos({ bottomOrigin.x, (std::max)(commonBottom, authorBottom) + Pixels(20.0F) });
 
+		PageBlockScope footerMotion("##home-footer-motion");
 		ImFluent::BeginWrapPanel(Pixels(16.0F), Pixels(8.0F));
 		const std::array footer{
 			std::pair{ IA(I18nKey.SettingsUI.Design.TermsOfUse), HomeAction::TermsOfUse },
@@ -1370,6 +1387,7 @@ namespace Inkeys::UI::Setting::Design
 			Link(link.first.c_str(), link.first.c_str(), link.second, action);
 		}
 		ImFluent::EndWrapPanel();
+		footerMotion.Finish();
 		Text(IA(I18nKey.SettingsUI.Home.Prompt).c_str(), ImFluentTextStyle_Caption, TextSecondary);
 		return action;
 	}

@@ -1,0 +1,46 @@
+{
+  "id": "settingui-style-motion",
+  "name": "settingui-style-motion",
+  "title": "SettingUI 样式与转场修正",
+  "description": "修复SettingUI开屏、滚动布局、导航底色、resize与材质连续性，并实现页面和条件条目动画",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "settingui",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": "feature/i18n",
+  "base_branch": "feature/i18n",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Motion.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.SessionState.h",
+    "InkeysHeadlessTests/setting_design_tests.cpp",
+    "InkeysHeadlessTests/setting_session_state_tests.cpp",
+    ".trellis/spec/native-desktop/setting-motion.md"
+  ],
+  "notes": "实现及全部自动验证完成；用户授权阶段性commit，明确不结束任务。继续等待实机验收，不归档、不push。Win7 resize和Win10/11 DWM观感未由无窗口测试替代。",
+  "meta": {
+    "planning_artifacts_ready": true,
+    "requirements_converged": true,
+    "implementation_approved": true,
+    "implementation_complete": true,
+    "automated_validation": "passed",
+    "manual_validation_pending": [
+      "Windows 7 continuous resize experience",
+      "Windows 10/11 dynamic backdrop maximize/restore appearance"
+    ],
+    "user_accepted": false
+  }
+}

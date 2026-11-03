@@ -129,6 +129,14 @@ namespace Inkeys::UI::Setting::Design
 		[[nodiscard]] bool EntryActive() const noexcept { return entry==Entry::Playing; }
 	};
 
+	// 遮盖层完全淡去后才恢复可选标题栏操作，准备帧也不能提前泄露入口。
+	[[nodiscard]] inline bool HomeEntryChromeVisible(const HomeMotionState& state) noexcept
+	{
+		return state.entry != HomeMotionState::Entry::Pending
+			&& (!state.EntryActive() || state.entryElapsed >= (state.fadeOnly
+				? HomeEntryTiming::WritingEnd + HomeEntryTiming::Dock : HomeEntryTiming::SettleStart));
+	}
+
 	inline void FinishHomeEntry(HomeMotionState& state) noexcept
 	{
 		state.entry=HomeMotionState::Entry::Finished; state.x=state.y=0;

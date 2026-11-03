@@ -57,6 +57,13 @@ Search for `INKEYS PATCH`. Local changes are deliberately limited to:
    text measurement disagree with the available drawing width. The manual border,
    `NoBackground`, and flattened navigation are retained.
 
+10. Accumulating elapsed time from each color transition's start instead of feeding the
+    rounded U32 result back into each frame. This preserves the alpha-weighted exponential
+    curve while letting low-alpha navigation fills and ordinary buttons reach their exact
+    targets at high refresh rates; reversals resume from the current visible color. Actual
+    NavItemEx/Button DrawData regressions cover 30/60/120/240 Hz, transparent endpoints,
+    selected states, missing frames, and transparent-to-light intermediate colors.
+
 The new settings shell composes ImGui child regions with these ImFluent widgets.
 The original navigation container remains available; no rendering backend is replaced.
 

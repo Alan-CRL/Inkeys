@@ -86,6 +86,9 @@ namespace
 	atomic<bool> settingInitialized = false;
 	atomic<bool> settingSessionShouldStop = false;
 	atomic<bool> settingWindowActive = true;
+	atomic<bool> settingOptionalChromeVisible = false; // 与 HWND hit-test 共享本帧开屏可见性。
+	Inkeys::UI::Setting::BackdropMode settingPaletteBackdropMode =
+		Inkeys::UI::Setting::BackdropMode::Solid; // 仅渲染线程：与已应用的 palette 同批冻结。
 	atomic<Inkeys::UI::Setting::BackdropMode> settingBackdropMode =
 		Inkeys::UI::Setting::BackdropMode::Solid;
 	atomic<Inkeys::UI::Setting::InteractiveWindowOperation>
@@ -234,6 +237,7 @@ namespace
 	constexpr wchar_t SettingClientDpiProperty[] = L"Inkeys.Setting.ClientDpi";
 
 	using Inkeys::UI::Setting::SettingAccentState;
+	Inkeys::UI::Setting::SettingBackdropState settingNativeBackdrop;
 	bool settingFrameDarkMode = false; // 仅 HWND owner 读取/更新，交互结束恢复同一主题。
 
 	struct SettingAccentPolicy
@@ -314,22 +318,18 @@ namespace
 	[[nodiscard]] Inkeys::UI::Setting::BackdropMode
 		ApplySettingBackdrop(HWND hwnd, bool darkMode) noexcept
 	{
-		DisableSettingBackdrop(hwnd);
+		if (!hwnd) return Inkeys::UI::Setting::BackdropMode::Solid;
 		// Win10 RS4+ 与 Win11 统一使用 accent 动态模糊；更早系统直接 Solid，不提供 Aero 回退。
-		if (!hwnd || !Inkeys::Window::IsSettingCompositionEnabled()
-			|| !Inkeys::Window::QuerySettingPlatformCapabilities().acrylic)
-			return Inkeys::UI::Setting::BackdropMode::Solid;
+		bool eligible = Inkeys::Window::IsSettingCompositionEnabled()
+			&& Inkeys::Window::QuerySettingPlatformCapabilities().acrylic;
 		HIGHCONTRASTW highContrast{ sizeof(highContrast) };
-		if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast), &highContrast, 0)
-			&& (highContrast.dwFlags & HCF_HIGHCONTRASTON))
-			return Inkeys::UI::Setting::BackdropMode::Solid;
-
-		// 不设置系统 backdrop/Mica：其与壁纸静态合成，不随下层窗口变化。
-		const auto backdrop = Inkeys::UI::Setting::ResolveBackdropMode(
-			SetSettingAcrylic(hwnd, true, darkMode));
-		if (backdrop == Inkeys::UI::Setting::BackdropMode::Solid)
-			DisableSettingBackdrop(hwnd);
-		return backdrop;
+		if (eligible && SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast), &highContrast, 0)
+			&& (highContrast.dwFlags & HCF_HIGHCONTRASTON)) eligible = false;
+		// 不设置系统 backdrop/Mica；等价请求保持已经成功应用的 BlurBehind，不先撤销。
+		return Inkeys::UI::Setting::ResolveBackdropMode(settingNativeBackdrop.Apply(
+			reinterpret_cast<std::uintptr_t>(hwnd), eligible, darkMode,
+			[&] { return SetSettingAcrylic(hwnd, true, darkMode); },
+			[&] { DisableSettingBackdrop(hwnd); }));
 	}
 
 	[[nodiscard]] UINT QuerySettingDpi(HWND hwnd) noexcept
@@ -380,6 +380,7 @@ namespace
 		// ImGui/ImFluent 只在渲染线程帧边界换色，系统主题消息不覆盖用户偏好。
 		const auto backdrop = settingBackdropMode.load(memory_order_acquire);
 		Design::ApplyPalette(setlist.settingDarkMode, backdrop);
+		settingPaletteBackdropMode = backdrop;
 		ImFluent::GetStyle().NavItemHeight = 36.0F;
 		Widgets::style.ApplyGlobal(Design::ScrollbarTrackSize);
 		Design::ApplyScrollbars();
@@ -413,8 +414,8 @@ namespace
 		const COLORREF borderColor = DWMWA_COLOR_DEFAULT;
 		(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
 		const auto backdrop = ApplySettingBackdrop(hwnd, darkMode);
-		// 材质应用/撤销后重新确认框架 margin，不依赖 DWM 是否保留旧值。
-		ApplySettingFrameMargins(hwnd, true);
+		// 普通主题重应用不重复提交 frame；composition 改变的消息会强制重设。
+		ApplySettingFrameMargins(hwnd);
 		if (settingBackdropMode.exchange(backdrop, memory_order_acq_rel) != backdrop)
 		{
 			// 可选材质成功/回退后，由渲染线程统一更新表面及根背景的 alpha。
@@ -735,8 +736,9 @@ namespace
 		if (geometry.close.Contains(x, y)) return HTCLOSE;
 		if (geometry.maximize.Contains(x, y)) return HTMAXBUTTON;
 		if (geometry.minimize.Contains(x, y)) return HTMINBUTTON;
-		if (geometry.themeToggle.Contains(x, y) || geometry.feedback.Contains(x, y) || geometry.debug.Contains(x, y)
-			|| (geometry.versionVisible && geometry.version.Contains(x, y)))
+		if (settingOptionalChromeVisible.load(memory_order_acquire)
+			&& (geometry.themeToggle.Contains(x, y) || geometry.feedback.Contains(x, y) || geometry.debug.Contains(x, y)
+				|| (geometry.versionVisible && geometry.version.Contains(x, y))))
 			return HTCLIENT;
 		if (geometry.icon.Contains(x, y)) return HTSYSMENU;
 
@@ -1647,6 +1649,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_NCDESTROY:
+		settingNativeBackdrop.Invalidate();
 		(void)RemovePropW(hWnd, SettingClientDpiProperty);
 		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	case WM_CAPTURECHANGED:
@@ -1767,6 +1770,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	case WM_DWMCOMPOSITIONCHANGED:
+		settingNativeBackdrop.Invalidate();
 		// composition 开关会改变恢复态顶部/侧边 inset，立即重算而不等待用户 resize。
 		SetWindowPos(hWnd, nullptr, 0, 0, 0, 0,
 			SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1774,6 +1778,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		ApplySettingFrameMargins(hWnd, true);
 		[[fallthrough]];
 	case WM_THEMECHANGED:
+		settingNativeBackdrop.Invalidate();
+		[[fallthrough]];
 	case WM_SETTINGCHANGE:
 		// 系统边框宽度等度量变化后同步外侧热区。
 		SyncSettingResizeBorder(hWnd);
@@ -2557,6 +2563,7 @@ SettingSessionCoroutine RunSettingSession()
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
 		Design::HomeMotionState homeMotion;
+		Design::PageMotionState pageMotion;
 		Design::SettingOpenNavigation openNavigation;
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 		SettingEntryProfiler entryProfiler;
@@ -2617,7 +2624,7 @@ SettingSessionCoroutine RunSettingSession()
 			const bool submissionInput=!GImGui->InputEventsTrail.empty();
 			if (submissionInput) settingFrameSubmission.Reset();
 			// 本帧 backdrop/底色一致快照；caption 的主题点击只在下帧 ApplySettingTheme 换色。
-			const auto entryBackdrop=settingBackdropMode.load(memory_order_acquire);
+			const auto entryBackdrop=settingPaletteBackdropMode;
 			const bool transparentBackdrop=entryBackdrop!=Inkeys::UI::Setting::BackdropMode::Solid;
 			const ImVec4 clearColorValue=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
 			std::uint64_t hideSerial, showSerial;
@@ -2726,6 +2733,22 @@ SettingSessionCoroutine RunSettingSession()
 				const auto shellGeometry = Inkeys::UI::Setting::Design::ResolveShellGeometry(
 					widthDip, static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
 
+				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
+					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
+					!navigationState.BlockContentInput() && settingWindowActive.load(memory_order_acquire),
+					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
+					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
+					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
+				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
+				const bool optionalChromeVisible = !entryInputBlock && Design::HomeEntryChromeVisible(homeMotion);
+				{
+					lock_guard stateLock(settingStateMutex);
+					// Hide→Show 可发生在旧帧绘制中，旧会话不能覆盖新开屏的命中屏障。
+					if (settingSessionState.IsVisible() && settingSessionState.ShowSerial() == showSerial
+						&& settingSessionState.HideSerial() == hideSerial)
+						settingOptionalChromeVisible.store(optionalChromeVisible, memory_order_release);
+				}
+
 				// TitleBar 与三个 caption buttons 始终由 Inkeys 自绘；DWM 只做
 				// 可选的外框/阴影/圆角增强，因此 Win7 关闭 Aero 时也不会退回
 				// 系统标题栏。
@@ -2779,67 +2802,71 @@ SettingSessionCoroutine RunSettingSession()
 								titleColor, titleText.c_str(), nullptr, 0.0F, &titleClip);
 						ImFluent::PopFont();
 
-						if (titleBarGeometry.versionVisible)
+						// 只隐藏业务入口；原生 caption 按钮始终可用，取消帧仍禁止点穿。
+						if (optionalChromeVisible)
 						{
-							const ImRect versionBounds = ToImRect(titleBarGeometry.version, origin);
-							ImGui::SetCursorScreenPos(versionBounds.Min);
-							if (ImGui::InvisibleButton("##setting-titlebar-version",
-								versionBounds.GetSize()))
+							if (titleBarGeometry.versionVisible)
 							{
-								// RightHeader 版本入口与导航中的“软件版本”复用同一路由。
-								settingTab = settingTabEnum::tab6;
+								const ImRect versionBounds = ToImRect(titleBarGeometry.version, origin);
+								ImGui::SetCursorScreenPos(versionBounds.Min);
+								if (ImGui::InvisibleButton("##setting-titlebar-version",
+									versionBounds.GetSize()))
+								{
+									// RightHeader 版本入口与导航中的“软件版本”复用同一路由。
+									settingTab = settingTabEnum::tab6;
+								}
+								const bool versionHovered = ImGui::IsItemHovered();
+								const bool versionHeld = ImGui::IsItemActive();
+								if (versionHovered)
+								{
+									const float insetY = 4.0F * settingGlobalScale;
+									drawList->AddRectFilled(
+										{ versionBounds.Min.x, versionBounds.Min.y + insetY },
+										{ versionBounds.Max.x, versionBounds.Max.y - insetY },
+										SettingChromeColor(versionHeld
+											? ImFluentCol_SubtleFillTertiary
+											: ImFluentCol_SubtleFillSecondary),
+										4.0F * settingGlobalScale);
+								}
+								ImFluent::PushFont(ImFluentTextStyle_Caption);
+								const ImVec2 versionSize = ImGui::CalcTextSize(versionLabel.c_str());
+								drawList->AddText({
+									versionBounds.Min.x + (versionBounds.GetWidth() - versionSize.x) * 0.5F,
+									versionBounds.Min.y + (versionBounds.GetHeight() - versionSize.y) * 0.5F },
+									SettingChromeColor(ImFluentCol_TextPrimary,
+										active ? 1.0F : 0.55F), versionLabel.c_str());
+								ImFluent::PopFont();
 							}
-							const bool versionHovered = ImGui::IsItemHovered();
-							const bool versionHeld = ImGui::IsItemActive();
-							if (versionHovered)
+
+							const ImRect themeBounds = ToImRect(titleBarGeometry.themeToggle, origin);
+							ImGui::SetCursorScreenPos(themeBounds.Min);
+							if (ImGui::InvisibleButton("##setting-theme-toggle", themeBounds.GetSize(),
+								ImGuiButtonFlags_EnableNav))
 							{
-								const float insetY = 4.0F * settingGlobalScale;
-								drawList->AddRectFilled(
-									{ versionBounds.Min.x, versionBounds.Min.y + insetY },
-									{ versionBounds.Max.x, versionBounds.Max.y - insetY },
-									SettingChromeColor(versionHeld
-										? ImFluentCol_SubtleFillTertiary
-										: ImFluentCol_SubtleFillSecondary),
-									4.0F * settingGlobalScale);
+								setlist.settingDarkMode = !Design::IsDarkMode();
+								WriteSetting();
+								// 下一帧先换色，再 PushFluentStyle；主题切换不重建 atlas/device。
+								settingThemeSerial.fetch_add(1, memory_order_release);
+								Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
 							}
-							ImFluent::PushFont(ImFluentTextStyle_Caption);
-							const ImVec2 versionSize = ImGui::CalcTextSize(versionLabel.c_str());
-							drawList->AddText({
-								versionBounds.Min.x + (versionBounds.GetWidth() - versionSize.x) * 0.5F,
-								versionBounds.Min.y + (versionBounds.GetHeight() - versionSize.y) * 0.5F },
-								SettingChromeColor(ImFluentCol_TextPrimary,
-									active ? 1.0F : 0.55F), versionLabel.c_str());
-							ImFluent::PopFont();
-						}
+							if (ImGui::IsItemHovered())
+							{
+								const float inset = 4.0F * settingGlobalScale;
+								drawList->AddRectFilled({ themeBounds.Min.x, themeBounds.Min.y + inset },
+									{ themeBounds.Max.x, themeBounds.Max.y - inset },
+									SettingChromeColor(ImGui::IsItemActive()
+										? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
+							}
+							ImFluent::DrawIcon(Design::IsDarkMode() ? "\xee\x9c\x86" : "\xee\x9c\x88",
+								themeBounds.Min, themeBounds.Max, Design::NavigationGlyphSize,
+								SettingChromeColor(ImFluentCol_TextPrimary, active ? 1.0F : 0.55F));
 
-						const ImRect themeBounds = ToImRect(titleBarGeometry.themeToggle, origin);
-						ImGui::SetCursorScreenPos(themeBounds.Min);
-						if (ImGui::InvisibleButton("##setting-theme-toggle", themeBounds.GetSize(),
-							ImGuiButtonFlags_EnableNav))
-						{
-							setlist.settingDarkMode = !Design::IsDarkMode();
-							WriteSetting();
-							// 下一帧先换色，再 PushFluentStyle；主题切换不重建 atlas/device。
-							settingThemeSerial.fetch_add(1, memory_order_release);
-							Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
-						}
-						if (ImGui::IsItemHovered())
-						{
-							const float inset = 4.0F * settingGlobalScale;
-							drawList->AddRectFilled({ themeBounds.Min.x, themeBounds.Min.y + inset },
-								{ themeBounds.Max.x, themeBounds.Max.y - inset },
-								SettingChromeColor(ImGui::IsItemActive()
-									? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
-						}
-						ImFluent::DrawIcon(Design::IsDarkMode() ? "\xee\x9c\x86" : "\xee\x9c\x88",
-							themeBounds.Min, themeBounds.Max, Design::NavigationGlyphSize,
-							SettingChromeColor(ImFluentCol_TextPrimary, active ? 1.0F : 0.55F));
+							if (Design::RenderFeedbackButton(titleBarGeometry.feedback, destination.page == Design::PageId::Feedback,
+								navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Feedback });
 
-						if (Design::RenderFeedbackButton(titleBarGeometry.feedback, destination.page == Design::PageId::Feedback,
-							navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Feedback });
-
-						if (Design::RenderDebugButton(titleBarGeometry.debug, destination.page == Design::PageId::Debug,
-							navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Debug });
+							if (Design::RenderDebugButton(titleBarGeometry.debug, destination.page == Design::PageId::Debug,
+								navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Debug });
+						}
 
 						ImFluent::PushFont(ImFluentTextStyle_Body);
 						RenderSettingCaptionButton(drawList, setting_window, origin,
@@ -2857,20 +2884,12 @@ SettingSessionCoroutine RunSettingSession()
 
 				// 内容与导航单独排布；窄窗覆盖展开不改变正文宽度及其滚动位置。
 				synchronizeDestination();
-				const float contentAlpha = Design::ContentAlpha(navigationState);
 				bool blockContentInput = navigationState.BlockContentInput();
 				std::uint64_t entryFontSerial;
 				{
 					lock_guard stateLock(settingStateMutex);
 					entryFontSerial=settingSessionState.FontRebuildSerial();
 				}
-				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
-					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
-					!blockContentInput && settingWindowActive.load(memory_order_acquire),
-					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
-					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
-					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
-				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				blockContentInput|=entryInputBlock;
 				const auto& contentGeometry = shellGeometry.content;
 				const auto entryKey=Design::MakeHomeEntryFrameKey(
@@ -2885,6 +2904,14 @@ SettingSessionCoroutine RunSettingSession()
 				const bool skipEntryBackground=Design::BeginHomeEntryFrame(homeMotion,entryKey,
 					!blockContentInput && !navigationState.flyoutOpen
 					&& !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel));
+				const int pageSubpage = settingTab == settingTabEnum::tab4 ? settingPlugInTab
+					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
+					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0;
+				const auto pageRoute = (static_cast<std::uint64_t>(settingTab) << 32)
+					| static_cast<std::uint32_t>(pageSubpage);
+				// 真正导航才重播；字标开屏复用原快照，不在结束后追加一轮页面动画。
+				Design::ConfigurePageMotion(pageMotion, pageRoute,
+					homeMotion.EntryActive() || homeMotion.entry == Design::HomeMotionState::Entry::Pending, resetHomeScroll, I18n::revision());
 				// 写完后捕获真实无字标页；渐退/归位复用 GPU 像素，终态前才恢复 child 排布。
 				if (!skipEntryBackground)
 				{
@@ -2898,13 +2925,12 @@ SettingSessionCoroutine RunSettingSession()
 					{ Widgets::Dip(shellGeometry.gutter), Widgets::Dip(28.0F) });
 				ImGui::PushID(settingTab);
 				// 插件/绘制详情及通用子页各自保存滚动状态，标签翻译不参与窗口标识。
-				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab
-					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
-					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0);
+				ImGui::PushID(pageSubpage);
 				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
 					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll,
-					homeMotion.home && (homeMotion.EntryActive() || homeMotion.entry==Design::HomeMotionState::Entry::Pending));
+					homeMotion.home && (homeMotion.EntryActive() || homeMotion.entry==Design::HomeMotionState::Entry::Pending),
+					true, Design::PageScrollbarAlpha(pageMotion), &pageMotion);
 				ImGuiWindow* contentWindow = ImGui::GetCurrentWindow();
 				resetHomeScroll=false;
 				const auto root=ImGui::GetMainViewport(); const auto clip=contentWindow->ClipRect;
@@ -2913,6 +2939,7 @@ SettingSessionCoroutine RunSettingSession()
 					{clip.Min.x,clip.Min.y,clip.Max.x,clip.Max.y});
 				ImGui::PopStyleVar();
 				ImGui::PopStyleColor();
+				Design::BeginPageMotion(pageMotion);
 				// 所有设置页面共享校准字体；离开内容区后再恢复标题栏字体。
 				Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
 				ImFluent::PushFont(ImFluentTextStyle_Body);
@@ -3152,14 +3179,17 @@ SettingSessionCoroutine RunSettingSession()
 						settingCICD.url.empty() ? nullptr : IA(I18nKey.SettingsUI.Version.Info.CICDInfo).c_str()))
 						settingTab = settingTabEnum::tabCICD;
 
-					if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew
-						&& Design::ButtonRow("##version-manual-update", IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str(),
-							nullptr, "\ue895", IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str()))
+					if (Design::ConditionalBlock block{"##version-manual-visibility",
+						AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew}; block)
 					{
-						mandatoryUpdate = true;
-						AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+						if (Design::ButtonRow("##version-manual-update", IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str(),
+								nullptr, "\ue895", IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str()))
+						{
+							mandatoryUpdate = true;
+							AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+						}
 					}
-					if (inconsistentArchitecture)
+					if (Design::ConditionalBlock block{"##version-architecture-visibility", inconsistentArchitecture}; block)
 					{
 						Design::Notice("##version-architecture-warning",
 							IA(I18nKey.SettingsUI.Version.N).c_str(),
@@ -3664,26 +3694,30 @@ SettingSessionCoroutine RunSettingSession()
 					Design::PageHeader(IA(I18nKey.SettingsUI.Draw.N).c_str());
 
 					const auto workspaceFailure = WorkspaceTransitionFailureRevision();
-					if (workspaceFailure != 0 && Design::Notice("##workspace-recovery",
-						IA(I18nKey.UI.Bar.CanvasRecovery.Failed).c_str(),
-						IA(I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str(),
-						ImFluentInfoSeverity_Warning, IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas).c_str()))
+					if (Design::ConditionalBlock block{"##workspace-recovery-visibility", workspaceFailure != 0}; block)
 					{
-						// 按钮携带用户看到的协调故障版本，不借用 Host 故障令牌或执行时的新版本。
-						SettingBusinessCommand retry;
-						retry.kind = SettingBusinessKind::RetryWorkspaceTransition;
-						retry.workspaceFailureRevision = workspaceFailure;
-						QueueBusiness(std::move(retry));
+						if (Design::Notice("##workspace-recovery",
+							IA(I18nKey.UI.Bar.CanvasRecovery.Failed).c_str(),
+							IA(I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str(),
+							ImFluentInfoSeverity_Warning, IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas).c_str()))
+						{
+							// 按钮携带用户看到的协调故障版本，不借用 Host 故障令牌或执行时的新版本。
+							SettingBusinessCommand retry;
+							retry.kind = SettingBusinessKind::RetryWorkspaceTransition;
+							retry.workspaceFailureRevision = workspaceFailure;
+							QueueBusiness(std::move(retry));
+						}
 					}
 					const auto canvasRuntime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-					if (canvasRuntime.recovery.status != Inkeys::Drawing::Draw3::CanvasRecoveryStatus::None)
+					if (Design::ConditionalBlock block{"##canvas-recovery-visibility",
+						canvasRuntime.recovery.status != Inkeys::Drawing::Draw3::CanvasRecoveryStatus::None}; block)
 					{
 						const bool protectedConflict = canvasRuntime.recovery.status ==
 							Inkeys::Drawing::Draw3::CanvasRecoveryStatus::ProtectedConflict;
 						ImGui::BeginDisabled(canvasRuntime.consumerFatal || !canvasRuntime.recovery.retryAvailable);
 						if (Design::Notice("##canvas-recovery",
-							IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.Conflict : I18nKey.UI.Bar.CanvasRecovery.Failed).c_str(),
-							IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.ProtectedHint : I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str(),
+							block.RetainText("title", IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.Conflict : I18nKey.UI.Bar.CanvasRecovery.Failed).c_str()),
+							block.RetainText("description", IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.ProtectedHint : I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str()),
 							ImFluentInfoSeverity_Warning, IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas).c_str()))
 						{
 							// 捕获当前呈现的令牌；业务执行时再次核验，旧点击不能重试后来场景。
@@ -3890,13 +3924,13 @@ SettingSessionCoroutine RunSettingSession()
 							: utf16ToUtf8(pptComVersion);
 						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
 							pptVersionText.c_str());
-						if (pptComVersion.substr(0, 7) == L"Error: ")
+						if (Design::ConditionalBlock block{"##ppt-version-visibility", pptComVersion.substr(0, 7) == L"Error: "}; block)
 						{
 							const string error = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Error)
 								+ utf16ToUtf8(pptComVersion);
 							Design::Notice("##ppt-version-error",
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError).c_str(),
-								error.c_str(),
+								block.RetainText("description", error.c_str()),
 								ImFluentInfoSeverity_Warning);
 						}
 						if (Design::Notice("##ppt-setup-notice",
@@ -3906,7 +3940,7 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
 							ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-com",
 								nullptr, nullptr, SW_SHOW);
-						if (pptComSetlist.setAdmin)
+						if (Design::ConditionalBlock block{"##ppt-admin-visibility", pptComSetlist.setAdmin}; block)
 						{
 							if (Design::Notice("##ppt-admin-notice",
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
@@ -4504,13 +4538,15 @@ SettingSessionCoroutine RunSettingSession()
 						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
 						QueueConfigWrite();
 					}
-					if (Experimental.Inkeys3.DebugMode
-						&& Design::ToggleRow("##experimental-frame-rate", IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.N).c_str(),
-							IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.E).c_str(), "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
+					if (Design::ConditionalBlock block{"##debug-frame-rate-visibility", Experimental.Inkeys3.DebugMode}; block)
 					{
-						Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate = Experimental.Inkeys3.ShowFrameRate;
-						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
-						QueueConfigWrite();
+						if (Design::ToggleRow("##experimental-frame-rate", IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.N).c_str(),
+								IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.E).c_str(), "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate = Experimental.Inkeys3.ShowFrameRate;
+							Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
+							QueueConfigWrite();
+						}
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
@@ -4732,7 +4768,7 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::EndChild();
 				ImFluent::PopFont();
 				Design::BindTextFonts(ImFontMain, ImFontStrong);
-				Design::ApplyContentAlpha(contentWindow, Experimental.Inkeys3.AnimationEnable ? contentAlpha : 1.0F);
+				Design::EndPageMotion();
 				Design::CompleteHomeEntryLayout(homeMotion);
 				ImGui::EndChild();
 				ImGui::PopID();
@@ -5212,6 +5248,8 @@ namespace
 		if (!settingInitialized.load(memory_order_acquire)) return;
 		{
 			lock_guard stateLock(settingStateMutex);
+			if (!settingSessionState.IsVisible())
+				settingOptionalChromeVisible.store(false, memory_order_release);
 			settingSessionState.RequestShow(target);
 		}
 		// 复用 HWND owner 线程的恢复与激活；不能从 Bar 输入线程直接操作 ImGui 或窗口。

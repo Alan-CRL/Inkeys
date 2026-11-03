@@ -2329,6 +2329,91 @@ namespace
 		style.HoverDelayShort = shortDelay; style.HoverDelayNormal = normalDelay; style.HoverStationaryDelay = stationary; Design::ApplyPalette(oldDark);
 	}
 
+	void CheckAnimatedColorEndpoints(Checks& checks, ImFont* regular, float scale)
+	{
+		auto& io = ImGui::GetIO();
+		const auto previousDisplay = io.DisplaySize;
+		const float previousDelta = io.DeltaTime;
+		const bool previousTrickle = io.ConfigInputTrickleEventQueue, previousDark = Design::IsDarkMode();
+		io.DisplaySize = { 600 * scale, 300 * scale }; io.ConfigInputTrickleEventQueue = false;
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
+		const ImVec2 outside(-100, -100);
+		int frames = 0, caseId = 0;
+		for (auto backdrop : { BackdropMode::Solid, BackdropMode::Acrylic })
+		for (bool dark : { false, true }) for (int hz : { 30, 60, 120, 240 })
+		{
+			Design::ApplyPalette(dark, backdrop); io.DeltaTime = 1.0F / hz; ++caseId;
+			std::array<ImRect, 3> bounds{};
+			std::array<int, 3> activations{};
+			auto draw = [&](ImVec2 mouse, bool down, bool submit = true, bool transparentButton = false) {
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##animated-color-endpoints", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				ImGui::PushID(caseId);
+				auto* list = ImGui::GetWindowDrawList();
+				std::array<int, 3> first{}, last{};
+				if (submit) for (int kind = 0; kind < 3; ++kind)
+				{
+					ImGui::SetCursorScreenPos({ 20 * scale, (20 + kind * 64) * scale });
+					first[kind] = list->VtxBuffer.Size;
+					bool pressed = false;
+					if (kind < 2) pressed = ImFluent::NavItemEx(kind ? "selected" : "idle", "Navigation", kind == 1, nullptr, false);
+					else
+					{
+						if (transparentButton)
+						{
+							ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
+							ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, IM_COL32(255, 255, 255, 179));
+						}
+						pressed = ImFluent::Button("Button", { 240 * scale, 32 * scale });
+						if (transparentButton) ImFluent::PopStyleColor(2);
+					}
+					activations[kind] += pressed ? 1 : 0;
+					bounds[kind] = GImGui->LastItemData.Rect; last[kind] = list->VtxBuffer.Size;
+				}
+				ImGui::PopID(); ImGui::End(); ImGui::Render(); ++frames;
+				std::array<FlatSample, 3> result{};
+				if (submit) for (int kind = 0; kind < 3; ++kind)
+					result[kind] = SampleFlatDrawData({ bounds[kind].Min.x + bounds[kind].GetWidth() * .62F + .37F,
+						bounds[kind].Min.y + 4.61F * scale }, list, first[kind], last[kind], Design::AppBase);
+				return result;
+			};
+			auto frame = draw(outside, false); frame = draw(outside, false);
+			const auto nav = bounds[0].GetCenter(), button = bounds[2].GetCenter();
+			const int settleFrames = static_cast<int>(std::ceil(.8F * hz));
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(nav, false);
+			const auto hover = ImFluent::GetColorU32(ImFluentCol_SubtleFillSecondary);
+			checks.Expect(frame[0].fill == hover && frame[1].fill == hover,
+				"real navigation hover and persistent selection reach exact theme fill endpoints at every frame rate");
+			draw(nav, true); frame = draw(nav, false);
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false);
+			checks.Expect((frame[0].fill & IM_COL32_A_MASK) == 0 && frame[1].fill == hover && activations[0] == 1,
+				"hover/press/release then leave removes every alpha unit from unselected navigation without clearing selection");
+			if ((frame[0].fill & IM_COL32_A_MASK) != 0) std::cerr << "[ColorEndpoint] hz=" << hz << " dark=" << dark
+				<< " backdrop=" << static_cast<int>(backdrop) << " residual-alpha=" << (frame[0].fill >> IM_COL32_A_SHIFT) << '\n';
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(button, false);
+			checks.Expect(frame[2].fill == ImFluent::GetColorU32(ImFluentCol_ControlFillSecondary),
+				"ordinary button sharing the color animator reaches its exact hover endpoint");
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false);
+			checks.Expect(frame[2].fill == ImFluent::GetColorU32(ImFluentCol_ControlFillDefault),
+				"ordinary button sharing the color animator returns to its exact default endpoint");
+			// 中途反向后仍到达端点；缺席后重提不能继承旧的半透明尾帧。
+			draw(nav, false); draw(outside, false); draw(nav, true); draw(outside, false);
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false);
+			checks.Expect((frame[0].fill & IM_COL32_A_MASK) == 0, "rapidly reversed navigation color still reaches the transparent endpoint");
+			draw(nav, false); draw(outside, false, false); frame = draw(outside, false);
+			checks.Expect((frame[0].fill & IM_COL32_A_MASK) == 0, "navigation reappearing after a missing frame resets directly to its real target");
+			// 使用真实按钮验证透明黑到浅色的可见中间帧，防止端点修复回退为普通RGBA插值。
+			for (int pass = 0; pass < settleFrames; ++pass) frame = draw(outside, false, true, true);
+			frame = draw(button, false, true, true);
+			checks.Expect((frame[2].fill & IM_COL32_A_MASK) != 0 && (frame[2].fill & ~IM_COL32_A_MASK) == (IM_COL32_WHITE & ~IM_COL32_A_MASK),
+				"transparent-to-light button interpolation keeps visible RGB white instead of darkening the alpha ramp");
+		}
+		io.DisplaySize = previousDisplay; io.DeltaTime = previousDelta; io.ConfigInputTrickleEventQueue = previousTrickle;
+		Design::ApplyPalette(previousDark);
+		std::cout << "[ColorEndpoint] scale=" << scale << " cases=" << caseId << " frames=" << frames << '\n';
+	}
+
 	void CheckAnimatedColors(Checks& checks, ImFont* regular, float scale)
 	{
 		struct Capture { ImDrawList* list = nullptr; int first = 0, last = 0; ImRect rect; };
@@ -4767,6 +4852,319 @@ namespace
 	}
 
 
+
+	void CheckPageMotionOffscreen(Checks& checks, const std::array<FontData, 9>& sources, float scale)
+	{
+		// 每份样张独立context，真实DX11上传动态字体；不复用CPU回放的模拟TexID。
+		for (bool dark : { false, true })
+			for (int scene = 0; scene < 5; ++scene)
+			{
+				ImGuiSession session;
+				Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
+				ImGui::GetStyle().FontScaleDpi = scale;
+				std::array<ImFont*, 2> fonts{};
+				for (int weight = 0; weight < 2; ++weight)
+				{
+					auto config = Design::FreeTypeTextFontConfig(false, Design::TextFontRole::Design, false);
+					fonts[weight] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+						const_cast<char*>(sources[weight].bytes.data()), static_cast<int>(sources[weight].bytes.size()),
+						Design::FontReferenceSize, &config);
+				}
+				auto iconConfig = Design::IconFontConfig(scale);
+				iconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
+				auto* icons = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+					const_cast<char*>(sources.back().bytes.data()), static_cast<int>(sources.back().bytes.size()),
+					Design::FontReferenceSize, &iconConfig);
+				ImGui::GetIO().FontDefault = fonts[0];
+				Design::BindTextFonts(fonts[0], fonts[1]); ImFluent::SetIconFont(icons); Design::ApplyPalette(dark);
+				Design::PageMotionState motion;
+				Design::GeneralDraft draft{}; draft.animation = true; draft.animationRate = 1;
+				draft.edgeLighting = scene != 2;
+				int frame = 0;
+				const int capture = scene == 0 ? 7 : scene == 1 ? 18 : scene == 4 ? 12 : 41;
+				const auto path = std::filesystem::path("Build/settingui-style-motion/visual")
+					/ (std::string(scene == 4 ? "home-" : "appearance-") + (dark ? "dark-" : "light-")
+						+ std::to_string(static_cast<int>(scale * 100)) + "-" + std::to_string(scene) + ".png");
+				const auto failures = SaveSettingFontComparison(path, scale, [&] {
+					++frame;
+					if (frame == 36 && scene >= 2) draft.edgeLighting = scene == 2;
+					Design::ConfigureRowAnimations(1.0F / 60, true, 1);
+					ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+					ImGui::Begin("##motion-warp-root", nullptr, ImGuiWindowFlags_NoDecoration
+						| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+					Design::ConfigurePageMotion(motion, 1, false);
+					ImGui::SetCursorPos({ 40 * scale, 40 * scale });
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
+					Design::BeginScrollChild("##motion-warp-body", { 860 * scale, 850 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
+						0, false, false, true, Design::PageScrollbarAlpha(motion), &motion);
+					ImGui::PopStyleVar(); Design::BeginPageMotion(motion);
+					Design::BeginScrollChild("##motion-warp-page", { ImGui::GetContentRegionAvail().x, 0 }, ImGuiChildFlags_AutoResizeY);
+					if (scene == 4)
+						checks.Expect(Design::RenderHome({}) == Design::HomeAction::None,
+							"actual WARP home entry performs no synthetic navigation");
+					else
+					{
+						const auto events = Design::RenderGeneral(draft, Design::GeneralSection::Appearance);
+						checks.Expect(!events.edgeLightingChanged && !events.animationChanged,
+							"actual WARP appearance capture performs no synthetic configuration action");
+					}
+					ImGui::EndChild(); Design::EndPageMotion(); ImGui::EndChild(); ImGui::End();
+				}, capture);
+				checks.Expect(failures == 0, "real WARP renders page entry and conditional reveal without HWND");
+				std::cout << "[PageMotionOffscreen] " << path.string() << " frames=" << frame << " failures=" << failures << '\n';
+			}
+	}
+
+	void CheckPageAndConditionalMotion(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); ApplyPalette(false);
+		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
+		PageMotionState motion;
+		std::uint64_t route = 1;
+		bool animated = true, opening = false, longPage = false, visible = false, nested = true;
+		bool generalPage = false, conditionAtBottom = false;
+		float bodyWidth = 700.0F; std::uint64_t layoutRevision = 0;
+		GeneralDraft general{}; general.animation = true; general.animationRate = 1.0F;
+		float requestedScroll = -1.0F;
+		int actions = 0, frames = 0;
+		const ImVec2 outside(-100, -100);
+		struct Frame
+		{
+			ImGuiWindow* owner = nullptr;
+			float width = 0, firstY = 0, firstDrawY = 0, after = 0, scroll = 0;
+			unsigned firstAlpha = 0, secondAlpha = 0, afterAlpha = 0;
+			ImRect action;
+			std::string retained;
+		};
+		auto draw = [&](ImVec2 mouse, bool down, float wheel = 0.0F) {
+			io.DisplaySize = { 960 * scale, 700 * scale }; io.DeltaTime = 1.0F / 60;
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+			if (wheel != 0) io.AddMouseWheelEvent(0, wheel);
+			ImGui::NewFrame(); ConfigureRowAnimations(io.DeltaTime, animated, 1.0F);
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##motion-production-root", nullptr, ImGuiWindowFlags_NoDecoration
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+			ConfigurePageMotion(motion, route, opening, false, layoutRevision);
+			ImGui::SetCursorPos({ 40 * scale, 40 * scale });
+			ImGui::PushID(static_cast<int>(route));
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
+			BeginScrollChild("##motion-body", { bodyWidth * scale, 360 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
+				0, false, false, true, PageScrollbarAlpha(motion), &motion);
+			ImGui::PopStyleVar(); Frame frame; frame.owner = ImGui::GetCurrentWindow();
+			if (requestedScroll >= 0) { ImGui::SetScrollY(requestedScroll); requestedScroll = -1; }
+			BeginPageMotion(motion);
+			frame.width = ImGui::GetContentRegionAvail().x;
+			BeginScrollChild("##motion-page", { frame.width, 0 }, ImGuiChildFlags_AutoResizeY);
+			auto* body = ImGui::GetCurrentWindow();
+			if (generalPage)
+			{
+				const auto events = RenderGeneral(general, GeneralSection::Appearance);
+				checks.Expect(!events.edgeLightingChanged && !events.dynamicEdgeLightingChanged,
+					"actual appearance motion does not manufacture UI events during layout");
+			}
+			else
+			{
+				frame.firstY = ImGui::GetCursorScreenPos().y;
+				auto cardAlpha = [&](int first, float* top) {
+					unsigned alpha = 0;
+					for (int i = first; i < body->DrawList->VtxBuffer.Size; ++i)
+					{
+						const auto& vertex = body->DrawList->VtxBuffer[i];
+						if ((vertex.col & ~IM_COL32_A_MASK) != (Card & ~IM_COL32_A_MASK)) continue;
+						alpha = (std::max)(alpha, vertex.col >> IM_COL32_A_SHIFT);
+						if (top) *top = (std::min)(*top, vertex.pos.y);
+					}
+					return alpha;
+				};
+				int first = body->DrawList->VtxBuffer.Size;
+				actions += ButtonRow("##motion-first", "First", "A real setting row", nullptr, "Action");
+				frame.action = GImGui->LastItemData.Rect; frame.firstDrawY = FLT_MAX;
+				frame.firstAlpha = cardAlpha(first, &frame.firstDrawY);
+				first = body->DrawList->VtxBuffer.Size;
+				ButtonRow("##motion-second", "Second", nullptr, nullptr, "Action");
+				frame.secondAlpha = cardAlpha(first, nullptr);
+				auto extraRows = [&] {
+					if (longPage) for (int row = 0; row < 14; ++row)
+					{
+						ImGui::PushID(row);
+						ButtonRow("##motion-extra", "More", nullptr, nullptr, "Action");
+						ImGui::PopID();
+					}
+				};
+				if (conditionAtBottom) extraRows();
+				if (ConditionalBlock block{"##motion-condition", visible}; block)
+				{
+					frame.retained = block.RetainText("title", visible ? "Dynamic" : "");
+					Notice("##motion-warning", frame.retained.c_str(), "Condition changes the real occupied height");
+					if (ConditionalBlock inner{"##motion-nested", nested}; inner)
+						ButtonRow("##motion-detail", "Detail", nullptr, nullptr, "Action");
+				}
+				frame.after = ImGui::GetCursorScreenPos().y;
+				first = body->DrawList->VtxBuffer.Size;
+				ButtonRow("##motion-after", "After", nullptr, nullptr, "Action");
+				frame.afterAlpha = cardAlpha(first, nullptr);
+				if (!conditionAtBottom) extraRows();
+			}
+			ImGui::EndChild(); EndPageMotion(); frame.scroll = frame.owner->Scroll.y;
+			ImGui::EndChild(); ImGui::PopID(); ImGui::End(); ImGui::Render(); ++frames;
+			CheckDrawData(checks);
+			checks.Expect(frame.owner->ScrollMax.x == 0 && frame.owner->Scroll.x == 0 && !frame.owner->ScrollbarX,
+				"stable body gutter never manufactures horizontal scroll range or movement");
+			return frame;
+		};
+		auto idle = [&](int count = 1) { Frame f; for (int i = 0; i < count; ++i) f = draw(outside, false); return f; };
+		auto frame = idle(); const float width = frame.width;
+		checks.Expect(frame.firstAlpha == 0 && frame.secondAlpha == 0,
+			"new actual page begins with invisible card geometry while terminal layout is already available");
+		frame = idle(6);
+		checks.Expect(frame.firstAlpha > frame.secondAlpha && frame.secondAlpha > 0
+			&& frame.firstDrawY > frame.firstY && frame.firstDrawY < frame.firstY + 12 * scale,
+			"real setting cards overlap their nonlinear upward entry in visual order without moving item layout");
+		frame = idle(24);
+		checks.Expect(frame.firstAlpha == 255 && Near(frame.firstDrawY, frame.firstY, 1),
+			"real card entry reaches exact stable geometry and alpha");
+		visible = false; ++route; frame = idle(3);
+		unsigned previousAlpha = frame.afterAlpha; visible = true;
+		for (int i = 0; i < 16; ++i)
+		{
+			frame = idle();
+			checks.Expect(frame.afterAlpha >= previousAlpha, "async preceding block insertion cannot make an existing entering card fade backwards");
+			previousAlpha = frame.afterAlpha;
+		}
+		visible = false; frame = idle(18);
+		const auto generation = motion.generation;
+		idle(); checks.Expect(motion.generation == generation && motion.elapsed >= .46F,
+			"repeated current-route notifications do not replay page entry");
+		longPage = true; ++route;
+		bool sawRail = false;
+		for (int i = 0; i < 36; ++i)
+		{
+			frame = idle(); sawRail |= frame.owner->ScrollbarY;
+			checks.Expect(Near(frame.width, width, 1), "short-to-long page keeps the exact body width from first visible frame through scrollbar reveal");
+			if (i < 19) checks.Expect(PageScrollbarAlpha(motion) == 0, "vertical thumb waits for all visible blocks to settle");
+		}
+		checks.Expect(sawRail && frame.owner->ScrollMax.y > 0 && PageScrollbarAlpha(motion) == 1,
+			"long real page has a scrollable full rail after entry completes");
+		io.AddMouseWheelEvent(-1.0F, 0.0F); frame = draw({200 * scale, 200 * scale}, false); idle();
+		checks.Expect(frame.owner->Scroll.x == 0 && frame.owner->ScrollMax.x == 0,
+			"real horizontal wheel cannot displace a stable vertical-only body");
+		++route; frame = idle(); frame = idle(3);
+		const ImVec2 click = frame.action.GetCenter();
+		draw(click, false); frame = draw(click, true);
+		checks.Expect(motion.elapsed >= .46F && frame.firstAlpha == 255,
+			"first real pointer press immediately settles entry before registering actionable items");
+		draw(click, false);
+		checks.Expect(actions == 1, "same pointer action is executed exactly once without swallowing or synthetic replay");
+		++route; idle();
+		frame = draw({ 200 * scale, 200 * scale }, false, -1);
+		checks.Expect(motion.elapsed >= .46F, "real wheel input immediately settles page motion");
+		idle(2); requestedScroll = 240 * scale; frame = idle(3);
+		const float saved = frame.scroll; ++route; idle(2); --route; frame = idle(3);
+		checks.Expect(Near(frame.scroll, saved, 1), "returning route replays motion but retains its own existing scroll position");
+		opening = true; ++route; idle(3); opening = false; frame = idle();
+		checks.Expect(motion.elapsed >= .46F && frame.firstAlpha == 255,
+			"special home opening hands off to stable content without appending another entry");
+		animated = false; longPage = false; visible = false; ++route; frame = idle(5);
+		const float baseAfter = frame.after;
+		checks.Expect(!frame.owner->ScrollbarY && Near(frame.width, width, 1),
+			"short settled page has no fake scrollbar and no extra rail column");
+		animated = true; visible = true;
+		bool partial = false; float previousAfter = baseAfter;
+		for (int i = 0; i < 14; ++i)
+		{
+			frame = idle(); partial |= frame.after > baseAfter + 1 && i < 8;
+			checks.Expect(frame.after >= previousAfter - 1, "conditional insertion smoothly pushes subsequent actual rows downward");
+			previousAfter = frame.after;
+		}
+		const float fullAfter = frame.after;
+		checks.Expect(partial && fullAfter > baseAfter + 50 * scale, "conditional content has intermediate occupied heights and a full measured endpoint");
+		visible = false; frame = idle();
+		checks.Expect(frame.retained == "Dynamic", "disappearing status retains its displayed text while fading out");
+		previousAfter = frame.after;
+		for (int i = 0; i < 14; ++i)
+		{
+			frame = idle();
+			checks.Expect(frame.after <= previousAfter + 1, "conditional removal smoothly pulls actual following rows upward");
+			previousAfter = frame.after;
+		}
+		checks.Expect(Near(frame.after, baseAfter, 1), "conditional removal reaches exact zero occupied height including final fade frame");
+		visible = true; idle(3); visible = false; idle(2); visible = true; frame = idle();
+		checks.Expect(frame.after > baseAfter && frame.after < fullAfter,
+			"rapid conditional reversal continues from its visible height instead of snapping to endpoints");
+		animated = false; frame = idle();
+		checks.Expect(Near(frame.after, fullAfter, 1), "disabling global animations immediately settles conditional layout");
+		animated = true; longPage = true; visible = true; ++route; frame = idle(32);
+		requestedScroll = 500 * scale; frame = idle(3);
+		const float anchoredAfter = frame.after; visible = false;
+		for (int i = 0; i < 14; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, anchoredAfter, 1.5F), "a conditional block entirely above the viewport preserves the following visible content anchor");
+		}
+		// 条件块在底部可见区域内变化，必须在Begin前补偿，不能靠上方块的局部修正通过。
+		conditionAtBottom = true; visible = false; ++route; idle(32);
+		requestedScroll = 100000 * scale; frame = idle(3);
+		const float bottomAfter = frame.after; visible = true;
+		for (int i = 0; i < 15; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, bottomAfter, 1), "visible bottom insertion preserves the exact footer anchor in the same frame");
+		}
+		visible = false;
+		for (int i = 0; i < 15; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, bottomAfter, 1), "visible bottom removal preserves its footer anchor through the zero-height tail");
+		}
+		visible = true; idle(14); nested = false;
+		for (int i = 0; i < 15; ++i)
+		{
+			frame = idle();
+			checks.Expect(Near(frame.after, bottomAfter, 1), "nested bottom visibility uses one predicted parent extent without double compensation");
+		}
+		const auto layoutGeneration = motion.generation; bodyWidth = 640;
+		frame = idle(2);
+		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= .46F && frame.scroll >= 0,
+			"body resize invalidates old extent without replaying navigation or invalid scroll");
+		const float previousScale = ImGui::GetStyle().FontScaleDpi;
+		ImGui::GetStyle().FontScaleDpi *= 1.125F; ++layoutRevision; frame = idle(2);
+		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= .46F && frame.scroll >= 0,
+			"font scale and language-layout revision remeasure geometry without another entry");
+		ImGui::GetStyle().FontScaleDpi = previousScale; bodyWidth = 700; nested = true;
+		++route; frame = idle(3);
+		checks.Expect(frame.owner->ScrollbarY && PageScrollbarAlpha(motion) == 0, "actual long page has a native track before its visual reveal");
+		const ImVec2 railPress = ImGui::GetWindowScrollbarRect(frame.owner, ImGuiAxis_Y).GetCenter();
+		draw(railPress, false); frame = draw(railPress, true);
+		checks.Expect(motion.elapsed >= .46F && PageScrollbarAlpha(motion) == 1,
+			"pressing the invisible native rail settles and reveals it before the same native press is consumed");
+		draw(railPress, false); conditionAtBottom = false;
+		++route; io.AddKeyEvent(ImGuiKey_DownArrow, true); idle();
+		idle(19);
+		checks.Expect(motion.elapsed >= .46F, "held navigation-key repeat settles active page entry when it actually repeats");
+		io.AddKeyEvent(ImGuiKey_DownArrow, false); idle();
+		// 经过实际页面Renderer，不以测试中的独立条件块冒充产品接入。
+		generalPage = true; general.edgeLighting = false; ++route; idle(32);
+		general.edgeLighting = true; idle(14);
+		bool retainedState = false;
+		for (const auto& [id, value] : motion.conditions)
+			retainedState |= value.generation == motion.generation && value.reveal.value == 1 && value.height > 0;
+		checks.Expect(retainedState, "actual RenderGeneral appearance uses persistent conditional motion state");
+		general.edgeLighting = false; idle(14);
+		HomeMotionState home; home.entry = HomeMotionState::Entry::Pending;
+		checks.Expect(!HomeEntryChromeVisible(home), "opening preparation suppresses optional titlebar actions");
+		home.entry = HomeMotionState::Entry::Playing;
+		for (bool fadeOnly : { false, true })
+		{
+			home.fadeOnly = fadeOnly;
+			const float boundary = fadeOnly ? HomeEntryTiming::WritingEnd + HomeEntryTiming::Dock : HomeEntryTiming::SettleStart;
+			home.entryElapsed = boundary - .001F; checks.Expect(!HomeEntryChromeVisible(home), "optional chrome remains hidden until mask fade finishes");
+			home.entryElapsed = boundary; checks.Expect(HomeEntryChromeVisible(home), "optional chrome becomes available exactly at mask fade completion");
+		}
+		FinishHomeEntry(home); checks.Expect(HomeEntryChromeVisible(home), "opening cancellation or completion restores optional chrome");
+		std::cout << "[PageConditionalMotion] scale=" << scale << " frames=" << frames << " actions=" << actions << '\n';
+	}
+
 	void CheckHomeScrollFollowup(Checks& checks, ImFont* regular, ImFont* strong, float scale)
 	{
 		Design::BindTextFonts(regular, strong); Design::ApplyPalette(false);
@@ -6554,6 +6952,8 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		}
 	}
 
+	char motionFilter[4]{};
+	const bool motionOnly = GetEnvironmentVariableA("INKEYS_SETTING_MOTION_ONLY", motionFilter, 4) != 0;
 	char warpFilter[4]{};
 	const bool warpOnly=GetEnvironmentVariableA("INKEYS_FONT_WARP_ONLY",warpFilter,4)!=0;
 	char focusedPages[32]{};
@@ -6562,12 +6962,13 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		CheckFreeTypeRealPages(checks,sources,fontDirectory);
 		return checks.failures;
 	}
-	if (!warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
+	if (!motionOnly && !warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
 
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
 		if (generalOnly && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
+		if (motionOnly && scale != 1.0F && scale != 1.875F) continue;
 		ImGuiSession session;
 		Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
 		ClipboardProbe settingsClipboard;
@@ -6608,6 +7009,21 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		ImGui::GetIO().FontDefault = fonts[0];
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
 		if(warpOnly) return checks.failures+RunSettingHomeWarpProbe(fonts[0],fonts[1],fonts.back());
+		if (motionOnly)
+		{
+			char captureMotion[4]{};
+			if (GetEnvironmentVariableA("INKEYS_SETTING_MOTION_SNAPSHOTS", captureMotion, 4))
+				CheckPageMotionOffscreen(checks, sources, scale);
+			CheckPageAndConditionalMotion(checks, fonts[0], fonts[1], fonts.back(), scale);
+			if (scale == 1.0F)
+			{
+				// 额外覆盖非整数padding，避免先截断两侧padding而制造亚像素横向范围。
+				ImGui::GetStyle().FontScaleDpi = 1.2F;
+				CheckPageAndConditionalMotion(checks, fonts[0], fonts[1], fonts.back(), 1.2F);
+				ImGui::GetStyle().FontScaleDpi = scale;
+			}
+			continue;
+		}
 		if (generalOnly)
 		{
 			for (const auto& locale : Inkeys::Localization::Locales)
@@ -6699,6 +7115,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		CheckEdidCard(checks, fonts[0], fonts[1], scale);
 		CheckHomeBrandDesign(checks, fonts, fontDirectory, scale);
 		if (scale==1.0F || scale==1.875F) CheckHomeMotion(checks,fonts[0],fonts[1],fonts.back(),scale);
+		if (scale==1.0F || scale==1.875F) CheckPageAndConditionalMotion(checks,fonts[0],fonts[1],fonts.back(),scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 		{
 			for (const auto& locale : Inkeys::Localization::Locales)
@@ -6727,7 +7144,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
 			CheckHomeScrollFollowup(checks, fonts[0], fonts[1], scale);
 		}
-		if (scale == 1.0F || scale == 1.875F) CheckAnimatedColors(checks, fonts[0], scale);
+		if (scale == 1.0F || scale == 1.875F) { CheckAnimatedColors(checks, fonts[0], scale); CheckAnimatedColorEndpoints(checks, fonts[0], scale); }
 	}
 	return checks.failures;
 }

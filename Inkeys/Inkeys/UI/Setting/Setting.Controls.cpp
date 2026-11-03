@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string_view>
 #include <vector>
+#include <utility>
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -95,6 +96,106 @@ namespace Inkeys::UI::Setting::Design
 
 		float rowAnimationDelta = 0.0F, rowAnimationRate = 1.0F;
 		bool rowAnimationsEnabled = false;
+		PageMotionState* activePageMotion = nullptr;
+		ImGuiWindow* pageMotionOwner = nullptr;
+		int pageMotionDepth = 0, conditionalMotionDepth = 0;
+		bool pageMotionUserScroll = false;
+		std::vector<PageBlockScope> cardMotionScopes;
+		std::vector<ImGuiID> conditionalMotionParents;
+
+		float MotionEase(float progress)
+		{
+			const float remaining = 1.0F - std::clamp(progress, 0.0F, 1.0F);
+			return 1.0F - remaining * remaining * remaining;
+		}
+
+		bool MotionInput(const ImVec4& bounds, bool pointer)
+		{
+			const auto& io = ImGui::GetIO();
+			const bool inside = ImRect({ bounds.x, bounds.y }, { bounds.z, bounds.w }).Contains(io.MousePos);
+			if (pointer && inside && (io.MouseWheel != 0 || io.MouseWheelH != 0
+				|| ImGui::IsMouseClicked(0) || ImGui::IsMouseClicked(1)
+				|| ImGui::IsMouseReleased(0) || ImGui::IsMouseReleased(1))) return true;
+			for (auto key : { ImGuiKey_Tab, ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
+				ImGuiKey_UpArrow, ImGuiKey_DownArrow, ImGuiKey_LeftArrow, ImGuiKey_RightArrow,
+				ImGuiKey_PageUp, ImGuiKey_PageDown, ImGuiKey_Home, ImGuiKey_End })
+				if (ImGui::IsKeyPressed(key)) return true;
+			return io.InputQueueCharacters.Size > 0;
+		}
+
+		void TransformMotionDraw(ImGuiWindow* window, int firstVertex, float offset, float alpha)
+		{
+			if (offset == 0.0F && alpha >= 1.0F) return;
+			for (int index = firstVertex; index < window->DrawList->VtxBuffer.Size; ++index)
+			{
+				auto& vertex = window->DrawList->VtxBuffer[index];
+				vertex.pos.y += offset;
+				const ImU32 opacity = static_cast<ImU32>(std::round((vertex.col >> IM_COL32_A_SHIFT) * alpha));
+				vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (opacity << IM_COL32_A_SHIFT);
+			}
+		}
+
+		void TransformMotionChild(ImGuiWindow* window, float offset, float alpha)
+		{
+			TransformMotionDraw(window, 0, offset, alpha);
+			if (offset != 0.0F)
+				for (auto& command : window->DrawList->CmdBuffer)
+				{
+					command.ClipRect.y = (std::max)(pageMotionOwner->ClipRect.Min.y, command.ClipRect.y + offset);
+					command.ClipRect.w = (std::min)(pageMotionOwner->ClipRect.Max.y, command.ClipRect.w + offset);
+					command.ClipRect.w = (std::max)(command.ClipRect.y, command.ClipRect.w);
+				}
+			for (auto* child : window->DC.ChildWindows)
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) TransformMotionChild(child, offset, alpha);
+		}
+
+		void ClipConditionalDraw(ImGuiWindow* window, int firstIndex, float top, float bottom)
+		{
+			auto& commands = window->DrawList->CmdBuffer;
+			for (int index = 0; index < commands.Size; ++index)
+			{
+				const auto command = commands[index];
+				if (command.ElemCount == 0 || command.IdxOffset + command.ElemCount <= static_cast<unsigned>(firstIndex)) continue;
+				if (command.IdxOffset < static_cast<unsigned>(firstIndex))
+				{
+					// PopClipRect可能合并相邻命令；按真实index边界拆分，不能连带裁掉前一块。
+					ImDrawCmd tail = command;
+					commands[index].ElemCount = static_cast<unsigned>(firstIndex) - command.IdxOffset;
+					tail.IdxOffset = static_cast<unsigned>(firstIndex);
+					tail.ElemCount -= commands[index].ElemCount;
+					commands.insert(commands.Data + index + 1, tail);
+					++index;
+				}
+				auto& clip = commands[index].ClipRect;
+				clip.y = (std::max)(clip.y, top);
+				clip.w = (std::max)(clip.y, (std::min)(clip.w, bottom));
+			}
+		}
+
+		void ClipConditionalChild(ImGuiWindow* window, float top, float bottom, float alpha)
+		{
+			ClipConditionalDraw(window, 0, top, bottom);
+			TransformMotionDraw(window, 0, 0.0F, alpha);
+			for (auto* child : window->DC.ChildWindows)
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) ClipConditionalChild(child, top, bottom, alpha);
+		}
+
+		void CompensateConditionalHeight(ImGuiWindow* window, float top, float previous, float current)
+		{
+			const float delta = current - previous;
+			// 贴底补偿已在宿主Begin之前应用，不能再次按各块累加。
+			if (activePageMotion->pinnedBottom) return;
+			if (pageMotionUserScroll || delta == 0.0F || top + (std::max)(current, previous) > pageMotionOwner->ClipRect.Min.y) return;
+			// 变化完全在视口上方时同步重基准后续布局，避免等下一帧补scroll造成抖动。
+			pageMotionOwner->Scroll.y = (std::max)(0.0F, pageMotionOwner->Scroll.y + delta);
+			for (auto* ancestor = window; ancestor; ancestor = ancestor->ParentWindow)
+			{
+				ancestor->DC.CursorPos.y -= delta; ancestor->DC.CursorMaxPos.y -= delta;
+				ancestor->DC.CursorStartPos.y -= delta; ancestor->DC.CursorPosPrevLine.y -= delta;
+				if (ancestor == pageMotionOwner) break;
+			}
+		}
+
 
 		std::string stateOn = "On";
 		std::string stateOff = "Off";
@@ -217,6 +318,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void Text(const char* text, ImFluentTextStyle style, ImU32 color)
 	{
+		PageBlockScope motion("##text");
 		const ImVec2 position = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		const float height = TextHeight(text, width, style);
@@ -247,6 +349,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void InfoText(const char* text, ImFluentTextStyle style)
 	{
+		PageBlockScope motion("##info-text");
 		if (!text || !*text) return;
 		const auto position = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
@@ -299,7 +402,7 @@ namespace Inkeys::UI::Setting::Design
 			bool settled;
 			ImVec4 previousColors[3];
 		public:
-			explicit ScrollbarStyleScope(ImGuiWindow* existing, bool input = true, bool settleLayout = false)
+			explicit ScrollbarStyleScope(ImGuiWindow* existing, bool input = true, bool settleLayout = false, float visualAlpha = 1.0F)
 				: window(existing), phase(0.0F), settled(settleLayout)
 			{
 				previousSize = ImGui::GetStyle().ScrollbarSize;
@@ -340,7 +443,7 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::GetStyle().ScrollbarPadding = Pixels(ScrollbarPadding) * phase;
 				for (auto color : { ImGuiCol_ScrollbarGrab, ImGuiCol_ScrollbarGrabHovered, ImGuiCol_ScrollbarGrabActive })
 				{
-					ImVec4 value = ImGui::GetStyle().Colors[color]; value.w *= phase;
+					ImVec4 value = ImGui::GetStyle().Colors[color]; value.w *= phase * std::clamp(visualAlpha, 0.0F, 1.0F);
 					ImGui::GetStyle().Colors[color] = value;
 				}
 			}
@@ -492,7 +595,7 @@ namespace Inkeys::UI::Setting::Design
 		if (owner) CaptureDrag(owner);
 	}
 
-	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop, bool settleScrollbarLayout)
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop, bool settleScrollbarLayout, bool stableBodyLayout, float visualAlpha, PageMotionState* motion)
 	{
 		auto* existing=ChildWindow(id);
 		if (resetToTop && existing)
@@ -505,11 +608,55 @@ namespace Inkeys::UI::Setting::Design
 			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-rebase"),1);
 		}
 		if (resetToTop) ImGui::SetNextWindowScroll({0,0});
+		// 正文宽度是当前布局预算，不继承AutoResize子页上一帧的旧宽度。
+		const float bodyContentWidth = (std::max)(0.0F, ImTrunc(size.x) - ImGui::GetStyle().WindowPadding.x * 2.0F);
+		if (stableBodyLayout) ImGui::SetNextWindowContentSize({bodyContentWidth, 0});
+		if (stableBodyLayout && motion && existing)
+		{
+			auto& state = *motion;
+			const bool userScroll = MotionInput(state.bounds, true) || ImGui::IsAnyMouseDown()
+				|| ImGui::GetIO().MouseWheel != 0 || ImGui::GetIO().MouseWheelH != 0;
+			if (userScroll || resetToTop) state.pinnedBottom = false;
+			const bool resized = state.owner == existing->ID && (state.viewport.x != ImTrunc(size.x) || state.viewport.y != ImTrunc(size.y));
+			if (resized)
+			{
+				state.contentHeight = state.predictedDelta = 0; state.pinnedBottom = false;
+				for (auto& [key, condition] : state.conditions)
+					if (condition.generation == state.generation)
+					{ condition.reveal.Reset(condition.reveal.target); condition.height = condition.occupied = 0; }
+			}
+			if (state.owner == existing->ID && state.contentHeight > 0 && !resized)
+			{
+				// AutoResizeY的native测高晚一帧；使用已提交真实内容和本帧条件增量消除贴底漂移。
+				ImGui::SetNextWindowContentSize({bodyContentWidth, (std::max)(0.0F, state.contentHeight + state.predictedDelta)});
+				if (state.pinnedBottom && !userScroll)
+					ImGui::SetNextWindowScroll({0, (std::max)(0.0F, state.contentHeight + state.predictedDelta
+							+ existing->WindowPadding.y * 2.0F - existing->InnerRect.GetHeight())});
+			}
+		}
 		auto* parent = ImGui::GetCurrentWindow();
 		settleScrollbarLayout |= parent->StateStorage.GetInt(WindowStateId(parent, "##scrollbar-settled-frame"), -2) == GImGui->FrameCount;
-		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs), settleScrollbarLayout);
+		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs), settleScrollbarLayout || stableBodyLayout, visualAlpha);
 		const bool visible = ImGui::BeginChild(id, size, childFlags, flags);
-		scrollbar.Finish(ImGui::GetCurrentWindow());
+		auto* window = ImGui::GetCurrentWindow();
+		scrollbar.Finish(window);
+		if (stableBodyLayout && window->ScrollbarY)
+		{
+			// 轨道占用现有右侧gutter，不再随出现/消失挤压正文；须在任何内容item提交前执行一次。
+			const float compensation = (std::min)(window->ScrollbarSizes.x, window->WindowPadding.x);
+			window->InnerRect.Max.x += compensation;
+			window->ScrollMax.x = (std::max)(0.0F, window->ScrollMax.x - compensation);
+			const float previousScroll = window->Scroll.x;
+			window->Scroll.x = (std::min)(window->Scroll.x, window->ScrollMax.x);
+			const float rebase = previousScroll - window->Scroll.x;
+			// native内容范围也须使用同一gutter预算，否则看不到横条仍能被水平滚轮移走8DIP。
+			window->WorkRect.Min.x += rebase; window->WorkRect.Max.x += rebase;
+			window->ParentWorkRect.Min.x += rebase; window->ParentWorkRect.Max.x += rebase;
+			window->ContentRegionRect.Min.x += rebase; window->ContentRegionRect.Max.x += rebase;
+			window->DC.CursorStartPos.x += rebase; window->DC.CursorPos.x += rebase;
+			window->DC.CursorMaxPos.x += rebase; window->DC.CursorPosPrevLine.x += rebase;
+			window->DC.Indent.x += rebase;
+		}
 		return visible;
 	}
 
@@ -540,6 +687,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void PageHeader(const char* title, const char* description)
 	{
+		PageBlockScope motion("##page-header");
 		Text(title, ImFluentTextStyle_Title);
 		if (description && *description)
 			Text(description, ImFluentTextStyle_Body, TextSecondary);
@@ -547,6 +695,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void SectionHeader(const char* title)
 	{
+		PageBlockScope motion("##section-header", true);
 		AdvanceGap(SectionGap);
 		Text(title, ImFluentTextStyle_BodyStrong);
 		AdvanceGap(8.0F);
@@ -568,17 +717,254 @@ namespace Inkeys::UI::Setting::Design
 		return (std::max)(72.0F, ControlTextWidth(label) / Pixels(1.0F) + 32.0F);
 	}
 
+	namespace
+	{
+		float PredictConditionalHeight(PageMotionState& state, ImGuiID key)
+		{
+			auto& condition = state.conditions.at(key);
+			if (condition.predictionFrame == ImGui::GetFrameCount()) return condition.predicted;
+			float full = condition.height;
+			for (auto& [childKey, child] : state.conditions)
+				if (child.parent == key && child.generation == state.generation && child.frame == ImGui::GetFrameCount() - 1)
+					full += PredictConditionalHeight(state, childKey) - child.occupied;
+			condition.predicted = std::round((std::max)(0.0F, full) * condition.reveal.value);
+			condition.predictionFrame = ImGui::GetFrameCount();
+			return condition.predicted;
+		}
+	}
+
+	void ConfigurePageMotion(PageMotionState& state, std::uint64_t routeKey, bool opening, bool reset, std::uint64_t layoutRevision)
+	{
+		const auto context = reinterpret_cast<std::uintptr_t>(ImGui::GetCurrentContext());
+		if (state.context != context) { state = {}; state.context = context; }
+		const bool newFrame = state.frame != ImGui::GetFrameCount();
+		const auto& io = ImGui::GetIO();
+		const auto atlas = reinterpret_cast<std::uintptr_t>(io.Fonts);
+		const auto font = reinterpret_cast<std::uintptr_t>(io.Fonts->Fonts.empty() ? nullptr : io.Fonts->Fonts[0]);
+		const float scale = ImGui::GetStyle().FontScaleDpi;
+		const bool layoutChanged = state.initialized && (state.layoutRevision != layoutRevision
+			|| state.layoutAtlas != atlas || state.layoutFont != font || state.layoutScale != scale);
+		if (layoutChanged)
+		{
+			// 字体/语言/倍率只重测几何，不制造新的导航或沿用旧高度预测。
+			state.contentHeight = 0; state.pinnedBottom = false;
+			for (auto& [key, condition] : state.conditions)
+			{ condition.reveal.Reset(condition.reveal.target); condition.height = condition.occupied = 0; }
+		}
+		state.layoutRevision = layoutRevision; state.layoutAtlas = atlas; state.layoutFont = font; state.layoutScale = scale;
+		const bool changed = !state.initialized || state.route != routeKey || reset;
+		if (changed)
+		{
+			state.route = routeKey; ++state.generation; state.initialized = true;
+			state.elapsed = rowAnimationsEnabled && !opening ? 0.0F : 0.46F;
+			state.hadBlocks = false; state.owner = 0; state.contentHeight = 0; state.pinnedBottom = false;
+			state.blockProgress.clear();
+		}
+		else if (state.frame != ImGui::GetFrameCount() && state.hadBlocks)
+			state.elapsed = (std::min)(0.46F, state.elapsed + rowAnimationDelta * rowAnimationRate);
+		// 开屏结束只恢复页面，不再派发一轮逐块入场；取消输入不消费原始事件。
+		if (opening || !rowAnimationsEnabled || (!changed && MotionInput(state.bounds, true))) state.elapsed = 0.46F;
+		state.opening = opening; state.frame = ImGui::GetFrameCount(); state.visibleOrder = 0;
+		state.navigationFrame = changed; state.lastBlockTop = -1.0e20F;
+		state.blockOccurrences.clear();
+		if (state.elapsed >= 0.34F) state.blockProgress.clear();
+		state.predictedDelta = 0.0F;
+		// 先推进已登记的条件高度，再开始正文布局；首个目标变化帧只登记目标和测高。
+		for (auto& [key, condition] : state.conditions)
+			if (newFrame && !layoutChanged && condition.generation == state.generation && condition.frame == ImGui::GetFrameCount() - 1)
+				condition.reveal.Advance(rowAnimationDelta, 0.180F / rowAnimationRate, rowAnimationsEnabled && !opening);
+		for (auto& [key, condition] : state.conditions)
+			if (condition.parent == 0 && condition.generation == state.generation && condition.frame == ImGui::GetFrameCount() - 1)
+				state.predictedDelta += PredictConditionalHeight(state, key) - condition.occupied;
+	}
+
+	void ResumeSkippedPageOpening()
+	{
+		// 首次实际布局不容纳字标时改播普通页面入场，用户主动取消仍由原开屏落定。
+		if (activePageMotion && activePageMotion->opening)
+		{
+			activePageMotion->opening = false;
+			activePageMotion->elapsed = 0.0F;
+		}
+	}
+
+	float PageScrollbarAlpha(const PageMotionState& state)
+	{
+		return rowAnimationsEnabled && !state.opening ? MotionEase((state.elapsed - 0.34F) / 0.12F) : 1.0F;
+	}
+
+	void BeginPageMotion(PageMotionState& state)
+	{
+		IM_ASSERT(activePageMotion == nullptr);
+		activePageMotion = &state; pageMotionOwner = ImGui::GetCurrentWindow(); pageMotionDepth = 0;
+		const auto bounds = pageMotionOwner->Rect();
+		// 命中范围包含尚未可见的native轨道，按下先落定再由同一原生控件处理。
+		state.bounds = { bounds.Min.x, bounds.Min.y, bounds.Max.x, bounds.Max.y };
+		if (!state.navigationFrame && MotionInput(state.bounds, true)) state.elapsed = 0.46F;
+		pageMotionUserScroll = ImGui::GetIO().MouseWheel != 0.0F || ImGui::IsAnyMouseDown()
+			|| MotionInput(state.bounds, false);
+		const bool atBottom = pageMotionOwner->ScrollMax.y > 0.0F
+			&& std::abs(pageMotionOwner->Scroll.y - pageMotionOwner->ScrollMax.y) <= Pixels(1.0F);
+		if (pageMotionUserScroll) state.pinnedBottom = false;
+		else if (atBottom) state.pinnedBottom = true;
+	}
+
+	void EndPageMotion()
+	{
+		IM_ASSERT(pageMotionDepth == 0 && conditionalMotionDepth == 0 && cardMotionScopes.empty());
+		float bottom = pageMotionOwner->DC.CursorStartPos.y;
+		bool measuredChild = false;
+		for (auto* child : pageMotionOwner->DC.ChildWindows)
+			if (child->Active && child->LastFrameActive == GImGui->FrameCount && (child->ChildFlags & ImGuiChildFlags_AutoResizeY))
+			{
+				bottom = (std::max)(bottom, child->DC.CursorMaxPos.y + child->WindowPadding.y);
+				measuredChild = true;
+			}
+		if (!measuredChild) bottom = pageMotionOwner->DC.CursorMaxPos.y;
+		activePageMotion->contentHeight = (std::max)(0.0F, bottom - pageMotionOwner->DC.CursorStartPos.y);
+		activePageMotion->owner = pageMotionOwner->ID;
+		activePageMotion->viewport = pageMotionOwner->Size;
+		activePageMotion = nullptr; pageMotionOwner = nullptr;
+	}
+
+	PageBlockScope::PageBlockScope(const char* id, bool section) : section_(section)
+	{
+		if (!activePageMotion || pageMotionDepth != 0) return;
+		state_ = activePageMotion; window_ = ImGui::GetCurrentWindow(); id_ = window_->GetID(id);
+		origin_ = ImGui::GetCursorScreenPos(); firstVertex_ = window_->DrawList->VtxBuffer.Size;
+		firstChild_ = window_->DC.ChildWindows.Size;
+		++pageMotionDepth;
+	}
+
+	PageBlockScope::PageBlockScope(PageBlockScope&& other) noexcept
+		: state_(std::exchange(other.state_, nullptr)), window_(other.window_), origin_(other.origin_),
+		firstVertex_(other.firstVertex_), firstChild_(other.firstChild_), id_(other.id_), section_(other.section_) {}
+
+	PageBlockScope::~PageBlockScope() { Finish(); }
+
+	void PageBlockScope::Finish()
+	{
+		if (!state_) return;
+		--pageMotionDepth;
+		const float bottom = (std::max)(origin_.y, window_->DC.CursorPos.y);
+		const auto& clip = pageMotionOwner->ClipRect;
+		if (!window_->SkipItems && origin_.y < clip.Max.y && bottom > clip.Min.y)
+		{
+			const int order = std::abs(origin_.y - state_->lastBlockTop) <= Pixels(1.0F)
+				? state_->lastBlockOrder : state_->visibleOrder;
+			const float delay = (std::min)(0.120F, order * 0.024F);
+			if (!section_) state_->visibleOrder = (std::max)(state_->visibleOrder, order + 1);
+			state_->lastBlockTop = origin_.y; state_->lastBlockOrder = order;
+			state_->hadBlocks = true;
+			float alpha = rowAnimationsEnabled && !state_->opening
+				? MotionEase((state_->elapsed - delay) / 0.220F) : 1.0F;
+			if (state_->elapsed < 0.34F && !state_->opening)
+			{
+				const int occurrence = state_->blockOccurrences[id_]++;
+				const ImGuiID key = ImHashData(&occurrence, sizeof(occurrence), id_);
+				auto& previous = state_->blockProgress[key];
+				// 异步提示插到前方时顺序号会改变，同一可见块不能因此向后退或重新变淡。
+				alpha = previous = (std::max)(previous, alpha);
+			}
+			const float offset = Pixels(12.0F) * (1.0F - alpha);
+			// 仅变换当前块的新顶点及其本帧 child；真实占位与事件保持唯一终态布局。
+			TransformMotionDraw(window_, firstVertex_, offset, alpha);
+			for (int index = firstChild_; index < window_->DC.ChildWindows.Size; ++index)
+			{
+				auto* child = window_->DC.ChildWindows[index];
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) TransformMotionChild(child, offset, alpha);
+			}
+		}
+		state_ = nullptr;
+	}
+
+	ConditionalBlock::ConditionalBlock(const char* id, bool visible) : block_(id), visible_(visible)
+	{
+		if (!activePageMotion) { render_ = visible; return; }
+		window_ = ImGui::GetCurrentWindow(); accountHeight_ = conditionalMotionDepth == 0;
+		const ImGuiID local = window_->GetID(id);
+		const ImGuiID key = ImHashData(&activePageMotion->route, sizeof(activePageMotion->route), local);
+		motion_ = &activePageMotion->conditions[key];
+		motion_->parent = conditionalMotionParents.empty() ? 0 : conditionalMotionParents.back();
+		const int frame = ImGui::GetFrameCount();
+		if (motion_->generation != activePageMotion->generation)
+		{
+			motion_->generation = activePageMotion->generation;
+			motion_->reveal.Reset(visible ? 1.0F : 0.0F); motion_->height = motion_->occupied = 0.0F;
+		}
+		motion_->reveal.Target(visible ? 1.0F : 0.0F);
+		if (!rowAnimationsEnabled || activePageMotion->opening) motion_->reveal.Reset(visible ? 1.0F : 0.0F);
+		motion_->frame = frame;
+		render_ = visible || motion_->reveal.value > 0.0F;
+		origin_ = ImGui::GetCursorScreenPos();
+		if (!render_)
+		{
+			if (accountHeight_ && motion_->height > 0.0F) CompensateConditionalHeight(window_, origin_.y, motion_->occupied, 0.0F);
+			motion_->occupied = 0.0F;
+			return;
+		}
+		previousMaximum_ = window_->DC.CursorMaxPos;
+		firstChild_ = window_->DC.ChildWindows.Size; firstVertex_ = window_->DrawList->VtxBuffer.Size;
+		firstIndex_ = window_->DrawList->IdxBuffer.Size;
+		++conditionalMotionDepth; conditionalMotionParents.push_back(key);
+		// 保留原条件分支的真实游标布局；额外EndGroup会把已裁剪子块的旧Rect和间距重新算入父高度。
+		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0F);
+		ImGui::BeginDisabled(!visible || motion_->reveal.value < 0.9999F); disabled_ = true;
+	}
+
+	const char* ConditionalBlock::RetainText(const char* key, const char* current)
+	{
+		if (!motion_) return current ? current : "";
+		auto& text = motion_->text[ImHashStr(key)];
+		if (visible_) text = current ? current : "";
+		return text.c_str();
+	}
+
+	ConditionalBlock::~ConditionalBlock()
+	{
+		if (!motion_ || !render_) return;
+		if (disabled_) { ImGui::EndDisabled(); ImGui::PopStyleVar(); }
+		--conditionalMotionDepth; conditionalMotionParents.pop_back();
+		const float fullHeight = (std::max)(0.0F, window_->DC.CursorPos.y - origin_.y);
+		const float value = rowAnimationsEnabled ? motion_->reveal.value : (visible_ ? 1.0F : 0.0F);
+		// 预测和实际占位使用同一物理像素取整，避免native滚动取整逐帧累积。
+		const float height = std::round(fullHeight * value);
+		const float oldHeight = motion_->occupied;
+		const bool continuing = motion_->height > 0.0F;
+		motion_->height = fullHeight; motion_->occupied = height;
+		if (value < 0.9999F)
+		{
+			ClipConditionalDraw(window_, firstIndex_, origin_.y, origin_.y + height);
+			TransformMotionDraw(window_, firstVertex_, 0.0F, value);
+			for (int index = firstChild_; index < window_->DC.ChildWindows.Size; ++index)
+				ClipConditionalChild(window_->DC.ChildWindows[index], origin_.y, origin_.y + height, value);
+			window_->DrawList->AddDrawCmd();
+			window_->DC.CursorPos = { origin_.x, origin_.y + height };
+			window_->DC.CursorMaxPos.y = (std::max)(previousMaximum_.y, origin_.y + height);
+			window_->DC.CursorPosPrevLine = window_->DC.CursorPos;
+			window_->DC.CurrLineSize = window_->DC.PrevLineSize = { 0.0F, 0.0F };
+			window_->DC.IsSameLine = window_->DC.IsSetPos = false;
+		}
+		if (accountHeight_ && continuing) CompensateConditionalHeight(window_, origin_.y, oldHeight, height);
+	}
+
 	void ConfigureRowAnimations(float delta, bool enabled, float rate)
 	{
 		rowAnimationDelta = std::isfinite(delta) ? std::clamp(delta, 0.0F, 0.25F) : 0.0F;
 		rowAnimationRate = std::isfinite(rate) ? std::clamp(rate, 0.1F, 5.0F) : 1.0F;
 		rowAnimationsEnabled = enabled;
+		if (!enabled && activePageMotion)
+		{
+			activePageMotion->elapsed = 0.46F;
+			for (auto& [id, condition] : activePageMotion->conditions) condition.reveal.Reset(condition.reveal.target);
+		}
 	}
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note, bool showNoteIcon)
 	{
+		PageBlockScope motion(id);
 		// 只有普通说明之外的补充才画 i；单独一段前提仍按原说明排版和着色。
 		if ((!description || !*description) && note && *note)
 		{
@@ -1328,6 +1714,7 @@ namespace Inkeys::UI::Setting::Design
 
 	bool BeginCard(const char* id, const ImVec2& size, ImFluentCardStyle style)
 	{
+		cardMotionScopes.emplace_back(id);
 		ScrollbarStyleScope scrollbar(ChildWindow(id));
 		const auto& cardStyle = ImFluent::GetStyle();
 		const ImU32 fill = ImFluent::GetColorU32(style == ImFluentCardStyle_Outlined
@@ -1351,7 +1738,11 @@ namespace Inkeys::UI::Setting::Design
 		return visible;
 	}
 
-	void EndCard() { ImFluent::EndCard(); }
+	void EndCard()
+	{
+		ImFluent::EndCard();
+		cardMotionScopes.pop_back();
+	}
 
 	void CheckboxGroup(const char* id, const char* title, const char* glyph,
 		std::initializer_list<CheckboxSpec> items)
@@ -1548,6 +1939,7 @@ namespace Inkeys::UI::Setting::Design
 
 	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph, ImTextureID iconTexture, ImU32 iconTint, const char* note)
 	{
+		PageBlockScope motion(id);
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		SettingRow(id, title, description, glyph, 24.0F, 24.0F, [&](const LayoutRect& bounds)
