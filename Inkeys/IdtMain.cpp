@@ -362,6 +362,9 @@ void SetOffSignal(int signal)
 	const DWORD supervisorError = GetLastError();
 	const auto armEnd = ShutdownTrace::CaptureEnd(preArmRecorder, armTrace, "returned",
 		static_cast<long>(supervisorError));
+	// 纯关闭不再需要实例占位；Arm 已建立 15 秒保护，此后清理变慢也不会挡住用户重新打开。
+	// 重启类意图由监督器接力占位，这里不能释放。
+	if (signal == 1) Inkeys::Launch::ReleaseForClose();
 	const auto publishTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-publish");
 	offSignal.store(signal, std::memory_order_release);
 	const auto publishEnd = ShutdownTrace::CaptureEnd(preArmRecorder, publishTrace);
@@ -411,10 +414,13 @@ namespace Inkeys::Shutdown
 	{
 		// 失败清理owner已能自守截止；不能在这里重新建线程、Arm、日志或等待业务清理。
 		LONG intent = InterlockedCompareExchange(&offSignalInterop, 1, 0);
+		// 只有赢得意图的一方释放占位，避免与 SetOffSignal 的释放并发重复关闭同一句柄。
+		const bool wonClose = intent == 0;
 		if (intent == 0) intent = 1;
 		Inkeys::Window::GetService().BeginShutdown();
 		if (intent == 1 || intent == 2)
 			offSignal.store(static_cast<int>(intent), std::memory_order_release);
+		if (wonClose) Inkeys::Launch::ReleaseForClose();
 		Inkeys::UI::RenderPipeline::WakeForStop();
 		return PublishedShutdownDeadlineTick();
 	}

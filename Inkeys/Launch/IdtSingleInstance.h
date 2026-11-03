@@ -183,6 +183,14 @@ namespace Inkeys::Launch
 		presence.Reset(candidate.Release()); return Admission::Accepted;
 	}
 
+	// 受控关闭一旦被接受就放开占位：清理耗时再久，也不会让用户此时重新打开程序时被判为重复实例。
+	// 只给纯关闭使用；重启、崩溃重启与更新需要把占位连续接力给新实例，不能调用。
+	inline void ReleaseForClose()
+	{
+		presence.Reset();
+		physicalPresence.Reset();
+	}
+
 	inline bool CopyParentPresence(HANDLE parent, HANDLE lease, const std::wstring& root)
 	{
 		HANDLE copy = nullptr;
