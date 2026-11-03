@@ -205,7 +205,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 	};
 
-	enum class DrawingSubpage : int { Overview, SpeedEraser, PalmEraser };
+	enum class DrawingSubpage : int { Overview, SpeedEraser, PalmEraser, Cursor };
 	DrawingSubpage RenderDrawingEraserEntries(DrawingSubpage current);
 
 	inline void NavigateDrawingSubpage(NavigationState& navigation, DrawingSubpage& current,
@@ -257,6 +257,20 @@ namespace Inkeys::UI::Setting::Design
 		std::array<bool, 7> toolsChanged{};
 	};
 	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
+	// 光标专页草稿：四个设备下拉与高亮模式直接使用 Draw3 枚举值作为下拉索引。
+	struct CursorPageDraft
+	{
+		int mouse = 0, touch = 0, screenPen = 0, tablet = 0, highlightMode = 1;
+		bool injectedMouse = false;
+		bool injectedAvailable = true;
+	};
+	struct CursorPageEvents
+	{
+		bool back = false;
+		bool mouse = false, touch = false, screenPen = false, tablet = false;
+		bool highlightMode = false, injectedMouse = false;
+	};
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
 
 	struct GeneralDraft
 	{

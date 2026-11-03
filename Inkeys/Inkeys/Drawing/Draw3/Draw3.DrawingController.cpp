@@ -4659,7 +4659,7 @@ namespace Inkeys::Drawing::Draw3
 					window.SetMouseUsesSystemCursor(effective.mouseStyle == MouseCursorStyle::System);
 					check(effective.mouseStyle == expected &&
 						window.GetMouseUsesSystemCursor() == (expected == MouseCursorStyle::System) &&
-						effective.penStyle == PenCursorStyle::PenIcon && raw.mouseStyle == MouseCursorStyle::System,
+						effective.screenPenStyle == PenCursorStyle::PenIcon && raw.mouseStyle == MouseCursorStyle::System,
 						"actual-tool cursor projection preserves raw preferences and synchronizes the Window policy");
 				};
 				// 使用真实 Window 的活动工具锁存/释放，不创建 contact、HWND 或新测试入口。
@@ -10022,8 +10022,8 @@ namespace Inkeys::Drawing::Draw3
 		const bool systemChanged = window_.GetMouseUsesSystemCursor() != system;
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
-		const uint32_t packed = 4u | (settings.mouseStyle == MouseCursorStyle::Drawing ? 1u : 0u) |
-			(settings.penStyle == PenCursorStyle::PenIcon ? 2u : 0u);
+		window_.SetInjectedMouseAsTablet(settings.injectedMouseAsTablet);
+		const uint32_t packed = PackCursorSettings(settings);
 		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
@@ -13347,10 +13347,8 @@ namespace Inkeys::Drawing::Draw3
 					mouseSample.inContact = false;
 			}
 			const uint32_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
-			CursorSettings cursorSettings{
-				.mouseStyle = (cursorSettingsBits & 1u) != 0 ? MouseCursorStyle::Drawing : MouseCursorStyle::System,
-				.penStyle = (cursorSettingsBits & 2u) != 0 ? PenCursorStyle::PenIcon : PenCursorStyle::Circle
-			};
+			CursorSettings cursorSettings = UnpackCursorSettings(cursorSettingsBits);
+			const bool cursorSettingsValid = (cursorSettingsBits & kCursorSettingsValidBit) != 0;
 			DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const DrawingCursorPointerAuthority cursorAuthority = window_.CursorOwner();
 			const bool primaryUsesPen = cursorAuthority == DrawingCursorPointerAuthority::Pen ||
@@ -13370,7 +13368,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			if(primaryRuntime)cursorTool=primaryRuntime->tool;
-			if ((cursorSettingsBits & 4u) != 0)
+			if (cursorSettingsValid)
 			{
 				// 同一实际工具投影同时控制系统箭头和应用预览，不能用新选择覆盖活动笔画。
 				cursorSettings = ResolveCursorSettingsForDrawingTool(cursorTool, cursorSettings);
@@ -13407,7 +13405,7 @@ namespace Inkeys::Drawing::Draw3
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
 					mouseUsesSystemCursor,
-					(cursorSettingsBits & 4u) != 0 ? &cursorSettings : nullptr,
+					cursorSettingsValid ? &cursorSettings : nullptr,
 					cursorTool == DrawingTool::Pen || cursorTool == DrawingTool::HardPen,
 					ProductTargetScale(currentProductVisualStyle));
 				if (primary.visible &&
@@ -13473,6 +13471,20 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					++runtimeCursorSourceCount;
 #endif
+					continue;
+				}
+				// 触摸落笔光标：仅软/硬笔，逐接触各一个；荧光笔、形状等保持无光标。
+				if (cursorSettingsValid && cursorSettings.touchStyle != TouchCursorStyle::None &&
+					runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
+					runtime->metricDeviceType == InputDeviceType::Touch &&
+					(runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen))
+				{
+					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
+					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
+						snapshot.position.x, snapshot.position.y,
+						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touchStyle,
+						ProductTargetScale(runtime->visualStyle));
+					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
 					continue;
 				}
 				if (!runtime || runtime->ended || runtime->awaitingReconnect || runtime->palmObservationOnly ||

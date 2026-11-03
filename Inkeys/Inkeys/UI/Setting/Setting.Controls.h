@@ -116,6 +116,10 @@ namespace Inkeys::UI::Setting::Design
 		const char* glyph, bool& value, const char* note = nullptr);
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr);
+	// 与 ComboRow 相同，但在下拉框左侧预留一块预览区；preview 收到该区域的物理像素矩形。
+	bool ComboPreviewRow(const char* id, const char* title, const char* description,
+		const char* glyph, int& value, const std::vector<std::string>& items,
+		const std::function<void(const LayoutRect&)>& preview, const char* note = nullptr);
 	bool SliderRow(const char* id, const char* title, const char* description,
 		const char* glyph, float& value, float minimum, float maximum,
 		bool& active, const char* format = "%.2f", const char* note = nullptr);

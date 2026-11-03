@@ -1213,6 +1213,194 @@ namespace
 			"touch eraser contact remains opaque")) ++failures;
 	}
 
+	void TestPerDeviceCursorStyles(int& failures)
+	{
+		const DrawingCursorAppearance penAppearance = {
+			DrawingCursorShape::Circle, 9.0f, 9.0f, 0.2f, 0.4f, 0.8f
+		};
+		DrawingCursorAppearance highlighter = {
+			DrawingCursorShape::Rectangle, 3.75f, 30.0f, 1.0f, 0.8f, 0.2f
+		};
+		highlighter.opacity = Bridge::kHighlighterCompositeOpacity;
+		highlighter.fillAlpha = 1.0f;
+		DrawingCursorAppearance eraser = {
+			DrawingCursorShape::EraserGripCircle, 50.0f, 50.0f, 1.0f, 1.0f, 1.0f
+		};
+		CursorSettings settings;
+		DrawingCursorSample pen = { .x = 30.0f, .y = 40.0f, .valid = true };
+		DrawingCursorSample mouse = { .x = 60.0f, .y = 70.0f, .valid = true };
+		const auto mouseOwner = DrawingCursorPointerAuthority::Mouse;
+		const auto penOwner = DrawingCursorPointerAuthority::Pen;
+		auto resolve = [&](DrawingCursorPointerAuthority owner, const DrawingCursorAppearance& appearance,
+			Bridge::Tool tool = Bridge::Tool::Pen, bool penIconAllowed = true, float scale = 1.0f)
+		{
+			const auto effective = Bridge::ResolveCursorSettingsForTool(tool, settings);
+			return ResolvePrimaryDrawingCursorVisual(pen, mouse, owner, appearance, eraser,
+				false, true, false, true, &effective, penIconAllowed, scale);
+		};
+		const auto highlighted = [](const DrawingCursorVisual& v) { return Near(v.appearance.outlineWidth, 1.25f); };
+		const auto plain = [](const DrawingCursorVisual& v) { return Near(v.appearance.outlineWidth, 0.5f); };
+		const auto setScreen = [&] {
+			pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+		};
+		const auto setTablet = [&] {
+			pen.source = { SpeedEraser::SourceKind::ExternalPen, SpeedEraser::SourceRecognition::PointerCursor };
+		};
+
+		// 高亮模式只控制屏幕笔/数位板圆形与画笔图标的外描边；Unknown/Conflict 按数位板行处理。
+		for (const auto shape : { PenCursorStyle::Circle, PenCursorStyle::PenIcon })
+		{
+			settings = {};
+			settings.screenPenStyle = settings.tabletStyle = shape;
+			struct Case { PenHighlightMode mode; bool screen; bool tablet; };
+			const Case cases[] = {
+				{ PenHighlightMode::Off, false, false },
+				{ PenHighlightMode::DigitizerOnly, false, true },
+				{ PenHighlightMode::Always, true, true } };
+			for (const auto& c : cases)
+			{
+				settings.penHighlight = c.mode;
+				setScreen();
+				const auto screen = resolve(penOwner, penAppearance);
+				setTablet();
+				const auto tablet = resolve(penOwner, penAppearance);
+				pen.source = {};
+				const auto unknown = resolve(penOwner, penAppearance);
+				pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::Conflict };
+				const auto conflict = resolve(penOwner, penAppearance);
+				if (!Expect(screen.visible && tablet.visible && highlighted(screen) == c.screen &&
+					highlighted(tablet) == c.tablet && highlighted(unknown) == c.tablet &&
+					highlighted(conflict) == c.tablet,
+					"pen highlight mode controls the circle and pen icon edge per device row")) ++failures;
+			}
+		}
+
+		// 小圆点：固定小尺寸、不随笔宽，普通/高亮变体固定，不受模式影响。
+		for (const auto mode : { PenHighlightMode::Off, PenHighlightMode::DigitizerOnly, PenHighlightMode::Always })
+			for (const bool screen : { true, false })
+			{
+				settings = {};
+				settings.penHighlight = mode;
+				screen ? setScreen() : setTablet();
+				DrawingCursorAppearance wide = penAppearance;
+				wide.width = wide.height = 37.0f;
+				(screen ? settings.screenPenStyle : settings.tabletStyle) = PenCursorStyle::Dot;
+				const auto dot = resolve(penOwner, wide, Bridge::Tool::Pen, true, 2.0f);
+				(screen ? settings.screenPenStyle : settings.tabletStyle) = PenCursorStyle::HighlightDot;
+				const auto highDot = resolve(penOwner, wide, Bridge::Tool::Pen, true, 2.0f);
+				if (!Expect(dot.visible && highDot.visible &&
+					dot.appearance.shape == DrawingCursorShape::Circle &&
+					Near(dot.appearance.width, 12.0f) && Near(dot.appearance.height, 12.0f) &&
+					Near(highDot.appearance.width, 12.0f) &&
+					Near(dot.appearance.centerOffsetX, 0.0f) && Near(dot.appearance.fillAlpha, 1.0f) &&
+					Near(dot.appearance.outlineWidth, 1.0f) && Near(highDot.appearance.outlineWidth, 2.5f) &&
+					Near(highDot.appearance.outlineOpacity, 1.0f),
+					"dot cursors keep a fixed size and fixed edge regardless of pen width and highlight mode")) ++failures;
+			}
+
+		// 鼠标行：圆点/高亮圆点属于应用光标；画笔图标始终高亮。
+		settings = {};
+		settings.penHighlight = PenHighlightMode::Off;
+		if (!Expect(!resolve(mouseOwner, penAppearance).visible, "default mouse row stays the system cursor")) ++failures;
+		settings.mouseStyle = MouseCursorStyle::Dot;
+		const auto mouseDot = resolve(mouseOwner, penAppearance);
+		settings.mouseStyle = MouseCursorStyle::HighlightDot;
+		const auto mouseHighDot = resolve(mouseOwner, penAppearance);
+		settings.mouseStyle = MouseCursorStyle::Drawing;
+		const auto mouseIcon = resolve(mouseOwner, penAppearance);
+		if (!Expect(mouseDot.visible && plain(mouseDot) && Near(mouseDot.appearance.width, 6.0f) &&
+			mouseHighDot.visible && highlighted(mouseHighDot) &&
+			mouseIcon.visible && mouseIcon.appearance.shape == DrawingCursorShape::PenIcon && highlighted(mouseIcon),
+			"mouse row supports dot and highlighted dot; pen icon stays highlighted")) ++failures;
+
+		// 荧光笔与图形保持原几何和原高亮规则，不受设备样式及高亮模式影响。
+		for (const auto style : { PenCursorStyle::Circle, PenCursorStyle::PenIcon, PenCursorStyle::Dot, PenCursorStyle::HighlightDot })
+			for (const auto mode : { PenHighlightMode::Off, PenHighlightMode::DigitizerOnly, PenHighlightMode::Always })
+			{
+				settings = {};
+				settings.screenPenStyle = settings.tabletStyle = style;
+				settings.mouseStyle = MouseCursorStyle::HighlightDot;
+				settings.touchStyle = TouchCursorStyle::HighlightDot;
+				settings.penHighlight = mode;
+				setScreen();
+				const auto screenMarker = resolve(penOwner, highlighter, Bridge::Tool::Highlighter, false);
+				setTablet();
+				const auto tabletMarker = resolve(penOwner, highlighter, Bridge::Tool::Highlighter, false);
+				const auto mouseMarker = resolve(mouseOwner, highlighter, Bridge::Tool::Highlighter, false);
+				const auto shapeCircle = resolve(penOwner, penAppearance, Bridge::Tool::SolidLine, false);
+				if (!Expect(screenMarker.appearance.shape == DrawingCursorShape::Rectangle &&
+					Near(screenMarker.appearance.width, 3.75f) && plain(screenMarker) &&
+					tabletMarker.appearance.shape == DrawingCursorShape::Rectangle && highlighted(tabletMarker) &&
+					mouseMarker.visible && mouseMarker.appearance.shape == DrawingCursorShape::Rectangle &&
+					highlighted(mouseMarker) &&
+					shapeCircle.appearance.shape == DrawingCursorShape::Circle && Near(shapeCircle.appearance.width, 9.0f),
+					"highlighter and shape cursors ignore device styles and the highlight mode")) ++failures;
+			}
+
+		// 非 Windows Ink 数位板：驱动注入的鼠标按开关使用数位板行。
+		settings = {};
+		settings.tabletStyle = PenCursorStyle::Dot;
+		mouse.source = { SpeedEraser::SourceKind::ExternalPen, SpeedEraser::SourceRecognition::Unknown };
+		if (!Expect(!resolve(mouseOwner, penAppearance).visible, "injected tablet mouse is a plain mouse while the switch is off")) ++failures;
+		settings.injectedMouseAsTablet = true;
+		const auto injected = resolve(mouseOwner, penAppearance);
+		mouse.source = { SpeedEraser::SourceKind::Mouse, SpeedEraser::SourceRecognition::Unknown };
+		if (!Expect(injected.visible && Near(injected.appearance.width, 6.0f) &&
+			!resolve(mouseOwner, penAppearance).visible,
+			"injected tablet mouse uses the tablet row only when marked and enabled")) ++failures;
+		mouse.source = {};
+		if (!Expect(ShouldHideSystemDrawingCursor(mouseOwner, false, false, false, true, true, false, false, true) &&
+			!ShouldHideSystemDrawingCursor(mouseOwner, false, false, false, true, true, false, false, false) &&
+			!ShouldHideSystemDrawingCursor(mouseOwner, false, false, false, false, true, false, false, true),
+			"system arrow is hidden for a marked injected tablet mouse only while its sample is valid")) ++failures;
+
+		// 触摸：默认无光标；逐接触生成所选软/硬笔光标。
+		const auto touchVisual = [&](TouchCursorStyle style, float scale = 1.0f)
+		{
+			return MakeTouchPenDrawingCursorVisual(15.0f, 25.0f, penAppearance, style, scale);
+		};
+		if (!Expect(!touchVisual(TouchCursorStyle::None).visible, "touch defaults to no cursor")) ++failures;
+		const auto touchCircle = touchVisual(TouchCursorStyle::Circle);
+		const auto touchIcon = touchVisual(TouchCursorStyle::PenIcon);
+		const auto touchDot = touchVisual(TouchCursorStyle::Dot, 2.0f);
+		const auto touchHighDot = touchVisual(TouchCursorStyle::HighlightDot);
+		if (!Expect(touchCircle.visible && Near(touchCircle.x, 15.0f) && Near(touchCircle.y, 25.0f) &&
+			touchCircle.appearance.shape == DrawingCursorShape::Circle && Near(touchCircle.appearance.width, 9.0f) &&
+			plain(touchCircle) &&
+			touchIcon.visible && touchIcon.appearance.shape == DrawingCursorShape::PenIcon &&
+			Near(touchIcon.appearance.width, 24.0f) && Near(touchIcon.appearance.centerOffsetX, 12.0f) &&
+			touchDot.visible && Near(touchDot.appearance.width, 12.0f) && Near(touchDot.appearance.outlineWidth, 1.0f) &&
+			touchHighDot.visible && Near(touchHighDot.appearance.width, 6.0f) && highlighted(touchHighDot) &&
+			!MakeTouchPenDrawingCursorVisual(NAN, 0.0f, penAppearance, TouchCursorStyle::Circle, 1.0f).visible,
+			"touch pen cursors follow the selected style at each contact")) ++failures;
+
+		// 打包往返与旧配置恢复。
+		bool packedOk = true;
+		for (int m = 0; m < 4; ++m) for (int s = 0; s < 4; ++s) for (int t = 0; t < 4; ++t)
+			for (int u = 0; u < 5; ++u) for (int h = 0; h < 3; ++h) for (int i = 0; i < 2; ++i)
+			{
+				const CursorSettings expected{ static_cast<MouseCursorStyle>(m), static_cast<PenCursorStyle>(s),
+					static_cast<PenCursorStyle>(t), static_cast<TouchCursorStyle>(u),
+					static_cast<PenHighlightMode>(h), i != 0 };
+				const uint32_t bits = PackCursorSettings(expected);
+				packedOk = packedOk && UnpackCursorSettings(bits) == expected && (bits & kCursorSettingsValidBit) != 0;
+			}
+		if (!Expect(packedOk && (PackCursorSettings({}) & kCursorSettingsValidBit) != 0,
+			"packed cursor settings round-trip every legal combination with the valid bit")) ++failures;
+		if (!Expect(RestoreDevicePenCursorStyle(-1, 1) == PenCursorStyle::PenIcon &&
+			RestoreDevicePenCursorStyle(-1, 0) == PenCursorStyle::Circle &&
+			RestoreDevicePenCursorStyle(-1, 2) == PenCursorStyle::Circle &&
+			RestoreDevicePenCursorStyle(2, 1) == PenCursorStyle::Dot &&
+			RestoreDevicePenCursorStyle(0, 1) == PenCursorStyle::Circle &&
+			RestoreDevicePenCursorStyle(9, 1) == PenCursorStyle::Circle &&
+			RestoreTouchCursorStyle(4) == TouchCursorStyle::HighlightDot &&
+			RestoreTouchCursorStyle(5) == TouchCursorStyle::None &&
+			RestorePenHighlightMode(2) == PenHighlightMode::Always &&
+			RestorePenHighlightMode(3) == PenHighlightMode::DigitizerOnly &&
+			RestorePenHighlightMode(-1) == PenHighlightMode::DigitizerOnly,
+			"device restorers inherit the legacy pen type only when the new key is absent")) ++failures;
+	}
+
 	void TestProductCursorSettings(int& failures)
 	{
 		const DrawingCursorAppearance penAppearance = {
@@ -1286,7 +1474,7 @@ namespace
 			for (const auto penStyle : { PenCursorStyle::Circle, PenCursorStyle::PenIcon })
 				for (const auto& source : sources)
 				{
-					settings = { mouseStyle, penStyle };
+					settings = { mouseStyle, penStyle, penStyle };
 					pen.source.kind = source.kind;
 					pen.source.recognition = source.recognition;
 					// 两个类型交错并覆盖真实设备/未知/冲突；边缘规则没有可写偏好。
@@ -1329,7 +1517,7 @@ namespace
 		settings = { MouseCursorStyle::System, PenCursorStyle::Circle };
 		pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
 		const auto screen = resolve(penOwner, penAppearance);
-		settings.penStyle = PenCursorStyle::PenIcon;
+		settings.screenPenStyle = PenCursorStyle::PenIcon;
 		const auto penIcon = resolve(penOwner, penAppearance, Bridge::Tool::Pen, true, 2.0f);
 		if (!Expect(penIcon.visible && Near(penIcon.x, pen.x) && Near(penIcon.y, pen.y) &&
 			Near(penIcon.appearance.width, 48.0f) && Near(penIcon.appearance.centerOffsetX, 24.0f) &&
@@ -1866,6 +2054,7 @@ int RunDraw3ContactInputTests()
 	TestClosingDiscardLiveness(failures);
 	TestCursorOpacityContracts(failures);
 	TestProductCursorSettings(failures);
+	TestPerDeviceCursorStyles(failures);
 	TestTouchCursorOwnership(failures);
 	TestSystemTouchMoveFilter(failures);
 	TestSystemTouchMoveSequence(failures);

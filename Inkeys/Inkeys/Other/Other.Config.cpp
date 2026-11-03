@@ -641,11 +641,25 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					return;
 				}
 
-				if (path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.PenStyle")
+				if (path == "Drawing.Cursor.PenStyle")
 				{
-					// 两种类型只接受整数 0/1；非法值各自恢复系统/圆形默认，不能强转成笔形。
+					// 旧版单一“笔”类型只接受整数 0/1；非法值恢复圆形默认，不能强转成笔形。
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
+				if (path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.ScreenPenStyle" ||
+					path == "Drawing.Cursor.TabletStyle" || path == "Drawing.Cursor.TouchStyle" ||
+					path == "Drawing.Cursor.PenHighlightMode")
+				{
+					// 各设备光标类型先验整数类型和宽度；ScreenPen/Tablet 的 -1 表示沿用旧版 PenStyle。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -2;
+					const bool inheritable = path == "Drawing.Cursor.ScreenPenStyle" || path == "Drawing.Cursor.TabletStyle";
+					const int maximum = path == "Drawing.Cursor.TouchStyle" ? 4
+						: path == "Drawing.Cursor.PenHighlightMode" ? 2 : 3;
+					const bool accepted = (candidate >= 0 && candidate <= maximum) || (inheritable && candidate == -1);
+					value = accepted ? candidate : defaultValue.load();
 					return;
 				}
 				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")

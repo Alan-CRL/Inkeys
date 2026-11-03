@@ -225,6 +225,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 控制普通绘制工具下鼠标使用系统箭头或应用光标；Eraser/Laser 不受影响。
 		void SetMouseUsesSystemCursor(bool enabled) noexcept;
 		bool GetMouseUsesSystemCursor() const noexcept;
+		// 开启后，来源为“驱动注入的鼠标”的消息按数位板处理（非 Windows Ink 数位板）。
+		void SetInjectedMouseAsTablet(bool enabled) noexcept;
 		// 活动 Pen/Mouse contact 锁定有效工具；没有主指针 contact 时恢复批次选择。
 		void SetActiveDrawingCursorTool(DrawingTool tool) noexcept;
 		void ClearActiveDrawingCursorTool() noexcept;
@@ -374,6 +376,9 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> touchCursorSuppressed_ = false;
 		std::atomic<bool> systemCursorRefreshPosted_ = false;
 		std::atomic<bool> mouseUsesSystemCursor_ = true;
+		std::atomic<bool> injectedMouseAsTablet_ = false;
+		// 最近一次带来源的 Pen 样本，仅用于补全无来源的 Pointer 路径样本。
+		DrawingCursorSampleMailbox lastKnownPenSource_;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		std::atomic<bool> cursorTraceEnabled_ = false;
 		std::mutex cursorTraceMutex_;

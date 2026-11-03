@@ -3141,7 +3141,7 @@ namespace
 		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 		NavigationState navigation; navigation.animationsEnabled = true;
 		NotifyNavigationDestination(navigation, { PageId::Draw });
-		DrawingSubpage subpage = DrawingSubpage::Overview; SpeedEraserDraft draft; PalmEraserDraft palm;
+		DrawingSubpage subpage = DrawingSubpage::Overview; SpeedEraserDraft draft; PalmEraserDraft palm; CursorPageDraft cursorDraft;
 		palm.referenceAreaPixels = 40000;
 		auto& io = ImGui::GetIO(); const auto oldSize = io.DisplaySize;
 		auto draw = [&](DrawingSubpage requested, float scroll = -1.0F, ImVec2 mouse = ImVec2(-100, -100), bool down = false) {
@@ -3156,6 +3156,7 @@ namespace
 			auto* host = ImGui::GetCurrentWindow();
 			if (subpage == DrawingSubpage::SpeedEraser) (void)RenderSpeedEraser(draft);
 			else if (subpage == DrawingSubpage::PalmEraser) (void)RenderPalmEraser(palm);
+			else if (subpage == DrawingSubpage::Cursor) (void)RenderCursorPage(cursorDraft);
 			else
 			{
 				NavigateDrawingSubpage(navigation, subpage, RenderDrawingEraserEntries(subpage));
@@ -3192,6 +3193,16 @@ namespace
 			"returning from palm detail restores overview scroll state");
 		checks.Expect(draw(DrawingSubpage::PalmEraser) == palmDetail && storedPalm > 0 && Near(palmDetail->Scroll.y, storedPalm),
 			"palm detail restores its own real scroll position on re-entry");
+		auto* cursorDetail = draw(DrawingSubpage::Cursor);
+		checks.Expect(cursorDetail != detail && cursorDetail != palmDetail && cursorDetail != overview
+			&& Near(cursorDetail->Scroll.y, 0) && navigation.contentPage == static_cast<int>(PageId::Draw),
+			"cursor page has its own stable child identity under the drawing sidebar destination");
+		cursorDraft.mouse = 9; cursorDraft.touch = -3; cursorDraft.screenPen = 7; cursorDraft.tablet = 4; cursorDraft.highlightMode = 8;
+		cursorDraft.injectedAvailable = false;
+		draw(DrawingSubpage::Cursor);
+		checks.Expect(cursorDraft.mouse == 3 && cursorDraft.touch == 0 && cursorDraft.screenPen == 3 && cursorDraft.tablet == 3,
+			"cursor page clamps every device selection to that device's legal style range");
+		draw(DrawingSubpage::PalmEraser);
 		AdvanceNavigationAnimations(navigation, .05F, true, 1); const float reveal = navigation.contentReveal.value;
 		NavigateDrawingSubpage(navigation, subpage, subpage);
 		checks.Expect(Near(navigation.contentReveal.value, reveal), "same drawing subpage does not restart its transition");

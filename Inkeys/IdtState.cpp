@@ -516,7 +516,14 @@ namespace
 		// 光标偏好和当前工具一起发布；设置线程不直接访问绘制对象或 HWND。
 		const auto& cursor = Inkeys::config.Drawing.Cursor;
 		state.cursorSettings.mouseStyle = Inkeys::Drawing::Draw3::RestoreMouseCursorStyle(cursor.MouseStyle.load());
-		state.cursorSettings.penStyle = Inkeys::Drawing::Draw3::RestorePenCursorStyle(cursor.PenStyle.load());
+		const int legacyPenStyle = cursor.PenStyle.load();
+		state.cursorSettings.screenPenStyle = Inkeys::Drawing::Draw3::RestoreDevicePenCursorStyle(
+			cursor.ScreenPenStyle.load(), legacyPenStyle);
+		state.cursorSettings.tabletStyle = Inkeys::Drawing::Draw3::RestoreDevicePenCursorStyle(
+			cursor.TabletStyle.load(), legacyPenStyle);
+		state.cursorSettings.touchStyle = Inkeys::Drawing::Draw3::RestoreTouchCursorStyle(cursor.TouchStyle.load());
+		state.cursorSettings.penHighlight = Inkeys::Drawing::Draw3::RestorePenHighlightMode(cursor.PenHighlightMode.load());
+		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.whiteboardStyle = whiteboardStyleToken;

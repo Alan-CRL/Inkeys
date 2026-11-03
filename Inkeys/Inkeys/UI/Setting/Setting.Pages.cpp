@@ -7,6 +7,7 @@
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
 #include "imgui/imgui_internal.h"
+#include "../../Drawing/Draw3/Draw3.CursorSettings.h"
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -592,6 +593,138 @@ namespace Inkeys::UI::Setting::Design
 			IA(eraser.PalmEraser.EntryDescription).c_str(), "\ue7c9"))
 			current = DrawingSubpage::PalmEraser;
 		return current;
+	}
+
+	namespace
+	{
+		enum class CursorPreviewKind { System, None, Circle, PenIcon, Dot, HighlightDot };
+
+		// 与 Draw3 实际光标共用尺寸/描边常量；预览是近似，不替代真实绘制验收。
+		void DrawCursorPreview(const LayoutRect& rect, CursorPreviewKind kind, bool highlight)
+		{
+			namespace Cursor = Inkeys::Drawing::Draw3;
+			ImDrawList* draw = ImGui::GetWindowDrawList();
+			const ImVec2 min(rect.left, rect.top), max(rect.right, rect.bottom);
+			const float corner = Pixels(4.0F);
+			draw->AddRectFilled(min, max, IM_COL32(52, 54, 60, 255), corner);
+			draw->AddRect(min, max, IM_COL32(255, 255, 255, 36), corner);
+			const ImVec2 center((min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F);
+			const ImU32 ink = IM_COL32(255, 15, 0, 255);
+			// 小圆点两个变体固定普通/高亮，不受高亮模式影响（与 PenCursor 实际规则一致）。
+			const bool isDot = kind == CursorPreviewKind::Dot || kind == CursorPreviewKind::HighlightDot;
+			const bool edgeHighlight = isDot ? kind == CursorPreviewKind::HighlightDot : highlight;
+			const float edgeWidth = (std::max)(1.0F, Pixels(edgeHighlight ? Cursor::kCursorHighlightEdgeDip : Cursor::kCursorPlainEdgeDip));
+			const ImU32 edge = edgeHighlight ? IM_COL32(245, 245, 245, 255) : IM_COL32(184, 184, 184, 255);
+			const float unit = Pixels(1.0F);
+			switch (kind)
+			{
+			case CursorPreviewKind::System:
+			{
+				const ImVec2 origin(center.x - 5.0F * unit, center.y - 9.0F * unit);
+				constexpr float arrow[][2]{ {0, 0}, {0, 15}, {3.6F, 11.8F}, {6.2F, 17.5F}, {8.6F, 16.4F}, {6.0F, 10.8F}, {10.8F, 10.8F} };
+				ImVec2 points[7];
+				for (int index = 0; index < 7; ++index)
+					points[index] = { origin.x + arrow[index][0] * unit, origin.y + arrow[index][1] * unit };
+				draw->AddConcavePolyFilled(points, 7, IM_COL32(255, 255, 255, 255));
+				draw->AddPolyline(points, 7, IM_COL32(0, 0, 0, 255), ImDrawFlags_Closed, (std::max)(1.0F, unit));
+				break;
+			}
+			case CursorPreviewKind::None:
+			{
+				const float radius = 7.0F * unit;
+				const ImU32 dim = IM_COL32(200, 200, 200, 120);
+				draw->AddCircle(center, radius, dim, 0, (std::max)(1.0F, unit));
+				draw->AddLine({ center.x - radius * 0.7F, center.y + radius * 0.7F },
+					{ center.x + radius * 0.7F, center.y - radius * 0.7F }, dim, (std::max)(1.0F, unit));
+				break;
+			}
+			case CursorPreviewKind::Circle:
+			{
+				const float radius = 5.0F * unit;
+				draw->AddCircleFilled(center, radius, IM_COL32(255, 15, 0, 64));
+				draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				break;
+			}
+			case CursorPreviewKind::Dot:
+			case CursorPreviewKind::HighlightDot:
+			{
+				const float radius = Cursor::kCursorDotDiameterDip * 0.5F * unit;
+				draw->AddCircleFilled(center, radius, ink);
+				draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				break;
+			}
+			case CursorPreviewKind::PenIcon:
+			{
+				// 左上尖端为热点，笔身向右下；热点放在预览块左上区域以完整容纳 24 DIP 笔形。
+				const ImVec2 tip(center.x - 12.0F * unit, center.y - 12.0F * unit);
+				constexpr float axis = 0.70710678F;
+				const auto at = [&](float along, float across)
+				{
+					return ImVec2(tip.x + (along * axis + across * axis) * unit, tip.y + (along * axis - across * axis) * unit);
+				};
+				const ImVec2 points[5]{ at(0, 0), at(6, 3.4F), at(30, 3.4F), at(30, -3.4F), at(6, -3.4F) };
+				draw->AddConvexPolyFilled(points, 5, ink);
+				draw->AddPolyline(points, 5, edge, ImDrawFlags_Closed, edgeWidth);
+				break;
+			}
+			}
+		}
+	}
+
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft)
+	{
+		namespace Cursor = Inkeys::Drawing::Draw3;
+		CursorPageEvents events;
+		const auto& cursor = I18nKey.SettingsUI.Draw.Cursor;
+		events.back = IconButton("##cursor-back", "\ue72b");
+		PageHeader(IA(cursor.N).c_str());
+		PageContentStart();
+		const auto mode = static_cast<Cursor::PenHighlightMode>(std::clamp(draft.highlightMode, 0, 2));
+		const std::string system = IA(cursor.Style.System), none = IA(cursor.Style.None),
+			circle = IA(cursor.Style.Circle), penIcon = IA(cursor.Style.PenIcon),
+			dot = IA(cursor.Style.Dot), highlightDot = IA(cursor.Style.HighlightDot);
+
+		constexpr CursorPreviewKind mouseKinds[]{ CursorPreviewKind::System, CursorPreviewKind::PenIcon,
+			CursorPreviewKind::Dot, CursorPreviewKind::HighlightDot };
+		constexpr CursorPreviewKind touchKinds[]{ CursorPreviewKind::None, CursorPreviewKind::Circle,
+			CursorPreviewKind::PenIcon, CursorPreviewKind::Dot, CursorPreviewKind::HighlightDot };
+		constexpr CursorPreviewKind penKinds[]{ CursorPreviewKind::Circle, CursorPreviewKind::PenIcon,
+			CursorPreviewKind::Dot, CursorPreviewKind::HighlightDot };
+		draft.mouse = std::clamp(draft.mouse, 0, 3);
+		draft.touch = std::clamp(draft.touch, 0, 4);
+		draft.screenPen = std::clamp(draft.screenPen, 0, 3);
+		draft.tablet = std::clamp(draft.tablet, 0, 3);
+
+		SectionHeader(IA(cursor.Devices).c_str());
+		events.mouse = ComboPreviewRow("##cursor-mouse", IA(cursor.Mouse.N).c_str(), IA(cursor.Mouse.E).c_str(),
+			"\ue962", draft.mouse, { system, penIcon, dot, highlightDot },
+			[&](const LayoutRect& area) { DrawCursorPreview(area, mouseKinds[draft.mouse],
+				Cursor::IsCursorEdgeHighlighted(Cursor::CursorDevice::Mouse, mode)); });
+		events.touch = ComboPreviewRow("##cursor-touch", IA(cursor.Touch.N).c_str(), IA(cursor.Touch.E).c_str(),
+			"\ue7c9", draft.touch, { none, circle, penIcon, dot, highlightDot },
+			[&](const LayoutRect& area) { DrawCursorPreview(area, touchKinds[draft.touch],
+				Cursor::IsCursorEdgeHighlighted(Cursor::CursorDevice::Touch, mode)); });
+		events.screenPen = ComboPreviewRow("##cursor-screen-pen", IA(cursor.ScreenPen.N).c_str(), IA(cursor.ScreenPen.E).c_str(),
+			"\uedc6", draft.screenPen, { circle, penIcon, dot, highlightDot },
+			[&](const LayoutRect& area) { DrawCursorPreview(area, penKinds[draft.screenPen],
+				Cursor::IsCursorEdgeHighlighted(Cursor::CursorDevice::ScreenPen, mode)); });
+		events.tablet = ComboPreviewRow("##cursor-tablet", IA(cursor.Tablet.N).c_str(), IA(cursor.Tablet.E).c_str(),
+			"\ue70f", draft.tablet, { circle, penIcon, dot, highlightDot },
+			[&](const LayoutRect& area) { DrawCursorPreview(area, penKinds[draft.tablet],
+				Cursor::IsCursorEdgeHighlighted(Cursor::CursorDevice::Tablet, mode)); });
+
+		SectionHeader(IA(cursor.PenDevices).c_str());
+		events.highlightMode = ComboRow("##cursor-pen-highlight", IA(cursor.PenHighlight.N).c_str(),
+			IA(cursor.PenHighlight.E).c_str(), "\ue706", draft.highlightMode,
+			{ IA(cursor.PenHighlight.Off), IA(cursor.PenHighlight.DigitizerOnly) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+				IA(cursor.PenHighlight.Always) });
+		ImFluent::BeginDisabled(!draft.injectedAvailable);
+		events.injectedMouse = ToggleRow("##cursor-injected-mouse", IA(cursor.InjectedMouse.N).c_str(),
+			IA(cursor.InjectedMouse.E).c_str(), "\ue946", draft.injectedMouse,
+			draft.injectedAvailable ? nullptr : IA(cursor.InjectedMouse.Unavailable).c_str());
+		ImFluent::EndDisabled();
+		InfoText(IA(cursor.Note).c_str());
+		return events;
 	}
 
 	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft)

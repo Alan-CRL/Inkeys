@@ -60,7 +60,10 @@ namespace
 		if (!Expect(initial.revision == 0,
 			"default snapshot starts at revision zero")) ++failures;
 		if (!Expect(initial.cursorSettings.mouseStyle == MouseCursorStyle::System
-			&& initial.cursorSettings.penStyle == PenCursorStyle::Circle,
+			&& initial.cursorSettings.screenPenStyle == PenCursorStyle::Circle
+			&& initial.cursorSettings.tabletStyle == PenCursorStyle::Circle
+			&& initial.cursorSettings.touchStyle == Inkeys::Drawing::Draw3::TouchCursorStyle::None
+			&& initial.cursorSettings.penHighlight == Inkeys::Drawing::Draw3::PenHighlightMode::DigitizerOnly,
 			"bridge defaults use the system mouse cursor and the original pen circle")) ++failures;
 		if (!Expect(initial.selectionMode,
 			"default product state starts in selection mode")) ++failures;
@@ -118,12 +121,12 @@ namespace
 
 		const auto beforeCursor = bridge.Snapshot();
 		auto cursorOnly = beforeCursor;
-		cursorOnly.cursorSettings.penStyle = PenCursorStyle::PenIcon;
+		cursorOnly.cursorSettings.screenPenStyle = PenCursorStyle::PenIcon;
 		bridge.PublishState(cursorOnly);
 		const auto afterCursor = bridge.Snapshot();
 		if (!Expect(afterCursor.revision == beforeCursor.revision + 1
 			&& afterCursor.cursorSettings == cursorOnly.cursorSettings
-			&& beforeCursor.cursorSettings.penStyle == PenCursorStyle::Circle
+			&& beforeCursor.cursorSettings.screenPenStyle == PenCursorStyle::Circle
 			&& afterCursor.cursorSettings.mouseStyle == beforeCursor.cursorSettings.mouseStyle
 			&& afterCursor.tool == beforeCursor.tool && afterCursor.widthDip == beforeCursor.widthDip,
 			"pen-only cursor updates publish an immutable revision without changing mouse or brush")) ++failures;
@@ -132,7 +135,7 @@ namespace
 		bridge.PublishState(cursorOnly);
 		const auto mouseChanged = bridge.Snapshot();
 		if (!Expect(mouseChanged.revision == afterCursor.revision + 1
-			&& mouseChanged.cursorSettings.penStyle == PenCursorStyle::PenIcon
+			&& mouseChanged.cursorSettings.screenPenStyle == PenCursorStyle::PenIcon
 			&& mouseChanged.cursorSettings.mouseStyle == MouseCursorStyle::Drawing
 			&& afterCursor.cursorSettings.mouseStyle == MouseCursorStyle::System,
 			"mouse-only cursor updates preserve the independently selected pen type")) ++failures;
@@ -161,26 +164,31 @@ namespace
 				ResolveMouseCursorStyleForTool(test.tool, MouseCursorStyle::Drawing) == test.drawingChoice,
 				"production tool projection keeps highlighter independent and excludes every shape")) ++failures;
 		}
-		const Inkeys::Drawing::Draw3::CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
+		const Inkeys::Drawing::Draw3::CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon, PenCursorStyle::PenIcon };
 		const auto marker = ResolveCursorSettingsForTool(Tool::Highlighter, raw);
 		const auto shape = ResolveCursorSettingsForTool(Tool::SolidLine, raw);
 		const auto brush = ResolveCursorSettingsForTool(Tool::Pen, raw);
 		if (!Expect(marker.mouseStyle == MouseCursorStyle::Drawing &&
 			shape.mouseStyle == MouseCursorStyle::System && brush.mouseStyle == MouseCursorStyle::System &&
 			raw.mouseStyle == MouseCursorStyle::System &&
-			marker.penStyle == PenCursorStyle::PenIcon && shape.penStyle == raw.penStyle && brush.penStyle == raw.penStyle,
+			marker.screenPenStyle == PenCursorStyle::PenIcon && shape.screenPenStyle == raw.screenPenStyle && brush.screenPenStyle == raw.screenPenStyle &&
+			marker.tabletStyle == raw.tabletStyle && brush.touchStyle == raw.touchStyle && brush.penHighlight == raw.penHighlight,
 			"actual marker-to-shape-to-brush projection preserves raw system preference and independent pen type")) ++failures;
 		using Inkeys::Drawing::Draw3::RestoreMouseCursorStyle;
 		using Inkeys::Drawing::Draw3::RestorePenCursorStyle;
 		if (!Expect(RestoreMouseCursorStyle(0) == MouseCursorStyle::System &&
 			RestoreMouseCursorStyle(1) == MouseCursorStyle::Drawing &&
 			RestoreMouseCursorStyle(-1) == MouseCursorStyle::System &&
-			RestoreMouseCursorStyle(2) == MouseCursorStyle::System &&
+			RestoreMouseCursorStyle(2) == MouseCursorStyle::Dot &&
+			RestoreMouseCursorStyle(3) == MouseCursorStyle::HighlightDot &&
+			RestoreMouseCursorStyle(4) == MouseCursorStyle::System &&
 			RestorePenCursorStyle(0) == PenCursorStyle::Circle &&
 			RestorePenCursorStyle(1) == PenCursorStyle::PenIcon &&
 			RestorePenCursorStyle(-1) == PenCursorStyle::Circle &&
-			RestorePenCursorStyle(2) == PenCursorStyle::Circle,
-			"shared cursor restorers accept only one as the optional pen icon")) ++failures;
+			RestorePenCursorStyle(2) == PenCursorStyle::Dot &&
+			RestorePenCursorStyle(3) == PenCursorStyle::HighlightDot &&
+			RestorePenCursorStyle(4) == PenCursorStyle::Circle,
+			"shared cursor restorers accept only their device's legal styles")) ++failures;
 	}
 
 	void TestPresentationSessionIdentity(int& failures)

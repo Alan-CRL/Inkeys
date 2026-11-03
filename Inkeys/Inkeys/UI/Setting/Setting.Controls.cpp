@@ -1463,6 +1463,26 @@ namespace Inkeys::UI::Setting::Design
 		return changed;
 	}
 
+	bool ComboPreviewRow(const char* id, const char* title, const char* description,
+		const char* glyph, int& value, const std::vector<std::string>& items,
+		const std::function<void(const LayoutRect&)>& preview, const char* note)
+	{
+		constexpr float previewWidth = 44.0F, previewGap = 12.0F;
+		float width = 160.0F;
+		for (const auto& item : items)
+			width = (std::max)(width, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+		bool changed = false;
+		SettingRow(id, title, description, glyph, previewWidth + previewGap + (std::min)(320.0F, width), ControlHeight,
+			[&](const LayoutRect& bounds)
+			{
+				preview({ bounds.left, bounds.top, bounds.left + Pixels(previewWidth), bounds.bottom });
+				ImGui::SetCursorScreenPos({ bounds.left + Pixels(previewWidth + previewGap), bounds.top });
+				ImGui::SetNextItemWidth((std::max)(1.0F, bounds.Width() - Pixels(previewWidth + previewGap)));
+				changed = ComboBox("##select", &value, items);
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
+		return changed;
+	}
+
 	bool SliderRow(const char* id, const char* title, const char* description,
 		const char* glyph, float& value, float minimum, float maximum, bool& active, const char* format, const char* note)
 	{

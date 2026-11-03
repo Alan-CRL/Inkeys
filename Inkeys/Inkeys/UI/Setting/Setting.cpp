@@ -3499,6 +3499,39 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
+					if (drawingSubpage == Design::DrawingSubpage::Cursor)
+					{
+						namespace Cursor = Inkeys::Drawing::Draw3;
+						auto& cursor = Inkeys::config.Drawing.Cursor;
+						const int legacyPenStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
+						static const bool injectedSourceAvailable = GetProcAddress(
+							GetModuleHandleW(L"user32.dll"), "GetCurrentInputMessageSource") != nullptr;
+						Design::CursorPageDraft draft;
+						draft.mouse = static_cast<int>(Cursor::RestoreMouseCursorStyle(cursor.MouseStyle.load()));
+						draft.touch = static_cast<int>(Cursor::RestoreTouchCursorStyle(cursor.TouchStyle.load()));
+						draft.screenPen = static_cast<int>(Cursor::RestoreDevicePenCursorStyle(cursor.ScreenPenStyle.load(), legacyPenStyle));
+						draft.tablet = static_cast<int>(Cursor::RestoreDevicePenCursorStyle(cursor.TabletStyle.load(), legacyPenStyle));
+						draft.highlightMode = static_cast<int>(Cursor::RestorePenHighlightMode(cursor.PenHighlightMode.load()));
+						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
+						draft.injectedAvailable = injectedSourceAvailable;
+						const auto events = Design::RenderCursorPage(draft);
+						if (events.back)
+							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
+						if (events.mouse || events.touch || events.screenPen || events.tablet
+							|| events.highlightMode || events.injectedMouse)
+						{
+							// 只写被改动的设备；未改动的屏幕笔/数位板继续沿用旧版“笔”类型。
+							if (events.mouse) cursor.MouseStyle = draft.mouse;
+							if (events.touch) cursor.TouchStyle = draft.touch;
+							if (events.screenPen) cursor.ScreenPenStyle = draft.screenPen;
+							if (events.tablet) cursor.TabletStyle = draft.tablet;
+							if (events.highlightMode) cursor.PenHighlightMode = draft.highlightMode;
+							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
+							SyncDraw3State();
+							QueueConfigWrite();
+						}
+						break;
+					}
 					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
 					{
 						namespace Palm = Inkeys::Drawing::Draw3::PalmEraser;
@@ -3681,20 +3714,9 @@ SettingSessionCoroutine RunSettingSession()
 					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
-					auto& cursor = Inkeys::config.Drawing.Cursor;
-					const vector<string> cursorStyles{ IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
-					int mouseStyle = cursor.MouseStyle.load() == 1 ? 1 : 0, penStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
-					const bool mouseStyleChanged = Design::ComboRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Cursor.Description).c_str(), "\ue962", mouseStyle, cursorStyles);
-					const bool penStyleChanged = Design::ComboRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle).c_str(),
-						nullptr, "\uedc6", penStyle, cursorStyles);
-					if (mouseStyleChanged || penStyleChanged)
-					{
-						cursor.MouseStyle = mouseStyle;
-						cursor.PenStyle = penStyle;
-						SyncDraw3State();
-						QueueConfigWrite();
-					}
+					if (Design::NavigationRow("##cursor-entry", IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Cursor.EntryDescription).c_str(), "\ue962"))
+						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Cursor);
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
 					bool laserMultiTouchEnabled = drawingOptions.Laser.MultiTouchEnabled;
