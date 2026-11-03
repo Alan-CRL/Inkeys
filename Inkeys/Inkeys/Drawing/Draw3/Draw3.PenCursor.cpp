@@ -341,40 +341,30 @@ namespace Inkeys::Drawing::Draw3
 				? std::clamp(dpiScale, 0.25f, 8.0f) : 1.0f;
 			// 设备行：鼠标 / 屏幕笔 / 数位板（含 Unknown、Conflict 与开关开启的注入鼠标）。
 			const bool mouseRow = !pen && !tabletMouse;
-			bool useIcon = false;
-			int dotKind = 0; // 0 无，1 小圆点，2 高亮小圆点
+			bool useIcon = false, highlightDot = false;
 			if (mouseRow)
 			{
 				useIcon = productSettings->mouseStyle == MouseCursorStyle::Drawing;
-				dotKind = productSettings->mouseStyle == MouseCursorStyle::Dot ? 1
-					: productSettings->mouseStyle == MouseCursorStyle::HighlightDot ? 2 : 0;
+				highlightDot = productSettings->mouseStyle == MouseCursorStyle::HighlightDot;
 			}
 			else
 			{
 				const PenCursorStyle style = screenPen ? productSettings->screenPenStyle : productSettings->tabletStyle;
 				useIcon = style == PenCursorStyle::PenIcon;
-				dotKind = style == PenCursorStyle::Dot ? 1 : style == PenCursorStyle::HighlightDot ? 2 : 0;
+				highlightDot = style == PenCursorStyle::HighlightDot;
 			}
 			// 类型选择只允许改变软/硬笔，荧光笔矩形和图形圆形保持原几何与原高亮规则。
 			bool highlight;
 			if (!penIconAllowed) highlight = !screenPen;
-			else if (dotKind != 0) highlight = dotKind == 2;
+			else if (highlightDot) highlight = true;
 			else highlight = IsCursorEdgeHighlighted(mouseRow ? CursorDevice::Mouse
-				: screenPen ? CursorDevice::ScreenPen : CursorDevice::Tablet, productSettings->penHighlight);
+				: screenPen ? CursorDevice::ScreenPen : CursorDevice::Tablet, productSettings->penHighlight, useIcon);
 			if (penIconAllowed && useIcon)
 			{
 				visual.appearance.shape = DrawingCursorShape::PenIcon;
 				visual.appearance.width = visual.appearance.height = kCursorPenIconDip * scale;
 				visual.appearance.centerOffsetX = visual.appearance.width * 0.5f;
 				visual.appearance.centerOffsetY = visual.appearance.height * 0.5f;
-			}
-			else if (penIconAllowed && dotKind != 0)
-			{
-				// 小圆点固定小尺寸、不随笔宽，热点即圆心。
-				visual.appearance.shape = DrawingCursorShape::Circle;
-				visual.appearance.width = visual.appearance.height = kCursorDotDiameterDip * scale;
-				visual.appearance.centerOffsetX = visual.appearance.centerOffsetY = 0.0f;
-				visual.appearance.fillAlpha = 1.0f;
 			}
 			visual.appearance.outlineWidth = (highlight ? 1.25f : 0.5f) * scale;
 			visual.appearance.outlineOpacity = highlight ? 1.0f :
@@ -635,13 +625,6 @@ namespace Inkeys::Drawing::Draw3
 			visual.appearance.width = visual.appearance.height = kCursorPenIconDip * scale;
 			visual.appearance.centerOffsetX = visual.appearance.width * 0.5f;
 			visual.appearance.centerOffsetY = visual.appearance.height * 0.5f;
-		}
-		else if (style == TouchCursorStyle::Dot || style == TouchCursorStyle::HighlightDot)
-		{
-			visual.appearance.shape = DrawingCursorShape::Circle;
-			visual.appearance.width = visual.appearance.height = kCursorDotDiameterDip * scale;
-			visual.appearance.centerOffsetX = visual.appearance.centerOffsetY = 0.0f;
-			visual.appearance.fillAlpha = 1.0f;
 		}
 		visual.appearance.outlineWidth = (highlight ? 1.25f : 0.5f) * scale;
 		visual.appearance.outlineOpacity = highlight ? 1.0f :

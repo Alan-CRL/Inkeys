@@ -179,14 +179,14 @@ namespace
 		if (!Expect(RestoreMouseCursorStyle(0) == MouseCursorStyle::System &&
 			RestoreMouseCursorStyle(1) == MouseCursorStyle::Drawing &&
 			RestoreMouseCursorStyle(-1) == MouseCursorStyle::System &&
-			RestoreMouseCursorStyle(2) == MouseCursorStyle::Dot &&
+			RestoreMouseCursorStyle(2) == MouseCursorStyle::Circle &&
 			RestoreMouseCursorStyle(3) == MouseCursorStyle::HighlightDot &&
 			RestoreMouseCursorStyle(4) == MouseCursorStyle::System &&
 			RestorePenCursorStyle(0) == PenCursorStyle::Circle &&
 			RestorePenCursorStyle(1) == PenCursorStyle::PenIcon &&
 			RestorePenCursorStyle(-1) == PenCursorStyle::Circle &&
-			RestorePenCursorStyle(2) == PenCursorStyle::Dot &&
-			RestorePenCursorStyle(3) == PenCursorStyle::HighlightDot &&
+			RestorePenCursorStyle(2) == PenCursorStyle::HighlightDot &&
+			RestorePenCursorStyle(3) == PenCursorStyle::Circle &&
 			RestorePenCursorStyle(4) == PenCursorStyle::Circle,
 			"shared cursor restorers accept only their device's legal styles")) ++failures;
 	}

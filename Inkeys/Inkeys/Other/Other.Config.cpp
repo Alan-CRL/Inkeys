@@ -656,8 +656,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -2;
 					const bool inheritable = path == "Drawing.Cursor.ScreenPenStyle" || path == "Drawing.Cursor.TabletStyle";
-					const int maximum = path == "Drawing.Cursor.TouchStyle" ? 4
-						: path == "Drawing.Cursor.PenHighlightMode" ? 2 : 3;
+					const int maximum = path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.TouchStyle" ? 3 : 2;
 					const bool accepted = (candidate >= 0 && candidate <= maximum) || (inheritable && candidate == -1);
 					value = accepted ? candidate : defaultValue.load();
 					return;

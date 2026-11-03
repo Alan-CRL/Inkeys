@@ -363,9 +363,9 @@ int RunConfigMetadataTests()
 		Inkeys::Config deviceConfig;
 		auto& deviceCursor = deviceConfig.Drawing.Cursor;
 		const DeviceKey deviceKeys[] = {
-			{ "ScreenPenStyle", &deviceCursor.ScreenPenStyle, -1, 3, true },
-			{ "TabletStyle", &deviceCursor.TabletStyle, -1, 3, true },
-			{ "TouchStyle", &deviceCursor.TouchStyle, 0, 4, false },
+			{ "ScreenPenStyle", &deviceCursor.ScreenPenStyle, -1, 2, true },
+			{ "TabletStyle", &deviceCursor.TabletStyle, -1, 2, true },
+			{ "TouchStyle", &deviceCursor.TouchStyle, 0, 3, false },
 			{ "PenHighlightMode", &deviceCursor.PenHighlightMode, 1, 2, false } };
 		for (const auto& key : deviceKeys)
 		{
@@ -398,7 +398,7 @@ int RunConfigMetadataTests()
 		deviceCursor.MouseStyle = 3;
 		deviceCursor.ScreenPenStyle = 2;
 		deviceCursor.TabletStyle = 1;
-		deviceCursor.TouchStyle = 4;
+		deviceCursor.TouchStyle = 3;
 		deviceCursor.PenHighlightMode = 2;
 		deviceCursor.InjectedMouseAsTablet = true;
 		check(deviceConfig.Write(), "write the full per-device cursor selection");
@@ -406,7 +406,7 @@ int RunConfigMetadataTests()
 		auto& restoredCursor = deviceRestarted.Drawing.Cursor;
 		check(deviceRestarted.ReadAll() && restoredCursor.MouseStyle.load() == 3 &&
 			restoredCursor.ScreenPenStyle.load() == 2 && restoredCursor.TabletStyle.load() == 1 &&
-			restoredCursor.TouchStyle.load() == 4 && restoredCursor.PenHighlightMode.load() == 2 &&
+			restoredCursor.TouchStyle.load() == 3 && restoredCursor.PenHighlightMode.load() == 2 &&
 			restoredCursor.InjectedMouseAsTablet.load(),
 			"restart restores every per-device cursor selection");
 		check(deviceConfig.GetUploadInfo() == cursorUpload, "per-device cursor preferences are not uploaded");

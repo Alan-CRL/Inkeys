@@ -5,10 +5,11 @@
 namespace Inkeys::Drawing::Draw3
 {
 	// 取值 0/1 与旧版两个下拉保持一致，使旧配置无需转换即可被读取。
-	enum class MouseCursorStyle : std::uint8_t { System = 0, Drawing = 1, Dot = 2, HighlightDot = 3 };
-	enum class PenCursorStyle : std::uint8_t { Circle = 0, PenIcon = 1, Dot = 2, HighlightDot = 3 };
+	// Circle 即界面上的“小圆点”（随笔宽的圆形预览）；HighlightDot 为固定高亮描边的变体。
+	enum class MouseCursorStyle : std::uint8_t { System = 0, Drawing = 1, Circle = 2, HighlightDot = 3 };
+	enum class PenCursorStyle : std::uint8_t { Circle = 0, PenIcon = 1, HighlightDot = 2 };
 	// 触摸默认无光标，且“无光标”只属于触摸。
-	enum class TouchCursorStyle : std::uint8_t { None = 0, Circle = 1, PenIcon = 2, Dot = 3, HighlightDot = 4 };
+	enum class TouchCursorStyle : std::uint8_t { None = 0, Circle = 1, PenIcon = 2, HighlightDot = 3 };
 	// 只控制屏幕笔/数位板圆形与画笔图标的外描边；小圆点的两个变体和鼠标不受其影响。
 	enum class PenHighlightMode : std::uint8_t { Off = 0, DigitizerOnly = 1, Always = 2 };
 
@@ -32,12 +33,12 @@ namespace Inkeys::Drawing::Draw3
 
 	constexpr PenCursorStyle RestorePenCursorStyle(int value) noexcept
 	{
-		return value >= 0 && value <= 3 ? static_cast<PenCursorStyle>(value) : PenCursorStyle::Circle;
+		return value >= 0 && value <= 2 ? static_cast<PenCursorStyle>(value) : PenCursorStyle::Circle;
 	}
 
 	constexpr TouchCursorStyle RestoreTouchCursorStyle(int value) noexcept
 	{
-		return value >= 0 && value <= 4 ? static_cast<TouchCursorStyle>(value) : TouchCursorStyle::None;
+		return value >= 0 && value <= 3 ? static_cast<TouchCursorStyle>(value) : TouchCursorStyle::None;
 	}
 
 	constexpr PenHighlightMode RestorePenHighlightMode(int value) noexcept
@@ -46,20 +47,20 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	// 光标设置页预览与实际渲染共用的外观常量，避免两处漂移。
-	inline constexpr float kCursorDotDiameterDip = 6.0f;
 	inline constexpr float kCursorPenIconDip = 24.0f;
 	inline constexpr float kCursorHighlightEdgeDip = 1.25f;
 	inline constexpr float kCursorPlainEdgeDip = 0.5f;
 
 	enum class CursorDevice : std::uint8_t { Mouse, Touch, ScreenPen, Tablet };
 
-	// 圆形与画笔光标的外描边是否高亮：鼠标始终高亮；触摸不高亮；笔设备按高亮模式。
-	// Unknown/Conflict 笔与开启识别的注入鼠标按数位板行处理。小圆点两个变体不走此函数。
-	constexpr bool IsCursorEdgeHighlighted(CursorDevice device, PenHighlightMode mode) noexcept
+	// 小圆点与画笔光标的外描边是否高亮（高亮小圆点恒高亮，不走此函数）：
+	// 鼠标的画笔图标高亮、小圆点普通；触摸不高亮；笔设备按高亮模式。
+	// Unknown/Conflict 笔与开启识别的注入鼠标按数位板行处理。
+	constexpr bool IsCursorEdgeHighlighted(CursorDevice device, PenHighlightMode mode, bool penIcon) noexcept
 	{
 		switch (device)
 		{
-		case CursorDevice::Mouse: return true;
+		case CursorDevice::Mouse: return penIcon;
 		case CursorDevice::Touch: return false;
 		case CursorDevice::ScreenPen: return mode == PenHighlightMode::Always;
 		default: return mode != PenHighlightMode::Off;

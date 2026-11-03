@@ -3200,7 +3200,7 @@ namespace
 		cursorDraft.mouse = 9; cursorDraft.touch = -3; cursorDraft.screenPen = 7; cursorDraft.tablet = 4; cursorDraft.highlightMode = 8;
 		cursorDraft.injectedAvailable = false;
 		draw(DrawingSubpage::Cursor);
-		checks.Expect(cursorDraft.mouse == 3 && cursorDraft.touch == 0 && cursorDraft.screenPen == 3 && cursorDraft.tablet == 3,
+		checks.Expect(cursorDraft.mouse == 3 && cursorDraft.touch == 0 && cursorDraft.screenPen == 2 && cursorDraft.tablet == 2,
 			"cursor page clamps every device selection to that device's legal style range");
 		draw(DrawingSubpage::PalmEraser);
 		AdvanceNavigationAnimations(navigation, .05F, true, 1); const float reveal = navigation.contentReveal.value;

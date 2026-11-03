@@ -644,15 +644,14 @@
         {
           "System": "System cursor",
           "None": "No cursor",
-          "Circle": "Circle",
+          "Circle": "Small dot",
           "PenIcon": "Pen cursor",
-          "Dot": "Small dot",
           "HighlightDot": "Highlighted small dot"
         },
         "PenHighlight":
         {
           "N": "Pen highlight mode",
-          "E": "Adds a highlighted edge to the circle and pen cursors of screen pens and pen tablets. The two small dots are not affected.",
+          "E": "Adds a highlighted edge to the small dot and pen cursors of screen pens and pen tablets. The highlighted small dot is always highlighted.",
           "Off": "Off",
           "DigitizerOnly": "Pen tablets only",
           "Always": "Always"

@@ -649,7 +649,6 @@ inline constexpr struct I18nKeyRoot
                     const char* None = "SettingsUI/Draw/Cursor/Style/None";
                     const char* Circle = "SettingsUI/Draw/Cursor/Style/Circle";
                     const char* PenIcon = "SettingsUI/Draw/Cursor/Style/PenIcon";
-                    const char* Dot = "SettingsUI/Draw/Cursor/Style/Dot";
                     const char* HighlightDot = "SettingsUI/Draw/Cursor/Style/HighlightDot";
                 } Style{};
                 struct Node__SettingsUI__Draw__Cursor__PenHighlight
