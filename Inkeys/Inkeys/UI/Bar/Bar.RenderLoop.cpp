@@ -12682,7 +12682,7 @@ bool presetButton = button.presetIndex >= 0;
 		}
 		if (presentCompletion.IsCommitted())
 		{
-			owner_.PreparePresentedButtonHits();
+			owner_.PreparePresentedButtonHits(state.stateModeSnapshot);
 			state.barPresentFailureLogged = false;
 			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
 			state.dirtyRegionTracker.CommitPresented();

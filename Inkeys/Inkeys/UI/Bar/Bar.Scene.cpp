@@ -9,6 +9,7 @@ module;
 #include <mutex>
 #include <utility>
 #include <windows.h>
+#include "Bar.BusyRing.h"
 #include "Bar.DirtyRegion.h"
 #include "Bar.InteractionWorker.h"
 #include "../Whiteboard/Whiteboard.Theme.h"
@@ -140,6 +141,9 @@ namespace Inkeys::UI::Bar
 		double fontTargetScale=0;
 		bool initialized=false,backgroundOnly=false,active=false,invalidated=true,subscribed=false;
 		std::chrono::steady_clock::time_point previousFrame{};
+		// 白板翻页开始计时（steady 时钟，与帧时间同域）；仅 switching 期间有效。
+		std::chrono::steady_clock::time_point switchingSince{};
+		bool switchingTimed=false;
 		FrameAnimationClock animationClock;
 		bool frameSeen=false;
 		std::uint64_t appliedLightingRevision=0;
@@ -368,7 +372,11 @@ namespace Inkeys::UI::Bar
 					if(ThemeColors[i]==content.backgroundRgb||ThemeColors[i]==next.backgroundRgb)IncludeButton(static_cast<BarSurfaceButtonId>(9+i));
 			}
 			for(std::size_t i=0;i<next.enabled.size();++i)if(content.enabled[i]!=next.enabled[i]||content.interactive[i]!=next.interactive[i])IncludeButton(static_cast<BarSurfaceButtonId>(2+i));
-			if(content.switching!=next.switching)for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
+			if(content.switching!=next.switching){
+				switchingTimed=next.switching;
+				if(next.switching)switchingSince=std::chrono::steady_clock::now();
+				for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
+			}
 			if(content.pptActive!=next.pptActive){
 				IncludeButton(7);
 				// 放映恢复时同步撤销 Minimize 的旧反馈，禁用态不能残留按压底色或释放点击。
@@ -578,6 +586,11 @@ namespace Inkeys::UI::Bar
 			const BarUiAnimationAdvanceContextClass frame{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
 			renderer.BeginFontFrame(now,frame,fontTargetScale>0?fontTargetScale:scale);
 			active=fontPending;bool changed=false,panelsChanged=false;
+			// 翻页卡住期间保持帧推进；圆环可见后每帧重绘页码区以更新角度。
+			if(switchingTimed&&content.whiteboard&&!backgroundOnly){
+				active=true;
+				if(BusyRingVisible(true,std::chrono::duration<double>(now-switchingSince).count()))IncludeButton(3);
+			}
 			const auto surface=GetThemeColor(BarThemeColorEnum::Surface);
 			if(appliedSurfaceColor!=surface){
 				// 普通表面跟随主栏样式，预览内部颜色仍由页面主题独立控制。
@@ -668,6 +681,23 @@ namespace Inkeys::UI::Bar
 				};
 			}
 			DrawBarButtonVisual(renderer,dc,button,Inherit(button.button),options);
+		}
+		// 页码按钮右侧的旋转圆环：用现有 DrawProgressRing 画 28% 弧段并整体旋转。
+		void DrawBusyRing(ID2D1DeviceContext* dc,std::chrono::steady_clock::time_point now)
+		{
+			const auto& hit=candidate.buttons[2];if(!hit.visible)return;
+			const double width=hit.boundsDip.right-hit.boundsDip.left,height=hit.boundsDip.bottom-hit.boundsDip.top;
+			const float radius=static_cast<float>((std::min)(width,height)*0.22);if(radius<=0)return;
+			const D2D1_POINT_2F centre=D2D1::Point2F(static_cast<FLOAT>(hit.boundsDip.right-radius-4.0),
+				static_cast<FLOAT>((hit.boundsDip.top+hit.boundsDip.bottom)/2.0));
+			const double elapsed=std::chrono::duration<double>(now-switchingSince).count();
+			D2D1_MATRIX_3X2_F original;dc->GetTransform(&original);
+			dc->SetTransform(D2D1::Matrix3x2F::Rotation(static_cast<FLOAT>(BusyRingAngleDegrees(elapsed)),centre)
+				*D2D1::Matrix3x2F::Scale(scale,scale)
+				*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(logical.left-presentation.left),static_cast<FLOAT>(logical.top-presentation.top)));
+			const auto colour=GetThemeColor(BarThemeColorEnum::TextPrimary);
+			renderer.DrawRing(dc,centre,radius,(std::max)(1.5F,radius*0.30F),BusyRingArcFraction,colour,0.25F,0.90F);
+			dc->SetTransform(original);
 		}
 		void DrawGroup(ID2D1DeviceContext* dc,bool child)
 		{
@@ -905,6 +935,7 @@ namespace Inkeys::UI::Bar
 					EraserRectCenterX(r)+(vertical?1:10),EraserRectCenterY(r)+(vertical?10:1)},0,true);p.DrawShape(dc,p.dragHandle);
 			}
 			for(const auto id:p.paginationDrawOrder)p.DrawButton(dc,id);
+			if(p.switchingTimed&&p.content.whiteboard&&BusyRingVisible(true,std::chrono::duration<double>(now-p.switchingSince).count()))p.DrawBusyRing(dc,now);
 			if(p.content.whiteboard&&p.content.surface==0&&p.content.unsaved)p.renderer.Word(dc,p.unsaved,{5,-32},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
 		}
 		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);

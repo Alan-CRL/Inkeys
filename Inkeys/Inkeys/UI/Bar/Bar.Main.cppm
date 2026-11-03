@@ -9,10 +9,13 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <memory>
+#include <vector>
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
 #include "Bar.InteractionWorker.h"
+#include "../../Input/UiTouchRouting.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
@@ -86,6 +89,7 @@ class BarRenderLoopCoordinator;
 
 class BarEraserAttributePanel
 {
+	friend class BarUISetClass; // 仅 render owner 在候选命中事务中读取当前 frame_。
 public:
 	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
 		RECT workArea, POINT origin, double rigidX, double rigidY,
@@ -145,6 +149,7 @@ private:
 // 撤回属性：单 70x70 Redo 按钮，开合/换边/命中语义与橡皮属性一致，无子菜单。
 class BarRecallAttributePanel
 {
+	friend class BarUISetClass; // 与橡皮面板使用同一成功呈现边界。
 public:
 	bool Advance(BarUISetClass& owner, const Inkeys::UI::Bar::RecallChromeView& chrome,
 		bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
@@ -616,6 +621,7 @@ public:
 		double layoutXDip, double layoutYDip) const;
 	bool HitTestPresentedShape(const BarUiSuperellipseClass& shape,
 		double layoutXDip, double layoutYDip) const;
+	Inkeys::Input::UiPointer::Touch::Probe ProbeTouchScreen(POINT screen) const;
 
 	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
 	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
@@ -1002,11 +1008,26 @@ public:
 	}
 
 protected:
-	void PreparePresentedButtonHits();
+	void PreparePresentedButtonHits(const StateModeClass& stateMode);
 	void PublishPresentedButtonHits();
 	mutable std::mutex presentedButtonHitsMutex_;
 	std::unordered_map<const BarButtonClass*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedButtonHits_, candidateButtonHits_;
 	std::unordered_map<const void*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedVisualHits_, candidateVisualHits_;
+	enum class TouchRegionSpace { Rigid, Body, Grip };
+	struct PresentedTouchRegion
+	{
+		Inkeys::UI::Bar::BarButtonHitSnapshot geometry;
+		TouchRegionSpace space = TouchRegionSpace::Rigid;
+		Inkeys::Input::UiPointer::Touch::Hit disposition = Inkeys::Input::UiPointer::Touch::Hit::Miss;
+	};
+	struct PresentedTouchRegions
+	{
+		std::vector<PresentedTouchRegion> regions;
+		std::uint64_t semantic = 0;
+	};
+	// 只在成功 commit 时交换不可变小值快照；native probe 不读动画或控件对象。
+	std::shared_ptr<const PresentedTouchRegions> presentedTouchRegions_, candidateTouchRegions_;
+	double presentedTouchRebaseXDip_ = 0.0, presentedTouchRebaseYDip_ = 0.0;
 	void BeginBottomDockTransition() noexcept
 	{
 		Inkeys::UI::Bar::BeginBarBottomDockTransition(bottomDockTransitionSerial);
@@ -1083,6 +1104,7 @@ protected:
 				}
 			};
 			shiftHits(presentedButtonHits_); shiftHits(presentedVisualHits_);
+			presentedTouchRebaseXDip_ += dx; presentedTouchRebaseYDip_ += dy;
 		}
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
@@ -1255,6 +1277,7 @@ namespace Inkeys::UI::Bar
 	};
 
 	export WNDPROC WindowProc() noexcept;
+	export void RegisterNativeTouchInput(HWND window);
 	export std::function<Inkeys::UI::RenderPipeline::FrameResult(
 		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
 		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
@@ -1270,6 +1293,7 @@ namespace Inkeys::UI::Bar
 		bool expandAfterClick = false);
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
+	export int RunBarTouchProbeProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);

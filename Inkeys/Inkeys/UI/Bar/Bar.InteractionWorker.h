@@ -175,6 +175,7 @@ namespace Inkeys::UI::Bar
 		std::uint64_t presentedRevision = 0;
 		std::uint64_t semanticRevision = 0;
 		std::uint64_t captureTicket = 0;
+		std::uint64_t touchRegistration = 0, touchRouteGeneration = 0;
 		std::uint64_t hitButtonId = 0;
 		std::uint32_t contactId = 0;
 		bool touch = false;
