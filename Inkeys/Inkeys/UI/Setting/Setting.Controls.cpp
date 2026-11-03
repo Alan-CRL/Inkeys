@@ -2,6 +2,9 @@
 #include "imfluent/imfluent_internal.h"
 #include "Setting.Theme.h"
 #include "imgui/imgui_internal.h"
+#include "imgui/imgui_impl_dx11.h"
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <vector>
@@ -102,6 +105,9 @@ namespace Inkeys::UI::Setting::Design
 		bool pageMotionUserScroll = false;
 		std::vector<PageBlockScope> cardMotionScopes;
 		std::vector<ImGuiID> conditionalMotionParents;
+		// 本帧并入父列表的child命令index区间；外层块位移时同步平移这些原child裁剪。
+		struct MergedDrawRange { ImDrawList* list; unsigned begin, end; };
+		std::vector<MergedDrawRange> mergedDrawRanges;
 
 		float MotionEase(float progress)
 		{
@@ -123,30 +129,136 @@ namespace Inkeys::UI::Setting::Design
 			return io.InputQueueCharacters.Size > 0;
 		}
 
-		void TransformMotionDraw(ImGuiWindow* window, int firstVertex, float offset, float alpha)
+		void OffsetMotionDraw(ImGuiWindow* window, int firstVertex, float offset)
 		{
-			if (offset == 0.0F && alpha >= 1.0F) return;
+			if (offset == 0.0F) return;
 			for (int index = firstVertex; index < window->DrawList->VtxBuffer.Size; ++index)
+				window->DrawList->VtxBuffer[index].pos.y += offset;
+		}
+
+		void OffsetMotionClip(ImDrawCmd& command, float offset)
+		{
+			command.ClipRect.y = (std::max)(pageMotionOwner->ClipRect.Min.y, command.ClipRect.y + offset);
+			command.ClipRect.w = (std::min)(pageMotionOwner->ClipRect.Max.y, command.ClipRect.w + offset);
+			command.ClipRect.w = (std::max)(command.ClipRect.y, command.ClipRect.w);
+		}
+
+		void OffsetMotionChild(ImGuiWindow* window, float offset)
+		{
+			OffsetMotionDraw(window, 0, offset);
+			for (auto& command : window->DrawList->CmdBuffer)
+				if (!command.UserCallback) OffsetMotionClip(command, offset);
+			for (auto* child : window->DC.ChildWindows)
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) OffsetMotionChild(child, offset);
+		}
+
+		void OffsetMergedClips(ImDrawList* list, int firstIndex, float offset)
+		{
+			if (offset == 0.0F) return;
+			for (const auto& range : mergedDrawRanges)
+				if (range.list == list && range.begin >= static_cast<unsigned>(firstIndex))
+					for (auto& command : list->CmdBuffer)
+						if (!command.UserCallback && command.IdxOffset >= range.begin && command.IdxOffset < range.end)
+							OffsetMotionClip(command, offset);
+		}
+
+		// 无整块合成backend时的退路；透明度为0时逐顶点结果与整块合成完全等价。
+		void FadeMotionDraw(ImDrawList* list, int firstVertex, float alpha)
+		{
+			for (int index = firstVertex; index < list->VtxBuffer.Size; ++index)
 			{
-				auto& vertex = window->DrawList->VtxBuffer[index];
-				vertex.pos.y += offset;
+				auto& vertex = list->VtxBuffer[index];
 				const ImU32 opacity = static_cast<ImU32>(std::round((vertex.col >> IM_COL32_A_SHIFT) * alpha));
 				vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (opacity << IM_COL32_A_SHIFT);
 			}
 		}
 
-		void TransformMotionChild(ImGuiWindow* window, float offset, float alpha)
+		void FadeMotionChild(ImGuiWindow* window, float alpha)
 		{
-			TransformMotionDraw(window, 0, offset, alpha);
-			if (offset != 0.0F)
-				for (auto& command : window->DrawList->CmdBuffer)
-				{
-					command.ClipRect.y = (std::max)(pageMotionOwner->ClipRect.Min.y, command.ClipRect.y + offset);
-					command.ClipRect.w = (std::min)(pageMotionOwner->ClipRect.Max.y, command.ClipRect.w + offset);
-					command.ClipRect.w = (std::max)(command.ClipRect.y, command.ClipRect.w);
-				}
+			FadeMotionDraw(window->DrawList, 0, alpha);
 			for (auto* child : window->DC.ChildWindows)
-				if (child->Active && child->LastFrameActive == GImGui->FrameCount) TransformMotionChild(child, offset, alpha);
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) FadeMotionChild(child, alpha);
+		}
+
+		// 按ImGui实际提交顺序（自身列表后接各child）把child几何并入块所在列表，原child列表清空不再提交。
+		void MergeChildDraw(ImDrawList* target, ImGuiWindow* child)
+		{
+			if (!child->Active || child->Hidden) return;
+			auto* source = child->DrawList;
+			if (source->_Splitter._Count > 1) source->ChannelsMerge();
+			const unsigned vertexBase = target->VtxBuffer.Size, indexBase = target->IdxBuffer.Size;
+			const int dataBase = target->_CallbacksDataBuf.Size;
+			for (auto command : source->CmdBuffer)
+			{
+				if (command.ElemCount == 0 && !command.UserCallback) continue;
+				command.VtxOffset += vertexBase; command.IdxOffset += indexBase;
+				if (command.UserCallback && command.UserCallbackDataSize > 0) command.UserCallbackDataOffset += dataBase;
+				target->CmdBuffer.push_back(command);
+			}
+			auto append = [](auto& destination, const auto& values) {
+				const int size = destination.Size;
+				destination.resize(size + values.Size);
+				if (values.Size) std::memcpy(destination.Data + size, values.Data, values.Size * sizeof(values.Data[0]));
+			};
+			append(target->VtxBuffer, source->VtxBuffer); append(target->IdxBuffer, source->IdxBuffer);
+			append(target->_CallbacksDataBuf, source->_CallbacksDataBuf);
+			if (target->IdxBuffer.Size > static_cast<int>(indexBase))
+				mergedDrawRanges.push_back({ target, indexBase, static_cast<unsigned>(target->IdxBuffer.Size) });
+			source->CmdBuffer.resize(0); source->VtxBuffer.resize(0); source->IdxBuffer.resize(0);
+			source->_CallbacksDataBuf.resize(0);
+			source->_CmdHeader.VtxOffset = 0; source->_VtxCurrentIdx = 0;
+			source->AddDrawCmd();
+			source->_VtxWritePtr = source->VtxBuffer.Data; source->_IdxWritePtr = source->IdxBuffer.Data;
+			for (auto* nested : child->DC.ChildWindows) MergeChildDraw(target, nested);
+		}
+
+		// 把块的父列表区间及其本帧child树包进透明度组：backend先按原alpha合成整块，再整体乘opacity一次。
+		void CommitOpacityGroup(ImGuiWindow* window, int firstIndex, int firstVertex, int firstChild, float opacity)
+		{
+			if (!std::isfinite(opacity) || opacity >= 1.0F) return;
+			opacity = (std::max)(0.0F, opacity);
+			auto* list = window->DrawList;
+			if (opacity <= 0.0F || list->_Splitter._Count > 1 || !ImGui_ImplDX11_SupportsOpacityGroups()
+				|| !(ImGui::GetIO().BackendFlags & ImGuiBackendFlags_RendererHasVtxOffset))
+			{
+				FadeMotionDraw(list, firstVertex, opacity);
+				for (int index = firstChild; index < window->DC.ChildWindows.Size; ++index)
+				{
+					auto* child = window->DC.ChildWindows[index];
+					if (child->Active && child->LastFrameActive == GImGui->FrameCount) FadeMotionChild(child, opacity);
+				}
+				return;
+			}
+			const int vertices = list->VtxBuffer.Size;
+			for (int index = firstChild; index < window->DC.ChildWindows.Size; ++index) MergeChildDraw(list, window->DC.ChildWindows[index]);
+			auto& commands = list->CmdBuffer;
+			const auto first = static_cast<unsigned>(firstIndex);
+			// 前一兄弟组的结束哨兵可能与本组起点同index，必须留在开始哨兵之前。
+			int at = commands.Size;
+			while (at > 0 && (commands[at - 1].IdxOffset > first
+				|| (commands[at - 1].IdxOffset == first && commands[at - 1].UserCallback != ImGui_ImplDX11_OpacityGroupEnd))) --at;
+			if (at > 0 && !commands[at - 1].UserCallback && commands[at - 1].IdxOffset + commands[at - 1].ElemCount > first)
+			{
+				// 块从命令中途开始时按真实index边界拆分，前段仍在组外。
+				ImDrawCmd tail = commands[at - 1];
+				commands[at - 1].ElemCount = first - tail.IdxOffset;
+				tail.ElemCount -= commands[at - 1].ElemCount; tail.IdxOffset = first;
+				commands.insert(commands.Data + at, tail);
+			}
+			std::uint32_t bits = 0; std::memcpy(&bits, &opacity, sizeof(bits));
+			ImDrawCmd marker = commands[(std::min)(at, commands.Size - 1)];
+			marker.ElemCount = 0; marker.IdxOffset = first;
+			marker.UserCallback = ImGui_ImplDX11_OpacityGroupBegin;
+			marker.UserCallbackData = reinterpret_cast<void*>(static_cast<std::uintptr_t>(bits));
+			marker.UserCallbackDataSize = 0; marker.UserCallbackDataOffset = -1;
+			commands.insert(commands.Data + at, marker);
+			marker.UserCallback = ImGui_ImplDX11_OpacityGroupEnd; marker.IdxOffset = list->IdxBuffer.Size;
+			if (!commands.back().UserCallback && commands.back().ElemCount == 0) commands.back() = marker;
+			else commands.push_back(marker);
+			if (list->VtxBuffer.Size != vertices) { list->_CmdHeader.VtxOffset = list->VtxBuffer.Size; list->_VtxCurrentIdx = 0; }
+			list->AddDrawCmd();
+			list->_VtxWritePtr = list->VtxBuffer.Data + list->VtxBuffer.Size;
+			list->_IdxWritePtr = list->IdxBuffer.Data + list->IdxBuffer.Size;
 		}
 
 		void ClipConditionalDraw(ImGuiWindow* window, int firstIndex, float top, float bottom)
@@ -172,12 +284,11 @@ namespace Inkeys::UI::Setting::Design
 			}
 		}
 
-		void ClipConditionalChild(ImGuiWindow* window, float top, float bottom, float alpha)
+		void ClipConditionalChild(ImGuiWindow* window, float top, float bottom)
 		{
 			ClipConditionalDraw(window, 0, top, bottom);
-			TransformMotionDraw(window, 0, 0.0F, alpha);
 			for (auto* child : window->DC.ChildWindows)
-				if (child->Active && child->LastFrameActive == GImGui->FrameCount) ClipConditionalChild(child, top, bottom, alpha);
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) ClipConditionalChild(child, top, bottom);
 		}
 
 		void CompensateConditionalHeight(ImGuiWindow* window, float top, float previous, float current)
@@ -733,7 +844,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 	}
 
-	void ConfigurePageMotion(PageMotionState& state, std::uint64_t routeKey, bool opening, bool reset, std::uint64_t layoutRevision)
+	void ConfigurePageMotion(PageMotionState& state, std::uint64_t routeKey, bool opening, bool reset, std::uint64_t layoutRevision, bool exiting)
 	{
 		const auto context = reinterpret_cast<std::uintptr_t>(ImGui::GetCurrentContext());
 		if (state.context != context) { state = {}; state.context = context; }
@@ -756,26 +867,58 @@ namespace Inkeys::UI::Setting::Design
 		if (changed)
 		{
 			state.route = routeKey; ++state.generation; state.initialized = true;
-			state.elapsed = rowAnimationsEnabled && !opening ? 0.0F : 0.46F;
+			state.elapsed = rowAnimationsEnabled && !opening ? 0.0F : PageMotionTiming::Total;
 			state.hadBlocks = false; state.owner = 0; state.contentHeight = 0; state.pinnedBottom = false;
 			state.blockProgress.clear();
 		}
-		else if (state.frame != ImGui::GetFrameCount() && state.hadBlocks)
-			state.elapsed = (std::min)(0.46F, state.elapsed + rowAnimationDelta * rowAnimationRate);
+		else if (!exiting && state.frame != ImGui::GetFrameCount() && state.hadBlocks)
+			state.elapsed = (std::min)(PageMotionTiming::Total, state.elapsed + rowAnimationDelta * rowAnimationRate);
 		// 开屏结束只恢复页面，不再派发一轮逐块入场；取消输入不消费原始事件。
-		if (opening || !rowAnimationsEnabled || (!changed && MotionInput(state.bounds, true))) state.elapsed = 0.46F;
-		state.opening = opening; state.frame = ImGui::GetFrameCount(); state.visibleOrder = 0;
+		if (opening || !rowAnimationsEnabled || (!changed && !exiting && MotionInput(state.bounds, true))) state.elapsed = PageMotionTiming::Total;
+		state.opening = opening; state.exiting = exiting; state.frame = ImGui::GetFrameCount(); state.visibleOrder = 0;
 		state.navigationFrame = changed; state.lastBlockTop = -1.0e20F;
-		state.blockOccurrences.clear();
-		if (state.elapsed >= 0.34F) state.blockProgress.clear();
+		state.blockOccurrences.clear(); mergedDrawRanges.clear();
+		if (state.elapsed >= PageMotionTiming::FadeEnd) state.blockProgress.clear();
 		state.predictedDelta = 0.0F;
 		// 先推进已登记的条件高度，再开始正文布局；首个目标变化帧只登记目标和测高。
 		for (auto& [key, condition] : state.conditions)
 			if (newFrame && !layoutChanged && condition.generation == state.generation && condition.frame == ImGui::GetFrameCount() - 1)
-				condition.reveal.Advance(rowAnimationDelta, 0.180F / rowAnimationRate, rowAnimationsEnabled && !opening);
+				condition.reveal.Advance(exiting ? 0.0F : rowAnimationDelta, 0.180F / rowAnimationRate, rowAnimationsEnabled && !opening);
 		for (auto& [key, condition] : state.conditions)
 			if (condition.parent == 0 && condition.generation == state.generation && condition.frame == ImGui::GetFrameCount() - 1)
 				state.predictedDelta += PredictConditionalHeight(state, key) - condition.occupied;
+	}
+
+	void ApplyGroupOpacity(ImGuiWindow* window, float opacity)
+	{
+		if (window) CommitOpacityGroup(window, 0, 0, 0, opacity);
+	}
+
+	void SuppressDepartingPageInput(const PageMotionState& state)
+	{
+		auto* owner = ImGui::FindWindowByID(state.owner);
+		if (!owner) return;
+		auto belongs = [owner](ImGuiWindow* window) {
+			for (; window; window = window->ParentWindow) if (window == owner) return true;
+			return false;
+		};
+		auto& context = *GImGui;
+		// 只撤销旧正文的输入归属，不把控件变灰，也不影响侧栏和标题栏操作。
+		if (belongs(context.ActiveIdWindow)) ImGui::ClearActiveID();
+		// NewFrame的hover仍可能来自上一帧，首个淡出帧也不能重新取得旧Slider。
+		if (belongs(context.HoveredWindow)) context.HoveredWindow = nullptr;
+		if (belongs(context.HoveredWindowUnderMovingWindow)) context.HoveredWindowUnderMovingWindow = nullptr;
+		// 滚轮/导航可能已在NewFrame排队，只清理旧正文及其上一帧实际子树。
+		auto clearScrollTargets = [](auto&& self, ImGuiWindow* window) -> void {
+			window->ScrollTarget = { FLT_MAX, FLT_MAX };
+			for (auto* child : window->DC.ChildWindows) self(self, child);
+		};
+		clearScrollTargets(clearScrollTargets, owner);
+		if (belongs(context.NavWindow))
+		{
+			context.NavId = context.NavActivateId = context.NavActivateDownId = 0;
+			context.NavActivatePressedId = context.NavNextActivateId = 0;
+		}
 	}
 
 	void ResumeSkippedPageOpening()
@@ -790,7 +933,7 @@ namespace Inkeys::UI::Setting::Design
 
 	float PageScrollbarAlpha(const PageMotionState& state)
 	{
-		return rowAnimationsEnabled && !state.opening ? MotionEase((state.elapsed - 0.34F) / 0.12F) : 1.0F;
+		return rowAnimationsEnabled && !state.opening ? MotionEase((state.elapsed - PageMotionTiming::FadeEnd) / PageMotionTiming::Scrollbar) : 1.0F;
 	}
 
 	void BeginPageMotion(PageMotionState& state)
@@ -800,7 +943,7 @@ namespace Inkeys::UI::Setting::Design
 		const auto bounds = pageMotionOwner->Rect();
 		// 命中范围包含尚未可见的native轨道，按下先落定再由同一原生控件处理。
 		state.bounds = { bounds.Min.x, bounds.Min.y, bounds.Max.x, bounds.Max.y };
-		if (!state.navigationFrame && MotionInput(state.bounds, true)) state.elapsed = 0.46F;
+		if (!state.navigationFrame && !state.exiting && MotionInput(state.bounds, true)) state.elapsed = PageMotionTiming::Total;
 		pageMotionUserScroll = ImGui::GetIO().MouseWheel != 0.0F || ImGui::IsAnyMouseDown()
 			|| MotionInput(state.bounds, false);
 		const bool atBottom = pageMotionOwner->ScrollMax.y > 0.0F
@@ -832,13 +975,14 @@ namespace Inkeys::UI::Setting::Design
 		if (!activePageMotion || pageMotionDepth != 0) return;
 		state_ = activePageMotion; window_ = ImGui::GetCurrentWindow(); id_ = window_->GetID(id);
 		origin_ = ImGui::GetCursorScreenPos(); firstVertex_ = window_->DrawList->VtxBuffer.Size;
-		firstChild_ = window_->DC.ChildWindows.Size;
+		firstIndex_ = window_->DrawList->IdxBuffer.Size; firstChild_ = window_->DC.ChildWindows.Size;
 		++pageMotionDepth;
 	}
 
 	PageBlockScope::PageBlockScope(PageBlockScope&& other) noexcept
 		: state_(std::exchange(other.state_, nullptr)), window_(other.window_), origin_(other.origin_),
-		firstVertex_(other.firstVertex_), firstChild_(other.firstChild_), id_(other.id_), section_(other.section_) {}
+		firstVertex_(other.firstVertex_), firstIndex_(other.firstIndex_), firstChild_(other.firstChild_),
+		opacity_(other.opacity_), id_(other.id_), section_(other.section_) {}
 
 	PageBlockScope::~PageBlockScope() { Finish(); }
 
@@ -852,29 +996,40 @@ namespace Inkeys::UI::Setting::Design
 		{
 			const int order = std::abs(origin_.y - state_->lastBlockTop) <= Pixels(1.0F)
 				? state_->lastBlockOrder : state_->visibleOrder;
-			const float delay = (std::min)(0.120F, order * 0.024F);
+			const float delay = (std::min)(PageMotionTiming::MaxDelay, order * PageMotionTiming::Stagger);
 			if (!section_) state_->visibleOrder = (std::max)(state_->visibleOrder, order + 1);
 			state_->lastBlockTop = origin_.y; state_->lastBlockOrder = order;
 			state_->hadBlocks = true;
-			float alpha = rowAnimationsEnabled && !state_->opening
-				? MotionEase((state_->elapsed - delay) / 0.220F) : 1.0F;
-			if (state_->elapsed < 0.34F && !state_->opening)
+			const bool animated = rowAnimationsEnabled && !state_->opening;
+			float position = animated ? MotionEase((state_->elapsed - delay) / PageMotionTiming::Move) : 1.0F;
+			const float fade = std::clamp((state_->elapsed - delay) / PageMotionTiming::Fade, 0.0F, 1.0F);
+			// 透明度单独走平滑S曲线，避免位移到位时文字也瞬间变为全实。
+			float alpha = animated ? fade * fade * (3.0F - 2.0F * fade) : 1.0F;
+			if (state_->elapsed < PageMotionTiming::FadeEnd && !state_->opening)
 			{
 				const int occurrence = state_->blockOccurrences[id_]++;
 				const ImGuiID key = ImHashData(&occurrence, sizeof(occurrence), id_);
 				auto& previous = state_->blockProgress[key];
 				// 异步提示插到前方时顺序号会改变，同一可见块不能因此向后退或重新变淡。
-				alpha = previous = (std::max)(previous, alpha);
+				alpha = previous.opacity = (std::max)(previous.opacity, alpha);
+				position = previous.position = (std::max)(previous.position, position);
 			}
-			const float offset = Pixels(12.0F) * (1.0F - alpha);
-			// 仅变换当前块的新顶点及其本帧 child；真实占位与事件保持唯一终态布局。
-			TransformMotionDraw(window_, firstVertex_, offset, alpha);
-			for (int index = firstChild_; index < window_->DC.ChildWindows.Size; ++index)
+			const float offset = Pixels(12.0F) * (1.0F - position);
+			// 仅平移当前块的新顶点及其本帧 child；真实占位与事件保持唯一终态布局。
+			if (offset != 0.0F)
 			{
-				auto* child = window_->DC.ChildWindows[index];
-				if (child->Active && child->LastFrameActive == GImGui->FrameCount) TransformMotionChild(child, offset, alpha);
+				OffsetMotionDraw(window_, firstVertex_, offset);
+				OffsetMergedClips(window_->DrawList, firstIndex_, offset);
+				for (int index = firstChild_; index < window_->DC.ChildWindows.Size; ++index)
+				{
+					auto* child = window_->DC.ChildWindows[index];
+					if (child->Active && child->LastFrameActive == GImGui->FrameCount) OffsetMotionChild(child, offset);
+				}
 			}
+			// 位移完成后整块合成一次；同范围的条件显隐透明度已乘入，不重复嵌套。
+			CommitOpacityGroup(window_, firstIndex_, firstVertex_, firstChild_, alpha * opacity_);
 		}
+		mergedDrawRanges.clear();
 		state_ = nullptr;
 	}
 
@@ -935,10 +1090,12 @@ namespace Inkeys::UI::Setting::Design
 		if (value < 0.9999F)
 		{
 			ClipConditionalDraw(window_, firstIndex_, origin_.y, origin_.y + height);
-			TransformMotionDraw(window_, firstVertex_, 0.0F, value);
 			for (int index = firstChild_; index < window_->DC.ChildWindows.Size; ++index)
-				ClipConditionalChild(window_->DC.ChildWindows[index], origin_.y, origin_.y + height, value);
+				ClipConditionalChild(window_->DC.ChildWindows[index], origin_.y, origin_.y + height);
 			window_->DrawList->AddDrawCmd();
+			// 自身就是顶层块时交给块在位移后一并合成；嵌套条件块单独成组，外层再整体合成。
+			if (block_.Active()) block_.MultiplyOpacity(value);
+			else CommitOpacityGroup(window_, firstIndex_, firstVertex_, firstChild_, value);
 			window_->DC.CursorPos = { origin_.x, origin_.y + height };
 			window_->DC.CursorMaxPos.y = (std::max)(previousMaximum_.y, origin_.y + height);
 			window_->DC.CursorPosPrevLine = window_->DC.CursorPos;
@@ -955,7 +1112,7 @@ namespace Inkeys::UI::Setting::Design
 		rowAnimationsEnabled = enabled;
 		if (!enabled && activePageMotion)
 		{
-			activePageMotion->elapsed = 0.46F;
+			activePageMotion->elapsed = PageMotionTiming::Total;
 			for (auto& [id, condition] : activePageMotion->conditions) condition.reveal.Reset(condition.reveal.target);
 		}
 	}

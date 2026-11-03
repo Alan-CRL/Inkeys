@@ -34,6 +34,11 @@ IMGUI_IMPL_API void     ImGui_ImplDX11_NewFrame();
 IMGUI_IMPL_API void     ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data);
 // [Inkeys] 保留原 void API；调用方在 Present 前读取本 context 最近一次提交/创建的 HRESULT。
 IMGUI_IMPL_API long     ImGui_ImplDX11_GetLastResult();
+// [Inkeys] 整块透明度哨兵：Begin/End 之间的命令先按原 alpha 合成到透明离屏目标，再整体乘透明度回写。
+// UserCallbackData 保存 float 位模式；只有本 backend 识别，含哨兵的 DrawData 不能交给其他 renderer。
+#define ImGui_ImplDX11_OpacityGroupBegin    ((ImDrawCallback)(-16))
+#define ImGui_ImplDX11_OpacityGroupEnd      ((ImDrawCallback)(-24))
+IMGUI_IMPL_API bool     ImGui_ImplDX11_SupportsOpacityGroups();
 
 // Use if you want to reset your rendering device without losing Dear ImGui state.
 IMGUI_IMPL_API bool     ImGui_ImplDX11_CreateDeviceObjects();

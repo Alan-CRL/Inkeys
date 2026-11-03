@@ -26,6 +26,7 @@ module;
 #include "imgui/misc/freetype/imgui_freetype.h"
 #include "../StartupPlacement.h"
 #include "Setting.Pages.h"
+#include "Setting.PageTransition.h"
 #include "Setting.HomeEntryCache.h"
 #include "Setting.EraserDemoGpu.h"
 #include "../../../resource.h"
@@ -2564,6 +2565,7 @@ SettingSessionCoroutine RunSettingSession()
 		Design::NavigationDestination destination;
 		Design::HomeMotionState homeMotion;
 		Design::PageMotionState pageMotion;
+		Design::PageTransitionState pageTransition;
 		Design::SettingOpenNavigation openNavigation;
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 		SettingEntryProfiler entryProfiler;
@@ -2884,6 +2886,29 @@ SettingSessionCoroutine RunSettingSession()
 
 				// 内容与导航单独排布；窄窗覆盖展开不改变正文宽度及其滚动位置。
 				synchronizeDestination();
+				const auto requestedDestination = destination;
+				const int requestedTab = settingTab, requestedPlugin = settingPlugInTab;
+				const auto requestedDrawing = drawingSubpage;
+				const int requestedSubpage = settingTab == settingTabEnum::tab4 ? settingPlugInTab
+					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
+					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0;
+				const auto displayedRoute = pageTransition.Resolve({settingTab, requestedSubpage},
+					navigationDelta, Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate,
+					resetHomeScroll || openAction != Design::SettingOpenNavigation::Action::None
+					|| homeMotion.EntryActive() || homeMotion.entry == Design::HomeMotionState::Entry::Pending);
+				const bool holdingPage = pageTransition.Holding();
+				if (holdingPage)
+				{
+					// 淡出期间只替换正文绘制路由，导航仍保留最新目标和未活动的子页状态。
+					settingTab = displayedRoute.page;
+					destination = Design::DestinationForPage(settingTab);
+					if (destination.page == Design::PageId::General)
+						destination.section = static_cast<Design::GeneralSection>(displayedRoute.subpage);
+					if (destination.page == Design::PageId::Plugins) settingPlugInTab = displayedRoute.subpage;
+					if (destination.page == Design::PageId::Draw)
+						drawingSubpage = static_cast<Design::DrawingSubpage>(displayedRoute.subpage);
+				}
+				if (holdingPage) Design::SuppressDepartingPageInput(pageMotion);
 				bool blockContentInput = navigationState.BlockContentInput();
 				std::uint64_t entryFontSerial;
 				{
@@ -2911,7 +2936,7 @@ SettingSessionCoroutine RunSettingSession()
 					| static_cast<std::uint32_t>(pageSubpage);
 				// 真正导航才重播；字标开屏复用原快照，不在结束后追加一轮页面动画。
 				Design::ConfigurePageMotion(pageMotion, pageRoute,
-					homeMotion.EntryActive() || homeMotion.entry == Design::HomeMotionState::Entry::Pending, resetHomeScroll, I18n::revision());
+					homeMotion.EntryActive() || homeMotion.entry == Design::HomeMotionState::Entry::Pending, resetHomeScroll, I18n::revision(), holdingPage);
 				// 写完后捕获真实无字标页；渐退/归位复用 GPU 像素，终态前才恢复 child 排布。
 				if (!skipEntryBackground)
 				{
@@ -2928,9 +2953,9 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::PushID(pageSubpage);
 				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
-					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll,
+					(blockContentInput || holdingPage) ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll,
 					homeMotion.home && (homeMotion.EntryActive() || homeMotion.entry==Design::HomeMotionState::Entry::Pending),
-					true, Design::PageScrollbarAlpha(pageMotion), &pageMotion);
+					true, Design::PageScrollbarAlpha(pageMotion) * pageTransition.Opacity(), &pageMotion);
 				ImGuiWindow* contentWindow = ImGui::GetCurrentWindow();
 				resetHomeScroll=false;
 				const auto root=ImGui::GetMainViewport(); const auto clip=contentWindow->ClipRect;
@@ -4765,6 +4790,8 @@ SettingSessionCoroutine RunSettingSession()
 					break;
 				}
 				}
+				// 只淡出当前实际旧页内容，正文底色保持稳定；轨道透明度已在Begin中组合一次。
+				if (holdingPage) Design::ApplyContentAlpha(ImGui::GetCurrentWindow(), pageTransition.Opacity());
 				ImGui::EndChild();
 				ImFluent::PopFont();
 				Design::BindTextFonts(ImFontMain, ImFontStrong);
@@ -4788,6 +4815,11 @@ SettingSessionCoroutine RunSettingSession()
 					ImGui::EndChild();
 					ImGui::PopStyleVar();
 					ImGui::PopStyleColor();
+				}
+				if (holdingPage)
+				{
+					settingTab = requestedTab; destination = requestedDestination;
+					settingPlugInTab = requestedPlugin; drawingSubpage = requestedDrawing;
 				}
 				Inkeys::UI::Setting::Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
 				ImFluent::PushFont(ImFluentTextStyle_Body);

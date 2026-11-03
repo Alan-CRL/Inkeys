@@ -513,6 +513,9 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>

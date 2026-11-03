@@ -48,6 +48,8 @@
 
 // DirectX
 #include <stdio.h>
+#include <math.h>
+#include <limits.h>
 #include <d3d11.h>
 // [Inkeys] 自定义开始：声明 EXE 内嵌 CSO 的 Win32 资源 ID。
 #include <windows.h>
@@ -67,6 +69,17 @@ struct ImGui_ImplDX11_Texture
     ID3D11ShaderResourceView*   pTextureView;
     ImGui_ImplDX11_Texture*     Next;
     bool                       AlphaR8;
+};
+
+// [Inkeys] 每帧由 DrawData 解析的组：帧缓冲像素范围、嵌套层级及透明度；不跨帧保存命令指针。
+static const int ImGui_ImplDX11_OpacityGroupLevels = 4;
+struct ImGui_ImplDX11_OpacityGroup
+{
+    D3D11_RECT                  Rect;
+    float                       Opacity;
+    int                         Depth;
+    bool                        Closed;
+    bool                        Valid;
 };
 
 struct ImGui_ImplDX11_Data
@@ -92,6 +105,17 @@ struct ImGui_ImplDX11_Data
     int                         VertexBufferSize;
     int                         IndexBufferSize;
     HRESULT                     LastResult;
+    // [Inkeys] 整块透明度：每层嵌套一张与目标同尺寸的离屏纹理，空闲后释放；随设备对象一起失效。
+    ID3D11Texture2D*            pGroupTexture[ImGui_ImplDX11_OpacityGroupLevels];
+    ID3D11RenderTargetView*     pGroupTarget[ImGui_ImplDX11_OpacityGroupLevels];
+    ID3D11ShaderResourceView*   pGroupView[ImGui_ImplDX11_OpacityGroupLevels];
+    UINT                        GroupWidth, GroupHeight;
+    ID3D11Buffer*               pGroupVB;
+    int                         GroupVertexCapacity;
+    ID3D11BlendState*           pGroupClearBlend;
+    ID3D11BlendState*           pGroupCompositeBlend;
+    ULONGLONG                   GroupLastUse;
+    ImVector<ImGui_ImplDX11_OpacityGroup> Groups;
 #if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
     ImGui_ImplDX11_TestFailure   TestFailure;
     HRESULT                     TestResult;
@@ -126,6 +150,206 @@ long ImGui_ImplDX11_GetLastResult()
     ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
     return bd ? bd->LastResult : E_FAIL;
 }
+
+// [Inkeys] 自定义开始：整块透明度离屏合成。
+template<typename T> static inline T GroupMin(T a, T b) { return a < b ? a : b; }
+template<typename T> static inline T GroupMax(T a, T b) { return a < b ? b : a; }
+bool ImGui_ImplDX11_SupportsOpacityGroups()
+{
+    return ImGui_ImplDX11_GetBackendData() != nullptr;
+}
+
+static void ImGui_ImplDX11_ReleaseOpacityGroupTextures(ImGui_ImplDX11_Data* bd)
+{
+    for (int level = 0; level < ImGui_ImplDX11_OpacityGroupLevels; level++)
+    {
+        if (bd->pGroupView[level])    { bd->pGroupView[level]->Release(); bd->pGroupView[level] = nullptr; }
+        if (bd->pGroupTarget[level])  { bd->pGroupTarget[level]->Release(); bd->pGroupTarget[level] = nullptr; }
+        if (bd->pGroupTexture[level]) { bd->pGroupTexture[level]->Release(); bd->pGroupTexture[level] = nullptr; }
+    }
+    bd->GroupWidth = bd->GroupHeight = 0;
+}
+
+// 按渲染时相同的列表/命令顺序配对哨兵，求各组实际像素范围；返回需要的离屏层数。
+static int ImGui_ImplDX11_ResolveOpacityGroups(ImGui_ImplDX11_Data* bd, const ImDrawData* draw_data)
+{
+    bd->Groups.resize(0);
+    const ImVec2 off = draw_data->DisplayPos, scale = draw_data->FramebufferScale;
+    const LONG width = (LONG)(draw_data->DisplaySize.x * scale.x), height = (LONG)(draw_data->DisplaySize.y * scale.y);
+    int stack[16];
+    for (const ImDrawList* draw_list : draw_data->CmdLists)
+    {
+        int depth = 0;
+        for (const ImDrawCmd& cmd : draw_list->CmdBuffer)
+        {
+            if (cmd.UserCallback == ImGui_ImplDX11_OpacityGroupBegin)
+            {
+                ImGui_ImplDX11_OpacityGroup group = {};
+                group.Rect = { LONG_MAX, LONG_MAX, LONG_MIN, LONG_MIN };
+                const unsigned int bits = (unsigned int)(uintptr_t)cmd.UserCallbackData;
+                memcpy(&group.Opacity, &bits, sizeof(group.Opacity));
+                group.Depth = depth;
+                if (depth < IM_ARRAYSIZE(stack)) stack[depth] = bd->Groups.Size;
+                depth++;
+                bd->Groups.push_back(group);
+            }
+            else if (cmd.UserCallback == ImGui_ImplDX11_OpacityGroupEnd)
+            {
+                if (depth == 0) continue;
+                if (--depth >= IM_ARRAYSIZE(stack)) continue;
+                ImGui_ImplDX11_OpacityGroup& group = bd->Groups[stack[depth]];
+                group.Closed = true;
+                if (depth > 0 && depth - 1 < IM_ARRAYSIZE(stack) && group.Rect.left < group.Rect.right)
+                {
+                    // 子组像素也属于父组；父组只合成一次它自己的离屏结果。
+                    D3D11_RECT& parent = bd->Groups[stack[depth - 1]].Rect;
+                    parent.left = GroupMin(parent.left, group.Rect.left); parent.top = GroupMin(parent.top, group.Rect.top);
+                    parent.right = GroupMax(parent.right, group.Rect.right); parent.bottom = GroupMax(parent.bottom, group.Rect.bottom);
+                }
+            }
+            else if (cmd.UserCallback == nullptr && cmd.ElemCount > 0 && depth > 0 && depth <= IM_ARRAYSIZE(stack))
+            {
+                float min_x = FLT_MAX, min_y = FLT_MAX, max_x = -FLT_MAX, max_y = -FLT_MAX;
+                for (unsigned int element = 0; element < cmd.ElemCount; element++)
+                {
+                    const ImVec2 pos = draw_list->VtxBuffer.Data[cmd.VtxOffset + draw_list->IdxBuffer.Data[cmd.IdxOffset + element]].pos;
+                    min_x = GroupMin(min_x, pos.x); min_y = GroupMin(min_y, pos.y); max_x = GroupMax(max_x, pos.x); max_y = GroupMax(max_y, pos.y);
+                }
+                // 与逐命令 scissor 相同的截断规则；顶点外接框覆盖抗锯齿边缘。
+                const LONG left = GroupMax(GroupMax((LONG)floorf((min_x - off.x) * scale.x), (LONG)((cmd.ClipRect.x - off.x) * scale.x)), 0L);
+                const LONG top = GroupMax(GroupMax((LONG)floorf((min_y - off.y) * scale.y), (LONG)((cmd.ClipRect.y - off.y) * scale.y)), 0L);
+                const LONG right = GroupMin(GroupMin((LONG)ceilf((max_x - off.x) * scale.x), (LONG)((cmd.ClipRect.z - off.x) * scale.x)), width);
+                const LONG bottom = GroupMin(GroupMin((LONG)ceilf((max_y - off.y) * scale.y), (LONG)((cmd.ClipRect.w - off.y) * scale.y)), height);
+                if (left >= right || top >= bottom) continue;
+                D3D11_RECT& rect = bd->Groups[stack[depth - 1]].Rect;
+                rect.left = GroupMin(rect.left, left); rect.top = GroupMin(rect.top, top);
+                rect.right = GroupMax(rect.right, right); rect.bottom = GroupMax(rect.bottom, bottom);
+            }
+        }
+    }
+    int levels = 0;
+    for (ImGui_ImplDX11_OpacityGroup& group : bd->Groups)
+    {
+        // 未配对或无可见像素的组按普通命令直接绘制；超出层级只会出现在异常嵌套中。
+        group.Valid = group.Closed && group.Depth < ImGui_ImplDX11_OpacityGroupLevels
+            && group.Rect.left < group.Rect.right && group.Rect.top < group.Rect.bottom;
+        if (group.Valid) levels = GroupMax(levels, group.Depth + 1);
+    }
+    return levels;
+}
+
+// 创建本帧所需离屏层并一次上传全部清除/合成四边形；失败经 LastResult 交给调用方仲裁，不提交半成品。
+static bool ImGui_ImplDX11_PrepareOpacityGroups(ImGui_ImplDX11_Data* bd, const ImDrawData* draw_data, ID3D11RenderTargetView* base, int levels)
+{
+    if (!base) { for (ImGui_ImplDX11_OpacityGroup& group : bd->Groups) group.Valid = false; return true; }
+    ID3D11Resource* resource = nullptr;
+    base->GetResource(&resource);
+    ID3D11Texture2D* texture = nullptr;
+    const HRESULT query = resource ? resource->QueryInterface(IID_PPV_ARGS(&texture)) : E_NOINTERFACE;
+    if (resource) resource->Release();
+    if (!ImGui_ImplDX11_CheckResult(query)) return false;
+    D3D11_TEXTURE2D_DESC target_desc = {};
+    texture->GetDesc(&target_desc);
+    texture->Release();
+    if (bd->GroupWidth != target_desc.Width || bd->GroupHeight != target_desc.Height)
+        ImGui_ImplDX11_ReleaseOpacityGroupTextures(bd);
+    bd->GroupWidth = target_desc.Width; bd->GroupHeight = target_desc.Height;
+    for (int level = 0; level < levels; level++)
+    {
+        if (bd->pGroupView[level]) continue;
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = target_desc.Width; desc.Height = target_desc.Height;
+        desc.MipLevels = desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        if (!ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateTexture2D(&desc, nullptr, &bd->pGroupTexture[level]))
+            || !ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateRenderTargetView(bd->pGroupTexture[level], nullptr, &bd->pGroupTarget[level]))
+            || !ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateShaderResourceView(bd->pGroupTexture[level], nullptr, &bd->pGroupView[level])))
+        {
+            ImGui_ImplDX11_ReleaseOpacityGroupTextures(bd);
+            return false;
+        }
+    }
+    if (!bd->pGroupClearBlend || !bd->pGroupCompositeBlend)
+    {
+        // 清除直接写零；合成输入为预乘 RGBA，RGB/A 同乘组透明度后按 ONE/INV_SRC_ALPHA 叠回。
+        D3D11_BLEND_DESC desc = {};
+        desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        if (!bd->pGroupClearBlend && !ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateBlendState(&desc, &bd->pGroupClearBlend)))
+            return false;
+        desc.RenderTarget[0].BlendEnable = true;
+        desc.RenderTarget[0].SrcBlend = desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        desc.RenderTarget[0].DestBlend = desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+        desc.RenderTarget[0].BlendOp = desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        if (!bd->pGroupCompositeBlend && !ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateBlendState(&desc, &bd->pGroupCompositeBlend)))
+            return false;
+    }
+    const int vertices = bd->Groups.Size * 12;
+    if (!bd->pGroupVB || bd->GroupVertexCapacity < vertices)
+    {
+        if (bd->pGroupVB) { bd->pGroupVB->Release(); bd->pGroupVB = nullptr; }
+        bd->GroupVertexCapacity = vertices + 48;
+        D3D11_BUFFER_DESC desc = {};
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.ByteWidth = bd->GroupVertexCapacity * sizeof(ImDrawVert);
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        if (!ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateBuffer(&desc, nullptr, &bd->pGroupVB)))
+            return false;
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    if (!ImGui_ImplDX11_CheckResult(bd->pd3dDeviceContext->Map(bd->pGroupVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+        return false;
+    ImDrawVert* vertex = (ImDrawVert*)mapped.pData;
+    const ImVec2 off = draw_data->DisplayPos, scale = draw_data->FramebufferScale;
+    for (const ImGui_ImplDX11_OpacityGroup& group : bd->Groups)
+    {
+        // 四边形顶点落在整像素边界，采样点即离屏纹素中心；颜色 (o,o,o,o) 让默认 PS 输出预乘结果。
+        const float x0 = group.Rect.left / scale.x + off.x, y0 = group.Rect.top / scale.y + off.y;
+        const float x1 = group.Rect.right / scale.x + off.x, y1 = group.Rect.bottom / scale.y + off.y;
+        const float u0 = (float)group.Rect.left / bd->GroupWidth, v0 = (float)group.Rect.top / bd->GroupHeight;
+        const float u1 = (float)group.Rect.right / bd->GroupWidth, v1 = (float)group.Rect.bottom / bd->GroupHeight;
+        const ImU32 value = (ImU32)(GroupMin(GroupMax(group.Opacity, 0.0f), 1.0f) * 255.0f + 0.5f);
+        const ImU32 color = IM_COL32(value, value, value, value);
+        const ImDrawVert quad[12] =
+        {
+            { { x0, y0 }, { 0, 0 }, 0 }, { { x1, y0 }, { 0, 0 }, 0 }, { { x1, y1 }, { 0, 0 }, 0 },
+            { { x0, y0 }, { 0, 0 }, 0 }, { { x1, y1 }, { 0, 0 }, 0 }, { { x0, y1 }, { 0, 0 }, 0 },
+            { { x0, y0 }, { u0, v0 }, color }, { { x1, y0 }, { u1, v0 }, color }, { { x1, y1 }, { u1, v1 }, color },
+            { { x0, y0 }, { u0, v0 }, color }, { { x1, y1 }, { u1, v1 }, color }, { { x0, y1 }, { u0, v1 }, color },
+        };
+        memcpy(vertex, quad, sizeof(quad));
+        vertex += 12;
+    }
+    bd->pd3dDeviceContext->Unmap(bd->pGroupVB, 0);
+    bd->GroupLastUse = GetTickCount64();
+    return true;
+}
+
+static void ImGui_ImplDX11_DrawOpacityQuad(ImGui_ImplDX11_Data* bd, const D3D11_RECT& rect, UINT first,
+    ID3D11BlendState* blend, ID3D11ShaderResourceView* view, ID3D11PixelShader* restore_shader)
+{
+    ID3D11DeviceContext* device = bd->pd3dDeviceContext;
+    const float factor[4] = { 0.f, 0.f, 0.f, 0.f };
+    const UINT stride = sizeof(ImDrawVert), offset = 0;
+    device->IASetVertexBuffers(0, 1, &bd->pGroupVB, &stride, &offset);
+    device->OMSetBlendState(blend, factor, 0xffffffff);
+    device->RSSetScissorRects(1, &rect);
+    device->PSSetShader(bd->pPixelShader, nullptr, 0);
+    device->PSSetShaderResources(0, 1, &view);
+    device->PSSetSamplers(0, 1, &bd->pTexSamplerNearest);
+    device->Draw(6, first);
+    // 还原逐命令依赖的固定状态；纹理和 scissor 由下一条普通命令重新设置。
+    ID3D11ShaderResourceView* none = nullptr;
+    device->PSSetShaderResources(0, 1, &none);
+    device->PSSetSamplers(0, 1, &bd->pTexSamplerLinear);
+    device->PSSetShader(restore_shader, nullptr, 0);
+    device->OMSetBlendState(bd->pBlendState, factor, 0xffffffff);
+    device->IASetVertexBuffers(0, 1, &bd->pVB, &stride, &offset);
+}
+// [Inkeys] 自定义结束
 
 #if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
 void ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure stage, long result)
@@ -303,6 +527,24 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     device->Unmap(bd->pVB, 0);
     device->Unmap(bd->pIB, 0);
 
+    // [Inkeys] 整块透明度：只有 DrawData 含哨兵时才解析和准备离屏层；空闲两秒后归还纹理显存。
+    const int group_levels = ImGui_ImplDX11_ResolveOpacityGroups(bd, draw_data);
+    ID3D11RenderTargetView* group_base_target = nullptr;
+    ID3D11DepthStencilView* group_base_depth = nullptr;
+    if (group_levels > 0)
+    {
+        device->OMGetRenderTargets(1, &group_base_target, &group_base_depth);
+        if (!ImGui_ImplDX11_PrepareOpacityGroups(bd, draw_data, group_base_target, group_levels))
+        {
+            if (group_base_target) group_base_target->Release();
+            if (group_base_depth) group_base_depth->Release();
+            return;
+        }
+    }
+    else if (bd->pGroupTexture[0] && GetTickCount64() - bd->GroupLastUse > 2000)
+        ImGui_ImplDX11_ReleaseOpacityGroupTextures(bd);
+    int group_cursor = 0, group_depth = 0;
+    int group_stack[16];
     // Backup DX state that will be modified to restore it afterwards (unfortunately this is very ugly looking and verbose. Close your eyes!)
     struct BACKUP_DX11_STATE
     {
@@ -387,6 +629,38 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
                     automaticPixelShader = true;
                     selectedPixelShader = bd->pPixelShader;
                 }
+                else if (pcmd->UserCallback == ImGui_ImplDX11_OpacityGroupBegin)
+                {
+                    // 组内命令按原混合画入清零的透明层，得到整块的预乘 RGBA。
+                    const int index = group_cursor++;
+                    // 只有全部外层也已离屏时才进入下一层，异常哨兵流退回普通绘制而不丢内容。
+                    const bool parent = group_depth == 0 || (group_depth <= IM_ARRAYSIZE(group_stack) && group_stack[group_depth - 1] >= 0);
+                    const bool active = group_levels > 0 && parent && index < bd->Groups.Size && bd->Groups[index].Valid;
+                    if (group_depth < IM_ARRAYSIZE(group_stack)) group_stack[group_depth] = active ? index : -1;
+                    group_depth++;
+                    if (active)
+                    {
+                        const ImGui_ImplDX11_OpacityGroup& group = bd->Groups[index];
+                        ID3D11ShaderResourceView* none = nullptr;
+                        device->PSSetShaderResources(0, 1, &none);
+                        device->OMSetRenderTargets(1, &bd->pGroupTarget[group.Depth], nullptr);
+                        ImGui_ImplDX11_DrawOpacityQuad(bd, group.Rect, (UINT)index * 12, bd->pGroupClearBlend, nullptr, selectedPixelShader);
+                    }
+                }
+                else if (pcmd->UserCallback == ImGui_ImplDX11_OpacityGroupEnd)
+                {
+                    if (group_depth == 0) continue;
+                    const int index = --group_depth < IM_ARRAYSIZE(group_stack) ? group_stack[group_depth] : -1;
+                    if (index >= 0)
+                    {
+                        // 回到父层后整体乘透明度合成一次，重叠图元不再分别透出下层。
+                        const ImGui_ImplDX11_OpacityGroup& group = bd->Groups[index];
+                        if (group.Depth == 0) device->OMSetRenderTargets(1, &group_base_target, group_base_depth);
+                        else device->OMSetRenderTargets(1, &bd->pGroupTarget[group.Depth - 1], nullptr);
+                        ImGui_ImplDX11_DrawOpacityQuad(bd, group.Rect, (UINT)index * 12 + 6, bd->pGroupCompositeBlend,
+                            bd->pGroupView[group.Depth], selectedPixelShader);
+                    }
+                }
                 else
                 {
                     pcmd->UserCallback(draw_list, pcmd);
@@ -427,8 +701,16 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
         }
         global_idx_offset += draw_list->IdxBuffer.Size;
         global_vtx_offset += draw_list->VtxBuffer.Size;
+        group_depth = 0; // 与解析相同，哨兵只在单个列表内配对。
     }
     platform_io.Renderer_RenderState = nullptr;
+    if (group_levels > 0)
+    {
+        // 中途失败也必须回到调用方目标，离屏层不能残留为后续 Present/Copy 的输出。
+        device->OMSetRenderTargets(1, &group_base_target, group_base_depth);
+        if (group_base_target) group_base_target->Release();
+        if (group_base_depth) group_base_depth->Release();
+    }
 
     // Restore modified DX state
     device->RSSetScissorRects(old.ScissorRectsCount, old.ScissorRects);
@@ -769,6 +1051,12 @@ void    ImGui_ImplDX11_InvalidateDeviceObjects()
         if (tex->RefCount == 1)
             ImGui_ImplDX11_DestroyTexture(tex);
 
+    // [Inkeys] 整块透明度资源与设备对象同生命周期。
+    ImGui_ImplDX11_ReleaseOpacityGroupTextures(bd);
+    if (bd->pGroupVB)               { bd->pGroupVB->Release(); bd->pGroupVB = nullptr; }
+    bd->GroupVertexCapacity = 0;
+    if (bd->pGroupClearBlend)       { bd->pGroupClearBlend->Release(); bd->pGroupClearBlend = nullptr; }
+    if (bd->pGroupCompositeBlend)   { bd->pGroupCompositeBlend->Release(); bd->pGroupCompositeBlend = nullptr; }
     if (bd->pTexSamplerLinear)      { bd->pTexSamplerLinear->Release(); bd->pTexSamplerLinear = nullptr; }
     if (bd->pTexSamplerNearest)     { bd->pTexSamplerNearest->Release(); bd->pTexSamplerNearest = nullptr; }
     if (bd->pIB)                    { bd->pIB->Release(); bd->pIB = nullptr; }

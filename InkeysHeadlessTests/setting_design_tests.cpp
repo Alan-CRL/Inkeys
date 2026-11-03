@@ -4857,7 +4857,7 @@ namespace
 	{
 		// 每份样张独立context，真实DX11上传动态字体；不复用CPU回放的模拟TexID。
 		for (bool dark : { false, true })
-			for (int scene = 0; scene < 5; ++scene)
+			for (int scene = 0; scene < 7; ++scene)
 			{
 				ImGuiSession session;
 				Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
@@ -4877,40 +4877,53 @@ namespace
 					Design::FontReferenceSize, &iconConfig);
 				ImGui::GetIO().FontDefault = fonts[0];
 				Design::BindTextFonts(fonts[0], fonts[1]); ImFluent::SetIconFont(icons); Design::ApplyPalette(dark);
-				Design::PageMotionState motion;
+				Design::PageMotionState motion; Design::PageTransitionState transition;
+				bool sawOldExit = false, sawNewEntry = false;
 				Design::GeneralDraft draft{}; draft.animation = true; draft.animationRate = 1;
 				draft.edgeLighting = scene != 2;
 				int frame = 0;
-				const int capture = scene == 0 ? 7 : scene == 1 ? 18 : scene == 4 ? 12 : 41;
+				const int capture = scene == 0 ? 12 : scene == 1 ? 30 : scene == 4 ? 20 : scene == 6 ? 78 : 65;
 				const auto path = std::filesystem::path("Build/settingui-style-motion/visual")
 					/ (std::string(scene == 4 ? "home-" : "appearance-") + (dark ? "dark-" : "light-")
 						+ std::to_string(static_cast<int>(scale * 100)) + "-" + std::to_string(scene) + ".png");
 				const auto failures = SaveSettingFontComparison(path, scale, [&] {
 					++frame;
-					if (frame == 36 && scene >= 2) draft.edgeLighting = scene == 2;
+					if (frame == 60 && (scene == 2 || scene == 3)) draft.edgeLighting = scene == 2;
 					Design::ConfigureRowAnimations(1.0F / 60, true, 1);
 					ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
 					ImGui::Begin("##motion-warp-root", nullptr, ImGuiWindowFlags_NoDecoration
 						| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
-					Design::ConfigurePageMotion(motion, 1, false);
+					const Design::PageRoute requested{scene >= 5 && frame >= 60 ? 15 : 4, 0};
+					const auto displayed = transition.Resolve(requested, 1.0F / 60, true, 1);
+					if (transition.Holding()) sawOldExit = displayed.page == 4;
+					if (displayed.page == 15) sawNewEntry = true;
+					Design::ConfigurePageMotion(motion, static_cast<std::uint64_t>(displayed.page), false, false, 0, transition.Holding());
+					if (transition.Holding()) Design::SuppressDepartingPageInput(motion);
 					ImGui::SetCursorPos({ 40 * scale, 40 * scale });
 					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
 					Design::BeginScrollChild("##motion-warp-body", { 860 * scale, 850 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
-						0, false, false, true, Design::PageScrollbarAlpha(motion), &motion);
+						transition.Holding() ? ImGuiWindowFlags_NoInputs : 0, false, false, true,
+						Design::PageScrollbarAlpha(motion) * transition.Opacity(), &motion);
 					ImGui::PopStyleVar(); Design::BeginPageMotion(motion);
 					Design::BeginScrollChild("##motion-warp-page", { ImGui::GetContentRegionAvail().x, 0 }, ImGuiChildFlags_AutoResizeY);
 					if (scene == 4)
 						checks.Expect(Design::RenderHome({}) == Design::HomeAction::None,
 							"actual WARP home entry performs no synthetic navigation");
+					else if (displayed.page == 15)
+						checks.Expect(Design::RenderFeedback(0, 1.0F, 0) == Design::FeedbackAction::None,
+							"new feedback page is rendered only after outgoing route commit");
 					else
 					{
 						const auto events = Design::RenderGeneral(draft, Design::GeneralSection::Appearance);
 						checks.Expect(!events.edgeLightingChanged && !events.animationChanged,
 							"actual WARP appearance capture performs no synthetic configuration action");
 					}
+					if (transition.Holding()) Design::ApplyContentAlpha(ImGui::GetCurrentWindow(), transition.Opacity());
 					ImGui::EndChild(); Design::EndPageMotion(); ImGui::EndChild(); ImGui::End();
 				}, capture);
 				checks.Expect(failures == 0, "real WARP renders page entry and conditional reveal without HWND");
+				if (scene == 5) checks.Expect(sawOldExit && !sawNewEntry, "GPU departure sample still renders original page rather than requested new content");
+				if (scene == 6) checks.Expect(sawOldExit && sawNewEntry, "GPU sequence commits and fades new content after original page departure");
 				std::cout << "[PageMotionOffscreen] " << path.string() << " frames=" << frame << " failures=" << failures << '\n';
 			}
 	}
@@ -4922,8 +4935,8 @@ namespace
 		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
 		PageMotionState motion;
 		std::uint64_t route = 1;
-		bool animated = true, opening = false, longPage = false, visible = false, nested = true;
-		bool generalPage = false, conditionAtBottom = false;
+		bool animated = true, opening = false, departing = false, longPage = false, visible = false, nested = true;
+		bool generalPage = false, conditionAtBottom = false, focusRootNextFrame = false;
 		float bodyWidth = 700.0F; std::uint64_t layoutRevision = 0;
 		GeneralDraft general{}; general.animation = true; general.animationRate = 1.0F;
 		float requestedScroll = -1.0F;
@@ -4935,7 +4948,7 @@ namespace
 			float width = 0, firstY = 0, firstDrawY = 0, after = 0, scroll = 0;
 			unsigned firstAlpha = 0, secondAlpha = 0, afterAlpha = 0;
 			ImRect action;
-			std::string retained;
+			std::string retained; ImGuiID firstAction = 0;
 		};
 		auto draw = [&](ImVec2 mouse, bool down, float wheel = 0.0F) {
 			io.DisplaySize = { 960 * scale, 700 * scale }; io.DeltaTime = 1.0F / 60;
@@ -4945,12 +4958,19 @@ namespace
 			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
 			ImGui::Begin("##motion-production-root", nullptr, ImGuiWindowFlags_NoDecoration
 				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
-			ConfigurePageMotion(motion, route, opening, false, layoutRevision);
+			if (focusRootNextFrame)
+			{
+				ImGui::FocusWindow(ImGui::GetCurrentWindow());
+				ImGui::NavInitWindow(ImGui::GetCurrentWindow(), true);
+				focusRootNextFrame = false;
+			}
+			ConfigurePageMotion(motion, route, opening, false, layoutRevision, departing);
+			if (departing) SuppressDepartingPageInput(motion);
 			ImGui::SetCursorPos({ 40 * scale, 40 * scale });
 			ImGui::PushID(static_cast<int>(route));
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
 			BeginScrollChild("##motion-body", { bodyWidth * scale, 360 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
-				0, false, false, true, PageScrollbarAlpha(motion), &motion);
+				departing ? ImGuiWindowFlags_NoInputs : 0, false, false, true, PageScrollbarAlpha(motion), &motion);
 			ImGui::PopStyleVar(); Frame frame; frame.owner = ImGui::GetCurrentWindow();
 			if (requestedScroll >= 0) { ImGui::SetScrollY(requestedScroll); requestedScroll = -1; }
 			BeginPageMotion(motion);
@@ -4979,7 +4999,7 @@ namespace
 				};
 				int first = body->DrawList->VtxBuffer.Size;
 				actions += ButtonRow("##motion-first", "First", "A real setting row", nullptr, "Action");
-				frame.action = GImGui->LastItemData.Rect; frame.firstDrawY = FLT_MAX;
+				frame.action = GImGui->LastItemData.Rect; frame.firstAction = GImGui->LastItemData.ID; frame.firstDrawY = FLT_MAX;
 				frame.firstAlpha = cardAlpha(first, &frame.firstDrawY);
 				first = body->DrawList->VtxBuffer.Size;
 				ButtonRow("##motion-second", "Second", nullptr, nullptr, "Action");
@@ -5021,9 +5041,70 @@ namespace
 		checks.Expect(frame.firstAlpha > frame.secondAlpha && frame.secondAlpha > 0
 			&& frame.firstDrawY > frame.firstY && frame.firstDrawY < frame.firstY + 12 * scale,
 			"real setting cards overlap their nonlinear upward entry in visual order without moving item layout");
+		frame = idle(9);
+		const float slowerDrawY = frame.firstDrawY; const unsigned slowerAlpha = frame.firstAlpha;
+		frame = idle(7);
+		checks.Expect(Near(frame.firstDrawY, frame.firstY, 1) && frame.firstAlpha > 0 && frame.firstAlpha < 255,
+			"position reaches its endpoint while the slower opacity curve still has a visible tail");
 		frame = idle(24);
 		checks.Expect(frame.firstAlpha == 255 && Near(frame.firstDrawY, frame.firstY, 1),
 			"real card entry reaches exact stable geometry and alpha");
+		checks.Expect(slowerDrawY > frame.firstDrawY + 0.01F && slowerAlpha < 255,
+			"slower entry still moves after previous220ms measured against actual final AA geometry");
+		auto reachFirstAction = [&](bool enterChildren) {
+			const auto previousNavFlags = io.ConfigFlags; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+			focusRootNextFrame = true; frame = idle();
+			bool reached = GImGui->NavId == frame.firstAction;
+			for (int attempt = 0; attempt < 12 && !reached; ++attempt)
+			{
+				io.AddKeyEvent(ImGuiKey_Tab, true); frame = idle();
+				io.AddKeyEvent(ImGuiKey_Tab, false); frame = idle();
+				reached = GImGui->NavId == frame.firstAction;
+				bool childAnchor = false;
+				for (auto* window : GImGui->Windows)
+					childAnchor |= window->Active && window->ParentWindow == GImGui->NavWindow && window->ChildId == GImGui->NavId;
+				// 非NavFlattened子容器是原生导航锚点，Enter进入后再Tab到其真实控件。
+				if (!reached && enterChildren && childAnchor)
+				{
+					io.AddKeyEvent(ImGuiKey_Enter, true); frame = idle();
+					io.AddKeyEvent(ImGuiKey_Enter, false); frame = idle();
+					reached = GImGui->NavId == frame.firstAction;
+				}
+			}
+			io.ConfigFlags = previousNavFlags;
+			return reached;
+		};
+		const bool baselineTabOnly = reachFirstAction(false);
+		const bool baselineKeyboard = reachFirstAction(true);
+		checks.Expect(baselineKeyboard, "baseline real keyboard navigation enters native child containers and reaches the first action");
+		++route; frame = idle(8);
+		const float frozenY = frame.firstDrawY; const unsigned frozenAlpha = frame.firstAlpha;
+		departing = true; frame = idle(4);
+		checks.Expect(Near(frame.firstDrawY, frozenY, 0.01F) && frame.firstAlpha == frozenAlpha,
+			"departing page freezes its actual partially entered pose instead of flashing fully opaque");
+		const int beforeDepartureClick = actions;
+		const ImVec2 oldAction = frame.action.GetCenter();
+		draw(oldAction, false); draw(oldAction, true); draw(oldAction, false);
+		checks.Expect(actions == beforeDepartureClick, "fading old content retains its normal palette but cannot execute a mouse action");
+		// 使用真实旧正文窗口校验键盘/ActiveID归属，只撤销旧正文，不碰同级导航。
+		ImGuiWindow* oldBody = frame.owner;
+		ImGui::SetActiveID(ImHashStr("##departing-active"), oldBody);
+		GImGui->NavWindow = oldBody; GImGui->NavId = GImGui->NavActivateId = ImHashStr("##departing-nav");
+		SuppressDepartingPageInput(motion);
+		checks.Expect(GImGui->ActiveId == 0 && GImGui->NavActivateId == 0 && GImGui->NavId == 0,
+			"old body active and queued keyboard activation are removed without synthetic key events");
+		ImGuiWindow* sibling = oldBody->ParentWindow;
+		const ImGuiID siblingId = ImHashStr("##caption-or-sidebar-active");
+		ImGui::SetActiveID(siblingId, sibling); GImGui->NavWindow = sibling; GImGui->NavActivateId = siblingId;
+		SuppressDepartingPageInput(motion);
+		checks.Expect(GImGui->ActiveId == siblingId && GImGui->NavActivateId == siblingId,
+			"departure does not suppress sibling caption or navigation interaction");
+		ImGui::ClearActiveID(); GImGui->NavActivateId = 0;
+		departing = false; ++route; frame = idle(50);
+		const bool afterDepartureKeyboard = reachFirstAction(true);
+		checks.Expect(afterDepartureKeyboard, "new page keyboard navigation remains reachable after outgoing input ownership is cleared");
+		std::cout << "[PageKeyboard] scale=" << scale << " baseline-tab=" << baselineTabOnly
+			<< " baseline-child-activation=" << baselineKeyboard << " after-departure=" << afterDepartureKeyboard << '\n';
 		visible = false; ++route; frame = idle(3);
 		unsigned previousAlpha = frame.afterAlpha; visible = true;
 		for (int i = 0; i < 16; ++i)
@@ -5032,17 +5113,17 @@ namespace
 			checks.Expect(frame.afterAlpha >= previousAlpha, "async preceding block insertion cannot make an existing entering card fade backwards");
 			previousAlpha = frame.afterAlpha;
 		}
-		visible = false; frame = idle(18);
+		visible = false; frame = idle(34);
 		const auto generation = motion.generation;
-		idle(); checks.Expect(motion.generation == generation && motion.elapsed >= .46F,
+		idle(); checks.Expect(motion.generation == generation && motion.elapsed >= PageMotionTiming::Total,
 			"repeated current-route notifications do not replay page entry");
 		longPage = true; ++route;
 		bool sawRail = false;
-		for (int i = 0; i < 36; ++i)
+		for (int i = 0; i < 50; ++i)
 		{
 			frame = idle(); sawRail |= frame.owner->ScrollbarY;
 			checks.Expect(Near(frame.width, width, 1), "short-to-long page keeps the exact body width from first visible frame through scrollbar reveal");
-			if (i < 19) checks.Expect(PageScrollbarAlpha(motion) == 0, "vertical thumb waits for all visible blocks to settle");
+			if (i < 32) checks.Expect(PageScrollbarAlpha(motion) == 0, "vertical thumb waits for all visible blocks to settle");
 		}
 		checks.Expect(sawRail && frame.owner->ScrollMax.y > 0 && PageScrollbarAlpha(motion) == 1,
 			"long real page has a scrollable full rail after entry completes");
@@ -5052,18 +5133,18 @@ namespace
 		++route; frame = idle(); frame = idle(3);
 		const ImVec2 click = frame.action.GetCenter();
 		draw(click, false); frame = draw(click, true);
-		checks.Expect(motion.elapsed >= .46F && frame.firstAlpha == 255,
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total && frame.firstAlpha == 255,
 			"first real pointer press immediately settles entry before registering actionable items");
 		draw(click, false);
 		checks.Expect(actions == 1, "same pointer action is executed exactly once without swallowing or synthetic replay");
 		++route; idle();
 		frame = draw({ 200 * scale, 200 * scale }, false, -1);
-		checks.Expect(motion.elapsed >= .46F, "real wheel input immediately settles page motion");
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total, "real wheel input immediately settles page motion");
 		idle(2); requestedScroll = 240 * scale; frame = idle(3);
 		const float saved = frame.scroll; ++route; idle(2); --route; frame = idle(3);
 		checks.Expect(Near(frame.scroll, saved, 1), "returning route replays motion but retains its own existing scroll position");
 		opening = true; ++route; idle(3); opening = false; frame = idle();
-		checks.Expect(motion.elapsed >= .46F && frame.firstAlpha == 255,
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total && frame.firstAlpha == 255,
 			"special home opening hands off to stable content without appending another entry");
 		animated = false; longPage = false; visible = false; ++route; frame = idle(5);
 		const float baseAfter = frame.after;
@@ -5094,7 +5175,7 @@ namespace
 			"rapid conditional reversal continues from its visible height instead of snapping to endpoints");
 		animated = false; frame = idle();
 		checks.Expect(Near(frame.after, fullAfter, 1), "disabling global animations immediately settles conditional layout");
-		animated = true; longPage = true; visible = true; ++route; frame = idle(32);
+		animated = true; longPage = true; visible = true; ++route; frame = idle(50);
 		requestedScroll = 500 * scale; frame = idle(3);
 		const float anchoredAfter = frame.after; visible = false;
 		for (int i = 0; i < 14; ++i)
@@ -5103,7 +5184,7 @@ namespace
 			checks.Expect(Near(frame.after, anchoredAfter, 1.5F), "a conditional block entirely above the viewport preserves the following visible content anchor");
 		}
 		// 条件块在底部可见区域内变化，必须在Begin前补偿，不能靠上方块的局部修正通过。
-		conditionAtBottom = true; visible = false; ++route; idle(32);
+		conditionAtBottom = true; visible = false; ++route; idle(50);
 		requestedScroll = 100000 * scale; frame = idle(3);
 		const float bottomAfter = frame.after; visible = true;
 		for (int i = 0; i < 15; ++i)
@@ -5125,26 +5206,26 @@ namespace
 		}
 		const auto layoutGeneration = motion.generation; bodyWidth = 640;
 		frame = idle(2);
-		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= .46F && frame.scroll >= 0,
+		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= PageMotionTiming::Total && frame.scroll >= 0,
 			"body resize invalidates old extent without replaying navigation or invalid scroll");
 		const float previousScale = ImGui::GetStyle().FontScaleDpi;
 		ImGui::GetStyle().FontScaleDpi *= 1.125F; ++layoutRevision; frame = idle(2);
-		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= .46F && frame.scroll >= 0,
+		checks.Expect(motion.generation == layoutGeneration && motion.elapsed >= PageMotionTiming::Total && frame.scroll >= 0,
 			"font scale and language-layout revision remeasure geometry without another entry");
 		ImGui::GetStyle().FontScaleDpi = previousScale; bodyWidth = 700; nested = true;
 		++route; frame = idle(3);
 		checks.Expect(frame.owner->ScrollbarY && PageScrollbarAlpha(motion) == 0, "actual long page has a native track before its visual reveal");
 		const ImVec2 railPress = ImGui::GetWindowScrollbarRect(frame.owner, ImGuiAxis_Y).GetCenter();
 		draw(railPress, false); frame = draw(railPress, true);
-		checks.Expect(motion.elapsed >= .46F && PageScrollbarAlpha(motion) == 1,
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total && PageScrollbarAlpha(motion) == 1,
 			"pressing the invisible native rail settles and reveals it before the same native press is consumed");
 		draw(railPress, false); conditionAtBottom = false;
 		++route; io.AddKeyEvent(ImGuiKey_DownArrow, true); idle();
 		idle(19);
-		checks.Expect(motion.elapsed >= .46F, "held navigation-key repeat settles active page entry when it actually repeats");
+		checks.Expect(motion.elapsed >= PageMotionTiming::Total, "held navigation-key repeat settles active page entry when it actually repeats");
 		io.AddKeyEvent(ImGuiKey_DownArrow, false); idle();
 		// 经过实际页面Renderer，不以测试中的独立条件块冒充产品接入。
-		generalPage = true; general.edgeLighting = false; ++route; idle(32);
+		generalPage = true; general.edgeLighting = false; ++route; idle(50);
 		general.edgeLighting = true; idle(14);
 		bool retainedState = false;
 		for (const auto& [id, value] : motion.conditions)
@@ -5657,8 +5738,8 @@ namespace
 	void CheckHomeEntryPreparation(Checks& checks)
 	{
 		using Timing=Design::HomeEntryTiming;
-		checks.Expect(Near(Timing::Total,2.66F) && Near(Timing::Writing,1.06F) && Near(Timing::Hold,.6F),
-			"one shared timing definition doubles complete entrance, writing and opaque hold");
+		checks.Expect(Near(Timing::Total,1.98F) && Near(Timing::Writing,.90F) && Near(Timing::Hold,.32F),
+			"one shared timing definition keeps the brisk entrance, writing and opaque hold");
 		Design::HomeMotionState state; Design::HomeEntryFrameKey key;
 		key.geometry={1000,1100,1,1,200,32,1000,1100,20,1}; key.epoch=1; key.fontSerial=1;
 		state.home=true; state.showSerial=1; state.entry=Design::HomeMotionState::Entry::Playing;
@@ -5886,17 +5967,17 @@ namespace
 		const auto start=Design::ResolveHomeEntryPose(motion);
 		for (float time : {1.30F,1.60F,1.898F})
 		{
-			motion.entryElapsed=time; frame(outside); const auto pose=Design::ResolveHomeEntryPose(motion);
+			motion.entryElapsed=HomeEntryPhaseTime(time); frame(outside); const auto pose=Design::ResolveHomeEntryPose(motion);
 			checks.Expect(pose.writing==1 && pose.opacity==1 && pose.origin.x==start.origin.x && pose.origin.y==start.origin.y
-				&& pose.width==start.width,"all six strokes complete before exact 600ms opaque centre hold");
+				&& pose.width==start.width,"all six strokes complete before the exact opaque centre hold");
 		}
-		motion.entryElapsed=2.16F; frame(outside); const auto curve=Design::ResolveHomeEntryPose(motion);
+		motion.entryElapsed=HomeEntryPhaseTime(2.16F); frame(outside); const auto curve=Design::ResolveHomeEntryPose(motion);
 		const ImVec2 a(start.origin.x+start.width*.5F,start.origin.y+Design::HomeBrand::Height(start.width)*.5F);
 		const ImVec2 b(motion.brandOrigin.x+motion.brandWidth*.5F,motion.brandOrigin.y+Design::HomeBrand::Height(motion.brandWidth)*.5F);
 		const ImVec2 c(curve.origin.x+curve.width*.5F,curve.origin.y+Design::HomeBrand::Height(curve.width)*.5F);
 		const float deviation=std::abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))/std::hypot(b.x-a.x,b.y-a.y);
 		checks.Expect(curve.opacity>0 && curve.opacity<1 && deviation>scale,"dock fades and follows a real spatial curve away from straight interpolation");
-		motion.entryElapsed=.50F;
+		motion.entryElapsed=HomeEntryPhaseTime(.50F);
 		delta=.02F; rate=1; frame(outside);
 		const auto openingRebuilds=motion.cache.rebuilds; const auto openingBounds=motion.buttonBounds;
 		for (int i=0;i<8;++i) frame(outside);

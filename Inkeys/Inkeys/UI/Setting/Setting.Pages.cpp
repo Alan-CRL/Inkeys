@@ -540,17 +540,8 @@ namespace Inkeys::UI::Setting::Design
 
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha)
 	{
-		// 内容自绘文字/图标也直接写入顶点颜色；统一处理整棵子窗口，避免只淡入库控件。
-		if (!window || alpha >= 1.0F) return;
-		alpha = std::clamp(alpha, 0.0F, 1.0F);
-		for (auto& vertex : window->DrawList->VtxBuffer)
-		{
-			const ImU32 originalAlpha = (vertex.col >> IM_COL32_A_SHIFT) & 0xff;
-			const ImU32 fadedAlpha = static_cast<ImU32>(std::round(originalAlpha * alpha));
-			vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (fadedAlpha << IM_COL32_A_SHIFT);
-		}
-		for (ImGuiWindow* child : window->DC.ChildWindows)
-			ApplyContentAlpha(child, alpha);
+		// 旧页整棵内容（含自绘文字/图标和子卡片）作为一块淡出；块内重叠控件不各自透出下层。
+		ApplyGroupOpacity(window, alpha);
 	}
 
 	CicdAction RenderCicdDetails(const CicdContent& content)

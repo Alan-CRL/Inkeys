@@ -499,6 +499,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h" />

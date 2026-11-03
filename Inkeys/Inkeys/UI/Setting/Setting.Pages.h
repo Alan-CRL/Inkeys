@@ -80,7 +80,7 @@ namespace Inkeys::UI::Setting::Design
 	// 入场时间只在这一处定义；准备字体/首帧提交的等待不占用书写时长。
 	struct HomeEntryTiming
 	{
-		static constexpr float Wait = .24F, Writing = 1.06F, Hold = .60F, Dock = .54F, Settle = .22F;
+		static constexpr float Wait = .14F, Writing = .90F, Hold = .32F, Dock = .44F, Settle = .18F;
 		static constexpr float WritingEnd = Wait + Writing, DockStart = WritingEnd + Hold;
 		static constexpr float SettleStart = DockStart + Dock, Total = SettleStart + Settle;
 	};

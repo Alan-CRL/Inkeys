@@ -253,6 +253,7 @@
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Typography.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Controls.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Motion.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.PageTransition.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />

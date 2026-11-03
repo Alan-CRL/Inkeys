@@ -28,19 +28,27 @@
     "Inkeys/Inkeys/UI/Setting/Setting.SessionState.h",
     "InkeysHeadlessTests/setting_design_tests.cpp",
     "InkeysHeadlessTests/setting_session_state_tests.cpp",
-    ".trellis/spec/native-desktop/setting-motion.md"
+    ".trellis/spec/native-desktop/setting-motion.md",
+    "Inkeys/Inkeys/UI/Setting/Setting.PageTransition.h",
+    "Inkeys/additional/imgui/imgui_impl_dx11.cpp",
+    "Inkeys/additional/imgui/imgui_impl_dx11.h",
+    "InkeysHeadlessTests/setting_home_warp_tests.cpp",
+    "InkeysHeadlessTests/setting_home_warp_tests.h"
   ],
-  "notes": "实现及全部自动验证完成；用户授权阶段性commit，明确不结束任务。继续等待实机验收，不归档、不push。Win7 resize和Win10/11 DWM观感未由无窗口测试替代。",
+  "notes": "整块合成已在DX11 backend接入（块内先按原alpha合成再整体淡化），开屏总长2.66s→1.98s；自动化验证通过，待用户实机验收，不自动commit。",
   "meta": {
     "planning_artifacts_ready": true,
     "requirements_converged": true,
     "implementation_approved": true,
     "implementation_complete": true,
-    "automated_validation": "passed",
+    "automated_validation": "passed_group_opacity",
     "manual_validation_pending": [
+      "Real GPU (incl. Windows 7 iGPU) page transition smoothness with group opacity",
+      "Opening entry pacing feel after 1.98s schedule",
       "Windows 7 continuous resize experience",
       "Windows 10/11 dynamic backdrop maximize/restore appearance"
     ],
-    "user_accepted": false
+    "user_accepted": false,
+    "stage_commit": "925d8b2b4bfc25f879c768689710a8300b4387a4"
   }
 }

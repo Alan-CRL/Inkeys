@@ -1,4 +1,5 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.SessionState.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.PageTransition.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Layout.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Theme.h"
 #include "../Inkeys/Inkeys/Window/Window.MessageDispatch.h"
@@ -28,6 +29,60 @@ namespace
 	{
 		return left.left == right.left && left.top == right.top
 			&& left.right == right.right && left.bottom == right.bottom;
+	}
+
+	int CheckPageTransitionRoutes()
+	{
+		using namespace Inkeys::UI::Setting::Design;
+		int failures = 0;
+		PageTransitionState transition;
+		const PageRoute home{0, 0}, language{1, 0}, general{4, 2}, drawing{5, 2}, plugin{8, 3};
+		const auto check = [&](bool value, const char* name) { if (!Expect(value, name)) ++failures; };
+		check(transition.Resolve(home, .1F, true, 1) == home && !transition.Holding() && transition.Opacity() == 1,
+			"first page has no nonexistent outgoing page to fade");
+		check(transition.Resolve(home, .1F, true, 1) == home && !transition.Holding(),
+			"repeated current route does not start a departure");
+		check(transition.Resolve(language, 0, true, 1) == home && transition.Exiting() && transition.Opacity() == 1,
+			"actual old route remains displayed when a different target is requested");
+		transition.Resolve(language, PageTransitionState::Duration * .5F, true, 1);
+		check(transition.Displayed() == home && std::abs(transition.Opacity() - .5F) < .0001F,
+			"old page is half faded while target page has not been committed");
+		const float prior = transition.Opacity();
+		transition.Resolve(plugin, PageTransitionState::Duration * .25F, true, 1);
+		check(transition.Displayed() == home && transition.Target() == plugin && transition.Opacity() < prior,
+			"new pending target replaces the prior request without restarting old-page fade");
+		check(transition.Resolve(plugin, PageTransitionState::Duration * .25F, true, 1) == plugin
+			&& !transition.Holding() && transition.Opacity() == 1,
+			"only completely faded old page commits the latest actual target once");
+		check(transition.Resolve(general, 0, true, 1) == plugin && transition.Holding(),
+			"plugin subpage participates in the same actual-route handoff");
+		transition.Resolve(general, PageTransitionState::Duration * .5F, true, 1);
+		const float reversed = transition.Opacity();
+		transition.Resolve(plugin, 0, true, 1);
+		check(!transition.Exiting() && transition.Holding() && transition.Opacity() == reversed,
+			"returning to displayed source reverses from its current opacity without a flash");
+		transition.Resolve(plugin, PageTransitionState::Duration * .5F, true, 1);
+		check(transition.Displayed() == plugin && transition.Opacity() > reversed && transition.Opacity() < 1,
+			"cancelled departure restores source opacity smoothly");
+		transition.Resolve(plugin, PageTransitionState::Duration, true, 1);
+		check(!transition.Holding() && transition.Displayed() == plugin && transition.Opacity() == 1,
+			"return fade settles without changing source identity");
+		transition.Resolve(drawing, 0, true, 1);
+		check(transition.Resolve(drawing, .01F, false, 1) == drawing && !transition.Holding(),
+			"disabling animations immediately commits requested drawing detail");
+		transition.Resolve(general, 0, true, 1);
+		check(transition.Resolve(home, 0, true, 1, true) == home && !transition.Holding() && transition.Opacity() == 1,
+			"Hide Show opening or explicit reset discards stale departure state");
+		transition.Resolve(general, 0, true, 1);
+		check(transition.Resolve(general, PageTransitionState::Duration * .5F, true, 2) == general && !transition.Holding(),
+			"existing software rate scales departure duration");
+		const PageRoute nextSection{4, 3};
+		check(transition.Resolve(nextSection, 0, true, 1) == general && transition.Holding(),
+			"different active General section is a real page change");
+		transition.Resolve(nextSection, PageTransitionState::Duration, true, 1);
+		check(transition.Displayed() == nextSection && !transition.Holding(),
+			"General section target commits after old section opacity reaches zero");
+		return failures;
 	}
 
 	int CheckSettingWindowFrame()
@@ -869,6 +924,7 @@ int RunSettingSessionStateTests()
 	using Inkeys::UI::Setting::InteractiveWindowOperation;
 	using Inkeys::UI::Setting::BackdropMode;
 	int failures = 0;
+	failures += CheckPageTransitionRoutes();
 	failures += CheckSettingWindowFrame();
 	failures += CheckSettingNativeMessageRouting();
 	failures += CheckSettingPresentInputLock();
