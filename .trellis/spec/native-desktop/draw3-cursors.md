@@ -43,6 +43,7 @@ Mouse/Pen 选择独立往返，不保存高亮。`MouseHighlightEdge`、`ScreenP
 
 - Host只传原始两类型选择；Controller按实际 EffectiveDrawingCursorTool 进行生产工具投影：Pen/HardPen返回保存的MouseStyle，Highlighter固定Drawing，其余System。Window系统箭头和resolver使用同一有效策略。活动contact锁存原工具时不能按新选择state.tool覆盖投影；抬起后重新投影，原始偏好始终保留。
 - Unknown/Conflict Pen 只在视觉上固定高亮，不改输入身份或橡皮模型。没有任何高亮开关，历史高亮值不能覆盖固定规则。
+- 数位板驱动（如 GAOMON M6 的 Windows Ink 虚拟 HID 设备）常被系统同时以 `POINTER_DEVICE_TYPE_INTEGRATED_PEN` 与 `THWC_Integrated` 报告为屏幕笔，但其 `POINTER_DEVICE_INFO.monitor` 为空；真实屏幕笔（Surface 内置笔）monitor 恒有效。`ClassifySource` 在指针设备已匹配、两路 Integrated 证据一致、已读到映射矩形且 monitor 为空时归为 `ExternalPen`；矩形读取失败、能力位与指针类型冲突或多重匹配仍按原规则（Unknown/Conflict）。依据为单机 Surface Laptop + GAOMON M6 的 2026-11-03 日志（见 11-03-tablet-recognition-investigation/research），其它数位板需设备验收。
 - PenIcon 仍24 DIP，左上尖端为输入热点、笔尾向右下；仅笔侧/笔尾四个非尖端角做内切圆角，目标半径3 DIP并等比缩放，切线长度各不超过相邻短边2/5以保留间隔；不能整体圆化而钝化笔头。偏移仅影响瞬态中心/quad/dirty，不移动 sample、不外扩外框，复用GPU type21。
 - Highlighter矩形复用当前 `CanvasDiameterForTool` 和同一长宽比，填充有效alpha仍0.35；显式不透明高亮（outlineOpacity=1、GPU编码uv.x=2）时左右边缘为原宽度一半，上下保持原宽度，外框不动。ScreenPen非高亮与legacy默认编码0保持原公式，小尺寸inner coverage须非负且不超过outer；独立边缘alpha不改变工具墨迹。`outlineOpacity=-1` 保留旧整体opacity语义。
 - 显式productSettings=nullptr时保留旧独立API行为；Pen Contact开关、倒转橡皮、Laser及逐Touch保持。瞬态视觉不进入L0/L1/L2、文档或Undo。

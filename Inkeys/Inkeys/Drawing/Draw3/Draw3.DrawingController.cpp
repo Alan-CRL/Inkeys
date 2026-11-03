@@ -13513,6 +13513,9 @@ namespace Inkeys::Drawing::Draw3
 				key = key * 17u + (penSample.inverted ? 1u : 0u);
 				key = key * 17u + (mouseSample.valid ? 1u : 0u);
 				key = key * 17u + (mouseSample.inContact ? 1u : 0u);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.kind);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.recognition);
+				key = key * 17u + static_cast<uint64_t>(mouseSample.source.kind);
 				const double nowMilliseconds = GetQpcTimeMilliseconds();
 				const bool activeCursor = !currentCursorVisuals.empty() ||
 					!laserTipVisuals.empty() || penSample.valid || mouseSample.valid || liveTouchCount;
@@ -13523,7 +13526,7 @@ namespace Inkeys::Drawing::Draw3
 					lastCursorVisualDiagnosticKey = key;
 					nextCursorVisualDiagnosticMilliseconds = nowMilliseconds + 100.0;
 					cursorVisualDiagnosticRecorded = true;
-					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u",
+					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u penSource=%s/%u/cid%u mouseSource=%s/%u",
 						static_cast<unsigned>(cursorTool), static_cast<unsigned>(window_.CursorOwner()),
 						primaryCursorCount, currentCursorVisuals.size() - primaryCursorCount,
 						primaryLaserTipCount, laserTipVisuals.size() - primaryLaserTipCount,
@@ -13531,7 +13534,12 @@ namespace Inkeys::Drawing::Draw3
 						penSample.inContact ? 1u : 0u, penSample.inverted ? 1u : 0u,
 						mouseSample.valid ? 1u : 0u, mouseSample.inContact ? 1u : 0u,
 						mouseSpeedEraser().HasPosition() ? 1u : 0u,
-						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u);
+						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u,
+						SpeedEraser::SourceKindName(penSample.source.kind),
+						static_cast<unsigned>(penSample.source.recognition),
+						static_cast<unsigned>(penSample.source.cursorId),
+						SpeedEraser::SourceKindName(mouseSample.source.kind),
+						static_cast<unsigned>(mouseSample.source.recognition));
 					for (size_t index = 0; index < currentCursorVisuals.size(); ++index)
 					{
 						const auto& visual = currentCursorVisuals[index];

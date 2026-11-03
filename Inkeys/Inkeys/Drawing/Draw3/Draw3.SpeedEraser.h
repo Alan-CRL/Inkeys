@@ -31,7 +31,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	};
 	SourceKind ClassifySource(uint32_t actualInputType, bool modernApiAvailable,
 		bool capabilitiesKnown, bool integrated, SourceKind pointerKind = SourceKind::Unknown,
-		bool pointerMatched = false, bool pointerAmbiguous = false) noexcept;
+		bool pointerMatched = false, bool pointerAmbiguous = false, bool pointerUnmapped = false) noexcept;
 
 	struct ManualSurfaceCalibration
 	{
