@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "创建桌面快捷方式",
-          "E": "可修正现有快捷方式的名称或创建新快捷方式。点击“更多选项”进行设置。",
+          "E": "使用下方选定的名称创建桌面快捷方式。",
           "More": "更多选项"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "拓展选项",
           "CreateLnk": "创建桌面快捷方式",
-          "CreateLnkE": "当桌面不存在软件的快捷方式时，则创建一个。"
+          "CreateLnkE": "软件启动时，若桌面不存在软件的快捷方式，则创建一个。"
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "需要 NamePicker 注册 Url 协议。",
       "ClassIslandProtocolNote": "需要在 ClassIsland 应用设置 中注册 Url 导航协议。",
       "ClassIslandSwapNote": "在 ClassIsland 当前没有加载课表时，此组件不起作用。"
+    },
+    "DesktopShortcut":
+    {
+      "N": "快捷方式",
+      "ApplicationSection": "应用程序",
+      "NameLabel": "快捷方式名称",
+      "CustomName": "自定义",
+      "CustomHint": "输入快捷方式名称",
+      "InvalidName": "请输入有效的 Windows 文件名；名称不能为空，也不能包含非法字符、保留名称或超出路径长度限制。",
+      "GuaranteeSection": "快捷方式保障",
+      "PresetAnnotation": "Inkeys(批注)",
+      "PresetAnnotationTool": "Inkeys(批注工具)"
     },
     "HotKey":
     {

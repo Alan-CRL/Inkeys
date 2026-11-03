@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Masaüstü kısayolu oluştur",
-          "E": "Mevcut kısayolların adını düzeltin veya yeni kısayol oluşturun. Yapılandırmak için Diğer seçenekler'i seçin.",
+          "E": "Aşağıda seçilen adla bir masaüstü kısayolu oluşturur.",
           "More": "Diğer seçenekler"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Ek seçenekler",
           "CreateLnk": "Masaüstü kısayolu oluştur",
-          "CreateLnkE": "Masaüstünde yoksa kısayol oluşturur."
+          "CreateLnkE": "Uygulama başlatıldığında masaüstü kısayolu yoksa oluşturur."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "NamePicker URL protokolünün kaydını gerektirir.",
       "ClassIslandProtocolNote": "ClassIsland ayarlarında URL gezinme protokolünü kaydedin.",
       "ClassIslandSwapNote": "ClassIsland'da ders programı yüklü değilken bu bileşen çalışmaz."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Kısayollar",
+      "ApplicationSection": "Uygulama",
+      "NameLabel": "Kısayol adı",
+      "CustomName": "Özel",
+      "CustomHint": "Kısayol adı girin",
+      "InvalidName": "Geçerli bir Windows dosya adı girin. Boş veya ayrılmış adlara, geçersiz karakterlere ve çok uzun yollara izin verilmez.",
+      "GuaranteeSection": "Kısayol koruması",
+      "PresetAnnotation": "Inkeys(Açıklama)",
+      "PresetAnnotationTool": "Inkeys(AçıklamaAracı)"
     },
     "HotKey":
     {

@@ -1885,61 +1885,80 @@ void StartDesktopDrawpadBlocker()
 
 // 快捷方式保障助手 插件
 ShortcutAssistantClass shortcutAssistant;
-void ShortcutAssistantClass::SetShortcut()
+Inkeys::Business::DesktopShortcut::NameOptions CaptureDesktopShortcutNames()
 {
-	wchar_t desktopPath[MAX_PATH];
-	wstring DesktopPath;
-
-	if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE)) DesktopPath = wstring(desktopPath) + L"\\";
-	else return;
-
-	if (setlist.shortcutAssistant.correctLnk)
+	Inkeys::Business::DesktopShortcut::NameOptions options;
+	I18n::TextSnapshot snapshot;
+	if (I18n::capture({ I18nKey.SettingsUI.DesktopShortcut.PresetAnnotation,
+		I18nKey.SettingsUI.DesktopShortcut.PresetAnnotationTool }, snapshot) && snapshot.text.size() == 2)
 	{
-		if (_waccess((DesktopPath + IW("Widget/LnkName") + L".lnk").c_str(), 0) == 0)
-		{
-			// 存在对应名称的 Lnk
-			if (!IsShortcutPointingToDirectory(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath()))
-			{
-				// 不指向当前的程序路径
-				error_code ec;
-				filesystem::remove(DesktopPath + IW("Widget/LnkName") + L".lnk", ec);
+		options.simplifiedChinese = snapshot.language == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
+		options.presets[2] = std::move(snapshot.text[0]);
+		options.presets[3] = std::move(snapshot.text[1]);
+	}
+	return options;
+}
 
-				CreateShortcut(DesktopPath + IW("Widget/LnkName").c_str() + L".lnk", GetCurrentExePath());
-			}
-		}
+std::wstring GetDesktopShortcutDirectory()
+{
+	wchar_t path[MAX_PATH]{};
+	return SHGetSpecialFolderPathW(nullptr, path, CSIDL_DESKTOP, FALSE) ? path : L"";
+}
+
+bool ShortcutAssistantClass::SetShortcut()
+{
+	const auto options = CaptureDesktopShortcutNames();
+	auto [preset, customName] = Inkeys::config.GetShortcutNamePreference();
+	const auto desktopDirectory = GetDesktopShortcutDirectory();
+	const int normalized = Inkeys::Business::DesktopShortcut::NormalizePreset(preset, customName, options.simplifiedChinese, desktopDirectory.size());
+	if (normalized != preset && Inkeys::config.SetShortcutNamePreference(normalized, customName))
+		Inkeys::config.Write(); // 启动阶段归一不可用的简中专用预设，不迁移旧配置。
+	return SetShortcut(Inkeys::Business::DesktopShortcut::ResolveName(normalized, customName, options),
+		Inkeys::config.Application.Shortcut.CorrectLnk, Inkeys::config.Application.Shortcut.CreateLnk,
+		desktopDirectory);
+}
+
+bool ShortcutAssistantClass::SetShortcut(const std::wstring& name, bool correct, bool create,
+	const std::wstring& desktopDirectory)
+{
+	if (desktopDirectory.empty() || !Inkeys::Business::DesktopShortcut::IsValidName(name, desktopDirectory.size())) return false;
+	const auto target = GetCurrentExePath();
+	const auto path = (filesystem::path(desktopDirectory) / (name + L".lnk")).wstring();
+	bool succeeded = true;
+	if (correct)
+	{
+		if (_waccess(path.c_str(), 0) == 0 && !IsShortcutPointingToDirectory(path, target))
+			succeeded = CreateShortcut(path, target);
+		error_code ec;
+		filesystem::directory_iterator it(desktopDirectory, ec), end;
+		if (ec) return false;
+		for (; it != end; it.increment(ec))
 		{
-			for (const auto& entry : filesystem::directory_iterator(DesktopPath))
+			if (ec) return false;
+			if (it->is_regular_file(ec) && it->path().extension() == L".lnk"
+				&& CompareStringOrdinal(it->path().c_str(), -1, path.c_str(), -1, TRUE) != CSTR_EQUAL
+				&& IsShortcutPointingToDirectory(it->path().wstring(), target))
 			{
-				if (filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
+				// 保留原保障语义；先成功保存目标，再删除本程序的旧名称快捷方式。
+				if (CreateShortcut(path, target))
 				{
-					if (entry.path().wstring() != DesktopPath + IW("Widget/LnkName").c_str() + L".lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
-					{
-						// 存在指向当前的程序路径的快捷方式，但是其名称并不正确
-						error_code ec;
-						filesystem::remove(entry.path().wstring(), ec);
-
-						CreateShortcut(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath());
-					}
+					filesystem::remove(it->path(), ec);
+					if (ec) succeeded = false;
 				}
+				else succeeded = false;
 			}
 		}
+		if (ec) succeeded = false;
 	}
-	if (setlist.shortcutAssistant.createLnk)
-	{
-		if (_waccess((DesktopPath + IW("Widget/LnkName").c_str() + L".lnk").c_str(), 0) == -1 ||
-			!IsShortcutPointingToDirectory((DesktopPath + IW("Widget/LnkName").c_str() + L".lnk"), GetCurrentExePath()))
-		{
-			CreateShortcut(DesktopPath + IW("Widget/LnkName").c_str() + L".lnk", GetCurrentExePath());
-		}
-	}
-
-	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
-	return;
+	if (create && (_waccess(path.c_str(), 0) == -1 || !IsShortcutPointingToDirectory(path, target)))
+		succeeded = CreateShortcut(path, target) && succeeded;
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+	return succeeded;
 }
 bool ShortcutAssistantClass::IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory)
 {
 	IShellLink* psl;
-	//CoInitialize(NULL);
+	bool matches = false;
 
 	// 创建一个IShellLink对象
 	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
@@ -1964,7 +1983,7 @@ bool ShortcutAssistantClass::IsShortcutPointingToDirectory(const std::wstring& s
 					// 检查目标路径是否与指定目录相匹配
 					if (std::wstring(wfd.cFileName).find(targetDirectory) != std::wstring::npos)
 					{
-						return true;
+						matches = true;
 					}
 				}
 			}
@@ -1972,9 +1991,7 @@ bool ShortcutAssistantClass::IsShortcutPointingToDirectory(const std::wstring& s
 		}
 		psl->Release();
 	}
-	//CoUninitialize();
-
-	return false;
+	return matches;
 }
 bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath)
 {
@@ -1987,7 +2004,8 @@ bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, co
 	if (SUCCEEDED(hres))
 	{
 		// 设置快捷方式的目标路径
-		psl->SetPath(targetExePath.c_str());
+		hres = psl->SetPath(targetExePath.c_str());
+		if (FAILED(hres)) { psl->Release(); return false; }
 
 		// 创建一个IShellLink对象的IPersistFile接口
 		IPersistFile* ppf;

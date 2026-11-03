@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Create Desktop Shortcut",
-          "E": "Fix existing shortcut names or create a new shortcut. Select More options to configure this.",
+          "E": "Create a desktop shortcut using the name selected below.",
           "More": "More Options"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Additional Options",
           "CreateLnk": "Create desktop shortcut",
-          "CreateLnkE": "Creates a desktop shortcut if one doesn't already exist."
+          "CreateLnkE": "On startup, create a desktop shortcut if one does not already exist."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Requires registration of the NamePicker URL protocol.",
       "ClassIslandProtocolNote": "Register the URL navigation protocol in ClassIsland settings.",
       "ClassIslandSwapNote": "This component has no effect when ClassIsland has no timetable loaded."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Shortcuts",
+      "ApplicationSection": "Application",
+      "NameLabel": "Shortcut name",
+      "CustomName": "Custom",
+      "CustomHint": "Enter a shortcut name",
+      "InvalidName": "Enter a valid Windows filename. Empty names, invalid characters, reserved names and paths that are too long are not allowed.",
+      "GuaranteeSection": "Shortcut protection",
+      "PresetAnnotation": "Inkeys(Annotation)",
+      "PresetAnnotationTool": "Inkeys(AnnotationTool)"
     },
     "HotKey":
     {

@@ -401,6 +401,14 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Application, \
+		GROUP(Shortcut, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, NamePreset, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", std::wstring, CustomName, L"") \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CorrectLnk, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CreateLnk, false) \
+		) \
+	) \
 	GROUP(Input, \
 		GROUP(Shortcuts, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ToggleAnnotation, true) \
@@ -541,6 +549,8 @@ namespace Inkeys
 		bool ReadMini(std::initializer_list<std::string_view> paths, bool readOnly = false);
 		bool Write();
 		bool SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept;
+		std::pair<int, std::wstring> GetShortcutNamePreference() const;
+		bool SetShortcutNamePreference(int preset, std::wstring customName);
 		std::string GetUploadInfo();
 		std::wstring GetFilePath() const;
 		void ResetToDefaults();

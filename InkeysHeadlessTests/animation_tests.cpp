@@ -80,6 +80,7 @@ int RunPresentationDescriptorTests();
 int RunUiPointerTests();
 int RunAutoCollapseTests();
 int RunKeyboardShortcutConfigTests();
+int RunDesktopShortcutConfigTests();
 int RunKeyboardShortcutInputTests();
 int RunAutoCollapseInteractionTests();
 int RunMouseHookTransportTests();
@@ -1869,6 +1870,7 @@ int main(int argc, char** argv)
 	failureCount += RunUiPointerTests();
 	failureCount += RunAutoCollapseTests();
 	failureCount += RunKeyboardShortcutConfigTests();
+	failureCount += RunDesktopShortcutConfigTests();
 	failureCount += RunKeyboardShortcutInputTests();
 	failureCount += RunAutoCollapseInteractionTests();
 	failureCount += RunMouseHookTransportTests();

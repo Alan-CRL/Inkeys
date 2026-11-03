@@ -524,6 +524,7 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Business\PptSession.h" />
+    <ClInclude Include="Inkeys\Business\DesktopShortcut.h" />
     <ClInclude Include="PptSettingsPersistence.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h" />

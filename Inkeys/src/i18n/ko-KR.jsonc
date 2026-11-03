@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "바탕 화면 바로 가기 만들기",
-          "E": "바로 가기 이름 자동 수정 및 자동 생성은 ‘추가 옵션’에서 설정하세요.",
+          "E": "아래에서 선택한 이름으로 바탕 화면 바로 가기를 만듭니다.",
           "More": "추가 옵션"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "추가 옵션",
           "CreateLnk": "바탕 화면 바로 가기 만들기",
-          "CreateLnkE": "바탕 화면에 바로 가기가 없으면 만듭니다."
+          "CreateLnkE": "시작할 때 바탕 화면 바로 가기가 없으면 만듭니다."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "NamePicker URL 프로토콜을 등록해야 합니다.",
       "ClassIslandProtocolNote": "ClassIsland 앱 설정에서 URL 탐색 프로토콜을 등록해야 합니다.",
       "ClassIslandSwapNote": "ClassIsland에 시간표가 로드되지 않은 경우 이 구성 요소는 작동하지 않습니다."
+    },
+    "DesktopShortcut":
+    {
+      "N": "바로 가기",
+      "ApplicationSection": "응용 프로그램",
+      "NameLabel": "바로 가기 이름",
+      "CustomName": "사용자 지정",
+      "CustomHint": "바로 가기 이름 입력",
+      "InvalidName": "유효한 Windows 파일 이름을 입력하세요. 빈 이름, 잘못된 문자, 예약된 이름 및 너무 긴 경로는 사용할 수 없습니다.",
+      "GuaranteeSection": "바로 가기 보호",
+      "PresetAnnotation": "Inkeys(주석)",
+      "PresetAnnotationTool": "Inkeys(주석도구)"
     },
     "HotKey":
     {

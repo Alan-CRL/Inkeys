@@ -1845,3 +1845,70 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 162: 快捷方式设置与保障整合
+<!-- trellis-session: v=2 fp=b77ace4221ccade5 -->
+
+**Date**: 2026-11-03
+**Task**: 快捷方式设置与保障整合
+**Branch**: `temp/state`
+
+### Summary
+
+完成通用快捷方式页、预设/自定义名称、双保障开关及 main.json 配置整合；完整 ARM64 Solution、Headless 和快捷方式专项通过，未进行 GUI/commit/push。
+
+### Main Changes
+
+- 新增通用快捷方式子页与名称内联区，全部语言默认 Inkeys，改名仅保存。
+- 配置迁入 Application.Shortcut，冻结 FIFO 请求，补齐文件名和 Unicode 同名边界。
+- 补 20 语文案、实际控件/导航/配置/队列/ShellLink 回归和桌面快捷方式 code spec。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 最终完整 InkeysRepo.sln Debug ARM64 build-8 exit 0；canonical Path 与 workspace TEMP 仅作用于验证进程。
+- [OK] 完整 InkeysHeadlessTests --no-window exit 0；快捷方式 exact/quoted exit 0，额外参数 exit 2；i18n check/runtime 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 代码保持未提交，未运行 GUI；旧任务目录内 10 张测试生成 PNG 的清理被自动审批拒绝，等待用户明确授权，不绕过。
+
+
+## Session 163: 回收无关测试预览图
+<!-- trellis-session: v=2 fp=19dad8b0a331da38 -->
+
+**Date**: 2026-11-03
+**Task**: 回收无关测试预览图
+**Branch**: `temp/state`
+
+### Summary
+
+按用户明确指示，将本轮测试生成的十张 PNG 送入 Windows 回收站，原路径清空且回收副本大小/SHA256 全部匹配。
+
+### Main Changes
+
+- 仅处理 generated-preview-inventory.json 中限定目录和十个已核对文件；不永久删除，不操作其他文件或目录。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Windows 原生回收成功；十个原路径不存在，十份新回收站副本逐一通过大小及 SHA256 校验。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 清理已完成，代码仍保持未提交；本轮未改产品代码，不重复编译或测试。

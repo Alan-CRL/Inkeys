@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Utwórz skrót na pulpicie",
-          "E": "Popraw nazwy istniejących skrótów lub utwórz nowy. Wybierz Więcej opcji, aby skonfigurować.",
+          "E": "Tworzy skrót na pulpicie z nazwą wybraną poniżej.",
           "More": "Więcej opcji"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Opcje dodatkowe",
           "CreateLnk": "Utwórz skrót na pulpicie",
-          "CreateLnkE": "Tworzy skrót na pulpicie, jeśli jeszcze go nie ma."
+          "CreateLnkE": "Przy uruchamianiu tworzy skrót na pulpicie, jeśli jeszcze nie istnieje."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Wymaga zarejestrowania protokołu URL NamePicker.",
       "ClassIslandProtocolNote": "Zarejestruj protokół nawigacji URL w ustawieniach ClassIsland.",
       "ClassIslandSwapNote": "Ten komponent nie działa, gdy ClassIsland nie ma wczytanego planu lekcji."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Skróty",
+      "ApplicationSection": "Aplikacja",
+      "NameLabel": "Nazwa skrótu",
+      "CustomName": "Własna",
+      "CustomHint": "Wpisz nazwę skrótu",
+      "InvalidName": "Wpisz prawidłową nazwę pliku Windows. Puste lub zastrzeżone nazwy, niedozwolone znaki i zbyt długie ścieżki nie są dozwolone.",
+      "GuaranteeSection": "Ochrona skrótów",
+      "PresetAnnotation": "Inkeys(Adnotacje)",
+      "PresetAnnotationTool": "Inkeys(NarzędzieAdnotacji)"
     },
     "HotKey":
     {

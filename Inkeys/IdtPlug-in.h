@@ -61,10 +61,16 @@ bool IsPowerPointRunAsAdminSet();
 void StartDesktopDrawpadBlocker();
 bool LaunchVerifiedDesktopDrawpadBlocker(bool runAsAdmin);
 
+#include "Inkeys/Business/DesktopShortcut.h"
+
+Inkeys::Business::DesktopShortcut::NameOptions CaptureDesktopShortcutNames();
+std::wstring GetDesktopShortcutDirectory();
+
 class ShortcutAssistantClass
 {
 public:
-	void SetShortcut();
+	bool SetShortcut();
+	bool SetShortcut(const std::wstring& name, bool correct, bool create, const std::wstring& desktopDirectory);
 	bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory);
 	bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath);
 };

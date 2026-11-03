@@ -138,11 +138,6 @@ struct SetListStruct
 #pragma region 插件
 	struct
 	{
-		bool createLnk, correctLnk;
-	}shortcutAssistant;
-
-	struct
-	{
 		struct
 		{
 			IdtAtomic<bool> enable;

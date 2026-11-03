@@ -18,6 +18,7 @@
 - [ui-pointer-session.md](ui-pointer-session.md)：Bar/PPT 私有 Raw Mouse、WM_TOUCH 来源会话、窗口外拖动与取消合同。
 - [mouse-hook-and-autocollapse.md](mouse-hook-and-autocollapse.md)：有界鼠标 Hook、PPT 滚轮业务入口与独立 Inkeys3 自动收起策略。
 - [keyboard-shortcuts.md](keyboard-shortcuts.md)：固定快捷键、按压归属、启动同步、条件画布命令与清空选择事务。
+- [desktop-shortcuts.md](desktop-shortcuts.md)：桌面快捷方式名称、双开关保障、main.json 配置与设置 FIFO 合同。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [canvas-freeze-boundaries.md](canvas-freeze-boundaries.md)：Draw3 标准流隔离、PPT IoError 有限重试、橡皮 idle Move 握手与 Setting 隐藏输入会话。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、二十语言映射、菜单排序与热切换、国际化生成链及字体资源归属。

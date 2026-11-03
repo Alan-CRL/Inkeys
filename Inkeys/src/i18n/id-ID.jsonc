@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Buat pintasan desktop",
-          "E": "Perbaiki nama pintasan yang ada atau buat pintasan baru. Pilih Opsi lainnya untuk mengaturnya.",
+          "E": "Buat pintasan desktop menggunakan nama yang dipilih di bawah.",
           "More": "Opsi lainnya"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Opsi tambahan",
           "CreateLnk": "Buat pintasan desktop",
-          "CreateLnkE": "Buat pintasan desktop jika belum ada."
+          "CreateLnkE": "Saat aplikasi dimulai, buat pintasan desktop jika belum ada."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Memerlukan pendaftaran protokol URL NamePicker.",
       "ClassIslandProtocolNote": "Daftarkan protokol navigasi URL di setelan ClassIsland.",
       "ClassIslandSwapNote": "Komponen ini tidak berfungsi jika ClassIsland belum memuat jadwal kelas."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Pintasan",
+      "ApplicationSection": "Aplikasi",
+      "NameLabel": "Nama pintasan",
+      "CustomName": "Kustom",
+      "CustomHint": "Masukkan nama pintasan",
+      "InvalidName": "Masukkan nama berkas Windows yang valid. Nama kosong atau terlarang, karakter tidak valid, dan jalur yang terlalu panjang tidak diizinkan.",
+      "GuaranteeSection": "Perlindungan pintasan",
+      "PresetAnnotation": "Inkeys(Anotasi)",
+      "PresetAnnotationTool": "Inkeys(AlatAnotasi)"
     },
     "HotKey":
     {

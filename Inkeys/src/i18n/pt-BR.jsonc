@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Criar atalho na área de trabalho",
-          "E": "Para corrigir nomes ou criar atalhos automaticamente, acesse ‘Mais opções’.",
+          "E": "Cria um atalho na área de trabalho com o nome selecionado abaixo.",
           "More": "Mais opções"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Opções adicionais",
           "CreateLnk": "Criar atalho na área de trabalho",
-          "CreateLnkE": "Cria um atalho na área de trabalho se ainda não houver um."
+          "CreateLnkE": "Ao iniciar o aplicativo, cria um atalho na área de trabalho caso ele não exista."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Requer o registro do protocolo de URL do NamePicker.",
       "ClassIslandProtocolNote": "Registre o protocolo de navegação por URL nas configurações do ClassIsland.",
       "ClassIslandSwapNote": "Este componente não tem efeito quando o ClassIsland não tem uma grade de aulas carregada."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Atalhos",
+      "ApplicationSection": "Aplicativo",
+      "NameLabel": "Nome do atalho",
+      "CustomName": "Personalizado",
+      "CustomHint": "Digite um nome para o atalho",
+      "InvalidName": "Digite um nome de arquivo válido do Windows. Nomes vazios ou reservados, caracteres inválidos e caminhos longos demais não são permitidos.",
+      "GuaranteeSection": "Proteção de atalhos",
+      "PresetAnnotation": "Inkeys(Anotação)",
+      "PresetAnnotationTool": "Inkeys(FerramentaAnotação)"
     },
     "HotKey":
     {

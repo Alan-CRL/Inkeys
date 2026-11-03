@@ -60,11 +60,16 @@ namespace Inkeys::UI::Setting::Design
 	float ButtonWidth(const char* label);
 	// 由现有会话在帧边界提供时钟和软件动画偏好，不新增计时器或持久化状态。
 	void ConfigureRowAnimations(float delta, bool enabled, float rate);
+	struct InlineRowContent
+	{
+		std::function<float(float)> height; // 可用宽度和返回高度均为物理像素。
+		std::function<void(const LayoutRect&)> render;
+	};
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,
 		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0,
-		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr, bool showNoteIcon = true);
+		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr, bool showNoteIcon = true, const InlineRowContent* inlineContent = nullptr);
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
@@ -92,8 +97,22 @@ namespace Inkeys::UI::Setting::Design
 	bool RadioButton(const char* label, int* value, int selectedValue);
 	bool RadioButton(const char* label, bool selected);
 	bool ToggleSwitch(const char* label, bool* value, const char* onText = "", const char* offText = "");
-	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items);
-	bool ComboBox(const char* label, int* value, const char* const items[], int count, ImGuiComboFlags flags = 0);
+	// 仅显式传入的下方弹层使用此状态；不保存窗口、绘制列表或字体指针。
+	struct BelowComboMotion
+	{
+		NavigationTween reveal;
+		std::uintptr_t context = 0;
+		std::uint64_t revision = 0, atlas = 0;
+		ImGuiID popup = 0;
+		int frame = -1, selected = 0;
+		float scale = 0.0F, scroll = 0.0F;
+		ImVec2 position{}, size{};
+		std::vector<std::string> items;
+	};
+	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items,
+		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0);
+	bool ComboBox(const char* label, int* value, const char* const items[], int count, ImGuiComboFlags flags = 0,
+		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0);
 	bool Slider(const char* label, float* value, float minimum, float maximum,
 		const char* format = "%.2f", ImGuiSliderFlags flags = 0);
 	bool SliderInt(const char* label, int* value, int minimum, int maximum,

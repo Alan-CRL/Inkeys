@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "建立桌面捷徑",
-          "E": "可修正現有捷徑名稱或建立新捷徑。請選擇「更多選項」進行設定。",
+          "E": "使用下方選定的名稱建立桌面捷徑。",
           "More": "更多選項"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "擴充選項",
           "CreateLnk": "建立桌面捷徑",
-          "CreateLnkE": "當桌面不存在軟件的捷徑時，則建立一個。"
+          "CreateLnkE": "軟件啟動時，若桌面沒有軟件的捷徑，則建立一個。"
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "需要註冊 NamePicker URL 通訊協定。",
       "ClassIslandProtocolNote": "需要在 ClassIsland 應用程式設定中註冊 URL 導覽通訊協定。",
       "ClassIslandSwapNote": "ClassIsland 未載入課表時，此元件不會生效。"
+    },
+    "DesktopShortcut":
+    {
+      "N": "捷徑",
+      "ApplicationSection": "應用程式",
+      "NameLabel": "捷徑名稱",
+      "CustomName": "自訂",
+      "CustomHint": "輸入捷徑名稱",
+      "InvalidName": "請輸入有效的 Windows 檔案名稱；不可空白，也不可包含無效字元、保留名稱或超出路徑長度限制。",
+      "GuaranteeSection": "捷徑保障",
+      "PresetAnnotation": "Inkeys(批註)",
+      "PresetAnnotationTool": "Inkeys(批註工具)"
     },
     "HotKey":
     {

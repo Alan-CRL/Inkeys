@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Creare comandă rapidă pe desktop",
-          "E": "Corectați numele comenzilor rapide existente sau creați una nouă. Selectați Mai multe opțiuni pentru configurare.",
+          "E": "Creează o comandă rapidă pe desktop cu numele selectat mai jos.",
           "More": "Mai multe opțiuni"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Opțiuni suplimentare",
           "CreateLnk": "Creare comandă rapidă pe desktop",
-          "CreateLnkE": "Creează o comandă rapidă pe desktop dacă nu există deja."
+          "CreateLnkE": "La pornire, creează o comandă rapidă pe desktop dacă nu există deja."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Necesită înregistrarea protocolului URL NamePicker.",
       "ClassIslandProtocolNote": "Înregistrați protocolul de navigare URL din setările ClassIsland.",
       "ClassIslandSwapNote": "Componenta nu are efect dacă în ClassIsland nu este încărcat un orar."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Comenzi rapide",
+      "ApplicationSection": "Aplicație",
+      "NameLabel": "Numele comenzii rapide",
+      "CustomName": "Personalizat",
+      "CustomHint": "Introduceți un nume",
+      "InvalidName": "Introduceți un nume de fișier Windows valid. Numele goale sau rezervate, caracterele nevalide și căile prea lungi nu sunt permise.",
+      "GuaranteeSection": "Protecția comenzilor rapide",
+      "PresetAnnotation": "Inkeys(Adnotare)",
+      "PresetAnnotationTool": "Inkeys(InstrumentAdnotare)"
     },
     "HotKey":
     {

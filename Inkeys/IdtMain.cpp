@@ -558,6 +558,53 @@ namespace
 		return 0;
 	}
 
+	#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	int RunDesktopShortcutTest() noexcept
+	{
+		namespace fs = std::filesystem;
+		const auto root = fs::temp_directory_path() / (L"inkeys-shortcut-shell-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+		const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		if (FAILED(initialized)) return 1;
+		struct Scope { fs::path root; ~Scope() { std::error_code ec; fs::remove_all(root,ec); CoUninitialize(); } } scope{root};
+		try
+		{
+			int failures=0;
+			auto check=[&](bool value,const char* name) { if (!value) { ++failures; std::fprintf(stderr,"[DesktopShortcutShell] FAIL: %s\n",name); } };
+			const auto exe=GetCurrentExePath();
+			for (bool correct : {false,true}) for (bool create : {false,true})
+			{
+				const auto directory=root/(std::to_wstring(correct)+std::to_wstring(create)); fs::create_directories(directory);
+				const auto selected=directory/L"Selected.lnk", old=directory/L"Old.lnk";
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring()),"independent missing-file guarantee succeeds");
+				check(fs::exists(selected)==create,"only creation switch fills a missing shortcut");
+				check(shortcutAssistant.CreateShortcut(old.wstring(),exe),"create real ShellLink fixture");
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring()),"apply frozen guarantee request");
+				check(fs::exists(old)==!correct && fs::exists(selected)==(correct||create),"correction unifies old names independently");
+				check(shortcutAssistant.CreateShortcut(selected.wstring(),(directory/L"Other.exe").wstring()),"create wrong-target fixture");
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring()),"apply target correction");
+				check(shortcutAssistant.IsShortcutPointingToDirectory(selected.wstring(),exe)==(correct||create),"each enabled guarantee repairs selected wrong target");
+				check(!shortcutAssistant.SetShortcut(L"../invalid",true,true,directory.wstring()),"invalid path does not perform shell operations");
+			}
+			const auto caseDirectory=root/L"case-only"; fs::create_directories(caseDirectory);
+			const auto lower=caseDirectory/L"inkeys.lnk";
+			check(shortcutAssistant.CreateShortcut(lower.wstring(),exe)
+				&& shortcutAssistant.SetShortcut(L"Inkeys",true,false,caseDirectory.wstring())
+				&& fs::exists(lower) && shortcutAssistant.IsShortcutPointingToDirectory(lower.wstring(),exe),
+				"case-only selection cannot create and then delete the same Windows file");
+			const auto unicodeDirectory=root/L"unicode-case"; fs::create_directories(unicodeDirectory);
+			const auto unicodeLower=unicodeDirectory/L"ä.lnk";
+			check(shortcutAssistant.CreateShortcut(unicodeLower.wstring(),exe)
+				&& shortcutAssistant.SetShortcut(L"Ä",true,false,unicodeDirectory.wstring())
+				&& fs::exists(unicodeLower) && shortcutAssistant.IsShortcutPointingToDirectory(unicodeLower.wstring(),exe),
+				"Unicode case-only names cannot delete the same Windows file");
+			std::fprintf(stderr,"[DesktopShortcutShell] %s: real ShellLink operations in isolated temporary directories\n",failures ? "FAIL" : "PASS");
+			return failures ? 1 : 0;
+		}
+		catch (...) { std::fputs("[DesktopShortcutShell] FAIL: isolated test exception\n",stderr); return 1; }
+	}
+
+	#endif
+
 	int RunConfigBoundaryTest() noexcept
 	{
 		const char* stage = "setup";
@@ -1632,6 +1679,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			const int stateResult = RunStateModeProductionTest();
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1],-1,L"--desktop-shortcut-test",-1,TRUE)==CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			const int queue = Inkeys::UI::Setting::RunBusinessCancellationProductionTest();
+			return queue ? queue : RunDesktopShortcutTest();
+#else
+			return 2;
+#endif
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--setting-business-cancellation-test") == 0)
 		{
@@ -2990,10 +3048,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 			// 插件
 			{
-				{
-					setlist.shortcutAssistant.correctLnk = true;
-					setlist.shortcutAssistant.createLnk = false;
-				}
 				{
 					setlist.plugInSetting.superTop.enable = false;
 					setlist.plugInSetting.superTop.indicator = true;

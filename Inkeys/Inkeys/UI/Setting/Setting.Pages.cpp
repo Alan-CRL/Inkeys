@@ -9,6 +9,8 @@
 #include <array>
 #include "imgui/imgui_internal.h"
 
+import Inkeys.Conv.Text;
+
 namespace Inkeys::UI::Setting::Design
 {
 	namespace
@@ -982,6 +984,7 @@ namespace Inkeys::UI::Setting::Design
 		const char* title = section == GeneralSection::Appearance ? I18nKey.SettingsUI.Design.GeneralAppearance
 			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
 			: section == GeneralSection::Shortcuts ? I18nKey.SettingsUI.HotKey.N
+			: section == GeneralSection::DesktopShortcuts ? I18nKey.SettingsUI.DesktopShortcut.N
 			: I18nKey.SettingsUI.Design.GeneralBasic;
 		PageHeader(IA(title).c_str());
 		// 仅渲染当前子页；未显示字段继续使用同一草稿，不触发写回或重置。
@@ -1029,13 +1032,7 @@ namespace Inkeys::UI::Setting::Design
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) },
 				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
-			const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
-			const std::string create = IA(I18nKey.Operate.Create);
-			const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b",
-				{ { "create", create }, { "more", more } });
-			events.createShortcut = shortcutAction == 0;
-			events.shortcutOptions = shortcutAction == 1;
+
 		}
 		if (section == GeneralSection::Appearance)
 		{
@@ -1166,6 +1163,77 @@ namespace Inkeys::UI::Setting::Design
 					"\ue765", draft.shortcuts[item], item == 5 ? IA(I18nKey.SettingsUI.HotKey.FreezeNote).c_str() : nullptr);
 				ImGui::PopID();
 			}
+		}
+		if (section == GeneralSection::DesktopShortcuts)
+		{
+			using namespace Business::DesktopShortcut;
+			auto& shortcut = draft.desktopShortcut;
+			const auto& keys = I18nKey.SettingsUI.DesktopShortcut;
+			const auto valid = [&] { return shortcut.desktopAvailable && (shortcut.preset != Custom
+				|| IsValidName(utf8ToUtf16(shortcut.customName), shortcut.directoryLength)); };
+			SectionHeader(IA(keys.ApplicationSection).c_str());
+			const std::string create = IA(I18nKey.Operate.Create), invalidName = IA(keys.InvalidName);
+			InlineRowContent inlineName;
+			inlineName.height = [&](float width) {
+				return Pixels(ControlHeight) + (valid() ? 0.0F : Pixels(8) + (std::max)(Pixels(20),
+					TextHeight(invalidName.c_str(), (std::max)(1.0F, width - Pixels(24)), ImFluentTextStyle_Caption)));
+			};
+			inlineName.render = [&](const LayoutRect& bounds) {
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+				// 透明 child 只承载控件和输入；外框与分隔线由上方 SettingRow 统一绘制。
+				if (ImGui::BeginChild("##desktop-shortcut-name", { bounds.Width(), bounds.Height() },
+					ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+				{
+					const auto origin = ImGui::GetCursorScreenPos();
+					const float innerWidth = ImGui::GetContentRegionAvail().x;
+					const float gap = Pixels(ControlSpacing);
+					const float comboWidth = (std::min)(Pixels(300), (std::max)(1.0F, (innerWidth - gap) * .55F));
+					const float leftWidth = (std::max)(1.0F, innerWidth - comboWidth - gap);
+					std::vector<std::string> names;
+					for (int index = 0; index < (shortcut.names.simplifiedChinese ? 5 : 4); ++index)
+					{
+						const int preset = PresetForIndex(index, shortcut.names.simplifiedChinese);
+						names.push_back(preset == Custom ? IA(keys.CustomName) : utf16ToUtf8(shortcut.names.presets[preset]));
+					}
+					if (shortcut.preset == Custom)
+					{
+						ImGui::SetNextItemWidth(leftWidth);
+						events.desktopNameCommitted = TextBox("##desktop-shortcut-custom", shortcut.customName,
+							IA(keys.CustomHint).c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
+						events.desktopNameCommitted |= ImGui::IsItemDeactivatedAfterEdit();
+					}
+					else TextAt(IA(keys.NameLabel).c_str(), { origin.x, origin.y + Pixels(5) }, leftWidth);
+					ImGui::SetCursorScreenPos({ origin.x + innerWidth - comboWidth, origin.y });
+					ImGui::SetNextItemWidth(comboWidth);
+					int index = IndexForPreset(shortcut.preset, shortcut.names.simplifiedChinese);
+					const auto previous = ResolveName(shortcut.preset, utf8ToUtf16(shortcut.customName), shortcut.names);
+					if (ComboBox("##desktop-shortcut-preset", &index, names, &shortcut.namePopup, I18n::revision()))
+					{
+						shortcut.preset = PresetForIndex(index, shortcut.names.simplifiedChinese);
+						// 从预设进入自定义时使用当时的显示名；重开已保存的自定义不走此分支。
+						if (shortcut.preset == Custom) shortcut.customName = utf16ToUtf8(previous);
+						events.desktopNamePresetChanged = true;
+					}
+					ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, Pixels(ControlHeight) });
+					if (!valid()) InfoText(IA(keys.InvalidName).c_str());
+				}
+				ImGui::EndChild(); ImGui::PopStyleVar();
+			};
+			SettingRow("desktop-shortcut-create", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b", ButtonWidth(create.c_str()), ControlHeight,
+				[&](const LayoutRect& bounds) {
+					ImGui::PushID("create"); ImFluent::BeginDisabled(!valid());
+					events.createShortcut = Button((create + "###button").c_str(), { bounds.Width(), bounds.Height() });
+					ImFluent::EndDisabled(); ImGui::PopID();
+				}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineName);
+			SectionHeader(IA(keys.GuaranteeSection).c_str());
+			events.desktopCorrectChanged = ToggleRow("desktop-shortcut-correct",
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnk).c_str(),
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE).c_str(), "\ue71b", shortcut.correct);
+			events.desktopCreateChanged = ToggleRow("desktop-shortcut-auto-create",
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk).c_str(),
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE).c_str(), "\ue71b", shortcut.create);
+			if (!valid()) events.createShortcut = false;
 		}
 		return events;
 	}

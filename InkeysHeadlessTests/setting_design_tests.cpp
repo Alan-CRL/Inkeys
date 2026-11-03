@@ -3408,6 +3408,116 @@ namespace
 		io.DisplaySize = oldSize;
 	}
 
+	void CheckBelowComboPopup(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular,strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
+		auto& io=ImGui::GetIO(); const auto oldSize=io.DisplaySize; const auto oldFlags=io.ConfigFlags;
+		const bool oldTrickle=io.ConfigInputTrickleEventQueue; io.ConfigInputTrickleEventQueue=false;
+		io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard; io.DisplaySize={620*scale,480*scale};
+		Design::BelowComboMotion motion; Design::PageMotionState page;
+		std::vector<std::string> items; for (int i=0;i<12;++i) items.push_back("Option "+std::to_string(i));
+		bool animated=true, submit=true; float rate=1, top=260*scale; std::uint64_t revision=1;
+		int selected=0, changes=0, clicks=0; ImGuiWindow* host=nullptr;
+		const ImVec2 outside{-100,-100};
+		struct Frame { ImGuiWindow* popup=nullptr; ImGuiWindow* exit=nullptr; ImRect button; ImRect underlying; float opacity=0; bool changed=false; };
+		auto draw=[&](ImVec2 mouse=ImVec2(-100,-100),bool down=false) {
+			io.AddMousePosEvent(mouse.x,mouse.y); io.AddMouseButtonEvent(0,down);
+			ImGui::NewFrame(); Design::ConfigureRowAnimations(1.0F/60,animated,rate);
+			ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##below-combo-cpu",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoMove);
+			host=ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+			Design::ConfigurePageMotion(page,17,true); Design::BeginPageMotion(page);
+			Frame frame;
+			ImGui::SetCursorPos({20*scale,50*scale}); if (Design::Button("Underlying")) ++clicks;
+			frame.underlying={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
+			ImGui::SetCursorPos({20*scale,top}); Design::Text("Shortcut name");
+			if (submit)
+			{
+				ImGui::SetCursorPos({180*scale,top}); ImGui::SetNextItemWidth(240*scale);
+				frame.changed=Design::ComboBox("##below-combo-probe",&selected,items,&motion,revision);
+				changes+=frame.changed ? 1 : 0;
+			}
+			Design::EndPageMotion(); ImFluent::PopFont(); ImGui::End(); ImGui::Render();
+			for (const auto& popup:GImGui->OpenPopupStack) if (popup.PopupId==motion.popup) frame.popup=popup.Window;
+			char name[40]; ImFormatString(name,sizeof(name),"##BelowComboExit_%08x",motion.popup);
+			if (auto* exit=ImGui::FindWindowByName(name);exit && exit->LastFrameActive==ImGui::GetFrameCount()) frame.exit=exit;
+			frame.button=ImGui::WindowRectRelToAbs(host,host->NavRectRel[ImGuiNavLayer_Main]); frame.opacity=motion.reveal.value;
+			return frame;
+		};
+		auto idle=[&](int count=1) {Frame result; for(int i=0;i<count;++i) result=draw(); return result;};
+		auto focus=[&] {
+			ImGui::FocusWindow(host); ImGui::SetNavID(host->GetID("##below-combo-probe"),ImGuiNavLayer_Main,host->NavRootFocusScopeId,ImRect{});
+			return draw().button;
+		};
+		auto key=[&](ImGuiKey value) { io.AddKeyEvent(value,true); auto first=draw(); io.AddKeyEvent(value,false); auto second=draw(); return second.popup || second.exit ? second : first; };
+		auto open=[&] { idle(2); const auto button=focus(); key(ImGuiKey_F4); return std::pair{button,draw()}; };
+		auto [button,opening]=open();
+		checks.Expect(opening.popup && opening.opacity>0 && opening.opacity<1,"opt-in popup has a real intermediate opening frame");
+		auto complete=idle(20);
+		checks.Expect(complete.popup && Near(complete.opacity,1),"below popup reaches a full-opacity endpoint");
+		if (complete.popup)
+		{
+			checks.Expect(complete.popup->Pos.y>=button.Max.y && complete.popup->Pos.x>=button.Min.x-1
+				&& complete.popup->Pos.x+complete.popup->Size.x<=io.DisplaySize.x+1
+				&& complete.popup->Pos.y+complete.popup->Size.y<=io.DisplaySize.y-Design::Pixels(4)+1,
+				"real popup stays below/right of the button and inside available viewport space");
+			ImGui::SetScrollY(complete.popup,100*scale); complete=idle(2);
+		}
+		const float scroll=motion.scroll;
+		key(ImGuiKey_Escape); auto closing=idle(2);
+		checks.Expect(!closing.popup && closing.exit && closing.opacity>0 && closing.opacity<1,"closing renders a fading non-popup decoration");
+		if (closing.exit)
+		{
+			checks.Expect((closing.exit->Flags&ImGuiWindowFlags_NoInputs)==ImGuiWindowFlags_NoInputs
+				&& GImGui->HoveredWindow!=closing.exit && GImGui->NavWindow!=closing.exit && GImGui->ActiveIdWindow!=closing.exit,
+				"closing decoration owns neither mouse, navigation nor active input");
+			checks.Expect(scroll>0 && Near(closing.exit->Scroll.y,scroll,1),"scrolled popup keeps the same visible row range while fading out");
+		}
+		// Exit is still visible, but a separate real control accepts a fresh click.
+		const auto point=closing.underlying.GetCenter(); draw(point,false); draw(point,true); auto clicked=draw(point,false);
+		checks.Expect(clicks==1 && !clicked.changed,"underlying control remains usable while closing decoration fades");
+		idle(20); checks.Expect(!draw().exit && Near(motion.reveal.value,0),"closed endpoint removes all decoration");
+		// A quick close/open reverses from the current value, rather than resetting to zero.
+		auto firstOpen=open().second; idle(5); key(ImGuiKey_Escape); idle(); const float before=motion.reveal.value;
+		focus(); const float atReverse=motion.reveal.value; io.AddKeyEvent(ImGuiKey_F4,true); auto reverse=draw(); io.AddKeyEvent(ImGuiKey_F4,false); auto resumed=draw();
+		checks.Expect(reverse.popup && Near(reverse.opacity,atReverse,.001F) && resumed.opacity>=reverse.opacity && before>0,
+			"reopening reverses continuously from the current closing opacity");
+		// Disable animations during motion: both endpoints must settle immediately.
+		animated=false; auto instant=draw(); checks.Expect(instant.popup && Near(instant.opacity,1),"global animation off settles opening immediately");
+		key(ImGuiKey_Escape); instant=draw(); checks.Expect(!instant.popup && !instant.exit && Near(instant.opacity,0),"global animation off closes immediately without decoration");
+		animated=true; rate=1; ++revision; idle(); auto slow=open().second; const float slowOpacity=slow.opacity;
+		++revision; idle(); rate=2; auto fast=open().second;
+		checks.Expect(fast.opacity>slowOpacity,"popup timing follows existing global animation rate");
+		// Selection is committed exactly once; no stale exit control can commit again.
+		idle(20); auto live=draw(); const int beforeChanges=changes;
+		if (live.popup)
+		{
+			// 前面的滚动测试会让同名弹层窗口保留滚动位置；回到顶部，保证第 2 项被列表裁剪器提交。
+			ImGui::SetScrollY(live.popup,0); live=draw();
+			checks.Expect(live.popup!=nullptr,"popup is still open after scrolling back to the top");
+			if (live.popup)
+			{
+			const int item=2; const auto id=ImHashStr(items[item].c_str(),0,ImHashData(&item,sizeof(item),live.popup->ID));
+			ImGui::FocusWindow(live.popup); ImGui::SetNavID(id,ImGuiNavLayer_Main,live.popup->NavRootFocusScopeId,ImRect{});
+			GImGui->NavCursorVisible=true; // SetNavID 不会像真实方向键导航那样显示焦点，Enter 激活依赖它。
+			draw(); key(ImGuiKey_Enter); idle(4);
+			checks.Expect(selected==2 && changes==beforeChanges+1,"actual popup selection emits one event despite exit rendering");
+			}
+		}
+		// The lower-space budget is authoritative even when less than one row fits.
+		++revision; idle(); top=io.DisplaySize.y-50*scale; auto shortPopup=open().second;
+		checks.Expect(shortPopup.popup && shortPopup.popup->Pos.y>=shortPopup.button.Max.y
+			&& shortPopup.popup->Pos.y+shortPopup.popup->Size.y<=io.DisplaySize.y-Design::Pixels(4)+1
+			&& shortPopup.popup->Size.y<Design::Pixels(Design::ControlHeight),"constrained popup shortens below rather than covering left text");
+		++revision; auto replaced=draw(); checks.Expect(!replaced.popup && !replaced.exit,"language/layout revision retires old popup without stale resources");
+		top=260*scale; open(); submit=false; auto omitted=draw();
+		checks.Expect(!omitted.popup,"leaving the page retires the unsubmitted scoped popup");
+		submit=true; auto returned=draw(); checks.Expect(!returned.popup && !returned.exit,"returning after omission does not resurrect old popup motion");
+		idle(); io.ConfigFlags=oldFlags; io.ConfigInputTrickleEventQueue=oldTrickle; io.DisplaySize=oldSize;
+		Design::ConfigureRowAnimations(0,false,1);
+		std::cout<<"[BelowComboPopup] scale="<<scale<<" changes="<<changes<<" underlying-clicks="<<clicks<<'\n';
+	}
+
 	void CheckGeneralSections(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
@@ -3420,7 +3530,7 @@ namespace
 		struct Frame
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
-			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false;
+			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false, desktopShortcuts = false;
 			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false;
 		};
 		ImGuiWindow* host = nullptr;
@@ -3444,6 +3554,7 @@ namespace
 				return ImGui::GetStateStorage()->GetInt(id, -1) == ImGui::GetFrameCount();
 			};
 			frame.operation = rowSeen("##选择与穿透"); frame.layout = rowSeen("主栏图标顺序") && rowSeen("主栏展开方向调整");
+			frame.desktopShortcuts = rowSeen("desktop-shortcut-create") && rowSeen("desktop-shortcut-correct") && rowSeen("desktop-shortcut-auto-create");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
 			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
 			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
@@ -3460,7 +3571,8 @@ namespace
 			return frame;
 		};
 		auto noEdits = [](const Design::GeneralEvents& events) {
-			return !events.startupChanged && !events.createShortcut && !events.shortcutOptions
+			return !events.desktopNamePresetChanged && !events.desktopNameCommitted && !events.desktopCorrectChanged && !events.desktopCreateChanged
+				&& !events.startupChanged && !events.createShortcut
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
 				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.animationChanged
@@ -3472,7 +3584,7 @@ namespace
 		};
 		const ImVec2 outside(-100, -100);
 		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Appearance,
-			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts })
+			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts, Design::GeneralSection::DesktopShortcuts })
 		{
 			draw(section, outside, false); const auto frame = draw(section, outside, false);
 			checks.Expect(frame.vertices > 0 && noEdits(frame.events), "actual general subpage renders without creating idle edits");
@@ -3480,6 +3592,7 @@ namespace
 				&& frame.layout == (section == Design::GeneralSection::Basic)
 				&& frame.collapse == (section == Design::GeneralSection::Interaction)
 				&& frame.shortcuts == (section == Design::GeneralSection::Shortcuts)
+				&& frame.desktopShortcuts == (section == Design::GeneralSection::DesktopShortcuts)
 				&& frame.startupPreview == (section == Design::GeneralSection::Appearance)
 				&& frame.entryAnimation == (section == Design::GeneralSection::Appearance)
 				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom
@@ -3543,6 +3656,108 @@ namespace
 		checks.Expect(!draft.shortcuts[5] && shortcutChanges[5] == 1
 			&& std::all_of(draft.shortcuts.begin(), draft.shortcuts.begin() + 5, [](bool value) { return value; }),
 			"independent shortcuts page toggles only the chosen shortcut and returns one configuration event");
+		// 新页实际控件保持独立事件；无效编辑不能误触发创建。
+		draw(Design::GeneralSection::DesktopShortcuts, outside, false);
+		focus(Design::GeneralSection::DesktopShortcuts, "desktop-shortcut-correct", "##toggle");
+		io.AddKeyEvent(ImGuiKey_Space,true); auto desktopDown=draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+		io.AddKeyEvent(ImGuiKey_Space,false); auto desktopUp=draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+		checks.Expect(!draft.desktopShortcut.correct && !draft.desktopShortcut.create
+			&& (desktopDown.events.desktopCorrectChanged || desktopUp.events.desktopCorrectChanged)
+			&& !desktopDown.events.desktopCreateChanged && !desktopUp.events.desktopCreateChanged,
+			"actual correction switch returns only its independent preference event");
+		draft.desktopShortcut.preset=Inkeys::Business::DesktopShortcut::Custom; draft.desktopShortcut.customName="CON";
+		auto invalidName=draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+		checks.Expect(!invalidName.events.createShortcut && !invalidName.events.desktopNameCommitted
+			&& draft.desktopShortcut.customName=="CON", "invalid custom draft remains editable without producing a creation/save event");
+		for (float width : {440.0F,1100.0F})
+		{
+			io.DisplaySize.x=width*scale; draft.desktopShortcut.customName="My Inkeys";
+			draw(Design::GeneralSection::DesktopShortcuts,outside,false); draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+			ImGuiWindow* card=nullptr;
+			for (auto* window : GImGui->Windows) if (strstr(window->Name,"##desktop-shortcut-name") && window->LastFrameActive==ImGui::GetFrameCount()) card=window;
+			checks.Expect(card!=nullptr,"desktop shortcut inline name card is actually rendered");
+			if (!card) continue;
+			checks.Expect((card->Flags & ImGuiWindowFlags_NoBackground) && card->WindowBorderSize == 0
+				&& Near(card->WindowPadding.x,0) && Near(card->WindowPadding.y,0),
+				"name controls are an unbordered transparent inline child rather than a second card");
+			const auto surface = SampleFlatDrawData({card->Pos.x-8*scale,card->Pos.y+16*scale},host->DrawList,0,host->DrawList->VtxBuffer.Size,Design::AppBase);
+			const auto expectedSurface = ImGui::ColorConvertU32ToFloat4(Design::Card);
+			checks.Expect(Near(surface.visible.x,expectedSurface.x,.01F) && Near(surface.visible.y,expectedSurface.y,.01F)
+				&& Near(surface.visible.z,expectedSurface.z,.01F),"create row outer surface extends beside the lower name area");
+			const auto dividerY=std::round(card->Pos.y-Design::Pixels(ImFluent::GetStyle().CardPadding));
+			// 1px 抗锯齿线使用线条纹理，不是纯白平面三角形；直接检查绘制数据中的描边色顶点横跨整张卡片。
+			float lineMin=FLT_MAX, lineMax=-FLT_MAX; const ImU32 strokeRgb=Design::Stroke&0x00FFFFFF;
+			for (const auto* list : ImGui::GetDrawData()->CmdLists)
+				for (const auto& vertex : list->VtxBuffer)
+					if ((vertex.col&0x00FFFFFF)==strokeRgb && (vertex.col>>24)!=0 && std::fabs(vertex.pos.y-dividerY)<=1.0F)
+					{ lineMin=(std::min)(lineMin,vertex.pos.x); lineMax=(std::max)(lineMax,vertex.pos.x); }
+			const float cardPadding=Design::Pixels(ImFluent::GetStyle().CardPadding);
+			checks.Expect(lineMin<=card->Pos.x-cardPadding+2*scale && lineMax>=card->Pos.x+card->Size.x+cardPadding-2*scale,
+				"one shared outer card has a real full-width header/body divider");
+			auto controlRect=[&](const char* id) {
+				ImGui::FocusWindow(card); ImGui::SetNavID(card->GetID(id),ImGuiNavLayer_Main,card->NavRootFocusScopeId,ImRect{});
+				draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+				checks.Expect(GImGui->NavIdIsAlive,"desktop name control exposes a real stable navigation item");
+				return ImGui::WindowRectRelToAbs(card,card->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			const auto input=controlRect("##desktop-shortcut-custom"), combo=controlRect("##desktop-shortcut-preset");
+			checks.Expect(input.Max.x<=combo.Min.x && input.GetWidth()>0 && combo.GetWidth()>0,
+				"real custom input stays left of preset combo in narrow and wide windows");
+		}
+		io.DisplaySize.x=1100*scale;
+		draft.desktopShortcut.names.simplifiedChinese=true;
+		draft.desktopShortcut.names.presets[2]=L"Inkeys(批注)";
+		draft.desktopShortcut.preset=Inkeys::Business::DesktopShortcut::Annotation;
+		draft.desktopShortcut.customName="old custom";
+		auto desktopDraw=[&] { return draw(Design::GeneralSection::DesktopShortcuts,outside,false); };
+		auto nameCard=[&]() -> ImGuiWindow* {
+			for (auto* window : GImGui->Windows) if (strstr(window->Name,"##desktop-shortcut-name") && window->LastFrameActive==ImGui::GetFrameCount()) return window;
+			return nullptr;
+		};
+		desktopDraw(); desktopDraw();
+		if (auto* card=nameCard())
+		{
+			ImGui::FocusWindow(card); ImGui::SetNavID(card->GetID("##desktop-shortcut-preset"),ImGuiNavLayer_Main,card->NavRootFocusScopeId,ImRect{});
+			desktopDraw();
+			io.AddKeyEvent(ImGuiKey_Enter,true); desktopDraw(); io.AddKeyEvent(ImGuiKey_Enter,false); desktopDraw();
+			ImGuiWindow* popup=GImGui->OpenPopupStack.empty() ? nullptr : GImGui->OpenPopupStack.back().Window;
+			checks.Expect(popup!=nullptr,"actual preset combo opens its selection popup");
+			if (popup)
+			{
+				const int last=4; const auto custom=IA(I18nKey.SettingsUI.DesktopShortcut.CustomName);
+				const auto id=ImHashStr(custom.c_str(),0,ImHashData(&last,sizeof(last),popup->ID));
+				ImGui::FocusWindow(popup); ImGui::SetNavID(id,ImGuiNavLayer_Main,popup->NavRootFocusScopeId,ImRect{});
+				desktopDraw(); io.AddKeyEvent(ImGuiKey_Enter,true); const auto chosen=desktopDraw();
+				io.AddKeyEvent(ImGuiKey_Enter,false); desktopDraw();
+				checks.Expect(draft.desktopShortcut.preset==Inkeys::Business::DesktopShortcut::Custom
+					&& draft.desktopShortcut.customName=="Inkeys(批注)" && chosen.events.desktopNamePresetChanged
+					&& !chosen.events.createShortcut,"real preset-to-custom choice seeds the previous visible name without a file action");
+			}
+		}
+		desktopDraw();
+		if (auto* card=nameCard(); card && draft.desktopShortcut.preset==Inkeys::Business::DesktopShortcut::Custom)
+		{
+			auto edit=[&](const char* value) {
+				ImGui::FocusWindow(card); ImGui::SetNavID(card->GetID("##desktop-shortcut-custom"),ImGuiNavLayer_Main,card->NavRootFocusScopeId,ImRect{});
+				desktopDraw(); const auto point=ImGui::WindowRectRelToAbs(card,card->NavRectRel[ImGuiNavLayer_Main]).GetCenter();
+				draw(Design::GeneralSection::DesktopShortcuts,point,false); draw(Design::GeneralSection::DesktopShortcuts,point,true); draw(Design::GeneralSection::DesktopShortcuts,point,false);
+				io.AddKeyEvent(ImGuiMod_Ctrl,true); io.AddKeyEvent(ImGuiKey_A,true); desktopDraw();
+				io.AddKeyEvent(ImGuiKey_A,false); io.AddKeyEvent(ImGuiMod_Ctrl,false); io.AddInputCharactersUTF8(value);
+				return desktopDraw();
+			};
+			const auto typing=edit("Saved by Enter");
+			checks.Expect(draft.desktopShortcut.customName=="Saved by Enter" && !typing.events.desktopNameCommitted && !typing.events.createShortcut,
+				"real custom typing updates only the resident draft");
+			io.AddKeyEvent(ImGuiKey_Enter,true); const auto enter=desktopDraw(); io.AddKeyEvent(ImGuiKey_Enter,false); const auto enterUp=desktopDraw();
+			checks.Expect((enter.events.desktopNameCommitted || enterUp.events.desktopNameCommitted) && !enter.events.createShortcut,
+				"real Enter produces the name-save event without creating a shortcut");
+			edit("Saved by blur");
+			draw(Design::GeneralSection::DesktopShortcuts,{30*scale,30*scale},false);
+			const auto blurDown=draw(Design::GeneralSection::DesktopShortcuts,{30*scale,30*scale},true);
+			const auto blurUp=draw(Design::GeneralSection::DesktopShortcuts,{30*scale,30*scale},false);
+			checks.Expect(draft.desktopShortcut.customName=="Saved by blur" && (blurDown.events.desktopNameCommitted || blurUp.events.desktopNameCommitted)
+				&& !blurDown.events.createShortcut,"real focus loss produces the name-save event without a file action");
+		}
 		auto hidden = draw(Design::GeneralSection::Appearance, outside, false);
 		draft.animation = true; draft.edgeLighting = true;
 		draw(Design::GeneralSection::Appearance, outside, false);
@@ -3837,6 +4052,12 @@ namespace
 		click(state.parentBounds); frame = idle(); click(state.parentBounds); frame = idle();
 		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Shortcuts,
 			"parent fold and reopen preserve the fifth shortcut child");
+		click(state.childBounds[5]); frame = idle();
+		checks.Expect(selected.section == GeneralSection::DesktopShortcuts && state.lastGeneralSection == GeneralSection::DesktopShortcuts,
+			"sixth inline child selects desktop shortcuts after keyboard shortcuts");
+		click(state.parentBounds); frame = idle(); click(state.parentBounds); frame = idle();
+		checks.Expect(state.generalExpanded && selected.section == GeneralSection::DesktopShortcuts,
+			"fold and reopen preserve the sixth desktop-shortcut child");
 		click(state.childBounds[0]); frame = idle(); size.y = 700; requestedScroll = 0; frame = idle(); requestedScroll = -1;
 		click(state.childBounds[1]); frame = idle();
 		checks.Expect(selected.section == GeneralSection::Appearance && state.lastGeneralSection == GeneralSection::Appearance,
@@ -3917,11 +4138,15 @@ namespace
 		checks.Expect(!state.flyoutOpen && navigations == beforeMenu,
 			"compact third click closes the popup without navigating");
 		click(state.parentBounds); frame = idle();
-		checks.Expect(Contains(state.flyoutBounds, state.flyoutChildBounds[4]),
-			"compact popup geometry contains all five general children");
+		checks.Expect(Contains(state.flyoutBounds, state.flyoutChildBounds.back()),
+			"compact popup geometry contains all general children");
 		click(state.flyoutChildBounds[4]); frame = idle();
 		checks.Expect(!state.flyoutOpen && selected.section == GeneralSection::Shortcuts,
 			"fifth compact popup child enters the same independent shortcuts page");
+		click(state.parentBounds); frame = idle();
+		click(state.flyoutChildBounds[5]); frame = idle();
+		checks.Expect(!state.flyoutOpen && selected.section == GeneralSection::DesktopShortcuts,
+			"sixth compact popup child enters desktop shortcuts after keyboard shortcuts");
 		click(state.parentBounds); frame = idle();
 		click(state.flyoutChildBounds[3]); frame = idle();
 		checks.Expect(!state.flyoutOpen && selected.page == PageId::General && selected.section == GeneralSection::Storage,
@@ -4100,14 +4325,14 @@ namespace
 		click(state.parentBounds); frame = draw(outside, false);
 		const float foldingReveal = state.groupReveal.value;
 		checks.Expect(!state.generalExpanded && foldingReveal > 0 && foldingReveal < 1 && frame.group
-			&& Near(frame.group->Size.y, (36 * 5 + 4 * 4) * scale * foldingReveal, 1)
+			&& Near(frame.group->Size.y, (Design::NavigationRowHeight * Design::GeneralSectionCount + Design::RowGap * (Design::GeneralSectionCount - 1)) * scale * foldingReveal, 1)
 			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
 			&& Near(frame.contentAlpha, 1),
 			"real parent folding animates the clipped group geometry without restarting the body fade");
 		click(state.parentBounds); const float reversingReveal = state.groupReveal.value;
 		frame = draw(outside, false);
 		checks.Expect(state.generalExpanded && state.groupReveal.value > reversingReveal && state.groupReveal.value < 1
-			&& frame.group && Near(frame.group->Size.y, (36 * 5 + 4 * 4) * scale * state.groupReveal.value, 1)
+			&& frame.group && Near(frame.group->Size.y, (Design::NavigationRowHeight * Design::GeneralSectionCount + Design::RowGap * (Design::GeneralSectionCount - 1)) * scale * state.groupReveal.value, 1)
 			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
 			&& Near(frame.contentAlpha, 1),
 			"rapid parent reversal continues from the current real child-window height without re-navigating");
@@ -7137,6 +7362,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				const auto fontIndex = localeFontIndex(locale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
+			CheckBelowComboPopup(checks,fonts[0],fonts[1],fonts.back(),scale);
 			continue;
 		}
 		if (attentionOnly)

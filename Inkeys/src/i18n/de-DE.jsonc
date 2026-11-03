@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Desktop-Verknüpfung erstellen",
-          "E": "Namen vorhandener Verknüpfungen korrigieren oder eine neue erstellen. Unter Weitere Optionen konfigurieren.",
+          "E": "Erstellt eine Desktopverknüpfung mit dem unten ausgewählten Namen.",
           "More": "Weitere Optionen"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Zusätzliche Optionen",
           "CreateLnk": "Desktop-Verknüpfung erstellen",
-          "CreateLnkE": "Eine Desktop-Verknüpfung erstellen, falls noch keine vorhanden ist."
+          "CreateLnkE": "Erstellt beim Programmstart eine Desktopverknüpfung, falls noch keine vorhanden ist."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Erfordert die Registrierung des NamePicker-URL-Protokolls.",
       "ClassIslandProtocolNote": "Das URL-Navigationsprotokoll in den ClassIsland-Einstellungen registrieren.",
       "ClassIslandSwapNote": "Diese Komponente hat keine Wirkung, wenn in ClassIsland kein Stundenplan geladen ist."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Verknüpfungen",
+      "ApplicationSection": "Anwendung",
+      "NameLabel": "Name der Verknüpfung",
+      "CustomName": "Benutzerdefiniert",
+      "CustomHint": "Namen der Verknüpfung eingeben",
+      "InvalidName": "Geben Sie einen gültigen Windows-Dateinamen ein. Leere oder reservierte Namen, ungültige Zeichen und zu lange Pfade sind nicht zulässig.",
+      "GuaranteeSection": "Verknüpfungsschutz",
+      "PresetAnnotation": "Inkeys(Anmerkung)",
+      "PresetAnnotationTool": "Inkeys(Anmerkungstool)"
     },
     "HotKey":
     {

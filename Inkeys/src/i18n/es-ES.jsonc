@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Crear acceso directo en el escritorio",
-          "E": "Corregir los nombres de los accesos directos existentes o crear uno nuevo. Selecciona Más opciones para configurarlo.",
+          "E": "Crea un acceso directo en el escritorio con el nombre seleccionado abajo.",
           "More": "Más opciones"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Opciones adicionales",
           "CreateLnk": "Crear acceso directo en el escritorio",
-          "CreateLnkE": "Crear un acceso directo en el escritorio si aún no existe."
+          "CreateLnkE": "Al iniciar el programa, crea un acceso directo en el escritorio si no existe."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Requiere registrar el protocolo URL de NamePicker.",
       "ClassIslandProtocolNote": "Registrar el protocolo de navegación URL en los ajustes de ClassIsland.",
       "ClassIslandSwapNote": "Este componente no tiene efecto si ClassIsland no tiene cargado un horario."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Accesos directos",
+      "ApplicationSection": "Aplicación",
+      "NameLabel": "Nombre del acceso directo",
+      "CustomName": "Personalizado",
+      "CustomHint": "Introduce un nombre",
+      "InvalidName": "Introduce un nombre de archivo válido de Windows. No se permiten nombres vacíos o reservados, caracteres no válidos ni rutas demasiado largas.",
+      "GuaranteeSection": "Protección de accesos directos",
+      "PresetAnnotation": "Inkeys(Anotación)",
+      "PresetAnnotationTool": "Inkeys(HerramientaAnotación)"
     },
     "HotKey":
     {

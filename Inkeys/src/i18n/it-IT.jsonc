@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Crea collegamento sul desktop",
-          "E": "Correggi i nomi dei collegamenti esistenti o creane uno nuovo. Scegli Altre opzioni per configurare.",
+          "E": "Crea un collegamento sul desktop con il nome selezionato qui sotto.",
           "More": "Altre opzioni"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Opzioni aggiuntive",
           "CreateLnk": "Crea collegamento sul desktop",
-          "CreateLnkE": "Crea un collegamento sul desktop se non ne esiste già uno."
+          "CreateLnkE": "All’avvio, crea un collegamento sul desktop se non esiste già."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Richiede la registrazione del protocollo URL di NamePicker.",
       "ClassIslandProtocolNote": "Registra il protocollo di navigazione URL nelle impostazioni di ClassIsland.",
       "ClassIslandSwapNote": "Il componente non ha effetto se ClassIsland non ha caricato un orario delle lezioni."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Collegamenti",
+      "ApplicationSection": "Applicazione",
+      "NameLabel": "Nome del collegamento",
+      "CustomName": "Personalizzato",
+      "CustomHint": "Inserisci un nome",
+      "InvalidName": "Inserisci un nome di file Windows valido. Non sono consentiti nomi vuoti o riservati, caratteri non validi e percorsi troppo lunghi.",
+      "GuaranteeSection": "Protezione dei collegamenti",
+      "PresetAnnotation": "Inkeys(Annotazione)",
+      "PresetAnnotationTool": "Inkeys(StrumentoAnnotazione)"
     },
     "HotKey":
     {

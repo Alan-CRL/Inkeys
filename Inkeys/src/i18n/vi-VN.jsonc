@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "Tạo lối tắt màn hình",
-          "E": "Sửa tên lối tắt hiện có hoặc tạo lối tắt mới. Chọn Tùy chọn khác để thiết lập.",
+          "E": "Tạo lối tắt trên màn hình nền bằng tên được chọn bên dưới.",
           "More": "Tùy chọn khác"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "Tùy chọn bổ sung",
           "CreateLnk": "Tạo lối tắt màn hình",
-          "CreateLnkE": "Tạo lối tắt trên màn hình nếu chưa có."
+          "CreateLnkE": "Khi khởi động ứng dụng, tạo lối tắt trên màn hình nền nếu chưa có."
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "Cần đăng ký giao thức URL NamePicker.",
       "ClassIslandProtocolNote": "Đăng ký giao thức điều hướng URL trong thiết lập ClassIsland.",
       "ClassIslandSwapNote": "Thành phần này không có tác dụng khi ClassIsland chưa tải thời khóa biểu."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Lối tắt",
+      "ApplicationSection": "Ứng dụng",
+      "NameLabel": "Tên lối tắt",
+      "CustomName": "Tùy chỉnh",
+      "CustomHint": "Nhập tên lối tắt",
+      "InvalidName": "Nhập tên tệp Windows hợp lệ. Không được để trống, dùng ký tự không hợp lệ, tên dành riêng hoặc đường dẫn quá dài.",
+      "GuaranteeSection": "Bảo vệ lối tắt",
+      "PresetAnnotation": "Inkeys(ChúThích)",
+      "PresetAnnotationTool": "Inkeys(CôngCụChúThích)"
     },
     "HotKey":
     {

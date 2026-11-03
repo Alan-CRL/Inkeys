@@ -2,6 +2,7 @@ module;
 
 #include "../../IdtMain.h"
 #include "../../PptSettingsPersistence.h"
+#include "../Business/DesktopShortcut.h"
 
 #include <atomic>
 #include <initializer_list>
@@ -809,6 +810,26 @@ namespace Inkeys::ConfigDetail
 
 namespace Inkeys
 {
+	std::pair<int, std::wstring> Config::GetShortcutNamePreference() const
+	{
+		std::shared_lock lock(rwMutex);
+		const auto& shortcut = Application.Shortcut;
+		return { Business::DesktopShortcut::NormalizePreset(shortcut.NamePreset.load(), shortcut.CustomName), shortcut.CustomName };
+	}
+
+	bool Config::SetShortcutNamePreference(int preset, std::wstring customName)
+	{
+		using namespace Business::DesktopShortcut;
+		if (preset < Default || preset > Custom || (preset == Custom && !IsValidName(customName))) return false;
+		// 名称对与整个 Config 的异步快照复制共用锁，不能只保护写盘队列。
+		std::unique_lock lock(rwMutex);
+		auto& shortcut = Application.Shortcut;
+		if (shortcut.NamePreset.load() == preset && shortcut.CustomName == customName) return false;
+		shortcut.NamePreset = preset;
+		shortcut.CustomName = std::move(customName);
+		return true;
+	}
+
 	bool Config::ReadAll()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
@@ -1038,6 +1059,8 @@ namespace Inkeys
 	{
 		ReadDocumentHandler handler(root, paths, includeWriteOnly);
 		TraverseSchema(handler);
+		auto& shortcut = Application.Shortcut;
+		shortcut.NamePreset = Business::DesktopShortcut::NormalizePreset(shortcut.NamePreset.load(), shortcut.CustomName);
 	}
 
 	void Config::OverlayDocument(Json::Value& root)

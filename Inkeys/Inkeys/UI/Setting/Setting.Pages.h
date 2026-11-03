@@ -4,6 +4,7 @@
 #include "Setting.HomeBrand.h"
 #include "Setting.SessionState.h"
 #include "Setting.EraserDemo.h"
+#include "../../Business/DesktopShortcut.h"
 
 struct ImGuiWindow;
 
@@ -266,6 +267,17 @@ namespace Inkeys::UI::Setting::Design
 	};
 	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
 
+	struct DesktopShortcutDraft
+	{
+		Business::DesktopShortcut::NameOptions names;
+		int preset = Business::DesktopShortcut::Default;
+		std::string customName;
+		std::size_t directoryLength = 0;
+		bool desktopAvailable = true;
+		bool correct = true, create = false;
+		BelowComboMotion namePopup;
+	};
+
 	struct GeneralDraft
 	{
 		bool startup;
@@ -292,13 +304,15 @@ namespace Inkeys::UI::Setting::Design
 		// 常驻透明度为绝对值（0.30~1.00）；背景默认值随主栏主题变化，供显示与重置。
 		float backgroundOpacity = 0.80F, backgroundOpacityDefault = 0.80F;
 		float contentOpacity = 1.0F;
+		DesktopShortcutDraft desktopShortcut;
 	};
 
 	struct GeneralEvents
 	{
 		bool startupChanged = false;
 		bool createShortcut = false;
-		bool shortcutOptions = false;
+		bool desktopNamePresetChanged = false, desktopNameCommitted = false;
+		bool desktopCorrectChanged = false, desktopCreateChanged = false;
 		bool barZoomChanged = false;
 		bool barZoomActive = false;
 		bool edgeLightingChanged = false;

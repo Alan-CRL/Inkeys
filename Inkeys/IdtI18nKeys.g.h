@@ -1014,6 +1014,18 @@ inline constexpr struct I18nKeyRoot
             const char* ClassIslandProtocolNote = "SettingsUI/Component/ClassIslandProtocolNote";
             const char* ClassIslandSwapNote = "SettingsUI/Component/ClassIslandSwapNote";
         } Component{};
+        struct Node__SettingsUI__DesktopShortcut
+        {
+            const char* N = "SettingsUI/DesktopShortcut/N";
+            const char* ApplicationSection = "SettingsUI/DesktopShortcut/ApplicationSection";
+            const char* NameLabel = "SettingsUI/DesktopShortcut/NameLabel";
+            const char* CustomName = "SettingsUI/DesktopShortcut/CustomName";
+            const char* CustomHint = "SettingsUI/DesktopShortcut/CustomHint";
+            const char* InvalidName = "SettingsUI/DesktopShortcut/InvalidName";
+            const char* GuaranteeSection = "SettingsUI/DesktopShortcut/GuaranteeSection";
+            const char* PresetAnnotation = "SettingsUI/DesktopShortcut/PresetAnnotation";
+            const char* PresetAnnotationTool = "SettingsUI/DesktopShortcut/PresetAnnotationTool";
+        } DesktopShortcut{};
         struct Node__SettingsUI__HotKey
         {
             const char* N = "SettingsUI/HotKey/N";

@@ -503,7 +503,7 @@
         "Link":
         {
           "N": "デスクトップにショートカットを作成",
-          "E": "名前の自動修正やショートカットの自動作成は「詳細設定」で設定できます。",
+          "E": "下で選択した名前でデスクトップのショートカットを作成します。",
           "More": "詳細設定"
         }
       },
@@ -976,7 +976,7 @@
         {
           "N": "追加設定",
           "CreateLnk": "デスクトップにショートカットを作成",
-          "CreateLnkE": "デスクトップにショートカットがない場合に作成します。"
+          "CreateLnkE": "起動時にデスクトップのショートカットがない場合は作成します。"
         }
       }
     },
@@ -1010,6 +1010,18 @@
       "NamePickerRequirement": "NamePicker URL プロトコルの登録が必要です。",
       "ClassIslandProtocolNote": "ClassIsland のアプリ設定で URL ナビゲーションプロトコルを登録してください。",
       "ClassIslandSwapNote": "ClassIsland で時間割が読み込まれていない場合、このコンポーネントは機能しません。"
+    },
+    "DesktopShortcut":
+    {
+      "N": "ショートカット",
+      "ApplicationSection": "アプリケーション",
+      "NameLabel": "ショートカット名",
+      "CustomName": "カスタム",
+      "CustomHint": "ショートカット名を入力",
+      "InvalidName": "有効な Windows ファイル名を入力してください。空の名前、無効な文字、予約名、長すぎるパスは使用できません。",
+      "GuaranteeSection": "ショートカットの保護",
+      "PresetAnnotation": "Inkeys(注釈)",
+      "PresetAnnotationTool": "Inkeys(注釈ツール)"
     },
     "HotKey":
     {

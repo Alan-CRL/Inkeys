@@ -108,6 +108,20 @@ namespace Inkeys::UI::Setting::Design
 		// 本帧并入父列表的child命令index区间；外层块位移时同步平移这些原child裁剪。
 		struct MergedDrawRange { ImDrawList* list; unsigned begin, end; };
 		std::vector<MergedDrawRange> mergedDrawRanges;
+		struct TrackedBelowPopup { std::uintptr_t context = 0; ImGuiID id = 0; int frame = -1; };
+		TrackedBelowPopup trackedBelowPopup;
+
+		void CloseBelowPopup(ImGuiID id, bool restoreFocus = true)
+		{
+			if (!id) return;
+			for (int level = 0; level < GImGui->OpenPopupStack.Size; ++level)
+				if (GImGui->OpenPopupStack[level].PopupId == id)
+				{
+					const auto* popup = GImGui->OpenPopupStack[level].Window;
+					ImGui::ClosePopupToLevel(level, restoreFocus && GImGui->NavWindow == popup);
+					break;
+				}
+		}
 
 		float MotionEase(float progress)
 		{
@@ -967,6 +981,13 @@ namespace Inkeys::UI::Setting::Design
 		activePageMotion->contentHeight = (std::max)(0.0F, bottom - pageMotionOwner->DC.CursorStartPos.y);
 		activePageMotion->owner = pageMotionOwner->ID;
 		activePageMotion->viewport = pageMotionOwner->Size;
+		// 名称控件离页/隐藏后不再提交，不能让旧弹层保留输入归属。
+		if (trackedBelowPopup.context == reinterpret_cast<std::uintptr_t>(GImGui)
+			&& trackedBelowPopup.frame != GImGui->FrameCount)
+		{
+			CloseBelowPopup(trackedBelowPopup.id, false);
+			trackedBelowPopup = {};
+		}
 		activePageMotion = nullptr; pageMotionOwner = nullptr;
 	}
 
@@ -1119,7 +1140,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
-		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note, bool showNoteIcon)
+		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note, bool showNoteIcon, const InlineRowContent* inlineContent)
 	{
 		PageBlockScope motion(id);
 		// 只有普通说明之外的补充才画 i；单独一段前提仍按原说明排版和着色。
@@ -1170,9 +1191,13 @@ namespace Inkeys::UI::Setting::Design
 			descriptionHeight / Pixels(1.0F), inlineDescriptionHeight / Pixels(1.0F),
 			noteHeight / Pixels(1.0F), inlineNoteHeight / Pixels(1.0F), tween.value);
 		// 整行占位同时登记尾部间隙，最后一行后直接 EndChild 也不会越过内容边界。
-		ImGui::Dummy({ width, Pixels(row.height + RowGap) });
+		const float inlinePadding = inlineContent ? Pixels(ImFluent::GetStyle().CardPadding) : 0.0F;
+		const float inlineWidth = (std::max)(1.0F, width - inlinePadding * 2.0F);
+		const float inlineHeight = inlineContent && inlineContent->height ? (std::max)(0.0F, inlineContent->height(inlineWidth)) : 0.0F;
+		const float fullHeight = Pixels(row.height) + (inlineContent ? inlinePadding * 2.0F + inlineHeight : 0.0F);
+		ImGui::Dummy({ width, inlineContent ? fullHeight + Pixels(RowGap) : Pixels(row.height + RowGap) });
 		ImDrawList* draw = ImGui::GetWindowDrawList();
-		const ImVec2 bottom(origin.x + width, origin.y + Pixels(row.height));
+		const ImVec2 bottom(origin.x + width, origin.y + fullHeight);
 		DrawCardSurface(draw, origin, bottom, fill, border, Pixels(4.0F));
 		TextAt(title, { origin.x + Pixels(row.title.left), origin.y + Pixels(row.title.top) },
 			Pixels(row.title.Width()));
@@ -1198,6 +1223,15 @@ namespace Inkeys::UI::Setting::Design
 		action(actionPixels);
 		ImGui::PopItemWidth();
 		ImGui::PopID();
+		if (inlineContent)
+		{
+			const float divider = std::round(origin.y + Pixels(row.height));
+			draw->AddLine({ origin.x + 1.0F, divider }, { bottom.x - 1.0F, divider }, border, 1.0F);
+			const LayoutRect body{ origin.x + inlinePadding, divider + inlinePadding,
+				bottom.x - inlinePadding, divider + inlinePadding + inlineHeight };
+			ImGui::SetCursorScreenPos({ body.left, body.top });
+			if (inlineContent->render) inlineContent->render(body);
+		}
 		// ItemSize 会截到物理像素；结束游标使用同一取整，避免分数 DPI 多出半像素。
 		ImGui::SetCursorScreenPos({ origin.x, std::floor(bottom.y + Pixels(RowGap)) });
 	}
@@ -1669,13 +1703,14 @@ namespace Inkeys::UI::Setting::Design
 
 	}
 
-	bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags )
+	bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags, BelowComboMotion* motion, std::uint64_t revision )
 	{
 	    ControlFontScope font;
 	    using namespace ImFluent;
 	    ImGuiWindow * w = ImGui::GetCurrentWindow();
 	    if ( w->SkipItems )
 	    {
+	        if (motion) { CloseBelowPopup(motion->popup); *motion = {}; }
 	        return false;
 	    }
 
@@ -1702,6 +1737,7 @@ namespace Inkeys::UI::Setting::Design
 	    ImGui::ItemSize( bb );
 	    if ( !ImGui::ItemAdd( bb, id ) )
 	    {
+	        if (motion) { CloseBelowPopup(motion->popup); *motion = {}; }
 	        return false;
 	    }
 
@@ -1711,7 +1747,30 @@ namespace Inkeys::UI::Setting::Design
 	    const bool disabled = ( GImGui->LastItemData.ItemFlags & ImGuiItemFlags_Disabled );
 
 	    const ImGuiID popup_id = ImHashStr( "##fl_cb_popup", 0, id );
-	    const bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
+	    bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
+	    bool scopedBlocked = false;
+	    if (motion)
+	    {
+	        std::vector<std::string> currentItems;
+	        for (int index = 0; index < items_count; ++index) currentItems.emplace_back(items[index] ? items[index] : "");
+	        const auto context = reinterpret_cast<std::uintptr_t>(GImGui);
+	        const auto atlas = ImGui::GetIO().Fonts->TexData ? ImGui::GetIO().Fonts->TexData->UniqueID : 0;
+	        const bool invalid = motion->context != context || motion->popup != popup_id || motion->revision != revision
+	            || motion->atlas != atlas || motion->scale != Pixels(1.0F) || motion->items != currentItems
+	            || (motion->frame != GImGui->FrameCount && motion->frame != GImGui->FrameCount - 1);
+	        if (invalid)
+	        {
+	            if (motion->context == context) CloseBelowPopup(motion->popup);
+	            *motion = {}; motion->context = context; motion->popup = popup_id; motion->revision = revision;
+	            motion->atlas = atlas; motion->scale = Pixels(1.0F); motion->items = std::move(currentItems);
+	            popup_open = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+	        }
+	        bool blocked = disabled || (activePageMotion && activePageMotion->exiting);
+	        for (auto* owner = w; owner; owner = owner->ParentWindow)
+	            blocked |= (owner->Flags & ImGuiWindowFlags_NoMouseInputs) != 0;
+	        scopedBlocked = blocked;
+	        if (blocked) { CloseBelowPopup(popup_id); motion->reveal.Reset(0.0F); popup_open = false; }
+	    }
 
 	    // 仅自身弹层允许入口再次点击收起；实际 HoveredWindow 仍隔离被弹层覆盖的其他控件。
 	    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left )
@@ -1723,7 +1782,7 @@ namespace Inkeys::UI::Setting::Design
 	    const bool key_open = !popup_open && !disabled
 	        && ( IsFocusedItemChordPressed( id, actions.TogglePopup, false )
 	            || IsFocusedItemChordPressed( id, actions.OpenPopup, false ) );
-	    const bool toggle       = ( click_in_bb || nav_activate || key_open ) && !disabled;
+	    const bool toggle       = ( click_in_bb || nav_activate || key_open ) && !disabled && !scopedBlocked;
 
 	    if ( toggle )
 	    {
@@ -1783,21 +1842,69 @@ namespace Inkeys::UI::Setting::Design
 	    bool changed              = false;
 	    const int popup_max_items = ResolveComboPopupMaxItems( flags );
 	    const float popup_max_h   = CalcComboPopupMaxHeight( popup_max_items, h );
-	    ImGui::SetNextWindowPos( ImVec2( bb.Min.x, bb.Max.y + FluentDpx( style.SpacingXSmall ) ) );
-	    ImGui::SetNextWindowSizeConstraints( ImVec2( bb.GetWidth(), 0.f ), ImVec2( bb.GetWidth(), popup_max_h ) );
+	    const bool logicalOpen = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+	    bool decoration = false;
+	    ImVec2 popupPosition(bb.Min.x, bb.Max.y + FluentDpx(style.SpacingXSmall));
+	    ImVec2 popupSize;
+	    if (motion)
+	    {
+	        const auto* viewport = ImGui::GetWindowViewport();
+	        const float below = (std::max)(0.0F, viewport->WorkPos.y + viewport->WorkSize.y - Pixels(4) - popupPosition.y);
+	        const float availableWidth = (std::max)(1.0F, viewport->WorkPos.x + viewport->WorkSize.x - popupPosition.x - Pixels(4));
+	        const float natural = items_count * h + (std::max)(0, items_count - 1) * ImGui::GetStyle().ItemSpacing.y
+	            + FluentDpx(style.SpacingXSmall) * 2.0F;
+	        popupSize = { (std::min)(bb.GetWidth(), availableWidth), (std::min)({ natural, popup_max_h, below }) };
+	        if (below <= 0) { CloseBelowPopup(popup_id); motion->reveal.Reset(0); }
+	        const float target = logicalOpen && below > 0 ? 1.0F : 0.0F;
+	        const bool targetChanged = motion->reveal.target != target;
+	        motion->reveal.Target(target);
+	        if (motion->frame != GImGui->FrameCount)
+	            motion->reveal.Advance(!targetChanged && motion->frame == GImGui->FrameCount - 1 ? rowAnimationDelta : 0.0F,
+	                0.180F / rowAnimationRate, rowAnimationsEnabled);
+	        motion->frame = GImGui->FrameCount;
+	        decoration = !ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None) && motion->reveal.value > 0.0001F;
+	        // 下方空间不足时只缩短/滚动，不让 ImGui 将弹层避让到左侧文字上。
+	        popupPosition.y += (std::min)(Pixels(12) * (1.0F - motion->reveal.value), (std::max)(0.0F, below - popupSize.y));
+	        motion->position = popupPosition; motion->size = popupSize;
+	        if (motion->reveal.value > 0 || logicalOpen)
+	            trackedBelowPopup = { reinterpret_cast<std::uintptr_t>(GImGui), popup_id, GImGui->FrameCount };
+	    }
+	    ImGui::SetNextWindowPos(popupPosition);
+	    ImGui::SetNextWindowSizeConstraints(ImVec2(bb.GetWidth(), 0.f), ImVec2(bb.GetWidth(), popup_max_h));
+	    if (motion)
+	    {
+	        ImGui::SetNextWindowSizeConstraints({ popupSize.x, 1 }, { popupSize.x, (std::max)(1.0F, popupSize.y) });
+	        ImGui::SetNextWindowSize(popupSize);
+	        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, { 1, 1 });
+	    }
 
 	    PushOverlayWindowStyle( style.SpacingXSmall, style.SpacingXSmall );
-	    const ImGuiWindowFlags cb_wflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+	    ImGuiWindowFlags cb_wflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+	    if (!motion) cb_wflags |= ImGuiWindowFlags_AlwaysAutoResize;
 	    ImGuiWindow* popup_window = nullptr;
 	    for ( const auto& popup : GImGui->OpenPopupStack ) if ( popup.PopupId == popup_id ) popup_window = popup.Window;
+	    char decorationName[40]; ImFormatString(decorationName, sizeof(decorationName), "##BelowComboExit_%08x", popup_id);
+	    if (decoration)
 	    {
-	    ScrollbarStyleScope scrollbar(popup_window);
-	    if ( ImGui::BeginPopupEx( popup_id, cb_wflags ) )
+	        popup_window = ImGui::FindWindowByName(decorationName);
+	        ImGui::SetNextWindowScroll({ -1, motion->scroll });
+	        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_PopupBg));
+	        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ImGui::GetStyle().PopupRounding);
+	        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, ImGui::GetStyle().PopupBorderSize);
+	    }
+	    {
+	    ScrollbarStyleScope scrollbar(popup_window, !decoration);
+	    // 退出装饰不是 Popup，不进入 OpenPopupStack，也不取得鼠标、滚轮或导航焦点。
+	    const bool renderPopup = decoration ? ImGui::Begin(decorationName, nullptr, cb_wflags | ImGuiWindowFlags_NoInputs
+	        | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus) : ImGui::BeginPopupEx(popup_id, cb_wflags);
+	    if (renderPopup)
 	    {
 	        auto* popup_host = ImGui::GetCurrentWindow();
 	        scrollbar.Finish(popup_host);
+	        if (motion && !decoration) motion->selected = current_item ? *current_item : -1;
+	        if (decoration) ImGui::BringWindowToDisplayFront(popup_host);
 	        int focus_only = -1;
-	        if ( gctx.NavWindow == popup_host && gctx.NavId != 0 )
+	        if ( !decoration && gctx.NavWindow == popup_host && gctx.NavId != 0 )
 	        {
 	            if ( IsChordPressedOwned( actions.FirstItem, popup_id, false ) ) focus_only = 0;
 	            if ( IsChordPressedOwned( actions.LastItem, popup_id, false ) ) focus_only = items_count - 1;
@@ -1815,16 +1922,17 @@ namespace Inkeys::UI::Setting::Design
 	                if ( !items[ i ] )
 	                    continue;
 	                ImGui::PushID( i );
-	                const bool sel = ( current_item && *current_item == i );
-	                if ( ImFluent::Selectable( items[ i ], sel, NULL, h ) )
+	                const bool sel = decoration ? motion->selected == i : (current_item && *current_item == i);
+	                if ( ImFluent::Selectable( items[ i ], sel, NULL, h ) && !decoration )
 	                {
 	                    if ( current_item )
 	                        *current_item = i;
 	                    changed = true;
+	                    if (motion) motion->selected = i;
 	                    ImGui::CloseCurrentPopup();
 	                }
 	                const auto item_id = gctx.LastItemData.ID;
-	                if ( sel ) ImGui::SetItemDefaultFocus();
+	                if ( sel && !decoration ) ImGui::SetItemDefaultFocus();
 	                if ( i == 0 ) ConsumeNavArrow( item_id, ImGuiDir_Up );
 	                if ( i == items_count - 1 ) ConsumeNavArrow( item_id, ImGuiDir_Down );
 	                if ( i == focus_only )
@@ -1838,22 +1946,27 @@ namespace Inkeys::UI::Setting::Design
 	            }
 	        }
 	        // 只关闭原本已展开的列表，避免本帧 F4 打开后又立即关闭。
-	        if ( popup_open && ( IsActionPressed( actions.TogglePopup )
+	        if ( !decoration && popup_open && ( IsActionPressed( actions.TogglePopup )
 	            || IsActionPressed( actions.ClosePopup ) || ImGui::IsKeyPressed( ImGuiKey_Tab, false ) ) )
 	            ImGui::CloseCurrentPopup();
-	        ImGui::EndPopup();
+	        if (motion && !decoration) motion->scroll = popup_host->Scroll.y;
+	        if (motion) ApplyGroupOpacity(popup_host, motion->reveal.value);
+	        if (!decoration) ImGui::EndPopup();
 	    }
+	    if (decoration) ImGui::End();
 	    }
+	    if (decoration) { ImGui::PopStyleVar(2); ImGui::PopStyleColor(); }
 	    PopOverlayWindowStyle();
+	    if (motion) ImGui::PopStyleVar();
 
 	    return changed;
 	}
 
-	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items)
+	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items, BelowComboMotion* motion, std::uint64_t revision)
 	{
 		std::vector<const char*> views;
 		for (const auto& item : items) views.push_back(item.c_str());
-		return ComboBox(label, value, views.data(), static_cast<int>(views.size()));
+		return ComboBox(label, value, views.data(), static_cast<int>(views.size()), 0, motion, revision);
 	}
 
 	bool Slider(const char* label, float* value, float minimum, float maximum,
