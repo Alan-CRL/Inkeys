@@ -1111,3 +1111,124 @@ Win11 blur only showed while dragging: accent 0xCC tint plus 80% AppBase left ~4
 ### Next Steps
 
 - 等待高漫M6数位板主栏点击日志，R2输入过滤未改；未commit/push
+
+
+## Session 162: M6主栏与翻页详细输入诊断
+<!-- trellis-session: v=2 fp=7657d9a5911910f2 -->
+
+**Date**: 2026-11-02
+**Task**: M6主栏与翻页详细输入诊断
+**Branch**: `bugfix/color`
+
+### Summary
+
+沿现有测试触控反馈输出补齐raw到业务的主栏/四分页诊断，记录跨窗口lease与capture归属，未改变输入策略。
+
+### Main Changes
+
+- 有界Move摘要、关键边沿/拒绝完整、channel与窗口映射、错误码保护及真实helper测试
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整Solution Debug ARM64、五个生产探针、headless --no-window exit0/296.57s
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户用M6采集ui_schema/ui_input v1完整日志以定位R2；本轮未commit/push或GUI
+
+
+## Session 163: 五窗独立Touch与数位板跨窗修复
+<!-- trellis-session: v=2 fp=7891bc8ea5e288a6 -->
+
+**Date**: 2026-11-03
+**Task**: 五窗独立Touch与数位板跨窗修复
+**Branch**: `bugfix/color`
+
+### Summary
+
+依据持续感应跨窗日志修复五窗Touch归属及分页兼容鼠标终态丢失；各窗独立Context，共用规则，完成自动回归与Release x64交付，设备待验收。
+
+### Main Changes
+
+- 五窗本地TouchContext、真实候选与已呈现probe、完整64位取消身份、统一Pointer兼容鼠标过滤，保留PPT长按和白板Up单次
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整Solution Debug ARM64 exit0/41.04s，五生产探针全0含真实UI3TouchProbe，完整headless --no-window exit0/306.60s
+- [OK] 完整Solution Release x64 exit0/115.29s，PE0x8664、预期诊断标识与SHA256核对通过；未GUI
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户按touch-fix-capture.md进行一次同一数位板持续感应跨五窗/长按复核，交回M6-touch-fix.txt；任务保持in_progress，本轮不commit/push
+
+
+## Session 164: Touch注册与Pointer来源诊断补齐
+<!-- trellis-session: v=2 fp=0cf34f5af0a9597c -->
+
+**Date**: 2026-11-03
+**Task**: Touch注册与Pointer来源诊断补齐
+**Branch**: `bugfix/color`
+
+### Summary
+
+补齐五窗RegisterTouchWindow实际结果、IsTouchWindow状态及原生Pointer Down来源，保持输入策略，交付Release x64诊断包等待下轮设备日志。
+
+### Main Changes
+
+- 现有测试触控反馈开关下新增touch_registration/touch_window_snapshot/pointer_info，动态可选API、GLE保护、关闭零新增查询；修启动快照误标Down
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整Debug ARM64源码编译通过；本机增量链接LNK1000内部错误保留单个ilk重建后Solution exit0/8.27s；五生产探针全0
+- [OK] 完整headless --no-window exit0/260.41s，Release x64 exit0/332.72s；PE0x8664/新诊断标识/SHA256/无GetPointerInfo硬导入核验通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户按touch-registration-capture.md采集M6-touch-registration.txt，先保持驱动设置；Pointer-only业务缺口仍待处理，任务in_progress，本轮不GUI/commit/push
+
+
+## Session 165: UI3 pointer-source arbitration for tablet pen and touch input
+<!-- trellis-session: v=2 fp=a724db5e1f19bc99 -->
+
+**Date**: 2026-11-03
+**Task**: UI3 pointer-source arbitration for tablet pen and touch input
+**Branch**: `bugfix/color`
+
+### Summary
+
+Investigated why tablet pens could not click the bar and page controls (Pointer only, no WM_TOUCH). Made WM_POINTER the contact source for the five UI windows with WM_TOUCH and signed compatibility mouse excluded by type, fixed the lost first page tap after drawing and the cancelled bar press with the page menu open, kept pen haptic credentials across pen-up, added a whiteboard page-switch busy ring, and validated on Surface pen, finger, two Gaomon M6 setups and the affected user's M6. Page-control haptics and haptic stop/discrete timing are left as follow-ups.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f9aeefbd` | fix(ui-input): use Pointer as the contact source for bar and page controls |
+| `25749d67` | docs(task): record tablet pointer input investigation and validation |
+
+### Status
+
+[OK] **Completed**
