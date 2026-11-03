@@ -2096,6 +2096,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			wstring old_name;
 
 			bool flag = true;
+			bool keepUpdateInstruction = false; // 等待旧进程超时时保留暂存指令，不当作损坏指令删除
 			string jsonContent;
 
 			HANDLE fileHandle = NULL;
@@ -2188,23 +2189,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
 
+				// 接力启动时占位不再证明旧进程已死（关闭会提前释放占位），同样要等根目录 EXE 退出；
+				// 接力路径的等待上限略长于 15 秒强杀，超时保留暂存指令，旧版重启后下次再试。
+				const int maxWaitTimes = Inkeys::Launch::adopted ? 200 : 20;
+				const wstring waitedName = old_name.empty() ? wstring(L"智绘教.exe") : old_name;
 				int times = 0;
-				for (; !Inkeys::Launch::adopted && times <= 20; times++)
+				for (; times <= maxWaitTimes; times++)
 				{
-					if (!old_name.empty())
-					{
-						if (!isProcessRunning((main_path + old_name).c_str()))
-							break;
-					}
-					else
-					{
-						if (!isProcessRunning((main_path + L"智绘教.exe").c_str()))
-							break;
-					}
+					if (!isProcessRunning((main_path + waitedName).c_str()) &&
+						!isProcessRunning((main_path + L"Inkeys.exe").c_str()))
+						break;
 
 					this_thread::sleep_for(chrono::milliseconds(100));
 				}
-				if (times > 20) goto fail;
+				if (times > maxWaitTimes)
+				{
+					keepUpdateInstruction = Inkeys::Launch::adopted;
+					goto fail;
+				}
 				// 兼容旧更新器直接拉起的安装包：只有现有指令/哈希已验真且旧进程退出后才绑定安装根。
 				if (!Inkeys::Launch::adopted)
 				{
@@ -2295,7 +2297,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 			fail:
 				error_code ec;
-				filesystem::remove(globalPath + L"update.json", ec);
+				if (!keepUpdateInstruction) filesystem::remove(globalPath + L"update.json", ec);
 
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
@@ -2426,10 +2428,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				//符合条件，开始替换版本
 
+				// 退出中的旧实例已提前释放单实例占位，但可能仍在清理并占用根目录 EXE；
+				// 此时交给安装进程会因覆盖失败而丢掉暂存更新。先等其他实例消失（上限略长于 15 秒强杀），
+				// 超时则本次不更新、不改写指令（保留 MandatoryUpdate），正常启动，下次再试。
+				{
+					const DWORD selfProcessId = GetCurrentProcessId();
+					const wstring currentImage = GetCurrentExePath();
+					const wstring replacementTarget = globalPath + L"Inkeys.exe";
+					int waitTimes = 0;
+					for (; waitTimes < 200; ++waitTimes)
+					{
+						if (!isProcessRunning(currentImage, selfProcessId) &&
+							!isProcessRunning(replacementTarget, selfProcessId)) break;
+						this_thread::sleep_for(chrono::milliseconds(100));
+					}
+					if (waitTimes >= 200) flag = false;
+				}
+
 				const wstring oldName = GetCurrentExeName();
-				if (!IsSafeUpdateExecutableName(oldName)) flag = false;
+				if (!flag || !IsSafeUpdateExecutableName(oldName)) flag = false;
 				updateVal["old_name"] = Json::Value(utf16ToUtf8(oldName));
-				if (mandatoryUpdate) updateVal["MandatoryUpdate"] = Json::Value(false);
+				if (mandatoryUpdate && flag) updateVal["MandatoryUpdate"] = Json::Value(false);
 
 				if (flag)
 				{
