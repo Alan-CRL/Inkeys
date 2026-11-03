@@ -1,3 +1,4 @@
+<!-- 当前阶段：Touch注册/Pointer来源诊断补齐，用户已授权且实现与自动验证完成；见touch-registration-diagnostics-plan.md、touch-registration-validation.md、touch-registration-capture.md。下文保留已完成历史阶段。 -->
 # 工具状态设计报告与共享方案（已批准）
 
 ## 范围和状态
