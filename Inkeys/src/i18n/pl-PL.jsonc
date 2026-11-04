@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Kursor",
-        "Description": "Opcja myszy dotyczy tylko pióra pędzelkowego i pióra o stałej grubości. Zakreślacz zawsze pokazuje podgląd grubości; figury używają kursora systemowego. Domyślny kursor pióra jest okrągły. Podświetlenie krawędzi jest wyłączone dla piór ekranowych, a włączone dla tabletów graficznych i nierozpoznanych piór.",
-        "MouseStyle": "Mysz",
-        "PenStyle": "Pióro",
-        "DefaultStyle": "Kursor domyślny",
-        "DrawingStyle": "Kursor w kształcie pióra"
+        "EntryDescription": "Ustawia kursor wyświetlany podczas rysowania osobno dla każdego urządzenia wejściowego i pokazuje podgląd.",
+        "Devices": "Według urządzenia",
+        "PenDevices": "Rozpoznawanie tabletu graficznego",
+        "Mouse":
+        {
+          "N": "Mysz",
+          "E": "Mysz i touchpad."
+        },
+        "Touch":
+        {
+          "N": "Dotyk",
+          "E": "Po przyłożeniu palców każdy palec ma własny kursor, który znika po uniesieniu."
+        },
+        "ScreenPen":
+        {
+          "N": "Pióro ekranowe",
+          "E": "Pióro, którym pisze się bezpośrednio na ekranie."
+        },
+        "Tablet":
+        {
+          "N": "Tablet graficzny",
+          "E": "Zewnętrzne tablety graficzne oraz pióra, których źródła nie można rozpoznać."
+        },
+        "Style":
+        {
+          "None": "Brak kursora",
+          "Arrow": "Mysz",
+          "Pen": "Pióro",
+          "HighlightPen": "Pióro (wyróżnione)",
+          "Dot": "Mała kropka",
+          "HighlightDot": "Mała kropka (wyróżniona)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Rozpoznawaj tablety graficzne wstrzykiwane przez sterownik",
+          "E": "Tablety graficzne bez Windows Ink zwykle docierają jako „mysz wstrzyknięta przez sterownik”. Po włączeniu ta mysz używa ustawień kursora tabletu; oprogramowanie, które także wstrzykuje mysz, na przykład Pulpit zdalny, może zostać rozpoznane błędnie.",
+          "Unavailable": "Ten system nie potrafi odróżnić źródła wejścia, więc opcja jest niedostępna."
+        },
+        "Note": "W przypadku pióra ekranowego, tabletu graficznego i dotyku „Mysz” to strzałka rysowana przez samą aplikację; kursory zakreślacza i wskaźnika laserowego, narzędzia kształtów oraz osobny kursor gumki nie zależą od tych opcji."
       },
       "Effect":
       {

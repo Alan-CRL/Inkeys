@@ -96,6 +96,36 @@ float GetRectangleDist(float2 p, float2 halfSize)
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
 }
 
+float GetArrowDist(float2 local, float2 halfSize)
+{
+    // 自绘箭头（左上尖端为热点）按 12x19 参考盒归一化；轮廓是凹多边形，用射线奇偶规则判断内外。
+    const float2 vertices[7] = {
+        float2(0.0, 0.0), float2(0.0, 16.5 / 19.0), float2(3.8 / 12.0, 12.8 / 19.0),
+        float2(6.6 / 12.0, 1.0), float2(9.1 / 12.0, 17.9 / 19.0),
+        float2(6.4 / 12.0, 11.9 / 19.0), float2(11.4 / 12.0, 11.9 / 19.0)
+    };
+    float2 size = halfSize * 2.0;
+    float2 p = local + halfSize;
+    float distanceSquared = 1e20;
+    bool inside = false;
+    [unroll]
+    for (int edgeIndex = 0; edgeIndex < 7; ++edgeIndex)
+    {
+        float2 start = vertices[edgeIndex] * size;
+        float2 end = vertices[(edgeIndex + 1) % 7] * size;
+        float2 edge = end - start;
+        float2 delta = p - start;
+        float2 nearest = delta - edge * saturate(dot(delta, edge) / max(dot(edge, edge), 1e-8));
+        distanceSquared = min(distanceSquared, dot(nearest, nearest));
+        float safeEdgeY = abs(edge.y) > 1e-6 ? edge.y : 1.0;
+        bool crosses = (start.y > p.y) != (end.y > p.y);
+        if (crosses && p.x < start.x + (p.y - start.y) * edge.x / safeEdgeY)
+            inside = !inside;
+    }
+    float arrowDistance = sqrt(distanceSquared);
+    return inside ? -arrowDistance : arrowDistance;
+}
+
 float GetPenIconDist(float2 local, float2 halfSize)
 {
     // 五边形的左上尖端为热点，笔身沿右下延伸；距离仍以像素计算供 1px AA 使用。
@@ -319,7 +349,7 @@ OperatorOutput main(PS_INPUT input)
         return particleOutput;
     }
 
-    if ((type >= 4 && type <= 6) || type == 21)
+    if ((type >= 4 && type <= 6) || type == 21 || type == 22)
     {
         float2 local = input.pixPos - input.p1;
         float distanceToShape;
@@ -327,6 +357,8 @@ OperatorOutput main(PS_INPUT input)
         [branch]
         if (type == 21)
             distanceToShape = GetPenIconDist(local, input.p2);
+        else if (type == 22)
+            distanceToShape = GetArrowDist(local, input.p2);
         else
             distanceToShape = type == 5 ? GetRectangleDist(local, input.p2)
                 : length(local) - min(input.p2.x, input.p2.y);

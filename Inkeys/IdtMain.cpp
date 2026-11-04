@@ -61,6 +61,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 
 #include "IdtConfiguration.h"
 #include "Inkeys/Drawing/Draw3/Draw3.HapticDiagnostics.h"
+#include "Inkeys/Input/UiPointerDiagnostics.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
@@ -3560,10 +3561,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				Inkeys::Gesture::DisableEdgeGestures(hWnd, true);
 			};
-		auto touchRegisterFuc = [&](HWND hWnd) -> void
+		auto touchRegisterFuc = [disableGestureFuc](const char* role)
 			{
-				RegisterTouchWindow(hWnd, 0);
-				disableGestureFuc(hWnd);
+				return [disableGestureFuc,role](HWND hWnd)
+				{
+					// 保留原有单次注册与 flags；GLE 必须在任何诊断查询之前取得。
+					const BOOL registered=RegisterTouchWindow(hWnd,0);
+					const DWORD registrationError=registered?ERROR_SUCCESS:GetLastError();
+					Inkeys::Input::UiPointer::Diagnostics::TouchRegistration(role,hWnd,0,registered,registrationError);
+					disableGestureFuc(hWnd);
+				};
 			};
 
 		SettingWindowBegin();
@@ -3652,7 +3659,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					};
 				}
 				spec.windowProc = proc;
-				spec.created = created;
+				spec.created = [created,role](HWND hwnd)
+				{
+					if(created)created(hwnd);
+					// Window Service 已登记 HWND，且原回调已注册 WM_TOUCH 后再接入五窗路由。
+					if(role==Inkeys::Window::WindowRole::Bar)Inkeys::UI::Bar::RegisterNativeTouchInput(hwnd);
+					else if(role>=Inkeys::Window::WindowRole::PptBottomLeft&&role<=Inkeys::Window::WindowRole::PptMiddleRight)
+						Inkeys::UI::PageControl::RegisterNativeTouchInput(static_cast<std::size_t>(role)-static_cast<std::size_t>(Inkeys::Window::WindowRole::PptBottomLeft),hwnd);
+				};
 				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
 					role <= Inkeys::Window::WindowRole::PptMiddleRight)
 				{
@@ -3689,18 +3703,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			});
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomLeft,
 			L"Inkeys4.BottomLeft;", L"Inkeys Ppt Bottom Left",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("bottom-left"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomRight,
 			L"Inkeys4.BottomRight;", L"Inkeys Ppt Bottom Right",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("bottom-right"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptMiddleLeft,
 			L"Inkeys4.MiddleLeft;", L"Inkeys Ppt Middle Left",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("middle-left"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptMiddleRight,
 			L"Inkeys4.MiddleRight;", L"Inkeys Ppt Middle Right",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("middle-right"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::Bar, L"Inkeys5;", L"Inkeys BarWindow",
-			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc("bar"));
 
 		Inkeys::Window::WindowSpec settingSpec;
 		settingSpec.role = Inkeys::Window::WindowRole::Setting;

@@ -849,6 +849,14 @@ namespace Inkeys::Drawing::Draw3
 		QueueSystemCursorRefresh();
 	}
 
+	void WindowController::SetInjectedMouseAsTablet(bool enabled) noexcept
+	{
+		if (injectedMouseAsTablet_.exchange(enabled, std::memory_order_acq_rel) == enabled)
+			return;
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+	}
+
 	bool WindowController::GetMouseUsesSystemCursor() const noexcept
 	{
 		return mouseUsesSystemCursor_.load(std::memory_order_acquire);
@@ -1043,8 +1051,27 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	void WindowController::PublishPenCursorSample(
-		const DrawingCursorSample& sample) noexcept
+		const DrawingCursorSample& inputSample) noexcept
 	{
+		DrawingCursorSample sample = inputSample;
+		if (sample.valid)
+		{
+			// Pointer 路径发布的首批悬停样本没有来源；沿用最近一次已知来源，避免进入时短暂套用错误设备行。
+			const bool sourceKnown = sample.source.kind != SpeedEraser::SourceKind::Unknown ||
+				sample.source.recognition != SpeedEraser::SourceRecognition::Unknown;
+			DrawingCursorSample known;
+			const bool hasKnown = lastKnownPenSource_.Read(known) && known.valid;
+			if (sourceKnown)
+			{
+				if (!hasKnown || !(known.source == sample.source))
+				{
+					known.valid = true;
+					known.source = sample.source;
+					lastKnownPenSource_.Publish(known);
+				}
+			}
+			else if (hasKnown) sample.source = known.source;
+		}
 		if (sample.valid) SetTouchCursorSuppressed(false);
 		const bool touchPanActive = touchPanActive_.load(std::memory_order_acquire);
 		const bool realMouseTakeover = realMouseTakeoverDuringTouchPan_.load(
@@ -1250,7 +1277,9 @@ namespace Inkeys::Drawing::Draw3
 			!selectionMode && tool == DrawingTool::Eraser,
 			!selectionMode && tool == DrawingTool::Laser,
 			penSample.valid, mouseSample.valid, mouseUsesSystemCursor,
-			touchPanActive, realMouseTakeover);
+			touchPanActive, realMouseTakeover,
+			injectedMouseAsTablet_.load(std::memory_order_acquire) &&
+				mouseSample.source.kind == SpeedEraser::SourceKind::ExternalPen);
 		DrawingCursorDiagnosticVisualState appVisual;
 		const bool appVisualKnown = ReadDrawingCursorDiagnosticVisualState(appVisual);
 
@@ -1391,7 +1420,9 @@ namespace Inkeys::Drawing::Draw3
 			!selectionMode && tool == DrawingTool::Eraser,
 			!selectionMode && tool == DrawingTool::Laser,
 			penSample.valid, mouseSample.valid,
-			mouseUsesSystemCursor, touchPanActive, realMouseTakeover);
+			mouseUsesSystemCursor, touchPanActive, realMouseTakeover,
+			injectedMouseAsTablet_.load(std::memory_order_acquire) &&
+				mouseSample.source.kind == SpeedEraser::SourceKind::ExternalPen);
 		uint64_t key = static_cast<uint64_t>(authority);
 		key = key * 17u + static_cast<uint64_t>(tool);
 		key = key * 17u + (hide ? 1u : 0u);
@@ -2177,6 +2208,10 @@ namespace Inkeys::Drawing::Draw3
 			sample.valid = true;
 			sample.inContact = buttonDown;
 			sample.qpc = qpc.QuadPart;
+			// 非 Windows Ink 数位板以驱动注入的鼠标到达；仅在用户开启时标记为数位板来源。
+			if (injectedMouseAsTablet_.load(std::memory_order_acquire) && sourceSnapshot.succeeded &&
+				sourceSnapshot.deviceType == IMDT_MOUSE && sourceSnapshot.originId == IMO_INJECTED)
+				sample.source.kind = SpeedEraser::SourceKind::ExternalPen;
 			PublishMouseCursorSample(sample);
 			lastTouchMousePositionKnown_ = false;
 			recordMouseDecision(true, "accepted-mouse");

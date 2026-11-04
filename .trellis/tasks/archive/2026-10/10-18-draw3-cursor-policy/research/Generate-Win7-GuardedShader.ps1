@@ -39,7 +39,7 @@ if ($start -lt 0 -or $end -le $start -or $production.LastIndexOf($anchor, [Strin
 $tail = $production.Substring($start, $end - $start)
 $indented = ($tail -split "`r`n" | ForEach-Object { if ($_.Length) { '    ' + $_ } else { $_ } }) -join "`r`n"
 # 保留全部数学和未知 type 的旧 d=0 输出，只改变尾部控制流所在的正向分支。
-$gate = "    // Diagnostic candidate: preserve DefaultInk math and unknown-type output.`r`n    if (type == 0 || type == 3 || type < 0 || type > 21)`r`n    {`r`n"
+$gate = "    // Diagnostic candidate: preserve DefaultInk math and unknown-type output.`r`n    if (type == 0 || type == 3 || type < 0 || type > 22)`r`n    {`r`n"
 $fallback = "`r`n    }`r`n    OperatorOutput unreachableOutput;`r`n    unreachableOutput.add = 0.0;`r`n    unreachableOutput.retain = 1.0;`r`n    return unreachableOutput;"
 $candidate = $production.Substring(0, $start) + $gate + $indented + $fallback + $production.Substring($end)
 $restored = ($indented -split "`r`n" | ForEach-Object { if ($_.Length) { $_.Substring(4) } else { $_ } }) -join "`r`n"

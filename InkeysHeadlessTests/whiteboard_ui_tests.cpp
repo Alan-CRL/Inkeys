@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <string_view>
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.WhiteboardModel.h"
 
 #include "../Inkeys/Inkeys/UI/Whiteboard/Whiteboard.BackgroundState.h"
 
@@ -115,6 +116,33 @@ namespace
 		(void)background.Publish(true, 13);
 		Check(!background.CommitInactive(closing) && !background.Prepare(frame),
 			"late inactive or active ACK after reversal cannot confirm a newer request");
+	}
+
+	void TestBackgroundColorClassification()
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		struct BackgroundCase { std::uint32_t rgb; bool light; std::string_view name; };
+		constexpr BackgroundCase backgrounds[]{
+			{0x123B32, false, "dark green background selects the dark color memory"},
+			{0x172A46, false, "dark blue background selects the dark color memory"},
+			{0x000000, false, "black background selects the dark color memory"},
+			{0xFFFFFF, true, "white background selects the light color memory"},
+			{0xE5E7EB, true, "light gray background selects the light color memory"},
+			{0xF5F1E6, true, "cream background selects the light color memory"},
+			{0x808080, false, "the exact luminance threshold belongs to the dark class"},
+			{0x818181, true, "gray above the luminance threshold belongs to the light class"},
+			{0x00FF00, true, "green luminance is evaluated in the RGB channel order"},
+			{0xFF0000, false, "red luminance is evaluated in the RGB channel order"}};
+		constexpr WhiteboardPattern patterns[]{WhiteboardPattern::Blank,
+			WhiteboardPattern::Dots, WhiteboardPattern::Grid};
+		// 直接调用生产分类；主题纹理只影响背景绘制，不改变颜色记忆所属类别。
+		for (const auto& background : backgrounds)
+		for (const auto pattern : patterns)
+		{
+			const WhiteboardTheme theme{background.rgb, pattern};
+			Check(ValidWhiteboardTheme(theme), "background classification fixtures are valid themes");
+			Check(IsLightWhiteboardBackground(theme.backgroundRgb) == background.light, background.name);
+		}
 	}
 
 	void TestPageState()
@@ -281,6 +309,7 @@ int RunWhiteboardUiTests()
 {
 	TestBackgroundInvalidation();
 	TestBackgroundNativeReceipts();
+	TestBackgroundColorClassification();
 	TestPageState();
 	TestSceneLayout();
 	TestSurfaceLayoutContracts();

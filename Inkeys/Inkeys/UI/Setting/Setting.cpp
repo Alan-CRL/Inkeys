@@ -3755,6 +3755,41 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
+					if (drawingSubpage == Design::DrawingSubpage::Cursor)
+					{
+						namespace Cursor = Inkeys::Drawing::Draw3;
+						using Cursor::CursorDevice;
+						auto& cursor = Inkeys::config.Drawing.Cursor;
+						const int legacyMouseStyle = cursor.MouseStyle.load(), legacyPenStyle = cursor.PenStyle.load();
+						const auto deviceStyle = [&](CursorDevice device, int configured) {
+							return Cursor::RestoreDeviceCursorStyle(device, configured, legacyMouseStyle, legacyPenStyle);
+						};
+						static const bool injectedSourceAvailable = GetProcAddress(
+							GetModuleHandleW(L"user32.dll"), "GetCurrentInputMessageSource") != nullptr;
+						Design::CursorPageDraft draft;
+						draft.mouse = Cursor::CursorStyleToItemIndex(CursorDevice::Mouse, deviceStyle(CursorDevice::Mouse, cursor.Mouse.load()));
+						draft.touch = Cursor::CursorStyleToItemIndex(CursorDevice::Touch, deviceStyle(CursorDevice::Touch, cursor.Touch.load()));
+						draft.screenPen = Cursor::CursorStyleToItemIndex(CursorDevice::ScreenPen, deviceStyle(CursorDevice::ScreenPen, cursor.ScreenPen.load()));
+						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
+						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
+						draft.injectedAvailable = injectedSourceAvailable;
+						const auto events = Design::RenderCursorPage(draft);
+						if (events.back)
+							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
+						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse)
+						{
+							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
+							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
+							if (events.mouse) cursor.Mouse = styleValue(CursorDevice::Mouse, draft.mouse);
+							if (events.touch) cursor.Touch = styleValue(CursorDevice::Touch, draft.touch);
+							if (events.screenPen) cursor.ScreenPen = styleValue(CursorDevice::ScreenPen, draft.screenPen);
+							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
+							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
+							SyncDraw3State();
+							QueueConfigWrite();
+						}
+						break;
+					}
 					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
 					{
 						namespace Palm = Inkeys::Drawing::Draw3::PalmEraser;
@@ -3941,20 +3976,9 @@ SettingSessionCoroutine RunSettingSession()
 					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
-					auto& cursor = Inkeys::config.Drawing.Cursor;
-					const vector<string> cursorStyles{ IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
-					int mouseStyle = cursor.MouseStyle.load() == 1 ? 1 : 0, penStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
-					const bool mouseStyleChanged = Design::ComboRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Cursor.Description).c_str(), "\ue962", mouseStyle, cursorStyles);
-					const bool penStyleChanged = Design::ComboRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle).c_str(),
-						nullptr, "\uedc6", penStyle, cursorStyles);
-					if (mouseStyleChanged || penStyleChanged)
-					{
-						cursor.MouseStyle = mouseStyle;
-						cursor.PenStyle = penStyle;
-						SyncDraw3State();
-						QueueConfigWrite();
-					}
+					if (Design::NavigationRow("##cursor-entry", IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Cursor.EntryDescription).c_str(), "\ue962"))
+						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Cursor);
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
 					bool laserMultiTouchEnabled = drawingOptions.Laser.MultiTouchEnabled;

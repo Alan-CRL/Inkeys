@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 163
+- **Total Sessions**: 167
 - **Last Active**: 2026-11-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1914 | Active |
+| `journal-2.md` | ~2010 | Active |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,9 +30,14 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 167 | 2026-11-03 | UI3 pointer-source arbitration for tablet pen and touch input | `f9aeefbd`, `25749d67` | `bugfix/color` |
+| 166 | 2026-11-03 | Touch注册与Pointer来源诊断补齐 | - | `bugfix/color` |
+| 165 | 2026-11-03 | 五窗独立Touch与数位板跨窗修复 | - | `bugfix/color` |
+| 164 | 2026-11-02 | M6主栏与翻页详细输入诊断 | - | `bugfix/color` |
 | 163 | 2026-11-03 | 回收无关测试预览图 | - | `temp/state` |
 | 162 | 2026-11-03 | 快捷方式设置与保障整合 | - | `temp/state` |
 | 161 | 2026-11-02 | 二十语言扩展验收提交与归档 | `100fda717084aeac1e3b377c24b141d9412a118a`, `ef05d1b6d8d74f7c8996174520fbc31ddbec313b` | `feature/i18n` |
+| 160 | 2026-11-02 | 共享画笔样式与跨场景颜色粗细 | - | `bugfix/color` |
 | 159 | 2026-11-02 | 验收并归档设置字体与语言热切换 | `6a8fd4ea` | `feature/i18n` |
 | 158 | 2026-11-02 | Setting FreeType、动态图集与语言热切换 | - | `feature/i18n` |
 | 157 | 2026-11-02 | 白板快捷键、分页过渡与动画速率设置收尾 | `7f37a527` | `bugfix/mode` |

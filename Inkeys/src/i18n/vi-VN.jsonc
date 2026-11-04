@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Con trỏ",
-        "Description": "Tùy chọn chuột chỉ áp dụng cho bút nét mềm và nét đều. Bút nhớ dòng luôn xem trước độ dày; công cụ hình dùng con trỏ hệ thống. Con trỏ bút mặc định là hình tròn. Tắt viền sáng cho bút màn hình, bật cho bảng vẽ và bút không nhận diện được.",
-        "MouseStyle": "Chuột",
-        "PenStyle": "Bút",
-        "DefaultStyle": "Con trỏ mặc định",
-        "DrawingStyle": "Con trỏ hình bút"
+        "EntryDescription": "Đặt con trỏ hiển thị khi vẽ riêng cho từng thiết bị nhập và xem trước hiệu ứng.",
+        "Devices": "Theo thiết bị",
+        "PenDevices": "Nhận diện bảng vẽ",
+        "Mouse":
+        {
+          "N": "Chuột",
+          "E": "Chuột và bàn di chuột."
+        },
+        "Touch":
+        {
+          "N": "Cảm ứng",
+          "E": "Khi ngón tay chạm vào, mỗi ngón hiển thị một con trỏ và biến mất khi nhấc lên."
+        },
+        "ScreenPen":
+        {
+          "N": "Bút màn hình",
+          "E": "Bút viết trực tiếp trên màn hình."
+        },
+        "Tablet":
+        {
+          "N": "Bảng vẽ",
+          "E": "Bảng vẽ ngoài và các bút không xác định được nguồn."
+        },
+        "Style":
+        {
+          "None": "Không có con trỏ",
+          "Arrow": "Chuột",
+          "Pen": "Bút",
+          "HighlightPen": "Bút (làm nổi bật)",
+          "Dot": "Chấm nhỏ",
+          "HighlightDot": "Chấm nhỏ (làm nổi bật)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Nhận diện bảng vẽ do trình điều khiển chèn vào",
+          "E": "Bảng vẽ không bật Windows Ink thường gửi dữ liệu dưới dạng “chuột do trình điều khiển chèn vào”. Khi bật, chuột này dùng thiết lập con trỏ của bảng vẽ; phần mềm cũng chèn chuột như Remote Desktop có thể bị nhận diện nhầm.",
+          "Unavailable": "Hệ thống này không thể phân biệt nguồn nhập nên tùy chọn không khả dụng."
+        },
+        "Note": "Với bút màn hình, bảng vẽ và cảm ứng, “Chuột” là mũi tên do chính ứng dụng vẽ; con trỏ của bút nhớ dòng và con trỏ laser, công cụ hình và con trỏ riêng của tẩy không bị các tùy chọn này ảnh hưởng."
       },
       "Effect":
       {

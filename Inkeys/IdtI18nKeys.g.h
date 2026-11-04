@@ -650,11 +650,45 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Draw__Cursor
             {
                 const char* N = "SettingsUI/Draw/Cursor/N";
-                const char* Description = "SettingsUI/Draw/Cursor/Description";
-                const char* MouseStyle = "SettingsUI/Draw/Cursor/MouseStyle";
-                const char* PenStyle = "SettingsUI/Draw/Cursor/PenStyle";
-                const char* DefaultStyle = "SettingsUI/Draw/Cursor/DefaultStyle";
-                const char* DrawingStyle = "SettingsUI/Draw/Cursor/DrawingStyle";
+                const char* EntryDescription = "SettingsUI/Draw/Cursor/EntryDescription";
+                const char* Devices = "SettingsUI/Draw/Cursor/Devices";
+                const char* PenDevices = "SettingsUI/Draw/Cursor/PenDevices";
+                struct Node__SettingsUI__Draw__Cursor__Mouse
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Mouse/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Mouse/E";
+                } Mouse{};
+                struct Node__SettingsUI__Draw__Cursor__Touch
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Touch/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Touch/E";
+                } Touch{};
+                struct Node__SettingsUI__Draw__Cursor__ScreenPen
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/ScreenPen/N";
+                    const char* E = "SettingsUI/Draw/Cursor/ScreenPen/E";
+                } ScreenPen{};
+                struct Node__SettingsUI__Draw__Cursor__Tablet
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Tablet/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Tablet/E";
+                } Tablet{};
+                struct Node__SettingsUI__Draw__Cursor__Style
+                {
+                    const char* None = "SettingsUI/Draw/Cursor/Style/None";
+                    const char* Arrow = "SettingsUI/Draw/Cursor/Style/Arrow";
+                    const char* Pen = "SettingsUI/Draw/Cursor/Style/Pen";
+                    const char* HighlightPen = "SettingsUI/Draw/Cursor/Style/HighlightPen";
+                    const char* Dot = "SettingsUI/Draw/Cursor/Style/Dot";
+                    const char* HighlightDot = "SettingsUI/Draw/Cursor/Style/HighlightDot";
+                } Style{};
+                struct Node__SettingsUI__Draw__Cursor__InjectedMouse
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/InjectedMouse/N";
+                    const char* E = "SettingsUI/Draw/Cursor/InjectedMouse/E";
+                    const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
+                } InjectedMouse{};
+                const char* Note = "SettingsUI/Draw/Cursor/Note";
             } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {

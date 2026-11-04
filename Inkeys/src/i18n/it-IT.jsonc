@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Puntatore",
-        "Description": "L'opzione del mouse riguarda solo le penne morbide e dure. Gli evidenziatori mostrano sempre l'anteprima dello spessore; le forme usano il puntatore di sistema. Il puntatore predefinito della penna è circolare. Il bordo luminoso è disattivato per le penne su schermo e attivato per le tavolette grafiche e le penne non riconosciute.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Penna",
-        "DefaultStyle": "Puntatore predefinito",
-        "DrawingStyle": "Puntatore a forma di penna"
+        "EntryDescription": "Imposta il puntatore mostrato durante il disegno per ciascun dispositivo di input, con anteprima.",
+        "Devices": "Per dispositivo",
+        "PenDevices": "Rilevamento tavoletta grafica",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse e touchpad."
+        },
+        "Touch":
+        {
+          "N": "Touch",
+          "E": "Quando le dita toccano lo schermo, ogni dito mostra un puntatore che scompare al sollevamento."
+        },
+        "ScreenPen":
+        {
+          "N": "Penna su schermo",
+          "E": "Penna con cui si scrive direttamente sullo schermo."
+        },
+        "Tablet":
+        {
+          "N": "Tavoletta grafica",
+          "E": "Tavolette grafiche esterne e penne la cui origine non è riconoscibile."
+        },
+        "Style":
+        {
+          "None": "Nessun puntatore",
+          "Arrow": "Mouse",
+          "Pen": "Penna",
+          "HighlightPen": "Penna (evidenziata)",
+          "Dot": "Punto piccolo",
+          "HighlightDot": "Punto piccolo (evidenziato)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Riconosci tavolette grafiche inserite dal driver",
+          "E": "Le tavolette grafiche senza Windows Ink arrivano di solito come «mouse inserito dal driver». Se attivata, questo mouse usa le impostazioni del puntatore della tavoletta; i software che inseriscono a loro volta il mouse, come Desktop remoto, potrebbero essere riconosciuti per errore.",
+          "Unavailable": "Questo sistema non riesce a distinguere l’origine dell’input; l’opzione non è disponibile."
+        },
+        "Note": "Con penna su schermo, tavoletta grafica e touch, «Mouse» è una freccia disegnata dall’app stessa; i puntatori di evidenziatore e puntatore laser, gli strumenti per le forme e il puntatore dedicato della gomma non sono influenzati da queste opzioni."
       },
       "Effect":
       {

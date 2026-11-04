@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Cursor",
-        "Description": "Opțiunea pentru mouse se aplică doar penițelor moi și rigide. Evidențiatorul arată mereu grosimea, iar formele folosesc cursorul de sistem. Cursorul implicit al creionului este circular. Evidențierea marginii este dezactivată pentru creioanele de ecran și activată pentru tablete grafice și creioane nerecunoscute.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Creion",
-        "DefaultStyle": "Cursor implicit",
-        "DrawingStyle": "Cursor în formă de creion"
+        "EntryDescription": "Setează cursorul afișat la desenare pentru fiecare dispozitiv de intrare și oferă o previzualizare.",
+        "Devices": "Pe dispozitiv",
+        "PenDevices": "Recunoaștere tabletă grafică",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse și touchpad."
+        },
+        "Touch":
+        {
+          "N": "Atingere",
+          "E": "Când degetele ating ecranul, fiecare deget afișează un cursor care dispare la ridicare."
+        },
+        "ScreenPen":
+        {
+          "N": "Creion de ecran",
+          "E": "Creion cu care se scrie direct pe ecran."
+        },
+        "Tablet":
+        {
+          "N": "Tabletă grafică",
+          "E": "Tablete grafice externe și creioane a căror sursă nu poate fi identificată."
+        },
+        "Style":
+        {
+          "None": "Fără cursor",
+          "Arrow": "Mouse",
+          "Pen": "Creion",
+          "HighlightPen": "Creion (evidențiat)",
+          "Dot": "Punct mic",
+          "HighlightDot": "Punct mic (evidențiat)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Recunoaște tabletele grafice injectate de driver",
+          "E": "Tabletele grafice fără Windows Ink ajung de obicei ca „mouse injectat de driver”. Dacă este activată, acest mouse folosește setările de cursor ale tabletei; programele care injectează și ele mouse, precum Remote Desktop, pot fi detectate greșit.",
+          "Unavailable": "Acest sistem nu poate distinge sursa intrării, deci opțiunea nu este disponibilă."
+        },
+        "Note": "La creionul de ecran, tableta grafică și atingere, „Mouse” este o săgeată desenată chiar de aplicație; cursoarele evidențiatorului și ale pointerului laser, instrumentele de forme și cursorul dedicat radierei nu sunt afectate de aceste opțiuni."
       },
       "Effect":
       {

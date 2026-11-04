@@ -438,6 +438,11 @@ GROUP(UI, \
 		GROUP(Cursor, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseStyle, 0) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenStyle, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Mouse, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Touch, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ScreenPen, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Tablet, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InjectedMouseAsTablet, false) \
 		) \
 		GROUP(Eraser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \

@@ -232,6 +232,12 @@ public:
 				? radius.height : 0.0F;
 	}
 
+	// 供页面表面绘制旋转圆环；沿用受保护的 DrawProgressRing 实现（同色轨道与进度，仅不透明度不同）。
+	void DrawRing(ID2D1DeviceContext* deviceContext, D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
+		FLOAT progress, COLORREF color, FLOAT trackOpacity, FLOAT progressOpacity)
+	{
+		DrawProgressRing(deviceContext, center, radius, strokeWidth, progress, color, color, trackOpacity, progressOpacity);
+	}
 protected:
 	BarFormatCache* GetTypographyCache();
 	BarUIRenderingServices services_;

@@ -1,0 +1,12 @@
+{"reason":"生产边界与验证","file":".trellis/spec/native-desktop/index.md"}
+{"reason":"原生owner/worker、快照、锁与格式","file":".trellis/spec/native-desktop/cpp-conventions.md"}
+{"reason":"现有Mouse/Raw/lease和取消合同；Page Pen兼容入口由本次R2新PRD替代","file":".trellis/spec/native-desktop/ui-pointer-session.md"}
+{"reason":"Bar元数据和可选触觉保留，不加分页震动","file":".trellis/spec/native-desktop/pen-haptics.md"}
+{"reason":"现场两层缺陷、线号、修复边界","file":".trellis/tasks/11-02-shape-style-tablet-bar/research/tablet-hover-root-cause.md"}
+{"reason":"五套独立TouchContext、共享规则/薄转交、probe与owner接缝","file":".trellis/tasks/11-02-shape-style-tablet-bar/research/unified-touch-routing-plan.md"}
+{"reason":"跨窗/多点/重入/取消和回归范围","file":".trellis/tasks/11-02-shape-style-tablet-bar/research/unified-touch-risk-review.md"}
+{"reason":"当前用户授权：注册/状态读回与Pointer来源诊断，保持输入行为","file":".trellis/tasks/11-02-shape-style-tablet-bar/touch-registration-diagnostics-plan.md"}
+{"reason":"Touch缺失调查、线程/协议与证据盲点","file":".trellis/tasks/11-02-shape-style-tablet-bar/research/no-touch-cause-investigation.md"}
+{"reason": "R3 Pointer为根的来源仲裁正式设计", "file": ".trellis/tasks/11-02-shape-style-tablet-bar/pointer-source-design.md"}
+{"reason": "R3 分阶段实施计划与验证", "file": ".trellis/tasks/11-02-shape-style-tablet-bar/pointer-source-implement.md"}
+{"reason": "M6日志证据：仅PT_PEN Pointer、无WM_TOUCH、注册正常", "file": ".trellis/tasks/11-02-shape-style-tablet-bar/research/touch-registration-log-analysis.md"}

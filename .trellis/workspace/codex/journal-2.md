@@ -1669,6 +1669,21 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 - 十一语言稳定元数据、旧索引兼容、首次系统语言匹配及母语名/代码/Beta列表。
 - 补齐84个活动UI key，处理主栏局部拟合及赞助长文可见字形居中/高度。
 
+## Session 160: 共享画笔样式与跨场景颜色粗细
+<!-- trellis-session: v=2 fp=d111c6766a9c5cfa -->
+
+**Date**: 2026-11-02
+**Task**: 共享画笔样式与跨场景颜色粗细
+**Branch**: `bugfix/color`
+
+### Summary
+
+完成Brush三范围颜色、三组全局宽度与荧光激光全局颜色；白板主题token与owner应用ACK同步；数位板R2暂缓等待日志。
+
+### Main Changes
+
+- 共享样式、工作区投影、颜色版本校验和主题后主栏刷新
+
 ### Git Commits
 
 (No commits - planning session)
@@ -1677,6 +1692,7 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 
 - [OK] 完整InkeysRepo.sln Debug|ARM64使用ARM64原生MSBuild：exit0；最终增量10.15秒。
 - [OK] 真实嵌入/typedformat exit0；DWrite/组件离屏exit0；完整--no-window exit0/338.72秒且stderr空；679全语言check及编码/字形覆盖通过。
+- [OK] 完整InkeysRepo.sln Debug ARM64、四个生产探针、headless --no-window通过
 
 ### Status
 
@@ -1697,6 +1713,23 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Summary
 
 Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/图标/字体资产和翻译保持。三DPI真实对照、设置专项与完整无窗口回归通过。
+- 等待高漫M6数位板主栏点击日志，R2输入过滤未改；未commit/push
+
+
+## Session 164: M6主栏与翻页详细输入诊断
+<!-- trellis-session: v=2 fp=7657d9a5911910f2 -->
+
+**Date**: 2026-11-02
+**Task**: M6主栏与翻页详细输入诊断
+**Branch**: `bugfix/color`
+
+### Summary
+
+沿现有测试触控反馈输出补齐raw到业务的主栏/四分页诊断，记录跨窗口lease与capture归属，未改变输入策略。
+
+### Main Changes
+
+- 有界Move摘要、关键边沿/拒绝完整、channel与窗口映射、错误码保护及真实helper测试
 
 ### Git Commits
 
@@ -1705,6 +1738,7 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Testing
 
 - [OK] Debug|ARM64完整Solution exit0/12.88s；设置专项exit0/10.96s；完整--no-window exit0/358.22s且stderr空。
+- [OK] 完整Solution Debug ARM64、五个生产探针、headless --no-window exit0/296.57s
 
 ### Status
 
@@ -1863,6 +1897,23 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 - 新增通用快捷方式子页与名称内联区，全部语言默认 Inkeys，改名仅保存。
 - 配置迁入 Application.Shortcut，冻结 FIFO 请求，补齐文件名和 Unicode 同名边界。
 - 补 20 语文案、实际控件/导航/配置/队列/ShellLink 回归和桌面快捷方式 code spec。
+- 用户用M6采集ui_schema/ui_input v1完整日志以定位R2；本轮未commit/push或GUI
+
+
+## Session 165: 五窗独立Touch与数位板跨窗修复
+<!-- trellis-session: v=2 fp=7891bc8ea5e288a6 -->
+
+**Date**: 2026-11-03
+**Task**: 五窗独立Touch与数位板跨窗修复
+**Branch**: `bugfix/color`
+
+### Summary
+
+依据持续感应跨窗日志修复五窗Touch归属及分页兼容鼠标终态丢失；各窗独立Context，共用规则，完成自动回归与Release x64交付，设备待验收。
+
+### Main Changes
+
+- 五窗本地TouchContext、真实候选与已呈现probe、完整64位取消身份、统一Pointer兼容鼠标过滤，保留PPT长按和白板Up单次
 
 ### Git Commits
 
@@ -1872,6 +1923,8 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 
 - [OK] 最终完整 InkeysRepo.sln Debug ARM64 build-8 exit 0；canonical Path 与 workspace TEMP 仅作用于验证进程。
 - [OK] 完整 InkeysHeadlessTests --no-window exit 0；快捷方式 exact/quoted exit 0，额外参数 exit 2；i18n check/runtime 通过。
+- [OK] 完整Solution Debug ARM64 exit0/41.04s，五生产探针全0含真实UI3TouchProbe，完整headless --no-window exit0/306.60s
+- [OK] 完整Solution Release x64 exit0/115.29s，PE0x8664、预期诊断标识与SHA256核对通过；未GUI
 
 ### Status
 
@@ -1896,6 +1949,23 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Main Changes
 
 - 仅处理 generated-preview-inventory.json 中限定目录和十个已核对文件；不永久删除，不操作其他文件或目录。
+- 用户按touch-fix-capture.md进行一次同一数位板持续感应跨五窗/长按复核，交回M6-touch-fix.txt；任务保持in_progress，本轮不commit/push
+
+
+## Session 166: Touch注册与Pointer来源诊断补齐
+<!-- trellis-session: v=2 fp=0cf34f5af0a9597c -->
+
+**Date**: 2026-11-03
+**Task**: Touch注册与Pointer来源诊断补齐
+**Branch**: `bugfix/color`
+
+### Summary
+
+补齐五窗RegisterTouchWindow实际结果、IsTouchWindow状态及原生Pointer Down来源，保持输入策略，交付Release x64诊断包等待下轮设备日志。
+
+### Main Changes
+
+- 现有测试触控反馈开关下新增touch_registration/touch_window_snapshot/pointer_info，动态可选API、GLE保护、关闭零新增查询；修启动快照误标Down
 
 ### Git Commits
 
@@ -1904,6 +1974,8 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Testing
 
 - [OK] Windows 原生回收成功；十个原路径不存在，十份新回收站副本逐一通过大小及 SHA256 校验。
+- [OK] 完整Debug ARM64源码编译通过；本机增量链接LNK1000内部错误保留单个ilk重建后Solution exit0/8.27s；五生产探针全0
+- [OK] 完整headless --no-window exit0/260.41s，Release x64 exit0/332.72s；PE0x8664/新诊断标识/SHA256/无GetPointerInfo硬导入核验通过
 
 ### Status
 
@@ -1912,3 +1984,27 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Next Steps
 
 - 清理已完成，代码仍保持未提交；本轮未改产品代码，不重复编译或测试。
+- 用户按touch-registration-capture.md采集M6-touch-registration.txt，先保持驱动设置；Pointer-only业务缺口仍待处理，任务in_progress，本轮不GUI/commit/push
+
+
+## Session 167: UI3 pointer-source arbitration for tablet pen and touch input
+<!-- trellis-session: v=2 fp=a724db5e1f19bc99 -->
+
+**Date**: 2026-11-03
+**Task**: UI3 pointer-source arbitration for tablet pen and touch input
+**Branch**: `bugfix/color`
+
+### Summary
+
+Investigated why tablet pens could not click the bar and page controls (Pointer only, no WM_TOUCH). Made WM_POINTER the contact source for the five UI windows with WM_TOUCH and signed compatibility mouse excluded by type, fixed the lost first page tap after drawing and the cancelled bar press with the page menu open, kept pen haptic credentials across pen-up, added a whiteboard page-switch busy ring, and validated on Surface pen, finger, two Gaomon M6 setups and the affected user's M6. Page-control haptics and haptic stop/discrete timing are left as follow-ups.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f9aeefbd` | fix(ui-input): use Pointer as the contact source for bar and page controls |
+| `25749d67` | docs(task): record tablet pointer input investigation and validation |
+
+### Status
+
+[OK] **Completed**

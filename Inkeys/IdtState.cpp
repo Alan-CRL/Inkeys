@@ -44,6 +44,40 @@ namespace
 	std::mutex stateModeTransitionMutex;
 	Workspace stateModeWorkspace = Workspace::Desktop;
 	std::array<std::optional<StateModeClass>, 3> workspaceStateModes;
+	// 工具身份按工作区保存，样式独立拥有；旧工作区不得反写全局宽色。
+	StateModeClass sharedStyleState;
+	std::array<COLORREF, 3> brushColors{ RGB(255,16,0), RGB(255,16,0), RGB(255,255,255) };
+	std::uint32_t whiteboardStyleBackground = 0x123B32;
+	Inkeys::Drawing::Draw3::Bridge::WhiteboardStyleToken whiteboardStyleToken;
+	std::size_t BrushColorScope(Workspace workspace) noexcept
+	{
+		return workspace == Workspace::Whiteboard
+			? (Inkeys::Drawing::Draw3::IsLightWhiteboardBackground(whiteboardStyleBackground) ? 1 : 2) : 0;
+	}
+	void ProjectSharedStyles(StateModeClass& target, Workspace workspace)
+	{
+		using namespace Inkeys::Business::PenWidth;
+		const auto penMode = target.Pen.ModeSelect;
+		target.Pen = sharedStyleState.Pen;
+		target.Pen.ModeSelect = penMode;
+		target.Pen.Brush1.color = brushColors[BrushColorScope(workspace)];
+		auto resolve = [&](auto& slot, Family family) { slot.width = static_cast<float>(Resolve(slot.widthSelection, family, target.penWidthContext).resolvedWidthDip); };
+		resolve(target.Pen.Brush1, Family::Brush);
+		resolve(target.Pen.Highlighter1, Family::Highlighter);
+		resolve(target.Pen.Laser, Family::Laser);
+		target.Pen.Brush1.widthPreset = static_cast<float>(PresetDip(Preset::Medium, Family::Brush, target.penWidthContext));
+		target.Pen.Highlighter1.widthPreset = static_cast<float>(PresetDip(Preset::Medium, Family::Highlighter, target.penWidthContext));
+		for (int i=0; i<3; ++i) target.Pen.Laser.widthPreset[i] = static_cast<float>(PresetDip(static_cast<Preset>(i), Family::Laser, target.penWidthContext));
+		// 形状旧字段仅保留值型快照投影，不再独立拥有有效属性。
+		target.Shape.StraightLine1.widthSelection = target.Shape.Rectangle1.widthSelection = target.Pen.Brush1.widthSelection;
+		target.Shape.StraightLine1.width = target.Shape.Rectangle1.width = target.Pen.Brush1.width;
+		target.Shape.StraightLine1.color = target.Shape.Rectangle1.color = target.Pen.Brush1.color;
+	}
+	void CaptureSharedStylesLocked()
+	{
+		sharedStyleState.Pen = stateMode.Pen;
+		brushColors[BrushColorScope(stateModeWorkspace)] = stateMode.Pen.Brush1.color;
+	}
 	std::atomic_uint64_t stateModeTransitionRevision = 0;
 	std::atomic_uint64_t draw3ExitSelectionModeRevision = 0;
 	std::mutex eraserPreferencesMutex;
@@ -565,10 +599,20 @@ namespace
 		state.eraserInputs = ReadEraserPreferences();
 		// 光标偏好和当前工具一起发布；设置线程不直接访问绘制对象或 HWND。
 		const auto& cursor = Inkeys::config.Drawing.Cursor;
-		state.cursorSettings.mouseStyle = Inkeys::Drawing::Draw3::RestoreMouseCursorStyle(cursor.MouseStyle.load());
-		state.cursorSettings.penStyle = Inkeys::Drawing::Draw3::RestorePenCursorStyle(cursor.PenStyle.load());
+		namespace CursorModel = Inkeys::Drawing::Draw3;
+		const int legacyMouseStyle = cursor.MouseStyle.load(), legacyPenStyle = cursor.PenStyle.load();
+		state.cursorSettings.mouse = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::Mouse, cursor.Mouse.load(), legacyMouseStyle, legacyPenStyle);
+		state.cursorSettings.touch = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::Touch, cursor.Touch.load(), legacyMouseStyle, legacyPenStyle);
+		state.cursorSettings.screenPen = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::ScreenPen, cursor.ScreenPen.load(), legacyMouseStyle, legacyPenStyle);
+		state.cursorSettings.tablet = CursorModel::RestoreDeviceCursorStyle(
+			CursorModel::CursorDevice::Tablet, cursor.Tablet.load(), legacyMouseStyle, legacyPenStyle);
+		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
+		state.whiteboardStyle = whiteboardStyleToken;
 		state.selectionMode =
 			IsComputerInteractionMode(stateMode.StateModeSelect);
 		state.autoSaveEnabled = setlist.saveSetting.enable;
@@ -1291,6 +1335,30 @@ void SyncDraw3State()
 	Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
 }
 
+namespace
+{
+	void AcceptWhiteboardStyle(const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& snapshot)
+	{
+		if (!snapshot.running || snapshot.workspace != Workspace::Whiteboard || snapshot.whiteboardLoadPending || !snapshot.whiteboardStyle.hostGeneration) return;
+		{
+			std::scoped_lock lock(stateModeTransitionMutex);
+			if (stateModeWorkspace != Workspace::Whiteboard || whiteboardStyleToken == snapshot.whiteboardStyle) return;
+			if (snapshot.whiteboardStyle.hostGeneration < whiteboardStyleToken.hostGeneration ||
+				(snapshot.whiteboardStyle.hostGeneration == whiteboardStyleToken.hostGeneration && snapshot.whiteboardStyle.serial < whiteboardStyleToken.serial)) return;
+			whiteboardStyleToken = snapshot.whiteboardStyle;
+			whiteboardStyleBackground = snapshot.whiteboardTheme.backgroundRgb;
+			ProjectSharedStyles(stateMode, stateModeWorkspace);
+			BackgroundColorMode = IsComputerInteractionMode(stateMode.StateModeSelect) ||
+				stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? 0 :
+				(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+			PublishDraw3StateLocked();
+		}
+		// 主栏可能已静置；样式回执也要刷新色块和预览，窗口/UI请求留在模式锁外。
+		Inkeys::UI::Bar::RefreshToolState();
+	}
+}
+
 void ReconcileDraw3Presentation()
 {
 	(void)ReconcileDraw3PresentationState();
@@ -1299,7 +1367,7 @@ void ReconcileDraw3Presentation()
 StateModeClass GetStateModeSnapshot()
 {
 	std::scoped_lock lock(stateModeTransitionMutex);
-	return stateMode;
+	auto result = stateMode; ProjectSharedStyles(result, stateModeWorkspace); return result;
 }
 
 bool TryGetDesktopStateModeSnapshot(StateModeClass& snapshot)
@@ -1307,14 +1375,14 @@ bool TryGetDesktopStateModeSnapshot(StateModeClass& snapshot)
 	std::scoped_lock lock(stateModeTransitionMutex);
 	// 工作区身份与值同锁读取；不得把白板/PPT 工具写入无工作区字段的全局 memory。
 	if (stateModeWorkspace != Workspace::Desktop) return false;
-	snapshot = stateMode;
+	snapshot = stateMode; ProjectSharedStyles(snapshot, stateModeWorkspace);
 	return true;
 }
 
 StateModeVersionedSnapshot GetStateModeVersionedSnapshot()
 {
 	std::scoped_lock lock(stateModeTransitionMutex);
-	return { stateMode, stateModeTransitionRevision.load(std::memory_order_relaxed) };
+	auto result = stateMode; ProjectSharedStyles(result, stateModeWorkspace); return { result, stateModeTransitionRevision.load(std::memory_order_relaxed) };
 }
 
 bool IsLaserPenSelected() noexcept
@@ -1353,9 +1421,9 @@ CommittedWorkspaceStateSnapshot GetCommittedWorkspaceStateSnapshot()
 		scene.committed == WorkspaceScene::Presentation ? Workspace::Presentation : Workspace::Desktop;
 	// 不跨两个锁：工具锁下读取指定已提交工作区的现有记忆，同一渲染帧沿用这份场景身份。
 	std::scoped_lock lock(stateModeTransitionMutex);
-	if (stateModeWorkspace == committed) return { scene, stateMode };
+	if (stateModeWorkspace == committed) { auto result = stateMode; ProjectSharedStyles(result, committed); return { scene, result }; }
 	const auto& saved = workspaceStateModes[static_cast<std::size_t>(committed)];
-	return { scene, saved ? *saved : stateMode };
+	auto result = saved ? *saved : stateMode; ProjectSharedStyles(result, committed); return { scene, result };
 }
 
 StateModeClass GetCommittedStateModeSnapshot()
@@ -1610,6 +1678,7 @@ namespace
 		}
 		// 显示器和设备属于当前环境，不能随旧工具快照退回旧 DPI。
 		stateMode.penWidthContext = widthContext;
+		ProjectSharedStyles(stateMode, workspace);
 		ResolveWidthSlotsLocked();
 		stateModeWorkspace = workspace;
 		if (IsComputerInteractionMode(stateMode.StateModeSelect) && state == 1.1) state = 1;
@@ -1700,13 +1769,15 @@ namespace
         else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
         {
             if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
-                stateMode.Shape.Rectangle1.widthSelection = selection;
+                stateMode.Pen.Brush1.widthSelection = selection;
             else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
                 stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
-                stateMode.Shape.StraightLine1.widthSelection = selection;
+                stateMode.Pen.Brush1.widthSelection = selection;
             else return false;
         }
         else return false;
+        CaptureSharedStylesLocked();
+        ProjectSharedStyles(stateMode, stateModeWorkspace);
         ResolveWidthSlotsLocked();
         stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
         lock.unlock();
@@ -1779,8 +1850,7 @@ Inkeys::Business::PenWidth::Selection GetPenWidthSelection(const StateModeClass&
 {
     if (IsLaserToolActive(snapshot)) return snapshot.Pen.Laser.widthSelection;
     if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
-        return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
-            ? snapshot.Shape.Rectangle1.widthSelection : snapshot.Shape.StraightLine1.widthSelection;
+        return snapshot.Pen.Brush1.widthSelection;
     return snapshot.StateModeSelect == StateModeSelectEnum::IdtPen &&
         snapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
         ? snapshot.Pen.Highlighter1.widthSelection : snapshot.Pen.Brush1.widthSelection;
@@ -1829,15 +1899,18 @@ void RestorePenWidthSelections(Inkeys::Business::PenWidth::Selection brush,
         stateMode.Pen.Laser.widthSelection = laser;
         if (brushColor) stateMode.Pen.Brush1.color = *brushColor;
         if (highlighterColor) stateMode.Pen.Highlighter1.color = *highlighterColor;
+        CaptureSharedStylesLocked();
+        ProjectSharedStyles(stateMode, stateModeWorkspace);
         ResolveWidthSlotsLocked();
         stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
     }
     PublishDraw3State();
 }
 
-bool SetPenColor(COLORREF targetColor, bool setMemory)
+static bool SetPenColorImpl(COLORREF targetColor, bool setMemory, const std::uint64_t* expectedRevision)
 {
 	std::unique_lock lock(stateModeTransitionMutex);
+	if (expectedRevision && stateModeTransitionRevision.load(std::memory_order_relaxed) != *expectedRevision) return false;
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		const auto colorSlot = Inkeys::Business::ResolvePenColorStateSlot(
@@ -1856,20 +1929,31 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 	{
 		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
 			stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
-			stateMode.Shape.StraightLine1.color = targetColor;
+			stateMode.Pen.Brush1.color = targetColor;
 		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
-			stateMode.Shape.Rectangle1.color = targetColor;
+			stateMode.Pen.Brush1.color = targetColor;
 		else
 			return false;
 	}
 	else
 		return false;
 
+	CaptureSharedStylesLocked();
+	ProjectSharedStyles(stateMode, stateModeWorkspace);
 	BackgroundColorMode = computeContrast(targetColor, RGB(255, 255, 255)) >= 3 ? 0 : 1;
 	lock.unlock();
 	if (setMemory) SetMemory();
 	PublishDraw3State();
 	return true;
+}
+
+bool SetPenColor(COLORREF targetColor, bool setMemory)
+{
+	return SetPenColorImpl(targetColor, setMemory, nullptr);
+}
+bool SetPenColorIfRevision(COLORREF targetColor, std::uint64_t revision, bool setMemory)
+{
+	return SetPenColorImpl(targetColor, setMemory, &revision);
 }
 
 float GetPenWidth()
@@ -1888,9 +1972,7 @@ float GetPenWidth(const StateModeClass& snapshot) noexcept
 	}
 	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
-			? snapshot.Shape.Rectangle1.width
-			: snapshot.Shape.StraightLine1.width;
+		return snapshot.Pen.Brush1.width;
 	}
 	return snapshot.Pen.Brush1.width;
 }
@@ -1914,9 +1996,7 @@ COLORREF GetPenColor(const StateModeClass& snapshot) noexcept
 	}
 	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
-			? snapshot.Shape.Rectangle1.color
-			: snapshot.Shape.StraightLine1.color;
+		return snapshot.Pen.Brush1.color;
 	}
 	return snapshot.Pen.Brush1.color;
 }
@@ -2296,6 +2376,10 @@ struct Inkeys::Testing::WorkspaceSceneScope::Impl
 {
 	WorkspaceHandoff coordinator = ReadWorkspaceHandoff();
 	StateModeClass mode;
+	StateModeClass styles;
+	std::array<COLORREF,3> colors;
+	std::uint32_t background;
+	Inkeys::Drawing::Draw3::Bridge::WhiteboardStyleToken styleToken;
 	Workspace workspace;
 	std::array<std::optional<StateModeClass>, 3> memories;
 	std::uint64_t modeRevision;
@@ -2305,6 +2389,7 @@ struct Inkeys::Testing::WorkspaceSceneScope::Impl
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		mode = stateMode; workspace = stateModeWorkspace; memories = workspaceStateModes;
+		styles = sharedStyleState; colors = brushColors; background = whiteboardStyleBackground; styleToken = whiteboardStyleToken;
 		modeRevision = stateModeTransitionRevision.load(std::memory_order_acquire);
 		exitRevision = draw3ExitSelectionModeRevision.load(std::memory_order_acquire);
 		bridge = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
@@ -2324,6 +2409,7 @@ Inkeys::Testing::WorkspaceSceneScope::~WorkspaceSceneScope()
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
 		stateMode = impl_->mode; stateModeWorkspace = impl_->workspace; workspaceStateModes = impl_->memories;
+		sharedStyleState = impl_->styles; brushColors = impl_->colors; whiteboardStyleBackground = impl_->background; whiteboardStyleToken = impl_->styleToken;
 		stateModeTransitionRevision.store(impl_->modeRevision, std::memory_order_release);
 		draw3ExitSelectionModeRevision.store(impl_->exitRevision, std::memory_order_release);
 	}
@@ -2400,6 +2486,10 @@ int RunStateModeProductionTest() noexcept
 				a.Shape.ModeSelect == b.Shape.ModeSelect &&
 				a.Shape.StraightLine1.width == b.Shape.StraightLine1.width && a.Shape.StraightLine1.color == b.Shape.StraightLine1.color &&
 				a.Shape.Rectangle1.width == b.Shape.Rectangle1.width && a.Shape.Rectangle1.color == b.Shape.Rectangle1.color;
+		};
+		const auto sameTool = [](const StateModeClass& a, const StateModeClass& b) {
+			return a.StateModeSelect == b.StateModeSelect && a.Pen.ModeSelect == b.Pen.ModeSelect &&
+				a.Shape.ModeSelect == b.Shape.ModeSelect && a.laserActive == b.laserActive && a.lastAnnotationMode == b.lastAnnotationMode;
 		};
 		const auto sameProjection = [](const Bridge::ProductState& a, const Bridge::ProductState& b)
 		{
@@ -2650,9 +2740,22 @@ int RunStateModeProductionTest() noexcept
 			const auto after = GetStateModeSnapshot();
 			require(stateModeWorkspace == target && !ReadWorkspaceHandoff().pending &&
 				ReadWorkspaceHandoff().committed == target, "committed-and-real-tool-owner-match-after-safe-exit");
-			require(target == Workspace::Desktop ? sameState(after, desktopMemory) :
-				after.StateModeSelect == StateModeSelectEnum::IdtSelection,
-				"safe-exit-restores-memory-or-new-target-default-selection");
+			require((target == Workspace::Desktop ? sameTool(after, desktopMemory) :
+				after.StateModeSelect == StateModeSelectEnum::IdtSelection) &&
+				after.StateModeSelectTarget == after.StateModeSelect && after.StateModeSelectEcho == after.StateModeSelect,
+				"safe-exit-restores-tool-or-new-target-default-selection");
+			const auto sameStyleSlot = [](const auto& actual, const auto& expected)
+			{
+				return actual.width == expected.width && actual.color == expected.color &&
+					actual.widthSelection.source == expected.widthSelection.source &&
+					actual.widthSelection.preset == expected.widthSelection.preset &&
+					actual.widthSelection.explicitDip == expected.widthSelection.explicitDip;
+			};
+			// 安全退场恢复工具身份；全局荧光属性不能被旧桌面副本回滚，Brush仍用Primary颜色。
+			require(sameStyleSlot(after.Pen.Brush1, desktopMemory.Pen.Brush1) &&
+				sameStyleSlot(after.Pen.Highlighter1, whiteboardMemory.Pen.Highlighter1) &&
+				sameStyleSlot(after.Pen.Laser, whiteboardMemory.Pen.Laser),
+				"safe-exit-projects-current-shared-styles-with-primary-brush-color");
 			require(bridge.Snapshot().revision == bridgeBefore.revision && sameProjection(bridge.Snapshot(), bridgeBefore) &&
 				ProductRuntimeSnapshot().recovery == runtimeBefore.recovery &&
 				ProductRuntimeSnapshot().consumerFatal == runtimeBefore.consumerFatal &&
@@ -2715,6 +2818,39 @@ int RunStateModeProductionTest() noexcept
 			setProbePhase(WhiteboardPhase::Inactive);
 		}
 
+		stage = "global-styles-and-background-color-scopes";
+		{
+			Inkeys::Testing::WorkspaceSceneScope fixture(WorkspaceScene::Desktop);
+			ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+			require(SetPenWidth(7.375, false) && SetPenColor(RGB(19,29,39), false), "shared-brush-seed");
+			fixture.Set(WorkspaceScene::Presentation); ChangeStateModeToShape();
+			require(GetPenColor() == RGB(19,29,39) && GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 7.375, "ppt-shape-shares-primary-brush");
+			require(SetPenColor(RGB(44,55,66),false) && SetPenWidth(8.625,false), "shape-writes-shared-brush");
+			fixture.Set(WorkspaceScene::Desktop); ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+			require(GetPenColor() == RGB(44,55,66) && GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 8.625, "desktop-sees-ppt-shape-edit");
+			fixture.Set(WorkspaceScene::Whiteboard); ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+			HostRuntimeSnapshot theme; theme.running = true; theme.workspace = Workspace::Whiteboard;
+			theme.whiteboardTheme.backgroundRgb = 0; theme.whiteboardStyle = { 99, 1, 0, 0 }; AcceptWhiteboardStyle(theme);
+			require(GetPenColor() == RGB(255,255,255) && BackgroundColorMode == 1, "dark-board-initial-white-and-contrast");
+			require(SetPenColor(RGB(120,130,140),false), "dark-board-custom-color");
+			const auto darkRevision = StateModeTransitionRevision();
+			theme.whiteboardTheme.backgroundRgb = 0xffffff; theme.whiteboardStyle.backgroundRgb = 0xffffff; AcceptWhiteboardStyle(theme);
+			require(GetPenColor() == RGB(255,16,0) && BackgroundColorMode == 0 && !SetPenColorIfRevision(RGB(1,2,3),darkRevision,false), "light-board-default-contrast-and-stale-color-rejected");
+			require(SetPenColor(RGB(70,80,90),false) && SetPenWidth(9.125,false), "light-board-custom-style");
+			theme.whiteboardTheme.backgroundRgb = 0; theme.whiteboardStyle.backgroundRgb = 0; AcceptWhiteboardStyle(theme);
+			require(GetPenColor() == RGB(120,130,140), "dark-board-remembers-custom");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			require(SetPenColor(RGB(6,7,8),false) && SetPenWidth(25.25,false), "global-highlighter-seed");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+			require(SetPenColor(RGB(9,10,11),false) && SetPenWidth(5.75,false), "global-laser-seed");
+			fixture.Set(WorkspaceScene::Desktop);
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			require(GetPenColor() == RGB(6,7,8) && GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 25.25, "highlighter-global-without-merging");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+			require(GetPenColor() == RGB(9,10,11) && GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 5.75, "laser-global-without-merging");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+			require(GetPenColor() == RGB(44,55,66) && GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 9.125, "board-width-global-primary-color-isolated");
+		}
 		stage = "workspace-tool-isolation";
 		ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
 		require(SetPenWidth(7.0f, false) && SetPenColor(RGB(17, 31, 47), false), "desktop-tool-memory");
@@ -2730,7 +2866,7 @@ int RunStateModeProductionTest() noexcept
 		require(SetPenWidth(18.0f, false) && SetPenColor(RGB(61, 79, 97), false), "whiteboard-tool-memory");
 		const auto whiteboardTool = GetStateModeSnapshot();
 		require(SwitchWorkspaceStateMode(Workspace::Desktop) &&
-			sameState(desktopTool.state, GetStateModeSnapshot()), "whiteboard-restores-desktop-tool");
+			sameTool(desktopTool.state, GetStateModeSnapshot()), "whiteboard-restores-desktop-tool");
 		require(SwitchWorkspaceStateMode(Workspace::Presentation) &&
 			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection &&
 			bridge.Snapshot().workspace == Workspace::Desktop,
@@ -2741,20 +2877,20 @@ int RunStateModeProductionTest() noexcept
 		for (int index = 0; index < 16; ++index)
 		{
 			require(SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
-				sameState(whiteboardTool, GetStateModeSnapshot()), "rapid-reentry-restores-whiteboard");
+				sameTool(whiteboardTool, GetStateModeSnapshot()), "rapid-reentry-restores-whiteboard");
 			const auto revision = StateModeTransitionRevision();
 			require(!SwitchWorkspaceStateMode(Workspace::Whiteboard) &&
 				StateModeTransitionRevision() == revision, "same-workspace-does-not-resnapshot");
 			require(SwitchWorkspaceStateMode(Workspace::Presentation) &&
-				sameState(presentationTool, GetStateModeSnapshot()), "whiteboard-restores-ppt-tool");
+				sameTool(presentationTool, GetStateModeSnapshot()), "whiteboard-restores-ppt-tool");
 		}
 		require(SwitchWorkspaceStateMode(Workspace::Whiteboard), "whiteboard-before-background-ppt-end");
 		setProbePhase(WhiteboardPhase::Active);
 		SyncPrimaryWorkspaceStateMode();
-		require(sameState(whiteboardTool, GetStateModeSnapshot()), "background-ppt-end-preserves-whiteboard-tool");
+		require(sameTool(whiteboardTool, GetStateModeSnapshot()), "background-ppt-end-preserves-whiteboard-tool");
 		setProbePhase(WhiteboardPhase::Exiting);
 		require(SwitchWorkspaceStateMode(Workspace::Desktop) &&
-			sameState(desktopTool.state, GetStateModeSnapshot()), "ppt-ended-whiteboard-returns-desktop-tool");
+			sameTool(desktopTool.state, GetStateModeSnapshot()), "ppt-ended-whiteboard-returns-desktop-tool");
 		setProbePhase(WhiteboardPhase::Inactive);
 		const auto cancelledEntry = GetStateModeVersionedSnapshot();
 		RequestWhiteboardActive(true);
@@ -2860,6 +2996,8 @@ int RunStateModeProductionTest() noexcept
 				StateModeClass savedState = GetStateModeSnapshot();
 				Workspace savedWorkspace = stateModeWorkspace;
 				decltype(workspaceStateModes) savedWorkspaces = workspaceStateModes;
+				StateModeClass savedStyles = sharedStyleState;
+				decltype(brushColors) savedColors = brushColors;
 				~MemoryScope()
 				{
 					globalPath = savedPath;
@@ -2868,6 +3006,7 @@ int RunStateModeProductionTest() noexcept
 						stateMode = savedState;
 						stateModeWorkspace = savedWorkspace;
 						workspaceStateModes = savedWorkspaces;
+						sharedStyleState = savedStyles; brushColors = savedColors;
 					}
 					if (!directory.empty())
 					{
@@ -3012,7 +3151,7 @@ int RunStateModeProductionTest() noexcept
 		const auto rectangle = GetStateModeVersionedSnapshot();
 		require(SetPenWidthIfRevision(13.0f, rectangle.revision, false), "valid-shape-width-accepted");
 		require(GetStateModeSnapshot().Shape.Rectangle1.width == 13.0f &&
-			GetStateModeSnapshot().Shape.StraightLine1.width == rectangle.state.Shape.StraightLine1.width,
+			GetStateModeSnapshot().Shape.StraightLine1.width == 13.0f && GetStateModeSnapshot().Pen.Brush1.width == 13.0f,
 			"shape-width-only-target-slot");
 		checkProjection(Bridge::Tool::OutlineRectangle);
 		const auto shapeRevision = StateModeTransitionRevision();
@@ -3629,6 +3768,7 @@ void StateMonitoring()
 						Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
 				}
 			}
+			AcceptWhiteboardStyle(snapshot);
 			Inkeys::UI::Whiteboard::PublishPageSnapshot(
 				static_cast<int>(snapshot.currentPageIndex + 1),
 				static_cast<int>(snapshot.pageCount), pageSwitching || snapshot.whiteboardLoadPending,
@@ -3785,6 +3925,7 @@ void StateMonitoring()
 
 		if (policy.whiteboard)
 		{
+			AcceptWhiteboardStyle(snapshot);
 			Inkeys::UI::Whiteboard::PublishPageSnapshot(static_cast<int>(snapshot.currentPageIndex + 1),
 				static_cast<int>(snapshot.pageCount), true, snapshot.whiteboardTheme.backgroundRgb,
 				static_cast<int>(snapshot.whiteboardTheme.pattern), snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);

@@ -23,6 +23,7 @@ import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys::UI::PageControl
 {
+	void RegisterNativeTouchInput(std::size_t index,HWND hwnd);
 	enum class Surface : std::uint8_t
 	{
 		BottomLeft,

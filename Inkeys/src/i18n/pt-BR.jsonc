@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Ponteiro",
-        "Description": "As opções do mouse afetam apenas as canetas suave e rígida. O marca-texto sempre mostra a espessura, e as formas usam o ponteiro do sistema. O ponteiro padrão da caneta é circular. Canetas na tela não realçam a borda do ponteiro; mesas digitalizadoras e canetas não identificadas realçam.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Caneta",
-        "DefaultStyle": "Ponteiro padrão",
-        "DrawingStyle": "Ponteiro em forma de caneta"
+        "EntryDescription": "Define o ponteiro exibido ao desenhar para cada dispositivo de entrada e mostra uma prévia.",
+        "Devices": "Por dispositivo",
+        "PenDevices": "Detecção de mesa digitalizadora",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse e touchpad."
+        },
+        "Touch":
+        {
+          "N": "Toque",
+          "E": "Ao encostar os dedos, cada dedo exibe um ponteiro que desaparece quando é levantado."
+        },
+        "ScreenPen":
+        {
+          "N": "Caneta na tela",
+          "E": "Caneta usada para escrever diretamente na tela."
+        },
+        "Tablet":
+        {
+          "N": "Mesa digitalizadora",
+          "E": "Mesas digitalizadoras externas e canetas cuja origem não pode ser identificada."
+        },
+        "Style":
+        {
+          "None": "Sem ponteiro",
+          "Arrow": "Mouse",
+          "Pen": "Caneta",
+          "HighlightPen": "Caneta (destacada)",
+          "Dot": "Ponto pequeno",
+          "HighlightDot": "Ponto pequeno (destacado)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Detectar mesas digitalizadoras injetadas pelo driver",
+          "E": "Mesas digitalizadoras sem o Windows Ink costumam chegar como “mouse injetado pelo driver”. Quando ativada, esse mouse usa as configurações de ponteiro da mesa; softwares que também injetam mouse, como a Área de Trabalho Remota, podem ser detectados por engano.",
+          "Unavailable": "Este sistema não consegue distinguir a origem da entrada; a opção não está disponível."
+        },
+        "Note": "Com caneta na tela, mesa digitalizadora e toque, “Mouse” é uma seta desenhada pelo próprio aplicativo; os ponteiros do marca-texto e do laser, as ferramentas de formas e o ponteiro próprio da borracha não são afetados por estas opções."
       },
       "Effect":
       {

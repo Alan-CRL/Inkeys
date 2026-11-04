@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Kursor",
-        "Description": "Opsi mouse hanya memengaruhi pena keras dan lunak. Penyorot selalu menampilkan pratinjau ketebalan; bentuk memakai kursor sistem. Kursor pena bawaan berbentuk lingkaran. Sorotan tepi kursor nonaktif untuk pena layar, dan aktif untuk tablet grafis serta pena yang tidak dikenali.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Pena",
-        "DefaultStyle": "Kursor bawaan",
-        "DrawingStyle": "Kursor berbentuk pena"
+        "EntryDescription": "Atur kursor yang ditampilkan saat menggambar untuk setiap perangkat input, lengkap dengan pratinjau.",
+        "Devices": "Per perangkat",
+        "PenDevices": "Deteksi tablet grafis",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse dan touchpad."
+        },
+        "Touch":
+        {
+          "N": "Sentuh",
+          "E": "Saat jari menyentuh layar, setiap jari menampilkan satu kursor yang hilang setelah jari diangkat."
+        },
+        "ScreenPen":
+        {
+          "N": "Pena layar",
+          "E": "Pena yang menulis langsung di layar."
+        },
+        "Tablet":
+        {
+          "N": "Tablet grafis",
+          "E": "Tablet grafis eksternal dan pena yang sumbernya tidak dapat dikenali."
+        },
+        "Style":
+        {
+          "None": "Tanpa kursor",
+          "Arrow": "Mouse",
+          "Pen": "Pena",
+          "HighlightPen": "Pena (disorot)",
+          "Dot": "Titik kecil",
+          "HighlightDot": "Titik kecil (disorot)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Kenali tablet grafis yang disuntikkan driver",
+          "E": "Tablet grafis tanpa Windows Ink biasanya masuk sebagai “mouse yang disuntikkan driver”. Jika diaktifkan, mouse tersebut memakai pengaturan kursor tablet; perangkat lunak lain yang juga menyuntikkan mouse, seperti desktop jarak jauh, dapat terdeteksi secara keliru.",
+          "Unavailable": "Sistem ini tidak dapat membedakan sumber input, sehingga opsi ini tidak tersedia."
+        },
+        "Note": "Pada pena layar, tablet grafis, dan sentuhan, “Mouse” berupa panah yang digambar sendiri oleh aplikasi; kursor penyorot dan penunjuk laser, alat bentuk, serta kursor khusus penghapus tidak terpengaruh oleh opsi ini."
       },
       "Effect":
       {

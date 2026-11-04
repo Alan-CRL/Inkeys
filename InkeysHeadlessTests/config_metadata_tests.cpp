@@ -313,7 +313,7 @@ int RunConfigMetadataTests()
 	for (size_t index = 0; index < typePreferences.size(); ++index)
 	{
 		const std::string path = std::string("Drawing.Cursor.") + typeNames[index];
-		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(2), Json::Value(true),
+		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(4), Json::Value(true),
 			Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)), Json::Value(Json::arrayValue) })
 		{
 			Json::Value cursorDocument(Json::objectValue);
@@ -356,6 +356,57 @@ int RunConfigMetadataTests()
 		&& ReadJson(file)["Drawing"]["Cursor"]["PenStyle"].asInt() == 0,
 		"frozen cursor snapshot keeps both captured types independently");
 	check(cursorConfig.GetUploadInfo() == cursorUpload, "cursor type preferences are not uploaded");
+
+	// 按设备光标：四个设备键独立校验；-1/非法/不属于该设备（非触摸的“无光标”）一律为 -1，由读取方回落旧配置或默认值。
+	{
+		struct DeviceKey { const char* name; IdtAtomic<int>* value; int firstValid; };
+		Inkeys::Config deviceConfig;
+		auto& deviceCursor = deviceConfig.Drawing.Cursor;
+		const DeviceKey deviceKeys[] = {
+			{ "Mouse", &deviceCursor.Mouse, 1 }, { "Touch", &deviceCursor.Touch, 0 },
+			{ "ScreenPen", &deviceCursor.ScreenPen, 1 }, { "Tablet", &deviceCursor.Tablet, 1 } };
+		check(!deviceCursor.InjectedMouseAsTablet.load(), "injected tablet detection defaults off");
+		for (const auto& key : deviceKeys)
+		{
+			const std::string devicePath = std::string("Drawing.Cursor.") + key.name;
+			check(key.value->load() == -1, "per-device cursor keys default to inherit");
+			for (int valid = key.firstValid; valid <= 5; ++valid)
+			{
+				Json::Value validDocument(Json::objectValue);
+				validDocument["Drawing"]["Cursor"][key.name] = valid;
+				writeModeDocument(validDocument);
+				*key.value = 99;
+				check(deviceConfig.ReadMini({ devicePath }) && key.value->load() == valid,
+					"every legal per-device cursor value is accepted");
+			}
+			std::vector<Json::Value> invalidValues{ Json::Value(6), Json::Value(-2), Json::Value(true),
+				Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)), Json::Value(Json::arrayValue) };
+			if (key.firstValid == 1) invalidValues.push_back(Json::Value(0));
+			for (const Json::Value& invalid : invalidValues)
+			{
+				Json::Value invalidDocument(Json::objectValue);
+				invalidDocument["Drawing"]["Cursor"][key.name] = invalid;
+				writeModeDocument(invalidDocument);
+				*key.value = 2;
+				check(deviceConfig.ReadMini({ devicePath }) && key.value->load() == -1,
+					"illegal per-device cursor values fall back to inherit without coercion");
+			}
+		}
+		deviceCursor.Mouse = 5;
+		deviceCursor.Touch = 3;
+		deviceCursor.ScreenPen = 4;
+		deviceCursor.Tablet = 2;
+		deviceCursor.InjectedMouseAsTablet = true;
+		check(deviceConfig.Write(), "write the full per-device cursor selection");
+		Inkeys::Config deviceRestarted;
+		auto& restoredCursor = deviceRestarted.Drawing.Cursor;
+		check(deviceRestarted.ReadAll() && restoredCursor.Mouse.load() == 5 &&
+			restoredCursor.Touch.load() == 3 && restoredCursor.ScreenPen.load() == 4 &&
+			restoredCursor.Tablet.load() == 2 && restoredCursor.InjectedMouseAsTablet.load(),
+			"restart restores every per-device cursor selection");
+		check(deviceConfig.GetUploadInfo() == cursorUpload, "per-device cursor preferences are not uploaded");
+	}
+
 
 	Json::Value modeDocument(Json::objectValue);
 	modeDocument["UI"]["Bar"]["Zoom2"] = 1.25;

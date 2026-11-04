@@ -8,6 +8,7 @@
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
 #include "imgui/imgui_internal.h"
+#include "../../Drawing/Draw3/Draw3.CursorSettings.h"
 
 import Inkeys.Conv.Text;
 
@@ -586,6 +587,151 @@ namespace Inkeys::UI::Setting::Design
 			IA(eraser.PalmEraser.EntryDescription).c_str(), "\ue7c9"))
 			current = DrawingSubpage::PalmEraser;
 		return current;
+	}
+
+	namespace
+	{
+		// 与 Draw3 实际光标共用尺寸/描边常量；预览是近似，不替代真实绘制验收。
+		void DrawCursorPreview(const LayoutRect& rect, Inkeys::Drawing::Draw3::CursorStyle style)
+		{
+			namespace Cursor = Inkeys::Drawing::Draw3;
+			ImDrawList* draw = ImGui::GetWindowDrawList();
+			const ImVec2 min(rect.left, rect.top), max(rect.right, rect.bottom);
+			const float corner = Pixels(4.0F);
+			draw->AddRectFilled(min, max, IM_COL32(52, 54, 60, 255), corner);
+			draw->AddRect(min, max, IM_COL32(255, 255, 255, 36), corner);
+			const ImVec2 center((min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F);
+			const ImU32 ink = IM_COL32(255, 15, 0, 255);
+			const bool highlight = Cursor::IsHighlightedCursorStyle(style);
+			const float unit = Pixels(1.0F);
+			const float edgeWidth = (std::max)(1.0F, (highlight ? Cursor::kCursorHighlightEdgeDip : Cursor::kCursorPlainEdgeDip) * unit);
+			const ImU32 edge = highlight ? IM_COL32(245, 245, 245, 255) : IM_COL32(184, 184, 184, 255);
+			switch (style)
+			{
+			case Cursor::CursorStyle::Arrow:
+			{
+				// 与 GPU 箭头同一组 12x19 DIP 顶点；凹多边形拆成三角扇 + 尾部四边形填充，再描黑边。
+				const ImVec2 origin(center.x - Cursor::kCursorArrowWidthDip * 0.5F * unit,
+					center.y - Cursor::kCursorArrowHeightDip * 0.5F * unit);
+				constexpr float arrow[7][2]{ {0.0F, 0.0F}, {0.0F, 16.5F}, {3.8F, 12.8F}, {6.6F, 19.0F},
+					{9.1F, 17.9F}, {6.4F, 11.9F}, {11.4F, 11.9F} };
+				ImVec2 points[7];
+				for (int index = 0; index < 7; ++index)
+					points[index] = { origin.x + arrow[index][0] * unit, origin.y + arrow[index][1] * unit };
+				const ImU32 white = IM_COL32(255, 255, 255, 255);
+				const ImVec2 head1[3]{ points[0], points[1], points[2] };
+				const ImVec2 head2[3]{ points[0], points[2], points[5] };
+				const ImVec2 head3[3]{ points[0], points[5], points[6] };
+				const ImVec2 tail[4]{ points[2], points[3], points[4], points[5] };
+				draw->AddConvexPolyFilled(head1, 3, white);
+				draw->AddConvexPolyFilled(head2, 3, white);
+				draw->AddConvexPolyFilled(head3, 3, white);
+				draw->AddConvexPolyFilled(tail, 4, white);
+				draw->AddPolyline(points, 7, IM_COL32(0, 0, 0, 255), ImDrawFlags_Closed, (std::max)(1.0F, unit));
+				break;
+			}
+			case Cursor::CursorStyle::None:
+			{
+				const float radius = 7.0F * unit;
+				const ImU32 dim = IM_COL32(200, 200, 200, 120);
+				draw->AddCircle(center, radius, dim, 0, (std::max)(1.0F, unit));
+				draw->AddLine({ center.x - radius * 0.7F, center.y + radius * 0.7F },
+					{ center.x + radius * 0.7F, center.y - radius * 0.7F }, dim, (std::max)(1.0F, unit));
+				break;
+			}
+			case Cursor::CursorStyle::Dot:
+			case Cursor::CursorStyle::HighlightDot:
+			{
+				// 小圆点沿用实际光标的圆形预览（随笔宽，这里取常见笔宽）。
+				const float radius = 5.0F * unit;
+				draw->AddCircleFilled(center, radius, IM_COL32(255, 15, 0, 64));
+				draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				break;
+			}
+			case Cursor::CursorStyle::Pen:
+			case Cursor::CursorStyle::HighlightPen:
+			{
+				// 左上尖端为热点，笔身向右下；热点放在预览块左上区域以完整容纳 24 DIP 笔形。
+				const ImVec2 tip(center.x - 12.0F * unit, center.y - 12.0F * unit);
+				constexpr float axis = 0.70710678F;
+				const auto at = [&](float along, float across)
+				{
+					return ImVec2(tip.x + (along * axis + across * axis) * unit, tip.y + (along * axis - across * axis) * unit);
+				};
+				const ImVec2 points[5]{ at(0, 0), at(6, 3.4F), at(30, 3.4F), at(30, -3.4F), at(6, -3.4F) };
+				draw->AddConvexPolyFilled(points, 5, ink);
+				draw->AddPolyline(points, 5, edge, ImDrawFlags_Closed, edgeWidth);
+				break;
+			}
+			}
+		}
+	}
+
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft)
+	{
+		namespace Cursor = Inkeys::Drawing::Draw3;
+		using Cursor::CursorDevice;
+		using Cursor::CursorStyle;
+		CursorPageEvents events;
+		const auto& cursor = I18nKey.SettingsUI.Draw.Cursor;
+		events.back = IconButton("##cursor-back", "\ue72b");
+		PageHeader(IA(cursor.N).c_str());
+		PageContentStart();
+
+		const std::string styleNames[6]{ IA(cursor.Style.None), IA(cursor.Style.Arrow), IA(cursor.Style.Pen),
+			IA(cursor.Style.HighlightPen), IA(cursor.Style.Dot), IA(cursor.Style.HighlightDot) };
+		// 下拉项顺序即枚举顺序；触摸从“无光标”开始，其余设备从“鼠标”开始。
+		const auto itemsFor = [&](CursorDevice device)
+		{
+			std::vector<std::string> items;
+			for (int value = device == CursorDevice::Touch ? 0 : 1; value <= 5; ++value) items.push_back(styleNames[value]);
+			return items;
+		};
+		const auto row = [&](const char* id, const char* title, const char* description, const char* glyph,
+			CursorDevice device, int& index)
+		{
+			index = std::clamp(index, 0, Cursor::CursorStyleItemCount(device) - 1);
+			return ComboPreviewRow(id, title, description, glyph, index, itemsFor(device),
+				[&](const LayoutRect& area) { DrawCursorPreview(area, Cursor::CursorStyleFromItemIndex(device, index)); });
+		};
+
+		SectionHeader(IA(cursor.Devices).c_str());
+		events.mouse = row("##cursor-mouse", IA(cursor.Mouse.N).c_str(), IA(cursor.Mouse.E).c_str(), "\ue962",
+			CursorDevice::Mouse, draft.mouse);
+		events.touch = row("##cursor-touch", IA(cursor.Touch.N).c_str(), IA(cursor.Touch.E).c_str(), "\ue7c9",
+			CursorDevice::Touch, draft.touch);
+		events.screenPen = row("##cursor-screen-pen", IA(cursor.ScreenPen.N).c_str(), IA(cursor.ScreenPen.E).c_str(), "\uedc6",
+			CursorDevice::ScreenPen, draft.screenPen);
+		events.tablet = row("##cursor-tablet", IA(cursor.Tablet.N).c_str(), IA(cursor.Tablet.E).c_str(), "\ue70f",
+			CursorDevice::Tablet, draft.tablet);
+
+		SectionHeader(IA(cursor.PenDevices).c_str());
+		ImFluent::BeginDisabled(!draft.injectedAvailable);
+		events.injectedMouse = ToggleRow("##cursor-injected-mouse", IA(cursor.InjectedMouse.N).c_str(),
+			IA(cursor.InjectedMouse.E).c_str(), "\ue946", draft.injectedMouse,
+			draft.injectedAvailable ? nullptr : IA(cursor.InjectedMouse.Unavailable).c_str());
+		ImFluent::EndDisabled();
+		{
+			// 说明以分号分成两行：前半为标题行，后半为说明行；无分号时整句作标题。
+			const std::string note = IA(cursor.Note);
+			size_t split = std::string::npos, skip = 1;
+			for (const char* separator : { "ï¼", ";" })
+			{
+				const size_t found = note.find(separator);
+				if (found != std::string::npos && (split == std::string::npos || found < split))
+				{ split = found; skip = std::strlen(separator); }
+			}
+			const auto trim = [](std::string text)
+			{
+				const size_t first = text.find_first_not_of(" 	");
+				const size_t last = text.find_last_not_of(" 	");
+				return first == std::string::npos ? std::string() : text.substr(first, last - first + 1);
+			};
+			const std::string title = trim(split == std::string::npos ? note : note.substr(0, split));
+			const std::string detail = split == std::string::npos ? std::string() : trim(note.substr(split + skip));
+			Notice("##cursor-note", title.c_str(), detail.c_str(), ImFluentInfoSeverity_Informational);
+		}
+		return events;
 	}
 
 	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft)

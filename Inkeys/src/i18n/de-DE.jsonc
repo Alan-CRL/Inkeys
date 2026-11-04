@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Zeiger",
-        "Description": "Die Mausoption gilt nur für weiche und harte Stifte. Textmarker zeigen immer die Stärke an; Formen nutzen den Systemzeiger. Der Standard-Stiftzeiger ist kreisförmig. Die Hervorhebung des Zeigerrands ist bei Bildschirmstiften aus und bei Grafiktabletts sowie nicht erkannten Stiften ein.",
-        "MouseStyle": "Maus",
-        "PenStyle": "Stift",
-        "DefaultStyle": "Standardzeiger",
-        "DrawingStyle": "Stiftförmiger Zeiger"
+        "EntryDescription": "Legt je Eingabegerät fest, welcher Zeiger beim Zeichnen angezeigt wird, und zeigt eine Vorschau.",
+        "Devices": "Nach Gerät",
+        "PenDevices": "Grafiktablett-Erkennung",
+        "Mouse":
+        {
+          "N": "Maus",
+          "E": "Maus und Touchpad."
+        },
+        "Touch":
+        {
+          "N": "Touch",
+          "E": "Beim Aufsetzen der Finger erscheint für jeden Finger ein eigener Zeiger, der nach dem Abheben verschwindet."
+        },
+        "ScreenPen":
+        {
+          "N": "Bildschirmstift",
+          "E": "Stifte, mit denen direkt auf dem Bildschirm geschrieben wird."
+        },
+        "Tablet":
+        {
+          "N": "Grafiktablett",
+          "E": "Externe Grafiktabletts sowie Stifte, deren Herkunft nicht erkannt wird."
+        },
+        "Style":
+        {
+          "None": "Kein Zeiger",
+          "Arrow": "Maus",
+          "Pen": "Stift",
+          "HighlightPen": "Stift (hervorgehoben)",
+          "Dot": "Kleiner Punkt",
+          "HighlightDot": "Kleiner Punkt (hervorgehoben)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Vom Treiber eingespeiste Grafiktabletts erkennen",
+          "E": "Grafiktabletts ohne Windows Ink senden ihre Eingaben meist als vom Treiber eingespeiste Maus. Bei aktivierter Option nutzt diese Maus die Zeigereinstellungen des Grafiktabletts; Software wie Remotedesktop, die ebenfalls Mauseingaben einspeist, kann fälschlich erkannt werden.",
+          "Unavailable": "Dieses System kann die Eingabequelle nicht unterscheiden; die Option ist nicht verfügbar."
+        },
+        "Note": "Bei Bildschirmstift, Grafiktablett und Touch zeichnet die App „Maus“ als eigenen Pfeil; die Zeiger von Textmarker und Laserpointer, Formwerkzeuge und der spezielle Radierer-Zeiger bleiben von diesen Optionen unberührt."
       },
       "Effect":
       {

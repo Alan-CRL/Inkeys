@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "İmleç",
-        "Description": "Fare seçeneği yalnızca yumuşak ve sert uçlu kalemleri etkiler. Vurgulayıcı her zaman kalınlığı önizler; şekiller sistem imlecini kullanır. Varsayılan kalem imleci daireseldir. İmleç kenar vurgusu ekran kalemlerinde kapalı, grafik tabletlerde ve tanınmayan kalemlerde açıktır.",
-        "MouseStyle": "Fare",
-        "PenStyle": "Kalem",
-        "DefaultStyle": "Varsayılan imleç",
-        "DrawingStyle": "Kalem biçimli imleç"
+        "EntryDescription": "Çizim sırasında gösterilecek imleci her giriş aygıtı için ayrı ayrı belirler ve önizleme sunar.",
+        "Devices": "Aygıta göre",
+        "PenDevices": "Grafik tablet algılama",
+        "Mouse":
+        {
+          "N": "Fare",
+          "E": "Fare ve dokunmatik yüzey."
+        },
+        "Touch":
+        {
+          "N": "Dokunma",
+          "E": "Parmaklar değdiğinde her parmak için bir imleç gösterilir; kaldırılınca kaybolur."
+        },
+        "ScreenPen":
+        {
+          "N": "Ekran kalemi",
+          "E": "Doğrudan ekrana yazan kalem."
+        },
+        "Tablet":
+        {
+          "N": "Grafik tablet",
+          "E": "Harici grafik tabletler ve kaynağı tanınamayan kalemler."
+        },
+        "Style":
+        {
+          "None": "İmleç yok",
+          "Arrow": "Fare",
+          "Pen": "Kalem",
+          "HighlightPen": "Kalem (vurgulu)",
+          "Dot": "Küçük nokta",
+          "HighlightDot": "Küçük nokta (vurgulu)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Sürücünün enjekte ettiği grafik tabletleri algıla",
+          "E": "Windows Ink kullanmayan grafik tabletler genellikle “sürücünün enjekte ettiği fare” olarak gelir. Açıldığında bu fare, tabletin imleç ayarlarını kullanır; Uzak Masaüstü gibi fare enjekte eden diğer yazılımlar yanlışlıkla algılanabilir.",
+          "Unavailable": "Bu sistem giriş kaynağını ayırt edemediği için seçenek kullanılamıyor."
+        },
+        "Note": "Ekran kalemi, grafik tablet ve dokunmada “Fare”, uygulamanın kendisinin çizdiği bir oktur; vurgulayıcı ve lazer işaretçi imleçleri, şekil araçları ve silgiye özel imleç bu seçeneklerden etkilenmez."
       },
       "Effect":
       {

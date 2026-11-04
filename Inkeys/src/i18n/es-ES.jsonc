@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Cursor",
-        "Description": "La opción del ratón solo afecta a los lápices suaves y duros. Los resaltadores siempre muestran el grosor; las formas usan el cursor del sistema. El cursor del lápiz es circular por defecto. El borde del cursor no se resalta con lápices de pantalla, pero sí con tabletas gráficas y lápices no reconocidos.",
-        "MouseStyle": "Ratón",
-        "PenStyle": "Lápiz",
-        "DefaultStyle": "Cursor predeterminado",
-        "DrawingStyle": "Cursor con forma de lápiz"
+        "EntryDescription": "Define el cursor que se muestra al dibujar con cada dispositivo de entrada y ofrece una vista previa.",
+        "Devices": "Por dispositivo",
+        "PenDevices": "Detección de tableta gráfica",
+        "Mouse":
+        {
+          "N": "Ratón",
+          "E": "Ratón y panel táctil."
+        },
+        "Touch":
+        {
+          "N": "Táctil",
+          "E": "Al apoyar los dedos se muestra un cursor por cada dedo; desaparece al levantarlos."
+        },
+        "ScreenPen":
+        {
+          "N": "Lápiz de pantalla",
+          "E": "Lápiz con el que se escribe directamente sobre la pantalla."
+        },
+        "Tablet":
+        {
+          "N": "Tableta gráfica",
+          "E": "Tabletas gráficas externas y lápices cuyo origen no se puede identificar."
+        },
+        "Style":
+        {
+          "None": "Sin cursor",
+          "Arrow": "Ratón",
+          "Pen": "Lápiz",
+          "HighlightPen": "Lápiz (resaltado)",
+          "Dot": "Punto pequeño",
+          "HighlightDot": "Punto pequeño (resaltado)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Detectar tabletas gráficas inyectadas por el controlador",
+          "E": "Las tabletas gráficas sin Windows Ink suelen llegar como un «ratón inyectado por el controlador». Si se activa, ese ratón usa la configuración de cursor de la tableta; el software que también inyecta ratón, como el escritorio remoto, puede detectarse por error.",
+          "Unavailable": "Este sistema no puede distinguir el origen de la entrada; la opción no está disponible."
+        },
+        "Note": "Con lápiz de pantalla, tableta gráfica y táctil, «Ratón» es una flecha que dibuja la propia aplicación; los cursores del resaltador y del puntero láser, las herramientas de formas y el cursor propio del borrador no cambian con estas opciones."
       },
       "Effect":
       {

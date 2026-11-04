@@ -18,7 +18,7 @@
 
 业务/配置/UI是真正Windows DIP。`systemScale=effectiveDpi/96`，有效DPI[1,1536]，非法回退96。普通硬软笔1/3/6DIP，荧光16/24/36DIP，默认Medium。大屏paintDevice0按全幅旋转对称`min(max(W,H)/1920,min(W,H)/1080)`乘参考笔2/4/6px、荧光16/24/36px，再除systemScale得到DIP。其它模式普通设备；不新增识别或EDID宽度单位。Laser3/5/7DIP默认5独立。
 
-硬软共享Brush槽；形状当前独立StraightLine/Rectangle槽，不能凭历史“跟随画笔”注释新增跟随关系。形状细/中/粗的点击、读数、预览共用Brush的同代Context与1/3/6DIP（大屏参考2/4/6px）策略；数值匹配高亮不意味着改为共享宽度记忆。各槽Selection是用户真值，resolved float缓存不能取代身份。Preset换场景重解析，ExplicitDip保留。Context、Selection、width必须在同一状态锁下快照；语义上下文变化推进revision，拒绝过期手势，等价刷新不重设宽度/写盘。
+2026-11-02 用户批准的共享样式合同（任务 shape-style-tablet-bar）替代旧独立形状槽：硬笔/软笔/实线/虚线/矩形完全共用Brush宽色。Brush颜色分Primary（桌面+PPT）、浅白板（首次现有红色）、深白板（首次白色）三份，按当前实际页主题选色并保留各类用户改色；Highlighter/Laser各自全局一份颜色。三组各自全局一份Selection宽度，工作区只恢复工具身份，不得从旧快照反写宽色。形状细/中/粗的点击、读数、预览继续共用Brush同代Context与1/3/6DIP（大屏参考2/4/6px）策略。各槽Selection是用户真值，resolved float缓存不能取代身份。Preset换场景重解析，ExplicitDip保留。Context、Selection、width必须在同一状态锁下快照；语义上下文变化推进revision，拒绝过期手势，等价刷新不重设宽度/写盘。
 
 `idealCanvasWidthPx=resolvedWidthDip*systemScale`。Draw3原本支持连续float，`appliedCanvasWidthPx=idealCanvasWidthPx`；普通笔/荧光/形状/Laser只在`CanvasDiameterForTool -> CanvasWidthPx`转一次。Down捕获style/context，活动笔迹不被下一代状态改变。整数兼容器独立为`max(1,floor(px+0.5))`；不得先取整DIP或半径。DIP上限65536、canvas上限1048576，输入保护在转换前；不整数化每点压力、预测、模型半径或GPU几何。
 
@@ -26,7 +26,7 @@ Bar在96DPI D2D物理画布中使用相同目标metrics；布局zoom只能调整
 
 当前发布隐藏/不支持启动记忆与启动预设，启动只建立共享Medium；旧Preset flags/default、PenWidth.Startup以及memory值/颜色均不得应用。初始化只一次，后续显示/工具/PPT变化保留用户会话值。GetMemory兼容实现不接生产启动；临时提交安全保存身份，不构成本版恢复能力。codec仍保护Legacy/未来schema：旧Brush/Highlighter px无源DPI时估计除一次，旧Laser DIP不除，版本化DIP不再次迁移；仅为兼容数据安全，不改变本版Medium启动。
 
-全局 memory 没有工作区字段；`SetMemory()` 必须经 `TryGetDesktopStateModeSnapshot()` 在同一状态锁内校验 Desktop 身份并取得值，非 Desktop 跳过写盘。颜色、宽度和 FineDial 共用这一保存边界；不能分别检查工作区和读取快照。
+全局 memory 没有工作区字段；共享样式保存快照必须同状态锁投影Primary Brush色和三组最新全局Selection及已有编码的全局颜色，不能把白板Brush色写入Primary，也不能让旧Desktop宽度覆盖白板/PPT最新全局值。不得分开读取来源、工作区与样式后拼接跨代状态。沿用现有编码字段与启动恢复停用；不为会话共享添加白板/Laser颜色schema。具体生产保存入口与运行证据见本任务最终验证记录。
 
 memory沿用bounded parse和现成atomic writer，保存失败保留原件，不先截断；未知futureschema原样保留，AutoClean也不能丢弃或降级覆盖。坏字段各槽回退，不吞掉无关配置。
 
@@ -52,7 +52,7 @@ Slider连续double，基础Brush范围1/systemScale～30DIP、荧光min(16,1/sys
 
 ## 6. Tests Required
 
-生产Bar新增手动非预设→提交匹配高亮且保持ExplicitDip、严格double容差/同文字不相等/非法输入、形状直线矩形各档与Brush同策略且独立槽、Explicit换屏不改值；真实policy矩阵普通设备100/125/150/200/275%、大屏1080/1440/2160p及荧光；横竖/非16:9/异常数据/奇数与半整数；真实codec的旧px/LaserDIP/幂等/portable/failedsave/futureAutoClean；生产启动残留旧/new Startup与memory仍Medium、后续初始化保留手动值；真实Staterevision、BarFineDial不改值/取消/身份/预览zoom分离/活动候选到core与outer.val同帧；真实Draw3浮点转换与捕获样式锁定。完整Solution Debug|ARM64、headless --no-window、早退生产probes和i18n check；有真实可见HWND的hidden测试未经GUI授权不运行。
+生产Bar新增手动非预设→提交匹配高亮且保持ExplicitDip、严格double容差/同文字不相等/非法输入、形状直线矩形各档与Brush共享Selection/颜色，三组宽度跨场景不回滚且组间独立、Brush三范围颜色默认/往返记忆、荧光/Laser颜色跨场景共享、主题/页切换后首笔正确、Explicit换屏不改值；真实policy矩阵普通设备100/125/150/200/275%、大屏1080/1440/2160p及荧光；横竖/非16:9/异常数据/奇数与半整数；真实codec的旧px/LaserDIP/幂等/portable/failedsave/futureAutoClean；生产启动残留旧/new Startup与memory仍Medium、后续初始化保留手动值；真实Staterevision、BarFineDial不改值/取消/身份/预览zoom分离/活动候选到core与outer.val同帧；真实Draw3浮点转换与捕获样式锁定。完整Solution Debug|ARM64、headless --no-window、早退生产probes和i18n check；有真实可见HWND的hidden测试未经GUI授权不运行。
 
 ## 7. Wrong vs Correct
 

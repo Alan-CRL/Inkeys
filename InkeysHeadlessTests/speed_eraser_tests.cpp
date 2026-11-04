@@ -1665,6 +1665,14 @@ int RunSpeedEraserTests()
 	expect(ClassifySource(1,true,false,false)==SourceKind::Unknown,"failed query cannot identify a screen pen");
 	expect(ClassifySource(0,true,false,false,SourceKind::TouchPad,true)==SourceKind::TouchPad,"touch pad is not screen touch");
 	expect(ClassifySource(1,true,true,false,SourceKind::IntegratedPen,true)==SourceKind::Unknown,"conflicting source evidence is rejected");
+	expect(ClassifySource(1,true,true,true,SourceKind::IntegratedPen,true,false,true)==SourceKind::ExternalPen,
+		"integrated pen without a monitor is a tablet driver device");
+	expect(ClassifySource(1,true,true,true,SourceKind::IntegratedPen,true,false,false)==SourceKind::IntegratedPen,
+		"integrated pen mapped to a monitor stays a screen pen");
+	expect(ClassifySource(1,true,true,false,SourceKind::IntegratedPen,true,false,true)==SourceKind::Unknown,
+		"unmapped rule does not override conflicting capability evidence");
+	expect(ClassifySource(1,true,true,false,SourceKind::ExternalPen,true,false,true)==SourceKind::ExternalPen,
+		"external pen is unaffected by the unmapped flag");
 	for(const auto response:{ResponseOverride::IndirectDip,ResponseOverride::ScreenPenHybrid,ResponseOverride::DirectTouch})
 	{
 		auto d=physical;d.development.response=response;

@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Cursor",
-        "Description": "The mouse option applies only to soft and hard pens. Highlighters always preview width; shapes use the system cursor. The default pen cursor is circular. Cursor edge highlighting is disabled for screen styluses and enabled for pen tablets and unrecognized pens.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Pen",
-        "DefaultStyle": "Default cursor",
-        "DrawingStyle": "Pen-shaped cursor"
+        "EntryDescription": "Choose the drawing cursor for each input device and preview it.",
+        "Devices": "By device",
+        "PenDevices": "Pen tablet detection",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse and touchpad."
+        },
+        "Touch":
+        {
+          "N": "Touch",
+          "E": "Each finger that is drawing shows its own cursor, which disappears when lifted."
+        },
+        "ScreenPen":
+        {
+          "N": "Screen pen",
+          "E": "A pen that writes directly on the screen."
+        },
+        "Tablet":
+        {
+          "N": "Pen tablet",
+          "E": "External pen tablets and pens whose source cannot be recognized."
+        },
+        "Style":
+        {
+          "None": "No cursor",
+          "Arrow": "Mouse",
+          "Pen": "Pen",
+          "HighlightPen": "Pen (highlighted)",
+          "Dot": "Small dot",
+          "HighlightDot": "Small dot (highlighted)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Recognize driver-injected tablets",
+          "E": "Pen tablets without Windows Ink usually arrive as a mouse injected by the driver. When on, that mouse uses the pen tablet cursor settings; software that also injects a mouse, such as remote desktop, may be misdetected.",
+          "Unavailable": "This system cannot tell input sources apart, so this option is unavailable."
+        },
+        "Note": "On screen pens, pen tablets and touch, \"Mouse\" is an arrow drawn by the app itself; the highlighter, laser pointer, shape tools and eraser keep their own cursors regardless of these options."
       },
       "Effect":
       {

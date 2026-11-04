@@ -644,7 +644,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 
 				if (path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.PenStyle")
 				{
-					// 两种类型只接受整数 0/1；非法值各自恢复系统/圆形默认，不能强转成笔形。
+					// 旧版“鼠标/笔”类型只接受整数 0/1；非法值恢复默认，不能强转成笔形。
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
 					return;
@@ -656,6 +656,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
 					value = candidate == 0 || candidate == 5 || candidate == 10 || candidate == 15 || candidate == 30
 						? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.Cursor.Mouse" || path == "Drawing.Cursor.Touch" ||
+					path == "Drawing.Cursor.ScreenPen" || path == "Drawing.Cursor.Tablet")
+				{
+					// 各设备光标样式先验整数类型和宽度；-1/非法/不属于该设备的值（如非触摸的“无光标”）表示沿用旧版配置或默认。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const bool touch = path == "Drawing.Cursor.Touch";
+					value = candidate >= (touch ? 0 : 1) && candidate <= 5 ? candidate : -1;
 					return;
 				}
 				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")

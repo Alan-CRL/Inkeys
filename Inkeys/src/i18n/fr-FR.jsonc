@@ -647,11 +647,45 @@
       "Cursor":
       {
         "N": "Curseur",
-        "Description": "L’option de souris ne concerne que les stylos souples et durs. Les surligneurs affichent toujours l’épaisseur ; les formes utilisent le curseur du système. Le curseur du stylo est circulaire par défaut. Le contour du curseur n’est pas accentué pour les stylets d’écran, mais il l’est pour les tablettes graphiques et les stylets non identifiés.",
-        "MouseStyle": "Souris",
-        "PenStyle": "Stylo",
-        "DefaultStyle": "Curseur par défaut",
-        "DrawingStyle": "Curseur en forme de stylo"
+        "EntryDescription": "Définit le curseur affiché pendant le dessin pour chaque périphérique de saisie et en affiche un aperçu.",
+        "Devices": "Par périphérique",
+        "PenDevices": "Détection des tablettes graphiques",
+        "Mouse":
+        {
+          "N": "Souris",
+          "E": "Souris et pavé tactile."
+        },
+        "Touch":
+        {
+          "N": "Tactile",
+          "E": "Lorsque les doigts se posent, un curseur s’affiche pour chaque doigt et disparaît à leur relèvement."
+        },
+        "ScreenPen":
+        {
+          "N": "Stylet d’écran",
+          "E": "Stylet utilisé directement sur l’écran."
+        },
+        "Tablet":
+        {
+          "N": "Tablette graphique",
+          "E": "Tablettes graphiques externes et stylos dont l’origine n’est pas identifiable."
+        },
+        "Style":
+        {
+          "None": "Aucun curseur",
+          "Arrow": "Souris",
+          "Pen": "Stylo",
+          "HighlightPen": "Stylo (en surbrillance)",
+          "Dot": "Petit point",
+          "HighlightDot": "Petit point (en surbrillance)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Détecter les tablettes graphiques injectées par le pilote",
+          "E": "Les tablettes graphiques sans Windows Ink arrivent généralement comme une « souris injectée par le pilote ». Une fois l’option activée, cette souris utilise les réglages de curseur de la tablette ; les logiciels qui injectent aussi de la souris, comme le Bureau à distance, peuvent être détectés par erreur.",
+          "Unavailable": "Ce système ne peut pas distinguer la source de saisie ; l’option n’est pas disponible."
+        },
+        "Note": "Avec le stylet d’écran, la tablette graphique et le tactile, « Souris » est une flèche dessinée par l’application ; les curseurs du surligneur et du pointeur laser, les outils de formes et le curseur propre à la gomme ne sont pas affectés par ces options."
       },
       "Effect":
       {
