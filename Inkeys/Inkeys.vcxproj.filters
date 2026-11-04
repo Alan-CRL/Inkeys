@@ -576,6 +576,9 @@
     <ClInclude Include="Inkeys\Business\PptSession.h">
       <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Business\DesktopShortcut.h">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
     <ClInclude Include="PptSettingsPersistence.h">
       <Filter>头文件</Filter>
     </ClInclude>
