@@ -72,3 +72,35 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 170: 光标细边与共享下拉边界修复收尾
+<!-- trellis-session: v=2 fp=67c21815631a34a7 -->
+
+**Date**: 2026-11-04
+**Task**: 光标细边与共享下拉边界修复收尾
+**Branch**: `temp/state`
+
+### Summary
+
+按设备小圆点落笔隐藏、DPI箭头尺寸与细边、共享下拉上下避让及教学安全消费者验收完成；用户确认生效，任务归档，保留签名且未推送。
+
+### Main Changes
+
+- 新增四态小圆点落笔隐藏，默认仅屏幕笔；20语言同步。
+- 校准Arrow尺寸并减细黑边，保留热点；共享Combo统一向上避让，覆盖教学安全等全部现有消费者。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `15200e7b` | fix(cursor): refine device cursors and shared combo placement |
+| `2d3eb582` | chore(task): archive cursor settings follow-up |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64、五项受影响无窗口回归、20语言3DPI真实控件、GPU像素及i18n均通过；用户完成实机确认，代理未启动GUI。
+
+### Status
+
+[OK] **Completed**

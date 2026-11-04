@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 169
+- **Total Sessions**: 170
 - **Last Active**: 2026-11-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~74 | Active |
+| `journal-3.md` | ~106 | Active |
 | `journal-2.md` | ~2010 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 170 | 2026-11-04 | 光标细边与共享下拉边界修复收尾 | `15200e7b`, `2d3eb582` | `temp/state` |
 | 169 | 2026-11-04 | PPT闲置淡化、底栏主栏与设置内联动画收尾 | `f485146eab917aec5706d74482dfbdf8740d7636`, `c208677aa58bba98fef0b09007baa3b80f4c93e5` | `temp/state` |
 | 168 | 2026-11-04 | 白板桌面快捷方式与启动转发验收收尾 | `40ba6efec7767d64b2206079bc157640c062b3c9` | `temp/state` |
 | 167 | 2026-11-03 | UI3 pointer-source arbitration for tablet pen and touch input | `f9aeefbd`, `25749d67` | `bugfix/color` |
