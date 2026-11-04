@@ -45,3 +45,8 @@
 ## 审阅关口
 - 阶段 1 测试通过后再进入渲染；阶段 2、3 完成后（含点击/轨道展开）请用户用调试页人工确认动画观感与参数（尺寸、错开步长、颜色）再继续设置与状态源。
 - 调试随机状态中约 1/3 的持久条目附带模拟下载进度（约 6s 走完并完成），用于在阶段 5 之前验证进度环绘制。
+
+## 阶段 2'/3' — v2 重设计（2026-11-04，取代阶段 2/3 的视觉与部分交互）
+- [x] 合并 `temp/state`（cd244350），Debug|ARM64 完整构建、无窗口测试、`--bar-eraser-offscreen-test` 通过。
+- [x] 状态图标按实心语言重绘（`research/status_icon_build.py`，lint 7/7）；HTML 预览稿 `research/indicator-v2-preview.html`。
+- [ ] 用户确认预览稿的尺寸/颜色/动画后：按 prd “Decisions v2” 重写 `Bar.StatusIndicator.h` 布局与收起动画、`.cpp` 绘制（主栏 `BarUiShapeClass` 材质、遮挡裁剪 + `PushPanelOpacity` 单次合成、圆角文字遮罩与渐隐、光晕）、交互（单方块重新展开、主栏按钮式悬停）、RenderLoop 倒转输入与胶囊扩窗包络；更新无窗口与离屏测试。
