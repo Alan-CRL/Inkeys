@@ -111,10 +111,22 @@ def pen_shape(tip, end, w=2.8, tip_len=2.6):
                         (end[0] - nx * h, end[1] - ny * h), (bx - nx * h, by - ny * h)]), 0.3)
 
 
+def soft_pen_cut(s=0.45, gap=1.25):
+    """软笔（barBrush2）外形：圆帽 + 弧形收尖笔身，缩放后帽身间隙保持 gap，并居中到白板板面。"""
+    cap = from_svg_paths(["M8.1 1.75A4 4 0 1 1 15.9 1.75Z"])
+    body = from_svg_paths(["M8 3.25H16V18.5C16 22.8 13.4 25.2 12.6 27.9A0.75 0.75 0 0 1 11.4 27.9C10.6 25.2 8 22.8 8 18.5Z"])
+    body = scale(body, s, origin=(12, 3.25))
+    cap = scale(cap, s, origin=(12, 1.75))
+    cap = move(cap, 0, (3.25 - gap) - cap.bounds[3])
+    pen = rotate(U(cap, body), 45, (12, 12))
+    minx, miny, maxx, maxy = pen.bounds
+    return move(pen, 12 - (minx + maxx) / 2, 0.75 + 16.75 / 2 - (miny + maxy) / 2)
+
+
 # ---------- 主栏重绘 ----------
 @icon("barWhiteboard", "主栏", "白板")
 def _():
-    return easel(pen_shape((6.25, 13.25), (16.75, 2.75), 3.6, 3.2))
+    return easel(soft_pen_cut())
 
 
 @icon("barEndShow", "主栏", "结束放映")
