@@ -38,3 +38,37 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 169: PPT闲置淡化、底栏主栏与设置内联动画收尾
+<!-- trellis-session: v=2 fp=328f5ee3857566ea -->
+
+**Date**: 2026-11-04
+**Task**: PPT闲置淡化、底栏主栏与设置内联动画收尾
+**Branch**: `temp/state`
+
+### Summary
+
+完成PPT三范围闲置淡化、背景30%/内容60%独立上限、底栏主栏保护及设置同卡片动画，用户授权提交归档。
+
+### Main Changes
+
+- 新增底部/中部/主栏范围；主栏只在普通或居中底栏生效，悬停恢复、附属面板保护，外部翻页不影响主栏计时。
+- 时长与复选项合并同卡片，关闭/开启内联区动画收展；修复视口上方条件高度补偿，二十语言同步。
+- 功能与专题spec已签名提交，当前Trellis任务已归档并清空活动指针；保留未做逐面板GUI验收的证据边界。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f485146eab917aec5706d74482dfbdf8740d7636` | feat(ppt): add scoped idle fading and docked toolbar support |
+| `c208677aa58bba98fef0b09007baa3b80f4c93e5` | chore(task): archive PPT idle fade targets |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64、i18n 20语言723/723及最终UI/motion/page-policy/offscreen四项无窗口回归退出0；源码/产物SHA、BOM/EOL、diff检查通过。
+- [OK] 前轮完整--no-window通过，最终一轮只重跑改动相关范围；未运行GUI/Computer Use/真实Office或跨平台设备测试，未push。
+
+### Status
+
+[OK] **Completed**
