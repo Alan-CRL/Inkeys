@@ -492,6 +492,14 @@
         "AutoStartE": "目前使用者登入 Windows 時自動啟動 Inkeys。",
         "LoadingAnimation": "啟動載入動畫",
         "LoadingAnimationE": "顯示軟體啟動過程中的載入動畫。",
+        "StartupEffect":
+        {
+          "N": "啟動效果",
+          "E": "選擇下次啟動時播放的載入效果。",
+          "Shimmer": "掠光",
+          "Aurora": "柔光流彩",
+          "PixelAssembly": "像素拼裝"
+        },
         "SettingEntryAnimation":
         {
           "N": "設定介面開屏動畫",

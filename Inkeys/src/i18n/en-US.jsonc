@@ -492,6 +492,14 @@
         "AutoStartE": "Launch Inkeys when the current user signs in to Windows.",
         "LoadingAnimation": "Startup loading animation",
         "LoadingAnimationE": "Show the loading animation while Inkeys starts.",
+        "StartupEffect":
+        {
+          "N": "Startup effect",
+          "E": "Choose the loading effect for the next startup.",
+          "Shimmer": "Shimmer",
+          "Aurora": "Soft glow",
+          "PixelAssembly": "Pixel assembly"
+        },
         "SettingEntryAnimation":
         {
           "N": "Settings opening animation",

@@ -48,15 +48,62 @@
 
 ## UI3 常驻透明度配置合同
 
-持久化路径为 `Experimental.Inkeys3.UI3.BackgroundOpacity` 与 `ContentOpacity`，均为整数百分比。背景默认 `0`（`ResidentBackgroundOpacityThemeDefault`，跟随主题：Dark 80%、Light 88%），其余值经 `NormalizeResidentBackgroundOpacity()` 收敛到 30~100；内容默认 `100`，经 `NormalizeResidentContentOpacity()` 收敛到 30~100。
+持久化路径为 `Experimental.Inkeys3.UI3.BackgroundOpacity` 与 `ContentOpacity`，均为整数百分比。背景默认 `0`（`ResidentBackgroundOpacityThemeDefault`，跟随主题：Dark 80%、Light 92%），其余值经 `NormalizeResidentBackgroundOpacity()` 收敛到 30~100；内容默认 `100`，经 `NormalizeResidentContentOpacity()` 收敛到 30~100。
 
 - 背景为绝对值：用户值即展开主栏的填充透明度；主按钮（收起 0.6 基准）、底部吸附指示与分页按与主栏 0.80 基准的比例同步。内容透明度是图标/文字的倍率。两者只作用于常驻表面（主栏、主按钮、吸附指示、PPT/白板分页），弹出面板、属性栏、菜单保持原透明度。
 - 启动在 `ReadAll()` 后归一并写回内存，再调用 `Inkeys::UI::Bar::SetResidentOpacity()`；该函数只交换 `BarStyleClass::requested*Opacity` 并唤醒 Bar 与 `PptPageMask()`，渲染线程在帧首应用并整幅重画，分页在 Advance 中比较已应用值。
 - “常规 > 外观 > 透明度”分区两条滑块（30%~100%）带“恢复默认”按钮。拖动实时发布，松手、重置或离页时再 `QueueConfigWrite()`；背景重置写回 `0`，滑块显示当前主栏主题的默认值。动画速率（默认 1.0x）与主栏缩放（默认 100%）滑块同样带“恢复默认”，重置后沿原有释放保存路径。
-- Startup Preview 仍使用主题默认透明度绘制占位，与自定义背景透明度交接时可能有一次可见跳变。
+- Startup Preview 在 `ReadMini()` 阶段冻结同一主题及两项透明度，背景/反光/柔光流彩/像素速度线作为背景组，进度轨道/填充单独消费内容透明度；角落保持深色并使用主按钮比例。最终整窗淡入淡出不替代这两项材质透明度。
 
-无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/88%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
+无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/92%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
 PPT 闲置淡化不改写这两个正常偏好；三范围配置与 30%/60% 独立上限见 [PPT 闲置淡化合同](ppt-idle-fade.md)。
+
+## 启动加载效果选择合同（2026-11-04）
+
+### 1. Scope / Trigger
+
+启动动画效果的持久化、Mini 快照、设置选择与对应渲染交接；视觉/生命周期细节见 [startup-preview.md](startup-preview.md)。
+
+### 2. Signatures
+
+- `Experimental.Inkeys3.UI3.StartupPreview.Effect : IdtAtomic<int> = 0`。
+- `StartupPreview.Effect.h`：`StartupPreviewEffect { Shimmer=0, Aurora=1, PixelAssembly=2 }`、`NormalizeStartupPreviewEffect(int)`。
+- `StartOptions.effect/themeMode/backgroundOpacity/contentOpacity` 是本次预览的冻结输入。
+- `GeneralDraft.startupEffect` / `GeneralEvents.startupEffectChanged` 贯通设置选择与保存。
+
+### 3. Contracts
+
+- `ReadMini`/`ReadAll` 仅接受真实 JSON 整数 0/1/2；未知值、非整数类型、超宽整数均回退 0，不允许先窄化再命中有效值。旧配置缺失效果仍为“掠光”。
+- `IdtMain` 的 Mini 路径同时选择 Effect、ThemeMode、BackgroundOpacity、ContentOpacity；归一后传给 StartOptions，不等待完整配置加载才选择外观。
+- “常规 > 外观 > 启动加载动画”开启时，在正下方 `ConditionalBlock` 中显示 `ComboRow`，选项为“掠光 / 柔光流彩 / 像素拼装”（柔光流彩原名彩虹晕染，key 仍为 `Aurora`）；关闭收起该行但保留效果值。条件退出时沿共用输入禁用规则，不产生隐藏控件事件。
+- 效果选择通过 `QueueConfigWrite()` 保存且下次启动生效；不重新启动当前预览，不清除宽度缓存。新文案遵循现有二十语源/键生成合同。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| 缺失/非法/超宽 Effect | 回到 Shimmer，保留无关配置 |
+| Preview Enable=false | 保留选择；不显示选择行或启动预览 |
+| 关闭后再开启 | 选择值不丢失，行随既有条件动画恢复 |
+| 当前会话改效果 | 保存下次偏好，本次冻结外观不变 |
+
+### 5. Good / Base / Bad Cases
+
+Good：Mini 已取得 PixelAssembly + Light + 两项透明度后启动正确预览。Base：旧 main.json 沿原掠光启动。Bad：效果与主题直到 ReadAll 后才切换；或关闭开关时把用户选择重置为默认。
+
+### 6. Tests Required
+
+真实 Config Mini/All、缺失/错类型/超宽整数、写回/重读及冻结快照；真实 ImGui 选择、开关折叠/恢复、两主题/缩放、禁动画输入与事件隔离。完整 ARM64 Solution 与 `--no-window` 验证按主项目规则执行。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：宽整数可被窄化为有效选项。
+const int candidate = static_cast<int>(jsonValue.asInt64());
+// Correct：先验证原始整数类型与可表示范围，再归一。
+const int candidate = integerType && jsonValue.isInt() ? jsonValue.asInt() : -1;
+value = static_cast<int>(NormalizeStartupPreviewEffect(candidate));
+```
 
 ## 设置页废弃配置清理合同
 
@@ -117,7 +164,7 @@ setlistVal.removeMember("Preset");
 
 ## UI2/旧设置资源退役边界
 
-- 按活动工程、RC 和真实加载/绘制消费者确认归属，不能只因资源名含 UI2 或位于旧目录就删除。保留 UI3 共用的四个 PluginFlag、CUSTOMIZEICO 快捷操作、头像、反馈码、赞助图、SIGN4 定格标识及当前 SVG/字体/演示 atlas。
+- 按活动工程、RC 和真实加载/绘制消费者确认归属，不能只因资源名含 UI2 或位于旧目录就删除。保留 UI3 共用的四个 PluginFlag、头像、反馈码、赞助图、SIGN4 定格标识及当前 SVG/字体/演示 atlas。
 - 旧首页 Home1/Home2 整图不再由 Setting 初始化或列入 requiredTextureIndexes；保留 1/2 槽位编号，避免改动其他共享纹理索引和设备重建合同。旧 UI2 专用资源从 RC、项目项和历史加载调用同步退役；已不存在的资源项目项也一并清除。
 - 用户要求移入回收站时使用原生 recycle-on-delete，不永久删除；操作前核对仓库内绝对路径/清单/哈希，操作后核对实际回收站副本。验证保留 RC 文件、项目筛选器及生成 EXE 的嵌入内容，不以编译通过代替资源完整性检查。
 
@@ -212,10 +259,10 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - `UI.Bar.FixedButtonsA2`：同 A1 元素形态
 - 运行时渲染顺序恒为 `normalize(A1) + normalize(B) + normalize(A2)`。
 - **UI2/UI3 并行期覆盖规则**：启用 UI3 时，`Load()` 的运行时 B 不读取 `UI.Bar.ExtensionButtons`，而是按设置页固定顺序读取 16 个 `setlist.component.shortcutButton.*` 开关。该投影只存在于当前进程，不调用 `ExtensionButtons.Replace()`、新版 `Config::Write()` 或其他 B 区持久化入口；持久化 B 的排序与编辑能力留到移除 UI2 后恢复。
-- 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、PNG 资源、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
+- 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、`UI` 类型 SVG 资源名（`comp*`，见 [bar-icons.md](bar-icons.md)）、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
 - 设置页修改旧组件开关时，先更新 `setlist` 并执行 `WriteSetting()`，再在 UI3 下调用 `SyncLegacyExtensionButtons()` 和 Bar 渲染唤醒入口。打开开关按固定列表位置加入 B，关闭开关立即移除，其余组件相对顺序不变；UI2 的首个有效组件规则保持不变。
 - 运行时按钮列表整体替换为注册表持有的 `shared_ptr` 序列；两条交界 Divider 使用长期持有的独立对象。组件按钮各自使用本地状态，避免多个扩展按钮共享按压/选中状态。
-- 按钮图标载荷可为 SVG 或 PNG。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `BarUIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。
+- 按钮图标载荷可为 SVG 或 PNG；内置组件自 2026-11 起全部为主题占位色 SVG，PNG 路径当前无内置使用者但保留。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `BarUIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。
 - **按钮 ID 命名**：
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
@@ -286,7 +333,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - 验证旧 `ButtonLayout` 迁移与 `configOnce = config` 后三区一致。
 - 静态确认 16 个内置组件均已注册且顺序与设置页一致，16 个 toggle 写入后均触发 UI3 同步。
 - 验证 UI3 启动和 toggle 同步均不读取、替换或写回 `UI.Bar.ExtensionButtons`。
-- 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
+- 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、组件 SVG 深浅主题着色、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
 - 手工验证 0/1/2/3+ 个旧组件的主栏容量、MoreBoundary 两组顺序、分割线条件、上下展开物理行方向、与绘制属性一致的时长及 Back/Sine 动画、隐藏态 Selected 青色同步、More 固定小三角、右上角 X 悬停/按压/拖出，以及 `closeMoreAfterAction=false` 保持打开。
 - 手工验证主栏两条 Divider 保持 `oneTwo` 两行布局占用但只绘制垂直居中的 `1x50` DIP 纯 Shape，以及 `0.30` 填充/第三光强度、5 DIP 间隙居中、半列封列、左右镜像；指针经过/按下不产生背景、缩放或点击。
 - 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；Headless/静态断言确认旧 Whiteboard/Freeze 顺序迁移、A2 三态可见性、EndShow 单次业务投递、旧 Pierce 被迁移且新配置不接受；无自动化 UI 测试时记录未做运行验证。
@@ -565,7 +612,6 @@ H(true, true, "ch", std::string, UpdateChannel,
 - 两条场景说明位于模式选择块上方的独立信息卡片，使用蓝色信息图标、现有圆角边框/内边距，通过 `Device.TouchE/MousePenE` 国际化，并按实际换行高度布局；不得裁切长英文。
 - Surface（含手指触摸）、平板、鼠标操控的大屏及普通投影属于桌面交互的文案场景。2026-10-13 用户明确要求保留现有全部自动启动判定，含“系统有触摸但主屏尺寸未知时默认大屏”；此自动识别与场景定义的差异是后续产品决策，不得借文案修改自动调整启动策略。
 - 验证：无 HWND ImGui 回放覆盖下拉双向选择、三语/缩放卡片布局；另以生产调度边界的线程回归覆盖锁内提交与 FIFO 顺序。只把 Sync 替换为计数器的控件回放不能验证卡死修复。
-
 
 ## 启动位置预设配置合同
 - UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏展开、1左角主按钮、2右角主按钮。读盘仅接受JSON int/uint且isInt()可表示的0..2；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。

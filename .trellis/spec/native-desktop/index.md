@@ -12,6 +12,7 @@
 - [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工及Setting FreeType动态图集。
 - [bar-theme-material.md](bar-theme-material.md)：Bar 颜色角色、整笔指示器、逐对象材质、完整收展过渡与阴影范围。
 - [ppt-idle-fade.md](ppt-idle-fade.md)：PPT 闲置淡化三范围、背景/内容独立上限、主栏交互与附属面板保护。
+- [bar-icons.md](bar-icons.md)：Bar SVG 图标设计语言、占位色着色、专属资源映射与 lint/预览流程。
 - [setting-motion.md](setting-motion.md)：Setting页面入场、条件块、稳定正文轨道、开屏标题栏及resize/材质连续性。
 - [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
@@ -33,7 +34,7 @@
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
 - [draw3-cursors.md](draw3-cursors.md)：鼠标/笔类型选择、荧光笔独立预览与设备固定高亮、始终隐藏 Touch 与 Win7 生命周期边界。
 - [single-instance-and-startup-handoff.md](single-instance-and-startup-handoff.md)：目录单实例、多开偏好、更新/重启与SuperTop连续占位交接。
-- [startup-preview.md](startup-preview.md)：SuperTop 后启动预览、程序化灰色占位、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
+- [startup-preview.md](startup-preview.md)：SuperTop 后三种启动效果、深浅/分层透明度、像素入场、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
 
 PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../ppt-interop/index.md)。
 

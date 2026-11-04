@@ -792,19 +792,15 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 		obj->button.enable.Initialization(true);
 
+		// 组件图标为主题占位色 SVG，与其他按钮共用着色与选中/悬停变色。
 		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
-		obj->icon.enable.Initialization(true);
-		obj->pngIcon.Initialization(0.0, 0.0);
-		if (!obj->pngIcon.InitializationFromResource(L"PNG", iconResource))
+		obj->icon.InitializationFromResource(L"UI", iconResource);
+		if (obj->icon.svg.GetVal().empty())
 		{
 			delete obj;
 			return;
 		}
-		obj->pngIcon.enable.Initialization(true);
-		// 复用 SVG 的动画状态，但为 PNG 提供真实宽高，避免 SetWH 无法按比例计算。
-		obj->icon.rW = obj->pngIcon.rW;
-		obj->icon.rH = obj->pngIcon.rH;
-		obj->iconKind = BarButtonIconKindEnum::Png;
+		obj->icon.enable.Initialization(true);
 		obj->clickFunc = [action]()
 		{
 			switch (action)
@@ -835,101 +831,101 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		"Component.ShortcutButton.Appliance.Explorer",
 		"component.shortcutButton.appliance.explorer",
 		[] { return setlist.component.shortcutButton.appliance.explorer; },
-		IW(componentText.SoftwareSection).c_str(), IW(componentText.ExplorerTitle).c_str(), IW(componentLabels.ExplorerLabel).c_str(), L"CustomizeIco4",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.ExplorerTitle).c_str(), IW(componentLabels.ExplorerLabel).c_str(), L"compExplorer",
 		BuiltInComponentAction::Explorer);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Taskmgr",
 		"component.shortcutButton.appliance.taskmgr",
 		[] { return setlist.component.shortcutButton.appliance.taskmgr; },
-		IW(componentText.SoftwareSection).c_str(), IW(componentText.TaskManagerTitle).c_str(), IW(componentLabels.TaskManagerLabel).c_str(), L"CustomizeIco9",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.TaskManagerTitle).c_str(), IW(componentLabels.TaskManagerLabel).c_str(), L"compTaskManager",
 		BuiltInComponentAction::TaskManager);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Control",
 		"component.shortcutButton.appliance.control",
 		[] { return setlist.component.shortcutButton.appliance.control; },
-		IW(componentText.SoftwareSection).c_str(), IW(componentText.ControlPanelTitle).c_str(), IW(componentLabels.ControlPanelLabel).c_str(), L"CustomizeIco7",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.ControlPanelTitle).c_str(), IW(componentLabels.ControlPanelLabel).c_str(), L"compControlPanel",
 		BuiltInComponentAction::ControlPanel);
 
 	registerComponent(
 		"Component.ShortcutButton.System.Desktop",
 		"component.shortcutButton.system.desktop",
 		[] { return setlist.component.shortcutButton.system.desktop; },
-		IW(componentText.SystemSection).c_str(), IW(componentText.ShowDesktopTitle).c_str(), IW(componentLabels.ShowDesktopLabel).c_str(), L"CustomizeIco3",
+		IW(componentText.SystemSection).c_str(), IW(componentText.ShowDesktopTitle).c_str(), IW(componentLabels.ShowDesktopLabel).c_str(), L"compShowDesktop",
 		BuiltInComponentAction::ShowDesktop);
 	registerComponent(
 		"Component.ShortcutButton.System.LockWorkStation",
 		"component.shortcutButton.system.lockWorkStation",
 		[] { return setlist.component.shortcutButton.system.lockWorkStation; },
-		IW(componentText.SystemSection).c_str(), IW(componentText.LockScreenTitle).c_str(), IW(componentLabels.LockScreenLabel).c_str(), L"CustomizeIco8",
+		IW(componentText.SystemSection).c_str(), IW(componentText.LockScreenTitle).c_str(), IW(componentLabels.LockScreenLabel).c_str(), L"compLockScreen",
 		BuiltInComponentAction::LockWorkStation);
 
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.Keyboardesc",
 		"component.shortcutButton.keyboard.keyboardesc",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardesc; },
-		IW(componentText.KeyboardSection).c_str(), IW(componentText.EscapeTitle).c_str(), IW(componentLabels.EscapeLabel).c_str(), L"CustomizeIco5",
+		IW(componentText.KeyboardSection).c_str(), IW(componentText.EscapeTitle).c_str(), IW(componentLabels.EscapeLabel).c_str(), L"compEscape",
 		BuiltInComponentAction::Escape);
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.KeyboardAltF4",
 		"component.shortcutButton.keyboard.keyboardAltF4",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardAltF4; },
-		IW(componentText.KeyboardSection).c_str(), IW(componentText.AltF4Title).c_str(), L"Alt+F4", L"CustomizeIco6",
+		IW(componentText.KeyboardSection).c_str(), IW(componentText.AltF4Title).c_str(), L"Alt+F4", L"compAltF4",
 		BuiltInComponentAction::AltF4);
 
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller1",
 		"component.shortcutButton.rollCall.IslandCaller1",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller1; },
-		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco2",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallRandom",
 		BuiltInComponentAction::IslandCaller);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller2",
 		"component.shortcutButton.rollCall.IslandCaller2",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller2; },
-		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco2",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallSingle",
 		BuiltInComponentAction::IslandCallerSimple);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom1",
 		"component.shortcutButton.rollCall.SecRandom1",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom1; },
-		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuick",
 		BuiltInComponentAction::SecRandomDirect);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2",
 		"component.shortcutButton.rollCall.SecRandom2",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2; },
-		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuick2",
 		BuiltInComponentAction::SecRandomQuickDraw);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2Compat",
 		"component.shortcutButton.rollCall.SecRandom2Compat",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2Compat; },
-		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2CompatTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2CompatTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuickCompat",
 		BuiltInComponentAction::SecRandomQuickDrawCompat);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.NamePicker",
 		"component.shortcutButton.rollCall.NamePicker",
 		[] { return setlist.component.shortcutButton.rollCall.NamePicker; },
-		IW(componentText.RollCallSection).c_str(), IW(componentText.NamePickerTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"CustomizeIco11",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.NamePickerTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compNamePicker",
 		BuiltInComponentAction::NamePicker);
 
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandSettings",
 		"component.shortcutButton.linkage.classislandSettings",
 		[] { return setlist.component.shortcutButton.linkage.classislandSettings; },
-		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSettingsTitle).c_str(), IW(componentLabels.ClassIslandSettingsLabel).c_str(), L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSettingsTitle).c_str(), IW(componentLabels.ClassIslandSettingsLabel).c_str(), L"compClassSettings",
 		BuiltInComponentAction::ClassIslandSettings);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandProfile",
 		"component.shortcutButton.linkage.classislandProfile",
 		[] { return setlist.component.shortcutButton.linkage.classislandProfile; },
-		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandProfileTitle).c_str(), IW(componentLabels.ClassIslandProfileLabel).c_str(), L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandProfileTitle).c_str(), IW(componentLabels.ClassIslandProfileLabel).c_str(), L"compClassProfile",
 		BuiltInComponentAction::ClassIslandProfile);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandClassswap",
 		"component.shortcutButton.linkage.classislandClassswap",
 		[] { return setlist.component.shortcutButton.linkage.classislandClassswap; },
-		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSwapTitle).c_str(), IW(componentLabels.ClassIslandSwapLabel).c_str(), L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSwapTitle).c_str(), IW(componentLabels.ClassIslandSwapLabel).c_str(), L"compClassSwap",
 		BuiltInComponentAction::ClassIslandClassSwap);
 }
 
@@ -1060,7 +1056,7 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	// 长标签换行由语言资源指定，翻译调整不再依赖英文原文匹配。
 	auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
 		: IW(separate && !selection ? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
-	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label, immediateLabel);
+	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(whiteboard ? L"barMove" : L"barSelect", label, immediateLabel);
 	UpdateDrawButtonStyle(stateMode, immediateLabel);
 	UpdateWhiteboardButtonStyle(whiteboard,
 		Inkeys::Window::GetService().WhiteboardWindowGroupMinimized(), immediateLabel);
@@ -1217,11 +1213,14 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized,
 		pierce->TransitionContent(L"barPierce", label, immediateLabel);
 	}
 	const bool resume = active && minimized;
-	whiteboard->TransitionContent(active && !resume ? L"barDismiss" : L"barWhiteboard",
+	const bool returnToShow = active && !resume && Inkeys::UI::Bar::PptPresentationActive();
+	// 每个状态使用专属图标：回到白板、返回放映、关闭白板与打开白板。
+	whiteboard->TransitionContent(resume ? L"barResumeWhiteboard"
+			: returnToShow ? L"barReturnShow"
+			: active ? L"barCloseSmall" : L"barWhiteboard",
 		resume ? IW(I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel)
-			: active ? (Inkeys::UI::Bar::PptPresentationActive()
-				? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
-				: IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel))
+			: returnToShow ? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
+			: active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
 				: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel), immediateLabel);
 }
 void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode, bool immediateLabel)

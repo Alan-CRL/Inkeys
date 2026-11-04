@@ -1914,6 +1914,21 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Main Changes
 
 - 五窗本地TouchContext、真实候选与已呈现probe、完整64位取消身份、统一Pointer兼容鼠标过滤，保留PPT长按和白板Up单次
+## Session 169: 启动动画多效果与主题透明度适配完成
+<!-- trellis-session: v=2 fp=1d115f24f6c16e41 -->
+
+**Date**: 2026-11-04
+**Task**: 启动动画多效果与主题透明度适配完成
+**Branch**: `bugfix/theme`
+
+### Summary
+
+完成用户批准的第四版：掠光、淡彩虹、像素拼装及内联选择，ReadMini冻结主题/独立透明度并适配角落/缩放。完整ARM64构建与无窗口测试通过；按用户规则保留未提交状态。
+
+### Main Changes
+
+- 新增三效果渲染、分层透明度、像素渐显外散/弧线归位和正常成功的2.4秒视觉门。
+- 新增设置条件下拉框、严格配置codec/Mini快照与20语；同步启动/配置spec。
 
 ### Git Commits
 
@@ -1925,6 +1940,9 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 - [OK] 完整 InkeysHeadlessTests --no-window exit 0；快捷方式 exact/quoted exit 0，额外参数 exit 2；i18n check/runtime 通过。
 - [OK] 完整Solution Debug ARM64 exit0/41.04s，五生产探针全0含真实UI3TouchProbe，完整headless --no-window exit0/306.60s
 - [OK] 完整Solution Release x64 exit0/115.29s，PE0x8664、预期诊断标识与SHA256核对通过；未GUI
+- [OK] ARM64原生MSBuild完整InkeysRepo.sln Debug|ARM64（主机环境、独立OutDir）exit0。
+- [OK] 最终启动专项与完整--no-window均exit0；固定30Hz、模糊原点、奇数尺寸逆缩放及透明度隔离回归通过。
+- [OK] diff/编码/BOM/CRLF审计通过，PptCOM输入二进制未变，原生离屏图已检查。
 
 ### Status
 
@@ -2008,3 +2026,4 @@ Investigated why tablet pens could not click the bar and page controls (Pointer 
 ### Status
 
 [OK] **Completed**
+- 本任务已归档至archive/2026-11/11-04-startup-preview-theme-opacity；未运行GUI、未commit/push。

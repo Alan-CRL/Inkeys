@@ -3837,11 +3837,11 @@ namespace
 		struct Frame
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
-			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false, desktopShortcuts = false;
+			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false, desktopShortcuts = false, startupEffect = false;
 			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false;
 		};
 		ImGuiWindow* host = nullptr;
-		int modeChanges = 0, entryAnimationChanges = 0, multipleInstanceChanges = 0; std::array<int, 6> shortcutChanges{};
+		int modeChanges = 0, entryAnimationChanges = 0, multipleInstanceChanges = 0, startupEffectChanges = 0; std::array<int, 6> shortcutChanges{};
 		checks.Expect(!draft.allowMultipleInstances, "multiple-instance preference is disabled in the initial general draft");
 		auto draw = [&](Design::GeneralSection section, ImVec2 mouse, bool down)
 		{
@@ -3864,6 +3864,7 @@ namespace
 			frame.desktopShortcuts = rowSeen("desktop-shortcut-create") && rowSeen("desktop-shortcut-correct") && rowSeen("desktop-shortcut-auto-create")
 				&& rowSeen("whiteboard-shortcut-create") && rowSeen("whiteboard-shortcut-correct") && rowSeen("whiteboard-shortcut-auto-create");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
+			frame.startupEffect = rowSeen("startup-effect");
 			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
 			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
@@ -3872,6 +3873,7 @@ namespace
 				if (vertex.col == Design::GetPalette().notice[0]) ++frame.blueVertices;
 			modeChanges += frame.events.selectModeChanged ? 1 : 0;
 			entryAnimationChanges += frame.events.settingEntryAnimationChanged ? 1 : 0;
+			startupEffectChanges += frame.events.startupEffectChanged ? 1 : 0;
 			multipleInstanceChanges += frame.events.allowMultipleInstancesChanged ? 1 : 0;
 			for (int item = 0; item < 6; ++item) shortcutChanges[item] += frame.events.shortcutsChanged[item] ? 1 : 0;
 			ImGui::PopID(); ImFluent::PopFont(); ImGui::End(); ImGui::Render();
@@ -3885,7 +3887,7 @@ namespace
 				&& !events.startupChanged && !events.createShortcut
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
-				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.animationChanged
+				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.startupEffectChanged && !events.animationChanged
 				&& !events.dynamicEdgeLightingChanged
 				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
@@ -3903,7 +3905,7 @@ namespace
 				&& frame.collapse == (section == Design::GeneralSection::Interaction)
 				&& frame.shortcuts == (section == Design::GeneralSection::Shortcuts)
 				&& frame.desktopShortcuts == (section == Design::GeneralSection::DesktopShortcuts)
-				&& frame.startupPreview == (section == Design::GeneralSection::Appearance)
+				&& frame.startupPreview == (section == Design::GeneralSection::Appearance) && !frame.startupEffect
 				&& frame.entryAnimation == (section == Design::GeneralSection::Appearance)
 				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom
 				&& frame.allowMultipleInstances == (section == Design::GeneralSection::Interaction),
@@ -3936,11 +3938,30 @@ namespace
 		chord(Design::GeneralSection::Basic, ImGuiKey_F4); chord(Design::GeneralSection::Basic, ImGuiKey_Home);
 		chord(Design::GeneralSection::Basic, ImGuiKey_DownArrow); chord(Design::GeneralSection::Basic, ImGuiKey_Enter);
 		checks.Expect(draft.selectMode == 1 && modeChanges == 1, "relocated operation combo commits its actual selection once");
-		draw(Design::GeneralSection::Appearance, outside, false);
+		const auto previewHidden = draw(Design::GeneralSection::Appearance, outside, false);
 		focus(Design::GeneralSection::Appearance, "startup-preview", "##toggle");
 		const bool previewChanged = chord(Design::GeneralSection::Appearance, ImGuiKey_Space);
 		checks.Expect(draft.startupPreview && previewChanged && !draft.animation && Near(draft.animationRate, 4.7F),
 			"appearance loading-animation switch remains independently editable while general animations are disabled");
+		const auto previewShown = draw(Design::GeneralSection::Appearance, outside, false);
+		checks.Expect(!previewHidden.startupEffect && previewShown.startupEffect
+			&& previewShown.height > previewHidden.height + 40 * scale,
+			"startup effect selector is an inline conditional row below the enabled toggle");
+		focus(Design::GeneralSection::Appearance, "startup-effect", "##select");
+		chord(Design::GeneralSection::Appearance, ImGuiKey_F4); chord(Design::GeneralSection::Appearance, ImGuiKey_Home);
+		chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow); chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow);
+		chord(Design::GeneralSection::Appearance, ImGuiKey_Enter);
+		checks.Expect(draft.startupEffect == 2 && startupEffectChanges == 1 && draft.startupPreview,
+			"startup effect combo selects pixel assembly through the actual keyboard event once");
+		focus(Design::GeneralSection::Appearance, "startup-preview", "##toggle");
+		chord(Design::GeneralSection::Appearance, ImGuiKey_Space);
+		const auto effectHidden = draw(Design::GeneralSection::Appearance, outside, false);
+		checks.Expect(!effectHidden.startupEffect && draft.startupEffect == 2 && startupEffectChanges == 1,
+			"disabling startup animation hides the selector without resetting its preference");
+		focus(Design::GeneralSection::Appearance, "startup-preview", "##toggle");
+		chord(Design::GeneralSection::Appearance, ImGuiKey_Space);
+		checks.Expect(draw(Design::GeneralSection::Appearance, outside, false).startupEffect && draft.startupEffect == 2,
+			"enabling startup animation restores the stored effect");
 		draw(Design::GeneralSection::Appearance, outside, false);
 		focus(Design::GeneralSection::Appearance, "setting-entry-animation", "##select");
 		chord(Design::GeneralSection::Appearance, ImGuiKey_F4); chord(Design::GeneralSection::Appearance, ImGuiKey_Home);
@@ -4230,6 +4251,19 @@ namespace
 					"mouse commits final teaching safety option once without editing other behavior preferences");
 			}
 		}
+		// 同一生产条件行覆盖深浅色和窄布局，隐藏期间不能产生偏好事件。
+		for (bool dark : { false, true }) for (float width : { 540.0F, 1100.0F })
+		{
+			Design::ApplyPalette(dark); io.DisplaySize = ImVec2(width * scale, 1600 * scale);
+			draft.startupPreview = false; draw(Design::GeneralSection::Appearance, outside, false);
+			const auto hiddenEffect = draw(Design::GeneralSection::Appearance, outside, false);
+			draft.startupPreview = true; draw(Design::GeneralSection::Appearance, outside, false);
+			const auto visibleEffect = draw(Design::GeneralSection::Appearance, outside, false);
+			checks.Expect(!hiddenEffect.startupEffect && visibleEffect.startupEffect && draft.startupEffect == 2
+				&& !hiddenEffect.events.startupEffectChanged && !visibleEffect.events.startupEffectChanged,
+				"startup effect condition preserves selection across themes and narrow layouts without idle edits");
+		}
+		Design::ApplyPalette(false);
 		io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 	}
@@ -5620,7 +5654,7 @@ namespace
 		float bodyWidth = 700.0F, departureOpacity = 1.0F; std::uint64_t layoutRevision = 0;
 		GeneralDraft general{}; general.animation = true; general.animationRate = 1.0F;
 		float requestedScroll = -1.0F;
-		int actions = 0, frames = 0;
+		int actions = 0, frames = 0, startupEffectEdits = 0;
 		const ImVec2 outside(-100, -100);
 		struct Frame
 		{
@@ -5628,10 +5662,11 @@ namespace
 			float width = 0, firstY = 0, firstDrawY = 0, after = 0, scroll = 0;
 			unsigned firstAlpha = 0, secondAlpha = 0, afterAlpha = 0, thumbAlpha = 0;
 			ImRect action;
-			std::string retained; ImGuiID firstAction = 0;
+			std::string retained; ImGuiID firstAction = 0, startupEffectId = 0;
+			ImGuiWindow* effectOwner = nullptr; float effectOpacity = 0; bool effectRendered = false;
 		};
 		auto draw = [&](ImVec2 mouse, bool down, float wheel = 0.0F) {
-			io.DisplaySize = { 960 * scale, 700 * scale }; io.DeltaTime = 1.0F / 60;
+			io.DisplaySize = { 960 * scale, (generalPage ? 1600 : 700) * scale }; io.DeltaTime = 1.0F / 60;
 			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
 			if (wheel != 0) io.AddMouseWheelEvent(0, wheel);
 			ImGui::NewFrame(); ConfigureRowAnimations(io.DeltaTime, animated, 1.0F);
@@ -5651,7 +5686,7 @@ namespace
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
 			auto* parentDraw = ImGui::GetWindowDrawList();
 			const int parentFirst = parentDraw->VtxBuffer.Size;
-			BeginScrollChild("##motion-body", { bodyWidth * scale, 360 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
+			BeginScrollChild("##motion-body", { bodyWidth * scale, (generalPage ? 1400 : 360) * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
 				departing ? ImGuiWindowFlags_NoInputs : 0, false, false, true, PageScrollbarAlpha(motion) * departureOpacity, &motion);
 			ImGui::PopStyleVar(); Frame frame; frame.owner = ImGui::GetCurrentWindow();
 			if (frame.owner->ScrollbarY)
@@ -5677,6 +5712,15 @@ namespace
 			if (generalPage)
 			{
 				const auto events = RenderGeneral(general, GeneralSection::Appearance);
+				startupEffectEdits += events.startupEffectChanged ? 1 : 0;
+				frame.effectOwner = body;
+				frame.startupEffectId = ImHashStr("##select", 0, body->GetID("startup-effect"));
+				ImGui::PushID("startup-effect");
+				frame.effectRendered = ImGui::GetStateStorage()->GetInt(ImGui::GetID("##description-frame"), -1) == ImGui::GetFrameCount();
+				ImGui::PopID();
+				const auto effectCondition = ImHashData(&motion.route, sizeof(motion.route), body->GetID("##startup-effect-visibility"));
+				if (const auto it = motion.conditions.find(effectCondition); it != motion.conditions.end())
+					frame.effectOpacity = it->second.reveal.value;
 				checks.Expect(!events.edgeLightingChanged && !events.dynamicEdgeLightingChanged,
 					"actual appearance motion does not manufacture UI events during layout");
 			}
@@ -5947,6 +5991,26 @@ namespace
 			retainedState |= value.generation == motion.generation && value.reveal.value == 1 && value.height > 0;
 		checks.Expect(retainedState, "actual RenderGeneral appearance uses persistent conditional motion state");
 		general.edgeLighting = false; idle(14);
+		general.startupPreview = true; general.startupEffect = 2; frame = idle(14);
+		checks.Expect(frame.effectRendered && Near(frame.effectOpacity, 1),
+			"actual startup effect row fully reveals through production conditional motion");
+		const auto navFlags = io.ConfigFlags; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		ImGui::FocusWindow(frame.effectOwner);
+		ImGui::SetNavID(frame.startupEffectId, ImGuiNavLayer_Main, frame.effectOwner->NavRootFocusScopeId, ImRect(1, 1, 20, 20));
+		GImGui->NavCursorVisible = true; frame = idle();
+		checks.Expect(GImGui->NavId == frame.startupEffectId && GImGui->NavIdIsAlive,
+			"startup effect combo owns a live native navigation item before closing");
+		general.startupPreview = false; frame = idle(3);
+		checks.Expect(frame.effectRendered && frame.effectOpacity > 0 && frame.effectOpacity < 1,
+			"startup effect row retains its exit visual while collapsing");
+		const int popupCount = GImGui->OpenPopupStack.Size;
+		io.AddKeyEvent(ImGuiKey_F4, true); idle(); io.AddKeyEvent(ImGuiKey_F4, false); idle();
+		checks.Expect(GImGui->OpenPopupStack.Size == popupCount && startupEffectEdits == 0 && general.startupEffect == 2,
+			"collapsing startup selector rejects activation while preserving its effect");
+		frame = idle(14);
+		checks.Expect(!frame.effectRendered && Near(frame.effectOpacity, 0),
+			"collapsed startup effect row leaves no live control");
+		io.ConfigFlags = navFlags;
 		HomeMotionState home; home.entry = HomeMotionState::Entry::Pending;
 		checks.Expect(!HomeEntryChromeVisible(home), "opening preparation suppresses optional titlebar actions");
 		home.entry = HomeMotionState::Entry::Playing;

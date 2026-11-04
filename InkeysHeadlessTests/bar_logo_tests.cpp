@@ -99,8 +99,10 @@ namespace
 					const auto appearance = Resolve(light, drawing, color);
 					Check(Near(appearance.indicatorOpacity, drawing * (1.0 - light)),
 						"original Dark indicator fades by both current material and drawing weights");
-					Check(Near(appearance.outlineOpacity, 0.85 * light),
-						"whole outline follows current Light material");
+					Check(Near(appearance.outlineOpacity, light * BarLogoAppearance::LightOutlineOpacity(
+							BarThemeMaterial::MixColor(BarThemeMaterial::LightColor(
+								BarThemeMaterial::ColorRole::IconPrimary), color, drawing))),
+						"outline follows Light material and only appears for low-contrast pens");
 					Check(appearance.screenFill == neutral.screenFill
 						&& Near(appearance.screenOpacity, neutral.screenOpacity),
 						"base screen is independent of drawing state and pen RGB");
@@ -123,9 +125,14 @@ namespace
 			}
 		}
 		const auto lightNeutral = Resolve(1.0, 0.0, colors[0]);
-		Check(lightNeutral.penFill == RGB(71, 77, 82)
-			&& lightNeutral.screenFill == RGB(71, 77, 82)
-			&& Near(lightNeutral.screenOpacity, 0.22), "Light non-drawing defaults use neutral theme colors");
+		Check(lightNeutral.penFill == RGB(43, 43, 43)
+			&& lightNeutral.screenFill == RGB(0, 0, 0)
+			&& Near(lightNeutral.screenOpacity, 0.09)
+			&& Near(lightNeutral.outlineOpacity, 0.0), "Light non-drawing defaults use the icon pen on a 9% neutral screen");
+		Check(Near(Resolve(1.0, 1.0, RGB(0, 0, 0)).outlineOpacity, 0.0)
+			&& Resolve(1.0, 1.0, RGB(255, 255, 255)).outlineOpacity > 0.5
+			&& Resolve(1.0, 1.0, RGB(255, 197, 16)).outlineOpacity > 0.0,
+			"dark pens have no outline while white and light yellow pens stay readable");
 		for (const double invalid : { std::numeric_limits<double>::quiet_NaN(),
 			std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity() })
 		{

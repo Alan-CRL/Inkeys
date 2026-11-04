@@ -1542,11 +1542,33 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			if (key == BarUISetSvgEnum::logo1
 				|| (key >= BarUISetSvgEnum::DrawAttributeBar_ColorSelect1
 					&& key <= BarUISetSvgEnum::DrawAttributeBar_ColorSelect11)) continue;
-			if (svg->color1) svg->color1->SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
-			if (svg->color2) svg->color2->SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
+			// 笔型扩展箭头与菜单勾选为强调色，不能被统一重置成图标色。
+			const bool accentSvg = key == BarUISetSvgEnum::DrawAttributeBar_PenTypeExtensionArrow
+				|| key == BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck;
+			const COLORREF svgColor = GetThemeColor(accentSvg
+				? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
+			if (svg->color1) svg->color1->SetTar(svgColor);
+			if (svg->color2) svg->color2->SetTar(svgColor);
+		}
+		// 仅初始化取色、之后不再逐帧着色的形状，在主题落地时补齐，避免残留上一主题颜色。
+		{
+			auto Refill = [&](BarUISetShapeEnum key, BarThemeColorEnum role)
+				{
+					auto it = state.shapeMap.find(key);
+					if (it != state.shapeMap.end() && it->second && it->second->fill)
+						it->second->fill->SetTar(GetThemeColor(role));
+				};
+			Refill(BarUISetShapeEnum::MorePanelDivider, BarThemeColorEnum::SurfaceFrame);
+			Refill(BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle, BarThemeColorEnum::PressedFill);
+			Refill(BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit, BarThemeColorEnum::PressedFill);
+			Refill(BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint, BarThemeColorEnum::Surface);
 		}
 		state.unclassifiedDamagePending = true;
 		state.dirtyRegionTracker.ForceFullDamage();
+		// 关闭动画时主题直接到端点，静止主栏同样需要显式要求一次视觉呈现。
+		state.presentDecision.RequireVisualRetry();
+		// 分页表面在自身线程读取已应用的主题；空闲时不会自行重绘，需在主题落地后唤醒。
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 	{
 		// 常驻透明度只改变绘制倍率，不经动画；变化时整幅重画，避免局部脏区残留旧透明度。
@@ -1557,8 +1579,10 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		{
 			state.barStyle.backgroundOpacity = requestedBackground;
 			state.barStyle.contentOpacity = requestedContent;
+			// 透明度不经动画：静止主栏仅有损伤不会提交，必须同时要求一次视觉呈现。
 			state.unclassifiedDamagePending = true;
 			state.dirtyRegionTracker.ForceFullDamage();
+			state.presentDecision.RequireVisualRetry();
 		}
 	}
 	state.barLightMaterial.SetTar(requestedDarkStyle ? 0.0 : 1.0, BarUiDefaultOperationDur);
@@ -3406,7 +3430,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						// 色芯只动画透明度，拖动色板时纯色必须即时跟手。
 						customInner->fill->SetDirect(currentColor);
 						customInner->frame->SetTar(
-							GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
+							GetThemeColor(BarThemeColorEnum::SwatchFrame), operationDur);
 						customInner->framePct->SetTar(customSelected
 							&& state.barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
 						customSwatch->framePct->SetTar(
@@ -3419,7 +3443,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									: 0.0);
 						if (customSwatch->frame.has_value())
 							customSwatch->frame->SetTar(
-								GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
+								GetThemeColor(BarThemeColorEnum::SwatchFrame), operationDur);
 					}
 
 					// 面板本体和文字显式跟随 UI3 主题，避免运行时换色后停留在旧主题。
@@ -4094,9 +4118,11 @@ for (size_t i = 0; i < 3; ++i)
 					shape->rh.value().SetTar(4.0 * drawAttributeLayoutScale);
 					// 描边只在此提交最终缩放目标，避免选中态分支每帧重启动画。
 					shape->ft.value().SetTar(drawAttributeLayoutScale);
-					// 填充先显现，灰边只随同一批次淡入到 18%。
+					// 填充先显现，灰边只随同一批次淡入到 18%；边框色逐帧跟随主题，运行时换色不残留旧色。
 					shape->framePct.value().SetTar(
 						state.barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
+					if (shape->frame.has_value())
+						shape->frame->SetTar(GetThemeColor(BarThemeColorEnum::SwatchFrame), operationDur);
 
 					auto svg = state.svgMap[static_cast<BarUISetSvgEnum>(
 						static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)

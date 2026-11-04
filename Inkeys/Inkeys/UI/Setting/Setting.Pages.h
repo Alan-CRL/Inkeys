@@ -338,6 +338,7 @@ namespace Inkeys::UI::Setting::Design
 		float contentOpacity = 1.0F;
 		DesktopShortcutDraft desktopShortcut;
 		DesktopShortcutDraft whiteboardShortcut{ Business::DesktopShortcut::Kind::Whiteboard };
+		int startupEffect = 0;
 	};
 
 	struct GeneralEvents
@@ -357,6 +358,7 @@ namespace Inkeys::UI::Setting::Design
 		bool safetyModeChanged = false;
 		bool allowMultipleInstancesChanged = false;
 		bool startupPreviewChanged = false;
+		bool startupEffectChanged = false;
 		bool settingEntryAnimationChanged = false;
 		bool animationChanged = false;
 		bool dynamicEdgeLightingChanged = false;

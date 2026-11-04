@@ -492,6 +492,14 @@
         "AutoStartE": "現在のユーザーのサインイン時にInkeysを起動します。",
         "LoadingAnimation": "起動アニメーション",
         "LoadingAnimationE": "Inkeysの起動中に読み込みアニメーションを表示します。",
+        "StartupEffect":
+        {
+          "N": "起動エフェクト",
+          "E": "次回起動時の読み込みエフェクトを選択します。",
+          "Shimmer": "光の流れ",
+          "Aurora": "やわらかな光彩",
+          "PixelAssembly": "ピクセル組み立て"
+        },
         "SettingEntryAnimation":
         {
           "N": "設定を開くアニメーション",

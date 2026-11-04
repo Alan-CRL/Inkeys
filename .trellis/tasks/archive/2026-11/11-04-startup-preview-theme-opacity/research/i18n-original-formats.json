@@ -1,0 +1,90 @@
+{
+  "Inkeys\\src\\i18n\\zh-CN.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\zh-TW.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\zh-HK.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\en-US.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\en-GB.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\de-DE.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\es-ES.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\es-MX.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\fr-FR.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\id-ID.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\it-IT.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\ja-JP.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\ko-KR.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\pl-PL.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\pt-BR.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\ro-RO.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\ru-RU.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\uk-UA.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\tr-TR.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys\\src\\i18n\\vi-VN.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys/IdtI18nKeys.g.h": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Scripts/i18n.zh-CN.snapshot.jsonc": {
+    "bom": false,
+    "newline": "\r\n"
+  }
+}

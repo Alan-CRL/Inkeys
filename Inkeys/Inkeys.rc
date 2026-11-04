@@ -103,32 +103,10 @@ PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
 SETTINGSPONSOR          PNG                     "src\\setting\\SettingSponsor.png"
 
-CUSTOMIZEICO1           PNG                     "src\\ClassIsland.png"
-
-CUSTOMIZEICO2           PNG                     "src\\IslandCaller.png"
-
-CUSTOMIZEICO3           PNG                     "src\\quick\\desktop.png"
-
-CUSTOMIZEICO4           PNG                     "src\\quick\\explorer.png"
-
-CUSTOMIZEICO5           PNG                     "src\\quick\\keyboardesc.png"
-
-CUSTOMIZEICO6           PNG                     "src\\quick\\altf4.png"
-
-CUSTOMIZEICO7           PNG                     "src\\quick\\control.png"
-
-CUSTOMIZEICO8           PNG                     "src\\quick\\lockworkstation.png"
-
-CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
-
 PLUGINFLAG4             PNG                     "src\\PluginFlag4.png"
 
 
 
-
-CUSTOMIZEICO11          PNG                     "src\\NamePicker.png"
-
-CUSTOMIZEICO10          PNG                     "src\\SecRandom.png"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -286,11 +264,7 @@ IDR_EN_GB               JSON                    "src\\i18n\\en-GB.jsonc"
 
 LOGO1                   UI                      "src\\UI\\logo1.svg"
 
-LOGO2                   UI                      "src\\UI\\logo2.svg"
-
 FRAME94                 UI                      "src\\UI\\Frame 94.svg"
-
-BARDIVIDER              UI                      "src\\UI\\barDivider.svg"
 
 BARSELECT               UI                      "src\\UI\\barSelect.svg"
 
@@ -305,8 +279,6 @@ BARLASER                UI                      "src\\UI\\barLaser.svg"
 BARFREEZE               UI                      "src\\UI\\barFreeze.svg"
 
 BARWHITEBOARD           UI                      "src\\UI\\barWhiteboard.svg"
-
-BARDISMISS              UI                      "src\\UI\\barDismiss.svg"
 
 BARSETTING              UI                      "src\\UI\\barSetting.svg"
 
@@ -356,6 +328,47 @@ BARPALETTE              UI                      "src\\UI\\barPalette.svg"
 BARENDSHOW              UI                      "src\\UI\\barEndShow.svg"
 
 BARADD                  UI                      "src\\UI\\barAdd.svg"
+
+BARRETURNSHOW           UI                      "src\\UI\\barReturnShow.svg"
+
+BARRESUMEWHITEBOARD     UI                      "src\\UI\\barResumeWhiteboard.svg"
+
+BARMOVE                 UI                      "src\\UI\\barMove.svg"
+
+
+BARERASERSPEEDSETTING   UI                      "src\\UI\\barEraserSpeedSetting.svg"
+
+COMPEXPLORER            UI                      "src\\UI\\compExplorer.svg"
+
+COMPTASKMANAGER         UI                      "src\\UI\\compTaskManager.svg"
+
+COMPCONTROLPANEL        UI                      "src\\UI\\compControlPanel.svg"
+
+COMPSHOWDESKTOP         UI                      "src\\UI\\compShowDesktop.svg"
+
+COMPLOCKSCREEN          UI                      "src\\UI\\compLockScreen.svg"
+
+COMPESCAPE              UI                      "src\\UI\\compEscape.svg"
+
+COMPALTF4               UI                      "src\\UI\\compAltF4.svg"
+
+COMPROLLCALLRANDOM      UI                      "src\\UI\\compRollCallRandom.svg"
+
+COMPROLLCALLSINGLE      UI                      "src\\UI\\compRollCallSingle.svg"
+
+COMPROLLCALLQUICK       UI                      "src\\UI\\compRollCallQuick.svg"
+
+COMPROLLCALLQUICK2      UI                      "src\\UI\\compRollCallQuick2.svg"
+
+COMPROLLCALLQUICKCOMPAT UI                      "src\\UI\\compRollCallQuickCompat.svg"
+
+COMPNAMEPICKER          UI                      "src\\UI\\compNamePicker.svg"
+
+COMPCLASSSETTINGS       UI                      "src\\UI\\compClassSettings.svg"
+
+COMPCLASSPROFILE        UI                      "src\\UI\\compClassProfile.svg"
+
+COMPCLASSSWAP           UI                      "src\\UI\\compClassSwap.svg"
 
 
 /////////////////////////////////////////////////////////////////////////////

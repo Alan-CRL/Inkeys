@@ -25,6 +25,7 @@ module;
 #include "Setting.SessionState.h"
 #include "imgui/misc/freetype/imgui_freetype.h"
 #include "../StartupPlacement.h"
+#include "../StartupPreview.Effect.h"
 #include "Setting.Pages.h"
 #include "Setting.PageTransition.h"
 #include "Setting.HomeEntryCache.h"
@@ -3544,6 +3545,8 @@ SettingSessionCoroutine RunSettingSession()
 						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
 					draft.settingEntryAnimation = setlist.settingEntryAnimation;
+					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
+						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
 					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
@@ -3697,6 +3700,12 @@ SettingSessionCoroutine RunSettingSession()
 							Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable = draft.startupPreview;
 							if (Experimental.Inkeys3.StartupPreviewPreferenceState.ConsumeWritePending())
 								QueueConfigWrite();
+						}
+						if (events.startupEffectChanged)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect =
+								static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(draft.startupEffect));
+							QueueConfigWrite();
 						}
 						if (events.settingEntryAnimationChanged)
 						{

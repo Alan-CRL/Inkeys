@@ -1,0 +1,38 @@
+
+  Scanning sources for module dependencies...
+  StartupPreview.cpp
+  Compiling...
+  StartupPreview.cpp
+  Inkeys.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\.trellis\tasks\11-04-startup-preview-theme-opacity\validation\bin\Inkeys.exe
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys\.trellis\tasks\11-04-startup-preview-theme-opacity\validation\bin\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys\.trellis\tasks\11-04-startup-preview-theme-opacity\validation\bin\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys\.trellis\tasks\11-04-startup-preview-theme-opacity\validation\bin\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  StartupPreview.cpp
+  startup_preview_state_tests.cpp
+  Compiling...
+  startup_preview_state_tests.cpp
+  StartupPreview.cpp
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(430,25): error C2628: 'Microsoft::WRL::ComPtr<ID2D1Bitmap1>' followed by 'char' is illegal (did you forget a ';'?) [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(430,30): error C2059: syntax error: ',' [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(434,7): error C2062: type 'char' unexpected [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(437,75): error C2144: syntax error: 'char' should be preceded by ')' [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(437,65): error C2660: 'ID2D1DeviceContext::SetTarget': function does not take 0 arguments [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\d2d1_1.h(1701,5):
+      see declaration of 'ID2D1DeviceContext::SetTarget'
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(437,65):
+      while trying to match the argument list '()'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(437,75): error C2144: syntax error: 'char' should be preceded by ';' [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(437,80): error C2059: syntax error: '.' [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(437,86): error C2059: syntax error: ')' [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(440,23): error C2065: 'large': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(441,73): error C2062: type 'char' unexpected [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(445,7): error C2065: 'readback': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(446,7): error C2065: 'readback': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(446,7): error C2065: 'large': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(447,33): error C2065: 'readback': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\startup_preview_state_tests.cpp(450,10): error C2065: 'readback': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]

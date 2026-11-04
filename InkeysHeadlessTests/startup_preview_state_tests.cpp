@@ -6,10 +6,11 @@
 #include <d2d1_1.h>
 #include <wrl/client.h>
 #include "../Inkeys/Inkeys/UI/StartupPlacement.h"
-#include "../Inkeys/Inkeys/UI/StartupPreview/StartupPreview.Drawing.h"
+#include "../Inkeys/Inkeys/UI/StartupPreview/StartupPreview.Effects.Drawing.h"
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dxguid.lib")
 
 #include <algorithm>
 #include <chrono>
@@ -281,6 +282,10 @@ namespace
 		bool floating = false;
 		Inkeys::UI::StartupPlacement placement = Inkeys::UI::StartupPlacement::CenteredBottomBar;
 		float scale = 1.f;
+		Inkeys::UI::StartupPreview::Drawing::EffectRenderer effectRenderer;
+		Inkeys::UI::StartupPreview::Effects::Appearance effectAppearance;
+		Inkeys::UI::StartupPreview::Effects::Rect effectTarget;
+		Inkeys::UI::StartupPreviewEffect effectType = Inkeys::UI::StartupPreviewEffect::Shimmer;
 	public:
 		UINT width = 0, height = 0;
 		HRESULT Initialize(Inkeys::UI::StartupPlacement startupPlacement, float pixelScale)
@@ -354,6 +359,67 @@ namespace
 				mapped.bits+static_cast<size_t>(y)*mapped.pitch, static_cast<size_t>(width)*sizeof(BgraPixel));
 			(void)readable->Unmap(); return pixels;
 		}
+		HRESULT InitializeEffect(Inkeys::UI::StartupPlacement startupPlacement, float pixelScale,
+			Inkeys::UI::StartupPreviewEffect effect, int theme, int background = 0, int content = 100, bool allowSpriteBatch = true)
+		{
+			using namespace Inkeys::UI::StartupPreview;
+			HRESULT hr = Initialize(startupPlacement, pixelScale); if (FAILED(hr)) return hr;
+			effectType = effect;
+			const float w = static_cast<float>(width), h = static_cast<float>(height);
+			const Effects::Rect work{0.f, 0.f, std::round(1200.f * scale), std::round(440.f * scale)};
+			const float x = startupPlacement == Inkeys::UI::StartupPlacement::BottomLeftFloating ? std::round(24.f * scale)
+				: startupPlacement == Inkeys::UI::StartupPlacement::BottomRightFloating ? work.right - std::round(24.f * scale) - w
+				: std::round((work.right - w) * .5f);
+			const float bottom = std::round(400.f * scale);
+			const Effects::Rect destination{x, bottom-h, x+w, bottom};
+			const auto scatter = effect == Inkeys::UI::StartupPreviewEffect::PixelAssembly
+				? Effects::ScatterBounds(destination, work, floating) : destination;
+			const auto presentation = effect == Inkeys::UI::StartupPreviewEffect::PixelAssembly
+				? Effects::PresentationBounds(destination, scatter, work, scale) : destination;
+			effectTarget = {destination.left-presentation.left,destination.top-presentation.top,
+				destination.right-presentation.left,destination.bottom-presentation.top};
+			const Effects::Rect localScatter{scatter.left-presentation.left,scatter.top-presentation.top,
+				scatter.right-presentation.left,scatter.bottom-presentation.top};
+			width = static_cast<UINT>(Effects::Width(presentation)); height = static_cast<UINT>(Effects::Height(presentation));
+			const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+			hr=context->CreateBitmap(D2D1::SizeU(width,height),nullptr,0,&properties,&target); if(FAILED(hr))return hr;
+			const auto readProperties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+			hr=context->CreateBitmap(D2D1::SizeU(width,height),nullptr,0,&readProperties,&readable); if(FAILED(hr))return hr;
+			effectAppearance=Effects::ResolveAppearance(theme,background,content,floating);
+			return effectRenderer.Initialize(context.Get(),width,height,effectTarget,localScatter,scale,floating,effect,effectAppearance,50312,allowSpriteBatch);
+		}
+		const auto& EffectParticles() const noexcept { return effectRenderer.Particles(); }
+		const auto& EffectTarget() const noexcept { return effectTarget; }
+		RECT EffectContentBounds() const noexcept { return effectRenderer.ContentBounds(); }
+		bool EffectUsesSpriteBatch() const noexcept { return effectRenderer.UsesSpriteBatch(); }
+		std::vector<BgraPixel> RenderEffect(double elapsed,double ratio,bool failed,bool showProgress)
+		{
+			using namespace Inkeys::UI::StartupPreview;
+			const double w=Effects::Width(effectTarget),h=Effects::Height(effectTarget);
+			const auto gradient=ResolveStartupPreviewShimmerGradient(w,h);
+			const auto travel=ResolveShimmerTravel({0.,0.,w,h},gradient,
+				(std::max)(8.,std::hypot(gradient.endX-gradient.startX,gradient.endY-gradient.startY)*.1));
+			const double shimmerTime=effectType==Inkeys::UI::StartupPreviewEffect::PixelAssembly
+				? (std::max)(0.,elapsed-Effects::AssemblySeconds):elapsed;
+			const auto movement=ResolveShimmerTranslation(travel,EaseShimmerPhase(std::fmod(shimmerTime,4.)/4.));
+			HRESULT hr=effectRenderer.Prepare(elapsed,D2D1::Point2F(static_cast<float>(gradient.startX+movement.x),static_cast<float>(gradient.startY+movement.y)),
+				D2D1::Point2F(static_cast<float>(gradient.endX+movement.x),static_cast<float>(gradient.endY+movement.y)));
+			if(FAILED(hr)){std::cerr<<"Effect prepare HRESULT="<<std::hex<<hr<<std::dec<<'\n';return {};}
+			context->SetTarget(target.Get());context->SetTransform(D2D1::Matrix3x2F::Identity());context->BeginDraw();context->Clear(D2D1::ColorF(0.f,0.f,0.f,0.f));
+			effectRenderer.DrawBackground(context.Get());
+			if(showProgress){context->SetTransform(D2D1::Matrix3x2F::Translation(effectTarget.left,effectTarget.top));
+				hr=Drawing::DrawProgress(context.Get(),ringStroke.Get(),track.Get(),indicator.Get(),placement,
+					static_cast<float>(w),static_cast<float>(h),scale,ratio,effectAppearance.contentOpacity,failed,effectAppearance.light);}
+			context->SetTransform(D2D1::Matrix3x2F::Identity());const HRESULT end=context->EndDraw();context->SetTarget(nullptr);
+			if(FAILED(hr)||FAILED(end)||FAILED(readable->CopyFromBitmap(nullptr,target.Get(),nullptr)))return {};
+			D2D1_MAPPED_RECT mapped{};if(FAILED(readable->Map(D2D1_MAP_OPTIONS_READ,&mapped)))return {};
+			std::vector<BgraPixel> pixels(static_cast<size_t>(width)*height);
+			for(UINT y=0;y<height;++y)std::memcpy(pixels.data()+static_cast<size_t>(y)*width,mapped.bits+static_cast<size_t>(y)*mapped.pitch,static_cast<size_t>(width)*sizeof(BgraPixel));
+			(void)readable->Unmap();return pixels;
+		}
+
 	};
 
 	bool Blue(const BgraPixel& pixel) { return pixel.blue > pixel.red + 30 && pixel.green > pixel.red + 15; }
@@ -372,6 +438,202 @@ namespace
 		std::ofstream output(directory/name,std::ios::binary|std::ios::trunc);
 		output.write(reinterpret_cast<const char*>(&file),sizeof(file)); output.write(reinterpret_cast<const char*>(&info),sizeof(info));
 		output.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()*sizeof(BgraPixel)));
+	}
+
+	// 两条路径都为 ALIASED；仅速度线/微光的线性采样在 SpriteBatch 与 DrawBitmap 间有亚纹素差异（实测孤立最大146、均值≤0.26）；缺失整块像素会产生≥200的差值。
+	constexpr int SpriteFallbackMaximumDelta = 160;
+	constexpr double SpriteFallbackMeanDelta = .6;
+
+	int RunStartupEffectTests()
+	{
+		using namespace Inkeys::UI;
+		using namespace Inkeys::UI::StartupPreview;
+		int failures=0;
+		auto check=[&](bool condition,const char* name){if(!Expect(condition,name))++failures;};
+		const auto dark=Effects::ResolveAppearance(1,0,100,false),light=Effects::ResolveAppearance(2,0,100,false),corner=Effects::ResolveAppearance(2,0,100,true);
+		check(std::abs(dark.backgroundOpacity-StartupPreviewFillAlpha)<1e-6
+			&& std::abs(corner.backgroundOpacity-StartupPreviewFloatingFillAlpha)<1e-6
+			&& std::abs(dark.canonicalFrameOpacity*dark.backgroundOpacity-StartupPreviewFrameAlpha)<1e-6
+			&& std::abs((dark.surface&255)/255.0-StartupPreviewSurfaceColorChannel)<1e-6,
+			"effect appearance stays anchored to shared Bar surface and opacity metrics");
+		check(light.light&&!corner.light&&std::abs(light.backgroundOpacity-.92f)<1e-6f,
+			"light bar uses mist surface while both corner placements remain dark");
+		for(int theme:{0,1,2,3})for(bool floating:{false,true})for(int background:{-1,0,30,64,100,150})
+		{
+			const auto a=Effects::ResolveAppearance(theme,background,30,floating);
+			check(a.backgroundOpacity>0&&a.backgroundOpacity<=1&&std::abs(a.contentOpacity-.3f)<1e-6f,
+				"theme opacity resolver independently normalizes background and content");
+		}
+		check(!Effects::AssemblyReady(StartupPreviewEffect::PixelAssembly,2.399)
+			&& Effects::AssemblyReady(StartupPreviewEffect::PixelAssembly,2.4)
+			&& Effects::AssemblyReady(StartupPreviewEffect::Aurora,0),"only pixel assembly gates fast success for 2.4 seconds");
+		check(Effects::LatestArrivalSeconds+Effects::ArrivalFlashSeconds<=Effects::AssemblySeconds
+			&&Effects::ParticleOpacity(0.f)==0.f&&Effects::ParticleOpacity(1.f)==1.f&&Effects::ParticleScale(1.f)==1.f&&Effects::ParticleScale(0.f)>.54f,
+			"last arrival glint and particle fade/scale all finish before assembly completes");
+		{
+			// 柔光流彩色场：深浅都连续铺满，始终是粉紫系（绿色通道最低）且保持明显彩度；深色只用低明度色并保留明暗层次。
+			for(bool lightTheme:{false,true}){
+				const auto palette=Effects::MakeGlowPalette(lightTheme);
+				std::vector<std::uint32_t> field(140*14);
+				int minimumChroma=255,worstGreenLead=-255,brightest=0,darkest=255;bool opaque=true;
+				for(double t=0.;t<60.;t+=2.3){
+					Effects::GlowField(palette,t,140,14,560.f,56.f,field.data());
+					for(const auto pixel:field){
+						opaque=opaque&&(pixel>>24)==255;
+						const int r=(pixel>>16)&255,g=(pixel>>8)&255,b=pixel&255,top=(std::max)({r,g,b});
+						minimumChroma=(std::min)(minimumChroma,top-(std::min)({r,g,b}));
+						worstGreenLead=(std::max)(worstGreenLead,g-(std::min)(r,b));
+						brightest=(std::max)(brightest,top);darkest=(std::min)(darkest,top);
+					}
+				}
+				if(minimumChroma<45||worstGreenLead>6||!lightTheme&&(brightest>230||darkest>120||brightest-darkest<60))
+					std::cerr<<"[GlowField] light="<<lightTheme<<" minimumChroma="<<minimumChroma<<" worstGreenLead="<<worstGreenLead<<" brightest="<<brightest<<" darkest="<<darkest<<'\n';
+				check(opaque&&minimumChroma>=45&&worstGreenLead<=6,"soft glow field stays continuous, saturated and locked to the lavender-pink family");
+				if(!lightTheme)check(brightest<=230&&darkest<=120&&brightest-darkest>=60,"dark soft glow uses only deep tones with brighter cores over a deep plum base");
+			}
+		}
+		std::vector<BgraPixel> fixture(9000,{24,24,24,255});
+		const auto* bytes=reinterpret_cast<const std::uint8_t*>(fixture.data());
+		check(Effects::BuildParticles(bytes,9000,1,36000,{0,0,9000,1},{-4500,-2,13500,1},.1f,false,1).size()<=Effects::MaximumParticles,
+			"particle count is strictly bounded for a very wide one-pixel strip");
+		check(Effects::BuildParticles(bytes,2,2,8,{}, {0,0,2,2},1,false,1).empty()
+			&&Effects::BuildParticles(bytes,2,2,8,{0,0,2,2},{0,0,2,2},std::numeric_limits<float>::quiet_NaN(),false,1).empty(),
+			"invalid geometry or scale cannot enter particle origin rejection sampling");
+		const Effects::Rect target{-500,-100,-29,-19},work{-1600,-700,600,0};
+		const auto area=Effects::ScatterBounds(target,work,false);
+		check(std::abs(Effects::Width(area)-706.5)<.001&&std::abs(Effects::Height(area)-194.4)<.001&&area.bottom==target.bottom
+			&&std::abs((area.left+area.right)*.5f-(target.left+target.right)*.5f)<.001,
+			"center particle source area is 1.5W by 2.4H and keeps the bottom center on negative coordinates");
+		const auto clippedArea=Effects::ScatterBounds(target,{-1200,-700,0,0},false);
+		check(clippedArea.left==area.left&&std::abs(clippedArea.top-area.top)<.001&&clippedArea.right==0&&clippedArea.bottom==target.bottom,
+			"source area clips the working-area edge instead of preserving width outside the screen");
+		for(const auto placement:{StartupPlacement::CenteredBottomBar,StartupPlacement::BottomLeftFloating,StartupPlacement::BottomRightFloating})
+			for(int theme:{1,2})for(float scale:{.75f,1.f,1.5625f})
+				for(const auto effect:{StartupPreviewEffect::Shimmer,StartupPreviewEffect::Aurora,StartupPreviewEffect::PixelAssembly})
+				{
+					OffscreenPreview renderer;
+					const HRESULT initialized=renderer.InitializeEffect(placement,scale,effect,theme);
+					if(!Expect(SUCCEEDED(initialized),"create production effect renderer on HWND-free WARP/D2D"))
+					{std::cerr<<"Effect init HRESULT="<<std::hex<<initialized<<std::dec<<'\n';++failures;continue;}
+					const auto base=renderer.RenderEffect(3.6,0,false,false);
+					const auto half=renderer.RenderEffect(3.6,.5,false,true);
+					const auto zero=renderer.RenderEffect(3.6,0,false,true);
+					const auto full=renderer.RenderEffect(3.6,1,false,true);
+					const auto fatal=renderer.RenderEffect(3.6,0,true,true);
+					const auto count=static_cast<size_t>(renderer.width)*renderer.height;
+					if(!Expect(base.size()==count&&half.size()==count&&zero.size()==count&&full.size()==count&&fatal.size()==count,"production background/progress/failure effect images render")){++failures;continue;}
+					const auto r=renderer.EffectTarget();
+					const auto at=[&](const auto& pixels,float x,float y)->const BgraPixel&{return pixels[static_cast<size_t>(std::clamp(static_cast<int>(y),0,static_cast<int>(renderer.height)-1))*renderer.width+std::clamp(static_cast<int>(x),0,static_cast<int>(renderer.width)-1)];};
+					const bool floating=placement!=StartupPlacement::CenteredBottomBar;
+					const auto appearance=Effects::ResolveAppearance(theme,0,100,floating);
+					check(std::abs(at(base,r.left+Effects::Width(r)*.5f,r.top+Effects::Height(r)*.5f).alpha-appearance.backgroundOpacity*255)<2,
+						"background group keeps intended alpha under soft glow/shimmer overlap");
+					const float px=floating?r.left+Effects::Width(r)*.5f+14.5f*scale:r.left+Effects::Width(r)*.5f-48.f*scale;
+					const float py=r.top+Effects::Height(r)*.5f;
+					if(!Red(at(fatal,px,py))){const auto& f=at(fatal,px,py);std::cerr<<"[FailureTrack] effect="<<static_cast<int>(effect)<<" theme="<<theme<<" placement="<<static_cast<int>(placement)<<" scale="<<scale<<" bgra="<<int(f.blue)<<','<<int(f.green)<<','<<int(f.red)<<','<<int(f.alpha)<<'\n';}
+					check(Red(at(fatal,px,py)),"theme-appropriate failure track stays visible at zero progress");
+					check(at(half,px,py).alpha>at(base,px,py).alpha,"foreground progress remains above the background effect");
+					const std::wstring prefix=L"effect-"+std::to_wstring(static_cast<int>(effect))+L"-theme"+std::to_wstring(theme)+L"-pos"+std::to_wstring(static_cast<int>(placement))+L"-scale"+std::to_wstring(scale);
+					SavePreviewBitmap(prefix+L"-ready.bmp",renderer.width,renderer.height,half);
+					SavePreviewBitmap(prefix+L"-zero.bmp",renderer.width,renderer.height,zero);
+					SavePreviewBitmap(prefix+L"-full.bmp",renderer.width,renderer.height,full);
+					SavePreviewBitmap(prefix+L"-failure.bmp",renderer.width,renderer.height,fatal);
+					if(effect==StartupPreviewEffect::PixelAssembly)
+					{
+						OffscreenPreview steady;
+						const HRESULT steadyInit=steady.InitializeEffect(placement,scale,StartupPreviewEffect::Shimmer,theme);
+						const auto steadyPixels=SUCCEEDED(steadyInit)?steady.RenderEffect(3.6-Effects::AssemblySeconds,0,false,false):std::vector<BgraPixel>{};
+						bool sameBase=steadyPixels.size()==static_cast<size_t>(Effects::Width(r))*static_cast<size_t>(Effects::Height(r));
+						std::vector<BgraPixel> actualCrop;size_t different=0;int maxDelta=0,maxAlphaDelta=0;
+						if(sameBase){actualCrop.resize(steadyPixels.size());for(UINT y=0;y<steady.height;++y)for(UINT x=0;x<steady.width;++x){
+							const size_t index=static_cast<size_t>(y)*steady.width+x;
+							const auto& expected=steadyPixels[index];const auto& actual=base[static_cast<size_t>(y+static_cast<UINT>(r.top))*renderer.width+x+static_cast<UINT>(r.left)];actualCrop[index]=actual;
+							if(std::memcmp(&expected,&actual,sizeof(BgraPixel))!=0)++different;
+							maxAlphaDelta=(std::max)(maxAlphaDelta,std::abs(static_cast<int>(expected.alpha)-actual.alpha));
+							maxDelta=(std::max)({maxDelta,std::abs(static_cast<int>(expected.blue)-actual.blue),std::abs(static_cast<int>(expected.green)-actual.green),std::abs(static_cast<int>(expected.red)-actual.red),maxAlphaDelta});
+						}
+							// 相同本地相位下，扩大画布的整数平移仍可能让D2D渐变RGB量化差1；实测暗色主栏仅1~3像素。
+							// alpha/轮廓必须逐像素完全相同，颜色最多允许一个8位量化单位，不容忍位移或材质跳变。
+							sameBase=maxAlphaDelta==0&&maxDelta<=1;
+						}
+						if(different>0||!sameBase){std::cerr<<"[StartupEffectEquivalence] theme="<<theme<<" placement="<<static_cast<int>(placement)<<" scale="<<scale<<" mismatched="<<different<<" maxRGBA="<<maxDelta<<" maxAlpha="<<maxAlphaDelta<<'\n';
+							SavePreviewBitmap(prefix+L"-assembled-expected.bmp",steady.width,steady.height,steadyPixels);SavePreviewBitmap(prefix+L"-assembled-actual.bmp",steady.width,steady.height,actualCrop);}
+						check(sameBase,"assembled pixel surface matches shimmer with exact alpha and at most one RGB quantization unit at identical local phase");
+						const auto& particles=renderer.EffectParticles();size_t moving=0;double centerArrival=0,edgeArrival=0;size_t centerCount=0,edgeCount=0;
+						const float centerX=r.left+Effects::Width(r)*.5f;
+						for(const auto& p:particles)
+						{
+							const auto end=Effects::Position(p,2.4),later=Effects::Position(p,20.);
+							check(end.x==p.target.x&&end.y==p.target.y&&later.x==end.x&&later.y==end.y,"particles reach the exact bitmap and stay stationary");
+							check(p.begin>=0.f&&p.begin<p.arrive&&p.arrive<=static_cast<float>(Effects::LatestArrivalSeconds),"particle flight window is ordered and ends before the last glint");
+							const auto middle=Effects::Position(p,(p.begin+p.arrive)*.5);
+							if(std::hypot(middle.x-p.target.x,middle.y-p.target.y)>4.f*scale)++moving;
+							const float spread=std::abs(p.target.x-centerX)/(Effects::Width(r)*.5f);
+							if(spread<.2f){centerArrival+=p.arrive;++centerCount;}else if(spread>.8f){edgeArrival+=p.arrive;++edgeCount;}
+						}
+						check(!particles.empty()&&particles.size()<=Effects::MaximumParticles&&moving>=particles.size()*.95,
+							"converging particles visibly travel and respect the halved particle budget");
+						check(centerCount&&edgeCount&&centerArrival/centerCount+.4<edgeArrival/edgeCount,"particles settle in waves from the center outward");
+						(void)renderer.RenderEffect(1.2,0,false,false);const RECT flying=renderer.EffectContentBounds();
+						(void)renderer.RenderEffect(3.0,0,false,false);const RECT settled=renderer.EffectContentBounds();
+						check(settled.left<=static_cast<LONG>(r.left)&&settled.right>=static_cast<LONG>(r.right)&&settled.top<=static_cast<LONG>(r.top)
+							&&settled.bottom>=static_cast<LONG>(r.bottom)&&(settled.right-settled.left)*(settled.bottom-settled.top)<static_cast<LONG>(renderer.width*renderer.height)
+							&&(flying.right-flying.left)*(flying.bottom-flying.top)>(settled.right-settled.left)*(settled.bottom-settled.top),
+							"dirty content bounds cover flying particles and shrink back to the bar once assembled");
+						OffscreenPreview fallback;
+						if(SUCCEEDED(fallback.InitializeEffect(placement,scale,effect,theme,0,100,false))&&renderer.EffectUsesSpriteBatch()){
+							for(double t:{.7,1.3,2.1}){
+								const auto batched=renderer.RenderEffect(t,0,false,false),looped=fallback.RenderEffect(t,0,false,false);
+								int spriteDelta=0;std::uint64_t spriteSum=0;
+								if(batched.size()==looped.size())for(size_t k=0;k<batched.size();++k){
+									const auto& a=batched[k];const auto& b=looped[k];
+									const int d=(std::max)({std::abs(a.blue-b.blue),std::abs(a.green-b.green),std::abs(a.red-b.red),std::abs(a.alpha-b.alpha)});
+									spriteSum+=std::abs(a.blue-b.blue)+std::abs(a.green-b.green)+std::abs(a.red-b.red)+std::abs(a.alpha-b.alpha);spriteDelta=(std::max)(spriteDelta,d);
+								}
+								const double spriteMean=batched.empty()?0.:static_cast<double>(spriteSum)/batched.size();
+								const bool spriteMatches=batched.size()==looped.size()&&spriteDelta<=SpriteFallbackMaximumDelta&&spriteMean<=SpriteFallbackMeanDelta;
+								if(!spriteMatches){std::cerr<<"[SpriteFallback] t="<<t<<" scale="<<scale<<" maxDelta="<<spriteDelta<<" mean="<<spriteMean<<'\n';
+									SavePreviewBitmap(prefix+L"-sprite-t"+std::to_wstring(t)+L".bmp",renderer.width,renderer.height,batched);
+									SavePreviewBitmap(prefix+L"-fallback-t"+std::to_wstring(t)+L".bmp",fallback.width,fallback.height,looped);}
+								check(spriteMatches,"sprite batch and aliased DrawBitmap fallback produce matching particle frames");
+							}
+						}
+						for(double t:{.2,.8,1.6,2.4,3.0}){const auto frame=renderer.RenderEffect(t,.3,false,t>=3.);check(frame.size()==count,"production particle entry/return/trail frame renders");SavePreviewBitmap(prefix+L"-t"+std::to_wstring(t)+L".bmp",renderer.width,renderer.height,frame);}
+					}
+				}
+		// 背景与内容分别改变，像素比较必须经过同一生产整组绘制。
+		OffscreenPreview low,high;
+		check(SUCCEEDED(low.InitializeEffect(StartupPlacement::CenteredBottomBar,1.f,StartupPreviewEffect::Aurora,2,30,30))
+			&&SUCCEEDED(high.InitializeEffect(StartupPlacement::CenteredBottomBar,1.f,StartupPreviewEffect::Aurora,2,30,100)),"create independent-opacity effect fixtures");
+		const auto lowPixels=low.RenderEffect(3.6,.5,false,true),highPixels=high.RenderEffect(3.6,.5,false,true);
+		if(!lowPixels.empty()&&lowPixels.size()==highPixels.size()){
+			const size_t backgroundIndex=10*low.width+low.width/2,progressIndex=(low.height/2)*low.width+low.width/2-48;
+			check(std::memcmp(&lowPixels[backgroundIndex],&highPixels[backgroundIndex],sizeof(BgraPixel))==0
+				&&lowPixels[progressIndex].alpha<highPixels[progressIndex].alpha,"content opacity changes foreground without dimming the soft glow background");
+			SavePreviewBitmap(L"effect-opacity-bg30-content30.bmp",low.width,low.height,lowPixels);SavePreviewBitmap(L"effect-opacity-bg30-content100.bmp",high.width,high.height,highPixels);
+		}else check(false,"opacity fixture pixels available");
+		OffscreenPreview opaqueBackground;
+		check(SUCCEEDED(opaqueBackground.InitializeEffect(StartupPlacement::CenteredBottomBar,1.f,StartupPreviewEffect::Aurora,2,100,100)),"create full-background opacity fixture");
+		const auto opaqueProgress=opaqueBackground.RenderEffect(3.6,.5,false,true);
+		if(!highPixels.empty()&&opaqueProgress.size()==highPixels.size()){
+			const size_t progressIndex=(high.height/2)*high.width+high.width/2-48;
+			check(std::memcmp(&highPixels[progressIndex],&opaqueProgress[progressIndex],sizeof(BgraPixel))==0,
+				"opaque foreground progress is unchanged when only background opacity changes from30 to100");
+		}else check(false,"foreground isolation pixels available");
+		std::vector<BgraPixel> cadenceReference;
+		for(int hz:{30,60,120}){
+			OffscreenPreview cadence;
+			const HRESULT init=cadence.InitializeEffect(StartupPlacement::CenteredBottomBar,1.f,StartupPreviewEffect::PixelAssembly,1);
+			if(!Expect(SUCCEEDED(init),"create cadence comparison WARP renderer")){++failures;continue;}
+			std::vector<BgraPixel> pixels;
+			for(int frame=0;frame<=hz*8/5;++frame){pixels=cadence.RenderEffect(static_cast<double>(frame)/hz,0,false,false);if(pixels.empty())break;}
+			check(!pixels.empty(),"all fixed-step cadence frames render");
+			if(hz==30)cadenceReference=pixels;
+			else check(!pixels.empty()&&pixels.size()==cadenceReference.size()
+				&&std::memcmp(pixels.data(),cadenceReference.data(),pixels.size()*sizeof(BgraPixel))==0,
+				"particle frame is byte-identical at1.6s under30/60/120Hz preparation cadence");
+		}
+		return failures;
 	}
 
 	int RunStartupPreviewPixelTests()
@@ -504,7 +766,7 @@ int RunStartupPreviewStateTests()
 {
 	using namespace Inkeys::UI::StartupPreview;
 	using namespace std::chrono_literals;
-	int failures = RunStartupPlacementConfigTests() + RunStartupPlacementGeometryTests() + RunStartupPreviewPixelTests();
+	int failures = RunStartupPlacementConfigTests() + RunStartupPlacementGeometryTests() + RunStartupPreviewPixelTests() + RunStartupEffectTests();
 
 	if (!Expect(DefaultMainBarBodyWidthDip == 380.0
 		&& DefaultCachedStartupBarWidthDip == 470.0

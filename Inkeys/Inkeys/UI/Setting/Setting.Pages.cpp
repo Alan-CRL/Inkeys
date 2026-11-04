@@ -1281,6 +1281,14 @@ namespace Inkeys::UI::Setting::Design
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
 				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
+			// 关闭预览时收起选择行，保留效果偏好；真实选择事件仍由现有配置队列保存。
+			if (ConditionalBlock block{ "##startup-effect-visibility", draft.startupPreview }; block)
+				events.startupEffectChanged = ComboRow("startup-effect",
+					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N).c_str(),
+					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.E).c_str(), "\ue768", draft.startupEffect,
+					{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
+					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
+					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) });
 			events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,

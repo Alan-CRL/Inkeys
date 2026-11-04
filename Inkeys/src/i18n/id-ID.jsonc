@@ -492,6 +492,14 @@
         "AutoStartE": "Jalankan Inkeys saat pengguna ini masuk ke Windows.",
         "LoadingAnimation": "Animasi pemuatan awal",
         "LoadingAnimationE": "Tampilkan animasi pemuatan saat Inkeys dimulai.",
+        "StartupEffect":
+        {
+          "N": "Efek mulai",
+          "E": "Pilih efek pemuatan untuk peluncuran berikutnya.",
+          "Shimmer": "Kilau melintas",
+          "Aurora": "Pendar lembut",
+          "PixelAssembly": "Rangkaian piksel"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animasi pembukaan Setelan",
