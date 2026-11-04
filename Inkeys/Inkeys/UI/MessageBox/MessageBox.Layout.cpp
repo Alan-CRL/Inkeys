@@ -136,6 +136,13 @@ namespace Inkeys::UI::MessageBox::Detail
 		case LANG_SPANISH: return { L"Aceptar", L"Cancelar", L"Sí", L"No" };
 		case LANG_PORTUGUESE: return { L"OK", L"Cancelar", L"Sim", L"Não" };
 		case LANG_RUSSIAN: return { L"ОК", L"Отмена", L"Да", L"Нет" };
+		case LANG_INDONESIAN: return { L"OK", L"Batal", L"Ya", L"Tidak" };
+		case LANG_VIETNAMESE: return { L"OK", L"Hủy", L"Có", L"Không" };
+		case LANG_TURKISH: return { L"Tamam", L"İptal", L"Evet", L"Hayır" };
+		case LANG_ITALIAN: return { L"OK", L"Annulla", L"Sì", L"No" };
+		case LANG_POLISH: return { L"OK", L"Anuluj", L"Tak", L"Nie" };
+		case LANG_UKRAINIAN: return { L"Гаразд", L"Скасувати", L"Так", L"Ні" };
+		case LANG_ROMANIAN: return { L"OK", L"Anulare", L"Da", L"Nu" };
 		default: return { L"OK", L"Cancel", L"Yes", L"No" };
 		}
 	}

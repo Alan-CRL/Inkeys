@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "Die Sprachänderung wird erst nach einem Neustart vollständig wirksam. Inkeys jetzt neu starten?",
-        "SelectNote": "Inkeys neu starten, um die Sprachänderung vollständig anzuwenden."
+        "Warn": "Die Sprachänderung wird sofort wirksam. Ein Neustart ist nicht erforderlich.",
+        "SelectNote": "Sofort wirksam, ohne Neustart."
       }
     },
     "Configuration":
@@ -492,6 +492,13 @@
         "AutoStartE": "Inkeys starten, wenn sich der aktuelle Benutzer bei Windows anmeldet.",
         "LoadingAnimation": "Ladeanimation beim Start",
         "LoadingAnimationE": "Beim Start von Inkeys die Ladeanimation anzeigen.",
+        "StartupEffect":
+        {
+          "N": "Starteffekt",
+          "Shimmer": "Lichtschimmer",
+          "Aurora": "Sanfter Schimmer",
+          "PixelAssembly": "Pixelaufbau"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animation beim Öffnen der Einstellungen",
@@ -503,7 +510,7 @@
         "Link":
         {
           "N": "Desktop-Verknüpfung erstellen",
-          "E": "Namen vorhandener Verknüpfungen korrigieren oder eine neue erstellen. Unter Weitere Optionen konfigurieren.",
+          "E": "Erstellt eine Desktopverknüpfung mit dem unten ausgewählten Namen.",
           "More": "Weitere Optionen"
         }
       },
@@ -536,8 +543,8 @@
         },
         "Theme":
         {
-          "N": "Design",
-          "E": "Empfohlenes Design auswählen, um automatisch das derzeit offiziell empfohlene Design anzuwenden.",
+          "N": "Design der Leiste",
+          "E": "Schaltet die Leiste zwischen dunkler und heller Darstellung um. Änderungen gelten sofort.",
           "Dark": "Dunkler Modus",
           "Light": "Heller Modus"
         },
@@ -647,11 +654,55 @@
       "Cursor":
       {
         "N": "Zeiger",
-        "Description": "Die Mausoption gilt nur für weiche und harte Stifte. Textmarker zeigen immer die Stärke an; Formen nutzen den Systemzeiger. Der Standard-Stiftzeiger ist kreisförmig. Die Hervorhebung des Zeigerrands ist bei Bildschirmstiften aus und bei Grafiktabletts sowie nicht erkannten Stiften ein.",
-        "MouseStyle": "Maus",
-        "PenStyle": "Stift",
-        "DefaultStyle": "Standardzeiger",
-        "DrawingStyle": "Stiftförmiger Zeiger"
+        "EntryDescription": "Legt je Eingabegerät fest, welcher Zeiger beim Zeichnen angezeigt wird, und zeigt eine Vorschau.",
+        "Devices": "Nach Gerät",
+        "PenDevices": "Grafiktablett-Erkennung",
+        "Mouse":
+        {
+          "N": "Maus",
+          "E": "Maus und Touchpad."
+        },
+        "Touch":
+        {
+          "N": "Touch",
+          "E": "Beim Aufsetzen der Finger erscheint für jeden Finger ein eigener Zeiger, der nach dem Abheben verschwindet."
+        },
+        "ScreenPen":
+        {
+          "N": "Bildschirmstift",
+          "E": "Stifte, mit denen direkt auf dem Bildschirm geschrieben wird."
+        },
+        "Tablet":
+        {
+          "N": "Grafiktablett",
+          "E": "Externe Grafiktabletts sowie Stifte, deren Herkunft nicht erkannt wird."
+        },
+        "Style":
+        {
+          "None": "Kein Zeiger",
+          "Arrow": "Maus",
+          "Pen": "Stift",
+          "HighlightPen": "Stift (hervorgehoben)",
+          "Dot": "Kleiner Punkt",
+          "HighlightDot": "Kleiner Punkt (hervorgehoben)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Vom Treiber eingespeiste Grafiktabletts erkennen",
+          "E": "Grafiktabletts ohne Windows Ink senden ihre Eingaben meist als vom Treiber eingespeiste Maus. Bei aktivierter Option nutzt diese Maus die Zeigereinstellungen des Grafiktabletts; Software wie Remotedesktop, die ebenfalls Mauseingaben einspeist, kann fälschlich erkannt werden.",
+          "Unavailable": "Dieses System kann die Eingabequelle nicht unterscheiden; die Option ist nicht verfügbar."
+        },
+        "FineControl": "Feinsteuerung",
+        "DotHideOnContact":
+        {
+          "N": "Kleinen Punktcursor beim Aufsetzen automatisch ausblenden",
+          "E": "Gilt für beide kleinen Punktstile. Der Cursor wird beim Aufsetzen des ausgewählten Geräts ausgeblendet und bleibt beim Schweben sichtbar.",
+          "Off": "Aus",
+          "ScreenPen": "Nur Bildschirmstift",
+          "Tablet": "Nur Grafiktablett",
+          "Both": "Bildschirmstift und Grafiktablett"
+        },
+        "Note": "Bei Bildschirmstift, Grafiktablett und Touch zeichnet die App „Maus“ als eigenen Pfeil; die Zeiger von Textmarker und Laserpointer, Formwerkzeuge und der spezielle Radierer-Zeiger bleiben von diesen Optionen unberührt."
       },
       "Effect":
       {
@@ -864,9 +915,12 @@
           "MiddleBoth": "Steuerelemente beidseitig auf mittlerer Höhe anzeigen",
           "BottomMiddle": "Steuerelemente in der unteren Leiste anzeigen",
           "IdleFade": "Im Leerlauf ausblenden",
-          "IdleFadeE": "Während einer Präsentation werden die Seitensteuerelemente nach einer Weile ohne Interaktion oder nach dem Blättern per Presenter oder Tastatur transparenter, damit sie weniger verdecken. Zeigen, Klicken oder Ziehen stellt sie wieder her.",
+          "IdleFadeE": "Während einer Präsentation werden die ausgewählten Bedienelemente bei Inaktivität transparenter. Darüberfahren, Klicken oder Ziehen stellt sie wieder her. Externe Seitenwechsel blenden nur die Seitensteuerung ab. Die Hauptleiste wird nur unten angedockt (auch zentriert) nach der Wartezeit abgeblendet und bleibt bei geöffneten Unterfenstern unverändert.",
           "IdleFadeOff": "Aus",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Beide unteren Ecken",
+          "IdleFadeMiddlePair": "Beide Seiten auf halber Höhe",
+          "IdleFadeMainBar": "Hauptleiste (nur angedockt)"
         },
         "WidgetPosition":
         {
@@ -975,8 +1029,8 @@
         "Expansion":
         {
           "N": "Zusätzliche Optionen",
-          "CreateLnk": "Desktop-Verknüpfung erstellen",
-          "CreateLnkE": "Eine Desktop-Verknüpfung erstellen, falls noch keine vorhanden ist."
+          "CreateLnk": "Desktop-Verknüpfung beim Start erstellen",
+          "CreateLnkE": "Erstellt beim Programmstart eine Desktopverknüpfung, falls noch keine vorhanden ist."
         }
       }
     },
@@ -1010,6 +1064,20 @@
       "NamePickerRequirement": "Erfordert die Registrierung des NamePicker-URL-Protokolls.",
       "ClassIslandProtocolNote": "Das URL-Navigationsprotokoll in den ClassIsland-Einstellungen registrieren.",
       "ClassIslandSwapNote": "Diese Komponente hat keine Wirkung, wenn in ClassIsland kein Stundenplan geladen ist."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Verknüpfungen",
+      "ApplicationSection": "Anwendung",
+      "WhiteboardSection": "Whiteboard",
+      "NameLabel": "Name der Verknüpfung",
+      "CustomName": "Benutzerdefiniert",
+      "CustomHint": "Namen der Verknüpfung eingeben",
+      "InvalidName": "Geben Sie einen gültigen Windows-Dateinamen ein. Leere oder reservierte Namen, ungültige Zeichen und zu lange Pfade sind nicht zulässig.",
+      "NameConflict": "Die Verknüpfungen für die Anwendung und das Whiteboard müssen unterschiedliche Namen haben.",
+      "PresetWhiteboard": "Inkeys Whiteboard",
+      "PresetAnnotation": "Inkeys(Anmerkung)",
+      "PresetAnnotationTool": "Inkeys(Anmerkungstool)"
     },
     "HotKey":
     {

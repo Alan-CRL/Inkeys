@@ -8,11 +8,11 @@
 - 菜单及主题面板属于左下同一 HWND，但分别绘制独立矩形：菜单在分页栏上方回弹展开，主题在菜单右侧回弹展开，节奏复用主栏属性动画。菜单行使用左图标和左对齐文字。包络、命中、damage 与呈现基于同帧动画几何；左/底锚点不移动，不新建 popup HWND。分页列表与固定属性直接调用主栏公共按钮函数，BarPageSurface 仅负责数据和目标适配。
 - More、Escape、面板外点击、翻页、最小化、workspace 转换收起菜单并取消 capture。白板返回放映时保留 More 实例与列表成员，使用共享 UI3 隐藏布局收拢到 Next 下层并渐隐，不得以空目标矩形或移除成员代替隐藏；按钮退场与列表背景宽度在同一布局批次连续变化，保留按钮和整条栏保持正常透明度；退场时不可命中，中途重入时宽度、位置与按钮透明度均从当前呈现值反向；首次隐藏配置从首帧保持透明。透明边界穿透，UI 操作不落笔。背景和预览使用同一主题纹理绘制规则。
 - 按钮在白板中显示关闭白板，有有效放映时显示返回放映；英文返回标签使用短文案 `Resume`，保持标准按钮字号与文字槽。白板窗口组最小化后，主栏按钮显示白板图标和“返回白板”（英文 `Resume`），点击恢复同一白板，不切换 workspace 或重新进入。最小化/恢复边沿须立即刷新按钮内容，浮动和折叠主栏同样适用。菜单关闭使用同一退出事务。后台 PPT 结束不得结束白板。
-- 主题按页保存，同进程新页继承当前页；新进程首张白板页读取最后一次成功修改的颜色/纹理偏好，缺省或非法配置回退墨绿 #123B32/空白。冷加载与切换已有页不回写偏好，重复或身份失效的主题请求不触发持久化；绘制 owner 只投递既有配置 FIFO，正常退出先停止生产者再排空写入。色板按三列两排：#123B32/#172A46/#000000，#FFFFFF/#E5E7EB/#F5F1E6；空白/点阵/网格，24 DIP 间距、1 DIP 点半径/线宽。主题不改变画笔、不进入墨迹 undo，修改使页 dirty。
+- 主题按页保存，同进程新页继承当前页；新进程首张白板页读取最后一次成功修改的颜色/纹理偏好，缺省或非法配置回退墨绿 #123B32/空白。冷加载与切换已有页不回写偏好，重复或身份失效的主题请求不触发持久化；绘制 owner 只投递既有配置 FIFO，正常退出先停止生产者再排空写入。色板按三列两排：#123B32/#172A46/#000000，#FFFFFF/#E5E7EB/#F5F1E6；空白/点阵/网格，24 DIP 间距、1 DIP 点半径/线宽。2026-11-02批准的共享样式合同替代“主题不改变画笔”：主题按实际RGB浅/深类别选择Brush的独立颜色记忆（浅首次红色、深首次白色），同类别/仅纹理变化不重置用户颜色；荧光/激光颜色各自全局共享、不随背景切色。主题不改变已有笔迹、不进入墨迹undo，修改使页dirty。
 - UI 只发布带身份请求并消费快照，Draw3 绘制线程独占页内容/历史；I/O worker 不访问 UI、HWND 或可变 runtime。
 - 白板首个 Next/Previous 页面命令在 Host 立即设置 `commandScenePending` 并关闭新 Down，沿用 PPT admission revision 的 contact 封口：旧页已接受笔按最后位置完成，旧 Move/Up 隔离到真实终态，不得跨页续写。协调器只保留一个页面事务，首请求不得再等待 `whiteboardLoadPending`，但在真实 ready 前不得发布第二事务；不扩展多冷页 latest-wins。
 - 暖页重放和冷页严格加载后，只有真实 Present 回执才清除 pending 并重开输入。第一页 Previous、追加/加载失败或无效页命令留在原页时，必须补原页真实 ready，不能永久关闸；持续加载、呈现失败或身份不明不得伪造 ready。旧页保存、失败暖页和冷页完整性门禁不变。
-- 首次尚未建立白板工具记忆时默认 SoftPen 绘制；Desktop/Presentation 的新工具记忆仍默认 Selection。已有工作区记忆及用户手动切换的拖动状态保持不变。
+- 首次尚未建立白板工具记忆时默认 SoftPen 绘制；Desktop/Presentation 的新工具记忆仍默认 Selection。已有工作区工具身份记忆及用户手动切换的拖动状态保持不变。样式按2026-11-02共享合同单独投影：三组宽度各自全局、Brush三范围颜色、荧光/激光全局颜色，不随旧工作区状态恢复旧值。
 
 ## 存储、历史与内存
 
@@ -130,3 +130,49 @@
 
 - Wrong：失败后 `SetPage(currentPage)`，仅凭入队时仍在白板就授权后续执行。
 - Correct：发送 `RePresentWhiteboardPage` 并携带原代次/原页；消费时核对后只补真实呈现。
+
+## 场景：跨场景共享样式与白板首笔同步（2026-11-02）
+
+### 1. Scope / Trigger
+
+用户批准任务 shape-style-tablet-bar；涉及工具样式、工作区恢复、白板主题/页回执或Host输入准入时适用。此合同覆盖旧的工作区宽色隔离，不改变工具身份和页级墨迹存储边界。
+
+### 2. Signatures
+
+- `IsLightWhiteboardBackground(uint32_t rgb)` 位于 `Draw3.WhiteboardModel.h`，299R+587G+114B >128000为浅色，等值为深色；纹理不参与。
+- `Bridge::WhiteboardStyleToken { hostGeneration, generation, page, backgroundRgb, serial }`；ProductState与HostRuntimeSnapshot携带同源token。
+- `SetPenColorIfRevision(color,revision,save)` 与既有条件宽度setter共同约束长手势；同锁校验版本和写入范围。
+
+### 3. Contracts
+
+- Brush（软/硬/实线/虚线/矩形）颜色存Primary（桌面+PPT）、浅白板、深白板三份，浅首次现有红/深首次白，用户改色后按类别恢复。荧光/激光颜色各自全局，三组宽度各自全局，组间不合并。
+- 工作区恢复仅恢复工具身份并投影最新共享样式；旧StateMode宽色字段只是快照/兼容投影，不能反写权威值。Preset/ExplicitDip与当前显示Context规则不变。
+- 主题和翻页分类以Controller实际当前页为准，覆盖首次进入/冷恢复；预览、请求Accepted、主题持久化回调均不能代替实际接纳。模型允许任意合法RGB，不能只按六色索引分类。
+- 新主题需要重新绑定样式时，Host先登记独立样式pending并关闭新Down，再发布主题/页身份。业务据同源token选择有效色；owner真正应用ProductState后，匹配token与应用版本才可清样式原因。不得复用workspaceTransitionEpoch，也不得绕过其余加载/呈现/恢复阻挡直接开门。
+- 同页主题变化可能不推进generation，必须包含背景身份和单调serial（A→B→A也不能接纳第一份A的ACK）；旧Host/页/主题确认不释放新pending。同类重复通知保持幂等，不重置用户颜色。
+- Host回调不持锁执行重型业务/窗口同步；业务不持状态锁等待Host应用。活动笔划在Down锁存，旧笔迹不改色。
+- memory仅编码已有字段的权威样式投影，白板Brush色不污染Primary；不新增白板/Laser颜色schema，不启用停用的启动恢复。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 预期 |
+| --- | --- |
+| 浅→深→浅或跨类翻页 | 选择相应记忆，首笔与新类一致 |
+| 同类页、纹理变化、重复主题 | 不重置颜色，不覆盖全局宽度 |
+| 无效/stale主题、cold load失败 | 保持实际旧页/主题颜色 |
+| 已生效主题保存失败 | 保留当前颜色，仍报告未保存 |
+| 旧token ACK、旧revision选色/粗细提交 | 不开新门，不写入新范围 |
+| 工作区往返、显示Context变化 | 工具按工作区恢复，宽色按共享合同投影，DIP规则不变 |
+
+### 5. Good / Base / Bad Cases
+
+Good：白板深色手选黄，回浅色仍红，再回任意深色页恢复黄；PPT保留Primary色，全局宽度不回退。Base：首次深色白板Brush白色，荧光/激光保持各自全局默认色。Bad：themeEdited里只改UI颜色、先开门后发样式、把旧工作区整份宽色作为权威恢复。
+
+### 6. Tests Required
+
+生产State/Bar/Host测试覆盖三范围默认和改色记忆、三组全局Selection/颜色隔离、工作区工具恢复与保存快照、旧交互revision、同页改主题token、过期ACK、连续主题/翻页、加载失败/stale、pending未应用拒新Down且应用后仅清本原因；Headless直接调用公共RGB分类覆盖六色和阈值。完整ARM64 Debug Solution及适用初始化前探针必须记录退出码；GUI/实机结果不可由静态或headless推出。
+
+### 7. Wrong vs Correct
+
+Wrong：收到主题点击请求就选色；只比较generation认为同页主题没变化；收到任意新ProductState便直接开放输入。
+Correct：实际当前页主题生成完整token；有效样式应用确认匹配本token，再清独立样式pending，其余准入原因继续生效。

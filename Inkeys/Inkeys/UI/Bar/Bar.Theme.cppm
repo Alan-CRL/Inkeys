@@ -93,6 +93,8 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 	{
 	case BarThemeColorEnum::Surface: return RGB(BarDarkSurfaceColorChannel,
 		BarDarkSurfaceColorChannel, BarDarkSurfaceColorChannel);
+	// 色块边框在深色端沿用表面边框色，保持原观感。
+	case BarThemeColorEnum::SwatchFrame:
 	case BarThemeColorEnum::Divider:
 	case BarThemeColorEnum::EdgeLight:
 	case BarThemeColorEnum::SurfaceFrame: return RGB(
@@ -105,7 +107,6 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 	case BarThemeColorEnum::Accent: return RGB(88, 255, 236);
 	case BarThemeColorEnum::PressedFill: return RGB(127, 127, 127);
 	case BarThemeColorEnum::SubtleFill: return RGB(127, 127, 127);
-	case BarThemeColorEnum::SwatchFrame: return RGB(80, 80, 80);
 	case BarThemeColorEnum::DockTarget: return RGB(76, 158, 255);
 	case BarThemeColorEnum::ShadowKey:
 	case BarThemeColorEnum::ShadowAmbient: return RGB(BarDarkSurfaceColorChannel,
@@ -180,6 +181,13 @@ export double GetThemeSurfaceFrameOpacity(double darkOpacity)
 {
 	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
 	return BarThemeMaterial::FrameOpacity(darkStyle ? 0.0 : 1.0, darkOpacity);
+}
+
+// 不经主栏材质动画的客户端（分页）取当前主题端点：Dark 0、Light 1。
+export double GetThemeLightWeight()
+{
+	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
+	return darkStyle ? 0.0 : 1.0;
 }
 
 export double GetThemeDisabledContentOpacity()

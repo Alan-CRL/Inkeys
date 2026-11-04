@@ -33,33 +33,34 @@ namespace BarThemeMaterial
 		DockTarget,
 	};
 
-	// 「青瓷」浅色：主题色与深色 #58FFEC 同色相，只用于强调、选中底和边缘光；
-	// 中性灰为冷石墨灰（色相约 207°、低饱和），避免低饱和青绿灰显脏。
-	// 边框/分隔线/悬停底为预混色，在对象原有透明度下得到约 12%/16%/8% 的观感；
-	// 浅色表面边框另按 LightFrameOpacityScale 加深，不依赖材质系统的独立面板（橡皮、撤销、分页）
-	// 通过 GetThemeSurfaceFrameOpacity 取得同一结果。
+	// 「中性雾白」浅色：中性色全部无色相（R=G=B），与设置窗口的 WinUI 3 浅色一致；
+	// 品牌青与深色 #58FFEC 同色相，只用于选中内容、选中底和选中按钮的边缘光。
+	// 边框/分隔线/悬停底为预混中性灰：按 C = 251 - 目标黑色占比 × 251 / 对象透明度 反算，
+	// 在对象原有透明度（边框 18%、分隔线 30%、悬停 18%）下得到约 8%/10%/4.5% 的黑色观感，
+	// 不依赖材质系统的独立面板（橡皮、撤销、分页）通过 GetThemeSurfaceFrameOpacity 取得同一结果。
 	constexpr Color LightColor(ColorRole role) noexcept
 	{
 		switch (role)
 		{
-		case ColorRole::Surface: return Rgb(247, 248, 250);
-		case ColorRole::SurfaceFrame: return Rgb(107, 114, 120);
-		case ColorRole::IconPrimary: return Rgb(71, 77, 82);
-		case ColorRole::TextPrimary: return Rgb(34, 39, 43);
-		// 选中文字压在同色半透明底上，加深到在深色背景下仍约 4.9:1。
-		case ColorRole::Accent: return Rgb(0, 98, 92);
-		case ColorRole::SelectedFill: return Rgb(0, 163, 153);
-		case ColorRole::PressedFill: return Rgb(174, 180, 186);
-		case ColorRole::SubtleFill: return Rgb(221, 225, 229);
-		case ColorRole::SwatchFrame: return Rgb(180, 185, 190);
-		case ColorRole::Divider: return Rgb(138, 144, 150);
-		// 边缘光与 Dark 一致取边框色，不再使用独立的浅青。
-		case ColorRole::EdgeLight: return Rgb(107, 114, 120);
-		case ColorRole::ShadowKey: return Rgb(34, 39, 43);
-		case ColorRole::ShadowAmbient: return Rgb(71, 77, 82);
+		case ColorRole::Surface: return Rgb(251, 251, 251);
+		case ColorRole::SurfaceFrame: return Rgb(139, 139, 139);
+		case ColorRole::IconPrimary: return Rgb(43, 43, 43);
+		case ColorRole::TextPrimary: return Rgb(26, 26, 26);
+		// 选中内容压在同色 10% 底上，深色课件背景下仍不低于 4.5:1。
+		case ColorRole::Accent: return Rgb(0, 106, 99);
+		case ColorRole::SelectedFill: return Rgb(0, 106, 99);
+		case ColorRole::PressedFill: return Rgb(188, 188, 188);
+		case ColorRole::SubtleFill: return Rgb(225, 225, 225);
+		// 色块边框以 18% 透明度绘制，纯黑即约 18% 观感，白色色块也能读出轮廓。
+		case ColorRole::SwatchFrame: return Rgb(0, 0, 0);
+		case ColorRole::Divider: return Rgb(167, 167, 167);
+		// 浅色边缘光与边框解耦：边框只有 8% 黑，直接作光色在雾白底上不可见，改用中性深灰。
+		case ColorRole::EdgeLight: return Rgb(58, 58, 58);
+		case ColorRole::ShadowKey: return Rgb(0, 0, 0);
+		case ColorRole::ShadowAmbient: return Rgb(0, 0, 0);
 		case ColorRole::TopHighlight: return Rgb(255, 255, 255);
 		case ColorRole::DockTarget: return Rgb(0, 120, 212);
-		default: return Rgb(34, 39, 43);
+		default: return Rgb(26, 26, 26);
 		}
 	}
 
@@ -73,19 +74,28 @@ namespace BarThemeMaterial
 		return dark + (light - dark) * ClampWeight(lightWeight);
 	}
 
-	// 浅色选中底与深色同为半透明主题色，只按比例降低，避免实色卡片压住背景。
-	inline constexpr double LightSelectedFillOpacityScale = 0.60;
+	// 浅色选中底与深色同为半透明主题色，只按比例降低（0.20 → 0.10），避免实色卡片压住背景。
+	inline constexpr double LightSelectedFillOpacityScale = 0.50;
 	// 主栏、主按钮和分页这类常驻表面在浅色端更实：半透明浅底压在深色背景上会混成脏灰，
-	// 0.80 × 1.10 = 0.88 让深色背景下图标仍有约 5.7:1 对比度；弹出面板不受影响。
-	inline constexpr double LightResidentSurfaceOpacityScale = 1.10;
-	// 浅色表面外缘在浅背景上几乎与背景同亮，单层边框按比例加深（0.18 → 约 0.32）。
-	inline constexpr double LightFrameOpacityScale = 1.75;
+	// 0.80 × 1.15 = 0.92；弹出面板不受影响。
+	inline constexpr double LightResidentSurfaceOpacityScale = 1.15;
+	// 浅色外框由预混色直接给出约 8% 黑，配合单圈柔和投影读出外缘，不再加深透明度。
+	inline constexpr double LightFrameOpacityScale = 1.0;
 	// 浅色底上 0.30 的禁用内容只剩约 1.5:1，提高到约 2:1 仍明显区别于可用态。
 	inline constexpr double DarkDisabledContentOpacity = 0.30;
 	inline constexpr double LightDisabledContentOpacity = 0.45;
 
 	// 主栏展开时的 Dark 常驻填充透明度；其他常驻表面按与它的比例同步缩放。
 	inline constexpr double ResidentBaseFillOpacity = 0.80;
+	inline constexpr double IdleBackgroundOpacity = 0.30;
+	inline constexpr double IdleContentOpacity = 0.60;
+
+	// 闲置只限制当前正常值，不再次乘用户透明度，也不把本来更淡的材质加深。
+	inline double ResolveIdleOpacity(double normal, double ceiling, double progress) noexcept
+	{
+		normal = ClampWeight(normal);
+		return Mix(normal, (std::min)(normal, ceiling), progress);
+	}
 
 	// 常驻表面填充比例：用户设置的绝对透明度优先（>0），否则为主题默认（Light 端 ×1.10）。
 	inline double ResidentFillOpacityScale(double lightWeight, double lightScale,
@@ -137,8 +147,13 @@ namespace BarThemeMaterial
 	inline constexpr double DarkPenDiffuseOpacity = 0.20;
 	inline constexpr double LightFrameDiffuseOpacity = 0.08;
 	inline constexpr double LightPenDiffuseOpacity = 0.06;
-	// 浅色边缘光沿用对象边框色；强度略高于深色以保持相近的可见度。
-	inline constexpr double LightEdgeLightIntensity = 1.5;
+	// 浅色边缘光为中性深灰，与深色同强度，避免灰光发脏、刺眼。
+	inline constexpr double LightEdgeLightIntensity = 1.0;
+	// 浅色单圈柔和投影：只用 ambient 一层，全周等宽外扩，下移量很小以免一侧发粗；
+	// 半径 + 下移不超过 SurfaceShadowOutsetDip，沿用既有窗口/dirty 外扩，不改布局。
+	inline constexpr double LightAmbientShadowOpacity = 0.08;
+	inline constexpr double LightAmbientShadowRadiusDip = 6.0;
+	inline constexpr double LightAmbientShadowOffsetYDip = 2.0;
 	inline constexpr double LightPrimaryRadiusScale = 360.0 / 480.0;
 	inline constexpr double LightCursorRadiusScale = 200.0 / 240.0;
 	// WinUI 3 Slider Thumb 外圈：ControlElevationBorder 约 6%~16% 黑，取 12% 石墨灰。
@@ -181,9 +196,9 @@ namespace BarThemeMaterial
 		// 填充透明度比例由常驻表面自行选择；边框保持 1 DIP 单层，浅色端按比例加深。
 		result.fillOpacityScale = 1.0;
 		result.frameOpacityScale = Mix(1.0, LightFrameOpacityScale, weight);
-		// 边缘光与 Dark 同规则：未绘制时取对象自身边框色（表面/分隔线为灰，选中按钮为主题青），
-		// 绘制时再向笔色过渡；renderer 会用实际绘制的边框色覆盖此默认值。
-		result.edgeLight = result.surfaceFrame;
+		// 边缘光：Dark 取边框色，Light 端中性对象改用 EdgeLight 深灰（见 ObjectEdgeLight），
+		// 选中按钮等有色边框仍取自身颜色；绘制时再向笔色过渡。
+		result.edgeLight = MixColor(darkFrame, LightColor(ColorRole::EdgeLight), weight);
 		result.lightIntensity = Mix(1.0, LightEdgeLightIntensity, weight);
 		result.cursorLightIntensityScale = Mix(1.0, 0.85, weight);
 		result.primaryLightRadiusScale = Mix(1.0, LightPrimaryRadiusScale, weight);
@@ -196,12 +211,26 @@ namespace BarThemeMaterial
 		result.keyShadowRadiusDip = 0.0;
 		result.keyShadowOffsetYDip = 0.0;
 		result.ambientShadowColor = MixColor(darkSurface, LightColor(ColorRole::ShadowAmbient), weight);
-		result.ambientShadowOpacity = 0.0;
-		result.ambientShadowRadiusDip = 0.0;
-		result.ambientShadowOffsetYDip = 0.0;
+		result.ambientShadowOpacity = Mix(0.0, LightAmbientShadowOpacity, weight);
+		result.ambientShadowRadiusDip = Mix(0.0, LightAmbientShadowRadiusDip, weight);
+		result.ambientShadowOffsetYDip = Mix(0.0, LightAmbientShadowOffsetYDip, weight);
 		result.highlightColor = LightColor(ColorRole::TopHighlight);
 		result.highlightOpacity = 0.0;
 		return result;
+	}
+
+	inline bool IsNeutralColor(Color color) noexcept
+	{
+		const auto r = color & 0xFFU, g = (color >> 8) & 0xFFU, b = (color >> 16) & 0xFFU;
+		return r == g && g == b;
+	}
+
+	// 对象边缘光基色：有色边框（选中按钮的主题青）保持自身颜色；中性边框在浅色端
+	// 向 EdgeLight 深灰过渡，Dark 端仍为边框色本身。
+	inline Color ObjectEdgeLight(double lightWeight, Color drawnFrame) noexcept
+	{
+		if (!IsNeutralColor(drawnFrame)) return drawnFrame;
+		return MixColor(drawnFrame, LightColor(ColorRole::EdgeLight), lightWeight);
 	}
 
 	struct Lighting

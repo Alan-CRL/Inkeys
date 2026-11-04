@@ -158,6 +158,7 @@ std::uint64_t WorkspaceTransitionFailureRevision() noexcept;
 bool RetryWorkspaceTransitionIfRevision(std::uint64_t revision) noexcept;
 bool CancelFailedWhiteboardTransitionIfRevision(std::uint64_t revision) noexcept;
 bool RequestWhiteboardWindowView(bool minimized) noexcept;
+void RequestWhiteboardFromShortcut() noexcept;
 void NotifyWhiteboardWindowMinimizedChanged() noexcept;
 void NotifyWhiteboardWindowViewRequested(bool minimized) noexcept;
 void NotifyWhiteboardWindowCloseRequested() noexcept;
@@ -191,6 +192,7 @@ void RestorePenWidthSelections(Inkeys::Business::PenWidth::Selection brush,
     const COLORREF* brushColor = nullptr, const COLORREF* highlighterColor = nullptr);
 int RunPenWidthStateProductionTest() noexcept;
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
+bool SetPenColorIfRevision(COLORREF targetColor, std::uint64_t revision, bool setMemory = true);
 float GetPenWidth();
 float GetPenWidth(const StateModeClass& snapshot) noexcept;
 COLORREF GetPenColor();

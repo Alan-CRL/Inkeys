@@ -1,0 +1,39 @@
+{
+  "rows": 1664,
+  "locales": [
+    "de-DE",
+    "en-GB",
+    "en-US",
+    "es-ES",
+    "es-MX",
+    "fr-FR",
+    "id-ID",
+    "it-IT",
+    "ja-JP",
+    "ko-KR",
+    "pl-PL",
+    "pt-BR",
+    "ro-RO",
+    "ru-RU",
+    "tr-TR",
+    "uk-UA",
+    "vi-VN",
+    "zh-CN",
+    "zh-HK",
+    "zh-TW"
+  ],
+  "freetype_scenarios": 832,
+  "stb_comparisons": 832,
+  "missing_glyph_rows": 0,
+  "budget_failures": 0,
+  "scales": [
+    1.0,
+    1.25,
+    1.5,
+    1.875,
+    2.0,
+    4.0
+  ],
+  "uk_final_rows": 80,
+  "csv_sha256": "2c462abb76d666e14f36c7d0f90a3ee66f32c4609cc5dfae5db684664b59cb31"
+}

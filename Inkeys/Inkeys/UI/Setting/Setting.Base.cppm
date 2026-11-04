@@ -2,6 +2,7 @@ module;
 
 #include "Setting.Wrap.h"
 #include "Setting.Layout.h"
+#include "Setting.SessionState.h"
 
 export module Inkeys.UI.Setting:Base;
 
@@ -32,6 +33,7 @@ Microsoft::WRL::ComPtr<ID3D11DeviceContext> g_settingContextLease;
 IDXGISwapChain* g_pSwapChain = nullptr;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 bool g_SwapChainOccluded = false;
+UINT g_settingPresentationWidth = 0, g_settingPresentationHeight = 0;
 
 // Forward declarations of helper functions
 void CleanupDeviceD3D();
@@ -44,6 +46,13 @@ bool CreateRenderTarget()
 
 	// RTV 仅持有交换链后缓冲，resize 前必须先释放。
 	const HRESULT hr = g_pd3dDevice->CreateRenderTargetView(backBuffer, nullptr, &g_mainRenderTargetView);
+	if (SUCCEEDED(hr))
+	{
+		D3D11_TEXTURE2D_DESC description{};
+		backBuffer->GetDesc(&description);
+		g_settingPresentationWidth = description.Width;
+		g_settingPresentationHeight = description.Height;
+	}
 	backBuffer->Release();
 	return SUCCEEDED(hr);
 }
@@ -104,6 +113,7 @@ void CleanupPresentation()
 	CleanupRenderTarget();
 	if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
 	g_SwapChainOccluded = false;
+	g_settingPresentationWidth = g_settingPresentationHeight = 0;
 }
 
 void CleanupDeviceD3D()
@@ -117,11 +127,13 @@ void CleanupDeviceD3D()
 
 HRESULT ResizeSwapChain(UINT width, UINT height)
 {
-	CleanupRenderTarget();
-	const HRESULT resizeResult = g_pSwapChain->ResizeBuffers(
-		0, width, height, DXGI_FORMAT_UNKNOWN, 0);
-	if (FAILED(resizeResult)) return resizeResult;
-	return CreateRenderTarget() ? S_OK : E_FAIL;
+	// 自动匹配 HWND 的首次交换链可能已是目标尺寸；保留 RTV 可避免无意义的同步重建。
+	// RTV 缺失时不能跳过，失败后的同尺寸请求仍须执行原恢复路径。
+	return Inkeys::UI::Setting::ResizeSettingPresentation(width, height,
+		g_settingPresentationWidth, g_settingPresentationHeight, g_mainRenderTargetView != nullptr,
+		[] { CleanupRenderTarget(); },
+		[=] { return g_pSwapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0); },
+		[] { return CreateRenderTarget(); });
 }
 
 void CleanupSettingTextures()

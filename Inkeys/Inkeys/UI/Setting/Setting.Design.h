@@ -71,8 +71,8 @@ namespace Inkeys::UI::Setting::Design
 		return result;
 	}
 
-	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage, Shortcuts };
-	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::Shortcuts) + 1;
+	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage, Shortcuts, DesktopShortcuts };
+	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::DesktopShortcuts) + 1;
 
 	struct NavigationTween
 	{
@@ -82,7 +82,8 @@ namespace Inkeys::UI::Setting::Design
 		float elapsed = 0.0F;
 		float progress = 0.0F;
 
-		explicit NavigationTween(float initial = 0.0F) noexcept
+		NavigationTween() noexcept = default; // 非 explicit，允许聚合成员和 `= {}` 重置。
+		explicit NavigationTween(float initial) noexcept
 			: value(initial), target(initial), start(initial) {}
 		void Reset(float next) noexcept { value = target = start = next; elapsed = progress = 0.0F; }
 		void Target(float next) noexcept

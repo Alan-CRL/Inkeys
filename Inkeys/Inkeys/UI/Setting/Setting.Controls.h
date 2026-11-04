@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Setting.Design.h"
+#include "Setting.Motion.h"
 #include "Setting.Theme.h"
 #include "Setting.Typography.h"
 #include "imfluent/imfluent.h"
@@ -12,7 +13,7 @@
 namespace Inkeys::UI::Setting::Design
 {
 	// 入场完整准备帧可固定到 native 终态条宽；当前帧嵌套 child 同步，普通页面仍保留出现/消失动效。
-	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0, ImGuiWindowFlags flags = 0, bool resetToTop = false, bool settleScrollbarLayout = false);
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags = 0, ImGuiWindowFlags flags = 0, bool resetToTop = false, bool settleScrollbarLayout = false, bool stableBodyLayout = false, float visualAlpha = 1.0F, PageMotionState* motion = nullptr);
 	bool BeginScrollPopupModal(const char* id, ImGuiWindowFlags flags);
 
 	// 主题语义色集中在同一张表；页面只选择角色，不自行判断明暗。
@@ -59,11 +60,18 @@ namespace Inkeys::UI::Setting::Design
 	float ButtonWidth(const char* label);
 	// 由现有会话在帧边界提供时钟和软件动画偏好，不新增计时器或持久化状态。
 	void ConfigureRowAnimations(float delta, bool enabled, float rate);
+	struct InlineRowContent
+	{
+		std::function<float(float)> height; // 可用宽度和返回高度均为物理像素。
+		std::function<void(const LayoutRect&)> render;
+		const char* visibilityId = nullptr; // 可选：只让内联区复用现有条件显隐，父行保持常驻。
+		bool visible = true;
+	};
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,
 		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0,
-		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr);
+		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr, bool showNoteIcon = true, const InlineRowContent* inlineContent = nullptr);
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
@@ -91,8 +99,22 @@ namespace Inkeys::UI::Setting::Design
 	bool RadioButton(const char* label, int* value, int selectedValue);
 	bool RadioButton(const char* label, bool selected);
 	bool ToggleSwitch(const char* label, bool* value, const char* onText = "", const char* offText = "");
-	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items);
-	bool ComboBox(const char* label, int* value, const char* const items[], int count, ImGuiComboFlags flags = 0);
+	// 仅显式传入的动画弹层使用此状态；上下避让共用布局，不保存窗口、绘制列表或字体指针。
+	struct BelowComboMotion
+	{
+		NavigationTween reveal;
+		std::uintptr_t context = 0;
+		std::uint64_t revision = 0, atlas = 0;
+		ImGuiID popup = 0;
+		int frame = -1, selected = 0;
+		float scale = 0.0F, scroll = 0.0F;
+		ImVec2 position{}, size{};
+		std::vector<std::string> items;
+	};
+	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items,
+		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0);
+	bool ComboBox(const char* label, int* value, const char* const items[], int count, ImGuiComboFlags flags = 0,
+		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0);
 	bool Slider(const char* label, float* value, float minimum, float maximum,
 		const char* format = "%.2f", ImGuiSliderFlags flags = 0);
 	bool SliderInt(const char* label, int* value, int minimum, int maximum,
@@ -119,9 +141,17 @@ namespace Inkeys::UI::Setting::Design
 	void SetStateLabels(const char* onText, const char* offText);
 	void SetCopyLabels(const char* prompt, const char* copied);
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value, const char* note = nullptr);
+		const char* glyph, bool& value, const char* note = nullptr, const InlineRowContent* inlineContent = nullptr);
+	// 父行下方“标签 + 右对齐下拉框”内联区；visibilityId 非空时按 visible 复用条件动画收起/展开，
+	// 收起期间禁交互、保留选择且不产生事件。返回值引用的参数须存活到对应行提交结束。
+	InlineRowContent InlineCombo(const char* id, const char* label, int& value,
+		const std::vector<std::string>& items, bool& changed, const char* visibilityId = nullptr, bool visible = true);
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr);
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true);
+	// 与 ComboRow 相同，但在下拉框左侧预留一块预览区；preview 收到该区域的物理像素矩形。
+	bool ComboPreviewRow(const char* id, const char* title, const char* description,
+		const char* glyph, int& value, const std::vector<std::string>& items,
+		const std::function<void(const LayoutRect&)>& preview, const char* note = nullptr);
 	bool SliderRow(const char* id, const char* title, const char* description,
 		const char* glyph, float& value, float minimum, float maximum,
 		bool& active, const char* format = "%.2f", const char* note = nullptr);

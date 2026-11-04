@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "El cambio de idioma requiere reiniciar para aplicarse por completo. ¿Reiniciar Inkeys ahora?",
-        "SelectNote": "Reinicia Inkeys para aplicar por completo el cambio de idioma."
+        "Warn": "El cambio de idioma se aplica de inmediato. No es necesario reiniciar.",
+        "SelectNote": "Se aplica de inmediato, sin reiniciar."
       }
     },
     "Configuration":
@@ -492,6 +492,13 @@
         "AutoStartE": "Iniciar Inkeys cuando el usuario actual inicie sesión en Windows.",
         "LoadingAnimation": "Animación de carga al iniciar",
         "LoadingAnimationE": "Mostrar la animación de carga mientras se inicia Inkeys.",
+        "StartupEffect":
+        {
+          "N": "Efecto de inicio",
+          "Shimmer": "Reflejo deslizante",
+          "Aurora": "Brillo suave",
+          "PixelAssembly": "Ensamblaje de píxeles"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animación de apertura de Ajustes",
@@ -503,7 +510,7 @@
         "Link":
         {
           "N": "Crear acceso directo en el escritorio",
-          "E": "Corregir los nombres de los accesos directos existentes o crear uno nuevo. Selecciona Más opciones para configurarlo.",
+          "E": "Crea un acceso directo en el escritorio con el nombre seleccionado abajo.",
           "More": "Más opciones"
         }
       },
@@ -536,8 +543,8 @@
         },
         "Theme":
         {
-          "N": "Tema",
-          "E": "Selecciona Apariencia recomendada para aplicar automáticamente el tema recomendado actualmente por el equipo.",
+          "N": "Tema de la barra",
+          "E": "Cambia la barra principal entre el aspecto oscuro y claro. Los cambios se aplican de inmediato.",
           "Dark": "Modo oscuro",
           "Light": "Modo claro"
         },
@@ -647,11 +654,55 @@
       "Cursor":
       {
         "N": "Cursor",
-        "Description": "La opción del ratón solo afecta a los lápices suaves y duros. Los resaltadores siempre muestran el grosor; las formas usan el cursor del sistema. El cursor del lápiz es circular por defecto. El borde del cursor no se resalta con lápices de pantalla, pero sí con tabletas gráficas y lápices no reconocidos.",
-        "MouseStyle": "Ratón",
-        "PenStyle": "Lápiz",
-        "DefaultStyle": "Cursor predeterminado",
-        "DrawingStyle": "Cursor con forma de lápiz"
+        "EntryDescription": "Define el cursor que se muestra al dibujar con cada dispositivo de entrada y ofrece una vista previa.",
+        "Devices": "Por dispositivo",
+        "PenDevices": "Detección de tableta gráfica",
+        "Mouse":
+        {
+          "N": "Ratón",
+          "E": "Ratón y panel táctil."
+        },
+        "Touch":
+        {
+          "N": "Táctil",
+          "E": "Al apoyar los dedos se muestra un cursor por cada dedo; desaparece al levantarlos."
+        },
+        "ScreenPen":
+        {
+          "N": "Lápiz de pantalla",
+          "E": "Lápiz con el que se escribe directamente sobre la pantalla."
+        },
+        "Tablet":
+        {
+          "N": "Tableta gráfica",
+          "E": "Tabletas gráficas externas y lápices cuyo origen no se puede identificar."
+        },
+        "Style":
+        {
+          "None": "Sin cursor",
+          "Arrow": "Ratón",
+          "Pen": "Lápiz",
+          "HighlightPen": "Lápiz (resaltado)",
+          "Dot": "Punto pequeño",
+          "HighlightDot": "Punto pequeño (resaltado)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Detectar tabletas gráficas inyectadas por el controlador",
+          "E": "Las tabletas gráficas sin Windows Ink suelen llegar como un «ratón inyectado por el controlador». Si se activa, ese ratón usa la configuración de cursor de la tableta; el software que también inyecta ratón, como el escritorio remoto, puede detectarse por error.",
+          "Unavailable": "Este sistema no puede distinguir el origen de la entrada; la opción no está disponible."
+        },
+        "FineControl": "Control preciso",
+        "DotHideOnContact":
+        {
+          "N": "Ocultar automáticamente el cursor de punto pequeño al apoyar el lápiz",
+          "E": "Se aplica a ambos estilos de punto pequeño. El cursor se oculta al apoyar el dispositivo seleccionado y permanece visible al mantenerlo suspendido.",
+          "Off": "Desactivado",
+          "ScreenPen": "Solo lápiz de pantalla",
+          "Tablet": "Solo tableta gráfica",
+          "Both": "Lápiz de pantalla y tableta gráfica"
+        },
+        "Note": "Con lápiz de pantalla, tableta gráfica y táctil, «Ratón» es una flecha que dibuja la propia aplicación; los cursores del resaltador y del puntero láser, las herramientas de formas y el cursor propio del borrador no cambian con estas opciones."
       },
       "Effect":
       {
@@ -864,9 +915,12 @@
           "MiddleBoth": "Mostrar controles a media altura en ambos lados",
           "BottomMiddle": "Mostrar controles en la barra inferior",
           "IdleFade": "Atenuar en reposo",
-          "IdleFadeE": "Durante una presentación, los controles de página se vuelven más transparentes tras un tiempo sin interacción o tras pasar páginas con un presentador o el teclado, para tapar menos contenido. Se restauran al pasar el cursor, hacer clic o arrastrar.",
+          "IdleFadeE": "Durante la presentación, los controles seleccionados se atenúan al estar inactivos y se restauran al pasar el cursor, hacer clic o arrastrar. Los cambios de página externos también atenúan los controles de página. La barra principal solo se atenúa tras el tiempo de inactividad si está acoplada abajo, también en modo centrado y mantiene su opacidad normal si tiene algún panel abierto.",
           "IdleFadeOff": "Desactivado",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Ambas esquinas inferiores",
+          "IdleFadeMiddlePair": "Ambos lados a media altura",
+          "IdleFadeMainBar": "Barra principal (solo acoplada)"
         },
         "WidgetPosition":
         {
@@ -975,8 +1029,8 @@
         "Expansion":
         {
           "N": "Opciones adicionales",
-          "CreateLnk": "Crear acceso directo en el escritorio",
-          "CreateLnkE": "Crear un acceso directo en el escritorio si aún no existe."
+          "CreateLnk": "Crear acceso directo en el escritorio al iniciar",
+          "CreateLnkE": "Al iniciar el programa, crea un acceso directo en el escritorio si no existe."
         }
       }
     },
@@ -1010,6 +1064,20 @@
       "NamePickerRequirement": "Requiere registrar el protocolo URL de NamePicker.",
       "ClassIslandProtocolNote": "Registrar el protocolo de navegación URL en los ajustes de ClassIsland.",
       "ClassIslandSwapNote": "Este componente no tiene efecto si ClassIsland no tiene cargado un horario."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Accesos directos",
+      "ApplicationSection": "Aplicación",
+      "WhiteboardSection": "Pizarra",
+      "NameLabel": "Nombre del acceso directo",
+      "CustomName": "Personalizado",
+      "CustomHint": "Introduce un nombre",
+      "InvalidName": "Introduce un nombre de archivo válido de Windows. No se permiten nombres vacíos o reservados, caracteres no válidos ni rutas demasiado largas.",
+      "NameConflict": "Los accesos directos de la aplicación y de la pizarra deben tener nombres distintos.",
+      "PresetWhiteboard": "Inkeys Pizarra",
+      "PresetAnnotation": "Inkeys(Anotación)",
+      "PresetAnnotationTool": "Inkeys(HerramientaAnotación)"
     },
     "HotKey":
     {

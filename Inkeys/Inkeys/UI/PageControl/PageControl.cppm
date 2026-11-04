@@ -23,6 +23,7 @@ import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys::UI::PageControl
 {
+	void RegisterNativeTouchInput(std::size_t index,HWND hwnd);
 	enum class Surface : std::uint8_t
 	{
 		BottomLeft,
@@ -643,6 +644,7 @@ export namespace Inkeys::UI::PageControl
 		bool longPressEnabled = false;
 		// 闲置淡化时长（秒），0 表示关闭；来自 PPTHelper.IdleFadeSeconds 的发布快照。
 		int idleFadeSeconds = 0;
+		bool idleFadeBottomPair = true, idleFadeMiddlePair = true, idleFadeMainBar = false;
 		int currentPage = -1;
 		int totalPage = -1;
 		PptNavigationWaiting navigationWaiting;
@@ -651,8 +653,7 @@ export namespace Inkeys::UI::PageControl
 		float uiScale = 0.0F;
 	};
 
-	// 闲置淡化只叠加在显隐透明度之上；淡化后仍保持可命中。
-	inline constexpr double PptIdleFadeOpacity = 0.4;
+	// 闲置背景/内容在渲染通道分别取上限，显隐透明度与命中始终独立。
 	inline constexpr double PptIdleFadeOutSeconds = 0.5;
 	inline constexpr double PptIdleFadeInSeconds = 0.15;
 	inline constexpr int PptIdleFadeMaximumSeconds = 3600;
@@ -685,6 +686,37 @@ export namespace Inkeys::UI::PageControl
 		if (input.now >= deadline) return { true };
 		return { false, deadline };
 	}
+
+	struct PptIdleFadeSnapshot
+	{
+		std::uint64_t session = 0;
+		int timeoutSeconds = 0;
+		bool visible = false, mainBar = false;
+		bool operator==(const PptIdleFadeSnapshot&) const = default;
+	};
+	[[nodiscard]] PptIdleFadeSnapshot ReadPptIdleFadeSnapshot() noexcept;
+
+	// 主栏由渲染 owner 记生命周期/保护边沿；输入只发布活动时间，外部翻页不参与。
+	struct PptMainIdleFadeState
+	{
+		std::uint64_t session = 0;
+		bool eligible = false, protectedLastFrame = false;
+		std::chrono::steady_clock::time_point resetAt{};
+		[[nodiscard]] PptIdleFadeDecision Update(const PptIdleFadeSnapshot& snapshot,
+			bool sceneEligible, bool engaged, bool panelOpen,
+			std::chrono::steady_clock::time_point activity,
+			std::chrono::steady_clock::time_point now) noexcept
+		{
+			const bool next = sceneEligible && snapshot.visible && snapshot.mainBar
+				&& snapshot.session != 0 && snapshot.timeoutSeconds > 0;
+			const bool protectedNow = engaged || panelOpen;
+			if (!next || !eligible || session != snapshot.session
+				|| (protectedLastFrame && !protectedNow)) resetAt = now;
+			session = snapshot.session; eligible = next; protectedLastFrame = protectedNow;
+			return ResolvePptIdleFade({snapshot.timeoutSeconds, next, protectedNow, false,
+				(std::max)(resetAt, activity), now});
+		}
+	};
 
 	[[nodiscard]] constexpr bool IsPptExternalPageTurn(
 		std::uint64_t previousSession, int previousPage,
@@ -886,6 +918,9 @@ export namespace Inkeys::UI::PageControl
 			&& left.displayedTotalPage == right.displayedTotalPage
 			&& left.longPressEnabled == right.longPressEnabled
 			&& left.idleFadeSeconds == right.idleFadeSeconds
+			&& left.idleFadeBottomPair == right.idleFadeBottomPair
+			&& left.idleFadeMiddlePair == right.idleFadeMiddlePair
+			&& left.idleFadeMainBar == right.idleFadeMainBar
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage
 			&& left.navigationWaiting.session == right.navigationWaiting.session

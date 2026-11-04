@@ -1669,6 +1669,21 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 - 十一语言稳定元数据、旧索引兼容、首次系统语言匹配及母语名/代码/Beta列表。
 - 补齐84个活动UI key，处理主栏局部拟合及赞助长文可见字形居中/高度。
 
+## Session 160: 共享画笔样式与跨场景颜色粗细
+<!-- trellis-session: v=2 fp=d111c6766a9c5cfa -->
+
+**Date**: 2026-11-02
+**Task**: 共享画笔样式与跨场景颜色粗细
+**Branch**: `bugfix/color`
+
+### Summary
+
+完成Brush三范围颜色、三组全局宽度与荧光激光全局颜色；白板主题token与owner应用ACK同步；数位板R2暂缓等待日志。
+
+### Main Changes
+
+- 共享样式、工作区投影、颜色版本校验和主题后主栏刷新
+
 ### Git Commits
 
 (No commits - planning session)
@@ -1677,6 +1692,7 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 
 - [OK] 完整InkeysRepo.sln Debug|ARM64使用ARM64原生MSBuild：exit0；最终增量10.15秒。
 - [OK] 真实嵌入/typedformat exit0；DWrite/组件离屏exit0；完整--no-window exit0/338.72秒且stderr空；679全语言check及编码/字形覆盖通过。
+- [OK] 完整InkeysRepo.sln Debug ARM64、四个生产探针、headless --no-window通过
 
 ### Status
 
@@ -1697,6 +1713,23 @@ PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字�
 ### Summary
 
 Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/图标/字体资产和翻译保持。三DPI真实对照、设置专项与完整无窗口回归通过。
+- 等待高漫M6数位板主栏点击日志，R2输入过滤未改；未commit/push
+
+
+## Session 164: M6主栏与翻页详细输入诊断
+<!-- trellis-session: v=2 fp=7657d9a5911910f2 -->
+
+**Date**: 2026-11-02
+**Task**: M6主栏与翻页详细输入诊断
+**Branch**: `bugfix/color`
+
+### Summary
+
+沿现有测试触控反馈输出补齐raw到业务的主栏/四分页诊断，记录跨窗口lease与capture归属，未改变输入策略。
+
+### Main Changes
+
+- 有界Move摘要、关键边沿/拒绝完整、channel与窗口映射、错误码保护及真实helper测试
 
 ### Git Commits
 
@@ -1705,6 +1738,7 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Testing
 
 - [OK] Debug|ARM64完整Solution exit0/12.88s；设置专项exit0/10.96s；完整--no-window exit0/358.22s且stderr空。
+- [OK] 完整Solution Debug ARM64、五个生产探针、headless --no-window exit0/296.57s
 
 ### Status
 
@@ -1742,3 +1776,254 @@ Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 158: Setting FreeType、动态图集与语言热切换
+<!-- trellis-session: v=2 fp=1a5f5577cebd48df -->
+
+**Date**: 2026-11-02
+**Task**: Setting FreeType、动态图集与语言热切换
+**Branch**: `feature/i18n`
+
+### Summary
+
+完成固定 ImGui 1.92.7 的 SettingUI FreeType/Alpha8+R8、像素基线对齐及全自有界面语言即时刷新；核心自动验证通过，等待用户原生观感验收。
+
+### Main Changes
+
+- FreeType仅用于Setting；Bar/PPT继续DWrite，旧消息框保持快照；移除语言重启提示。
+- 360页面候选均满足可计量稳态预算，真实字号/字重与布局回归通过；更新规范及完整验证报告。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug ARM64最终构建、完整无窗口342.39s、720行页面矩阵、R8像素/回调/失败恢复、33轮字体生命周期、i18n格式与并发快照均通过。
+- [OK] 字体性能ABBA未重现稳定暖态退化；冷初始化成本与额外Bar culled=0诊断明确保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户检查实际设置窗口清晰度、字号字重及语言切换；确认后再按明确授权提交/归档，不自动push。
+
+
+## Session 159: 验收并归档设置字体与语言热切换
+<!-- trellis-session: v=2 fp=90d50e32ad2b9711 -->
+
+**Date**: 2026-11-02
+**Task**: 验收并归档设置字体与语言热切换
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认效果符合预期；仅移除语言即时生效说明的信息图标并保留文字，完成验证、签名提交及任务归档。
+
+### Main Changes
+
+- 主改动6a8fd4ea，任务归档ce95bea8；仅处理当前任务，未push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6a8fd4ea` | feat(settings): improve font rendering and live language switching |
+
+### Testing
+
+- [OK] 最终微调完整Debug ARM64构建40.01s、无窗口设置专项18.18s通过；此前完整功能与360候选页面预算证据保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务completed；额外主栏culling诊断作为独立观察保留在归档报告。
+
+
+## Session 161: 二十语言扩展验收提交与归档
+<!-- trellis-session: v=2 fp=b95592ba1d07bd25 -->
+
+**Date**: 2026-11-02
+**Task**: 二十语言扩展验收提交与归档
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认改动生效并授权提交、结束。九语各679键，二十项按代码排序且旧保存索引兼容；实现和验证已提交、任务已归档，未push。
+
+### Main Changes
+
+- 新增id-ID、vi-VN、tr-TR、it-IT、pl-PL、uk-UA、es-MX、ro-RO、en-GB，共6111个叶子值，补消息框按钮和稳定索引/显示映射。
+- 沿用既有FreeType、Harmony/Noto字体和帧边界热切换；精炼固定槽与UA侧栏，补真实菜单选择、字形/Caption裁切及导航回归，同步规范。
+- 用户已验收；归档引用与资源校验脚本在归档目录继续可用。旧RU侧栏既有超宽与母语审校建议单列，未扩改范围。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `100fda717084aeac1e3b377c24b141d9412a118a` | feat(i18n): expand to twenty locales and sort language menu |
+| `ef05d1b6d8d74f7c8996174520fbc31ddbec313b` | chore(task): archive i18n-twenty-locales |
+
+### Testing
+
+- [OK] i18n sync/check：19个非基准语言均679/679；20个EXE资源与源文件逐字节一致，实际格式化/语言事务/快照通过。
+- [OK] 完整InkeysRepo.sln Debug ARM64构建通过；完整--no-window 304.1秒exit0且stderr为空；生产字体生命周期、Bar/PageControl离屏和九语字体样本通过。
+- [OK] 最终1664个页面场景/832个FT对照组，0缺字0预算失败；UA修正后80场景复测通过。沙箱PDB/TEMP问题通过原生MSBuild和工作区TEMP解决，无工程配置绕过，无GUI操作。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 162: 快捷方式设置与保障整合
+<!-- trellis-session: v=2 fp=b77ace4221ccade5 -->
+
+**Date**: 2026-11-03
+**Task**: 快捷方式设置与保障整合
+**Branch**: `temp/state`
+
+### Summary
+
+完成通用快捷方式页、预设/自定义名称、双保障开关及 main.json 配置整合；完整 ARM64 Solution、Headless 和快捷方式专项通过，未进行 GUI/commit/push。
+
+### Main Changes
+
+- 新增通用快捷方式子页与名称内联区，全部语言默认 Inkeys，改名仅保存。
+- 配置迁入 Application.Shortcut，冻结 FIFO 请求，补齐文件名和 Unicode 同名边界。
+- 补 20 语文案、实际控件/导航/配置/队列/ShellLink 回归和桌面快捷方式 code spec。
+- 用户用M6采集ui_schema/ui_input v1完整日志以定位R2；本轮未commit/push或GUI
+
+
+## Session 165: 五窗独立Touch与数位板跨窗修复
+<!-- trellis-session: v=2 fp=7891bc8ea5e288a6 -->
+
+**Date**: 2026-11-03
+**Task**: 五窗独立Touch与数位板跨窗修复
+**Branch**: `bugfix/color`
+
+### Summary
+
+依据持续感应跨窗日志修复五窗Touch归属及分页兼容鼠标终态丢失；各窗独立Context，共用规则，完成自动回归与Release x64交付，设备待验收。
+
+### Main Changes
+
+- 五窗本地TouchContext、真实候选与已呈现probe、完整64位取消身份、统一Pointer兼容鼠标过滤，保留PPT长按和白板Up单次
+## Session 169: 启动动画多效果与主题透明度适配完成
+<!-- trellis-session: v=2 fp=1d115f24f6c16e41 -->
+
+**Date**: 2026-11-04
+**Task**: 启动动画多效果与主题透明度适配完成
+**Branch**: `bugfix/theme`
+
+### Summary
+
+完成用户批准的第四版：掠光、淡彩虹、像素拼装及内联选择，ReadMini冻结主题/独立透明度并适配角落/缩放。完整ARM64构建与无窗口测试通过；按用户规则保留未提交状态。
+
+### Main Changes
+
+- 新增三效果渲染、分层透明度、像素渐显外散/弧线归位和正常成功的2.4秒视觉门。
+- 新增设置条件下拉框、严格配置codec/Mini快照与20语；同步启动/配置spec。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 最终完整 InkeysRepo.sln Debug ARM64 build-8 exit 0；canonical Path 与 workspace TEMP 仅作用于验证进程。
+- [OK] 完整 InkeysHeadlessTests --no-window exit 0；快捷方式 exact/quoted exit 0，额外参数 exit 2；i18n check/runtime 通过。
+- [OK] 完整Solution Debug ARM64 exit0/41.04s，五生产探针全0含真实UI3TouchProbe，完整headless --no-window exit0/306.60s
+- [OK] 完整Solution Release x64 exit0/115.29s，PE0x8664、预期诊断标识与SHA256核对通过；未GUI
+- [OK] ARM64原生MSBuild完整InkeysRepo.sln Debug|ARM64（主机环境、独立OutDir）exit0。
+- [OK] 最终启动专项与完整--no-window均exit0；固定30Hz、模糊原点、奇数尺寸逆缩放及透明度隔离回归通过。
+- [OK] diff/编码/BOM/CRLF审计通过，PptCOM输入二进制未变，原生离屏图已检查。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 代码保持未提交，未运行 GUI；旧任务目录内 10 张测试生成 PNG 的清理被自动审批拒绝，等待用户明确授权，不绕过。
+
+
+## Session 163: 回收无关测试预览图
+<!-- trellis-session: v=2 fp=19dad8b0a331da38 -->
+
+**Date**: 2026-11-03
+**Task**: 回收无关测试预览图
+**Branch**: `temp/state`
+
+### Summary
+
+按用户明确指示，将本轮测试生成的十张 PNG 送入 Windows 回收站，原路径清空且回收副本大小/SHA256 全部匹配。
+
+### Main Changes
+
+- 仅处理 generated-preview-inventory.json 中限定目录和十个已核对文件；不永久删除，不操作其他文件或目录。
+- 用户按touch-fix-capture.md进行一次同一数位板持续感应跨五窗/长按复核，交回M6-touch-fix.txt；任务保持in_progress，本轮不commit/push
+
+
+## Session 166: Touch注册与Pointer来源诊断补齐
+<!-- trellis-session: v=2 fp=0cf34f5af0a9597c -->
+
+**Date**: 2026-11-03
+**Task**: Touch注册与Pointer来源诊断补齐
+**Branch**: `bugfix/color`
+
+### Summary
+
+补齐五窗RegisterTouchWindow实际结果、IsTouchWindow状态及原生Pointer Down来源，保持输入策略，交付Release x64诊断包等待下轮设备日志。
+
+### Main Changes
+
+- 现有测试触控反馈开关下新增touch_registration/touch_window_snapshot/pointer_info，动态可选API、GLE保护、关闭零新增查询；修启动快照误标Down
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Windows 原生回收成功；十个原路径不存在，十份新回收站副本逐一通过大小及 SHA256 校验。
+- [OK] 完整Debug ARM64源码编译通过；本机增量链接LNK1000内部错误保留单个ilk重建后Solution exit0/8.27s；五生产探针全0
+- [OK] 完整headless --no-window exit0/260.41s，Release x64 exit0/332.72s；PE0x8664/新诊断标识/SHA256/无GetPointerInfo硬导入核验通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 清理已完成，代码仍保持未提交；本轮未改产品代码，不重复编译或测试。
+- 用户按touch-registration-capture.md采集M6-touch-registration.txt，先保持驱动设置；Pointer-only业务缺口仍待处理，任务in_progress，本轮不GUI/commit/push
+
+
+## Session 167: UI3 pointer-source arbitration for tablet pen and touch input
+<!-- trellis-session: v=2 fp=a724db5e1f19bc99 -->
+
+**Date**: 2026-11-03
+**Task**: UI3 pointer-source arbitration for tablet pen and touch input
+**Branch**: `bugfix/color`
+
+### Summary
+
+Investigated why tablet pens could not click the bar and page controls (Pointer only, no WM_TOUCH). Made WM_POINTER the contact source for the five UI windows with WM_TOUCH and signed compatibility mouse excluded by type, fixed the lost first page tap after drawing and the cancelled bar press with the page menu open, kept pen haptic credentials across pen-up, added a whiteboard page-switch busy ring, and validated on Surface pen, finger, two Gaomon M6 setups and the affected user's M6. Page-control haptics and haptic stop/discrete timing are left as follow-ups.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f9aeefbd` | fix(ui-input): use Pointer as the contact source for bar and page controls |
+| `25749d67` | docs(task): record tablet pointer input investigation and validation |
+
+### Status
+
+[OK] **Completed**
+- 本任务已归档至archive/2026-11/11-04-startup-preview-theme-opacity；未运行GUI、未commit/push。

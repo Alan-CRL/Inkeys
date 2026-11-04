@@ -24,6 +24,8 @@ module;
 #include "../Bar/Bar.BottomDock.h"
 #include "../../Drawing/Draw3/Draw3.PptTiming.h"
 #include "../../Input/UiPointerInput.h"
+#include "../../Input/UiTouchRouting.h"
+#include "../../Input/UiPointerDiagnostics.h"
 #include "../../Input/MouseHook.Transport.h"
 #include "../../Window/Window.MessageDispatch.h"
 #include "../../Input/KeyboardShortcuts.h"
@@ -62,6 +64,8 @@ import Inkeys.Display;
 import Inkeys.Other.Config;
 import Inkeys.Message;
 import Inkeys.Window;
+
+namespace UiDiag = Inkeys::Input::UiPointer::Diagnostics;
 
 namespace Inkeys::UI::PageControl
 {
@@ -246,6 +250,7 @@ namespace Inkeys::UI::PageControl
 			double opacityTarget = 0.0;
 			// 上一帧是否处于可淡化的 PPT 可见态；白板→PPT 时底部控件不经过隐藏也须重新计时。
 			bool idleEligible = false;
+			std::uint64_t idleSession = 0;
 			// 最近一次交给 Scene 的分页内容；淡出期间保持不变。
 			PageContent configuredContent{};
 			bool inputLocked = true;
@@ -268,6 +273,7 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t pressedCaptureTicket=0;
 			PptKeyboardRepeatTiming repeatTiming{};
 			std::uint64_t observedRevision = 0;
+			std::uint64_t localeRevision = 0;
 			WhiteboardState renderedWhiteboard;
 			WhiteboardState pressedWhiteboard;
 			WorkspaceMode pressedMode=WorkspaceMode::Hidden;
@@ -327,6 +333,8 @@ namespace Inkeys::UI::PageControl
 		struct PointerClient
 		{
 			PointerInput::MouseChannel mouse;
+			PointerInput::Touch::Context touchContext;
+			PointerInput::Touch::Identity touchRoute;
 			PointerInput::Session session;
 			PointerInput::MouseGesture mouseGesture;
 			std::uint64_t mouseGeneration = 0;
@@ -396,9 +404,6 @@ namespace Inkeys::UI::PageControl
 			if (pending.nativeRevision) Inkeys::Window::GetService().CancelCandidate(Roles[pairIndex * 2], pending.nativeRevision);
 			pending = {};
 		}
-		// 触摸批次只属于 HWND owner，不随渲染对象销毁而从另一线程重置。
-		struct NativeTouchState {DWORD id=0;bool active=false,primary=false;POINT lastClient{};std::uintptr_t source=0;};
-		std::array<NativeTouchState,4> nativeTouches;
 		std::array<std::uint64_t,4> nativeCaptureTickets{};
 		std::atomic_uint64_t nextNativeCaptureTicket=1;
 		constexpr bool ShouldReleasePageCapture(std::uint64_t captured,std::uint64_t requested) noexcept
@@ -497,7 +502,6 @@ namespace Inkeys::UI::PageControl
 		PptCallbacks pptCallbacks;
 		WhiteboardCallbacks whiteboardCallbacks;
 		Inkeys::Display::Subscription displaySubscription;
-		thread_local bool translatingTouch = false;
 		thread_local bool releasingPageCapture = false;
 		constexpr UINT ReleasePageCaptureMessage=WM_APP+0x247;
 		thread_local const PointerInput::Sample* dispatchedPointer = nullptr;
@@ -506,20 +510,17 @@ namespace Inkeys::UI::PageControl
 		struct PointerDispatchScope
 		{
 			const PointerInput::Sample* previous = dispatchedPointer;
-			bool previousTouch = translatingTouch;
 			bool previousMouseAccepted = dispatchedMouseAccepted;
 			explicit PointerDispatchScope(const PointerInput::Sample& sample,
 				bool mouseAccepted = false) noexcept
 			{
 				dispatchedPointer = &sample;
 				dispatchedMouseAccepted = mouseAccepted;
-				translatingTouch = sample.source == PointerInput::Source::Touch;
 			}
 			~PointerDispatchScope()
 			{
 				dispatchedPointer = previous;
 				dispatchedMouseAccepted = previousMouseAccepted;
-				translatingTouch = previousTouch;
 			}
 		};
 
@@ -885,7 +886,7 @@ namespace Inkeys::UI::PageControl
 			const auto liveMode=ResolveWorkspaceMode(SurfaceFor(surfaceIndex),ppt,whiteboard);
 			if((expectedMode!=WorkspaceMode::Hidden&&expectedMode!=liveMode)
 				||WhiteboardWorkspaceSwitching(whiteboard)
-				||(whiteboard.active&&Inkeys::Window::GetService().WhiteboardWindowGroupMinimized()))return;
+				||(whiteboard.active&&Inkeys::Window::GetService().WhiteboardWindowGroupMinimized())) { UiDiag::Log(SurfaceName(surfaceIndex),nullptr,"action_reject","workspace_changed_switching_or_minimized",0,nullptr,"expected_mode=%u live_mode=%u next=%d",static_cast<unsigned>(expectedMode),static_cast<unsigned>(liveMode),next); return; }
 			CloseWhiteboardMenu();
 			{
 				std::scoped_lock lock(callbackMutex);
@@ -910,6 +911,7 @@ namespace Inkeys::UI::PageControl
 					}
 				}
 			}
+			UiDiag::Log(SurfaceName(surfaceIndex),nullptr,"action",callback?"direction_callback_dispatched":"no_direction_callback",0,nullptr,"next=%d mode=%u ppt_visible=%d whiteboard_active=%d page=%d total=%d",next,static_cast<unsigned>(liveMode),ppt.presentationVisible,whiteboard.active,ppt.currentPage,ppt.totalPage);
 			if (!callback) return;
 			// 先登记控件发起的翻页，随后的页码发布不能被误判为翻页笔/键盘翻页。
 			const auto now = std::chrono::steady_clock::now();
@@ -1248,9 +1250,10 @@ namespace Inkeys::UI::PageControl
 			const auto visualMode=desiredMode==WorkspaceMode::Hidden
 				?(state.sceneConfigured?state.configuredMode:WorkspaceMode::PptCompact):desiredMode;
 			const bool modeChanged=state.sceneConfigured&&state.configuredMode!=visualMode;
-			// 淡出期间保留离场前内容：退场后的页码/加载状态不能在渐隐途中改写文字与按钮外观。
+			// 淡出期间保留离场前内容：退场后的页码/加载状态与语言都不能在渐隐途中改写文字与按钮外观。
 			const bool fadingOut=state.sceneConfigured&&desiredMode==WorkspaceMode::Hidden;
-			if(!state.sceneConfigured || modeChanged || (!fadingOut&&state.observedRevision!=revision)){
+			const auto languageRevision = I18n::revision();
+			if(!state.sceneConfigured || modeChanged || (!fadingOut&&(state.observedRevision!=revision || state.localeRevision!=languageRevision))){
 				const bool animate=modeChanged&&ShouldAnimateWorkspaceLayout(SurfaceFor(index),state.configuredMode,visualMode,state.targetVisible);
 				WaitTrace::Fields contentFields;
 				if(WaitTrace::Enabled()&&visualMode==WorkspaceMode::PptCompact){
@@ -1302,9 +1305,15 @@ namespace Inkeys::UI::PageControl
 				RetargetBounds(state.bounds,ResolveHiddenSurfaceBounds(SurfaceFor(index),monitor,target.logicalBounds),target.scale,false,now);
 			{
 				// 每次进入可淡化的 PPT 可见态（含从白板返回）都从不透明开始计时。
-				const bool idleEligible=state.targetVisible&&desiredMode==WorkspaceMode::PptCompact;
-				if(idleEligible&&!state.idleEligible)ResetIdleFade(index,now);
-				state.idleEligible=idleEligible;
+				const bool idleEligible=state.targetVisible&&desiredMode==WorkspaceMode::PptCompact
+					&&ppt.idleFadeSeconds>0&&(index<2?ppt.idleFadeBottomPair:ppt.idleFadeMiddlePair);
+				if(idleEligible&&(!state.idleEligible||state.idleSession!=ppt.layout.session)){
+					// 同一可见栏只切配置时保留真实悬停/按压；场景/场次进入才退休旧接触。
+					if(wasVisible&&!modeChanged&&state.idleSession==ppt.layout.session)MarkIdleActivity(index,now);
+					else ResetIdleFade(index,now);
+					state.scene.SetIdleFade(false,0);
+				}
+				state.idleEligible=idleEligible;state.idleSession=ppt.layout.session;
 				auto& signals=idleFade[index];
 				const auto fade=ResolvePptIdleFade({ppt.idleFadeSeconds,idleEligible,
 					signals.hovered.load(std::memory_order_acquire)||signals.pressed.load(std::memory_order_acquire),
@@ -1312,11 +1321,12 @@ namespace Inkeys::UI::PageControl
 					std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(signals.activity.load(std::memory_order_acquire))),now});
 				signals.dimmed.store(fade.dimmed,std::memory_order_release);
 				if(idleDeadlines[index].Publish(fade.wake))Inkeys::UI::Bar::WakeInteractionWorker();
-				// 显隐沿用工作区过渡；闲置淡化只在可见时叠加，淡出慢、恢复快。
-				const double opacity=state.targetVisible?(fade.dimmed?PptIdleFadeOpacity:1.0):0.0;
+				// 显隐只负责工作区过渡；闲置在 Scene 内分开限制背景与内容。
+				state.scene.SetIdleFade(fade.dimmed,desiredMode!=WorkspaceMode::PptCompact?0
+					:fade.dimmed?PptIdleFadeOutSeconds:PptIdleFadeInSeconds);
+				const double opacity=state.targetVisible?1.0:0.0;
 				if(opacity!=state.opacityTarget){
-					state.scene.SetOpacity(opacity,state.targetVisible!=wasVisible?LayoutTransitionDurationSeconds()
-						:fade.dimmed?PptIdleFadeOutSeconds:PptIdleFadeInSeconds);
+					state.scene.SetOpacity(opacity,LayoutTransitionDurationSeconds());
 					state.opacityTarget=opacity;
 				}
 			}
@@ -1341,8 +1351,8 @@ namespace Inkeys::UI::PageControl
 			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,
 				(state.bounds.active||state.scene.Geometry().layoutAnimating)&&!settleDragPosition,WhiteboardWorkspaceSwitching(whiteboard));
 			if(!ApplyCurrentSceneBounds(state)){failedStage="pagination-bounds";return false;}
-			// 被冻结的修订不记为已观测，重新可见时按最新发布重建内容。
-			state.sceneConfigured=true;state.configuredMode=visualMode;if(!fadingOut)state.observedRevision=revision;state.renderedWhiteboard=whiteboard;
+			// 被冻结的修订不记为已观测，重新可见时按最新发布与语言重建内容。
+			state.sceneConfigured=true;state.configuredMode=visualMode;if(!fadingOut){state.observedRevision=revision;state.localeRevision=languageRevision;}state.renderedWhiteboard=whiteboard;
 			return true;
 		}
 
@@ -2735,7 +2745,7 @@ namespace Inkeys::UI::PageControl
 			const auto wParam=event.wParam;const auto lParam=event.lParam;
 			const auto* registration=static_cast<InputRegistrationContext*>(context);
 			if(registration&&(!initialized.load(std::memory_order_acquire)
-				||registration->generation!=inputLifecycle.load(std::memory_order_acquire)))return;
+				||registration->generation!=inputLifecycle.load(std::memory_order_acquire))) { UiDiag::Log("page",hwnd,"worker_reject","registration_lifecycle_changed",message,nullptr,"event_generation=%llu registered_generation=%llu",static_cast<unsigned long long>(event.generation),static_cast<unsigned long long>(registration->generation)); return; }
 			const std::size_t index=registration?registration->index:Index(hwnd);
 			if(index>=surfaces.size())return;auto& state=surfaces[index];
 			if(message==WhiteboardMenuDismissMessage){
@@ -2751,6 +2761,8 @@ namespace Inkeys::UI::PageControl
 			if(message==WM_LBUTTONUP||message==WM_CANCELMODE||message==WM_CAPTURECHANGED)
 				SetIdleEngaged(index,&IdleFadeSignals::pressed,false);
 			if(message==WM_MOUSELEAVE||message==WM_CANCELMODE)SetIdleEngaged(index,&IdleFadeSignals::hovered,false);
+			PointerInput::Sample diagnosticSample; if(UiDiag::Enabled()) { diagnosticSample.source=event.touch?PointerInput::Source::Touch:Inkeys::Message::IsPenGeneratedMouseMessage(message,event.extraInfo)?PointerInput::Source::Pen:PointerInput::Source::Mouse;diagnosticSample.kind=message==WM_LBUTTONDOWN?PointerInput::Kind::Down:message==WM_LBUTTONUP?PointerInput::Kind::Up:message==WM_CANCELMODE||message==WM_CAPTURECHANGED?PointerInput::Kind::Cancel:PointerInput::Kind::Move;diagnosticSample.screen=event.screenPoint;diagnosticSample.contact=event.contactId;diagnosticSample.generation=event.generation;diagnosticSample.tick=event.tick;diagnosticSample.messageTime=event.messageTime; }
+			UiDiag::Log(SurfaceName(index),hwnd,"consume","dequeued",message,&diagnosticSample,"source_basis=event_touch_then_extra_signature generation_basis=surface_lifecycle extra=0x%llx mode=%u visible=%d locked=%d event_semantic=%llu current_semantic=%llu presented=%llu hit=%u logical_valid=%d capture=%d ticket=%llu",static_cast<unsigned long long>(event.extraInfo),static_cast<unsigned>(committed.mode),committed.visible,committed.locked,static_cast<unsigned long long>(event.semanticRevision),static_cast<unsigned long long>(committed.semanticRevision),static_cast<unsigned long long>(event.presentedRevision),static_cast<unsigned>(event.hitButtonId),event.logicalPointValid,event.captureOwned,static_cast<unsigned long long>(event.captureTicket));
 			if(message==WM_LBUTTONDOWN&&event.captureTicket)state.pressedCaptureTicket=event.captureTicket;
 			if((message==WM_KEYDOWN&&wParam==VK_ESCAPE)||message==WM_CANCELMODE||message==WM_CAPTURECHANGED)CloseWhiteboardMenu();
 			if (message == WM_MOUSEMOVE)
@@ -2824,10 +2836,14 @@ namespace Inkeys::UI::PageControl
 
 					notifyBorderCursor = state.borderCursorPointerInside;
 					state.borderCursorPointerInside = false;
-					if (!state.dragging) state.scene.PointerLeave();
-					state.pressStarted = {};
-					state.lastRepeat = {};
-					state.repeatTiming = {};
+					// 活动 Touch/Pen 接触期间的鼠标离开只是悬停追踪的延迟通知，不得清掉该接触刚建立的按压。
+					if (!event.touch)
+					{
+						if (!state.dragging) state.scene.PointerLeave();
+						state.pressStarted = {};
+						state.lastRepeat = {};
+						state.repeatTiming = {};
+					}
 				}
 				if (notifyBorderCursor)
 					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
@@ -2836,22 +2852,22 @@ namespace Inkeys::UI::PageControl
 			if (message == WM_LBUTTONDOWN)
 			{
 				// 动画帧可以更新命中几何，但排队的 Down 不能跨业务页面或放映会话重新解释。
-				if(committed.nativePending || (event.semanticRevision&&event.semanticRevision!=committed.semanticRevision))return;
+				if(committed.nativePending || (event.semanticRevision&&event.semanticRevision!=committed.semanticRevision)) { UiDiag::Log(SurfaceName(index),hwnd,"worker_reject","semantic_revision_changed",message,&diagnosticSample,""); return; }
 				const auto [livePpt,liveWhiteboard]=Snapshot();
 				if(ResolveWorkspaceMode(SurfaceFor(index),livePpt,liveWhiteboard)!=committed.mode
 					||WhiteboardWorkspaceSwitching(liveWhiteboard)
 					||(committed.mode==WorkspaceMode::PptCompact&&(committed.pptSession!=livePpt.layout.session||committed.pptLayoutEpoch!=livePpt.layout.epoch||committed.pptRecovery!=livePpt.recovery))
 					||(committed.mode==WorkspaceMode::WhiteboardExpanded
-						&&(committed.whiteboard.generation!=liveWhiteboard.generation||committed.whiteboard.currentPage!=liveWhiteboard.currentPage)))return;
+						&&(committed.whiteboard.generation!=liveWhiteboard.generation||committed.whiteboard.currentPage!=liveWhiteboard.currentPage))) { UiDiag::Log(SurfaceName(index),hwnd,"worker_reject","workspace_or_page_identity_changed",message,&diagnosticSample,"mode=%u wb_switching=%d wb_generation=%llu live_wb_generation=%llu wb_page=%d live_wb_page=%d ppt_session=%llu live_ppt_session=%llu ppt_epoch=%llu live_ppt_epoch=%llu",static_cast<unsigned>(committed.mode),WhiteboardWorkspaceSwitching(liveWhiteboard),static_cast<unsigned long long>(committed.whiteboard.generation),static_cast<unsigned long long>(liveWhiteboard.generation),committed.whiteboard.currentPage,liveWhiteboard.currentPage,static_cast<unsigned long long>(committed.pptSession),static_cast<unsigned long long>(livePpt.layout.session),static_cast<unsigned long long>(committed.pptLayoutEpoch),static_cast<unsigned long long>(livePpt.layout.epoch)); return; }
 				bool promotePpt = false;
 				bool invokeDirectionOnDown = false;
 				bool invokeNext = false;
 				{
 
-					if (!committed.visible || committed.locked) return;
+					if (!committed.visible || committed.locked) { UiDiag::Log(SurfaceName(index),hwnd,"worker_reject",!committed.visible?"hidden":"locked",message,&diagnosticSample,""); return; }
 					const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 					const auto logical = (event.logicalPointValid?std::optional<POINT>(event.logicalPoint):std::nullopt);
-					if (!logical.has_value()) return;
+					if (!logical.has_value()) { UiDiag::Log(SurfaceName(index),hwnd,"worker_reject","logical_point_invalid",message,&diagnosticSample,""); return; }
 					const auto hit = static_cast<WidgetId>(event.hitButtonId);
 					const auto region = PointerRegionForWidget(hit);
 					const auto inputPolicy = ResolveWorkspaceInputPolicy(
@@ -2862,7 +2878,7 @@ namespace Inkeys::UI::PageControl
 					const auto result = hit == Inkeys::UI::Bar::BarSurfaceNoButton
 						? Inkeys::UI::Bar::BarSurfacePointerResult{}
 						: state.scene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Down,static_cast<WidgetId>(event.hitButtonId),event.screenPoint);
-					if (!result.consumed && !dragCandidate) return;
+					if (!result.consumed && !dragCandidate) { UiDiag::Log(SurfaceName(index),hwnd,"worker_reject","button_and_drag_miss",message,&diagnosticSample,"hit=%u",static_cast<unsigned>(event.hitButtonId)); return; }
 					state.pressedWhiteboard = committed.whiteboard;state.pressedMode=committed.mode;
 					state.pressedPptSession=livePpt.layout.session;
 					state.pressedPptLayoutEpoch=livePpt.layout.epoch;
@@ -2925,7 +2941,7 @@ namespace Inkeys::UI::PageControl
 				// Z 序和业务回调都可能同步进入 Window Service，必须位于 Scene 锁外。
 				if (promotePpt)
 					(void)Inkeys::Window::GetService().RequestPromotePptWindow(Roles[index]);
-				if (invokeDirectionOnDown) InvokeDirection(index,invokeNext,committed.mode);
+				if (invokeDirectionOnDown) { UiDiag::Log(SurfaceName(index),hwnd,"action_trigger","direction_on_down",message,&diagnosticSample,"next=%d mode=%u",invokeNext,static_cast<unsigned>(committed.mode)); InvokeDirection(index,invokeNext,committed.mode); }
 				return;
 			}
 			if (message == WM_LBUTTONUP)
@@ -2960,6 +2976,7 @@ namespace Inkeys::UI::PageControl
 						state.scene.CancelPointer();state.dragPending=false;state.dragging=true;
 						UpdateDrag(index,event.screenPoint,InputSampleTime(event));
 					}
+					UiDiag::Log(SurfaceName(index),hwnd,"release_decision",!acceptInput?"workspace_or_page_identity_changed":state.dragging?"dragging_no_click":"click_candidate",message,&diagnosticSample,"mode=%u pressed_mode=%u hit=%u",static_cast<unsigned>(committed.mode),static_cast<unsigned>(state.pressedMode),static_cast<unsigned>(event.hitButtonId));
 					shouldInvokeClick = acceptInput&&!committed.nativePending&&!state.dragging;
 					releasedMode = committed.mode;
 					pressedWhiteboard = state.pressedWhiteboard;
@@ -2970,6 +2987,7 @@ namespace Inkeys::UI::PageControl
 						else state.scene.CancelPointer();
 					}
 					else state.scene.CancelPointer();
+					UiDiag::Log(SurfaceName(index),hwnd,"button_release",clicked==Inkeys::UI::Bar::BarSurfaceNoButton?"no_button_click":"button_activated",message,&diagnosticSample,"clicked=%u hit=%u should_invoke=%d",static_cast<unsigned>(clicked),static_cast<unsigned>(event.hitButtonId),shouldInvokeClick);
 					hadDragTracking = state.dragging || state.dragPending;
 					dragEnded = acceptInput && sameLayout && state.dragging;
 					state.pointerActive=false;
@@ -3009,7 +3027,7 @@ namespace Inkeys::UI::PageControl
 				else if (shouldInvokeClick
 					&& releasedMode != WorkspaceMode::PptCompact
 					&& (clicked == PreviousWidget || clicked == NextWidget))
-					InvokeDirection(index,clicked==NextWidget,releasedMode);
+					{ UiDiag::Log(SurfaceName(index),hwnd,"action_trigger","direction_on_up",message,&diagnosticSample,"next=%d mode=%u",clicked==NextWidget,static_cast<unsigned>(releasedMode)); InvokeDirection(index,clicked==NextWidget,releasedMode); }
 				else if(shouldInvokeClick && releasedMode==WorkspaceMode::WhiteboardExpanded && clicked>=MoreWidget)
 					InvokeWhiteboardMenu(clicked, pressedWhiteboard);
 				if (dragRelease.tracked)
@@ -3046,6 +3064,7 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
 			{
+				if(!event.nativeCaptureReleased)PointerInput::Touch::RequestCancel({hwnd,event.touchRegistration,event.touchRouteGeneration});
 				state.pressedCaptureTicket=0;
 				bool rollbackDrag = false;
 				const std::size_t dragPairIndex = DragPairIndex(index);
@@ -3113,6 +3132,7 @@ namespace Inkeys::UI::PageControl
 			const bool repeated=state.lastRepeat.time_since_epoch().count()!=0;
 			if(ShouldTriggerPptLongPressRepeat(true,now-state.pressStarted,repeated,repeated?now-state.lastRepeat:std::chrono::steady_clock::duration::zero(),state.repeatTiming)){
 				state.lastRepeat=ResolvePptLongPressRepeatAnchor(state.lastRepeat,now,repeated,state.repeatTiming);
+				UiDiag::Log(SurfaceName(index),nullptr,"action_trigger","long_press_repeat",WM_TIMER,nullptr,"next=%d",state.pressedNext);
 				const bool next=state.pressedNext;
 				if(!IsPptDirectionActionRepeatable(ResolvePptDirectionAction(next,ppt.currentPage,ppt.totalPage))){state.pressStarted={};state.lastRepeat={};}
 				InvokeDirection(index,next,WorkspaceMode::PptCompact);
@@ -3123,10 +3143,11 @@ namespace Inkeys::UI::PageControl
 		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context)
 		{
 			const auto hwnd=cancellation.window;
+			PointerInput::Touch::RequestCancel({hwnd,cancellation.touchRegistration,cancellation.touchRouteGeneration});
 			const auto* registration=static_cast<InputRegistrationContext*>(context);
 			if(!registration||registration->generation!=inputLifecycle.load(std::memory_order_acquire))return;
 			const auto ticket=cancellation.captureTicket?cancellation.captureTicket:
-				(registration->index<surfaces.size()?surfaces[registration->index].pressedCaptureTicket:0);
+				(!cancellation.touchRegistration&&registration->index<surfaces.size()?surfaces[registration->index].pressedCaptureTicket:0);
 			auto event=cancellation;event.message=WM_CANCELMODE;
 			PageControlInputEvent(event,context);
 			// 捕获只能由窗口 owner 释放；投递不等待该窗口或渲染线程。
@@ -3138,12 +3159,13 @@ namespace Inkeys::UI::PageControl
 		void ResetNativePointer(HWND hwnd,std::size_t index)
 		{
 			auto& client=pointerClients[index];
+			UiDiag::Log(SurfaceName(index),hwnd,"session_reset","native_reset",WM_CANCELMODE,client.session.Active()?&client.session.Latest():nullptr,"channel=0x%llx touch_generation=%llu ticket=%llu semantic=%llu",static_cast<unsigned long long>(client.mouse.DiagnosticId()),static_cast<unsigned long long>(client.touchGeneration),static_cast<unsigned long long>(client.captureTicket),static_cast<unsigned long long>(client.semanticRevision));
 			client.mouse.FinishMouse();
 			// capture/准入失败可能尚未建立 Session，也须释放该 client 已申请的直接指针租约。
 			client.mouse.EndTouch(client.touchGeneration);
 			client.session.Reset();client.mouseGesture.Reset();client.rawTracking=false;
-			client.captureTicket=0;client.semanticRevision=0;client.dragCandidate=false;
-			nativeTouches[index]={};KillTimer(hwnd,PointerTimer);
+			client.captureTicket=0;client.semanticRevision=0;client.dragCandidate=false;client.touchRoute={};
+			KillTimer(hwnd,PointerTimer);
 		}
 
 		[[nodiscard]] bool NativePointerCurrent(std::size_t index)
@@ -3191,6 +3213,135 @@ namespace Inkeys::UI::PageControl
 			client.draining = false;
 		}
 
+		// Native Mouse 与按值转交的 Touch 复用准入/入队段，不递归调用目标 WndProc。
+		bool ProcessNativePointer(HWND hwnd,std::size_t index,UINT message,WPARAM wParam,LPARAM lParam,
+			const PointerInput::Sample& pointer,bool normalized,PointerInput::Touch::Identity route={})
+		{
+			auto& client=pointerClients[index];
+			// 真实 WM_MOUSELEAVE 是此前悬停追踪的延迟投递，会撞上刚建立的 Touch/Pen 按下；仍排入队列（边缘光效需要离开通知），
+			// 但标记为活动接触期间，worker 不得据此清除该接触的按压状态。
+			const bool leaveDuringContact=message==WM_MOUSELEAVE&&!normalized&&client.session.Active()&&client.session.Latest().source!=PointerInput::Source::Mouse;
+			POINT local=pointer.screen;ScreenToClient(hwnd,&local);
+			auto [input,sample]=CaptureInputSnapshot(index,local);
+			UiDiag::Log(SurfaceName(index),hwnd,"presented_hit","snapshot",message,&pointer,"channel=0x%llx session=%p mode=%u visible=%d locked=%d logical_valid=%d client=%ld,%ld logical=%ld,%ld background=%d primary_background=%d hit=%u presented=%llu semantic=%llu ticket=%llu",static_cast<unsigned long long>(client.mouse.DiagnosticId()),&client.session,static_cast<unsigned>(input.mode),input.visible,input.locked,sample.valid,local.x,local.y,sample.logical.x,sample.logical.y,sample.background,sample.primaryBackground,static_cast<unsigned>(sample.hit),static_cast<unsigned long long>(sample.revision),static_cast<unsigned long long>(input.semanticRevision),static_cast<unsigned long long>(client.captureTicket));
+			if(message==WM_LBUTTONDOWN){
+				if(!normalized||!input.visible||input.locked||input.nativePending||!sample.background
+					||(pointer.source==PointerInput::Source::Touch&&(input.semanticRevision!=client.touchContext.semantic
+					||!IsWindowVisible(hwnd)||!IsWindowEnabled(hwnd)||Inkeys::UI::MessageBox::IsShowing()))) { UiDiag::Log(SurfaceName(index),hwnd,"down_reject",!normalized?"no_normalized_source":!input.visible?"hidden":input.locked?"locked":"background_miss",message,&pointer,""); return false; }
+				const auto identity=input.semanticRevision;
+				const auto region=PointerRegionForWidget(sample.hit);
+				// SetCapture 可同步取消旧 HWND；完成后重新核对已呈现身份再建立新源。
+				const auto captureBefore=pointer.source==PointerInput::Source::Touch?GetCapture():nullptr;
+				const auto ticketBefore=nativeCaptureTickets[index];
+				SetCapture(hwnd);
+				if(pointer.source==PointerInput::Source::Touch&&!client.touchContext.Current(route)){
+					if(PointerInput::Touch::ShouldRollbackPreparingCapture(client.touchContext,route,captureBefore,GetCapture(),ticketBefore,nativeCaptureTickets[index])){
+						releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;
+					}
+					return false;
+				}
+				if(UiDiag::Enabled()) { UiDiag::ErrorScope diagnosticError; UiDiag::Log(SurfaceName(index),hwnd,"capture_acquire",GetCapture()==hwnd?"acquired":"failed",message,&pointer,"capture=%p",GetCapture()); }
+				if(GetCapture()==hwnd)nativeCaptureTickets[index]=nextNativeCaptureTicket.fetch_add(1,std::memory_order_relaxed);
+				local=pointer.screen;ScreenToClient(hwnd,&local);
+				std::tie(input,sample)=CaptureInputSnapshot(index,local);
+				PointerInput::BeginResult diagnosticBegin=PointerInput::BeginResult::Rejected;
+				bool diagnosticBeginReached=false;
+				if(!input.visible||input.locked||input.nativePending||identity!=input.semanticRevision||!sample.background
+					||region!=PointerRegionForWidget(sample.hit)
+					||(pointer.source==PointerInput::Source::Touch&&(!client.touchContext.Current(route)||!IsWindowVisible(hwnd)||!IsWindowEnabled(hwnd)||Inkeys::UI::MessageBox::IsShowing()))
+					||(diagnosticBeginReached=true,diagnosticBegin=client.session.Begin(pointer))==PointerInput::BeginResult::Rejected
+					||(pointer.source==PointerInput::Source::Mouse&&!client.mouseGesture.Begin(pointer))){
+					if(UiDiag::Enabled()) { UiDiag::ErrorScope diagnosticError; UiDiag::Log(SurfaceName(index),hwnd,"down_reject",!input.visible?"hidden_after_capture":input.locked?"locked_after_capture":identity!=input.semanticRevision?"semantic_changed_after_capture":!sample.background?"background_miss_after_capture":region!=PointerRegionForWidget(sample.hit)?"region_changed_after_capture":pointer.source==PointerInput::Source::Touch&&!client.touchContext.Current(route)?"route_retired_after_capture":diagnosticBeginReached&&diagnosticBegin==PointerInput::BeginResult::Rejected?"session_begin_rejected":"mouse_gesture_begin_rejected",message,&pointer,"session=%p semantic_before=%llu semantic_after=%llu",&client.session,static_cast<unsigned long long>(identity),static_cast<unsigned long long>(input.semanticRevision)); }
+					ResetNativePointer(hwnd,index);
+					if(GetCapture()==hwnd){nativeCaptureTickets[index]=0;releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;}
+					return false;
+				}
+				++client.nextSerial;client.semanticRevision=input.semanticRevision;
+				client.captureTicket=nativeCaptureTickets[index];client.dragStartScreen=pointer.screen;
+				client.dragCandidate=ResolveWorkspaceInputPolicy(input.mode).drag&&CanStartPptDrag(region)
+					&&(region!=PptPointerRegion::Background||sample.primaryBackground);
+				if(pointer.source==PointerInput::Source::Mouse&&client.dragCandidate){
+					if(StartsPptDragImmediately(region))(void)client.mouseGesture.BeginDrag();
+					client.mouse.SetWakeWindow(hwnd,PointerWakeMessage);
+					client.rawTracking=client.mouse.BeginMouse(pointer.screen,pointer.messageTime);
+				}
+				if(!SetTimer(hwnd,PointerTimer,50,nullptr)&&pointer.source==PointerInput::Source::Touch){
+					ResetNativePointer(hwnd,index);
+					if(GetCapture()==hwnd){nativeCaptureTickets[index]=0;releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;}
+					return false;
+				}
+			}
+			Inkeys::UI::Bar::SurfaceInputEvent event;event.window=hwnd;
+			event.message=(message==WM_KEYDOWN&&wParam==VK_ESCAPE)?WM_CANCELMODE:message;
+			event.wParam=wParam;event.lParam=MAKELPARAM(local.x,local.y);
+			event.extraInfo=static_cast<ULONG_PTR>(GetMessageExtraInfo());
+			event.generation=inputLifecycle.load(std::memory_order_acquire);
+			event.touch=pointer.source==PointerInput::Source::Touch||leaveDuringContact;event.contactId=pointer.contact;
+			if(event.touch){event.touchRegistration=route.registration;event.touchRouteGeneration=route.generation;}
+			event.screenPoint=pointer.screen;event.messageTime=pointer.messageTime;event.tick=pointer.tick;
+			event.logicalPoint=sample.logical;event.logicalPointValid=sample.valid;
+			// 退场 popup 继续遮挡，但只有主体背景属于 PPT 拖动区。
+			event.backgroundHit=sample.primaryBackground;event.hitButtonId=sample.hit;
+			event.presentedRevision=sample.revision;event.semanticRevision=input.semanticRevision;
+			if(message==WM_MOUSEMOVE){TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,hwnd,0};TrackMouseEvent(&track);}
+			event.captureOwned=GetCapture()==hwnd;
+			event.captureTicket=client.captureTicket?client.captureTicket:nativeCaptureTickets[index];
+			event.nativeCaptureReleased=event.message==WM_CANCELMODE||event.message==WM_CAPTURECHANGED;
+			const bool accepted=Inkeys::UI::Bar::SubmitSurfaceInput(event);
+			UiDiag::Log(SurfaceName(index),hwnd,"queue",accepted?"accepted":"mailbox_or_registration_rejected",event.message,&pointer,"ticket=%llu generation=%llu semantic=%llu hit=%u",static_cast<unsigned long long>(event.captureTicket),static_cast<unsigned long long>(event.generation),static_cast<unsigned long long>(event.semanticRevision),static_cast<unsigned>(event.hitButtonId));
+			if(!accepted&&(message==WM_LBUTTONDOWN||client.session.Active()))ResetNativePointer(hwnd,index);
+			const bool release=!accepted||message==WM_LBUTTONUP||event.message==WM_CANCELMODE;
+			// 先排入 Up，再释放本手势票据；晚到的取消不能释放下一次 Down。
+			if(release&&ShouldReleasePageCapture(nativeCaptureTickets[index],event.captureTicket)){
+				nativeCaptureTickets[index]=0;
+				if(GetCapture()==hwnd){releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;UiDiag::Log(SurfaceName(index),hwnd,"capture_release","released",message,&pointer,"ticket=%llu",static_cast<unsigned long long>(event.captureTicket));}
+			}
+			if(message==WM_LBUTTONUP||event.message==WM_CANCELMODE||event.message==WM_CAPTURECHANGED)
+				ResetNativePointer(hwnd,index);
+			return accepted;
+		}
+
+		PointerInput::Touch::Probe ProbeTouch(void* opaque,const PointerInput::Touch::Packet& packet)
+		{
+			const auto index=static_cast<PointerClient*>(opaque)-pointerClients.data();
+			const HWND hwnd=pointerClients[index].touchContext.window;if(!IsWindowVisible(hwnd))return {};
+			POINT local=packet.screen;ScreenToClient(hwnd,&local);
+			const auto [input,sample]=CaptureInputSnapshot(index,local);
+			return {!input.visible||!sample.background?PointerInput::Touch::Hit::Miss:
+				input.locked||input.nativePending||!IsWindowEnabled(hwnd)||Inkeys::UI::MessageBox::IsShowing()?PointerInput::Touch::Hit::Blocked:PointerInput::Touch::Hit::Accept,input.semanticRevision};
+		}
+		bool DeliverTouch(void* opaque,const PointerInput::Touch::Packet& packet,PointerInput::Touch::Identity route)
+		{
+			auto& client=*static_cast<PointerClient*>(opaque);const auto index=&client-pointerClients.data();
+			const HWND hwnd=route.window;
+			PointerInput::Sample sample;sample.source=PointerInput::Source::Touch;sample.kind=packet.kind;
+			sample.screen=packet.screen;sample.messageTime=packet.messageTime;sample.tick=packet.tick;
+			sample.device=reinterpret_cast<std::uintptr_t>(packet.input.hSource);sample.contact=packet.input.dwID;
+			if(packet.kind==PointerInput::Kind::Down){
+				if(client.session.Active()){
+					auto cancel=client.session.Latest();cancel.kind=PointerInput::Kind::Cancel;
+					(void)ProcessNativePointer(hwnd,index,WM_CANCELMODE,0,0,cancel,true,client.touchRoute);
+				}
+				if(!client.touchContext.Current(route))return false;
+				sample.generation=++client.touchGeneration;client.touchRoute=route;
+				if(!client.mouse.BeginTouch(sample.generation))return false;
+				client.touchDevice=sample.device;
+			}else{
+				if(client.touchRoute!=route||!NativePointerCurrent(index))return false;
+				sample.generation=client.touchGeneration;
+				if(!client.session.Accept(sample))return false;
+			}
+			const UINT message=packet.kind==PointerInput::Kind::Down?WM_LBUTTONDOWN:packet.kind==PointerInput::Kind::Up?WM_LBUTTONUP:WM_MOUSEMOVE;
+			return ProcessNativePointer(hwnd,index,message,message==WM_LBUTTONUP?0:MK_LBUTTON,0,sample,true,route);
+		}
+		void CancelTouch(void* opaque,PointerInput::Touch::Identity route)
+		{
+			auto& client=*static_cast<PointerClient*>(opaque);if(client.touchRoute!=route)return;
+			const auto index=&client-pointerClients.data();auto sample=client.session.Latest();
+			sample.source=PointerInput::Source::Touch;sample.kind=PointerInput::Kind::Cancel;
+			(void)ProcessNativePointer(route.window,index,WM_CANCELMODE,0,0,sample,true,route);
+		}
+
 		LRESULT CALLBACK PageControlWindowProc(HWND hwnd, UINT message,
 			WPARAM wParam, LPARAM lParam)
 		{
@@ -3218,22 +3369,32 @@ namespace Inkeys::UI::PageControl
 						&& hiddenTestBlockedBoundsSurface.compare_exchange_strong(expected, -1)) ++position->x;
 				}
 			}
-			auto& touch = nativeTouches[index];
 			auto& client = pointerClients[index];
+			PointerInput::Touch::DrainCancels();
+			if(message==PointerInput::Touch::CancelWakeMessage)return 0;
+			if(message==WM_CANCELMODE||message==WM_DESTROY||(message==WM_SHOWWINDOW&&!wParam))PointerInput::Touch::CancelWindow(hwnd);
+			if(message==WM_CAPTURECHANGED&&!releasingPageCapture)PointerInput::Touch::CancelTargetWindow(hwnd);
+			if(message==WM_DESTROY)PointerInput::Touch::RetireTarget(hwnd);
+			const bool diagnosticRaw=!dispatchedPointer&&UiDiag::Raw(SurfaceName(index),hwnd,message,wParam,lParam,client.mouse.DiagnosticId());
+			if(diagnosticRaw) {
+				UiDiag::ErrorScope diagnosticError;
+				const auto observed=InputSnapshot(index);
+				UiDiag::Log(SurfaceName(index),hwnd,"raw_context","before_filters",message,nullptr,"index=%zu mode=%u visible=%d locked=%d semantic=%llu channel=0x%llx session=%p active=%d active_source=%s active_generation=%llu ticket=%llu",index,static_cast<unsigned>(observed.mode),observed.visible,observed.locked,static_cast<unsigned long long>(observed.semanticRevision),static_cast<unsigned long long>(client.mouse.DiagnosticId()),&client.session,client.session.Active(),UiDiag::SourceName(client.session.Latest().source),static_cast<unsigned long long>(client.session.Latest().generation),static_cast<unsigned long long>(client.captureTicket));
+			}
 			if(message==ReleasePageCaptureMessage){
 				// 旧代的释放仍需清理它拥有的捕获，但不得释放新 Down 已取得的捕获。
-				if(!ShouldReleasePageCapture(nativeCaptureTickets[index],wParam))return 0;
+				if(!ShouldReleasePageCapture(nativeCaptureTickets[index],wParam)) { UiDiag::Log(SurfaceName(index),hwnd,"capture_release_request","stale_or_missing_ticket",message,nullptr,"requested_ticket=%llu owned_ticket=%llu channel=0x%llx",static_cast<unsigned long long>(wParam),static_cast<unsigned long long>(nativeCaptureTickets[index]),static_cast<unsigned long long>(client.mouse.DiagnosticId())); return 0; }
 				nativeCaptureTickets[index]=0;
 				if(client.captureTicket==wParam)ResetNativePointer(hwnd,index);
-				touch={};
 				releasingPageCapture=true;if(GetCapture()==hwnd)ReleaseCapture();releasingPageCapture=false;return 0;
 			}
 			if(message==WM_CAPTURECHANGED){nativeCaptureTickets[index]=0;if(releasingPageCapture)return 0;}
-			if ((message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN
-				|| message == WM_LBUTTONUP || message == WM_MOUSEWHEEL)
-				&& !translatingTouch
-				&& Inkeys::Message::IsTouchGeneratedMouseMessage(
-					message, GetMessageExtraInfo())) return 0;
+			// 阶段1探针（INKEYS_POINTER_PROBE=1）：接触阶段 Pointer 不交 DefWindowProc；默认关闭。
+			if(!dispatchedPointer&&UiDiag::Probe::Swallow(SurfaceName(index),hwnd,message,wParam))return 0;
+			// 手指/笔接触直接由 Pointer 进入业务（PointerMode）；返回 0 使系统不再派生 WM_TOUCH/兼容 Mouse。
+			if(!dispatchedPointer&&PointerInput::Touch::HandlePointer(hwnd,message,wParam))return 0;
+			if (!dispatchedPointer && Inkeys::Message::IsPointerGeneratedMouseMessage(
+					message, GetMessageExtraInfo())) { if(UiDiag::Enabled()) { UiDiag::ErrorScope diagnosticError; UiDiag::Log(SurfaceName(index),hwnd,"filter","pointer_promoted_mouse",message,nullptr,"extra=0x%llx",static_cast<unsigned long long>(GetMessageExtraInfo())); } return 0; }
 			if (message == WM_TABLET_QUERYSYSTEMGESTURESTATUS)
 				return static_cast<LRESULT>(PageControlTabletGestureStatusFlags);
 			PointerInput::Sample normalizedMouseSample;
@@ -3258,6 +3419,7 @@ namespace Inkeys::UI::PageControl
 				}
 				DrainPointerMouse(hwnd, index);
 				const bool cancel=client.session.Active()&&!NativePointerCurrent(index);
+				if(cancel)UiDiag::Log(SurfaceName(index),hwnd,"timer_cancel","native_semantic_or_workspace_invalid",message,&client.session.Latest(),"session=%p semantic=%llu",&client.session,static_cast<unsigned long long>(client.semanticRevision));
 				if (cancel) (void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
 				else if (!client.session.Active())
 					KillTimer(hwnd, PointerTimer);
@@ -3276,48 +3438,6 @@ namespace Inkeys::UI::PageControl
 				(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
 				client.mouse.SetWakeWindow(nullptr, 0);
 			}
-			if (!dispatchedPointer
-				&& (message == WM_LBUTTONDOWN || message == WM_MOUSEMOVE || message == WM_LBUTTONUP)
-				&& Inkeys::Message::IsPenGeneratedMouseMessage(message, GetMessageExtraInfo()))
-			{
-				// 笔兼容消息没有物理 Raw Mouse；保留原有 capture 路径并隔离来源。
-				auto sample = NativePointerSample(hwnd, message, wParam, lParam);
-				sample.source = PointerInput::Source::Pen;
-				if (sample.kind == PointerInput::Kind::Down)
-				{
-					if (client.session.Active()
-						&& client.session.Latest().source != PointerInput::Source::Mouse) return 0;
-					if (client.session.Active())
-						(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
-					sample.generation = ++client.touchGeneration;
-					if (!client.mouse.BeginTouch(sample.generation)) return 0;
-					if (!SetTimer(hwnd, PointerTimer, 50, nullptr))
-					{
-						(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
-						return 0;
-					}
-					for (std::size_t other = 0; other < pointerClients.size(); ++other)
-						if (other != index)
-							DrainPointerMouse(Inkeys::Window::GetService().Handle(Roles[other]), other);
-				}
-				else
-				{
-					if (!client.session.Active()
-						|| client.session.Latest().source != PointerInput::Source::Pen) return 0;
-					sample.generation = client.session.Latest().generation;
-				}
-				PointerDispatchScope scope(sample);
-				(void)PageControlWindowProc(hwnd, message, wParam, 0);
-				if (sample.kind == PointerInput::Kind::Down && !client.session.Active())
-					(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
-				if (sample.kind == PointerInput::Kind::Up) client.mouse.EndTouch(sample.generation);
-				return 0;
-			}
-			if ((message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN
-				|| message == WM_LBUTTONUP || message == WM_MOUSEWHEEL)
-				&& !dispatchedPointer
-				&& Inkeys::Message::IsTouchGeneratedMouseMessage(
-					message, GetMessageExtraInfo())) return 0;
 			if (message == WM_LBUTTONDOWN && !dispatchedPointer)
 			{
 				// 原消息立即建立按压；Raw 注册与配对结果不能阻断点击或长按。
@@ -3364,6 +3484,7 @@ namespace Inkeys::UI::PageControl
 				const bool invalid=client.session.Active()&&!NativePointerCurrent(index);
 				if (invalid)
 				{
+					UiDiag::Log(SurfaceName(index),hwnd,"session","native_semantic_or_workspace_invalid",message,dispatchedPointer,"semantic=%llu",static_cast<unsigned long long>(client.semanticRevision));
 					(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
 					return 0;
 				}
@@ -3389,119 +3510,21 @@ namespace Inkeys::UI::PageControl
 					normalizedMouseScope.emplace(normalizedMouseSample, true);
 				}
 				// 来源校验先于入队；worker 统一采用合法 Up 的末段屏幕坐标。
-				if (!client.session.Accept(*dispatchedPointer)) return 0;
+				if (!client.session.Accept(*dispatchedPointer)) { UiDiag::Log(SurfaceName(index),hwnd,"session","source_generation_contact_rejected",message,dispatchedPointer,"session=%p active=%d active_source=%s active_generation=%llu active_device=0x%llx active_contact=%lu",&client.session,client.session.Active(),UiDiag::SourceName(client.session.Latest().source),static_cast<unsigned long long>(client.session.Latest().generation),static_cast<unsigned long long>(client.session.Latest().device),client.session.Latest().contact); return 0; }
 			}
-			else if (message == WM_LBUTTONUP) return 0;
+			else if (message == WM_LBUTTONUP) { UiDiag::Log(SurfaceName(index),hwnd,"session","up_without_normalized_session",message,nullptr,"active=%d channel=0x%llx",client.session.Active(),static_cast<unsigned long long>(client.mouse.DiagnosticId())); return 0; }
 			if (message == WM_CAPTURECHANGED && client.session.Active()
 				&& client.session.Latest().source == PointerInput::Source::Mouse
 				&& client.rawTracking && client.mouseGesture.Dragging())
 				return 0; // 实际拖动允许 Raw 延续；普通按压仍沿用捕获丢失取消。
 
-			if (message == WM_TOUCH)
-			{
-				const UINT count = LOWORD(wParam);
-				std::vector<TOUCHINPUT> inputs(count);
-				if (count != 0 && GetTouchInputInfo(
-					reinterpret_cast<HTOUCHINPUT>(lParam), count,
-					inputs.data(), sizeof(TOUCHINPUT)))
-				{
-					const bool hasPrimaryTouch = std::any_of(
-						inputs.begin(), inputs.end(),
-						[](const TOUCHINPUT& input) noexcept
-						{
-							return (input.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
-						});
-					// 同批 primary 必须先接管，避免旧 fallback 先 Up 误触发 click。
-					std::stable_partition(inputs.begin(), inputs.end(),
-						[](const TOUCHINPUT& input) noexcept
-						{
-							return (input.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
-						});
-					bool fallbackTouchLocked = false;
-					for (const auto& input : inputs)
-					{
-						const auto device = reinterpret_cast<std::uintptr_t>(input.hSource);
-						const bool down = (input.dwFlags & TOUCHEVENTF_DOWN) != 0;
-						PageControlTouchLockState current;
-						{
-
-							current = { touch.id, touch.active,
-								touch.primary,touch.source };
-						}
-						auto decision = ResolvePageControlTouchSample(
-							current, input.dwID,
-							down,
-							(input.dwFlags & TOUCHEVENTF_MOVE) != 0,
-							(input.dwFlags & TOUCHEVENTF_UP) != 0,
-							(input.dwFlags & TOUCHEVENTF_PRIMARY) != 0,
-							hasPrimaryTouch, fallbackTouchLocked, device);
-						fallbackTouchLocked = decision.fallbackLocked;
-						if (decision.message == PageControlTouchMessage::Down
-							&& client.session.Active()
-							&& client.session.Latest().source != PointerInput::Source::Touch)
-							decision.cancelPrevious = true;
-						if (decision.cancelPrevious)
-							(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
-						if (decision.message == PageControlTouchMessage::None) continue;
-						PointerInput::Sample sample;
-						sample.source = PointerInput::Source::Touch;
-						sample.screen = { TOUCH_COORD_TO_PIXEL(input.x), TOUCH_COORD_TO_PIXEL(input.y) };
-						sample.messageTime = input.dwTime;
-						sample.tick = Inkeys::Window::MessageDispatch::PostedTick(sample.messageTime);
-						sample.device = device;
-						sample.contact = input.dwID;
-						if (decision.message == PageControlTouchMessage::Down)
-						{
-							++client.touchGeneration;
-							if (!client.mouse.BeginTouch(client.touchGeneration)) continue;
-							if (!SetTimer(hwnd, PointerTimer, 50, nullptr))
-							{
-								client.mouse.EndTouch(client.touchGeneration);
-								continue;
-							}
-							// 四个分页窗共用 pair 状态；新触摸先在 owner 上收尾旧鼠标。
-							for (std::size_t other = 0; other < pointerClients.size(); ++other)
-								if (other != index)
-									DrainPointerMouse(Inkeys::Window::GetService().Handle(Roles[other]), other);
-							client.touchDevice = device;
-							sample.kind = PointerInput::Kind::Down;
-						}
-						else sample.kind = decision.message == PageControlTouchMessage::Up
-							? PointerInput::Kind::Up : PointerInput::Kind::Move;
-						sample.generation = client.touchGeneration;
-						POINT local = sample.screen;
-						ScreenToClient(hwnd, &local);
-						{
-
-							touch.id = decision.state.id;
-							touch.active = decision.state.active;
-							touch.primary = decision.state.primary;
-							touch.source = decision.state.source;
-							if (decision.message != PageControlTouchMessage::None)
-								touch.lastClient = decision.state.active
-									? local : POINT{};
-						}
-						PointerDispatchScope scope(sample);
-						const UINT translated = sample.kind == PointerInput::Kind::Down
-							? WM_LBUTTONDOWN : sample.kind == PointerInput::Kind::Up
-								? WM_LBUTTONUP : WM_MOUSEMOVE;
-						(void)PageControlWindowProc(hwnd, translated,
-							translated == WM_LBUTTONUP ? 0 : MK_LBUTTON, 0);
-						if (sample.kind == PointerInput::Kind::Down && !client.session.Active())
-							(void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
-						if (sample.kind == PointerInput::Kind::Up)
-							client.mouse.EndTouch(sample.generation);
-					}
-				}
-				else (void)PageControlWindowProc(hwnd, WM_CANCELMODE, 0, 0);
-				CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(lParam));
-				return 0;
-			}
+			if (message == WM_TOUCH) return PointerInput::Touch::HandleMessage(hwnd,wParam,lParam);
 
 			if(message==WM_NCHITTEST){
 				RECT window{};GetWindowRect(hwnd,&window);
 				const auto [input,sample]=CaptureInputSnapshot(index,{GET_X_LPARAM(lParam)-window.left,GET_Y_LPARAM(lParam)-window.top});
 				if(!input.visible)return HTTRANSPARENT;
+				if(PointerInput::Touch::QueryActive()&&sample.background&&!input.nativePending)return HTCLIENT;
 				return ShouldAcceptPageControlClientHit(input.mode,sample.background,sample.hit!=0,input.locked||input.nativePending,
 					index==0&&(input.whiteboard.menu!=0||sample.popupBackground))?HTCLIENT:HTTRANSPARENT;
 			}
@@ -3521,67 +3544,19 @@ namespace Inkeys::UI::PageControl
 			if(message==WM_MOUSEMOVE||message==WM_MOUSELEAVE||message==WM_LBUTTONDOWN||message==WM_LBUTTONUP
 				||message==WM_CANCELMODE||message==WM_CAPTURECHANGED||message==WM_KEYDOWN){
 				const auto pointer=dispatchedPointer?*dispatchedPointer:NativePointerSample(hwnd,message,wParam,lParam);
-				POINT local=pointer.screen;ScreenToClient(hwnd,&local);
-				auto [input,sample]=CaptureInputSnapshot(index,local);
-				if(message==WM_LBUTTONDOWN){
-					if(!dispatchedPointer||!input.visible||input.locked||input.nativePending||!sample.background)return 0;
-					const auto identity=input.semanticRevision;
-					const auto region=PointerRegionForWidget(sample.hit);
-					// SetCapture 可同步取消旧 HWND；完成后重新核对已呈现身份再建立新源。
-					SetCapture(hwnd);
-					if(GetCapture()==hwnd)nativeCaptureTickets[index]=nextNativeCaptureTicket.fetch_add(1,std::memory_order_relaxed);
-					local=pointer.screen;ScreenToClient(hwnd,&local);
-					std::tie(input,sample)=CaptureInputSnapshot(index,local);
-					if(!input.visible||input.locked||input.nativePending||identity!=input.semanticRevision||!sample.background
-						||region!=PointerRegionForWidget(sample.hit)
-						||(pointer.source==PointerInput::Source::Pen&&GetCapture()!=hwnd)
-						||client.session.Begin(pointer)==PointerInput::BeginResult::Rejected
-						||(pointer.source==PointerInput::Source::Mouse&&!client.mouseGesture.Begin(pointer))){
-						ResetNativePointer(hwnd,index);
-						if(GetCapture()==hwnd){nativeCaptureTickets[index]=0;releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;}
-						return 0;
-					}
-					++client.nextSerial;client.semanticRevision=input.semanticRevision;
-					client.captureTicket=nativeCaptureTickets[index];client.dragStartScreen=pointer.screen;
-					client.dragCandidate=ResolveWorkspaceInputPolicy(input.mode).drag&&CanStartPptDrag(region)
-						&&(region!=PptPointerRegion::Background||sample.primaryBackground);
-					if(pointer.source==PointerInput::Source::Mouse&&client.dragCandidate){
-						if(StartsPptDragImmediately(region))(void)client.mouseGesture.BeginDrag();
-						client.mouse.SetWakeWindow(hwnd,PointerWakeMessage);
-						client.rawTracking=client.mouse.BeginMouse(pointer.screen,pointer.messageTime);
-					}
-					(void)SetTimer(hwnd,PointerTimer,50,nullptr);
-				}
-				Inkeys::UI::Bar::SurfaceInputEvent event;event.window=hwnd;
-				event.message=(message==WM_KEYDOWN&&wParam==VK_ESCAPE)?WM_CANCELMODE:message;
-				event.wParam=wParam;event.lParam=MAKELPARAM(local.x,local.y);
-				event.extraInfo=static_cast<ULONG_PTR>(GetMessageExtraInfo());
-				event.generation=inputLifecycle.load(std::memory_order_acquire);
-				event.touch=pointer.source==PointerInput::Source::Touch;event.contactId=pointer.contact;
-				event.screenPoint=pointer.screen;event.messageTime=pointer.messageTime;event.tick=pointer.tick;
-				event.logicalPoint=sample.logical;event.logicalPointValid=sample.valid;
-				// 退场 popup 继续遮挡，但只有主体背景属于 PPT 拖动区。
-				event.backgroundHit=sample.primaryBackground;event.hitButtonId=sample.hit;
-				event.presentedRevision=sample.revision;event.semanticRevision=input.semanticRevision;
-				if(message==WM_MOUSEMOVE){TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,hwnd,0};TrackMouseEvent(&track);}
-				event.captureOwned=GetCapture()==hwnd;
-				event.captureTicket=client.captureTicket?client.captureTicket:nativeCaptureTickets[index];
-				event.nativeCaptureReleased=event.message==WM_CANCELMODE||event.message==WM_CAPTURECHANGED;
-				const bool accepted=Inkeys::UI::Bar::SubmitSurfaceInput(event);
-				if(!accepted&&(message==WM_LBUTTONDOWN||client.session.Active()))ResetNativePointer(hwnd,index);
-				const bool release=!accepted||message==WM_LBUTTONUP||event.message==WM_CANCELMODE;
-				// 先排入 Up，再释放本手势票据；晚到的取消不能释放下一次 Down。
-				if(release&&ShouldReleasePageCapture(nativeCaptureTickets[index],event.captureTicket)){
-					nativeCaptureTickets[index]=0;
-					if(GetCapture()==hwnd){releasingPageCapture=true;ReleaseCapture();releasingPageCapture=false;}
-				}
-				if(message==WM_LBUTTONUP||event.message==WM_CANCELMODE||event.message==WM_CAPTURECHANGED)
-					ResetNativePointer(hwnd,index);
+				(void)ProcessNativePointer(hwnd,index,message,wParam,lParam,pointer,dispatchedPointer!=nullptr,client.touchRoute);
 				return 0;
 			}
 			return DefWindowProcW(hwnd, message, wParam, lParam);
 		}
 
+	}
+
+	void RegisterNativeTouchInput(std::size_t index,HWND hwnd)
+	{
+		if(index>=pointerClients.size())return;
+		auto& client=pointerClients[index];
+		(void)PointerInput::Touch::RegisterTarget(index+1,hwnd,client.touchContext,{ProbeTouch,DeliverTouch,CancelTouch},&client);
 	}
 
 	std::function<FrameResult(const FrameContext&)> CreatePageControlOffscreenRenderCallback(
@@ -3949,6 +3924,39 @@ namespace Inkeys::UI::PageControl
 					result.bytes.data()+static_cast<std::size_t>(y)*result.width*4);
 				cpu->Unmap();return result;
 			};
+			{
+				// 读取真实 Scene/D2D 像素：根底板独立到30%，图标60%覆盖其上，而不是整层相乘。
+				auto frame=ppt;frame.currentPage=3;frame.totalPage=9;
+				Scene idle;idle.ConfigurePagination(BuildPageContent(0,WorkspaceMode::PptCompact,frame,{}));
+				idle.SetBounds({0,0,240,80},1);idle.SetOpacity(1,0);
+				const auto start=origin+18s;const auto normal=drawScene(idle,start);
+				idle.SetIdleFade(true,0);const auto dimmed=drawScene(idle,start+20ms);
+				const auto alphaAt=[&](const PageTestPixels& pixels,LONG x,LONG y){
+					x-=pixels.bounds.left;y-=pixels.bounds.top;
+					return x>=0&&y>=0&&static_cast<UINT>(x)<pixels.width&&static_cast<UINT>(y)<pixels.height
+						&&!pixels.bytes.empty()?pixels.bytes[(static_cast<std::size_t>(y)*pixels.width+x)*4+3]:0;
+				};
+				const auto background=alphaAt(dimmed,12,40);
+				int normalInk=0,idleInk=0;
+				for(LONG y=20;y<60;++y)for(LONG x=20;x<220;++x){
+					normalInk=(std::max)(normalInk,alphaAt(normal,x,y));idleInk=(std::max)(idleInk,alphaAt(dimmed,x,y));
+				}
+				Check(std::abs(background-77)<=2,"PPT idle root fill reaches absolute thirty percent alpha");
+				Check(normalInk>=245&&idleInk>=180&&idleInk<=187,
+					"sixty percent content composites over thirty percent fill without a second user-opacity multiply");
+				idle.CommitPresented();Check(idle.HitTestBackground({120,40}),"a fully dimmed page retains its original hit region");
+				idle.SetIdleFade(false,0);Check(drawScene(idle,start+40ms)==normal,"restoring idle leaves the original scene and user opacity intact");
+				idle.SetIdleFade(true,.5);(void)drawScene(idle,start+60ms);
+				const auto halfway=idle.Geometry().fillOpacity;
+				idle.SetIdleFade(false,.15);(void)drawScene(idle,start+60ms);
+				Check(std::abs(idle.Geometry().fillOpacity-halfway)<0.000001,"same-frame idle reversal preserves the current rendered fill");
+				BarUiAnimationEnabled=false;idle.SetIdleFade(true,.5);(void)drawScene(idle,start+80ms);
+				Check(std::abs(idle.Geometry().fillOpacity-.3)<0.000001,"animation disabled snaps idle channels to their exact targets");
+				Inkeys::UI::Bar::BarSurfaceBackgroundSpec backgroundOnly;backgroundOnly.bounds={0,0,240,80};backgroundOnly.fillOpacity=.8;
+				idle.ConfigureBackground(backgroundOnly);(void)drawScene(idle,start+100ms);
+				Check(std::abs(idle.Geometry().fillOpacity-.8)<0.000001,"background-only reuse never inherits a pagination idle cap");
+				BarUiAnimationEnabled=true;
+			}
 			const auto reference=[&](const PageContent& content,std::chrono::steady_clock::time_point now,LONG width=240){
 				Scene scene;scene.ConfigurePagination(content);scene.SetBounds({0,0,width,80},1);scene.SetOpacity(1,0);
 				return drawScene(scene,now);
@@ -4589,6 +4597,28 @@ namespace Inkeys::UI::PageControl
 			Check(wakes==0,"reset removes the old target lighting subscription and hooks");
 		}
 		{
+			// 真正的 native adapter：命中失败且 capture ticket 为 0，也必须退休租约；不创建窗口。
+			auto& client=pointerClients[0];const auto savedContext=client.touchContext;
+			const auto savedRoute=client.touchRoute;const auto savedGeneration=client.touchGeneration;
+			const HWND identity=reinterpret_cast<HWND>(static_cast<std::uintptr_t>(0x7fff0001));
+			RegisterNativeTouchInput(0,identity);
+			const PointerInput::Touch::Identity route{identity,client.touchContext.registration,++client.touchContext.nextGeneration};
+			client.touchContext.identity=route;client.touchContext.active=client.touchContext.preparing=true;
+			PointerInput::Touch::Packet packet;packet.kind=PointerInput::Kind::Down;packet.origin=identity;
+			packet.input.dwFlags=TOUCHEVENTF_DOWN|TOUCHEVENTF_PRIMARY;packet.input.dwID=1;
+			packet.input.hSource=reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(0x6));packet.messageTime=GetTickCount();packet.tick=GetTickCount64();
+			Check(!DeliverTouch(&client,packet,route),"real native Touch adapter rejects an unpresented target before business Down");
+			Check(client.touchRoute==route,"rejected adapter Down retains its identity for native rollback");
+			PointerInput::Touch::Cancel(client.touchContext,route);
+			PointerInput::MouseChannel following;
+			const bool reclaimed=following.BeginTouch(1);
+			Check(!client.touchContext.active&&!client.session.Active()&&reclaimed,
+				"zero-capture rejected native Touch releases its lease for the following window");
+			if(reclaimed)following.EndTouch(1);
+			PointerInput::Touch::RetireTarget(identity);client.touchContext=savedContext;
+			client.touchRoute=savedRoute;client.touchGeneration=savedGeneration;
+		}
+		{
 			// 直接驱动与共享 worker 注册的同一个 handler/tick；不创建 HWND 或调用真实 PPT。
 			const bool wasInitialized=initialized.load(std::memory_order_acquire);
 			const auto oldPpt=publishedPpt;const auto oldWhiteboard=publishedWhiteboard;
@@ -4751,6 +4781,27 @@ namespace Inkeys::UI::PageControl
 					if(mapped.bits[static_cast<std::size_t>(y)*mapped.pitch+column*4+3])last=y;
 				cpu->Unmap();return last>=0?std::optional<LONG>(submitted.top+last+1):std::nullopt;
 			};
+			{
+				// 业务 revision 不变时仍通过真实 ConfigureSurface 更新四个分页 renderer。
+				Prepare();
+				const auto fixedRevision=publishedRevision.load();
+				for(const auto& locale:Inkeys::Localization::Locales){
+					Check(I18n::load(1,L"JSON",locale.code),"pagination hot locale loads");
+					for(std::size_t index=0;index<surfaces.size();++index){
+						auto& state=surfaces[index];const auto priorGeneration=state.scene.PresentedGeneration();
+						const auto target=ResolveSurfaceLayout(SurfaceFor(index),monitor,1.0F,baseline,{});
+						const char* failed=nullptr;
+						Check(ConfigureSurface(index,WorkspaceMode::PptCompact,baseline,{},monitor,target,
+							fixedRevision,time,false,failed),"production pagination config consumes language-only revision");
+						Check(state.localeRevision==I18n::revision() && state.observedRevision==fixedRevision
+							&& state.scene.Renderer().GetFontFamily()==locale.fontFamily,
+							"all pagination renderers switch family without business revision");
+						Check(state.scene.IsInvalidated() && state.scene.PresentedGeneration()==priorGeneration,
+							"locale change marks visual damage but does not commit input prematurely");
+					}
+				}
+				Check(I18n::load(1,L"JSON",L"zh-CN"),"restore pagination test locale");
+			}
 			{
 				// 按产品分步发布工作区事实，直接走 ConfigureSurface/Scene/PresentScene；只替换最终 HWND sink。
 				Prepare();auto show=baseline;WhiteboardState board;bool minimized=false,blockResources=false;
@@ -6013,10 +6064,17 @@ namespace Inkeys::UI::PageControl
 		whiteboardCallbacks = std::move(callbacks);
 	}
 
+	PptIdleFadeSnapshot ReadPptIdleFadeSnapshot() noexcept
+	{
+		std::scoped_lock lock(snapshotMutex);
+		return {publishedPpt.layout.session,publishedPpt.idleFadeSeconds,
+			publishedPpt.presentationActive&&publishedPpt.presentationVisible,publishedPpt.idleFadeMainBar};
+	}
+
 	void PublishPptState(const PptState& state) noexcept
 	{
 		PptState merged = state;
-		bool changed = false;
+		bool changed = false, mainIdleChanged = false;
 		{
 			std::scoped_lock dragLock(dragCommitMutex);
 			std::scoped_lock snapshotLock(snapshotMutex);
@@ -6048,6 +6106,11 @@ namespace Inkeys::UI::PageControl
 				else if (merged.layout.session != publishedPpt.layout.session)
 					for (std::size_t index = 0; index < idleFade.size(); ++index) MarkIdleActivity(index, now);
 			}
+			mainIdleChanged = publishedPpt.layout.session != merged.layout.session
+				|| publishedPpt.presentationActive != merged.presentationActive
+				|| publishedPpt.presentationVisible != merged.presentationVisible
+				|| publishedPpt.idleFadeSeconds != merged.idleFadeSeconds
+				|| publishedPpt.idleFadeMainBar != merged.idleFadeMainBar;
 			changed = !ArePptStatesEquivalent(publishedPpt, merged);
 			publishedPpt = merged;
 			if (changed) publishedRevision.fetch_add(1, std::memory_order_release);
@@ -6057,6 +6120,8 @@ namespace Inkeys::UI::PageControl
 		}
 		AcknowledgePage(merged, 0);
 		if (changed) RequestAll();
+		// 页码变化不唤醒/重置主栏闲置策略，只有相关配置或场景载荷变化才通知。
+		if (mainIdleChanged) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 	}
 
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept

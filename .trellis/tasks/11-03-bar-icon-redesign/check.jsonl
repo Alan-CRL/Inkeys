@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/11-03-bar-icon-redesign/research/icon-inventory.md", "reason": "核对每个调用点都已迁移且无旧资源残留"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "翻页箭头角度与 EndShow 共用资源合同不被破坏"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "深浅主题着色与对比度要求"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建验证要求"}

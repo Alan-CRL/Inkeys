@@ -146,6 +146,9 @@ namespace Inkeys::UI::Ppt
 				state.longPressEnabled =
 					Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
 				state.idleFadeSeconds = Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds;
+				state.idleFadeBottomPair = Inkeys::config.PlugIn.PPTHelper.IdleFadeBottomPair;
+				state.idleFadeMiddlePair = Inkeys::config.PlugIn.PPTHelper.IdleFadeMiddlePair;
+				state.idleFadeMainBar = Inkeys::config.PlugIn.PPTHelper.IdleFadeMainBar;
 				state.currentPage = pageState.currentPage;
 				state.totalPage = pageState.totalPage;
 				state.layout = ToPageLayout(positions.configuration);

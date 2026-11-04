@@ -48,6 +48,7 @@ import Inkeys.Window;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
+import Inkeys.UI.PageControl;
 import Inkeys.Startup.Progress;
 
 import <ranges>;
@@ -699,6 +700,8 @@ struct BarRenderLoopState
 	BarUiValueClass mainButtonLightMaterial{ barStyle.darkStyle || barState.fold ? 0.0 : 1.0 };
 	BarUiColorClass mainLogoPenColor{ GetPenColor() };
 	BarUiPctClass mainLogoDrawingPct{ 0.0 };
+	BarUiPctClass pptIdleFade{ 0.0 };
+	Inkeys::UI::PageControl::PptMainIdleFadeState pptIdleState;
 	bool mainLogoColorInitialized = false;
 	bool mainLogoCarriesNonBrushColor = false;
 	BarUiValueClass barLightMaterial{ barStyle.darkStyle ? 0.0 : 1.0 };
@@ -1540,11 +1543,33 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			if (key == BarUISetSvgEnum::logo1
 				|| (key >= BarUISetSvgEnum::DrawAttributeBar_ColorSelect1
 					&& key <= BarUISetSvgEnum::DrawAttributeBar_ColorSelect11)) continue;
-			if (svg->color1) svg->color1->SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
-			if (svg->color2) svg->color2->SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
+			// 笔型扩展箭头与菜单勾选为强调色，不能被统一重置成图标色。
+			const bool accentSvg = key == BarUISetSvgEnum::DrawAttributeBar_PenTypeExtensionArrow
+				|| key == BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck;
+			const COLORREF svgColor = GetThemeColor(accentSvg
+				? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
+			if (svg->color1) svg->color1->SetTar(svgColor);
+			if (svg->color2) svg->color2->SetTar(svgColor);
+		}
+		// 仅初始化取色、之后不再逐帧着色的形状，在主题落地时补齐，避免残留上一主题颜色。
+		{
+			auto Refill = [&](BarUISetShapeEnum key, BarThemeColorEnum role)
+				{
+					auto it = state.shapeMap.find(key);
+					if (it != state.shapeMap.end() && it->second && it->second->fill)
+						it->second->fill->SetTar(GetThemeColor(role));
+				};
+			Refill(BarUISetShapeEnum::MorePanelDivider, BarThemeColorEnum::SurfaceFrame);
+			Refill(BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle, BarThemeColorEnum::PressedFill);
+			Refill(BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit, BarThemeColorEnum::PressedFill);
+			Refill(BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint, BarThemeColorEnum::Surface);
 		}
 		state.unclassifiedDamagePending = true;
 		state.dirtyRegionTracker.ForceFullDamage();
+		// 关闭动画时主题直接到端点，静止主栏同样需要显式要求一次视觉呈现。
+		state.presentDecision.RequireVisualRetry();
+		// 分页表面在自身线程读取已应用的主题；空闲时不会自行重绘，需在主题落地后唤醒。
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 	{
 		// 常驻透明度只改变绘制倍率，不经动画；变化时整幅重画，避免局部脏区残留旧透明度。
@@ -1555,8 +1580,10 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		{
 			state.barStyle.backgroundOpacity = requestedBackground;
 			state.barStyle.contentOpacity = requestedContent;
+			// 透明度不经动画：静止主栏仅有损伤不会提交，必须同时要求一次视觉呈现。
 			state.unclassifiedDamagePending = true;
 			state.dirtyRegionTracker.ForceFullDamage();
+			state.presentDecision.RequireVisualRetry();
 		}
 	}
 	state.barLightMaterial.SetTar(requestedDarkStyle ? 0.0 : 1.0, BarUiDefaultOperationDur);
@@ -3404,7 +3431,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						// 色芯只动画透明度，拖动色板时纯色必须即时跟手。
 						customInner->fill->SetDirect(currentColor);
 						customInner->frame->SetTar(
-							GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
+							GetThemeColor(BarThemeColorEnum::SwatchFrame), operationDur);
 						customInner->framePct->SetTar(customSelected
 							&& state.barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
 						customSwatch->framePct->SetTar(
@@ -3417,7 +3444,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									: 0.0);
 						if (customSwatch->frame.has_value())
 							customSwatch->frame->SetTar(
-								GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
+								GetThemeColor(BarThemeColorEnum::SwatchFrame), operationDur);
 					}
 
 					// 面板本体和文字显式跟随 UI3 主题，避免运行时换色后停留在旧主题。
@@ -4092,9 +4119,11 @@ for (size_t i = 0; i < 3; ++i)
 					shape->rh.value().SetTar(4.0 * drawAttributeLayoutScale);
 					// 描边只在此提交最终缩放目标，避免选中态分支每帧重启动画。
 					shape->ft.value().SetTar(drawAttributeLayoutScale);
-					// 填充先显现，灰边只随同一批次淡入到 18%。
+					// 填充先显现，灰边只随同一批次淡入到 18%；边框色逐帧跟随主题，运行时换色不残留旧色。
 					shape->framePct.value().SetTar(
 						state.barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
+					if (shape->frame.has_value())
+						shape->frame->SetTar(GetThemeColor(BarThemeColorEnum::SwatchFrame), operationDur);
 
 					auto svg = state.svgMap[static_cast<BarUISetSvgEnum>(
 						static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
@@ -7674,6 +7703,49 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtShape
 			|| state.spec.SnapshotFrameLighting().drawingPenColorBlend > 0.0001);
 	if (statusChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
+	{
+		const auto config = Inkeys::UI::PageControl::ReadPptIdleFadeSnapshot();
+		const auto input = Inkeys::UI::Bar::SnapshotPptIdleInput();
+		const auto& panels = state.barState.drawAttributeBar;
+		bool protectedPanel = state.barState.drawAttribute || state.barState.geometryAttribute
+			|| state.barState.eraserAttribute || state.barState.recallAttribute || state.barState.moreExpanded
+			|| state.barState.eraserSensitivityOpen || panels.colorPickerOpen || panels.penTypeMenuOpen
+			|| panels.thicknessSliderPinned || panels.thicknessFineDialPhysicsActive
+			|| owner_.eraserAttribute.IdleFadeProtected() || owner_.recallAttribute.IdleFadeProtected();
+		// 关闭指令之后仍保护实际退场中的面板，最后一项完全收起才重新计时。
+		for (auto id : {BarUISetShapeEnum::DrawAttributeBar, BarUISetShapeEnum::GeometryAttributeBar,
+			BarUISetShapeEnum::MorePanel, BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel,
+			BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu,
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface})
+			if (const auto it = state.shapeMap.find(id); it != state.shapeMap.end() && it->second)
+				protectedPanel = protectedPanel || it->second->pct.val > 0.000001;
+		const bool sceneEligible = state.workspaceSnapshot.committed == WorkspaceScene::Presentation
+			&& !state.workspaceSnapshot.pending && Inkeys::UI::Bar::RequestedPresentationAlpha() > 0;
+		// 仅普通/居中底栏参与闲置淡化；Floating 门禁不退休仍有效的输入状态。
+		const bool dockEligible = frame.bottomDockMode == BarBottomDockMode::BottomDocked;
+		const bool wasEligible = state.pptIdleState.eligible;
+		const auto previousSession = state.pptIdleState.session;
+		const auto decision = state.pptIdleState.Update(config, sceneEligible && dockEligible,
+			input.hovered || input.pressed || frame.bottomDockDragActive, protectedPanel,
+			input.activity, frame.frameTime);
+		// 配置开关不退休仍有效的主栏输入，静止悬停跨关闭/开启也继续保护。
+		if (wasEligible && (!sceneEligible || !config.visible || previousSession != config.session))
+			Inkeys::UI::Bar::ResetPptIdleInput();
+		Inkeys::UI::Bar::PublishPptIdleDeadline(decision.wake);
+		if (!sceneEligible || !dockEligible || !config.visible || (state.pptIdleState.eligible
+			&& (!wasEligible || previousSession != config.session)))
+		{
+			// 直接清零后 Advance 已看不到变化；必须显式重画，防可见性单独变化留下旧淡化像素。
+			if (state.pptIdleFade.val != 0)
+			{
+				needRendering = true;state.dirtyRegionTracker.MarkChanged(mainMaterialDirtyKey);
+			}
+			state.pptIdleFade.SetDirect(0);
+		}
+		state.pptIdleFade.SetTar(decision.dimmed ? 1.0 : 0.0, decision.dimmed
+			? Inkeys::UI::PageControl::PptIdleFadeOutSeconds : Inkeys::UI::PageControl::PptIdleFadeInSeconds);
+		ChangePct(state.pptIdleFade, false, mainMaterialDirtyKey);
+	}
 	return needRendering || eraserChanged || recallChanged || recallIdleDismissed || statusChanged;
 }
 
@@ -11481,6 +11553,7 @@ bool presetButton = button.presetIndex >= 0;
 				// More 必须先画、主栏后画，收拢部分才会从主栏下层自然出现。
 				auto DrawMainBar = [&]()
 				{
+					state.spec.SetResidentIdleFade(state.pptIdleFade.val);
 					SetBodyTransform();
 					auto obj = BarUISetShapeEnum::MainBar;
 					DrawBarBackgroundVisual(state.spec, barDeviceContext,
@@ -11505,6 +11578,7 @@ bool presetButton = button.presetIndex >= 0;
 						}
 					}
 					state.spec.SetResidentContentOpacity(1.0);
+					state.spec.SetResidentIdleFade(0);
 				};
 
 				// 更多按钮保留主栏局部坐标，浮层自身仍只按上下展开方向翻转物理行。
@@ -11580,6 +11654,7 @@ bool presetButton = button.presetIndex >= 0;
 
 			// 主按钮
 				{
+					state.spec.SetResidentIdleFade(state.pptIdleFade.val);
 					SetGripTransform();
 					auto obj = BarUISetSuperellipseEnum::MainButton;
 					state.spec.Superellipse(barDeviceContext, *state.superellipseMap[obj], BarUiInheritClass(state.superellipseMap[obj]->inhX, state.superellipseMap[obj]->inhY), &state.current, true);
@@ -11594,6 +11669,7 @@ bool presetButton = button.presetIndex >= 0;
 						state.spec.SetResidentContentOpacity(1.0);
 					}
 				}
+				state.spec.SetResidentIdleFade(0);
 				SetGripTransform();
 				owner_.statusIndicator.Draw(state.spec,barDeviceContext,
 					*state.superellipseMap[BarUISetSuperellipseEnum::MainButton],state.mainButtonLightMaterial.val);
@@ -12872,7 +12948,7 @@ bool presetButton = button.presetIndex >= 0;
 		}
 		if (presentCompletion.IsCommitted())
 		{
-			owner_.PreparePresentedButtonHits();
+			owner_.PreparePresentedButtonHits(state.stateModeSnapshot);
 			state.barPresentFailureLogged = false;
 			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
 			state.dirtyRegionTracker.CommitPresented();
@@ -13259,6 +13335,84 @@ BarRenderLoopCoordinator::RenderFrame(
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
 	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
+	if (state.spec.RefreshLocalizedTypography())
+	{
+		// 语言只更换文案与度量，不重新初始化交互和业务状态。
+		state.barButtonSet.RefreshLocalizedText();
+		if (auto it = state.wordMap.find(BarUISetWordEnum::BackgroundWarning); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.Errors.TransparentBackgroundWarning));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerG); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerB); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Brush2); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.BrushLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Laser); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.LaserLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Highlight1); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.HighlighterLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_Brush1); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.HardPenLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_SoftPen); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.SoftPenLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_PenTypeMenuFreeLine); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.FreeLineLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationLineLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessHoldLockLabel); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::GeometryAttributeBar_StraightLine); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel));
+		if (auto it = state.wordMap.find(BarUISetWordEnum::GeometryAttributeBar_Rectangle); it != state.wordMap.end()) it->second->SetStringImmediate(IW(I18nKey.UI.Bar.GeometryAttributes.RectangleLabel));
+		state.holdLockLabelTextSize =
+			state.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerHoldTextSize =
+			state.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel),
+			12.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterTextSize =
+			state.spec.MeasureText(L"Ag", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterRgbValueSize =
+			state.spec.MeasureText(L"255", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterOpacityValueSize =
+			state.spec.MeasureText(L"100%", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterRLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb]->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterGLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerG]->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterBLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerB]->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.colorPickerFooterOpacityLabelSize = state.spec.MeasureText(
+			state.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity]
+			->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		state.annotationPopupTitleText = IW(
+			I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle);
+		state.annotationPopupTitleSize = state.spec.MeasureText(
+			state.annotationPopupTitleText, BarThicknessTooltipTitleFontSize,
+			DWRITE_FONT_WEIGHT_SEMI_BOLD);
+		state.annotationPopupBodySize = state.spec.MeasureText(
+			IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),
+			BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+		state.overflowPopupTitleSize = state.spec.MeasureText(
+			IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),
+			BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+		state.overflowPopupBodySize = state.spec.MeasureText(
+			IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),
+			BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+		state.annotationPopupWidth = ceil(max(
+			state.annotationPopupTitleSize.width, state.annotationPopupBodySize.width))
+			+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
+		state.annotationPopupHeight = ceil(state.annotationPopupTitleSize.height
+			+ BarThicknessTooltipLineGap + state.annotationPopupBodySize.height)
+			+ BarThicknessTooltipPadding * 2.0;
+		state.overflowPopupWidth = ceil(max(
+			state.overflowPopupTitleSize.width, state.overflowPopupBodySize.width))
+			+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
+		state.overflowPopupHeight = ceil(state.overflowPopupTitleSize.height
+			+ BarThicknessTooltipLineGap + state.overflowPopupBodySize.height)
+			+ BarThicknessTooltipPadding * 2.0;
+		state.unclassifiedDamagePending = true;
+		state.presentDecision.RequireVisualRetry();
+	}
 	if (state.spec.UpdateFontRenderingPolicy(
 		Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))
 	{

@@ -4,6 +4,7 @@
 #include "Setting.HomeBrand.h"
 #include "Setting.SessionState.h"
 #include "Setting.EraserDemo.h"
+#include "../../Business/DesktopShortcut.h"
 
 struct ImGuiWindow;
 
@@ -80,7 +81,7 @@ namespace Inkeys::UI::Setting::Design
 	// 入场时间只在这一处定义；准备字体/首帧提交的等待不占用书写时长。
 	struct HomeEntryTiming
 	{
-		static constexpr float Wait = .24F, Writing = 1.06F, Hold = .60F, Dock = .54F, Settle = .22F;
+		static constexpr float Wait = .14F, Writing = .90F, Hold = .32F, Dock = .44F, Settle = .18F;
 		static constexpr float WritingEnd = Wait + Writing, DockStart = WritingEnd + Hold;
 		static constexpr float SettleStart = DockStart + Dock, Total = SettleStart + Settle;
 	};
@@ -128,6 +129,14 @@ namespace Inkeys::UI::Setting::Design
 		float brandWidth = 0, entryStartWidth = 0;
 		[[nodiscard]] bool EntryActive() const noexcept { return entry==Entry::Playing; }
 	};
+
+	// 遮盖层完全淡去后才恢复可选标题栏操作，准备帧也不能提前泄露入口。
+	[[nodiscard]] inline bool HomeEntryChromeVisible(const HomeMotionState& state) noexcept
+	{
+		return state.entry != HomeMotionState::Entry::Pending
+			&& (!state.EntryActive() || state.entryElapsed >= (state.fadeOnly
+				? HomeEntryTiming::WritingEnd + HomeEntryTiming::Dock : HomeEntryTiming::SettleStart));
+	}
 
 	inline void FinishHomeEntry(HomeMotionState& state) noexcept
 	{
@@ -205,7 +214,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 	};
 
-	enum class DrawingSubpage : int { Overview, SpeedEraser, PalmEraser };
+	enum class DrawingSubpage : int { Overview, SpeedEraser, PalmEraser, Cursor };
 	DrawingSubpage RenderDrawingEraserEntries(DrawingSubpage current);
 
 	inline void NavigateDrawingSubpage(NavigationState& navigation, DrawingSubpage& current,
@@ -257,6 +266,49 @@ namespace Inkeys::UI::Setting::Design
 		std::array<bool, 7> toolsChanged{};
 	};
 	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
+	// 光标专页草稿：四个设备各自的下拉项索引（触摸首项为“无光标”，其余设备首项为“鼠标”）。
+	struct CursorPageDraft
+	{
+		int mouse = 0, touch = 0, screenPen = 0, tablet = 0;
+		int dotHideOnContact = 1;
+		bool injectedMouse = false;
+		bool injectedAvailable = true;
+	};
+	struct CursorPageEvents
+	{
+		bool back = false;
+		bool mouse = false, touch = false, screenPen = false, tablet = false;
+		bool injectedMouse = false, dotHideOnContact = false;
+	};
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
+
+	struct PptIdleFadeDraft
+	{
+		bool bottomPair = true, middlePair = true, mainBar = false;
+		int timeoutIndex = 2;
+	};
+	struct PptIdleFadeEvents
+	{
+		bool bottomPair = false, middlePair = false, mainBar = false, timeout = false;
+	};
+	PptIdleFadeEvents RenderPptIdleFadeRow(PptIdleFadeDraft& draft, const std::vector<std::string>& items);
+
+	struct DesktopShortcutDraft
+	{
+		Business::DesktopShortcut::NameOptions names;
+		int preset = Business::DesktopShortcut::Default;
+		std::string customName;
+		std::wstring lastValidName;
+		std::size_t directoryLength = 0;
+		bool desktopAvailable = true;
+		bool correct = true, create = false;
+		BelowComboMotion namePopup;
+		DesktopShortcutDraft() = default;
+		explicit DesktopShortcutDraft(Business::DesktopShortcut::Kind kind) : names(kind) {}
+	};
+	std::wstring ResolveDesktopShortcutDraftName(const DesktopShortcutDraft& draft);
+	bool DesktopShortcutDraftNamesCollide(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
+	bool IsDesktopShortcutDraftValid(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
 
 	struct GeneralDraft
 	{
@@ -284,13 +336,20 @@ namespace Inkeys::UI::Setting::Design
 		// 常驻透明度为绝对值（0.30~1.00）；背景默认值随主栏主题变化，供显示与重置。
 		float backgroundOpacity = 0.80F, backgroundOpacityDefault = 0.80F;
 		float contentOpacity = 1.0F;
+		DesktopShortcutDraft desktopShortcut;
+		DesktopShortcutDraft whiteboardShortcut{ Business::DesktopShortcut::Kind::Whiteboard };
+		int startupEffect = 0;
 	};
 
 	struct GeneralEvents
 	{
 		bool startupChanged = false;
 		bool createShortcut = false;
-		bool shortcutOptions = false;
+		bool desktopNamePresetChanged = false, desktopNameCommitted = false;
+		bool desktopCorrectChanged = false, desktopCreateChanged = false;
+		bool createWhiteboardShortcut = false;
+		bool whiteboardNamePresetChanged = false, whiteboardNameCommitted = false;
+		bool whiteboardCorrectChanged = false, whiteboardCreateChanged = false;
 		bool barZoomChanged = false;
 		bool barZoomActive = false;
 		bool edgeLightingChanged = false;
@@ -299,6 +358,7 @@ namespace Inkeys::UI::Setting::Design
 		bool safetyModeChanged = false;
 		bool allowMultipleInstancesChanged = false;
 		bool startupPreviewChanged = false;
+		bool startupEffectChanged = false;
 		bool settingEntryAnimationChanged = false;
 		bool animationChanged = false;
 		bool dynamicEdgeLightingChanged = false;

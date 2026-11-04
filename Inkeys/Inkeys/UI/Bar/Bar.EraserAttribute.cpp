@@ -119,7 +119,9 @@ void BarEraserAttributePanel::Initialize()
 		b.name.enable.Initialization(!label.empty());b.name.pct.SetDirect(1);
 		b.icon.Initialization(0,0,GetThemeColor(BarThemeColorEnum::TextPrimary),std::nullopt);
 		b.icon.enable.Initialization(large || i==9);b.icon.pct.SetDirect(1);
-		if(large || i==9)b.icon.InitializationFromResource(L"UI",i==0?L"barClean":i==4?L"barAutoEraser":L"barSetting");
+		// 面板图标显式映射：清空画布沿用主栏垃圾桶，自动粗细、笔速橡皮设置用专属资源。
+		const wchar_t* iconResource=i==0?L"barClean":i==4?L"barAutoEraser":i==9?L"barEraserSpeedSetting":nullptr;
+		if(iconResource)b.icon.InitializationFromResource(L"UI",iconResource);
 		b.icon.SetWH(large?metrics.iconSizeDip:20,large?metrics.iconSizeDip:20);
 		b.icon.w.SetDirect(b.icon.w.tar);b.icon.h.SetDirect(b.icon.h.tar);
 	}

@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "語言變更需要重新啟動 Inkeys 才能完全生效。是否立即重新啟動？",
-        "SelectNote": "重新啟動軟體後完全生效。"
+        "Warn": "語言變更立即生效，無需重新啟動 Inkeys。",
+        "SelectNote": "立即生效，無需重新啟動。"
       }
     },
     "Configuration":
@@ -492,6 +492,13 @@
         "AutoStartE": "目前使用者登入 Windows 時自動啟動 Inkeys。",
         "LoadingAnimation": "啟動載入動畫",
         "LoadingAnimationE": "顯示軟體啟動過程中的載入動畫。",
+        "StartupEffect":
+        {
+          "N": "啟動效果",
+          "Shimmer": "掠光",
+          "Aurora": "柔光流彩",
+          "PixelAssembly": "像素拼裝"
+        },
         "SettingEntryAnimation":
         {
           "N": "設定介面開屏動畫",
@@ -503,7 +510,7 @@
         "Link":
         {
           "N": "建立桌面捷徑",
-          "E": "可修正現有捷徑名稱或建立新捷徑。請選擇「更多選項」進行設定。",
+          "E": "使用下方選定的名稱建立桌面捷徑。",
           "More": "更多選項"
         }
       },
@@ -647,11 +654,55 @@
       "Cursor":
       {
         "N": "游標",
-        "Description": "滑鼠選項僅影響軟筆和硬筆；螢光筆始終預覽粗細，形狀使用系統游標。筆的預設游標為圓形。螢幕筆關閉邊緣高亮，繪圖板和無法辨識的筆開啟邊緣高亮。",
-        "MouseStyle": "滑鼠",
-        "PenStyle": "筆",
-        "DefaultStyle": "預設游標",
-        "DrawingStyle": "筆形游標"
+        "EntryDescription": "依輸入裝置分別設定繪製時顯示的游標，並預覽效果。",
+        "Devices": "依裝置設定",
+        "PenDevices": "數位板辨識",
+        "Mouse":
+        {
+          "N": "滑鼠",
+          "E": "滑鼠和觸控板。"
+        },
+        "Touch":
+        {
+          "N": "觸控",
+          "E": "手指落筆時，每根手指各顯示一個游標；抬起後消失。"
+        },
+        "ScreenPen":
+        {
+          "N": "螢幕筆",
+          "E": "直接在螢幕上書寫的筆。"
+        },
+        "Tablet":
+        {
+          "N": "數位板",
+          "E": "外接數位板，以及無法辨識來源的筆。"
+        },
+        "Style":
+        {
+          "None": "無游標",
+          "Arrow": "滑鼠",
+          "Pen": "畫筆",
+          "HighlightPen": "畫筆（高亮）",
+          "Dot": "小圓點",
+          "HighlightDot": "小圓點（高亮）"
+        },
+        "InjectedMouse":
+        {
+          "N": "辨識驅動注入的數位板",
+          "E": "未啟用 Windows Ink 的數位板通常以「驅動注入的滑鼠」送達。開啟後這類滑鼠使用數位板的游標設定；遠端桌面等同樣注入滑鼠的軟體可能被誤判。",
+          "Unavailable": "目前系統無法區分輸入來源，此選項無法使用。"
+        },
+        "FineControl": "精細控制",
+        "DotHideOnContact":
+        {
+          "N": "小圓點游標落筆後自動隱藏",
+          "E": "同時適用於「小圓點」和「小圓點（高亮）」。所選裝置落筆後隱藏游標，懸停時仍顯示。",
+          "Off": "關閉",
+          "ScreenPen": "僅螢幕筆",
+          "Tablet": "僅繪圖板",
+          "Both": "螢幕筆和繪圖板"
+        },
+        "Note": "「滑鼠」在螢幕筆、數位板和觸控上由軟體自行繪製箭頭；螢光筆和雷射筆的游標、圖形工具及橡皮擦的專用游標不受這些選項影響。"
       },
       "Effect":
       {
@@ -864,9 +915,12 @@
           "MiddleBoth": "顯示中部兩側控制項",
           "BottomMiddle": "顯示底部主欄控制項",
           "IdleFade": "閒置時自動淡化",
-          "IdleFadeE": "放映中一段時間未操作，或使用簡報筆、鍵盤翻頁後，翻頁控制項會變得更透明以減少遮擋；懸停、點擊或拖曳時恢復。",
+          "IdleFadeE": "放映時，所選控制項閒置後會變得更透明，懸停、點擊或拖曳時恢復。外部翻頁僅觸發翻頁控制項淡化；主欄僅在底欄或置中底欄模式下按閒置計時淡化，有附屬面板展開時保持清晰。",
           "IdleFadeOff": "關閉",
-          "IdleFadeSeconds": "{} 秒"
+          "IdleFadeSeconds": "{} 秒",
+          "IdleFadeBottomPair": "兩側底部",
+          "IdleFadeMiddlePair": "兩側中部",
+          "IdleFadeMainBar": "主欄（僅底欄模式時）"
         },
         "WidgetPosition":
         {
@@ -975,8 +1029,8 @@
         "Expansion":
         {
           "N": "擴充選項",
-          "CreateLnk": "建立桌面捷徑",
-          "CreateLnkE": "當桌面不存在軟體的捷徑時，則建立一個。"
+          "CreateLnk": "啟動時建立桌面捷徑",
+          "CreateLnkE": "軟體啟動時，若桌面沒有軟體的捷徑，則建立一個。"
         }
       }
     },
@@ -1010,6 +1064,20 @@
       "NamePickerRequirement": "需要註冊 NamePicker 的 URL 通訊協定。",
       "ClassIslandProtocolNote": "需要在 ClassIsland 的應用程式設定中註冊 URL 導覽通訊協定。",
       "ClassIslandSwapNote": "ClassIsland 目前未載入課表時，此元件不會生效。"
+    },
+    "DesktopShortcut":
+    {
+      "N": "捷徑",
+      "ApplicationSection": "應用程式",
+      "WhiteboardSection": "白板",
+      "NameLabel": "捷徑名稱",
+      "CustomName": "自訂",
+      "CustomHint": "輸入捷徑名稱",
+      "InvalidName": "請輸入有效的 Windows 檔案名稱；不可空白，也不可包含無效字元、保留名稱或超出路徑長度限制。",
+      "NameConflict": "應用程式和白板的捷徑名稱不能相同。",
+      "PresetWhiteboard": "Inkeys白板",
+      "PresetAnnotation": "Inkeys(批註)",
+      "PresetAnnotationTool": "Inkeys(批註工具)"
     },
     "HotKey":
     {

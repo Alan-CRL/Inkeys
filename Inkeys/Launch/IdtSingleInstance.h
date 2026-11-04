@@ -5,6 +5,7 @@
 #include <objbase.h>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <cstdint>
 #include <cstring>
@@ -183,6 +184,14 @@ namespace Inkeys::Launch
 		presence.Reset(candidate.Release()); return Admission::Accepted;
 	}
 
+	// 受控关闭一旦被接受就放开占位：清理耗时再久，也不会让用户此时重新打开程序时被判为重复实例。
+	// 只给纯关闭使用；重启、崩溃重启与更新需要把占位连续接力给新实例，不能调用。
+	inline void ReleaseForClose()
+	{
+		presence.Reset();
+		physicalPresence.Reset();
+	}
+
 	inline bool CopyParentPresence(HANDLE parent, HANDLE lease, const std::wstring& root)
 	{
 		HANDLE copy = nullptr;
@@ -271,10 +280,12 @@ namespace Inkeys::Launch
 		}
 		FreeLibrary(library); return protocol;
 	}
-	inline bool StartCompatibleReplacement(const std::wstring& image)
+	inline bool StartCompatibleReplacement(const std::wstring& image, std::wstring_view extraArguments = {})
 	{
-		if(!presence.Get() || !WithinRoot(image,logicalRoot) || HandoffProtocol(image)!=Protocol::Legacy)return false;
+		if((!extraArguments.empty() && extraArguments != L"-Whiteboard") || !presence.Get()
+			|| !WithinRoot(image,logicalRoot) || HandoffProtocol(image)!=Protocol::Legacy)return false;
 		std::wstring command=L"\""+image+L"\"";
+		if (!extraArguments.empty()) command += L" " + std::wstring(extraArguments);
 		STARTUPINFOW startup{sizeof(startup)}; PROCESS_INFORMATION created{};
 		if(!CreateProcessW(image.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_SUSPENDED,nullptr,nullptr,&startup,&created))return false;
 		Handle process(created.hProcess),thread(created.hThread); HANDLE remote=nullptr;
@@ -284,13 +295,16 @@ namespace Inkeys::Launch
 		TerminateProcess(process.Get(),ERROR_CANCELLED);(void)WaitForSingleObject(process.Get(),1000);return false;
 	}
 
-	inline bool StartReplacement(const std::wstring& image)
+	inline bool StartReplacement(const std::wstring& image, std::wstring_view extraArguments = {})
 	{
+		// 更新交接仅允许传递这一个一次性意图，不能成为任意命令行转发入口。
+		if (!extraArguments.empty() && extraArguments != L"-Whiteboard") return false;
 		const auto protocol=HandoffProtocol(image);
 		if (protocol==Protocol::Unsupported) return false;
-		if (protocol==Protocol::Legacy) return StartCompatibleReplacement(image);
+		if (protocol==Protocol::Legacy) return StartCompatibleReplacement(image, extraArguments);
 		Handoff handoff; if (!handoff.Valid() || !WithinRoot(image, logicalRoot)) return false;
 		std::wstring command = L"\"" + image + L"\" " + handoff.Arguments();
+		if (!extraArguments.empty()) command += L" " + std::wstring(extraArguments);
 		STARTUPINFOW startup{sizeof(startup)}; PROCESS_INFORMATION created{};
 		if (!CreateProcessW(image.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &created)) return false;
 		Handle process(created.hProcess), thread(created.hThread);

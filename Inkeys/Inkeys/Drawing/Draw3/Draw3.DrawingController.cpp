@@ -4684,31 +4684,31 @@ namespace Inkeys::Drawing::Draw3
 			using namespace Inkeys::Business::PenWidth;
 			WindowController window; // 不附着 HWND，不初始化 Host/RTS/GPU。
 			{
-				const CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
-				const auto expectCursorProjection = [&](MouseCursorStyle expected)
+				const CursorSettings raw{}; // 默认：鼠标系统光标
+				const auto expectCursorProjection = [&](CursorStyle expected)
 				{
 					const auto effective = ResolveCursorSettingsForDrawingTool(window.EffectiveDrawingCursorTool(), raw);
-					window.SetMouseUsesSystemCursor(effective.mouseStyle == MouseCursorStyle::System);
-					check(effective.mouseStyle == expected &&
-						window.GetMouseUsesSystemCursor() == (expected == MouseCursorStyle::System) &&
-						effective.penStyle == PenCursorStyle::PenIcon && raw.mouseStyle == MouseCursorStyle::System,
+					window.SetMouseUsesSystemCursor(effective.mouse == CursorStyle::Arrow);
+					check(effective.mouse == expected &&
+						window.GetMouseUsesSystemCursor() == (expected == CursorStyle::Arrow) &&
+						effective.screenPen == raw.screenPen && raw.mouse == CursorStyle::Arrow,
 						"actual-tool cursor projection preserves raw preferences and synchronizes the Window policy");
 				};
 				// 使用真实 Window 的活动工具锁存/释放，不创建 contact、HWND 或新测试入口。
 				window.SetActiveDrawingCursorTool(DrawingTool::Highlighter);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::SolidLine);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveDrawingCursorTool(DrawingTool::SolidLine);
 				window.SetActiveTool(DrawingTool::Highlighter);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.ClearActiveDrawingCursorTool();
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::HardPen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::Pen);
 			}
 			const auto configuration = CreateStrokeModelConfiguration(96);
@@ -4743,6 +4743,39 @@ namespace Inkeys::Drawing::Draw3
 					window.SetProductVisualStyle(0x123456FF, highlighter.resolvedWidthDip, context);
 					check(nearlyEqual(CanvasDiameterForTool(DrawingTool::Highlighter, window.ProductVisualStyleSnapshot(), 1),
 						test.highlighter[index]), "ordinary highlighter uses new DIP presets with one target scale");
+				}
+			}
+			// 复用真实 Window 样式邮箱和 Controller 的 DPI 入口，连续改变目标 DPI；不创建 HWND。
+			{
+				DrawingCursorSample pen{ .x = 32.0f, .y = 48.0f, .valid = true };
+				pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+				CursorSettings cursor;
+				cursor.dotHideOnContact = DotCursorHideMode::Off;
+				for (const double dpi : { 96.0, 144.0, 192.0, 264.0, 96.0 })
+				{
+					Context context; context.effectiveDpi = dpi;
+					window.SetProductVisualStyle(0x123456FF, 3.0, context);
+					const auto style = window.ProductVisualStyleSnapshot();
+					ConfigureProductInkCursorAppearances(window, style, configuration.dpiScale);
+					const float scale = ProductTargetScale(style);
+					for (const auto selected : { CursorStyle::Arrow, CursorStyle::Pen, CursorStyle::HighlightPen, CursorStyle::Dot })
+					{
+						cursor.screenPen = selected;
+						const auto visual = ResolvePrimaryDrawingCursorVisual(pen, {}, DrawingCursorPointerAuthority::Pen,
+							window.CursorAppearanceForTool(DrawingTool::Pen), window.CursorAppearanceForTool(DrawingTool::Eraser),
+							false, false, false, true, &cursor, true, scale);
+						const double expectedWidth = (selected == CursorStyle::Arrow ? 13.0 : selected == CursorStyle::Dot ? 5.0 : 24.0) * dpi / 96.0;
+						const double expectedHeight = selected == CursorStyle::Arrow ? 19.5 * dpi / 96.0 : expectedWidth;
+						const double expectedEdge = selected == CursorStyle::Arrow ? (std::max)(1.0, 0.5 * dpi / 96.0)
+							: (selected == CursorStyle::HighlightPen ? 1.25 : 0.5) * dpi / 96.0;
+						check(visual.visible && nearlyEqual(visual.appearance.width, expectedWidth) &&
+							nearlyEqual(visual.appearance.height, expectedHeight) && nearlyEqual(visual.appearance.outlineWidth, expectedEdge),
+							"real Window style updates feed one system DPI scale to cursor geometry and edges");
+						check(nearlyEqual(visual.x, pen.x) && nearlyEqual(visual.y, pen.y) &&
+							nearlyEqual(visual.appearance.centerOffsetX, selected == CursorStyle::Dot ? 0.0 : expectedWidth / 2.0) &&
+							nearlyEqual(visual.appearance.centerOffsetY, selected == CursorStyle::Dot ? 0.0 : expectedHeight / 2.0),
+							"system DPI changes preserve the input hotspot while moving only the cursor quad center");
+					}
 				}
 			}
 			struct LargeCase { int width; int height; std::array<double, 3> brush; std::array<double, 3> highlighter; };
@@ -10110,12 +10143,12 @@ namespace Inkeys::Drawing::Draw3
 	{
 		const CursorSettings effective = ResolveCursorSettingsForDrawingTool(
 			window_.EffectiveDrawingCursorTool(), settings);
-		const bool system = effective.mouseStyle == MouseCursorStyle::System;
+		const bool system = effective.mouse == CursorStyle::Arrow;
 		const bool systemChanged = window_.GetMouseUsesSystemCursor() != system;
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
-		const uint32_t packed = 4u | (settings.mouseStyle == MouseCursorStyle::Drawing ? 1u : 0u) |
-			(settings.penStyle == PenCursorStyle::PenIcon ? 2u : 0u);
+		window_.SetInjectedMouseAsTablet(settings.injectedMouseAsTablet);
+		const uint32_t packed = PackCursorSettings(settings);
 		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
@@ -13446,10 +13479,8 @@ namespace Inkeys::Drawing::Draw3
 					mouseSample.inContact = false;
 			}
 			const uint32_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
-			CursorSettings cursorSettings{
-				.mouseStyle = (cursorSettingsBits & 1u) != 0 ? MouseCursorStyle::Drawing : MouseCursorStyle::System,
-				.penStyle = (cursorSettingsBits & 2u) != 0 ? PenCursorStyle::PenIcon : PenCursorStyle::Circle
-			};
+			CursorSettings cursorSettings = UnpackCursorSettings(cursorSettingsBits);
+			const bool cursorSettingsValid = (cursorSettingsBits & kCursorSettingsValidBit) != 0;
 			DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const DrawingCursorPointerAuthority cursorAuthority = window_.CursorOwner();
 			const bool primaryUsesPen = cursorAuthority == DrawingCursorPointerAuthority::Pen ||
@@ -13469,11 +13500,11 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			if(primaryRuntime)cursorTool=primaryRuntime->tool;
-			if ((cursorSettingsBits & 4u) != 0)
+			if (cursorSettingsValid)
 			{
 				// 同一实际工具投影同时控制系统箭头和应用预览，不能用新选择覆盖活动笔画。
 				cursorSettings = ResolveCursorSettingsForDrawingTool(cursorTool, cursorSettings);
-				window_.SetMouseUsesSystemCursor(cursorSettings.mouseStyle == MouseCursorStyle::System);
+				window_.SetMouseUsesSystemCursor(cursorSettings.mouse == CursorStyle::Arrow);
 			}
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -13506,7 +13537,7 @@ namespace Inkeys::Drawing::Draw3
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
 					mouseUsesSystemCursor,
-					(cursorSettingsBits & 4u) != 0 ? &cursorSettings : nullptr,
+					cursorSettingsValid ? &cursorSettings : nullptr,
 					cursorTool == DrawingTool::Pen || cursorTool == DrawingTool::HardPen,
 					ProductTargetScale(currentProductVisualStyle));
 				if (primary.visible &&
@@ -13574,6 +13605,20 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					continue;
 				}
+				// 触摸落笔光标：仅软/硬笔，逐接触各一个；荧光笔、形状等保持无光标。
+				if (cursorSettingsValid && cursorSettings.touch != CursorStyle::None &&
+					runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
+					runtime->metricDeviceType == InputDeviceType::Touch &&
+					(runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen))
+				{
+					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
+					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
+						snapshot.position.x, snapshot.position.y,
+						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touch,
+						ProductTargetScale(runtime->visualStyle));
+					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
+					continue;
+				}
 				if (!runtime || runtime->ended || runtime->awaitingReconnect || runtime->palmObservationOnly ||
 					runtime->metricDeviceType != InputDeviceType::Touch ||
 					runtime->tool != DrawingTool::Eraser) continue;
@@ -13612,6 +13657,9 @@ namespace Inkeys::Drawing::Draw3
 				key = key * 17u + (penSample.inverted ? 1u : 0u);
 				key = key * 17u + (mouseSample.valid ? 1u : 0u);
 				key = key * 17u + (mouseSample.inContact ? 1u : 0u);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.kind);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.recognition);
+				key = key * 17u + static_cast<uint64_t>(mouseSample.source.kind);
 				const double nowMilliseconds = GetQpcTimeMilliseconds();
 				const bool activeCursor = !currentCursorVisuals.empty() ||
 					!laserTipVisuals.empty() || penSample.valid || mouseSample.valid || liveTouchCount;
@@ -13622,7 +13670,14 @@ namespace Inkeys::Drawing::Draw3
 					lastCursorVisualDiagnosticKey = key;
 					nextCursorVisualDiagnosticMilliseconds = nowMilliseconds + 100.0;
 					cursorVisualDiagnosticRecorded = true;
-					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u",
+					// 与 frame 同门禁/限频，单列短记录以免挤出 320 字节日志中的来源字段。
+					const double displayDpi = std::isfinite(observedSpeedEraserDisplayScale.dipPerPixelX) &&
+						observedSpeedEraserDisplayScale.dipPerPixelX > 0.0 ? 96.0 / observedSpeedEraserDisplayScale.dipPerPixelX : 0.0;
+					RecordCursorDiagnostic("frame-scale cursorDpi=%.1f cursorScale=%.3f contextRevision=%llu displayDpi=%.1f viewport=%.0fx%.0f",
+						currentProductVisualStyle.penWidthContext.effectiveDpi, ProductTargetScale(currentProductVisualStyle),
+						static_cast<unsigned long long>(currentProductVisualStyle.penWidthContext.revision), displayDpi,
+						renderer_.viewportWidth, renderer_.viewportHeight);
+					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u penSource=%s/%u/cid%u mouseSource=%s/%u",
 						static_cast<unsigned>(cursorTool), static_cast<unsigned>(window_.CursorOwner()),
 						primaryCursorCount, currentCursorVisuals.size() - primaryCursorCount,
 						primaryLaserTipCount, laserTipVisuals.size() - primaryLaserTipCount,
@@ -13630,7 +13685,12 @@ namespace Inkeys::Drawing::Draw3
 						penSample.inContact ? 1u : 0u, penSample.inverted ? 1u : 0u,
 						mouseSample.valid ? 1u : 0u, mouseSample.inContact ? 1u : 0u,
 						mouseSpeedEraser().HasPosition() ? 1u : 0u,
-						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u);
+						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u,
+						SpeedEraser::SourceKindName(penSample.source.kind),
+						static_cast<unsigned>(penSample.source.recognition),
+						static_cast<unsigned>(penSample.source.cursorId),
+						SpeedEraser::SourceKindName(mouseSample.source.kind),
+						static_cast<unsigned>(mouseSample.source.recognition));
 					for (size_t index = 0; index < currentCursorVisuals.size(); ++index)
 					{
 						const auto& visual = currentCursorVisuals[index];

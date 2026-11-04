@@ -4,6 +4,7 @@ module;
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtState.h"
 #include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../../resource.h"
 #include "../StartupPlacement.h"
 #include "Bar.BottomDock.h"
@@ -246,6 +247,34 @@ namespace Inkeys::UI::Bar
 			auto main = owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 			main->x.SetDirect(160); main->y.SetDirect(800);
 			const auto mainFrame = CreateBarOffscreenRenderCallback(owner, ReceivePresentation);
+			// 首个负载验证真实帧入口消费语言版本；不在性能采样区更换语言。
+			static bool liveLocaleVerified = false;
+			if (!liveLocaleVerified && GetEnvironmentVariableW(L"INKEYS_UI3_SKIP_LOCALE_PROBE", nullptr, 0) == 0)
+			{
+				const std::wstring originalLocale = I18n::locale().code;
+				auto* stableMore = owner.barButtonSet.GetMoreButton();
+				Pipeline::FrameContext localeFrame;
+				localeFrame.epoch = Pipeline::GetDeviceEpoch();
+				localeFrame.assets = Pipeline::GetSharedAssets();
+				localeFrame.frameTime = std::chrono::steady_clock::now();
+				for (const auto& locale : Inkeys::Localization::Locales)
+				{
+					if (!I18n::load(1,L"JSON",locale.code)) return 1;
+					localeFrame.frameTime += std::chrono::milliseconds(20);
+					(void)mainFrame(localeFrame);
+					if (owner.spec.GetFontFamily() != locale.fontFamily
+						|| owner.barButtonSet.GetMoreButton()!=stableMore
+						|| stableMore->name.content.GetTar()!=IW(I18nKey.UI.Bar.MainButtons.MoreLabel)
+						|| owner.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel]->content.GetTar()
+							!=IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel))
+					{
+						std::fputs("[UI3MultiTarget] live locale frame did not update font/labels in place\n",stderr);return 1;
+					}
+				}
+				if (!I18n::load(1,L"JSON",originalLocale)) return 1;
+				localeFrame.frameTime += std::chrono::milliseconds(20);(void)mainFrame(localeFrame);
+				liveLocaleVerified = true;
+			}
 			// 使用与产品相同的 mailbox/dispatcher；这些 HWND 值只是注册身份，从不调用 USER32。
 			auto inputWorker = CreateOffscreenInteractionWorker();
 			if (!inputWorker) return 1;
@@ -480,7 +509,7 @@ namespace Inkeys::UI::Bar
 		if (FAILED(com)) return 2;
 		if (FAILED(Pipeline::Initialize())) { CoUninitialize(); return 3; }
 		IdtFontFileLoader::IsLoaderInitialized(); IdtFontCollectionLoader::IsLoaderInitialized();
-		const std::array<UINT, 4> fonts{ IDR_TTF1, IDR_TTF7, IDR_TTF3, IDR_TTF8 };
+		const std::array<UINT, 8> fonts{ IDR_TTF1, IDR_TTF7, IDR_TTF3, IDR_TTF8, IDR_NOTO_JP_REGULAR, IDR_NOTO_JP_BOLD, IDR_NOTO_KR_REGULAR, IDR_NOTO_KR_BOLD };
 		int failures = FAILED(Pipeline::InitializeFontCollection(IdtFontFileLoader::GetLoader(),
 			IdtFontCollectionLoader::GetLoader(), fonts)) || !I18n::load(1, L"JSON", L"zh-CN") ? 1 : 0;
 		const std::filesystem::path directory = L"TestResults/ui3-shared-runtime";
@@ -495,10 +524,20 @@ namespace Inkeys::UI::Bar
 		BarUiEdgeLightingEnabled = true; BarUiDynamicEdgeLightingEnabled = true;
 		BarUiDebugModeEnabled = false;
 		bool presetsInitialized=false;
-		for (const double scale : { 1.0, 1.5, 2.0 })
-			for (const auto workload : { Workload::Main, Workload::Ppt, Workload::Whiteboard })
-				for (unsigned run = 1; run <= 3; ++run)
-					failures += MeasureRun(workload, scale, run, summary, directory, presetsInitialized);
+		bool firstCaseOnly=false;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		// 仅缩小诊断样本数；首例仍执行原600帧负载、全部门槛和正常资源释放。
+		wchar_t firstCaseFlag[2]{};
+		firstCaseOnly=GetEnvironmentVariableW(L"INKEYS_UI3_BENCHMARK_FIRST_CASE_ONLY",
+			firstCaseFlag,2)==1 && firstCaseFlag[0]==L'1';
+#endif
+		if (firstCaseOnly)
+			failures += MeasureRun(Workload::Main, 1.0, 1, summary, directory, presetsInitialized);
+		else
+			for (const double scale : { 1.0, 1.5, 2.0 })
+				for (const auto workload : { Workload::Main, Workload::Ppt, Workload::Whiteboard })
+					for (unsigned run = 1; run <= 3; ++run)
+						failures += MeasureRun(workload, scale, run, summary, directory, presetsInitialized);
 		barUISet.spec.DiscardDeviceResources();
 		Pipeline::Shutdown();
 		globalPath=originalGlobalPath;
@@ -1991,7 +2030,7 @@ namespace Inkeys::UI::Bar
 		if (FAILED(Pipeline::Initialize())) { CoUninitialize(); return 3; }
 		IdtFontFileLoader::IsLoaderInitialized();
 		IdtFontCollectionLoader::IsLoaderInitialized();
-		const std::array<UINT, 4> fonts{ IDR_TTF1, IDR_TTF7, IDR_TTF3, IDR_TTF8 };
+		const std::array<UINT, 8> fonts{ IDR_TTF1, IDR_TTF7, IDR_TTF3, IDR_TTF8, IDR_NOTO_JP_REGULAR, IDR_NOTO_JP_BOLD, IDR_NOTO_KR_REGULAR, IDR_NOTO_KR_BOLD };
 		const HRESULT fontResult = Pipeline::InitializeFontCollection(
 			IdtFontFileLoader::GetLoader(), IdtFontCollectionLoader::GetLoader(), fonts);
 		const std::filesystem::path directory = bottomDock

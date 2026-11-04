@@ -20,7 +20,8 @@ export namespace Inkeys::Drawing::Draw3
 		Circle,
 		Rectangle,
 		EraserGripCircle,
-		PenIcon
+		PenIcon,
+		Arrow
 	};
 
 	// 描述应用内瞬态光标外观；颜色分量使用 [0,1]，尺寸使用画布像素。
@@ -183,7 +184,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool selectedToolIsEraser, bool selectedToolIsLaser,
 		bool penSampleValid, bool mouseSampleValid,
 		bool mouseUsesSystemCursor = true, bool touchPanActive = false,
-		bool realMouseTakeoverDuringTouchPan = false) noexcept;
+		bool realMouseTakeoverDuringTouchPan = false,
+		bool mouseSampleIsTablet = false) noexcept;
 	// Touch 仅暂时接管视觉；真实 Mouse 接管活动 Pan 时仍保持优先。
 	DrawingCursorPointerAuthority ResolveDrawingCursorVisualAuthority(
 		DrawingCursorPointerAuthority persistentOwner, bool touchCursorSuppressed,
@@ -261,6 +263,10 @@ export namespace Inkeys::Drawing::Draw3
 	// Touch 橡皮接触始终生成不透明 visual；Hover 不调用该函数。
 	DrawingCursorVisual MakeTouchEraserDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& eraserAppearance) noexcept;
+	// 触摸接触点的软/硬笔光标；None 不生成 visual，由调用方逐接触调用，抬起后随 runtime 消失。
+	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
+		const DrawingCursorAppearance& penAppearance, CursorStyle style,
+		float dpiScale = 1.0f) noexcept;
 	// 计算包含 1px AA 和 shader quad padding 的画布内脏区。
 	RECT DrawingCursorVisualBounds(const DrawingCursorVisual& visual,
 		int canvasWidth, int canvasHeight) noexcept;

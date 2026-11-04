@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "确认当前产品路径、配置归属和最小修改边界"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "保持编码换行、C++ module 边界及共享状态同步"}
+{"file": ".trellis/tasks/11-03-shortcut-settings-integration/research/config-i18n-contracts.md", "reason": "配置归属、旧键退出及 i18n 生成/语言快照合同的相关规范摘录；完整原规范过大时避免注入截断"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "新子页/内联条件区接入现有路由、布局和转场，不引入重复副作用"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "现有 Solution 与无窗口验证边界；具体构建以根 AGENTS 为准"}
+{"file": ".trellis/tasks/11-03-shortcut-settings-integration/research/current-behavior.md", "reason": "旧快捷方式双开关、配置消费者、FIFO 及名称同步证据"}
+{"file": ".trellis/spec/native-desktop/desktop-shortcuts.md", "reason": "本次桌面快捷方式的稳定配置、语言、自定义编辑与 FIFO 跨层合同"}
+{"file": ".trellis/tasks/11-03-shortcut-settings-integration/research/ui-layout-followup.md", "reason": "用户截图明确的同卡片内联、下方弹层、显隐动效和启动说明修正及验证范围"}

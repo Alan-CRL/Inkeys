@@ -199,7 +199,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -240,7 +240,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -279,7 +279,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -318,7 +318,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -358,7 +358,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -399,7 +399,7 @@
       <OptimizeReferences>
       </OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(VcpkgInstalledDir)$(VcpkgTriplet)\lib\*.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;$(VcpkgInstalledDir)$(VcpkgTriplet)\lib\*.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -500,6 +500,8 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h" />
@@ -522,6 +524,7 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Business\PptSession.h" />
+    <ClInclude Include="Inkeys\Business\DesktopShortcut.h" />
     <ClInclude Include="PptSettingsPersistence.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h" />
@@ -531,6 +534,7 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h" />
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
+    <ClInclude Include="Launch\IdtCommandPipe.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
@@ -931,6 +935,7 @@
     <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp" />
     <ClCompile Include="additional\imgui\imgui.cpp" />
     <ClCompile Include="additional\imgui\imgui_draw.cpp" />
+    <ClCompile Include="additional\imgui\misc\freetype\imgui_freetype.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="additional\imgui\imgui_tables.cpp" />
@@ -1165,22 +1170,12 @@
   </ItemGroup>
   <ItemGroup>
 	<Image Include="src\message_box\error.png" />
-    <Image Include="src\ClassIsland.png" />
     <Image Include="src\icon.ico" />
-    <Image Include="src\IslandCaller.png" />
-    <Image Include="src\NamePicker.png" />
+    <Image Include="src\whiteboard.ico" />
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
     <Image Include="src\PluginFlag3.png" />
     <Image Include="src\PluginFlag4.png" />
-    <Image Include="src\quick\altf4.png" />
-    <Image Include="src\quick\control.png" />
-    <Image Include="src\quick\desktop.png" />
-    <Image Include="src\quick\explorer.png" />
-    <Image Include="src\quick\keyboardesc.png" />
-    <Image Include="src\quick\lockworkstation.png" />
-    <Image Include="src\quick\taskmgr.png" />
-    <Image Include="src\SecRandom.png" />
     <Image Include="src\setting\Home_Feedback.png" />
     <Image Include="src\setting\GitHubMark.png" />
     <Image Include="src\setting\EraserDemoFine.png" />
@@ -1199,6 +1194,7 @@
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
     <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli" />
@@ -1217,12 +1213,20 @@
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
+    <None Include="src\i18n\id-ID.jsonc" />
+    <None Include="src\i18n\vi-VN.jsonc" />
+    <None Include="src\i18n\tr-TR.jsonc" />
+    <None Include="src\i18n\it-IT.jsonc" />
+    <None Include="src\i18n\pl-PL.jsonc" />
+    <None Include="src\i18n\uk-UA.jsonc" />
+    <None Include="src\i18n\es-MX.jsonc" />
+    <None Include="src\i18n\ro-RO.jsonc" />
+    <None Include="src\i18n\en-GB.jsonc" />
     <None Include="src\UI\barBrush1.svg" />
     <None Include="src\UI\barBrush2.svg" />
     <None Include="src\UI\barPaintBrush.svg" />
     <None Include="src\UI\barLaser.svg" />
     <None Include="src\UI\barClean.svg" />
-    <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barAutoEraser.svg" />
     <None Include="src\UI\barStatusSlideshow.svg" />
@@ -1241,10 +1245,29 @@
     <None Include="src\UI\barPalette.svg" />
     <None Include="src\UI\barEndShow.svg" />
     <None Include="src\UI\barAdd.svg" />
+    <None Include="src\UI\barReturnShow.svg" />
+    <None Include="src\UI\barResumeWhiteboard.svg" />
+    <None Include="src\UI\barMove.svg" />
+    <None Include="src\UI\barEraserSpeedSetting.svg" />
+    <None Include="src\UI\compExplorer.svg" />
+    <None Include="src\UI\compTaskManager.svg" />
+    <None Include="src\UI\compControlPanel.svg" />
+    <None Include="src\UI\compShowDesktop.svg" />
+    <None Include="src\UI\compLockScreen.svg" />
+    <None Include="src\UI\compEscape.svg" />
+    <None Include="src\UI\compAltF4.svg" />
+    <None Include="src\UI\compRollCallRandom.svg" />
+    <None Include="src\UI\compRollCallSingle.svg" />
+    <None Include="src\UI\compRollCallQuick.svg" />
+    <None Include="src\UI\compRollCallQuick2.svg" />
+    <None Include="src\UI\compRollCallQuickCompat.svg" />
+    <None Include="src\UI\compNamePicker.svg" />
+    <None Include="src\UI\compClassSettings.svg" />
+    <None Include="src\UI\compClassProfile.svg" />
+    <None Include="src\UI\compClassSwap.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barWhiteboard.svg" />
     <None Include="src\UI\barMenu.svg" />
-    <None Include="src\UI\barDismiss.svg" />
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />
     <None Include="src\UI\barInfo.svg" />
@@ -1261,7 +1284,7 @@
     <Image Include="src\UI\color\colorCustom.png" />
     <None Include="src\UI\Frame 94.svg" />
     <None Include="src\UI\logo1.svg" />
-    <None Include="src\UI\logo2.svg" />
+    <None Include="src\UI\whiteboardLnk.svg" />
   </ItemGroup>
   <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
@@ -1286,6 +1309,26 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>

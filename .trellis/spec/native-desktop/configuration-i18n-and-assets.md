@@ -48,14 +48,63 @@
 
 ## UI3 常驻透明度配置合同
 
-持久化路径为 `Experimental.Inkeys3.UI3.BackgroundOpacity` 与 `ContentOpacity`，均为整数百分比。背景默认 `0`（`ResidentBackgroundOpacityThemeDefault`，跟随主题：Dark 80%、Light 88%），其余值经 `NormalizeResidentBackgroundOpacity()` 收敛到 30~100；内容默认 `100`，经 `NormalizeResidentContentOpacity()` 收敛到 30~100。
+持久化路径为 `Experimental.Inkeys3.UI3.BackgroundOpacity` 与 `ContentOpacity`，均为整数百分比。背景默认 `0`（`ResidentBackgroundOpacityThemeDefault`，跟随主题：Dark 80%、Light 92%），其余值经 `NormalizeResidentBackgroundOpacity()` 收敛到 30~100；内容默认 `100`，经 `NormalizeResidentContentOpacity()` 收敛到 30~100。
 
 - 背景为绝对值：用户值即展开主栏的填充透明度；主按钮（收起 0.6 基准）、底部吸附指示与分页按与主栏 0.80 基准的比例同步。内容透明度是图标/文字的倍率。两者只作用于常驻表面（主栏、主按钮、吸附指示、PPT/白板分页），弹出面板、属性栏、菜单保持原透明度。
 - 启动在 `ReadAll()` 后归一并写回内存，再调用 `Inkeys::UI::Bar::SetResidentOpacity()`；该函数只交换 `BarStyleClass::requested*Opacity` 并唤醒 Bar 与 `PptPageMask()`，渲染线程在帧首应用并整幅重画，分页在 Advance 中比较已应用值。
 - “常规 > 外观 > 透明度”分区两条滑块（30%~100%）带“恢复默认”按钮。拖动实时发布，松手、重置或离页时再 `QueueConfigWrite()`；背景重置写回 `0`，滑块显示当前主栏主题的默认值。动画速率（默认 1.0x）与主栏缩放（默认 100%）滑块同样带“恢复默认”，重置后沿原有释放保存路径。
-- Startup Preview 仍使用主题默认透明度绘制占位，与自定义背景透明度交接时可能有一次可见跳变。
+- Startup Preview 在 `ReadMini()` 阶段冻结同一主题及两项透明度，背景/反光/柔光流彩/像素速度线作为背景组，进度轨道/填充单独消费内容透明度；角落保持深色并使用主按钮比例。最终整窗淡入淡出不替代这两项材质透明度。
 
-无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/88%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
+无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/92%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
+PPT 闲置淡化不改写这两个正常偏好；三范围配置与 30%/60% 独立上限见 [PPT 闲置淡化合同](ppt-idle-fade.md)。
+
+## 启动加载效果选择合同（2026-11-04）
+
+### 1. Scope / Trigger
+
+启动动画效果的持久化、Mini 快照、设置选择与对应渲染交接；视觉/生命周期细节见 [startup-preview.md](startup-preview.md)。
+
+### 2. Signatures
+
+- `Experimental.Inkeys3.UI3.StartupPreview.Effect : IdtAtomic<int> = 0`。
+- `StartupPreview.Effect.h`：`StartupPreviewEffect { Shimmer=0, Aurora=1, PixelAssembly=2 }`、`NormalizeStartupPreviewEffect(int)`。
+- `StartOptions.effect/themeMode/backgroundOpacity/contentOpacity` 是本次预览的冻结输入。
+- `GeneralDraft.startupEffect` / `GeneralEvents.startupEffectChanged` 贯通设置选择与保存。
+
+### 3. Contracts
+
+- `ReadMini`/`ReadAll` 仅接受真实 JSON 整数 0/1/2；未知值、非整数类型、超宽整数均回退 0，不允许先窄化再命中有效值。旧配置缺失效果仍为“掠光”。
+- `IdtMain` 的 Mini 路径同时选择 Effect、ThemeMode、BackgroundOpacity、ContentOpacity；归一后传给 StartOptions，不等待完整配置加载才选择外观。
+- “常规 > 外观 > 启动加载动画”卡片的下半区是内联“启动效果”下拉（`ToggleRow` + `InlineCombo`，visibilityId `##startup-effect-visibility`），选项为“掠光 / 柔光流彩 / 像素拼装”（柔光流彩原名彩虹晕染，key 仍为 `Aurora`）；开关关闭时内联区随条件动画收起、父行保持常驻并保留效果值，开启时展开。收起过程中沿共用输入禁用规则，不产生隐藏控件事件。2026-11-04 起不再是独立卡片，原说明键 `StartupEffect.E` 已删除。
+- 效果选择通过 `QueueConfigWrite()` 保存且下次启动生效；不重新启动当前预览，不清除宽度缓存。新文案遵循现有二十语源/键生成合同。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| 缺失/非法/超宽 Effect | 回到 Shimmer，保留无关配置 |
+| Preview Enable=false | 保留选择；内联区收起且不启动预览 |
+| 关闭后再开启 | 选择值不丢失，内联区随既有条件动画展开 |
+| 当前会话改效果 | 保存下次偏好，本次冻结外观不变 |
+
+### 5. Good / Base / Bad Cases
+
+Good：Mini 已取得 PixelAssembly + Light + 两项透明度后启动正确预览。Base：旧 main.json 沿原掠光启动。Bad：效果与主题直到 ReadAll 后才切换；或关闭开关时把用户选择重置为默认。
+
+### 6. Tests Required
+
+真实 Config Mini/All、缺失/错类型/超宽整数、写回/重读及冻结快照；真实 ImGui 选择、开关折叠/恢复、两主题/缩放、禁动画输入与事件隔离。完整 ARM64 Solution 与 `--no-window` 验证按主项目规则执行。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：宽整数可被窄化为有效选项。
+const int candidate = static_cast<int>(jsonValue.asInt64());
+// Correct：先验证原始整数类型与可表示范围，再归一。
+const int candidate = integerType && jsonValue.isInt() ? jsonValue.asInt() : -1;
+value = static_cast<int>(NormalizeStartupPreviewEffect(candidate));
+```
+
 ## 设置页废弃配置清理合同
 
 ### 1. Scope / Trigger
@@ -115,7 +164,7 @@ setlistVal.removeMember("Preset");
 
 ## UI2/旧设置资源退役边界
 
-- 按活动工程、RC 和真实加载/绘制消费者确认归属，不能只因资源名含 UI2 或位于旧目录就删除。保留 UI3 共用的四个 PluginFlag、CUSTOMIZEICO 快捷操作、头像、反馈码、赞助图、SIGN4 定格标识及当前 SVG/字体/演示 atlas。
+- 按活动工程、RC 和真实加载/绘制消费者确认归属，不能只因资源名含 UI2 或位于旧目录就删除。保留 UI3 共用的四个 PluginFlag、头像、反馈码、赞助图、SIGN4 定格标识及当前 SVG/字体/演示 atlas。
 - 旧首页 Home1/Home2 整图不再由 Setting 初始化或列入 requiredTextureIndexes；保留 1/2 槽位编号，避免改动其他共享纹理索引和设备重建合同。旧 UI2 专用资源从 RC、项目项和历史加载调用同步退役；已不存在的资源项目项也一并清除。
 - 用户要求移入回收站时使用原生 recycle-on-delete，不永久删除；操作前核对仓库内绝对路径/清单/哈希，操作后核对实际回收站副本。验证保留 RC 文件、项目筛选器及生成 EXE 的嵌入内容，不以编译通过代替资源完整性检查。
 
@@ -210,10 +259,10 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - `UI.Bar.FixedButtonsA2`：同 A1 元素形态
 - 运行时渲染顺序恒为 `normalize(A1) + normalize(B) + normalize(A2)`。
 - **UI2/UI3 并行期覆盖规则**：启用 UI3 时，`Load()` 的运行时 B 不读取 `UI.Bar.ExtensionButtons`，而是按设置页固定顺序读取 16 个 `setlist.component.shortcutButton.*` 开关。该投影只存在于当前进程，不调用 `ExtensionButtons.Replace()`、新版 `Config::Write()` 或其他 B 区持久化入口；持久化 B 的排序与编辑能力留到移除 UI2 后恢复。
-- 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、PNG 资源、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
+- 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、`UI` 类型 SVG 资源名（`comp*`，见 [bar-icons.md](bar-icons.md)）、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
 - 设置页修改旧组件开关时，先更新 `setlist` 并执行 `WriteSetting()`，再在 UI3 下调用 `SyncLegacyExtensionButtons()` 和 Bar 渲染唤醒入口。打开开关按固定列表位置加入 B，关闭开关立即移除，其余组件相对顺序不变；UI2 的首个有效组件规则保持不变。
 - 运行时按钮列表整体替换为注册表持有的 `shared_ptr` 序列；两条交界 Divider 使用长期持有的独立对象。组件按钮各自使用本地状态，避免多个扩展按钮共享按压/选中状态。
-- 按钮图标载荷可为 SVG 或 PNG。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `BarUIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。
+- 按钮图标载荷可为 SVG 或 PNG；内置组件自 2026-11 起全部为主题占位色 SVG，PNG 路径当前无内置使用者但保留。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `BarUIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。
 - **按钮 ID 命名**：
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
@@ -284,7 +333,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - 验证旧 `ButtonLayout` 迁移与 `configOnce = config` 后三区一致。
 - 静态确认 16 个内置组件均已注册且顺序与设置页一致，16 个 toggle 写入后均触发 UI3 同步。
 - 验证 UI3 启动和 toggle 同步均不读取、替换或写回 `UI.Bar.ExtensionButtons`。
-- 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
+- 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、组件 SVG 深浅主题着色、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
 - 手工验证 0/1/2/3+ 个旧组件的主栏容量、MoreBoundary 两组顺序、分割线条件、上下展开物理行方向、与绘制属性一致的时长及 Back/Sine 动画、隐藏态 Selected 青色同步、More 固定小三角、右上角 X 悬停/按压/拖出，以及 `closeMoreAfterAction=false` 保持打开。
 - 手工验证主栏两条 Divider 保持 `oneTwo` 两行布局占用但只绘制垂直居中的 `1x50` DIP 纯 Shape，以及 `0.30` 填充/第三光强度、5 DIP 间隙居中、半列封列、左右镜像；指针经过/按下不产生背景、缩放或点击。
 - 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；Headless/静态断言确认旧 Whiteboard/Freeze 顺序迁移、A2 三态可见性、EndShow 单次业务投递、旧 Pierce 被迁移且新配置不接受；无自动化 UI 测试时记录未做运行验证。
@@ -305,7 +354,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | 路径 | `【直接确认】`的角色 |
 | --- | --- |
 | `Inkeys/src/i18n/zh-CN.jsonc` | 基准语言 |
-| `Inkeys/src/i18n/*.jsonc`（除zh-CN） | 当前其他十种语言，脚本自动枚举 |
+| `Inkeys/src/i18n/*.jsonc`（除zh-CN） | 当前其他十九种语言，脚本自动枚举 |
 | `Scripts/i18n.ps1` | `check`/`sync` 工具 |
 | `Scripts/i18n.zh-CN.snapshot.jsonc` | 基准语言同步快照 |
 | `Inkeys/IdtI18nKeys.g.h` | `sync` 生成的 key header |
@@ -319,7 +368,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 实验选项的控制台诊断由旧 `SettingsUI/Experimental/ConsoleOutput/TouchArea` 文案键和 `Experimental.Inkeys3.ConsoleOutput.TouchArea` 保存键继续承载；扩大输出内容时只更新全部支持语言的可见名称/说明，不改键以保留已有用户选择。
 
-### 十一语言身份、字体与验证合同（2026-11-02）
+### 二十语言身份、字体与验证合同（2026-11-02）
 
 #### 1. Scope / Trigger
 
@@ -327,7 +376,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 #### 2. Signatures
 
-- `Inkeys/IdtI18nLocales.h`：`Locales`、`IsValidIndex(int)`、`LocaleForIndex(int)`、`FindLocale(std::wstring_view)`、`IndexForSystemLanguage(LANGID)`、`NativeLabel(const Locale&)`。
+- `Inkeys/IdtI18nLocales.h`：`Locales`、`IsValidIndex(int)`、`LocaleForIndex(int)`、`FindLocale(std::wstring_view)`、`IndexForSystemLanguage(LANGID)`、`NativeLabel(const Locale&)`；`DisplayOrder`、`DisplayIndexForLocale(int)`、`LocaleIndexForDisplay(int)`。
 - `I18n::load(1, L"JSON", code)`、`I18n::languageId()`、`I18n::locale()`；元数据包含实际JSON resource、LANGID、Regular/Bold资源及字体族。
 - `BarUIRendering::FitButtonLabelFontSize(content, fontSize, width, height, weight)`；`Word(..., bool fitButtonLabel = false)`默认不变，仅主标签开启；拟合比例同时作用于当前字面与fontCorrection的名义目标。
 - `Setting::Design::TextFontConfig(rasterizerDensity, notoSource, TextFontRole role, notoPrimary)`：共享设置字体profile，区分源字族尺度、主字族基线和Legacy/Design角色。
@@ -335,12 +384,13 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 #### 3. Contracts
 
-- 传统 `deploy.json/SelectLanguage` 保持 `0=en-US,1=zh-CN,2=zh-TW`；追加 `3=zh-HK,4=ja-JP,5=ko-KR,6=fr-FR,7=de-DE,8=es-ES,9=pt-BR,10=ru-RU`。不能为下拉排序重排保存索引或迁移到main.json。
+- 传统 `deploy.json/SelectLanguage` 保持 `0=en-US,1=zh-CN,2=zh-TW`；追加 `3=zh-HK,4=ja-JP,5=ko-KR,6=fr-FR,7=de-DE,8=es-ES,9=pt-BR,10=ru-RU`。后续追加 `11=id-ID,12=vi-VN,13=tr-TR,14=it-IT,15=pl-PL,16=uk-UA,17=es-MX,18=ro-RO,19=en-GB`。不能为下拉排序重排保存索引或迁移到main.json。
+- 全部二十项菜单按语言码ordinal字典序显示，`DisplayOrder`由同一Locales表生成保存索引视图；Combo选中显示行须经`LocaleIndexForDisplay`再请求/保存，恢复时经`DisplayIndexForLocale`反查。非法保存值仍选英语，不能误用排序第一项de-DE；准备失败恢复原选中语言。
 - 未保存选择时精确匹配新增地区，已有ReadSetting偏好优先；新加坡/澳门中文及未覆盖地区保持旧回退。非法值仅本次回退英语；未知嵌入代码加载失败，不能拿中文资源却记录为另一个语言。
 - 列表显示母语名称、语言码及Beta，只有zh-CN不含Beta；通用品牌/新快捷方式zh-CN使用智绘教Inkeys，其余Inkeys，主页既定地区化标题/标语/版权例外保留。社区沿zh-CN→QQ、其余→GitHub分流。
-- 新语言须同时进入JSONC、RC/resource、Locales及必要工程/Solution展示项；脚本自动枚举其他JSONC，无需另加语言白名单。所有叶子完整翻译，不能把品牌/母语菜单/原生软件专名等有意同值误判为漏译。
+- 新语言须同时进入JSONC、RC/resource、Locales及必要工程/Solution展示项；消息框默认按钮另按PRIMARYLANGID分派，须同步补齐且与JSONC术语一致，地区英/西复用既有按钮规则；脚本自动枚举其他JSONC，无需另加语言白名单。所有叶子完整翻译，不能把品牌/母语菜单/原生软件专名等有意同值误判为漏译。
 - Noto Sans JP/KR采用固定官方来源的静态TrueType Regular/Bold，保留OFL与来源哈希；DWrite资源集合、ImGui普通/粗体/Design脸及MessageBox独立GDI+路径分别验证。主语言字形优先，SC/TC/JP/KR同字重合并仅补缺，保证任何当前语言下的母语列表可读；Noto不套Harmony光学校正。
-- 选择后沿用重启完整生效合同，不新增全程序热切换保证。组件注册保存字符串副本；DDB等跨帧表存稳定key，每帧取文案，不能保存临时`IA(...).c_str()`。
+- 语言选择改为安全帧边界热切换，具体发布/刷新/消息框快照见下节；组件注册保存的字符串副本必须随语言revision原位刷新。DDB等跨帧表存稳定key，每帧取文案，不能保存临时`IA(...).c_str()`。
 - 脚本token正则只验证字面/顺序，不能证明std::format语法和参数类型。真实模板测试须使用生产参数类型（含IdtAtomic<int>下载线路、字符串笔宽与浮点指标），绕开生产异常兜底；兼容swprintf消费者另查百分号和固定缓冲边界。
 - 设置Noto Design以1.448×TextOpticalScale（当前约1.40456）、Legacy以1.448/1.213（约1.193735）校准stb的hhea归一化；Harmony Design和Legacy原配置保持。merged字形共用primary的baked.Ascent，因此ExtraSizeScale按source字族，GlyphOffset按primary字族及role，不可分别给fallback套自身基线；图标、名义字号、行框和FontScaleDpi不随此补偿改变。
 - 固定主栏/组件网格不因翻译扩张；短标签可在不误导操作的前提下精炼，必要局部适配必须让生产绘制与测量共用实际字体/几何。SelectClear/ClickThrough仅各自允许0或1个换行，其他资源继续按基准严格检查。
@@ -349,7 +399,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 | 输入/条件 | 必须结果 |
 | --- | --- |
-| 旧0/1/2保存值，新3..10或未保存精确系统地区 | 保持旧值含义，新值/首次匹配选择正确，保存偏好不被系统覆盖 |
+| 旧0..10保存值，新11..19或未保存精确系统地区 | 保持旧值含义，新值/首次匹配选择正确，保存偏好不被系统覆盖 |
+| 排序菜单选择、取消或失败 | 显示行和保存索引双向一致；导航未提交不写配置，默认英语不能变成de-DE |
 | 非法索引/未知嵌入代码 | 前者内存回退英语；后者load失败且不伪造语言身份 |
 | 资源ID错配 | 根Language、实际查询Language与请求code不符时测试失败 |
 | 内嵌/合并字体缺字或真实槽溢出 | DWrite glyph-run/ImGui glyph及严格边界测试报具体locale/key/尺寸，不以RC条目存在或全局缩字冒作通过 |
@@ -364,7 +415,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 #### 6. Tests Required
 
-十一语JSONC完整性/同序/token/换行；真实EXE资源Language与LANGID/索引/首次地区及Beta；所有活动格式模板的实际类型；DWrite实际glyph-run与37/70DIP槽、菜单/组件/提示；ImGui常规/粗体混合母语列表及窄/宽窗/不同倍率的真实组件、DDB、赞助长文；MessageBox默认按钮及私有字体。按用户要求完整Debug|ARM64 Solution构建后执行，无GUI/Computer Use授权时不声称真实桌面/触控/其他系统已验收。改已有文件时比较检出字节格式（本仓库core.autocrlf=true），不能把Git内部LF误当原工作区换行。
+二十语JSONC完整性/同序/token/换行；排序后真实Combo按键选择与保存身份（含首行de-DE、en-GB/en-US及末行）；真实EXE资源Language与LANGID/索引/首次地区及Beta；所有活动格式模板的实际类型；DWrite实际glyph-run与37/70DIP槽、菜单/组件/提示；ImGui常规/粗体混合母语列表及窄/宽窗/不同倍率的真实组件、DDB、赞助长文；MessageBox默认按钮及私有字体。按用户要求完整Debug|ARM64 Solution构建后执行，无GUI/Computer Use授权时不声称真实桌面/触控/其他系统已验收。改已有文件时比较检出字节格式（本仓库core.autocrlf=true），不能把Git内部LF误当原工作区换行。
 
 设置字体校准必须以真实字体共同汉字/H/数字的字面上下界和基线验证，并独立保留descender完整性、Noto主→Harmony缺字和Harmony主→Hangul混排基线；旧Noto profile用跨字号聚合负对照，防止仅“不溢出”放过整体过小。位图quad的小字号量化允许相对±10%或绝对≤1设备像素，不把该像素容差随DPI放大；同页真实ImGui离屏对照覆盖100/150/200%，不等同于GUI实机验收。
 
@@ -377,6 +428,62 @@ else I18n::load(1, L"JSON", L"en-US");
 // Correct：启动、选择、资源和字体共用稳定语言身份。
 I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(selection).code);
 ```
+### 全界面语言热切换与消息框快照（2026-11-02）
+
+#### 1. Scope / Trigger
+
+更改运行时语言、字体优先级、已缓存本地化文字、延后消费的提示请求时适用。全部程序自有表面更新；已打开独立消息框保持原语言，新请求使用新语言。原生字体渲染各自保留：设置FreeType、Bar/PageControl DirectWrite、MessageBox GDI+。
+
+#### 2. Signatures
+
+- `I18n::PreparedLanguage { language, values, baseRevision }`；`prepare(type,path,lang,output)`、`commit(PreparedLanguage&&) noexcept`、`revision() noexcept`。
+- `I18n::TextSnapshot { LANGID language; vector<wstring> text; }`；`capture(initializer_list<const char*> keys, TextSnapshot&, bool nonblocking=false) noexcept`。
+- `BarButtonSetClass::RefreshLocalizedText()`、`BarUIRendering::RefreshLocalizedTypography()`；Setting帧边界语言请求与字体替换。
+
+#### 3. Contracts
+
+- prepare构造候选map但不改变当前语言；commit在独占锁内检查baseRevision，再交换map/语言并递增revision。未知语言、缺失资源或过期候选不发布；保存SelectLanguage仍沿旧配置路径/索引，只有成功应用才写回。
+- 发布者不在i18n锁内执行字体生成、D3D或跨窗口调用。生产切换由共享渲染线程安全帧边界完成；不在绘制Combo期间修改锁定atlas。成功后主动唤醒Bar/PageControl，不能仅更新revision而等待下一次用户输入。语言页不显示即时生效说明，简中说明使用“界面使用的显示语言。”；其余注意提示默认保持图标。
+- Bar固定/状态型/组件标签原位更新，保留对象与工具状态；每个独立renderer同时更新字体族、locale、测量缓存。PageControl在业务revision不变时也消费语言revision，隐藏表面下次呈现使用新版本。记录所消费的版本，不能用“旧语言数据+随后读取的新revision”跳过刷新。
+- capture在一次shared_lock内获取整组UTF-16文案和LANGID；缺少任一键/异常时保持output不变。nonblocking模式仅try_lock，崩溃路径不得改为阻塞读取；失败整组使用一致fallback。
+- 排队提示在生产者侧冻结正文、标题、按钮与语言，worker只消费owned数据；正文若由同一渲染帧生成，要维持该帧内不能插入语言commit的合同。其他线程用同一capture取得所有字段。MessageBox保存request.language，DPI/主题恢复仍从该快照选字体。
+- 系统已托管的历史通知、外部插件内容和用户数据不改写；不得为了语言刷新重启进程或重建整个业务UI。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| prepare失败/候选revision过期 | 不发布，不持久化新选择，旧语言可继续使用 |
+| 字体候选初始创建/上传失败 | 恢复旧atlas及字体绑定，不提交语言 |
+| 发布后动态新字形上传失败 | 不Present失败帧，沿既有Retry/DeviceLost恢复；不冒称全部未来字形均已预热或已回滚语言 |
+| 静止可见Bar/分页窗口 | 提交后主动重绘，无需额外输入 |
+| 旧提示入队后切换语言 | 旧请求全字段一致，新请求全字段采用新快照 |
+| capture try_lock失败 | 不修改已有output，崩溃调用者使用整组英文fallback |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：zh-CN→ja-JP时文字和字体优先级同步，Bar工具/白板内容不变；旧消息框仍为中文。
+- Base：同字族语言复用字体，刷新文本和缓存即可。
+- Bad：逐个IW再单独languageId拼消息框；只替换JSON却保留初始化标签或静止表面；先写配置再尝试加载。
+
+#### 6. Tests Required
+
+`--i18n-locales-test`包含候选/过期提交/并发成组快照；`--bar-eraser-offscreen-test`保留工具和按钮identity，并经PageControl::RunOffscreenTests验证四个表面的真实ConfigureSurface语言变化；`--ui3-multitarget-benchmark`验证真实Bar RenderFrame的语言刷新；`--setting-font-lifecycle-test`在无HWND WARP中经过生产字体替换和失败路径。Debug harness须在GUI初始化前返回；实际执行结果记录于任务验证文档，不以源码存在推断通过。
+
+#### 7. Wrong vs Correct
+
+```cpp
+// Wrong：三次读取可能跨越语言发布。
+auto title = IW(titleKey);
+auto body = IW(bodyKey);
+auto language = I18n::languageId();
+// Correct：一次快照为整个请求选文案与字体身份。
+I18n::TextSnapshot snapshot;
+if (I18n::capture({titleKey, bodyKey}, snapshot)) {
+    // 构造拥有snapshot.text和snapshot.language的消息框请求。
+}
+```
+
 ### 生成键标识符与 Win32 宏合同
 
 #### 1. Scope / Trigger
@@ -506,7 +613,6 @@ H(true, true, "ch", std::string, UpdateChannel,
 - Surface（含手指触摸）、平板、鼠标操控的大屏及普通投影属于桌面交互的文案场景。2026-10-13 用户明确要求保留现有全部自动启动判定，含“系统有触摸但主屏尺寸未知时默认大屏”；此自动识别与场景定义的差异是后续产品决策，不得借文案修改自动调整启动策略。
 - 验证：无 HWND ImGui 回放覆盖下拉双向选择、三语/缩放卡片布局；另以生产调度边界的线程回归覆盖锁内提交与 FIFO 顺序。只把 Sync 替换为计数器的控件回放不能验证卡死修复。
 
-
 ## 启动位置预设配置合同
 - UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏展开、1左角主按钮、2右角主按钮。读盘仅接受JSON int/uint且isInt()可表示的0..2；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。
 - 启动后位置说明和现有combo位于通用→基本的启动行为分类，不提供Preset导航页。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
@@ -631,3 +737,34 @@ Settings原子配置→frame配置快照→完整稳定宽度→受锁约束的s
 - 仅有效当前白板页真正接受的主题修改更新偏好；初始化、冷恢复、重复/stale/错页/加载中请求不写回。新进程首张页读取偏好，同进程新页继续继承当前页。
 - 配置经现有 Setting FIFO 异步写盘，跨生产者的完整配置捕获与入队必须在同一短临界区保持同序，锁内不执行文件 I/O；Draw3 不做磁盘 I/O；正常退出先停止 Draw3 再排空配置队列，Window Service 与 RenderPipeline 在 Setting 释放后停止。
 - 回归使用真实配置 roundtrip、新实例重读及 Controller 同源初始化/主题命令门禁；GUI 重启观感需另行明确授权。
+
+## 场景：白板快捷方式图标资源（2026-11-04）
+
+### 1. Scope / Trigger
+
+修改白板快捷方式图标或资源 ID 时适用；图标设计来自用户最终确认的蓝色点阵卡片与白色书写线。
+
+### 2. Signatures
+
+源 `Inkeys/src/UI/whiteboardLnk.svg`，产物 `Inkeys/src/whiteboard.ico`；`IDI_ICON2=332`。主图标 `IDI_ICON1=191` 保持最小图标组 ID。
+
+### 3. Contracts
+
+ICO 包含16/20/24/32/40/48/64/128/256的32位 PNG 帧，RC 注册第二图标，vcxproj/filters 同步登记 ICO 和 SVG。ShellLink 使用负资源 ID `-332`，不依赖图标序号。原 `icon.ico` 字节不修改，不引入产品构建依赖。
+
+### 4. Validation & Error Matrix
+
+缺帧、组 ID 不符、内嵌 PNG 与 ICO 帧不一致或负 ID 无法提取均视为资源验证失败；图标设计须先经过用户预览确认。
+
+### 5. Good / Base / Bad Cases
+
+Good：第二图标固定资源 ID、主图标原样；Base：应用链接仍取原图标；Bad：新增比191更小的图标 ID，改变 Shell 默认程序图标。
+
+### 6. Tests Required
+
+任务 `research/icon-resource-check.py` 对最终 EXE 无窗口读取图标组、逐帧比对 PNG，并按负 ID 提取各尺寸；记录完整 Solution 构建与运行证据，不启动产品 GUI。
+
+### 7. Wrong vs Correct
+
+Wrong：把第二图标资源排成最小 ID 或只验证 ICO 文件存在。
+Correct：保留191为最小组，白板用332，并验证最终内嵌资源和负 ID 的实际提取。

@@ -327,15 +327,15 @@
       {
         "N": "界面语言",
         "Select": "选择语言",
-        "SelectE": "设置界面使用的显示语言。",
+        "SelectE": "界面使用的显示语言。",
         "Language":
         {
           "en-US": "English · en-US · Beta",
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "语言更改需要重启 Inkeys 才能完全生效。是否立即重启？",
-        "SelectNote": "重启软件后完全生效。"
+        "Warn": "语言更改立即生效，无需重启 Inkeys。",
+        "SelectNote": "立即生效，无需重启。"
       }
     },
     "Configuration":
@@ -492,6 +492,13 @@
         "AutoStartE": "当前用户登录 Windows 时自动启动智绘教Inkeys。",
         "LoadingAnimation": "启动加载动画",
         "LoadingAnimationE": "显示软件启动过程中的加载动画。",
+        "StartupEffect":
+        {
+          "N": "启动效果",
+          "Shimmer": "掠光",
+          "Aurora": "柔光流彩",
+          "PixelAssembly": "像素拼装"
+        },
         "SettingEntryAnimation":
         {
           "N": "设置界面开屏动画",
@@ -503,7 +510,7 @@
         "Link":
         {
           "N": "创建桌面快捷方式",
-          "E": "可修正现有快捷方式的名称或创建新快捷方式。点击“更多选项”进行设置。",
+          "E": "使用下方选定的名称创建桌面快捷方式。",
           "More": "更多选项"
         }
       },
@@ -647,11 +654,55 @@
       "Cursor":
       {
         "N": "光标",
-        "Description": "鼠标选项仅影响软笔和硬笔；荧光笔始终预览粗细，形状使用系统光标。笔的默认光标为圆形。屏幕笔关闭边缘高亮，数位板和无法识别的笔开启边缘高亮。",
-        "MouseStyle": "鼠标",
-        "PenStyle": "笔",
-        "DefaultStyle": "默认光标",
-        "DrawingStyle": "笔形光标"
+        "EntryDescription": "按输入设备分别设置绘制时显示的光标，并预览效果。",
+        "Devices": "按设备设置",
+        "PenDevices": "数位板识别",
+        "Mouse":
+        {
+          "N": "鼠标",
+          "E": "鼠标和触摸板。"
+        },
+        "Touch":
+        {
+          "N": "触摸",
+          "E": "手指落笔时，每根手指各显示一个光标；抬起后消失。"
+        },
+        "ScreenPen":
+        {
+          "N": "屏幕笔",
+          "E": "直接在屏幕上书写的笔。"
+        },
+        "Tablet":
+        {
+          "N": "数位板",
+          "E": "外接数位板，以及无法识别来源的笔。"
+        },
+        "Style":
+        {
+          "None": "无光标",
+          "Arrow": "鼠标",
+          "Pen": "画笔",
+          "HighlightPen": "画笔（高亮）",
+          "Dot": "小圆点",
+          "HighlightDot": "小圆点（高亮）"
+        },
+        "InjectedMouse":
+        {
+          "N": "识别驱动注入的数位板",
+          "E": "未启用 Windows Ink 的数位板通常以“驱动注入的鼠标”到达。开启后这类鼠标使用数位板的光标设置；远程桌面等同样注入鼠标的软件可能被误判。",
+          "Unavailable": "当前系统无法区分输入来源，该选项不可用。"
+        },
+        "FineControl": "精细控制",
+        "DotHideOnContact":
+        {
+          "N": "小圆点光标落笔后自动隐藏",
+          "E": "同时适用于“小圆点”和“小圆点（高亮）”。所选设备落笔后隐藏光标，悬停时仍显示。",
+          "Off": "关闭",
+          "ScreenPen": "仅屏幕笔",
+          "Tablet": "仅数位板",
+          "Both": "屏幕笔和数位板"
+        },
+        "Note": "“鼠标”在屏幕笔、数位板和触摸上由软件自行绘制箭头；荧光笔和激光笔的光标、图形工具及橡皮的专用光标不受这些选项影响。"
       },
       "Effect":
       {
@@ -864,9 +915,12 @@
           "MiddleBoth": "显示中部两侧控件",
           "BottomMiddle": "显示底部主栏控件",
           "IdleFade": "闲置时自动淡化",
-          "IdleFadeE": "放映中一段时间未操作，或使用翻页笔、键盘翻页后，翻页控件会变得更透明以减少遮挡；悬停、点击或拖动时恢复。",
+          "IdleFadeE": "放映中，所选控件闲置后会变得更透明，悬停、点击或拖动时恢复。外部翻页仅触发翻页控件淡化；主栏仅在底栏或居中底栏模式下按闲置计时淡化，有附属面板展开时保持清晰。",
           "IdleFadeOff": "关闭",
-          "IdleFadeSeconds": "{} 秒"
+          "IdleFadeSeconds": "{} 秒",
+          "IdleFadeBottomPair": "两侧底部",
+          "IdleFadeMiddlePair": "两侧中部",
+          "IdleFadeMainBar": "主栏（仅底栏模式时）"
         },
         "WidgetPosition":
         {
@@ -975,8 +1029,8 @@
         "Expansion":
         {
           "N": "拓展选项",
-          "CreateLnk": "创建桌面快捷方式",
-          "CreateLnkE": "当桌面不存在软件的快捷方式时，则创建一个。"
+          "CreateLnk": "启动时创建桌面快捷方式",
+          "CreateLnkE": "软件启动时，若桌面不存在软件的快捷方式，则创建一个。"
         }
       }
     },
@@ -1010,6 +1064,20 @@
       "NamePickerRequirement": "需要 NamePicker 注册 Url 协议。",
       "ClassIslandProtocolNote": "需要在 ClassIsland 应用设置 中注册 Url 导航协议。",
       "ClassIslandSwapNote": "在 ClassIsland 当前没有加载课表时，此组件不起作用。"
+    },
+    "DesktopShortcut":
+    {
+      "N": "快捷方式",
+      "ApplicationSection": "应用程序",
+      "WhiteboardSection": "白板",
+      "NameLabel": "快捷方式名称",
+      "CustomName": "自定义",
+      "CustomHint": "输入快捷方式名称",
+      "InvalidName": "请输入有效的 Windows 文件名；名称不能为空，也不能包含非法字符、保留名称或超出路径长度限制。",
+      "NameConflict": "应用程序和白板的快捷方式名称不能相同。",
+      "PresetWhiteboard": "Inkeys白板",
+      "PresetAnnotation": "Inkeys(批注)",
+      "PresetAnnotationTool": "Inkeys(批注工具)"
     },
     "HotKey":
     {

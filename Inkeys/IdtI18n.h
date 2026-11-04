@@ -2,6 +2,7 @@
 
 #include "IdtMain.h"
 #include <shared_mutex>
+#include <atomic>
 #include "IdtI18nLocales.h"
 
 // i18n 维护说明：
@@ -34,7 +35,24 @@ public:
 	static inline wstring identifying;
 	static inline unordered_map<string, string> i18n;
 
+	struct PreparedLanguage
+	{
+		wstring language;
+		unordered_map<string, string> values;
+		std::uint64_t baseRevision = 0;
+	};
+	// 准备阶段不发布，字体准备成功后再以版本校验提交，失败保留当前语言。
+	static bool prepare(int type, wstring path, wstring lang, PreparedLanguage& output);
+	static bool commit(PreparedLanguage&& prepared) noexcept;
+	static std::uint64_t revision() noexcept { return languageRevision.load(std::memory_order_acquire); }
 	static bool load(int type, wstring path, wstring lang = L"en-US");
+	struct TextSnapshot
+	{
+		LANGID language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+		vector<wstring> text;
+	};
+	// 单次读锁固定多个文案与语言；崩溃路径可选择非阻塞读取。
+	static bool capture(std::initializer_list<const char*> keys, TextSnapshot& output, bool nonblocking = false) noexcept;
 	static string getA(string x);
 	static wstring getW(string x);
 	static wstring getWOr(const char* key, const wchar_t* fallback);
@@ -47,6 +65,7 @@ public:
 private:
 	friend void IdtTest::PrintI18nMap();
 	static inline shared_mutex i18nMutex;
+	static inline std::atomic<std::uint64_t> languageRevision{0};
 	static void flattenJson(const Json::Value& node, const string& prefix, unordered_map<string, string>& outMap);
 
 	I18n() = delete;

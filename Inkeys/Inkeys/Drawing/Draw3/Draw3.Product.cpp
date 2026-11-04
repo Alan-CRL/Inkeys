@@ -182,6 +182,7 @@ namespace Inkeys::Drawing::Draw3
 		merged.widthDip = state.widthDip;
 		merged.penWidthContext = state.penWidthContext;
 		merged.colorRgba = state.colorRgba;
+		merged.whiteboardStyle = state.whiteboardStyle;
 		merged.paintDevice = state.paintDevice;
 		merged.eraserInputs = state.eraserInputs;
 		merged.cursorSettings = state.cursorSettings;

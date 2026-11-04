@@ -1,0 +1,29 @@
+{
+  "id": "draw-cursor-per-device-pen-cursor",
+  "name": "draw-cursor-per-device-pen-cursor",
+  "title": "绘制光标:按设备设置、笔光标与高亮模式",
+  "description": "绘制光标选择改为按输入设备(鼠标/触摸/笔/数位板)独立设置的专门设置页,新增笔光标(小圆点,普通/高亮)与笔设备高亮模式(关闭/仅数位板/始终/启用),并调查 Windows Ink 数位板高亮缺失及非 Ink 数位板识别问题",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-03",
+  "completedAt": "2026-11-04",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-03-tablet-recognition-investigation",
+    "11-03-per-device-cursor-page"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "imgui/imgui.h"
+#include "imgui/misc/freetype/imgui_freetype.h"
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -63,6 +64,25 @@ namespace Inkeys::UI::Setting::Design
 		// merged 字形共用主脸 baked Ascent；尺度按源字族，基线偏移必须按主字族。
 		config.GlyphOffset.y = notoPrimary ? NotoFontConfig(rasterizerDensity, role).GlyphOffset.y
 			: design ? HarmonyFontConfig(rasterizerDensity).GlyphOffset.y : 0.0F;
+		return config;
+	}
+
+	inline void ConfigureFreeTypeAtlas(ImFontAtlas& atlas)
+	{
+		atlas.SetFontLoader(ImGuiFreeType::GetFontLoader());
+		// 仅对齐基线，避免已hinting字图再次经过分数像素纵向采样；字号与真实字重保持原值。
+		atlas.FontLoaderFlags |= ImGuiFreeTypeLoaderFlags_SnapAscentToPixelGrid;
+		// 设置沿用灰度字形模式；显式启用彩色字形时保留RGBA，不能丢弃颜色通道。
+		atlas.TexDesiredFormat = (atlas.FontLoaderFlags & ImGuiFreeTypeLoaderFlags_LoadColor)
+			? ImTextureFormat_RGBA32 : ImTextureFormat_Alpha8;
+	}
+
+	[[nodiscard]] inline ImFontConfig FreeTypeTextFontConfig(bool notoSource,
+		TextFontRole role, bool notoPrimary)
+	{
+		// 动态字号已经包含窗口倍率；源密度保持1，避免再放大字图后缩小采样。
+		auto config = TextFontConfig(1.0F, notoSource, role, notoPrimary);
+		config.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
 		return config;
 	}
 

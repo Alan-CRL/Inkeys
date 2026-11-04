@@ -635,7 +635,6 @@ namespace Inkeys::UI::Bar
 			setlist.performanceSetting.preparationQuantity = 2; setlist.performanceSetting.drawpadFps = 72; setlist.performanceSetting.superDraw = false;
 			setlist.presetSetting.memoryWidth = true; setlist.presetSetting.memoryColor = false; setlist.presetSetting.autoDefaultWidth = true;
 			setlist.presetSetting.defaultBrush1Width = 3.0f; setlist.presetSetting.defaultHighlighter1Width = 35.0f;
-			setlist.shortcutAssistant.correctLnk = true; setlist.shortcutAssistant.createLnk = false;
 			setlist.plugInSetting.superTop.enable = false; setlist.plugInSetting.superTop.indicator = true;
 			auto& shortcuts = setlist.component.shortcutButton;
 			shortcuts.appliance.explorer = false; shortcuts.appliance.taskmgr = false; shortcuts.appliance.control = false;

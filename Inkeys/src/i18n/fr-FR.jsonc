@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "Le changement de langue nécessite un redémarrage pour être entièrement appliqué. Redémarrer Inkeys maintenant ?",
-        "SelectNote": "Redémarrez Inkeys pour appliquer entièrement la nouvelle langue."
+        "Warn": "Le changement de langue est immédiat. Aucun redémarrage nécessaire.",
+        "SelectNote": "Application immédiate, sans redémarrage."
       }
     },
     "Configuration":
@@ -492,6 +492,13 @@
         "AutoStartE": "Lancer Inkeys à la connexion de l’utilisateur actuel à Windows.",
         "LoadingAnimation": "Animation de chargement au démarrage",
         "LoadingAnimationE": "Afficher l’animation de chargement au démarrage d’Inkeys.",
+        "StartupEffect":
+        {
+          "N": "Effet au démarrage",
+          "Shimmer": "Reflet glissant",
+          "Aurora": "Lueur douce",
+          "PixelAssembly": "Assemblage de pixels"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animation d’ouverture des paramètres",
@@ -503,7 +510,7 @@
         "Link":
         {
           "N": "Créer un raccourci sur le bureau",
-          "E": "Corriger le nom des raccourcis existants ou en créer un nouveau. Choisissez Plus d’options pour configurer ce comportement.",
+          "E": "Crée un raccourci sur le bureau avec le nom sélectionné ci-dessous.",
           "More": "Plus d’options"
         }
       },
@@ -536,8 +543,8 @@
         },
         "Theme":
         {
-          "N": "Thème",
-          "E": "Choisissez Habillage recommandé pour appliquer automatiquement le thème actuellement recommandé par l’équipe.",
+          "N": "Thème de la barre",
+          "E": "Bascule la barre entre l’apparence sombre et claire. Les modifications s’appliquent immédiatement.",
           "Dark": "Mode sombre",
           "Light": "Mode clair"
         },
@@ -647,11 +654,55 @@
       "Cursor":
       {
         "N": "Curseur",
-        "Description": "L’option de souris ne concerne que les stylos souples et durs. Les surligneurs affichent toujours l’épaisseur ; les formes utilisent le curseur du système. Le curseur du stylo est circulaire par défaut. Le contour du curseur n’est pas accentué pour les stylets d’écran, mais il l’est pour les tablettes graphiques et les stylets non identifiés.",
-        "MouseStyle": "Souris",
-        "PenStyle": "Stylo",
-        "DefaultStyle": "Curseur par défaut",
-        "DrawingStyle": "Curseur en forme de stylo"
+        "EntryDescription": "Définit le curseur affiché pendant le dessin pour chaque périphérique de saisie et en affiche un aperçu.",
+        "Devices": "Par périphérique",
+        "PenDevices": "Détection des tablettes graphiques",
+        "Mouse":
+        {
+          "N": "Souris",
+          "E": "Souris et pavé tactile."
+        },
+        "Touch":
+        {
+          "N": "Tactile",
+          "E": "Lorsque les doigts se posent, un curseur s’affiche pour chaque doigt et disparaît à leur relèvement."
+        },
+        "ScreenPen":
+        {
+          "N": "Stylet d’écran",
+          "E": "Stylet utilisé directement sur l’écran."
+        },
+        "Tablet":
+        {
+          "N": "Tablette graphique",
+          "E": "Tablettes graphiques externes et stylos dont l’origine n’est pas identifiable."
+        },
+        "Style":
+        {
+          "None": "Aucun curseur",
+          "Arrow": "Souris",
+          "Pen": "Stylo",
+          "HighlightPen": "Stylo (en surbrillance)",
+          "Dot": "Petit point",
+          "HighlightDot": "Petit point (en surbrillance)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Détecter les tablettes graphiques injectées par le pilote",
+          "E": "Les tablettes graphiques sans Windows Ink arrivent généralement comme une « souris injectée par le pilote ». Une fois l’option activée, cette souris utilise les réglages de curseur de la tablette ; les logiciels qui injectent aussi de la souris, comme le Bureau à distance, peuvent être détectés par erreur.",
+          "Unavailable": "Ce système ne peut pas distinguer la source de saisie ; l’option n’est pas disponible."
+        },
+        "FineControl": "Réglages fins",
+        "DotHideOnContact":
+        {
+          "N": "Masquer automatiquement le petit point au contact",
+          "E": "Concerne les deux styles de petit point. Le curseur se masque au contact du périphérique sélectionné et reste visible en survol.",
+          "Off": "Désactivé",
+          "ScreenPen": "Stylet sur écran uniquement",
+          "Tablet": "Tablette graphique uniquement",
+          "Both": "Stylet sur écran et tablette graphique"
+        },
+        "Note": "Avec le stylet d’écran, la tablette graphique et le tactile, « Souris » est une flèche dessinée par l’application ; les curseurs du surligneur et du pointeur laser, les outils de formes et le curseur propre à la gomme ne sont pas affectés par ces options."
       },
       "Effect":
       {
@@ -864,9 +915,12 @@
           "MiddleBoth": "Afficher les commandes au milieu des deux côtés",
           "BottomMiddle": "Afficher les commandes sur la barre inférieure",
           "IdleFade": "Estomper au repos",
-          "IdleFadeE": "Pendant un diaporama, les commandes de page deviennent plus transparentes après un moment sans interaction ou après un changement de page au pointeur ou au clavier, afin de masquer moins de contenu. Survoler, cliquer ou faire glisser les rétablit.",
+          "IdleFadeE": "Pendant un diaporama, les commandes sélectionnées deviennent plus transparentes au repos et retrouvent leur aspect au survol, au clic ou au glissement. Les changements de page externes atténuent aussi les commandes de page. La barre principale attend son délai et ne s’atténue que si elle est ancrée en bas, y compris centrée et conserve son opacité normale si un de ses panneaux est ouvert.",
           "IdleFadeOff": "Désactivé",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Deux coins inférieurs",
+          "IdleFadeMiddlePair": "Deux côtés à mi-hauteur",
+          "IdleFadeMainBar": "Barre principale (ancrée uniquement)"
         },
         "WidgetPosition":
         {
@@ -975,8 +1029,8 @@
         "Expansion":
         {
           "N": "Options supplémentaires",
-          "CreateLnk": "Créer un raccourci de bureau",
-          "CreateLnkE": "Créer un raccourci de bureau s’il n’en existe pas."
+          "CreateLnk": "Créer un raccourci de bureau au démarrage",
+          "CreateLnkE": "Au démarrage, crée un raccourci sur le bureau s’il n’existe pas déjà."
         }
       }
     },
@@ -1010,6 +1064,20 @@
       "NamePickerRequirement": "Nécessite l’enregistrement du protocole URL de NamePicker.",
       "ClassIslandProtocolNote": "Enregistrer le protocole de navigation URL dans les paramètres de ClassIsland.",
       "ClassIslandSwapNote": "Ce composant est sans effet si aucun emploi du temps n’est chargé dans ClassIsland."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Raccourcis",
+      "ApplicationSection": "Application",
+      "WhiteboardSection": "Tableau blanc",
+      "NameLabel": "Nom du raccourci",
+      "CustomName": "Personnalisé",
+      "CustomHint": "Saisir un nom de raccourci",
+      "InvalidName": "Saisissez un nom de fichier Windows valide. Les noms vides ou réservés, les caractères interdits et les chemins trop longs ne sont pas autorisés.",
+      "NameConflict": "Les raccourcis de l’application et du tableau blanc doivent porter des noms différents.",
+      "PresetWhiteboard": "Inkeys Tableau blanc",
+      "PresetAnnotation": "Inkeys(Annotation)",
+      "PresetAnnotationTool": "Inkeys(OutilAnnotation)"
     },
     "HotKey":
     {

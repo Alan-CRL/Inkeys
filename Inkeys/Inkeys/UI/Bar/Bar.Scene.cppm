@@ -126,6 +126,7 @@ export namespace Inkeys::UI::Bar
 		bool SetBounds(RECT, float) noexcept;
 		void SetFontTargetScale(double) noexcept;
 		void SetOpacity(double, double durationSeconds = 0.2) noexcept;
+		void SetIdleFade(bool dimmed, double durationSeconds) noexcept;
 		void SetHooks(BarSurfaceHooks);
 		void SetSharedLightingSubscribed(bool) noexcept;
 		static void PublishSharedLighting(const BarSurfaceSharedLighting&) noexcept;

@@ -8,6 +8,7 @@
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../../resource.h"
+#include "Bar.ThemeMaterial.h"
 #include <d3d11.h>
 #include <filesystem>
 #include <iostream>
@@ -206,6 +207,36 @@ namespace Inkeys::UI::Bar
 		int failures=0;
 		auto expect=[&](bool ok,const char* why){if(!ok){++failures;report<<"[EraserVisual] FAIL "<<why<<'\n';}};
 		expect(SUCCEEDED(fontCollectionHr),"SC/TC font collection initializes");
+		{
+			// 使用真实主栏 Shape 绘制通道验证 cap 与收展显隐独立，半收起不能仍停在30%。
+			BarUIRendering renderer;
+			const bool ready=SUCCEEDED(renderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),80,40));
+			expect(ready,"idle main body owns a real offscreen renderer");
+			if(ready){
+				BarUiShapeClass body;body.Initialization(40,20,80,40,0,0,0,RGB(30,30,30),std::nullopt);
+				body.enable.Initialization(true);body.themeSurface=true;body.residentSurface=true;
+				body.lightFillOpacityScale=1.10;
+				const auto draw=[&](double pct,double idle){
+					body.pct.SetDirect(pct);renderer.SetFrameZoom(1);renderer.SetResidentIdleFade(idle);
+					auto* dc=renderer.GetDeviceContext();dc->SetDpi(96,96);dc->SetTransform(D2D1::IdentityMatrix());
+					renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,80,40));
+					const bool drew=renderer.Shape(dc,body,{0,0});renderer.FinishFrameDrawCommands(dc);
+					expect((drew||pct==0)&&SUCCEEDED(renderer.EndFrameDraw(dc)),"idle main body draws through production Shape");
+					return static_cast<int>(ReadEraserTestPixel(dc,renderer.GetTargetBitmap(),40,20)[3]);
+				};
+				for(double light:{0.0,1.0}){
+					body.lightMaterial=light;
+					for(double pct:{.8,.6,.4,.2,.0}){
+						const int actual=draw(pct,1);
+						expect(std::abs(actual-static_cast<int>(std::lround(255*.3*pct/.8)))<=2,
+							"idle body shrink preserves independent visibility through every intermediate frame");
+					}
+					const int full=draw(.8,0),half=draw(.4,0);
+					expect(std::abs(half*2-full)<=2,"normal body visibility is unchanged when idle is off");
+				}
+				renderer.SetResidentIdleFade(0);renderer.DiscardDeviceResources();
+			}
+		}
 		// screenPoint/serial 保持不变，验证直移吸收和显示原点变更不依赖下一次 WM_MOUSEMOVE。
 		{
 			const bool savedEdge = BarUiEdgeLightingEnabled;
@@ -628,6 +659,25 @@ namespace Inkeys::UI::Bar
 			&& freezeModeButton->size==BarButtonSizeEnum::twoOne
 			&& selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
 			"setting mode updates compact buttons while tool and empty content stay unchanged");
+		// 在工具状态不变时切语言，必须绕过旧styleKey缓存且保留按钮身份。
+		for (const auto& language : Inkeys::Localization::Locales)
+		{
+			expect(I18n::load(1,L"JSON",language.code),"load live language while drawing in separate mode");
+			owner.barButtonSet.RefreshLocalizedText();
+			owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
+			expect(selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel)
+				&& selectModeButton->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+				"active separate-mode label updates without tool change");
+			selectModeButton->name.AdvanceContentTransition(0.1,1.0);
+			expect(selectModeButton->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+				"old text fade cannot resurrect previous language after immediate switch");
+			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
+				&& pierceModeButton->size==BarButtonSizeEnum::twoOne && freezeModeButton->size==BarButtonSizeEnum::twoOne,
+				"live language preserves drawing mode and compact paired buttons");
+			expectStableButtons();
+		}
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"restore locale after live state labels");
+		owner.barButtonSet.RefreshLocalizedText();owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
 		// 复用设置的真实组件同步链；业务 key 不变时不能覆写分离式的有效半高网格。
 		owner.barButtonSet.RegisterBuiltInComponents();
 		const bool savedExplorer=setlist.component.shortcutButton.appliance.explorer;
@@ -1179,7 +1229,12 @@ namespace Inkeys::UI::Bar
 		for(const auto& language:Inkeys::Localization::Locales)
 		{
 			expect(I18n::load(1,L"JSON",language.code),"bar language loads for layout audit");
-			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
+			expect(owner.spec.RefreshLocalizedTypography(),"new locale revision refreshes typography without device recreation");
+			owner.barButtonSet.RefreshLocalizedText();
+			expect(owner.barButtonSet.GetMoreButton()->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.MoreLabel),
+				"production label refresh updates More in place");
+			expect(!owner.spec.RefreshLocalizedTypography(),"consumed locale revision does not invalidate every frame");
+			updateLocalizedPresetLabels();
 			report << "[I18nLayout] " << language.codeUtf8 << '\n';
 			auto reportBounds = [&](const char* key, const wstring& text, double fontSize,
 				D2D1_SIZE_F bounds, double maxWidth, double maxHeight, const char* stage)
@@ -1221,8 +1276,8 @@ namespace Inkeys::UI::Bar
 				auto* button=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Whiteboard];
 				style.preset[(int)BarButtonPresetEnum::Whiteboard]=button;
 				BarUiSVGClass resumeIcon,closeIcon;
-				resumeIcon.InitializationFromResource(L"UI",L"barWhiteboard");
-				closeIcon.InitializationFromResource(L"UI",L"barDismiss");
+				resumeIcon.InitializationFromResource(L"UI",L"barResumeWhiteboard");
+				closeIcon.InitializationFromResource(L"UI",L"barCloseSmall");
 				expect(!resumeIcon.svg.GetVal().empty() && !closeIcon.svg.GetVal().empty(),
 					"Whiteboard resume and close SVG resources are available for real content checks");
 				const bool savedFold=owner.barState.fold;
@@ -2972,13 +3027,75 @@ namespace Inkeys::UI::Bar
 						{
 							const auto at=(static_cast<size_t>(sampleY)*width+sampleX)*4;
 							const auto expected=GetThemeColor(BarThemeColorEnum::Surface);
-							const auto premultiplied=[](int channel){return static_cast<int>(std::lround(channel*BarMainBarFillOpacity));};
+							// 分页常驻底板与主栏同一常驻透明度：Dark 0.80、Light 端更实。
+							const double residentOpacity=GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity);
+							const auto premultiplied=[&](int channel){return static_cast<int>(std::lround(channel*residentOpacity));};
 							expect(std::abs(int(themed[at+3])-premultiplied(255))<=1
 								&&std::abs(int(themed[at])-premultiplied(GetBValue(expected)))<=2
 								&&std::abs(int(themed[at+1])-premultiplied(GetGValue(expected)))<=2
 								&&std::abs(int(themed[at+2])-premultiplied(GetRValue(expected)))<=2,
 								"PageSurface dark/light pixels follow the same UI3 surface color as the main bar");
 						}
+					}
+					{
+						// 用户常驻背景透明度：深浅两端都必须真实改变分页底板与主栏常驻表面的像素透明度。
+						const int savedBackground=owner.barStyle.backgroundOpacity;
+						auto readAlpha=[&](const std::vector<unsigned char>& pixels,UINT x,UINT y,UINT stride)
+							{return int(pixels[(static_cast<size_t>(y)*stride+x)*4+3]);};
+						for(const bool dark:{true,false})for(const int userOpacity:{0,50,100})
+						{
+							owner.barStyle.darkStyle=dark;owner.barStyle.backgroundOpacity=userOpacity;
+							for(int frame=0;frame<40;++frame){frameTime+=std::chrono::milliseconds(20);(void)scene.Advance(frameTime);}
+							const double expectedOpacity=userOpacity>0?userOpacity/100.0
+								:GetThemeDefaultResidentBackgroundOpacity(dark);
+							std::vector<unsigned char> themed;
+							if(drawPageSurface(epochA,width,height,themed))
+							{
+								const UINT sampleX=static_cast<UINT>(77-presentation.left),sampleY=static_cast<UINT>(40-presentation.top);
+								if(sampleX<width&&sampleY<height)
+									expect(std::abs(readAlpha(themed,sampleX,sampleY,width)-int(std::lround(255*expectedOpacity)))<=1,
+										"PageSurface background follows the user resident opacity in Dark and Light");
+							}
+							// 主栏常驻表面：与生产初始化一致的 themeSurface + residentSurface 形状。
+							BarUiShapeClass mainBar(0.0,0.0,60.0,40.0,8.0,8.0,1.0,
+								GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::Surface),
+								GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::SurfaceFrame));
+							mainBar.enable.Initialization(true);mainBar.pct.SetDirect(BarMainBarFillOpacity);
+							mainBar.framePct.emplace(0.0);mainBar.themeSurface=true;mainBar.residentSurface=true;
+							mainBar.lightFillOpacityScale=BarThemeMaterial::LightResidentSurfaceOpacityScale;
+							mainBar.lightMaterial=dark?0.0:1.0;
+							bool drewMainBar=false;std::vector<unsigned char> barPixels;
+							if(SUCCEEDED(scene.EnsureDeviceResources(epochA,width,height)))
+								if(auto* context=scene.DeviceContext())
+								{
+									const D2D1_RECT_F all=D2D1::RectF(0,0,static_cast<FLOAT>(width),static_cast<FLOAT>(height));
+									scene.Renderer().BeginFrameDraw(context,all);
+									context->Clear(D2D1::ColorF(0,0,0,0));
+									(void)scene.Renderer().Shape(context,mainBar,BarUiInheritClass(10.0,10.0));
+									scene.Renderer().FinishFrameDrawCommands(context);
+									if(SUCCEEDED(scene.Renderer().EndFrameDraw(context)))
+									{
+										ComPtr<ID2D1Image> image;context->GetTarget(&image);ComPtr<ID2D1Bitmap1> target;
+										ComPtr<ID2D1Bitmap1> readable;
+										const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+											D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+										D2D1_MAPPED_RECT mapped{};
+										if(image&&SUCCEEDED(image.As(&target))
+											&&SUCCEEDED(context->CreateBitmap(target->GetPixelSize(),nullptr,0,&props,&readable))
+											&&SUCCEEDED(readable->CopyFromBitmap(nullptr,target.Get(),nullptr))
+											&&SUCCEEDED(readable->Map(D2D1_MAP_OPTIONS_READ,&mapped)))
+										{
+											barPixels.assign(mapped.bits+30*mapped.pitch+40*4,mapped.bits+30*mapped.pitch+40*4+4);
+											readable->Unmap();drewMainBar=true;
+										}
+									}
+								}
+							expect(drewMainBar,"main bar resident surface renders offscreen");
+							if(drewMainBar)
+								expect(std::abs(int(barPixels[3])-int(std::lround(255*expectedOpacity)))<=1,
+									"main bar resident surface follows the user background opacity in Dark and Light");
+						}
+						owner.barStyle.backgroundOpacity=savedBackground;
 					}
 					owner.barStyle.darkStyle=originalTheme;
 					for(int frame=0;frame<40;++frame){frameTime+=std::chrono::milliseconds(20);(void)scene.Advance(frameTime);}

@@ -495,6 +495,13 @@ inline constexpr struct I18nKeyRoot
                 const char* AutoStartE = "SettingsUI/Regular/StartUp/AutoStartE";
                 const char* LoadingAnimation = "SettingsUI/Regular/StartUp/LoadingAnimation";
                 const char* LoadingAnimationE = "SettingsUI/Regular/StartUp/LoadingAnimationE";
+                struct Node__SettingsUI__Regular__StartUp__StartupEffect
+                {
+                    const char* N = "SettingsUI/Regular/StartUp/StartupEffect/N";
+                    const char* Shimmer = "SettingsUI/Regular/StartUp/StartupEffect/Shimmer";
+                    const char* Aurora = "SettingsUI/Regular/StartUp/StartupEffect/Aurora";
+                    const char* PixelAssembly = "SettingsUI/Regular/StartUp/StartupEffect/PixelAssembly";
+                } StartupEffect{};
                 struct Node__SettingsUI__Regular__StartUp__SettingEntryAnimation
                 {
                     const char* N = "SettingsUI/Regular/StartUp/SettingEntryAnimation/N";
@@ -650,11 +657,55 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Draw__Cursor
             {
                 const char* N = "SettingsUI/Draw/Cursor/N";
-                const char* Description = "SettingsUI/Draw/Cursor/Description";
-                const char* MouseStyle = "SettingsUI/Draw/Cursor/MouseStyle";
-                const char* PenStyle = "SettingsUI/Draw/Cursor/PenStyle";
-                const char* DefaultStyle = "SettingsUI/Draw/Cursor/DefaultStyle";
-                const char* DrawingStyle = "SettingsUI/Draw/Cursor/DrawingStyle";
+                const char* EntryDescription = "SettingsUI/Draw/Cursor/EntryDescription";
+                const char* Devices = "SettingsUI/Draw/Cursor/Devices";
+                const char* PenDevices = "SettingsUI/Draw/Cursor/PenDevices";
+                struct Node__SettingsUI__Draw__Cursor__Mouse
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Mouse/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Mouse/E";
+                } Mouse{};
+                struct Node__SettingsUI__Draw__Cursor__Touch
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Touch/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Touch/E";
+                } Touch{};
+                struct Node__SettingsUI__Draw__Cursor__ScreenPen
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/ScreenPen/N";
+                    const char* E = "SettingsUI/Draw/Cursor/ScreenPen/E";
+                } ScreenPen{};
+                struct Node__SettingsUI__Draw__Cursor__Tablet
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Tablet/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Tablet/E";
+                } Tablet{};
+                struct Node__SettingsUI__Draw__Cursor__Style
+                {
+                    const char* None = "SettingsUI/Draw/Cursor/Style/None";
+                    const char* Arrow = "SettingsUI/Draw/Cursor/Style/Arrow";
+                    const char* Pen = "SettingsUI/Draw/Cursor/Style/Pen";
+                    const char* HighlightPen = "SettingsUI/Draw/Cursor/Style/HighlightPen";
+                    const char* Dot = "SettingsUI/Draw/Cursor/Style/Dot";
+                    const char* HighlightDot = "SettingsUI/Draw/Cursor/Style/HighlightDot";
+                } Style{};
+                struct Node__SettingsUI__Draw__Cursor__InjectedMouse
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/InjectedMouse/N";
+                    const char* E = "SettingsUI/Draw/Cursor/InjectedMouse/E";
+                    const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
+                } InjectedMouse{};
+                const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
+                struct Node__SettingsUI__Draw__Cursor__DotHideOnContact
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/DotHideOnContact/N";
+                    const char* E = "SettingsUI/Draw/Cursor/DotHideOnContact/E";
+                    const char* Off = "SettingsUI/Draw/Cursor/DotHideOnContact/Off";
+                    const char* ScreenPen = "SettingsUI/Draw/Cursor/DotHideOnContact/ScreenPen";
+                    const char* Tablet = "SettingsUI/Draw/Cursor/DotHideOnContact/Tablet";
+                    const char* Both = "SettingsUI/Draw/Cursor/DotHideOnContact/Both";
+                } DotHideOnContact{};
+                const char* Note = "SettingsUI/Draw/Cursor/Note";
             } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {
@@ -870,6 +921,9 @@ inline constexpr struct I18nKeyRoot
                     const char* IdleFadeE = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeE";
                     const char* IdleFadeOff = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeOff";
                     const char* IdleFadeSeconds = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeSeconds";
+                    const char* IdleFadeBottomPair = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeBottomPair";
+                    const char* IdleFadeMiddlePair = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeMiddlePair";
+                    const char* IdleFadeMainBar = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeMainBar";
                 } WidgetDisplay{};
                 struct Node__SettingsUI__PlugIn__PPTHelper__WidgetPosition
                 {
@@ -1014,6 +1068,20 @@ inline constexpr struct I18nKeyRoot
             const char* ClassIslandProtocolNote = "SettingsUI/Component/ClassIslandProtocolNote";
             const char* ClassIslandSwapNote = "SettingsUI/Component/ClassIslandSwapNote";
         } Component{};
+        struct Node__SettingsUI__DesktopShortcut
+        {
+            const char* N = "SettingsUI/DesktopShortcut/N";
+            const char* ApplicationSection = "SettingsUI/DesktopShortcut/ApplicationSection";
+            const char* WhiteboardSection = "SettingsUI/DesktopShortcut/WhiteboardSection";
+            const char* NameLabel = "SettingsUI/DesktopShortcut/NameLabel";
+            const char* CustomName = "SettingsUI/DesktopShortcut/CustomName";
+            const char* CustomHint = "SettingsUI/DesktopShortcut/CustomHint";
+            const char* InvalidName = "SettingsUI/DesktopShortcut/InvalidName";
+            const char* NameConflict = "SettingsUI/DesktopShortcut/NameConflict";
+            const char* PresetWhiteboard = "SettingsUI/DesktopShortcut/PresetWhiteboard";
+            const char* PresetAnnotation = "SettingsUI/DesktopShortcut/PresetAnnotation";
+            const char* PresetAnnotationTool = "SettingsUI/DesktopShortcut/PresetAnnotationTool";
+        } DesktopShortcut{};
         struct Node__SettingsUI__HotKey
         {
             const char* N = "SettingsUI/HotKey/N";

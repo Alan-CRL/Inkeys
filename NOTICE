@@ -79,3 +79,6 @@ Main component notices (NOTICE):
 
 Third-party license files:
 ./ThirdpartyLicenses/
+Component: FreeType 2.14.3 (https://freetype.org/)
+License: FreeType Project License (FTL); full bundled notices in Inkeys/additional/imgui/misc/freetype/LICENSE.freetype.txt
+Copyright / Notes: Portions of this software are copyright (C) 1996-2026 The FreeType Project (www.freetype.org). All rights reserved.

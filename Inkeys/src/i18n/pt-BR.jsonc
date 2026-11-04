@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "É necessário reiniciar o Inkeys para aplicar o idioma por completo. Reiniciar agora?",
-        "SelectNote": "Reinicie o Inkeys para aplicar o idioma por completo."
+        "Warn": "A mudança de idioma é aplicada imediatamente. Não é necessário reiniciar.",
+        "SelectNote": "Aplicação imediata, sem reiniciar."
       }
     },
     "Configuration":
@@ -492,6 +492,13 @@
         "AutoStartE": "Inicia o Inkeys automaticamente quando o usuário atual entra no Windows.",
         "LoadingAnimation": "Animação de inicialização",
         "LoadingAnimationE": "Exibe uma animação de carregamento durante a inicialização do Inkeys.",
+        "StartupEffect":
+        {
+          "N": "Efeito de inicialização",
+          "Shimmer": "Reflexo deslizante",
+          "Aurora": "Brilho suave",
+          "PixelAssembly": "Montagem de pixels"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animação de abertura das opções",
@@ -503,7 +510,7 @@
         "Link":
         {
           "N": "Criar atalho na área de trabalho",
-          "E": "Para corrigir nomes ou criar atalhos automaticamente, acesse ‘Mais opções’.",
+          "E": "Cria um atalho na área de trabalho com o nome selecionado abaixo.",
           "More": "Mais opções"
         }
       },
@@ -536,8 +543,8 @@
         },
         "Theme":
         {
-          "N": "Tema",
-          "E": "Selecione ‘Recomendado’ para aplicar automaticamente o tema recomendado atualmente pela equipe.",
+          "N": "Tema da barra principal",
+          "E": "Alterna a barra principal entre a aparência escura e clara. As alterações são aplicadas imediatamente.",
           "Dark": "Modo escuro",
           "Light": "Modo claro"
         },
@@ -647,11 +654,55 @@
       "Cursor":
       {
         "N": "Ponteiro",
-        "Description": "As opções do mouse afetam apenas as canetas suave e rígida. O marca-texto sempre mostra a espessura, e as formas usam o ponteiro do sistema. O ponteiro padrão da caneta é circular. Canetas na tela não realçam a borda do ponteiro; mesas digitalizadoras e canetas não identificadas realçam.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Caneta",
-        "DefaultStyle": "Ponteiro padrão",
-        "DrawingStyle": "Ponteiro em forma de caneta"
+        "EntryDescription": "Define o ponteiro exibido ao desenhar para cada dispositivo de entrada e mostra uma prévia.",
+        "Devices": "Por dispositivo",
+        "PenDevices": "Detecção de mesa digitalizadora",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse e touchpad."
+        },
+        "Touch":
+        {
+          "N": "Toque",
+          "E": "Ao encostar os dedos, cada dedo exibe um ponteiro que desaparece quando é levantado."
+        },
+        "ScreenPen":
+        {
+          "N": "Caneta na tela",
+          "E": "Caneta usada para escrever diretamente na tela."
+        },
+        "Tablet":
+        {
+          "N": "Mesa digitalizadora",
+          "E": "Mesas digitalizadoras externas e canetas cuja origem não pode ser identificada."
+        },
+        "Style":
+        {
+          "None": "Sem ponteiro",
+          "Arrow": "Mouse",
+          "Pen": "Caneta",
+          "HighlightPen": "Caneta (destacada)",
+          "Dot": "Ponto pequeno",
+          "HighlightDot": "Ponto pequeno (destacado)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Detectar mesas digitalizadoras injetadas pelo driver",
+          "E": "Mesas digitalizadoras sem o Windows Ink costumam chegar como “mouse injetado pelo driver”. Quando ativada, esse mouse usa as configurações de ponteiro da mesa; softwares que também injetam mouse, como a Área de Trabalho Remota, podem ser detectados por engano.",
+          "Unavailable": "Este sistema não consegue distinguir a origem da entrada; a opção não está disponível."
+        },
+        "FineControl": "Controles precisos",
+        "DotHideOnContact":
+        {
+          "N": "Ocultar automaticamente o cursor de ponto pequeno ao tocar",
+          "E": "Aplica-se aos dois estilos de ponto pequeno. O cursor fica oculto quando o dispositivo selecionado toca a superfície e permanece visível ao pairar.",
+          "Off": "Desativado",
+          "ScreenPen": "Somente caneta de tela",
+          "Tablet": "Somente mesa digitalizadora",
+          "Both": "Caneta de tela e mesa digitalizadora"
+        },
+        "Note": "Com caneta na tela, mesa digitalizadora e toque, “Mouse” é uma seta desenhada pelo próprio aplicativo; os ponteiros do marca-texto e do laser, as ferramentas de formas e o ponteiro próprio da borracha não são afetados por estas opções."
       },
       "Effect":
       {
@@ -864,9 +915,12 @@
           "MiddleBoth": "Mostrar controles no meio das duas laterais",
           "BottomMiddle": "Mostrar controles da barra principal inferior",
           "IdleFade": "Esmaecer quando ocioso",
-          "IdleFadeE": "Durante uma apresentação, os controles de página ficam mais transparentes após um tempo sem interação ou após virar páginas com um passador ou o teclado, para cobrir menos conteúdo. Passe o cursor, clique ou arraste para restaurá-los.",
+          "IdleFadeE": "Durante a apresentação, os controles selecionados esmaecem quando ficam inativos e são restaurados ao passar o cursor, clicar ou arrastar. Mudanças de página externas também esmaecem os controles de página. A barra principal só esmaece após o tempo de inatividade quando está acoplada embaixo, inclusive centralizada e mantém a opacidade normal se algum de seus painéis estiver aberto.",
           "IdleFadeOff": "Desativado",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Ambos os cantos inferiores",
+          "IdleFadeMiddlePair": "Ambos os lados ao centro",
+          "IdleFadeMainBar": "Barra principal (só acoplada)"
         },
         "WidgetPosition":
         {
@@ -975,8 +1029,8 @@
         "Expansion":
         {
           "N": "Opções adicionais",
-          "CreateLnk": "Criar atalho na área de trabalho",
-          "CreateLnkE": "Cria um atalho na área de trabalho se ainda não houver um."
+          "CreateLnk": "Criar atalho na área de trabalho ao iniciar",
+          "CreateLnkE": "Ao iniciar o aplicativo, cria um atalho na área de trabalho caso ele não exista."
         }
       }
     },
@@ -1010,6 +1064,20 @@
       "NamePickerRequirement": "Requer o registro do protocolo de URL do NamePicker.",
       "ClassIslandProtocolNote": "Registre o protocolo de navegação por URL nas configurações do ClassIsland.",
       "ClassIslandSwapNote": "Este componente não tem efeito quando o ClassIsland não tem uma grade de aulas carregada."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Atalhos",
+      "ApplicationSection": "Aplicativo",
+      "WhiteboardSection": "Quadro branco",
+      "NameLabel": "Nome do atalho",
+      "CustomName": "Personalizado",
+      "CustomHint": "Digite um nome para o atalho",
+      "InvalidName": "Digite um nome de arquivo válido do Windows. Nomes vazios ou reservados, caracteres inválidos e caminhos longos demais não são permitidos.",
+      "NameConflict": "Os atalhos do aplicativo e do quadro branco devem ter nomes diferentes.",
+      "PresetWhiteboard": "Inkeys Quadro Branco",
+      "PresetAnnotation": "Inkeys(Anotação)",
+      "PresetAnnotationTool": "Inkeys(FerramentaAnotação)"
     },
     "HotKey":
     {

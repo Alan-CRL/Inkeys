@@ -107,6 +107,7 @@ public:
 	double FitButtonLabelFontSize(const wstring& content, double fontSize, double width, double height,
 		DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_BOLD);
 	void ConfigureLocalizedTypography();
+	bool RefreshLocalizedTypography();
 	bool UpdateFontRenderingPolicy(bool allowFractional) noexcept;
 	[[nodiscard]] FLOAT ResolveFontSize(ID2D1DeviceContext* context, double fontSize, double nominalTarget = -1.0);
 	[[nodiscard]] FLOAT ResolveWordFontSize(ID2D1DeviceContext* context, const BarUiWordClass& word,
@@ -171,6 +172,9 @@ public:
 		return frameZoom;
 	}
 	// 常驻内容（主栏/主按钮/分页的图标与文字）透明度倍率；调用方在绘制完常驻内容后恢复为 1。
+	// 仅常驻对象绘制段启用，退出该段必须恢复，避免污染属性/更多等面板。
+	void SetResidentIdleFade(double progress) noexcept
+	{ residentIdleFade = BarThemeMaterial::ClampWeight(progress); }
 	void SetResidentContentOpacity(double opacity) noexcept
 	{
 		residentContentOpacity = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
@@ -231,6 +235,12 @@ public:
 				? radius.height : 0.0F;
 	}
 
+	// 供页面表面绘制旋转圆环；沿用受保护的 DrawProgressRing 实现（同色轨道与进度，仅不透明度不同）。
+	void DrawRing(ID2D1DeviceContext* deviceContext, D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
+		FLOAT progress, COLORREF color, FLOAT trackOpacity, FLOAT progressOpacity)
+	{
+		DrawProgressRing(deviceContext, center, radius, strokeWidth, progress, color, color, trackOpacity, progressOpacity);
+	}
 protected:
 	BarFormatCache* GetTypographyCache();
 	BarUIRenderingServices services_;
@@ -464,6 +474,7 @@ protected:
 	unsigned long long frameDiffuseExactMaskPromotionFrameSerial = 0;
 	double frameZoom = 1.0;
 	double residentContentOpacity = 1.0;
+	double residentIdleFade = 0.0;
 	bool frameDirtyClipActive = false;
 	D2D1_RECT_F frameDirtyClipRect{};
 	D2D1_RECT_F frameDirtyClipDeviceRect{};
@@ -521,6 +532,7 @@ protected:
 	bool fontTargetTransformReady = false;
 	BarUiAnimationAdvanceContextClass fontFrameContext;
 	BarUiFontCorrectionClass directFontCorrection, fineDialFontCorrection;
+	std::uint64_t localeRevision = 0;
 	wstring fontFamily = L"HarmonyOS Sans SC";
 	wstring textLocale = L"zh-cn";
 	using ButtonLabelFitKey = std::tuple<wstring,double,double,double,unsigned>;

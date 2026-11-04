@@ -1,0 +1,56 @@
+{
+  "frames": [
+    {
+      "size": 16,
+      "bytes": 632,
+      "bitDepth": 32
+    },
+    {
+      "size": 20,
+      "bytes": 746,
+      "bitDepth": 32
+    },
+    {
+      "size": 24,
+      "bytes": 1032,
+      "bitDepth": 32
+    },
+    {
+      "size": 32,
+      "bytes": 1367,
+      "bitDepth": 32
+    },
+    {
+      "size": 40,
+      "bytes": 1887,
+      "bitDepth": 32
+    },
+    {
+      "size": 48,
+      "bytes": 2308,
+      "bitDepth": 32
+    },
+    {
+      "size": 64,
+      "bytes": 2677,
+      "bitDepth": 32
+    },
+    {
+      "size": 128,
+      "bytes": 5681,
+      "bitDepth": 32
+    },
+    {
+      "size": 256,
+      "bytes": 13278,
+      "bitDepth": 32
+    }
+  ],
+  "sha256": {
+    "Inkeys/src/UI/whiteboardLnk.svg": "7483169461a1c8c87901ae3078231b767ccbd9e8d639ef37798a094b3c99f56a",
+    "Inkeys/src/whiteboard.ico": "5d4ff953f7fd788b7dbefbcb93c6459d948913ab40bc46f6dbeb84220efd38e4",
+    "Inkeys/src/icon.ico": "fa0011110a625cb1e8eac068b785b10448618e5af8a4245729876c9f824a0037"
+  },
+  "resourceId": 332,
+  "primaryIconId": 191
+}

@@ -428,6 +428,181 @@ namespace
 		return success;
 	}
 
+	void CheckAlpha8Uploads(Checks& checks, Offscreen& renderer, ImFont* font)
+	{
+		// 使用真实 GPU 读回验证全图/非零偏移脏块，不能只比较 CPU 转换缓冲。
+		auto readTexture = [&](ImTextureData& source) {
+			Pixels result;
+			if (!source.BackendUserData) return result;
+			auto* srv=reinterpret_cast<ID3D11ShaderResourceView*>(static_cast<intptr_t>(source.TexID));
+			ComPtr<ID3D11Resource> resource; srv->GetResource(&resource);
+			ComPtr<ID3D11Texture2D> texture, staging;
+			if (!checks.Result(resource.As(&texture),"Alpha8 upload texture resource")) return result;
+			D3D11_TEXTURE2D_DESC desc{}; texture->GetDesc(&desc);
+			desc.Usage=D3D11_USAGE_STAGING;desc.BindFlags=0;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+			if (!checks.Result(renderer.device->CreateTexture2D(&desc,nullptr,staging.GetAddressOf()),"Alpha8 staging texture")) return result;
+			renderer.context->CopyResource(staging.Get(),texture.Get());
+			D3D11_MAPPED_SUBRESOURCE mapped{};
+			if (!checks.Result(renderer.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"Alpha8 actual GPU readback")) return result;
+			result.resize(static_cast<size_t>(desc.Width)*desc.Height);
+			for(UINT y=0;y<desc.Height;++y){
+                const auto* row=static_cast<const unsigned char*>(mapped.pData)+y*mapped.RowPitch;
+                if(desc.Format==DXGI_FORMAT_R8_UNORM)for(UINT x=0;x<desc.Width;++x)result[y*desc.Width+x]=0x00ffffffU|(ImU32(row[x])<<24);
+                else std::memcpy(result.data()+y*desc.Width,row,desc.Width*4);
+            }
+			renderer.context->Unmap(staging.Get(),0);return result;
+		};
+		auto destroy=[](ImTextureData& texture){
+			texture.WantDestroyNextFrame=true;texture.UnusedFrames=1;
+			texture.SetStatus(ImTextureStatus_WantDestroy);ImGui_ImplDX11_UpdateTexture(&texture);
+		};
+		for(bool forceRgba:{false,true}) {
+        ImGui_ImplDX11_TestForceRgbaAlpha(forceRgba);
+		ImTextureData alpha;alpha.Create(ImTextureFormat_Alpha8,11,9);
+		Pixels expected(99);
+		for(int i=0;i<99;++i){alpha.Pixels[i]=static_cast<unsigned char>((i*29)%256);expected[i]=0x00ffffffU|(ImU32(alpha.Pixels[i])<<24);}
+		ImGui_ImplDX11_TestFailNext(forceRgba ? ImGui_ImplDX11_TestFailure_TextureConversion : ImGui_ImplDX11_TestFailure_Texture,E_OUTOFMEMORY);
+		ImGui_ImplDX11_UpdateTexture(&alpha);
+		checks.Expect(ImGui_ImplDX11_GetLastResult()==E_OUTOFMEMORY && alpha.Status==ImTextureStatus_WantCreate
+			&& !alpha.BackendUserData && alpha.TexID==ImTextureID_Invalid,"Alpha8 conversion OOM retains unpublished create");
+		ImGui_ImplDX11_UpdateTexture(&alpha);
+		checks.Expect(readTexture(alpha)==expected,"Alpha8 create expands exact coverage to white RGBA on GPU");
+		const auto original=expected;
+		for(const ImTextureRect rect:{ImTextureRect{2,3,3,2},ImTextureRect{7,1,2,4}}){
+			alpha.Updates.push_back(rect);
+			for(int y=rect.y;y<rect.y+rect.h;++y)for(int x=rect.x;x<rect.x+rect.w;++x){
+				const auto value=static_cast<unsigned char>(31+x*11+y*7);*static_cast<unsigned char*>(alpha.GetPixelsAt(x,y))=value;
+				expected[y*11+x]=0x00ffffffU|(ImU32(value)<<24);
+			}
+		}
+		alpha.SetStatus(ImTextureStatus_WantUpdates);
+		ImGui_ImplDX11_TestFailNext(forceRgba ? ImGui_ImplDX11_TestFailure_TextureConversion : ImGui_ImplDX11_TestFailure_TextureUpdate,E_OUTOFMEMORY);
+		ImGui_ImplDX11_UpdateTexture(&alpha);
+		checks.Expect(ImGui_ImplDX11_GetLastResult()==E_OUTOFMEMORY && alpha.Status==ImTextureStatus_WantUpdates
+			&& alpha.Updates.Size==2 && readTexture(alpha)==original,"Alpha8 dirty conversion OOM preserves GPU contents and retry rectangles");
+		ImGui_ImplDX11_UpdateTexture(&alpha);
+		checks.Expect(alpha.Status==ImTextureStatus_OK && readTexture(alpha)==expected,
+			"Alpha8 disjoint offset rect uploads preserve row pitch and untouched pixels on retry");
+		destroy(alpha);
+        }
+        ImGui_ImplDX11_TestForceRgbaAlpha(false);
+
+		// 独立context重新烘焙RGBA源，不更改调用方的atlas/bake缓存或其生命周期。
+		ImGuiContext* savedContext=ImGui::GetCurrentContext();
+		auto* originalAtlas=font->OwnerAtlas;
+		auto* selectedFont=font;
+		auto* isolatedContext=ImGui::CreateContext();
+		ImGui::SetCurrentContext(isolatedContext);
+		ImGui::GetIO().IniFilename=nullptr;
+		ImGui::GetIO().DisplaySize={static_cast<float>(Width),static_cast<float>(Height)};
+		ImGui::GetIO().DeltaTime=1.0F/60.0F;
+		{
+			auto* sourceAtlas=ImGui::GetIO().Fonts;
+			sourceAtlas->SetFontLoader(originalAtlas->FontLoader);
+			sourceAtlas->FontLoaderFlags=originalAtlas->FontLoaderFlags;
+			for(const auto& original:originalAtlas->Sources){
+				ImFontConfig config=original;
+				config.FontDataOwnedByAtlas=false;config.DstFont=nullptr;config.FontLoaderData=nullptr;
+				auto* added=sourceAtlas->AddFont(&config);
+				if(!original.MergeMode && original.DstFont==selectedFont)font=added;
+			}
+			Offscreen renderer;
+			if(renderer.Initialize(checks))
+			{
+			checks.Expect(sourceAtlas->Build(),"materialize independent RGBA atlas for pixel baseline");
+            checks.Expect(font && font->OwnerAtlas==sourceAtlas,"isolated pixel font belongs to isolated atlas");
+		ImTextureData image;image.Create(ImTextureFormat_RGBA32,2,2);
+		const ImU32 colors[]={0xff0000ffU,0xff00ff00U,0xffff0000U,0x80ffffffU};
+        std::memcpy(image.Pixels,colors,sizeof(colors));ImGui_ImplDX11_UpdateTexture(&image);
+		ImGui_ImplDX11_NewFrame();ImGui::NewFrame();
+		auto* list=ImGui::GetForegroundDrawList();
+        list->AddText(font,17.5F,{30.25F,30.375F},IM_COL32_WHITE,"Agyp 0123 日本語 한국어 字体");
+		// 强制分数像素几何，避免字体内部整数取整掩盖padding采样差异。
+		for(auto& vertex:list->VtxBuffer){vertex.pos.x+=0.25F;vertex.pos.y+=0.375F;}
+		list->AddLine({30.25F,120.375F},{250.5F,132.75F},IM_COL32(83,211,125,220),2.0F);
+		list->AddRectFilled({30.25F,155.375F},{250.5F,180.75F},IM_COL32(60,90,140,170));
+        list->AddCallback([](const ImDrawList*,const ImDrawCmd*){},nullptr);
+		list->AddImage(image.GetTexRef(),{30.25F,210.375F},{250.5F,320.75F});
+        list->AddCallback([](const ImDrawList*,const ImDrawCmd*){
+            auto* state=static_cast<ImGui_ImplDX11_RenderState*>(ImGui::GetPlatformIO().Renderer_RenderState);
+            state->DeviceContext->PSSetSamplers(0,1,&state->SamplerLinear);
+        },nullptr);
+        list->AddRectFilled({30.25F,350.375F},{250.5F,380.75F},IM_COL32(100,170,90,210));
+        ImGui::Render();Pixels baseline,candidate;
+		renderer.Submit(checks,ImGui::GetDrawData(),&baseline);
+		auto* atlas=font->OwnerAtlas->TexData;
+		checks.Expect(atlas->Format==ImTextureFormat_RGBA32,
+			"pixel comparison uses an independent RGBA atlas baseline, not Alpha8 against itself");
+		ImTextureData converted;converted.Create(ImTextureFormat_Alpha8,atlas->Width,atlas->Height);
+		for(int i=0;i<atlas->Width*atlas->Height;++i)
+			converted.Pixels[i]=atlas->Format==ImTextureFormat_Alpha8 ? atlas->Pixels[i] : atlas->Pixels[i*4+3];
+		ImGui_ImplDX11_UpdateTexture(&converted);
+		std::vector<std::pair<ImDrawCmd*,ImTextureRef>> originals;
+		for(auto* drawList:ImGui::GetDrawData()->CmdLists)for(auto& command:drawList->CmdBuffer)
+			if(command.GetTexID()==atlas->TexID){originals.push_back({&command,command.TexRef});command.TexRef=converted.GetTexRef();}
+		renderer.Submit(checks,ImGui::GetDrawData(),&candidate);
+		for(auto& [command,texture]:originals)command->TexRef=texture;
+		checks.Expect(baseline.size()==candidate.size() && !baseline.empty(),"Alpha8 rendered pixel comparison is populated");
+		size_t textDifferences=0,nonTextDifferences=0;
+		for(size_t i=0;i<(std::min)(baseline.size(),candidate.size());++i)if(baseline[i]!=candidate[i]){
+			if(i/renderer.targetWidth<100)++textDifferences;else ++nonTextDifferences;
+		}
+		checks.Expect(nonTextDifferences==0,"Alpha8 preserves actual AA line, solid white-UV primitive and coloured image pixels");
+		std::cout<<"[Alpha8Pixels] source-format="<<static_cast<int>(atlas->Format)
+			<<" fractional-text-differences="<<textDifferences<<" nontext-differences="<<nonTextDifferences<<'\n';
+        // 同一Alpha8 CPU数据分别走R8和RGBA回退，含裸SRV缓存命令，像素必须完全一致。
+        ImTextureData rgbaAlpha;rgbaAlpha.Create(ImTextureFormat_Alpha8,atlas->Width,atlas->Height);
+        std::memcpy(rgbaAlpha.Pixels,converted.Pixels,static_cast<size_t>(atlas->Width)*atlas->Height);
+        ImGui_ImplDX11_TestForceRgbaAlpha(true);ImGui_ImplDX11_UpdateTexture(&rgbaAlpha);
+        ImGui_ImplDX11_TestForceRgbaAlpha(false);
+        Pixels rgbaCoverage,r8Coverage;
+        for(auto& [command,texture]:originals)command->TexRef=ImTextureRef(rgbaAlpha.TexID);
+        renderer.Submit(checks,ImGui::GetDrawData(),&rgbaCoverage);
+        for(auto& [command,texture]:originals)command->TexRef=ImTextureRef(converted.TexID);
+        renderer.Submit(checks,ImGui::GetDrawData(),&r8Coverage);
+        checks.Expect(!r8Coverage.empty() && r8Coverage==rgbaCoverage,"R8 and expanded Alpha8 RGBA render identical pixels using cached raw SRV IDs");
+        for(auto& [command,texture]:originals)command->TexRef=texture;
+        destroy(rgbaAlpha);
+        // 任意用户回调设置的PS必须保持至ResetRenderState；之后恢复自动纹理着色。
+        ImGui_ImplDX11_NewFrame();ImGui::NewFrame();
+        auto* callbackList=ImGui::GetForegroundDrawList();
+        // 使用实际不同字节码的橡皮PS，不能把后端自有RGBA shader冒充外部shader。
+        ComPtr<ID3D11PixelShader> customShader;
+        const auto shaderResource=FindResourceW(GetModuleHandleW(nullptr),MAKEINTRESOURCEW(IDR_SETTING_ERASER_DEMO_PS),L"SHADERS");
+        const auto shaderMemory=LoadResource(GetModuleHandleW(nullptr),shaderResource);
+        checks.Result(renderer.device->CreatePixelShader(LockResource(shaderMemory),SizeofResource(GetModuleHandleW(nullptr),shaderResource),nullptr,customShader.GetAddressOf()),"create distinct custom callback pixel shader");
+        struct CallbackProbe { ID3D11PixelShader* shader; bool preserved=false; bool distinct=false; } probe{customShader.Get()};
+        callbackList->AddCallback([](const ImDrawList*,const ImDrawCmd* command){
+            auto* state=static_cast<ImGui_ImplDX11_RenderState*>(ImGui::GetPlatformIO().Renderer_RenderState);
+            auto* probe=static_cast<CallbackProbe*>(command->UserCallbackData);
+            probe->distinct=probe->shader && probe->shader!=state->PixelShader && probe->shader!=state->AlphaPixelShader;
+            state->DeviceContext->PSSetShader(probe->shader,nullptr,0);
+        },&probe);
+        callbackList->AddImage(ImTextureRef(converted.TexID),{10,10},{40,40});
+        callbackList->AddCallback([](const ImDrawList*,const ImDrawCmd* command){
+            auto* state=static_cast<ImGui_ImplDX11_RenderState*>(ImGui::GetPlatformIO().Renderer_RenderState);
+            ID3D11PixelShader* shader=nullptr;state->DeviceContext->PSGetShader(&shader,nullptr,nullptr);
+            auto* probe=static_cast<CallbackProbe*>(command->UserCallbackData);
+            probe->preserved=shader==probe->shader;
+            if(shader)shader->Release();
+        },&probe);
+        callbackList->AddCallback(ImDrawCallback_ResetRenderState,nullptr);
+        callbackList->AddImage(ImTextureRef(converted.TexID),{50,10},{80,40});
+        bool resetRestored=false;
+        callbackList->AddCallback([](const ImDrawList*,const ImDrawCmd* command){
+            auto* state=static_cast<ImGui_ImplDX11_RenderState*>(ImGui::GetPlatformIO().Renderer_RenderState);
+            ID3D11PixelShader* shader=nullptr;state->DeviceContext->PSGetShader(&shader,nullptr,nullptr);
+            *static_cast<bool*>(command->UserCallbackData)=shader==state->AlphaPixelShader;
+            if(shader)shader->Release();
+        },&resetRestored);
+        ImGui::Render();renderer.Submit(checks,ImGui::GetDrawData(),nullptr);
+        checks.Expect(probe.distinct && probe.preserved && resetRestored,"custom pixel shader survives normal commands until explicit reset restores R8 selection");
+        destroy(converted);destroy(image);
+			}
+		}
+		ImGui::DestroyContext(isolatedContext);ImGui::SetCurrentContext(savedContext);
+		activeRenderer=&renderer;
+	}
 	void CheckBackendFailures(Checks& checks, Offscreen& renderer)
 	{
 		using Inkeys::UI::Setting::IsSharedDeviceLoss;
@@ -599,6 +774,110 @@ namespace
 		ID3D11Buffer* empty=nullptr; renderer.context->PSSetConstantBuffers(1,1,&empty);
 	}
 
+	// 整块透明度：组内重叠控件先按原 alpha 合成，再整体乘透明度；参考值为“无块背景”与“完整块”逐通道插值。
+	void CheckOpacityGroups(Checks& checks, Offscreen& renderer)
+	{
+		auto& io = ImGui::GetIO();
+		const auto oldFlags = io.BackendFlags;
+		struct Inspection { int begins = 0, ends = 0; bool balanced = true, nestedListSubmitted = false; };
+		auto frame = [&](float outer, float inner, bool translucentRoot, Inspection* inspection = nullptr)
+		{
+			io.DisplaySize = { static_cast<float>(Width), static_cast<float>(Height) };
+			io.DisplayFramebufferScale = { 1, 1 }; io.DeltaTime = 1.0F / 60.0F; io.AddMousePosEvent(Away.x, Away.y);
+			ImGui_ImplDX11_NewFrame(); ImGui::NewFrame(); Design::ConfigureRowAnimations(0, false, 1);
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			if (translucentRoot) ImGui::SetNextWindowBgAlpha(0);
+			ImGui::Begin("##group-opacity-root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings
+				| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+			// 半透明目标：块合成后仍须保留目标原有 alpha 与卡片固有透明度。
+			if (translucentRoot) ImGui::GetWindowDrawList()->AddRectFilled({ 20, 20 }, { 520, 360 }, IM_COL32(40, 90, 160, 110));
+			ImGui::SetCursorPos({ 40, 40 });
+			ImGui::BeginChild("##group-opacity-host", { 440, 280 }, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+			ImGui::GetWindowDrawList()->AddRectFilled({ 44, 44 }, { 476, 316 }, Design::IsDarkMode() ? IM_COL32(43, 43, 43, 230) : IM_COL32(255, 255, 255, 230), 6);
+			bool on = true, off = false;
+			Design::ToggleSwitch("##group-on", &on); Design::ToggleSwitch("##group-off", &off);
+			ImGui::TextUnformatted("Group opacity");
+			ImGui::BeginChild("##group-opacity-nested", { 320, 96 }, ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+			Design::ToggleSwitch("##nested-on", &on);
+			auto* nested = ImGui::GetCurrentWindow();
+			if (inner < 1) Design::ApplyGroupOpacity(nested, inner);
+			ImGui::EndChild();
+			auto* host = ImGui::GetCurrentWindow();
+			if (outer < 1) Design::ApplyGroupOpacity(host, outer);
+			ImGui::EndChild(); ImGui::End(); ImGui::Render();
+			if (!inspection) return;
+			for (const auto* list : ImGui::GetDrawData()->CmdLists)
+			{
+				inspection->nestedListSubmitted |= list == nested->DrawList;
+				int depth = 0;
+				for (const auto& command : list->CmdBuffer)
+				{
+					if (command.UserCallback == ImGui_ImplDX11_OpacityGroupBegin) { ++inspection->begins; ++depth; }
+					if (command.UserCallback == ImGui_ImplDX11_OpacityGroupEnd) { ++inspection->ends; inspection->balanced &= --depth >= 0; }
+				}
+				inspection->balanced &= depth == 0;
+			}
+		};
+		auto capture = [&](float outer, float inner, bool translucentRoot, Pixels& pixels, Inspection* inspection = nullptr)
+		{
+			// 两帧让 toggle 颜色/位置动画落定后的同一状态生效，再读回真实 GPU 像素。
+			frame(outer, inner, translucentRoot); renderer.Submit(checks, ImGui::GetDrawData());
+			frame(outer, inner, translucentRoot, inspection);
+			return renderer.Submit(checks, ImGui::GetDrawData(), &pixels);
+		};
+		auto worst = [](const Pixels& background, const Pixels& full, const Pixels& actual, float opacity)
+		{
+			int error = 0;
+			for (std::size_t index = 0; index < actual.size(); ++index)
+				for (int shift = 0; shift < 32; shift += 8)
+				{
+					const int b = (background[index] >> shift) & 255, s = (full[index] >> shift) & 255, a = (actual[index] >> shift) & 255;
+					error = (std::max)(error, std::abs(a - static_cast<int>(std::lround(b + (s - b) * opacity))));
+				}
+			return error;
+		};
+		for (bool dark : { false, true })
+			for (bool translucentRoot : { false, true })
+			{
+				Design::ApplyPalette(dark);
+				for (int warm = 0; warm < 40; ++warm) { frame(1, 1, translucentRoot); renderer.Submit(checks, ImGui::GetDrawData()); }
+				Pixels background, full, nestedFull, actual, legacy;
+				Inspection plain, grouped;
+				if (!capture(0, 1, translucentRoot, background) || !capture(1, 1, translucentRoot, full, &plain)
+					|| !capture(1, .5F, translucentRoot, nestedFull)) return;
+				checks.Expect(plain.begins == 0 && plain.ends == 0 && plain.nestedListSubmitted, "fully opaque blocks submit ordinary commands without offscreen groups");
+				checks.Expect(background != full, "group probe draws visible toggle content");
+				int maximum = 0;
+				for (float opacity : { .1F, .2F, .5F, .9F })
+				{
+					if (!capture(opacity, 1, translucentRoot, actual)) return;
+					maximum = (std::max)(maximum, worst(background, full, actual, opacity));
+				}
+				checks.Expect(maximum <= 2, "group opacity equals interpolation of composited block over destination");
+				if (!capture(.5F, .5F, translucentRoot, actual, &grouped)) return;
+				const int nestedError = worst(background, nestedFull, actual, .5F);
+				checks.Expect(grouped.begins == 2 && grouped.ends == 2 && grouped.balanced, "nested child group stays balanced inside merged parent list");
+				checks.Expect(!grouped.nestedListSubmitted, "group child draw lists are merged into the block instead of drawn after it");
+				checks.Expect(nestedError <= 2, "nested groups composite inner result once before the outer opacity");
+				// 去掉 VtxOffset 能力即强制旧逐顶点路径；同一场景必须能观察到重叠图元透出。
+				io.BackendFlags &= ~ImGuiBackendFlags_RendererHasVtxOffset;
+				const bool legacyCaptured = capture(.5F, 1, translucentRoot, legacy);
+				io.BackendFlags = oldFlags;
+				if (!legacyCaptured) return;
+				const int legacyError = worst(background, full, legacy, .5F);
+				checks.Expect(legacyError > 6, "probe detects per-vertex alpha bleeding through overlapped toggle parts");
+				std::cout << "[GroupOpacityWARP] dark=" << dark << " translucent=" << translucentRoot << " group-max-error=" << maximum
+					<< " nested-error=" << nestedError << " legacy-error=" << legacyError << '\n';
+			}
+		// 设备对象失效后离屏层随之释放，重建后结果不变。
+		Pixels before, after;
+		if (!capture(.5F, 1, false, before)) return;
+		ImGui_ImplDX11_InvalidateDeviceObjects();
+		checks.Expect(ImGui_ImplDX11_CreateDeviceObjects(), "recreate device objects after releasing group targets");
+		if (capture(.5F, 1, false, after)) checks.Expect(before == after, "group targets rebuild deterministically after device object invalidation");
+		Design::ApplyPalette(false);
+	}
+
 	void CheckColdEntry(Checks& checks, Offscreen& renderer)
 	{
 		// 首次动态字体/AutoResizeY 尚未测量；不先用静态帧掩盖首开字形与提交准备。
@@ -647,7 +926,7 @@ namespace
 			for (int warm=0;warm<8 && !state.preparation.ready;++warm)
 			{ frame(); if (!SubmitPrepared(checks,renderer,state)) return; }
 			checks.Expect(state.preparation.ready && state.preparation.warmFrames==2,"animated cold entry uses the existing two successful warm submissions");
-			state.entryElapsed=.76F;
+			state.entryElapsed=HomeEntryPhaseTime(.76F);
 			for (int absent=0;absent<12;++absent)
 			{ const auto info=frame(); checks.Expect(info.skipped,"actual entry omits cold page children before capture"); if (!SubmitPrepared(checks,renderer,state)) return; }
 			state.entryElapsed=Design::HomeEntryTiming::WritingEnd-.001F;
@@ -664,7 +943,7 @@ namespace
 			checks.Expect(scrollbar== (variant!=2),"normal and narrow pages overflow naturally while the roomy scaled page has no forced rail");
 			checks.Expect(reserve==(scrollbar ? Design::Pixels(Design::ScrollbarTrackSize) : 0),"captured native rail has terminal width or exactly zero reservation without overflow");
 			Pixels cached,first;
-			state.entryElapsed=2.65F; auto info=frame();
+			state.entryElapsed=HomeEntryPhaseTime(2.65F); auto info=frame();
 			if (!SubmitPrepared(checks,renderer,state,&cached)) return;
 			checks.Expect(info.skipped && !info.content,"docking cached page performs no child layout");
 			// 恢复仍在缓存下等本帧实际布局就绪；第一帧实时输出不能依赖额外事后暖帧才正确。
@@ -784,7 +1063,7 @@ namespace
 		checks.Expect(warm<6 && state.preparation.ready && state.preparation.warmFrames==2,
 			"two actual successful backend submissions prepare current glyph sizes within bounded warm frames");
 		const auto entries=state.entries; Pixels fast,full;
-		state.entryElapsed=.76F;
+		state.entryElapsed=HomeEntryPhaseTime(.76F);
 		info=Frame(&state,Away,0,true,41,true);
 		if (!SubmitPrepared(checks,renderer,state,&fast)) return;
 		checks.Expect(info.skipped && state.entries==entries,
@@ -820,8 +1099,9 @@ namespace
 		}
 		checks.Expect(state.preparation.revealReady && renderer.pageCache.Ready(),"GPU cache is published only after real background render/copy and successful submission");
 		// 比较整张真实 RGBA，包括字标内/外透明 AA、标题边界和底层文字；不放宽像素误差。
-		for (float time : {1.6F,1.91F,2.16F,2.44F,2.54F,2.65F})
+		for (float legacy : {1.6F,1.91F,2.16F,2.44F,2.54F,2.65F})
 		{
+			const float time=HomeEntryPhaseTime(legacy);
 			state.entryElapsed=time;
 			info=Frame(&state,Away,0,true,41,true);
 			if (!SubmitPrepared(checks,renderer,state,&fast)) return;
@@ -864,7 +1144,7 @@ namespace
 			if (!SubmitPrepared(checks,renderer,state,nullptr,true)) return;
 		}
 		Pixels control,optimized; int comparisons=0,edgePixels=0;
-		for (float time : {0.0F,Timing::Wait+.01F,.76F,Timing::WritingEnd+.15F,Timing::DockStart,
+		for (float time : {0.0F,Timing::Wait+.01F,HomeEntryPhaseTime(.76F),Timing::WritingEnd+.15F,Timing::DockStart,
 			Timing::DockStart+Timing::Dock*.5F,Timing::SettleStart+Timing::Settle*.5F,Timing::Total})
 		{
 			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=time;
@@ -933,13 +1213,13 @@ namespace
 				if (!SubmitPrepared(checks,renderer,state,nullptr,solid)) return;
 			}
 			checks.Expect(state.preparation.revealReady && renderer.pageCache.Ready(),"all supported alpha/backdrop materials capture real GPU pixels");
-			for (float time : {1.6F,2.16F,2.54F})
+			for (float legacy : {1.6F,2.16F,2.54F})
 			{
-				Pixels cached,full; state.entryElapsed=time;
+				Pixels cached,full; state.entryElapsed=HomeEntryPhaseTime(legacy);
 				Frame(&state,Away,0,true,serial,true,1,solid,true);
 				const auto copiesBefore=renderer.counters.copies;
 				if (!SubmitPrepared(checks,renderer,state,&cached,solid)) return;
-				if (time==1.6F)
+				if (legacy==1.6F)
 					checks.Expect(renderer.counters.copies-copiesBefore==(material==2 ? 1U : 0U),
 						"only truly opaque style-alpha-one hold omits hidden cache replay; partial style alpha retains copy");
 				auto reference=state; reference.preparation={};
@@ -1299,8 +1579,8 @@ namespace
 		Frame(&state, Away, 0, false);
 		if (mode>=4)
 		{
-			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=1.6F; Frame(&state,Away,0,true);
-			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=1.28F; Frame(&state,Away,0,true);
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=HomeEntryPhaseTime(1.6F); Frame(&state,Away,0,true);
+			state.entry=Design::HomeMotionState::Entry::Playing; state.entryElapsed=HomeEntryPhaseTime(1.28F); Frame(&state,Away,0,true);
 		}
 		if (optimized)
 		{
@@ -1337,9 +1617,10 @@ namespace
 			{
 				state.entry=Design::HomeMotionState::Entry::Playing;
 				state.entryElapsed=mode==10 ? 0 : mode==11 ? Design::HomeEntryTiming::Total-.005F
-					: mode==8 ? .12F : mode==9 ? Design::HomeEntryTiming::WritingEnd
-					: mode==4 ? .26F+1.0F*((frame+20)%100)/100
-					: mode==5 ? 1.6F : mode==6 ? 1.92F+.50F*((frame+20)%100)/100 : 2.46F+.18F*((frame+20)%100)/100;
+					: mode==8 ? HomeEntryPhaseTime(.12F) : mode==9 ? Design::HomeEntryTiming::WritingEnd
+					: mode==4 ? HomeEntryPhaseTime(.26F+1.0F*((frame+20)%100)/100)
+					: mode==5 ? HomeEntryPhaseTime(1.6F) : mode==6 ? HomeEntryPhaseTime(1.92F+.50F*((frame+20)%100)/100)
+					: HomeEntryPhaseTime(2.46F+.18F*((frame+20)%100)/100);
 				if (mode==10) { renderer.pageCache.Reset(); state.preparation={}; }
 				if (mode==11) { state.preparation.restorePending=true; state.preparation.restoreReady=false; state.preparation.restoreFrames=0; }
 				if (mode==9)
@@ -1540,14 +1821,14 @@ namespace
 		if (!PrepareCache(checks,renderer,state,151)) return;
 		for (float phase : {1.6F,2.16F,2.54F})
 		{
-			Pixels full,separate; state.entryElapsed=phase;
+			Pixels full,separate; state.entryElapsed=HomeEntryPhaseTime(phase);
 			Frame(&state,Away,0,true,151,true);
 			if (!renderer.Submit(checks,ImGui::GetDrawData(),&full,S_OK,false,&state,false,true)) return;
-			state.entryElapsed=phase;
+			state.entryElapsed=HomeEntryPhaseTime(phase);
 			auto info=Frame(&state,Away,0,true,151,true,1,false,false,OverlaySubset::CoverOnly);
 			checks.Expect(info.subsetValid,"diagnostic cover is the exact production rectangle with original blend and clip");
 			if (!renderer.Submit(checks,ImGui::GetDrawData(),nullptr,S_OK,false,&state,false,true)) return;
-			state.entryElapsed=phase;
+			state.entryElapsed=HomeEntryPhaseTime(phase);
 			info=Frame(&state,Away,0,true,151,true,1,false,false,OverlaySubset::InkOnly);
 			checks.Expect(info.subsetValid,"diagnostic ink retains exact original production vertices UV colours and indices");
 			const auto* source=ImGui::GetDrawData(); ImDrawData ink;
@@ -1580,13 +1861,13 @@ namespace
 			if (material==5) state.clientContent.x+=.25F;
 			for (float phase : {.76F,1.6F,2.16F,2.54F})
 			{
-				Pixels control,candidate,copyControl; state.entryElapsed=phase;
+				Pixels control,candidate,copyControl; state.entryElapsed=HomeEntryPhaseTime(phase);
 				Frame(&state,Away,0,true,160+material,true,1,solid,true);
 				if (!renderer.Submit(checks,ImGui::GetDrawData(),&control,S_OK,solid,&state)) break;
-				state.entryElapsed=phase; Frame(&state,Away,0,true,160+material,true,1,solid,true);
+				state.entryElapsed=HomeEntryPhaseTime(phase); Frame(&state,Away,0,true,160+material,true,1,solid,true);
 				if (!renderer.Submit(checks,ImGui::GetDrawData(),&copyControl,S_OK,solid,&state,false,true)) break;
 				checks.Expect(control==copyControl,"opaque replay omission preserves exact RGBA versus forced original cache copy at all materials and phases");
-				state.entryElapsed=phase;
+				state.entryElapsed=HomeEntryPhaseTime(phase);
 				const auto info=Frame(&state,Away,0,true,160+material,true,1,solid,true,OverlaySubset::All,true);
 				// 故意污染整个目标，证明省clear不依赖上一张discard buffer或离屏保留像素。
 				const float poison[4]{.9F,.1F,.8F,.3F}; renderer.context->ClearRenderTargetView(renderer.view.Get(),poison);
@@ -1653,7 +1934,8 @@ namespace
 }
 
 int SaveSettingFontComparison(const std::filesystem::path& path, float scale,
-	const std::function<void()>& draw)
+	const std::function<void()>& draw, int warmFrames, const std::function<void()>& afterSubmit,
+	const std::function<bool()>& stopAfterSubmit)
 {
 	Checks checks;
 	const HRESULT apartment=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
@@ -1668,10 +1950,16 @@ int SaveSettingFontComparison(const std::filesystem::path& path, float scale,
 			io.DisplayFramebufferScale={1,1}; io.AddMousePosEvent(Away.x,Away.y);
 			Pixels pixels;
 			// 真实后端处理动态字形纹理，不能用 CPU 夹具的模拟 TexID 生成样张。
-			for (int frame=0;frame<3;++frame)
+			for (int frame=0;frame<(std::max)(3,warmFrames);++frame)
 			{
 				ImGui_ImplDX11_NewFrame(); ImGui::NewFrame(); draw(); ImGui::Render();
-				if (!renderer.Submit(checks,ImGui::GetDrawData(),&pixels)) break;
+				if (!renderer.Submit(checks,ImGui::GetDrawData(), frame+1==(std::max)(3,warmFrames)?&pixels:nullptr)) break;
+				if (afterSubmit) afterSubmit();
+				if (stopAfterSubmit && stopAfterSubmit())
+				{
+					if (pixels.empty()) (void)renderer.Readback(checks,&pixels);
+					break;
+				}
 			}
 			if (!pixels.empty())
 			{
@@ -1714,7 +2002,9 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 	Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
 	CheckColdEntry(checks, renderer);
 	CheckBackendFailures(checks, renderer);
+	CheckAlpha8Uploads(checks, renderer, regular);
 	CheckIndependentPixelShader(checks, renderer);
+	CheckOpacityGroups(checks, renderer);
 	CheckEntryScrollbarContinuity(checks,renderer);
 	for (bool dark : { false, true })
 	{
@@ -1732,12 +2022,13 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 		checks.Expect(state.EntryActive() && state.entryElapsed==0,"new Show serial starts full-window entry at zero");
 		const auto openingRebuilds=state.cache.rebuilds; const auto openingBounds=state.buttonBounds;
 		Pixels held;
-		for (float time : {.26F,.76F,1.30F,1.60F,1.898F,2.16F,2.54F})
+		for (float legacy : {.26F,.76F,1.30F,1.60F,1.898F,2.16F,2.54F})
 		{
+			const float time=HomeEntryPhaseTime(legacy);
 			state.entryElapsed=time; Frame(&state,Away,0,true,2);
 			renderer.Submit(checks,ImGui::GetDrawData(),&changed);
 			const auto pose=Design::ResolveHomeEntryPose(state);
-			if (time==.76F) CheckWritingInk(checks,renderer,state);
+			if (legacy==.76F) CheckWritingInk(checks,renderer,state);
 			int outside=0,navChanged=0;
 			for (UINT y=0;y<Height;++y) for (UINT x=0;x<Width;++x)
 			{
@@ -1796,7 +2087,7 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 	Benchmark(checks,renderer,"capture",9,baseline,true);
 	for (int phase=0;phase<3;++phase)
 	{
-		const float time=std::array{1.6F,2.16F,2.54F}[phase];
+		const float time=HomeEntryPhaseTime(std::array{1.6F,2.16F,2.54F}[phase]);
 		const char* stage=std::array{"hold","dock","settle"}[phase];
 		for (int subset=0;subset<4;++subset)
 		{
@@ -1807,8 +2098,8 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 		BenchmarkFixedSubmission(checks,renderer,(std::string(stage)+"-solid-clear-control").c_str(),time,OverlaySubset::All,false,false,false,true,false);
 		BenchmarkFixedSubmission(checks,renderer,(std::string(stage)+"-solid-clear-candidate").c_str(),time,OverlaySubset::All,false,false,false,true,true);
 	}
-	BenchmarkFixedSubmission(checks,renderer,"hold-copy-omitted",1.6F,OverlaySubset::All,false,false);
-	BenchmarkFixedSubmission(checks,renderer,"hold-duplicate-skip",1.6F,OverlaySubset::All,true,false);
+	BenchmarkFixedSubmission(checks,renderer,"hold-copy-omitted",HomeEntryPhaseTime(1.6F),OverlaySubset::All,false,false);
+	BenchmarkFixedSubmission(checks,renderer,"hold-duplicate-skip",HomeEntryPhaseTime(1.6F),OverlaySubset::All,true,false);
 	BenchmarkFixedSubmission(checks,renderer,"static-duplicate-skip",0,OverlaySubset::All,true,false,true);
 	}
 	// 使用同一生产页面/字体/CSO，独立硬件设备仅作吞吐诊断，不改变产品默认 WARP 后端。

@@ -349,6 +349,7 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		Bridge::WhiteboardStyleToken whiteboardStyle;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		bool whiteboardLoadPending = false;

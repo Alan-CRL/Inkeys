@@ -334,8 +334,8 @@
           "zh-CN": "简体中文 · zh-CN",
           "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "The language change requires a restart to take full effect. Restart Inkeys now?",
-        "SelectNote": "Restart Inkeys for the language change to take full effect."
+        "Warn": "Language changes apply immediately. No restart is needed.",
+        "SelectNote": "Applies immediately. No restart required."
       }
     },
     "Configuration":
@@ -492,6 +492,13 @@
         "AutoStartE": "Launch Inkeys when the current user signs in to Windows.",
         "LoadingAnimation": "Startup loading animation",
         "LoadingAnimationE": "Show the loading animation while Inkeys starts.",
+        "StartupEffect":
+        {
+          "N": "Startup effect",
+          "Shimmer": "Shimmer",
+          "Aurora": "Soft glow",
+          "PixelAssembly": "Pixel assembly"
+        },
         "SettingEntryAnimation":
         {
           "N": "Settings opening animation",
@@ -503,7 +510,7 @@
         "Link":
         {
           "N": "Create Desktop Shortcut",
-          "E": "Fix existing shortcut names or create a new shortcut. Select More options to configure this.",
+          "E": "Create a desktop shortcut using the name selected below.",
           "More": "More Options"
         }
       },
@@ -647,11 +654,55 @@
       "Cursor":
       {
         "N": "Cursor",
-        "Description": "The mouse option applies only to soft and hard pens. Highlighters always preview width; shapes use the system cursor. The default pen cursor is circular. Cursor edge highlighting is disabled for screen styluses and enabled for pen tablets and unrecognized pens.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Pen",
-        "DefaultStyle": "Default cursor",
-        "DrawingStyle": "Pen-shaped cursor"
+        "EntryDescription": "Choose the drawing cursor for each input device and preview it.",
+        "Devices": "By device",
+        "PenDevices": "Pen tablet detection",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse and touchpad."
+        },
+        "Touch":
+        {
+          "N": "Touch",
+          "E": "Each finger that is drawing shows its own cursor, which disappears when lifted."
+        },
+        "ScreenPen":
+        {
+          "N": "Screen pen",
+          "E": "A pen that writes directly on the screen."
+        },
+        "Tablet":
+        {
+          "N": "Pen tablet",
+          "E": "External pen tablets and pens whose source cannot be recognized."
+        },
+        "Style":
+        {
+          "None": "No cursor",
+          "Arrow": "Mouse",
+          "Pen": "Pen",
+          "HighlightPen": "Pen (highlighted)",
+          "Dot": "Small dot",
+          "HighlightDot": "Small dot (highlighted)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Recognize driver-injected tablets",
+          "E": "Pen tablets without Windows Ink usually arrive as a mouse injected by the driver. When on, that mouse uses the pen tablet cursor settings; software that also injects a mouse, such as remote desktop, may be misdetected.",
+          "Unavailable": "This system cannot tell input sources apart, so this option is unavailable."
+        },
+        "FineControl": "Fine controls",
+        "DotHideOnContact":
+        {
+          "N": "Automatically hide the small dot cursor on contact",
+          "E": "Applies to both small dot styles. The cursor hides when the selected device touches down and remains visible while hovering.",
+          "Off": "Off",
+          "ScreenPen": "Screen pen only",
+          "Tablet": "Pen tablet only",
+          "Both": "Screen pen and pen tablet"
+        },
+        "Note": "On screen pens, pen tablets and touch, \"Mouse\" is an arrow drawn by the app itself; the highlighter, laser pointer, shape tools and eraser keep their own cursors regardless of these options."
       },
       "Effect":
       {
@@ -864,9 +915,12 @@
           "MiddleBoth": "Show controls on both sides at mid-height",
           "BottomMiddle": "Show controls on the bottom toolbar",
           "IdleFade": "Fade when idle",
-          "IdleFadeE": "During a slideshow, page widgets become more transparent after a period without interaction or after turning pages with a presenter or keyboard, so they cover less content. Hover, click or drag to restore them.",
+          "IdleFadeE": "During a slideshow, selected controls fade when idle and return on hover, click or drag. External page changes also fade page controls. The main toolbar fades only when docked at the bottom (including centered mode), after its idle timeout and keeps its normal opacity while any of its panels is open.",
           "IdleFadeOff": "Off",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Both bottom corners",
+          "IdleFadeMiddlePair": "Both sides at mid-height",
+          "IdleFadeMainBar": "Main toolbar (docked mode only)"
         },
         "WidgetPosition":
         {
@@ -975,8 +1029,8 @@
         "Expansion":
         {
           "N": "Additional Options",
-          "CreateLnk": "Create desktop shortcut",
-          "CreateLnkE": "Creates a desktop shortcut if one doesn't already exist."
+          "CreateLnk": "Create desktop shortcut on startup",
+          "CreateLnkE": "On startup, create a desktop shortcut if one does not already exist."
         }
       }
     },
@@ -1010,6 +1064,20 @@
       "NamePickerRequirement": "Requires registration of the NamePicker URL protocol.",
       "ClassIslandProtocolNote": "Register the URL navigation protocol in ClassIsland settings.",
       "ClassIslandSwapNote": "This component has no effect when ClassIsland has no timetable loaded."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Shortcuts",
+      "ApplicationSection": "Application",
+      "WhiteboardSection": "Whiteboard",
+      "NameLabel": "Shortcut name",
+      "CustomName": "Custom",
+      "CustomHint": "Enter a shortcut name",
+      "InvalidName": "Enter a valid Windows filename. Empty names, invalid characters, reserved names and paths that are too long are not allowed.",
+      "NameConflict": "Application and whiteboard shortcuts must have different names.",
+      "PresetWhiteboard": "Inkeys Whiteboard",
+      "PresetAnnotation": "Inkeys(Annotation)",
+      "PresetAnnotationTool": "Inkeys(AnnotationTool)"
     },
     "HotKey":
     {
