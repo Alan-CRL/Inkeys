@@ -685,6 +685,16 @@
           "E": "Le tavolette grafiche senza Windows Ink arrivano di solito come «mouse inserito dal driver». Se attivata, questo mouse usa le impostazioni del puntatore della tavoletta; i software che inseriscono a loro volta il mouse, come Desktop remoto, potrebbero essere riconosciuti per errore.",
           "Unavailable": "Questo sistema non riesce a distinguere l’origine dell’input; l’opzione non è disponibile."
         },
+        "FineControl": "Controlli di precisione",
+        "DotHideOnContact":
+        {
+          "N": "Nascondi automaticamente il cursore a punto piccolo al contatto",
+          "E": "Si applica a entrambi gli stili del punto piccolo. Il cursore si nasconde quando il dispositivo selezionato tocca la superficie e resta visibile quando è sospeso.",
+          "Off": "Disattivato",
+          "ScreenPen": "Solo penna su schermo",
+          "Tablet": "Solo tavoletta grafica",
+          "Both": "Penna su schermo e tavoletta grafica"
+        },
         "Note": "Con penna su schermo, tavoletta grafica e touch, «Mouse» è una freccia disegnata dall’app stessa; i puntatori di evidenziatore e puntatore laser, gli strumenti per le forme e il puntatore dedicato della gomma non sono influenzati da queste opzioni."
       },
       "Effect":

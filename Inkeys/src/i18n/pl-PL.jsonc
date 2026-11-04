@@ -685,6 +685,16 @@
           "E": "Tablety graficzne bez Windows Ink zwykle docierają jako „mysz wstrzyknięta przez sterownik”. Po włączeniu ta mysz używa ustawień kursora tabletu; oprogramowanie, które także wstrzykuje mysz, na przykład Pulpit zdalny, może zostać rozpoznane błędnie.",
           "Unavailable": "Ten system nie potrafi odróżnić źródła wejścia, więc opcja jest niedostępna."
         },
+        "FineControl": "Precyzyjne sterowanie",
+        "DotHideOnContact":
+        {
+          "N": "Automatycznie ukrywaj mały kursor punktowy przy kontakcie",
+          "E": "Dotyczy obu stylów małego punktu. Kursor znika, gdy wybrane urządzenie dotyka powierzchni, i pozostaje widoczny podczas unoszenia.",
+          "Off": "Wyłączone",
+          "ScreenPen": "Tylko pióro ekranowe",
+          "Tablet": "Tylko tablet graficzny",
+          "Both": "Pióro ekranowe i tablet graficzny"
+        },
         "Note": "W przypadku pióra ekranowego, tabletu graficznego i dotyku „Mysz” to strzałka rysowana przez samą aplikację; kursory zakreślacza i wskaźnika laserowego, narzędzia kształtów oraz osobny kursor gumki nie zależą od tych opcji."
       },
       "Effect":

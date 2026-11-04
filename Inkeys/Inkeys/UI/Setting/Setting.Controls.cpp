@@ -1886,18 +1886,23 @@ namespace Inkeys::UI::Setting::Design
 	    const float popup_max_h   = CalcComboPopupMaxHeight( popup_max_items, h );
 	    const bool logicalOpen = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
 	    bool decoration = false;
-	    ImVec2 popupPosition(bb.Min.x, bb.Max.y + FluentDpx(style.SpacingXSmall));
-	    ImVec2 popupSize;
+	    const auto* viewport = ImGui::GetWindowViewport();
+	    const float gap = FluentDpx(style.SpacingXSmall);
+	    const float below = (std::max)(0.0F, viewport->WorkPos.y + viewport->WorkSize.y - Pixels(4) - bb.Max.y - gap);
+	    const float above = (std::max)(0.0F, bb.Min.y - gap - viewport->WorkPos.y - Pixels(4));
+	    const float natural = items_count * h + (std::max)(0, items_count - 1) * ImGui::GetStyle().ItemSpacing.y + gap * 2.0F;
+	    const float desired = (std::min)(natural, popup_max_h);
+	    // 优先向下；放不下且上方更宽裕时向上，两侧均不足则在较大一侧滚动。
+	    const bool opensAbove = below < desired && above > below;
+	    const float available = opensAbove ? above : below;
+	    const float availableWidth = (std::max)(1.0F, viewport->WorkPos.x + viewport->WorkSize.x - bb.Min.x - Pixels(4));
+	    const ImVec2 popupSize((std::min)(bb.GetWidth(), availableWidth), (std::min)(desired, available));
+	    ImVec2 popupPosition(bb.Min.x, opensAbove ? bb.Min.y - gap - popupSize.y : bb.Max.y + gap);
+	    if (available <= 0) CloseBelowPopup(popup_id);
 	    if (motion)
 	    {
-	        const auto* viewport = ImGui::GetWindowViewport();
-	        const float below = (std::max)(0.0F, viewport->WorkPos.y + viewport->WorkSize.y - Pixels(4) - popupPosition.y);
-	        const float availableWidth = (std::max)(1.0F, viewport->WorkPos.x + viewport->WorkSize.x - popupPosition.x - Pixels(4));
-	        const float natural = items_count * h + (std::max)(0, items_count - 1) * ImGui::GetStyle().ItemSpacing.y
-	            + FluentDpx(style.SpacingXSmall) * 2.0F;
-	        popupSize = { (std::min)(bb.GetWidth(), availableWidth), (std::min)({ natural, popup_max_h, below }) };
-	        if (below <= 0) { CloseBelowPopup(popup_id); motion->reveal.Reset(0); }
-	        const float target = logicalOpen && below > 0 ? 1.0F : 0.0F;
+	        if (available <= 0) motion->reveal.Reset(0);
+	        const float target = logicalOpen && available > 0 ? 1.0F : 0.0F;
 	        const bool targetChanged = motion->reveal.target != target;
 	        motion->reveal.Target(target);
 	        if (motion->frame != GImGui->FrameCount)
@@ -1905,24 +1910,20 @@ namespace Inkeys::UI::Setting::Design
 	                0.180F / rowAnimationRate, rowAnimationsEnabled);
 	        motion->frame = GImGui->FrameCount;
 	        decoration = !ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None) && motion->reveal.value > 0.0001F;
-	        // 下方空间不足时只缩短/滚动，不让 ImGui 将弹层避让到左侧文字上。
-	        popupPosition.y += (std::min)(Pixels(12) * (1.0F - motion->reveal.value), (std::max)(0.0F, below - popupSize.y));
+	        // 展开与退出沿当前方向平移，始终限制在所选一侧的客户区预算内。
+	        const float offset = (std::min)(Pixels(12) * (1.0F - motion->reveal.value), (std::max)(0.0F, available - popupSize.y));
+	        popupPosition.y += opensAbove ? -offset : offset;
 	        motion->position = popupPosition; motion->size = popupSize;
 	        if (motion->reveal.value > 0 || logicalOpen)
 	            trackedBelowPopup = { reinterpret_cast<std::uintptr_t>(GImGui), popup_id, GImGui->FrameCount };
 	    }
 	    ImGui::SetNextWindowPos(popupPosition);
-	    ImGui::SetNextWindowSizeConstraints(ImVec2(bb.GetWidth(), 0.f), ImVec2(bb.GetWidth(), popup_max_h));
-	    if (motion)
-	    {
-	        ImGui::SetNextWindowSizeConstraints({ popupSize.x, 1 }, { popupSize.x, (std::max)(1.0F, popupSize.y) });
-	        ImGui::SetNextWindowSize(popupSize);
-	        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, { 1, 1 });
-	    }
+	    ImGui::SetNextWindowSizeConstraints({ popupSize.x, 1 }, { popupSize.x, (std::max)(1.0F, popupSize.y) });
+	    ImGui::SetNextWindowSize(popupSize);
+	    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, { 1, 1 });
 
 	    PushOverlayWindowStyle( style.SpacingXSmall, style.SpacingXSmall );
 	    ImGuiWindowFlags cb_wflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-	    if (!motion) cb_wflags |= ImGuiWindowFlags_AlwaysAutoResize;
 	    ImGuiWindow* popup_window = nullptr;
 	    for ( const auto& popup : GImGui->OpenPopupStack ) if ( popup.PopupId == popup_id ) popup_window = popup.Window;
 	    char decorationName[40]; ImFormatString(decorationName, sizeof(decorationName), "##BelowComboExit_%08x", popup_id);
@@ -1999,7 +2000,7 @@ namespace Inkeys::UI::Setting::Design
 	    }
 	    if (decoration) { ImGui::PopStyleVar(2); ImGui::PopStyleColor(); }
 	    PopOverlayWindowStyle();
-	    if (motion) ImGui::PopStyleVar();
+	    ImGui::PopStyleVar();
 
 	    return changed;
 	}

@@ -99,7 +99,7 @@ namespace Inkeys::UI::Setting::Design
 	bool RadioButton(const char* label, int* value, int selectedValue);
 	bool RadioButton(const char* label, bool selected);
 	bool ToggleSwitch(const char* label, bool* value, const char* onText = "", const char* offText = "");
-	// 仅显式传入的下方弹层使用此状态；不保存窗口、绘制列表或字体指针。
+	// 仅显式传入的动画弹层使用此状态；上下避让共用布局，不保存窗口、绘制列表或字体指针。
 	struct BelowComboMotion
 	{
 		NavigationTween reveal;

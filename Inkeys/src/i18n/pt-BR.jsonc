@@ -685,6 +685,16 @@
           "E": "Mesas digitalizadoras sem o Windows Ink costumam chegar como “mouse injetado pelo driver”. Quando ativada, esse mouse usa as configurações de ponteiro da mesa; softwares que também injetam mouse, como a Área de Trabalho Remota, podem ser detectados por engano.",
           "Unavailable": "Este sistema não consegue distinguir a origem da entrada; a opção não está disponível."
         },
+        "FineControl": "Controles precisos",
+        "DotHideOnContact":
+        {
+          "N": "Ocultar automaticamente o cursor de ponto pequeno ao tocar",
+          "E": "Aplica-se aos dois estilos de ponto pequeno. O cursor fica oculto quando o dispositivo selecionado toca a superfície e permanece visível ao pairar.",
+          "Off": "Desativado",
+          "ScreenPen": "Somente caneta de tela",
+          "Tablet": "Somente mesa digitalizadora",
+          "Both": "Caneta de tela e mesa digitalizadora"
+        },
         "Note": "Com caneta na tela, mesa digitalizadora e toque, “Mouse” é uma seta desenhada pelo próprio aplicativo; os ponteiros do marca-texto e do laser, as ferramentas de formas e o ponteiro próprio da borracha não são afetados por estas opções."
       },
       "Effect":

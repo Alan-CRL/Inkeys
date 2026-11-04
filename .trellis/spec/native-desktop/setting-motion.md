@@ -37,6 +37,8 @@
 
 - `InlineRowContent` 可通过 `visibilityId`/`visible` 仅折叠内联区；时长/开关父行始终显示，卡片外框按与 `ConditionalBlock` 相同的 reveal 进度计量（含上下 padding），内容复用原裁剪/组透明度和退出禁交互。初始状态/目标/速率不另建一套状态机，未传 visibilityId 的旧内联行保持原行为。条件块完成视口上方高度补偿后，SettingRow 行末游标必须继承 CursorStartPos 的重基准 delta，不能用进入行时缓存绝对坐标覆盖补偿。滚动回归应逐帧保证旧/新条件范围都完全在视口上方，不能仅以初始摆位认定整个展开过程满足前提。
 
+- 设置下拉沿现有 ImGui Popup 在当前viewport工作区内选择纵向：优先下方；下方小于所需高度且上方更多时向上。两侧都不足则采用较大一侧并限制高度、保留滚动；不得让尾部选项越客户区或侧移遮盖左侧说明。普通ComboRow与显式BelowComboMotion使用同一预算，第一帧即定位，不依赖AutoResize下一帧补救。上方展开的动效/退出装饰按同方向避让，仍不接输入；重开反向、resize、全局禁动画及原键盘/鼠标语义保持。BelowComboMotion名称为兼容保留，不新增原生弹窗。
+
 ## 4. Validation & Error Matrix
 
 | 边界 | 必须结果 |
@@ -56,6 +58,8 @@
 - Bad：逐顶点乘块透明度让toggle轨道透过滑块；只在父列表插Begin/End而child列表仍在组后绘制；用straight-alpha混合离屏预乘结果造成暗边；用0-alpha但可点击的标题栏/轨道隐藏入口；用宽度补间挤压正文；同帧重复渲染业务switch做测量；静止贴底时只发晚到的scroll target；用普通RGBA插值替代原alpha权重；把WARP回调计时外推为Win7/DXGI性能。
 
 ## 6. Tests Required
+
+- 下拉避让：1/1.5/1.875等DPI下普通与scoped路径的顶部向下、底部向上、两侧受限滚动、resize、开关/反向动画、鼠标最后项与键盘Home/End。必须覆盖真实RenderCursorPage滚到最底部后##cursor-dot-hide最后项可见且鼠标可选，以及RenderGeneral(Interaction)教学安全Combo位于客户区底部时上开并鼠标选择末项、仅触发safetyMode事件。所有ComboRow/ComboPreviewRow和直接Combo消费者统一使用该入口，不得改成页面特判；仅纯预算函数不能证明SettingRow/滚动宿主接线。旧“只有下方不足一行也必须截短在下方”断言已由用户要求取代。 `INKEYS_SETTING_POPUP_ONLY=1` 配合 `--no-window --setting-home-only` 定向运行弹层、原Combo交互、长列表滚动与真实光标页；配合单独 `--no-window` 则保留其它算法/配置/输入回归，仅设置页范围聚焦弹层，不能称为未过滤的完整设置回归。
 
 完整原生ARM64 MSBuild构建`InkeysRepo.sln Debug|ARM64`和Headless `--no-window`。真实页面/控件/DrawData回放验证真实旧页保持至退出、latest目标/返回反向、位置先落定而alpha仍有尾段、旧正文禁操作但不变灰及新页Tab可达，以及alpha、位置、clip、width、真实命中、业务次数、保存scroll、条件嵌套/反向/归零/上方锚点及贴底。颜色覆盖Solid/半透明、浅深和30/60/120/240Hz，透明端点alpha必须为0。资源/材质测试经过生产事务，不能只复制算法；整块透明度由RunSettingHomeWarpProbe中的真实backend像素回放验证（浅/深×不透明/半透明目标，opacity .1/.2/.5/.9，嵌套.5×.5，并强制旧逐顶点路径证明可检出透出）；开屏测试时刻用HomeEntryPhaseTime按阶段映射，不能硬编码旧总时长；同时保留i18n资源/格式化和字体生命周期测试。
 

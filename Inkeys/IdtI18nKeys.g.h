@@ -688,6 +688,16 @@ inline constexpr struct I18nKeyRoot
                     const char* E = "SettingsUI/Draw/Cursor/InjectedMouse/E";
                     const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
                 } InjectedMouse{};
+                const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
+                struct Node__SettingsUI__Draw__Cursor__DotHideOnContact
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/DotHideOnContact/N";
+                    const char* E = "SettingsUI/Draw/Cursor/DotHideOnContact/E";
+                    const char* Off = "SettingsUI/Draw/Cursor/DotHideOnContact/Off";
+                    const char* ScreenPen = "SettingsUI/Draw/Cursor/DotHideOnContact/ScreenPen";
+                    const char* Tablet = "SettingsUI/Draw/Cursor/DotHideOnContact/Tablet";
+                    const char* Both = "SettingsUI/Draw/Cursor/DotHideOnContact/Both";
+                } DotHideOnContact{};
                 const char* Note = "SettingsUI/Draw/Cursor/Note";
             } Cursor{};
             struct Node__SettingsUI__Draw__Effect

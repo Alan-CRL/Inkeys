@@ -3427,10 +3427,10 @@ namespace
 		io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard; io.DisplaySize={620*scale,480*scale};
 		Design::BelowComboMotion motion; Design::PageMotionState page;
 		std::vector<std::string> items; for (int i=0;i<12;++i) items.push_back("Option "+std::to_string(i));
-		bool animated=true, submit=true; float rate=1, top=260*scale; std::uint64_t revision=1;
+		bool animated=true, submit=true, scoped=true; float rate=1, top=100*scale; std::uint64_t revision=1;
 		int selected=0, changes=0, clicks=0; ImGuiWindow* host=nullptr;
 		const ImVec2 outside{-100,-100};
-		struct Frame { ImGuiWindow* popup=nullptr; ImGuiWindow* exit=nullptr; ImRect button; ImRect underlying; float opacity=0; bool changed=false; };
+		struct Frame { ImGuiWindow* popup=nullptr; ImGuiWindow* exit=nullptr; ImRect button; ImRect underlying, popupBounds; float opacity=0; bool changed=false; };
 		auto draw=[&](ImVec2 mouse=ImVec2(-100,-100),bool down=false) {
 			io.AddMousePosEvent(mouse.x,mouse.y); io.AddMouseButtonEvent(0,down);
 			ImGui::NewFrame(); Design::ConfigureRowAnimations(1.0F/60,animated,rate);
@@ -3445,11 +3445,12 @@ namespace
 			if (submit)
 			{
 				ImGui::SetCursorPos({180*scale,top}); ImGui::SetNextItemWidth(240*scale);
-				frame.changed=Design::ComboBox("##below-combo-probe",&selected,items,&motion,revision);
+				frame.changed=Design::ComboBox("##below-combo-probe",&selected,items,scoped ? &motion : nullptr,revision);
 				changes+=frame.changed ? 1 : 0;
 			}
 			Design::EndPageMotion(); ImFluent::PopFont(); ImGui::End(); ImGui::Render();
 			for (const auto& popup:GImGui->OpenPopupStack) if (popup.PopupId==motion.popup) frame.popup=popup.Window;
+			if (frame.popup) frame.popupBounds=frame.popup->Rect();
 			char name[40]; ImFormatString(name,sizeof(name),"##BelowComboExit_%08x",motion.popup);
 			if (auto* exit=ImGui::FindWindowByName(name);exit && exit->LastFrameActive==ImGui::GetFrameCount()) frame.exit=exit;
 			frame.button=ImGui::WindowRectRelToAbs(host,host->NavRectRel[ImGuiNavLayer_Main]); frame.opacity=motion.reveal.value;
@@ -3515,18 +3516,156 @@ namespace
 			checks.Expect(selected==2 && changes==beforeChanges+1,"actual popup selection emits one event despite exit rendering");
 			}
 		}
-		// The lower-space budget is authoritative even when less than one row fits.
+		// 底部不足一行时应向上，保留真实可操作列表和同方向的退出动画。
 		++revision; idle(); top=io.DisplaySize.y-50*scale; auto shortPopup=open().second;
-		checks.Expect(shortPopup.popup && shortPopup.popup->Pos.y>=shortPopup.button.Max.y
-			&& shortPopup.popup->Pos.y+shortPopup.popup->Size.y<=io.DisplaySize.y-Design::Pixels(4)+1
-			&& shortPopup.popup->Size.y<Design::Pixels(Design::ControlHeight),"constrained popup shortens below rather than covering left text");
+		checks.Expect(shortPopup.popup && shortPopup.popupBounds.Max.y<=shortPopup.button.Min.y
+			&& shortPopup.popupBounds.Min.y>=Design::Pixels(4)-1
+			&& shortPopup.popupBounds.GetHeight()>Design::Pixels(Design::ControlHeight),"bottom animated popup opens above with usable rows");
+		key(ImGuiKey_Escape); const auto aboveClosing=idle(2);
+		checks.Expect(!aboveClosing.popup && aboveClosing.exit && aboveClosing.exit->Pos.y>=Design::Pixels(4)-1
+			&& aboveClosing.exit->Pos.y+aboveClosing.exit->Size.y<=shortPopup.button.Min.y
+			&& (aboveClosing.exit->Flags&ImGuiWindowFlags_NoInputs)==ImGuiWindowFlags_NoInputs,
+			"upward popup exit stays above its anchor and cannot capture input");
 		++revision; auto replaced=draw(); checks.Expect(!replaced.popup && !replaced.exit,"language/layout revision retires old popup without stale resources");
 		top=260*scale; open(); submit=false; auto omitted=draw();
 		checks.Expect(!omitted.popup,"leaving the page retires the unsubmitted scoped popup");
 		submit=true; auto returned=draw(); checks.Expect(!returned.popup && !returned.exit,"returning after omission does not resurrect old popup motion");
+		idle(20); scoped=false; animated=false; items.resize(4); selected=1;
+		// 普通 Combo 不传 motion；必须首帧完整避让，不能等 AutoResize 的下一帧。
+		auto openFirstFrame=[&] {
+			idle(2); const auto button=focus();
+			io.AddKeyEvent(ImGuiKey_F4,true); const auto first=draw();
+			io.AddKeyEvent(ImGuiKey_F4,false); draw(); return std::pair{button,first};
+		};
+		const int beforeMouseChoices=changes;
+		top=io.DisplaySize.y-44*scale;
+		for (int item=0;item<4;++item)
+		{
+			auto [anchor,first]=openFirstFrame();
+			checks.Expect(first.popup && first.popupBounds.Max.y<=anchor.Min.y
+				&& first.popupBounds.Min.y>=Design::Pixels(4)-1,
+				"ordinary bottom Combo opens fully above on its first popup frame");
+			if (!first.popup) continue;
+			const auto id=ImHashStr(items[item].c_str(),0,ImHashData(&item,sizeof(item),first.popup->ID));
+			ImGui::FocusWindow(first.popup); ImGui::SetNavID(id,ImGuiNavLayer_Main,first.popup->NavRootFocusScopeId,ImRect{});
+			GImGui->NavCursorVisible=true; draw();
+			checks.Expect(GImGui->NavId==id && GImGui->NavIdIsAlive,"actual upward option registers its navigation rectangle");
+			const auto choice=ImGui::WindowRectRelToAbs(first.popup,first.popup->NavRectRel[ImGuiNavLayer_Main]);
+			checks.Expect(choice.Min.y>=Design::Pixels(4)-1 && choice.Max.y<=io.DisplaySize.y-Design::Pixels(4)+1,
+				"every ordinary upward option is inside the client and mouse reachable");
+			const auto optionPoint=choice.GetCenter(); draw(optionPoint,false); draw(optionPoint,true); draw(optionPoint,false); idle(2);
+			checks.Expect(selected==item && changes==beforeMouseChoices+item+1,
+				"mouse selects each of four upward options exactly once, including the last");
+		}
+		top=40*scale; auto [upperAnchor,downward]=openFirstFrame();
+		checks.Expect(downward.popup && downward.popupBounds.Min.y>=upperAnchor.Max.y,
+			"ordinary Combo keeps downward placement when its full list fits");
+		io.DisplaySize.y=300*scale; top=io.DisplaySize.y-44*scale; const auto resized=draw();
+		checks.Expect(resized.popup && resized.popupBounds.Min.y>=Design::Pixels(4)-1
+			&& resized.popupBounds.Max.y<=top,
+			"an open ordinary Combo recomputes upward placement during a client resize");
+		key(ImGuiKey_Escape); idle(2);
+		io.DisplaySize.y=220*scale; top=100*scale; items.clear();
+		for (int item=0;item<12;++item) items.push_back("Option "+std::to_string(item));
+		const auto limited=openFirstFrame().second; idle(3); const auto scrolled=draw();
+		checks.Expect(limited.popup && scrolled.popup && scrolled.popup->ScrollMax.y>0
+			&& scrolled.popupBounds.Min.y>=Design::Pixels(4)-1 && scrolled.popupBounds.Max.y<=io.DisplaySize.y-Design::Pixels(4)+1,
+			"when neither side fits the full list, the larger side stays bounded and scrollable");
+		const int beforeEnd=changes; key(ImGuiKey_End); key(ImGuiKey_Enter); idle(2);
+		checks.Expect(selected==11 && changes==beforeEnd+1,"End and Enter reach the final row in a height-limited upward list");
 		idle(); io.ConfigFlags=oldFlags; io.ConfigInputTrickleEventQueue=oldTrickle; io.DisplaySize=oldSize;
 		Design::ConfigureRowAnimations(0,false,1);
 		std::cout<<"[BelowComboPopup] scale="<<scale<<" changes="<<changes<<" underlying-clicks="<<clicks<<'\n';
+	}
+
+
+	void CheckCursorPageControls(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); ApplyPalette(false);
+		auto& io = ImGui::GetIO(); const auto oldSize = io.DisplaySize; const auto oldFlags = io.ConfigFlags;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		for (float width : { 340.0F, 780.0F })
+		{
+			CursorPageDraft draft; draft.injectedAvailable = false; bool bottomCase = false;
+			ImGuiWindow* host = nullptr; int edits = 0; ImRect note;
+			auto draw = [&](ImVec2 mouse = ImVec2(-100, -100)) {
+				io.DisplaySize = { (width + 32) * scale, (bottomCase ? 480 : 2400) * scale }; io.AddMousePosEvent(mouse.x, mouse.y);
+				ImGui::NewFrame(); ConfigureRowAnimations(0, false, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##cursor-page-controls-cpu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				host = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				const auto events = RenderCursorPage(draft);
+				edits += events.dotHideOnContact ? 1 : 0;
+				checks.Expect(!events.back && !events.mouse && !events.touch && !events.screenPen && !events.tablet && !events.injectedMouse,
+					"cursor fine control never edits unrelated device preferences");
+				note = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+				for (const auto& vertex : host->DrawList->VtxBuffer)
+					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Informational]) note.Add(vertex.pos);
+				ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+			};
+			for (int pass = 0; pass < 3; ++pass) draw();
+			checks.Expect(draft.dotHideOnContact == 1 && edits == 0, "cursor contact hiding defaults to screen pen without a write event");
+			const auto rowId = ImHashStr("##cursor-dot-hide", 0, host->ID);
+			const auto comboId = ImHashStr("##select", 0, rowId);
+			auto focusRect = [&](ImGuiID id) {
+				ImGui::FocusWindow(host); ImGui::SetNavID(id, ImGuiNavLayer_Main, host->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw();
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "cursor fine control registers actual keyboard navigation");
+				return ImGui::WindowRectRelToAbs(host, host->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			const auto combo = focusRect(comboId);
+			checks.Expect(note.Min.y < note.Max.y && note.Max.y < combo.Min.y,
+				"blue cursor notice is above the final fine control row");
+			checks.Expect(combo.Min.x >= host->Pos.x && combo.Max.x <= host->Pos.x + host->Size.x
+				&& host->ScrollMax.x == 0, "cursor fine control fits both narrow and wide layouts");
+			auto chord = [&](ImGuiKey key) { io.AddKeyEvent(key, true); draw(); io.AddKeyEvent(key, false); draw(); };
+			for (int mode = 0; mode < 4; ++mode)
+			{
+				focusRect(comboId); chord(ImGuiKey_F4); chord(ImGuiKey_Home);
+				for (int next = 0; next < mode; ++next) chord(ImGuiKey_DownArrow);
+				chord(ImGuiKey_Enter); draw();
+				checks.Expect(draft.dotHideOnContact == mode && edits == mode + 1,
+					"actual cursor combo selects each mode in order and dispatches one write event");
+			}
+			const int savedEdits = edits;
+			for (int invalid : { -1, 4, 99 })
+			{
+				draft.dotHideOnContact = invalid; draw();
+				checks.Expect(draft.dotHideOnContact == 1 && edits == savedEdits,
+					"invalid cursor draft modes restore the default without emitting an edit");
+			}
+			if (width == 780.0F)
+			{
+				bottomCase = true; draw(); draw(); ImGui::SetScrollY(host, host->ScrollMax.y); draw(); draw();
+				const auto bottomAnchor = focusRect(comboId);
+				const auto popupId = ImHashStr("##fl_cb_popup", 0, comboId);
+				io.AddKeyEvent(ImGuiKey_F4, true); draw(); ImGuiWindow* popup = nullptr;
+				for (const auto& open : GImGui->OpenPopupStack) if (open.PopupId == popupId) popup = open.Window;
+				checks.Expect(popup && popup->Pos.y >= Pixels(4) - 1 && popup->Pos.y + popup->Size.y <= bottomAnchor.Min.y,
+					"actual cursor page at its scroll bottom opens its last Combo upward immediately");
+				io.AddKeyEvent(ImGuiKey_F4, false); draw();
+				if (popup)
+				{
+					const int last = 3; const std::string label = IA(I18nKey.SettingsUI.Draw.Cursor.DotHideOnContact.Both);
+					const auto id = ImHashStr(label.c_str(), 0, ImHashData(&last, sizeof(last), popup->ID));
+					ImGui::FocusWindow(popup); ImGui::SetNavID(id, ImGuiNavLayer_Main, popup->NavRootFocusScopeId, ImRect{});
+					GImGui->NavCursorVisible = true; draw();
+					checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "actual last cursor hide option has a live hit rectangle");
+					const auto choice = ImGui::WindowRectRelToAbs(popup, popup->NavRectRel[ImGuiNavLayer_Main]);
+					const auto point = choice.GetCenter(); draw(point);
+					io.AddMouseButtonEvent(0, true); draw(point);
+					io.AddMouseButtonEvent(0, false); draw(point);
+					checks.Expect(draft.dotHideOnContact == 3 && edits == savedEdits + 1,
+						"mouse selects the last option in the real cursor page's bottom Combo exactly once");
+				}
+			}
+
+		}
+		io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle; io.DisplaySize = oldSize;
+		std::cout << "[CursorPage] scale=" << scale << " locale=" << I18n::getA("SettingsUI/Draw/Cursor/N") << '\n';
 	}
 
 	void CheckPptIdleFadeScopes(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
@@ -4043,6 +4182,54 @@ namespace
 		const auto resetDone = draw(Design::GeneralSection::Appearance, reset, false);
 		checks.Expect(Near(draft.barZoom, 1.0F) && resetDone.events.barZoomChanged && !resetDone.events.barZoomActive,
 			"the scale reset button restores 100% through the normal change event");
+		// 复用真实行为与安全页，把教学安全的公共 Combo 放到客户区底部，验证跨页面生效。
+		{
+			const auto behaviorSection = Design::GeneralSection::Interaction;
+			const auto savedBehavior = draft;
+			io.DisplaySize.y = 480 * scale;
+			draw(behaviorSection, outside, false); draw(behaviorSection, outside, false);
+			ImGui::SetScrollY(host, host->ScrollMax.y); draw(behaviorSection, outside, false);
+			focus(behaviorSection, "teaching-safety", "##select"); draw(behaviorSection, outside, false);
+			const auto teachingRect = ImGui::WindowRectRelToAbs(host, host->NavRectRel[ImGuiNavLayer_Main]);
+			ImGui::SetScrollY(host, (std::max)(0.0F, host->Scroll.y + teachingRect.Max.y - (io.DisplaySize.y - Design::Pixels(24))));
+			draw(behaviorSection, outside, false); draw(behaviorSection, outside, false);
+			focus(behaviorSection, "teaching-safety", "##select"); draw(behaviorSection, outside, false);
+			const auto teachingAnchor = ImGui::WindowRectRelToAbs(host, host->NavRectRel[ImGuiNavLayer_Main]);
+			const auto teachingComboId = GImGui->NavId;
+			checks.Expect(GImGui->NavIdIsAlive && teachingAnchor.Max.y >= io.DisplaySize.y - Design::Pixels(32),
+				"real teaching safety Combo is registered at the client bottom");
+			io.AddKeyEvent(ImGuiKey_F4, true); draw(behaviorSection, outside, false);
+			ImGuiWindow* teachingPopup = nullptr;
+			const auto teachingPopupId = ImHashStr("##fl_cb_popup", 0, teachingComboId);
+			for (const auto& teachingOpen : GImGui->OpenPopupStack) if (teachingOpen.PopupId == teachingPopupId) teachingPopup = teachingOpen.Window;
+			checks.Expect(teachingPopup && teachingPopup->Pos.y >= Design::Pixels(4) - 1
+				&& teachingPopup->Pos.y + teachingPopup->Size.y <= teachingAnchor.Min.y,
+				"real teaching safety Combo opens upward completely on its first frame");
+			io.AddKeyEvent(ImGuiKey_F4, false); draw(behaviorSection, outside, false);
+			if (teachingPopup)
+			{
+				const int teachingLastItem = 3;
+				const auto teachingLastLabel = IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4);
+				const auto teachingLastId = ImHashStr(teachingLastLabel.c_str(), 0,
+					ImHashData(&teachingLastItem, sizeof(teachingLastItem), teachingPopup->ID));
+				ImGui::FocusWindow(teachingPopup); ImGui::SetNavID(teachingLastId, ImGuiNavLayer_Main, teachingPopup->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(behaviorSection, outside, false);
+				checks.Expect(GImGui->NavIdIsAlive && GImGui->NavId == teachingLastId, "actual final teaching safety option registers its hit rectangle");
+				const auto teachingOptionRect = ImGui::WindowRectRelToAbs(teachingPopup, teachingPopup->NavRectRel[ImGuiNavLayer_Main]);
+				checks.Expect(teachingOptionRect.Min.y >= Design::Pixels(4) - 1 && teachingOptionRect.Max.y <= io.DisplaySize.y - Design::Pixels(4) + 1,
+					"final teaching safety option is fully inside the client for real mouse selection");
+				const auto teachingOptionPoint = teachingOptionRect.GetCenter();
+				draw(behaviorSection, teachingOptionPoint, false);
+				auto teachingDown = draw(behaviorSection, teachingOptionPoint, true).events;
+				auto teachingUp = draw(behaviorSection, teachingOptionPoint, false).events;
+				const int teachingEdits = (teachingDown.safetyModeChanged ? 1 : 0) + (teachingUp.safetyModeChanged ? 1 : 0);
+				teachingDown.safetyModeChanged = teachingUp.safetyModeChanged = false;
+				checks.Expect(draft.safetyMode == 3 && teachingEdits == 1 && noEdits(teachingDown) && noEdits(teachingUp)
+					&& draft.autoCollapse == savedBehavior.autoCollapse && draft.topInterval == savedBehavior.topInterval
+					&& draft.rightClickClose == savedBehavior.rightClickClose && draft.allowMultipleInstances == savedBehavior.allowMultipleInstances,
+					"mouse commits final teaching safety option once without editing other behavior preferences");
+			}
+		}
 		io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 	}
@@ -7579,6 +7766,10 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 	const bool motionOnly = GetEnvironmentVariableA("INKEYS_SETTING_MOTION_ONLY", motionFilter, 4) != 0;
 	char pptIdleFilter[4]{};
 	const bool pptIdleOnly = GetEnvironmentVariableA("INKEYS_SETTING_PPT_IDLE_ONLY", pptIdleFilter, 4) != 0;
+	char cursorFilter[4]{};
+	const bool cursorOnly = GetEnvironmentVariableA("INKEYS_SETTING_CURSOR_ONLY", cursorFilter, 4) != 0;
+	char popupFilter[4]{};
+	const bool popupOnly = GetEnvironmentVariableA("INKEYS_SETTING_POPUP_ONLY", popupFilter, 4) != 0;
 	char warpFilter[4]{};
 	const bool warpOnly=GetEnvironmentVariableA("INKEYS_FONT_WARP_ONLY",warpFilter,4)!=0;
 	char focusedPages[32]{};
@@ -7587,12 +7778,12 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		CheckFreeTypeRealPages(checks,sources,fontDirectory);
 		return checks.failures;
 	}
-	if (!pptIdleOnly && !motionOnly && !warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
+	if (!popupOnly && !cursorOnly && !pptIdleOnly && !motionOnly && !warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
 
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
-		if ((generalOnly || pptIdleOnly) && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
+		if ((generalOnly || pptIdleOnly || cursorOnly || popupOnly) && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
 		if (motionOnly && scale != 1.0F && scale != 1.875F) continue;
 		ImGuiSession session;
 		Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
@@ -7646,6 +7837,25 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				ImGui::GetStyle().FontScaleDpi = 1.2F;
 				CheckPageAndConditionalMotion(checks, fonts[0], fonts[1], fonts.back(), 1.2F);
 				ImGui::GetStyle().FontScaleDpi = scale;
+			}
+			continue;
+		}
+		if (popupOnly)
+		{
+			CheckBelowComboPopup(checks, fonts[0], fonts[1], fonts.back(), scale);
+			for (auto backdrop : { BackdropMode::Solid, BackdropMode::Acrylic })
+				CheckComboBoxInteraction(checks, fonts[0], scale, backdrop);
+			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
+			CheckCursorPageControls(checks, fonts[0], fonts[1], fonts.back(), scale);
+			continue;
+		}
+		if (cursorOnly)
+		{
+			for (const auto& locale : Inkeys::Localization::Locales)
+			{
+				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "cursor tests load actual locale resources");
+				const auto fontIndex = localeFontIndex(locale);
+				CheckCursorPageControls(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			continue;
 		}
@@ -7764,6 +7974,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				if (std::strcmp(locale.codeUtf8, "vi-VN") == 0)
 					CheckVietnameseCaptionClipping(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckLocalizedComponentAndPluginRows(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckCursorPageControls(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckPptIdleFadeScopes(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckSpeedEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
@@ -7777,6 +7988,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		}
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 		{
+			CheckBelowComboPopup(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckCompactedSettingPages(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckDrawingSubpageScroll(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);

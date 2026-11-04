@@ -667,6 +667,14 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 						? candidate : defaultValue.load();
 					return;
 				}
+				if (path == "Drawing.Cursor.DotHideOnContact")
+				{
+					// 四态设备选择只接受窄整数，拒绝布尔、浮点和超宽数值。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 3 ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "Drawing.Cursor.Mouse" || path == "Drawing.Cursor.Touch" ||
 					path == "Drawing.Cursor.ScreenPen" || path == "Drawing.Cursor.Tablet")
 				{

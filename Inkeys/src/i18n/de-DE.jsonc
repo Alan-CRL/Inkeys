@@ -685,6 +685,16 @@
           "E": "Grafiktabletts ohne Windows Ink senden ihre Eingaben meist als vom Treiber eingespeiste Maus. Bei aktivierter Option nutzt diese Maus die Zeigereinstellungen des Grafiktabletts; Software wie Remotedesktop, die ebenfalls Mauseingaben einspeist, kann fälschlich erkannt werden.",
           "Unavailable": "Dieses System kann die Eingabequelle nicht unterscheiden; die Option ist nicht verfügbar."
         },
+        "FineControl": "Feinsteuerung",
+        "DotHideOnContact":
+        {
+          "N": "Kleinen Punktcursor beim Aufsetzen automatisch ausblenden",
+          "E": "Gilt für beide kleinen Punktstile. Der Cursor wird beim Aufsetzen des ausgewählten Geräts ausgeblendet und bleibt beim Schweben sichtbar.",
+          "Off": "Aus",
+          "ScreenPen": "Nur Bildschirmstift",
+          "Tablet": "Nur Grafiktablett",
+          "Both": "Bildschirmstift und Grafiktablett"
+        },
         "Note": "Bei Bildschirmstift, Grafiktablett und Touch zeichnet die App „Maus“ als eigenen Pfeil; die Zeiger von Textmarker und Laserpointer, Formwerkzeuge und der spezielle Radierer-Zeiger bleiben von diesen Optionen unberührt."
       },
       "Effect":

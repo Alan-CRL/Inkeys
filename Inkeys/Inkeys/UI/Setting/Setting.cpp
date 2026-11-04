@@ -3826,11 +3826,12 @@ SettingSessionCoroutine RunSettingSession()
 						draft.screenPen = Cursor::CursorStyleToItemIndex(CursorDevice::ScreenPen, deviceStyle(CursorDevice::ScreenPen, cursor.ScreenPen.load()));
 						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
 						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
+						draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(cursor.DotHideOnContact.load()));
 						draft.injectedAvailable = injectedSourceAvailable;
 						const auto events = Design::RenderCursorPage(draft);
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
-						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse)
+						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse || events.dotHideOnContact)
 						{
 							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
 							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
@@ -3839,6 +3840,7 @@ SettingSessionCoroutine RunSettingSession()
 							if (events.screenPen) cursor.ScreenPen = styleValue(CursorDevice::ScreenPen, draft.screenPen);
 							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
 							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
+							if (events.dotHideOnContact) cursor.DotHideOnContact = draft.dotHideOnContact;
 							SyncDraw3State();
 							QueueConfigWrite();
 						}

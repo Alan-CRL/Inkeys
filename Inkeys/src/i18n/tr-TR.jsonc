@@ -685,6 +685,16 @@
           "E": "Windows Ink kullanmayan grafik tabletler genellikle “sürücünün enjekte ettiği fare” olarak gelir. Açıldığında bu fare, tabletin imleç ayarlarını kullanır; Uzak Masaüstü gibi fare enjekte eden diğer yazılımlar yanlışlıkla algılanabilir.",
           "Unavailable": "Bu sistem giriş kaynağını ayırt edemediği için seçenek kullanılamıyor."
         },
+        "FineControl": "Hassas denetimler",
+        "DotHideOnContact":
+        {
+          "N": "Küçük nokta imlecini temas sırasında otomatik gizle",
+          "E": "Her iki küçük nokta stiline de uygulanır. Seçilen aygıt yüzeye dokunduğunda imleç gizlenir ve yüzeyin üzerinde tutulduğunda görünür kalır.",
+          "Off": "Kapalı",
+          "ScreenPen": "Yalnızca ekran kalemi",
+          "Tablet": "Yalnızca grafik tablet",
+          "Both": "Ekran kalemi ve grafik tablet"
+        },
         "Note": "Ekran kalemi, grafik tablet ve dokunmada “Fare”, uygulamanın kendisinin çizdiği bir oktur; vurgulayıcı ve lazer işaretçi imleçleri, şekil araçları ve silgiye özel imleç bu seçeneklerden etkilenmez."
       },
       "Effect":

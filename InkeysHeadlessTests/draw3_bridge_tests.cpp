@@ -139,6 +139,20 @@ namespace
 			&& mouseChanged.cursorSettings.mouse == CursorStyle::HighlightPen
 			&& afterCursor.cursorSettings.mouse == CursorStyle::Arrow,
 			"mouse-only cursor updates preserve the independently selected pen type")) ++failures;
+		for (int mode = 0; mode <= 3; ++mode)
+		{
+			const auto beforeMode = bridge.Snapshot();
+			auto modeOnly = beforeMode;
+			modeOnly.cursorSettings.dotHideOnContact = static_cast<Inkeys::Drawing::Draw3::DotCursorHideMode>(mode);
+			bridge.PublishState(modeOnly);
+			const auto afterMode = bridge.Snapshot();
+			if (!Expect(afterMode.revision == beforeMode.revision + 1 && afterMode.cursorSettings == modeOnly.cursorSettings &&
+				afterMode.cursorSettings.mouse == beforeMode.cursorSettings.mouse &&
+				afterMode.cursorSettings.tablet == beforeMode.cursorSettings.tablet &&
+				afterMode.widthDip == beforeMode.widthDip && afterMode.tool == beforeMode.tool &&
+				beforeMode.cursorSettings.dotHideOnContact != afterMode.cursorSettings.dotHideOnContact,
+				"dot contact hide mode alone publishes a new immutable cursor revision")) ++failures;
+		}
 	}
 
 	void TestMouseCursorToolProjection(int& failures)
@@ -163,12 +177,15 @@ namespace
 			}
 		Inkeys::Drawing::Draw3::CursorSettings raw;
 		raw.touch = CursorStyle::Dot; raw.screenPen = CursorStyle::Pen; raw.tablet = CursorStyle::HighlightPen;
+		raw.dotHideOnContact = Inkeys::Drawing::Draw3::DotCursorHideMode::Both;
 		const auto marker = ResolveCursorSettingsForTool(Tool::Highlighter, raw);
 		const auto shape = ResolveCursorSettingsForTool(Tool::SolidLine, raw);
 		const auto brush = ResolveCursorSettingsForTool(Tool::Pen, raw);
 		if (!Expect(marker.mouse != CursorStyle::Arrow && shape.mouse == CursorStyle::Arrow &&
 			brush.mouse == raw.mouse && raw.mouse == CursorStyle::Arrow &&
-			marker.screenPen == raw.screenPen && shape.tablet == raw.tablet && brush.touch == raw.touch,
+			marker.screenPen == raw.screenPen && shape.tablet == raw.tablet && brush.touch == raw.touch &&
+			marker.dotHideOnContact == raw.dotHideOnContact && shape.dotHideOnContact == raw.dotHideOnContact &&
+			brush.dotHideOnContact == raw.dotHideOnContact,
 			"actual marker-to-shape-to-brush projection preserves raw selections of every other device")) ++failures;
 	}
 

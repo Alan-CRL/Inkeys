@@ -41,7 +41,7 @@ namespace Inkeys::Drawing::Draw3
 				appearance.red = appearance.green = appearance.blue = 1.0f;
 				appearance.opacity = 1.0f;
 				appearance.fillAlpha = 1.0f;
-				appearance.outlineWidth = 1.0f * scale;
+				appearance.outlineWidth = CursorArrowOutlineWidthPx(scale);
 				appearance.outlineOpacity = 1.0f;
 				appearance.outlineRed = appearance.outlineGreen = appearance.outlineBlue = 0.0f;
 				return;
@@ -339,6 +339,15 @@ namespace Inkeys::Drawing::Draw3
 		// 非 Windows Ink 数位板以驱动注入的鼠标到达；窗口已按开关把它标记为 ExternalPen 来源。
 		const bool tabletMouse = !pen && productSettings && productSettings->injectedMouseAsTablet &&
 			sample->source.kind == SpeedEraser::SourceKind::ExternalPen;
+		// Conflict/Unknown 只回退视觉场景，绝不改写样本身份或橡皮响应。
+		const bool screenPen = pen &&
+			sample->source.recognition != SpeedEraser::SourceRecognition::Conflict &&
+			sample->source.kind == SpeedEraser::SourceKind::IntegratedPen;
+		const CursorDevice device = !pen && !tabletMouse ? CursorDevice::Mouse
+			: screenPen ? CursorDevice::ScreenPen : CursorDevice::Tablet;
+		const CursorStyle style = !productSettings ? CursorStyle::None
+			: device == CursorDevice::Mouse ? productSettings->mouse
+			: screenPen ? productSettings->screenPen : productSettings->tablet;
 		const bool eraser = selectedToolIsEraser || (pen && sample->inverted);
 		if (!eraser)
 		{
@@ -349,8 +358,11 @@ namespace Inkeys::Drawing::Draw3
 					DrawingCursorDiagnosticVisualReason::MouseUsesSystemCursor);
 				return visual;
 			}
-			// Contact 开关只放开普通 Pen/Highlighter；Mouse 应用光标不进入该语义。
-			if ((pen || tabletMouse) && sample->inContact && !drawingCursorDuringContactEnabled)
+			// 产品仅按设备隐藏软/硬笔的小圆点；独立 API 保留旧 Contact 开关。
+			const bool hideContact = productSettings
+				? penIconAllowed && ShouldHideDotCursorOnContact(device, style, productSettings->dotHideOnContact)
+				: !drawingCursorDuringContactEnabled;
+			if ((pen || tabletMouse) && sample->inContact && hideContact)
 			{
 				TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
 					false, false,
@@ -366,16 +378,8 @@ namespace Inkeys::Drawing::Draw3
 		if (eraser && sample->inContact) visual.appearance.opacity = 1.0f;
 		if (productSettings && !eraser)
 		{
-			// Conflict/Unknown 只回退视觉场景，绝不改写样本身份或橡皮响应。
-			const bool screenPen = pen &&
-				sample->source.recognition != SpeedEraser::SourceRecognition::Conflict &&
-				sample->source.kind == SpeedEraser::SourceKind::IntegratedPen;
 			const float scale = std::isfinite(dpiScale) && dpiScale > 0.0f
 				? std::clamp(dpiScale, 0.25f, 8.0f) : 1.0f;
-			// 设备行：鼠标 / 屏幕笔 / 数位板（含 Unknown、Conflict 与开关开启的注入鼠标）。
-			const bool mouseRow = !pen && !tabletMouse;
-			const CursorStyle style = mouseRow ? productSettings->mouse
-				: screenPen ? productSettings->screenPen : productSettings->tablet;
 			if (penIconAllowed)
 			{
 				// 设备样式只作用于软/硬笔；荧光笔矩形、图形圆形和其它工具保持原几何与原高亮规则。

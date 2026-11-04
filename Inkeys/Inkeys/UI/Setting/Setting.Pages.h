@@ -270,6 +270,7 @@ namespace Inkeys::UI::Setting::Design
 	struct CursorPageDraft
 	{
 		int mouse = 0, touch = 0, screenPen = 0, tablet = 0;
+		int dotHideOnContact = 1;
 		bool injectedMouse = false;
 		bool injectedAvailable = true;
 	};
@@ -277,7 +278,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		bool back = false;
 		bool mouse = false, touch = false, screenPen = false, tablet = false;
-		bool injectedMouse = false;
+		bool injectedMouse = false, dotHideOnContact = false;
 	};
 	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
 

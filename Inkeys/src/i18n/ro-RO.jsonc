@@ -685,6 +685,16 @@
           "E": "Tabletele grafice fără Windows Ink ajung de obicei ca „mouse injectat de driver”. Dacă este activată, acest mouse folosește setările de cursor ale tabletei; programele care injectează și ele mouse, precum Remote Desktop, pot fi detectate greșit.",
           "Unavailable": "Acest sistem nu poate distinge sursa intrării, deci opțiunea nu este disponibilă."
         },
+        "FineControl": "Control fin",
+        "DotHideOnContact":
+        {
+          "N": "Ascunde automat cursorul cu punct mic la contact",
+          "E": "Se aplică ambelor stiluri de punct mic. Cursorul se ascunde când dispozitivul selectat atinge suprafața și rămâne vizibil când este ținut deasupra ei.",
+          "Off": "Dezactivat",
+          "ScreenPen": "Doar creion pe ecran",
+          "Tablet": "Doar tabletă grafică",
+          "Both": "Creion pe ecran și tabletă grafică"
+        },
         "Note": "La creionul de ecran, tableta grafică și atingere, „Mouse” este o săgeată desenată chiar de aplicație; cursoarele evidențiatorului și ale pointerului laser, instrumentele de forme și cursorul dedicat radierei nu sunt afectate de aceste opțiuni."
       },
       "Effect":

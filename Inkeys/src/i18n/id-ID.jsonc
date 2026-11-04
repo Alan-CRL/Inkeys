@@ -685,6 +685,16 @@
           "E": "Tablet grafis tanpa Windows Ink biasanya masuk sebagai “mouse yang disuntikkan driver”. Jika diaktifkan, mouse tersebut memakai pengaturan kursor tablet; perangkat lunak lain yang juga menyuntikkan mouse, seperti desktop jarak jauh, dapat terdeteksi secara keliru.",
           "Unavailable": "Sistem ini tidak dapat membedakan sumber input, sehingga opsi ini tidak tersedia."
         },
+        "FineControl": "Kontrol terperinci",
+        "DotHideOnContact":
+        {
+          "N": "Sembunyikan kursor titik kecil secara otomatis saat menyentuh",
+          "E": "Berlaku untuk kedua gaya titik kecil. Kursor tersembunyi saat perangkat yang dipilih menyentuh permukaan dan tetap terlihat saat melayang.",
+          "Off": "Nonaktif",
+          "ScreenPen": "Hanya pena layar",
+          "Tablet": "Hanya tablet pena",
+          "Both": "Pena layar dan tablet pena"
+        },
         "Note": "Pada pena layar, tablet grafis, dan sentuhan, “Mouse” berupa panah yang digambar sendiri oleh aplikasi; kursor penyorot dan penunjuk laser, alat bentuk, serta kursor khusus penghapus tidak terpengaruh oleh opsi ini."
       },
       "Effect":

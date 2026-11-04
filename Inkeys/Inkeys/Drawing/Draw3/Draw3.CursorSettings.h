@@ -18,6 +18,14 @@ namespace Inkeys::Drawing::Draw3
 
 	enum class CursorDevice : std::uint8_t { Mouse, Touch, ScreenPen, Tablet };
 
+	// 数值同时作为设备掩码；鼠标和触摸不参与落笔隐藏。
+	enum class DotCursorHideMode : std::uint8_t { Off = 0, ScreenPen = 1, Tablet = 2, Both = 3 };
+
+	constexpr DotCursorHideMode RestoreDotCursorHideMode(int value) noexcept
+	{
+		return value >= 0 && value <= 3 ? static_cast<DotCursorHideMode>(value) : DotCursorHideMode::ScreenPen;
+	}
+
 	// 只保存可选视觉；系统触摸光标始终隐藏，不进入用户配置。
 	struct CursorSettings
 	{
@@ -27,13 +35,23 @@ namespace Inkeys::Drawing::Draw3
 		CursorStyle tablet = CursorStyle::HighlightDot;
 		// 非 Windows Ink 数位板以“驱动注入的鼠标”到达；开启后按数位板行处理。
 		bool injectedMouseAsTablet = false;
+		DotCursorHideMode dotHideOnContact = DotCursorHideMode::ScreenPen;
 		friend bool operator==(const CursorSettings&, const CursorSettings&) = default;
 	};
 
 	// 光标设置页预览与实际渲染共用的外观常量，避免两处漂移。
 	inline constexpr float kCursorPenIconDip = 24.0f;
-	inline constexpr float kCursorArrowWidthDip = 12.0f;
-	inline constexpr float kCursorArrowHeightDip = 19.0f;
+	// 按原生 192 DPI 可见 25×39 px 校准；参考轮廓最右为盒宽的 95%，其形状保持不变。
+	inline constexpr float kCursorArrowWidthDip = 13.0f;
+	inline constexpr float kCursorArrowHeightDip = 19.5f;
+	inline constexpr float kCursorArrowEdgeDip = 0.5f;
+
+	// 箭头使用细黑边；低 DPI 仍保留至少一个物理像素，其它样式的描边不经过这里。
+	constexpr float CursorArrowOutlineWidthPx(float scale) noexcept
+	{
+		const float scaledWidth = kCursorArrowEdgeDip * scale;
+		return scaledWidth > 1.0f ? scaledWidth : 1.0f;
+	}
 	inline constexpr float kCursorHighlightEdgeDip = 1.25f;
 	inline constexpr float kCursorPlainEdgeDip = 0.5f;
 
@@ -45,6 +63,12 @@ namespace Inkeys::Drawing::Draw3
 	constexpr bool IsDotCursorStyle(CursorStyle style) noexcept
 	{
 		return style == CursorStyle::Dot || style == CursorStyle::HighlightDot;
+	}
+
+	constexpr bool ShouldHideDotCursorOnContact(CursorDevice device, CursorStyle style, DotCursorHideMode mode) noexcept
+	{
+		const auto mask = device == CursorDevice::ScreenPen ? 1u : device == CursorDevice::Tablet ? 2u : 0u;
+		return IsDotCursorStyle(style) && (static_cast<unsigned>(mode) & mask) != 0;
 	}
 
 	// 高亮变体使用固定高亮描边；其余使用普通描边（鼠标系统光标/箭头不使用该描边）。
@@ -111,7 +135,7 @@ namespace Inkeys::Drawing::Draw3
 		return device == CursorDevice::Touch ? 6 : 5;
 	}
 
-	// Controller 用一个原子字发布完整设置：mouse3 | touch3 | screenPen3 | tablet3 | injected1 | valid1。
+	// Controller 用一个原子字发布完整设置：mouse3 | touch3 | screenPen3 | tablet3 | injected1 | valid1 | dotHide2。
 	inline constexpr std::uint32_t kCursorSettingsValidBit = 1u << 13;
 
 	constexpr std::uint32_t PackCursorSettings(const CursorSettings& s) noexcept
@@ -121,6 +145,7 @@ namespace Inkeys::Drawing::Draw3
 			| (static_cast<std::uint32_t>(s.screenPen) << 6)
 			| (static_cast<std::uint32_t>(s.tablet) << 9)
 			| (s.injectedMouseAsTablet ? 1u << 12 : 0u)
+			| (static_cast<std::uint32_t>(s.dotHideOnContact) << 14)
 			| kCursorSettingsValidBit;
 	}
 
@@ -131,6 +156,7 @@ namespace Inkeys::Drawing::Draw3
 			RestoreCursorStyle(CursorDevice::Touch, static_cast<int>((bits >> 3) & 7u)),
 			RestoreCursorStyle(CursorDevice::ScreenPen, static_cast<int>((bits >> 6) & 7u)),
 			RestoreCursorStyle(CursorDevice::Tablet, static_cast<int>((bits >> 9) & 7u)),
-			((bits >> 12) & 1u) != 0 };
+			((bits >> 12) & 1u) != 0,
+			RestoreDotCursorHideMode(static_cast<int>((bits >> 14) & 3u)) };
 	}
 }

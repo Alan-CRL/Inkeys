@@ -685,6 +685,16 @@
           "E": "Las tabletas gráficas sin Windows Ink suelen llegar como un «mouse inyectado por el controlador». Si se activa, ese mouse usa la configuración de cursor de la tableta; el software que también inyecta mouse, como el escritorio remoto, puede detectarse por error.",
           "Unavailable": "Este sistema no puede distinguir el origen de la entrada; la opción no está disponible."
         },
+        "FineControl": "Control preciso",
+        "DotHideOnContact":
+        {
+          "N": "Ocultar automáticamente el cursor de punto pequeño al apoyar el lápiz",
+          "E": "Se aplica a ambos estilos de punto pequeño. El cursor se oculta al apoyar el dispositivo seleccionado y permanece visible al mantenerlo suspendido.",
+          "Off": "Desactivado",
+          "ScreenPen": "Solo lápiz de pantalla",
+          "Tablet": "Solo tableta gráfica",
+          "Both": "Lápiz de pantalla y tableta gráfica"
+        },
         "Note": "Con lápiz de pantalla, tableta gráfica y táctil, «Mouse» es una flecha que dibuja la propia aplicación; los cursores del resaltador y del puntero láser, las herramientas de formas y el cursor propio del borrador no cambian con estas opciones."
       },
       "Effect":

@@ -8,6 +8,8 @@
 #include "../../../resource.h"
 #include "../../../IdtStart.h"
 #include "Draw3.ShaderCompatibility.h"
+#include "Draw3.CursorSettings.h"
+#include "Draw3.SpeedEraser.h"
 #include "Draw3.Win7GuardedShader.h"
 
 #include <algorithm>
@@ -932,6 +934,63 @@ namespace Inkeys::Drawing::Draw3
 					greenPixel[1] > 240 && greenPixel[2] < 8 && greenPixel[0] < 8 && greenPixel[3] > 240,
 					"both consecutive batches rendered with their own data");
 				testContext->Unmap(pixelReadback.Get(), 0);
+
+				// 光标尺寸必须由真实生产 PS 像素读回证明，不能用 appearance 的理论盒代替。
+				if (mode == 0)
+				{
+					const auto originalShader = renderer.pixelShader;
+					Microsoft::WRL::ComPtr<ID3D11PixelShader> guardedShader;
+					if (!check(SUCCEEDED(testDevice->CreatePixelShader(Draw3Win7GuardedShader::Bytecode,
+						sizeof(Draw3Win7GuardedShader::Bytecode), nullptr, guardedShader.GetAddressOf())), "guarded cursor pixel shader")) return 1;
+					DrawingCursorSample pen{ .x = 8.0f, .y = 8.0f, .valid = true };
+					pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+					CursorSettings settings; settings.screenPen = CursorStyle::Arrow;
+					DrawingCursorAppearance base; base.width = base.height = 5;
+					for (int route = 0; route < 2; ++route)
+						for (const float dpi : { 96.0f, 144.0f, 192.0f, 264.0f })
+						{
+							renderer.pixelShader = route ? guardedShader : originalShader;
+							const auto arrow = ResolvePrimaryDrawingCursorVisual(pen, {}, DrawingCursorPointerAuthority::Pen,
+								base, base, false, false, false, true, &settings, true, dpi / 96.0f);
+							renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+							renderer.DrawTransientDrawingCursor(arrow);
+							testContext->OMSetRenderTargets(0, nullptr, nullptr);
+							testContext->CopyResource(pixelReadback.Get(), renderer.backBufferTexture.Get());
+							if (!check(SUCCEEDED(testContext->Map(pixelReadback.Get(), 0, D3D11_MAP_READ, 0, &pixels)), "arrow pixel readback")) return 1;
+							int left = 64, top = 64, right = 0, bottom = 0, count = 0;
+							for (int y = 0; y < 64; ++y) for (int x = 0; x < 64; ++x)
+							{
+								const auto* pixel = static_cast<const unsigned char*>(pixels.pData) + y * pixels.RowPitch + x * 4;
+								if (!pixel[3]) continue;
+								left = (std::min)(left, x); top = (std::min)(top, y);
+								right = (std::max)(right, x + 1); bottom = (std::max)(bottom, y + 1); ++count;
+							}
+							if (dpi == 192.0f)
+							{
+								// 取竖直左边的中段：x=8 为黑边，紧邻 x=9 应已是白色填充；旧 2px 边会使后者仍黑。
+								const auto* row = static_cast<const unsigned char*>(pixels.pData) + 24 * pixels.RowPitch;
+								const auto* edge = row + 8 * 4;
+								const auto* fill = row + 9 * 4;
+								std::fprintf(stderr, "[Draw3CursorEdge] shader=%s dpi=192 edge_bgra=(%u,%u,%u,%u) fill_bgra=(%u,%u,%u,%u) no_hwnd=1\n",
+									route ? "guarded" : "production", edge[0], edge[1], edge[2], edge[3], fill[0], fill[1], fill[2], fill[3]);
+								check(edge[0] <= 8 && edge[1] <= 8 && edge[2] <= 8 && edge[3] >= 248 &&
+									fill[0] >= 247 && fill[1] >= 247 && fill[2] >= 247 && fill[3] >= 248,
+									"192 DPI arrow has one black edge pixel followed immediately by opaque white fill");
+							}
+							testContext->Unmap(pixelReadback.Get(), 0);
+							std::fprintf(stderr, "[Draw3CursorPixels] shader=%s dpi=%.0f appearance=(%.2f,%.2f) hotspot=(%.1f,%.1f) bbox=(%d,%d,%d,%d) visible=(%d,%d) count=%d no_hwnd=1\n",
+								route ? "guarded" : "production", dpi, arrow.appearance.width, arrow.appearance.height,
+								arrow.x, arrow.y, left, top, right, bottom, right - left, bottom - top, count);
+							check(count > 0 && left >= 7 && left <= 9 && top >= 7 && top <= 9 &&
+								right - left >= arrow.appearance.width * 0.85f && right - left <= arrow.appearance.width + 2 &&
+								bottom - top >= arrow.appearance.height * 0.85f && bottom - top <= arrow.appearance.height + 2,
+								"production and guarded cursor pixels follow DPI once and retain the tip hotspot");
+							if (dpi == 192.0f)
+								check(left == 8 && top == 8 && right - left == 25 && bottom - top == 39,
+									"192 DPI arrow pixels match the measured native 25 by 39 visible bounds");
+						}
+					renderer.pixelShader = originalShader;
+				}
 
 				// 越界拆批仍共享笔端点；最终批次与回卷偏移由真实上传读回验证。
 				std::vector<InkPoint> longStroke(InkRenderer::kMaxBufferCapacity + 2, { -100, -100, 0, 0 });

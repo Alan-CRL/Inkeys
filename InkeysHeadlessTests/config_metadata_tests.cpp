@@ -366,6 +366,36 @@ int RunConfigMetadataTests()
 			{ "Mouse", &deviceCursor.Mouse, 1 }, { "Touch", &deviceCursor.Touch, 0 },
 			{ "ScreenPen", &deviceCursor.ScreenPen, 1 }, { "Tablet", &deviceCursor.Tablet, 1 } };
 		check(!deviceCursor.InjectedMouseAsTablet.load(), "injected tablet detection defaults off");
+		check(deviceCursor.DotHideOnContact.load() == 1, "dot contact hiding defaults to screen pen only");
+		for (int mode = 0; mode <= 3; ++mode)
+		{
+			Json::Value modeDocument(Json::objectValue);
+			modeDocument["Drawing"]["Cursor"]["DotHideOnContact"] = mode;
+			writeModeDocument(modeDocument);
+			deviceCursor.DotHideOnContact = 99;
+			check(deviceConfig.ReadMini({ "Drawing.Cursor.DotHideOnContact" }) && deviceCursor.DotHideOnContact.load() == mode,
+				"all four dot-hide modes load through ReadMini");
+			check(deviceConfig.Write(), "write dot contact hide mode");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && restarted.Drawing.Cursor.DotHideOnContact.load() == mode,
+				"restart preserves every dot contact hide mode");
+		}
+		const std::vector<Json::Value> invalidHideModes{ Json::Value(-1), Json::Value(4), Json::Value(true),
+			Json::Value(false), Json::Value(1.0), Json::Value("2"), Json::Value(), Json::Value(Json::arrayValue),
+			Json::Value(Json::objectValue), Json::Value(Json::Int64(-4294967295LL)), Json::Value(Json::UInt64(4294967297ULL)) };
+		for (const auto& invalid : invalidHideModes)
+		{
+			Json::Value invalidDocument(Json::objectValue);
+			invalidDocument["Drawing"]["Cursor"]["DotHideOnContact"] = invalid;
+			writeModeDocument(invalidDocument);
+			deviceCursor.DotHideOnContact = 3;
+			check(deviceConfig.ReadMini({ "Drawing.Cursor.DotHideOnContact" }) && deviceCursor.DotHideOnContact.load() == 1,
+				"invalid dot-hide modes strictly fall back without numeric coercion");
+		}
+		writeModeDocument(Json::Value(Json::objectValue));
+		deviceCursor.DotHideOnContact = 0;
+		check(deviceConfig.ReadAll() && deviceCursor.DotHideOnContact.load() == 1,
+			"old configurations with no dot-hide mode use the new default");
 		for (const auto& key : deviceKeys)
 		{
 			const std::string devicePath = std::string("Drawing.Cursor.") + key.name;
@@ -397,14 +427,21 @@ int RunConfigMetadataTests()
 		deviceCursor.ScreenPen = 4;
 		deviceCursor.Tablet = 2;
 		deviceCursor.InjectedMouseAsTablet = true;
+		deviceCursor.DotHideOnContact = 3;
 		check(deviceConfig.Write(), "write the full per-device cursor selection");
 		Inkeys::Config deviceRestarted;
 		auto& restoredCursor = deviceRestarted.Drawing.Cursor;
 		check(deviceRestarted.ReadAll() && restoredCursor.Mouse.load() == 5 &&
 			restoredCursor.Touch.load() == 3 && restoredCursor.ScreenPen.load() == 4 &&
-			restoredCursor.Tablet.load() == 2 && restoredCursor.InjectedMouseAsTablet.load(),
+			restoredCursor.Tablet.load() == 2 && restoredCursor.InjectedMouseAsTablet.load() &&
+			restoredCursor.DotHideOnContact.load() == 3,
 			"restart restores every per-device cursor selection");
-		check(deviceConfig.GetUploadInfo() == cursorUpload, "per-device cursor preferences are not uploaded");
+		Inkeys::Config frozenDevice;
+		frozenDevice = deviceConfig;
+		deviceCursor.DotHideOnContact = 0;
+		check(frozenDevice.Write() && ReadJson(file)["Drawing"]["Cursor"]["DotHideOnContact"].asInt() == 3,
+			"a deferred frozen config keeps its captured dot contact hide mode");
+		check(deviceConfig.GetUploadInfo() == cursorUpload, "per-device cursor preferences and dot hiding are not uploaded");
 	}
 
 

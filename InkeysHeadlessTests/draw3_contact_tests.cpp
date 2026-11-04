@@ -1265,7 +1265,7 @@ namespace
 		// 五种样式 × 屏幕笔/数位板/Unknown/Conflict：形状、尺寸与描边只由样式和设备行决定。
 		struct StyleCase { CursorStyle style; DrawingCursorShape shape; float width; bool highlight; };
 		const StyleCase styles[] = {
-			{ CursorStyle::Arrow, DrawingCursorShape::Arrow, 12.0f, false },
+			{ CursorStyle::Arrow, DrawingCursorShape::Arrow, 13.0f, false },
 			{ CursorStyle::Pen, DrawingCursorShape::PenIcon, 24.0f, false },
 			{ CursorStyle::HighlightPen, DrawingCursorShape::PenIcon, 24.0f, true },
 			{ CursorStyle::Dot, DrawingCursorShape::Circle, 9.0f, false },
@@ -1316,6 +1316,21 @@ namespace
 			bounds.left == 58 && bounds.top == 68 && bounds.right == 86 && bounds.bottom == 96 &&
 			Near(scaledIcon.x, icon.x) && Near(scaledIcon.appearance.width, 48.0f),
 			"pen cursor keeps its upper-left hotspot, bounds and DPI scaling")) ++failures;
+		// 仅箭头改用细黑边；低 DPI 最少 1px，192 DPI 仍为 1px，盒尺寸和尖端不变。
+		settings = {}; settings.screenPen = CursorStyle::Arrow;
+		setScreen();
+		struct ArrowScaleCase { float scale; float edge; };
+		for (const auto& test : { ArrowScaleCase{ 0.5f, 1.0f }, { 1.0f, 1.0f }, { 1.5f, 1.0f },
+			{ 2.0f, 1.0f }, { 2.75f, 1.375f }, { 4.0f, 2.0f } })
+		{
+			const auto arrow = resolve(penOwner, penAppearance, Bridge::Tool::Pen, true, test.scale);
+			if (!Expect(arrow.visible && Near(arrow.appearance.width, 13.0f * test.scale) &&
+				Near(arrow.appearance.height, 19.5f * test.scale) && Near(arrow.appearance.outlineWidth, test.edge) &&
+				Near(arrow.x, pen.x) && Near(arrow.y, pen.y) &&
+				Near(arrow.appearance.centerOffsetX, 6.5f * test.scale) && Near(arrow.appearance.centerOffsetY, 9.75f * test.scale),
+				"arrow border stays thin with a one-physical-pixel minimum while its size and hotspot are unchanged")) ++failures;
+		}
+		settings.mouse = CursorStyle::HighlightPen;
 		mouse.x = -12.0f; mouse.y = -8.0f;
 		const RECT clipped = DrawingCursorVisualBounds(resolve(mouseOwner, penAppearance), 100, 100);
 		if (!Expect(clipped.left == 0 && clipped.top == 0 && clipped.right == 14 && clipped.bottom == 18,
@@ -1378,15 +1393,52 @@ namespace
 			Near(hoverAlpha, 0.5f) && Near(contactAlpha, 1.0f) && !touchPrimary && laserHover && !laserContact,
 			"eraser, inverted pen, touch primary and laser keep their dedicated behavior")) ++failures;
 
-		// 笔接触期间的可见性仍由既有 Contact 开关控制。
+		// 四态 × 五种样式 × 来源行：仅两种小圆点按设备隐藏，不再受旧统一 Contact 开关限制。
+		for (int mode = 0; mode <= 3; ++mode)
+			for (const auto& c : styles)
+				for (int row = 0; row < 6; ++row)
+				{
+					settings = {};
+					settings.dotHideOnContact = static_cast<DotCursorHideMode>(mode);
+					settings.mouse = settings.screenPen = settings.tablet = c.style;
+					settings.injectedMouseAsTablet = true;
+					if (row == 0) setScreen();
+					else if (row == 1) setTablet();
+					else if (row == 2) pen.source = {};
+					else if (row == 3) pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::Conflict };
+					mouse.source = { row == 4 ? SpeedEraser::SourceKind::ExternalPen : SpeedEraser::SourceKind::Mouse };
+					const auto owner = row < 4 ? penOwner : mouseOwner;
+					const bool systemMouse = row == 5 && c.style == CursorStyle::Arrow;
+					const bool dot = c.style == CursorStyle::Dot || c.style == CursorStyle::HighlightDot;
+					const bool hidden = dot && (row == 0 ? (mode == 1 || mode == 3)
+						: row < 5 ? (mode == 2 || mode == 3) : false);
+					pen.inContact = mouse.inContact = true;
+					for (const auto tool : { Bridge::Tool::Pen, Bridge::Tool::HardPen })
+					{
+						const auto visual = resolve(owner, penAppearance, tool, true, 1.0f, false, false);
+						if (!Expect(visual.visible == (!systemMouse && !hidden),
+							"contact hiding applies only to both dot variants on the selected pen device rows")) ++failures;
+					}
+					const auto marker = resolve(owner, highlighter, Bridge::Tool::Highlighter, false, 1.0f, false, false);
+					const auto shape = resolve(owner, penAppearance, Bridge::Tool::SolidLine, false, 1.0f, false, false);
+					if (!Expect(marker.visible && marker.appearance.shape == DrawingCursorShape::Rectangle &&
+						Near(marker.appearance.height, 30.0f) && Near(marker.appearance.opacity * marker.appearance.fillAlpha, 0.35f) &&
+						shape.visible == (row < 5) && (!shape.visible || shape.appearance.shape == DrawingCursorShape::Circle),
+						"dedicated marker and shape cursors remain visible during pen contact in every hide mode")) ++failures;
+					if (row < 4)
+					{
+						pen.inverted = true;
+						const auto inverted = resolve(owner, penAppearance, Bridge::Tool::Pen, true, 1.0f, false, false);
+						pen.inverted = false;
+						if (!Expect(inverted.visible && inverted.appearance.shape == DrawingCursorShape::EraserGripCircle,
+							"inverted eraser takes precedence over dot contact hiding")) ++failures;
+					}
+					pen.inContact = mouse.inContact = false;
+					if (!Expect(resolve(owner, penAppearance).visible == !systemMouse,
+						"a real hover sample restores every selected pen cursor after contact")) ++failures;
+				}
+		pen.source = mouse.source = {};
 		settings = {};
-		settings.tablet = CursorStyle::HighlightDot;
-		setTablet();
-		pen.inContact = true;
-		const bool hiddenInContact = !resolve(penOwner, penAppearance, Bridge::Tool::Pen, true, 1.0f, false, false).visible;
-		const bool shownInContact = resolve(penOwner, penAppearance).visible;
-		pen.inContact = false;
-		if (!Expect(hiddenInContact && shownInContact, "device styles keep the separate pen contact visibility policy")) ++failures;
 
 		// 非 Windows Ink 数位板：驱动注入的鼠标按开关使用数位板行并隐藏系统箭头。
 		settings = {};
@@ -1410,11 +1462,14 @@ namespace
 			return MakeTouchPenDrawingCursorVisual(15.0f, 25.0f, penAppearance, style, scale);
 		};
 		const auto touchArrow = touchVisual(CursorStyle::Arrow);
+		const auto scaledTouchArrow = touchVisual(CursorStyle::Arrow, 2.0f);
 		const auto touchPen = touchVisual(CursorStyle::Pen, 2.0f);
 		const auto touchDot = touchVisual(CursorStyle::Dot);
 		const auto touchHighDot = touchVisual(CursorStyle::HighlightDot);
 		if (!Expect(!touchVisual(CursorStyle::None).visible &&
 			touchArrow.visible && touchArrow.appearance.shape == DrawingCursorShape::Arrow &&
+			scaledTouchArrow.visible && Near(scaledTouchArrow.appearance.width, 26.0f) && Near(scaledTouchArrow.appearance.height, 39.0f) &&
+			Near(scaledTouchArrow.appearance.outlineWidth, 1.0f) &&
 			touchPen.visible && touchPen.appearance.shape == DrawingCursorShape::PenIcon &&
 			Near(touchPen.appearance.width, 48.0f) && Near(touchPen.appearance.outlineWidth, 1.0f) &&
 			touchDot.visible && Near(touchDot.x, 15.0f) && Near(touchDot.y, 25.0f) &&
@@ -1426,10 +1481,10 @@ namespace
 		// 配置值、旧配置回落、设置页下拉索引与打包往返。
 		bool packedOk = true;
 		for (int m = 1; m <= 5; ++m) for (int t = 0; t <= 5; ++t) for (int u = 1; u <= 5; ++u)
-			for (int v = 1; v <= 5; ++v) for (int i = 0; i < 2; ++i)
+			for (int v = 1; v <= 5; ++v) for (int i = 0; i < 2; ++i) for (int mode = 0; mode <= 3; ++mode)
 			{
 				const CursorSettings expected{ static_cast<CursorStyle>(m), static_cast<CursorStyle>(t),
-					static_cast<CursorStyle>(u), static_cast<CursorStyle>(v), i != 0 };
+					static_cast<CursorStyle>(u), static_cast<CursorStyle>(v), i != 0, static_cast<DotCursorHideMode>(mode) };
 				const uint32_t bits = PackCursorSettings(expected);
 				packedOk = packedOk && UnpackCursorSettings(bits) == expected && (bits & kCursorSettingsValidBit) != 0;
 			}
@@ -1440,6 +1495,8 @@ namespace
 		const CursorSettings defaults;
 		if (!Expect(packedOk && indexOk && defaults.mouse == CursorStyle::Arrow && defaults.touch == CursorStyle::None &&
 			defaults.screenPen == CursorStyle::Dot && defaults.tablet == CursorStyle::HighlightDot &&
+			defaults.dotHideOnContact == DotCursorHideMode::ScreenPen &&
+			RestoreDotCursorHideMode(-1) == DotCursorHideMode::ScreenPen && RestoreDotCursorHideMode(4) == DotCursorHideMode::ScreenPen &&
 			CursorStyleItemCount(CursorDevice::Touch) == 6 && CursorStyleItemCount(CursorDevice::Mouse) == 5 &&
 			CursorStyleFromItemIndex(CursorDevice::Touch, 0) == CursorStyle::None &&
 			CursorStyleFromItemIndex(CursorDevice::Mouse, 0) == CursorStyle::Arrow,

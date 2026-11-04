@@ -4745,6 +4745,39 @@ namespace Inkeys::Drawing::Draw3
 						test.highlighter[index]), "ordinary highlighter uses new DIP presets with one target scale");
 				}
 			}
+			// 复用真实 Window 样式邮箱和 Controller 的 DPI 入口，连续改变目标 DPI；不创建 HWND。
+			{
+				DrawingCursorSample pen{ .x = 32.0f, .y = 48.0f, .valid = true };
+				pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+				CursorSettings cursor;
+				cursor.dotHideOnContact = DotCursorHideMode::Off;
+				for (const double dpi : { 96.0, 144.0, 192.0, 264.0, 96.0 })
+				{
+					Context context; context.effectiveDpi = dpi;
+					window.SetProductVisualStyle(0x123456FF, 3.0, context);
+					const auto style = window.ProductVisualStyleSnapshot();
+					ConfigureProductInkCursorAppearances(window, style, configuration.dpiScale);
+					const float scale = ProductTargetScale(style);
+					for (const auto selected : { CursorStyle::Arrow, CursorStyle::Pen, CursorStyle::HighlightPen, CursorStyle::Dot })
+					{
+						cursor.screenPen = selected;
+						const auto visual = ResolvePrimaryDrawingCursorVisual(pen, {}, DrawingCursorPointerAuthority::Pen,
+							window.CursorAppearanceForTool(DrawingTool::Pen), window.CursorAppearanceForTool(DrawingTool::Eraser),
+							false, false, false, true, &cursor, true, scale);
+						const double expectedWidth = (selected == CursorStyle::Arrow ? 13.0 : selected == CursorStyle::Dot ? 5.0 : 24.0) * dpi / 96.0;
+						const double expectedHeight = selected == CursorStyle::Arrow ? 19.5 * dpi / 96.0 : expectedWidth;
+						const double expectedEdge = selected == CursorStyle::Arrow ? (std::max)(1.0, 0.5 * dpi / 96.0)
+							: (selected == CursorStyle::HighlightPen ? 1.25 : 0.5) * dpi / 96.0;
+						check(visual.visible && nearlyEqual(visual.appearance.width, expectedWidth) &&
+							nearlyEqual(visual.appearance.height, expectedHeight) && nearlyEqual(visual.appearance.outlineWidth, expectedEdge),
+							"real Window style updates feed one system DPI scale to cursor geometry and edges");
+						check(nearlyEqual(visual.x, pen.x) && nearlyEqual(visual.y, pen.y) &&
+							nearlyEqual(visual.appearance.centerOffsetX, selected == CursorStyle::Dot ? 0.0 : expectedWidth / 2.0) &&
+							nearlyEqual(visual.appearance.centerOffsetY, selected == CursorStyle::Dot ? 0.0 : expectedHeight / 2.0),
+							"system DPI changes preserve the input hotspot while moving only the cursor quad center");
+					}
+				}
+			}
 			struct LargeCase { int width; int height; std::array<double, 3> brush; std::array<double, 3> highlighter; };
 			constexpr LargeCase large[] = {
 				{ 1920, 1080, { 2, 4, 6 }, { 16, 24, 36 } },
@@ -13637,6 +13670,13 @@ namespace Inkeys::Drawing::Draw3
 					lastCursorVisualDiagnosticKey = key;
 					nextCursorVisualDiagnosticMilliseconds = nowMilliseconds + 100.0;
 					cursorVisualDiagnosticRecorded = true;
+					// 与 frame 同门禁/限频，单列短记录以免挤出 320 字节日志中的来源字段。
+					const double displayDpi = std::isfinite(observedSpeedEraserDisplayScale.dipPerPixelX) &&
+						observedSpeedEraserDisplayScale.dipPerPixelX > 0.0 ? 96.0 / observedSpeedEraserDisplayScale.dipPerPixelX : 0.0;
+					RecordCursorDiagnostic("frame-scale cursorDpi=%.1f cursorScale=%.3f contextRevision=%llu displayDpi=%.1f viewport=%.0fx%.0f",
+						currentProductVisualStyle.penWidthContext.effectiveDpi, ProductTargetScale(currentProductVisualStyle),
+						static_cast<unsigned long long>(currentProductVisualStyle.penWidthContext.revision), displayDpi,
+						renderer_.viewportWidth, renderer_.viewportHeight);
 					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u penSource=%s/%u/cid%u mouseSource=%s/%u",
 						static_cast<unsigned>(cursorTool), static_cast<unsigned>(window_.CursorOwner()),
 						primaryCursorCount, currentCursorVisuals.size() - primaryCursorCount,

@@ -610,6 +610,7 @@ namespace
 		state.cursorSettings.tablet = CursorModel::RestoreDeviceCursorStyle(
 			CursorModel::CursorDevice::Tablet, cursor.Tablet.load(), legacyMouseStyle, legacyPenStyle);
 		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
+		state.cursorSettings.dotHideOnContact = CursorModel::RestoreDotCursorHideMode(cursor.DotHideOnContact.load());
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.whiteboardStyle = whiteboardStyleToken;

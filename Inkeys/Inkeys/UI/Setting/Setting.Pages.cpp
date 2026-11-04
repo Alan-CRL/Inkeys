@@ -610,14 +610,15 @@ namespace Inkeys::UI::Setting::Design
 			{
 			case Cursor::CursorStyle::Arrow:
 			{
-				// 与 GPU 箭头同一组 12x19 DIP 顶点；凹多边形拆成三角扇 + 尾部四边形填充，再描黑边。
+				// 与 GPU 共用 12x19 归一化参考轮廓，按校准后的 DIP 尺寸显示。
 				const ImVec2 origin(center.x - Cursor::kCursorArrowWidthDip * 0.5F * unit,
 					center.y - Cursor::kCursorArrowHeightDip * 0.5F * unit);
 				constexpr float arrow[7][2]{ {0.0F, 0.0F}, {0.0F, 16.5F}, {3.8F, 12.8F}, {6.6F, 19.0F},
 					{9.1F, 17.9F}, {6.4F, 11.9F}, {11.4F, 11.9F} };
 				ImVec2 points[7];
 				for (int index = 0; index < 7; ++index)
-					points[index] = { origin.x + arrow[index][0] * unit, origin.y + arrow[index][1] * unit };
+					points[index] = { origin.x + arrow[index][0] / 12.0F * Cursor::kCursorArrowWidthDip * unit,
+						origin.y + arrow[index][1] / 19.0F * Cursor::kCursorArrowHeightDip * unit };
 				const ImU32 white = IM_COL32(255, 255, 255, 255);
 				const ImVec2 head1[3]{ points[0], points[1], points[2] };
 				const ImVec2 head2[3]{ points[0], points[2], points[5] };
@@ -627,7 +628,7 @@ namespace Inkeys::UI::Setting::Design
 				draw->AddConvexPolyFilled(head2, 3, white);
 				draw->AddConvexPolyFilled(head3, 3, white);
 				draw->AddConvexPolyFilled(tail, 4, white);
-				draw->AddPolyline(points, 7, IM_COL32(0, 0, 0, 255), ImDrawFlags_Closed, (std::max)(1.0F, unit));
+				draw->AddPolyline(points, 7, IM_COL32(0, 0, 0, 255), ImDrawFlags_Closed, Cursor::CursorArrowOutlineWidthPx(unit));
 				break;
 			}
 			case Cursor::CursorStyle::None:
@@ -731,6 +732,11 @@ namespace Inkeys::UI::Setting::Design
 			const std::string detail = split == std::string::npos ? std::string() : trim(note.substr(split + skip));
 			Notice("##cursor-note", title.c_str(), detail.c_str(), ImFluentInfoSeverity_Informational);
 		}
+		SectionHeader(IA(cursor.FineControl).c_str());
+		const auto& hide = cursor.DotHideOnContact;
+		draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(draft.dotHideOnContact));
+		events.dotHideOnContact = ComboRow("##cursor-dot-hide", IA(hide.N).c_str(), IA(hide.E).c_str(), "\ue7b3",
+			draft.dotHideOnContact, { IA(hide.Off), IA(hide.ScreenPen), IA(hide.Tablet), IA(hide.Both) });
 		return events;
 	}
 

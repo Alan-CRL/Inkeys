@@ -685,6 +685,16 @@
           "E": "Les tablettes graphiques sans Windows Ink arrivent généralement comme une « souris injectée par le pilote ». Une fois l’option activée, cette souris utilise les réglages de curseur de la tablette ; les logiciels qui injectent aussi de la souris, comme le Bureau à distance, peuvent être détectés par erreur.",
           "Unavailable": "Ce système ne peut pas distinguer la source de saisie ; l’option n’est pas disponible."
         },
+        "FineControl": "Réglages fins",
+        "DotHideOnContact":
+        {
+          "N": "Masquer automatiquement le petit point au contact",
+          "E": "Concerne les deux styles de petit point. Le curseur se masque au contact du périphérique sélectionné et reste visible en survol.",
+          "Off": "Désactivé",
+          "ScreenPen": "Stylet sur écran uniquement",
+          "Tablet": "Tablette graphique uniquement",
+          "Both": "Stylet sur écran et tablette graphique"
+        },
         "Note": "Avec le stylet d’écran, la tablette graphique et le tactile, « Souris » est une flèche dessinée par l’application ; les curseurs du surligneur et du pointeur laser, les outils de formes et le curseur propre à la gomme ne sont pas affectés par ces options."
       },
       "Effect":
