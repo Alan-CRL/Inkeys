@@ -898,9 +898,12 @@
           "MiddleBoth": "Hiện điều khiển ở giữa hai bên",
           "BottomMiddle": "Hiện điều khiển trên thanh dưới",
           "IdleFade": "Làm mờ khi không dùng",
-          "IdleFadeE": "Khi trình chiếu, điều khiển trang sẽ trong suốt hơn sau một lúc không thao tác hoặc sau khi chuyển trang bằng bút trình chiếu hay bàn phím, để che ít nội dung hơn. Di chuột, nhấp hoặc kéo để khôi phục.",
+          "IdleFadeE": "Trong trình chiếu, các điều khiển đã chọn mờ đi khi không hoạt động và khôi phục khi di chuột, nhấp hoặc kéo. Thay đổi trang từ bên ngoài cũng làm mờ điều khiển trang. Thanh chính chỉ mờ khi hết thời gian chờ và được neo ở dưới, kể cả chế độ căn giữa và giữ độ đục bình thường khi có bảng phụ đang mở.",
           "IdleFadeOff": "Tắt",
-          "IdleFadeSeconds": "{} giây"
+          "IdleFadeSeconds": "{} giây",
+          "IdleFadeBottomPair": "Hai góc dưới",
+          "IdleFadeMiddlePair": "Hai bên ở giữa",
+          "IdleFadeMainBar": "Thanh chính (chỉ chế độ neo)"
         },
         "WidgetPosition":
         {

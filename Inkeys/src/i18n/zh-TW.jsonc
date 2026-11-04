@@ -898,9 +898,12 @@
           "MiddleBoth": "顯示中部兩側控制項",
           "BottomMiddle": "顯示底部主欄控制項",
           "IdleFade": "閒置時自動淡化",
-          "IdleFadeE": "放映中一段時間未操作，或使用簡報筆、鍵盤翻頁後，翻頁控制項會變得更透明以減少遮擋；懸停、點擊或拖曳時恢復。",
+          "IdleFadeE": "放映時，所選控制項閒置後會變得更透明，懸停、點擊或拖曳時恢復。外部翻頁僅觸發翻頁控制項淡化；主欄僅在底欄或置中底欄模式下按閒置計時淡化，有附屬面板展開時保持清晰。",
           "IdleFadeOff": "關閉",
-          "IdleFadeSeconds": "{} 秒"
+          "IdleFadeSeconds": "{} 秒",
+          "IdleFadeBottomPair": "兩側底部",
+          "IdleFadeMiddlePair": "兩側中部",
+          "IdleFadeMainBar": "主欄（僅底欄模式時）"
         },
         "WidgetPosition":
         {

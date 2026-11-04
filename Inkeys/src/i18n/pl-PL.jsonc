@@ -898,9 +898,12 @@
           "MiddleBoth": "Pokaż kontrolki po obu stronach na środku wysokości",
           "BottomMiddle": "Pokaż kontrolki na dolnym pasku",
           "IdleFade": "Wygaszaj w bezczynności",
-          "IdleFadeE": "Podczas pokazu kontrolki stron stają się bardziej przezroczyste po pewnym czasie bez interakcji lub po zmianie slajdu prezenterem albo klawiaturą, aby mniej zasłaniać treść. Najechanie, kliknięcie lub przeciągnięcie przywraca je.",
+          "IdleFadeE": "Podczas pokazu wybrane kontrolki stają się bardziej przezroczyste po okresie bezczynności i wracają po najechaniu, kliknięciu lub przeciągnięciu. Zewnętrzne zmiany slajdu także przygaszają kontrolki stron. Pasek główny przygasa po upływie czasu tylko po zadokowaniu na dole, także na środku i zachowuje zwykłe krycie, gdy którykolwiek jego panel jest otwarty.",
           "IdleFadeOff": "Wyłączone",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Oba dolne rogi",
+          "IdleFadeMiddlePair": "Obie strony na środku",
+          "IdleFadeMainBar": "Pasek główny (tylko dokowany)"
         },
         "WidgetPosition":
         {

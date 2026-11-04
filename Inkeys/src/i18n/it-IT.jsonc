@@ -898,9 +898,12 @@
           "MiddleBoth": "Mostra controlli a metà altezza sui due lati",
           "BottomMiddle": "Mostra controlli sulla barra inferiore",
           "IdleFade": "Attenua quando inattivo",
-          "IdleFadeE": "Durante una presentazione, i controlli pagina diventano più trasparenti dopo un periodo senza interazione o dopo aver cambiato pagina con un presenter o la tastiera, per coprire meno contenuto. Passa sopra, fai clic o trascina per ripristinarli.",
+          "IdleFadeE": "Durante una presentazione, i controlli selezionati diventano più trasparenti quando inattivi e si ripristinano al passaggio del puntatore, al clic o al trascinamento. I cambi di pagina esterni attenuano anche i controlli di pagina. La barra principale attende il tempo di inattività e si attenua solo se ancorata in basso, anche al centro e mantiene la normale opacità se un suo pannello è aperto.",
           "IdleFadeOff": "Disattivato",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Entrambi gli angoli inferiori",
+          "IdleFadeMiddlePair": "Entrambi i lati a metà altezza",
+          "IdleFadeMainBar": "Barra principale (solo ancorata)"
         },
         "WidgetPosition":
         {

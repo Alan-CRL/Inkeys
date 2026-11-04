@@ -824,6 +824,38 @@ namespace
 					return 1;
 				}
 			}
+			stage = "PPT idle fade scopes";
+			Inkeys::Config idleDefaults;
+			if (!writeBytes(mainConfig,"{}") || !idleDefaults.ReadAll()
+				|| !idleDefaults.PlugIn.PPTHelper.IdleFadeBottomPair
+				|| !idleDefaults.PlugIn.PPTHelper.IdleFadeMiddlePair
+				|| idleDefaults.PlugIn.PPTHelper.IdleFadeMainBar) return 1;
+			for (int mask=0;mask<8;++mask)
+			{
+				idleDefaults.PlugIn.PPTHelper.IdleFadeBottomPair=(mask&1)!=0;
+				idleDefaults.PlugIn.PPTHelper.IdleFadeMiddlePair=(mask&2)!=0;
+				idleDefaults.PlugIn.PPTHelper.IdleFadeMainBar=(mask&4)!=0;
+				idleDefaults.PlugIn.PPTHelper.IdleFadeSeconds=15;
+				idleDefaults.Experimental.Inkeys3.UI3.BackgroundOpacity=45;
+				idleDefaults.Experimental.Inkeys3.UI3.ContentOpacity=55;
+				Inkeys::Config full,mini;
+				if (!idleDefaults.Write() || !full.ReadAll() || !mini.ReadMini({"PlugIn.PPTHelper"},true)) return 1;
+				for (auto* restored:{&full,&mini})
+					if (restored->PlugIn.PPTHelper.IdleFadeBottomPair.load()!=((mask&1)!=0)
+						|| restored->PlugIn.PPTHelper.IdleFadeMiddlePair.load()!=((mask&2)!=0)
+						|| restored->PlugIn.PPTHelper.IdleFadeMainBar.load()!=((mask&4)!=0)
+						|| restored->PlugIn.PPTHelper.IdleFadeSeconds!=15) return 1;
+				if (full.Experimental.Inkeys3.UI3.BackgroundOpacity!=45
+					|| full.Experimental.Inkeys3.UI3.ContentOpacity!=55) return 1;
+			}
+			for (const char* invalid:{"0","1","\"false\"","null","{}","[]"})
+			{
+				const auto json=std::string("{\"PlugIn\":{\"PPTHelper\":{\"IdleFadeBottomPair\":")+invalid
+					+",\"IdleFadeMiddlePair\":"+invalid+",\"IdleFadeMainBar\":"+invalid+"}}}";
+				Inkeys::Config value;
+				if (!writeBytes(mainConfig,json)||!value.ReadAll()||!value.PlugIn.PPTHelper.IdleFadeBottomPair
+					||!value.PlugIn.PPTHelper.IdleFadeMiddlePair||value.PlugIn.PPTHelper.IdleFadeMainBar) return 1;
+			}
 			stage = "performance and general drawing preferences";
 			Inkeys::Config drawingDefaults;
 			if (!writeBytes(mainConfig, "{}") || !drawingDefaults.ReadAll() ||

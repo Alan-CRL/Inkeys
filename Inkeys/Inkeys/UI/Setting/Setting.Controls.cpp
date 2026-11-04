@@ -1055,23 +1055,32 @@ namespace Inkeys::UI::Setting::Design
 		state_ = nullptr;
 	}
 
+	namespace
+	{
+		ConditionalMotionState* PrepareConditionalMotion(ImGuiID key, bool visible)
+		{
+			if (!activePageMotion) return nullptr;
+			auto& condition = activePageMotion->conditions[key];
+			if (condition.generation != activePageMotion->generation)
+			{
+				condition.generation = activePageMotion->generation;
+				condition.reveal.Reset(visible ? 1.0F : 0.0F); condition.height = condition.occupied = 0.0F;
+			}
+			condition.reveal.Target(visible ? 1.0F : 0.0F);
+			if (!rowAnimationsEnabled || activePageMotion->opening) condition.reveal.Reset(visible ? 1.0F : 0.0F);
+			return &condition;
+		}
+	}
+
 	ConditionalBlock::ConditionalBlock(const char* id, bool visible) : block_(id), visible_(visible)
 	{
 		if (!activePageMotion) { render_ = visible; return; }
 		window_ = ImGui::GetCurrentWindow(); accountHeight_ = conditionalMotionDepth == 0;
 		const ImGuiID local = window_->GetID(id);
 		const ImGuiID key = ImHashData(&activePageMotion->route, sizeof(activePageMotion->route), local);
-		motion_ = &activePageMotion->conditions[key];
+		motion_ = PrepareConditionalMotion(key, visible);
 		motion_->parent = conditionalMotionParents.empty() ? 0 : conditionalMotionParents.back();
-		const int frame = ImGui::GetFrameCount();
-		if (motion_->generation != activePageMotion->generation)
-		{
-			motion_->generation = activePageMotion->generation;
-			motion_->reveal.Reset(visible ? 1.0F : 0.0F); motion_->height = motion_->occupied = 0.0F;
-		}
-		motion_->reveal.Target(visible ? 1.0F : 0.0F);
-		if (!rowAnimationsEnabled || activePageMotion->opening) motion_->reveal.Reset(visible ? 1.0F : 0.0F);
-		motion_->frame = frame;
+		motion_->frame = ImGui::GetFrameCount();
 		render_ = visible || motion_->reveal.value > 0.0F;
 		origin_ = ImGui::GetCursorScreenPos();
 		if (!render_)
@@ -1151,6 +1160,7 @@ namespace Inkeys::UI::Setting::Design
 			note = nullptr;
 		}
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		const float initialCursorStartY = ImGui::GetCurrentWindow()->DC.CursorStartPos.y;
 		const float width = ImGui::GetContentRegionAvail().x;
 		const auto measure = MeasureRow(width / Pixels(1.0F), actionWidthDip,
 			actionHeightDip, iconTexture != 0 || (glyph && *glyph));
@@ -1195,7 +1205,21 @@ namespace Inkeys::UI::Setting::Design
 		const float inlinePadding = inlineContent ? Pixels(ImFluent::GetStyle().CardPadding) : 0.0F;
 		const float inlineWidth = (std::max)(1.0F, width - inlinePadding * 2.0F);
 		const float inlineHeight = inlineContent && inlineContent->height ? (std::max)(0.0F, inlineContent->height(inlineWidth)) : 0.0F;
-		const float fullHeight = Pixels(row.height) + (inlineContent ? inlinePadding * 2.0F + inlineHeight : 0.0F);
+		const float fullInlineHeight = inlineContent ? inlinePadding * 2.0F + inlineHeight : 0.0F;
+		float occupiedInlineHeight = fullInlineHeight;
+		if (inlineContent && inlineContent->visibilityId)
+		{
+			ImGui::PushID(id);
+			const ImGuiID local = ImGui::GetID(inlineContent->visibilityId);
+			const ImGuiID key = activePageMotion ? ImHashData(&activePageMotion->route, sizeof(activePageMotion->route), local) : 0;
+			const auto* condition = PrepareConditionalMotion(key, inlineContent->visible);
+			occupiedInlineHeight = condition ? std::round(fullInlineHeight * condition->reveal.value)
+				: inlineContent->visible ? fullInlineHeight : 0.0F;
+			ImGui::PopID();
+		}
+		const float headerHeight = inlineContent && inlineContent->visibilityId
+			? std::round(origin.y + Pixels(row.height)) - origin.y : Pixels(row.height);
+		const float fullHeight = headerHeight + occupiedInlineHeight;
 		ImGui::Dummy({ width, inlineContent ? fullHeight + Pixels(RowGap) : Pixels(row.height + RowGap) });
 		ImDrawList* draw = ImGui::GetWindowDrawList();
 		const ImVec2 bottom(origin.x + width, origin.y + fullHeight);
@@ -1227,14 +1251,31 @@ namespace Inkeys::UI::Setting::Design
 		if (inlineContent)
 		{
 			const float divider = std::round(origin.y + Pixels(row.height));
-			draw->AddLine({ origin.x + 1.0F, divider }, { bottom.x - 1.0F, divider }, border, 1.0F);
-			const LayoutRect body{ origin.x + inlinePadding, divider + inlinePadding,
-				bottom.x - inlinePadding, divider + inlinePadding + inlineHeight };
-			ImGui::SetCursorScreenPos({ body.left, body.top });
-			if (inlineContent->render) inlineContent->render(body);
+			const auto renderInline = [&] {
+				draw->AddLine({ origin.x + 1.0F, divider }, { bottom.x - 1.0F, divider }, border, 1.0F);
+				const LayoutRect body{ origin.x + inlinePadding, divider + inlinePadding,
+					bottom.x - inlinePadding, divider + inlinePadding + inlineHeight };
+				ImGui::SetCursorScreenPos({ body.left, body.top });
+				if (inlineContent->render) inlineContent->render(body);
+			};
+			if (inlineContent->visibilityId)
+			{
+				// 外框先按同一个条件进度测高；仅内联内容交给原条件块裁剪/渐隐。
+				ImGui::SetCursorScreenPos({ origin.x, divider }); ImGui::PushID(id);
+				if (ConditionalBlock block{ inlineContent->visibilityId, inlineContent->visible }; block)
+				{
+					renderInline();
+					ImGui::SetCursorScreenPos({ origin.x, divider + fullInlineHeight });
+				}
+				ImGui::PopID();
+			}
+			else renderInline();
 		}
+		// 视口上方的条件高度变化会同步重基准布局，结束游标不能覆盖这次补偿。
+		const float conditionalOffset = inlineContent && inlineContent->visibilityId
+			? ImGui::GetCurrentWindow()->DC.CursorStartPos.y - initialCursorStartY : 0.0F;
 		// ItemSize 会截到物理像素；结束游标使用同一取整，避免分数 DPI 多出半像素。
-		ImGui::SetCursorScreenPos({ origin.x, std::floor(bottom.y + Pixels(RowGap)) });
+		ImGui::SetCursorScreenPos({ origin.x, std::floor(bottom.y + Pixels(RowGap)) + conditionalOffset });
 	}
 
 	bool ToggleAction(const LayoutRect& bounds, bool& value)

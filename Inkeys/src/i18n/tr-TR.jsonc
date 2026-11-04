@@ -898,9 +898,12 @@
           "MiddleBoth": "Denetimleri iki yanda ortada göster",
           "BottomMiddle": "Denetimleri alt araç çubuğunda göster",
           "IdleFade": "Boştayken soldur",
-          "IdleFadeE": "Sunum sırasında bir süre etkileşim olmadığında veya sunum kumandası ya da klavyeyle sayfa çevrildikten sonra sayfa denetimleri daha az içerik kapatmak için daha saydam olur. Üzerine gelmek, tıklamak veya sürüklemek onları geri getirir.",
+          "IdleFadeE": "Sunum sırasında seçilen denetimler boşta kaldığında soluklaşır; üzerine gelindiğinde, tıklandığında veya sürüklendiğinde geri döner. Harici sayfa değişiklikleri de sayfa denetimlerini soluklaştırır. Ana araç çubuğu yalnızca alta yerleştirildiğinde (ortalanmış mod dahil) boşta kalma süresi dolunca soluklaşır ve panellerinden biri açıkken normal opaklığını korur.",
           "IdleFadeOff": "Kapalı",
-          "IdleFadeSeconds": "{} sn"
+          "IdleFadeSeconds": "{} sn",
+          "IdleFadeBottomPair": "Her iki alt köşe",
+          "IdleFadeMiddlePair": "Her iki yanın ortası",
+          "IdleFadeMainBar": "Ana araç çubuğu (yalnızca yuvalı)"
         },
         "WidgetPosition":
         {

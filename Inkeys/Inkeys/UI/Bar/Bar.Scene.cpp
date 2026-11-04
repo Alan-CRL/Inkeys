@@ -11,6 +11,7 @@ module;
 #include <windows.h>
 #include "Bar.BusyRing.h"
 #include "Bar.DirtyRegion.h"
+#include "Bar.ThemeMaterial.h"
 #include "Bar.PageLoadingIndicator.h"
 #include <wrl/client.h>
 #include "../../../PptWaitingDiagnostics.h"
@@ -136,7 +137,7 @@ namespace Inkeys::UI::Bar
 		COLORREF appliedSurfaceColor=CLR_INVALID;
 		double appliedResidentFillOpacity=-1,appliedResidentContentOpacity=-1;
 		float pagePrimaryWidth=0,pageSecondaryWidth=0;
-		BarUiPctClass opacity{1};
+		BarUiPctClass opacity{1},idleFade{0};
 		BarPageSurfaceContent content;
 		PageLoadingIndicator indicator;
 		bool indicatorAllowed=true,indicatorInputDirty=true,indicatorAnimations=true,ringAttempted=false,ringFailed=false;
@@ -205,6 +206,7 @@ namespace Inkeys::UI::Bar
 			const COLORREF surface=GetThemeColor(BarThemeColorEnum::Surface);appliedSurfaceColor=surface;
 			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,
 				GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity),GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
+			root.residentSurface=true;
 			InitializeShape(menu,MenuBounds,surface,BarMainBarCornerRadiusDip,0.95,GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 			InitializeShape(theme,ThemeBounds,surface,BarMainBarCornerRadiusDip,0.95,GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 			InitializeShape(divider,{350,-116,570,-115},GetThemeColor(BarThemeColorEnum::SurfaceFrame),0.5,0.30);
@@ -448,7 +450,7 @@ namespace Inkeys::UI::Bar
 		void Configure(const BarPageSurfaceContent& next,double duration)
 		{
 			if(initialized&&!backgroundOnly&&content.surface==next.surface&&content.whiteboard==next.whiteboard){UpdateContent(next);return;}
-			indicatorInputDirty=true;
+			indicatorInputDirty=true;root.residentSurface=true;
 			const bool direct=!initialized || duration<=0;
 			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0,standard=wb||!BarPptCompactPaginationEnabled;
 			for(std::size_t i=0;i<pageButtons.size();++i){
@@ -694,7 +696,7 @@ namespace Inkeys::UI::Bar
 			const auto advance=[&](auto& value){
 				if(frame.animationEnabled&&dt<=0&&!value.IsSame()){active=true;return;}
 				auto r=BarUiAdvanceAnimation(value,frame);active|=r.active;changed|=r.changed;};
-			advance(opacity);
+			advance(opacity);advance(idleFade);
 			const BarButtonAnimationContext common{dt,speed,static_cast<bool>(BarUiAnimationEnabled)};
 			const auto join=[&](const auto& result){active|=result.active;changed|=result.changed;};
 			join(AdvanceBarShapeVisual(root,common));
@@ -878,6 +880,7 @@ namespace Inkeys::UI::Bar
 	bool BarPageSurface::ConfigureBackground(const BarSurfaceBackgroundSpec& background)
 	{
 		auto& p=*impl_;p.background=background;p.backgroundOnly=true;p.initialized=true;
+		p.root.residentSurface=false;
 		InitializeShape(p.root,{background.bounds.left,background.bounds.top,background.bounds.right,background.bounds.bottom},
 			background.useThemeColors?GetThemeColor(BarThemeColorEnum::Surface):background.fill,
 			background.cornerRadiusDip,background.fillOpacity,background.frameOpacity);
@@ -904,6 +907,13 @@ namespace Inkeys::UI::Bar
 		value=std::isfinite(value)?(std::clamp)(value,0.0,1.0):0.0;
 		if(duration<=0){if(impl_->opacity.IsSame()&&impl_->opacity.val==value)return;impl_->opacity.SetDirect(value);}
 		else if(!impl_->opacity.SetTar(value,duration))return;
+		impl_->FullDamage();
+	}
+	void BarPageSurface::SetIdleFade(bool dimmed,double duration) noexcept
+	{
+		const double value=dimmed?1.0:0.0;
+		if(duration<=0){if(impl_->idleFade.IsSame()&&impl_->idleFade.val==value)return;impl_->idleFade.SetDirect(value);}
+		else if(!impl_->idleFade.SetTar(value,duration))return;
 		impl_->FullDamage();
 	}
 	void BarPageSurface::SetHooks(BarSurfaceHooks hooks)
@@ -960,7 +970,7 @@ namespace Inkeys::UI::Bar
 	BarPageSurfaceGeometry BarPageSurface::Geometry() const noexcept
 	{
 		auto& p=*impl_;const auto body=Bounds(p.root);
-		return {{body.left,body.top,body.right,body.bottom},p.opacity.val,p.root.pct.val,p.layoutRevision,
+		return {{body.left,body.top,body.right,body.bottom},p.opacity.val,BarThemeMaterial::ResolveIdleOpacity(p.root.pct.val,BarThemeMaterial::IdleBackgroundOpacity,p.backgroundOnly?0.0:static_cast<double>(p.idleFade.val)),p.layoutRevision,
 			!p.root.x.IsSame()||!p.root.y.IsSame()||!p.root.w.IsSame()||!p.root.h.IsSame()};
 	}
 	RECT BarPageSurface::LogicalBounds() const noexcept{return impl_->logical;}
@@ -1088,6 +1098,7 @@ namespace Inkeys::UI::Bar
 			if(p.menuFrame.visible)p.DrawGroup(dc,false);
 			p.SetPose(dc,{});
 		}
+		p.renderer.SetResidentIdleFade(p.backgroundOnly?0.0:static_cast<double>(p.idleFade.val));
 		p.DrawShape(dc,p.root);
 		if(p.backgroundOnly&&p.background.drawContent){
 			dc->SetTransform(D2D1::Matrix3x2F::Scale(p.scale,p.scale)*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(p.logical.left-p.presentation.left),static_cast<FLOAT>(p.logical.top-p.presentation.top)));
@@ -1106,6 +1117,7 @@ namespace Inkeys::UI::Bar
 			if(p.content.whiteboard&&p.content.surface==0&&p.content.unsaved)p.renderer.Word(dc,p.unsaved,{5,-32},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
 			p.renderer.SetResidentContentOpacity(1.0);
 		}
+		p.renderer.SetResidentIdleFade(0);
 		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);
 		p.renderer.SetFrameLightingSnapshot(p.drawingLighting);
 		return {true,p.active||p.renderer.FontAnimationsActive(),p.invalidated,p.damage};

@@ -48,6 +48,7 @@ import Inkeys.Window;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
+import Inkeys.UI.PageControl;
 import Inkeys.Startup.Progress;
 
 import <ranges>;
@@ -698,6 +699,8 @@ struct BarRenderLoopState
 	BarUiValueClass mainButtonLightMaterial{ barStyle.darkStyle || barState.fold ? 0.0 : 1.0 };
 	BarUiColorClass mainLogoPenColor{ GetPenColor() };
 	BarUiPctClass mainLogoDrawingPct{ 0.0 };
+	BarUiPctClass pptIdleFade{ 0.0 };
+	Inkeys::UI::PageControl::PptMainIdleFadeState pptIdleState;
 	bool mainLogoColorInitialized = false;
 	bool mainLogoCarriesNonBrushColor = false;
 	BarUiValueClass barLightMaterial{ barStyle.darkStyle ? 0.0 : 1.0 };
@@ -7667,6 +7670,49 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive);
 	if (recallChanged || recallIdleDismissed) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
+	{
+		const auto config = Inkeys::UI::PageControl::ReadPptIdleFadeSnapshot();
+		const auto input = Inkeys::UI::Bar::SnapshotPptIdleInput();
+		const auto& panels = state.barState.drawAttributeBar;
+		bool protectedPanel = state.barState.drawAttribute || state.barState.geometryAttribute
+			|| state.barState.eraserAttribute || state.barState.recallAttribute || state.barState.moreExpanded
+			|| state.barState.eraserSensitivityOpen || panels.colorPickerOpen || panels.penTypeMenuOpen
+			|| panels.thicknessSliderPinned || panels.thicknessFineDialPhysicsActive
+			|| owner_.eraserAttribute.IdleFadeProtected() || owner_.recallAttribute.IdleFadeProtected();
+		// 关闭指令之后仍保护实际退场中的面板，最后一项完全收起才重新计时。
+		for (auto id : {BarUISetShapeEnum::DrawAttributeBar, BarUISetShapeEnum::GeometryAttributeBar,
+			BarUISetShapeEnum::MorePanel, BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel,
+			BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu,
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface})
+			if (const auto it = state.shapeMap.find(id); it != state.shapeMap.end() && it->second)
+				protectedPanel = protectedPanel || it->second->pct.val > 0.000001;
+		const bool sceneEligible = state.workspaceSnapshot.committed == WorkspaceScene::Presentation
+			&& !state.workspaceSnapshot.pending && Inkeys::UI::Bar::RequestedPresentationAlpha() > 0;
+		// 仅普通/居中底栏参与闲置淡化；Floating 门禁不退休仍有效的输入状态。
+		const bool dockEligible = frame.bottomDockMode == BarBottomDockMode::BottomDocked;
+		const bool wasEligible = state.pptIdleState.eligible;
+		const auto previousSession = state.pptIdleState.session;
+		const auto decision = state.pptIdleState.Update(config, sceneEligible && dockEligible,
+			input.hovered || input.pressed || frame.bottomDockDragActive, protectedPanel,
+			input.activity, frame.frameTime);
+		// 配置开关不退休仍有效的主栏输入，静止悬停跨关闭/开启也继续保护。
+		if (wasEligible && (!sceneEligible || !config.visible || previousSession != config.session))
+			Inkeys::UI::Bar::ResetPptIdleInput();
+		Inkeys::UI::Bar::PublishPptIdleDeadline(decision.wake);
+		if (!sceneEligible || !dockEligible || !config.visible || (state.pptIdleState.eligible
+			&& (!wasEligible || previousSession != config.session)))
+		{
+			// 直接清零后 Advance 已看不到变化；必须显式重画，防可见性单独变化留下旧淡化像素。
+			if (state.pptIdleFade.val != 0)
+			{
+				needRendering = true;state.dirtyRegionTracker.MarkChanged(mainMaterialDirtyKey);
+			}
+			state.pptIdleFade.SetDirect(0);
+		}
+		state.pptIdleFade.SetTar(decision.dimmed ? 1.0 : 0.0, decision.dimmed
+			? Inkeys::UI::PageControl::PptIdleFadeOutSeconds : Inkeys::UI::PageControl::PptIdleFadeInSeconds);
+		ChangePct(state.pptIdleFade, false, mainMaterialDirtyKey);
+	}
 	return needRendering || eraserChanged || recallChanged || recallIdleDismissed;
 }
 
@@ -11439,6 +11485,7 @@ bool presetButton = button.presetIndex >= 0;
 				// More 必须先画、主栏后画，收拢部分才会从主栏下层自然出现。
 				auto DrawMainBar = [&]()
 				{
+					state.spec.SetResidentIdleFade(state.pptIdleFade.val);
 					SetBodyTransform();
 					auto obj = BarUISetShapeEnum::MainBar;
 					DrawBarBackgroundVisual(state.spec, barDeviceContext,
@@ -11463,6 +11510,7 @@ bool presetButton = button.presetIndex >= 0;
 						}
 					}
 					state.spec.SetResidentContentOpacity(1.0);
+					state.spec.SetResidentIdleFade(0);
 				};
 
 				// 更多按钮保留主栏局部坐标，浮层自身仍只按上下展开方向翻转物理行。
@@ -11538,6 +11586,7 @@ bool presetButton = button.presetIndex >= 0;
 
 			// 主按钮
 				{
+					state.spec.SetResidentIdleFade(state.pptIdleFade.val);
 					SetGripTransform();
 					auto obj = BarUISetSuperellipseEnum::MainButton;
 					state.spec.Superellipse(barDeviceContext, *state.superellipseMap[obj], BarUiInheritClass(state.superellipseMap[obj]->inhX, state.superellipseMap[obj]->inhY), &state.current, true);
@@ -11552,6 +11601,7 @@ bool presetButton = button.presetIndex >= 0;
 						state.spec.SetResidentContentOpacity(1.0);
 					}
 				}
+				state.spec.SetResidentIdleFade(0);
 				// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
 				for (BarUISetShapeEnum moreShape : {
 					BarUISetShapeEnum::MorePanel,

@@ -57,6 +57,17 @@ namespace
 		return std::abs(left - right) <= 0.000001;
 	}
 
+	void TestIdleOpacity()
+	{
+		for(double normal:{0.0,0.1,0.3,0.4,0.5,0.6,0.8,0.88,1.0})
+			for(double ceiling:{IdleBackgroundOpacity,IdleContentOpacity}){
+				Check(Near(ResolveIdleOpacity(normal,ceiling,0),normal),"normal endpoint preserves the configured opacity");
+				Check(Near(ResolveIdleOpacity(normal,ceiling,1),(std::min)(normal,ceiling)),"idle endpoint takes an absolute ceiling");
+				Check(Near(ResolveIdleOpacity(normal,ceiling,.5),(normal+(std::min)(normal,ceiling))*.5),"idle animation interpolates from normal without compounding");
+			}
+		Check(Near(ResolveIdleOpacity(.8,IdleContentOpacity,1),.6),"80% content dims to 60%, not 48%");
+		Check(Near(ResolveIdleOpacity(.5,IdleContentOpacity,1),.5),"50% content below the idle preset stays unchanged");
+	}
 	unsigned int Channel(Color color, unsigned int shift)
 	{
 		return (color >> shift) & 0xFFU;
@@ -434,6 +445,7 @@ int RunBarThemeTests()
 	TestAnimationReversalAndDisabled();
 	TestThemeModeConfigPolicy();
 	TestResidentOpacityPolicy();
+	TestIdleOpacity();
 	return failures;
 }
 

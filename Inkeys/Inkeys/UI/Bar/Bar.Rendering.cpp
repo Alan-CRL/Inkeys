@@ -2872,6 +2872,16 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 					? BarThemeMaterial::ResidentFillOpacityScale(material.lightWeight,
 						shape.lightFillOpacityScale, GetThemeResidentBackgroundOpacityOverride())
 					: BarThemeMaterial::Mix(1.0, shape.lightFillOpacityScale, material.lightWeight)) : 1.0);
+			if (shape.residentSurface)
+			{
+				// 主栏 pct 的 0↔0.8 是收展显隐，先限制正常材质再组合，不能把淡出前半段钳在30%。
+				const double visibility = shape.themeSurface ? tarPct / BarThemeMaterial::ResidentBaseFillOpacity : 1.0;
+				const double normal = shape.themeSurface ? BarThemeMaterial::ResidentBaseFillOpacity
+					* material.fillOpacityScale * BarThemeMaterial::ResidentFillOpacityScale(material.lightWeight,
+						shape.lightFillOpacityScale, GetThemeResidentBackgroundOpacityOverride()) : fillPct;
+				fillPct = BarThemeMaterial::ResolveIdleOpacity(normal,
+					BarThemeMaterial::IdleBackgroundOpacity, residentIdleFade) * visibility;
+			}
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, fillPct);
 			if (!fillBrush) return false;
@@ -3036,6 +3046,9 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 					? BarThemeMaterial::ResidentFillOpacityScale(material.lightWeight,
 						superellipse.lightFillOpacityScale, GetThemeResidentBackgroundOpacityOverride())
 					: BarThemeMaterial::Mix(1.0, superellipse.lightFillOpacityScale, material.lightWeight)) : 1.0);
+			if (superellipse.residentSurface)
+				fillPct = BarThemeMaterial::ResolveIdleOpacity(fillPct,
+					BarThemeMaterial::IdleBackgroundOpacity, residentIdleFade);
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, fillPct);
 			if (!fillBrush) return false;
@@ -3115,7 +3128,8 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 	double tarX = baseX + (baseW - tarW) / 2.0;
 	double tarY = baseY + (baseH - tarH) / 2.0;
 	double tarPct = clamp(static_cast<double>(svg.pct.val) * contentPct
-		* residentContentOpacity, 0.0, 1.0);
+		* BarThemeMaterial::ResolveIdleOpacity(residentContentOpacity,
+			BarThemeMaterial::IdleContentOpacity, residentIdleFade), 0.0, 1.0);
 
 	// 尺寸与内容缩放动画只改变目标矩形，SVG 位图尽量复用到稳定帧。
 	ComPtr<ID2D1Bitmap> d2dBitmap;
@@ -3227,7 +3241,9 @@ bool BarUIRendering::Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, 
 	double tarY = inh.y * tarZoom;
 	double tarW = png.w.val * tarZoom;
 	double tarH = png.h.val * tarZoom;
-	double tarPct = clamp(static_cast<double>(png.pct.val), 0.0, 1.0);
+	double tarPct = clamp(static_cast<double>(png.pct.val)
+		* BarThemeMaterial::ResolveIdleOpacity(residentContentOpacity,
+			BarThemeMaterial::IdleContentOpacity, residentIdleFade), 0.0, 1.0);
 	double tarAngle = png.angle.val;
 	if (!isfinite(tarAngle)) tarAngle = 0.0;
 
@@ -3299,7 +3315,8 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	tarX = centerX - tarW / 2.0;
 	tarY = centerY - tarH / 2.0;
 	// 布局透明度、内容切换透明度与常驻内容透明度相乘
-	double tarPct = word.pct.val * contentPct * residentContentOpacity;
+	double tarPct = word.pct.val * contentPct * BarThemeMaterial::ResolveIdleOpacity(
+		residentContentOpacity, BarThemeMaterial::IdleContentOpacity, residentIdleFade);
 	const auto layoutRect = D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY),
 		static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
 	if (!ShouldDrawFrameBounds(deviceContext, layoutRect, BarRenderingAttribute::dirtyAntialiasPadding)) return false;

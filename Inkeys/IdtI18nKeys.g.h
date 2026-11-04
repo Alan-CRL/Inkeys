@@ -904,6 +904,9 @@ inline constexpr struct I18nKeyRoot
                     const char* IdleFadeE = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeE";
                     const char* IdleFadeOff = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeOff";
                     const char* IdleFadeSeconds = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeSeconds";
+                    const char* IdleFadeBottomPair = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeBottomPair";
+                    const char* IdleFadeMiddlePair = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeMiddlePair";
+                    const char* IdleFadeMainBar = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeMainBar";
                 } WidgetDisplay{};
                 struct Node__SettingsUI__PlugIn__PPTHelper__WidgetPosition
                 {

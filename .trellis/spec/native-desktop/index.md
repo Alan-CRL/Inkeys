@@ -11,6 +11,7 @@
 - [cpp-conventions.md](cpp-conventions.md)：命名、模块、注释、共享状态和并发习惯。
 - [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工及Setting FreeType动态图集。
 - [bar-theme-material.md](bar-theme-material.md)：Bar 颜色角色、整笔指示器、逐对象材质、完整收展过渡与阴影范围。
+- [ppt-idle-fade.md](ppt-idle-fade.md)：PPT 闲置淡化三范围、背景/内容独立上限、主栏交互与附属面板保护。
 - [setting-motion.md](setting-motion.md)：Setting页面入场、条件块、稳定正文轨道、开屏标题栏及resize/材质连续性。
 - [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。

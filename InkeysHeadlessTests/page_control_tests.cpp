@@ -1967,6 +1967,66 @@ namespace
 			&& !IsPptExternalPageTurn(7, 3, 8, 4, false) && !IsPptExternalPageTurn(7, -1, 7, 4, false)
 			&& !IsPptExternalPageTurn(7, 3, 7, 3, false) && !IsPptExternalPageTurn(0, 3, 0, 4, false),
 			"only same-session page changes outside the control grace window count as external turns");
+		PptMainIdleFadeState main;
+		PptIdleFadeSnapshot snapshot{7,10,true,true};
+		Check(!main.Update(snapshot,true,false,false,activity,activity).dimmed,
+			"main bar starts a full independent idle interval on entry");
+		Check(main.Update(snapshot,true,false,false,activity,activity+std::chrono::seconds(10)).dimmed,
+			"main bar dims at its own idle deadline");
+		Check(!main.Update(snapshot,true,false,true,activity,activity+std::chrono::hours(1)).dimmed,
+			"an open property or More panel protects the main bar indefinitely");
+		const auto closed=activity+std::chrono::hours(1)+std::chrono::seconds(1);
+		const auto restarted=main.Update(snapshot,true,false,false,activity,closed);
+		Check(!restarted.dimmed&&restarted.wake==closed+std::chrono::seconds(10)
+			&&!main.Update(snapshot,true,false,false,activity,closed+std::chrono::seconds(9)).dimmed,
+			"the final panel close restarts a full interval rather than using the pre-open time");
+		Check(!main.Update(snapshot,true,true,false,activity,closed+std::chrono::hours(1)).dimmed,
+			"hover or an admitted press also protects the main bar indefinitely");
+		const auto leftAt=closed+std::chrono::hours(1)+std::chrono::seconds(1);
+		Check(main.Update(snapshot,true,false,false,activity,leftAt).wake==leftAt+std::chrono::seconds(10),
+			"leaving the last interaction starts the entire main-bar interval again");
+		// 重复快照对应页码发布；主栏没有外部翻页输入，不能重置原期限。
+		Check(main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(4)).wake
+			==leftAt+std::chrono::seconds(10), "page-only publications do not reset main idle");
+		snapshot.mainBar=false;
+		Check(!main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(20)).dimmed,
+			"unselected main bar clears its idle deadline");
+		snapshot.mainBar=true;
+		Check(!main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(30)).dimmed,
+			"re-enabling starts in the normal state without consuming old idle time");
+		snapshot.session=8;
+		Check(main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(50)).wake
+			==leftAt+std::chrono::seconds(60), "a new presentation session retires the old deadline");
+		Check(!main.Update(snapshot,false,false,false,activity,leftAt+std::chrono::hours(2)).dimmed,
+			"whiteboard desktop and pending workspace transitions remain normal");
+		// 底栏门禁复用同一生命周期策略：切到 Floating 清期限，回来从正常态完整等待。
+		PptMainIdleFadeState dock;
+		const auto dockAt=activity+std::chrono::hours(3);
+		(void)dock.Update(snapshot,true,false,false,activity,dockAt);
+		Check(dock.Update(snapshot,true,false,false,activity,dockAt+std::chrono::seconds(10)).dimmed,
+			"an eligible bottom dock reaches its idle target");
+		const auto floating=dock.Update(snapshot,false,false,false,activity,dockAt+std::chrono::seconds(11));
+		Check(!floating.dimmed&&floating.wake==Clock::time_point::max()&&!dock.eligible,
+			"floating mode restores the main bar and retires its previous idle deadline");
+		const auto dockAgain=dockAt+std::chrono::hours(1);
+		const auto hovered=dock.Update(snapshot,true,true,false,activity,dockAgain);
+		Check(!hovered.dimmed&&hovered.wake==Clock::time_point::max(),
+			"live hover remains a protection when returning to a bottom dock");
+		const auto hoverEnd=dockAgain+std::chrono::seconds(1);
+		Check(dock.Update(snapshot,true,false,false,activity,hoverEnd).wake==hoverEnd+std::chrono::seconds(10)
+			&&!dock.Update(snapshot,true,false,false,activity,hoverEnd+std::chrono::seconds(9)).dimmed
+			&&dock.Update(snapshot,true,false,false,activity,hoverEnd+std::chrono::seconds(10)).dimmed,
+			"returning from floating waits the full interval after live interaction ends");
+		PptState defaults;
+		Check(defaults.idleFadeBottomPair&&defaults.idleFadeMiddlePair&&!defaults.idleFadeMainBar,
+			"idle fade range defaults preserve both page pairs and opt main bar out");
+		for(int scope=0;scope<3;++scope){
+			auto selected=defaults;
+			if(scope==0)selected.idleFadeBottomPair=false;
+			else if(scope==1)selected.idleFadeMiddlePair=false;
+			else selected.idleFadeMainBar=true;
+			Check(!ArePptStatesEquivalent(defaults,selected),"every range change republishes the PPT snapshot");
+		}
 		PptState left, right; right.idleFadeSeconds = 5;
 		Check(!ArePptStatesEquivalent(left, right), "idle fade timeout changes republish the PPT state");
 	}

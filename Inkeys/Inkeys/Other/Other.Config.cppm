@@ -522,6 +522,9 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOverOnce, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOverExpand, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IdleFadeSeconds, 10) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeBottomPair, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMiddlePair, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMainBar, false) \
 			GROUP(Tentative, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnablePageButtonLongPress, false) \
 			) \

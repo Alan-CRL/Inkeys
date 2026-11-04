@@ -898,9 +898,12 @@
           "MiddleBoth": "Afficher les commandes au milieu des deux côtés",
           "BottomMiddle": "Afficher les commandes sur la barre inférieure",
           "IdleFade": "Estomper au repos",
-          "IdleFadeE": "Pendant un diaporama, les commandes de page deviennent plus transparentes après un moment sans interaction ou après un changement de page au pointeur ou au clavier, afin de masquer moins de contenu. Survoler, cliquer ou faire glisser les rétablit.",
+          "IdleFadeE": "Pendant un diaporama, les commandes sélectionnées deviennent plus transparentes au repos et retrouvent leur aspect au survol, au clic ou au glissement. Les changements de page externes atténuent aussi les commandes de page. La barre principale attend son délai et ne s’atténue que si elle est ancrée en bas, y compris centrée et conserve son opacité normale si un de ses panneaux est ouvert.",
           "IdleFadeOff": "Désactivé",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Deux coins inférieurs",
+          "IdleFadeMiddlePair": "Deux côtés à mi-hauteur",
+          "IdleFadeMainBar": "Barre principale (ancrée uniquement)"
         },
         "WidgetPosition":
         {

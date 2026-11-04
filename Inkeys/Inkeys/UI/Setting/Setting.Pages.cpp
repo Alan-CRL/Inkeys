@@ -1122,6 +1122,43 @@ namespace Inkeys::UI::Setting::Design
 		return action;
 	}
 
+	PptIdleFadeEvents RenderPptIdleFadeRow(PptIdleFadeDraft& draft, const std::vector<std::string>& items)
+	{
+		PptIdleFadeEvents events;
+		const auto& keys = I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay;
+		const std::array labels{ IA(keys.IdleFadeBottomPair), IA(keys.IdleFadeMiddlePair), IA(keys.IdleFadeMainBar) };
+		const std::array values{ &draft.bottomPair, &draft.middlePair, &draft.mainBar };
+		const std::array changed{ &events.bottomPair, &events.middlePair, &events.mainBar };
+		float widest = 0, comboWidth = 160;
+		for (const auto& label : labels) widest = (std::max)(widest, ControlTextWidth(label.c_str()) + Pixels(32));
+		for (const auto& item : items) comboWidth = (std::max)(comboWidth, ControlTextWidth(item.c_str()) / Pixels(1) + 48);
+		const auto columnsFor = [&](float width) { return width >= (std::max)(Pixels(440), widest * 2 + Pixels(16)) ? 2 : 1; };
+		InlineRowContent scopes;
+		scopes.visibilityId = "##ppt-idle-fade-options"; scopes.visible = draft.timeoutIndex != 0;
+		scopes.height = [&](float width) {
+			const int rows = (3 + columnsFor(width) - 1) / columnsFor(width);
+			return rows * Pixels(ControlHeight) + (rows - 1) * Pixels(ControlSpacing);
+		};
+		scopes.render = [&](const LayoutRect& bounds) {
+			// 三项只占父卡片的内联区，不再建立额外标题、图标或卡片。
+			const int columns = columnsFor(bounds.Width());
+			const float columnWidth = (bounds.Width() - Pixels(16) * (columns - 1)) / columns;
+			ImGui::PushID("##ppt-idle-fade-scopes"); ImFluent::BeginDisabled(draft.timeoutIndex == 0);
+			for (int index = 0; index < 3; ++index)
+			{
+				ImGui::SetCursorScreenPos({ bounds.left + (index % columns) * (columnWidth + Pixels(16)),
+					bounds.top + (index / columns) * Pixels(ControlHeight + ControlSpacing) });
+				ImGui::PushID(index); *changed[index] = Checkbox((labels[index] + "###scope").c_str(), values[index]); ImGui::PopID();
+			}
+			ImFluent::EndDisabled(); ImGui::PopID();
+		};
+		SettingRow("##ppt-idle-fade", IA(keys.IdleFade).c_str(), IA(keys.IdleFadeE).c_str(), "\ue7b3",
+			(std::min)(320.0F, comboWidth), ControlHeight,
+			[&](const LayoutRect&) { events.timeout = ComboBox("##select", &draft.timeoutIndex, items); },
+			Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &scopes);
+		return events;
+	}
+
 	std::wstring ResolveDesktopShortcutDraftName(const DesktopShortcutDraft& draft)
 	{
 		return draft.preset == Business::DesktopShortcut::CustomPreset(draft.names.kind)

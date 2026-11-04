@@ -898,9 +898,12 @@
           "MiddleBoth": "显示中部两侧控件",
           "BottomMiddle": "显示底部主栏控件",
           "IdleFade": "闲置时自动淡化",
-          "IdleFadeE": "放映中一段时间未操作，或使用翻页笔、键盘翻页后，翻页控件会变得更透明以减少遮挡；悬停、点击或拖动时恢复。",
+          "IdleFadeE": "放映中，所选控件闲置后会变得更透明，悬停、点击或拖动时恢复。外部翻页仅触发翻页控件淡化；主栏仅在底栏或居中底栏模式下按闲置计时淡化，有附属面板展开时保持清晰。",
           "IdleFadeOff": "关闭",
-          "IdleFadeSeconds": "{} 秒"
+          "IdleFadeSeconds": "{} 秒",
+          "IdleFadeBottomPair": "两侧底部",
+          "IdleFadeMiddlePair": "两侧中部",
+          "IdleFadeMainBar": "主栏（仅底栏模式时）"
         },
         "WidgetPosition":
         {

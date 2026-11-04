@@ -898,9 +898,12 @@
           "MiddleBoth": "Show controls on both sides at mid-height",
           "BottomMiddle": "Show controls on the bottom toolbar",
           "IdleFade": "Fade when idle",
-          "IdleFadeE": "During a slideshow, page controls become more transparent after a period without interaction or after turning pages with a presenter or keyboard, so they cover less content. Hover, click or drag to restore them.",
+          "IdleFadeE": "During a slideshow, selected controls fade when idle and return on hover, click or drag. External page changes also fade page controls. The main toolbar fades only when docked at the bottom (including centred mode), after its idle timeout and keeps its normal opacity while any of its panels is open.",
           "IdleFadeOff": "Off",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Both bottom corners",
+          "IdleFadeMiddlePair": "Both sides at mid-height",
+          "IdleFadeMainBar": "Main toolbar (docked mode only)"
         },
         "WidgetPosition":
         {

@@ -86,6 +86,32 @@ constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
 constexpr UINT_PTR BarThicknessAnnotationTooltipGraceTimerId = 0x494B4302;
 constexpr UINT_PTR BarThicknessOverflowTooltipGraceTimerId = 0x494B4303;
 constexpr UINT_PTR BarRecallChromeIdleTimerId = 0x494B4304;
+namespace
+{
+	std::mutex pptIdleInputMutex;
+	Inkeys::UI::Bar::PptIdleInputSnapshot pptIdleInput;
+	Inkeys::UI::Bar::PageLoadingDeadline pptIdleDeadline;
+
+	void UpdatePptIdleInput(bool hovered, bool pressed, bool activity = false) noexcept
+	{
+		{
+			std::scoped_lock lock(pptIdleInputMutex);
+			if (!activity && pptIdleInput.hovered == hovered && pptIdleInput.pressed == pressed) return;
+			pptIdleInput = {std::chrono::steady_clock::now(), hovered, pressed};
+		}
+		// 渲染可能刚读过旧活动时间；每次有效边沿都请求重新决策。
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+	}
+}
+Inkeys::UI::Bar::PptIdleInputSnapshot Inkeys::UI::Bar::SnapshotPptIdleInput() noexcept
+{
+	std::scoped_lock lock(pptIdleInputMutex); return pptIdleInput;
+}
+void Inkeys::UI::Bar::ResetPptIdleInput() noexcept { UpdatePptIdleInput(false, false); }
+void Inkeys::UI::Bar::PublishPptIdleDeadline(std::chrono::steady_clock::time_point time) noexcept
+{
+	if (pptIdleDeadline.Publish(time)) WakeInteractionWorker();
+}
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
 constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
@@ -594,6 +620,8 @@ namespace
 
 	void FinishBarPointerSession()
 	{
+		const auto idle = Inkeys::UI::Bar::SnapshotPptIdleInput();
+		UpdatePptIdleInput(idle.hovered, false);
 		RecordBarDragPointerDecision(false, false);
 		if (barMouseArmed) barPointerMouse.FinishMouse();
 		barMouseArmed = false;
@@ -643,6 +671,7 @@ namespace
 		if (barPointerHapticSession) barPointerHapticSession->valid.store(false, std::memory_order_release);
 		currentHapticMessage.reset();
 		FinishBarPointerSession();
+		Inkeys::UI::Bar::ResetPptIdleInput();
 		barPointerLatest.kind = Pointer::Kind::Cancel;
 		message = {};
 		message.category = EM_MOUSE;
@@ -697,6 +726,35 @@ void PrepareBarInteractionMessage(ExMessage& message,
 
 namespace
 {
+	void ObservePptIdlePointer(const ExMessage& incoming, const Pointer::Sample* sample,
+		std::optional<bool> frozenHit = std::nullopt)
+	{
+		const bool down = incoming.message == WM_LBUTTONDOWN || incoming.message == WM_LBUTTONDBLCLK;
+		if (!down && incoming.message != WM_MOUSEMOVE && incoming.message != WM_LBUTTONUP) return;
+		bool inside = false;
+		if (frozenHit) inside = *frozenHit;
+		else for (;;)
+		{
+			const auto before = barUISet.BottomDockPresentedSnapshot();
+			ExMessage rigid = incoming;
+			PrepareBarInteractionMessage(rigid, false, nullptr, sample);
+			ExMessage body = rigid; ApplyBarBottomDockBodyHitTestFromRigid(body);
+			const POINT grip=barUISet.BottomDockGripHitTestPointFromRigid({rigid.x,rigid.y});
+			const double zoom = (std::max)(0.000001, before.zoom);
+			const auto main = barUISet.superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+			const auto bar = barUISet.shapeMap.find(BarUISetShapeEnum::MainBar);
+			inside = (main != barUISet.superellipseMap.end() && main->second
+				&& barUISet.HitTestPresentedShape(*main->second, grip.x / zoom, grip.y / zoom))
+				|| (bar != barUISet.shapeMap.end() && bar->second
+					&& barUISet.HitTestPresentedShape(*bar->second, body.x / zoom, body.y / zoom));
+			if (barUISet.BottomDockPresentedSnapshot().serial == before.serial) break;
+		}
+		const bool mouse = !IsBarTouchPointerMessage(incoming)
+			&& (!sample || sample->source == Pointer::Source::Mouse);
+		const auto previous = Inkeys::UI::Bar::SnapshotPptIdleInput();
+		const bool pressed = down ? inside : incoming.message == WM_LBUTTONUP ? false : previous.pressed;
+		UpdatePptIdleInput(mouse && inside, pressed, inside && down);
+	}
 	Inkeys::UI::Bar::Ui3FixtureWireValue FixtureWireFromMessage(const ExMessage& message) noexcept
 	{
 		return { reinterpret_cast<std::uintptr_t>(message.hwnd), message.message,
@@ -988,7 +1046,7 @@ namespace
 		std::optional<BarQueuedPointerSample> pointer;
 		bool sourceObserved = false;
 		std::shared_ptr<BarButtonClass> mainButtonHit;
-		bool mainHitFrozen = false;
+		bool mainHitFrozen = false, mainIdleHit = false;
 		bool fixtureSource = false;
 		bool forMain = false;
 	};
@@ -1063,6 +1121,7 @@ namespace
 			PrepareBarInteractionMessage(rigid, false, nullptr,
 				event.pointer ? &event.pointer->sample : nullptr);
 			ExMessage body = rigid; ApplyBarBottomDockBodyHitTestFromRigid(body);
+			const POINT grip=barUISet.BottomDockGripHitTestPointFromRigid({rigid.x,rigid.y});
 			const double zoom = (std::max)(0.000001, before.zoom);
 			const auto more = barUISet.barButtonSet.GetMoreButtonSnapshot();
 			auto hitMore = [&](const auto& buttons)
@@ -1079,7 +1138,12 @@ namespace
 					if (button && barUISet.HitTestPresentedButton(*button, body.x / zoom, body.y / zoom))
 					{ event.mainButtonHit = button; break; }
 			bool diagnosticBackground=false;
-			if(UiDiag::Enabled()) { const auto shape=barUISet.shapeMap.find(BarUISetShapeEnum::MainBar); if(shape!=barUISet.shapeMap.end()&&shape->second)diagnosticBackground=barUISet.HitTestPresentedShape(*shape->second,body.x/zoom,body.y/zoom); }
+			const auto shape=barUISet.shapeMap.find(BarUISetShapeEnum::MainBar);
+			if(shape!=barUISet.shapeMap.end()&&shape->second)
+				diagnosticBackground=barUISet.HitTestPresentedShape(*shape->second,body.x/zoom,body.y/zoom);
+			const auto main=barUISet.superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+			event.mainIdleHit=diagnosticBackground||(!moreHit&&event.mainButtonHit!=nullptr)||(main!=barUISet.superellipseMap.end()&&main->second
+				&&barUISet.HitTestPresentedShape(*main->second,grip.x/zoom,grip.y/zoom));
 			if (barUISet.BottomDockPresentedSnapshot().serial != before.serial) continue;
 			event.surface.presentedRevision = before.serial;
 			UiDiag::Log("bar",event.surface.window,"presented_hit",event.mainButtonHit?"button":"no_main_button",event.main.message,event.pointer?&event.pointer->sample:nullptr,"button=%p preset=%d presented=%llu rigid=%d,%d body=%d,%d zoom=%.4f background=%d ticket=%llu",event.mainButtonHit.get(),event.mainButtonHit?static_cast<int>(event.mainButtonHit->preset.load()):-1,static_cast<unsigned long long>(before.serial),rigid.x,rigid.y,body.x,body.y,zoom,diagnosticBackground,static_cast<unsigned long long>(event.surface.captureTicket));
@@ -1297,6 +1361,7 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 			BarScreenToLayout(point);
 			message.x = static_cast<short>(clamp<LONG>(point.x, SHRT_MIN, SHRT_MAX));
 			message.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
+			ObservePptIdlePointer(message, &sample);
 			ApplyBarBottomDockRigidHitTest(message);
 			if (screenSample) *screenSample = { sample.screen, true };
 			if (sample.kind == Pointer::Kind::Up)
@@ -1336,6 +1401,8 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		// 内部键盘/测试消息没有原生样本；真实 Mouse/Touch 均携带 owner 已固化的值。
 		if (!hasMetadata && !touch)
 		{
+			ObservePptIdlePointer(message, nullptr, down&&event.mainHitFrozen
+				? std::optional<bool>(event.mainIdleHit) : std::nullopt);
 			PrepareBarInteractionMessage(message, preserveScreenCoordinates, screenSample);
 			return true;
 		}
@@ -1423,6 +1490,8 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		currentHapticMessage = queued.haptic;
 		barPointerLatest = sample;
 		barPointerSampleReady = true;
+		ObservePptIdlePointer(message, &sample, down&&event.mainHitFrozen
+			? std::optional<bool>(event.mainIdleHit) : std::nullopt);
 		PrepareBarInteractionMessage(message, preserveScreenCoordinates, screenSample, &sample);
 		return true;
 	}
@@ -1574,6 +1643,7 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 			// 丢掉整个在途接触并显式取消；宁可取消点击，也不能丢 Up 后留下捕获。
 			pendingMainInput.clear(); context.cancelled = true;
 			FinishBarPointerSession();
+			Inkeys::UI::Bar::ResetPptIdleInput();
 			CancelAcceptedMainCapture();
 			CancelRegisteredInteractionSurfaces();
 		}
@@ -1588,17 +1658,21 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 			{
 				pendingMainInput.clear(); context.cancelled = true;
 				FinishBarPointerSession();
+				Inkeys::UI::Bar::ResetPptIdleInput();
 			}
 			else if (!pendingMainInput.empty() && CanCoalesceMainInput(pendingMainInput.back(), event))
 				pendingMainInput.back() = std::move(event);
 			else if (pendingMainInput.size() < 512) pendingMainInput.push_back(std::move(event));
-			else { pendingMainInput.clear(); context.cancelled = true; FinishBarPointerSession(); CancelAcceptedMainCapture(); }
+			else { pendingMainInput.clear(); context.cancelled = true; FinishBarPointerSession(); Inkeys::UI::Bar::ResetPptIdleInput(); CancelAcceptedMainCapture(); }
 			(void)ResumeMainInteraction(context, now);
 			// 主手势取消后先重建续接，再消费随后接触；不能把新 Down/Up 丢在旧协程后。
 			if (context.cancelled) break;
 		}
 		// 时间事件也通过同一 owner，长按重复不再依赖绘制帧率。
 		auto deadline = TickSurfaceInteractions(now);
+		bool idleDue = false;
+		deadline = (std::min)(deadline, pptIdleDeadline.Consume(now, idleDue));
+		if (idleDue) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 		for (unsigned budget = 0; budget != 32 && ResumeMainInteraction(context, now); ++budget) {}
 		return (std::min)(deadline, context.deadline);
 	}
@@ -2182,6 +2256,43 @@ namespace Inkeys::UI::Bar
 		{
 			if (!value) { ++failures; std::fprintf(stderr, "[UI3Input] FAIL %s\n", name); }
 		};
+		{
+			const auto savedInput=SnapshotPptIdleInput();const auto savedDeadline=pptIdleDeadline.ticks.load();
+			// 真正冻结→mailbox→成功几何变化→消费：同一次 Down 的恢复命中必须与业务冻结来源一致。
+			const auto original=barUISet.shapeMap.find(BarUISetShapeEnum::MainBar);
+			const bool hadBody=original!=barUISet.shapeMap.end();
+			const auto savedBody=hadBody?original->second:nullptr;
+			auto body=std::make_shared<BarUiShapeClass>(0,0,100,60,0,0,std::nullopt,RGB(30,30,30),std::nullopt);
+			body->enable.Initialization(true);body->pct.SetDirect(.8);body->inhX=0;body->inhY=0;
+			barUISet.shapeMap[BarUISetShapeEnum::MainBar]=body;
+			const auto state=GetStateModeSnapshot();barUISet.PreparePresentedButtonHits(state);barUISet.PublishPresentedButtonHits();
+			ExMessage down{};down.category=EM_MOUSE;down.message=WM_LBUTTONDOWN;down.x=30;down.y=30;down.lbutton=true;
+			check(EnqueueMainInteractionMessage(nullptr,down),"main idle Down is captured in the actual mailbox");
+			body->inhX=500;barUISet.PreparePresentedButtonHits(state);barUISet.PublishPresentedButtonHits();
+			check(!barUISet.HitTestPresentedShape(*body,30,30),"queued Down is outside the newly committed body geometry");
+			MainInteractionAwaitContext frozenContext;auto* previousContext=mainInteractionAwaitContext;
+			mainInteractionAwaitContext=&frozenContext;(void)PumpSharedInteraction(frozenContext,InteractionClock::now());
+			ExMessage consumed{};check(TryReadBarPointerMessage(consumed,EM_MOUSE,nullptr,false,nullptr)
+				&&frozenContext.currentHitFrozen&&SnapshotPptIdleInput().pressed,
+				"accepted frozen Down restores main idle even after the committed geometry moves");
+			mainInteractionAwaitContext=previousContext;
+			if(hadBody)barUISet.shapeMap[BarUISetShapeEnum::MainBar]=savedBody;else barUISet.shapeMap.erase(BarUISetShapeEnum::MainBar);
+			barUISet.PreparePresentedButtonHits(state);barUISet.PublishPresentedButtonHits();
+			UpdatePptIdleInput(true,false);
+			check(SnapshotPptIdleInput().hovered,"main idle consumes actual hover state");
+			UpdatePptIdleInput(true,true);ProcessBarPointerLeave();
+			check(!SnapshotPptIdleInput().hovered&&SnapshotPptIdleInput().pressed,
+				"mouse leave preserves the admitted press while dragging outside");
+			FinishBarPointerSession();
+			check(!SnapshotPptIdleInput().pressed,"main idle press is retired with its real input session");
+			const auto now=InteractionClock::now(),due=now+std::chrono::seconds(10);
+			PublishPptIdleDeadline(due);MainInteractionAwaitContext idleContext;
+			check(PumpSharedInteraction(idleContext,now)==due,"main idle deadline participates in the real worker wait");
+			check(PumpSharedInteraction(idleContext,due)==InteractionClock::time_point::max()
+				&&pptIdleDeadline.ticks.load()==0,"main idle expiry is consumed once without a busy wake loop");
+			{std::scoped_lock lock(pptIdleInputMutex);pptIdleInput=savedInput;}
+			pptIdleDeadline.ticks.store(savedDeadline);
+		}
 		struct Probe
 		{
 			unsigned down = 0, up = 0, cancelled = 0, logicalCancelled = 0, repeat = 0;
@@ -2939,6 +3050,8 @@ namespace
 	}
 	void ProcessBarPointerLeave()
 	{
+		const auto idle = Inkeys::UI::Bar::SnapshotPptIdleInput();
+		UpdatePptIdleInput(false, idle.pressed);
 		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		if (barUISet.recallAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		// 原生窗口线程统一处理离开反馈，解除边缘光效的重新激活限制。
@@ -3430,6 +3543,8 @@ void BarUISetClass::DisarmRecallChromeIdleTimer() noexcept
 
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
+	Inkeys::UI::Bar::ResetPptIdleInput();
+	Inkeys::UI::Bar::PublishPptIdleDeadline(std::chrono::steady_clock::time_point::max());
 	Pointer::Touch::CancelWindow(hWnd);
 	PublishBarPointerCancellation();
 	barPointerMouse.EndTouch(barTouchProducer.generation);

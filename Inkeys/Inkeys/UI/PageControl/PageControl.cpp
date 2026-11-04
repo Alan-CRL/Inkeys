@@ -250,6 +250,7 @@ namespace Inkeys::UI::PageControl
 			double opacityTarget = 0.0;
 			// 上一帧是否处于可淡化的 PPT 可见态；白板→PPT 时底部控件不经过隐藏也须重新计时。
 			bool idleEligible = false;
+			std::uint64_t idleSession = 0;
 			// 最近一次交给 Scene 的分页内容；淡出期间保持不变。
 			PageContent configuredContent{};
 			bool inputLocked = true;
@@ -1304,9 +1305,15 @@ namespace Inkeys::UI::PageControl
 				RetargetBounds(state.bounds,ResolveHiddenSurfaceBounds(SurfaceFor(index),monitor,target.logicalBounds),target.scale,false,now);
 			{
 				// 每次进入可淡化的 PPT 可见态（含从白板返回）都从不透明开始计时。
-				const bool idleEligible=state.targetVisible&&desiredMode==WorkspaceMode::PptCompact;
-				if(idleEligible&&!state.idleEligible)ResetIdleFade(index,now);
-				state.idleEligible=idleEligible;
+				const bool idleEligible=state.targetVisible&&desiredMode==WorkspaceMode::PptCompact
+					&&ppt.idleFadeSeconds>0&&(index<2?ppt.idleFadeBottomPair:ppt.idleFadeMiddlePair);
+				if(idleEligible&&(!state.idleEligible||state.idleSession!=ppt.layout.session)){
+					// 同一可见栏只切配置时保留真实悬停/按压；场景/场次进入才退休旧接触。
+					if(wasVisible&&!modeChanged&&state.idleSession==ppt.layout.session)MarkIdleActivity(index,now);
+					else ResetIdleFade(index,now);
+					state.scene.SetIdleFade(false,0);
+				}
+				state.idleEligible=idleEligible;state.idleSession=ppt.layout.session;
 				auto& signals=idleFade[index];
 				const auto fade=ResolvePptIdleFade({ppt.idleFadeSeconds,idleEligible,
 					signals.hovered.load(std::memory_order_acquire)||signals.pressed.load(std::memory_order_acquire),
@@ -1314,11 +1321,12 @@ namespace Inkeys::UI::PageControl
 					std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(signals.activity.load(std::memory_order_acquire))),now});
 				signals.dimmed.store(fade.dimmed,std::memory_order_release);
 				if(idleDeadlines[index].Publish(fade.wake))Inkeys::UI::Bar::WakeInteractionWorker();
-				// 显隐沿用工作区过渡；闲置淡化只在可见时叠加，淡出慢、恢复快。
-				const double opacity=state.targetVisible?(fade.dimmed?PptIdleFadeOpacity:1.0):0.0;
+				// 显隐只负责工作区过渡；闲置在 Scene 内分开限制背景与内容。
+				state.scene.SetIdleFade(fade.dimmed,desiredMode!=WorkspaceMode::PptCompact?0
+					:fade.dimmed?PptIdleFadeOutSeconds:PptIdleFadeInSeconds);
+				const double opacity=state.targetVisible?1.0:0.0;
 				if(opacity!=state.opacityTarget){
-					state.scene.SetOpacity(opacity,state.targetVisible!=wasVisible?LayoutTransitionDurationSeconds()
-						:fade.dimmed?PptIdleFadeOutSeconds:PptIdleFadeInSeconds);
+					state.scene.SetOpacity(opacity,LayoutTransitionDurationSeconds());
 					state.opacityTarget=opacity;
 				}
 			}
@@ -3916,6 +3924,39 @@ namespace Inkeys::UI::PageControl
 					result.bytes.data()+static_cast<std::size_t>(y)*result.width*4);
 				cpu->Unmap();return result;
 			};
+			{
+				// 读取真实 Scene/D2D 像素：根底板独立到30%，图标60%覆盖其上，而不是整层相乘。
+				auto frame=ppt;frame.currentPage=3;frame.totalPage=9;
+				Scene idle;idle.ConfigurePagination(BuildPageContent(0,WorkspaceMode::PptCompact,frame,{}));
+				idle.SetBounds({0,0,240,80},1);idle.SetOpacity(1,0);
+				const auto start=origin+18s;const auto normal=drawScene(idle,start);
+				idle.SetIdleFade(true,0);const auto dimmed=drawScene(idle,start+20ms);
+				const auto alphaAt=[&](const PageTestPixels& pixels,LONG x,LONG y){
+					x-=pixels.bounds.left;y-=pixels.bounds.top;
+					return x>=0&&y>=0&&static_cast<UINT>(x)<pixels.width&&static_cast<UINT>(y)<pixels.height
+						&&!pixels.bytes.empty()?pixels.bytes[(static_cast<std::size_t>(y)*pixels.width+x)*4+3]:0;
+				};
+				const auto background=alphaAt(dimmed,12,40);
+				int normalInk=0,idleInk=0;
+				for(LONG y=20;y<60;++y)for(LONG x=20;x<220;++x){
+					normalInk=(std::max)(normalInk,alphaAt(normal,x,y));idleInk=(std::max)(idleInk,alphaAt(dimmed,x,y));
+				}
+				Check(std::abs(background-77)<=2,"PPT idle root fill reaches absolute thirty percent alpha");
+				Check(normalInk>=245&&idleInk>=180&&idleInk<=187,
+					"sixty percent content composites over thirty percent fill without a second user-opacity multiply");
+				idle.CommitPresented();Check(idle.HitTestBackground({120,40}),"a fully dimmed page retains its original hit region");
+				idle.SetIdleFade(false,0);Check(drawScene(idle,start+40ms)==normal,"restoring idle leaves the original scene and user opacity intact");
+				idle.SetIdleFade(true,.5);(void)drawScene(idle,start+60ms);
+				const auto halfway=idle.Geometry().fillOpacity;
+				idle.SetIdleFade(false,.15);(void)drawScene(idle,start+60ms);
+				Check(std::abs(idle.Geometry().fillOpacity-halfway)<0.000001,"same-frame idle reversal preserves the current rendered fill");
+				BarUiAnimationEnabled=false;idle.SetIdleFade(true,.5);(void)drawScene(idle,start+80ms);
+				Check(std::abs(idle.Geometry().fillOpacity-.3)<0.000001,"animation disabled snaps idle channels to their exact targets");
+				Inkeys::UI::Bar::BarSurfaceBackgroundSpec backgroundOnly;backgroundOnly.bounds={0,0,240,80};backgroundOnly.fillOpacity=.8;
+				idle.ConfigureBackground(backgroundOnly);(void)drawScene(idle,start+100ms);
+				Check(std::abs(idle.Geometry().fillOpacity-.8)<0.000001,"background-only reuse never inherits a pagination idle cap");
+				BarUiAnimationEnabled=true;
+			}
 			const auto reference=[&](const PageContent& content,std::chrono::steady_clock::time_point now,LONG width=240){
 				Scene scene;scene.ConfigurePagination(content);scene.SetBounds({0,0,width,80},1);scene.SetOpacity(1,0);
 				return drawScene(scene,now);
@@ -6023,10 +6064,17 @@ namespace Inkeys::UI::PageControl
 		whiteboardCallbacks = std::move(callbacks);
 	}
 
+	PptIdleFadeSnapshot ReadPptIdleFadeSnapshot() noexcept
+	{
+		std::scoped_lock lock(snapshotMutex);
+		return {publishedPpt.layout.session,publishedPpt.idleFadeSeconds,
+			publishedPpt.presentationActive&&publishedPpt.presentationVisible,publishedPpt.idleFadeMainBar};
+	}
+
 	void PublishPptState(const PptState& state) noexcept
 	{
 		PptState merged = state;
-		bool changed = false;
+		bool changed = false, mainIdleChanged = false;
 		{
 			std::scoped_lock dragLock(dragCommitMutex);
 			std::scoped_lock snapshotLock(snapshotMutex);
@@ -6058,6 +6106,11 @@ namespace Inkeys::UI::PageControl
 				else if (merged.layout.session != publishedPpt.layout.session)
 					for (std::size_t index = 0; index < idleFade.size(); ++index) MarkIdleActivity(index, now);
 			}
+			mainIdleChanged = publishedPpt.layout.session != merged.layout.session
+				|| publishedPpt.presentationActive != merged.presentationActive
+				|| publishedPpt.presentationVisible != merged.presentationVisible
+				|| publishedPpt.idleFadeSeconds != merged.idleFadeSeconds
+				|| publishedPpt.idleFadeMainBar != merged.idleFadeMainBar;
 			changed = !ArePptStatesEquivalent(publishedPpt, merged);
 			publishedPpt = merged;
 			if (changed) publishedRevision.fetch_add(1, std::memory_order_release);
@@ -6067,6 +6120,8 @@ namespace Inkeys::UI::PageControl
 		}
 		AcknowledgePage(merged, 0);
 		if (changed) RequestAll();
+		// 页码变化不唤醒/重置主栏闲置策略，只有相关配置或场景载荷变化才通知。
+		if (mainIdleChanged) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 	}
 
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept

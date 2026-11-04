@@ -206,6 +206,36 @@ namespace Inkeys::UI::Bar
 		int failures=0;
 		auto expect=[&](bool ok,const char* why){if(!ok){++failures;report<<"[EraserVisual] FAIL "<<why<<'\n';}};
 		expect(SUCCEEDED(fontCollectionHr),"SC/TC font collection initializes");
+		{
+			// 使用真实主栏 Shape 绘制通道验证 cap 与收展显隐独立，半收起不能仍停在30%。
+			BarUIRendering renderer;
+			const bool ready=SUCCEEDED(renderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),80,40));
+			expect(ready,"idle main body owns a real offscreen renderer");
+			if(ready){
+				BarUiShapeClass body;body.Initialization(40,20,80,40,0,0,0,RGB(30,30,30),std::nullopt);
+				body.enable.Initialization(true);body.themeSurface=true;body.residentSurface=true;
+				body.lightFillOpacityScale=1.10;
+				const auto draw=[&](double pct,double idle){
+					body.pct.SetDirect(pct);renderer.SetFrameZoom(1);renderer.SetResidentIdleFade(idle);
+					auto* dc=renderer.GetDeviceContext();dc->SetDpi(96,96);dc->SetTransform(D2D1::IdentityMatrix());
+					renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,80,40));
+					const bool drew=renderer.Shape(dc,body,{0,0});renderer.FinishFrameDrawCommands(dc);
+					expect((drew||pct==0)&&SUCCEEDED(renderer.EndFrameDraw(dc)),"idle main body draws through production Shape");
+					return static_cast<int>(ReadEraserTestPixel(dc,renderer.GetTargetBitmap(),40,20)[3]);
+				};
+				for(double light:{0.0,1.0}){
+					body.lightMaterial=light;
+					for(double pct:{.8,.6,.4,.2,.0}){
+						const int actual=draw(pct,1);
+						expect(std::abs(actual-static_cast<int>(std::lround(255*.3*pct/.8)))<=2,
+							"idle body shrink preserves independent visibility through every intermediate frame");
+					}
+					const int full=draw(.8,0),half=draw(.4,0);
+					expect(std::abs(half*2-full)<=2,"normal body visibility is unchanged when idle is off");
+				}
+				renderer.SetResidentIdleFade(0);renderer.DiscardDeviceResources();
+			}
+		}
 		// screenPoint/serial 保持不变，验证直移吸收和显示原点变更不依赖下一次 WM_MOUSEMOVE。
 		{
 			const bool savedEdge = BarUiEdgeLightingEnabled;
@@ -2992,7 +3022,9 @@ namespace Inkeys::UI::Bar
 						{
 							const auto at=(static_cast<size_t>(sampleY)*width+sampleX)*4;
 							const auto expected=GetThemeColor(BarThemeColorEnum::Surface);
-							const auto premultiplied=[](int channel){return static_cast<int>(std::lround(channel*BarMainBarFillOpacity));};
+							// 正常背景沿当前主题/用户值解析，浅色默认88%，不能仍固定按Dark的80%断言。
+							const double normalOpacity=GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity);
+							const auto premultiplied=[&](int channel){return static_cast<int>(std::lround(channel*normalOpacity));};
 							expect(std::abs(int(themed[at+3])-premultiplied(255))<=1
 								&&std::abs(int(themed[at])-premultiplied(GetBValue(expected)))<=2
 								&&std::abs(int(themed[at+1])-premultiplied(GetGValue(expected)))<=2

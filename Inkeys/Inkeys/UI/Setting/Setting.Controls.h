@@ -64,6 +64,8 @@ namespace Inkeys::UI::Setting::Design
 	{
 		std::function<float(float)> height; // 可用宽度和返回高度均为物理像素。
 		std::function<void(const LayoutRect&)> render;
+		const char* visibilityId = nullptr; // 可选：只让内联区复用现有条件显隐，父行保持常驻。
+		bool visible = true;
 	};
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,

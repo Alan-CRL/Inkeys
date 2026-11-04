@@ -898,9 +898,12 @@
           "MiddleBoth": "Mostrar controles no meio das duas laterais",
           "BottomMiddle": "Mostrar controles da barra principal inferior",
           "IdleFade": "Esmaecer quando ocioso",
-          "IdleFadeE": "Durante uma apresentação, os controles de página ficam mais transparentes após um tempo sem interação ou após virar páginas com um passador ou o teclado, para cobrir menos conteúdo. Passe o cursor, clique ou arraste para restaurá-los.",
+          "IdleFadeE": "Durante a apresentação, os controles selecionados esmaecem quando ficam inativos e são restaurados ao passar o cursor, clicar ou arrastar. Mudanças de página externas também esmaecem os controles de página. A barra principal só esmaece após o tempo de inatividade quando está acoplada embaixo, inclusive centralizada e mantém a opacidade normal se algum de seus painéis estiver aberto.",
           "IdleFadeOff": "Desativado",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Ambos os cantos inferiores",
+          "IdleFadeMiddlePair": "Ambos os lados ao centro",
+          "IdleFadeMainBar": "Barra principal (só acoplada)"
         },
         "WidgetPosition":
         {

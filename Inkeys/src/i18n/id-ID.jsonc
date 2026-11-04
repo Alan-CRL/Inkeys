@@ -898,9 +898,12 @@
           "MiddleBoth": "Tampilkan kontrol di kedua sisi tengah",
           "BottomMiddle": "Tampilkan kontrol pada bilah bawah",
           "IdleFade": "Pudar saat tidak digunakan",
-          "IdleFadeE": "Selama tayangan slide, kontrol halaman menjadi lebih transparan setelah beberapa saat tanpa interaksi atau setelah berganti halaman dengan presenter atau keyboard, agar tidak terlalu menutupi konten. Arahkan kursor, klik, atau seret untuk memulihkannya.",
+          "IdleFadeE": "Saat presentasi, kontrol yang dipilih memudar ketika tidak aktif dan pulih saat diarahkan, diklik, atau diseret. Perubahan halaman dari luar juga memudarkan kontrol halaman. Bilah utama hanya memudar setelah batas waktu tidak aktif saat ditambatkan di bawah, termasuk mode tengah dan tetap pada opasitas normal selama salah satu panelnya terbuka.",
           "IdleFadeOff": "Mati",
-          "IdleFadeSeconds": "{} dtk"
+          "IdleFadeSeconds": "{} dtk",
+          "IdleFadeBottomPair": "Kedua sudut bawah",
+          "IdleFadeMiddlePair": "Kedua sisi di tengah",
+          "IdleFadeMainBar": "Bilah utama (hanya mode dok)"
         },
         "WidgetPosition":
         {

@@ -107,6 +107,7 @@ public:
 	Inkeys::UI::Bar::EraserAttributePresentation PresentationSnapshot() const;
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
+	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible() || menuMotion_.Visible(); }
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
@@ -167,6 +168,7 @@ public:
 	Inkeys::UI::Bar::RecallAttributePresentation PresentationSnapshot() const;
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
+	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible(); }
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	void Initialize();
@@ -579,6 +581,7 @@ struct BarBottomDockPresentedSnapshot
 // UI 总集
 export class BarUISetClass
 {
+	friend int Inkeys::UI::Bar::RunSharedInteractionWorkerTests() noexcept;
 public:
 	BarUISetClass() : spec(this) {};
 
@@ -1338,6 +1341,14 @@ namespace Inkeys::UI::Bar
 	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
 	export void RefreshToolState() noexcept;
+	export struct PptIdleInputSnapshot
+	{
+		std::chrono::steady_clock::time_point activity{};
+		bool hovered = false, pressed = false;
+	};
+	export PptIdleInputSnapshot SnapshotPptIdleInput() noexcept;
+	export void ResetPptIdleInput() noexcept;
+	export void PublishPptIdleDeadline(std::chrono::steady_clock::time_point) noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
 	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;

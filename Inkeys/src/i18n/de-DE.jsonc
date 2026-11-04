@@ -898,9 +898,12 @@
           "MiddleBoth": "Steuerelemente beidseitig auf mittlerer Höhe anzeigen",
           "BottomMiddle": "Steuerelemente in der unteren Leiste anzeigen",
           "IdleFade": "Im Leerlauf ausblenden",
-          "IdleFadeE": "Während einer Präsentation werden die Seitensteuerelemente nach einer Weile ohne Interaktion oder nach dem Blättern per Presenter oder Tastatur transparenter, damit sie weniger verdecken. Zeigen, Klicken oder Ziehen stellt sie wieder her.",
+          "IdleFadeE": "Während einer Präsentation werden die ausgewählten Bedienelemente bei Inaktivität transparenter. Darüberfahren, Klicken oder Ziehen stellt sie wieder her. Externe Seitenwechsel blenden nur die Seitensteuerung ab. Die Hauptleiste wird nur unten angedockt (auch zentriert) nach der Wartezeit abgeblendet und bleibt bei geöffneten Unterfenstern unverändert.",
           "IdleFadeOff": "Aus",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Beide unteren Ecken",
+          "IdleFadeMiddlePair": "Beide Seiten auf halber Höhe",
+          "IdleFadeMainBar": "Hauptleiste (nur angedockt)"
         },
         "WidgetPosition":
         {

@@ -3529,6 +3529,163 @@ namespace
 		std::cout<<"[BelowComboPopup] scale="<<scale<<" changes="<<changes<<" underlying-clicks="<<clicks<<'\n';
 	}
 
+	void CheckPptIdleFadeScopes(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); ApplyPalette(false);
+		auto& io = ImGui::GetIO(); const auto oldSize = io.DisplaySize; const auto oldFlags = io.ConfigFlags;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		const auto& keys = I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay;
+		std::vector<std::string> items{ IA(keys.IdleFadeOff) };
+		for (int seconds : { 5, 10, 15, 30 }) items.push_back(std::vformat(IA(keys.IdleFadeSeconds), std::make_format_args(seconds)));
+		for (float width : { 340.0F, 780.0F })
+		{
+			PptIdleFadeDraft draft; ImGuiWindow* host = nullptr; LayoutRect card{}; PageMotionState motion;
+			std::array<int, 3> edits{}; int timeEdits = 0;
+			bool scrollCase = false; float scrollRequest = -1, anchorY = 0;
+			auto values = [&] { return std::array{ draft.bottomPair, draft.middlePair, draft.mainBar }; };
+			auto draw = [&](ImVec2 mouse, bool down, bool animated = false) {
+				io.DisplaySize = { (width + 32) * scale, (scrollCase ? 320 : 900) * scale };
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); ConfigureRowAnimations(animated ? .03F : 0, animated, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				if (scrollRequest >= 0) { ImGui::SetNextWindowScroll({ 0, scrollRequest }); scrollRequest = -1; }
+				ImGui::Begin("##ppt-idle-fade-scopes-cpu", nullptr,
+					ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				host = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				ConfigurePageMotion(motion, 1701, false); BeginPageMotion(motion);
+				if (scrollCase) ImGui::Dummy({ 1, Pixels(480) });
+				const auto origin = ImGui::GetCursorScreenPos(); const float rowWidth = ImGui::GetContentRegionAvail().x;
+				const auto events = RenderPptIdleFadeRow(draft, items);
+				card = { origin.x, origin.y, origin.x + rowWidth, ImGui::GetCursorScreenPos().y - Pixels(RowGap) };
+				const std::array changed{ events.bottomPair, events.middlePair, events.mainBar };
+				for (int index = 0; index < 3; ++index) edits[index] += changed[index] ? 1 : 0;
+				timeEdits += events.timeout ? 1 : 0;
+				for (auto* window : GImGui->Windows)
+					checks.Expect(!(window->Active && window->ParentWindow == host
+						&& window->ChildId == host->GetID("##ppt-idle-fade-scopes")),
+						"PPT scopes share the timeout row without a second child card or title");
+				if (scrollCase)
+				{
+					ImGui::Dummy({ 1, Pixels(300) }); anchorY = ImGui::GetCursorScreenPos().y;
+					ImGui::Dummy({ 1, Pixels(32) }); ImGui::Dummy({ 1, Pixels(480) });
+				}
+				EndPageMotion(); ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
+				return changed;
+			};
+			for (int pass = 0; pass < 3; ++pass) draw(outside, false);
+			checks.Expect(values() == std::array{ true, true, false } && draft.timeoutIndex == 2
+				&& edits == std::array{ 0, 0, 0 } && timeEdits == 0,
+				"PPT timeout/scopes retain their defaults without emitting a write event");
+			const auto rowId = ImHashStr("##ppt-idle-fade", 0, host->ID);
+			const auto scopeId = ImHashStr("##ppt-idle-fade-scopes", 0, rowId);
+			auto focusRect = [&](ImGuiID id) {
+				ImGui::FocusWindow(host); ImGui::SetNavID(id, ImGuiNavLayer_Main, host->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(outside, false);
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "PPT inline item registers actual keyboard navigation");
+				return ImGui::WindowRectRelToAbs(host, host->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			std::array<ImRect, 3> choices;
+			for (int index = 0; index < 3; ++index)
+			{
+				choices[index] = focusRect(ImHashStr("###scope", 0, ImHashData(&index, sizeof(index), scopeId)));
+				const auto& rect = choices[index];
+				checks.Expect(rect.GetWidth() > 0 && rect.GetHeight() > 0 && rect.Min.x >= card.left
+					&& rect.Max.x <= card.right && rect.Min.y >= card.top && rect.Max.y <= card.bottom + 1,
+					"localized scope labels and dock-only note remain within the shared parent card");
+			}
+			auto click = [&](int index) {
+				const auto point = choices[index].GetCenter();
+				draw(point, false); draw(point, true); const auto changed = draw(point, false); draw(outside, false);
+				return changed;
+			};
+			for (int index = 0; index < 3; ++index)
+			{
+				for (int other = index + 1; other < 3; ++other)
+					checks.Expect(!choices[index].Overlaps(choices[other]), "PPT scope hit rectangles do not overlap");
+				const auto before = values(); const auto changed = click(index); const auto after = values();
+				for (int item = 0; item < 3; ++item)
+					checks.Expect(after[item] == (item == index ? !before[item] : before[item])
+						&& changed[item] == (item == index) && edits[item] == (item <= index ? 1 : 0),
+						"a PPT scope click changes only its preference and dispatches once");
+			}
+			click(2);
+			checks.Expect(values() == std::array{ false, false, false }, "PPT scopes permit deselecting all regions");
+			const auto saved = values(); const auto savedEdits = edits; const float expandedHeight = card.Height();
+			const auto comboId = ImHashStr("##select", 0, rowId);
+			auto chord = [&](ImGuiKey key) { io.AddKeyEvent(key, true); draw(outside, false); io.AddKeyEvent(key, false); draw(outside, false); };
+			focusRect(comboId); chord(ImGuiKey_F4); chord(ImGuiKey_Home); chord(ImGuiKey_Enter); draw(outside, false);
+			checks.Expect(draft.timeoutIndex == 0 && timeEdits == 1 && card.Height() < expandedHeight,
+				"turning the actual timeout combo off collapses its inline choices and emits one event");
+			for (int index = 0; index < 3; ++index) click(index);
+			checks.Expect(values() == saved && edits == savedEdits,
+				"collapsed choices retain preferences and cannot dispatch edits at old hit positions");
+			focusRect(comboId); chord(ImGuiKey_F4); chord(ImGuiKey_End); chord(ImGuiKey_Enter); draw(outside, false); click(2);
+			checks.Expect(draft.timeoutIndex == 4 && timeEdits == 2 && !draft.bottomPair && !draft.middlePair && draft.mainBar,
+				"reenabling the timeout expands the same card and preserves independently editable preferences");
+			if ((I18n::isIdentifying(L"zh-CN") || I18n::isIdentifying(L"en-US")) && scale != 1.5F)
+			{
+				const auto beforeMotion = values(); const auto beforeEdits = edits;
+				const float fullHeight = card.Height(); draft.timeoutIndex = 0;
+				draw(outside, false, true); draw(outside, false, true); draw(outside, false, true);
+				const float middleHeight = card.Height();
+				checks.Expect(middleHeight < fullHeight && !motion.conditions.empty()
+					&& motion.conditions.begin()->second.reveal.value > 0 && motion.conditions.begin()->second.reveal.value < 1,
+					"idle choices collapse with real intermediate card height and fade progress");
+				draft.timeoutIndex = 4; draw(outside, false, true);
+				checks.Expect(motion.conditions.begin()->second.reveal.value > 0
+					&& motion.conditions.begin()->second.reveal.value < 1 && card.Height() < fullHeight
+					&& std::abs(card.Height() - middleHeight) < Pixels(64), "reversing inline motion keeps its current intermediate state");
+				for (int frame = 0; frame < 12; ++frame) draw(outside, false, true);
+				checks.Expect(std::abs(card.Height() - fullHeight) <= 1, "inline expansion reaches the full parent-card height");
+				draft.timeoutIndex = 0;
+				for (int frame = 0; frame < 12; ++frame) draw(outside, false, true);
+				const float closedHeight = card.Height();
+				checks.Expect(closedHeight < middleHeight && values() == beforeMotion && edits == beforeEdits,
+					"animated collapse removes the inline region without changing any preference");
+				draft.timeoutIndex = 4; draw(outside, false);
+				checks.Expect(std::abs(card.Height() - fullHeight) <= 1, "disabled animations reveal the inline region immediately");
+				// 把整张卡片滚到视口上方，真实后续锚点不能被行末缓存坐标拉回。
+				scrollCase = true; draw(outside, false); draw(outside, false);
+				scrollRequest = host->Scroll.y + card.bottom + Pixels(200); draw(outside, false); draw(outside, false);
+				const float stableAnchor = anchorY;
+				checks.Expect(card.bottom < host->ClipRect.Min.y && anchorY > host->ClipRect.Min.y,
+					"scroll fixture places the inline row above the viewport and its following anchor within view");
+				draft.timeoutIndex = 0;
+				for (int frame = 0; frame < 10; ++frame)
+				{
+					const float previousOccupied = motion.conditions.begin()->second.occupied, previousScroll = host->Scroll.y;
+					draw(outside, false, true);
+					const float extent = card.bottom + host->Scroll.y - previousScroll
+						+ (std::max)(0.0F, previousOccupied - motion.conditions.begin()->second.occupied);
+					checks.Expect(extent <= host->ClipRect.Min.y + 1, "collapse fixture stays fully above the viewport before compensation");
+					checks.Expect(std::abs(anchorY - stableAnchor) <= 2, "inline collapse above the viewport preserves the following anchor");
+				}
+				draft.timeoutIndex = 4;
+				for (int frame = 0; frame < 10; ++frame)
+				{
+					const float previousOccupied = motion.conditions.begin()->second.occupied, previousScroll = host->Scroll.y;
+					draw(outside, false, true);
+					const float extent = card.bottom + host->Scroll.y - previousScroll
+						+ (std::max)(0.0F, previousOccupied - motion.conditions.begin()->second.occupied);
+					checks.Expect(extent <= host->ClipRect.Min.y + 1, "expansion fixture stays fully above the viewport before compensation");
+					if (std::abs(anchorY - stableAnchor) > 2)
+						std::cerr << "[PptInlineAnchor] width=" << width << " scale=" << scale << " frame=" << frame
+							<< " anchor=" << anchorY << " expected=" << stableAnchor << " scroll=" << host->Scroll.y
+							<< " occupied=" << motion.conditions.begin()->second.occupied
+							<< " reveal=" << motion.conditions.begin()->second.reveal.value << '\n';
+					checks.Expect(std::abs(anchorY - stableAnchor) <= 2, "inline expansion above the viewport preserves the following anchor");
+				}
+				scrollCase = false; scrollRequest = 0; draw(outside, false);
+			}
+		}
+		io.AddMousePosEvent(outside.x, outside.y); io.AddMouseButtonEvent(0, false);
+		io.DisplaySize = oldSize; io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle;
+		ConfigureRowAnimations(0, false, 1);
+	}
+
 	void CheckGeneralSections(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
@@ -7420,6 +7577,8 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 
 	char motionFilter[4]{};
 	const bool motionOnly = GetEnvironmentVariableA("INKEYS_SETTING_MOTION_ONLY", motionFilter, 4) != 0;
+	char pptIdleFilter[4]{};
+	const bool pptIdleOnly = GetEnvironmentVariableA("INKEYS_SETTING_PPT_IDLE_ONLY", pptIdleFilter, 4) != 0;
 	char warpFilter[4]{};
 	const bool warpOnly=GetEnvironmentVariableA("INKEYS_FONT_WARP_ONLY",warpFilter,4)!=0;
 	char focusedPages[32]{};
@@ -7428,12 +7587,12 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		CheckFreeTypeRealPages(checks,sources,fontDirectory);
 		return checks.failures;
 	}
-	if (!motionOnly && !warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
+	if (!pptIdleOnly && !motionOnly && !warpOnly && !eraserOnly && !attentionOnly) CheckNotoFontCalibration(checks,sources,fontDirectory);
 
 	// 系统 DPI 100/125/150/200%，另覆盖系统 DPI × 用户倍率的组合。
 	for (const float scale : { 1.0F, 1.25F, 1.5F, 2.0F, 1.875F, 3.0F, 4.0F })
 	{
-		if (generalOnly && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
+		if ((generalOnly || pptIdleOnly) && scale != 1.0F && scale != 1.5F && scale != 1.875F) continue;
 		if (motionOnly && scale != 1.0F && scale != 1.875F) continue;
 		ImGuiSession session;
 		Design::ConfigureFreeTypeAtlas(*ImGui::GetIO().Fonts);
@@ -7490,6 +7649,16 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			}
 			continue;
 		}
+		if (pptIdleOnly)
+		{
+			for (const auto& locale : Inkeys::Localization::Locales)
+			{
+				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "PPT scope tests load actual locale resources");
+				const auto fontIndex = localeFontIndex(locale);
+				CheckPptIdleFadeScopes(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+			}
+			continue;
+		}
 		if (generalOnly)
 		{
 			for (const auto& locale : Inkeys::Localization::Locales)
@@ -7497,6 +7666,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "general-only tests load actual language resources");
 				const auto fontIndex = localeFontIndex(locale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckPptIdleFadeScopes(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			CheckBelowComboPopup(checks,fonts[0],fonts[1],fonts.back(),scale);
 			continue;
@@ -7595,6 +7765,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 					CheckVietnameseCaptionClipping(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckLocalizedComponentAndPluginRows(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckPptIdleFadeScopes(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckSpeedEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
 				CheckPalmEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
 				CheckSpeedEraserDemoPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);

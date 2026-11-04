@@ -4515,15 +4515,20 @@ SettingSessionCoroutine RunSettingSession()
 							idleFadeItems.push_back(vformat(
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFadeSeconds),
 								make_format_args(idleFadeOptions[option])));
-						if (Design::ComboRow("##ppt-idle-fade",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFade).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFadeE).c_str(),
-							"\ue7b3", idleFadeIndex, idleFadeItems))
+						Design::PptIdleFadeDraft idleFadeDraft{
+							Inkeys::config.PlugIn.PPTHelper.IdleFadeBottomPair.load(),
+							Inkeys::config.PlugIn.PPTHelper.IdleFadeMiddlePair.load(),
+							Inkeys::config.PlugIn.PPTHelper.IdleFadeMainBar.load(), idleFadeIndex };
+						const auto idleFadeEvents = Design::RenderPptIdleFadeRow(idleFadeDraft, idleFadeItems);
+						if (idleFadeEvents.timeout || idleFadeEvents.bottomPair || idleFadeEvents.middlePair || idleFadeEvents.mainBar)
 						{
-							Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds = idleFadeOptions[idleFadeIndex];
+							// 时长与范围共用一张卡片，只写本帧改变的字段并合并一次保存/通知。
+							if (idleFadeEvents.timeout) Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds = idleFadeOptions[idleFadeDraft.timeoutIndex];
+							if (idleFadeEvents.bottomPair) Inkeys::config.PlugIn.PPTHelper.IdleFadeBottomPair = idleFadeDraft.bottomPair;
+							if (idleFadeEvents.middlePair) Inkeys::config.PlugIn.PPTHelper.IdleFadeMiddlePair = idleFadeDraft.middlePair;
+							if (idleFadeEvents.mainBar) Inkeys::config.PlugIn.PPTHelper.IdleFadeMainBar = idleFadeDraft.mainBar;
 							QueueConfigWrite();
-							Inkeys::UI::Ppt::NotifyConfigurationChanged(
-								Inkeys::UI::Ppt::ConfigGroup::IdleFade);
+							Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::IdleFade);
 						}
 
 						Design::SectionHeader(

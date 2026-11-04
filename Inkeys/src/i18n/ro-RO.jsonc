@@ -898,9 +898,12 @@
           "MiddleBoth": "Comenzi pe ambele laturi la mijloc",
           "BottomMiddle": "Comenzi în bara principală de jos",
           "IdleFade": "Estompare la inactivitate",
-          "IdleFadeE": "În timpul prezentării, comenzile de pagină devin mai transparente după o perioadă fără interacțiune sau după schimbarea paginii cu un prezentator ori cu tastatura, pentru a acoperi mai puțin conținut. Treceți cu cursorul, faceți clic sau trageți pentru a le restabili.",
+          "IdleFadeE": "În timpul prezentării, comenzile selectate devin mai transparente când sunt inactive și revin la trecerea cursorului, clic sau glisare. Schimbările externe de pagină estompează și comenzile de pagină. Bara principală se estompează după timpul de inactivitate doar când este andocată jos, inclusiv centrată și își păstrează opacitatea normală dacă are un panou deschis.",
           "IdleFadeOff": "Dezactivat",
-          "IdleFadeSeconds": "{} s"
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Ambele colțuri de jos",
+          "IdleFadeMiddlePair": "Ambele laturi la mijloc",
+          "IdleFadeMainBar": "Bara principală (doar andocată)"
         },
         "WidgetPosition":
         {

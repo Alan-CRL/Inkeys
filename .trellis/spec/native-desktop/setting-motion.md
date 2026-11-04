@@ -35,6 +35,8 @@
 - 同尺寸resize不新增serial；已有有效同尺寸RTV复用。缺RTV、未知实际尺寸、失败及新epoch仍重试，旧serial完成不消费更新目标；Size持续渲染，Move原有Idle保持。布局优化不能触发普通resize的字体/图片重建。
 - HWND owner仅缓存成功应用的材质；等价请求无disable/re-enable，主题直接更新既有accent。真实composition/能力/高对比度/销毁仍失效重验，失败撤销并走Solid，可重试。帧内backdrop/palette/clear使用一致冻结快照，几何边框/圆角继续原路径，不关闭系统动画掩盖问题。
 
+- `InlineRowContent` 可通过 `visibilityId`/`visible` 仅折叠内联区；时长/开关父行始终显示，卡片外框按与 `ConditionalBlock` 相同的 reveal 进度计量（含上下 padding），内容复用原裁剪/组透明度和退出禁交互。初始状态/目标/速率不另建一套状态机，未传 visibilityId 的旧内联行保持原行为。条件块完成视口上方高度补偿后，SettingRow 行末游标必须继承 CursorStartPos 的重基准 delta，不能用进入行时缓存绝对坐标覆盖补偿。滚动回归应逐帧保证旧/新条件范围都完全在视口上方，不能仅以初始摆位认定整个展开过程满足前提。
+
 ## 4. Validation & Error Matrix
 
 | 边界 | 必须结果 |

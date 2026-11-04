@@ -898,9 +898,12 @@
           "MiddleBoth": "중앙 양쪽 제어부 표시",
           "BottomMiddle": "하단 주 도구 모음 제어부 표시",
           "IdleFade": "유휴 시 흐리게",
-          "IdleFadeE": "슬라이드 쇼 중 일정 시간 조작이 없거나 프레젠터·키보드로 페이지를 넘긴 후 페이지 제어부가 더 투명해져 가림을 줄입니다. 가리키기, 클릭, 끌기로 복원됩니다.",
+          "IdleFadeE": "슬라이드 쇼 중 선택한 컨트롤은 사용하지 않으면 흐려지고, 포인터를 올리거나 클릭하거나 끌면 복원됩니다. 외부에서 페이지를 바꾸면 페이지 컨트롤도 흐려집니다. 기본 도구 모음은 하단 도킹 모드(가운데 배치 포함)에서 유휴 시간이 지난 후에만 흐려지며, 연결된 패널이 열려 있으면 원래 불투명도를 유지합니다.",
           "IdleFadeOff": "끄기",
-          "IdleFadeSeconds": "{}초"
+          "IdleFadeSeconds": "{}초",
+          "IdleFadeBottomPair": "양쪽 하단",
+          "IdleFadeMiddlePair": "양쪽 중앙",
+          "IdleFadeMainBar": "기본 도구 모음(하단 도킹만)"
         },
         "WidgetPosition":
         {

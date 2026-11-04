@@ -86,6 +86,15 @@ namespace BarThemeMaterial
 
 	// 主栏展开时的 Dark 常驻填充透明度；其他常驻表面按与它的比例同步缩放。
 	inline constexpr double ResidentBaseFillOpacity = 0.80;
+	inline constexpr double IdleBackgroundOpacity = 0.30;
+	inline constexpr double IdleContentOpacity = 0.60;
+
+	// 闲置只限制当前正常值，不再次乘用户透明度，也不把本来更淡的材质加深。
+	inline double ResolveIdleOpacity(double normal, double ceiling, double progress) noexcept
+	{
+		normal = ClampWeight(normal);
+		return Mix(normal, (std::min)(normal, ceiling), progress);
+	}
 
 	// 常驻表面填充比例：用户设置的绝对透明度优先（>0），否则为主题默认（Light 端 ×1.10）。
 	inline double ResidentFillOpacityScale(double lightWeight, double lightScale,

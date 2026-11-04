@@ -281,6 +281,17 @@ namespace Inkeys::UI::Setting::Design
 	};
 	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
 
+	struct PptIdleFadeDraft
+	{
+		bool bottomPair = true, middlePair = true, mainBar = false;
+		int timeoutIndex = 2;
+	};
+	struct PptIdleFadeEvents
+	{
+		bool bottomPair = false, middlePair = false, mainBar = false, timeout = false;
+	};
+	PptIdleFadeEvents RenderPptIdleFadeRow(PptIdleFadeDraft& draft, const std::vector<std::string>& items);
+
 	struct DesktopShortcutDraft
 	{
 		Business::DesktopShortcut::NameOptions names;
