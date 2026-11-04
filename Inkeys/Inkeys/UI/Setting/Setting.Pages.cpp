@@ -717,7 +717,26 @@ namespace Inkeys::UI::Setting::Design
 			IA(cursor.InjectedMouse.E).c_str(), "\ue946", draft.injectedMouse,
 			draft.injectedAvailable ? nullptr : IA(cursor.InjectedMouse.Unavailable).c_str());
 		ImFluent::EndDisabled();
-		InfoText(IA(cursor.Note).c_str());
+		{
+			// 说明以分号分成两行：前半为标题行，后半为说明行；无分号时整句作标题。
+			const std::string note = IA(cursor.Note);
+			size_t split = std::string::npos, skip = 1;
+			for (const char* separator : { "ï¼", ";" })
+			{
+				const size_t found = note.find(separator);
+				if (found != std::string::npos && (split == std::string::npos || found < split))
+				{ split = found; skip = std::strlen(separator); }
+			}
+			const auto trim = [](std::string text)
+			{
+				const size_t first = text.find_first_not_of(" 	");
+				const size_t last = text.find_last_not_of(" 	");
+				return first == std::string::npos ? std::string() : text.substr(first, last - first + 1);
+			};
+			const std::string title = trim(split == std::string::npos ? note : note.substr(0, split));
+			const std::string detail = split == std::string::npos ? std::string() : trim(note.substr(split + skip));
+			Notice("##cursor-note", title.c_str(), detail.c_str(), ImFluentInfoSeverity_Informational);
+		}
 		return events;
 	}
 
