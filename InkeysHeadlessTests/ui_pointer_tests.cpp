@@ -724,6 +724,25 @@ namespace
             check(!RoutedTouch::HandlePointer(window(0), WM_POINTERUP, wp(90)) && fixture.targets[0].cancellations.size() == cancels0 + 1 && !fixture.locals[0].active,
                 "A failed GetPointerInfo query on Up cancels the route it cannot confirm");
             fake.ok = TRUE;
+            // 系统手势等接管捕获后不会再有 Up：按 id 撤销路由，且仍交回调用方继续处理该消息。
+            fake.Set(PT_TOUCH, PenDownFlags, { 140, 150 }, 8300, 0x4568);
+            (void)RoutedTouch::HandlePointer(window(0), WM_POINTERDOWN, wp(92));
+            const auto cancelsCapture = fixture.targets[0].cancellations.size();
+            const auto upsCapture = fixture.targets[0].Count(Kind::Up);
+            check(fixture.locals[0].active, "Touch contact is active before capture is lost");
+            check(!RoutedTouch::HandlePointer(window(0), WM_POINTERCAPTURECHANGED, wp(93)) && fixture.locals[0].active
+                && fixture.targets[0].cancellations.size() == cancelsCapture,
+                "Capture loss of another pointer id leaves the active route alone");
+            check(!RoutedTouch::HandlePointer(window(0), WM_POINTERCAPTURECHANGED, wp(92))
+                && fixture.targets[0].cancellations.size() == cancelsCapture + 1 && !fixture.locals[0].active
+                && fixture.targets[0].Count(Kind::Up) == upsCapture,
+                "WM_POINTERCAPTURECHANGED cancels the route of that pointer id without a successful Up");
+            const auto downsCapture = fixture.targets[0].Count(Kind::Down);
+            fake.Set(PT_TOUCH, PenDownFlags, { 140, 150 }, 8310, 0x4568);
+            check(RoutedTouch::HandlePointer(window(0), WM_POINTERDOWN, wp(94)) && fixture.targets[0].Count(Kind::Down) == downsCapture + 1,
+                "A new Down is accepted after capture loss");
+            fake.Set(PT_TOUCH, PenUpFlags, { 140, 150 }, 8320, 0x4568);
+            (void)RoutedTouch::HandlePointer(window(0), WM_POINTERUP, wp(94));
             // WM_TOUCH 的去向：PointerMode 丢弃，Legacy（Win7/应急开关）仍按原路径读取。
             {
                 namespace Diag = Inkeys::Input::UiPointer::Diagnostics;

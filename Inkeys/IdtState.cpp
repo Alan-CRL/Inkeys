@@ -3659,17 +3659,6 @@ int RunStateModeProductionTest() noexcept
 				ProductRuntimeSnapshot().runtimeRevision != after.runtimeRevision,
 				"ui-tool-sync-publishes-native-intent-without-synchronous-window-application");
 		}
-		stage = "workspace-legacy-restart-callback";
-		{
-			unsigned restarts = 0;
-			ConfigureProductLegacyRestart([&] { ++restarts; return true; });
-			RequestProductLegacyRecovery(nullptr);
-			require(TryProductLegacyRestart() && restarts == 1 && !TryProductLegacyRestart(),
-				"stopped-host-legacy-restart-runs-once-and-retires-request");
-			ConfigureProductLegacyRestart([] { return false; });
-			RequestProductLegacyRecovery(nullptr);
-			require(!TryProductLegacyRestart(), "failed-legacy-restart-retains-failure-instead-of-faking-ready");
-		}
 		setProbePhase(WhiteboardPhase::Inactive);
 		require(SwitchWorkspaceStateMode(Workspace::Desktop), "restore-desktop-after-scene-tests");
 		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
@@ -3815,13 +3804,6 @@ void StateMonitoring()
 		const bool fatalSafetyExit = currentFault && Draw3FatalRecoveryMatches(snapshot, desired);
 		const bool stoppedSafetyExit = currentFault && !ProductRunning() && Draw3RecoveryNeedsUiRelease(snapshot, desired);
 		const bool stoppedOrFatalSafetyExit = fatalSafetyExit || stoppedSafetyExit;
-		if (stoppedSafetyExit && TryProductLegacyRestart())
-		{
-			snapshot = ProductRuntimeSnapshot();
-			observedHostGeneration = 0;
-			request = RequestWorkspace(request.desired, request.minimized, true);
-			continue;
-		}
 		if (!CloseWorkspaceAdmission(request) && !stoppedOrFatalSafetyExit) continue;
 		const auto admitted = ReadWorkspaceHandoff();
 		if (admitted.revision != request.revision) continue;

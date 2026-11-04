@@ -2184,7 +2184,6 @@ namespace Inkeys::Drawing::Draw3
 							observer.shortcutCompleted = &CompleteShortcut;
 							observer.recoveryChanged = &ObserveRecovery;
 							observer.recoveryRetryAllowed = &RecoveryRetryAllowed;
-							observer.legacyWindowRebuildRequested = &RequestProductLegacyRecovery;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。

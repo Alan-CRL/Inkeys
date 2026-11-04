@@ -108,7 +108,6 @@ export namespace Inkeys::Drawing::Draw3
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
 		void (*recoveryChanged)(void*, const CanvasRecoveryState&) noexcept = nullptr;
 		bool (*recoveryRetryAllowed)(void*, std::uint64_t) noexcept = nullptr;
-		void (*legacyWindowRebuildRequested)(void*) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

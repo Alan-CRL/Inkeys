@@ -106,6 +106,22 @@ namespace
 	mutex settingDrainMutex;
 	condition_variable settingDrainCondition;
 	bool settingSessionDrained = true;
+	// 仅共享渲染线程访问；注销先于协程局部草稿销毁，避免留下悬空捕获。
+	function<void()> settingCommitPendingEdits;
+	struct SettingPendingEditsScope
+	{
+		explicit SettingPendingEditsScope(function<void()> commit)
+		{ settingCommitPendingEdits = std::move(commit); }
+		~SettingPendingEditsScope() { settingCommitPendingEdits = {}; }
+	};
+	void CommitPendingSettingEdits()
+	{
+		if (settingCommitPendingEdits) settingCommitPendingEdits();
+	}
+	void CommitSettingEditsBeforeSuspend(const Inkeys::UI::Setting::SessionDecision& decision)
+	{
+		if (decision.releasePresentation || decision.resetInput) CommitPendingSettingEdits();
+	}
 	mutex settingInitializeMutex;
 	condition_variable settingInitializeCondition;
 	bool settingInitializeCompleted = false;
@@ -1958,7 +1974,8 @@ static int settingPendingLanguage = -1;
 {
 	ImGuiIO& io = ImGui::GetIO();
 	io.Fonts->Clear();
-	io.Fonts->SetFontLoader(ImGuiFreeType::GetFontLoader());
+	// 与字体测试同一入口：FreeType 加载器、基线像素对齐和灰度 Alpha8 图集。
+	Inkeys::UI::Setting::Design::ConfigureFreeTypeAtlas(*io.Fonts);
 	ImFontMain = nullptr;
 	ImFontStrong = nullptr;
 	ImFontDesignMain = nullptr;
@@ -2681,6 +2698,7 @@ SettingSessionCoroutine RunSettingSession()
 				ResidentOpacitySavePending = false;
 			}
 		};
+		const SettingPendingEditsScope pendingEditsScope{commitGeneralSliders};
 		auto navigateTo = [&](Design::NavigationDestination requested)
 		{
 			requested = Design::NormalizeDestination(requested);
@@ -5271,8 +5289,10 @@ namespace
 		settingNavigationClockIdle = true; settingFrameSubmission.Reset();
 		if (!settingSession.Done())
 		{
-			settingSessionShouldStop.store(true, memory_order_release);
 			unique_lock imguiLock(settingImguiMutex);
+			// 退出可发生在隐藏后尚无新 ImGui 帧时，先提交有效草稿再排空协程。
+			CommitPendingSettingEdits();
+			settingSessionShouldStop.store(true, memory_order_release);
 			SettingRenderScope renderScope;
 			settingSession.Resume(imguiLock);
 		}
@@ -5314,6 +5334,8 @@ namespace
 			}
 		}
 
+		// Hide 后可能直接休眠：在释放 RTV、清输入或提前返回前提交，不强行恢复无呈现协程。
+		CommitSettingEditsBeforeSuspend(decision);
 		if (decision.releasePresentation || decision.rebuildDeviceResources || decision.rebuildFonts || decision.resize)
 		{ settingHomeEntryCache.Reset(); settingFrameSubmission.Reset(); }
 		// 预览自行按画布宽度分桶调整目标纹理，普通窗口缩放不重编译播放着色器。
@@ -5749,6 +5771,13 @@ namespace Inkeys::UI::Setting
             check(backend, "backend initialization");
             if (backend && I18n::load(1,L"JSON",L"zh-CN") && RebuildSettingFonts())
             {
+                const auto checkAtlasPolicy = [&] {
+                    const auto* atlas = ImGui::GetIO().Fonts;
+                    check(atlas->TexDesiredFormat == ImTextureFormat_Alpha8
+                        && (atlas->FontLoaderFlags & ImGuiFreeTypeLoaderFlags_SnapAscentToPixelGrid),
+                        "production atlas uses Alpha8 and pixel-aligned baselines");
+                };
+                checkAtlasPolicy();
                 auto draw = [&](bool expectedFailure = false)
                 {
                     ImGui_ImplDX11_NewFrame(); ImGui::NewFrame();
@@ -5804,6 +5833,7 @@ namespace Inkeys::UI::Setting
                         const auto& current = I18n::locale();
                         const bool reuse = cycle != 0 && locale.regularFont == current.regularFont && locale.boldFont == current.boldFont;
                         check(ApplyPreparedSettingLanguage(locale,next,cycle == 0),"production font decision stages or reuses and commits");
+                        checkAtlasPolicy();
                         check((ImGui::GetIO().Fonts == previousAtlas) == reuse,"same-family locale reuses atlas while rebuild replaces it");
                         draw(); draw();
                         check(GImGui==originalContext && persistent==ImGui::FindWindowByName("font-lifecycle###persistent")
@@ -5895,6 +5925,50 @@ namespace Inkeys::UI::Setting
 			{
 				Inkeys::Config savedConfig; savedConfig = Inkeys::config;
 				struct Restore { Inkeys::Config& saved; ~Restore() { Inkeys::config=saved; } } restore{savedConfig};
+				// 不创建 HWND/ImGui 帧：真实 Hide 决策和关闭排空都必须提交草稿，销毁后不再调用捕获。
+				bool pendingEditsPassed = false;
+				{
+					Design::DesktopShortcutDraft app, board(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+					app.preset = Inkeys::Business::DesktopShortcut::Custom; app.customName = "App before hide";
+					board.preset = Inkeys::Business::DesktopShortcut::WhiteboardCustom; board.customName = "Board before hide";
+					Inkeys::UI::Setting::SessionState session;
+					session.CommitEpoch(1); session.SetVisible(true);
+					unsigned commits = 0;
+					{
+						const SettingPendingEditsScope scope{[&] {
+							++commits;
+							(void)CommitDesktopShortcutNamePreference(app, 30, &board);
+							(void)CommitDesktopShortcutNamePreference(board, 30, &app);
+						}};
+						CommitSettingEditsBeforeSuspend(session.Resolve(1, true, true));
+						const bool visibleUnchanged = commits == 0;
+						session.SetVisible(false);
+						const auto hidden = session.Resolve(1, true, true);
+						CommitSettingEditsBeforeSuspend(hidden);
+						const bool hiddenSaved = !hidden.HasPresentationWork() && commits == 1
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App before hide"
+							&& Inkeys::config.GetWhiteboardShortcutNamePreference().second == L"Board before hide";
+						session.ConsumeInputReset(session.InputResetSerial()); session.SetVisible(true);
+						app.customName = "App after quick reopen";
+						session.SetVisible(false); session.SetVisible(true);
+						const auto reopened = session.Resolve(1, true, false);
+						CommitSettingEditsBeforeSuspend(reopened);
+						const bool quickReopenSaved = reopened.resetInput && !reopened.releasePresentation
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App after quick reopen";
+						app.customName = "App before shutdown";
+						CommitPendingSettingEdits();
+						const bool shutdownSaved = Inkeys::config.GetShortcutNamePreference().second == L"App before shutdown";
+						app.customName = "CON"; board.customName = "App before shutdown";
+						CommitPendingSettingEdits();
+						pendingEditsPassed = visibleUnchanged && hiddenSaved && quickReopenSaved && shutdownSaved
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App before shutdown"
+							&& Inkeys::config.GetWhiteboardShortcutNamePreference().second == L"Board before hide";
+					}
+					const auto retiredCommits = commits;
+					CommitPendingSettingEdits();
+					pendingEditsPassed &= !settingCommitPendingEdits && commits == retiredCommits;
+				}
+				if (!pendingEditsPassed) { std::fputs("[SettingPendingEdits] FAIL: hidden/reopen/shutdown commit or retirement\n", stderr); return 1; }
 				struct FrozenProbe
 				{
 					mutex mutex; condition_variable condition;

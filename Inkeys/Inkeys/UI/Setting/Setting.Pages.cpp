@@ -716,7 +716,8 @@ namespace Inkeys::UI::Setting::Design
 			// 说明以分号分成两行：前半为标题行，后半为说明行；无分号时整句作标题。
 			const std::string note = IA(cursor.Note);
 			size_t split = std::string::npos, skip = 1;
-			for (const char* separator : { "ï¼", ";" })
+			// 全角分号以 UTF-8 字节转义书写，不受源文件编码转换影响。
+			for (const char* separator : { "\xEF\xBC\x9B", ";" })
 			{
 				const size_t found = note.find(separator);
 				if (found != std::string::npos && (split == std::string::npos || found < split))

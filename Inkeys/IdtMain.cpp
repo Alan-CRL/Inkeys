@@ -4008,12 +4008,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
 			drawpad_window, draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks,
 			preferDraw3DirectComposition, StartWindowService);
-		Inkeys::Drawing::Draw3::ConfigureProductLegacyRestart([&]
-		{
-			return StartDraw3ProductWithFallback(windowService, windowSpecs,
-				drawpad_window, draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks,
-				preferDraw3DirectComposition, StartWindowService);
-		});
 		if (!draw3Started)
 		{
 			// Host 初始化失败后的提示和窗口清理可能依赖已停止的绘制线程，先建立监督。
