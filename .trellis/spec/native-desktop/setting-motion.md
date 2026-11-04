@@ -21,7 +21,7 @@
 ## 3. Contracts
 
 - 每次真实页面/子页/返回播放，重复当前页不重播，各页原有scroll保留。路由、条件块和窗口ID不依赖翻译文案。字体/语言/DPI/resize只影响布局，不算导航。产品传入I18n::revision，atlas/字体/倍率/正文尺寸失效使旧预测高度落定并重测，不改变导航generation。
-- 速率1时旧页125ms smoothstep渐隐，完全消失后才提交新页。新块上浮12 DIP、位置310ms三次ease-out、透明度450ms smoothstep，约27ms顺序且首末延迟最多108ms；最后位置418ms落定而alpha到558ms才完全恢复，再用110ms渐显thumb。单独的PageMotionTiming为入场时序权威，Exit引用PageTransitionState::Duration；沿用现有开关/速率，不叠加旧整页contentReveal。
+- 速率1时旧页125ms smoothstep渐隐，完全消失后才提交新页。新块上浮12 DIP、位置310ms三次ease-out、透明度450ms smoothstep，约27ms顺序且首末延迟最多108ms；最后位置418ms落定而alpha到558ms才完全恢复，thumb在同一正文渐显阶段从0连续恢复到1，不再等待正文结束后单独出现。单独的PageMotionTiming为入场时序权威，Exit引用PageTransitionState::Duration；沿用现有开关/速率，不叠加旧整页contentReveal。
 - 同一物理排一起、分区标题随第一项，按当前viewport内可见内容排序。短入场阶段按稳定window/块ID保留位置/alpha各自单调上界，异步插入不得让后项倒退；完成后清空有界记录，稳定页不逐帧分配，离屏行数不拖长总时长。
 - 离页/快速返回时冻结当前块姿态再组合整页opacity，不先跳成完整终态。旧页正文switch每帧只运行一次，淡出时保持实际旧page/subpage，不能立即换新页再假装旧页淡出。最新请求替换pending而不重启淡出；回到仍显示的源页从当前opacity反向。仅inner正文内容及轨道组合alpha各一次，背景/导航/标题栏保持稳定；初次Show、字标开屏、reset与禁动画直接提交。
 - 退出正文使用NoInputs及owner输入屏障，不用BeginDisabled使正常控件先跳成灰色；嵌套child不继承全部NoInputs，须清理NewFrame遗留的旧hover/nav/scroll，侧栏和标题栏保持可用。
@@ -49,7 +49,7 @@
 
 ## 5. Good / Base / Bad Cases
 
-- Good：新长页首帧正文已是最终宽度，thumb稍后渐显；点实际按钮立即落定且只产生一次动作；条件退出仍保留可见文字，但不能触发恢复/保存操作。
+- Good：新长页首帧正文已是最终宽度，thumb随正文一起渐显、随旧页一起渐隐；点实际按钮立即落定且只产生一次动作；条件退出仍保留可见文字，但不能触发恢复/保存操作。
 - Base：全局动画关闭即刻到位；Win7/8/8.1仍不透明，Win10/11仍统一BlurBehind；字标及20语字体机制保持。
 - Bad：逐顶点乘块透明度让toggle轨道透过滑块；只在父列表插Begin/End而child列表仍在组后绘制；用straight-alpha混合离屏预乘结果造成暗边；用0-alpha但可点击的标题栏/轨道隐藏入口；用宽度补间挤压正文；同帧重复渲染业务switch做测量；静止贴底时只发晚到的scroll target；用普通RGBA插值替代原alpha权重；把WARP回调计时外推为Win7/DXGI性能。
 

@@ -5273,7 +5273,7 @@ namespace
 		std::uint64_t route = 1;
 		bool animated = true, opening = false, departing = false, longPage = false, visible = false, nested = true;
 		bool generalPage = false, conditionAtBottom = false, focusRootNextFrame = false;
-		float bodyWidth = 700.0F; std::uint64_t layoutRevision = 0;
+		float bodyWidth = 700.0F, departureOpacity = 1.0F; std::uint64_t layoutRevision = 0;
 		GeneralDraft general{}; general.animation = true; general.animationRate = 1.0F;
 		float requestedScroll = -1.0F;
 		int actions = 0, frames = 0;
@@ -5282,7 +5282,7 @@ namespace
 		{
 			ImGuiWindow* owner = nullptr;
 			float width = 0, firstY = 0, firstDrawY = 0, after = 0, scroll = 0;
-			unsigned firstAlpha = 0, secondAlpha = 0, afterAlpha = 0;
+			unsigned firstAlpha = 0, secondAlpha = 0, afterAlpha = 0, thumbAlpha = 0;
 			ImRect action;
 			std::string retained; ImGuiID firstAction = 0;
 		};
@@ -5305,9 +5305,26 @@ namespace
 			ImGui::SetCursorPos({ 40 * scale, 40 * scale });
 			ImGui::PushID(static_cast<int>(route));
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 24 * scale, 28 * scale });
+			auto* parentDraw = ImGui::GetWindowDrawList();
+			const int parentFirst = parentDraw->VtxBuffer.Size;
 			BeginScrollChild("##motion-body", { bodyWidth * scale, 360 * scale }, ImGuiChildFlags_AlwaysUseWindowPadding,
-				departing ? ImGuiWindowFlags_NoInputs : 0, false, false, true, PageScrollbarAlpha(motion), &motion);
+				departing ? ImGuiWindowFlags_NoInputs : 0, false, false, true, PageScrollbarAlpha(motion) * departureOpacity, &motion);
 			ImGui::PopStyleVar(); Frame frame; frame.owner = ImGui::GetCurrentWindow();
+			if (frame.owner->ScrollbarY)
+			{
+				// native 装饰可能写入父列表，检查真实滑块顶点而不是只检查透明度公式。
+				const auto track = ImGui::GetWindowScrollbarRect(frame.owner, ImGuiAxis_Y);
+				const auto thumbRgb = ImGui::GetColorU32(ImGuiCol_ScrollbarGrab) & ~IM_COL32_A_MASK;
+				auto readThumb = [&](ImDrawList* list, int first) {
+					for (int index = first; index < list->VtxBuffer.Size; ++index)
+					{
+						const auto& vertex = list->VtxBuffer[index];
+						if ((vertex.col & ~IM_COL32_A_MASK) == thumbRgb && track.Contains(vertex.pos))
+							frame.thumbAlpha = (std::max)(frame.thumbAlpha, vertex.col >> IM_COL32_A_SHIFT);
+					}
+				};
+				readThumb(frame.owner->DrawList, 0); readThumb(parentDraw, parentFirst);
+			}
 			if (requestedScroll >= 0) { ImGui::SetScrollY(requestedScroll); requestedScroll = -1; }
 			BeginPageMotion(motion);
 			frame.width = ImGui::GetContentRegionAvail().x;
@@ -5454,15 +5471,33 @@ namespace
 		idle(); checks.Expect(motion.generation == generation && motion.elapsed >= PageMotionTiming::Total,
 			"repeated current-route notifications do not replay page entry");
 		longPage = true; ++route;
-		bool sawRail = false;
+		bool sawRail = false, sawThumbDuringContent = false;
+		const unsigned fullThumbAlpha = ImGui::GetColorU32(ImGuiCol_ScrollbarGrab) >> IM_COL32_A_SHIFT;
+		unsigned previousThumbAlpha = 0;
 		for (int i = 0; i < 50; ++i)
 		{
 			frame = idle(); sawRail |= frame.owner->ScrollbarY;
 			checks.Expect(Near(frame.width, width, 1), "short-to-long page keeps the exact body width from first visible frame through scrollbar reveal");
-			if (i < 32) checks.Expect(PageScrollbarAlpha(motion) == 0, "vertical thumb waits for all visible blocks to settle");
+			sawThumbDuringContent |= frame.firstAlpha > 0 && frame.firstAlpha < 255
+				&& frame.thumbAlpha > 0 && frame.thumbAlpha < fullThumbAlpha;
+			checks.Expect(frame.thumbAlpha >= previousThumbAlpha, "actual vertical thumb fades in monotonically with page content");
+			previousThumbAlpha = frame.thumbAlpha;
 		}
 		checks.Expect(sawRail && frame.owner->ScrollMax.y > 0 && PageScrollbarAlpha(motion) == 1,
 			"long real page has a scrollable full rail after entry completes");
+		checks.Expect(sawThumbDuringContent && frame.thumbAlpha == fullThumbAlpha,
+			"actual vertical thumb is already fading while content fades and reaches its exact endpoint");
+		departing = true;
+		for (float opacity : { 1.0F, 0.75F, 0.5F, 0.25F, 0.0F })
+		{
+			departureOpacity = opacity; frame = idle();
+			checks.Expect(frame.thumbAlpha <= previousThumbAlpha
+				&& std::abs(static_cast<float>(frame.thumbAlpha) - fullThumbAlpha * opacity) <= 1.0F,
+				"actual departing vertical thumb shares content opacity exactly once and reaches zero");
+			previousThumbAlpha = frame.thumbAlpha;
+		}
+		departing = false; departureOpacity = 1.0F;
+
 		io.AddMouseWheelEvent(-1.0F, 0.0F); frame = draw({200 * scale, 200 * scale}, false); idle();
 		checks.Expect(frame.owner->Scroll.x == 0 && frame.owner->ScrollMax.x == 0,
 			"real horizontal wheel cannot displace a stable vertical-only body");
@@ -5550,11 +5585,11 @@ namespace
 			"font scale and language-layout revision remeasure geometry without another entry");
 		ImGui::GetStyle().FontScaleDpi = previousScale; bodyWidth = 700; nested = true;
 		++route; frame = idle(3);
-		checks.Expect(frame.owner->ScrollbarY && PageScrollbarAlpha(motion) == 0, "actual long page has a native track before its visual reveal");
+		checks.Expect(frame.owner->ScrollbarY && PageScrollbarAlpha(motion) < 1, "actual long page keeps its native track while the thumb fades in");
 		const ImVec2 railPress = ImGui::GetWindowScrollbarRect(frame.owner, ImGuiAxis_Y).GetCenter();
 		draw(railPress, false); frame = draw(railPress, true);
 		checks.Expect(motion.elapsed >= PageMotionTiming::Total && PageScrollbarAlpha(motion) == 1,
-			"pressing the invisible native rail settles and reveals it before the same native press is consumed");
+			"pressing the fading native rail settles and reveals it before the same native press is consumed");
 		draw(railPress, false); conditionAtBottom = false;
 		++route; io.AddKeyEvent(ImGuiKey_DownArrow, true); idle();
 		idle(19);

@@ -17,7 +17,7 @@ namespace Inkeys::UI::Setting::Design
 		static constexpr float Exit = PageTransitionState::Duration, Move = 0.310F, Fade = 0.450F;
 		static constexpr float Stagger = 0.027F, MaxDelay = 0.108F;
 		static constexpr float PositionEnd = Move + MaxDelay, FadeEnd = Fade + MaxDelay;
-		static constexpr float Scrollbar = 0.110F, Total = FadeEnd + Scrollbar;
+		static constexpr float Total = FadeEnd;
 	};
 
 	struct PageBlockProgress { float position = 0.0F, opacity = 0.0F; };

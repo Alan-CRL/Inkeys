@@ -947,7 +947,8 @@ namespace Inkeys::UI::Setting::Design
 
 	float PageScrollbarAlpha(const PageMotionState& state)
 	{
-		return rowAnimationsEnabled && !state.opening ? MotionEase((state.elapsed - PageMotionTiming::FadeEnd) / PageMotionTiming::Scrollbar) : 1.0F;
+		// 滑块随正文入场渐显；离页时由调用方叠加同一退场透明度。
+		return rowAnimationsEnabled && !state.opening ? MotionEase(state.elapsed / PageMotionTiming::FadeEnd) : 1.0F;
 	}
 
 	void BeginPageMotion(PageMotionState& state)
