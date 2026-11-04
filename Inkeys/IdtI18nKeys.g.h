@@ -498,7 +498,6 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Regular__StartUp__StartupEffect
                 {
                     const char* N = "SettingsUI/Regular/StartUp/StartupEffect/N";
-                    const char* E = "SettingsUI/Regular/StartUp/StartupEffect/E";
                     const char* Shimmer = "SettingsUI/Regular/StartUp/StartupEffect/Shimmer";
                     const char* Aurora = "SettingsUI/Regular/StartUp/StartupEffect/Aurora";
                     const char* PixelAssembly = "SettingsUI/Regular/StartUp/StartupEffect/PixelAssembly";

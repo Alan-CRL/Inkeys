@@ -37,6 +37,8 @@
 
 - `InlineRowContent` 可通过 `visibilityId`/`visible` 仅折叠内联区；时长/开关父行始终显示，卡片外框按与 `ConditionalBlock` 相同的 reveal 进度计量（含上下 padding），内容复用原裁剪/组透明度和退出禁交互。初始状态/目标/速率不另建一套状态机，未传 visibilityId 的旧内联行保持原行为。条件块完成视口上方高度补偿后，SettingRow 行末游标必须继承 CursorStartPos 的重基准 delta，不能用进入行时缓存绝对坐标覆盖补偿。滚动回归应逐帧保证旧/新条件范围都完全在视口上方，不能仅以初始摆位认定整个展开过程满足前提。
 
+- 控件能力：`ToggleRow(..., inlineContent)` 让开关行直接承载内联区；`InlineCombo(id, label, value, items, changed, visibilityId, visible)` 生成“标签 + 右对齐下拉框”内联内容，下拉宽度沿用 `ComboRow` 规则，标签垂直居中，控件位于 `PushID(id)` 之下并写入与 `SettingRow` 相同的 `##description-frame` 提交标记。返回的内容只引用调用方参数，必须在同一帧该行提交结束前使用。父行由开关控制子选项时用该组合（如启动加载动画 → 启动效果），不再另建条件卡片。
+
 - 设置下拉沿现有 ImGui Popup 在当前viewport工作区内选择纵向：优先下方；下方小于所需高度且上方更多时向上。两侧都不足则采用较大一侧并限制高度、保留滚动；不得让尾部选项越客户区或侧移遮盖左侧说明。普通ComboRow与显式BelowComboMotion使用同一预算，第一帧即定位，不依赖AutoResize下一帧补救。上方展开的动效/退出装饰按同方向避让，仍不接输入；重开反向、resize、全局禁动画及原键盘/鼠标语义保持。BelowComboMotion名称为兼容保留，不新增原生弹窗。
 
 ## 4. Validation & Error Matrix

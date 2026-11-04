@@ -75,7 +75,7 @@ PPT 闲置淡化不改写这两个正常偏好；三范围配置与 30%/60% 独�
 
 - `ReadMini`/`ReadAll` 仅接受真实 JSON 整数 0/1/2；未知值、非整数类型、超宽整数均回退 0，不允许先窄化再命中有效值。旧配置缺失效果仍为“掠光”。
 - `IdtMain` 的 Mini 路径同时选择 Effect、ThemeMode、BackgroundOpacity、ContentOpacity；归一后传给 StartOptions，不等待完整配置加载才选择外观。
-- “常规 > 外观 > 启动加载动画”开启时，在正下方 `ConditionalBlock` 中显示 `ComboRow`，选项为“掠光 / 柔光流彩 / 像素拼装”（柔光流彩原名彩虹晕染，key 仍为 `Aurora`）；关闭收起该行但保留效果值。条件退出时沿共用输入禁用规则，不产生隐藏控件事件。
+- “常规 > 外观 > 启动加载动画”卡片的下半区是内联“启动效果”下拉（`ToggleRow` + `InlineCombo`，visibilityId `##startup-effect-visibility`），选项为“掠光 / 柔光流彩 / 像素拼装”（柔光流彩原名彩虹晕染，key 仍为 `Aurora`）；开关关闭时内联区随条件动画收起、父行保持常驻并保留效果值，开启时展开。收起过程中沿共用输入禁用规则，不产生隐藏控件事件。2026-11-04 起不再是独立卡片，原说明键 `StartupEffect.E` 已删除。
 - 效果选择通过 `QueueConfigWrite()` 保存且下次启动生效；不重新启动当前预览，不清除宽度缓存。新文案遵循现有二十语源/键生成合同。
 
 ### 4. Validation & Error Matrix
@@ -83,8 +83,8 @@ PPT 闲置淡化不改写这两个正常偏好；三范围配置与 30%/60% 独�
 | 条件 | 行为 |
 | --- | --- |
 | 缺失/非法/超宽 Effect | 回到 Shimmer，保留无关配置 |
-| Preview Enable=false | 保留选择；不显示选择行或启动预览 |
-| 关闭后再开启 | 选择值不丢失，行随既有条件动画恢复 |
+| Preview Enable=false | 保留选择；内联区收起且不启动预览 |
+| 关闭后再开启 | 选择值不丢失，内联区随既有条件动画展开 |
 | 当前会话改效果 | 保存下次偏好，本次冻结外观不变 |
 
 ### 5. Good / Base / Bad Cases

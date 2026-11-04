@@ -495,7 +495,6 @@
         "StartupEffect":
         {
           "N": "시작 효과",
-          "E": "다음 시작 시 표시할 로딩 효과를 선택합니다.",
           "Shimmer": "빛 스윕",
           "Aurora": "부드러운 빛결",
           "PixelAssembly": "픽셀 조립"

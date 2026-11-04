@@ -141,7 +141,11 @@ namespace Inkeys::UI::Setting::Design
 	void SetStateLabels(const char* onText, const char* offText);
 	void SetCopyLabels(const char* prompt, const char* copied);
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value, const char* note = nullptr);
+		const char* glyph, bool& value, const char* note = nullptr, const InlineRowContent* inlineContent = nullptr);
+	// 父行下方“标签 + 右对齐下拉框”内联区；visibilityId 非空时按 visible 复用条件动画收起/展开，
+	// 收起期间禁交互、保留选择且不产生事件。返回值引用的参数须存活到对应行提交结束。
+	InlineRowContent InlineCombo(const char* id, const char* label, int& value,
+		const std::vector<std::string>& items, bool& changed, const char* visibilityId = nullptr, bool visible = true);
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true);
 	// 与 ComboRow 相同，但在下拉框左侧预留一块预览区；preview 收到该区域的物理像素矩形。

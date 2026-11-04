@@ -495,7 +495,6 @@
         "StartupEffect":
         {
           "N": "启动效果",
-          "E": "选择下次启动时播放的加载效果。",
           "Shimmer": "掠光",
           "Aurora": "柔光流彩",
           "PixelAssembly": "像素拼装"

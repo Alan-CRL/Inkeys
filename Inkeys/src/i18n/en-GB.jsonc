@@ -495,7 +495,6 @@
         "StartupEffect":
         {
           "N": "Startup effect",
-          "E": "Choose the loading effect for the next startup.",
           "Shimmer": "Shimmer",
           "Aurora": "Soft glow",
           "PixelAssembly": "Pixel assembly"

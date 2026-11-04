@@ -1277,18 +1277,17 @@ namespace Inkeys::UI::Setting::Design
 			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
 			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
+			// 效果选择是加载动画卡片的内联下半区：关闭时随条件动画收起并保留偏好，选择仍由现有配置队列保存。
+			const std::string startupEffectLabel = IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N);
+			const std::vector<std::string> startupEffects{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
+				IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
+				IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) };
+			const auto startupEffect = InlineCombo("startup-effect", startupEffectLabel.c_str(), draft.startupEffect,
+				startupEffects, events.startupEffectChanged, "##startup-effect-visibility", draft.startupPreview);
 			events.startupPreviewChanged = ToggleRow("startup-preview",
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
-				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
-			// 关闭预览时收起选择行，保留效果偏好；真实选择事件仍由现有配置队列保存。
-			if (ConditionalBlock block{ "##startup-effect-visibility", draft.startupPreview }; block)
-				events.startupEffectChanged = ComboRow("startup-effect",
-					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N).c_str(),
-					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.E).c_str(), "\ue768", draft.startupEffect,
-					{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
-					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
-					IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) });
+				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str(), &startupEffect);
 			events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,

@@ -495,7 +495,6 @@
         "StartupEffect":
         {
           "N": "Effetto di avvio",
-          "E": "Scegli l’effetto di caricamento per il prossimo avvio.",
           "Shimmer": "Riflesso scorrevole",
           "Aurora": "Bagliore soffuso",
           "PixelAssembly": "Composizione a pixel"

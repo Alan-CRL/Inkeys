@@ -495,7 +495,6 @@
         "StartupEffect":
         {
           "N": "Starteffekt",
-          "E": "Animation für den nächsten Start auswählen.",
           "Shimmer": "Lichtschimmer",
           "Aurora": "Sanfter Schimmer",
           "PixelAssembly": "Pixelaufbau"

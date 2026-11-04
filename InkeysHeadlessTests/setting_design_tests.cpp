@@ -3864,7 +3864,8 @@ namespace
 			frame.desktopShortcuts = rowSeen("desktop-shortcut-create") && rowSeen("desktop-shortcut-correct") && rowSeen("desktop-shortcut-auto-create")
 				&& rowSeen("whiteboard-shortcut-create") && rowSeen("whiteboard-shortcut-correct") && rowSeen("whiteboard-shortcut-auto-create");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
-			frame.startupEffect = rowSeen("startup-effect");
+			// 效果选择是加载动画行的内联区，提交标记位于父行 ID 之下。
+			ImGui::PushID("startup-preview"); frame.startupEffect = rowSeen("startup-effect"); ImGui::PopID();
 			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
 			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
@@ -3918,10 +3919,11 @@ namespace
 				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0 && !draft.allowMultipleInstances,
 				"page filtering and conditional hidden controls preserve every resident draft value");
 		}
-		auto focus = [&](Design::GeneralSection section, const char* row, const char* control, int item = -1) {
+		auto focus = [&](Design::GeneralSection section, const char* row, const char* control, int item = -1, const char* parent = nullptr) {
 			const int value = static_cast<int>(section);
 			ImGuiID seed = ImHashData(&value, sizeof(value), host->ID);
 			if (item >= 0) seed = ImHashData(&item, sizeof(item), seed);
+			if (parent) seed = ImHashStr(parent, 0, seed);
 			const ImGuiID id = ImHashStr(control, 0, ImHashStr(row, 0, seed));
 			ImGui::FocusWindow(host);
 			ImGui::SetNavID(id, ImGuiNavLayer_Main, host->NavRootFocusScopeId, ImRect(1, 1, 20, 20));
@@ -3946,8 +3948,8 @@ namespace
 		const auto previewShown = draw(Design::GeneralSection::Appearance, outside, false);
 		checks.Expect(!previewHidden.startupEffect && previewShown.startupEffect
 			&& previewShown.height > previewHidden.height + 40 * scale,
-			"startup effect selector is an inline conditional row below the enabled toggle");
-		focus(Design::GeneralSection::Appearance, "startup-effect", "##select");
+			"startup effect selector is an inline area of the enabled loading-animation card");
+		focus(Design::GeneralSection::Appearance, "startup-effect", "##select", -1, "startup-preview");
 		chord(Design::GeneralSection::Appearance, ImGuiKey_F4); chord(Design::GeneralSection::Appearance, ImGuiKey_Home);
 		chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow); chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow);
 		chord(Design::GeneralSection::Appearance, ImGuiKey_Enter);
@@ -5714,11 +5716,14 @@ namespace
 				const auto events = RenderGeneral(general, GeneralSection::Appearance);
 				startupEffectEdits += events.startupEffectChanged ? 1 : 0;
 				frame.effectOwner = body;
+				// 内联效果区挂在加载动画父行 ID 下，条件状态与控件均以同一父作用域定位。
+				ImGui::PushID("startup-preview");
 				frame.startupEffectId = ImHashStr("##select", 0, body->GetID("startup-effect"));
 				ImGui::PushID("startup-effect");
 				frame.effectRendered = ImGui::GetStateStorage()->GetInt(ImGui::GetID("##description-frame"), -1) == ImGui::GetFrameCount();
 				ImGui::PopID();
 				const auto effectCondition = ImHashData(&motion.route, sizeof(motion.route), body->GetID("##startup-effect-visibility"));
+				ImGui::PopID();
 				if (const auto it = motion.conditions.find(effectCondition); it != motion.conditions.end())
 					frame.effectOpacity = it->second.reveal.value;
 				checks.Expect(!events.edgeLightingChanged && !events.dynamicEdgeLightingChanged,

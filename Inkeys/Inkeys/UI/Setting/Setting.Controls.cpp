@@ -2162,7 +2162,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value, const char* note)
+		const char* glyph, bool& value, const char* note, const InlineRowContent* inlineContent)
 	{
 		const float labelWidth = (std::max)(TextWidth(stateOn.c_str()), TextWidth(stateOff.c_str()));
 		bool changed = false;
@@ -2171,8 +2171,34 @@ namespace Inkeys::UI::Setting::Design
 			{
 				changed = ToggleAction(bounds, value);
 				TextAt(value ? stateOn.c_str() : stateOff.c_str(), { bounds.left, bounds.top }, labelWidth);
-			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note, true, inlineContent);
 		return changed;
+	}
+
+	InlineRowContent InlineCombo(const char* id, const char* label, int& value,
+		const std::vector<std::string>& items, bool& changed, const char* visibilityId, bool visible)
+	{
+		InlineRowContent content;
+		content.visibilityId = visibilityId; content.visible = visible;
+		content.height = [](float) { return Pixels(ControlHeight); };
+		content.render = [id, label, &value, &items, &changed](const LayoutRect& bounds)
+		{
+			// 下拉宽度沿用 ComboRow 规则并右对齐到父行操作列；标签占剩余宽度并垂直居中。
+			float comboWidth = 160.0F;
+			for (const auto& item : items)
+				comboWidth = (std::max)(comboWidth, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+			const float width = (std::min)(Pixels((std::min)(320.0F, comboWidth)), (std::max)(1.0F, bounds.Width() * 0.6F));
+			const float labelWidth = (std::max)(1.0F, bounds.Width() - width - Pixels(ControlSpacing));
+			ImGui::PushID(id);
+			// 与 SettingRow 同一提交标记，内联项也可按稳定 ID 判断本帧是否真实提交。
+			ImGui::GetStateStorage()->SetInt(ImGui::GetID("##description-frame"), ImGui::GetFrameCount());
+			TextAt(label, { bounds.left, bounds.top + (Pixels(ControlHeight) - TextHeight(label, labelWidth)) * 0.5F }, labelWidth);
+			ImGui::SetCursorScreenPos({ bounds.right - width, bounds.top });
+			ImGui::SetNextItemWidth(width);
+			if (ComboBox("##select", &value, items)) changed = true;
+			ImGui::PopID();
+		};
+		return content;
 	}
 
 	bool ComboRow(const char* id, const char* title, const char* description,

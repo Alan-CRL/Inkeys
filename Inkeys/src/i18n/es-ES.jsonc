@@ -495,7 +495,6 @@
         "StartupEffect":
         {
           "N": "Efecto de inicio",
-          "E": "Elige el efecto de carga para el próximo inicio.",
           "Shimmer": "Reflejo deslizante",
           "Aurora": "Brillo suave",
           "PixelAssembly": "Ensamblaje de píxeles"

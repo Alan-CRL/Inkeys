@@ -495,7 +495,6 @@
         "StartupEffect":
         {
           "N": "Effet au démarrage",
-          "E": "Choisissez l’effet de chargement pour le prochain démarrage.",
           "Shimmer": "Reflet glissant",
           "Aurora": "Lueur douce",
           "PixelAssembly": "Assemblage de pixels"
