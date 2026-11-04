@@ -56,18 +56,18 @@ namespace Inkeys::UI::StartupPreview::Drawing
 	[[nodiscard]] inline HRESULT DrawRing(ID2D1DeviceContext* context,
 		ID2D1StrokeStyle* strokeStyle, ID2D1SolidColorBrush* track,
 		ID2D1SolidColorBrush* fill, D2D1_POINT_2F center, float scale,
-		double ratio, float opacity, bool failed)
+		double ratio, float opacity, bool failed, bool light = false)
 	{
 		const float stroke = ProgressStrokeDip * scale;
 		const float radius = (ProgressOuterDiameterDip - ProgressStrokeDip) * .5f * scale;
 		const auto ellipse = D2D1::Ellipse(center, radius, radius);
 		// 最早阶段失败可能仍是0%；只将轨道染红，不伪造已完成进度。
-		track->SetColor(failed ? D2D1::ColorF(1.f, .38f, .44f, .24f)
-			: D2D1::ColorF(1.f, 1.f, 1.f, .24f));
+		track->SetColor(failed ? (light ? D2D1::ColorF(.74f, .17f, .23f, .28f) : D2D1::ColorF(1.f, .38f, .44f, .24f))
+			: (light ? D2D1::ColorF(.10f, .10f, .10f, .22f) : D2D1::ColorF(1.f, 1.f, 1.f, .24f)));
 		track->SetOpacity(opacity);
 		context->DrawEllipse(&ellipse, track, stroke);
-		fill->SetColor(failed ? D2D1::ColorF(1.f, .38f, .44f, 1.f)
-			: D2D1::ColorF(.38f, .80f, 1.f, 1.f));
+		fill->SetColor(failed ? (light ? D2D1::ColorF(.74f, .17f, .23f) : D2D1::ColorF(1.f, .38f, .44f))
+			: (light ? D2D1::ColorF(0.f, 106.f / 255.f, 99.f / 255.f) : D2D1::ColorF(.38f, .80f, 1.f)));
 		fill->SetOpacity(opacity);
 		ratio = std::clamp(ratio, 0.0, 1.0);
 		if (ratio <= 0.0) return S_OK;
@@ -102,7 +102,7 @@ namespace Inkeys::UI::StartupPreview::Drawing
 
 	[[nodiscard]] inline HRESULT DrawLinear(ID2D1DeviceContext* context,
 		ID2D1SolidColorBrush* track, ID2D1SolidColorBrush* fill,
-		float width, float height, float scale, double ratio, float opacity, bool failed)
+		float width, float height, float scale, double ratio, float opacity, bool failed, bool light = false)
 	{
 		// 居中底栏恢复原192DIP横向样式；窄窗口两侧各保留12DIP。
 		const float progressWidth = (std::min)(192.f * scale, (std::max)(0.f, width - 24.f * scale));
@@ -114,9 +114,9 @@ namespace Inkeys::UI::StartupPreview::Drawing
 			centerX - progressWidth * .5f, centerY - trackHeight * .5f,
 			centerX + progressWidth * .5f, centerY + trackHeight * .5f),
 			trackHeight * .5f, trackHeight * .5f);
-		// 0%最终失败仍染红轨道，不虚构已完成长度。
-		track->SetColor(failed ? D2D1::ColorF(1.f, .38f, .44f, .24f)
-			: D2D1::ColorF(1.f, 1.f, 1.f, .24f));
+		// 0%最终失败仍染红轨道，不虚构已完成长度；横条仅1DIP，深色失败轨道加到0.40才能压过高彩度彩虹。
+		track->SetColor(failed ? (light ? D2D1::ColorF(.74f, .17f, .23f, .28f) : D2D1::ColorF(1.f, .38f, .44f, .40f))
+			: (light ? D2D1::ColorF(.10f, .10f, .10f, .22f) : D2D1::ColorF(1.f, 1.f, 1.f, .24f)));
 		track->SetOpacity(opacity);
 		context->FillRoundedRectangle(&trackRect, track);
 		const float fillWidth = progressWidth * static_cast<float>(std::clamp(ratio, 0.0, 1.0));
@@ -125,8 +125,8 @@ namespace Inkeys::UI::StartupPreview::Drawing
 			trackRect.rect.left, centerY - indicatorHeight * .5f,
 			trackRect.rect.left + fillWidth, centerY + indicatorHeight * .5f),
 			indicatorHeight * .5f, indicatorHeight * .5f);
-		fill->SetColor(failed ? D2D1::ColorF(1.f, .38f, .44f, 1.f)
-			: D2D1::ColorF(.38f, .80f, 1.f, 1.f));
+		fill->SetColor(failed ? (light ? D2D1::ColorF(.74f, .17f, .23f) : D2D1::ColorF(1.f, .38f, .44f))
+			: (light ? D2D1::ColorF(0.f, 106.f / 255.f, 99.f / 255.f) : D2D1::ColorF(.38f, .80f, 1.f)));
 		fill->SetOpacity(opacity);
 		context->FillRoundedRectangle(&fillRect, fill);
 		return S_OK;
@@ -135,26 +135,28 @@ namespace Inkeys::UI::StartupPreview::Drawing
 	[[nodiscard]] inline HRESULT DrawProgress(ID2D1DeviceContext* context,
 		ID2D1StrokeStyle* ringStroke, ID2D1SolidColorBrush* track, ID2D1SolidColorBrush* fill,
 		StartupPlacement placement, float width, float height, float scale,
-		double ratio, float opacity, bool failed)
+		double ratio, float opacity, bool failed, bool light = false)
 	{
 		// 生产和离屏验证共用模式选择，避免测试重新实现另一份分支。
 		return placement == StartupPlacement::CenteredBottomBar
-			? DrawLinear(context, track, fill, width, height, scale, ratio, opacity, failed)
+			? DrawLinear(context, track, fill, width, height, scale, ratio, opacity, failed, light)
 			: DrawRing(context, ringStroke, track, fill,
-				D2D1::Point2F(width * .5f, height * .5f), scale, ratio, opacity, failed);
+				D2D1::Point2F(width * .5f, height * .5f), scale, ratio, opacity, failed, light);
 	}
 
 	[[nodiscard]] inline HRESULT CreateShimmer(ID2D1DeviceContext* context,
-		D2D1_POINT_2F start, D2D1_POINT_2F end, ID2D1LinearGradientBrush** output)
+		D2D1_POINT_2F start, D2D1_POINT_2F end, ID2D1LinearGradientBrush** output, bool light = false)
 	{
+		// 浅底采用克制的中性深色扫光；彩虹模式仍可显式选择白色柔光。
+		const auto color = [light](float alpha) {
+			return light ? D2D1::ColorF(45.f / 255.f, 53.f / 255.f, 60.f / 255.f, alpha * .55f)
+				: D2D1::ColorF(1.f, 1.f, 1.f, alpha);
+		};
 		const std::array<D2D1_GRADIENT_STOP, 7> stops{
-			D2D1::GradientStop(0.00f, D2D1::ColorF(1.f, 1.f, 1.f, 0.00f)),
-			D2D1::GradientStop(0.24f, D2D1::ColorF(1.f, 1.f, 1.f, 0.035f)),
-			D2D1::GradientStop(0.40f, D2D1::ColorF(1.f, 1.f, 1.f, 0.09f)),
-			D2D1::GradientStop(0.50f, D2D1::ColorF(1.f, 1.f, 1.f, 0.20f)),
-			D2D1::GradientStop(0.60f, D2D1::ColorF(1.f, 1.f, 1.f, 0.075f)),
-			D2D1::GradientStop(0.78f, D2D1::ColorF(1.f, 1.f, 1.f, 0.025f)),
-			D2D1::GradientStop(1.00f, D2D1::ColorF(1.f, 1.f, 1.f, 0.00f)),
+			D2D1::GradientStop(0.00f, color(0.f)), D2D1::GradientStop(0.24f, color(.035f)),
+			D2D1::GradientStop(0.40f, color(.09f)), D2D1::GradientStop(0.50f, color(.20f)),
+			D2D1::GradientStop(0.60f, color(.075f)), D2D1::GradientStop(0.78f, color(.025f)),
+			D2D1::GradientStop(1.00f, color(0.f)),
 		};
 		Microsoft::WRL::ComPtr<ID2D1GradientStopCollection> collection;
 		const HRESULT result = context->CreateGradientStopCollection(stops.data(),

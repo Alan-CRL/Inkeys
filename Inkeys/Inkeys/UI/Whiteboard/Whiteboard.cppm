@@ -141,15 +141,19 @@ export namespace Inkeys::UI::Whiteboard
 		return state;
 	}
 
+	// 由既有 PageControl 屏外入口调用，不创建其它 owner 或真实屏幕窗口。
+	int RunHiddenBackgroundTests(const RECT& bounds, const std::function<bool()>& gateOwner,
+		const std::function<void()>& releaseOwner);
 	bool Initialize(BusinessCallbacks callbacks);
 	void Shutdown() noexcept;
 	[[nodiscard]] WNDPROC WindowProc() noexcept;
 	void PublishExpandedLayoutTarget(bool expanded) noexcept;
-	void PublishActive(bool active) noexcept;
+	void PublishActive(bool active, std::uint64_t revision = 0) noexcept;
 	void CancelPointerCapture() noexcept;
 	void PublishPageSnapshot(int currentPage, int totalPage, bool switching,
 		std::uint32_t rgb, int pattern, bool unsaved, std::uint64_t generation) noexcept;
 	void PublishPageState(int currentPage, int totalPage, bool switching) noexcept;
 	[[nodiscard]] bool Active() noexcept;
-	[[nodiscard]] bool BackgroundMatchesActive(bool active) noexcept;
+	[[nodiscard]] bool BackgroundPrepared(std::uint64_t revision) noexcept;
+	[[nodiscard]] bool BackgroundMatchesActive(bool active, std::uint64_t revision = 0) noexcept;
 }

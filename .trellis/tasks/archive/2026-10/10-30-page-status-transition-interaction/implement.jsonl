@@ -1,0 +1,3 @@
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵守共享 Bar 列表、按钮内容过渡、分页命中/呈现和动画合同。"}
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"保持白板 switching、分页交互、主题与存储状态边界。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"按三语言基准、sync/check 和生成头规则增加 Loading。"}

@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "Bar.LogoAppearance.h"
 
 #include <d2d1_1.h>
 #include <wrl/client.h>
@@ -456,6 +457,7 @@ void BarUiSVGClass::ResetCache()
 	cacheBitmap.Reset();
 	cW = cH = 0.0;
 	cColor1 = cColor2 = RGB(0, 0, 0);
+	cMainLogoAppearance.reset();
 }
 void BarUiSVGClass::ApplyContentDirect(const wstring& valT)
 {
@@ -551,6 +553,18 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 				document ? Inkeys::UI::Bar::Ui3SvgOperation::Success : Inkeys::UI::Bar::Ui3SvgOperation::Failure);
 		}
 		if (!document) { NoteFailure(Inkeys::UI::Bar::Ui3SvgFailure::Parse); return false; } // 解析失败
+		if (mainLogoAppearance)
+		{
+			bool complete = true;
+			// 只加工主按钮约定的节点；缺失节点不能发布成功缓存。
+			BarLogoAppearance::ApplyAttributes(*mainLogoAppearance,
+				[&](const char* id, const char* name, const string& value) {
+					auto element = document->getElementById(id);
+					if (element.isNull()) complete = false;
+					else element.setAttribute(name, value);
+				});
+			if (!complete) { NoteFailure(Inkeys::UI::Bar::Ui3SvgFailure::Parse); return false; }
+		}
 	}
 
 	// 绘制到离屏位图
@@ -597,6 +611,7 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 	// 记录缓存值
 	{
 		cW = tarW, cH = tarH;
+		cMainLogoAppearance = mainLogoAppearance;
 		if (color1.has_value()) cColor1 = color1.value().val;
 		if (color2.has_value()) cColor2 = color2.value().val;
 	}
@@ -801,6 +816,7 @@ BarUiWordClass::BarUiWordClass(double xT, double yT, double wT, double hT, wstri
 void BarUiWordClass::Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT, BarUiValueModeEnum type)
 {
 	CancelContentTransition();
+	fontCorrection.Reset(); fontTargetSize = -1.0;
 	x.Initialization(xT, type);
 	y.Initialization(yT, type);
 	w.Initialization(wT, type);

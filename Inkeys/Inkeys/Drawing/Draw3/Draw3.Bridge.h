@@ -44,22 +44,22 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	};
 
 	// 鼠标类型只作用于软/硬笔；荧光笔预览独立开启，其余工具保留专用或系统策略。
-	constexpr MouseCursorStyle ResolveMouseCursorStyleForTool(
-		Tool tool, MouseCursorStyle selected) noexcept
+	constexpr CursorStyle ResolveMouseCursorStyleForTool(
+		Tool tool, CursorStyle selected) noexcept
 	{
 		switch (tool)
 		{
 		case Tool::Pen:
 		case Tool::HardPen: return selected;
-		case Tool::Highlighter: return MouseCursorStyle::Drawing;
-		default: return MouseCursorStyle::System;
+		case Tool::Highlighter: return CursorStyle::Pen; // 任一非 Arrow 值：荧光笔预览独立开启，形状仍为矩形。
+		default: return CursorStyle::Arrow;
 		}
 	}
 
 	// 仅生成当前实际工具的有效快照，原始鼠标/笔选择不因临时投影丢失。
 	constexpr CursorSettings ResolveCursorSettingsForTool(Tool actualTool, CursorSettings selected) noexcept
 	{
-		selected.mouseStyle = ResolveMouseCursorStyleForTool(actualTool, selected.mouseStyle);
+		selected.mouse = ResolveMouseCursorStyleForTool(actualTool, selected.mouse);
 		return selected;
 	}
 
@@ -231,8 +231,19 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		NotRunning
 	};
 
+	struct WhiteboardStyleToken
+	{
+		std::uint64_t hostGeneration = 0;
+		std::uint64_t generation = 0;
+		std::size_t page = 0;
+		std::uint32_t backgroundRgb = 0;
+		std::uint64_t serial = 0; // 同页 A→B→A 仍须拒绝第一份 A 的回执。
+		bool operator==(const WhiteboardStyleToken&) const = default;
+	};
+
 	struct ProductState
 	{
+		WhiteboardStyleToken whiteboardStyle;
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
 		double widthDip = 2.0;

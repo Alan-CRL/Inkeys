@@ -1,0 +1,9 @@
+# 技术设计
+
+在Setting.Shell.cpp复用ImGui独立child区域和ImFluent控件；纯分区几何放在既有Design边界供无窗口测试。顶部固定两项、底部固定操作先测量，中段只占剩余区域且独立滚动。赞助用AccentButton加独立glyph，关闭使用主题红色语义，调试为低强调自然宽文字按钮。
+
+保留PageId和现有事件返回/FIFO，不改变Setting公开接口。仅修改现有NavItemEx所需参数或局部样式支持，不新建导航框架。
+
+ImFluent LerpColorU32使用alpha加权RGB和插值alpha，再转换为straight RGBA；零alpha正确处理，保持动画状态/时长。针对NavItem、Button、ComboBox及Selectable实际绘制顶点合成测试，不在测试复制生产算法。
+
+用户倍率变更会改变有效最小client；现有已打开window不随变化调整，可能让固定分区预算无法容纳。本轮在倍率应用后投递私有ensure-minimum消息，由HWND所属线程复用现有720×520逻辑最小尺寸/实际frame差，只必要时增大普通窗口并夹紧workarea，保留原最大化与DPI路径。极短workarea物理无法容纳固定行时，几何不得让顶部/底部重叠，超出部分受窗口裁剪；该实际可达性边界另记实机验收。

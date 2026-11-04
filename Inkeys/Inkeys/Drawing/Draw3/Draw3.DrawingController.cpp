@@ -1,4 +1,4 @@
-﻿module;
+module;
 #include "Draw3.DiagnosticOutput.h"
 #include "Assets/EraserGripVisual.h"
 
@@ -46,6 +46,8 @@
 #include <mmsystem.h>
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Host.h"
+#include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.HapticDiagnostics.h"
 #include "Draw3.Shortcut.h"
@@ -56,6 +58,7 @@
 #include "Draw3.ShapeInteraction.h"
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 #include "../../../../inkStrokeModelerTest/draw3/shape_interaction.h"
+#include "Draw3.PalmEraser.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -73,6 +76,39 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		struct GeneralDrawingOptionsSnapshot
+		{
+			bool multiTouchEnabled = true;
+			bool penTailCorrectionEnabled = true;
+			InkPredictionMode predictionMode = kActivePredictionMode;
+		};
+
+		uint32_t EncodeGeneralDrawingOptions(bool multiTouch, bool tailCorrection,
+			InkPredictionMode prediction) noexcept
+		{
+			if (prediction != InkPredictionMode::Disabled && prediction != InkPredictionMode::StrokeEnd &&
+				prediction != InkPredictionMode::Kalman) prediction = kActivePredictionMode;
+			return static_cast<uint32_t>(multiTouch) | (static_cast<uint32_t>(tailCorrection) << 1) |
+				(static_cast<uint32_t>(prediction) << 2);
+		}
+
+		GeneralDrawingOptionsSnapshot DecodeGeneralDrawingOptions(uint32_t encoded) noexcept
+		{
+			return { (encoded & 1u) != 0, (encoded & 2u) != 0,
+				static_cast<InkPredictionMode>((encoded >> 2) & 3u) };
+		}
+
+		ink::stroke_model::StrokeModelParams LatchStrokeDrawingOptions(ActiveStroke& stroke,
+			const StrokeModelConfiguration& configuration, bool eraser,
+			const GeneralDrawingOptionsSnapshot& options)
+		{
+			stroke.penTailCorrectionEnabled = options.penTailCorrectionEnabled;
+			stroke.predictionMode = eraser ? InkPredictionMode::Disabled : options.predictionMode;
+			auto params = configuration.modelParams;
+			ApplyPredictionMode(params, configuration.kalmanPredictorParams, stroke.predictionMode);
+			return params;
+		}
+
 		std::vector<WhiteboardTheme> InitializeWhiteboardThemes(const DrawingControllerRuntimeObserver& observer)
 		{
 			return {ValidWhiteboardTheme(observer.whiteboardDefaultTheme) ? observer.whiteboardDefaultTheme : WhiteboardTheme{}};
@@ -81,6 +117,38 @@ namespace Inkeys::Drawing::Draw3
 		void ExtendWhiteboardThemes(std::vector<WhiteboardTheme>& themes, std::size_t target, std::size_t current)
 		{
 			if (target >= themes.size()) themes.resize(target + 1, themes[current]);
+		}
+
+		void CompleteFailedWhiteboardPageLoad(WindowController& window,
+			const DrawingControllerRuntimeObserver& observer, CanvasCommandType original,
+			std::uint64_t generation, std::size_t page, std::size_t pageCount)
+		{
+			if (observer.commandProcessed) observer.commandProcessed(observer.context, original, page, pageCount);
+			// 失败只补原白板页呈现，不能让迟到的通用 SetPage 切换或创建其他场景页面。
+			CanvasCommand recovery;
+			recovery.type = CanvasCommandType::RePresentWhiteboardPage;
+			recovery.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Whiteboard);
+			recovery.requireSceneMatch = true;
+			recovery.whiteboardGeneration = generation;
+			recovery.pageIndex = page;
+			recovery.sceneClosedAdmission = true;
+			window.EnqueueCanvasCommand(recovery);
+		}
+
+		template <typename Present>
+		bool ApplyWhiteboardPageRecoveryCommand(const CanvasCommand& command,
+			Bridge::Workspace workspace, bool loading, bool exitPrepared, std::uint64_t generation,
+			std::size_t page, Present&& present)
+		{
+			// 失败已清空 loading；最终退出 ACK、退出重入或换页后，旧补回执必须作废。
+			if (command.type != CanvasCommandType::RePresentWhiteboardPage ||
+				!command.requireSceneMatch || !command.sceneClosedAdmission ||
+				command.workspace != static_cast<std::uint8_t>(Bridge::Workspace::Whiteboard) ||
+				workspace != Bridge::Workspace::Whiteboard || loading || exitPrepared ||
+				command.whiteboardGeneration == 0 || command.whiteboardGeneration != generation ||
+				command.pageIndex != page) return false;
+			present(command);
+			return true;
 		}
 
 		bool ApplyWhiteboardThemeCommand(const CanvasCommand& command, Bridge::Workspace workspace,
@@ -1022,6 +1090,7 @@ namespace Inkeys::Drawing::Draw3
 			std::uint64_t queuedRevision = 0;
 			std::uint64_t committedRevision = 0;
 			bool persistenceInitialized = false;
+			bool emptyLaneVerified = false;
 			bool loadPending = false;
 			std::uint64_t slotGeneration = 0;
 		};
@@ -1068,6 +1137,7 @@ namespace Inkeys::Drawing::Draw3
 			std::uint64_t& queuedRevision;
 			std::uint64_t& committedRevision;
 			bool& persistenceInitialized;
+			bool& emptyLaneVerified;
 			bool& loadPending;
 			std::uint64_t& slotGeneration;
 		};
@@ -1086,6 +1156,7 @@ namespace Inkeys::Drawing::Draw3
 			swap(active.queuedRevision, parked.queuedRevision);
 			swap(active.committedRevision, parked.committedRevision);
 			swap(active.persistenceInitialized, parked.persistenceInitialized);
+			swap(active.emptyLaneVerified, parked.emptyLaneVerified);
 			swap(active.loadPending, parked.loadPending);
 			swap(active.slotGeneration, parked.slotGeneration);
 		}
@@ -1121,14 +1192,97 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		ActivePresentationSlotRefs DocumentSlotRefs(DrawingDocumentSlot& slot) noexcept
+		{
+			return { slot.document, slot.pageRuntimeStates, slot.retainedSlides,
+				slot.currentPageIndex, slot.presentationTarget, slot.fileGuid,
+				slot.mutationRevision, slot.queuedRevision, slot.committedRevision,
+				slot.persistenceInitialized, slot.emptyLaneVerified, slot.loadPending, slot.slotGeneration };
+		}
+
+		bool PresentationSlotFits(ActivePresentationSlotRefs slot,
+			const Bridge::PresentationTarget& target) noexcept
+		{
+			const auto count = Bridge::PresentationDocumentPageCount(target);
+			return slot.document && slot.document->Pages().size() == count &&
+				slot.pageRuntimeStates.size() == count &&
+				slot.document->PageAt(target.pageIndex);
+		}
+
+		bool PresentationSceneMatches(Bridge::Workspace workspace,
+			const std::optional<Bridge::PresentationKey>& key,
+			ActivePresentationSlotRefs slot,
+			const Bridge::PresentationTarget& target) noexcept
+		{
+			return workspace == Bridge::Workspace::Presentation && key &&
+				*key == target.key && slot.target && *slot.target == target &&
+				slot.currentPageIndex == target.pageIndex &&
+				PresentationSlotFits(slot, target);
+		}
+
+		bool CanvasCommandSceneMatches(const CanvasCommand& command,
+			Bridge::Workspace workspace,
+			const std::optional<Bridge::PresentationKey>& key,
+			ActivePresentationSlotRefs slot) noexcept
+		{
+			if (!command.requireSceneMatch || command.type == CanvasCommandType::PrepareExitAutoSave)
+				return true;
+			return static_cast<Bridge::Workspace>(command.workspace) == workspace &&
+				(workspace != Bridge::Workspace::Presentation ||
+					(command.presentationTarget && PresentationSceneMatches(workspace, key,
+						slot, *command.presentationTarget)));
+		}
+
+		template <typename Stage>
+		bool StageResolvedPresentationScene(Bridge::Workspace workspace,
+			const std::optional<Bridge::PresentationKey>& key,
+			ActivePresentationSlotRefs slot, Stage&& stage)
+		{
+			if (slot.loadPending || !slot.persistenceInitialized || !slot.target ||
+				!PresentationSceneMatches(workspace, key, slot, *slot.target)) return false;
+			stage(&*slot.target);
+			return true;
+		}
+
+		struct KeepPresentationTopology
+		{
+			bool operator()(ActivePresentationSlotRefs,
+				const Bridge::PresentationTarget&,
+				std::optional<DrawingDocumentSlot>&) const noexcept { return true; }
+		};
+
+		// 空 lane 的退休必须以真实严格 NotFound 为依据；“没有可见笔迹”并不等于没有历史或在途所有权。
+		bool CanRetireEmptyPresentationLane(ActivePresentationSlotRefs slot) noexcept
+		{
+			if (!slot.target || !PresentationSlotFits(slot, *slot.target) ||
+				!slot.emptyLaneVerified || !slot.persistenceInitialized || slot.loadPending ||
+				slot.fileGuid || slot.mutationRevision || slot.queuedRevision || slot.committedRevision ||
+				!slot.retainedSlides.empty() || !slot.document ||
+				slot.pageRuntimeStates.size() != slot.document->Pages().size()) return false;
+			for (const auto& page : slot.document->Pages())
+				for (const auto& canvas : page.Canvases())
+					if (!canvas.Strokes().empty()) return false;
+			return std::none_of(slot.pageRuntimeStates.begin(), slot.pageRuntimeStates.end(),
+				[](const auto& runtime)
+				{
+					return !runtime.history.Items().empty() || runtime.history.LastRedoItem() ||
+						!runtime.beforeStates.empty() || !runtime.afterStates.empty() || runtime.undoFloor ||
+						runtime.intervalOrdinal || runtime.intervalLoadPending || runtime.boundaryFallback ||
+						runtime.clearRedoAvailable || runtime.clearRedoContinuation;
+				});
+		}
+
+		enum class PresentationCpuSwitchOutcome : std::uint8_t { Failed, Applied, ProtectedConflict };
+
 		struct PresentationCpuSwitchResult
 		{
 			bool accepted = false;
 			bool topologyConflict = false;
+			PresentationCpuSwitchOutcome outcome = PresentationCpuSwitchOutcome::Failed;
 			std::optional<Bridge::PresentationTarget> preparedTarget;
 		};
 
-		template <typename AllocateToken>
+		template <typename AllocateToken, typename Prepare = KeepPresentationTopology>
 		PresentationCpuSwitchResult SwitchPresentationCpuSlot(
 			Bridge::Workspace& activeWorkspace,
 			std::optional<Bridge::PresentationKey>& activeKey,
@@ -1137,9 +1291,11 @@ namespace Inkeys::Drawing::Draw3
 			PresentationParkedSlots& parkedSlots,
 			std::uint64_t& nextSlotGeneration,
 			const Bridge::PresentationTarget& target,
-			AllocateToken&& allocateRasterStateToken)
+			AllocateToken&& allocateRasterStateToken, Prepare prepare = {})
 		{
+			(void)isolated;
 			static_assert(std::is_nothrow_move_assignable_v<DrawingDocumentSlot>);
+			static_assert(std::is_nothrow_move_assignable_v<std::optional<Bridge::PresentationTarget>>);
 			PresentationCpuSwitchResult result;
 			try { result.preparedTarget.emplace(target); }
 			catch (...) { return result; }
@@ -1147,79 +1303,78 @@ namespace Inkeys::Drawing::Draw3
 				activeKey && *activeKey == target.key && active.target &&
 				active.target->bindingMode == target.bindingMode;
 			const auto previousLane = activeKey && active.target
-				? std::optional<PresentationLaneKey>(LaneFor(*active.target))
-				: std::nullopt;
-			bool topologyConflict = sameLane &&
-				!CanReusePresentationDocumentSlot(*active.target, target,
-					active.document ? active.document->Pages().size() : 0);
-			if (!sameLane || topologyConflict)
+				? std::optional<PresentationLaneKey>(LaneFor(*active.target)) : std::nullopt;
+			DrawingDocumentSlot* destination = nullptr;
+			bool inserted = false, replaceEmpty = false;
+			DrawingDocumentSlot prepared;
+			std::optional<DrawingDocumentSlot> rebound;
+			try
 			{
-				DrawingDocumentSlot* destination = nullptr;
-				bool inserted = false;
-				if (!topologyConflict)
+				if (!sameLane)
 				{
-					try
-					{
-						auto [found, wasInserted] = parkedSlots.try_emplace(LaneFor(target));
-						inserted = wasInserted;
-						destination = &found->second;
-					}
-					catch (...) { return {}; }
-					if (destination->presentationTarget &&
-						!CanReusePresentationDocumentSlot(*destination->presentationTarget,
-							target, destination->document
-								? destination->document->Pages().size()
-								: Bridge::PresentationDocumentPageCount(target)))
-					{
-						topologyConflict = true;
-						destination = nullptr;
-					}
+					auto [found, wasInserted] = parkedSlots.try_emplace(LaneFor(target));
+					inserted = wasInserted;
+					destination = &found->second;
 				}
-				DrawingDocumentSlot prepared;
+				const auto prior = destination ? DocumentSlotRefs(*destination) : active;
+				const bool topologyConflict = prior.target && (!prior.document ||
+					!CanReusePresentationDocumentSlot(*prior.target, target,
+						prior.document->Pages().size()));
 				if (topologyConflict)
 				{
-					if (!TryCreateBlankDocumentSlot(prepared,
-						Bridge::PresentationDocumentPageCount(target),
-						allocateRasterStateToken)) return {};
+					if (!CanRetireEmptyPresentationLane(prior))
+					{
+						// 冲突不是成功切换：完整保留旧 lane，向 Host 报告被拒目标，等待明确重试/兼容新目标。
+						result.topologyConflict = true;
+						result.outcome = PresentationCpuSwitchOutcome::ProtectedConflict;
+						if (inserted) parkedSlots.erase(LaneFor(target));
+						return result;
+					}
+					replaceEmpty = true;
 				}
-				else if (!destination->document)
+				if (replaceEmpty || !prior.document)
 				{
-					if (!TryCreateBlankDocumentSlot(prepared,
-						Bridge::PresentationDocumentPageCount(target),
-						allocateRasterStateToken) || nextSlotGeneration == 0 ||
-						nextSlotGeneration == UINT64_MAX)
+					if (nextSlotGeneration == 0 || nextSlotGeneration == UINT64_MAX ||
+						!TryCreateBlankDocumentSlot(prepared, Bridge::PresentationDocumentPageCount(target),
+							allocateRasterStateToken))
 					{
 						if (inserted) parkedSlots.erase(LaneFor(target));
 						return {};
 					}
-					try { prepared.presentationTarget = *result.preparedTarget; }
-					catch (...)
-					{
-						if (inserted) parkedSlots.erase(LaneFor(target));
-						return {};
-					}
+					prepared.presentationTarget = *result.preparedTarget;
 					prepared.slotGeneration = nextSlotGeneration++;
-					*destination = std::move(prepared);
 				}
-				else if (destination->slotGeneration == 0) return {};
-				// 完整候选与 target 复制先成功，再以不抛异常的成组 swap 换权威槽。
-				SwapActiveDocumentSlot(active, source);
-				if (topologyConflict)
+				else if (prior.slotGeneration == 0) return {};
+				const auto candidate = prepared.document ? DocumentSlotRefs(prepared) : prior;
+				if (!prepare(candidate, target, rebound) ||
+					!PresentationSlotFits(rebound ? DocumentSlotRefs(*rebound) : candidate, target))
 				{
-					isolated = std::move(prepared);
-					destination = &isolated;
-					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=switch result=isolated reason=topology_conflict\n");
+					if (inserted) parkedSlots.erase(LaneFor(target));
+					return {};
 				}
+				if (rebound) SwapActiveDocumentSlot(candidate, *rebound);
+			}
+			catch (...)
+			{
+				if (inserted) parkedSlots.erase(LaneFor(target));
+				return {};
+			}
+			// 所有可能失败的准备均已结束。只有已证实空 lane 才能被新代次替换，随后仍走真实 Load/Present。
+			if (sameLane && replaceEmpty) SwapActiveDocumentSlot(active, prepared);
+			else if (!sameLane)
+			{
+				if (prepared.document) *destination = std::move(prepared);
+				SwapActiveDocumentSlot(active, source);
 				SwapActiveDocumentSlot(active, *destination);
 				if (previousLane && source.document && CanEvictPresentationCpuSlot(source))
 					parkedSlots.erase(*previousLane);
-				activeKey = topologyConflict
-					? std::nullopt : std::optional<Bridge::PresentationKey>(target.key);
 			}
+			activeKey = target.key;
 			activeWorkspace = Bridge::Workspace::Presentation;
-			if (topologyConflict) active.target.reset();
+			active.target = std::move(result.preparedTarget);
+			active.currentPageIndex = target.pageIndex;
 			result.accepted = true;
-			result.topologyConflict = topologyConflict;
+			result.outcome = PresentationCpuSwitchOutcome::Applied;
 			return result;
 		}
 
@@ -1324,11 +1479,53 @@ namespace Inkeys::Drawing::Draw3
 			catch (...) { return false; }
 		}
 
+		struct SceneApplicationRetry
+		{
+			void Cancel() noexcept { command_.reset(); attempt_ = 0; deadlineMs_ = 0; }
+			void Schedule(CanvasCommand command, std::uint64_t nowMs) noexcept
+			{
+				static_assert(std::is_nothrow_move_assignable_v<CanvasCommand>);
+				constexpr std::array<std::uint64_t, 4> delays = { 250, 500, 1000, 2000 };
+				const auto delay = delays[attempt_];
+				if (attempt_ + 1 < delays.size()) ++attempt_;
+				deadlineMs_ = nowMs > UINT64_MAX - delay ? UINT64_MAX : nowMs + delay;
+				command.sceneClosedAdmission = true;
+				// UI 令牌只在外部首次消费；后续退避已由 owner 持有，不能重验已经失效的旧令牌。
+				command.explicitRecoveryRetry = false;
+				command.recoveryRevision = 0;
+				command_ = std::move(command);
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					"[Draw3.Scene] action=apply result=retry delay_ms=%llu\n",
+					static_cast<unsigned long long>(delay));
+			}
+			bool TryTake(std::uint64_t nowMs, CanvasCommand& command) noexcept
+			{
+				if (!command_ || nowMs < deadlineMs_) return false;
+				command = std::move(*command_);
+				command_.reset();
+				return true;
+			}
+			std::optional<double> RemainingWaitMilliseconds(std::uint64_t nowMs) const noexcept
+			{
+				if (!command_) return std::nullopt;
+				return static_cast<double>((std::max)(std::uint64_t{ 1 },
+					deadlineMs_ > nowMs ? deadlineMs_ - nowMs : 0));
+			}
+		private:
+			std::optional<CanvasCommand> command_;
+			std::size_t attempt_ = 0;
+			std::uint64_t deadlineMs_ = 0;
+		};
+
 		struct PresentationCurrentLoadRetry
 		{
 			static constexpr std::array<std::uint64_t, 4> kDelaysMs =
 				{ 250, 500, 1000, 2000 };
 			bool ExitPrepared() const noexcept { return exitPrepared_; }
+			bool ManualOnly() const noexcept { return manualOnly_; }
+			bool Scheduled() const noexcept { return scheduled_; }
+			unsigned Attempts() const noexcept { return automaticAttempts_; }
+			bool HasRequest() const noexcept { return target_.has_value() || scheduled_ || manualOnly_; }
 			bool AllowsLoad(bool exitRequested) const noexcept
 			{
 				return !exitPrepared_ && !exitRequested;
@@ -2202,6 +2399,8 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t lastConsumedSequence = 0;
 			int64_t qpcOrigin = 0;
 			double lastModelInputTime = 0.0;
+			// 与尝试输入时钟分开，长空档按最后成功进入模型的时间判断。
+			double lastAcceptedModelInputTime = 0.0;
 			uint64_t diagnosticStrokeId = 0;
 			uint64_t diagnosticModelUpdates = 0;
 			float filteredInputSpeed = 0.0f;
@@ -2210,6 +2409,8 @@ namespace Inkeys::Drawing::Draw3
 			float lastOrientation = -1.0f;
 			// 每个 contact 保存批次快照，清屏和回收后不会遗留全局批次配置。
 			SpeedEraser::DisplayScale speedEraserDisplayScale = {};
+			PalmEraser::State palm;
+			bool palmObservationOnly = false;
 			SpeedEraser::DeviceMode speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 			SpeedEraserOcController speedEraserOc;
 			SpeedEraser::ContactSizeState eraserSize;
@@ -2522,6 +2723,108 @@ namespace Inkeys::Drawing::Draw3
 				snapshot.contactSize.width,snapshot.contactSize.height,snapshot.contactAreaUnits};
 		}
 
+		PalmEraser::ToolCategory PalmToolCategory(DrawingTool tool) noexcept
+		{
+			using Category = PalmEraser::ToolCategory;
+			switch (tool)
+			{
+			case DrawingTool::Pen: return Category::Pen;
+			case DrawingTool::HardPen: return Category::HardPen;
+			case DrawingTool::Highlighter: return Category::Highlighter;
+			case DrawingTool::Laser: return Category::Laser;
+			case DrawingTool::Eraser: return Category::Eraser;
+			default: return IsShapeDrawingTool(tool) ? Category::Shape : static_cast<Category>(-1);
+			}
+		}
+
+		bool PalmBlocksDrawing(const RuntimeStroke& runtime) noexcept
+		{
+			return runtime.palm.active && !runtime.palm.settings.parallelWriting &&
+				!runtime.ended && !runtime.awaitingReconnect &&
+				runtime.lastInputSnapshot.phase != ContactPhase::Up &&
+				runtime.lastInputSnapshot.phase != ContactPhase::Cancelled;
+		}
+
+		bool PalmNeighborBlocked(const std::vector<RuntimeStroke*>& active, PointF position,
+			int64_t qpc, const RuntimeStroke* self = nullptr) noexcept
+		{
+			for (const RuntimeStroke* other : active)
+			{
+				if (!other || other == self || other->ended || !other->palm.active) continue;
+				if (other->awaitingReconnect && qpc > other->reconnectDeadlineQpc) continue;
+				const auto& sample = other->awaitingReconnect ? other->deferredUpSnapshot : other->lastInputSnapshot;
+				const double radius = PalmEraser::ExclusionRadius(other->palm.diameterPx);
+				if (std::hypot(position.x - sample.position.x, position.y - sample.position.y) <= radius) return true;
+			}
+			return false;
+		}
+
+		bool PromotePalmRuntime(RuntimeStroke& runtime, const PalmEraser::State& candidate,
+			const ContactSnapshot& sample, const StrokeModelConfiguration& configuration,
+			int64_t qpcFrequency)
+		{
+			if (!candidate.active || candidate.diameterPx <= 0 || qpcFrequency <= 0) return false;
+			const double time = std::max(0.0, static_cast<double>(sample.qpc - runtime.qpcOrigin) / qpcFrequency);
+			if (runtime.tool != DrawingTool::Eraser || runtime.palmObservationOnly)
+			{
+				// 先在局部模型准备起点；失败时原笔迹、Shape 和 Laser 所有权保持完整。
+				ActiveStroke prepared(candidate.diameterPx, configuration.expectedSpeed, StrokeWidthMode::Fixed, false);
+				auto parameters = configuration.modelParams;
+				parameters.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+				if (!prepared.modeler.Reset(parameters).ok()) return false;
+				const ink::stroke_model::Input down{
+					.event_type = ink::stroke_model::Input::EventType::kDown,
+					.position = ink::stroke_model::Vec2(sample.position.x, sample.position.y),
+					.time = ink::stroke_model::Time(time), .pressure = 1.0f, .tilt = 0.0f, .orientation = 0.0f };
+				if (!prepared.modeler.Update(down, prepared.modeledResults).ok()) return false;
+				prepared.predictionMode = InkPredictionMode::Disabled;
+				prepared.inputStartPoint = { sample.position.x, sample.position.y, candidate.diameterPx * 0.5f, static_cast<float>(time) };
+				prepared.hasInputStartPoint = true;
+				AppendNewModeledPoints(prepared, -1.0f);
+				runtime.stroke = std::move(prepared);
+				runtime.shape.Reset();
+				runtime.rebuildPoints.clear();
+				runtime.reconnectManualTestRanges.clear();
+				runtime.lastModelInputTime = time;
+				runtime.lastAcceptedModelInputTime = time;
+				runtime.lastModelSnapshot = runtime.lastSpeedSnapshot = sample;
+				runtime.modelInputThisFrame = true;
+			}
+			else
+			{
+				// 已接受的擦除轨迹不回写半径，只为后续路径追加当前尺寸锚点。
+				const float pointTime = static_cast<float>(std::max(time, runtime.stroke.realPoints.empty()
+					? 0.0 : static_cast<double>(runtime.stroke.realPoints.back().time)));
+				if (runtime.stroke.realPoints.empty() || (sample.position.x == runtime.lastModelSnapshot.position.x &&
+					sample.position.y == runtime.lastModelSnapshot.position.y))
+					runtime.stroke.realPoints.push_back({ sample.position.x, sample.position.y,
+						candidate.diameterPx * 0.5f, pointTime });
+			}
+			runtime.tool = DrawingTool::Eraser;
+			runtime.stroke.widthMode = StrokeWidthMode::Fixed;
+			runtime.eraserWidthMode = EraserWidthMode::Fixed;
+			runtime.resolvedEraser.kind = SpeedEraser::EraserKind::Fixed;
+			runtime.stroke.widthEstimator.baseDiameter = candidate.diameterPx;
+			runtime.stroke.predictedResults.clear();
+			runtime.stroke.predictedPoints.clear();
+			runtime.eraserSize.Reset(candidate.diameterPx, static_cast<double>(sample.qpc) / qpcFrequency);
+			runtime.speedEraserModelDiameter = candidate.diameterPx;
+			runtime.stationaryModelAdvanceBlocked = false;
+			runtime.stroke.idleFrozen = false;
+			runtime.palm = candidate;
+			runtime.palmObservationOnly = false;
+			return true;
+		}
+
+		bool RetirePalmObservation(RuntimeStroke& runtime) noexcept
+		{
+			if (!runtime.palmObservationOnly || !runtime.palm.locked) return false;
+			runtime.palm.End();
+			runtime.ended = runtime.cancelled = true;
+			runtime.awaitingReconnect = false;
+			return true;
+		}
+
 		float RuntimeSpeedEraserContactDiameter(const RuntimeStroke& runtime) noexcept
 		{
 			return runtime.eraserSize.effectiveDiameterPx;
@@ -2595,6 +2898,15 @@ namespace Inkeys::Drawing::Draw3
 			shape.active = true;
 			shape.visualChanged = true;
 			return true;
+		}
+
+		void AdoptReconnectedContact(RuntimeStroke& runtime, ContactHandle handle) noexcept
+		{
+			// 同步新接触的手势归属，避免抬笔清理旧 key 后残留可复用的 contact ID。
+			runtime.palm.End(); // 只转交旧逻辑笔划，接续 Down 不能开启新的面积窗口。
+			runtime.handle = handle;
+			runtime.touchGestureKey = runtime.metricDeviceType == InputDeviceType::Touch
+				? CanvasTouchKey(handle) : 0;
 		}
 
 		bool SetShapeVisualEndpoint(
@@ -2735,7 +3047,7 @@ namespace Inkeys::Drawing::Draw3
 			};
 			if ((runtime.shape.construction && !runtime.shape.construction->completed) ||
 				(mode == StoredStrokeCommitMode::NormalUp && !runtime.ended) ||
-				!runtime.inUse || !runtime.handle || runtime.cancelled ||
+				!runtime.inUse || !runtime.handle || runtime.cancelled || runtime.palmObservationOnly ||
 				runtime.cpuCommitAttempted || pageIndex >= pageRuntimeStates.size() ||
 				runtime.ownerPageIndex != pageIndex ||
 				runtime.ownerWorkspaceGuid != document.WorkspaceGuid() ||
@@ -3057,6 +3369,42 @@ namespace Inkeys::Drawing::Draw3
 			}
 			return std::forward<Call>(call)();
 		}
+
+		absl::Status UpdateRuntimeContactModel(RuntimeStroke& runtime,
+			const ink::stroke_model::Input& next, double inputTime,
+			std::vector<ink::stroke_model::Result>& modelOutput,
+			const ink::stroke_model::StrokeModelParams& eraserModelParams,
+			RuntimeMetricsFrameCosts* costs = nullptr, int64_t metricFrequency = 0)
+		{
+			const auto& sampling = eraserModelParams.sampling_params;
+			const bool touchSpeed = runtime.metricDeviceType == InputDeviceType::Touch &&
+				runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser;
+			const bool touchPalm = runtime.metricDeviceType == InputDeviceType::Touch && runtime.palm.active;
+			const double gap = inputTime - (touchPalm ? runtime.lastAcceptedModelInputTime : runtime.speedEraserModelTime);
+			if ((touchSpeed || touchPalm) && !runtime.stroke.realPoints.empty() && sampling.min_output_rate > 0 &&
+				sampling.max_outputs_per_call > 2 && gap * sampling.min_output_rate > sampling.max_outputs_per_call - 2)
+			{
+				// 长空档只重锚位置模型；不重新识别、改尺寸或回写已接受几何。
+				const auto& last = runtime.stroke.realPoints.back();
+				auto anchor = next; anchor.event_type = ink::stroke_model::Input::EventType::kDown;
+				anchor.position = ink::stroke_model::Vec2(last.x, last.y);
+				anchor.time = ink::stroke_model::Time(inputTime - 1.0 / sampling.min_output_rate);
+				if (auto status = MetricsModelCall(costs, 0, metricFrequency,
+					[&] { return runtime.stroke.modeler.Reset(eraserModelParams); }); !status.ok()) return status;
+				if (auto status = MetricsModelCall(costs, 1, metricFrequency,
+					[&] { return runtime.stroke.modeler.Update(anchor, runtime.stroke.modeledResults); }); !status.ok()) return status;
+				runtime.lastAcceptedModelInputTime = anchor.time.Value();
+				runtime.stroke.predictedResults.clear();
+				runtime.stroke.predictedPoints.clear();
+				++runtime.eraserDiagnostics.idleModelReanchors;
+				// 合成种子不交给速度/面积控制器，不成为新的运动或定尺证据。
+			}
+			auto status = MetricsModelCall(costs, 1, metricFrequency,
+				[&] { return runtime.stroke.modeler.Update(next, modelOutput); });
+			if (status.ok()) runtime.lastAcceptedModelInputTime = inputTime;
+			return status;
+		}
+
 		template<class Call>
 		auto MetricsLaserCall(RuntimeMetricsLaserFrame* costs, size_t kind, int64_t frequency, Call&& call)
 		{
@@ -3888,7 +4236,7 @@ namespace Inkeys::Drawing::Draw3
 		void StopFatalInputConsumer(ContactInputCoordinator& input) noexcept
 		{
 			// fatal 后绘制线程不再消费旧 route；只封闭新 admission，终态由 Host/RTS 收拢。
-			input.SetAdmissionBlocked(true);
+			input.SetConsumerFatal();
 		}
 
 		void RejectStrokeInitialization(ContactInputCoordinator& input, ContactHandle handle,
@@ -3896,6 +4244,42 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 同 key 可能已属于下一次 Down；只交出失败旧笔的精确代次，等物理终态回收。
 			input.DiscardUntilTerminal(handle);
+		}
+
+		bool DiscardSelectionDown(ContactInputCoordinator& input, ContactHandle handle,
+			bool selectionMode) noexcept
+		{
+			if (!selectionMode) return false;
+			// 三工作区的选择都是电脑操作；RTS 鼠标也不得绕过穿透而初始化笔迹。
+			input.DiscardUntilTerminal(handle);
+			return true;
+		}
+
+		bool IgnoreAdditionalTouch(ContactInputCoordinator& input, ContactHandle handle,
+			InputDeviceType deviceType, bool hasActiveTouchContact, bool multiTouchEnabled) noexcept
+		{
+			if (deviceType != InputDeviceType::Touch || !hasActiveTouchContact || multiTouchEnabled) return false;
+			// producer 仍持有 route，必须等它发布 Up/Cancel 自回收，不能提前复用槽。
+			input.DiscardUntilTerminal(handle);
+			return true;
+		}
+
+		struct IgnoreIndependentTouchDiscard
+		{
+			void operator()() const noexcept {}
+		};
+
+		template<class AfterDiscard = IgnoreIndependentTouchDiscard>
+		bool RejectIndependentTouch(ContactInputCoordinator& input, CanvasTouchGestureState& gestures,
+			ContactHandle handle, InputDeviceType deviceType, bool hasActiveTouchContact, bool multiTouchEnabled,
+			AfterDiscard afterDiscard = {}) noexcept
+		{
+			// Discard 后 producer 可完成终态并复用 record；必须先保存本次已登记的身份。
+			const uint64_t registeredKey = CanvasTouchKey(handle);
+			if (!IgnoreAdditionalTouch(input, handle, deviceType, hasActiveTouchContact, multiTouchEnabled)) return false;
+			afterDiscard(); // 默认空操作，生产回归在这里精确复现终态/槽复用交错。
+			gestures.OnTouchUp(registeredKey);
+			return true;
 		}
 
 		bool IgnoreAdditionalLaserTouch(ContactInputCoordinator& input, ContactHandle handle,
@@ -3951,6 +4335,19 @@ namespace Inkeys::Drawing::Draw3
 			const auto iterator = std::find_if(layers.begin(), layers.end(),
 				[id](const LaserStrokeLayer& layer) { return layer.id == id; });
 			return iterator == layers.end() ? nullptr : &*iterator;
+		}
+
+		RECT RemovePalmLaserLayer(std::vector<LaserStrokeLayer>& layers, RuntimeStroke& runtime)
+		{
+			RECT dirty = {};
+			std::erase_if(layers, [&](const LaserStrokeLayer& layer)
+			{
+				if (layer.id != runtime.laserLayerId || layer.runtime != &runtime) return false;
+				UnionRectInPlace(dirty, layer.bounds);
+				return true;
+			});
+			runtime.laserLayerId = 0;
+			return dirty;
 		}
 
 		const std::vector<InkPoint>& LaserStrokeLayerPoints(
@@ -4032,6 +4429,18 @@ namespace Inkeys::Drawing::Draw3
 			layer->bounds = cancelled ? RECT{} : RectFromLaserPoints(
 				layer->completedPoints, ProductTargetScale(layer->visualStyle), width, height);
 			runtime.laserLayerId = 0;
+		}
+
+		void FinalizeLaserRuntime(std::vector<LaserStrokeLayer>& layers, RuntimeStroke& runtime,
+			LaserTrailLifecycle& lifecycle, int64_t terminalQpc, bool cancelled,
+			float modelDpiScale, int width, int height)
+		{
+			LaserStrokeLayer* layer = FindLaserStrokeLayer(layers, runtime.laserLayerId);
+			if (layer) UnionRectInPlace(runtime.visibleDirty, layer->bounds);
+			EndLaserContact(lifecycle, terminalQpc);
+			// 普通与合成 Up 都先冻结自有 CPU 层，再允许 Runtime 回收；保留其他 Laser。
+			FinalizeLaserStrokeLayer(layers, runtime, cancelled, modelDpiScale, width, height);
+			if (layer) UnionRectInPlace(runtime.visibleDirty, layer->bounds);
 		}
 
 		bool BakeLaserStrokeLayers(std::vector<LaserStrokeLayer>& layers,
@@ -4254,6 +4663,43 @@ namespace Inkeys::Drawing::Draw3
 			};
 		}
 
+		double QpcDeltaSeconds(int64_t newer, int64_t older, int64_t frequency);
+
+		InterruptedStrokeReconnectResult EvaluateRuntimeReconnectCandidate(const RuntimeStroke& candidate,
+			InterruptedStrokeReconnectIdentity downIdentity, const ContactSnapshot& down,
+			int64_t qpcFrequency, float dpiScale) noexcept
+		{
+			// 新偏好不改变旧笔的宽度身份；算法与生产原有候选判定保持一致。
+			downIdentity.widthMode = candidate.stroke.widthMode;
+			if (candidate.palm.active)
+			{
+				// 旧手掌以实际 Eraser/Fixed 继续匹配，仍严验真实设备与原始选定工具。
+				downIdentity.tool = static_cast<uint32_t>(candidate.tool);
+			}
+			if (!AreInterruptedStrokeReconnectIdentitiesCompatible(ReconnectIdentity(candidate), downIdentity))
+			{
+				InterruptedStrokeReconnectResult result;
+				result.rejectReason = InterruptedStrokeReconnectRejectReason::IdentityMismatch;
+				result.gapMilliseconds = QpcDeltaSeconds(down.qpc, candidate.deferredUpSnapshot.qpc, qpcFrequency) * 1000.0;
+				result.distance = std::hypot(down.position.x - candidate.deferredUpSnapshot.position.x,
+					down.position.y - candidate.deferredUpSnapshot.position.y);
+				return result;
+			}
+			const double gapSeconds = QpcDeltaSeconds(down.qpc, candidate.deferredUpSnapshot.qpc, qpcFrequency);
+			const auto motion = ResolveInterruptedStrokeReconnectMotion(candidate.reconnectPredictedResults,
+				candidate.stroke.realPoints, candidate.reconnectDirection, candidate.filteredInputSpeed,
+				candidate.lastModelInputTime, gapSeconds, dpiScale);
+			return EvaluateInterruptedStrokeReconnect({
+				.previousPosition = candidate.deferredUpSnapshot.position,
+				.previousUpQpc = candidate.deferredUpSnapshot.qpc,
+				.newPosition = down.position,
+				.newDownQpc = down.qpc,
+				.qpcFrequency = qpcFrequency,
+				.dpiScale = dpiScale,
+				.motion = motion
+			});
+		}
+
 		bool HasPhysicalContact(const std::vector<RuntimeStroke*>& active) noexcept
 		{
 			return std::any_of(active.begin(), active.end(), [](const RuntimeStroke* runtime)
@@ -4269,10 +4715,11 @@ namespace Inkeys::Drawing::Draw3
 				std::all_of(active.begin(), active.end(), [&](const RuntimeStroke* runtime)
 				{
 					return runtime && (runtime->ended || runtime->awaitingReconnect ||
+						(runtime->palmObservationOnly || runtime->palm.active ||
 						(runtime->stroke.widthMode == StrokeWidthMode::SpeedEraser &&
 						 !runtime->speedEraserOc.NeedsAnimation(seconds) &&
 						 runtime->speedEraserOc.SecondsSinceMovement(seconds) >=
-							runtime->speedEraserOc.Configuration().idleStartSeconds));
+							runtime->speedEraserOc.Configuration().idleStartSeconds)));
 				});
 		}
 
@@ -4547,7 +4994,7 @@ namespace Inkeys::Drawing::Draw3
 				scratch.clear();
 				for (const RuntimeStroke* runtime : active)
 				{
-					if (!runtime || runtime->ended || !runtime->shape.active ||
+					if (!runtime || runtime->ended || runtime->palmObservationOnly || !runtime->shape.active ||
 						runtime->shape.kind != kind) continue;
 					if (batchStyle && batchStyle->visualStyle.colorRgba !=
 						runtime->visualStyle.colorRgba)
@@ -4570,7 +5017,7 @@ namespace Inkeys::Drawing::Draw3
 			RECT dirty = {};
 			for (RuntimeStroke* runtime : active)
 			{
-				if (!runtime || runtime->ended) continue;
+				if (!runtime || runtime->ended || runtime->palmObservationOnly) continue;
 				if (runtime->tool == DrawingTool::Laser) continue;
 				if (runtime->shape.active)
 				{
@@ -4756,31 +5203,31 @@ namespace Inkeys::Drawing::Draw3
 			using namespace Inkeys::Business::PenWidth;
 			WindowController window; // 不附着 HWND，不初始化 Host/RTS/GPU。
 			{
-				const CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
-				const auto expectCursorProjection = [&](MouseCursorStyle expected)
+				const CursorSettings raw{}; // 默认：鼠标系统光标
+				const auto expectCursorProjection = [&](CursorStyle expected)
 				{
 					const auto effective = ResolveCursorSettingsForDrawingTool(window.EffectiveDrawingCursorTool(), raw);
-					window.SetMouseUsesSystemCursor(effective.mouseStyle == MouseCursorStyle::System);
-					check(effective.mouseStyle == expected &&
-						window.GetMouseUsesSystemCursor() == (expected == MouseCursorStyle::System) &&
-						effective.penStyle == PenCursorStyle::PenIcon && raw.mouseStyle == MouseCursorStyle::System,
+					window.SetMouseUsesSystemCursor(effective.mouse == CursorStyle::Arrow);
+					check(effective.mouse == expected &&
+						window.GetMouseUsesSystemCursor() == (expected == CursorStyle::Arrow) &&
+						effective.screenPen == raw.screenPen && raw.mouse == CursorStyle::Arrow,
 						"actual-tool cursor projection preserves raw preferences and synchronizes the Window policy");
 				};
 				// 使用真实 Window 的活动工具锁存/释放，不创建 contact、HWND 或新测试入口。
 				window.SetActiveDrawingCursorTool(DrawingTool::Highlighter);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::SolidLine);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveDrawingCursorTool(DrawingTool::SolidLine);
 				window.SetActiveTool(DrawingTool::Highlighter);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.ClearActiveDrawingCursorTool();
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::HardPen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::Pen);
 			}
 			const auto configuration = CreateStrokeModelConfiguration(96);
@@ -4815,6 +5262,39 @@ namespace Inkeys::Drawing::Draw3
 					window.SetProductVisualStyle(0x123456FF, highlighter.resolvedWidthDip, context);
 					check(nearlyEqual(CanvasDiameterForTool(DrawingTool::Highlighter, window.ProductVisualStyleSnapshot(), 1),
 						test.highlighter[index]), "ordinary highlighter uses new DIP presets with one target scale");
+				}
+			}
+			// 复用真实 Window 样式邮箱和 Controller 的 DPI 入口，连续改变目标 DPI；不创建 HWND。
+			{
+				DrawingCursorSample pen{ .x = 32.0f, .y = 48.0f, .valid = true };
+				pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+				CursorSettings cursor;
+				cursor.dotHideOnContact = DotCursorHideMode::Off;
+				for (const double dpi : { 96.0, 144.0, 192.0, 264.0, 96.0 })
+				{
+					Context context; context.effectiveDpi = dpi;
+					window.SetProductVisualStyle(0x123456FF, 3.0, context);
+					const auto style = window.ProductVisualStyleSnapshot();
+					ConfigureProductInkCursorAppearances(window, style, configuration.dpiScale);
+					const float scale = ProductTargetScale(style);
+					for (const auto selected : { CursorStyle::Arrow, CursorStyle::Pen, CursorStyle::HighlightPen, CursorStyle::Dot })
+					{
+						cursor.screenPen = selected;
+						const auto visual = ResolvePrimaryDrawingCursorVisual(pen, {}, DrawingCursorPointerAuthority::Pen,
+							window.CursorAppearanceForTool(DrawingTool::Pen), window.CursorAppearanceForTool(DrawingTool::Eraser),
+							false, false, false, true, &cursor, true, scale);
+						const double expectedWidth = (selected == CursorStyle::Arrow ? 13.0 : selected == CursorStyle::Dot ? 5.0 : 24.0) * dpi / 96.0;
+						const double expectedHeight = selected == CursorStyle::Arrow ? 19.5 * dpi / 96.0 : expectedWidth;
+						const double expectedEdge = selected == CursorStyle::Arrow ? (std::max)(1.0, 0.5 * dpi / 96.0)
+							: (selected == CursorStyle::HighlightPen ? 1.25 : 0.5) * dpi / 96.0;
+						check(visual.visible && nearlyEqual(visual.appearance.width, expectedWidth) &&
+							nearlyEqual(visual.appearance.height, expectedHeight) && nearlyEqual(visual.appearance.outlineWidth, expectedEdge),
+							"real Window style updates feed one system DPI scale to cursor geometry and edges");
+						check(nearlyEqual(visual.x, pen.x) && nearlyEqual(visual.y, pen.y) &&
+							nearlyEqual(visual.appearance.centerOffsetX, selected == CursorStyle::Dot ? 0.0 : expectedWidth / 2.0) &&
+							nearlyEqual(visual.appearance.centerOffsetY, selected == CursorStyle::Dot ? 0.0 : expectedHeight / 2.0),
+							"system DPI changes preserve the input hotspot while moving only the cursor quad center");
+					}
 				}
 			}
 			struct LargeCase { int width; int height; std::array<double, 3> brush; std::array<double, 3> highlighter; };
@@ -5241,6 +5721,602 @@ namespace Inkeys::Drawing::Draw3
 		return failures;
 	}
 
+	int RunIndependentTouchDiscardIdentityProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3TouchDiscardIdentity] FAIL: %s\n", label); }
+		};
+		for (bool cancelled : { false, true })
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			CanvasTouchGestureState gestures;
+			constexpr uint32_t tablet = 0xF536;
+			const auto down = [&](uint32_t id)
+			{
+				ContactSnapshot snapshot{}; snapshot.position = { 10, 0 }; snapshot.qpc = 100;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record) { check(false, "real Down reaches consumer"); return ContactHandle{}; }
+				const ContactHandle handle{ record, record->Generation() };
+				gestures.OnTouchDown(CanvasTouchKey(handle), 100, 1000, false, true);
+				return handle;
+			};
+			const auto rejected = down(1), other = down(2);
+			if (!rejected.record || !other.record) continue;
+			const uint64_t oldKey = CanvasTouchKey(rejected), otherKey = CanvasTouchKey(other);
+			ContactSnapshot terminal{}; terminal.position = { 12, 0 }; terminal.qpc = 150;
+			check(RejectIndependentTouch(input, gestures, rejected, InputDeviceType::Touch, true, false, [&]() noexcept
+				{
+					// 这段是确定性的 producer 交错：被隔离接触结束后，同址槽换成新的身份。
+					if (cancelled) input.PublishCancelled(tablet, 1, terminal);
+					else input.PublishUp(tablet, 1, terminal);
+					ContactSnapshot next{}; next.position = { 20, 0 }; next.qpc = 160;
+					check(input.PublishDown(tablet, 3, InputDeviceType::Touch, next), "new producer route reuses retired capacity");
+				}), "independent Touch is rejected after reconnect failed");
+			ContactRecord* replacement = nullptr;
+			while (input.TryDequeue(replacement) && !replacement) input.AcknowledgeControlWake();
+			const bool dequeued = replacement != nullptr;
+			const ContactHandle reused{ replacement, replacement ? replacement->Generation() : 0 };
+			check(dequeued && reused.record == rejected.record && reused.generation != rejected.generation &&
+				CanvasTouchKey(reused) != oldKey, "producer replaced old record identity before gesture retirement");
+			check(!gestures.HasContact(oldKey) && gestures.HasContact(otherKey) && gestures.ContactCount() == 1,
+				"retirement uses captured old key and preserves unrelated gesture");
+			if (dequeued)
+			{
+				gestures.OnTouchDown(CanvasTouchKey(reused), 160, 1000, false, true);
+				input.PublishUp(tablet, 3, terminal); gestures.OnTouchUp(CanvasTouchKey(reused)); input.Recycle(reused);
+			}
+			input.PublishUp(tablet, 2, terminal); gestures.OnTouchUp(otherKey); input.Recycle(other);
+			check(gestures.ContactCount() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
+				"producer identity race leaves no gesture or slot residue");
+		}
+		if (!failures) std::fputs("[Draw3TouchDiscardIdentity] PASS: captured key survives Up/Cancel and same-slot reuse\n", stderr);
+		return failures;
+	}
+
+	int RunSingleTouchReconnectAdmissionProductionProbe() noexcept
+	{
+		int failures = RunIndependentTouchDiscardIdentityProductionProbe();
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3SingleTouchReconnect] FAIL: %s\n", label); }
+		};
+		// A/B 已准入，A 真实 Up 后待续接；关闭多指不能将 A 的新物理接触误判成第三笔。
+		for (int scenario = 0; scenario < 5; ++scenario)
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			CanvasTouchGestureState gestures;
+			const auto config = CreateStrokeModelConfiguration(96);
+			RuntimeStroke candidate(config.expectedSpeed);
+			candidate.metricDeviceType = InputDeviceType::Touch;
+			candidate.selectedTool = candidate.tool = DrawingTool::Pen;
+			ResetNominalStroke(candidate, 5, config, StrokeWidthMode::Fixed);
+			const auto params = LatchStrokeDrawingOptions(candidate.stroke, config, false,
+				DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(true, true, InkPredictionMode::Disabled)));
+			check(candidate.stroke.modeler.Reset(params).ok(), "A uses its original predictor model");
+			const auto modelInput = [](ink::stroke_model::Input::EventType event, float x, double time)
+			{
+				return ink::stroke_model::Input{ .event_type = event, .position = { x, 0 },
+					.time = ink::stroke_model::Time(time), .pressure = 1, .tilt = 1.57079632679f, .orientation = 0 };
+			};
+			check(candidate.stroke.modeler.Update(modelInput(ink::stroke_model::Input::EventType::kDown, 0, 0),
+				candidate.stroke.modeledResults).ok(), "A real model receives Down");
+			for (int sample = 1; sample <= 12; ++sample)
+				check(candidate.stroke.modeler.Update(modelInput(ink::stroke_model::Input::EventType::kMove,
+					5.0f * sample, .01 * sample), candidate.stroke.modeledResults).ok(), "A real model receives Move");
+			AppendNewModeledPoints(candidate.stroke);
+			constexpr uint32_t tablet = 0xF535;
+			const auto down = [&](uint32_t id, float x, int64_t qpc)
+			{
+				ContactSnapshot snapshot{}; snapshot.position = { x, 0 }; snapshot.qpc = qpc;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record) { check(false, "real Touch route enters coordinator"); return ContactHandle{}; }
+				const ContactHandle handle{ record, record->Generation() };
+				check(gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition ==
+					CanvasTouchDisposition::Draw, "physical Down registers its exact drawing gesture");
+				return handle;
+			};
+			const auto a = down(1, 0, 1000), b = down(2, 200, 1001);
+			if (!a.record || !b.record) continue;
+			candidate.handle = a; candidate.touchGestureKey = CanvasTouchKey(a);
+			ContactSnapshot terminal{}; terminal.position = { 60, 0 }; terminal.qpc = 1120;
+			check(input.PublishUp(tablet, 1, terminal) && input.TryReadSnapshot(a, terminal), "A physical Up remains available for reconnect");
+			gestures.OnTouchUp(candidate.touchGestureKey);
+			candidate.awaitingReconnect = true; candidate.deferredUpSnapshot = terminal;
+			candidate.reconnectDirection = { 1, 0 }; candidate.filteredInputSpeed = 500;
+			candidate.lastModelInputTime = .12;
+			const auto changed = DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(false, false, InkPredictionMode::Kalman));
+			const auto c = down(3, scenario == 2 ? 5000.0f : 70.0f, scenario == 3 ? 1240 : 1140);
+			if (!c.record) continue;
+			const ContactSnapshot cDown = c.record->DownSnapshot();
+			auto identity = ReconnectIdentity(candidate);
+			if (scenario == 1) identity.selectedTool = static_cast<uint32_t>(DrawingTool::Highlighter);
+			const auto result = EvaluateRuntimeReconnectCandidate(candidate, identity, cDown, 1000, 1);
+			check(result.matched == (scenario == 0 || scenario == 4), "only compatible in-range candidate actually matches");
+			bool adopted = false;
+			if (result.matched)
+			{
+				// 与生产一样，匹配还必须经过真实模型 Update 成功，失败不能冒充已续接。
+				const auto status = candidate.stroke.modeler.Update(modelInput(ink::stroke_model::Input::EventType::kMove,
+					cDown.position.x, scenario == 4 ? .11 : .14), candidate.stroke.modeledResults);
+				check(status.ok() == (scenario != 4), "model continuation failure cannot bypass independent-stroke gate");
+				if (status.ok())
+				{
+					input.Recycle(candidate.handle);
+					AdoptReconnectedContact(candidate, c);
+					candidate.awaitingReconnect = false;
+					ClearPenTerminalState(candidate.stroke);
+					adopted = true;
+				}
+			}
+			const bool rejected = !adopted && RejectIndependentTouch(input, gestures, c,
+				InputDeviceType::Touch, true, changed.multiTouchEnabled);
+			check(adopted == (scenario == 0) && rejected == (scenario != 0), "successful reconnect precedes rejection of independent Touch");
+			check(gestures.ContactCount() == (adopted ? 2u : 1u) && gestures.HasContact(CanvasTouchKey(b)),
+				"rejected identity retires exactly once while B remains registered");
+			ContactSnapshot bSnapshot;
+			check(input.TryReadSnapshot(b, bSnapshot) && bSnapshot.phase == ContactPhase::Down &&
+				candidate.stroke.predictionMode == InkPredictionMode::Disabled && candidate.stroke.penTailCorrectionEnabled,
+				"B and A original Down options survive changed general preferences");
+			ContactSnapshot cSnapshot;
+			check(input.TryReadSnapshot(c, cSnapshot) == adopted, "only successful reconnect retains its producer route");
+			terminal.qpc = cDown.qpc + 10;
+			if (scenario % 2 == 0) input.PublishUp(tablet, 3, terminal);
+			else input.PublishCancelled(tablet, 3, terminal);
+			if (adopted) gestures.OnTouchUp(candidate.touchGestureKey);
+			input.Recycle(c); input.Recycle(a);
+			check(gestures.ContactCount() == 1 && input.DiagnosticsSnapshot().occupiedSlots == 1,
+				"reconnected or rejected C terminal retires without consuming a slot");
+			input.PublishUp(tablet, 2, terminal); gestures.OnTouchUp(CanvasTouchKey(b)); input.Recycle(b);
+			check(gestures.ContactCount() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
+				"all routes and gesture identities retire after the regression");
+		}
+		if (!failures) std::fputs("[Draw3SingleTouchReconnect] PASS: actual match/model handoff and independent-touch rejection\n", stderr);
+		return failures;
+	}
+
+	int RunReconnectContactIdentityProductionProbe() noexcept
+	{
+		int failures = RunSingleTouchReconnectAdmissionProductionProbe();
+		const auto check = [&failures](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3ReconnectIdentity] FAIL: %s\n", name);
+		};
+		// 使用真实 route 和 FSM；接管调用与生产重连成功分支共用，不能在测试里补写 key。
+		for (const uint32_t contactId : { 2u, 10u, 4u, 6u })
+		{
+			ContactInputCoordinator input;
+			CanvasTouchGestureState gestures;
+			RuntimeStroke runtime(1.0f);
+			runtime.metricDeviceType = InputDeviceType::Touch;
+			constexpr uint32_t tablet = 0xF531;
+			int64_t qpc = 100;
+			const auto down = [&](uint32_t id)
+			{
+				ContactSnapshot snapshot{};
+				snapshot.position = { 10.0f, 10.0f };
+				snapshot.qpc = qpc += 50;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record)
+				{
+					check(false, "Touch Down enters the real coordinator");
+					return ContactHandle{};
+				}
+				return ContactHandle{ record, record->Generation() };
+			};
+			const auto registerTouch = [&](ContactHandle handle)
+			{
+				return gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition;
+			};
+			const auto up = [&](ContactHandle handle, uint64_t gestureKey)
+			{
+				ContactSnapshot terminal{};
+				terminal.position = { 20.0f, 20.0f };
+				terminal.qpc = qpc += 50;
+				check(input.PublishUp(tablet, handle.record->ContactId(), terminal),
+					"Touch Up closes the current physical route");
+				check(input.TryReadSnapshot(handle, terminal) && terminal.phase == ContactPhase::Up,
+					"Touch terminal retains the exact handle generation");
+				gestures.OnTouchUp(gestureKey);
+			};
+			const auto first = down(1);
+			if (!first.record) continue;
+			check(registerTouch(first) == CanvasTouchDisposition::Draw, "ordinary Touch begins drawing");
+			runtime.handle = first;
+			runtime.touchGestureKey = CanvasTouchKey(first);
+			up(runtime.handle, runtime.touchGestureKey);
+			check(gestures.ContactCount() == 0, "ordinary Touch Up retires its gesture identity");
+			const auto reconnect = down(contactId);
+			if (!reconnect.record) continue;
+			check(registerTouch(reconnect) == CanvasTouchDisposition::Draw, "reconnecting Touch registers the new identity");
+			input.Recycle(runtime.handle);
+			AdoptReconnectedContact(runtime, reconnect);
+			const auto unrelated = down(100);
+			if (!unrelated.record) continue;
+			check(registerTouch(unrelated) == CanvasTouchDisposition::Draw, "unrelated Touch remains independently drawable");
+			const uint64_t unrelatedKey = CanvasTouchKey(unrelated);
+			up(runtime.handle, runtime.touchGestureKey);
+			check(gestures.ContactCount() == 1 && gestures.HasContact(unrelatedKey),
+				"reconnected Up retires only the adopted identity and preserves another Touch");
+			input.Recycle(runtime.handle);
+			up(unrelated, unrelatedKey);
+			input.Recycle(unrelated);
+			const auto reused = down(contactId);
+			if (!reused.record) continue;
+			check(reused.record == first.record && reused.generation != first.generation,
+				"regression reuses a real coordinator slot in a new generation");
+			check(registerTouch(reused) == CanvasTouchDisposition::Draw,
+				"same contact ID draws after reconnected Up instead of gesture suppression");
+			up(reused, CanvasTouchKey(reused));
+			input.Recycle(reused);
+			check(gestures.ContactCount() == 0, "all physical Touch contacts finish without stale identities");
+		}
+		{
+			// 连续接管复用同一条 RuntimeStroke，每段真实 Up 都应清掉当段身份。
+			ContactInputCoordinator input;
+			CanvasTouchGestureState gestures;
+			RuntimeStroke runtime(1.0f);
+			runtime.metricDeviceType = InputDeviceType::Touch;
+			int64_t qpc = 1000;
+			for (const uint32_t id : { 1u, 2u, 3u, 4u, 2u, 3u, 4u })
+			{
+				ContactSnapshot snapshot{};
+				snapshot.position = { 10.0f, 10.0f };
+				snapshot.qpc = qpc += 50;
+				ContactRecord* record = nullptr;
+				if (!input.PublishDown(0xF532, id, InputDeviceType::Touch, snapshot) ||
+					!input.TryDequeue(record) || !record)
+				{ check(false, "chained contact enters coordinator"); break; }
+				const ContactHandle handle{ record, record->Generation() };
+				check(gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition ==
+					CanvasTouchDisposition::Draw, "chained reconnect and subsequent ID reuse remain drawable");
+				if (runtime.handle.record)
+				{
+					input.Recycle(runtime.handle);
+					AdoptReconnectedContact(runtime, handle);
+				}
+				else
+				{
+					runtime.handle = handle;
+					runtime.touchGestureKey = CanvasTouchKey(handle);
+				}
+				snapshot.qpc = qpc += 50;
+				check(input.PublishUp(0xF532, id, snapshot), "chained Up closes adopted physical contact");
+				gestures.OnTouchUp(runtime.touchGestureKey);
+				check(gestures.ContactCount() == 0, "chained Up leaves no prior reconnect identity");
+			}
+			input.Recycle(runtime.handle);
+		}
+		{
+			// 笔尾橡皮也允许重连，但不能取得 Touch 手势身份或清掉其它接触。
+			ContactInputCoordinator input;
+			CanvasTouchGestureState gestures;
+			RuntimeStroke runtime(1.0f);
+			runtime.metricDeviceType = InputDeviceType::Pen;
+			runtime.tool = DrawingTool::Eraser;
+			runtime.invertedCursor = true;
+			check(IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)),
+				"non-Touch fixture uses the supported inverted Pen eraser reconnect path");
+			gestures.OnTouchDown(0xF53300000001ULL, 100, 1000, false, true);
+			ContactSnapshot snapshot{};
+			snapshot.position = { 10.0f, 10.0f };
+			snapshot.qpc = 100;
+			snapshot.isInvertedCursor = true;
+			ContactRecord* record = nullptr;
+			if (input.PublishDown(0xF534, 2, InputDeviceType::Pen, snapshot) && input.TryDequeue(record) && record)
+			{
+				const ContactHandle handle{ record, record->Generation() };
+				AdoptReconnectedContact(runtime, handle);
+				check(runtime.handle.record == handle.record && runtime.handle.generation == handle.generation &&
+					runtime.touchGestureKey == 0 && gestures.HasContact(0xF53300000001ULL),
+					"inverted Pen adopts its input handle without owning or clearing Touch gestures");
+				snapshot.qpc = 150;
+				check(input.PublishUp(0xF534, 2, snapshot), "non-Touch adopted Up closes route");
+				input.Recycle(handle);
+			}
+			else check(false, "non-Touch contact enters coordinator");
+		}
+		if (failures == 0)
+			std::fputs("[Draw3ReconnectIdentity] PASS: reused contact IDs, chained handoff and isolated Touch ownership\n", stderr);
+		return failures;
+	}
+
+	int RunPalmEraserProductionProbe() noexcept
+	{
+		int failures = RunSingleTouchReconnectAdmissionProductionProbe();
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3Palm] FAIL: %s\n", label); }
+		};
+		try
+		{
+			const auto configuration = CreateStrokeModelConfiguration(96);
+			PalmEraser::Settings preferences;
+			preferences.enabled = true;
+			preferences.parallelWriting = false;
+			const PalmEraser::Scale scale{ 1, 1, true, false };
+			ContactSnapshot sample;
+			sample.position = { 100, 200 }; sample.qpc = 1050; sample.phase = ContactPhase::Move;
+			sample.contactSize = { 100, 100 }; sample.contactAreaUnits = SpeedEraser::ContactAreaUnits::CanvasPixels;
+			const auto seed = [&](RuntimeStroke& runtime, DrawingTool tool)
+			{
+				runtime.inUse = true; runtime.selectedTool = runtime.tool = tool;
+				runtime.metricDeviceType = InputDeviceType::Touch; runtime.qpcOrigin = 1000;
+				runtime.lastInputSnapshot = runtime.lastModelSnapshot = sample;
+				runtime.stroke.realPoints = { {10, 20, 2, 0}, {20, 20, 2, .02f} };
+				runtime.stroke.l0DrawPoints = runtime.stroke.realPoints;
+				runtime.stroke.previousL0DrawPoints = runtime.stroke.realPoints;
+				runtime.stroke.highlighter = tool == DrawingTool::Highlighter;
+				if (runtime.stroke.highlighter)
+					runtime.stroke.committedHighlighterGeometry = runtime.stroke.l0HighlighterGeometry = BuildHighlighterGeometry(runtime.stroke.realPoints);
+				runtime.stroke.hasCommittedGeometry = true; runtime.stroke.committedIndex = 1;
+				runtime.shape.active = IsShapeDrawingTool(tool);
+				runtime.palm.Begin(preferences, scale, PalmToolCategory(tool), 1000, 1000);
+			};
+			RuntimeStroke other(configuration.expectedSpeed);
+			seed(other, DrawingTool::HardPen);
+			for (const auto tool : { DrawingTool::Pen, DrawingTool::HardPen, DrawingTool::Highlighter,
+				DrawingTool::SolidLine, DrawingTool::DashedLine, DrawingTool::OutlineRectangle,
+				DrawingTool::FilledRectangle, DrawingTool::Laser, DrawingTool::Eraser })
+			{
+				RuntimeStroke runtime(configuration.expectedSpeed);
+				seed(runtime, tool);
+				auto candidate = runtime.palm;
+				check(candidate.Observe(ContactAreaFromSnapshot(sample), sample.qpc) && candidate.active, "real snapshot area makes a candidate");
+				if (tool != DrawingTool::Eraser)
+				{
+					auto invalidModel = configuration;
+					invalidModel.modelParams.sampling_params.min_output_rate = 0;
+					check(!PromotePalmRuntime(runtime, candidate, sample, invalidModel, 1000) &&
+						runtime.tool == tool && runtime.stroke.realPoints.size() == 2 && runtime.stroke.realPoints.front().x == 10 &&
+						runtime.shape.active == IsShapeDrawingTool(tool) && !runtime.palm.active,
+						"actual model Reset failure retains original CPU geometry and tool");
+				}
+				runtime.laserLayerId = tool == DrawingTool::Laser ? 10 : 0;
+				std::vector<LaserStrokeLayer> layers;
+				if (tool == DrawingTool::Laser)
+				{
+					layers.push_back({ .id = 10, .runtime = &runtime, .bounds = {1, 2, 30, 40} });
+					layers.push_back({ .id = 11, .runtime = &other, .bounds = {50, 60, 70, 80} });
+				}
+				check(PromotePalmRuntime(runtime, candidate, sample, configuration, 1000), "production promotion prepares and commits a real model");
+				check(runtime.palm.active && runtime.tool == DrawingTool::Eraser && runtime.selectedTool == tool &&
+					runtime.stroke.widthMode == StrokeWidthMode::Fixed && !runtime.shape.active && runtime.qpcOrigin == 1000,
+					"promotion keeps original selected tool and time origin with local fixed eraser");
+				if (tool == DrawingTool::Eraser)
+					check(runtime.stroke.realPoints.size() == 3 && runtime.stroke.realPoints[0].r == 2 &&
+						runtime.stroke.realPoints[1].r == 2, "existing erase path and radii survive promotion");
+				else
+					check(runtime.stroke.realPoints.size() == 1 && runtime.stroke.realPoints.front().x == 100 &&
+						runtime.stroke.l0DrawPoints.empty() && runtime.stroke.previousL0DrawPoints.empty() &&
+						!runtime.stroke.highlighter && runtime.stroke.committedHighlighterGeometry.primitives.empty() &&
+						!runtime.stroke.hasCommittedGeometry, "new eraser contains no old drawing or shape geometry");
+				if (tool == DrawingTool::Laser)
+				{
+					const auto dirty = RemovePalmLaserLayer(layers, runtime);
+					check(layers.size() == 1 && layers.front().runtime == &other && dirty.left == 1 && dirty.bottom == 40,
+						"only promoted Laser CPU layer is removed and its old bounds become dirty");
+				}
+				check(other.stroke.realPoints.size() == 2 && other.stroke.realPoints.front().x == 10 &&
+					other.tool == DrawingTool::HardPen, "other Runtime geometry is untouched");
+				const auto oldPoints = runtime.stroke.realPoints;
+				auto grown = runtime.palm;
+				auto larger = sample; larger.qpc = 1100; larger.contactSize = {200, 200};
+				check(grown.Observe(ContactAreaFromSnapshot(larger), larger.qpc) &&
+					PromotePalmRuntime(runtime, grown, larger, configuration, 1000), "stationary maximum growth uses the production fixed-size path");
+				check(runtime.stroke.realPoints.size() > oldPoints.size() &&
+					std::equal(oldPoints.begin(), oldPoints.end(), runtime.stroke.realPoints.begin(),
+						[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }),
+					"size anchor never rewrites old erasure radii");
+			}
+
+			for (const auto profile : { StrokeTimingProfileId::Fps30, StrokeTimingProfileId::Fps60,
+				StrokeTimingProfileId::Fps120, StrokeTimingProfileId::Fps240 })
+			{
+				const auto idleConfiguration = CreateStrokeModelConfiguration(96, profile);
+				auto idleParameters = idleConfiguration.modelParams;
+				idleParameters.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+				const double longGap = idleParameters.sampling_params.max_outputs_per_call /
+					idleParameters.sampling_params.min_output_rate + 1.0;
+				for (const bool isPalm : { false, true }) for (const bool terminal : { false, true })
+				{
+					RuntimeStroke held(idleConfiguration.expectedSpeed);
+					seed(held, DrawingTool::Pen);
+					auto acceptedPalm = held.palm;
+					acceptedPalm.Observe(ContactAreaFromSnapshot(sample), sample.qpc);
+					check(PromotePalmRuntime(held, acceptedPalm, sample, idleConfiguration, 1000), "held eraser has a real prepared Fixed model");
+					held.palm.Advance(1200);
+					if (!isPalm) held.palm = {}; // 普通 Fixed 对照不能借手掌修复改变既有路径。
+					const auto acceptedPoints = held.stroke.realPoints;
+					const float acceptedDiameter = held.stroke.widthEstimator.baseDiameter;
+					const auto acceptedSelection = held.selectedTool;
+					const auto makeInput = [&](ink::stroke_model::Input::EventType event, double time, float x)
+					{
+						return ink::stroke_model::Input{ .event_type = event,
+							.position = { x, sample.position.y }, .time = ink::stroke_model::Time(time),
+							.pressure = 1, .tilt = 0, .orientation = 0 };
+					};
+					const double nextTime = held.lastAcceptedModelInputTime + longGap;
+					held.lastModelInputTime = nextTime; // Run 在调用前已推进尝试时钟，不能拿它掩盖空档。
+					const auto next = makeInput(terminal ? ink::stroke_model::Input::EventType::kUp : ink::stroke_model::Input::EventType::kMove,
+						nextTime, sample.position.x + 20);
+					const auto status = UpdateRuntimeContactModel(held, next, nextTime, held.stroke.modeledResults, idleParameters);
+					check(status.ok() == isPalm && held.eraserDiagnostics.idleModelReanchors == (isPalm ? 1 : 0),
+						"long-gap Move and Up reanchor active palms while ordinary Fixed remains unchanged");
+					if (!status.ok()) continue;
+					AppendRuntimeModeledPoints(held, -1, nextTime);
+					check(held.stroke.realPoints.size() > acceptedPoints.size() &&
+						std::equal(acceptedPoints.begin(), acceptedPoints.end(), held.stroke.realPoints.begin(),
+							[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }) &&
+						held.stroke.realPoints.size() - acceptedPoints.size() <= static_cast<size_t>(idleParameters.sampling_params.max_outputs_per_call),
+						"palm idle recovery appends bounded real output without rewriting accepted geometry");
+					check(held.palm.active && held.palm.locked && held.palm.diameterPx == acceptedDiameter &&
+						held.stroke.widthEstimator.baseDiameter == acceptedDiameter && held.selectedTool == acceptedSelection && held.qpcOrigin == 1000 &&
+						held.lastAcceptedModelInputTime == nextTime &&
+						std::all_of(held.stroke.realPoints.begin(), held.stroke.realPoints.end(),
+							[&](const InkPoint& point) { return point.r * 2 == acceptedDiameter; }),
+						"palm idle recovery retains frozen diameter, tool selection and original time identity");
+					if (!terminal)
+					{
+						const auto pointsBeforeUp = held.stroke.realPoints;
+						const double upTime = nextTime + longGap;
+						held.lastModelInputTime = upTime;
+						const auto up = makeInput(ink::stroke_model::Input::EventType::kUp, upTime, sample.position.x + 40);
+						check(UpdateRuntimeContactModel(held, up, upTime, held.stroke.modeledResults, idleParameters).ok(),
+							"palm can end normally after a second output-limit-sized idle gap");
+						AppendRuntimeModeledPoints(held, -1, upTime);
+						check(held.eraserDiagnostics.idleModelReanchors == 2 && held.lastAcceptedModelInputTime == upTime &&
+							held.palm.diameterPx == acceptedDiameter && held.palm.locked &&
+							std::equal(pointsBeforeUp.begin(), pointsBeforeUp.end(), held.stroke.realPoints.begin(),
+								[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }),
+							"long-gap Up preserves the entire pre-Up palm erase path and locked size");
+					}
+				}
+			}
+
+			RuntimeStroke laserA(configuration.expectedSpeed), laserB(configuration.expectedSpeed);
+			seed(laserA, DrawingTool::Laser); seed(laserB, DrawingTool::Laser);
+			laserA.laserLayerId = 21; laserB.laserLayerId = 22;
+			std::vector<LaserStrokeLayer> interruptedLayers{
+				{ .id = 21, .runtime = &laserA, .bounds = {1, 2, 30, 40} },
+				{ .id = 22, .runtime = &laserB, .bounds = {50, 60, 70, 80} } };
+			LaserTrailLifecycle interruptedLifecycle;
+			BeginLaserContact(interruptedLifecycle); BeginLaserContact(interruptedLifecycle);
+			const auto acceptedLaserPoints = laserA.stroke.realPoints;
+			FinalizeLaserRuntime(interruptedLayers, laserA, interruptedLifecycle,
+				sample.qpc, false, configuration.dpiScale, 1024, 768);
+			check(interruptedLifecycle.activeContactCount == 1 && interruptedLifecycle.phase == LaserTrailPhase::Active &&
+				laserA.laserLayerId == 0 && interruptedLayers[0].runtime == nullptr && !interruptedLayers[0].cancelled &&
+				interruptedLayers[1].runtime == &laserB && laserB.laserLayerId == 22,
+				"synthetic Laser Up retires only its own lifecycle and borrowed CPU layer");
+			check(laserA.visibleDirty.left <= 1 && laserA.visibleDirty.top <= 2 &&
+				laserA.visibleDirty.right >= 30 && laserA.visibleDirty.bottom >= 40,
+				"synthetic Laser Up preserves old coverage in the dirty bounds");
+			laserA.stroke.Reset(kPenDiameter, configuration.expectedSpeed);
+			const auto& retainedLaserPoints = LaserStrokeLayerPoints(interruptedLayers[0]);
+			check(retainedLaserPoints.size() == acceptedLaserPoints.size() &&
+				std::equal(acceptedLaserPoints.begin(), acceptedLaserPoints.end(), retainedLaserPoints.begin(),
+					[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }),
+				"pool reset cannot erase the accepted finalized Laser trail");
+			FinalizeLaserRuntime(interruptedLayers, laserB, interruptedLifecycle,
+				sample.qpc + 10, false, configuration.dpiScale, 1024, 768);
+			check(interruptedLifecycle.activeContactCount == 0 && interruptedLifecycle.phase == LaserTrailPhase::Hold &&
+				interruptedLifecycle.lastAllUpQpc == sample.qpc + 10 && interruptedLayers[1].runtime == nullptr,
+				"last synthetic Laser Up reaches the normal finite Hold lifecycle");
+			check(EvaluateLaserTrailOpacity(interruptedLifecycle, sample.qpc + 5000, 1000, 0) == 0 &&
+				interruptedLifecycle.phase == LaserTrailPhase::Inactive,
+				"synthetically ended Laser batch can fade completely without another physical Up");
+
+			RuntimeStroke palm(configuration.expectedSpeed), observer(configuration.expectedSpeed);
+			seed(palm, DrawingTool::Pen);
+			auto candidate = palm.palm;
+			candidate.Observe(ContactAreaFromSnapshot(sample), sample.qpc);
+			check(PromotePalmRuntime(palm, candidate, sample, configuration, 1000), "neighborhood palm setup");
+			palm.palm.diameterPx = 40; // 精确边界用 20px 半径与 4px 外扩，避免浮点舍入歧义。
+			std::vector<RuntimeStroke*> active{ &palm, &other };
+			check(PalmNeighborBlocked(active, {124, 200}, 1100) && !PalmNeighborBlocked(active, {125, 200}, 1100),
+				"neighbor exclusion includes the expanded boundary and permits separate palms");
+			check(PalmBlocksDrawing(palm), "physical nonparallel palm blocks new ordinary drawing");
+			palm.awaitingReconnect = true; palm.deferredUpSnapshot = sample; palm.reconnectDeadlineQpc = 1200;
+			check(!PalmBlocksDrawing(palm) && PalmNeighborBlocked(active, sample.position, 1200) &&
+				!PalmNeighborBlocked(active, sample.position, 1201), "pending handoff keeps finite exclusion without physical writing block");
+			observer.inUse = true; observer.palmObservationOnly = true;
+			observer.qpcOrigin = 1000; observer.lastModelSnapshot = sample;
+			observer.palm.Begin(preferences, scale, PalmEraser::ToolCategory::Pen, 1000, 1000);
+			check(observer.stroke.realPoints.empty() && !observer.stroke.hasInputStartPoint,
+				"observation-only runtime has no normal drawing model geometry");
+			auto observed = observer.palm;
+			observed.Observe(ContactAreaFromSnapshot(sample), sample.qpc);
+			check(PromotePalmRuntime(observer, observed, sample, configuration, 1000) && !observer.palmObservationOnly,
+				"remote observation-only contact can prepare its first real eraser model");
+			RuntimeStroke expired(configuration.expectedSpeed);
+			expired.palmObservationOnly = true;
+			expired.palm.Begin(preferences, scale, PalmEraser::ToolCategory::Pen, 1000, 1000);
+			expired.palm.Advance(1151);
+			check(RetirePalmObservation(expired) && expired.ended && expired.cancelled && expired.stroke.realPoints.empty(),
+				"expired observer is discarded through normal ended lifecycle without phantom history");
+
+			for (const bool isPalm : { false, true }) for (const bool failModel : { false, true })
+			{
+				ContactInputCoordinator input;
+				RuntimeStroke continued(configuration.expectedSpeed);
+				continued.inUse = true; continued.metricDeviceType = InputDeviceType::Touch;
+				continued.selectedTool = isPalm ? DrawingTool::Laser : DrawingTool::Pen;
+				continued.tool = isPalm ? DrawingTool::Eraser : DrawingTool::Pen;
+				continued.qpcOrigin = 1000;
+				continued.palm.Begin(preferences, scale, PalmEraser::ToolCategory::Pen, 1000, 1000);
+				if (isPalm) continued.palm.Observe(ContactAreaFromSnapshot(sample), 1050);
+				ResetNominalStroke(continued, isPalm ? continued.palm.diameterPx : 5.0f, configuration, StrokeWidthMode::Fixed);
+				auto parameters = configuration.modelParams;
+				parameters.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+				check(continued.stroke.modeler.Reset(parameters).ok(), "continuation uses real existing model");
+				const auto model = [](ink::stroke_model::Input::EventType event, float x, double time)
+				{
+					return ink::stroke_model::Input{ .event_type = event, .position = { x, 0 },
+						.time = ink::stroke_model::Time(time), .pressure = 1, .tilt = 0, .orientation = 0 };
+				};
+				check(continued.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kDown, 0, 0),
+					continued.stroke.modeledResults).ok(), "continuation receives initial model Down");
+				for (int index = 1; index <= 12; ++index)
+					check(continued.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kMove, index * 5.0f, index * .01),
+						continued.stroke.modeledResults).ok(), "continuation trains normal real Move history");
+				AppendNewModeledPoints(continued.stroke);
+				ContactSnapshot down; down.qpc = 1000;
+				ContactRecord* oldRecord = nullptr;
+				check(input.PublishDown(0xFA11, 1, InputDeviceType::Touch, down) && input.TryDequeue(oldRecord) && oldRecord,
+					"old logical stroke owns actual coordinator route");
+				if (!oldRecord) continue;
+				continued.handle = { oldRecord, oldRecord->Generation() };
+				ContactSnapshot up; up.position = { 60, 0 }; up.qpc = 1120;
+				check(input.PublishUp(0xFA11, 1, up) && input.TryReadSnapshot(continued.handle, up), "physical Up makes finite continuation candidate");
+				continued.palm.End();
+				continued.awaitingReconnect = true; continued.deferredUpSnapshot = up;
+				continued.reconnectDirection = { 1, 0 }; continued.filteredInputSpeed = 500;
+				continued.lastModelInputTime = .12;
+				auto incoming = sample; incoming.position = { 70, 0 }; incoming.qpc = 1140; incoming.contactSize = {500, 500};
+				ContactRecord* newRecord = nullptr;
+				check(input.PublishDown(0xFA11, 2, InputDeviceType::Touch, incoming) && input.TryDequeue(newRecord) && newRecord,
+					"continuation Down with very large area owns distinct actual route");
+				if (!newRecord) { input.Recycle(continued.handle); continue; }
+				const ContactHandle newHandle{ newRecord, newRecord->Generation() };
+				auto identity = ReconnectIdentity(continued);
+				identity.tool = static_cast<uint32_t>(continued.selectedTool);
+				check(EvaluateRuntimeReconnectCandidate(continued, identity, incoming, 1000, 1).matched,
+					"same original selection matches old actual tool without relaxing motion criteria");
+				const auto oldHandle = continued.handle;
+				const float oldDiameter = continued.palm.diameterPx;
+				const auto status = continued.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kMove, 70,
+					failModel ? .11 : .14), continued.stroke.modeledResults);
+				check(status.ok() != failModel, "real model rejects nonmonotonic handoff time");
+				if (status.ok())
+				{
+					AppendRuntimeModeledPoints(continued, 500, .14);
+					input.Recycle(oldHandle);
+					AdoptReconnectedContact(continued, newHandle);
+					if (isPalm) check(std::abs(continued.stroke.realPoints.back().r * 2 - oldDiameter) < .001f,
+						"continued hand eraser geometry keeps its frozen actual diameter");
+				}
+				check(continued.handle.record == (failModel ? oldHandle.record : newHandle.record) &&
+					continued.palm.active == isPalm && continued.palm.diameterPx == oldDiameter && continued.palm.locked &&
+					!continued.palm.Observe(ContactAreaFromSnapshot(incoming), incoming.qpc),
+					"handoff commits only on model success and neither ordinary nor palm continuation reopens recognition");
+				incoming.qpc = 1150; input.PublishUp(0xFA11, 2, incoming);
+				input.Recycle(newHandle); if (failModel) input.Recycle(oldHandle);
+			}
+		}
+		catch (...) { check(false, "production probe exception"); }
+		if (!failures) std::fputs("[Draw3Palm] PASS: CPU promotion, exact ownership, observation admission, deadline and real model continuation; no GPU/HWND\n", stderr);
+		return failures;
+	}
+
 	int RunDraw3ControlFenceProductionProbe() noexcept
 	{
 		int failures = 0;
@@ -5251,7 +6327,52 @@ namespace Inkeys::Drawing::Draw3
 			std::fprintf(stderr, "[Draw3ControlFence] FAIL: %s\n", name);
 		};
 		CheckTailInputDiagnosticContract(check);
+		failures += RunReconnectContactIdentityProductionProbe();
 		failures += RunEraserIdleWakeProductionProbe();
+		failures += RunHostWorkspaceTransitionInputProductionProbe();
+		{
+			constexpr int64_t frequency = 1000;
+			constexpr int64_t upQpc = 100;
+			LaserTrailLifecycle lifecycle;
+			BeginLaserContact(lifecycle);
+			EndLaserContact(lifecycle, upQpc);
+			LaserTrailPhase frameInitialPhase = lifecycle.phase;
+			int coverageClearCount = 0;
+			RECT stableBounds{ 1, 2, 30, 40 };
+			RECT liveBounds{ 5, 6, 50, 60 };
+			std::vector<int> strokeLayers{ 1 };
+			const auto retireFinalExpiry = [&]
+			{
+				if (!LaserTrailExpiredThisFrame(frameInitialPhase, lifecycle.phase)) return;
+				++coverageClearCount;
+				stableBounds = {};
+				liveBounds = {};
+				strokeLayers.clear();
+			};
+			const float firstOpacity = EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency, frequency, 1.0);
+			retireFinalExpiry();
+			check(lifecycle.phase == LaserTrailPhase::Fade && firstOpacity == 1.0f &&
+				coverageClearCount == 0 && strokeLayers.size() == 1,
+				"first Fade evaluation retains the final-frame laser resources");
+			(void)EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency * 2, frequency, 1.0);
+			retireFinalExpiry();
+			check(lifecycle.phase == LaserTrailPhase::Inactive && coverageClearCount == 1 &&
+				strokeLayers.empty() && stableBounds.left == stableBounds.right &&
+				liveBounds.left == liveBounds.right,
+				"second evaluation expiry retires coverage bounds and stroke layers immediately");
+			frameInitialPhase = lifecycle.phase; // 下一帧重新采样帧首相位。
+			(void)EvaluateLaserTrailOpacity(
+				lifecycle, upQpc + frequency * 2, frequency, 1.0);
+			retireFinalExpiry();
+			check(coverageClearCount == 1, "next frame does not repeat final laser expiry cleanup");
+			BeginLaserContact(lifecycle);
+			check(EvaluateLaserTrailOpacity(lifecycle,
+				upQpc + frequency * 2 + 1, frequency, 1.0) == 1.0f &&
+				lifecycle.phase == LaserTrailPhase::Active && coverageClearCount == 1,
+				"new laser Down retains the existing Active semantics");
+		}
 		ContactInputCoordinator input;
 		WindowController window;
 		const auto snapshot = [](ContactPhase phase)
@@ -5307,6 +6428,79 @@ namespace Inkeys::Drawing::Draw3
 		DrainIngressBatch(input, window, commandBoundaryPending, process);
 		check(observed == std::vector<int>{ 1, 0, 2 },
 			"new Down resumes after Clear has left the canvas queue");
+		struct SelectionInputCase
+		{
+			InputDeviceType device;
+			bool inverted;
+		};
+		const SelectionInputCase selectionInputs[] = {
+			{ InputDeviceType::MouseLeft, false }, { InputDeviceType::MouseRight, false },
+			{ InputDeviceType::Touch, false }, { InputDeviceType::Pen, false },
+			{ InputDeviceType::Pen, true }
+		};
+		// 共用操作不按 workspace 分支；各场景独立真实 route，包含 RTS 鼠标和笔尾元数据。
+		for (const auto workspace : { Bridge::Workspace::Desktop,
+			Bridge::Workspace::Presentation, Bridge::Workspace::Whiteboard })
+			for (const auto& source : selectionInputs)
+			{
+				ContactInputCoordinator selectionInput;
+				selectionInput.EnableDiagnostics(true);
+				WindowController selectionWindow;
+				selectionWindow.SetSelectionMode(true);
+				const std::uint32_t tablet = 0xF400 + static_cast<std::uint32_t>(workspace);
+				auto down = snapshot(ContactPhase::Down);
+				down.isInvertedCursor = source.inverted;
+				ContactHandle rejected, accepted;
+				int rejectedDowns = 0, passedDowns = 0;
+				bool boundary = false;
+				const auto consume = [&](ContactRecord* record)
+				{
+					if (!record) { selectionInput.AcknowledgeControlWake(); return; }
+					const ContactHandle handle{ record, record->Generation() };
+					check(record->DeviceType() == source.device &&
+						record->DownSnapshot().isInvertedCursor == source.inverted,
+						"selection fixture retains actual device and inverted metadata");
+					if (DiscardSelectionDown(selectionInput, handle, selectionWindow.SelectionMode()))
+					{
+						rejected = handle; ++rejectedDowns;
+						return;
+					}
+					accepted = handle; ++passedDowns;
+				};
+				check(selectionInput.PublishDown(tablet, 1, source.device, down),
+					"selection Down enters the real coordinator");
+				DrainIngressBatch(selectionInput, selectionWindow, boundary, consume);
+				ContactSnapshot current;
+				check(rejected && rejectedDowns == 1 && passedDowns == 0 &&
+					selectionInput.HasQuarantinedContacts() &&
+					!selectionInput.TryReadSnapshot(rejected, current),
+					"actual Selection discards Down and retains its physical route until terminal");
+				selectionWindow.SetActiveTool(DrawingTool::Pen);
+				selectionWindow.SetSelectionMode(false);
+				check(!selectionInput.PublishMove(tablet, 1, snapshot(ContactPhase::Move)) &&
+					selectionInput.PublishUp(tablet, 1, snapshot(ContactPhase::Up)),
+					"switching to Pen does not revive rejected Move and still accepts real Up");
+				DrainIngressBatch(selectionInput, selectionWindow, boundary, consume);
+				check(passedDowns == 0 && !selectionInput.HasQuarantinedContacts() &&
+					selectionInput.DiagnosticsSnapshot().occupiedSlots == 0,
+					"rejected Selection contact drains without replaying Down after tool switch");
+				check(selectionInput.PublishDown(tablet, 1, source.device, down),
+					"next physical Down is published after rejected terminal");
+				DrainIngressBatch(selectionInput, selectionWindow, boundary, consume);
+				check(accepted && passedDowns == 1 && rejectedDowns == 1 &&
+					(accepted.record != rejected.record || accepted.generation != rejected.generation) &&
+					selectionInput.ContactAdmitted(accepted),
+					"new non-Selection generation passes the same production rejection operation");
+				check(selectionInput.PublishMove(tablet, 1, snapshot(ContactPhase::Move)) &&
+					selectionInput.TryReadSnapshot(accepted, current) && current.phase == ContactPhase::Move &&
+					selectionInput.PublishUp(tablet, 1, snapshot(ContactPhase::Up)) &&
+					selectionInput.TryReadSnapshot(accepted, current) && current.phase == ContactPhase::Up,
+					"normal device Move and terminal remain readable after non-Selection Down");
+				selectionInput.Recycle(accepted);
+				check(selectionInput.DiagnosticsSnapshot().occupiedSlots == 0 &&
+					selectionInput.DiagnosticsSnapshot().recycled == 2,
+					"rejected and accepted generations each release their real slot once");
+			}
 		return failures;
 	}
 
@@ -5410,6 +6604,7 @@ namespace Inkeys::Drawing::Draw3
 			std::uint64_t queuedRevision = 2;
 			std::uint64_t committedRevision = 1;
 			bool initialized = true;
+			bool emptyLaneVerified = false;
 			bool loadPending = false;
 			std::uint64_t generation = 1;
 			Bridge::Workspace workspace = Bridge::Workspace::Presentation;
@@ -5424,7 +6619,7 @@ namespace Inkeys::Drawing::Draw3
 			{ return ++nextRasterToken; };
 			const ActivePresentationSlotRefs active{ document, runtimes, retained,
 				pageIndex, activeTarget, fileGuid, mutationRevision, queuedRevision,
-				committedRevision, initialized, loadPending, generation };
+				committedRevision, initialized, emptyLaneVerified, loadPending, generation };
 			const auto switched = SwitchPresentationCpuSlot(workspace, activeKey,
 				active, source->second, isolated, parked, nextSlotGeneration,
 				stable, allocate);
@@ -5592,6 +6787,186 @@ namespace Inkeys::Drawing::Draw3
 						"candidate allocation failure keeps authoritative slot unchanged");
 				}
 			}
+
+			// 同 lane 与已停放 lane 均在候选准备失败时保留原权威文稿。
+			const auto originalGuid = document->WorkspaceGuid().Bytes();
+			const auto originalTarget = activeTarget;
+			const auto originalGeneration = generation;
+			const auto originalPage = pageIndex;
+			auto* currentSource = &parked.at(LaneFor(*activeTarget));
+			auto requested = *activeTarget;
+			++requested.targetRevision;
+			const auto rebindFailure = [](ActivePresentationSlotRefs,
+				const Bridge::PresentationTarget&,
+				std::optional<DrawingDocumentSlot>&) { return false; };
+			const auto unchanged = [&]()
+			{
+				return document && document->WorkspaceGuid().Bytes() == originalGuid &&
+					activeTarget == originalTarget && generation == originalGeneration &&
+					pageIndex == originalPage;
+			};
+			const auto failedRebind = SwitchPresentationCpuSlot(workspace, activeKey,
+				active, *currentSource, isolated, parked, nextSlotGeneration,
+				requested, allocate, rebindFailure);
+			check(!failedRebind.accepted && unchanged(),
+				"same lane rebind failure changes neither CPU document nor target");
+			const auto malformed = [](ActivePresentationSlotRefs,
+				const Bridge::PresentationTarget&, std::optional<DrawingDocumentSlot>& candidate)
+			{ candidate.emplace(); return true; };
+			const auto failedCount = SwitchPresentationCpuSlot(workspace, activeKey,
+				active, *currentSource, isolated, parked, nextSlotGeneration,
+				requested, allocate, malformed);
+			check(!failedCount.accepted && unchanged(),
+				"candidate page count failure cannot commit target equality");
+			auto other = requested.bindingMode == Bridge::SlideBindingMode::StableSlideId
+				? fallback : stable;
+			const auto otherSlot = parked.find(LaneFor(other));
+			if (otherSlot != parked.end() && otherSlot->second.document)
+			{
+				const auto parkedGuid = otherSlot->second.document->WorkspaceGuid().Bytes();
+				const auto failedParked = SwitchPresentationCpuSlot(workspace, activeKey,
+					active, *currentSource, isolated, parked, nextSlotGeneration,
+					other, allocate, rebindFailure);
+				check(!failedParked.accepted && unchanged() && otherSlot->second.document &&
+					otherSlot->second.document->WorkspaceGuid().Bytes() == parkedGuid,
+					"parked lane preparation failure preserves both lanes before swap");
+			}
+			const auto recovered = SwitchPresentationCpuSlot(workspace, activeKey,
+				active, *currentSource, isolated, parked, nextSlotGeneration,
+				requested, allocate);
+			check(recovered.accepted && PresentationSceneMatches(workspace, activeKey,
+				active, requested) && document->WorkspaceGuid().Bytes() == originalGuid,
+				"same stable revision retries successfully without discarding old ink");
+			runtimes.emplace_back();
+			check(!PresentationSceneMatches(workspace, activeKey, active, requested),
+				"equal target with invalid runtime count cannot acknowledge or execute business");
+			runtimes.pop_back();
+
+			CanvasCommand business;
+			business.type = CanvasCommandType::Clear;
+			business.requireSceneMatch = true;
+			business.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Presentation);
+			business.presentationTarget = std::make_shared<Bridge::PresentationTarget>(requested);
+			check(CanvasCommandSceneMatches(business, workspace, activeKey, active),
+				"fully committed matching prefix allows business once");
+			check(!CanvasCommandSceneMatches(business, Bridge::Workspace::Desktop, activeKey, active),
+				"failed PPT prefix cannot Clear the old desktop");
+			business.presentationTarget = std::make_shared<Bridge::PresentationTarget>(*originalTarget);
+			check(!CanvasCommandSceneMatches(business, workspace, activeKey, active),
+				"old full target cannot mutate a newer CPU scene");
+			business.type = CanvasCommandType::PrepareExitAutoSave;
+			check(CanvasCommandSceneMatches(business, Bridge::Workspace::Desktop, activeKey, active),
+				"final save barrier remains admissible regardless of failed prefix");
+
+			SceneApplicationRetry sceneRetry;
+			CanvasCommand scene;
+			scene.type = CanvasCommandType::SetPresentationTarget;
+			scene.presentationTarget = std::make_shared<Bridge::PresentationTarget>(requested);
+			CanvasCommand retryCommand;
+			std::uint64_t nowMs = 100;
+			for (const auto delay : { 250, 500, 1000, 2000, 2000 })
+			{
+				sceneRetry.Schedule(scene, nowMs);
+				check(sceneRetry.RemainingWaitMilliseconds(nowMs) == delay &&
+					!sceneRetry.TryTake(nowMs + delay - 1, retryCommand),
+					"CPU retry respects capped backoff without polling");
+				nowMs += delay;
+				check(sceneRetry.TryTake(nowMs, retryCommand) &&
+					retryCommand.type == CanvasCommandType::SetPresentationTarget &&
+					retryCommand.sceneClosedAdmission && !sceneRetry.TryTake(nowMs, retryCommand),
+					"retry yields exactly one scene and requires successful-present acknowledgment");
+			}
+			scene.explicitRecoveryRetry = true;
+			scene.recoveryRevision = 12;
+			sceneRetry.Schedule(scene, nowMs);
+			check(sceneRetry.TryTake(nowMs + 2000, retryCommand) &&
+				!retryCommand.explicitRecoveryRetry && retryCommand.recoveryRevision == 0,
+				"first preparation failure transfers explicit request to token-free owner retry");
+			sceneRetry.Schedule(retryCommand, nowMs + 2000);
+			check(sceneRetry.TryTake(nowMs + 4000, retryCommand) &&
+				!retryCommand.explicitRecoveryRetry && retryCommand.recoveryRevision == 0,
+				"second preparation failure retains owner responsibility after UI token revision changes");
+			sceneRetry.Schedule(scene, nowMs);
+			sceneRetry.Cancel();
+			check(!sceneRetry.RemainingWaitMilliseconds(nowMs) &&
+				!sceneRetry.TryTake(UINT64_MAX, retryCommand),
+				"new scene or final Exit cancels old retry responsibility");
+
+			// PreviousInterval 的终态不携带新页身份；回执始终取真实活动目标而非旧 completion。
+			std::optional<Bridge::PresentationReadyIdentity> staged;
+			const auto stage = [&](const Bridge::PresentationTarget* value)
+			{ staged = value ? std::optional(Bridge::ReadyIdentityFor(*value)) : std::nullopt; };
+			initialized = true;
+			loadPending = true;
+			check(!StageResolvedPresentationScene(workspace, activeKey, active, stage) && !staged,
+				"pending history load cannot stage ready for a new page");
+			loadPending = false;
+			check(StageResolvedPresentationScene(workspace, activeKey, active, stage) &&
+				staged == Bridge::ReadyIdentityFor(requested),
+				"success or failure terminal stages current actual target after history load");
+			staged.reset();
+			check(!StageResolvedPresentationScene(Bridge::Workspace::Desktop, activeKey,
+				active, stage) && !staged,
+				"parked history completion cannot acknowledge the active desktop");
+			initialized = false;
+			check(!StageResolvedPresentationScene(workspace, activeKey, active, stage) && !staged,
+				"uninitialized current document stays blocked after history load");
+			// A1：拓扑冲突不能 accepted 后丢失 target/load/ready；真实 NotFound 的完整空 lane 才能退休。
+			DrawingDocumentSlot conflict;
+			check(TryCreateBlankDocumentSlot(conflict, 3, allocate), "build empty fallback conflict lane");
+			conflict.presentationTarget = fallback; conflict.slotGeneration = 41;
+			conflict.persistenceInitialized = true;
+			Bridge::Workspace conflictWorkspace = Bridge::Workspace::Presentation;
+			std::optional<Bridge::PresentationKey> conflictKey = fallback.key;
+			PresentationParkedSlots conflictParked;
+			auto& conflictSource = conflictParked[LaneFor(fallback)];
+			DrawingDocumentSlot unused;
+			std::uint64_t conflictGeneration = 42;
+			auto expanded = fallback; expanded.totalPages = 3; expanded.targetRevision = 30;
+			const auto conflictGuid = conflict.document->WorkspaceGuid();
+			auto denied = SwitchPresentationCpuSlot(conflictWorkspace, conflictKey, DocumentSlotRefs(conflict),
+				conflictSource, unused, conflictParked, conflictGeneration, expanded, allocate);
+			check(!denied.accepted && denied.outcome == PresentationCpuSwitchOutcome::ProtectedConflict &&
+				conflict.document->WorkspaceGuid() == conflictGuid && conflict.presentationTarget == fallback,
+				"unverified empty conflict preserves complete old lane instead of entering isolated blank");
+			conflict.emptyLaneVerified = true;
+			check(CanRetireEmptyPresentationLane(DocumentSlotRefs(conflict)),
+				"strict NotFound plus fully empty lane establishes retirement proof");
+			for (unsigned condition = 0; condition != 9; ++condition)
+			{
+				auto protectedSlot = conflict;
+				switch (condition)
+				{
+				case 0: protectedSlot.loadPending = true; break;
+				case 1: protectedSlot.queuedRevision = 1; break;
+				case 2: protectedSlot.mutationRevision = 1; break;
+				case 3: protectedSlot.pageRuntimeStates[0].clearRedoAvailable = true; break;
+				case 4: protectedSlot.pageRuntimeStates[0].boundaryFallback.emplace(); break;
+				case 5: protectedSlot.retainedSlides.emplace(101, draw3::uink::Draw3UInkCanvasSnapshot{}); break;
+				case 6: protectedSlot.document->PageAt(0)->GetOrCreateCanvas(kDefaultDeviceKey)->AppendStroke(
+					InkStroke({}, { { 1.f, 1.f, 2.f }, { 2.f, 2.f, 2.f } })); break;
+				case 7: protectedSlot.fileGuid = draw3::uink::UInkGuid(guid(0x71).Bytes()); break;
+				case 8:
+				{
+					InkStroke stroke({}, { { 1.f, 1.f, 2.f }, { 2.f, 2.f, 2.f } });
+					const auto coverage = BuildStrokeTileFootprint(stroke);
+					if (coverage) (void)protectedSlot.pageRuntimeStates[0].history.AppendStroke(0, *coverage, true);
+					break;
+				}
+				}
+				check(!CanRetireEmptyPresentationLane(DocumentSlotRefs(protectedSlot)),
+					"load, queued save, mutation, redo, fallback, retained or hidden ink protects conflict lane");
+			}
+			const auto fresh = SwitchPresentationCpuSlot(conflictWorkspace, conflictKey, DocumentSlotRefs(conflict),
+				conflictSource, unused, conflictParked, conflictGeneration, expanded, allocate);
+			check(fresh.accepted && conflict.presentationTarget == expanded && conflict.slotGeneration == 42 &&
+				conflict.document->Pages().size() == 4 && !conflict.persistenceInitialized &&
+				!conflict.emptyLaneVerified && !conflict.loadPending,
+				"verified empty conflict prepares a fresh generation and valid target but still requires real Load");
+			bool earlyReady = false;
+			check(!StageResolvedPresentationScene(conflictWorkspace, conflictKey, DocumentSlotRefs(conflict),
+				[&](auto*) { earlyReady = true; }) && !earlyReady,
+				"retired empty lane never fabricates initialization or ready before strict new-target Load");
 		}
 		catch (...)
 		{
@@ -6599,6 +7974,66 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
+			// 真实失败完成入队与消费函数均无 HWND；正常补呈现不再进入 SetPage 分支。
+			struct FailedLoadCapture
+			{
+				int completed = 0;
+				CanvasCommandType type = CanvasCommandType::Clear;
+				std::size_t page = 0;
+				std::size_t count = 0;
+			} failedLoad;
+			DrawingControllerRuntimeObserver failedObserver;
+			failedObserver.context = &failedLoad;
+			failedObserver.commandProcessed = [](void* context, CanvasCommandType type, std::size_t page, std::size_t count)
+			{
+				auto& capture = *static_cast<FailedLoadCapture*>(context);
+				++capture.completed; capture.type = type; capture.page = page; capture.count = count;
+			};
+			WindowController recoveryQueue;
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::NextPage, 9, 7, 10);
+			CanvasCommand recovery;
+			check(recoveryQueue.TryDequeueCanvasCommand(recovery) && !recoveryQueue.HasPendingCanvasCommand() &&
+				recovery.type == CanvasCommandType::RePresentWhiteboardPage && failedLoad.completed == 1 &&
+				failedLoad.type == CanvasCommandType::NextPage && failedLoad.page == 7 && failedLoad.count == 10,
+				"failed cold load settles the original command once and queues only original-page presentation");
+			int presentRequests = 0;
+			const auto present = [&](const CanvasCommand&) { ++presentRequests; };
+			check(ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 9, 7, present) &&
+				presentRequests == 1 && failedLoad.completed == 1,
+				"same whiteboard failure requests a genuine present without settling the page command twice");
+			for (const auto workspace : { Bridge::Workspace::Desktop, Bridge::Workspace::Presentation })
+				check(!ApplyWhiteboardPageRecoveryCommand(recovery, workspace, false, false, 9, 7, present),
+					"failed-load recovery cannot present or change a different workspace");
+			check(!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 11, 7, present),
+				"exit and reenter on the same whiteboard page retires the old recovery");
+			check(!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 9, 8, present) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, true, false, 9, 7, present) &&
+				presentRequests == 1, "page changes and another cold load cannot consume the original-page recovery");
+			CanvasCommand exit; exit.type = CanvasCommandType::SetWorkspace;
+			exit.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Desktop);
+			recoveryQueue.EnqueueCanvasCommand(exit);
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::PreviousPage, 12, 7, 10);
+			CanvasCommand queued;
+			check(recoveryQueue.TryDequeueCanvasCommand(queued) && queued.type == CanvasCommandType::SetWorkspace &&
+				recoveryQueue.TryDequeueCanvasCommand(recovery) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Desktop, false, false, 13, 0, present) &&
+				!recoveryQueue.HasPendingCanvasCommand() && presentRequests == 1 && failedLoad.completed == 2,
+				"FIFO exit ahead of failed-load recovery leaves desktop pages and its admission untouched");
+			// PersistenceCompleted 已追加恢复时，队列中更早的最终保存 ACK 也必须退休它。
+			CanvasCommand prepareExit; prepareExit.type = CanvasCommandType::PrepareExitAutoSave;
+			recoveryQueue.EnqueueCanvasCommand(prepareExit);
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::NextPage, 15, 7, 10);
+			PresentationCurrentLoadRetry exitBarrier;
+			int finalAcks = 0;
+			check(recoveryQueue.TryDequeueCanvasCommand(queued) && queued.type == CanvasCommandType::PrepareExitAutoSave,
+				"final save barrier is queued ahead of failed-load recovery");
+			ProcessPresentationExitBarrier(exitBarrier, [] {}, [&] { ++finalAcks; });
+			check(recoveryQueue.TryDequeueCanvasCommand(recovery) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false,
+					exitBarrier.ExitPrepared(), 15, 7, present) && presentRequests == 1 &&
+				failedLoad.completed == 3 && finalAcks == 1 && !recoveryQueue.HasPendingCanvasCommand(),
+				"final ACK rejects a matching late recovery without presenting or completing the original command twice");
+
 			const auto id = draw3::uink::CreateUInkGuid();
 			if (!id) return 1;
 			uint64_t nextHistoryRasterStateToken = 1000;
@@ -6920,9 +8355,91 @@ namespace Inkeys::Drawing::Draw3
 		return failures ? 1 : 0;
 	}
 
-	int RunIgnoredLaserTouchProductionTest() noexcept
+	int RunGeneralDrawingOptionsProductionTest() noexcept
 	{
 		int failures = 0;
+		const auto check = [&](bool ok, const char* label)
+		{
+			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3GeneralOptions] FAIL: %s\n", label); }
+		};
+		{
+			// 不 Attach/Initialize/Run：真实能力所有者仅配置 CPU 状态，不创建 HWND 或设备。
+			ContactInputCoordinator input;
+			WindowController window;
+			InkRenderer renderer;
+			TransparentPresentationController presentation;
+			auto configuration = CreateStrokeModelConfiguration(96);
+			configuration.laserParticlesEnabled = true;
+			DrawingController controller(input, window, renderer, presentation, configuration);
+			check(!window.Handle() && !controller.GetLaserParticlesEnabled(),
+				"particle startup request cannot enable disabled product capability");
+			const auto wakeBefore = input.CaptureWakeGeneration();
+			const bool pendingBefore = input.HasPendingWork();
+			for (bool request : { true, true, false, false, true })
+			{
+				controller.SetLaserParticlesEnabled(request);
+				check(!controller.GetLaserParticlesEnabled() && input.CaptureWakeGeneration() == wakeBefore &&
+					input.HasPendingWork() == pendingBefore,
+					"particle setter stays disabled without redundant control wake");
+			}
+		}
+		for (const auto [profileId, fps] : {
+			std::pair{ StrokeTimingProfileId::Fps30, 30.0 }, std::pair{ StrokeTimingProfileId::Fps60, 60.0 },
+			std::pair{ StrokeTimingProfileId::Fps120, 120.0 }, std::pair{ StrokeTimingProfileId::Fps240, 240.0 } })
+		{
+			const auto config = CreateStrokeModelConfiguration(96, profileId);
+			check(config.timingProfile.target_fps == fps && config.modelParams.sampling_params.min_output_rate ==
+				config.timingProfile.min_output_rate, "frame profile constructs the matching whole model configuration");
+		}
+		check(CreateStrokeModelConfiguration(96, static_cast<StrokeTimingProfileId>(99)).timingProfile.target_fps == 120.0,
+			"invalid frame profile retains 120 fps default");
+		const auto config = CreateStrokeModelConfiguration(96);
+		for (const auto mode : { InkPredictionMode::Disabled, InkPredictionMode::StrokeEnd, InkPredictionMode::Kalman })
+			for (bool tailCorrection : { false, true })
+			{
+				uint32_t desired = EncodeGeneralDrawingOptions(true, tailCorrection, mode);
+				ActiveStroke oldStroke(5, config.expectedSpeed), nextStroke(5, config.expectedSpeed);
+				const auto params = LatchStrokeDrawingOptions(oldStroke, config, false, DecodeGeneralDrawingOptions(desired));
+				check(oldStroke.modeler.Reset(params).ok(), "per-stroke selected predictor resets");
+				const auto input = [](ink::stroke_model::Input::EventType event, float x, double time)
+				{
+					return ink::stroke_model::Input{ .event_type = event, .position = { x, 0 },
+						.time = ink::stroke_model::Time(time), .pressure = 1, .tilt = 1.57079632679f, .orientation = 0 };
+				};
+				check(oldStroke.modeler.Update(input(ink::stroke_model::Input::EventType::kDown, 0, 0), oldStroke.modeledResults).ok(),
+					"selected predictor accepts Down");
+				const auto nextMode = mode == InkPredictionMode::Disabled ? InkPredictionMode::Kalman : InkPredictionMode::Disabled;
+				desired = EncodeGeneralDrawingOptions(false, !tailCorrection, nextMode);
+				const auto nextParams = LatchStrokeDrawingOptions(nextStroke, config, false, DecodeGeneralDrawingOptions(desired));
+				check(nextStroke.modeler.Reset(nextParams).ok() && nextStroke.predictionMode == nextMode &&
+					nextStroke.penTailCorrectionEnabled != tailCorrection, "next independent stroke receives new options");
+				ClearPenTerminalState(oldStroke); // 真实接续只清终态，不得重读全局希望值。
+				check(oldStroke.predictionMode == mode && oldStroke.penTailCorrectionEnabled == tailCorrection,
+					"active and reconnected stroke retain Down options");
+				for (int sample = 1; sample <= 12; ++sample)
+					check(oldStroke.modeler.Update(input(ink::stroke_model::Input::EventType::kMove,
+						3.0f * sample, .005 * sample), oldStroke.modeledResults).ok(),
+						"old stroke continues after next stroke changed options");
+				if (oldStroke.predictionMode != InkPredictionMode::Disabled)
+					check(oldStroke.modeler.Predict(oldStroke.predictedResults).ok() && !oldStroke.predictedResults.empty(),
+						"enabled predictor produces real modeled output");
+				else check(oldStroke.predictedResults.empty(), "disabled stroke does not request prediction");
+				check(oldStroke.modeler.Update(input(ink::stroke_model::Input::EventType::kUp, 40, .07), oldStroke.modeledResults).ok(),
+					"all prediction modes retain normal real Up completion");
+				ActiveStroke eraser(5, config.expectedSpeed);
+				const auto eraserParams = LatchStrokeDrawingOptions(eraser, config, true, DecodeGeneralDrawingOptions(desired));
+				check(eraser.predictionMode == InkPredictionMode::Disabled && eraser.modeler.Reset(eraserParams).ok(),
+					"eraser retains disabled prediction independently of user mode");
+			}
+		const auto invalid = DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(true, true, static_cast<InkPredictionMode>(99)));
+		check(invalid.predictionMode == InkPredictionMode::Kalman, "invalid predictor falls back to precise mode");
+		if (!failures) std::fputs("[Draw3GeneralOptions] PASS: profiles, per-stroke options and real model lifecycle\n", stderr);
+		return failures;
+	}
+
+	int RunIgnoredLaserTouchProductionTest() noexcept
+	{
+		int failures = RunGeneralDrawingOptionsProductionTest();
 		const auto check = [&](bool condition, const char* label)
 		{
 			if (condition) return;
@@ -6955,7 +8472,8 @@ namespace Inkeys::Drawing::Draw3
 		const ContactHandle first = dequeueContact();
 		if (!first) return 1;
 		ContactSnapshot firstBeforeBatch;
-		check(!IgnoreAdditionalLaserTouch(input, first, DrawingTool::Laser,
+		check(!IgnoreAdditionalTouch(input, first, InputDeviceType::Touch, false, false) &&
+			!IgnoreAdditionalLaserTouch(input, first, DrawingTool::Laser,
 			InputDeviceType::Touch, false, false) &&
 			input.TryReadSnapshot(first, firstBeforeBatch),
 			"first Laser Touch is admitted when no prior touch is active");
@@ -6988,13 +8506,16 @@ namespace Inkeys::Drawing::Draw3
 			if (index == 0)
 			{
 				ContactSnapshot enabledSnapshot;
-				check(!IgnoreAdditionalLaserTouch(input, ignored, DrawingTool::Laser,
+				check(!IgnoreAdditionalTouch(input, ignored, InputDeviceType::Touch, true, true) &&
+					!IgnoreAdditionalLaserTouch(input, ignored, DrawingTool::Laser,
 					InputDeviceType::Touch, true, true) &&
 					input.TryReadSnapshot(ignored, enabledSnapshot),
 					"multi-touch enabled keeps the second Touch route");
 			}
-			allIgnoredRetired &= IgnoreAdditionalLaserTouch(input, ignored,
-				DrawingTool::Laser, InputDeviceType::Touch, true, false);
+			// 同一真实 coordinator 同时覆盖原激光门禁与新增全工具 Touch 门禁。
+			allIgnoredRetired &= index % 2 == 0
+				? IgnoreAdditionalLaserTouch(input, ignored, DrawingTool::Laser, InputDeviceType::Touch, true, false)
+				: IgnoreAdditionalTouch(input, ignored, InputDeviceType::Touch, true, false);
 			ContactSnapshot abandoned;
 			allIgnoredRetired &= !input.TryReadSnapshot(ignored, abandoned);
 			const ContactPhase terminal = index % 2 == 0
@@ -7027,6 +8548,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			ContactSnapshot visible;
 			check(!IgnoreAdditionalLaserTouch(input, ordinary, tool, device, true, false) &&
+				(device == InputDeviceType::Touch || !IgnoreAdditionalTouch(input, ordinary, device, true, false)) &&
 				input.TryReadSnapshot(ordinary, visible), label);
 			input.PublishUp(tablet, contactId, sample(65.0f, ContactPhase::Up));
 			input.Recycle(ordinary);
@@ -9482,7 +11004,7 @@ namespace Inkeys::Drawing::Draw3
 		interruptedStrokeReconnectEnabled_(configuration_.interruptedStrokeReconnectEnabled),
 		drawingCursorDuringContactEnabled_(configuration_.drawingCursorDuringContactEnabled),
 		translucentInkCursorEnabled_(configuration_.translucentInkCursorEnabled),
-		laserParticlesEnabled_(configuration_.laserParticlesEnabled),
+		laserParticlesEnabled_(false), // 产品暂禁用粒子，兼容配置中的 true 不能绕过能力门禁。
 		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
@@ -9593,20 +11115,34 @@ namespace Inkeys::Drawing::Draw3
 	{
 		const CursorSettings effective = ResolveCursorSettingsForDrawingTool(
 			window_.EffectiveDrawingCursorTool(), settings);
-		const bool system = effective.mouseStyle == MouseCursorStyle::System;
+		const bool system = effective.mouse == CursorStyle::Arrow;
 		const bool systemChanged = window_.GetMouseUsesSystemCursor() != system;
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
-		const uint32_t packed = 4u | (settings.mouseStyle == MouseCursorStyle::Drawing ? 1u : 0u) |
-			(settings.penStyle == PenCursorStyle::PenIcon ? 2u : 0u);
+		window_.SetInjectedMouseAsTablet(settings.injectedMouseAsTablet);
+		const uint32_t packed = PackCursorSettings(settings);
 		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
 
-	void DrawingController::SetLaserParticlesEnabled(bool enabled) noexcept
+	void DrawingController::SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
+		InkPredictionMode predictionMode) noexcept
 	{
-		laserParticlesEnabled_.store(enabled, std::memory_order_release);
-		input_.PublishControlWake();
+		const uint32_t next = EncodeGeneralDrawingOptions(multiTouchEnabled, penTailCorrectionEnabled, predictionMode);
+		if (generalDrawingOptions_.exchange(next, std::memory_order_acq_rel) != next)
+			input_.PublishControlWake(); // 只发布后续落笔偏好，不修改任何活动模型。
+	}
+
+	void DrawingController::SetPalmEraserOptions(const PalmEraser::Settings& options) noexcept
+	{
+		palmEraserOptions_ = PalmEraser::NormalizeSettings(options);
+	}
+
+	void DrawingController::SetLaserParticlesEnabled(bool /*enabled*/) noexcept
+	{
+		// 兼容入口保留，但当前产品拒绝任何启用请求；仅真实关闭变化才唤醒清理。
+		if (laserParticlesEnabled_.exchange(false, std::memory_order_acq_rel))
+			input_.PublishControlWake();
 	}
 
 	bool DrawingController::GetLaserParticlesEnabled() const noexcept
@@ -9918,6 +11454,7 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<WhiteboardPageState> whiteboardPages(1);
 		std::optional<std::size_t> whiteboardLoading;
 		std::uint64_t whiteboardLoadingGeneration = 0;
+		CanvasCommandType whiteboardLoadingCommand = CanvasCommandType::NextPage;
 		bool whiteboardReadFailed = false;
 		const auto whiteboardFileGuid = draw3::uink::CreateUInkGuid();
 		WhiteboardStore whiteboardStore(observer_.whiteboardRoot, [&]
@@ -9939,15 +11476,17 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t activePresentationQueuedRevision = 0;
 		std::uint64_t activePresentationCommittedRevision = 0;
 		bool activePresentationPersistenceInitialized = false;
+		bool activePresentationEmptyLaneVerified = false;
 		bool activePresentationLoadPending = false;
 		std::uint64_t activePresentationSlotGeneration = 0;
 		PresentationCurrentLoadRetry currentLoadRetry;
+		SceneApplicationRetry sceneApplyRetry;
 		const ActivePresentationSlotRefs activeDocumentSlot{
 			document_, pageRuntimeStates, activeRetainedSlides, currentPageIndex_,
 			activePresentationTarget, activePresentationFileGuid,
 			activePresentationMutationRevision, activePresentationQueuedRevision,
 			activePresentationCommittedRevision,
-			activePresentationPersistenceInitialized,
+			activePresentationPersistenceInitialized, activePresentationEmptyLaneVerified,
 			activePresentationLoadPending, activePresentationSlotGeneration };
 		const auto presentationLoadUnresolved = [&]() noexcept
 		{
@@ -9957,14 +11496,17 @@ namespace Inkeys::Drawing::Draw3
 		};
 		const auto currentLoadRetryWait = [&]() noexcept -> std::optional<double>
 		{
-			if (activeWorkspace != Bridge::Workspace::Presentation ||
-				!activePresentationTarget || !observer_.presentationLoadRequested ||
-				activePresentationMutationRevision != 0 ||
-				activePresentationQueuedRevision != 0)
-				return std::nullopt;
-			return currentLoadRetry.RemainingWaitMilliseconds(
-				*activePresentationTarget, activePresentationSlotGeneration,
-				GetTickCount64());
+			const auto nowMs = GetTickCount64();
+			if (window_.ExitRequested() || currentLoadRetry.ExitPrepared()) sceneApplyRetry.Cancel();
+			auto wait = sceneApplyRetry.RemainingWaitMilliseconds(nowMs);
+			if (activeWorkspace == Bridge::Workspace::Presentation &&
+				activePresentationTarget && observer_.presentationLoadRequested &&
+				activePresentationMutationRevision == 0 &&
+				activePresentationQueuedRevision == 0)
+				if (const auto loadWait = currentLoadRetry.RemainingWaitMilliseconds(
+					*activePresentationTarget, activePresentationSlotGeneration, nowMs))
+					wait = wait ? (std::min)(*wait, *loadWait) : *loadWait;
+			return wait;
 		};
 		std::uint64_t acceptedStrokeSceneGeneration = 1;
 		auto acceptedStrokeScene = [&]() noexcept
@@ -9979,6 +11521,68 @@ namespace Inkeys::Drawing::Draw3
 		};
 		if (observer_.acceptedStrokeSceneChanged)
 			observer_.acceptedStrokeSceneChanged(observer_.context, acceptedStrokeScene());
+		CanvasRecoveryState recoveryRequest;
+		CanvasRecoveryState publishedRecovery;
+		std::uint32_t scenePreparationFailures = 0;
+		std::uint32_t presentationFailures = 0;
+		auto publishRecovery = [&](CanvasRecoveryState value)
+		{
+			if (publishedRecovery == value) return;
+			publishedRecovery = value;
+			if (observer_.recoveryChanged) observer_.recoveryChanged(observer_.context, value);
+		};
+		auto recoveryForCommand = [](const CanvasCommand& command)
+		{
+			CanvasRecoveryState value;
+			value.workspace = command.type == CanvasCommandType::SetPresentationTarget
+				? Bridge::Workspace::Presentation : static_cast<Bridge::Workspace>(command.workspace);
+			if (value.workspace == Bridge::Workspace::Presentation && command.presentationTarget)
+				value.presentationTarget = Bridge::ReadyIdentityFor(*command.presentationTarget);
+			return value;
+		};
+		auto recoveryMatchesActive = [&]()
+		{
+			return recoveryRequest.workspace == activeWorkspace && recoveryRequest.presentationTarget ==
+				(activeWorkspace == Bridge::Workspace::Presentation && activePresentationTarget
+					? std::optional(Bridge::ReadyIdentityFor(*activePresentationTarget)) : std::nullopt) &&
+				(activeWorkspace != Bridge::Workspace::Presentation || (activePresentationTarget &&
+					PresentationSceneMatches(activeWorkspace, activePresentationKey, activeDocumentSlot,
+						*activePresentationTarget)));
+		};
+		auto publishRecoveryProgress = [&](CanvasRecoveryStatus status, CanvasRecoveryReason reason,
+			std::uint32_t attempts = 0, bool retryAvailable = false)
+		{
+			auto value = recoveryRequest;
+			value.status = status; value.reason = reason;
+			value.attempts = attempts; value.retryAvailable = retryAvailable;
+			publishRecovery(value);
+		};
+		auto publishCurrentLoadProgress = [&]()
+		{
+			if (!recoveryMatchesActive() || activeWorkspace != Bridge::Workspace::Presentation ||
+				activePresentationPersistenceInitialized || !activePresentationTarget ||
+				!PresentationSceneMatches(activeWorkspace, activePresentationKey, activeDocumentSlot,
+					*activePresentationTarget)) return;
+			if (currentLoadRetry.ManualOnly())
+				publishRecoveryProgress(CanvasRecoveryStatus::ManualRetryRequired,
+					currentLoadRetry.Attempts() == PresentationCurrentLoadRetry::kDelaysMs.size()
+						? CanvasRecoveryReason::CurrentLoadIoError : CanvasRecoveryReason::CurrentLoadRejected,
+					currentLoadRetry.Attempts(), true);
+			else
+				publishRecoveryProgress(currentLoadRetry.Scheduled() ? CanvasRecoveryStatus::Retrying :
+					CanvasRecoveryStatus::Recovering, currentLoadRetry.Scheduled()
+						? CanvasRecoveryReason::CurrentLoadIoError : CanvasRecoveryReason::None,
+					currentLoadRetry.Attempts());
+		};
+		auto retryScenePreparation = [&](CanvasCommand command)
+		{
+			if (scenePreparationFailures < 4) ++scenePreparationFailures;
+			// 资源准备继续有界退避推进；达到提示阈值后明确暴露可重试终态，不再只有日志。
+			publishRecoveryProgress(scenePreparationFailures >= 4 ? CanvasRecoveryStatus::ManualRetryRequired :
+				CanvasRecoveryStatus::Retrying, CanvasRecoveryReason::ScenePreparation,
+				scenePreparationFailures, scenePreparationFailures >= 4);
+			sceneApplyRetry.Schedule(std::move(command), GetTickCount64());
+		};
 		std::optional<PendingWorkspaceReady> pendingWorkspaceReady;
 		auto stageWorkspaceReady = [&](const Bridge::PresentationTarget* target = nullptr)
 		{
@@ -9994,6 +11598,8 @@ namespace Inkeys::Drawing::Draw3
 			if (!pendingWorkspaceReady || !observer_.workspaceChanged) return;
 			const PendingWorkspaceReady ready = std::move(*pendingWorkspaceReady);
 			pendingWorkspaceReady.reset();
+			if (recoveryMatchesActive())
+				publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
 			observer_.workspaceChanged(observer_.context, ready.workspace,
 				ready.currentPageIndex, ready.pageCount,
 				ready.presentationTarget ? &*ready.presentationTarget : nullptr);
@@ -10233,6 +11839,7 @@ namespace Inkeys::Drawing::Draw3
 										state.cold = false; installed = true;
 										CanvasCommand command; command.type = CanvasCommandType::SetPage; command.pageIndex = result.page;
 										command.whiteboardGeneration = whiteboardGeneration;
+										command.sceneClosedAdmission = true;
 										window_.EnqueueCanvasCommand(command);
 									}
 								}
@@ -10241,7 +11848,12 @@ namespace Inkeys::Drawing::Draw3
 					}
 					catch (...) {}
 					whiteboardReadFailed = !installed;
-					if (!installed) whiteboardLoading.reset();
+					if (!installed)
+					{
+						whiteboardLoading.reset();
+						CompleteFailedWhiteboardPageLoad(window_, observer_, whiteboardLoadingCommand,
+							whiteboardGeneration, currentPageIndex_, doc->Pages().size());
+					}
 				}
 				else
 				{
@@ -10892,32 +12504,70 @@ namespace Inkeys::Drawing::Draw3
 		auto updateContactModel = [&](RuntimeStroke& runtime, const Input& next,
 			double inputTime, std::vector<ink::stroke_model::Result>& modelOutput)
 		{
-			const auto& sampling=eraserModelParams.sampling_params;
-			const bool touchSpeed=runtime.metricDeviceType==InputDeviceType::Touch &&
-				runtime.stroke.widthMode==StrokeWidthMode::SpeedEraser;
-			const double gap=inputTime-runtime.speedEraserModelTime;
-			if(touchSpeed && !runtime.stroke.realPoints.empty() && sampling.min_output_rate>0 &&
-				sampling.max_outputs_per_call>2 &&
-				gap*sampling.min_output_rate>sampling.max_outputs_per_call-2)
-			{
-				// 长时间没有建模输入时，只恢复位置模型；不重新开始接触、不重置尺寸或改写旧结果。
-				const auto& last=runtime.stroke.realPoints.back();
-				Input anchor=next;anchor.event_type=Input::EventType::kDown;
-				anchor.position=Vec2(last.x,last.y);
-				anchor.time=Time(inputTime-1.0/sampling.min_output_rate);
-				if(auto status=MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
-					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime.stroke.modeler.Reset(eraserModelParams); });!status.ok())return status;
-				if(auto status=MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
-					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime.stroke.modeler.Update(anchor,runtime.stroke.modeledResults); });!status.ok())return status;
-				runtime.stroke.predictedResults.clear();
-				runtime.stroke.predictedPoints.clear();
-				++runtime.eraserDiagnostics.idleModelReanchors;
-				// anchor 仅供既有模型续接，绝不交给速度/面积控制器当成真实运动。
-			}
 			if (observer_.penDiagnostics && runtime.stroke.useDisplayTime)
 				++runtime.diagnosticModelUpdates;
-			return MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
-				metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime.stroke.modeler.Update(next, modelOutput); });
+			return UpdateRuntimeContactModel(runtime, next, inputTime, modelOutput, eraserModelParams,
+				metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+				metricsState_ ? metricsState_->metricFrequency : 0);
+		};
+
+		RECT pendingPalmDirty = {};
+		bool palmLayersNeedRebuild = false;
+		int64_t palmInterruptQpc = 0;
+		auto hasBlockingPalm = [&]()
+		{
+			return std::any_of(active.begin(), active.end(), [&](const RuntimeStroke* runtime)
+			{
+				return runtime && PalmBlocksDrawing(*runtime) && runtimeContactPhysicallyLive(*runtime);
+			});
+		};
+		auto observePalm = [&](RuntimeStroke& runtime, const ContactSnapshot& sample)
+		{
+			if (runtime.metricDeviceType != InputDeviceType::Touch || runtime.ended) return false;
+			if (sample.phase == ContactPhase::Up || sample.phase == ContactPhase::Cancelled)
+			{
+				runtime.palm.End();
+				return false; // Up 的面积不参与识别或定尺，真正续接也不再开窗。
+			}
+			auto candidate = runtime.palm;
+			if (!candidate.active && !candidate.locked &&
+				PalmNeighborBlocked(active, sample.position, sample.qpc, &runtime))
+			{
+				candidate.blocked = candidate.locked = true;
+				candidate.eligible = false;
+				runtime.palm = candidate;
+				return false;
+			}
+			if (!candidate.Observe(ContactAreaFromSnapshot(sample), sample.qpc)) return false;
+			if (!candidate.active) { runtime.palm = candidate; return false; }
+			const DrawingTool oldTool = runtime.tool;
+			const bool wasActive = runtime.palm.active, wasObserver = runtime.palmObservationOnly;
+			RECT oldDirty = runtime.visibleDirty;
+			UnionRectInPlace(oldDirty, runtime.stroke.currentL0Rect);
+			UnionRectInPlace(oldDirty, runtime.stroke.lastL0Rect);
+			if (!PromotePalmRuntime(runtime, candidate, sample, configuration_, qpcFrequency)) return false;
+			if (!wasActive && !candidate.settings.parallelWriting)
+				palmInterruptQpc = std::max(palmInterruptQpc, sample.qpc);
+			if (!wasActive && oldTool != DrawingTool::Eraser)
+			{
+				UnionRectInPlace(pendingPalmDirty, oldDirty);
+				palmLayersNeedRebuild = true;
+				if (oldTool == DrawingTool::Laser && runtime.laserLayerId != 0)
+				{
+					UnionRectInPlace(pendingPalmDirty, RemovePalmLaserLayer(laserStrokeLayers, runtime));
+					ResetLaserParticleEmitterState(runtime);
+					EndLaserContact(laserLifecycle, sample.qpc);
+					laserCoverageMode = LaserCoverageMode::FullRedraw;
+					renderer_.ClearLaserIncrementalCoverage();
+				}
+			}
+			if (wasObserver && observer_.acceptedStrokeBegan)
+			{
+				auto accepted = acceptedStrokeScene();
+				accepted.kind = CompletedStrokeKindForTool(DrawingTool::Eraser);
+				observer_.acceptedStrokeBegan(observer_.context, accepted);
+			}
+			return true;
 		};
 
 		auto initializeStroke = [&](ContactHandle handle) -> bool
@@ -10925,6 +12575,28 @@ namespace Inkeys::Drawing::Draw3
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const InputDeviceType deviceType = handle.record->DeviceType();
+				const auto generalOptions = DecodeGeneralDrawingOptions(
+					generalDrawingOptions_.load(std::memory_order_acquire));
+				bool hasActiveTouch = false, hasActiveLaserTouch = false;
+				const bool palmReconnectPending = std::any_of(active.begin(), active.end(), [](const RuntimeStroke* runtime)
+					{ return runtime && !runtime->ended && runtime->awaitingReconnect && runtime->palm.active; });
+				if (deviceType == InputDeviceType::Touch)
+				{
+					bool hasBatch = false;
+					DrawingTool touchBatchTool = window_.ActiveTool();
+					for (const RuntimeStroke* candidate : active)
+					{
+						if (!candidate || candidate->ended || candidate->awaitingReconnect ||
+							!runtimeContactPhysicallyLive(*candidate)) continue;
+						if (!hasBatch) { touchBatchTool = candidate->selectedTool; hasBatch = true; }
+						if (candidate->metricDeviceType != InputDeviceType::Touch) continue;
+						hasActiveTouch = true;
+						hasActiveLaserTouch |= candidate->selectedTool == DrawingTool::Laser;
+					}
+					// 普通 Laser 保持原拒收时机；仅已转换手掌的真实接续候选延后准入。
+					if (!palmReconnectPending && IgnoreAdditionalLaserTouch(input_, handle, touchBatchTool, deviceType,
+						hasActiveLaserTouch, laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire))) return false;
+				}
 				if (deviceType == InputDeviceType::Pen && haptics_)
 				{
 					// RTS 和 Pointer 共用 tablet cursor 身份；不依赖 RTS 接管期间缺席的 Pointer Down。
@@ -11061,7 +12733,6 @@ namespace Inkeys::Drawing::Draw3
 				auto batchEraserPolicy=observedEraserPolicy;
 				bool hasSpeedEraserBatchContact = false;
 				bool hasActiveBatchContact = false;
-				bool hasActiveLaserTouchContact = false;
 				for (RuntimeStroke* activeRuntime : active)
 				{
 					if (activeRuntime && !activeRuntime->cancelled && !hasSpeedEraserBatchContact)
@@ -11097,15 +12768,8 @@ namespace Inkeys::Drawing::Draw3
 								activeRuntime->eraserWidthModeRevision;
 						}
 						hasActiveBatchContact = true;
-						hasActiveLaserTouchContact = hasActiveLaserTouchContact ||
-							(activeRuntime->selectedTool == DrawingTool::Laser &&
-								activeRuntime->metricDeviceType == InputDeviceType::Touch);
 					}
 				}
-				if (IgnoreAdditionalLaserTouch(input_, handle, batchTool, deviceType,
-					hasActiveLaserTouchContact,
-					laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire)))
-					return false; // 关闭多指时忽略后续 Touch，保留第一根手指的完整生命周期。
 				const bool selectedToolSupportsOverride =
 					batchTool == DrawingTool::Pen || batchTool == DrawingTool::HardPen ||
 					batchTool == DrawingTool::Highlighter ||
@@ -11163,57 +12827,15 @@ namespace Inkeys::Drawing::Draw3
 				RuntimeStroke* diagnosticRuntime = nullptr;
 				InterruptedStrokeReconnectResult diagnosticResult;
 				if (GetInterruptedStrokeReconnectEnabled() &&
-					IsInterruptedStrokeReconnectIdentitySupported(downIdentity) &&
-					tool != DrawingTool::Laser && !IsShapeDrawingTool(tool))
+					IsInterruptedStrokeReconnectIdentitySupported(downIdentity))
 				{
 					for (RuntimeStroke* candidate : active)
 					{
 						if (!candidate || !candidate->awaitingReconnect || candidate->ended) continue;
-						InterruptedStrokeReconnectIdentity candidateDownIdentity = downIdentity;
-						// C 在候选窗口内切换时，候选仍按原批次宽度模式续接。
-						candidateDownIdentity.widthMode = candidate->stroke.widthMode;
-						if (!AreInterruptedStrokeReconnectIdentitiesCompatible(
-							ReconnectIdentity(*candidate), candidateDownIdentity))
-						{
-							if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
-							{
-								if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
-									diagnosticRuntime->deferredUpSnapshot.qpc)
-								{
-									diagnosticRuntime = candidate;
-									diagnosticResult = {};
-									diagnosticResult.rejectReason =
-										InterruptedStrokeReconnectRejectReason::IdentityMismatch;
-									diagnosticResult.gapMilliseconds = QpcDeltaSeconds(
-										down.qpc, candidate->deferredUpSnapshot.qpc, qpcFrequency) * 1000.0;
-									diagnosticResult.distance = std::hypot(
-										down.position.x - candidate->deferredUpSnapshot.position.x,
-										down.position.y - candidate->deferredUpSnapshot.position.y);
-								}
-							}
-							continue;
-						}
-						const double gapSeconds = QpcDeltaSeconds(
-							down.qpc, candidate->deferredUpSnapshot.qpc, qpcFrequency);
-						const InterruptedStrokeReconnectMotion motion =
-							ResolveInterruptedStrokeReconnectMotion(
-								candidate->reconnectPredictedResults,
-								candidate->stroke.realPoints,
-								candidate->reconnectDirection,
-								candidate->filteredInputSpeed,
-								candidate->lastModelInputTime,
-								gapSeconds,
-								reconnectDpiScale);
-						const InterruptedStrokeReconnectResult result =
-							EvaluateInterruptedStrokeReconnect({
-								.previousPosition = candidate->deferredUpSnapshot.position,
-								.previousUpQpc = candidate->deferredUpSnapshot.qpc,
-								.newPosition = down.position,
-								.newDownQpc = down.qpc,
-								.qpcFrequency = qpcFrequency,
-								.dpiScale = reconnectDpiScale,
-								.motion = motion
-							});
+						if (!candidate->palm.active && palmInterruptQpc > 0 && candidate->qpcOrigin <= palmInterruptQpc) continue;
+						if (!candidate->palm.active && (tool == DrawingTool::Laser || IsShapeDrawingTool(tool))) continue;
+						const auto result = EvaluateRuntimeReconnectCandidate(*candidate, downIdentity,
+							down, qpcFrequency, reconnectDpiScale);
 						if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 						{
 							if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
@@ -11388,7 +13010,7 @@ namespace Inkeys::Drawing::Draw3
 								reconnectRuntime->stroke.realPoints.size() > metricsRealBefore);
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
-						reconnectRuntime->handle = handle;
+						AdoptReconnectedContact(*reconnectRuntime, handle);
 						BeginTailInputDiagnostic(*reconnectRuntime, down, true,
 							reconnectRuntime->stroke.tailInputDiagnostic.enabled);
 						reconnectRuntime->lastSpeedSnapshot = down;
@@ -11396,6 +13018,7 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->lastModelSnapshot = modelDown;
 						reconnectRuntime->lastConsumedSequence = down.sequence;
 						reconnectRuntime->lastModelInputTime = inputTime;
+						reconnectRuntime->lastAcceptedModelInputTime = inputTime;
 						reconnectRuntime->lastPressure = lastPressure;
 						reconnectRuntime->lastTilt = lastTilt;
 						reconnectRuntime->lastOrientation = lastOrientation;
@@ -11472,6 +13095,32 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
+				// 真实匹配且模型接续成功已在上方接管返回；失败/不匹配才按新独立笔判定。
+				if (RejectIndependentTouch(input_, touchGesture, handle, deviceType,
+					hasActiveTouch, generalOptions.multiTouchEnabled))
+				{
+					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					return false;
+				}
+				const uint64_t registeredTouchKey = CanvasTouchKey(handle);
+				if (palmReconnectPending && IgnoreAdditionalLaserTouch(input_, handle, batchTool, deviceType, hasActiveLaserTouch,
+					laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire)))
+				{
+					touchGesture.OnTouchUp(registeredTouchKey);
+					return false;
+				}
+				PalmEraser::State newPalm;
+				if (deviceType == InputDeviceType::Touch)
+					newPalm.Begin(palmEraserOptions_, PalmEraser::ResolveScale(observedSpeedEraserDisplayScale, down.source),
+						PalmToolCategory(tool), down.qpc, qpcFrequency, PalmNeighborBlocked(active, down.position, down.qpc));
+				const bool palmObservationOnly = hasBlockingPalm();
+				if (palmObservationOnly && !newPalm.eligible)
+				{
+					// 被拒收的物理接触必须抬起重落，不能在手掌离开后自动恢复。
+					if (deviceType == InputDeviceType::Touch) touchGesture.OnTouchUp(CanvasTouchKey(handle));
+					input_.DiscardUntilTerminal(handle);
+					return false;
+				}
 				RuntimeStroke* runtime = acquireStroke();
 				if (!runtime)
 				{
@@ -11500,6 +13149,9 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else runtime->viewport = {};
 				runtime->speedEraserDisplayScale = batchSpeedEraserDisplayScale;
+				runtime->palm = newPalm;
+				runtime->lastAcceptedModelInputTime = 0.0;
+				runtime->palmObservationOnly = palmObservationOnly;
 				runtime->speedEraserDeviceMode = batchSpeedEraserDeviceMode;
 				runtime->touchContactAreaAssistance=batchTouchArea;
 				runtime->eraserInputs=batchEraserInputs;runtime->eraserPolicy=batchEraserPolicy;
@@ -11535,7 +13187,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->metricEligibleQpc = down.qpc;
 				float baseDiameter = CanvasDiameterForTool(
 					runtime->tool, runtime->visualStyle, configuration_.dpiScale);
-				if (widthMode == StrokeWidthMode::SpeedEraser)
+				if (widthMode == StrokeWidthMode::SpeedEraser && !palmObservationOnly)
 				{
 					initializeSpeedEraserController(*runtime, down);
 					baseDiameter = runtime->speedEraserOc.Diameter();
@@ -11563,8 +13215,26 @@ namespace Inkeys::Drawing::Draw3
 				ResetNominalStroke(*runtime, baseDiameter, configuration_, widthMode);
 				runtime->stroke.useDisplayTime = (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen);
 				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
-				const auto& modelParams = runtime->tool == DrawingTool::Eraser
-					? eraserModelParams : strokeModelParams;
+				// 成功断触接续已在上方返回，只有真正新笔才锁存此时偏好。
+				const auto modelParams = LatchStrokeDrawingOptions(runtime->stroke, configuration_,
+					runtime->tool == DrawingTool::Eraser, generalOptions);
+				if (palmObservationOnly)
+				{
+					// 仅观察面积的 Touch 仍沿原 Runtime/route 生命周期，但从未开始普通模型。
+					runtime->lastInputSnapshot = runtime->lastModelSnapshot = runtime->lastSpeedSnapshot = down;
+					runtime->lastConsumedSequence = down.sequence;
+					runtime->qpcOrigin = down.qpc;
+					runtime->lastModelInputTime = 0;
+					runtime->lastPressure = downPressure;
+					runtime->lastTilt = down.tilt;
+					runtime->lastOrientation = down.orientation;
+					runtime->modelInputThisFrame = false;
+					runtime->stationaryModelAdvanceBlocked = true;
+					runtime->stroke.useDisplayTime = false;
+					active.push_back(runtime);
+					observePalm(*runtime, down);
+					return true;
+				}
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(modelParams); }); !status.ok())
 				{
@@ -11709,6 +13379,7 @@ namespace Inkeys::Drawing::Draw3
 					// Down 只重置时间累计；得到首条非退化 L0 切线前不发射。
 				}
 				active.push_back(runtime);
+				observePalm(*runtime, down); // 先消费不可变 Down，不让合并后的 Move/Up 覆盖最初面积。
 				if (observer_.acceptedStrokeBegan)
 				{
 					// 只在新笔划真正接纳后通知，临时橡皮用本笔 tool，续接/拒绝不重复。
@@ -11769,6 +13440,12 @@ namespace Inkeys::Drawing::Draw3
 			const ContactSnapshot& snapshot, bool cancelled,
 			int64_t controllerResumeQpc = 0)
 			{
+				runtime.palm.End();
+				if (runtime.palmObservationOnly)
+				{
+					RetirePalmObservation(runtime);
+					return;
+				}
 				if (runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser &&
 					runtime.speedEraserOc.IsPaused())
 				{
@@ -11907,6 +13584,17 @@ namespace Inkeys::Drawing::Draw3
 						metricsState_->Invalidate(MetricKey(runtime.handle), ContentMetricInvalidationReason::Cancelled);
 				}
 				if (snapshot.phase == ContactPhase::Down) return false;
+				const bool palmChanged = observePalm(runtime, snapshot);
+				if (runtime.palmObservationOnly)
+				{
+					if (runtime.palm.locked || snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled)
+					{
+						runtime.palm.End();
+						RetirePalmObservation(runtime);
+						touchGesture.OnTouchUp(runtime.touchGestureKey);
+					}
+					return false;
+				}
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
 				bool shapeRawChanged = false;
@@ -11973,7 +13661,7 @@ namespace Inkeys::Drawing::Draw3
 						runtime.speedEraserOc.SecondsSinceMovement(rawSeconds)>=runtime.speedEraserOc.Configuration().idleStartSeconds);
 				}
 				if (!terminal && !positionMoved && !stylusStateChanged && !shapeRawChanged)
-					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
+					return palmChanged; // 面积先于位移早退消费，原地摊掌也能激活或增长。
 
 				const double deltaSeconds = QpcDeltaSeconds(
 					snapshot.qpc, runtime.lastSpeedSnapshot.qpc, qpcFrequency);
@@ -12115,11 +13803,9 @@ namespace Inkeys::Drawing::Draw3
 						laserCoverageMode = LaserCoverageMode::FullRedraw;
 						renderer_.ClearLaserIncrementalCoverage();
 					}
-					EndLaserContact(laserLifecycle, snapshot.qpc);
 					const WindowSize laserSize = window_.Size();
-					// contact 结束后复制最终 CPU 几何，避免 runtime 回收破坏同批次层级。
-					FinalizeLaserStrokeLayer(laserStrokeLayers, runtime,
-						laserCancelled,
+					FinalizeLaserRuntime(laserStrokeLayers, runtime, laserLifecycle,
+						snapshot.qpc, laserCancelled,
 						configuration_.dpiScale, laserSize.width, laserSize.height);
 					if (metricsState_ && !laserCancelled) metricsState_->CaptureLaserFinal(MetricKey(runtime.handle), snapshot, laserLifecycle);
 				}
@@ -12140,7 +13826,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						runtime.reconnectPredictedResults.clear();
 						if (runtime.tool != DrawingTool::Eraser &&
-							kActivePredictionMode != InkPredictionMode::Disabled)
+							runtime.stroke.predictionMode != InkPredictionMode::Disabled)
 						{
 							// 同帧新 Down 会在渲染前出队，因此候选创建时必须先冻结最新 prediction。
 							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
@@ -12172,7 +13858,7 @@ namespace Inkeys::Drawing::Draw3
 					runtime.cancelled = snapshot.phase == ContactPhase::Cancelled;
 				}
 				if (terminal) finishMouseSpeedEraser(runtime); // 接受 Up/Cancel 即退出，不等烘干或 Hover。
-				return positionMoved || stylusStateChanged || shapeRawChanged || deferUp;
+				return palmChanged || positionMoved || stylusStateChanged || shapeRawChanged || deferUp;
 			};
 
 		auto sealPresentationContacts = [&]()
@@ -12249,13 +13935,7 @@ namespace Inkeys::Drawing::Draw3
 					input_.DiscardUntilTerminal(handle);
 					return;
 				}
-				if (activeWorkspace == Bridge::Workspace::Whiteboard &&
-					window_.SelectionMode())
-				{
-					// 白板“拖动”暂不启用平移，也不能让主 Drawpad 继续落笔。
-					input_.DiscardUntilTerminal(handle);
-					return;
-				}
+				if (DiscardSelectionDown(input_, handle, window_.SelectionMode())) return;
 				if ((activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) || Bridge::PresentationInputSuppressed(
 					activeWorkspace, activePresentationLoadPending ||
 					presentationLoadUnresolved()))
@@ -12790,10 +14470,8 @@ namespace Inkeys::Drawing::Draw3
 					mouseSample.inContact = false;
 			}
 			const uint32_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
-			CursorSettings cursorSettings{
-				.mouseStyle = (cursorSettingsBits & 1u) != 0 ? MouseCursorStyle::Drawing : MouseCursorStyle::System,
-				.penStyle = (cursorSettingsBits & 2u) != 0 ? PenCursorStyle::PenIcon : PenCursorStyle::Circle
-			};
+			CursorSettings cursorSettings = UnpackCursorSettings(cursorSettingsBits);
+			const bool cursorSettingsValid = (cursorSettingsBits & kCursorSettingsValidBit) != 0;
 			DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const DrawingCursorPointerAuthority cursorAuthority = window_.CursorOwner();
 			const bool primaryUsesPen = cursorAuthority == DrawingCursorPointerAuthority::Pen ||
@@ -12813,11 +14491,11 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			if(primaryRuntime)cursorTool=primaryRuntime->tool;
-			if ((cursorSettingsBits & 4u) != 0)
+			if (cursorSettingsValid)
 			{
 				// 同一实际工具投影同时控制系统箭头和应用预览，不能用新选择覆盖活动笔画。
 				cursorSettings = ResolveCursorSettingsForDrawingTool(cursorTool, cursorSettings);
-				window_.SetMouseUsesSystemCursor(cursorSettings.mouseStyle == MouseCursorStyle::System);
+				window_.SetMouseUsesSystemCursor(cursorSettings.mouse == CursorStyle::Arrow);
 			}
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -12850,7 +14528,7 @@ namespace Inkeys::Drawing::Draw3
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
 					mouseUsesSystemCursor,
-					(cursorSettingsBits & 4u) != 0 ? &cursorSettings : nullptr,
+					cursorSettingsValid ? &cursorSettings : nullptr,
 					cursorTool == DrawingTool::Pen || cursorTool == DrawingTool::HardPen,
 					ProductTargetScale(currentProductVisualStyle));
 				if (primary.visible &&
@@ -12903,7 +14581,7 @@ namespace Inkeys::Drawing::Draw3
 				window_.CursorAppearanceForTool(DrawingTool::Eraser);
 			for (const RuntimeStroke* runtime : active)
 			{
-				if (runtime && !runtime->ended && !runtime->awaitingReconnect &&
+				if (runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
 					runtime->metricDeviceType == InputDeviceType::Touch &&
 					runtime->tool == DrawingTool::Laser)
 				{
@@ -12918,7 +14596,21 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					continue;
 				}
-				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+				// 触摸落笔光标：仅软/硬笔，逐接触各一个；荧光笔、形状等保持无光标。
+				if (cursorSettingsValid && cursorSettings.touch != CursorStyle::None &&
+					runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
+					runtime->metricDeviceType == InputDeviceType::Touch &&
+					(runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen))
+				{
+					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
+					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
+						snapshot.position.x, snapshot.position.y,
+						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touch,
+						ProductTargetScale(runtime->visualStyle));
+					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
+					continue;
+				}
+				if (!runtime || runtime->ended || runtime->awaitingReconnect || runtime->palmObservationOnly ||
 					runtime->metricDeviceType != InputDeviceType::Touch ||
 					runtime->tool != DrawingTool::Eraser) continue;
 				const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
@@ -12956,6 +14648,9 @@ namespace Inkeys::Drawing::Draw3
 				key = key * 17u + (penSample.inverted ? 1u : 0u);
 				key = key * 17u + (mouseSample.valid ? 1u : 0u);
 				key = key * 17u + (mouseSample.inContact ? 1u : 0u);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.kind);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.recognition);
+				key = key * 17u + static_cast<uint64_t>(mouseSample.source.kind);
 				const double nowMilliseconds = GetQpcTimeMilliseconds();
 				const bool activeCursor = !currentCursorVisuals.empty() ||
 					!laserTipVisuals.empty() || penSample.valid || mouseSample.valid || liveTouchCount;
@@ -12966,7 +14661,14 @@ namespace Inkeys::Drawing::Draw3
 					lastCursorVisualDiagnosticKey = key;
 					nextCursorVisualDiagnosticMilliseconds = nowMilliseconds + 100.0;
 					cursorVisualDiagnosticRecorded = true;
-					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u",
+					// 与 frame 同门禁/限频，单列短记录以免挤出 320 字节日志中的来源字段。
+					const double displayDpi = std::isfinite(observedSpeedEraserDisplayScale.dipPerPixelX) &&
+						observedSpeedEraserDisplayScale.dipPerPixelX > 0.0 ? 96.0 / observedSpeedEraserDisplayScale.dipPerPixelX : 0.0;
+					RecordCursorDiagnostic("frame-scale cursorDpi=%.1f cursorScale=%.3f contextRevision=%llu displayDpi=%.1f viewport=%.0fx%.0f",
+						currentProductVisualStyle.penWidthContext.effectiveDpi, ProductTargetScale(currentProductVisualStyle),
+						static_cast<unsigned long long>(currentProductVisualStyle.penWidthContext.revision), displayDpi,
+						renderer_.viewportWidth, renderer_.viewportHeight);
+					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u penSource=%s/%u/cid%u mouseSource=%s/%u",
 						static_cast<unsigned>(cursorTool), static_cast<unsigned>(window_.CursorOwner()),
 						primaryCursorCount, currentCursorVisuals.size() - primaryCursorCount,
 						primaryLaserTipCount, laserTipVisuals.size() - primaryLaserTipCount,
@@ -12974,7 +14676,12 @@ namespace Inkeys::Drawing::Draw3
 						penSample.inContact ? 1u : 0u, penSample.inverted ? 1u : 0u,
 						mouseSample.valid ? 1u : 0u, mouseSample.inContact ? 1u : 0u,
 						mouseSpeedEraser().HasPosition() ? 1u : 0u,
-						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u);
+						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u,
+						SpeedEraser::SourceKindName(penSample.source.kind),
+						static_cast<unsigned>(penSample.source.recognition),
+						static_cast<unsigned>(penSample.source.cursorId),
+						SpeedEraser::SourceKindName(mouseSample.source.kind),
+						static_cast<unsigned>(mouseSample.source.recognition));
 					for (size_t index = 0; index < currentCursorVisuals.size(); ++index)
 					{
 						const auto& visual = currentCursorVisuals[index];
@@ -13555,6 +15262,7 @@ namespace Inkeys::Drawing::Draw3
 			if (fatalCaptureAttempted) return;
 			fatalCaptureAttempted = true;
 			StopFatalInputConsumer(input_);
+			publishRecoveryProgress(CanvasRecoveryStatus::Failed, CanvasRecoveryReason::ConsumerFatal);
 			if (metricsState_)
 			{
 				metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
@@ -13697,19 +15405,19 @@ namespace Inkeys::Drawing::Draw3
 				committedRevision, allocateRasterStateToken);
 		};
 
-		auto RebindStablePresentationTopology = [&](const Bridge::PresentationTarget& next)
-			-> bool
+		auto RebindStablePresentationTopology = [&](ActivePresentationSlotRefs candidate,
+			const Bridge::PresentationTarget& next)
+			-> std::optional<DrawingDocumentSlot>
 		{
-			if (activeWorkspace != Bridge::Workspace::Presentation ||
-				!activePresentationTarget ||
-				activePresentationTarget->bindingMode != Bridge::SlideBindingMode::StableSlideId ||
-				next.bindingMode != Bridge::SlideBindingMode::StableSlideId || !document_)
-				return false;
-			auto captured = BuildPresentationSaveRequest(*document_, pageRuntimeStates,
-				currentPageIndex_, *activePresentationTarget, activePresentationFileGuid,
-				activePresentationMutationRevision, configuration_.dpiScale,
-				activeRetainedSlides);
-			if (!captured) return false;
+			if (!candidate.target ||
+				candidate.target->bindingMode != Bridge::SlideBindingMode::StableSlideId ||
+				next.bindingMode != Bridge::SlideBindingMode::StableSlideId || !candidate.document)
+				return std::nullopt;
+			auto captured = BuildPresentationSaveRequest(*candidate.document, candidate.pageRuntimeStates,
+				candidate.currentPageIndex, *candidate.target, candidate.fileGuid,
+				candidate.mutationRevision, configuration_.dpiScale,
+				candidate.retainedSlides);
+			if (!captured) return std::nullopt;
 			std::map<std::int32_t, draw3::uink::Draw3UInkCanvasSnapshot> known;
 			for (const auto& canvas : captured->snapshot.activeCanvases)
 				if (canvas.slideId) known.emplace(*canvas.slideId, canvas);
@@ -13732,7 +15440,7 @@ namespace Inkeys::Drawing::Draw3
 					continue;
 				}
 				const auto pageGuid = draw3::uink::CreateUInkGuid();
-				if (!pageGuid) return false;
+				if (!pageGuid) return std::nullopt;
 				draw3::uink::Draw3UInkCanvasSnapshot blank;
 				blank.pageGuid = *pageGuid;
 				blank.slideId = slideId;
@@ -13749,7 +15457,7 @@ namespace Inkeys::Drawing::Draw3
 					return draw3::uink::InkeysPageKind(canvas.extra) ==
 						draw3::uink::UInkInkeysPageKind::EndScreen;
 				});
-			if (previousEnd == captured->snapshot.activeCanvases.end()) return false;
+			if (previousEnd == captured->snapshot.activeCanvases.end()) return std::nullopt;
 			remapped.activeCanvases.push_back(*previousEnd);
 			for (auto& [slideId, canvas] : known)
 			{
@@ -13758,12 +15466,12 @@ namespace Inkeys::Drawing::Draw3
 				remapped.retainedCanvases.push_back(std::move(canvas));
 			}
 			auto rebuilt = materializePresentationSlot(remapped, next,
-				activePresentationCommittedRevision);
-			if (!rebuilt || !rebuilt->document) return false;
+				candidate.committedRevision);
+			if (!rebuilt || !rebuilt->document) return std::nullopt;
 			std::map<std::array<std::uint8_t, 16>, std::size_t> oldRuntimeByPage;
-			for (std::size_t index = 0; index < document_->Pages().size() &&
-				index < pageRuntimeStates.size(); ++index)
-				if (const InkPage* page = document_->PageAt(index))
+			for (std::size_t index = 0; index < candidate.document->Pages().size() &&
+				index < candidate.pageRuntimeStates.size(); ++index)
+				if (const InkPage* page = candidate.document->PageAt(index))
 					oldRuntimeByPage.emplace(page->PageGuid().Bytes(), index);
 			for (std::size_t index = 0; index < rebuilt->document->Pages().size() &&
 				index < rebuilt->pageRuntimeStates.size(); ++index)
@@ -13772,13 +15480,13 @@ namespace Inkeys::Drawing::Draw3
 				const auto found = page
 					? oldRuntimeByPage.find(page->PageGuid().Bytes()) : oldRuntimeByPage.end();
 				if (found == oldRuntimeByPage.end()) continue;
-				CanvasPageRuntimeState& source = pageRuntimeStates[found->second];
+				CanvasPageRuntimeState& source = candidate.pageRuntimeStates[found->second];
 				CanvasPageRuntimeState& destination = rebuilt->pageRuntimeStates[index];
 				if (source.clearRedoContinuation || source.clearUndoHistory || source.history.LastRedoItem() || HasShapeEditOperations(source))
 				{
 					// 拓扑重排的 visible 导出会丢隐藏候选，仅前向分支页沿 GUID 保留完整值。
-					const InkPage* original = document_->PageAt(found->second);
-					if (!original || !rebuilt->document->ReplacePage(index, *original)) return false;
+					const InkPage* original = candidate.document->PageAt(found->second);
+					if (!original || !rebuilt->document->ReplacePage(index, *original)) return std::nullopt;
 					destination = source;
 					continue;
 				}
@@ -13789,24 +15497,17 @@ namespace Inkeys::Drawing::Draw3
 				destination.previousClearUndoAvailable =
 					source.previousClearUndoAvailable;
 				destination.clearRedoAvailable = source.clearRedoAvailable;
-				destination.boundaryFallback = std::move(source.boundaryFallback);
+				destination.boundaryFallback = source.boundaryFallback;
 			}
-			const auto oldMutation = activePresentationMutationRevision;
-			const auto oldQueued = activePresentationQueuedRevision;
-			const auto oldCommitted = activePresentationCommittedRevision;
-			const auto oldPersistence = activePresentationPersistenceInitialized;
-			const auto oldLoadPending = activePresentationLoadPending;
-			document_ = std::move(rebuilt->document);
-			pageRuntimeStates = std::move(rebuilt->pageRuntimeStates);
-			if (metricsState_) metricsScene(true);
-			activeRetainedSlides = std::move(rebuilt->retainedSlides);
-			activePresentationFileGuid = rebuilt->fileGuid;
-			activePresentationMutationRevision = oldMutation;
-			activePresentationQueuedRevision = oldQueued;
-			activePresentationCommittedRevision = oldCommitted;
-			activePresentationPersistenceInitialized = oldPersistence;
-			activePresentationLoadPending = oldLoadPending;
-			return true;
+			// 完整复制历史候选后才由 CPU switch 成组换入；任何分配失败均保留原页与恢复点。
+			rebuilt->mutationRevision = candidate.mutationRevision;
+			rebuilt->queuedRevision = candidate.queuedRevision;
+			rebuilt->committedRevision = candidate.committedRevision;
+			rebuilt->persistenceInitialized = candidate.persistenceInitialized;
+			rebuilt->emptyLaneVerified = candidate.emptyLaneVerified;
+			rebuilt->loadPending = candidate.loadPending;
+			rebuilt->slotGeneration = candidate.slotGeneration;
+			return rebuilt;
 		};
 
 		auto applyReplacementHistory = [&](bool redo, RECT& frameDirty) -> bool
@@ -14390,10 +16091,56 @@ namespace Inkeys::Drawing::Draw3
 				observer_.commandProcessed(observer_.context, type, currentPageIndex_,
 					document_ ? document_->Pages().size() : 0);
 			};
-			CanvasCommand command;
-			while (active.empty() && (!shapeDeferredCommands.empty() || window_.TryDequeueCanvasCommand(command)))
+			// 关闸命令发现 CPU 已在目标场景时补发当前 ready。加载未完成或文档尚未改到目标时不发布。
+			auto acknowledgeUnchangedScene = [&](const CanvasCommand& command)
 			{
-				if (!shapeDeferredCommands.empty()) { command = std::move(shapeDeferredCommands.front()); shapeDeferredCommands.pop_front(); }
+				if (!command.sceneClosedAdmission) return;
+				if (activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) return;
+				if (Bridge::PresentationInputSuppressed(activeWorkspace,
+					activePresentationLoadPending || presentationLoadUnresolved())) return;
+				if (activeWorkspace == Bridge::Workspace::Presentation)
+				{
+					if (!activePresentationTarget || !PresentationSceneMatches(activeWorkspace,
+						activePresentationKey, activeDocumentSlot, *activePresentationTarget)) return;
+					stageWorkspaceReady(&*activePresentationTarget);
+				}
+				else
+					stageWorkspaceReady();
+				// 旧准入代次的全帧请求可能早已消费；补回执本身也必须推动一次真实 Present。
+				forceFullPresent = true;
+			};
+			CanvasCommand command;
+			while (active.empty())
+			{
+				if (!shapeDeferredCommands.empty() || window_.TryDequeueCanvasCommand(command))
+				{
+					if (!shapeDeferredCommands.empty()) { command = std::move(shapeDeferredCommands.front()); shapeDeferredCommands.pop_front(); }
+					if (command.type == CanvasCommandType::SetPresentationTarget ||
+						command.type == CanvasCommandType::SetWorkspace ||
+						command.type == CanvasCommandType::PrepareExitAutoSave)
+						sceneApplyRetry.Cancel();
+				}
+				else
+				{
+					if (window_.ExitRequested() || currentLoadRetry.ExitPrepared()) sceneApplyRetry.Cancel();
+					if (!sceneApplyRetry.TryTake(GetTickCount64(), command)) break;
+				}
+				if (command.explicitRecoveryRetry && (!observer_.recoveryRetryAllowed ||
+					!observer_.recoveryRetryAllowed(observer_.context, command.recoveryRevision))) continue;
+				if (command.type == CanvasCommandType::SetPresentationTarget || command.type == CanvasCommandType::SetWorkspace)
+				{
+					const auto next = recoveryForCommand(command);
+					if (command.explicitRecoveryRetry || next.workspace != recoveryRequest.workspace ||
+						next.presentationTarget != recoveryRequest.presentationTarget)
+					{
+						recoveryRequest = next;
+						// 新建恢复债务后，即使 CPU 已在目标，也必须用真实 Present 回执结算。
+						command.sceneClosedAdmission = true;
+						scenePreparationFailures = 0;
+						presentationFailures = 0;
+						publishRecoveryProgress(CanvasRecoveryStatus::Recovering, CanvasRecoveryReason::None);
+					}
+				}
 				if (command.type == CanvasCommandType::ShapeInteraction)
 				{
 					if (command.shapeAction) processShapeUiAction(*command.shapeAction,frameDirty);
@@ -14415,6 +16162,12 @@ namespace Inkeys::Drawing::Draw3
 					consumeWhiteboardCompletions();
 					continue;
 				}
+				if (command.type == CanvasCommandType::RePresentWhiteboardPage)
+				{
+					ApplyWhiteboardPageRecoveryCommand(command, activeWorkspace, whiteboardLoading.has_value(),
+						currentLoadRetry.ExitPrepared(), whiteboardGeneration, currentPageIndex_, acknowledgeUnchangedScene);
+					continue;
+				}
 				struct ShortcutCompletionGuard
 				{
 					DrawingControllerRuntimeObserver& observer;
@@ -14432,7 +16185,11 @@ namespace Inkeys::Drawing::Draw3
 					shortcutResult.result = observer_.shortcutCommandAllowed && shortcutContext.available
 						? observer_.shortcutCommandAllowed(observer_.context, *command.shortcut, shortcutContext)
 						: Shortcuts::Result::Stale;
-					if (shortcutResult.result != Shortcuts::Result::Applied) continue;
+					if (shortcutResult.result != Shortcuts::Result::Applied)
+					{
+						acknowledgeUnchangedScene(command);
+						continue;
+					}
 					shortcutResult.result = Shortcuts::Result::Failed;
 				}
 				if (metricsState_) metricsState_->frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::Command);
@@ -14621,6 +16378,10 @@ namespace Inkeys::Drawing::Draw3
 									restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 										forceFullPresent, width, height);
 							}
+							// 历史加载可能跨过同 lane 翻页；成功或失败终态都交回当前实际页，停放槽不发回执。
+							if (StageResolvedPresentationScene(activeWorkspace, activePresentationKey,
+								activeDocumentSlot, stageWorkspaceReady))
+								forceFullPresent = true;
 						}
 						else if (parked)
 						{
@@ -14678,6 +16439,7 @@ namespace Inkeys::Drawing::Draw3
 									static_cast<unsigned>(completion.status),
 									static_cast<unsigned long long>(activePresentationSlotGeneration));
 							}
+							publishCurrentLoadProgress();
 							continue;
 						}
 						if (loadedVerified)
@@ -14697,10 +16459,12 @@ namespace Inkeys::Drawing::Draw3
 								DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 									"[Draw3.Presentation] action=current_load result=manual_required status=install_failed generation=%llu\n",
 									static_cast<unsigned long long>(activePresentationSlotGeneration));
+								publishCurrentLoadProgress();
 								continue;
 							}
 						}
 						activePresentationPersistenceInitialized = true;
+						activePresentationEmptyLaneVerified = emptyVerified;
 						currentLoadRetry.Cancel();
 						restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 							forceFullPresent, width, height);
@@ -14726,6 +16490,7 @@ namespace Inkeys::Drawing::Draw3
 							*parked = std::move(*loaded);
 						}
 						parked->persistenceInitialized = true;
+						parked->emptyLaneVerified = emptyVerified;
 						if (canEvictPresentationSlot(*parked) && route.parkedLane)
 							presentationSlots.erase(*route.parkedLane);
 					}
@@ -14736,17 +16501,18 @@ namespace Inkeys::Drawing::Draw3
 					if (!command.presentationTarget) continue;
 					const Bridge::PresentationTarget& requestedTarget =
 						*command.presentationTarget;
-					if (activeWorkspace == Bridge::Workspace::Presentation &&
-						activePresentationTarget && *activePresentationTarget == requestedTarget)
+					if (PresentationSceneMatches(activeWorkspace, activePresentationKey,
+						activeDocumentSlot, requestedTarget))
 					{
 						if (!activePresentationPersistenceInitialized &&
+							(!currentLoadRetry.HasRequest() || command.explicitRecoveryRetry) &&
 							!activePresentationLoadPending &&
 							activePresentationMutationRevision == 0 &&
 							activePresentationQueuedRevision == 0 &&
 							observer_.presentationLoadRequested &&
 							currentLoadRetry.AllowsLoad(window_.ExitRequested()))
 						{
-							currentLoadRetry.Cancel(); // 外部明确重发同一 target，允许安全重读。
+							currentLoadRetry.Cancel(); // 仅首次请求或带精确令牌的用户显式重试可重置预算。
 							activePresentationLoadPending = SubmitCurrentPresentationLoad(
 								requestedTarget, activePresentationSlotGeneration,
 								[&](PresentationLoadRequest&& request)
@@ -14758,43 +16524,53 @@ namespace Inkeys::Drawing::Draw3
 								currentLoadRetry.OnIoError(requestedTarget,
 									activePresentationSlotGeneration, GetTickCount64());
 						}
+						acknowledgeUnchangedScene(command);
+						sceneApplyRetry.Cancel();
 						continue;
 					}
-					const Bridge::PresentationTarget target = requestedTarget;
+					const Bridge::PresentationTarget& target = requestedTarget;
 					if (target.key.IsZero() || !Bridge::ValidPresentationPage(target)) continue;
 					// 同文稿翻页与跨文稿切换都先固定离开侧最新 revision。
 					(void)capturePresentationAutoSave();
+					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
 
 					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
-					if (!source) continue;
+					if (!source)
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						retryScenePreparation(std::move(command));
+						continue;
+					}
 					PresentationCpuSwitchResult cpuSwitch =
 						SwitchPresentationCpuSlot(activeWorkspace, activePresentationKey,
 							activeDocumentSlot, *source, isolatedPresentationSlot,
 							presentationSlots, nextPresentationSlotGeneration,
-							target, allocateRasterStateToken);
-					if (!cpuSwitch.accepted) continue;
-					if (!cpuSwitch.topologyConflict)
+							target, allocateRasterStateToken,
+							[&](ActivePresentationSlotRefs candidate,
+								const Bridge::PresentationTarget& next,
+								std::optional<DrawingDocumentSlot>& rebound)
+							{
+								if (!candidate.target ||
+									!StablePresentationTopologyChanged(*candidate.target, next)) return true;
+								rebound = RebindStablePresentationTopology(candidate, next);
+								return rebound.has_value();
+							});
+					if (!cpuSwitch.accepted)
 					{
-						// parked/warm slot 先恢复其旧 target，再按有序 SlideID 重映射。
-						const bool stableTopologyChange = activePresentationTarget &&
-							StablePresentationTopologyChanged(*activePresentationTarget, target);
-						if (stableTopologyChange && !RebindStablePresentationTopology(target))
+						pendingWorkspaceReady = keepStagedScene;
+						if (cpuSwitch.outcome == PresentationCpuSwitchOutcome::ProtectedConflict)
 						{
-							DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=rebind result=failed\n");
+							sceneApplyRetry.Cancel();
+							publishRecoveryProgress(CanvasRecoveryStatus::ProtectedConflict,
+								CanvasRecoveryReason::TopologyConflict, 0, true);
 							continue;
 						}
-						activePresentationTarget = std::move(cpuSwitch.preparedTarget);
-					}
-					if (!document_ || pageRuntimeStates.size() !=
-						Bridge::PresentationDocumentPageCount(target) ||
-						document_->Pages().size() != Bridge::PresentationDocumentPageCount(target))
-					{
-						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=switch result=isolated reason=page_count\n");
+						retryScenePreparation(std::move(command));
 						continue;
 					}
-					currentPageIndex_ = target.pageIndex;
+					sceneApplyRetry.Cancel();
 					currentLoadRetry.Cancel(); // 页/场次/代次变化取消上一目标的计时请求。
 					TracePptTiming("document_switched", target.sessionRevision, target.targetRevision);
 					restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
@@ -14843,8 +16619,14 @@ namespace Inkeys::Drawing::Draw3
 						target != Bridge::Workspace::Whiteboard) ||
 						(target == activeWorkspace && (target != Bridge::Workspace::Presentation ||
 							!activePresentationKey)))
+					{
+						if (target == activeWorkspace)
+							acknowledgeUnchangedScene(command);
+						sceneApplyRetry.Cancel();
 						continue;
+					}
 					(void)capturePresentationAutoSave();
+					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
 					const std::optional<PresentationLaneKey> previousPresentationLane =
 						activePresentationKey && activePresentationTarget
@@ -14855,10 +16637,20 @@ namespace Inkeys::Drawing::Draw3
 						? &whiteboardSlot : &isolatedPresentationSlot;
 					if (target == Bridge::Workspace::Presentation)
 						isolatedPresentationSlot = {};
-					if (!createBlankSlot(*destination, 1)) continue;
+					if (!createBlankSlot(*destination, 1))
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						retryScenePreparation(std::move(command));
+						continue;
+					}
 					if (activeWorkspace == Bridge::Workspace::Whiteboard) saveWhiteboard();
 					DrawingDocumentSlot* source = parkedActiveSlot();
-					if (!source) continue;
+					if (!source)
+					{
+						pendingWorkspaceReady = keepStagedScene;
+						retryScenePreparation(std::move(command));
+						continue;
+					}
 					swapActiveDocument(*source);
 					swapActiveDocument(*destination);
 					if (previousPresentationLane && canEvictPresentationSlot(*source))
@@ -14873,6 +16665,18 @@ namespace Inkeys::Drawing::Draw3
 					restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 						forceFullPresent, width, height);
 					stageWorkspaceReady();
+					sceneApplyRetry.Cancel();
+					continue;
+				}
+				if (!CanvasCommandSceneMatches(command, activeWorkspace,
+					activePresentationKey, activeDocumentSlot))
+				{
+					// 前缀失败时业务明确失败，不在旧文稿执行，也不随场景退避重复 Clear/Undo。
+					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+						"[Draw3.Scene] action=command result=cancelled reason=scene_not_applied command=%u\n",
+						static_cast<unsigned>(command.type));
+					shortcutResult.result = Shortcuts::Result::Blocked;
+					reportCommand(command.type); // processed 终态仍推进，避免页导航调用方永久等待。
 					continue;
 				}
 				// 冷加载完成命令也带代次；工作区切换不能让迟到 SetPage 改写别的文档。
@@ -14989,6 +16793,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (command.type == CanvasCommandType::PrepareExitAutoSave)
 				{
+					sceneApplyRetry.Cancel();
+					publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
 					// 回执只表示最终快照已提交给 worker；durable 结果仍由 worker 决定。
 					ProcessPresentationExitBarrier(currentLoadRetry,
 						[&] { captureExitAutoSave(false, "normal_exit"); },
@@ -15128,6 +16934,12 @@ namespace Inkeys::Drawing::Draw3
 					reportCommand(command.type);
 					continue;
 				}
+				struct PageCommandReadyGuard
+				{
+					const CanvasCommand& command;
+					decltype(acknowledgeUnchangedScene)& acknowledge;
+					~PageCommandReadyGuard() { acknowledge(command); }
+				} pageCommandReady{ command, acknowledgeUnchangedScene };
 				renderer_.InvalidateTrustedL2Snapshot();
 				trustedSnapshotSignatureValid = false;
 				const size_t pageCount = document_->Pages().size();
@@ -15207,9 +17019,13 @@ namespace Inkeys::Drawing::Draw3
 					{
 						whiteboardLoading = targetPageIndex;
 						whiteboardLoadingGeneration = whiteboardGeneration;
+						whiteboardLoadingCommand = command.type;
 						whiteboardReadFailed = false;
 						if (!whiteboardStore.Load(targetPageIndex, draw3::uink::UInkGuid(document_->PageAt(targetPageIndex)->PageGuid().Bytes()), whiteboardLoadingGeneration))
-						{ whiteboardLoading.reset(); whiteboardReadFailed = true; }
+						{
+							whiteboardLoading.reset(); whiteboardReadFailed = true;
+							reportCommand(command.type);
+						}
 						publishWhiteboard();
 						continue;
 					}
@@ -15249,6 +17065,11 @@ namespace Inkeys::Drawing::Draw3
 					CompositionRestorePathName(restored.path) << std::endl;
 				publishCurrentPageContent();
 				reportCommand(command.type);
+				if (command.type == CanvasCommandType::SetPage && command.whiteboardGeneration != 0)
+				{
+					// 冷页完成除内部 SetPage 外，还必须恰好结算一次最初的翻页命令。
+					reportCommand(whiteboardLoadingCommand);
+				}
 			}
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
@@ -15839,8 +17660,6 @@ namespace Inkeys::Drawing::Draw3
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				animationQpc.QuadPart, qpcFrequency, animationLaserHold);
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
-			const bool laserExpired = previousLaserPhase != LaserTrailPhase::Inactive &&
-				laserLifecycle.phase == LaserTrailPhase::Inactive;
 			const bool laserFadeActive = laserLifecycle.phase == LaserTrailPhase::Fade;
 			bool laserOpacityChanged =
 				std::abs(previousLaserOpacity - laserOpacity) > 0.0001f;
@@ -15897,22 +17716,12 @@ namespace Inkeys::Drawing::Draw3
 				// 最后一帧瞬态内容结束后做全帧 ULW 校验，不能按局部脏区推断窗口已净。
 				forceFullPresent = true;
 			}
-			if (laserOpacityChanged)
+			if (laserOpacityChanged ||
+				LaserTrailExpiredThisFrame(previousLaserPhase, laserLifecycle.phase))
 			{
+				// 即使末段 opacity 变化低于阈值，首次过期也不能在最终清理前进入 idle。
 				UnionRectInPlace(frameDirty, laserStableBounds);
 				UnionRectInPlace(frameDirty, laserLiveBounds);
-			}
-			if (laserExpired)
-			{
-				if (metricsState_) metricsState_->ObserveLaserExpiry(laserStableBounds, laserLiveBounds,
-					previousLaserParticleBounds, currentLaserParticleBounds);
-				UnionRectInPlace(frameDirty, laserStableBounds);
-				UnionRectInPlace(frameDirty, laserLiveBounds);
-				renderer_.ClearAllLaserCoverage();
-				laserStableBounds = {};
-				laserLiveBounds = {};
-				laserStrokeLayers.clear();
-				laserCoverageMode = LaserCoverageMode::Inactive;
 			}
 			if (active.empty())
 			{
@@ -15937,6 +17746,7 @@ namespace Inkeys::Drawing::Draw3
 							return observer_.presentationLoadRequested(observer_.context,
 								std::move(request));
 						});
+				publishCurrentLoadProgress();
 			}
 			const bool navigationActive = touchGesture.PanActive() ||
 				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
@@ -16099,6 +17909,45 @@ namespace Inkeys::Drawing::Draw3
 			if (interruptedStrokeReconnectEnabled)
 					drainIngressBatch();
 			sealPresentationContacts();
+			// 同批新 Down 和原地面积更新先完成仲裁，再按已激活手掌收尾其他绘制。
+			for (RuntimeStroke* runtime : active)
+			{
+				if (runtime->palm.eligible || runtime->palm.active || runtime->palmObservationOnly)
+					runtime->movedThisFrame = consumeLatestSnapshot(*runtime) || runtime->movedThisFrame;
+				runtime->palm.Advance(frameQpc.QuadPart);
+				if (runtime->palmObservationOnly && runtime->palm.locked)
+				{
+					RetirePalmObservation(*runtime);
+					touchGesture.OnTouchUp(runtime->touchGestureKey);
+				}
+			}
+			const bool blockingPalm = hasBlockingPalm();
+			if (blockingPalm || palmInterruptQpc > 0)
+			{
+				for (RuntimeStroke* runtime : active)
+				{
+					if (!runtime || runtime->ended || runtime->palm.active || runtime->palmObservationOnly) continue;
+					if (!blockingPalm && runtime->qpcOrigin > palmInterruptQpc) continue;
+					ContactSnapshot terminal = runtime->awaitingReconnect ? runtime->deferredUpSnapshot : runtime->lastModelSnapshot;
+					terminal.phase = ContactPhase::Up;
+					runtime->stroke.predictedResults.clear();
+					runtime->stroke.predictedPoints.clear();
+					completeModelUp(*runtime, terminal, false);
+					if (runtime->tool == DrawingTool::Laser)
+					{
+						const WindowSize laserSize = window_.Size();
+						FinalizeLaserRuntime(laserStrokeLayers, *runtime, laserLifecycle,
+							terminal.qpc, false, configuration_.dpiScale, laserSize.width, laserSize.height);
+					}
+					runtime->lastInputSnapshot = terminal;
+					finishMouseSpeedEraser(*runtime);
+					if (runtime->touchGestureKey) touchGesture.OnTouchUp(runtime->touchGestureKey);
+					if (runtime->metricDeviceType == InputDeviceType::Pen && haptics_ &&
+						window_.EndHapticContact(runtime->handle.record->ContactId(), runtime->handle.generation, false,
+							runtime->handle.record->TabletContextId())) haptics_->StopFeedback();
+				}
+			}
+			palmInterruptQpc = 0;
 			hasEndedStroke = hasEndedStroke || std::any_of(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime) { return runtime && runtime->ended; });
 			for (RuntimeStroke* runtime : active)
@@ -16117,7 +17966,7 @@ namespace Inkeys::Drawing::Draw3
 			mouseSpeedEraser().Advance(mouseVisualSeconds);
 			for (RuntimeStroke* runtime : active)
 			{
-				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+				if (!runtime || runtime->ended || runtime->awaitingReconnect || runtime->palmObservationOnly ||
 					runtime->stroke.widthMode != StrokeWidthMode::SpeedEraser) continue;
 				if(!runtime->firstEraserCursorFrame || runtime->lastInputSnapshot.phase!=ContactPhase::Down)
 					runtime->speedEraserOc.Advance(frameAbsoluteSeconds);
@@ -16130,7 +17979,7 @@ namespace Inkeys::Drawing::Draw3
 				1.0 / configuration_.timingProfile.target_fps;
 			for (RuntimeStroke* runtime : active)
 			{
-				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+				if (!runtime || runtime->ended || runtime->awaitingReconnect || runtime->palmObservationOnly ||
 					(runtime->tool != DrawingTool::Pen && runtime->tool != DrawingTool::HardPen) ||
 					runtime->stroke.idleFrozen || runtime->modelInputThisFrame ||
 					runtime->stationaryModelAdvanceBlocked) continue;
@@ -16217,6 +18066,21 @@ namespace Inkeys::Drawing::Draw3
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
 			laserOpacityChanged = laserOpacityChanged ||
 				std::abs(preInputLaserOpacity - laserOpacity) > 0.0001f;
+			const bool laserExpired = LaserTrailExpiredThisFrame(
+				previousLaserPhase, laserLifecycle.phase);
+			if (laserExpired)
+			{
+				// 第二次求值也可能进入 Inactive；按本帧最终边沿只清理一次。
+				if (metricsState_) metricsState_->ObserveLaserExpiry(laserStableBounds, laserLiveBounds,
+					previousLaserParticleBounds, currentLaserParticleBounds);
+				UnionRectInPlace(frameDirty, laserStableBounds);
+				UnionRectInPlace(frameDirty, laserLiveBounds);
+				renderer_.ClearAllLaserCoverage();
+				laserStableBounds = {};
+				laserLiveBounds = {};
+				laserStrokeLayers.clear();
+				laserCoverageMode = LaserCoverageMode::Inactive;
+			}
 			// Up 后同帧新 Down 可能刚完成旧批次 Bake；必须在本帧基础合成前消费该 dirty。
 			UnionRectInPlace(frameDirty, pendingLaserBakeDirty);
 			pendingLaserBakeDirty = {};
@@ -16224,7 +18088,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool hasPhysicalContact = HasPhysicalContact(active);
 			const auto frameToolIterator = std::find_if(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime)
-					{ return runtime && !runtime->ended && !runtime->awaitingReconnect; });
+					{ return runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly; });
 			const DrawingTool frameTool = frameToolIterator != active.end()
 				? (*frameToolIterator)->tool
 				: active.empty() ? window_.ActiveTool() : active.front()->tool;
@@ -16277,13 +18141,24 @@ namespace Inkeys::Drawing::Draw3
 			RECT currentLaserLiveBounds = {};
 			bool shapeLayerNeedsRebuild = false;
 			bool otherLiveLayerNeedsRebuild = false;
+			if (palmLayersNeedRebuild)
+			{
+				// 旧工具 CPU 已在转换成功后撤去，只重建共享活动层，L2/文档和其他接触保留。
+				const auto rebuilt = RebuildActiveLayers(active, renderer_, size.width, size.height, shapePrimitiveScratch);
+				rasterSubmissionFailed |= !rebuilt.succeeded;
+				UnionRectInPlace(frameDirty, rebuilt.dirty);
+				palmLayersNeedRebuild = false;
+			}
+			UnionRectInPlace(frameDirty, pendingPalmDirty);
+			pendingPalmDirty = {};
 			const bool hasLaserRuntime = std::any_of(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime)
 				{
-					return runtime && runtime->tool == DrawingTool::Laser;
+					return runtime && !runtime->palmObservationOnly && runtime->tool == DrawingTool::Laser;
 				});
 			for (RuntimeStroke* runtime : active)
 			{
+				if (runtime->palmObservationOnly) continue;
 				ActiveStroke& stroke = runtime->stroke;
 				if (runtime->shape.active)
 				{
@@ -16294,7 +18169,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						stroke.predictedResults.clear();
 						if (!runtime->shape.rawFallbackRequired &&
-							kActivePredictionMode != InkPredictionMode::Disabled)
+							stroke.predictionMode != InkPredictionMode::Disabled)
 						{
 							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
 								metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(
@@ -16332,7 +18207,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!runtime->ended)
 					{
 						stroke.predictedResults.clear();
-						if (kActivePredictionMode != InkPredictionMode::Disabled)
+						if (stroke.predictionMode != InkPredictionMode::Disabled)
 						{
 							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
 								metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(
@@ -16509,7 +18384,7 @@ namespace Inkeys::Drawing::Draw3
 								runtime->reconnectPredictedResults.end());
 					}
 					else if (!eraser && !stroke.endpointAdmission.active &&
-						kActivePredictionMode != InkPredictionMode::Disabled)
+						stroke.predictionMode != InkPredictionMode::Disabled)
 					{
 						if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
 							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(stroke.predictedResults); }); !status.ok())
@@ -16877,6 +18752,9 @@ namespace Inkeys::Drawing::Draw3
 						runtime->reconnectPredictedResults.clear();
 						runtime->reconnectManualTestRanges.clear();
 						runtime->speedEraserDisplayScale = {};
+						runtime->palm = {};
+						runtime->lastAcceptedModelInputTime = 0.0;
+						runtime->palmObservationOnly = false;
 						runtime->speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 						runtime->speedEraserModelTime = 0.0;
 						runtime->speedEraserModelDiameter = SpeedEraser::Config{}.minimumDiameterPx;
@@ -17156,6 +19034,14 @@ namespace Inkeys::Drawing::Draw3
 				consecutiveRasterFailures = 0;
 				activeLayerRebuildPending = false;
 			}
+			if ((rasterSubmissionFailed || (!presentSucceeded && !IsEmptyRect(frameDirty))) && recoveryMatchesActive() &&
+				!presentationLoadUnresolved() && !activePresentationLoadPending && !whiteboardLoading)
+			{
+				if (presentationFailures < 4) ++presentationFailures;
+				publishRecoveryProgress(presentationFailures >= 4 ? CanvasRecoveryStatus::ManualRetryRequired :
+					CanvasRecoveryStatus::Retrying, CanvasRecoveryReason::PresentFailure,
+					presentationFailures, presentationFailures >= 4);
+			}
 			if (cursorVisualDiagnosticRecorded)
 				RecordCursorDiagnostic("present success=%u visuals=%zu laserTips=%zu dirty=(%ld,%ld,%ld,%ld)",
 					presentSucceeded ? 1u : 0u, currentCursorVisuals.size(),
@@ -17163,6 +19049,13 @@ namespace Inkeys::Drawing::Draw3
 					frameDirty.right, frameDirty.bottom);
 			if (presentSucceeded)
 			{
+				presentationFailures = 0;
+				if (recoveryMatchesActive() && !presentationLoadUnresolved() && !activePresentationLoadPending &&
+					!whiteboardLoading && !viewportRecoveryPending && !viewportRefreshPending &&
+					(activeWorkspace != Bridge::Workspace::Presentation || (activePresentationTarget &&
+						PresentationSceneMatches(activeWorkspace, activePresentationKey, activeDocumentSlot,
+							*activePresentationTarget))))
+					publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
 				contentRevisionNeedsPresent = false;
 				// 文稿身份只能在目标 CPU 文档完成重放并成功提交一帧后成为 ready。
 				if (!viewportRecoveryPending && !viewportRefreshPending)
@@ -17261,6 +19154,9 @@ namespace Inkeys::Drawing::Draw3
 				int64_t nearestDeadlineQpc = (std::numeric_limits<int64_t>::max)();
 				for (const RuntimeStroke* runtime : active)
 				{
+					if (runtime && !runtime->ended && !runtime->palm.locked &&
+						runtime->palm.deadlineQpc < (std::numeric_limits<int64_t>::max)())
+						nearestDeadlineQpc = std::min(nearestDeadlineQpc, runtime->palm.deadlineQpc + 1);
 					if (runtime && runtime->awaitingReconnect)
 						nearestDeadlineQpc = std::min(
 							nearestDeadlineQpc, runtime->reconnectDeadlineQpc);

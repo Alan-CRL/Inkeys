@@ -1616,6 +1616,117 @@ namespace Inkeys::Drawing::Draw3
 					"first whiteboard page has independent ink", failures);
 				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::NextPage,
 					firstWhiteboardPage + 1, true, "nonempty whiteboard pages advance content revision");
+
+				// 暖页：物理 Up 尚未到达就完成封口、切页和真实 ready；旧尾事件不能污染新页。
+				const auto waitWhiteboardInputReady = [whiteboardState](std::size_t page)
+				{
+					return WaitUntil([whiteboardState, page]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.currentPageIndex == page && !state.whiteboardLoadPending &&
+							!state.commandScenePending && state.presentationInputReady && !state.pen.active &&
+							DrawpadPresentationReady(whiteboardState, state);
+					}, 60s);
+				};
+				const auto warmHeld = ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down, 62, 76);
+				postContact(HiddenTestContactPhase::Move, 124, 108);
+				modeSucceeded &= Check(WaitUntil([warmHeld]
+				{
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					return pen.active && pen.strokeId > warmHeld.pen.strokeId && pen.inputSequence > 2;
+				}), "whiteboard warm-page command starts with accepted still-down ink", failures);
+				const auto beforeWarm = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::NextPage) == Bridge::CommandResult::Accepted,
+					"whiteboard still-down Next accepted", failures);
+				modeSucceeded &= Check(waitWhiteboardInputReady(firstWhiteboardPage + 2),
+					"whiteboard warm page seals and becomes ready without physical Up", failures);
+				modeSucceeded &= Check(!ProductHost().RuntimeSnapshot().currentPageHasContent,
+					"whiteboard warm target starts empty after the sealed old-page stroke", failures);
+				const auto warmReady = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(warmReady.nextPageCommandCount == beforeWarm.nextPageCommandCount + 1,
+					"whiteboard warm page processes the original Next exactly once", failures);
+				postContact(HiddenTestContactPhase::Move, 220, 180);
+				postContact(HiddenTestContactPhase::Up, 236, 196);
+				modeSucceeded &= Check(WaitUntil([beforeWarm]
+				{
+					return ProductHost().RuntimeSnapshot().inputRecycled > beforeWarm.inputRecycled;
+				}), "whiteboard warm-page old Move and Up reach terminal isolation", failures);
+				modeSucceeded &= Check(!ProductHost().RuntimeSnapshot().currentPageHasContent &&
+					ProductHost().RuntimeSnapshot().contentRevision == warmReady.contentRevision,
+					"whiteboard warm target is unchanged by old Move and Up", failures);
+				postContact(HiddenTestContactPhase::Down, 56, 84);
+				postContact(HiddenTestContactPhase::Move, 112, 116);
+				postContact(HiddenTestContactPhase::Up, 168, 148);
+				modeSucceeded &= Check(WaitUntil([warmReady]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.currentPageHasContent && state.contentRevision > warmReady.contentRevision;
+				}), "whiteboard warm ready accepts a fresh Down", failures);
+
+				// 离页保存使目标成为冷页：加载期间保持关闸，严格恢复并 Present 后才重新接受输入。
+				const auto coldHeld = ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down, 68, 82);
+				postContact(HiddenTestContactPhase::Move, 132, 114);
+				modeSucceeded &= Check(WaitUntil([coldHeld]
+				{
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					return pen.active && pen.strokeId > coldHeld.pen.strokeId && pen.inputSequence > 2;
+				}), "whiteboard cold-page command starts with accepted still-down ink", failures);
+				const auto beforeCold = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::PreviousPage) == Bridge::CommandResult::Accepted,
+					"whiteboard still-down Previous accepted", failures);
+				// 不依赖短暂的 loading 采样窗口：旧尾事件直接进入真实命令/输入队列。
+				postContact(HiddenTestContactPhase::Move, 226, 184);
+				postContact(HiddenTestContactPhase::Up, 242, 200);
+				modeSucceeded &= Check(waitWhiteboardInputReady(firstWhiteboardPage + 1),
+					"whiteboard cold page opens only after strict load and real Present", failures);
+				const auto coldReady = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(coldReady.previousPageCommandCount == beforeCold.previousPageCommandCount + 1,
+					"whiteboard cold page processes the original Previous exactly once", failures);
+				modeSucceeded &= Check(WaitUntil([beforeCold]
+				{
+					return ProductHost().RuntimeSnapshot().inputRecycled > beforeCold.inputRecycled;
+				}), "whiteboard cold-page old Move and Up reach terminal isolation", failures);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().pen.strokeId == beforeCold.pen.strokeId &&
+					ProductHost().RuntimeSnapshot().contentRevision == coldReady.contentRevision,
+					"whiteboard cold target rejects old Move and Up without creating a stroke", failures);
+				const auto beforeColdFresh = ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down, 60, 88);
+				postContact(HiddenTestContactPhase::Move, 116, 120);
+				postContact(HiddenTestContactPhase::Up, 172, 152);
+				modeSucceeded &= Check(WaitUntil([beforeColdFresh]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.inputRecycled > beforeColdFresh.inputRecycled &&
+						state.pen.strokeId > beforeColdFresh.pen.strokeId;
+				}), "whiteboard cold ready accepts a fresh Down", failures);
+
+				// 第一页 Previous 是真实 no-op 终态，也必须补原页 ready，不能遗留 commandScenePending。
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::PreviousPage,
+					firstWhiteboardPage, true, "whiteboard returns to first page before no-op boundary");
+				const auto beforeNoop = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::PreviousPage) == Bridge::CommandResult::Accepted,
+					"whiteboard first-page Previous accepted as a no-op", failures);
+				modeSucceeded &= Check(WaitUntil([beforeNoop, whiteboardState]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.previousPageCommandCount > beforeNoop.previousPageCommandCount &&
+						!state.commandScenePending && state.presentationInputReady &&
+						DrawpadPresentationReady(whiteboardState, state);
+				}), "whiteboard first-page Previous acknowledges unchanged scene and reopens input", failures);
+				const auto beforeNoopFresh = ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down, 64, 92);
+				postContact(HiddenTestContactPhase::Move, 120, 124);
+				postContact(HiddenTestContactPhase::Up, 176, 156);
+				modeSucceeded &= Check(WaitUntil([beforeNoopFresh]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.inputRecycled > beforeNoopFresh.inputRecycled &&
+						state.pen.strokeId > beforeNoopFresh.pen.strokeId;
+				}), "whiteboard first-page no-op does not lock the next stroke", failures);
+				modeSucceeded &= switchWhiteboardPage(Bridge::CommandType::NextPage,
+					firstWhiteboardPage + 1, true, "whiteboard resumes the second page after immediate-boundary regressions");
 				PublishProductCommand(Bridge::CommandType::Clear);
 				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear empties annotation",failures);
 				PublishProductCommand(Bridge::CommandType::Undo);

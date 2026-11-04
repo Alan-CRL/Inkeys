@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Layout.h"
 
 #include <array>
 #include <atomic>
@@ -10,20 +11,50 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+#include "../Inkeys/Inkeys/Window/Window.CandidateMailbox.h"
+#include "../Inkeys/Inkeys/Window/Window.PresentationLease.h"
+#include "../Inkeys/Inkeys/Window/Window.NativeEventMailbox.h"
+#include "../Inkeys/Inkeys/Window/Window.ZOrderPolicy.h"
+#include "../Inkeys/Inkeys/Window/Window.SafetyOverride.h"
+#include "../Inkeys/Inkeys/Window/Window.ShellFullscreen.h"
 #include "../Inkeys/Inkeys/Window/Window.CanvasPolicy.h"
+#include "../Inkeys/Inkeys/UI/Whiteboard/Whiteboard.BackgroundState.h"
 
 import Inkeys.Window;
 
 namespace
 {
+	thread_local SIZE settingNativeMinimumTrack{};
 	constexpr UINT kSettingOwnerProbe = WM_APP + 74;
-	LRESULT CALLBACK SettingOwnerProbeProc(HWND hwnd, UINT message,
-		WPARAM wParam, LPARAM lParam)
+
+	LRESULT CALLBACK SettingFrameTestProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		if (message == kSettingOwnerProbe)
 		{
 			auto* service = reinterpret_cast<Inkeys::Window::Service*>(lParam);
 			return service->SetSettingOwnedByDrawpad(wParam != 0);
+		}
+		if (message == WM_GETMINMAXINFO && lParam)
+		{
+			auto& limits = *reinterpret_cast<MINMAXINFO*>(lParam);
+			settingNativeMinimumTrack = { limits.ptMinTrackSize.x, limits.ptMinTrackSize.y };
+			// 此小窗口只测客户区创建合同，隔离原生 caption 的最小宽度；产品最小尺寸不变。
+			Inkeys::UI::Setting::ApplyWindowFrameMinimumTrack(limits, { 1, 1 });
+			return 0;
+		}
+		if (message == WM_NCCALCSIZE && lParam)
+		{
+			// 测试复用产品 frame 度量，不能让默认原生 caption 再占一次客户区高度。
+			RECT& rect = wParam ? reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam)->rgrc[0]
+				: *reinterpret_cast<RECT*>(lParam);
+			const RECT frame = Inkeys::Window::QuerySettingClientFrameInsets(hwnd, IsZoomed(hwnd) != FALSE);
+			const auto client = Inkeys::UI::Setting::InsetWindowFrameRect(
+				{ static_cast<int>(rect.left), static_cast<int>(rect.top),
+					static_cast<int>(rect.right), static_cast<int>(rect.bottom) },
+				{ static_cast<int>(frame.left), static_cast<int>(frame.top),
+					static_cast<int>(frame.right), static_cast<int>(frame.bottom) });
+			rect = { client.left, client.top, client.right, client.bottom };
+			return 0;
 		}
 		return DefWindowProcW(hwnd, message, wParam, lParam);
 	}
@@ -194,6 +225,127 @@ int RunCanvasPolicyTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL canvas policy: " << name << '\n'; }
 	};
+	// 不创建 HWND，故障点与 owner 执行的是同一个实际样式事务。
+	struct ClickThroughState
+	{
+		LONG_PTR style = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+		bool pending = false, applying = false;
+		std::uint64_t epoch = 1;
+	};
+	struct ClickThroughOperations
+	{
+		ClickThroughState& state;
+		std::uint64_t epoch = 1;
+		bool failRead = false, failWrite = false, failCommit = false;
+		unsigned writes = 0, commits = 0;
+		std::function<void()> beforeWrite;
+		std::function<void()> afterWrite;
+		std::function<void()> afterCommit;
+		bool StillDesired() const { return epoch == state.epoch; }
+		bool ReadStyle(LONG_PTR& value) const { value = state.style; return !failRead; }
+		bool WriteStyle(LONG_PTR value)
+		{
+			++writes;
+			if (failWrite) return false;
+			if (beforeWrite) beforeWrite();
+			state.style = value;
+			if (afterWrite) afterWrite();
+			return true;
+		}
+		bool CommitStyle()
+		{
+			++commits;
+			if (afterCommit) afterCommit();
+			return !failCommit;
+		}
+	};
+	ClickThroughState clickState;
+	ClickThroughOperations click{ clickState };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !click.writes && !click.commits,
+		"same actual style performs no redundant Win32 mutation");
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 1
+		&& click.commits == 1 && clickState.style == WS_EX_NOACTIVATE && !clickState.pending,
+		"clear click-through preserves unrelated extended styles");
+	clickState.style |= WS_EX_TRANSPARENT;
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"external style drift is repaired without stale HWND or bool cache");
+	click.failRead = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && click.writes == 2,
+		"failed actual style read never fabricates success");
+	click.failRead = false; click.failWrite = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed style write retains retry responsibility");
+	click.failWrite = false; click.failCommit = true;
+	check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && clickState.pending,
+		"failed FRAMECHANGED retains retry responsibility after style bit changed");
+	const auto writesBeforeRetry = click.writes;
+	const auto commitsBeforeRetry = click.commits;
+	click.failCommit = false;
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && !clickState.pending
+		&& click.writes == writesBeforeRetry && click.commits == commitsBeforeRetry + 1,
+		"same-valued retry completes previously failed FRAMECHANGED");
+	++clickState.epoch;
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click)
+		&& (clickState.style & WS_EX_TRANSPARENT) && click.writes == writesBeforeRetry,
+		"retired tool or whiteboard request cannot mutate current owner style");
+	click.epoch = clickState.epoch;
+	click.afterCommit = [&] { clickState.style |= WS_EX_TRANSPARENT; };
+	check(!ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && clickState.pending,
+		"successful APIs with mismatched actual style keep retry pending");
+	click.afterCommit = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click) && !clickState.pending,
+		"later retry verifies and completes actual writable state");
+	// 三个真实同步重入窗口：WM_STYLECHANGING、WM_STYLECHANGED、FRAMECHANGED。
+	for (int boundary = 0; boundary < 3; ++boundary)
+	{
+		click.epoch = clickState.epoch;
+		bool nestedApplied = true;
+		const auto reenter = [&]
+		{
+			++clickState.epoch;
+			ClickThroughOperations latest{ clickState, clickState.epoch };
+			nestedApplied = ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest);
+		};
+		if (boundary == 0) click.beforeWrite = reenter;
+		else if (boundary == 1) click.afterWrite = reenter;
+		else click.afterCommit = reenter;
+		check(!ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click)
+			&& !nestedApplied && !clickState.applying && clickState.pending,
+			"nested owner request cannot acknowledge before outer style API returns");
+		click.beforeWrite = {}; click.afterWrite = {}; click.afterCommit = {};
+		ClickThroughOperations latest{ clickState, clickState.epoch };
+		check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, latest)
+			&& !(clickState.style & WS_EX_TRANSPARENT) && !clickState.pending && !clickState.applying,
+			"latest writable intent retries after outer owner frame retires");
+	}
+	click.epoch = clickState.epoch;
+	click.afterWrite = [] { throw 1; };
+	bool interrupted = false;
+	try { (void)ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click); }
+	catch (...) { interrupted = true; }
+	check(interrupted && !clickState.applying && clickState.pending,
+		"owner exception clears applying scope while preserving unfinished style responsibility");
+	click.afterWrite = {};
+	check(ApplyCanvasClickThrough(false, clickState.pending, clickState.applying, click),
+		"owner can retry after exception without a permanently latched applying flag");
+	ClickThroughState otherRole;
+	ClickThroughOperations other{ otherRole };
+	bool otherApplied = false;
+	click.beforeWrite = [&]
+	{ otherApplied = ApplyCanvasClickThrough(false, otherRole.pending, otherRole.applying, other); };
+	check(ApplyCanvasClickThrough(true, clickState.pending, clickState.applying, click) && otherApplied,
+		"independent HWND roles do not share a global reentry gate");
+	unsigned viewRequests = 0;
+	bool requestedMinimized = false;
+	const std::function<void(bool)> requestView = [&](bool minimized) { ++viewRequests; requestedMinimized = minimized; };
+	check(Inkeys::Window::DispatchWhiteboardViewIntent(true, true, true, true, requestView)
+		&& viewRequests == 1 && requestedMinimized, "system minimize submits a view intent without native Show");
+	check(!Inkeys::Window::DispatchWhiteboardViewIntent(true, false, true, true, requestView)
+		&& viewRequests == 1, "inactive Freeze owner keeps native minimize behavior outside Whiteboard");
+	check(Inkeys::Window::DispatchWhiteboardViewIntent(true, true, true, false, requestView) && viewRequests == 1,
+		"active presentation consumes a disabled system minimize without changing workspace");
+	check(Inkeys::Window::DispatchWhiteboardViewIntent(true, true, false, false, requestView)
+		&& viewRequests == 2 && !requestedMinimized, "system restore submits the same coordinated view intent");
 	unsigned closeRequests = 0;
 	const std::function<void()> close = [&] { ++closeRequests; };
 	check(!Inkeys::Window::DispatchWhiteboardCloseRequest(false, true, close) && closeRequests == 0,
@@ -463,6 +615,112 @@ int RunWindowCommandCompletionTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL " << name << '\n'; }
 	};
+	{
+		using Mailbox = Inkeys::Window::Detail::CandidateMailbox<int, int, 4>;
+		Mailbox box;
+		const auto a = box.Publish(0, 1, 10);
+		const auto b = box.Publish(0, 1, 20);
+		check(a.revision && b.revision > a.revision && b.coalesced && b.depth == 1, "coalescing keeps one fixed slot");
+		const auto latest = box.Take(0);
+		check(latest && latest->candidate == 20 && box.Current(*latest) && !box.Take(0), "latest wins instead of playing history");
+		const auto newer = box.Publish(0, 1, 30);
+		check(!box.Current(*latest) && !box.Complete(*latest, 20) && !box.TryRead(0, b.revision), "late completion cannot overwrite new candidate");
+		const auto pair = box.Publish(1, 6, 40);
+		const auto inFlightPair = box.Take(1);
+		check(inFlightPair && box.Current(*inFlightPair), "pair begins with both role revisions");
+		check(box.Publish(2, 4, 50).revision && !box.Current(*inFlightPair), "one newer member cancels entire pair");
+		box.Cancel(0, newer.revision);
+		const auto cancelled = box.Take(0);
+		check(cancelled && !box.Current(*cancelled), "cancelled queued candidate cannot execute");
+		box.Cancel(2, pair.revision);
+		const auto surviving = box.Take(2);
+		check(surviving && box.Current(*surviving), "old cancellation cannot cancel newer revision");
+		check(box.Complete(*surviving, 50) && box.TryRead(2, surviving->revision) == 50, "exact receipt only");
+		check(box.Publish(1, 6, 70).revision && !box.TryRead(2, surviving->revision), "new pair invalidates prior singleton receipt");
+		const auto oldReceipt = box.Publish(3, 8, 80);
+		const auto beforePolicy = box.Take(3);
+		check(beforePolicy && box.Complete(*beforePolicy, 80), "native state begins with complete receipt");
+		box.InvalidateRoles(8);
+		check(!box.Current(*beforePolicy) && !box.TryRead(3, oldReceipt.revision), "policy native mutation retires prior candidate receipt");
+		const auto afterPolicy = box.Publish(3, 8, 90);
+		check(afterPolicy.revision && box.Current(3, afterPolicy.revision), "new candidate can reconcile changed policy state");
+		check(!Inkeys::Window::Detail::CandidatePumpHasWork(2, 2), "blocked recovery slot does not self-wake");
+		check(Inkeys::Window::Detail::CandidatePumpHasWork(6, 2), "another free candidate slot can drain during recovery");
+		box.Reset();
+		check(!box.Current(*surviving) && !box.TryRead(2, surviving->revision), "reset invalidates old epoch");
+		check(box.Publish(2, 4, 60).revision > surviving->revision, "reset never reuses revision");
+	}
+	{
+		std::atomic<std::uint64_t> leases = 0;
+		check(TryAcquirePresentationBits(leases, 3), "pair lease acquires both roles atomically");
+		check(!TryAcquirePresentationBits(leases, 1) && !TryAcquirePresentationBits(leases, 6), "UI/native overlap cannot acquire a half pair");
+		check(TryAcquirePresentationBits(leases, 4), "unrelated render client continues while pair owner holds lease");
+		ReleasePresentationBits(leases, 3);
+		check(leases.load() == 4 && TryAcquirePresentationBits(leases, 3), "retired pair releases only its own roles");
+		ReleasePresentationBits(leases, 7);
+		check(leases.load() == 0, "all presentation leases retire without leaked role bits");
+		CandidateMailbox<int, int, 4> mailbox;
+		const auto first = mailbox.Publish(0, 3, 11);
+		const auto blocked = mailbox.Take(0);
+		check(first.revision && blocked.has_value(), "geometry candidate enters owner dispatch");
+		mailbox.Defer(*blocked);
+		const auto replacement = mailbox.Publish(0, 3, 22);
+		mailbox.Defer(*blocked);
+		const auto latest = mailbox.Take(0);
+		check(replacement.coalesced && latest && latest->candidate == 22 && !mailbox.Take(0), "lease delay still executes only latest geometry");
+	}
+	{
+		auto completion = std::make_shared<CommandCompletion>(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		auto result = std::make_shared<std::optional<Inkeys::Window::WorkspaceWindowPrepared>>();
+		auto truth = std::make_shared<std::atomic<std::uint64_t>>(7);
+		Inkeys::Window::WorkspaceWindowReceipt receipt(41,
+			Inkeys::Window::CommandReceipt([completion] { return static_cast<Inkeys::Window::CommandPhase>(completion->Phase()); }, [completion] { completion->Cancel(); }),
+			[result] { return *result; }, [truth] { return truth->load() == 7; });
+		check(static_cast<bool>(receipt) && receipt.Revision() == 41 && !receipt.Prepared() && !receipt.Current(), "queued workspace request cannot expose prepared data");
+		check(completion->Begin(), "async workspace owner begins exact request");
+		result->emplace(); (*result)->policy.revision = 41;
+		check(!receipt.Prepared(), "payload written before native terminal phase remains unavailable");
+		check(completion->Commit(true) && receipt.Prepared() && receipt.Prepared()->policy.revision == 41 && receipt.Current(), "committed explicit workspace receipt exposes matched result");
+		truth->fetch_add(1);
+		check(!receipt.Current(), "later native workspace truth invalidates old completion proof");
+		CommandCompletion expired(std::chrono::steady_clock::now() - std::chrono::milliseconds(1));
+		check(expired.Phase() == CommandPhase::Expired && !expired.Begin(), "queued async deadline expires without caller blocking or owner Begin");
+		CommandCompletion errors({});
+		errors.RecordNativeFailure(ERROR_ACCESS_DENIED); errors.RecordNativeFailure(ERROR_CANCELLED);
+		errors.RecordRollbackFailure(ERROR_GEN_FAILURE);
+		check(errors.NativeError() == ERROR_ACCESS_DENIED && errors.RollbackError() == ERROR_GEN_FAILURE, "pair preserves first native failure independently of rollback failure");
+	}
+	{
+		using Events = Inkeys::Window::Detail::NativeEventMailbox<std::array<std::uint64_t, 3>>;
+		Events events; std::uint64_t previous = 0;
+		for (std::uint64_t i = 1; i <= 10000; ++i)
+		{
+			const auto revision = events.Publish({ i % 4, i, i ^ 0x5a5a });
+			check(revision != 0, "owner-delayed event mailbox always admits serialized pointer down");
+			if (previous) check(!events.Current(previous), "newest pointer down wins across role order");
+			previous = revision;
+		}
+		const auto latestEvent = events.Take();
+		check(latestEvent && latestEvent->payload[1] == 10000 && latestEvent->payload[2] == (10000 ^ 0x5a5a)
+			&& !events.Take(), "owner receives exact latest fixed identity payload once");
+		events.Invalidate(); check(!events.Current(previous), "shutdown invalidates accepted native event identity");
+	}
+	{
+		CandidateMailbox<int, int, 4> retired;
+		const auto request = retired.Publish(0, 1, 1); const auto work = retired.Take(0);
+		retired.RequestCancel(0, request.revision);
+		int nativeCommits = 0;
+		check(!retired.TryCommit(*work, [&] { ++nativeCommits; return true; }) && nativeCommits == 0,
+			"cancellation before commit forces owner retirement instead of success");
+		check(!retired.Defer(*work), "cancellation during lease deferral cannot lose retirement responsibility");
+		check(retired.Complete(*work, -1) && retired.TryReadRetirement(0, request.revision) == -1 && !retired.TryRead(0, request.revision),
+			"cancelled terminal geometry is readable only through retirement API");
+		const auto next = retired.Publish(0, 1, 2); const auto committed = retired.Take(0);
+		check(retired.TryCommit(*committed, [] { return true; }), "native transaction wins atomic commit boundary");
+		retired.Cancel(0, next.revision); retired.RequestCancel(0, next.revision);
+		check(retired.Complete(*committed, 2) && retired.TryRead(0, next.revision) == 2,
+			"late cancellation preserves physically committed unread move");
+	}
 	for (const bool value : { false, true })
 	{
 		std::promise<bool> completion;
@@ -487,6 +745,572 @@ int RunWindowCommandCompletionTests()
 	auto ordinaryResult = ordinary.get_future();
 	ordinary.set_value(true);
 	check(WaitForCommandResult(ordinaryResult, {}), "ordinary completion unchanged");
+	{
+		CommandCompletion queued(std::chrono::steady_clock::now() - std::chrono::milliseconds(1));
+		check(!queued.Begin() && queued.Phase() == CommandPhase::Expired,
+			"expired queued command never enters native mutation");
+		CommandCompletion cancelled(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		cancelled.Cancel();
+		check(!cancelled.Begin() && cancelled.Phase() == CommandPhase::Cancelled,
+			"cancelled queued command never executes");
+		CommandCompletion executing(std::chrono::steady_clock::now() + std::chrono::milliseconds(10));
+		check(executing.Begin(), "owner begins current command");
+		check(!executing.Wait() && executing.Phase() == CommandPhase::Executing && !executing.Current(),
+			"in-flight timeout retains owner retirement responsibility");
+		check(!executing.Commit(true), "late native success cannot commit expired intent");
+		// 模拟恢复失败：回执不能在物理恢复完成之前变成终态。
+		check(executing.Phase() == CommandPhase::Executing, "failed rollback retains executing receipt");
+		executing.Retired();
+		check(executing.Phase() == CommandPhase::Expired, "successful rollback retires expired command");
+		CommandCompletion normal(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(normal.Begin() && normal.Commit(true) && normal.Wait(), "normal command commits once");
+		normal.Cancel();
+		check(normal.Phase() == CommandPhase::Committed, "cancel after commit cannot undo terminal receipt");
+		CommandCompletion old(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		check(old.Begin(), "old command starts before newer intent");
+		old.Cancel();
+		check(!old.Commit(true) && old.Phase() == CommandPhase::Executing,
+			"superseded in-flight operation remains uncommitted until restored");
+		old.Retired();
+		check(old.Phase() == CommandPhase::Cancelled, "superseded operation reaches cancelled after restore");
+	}
+	{
+		ZOrderSnapshot<4> group;
+		for (std::size_t i = 0; i < 4; ++i)
+		{
+			group.windows[i] = reinterpret_cast<HWND>(static_cast<UINT_PTR>(i + 1));
+			group.ordinal[i] = 3 - i;
+			group.owners[i] = i ? group.windows[i-1] : nullptr;
+		}
+		const auto expected = group.owners;
+		check(group.Matches(expected, false), "ordinary group validates all owners and bands");
+		group.topmost[2] = true;
+		check(!group.Matches(expected, false), "ordinary refresh rejects a mixed band below Bar");
+		group.topmost.fill(true);
+		check(group.Matches(expected, true), "topmost group uses identical complete predicate");
+		group.owners[2] = group.windows[0];
+		check(!group.Matches(expected, true), "valid-looking owner chain cannot substitute wrong owner identity");
+		group.owners = expected;
+		group.ordinal[2] = group.ordinal[1] + 1;
+		check(!group.Matches(expected, true), "child below its owner fails order predicate");
+		group.ordinal[2] = 1;
+		group.continuous = false;
+		check(!group.Matches(expected, true), "foreign interleaving fails whole-group continuity");
+		check(group.Above(3, 1), "Setting-like local above predicate ignores unrelated group continuity");
+		group.ordinal[3] = MissingZOrder;
+		check(!group.Above(3, 1) && !group.Matches(expected, true), "missing enumerated target fails finitely");
+	}
+	{
+		// 不创建 HWND：Fake 只执行插入/读回，排序、恢复目标及失败判定均调用生产策略。
+		using Snapshot = ZOrderSnapshot<10>;
+		struct RelativeOperations
+		{
+			Snapshot state, identity;
+			std::vector<HWND> stack;
+			std::vector<std::size_t> moved;
+			unsigned calls = 0, failAt = 0, ownerWrites = 0, bandWrites = 0;
+			bool current = true, stopped = false, ignoreMove = false, ignoreOwner = false, ignoreBand = false;
+			std::function<void()> afterWrite;
+			RelativeOperations()
+			{
+				for (std::size_t i = 0; i < 9; ++i)
+				{
+					state.windows[i] = reinterpret_cast<HWND>(static_cast<UINT_PTR>(i + 1));
+					state.generations[i] = i + 11;
+					state.owners[i] = i ? state.windows[i < 4 ? i - 1 : 3] : nullptr;
+				}
+				// 与现场相同：四个隐藏 PPT 都在 Bar 上方，owner/band/continuous 完全合法。
+				for (const auto i : { 7, 6, 5, 4, 8, 3, 2, 1, 0 }) stack.push_back(state.windows[i]);
+				identity = state;
+			}
+			bool Passed() { return ++calls != failAt; }
+			bool Current() const
+			{
+				if (!current || stopped) return false;
+				for (std::size_t i = 0; i < 9; ++i)
+					if (identity.windows[i] && (identity.windows[i] != state.windows[i]
+						|| identity.generations[i] != state.generations[i])) return false;
+				return true;
+			}
+			bool Read(Snapshot& actual)
+			{
+				if (!Passed()) return false;
+				actual = state;
+				for (std::size_t i = 0; i < 10; ++i)
+				{
+					if (!identity.windows[i])
+					{
+						actual.windows[i] = actual.owners[i] = nullptr;
+						actual.generations[i] = 0;
+						actual.ordinal[i] = MissingZOrder;
+						continue;
+					}
+					const auto found = std::find(stack.begin(), stack.end(), actual.windows[i]);
+					actual.ordinal[i] = found == stack.end() ? MissingZOrder : static_cast<std::size_t>(found - stack.begin());
+				}
+				return true;
+			}
+			bool SetOwner(std::size_t i, HWND owner)
+			{
+				if (!Passed()) return false;
+				++ownerWrites;
+				if (!ignoreOwner) state.owners[i] = owner;
+				if (afterWrite) afterWrite();
+				return true;
+			}
+			bool SetBand(std::size_t i, bool topmost, bool)
+			{
+				if (!Passed()) return false;
+				++bandWrites;
+				if (!ignoreBand) state.topmost[i] = topmost;
+				if (afterWrite) afterWrite();
+				return true;
+			}
+			bool PlaceAfter(std::size_t i, std::size_t anchor)
+			{
+				if (!Passed()) return false;
+				// 不提供 HWND_TOP/激活/几何/画布/显隐入口；只模拟 Win32 相对插入。
+				moved.push_back(i);
+				if (!ignoreMove)
+				{
+					const auto hwnd = state.windows[i];
+					stack.erase(std::find(stack.begin(), stack.end(), hwnd));
+					stack.insert(std::find(stack.begin(), stack.end(), state.windows[anchor]) + 1, hwnd);
+				}
+				if (afterWrite) afterWrite();
+				return true;
+			}
+		};
+		const auto capture = [](RelativeOperations& ops) { Snapshot snapshot; (void)ops.Read(snapshot); return snapshot; };
+		const auto reconcile = [](RelativeOperations& ops, const Snapshot& saved, const PptZOrder& order)
+		{ return ReconcileRelativeOverlayZOrder(saved, saved.owners, false, order, ops); };
+		RelativeOperations initial;
+		const auto before = capture(initial);
+		const auto originalOrder = CapturePptZOrder(before);
+		check(reconcile(initial, before, originalOrder) && initial.moved == std::vector<std::size_t>({7,6,5,4})
+			&& !initial.ownerWrites && !initial.bandWrites,
+			"background hidden Middle is lowered below stationary Bar without global TOP or canvas writes");
+		const auto healthy = capture(initial);
+		const auto moves = initial.moved.size();
+		check(reconcile(initial, healthy, originalOrder) && initial.moved.size() == moves,
+			"healthy background group requires no native ordering mutation");
+		std::array<std::size_t, 4> permutation{4,5,6,7};
+		do
+		{
+			for (int promoted = -1; promoted < 4; ++promoted)
+			{
+				RelativeOperations ops;
+				ops.stack.clear();
+				for (const auto i : permutation) ops.stack.push_back(ops.state.windows[i]);
+				for (const auto i : {8,3,2,1,0}) ops.stack.push_back(ops.state.windows[i]);
+				const auto saved = capture(ops);
+				const HWND target = promoted < 0 ? nullptr : saved.windows[4 + promoted];
+				const auto desired = CapturePptZOrder(saved, target);
+				check(reconcile(ops, saved, desired), "all PPT permutations preserve or promote with lower-only operations");
+				std::vector<HWND> expected{saved.windows[8]};
+				if (target) expected.push_back(target);
+				for (const auto i : permutation) if (saved.windows[i] != target) expected.push_back(saved.windows[i]);
+				check(std::equal(expected.begin(), expected.end(), ops.stack.begin()),
+					"promote preserves original relative order of the other PPT siblings");
+			}
+		} while (std::next_permutation(permutation.begin(), permutation.end()));
+		RelativeOperations foreign;
+		const HWND external = reinterpret_cast<HWND>(100);
+		foreign.stack.insert(foreign.stack.begin() + 3, external);
+		foreign.state.continuous = false;
+		const auto separated = capture(foreign);
+		check(!separated.Matches(separated.owners, false) && reconcile(foreign, separated, CapturePptZOrder(separated))
+			&& std::find(foreign.stack.begin(), foreign.stack.end(), external) < std::find(foreign.stack.begin(), foreign.stack.end(), separated.windows[8]),
+			"whiteboard permits foreign interleaving while retaining Bar versus foreign order and strict desktop default");
+		for (const auto missing : { 0, 4, 8 })
+		{
+			RelativeOperations partial;
+			const auto absent = partial.state.windows[missing];
+			partial.stack.erase(std::find(partial.stack.begin(), partial.stack.end(), absent));
+			partial.state.windows[missing] = partial.identity.windows[missing] = nullptr;
+			partial.state.generations[missing] = partial.identity.generations[missing] = 0;
+			if (missing == 0) partial.state.owners[1] = nullptr;
+			const auto saved = capture(partial);
+			check(reconcile(partial, saved, CapturePptZOrder(saved)), "valid missing Mag/PPT/Bar fixtures converge without lowering owned windows below owners");
+		}
+		RelativeOperations badBase;
+		std::swap(badBase.stack[7], badBase.stack[8]);
+		const auto invalidBase = capture(badBase);
+		check(reconcile(badBase, invalidBase, CapturePptZOrder(invalidBase))
+			&& capture(badBase).Matches(invalidBase.owners, false, false),
+			"child physically below its owner is repaired instead of rejecting a valid owner identity");
+		RelativeOperations inverted;
+		inverted.stack.clear();
+		for (std::size_t i = 0; i < 9; ++i) inverted.stack.push_back(inverted.state.windows[i]);
+		inverted.state.topmost.fill(true);
+		inverted.state.continuous = false;
+		inverted.stack.insert(inverted.stack.begin() + 2, external);
+		const auto invertedBefore = capture(inverted);
+		check(ReconcileRelativeOverlayZOrder(invertedBefore, invertedBefore.owners, true,
+			CapturePptZOrder(invertedBefore), inverted), "desktop exit repairs a fully inverted owner chain");
+		const auto invertedAfter = capture(inverted);
+		check(invertedAfter.Matches(invertedBefore.owners, true, false)
+			&& std::find(inverted.stack.begin(), inverted.stack.end(), external) < inverted.stack.end(),
+			"owner-chain repair accepts foreign gaps while preserving actual topmost bands");
+		for (std::size_t i = 4; i < 8; ++i)
+			check(invertedAfter.Above(8, i), "desktop exit restores Bar above every PPT window after owner-chain repair");
+		const auto invertedMoves = inverted.moved.size();
+		check(ReconcileRelativeOverlayZOrder(invertedAfter, invertedBefore.owners, true,
+			CapturePptZOrder(invertedAfter), inverted) && inverted.moved.size() == invertedMoves,
+			"repaired owner chain is idempotent without global TOP operations");
+		RelativeOperations mutation;
+		const auto mutationBefore = capture(mutation);
+		mutation.state.owners[6] = nullptr;
+		mutation.state.topmost[7] = true;
+		check(reconcile(mutation, mutationBefore, originalOrder) && mutation.ownerWrites == 1 && mutation.bandWrites == 1,
+			"actual owner and mixed-band drift must be repaired before success");
+		const auto successfulCalls = mutation.calls;
+		for (unsigned failedCall = 1; failedCall <= successfulCalls - 1; ++failedCall)
+		{
+			RelativeOperations failure;
+			const auto saved = capture(failure);
+			failure.calls = 0; failure.failAt = failedCall;
+			failure.state.owners[6] = nullptr; failure.state.topmost[7] = true;
+			check(!reconcile(failure, saved, originalOrder), "every native capture/owner/band/move failure rejects rather than reporting ready");
+		}
+		for (int ignored = 0; ignored < 3; ++ignored)
+		{
+			RelativeOperations ignoredWrite;
+			const auto saved = capture(ignoredWrite);
+			ignoredWrite.ignoreMove = ignored == 0;
+			ignoredWrite.ignoreOwner = ignored == 1;
+			ignoredWrite.ignoreBand = ignored == 2;
+			if (ignored == 1) ignoredWrite.state.owners[6] = nullptr;
+			if (ignored == 2) ignoredWrite.state.topmost[7] = true;
+			check(!reconcile(ignoredWrite, saved, originalOrder) && ignoredWrite.moved.size() <= 8,
+				"successful BOOL with failed readback never fabricates readiness or loops without bound");
+		}
+		for (int changed = 0; changed < 3; ++changed)
+		{
+			RelativeOperations stale;
+			const auto saved = capture(stale);
+			stale.afterWrite = [&] { if (changed == 0) ++stale.state.generations[6];
+				else if (changed == 1) stale.state.windows[6] = reinterpret_cast<HWND>(66); else stale.current = false; };
+			check(!reconcile(stale, saved, originalOrder) && stale.moved.size() == 1,
+				"generation reuse, replacement and reentrant cancellation stop before next native write");
+		}
+		RelativeOperations recovery;
+		const auto saved = capture(recovery);
+		check(reconcile(recovery, saved, CapturePptZOrder(saved, saved.windows[4])), "prepare partially promoted physical state");
+		// 分别验证生产排序 helper 与回执；Service 私有恢复/Retired 分派由源码复审确认。
+		CommandCompletion expired(std::chrono::steady_clock::now() + std::chrono::milliseconds(10));
+		check(expired.Begin() && !expired.Wait(), "expired request retains restoration responsibility");
+		recovery.ignoreMove = true;
+		for (int attempt = 0; attempt < 3; ++attempt)
+			check(!reconcile(recovery, saved, originalOrder) && expired.Phase() == CommandPhase::Executing,
+				"relative recovery helper may fail repeatedly while receipt remains executing");
+		recovery.ignoreMove = false;
+		check(reconcile(recovery, saved, originalOrder),
+			"pure relative recovery helper can restore captured sibling order");
+		expired.Retired();
+		check(expired.Phase() == CommandPhase::Expired, "restored expired operation is retired, never committed");
+		const auto restored = capture(recovery);
+		check(CapturePptZOrder(restored).members == originalOrder.members, "failed promote restores request-before sibling sequence");
+		++recovery.state.generations[6];
+		const auto current = capture(recovery);
+		const auto retained = RetainSurvivingZOrder(saved, current, saved.owners);
+		check(!retained.windows[6] && retained.windows[7], "retired PPT is excluded without discarding surviving siblings");
+		recovery.identity = retained;
+		const auto oldWrites = recovery.moved.size();
+		check(reconcile(recovery, retained, CapturePptZOrder(retained))
+			&& std::find(recovery.moved.begin() + oldWrites, recovery.moved.end(), 6) == recovery.moved.end(),
+			"old recovery cannot write replacement generation");
+		for (const std::size_t retiredParent : { 1, 3 }) // Freeze 或 Drawpad 原 HWND 的 generation 已换代。
+		{
+			RelativeOperations replacedParent;
+			const auto parentBefore = capture(replacedParent);
+			++replacedParent.state.generations[retiredParent];
+			const auto parentCurrent = capture(replacedParent);
+			const auto surviving = RetainSurvivingZOrder(parentBefore, parentCurrent, parentBefore.owners);
+			bool excludedSubtree = surviving.windows[retiredParent - 1] == parentBefore.windows[retiredParent - 1];
+			for (std::size_t i = retiredParent; i < 9; ++i) excludedSubtree = excludedSubtree && !surviving.windows[i];
+			check(excludedSubtree, "same HWND with new parent generation excludes its saved old subtree but retains independent old ancestors");
+			replacedParent.identity = surviving;
+			check(reconcile(replacedParent, surviving, CapturePptZOrder(surviving))
+				&& replacedParent.moved.empty() && !replacedParent.ownerWrites && !replacedParent.bandWrites,
+				"old recovery performs no ordering, owner or band write to replacement parent subtree");
+		}
+		RelativeOperations shutdown;
+		const auto stoppingSnapshot = capture(shutdown);
+		shutdown.stopped = true;
+		check(!reconcile(shutdown, stoppingSnapshot, originalOrder) && shutdown.moved.empty(),
+			"shutdown forbids stale physical ordering writes");
+		check(!CapturePptZOrder(saved, external).valid, "unknown promoted HWND is rejected");
+
+		// 实际政策提交接缝调用相同物理算法；不复制 Service 的 mode/回滚状态机。
+		const auto commitPolicy = [](RelativeOperations& ops, bool mode, bool requestedTopmost,
+			std::function<void()> publish)
+		{
+			return CommitOverlayGroupPolicy([&]() -> std::optional<Snapshot>
+				{ Snapshot identity; if (!ops.Read(identity)) return {}; return identity; },
+				[&](const Snapshot& identity, const PptZOrder& order)
+				{ return ReconcileRelativeOverlayZOrder(identity, ops.identity.owners, requestedTopmost && !mode, order, ops); },
+				publish, [&] { return ops.Current(); });
+		};
+		RelativeOperations desktopExit;
+		desktopExit.stack.insert(desktopExit.stack.begin() + 2, external);
+		desktopExit.state.continuous = false;
+		const auto exitBefore = capture(desktopExit);
+		unsigned policyPublications = 0;
+		const auto publishPolicy = [&] { ++policyPublications; };
+		check(commitPolicy(desktopExit, false, false, publishPolicy) && policyPublications == 1,
+			"mode=false non-topmost physical policy commits hidden PPT with foreign gaps and no global TOP operation");
+		const auto exitAfter = capture(desktopExit);
+		check(!exitAfter.Matches(exitAfter.owners, false) && exitAfter.Matches(exitAfter.owners, false, false)
+			&& CapturePptZOrder(exitBefore).members == CapturePptZOrder(exitAfter).members,
+			"policy commit keeps PPT siblings while strict ordinary global predicate remains unchanged");
+		const auto exitMoves = desktopExit.moved.size();
+		check(commitPolicy(desktopExit, false, false, publishPolicy) && desktopExit.moved.size() == exitMoves,
+			"same mode=false policy is idempotent without repeating ordering writes");
+		desktopExit.ignoreBand = true;
+		check(!commitPolicy(desktopExit, false, true, publishPolicy) && policyPublications == 2,
+			"post-Leave topmost readback failure remains false and does not publish completion");
+		desktopExit.ignoreBand = false;
+		check(commitPolicy(desktopExit, false, false, publishPolicy)
+			&& commitPolicy(desktopExit, false, false, publishPolicy)
+			&& commitPolicy(desktopExit, false, true, publishPolicy),
+			"mode=false retry of fullscreen/Leave/topmost physical commits recovers after later band failure");
+		check(commitPolicy(desktopExit, false, true, publishPolicy),
+			"policy repeat after a later caller failure still uses the same physical contract");
+		// 完整 Restore 的最后提交也使用此函数；Canvas/逐窗回滚和私有分派另经静态审阅。
+		check(commitPolicy(desktopExit, false, false, publishPolicy)
+			&& capture(desktopExit).Matches(desktopExit.identity.owners, false, false),
+			"mode=false full-group restore tail can commit actual internal state without global continuity");
+		RelativeOperations commitSuccess;
+		commitSuccess.state.owners[6] = nullptr;
+		commitSuccess.state.topmost[7] = true;
+		check(commitPolicy(commitSuccess, false, false, [] {}), "prepare real policy commit failure boundaries");
+		for (unsigned failedCall = 1; failedCall <= commitSuccess.calls; ++failedCall)
+		{
+			RelativeOperations commitFailure;
+			commitFailure.state.owners[6] = nullptr;
+			commitFailure.state.topmost[7] = true;
+			commitFailure.failAt = failedCall;
+			unsigned published = 0;
+			check(!commitPolicy(commitFailure, false, false, [&] { ++published; }) && !published,
+				"capture/owner/band/move failure cannot publish a successful physical policy commit");
+		}
+		for (int ignored = 0; ignored < 3; ++ignored)
+		{
+			RelativeOperations uncommitted;
+			uncommitted.ignoreMove = ignored == 0;
+			uncommitted.ignoreOwner = ignored == 1;
+			uncommitted.ignoreBand = ignored == 2;
+			if (ignored == 1) uncommitted.state.owners[6] = nullptr;
+			if (ignored == 2) uncommitted.state.topmost[7] = true;
+			unsigned published = 0;
+			check(!commitPolicy(uncommitted, false, false, [&] { ++published; }) && !published,
+				"BOOL success without owner/band/order readback cannot commit a physical policy");
+		}
+		for (const bool generationChange : { false, true })
+		{
+			RelativeOperations cancelledPolicy;
+			cancelledPolicy.afterWrite = [&]
+			{ if (generationChange) ++cancelledPolicy.state.generations[6]; else cancelledPolicy.current = false; };
+			unsigned published = 0;
+			check(!commitPolicy(cancelledPolicy, false, false, [&] { ++published; }) && !published
+				&& cancelledPolicy.moved.size() == 1,
+				"identity change or cancellation during a policy commit stops before publication and further writes");
+		}
+		// 生产两次 owner 调用的步骤编排；原生几何/region/显隐的 Service 接线仍由源码复审。
+		struct WorkspaceSteps
+		{
+			RelativeOperations& windows;
+			std::vector<int> steps;
+			int fail = -1;
+			bool current = true;
+			std::uint64_t safetyRevision = 0;
+			std::optional<std::uint64_t> preparedSafety;
+			bool Current() const { return current && windows.Current() && (!preparedSafety || *preparedSafety == safetyRevision); }
+			bool Step(int step) { steps.push_back(step); return fail != step; }
+			bool WithdrawFullscreen() { return Step(0); }
+			bool PrepareGeometry() { return Step(1); }
+			bool ApplyMode() { return Step(2); }
+			bool ApplyBand()
+			{
+				if (!Step(3)) return false;
+				Snapshot snapshot;
+				return windows.Read(snapshot) && ReconcileRelativeOverlayZOrder(snapshot, windows.identity.owners,
+					false, CapturePptZOrder(snapshot), windows);
+			}
+			bool BlockInput() { return Step(4); }
+			bool CapturePrepared() { if (!Step(5)) return false; preparedSafety = safetyRevision; return true; }
+			bool ValidatePrepared() { return Step(6); }
+			bool ApplyInput() { return Step(7); }
+			bool ApplyVisibility() { return Step(8); }
+			bool PublishFullscreen() { return Step(9); }
+		};
+		RelativeOperations stagedWindows;
+		stagedWindows.state.continuous = false;
+		WorkspaceSteps staged{stagedWindows};
+		check(PrepareWorkspacePolicy(staged) && staged.steps == std::vector<int>({0,1,2,3,4,5})
+			&& stagedWindows.moved == std::vector<std::size_t>({7,6,5,4}),
+			"owner preparation returns after actual relative policy without showing or waiting on rendering");
+		staged.steps.clear();
+		check(CompleteWorkspacePolicy(staged) && staged.steps == std::vector<int>({6,7,8,9}),
+			"same request completion validates before input/visibility and publishes fullscreen last");
+		for (int failure = 0; failure < 10; ++failure)
+		{
+			RelativeOperations windows;
+			WorkspaceSteps failing{windows}; failing.fail = failure;
+			const bool succeeded = failure < 6 ? PrepareWorkspacePolicy(failing) : CompleteWorkspacePolicy(failing);
+			check(!succeeded && !failing.steps.empty() && failing.steps.back() == failure,
+				"failed native stage stops later owner writes and never fabricates a prepared/completed receipt");
+		}
+		RelativeOperations cancelledStage;
+		WorkspaceSteps staleStage{cancelledStage};
+		cancelledStage.afterWrite = [&] { ++cancelledStage.state.generations[6]; };
+		check(!PrepareWorkspacePolicy(staleStage) && staleStage.steps.back() == 3,
+			"replacement generation during preparation cannot reach capture or final visibility");
+		for (int cleanup = 0; cleanup < 2; ++cleanup)
+		{
+			RelativeOperations windows;
+			WorkspaceSteps oldPrepared{windows};
+			check(PrepareWorkspacePolicy(oldPrepared), "prepare captures safety coverage identity");
+			oldPrepared.steps.clear(); ++oldPrepared.safetyRevision;
+			check(!CompleteWorkspacePolicy(oldPrepared) && oldPrepared.steps.empty(),
+				"Hide or transparency accepted after prepare rejects old completion before input, Show or coverage clearing");
+		}
+		RelativeOperations retiredAtPublication;
+		check(!commitPolicy(retiredAtPublication, false, false, [&] { retiredAtPublication.current = false; }),
+			"intent retired at publication is not reported as a committed policy");
+	}
+	{
+		using namespace Inkeys::UI::WhiteboardDetail;
+		BackgroundState background;
+		background.Reset();
+		unsigned hides = 0;
+		check(CompleteBackgroundInactive(background, background.Desired(), [&](const BackgroundState::Surface&) { ++hides; return true; }) && !hides,
+			"initial inactive baseline does not hide the shared Desktop/PPT Freeze");
+		check(background.Publish(true, 3), "current background request is accepted");
+		const auto first = background.Desired();
+		check(background.Prepare({first, reinterpret_cast<HWND>(1), 7, {-1920,-1080,0,0}})
+			&& background.Prepared(3).has_value() && !background.InactiveCommitted(first),
+			"pixel preparation records request, full negative-origin bounds and native identity without fabricating visibility");
+		check(background.Publish(false, 4), "inactive request supersedes prepared pixels");
+		const auto closing = background.Desired();
+		check(!CompleteBackgroundInactive(background, closing, [&](const BackgroundState::Surface&) { ++hides; return false; })
+			&& !background.InactiveCommitted(closing), "failed real Hide cannot acknowledge inactive even if minimized");
+		check(CompleteBackgroundInactive(background, closing, [&](const BackgroundState::Surface&) { ++hides; return true; })
+			&& background.InactiveCommitted(closing), "successful inactive Hide is acknowledged without requiring Restore");
+		const auto hideCount = hides;
+		check(CompleteBackgroundInactive(background, closing, [&](const BackgroundState::Surface&) { ++hides; return true; }) && hides == hideCount,
+			"already committed inactive never hides a later Desktop shared surface again");
+		check(background.Publish(false, 6) && CompleteBackgroundInactive(background, background.Desired(),
+			[&](const BackgroundState::Surface&) { ++hides; return true; }) && hides == hideCount,
+			"later Desktop inactive revision after real close does not hide the reused shared Freeze");
+		check(background.Publish(true, 7) && !background.Prepare({first, reinterpret_cast<HWND>(1), 7, {}})
+			&& !background.CommitInactive(closing), "old Show/frame/Hide ACK cannot confirm a new same-valued active request");
+		const auto reopened = background.Desired();
+		check(!background.Publish(false, 4) && !background.Publish(false, 0) && !background.Publish(true, 0) && background.Current(reopened), "old revision cannot replace a later background request");
+		background.Reset();
+		check(background.Publish(true, 0) && background.Publish(false, 0), "explicit lifecycle Reset permits legacy baseline again");
+		check(!background.Current(reopened) && !background.Prepare({reopened, reinterpret_cast<HWND>(1), 7, {}}),
+			"new lifecycle retires background frame even if external revision is reused");
+		(void)background.Publish(true, 5);
+		check(background.Bind(background.Desired(), {reinterpret_cast<HWND>(1), 7}), "active renderer binds exact held native generation");
+		(void)background.Publish(false, 6);
+		const auto interrupted = background.Desired();
+		check(!CompleteBackgroundInactive(background, interrupted, [&](const BackgroundState::Surface&) { (void)background.Publish(true, 7); return true; })
+			&& !background.InactiveCommitted(interrupted), "native Hide finishing after reopen cannot commit stale inactive ACK");
+		const auto owning = background.Desired();
+		const BackgroundState::Surface oldSurface{reinterpret_cast<HWND>(1), 7};
+		check(background.Bind(owning, oldSurface) && background.Prepare({owning, oldSurface.hwnd, oldSurface.generation, {0,0,1920,1080}}),
+			"renderer prepares only its bound generation");
+		background.RetireHeld(oldSurface);
+		check(!background.Prepared(7) && background.Bind(owning, {oldSurface.hwnd, 8}) && !background.Prepared(7),
+			"retired or rebound same-HWND generation invalidates prepared pixels for a required full repaint");
+		(void)background.Publish(false, 8);
+		background.RetireHeld({oldSurface.hwnd, 8});
+		const auto retiredClose = background.Desired();
+		check(CompleteBackgroundInactive(background, retiredClose, [&](const BackgroundState::Surface&) { ++hides; return true; })
+			&& !background.Held() && !background.Prepared(8) && hides == hideCount,
+			"retiring old background responsibility does not hide or acknowledge pixels on a replacement Freeze");
+	}
+	{
+		WindowSafetyOverride safety;
+		check(safety.Latch(7, true, false), "first safety hide creates a physical protection revision");
+		check(!safety.Latch(7, true, false), "identical hidden safety intent preserves workspace prepared revision");
+		check(safety.Latch(7, false, true), "new clickthrough protection advances safety revision");
+		check(!safety.Latch(7, true, true), "equivalent combined safety intent is idempotent");
+		check(!safety.Visible(7, true) && (safety.Style(7, 0) & WS_EX_TRANSPARENT),
+			"later safe hide and transparency survive old visible/input snapshot");
+		check(safety.Visible(8, true) && safety.Style(8, 0) == 0,
+			"reused HWND generation does not inherit an old safety override");
+		safety.AllowShow(7);
+		check(safety.Visible(7, true) && safety.ClickThrough(7),
+			"committed newer show clears only visibility protection");
+		safety.AllowInput(8);
+		check(safety.ClickThrough(7), "different generation cannot clear input protection");
+		safety.AllowInput(7);
+		check(!safety.ClickThrough(7), "committed newer input intent can clear matching protection");
+	}
+	{
+		// 只驱动生产邮箱和固定目标策略；不创建窗口、不启动 Shell COM worker。
+		using State = ShellFullscreenState;
+		const State::Target root{ reinterpret_cast<HWND>(1), 11, 17, 23 };
+		const State::Target freeze{ reinterpret_cast<HWND>(2), 12, 17, 23 };
+		const State::Target drawpad{ reinterpret_cast<HWND>(3), 13, 17, 23 };
+		const auto fullscreen = State::ResolveTargets(root, freeze, drawpad, true, true, false);
+		check(!fullscreen[0].enabled && fullscreen[1].enabled && fullscreen[2].enabled,
+			"whiteboard marks both activation surfaces and clears the ordinary root");
+		const auto ordinaryFullscreen = State::ResolveTargets(root, freeze, drawpad, false, true, false);
+		check(ordinaryFullscreen[0].enabled && !ordinaryFullscreen[1].enabled && !ordinaryFullscreen[2].enabled,
+			"ordinary fullscreen keeps its root and clears both whiteboard surfaces");
+		const auto duplicate = State::ResolveTargets(freeze, freeze, drawpad, true, true, false);
+		check(duplicate[0].hwnd == freeze.hwnd && duplicate[0].enabled && !duplicate[1].hwnd
+			&& duplicate[2].enabled, "shared fullscreen HWND receives one merged absolute value");
+		const auto minimized = State::ResolveTargets(root, freeze, drawpad, true, true, true);
+		const auto disabled = State::ResolveTargets(root, freeze, drawpad, true, false, false);
+		check(minimized == disabled && !disabled[0].enabled && !disabled[1].enabled && !disabled[2].enabled,
+			"minimize and leave clear all known surfaces without losing their identities");
+		State state;
+		state.Publish(fullscreen);
+		const auto entering = state.Snapshot();
+		state.Publish(fullscreen);
+		check(state.Snapshot().revision == entering.revision,
+			"equivalent fullscreen publishes retain a stable mailbox revision");
+		check(state.Complete(entering, S_OK) && state.confirmedRevision.load() == entering.revision,
+			"current fullscreen batch records its own completion");
+		state.Invalidate();
+		const auto activated = state.Snapshot();
+		check(activated.revision > entering.revision && activated.targets == entering.targets
+			&& WaitForSingleObject(state.wake, 0) == WAIT_OBJECT_0,
+			"activation edge wakes the same bounded batch even when values are unchanged");
+		check(!state.Complete(entering, S_OK), "pre-activation completion cannot confirm a refreshed batch");
+		state.Publish(minimized);
+		const auto minimizedRequest = state.Snapshot();
+		check(!state.Current(activated) && !state.Complete(activated, S_OK)
+			&& state.confirmedRevision.load() == entering.revision,
+			"late fullscreen TRUE cannot confirm newer whole-group FALSE");
+		check(state.Complete(minimizedRequest, E_FAIL) && state.lastResult.load() == E_FAIL
+			&& state.confirmedRevision.load() == entering.revision,
+			"failed clear keeps the current batch unconfirmed for bounded worker retry");
+		state.Publish(fullscreen);
+		const auto restored = state.Snapshot();
+		check(restored.targets == fullscreen && !state.Complete(minimizedRequest, S_OK)
+			&& state.Complete(restored, S_OK), "restore supersedes late minimized completion with both current surfaces");
+		state.Publish(disabled);
+		const auto leaving = state.Snapshot();
+		check(!state.Complete(restored, S_OK) && state.Current(leaving) && leaving.targets == disabled,
+			"latest leave retains absolute FALSE compensation for every known surface");
+		auto replacement = disabled;
+		++replacement[1].generation;
+		state.Publish(replacement);
+		const auto recreated = state.Snapshot();
+		check(!state.Current(leaving) && recreated.targets[1].generation != leaving.targets[1].generation
+			&& !state.TargetAlive(recreated.targets[1]), "HWND identity changes retire old generation and reject dead targets");
+		state.stopping.store(true);
+		state.Invalidate();
+		state.Publish(fullscreen);
+		check(state.Snapshot().revision == recreated.revision && !state.Current(recreated)
+			&& !state.Complete(recreated, S_OK), "stopping mailbox cannot accept or confirm a late fullscreen request");
+	}
 	std::cout << "[WindowCommandCompletion] failures=" << failures << '\n';
 	return failures;
 }
@@ -860,9 +1684,43 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
+	RECT settingClient{}, settingOuter{};
+	SIZE settingMinimumTrack{};
+	UINT settingDpi = 0;
+	bool settingClientMeasured = false;
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
-	settingSpec.windowProc = SettingOwnerProbeProc;
+	const auto settingCreated = settingSpec.created;
+	settingSpec.created = [&, settingCreated](HWND hwnd)
+		{
+			settingCreated(hwnd);
+			// 在创建线程量客户区，避免跨 DPI awareness 调用产生坐标虚拟化。
+			settingClientMeasured = GetClientRect(hwnd, &settingClient) != FALSE;
+			GetWindowRect(hwnd, &settingOuter);
+			settingMinimumTrack = settingNativeMinimumTrack;
+			using GetDpiForWindowProc = UINT(WINAPI*)(HWND);
+			const auto getDpi = reinterpret_cast<GetDpiForWindowProc>(
+				GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+			if (getDpi) settingDpi = getDpi(hwnd);
+		};
+	// 仅设置窗口的专用线程使用产品 DPI 模式，不改变其余测试窗口或测试进程。
+	using SetThreadDpiContextProc = DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT);
+	const auto setThreadDpiContext = reinterpret_cast<SetThreadDpiContextProc>(
+		GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetThreadDpiAwarenessContext"));
+	DPI_AWARENESS_CONTEXT previousSettingDpiContext = nullptr;
+	settingSpec.beforeCreate = [&]
+		{
+			if (!setThreadDpiContext) return true;
+			previousSettingDpiContext = setThreadDpiContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
+			return previousSettingDpiContext != nullptr;
+		};
+	settingSpec.destroyed = [&]
+		{
+			if (setThreadDpiContext && previousSettingDpiContext)
+				setThreadDpiContext(previousSettingDpiContext);
+		};
+	// 故意传旧 popup 样式，确认 Setting 角色会恢复独立应用窗口合同。
 	settingSpec.style = WS_POPUP;
+	settingSpec.windowProc = SettingFrameTestProc;
 	settingSpec.exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	specs.push_back(std::move(settingSpec));
 	auto observerSpec = makeSpec(WindowRole::DisplayObserver, L"DisplayObserver");
@@ -986,14 +1844,32 @@ int RunWindowTests()
 
 	const auto settingStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_STYLE));
 	const auto settingExStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_EXSTYLE));
-	check((settingStyle & (WS_POPUP | WS_CLIPCHILDREN)) ==
-		(WS_POPUP | WS_CLIPCHILDREN)
-		&& (settingStyle & (WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
-			WS_MAXIMIZEBOX | WS_SYSMENU)) == 0,
-		"setting fixed borderless style");
+	const bool legacySettingFrame = UsesLegacySettingFrame();
+	const DWORD expectedSettingStyle = legacySettingFrame
+		? SettingWindowStyle & ~WS_CAPTION : SettingWindowStyle;
+	check((settingStyle & expectedSettingStyle) == expectedSettingStyle
+		&& (settingStyle & WS_CAPTION) == (legacySettingFrame ? 0U : WS_CAPTION)
+		&& (settingStyle & WS_POPUP) == 0,
+		"setting keeps native sizing semantics and only legacy Aero removes caption drawing");
+	const HMENU settingSystemMenu = GetSystemMenu(setting, FALSE);
+	check(settingSystemMenu && IsMenu(settingSystemMenu)
+		&& GetMenuState(settingSystemMenu, SC_CLOSE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MINIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1)
+		&& GetMenuState(settingSystemMenu, SC_MAXIMIZE, MF_BYCOMMAND) != static_cast<UINT>(-1),
+		"setting retains its HWND-owned native close/minimize/maximize system menu after caption policy");
 	check((settingExStyle & WS_EX_APPWINDOW) != 0
 		&& (settingExStyle & (WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == 0,
 		"setting app ex-style");
+	const bool settingClientMatches = settingClientMeasured
+		&& settingClient.right - settingClient.left == 160
+		&& settingClient.bottom - settingClient.top == 90;
+	if (!settingClientMatches)
+		std::cerr << "Setting creation geometry: client="
+			<< settingClient.right - settingClient.left << 'x' << settingClient.bottom - settingClient.top
+			<< " outer=" << settingOuter.right - settingOuter.left << 'x' << settingOuter.bottom - settingOuter.top
+			<< " dpi=" << settingDpi << " native-min-track="
+			<< settingMinimumTrack.cx << 'x' << settingMinimumTrack.cy << '\n';
+	check(settingClientMatches, "setting spec dimensions describe the client area");
 	check(reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0)) != nullptr,
 		"setting icon");
 	check(service.Title(WindowRole::Setting) == L"Window test Setting", "title helper");
@@ -1238,6 +2114,7 @@ int RunWindowTests()
 		check(service.Show(role), "show whiteboard group member");
 	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary),
 		"show primary drawpad for whiteboard group");
+	check(!service.RequestWhiteboardActivation(), "presentation mode rejects whiteboard activation");
 	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
 	check(service.RequestTopmostRefresh() && HasConsistentOwnerBand(overlayOwnerTree, false),
 		"whiteboard root refresh preserves normal owner band and order");
@@ -1251,14 +2128,40 @@ int RunWindowTests()
 	check((whiteboardDrawpadExStyle & WS_EX_TOOLWINDOW) != 0
 		&& (whiteboardDrawpadExStyle & WS_EX_NOACTIVATE) == 0,
 		"whiteboard Drawpad accepts activation without a taskbar button");
+	const HWND focusBeforeWhiteboardActivation = Service::LastFocusWindow();
+	check(!service.RequestWhiteboardActivation([] { return false; })
+		&& Service::LastFocusWindow() == focusBeforeWhiteboardActivation,
+		"cancelled whiteboard entry cannot activate its anchor");
+	check(service.Hide(WindowRole::Freeze) && !service.RequestWhiteboardActivation()
+		&& !IsWindowVisible(freeze), "activation cannot revive a hidden anchor");
+	check(service.Show(WindowRole::Freeze) && service.RequestWhiteboardActivation(),
+		"ready whiteboard accepts its explicit asynchronous activation request");
+	const auto activationReceipt = service.LastCommandReceipt();
+	check(service.RequestTopmostRefresh() && activationReceipt.Phase() == CommandPhase::Committed,
+		"owner barrier observes the queued activation independently of caller admission");
+	GUITHREADINFO whiteboardThreadInfo{ sizeof(GUITHREADINFO) };
+	check(GetGUIThreadInfo(overlayThread, &whiteboardThreadInfo)
+		&& (GetForegroundWindow() != freeze
+			|| (whiteboardThreadInfo.hwndActive == freeze && whiteboardThreadInfo.hwndFocus == freeze)),
+		"granted whiteboard foreground owns keyboard focus while denied foreground remains valid");
 	whiteboardMinimizeAllowed.store(false);
 	check(!service.MinimizeWhiteboardWindowGroup() && !service.WhiteboardWindowGroupMinimized(),
 		"PPT policy rejects whiteboard minimization");
 	whiteboardMinimizeAllowed.store(true);
 	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
 	check(service.WhiteboardWindowGroupMinimized(), "minimize publishes minimized state");
-	check(service.Show(WindowRole::PptBottomLeft) && service.Show(WindowRole::Freeze),
-		"stale show requests are safely consumed");
+	check(!service.RequestWhiteboardActivation(), "activation cannot restore a minimized whiteboard");
+	RECT boundsBeforeRejectedShow{};
+	check(GetWindowRect(freeze, &boundsBeforeRejectedShow) != FALSE, "capture minimized freeze bounds");
+	const RECT minimizedFreezeBounds{ 11, 13, 1911, 1073 };
+	check(service.Show(WindowRole::PptBottomLeft) && !service.Show(WindowRole::Freeze)
+		&& !service.SetBounds(WindowRole::Freeze, minimizedFreezeBounds)
+		&& service.LastCommandReceipt().Phase() == CommandPhase::Rejected,
+		"minimized freeze show and bounds cannot report a successful presentation");
+	RECT boundsAfterRejectedShow{};
+	check(GetWindowRect(freeze, &boundsAfterRejectedShow) != FALSE
+		&& EqualRect(&boundsBeforeRejectedShow, &boundsAfterRejectedShow) != FALSE,
+		"rejected minimized bounds leave the native window unchanged");
 	check(IsIconic(freeze) && !IsWindowVisible(drawpad)
 		&& !IsWindowVisible(pptBottomLeft) && !IsWindowVisible(pptBottomRight)
 		&& IsWindowVisible(bar), "minimize hides canvas and pagination while preserving toolbar");
@@ -1267,6 +2170,12 @@ int RunWindowTests()
 		&& !IsWindowVisible(drawpadPresentation)
 		&& IsWindowVisible(pptBottomLeft) && IsWindowVisible(pptBottomRight)
 		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
+	RECT presentedFreezeBounds{};
+	check(service.SetBounds(WindowRole::Freeze, minimizedFreezeBounds)
+		&& service.Show(WindowRole::Freeze) && !IsIconic(freeze)
+		&& GetWindowRect(freeze, &presentedFreezeBounds) != FALSE
+		&& EqualRect(&presentedFreezeBounds, &minimizedFreezeBounds) != FALSE,
+		"restored freeze commits its first background bounds and visibility retry");
 	check(service.MinimizeWhiteboardWindowGroup(), "minimize before toolbar close");
 	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
 	check(!IsIconic(freeze) && !IsWindowVisible(freeze) && !service.WhiteboardWindowGroupMinimized(),

@@ -1,0 +1,3 @@
+[StartupEffectEquivalence] theme=1 placement=0 scale=1 mismatched=3 maxRGBA=1 maxAlpha=0
+[StartupEffectEquivalence] theme=1 placement=0 scale=1.5625 mismatched=1 maxRGBA=1 maxAlpha=0
+[StartupPreviewOnly] failures=0

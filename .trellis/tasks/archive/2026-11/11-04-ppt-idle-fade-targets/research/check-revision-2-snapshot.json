@@ -1,0 +1,181 @@
+{
+  "baseline": "Build/ppt-idle-fade-targets/final-source-state.json",
+  "reviewUpdate": "Final fixture bounds and per-frame precondition review",
+  "files": [
+    {
+      "path": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md",
+      "sha256": "d290c7f6a08725a0ce40a97f3001a11493fb3a5a8ef67cdfbaf5c9e5a450217e",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": ".trellis/spec/native-desktop/setting-motion.md",
+      "sha256": "1b253084e203056ab8c824f732ac01d07b24f543f512ec5510ffe09fd14c45f3",
+      "newAgainstBaseline": true
+    },
+    {
+      "path": "Inkeys/IdtI18nKeys.g.h",
+      "sha256": "368b3e21408cc618b4a27a9150bf42d0b956de1080dc39604a2529f1cdf0815a",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp",
+      "sha256": "df1fb309d2af351d0154c83db119e13896b61bf6a8a065e1c72e677003e398f7",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.ThemeMaterial.h",
+      "sha256": "5c7a6d7627fc72b01f29ebc154ba1604045e70ebd73896d8b202e162aeb8b3e5",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/PageControl/PageControl.cpp",
+      "sha256": "923c8cfc6eb855258191f76af7e80f749f5b2b43b7f594ec953941eaaf747626",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+      "sha256": "ccd8c25fefdecd8616df04294cae8cce91204753c535f0d32f95042b213d13cf",
+      "newAgainstBaseline": true
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Setting/Setting.Controls.h",
+      "sha256": "312b3848e17b5799a336ff530c39b1067afbde0cb1bcf83b9535fa078c750c28",
+      "newAgainstBaseline": true
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+      "sha256": "ddb43282056a10b66268f5300d8a9d23c36bcbe1d9c540184bddf3cd3502ac2d",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Setting/Setting.Pages.h",
+      "sha256": "c7ca445aebed74fcd5823f1620d5dd54f01b8e3d0964fed4c48bd2b6ee9c6660",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+      "sha256": "6202e1c66b0bbf6460d1443080fbe6ac325679be3f492f8b0081edc7e9f5f0a0",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/de-DE.jsonc",
+      "sha256": "a456ae2cb83534b06f151bbe672f336929e445aa7f0585d0731da8e5f69eb974",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/en-GB.jsonc",
+      "sha256": "e98ceb7b63459795e23855209b0a39592a3dd825e4adf18650d2e36aa14cb789",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/en-US.jsonc",
+      "sha256": "8d10a979802b280ccb00e3f6d43671bb3fa1c32d4db20589c1acf29ba3d87f16",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/es-ES.jsonc",
+      "sha256": "ab6e28844ddb25ce78f25cc4e1a0bb47e1be069a0a9fc8d8612b59dc1eec3601",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/es-MX.jsonc",
+      "sha256": "dd16a72ca78981cd9b2f8e5c8c0e17783a49943d6a76d169a42c4353873b8b0d",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/fr-FR.jsonc",
+      "sha256": "4a1d221060c9fe44b878dca71126fb65bac6529149a73952cedcb8d18dbd7a68",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/id-ID.jsonc",
+      "sha256": "e45e68cc90c59122ce22ec3c6ee0bfe62b5f8740952a31546a9d2ceff450f5ef",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/it-IT.jsonc",
+      "sha256": "c7f67bcdb2a4b793c846aa1b662a954ab3a664ac027ca32773b62bab486b5717",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/ja-JP.jsonc",
+      "sha256": "e2cb45340aba407aca72288fe998ab8354c1a417c3df506510ef43c9175ea09f",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/ko-KR.jsonc",
+      "sha256": "30f5b86795648362dd9ba7cba6b261d7b77e630b656c457065a65a144b6bd7bb",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/pl-PL.jsonc",
+      "sha256": "927cfc5e5b21c1e67950e213045f06ac1cec73a151cbb1c9677a535012945ad6",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/pt-BR.jsonc",
+      "sha256": "12b4807d3eabcf8bef18cdaa702044e38ffd4f5e916a152426017fff33d9b30b",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/ro-RO.jsonc",
+      "sha256": "8e9035742bdf4ce55ae5c70224ba2b2394425bde8534b42082831d013a703b30",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/ru-RU.jsonc",
+      "sha256": "7b8ceee8e57b3652aa8ae4084dcf4dfbf5a257a8a94b0a6bdae7903d3b18b630",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/tr-TR.jsonc",
+      "sha256": "794757e88395c77aa6f1f703fb7152feb93eeef947d4d4abc807f68dfdcfc898",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/uk-UA.jsonc",
+      "sha256": "f75a20c014b58ec555bdbc623640a1b14914e51457220ac0f15f0ecc904a1c29",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/vi-VN.jsonc",
+      "sha256": "ed9cc8fef2de8496627d31528b10f4ddcbb3fd809667d4cfd4ec57374f5fdbc4",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/zh-CN.jsonc",
+      "sha256": "3f2683c81a5cec5146cd77edf93ae7164e65c67d998585ad2533c285f4bfa143",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/zh-HK.jsonc",
+      "sha256": "591a6565f495a7764ff91f0b0eb0f0e614ab3edf51c252fcea25aa75caaa6065",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Inkeys/src/i18n/zh-TW.jsonc",
+      "sha256": "3719db33b62df02875312e3eb966805ca27fd96ed9ce8ef3999a87eb201ca620",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "InkeysHeadlessTests/bar_theme_tests.cpp",
+      "sha256": "1ba20e903f25a42007477514006476273bd1a4d1ca3cdb03a7226046b498c1f8",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "InkeysHeadlessTests/page_control_tests.cpp",
+      "sha256": "612884f4ab76d5bb20dbad1a293e3de8e5413321c1d164d5c13d89ede1622946",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "InkeysHeadlessTests/setting_design_tests.cpp",
+      "sha256": "58b89a942d0f843eda696025a43fd46810f34999d51b9c7e9af3dcb92c91a836",
+      "newAgainstBaseline": false
+    },
+    {
+      "path": "Scripts/i18n.zh-CN.snapshot.jsonc",
+      "sha256": "3f2683c81a5cec5146cd77edf93ae7164e65c67d998585ad2533c285f4bfa143",
+      "newAgainstBaseline": false
+    }
+  ]
+}

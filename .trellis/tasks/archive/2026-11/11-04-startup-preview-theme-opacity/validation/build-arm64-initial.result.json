@@ -1,0 +1,7 @@
+{
+  "phase": "build invocation",
+  "status": "canceled",
+  "wrapperExitCode": 1,
+  "compilerDiagnostics": false,
+  "note": "Start-Process with redirection/WaitForExit produced no compiler output; canceled after observing no MSBuild process through available process query. Direct native MSBuild solution validation succeeds (exit0). No project source/toolchain configuration changed for this environment issue."
+}

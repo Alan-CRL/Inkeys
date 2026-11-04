@@ -1,0 +1,322 @@
+{
+  "method": "stdlib sfnt cmap formats 4/12, nonzero glyph IDs; alphabet preflight, not rendered coverage",
+  "samples": {
+    "id-ID": "Bahasa Indonesia",
+    "vi-VN": "Tiếng Việt Đđ Ăă Ââ Êê Ôô Ơơ Ưư ẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ",
+    "tr-TR": "Türkçe Çç Ğğ İı Öö Şş Üü",
+    "it-IT": "Italiano ÀÈÉÌÒÙ àèéìòù",
+    "pl-PL": "Polski ĄąĆćĘęŁłŃńÓóŚśŹźŻż",
+    "uk-UA": "Українська АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяҐґЄєІіЇї’ʼ",
+    "es-MX": "Español (México) ÁÉÍÓÚÜÑ áéíóúüñ ¿¡",
+    "ro-RO": "Română ĂăÂâÎîȘșȚț",
+    "en-GB": "English (United Kingdom) £ ‘ ’ “ ”"
+  },
+  "fonts": [
+    {
+      "font": "HarmonyOS_Sans_SC_Regular.ttf",
+      "sha256": "8b193c486e7fd959598d209e3974b5f3838f07384239a9f4d05d45d06e6116ae",
+      "cmap_formats": [
+        4,
+        12
+      ],
+      "codepoints": 29527,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [],
+        "it-IT": [],
+        "pl-PL": [],
+        "uk-UA": [],
+        "es-MX": [],
+        "ro-RO": [],
+        "en-GB": []
+      }
+    },
+    {
+      "font": "HarmonyOS_SansSC_Bold.ttf",
+      "sha256": "705136d8e45591b6451da444f1c926b12b77536158f0bff744529b87010df3ee",
+      "cmap_formats": [
+        4,
+        12
+      ],
+      "codepoints": 29527,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [],
+        "it-IT": [],
+        "pl-PL": [],
+        "uk-UA": [],
+        "es-MX": [],
+        "ro-RO": [],
+        "en-GB": []
+      }
+    },
+    {
+      "font": "HarmonyOS_Sans_TC_Regular.ttf",
+      "sha256": "1c32d2caa30c52822e7ee4bc0ce305f8e520a1192121a0803ed4855d47e4ebe1",
+      "cmap_formats": [
+        4
+      ],
+      "codepoints": 14593,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [],
+        "it-IT": [],
+        "pl-PL": [],
+        "uk-UA": [],
+        "es-MX": [],
+        "ro-RO": [],
+        "en-GB": []
+      }
+    },
+    {
+      "font": "HarmonyOS_SansTC_Bold.ttf",
+      "sha256": "c8d7fe1e9cd36af07ecf23bce18d8b918dae8e1e1e35c0553edf8b0d4e404cd1",
+      "cmap_formats": [
+        4
+      ],
+      "codepoints": 14593,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [],
+        "it-IT": [],
+        "pl-PL": [],
+        "uk-UA": [],
+        "es-MX": [],
+        "ro-RO": [],
+        "en-GB": []
+      }
+    },
+    {
+      "font": "NotoSansJP-Regular.ttf",
+      "sha256": "57458d02bb14502d7ae98abe1e2f79b52783ceda9e4628df145faae23a3d31d2",
+      "cmap_formats": [
+        4,
+        12
+      ],
+      "codepoints": 16732,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [
+          "U+011E Ğ",
+          "U+011F ğ",
+          "U+0130 İ",
+          "U+0131 ı",
+          "U+015E Ş",
+          "U+015F ş"
+        ],
+        "it-IT": [],
+        "pl-PL": [
+          "U+0104 Ą",
+          "U+0105 ą",
+          "U+0106 Ć",
+          "U+0107 ć",
+          "U+0118 Ę",
+          "U+0119 ę",
+          "U+0141 Ł",
+          "U+0142 ł",
+          "U+015A Ś",
+          "U+015B ś",
+          "U+0179 Ź",
+          "U+017A ź",
+          "U+017B Ż",
+          "U+017C ż"
+        ],
+        "uk-UA": [
+          "U+02BC ʼ",
+          "U+0404 Є",
+          "U+0406 І",
+          "U+0407 Ї",
+          "U+0454 є",
+          "U+0456 і",
+          "U+0457 ї",
+          "U+0490 Ґ",
+          "U+0491 ґ"
+        ],
+        "es-MX": [],
+        "ro-RO": [
+          "U+0218 Ș",
+          "U+0219 ș",
+          "U+021A Ț",
+          "U+021B ț"
+        ],
+        "en-GB": []
+      }
+    },
+    {
+      "font": "NotoSansJP-Bold.ttf",
+      "sha256": "611dbdbda88a7a34c44232b90c71161b65178a82649bdc6e365a30f61ab28237",
+      "cmap_formats": [
+        4,
+        12
+      ],
+      "codepoints": 16732,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [
+          "U+011E Ğ",
+          "U+011F ğ",
+          "U+0130 İ",
+          "U+0131 ı",
+          "U+015E Ş",
+          "U+015F ş"
+        ],
+        "it-IT": [],
+        "pl-PL": [
+          "U+0104 Ą",
+          "U+0105 ą",
+          "U+0106 Ć",
+          "U+0107 ć",
+          "U+0118 Ę",
+          "U+0119 ę",
+          "U+0141 Ł",
+          "U+0142 ł",
+          "U+015A Ś",
+          "U+015B ś",
+          "U+0179 Ź",
+          "U+017A ź",
+          "U+017B Ż",
+          "U+017C ż"
+        ],
+        "uk-UA": [
+          "U+02BC ʼ",
+          "U+0404 Є",
+          "U+0406 І",
+          "U+0407 Ї",
+          "U+0454 є",
+          "U+0456 і",
+          "U+0457 ї",
+          "U+0490 Ґ",
+          "U+0491 ґ"
+        ],
+        "es-MX": [],
+        "ro-RO": [
+          "U+0218 Ș",
+          "U+0219 ș",
+          "U+021A Ț",
+          "U+021B ț"
+        ],
+        "en-GB": []
+      }
+    },
+    {
+      "font": "NotoSansKR-Regular.ttf",
+      "sha256": "4609a7b62a6da24cae3a8b73ecde7003581b8f60662d60cc8f55a3793de07763",
+      "cmap_formats": [
+        4,
+        12
+      ],
+      "codepoints": 23174,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [
+          "U+011E Ğ",
+          "U+011F ğ",
+          "U+0130 İ",
+          "U+0131 ı",
+          "U+015E Ş",
+          "U+015F ş"
+        ],
+        "it-IT": [],
+        "pl-PL": [
+          "U+0104 Ą",
+          "U+0105 ą",
+          "U+0106 Ć",
+          "U+0107 ć",
+          "U+0118 Ę",
+          "U+0119 ę",
+          "U+0141 Ł",
+          "U+0142 ł",
+          "U+015A Ś",
+          "U+015B ś",
+          "U+0179 Ź",
+          "U+017A ź",
+          "U+017B Ż",
+          "U+017C ż"
+        ],
+        "uk-UA": [
+          "U+02BC ʼ",
+          "U+0404 Є",
+          "U+0406 І",
+          "U+0407 Ї",
+          "U+0454 є",
+          "U+0456 і",
+          "U+0457 ї",
+          "U+0490 Ґ",
+          "U+0491 ґ"
+        ],
+        "es-MX": [],
+        "ro-RO": [
+          "U+0218 Ș",
+          "U+0219 ș",
+          "U+021A Ț",
+          "U+021B ț"
+        ],
+        "en-GB": []
+      }
+    },
+    {
+      "font": "NotoSansKR-Bold.ttf",
+      "sha256": "cf93c6acfa4c4adcb580d156aa46fc3614ed0310f1e2ef23b5954476e85c872e",
+      "cmap_formats": [
+        4,
+        12
+      ],
+      "codepoints": 23174,
+      "missing": {
+        "id-ID": [],
+        "vi-VN": [],
+        "tr-TR": [
+          "U+011E Ğ",
+          "U+011F ğ",
+          "U+0130 İ",
+          "U+0131 ı",
+          "U+015E Ş",
+          "U+015F ş"
+        ],
+        "it-IT": [],
+        "pl-PL": [
+          "U+0104 Ą",
+          "U+0105 ą",
+          "U+0106 Ć",
+          "U+0107 ć",
+          "U+0118 Ę",
+          "U+0119 ę",
+          "U+0141 Ł",
+          "U+0142 ł",
+          "U+015A Ś",
+          "U+015B ś",
+          "U+0179 Ź",
+          "U+017A ź",
+          "U+017B Ż",
+          "U+017C ż"
+        ],
+        "uk-UA": [
+          "U+02BC ʼ",
+          "U+0404 Є",
+          "U+0406 І",
+          "U+0407 Ї",
+          "U+0454 є",
+          "U+0456 і",
+          "U+0457 ї",
+          "U+0490 Ґ",
+          "U+0491 ґ"
+        ],
+        "es-MX": [],
+        "ro-RO": [
+          "U+0218 Ș",
+          "U+0219 ș",
+          "U+021A Ț",
+          "U+021B ț"
+        ],
+        "en-GB": []
+      }
+    }
+  ]
+}

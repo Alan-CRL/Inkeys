@@ -54,6 +54,7 @@ JSON schema version 1 恰含 `schemaVersion/provider/status/fullName/presentatio
 - 每次ROT/COM对象返回都是独立acquisition，即使同identity也须单次释放或明确转移；managed赋值/as/cast只是alias。去重列表不得再次释放已释放/转移的同一笔取得；转移到root后清空临时槽。Next/Previous/Exit的View及总览Navigation也必须具名/finally释放，不能保留链式temporary。
 - 事件例外使用内部raw IDispatch sink和显式IConnectionPoint/cookie，不让通用CLR事件包装将入站VARIANT物化为RCW。Invoke只派发DISPID/纯值hint，长期root由owner自行取得；Find/Advise失败自动轮询。成功的CP取得只转移一次，Unadvise成功或明确服务器断连后才Release该取得。
 - 失败解绑的CP/cookie/sink停用并转入静态retirement registry，由当前或后续service owner锁外重试；native重建server不能丢掉这笔所有权。首次解绑失败后，最终停止再作最多3轮显式重试，仍失败返回-1并记录未完成/保留可重试lease，不能伪称已释放；外部COM已阻塞的调用不能用本地超时撤销。
+- 文稿 `FullName/Name` 不能随稳定拓扑永久缓存：相同 COM identity 可被另存或首次保存；fast 复用前必须由 owner dynamic 重新确认身份。跨放映 session 首次重新完整验证，身份 busy/失败不能把旧路径发布为可信新身份；不以单独增加 binding revision 绕过正常事件绑定生命周期。
 - 当前页的 `SlideIndex` 和 `SlideID` 必须来自同一个 `View.Slide` acquisition。完整 topology 必须用 `for (1..Count) + Slides.Item(i)` 读取，校验当前 SlideIndex 顺序、正 SlideID、唯一性及当前 ID 对应；descriptor 中的数组顺序只表示本次 COM 的当前页顺序，不能把顺序变化当成 SlideID 身份变化。任一读取失败不得返回部分 `slideIds`。
 - `FullCleanup` 由 owner 在旧 binding 请求失效且在途使用结束后执行：先推进 `bindingRevision`/纯值状态，再逐项解绑事件并按 window -> presentation -> application 释放持有。不得靠 `GC.Collect/WaitForPendingFinalizers`、循环Release或共享RCW的FinalRelease补漏；每笔取得必须已配平。取消某一事件失败不能阻断其他订阅清理。
 - managed 在缓存/数组分配前限制单个 identity 的 UTF-8 长度不超过 32 KiB、页数不超过 10,000；native 再对 JSON 设置 1 MiB UTF-8 payload、32 KiB identity 和 10,000 页上限，并严格校验 schema/status/数值/唯一 SlideID。
@@ -104,7 +105,7 @@ try {
 
 ## `CheckCOM` 的真实作用
 
-`【直接确认】` `PptCOMServer.CheckCOM()` 当前返回常量字符串 `20260627a`。`IdtPlug-in.cpp::CheckPptCom` 会调用并保存返回值，但本轮静态搜索没有找到把它与期望版本比较、拒绝服务或选择兼容分支的代码。
+`【直接确认】` `PptCOMServer.CheckCOM()` 当前返回常量字符串 `20261024a`。`IdtPlug-in.cpp::CheckPptCom` 会调用并保存返回值，但本轮静态搜索没有找到把它与期望版本比较、拒绝服务或选择兼容分支的代码。
 
 因此：
 

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/tasks/10-08-setting-publish-baseline-sync/research/approved-plan.md", "reason": "本轮用户明确批准的范围和限制"}
+{"file": ".trellis/tasks/10-08-setting-publish-baseline-sync/research/content-source-audit.md", "reason": "Fixed publish settings content, configuration and side-effect mapping"}
+{"file": ".trellis/tasks/10-08-setting-publish-baseline-sync/research/runtime-merge-validation.md", "reason": "Resolved runtime, project and locale integration contracts"}

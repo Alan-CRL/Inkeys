@@ -1,6 +1,7 @@
 module;
 
 #include <windows.h>
+#include "Ppt.Recovery.h"
 
 #include <algorithm>
 #include <array>
@@ -156,6 +157,20 @@ export namespace Inkeys::UI::Ppt
 		int totalPage = -1;
 	};
 	enum class PageStateMode : std::uint8_t { Pending, BasicControl, InkReady };
+	// 只缓存同场最近已准备好的纯数字；Pending中的目标数字不能提前成为可见页码。
+	struct StablePageNumbers
+	{
+		std::uint64_t session = 0;
+		int currentPage = -1, totalPage = -1;
+		constexpr void Observe(std::uint64_t nextSession,int current,int total,PageStateMode mode) noexcept
+		{
+			if(session!=nextSession){*this={};session=nextSession;}
+			if(!session||mode==PageStateMode::Pending||total<=0
+				|| (current!=-1&&(current<=0||current>total)))return;
+			currentPage=current;totalPage=total;
+		}
+	};
+
 	struct PagePresentationState
 	{
 		int currentPage = -1;
@@ -533,6 +548,8 @@ export namespace Inkeys::UI::Ppt
 		BottomPair,
 		MiddlePair,
 		ExitShow,
+		// 只重新发布快照，供翻页控件读取闲置淡化时长。
+		IdleFade,
 		All,
 	};
 
@@ -544,6 +561,7 @@ export namespace Inkeys::UI::Ppt
 		std::function<void()> endShow;
 		std::function<void(std::string)> persistSettings;
 		std::function<void(std::uint64_t, std::uint64_t, int, int)> pagePresented;
+		std::function<void(PptRecovery::State)> retryCanvas;
 	};
 
 	// 初始化只注册渲染客户端；窗口本身仍由 Window Service 创建和销毁。
@@ -556,6 +574,10 @@ export namespace Inkeys::UI::Ppt
 	void PublishPageState(int currentPage, int totalPage,
 		std::uint64_t targetRevision = 0,
 		PageStateMode mode = PageStateMode::InkReady) noexcept;
+	void PublishNavigationWaiting(std::uint64_t session, std::uint64_t epoch, bool next) noexcept;
+	void CompleteNavigationWaiting(std::uint64_t session, std::uint64_t epoch) noexcept;
+	void ClearNavigationWaiting(std::uint64_t session = 0) noexcept;
+	void PublishCanvasRecovery(PptRecovery::State recovery) noexcept;
 	void ResetPositions() noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;

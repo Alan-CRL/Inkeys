@@ -880,3 +880,1175 @@ Completed special-taskbar docking, canvas bottom-edge/fullscreen policy, device-
 ### Next Steps
 
 - 任务完成；未push，不扩大Win7/UIPI/Office实机验证声明。
+
+
+## Session 128: 设置视觉重建与笔速橡皮精修验收归档
+<!-- trellis-session: v=2 fp=a831d8039bc234ec -->
+
+**Date**: 2026-10-25
+**Task**: 设置视觉重建与笔速橡皮精修验收归档
+**Branch**: `fluent`
+
+### Summary
+
+用户确认改动生效并授权提交和结束父任务。完成笔速橡皮几何/化学预计算动画精修、精细控制显隐与标题、绘制分类顺序及QQ/Email排版；任务已归档，未push。
+
+### Main Changes
+
+- 几何辅助线细擦与化学往返大块擦除离线预计算，保持轻量播放及独立完成。
+- 设备门控隐藏精细控制且保留偏好，新增详情标题，调整绘制顺序及主页联系标签。
+- 按用户验收归档当前父任务；其他子任务保留原状态，既有shader二进制和本地日志未纳入提交。
+## Session 127: 界面字体整数目标与连续动画收尾
+<!-- trellis-session: v=2 fp=eddef2fcb5851dd9 -->
+
+**Date**: 2026-10-24
+**Task**: 界面字体整数目标与连续动画收尾
+**Branch**: `bugfix/font`
+
+### Summary
+
+用户确认字体渲染及动画修订有效，授权结束任务并commit/push。默认关闭非整数静止字号，动画目标投影后连续过渡；仅主栏和控件，设置字体不变。
+
+### Main Changes
+
+- 完成实验开关、静止像素目标截断、连续字号修正、目标倍率交接及字体独立续帧；更新三语和code-spec。
+- 修复底栏抓手重基准目标来源，补充13px精度边界和真实PageControl空闲基线回归；仅归档当前任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bc494cd384d783b39156aba77dbbf8f5f2f769cc` | Refine speed eraser demos and settings controls |
+| `e4beb2ca8cf83bb1fad12ae466daec812add58cf` | Archive completed settings UI task |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64两轮构建通过；当前最后一轮0错误/46条既有警告。
+- [OK] --no-window --setting-eraser-demo-only 与 --no-window --setting-home-only 均退出0；i18n英文/繁中518/518。
+- [OK] 独立审查、格式/diff、源码和保护资源哈希通过，未启动GUI；见归档任务research的验证记录。
+| `aeb178bc` | fix(ui): truncate font rendering to whole pixels by default |
+| `3d9d04d5` | fix(ui): keep font animations continuous with integer targets |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过；Headless --no-window通过；真实D2D无HWND离屏通过；三语437/437、diff及编码换行检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 当前任务已完成；独立10-10-setting-home-design保留既有状态。
+- 按用户授权推送bugfix/font分支，不改动其他任务。
+
+
+## Session 129: Draw3 DComp 交接与激光过期修复
+<!-- trellis-session: v=2 fp=d4ca8a0e103dfbaa -->
+
+**Date**: 2026-10-25
+**Task**: Draw3 DComp 交接与激光过期修复
+**Branch**: `bugfix/cut`
+
+### Summary
+
+修复 DComp/ULW 交接 Present 后过早 ready 导致旧帧回闪，交接全帧增加 DwmFlush 屏障；修复激光第二次生命周期求值进入 Inactive 时漏清瞬态资源及 idle 跳过边界。补充确定性回归和项目规范，ARM64 Debug 构建、无窗口与隐藏 HWND 测试通过，用户完成真实桌面验收。任务已归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dffdd2ac` | fix(draw3): synchronize canvas handoff and laser expiry |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 130: UI3 吸附释放交接与最终收窗收尾归档
+<!-- trellis-session: v=2 fp=0577a678e8618603 -->
+
+**Date**: 2026-10-27
+**Task**: UI3 吸附释放交接与最终收窗收尾归档
+**Branch**: `bugfix/cut`
+
+### Summary
+
+完成释放末笔交接、临时固定表面及最终idle收窗；关闭吸附子任务和居中吸附父任务，保留用户接受的收窗闪动限制。
+
+### Main Changes
+
+- Down以成功真实content预留，避免透明viewport递归扩窗；Up先提交未呈现末笔，恢复结束的最后idle收窗。
+- 修复/测试/规范已提交，两个相关任务归档至.trellis/tasks/archive/2026-10；已归档居中任务引用同步，当前任务指针清除。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48dda087` | fix(ui): stabilize dock release and restore idle window shrink |
+| `b7f237f0` | chore(trellis): archive completed toolbar geometry tasks |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64及吸附19组合、workspace-centering、input-worker、完整InkeysHeadlessTests --no-window均exit0，最终PASS animation correctness。
+- [OK] 独立CSV核对190次最终收窗、57次末笔补交、21375连续恢复采样；旧候选171次连续释放均未收窗，可检出原回归。
+- [OK] 先前36秒V拖动由用户确认无跳变、顶边果冻正常；6次释放无闪属于恢复收窗前版本。最终收窗版未新做GUI，收窗闪动可能返回为用户接受的设计/性能取舍，未证明Windows内部根因。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 131: 修复白板形状选择窗口无法展开
+<!-- trellis-session: v=2 fp=1ef354436f1665f6 -->
+
+**Date**: 2026-10-30
+**Task**: 修复白板形状选择窗口无法展开
+**Branch**: `bugfix/mode`
+
+### Summary
+
+移除 Whiteboard 对 Geometry 面板的每帧永久清零，三态统一非 Shape、fold、按钮不可见收起规则；补充真实 PrepareMainPanels 三态回归与 Spec。ARM64 完整构建、定向离屏测试、完整 no-window 测试通过，用户确认真实三态人工验证通过。
+## Session 153: Setting translucent shell: WinUI 3 single-layer material
+<!-- trellis-session: v=2 fp=2ed0f1c684bd0b35 -->
+
+**Date**: 2026-11-01
+**Task**: Setting translucent shell: WinUI 3 single-layer material
+**Branch**: `bugfix/settingui`
+
+### Summary
+
+Win11 blur only showed while dragging: accent 0xCC tint plus 80% AppBase left ~4% show-through. Accent now always BlurBehind; root AppBase is the single layer for caption/sidebar/content; cards and colour blocks use WinUI 3 alphas; nav selection uses SubtleFill grey. Fixed sidebar seams/stacked fills, opaque caption during entry mask (patched end-of-frame), pane uses frame backdrop snapshot, cache test covers production translucent root. Root rounding only on Win11 restored; self-drawn border only on Win10 RS4+/Win11. Verified by user on Win10 and Win11.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3e0df72b` | fix(ui3): allow geometry panel expansion in whiteboard |
+| `1922b699` | fix(setting): render the translucent Setting window as one WinUI 3 layer |
+| `652f4409` | fix(setting): sync translucent caption and pane with the frame state |
+| `f99e94f8` | fix(setting): match the root window shape to the system frame |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 132: 统一分页状态动画与白板立即翻页
+<!-- trellis-session: v=2 fp=9ac9e854320b28cc -->
+
+**Date**: 2026-10-30
+**Task**: 统一分页状态动画与白板立即翻页
+**Branch**: `bugfix/mode`
+
+### Summary
+
+PPT recovery 与白板 loading 复用主栏可打断文字过渡，普通数字保持即时；补齐三语言与 Up 后同坐标 hover 抑制。白板翻页复用 PPT contact 封口，旧输入隔离，暖冷页真实 ready 后重开，no-op/失败回原页解锁。ARM64 构建、目标离屏、完整 no-window 和独立质量审查通过，用户确认人工验收通过。隐藏套件既有 Desktop contact/Clear 失败作为独立遗留记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `192ff6d5` | fix(ui3): unify page status transitions and whiteboard navigation |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 134: 修复分支审阅发现的 PPT 身份与等待及白板恢复问题
+<!-- trellis-session: v=2 fp=aa5deb0429e7136c -->
+
+**Date**: 2026-10-31
+**Task**: 修复分支审阅发现的 PPT 身份与等待及白板恢复问题
+**Branch**: `bugfix/mode`
+
+### Summary
+
+延续10-30 PPT导航任务，修复新鲜文稿身份与跨场拓扑、导航完成先到竞态、白板冷页失败跨场景及最终退出补呈现；所有允许的构建和无窗口验证通过，未commit/push，保留原实机未验项。
+
+### Main Changes
+
+- PptCOM fast使用dynamic确认FullName/Name，完整缓存按show session隔离，保持普通同场Slides.Item=0及手动COM释放。
+- 导航等待记住完成epoch，白板失败使用原场景/代次/页绑定的补呈现命令并拒绝ExitPrepared。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] managed红12→全绿；完整InkeysRepo.sln Debug|ARM64 exit0；分页exit0、白板100页exit0、完整--no-window exit0/296.42s；内嵌DLL/TLB/BOM/EOL/diff通过；独立review无未修项。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保持未提交；原任务的Office退出/重开、真实另存及等待像素验收仍未运行，不归档任务。
+
+
+## Session 135: 准备 PPT 导航分段诊断与人工采集入口
+<!-- trellis-session: v=2 fp=1d5cd4efd679ea95 -->
+
+**Date**: 2026-11-01
+**Task**: 准备 PPT 导航分段诊断与人工采集入口
+**Branch**: `bugfix/mode`
+
+### Summary
+
+针对1228ms Previous请求与141ms owner执行之间的未归因时间，增加默认关闭QPC诊断、精确入队出队、COM及focus边界和采集分析脚本；构建/定向/解析检查通过，交用户人工测试，未commit/push。
+
+### Main Changes
+
+- INKEYS_PPT_PERF=1：native/managed数值span、精确邮箱与维护阶段，无额外COM读取、无ABI/所有权/调度变更。
+- 一键入口固定本工作区产物、拒绝旧实例/标记缺失/内嵌DLL不一致；子进程环境与流采集不改配置或执行策略。分析器保持unknown与源/线程身份，不重复累加。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Managed构建/core与stderr开关探针通过；完整Debug|ARM64最终exit0；--ppt-session-only exit0；分析器10项通过；PrepareOnly无GUI且配置哈希不变；TLB/内嵌DLL/BOM/EOL/diff通过，独立审查无未修项。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户运行Scripts/Start-PptNavigationDiagnostic.cmd测试3↔4控件及键盘，重点Previous；退出Inkeys后读取新采集目录分析1.23s，AI不操控桌面、不自动提交。
+
+
+## Session 136: 细分 Observe 读取与释放并准备安全调度定位
+<!-- trellis-session: v=2 fp=fa9fd12e35e781fe -->
+
+**Date**: 2026-11-01
+**Task**: 细分 Observe 读取与释放并准备安全调度定位
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户要求准确定位并执行，先在已证实的ROT/Observe排队上补原有成员和释放子阶段。保持dynamic/逐次COM所有权、分支和调度不变；构建/等价测试通过，等待用户新采样后实施有证据的最小调度修复。
+
+### Main Changes
+
+- 仅PptCOM.cs原有Observe与共享getter包裹默认关闭span；16场景比较开关前后原操作序列、次数、释放账本和场次状态。分析器新增维护树和unknown/残余统计。
+- 只读安全调度研究明确pending条件基线、轮询/missingCount/HWND、ROT释放边界与墨迹准入不能跳过；不是把cached stamp当freshproof。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Managed Release|AnyCPU及全部core通过；完整InkeysRepo.sln Debug|ARM64 exit0/5.90秒；分析器17项和旧v1 1577/749/19兼容通过；TLB/内嵌DLL/PrepareOnly/配置不变/BOM/EOL/diff及独立COM审查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户用原一键入口做3↔4控件约5轮重点Previous；AI不操控桌面、不自动提交，读新子阶段后继续安全调度修复。
+
+
+## Session 137: 实现 ROT 导航让出与确定性清理修复
+<!-- trellis-session: v=2 fp=83701d00fa07f0fb -->
+
+**Date**: 2026-11-01
+**Task**: 实现 ROT 导航让出与确定性清理修复
+**Branch**: `bugfix/mode`
+
+### Summary
+
+依据已实测ROT+Observe累计排队，健康绑定下pending导航可在安全检查点取消ROT，先完整释放再原Observe/排水；最多一次让出避免饿死。dynamic、RCW逐笔释放、ABI、2s和墨迹门禁保持，待用户人工验证收益。
+
+### Main Changes
+
+- 扫描Deferred明确清partialbest/优先级并走所有finally；保留defaultHRESULT/out及释放系统边界，安全scanner诊断不再抛错 orphanwinner。两成员经既有actualdynamicaccessor，未增反射/typedwrapper/GC/FinalRelease。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 实际scanner所有检查点、重复/multiplewinner、失败outnonnull/异常/throwingwriter、真实BindCtx成功释放、资格与公平性、真实client unwind→fullObserve→单次Invoke/旧请求拒绝全过；defaultHarness隔离用户ROT。Managed和完整Debug|ARM64 exit0，TLB字节一致，内嵌DLL351A5292...一致，PrepareOnly配置哈希不变，独立检查无未修项。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户一键入口控件3↔4约8–10轮重点Previous，比较rot-deferred/forced及队列；已进入COM与完整Observe耗时仍有边界，不自动提交或归档。
+
+
+## Session 138: 记录正常退出超时并准备分阶段定位
+<!-- trellis-session: v=2 fp=de1a6af1c64b16b2 -->
+
+**Date**: 2026-11-01
+**Task**: 记录正常退出超时并准备分阶段定位
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认正常菜单/设置退出却触发E1430016，退出验收失败。ROT让出路径实际生效但单轮性能无稳定改善结论；增加默认关闭native/managed清理标记定位，保持原15秒/Arm-first/释放/调度不变，交用户同路径退出采样。
+
+### Main Changes
+
+- ShutdownTrace独立前缀/跨TURecorder，预热PODpreArm缓冲、Failed接管先输出、LastError瞬时保护；主线程/PPTLinkage/service及managedfinal/CP/roots阶段。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Managed构建+全部core及6启停清理等价/IErrorInfo案例通过；完整Debug|ARM64 exit0/23.43秒/0error；PPT定向exit0，TLB/内嵌DLL1061DDF5...一致；PrepareOnly无GUI/配置SHA不变，BOM/EOL/diff及独立检查通过。初轮ADL限定名源码错误已单行修正。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原一键入口按同样菜单/设置正常退出一次，保持原PPT环境；AI不操控桌面，不推断helper失败/COM泄漏，不自动commit或归档。
+
+
+## Session 139: 复核正常退出并准备等待可见性链路诊断
+<!-- trellis-session: v=2 fp=708cb771d5e95a9c -->
+
+**Date**: 2026-11-01
+**Task**: 复核正常退出并准备等待可见性链路诊断
+**Branch**: `bugfix/mode`
+
+### Summary
+
+135913实测正常exit0但导航仍有1.637秒长尾、邮箱1.239秒；用户确认三点不可见。未猜测修改COM或partial-proof，准备固定数值UI等待链路及真实像素回归，交用户短测。
+
+### Main Changes
+
+- 默认关闭16384槽PptWait，发布/合并/配置/真实三点/完整像素/pending回执同attempt，所有producer真实join后统一输出；本轮PptCOM源/DLL/TLB未变。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立review与CRLF/diff通过；完整Debug|ARM64 exit0/17.76秒/0error，PPT定向与24组合真实离屏及明确启用采样的BGRA等价exit0；DLL/内嵌一致，PrepareOnly实际main/deploy SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口控件3↔4出现一两次明显等待后正常菜单/设置退出以flush；读取新链路定位三点消失边界。性能/可见性尚未修复，旧退出超时根因未知，不归档、不提交。
+
+
+## Session 140: 修复命令完成后页面准备阶段三点提前消失
+<!-- trellis-session: v=2 fp=2da06aa159b0654f -->
+
+**Date**: 2026-11-01
+**Task**: 修复命令完成后页面准备阶段三点提前消失
+**Branch**: `bugfix/mode`
+
+### Summary
+
+144216零掉样采样及用户澄清确认三点正常出现但随COM/native命令Complete提前消失，后续Pending/页码准备仍约2秒。已独立投影真实Pending为双向通用准备提示，保留旧数字和原安全门。
+
+### Main Changes
+
+- Ppt同快照过滤recovery后投影pagePreparing，PageControl状态比较/双方向OR；generic PptWait Preparing1024 epoch0不借旧请求，原命令水位/COM/ready不变。同步规范及验证/手测交接。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立review与CRLF/diff通过；新增测试枚举限定名修正后完整Debug|ARM64 exit0，page-control-only/ppt-session-only/实际24组合扩展像素和启停等价exit0；PptCOM源/DLL/TLB/内嵌未变，PrepareOnly main/deploy SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口仅第3→4一次，核对真正Pending阻塞时三点保留、新页码成功显示同帧去点，正常退出收集。实际延迟未缩短、旧退出超时及CP末次是否清零未知仍保留，不提交/归档。
+
+
+## Session 141: 页面准备三点提示实机验收通过
+<!-- trellis-session: v=2 fp=953db167425effc2 -->
+
+**Date**: 2026-11-01
+**Task**: 页面准备三点提示实机验收通过
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认第3→4页面准备时三点正常保留和清除，修复版152235采样1744记录零掉样，同attempt generic六点软件链与反馈一致。等待反馈验收通过，停止重复此项矩阵。
+
+### Main Changes
+
+- 更新人工结果、PRD AC4与实现清单；本轮只读日志及文档，无新产品代码。任务保留性能长尾与旧退出未知，不归档。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 分析器exit0/13请求/0issues，8 Next最大42.3125ms、5 Previous最大1012.3007ms；Preparing107真实draw/95同attempt新像素显示receipt，45退出span闭合、exit0，主清理1001.898ms。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 剩余Previous邮箱855.8518ms主要是完整Observe781.0943ms与维护74.7354ms；实际延迟仍未修复，后续单独评估。PptCOM/安全门未变，未提交/归档，不追加人工三点测试。
+
+
+## Session 142: 提交PPT等待反馈修复与诊断阶段成果
+<!-- trellis-session: v=2 fp=96f99141369a20a0 -->
+
+**Date**: 2026-11-01
+**Task**: 提交PPT等待反馈修复与诊断阶段成果
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户明确授权提交当前改动；代码/脚本/测试/spec及任务研究已提交555ba5ce。最终全范围审查复用各轮通过证据，修正文档AC7过时表述为反馈通过、性能仍待处理。
+## Session 133: 修复重连接触身份残留并完成人工验收
+<!-- trellis-session: v=2 fp=323ace0df79f6509 -->
+
+**Date**: 2026-10-31
+**Task**: 修复重连接触身份残留并完成人工验收
+**Branch**: `bugfix/ink`
+
+### Summary
+
+同步重连接管的输入与手势身份；生产回归红17→绿0，Debug ARM64和Release x64构建及审查通过；用户人工验证通过，任务归档，待合并dev。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `555ba5ce` | fix(ppt): preserve preparation feedback and trace navigation delays |
+
+### Testing
+
+- [OK] 既有完整ARM64/managed/定向/真实离屏及用户等待反馈通过；本轮源码未变化，不重跑矩阵，git diff --check通过。
+| `74b8d3cb` | fix(ink): synchronize touch identity on stroke reconnect |
+
+### Testing
+
+- [OK] Debug ARM64 / Release x64完整构建通过；control-fence红17绿0；人工验证通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留in_progress任务与实际延迟/旧退出未知，不归档、不push；会话日志单独提交。
+
+
+## Session 143: 调查PPT数字页码偶发文字过渡
+<!-- trellis-session: v=2 fp=30eb4d505fbe38d1 -->
+
+**Date**: 2026-11-01
+**Task**: 调查PPT数字页码偶发文字过渡
+**Branch**: `bugfix/mode`
+
+### Summary
+
+确认历史与现规范要求Numeric到Numeric当前/总页数即时更新，现分支仍在。找到短暂Status未达中点即回Numeric可重开两槽动画的可达候选，尚缺现场kind/timeline证据；保留用户偏好的三点。
+
+### Main Changes
+
+- 只新增研究和任务记录，未改产品、测试或规范；解释普通PPT三点与白板switching/PPT recovery文字分工。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 只读源码、归档任务、trellis mem与既有测试覆盖核对；未构建或运行GUI，未将静态可达候选当现场定因。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 先补精确状态/动画选择轨迹或最小离屏场景确认，再决定仅取消未显现状态回数字的过渡；不全局禁用语义动画、不自动恢复文字或提交。
+
+
+## Session 144: 复现页码短状态动画并准备窄策略取证
+<!-- trellis-session: v=2 fp=3a34e73b8976a411 -->
+
+**Date**: 2026-11-01
+**Task**: 复现页码短状态动画并准备窄策略取证
+**Branch**: `bugfix/mode`
+
+### Summary
+
+0/20ms短Status未显示即返回数字可复现主次槽动画，普通Numeric仍直接更新。准备默认关闭content-policy同快照数值采样，不改动画策略、三点或COM，等真实偶发样本定因。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整Debug|ARM64 exit0/26.21秒，PPT定向与真实离屏/实际hook及采样BGRA等价exit0；独立check、UTF8/CRLF/diff、DLL/TLB/内嵌不变、PrepareOnly配置SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口遇一次数字缩小/淡出，记页码方向后正常退出；现场没有kind轨迹前不称定因，不提交/改策略。
+
+
+## Session 145: 现场确认正常页面准备误走文字状态动画
+<!-- trellis-session: v=2 fp=6f9fd712287745fe -->
+
+**Date**: 2026-11-01
+**Task**: 现场确认正常页面准备误走文字状态动画
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认3→4基本都有缩小淡出；163049样本912零掉样，现场Recovering被映射Status后返回Numeric，实际重启两槽。右下70.8269ms，总页数56未变。正常新目标也会发布Recovering，说明不是纯数字即时分支失效。
+
+### Main Changes
+
+- 只读调查并记录确认根因与安全显示修复边界，不改产品策略、COM或ready；建议保留恢复控制态、进度统一三点、失败/冲突/重试结果保留文字，不直接投影None。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 正确EXE1EB8...、exit0；原始policy/kind/setter变化与Gate新目标2一致。未把scale/pct当中点或状态文字已显示，未将7个surface配对当7次翻页；本轮无新build/GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 按独立显示策略设计最小修复，保留Pending/target0/错误与重试控制；当前仅调查，未提交。
+
+
+## Session 146: 恢复进度三点移至页码右上并修复正常数字动画
+<!-- trellis-session: v=2 fp=5be7ac66ecc01a37 -->
+
+**Date**: 2026-11-01
+**Task**: 恢复进度三点移至页码右上并修复正常数字动画
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户批准Recovering显示进度而非文字Status，保留错误与Retry。合并前后翻页三点到Page右上单角标，同session稳定数字override防目标页提前显示；所有控制current/ACK/Host恢复门及COM不变。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立review与UTF8/CRLF/diff通过，完整Debug|ARM64 exit0/49.69秒，page-control/PPT定向及实际24组合离屏/数字即时/缓存/旧ACK/最大字宽/partial与启停BGRA exit0；managed源/DLL/TLB/内嵌未变，PrepareOnly配置SHA不变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口3→4及返回一次，确认数字不缩淡、Page右上角标与清除；正常退出收集。未提交，性能长尾仍保留。
+
+
+## Session 147: 页码右上角进度角标与数字即时更新实机通过
+<!-- trellis-session: v=2 fp=5f04cab3df6147e0 -->
+
+**Date**: 2026-11-01
+**Task**: 页码右上角进度角标与数字即时更新实机通过
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户短测无问题。171213正确修复版433记录零掉样，16条内容策略均Numeric到Numeric即时，55条画点均3点1branch，正常exit0；本轮视觉修复验收通过。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 已核对manifest/hash/密封计数/content-policy/画点与45个闭合退出span，主清理954.7201ms；无新代码/build/GUI/commit。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 无需重复本轮视觉测试；未提交，任务保留性能长尾与原未验边界，不自动归档。
+
+
+## Session 148: 按用户决定结束并归档PPT调查任务
+<!-- trellis-session: v=2 fp=253114265447731b -->
+
+**Date**: 2026-11-01
+**Task**: 按用户决定结束并归档PPT调查任务
+**Branch**: `bugfix/mode`
+
+### Summary
+
+当前视觉修复、诊断和规范已提交，用户明确授权结束当前任务并归档至archive/2026-11。保留性能长尾、旧退出/CP及版本未验残余，不伪改未通过验收；只归档当前任务，不push。
+- 审阅bugfix/ink相对dev的差异，用户自行决定合并；不自动push/merge
+
+
+## Session 135: 设置性能、绘图控制与画布诊断完成归档
+<!-- trellis-session: v=2 fp=079ae463ac39198e -->
+
+**Date**: 2026-11-01
+**Task**: 设置性能、绘图控制与画布诊断完成归档
+**Branch**: `setting/performance`
+
+### Summary
+
+完成性能页、绘图选项、设置提示与诊断复制；修复末项复制按钮触发的 ImGui 边界断言，并归档任务。
+
+### Main Changes
+
+- 实现独立界面与画布帧率、逐笔绘图设置、激光笔约束、完整画布诊断及复制按钮。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7e649000` | fix(ppt): keep recovery progress numeric and anchor waiting dots to page |
+
+### Testing
+
+- [OK] 最终跨chunk gate PASS，复用完整ARM64/定向/真实离屏/171213人工PASS；差异检查通过。归档55跟踪文件，本地9个忽略证据保持本地不纳入Git。
+| `ead40db9` | feat(settings): add performance controls and canvas diagnostics |
+
+### Testing
+
+- [OK] 完整 solution Debug ARM64 构建通过；attention/copy 无窗口回归通过。历史 HomeWARP 检查限制见归档验证报告，未运行 GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本任务结束，无需继续当前测试；后续性能或退出问题如需处理另行明确范围。
+
+
+## Session 150: 实现延迟一秒显示的页码环形加载指示器
+<!-- trellis-session: v=2 fp=7c0ad4ed936019ec -->
+
+**Date**: 2026-11-01
+**Task**: 实现延迟一秒显示的页码环形加载指示器
+**Branch**: `bugfix/mode`
+
+### Summary
+
+按批准方案将Page三点替换为主题灰轨道/文字色圆角弧，绝对连续1000ms门槛、非线性渐显/退场和旋转；复用InputWorker deadline不延迟空转，隐藏/会话退休，未改数字/错误/ACK/Office COM。
+
+### Main Changes
+
+- 新增纯值motion/deadline helper及Scene缓存几何/双色brush/自有stroke，独立视觉续帧；全局设置唤醒Ppt，真实无手势worker及离屏回归，更新规范与验收记录。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立check修正同frame false→true与装饰stroke失败日志；完整Debug|ARM64 exit0/43.16s，page-control/PPT/production InputWorker/真实像素全exit0；内嵌及managed源/DLL/TLB未变，PrepareOnly main/deploy SHA相同，UTF8/CRLF/diff通过，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户原入口短加载/原慢3→4各看一次，核对一秒后出现、颜色尺寸与显隐旋转，正常退出；未提交/归档，不涉及PPT性能优化。
+
+
+## Session 151: 按人工反馈放大细线环并改为半秒显示
+<!-- trellis-session: v=2 fp=c758c5ec64f7137f -->
+
+**Date**: 2026-11-01
+**Task**: 按人工反馈放大细线环并改为半秒显示
+**Branch**: `bugfix/mode`
+
+### Summary
+
+小环外半径4→6DIP，track1→.6/arc2→1.2，显示门槛500ms；位置、旋转一秒及180/140ms显隐保持，统一Style用于路径/绘制/AA损伤。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立check补非空glyph守卫；完整Debug ARM64 exit0，499/500状态和实际像素/最大字形/partial/尾帧均exit0，无遮字保留原锚点；COM/资源与配置SHA未变，无GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户短测新尺寸细线与半秒显示，未commit/push/归档。
+
+
+## Session 152: 环形加载指示器验收提交与归档
+<!-- trellis-session: v=2 fp=6b7cf26ffabbb2a1 -->
+
+**Date**: 2026-11-01
+**Task**: 环形加载指示器验收提交与归档
+**Branch**: `bugfix/mode`
+
+### Summary
+
+用户确认最终改动生效并批准结束提交。500ms延迟、外半径6DIP、track.6/arc1.2及显隐旋转已验收；工作commit后归档当前任务。旧PPT性能不属于本任务，不push。
+
+## Session 149: 手掌橡皮人工验收与任务收尾
+<!-- trellis-session: v=2 fp=3bc1a963a3b6d63f -->
+
+**Date**: 2026-11-01
+**Task**: 手掌橡皮人工验收与任务收尾
+**Branch**: `feature/erase`
+
+### Summary
+
+完成手掌橡皮设置与1%倍率、实尺预览、边擦边写条件i提示；用户人工验收通过。ARM64完整构建/无窗口验证/i18n通过，最终默认路径构建0错误；清理三个临时程序目录并归档任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `47dd6314` | feat(ppt): add delayed animated loading ring to page badge |
+
+### Testing
+
+- [OK] 最终全范围gate PASS，复用完整ARM64/定向/worker/实际像素与用户确认；最新204632入口仍running，仅作为版本确认，不宣称退出/密封。源码未变，diff检查通过。
+| `4a9caa11` | feat(settings): refine palm eraser configuration and previews |
+| `b5dd13bb` | chore(trellis): archive verified palm eraser task |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 当前任务完成，活动指针清除；后续视觉调整另行明确范围。
+
+
+## Session 157: 白板快捷键、分页过渡与动画速率设置收尾
+<!-- trellis-session: v=2 fp=157c4639d2ed8eba -->
+
+**Date**: 2026-11-02
+**Task**: 白板快捷键、分页过渡与动画速率设置收尾
+**Branch**: `bugfix/mode`
+
+### Summary
+
+接续并完成白板快捷键与白板/PPT分页过渡修复，将动画速率移至实验选项，完成无窗口验证和任务归档。
+
+### Main Changes
+
+- 稳定白板恢复快捷键，保留过渡与最小化门禁；分页淡出冻结内容以消除闪烁。
+- 动画速率迁入实验选项，保留配置键、实时预览和松手/离页保存，更新现有布局回归。
+## Session 154: 十一语言国际化扩展与翻译修正完成
+<!-- trellis-session: v=2 fp=c1e03ff837b8acbf -->
+
+**Date**: 2026-11-02
+**Task**: 十一语言国际化扩展与翻译修正完成
+**Branch**: `feature/i18n`
+
+### Summary
+
+完成原三语审查修正、新增八种语言与Noto JP/KR嵌入，十一语各679条；真实format、DWrite离屏和完整无窗口回归通过，交付451项三语变更Markdown。无GUI、commit、push或归档。
+
+### Main Changes
+
+- 十一语言稳定元数据、旧索引兼容、首次系统语言匹配及母语名/代码/Beta列表。
+- 补齐84个活动UI key，处理主栏局部拟合及赞助长文可见字形居中/高度。
+
+## Session 160: 共享画笔样式与跨场景颜色粗细
+<!-- trellis-session: v=2 fp=d111c6766a9c5cfa -->
+
+**Date**: 2026-11-02
+**Task**: 共享画笔样式与跨场景颜色粗细
+**Branch**: `bugfix/color`
+
+### Summary
+
+完成Brush三范围颜色、三组全局宽度与荧光激光全局颜色；白板主题token与owner应用ACK同步；数位板R2暂缓等待日志。
+
+### Main Changes
+
+- 共享样式、工作区投影、颜色版本校验和主题后主栏刷新
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64使用ARM64原生MSBuild：exit0；最终增量10.15秒。
+- [OK] 真实嵌入/typedformat exit0；DWrite/组件离屏exit0；完整--no-window exit0/338.72秒且stderr空；679全语言check及编码/字形覆盖通过。
+- [OK] 完整InkeysRepo.sln Debug ARM64、四个生产探针、headless --no-window通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留当前任务及未提交改动供用户审阅；明细见任务translation-changes.md和validation.md。
+
+
+## Session 155: 日韩Noto设置字体校准完成
+<!-- trellis-session: v=2 fp=743089a5c45b0906 -->
+
+**Date**: 2026-11-02
+**Task**: 日韩Noto设置字体校准完成
+**Branch**: `feature/i18n`
+
+### Summary
+
+Noto按源字族校准尺度、按主字族对齐合并基线；中文/主栏/图标/字体资产和翻译保持。三DPI真实对照、设置专项与完整无窗口回归通过。
+- 等待高漫M6数位板主栏点击日志，R2输入过滤未改；未commit/push
+
+
+## Session 164: M6主栏与翻页详细输入诊断
+<!-- trellis-session: v=2 fp=7657d9a5911910f2 -->
+
+**Date**: 2026-11-02
+**Task**: M6主栏与翻页详细输入诊断
+**Branch**: `bugfix/color`
+
+### Summary
+
+沿现有测试触控反馈输出补齐raw到业务的主栏/四分页诊断，记录跨窗口lease与capture归属，未改变输入策略。
+
+### Main Changes
+
+- 有界Move摘要、关键边沿/拒绝完整、channel与窗口映射、错误码保护及真实helper测试
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug|ARM64完整Solution exit0/12.88s；设置专项exit0/10.96s；完整--no-window exit0/358.22s且stderr空。
+- [OK] 完整Solution Debug ARM64、五个生产探针、headless --no-window exit0/296.57s
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留未提交改动，用户重新启动新构建试用日/韩；任务继续，不自动归档。
+
+
+## Session 156: 国际化任务验收归档
+<!-- trellis-session: v=2 fp=19a12eb14892cf4c -->
+
+**Date**: 2026-11-02
+**Task**: 国际化任务验收归档
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认字体校准生效，授权结束、归档、提交和Push。已归档i18n-eight-locales；原三语451项对照及Noto校准验证保留在archive/2026-11。修复归档后文档链接，推送feature/i18n。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f37a527` | fix(ui3): restore whiteboard shortcuts and stabilize page transitions |
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 原生 MSBuild 构建通过；正常权限完整 headless --no-window 退出 0。
+- [OK] 状态生产测试、分页离屏回归、i18n check 与 diff check 均通过；未进行 GUI 测试。
+| `e5f0574e` | feat(i18n): add eight locales and fix translations and layouts |
+| `f6194712` | fix(i18n): calibrate Noto settings typography |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 158: Setting FreeType、动态图集与语言热切换
+<!-- trellis-session: v=2 fp=1a5f5577cebd48df -->
+
+**Date**: 2026-11-02
+**Task**: Setting FreeType、动态图集与语言热切换
+**Branch**: `feature/i18n`
+
+### Summary
+
+完成固定 ImGui 1.92.7 的 SettingUI FreeType/Alpha8+R8、像素基线对齐及全自有界面语言即时刷新；核心自动验证通过，等待用户原生观感验收。
+
+### Main Changes
+
+- FreeType仅用于Setting；Bar/PPT继续DWrite，旧消息框保持快照；移除语言重启提示。
+- 360页面候选均满足可计量稳态预算，真实字号/字重与布局回归通过；更新规范及完整验证报告。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug ARM64最终构建、完整无窗口342.39s、720行页面矩阵、R8像素/回调/失败恢复、33轮字体生命周期、i18n格式与并发快照均通过。
+- [OK] 字体性能ABBA未重现稳定暖态退化；冷初始化成本与额外Bar culled=0诊断明确保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户检查实际设置窗口清晰度、字号字重及语言切换；确认后再按明确授权提交/归档，不自动push。
+
+
+## Session 159: 验收并归档设置字体与语言热切换
+<!-- trellis-session: v=2 fp=90d50e32ad2b9711 -->
+
+**Date**: 2026-11-02
+**Task**: 验收并归档设置字体与语言热切换
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认效果符合预期；仅移除语言即时生效说明的信息图标并保留文字，完成验证、签名提交及任务归档。
+
+### Main Changes
+
+- 主改动6a8fd4ea，任务归档ce95bea8；仅处理当前任务，未push。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6a8fd4ea` | feat(settings): improve font rendering and live language switching |
+
+### Testing
+
+- [OK] 最终微调完整Debug ARM64构建40.01s、无窗口设置专项18.18s通过；此前完整功能与360候选页面预算证据保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 任务completed；额外主栏culling诊断作为独立观察保留在归档报告。
+
+
+## Session 161: 二十语言扩展验收提交与归档
+<!-- trellis-session: v=2 fp=b95592ba1d07bd25 -->
+
+**Date**: 2026-11-02
+**Task**: 二十语言扩展验收提交与归档
+**Branch**: `feature/i18n`
+
+### Summary
+
+用户确认改动生效并授权提交、结束。九语各679键，二十项按代码排序且旧保存索引兼容；实现和验证已提交、任务已归档，未push。
+
+### Main Changes
+
+- 新增id-ID、vi-VN、tr-TR、it-IT、pl-PL、uk-UA、es-MX、ro-RO、en-GB，共6111个叶子值，补消息框按钮和稳定索引/显示映射。
+- 沿用既有FreeType、Harmony/Noto字体和帧边界热切换；精炼固定槽与UA侧栏，补真实菜单选择、字形/Caption裁切及导航回归，同步规范。
+- 用户已验收；归档引用与资源校验脚本在归档目录继续可用。旧RU侧栏既有超宽与母语审校建议单列，未扩改范围。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `100fda717084aeac1e3b377c24b141d9412a118a` | feat(i18n): expand to twenty locales and sort language menu |
+| `ef05d1b6d8d74f7c8996174520fbc31ddbec313b` | chore(task): archive i18n-twenty-locales |
+
+### Testing
+
+- [OK] i18n sync/check：19个非基准语言均679/679；20个EXE资源与源文件逐字节一致，实际格式化/语言事务/快照通过。
+- [OK] 完整InkeysRepo.sln Debug ARM64构建通过；完整--no-window 304.1秒exit0且stderr为空；生产字体生命周期、Bar/PageControl离屏和九语字体样本通过。
+- [OK] 最终1664个页面场景/832个FT对照组，0缺字0预算失败；UA修正后80场景复测通过。沙箱PDB/TEMP问题通过原生MSBuild和工作区TEMP解决，无工程配置绕过，无GUI操作。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 162: 快捷方式设置与保障整合
+<!-- trellis-session: v=2 fp=b77ace4221ccade5 -->
+
+**Date**: 2026-11-03
+**Task**: 快捷方式设置与保障整合
+**Branch**: `temp/state`
+
+### Summary
+
+完成通用快捷方式页、预设/自定义名称、双保障开关及 main.json 配置整合；完整 ARM64 Solution、Headless 和快捷方式专项通过，未进行 GUI/commit/push。
+
+### Main Changes
+
+- 新增通用快捷方式子页与名称内联区，全部语言默认 Inkeys，改名仅保存。
+- 配置迁入 Application.Shortcut，冻结 FIFO 请求，补齐文件名和 Unicode 同名边界。
+- 补 20 语文案、实际控件/导航/配置/队列/ShellLink 回归和桌面快捷方式 code spec。
+- 用户用M6采集ui_schema/ui_input v1完整日志以定位R2；本轮未commit/push或GUI
+
+
+## Session 165: 五窗独立Touch与数位板跨窗修复
+<!-- trellis-session: v=2 fp=7891bc8ea5e288a6 -->
+
+**Date**: 2026-11-03
+**Task**: 五窗独立Touch与数位板跨窗修复
+**Branch**: `bugfix/color`
+
+### Summary
+
+依据持续感应跨窗日志修复五窗Touch归属及分页兼容鼠标终态丢失；各窗独立Context，共用规则，完成自动回归与Release x64交付，设备待验收。
+
+### Main Changes
+
+- 五窗本地TouchContext、真实候选与已呈现probe、完整64位取消身份、统一Pointer兼容鼠标过滤，保留PPT长按和白板Up单次
+## Session 169: 启动动画多效果与主题透明度适配完成
+<!-- trellis-session: v=2 fp=1d115f24f6c16e41 -->
+
+**Date**: 2026-11-04
+**Task**: 启动动画多效果与主题透明度适配完成
+**Branch**: `bugfix/theme`
+
+### Summary
+
+完成用户批准的第四版：掠光、淡彩虹、像素拼装及内联选择，ReadMini冻结主题/独立透明度并适配角落/缩放。完整ARM64构建与无窗口测试通过；按用户规则保留未提交状态。
+
+### Main Changes
+
+- 新增三效果渲染、分层透明度、像素渐显外散/弧线归位和正常成功的2.4秒视觉门。
+- 新增设置条件下拉框、严格配置codec/Mini快照与20语；同步启动/配置spec。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 最终完整 InkeysRepo.sln Debug ARM64 build-8 exit 0；canonical Path 与 workspace TEMP 仅作用于验证进程。
+- [OK] 完整 InkeysHeadlessTests --no-window exit 0；快捷方式 exact/quoted exit 0，额外参数 exit 2；i18n check/runtime 通过。
+- [OK] 完整Solution Debug ARM64 exit0/41.04s，五生产探针全0含真实UI3TouchProbe，完整headless --no-window exit0/306.60s
+- [OK] 完整Solution Release x64 exit0/115.29s，PE0x8664、预期诊断标识与SHA256核对通过；未GUI
+- [OK] ARM64原生MSBuild完整InkeysRepo.sln Debug|ARM64（主机环境、独立OutDir）exit0。
+- [OK] 最终启动专项与完整--no-window均exit0；固定30Hz、模糊原点、奇数尺寸逆缩放及透明度隔离回归通过。
+- [OK] diff/编码/BOM/CRLF审计通过，PptCOM输入二进制未变，原生离屏图已检查。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 代码保持未提交，未运行 GUI；旧任务目录内 10 张测试生成 PNG 的清理被自动审批拒绝，等待用户明确授权，不绕过。
+
+
+## Session 163: 回收无关测试预览图
+<!-- trellis-session: v=2 fp=19dad8b0a331da38 -->
+
+**Date**: 2026-11-03
+**Task**: 回收无关测试预览图
+**Branch**: `temp/state`
+
+### Summary
+
+按用户明确指示，将本轮测试生成的十张 PNG 送入 Windows 回收站，原路径清空且回收副本大小/SHA256 全部匹配。
+
+### Main Changes
+
+- 仅处理 generated-preview-inventory.json 中限定目录和十个已核对文件；不永久删除，不操作其他文件或目录。
+- 用户按touch-fix-capture.md进行一次同一数位板持续感应跨五窗/长按复核，交回M6-touch-fix.txt；任务保持in_progress，本轮不commit/push
+
+
+## Session 166: Touch注册与Pointer来源诊断补齐
+<!-- trellis-session: v=2 fp=0cf34f5af0a9597c -->
+
+**Date**: 2026-11-03
+**Task**: Touch注册与Pointer来源诊断补齐
+**Branch**: `bugfix/color`
+
+### Summary
+
+补齐五窗RegisterTouchWindow实际结果、IsTouchWindow状态及原生Pointer Down来源，保持输入策略，交付Release x64诊断包等待下轮设备日志。
+
+### Main Changes
+
+- 现有测试触控反馈开关下新增touch_registration/touch_window_snapshot/pointer_info，动态可选API、GLE保护、关闭零新增查询；修启动快照误标Down
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Windows 原生回收成功；十个原路径不存在，十份新回收站副本逐一通过大小及 SHA256 校验。
+- [OK] 完整Debug ARM64源码编译通过；本机增量链接LNK1000内部错误保留单个ilk重建后Solution exit0/8.27s；五生产探针全0
+- [OK] 完整headless --no-window exit0/260.41s，Release x64 exit0/332.72s；PE0x8664/新诊断标识/SHA256/无GetPointerInfo硬导入核验通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 清理已完成，代码仍保持未提交；本轮未改产品代码，不重复编译或测试。
+- 用户按touch-registration-capture.md采集M6-touch-registration.txt，先保持驱动设置；Pointer-only业务缺口仍待处理，任务in_progress，本轮不GUI/commit/push
+
+
+## Session 167: UI3 pointer-source arbitration for tablet pen and touch input
+<!-- trellis-session: v=2 fp=a724db5e1f19bc99 -->
+
+**Date**: 2026-11-03
+**Task**: UI3 pointer-source arbitration for tablet pen and touch input
+**Branch**: `bugfix/color`
+
+### Summary
+
+Investigated why tablet pens could not click the bar and page controls (Pointer only, no WM_TOUCH). Made WM_POINTER the contact source for the five UI windows with WM_TOUCH and signed compatibility mouse excluded by type, fixed the lost first page tap after drawing and the cancelled bar press with the page menu open, kept pen haptic credentials across pen-up, added a whiteboard page-switch busy ring, and validated on Surface pen, finger, two Gaomon M6 setups and the affected user's M6. Page-control haptics and haptic stop/discrete timing are left as follow-ups.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f9aeefbd` | fix(ui-input): use Pointer as the contact source for bar and page controls |
+| `25749d67` | docs(task): record tablet pointer input investigation and validation |
+
+### Status
+
+[OK] **Completed**
+- 本任务已归档至archive/2026-11/11-04-startup-preview-theme-opacity；未运行GUI、未commit/push。

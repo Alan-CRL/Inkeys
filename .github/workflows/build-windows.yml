@@ -449,6 +449,22 @@ jobs:
         merge-multiple: true
         path: Inkeys
 
+    - name: Install vcpkg dependencies
+      shell: pwsh
+      timeout-minutes: 60
+      run: |
+        $msbuildSearchPath = $env:Path
+        Remove-Item Env:PATH -ErrorAction SilentlyContinue
+        $env:Path = $msbuildSearchPath
+        $env:MSBUILDDISABLENODEREUSE = '1'
+        # 从工程读取 triplet 和安装目录，保持三种架构与本地配置一致。
+        $settingsJson = & '${{ steps.setup_msbuild.outputs.MSBUILD_PATH }}' 'Inkeys/Inkeys.vcxproj' /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 '/getProperty:VcpkgTriplet,VcpkgInstalledDir' /nologo
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $settings = ($settingsJson -join "`n" | ConvertFrom-Json).Properties
+        # 下载失败后可能由备用镜像恢复；在 MSBuild 外按真实退出码判断安装结果。
+        & .\vcpkg\vcpkg.exe install --x-wait-for-lock --triplet $settings.VcpkgTriplet "--x-manifest-root=$env:GITHUB_WORKSPACE" "--x-install-root=$($settings.VcpkgInstalledDir)"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     - name: Build Inkeys
       shell: pwsh
       timeout-minutes: 60
@@ -457,8 +473,8 @@ jobs:
         Remove-Item Env:PATH -ErrorAction SilentlyContinue
         $env:Path = $msbuildSearchPath
         $env:MSBUILDDISABLENODEREUSE = '1'
-        # Win32 也使用 64 位宿主工具；发布构建明确关闭内嵌 Harness。
-        & '${{ steps.setup_msbuild.outputs.MSBUILD_PATH }}' 'Inkeys/Inkeys.vcxproj' /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /p:PreferredToolArchitecture=x64 /p:EnableUi3PresentationHarness=false /verbosity:minimal
+        # 依赖已单独安装；Win32 使用 64 位宿主工具，发布构建关闭内嵌 Harness。
+        & '${{ steps.setup_msbuild.outputs.MSBUILD_PATH }}' 'Inkeys/Inkeys.vcxproj' /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /p:PreferredToolArchitecture=x64 /p:EnableUi3PresentationHarness=false /p:VcpkgManifestInstall=false /verbosity:minimal
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Verify embedded PptCOM DLL and symbols

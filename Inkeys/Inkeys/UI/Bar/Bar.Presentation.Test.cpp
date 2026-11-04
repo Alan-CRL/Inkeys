@@ -623,7 +623,7 @@ namespace Inkeys::UI::Bar
 			setlist.updateArchitecture = "win32";
 			#endif
 			setlist.selectLanguage = 1; setlist.startUp = false;
-			setlist.SetSkinMode = 0; setlist.SkinMode = 1; setlist.settingGlobalScale = 1.0f;
+			setlist.SetSkinMode = 0; setlist.SkinMode = 1;
 			setlist.topSleepTime = 3; setlist.RightClickClose = false;
 			setlist.BrushRecover = true; setlist.RubberRecover = false;
 			setlist.regularSetting.moveRecover = false; setlist.regularSetting.clickRecover = false;
@@ -635,7 +635,6 @@ namespace Inkeys::UI::Bar
 			setlist.performanceSetting.preparationQuantity = 2; setlist.performanceSetting.drawpadFps = 72; setlist.performanceSetting.superDraw = false;
 			setlist.presetSetting.memoryWidth = true; setlist.presetSetting.memoryColor = false; setlist.presetSetting.autoDefaultWidth = true;
 			setlist.presetSetting.defaultBrush1Width = 3.0f; setlist.presetSetting.defaultHighlighter1Width = 35.0f;
-			setlist.shortcutAssistant.correctLnk = true; setlist.shortcutAssistant.createLnk = false;
 			setlist.plugInSetting.superTop.enable = false; setlist.plugInSetting.superTop.indicator = true;
 			auto& shortcuts = setlist.component.shortcutButton;
 			shortcuts.appliance.explorer = false; shortcuts.appliance.taskmgr = false; shortcuts.appliance.control = false;

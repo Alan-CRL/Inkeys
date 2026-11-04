@@ -1,0 +1,26 @@
+{
+  "Inkeys/Inkeys/Other/Other.Config.cppm": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys/Inkeys/Other/Other.Config.cpp": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys/IdtMain.cpp": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.h": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+    "bom": false,
+    "newline": "\r\n"
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+    "bom": false,
+    "newline": "\r\n"
+  }
+}

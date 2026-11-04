@@ -1,0 +1,33 @@
+{
+  "stored_configuration_refs": {
+    "before": 130,
+    "after": 130,
+    "removed": {},
+    "added": {}
+  },
+  "business_calls": {
+    "before": 96,
+    "after": 96,
+    "removed": {},
+    "added": {}
+  },
+  "business_command_kinds": {
+    "before": 6,
+    "after": 6,
+    "removed": {},
+    "added": {}
+  },
+  "route_cases": {
+    "before": 18,
+    "after": 18,
+    "removed": {},
+    "added": {}
+  },
+  "i18n_keys": {
+    "removed": {},
+    "added": {
+      "I18nKey.SettingsUI.Version.N": 1,
+      "I18nKey.SettingsUI.PlugIn.N": 1
+    }
+  }
+}

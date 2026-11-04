@@ -1,0 +1,178 @@
+[
+ {
+  "name": "barGeometry",
+  "group": "主栏",
+  "label": "几何（恢复原版）",
+  "original": true
+ },
+ {
+  "name": "barWhiteboard",
+  "group": "主栏",
+  "label": "白板"
+ },
+ {
+  "name": "barEndShow",
+  "group": "主栏",
+  "label": "结束放映"
+ },
+ {
+  "name": "barFreeze",
+  "group": "主栏",
+  "label": "冻结"
+ },
+ {
+  "name": "barPierce",
+  "group": "主栏",
+  "label": "穿透"
+ },
+ {
+  "name": "barReturnShow",
+  "group": "主栏状态",
+  "label": "返回放映"
+ },
+ {
+  "name": "barResumeWhiteboard",
+  "group": "主栏状态",
+  "label": "回到白板"
+ },
+ {
+  "name": "barMove",
+  "group": "主栏状态",
+  "label": "移动（手形）"
+ },
+ {
+  "name": "compExplorer",
+  "group": "组件",
+  "label": "文件资源管理器"
+ },
+ {
+  "name": "compTaskManager",
+  "group": "组件",
+  "label": "任务管理器"
+ },
+ {
+  "name": "compControlPanel",
+  "group": "组件",
+  "label": "控制面板"
+ },
+ {
+  "name": "compShowDesktop",
+  "group": "组件",
+  "label": "显示桌面"
+ },
+ {
+  "name": "compLockScreen",
+  "group": "组件",
+  "label": "锁屏"
+ },
+ {
+  "name": "compEscape",
+  "group": "组件",
+  "label": "Esc"
+ },
+ {
+  "name": "compAltF4",
+  "group": "组件",
+  "label": "Alt+F4"
+ },
+ {
+  "name": "compRollCallRandom",
+  "group": "组件",
+  "label": "IslandCaller 随机点名"
+ },
+ {
+  "name": "compRollCallSingle",
+  "group": "组件",
+  "label": "IslandCaller 抽取一人"
+ },
+ {
+  "name": "compRollCallQuick",
+  "group": "组件",
+  "label": "SecRandom 快速抽取"
+ },
+ {
+  "name": "compRollCallQuick2",
+  "group": "组件",
+  "label": "SecRandom 2 快速抽取"
+ },
+ {
+  "name": "compRollCallQuickCompat",
+  "group": "组件",
+  "label": "SecRandom 2 快速抽取（兼容）"
+ },
+ {
+  "name": "compNamePicker",
+  "group": "组件",
+  "label": "NamePicker 随机姓名"
+ },
+ {
+  "name": "compClassSettings",
+  "group": "组件",
+  "label": "ClassIsland 设置"
+ },
+ {
+  "name": "compClassProfile",
+  "group": "组件",
+  "label": "ClassIsland 档案编辑"
+ },
+ {
+  "name": "compClassSwap",
+  "group": "组件",
+  "label": "ClassIsland 快速换课"
+ },
+ {
+  "name": "barAutoEraser",
+  "group": "橡皮面板",
+  "label": "自动粗细"
+ },
+ {
+  "name": "barEraserSpeedSetting",
+  "group": "橡皮面板",
+  "label": "极速橡皮设置"
+ },
+ {
+  "name": "barCloseSmall",
+  "group": "辅助",
+  "label": "关闭"
+ },
+ {
+  "name": "barInfo",
+  "group": "辅助",
+  "label": "信息"
+ },
+ {
+  "name": "barQuestion",
+  "group": "辅助",
+  "label": "问号"
+ },
+ {
+  "name": "barMore",
+  "group": "辅助",
+  "label": "展开 / 翻页箭头（0° 朝上）"
+ },
+ {
+  "name": "barThicknessAdjust",
+  "group": "辅助",
+  "label": "小展开箭头（0° 朝上）"
+ },
+ {
+  "name": "barAdd",
+  "group": "辅助",
+  "label": "添加页"
+ },
+ {
+  "name": "barMenu",
+  "group": "辅助",
+  "label": "白板菜单"
+ },
+ {
+  "name": "barMinimize",
+  "group": "辅助",
+  "label": "最小化白板"
+ },
+ {
+  "name": "barPalette",
+  "group": "辅助",
+  "label": "白板主题"
+ }
+]

@@ -226,6 +226,7 @@ namespace PptCOM
         public readonly SlideShowObservationStamp Stamp;
         public readonly bool HasStamp;
         public readonly bool Check;
+        public long DiagnosticId;
 
         public SlideShowExitRequest(long session, SlideShowOwnerOperation operation = SlideShowOwnerOperation.ExitShow)
         {
@@ -243,6 +244,8 @@ namespace PptCOM
         }
 
         public bool IsCancelled { get { lock (gate) { return cancelled; } } }
+        public bool IsCompleted { get { lock (gate) { return completed; } } }
+        public bool HasStarted { get { lock (gate) { return executing; } } }
 
         public bool TryBeginExecution()
         {
@@ -297,6 +300,21 @@ namespace PptCOM
 
         public bool IsOwner { get { return Thread.CurrentThread.ManagedThreadId == ownerThreadId; } }
 
+        internal bool HasPendingNavigationRequests
+        {
+            get
+            {
+                lock (gate)
+                {
+                    // 只检查只读操作类型；不增加 request 锁、COM 访问、分配或日志。
+                    foreach (SlideShowExitRequest request in exits)
+                        if (request.Operation == SlideShowOwnerOperation.Next ||
+                            request.Operation == SlideShowOwnerOperation.Previous) return true;
+                    return false;
+                }
+            }
+        }
+
         public void Start()
         {
             lock (gate)
@@ -309,13 +327,25 @@ namespace PptCOM
 
         public void Stop()
         {
+            List<KeyValuePair<SlideShowExitRequest, long>> drained = null;
+            if (PptPerfTrace.Enabled)
+                try { drained = new List<KeyValuePair<SlideShowExitRequest, long>>(); } catch { }
             lock (gate)
             {
                 running = false;
                 ownerThreadId = 0;
-                while (exits.Count != 0) exits.Dequeue().Complete(-1);
+                while (exits.Count != 0)
+                {
+                    SlideShowExitRequest request = exits.Dequeue();
+                    long qpc = PptPerfTrace.Timestamp();
+                    request.Complete(-1);
+                    if (drained != null)
+                        try { drained.Add(new KeyValuePair<SlideShowExitRequest, long>(request, qpc)); } catch { }
+                }
             }
             wake.Set();
+            if (drained != null)
+                foreach (var entry in drained) PptPerfTrace.Instant("mailbox-stop-drain", entry.Key, entry.Value, -1);
         }
 
         public void Wake() { wake.Set(); }
@@ -355,29 +385,46 @@ namespace PptCOM
 
         public int Request(SlideShowExitRequest request, int milliseconds)
         {
+            long queuedAt;
             lock (gate)
             {
                 if (!running || exits.Count >= 8) return -1;
                 exits.Enqueue(request);
+                queuedAt = PptPerfTrace.Timestamp();
             }
             wake.Set();
+            PptPerfTrace.Instant("mailbox-enqueue", request, queuedAt);
             return request.Wait(milliseconds);
         }
 
         public void ProcessExits(Func<SlideShowExitRequest, int> execute)
         {
-            while (true)
+            int remaining;
+            lock (gate) remaining = exits.Count;
+            // 每轮最多处理进入时的有界邮箱；持续新命令不能饿死页面维护。
+            for (int index = 0; index < remaining; ++index)
             {
                 SlideShowExitRequest request;
+                long dequeuedAt;
                 lock (gate)
                 {
                     if (exits.Count == 0) return;
                     request = exits.Dequeue();
+                    dequeuedAt = PptPerfTrace.Timestamp();
                 }
+                PptPerfTrace.Instant("mailbox-dequeue", request, dequeuedAt);
                 int result = -1;
-                try { if (request.TryBeginExecution()) result = execute(request); }
+                try
+                {
+                    if (request.TryBeginExecution()) result = execute(request);
+                    else PptPerfTrace.Instant("mailbox-skipped", request, PptPerfTrace.Timestamp(), -1);
+                }
                 catch { result = -1; }
-                finally { request.Complete(result); }
+                finally
+                {
+                    request.Complete(result);
+                    PptPerfTrace.Instant("mailbox-complete", request, PptPerfTrace.Timestamp(), result);
+                }
             }
         }
     }

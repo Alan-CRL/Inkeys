@@ -1,0 +1,7 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"活动UI3、设置和兼容源码边界；先读索引与适用决策门。"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"C++修改遵循现有风格、并发边界与中文注释要求。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"i18n基准与生成链、空连接符例外、既有术语、配置/资源合同；按研究锚点读取相关章节。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"既有Solution构建与无窗口验证边界，以本次用户ARM64和PATH要求为准。"}
+{"file":".trellis/tasks/11-01-i18n-eight-locales/research/report-audit.md","reason":"116项报告逐键处置与交互/历史批准证据，防止照抄误报。"}
+{"file":".trellis/tasks/11-01-i18n-eight-locales/research/locale-pipeline.md","reason":"语言索引兼容、启动匹配、RC/字体/MessageBox、format及回放入口。"}
+{"file":".trellis/tasks/11-01-i18n-eight-locales/research/font-sources.md","reason":"Noto官方来源、资产固定与双字体后端验证要求。"}

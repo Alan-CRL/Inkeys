@@ -1,0 +1,19 @@
+{"file":".trellis/spec/ppt-interop/index.md","reason":"核对 PPT 修改范围与构建交接"}
+{"file":".trellis/spec/ppt-interop/com-contract.md","reason":"审查 COM ABI、owner、拓扑、busy 与释放正确性"}
+{"file":".trellis/spec/ppt-interop/native-session-ui3.md","reason":"审查页面身份、Draw3 ready 和输入门禁是否保持"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核对完整构建和产物验证要求"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"审查 native 并发与代码约定"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"审查分页等待反馈的渲染与窗口边界"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"审查诊断默认关闭和错误处理"}
+{"file":".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/investigation.md","reason":"核对修复是否针对实测根因并保留验证边界"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/review-fixes-plan.md", "reason": "本轮已批准三项审阅修复的范围、合同、文件所有权和验收"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/navigation-perf-plan-20261101.md", "reason": "本轮获批分段诊断协议、阶段、所有权和用户测试交接合同"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/observe-substage-plan-20261101.md", "reason": "用户最新批准的Observe细分定位/安全调度设计及dynamic释放硬约束"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/rot-yield-fix-plan-20261101.md", "reason": "细分实测后已批准最小ROT让出修复、逐笔释放与公平约束"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/normal-exit-trace-plan-20261101.md", "reason": "用户确认正常退出失败后的最小阶段定位/COM释放与LastError约束"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/navigation-wait-trace-plan-20261101.md", "reason": "本轮等待标记不可见的最小诊断合同"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/normal-exit-trace-results-20261101.md", "reason": "最新实测退出成功但性能与三点仍失败"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-preparation-wait-fix-plan-20261101.md", "reason": "用户澄清后实际Pending页面准备提示的最小行为修复合同"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-number-animation-code-investigation-20261101.md", "reason": "本轮页码偶发动画的已证候选与用户批准的最小复现/取证边界"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-number-animation-repro-plan-20261101.md", "reason": "本轮页码偶发动画的已证候选与用户批准的最小复现/取证边界"}
+{"file": ".trellis/tasks/10-30-ppt-gif-mouse-navigation-stutter/research/page-badge-progress-fix-plan-20261101.md", "reason": "用户明确批准进度显示分类与页码右上角角标，含保持稳定显示数字的安全边界"}

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认 Draw3 产品边界、线程所有权与实施前检查要求"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"遵守透明 presenter、Selection 交接、激光瞬态层和验证合同"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"保持模块接口、文件编码、最小变更及跨线程状态发布习惯"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"处理 DwmFlush 失败诊断和既有恢复边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对绘制线程、DComp/ULW 与 Host ready 的跨层顺序"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"使用完整 Solution 和当前原生架构执行标准构建"}

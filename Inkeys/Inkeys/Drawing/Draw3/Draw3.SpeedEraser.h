@@ -31,7 +31,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	};
 	SourceKind ClassifySource(uint32_t actualInputType, bool modernApiAvailable,
 		bool capabilitiesKnown, bool integrated, SourceKind pointerKind = SourceKind::Unknown,
-		bool pointerMatched = false, bool pointerAmbiguous = false) noexcept;
+		bool pointerMatched = false, bool pointerAmbiguous = false, bool pointerUnmapped = false) noexcept;
 
 	struct ManualSurfaceCalibration
 	{
@@ -114,6 +114,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 
 		friend bool operator==(const DisplayScale&, const DisplayScale&) = default;
 	};
+
+	// 设置页只读当前绘制输出的实际标尺；不以鼠标/数位板的正常 DIP 模型触发提醒。
+	bool DirectInputUsesDpiFallback(const DisplayScale& display) noexcept;
 
 	// 全部为直径 DIP。固定模式直接消费此属性，不实例化速度控制器。
 	struct EraserSizes

@@ -123,6 +123,7 @@ extern wstring windowsEdition;
 void CloseProgram();
 void RestartProgram();
 void SetOffSignal(int signal);
+void RetireLaunchCommands() noexcept;
 LONG* GetOffSignalInteropPointer();
 
 extern IdtAtomic<int> offSignal; //关闭指令

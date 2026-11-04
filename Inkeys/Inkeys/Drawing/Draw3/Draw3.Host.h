@@ -1,10 +1,12 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 
@@ -15,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <condition_variable>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -59,15 +62,15 @@ namespace Inkeys::Drawing::Draw3
 			}
 			bool WaitForChange(std::uint64_t revision,
 				std::uint32_t timeoutMilliseconds,
-				const std::atomic_bool& running) const noexcept
+				const std::atomic_bool& running, bool waitWhileStopped = false) const noexcept
 			{
 				std::unique_lock lock(mutex_);
 				return condition_.wait_for(lock,
 					std::chrono::milliseconds(timeoutMilliseconds),
-					[this, revision, &running]
+					[this, revision, &running, waitWhileStopped]
 					{
 						return Revision() != revision
-							|| !running.load(std::memory_order_acquire);
+							|| (!waitWhileStopped && !running.load(std::memory_order_acquire));
 					});
 			}
 			void NotifyAll() const noexcept
@@ -142,6 +145,11 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::scoped_lock lock(mutex_);
 				accepted.hostGeneration = hostGeneration_;
+			}
+			[[nodiscard]] std::uint64_t HostGeneration() const noexcept
+			{
+				std::scoped_lock lock(mutex_);
+				return hostGeneration_;
 			}
 			[[nodiscard]] bool IsCurrent(const Bridge::AcceptedStrokeBegin& accepted,
 				const HostAcceptedStrokeContext& current) const noexcept
@@ -269,6 +277,7 @@ namespace Inkeys::Drawing::Draw3
 		// 启动时按值捕获；呈现回退与设备丢失后的恢复沿用本代偏好。
 		bool enableHardwareAcceleration = true;
 		bool enableZhaoxinCompatibility = true;
+		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -312,6 +321,9 @@ namespace Inkeys::Drawing::Draw3
 	struct HostRuntimeSnapshot
 	{
 		bool running = false;
+		std::uint64_t hostGeneration = 0;
+		std::uint64_t appliedProductRevision = 0;
+		Bridge::Tool appliedTool = Bridge::Tool::Pen;
 		bool firstFrameReady = false;
 		bool lastPresentSucceeded = false;
 		HostPresentationMode presentationMode = HostPresentationMode::Automatic;
@@ -337,6 +349,7 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		Bridge::WhiteboardStyleToken whiteboardStyle;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		bool whiteboardLoadPending = false;
@@ -352,6 +365,8 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<Bridge::PresentationReadyIdentity> presentationUiReady;
 		std::optional<Bridge::PresentationReadyIdentity> presentationSuspended;
 		bool commandScenePending = false;
+		bool consumerFatal = false;
+		CanvasRecoveryState recovery;
 		bool presentationInputReady = false;
 		HostOutputTarget requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
 		std::uint64_t requestedOutputRevision = 0;
@@ -372,6 +387,9 @@ namespace Inkeys::Drawing::Draw3
 	int RunPresentationCompletionDeliveryTest() noexcept;
 #endif
 
+	// 无窗口生产接缝：真实 Host 准入与 contact 生命周期，不启动设备或附着 HWND。
+	int RunHostWorkspaceTransitionInputProductionProbe() noexcept;
+
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
 	class Host
 	{
@@ -391,12 +409,20 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 只复制初始化/恢复边界发布的文本，不在设置线程访问图形或 RTS 对象。
+		std::string CanvasInformation() const;
+		bool RetryCanvasRecovery(const CanvasRecoveryState& expected,
+			const std::function<bool()>& stillDesired = {}) noexcept;
 		// 异步 UI 起笔通知只验证场景/生命周期；短笔结束后同场景仍有效。
 		bool IsAcceptedStrokeCurrent(const Bridge::AcceptedStrokeBegin& accepted) const noexcept;
 		// Caller 仅在成功 Start 后且不并行下一 Start 时读取；未启用 hidden 则 nullopt。
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
 		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
+		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
+		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
+		void SetPalmEraserOptions(const PalmEraser::Settings& options);
+		PalmEraser::Settings PalmEraserOptions() const;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;
@@ -406,7 +432,9 @@ namespace Inkeys::Drawing::Draw3
 		bool WaitForContentRevision(std::uint64_t revision,
 			std::uint32_t timeoutMilliseconds) const noexcept;
 		bool WaitForRuntimeRevision(std::uint64_t revision,
-			std::uint32_t timeoutMilliseconds) const noexcept;
+			std::uint32_t timeoutMilliseconds, bool waitWhileStopped = false) const noexcept;
+		// 只推进通知版本，不写 Frame/UI-ready；原生/背景完成复用同一个无丢醒握手。
+		void NotifyWorkspaceProgress() noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Haptics::Context HapticContext() const noexcept;
@@ -415,6 +443,8 @@ namespace Inkeys::Drawing::Draw3
 			HostHapticClickDiagnostics* diagnostics = nullptr) noexcept;
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
+		bool SetWorkspaceTransitionPending(std::uint64_t epoch, bool pending,
+			std::uint64_t expectedHostGeneration) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
 		Bridge::CommandResult PublishShapeAction(const ShapeUiAction&) noexcept;
 		Bridge::CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
@@ -435,6 +465,7 @@ namespace Inkeys::Drawing::Draw3
 			const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept;
 
 	private:
+		friend int RunHostWorkspaceTransitionInputProductionProbe() noexcept;
 		bool PublishHiddenTestContact(WPARAM phase, LPARAM position) noexcept;
 
 		struct Impl;

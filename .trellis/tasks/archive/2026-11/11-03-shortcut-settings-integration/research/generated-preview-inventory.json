@@ -1,0 +1,59 @@
+{
+  "source": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals",
+  "proposed_destination": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\shortcut-integration-validation\\eraser-demo-visuals",
+  "approval_status": "user_explicitly_authorized_recycle_completed",
+  "files": [
+    {
+      "name": "fine-active.png",
+      "bytes": 48735,
+      "sha256": "c3ef81f4ad6a60990001e65999000b0afb59b7550d535a105107ce147b327e5e"
+    },
+    {
+      "name": "fine-dark-result.png",
+      "bytes": 46170,
+      "sha256": "ae8ec6622c5a32ab5effe94992a2646286153e48d842aad67b16616b4c9d0f23"
+    },
+    {
+      "name": "fine-result.png",
+      "bytes": 45717,
+      "sha256": "db66a8880afbb2e30f340c1c36d4e392de830cccd3f68fc477ececeb588bc469"
+    },
+    {
+      "name": "fine-start.png",
+      "bytes": 47391,
+      "sha256": "a2cef1260c2ed8ba715db54c6f79bc4947c520c1b32d36e12e1b1d652a67a137"
+    },
+    {
+      "name": "sweep-active.png",
+      "bytes": 44541,
+      "sha256": "4f54e7537df00bcc90ca0ac71926db3d9e25dc29796141b25e22a21c41fdc1d3"
+    },
+    {
+      "name": "sweep-fixed-finished.png",
+      "bytes": 34924,
+      "sha256": "90ec54492f6741a722fbde1baf744ccf6123a456fb406cb22a1c13be0d5ac650"
+    },
+    {
+      "name": "sweep-result.png",
+      "bytes": 34924,
+      "sha256": "90ec54492f6741a722fbde1baf744ccf6123a456fb406cb22a1c13be0d5ac650"
+    },
+    {
+      "name": "sweep-speed-finished.png",
+      "bytes": 38957,
+      "sha256": "65e009d7844a39379bd0380bfcb5093e17e947f0fb766e3025fd62eb94f78432"
+    },
+    {
+      "name": "sweep-start.png",
+      "bytes": 45526,
+      "sha256": "f5c3e6f5bb7e9c88fdc5cdc647d27163066c2708a582c14d6f6451b427fc1384"
+    },
+    {
+      "name": "sweep-warmup.png",
+      "bytes": 44010,
+      "sha256": "af919b64f618156247ddd8e882727fd8e78f52077f231e30eeeaf058122b4329"
+    }
+  ],
+  "actual_destination": "Windows Recycle Bin",
+  "verification_record": "research/recycled-previews.json"
+}

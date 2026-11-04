@@ -38,7 +38,7 @@ int RunEraserAttributeTests()
 			"internal divider matches the centered main divider height");
 		expect(std::abs(cx(l.menu)-cx(automatic))<0.001,"menu centers on entire automatic control");
 		expect(l.menu.Width()>=180 && l.menu.Width()<=200 && l.menu.Height()<=100,"sensitivity menu has two compact rows");
-		expect(l.items[9].bottom<=l.items[6].top,"disabled gear lives in header row");
+		expect(l.items[9].bottom<=l.items[6].top,"settings gear lives in header row");
 		expect(std::abs(cy(l.menuTitle)-(l.menu.top+l.items[6].top)/2)<0.001,
 			"sensitivity title is vertically centered between popup top and button row");
 		const double firstGap=cx(l.items[2])-cx(l.items[1])-(l.previewDiameters[0]+l.previewDiameters[1])/2;

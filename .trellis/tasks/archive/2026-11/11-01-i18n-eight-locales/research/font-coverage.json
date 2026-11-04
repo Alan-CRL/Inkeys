@@ -1,0 +1,90 @@
+[
+  {
+    "locale": "zh-CN",
+    "unique_characters": 827,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "en-US",
+    "unique_characters": 147,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "unique_characters": 838,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "unique_characters": 839,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "ja-JP",
+    "unique_characters": 692,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "ko-KR",
+    "unique_characters": 594,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "fr-FR",
+    "unique_characters": 154,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "de-DE",
+    "unique_characters": 152,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "es-ES",
+    "unique_characters": 153,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "pt-BR",
+    "unique_characters": 157,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  },
+  {
+    "locale": "ru-RU",
+    "unique_characters": 192,
+    "missing": {
+      "regular": [],
+      "bold": []
+    }
+  }
+]

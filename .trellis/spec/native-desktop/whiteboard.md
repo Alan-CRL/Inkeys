@@ -8,8 +8,11 @@
 - 菜单及主题面板属于左下同一 HWND，但分别绘制独立矩形：菜单在分页栏上方回弹展开，主题在菜单右侧回弹展开，节奏复用主栏属性动画。菜单行使用左图标和左对齐文字。包络、命中、damage 与呈现基于同帧动画几何；左/底锚点不移动，不新建 popup HWND。分页列表与固定属性直接调用主栏公共按钮函数，BarPageSurface 仅负责数据和目标适配。
 - More、Escape、面板外点击、翻页、最小化、workspace 转换收起菜单并取消 capture。白板返回放映时保留 More 实例与列表成员，使用共享 UI3 隐藏布局收拢到 Next 下层并渐隐，不得以空目标矩形或移除成员代替隐藏；按钮退场与列表背景宽度在同一布局批次连续变化，保留按钮和整条栏保持正常透明度；退场时不可命中，中途重入时宽度、位置与按钮透明度均从当前呈现值反向；首次隐藏配置从首帧保持透明。透明边界穿透，UI 操作不落笔。背景和预览使用同一主题纹理绘制规则。
 - 按钮在白板中显示关闭白板，有有效放映时显示返回放映；英文返回标签使用短文案 `Resume`，保持标准按钮字号与文字槽。白板窗口组最小化后，主栏按钮显示白板图标和“返回白板”（英文 `Resume`），点击恢复同一白板，不切换 workspace 或重新进入。最小化/恢复边沿须立即刷新按钮内容，浮动和折叠主栏同样适用。菜单关闭使用同一退出事务。后台 PPT 结束不得结束白板。
-- 主题按页保存，同进程新页继承当前页；新进程首张白板页读取最后一次成功修改的颜色/纹理偏好，缺省或非法配置回退墨绿 #123B32/空白。冷加载与切换已有页不回写偏好，重复或身份失效的主题请求不触发持久化；绘制 owner 只投递既有配置 FIFO，正常退出先停止生产者再排空写入。色板按三列两排：#123B32/#172A46/#000000，#FFFFFF/#E5E7EB/#F5F1E6；空白/点阵/网格，24 DIP 间距、1 DIP 点半径/线宽。主题不改变画笔、不进入墨迹 undo，修改使页 dirty。
+- 主题按页保存，同进程新页继承当前页；新进程首张白板页读取最后一次成功修改的颜色/纹理偏好，缺省或非法配置回退墨绿 #123B32/空白。冷加载与切换已有页不回写偏好，重复或身份失效的主题请求不触发持久化；绘制 owner 只投递既有配置 FIFO，正常退出先停止生产者再排空写入。色板按三列两排：#123B32/#172A46/#000000，#FFFFFF/#E5E7EB/#F5F1E6；空白/点阵/网格，24 DIP 间距、1 DIP 点半径/线宽。2026-11-02批准的共享样式合同替代“主题不改变画笔”：主题按实际RGB浅/深类别选择Brush的独立颜色记忆（浅首次红色、深首次白色），同类别/仅纹理变化不重置用户颜色；荧光/激光颜色各自全局共享、不随背景切色。主题不改变已有笔迹、不进入墨迹undo，修改使页dirty。
 - UI 只发布带身份请求并消费快照，Draw3 绘制线程独占页内容/历史；I/O worker 不访问 UI、HWND 或可变 runtime。
+- 白板首个 Next/Previous 页面命令在 Host 立即设置 `commandScenePending` 并关闭新 Down，沿用 PPT admission revision 的 contact 封口：旧页已接受笔按最后位置完成，旧 Move/Up 隔离到真实终态，不得跨页续写。协调器只保留一个页面事务，首请求不得再等待 `whiteboardLoadPending`，但在真实 ready 前不得发布第二事务；不扩展多冷页 latest-wins。
+- 暖页重放和冷页严格加载后，只有真实 Present 回执才清除 pending 并重开输入。第一页 Previous、追加/加载失败或无效页命令留在原页时，必须补原页真实 ready，不能永久关闸；持续加载、呈现失败或身份不明不得伪造 ready。旧页保存、失败暖页和冷页完整性门禁不变。
+- 首次尚未建立白板工具记忆时默认 SoftPen 绘制；Desktop/Presentation 的新工具记忆仍默认 Selection。已有工作区工具身份记忆及用户手动切换的拖动状态保持不变。样式按2026-11-02共享合同单独投影：三组宽度各自全局、Brush三范围颜色、荧光/激光全局颜色，不随旧工作区状态恢复旧值。
 
 ## 存储、历史与内存
 
@@ -24,7 +27,9 @@
 
 - 首次 Desktop→PPT/Whiteboard 记录桌面主栏快照。只调整已有底栏贴屏底 5 DIP，保持是否居中；浮动、折叠不强制展开。PPT↔Whiteboard 不重拍基线，不重复折叠/复位；有效放映且启用底栏时，共用底部分页按活动会话事实跨越分步可见性发布，不经过 Hidden 或整栏渐隐/重现。真正结束、配置关闭及白板最小化仍按原显隐合同。最终回 Desktop 恢复基线。同屏、PPT 底栏默认偏移为零且局部倍率为 1 时，分页主体和箭头的底部 Y 在进入白板时保持不变；Drag 槽收起和 More 增宽仍沿原内容形变。
 - 白板主屏，PPT 放映屏；同屏连续，跨屏适配显示快照/DPI，原显示器消失按既有回退。白板用户拖动吸附也显示标准底栏/居中底栏提示，沿同一手势资格和动画；程序进入、最小化恢复本身不建立提示资格。
-- 最小化是窗口组操作，不是 workspace 退出；两侧分页隐藏，主栏保持显示并回到任务栏居中底栏，恢复不重放入口；PPT 场景禁止最小化白板，菜单最小化行的图标与文字复用 UI3 `BarButtonDisabledContentOpacity=0.30` 禁用视觉，并关闭悬停/按压/点击；禁用依据是有效放映会话事实，不能由被白板遮挡的分页可见性推导，后台放映结束时须唤醒并恢复可用状态。任务栏锚点使用 exe 图标和国际化 Inkeys 白板标题。任务栏关闭或 Alt+F4 必须转为白板退出请求，沿既有保存/离场事务完成；不能直接销毁共享 Freeze 锚点及其 owned 窗口链。保持 NOTOPMOST、单一任务栏锚点及退出穿透/Z序合同。
+- 最小化是窗口组操作，不是 workspace 退出；两侧分页隐藏，主栏保持显示并回到任务栏居中底栏，恢复不重放入口；PPT 场景禁止最小化白板，菜单最小化行的图标与文字复用 UI3 主题禁用透明度（Dark `0.30`、Light `0.45`）禁用视觉，并关闭悬停/按压/点击；禁用依据是有效放映会话事实，不能由被白板遮挡的分页可见性推导，后台放映结束时须唤醒并恢复可用状态。任务栏锚点使用 exe 图标和国际化 Inkeys 白板标题。任务栏关闭或 Alt+F4 必须转为白板退出请求，沿既有保存/离场事务完成；不能直接销毁共享 Freeze 锚点及其 owned 窗口链。保持 NOTOPMOST、单一任务栏锚点及退出穿透/Z序合同。Shell 全屏通知覆盖 Freeze 与 Drawpad 两个可激活面；激活仅异步重申，最小化、退出和销毁前撤销，恢复重新发布。
+- 进入白板必须等待真实 Draw3 首帧、输出/内容版本、背景提交及必要窗口事务；先发布 Active，再异步尝试一次前台激活。Freeze 的背景提交由 Window owner 读回目标 RECT、真实 visible 且非 iconic，并发布固定回执/快照；UI 和协调器不得自行调用 HWND 查询来裁决 ready；最小化期间被抑制的 SetBounds/Show 返回未提交并保留重试，不得以“未执行但成功”推进 `committedBackgroundActive`。恢复边沿重新唤醒背景提交，不需要再次点击入口。焦点分配失败仍完成后台进入，不按周期抢焦点；同 epoch 的 Entering→Active 不取消已接纳请求，退出、新 epoch、最小化、隐藏或停机必须拒绝。设置的实际 Present 不持 ImGui 输入锁，避免与窗口焦点消息互等。
+- 同一次进入 epoch 的原生窗口事务失败重试只执行一次主栏收起和 capture 取消；失败后的 250ms 退避先于 Entering 发布，新意图和取消不受旧期限阻挡。后台排序保留 Bar 位置、仅下调 PPT 并核验内部 owner/band/代际/顺序，焦点许可不参与准入；纯层级失败恢复不得 Hide/Show 或重建画布策略。
 - 平移缩放仍禁用；页面管理、历史 UI、手动导出、跨进程恢复不在初版内。
 
 ## 验证要求
@@ -65,3 +70,109 @@
 - 同一目标内从后向前绘制：主题面板、更多菜单、分页栏；重叠命中遵守相同可见层级，面板背景遮挡不能点击到其后的按钮。位置和共享展开动画不变。
 - 主题样式纹理覆盖完整70×70按钮，文字绘制在纹理上方，不能按标签槽缩短纹理区域。点阵为中心对称3×3九点，网格为三横三竖九交点；与画布共用纹理绘制规则，画布24DIP密度保持不变。
 - 色板显示、选中和点击请求使用同一顺序映射，第三项黑色为#000000。
+
+## 三工作区统一交接（2026-10-27）
+
+本轮已批准合同；实现和执行证据见任务 whiteboard-first-open-visibility 的最终报告，不能由本规范推定实机通过。
+
+- Desktop/Presentation/Whiteboard是三个稳定业务态。最新Desired、已完成Committed和仍有实际责任的Pending区分；最小化/焦点不是第四工作区。统一协调快照是业务权威，主栏稳定工作区、工具和Desktop基线按Committed投影，背景/分页可按Pending准备但不能据旧ACK开放业务。
+- 接纳切换先真实关闭Host新Down，工具/场景准备和ControlWake、Frame/UI ACK、终态排空仍继续。实际目标工具/选择、匹配输出、必要背景与原生Prepare/Complete结果就绪后统一提交；foreground、Shell COM成功和全局TOP/连续性不进入完成门。
+- 业务epoch复用现有奇偶模型，白板显示/最小化语义变化也退休旧ACK；普通PPT页/工具/输出变化不推进工作区epoch。业务版本不替代session/target、slot、tool、device/output/content或HWND代际。
+- 白板背景复用Freeze并保持完整主屏rcMonitor，尺寸与DPI读同一Display快照；Desktop/PPT双画布底部1物理像素及旧定格/放大镜规则独立不变。BackgroundPrepared仅证明当前请求、内容失效版本、设备与 HWND 代次的真实像素及窗口回执，实际Active仍需 owner 发布的真实visible/bounds/非iconic；inactive必须真实Hide后确认，且优先于minimized暂停。
+- 白板最小化仍保留页/历史/工具/基线；系统确认只确认当前视图，不另发意图让在途请求自失效。最小化后可直接关闭。后台PPT变化只更新最新Primary事实，不能抢走白板。
+- 普通失败停止无限重复显示/隐藏，保留owner真实责任；只有Rejected证明owner恢复已退休后才恢复Whiteboard源背景/分页，Pending/failed和输入fence继续保留，不能用源预览伪装切换成功。背景ACK、Draw3/PPT ready及背景prepared/final active的无进展等待进入同一可重试失败预算，实际输出/内容/背景进展才重置等待。
+- DComp退休采用共享有界等待，超时/忙碌禁止第二worker、ULW和新HWND；能清除样式才走原ULW，否则运行期进入受保护故障退出；完整legacy窗口链重建仅限启动期UI客户端初始化前。旧generation的帧/completion不得确认新恢复，受保护/fatal只可在完整token及真实安全清理后退场，不等待已停消费者普通帧、不清fatal或伪造ready。
+- Settings/安全UI与画布恢复的阻挡按实际写集区分；新场景Show/关穿透不得越过旧恢复，旧补偿不能作用于新HWND代际。保存/加载和失败warm数据规则不变。
+
+背景渲染遵守 [UI3 原生窗口候选与真实回执](rendering-and-ui.md#ui3-原生窗口候选与真实回执2026-10-28)：成功像素等待 native ACK 时不重复整屏绘制；Invalidate 同时退休旧内容候选，同请求版本不能绕过主题/DPI/设备失效。完整 mask、frameSerial、workspaceRevision、HWND/generation 和实际矩形全部匹配后才 Prepare/ConsumeDamage；inactive 的 Hide 也必须取得精确真实回执。
+
+背景完成/inactive ACK 通过 NotifyProductWorkspaceProgress 唤醒原协调等待；Freeze ULW 与政策几何/回滚共用 try-only 呈现租约及 pixel revision。Prepare/Complete 为显式异步回执；新通知不作为 ready，也不加速原失败预算。参见 rendering-and-ui 的直移与工作区异步协调合同。
+
+## 场景：冷页读取失败的原页补呈现（2026-10-31）
+
+### 1. Scope / Trigger
+
+修改白板冷页失败、退出/重入或补 ready 命令时应用。防止失败完成后追加的通用 SetPage 在已切换工作区中切页或创建空页。
+
+### 2. Signatures
+
+- 内部 `CanvasCommandType::RePresentWhiteboardPage` 复用 `workspace/whiteboardGeneration/pageIndex/requireSceneMatch/sceneClosedAdmission`，只授权原白板页补呈现，不授权切页。
+- `CompleteFailedWhiteboardPageLoad` 结算原 Next/Previous 后排队；`ApplyWhiteboardPageRecoveryCommand` 在消费时复核身份并调用既有 `acknowledgeUnchangedScene`。
+
+### 3. Contracts
+
+- 失败先清空本次 loading，保留原页；原翻页命令只结算一次，补呈现不得重复结算。
+- 消费要求最终退出屏障尚未 `ExitPrepared`、仍为 Whiteboard、非零相同 generation、相同原页且无新 loading，并要求场景/准入标志齐备；退出重入即使回到同页，也因代次不同拒绝旧命令。
+- 通过后只走既有 stageWorkspaceReady + forceFullPresent，等待真实 Present；不得经过 SetPage、创建页面或确认其他工作区输入。
+- 不直接复用成功冷加载的 whiteboardLoading 校验：失败已 reset，该校验会错误阻断正常原页恢复。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 同场同页失败 | 原请求恰好一次终态，排队原页真实补呈现 |
+| Desktop/Presentation 或退出后重入 | 丢弃旧补呈现，不切页/增页，不确认新场景 ready |
+| 原页已变或新 loading | 拒绝旧恢复，不解除新页面输入门 |
+| 最终退出保存已 ACK / ExitPrepared | 拒绝任何补呈现，不重开 ready，不重复结算原翻页 |
+| FIFO 中退出先于补呈现 | 根据消费时场景拒绝，不依赖生成时检查 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：冷页失败仍留原页，原页真正呈现后恢复输入。
+- Base：成功冷页继续由原 SetPage + loading/generation 合同切入目标页。
+- Bad：将无场景约束的 SetPage 追加到退出命令之后，误用白板页码修改桌面。
+
+### 6. Tests Required
+
+`--draw3-whiteboard-storage-test` 使用实际 WindowController FIFO 和生产生成/消费 helper，无 HWND，覆盖同场补呈现、恰好一次终态、Desktop/PPT、退出重入、换页、新 loading、退出排在恢复前，以及实际 ProcessPresentationExitBarrier 最终 ACK 后拒绝恢复。完整 Debug|ARM64 构建及无窗口测试仍须通过；该测试不代替真实画布 Present 的 GUI 验收。
+
+### 7. Wrong vs Correct
+
+- Wrong：失败后 `SetPage(currentPage)`，仅凭入队时仍在白板就授权后续执行。
+- Correct：发送 `RePresentWhiteboardPage` 并携带原代次/原页；消费时核对后只补真实呈现。
+
+## 场景：跨场景共享样式与白板首笔同步（2026-11-02）
+
+### 1. Scope / Trigger
+
+用户批准任务 shape-style-tablet-bar；涉及工具样式、工作区恢复、白板主题/页回执或Host输入准入时适用。此合同覆盖旧的工作区宽色隔离，不改变工具身份和页级墨迹存储边界。
+
+### 2. Signatures
+
+- `IsLightWhiteboardBackground(uint32_t rgb)` 位于 `Draw3.WhiteboardModel.h`，299R+587G+114B >128000为浅色，等值为深色；纹理不参与。
+- `Bridge::WhiteboardStyleToken { hostGeneration, generation, page, backgroundRgb, serial }`；ProductState与HostRuntimeSnapshot携带同源token。
+- `SetPenColorIfRevision(color,revision,save)` 与既有条件宽度setter共同约束长手势；同锁校验版本和写入范围。
+
+### 3. Contracts
+
+- Brush（软/硬/实线/虚线/矩形）颜色存Primary（桌面+PPT）、浅白板、深白板三份，浅首次现有红/深首次白，用户改色后按类别恢复。荧光/激光颜色各自全局，三组宽度各自全局，组间不合并。
+- 工作区恢复仅恢复工具身份并投影最新共享样式；旧StateMode宽色字段只是快照/兼容投影，不能反写权威值。Preset/ExplicitDip与当前显示Context规则不变。
+- 主题和翻页分类以Controller实际当前页为准，覆盖首次进入/冷恢复；预览、请求Accepted、主题持久化回调均不能代替实际接纳。模型允许任意合法RGB，不能只按六色索引分类。
+- 新主题需要重新绑定样式时，Host先登记独立样式pending并关闭新Down，再发布主题/页身份。业务据同源token选择有效色；owner真正应用ProductState后，匹配token与应用版本才可清样式原因。不得复用workspaceTransitionEpoch，也不得绕过其余加载/呈现/恢复阻挡直接开门。
+- 同页主题变化可能不推进generation，必须包含背景身份和单调serial（A→B→A也不能接纳第一份A的ACK）；旧Host/页/主题确认不释放新pending。同类重复通知保持幂等，不重置用户颜色。
+- Host回调不持锁执行重型业务/窗口同步；业务不持状态锁等待Host应用。活动笔划在Down锁存，旧笔迹不改色。
+- memory仅编码已有字段的权威样式投影，白板Brush色不污染Primary；不新增白板/Laser颜色schema，不启用停用的启动恢复。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 预期 |
+| --- | --- |
+| 浅→深→浅或跨类翻页 | 选择相应记忆，首笔与新类一致 |
+| 同类页、纹理变化、重复主题 | 不重置颜色，不覆盖全局宽度 |
+| 无效/stale主题、cold load失败 | 保持实际旧页/主题颜色 |
+| 已生效主题保存失败 | 保留当前颜色，仍报告未保存 |
+| 旧token ACK、旧revision选色/粗细提交 | 不开新门，不写入新范围 |
+| 工作区往返、显示Context变化 | 工具按工作区恢复，宽色按共享合同投影，DIP规则不变 |
+
+### 5. Good / Base / Bad Cases
+
+Good：白板深色手选黄，回浅色仍红，再回任意深色页恢复黄；PPT保留Primary色，全局宽度不回退。Base：首次深色白板Brush白色，荧光/激光保持各自全局默认色。Bad：themeEdited里只改UI颜色、先开门后发样式、把旧工作区整份宽色作为权威恢复。
+
+### 6. Tests Required
+
+生产State/Bar/Host测试覆盖三范围默认和改色记忆、三组全局Selection/颜色隔离、工作区工具恢复与保存快照、旧交互revision、同页改主题token、过期ACK、连续主题/翻页、加载失败/stale、pending未应用拒新Down且应用后仅清本原因；Headless直接调用公共RGB分类覆盖六色和阈值。完整ARM64 Debug Solution及适用初始化前探针必须记录退出码；GUI/实机结果不可由静态或headless推出。
+
+### 7. Wrong vs Correct
+
+Wrong：收到主题点击请求就选色；只比较generation认为同页主题没变化；收到任意新ProductState便直接开放输入。
+Correct：实际当前页主题生成完整token；有效样式应用确认匹配本token，再清独立样式pending，其余准入原因继续生效。

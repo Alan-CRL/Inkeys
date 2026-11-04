@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "native-desktop 层入口：修改前确认边界与平台支持决策门"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Setting 背景能力级联、透明 clear 门控、材质调色与验证矩阵的现行合同"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Windows 版本兼容约束与验证证据分级"}
+{"file": ".trellis/tasks/10-28-settingui3-backdrop-blur/research/current-backdrop-analysis.md", "reason": "现状调查：三级联代码位置、三系统实际路径与改动面"}

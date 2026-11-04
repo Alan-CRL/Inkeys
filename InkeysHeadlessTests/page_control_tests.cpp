@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.PageLoadingIndicator.h"
 #include "../Inkeys/Inkeys/Input/UiPointerInput.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 
@@ -18,6 +19,38 @@ import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar.Metrics;
 import Inkeys.UI.Bar.SurfaceLayout;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.Bar.Animation;
+
+namespace {
+int TestPageLoadingRingClock()
+{
+    using namespace std::chrono_literals;using Inkeys::UI::Bar::PageLoadingIndicator;
+    PageLoadingIndicator state;const auto begin=PageLoadingIndicator::Time{}+10s;int failures=0;
+    const auto expect=[&](bool value,const char* message){if(!value){++failures;std::cerr<<"FAIL "<<message<<'\n';}};
+    const auto curve=+[](bool entering,double t){return BarUiApplyCurve(entering?BarUiCurveEnum::EaseOutCubic:BarUiCurveEnum::EaseInCubic,t);};
+    const auto step=[&](auto now,bool loading,double dt=0,bool animations=true,std::uint64_t session=7,bool visible=true){state.Advance(now,session,visible,loading,dt,1,animations,curve);};
+    step(begin,true);expect(state.WakeDeadline()==begin+500ms&&!state.NeedsFrames(true),"delay idles with exact monotonic deadline");
+    step(begin+499ms,true,.05);expect(state.opacity==0,"499ms remains invisible despite animation dt");
+    step(begin+500ms,true);expect(state.moving&&state.opacity==0,"idle dt-zero threshold retains entering demand");
+    step(begin+550ms,true,.05);expect(state.opacity>0&&state.opacity<1,"public cubic entry interpolates alpha and scale");
+    const auto before=state.opacity;step(begin+550ms,false);expect(state.opacity==before&&state.moving,"entry cancellation retargets from current opacity");
+    step(begin+580ms,false,.03);const auto leaving=state.opacity;
+    step(begin+580ms,true);expect(state.opacity==leaving&&state.WakeDeadline()==begin+1080ms,"new wait during leaving gets its own deadline without restarting old fade");
+    step(begin+800ms,true,.05);step(begin+900ms,true,.05);step(begin+1000ms,true,.05);
+    expect(state.opacity==0&&!state.NeedsFrames(true),"old exit finishes while new hidden wait remains pending");
+    step(begin+1080ms,true,0,false);expect(state.opacity==1&&!state.NeedsFrames(false)&&state.angle==0,"animation off still respects absolute gate and statically idles");
+    step(begin+1100ms,true,.02);expect(std::abs(state.angle-7.2)<.000001&&state.opacity==1,"reenabling animation preserves one-second rotation without a new delay");
+    step(begin+1120ms,true,0,true,8);expect(state.opacity==0&&state.WakeDeadline()==begin+1620ms,"session change retires old ring and starts a fresh gate");
+    step(begin+1500ms,true,0,true,8,false);expect(state.opacity==0&&state.WakeDeadline()==PageLoadingIndicator::Time::max(),"hidden state cancels ring and deadline");
+    step(begin+4s,true);step(begin+4499ms,false);step(begin+4500ms,false);expect(state.opacity==0,"cancellation just before expiry never flashes later");
+    Inkeys::UI::Bar::PageLoadingDeadline deadline;bool due=false;
+    deadline.Publish(begin+500ms);expect(deadline.Consume(begin+499ms,due)==begin+500ms&&!due,"worker does not consume a future deadline");
+    deadline.Publish(begin+2s);expect(deadline.Consume(begin+500ms,due)==begin+2s&&!due,"replaced deadline cannot wake on the old expiry");
+    deadline.Publish(PageLoadingIndicator::Time::max());expect(deadline.Consume(begin+3s,due)==PageLoadingIndicator::Time::max()&&!due,"cancelled deadline cannot resurrect");
+    deadline.Publish(begin+4s);deadline.Consume(begin+4s,due);expect(due,"deadline is consumed at equality");deadline.Consume(begin+5s,due);expect(!due,"deadline wake occurs only once");
+    return failures;
+}
+}
 
 namespace
 {
@@ -414,6 +447,182 @@ namespace
 		}
 	}
 
+	void TestNavigationWaitingLifecycle()
+	{
+		PptNavigationWaitingState waiting;
+		waiting.BeginSession(7);
+		Check(waiting.Publish(7, 11, PptNavigationDirection::Next)
+			&& waiting.current.waiting && waiting.current.session == 7
+			&& waiting.current.epoch == 11,
+			"successful native enqueue publishes a session and epoch wait value");
+		Check(!waiting.Publish(7, 11, PptNavigationDirection::Previous)
+			&& waiting.current.direction == PptNavigationDirection::Next,
+			"duplicate click keeps the original direction and epoch");
+		PptState frame;
+		frame.layout.session = 7;
+		frame.currentPage = 2;
+		frame.totalPage = 3;
+		frame.navigationWaiting = waiting.current;
+		Check(IsPptNavigationWaiting(frame, true) && !IsPptNavigationWaiting(frame, false)
+			&& frame.currentPage == 2 && frame.totalPage == 3,
+			"waiting direction preserves the real old page and does not fabricate navigation");
+		frame.targetRevision = 44;
+		frame.pageAckEpoch = 3;
+		auto readyFrame = frame;
+		readyFrame.navigationWaiting = {};
+		PptPageCommitState commit;
+		commit.Publish(readyFrame, 0x3);
+		Check(commit.Commit(readyFrame, 0x3) && commit.acknowledged,
+			"page ready is acknowledged before independent command feedback changes");
+		commit.Publish(frame, 0x3);
+		Check(commit.acknowledged && commit.committed == 0x3 && !commit.Commit(frame, 0x3),
+			"navigation waiting neither resets nor newly completes Draw3/PageControl ready");
+		auto changed = frame;
+		++changed.navigationWaiting.epoch;
+		Check(!ArePptStatesEquivalent(frame, changed),
+			"waiting publication participates in PageControl visual invalidation");
+		Check(!waiting.Complete(7, 10) && !waiting.Complete(8, 11)
+			&& waiting.current.waiting,
+			"stale epoch and wrong session cannot clear an active wait");
+		Check(waiting.Complete(7, 11) && !waiting.current.waiting,
+			"command completion clears waiting even when the page did not change");
+		frame.navigationWaiting = waiting.current;
+		Check(!IsPptNavigationWaiting(frame, true),
+			"completed unchanged page is immediately retryable without a permanent marker");
+
+		Check(waiting.Publish(7, 12, PptNavigationDirection::Previous),
+			"the next request can wait in the same show");
+		waiting.BeginSession(8);
+		Check(waiting.Publish(8, 1, PptNavigationDirection::Next)
+			&& waiting.current.session == 8,
+			"a new show replaces the previous session wait even with a restarted epoch");
+		Check(!waiting.Complete(7, 12) && waiting.current.session == 8
+			&& waiting.current.waiting,
+			"late completion from the old show cannot clear the new show");
+		Check(!waiting.Clear(7) && waiting.current.waiting,
+			"wrong-session exit leaves the current session untouched");
+		Check(waiting.Clear(8) && !waiting.current.waiting,
+			"session exit clears its navigation feedback");
+		waiting.BeginSession(9);
+		Check(waiting.Publish(9, 2, PptNavigationDirection::Next)
+			&& waiting.Clear() && !waiting.current.waiting,
+			"shutdown clears any remaining navigation feedback");
+	}
+
+	void TestPagePreparingVisualState()
+	{
+		PptState frame;frame.layout.session=7;frame.presentationActive=true;frame.presentationVisible=true;
+		frame.currentPage=3;frame.totalPage=5;frame.targetRevision=44;frame.pageAckEpoch=3;
+		Check(!frame.pagePreparing&&!IsPptPagePreparing(frame),"page preparation feedback defaults off");
+		const auto original=frame;frame.pagePreparing=true;
+		Check(IsPptPagePreparing(frame)&&!ArePptStatesEquivalent(original,frame)
+			&&frame.currentPage==3&&frame.targetRevision==44&&frame.pageAckEpoch==3,
+			"preparation alone invalidates the visual state without changing page or ready identity");
+		PptPageCommitState committed;committed.Publish(original,0x3);
+		Check(committed.Commit(original,0x3),"ordinary ready transaction can complete before visual preparation changes");
+		committed.Publish(frame,0x3);
+		Check(committed.acknowledged&&!committed.Commit(frame,0x3),
+			"visual preparation neither resets nor authorizes a page ready acknowledgement");
+		PptNavigationWaitingState command;command.BeginSession(7);command.Publish(7,11,PptNavigationDirection::Next);
+		frame.navigationWaiting=command.current;command.Complete(7,11);frame.navigationWaiting=command.current;
+		Check(IsPptPagePreparing(frame)&&!IsPptNavigationWaiting(frame,true)
+			&&!command.Publish(7,11,PptNavigationDirection::Next),
+			"completed command retires its epoch while independent real preparation remains visible");
+		Check(command.Publish(7,12,PptNavigationDirection::Previous),"another command retains its original tracker during preparation");
+		frame.navigationWaiting=command.current;
+		Check(IsPptPagePreparing(frame)&&IsPptNavigationWaiting(frame,false)
+			&&frame.navigationWaiting.epoch==12,"preparation does not replace the new command direction or epoch");
+		command.Complete(7,12);frame.navigationWaiting=command.current;frame.pagePreparing=false;
+		Check(!IsPptPagePreparing(frame)&&!IsPptNavigationWaiting(frame,false),
+			"same-page or no-op completion does not invent a target-change wait");
+		frame.pagePreparing=true;frame.presentationVisible=false;
+		Check(!IsPptPagePreparing(frame),"hidden PPT does not show generic preparation");
+		frame.presentationVisible=true;frame.presentationActive=false;
+		Check(!IsPptPagePreparing(frame),"retired PPT does not show generic preparation");
+		frame.presentationActive=true;frame.layout.session=0;
+		Check(!IsPptPagePreparing(frame),"generic preparation requires an established local session");
+		frame.layout.session=7;frame.recovery.kind=decltype(frame.recovery.kind)::ReadFailed;
+		Check(!IsPptPagePreparing(frame),"same-show recovery keeps its own feedback instead of generic preparation");
+		Inkeys::UI::Ppt::PagePresentationState source;
+		source.Publish(3,5,44,Inkeys::UI::Ppt::PageStateMode::InkReady);const auto oldEpoch=source.pageAckEpoch;
+		source.Publish(3,5,44,Inkeys::UI::Ppt::PageStateMode::Pending);
+		Check(!source.CanAcknowledge(3,5,44,oldEpoch),"an old ready acknowledgement cannot complete a later Pending page");
+		source.Publish(3,5,0,Inkeys::UI::Ppt::PageStateMode::BasicControl);
+		Check(!source.CanAcknowledge(3,5,0,source.pageAckEpoch),"BasicControl still cannot manufacture an ink-ready acknowledgement");
+	}
+
+	void TestStableNumericDisplay()
+	{
+		using namespace Inkeys::UI::Ppt;
+		StablePageNumbers numbers;
+		numbers.Observe(7,4,56,PageStateMode::Pending);
+		Check(numbers.currentPage==-1&&numbers.totalPage==-1,"initial Pending has no invented stable display number");
+		numbers.Observe(7,3,56,PageStateMode::InkReady);numbers.Observe(7,4,56,PageStateMode::Pending);
+		Check(numbers.currentPage==3&&numbers.totalPage==56,"future recovery target four cannot replace the last stable third page");
+		PptState frame;frame.layout.session=7;frame.presentationActive=frame.presentationVisible=true;
+		frame.currentPage=4;frame.totalPage=56;frame.targetRevision=0;frame.pageAckEpoch=2;
+		frame.recovery.kind=decltype(frame.recovery.kind)::Recovering;frame.pagePreparing=true;
+		frame.numericPageOverride=true;frame.displayedCurrentPage=numbers.currentPage;frame.displayedTotalPage=numbers.totalPage;
+		Check(IsPptPagePreparing(frame)&&frame.currentPage==4&&frame.targetRevision==0,
+			"numeric progress leaves recovery and its control identity intact");
+		const auto control=frame;auto changed=frame;changed.displayedCurrentPage=2;
+		Check(!ArePptStatesEquivalent(frame,changed)&&frame.pageAckEpoch==control.pageAckEpoch,
+			"visual display override participates in rendering without modifying acknowledgement epochs");
+		PptPageCommitState committed;committed.Publish(frame,0x3);
+		Check(!committed.Commit(frame,0x3),"numeric Recovering cannot acknowledge the old or target canvas page");
+		numbers.Observe(7,4,56,PageStateMode::InkReady);
+		Check(numbers.currentPage==4,"only a real ready publication can advance the cached visible number");
+		numbers.Observe(7,-1,56,PageStateMode::InkReady);numbers.Observe(7,1,56,PageStateMode::Pending);
+		Check(numbers.currentPage==-1&&numbers.totalPage==56,"a prepared end screen remains a valid stable display while the next target is Pending");
+		numbers.Observe(8,2,4,PageStateMode::Pending);
+		Check(numbers.session==8&&numbers.currentPage==-1&&numbers.totalPage==-1,"new sessions cannot borrow stable digits from the previous show");
+		numbers.Observe(8,2,4,PageStateMode::BasicControl);
+		Check(numbers.currentPage==2&&numbers.totalPage==4,"basic control numbers are stable without a nonzero ink target");
+		numbers={};
+		Check(numbers.session==0&&numbers.currentPage==-1&&numbers.totalPage==-1,"session exit or initialize resets all stable numeric display data");
+	}
+
+	void TestNavigationWaitingCompletionOrder()
+	{
+		PptNavigationWaitingState waiting;
+		Check(!waiting.Publish(7, 10, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 10),
+			"navigation notices cannot establish a show before session publication");
+		waiting.BeginSession(7);
+		Check(!waiting.Complete(7, 11)
+			&& !waiting.Publish(7, 11, PptNavigationDirection::Next)
+			&& !waiting.Publish(7, 10, PptNavigationDirection::Previous)
+			&& !waiting.current.waiting,
+			"completion before publish retires that request and older delayed notices");
+		Check(waiting.Publish(7, 12, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 11) && waiting.current.epoch == 12
+			&& waiting.Complete(7, 12)
+			&& !waiting.Publish(7, 12, PptNavigationDirection::Next),
+			"normal completion permits a new request but never resurrects a completed epoch");
+		waiting.BeginSession(7);
+		Check(!waiting.Publish(7, 12, PptNavigationDirection::Next),
+			"repeated publication of the same active show preserves completed epochs");
+		Check(waiting.Publish(7, 13, PptNavigationDirection::Previous)
+			&& !waiting.Complete(7, 14)
+			&& !waiting.Publish(7, 14, PptNavigationDirection::Next)
+			&& waiting.Publish(7, 15, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 13) && waiting.current.epoch == 15,
+			"interleaved requests cannot revive the completed one or clear a newer wait");
+		Check(waiting.Clear(7)
+			&& !waiting.Publish(7, 16, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 16) && !waiting.current.waiting,
+			"session exit rejects a publish already in flight even without its completion");
+		waiting.BeginSession(8);
+		Check(waiting.Publish(8, 1, PptNavigationDirection::Previous)
+			&& !waiting.Publish(7, 100, PptNavigationDirection::Next)
+			&& !waiting.Complete(7, 100) && !waiting.Clear(7)
+			&& waiting.current.session == 8 && waiting.current.epoch == 1,
+			"old-show notices cannot replace, retire or clear the new-show request");
+		Check(waiting.Complete(8, 1) && !waiting.Clear()
+			&& !waiting.Publish(8, 2, PptNavigationDirection::Next),
+			"shutdown retires the active show even when no wait marker exists");
+	}
+
 	void TestDragCommitHandoff()
 	{
 		PptLayoutState initial;
@@ -557,6 +766,24 @@ namespace
 		newSession.publicationRevision = 1;
 		Check(MergePptPublication(frame, newSession),
 			"new native session accepts a restarted facade with smaller local revisions");
+	}
+
+	void TestCanvasRecoveryPresentationCommit()
+	{
+		PptState frame;
+		frame.layout.session = 7; frame.targetRevision = 9; frame.currentPage = 1; frame.totalPage = 2;
+		frame.pageAckEpoch = 1;
+		frame.recovery.kind = decltype(frame.recovery.kind)::Conflict;
+		frame.recovery.session = 7; frame.recovery.targetRevision = 9;
+		frame.recovery.revision = 11; frame.recovery.retryAvailable = true;
+		PptPageCommitState commit;
+		commit.Publish(frame, 1);
+		Check(!commit.Commit(frame, 1), "fault labels cannot emit a normal ink UI-ready ack");
+		auto ready = frame; ready.recovery = {};
+		commit.Publish(ready, 1);
+		Check(!commit.Commit(frame, 1) && commit.Commit(ready, 1) && !commit.Commit(ready, 1),
+			"clearing fault requires one real normal frame and rejects stale fault frame");
+		Check(!ArePptStatesEquivalent(frame, ready), "recovery publication invalidates page rendering equality");
 	}
 
 	void TestPagePresentationCommit()
@@ -1714,6 +1941,96 @@ namespace
 			"PPT drag clamp uses its active standard geometry without inheriting whiteboard width");
 	}
 
+	void TestPptIdleFadePolicy()
+	{
+		using Clock = std::chrono::steady_clock;
+		const auto activity = Clock::time_point(std::chrono::seconds(100));
+		PptIdleFadeInput input{ 10, true, false, false, activity, activity + std::chrono::milliseconds(9999) };
+		const auto waiting = ResolvePptIdleFade(input);
+		input.now = activity + std::chrono::seconds(10);
+		const auto expired = ResolvePptIdleFade(input);
+		Check(!waiting.dimmed && waiting.wake == activity + std::chrono::seconds(10)
+			&& expired.dimmed && expired.wake == Clock::time_point::max(),
+			"idle fade waits for the configured timeout and then dims without another wake");
+		auto engaged = input; engaged.engaged = true;
+		auto disabled = input; disabled.timeoutSeconds = 0;
+		auto hidden = input; hidden.eligible = false;
+		Check(!ResolvePptIdleFade(engaged).dimmed && !ResolvePptIdleFade(disabled).dimmed
+			&& !ResolvePptIdleFade(hidden).dimmed
+			&& ResolvePptIdleFade(disabled).wake == Clock::time_point::max(),
+			"hover/press, the off option and hidden or whiteboard surfaces stay opaque");
+		auto external = input; external.now = activity; external.externalTurn = true;
+		auto externalEngaged = external; externalEngaged.engaged = true;
+		Check(ResolvePptIdleFade(external).dimmed && !ResolvePptIdleFade(externalEngaged).dimmed,
+			"an external page turn dims immediately unless the surface is being used");
+		Check(IsPptExternalPageTurn(7, 3, 7, 4, false) && !IsPptExternalPageTurn(7, 3, 7, 4, true)
+			&& !IsPptExternalPageTurn(7, 3, 8, 4, false) && !IsPptExternalPageTurn(7, -1, 7, 4, false)
+			&& !IsPptExternalPageTurn(7, 3, 7, 3, false) && !IsPptExternalPageTurn(0, 3, 0, 4, false),
+			"only same-session page changes outside the control grace window count as external turns");
+		PptMainIdleFadeState main;
+		PptIdleFadeSnapshot snapshot{7,10,true,true};
+		Check(!main.Update(snapshot,true,false,false,activity,activity).dimmed,
+			"main bar starts a full independent idle interval on entry");
+		Check(main.Update(snapshot,true,false,false,activity,activity+std::chrono::seconds(10)).dimmed,
+			"main bar dims at its own idle deadline");
+		Check(!main.Update(snapshot,true,false,true,activity,activity+std::chrono::hours(1)).dimmed,
+			"an open property or More panel protects the main bar indefinitely");
+		const auto closed=activity+std::chrono::hours(1)+std::chrono::seconds(1);
+		const auto restarted=main.Update(snapshot,true,false,false,activity,closed);
+		Check(!restarted.dimmed&&restarted.wake==closed+std::chrono::seconds(10)
+			&&!main.Update(snapshot,true,false,false,activity,closed+std::chrono::seconds(9)).dimmed,
+			"the final panel close restarts a full interval rather than using the pre-open time");
+		Check(!main.Update(snapshot,true,true,false,activity,closed+std::chrono::hours(1)).dimmed,
+			"hover or an admitted press also protects the main bar indefinitely");
+		const auto leftAt=closed+std::chrono::hours(1)+std::chrono::seconds(1);
+		Check(main.Update(snapshot,true,false,false,activity,leftAt).wake==leftAt+std::chrono::seconds(10),
+			"leaving the last interaction starts the entire main-bar interval again");
+		// 重复快照对应页码发布；主栏没有外部翻页输入，不能重置原期限。
+		Check(main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(4)).wake
+			==leftAt+std::chrono::seconds(10), "page-only publications do not reset main idle");
+		snapshot.mainBar=false;
+		Check(!main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(20)).dimmed,
+			"unselected main bar clears its idle deadline");
+		snapshot.mainBar=true;
+		Check(!main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(30)).dimmed,
+			"re-enabling starts in the normal state without consuming old idle time");
+		snapshot.session=8;
+		Check(main.Update(snapshot,true,false,false,activity,leftAt+std::chrono::seconds(50)).wake
+			==leftAt+std::chrono::seconds(60), "a new presentation session retires the old deadline");
+		Check(!main.Update(snapshot,false,false,false,activity,leftAt+std::chrono::hours(2)).dimmed,
+			"whiteboard desktop and pending workspace transitions remain normal");
+		// 底栏门禁复用同一生命周期策略：切到 Floating 清期限，回来从正常态完整等待。
+		PptMainIdleFadeState dock;
+		const auto dockAt=activity+std::chrono::hours(3);
+		(void)dock.Update(snapshot,true,false,false,activity,dockAt);
+		Check(dock.Update(snapshot,true,false,false,activity,dockAt+std::chrono::seconds(10)).dimmed,
+			"an eligible bottom dock reaches its idle target");
+		const auto floating=dock.Update(snapshot,false,false,false,activity,dockAt+std::chrono::seconds(11));
+		Check(!floating.dimmed&&floating.wake==Clock::time_point::max()&&!dock.eligible,
+			"floating mode restores the main bar and retires its previous idle deadline");
+		const auto dockAgain=dockAt+std::chrono::hours(1);
+		const auto hovered=dock.Update(snapshot,true,true,false,activity,dockAgain);
+		Check(!hovered.dimmed&&hovered.wake==Clock::time_point::max(),
+			"live hover remains a protection when returning to a bottom dock");
+		const auto hoverEnd=dockAgain+std::chrono::seconds(1);
+		Check(dock.Update(snapshot,true,false,false,activity,hoverEnd).wake==hoverEnd+std::chrono::seconds(10)
+			&&!dock.Update(snapshot,true,false,false,activity,hoverEnd+std::chrono::seconds(9)).dimmed
+			&&dock.Update(snapshot,true,false,false,activity,hoverEnd+std::chrono::seconds(10)).dimmed,
+			"returning from floating waits the full interval after live interaction ends");
+		PptState defaults;
+		Check(defaults.idleFadeBottomPair&&defaults.idleFadeMiddlePair&&!defaults.idleFadeMainBar,
+			"idle fade range defaults preserve both page pairs and opt main bar out");
+		for(int scope=0;scope<3;++scope){
+			auto selected=defaults;
+			if(scope==0)selected.idleFadeBottomPair=false;
+			else if(scope==1)selected.idleFadeMiddlePair=false;
+			else selected.idleFadeMainBar=true;
+			Check(!ArePptStatesEquivalent(defaults,selected),"every range change republishes the PPT snapshot");
+		}
+		PptState left, right; right.idleFadeSeconds = 5;
+		Check(!ArePptStatesEquivalent(left, right), "idle fade timeout changes republish the PPT state");
+	}
+
 	void TestA2ProjectionAndMigration()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -1780,15 +2097,21 @@ namespace
 
 int RunPageControlTests()
 {
+	failureCount+=TestPageLoadingRingClock();
 	TestSharedButtonInheritance();
 	TestSharedSurfaceLightingMapping();
 	TestCompactWidgetContracts();
 	TestNativeMouseAndDragSupplement();
 	TestEndShowContentTargets();
+	TestNavigationWaitingLifecycle();
+	TestNavigationWaitingCompletionOrder();
+	TestPagePreparingVisualState();
+	TestStableNumericDisplay();
 	TestDragCommitHandoff();
 	TestVersionedDragPublication();
 	TestInterleavedPairFrameCommit();
 	TestPagePresentationCommit();
+	TestCanvasRecoveryPresentationCommit();
 	TestHideAndPageCommitRace();
 	TestEffectiveScaleAndResources();
 	TestTaskbarUiScale();
@@ -1806,5 +2129,6 @@ int RunPageControlTests()
 	TestDirtyInvalidationDeduplication();
 	TestRuntimeCollisionFallback();
 	TestA2ProjectionAndMigration();
+	TestPptIdleFadePolicy();
 	return failureCount;
 }

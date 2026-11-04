@@ -1,0 +1,18 @@
+{
+  "Inkeys/IdtMain.h": "47868f5a1bad038e8f8f847ab1ce9f01239fd4a7b78a9c124d12b2b8d9ac1c34",
+  "Inkeys/PptCOM.dll": "88b3e7aed2502a1280974a1d36cffe758ddf3526b2f381736b050a93f995d2fb",
+  "PptCOM.Tests/bin/Release/PptCOM.dll": "dffb30ea3345aafff8ff07c9ed40ab284033416df590b42ac530a4d5dcfda067",
+  "PptCOM.Tests/bin/Release/PptCOM.dll.config": "9159c3cf709abe6d97d228beb44333bf36fb8fa7368afada702a71a7e4c54571",
+  "PptCOM.Tests/bin/Release/PptCOM.pdb": "2e0799866309d689863dc44f3d4ba9440e326f905d88fe5fe80b5ebf43863e94",
+  "PptCOM.Tests/bin/Release/PptCOM.Tests.exe": "b58c552c6744bb5ed8d70efd2e8d2c1f44848287db4c3d888103078b63989f63",
+  "PptCOM.Tests/bin/Release/PptCOM.Tests.pdb": "186932c02acece0442e74be1eb2fdcae5b4c20064df728b2eaf165a5b98a6d22",
+  "PptCOM.Tests/obj/Release/.NETFramework,Version=v4.0.AssemblyAttributes.cs": "a68f8a233f30cf4737696fb94daaf44cb3772d40be168381aefa9059b2d3bcab",
+  "PptCOM.Tests/obj/Release/DesignTimeResolveAssemblyReferencesInput.cache": "0f0e7f54a862fc039a3f54e08f862a4d01ef6aadfe27a2a907820c3560d70ab0",
+  "PptCOM.Tests/obj/Release/PptCOM.T.787BB1FC.Up2Date": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "PptCOM.Tests/obj/Release/PptCOM.Tests.csproj.AssemblyReference.cache": "67f4b8c2a06b33d065de01a46a38e30a6657bd71b61ad49d7fd151b73118fcc5",
+  "PptCOM.Tests/obj/Release/PptCOM.Tests.csproj.CoreCompileInputs.cache": "25c9c1c47999b945c6df69f7c38aea11fed0db6b303dd92be07f509c1423e4ff",
+  "PptCOM.Tests/obj/Release/PptCOM.Tests.csproj.FileListAbsolute.txt": "3aba60db867540957d64bf34ca2b015e414355c7d25fd101fee7747b7f692d52",
+  "PptCOM.Tests/obj/Release/PptCOM.Tests.exe": "b58c552c6744bb5ed8d70efd2e8d2c1f44848287db4c3d888103078b63989f63",
+  "PptCOM.Tests/obj/Release/PptCOM.Tests.pdb": "186932c02acece0442e74be1eb2fdcae5b4c20064df728b2eaf165a5b98a6d22",
+  "git_status": " M Inkeys/IdtMain.h\n M Inkeys/PptCOM.dll\n?? PptCOM.Tests/\n"
+}

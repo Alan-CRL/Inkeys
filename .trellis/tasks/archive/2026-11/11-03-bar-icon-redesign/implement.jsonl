@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/11-03-bar-icon-redesign/research/icon-inventory.md", "reason": "全部图标使用点、调用行号、着色与尺寸清单"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "Bar 颜色角色（IconPrimary/Accent/TextPrimary）与 SVG 着色边界"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "barMore 翻页角度合同、EndShow 共用资源合同、SVG 内容转换规则"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 命名、注释、编码习惯"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 Solution Debug 原生架构构建要求"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "橡皮属性面板按钮项与事务合同"}

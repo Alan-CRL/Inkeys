@@ -77,14 +77,44 @@
 #define IDR_DRAW3_LASER_UPDATE_CS       303
 #define IDR_DRAW3_LASER_EMIT_CS         304
 #define IDR_MESSAGE_BOX_ERROR           305
-#define IDR_DRAW3_SHAPE_PIXEL_SHADER    307
-#define IDR_DRAW3_SHAPE_VERTEX_SHADER   308
+#define IDR_SETTING_ERASER_DEMO_FINE     307
+#define IDR_SETTING_ERASER_DEMO_SWEEP    308
+#define IDR_SETTING_ERASER_DEMO_PS       309
+
+#define IDR_ZH_HK                        310
+#define IDR_JA_JP                        311
+#define IDR_KO_KR                        312
+#define IDR_FR_FR                        313
+#define IDR_DE_DE                        314
+#define IDR_ES_ES                        315
+#define IDR_PT_BR                        316
+#define IDR_RU_RU                        317
+#define IDR_NOTO_JP_REGULAR              318
+#define IDR_NOTO_JP_BOLD                 319
+#define IDR_NOTO_KR_REGULAR              320
+#define IDR_NOTO_KR_BOLD                 321
+
+#define IDR_SETTING_IMGUI_ALPHA_PS       322
+
+#define IDR_ID_ID                       323
+#define IDR_VI_VN                       324
+#define IDR_TR_TR                       325
+#define IDR_IT_IT                       326
+#define IDR_PL_PL                       327
+#define IDR_UK_UA                       328
+#define IDR_ES_MX                       329
+#define IDR_RO_RO                       330
+#define IDR_EN_GB                       331
+#define IDI_ICON2                       332
+
+#define IDR_DRAW3_SHAPE_PIXEL_SHADER    333
+#define IDR_DRAW3_SHAPE_VERTEX_SHADER   334
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        309
+#define _APS_NEXT_RESOURCE_VALUE        335
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101

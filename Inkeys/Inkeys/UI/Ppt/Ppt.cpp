@@ -1,6 +1,8 @@
 module;
 
 #include <windows.h>
+#include "Ppt.Recovery.h"
+#include "../../../PptWaitingDiagnostics.h"
 
 #include <atomic>
 #include <cwchar>
@@ -51,8 +53,27 @@ namespace Inkeys::UI::Ppt
 		PositionState positions;
 		std::uint64_t publicationRevision = 0;
 		PagePresentationState pageState;
+		StablePageNumbers stablePageNumbers;
+		Inkeys::UI::PageControl::PptNavigationWaitingState navigationWaiting;
+		PptRecovery::State pageRecovery;
 		TopmostRefreshState topmostRefresh;
 		bool topmostRefreshFailureLogged = false;
+
+		namespace WaitTrace=Inkeys::Business::PptWaitTrace;
+		// 调用方持有原stateMutex；只拷贝已有纯值，不增加业务锁或窗口读取。
+		WaitTrace::Fields WaitingFields(std::uint64_t session=0,std::uint64_t epoch=0,unsigned direction=0) noexcept
+		{
+			WaitTrace::Fields value;if(!WaitTrace::Enabled())return value;
+			value.session=session?session:navigationWaiting.current.session;
+			value.epoch=epoch?epoch:navigationWaiting.current.epoch;
+			value.direction=direction?direction:static_cast<unsigned>(navigationWaiting.current.direction);
+			value.positionSession=positions.session;value.activeSession=navigationWaiting.activeSession;
+			value.activeEpoch=navigationWaiting.current.epoch;value.completedEpoch=navigationWaiting.completedEpoch;
+			value.layoutSession=positions.session;value.layoutEpoch=positions.epoch;value.publication=publicationRevision;
+			value.flags=WaitTrace::Initialized|(positions.active?WaitTrace::PositionActive:0)
+				|(navigationWaiting.current.waiting?WaitTrace::Waiting:0)|(topmostRefresh.presentationVisible?WaitTrace::Visible:0);
+			return value;
+		}
 
 		void LogTopmostRefreshState(bool recovered) noexcept
 		{
@@ -124,12 +145,32 @@ namespace Inkeys::UI::Ppt
 				state.presentationVisible = topmostRefresh.presentationVisible;
 				state.longPressEnabled =
 					Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
+				state.idleFadeSeconds = Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds;
+				state.idleFadeBottomPair = Inkeys::config.PlugIn.PPTHelper.IdleFadeBottomPair;
+				state.idleFadeMiddlePair = Inkeys::config.PlugIn.PPTHelper.IdleFadeMiddlePair;
+				state.idleFadeMainBar = Inkeys::config.PlugIn.PPTHelper.IdleFadeMainBar;
 				state.currentPage = pageState.currentPage;
 				state.totalPage = pageState.totalPage;
 				state.layout = ToPageLayout(positions.configuration);
 				state.targetRevision = pageState.targetRevision;
 				state.pageAckEpoch = pageState.pageAckEpoch;
+				state.navigationWaiting = navigationWaiting.current;
+				state.recovery = pageRecovery.session == positions.session ? pageRecovery : PptRecovery::State{};
+				// 与旧页码和过滤后的同场recovery取同一快照；命令返回不能代替真实页面准备完成。
+				state.pagePreparing = state.presentationActive && state.presentationVisible && state.layout.session != 0
+					&& (pageState.mode == PageStateMode::Pending || state.recovery.kind == PptRecovery::Kind::Recovering)
+					&& (state.recovery.kind == PptRecovery::Kind::None || state.recovery.kind == PptRecovery::Kind::Recovering);
+				// 保留控制/ACK页码；恢复或Pending仅覆写数字文本，恢复清除先到也不能泄露未来目标页。
+				state.numericPageOverride = state.presentationActive
+					&& (pageState.mode == PageStateMode::Pending || state.recovery.kind == PptRecovery::Kind::Recovering);
+				if(state.numericPageOverride&&stablePageNumbers.session==positions.session){
+					state.displayedCurrentPage=stablePageNumbers.currentPage;state.displayedTotalPage=stablePageNumbers.totalPage;
+				}
 				state.publicationRevision = ++publicationRevision;
+				auto waitFields=WaitingFields();
+				if(state.pagePreparing){waitFields.flags|=WaitTrace::Preparing;waitFields.session=state.layout.session;
+					waitFields.epoch=0;waitFields.direction=0;} // 通用准备没有命令epoch，不借用已完成请求。
+				WaitTrace::Capture(WaitTrace::Stage::Snapshot,waitFields,WaitTrace::Result::Accepted);
 			}
 			Inkeys::UI::PageControl::PublishPptState(state);
 		}
@@ -169,9 +210,23 @@ namespace Inkeys::UI::Ppt
 		{
 			std::scoped_lock lock(stateMutex);
 			if (!positions.active || session != positions.session
+				|| pageRecovery.kind != PptRecovery::Kind::None
 				|| !pageState.CanAcknowledge(current, total, target, epoch)) return;
 			// 纯值回执与模式变更串行完成，不能验完旧代次后跨过一次暂停再迟到转发。
 			if (business.pagePresented) business.pagePresented(session, target, current, total);
+		}
+
+		void RetryCanvas(PptRecovery::State expected)
+		{
+			std::function<void(PptRecovery::State)> callback;
+			{
+				std::scoped_lock lock(stateMutex);
+				if (!positions.active || !topmostRefresh.presentationVisible
+					|| positions.session != expected.session || !pageRecovery.CanRetry(expected)) return;
+				callback = business.retryCanvas;
+			}
+			// 产品重试不能跨 UI 状态锁；最终由 Host 再核验实际故障令牌。
+			if (callback) callback(expected);
 		}
 
 	}
@@ -187,6 +242,9 @@ namespace Inkeys::UI::Ppt
 			(void)SavedPptComPositions();
 			publicationRevision = 0;
 			pageState = {};
+			stablePageNumbers = {};
+			navigationWaiting = {};
+			pageRecovery = {};
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
 		}
@@ -209,6 +267,7 @@ namespace Inkeys::UI::Ppt
 			std::move(callbackSnapshot.endShow),
 			CommitPageLayout,
 			PagePresented,
+			RetryCanvas,
 		});
 		PublishSnapshot();
 		return true;
@@ -227,6 +286,8 @@ namespace Inkeys::UI::Ppt
 		if (!initialized.exchange(false, std::memory_order_acq_rel)) return;
 		{
 			std::scoped_lock lock(stateMutex);
+			navigationWaiting = {};
+			stablePageNumbers = {};
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
 		}
@@ -286,6 +347,71 @@ namespace Inkeys::UI::Ppt
 		{
 			std::scoped_lock lock(stateMutex);
 			pageState.Publish(current, total, target, mode);
+			// 只有真实页面发布的InkReady/BasicControl更新缓存；Snapshot/recovery通知不反向授予可信数字。
+			if(positions.active)stablePageNumbers.Observe(positions.session,current,total,mode);
+		}
+		PublishSnapshot();
+	}
+
+	void PublishNavigationWaiting(std::uint64_t session, std::uint64_t epoch, bool next) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) {
+			WaitTrace::Fields fields;fields.session=session;fields.epoch=epoch;fields.direction=next?2:1;
+			WaitTrace::Capture(WaitTrace::Stage::Publish,fields,WaitTrace::Result::Uninitialized);return;
+		}
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			if (!positions.active || positions.session != session) {
+				WaitTrace::Capture(WaitTrace::Stage::Publish,WaitingFields(session,epoch,next?2:1),WaitTrace::Result::PositionMismatch);return;
+			}
+			changed = navigationWaiting.Publish(session, epoch,
+				next ? Inkeys::UI::PageControl::PptNavigationDirection::Next
+					: Inkeys::UI::PageControl::PptNavigationDirection::Previous);
+			WaitTrace::Capture(WaitTrace::Stage::Publish,WaitingFields(session,epoch,next?2:1),
+				changed?WaitTrace::Result::Accepted:WaitTrace::Result::TrackerRejected);
+		}
+		if (changed) PublishSnapshot();
+	}
+
+	void CompleteNavigationWaiting(std::uint64_t session, std::uint64_t epoch) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			changed = navigationWaiting.Complete(session, epoch);
+			WaitTrace::Capture(WaitTrace::Stage::Complete,WaitingFields(session,epoch),
+				changed?WaitTrace::Result::Accepted:WaitTrace::Result::Unchanged);
+		}
+		if (changed) PublishSnapshot();
+	}
+
+	void ClearNavigationWaiting(std::uint64_t session) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			const auto fields=WaitingFields(session);
+			changed = navigationWaiting.Clear(session);
+			WaitTrace::Capture(WaitTrace::Stage::Clear,fields,changed?WaitTrace::Result::Accepted:WaitTrace::Result::Unchanged);
+		}
+		if (changed) PublishSnapshot();
+	}
+
+	void PublishCanvasRecovery(PptRecovery::State recovery) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		{
+			std::scoped_lock lock(stateMutex);
+			if (recovery.kind != PptRecovery::Kind::None &&
+				(!positions.active || recovery.session != positions.session || !recovery.revision
+					|| !recovery.targetRevision)) return;
+			if (recovery.kind != PptRecovery::Kind::None && pageRecovery.session == recovery.session
+				&& recovery.revision < pageRecovery.revision) return;
+			if (pageRecovery == recovery) return;
+			pageRecovery = recovery;
 		}
 		PublishSnapshot();
 	}
@@ -324,6 +450,11 @@ namespace Inkeys::UI::Ppt
 			if (changed)
 			{
 				pageState = {};
+				stablePageNumbers = {};
+				WaitTrace::Capture(WaitTrace::Stage::Session,WaitingFields(),WaitTrace::Result::Reset);
+				navigationWaiting.Clear();
+				if (positions.active) navigationWaiting.BeginSession(positions.session);
+				pageRecovery = {};
 			}
 		}
 		DispatchSettings(std::move(save));

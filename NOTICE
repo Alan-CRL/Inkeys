@@ -28,6 +28,10 @@ Component: google/ink-stroke-modeler (https://github.com/google/ink-stroke-model
 License: Apache License 2.0
 Copyright / Notes: 
 
+Component: lukaasm/ImFluent (https://github.com/lukaasm/ImFluent)
+License: MIT License
+Copyright / Notes: Copyright (c) 2026 lukaasm
+
 Component: martinus/unordered_dense (https://github.com/martinus/unordered_dense)
 License: MIT License
 Copyright / Notes: Copyright (c) 2022 Martin Leitner-Ankerl
@@ -75,3 +79,6 @@ Main component notices (NOTICE):
 
 Third-party license files:
 ./ThirdpartyLicenses/
+Component: FreeType 2.14.3 (https://freetype.org/)
+License: FreeType Project License (FTL); full bundled notices in Inkeys/additional/imgui/misc/freetype/LICENSE.freetype.txt
+Copyright / Notes: Portions of this software are copyright (C) 1996-2026 The FreeType Project (www.freetype.org). All rights reserved.

@@ -1,0 +1,14 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"本轮桌面UI、兼容、格式、交互与国际化合同"}
+{"file": ".trellis/tasks/10-10-setting-home-design/ripple-revision.md", "reason": "第三轮直接授权：圆头无缝与字标/整横幅明显波纹，覆盖旧冲突约定"}
+{"file": ".trellis/tasks/10-10-setting-home-design/soft-sheen-revision.md", "reason": "第四轮用户授权：克制背景和下方文案反光，字标颜色不变；签名失败后保持原暂存快照"}
+{"file": ".trellis/tasks/10-10-setting-home-design/brand-entry-revision.md", "reason": "第五轮最新直接授权：书写完成Hold300ms、背景渐退与非线性路径；仅Show播放、Hide归主页顶部、实际布局尺寸跳过，覆盖旧冲突合同"}
+{"file": ".trellis/tasks/10-10-setting-home-design/research/brand-entry-lifecycle.md", "reason": "第五轮窗口生命周期、目标包络门禁、冷启动及真实WARP接入研究"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "当前崩溃修复：HRESULT传播及资源事务/逆序清理"}
+{"file": ".trellis/tasks/10-10-setting-home-design/texture-crash-revision.md", "reason": "第六轮最新运行时缺陷：事务创建、安全清理、设备失效与真实后端无窗口回归"}
+{"file": ".trellis/tasks/10-10-setting-home-design/research/texture-runtime-crash.md", "reason": "第六轮已确认空资源发布和恢复路径缺口；最新native日志与初始device loss未知边界"}
+{"file": ".trellis/tasks/10-10-setting-home-design/entry-performance-revision.md", "reason": "第八轮用户预批准：2.66秒时序、遮罩下真实首帧准备、透明开始恢复页面、极致有界性能优化及必要原生测试，无Computer Use"}
+{"file": ".trellis/tasks/10-10-setting-home-design/research/entry-performance-research.md", "reason": "第八轮具体重复提交、字体烘焙、书写blocks排序及WARP/native性能证据边界"}

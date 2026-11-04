@@ -61,11 +61,23 @@ bool IsPowerPointRunAsAdminSet();
 void StartDesktopDrawpadBlocker();
 bool LaunchVerifiedDesktopDrawpadBlocker(bool runAsAdmin);
 
+#include "Inkeys/Business/DesktopShortcut.h"
+
+Inkeys::Business::DesktopShortcut::NameOptions CaptureDesktopShortcutNames(Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App);
+std::wstring GetDesktopShortcutDirectory();
+
 class ShortcutAssistantClass
 {
 public:
-	void SetShortcut();
+	bool SetShortcut();
+	bool SetShortcut(const std::wstring& name, bool correct, bool create, const std::wstring& desktopDirectory,
+		Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App, const std::wstring& targetExePath = {});
+	enum class Classification { NotOurs, App, Whiteboard };
+	Classification ClassifyShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath);
+	bool MatchesShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath,
+		Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App);
 	bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory);
-	bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath);
+	bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath,
+		Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App);
 };
 extern ShortcutAssistantClass shortcutAssistant;

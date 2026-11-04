@@ -1,0 +1,13 @@
+# 第三轮：缓存与终态滚动条一致
+
+用户要求接续当前in_progress任务：开屏字标归位后右侧滚动条出现，页面宽度/位置跳变。缓存首帧应已有和正常终态相同的页面，仅排除艺术字标与蒙版。
+
+最小边界：核查Setting.cpp的开屏NoInputs与Setting.Controls.cpp::BeginScrollChild/ScrollbarStyleScope视觉及布局；捕获准备/恢复必须稳定真实内容宽度、滚动条状态和hero目标。修复实际拥有该行为的最小逻辑，不通过隐藏终态滚动条或任意加长动画掩盖。不改共享WARP/Draw设备、60Hz/Present、字体精度/vendor/无关页面架构。
+
+直接核查后：NoInputs只在导航阻断或取消首帧由blockContentInput开启，正常active本身不设置；该标志只门禁拖拽目标消费，不能当作隐藏滚动条根因。真正线索是ScrollbarStyleScope在child缺席后将160ms条宽动画重置0，而fixture原ConfigureRowAnimations关闭。夹具需启用真实row时钟并补齐实际输入屏障条件，新增冷布局捕获→缓存归位→终态首帧的几何与精确RGBA回归。检查正常需滚动/无滚动、浅深和至少两倍率/窄布局；滚动与输入取消保持可用。不必重做全部性能分析，但实际构建用完整InkeysRepo.sln Debug|ARM64，无窗口验证。
+
+ownership：implement代理负责必要Setting.Controls.h/.cpp、Setting.cpp、Pages/Cache必要小改及现有setting_home_warp_tests.cpp/setting_design_tests.cpp回归和research/scrollbar-fix-notes.md。主会话负责task/spec与统一build/test。check代理独立审查。所有代理不是独自工作，保留他人修改/原编码BOM/CRLF，关键中文注释；禁止GUI、并行build、commit/push。此次新修复没有commit授权，用户前一条commit仅对前次完成的改动有效；任务继续不归档。
+
+## 实测后的就绪合同补充
+
+原两提交仅能作为最低准备数量，不能证明嵌套AutoResize高度已经传递给native scrollbar。诊断证明capture的page当前测量1348px但已消费1199px；first-live使用1348px，右侧thumb出现342个不同像素。必须按当前真实content子树测量与native ContentSize一致门禁捕获/恢复，沿现有有界预算，不把固定2改为猜测的3/4。回归改为至少原2实际成功提交、满足真实layoutReady后捕获，保持首live精确WorkRect和RGBA。

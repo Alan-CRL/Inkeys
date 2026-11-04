@@ -272,7 +272,8 @@ function Sync-Node {
 
 	if ($BaseNode -is [string]) {
 		$targetValue = if ($TargetNode -is [string]) { [string]$TargetNode } else { $null }
-		if (-not ($TargetNode -is [string]) -or [string]::IsNullOrEmpty($targetValue)) {
+		# 基准本身为空的连接符允许显式空翻译；缺少节点仍需要翻译。
+		if (-not ($TargetNode -is [string]) -or ([string]::IsNullOrEmpty($targetValue) -and $BaseNode -ne '')) {
 			return Get-NeedTranslationValue -BaseValue $BaseNode
 		}
 
@@ -535,7 +536,7 @@ function Compare-Language {
 		}
 
 		$targetValue = [string]$targetMap[$key]
-		if ([string]::IsNullOrEmpty($targetValue)) {
+		if ([string]::IsNullOrEmpty($targetValue) -and $baseMap[$key] -ne '') {
 			$unfinished.Add([pscustomobject]@{
 					Key = $key
 					Reason = 'Empty'

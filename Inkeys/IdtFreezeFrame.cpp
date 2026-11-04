@@ -267,4 +267,6 @@ void FreezeFrameWindow()
 			}
 		}
 	}
+	// 屏幕 DC 只由本线程持有，线程退出前配对释放。
+	if (hdcScreen) ReleaseDC(nullptr, hdcScreen);
 }

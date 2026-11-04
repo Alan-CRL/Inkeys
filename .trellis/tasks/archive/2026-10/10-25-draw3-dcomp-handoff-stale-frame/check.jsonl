@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"审查产品边界与必需质量门"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"核查交接 ready、激光清理、透明呈现及回归合同"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"核查最小变更、模块边界与线程所有权"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"核查失败诊断和恢复行为"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核查 Present 到 ready 到窗口交接的跨层时序"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核查标准构建与验证证据边界"}

@@ -23,12 +23,22 @@ struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11SamplerState;
 struct ID3D11Buffer;
+struct ID3D11PixelShader;
 
 // Follow "Getting Started" link and check examples/ folder to learn about using backends!
 IMGUI_IMPL_API bool     ImGui_ImplDX11_Init(ID3D11Device* device, ID3D11DeviceContext* device_context);
+// [Inkeys] 初始化尚无 backend owner 时，也向调用方保留实际 HRESULT；原两参数入口不变。
+IMGUI_IMPL_API bool     ImGui_ImplDX11_Init(ID3D11Device* device, ID3D11DeviceContext* device_context, long* result);
 IMGUI_IMPL_API void     ImGui_ImplDX11_Shutdown();
 IMGUI_IMPL_API void     ImGui_ImplDX11_NewFrame();
 IMGUI_IMPL_API void     ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data);
+// [Inkeys] 保留原 void API；调用方在 Present 前读取本 context 最近一次提交/创建的 HRESULT。
+IMGUI_IMPL_API long     ImGui_ImplDX11_GetLastResult();
+// [Inkeys] 整块透明度哨兵：Begin/End 之间的命令先按原 alpha 合成到透明离屏目标，再整体乘透明度回写。
+// UserCallbackData 保存 float 位模式；只有本 backend 识别，含哨兵的 DrawData 不能交给其他 renderer。
+#define ImGui_ImplDX11_OpacityGroupBegin    ((ImDrawCallback)(-16))
+#define ImGui_ImplDX11_OpacityGroupEnd      ((ImDrawCallback)(-24))
+IMGUI_IMPL_API bool     ImGui_ImplDX11_SupportsOpacityGroups();
 
 // Use if you want to reset your rendering device without losing Dear ImGui state.
 IMGUI_IMPL_API bool     ImGui_ImplDX11_CreateDeviceObjects();
@@ -36,6 +46,17 @@ IMGUI_IMPL_API void     ImGui_ImplDX11_InvalidateDeviceObjects();
 
 // (Advanced) Use e.g. if you need to precisely control the timing of texture updates (e.g. for staged rendering), by setting ImDrawData::Textures = nullptr to handle this manually.
 IMGUI_IMPL_API void     ImGui_ImplDX11_UpdateTexture(ImTextureData* tex);
+
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
+// 仅无窗口测试可注入一次故障；产品编译不含这些入口或状态。
+enum ImGui_ImplDX11_TestFailure { ImGui_ImplDX11_TestFailure_None, ImGui_ImplDX11_TestFailure_Texture,
+    ImGui_ImplDX11_TestFailure_TextureView, ImGui_ImplDX11_TestFailure_IndexMap, ImGui_ImplDX11_TestFailure_TextureConversion, ImGui_ImplDX11_TestFailure_TextureUpdate };
+struct ID3D11Texture2D;
+struct ID3D11ShaderResourceView;
+IMGUI_IMPL_API void ImGui_ImplDX11_TestForceRgbaAlpha(bool force);
+IMGUI_IMPL_API void ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure stage, long result);
+IMGUI_IMPL_API void ImGui_ImplDX11_TestPublishPartialTexture(ImTextureData* tex, ID3D11Texture2D* texture);
+#endif
 
 // [BETA] Selected render state data shared with callbacks.
 // This is temporarily stored in GetPlatformIO().Renderer_RenderState during the ImGui_ImplDX11_RenderDrawData() call.
@@ -47,6 +68,8 @@ struct ImGui_ImplDX11_RenderState
     ID3D11SamplerState*     SamplerLinear;
     ID3D11SamplerState*     SamplerNearest;
     ID3D11Buffer*           VertexConstantBuffer;
+    ID3D11PixelShader*      PixelShader;
+    ID3D11PixelShader*      AlphaPixelShader;
 };
 
 #endif // #ifndef IMGUI_DISABLE

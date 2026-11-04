@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/11-01-page-loading-progress-ring/research/relevant-spec-contracts.md", "reason": "大规范的本任务精确契约索引与原文行锚，避免上下文截断"}
+{"file": ".trellis/spec/native-desktop/ui3-render-diagnostics.md", "reason": "render热路径、真实idle/退出与观测边界"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用曲线和共享按钮，不混显示与业务"}
+{"file": ".trellis/tasks/11-01-page-loading-progress-ring/research/progress-ring-reuse.md", "reason": "本任务实际复用点、InputWorker deadline/生命周期和几何风险"}

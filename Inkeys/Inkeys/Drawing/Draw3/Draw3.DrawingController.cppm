@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -14,9 +14,11 @@
 #include <string>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
@@ -62,6 +64,8 @@ export namespace Inkeys::Drawing::Draw3
 	int RunPresentationCurrentLoadRetryProbe() noexcept;
 	// 无 HWND：复用 Run 的 ingress 批次函数验证命令屏障前后不吞新 Down。
 	int RunDraw3ControlFenceProductionProbe() noexcept;
+	// 无 HWND：复用生产手掌转换、邻域准入与接续身份接缝。
+	int RunPalmEraserProductionProbe() noexcept;
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
 	int RunDraw3ContentProofProductionProbe() noexcept;
 	int RunWhiteboardStorageProductionTest() noexcept;
@@ -104,6 +108,8 @@ export namespace Inkeys::Drawing::Draw3
 		void (*shortcutCompleted)(void*, std::uint64_t, Shortcuts::Result) noexcept = nullptr;
 		WhiteboardTheme whiteboardDefaultTheme;
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
+		void (*recoveryChanged)(void*, const CanvasRecoveryState&) noexcept = nullptr;
+		bool (*recoveryRetryAllowed)(void*, std::uint64_t) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
@@ -119,8 +125,13 @@ export namespace Inkeys::Drawing::Draw3
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
+		// 通用偏好成组发布，仅由之后开始的独立笔画锁存。
+		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
+			InkPredictionMode predictionMode) noexcept;
 		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
 		void SetInvertedPenEraserEnabled(bool enabled) noexcept;
+		// 由 Host 绘制 owner 应用；每个新独立触点再锁存。
+		void SetPalmEraserOptions(const PalmEraser::Settings& options) noexcept;
 		bool GetInvertedPenEraserEnabled() const noexcept;
 		void SetDrawingHapticsEnabled(bool enabled) noexcept { drawingHapticsEnabled_ = enabled; }
 		// 即时控制 Touch 断触修正；关闭时已有候选会立即按正常 Up 收尾。
@@ -137,7 +148,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool GetMouseUsesSystemCursor() const noexcept;
 		// 由产品 Host 在绘制 owner 同步；首次调用启用独立的鼠标/笔类型。
 		void SetCursorSettings(const CursorSettings& settings) noexcept;
-		// 即时控制激光笔的稀疏粒子点缀，不影响主轨迹和留存计时。
+		// 产品暂禁用激光粒子；兼容入口保留，任何启用请求均保持关闭。
 		void SetLaserParticlesEnabled(bool enabled) noexcept;
 		bool GetLaserParticlesEnabled() const noexcept;
 		// 控制激光笔是否接受同时按下的多根 Touch；只影响之后开始的 contact。
@@ -170,6 +181,9 @@ export namespace Inkeys::Drawing::Draw3
 		StrokeModelConfiguration configuration_;
 		DrawingControllerRuntimeObserver observer_;
 		InputWidthModeSettingsState inputWidthModeSettings_;
+		// 位0/1为多指/尾修正，位2..3为预测模式；默认开/开/Kalman。
+		std::atomic<uint32_t> generalDrawingOptions_ = 11;
+		PalmEraser::Settings palmEraserOptions_;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;

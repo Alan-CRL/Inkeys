@@ -252,8 +252,16 @@ bool ReadSetting()
 			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
 		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
 			setlist.startUp = setlistVal["StartUp"].asBool();
-		if (setlistVal.isMember("SettingGlobalScale") && setlistVal["SettingGlobalScale"].isDouble())
-			setlist.settingGlobalScale = setlistVal["SettingGlobalScale"].asDouble();
+		// 缺项或非布尔值均回退浅色，不接受数字、字符串等隐式转换。
+		setlist.settingDarkMode = setlistVal.isMember("SettingDarkMode")
+			&& setlistVal["SettingDarkMode"].isBool() && setlistVal["SettingDarkMode"].asBool();
+		// 缺项、错误类型和越界值均保持“本进程首次打开”的默认策略。
+		setlist.settingEntryAnimation = 1;
+		if (setlistVal.isMember("SettingEntryAnimation") && setlistVal["SettingEntryAnimation"].isInt())
+		{
+			const int mode = setlistVal["SettingEntryAnimation"].asInt();
+			if (mode >= 0 && mode <= 2) setlist.settingEntryAnimation = mode;
+		}
 
 		if (setlistVal.isMember("SetSkinMode") && setlistVal["SetSkinMode"].isInt())
 			setlist.SetSkinMode = setlistVal["SetSkinMode"].asInt();
@@ -377,13 +385,6 @@ bool ReadSetting()
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopDrawingFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"].isBool())
 						ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"].asBool();
 				}
-			}
-			if (setlistVal["PlugIn"].isMember("ShortcutAssistant") && setlistVal["PlugIn"]["ShortcutAssistant"].isObject())
-			{
-				if (setlistVal["PlugIn"]["ShortcutAssistant"].isMember("CorrectLnk") && setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].isBool())
-					setlist.shortcutAssistant.correctLnk = setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].asBool();
-				if (setlistVal["PlugIn"]["ShortcutAssistant"].isMember("CreateLnk") && setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].isBool())
-					setlist.shortcutAssistant.createLnk = setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].asBool();
 			}
 
 			if (setlistVal["PlugIn"].isMember("SuperTop") && setlistVal["PlugIn"]["SuperTop"].isObject())
@@ -537,7 +538,10 @@ string CaptureSettingJson()
 	{
 		setlistVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		setlistVal["StartUp"] = Json::Value(setlist.startUp);
-		setlistVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
+		setlistVal["SettingDarkMode"] = Json::Value(setlist.settingDarkMode);
+		setlistVal["SettingEntryAnimation"] = Json::Value(
+			setlist.settingEntryAnimation >= 0 && setlist.settingEntryAnimation <= 2
+			? setlist.settingEntryAnimation : 1);
 
 		setlistVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 		setlistVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
@@ -566,6 +570,7 @@ string CaptureSettingJson()
 			setlistVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
 		}
 		// 已删除的旧设置不依赖 AutoClean；每次保存都清除历史 JSON 键。
+		setlistVal.removeMember("SettingGlobalScale");
 		setlistVal["Regular"].removeMember("AvoidFullScreen");
 		setlistVal.removeMember("PointAdsorption");
 		setlistVal.removeMember("SmoothWriting");
@@ -609,10 +614,8 @@ string CaptureSettingJson()
 					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating);
 				}
 			}
-			{
-				setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"] = Json::Value(setlist.shortcutAssistant.correctLnk);
-				setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"] = Json::Value(setlist.shortcutAssistant.createLnk);
-			}
+			// 快捷方式配置已归 main.json；即使关闭 AutoClean 也不保留旧的活动字段。
+			setlistVal["PlugIn"].removeMember("ShortcutAssistant");
 
 			{
 				setlistVal["PlugIn"]["SuperTop"]["Enable"] = Json::Value(setlist.plugInSetting.superTop.enable);
@@ -693,6 +696,8 @@ bool WriteSetting()
 PptComSetListStruct pptComSetlist;
 bool PptComReadSetting()
 {
+	// 加载页暂不开放；缺失/损坏的配置以及旧 true 都不能重新启用。
+	pptComSetlist.showLoadingScreen = false;
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
 	{
@@ -731,8 +736,6 @@ bool PptComReadSetting()
 
 	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
 	{
-		if (updateVal.isMember("ShowLoadingScreen") && updateVal["ShowLoadingScreen"].isBool())
-			pptComSetlist.showLoadingScreen = updateVal["ShowLoadingScreen"].asBool();
 		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
 			pptComSetlist.memoryWidgetPosition = updateVal["MemoryWidgetPosition"].asBool();
 
@@ -840,7 +843,7 @@ static Json::Value CapturePptComSettingValue()
 {
 	Json::Value updateVal;
 	{
-		updateVal["ShowLoadingScreen"] = Json::Value(pptComSetlist.showLoadingScreen);
+		updateVal["ShowLoadingScreen"] = Json::Value(false);
 		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
 
 		updateVal["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);
@@ -1173,7 +1176,8 @@ bool SetMemory()
 {
     using namespace Inkeys::Business::PenWidth;
     std::scoped_lock lock(g_penWidthPreferencesMutex);
-    const auto snapshot = GetStateModeSnapshot();
+    StateModeClass snapshot;
+    if (!TryGetDesktopStateModeSnapshot(snapshot)) return true;
     Json::Value root;
     if (!ReadMemoryRoot(MemoryPath(), root)) return false;
     auto preferences = DecodePreferences(root, true, snapshot.penWidthContext);

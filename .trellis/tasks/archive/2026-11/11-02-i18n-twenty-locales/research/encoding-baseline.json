@@ -1,0 +1,92 @@
+{
+  "Inkeys/IdtI18nLocales.h": {
+    "sha256": "28f0e8161df38cb91eec7c3ded58c60188b0499c8f0f76ca23549a9522f15fa8",
+    "bom": false,
+    "crlf": 71,
+    "lf": 71
+  },
+  "Inkeys/resource.h": {
+    "sha256": "86066ee23ee4ff706b9ef6302f8ef3ad54e4b62c769ba859e162ee8453462093",
+    "bom": true,
+    "crlf": 108,
+    "lf": 108
+  },
+  "Inkeys/Inkeys.rc": {
+    "sha256": "9b1690fa09bae649121d08119aae6b38511d2cb31054bb1db808f822dd248b68",
+    "bom": false,
+    "crlf": 376,
+    "lf": 376
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+    "sha256": "6d072456cbc82bb999de28d3b653be3194569a133ae5779f02bd189c45efc99d",
+    "bom": false,
+    "crlf": 5559,
+    "lf": 5559
+  },
+  "Inkeys/IdtI18n.cpp": {
+    "sha256": "8c5a662ecf227c1fae82ae431d41404bf71855d0fc9024d000cb5f6f4a0b2159",
+    "bom": true,
+    "crlf": 396,
+    "lf": 396
+  },
+  "InkeysHeadlessTests/setting_design_tests.cpp": {
+    "sha256": "cd2005f3c32c09aeb2e2eb285f36fcec5425420981447191a29e77f77b9b441a",
+    "bom": false,
+    "crlf": 6579,
+    "lf": 6579
+  },
+  "InkeysHeadlessTests/setting_font_benchmark_tests.cpp": {
+    "sha256": "0549ad99b944babdc4dfc4ba723bfb88c53ea249d7324dbc2c72167355709481",
+    "bom": true,
+    "crlf": 294,
+    "lf": 294
+  },
+  "Inkeys/Inkeys/UI/MessageBox/MessageBox.Layout.cpp": {
+    "sha256": "467b2e5e7589d7f65aae5bd7646e4e8c24b83346af19eab1a00b4628e8b06bc0",
+    "bom": false,
+    "crlf": 170,
+    "lf": 170
+  },
+  "InkeysHeadlessTests/message_box_tests.cpp": {
+    "sha256": "63e4aa1221950898181fe84bfddda60aecca9be838601f8c6f162c1d049cab67",
+    "bom": false,
+    "crlf": 1738,
+    "lf": 1738
+  },
+  "Inkeys/Inkeys.vcxproj": {
+    "sha256": "acf38757c2cbb5e79e4ce8575cb7ac5e88e973dbb76578150c0c8ba7820fe9fa",
+    "bom": false,
+    "crlf": 1456,
+    "lf": 1456
+  },
+  "Inkeys/Inkeys.vcxproj.filters": {
+    "sha256": "1b1de1be98c6d2ae02d53cd74a3b77324cd87f0660fbbf338065756540a71b41",
+    "bom": false,
+    "crlf": 2745,
+    "lf": 2745
+  },
+  "InkeysRepo.sln": {
+    "sha256": "feed791eadd71d74664962290813cf7ba58810a62df05fbe69b9aaaf88b7c93a",
+    "bom": true,
+    "crlf": 93,
+    "lf": 93
+  },
+  ".trellis/spec/native-desktop/index.md": {
+    "sha256": "b0d29adba7f621867634d040e9aa86f8b3f3e66738bb31db0f13f650c98ed7a1",
+    "bom": false,
+    "crlf": 65,
+    "lf": 65
+  },
+  ".trellis/spec/native-desktop/configuration-i18n-and-assets.md": {
+    "sha256": "bf2de43ce0953f0981f7e18ddb91ce1547d8b7971861782cca7452386788783e",
+    "bom": false,
+    "crlf": 667,
+    "lf": 667
+  },
+  ".trellis/spec/native-desktop/rendering-and-ui.md": {
+    "sha256": "8778033e26818ac2e9e4c364e34e615b2f6ab05622c29ddc22adc72225234301",
+    "bom": false,
+    "crlf": 2819,
+    "lf": 2819
+  }
+}

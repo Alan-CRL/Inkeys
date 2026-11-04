@@ -125,6 +125,13 @@ export namespace Inkeys::Drawing::Draw3
 		double minimumHoldDurationSeconds = 0.0;
 	};
 
+	// 同一帧可多次求值；只在帧首到最终生命周期结果的边沿退休瞬态资源。
+	constexpr bool LaserTrailExpiredThisFrame(
+		LaserTrailPhase previous, LaserTrailPhase final) noexcept
+	{
+		return previous != LaserTrailPhase::Inactive && final == LaserTrailPhase::Inactive;
+	}
+
 	// 单 contact coverage 的批次模式；多 contact 一旦出现便锁定完整重绘。
 	enum class LaserCoverageMode : uint32_t
 	{
@@ -225,7 +232,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool drawingCursorDuringContactEnabled = false; // 默认落笔时隐藏应用光标；外部可显式开启。
 		bool translucentInkCursorEnabled = false; // 默认使用不透明 Ink 光标；开启后恢复半透明外观。
 		bool mouseUsesSystemCursor = true; // 普通绘制工具默认使用系统箭头；Eraser/Laser 始终保留专用光标。
-		bool laserParticlesEnabled = false; // GPU 粒子默认关闭；外部可按需开启，资源不可用时只降级激光主体。
+		bool laserParticlesEnabled = false; // 保留配置兼容字段；当前产品在 Controller 强制关闭粒子。
 		bool laserMultiTouchDrawingEnabled = false; // 默认只接受第一根 Touch，外部可显式启用激光笔多指绘图。
 		LaserParticleConfig laserParticleConfig = {};
 		double laserHoldDurationSeconds = 1.0; // 最后一根激光笔抬起后的满亮留存时间。
@@ -334,10 +341,12 @@ export namespace Inkeys::Drawing::Draw3
 	};
 
 	// 根据 DPI 和当前帧率预设创建模型配置。
-	StrokeModelConfiguration CreateStrokeModelConfiguration(int dpiX);
+	StrokeModelConfiguration CreateStrokeModelConfiguration(int dpiX,
+		StrokeTimingProfileId profileId = kActiveStrokeTimingProfileId);
 	// 将当前预测模式写入模型参数。
 	void ApplyPredictionMode(ink::stroke_model::StrokeModelParams& params,
-		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams);
+		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams,
+		InkPredictionMode mode = kActivePredictionMode);
 	// 为普通笔 contact 按设备设置解析本笔固定的宽度来源。
 	// HardwarePressure 普通笔禁用 L0 实时笔锋；其余宽度模式沿用配置时长。
 	double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
@@ -473,6 +482,9 @@ export namespace Inkeys::Drawing::Draw3
 	struct ActiveStroke
 	{
 		ink::stroke_model::StrokeModeler modeler;
+		// 落笔时锁存；设置切换与断触续接均不能改写本笔的预测和完成态修正。
+		InkPredictionMode predictionMode = kActivePredictionMode;
+		bool penTailCorrectionEnabled = true;
 		TailInputDiagnostic tailInputDiagnostic;
 		std::vector<ink::stroke_model::Result> modeledResults;
 		// stationary/terminal Update 复用该 scratch，避免累计 modeledResults 无界增长。

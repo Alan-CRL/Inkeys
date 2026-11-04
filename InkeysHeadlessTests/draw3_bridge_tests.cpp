@@ -2,19 +2,20 @@
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Shortcut.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TimerPeriod.h"
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <thread>
 
 namespace
 {
 	using namespace Inkeys::Drawing::Draw3::Bridge;
-	using Inkeys::Drawing::Draw3::MouseCursorStyle;
-	using Inkeys::Drawing::Draw3::PenCursorStyle;
+	using Inkeys::Drawing::Draw3::CursorStyle;
 	using Inkeys::Drawing::Draw3::DrawpadPresentationSurface;
 	using Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface;
 	using Inkeys::Drawing::Draw3::TimerPeriodController;
@@ -58,9 +59,12 @@ namespace
 			"default color uses RGBA black")) ++failures;
 		if (!Expect(initial.revision == 0,
 			"default snapshot starts at revision zero")) ++failures;
-		if (!Expect(initial.cursorSettings.mouseStyle == MouseCursorStyle::System
-			&& initial.cursorSettings.penStyle == PenCursorStyle::Circle,
-			"bridge defaults use the system mouse cursor and the original pen circle")) ++failures;
+		if (!Expect(initial.cursorSettings.mouse == CursorStyle::Arrow
+			&& initial.cursorSettings.touch == CursorStyle::None
+			&& initial.cursorSettings.screenPen == CursorStyle::Dot
+			&& initial.cursorSettings.tablet == CursorStyle::HighlightDot
+			&& !initial.cursorSettings.injectedMouseAsTablet,
+			"bridge defaults: system mouse, no touch cursor, screen pen dot, tablet highlighted dot")) ++failures;
 		if (!Expect(initial.selectionMode,
 			"default product state starts in selection mode")) ++failures;
 		if (!Expect(initial.workspace == Workspace::Desktop,
@@ -117,69 +121,72 @@ namespace
 
 		const auto beforeCursor = bridge.Snapshot();
 		auto cursorOnly = beforeCursor;
-		cursorOnly.cursorSettings.penStyle = PenCursorStyle::PenIcon;
+		cursorOnly.cursorSettings.screenPen = CursorStyle::Pen;
 		bridge.PublishState(cursorOnly);
 		const auto afterCursor = bridge.Snapshot();
 		if (!Expect(afterCursor.revision == beforeCursor.revision + 1
 			&& afterCursor.cursorSettings == cursorOnly.cursorSettings
-			&& beforeCursor.cursorSettings.penStyle == PenCursorStyle::Circle
-			&& afterCursor.cursorSettings.mouseStyle == beforeCursor.cursorSettings.mouseStyle
+			&& beforeCursor.cursorSettings.screenPen == CursorStyle::Dot
+			&& afterCursor.cursorSettings.mouse == beforeCursor.cursorSettings.mouse
 			&& afterCursor.tool == beforeCursor.tool && afterCursor.widthDip == beforeCursor.widthDip,
 			"pen-only cursor updates publish an immutable revision without changing mouse or brush")) ++failures;
 		cursorOnly = afterCursor;
-		cursorOnly.cursorSettings.mouseStyle = MouseCursorStyle::Drawing;
+		cursorOnly.cursorSettings.mouse = CursorStyle::HighlightPen;
 		bridge.PublishState(cursorOnly);
 		const auto mouseChanged = bridge.Snapshot();
 		if (!Expect(mouseChanged.revision == afterCursor.revision + 1
-			&& mouseChanged.cursorSettings.penStyle == PenCursorStyle::PenIcon
-			&& mouseChanged.cursorSettings.mouseStyle == MouseCursorStyle::Drawing
-			&& afterCursor.cursorSettings.mouseStyle == MouseCursorStyle::System,
+			&& mouseChanged.cursorSettings.screenPen == CursorStyle::Pen
+			&& mouseChanged.cursorSettings.mouse == CursorStyle::HighlightPen
+			&& afterCursor.cursorSettings.mouse == CursorStyle::Arrow,
 			"mouse-only cursor updates preserve the independently selected pen type")) ++failures;
+		for (int mode = 0; mode <= 3; ++mode)
+		{
+			const auto beforeMode = bridge.Snapshot();
+			auto modeOnly = beforeMode;
+			modeOnly.cursorSettings.dotHideOnContact = static_cast<Inkeys::Drawing::Draw3::DotCursorHideMode>(mode);
+			bridge.PublishState(modeOnly);
+			const auto afterMode = bridge.Snapshot();
+			if (!Expect(afterMode.revision == beforeMode.revision + 1 && afterMode.cursorSettings == modeOnly.cursorSettings &&
+				afterMode.cursorSettings.mouse == beforeMode.cursorSettings.mouse &&
+				afterMode.cursorSettings.tablet == beforeMode.cursorSettings.tablet &&
+				afterMode.widthDip == beforeMode.widthDip && afterMode.tool == beforeMode.tool &&
+				beforeMode.cursorSettings.dotHideOnContact != afterMode.cursorSettings.dotHideOnContact,
+				"dot contact hide mode alone publishes a new immutable cursor revision")) ++failures;
+		}
 	}
 
 	void TestMouseCursorToolProjection(int& failures)
 	{
 		// 断言表直接表达产品规则；调用 Host 使用的生产 helper，不在测试中复制分支。
-		struct ToolCase { Tool tool; MouseCursorStyle systemChoice; MouseCursorStyle drawingChoice; };
+		struct ToolCase { Tool tool; bool followsSelection; bool markerPreview; };
+		// 只有软/硬笔跟随所选样式；荧光笔固定走应用预览，其余工具回到系统光标。
 		constexpr ToolCase cases[] = {
-			{ Tool::Pen, MouseCursorStyle::System, MouseCursorStyle::Drawing },
-			{ Tool::HardPen, MouseCursorStyle::System, MouseCursorStyle::Drawing },
-			{ Tool::Highlighter, MouseCursorStyle::Drawing, MouseCursorStyle::Drawing },
-			{ Tool::FixedEraser, MouseCursorStyle::System, MouseCursorStyle::System },
-			{ Tool::SpeedEraser, MouseCursorStyle::System, MouseCursorStyle::System },
-			{ Tool::Laser, MouseCursorStyle::System, MouseCursorStyle::System },
-			{ Tool::SolidLine, MouseCursorStyle::System, MouseCursorStyle::System },
-			{ Tool::DashedLine, MouseCursorStyle::System, MouseCursorStyle::System },
-			{ Tool::OutlineRectangle, MouseCursorStyle::System, MouseCursorStyle::System },
-			{ Tool::FilledRectangle, MouseCursorStyle::System, MouseCursorStyle::System },
-			{ Tool::ConfiguredEraser, MouseCursorStyle::System, MouseCursorStyle::System }
+			{ Tool::Pen, true, false }, { Tool::HardPen, true, false }, { Tool::Highlighter, false, true },
+			{ Tool::FixedEraser, false, false }, { Tool::SpeedEraser, false, false }, { Tool::Laser, false, false },
+			{ Tool::SolidLine, false, false }, { Tool::DashedLine, false, false },
+			{ Tool::OutlineRectangle, false, false }, { Tool::FilledRectangle, false, false },
+			{ Tool::ConfiguredEraser, false, false }
 		};
 		for (const auto& test : cases)
-		{
-			if (!Expect(ResolveMouseCursorStyleForTool(test.tool, MouseCursorStyle::System) == test.systemChoice &&
-				ResolveMouseCursorStyleForTool(test.tool, MouseCursorStyle::Drawing) == test.drawingChoice,
-				"production tool projection keeps highlighter independent and excludes every shape")) ++failures;
-		}
-		const Inkeys::Drawing::Draw3::CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
+			for (const auto selected : { CursorStyle::Arrow, CursorStyle::Pen, CursorStyle::HighlightDot })
+			{
+				const auto projected = ResolveMouseCursorStyleForTool(test.tool, selected);
+				const bool expected = test.followsSelection ? projected == selected
+					: test.markerPreview ? projected != CursorStyle::Arrow : projected == CursorStyle::Arrow;
+				if (!Expect(expected, "production tool projection keeps highlighter independent and excludes every shape")) ++failures;
+			}
+		Inkeys::Drawing::Draw3::CursorSettings raw;
+		raw.touch = CursorStyle::Dot; raw.screenPen = CursorStyle::Pen; raw.tablet = CursorStyle::HighlightPen;
+		raw.dotHideOnContact = Inkeys::Drawing::Draw3::DotCursorHideMode::Both;
 		const auto marker = ResolveCursorSettingsForTool(Tool::Highlighter, raw);
 		const auto shape = ResolveCursorSettingsForTool(Tool::SolidLine, raw);
 		const auto brush = ResolveCursorSettingsForTool(Tool::Pen, raw);
-		if (!Expect(marker.mouseStyle == MouseCursorStyle::Drawing &&
-			shape.mouseStyle == MouseCursorStyle::System && brush.mouseStyle == MouseCursorStyle::System &&
-			raw.mouseStyle == MouseCursorStyle::System &&
-			marker.penStyle == PenCursorStyle::PenIcon && shape.penStyle == raw.penStyle && brush.penStyle == raw.penStyle,
-			"actual marker-to-shape-to-brush projection preserves raw system preference and independent pen type")) ++failures;
-		using Inkeys::Drawing::Draw3::RestoreMouseCursorStyle;
-		using Inkeys::Drawing::Draw3::RestorePenCursorStyle;
-		if (!Expect(RestoreMouseCursorStyle(0) == MouseCursorStyle::System &&
-			RestoreMouseCursorStyle(1) == MouseCursorStyle::Drawing &&
-			RestoreMouseCursorStyle(-1) == MouseCursorStyle::System &&
-			RestoreMouseCursorStyle(2) == MouseCursorStyle::System &&
-			RestorePenCursorStyle(0) == PenCursorStyle::Circle &&
-			RestorePenCursorStyle(1) == PenCursorStyle::PenIcon &&
-			RestorePenCursorStyle(-1) == PenCursorStyle::Circle &&
-			RestorePenCursorStyle(2) == PenCursorStyle::Circle,
-			"shared cursor restorers accept only one as the optional pen icon")) ++failures;
+		if (!Expect(marker.mouse != CursorStyle::Arrow && shape.mouse == CursorStyle::Arrow &&
+			brush.mouse == raw.mouse && raw.mouse == CursorStyle::Arrow &&
+			marker.screenPen == raw.screenPen && shape.tablet == raw.tablet && brush.touch == raw.touch &&
+			marker.dotHideOnContact == raw.dotHideOnContact && shape.dotHideOnContact == raw.dotHideOnContact &&
+			brush.dotHideOnContact == raw.dotHideOnContact,
+			"actual marker-to-shape-to-brush projection preserves raw selections of every other device")) ++failures;
 	}
 
 	void TestPresentationSessionIdentity(int& failures)
@@ -418,6 +425,290 @@ namespace
 			"successful retry receives exactly one matching end")) ++failures;
 	}
 
+	void TestSceneReadyHandoff(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		std::optional<PresentationReadyIdentity> none;
+		for (const auto workspace : { Workspace::Desktop, Workspace::Whiteboard, Workspace::Presentation })
+		{
+			desired.workspace = workspace;
+			if (!Expect(PresentationSceneNeedsReady(desired, workspace, none, true),
+				"same workspace retains outstanding command-scene ready responsibility")) ++failures;
+			if (!Expect(!PresentationSceneNeedsReady(desired, workspace, none, false),
+				"settled workspace does not create a spurious ready responsibility")) ++failures;
+		}
+		PresentationTarget target{};
+		target.key.bytes[0] = 7;
+		target.totalPages = 2;
+		target.sessionRevision = 9;
+		target.targetRevision = 3;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		const auto identity = ReadyIdentityFor(target);
+		if (!Expect(PresentationSceneNeedsReady(desired, Workspace::Presentation, none, false),
+			"missing CPU identity requires ready even in the same presentation workspace")) ++failures;
+		if (!Expect(!PresentationSceneNeedsReady(desired, Workspace::Presentation, identity, false),
+			"matching CPU identity settles the scene handoff")) ++failures;
+		std::optional<PresentationReadyIdentity> ui;
+		if (!Expect(TryLatchPresentationUiReady(desired, none, identity, ui) && ui == identity,
+			"actual UI commit is retained before CPU ready, including temporary old-scene replay")) ++failures;
+		if (!Expect(PresentationSceneNeedsReady(desired, Workspace::Presentation, none, true),
+			"early UI commit does not settle the independent CPU/command scene obligation")) ++failures;
+		auto stale = identity;
+		--stale.targetRevision;
+		if (!Expect(!TryLatchPresentationUiReady(desired, none, stale, ui) && ui == identity,
+			"stale UI target cannot overwrite the retained current commit")) ++failures;
+		ui.reset();
+		if (!Expect(!TryLatchPresentationUiReady(desired, identity, identity, ui) && !ui,
+			"suspended target cannot latch a UI commit")) ++failures;
+		desired.workspace = Workspace::Whiteboard;
+		if (!Expect(!TryLatchPresentationUiReady(desired, none, identity, ui) && !ui,
+			"presentation UI commit cannot cross into whiteboard")) ++failures;
+		desired.workspace = Workspace::Presentation;
+		desired.presentationTarget.reset();
+		if (!Expect(!TryLatchPresentationUiReady(desired, none, identity, ui),
+			"presentation without a trusted target cannot accept old UI commit")) ++failures;
+	}
+
+	void TestSceneDispatchResponsibility(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		if (!Expect(!PresentationSceneNeedsDispatch(desired, Workspace::Desktop,
+			Workspace::Desktop, 0, false), "settled desktop heartbeat does not dispatch")) ++failures;
+		PresentationTarget target{};
+		target.key.bytes[0] = 17;
+		target.sourceIdentity = "path:c:\\scene-dispatch.pptx";
+		target.totalPages = 2;
+		target.targetRevision = 4;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		for (const auto origin : { Workspace::Desktop, Workspace::Whiteboard })
+		{
+			desired.workspace = Workspace::Presentation;
+			if (!Expect(PresentationSceneNeedsDispatch(desired, origin, origin, 0, false),
+				"PPT request dispatches from desktop and whiteboard")) ++failures;
+			if (!Expect(!PresentationSceneNeedsDispatch(desired, origin,
+				Workspace::Presentation, target.targetRevision, false),
+				"same pending PPT heartbeat leaves the single Controller retry in charge")) ++failures;
+			desired.workspace = origin;
+			desired.presentationTarget.reset();
+			if (!Expect(PresentationSceneNeedsDispatch(desired, origin,
+				Workspace::Presentation, target.targetRevision, false),
+				"return to presented origin dispatches to retire a failed PPT request")) ++failures;
+			if (!Expect(!PresentationSceneNeedsDispatch(desired, origin, origin, 0, false),
+				"retired PPT request does not cause repeated origin dispatch")) ++failures;
+			desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		}
+		desired.presentationTarget.reset();
+		for (const auto origin : { Workspace::Desktop, Workspace::Whiteboard, Workspace::Presentation })
+		{
+			desired.workspace = origin;
+			const auto failed = origin == Workspace::Whiteboard ? Workspace::Desktop : Workspace::Whiteboard;
+			if (!Expect(PresentationSceneNeedsDispatch(desired, origin, failed, 0, false),
+				"workspace-only failed request retires even without a PPT target revision")) ++failures;
+			if (!Expect(!PresentationSceneNeedsDispatch(desired, origin, origin, 0, false),
+				"targetless workspace heartbeat remains deduplicated")) ++failures;
+		}
+		desired.workspace = Workspace::Presentation;
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Presentation, target.targetRevision, false),
+			"targetless PPT retires a previous full target in the same workspace")) ++failures;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Presentation, target.targetRevision - 1, false),
+			"full PPT target revision still controls page dispatch")) ++failures;
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Whiteboard, target.targetRevision, false),
+			"full PPT re-entry retires a workspace request even when the target revision matches")) ++failures;
+
+		if (!Expect(PresentationSceneNeedsDispatch(desired, Workspace::Presentation,
+			Workspace::Presentation, target.targetRevision, true),
+			"restoreLatest forces dispatch even when both workspace and target match")) ++failures;
+
+		StateBridge bridge;
+		if (!Expect(bridge.PublishPresentationTarget(target).has_value(),
+			"FIFO fixture accepts PPT target")) ++failures;
+		const auto accepted = bridge.Snapshot();
+		bridge.Publish(CommandType::Clear);
+		bridge.Publish(CommandType::Undo);
+		bridge.PublishWorkspace(Workspace::Desktop);
+		Command command;
+		for (const auto type : { CommandType::Clear, CommandType::Undo })
+		{
+			if (!Expect(bridge.TryConsume(command) && command.type == type &&
+				command.workspace == Workspace::Presentation &&
+				command.presentationTarget == accepted.presentationTarget,
+				"accepted business keeps captured PPT scene and FIFO through desktop return")) ++failures;
+			if (!Expect(command.presentationTarget &&
+				PresentationSceneNeedsDispatch(bridge.Snapshot(), Workspace::Desktop,
+					command.workspace, command.presentationTarget->targetRevision, true),
+				"restoreLatest follows each old business prefix despite the unchanged presented desktop")) ++failures;
+		}
+		if (!Expect(!PresentationSceneNeedsDispatch(bridge.Snapshot(), Workspace::Desktop,
+			Workspace::Desktop, 0, false), "host lifecycle reset starts with a settled desktop request")) ++failures;
+	}
+
+	void TestCanvasRecoveryTokens(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		ProductState desired{};
+		desired.workspace = Workspace::Presentation;
+		PresentationTarget target{};
+		target.key.bytes[0] = 27; target.totalPages = 2;
+		target.targetRevision = 4; target.sessionRevision = 7;
+		desired.presentationTarget = std::make_shared<PresentationTarget>(target);
+		CanvasRecoveryState current;
+		current.workspace = Workspace::Presentation;
+		current.presentationTarget = ReadyIdentityFor(target);
+		current.status = CanvasRecoveryStatus::ProtectedConflict;
+		current.reason = CanvasRecoveryReason::TopologyConflict;
+		current.retryAvailable = true; current.revision = 12;
+		if (!Expect(RecoveryMatchesDesired(current, desired) &&
+			CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"exact failed target and current recovery token admit an explicit safe retry")) ++failures;
+		auto stale = current; --stale.revision;
+		if (!Expect(!CanvasRecoveryRetryMatches(stale, current, desired, true, false, false),
+			"stale or duplicated UI recovery token cannot retry a newer recovery attempt")) ++failures;
+		if (!Expect(!CanvasRecoveryRetryMatches(current, current, desired, true, false, true) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, true, true, false) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, false, false, false),
+			"consumer fatal, stopping, and stopped Host never accept manual recovery")) ++failures;
+		desired.workspace = Workspace::Whiteboard; desired.presentationTarget.reset();
+		if (!Expect(!RecoveryMatchesDesired(current, desired) &&
+			!CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"old PPT failure cannot override or retry after a new workspace intent")) ++failures;
+		current.workspace = Workspace::Whiteboard; current.presentationTarget.reset();
+		current.status = CanvasRecoveryStatus::ManualRetryRequired;
+		current.reason = CanvasRecoveryReason::PresentFailure;
+		if (!Expect(CanvasRecoveryRetryMatches(current, current, desired, true, false, false),
+			"workspace-only presentation failures use the same exact recovery token contract")) ++failures;
+	}
+
+	void TestMergedRecoveryIntentProjection(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		for (const auto origin : { Workspace::Desktop, Workspace::Whiteboard })
+		{
+			ProductState desired{}; desired.workspace = origin;
+			CanvasRecoveryState reported;
+			reported.workspace = origin;
+			reported.status = CanvasRecoveryStatus::ManualRetryRequired;
+			reported.reason = CanvasRecoveryReason::PresentFailure;
+			reported.retryAvailable = true;
+			auto projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == reported.status && projected.retryAvailable,
+				"current owner failure exposes explicit recovery")) ++failures;
+			desired.workspace = origin == Workspace::Desktop ? Workspace::Whiteboard : Workspace::Desktop;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == CanvasRecoveryStatus::None &&
+				CanvasRecoveryBlocksAdmission(projected, &reported),
+				"temporary other intent hides old failure but cannot reopen an unrecovered owner")) ++failures;
+			desired.workspace = origin;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(projected.status == reported.status && projected.retryAvailable,
+				"owner failure survives intent round trip merged before Controller consumes it")) ++failures;
+			reported.status = CanvasRecoveryStatus::None; reported.retryAvailable = false;
+			projected = ProjectCanvasRecovery(&reported, desired, false);
+			if (!Expect(!CanvasRecoveryBlocksAdmission(projected, &reported),
+				"only an actual recovered owner report releases the recovery gate")) ++failures;
+			projected = ProjectCanvasRecovery(&reported, desired, true);
+			if (!Expect(projected.status == CanvasRecoveryStatus::Failed &&
+				projected.reason == CanvasRecoveryReason::ConsumerFatal && !projected.retryAvailable,
+				"fatal admission overrides normal projection and never offers retry")) ++failures;
+		}
+	}
+
+	void TestDCompRetirement(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::DCompRetirementResult;
+		using Inkeys::Drawing::Draw3::GetDCompRetirementSlot;
+		using Inkeys::Drawing::Draw3::WaitForDCompRetirement;
+		using namespace std::chrono_literals;
+		if (!Expect(WaitForDCompRetirement([] { return true; }, 50ms) == DCompRetirementResult::Completed,
+			"successful DComp retirement completes")) ++failures;
+		if (!Expect(WaitForDCompRetirement([] { return false; }, 50ms) == DCompRetirementResult::Failed,
+			"failed DComp retirement reports failure")) ++failures;
+
+		std::promise<void> blockedPromise;
+		auto blocked = blockedPromise.get_future();
+		const auto timeout = WaitForDCompRetirement([&] { blocked.wait(); return true; }, 10ms);
+		if (!Expect(timeout == DCompRetirementResult::Timeout,
+			"blocked DComp retirement returns within its deadline")) ++failures;
+		if (!Expect(WaitForDCompRetirement([] { return true; }, 1ms) == DCompRetirementResult::Busy,
+			"pending retirement rejects a second worker")) ++failures;
+		blockedPromise.set_value();
+		auto& slot = GetDCompRetirementSlot();
+		{
+			std::unique_lock lock(slot.mutex);
+			if (!Expect(slot.wake.wait_for(lock, 100ms, [&] { return !slot.active; }),
+				"late retirement releases the isolated slot")) ++failures;
+		}
+		if (!Expect(WaitForDCompRetirement([] { return true; }, 50ms) == DCompRetirementResult::Completed,
+			"late completion permits the next retirement")) ++failures;
+	}
+
+	void TestDCompHandoffBarrier(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::DCompHandoffBarrierState;
+		DCompHandoffBarrierState barrier;
+		int flushCount = 0;
+		bool ready = false;
+
+		// 普通 DComp 帧及 ULW 即使全帧成功也不取得交接屏障。
+		if (!Expect(!barrier.Consume(true, true, true, 1) &&
+			!barrier.Consume(false, true, true, 1) && flushCount == 0,
+			"ordinary DComp and ULW presents never wait")) ++failures;
+
+		barrier.Arm(7);
+		// Present1 已返回，但 DwmFlush 尚未完成时 observer/Host 仍不能发布 ready。
+		const bool wait = barrier.Consume(true, true, true, 7);
+		if (wait) ++flushCount;
+		if (!Expect(wait && flushCount == 1 && !ready,
+			"successful handoff Present stays unready before the barrier")) ++failures;
+		const bool flushSucceeded = false;
+		ready = !wait || flushSucceeded;
+		if (!Expect(!ready && flushCount == 1,
+			"barrier failure rejects ready")) ++failures;
+		barrier.Arm(7); // 生产失败路径保留 revision，恢复后仍需成功屏障。
+		const bool retryWait = barrier.Consume(true, true, true, 7);
+		if (retryWait) ++flushCount;
+		ready = retryWait;
+		if (!Expect(ready && flushCount == 2 &&
+			!barrier.Consume(true, true, true, 7) && flushCount == 2,
+			"recovered frame completes the barrier before one ready publication")) ++failures;
+
+		barrier.Arm(8);
+		ready = false;
+		const bool successfulWait = barrier.Consume(true, true, true, 8);
+		if (successfulWait) ++flushCount;
+		if (!Expect(successfulWait && !ready,
+			"the next output revision has its own ordered barrier")) ++failures;
+		ready = successfulWait; // 模拟 DwmFlush 成功返回后才调用成功 observer。
+		if (!Expect(ready && flushCount == 3 &&
+			!barrier.Consume(true, true, true, 8) && flushCount == 3,
+			"successful barrier publishes ready exactly once")) ++failures;
+
+		barrier.Arm(9);
+		if (!Expect(!barrier.Consume(true, false, true, 9) &&
+			!barrier.Consume(true, true, false, 9) && flushCount == 3,
+			"partial or failed Present does not execute the barrier")) ++failures;
+		const bool presentRetryWait = barrier.Consume(true, true, true, 9);
+		if (presentRetryWait) ++flushCount;
+		if (!Expect(presentRetryWait && flushCount == 4,
+			"a failed Present retains the same barrier for its full-frame retry")) ++failures;
+		barrier.Arm(10);
+		barrier.Cancel();
+		barrier.Arm(11);
+		if (!Expect(!barrier.Consume(false, true, true, 10) &&
+			!barrier.Consume(true, true, true, 10) && flushCount == 4,
+			"rapid DComp ULW DComp switching rejects the superseded revision")) ++failures;
+		const bool latestTargetWait = barrier.Consume(true, true, true, 11);
+		if (latestTargetWait) ++flushCount;
+		if (!Expect(latestTargetWait && flushCount == 5 &&
+			!barrier.Consume(true, true, true, 11),
+			"only the latest target revision completes its handoff barrier")) ++failures;
+	}
+
 	void TestDrawpadPresentationPlan(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3;
@@ -567,6 +858,29 @@ namespace
 		stopWaiter.join();
 		if (!Expect(stopWaitCompleted.load(std::memory_order_acquire),
 			"host stop notification releases runtime waiter")) ++failures;
+	}
+
+	void TestWorkspaceProgressWake(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostRuntimeRevisionSignal;
+		HostRuntimeRevisionSignal signal;
+		std::atomic_bool running = false;
+		const auto beforeDecision = signal.Revision();
+		signal.Publish();
+		signal.Publish();
+		if (!Expect(signal.WaitForChange(beforeDecision, 0, running, true)
+			&& !signal.WaitForChange(signal.Revision(), 0, running, true),
+			"native and background progress coalesce without losing a pre-wait notification")) ++failures;
+		const auto observed = signal.Revision();
+		std::promise<bool> completed;
+		auto result = completed.get_future();
+		std::jthread waiter([&] { completed.set_value(signal.WaitForChange(observed, 1000, running, true)); });
+		if (!Expect(result.wait_for(std::chrono::milliseconds(30)) == std::future_status::timeout,
+			"stopped-host coordinator sleeps for real native progress instead of spinning")) ++failures;
+		signal.Publish();
+		if (!Expect(result.wait_for(std::chrono::milliseconds(750)) == std::future_status::ready && result.get(),
+			"native retirement wakes stopped-host coordinator without the 250ms sleep")) ++failures;
+		waiter.join();
 	}
 
 	void TestPptWaitObservationBoundary(int& failures)
@@ -936,8 +1250,15 @@ int RunDraw3BridgeTests()
 	TestUnsupportedAndLifecycle(failures);
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);
+	TestDCompRetirement(failures);
+	TestDCompHandoffBarrier(failures);
 	TestDrawpadPresentationPlan(failures);
+	TestSceneReadyHandoff(failures);
+	TestSceneDispatchResponsibility(failures);
+	TestCanvasRecoveryTokens(failures);
+	TestMergedRecoveryIntentProjection(failures);
 	TestPageRuntimeRevisionPolicy(failures);
+	TestWorkspaceProgressWake(failures);
 	TestDrawingActivityLifecycle(failures);
 	TestAcceptedStrokeNoticeLifecycle(failures);
 	TestPptWaitObservationBoundary(failures);

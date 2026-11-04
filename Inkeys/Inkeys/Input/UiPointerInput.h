@@ -99,6 +99,7 @@ namespace Inkeys::Input::UiPointer
     class MouseChannel
     {
     public:
+        std::uintptr_t DiagnosticId() const noexcept { return reinterpret_cast<std::uintptr_t>(state_.get()); }
         MouseChannel();
         ~MouseChannel();
         MouseChannel(const MouseChannel&) = delete;

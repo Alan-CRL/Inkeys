@@ -5,6 +5,7 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include "../Inkeys/IdtI18nLocales.h"
 #include <Windowsx.h>
 #include <dwmapi.h>
 #include <objidl.h>
@@ -213,6 +214,34 @@ namespace
 		Check(traditional.ok == L"確定" && traditional.cancel == L"取消",
 			"traditional labels");
 		Check(english.ok == L"OK" && english.no == L"No", "English labels");
+		const struct { LANGID language; const wchar_t* cancel; const wchar_t* yes; } localized[]{
+			{ 0x0c04, L"取消", L"是" }, { 0x0411, L"キャンセル", L"はい" },
+			{ 0x0412, L"취소", L"예" }, { 0x040c, L"Annuler", L"Oui" },
+			{ 0x0407, L"Abbrechen", L"Ja" }, { 0x0c0a, L"Cancelar", L"Sí" },
+			{ 0x0416, L"Cancelar", L"Sim" }, { 0x0419, L"Отмена", L"Да" } };
+		for (const auto& sample : localized)
+		{
+			const auto labels = MessageBoxTest::ResolveLabels(sample.language);
+			Check(labels.cancel == sample.cancel && labels.yes == sample.yes, "new locale default button captions match the requested language");
+		}
+		const struct { LANGID language; const wchar_t* ok; const wchar_t* cancel; const wchar_t* yes; const wchar_t* no; } added[]{
+			{ 0x0421, L"OK", L"Batal", L"Ya", L"Tidak" },
+			{ 0x042a, L"OK", L"Hủy", L"Có", L"Không" },
+			{ 0x041f, L"Tamam", L"İptal", L"Evet", L"Hayır" },
+			{ 0x0410, L"OK", L"Annulla", L"Sì", L"No" },
+			{ 0x0415, L"OK", L"Anuluj", L"Tak", L"Nie" },
+			{ 0x0422, L"Гаразд", L"Скасувати", L"Так", L"Ні" },
+			{ 0x0418, L"OK", L"Anulare", L"Da", L"Nu" },
+			{ 0x080a, L"Aceptar", L"Cancelar", L"Sí", L"No" }, { 0x0809, L"OK", L"Cancel", L"Yes", L"No" } };
+		for (const auto& sample : added)
+		{
+			const auto labels = MessageBoxTest::ResolveLabels(sample.language);
+			Check(labels.ok == sample.ok && labels.cancel == sample.cancel && labels.yes == sample.yes && labels.no == sample.no,
+				"all added language and region default buttons match their requested locale");
+			auto custom = MakeOkCancelRequest(L"Title", L"Body"); custom.language = sample.language; custom.labels.ok = L"Custom";
+			const auto resolved = MessageBoxTest::ResolveRequestLabels(custom);
+			Check(resolved.ok == L"Custom" && resolved.cancel == sample.cancel, "custom button retains localized default for the other button");
+		}
 		const auto defaultLabels = MessageBoxTest::ResolveRequestLabels(
 			MakeOkRequest(L"Title", L"Body"));
 		Check(defaultLabels.ok == L"OK" && defaultLabels.cancel == L"Cancel",
@@ -268,6 +297,23 @@ namespace
 			traditionalRequest, 96, 900, 900);
 		Check(traditionalProbe.succeeded && traditionalProbe.buttonCount == 2,
 			"traditional Chinese request resolves fonts and layout");
+
+		// 实际 GDI+ 测量覆盖二十种按钮译文；日/韩从与产品相同的内嵌私有 TTF 取字。
+		for (const auto& locale : Inkeys::Localization::Locales)
+		{
+			const auto labels = MessageBoxTest::ResolveLabels(locale.language);
+			const std::wstring body = labels.cancel + L" · Đđ Ắặ Ệộ Ứự Ğğ İı Şş Ąą Ęę Łł Șș Țț Ґґ Єє Іі Її";
+			auto localized = MakeOkCancelRequest(labels.ok.c_str(), body.c_str());
+			localized.language = locale.language;
+			for (const UINT dpi : { 96u, 144u, 192u })
+			{
+				const auto probe = MessageBoxTest::ProbeLayout(localized, dpi,
+					MessageBoxTest::ScaleDip(320, dpi), MessageBoxTest::ScaleDip(900, dpi));
+				Check(probe.succeeded && probe.buttonCount == 2
+					&& probe.width == MessageBoxTest::ScaleDip(320, dpi),
+					"twenty-language dialog labels fit the minimum width at each DPI without a window");
+			}
+		}
 
 		const auto tooSmall = MessageBoxTest::ProbeLayout(request, 96, 319, 800);
 		Check(!tooSmall.succeeded, "work area below minimum rejects preflight");
@@ -1537,6 +1583,7 @@ int RunMessageBoxTests(bool runWindowTests)
 	TestLabelsAndScaling();
 	TestPreflightWithoutWindow();
 	Check(MessageBoxTest::VerifyCancellationAdmission(), "cancelled admission returns without waiting for another dialog");
+	Check(MessageBoxTest::VerifyDialogHideOwnerPolicy(), "dialog cleanup enables and returns foreground to owner before hiding without stealing external focus");
 	std::stop_source stop;
 	Request cancelled; cancelled.fallback.enabled = false; cancelled.cancellation = stop.get_token();
 	stop.request_stop();

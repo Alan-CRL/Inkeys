@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <mutex>
 
 namespace Inkeys::UI::Bar
@@ -340,6 +341,94 @@ namespace Inkeys::UI::Bar
 				&& outer.right >= inner.right && outer.bottom >= inner.bottom);
 	}
 
+	[[nodiscard]] constexpr bool IsBarWindowSourceContained(
+		POINT source, SIZE size, SIZE target) noexcept
+	{
+		return source.x >= 0 && source.y >= 0 && size.cx > 0 && size.cy > 0
+			&& static_cast<long long>(source.x) + size.cx <= target.cx
+			&& static_cast<long long>(source.y) + size.cy <= target.cy;
+	}
+
+	// 包络属于手势表面的存储坐标；允许越过屏幕，不改变 UI 自身的屏幕定位范围。
+	[[nodiscard]] inline RECT ResolveBarFixedDragEnvelope(
+		const RECT& currentContentBounds, const RECT& predictedEnvelope,
+		const RECT& presentedContentBounds, double zoom,
+		double horizontalMarginDip, double verticalMarginDip, LONG paddingPx = 0) noexcept
+	{
+		if (!std::isfinite(zoom) || zoom <= 0.0
+			|| !std::isfinite(horizontalMarginDip) || horizontalMarginDip < 0.0
+			|| !std::isfinite(verticalMarginDip) || verticalMarginDip < 0.0
+			|| paddingPx < 0) return {};
+		RECT bounds = currentContentBounds;
+		UnionBarWindowRect(bounds, predictedEnvelope);
+		UnionBarWindowRect(bounds, presentedContentBounds);
+		if (IsBarWindowRectEmpty(bounds)) return {};
+		const double horizontalPadding = std::ceil(horizontalMarginDip * zoom) + paddingPx;
+		const double verticalPadding = std::ceil(verticalMarginDip * zoom) + paddingPx;
+		constexpr auto minimum = (std::numeric_limits<LONG>::min)();
+		constexpr auto maximum = (std::numeric_limits<LONG>::max)();
+		if (!std::isfinite(horizontalPadding) || horizontalPadding > maximum
+			|| !std::isfinite(verticalPadding) || verticalPadding > maximum) return {};
+		const long long left = static_cast<long long>(bounds.left) - static_cast<long long>(horizontalPadding);
+		const long long top = static_cast<long long>(bounds.top) - static_cast<long long>(verticalPadding);
+		const long long right = static_cast<long long>(bounds.right) + static_cast<long long>(horizontalPadding);
+		const long long bottom = static_cast<long long>(bounds.bottom) + static_cast<long long>(verticalPadding);
+		if (left < minimum || top < minimum || right > maximum || bottom > maximum) return {};
+		return RECT{ static_cast<LONG>(left), static_cast<LONG>(top),
+			static_cast<LONG>(right), static_cast<LONG>(bottom) };
+	}
+
+	// 仅由 render owner 在完整呈现成功后冻结；候选失败不能改变当前手势的存储映射。
+	class BarFixedDragSurface
+	{
+	public:
+		[[nodiscard]] bool Matches(unsigned long long session,
+			unsigned long long displaySerial, double zoom) const noexcept
+		{
+			return session != 0 && session_ == session && displaySerial_ == displaySerial
+				&& std::isfinite(zoom) && zoom > 0.0 && std::abs(zoom_ - zoom) <= 0.000001;
+		}
+
+		[[nodiscard]] bool Freeze(unsigned long long session,
+			unsigned long long displaySerial, double zoom, const RECT& viewport,
+			POINT capacityOrigin, SIZE capacitySize) noexcept
+		{
+			const long long width = static_cast<long long>(viewport.right) - viewport.left;
+			const long long height = static_cast<long long>(viewport.bottom) - viewport.top;
+			const long long sourceX = static_cast<long long>(viewport.left) - capacityOrigin.x;
+			const long long sourceY = static_cast<long long>(viewport.top) - capacityOrigin.y;
+			if (!session || !std::isfinite(zoom) || zoom <= 0.0
+				|| width <= 0 || height <= 0 || capacitySize.cx <= 0 || capacitySize.cy <= 0
+				|| sourceX < 0 || sourceY < 0
+				|| sourceX + width > capacitySize.cx || sourceY + height > capacitySize.cy) return false;
+			// 重试或重复成功回执不能累计扩大同一手势；范围不足由调用方显式处理。
+			if (Matches(session, displaySerial, zoom)) return true;
+			session_ = session;
+			displaySerial_ = displaySerial;
+			zoom_ = zoom;
+			viewport_ = viewport;
+			capacityOrigin_ = capacityOrigin;
+			capacitySize_ = capacitySize;
+			source_ = POINT{ static_cast<LONG>(sourceX), static_cast<LONG>(sourceY) };
+			return true;
+		}
+
+		void Reset() noexcept { *this = {}; }
+		[[nodiscard]] RECT Viewport() const noexcept { return viewport_; }
+		[[nodiscard]] POINT CapacityOrigin() const noexcept { return capacityOrigin_; }
+		[[nodiscard]] SIZE CapacitySize() const noexcept { return capacitySize_; }
+		[[nodiscard]] POINT Source() const noexcept { return source_; }
+
+	private:
+		unsigned long long session_ = 0;
+		unsigned long long displaySerial_ = 0;
+		double zoom_ = 0.0;
+		RECT viewport_{};
+		POINT capacityOrigin_{};
+		SIZE capacitySize_{};
+		POINT source_{};
+	};
+
 	struct BarWindowCapacityDecision
 	{
 		POINT origin{};
@@ -353,13 +442,14 @@ namespace Inkeys::UI::Bar
 		POINT anchor,
 		const RECT& currentContentBounds,
 		const RECT& layoutBounds,
-		LONG padding) noexcept
+		LONG padding, const RECT& requiredViewport = {}) noexcept
 	{
 		const SIZE previousSize = currentSize;
 		currentSize.cx = (std::max)(1L, currentSize.cx);
 		currentSize.cy = (std::max)(1L, currentSize.cy);
 		RECT requiredBounds = InflateAndClipBarWindowRect(
 			currentContentBounds, padding, layoutBounds);
+		UnionBarWindowRect(requiredBounds, IntersectBarWindowRect(requiredViewport, layoutBounds));
 		if (!IsBarWindowRectEmpty(requiredBounds))
 		{
 			const LONG horizontalReach = (std::max)(

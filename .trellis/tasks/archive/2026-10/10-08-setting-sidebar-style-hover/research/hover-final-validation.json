@@ -1,0 +1,120 @@
+{
+  "old_algorithm": {
+    "build_exit": 0,
+    "headless_exit": 1,
+    "failure_count": 2,
+    "log": "hover-old-no-window.log",
+    "per_scale": {
+      "scales": [
+        1.0,
+        1.875
+      ],
+      "frames": 323,
+      "samples": 306,
+      "out_of_range_channels": 117,
+      "worst_excess": 0.108497
+    },
+    "first_nav_hover": {
+      "frame": 3,
+      "visible_channel": 0.813149,
+      "start_visible": 0.952941,
+      "target_visible": 0.905882
+    }
+  },
+  "repair": "LerpColorU32 alpha-weighted RGB and interpolated alpha; straight RGBA output; durations/targets/IDs/interactions unchanged; UPSTREAM local patch 7",
+  "full_solution": {
+    "configuration": "Debug|ARM64",
+    "native_msbuild": "ARM64 dynamically discovered with vswhere",
+    "timeout_seconds": 1800,
+    "first_exit": 0,
+    "first_elapsed_seconds": 21.0,
+    "checked_exit": 0,
+    "checked_elapsed_seconds": 17.2,
+    "final_stdout": "sidebar-checked-solution-stdout.log",
+    "final_stderr": "sidebar-checked-solution-stderr.log"
+  },
+  "final_no_window": {
+    "exit": 0,
+    "log": "sidebar-checked-no-window.log",
+    "final_line": "PASS animation correctness",
+    "per_scale": {
+      "scales": [
+        1.0,
+        1.875
+      ],
+      "frames": 328,
+      "samples": 315,
+      "out_of_range_channels": 0,
+      "worst_excess": 0.000492036,
+      "samples_by_control": {
+        "NavItemEx": 84,
+        "Button": 84,
+        "Combo_A": 88,
+        "Combo_B": 4,
+        "Popup_Selectable": 55
+      }
+    }
+  },
+  "geometry": {
+    "helper": "production ResolveNavigationPaneGeometry",
+    "window_dip_sizes": [
+      [
+        720,
+        520
+      ],
+      [
+        960,
+        700
+      ],
+      [
+        1440,
+        900
+      ]
+    ],
+    "scales": [
+      1,
+      1.25,
+      1.5,
+      1.875,
+      2,
+      4
+    ],
+    "pure_geometry_cases": 36,
+    "actual_child_modes_and_themes": 72,
+    "frames_per_child_case": 3,
+    "checks": [
+      "fixed/root ScrollY and ScrollMaxY zero",
+      "middle scroll reaches eighth item",
+      "all 14 real semantic icon glyphs",
+      "actual accent fill compact/expanded",
+      "actual critical text/icon light/dark",
+      "caption debug 4 text glyphs; natural width and 28 DIP; no icon"
+    ]
+  },
+  "i18n": {
+    "exit": 0,
+    "en-US": "366/366",
+    "zh-TW": "366/366"
+  },
+  "own_diff_check": {
+    "exit": 0,
+    "files": [
+      "Inkeys/additional/imfluent/imfluent.cpp",
+      "Inkeys/additional/imfluent/UPSTREAM.md",
+      "InkeysHeadlessTests/setting_design_tests.cpp",
+      "InkeysHeadlessTests/setting_session_state_tests.cpp"
+    ],
+    "format": "UTF-8 without BOM; CRLF preserved"
+  },
+  "final_source_sha256": {
+    "Inkeys/additional/imfluent/imfluent.cpp": "16d0722316afee7d30aa7a96885d9af5aa6b9edee478d66e596f768387082b9b",
+    "Inkeys/additional/imfluent/UPSTREAM.md": "3856110a3ac6346bf553c23d5e4de0d7617cd5d182e5f8ade08e562b66c0b309",
+    "InkeysHeadlessTests/setting_design_tests.cpp": "514ccee8dd32fe34ba785fe4388be7cfb9f64ef4170da6bbb9743cf58f812617",
+    "InkeysHeadlessTests/setting_session_state_tests.cpp": "b961a546ffd6b5ec3b1c5d5c199d7bfcce4dea4b64a3a9216ac2b20b0a709e2d"
+  },
+  "limits": [
+    "no GUI/Computer Use/HWND fixture/Office",
+    "Headless links production Design/Controls/Typography and ImGui/ImFluent, not full Setting Shell/Pages",
+    "Actual DX11/DWM rendering, real mouse feel and real monitor transitions remain manual acceptance"
+  ]
+}

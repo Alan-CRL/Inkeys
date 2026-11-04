@@ -1,10 +1,13 @@
 ﻿#pragma once
 
 #include "Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PalmEraser.h"
 
 #include "IdtMain.h"
 
 #include <cstdint>
+#include <optional>
+#include <memory>
 #include "Inkeys/Business/PenWidthPolicy.hpp"
 #include "../inkStrokeModelerTest/draw3/shape_core.h"
 
@@ -156,6 +159,39 @@ public:
 };
 extern StateModeClass stateMode;
 StateModeClass GetStateModeSnapshot();
+// 稳定主栏外观读取已提交工作区的既有工具记忆，准备目标仍用普通 getter。
+StateModeClass GetCommittedStateModeSnapshot();
+enum class WorkspaceScene : std::uint8_t { Desktop, Presentation, Whiteboard };
+struct WorkspaceSceneSnapshot
+{
+	WorkspaceScene desired;
+	WorkspaceScene committed;
+	std::uint64_t revision;
+	bool pending;
+	bool minimized;
+	bool committedMinimized;
+};
+WorkspaceSceneSnapshot GetWorkspaceSceneSnapshot() noexcept;
+struct CommittedWorkspaceStateSnapshot
+{
+	WorkspaceSceneSnapshot workspace;
+	StateModeClass state;
+};
+CommittedWorkspaceStateSnapshot GetCommittedWorkspaceStateSnapshot();
+std::uint64_t WorkspaceTransitionFailureRevision() noexcept;
+bool RetryWorkspaceTransitionIfRevision(std::uint64_t revision) noexcept;
+bool CancelFailedWhiteboardTransitionIfRevision(std::uint64_t revision) noexcept;
+bool RequestWhiteboardWindowView(bool minimized) noexcept;
+void RequestWhiteboardFromShortcut() noexcept;
+void NotifyWhiteboardWindowMinimizedChanged() noexcept;
+void NotifyWhiteboardWindowViewRequested(bool minimized) noexcept;
+void NotifyWhiteboardWindowCloseRequested() noexcept;
+bool PptScenePreparationAllowed() noexcept;
+namespace Inkeys::Business { struct PptSessionToken; }
+void PublishPptWorkspaceControlState(const Inkeys::Business::PptSessionToken& session, bool basicControl) noexcept;
+
+// 非 Desktop 不提供全局偏好保存快照。
+bool TryGetDesktopStateModeSnapshot(StateModeClass& snapshot);
 struct StateModeVersionedSnapshot
 {
 	StateModeClass state;
@@ -180,6 +216,7 @@ void RestorePenWidthSelections(Inkeys::Business::PenWidth::Selection brush,
     const COLORREF* brushColor = nullptr, const COLORREF* highlighterColor = nullptr);
 int RunPenWidthStateProductionTest() noexcept;
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
+bool SetPenColorIfRevision(COLORREF targetColor, std::uint64_t revision, bool setMemory = true);
 float GetPenWidth();
 float GetPenWidth(const StateModeClass& snapshot) noexcept;
 COLORREF GetPenColor();
@@ -195,7 +232,9 @@ int GetSelectAndClickThroughMode() noexcept;
 bool SetSelectAndClickThroughMode(int mode);
 bool ToggleFreezeFromButton();
 std::uint64_t StateModeTransitionRevision() noexcept;
-bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
+// PPT 真退出额外固定工作区身份；0 保持其它 revision-only 调用的原语义。
+bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision,
+    std::uint64_t expectedPptWorkspaceEpoch = 0);
 // 快捷键事务使用普通选择内核，不登记 PPT 真退出标识；恢复时沿用工具属性。
 bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
 	std::uint64_t expectedRevision, std::uint64_t freezeRevision);
@@ -227,14 +266,22 @@ void SyncDraw3State();
 void InitializeEraserInputPreferences();
 Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot();
 void SetGlobalEraserPreference(int baseDiameterDip = -1, int sensitivity = -1, int automatic = -1);
+Inkeys::Drawing::Draw3::PalmEraser::Settings PalmEraserPreferencesSnapshot();
+bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings& options);
 bool AutomaticPenResponseAvailable() noexcept;
 int EraserWidthPreference(int entry);
 int EraserPenResponsePreference(int entry);
 void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 // 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
 void ReconcileDraw3Presentation();
-// PPT 事实只切换非白板工具；白板进退由 StateMonitoring 的工作区事务交接。
-void SyncPrimaryWorkspaceStateMode();
+// PPT 事实同锁同步非白板工具和工作区；白板进退由 StateMonitoring 交接。
+void SyncPrimaryWorkspaceStateMode(std::uint64_t expectedWorkspaceEpoch = 0);
+namespace Inkeys::Drawing::Draw3::Bridge { struct PresentationTarget; }
+// nullptr 撤销旧目标；场景 epoch 门控与发布共锁，Exiting 允许恢复完整目标。
+std::optional<std::uint64_t> PublishPrimaryPresentationTarget(
+	const Inkeys::Drawing::Draw3::Bridge::PresentationTarget* target, std::uint64_t expectedWorkspaceEpoch = 0);
+// 同锁保存 PPT 工具、返回 Desktop，仅在退出版本仍有效时进入选择。
+bool CompletePresentationExitStateMode(std::uint64_t expectedRevision, std::uint64_t expectedPptWorkspaceEpoch = 0);
 
 // 白板按钮和翻页控件只提交请求，具体工作区事务由 StateMonitoring 串行执行。
 inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return true; }
@@ -242,13 +289,35 @@ void RequestWhiteboardActive(bool active) noexcept;
 bool WhiteboardRequested() noexcept;
 bool WhiteboardActive() noexcept;
 bool WhiteboardTransactionActive() noexcept;
+// 仅进入/退出过渡（阶段非稳定或请求与稳定阶段不一致）；稳定打开的白板不算。
+bool WhiteboardSwitching() noexcept;
 // 0 表示白板事务期间不可准入；非零身份仅随白板意图切换，普通翻页不退休它。
 std::uint64_t PptInputWorkspaceEpoch() noexcept;
+// 仅场景事实允许在 Exiting 提前恢复；业务输入仍等待完整离场。
+std::uint64_t PptSceneWorkspaceEpoch() noexcept;
 void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
 void RequestWhiteboardTheme(unsigned int rgb, int pattern, std::uint64_t generation, int currentPage) noexcept;
 
-// 显式早期 CLI 仅执行真实状态/bridge 逻辑，不启动窗口或读取、保存配置。
+// 离屏 fixture 只布置真实协调结果/工具记忆；Host 或窗口 owner 已运行时拒绝使用。
+namespace Inkeys::Testing
+{
+	class WorkspaceSceneScope
+	{
+	public:
+		explicit WorkspaceSceneScope(WorkspaceScene scene = WorkspaceScene::Desktop);
+		~WorkspaceSceneScope();
+		WorkspaceSceneScope(const WorkspaceSceneScope&) = delete;
+		WorkspaceSceneScope& operator=(const WorkspaceSceneScope&) = delete;
+		explicit operator bool() const noexcept;
+		bool Set(WorkspaceScene scene);
+	private:
+		struct Impl;
+		std::unique_ptr<Impl> impl_;
+	};
+}
+
+// 显式早期 CLI 不启动窗口；保存隔离检查仅使用独立临时目录，不读写用户配置。
 int RunStateModeProductionTest() noexcept;
 
 void StateMonitoring();

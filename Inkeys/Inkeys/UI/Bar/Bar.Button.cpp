@@ -15,10 +15,15 @@ module;
 #include "Bar.Presentation.Source.h"
 #include "Bar.InteractionWorker.h"
 #include "Bar.Haptics.h"
+#include "Bar.BottomDock.h"
+#include "Bar.WindowGeometry.h"
+#include "../../Input/UiTouchRouting.h"
+#include "Bar.ThemeMaterial.h"
 
 #include <d2d1_1.h>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cmath>
 #include <mutex>
 #include <unordered_map>
@@ -28,6 +33,7 @@ module Inkeys.UI.Bar;
 import :Button;
 
 import :Main;
+import :Layout;
 import :Theme;
 import Inkeys.UI.Bar.Metrics;
 
@@ -48,7 +54,7 @@ using Inkeys::UI::Bar::ResolveBarClearClickAction;
 using Inkeys::UI::Bar::ResolveBarDrawButtonToggleDecision;
 
 bool BarButtonClass::TransitionContent(
-	const wstring& iconResourceName, const wstring& label)
+	const wstring& iconResourceName, const wstring& label, bool immediateLabel)
 {
 	// 先缩到新标签所需字号，再在透明中点换字；换回短标签前保留小字号。
 	if (preset == BarButtonPresetEnum::Select || preset == BarButtonPresetEnum::Pierce)
@@ -59,7 +65,8 @@ bool BarButtonClass::TransitionContent(
 	bool changed = false;
 	if (iconKind == BarButtonIconKindEnum::Svg && !iconResourceName.empty())
 		changed |= icon.TransitionToResource(L"UI", iconResourceName);
-	changed |= name.TransitionToString(label);
+	// 跨字族切换不能在新字体下等待旧语言文字的淡出中点。
+	changed |= immediateLabel ? name.SetStringImmediate(label) : name.TransitionToString(label);
 	return changed;
 }
 
@@ -213,12 +220,12 @@ BarMoreButtonSnapshotClass BarButtonSetClass::GetMoreButtonSnapshot() const
 void BarButtonSetClass::PresetInitialization()
 {
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
-	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
 
 	// 分隔线
 	{
 		BarButtonClass* obj = new BarButtonClass;
-		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::Divider);
 		{
 			obj->size = BarButtonSizeEnum::oneTwo;
 			obj->preset = BarButtonPresetEnum::Divider;
@@ -583,9 +590,10 @@ void BarButtonSetClass::PresetInitialization()
 				{
 					auto& service = Inkeys::Window::GetService();
 					Inkeys::UI::Bar::DispatchBarWhiteboardButtonAction(WhiteboardRequested(),
-						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(),
-						[&service] { if (!service.RestoreWhiteboardWindowGroup()) Inkeys::UI::Bar::Haptics::RejectButtonAction(); },
-						[](bool active) { RequestWhiteboardActive(active); });
+						Inkeys::UI::Bar::WhiteboardActive() && service.WhiteboardWindowGroupMinimized(), WorkspaceTransitionFailureRevision(),
+						[] { if (!RequestWhiteboardWindowView(false)) Inkeys::UI::Bar::Haptics::RejectButtonAction(); },
+						[](bool active) { RequestWhiteboardActive(active); },
+						[](std::uint64_t failure) { (void)CancelFailedWhiteboardTransitionIfRevision(failure); });
 				};
 		}
 
@@ -757,8 +765,10 @@ void BarButtonSetClass::PresetInitialization()
 
 void BarButtonSetClass::RegisterBuiltInComponents()
 {
+	const auto& componentText = I18nKey.SettingsUI.Component;
+	const auto& componentLabels = I18nKey.UI.Bar.Components;
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
-	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
 
 	auto registerComponent = [&](const char* id,
 		const char* legacyField,
@@ -782,19 +792,15 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 		obj->button.enable.Initialization(true);
 
+		// 组件图标为主题占位色 SVG，与其他按钮共用着色与选中/悬停变色。
 		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
-		obj->icon.enable.Initialization(true);
-		obj->pngIcon.Initialization(0.0, 0.0);
-		if (!obj->pngIcon.InitializationFromResource(L"PNG", iconResource))
+		obj->icon.InitializationFromResource(L"UI", iconResource);
+		if (obj->icon.svg.GetVal().empty())
 		{
 			delete obj;
 			return;
 		}
-		obj->pngIcon.enable.Initialization(true);
-		// 复用 SVG 的动画状态，但为 PNG 提供真实宽高，避免 SetWH 无法按比例计算。
-		obj->icon.rW = obj->pngIcon.rW;
-		obj->icon.rH = obj->pngIcon.rH;
-		obj->iconKind = BarButtonIconKindEnum::Png;
+		obj->icon.enable.Initialization(true);
 		obj->clickFunc = [action]()
 		{
 			switch (action)
@@ -825,101 +831,101 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 		"Component.ShortcutButton.Appliance.Explorer",
 		"component.shortcutButton.appliance.explorer",
 		[] { return setlist.component.shortcutButton.appliance.explorer; },
-		L"软件", L"启动 文件资源管理器", L"文件管理器", L"CustomizeIco4",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.ExplorerTitle).c_str(), IW(componentLabels.ExplorerLabel).c_str(), L"compExplorer",
 		BuiltInComponentAction::Explorer);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Taskmgr",
 		"component.shortcutButton.appliance.taskmgr",
 		[] { return setlist.component.shortcutButton.appliance.taskmgr; },
-		L"软件", L"启动 任务管理器", L"任务管理器", L"CustomizeIco9",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.TaskManagerTitle).c_str(), IW(componentLabels.TaskManagerLabel).c_str(), L"compTaskManager",
 		BuiltInComponentAction::TaskManager);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Control",
 		"component.shortcutButton.appliance.control",
 		[] { return setlist.component.shortcutButton.appliance.control; },
-		L"软件", L"启动 控制面板", L"控制面板", L"CustomizeIco7",
+		IW(componentText.SoftwareSection).c_str(), IW(componentText.ControlPanelTitle).c_str(), IW(componentLabels.ControlPanelLabel).c_str(), L"compControlPanel",
 		BuiltInComponentAction::ControlPanel);
 
 	registerComponent(
 		"Component.ShortcutButton.System.Desktop",
 		"component.shortcutButton.system.desktop",
 		[] { return setlist.component.shortcutButton.system.desktop; },
-		L"系统", L"显示桌面", L"显示桌面", L"CustomizeIco3",
+		IW(componentText.SystemSection).c_str(), IW(componentText.ShowDesktopTitle).c_str(), IW(componentLabels.ShowDesktopLabel).c_str(), L"compShowDesktop",
 		BuiltInComponentAction::ShowDesktop);
 	registerComponent(
 		"Component.ShortcutButton.System.LockWorkStation",
 		"component.shortcutButton.system.lockWorkStation",
 		[] { return setlist.component.shortcutButton.system.lockWorkStation; },
-		L"系统", L"锁屏", L"锁屏", L"CustomizeIco8",
+		IW(componentText.SystemSection).c_str(), IW(componentText.LockScreenTitle).c_str(), IW(componentLabels.LockScreenLabel).c_str(), L"compLockScreen",
 		BuiltInComponentAction::LockWorkStation);
 
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.Keyboardesc",
 		"component.shortcutButton.keyboard.keyboardesc",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardesc; },
-		L"键盘", L"ESC 键", L"ESC键", L"CustomizeIco5",
+		IW(componentText.KeyboardSection).c_str(), IW(componentText.EscapeTitle).c_str(), IW(componentLabels.EscapeLabel).c_str(), L"compEscape",
 		BuiltInComponentAction::Escape);
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.KeyboardAltF4",
 		"component.shortcutButton.keyboard.keyboardAltF4",
 		[] { return setlist.component.shortcutButton.keyboard.keyboardAltF4; },
-		L"键盘", L"Alt+F4", L"Alt+F4", L"CustomizeIco6",
+		IW(componentText.KeyboardSection).c_str(), IW(componentText.AltF4Title).c_str(), L"Alt+F4", L"compAltF4",
 		BuiltInComponentAction::AltF4);
 
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller1",
 		"component.shortcutButton.rollCall.IslandCaller1",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller1; },
-		L"随机点名", L"IslandCaller 1", L"随机点名", L"CustomizeIco2",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallRandom",
 		BuiltInComponentAction::IslandCaller);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller2",
 		"component.shortcutButton.rollCall.IslandCaller2",
 		[] { return setlist.component.shortcutButton.rollCall.IslandCaller2; },
-		L"随机点名", L"IslandCaller 2", L"随机点名", L"CustomizeIco2",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallSingle",
 		BuiltInComponentAction::IslandCallerSimple);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom1",
 		"component.shortcutButton.rollCall.SecRandom1",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom1; },
-		L"随机点名", L"SecRandom 1", L"随机点名", L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuick",
 		BuiltInComponentAction::SecRandomDirect);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2",
 		"component.shortcutButton.rollCall.SecRandom2",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2; },
-		L"随机点名", L"SecRandom 2", L"随机点名", L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuick2",
 		BuiltInComponentAction::SecRandomQuickDraw);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2Compat",
 		"component.shortcutButton.rollCall.SecRandom2Compat",
 		[] { return setlist.component.shortcutButton.rollCall.SecRandom2Compat; },
-		L"随机点名", L"SecRandom 2 兼容", L"随机点名", L"CustomizeIco10",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2CompatTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuickCompat",
 		BuiltInComponentAction::SecRandomQuickDrawCompat);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.NamePicker",
 		"component.shortcutButton.rollCall.NamePicker",
 		[] { return setlist.component.shortcutButton.rollCall.NamePicker; },
-		L"随机点名", L"NamePicker", L"随机点名", L"CustomizeIco11",
+		IW(componentText.RollCallSection).c_str(), IW(componentText.NamePickerTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compNamePicker",
 		BuiltInComponentAction::NamePicker);
 
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandSettings",
 		"component.shortcutButton.linkage.classislandSettings",
 		[] { return setlist.component.shortcutButton.linkage.classislandSettings; },
-		L"联动", L"ClassIsland 设置", L"CI设置", L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSettingsTitle).c_str(), IW(componentLabels.ClassIslandSettingsLabel).c_str(), L"compClassSettings",
 		BuiltInComponentAction::ClassIslandSettings);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandProfile",
 		"component.shortcutButton.linkage.classislandProfile",
 		[] { return setlist.component.shortcutButton.linkage.classislandProfile; },
-		L"联动", L"档案编辑", L"档案编辑", L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandProfileTitle).c_str(), IW(componentLabels.ClassIslandProfileLabel).c_str(), L"compClassProfile",
 		BuiltInComponentAction::ClassIslandProfile);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandClassswap",
 		"component.shortcutButton.linkage.classislandClassswap",
 		[] { return setlist.component.shortcutButton.linkage.classislandClassswap; },
-		L"联动", L"快速换课", L"快速换课", L"CustomizeIco1",
+		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSwapTitle).c_str(), IW(componentLabels.ClassIslandSwapLabel).c_str(), L"compClassSwap",
 		BuiltInComponentAction::ClassIslandClassSwap);
 }
 
@@ -953,7 +959,7 @@ vector<BarMainButtonLayoutEntry> BarButtonSetClass::MainLayoutSnapshot()
 			result.push_back({ button, button->size.load(), button->IsVisible() });
 	return result;
 }
-void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateMode)
+void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateMode, bool immediateLabel)
 {
 	if (!preset[(int)BarButtonPresetEnum::Draw]) return;
 	// 所有动态网格共用这一组输入，内容缓存不能短路几何投影。
@@ -1050,14 +1056,127 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	// 长标签换行由语言资源指定，翻译调整不再依赖英文原文匹配。
 	auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
 		: IW(separate && !selection ? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
-	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(L"barSelect", label);
-	UpdateDrawButtonStyle(stateMode);
+	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(whiteboard ? L"barMove" : L"barSelect", label, immediateLabel);
+	UpdateDrawButtonStyle(stateMode, immediateLabel);
 	UpdateWhiteboardButtonStyle(whiteboard,
-		Inkeys::Window::GetService().WhiteboardWindowGroupMinimized());
-	UpdateEraserButtonStyle(stateMode);
-	UpdateGeometryButtonStyle(stateMode);
+		Inkeys::Window::GetService().WhiteboardWindowGroupMinimized(), immediateLabel);
+	UpdateEraserButtonStyle(stateMode, immediateLabel);
+	UpdateGeometryButtonStyle(stateMode, immediateLabel);
 }
-void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::RefreshLocalizedText()
+{
+	lock_guard lock(presentationMutex);
+	// 原位替换文字，不重建按钮或丢失按压/工具状态。
+	if (auto* button = preset[(int)BarButtonPresetEnum::Recall]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.UndoLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::Clean]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.ClearLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::Freeze]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.FreezeLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::EndShow]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel));
+	if (auto* button = preset[(int)BarButtonPresetEnum::Setting]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.SettingsLabel));
+	if (moreButton) moreButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.MoreLabel));
+	if (mainRedoButton) mainRedoButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.RedoLabel));
+	drawButtonStyleKey = -1; eraserButtonStyleKey = -1; geometryButtonStyleKey = -1;
+	unique_lock registrationsLock(registrationMutex);
+	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Explorer"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SoftwareSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ExplorerTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ExplorerLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Taskmgr"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SoftwareSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.TaskManagerTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.TaskManagerLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Control"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SoftwareSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ControlPanelTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ControlPanelLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.System.Desktop"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SystemSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ShowDesktopTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ShowDesktopLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.System.LockWorkStation"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.SystemSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.LockScreenTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.LockScreenLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Keyboard.Keyboardesc"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.KeyboardSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.EscapeTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.EscapeLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Keyboard.KeyboardAltF4"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.KeyboardSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.AltF4Title);
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.IslandCaller1"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.IslandCaller1Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.IslandCaller2"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.IslandCaller2Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.SecRandom1"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.SecRandom1Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.SecRandom2"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.SecRandom2Title);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.SecRandom2Compat"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.SecRandom2CompatTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.RollCall.NamePicker"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.RollCallSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.NamePickerTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.RollCallLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Linkage.ClassislandSettings"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.ClassIslandSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ClassIslandSettingsTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ClassIslandSettingsLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Linkage.ClassislandProfile"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.ClassIslandSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ClassIslandProfileTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ClassIslandProfileLabel));
+	}
+	if (auto it = registrations.find("Component.ShortcutButton.Linkage.ClassislandClassswap"); it != registrations.end()) {
+		auto& entry = it->second;
+		entry.categoryName = IW(I18nKey.SettingsUI.Component.ClassIslandSection);
+		entry.settingsName = IW(I18nKey.SettingsUI.Component.ClassIslandSwapTitle);
+		if (entry.button) entry.button->name.SetStringImmediate(IW(I18nKey.UI.Bar.Components.ClassIslandSwapLabel));
+	}
+	registrationsLock.unlock();
+	// 复用当前业务状态投影，立即替换动态文案而不重新触发工具动作。
+	ApplyMainPresentationLocked(GetStateModeSnapshot(), true);
+}
+
+void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
@@ -1081,27 +1200,30 @@ void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
 			: (highlighter ? IW(I18nKey.UI.Bar.MainButtons.HighlighterLabel)
 				: (hardPen ? IW(I18nKey.UI.Bar.MainButtons.HardPenLabel)
 					: IW(I18nKey.UI.Bar.MainButtons.SoftPenLabel))))
-			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel));
+			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel), immediateLabel);
 	drawButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized)
+void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized, bool immediateLabel)
 {
 	auto whiteboard = preset[(int)BarButtonPresetEnum::Whiteboard];
 	if (!whiteboard) return;
 	if (auto* pierce = preset[(int)BarButtonPresetEnum::Pierce])
 	{
 		auto label = IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
-		pierce->TransitionContent(L"barPierce", label);
+		pierce->TransitionContent(L"barPierce", label, immediateLabel);
 	}
 	const bool resume = active && minimized;
-	whiteboard->TransitionContent(active && !resume ? L"barDismiss" : L"barWhiteboard",
+	const bool returnToShow = active && !resume && Inkeys::UI::Bar::PptPresentationActive();
+	// 每个状态使用专属图标：回到白板、返回放映、关闭白板与打开白板。
+	whiteboard->TransitionContent(resume ? L"barResumeWhiteboard"
+			: returnToShow ? L"barReturnShow"
+			: active ? L"barCloseSmall" : L"barWhiteboard",
 		resume ? IW(I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel)
-			: active ? (Inkeys::UI::Bar::PptPresentationActive()
-				? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
-				: IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel))
-				: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
+			: returnToShow ? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
+			: active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
+				: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel), immediateLabel);
 }
-void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
@@ -1115,10 +1237,10 @@ void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
 	button->TransitionContent(
 		L"barEraser", selected
 			? IW(I18nKey.UI.Bar.MainButtons.AreaEraserLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel));
+			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel), immediateLabel);
 	eraserButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode)
+void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
 	const bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
@@ -1131,7 +1253,7 @@ void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMod
 	auto* button = preset[(int)BarButtonPresetEnum::Geometry];
 	if (!button) return;
 	button->TransitionContent(selected ? Inkeys::UI::Bar::ShapeToolIconResource(tool) : L"barGeometry",
-		selected ? Inkeys::UI::Bar::ShapeToolLabel(tool.preset) : IW(I18nKey.UI.Bar.MainButtons.GeometryLabel));
+		selected ? Inkeys::UI::Bar::ShapeToolLabel(tool.preset) : IW(I18nKey.UI.Bar.MainButtons.GeometryLabel), immediateLabel);
 	geometryButtonStyleKey = styleKey;
 }
 
@@ -1522,16 +1644,16 @@ void BarButtonSetClass::ResetIconCaches()
 
 void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 {
-	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
-	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+	// 白板内切换工具或折叠主栏时，也要收起已展开的绘制属性。
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
+		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
 	{
 		barUISet.barState.drawAttribute = false;
 	}
-	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible()))
+		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible())
 	{
 		barUISet.barState.geometryAttribute = false;
 	}
@@ -1912,26 +2034,34 @@ namespace Inkeys::UI::Bar
 		shape.frameRendering=BarUiFrameRenderingEnum::PointLight;
 		shape.framePrimaryLightEnabled=false;
 		shape.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
+		shape.frameLightCursorLightIntensityScale=BarButtonLightCursorLightIntensity;
 		shape.frame->SetTar(frameColor);
+		// 主题选中底色在浅色端为不透明浅青色；显式配色的客户端保持原透明度。
+		const double lightWeight=barUISet.barStyle.darkStyle?0.0:1.0;
 		if(!visible)shape.pct.SetTar(0.0,duration);
-		else if(pressed)shape.pct.SetTar(BarButtonPressedOpacity,duration);
-		else if(selected)shape.pct.SetTar(0.20,duration);
+		else if(pressed)shape.pct.SetTar(selected&&!fillOverride
+			?BarThemeMaterial::SelectedFillOpacity(lightWeight,BarButtonPressedOpacity)
+			:BarButtonPressedOpacity,duration);
+		else if(selected)shape.pct.SetTar(fillOverride?0.20
+			:BarThemeMaterial::SelectedFillOpacity(lightWeight),duration);
 		else if(!parts.hoverStage || *parts.hoverStage==BarButtonHoverStageEnum::None)
 			shape.pct.SetTar(0.0,duration);
 		shape.fill->SetTar(fillOverride.value_or(GetThemeColor(selected
-			?BarThemeColorEnum::Accent:BarThemeColorEnum::PressedFill)));
+			?BarThemeColorEnum::SelectedFill:BarThemeColorEnum::PressedFill)));
 		shape.frameLightPct->SetTar(visible && enabled && selected
 			?(pressed?BarButtonPressedLightOpacity:1.0):0.0,duration);
 		if(parts.pressScale)parts.pressScale->SetTar(pressed?BarButtonPressScale:1.0,
 			static_cast<double>(BarUiDefaultOperationDur),std::nullopt,false,
 			pressed?BarButtonPressCurve():BarButtonReleaseCurve());
-		const double opacity=visible?(enabled?1.0:BarButtonDisabledContentOpacity):0.0;
+		const double opacity=visible?(enabled?1.0:BarThemeMaterial::DisabledContentOpacity(lightWeight)):0.0;
 		const COLORREF content=contentOverride.value_or(GetThemeColor(selected
 			?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary));
+		const COLORREF iconContent=contentOverride.value_or(GetThemeColor(selected
+			?BarThemeColorEnum::Accent:BarThemeColorEnum::IconPrimary));
 		if(parts.icon)
 		{
 			parts.icon->pct.SetTar(iconVisible?opacity:0.0,BarButtonHoverTransitionDuration);
-			if(parts.icon->color1)parts.icon->color1->SetTar(content);
+			if(parts.icon->color1)parts.icon->color1->SetTar(iconContent);
 		}
 		if(parts.primary)
 		{
@@ -1949,7 +2079,7 @@ namespace Inkeys::UI::Bar
 			&button.pressScale,&button.hoverStage},visible,enabled,selected,
 			button.state->emph==BarWidgetEmphasize::Pressed,duration,content,iconVisible,fill,frame);
 		if(button.icon.color2)button.icon.color2->SetTar(content.value_or(GetThemeColor(selected
-			?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary)));
+			?BarThemeColorEnum::Accent:BarThemeColorEnum::IconPrimary)));
 	}
 
 	BarButtonVisualInheritance PrepareBarButtonVisualInheritance(
@@ -2047,8 +2177,8 @@ namespace Inkeys::UI::Bar
 		{
 		public:
 			ButtonDrawTransform(BarUIRendering& renderer, ID2D1DeviceContext* context,
-				const BarUiShapeClass& background, const BarUiInheritClass& inherit, double scale)
-				: context_(context)
+				const BarUiShapeClass& background, const BarUiInheritClass& inherit, double scale, double targetScale, double duration)
+				: fontScope_(renderer, targetScale, duration), context_(context)
 			{
 				context_->GetTransform(&original_);
 				if(!std::isfinite(scale) || scale<=0.0)scale=1.0;
@@ -2062,6 +2192,7 @@ namespace Inkeys::UI::Bar
 			}
 			~ButtonDrawTransform(){if(changed_)context_->SetTransform(original_);}
 		private:
+			BarUIRendering::FontTargetScope fontScope_;
 			ID2D1DeviceContext* context_;
 			D2D1_MATRIX_3X2_F original_{};
 			bool changed_=false;
@@ -2077,7 +2208,7 @@ namespace Inkeys::UI::Bar
 		const auto visualInheritance = PrepareBarButtonVisualInheritance(
 			button, inherit, options.secondary);
 		ButtonDrawTransform transform(renderer,deviceContext,button.button,
-			visualInheritance.button,button.pressScale.val);
+			visualInheritance.button,button.pressScale.val,button.pressScale.tar,button.pressScale.dur);
 		// 先更新继承坐标再拒绝绘制，成功呈现后的命中快照仍可读取本帧几何。
 		// 自定义内容没有额外包络合同，不能连同标准按钮一起猜测裁掉。
 		if (!options.underlay && !options.content)
@@ -2114,7 +2245,7 @@ namespace Inkeys::UI::Bar
 					visualInheritance) || rendered;
 			rendered = renderer.Word(deviceContext, button.name,
 				visualInheritance.primary,
-				options.primaryWeight, options.primaryAlignment) || rendered;
+				options.primaryWeight, options.primaryAlignment, true) || rendered;
 			if (options.secondary && visualInheritance.secondary)
 				rendered = renderer.Word(deviceContext, *options.secondary,
 					*visualInheritance.secondary,
@@ -2129,7 +2260,9 @@ namespace Inkeys::UI::Bar
 	{
 		if(!context)return false;
 		ButtonDrawTransform transform(renderer,context,parts.background,inherit.button,
-			parts.pressScale?static_cast<double>(parts.pressScale->val):1.0);
+			parts.pressScale?static_cast<double>(parts.pressScale->val):1.0,
+			parts.pressScale?static_cast<double>(parts.pressScale->tar):1.0,
+			parts.pressScale?static_cast<double>(parts.pressScale->dur):0.0);
 		const auto bounds = ComputeBarButtonVisualBounds(renderer, parts, inherit);
 		if (bounds && !renderer.ShouldDrawFrameBounds(context, *bounds)) return false;
 		bool rendered=renderer.Shape(context,parts.background,inherit.button);
@@ -2152,7 +2285,7 @@ namespace Inkeys::UI::Bar
 {
 	void ConfigureBarButtonVisualTargets(BarButtonClass& button,
 		BarButtonVisualLayoutKind layoutKind,double duration,double scale,bool direct,
-		std::optional<double> iconHeightOverride)
+		std::optional<double> iconHeightOverride,std::optional<double> fontTargetScale)
 	{
 		const auto metrics = ResolveBarButtonVisualMetrics(layoutKind);
 		if (!std::isfinite(scale) || scale <= 0.0) scale = 1.0;
@@ -2209,6 +2342,8 @@ namespace Inkeys::UI::Bar
 			if (labelSize * scale < button.name.size.val) button.name.size.SetDirect(labelSize * scale);
 		}
 		Set(button.name.size, labelSize);
+		// 派生布局传入最终倍率；回到普通布局时清除覆盖，恢复原 size.tar 目标。
+		button.name.fontTargetSize = fontTargetScale ? labelSize * *fontTargetScale : -1.0;
 	}
 
 	namespace
@@ -2292,6 +2427,7 @@ namespace Inkeys::UI::Bar
 	{
 		ButtonAnimationVisitor v{frame, &word, part};
 		const bool replace = v.Replace(word);
+		if (replace) word.fontCorrection.ForceNext();
 		const bool content = word.AdvanceContentTransition(frame.dtSeconds, frame.speedRate);
 		v.Observe(Property::Content, content, content, !content);
 		v.Advance(word.enable, replace, Property::Visibility);
@@ -2533,7 +2669,51 @@ bool BarUISetClass::HitTestPresentedShape(const BarUiSuperellipseClass& shape,do
 	return hit!=presentedVisualHits_.end() && Inkeys::UI::Bar::HitTestBarButton(hit->second,x,y);
 }
 
-void BarUISetClass::PreparePresentedButtonHits()
+Inkeys::Input::UiPointer::Touch::Probe BarUISetClass::ProbeTouchScreen(POINT screen) const
+{
+	using namespace Inkeys::UI::Bar;
+	using Inkeys::Input::UiPointer::Touch::Hit;
+	for (;;)
+	{
+		const auto mapping = BottomDockPresentedSnapshot();
+		std::shared_ptr<const PresentedTouchRegions> presented;
+		double rebaseX = 0.0, rebaseY = 0.0;
+		{
+			std::lock_guard lock(presentedButtonHitsMutex_);
+			presented = presentedTouchRegions_;
+			rebaseX = presentedTouchRebaseXDip_; rebaseY = presentedTouchRebaseYDip_;
+		}
+		if (!presented) return {};
+		const auto visual = BarScreenToLayoutPoint(screen, mapping.monitorOrigin, mapping.directTranslation);
+		auto rigid = ResolveBarBottomDockRigidHitTestPoint(visual.x, visual.y,
+			mapping.horizontalMapping, mapping.mapping, mapping.zoom);
+		// 业务 ExMessage 先落到整数 Rigid 像素，再逆映射 Body/Grip；边缘保持同样舍入。
+		rigid.logicalX = std::round(rigid.logicalX); rigid.logicalY = std::round(rigid.logicalY);
+		const auto body = ResolveBarBottomDockBodyHitTestPointFromRigid(rigid.logicalX, rigid.logicalY,
+			mapping.horizontalMapping, mapping.mapping, mapping.zoom);
+		const auto grip = ResolveBarBottomDockGripHitTestPointFromRigid(rigid.logicalX, rigid.logicalY,
+			mapping.horizontalMapping, mapping.mapping, mapping.zoom);
+		Hit result = IsBarBottomDockIndicatorHit(mapping.indicatorVisible && mapping.indicatorOccluding,
+			mapping.indicatorBounds, visual.x, visual.y) ? Hit::Blocked : Hit::Miss;
+		if (result == Hit::Miss)
+			for (const auto& region : presented->regions)
+			{
+				const auto& point = region.space == TouchRegionSpace::Grip ? grip
+					: region.space == TouchRegionSpace::Body ? body : rigid;
+				if (HitTestBarButton(region.geometry, std::round(point.logicalX) / mapping.zoom - rebaseX,
+					std::round(point.logicalY) / mapping.zoom - rebaseY))
+				{
+					result = region.disposition;
+					break;
+				}
+			}
+		// 几何、可用态与 Rigid/Body/Grip 映射属于同一成功提交；跨帧则重新取值。
+		if (BottomDockPresentedSnapshot().serial != mapping.serial) continue;
+		return { result, presented->semantic ^ (mapping.displaySerial * 1099511628211ULL) };
+	}
+}
+
+void BarUISetClass::PreparePresentedButtonHits(const StateModeClass& stateMode)
 {
 	std::unordered_map<const BarButtonClass*, Inkeys::UI::Bar::BarButtonHitSnapshot> next;
 	auto Add = [&](const std::shared_ptr<BarButtonClass>& button, bool more)
@@ -2564,6 +2744,165 @@ void BarUISetClass::PreparePresentedButtonHits()
 		hit.superellipseExponent=shape->n?static_cast<double>(shape->n->val):0.0;
 		visualHits.emplace(shape.get(),hit);
 	}
+	using namespace Inkeys::UI::Bar;
+	using Inkeys::Input::UiPointer::Touch::Hit;
+	using Shape = BarUISetShapeEnum;
+	auto touch = std::make_shared<PresentedTouchRegions>();
+	touch->regions.reserve(96);
+	// 白名单按业务 stage 排列；可见退场表面只阻挡，不重新准入旧动作。
+	auto Append = [&](BarButtonHitSnapshot hit, bool active, TouchRegionSpace space)
+	{
+		if (!hit.visible) return;
+		hit.enabled = true;
+		touch->regions.push_back({ hit, space, active ? Hit::Accept : Hit::Blocked });
+	};
+	auto AddShape = [&](Shape id, bool active, bool surface = false,
+		TouchRegionSpace space = TouchRegionSpace::Rigid)
+	{
+		const auto found = shapeMap.find(id);
+		if (found == shapeMap.end() || !found->second) return;
+		const auto& shape = *found->second;
+		if (surface ? (!shape.enable.val || shape.pct.val <= 0.000001) : !active) return;
+		const auto hit = visualHits.find(&shape);
+		if (hit != visualHits.end()) Append(hit->second, active, space);
+	};
+	auto AddShapes = [&](std::initializer_list<Shape> ids, bool active)
+		{ for (auto id : ids) AddShape(id, active); };
+	auto AddPanel = [&](const auto& rect, double scale, bool visible, bool active)
+	{
+		if (!visible || rect.Width() <= 0.0 || rect.Height() <= 0.0) return;
+		BarButtonHitSnapshot hit;
+		hit.boundsDip = D2D1::RectF(static_cast<FLOAT>(rect.left), static_cast<FLOAT>(rect.top),
+			static_cast<FLOAT>(rect.right), static_cast<FLOAT>(rect.bottom));
+		hit.visible = true; hit.radiusX = hit.radiusY = BarMainBarCornerRadiusDip * scale;
+		Append(hit, active, TouchRegionSpace::Rigid);
+	};
+	auto SurfaceVisible = [&](Shape id)
+	{
+		const auto found = shapeMap.find(id);
+		return found != shapeMap.end() && found->second && found->second->enable.val
+			&& found->second->pct.val > 0.000001 && found->second->w.val > 0.0 && found->second->h.val > 0.0;
+	};
+	const bool fold = barState.fold;
+	// open 可能早于动画首帧：透明 hit 区只在所属表面已经实际呈现后准入。
+	const bool draw = barState.drawAttribute && !fold && SurfaceVisible(Shape::DrawAttributeBar);
+	const bool pen = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+	const bool geometry = barState.geometryAttribute && stateMode.StateModeSelect == StateModeSelectEnum::IdtShape
+		&& SurfaceVisible(Shape::GeometryAttributeBar);
+	const bool eraser = barState.eraserAttribute, recall = barState.recallAttribute;
+	const bool moreOpen = barState.moreExpanded && !fold && SurfaceVisible(Shape::MorePanel);
+	const bool eraserMenu = barState.eraserSensitivityOpen;
+	const auto& attribute = barState.drawAttributeBar;
+	const auto view = static_cast<ThicknessViewMode>(attribute.thicknessViewMode);
+	const bool picker = pen && draw && attribute.colorPickerOpen && SurfaceVisible(Shape::DrawAttributeBar_ColorPickerPanel);
+	const bool menu = draw && attribute.penTypeMenuOpen && SurfaceVisible(Shape::DrawAttributeBar_PenTypeMenu);
+	const bool annotation = menu && !stateMode.laserActive && PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
+	const bool overflow = draw && view != ThicknessViewMode::FineDial && attribute.thicknessOverflowHintPresent;
+	const bool annotationPinned = attribute.thicknessAnnotationPinned, overflowPinned = attribute.thicknessOverflowPinned;
+	const bool annotationPopup = annotation && (annotationPinned || attribute.thicknessAnnotationHover)
+		&& SurfaceVisible(Shape::DrawAttributeBar_ThicknessAnnotationPopup);
+	const bool overflowPopup = overflow && (overflowPinned || attribute.thicknessOverflowHover)
+		&& SurfaceVisible(Shape::DrawAttributeBar_ThicknessOverflowPopup);
+	const bool slider = pen && draw && !stateMode.laserActive
+		&& GetBarThicknessSliderRange(stateMode.Pen.ModeSelect, barStyle.dpiZoom, stateMode).supported;
+	const bool rangeTransition = attribute.thicknessFineDialRangeTransitionActive;
+	const auto& eraserFrame = eraserAttribute.frame_;
+	AddPanel(eraserFrame.geometry.menu, eraserFrame.menuPose.scale, eraserFrame.menuVisible,
+		eraser && eraserMenu);
+	AddPanel(eraserFrame.geometry.panel, eraserFrame.panelPose.scale, eraserFrame.panelVisible, eraser);
+	const auto& recallFrame = recallAttribute.frame_;
+	AddPanel(recallFrame.geometry.panel, recallFrame.panelPose.scale, recallFrame.panelVisible, recall);
+
+	AddShape(Shape::DrawAttributeBar_ColorPickerPanel, picker, true);
+	AddShapes({ Shape::DrawAttributeBar_ColorPickerPalette, Shape::DrawAttributeBar_ColorPickerToneToggle,
+		Shape::DrawAttributeBar_ColorPickerCloseHit }, picker);
+	AddShape(Shape::DrawAttributeBar_ThicknessAnnotationPopup, annotationPopup, true);
+	AddShape(Shape::DrawAttributeBar_ThicknessAnnotationPopupCloseHit, annotationPopup && annotationPinned);
+	AddShape(Shape::DrawAttributeBar_ThicknessOverflowPopup, overflowPopup, true);
+	AddShape(Shape::DrawAttributeBar_ThicknessOverflowPopupCloseHit, overflowPopup && overflowPinned);
+	AddShape(Shape::DrawAttributeBar_ThicknessAnnotationInfoHit, annotation);
+	AddShape(Shape::DrawAttributeBar_ThicknessOverflowInfoHit, overflow);
+	AddShape(Shape::DrawAttributeBar_PenTypeMenu, menu, true);
+	AddShapes({ Shape::DrawAttributeBar_PenTypeMenuFreeLine, Shape::DrawAttributeBar_PenTypeMenuAnnotationLine }, menu);
+
+	AddShape(Shape::MorePanel, moreOpen, true);
+	AddShape(Shape::MorePanelCloseHit, moreOpen);
+	auto AddButton = [&](const std::shared_ptr<BarButtonClass>& button, bool active, TouchRegionSpace space)
+	{
+		if (!button) return;
+		const auto hit = next.find(button.get());
+		if (hit != next.end()) Append(hit->second, active && hit->second.enabled, space);
+	};
+	for (const auto& button : more.explicitMore) AddButton(button, moreOpen, TouchRegionSpace::Rigid);
+	for (const auto& button : more.forcedOverflow) AddButton(button, moreOpen, TouchRegionSpace::Rigid);
+	const auto main = superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+	if (main != superellipseMap.end() && main->second && main->second->enable.val && main->second->pct.val > 0.000001)
+	{
+		const auto hit = visualHits.find(main->second.get());
+		if (hit != visualHits.end()) Append(hit->second, true, TouchRegionSpace::Grip);
+	}
+	for (const auto& button : barButtonSet.buttonList.Snapshot()) AddButton(button, !fold, TouchRegionSpace::Body);
+	AddShape(Shape::MainBar, !fold, true, TouchRegionSpace::Body);
+
+	AddShape(Shape::GeometryAttributeBar, geometry, true);
+	AddShapes({ Shape::GeometryAttributeBar_StraightLine, Shape::GeometryAttributeBar_Rectangle,
+		Shape::GeometryAttributeBar_ThicknessFine, Shape::GeometryAttributeBar_ThicknessMedium,
+		Shape::GeometryAttributeBar_ThicknessCoarse, Shape::GeometryAttributeBar_Close }, geometry);
+	const bool popup = slider && (view == ThicknessViewMode::Slider || view == ThicknessViewMode::FineDial);
+	AddShape(Shape::DrawAttributeBar_ThicknessPreviewPopupSurface, popup && !(view == ThicknessViewMode::FineDial && rangeTransition), true);
+	if (slider && view == ThicknessViewMode::Slider)
+	{
+		const auto panel = shapeMap.find(Shape::DrawAttributeBar);
+		const auto region = shapeMap.find(Shape::DrawAttributeBar_ThicknessSelect);
+		const auto adjust = shapeMap.find(Shape::DrawAttributeBar_ThicknessAdjust);
+		const auto thumb = shapeMap.find(Shape::DrawAttributeBar_ThicknessSliderThumb);
+		if (panel != shapeMap.end() && panel->second && region != shapeMap.end() && region->second
+			&& adjust != shapeMap.end() && adjust->second)
+		{
+			const auto preview = CalculateBarThicknessPreviewGeometry(*panel->second, *region->second,
+				BarUiInheritClass(region->second->inhX, region->second->inhY), *adjust->second,
+				BarUiInheritClass(adjust->second->inhX, adjust->second->inhY));
+			double centerY = preview.sliderCenterY;
+			const bool thumbReady = thumb != shapeMap.end() && thumb->second
+				&& thumb->second->w.val > 0.0 && thumb->second->h.val > 0.0;
+			if (thumbReady) centerY = thumb->second->inhY + thumb->second->h.val / 2.0;
+			const auto dial = CalculateBarThicknessFineDialGeometry(preview, centerY,
+				panel->second->inhY, panel->second->inhY + panel->second->h.val);
+			if (dial.valid)
+			{
+				BarButtonHitSnapshot hit;
+				hit.visible = true;
+				// 合法透明走廊按原几何消费；thumb 未完成时也不能穿到后方控件。
+				if (thumbReady && thumb->second->pct.val >= 0.999999)
+				{
+					hit.boundsDip = dial.dragZone; Append(hit, true, TouchRegionSpace::Rigid);
+				}
+				hit.boundsDip = dial.ownershipCorridor; Append(hit, false, TouchRegionSpace::Rigid);
+			}
+		}
+	}
+	AddShape(Shape::DrawAttributeBar_ThicknessSliderHit, slider && !(view == ThicknessViewMode::FineDial && rangeTransition));
+	AddShape(Shape::DrawAttributeBar, draw && pen, true);
+	for (int i = static_cast<int>(Shape::DrawAttributeBar_ColorSelect1); i <= static_cast<int>(Shape::DrawAttributeBar_ColorSelect12); ++i)
+		AddShape(static_cast<Shape>(i), draw && pen);
+	AddShapes({ Shape::DrawAttributeBar_Brush1, Shape::DrawAttributeBar_Highlight1,
+		Shape::DrawAttributeBar_Laser, Shape::DrawAttributeBar_Brush2, Shape::DrawAttributeBar_SoftPen }, draw);
+	const bool presets = pen && draw && (IsLaserThicknessPresetMode(stateMode)
+		|| PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect, stateMode));
+	AddShapes({ Shape::DrawAttributeBar_ThicknessFine, Shape::DrawAttributeBar_ThicknessMedium,
+		Shape::DrawAttributeBar_ThicknessCoarse }, presets);
+	AddShape(Shape::DrawAttributeBar_ThicknessAdjust, presets && !stateMode.laserActive);
+	AddShape(Shape::DrawAttributeBar_PenTypeExtensionHit,
+		draw && !stateMode.laserActive && PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect));
+
+	// 版本只描述准入语义，不随每帧动画/颜色/粗细变化，防止按下复核被重绘打断。
+	touch->semantic = 1469598103934665603ULL;
+	auto Mix = [&](std::uint64_t value) { touch->semantic = (touch->semantic ^ value) * 1099511628211ULL; };
+	Mix(static_cast<std::uint64_t>(stateMode.StateModeSelect)); Mix(static_cast<std::uint64_t>(stateMode.Pen.ModeSelect));
+	Mix(stateMode.laserActive); Mix(fold); Mix(draw); Mix(geometry); Mix(eraser); Mix(recall); Mix(moreOpen);
+	Mix(picker); Mix(menu); Mix(annotationPopup); Mix(overflowPopup); Mix(slider); Mix(rangeTransition);
+	Mix(static_cast<std::uint64_t>(view)); Mix(eraserMenu); Mix(annotationPinned); Mix(overflowPinned);
+	candidateTouchRegions_ = std::move(touch);
 	// 分配和几何整理在 seqlock 奇数区之外完成，提交段只交换已经构造好的表。
 	candidateButtonHits_=std::move(next);candidateVisualHits_=std::move(visualHits);
 }
@@ -2572,4 +2911,117 @@ void BarUISetClass::PublishPresentedButtonHits()
 {
 	std::lock_guard lock(presentedButtonHitsMutex_);
 	presentedButtonHits_.swap(candidateButtonHits_);presentedVisualHits_.swap(candidateVisualHits_);
+	presentedTouchRegions_.swap(candidateTouchRegions_);
+	presentedTouchRebaseXDip_ = presentedTouchRebaseYDip_ = 0.0;
+}
+
+namespace Inkeys::UI::Bar
+{
+	int RunBarTouchProbeProductionTest() noexcept
+	{
+		using Inkeys::Input::UiPointer::Touch::Hit;
+		int failures = 0;
+		const auto check = [&](bool passed, const char* name)
+			{ if (!passed) { ++failures; std::fprintf(stderr, "[UI3TouchProbe] FAIL %s\n", name); } };
+		try
+		{
+			// 局部 fixture 只开放真实候选/提交入口，不启动窗口、设备或全局 Bar。
+			struct Fixture final : BarUISetClass
+			{
+				using BarUISetClass::PreparePresentedButtonHits;
+				void Mapping()
+				{
+					presentedMonitorOriginX = 1000; presentedMonitorOriginY = -400;
+					bottomDockPresentedDirectTranslationX = 30; bottomDockPresentedDirectTranslationY = 50;
+					bottomDockPresentedZoom = 2.0; bottomDockPresentedDisplaySerial = 7;
+					bottomDockPresentedBaseLeftDip = 0.0; bottomDockPresentedBaseRightDip = 400.0;
+					bottomDockPresentedVisualLeftDip = 100.0; bottomDockPresentedVisualRightDip = 900.0;
+					bottomDockPresentedScaleX = 2.0; bottomDockPresentedRigidGripTranslationXDip = 600.0;
+					bottomDockPresentedRigidTranslationXDip = 1000.0;
+					bottomDockPresentedBaseTopDip = 0.0; bottomDockPresentedBaseBottomDip = 300.0;
+					bottomDockPresentedVisualTopDip = 50.0; bottomDockPresentedVisualBottomDip = 500.0;
+					bottomDockPresentedScaleY = 1.5; bottomDockPresentedRigidTranslationDip = 400.0;
+				}
+				void PublishPrepared()
+				{
+					bottomDockPresentedMappingSerial.fetch_add(1, std::memory_order_acq_rel);
+					PublishPresentedButtonHits();
+					bottomDockPresentedMappingSerial.fetch_add(1, std::memory_order_release);
+				}
+				void Commit(const StateModeClass& state)
+					{ PreparePresentedButtonHits(state); PublishPrepared(); }
+			};
+			auto owner = std::make_unique<Fixture>(); owner->Mapping();
+			const auto shape = [](double left, double top, double width, double height, double radius, double opacity)
+			{
+				auto result = std::make_shared<BarUiShapeClass>(0.0, 0.0, width, height,
+					radius, radius, std::nullopt, RGB(80, 80, 80), std::nullopt);
+				result->inhX = left; result->inhY = top;
+				result->enable.Initialization(true); result->pct.Initialization(opacity);
+				return result;
+			};
+			owner->shapeMap[BarUISetShapeEnum::MainBar] = shape(60, 0, 100, 40, 8, 0.8);
+			auto draw = shape(0, 80, 370, 190, 8, 0.8);
+			owner->shapeMap[BarUISetShapeEnum::DrawAttributeBar] = draw;
+			owner->shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1] = shape(10, 90, 30, 30, 4, 1.0);
+			owner->shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit] = shape(700, 80, 40, 40, 4, 0.0);
+			owner->shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble] = shape(700, 80, 40, 40, 4, 1.0);
+			auto grip = std::make_shared<BarUiSuperellipseClass>(0.0, 0.0, 40.0, 40.0,
+				4.0, std::nullopt, RGB(80, 80, 80), std::nullopt);
+			grip->inhX = 0.0; grip->inhY = 0.0; grip->enable.Initialization(true); grip->pct.Initialization(1.0);
+			owner->superellipseMap[BarUISetSuperellipseEnum::MainButton] = grip;
+			auto button = std::make_shared<BarButtonClass>(); button->hide = false;
+			button->button.Initialization(0, 0, 40, 30, 4, 4, std::nullopt, RGB(80, 80, 80), std::nullopt);
+			button->button.enable.Initialization(true); button->button.inhX = 90; button->button.inhY = 5;
+			owner->barButtonSet.buttonList.Replace({ button });
+			owner->barState.drawAttribute = true;
+			StateModeClass state; state.StateModeSelect = StateModeSelectEnum::IdtPen;
+			state.Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
+			// 明确的屏幕样本同时区分 Rigid/Body/Grip、非单位 zoom、负 monitor origin 和直移。
+			const POINT bodyPoint{ 1670, -190 }, gripPoint{ 2270, -190 }, drawPoint{ 3230, 750 };
+			const auto hit = [&](POINT point) { return owner->ProbeTouchScreen(point).hit; };
+			check(hit(bodyPoint) == Hit::Miss && hit(gripPoint) == Hit::Miss && hit(drawPoint) == Hit::Miss,
+				"before-first-present-rejected");
+			owner->PreparePresentedButtonHits(state);
+			check(hit(drawPoint) == Hit::Miss, "prepared-without-publish-is-not-presented");
+			owner->PublishPrepared();
+			check(hit(bodyPoint) == Hit::Accept, "main-button-body-mapping");
+			check(hit({ 1510, -190 }) == Hit::Accept, "main-background-body-mapping");
+			check(hit(gripPoint) == Hit::Accept, "main-superellipse-grip-mapping");
+			check(hit(drawPoint) == Hit::Accept, "draw-surface-rigid-mapping");
+			check(hit({ 1470, -250 }) == Hit::Miss && hit({ 2230, -250 }) == Hit::Miss,
+				"rounded-main-and-superellipse-corners-miss");
+			check(hit({ 3030, 610 }) == Hit::Miss && hit({ 3830, 750 }) == Hit::Miss,
+				"rounded-draw-corner-and-exterior-miss");
+			check(hit({ 4470, 650 }) == Hit::Miss, "closed-transparent-hit-and-preview-decoration-excluded");
+			button->state->state = BarWidgetState::Disable; owner->Commit(state);
+			check(hit(bodyPoint) == Hit::Blocked, "disabled-button-blocks-enabled-background");
+			button->state->state = BarWidgetState::None;
+			draw->pct.SetDirect(0.0); owner->Commit(state);
+			check(hit(drawPoint) == Hit::Miss && hit({ 3080, 660 }) == Hit::Miss,
+				"open-before-visible-surface-does-not-revive-old-hit");
+			draw->pct.SetDirect(0.8); owner->Commit(state);
+			const auto semantic = owner->ProbeTouchScreen(drawPoint).semantic;
+			state.Pen.Brush1.color = RGB(1, 2, 3); state.Pen.Brush1.width = 11.0f; owner->Commit(state);
+			check(owner->ProbeTouchScreen(drawPoint).semantic == semantic, "style-change-keeps-admission-semantic");
+			draw->inhX = 1000.0; owner->barState.drawAttribute = false;
+			const POINT movedDrawPoint{ 5230, 750 };
+			check(hit(drawPoint) == Hit::Accept && hit(movedDrawPoint) == Hit::Miss,
+				"probe-does-not-read-live-animation-or-open-state");
+			owner->PreparePresentedButtonHits(state); // 模拟呈现失败：只准备候选，禁止发布。
+			check(hit(drawPoint) == Hit::Accept && hit(movedDrawPoint) == Hit::Miss
+				&& owner->ProbeTouchScreen(drawPoint).semantic == semantic, "failed-candidate-keeps-presented-snapshot");
+			owner->PublishPrepared();
+			check(hit(drawPoint) == Hit::Miss && hit(movedDrawPoint) == Hit::Blocked,
+				"visible-retiring-draw-blocks-with-new-committed-geometry");
+			owner->barState.fold = true; owner->Commit(state);
+			check(hit(gripPoint) == Hit::Accept && hit(bodyPoint) == Hit::Blocked,
+				"folded-grip-stays-active-while-body-retires");
+			draw->pct.SetDirect(0.0); owner->Commit(state);
+			check(hit(movedDrawPoint) == Hit::Miss, "fully-retired-draw-no-longer-occupies");
+		}
+		catch (...) { ++failures; std::fputs("[UI3TouchProbe] FAIL exception\n", stderr); }
+		std::fprintf(stderr, "[UI3TouchProbe] %s: production prepare/publish/probe geometry and admission\n", failures ? "FAIL" : "PASS");
+		return failures ? 1 : 0;
+	}
 }

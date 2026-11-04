@@ -1,0 +1,1229 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "ja-JP",
+  "Widget":
+  {
+    "LnkName": "Inkeys（画面書き込みツール）"
+  },
+  "Operate":
+  {
+    "Reset": "リセット",
+    "Repair": "修復",
+    "Copy": "コピー",
+    "Create": "作成"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "選択",
+      "SelectClean": "選択（消去）",
+      "Pen": "ペン",
+      "Eraser": "消しゴム",
+      "Options": "オプション"
+    },
+    "Pen":
+    {
+      "Pen": "ペン",
+      "Highlighter": "蛍光ペン",
+      "Thinkness": "太\nさ",
+      "Write": "手書き",
+      "Line": "直線",
+      "Square": "長方形"
+    },
+    "Operate":
+    {
+      "Revoke": "元に戻す",
+      "Recall": "復元",
+      "Freeze": "画面固定",
+      "Pierce": "操作透過"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "下部バー",
+        "Centered": "中央"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "消去",
+        "ClearCanvasHint": "このキャンバスの書き込みをすべて消去",
+        "AutomaticLabel": "太さ自動",
+        "SensitivityLabel": "感度",
+        "LowLabel": "低",
+        "MediumLabel": "中",
+        "HighLabel": "高",
+        "SmallSize": "小",
+        "MediumSize": "中",
+        "LargeSize": "大",
+        "BaseSizeHint": "太さ自動調整時の基準サイズ",
+        "MixedHint": "デバイスごとに設定が異なります\nクリックですべて自動調整を有効化",
+        "SettingsHint": "太さの自動調整設定はまだ利用できません"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "選択",
+        "SelectClearLabel": "消去・選択",
+        "ClickThroughLabel": "透過",
+        "MoveLabel": "移動",
+        "DrawLabel": "描画",
+        "LaserLabel": "レーザー",
+        "HighlighterLabel": "蛍光ペン",
+        "HardPenLabel": "硬筆",
+        "SoftPenLabel": "軟筆",
+        "EraserLabel": "消しゴム",
+        "AreaEraserLabel": "範囲消去",
+        "GeometryLabel": "図形",
+        "RectangleLabel": "長方形",
+        "StraightLineLabel": "直線",
+        "UndoLabel": "元に戻す",
+        "RedoLabel": "やり直す",
+        "ClearLabel": "全消去",
+        "WhiteboardWindowTitle": "Inkeys ホワイトボード",
+        "WhiteboardPreviousLabel": "前のページ",
+        "WhiteboardNextLabel": "次のページ",
+        "WhiteboardAddPageLabel": "ページ追加",
+        "WhiteboardLabel": "白板",
+        "ResumeWhiteboardLabel": "白板へ",
+        "CloseWhiteboardLabel": "閉じる",
+        "ReturnToShowLabel": "発表へ",
+        "MinimizeWhiteboardLabel": "白板を最小化",
+        "WhiteboardThemeLabel": "テーマ",
+        "WhiteboardBackgroundColorLabel": "背景色",
+        "WhiteboardBackgroundStyleLabel": "背景の種類",
+        "WhiteboardBlankLabel": "無地",
+        "WhiteboardDotsLabel": "ドット",
+        "WhiteboardGridLabel": "方眼",
+        "WhiteboardUnsavedLabel": "未保存のページがあります",
+        "FreezeLabel": "固定",
+        "EndPresentationLabel": "発表終了",
+        "SettingsLabel": "設定",
+        "MoreLabel": "その他"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "ファイル",
+        "TaskManagerLabel": "タスク",
+        "ControlPanelLabel": "制御パネル",
+        "ShowDesktopLabel": "デスクへ",
+        "LockScreenLabel": "ロック",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "指名",
+        "ClassIslandSettingsLabel": "CI 設定",
+        "ClassIslandProfileLabel": "プロフ編集",
+        "ClassIslandSwapLabel": "授業切替"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "ブラシ",
+        "LaserLabel": "レーザー",
+        "HighlighterLabel": "蛍光ペン",
+        "HardPenLabel": "硬筆",
+        "SoftPenLabel": "軟筆",
+        "FreeLineLabel": "自由線",
+        "AnnotationLineLabel": "補助線",
+        "HoldThicknessLabel": "押し続けて太さを固定",
+        "ThicknessFormat": "太さ {}",
+        "AnnotationUnavailableTitle": "補助線はまだ利用できません",
+        "AnnotationFixedUnsupportedTitle": "太さ固定の補助線は未対応です",
+        "AnnotationDescription": "描画方向を水平・垂直・斜め45°に固定",
+        "ThicknessOverflowTitle": "線の太さがプレビュー範囲を超えています",
+        "ThicknessOverflowBody": "プレビューと実際の線の太さが異なる場合があります。"
+      },
+      "ShapeConstruction":
+      {
+        "NextVertex": "次の頂点を指定",
+        "RadiusStep": "中心と半径を指定",
+        "SweepStep": "円弧の範囲を指定",
+        "FrontStep": "正面を指定",
+        "DepthStep": "奥行きを指定",
+        "BaseStep": "底面を指定",
+        "HeightStep": "高さを指定",
+        "Complete": "完了",
+        "Back": "戻る",
+        "CancelAction": "キャンセル"
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "直線",
+        "ArrowLabel": "矢印",
+        "RectangleLabel": "長方形",
+        "RoundedRectangleLabel": "角丸長方形",
+        "CircleLabel": "円",
+        "EllipseLabel": "楕円",
+        "TriangleLabel": "三角形",
+        "ParallelogramLabel": "平行四辺形",
+        "RhombusLabel": "ひし形",
+        "TrapezoidLabel": "台形",
+        "RegularPolygonLabel": "正多角形",
+        "PolylineLabel": "折れ線",
+        "PolygonLabel": "多角形",
+        "ArcLabel": "円弧",
+        "SectorLabel": "扇形",
+        "AngleLabel": "角度",
+        "ParallelLabel": "平行線",
+        "PerpendicularLabel": "垂線",
+        "CuboidLabel": "直方体",
+        "CubeLabel": "立方体",
+        "CylinderLabel": "円柱",
+        "ConeLabel": "円錐",
+        "PrismLabel": "角柱",
+        "PyramidLabel": "角錐",
+        "NumberLineLabel": "数直線",
+        "CartesianLabel": "座標軸",
+        "GridLabel": "グリッド",
+        "CoordinatePointLabel": "座標点",
+        "ParabolaLabel": "放物線",
+        "ReciprocalLabel": "反比例",
+        "HyperbolaLabel": "双曲線",
+        "SineLabel": "正弦",
+        "CosineLabel": "余弦",
+        "TangentLabel": "正接",
+        "ExponentialLabel": "指数",
+        "LogarithmicLabel": "対数",
+        "CircleCenterLabel": "中心と半径",
+        "CircleBoundsLabel": "外接正方形",
+        "OutlineLabel": "輪郭のみ",
+        "FillLabel": "塗りつぶし",
+        "OutlineFillLabel": "輪郭と塗り",
+        "SolidLabel": "実線",
+        "DashedLabel": "破線",
+        "DottedLabel": "点線",
+        "DashDotLabel": "一点鎖線"
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "不透明度",
+        "HoldColorLabel": "押し続けて色を固定"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "描画: {:.2f} FPS | 上限なし: {:.2f} FPS",
+        "FrameRateUnavailable": "描画: -- FPS | 上限なし: -- FPS"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "競合",
+        "ReadFailed": "読み込み",
+        "PresentFailed": "表示",
+        "Failed": "エラー",
+        "Recovering": "復元中",
+        "Loading": "読込中",
+        "Retry": "再試行",
+        "Wait": "待機",
+        "RetryCanvas": "キャンバスを再試行",
+        "ProtectedHint": "文書のページ順序または識別情報が変わったため、既存の書き込みを保護しています。元の文書の状態に戻してから再試行してください。",
+        "RecoveryHint": "キャンバスの復元が完了していません。再試行しても書き込みの保護は維持されます。"
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeysの透明な背景を正しく表示できません。\n\nInkeys.exeを右クリックし、「プロパティ → 互換性」で「制限された色モード」をオフにしてください。\nWindows 7ではAeroテーマを有効にしてください。\n\n解決しない場合は設定のホームから開発者に連絡してください。\nInkeysを再起動してお試しください。"
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "白板ウィンドウへの切り替えが完了せず、自動再試行を停止しました。メインバーの白板ボタンをもう一度押すと今回の切り替えを取り消せます。または設定の「描画」ページから再試行してください。",
+      "Return": "白板からの退出が完了せず、自動再試行を停止しました。メインバーの白板ボタンをもう一度押すと白板に戻れます。または設定の「描画」ページから再試行してください。",
+      "Primary": "デスクトップと発表ワークスペースの切り替えが完了せず、自動再試行を停止しました。設定の「描画」ページから再試行してください。"
+    },
+    "Common":
+    {
+      "TipsTitle": "Inkeysのお知らせ",
+      "ErrorTitle": "Inkeysのエラー",
+      "OK": "OK",
+      "Cancel": "キャンセル",
+      "Yes": "はい",
+      "No": "いいえ"
+    },
+    "EndPresentation":
+    {
+      "Body": "現在のスライドショーを終了しますか？"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "ウィンドウを作成できなかったか、作成がブロックされたため、Inkeysが予期せず終了しました。Inkeysを再起動してお試しください。(#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "自動更新モジュールが起動していません。このバージョンは公式リリースではないことを示します。\n「ソフトウェアのバージョン」で「ソフトウェアを修復」を選んでください。"
+    },
+    "CloseInkeys":
+    {
+      "Body": "Inkeysを終了しますか？"
+    },
+    "Crash":
+    {
+      "Body": "Inkeysで問題が発生しました。「OK」を選ぶとInkeysを再起動して復元を試みます。"
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Inkeysのオプション",
+    "Design":
+    {
+      "NavigationTitle": "設定",
+      "SwitchToDark": "ダークテーマに切り替え",
+      "SwitchToLight": "ライトテーマに切り替え",
+      "Preferences": "環境設定",
+      "RecommendedSuffix": "（推奨）",
+      "SupportGroup": "サポートと保守",
+      "Experimental": "試験的な機能",
+      "HomeWelcome": "Inkeys3へようこそ",
+      "HeroTitle": "なめらかな筆跡、美しい動き。",
+      "HeroJoin": "",
+      "HeroDescription": "書くときも操作するときも、心地よく。",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "このプログラムのライセンスは ",
+      "HomeLicenseSuffix": " です。",
+      "HomeRedistribution": "ライセンスの条件に従い、誰でもコードを閲覧・変更・再配布できます。",
+      "HomeOpenSourceTitle": "あなたのための、無料のオープンソース",
+      "HomeRepositoryPrefix": "Inkeysのコードは ",
+      "HomeRepositoryJoin": " と ",
+      "HomeRepositorySuffix": " で公開しています。",
+      "HomeStarAction": "GitHubでスターを付ける",
+      "HomeSponsorAction": "Inkeysを支援する",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "書き心地を調整",
+      "Tutorial": "使い方",
+      "Explore": "おすすめの設定",
+      "DrawDescription": "筆跡と消しゴム",
+      "AppearanceDescription": "アニメーション・光・バーの拡大率",
+      "PresetDescription": "お気に入りのペンをすぐに",
+      "PluginDescription": "発表と授業のツールを連携",
+      "CommonSettings": "よく使う設定",
+      "GeneralDescription": "操作モード・バーの並び・起動方法",
+      "ShortcutsDescription": "全体操作と書き込み編集のショートカット",
+      "DisplayLanguage": "表示言語",
+      "Improve": "Inkeysの改善に協力",
+      "Contact": "開発者に連絡",
+      "TermsOfUse": "利用規約",
+      "Website": "公式サイト",
+      "StartupSection": "起動",
+      "AppearanceSection": "外観",
+      "BehaviorSection": "動作",
+      "CompatibilitySection": "互換性",
+      "GeneralBasic": "基本",
+      "GeneralAppearance": "外観とアニメーション",
+      "GeneralInteraction": "動作と安全性",
+      "GeneralStorage": "保存と構成",
+      "OperationModeSection": "操作モード",
+      "IconArrangementSection": "アイコンの並び",
+      "AnimationSection": "アニメーション",
+      "LightingSection": "ライティング",
+      "ScalingSection": "拡大率",
+      "ThemeSection": "テーマ",
+      "OpacitySection": "不透明度",
+      "WindowBehaviorSection": "ウィンドウの動作",
+      "SafetyRecoverySection": "安全性と復元",
+      "ShortcutGlobalSection": "全体操作",
+      "ShortcutEditingSection": "書き込み編集",
+      "ShortcutAuxiliarySection": "補助操作",
+      "GeneralSubtitle": "起動方法、表示サイズ、日常の使い方を設定します。",
+      "EdgeLighting": "輪郭の光を有効化",
+      "EdgeLightingDescription": "オフにすると、基本の枠線だけを残し、点光と柔らかな光を無効にします。",
+      "TopWindowSummary": "描画していない間にウィンドウを最前面に戻す頻度を設定します。",
+      "TopWindowDetails": "詳細",
+      "AvoidFullscreenSummary": "再起動が必要です。描画していない場合と操作透過モードで全画面表示を避けます。",
+      "AvoidFullscreenDetails": "利用上の説明",
+      "Enabled": "オン",
+      "Disabled": "オフ",
+      "ClickToCopy": "クリックでコピー",
+      "Copied": "コピーしました",
+      "RestartRequired": "Inkeysを再起動すると反映されます。",
+      "NextStartupRequired": "次回のInkeys起動時に反映されます。"
+    },
+    "Home":
+    {
+      "N": "ホーム",
+      "Prompt": "これはInkeys 3のプレビュー版です。最終品質を示すものではありません。",
+      "Developer": "Inkeysの創設開発者",
+      "Group": "GitHub Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Bilibili公式チャンネル",
+      "FeedBack": "問題・改善案を送る"
+    },
+    "Feedback":
+    {
+      "N": "フィードバック",
+      "Description": "問題や改善案を送ってInkeysの改善にご協力ください。",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "GitHubで問題や改善案を公開し、進捗の確認や意見交換ができます。"
+      },
+      "Questionnaire":
+      {
+        "N": "アンケートで送る",
+        "E": "アンケートで使用中の問題や改善案をお知らせください。"
+      },
+      "Qr":
+      {
+        "N": "QRコードで送る",
+        "E": "QRコードを読み取り、アンケートで問題や改善案を送れます。"
+      },
+      "ContactSection": "コミュニティと開発者への連絡",
+      "CommunityDescription": "GitHub Discussionsで、使い方の問題や改善案について意見を交わせます。",
+      "ContactDescription": "問題や改善案を開発者にメールで送れます。",
+      "AuthorQQ": "開発者のQQ"
+    },
+    "Language":
+    {
+      "N": "言語",
+      "UI":
+      {
+        "N": "表示言語",
+        "Select": "言語を選択",
+        "SelectE": "インターフェイスの表示言語を設定します。",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "言語の変更はすぐに反映されます。再起動は不要です。",
+        "SelectNote": "すぐに反映されます。再起動は不要です。"
+      }
+    },
+    "Configuration":
+    {
+      "N": "構成の保存",
+      "Clean":
+      {
+        "N": "構成の整理",
+        "Enable": "構成の自動整理を有効化",
+        "EnableE": "起動時と構成の保存時に、現在の構成テンプレートにない余分な項目を削除します。",
+        "EnableNote": "旧版に戻してから更新した場合や構成を読み込んだ場合、一部の設定が失われ、初期値に戻ることがあります。"
+      },
+      "CanvasSave":
+      {
+        "N": "キャンバスの保存",
+        "Enable": "デスクトップキャンバスを自動保存",
+        "EnableE": "デスクトップキャンバスの消去時や終了時に、空でないキャンバスを自動保存し、後から履歴から復元できるようにします。",
+        "SaveTime":
+        {
+          "N": "保存期間",
+          "E": "設定期間を過ぎたキャンバスの履歴を、起動時に削除します。",
+          "1d": "1日",
+          "3d": "3日",
+          "5d": "5日",
+          "10d": "10日",
+          "30d": "30日",
+          "Never": "削除しない"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "ソフトウェアのバージョン",
+      "ManualUpdate":
+      {
+        "N": "新しいバージョンがあります",
+        "ManualUpdate": "手動更新"
+      },
+      "LimitUpdate":
+      {
+        "N": "自動更新を停止しました。\n\n新しいバージョンは対応システムが変更され、更新後に起動できなくなる可能性があります。詳細でシステム要件を確認し、手動でダウンロードして更新してください。現在のチャネルの修復機能も一時的に利用できません。",
+        "Info": "詳細"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3を正式リリースしました！\n\n下のボタンからInkeys3の詳細をご覧ください。現在のチャネルの修復機能は一時的に利用できません。",
+        "Download": "今すぐ更新"
+      },
+      "VersionTip": "アプリとシステムのアーキテクチャが異なります。動作が遅くなり、使い心地に影響する場合があります。下の「ソフトウェアを修復」で「修復時にアーキテクチャを修正」を有効にするか、ページ下部で対象アーキテクチャを選んで修復してください。",
+      "Info":
+      {
+        "N": "バージョン情報",
+        "ReleaseVersion": "リリースバージョン",
+        "ReleaseDate": "リリース日時",
+        "ReleaseArch": "アプリとシステムのアーキテクチャ：",
+        "ReleaseTag": "リリースビルド（RELEASE）",
+        "DebugTag": "デバッグビルド（DEBUG）",
+        "ManualBuild": "手動ビルド",
+        "AutoBuild": "自動ビルド（CI/CD）",
+        "CICDInfo": "自動ビルドの詳細"
+      },
+      "UserInfo":
+      {
+        "N": "ユーザー情報",
+        "CopyUserId": "ユーザーIDをコピー",
+        "UserId": "ユーザーID"
+      },
+      "Repair":
+      {
+        "N": "ソフトウェアの修復",
+        "RepairSoftware": "ソフトウェアを修復",
+        "RepairSoftwareE": "選択したチャネルの最新バージョンを再インストールします",
+        "RepairArch": "修復時にアーキテクチャを修正"
+      },
+      "Update":
+      {
+        "N": "更新の設定",
+        "AutoUpate": "自動更新（通知なし）",
+        "ChannelTip": "安定版（LTS）は最新の安定したバージョンを提供します。（推奨）\nプレビュー版（Insider）は安定性が低く、セキュリティソフトが警告を出す場合があります。\n早期版（Canary）はInkeys3の初期開発版で、通常の利用は推奨しません。",
+        "Channel":
+        {
+          "N": "更新先チャネル",
+          "LTS": "安定版（LTS）",
+          "Insider": "プレビュー版（Insider）",
+          "Canary": "早期版（Canary）"
+        },
+        "Arch":
+        {
+          "N": "更新先アーキテクチャ",
+          "E": "注意：システムと異なるアーキテクチャを選ぶと、起動できない場合や大幅に性能が低下する場合があります。",
+          "64": "64ビット",
+          "32": "32ビット",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "バージョンの状態"
+    },
+    "CICD":
+    {
+      "N": "自動ビルドの詳細",
+      "Repository": "ビルド元リポジトリ",
+      "Branch": "ビルド元ブランチ",
+      "Submitter": "コミットの作成者",
+      "BuildTime": "ビルド日時",
+      "BuildSystem": "ビルドシステム",
+      "BuildSystemVersion": "ビルドシステムのバージョン",
+      "RunnerImageSystem": "ランナーのOSイメージ",
+      "RunnerImageVersion": "ランナーイメージのバージョン",
+      "MSBuildVersion": "MSBuildのバージョン"
+    },
+    "Regular":
+    {
+      "N": "全般",
+      "SelectAndClickThrough":
+      {
+        "N": "選択と操作透過",
+        "Combined": "統合",
+        "Separate": "分離",
+        "CombinedDescription": "「選択」でコンピューターを操作します。書き込みのない状態と、書き込みを残した状態の両方に対応します。",
+        "SeparateDescription": "「選択」は書き込みを消して操作し、「操作透過」は書き込みを残したまま背後のウィンドウを操作します。",
+        "ClickThrough": "操作透過",
+        "ClickThroughDescription": "画面の書き込みを残したまま、クリックやタッチを注釈レイヤーの背後に通し、下のウィンドウを操作します。"
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "メインバーのアイコン順序",
+        "FollowMainButton": "メインボタンに合わせる",
+        "FollowMainButtonReverse": "メインボタンと逆順",
+        "LeftToRight": "左から右",
+        "RightToLeft": "右から左"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "メインバーの展開方向",
+        "Centerline": "画面中央線",
+        "WhenSpaceInsufficient": "スペース不足時のみ"
+      },
+      "AutoCollapse":
+      {
+        "N": "自動折りたたみ",
+        "Drawing": "描画時にメインバーをたたむ",
+        "Erasing": "消去時にメインバーをたたむ",
+        "Dragging": "メインバーの移動時にたたむ",
+        "OutsideClick": "選択・操作透過中にバーの外を押すとたたむ",
+        "Description": "描画にはペン・図形・レーザーを含みます。下部バーには中央配置も含みます。バー本体・メニュー・属性・ポップアップはバーの外に含まれません。",
+        "Off": "オフ",
+        "NonBottom": "下部バー以外で",
+        "Always": "常に"
+      },
+      "StartUp":
+      {
+        "N": "自動起動と起動時の動作",
+        "AutoStart": "サインイン時に自動起動",
+        "AutoStartE": "現在のユーザーのサインイン時にInkeysを起動します。",
+        "LoadingAnimation": "起動アニメーション",
+        "LoadingAnimationE": "Inkeysの起動中に読み込みアニメーションを表示します。",
+        "StartupEffect":
+        {
+          "N": "起動エフェクト",
+          "Shimmer": "光の流れ",
+          "Aurora": "やわらかな光彩",
+          "PixelAssembly": "ピクセル組み立て"
+        },
+        "SettingEntryAnimation":
+        {
+          "N": "設定を開くアニメーション",
+          "E": "設定画面を開くときのアニメーションを設定します",
+          "Off": "オフ",
+          "First": "初回のみ",
+          "Always": "毎回"
+        },
+        "Link":
+        {
+          "N": "デスクトップにショートカットを作成",
+          "E": "下で選択した名前でデスクトップのショートカットを作成します。",
+          "More": "詳細設定"
+        }
+      },
+      "Appearance":
+      {
+        "N": "外観",
+        "AnimationEnable": "アニメーションを有効化",
+        "AnimationEnableE": "オフにすると、UI3メインバーと設定画面のナビゲーション・ページのアニメーションは即座に完了します。",
+        "AnimationRate": "アニメーション速度",
+        "AnimationRateE": "UI3メインバーと設定画面のアニメーション速度を0.1倍～5.0倍で調整します。",
+        "EdgeLighting": "輪郭の光",
+        "EdgeLightingE": "オフにすると、基本の枠線だけを残し、点光と柔らかな光を無効にします。",
+        "DynamicEdgeLighting": "輪郭の光を動的に表示",
+        "DynamicEdgeLightingE": "カーソルの位置に合わせて光が移動します",
+        "ResetDefault": "既定に戻す",
+        "SettingTheme":
+        {
+          "N": "設定画面のテーマ",
+          "E": "設定ウィンドウのダーク／ライト外観を切り替えます。タイトルバーの切り替えボタンと同期します。"
+        },
+        "BackgroundOpacity":
+        {
+          "N": "メインバー背景の不透明度",
+          "E": "メインバー・メインボタン・ページ操作部の背景の不透明度を調整します。ポップアップパネルには影響しません。"
+        },
+        "ContentOpacity":
+        {
+          "N": "メインバー内容の不透明度",
+          "E": "メインバー・メインボタン・ページ操作部のアイコンと文字の不透明度を調整します。"
+        },
+        "Theme":
+        {
+          "N": "メインバーのテーマ",
+          "E": "メインバーのダーク／ライト外観を切り替えます。変更はすぐに反映されます。",
+          "Dark": "ダークモード",
+          "Light": "ライトモード"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "タスクバー基準の拡大率",
+          "E": "100%では「基準サイズ」は高さ48 DIP、「実サイズ」はタスクバーの厚みに合わせます。",
+          "Off": "オフ",
+          "Base": "タスクバーの基準サイズ",
+          "Actual": "タスクバーの実サイズ"
+        },
+        "BarZoom":
+        {
+          "N": "メインバーの拡大率",
+          "E": "メインバー・ボタン・PPT操作部の拡大率をすぐに調整します。",
+          "Ind": "{:.2f}倍"
+        }
+      },
+      "Behavior":
+      {
+        "N": "その他の動作",
+        "TopWindow":
+        {
+          "N": "最前面に戻す間隔",
+          "E": "描画していない間、この間隔でウィンドウを最前面に戻します。描画中は一時停止します。間隔を短くすると他のウィンドウに隠れにくくなりますが、CPU使用量は増えます。他のウィンドウが繰り返し重なる場合は、プラグインのSuperTopをお試しください。",
+          "100ms": "最短（100 ms）",
+          "500ms": "短い（500 ms）",
+          "1s": "やや短い（1秒）",
+          "3s": "標準（3秒）",
+          "5s": "やや長い（5秒）",
+          "10s": "長い（10秒）",
+          "30s": "最長（30秒）"
+        },
+        "RightClickClose": "メインアイコンの右クリックで終了",
+        "RightClickCloseE": "確認ダイアログを表示します。",
+        "DrawingRetract": "ペンで描画中にメインバーをたたむ",
+        "ErasingRetract": "消しゴム使用中にメインバーをたたむ",
+        "DraggingRetract": "メインバーの移動時にたたむ",
+        "CheckingRetract": "バーの外を押すとたたむ",
+        "CheckingRetractE": "選択・操作透過モードで、メインバー以外をクリックした場合に限ります。"
+      },
+      "Tentative":
+      {
+        "N": "試験的な機能",
+        "SafeMode":
+        {
+          "N": "クラッシュ時の動作",
+          "E": "Inkeysでクラッシュが発生したときの動作です。",
+          "Mode1": "通知して再起動",
+          "Mode2": "通知せず再起動",
+          "Mode3": "システムのクラッシュ処理に任せる",
+          "Mode4": "そのまま終了",
+          "Note": "起動中のエラーは引き続き通知します。"
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "複数インスタンスの起動を許可",
+          "E": "同じインストールフォルダーから複数のInkeysを起動できます。オフにすると追加起動を防ぎます。すでに実行中のものには影響しません。"
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "描画",
+      "General":
+      {
+        "N": "全般",
+        "MultiTouch":
+        {
+          "N": "複数の指で描画",
+          "E": "複数の指による同時の手書き・描画を許可します。オフの場合は1本の指だけに反応します。"
+        },
+        "PenTailCorrection":
+        {
+          "N": "ストローク終端の補正",
+          "E": "ペンを離すときに筆跡の末端が不自然に折れるのを抑え、自然な書き終わりにします。"
+        },
+        "InkPrediction":
+        {
+          "N": "筆跡の予測",
+          "E": "筆跡の遅れを軽減します。「精密」は続く動きを予測し、「高速」は最新の入力位置まで描き足します。オフでは予測筆跡を描き足しません。",
+          "Precise": "精密",
+          "Fast": "高速",
+          "Disabled": "オフ"
+        }
+      },
+      "Laser":
+      {
+        "N": "レーザーポインター",
+        "MultiTouch":
+        {
+          "N": "複数の指でレーザーを操作",
+          "E": "BETA：複数の指でレーザーポインターを同時に使えます。"
+        },
+        "Particles":
+        {
+          "N": "レーザーの粒子効果",
+          "E": "BETA：レーザーの軌跡の周囲に粒子を表示します。"
+        }
+      },
+      "Haptics":
+      {
+        "N": "ペンの触覚フィードバック",
+        "Drawing": "描画時の触覚フィードバック",
+        "Buttons": "ボタンの触覚フィードバック"
+      },
+      "Cursor":
+      {
+        "N": "カーソル",
+        "EntryDescription": "入力デバイスごとに、描画中に表示するカーソルを設定し、プレビューで確認します。",
+        "Devices": "デバイス別の設定",
+        "PenDevices": "ペンタブレットの識別",
+        "Mouse":
+        {
+          "N": "マウス",
+          "E": "マウスとタッチパッド。"
+        },
+        "Touch":
+        {
+          "N": "タッチ",
+          "E": "指が触れている間、指ごとにカーソルを表示し、離すと消えます。"
+        },
+        "ScreenPen":
+        {
+          "N": "画面用ペン",
+          "E": "画面上に直接書き込むペンです。"
+        },
+        "Tablet":
+        {
+          "N": "ペンタブレット",
+          "E": "外付けのペンタブレットと、入力元を識別できないペン。"
+        },
+        "Style":
+        {
+          "None": "カーソルなし",
+          "Arrow": "マウス",
+          "Pen": "ペン",
+          "HighlightPen": "ペン（強調）",
+          "Dot": "小さな点",
+          "HighlightDot": "小さな点（強調）"
+        },
+        "InjectedMouse":
+        {
+          "N": "ドライバーが挿入するペンタブレットを識別",
+          "E": "Windows Ink を使わないペンタブレットは、通常「ドライバーが挿入したマウス」として入力されます。オンにすると、このマウスにペンタブレットのカーソル設定を適用します。リモート デスクトップなど、同様にマウスを挿入するソフトウェアも誤って識別される場合があります。",
+          "Unavailable": "このシステムでは入力元を区別できないため、この設定は使用できません。"
+        },
+        "FineControl": "詳細制御",
+        "DotHideOnContact":
+        {
+          "N": "ペンを置いたときに小さな点のカーソルを自動的に隠す",
+          "E": "通常と強調表示の両方の小さな点に適用されます。選択したデバイスが接触するとカーソルが隠れ、ホバー中は表示されます。",
+          "Off": "オフ",
+          "ScreenPen": "画面ペンのみ",
+          "Tablet": "ペンタブレットのみ",
+          "Both": "画面ペンとペンタブレット"
+        },
+        "Note": "画面用ペン、ペンタブレット、タッチでは、「マウス」はアプリ自身が描画する矢印です。蛍光ペンとレーザーポインターのカーソル、図形ツール、消しゴム専用のカーソルは、これらの設定の影響を受けません。"
+      },
+      "Effect":
+      {
+        "N": "描画環境",
+        "Device":
+        {
+          "N": "操作モードを選択",
+          "Touch": "大型タッチ画面モード",
+          "MousePen": "デスクトップモード",
+          "TouchE": "教室や会議室などで、大型タッチ画面に直接書き込み、操作する場合に適しています。",
+          "MousePenE": "PC・タブレット・マウスで操作する大型画面向けです。マウス・ペン・ペンタブレット・タッチ操作に対応します。"
+        }
+      },
+      "Touch":
+      {
+        "N": "タッチ",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "途切れた線をつなぐ",
+          "E": "タッチで書いている途中に接触が一瞬途切れ、同じ方向に戻った場合、2つの筆跡を1本につなぐことを試みます。オフにすると、指を離すたびにストロークを終了します。"
+        }
+      },
+      "Eraser":
+      {
+        "N": "消しゴム",
+        "Automatic": "速度連動の消しゴムを有効化",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "細かな消去",
+          "DemoFineDescription": "補助線に沿ってゆっくり消すと、近くの印や線を残せます。",
+          "DemoSweepTitle": "広い範囲の消去",
+          "DemoSweepDescription": "往復して消し続けると太さが増し、広い範囲の筆跡を素早く消せます。",
+          "EntryDescription": "消したい範囲に合わせて太さを自動調整",
+          "Introduction": "画面サイズ・入力デバイス・動きから消去の意図を推定し、消しゴムの大きさを動的に調整します。",
+          "BasicSettings": "基本設定",
+          "EnabledDevices": "有効にするデバイス",
+          "FineControl": "細かな調整",
+          "SizeWarningTitle": "信頼できる画面サイズが取得できません",
+          "SizeWarningDescription": "描画先画面の正確な物理サイズが不明なため、タッチと画面用ペンではDPIから推定します。消しゴムの大きさが意図に合わない場合があります。"
+        },
+        "PalmEraser":
+        {
+          "N": "手のひら消しゴム",
+          "EntryDescription": "広い面積のタッチで、ツールを切り替えずに消去",
+          "Introduction": "手のひらで画面に触れると、ツールを切り替えずに消去できます。接触後の認識時間内に消しゴムの大きさを決めます。離しても元のツールはそのままです。",
+          "Enabled": "手のひら消しゴムを有効化",
+          "SizeWarningTitle": "信頼できる画面サイズが取得できません",
+          "SizeWarningDescription": "描画先画面の正確な物理サイズが不明なため、100×100システムDIPを基準面積のしきい値として使います。手のひら消しゴムは利用できますが、実際の大きさは異なる場合があります。倍率で調整してください。",
+          "RecognitionWindow": "認識時間",
+          "RecognitionWindowDescription": "触れてからこの時間内に手のひらを認識し、大きさを決めます。条件を満たすと消去を開始します。",
+          "Threshold": "タッチ面積のしきい値",
+          "ThresholdDescription": "倍率を上げると誤認識が減り、下げると手のひらを認識しやすくなります。",
+          "ThresholdSizePhysical": "現在のしきい値：{:.2f}cm × {:.2f}cm（{:.0f}px × {:.0f}px）",
+          "ThresholdSizePixels": "現在のしきい値：{:.0f}px × {:.0f}px",
+          "PreviewTitle": "タッチ面積の例（描画先画面）",
+          "PreviewDescription": "枠内の面積は描画先画面のピクセルしきい値です。プレビューの縦横比を切り替えられます。別の画面では実際の大きさが異なる場合があります。",
+          "PreviewEstimated": "100×100システムDIPの基準面積と現在の倍率から推定したピクセルしきい値です。プレビューの縦横比を切り替えられます。実際の大きさは異なる場合があります。",
+          "PreviewUnavailable": "描画先画面のサイズ情報がまだ利用できないため、面積の例を表示できません。",
+          "EnabledTools": "対象ツール",
+          "ParallelWritingMultiTouchNote": "複数の指での描画が無効なため、消去と描画を同時に行えません。",
+          "ParallelWritingLaserMultiTouchNote": "複数の指でのレーザー操作が無効なため、レーザーでは消去と描画を同時に行えません。",
+          "ParallelWriting": "消去と描画を同時に行う",
+          "ParallelWritingDescription": "手のひら消しゴム使用中も他の入力を中断せず、描画を続けられます。2人以上で同時に書く場合に適しています。"
+        },
+        "Input":
+        {
+          "MouseLeft": "マウス左ボタン",
+          "MouseRight": "マウス右ボタン",
+          "Touch": "タッチ",
+          "PenTip": "ペン先",
+          "PenTail": "ペン後端"
+        },
+        "Kind":
+        {
+          "Fixed": "太さ固定",
+          "Speed": "速度連動"
+        },
+        "ResponseFor": "速度応答の対象",
+        "Response":
+        {
+          "Auto": "自動判別",
+          "ScreenPen": "画面用ペン",
+          "Digitizer": "ペンタブレット"
+        },
+        "TouchArea":
+        {
+          "N": "速度連動消しゴムのタッチ面積補正",
+          "E": "消しゴムを常に指より少し大きくし、指でカーソルが隠れないようにします。",
+          "Note": "大型画面での利用は推奨しません。"
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "プリセット",
+      "StartupPlacement":
+      {
+        "N": "起動時の位置",
+        "E": "中央の下部バーはメインバーを展開して表示します。左下・右下のフローティング表示ではメインボタンのみを表示します。",
+        "CenteredBottomBar": "中央の下部バー",
+        "BottomLeftFloating": "左下にフローティング表示",
+        "BottomRightFloating": "右下にフローティング表示"
+      }
+    },
+    "Performance":
+    {
+      "N": "パフォーマンス",
+      "FrameRateSection": "フレームレート",
+      "InterfaceFrameRate":
+      {
+        "N": "画面UIのフレームレート",
+        "E": "メインバー・設定・ページ操作部の滑らかさを調整します。下げるとリソース使用量を減らせます。変更はすぐに反映されます。"
+      },
+      "CanvasFrameRate":
+      {
+        "N": "キャンバスのフレームレート",
+        "E": "手書き中のキャンバスの更新頻度を調整します。高くすると筆跡が滑らかになりますが、リソース使用量が増えます。"
+      },
+      "RenderingSection": "描画処理と互換性",
+      "DirectComposition":
+      {
+        "N": "DirectCompositionを優先",
+        "E": "対応するデバイスではシステムの合成機能でキャンバスを表示し、利用できない場合は互換方式に自動で切り替えます。"
+      }
+    },
+    "Linkage":
+    {
+      "N": "連携",
+      "PPT": "PPT 連携",
+      "CoreVersion": "コアバージョン {}"
+    },
+    "Experimental":
+    {
+      "N": "ラボ",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "UIの文字サイズに小数ピクセルを許可",
+          "E": "オフの場合、静止中のメインバーや操作部の文字サイズを整数ピクセルに切り下げます。拡大縮小や遷移のアニメーションは滑らかに変化します。すぐに反映されます。"
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "描画のハードウェアアクセラレーション",
+          "E": "GPUでキャンバス描画を高速化します。オフの場合はソフトウェア描画を使います。",
+          "Note": "描画の不具合や大きな遅延がある場合はオフをお試しください。再起動後に反映されます。"
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Zhaoxin向け互換モードを有効化",
+          "E": "Zhaoxin GPUで互換性のあるアップロード方式を使います。他のGPUには影響しません。オフにして描画性能を比較できます。"
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "ペンの触覚フィードバックを診断",
+          "E": "ペン入力・ボタンの要求・触覚デバイスへの送信結果を出力し、振動しない原因の特定を補助します。"
+        },
+        "TouchArea":
+        {
+          "N": "入力と消しゴムの診断出力",
+          "E": "画面のEDID・解像度・DPI、タッチ面積・入力座標・デバイス種別・消しゴムの大きさのスナップショットを、出力頻度を抑えて表示します。"
+        },
+        "PptCOM":
+        {
+          "N": "PptCOMのコンソール出力",
+          "E": "PptCOMの診断情報をコンソールに出力します。"
+        },
+        "Draw3":
+        {
+          "N": "Draw3のコンソール出力",
+          "E": "Draw3のデバイスとドライバー環境をコンソールに出力します。"
+        },
+        "Cursor":
+        {
+          "N": "カーソルのデバッグ情報",
+          "E": "カーソル入力の所属と実際の描画結果をコンソールに出力します。"
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "プラグイン",
+      "PPTHelper":
+      {
+        "N": "PPT発表アシスタント 3 Lite",
+        "E": "スライドショー中にページ操作とペンのボタンを表示します。ページごとに独立したキャンバスがあり、書き込みをそのページに固定できます。元の機能や外部デバイスの使用には影響しません。",
+        "VersionError": "バージョン不明（プラグインエラー）",
+        "Solve": "解決方法",
+        "Sync": "連動して調整",
+        "Reset": "リセット",
+        "Tip": "放映中のプロセスを正しく検出するには、InkeysとPowerPoint/WPSの実行権限をそろえてください。問題が続く場合は解決方法をご覧ください。",
+        "Warn": "PowerPoint/WPSが常に管理者として実行する設定になっています。スライドショーを検出してPPT連携を使うには、Inkeysも管理者として実行する必要があります。発表ソフトを常に管理者として実行したくない場合は解決方法をご覧ください。",
+        "Error": "プラグインを読み込めませんでした。.NET Framework 4.xが未導入か、システムのCOM環境に問題がある可能性があります。\n詳細：",
+        "BasicLogic":
+        {
+          "N": "基本動作",
+          "LoadPage": "読み込みページを表示",
+          "LoadPageE": "この機能は無効です。PPTの読み込みページは表示しません。"
+        },
+        "WidgetDisplay":
+        {
+          "N": "操作部の表示",
+          "BottomBoth": "下部両端の操作部を表示",
+          "MiddleBoth": "中央両端の操作部を表示",
+          "BottomMiddle": "下部メインバーの操作部を表示",
+          "IdleFade": "操作がないときに薄くする",
+          "IdleFadeE": "スライドショー中、選択したコントロールは操作がないと薄くなり、ポインターを重ねる、クリックする、ドラッグすると元に戻ります。外部操作でページを切り替えた場合もページ操作コントロールが薄くなります。メインバーは下部ドック時（中央配置を含む）に設定時間の経過後のみ薄くなり、付属パネルを開いている間は通常の不透明度を保ちます。",
+          "IdleFadeOff": "オフ",
+          "IdleFadeSeconds": "{} 秒",
+          "IdleFadeBottomPair": "左右の下部",
+          "IdleFadeMiddlePair": "左右の中央",
+          "IdleFadeMainBar": "メインバー（下部ドック時のみ）"
+        },
+        "WidgetPosition":
+        {
+          "N": "操作部の位置",
+          "Reset": "操作部の位置をリセット",
+          "Remember": "操作部の位置を記憶"
+        },
+        "WidgetScale":
+        {
+          "N": "操作部の拡大率",
+          "Ind": "{:.2f}倍",
+          "Page":
+          {
+            "BottomSideBoth": "下部両端の操作部の拡大率",
+            "MiddleSideBoth": "中央両端の操作部の拡大率"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "下部メインバーの操作部の拡大率"
+          }
+        },
+        "Tentative":
+        {
+          "N": "試験的な機能",
+          "CloseWpp": "停止した孤立WPP発表プロセスの終了を許可",
+          "CloseWppE": "再起動後に反映されます。WPSのスライドショー終了後もWPPプロセスが残り、次の発表を検出できない場合があります。このオプションで残ったプロセスの終了を補助します。プロセスを終了する前に、未保存の内容がないか確認してください。",
+          "AutoTakeOver": "発表の書き込みを引き継ぐ",
+          "AutoTakeOverE": "PPT標準の書き込み機能を検出すると、Inkeysの描画モードに切り替え、PPT標準の書き込みをオフにします。",
+          "AutoTakeOverOnce": "発表ごとに1回だけ引き継ぐ",
+          "AutoTakeOverOnceE": "PPT標準の書き込み機能を使いたい場合に、繰り返し切り替わるのを防ぎます。",
+          "AutoTakeOverExpand": "引き継ぎ後にメインバーを展開",
+          "EnablePageButtonLongPress": "ページボタンの長押し連続切り替え"
+        },
+        "SupportNote": "Microsoft PowerPoint 2007以降、およびKingsoft WPS 2013以降に対応します。"
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "UIAccessを使い、通常のアプリや、タスクバーなど対応するシステムUIの手前にInkeysを表示します。",
+        "Warn": "SuperTopはBETA機能のため、不安定になる場合があります。\n起動時に権限の昇格を要求するため自身を再実行し、その後に新しいインスタンスを起動します。\n処理に失敗して管理者権限で起動すると、PPT連携に影響する場合があります。\nUACが表示された場合は、プログラムの入手元と発行元を確認してから許可してください。\nセキュリティソフトが警告した場合は、入手元と署名を確認し、警告を一律に誤検出と判断しないでください。",
+        "Capability":
+        {
+          "N": "基本機能",
+          "SuperTop": "SuperTopを有効化",
+          "SuperTopE1": "3段階の起動処理でウィンドウを最前面に保持します。\n（現在有効）",
+          "SuperTopE2": "3段階の起動処理でウィンドウを最前面に保持します。\n（現在無効）",
+          "Indicator": "SuperTopの状態表示",
+          "IndicatorE": "SuperTopが有効になると、メインアイコンの右上にピンを表示します。",
+          "SuperTopNote": "再起動後に反映されます。起動時の最前面化が失敗する場合があります。"
+        },
+        "SupportNote": "Windows 8以降に対応します。"
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "教室の一体型端末では、他の白板ソフトのフローティングペンツールを直接閉じられず、複数のツールがデスクトップに重なることがあります。ツールを取り違えて書き込みを続けられなくなる問題を軽減するため、DesktopDrawpadBlockerを用意しました。",
+        "LicenseTitle": "GPLv3 オープンソースプラグイン",
+        "LicenseDescription": "本プラグインは学習・情報交換・研究の目的に限り使用でき、他の目的では使用できません。\nDesktopDrawpadBlocker（同種ソフトのフローティングウィンドウを遮断する補助ツール）は、GPLv3 ライセンスで公開されたオープンソースソフトウェアです。\nGitHub リポジトリで公開されています：https://github.com/Alan-CRL/DesktopDrawpadBlocker\n本プログラムが役立つことを願っていますが、品質について一切保証しません。\n本プラグインを使用すると、本規約に同意し、それに伴う結果や影響について利用者自身が責任を負うものとします。",
+        "UseSection": "プラグインの使用",
+        "EnableTitle": "プラグインを有効化",
+        "EnableDescription": "標準モードでは、プラグインは Inkeys と同時に起動・終了します。",
+        "GeneralSection": "一般設定",
+        "AdministratorTitle": "プラグインを管理者として起動",
+        "AdministratorDescription": "切り替え時はプラグインの応答を待ってください。",
+        "IntervalTitle": "遮断の間隔",
+        "IntervalDescription": "間隔を短くすると、現れたウィンドウをすばやく遮断できますが、CPU の使用量が増えます。",
+        "IntervalShort": "短い（500 ミリ秒）",
+        "IntervalMediumShort": "やや短い（1 秒）",
+        "IntervalMedium": "中（3 秒）",
+        "IntervalMediumLong": "やや長い（5 秒）",
+        "IntervalLong": "長い（10 秒）",
+        "PrecisionSection": "詳細設定",
+        "Seewo3Title": "希沃白板3 のデスクトップペンウィンドウ",
+        "Seewo5Title": "希沃白板5 のデスクトップペンウィンドウ",
+        "Seewo5CTitle": "希沃轻白板（5C）のデスクトップペンウィンドウ",
+        "PincoSidebarTitle": "希沃品课教师端 のサイドバー",
+        "PincoDrawingTitle": "希沃品课教师端 のデスクトップペンウィンドウ",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 の PPT ツール",
+        "YiouTitle": "欧帝白板 のデスクトップペンウィンドウ",
+        "AiClassTitle": "AiClass のデスクトップペンウィンドウ",
+        "ClassInXTitle": "ClassIn X のデスクトップペンウィンドウ",
+        "IntelligentClassTitle": "天喻教育云互动课堂 のデスクトップペンウィンドウ",
+        "ChangYan4Title": "畅言智慧课堂4.0 のデスクトップペンウィンドウ",
+        "ChangYan5Title": "畅言智慧课堂5.0 のデスクトップペンウィンドウ",
+        "Iclass30SidebarTitle": "C30智能教学 のサイドバー",
+        "Iclass30DrawingTitle": "C30智能教学 のデスクトップペンウィンドウ",
+        "SeewoDesktopSidebarTitle": "希沃桌面 のサイドバー",
+        "SeewoDesktopDrawingTitle": "希沃桌面 のデスクトップペンウィンドウ",
+        "IncludesPptNote": "PPT の操作部も含みます。",
+        "RestoresWhiteboardNote": "PPT の操作部も含みます。ホワイトボード使用時の自動復元に対応します。",
+        "WindowTrackingNote": "PPT の操作部も含みます。ホワイトボード使用時の自動復元とウィンドウ追跡に対応します。",
+        "SeewoDesktopVersionsNote": "1.0/2.0/2.5/3.0 の普通教育版・高等教育版に共通で対応します。",
+        "AdministratorNote": "DDB の管理者権限が必要です。"
+      },
+      "LnkHelper":
+      {
+        "N": "ショートカット保守",
+        "E": "更新で実行ファイル名が変わっても、既存のInkeysショートカットが使えるように起動時に確認します。デスクトップにショートカットがない場合に作成することもできます。",
+        "Capability":
+        {
+          "N": "基本機能",
+          "FixLnk": "デスクトップショートカットのリンク先と名前を修正",
+          "FixLnkE": "起動時に既存のデスクトップショートカットを修正します。自動更新で実行ファイル名が変わることがあるため、有効化を推奨します。"
+        },
+        "Expansion":
+        {
+          "N": "追加設定",
+          "CreateLnk": "起動時にデスクトップのショートカットを作成",
+          "CreateLnkE": "起動時にデスクトップのショートカットがない場合は作成します。"
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "コンポーネント",
+      "SoftwareSection": "アプリ",
+      "SystemSection": "システム",
+      "KeyboardSection": "キー操作",
+      "RollCallSection": "指名ツール",
+      "ClassIslandSection": "ClassIsland 連携",
+      "ExplorerTitle": "エクスプローラーを開く",
+      "TaskManagerTitle": "タスクマネージャーを開く",
+      "ControlPanelTitle": "コントロールパネルを開く",
+      "ShowDesktopTitle": "デスクトップを表示",
+      "LockScreenTitle": "画面をロック",
+      "EscapeTitle": "Esc を押す",
+      "AltF4Title": "Alt+F4 を押す",
+      "IslandCaller1Title": "IslandCaller 1 ランダム指名",
+      "IslandCaller2Title": "IslandCaller 2 1人を指名",
+      "SecRandom1Title": "SecRandom 1 即時抽選",
+      "SecRandom2Title": "SecRandom 2 即時抽選",
+      "SecRandom2CompatTitle": "SecRandom 2 即時抽選（互換）",
+      "NamePickerTitle": "NamePicker ランダム指名",
+      "ClassIslandSettingsTitle": "ClassIsland アプリ設定",
+      "ClassIslandProfileTitle": "ClassIsland プロファイル編集",
+      "ClassIslandSwapTitle": "ClassIsland 授業をすばやく切り替え",
+      "IslandCallerRequirement": "ClassIsland の IslandCaller プラグインのインストールと、ClassIsland URL プロトコルの登録が必要です。",
+      "SecRandomUrlRequirement": "SecRandom URL プロトコルの登録が必要です。",
+      "SecRandomIpcRequirement": "SecRandom IPC プロトコルの登録が必要です。",
+      "NamePickerRequirement": "NamePicker URL プロトコルの登録が必要です。",
+      "ClassIslandProtocolNote": "ClassIsland のアプリ設定で URL ナビゲーションプロトコルを登録してください。",
+      "ClassIslandSwapNote": "ClassIsland で時間割が読み込まれていない場合、このコンポーネントは機能しません。"
+    },
+    "DesktopShortcut":
+    {
+      "N": "ショートカット",
+      "ApplicationSection": "アプリケーション",
+      "WhiteboardSection": "ホワイトボード",
+      "NameLabel": "ショートカット名",
+      "CustomName": "カスタム",
+      "CustomHint": "ショートカット名を入力",
+      "InvalidName": "有効な Windows ファイル名を入力してください。空の名前、無効な文字、予約名、長すぎるパスは使用できません。",
+      "NameConflict": "アプリケーションとホワイトボードのショートカットには異なる名前を指定してください。",
+      "PresetWhiteboard": "Inkeys ホワイトボード",
+      "PresetAnnotation": "Inkeys(注釈)",
+      "PresetAnnotationTool": "Inkeys(注釈ツール)"
+    },
+    "HotKey":
+    {
+      "N": "ショートカットキー",
+      "E": "以下の固定キーの組み合わせを個別に有効・無効にできます。キーの変更にはまだ対応していません。\n全体切り替え以外は書き込み中にだけ有効です。設定の文字入力とモーダルダイアログを優先し、選択・操作透過モードでは現在のアプリに渡します。\n全体切り替えは通常の設定編集中も有効です。Inkeysのモーダルダイアログ中は動作を一時停止しますが、キーは予約したままです。AltGrはCtrl + Altと重なる場合があるため、必要に応じて全体切り替えを無効にしてください。\nPPTのページ操作をキーで引き継ぐことはありません。",
+      "ToggleAnnotationN": "書き込みの全体切り替え",
+      "ToggleAnnotationE": "書き込みと選択を切り替えます。統合モードでは選択時に筆跡を残し、分離モードでは現在のページを先に消去します。戻ると直前の書き込みツールを復元しますが、画面固定は復元しません。",
+      "UndoN": "元に戻す",
+      "UndoE": "現在のページの操作を元に戻します。押し続けると繰り返します。履歴が空でも背後のアプリには送信しません。",
+      "RedoYN": "やり直す",
+      "RedoYE": "現在のページの操作をやり直します。押し続けると繰り返します。このキーとCtrl + Shift + Zは個別に設定できます。",
+      "RedoShiftZN": "やり直す（別のキー）",
+      "RedoShiftZE": "Ctrl + Yと同じやり直しを実行します。個別に有効・無効にできます。",
+      "ClearN": "現在のページを消去",
+      "ClearE": "1回目はツールを保ったまま消去し、空のページでも選択には入りません。Ctrlを押したままDeleteを離し、もう一度Deleteを押すと、どちらのモードでも選択に入ります。Deleteの長押しは2回と数えません。途中で描画や他の操作を行うと、この手順はリセットされます。",
+      "FreezeN": "画面固定",
+      "FreezeE": "画面の固定を切り替えます。",
+      "Registering": "全体切り替えを登録中",
+      "Disabling": "全体切り替えを無効化中",
+      "UnregisterFailed": "全体切り替えの登録解除に失敗しました。キーは予約されたままです",
+      "Registered": "全体切り替えは有効です",
+      "Disabled": "全体切り替えは無効です",
+      "NotRunning": "キーボードサービスが未起動です",
+      "RegisterFailed": "全体切り替えを登録できませんでした。他のアプリが使用している可能性があります",
+      "SynchronizationPending": "キーの状態を同期しています。管理者に昇格していないウィンドウに切り替えてキーを離し、再試行してください。",
+      "HookReady": "書き込みのショートカットが利用できます",
+      "HookFailed": "キーボードフックが未導入のため、書き込みのショートカットは利用できません",
+      "FreezeNote": "PPTと白板では利用できません。利用できない場合も、同じキーを背後のアプリに渡しません。"
+    },
+    "Community":
+    {
+      "N": "コミュニティ"
+    },
+    "Sponsor":
+    {
+      "N": "支援する",
+      "Thanks": "ご支援後、開発者に連絡すると、お礼としてコミュニティページにニックネームと支援額を掲載できます。"
+    },
+    "RestartSoftware":
+    {
+      "N": "再起動"
+    },
+    "ExitSoftware":
+    {
+      "N": "終了"
+    },
+    "DebugSoftware":
+    {
+      "N": "デバッグ",
+      "RenderingSection": "UI3描画のデバッグ",
+      "DirtyRegions":
+      {
+        "N": "更新領域のデバッグ",
+        "E": "UI3が各フレームで実際に送信した更新領域の境界を表示します。"
+      },
+      "FrameRate":
+      {
+        "N": "フレームレートを表示",
+        "E": "直前1秒の平均フレームレートと待機なしのフレームレートを毎秒更新します。"
+      },
+      "ConsoleSection": "コンソール出力",
+      "CanvasInformation": "キャンバスの初期化情報",
+      "DisplayInformation": "ディスプレイと EDID"
+    },
+    "Update":
+    {
+      "Check": "更新を確認",
+      "Channel":
+      {
+        "LTS": "安定版チャネル",
+        "Insider": "プレビューチャネル",
+        "Dev": "開発チャネル",
+        "Canary": "早期版チャネル",
+        "Other": "その他のチャネル"
+      },
+      "NotStarted": "更新確認は未開始です",
+      "ObtainInformation": "更新情報を取得中",
+      "InformationFail": "更新情報を取得できませんでした",
+      "InformationDamage": "取得した更新情報が破損しています",
+      "InformationUnStandardized": "更新情報の形式が正しくありません",
+      "Downloading": "更新をダウンロード中（回線{}）",
+      "DownloadFail": "最新版をダウンロードできませんでした",
+      "DownloadDamage": "ダウンロードしたファイルが破損しています",
+      "Restart": "再起動して最新版に更新",
+      "Latest": "すでに最新バージョンです",
+      "Newer": "公式の最新版より新しいバージョンです",
+      "New": "新しいバージョンがあります",
+      "Repair": "修復を試す",
+      "ManualDownload": "最新版を手動ダウンロード",
+      "UpdateNow": "今すぐ更新"
+    }
+  }
+}

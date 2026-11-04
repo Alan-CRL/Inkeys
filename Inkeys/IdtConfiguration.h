@@ -19,12 +19,13 @@ struct SetListStruct
 	int selectLanguage;
 	// en-US 0
 	// zh-CN 1
-	// zh-TW 2
+	// zh-TW 2；新增地区索引参见 IdtI18nLocales.h，既有值不迁移。
 
 	bool startUp;
 
 	int SetSkinMode, SkinMode;
-	float settingGlobalScale;
+	bool settingDarkMode = false; // 旧配置默认保持浅色，只影响设置窗口。
+	int settingEntryAnimation = 1; // 0 关闭，1 本进程首次打开，2 始终。
 
 	int topSleepTime;
 	bool RightClickClose;
@@ -137,11 +138,6 @@ struct SetListStruct
 #pragma region 插件
 	struct
 	{
-		bool createLnk, correctLnk;
-	}shortcutAssistant;
-
-	struct
-	{
 		struct
 		{
 			IdtAtomic<bool> enable;
@@ -159,7 +155,7 @@ string CaptureSettingJson();
 bool WriteSettingJson(const string& jsonContent);
 bool WriteSetting();
 
-// PPT 加载页的配置和实现保留，样式重做前统一禁用。
+// PPT 加载页实现保留且固定禁用，旧配置不能重新开启。
 inline constexpr bool kPptLoadingPageEnabled = false;
 
 struct PptComSetListStruct
@@ -240,8 +236,8 @@ struct DdbInteractionSetListStruct
 		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20260502a";
-		DdbSHA256 = "24de028e1a429fd12c82ce8f807ba67ecfe8ce8f68086e284ea8d731951f1a4e";
+		DdbEdition = L"20261019a";
+		DdbSHA256 = "8ca39cfc3d29ea42d4c79850e177637ecfb76bd61885cff39e451f0a46da82a1";
 
 		// -----
 

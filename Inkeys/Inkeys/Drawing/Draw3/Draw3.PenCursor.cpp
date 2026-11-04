@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.DiagnosticOutput.h"
+#include "Draw3.CursorSettings.h"
 #include <windows.h>
 
 #include <algorithm>
@@ -25,6 +26,39 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> drawingCursorTraceEnabled = false;
 		std::mutex drawingCursorTraceMutex;
 		DrawingCursorDiagnosticVisualState drawingCursorDiagnosticVisual = {};
+
+		// 把设备样式应用到软/硬笔的光标外观：不改变热点，只改变几何与描边。
+		// Arrow 为自绘的白底黑边箭头（鼠标设备的 Arrow 是真实系统光标，不经过这里）。
+		void ApplyCursorStyle(DrawingCursorAppearance& appearance, CursorStyle style, float scale) noexcept
+		{
+			if (style == CursorStyle::Arrow)
+			{
+				appearance.shape = DrawingCursorShape::Arrow;
+				appearance.width = kCursorArrowWidthDip * scale;
+				appearance.height = kCursorArrowHeightDip * scale;
+				appearance.centerOffsetX = appearance.width * 0.5f;
+				appearance.centerOffsetY = appearance.height * 0.5f;
+				appearance.red = appearance.green = appearance.blue = 1.0f;
+				appearance.opacity = 1.0f;
+				appearance.fillAlpha = 1.0f;
+				appearance.outlineWidth = CursorArrowOutlineWidthPx(scale);
+				appearance.outlineOpacity = 1.0f;
+				appearance.outlineRed = appearance.outlineGreen = appearance.outlineBlue = 0.0f;
+				return;
+			}
+			if (IsPenCursorStyle(style))
+			{
+				appearance.shape = DrawingCursorShape::PenIcon;
+				appearance.width = appearance.height = kCursorPenIconDip * scale;
+				appearance.centerOffsetX = appearance.width * 0.5f;
+				appearance.centerOffsetY = appearance.height * 0.5f;
+			}
+			const bool highlight = IsHighlightedCursorStyle(style);
+			appearance.outlineWidth = (highlight ? kCursorHighlightEdgeDip : kCursorPlainEdgeDip) * scale;
+			appearance.outlineOpacity = highlight ? 1.0f : appearance.opacity * appearance.fillAlpha;
+			appearance.outlineRed = appearance.outlineGreen = appearance.outlineBlue =
+				highlight ? 0.96f : 184.0f / 255.0f;
+		}
 
 		bool FloatEqual(float left, float right) noexcept
 		{
@@ -289,7 +323,7 @@ namespace Inkeys::Drawing::Draw3
 		bool penIconAllowed, float dpiScale) noexcept
 	{
 		if (productSettings)
-			mouseUsesSystemCursor = productSettings->mouseStyle == MouseCursorStyle::System;
+			mouseUsesSystemCursor = productSettings->mouse == CursorStyle::Arrow;
 		DrawingCursorVisual visual;
 		const DrawingCursorSample* sample = SelectPrimarySample(
 			penSample, mouseSample, pointerAuthority);
@@ -302,18 +336,33 @@ namespace Inkeys::Drawing::Draw3
 			return visual;
 		}
 		const bool pen = sample == &penSample;
+		// 非 Windows Ink 数位板以驱动注入的鼠标到达；窗口已按开关把它标记为 ExternalPen 来源。
+		const bool tabletMouse = !pen && productSettings && productSettings->injectedMouseAsTablet &&
+			sample->source.kind == SpeedEraser::SourceKind::ExternalPen;
+		// Conflict/Unknown 只回退视觉场景，绝不改写样本身份或橡皮响应。
+		const bool screenPen = pen &&
+			sample->source.recognition != SpeedEraser::SourceRecognition::Conflict &&
+			sample->source.kind == SpeedEraser::SourceKind::IntegratedPen;
+		const CursorDevice device = !pen && !tabletMouse ? CursorDevice::Mouse
+			: screenPen ? CursorDevice::ScreenPen : CursorDevice::Tablet;
+		const CursorStyle style = !productSettings ? CursorStyle::None
+			: device == CursorDevice::Mouse ? productSettings->mouse
+			: screenPen ? productSettings->screenPen : productSettings->tablet;
 		const bool eraser = selectedToolIsEraser || (pen && sample->inverted);
 		if (!eraser)
 		{
-			if (!pen && mouseUsesSystemCursor)
+			if (!pen && !tabletMouse && mouseUsesSystemCursor)
 			{
 				TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
 					false, false,
 					DrawingCursorDiagnosticVisualReason::MouseUsesSystemCursor);
 				return visual;
 			}
-			// Contact 开关只放开普通 Pen/Highlighter；Mouse 应用光标不进入该语义。
-			if (pen && sample->inContact && !drawingCursorDuringContactEnabled)
+			// 产品仅按设备隐藏软/硬笔的小圆点；独立 API 保留旧 Contact 开关。
+			const bool hideContact = productSettings
+				? penIconAllowed && ShouldHideDotCursorOnContact(device, style, productSettings->dotHideOnContact)
+				: !drawingCursorDuringContactEnabled;
+			if ((pen || tabletMouse) && sample->inContact && hideContact)
 			{
 				TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
 					false, false,
@@ -329,28 +378,22 @@ namespace Inkeys::Drawing::Draw3
 		if (eraser && sample->inContact) visual.appearance.opacity = 1.0f;
 		if (productSettings && !eraser)
 		{
-			// Conflict/Unknown 只回退视觉场景，绝不改写样本身份或橡皮响应。
-			const bool screenPen = pen &&
-				sample->source.recognition != SpeedEraser::SourceRecognition::Conflict &&
-				sample->source.kind == SpeedEraser::SourceKind::IntegratedPen;
-			const bool highlight = !screenPen;
 			const float scale = std::isfinite(dpiScale) && dpiScale > 0.0f
 				? std::clamp(dpiScale, 0.25f, 8.0f) : 1.0f;
-			// 类型选择只允许改变软/硬笔，荧光笔矩形和图形圆形保持原几何。
-			if (penIconAllowed && (pen ? productSettings->penStyle == PenCursorStyle::PenIcon
-				: productSettings->mouseStyle == MouseCursorStyle::Drawing))
+			if (penIconAllowed)
 			{
-				visual.appearance.shape = DrawingCursorShape::PenIcon;
-				visual.appearance.width = visual.appearance.height = 24.0f * scale;
-				visual.appearance.centerOffsetX = visual.appearance.width * 0.5f;
-				visual.appearance.centerOffsetY = visual.appearance.height * 0.5f;
+				// 设备样式只作用于软/硬笔；荧光笔矩形、图形圆形和其它工具保持原几何与原高亮规则。
+				ApplyCursorStyle(visual.appearance, style, scale);
 			}
-			visual.appearance.outlineWidth = (highlight ? 1.25f : 0.5f) * scale;
-			visual.appearance.outlineOpacity = highlight ? 1.0f :
-				visual.appearance.opacity * visual.appearance.fillAlpha;
-			const float outline = highlight ? 0.96f : 184.0f / 255.0f;
-			visual.appearance.outlineRed = visual.appearance.outlineGreen =
-				visual.appearance.outlineBlue = outline;
+			else
+			{
+				const bool highlight = !screenPen;
+				visual.appearance.outlineWidth = (highlight ? kCursorHighlightEdgeDip : kCursorPlainEdgeDip) * scale;
+				visual.appearance.outlineOpacity = highlight ? 1.0f :
+					visual.appearance.opacity * visual.appearance.fillAlpha;
+				visual.appearance.outlineRed = visual.appearance.outlineGreen =
+					visual.appearance.outlineBlue = highlight ? 0.96f : 184.0f / 255.0f;
+			}
 		}
 		else if (pen && !eraser && !translucentInkCursorEnabled &&
 			visual.appearance.opacity >= 1.0f)
@@ -417,8 +460,10 @@ namespace Inkeys::Drawing::Draw3
 		bool selectedToolIsEraser, bool selectedToolIsLaser,
 		bool penSampleValid, bool mouseSampleValid,
 		bool mouseUsesSystemCursor, bool touchPanActive,
-		bool realMouseTakeoverDuringTouchPan) noexcept
+		bool realMouseTakeoverDuringTouchPan, bool mouseSampleIsTablet) noexcept
 	{
+		// 开关开启时驱动注入的数位板鼠标按数位板行绘制应用光标，系统箭头必须隐藏。
+		if (mouseSampleIsTablet) mouseUsesSystemCursor = false;
 		// Eraser/Laser 始终由 Draw3 绘制专用光标，不依赖 event-only Touch owner 或 Hover sample。
 		if (selectedToolIsEraser || selectedToolIsLaser) return true;
 		if (touchPanActive)
@@ -578,6 +623,24 @@ namespace Inkeys::Drawing::Draw3
 		visual.y = y;
 		visual.appearance = eraserAppearance;
 		visual.appearance.opacity = 1.0f;
+		return visual;
+	}
+
+	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
+		const DrawingCursorAppearance& penAppearance, CursorStyle style,
+		float dpiScale) noexcept
+	{
+		DrawingCursorVisual visual;
+		if (style == CursorStyle::None || !std::isfinite(x) || !std::isfinite(y) ||
+			!IsValidDrawingCursorAppearance(penAppearance)) return visual;
+		const float scale = std::isfinite(dpiScale) && dpiScale > 0.0f
+			? std::clamp(dpiScale, 0.25f, 8.0f) : 1.0f;
+		visual.visible = true;
+		visual.x = x;
+		visual.y = y;
+		visual.appearance = penAppearance;
+		ApplyCursorStyle(visual.appearance, style, scale);
+		if (!IsValidDrawingCursorAppearance(visual.appearance)) visual.visible = false;
 		return visual;
 	}
 

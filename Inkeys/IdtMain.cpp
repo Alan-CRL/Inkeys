@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @file		IdtMain.cpp
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
@@ -49,7 +49,10 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
 #include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
 #include "Inkeys/UI/StartupPlacement.h"
+#include "Inkeys/UI/StartupPreview.Effect.h"
 #include "PptSettingsPersistence.h"
+#include "ShutdownProgressTrace.h"
+#include "PptWaitingDiagnostics.h"
 #include "resource.h"
 #include <array>
 #include <cstdio>
@@ -62,6 +65,7 @@ int RunShapeCoreTests();
 
 #include "IdtConfiguration.h"
 #include "Inkeys/Drawing/Draw3/Draw3.HapticDiagnostics.h"
+#include "Inkeys/Input/UiPointerDiagnostics.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
@@ -85,6 +89,8 @@ int RunShapeCoreTests();
 #include "Inkeys/Helper/ShutdownSupervisor.h"
 #include "Inkeys/Net/UpdatePathSafety.h"
 #include "Launch/IdtLaunchState.h"
+#include "Launch/IdtSingleInstance.h"
+#include "Launch/IdtCommandPipe.h"
 #include "SuperTop/IdtSuperTop.h"
 
 #include <atomic>
@@ -98,8 +104,8 @@ int RunShapeCoreTests();
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.9924";		// 程序发布版本
-wstring editionDate = L"3.0.0-20261014a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.13203";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261104a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -172,6 +178,18 @@ namespace
 		request.fallback.modality =
 			Inkeys::UI::MessageBox::SystemModality::System;
 		(void)Inkeys::UI::MessageBox::Show(request);
+	}
+
+	bool StartWhiteboardReplacement(const std::wstring& image)
+	{
+		using namespace Inkeys::Launch::CommandPipe;
+		const bool requested = TakeHandoffIntent(LaunchState::openWhiteboard);
+		const bool started = Inkeys::Launch::StartReplacement(image, requested ? WhiteboardArgument : L"");
+		const DWORD replacementError = GetLastError();
+		// 替换失败的这次意图作废；原进程继续时只接收后续新请求。
+		if (!started) (void)server.Start(Inkeys::Launch::logicalRoot);
+		SetLastError(replacementError); // 保留取消提升等原始失败原因。
+		return started;
 	}
 
 	void ReportStartupMilestoneForManualTest(
@@ -342,18 +360,39 @@ namespace
 	}
 }
 
+namespace ShutdownTrace = Inkeys::Shutdown::ProgressTrace;
+
+void RetireLaunchCommands() noexcept
+{
+	Inkeys::Launch::CommandPipe::server.BeginExit();
+}
+
 void SetOffSignal(int signal)
 {
 	if (signal != 1 && signal != 2) return;
 	// 首次请求决定关闭或重启；先建立独立监督，再进入任何可能卡住的清理。
 	if (InterlockedCompareExchange(&offSignalInterop,
 		static_cast<LONG>(signal), 0) != 0) return;
+	// Arm 前只取纯值时刻，不写日志；不能让诊断 I/O 抢在独立退出保护之前。
+	auto* preArmRecorder = ShutdownTrace::PreparedRecorder();
+	const auto acceptedTrace = ShutdownTrace::Capture(preArmRecorder, "set-off");
+	const auto windowTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-window-begin");
+	RetireLaunchCommands();
 	Inkeys::Window::GetService().BeginShutdown();
+	const auto windowEnd = ShutdownTrace::CaptureEnd(preArmRecorder, windowTrace);
+	const auto armTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-arm");
 	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
 		signal == 2 ? Inkeys::Shutdown::Intent::Restart
 		: Inkeys::Shutdown::Intent::Close);
 	const DWORD supervisorError = GetLastError();
+	const auto armEnd = ShutdownTrace::CaptureEnd(preArmRecorder, armTrace, "returned",
+		static_cast<long>(supervisorError));
+	// 纯关闭不再需要实例占位；Arm 已建立 15 秒保护，此后清理变慢也不会挡住用户重新打开。
+	// 重启类意图由监督器接力占位，这里不能释放。
+	if (signal == 1) Inkeys::Launch::ReleaseForClose();
+	const auto publishTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-publish");
 	offSignal.store(signal, std::memory_order_release);
+	const auto publishEnd = ShutdownTrace::CaptureEnd(preArmRecorder, publishTrace);
 	if (supervisor == Inkeys::Shutdown::ArmResult::Failed)
 	{
 		// 首次普通owner的合法Arm已双失败，当前线程接管原截止，先于任何隐藏/日志/清理等待。
@@ -362,17 +401,36 @@ void SetOffSignal(int signal)
 			signal == 2 ? Inkeys::Shutdown::Intent::Restart
 			: Inkeys::Shutdown::Intent::Close);
 	}
-	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
+	// Failed 接管仍先于任何输出；Arm 若未返回，本轮缓冲记录不会假装已经写出。
+	auto& shutdownRecorder = ShutdownTrace::DefaultRecorder();
+	ShutdownTrace::Begin(shutdownRecorder, acceptedTrace);
+	ShutdownTrace::Scope acceptedScope(shutdownRecorder, acceptedTrace);
+	ShutdownTrace::Begin(shutdownRecorder, windowTrace); ShutdownTrace::Emit(shutdownRecorder, windowEnd);
+	ShutdownTrace::Begin(shutdownRecorder, armTrace); ShutdownTrace::Emit(shutdownRecorder, armEnd);
+	ShutdownTrace::Begin(shutdownRecorder, publishTrace); ShutdownTrace::Emit(shutdownRecorder, publishEnd);
+	{
+		ShutdownTrace::Scope trace("set-off-hide");
+		(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
+	}
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
-	Inkeys::UI::RenderPipeline::WakeForStop();
+	{
+		ShutdownTrace::Scope trace("set-off-wake");
+		Inkeys::UI::RenderPipeline::WakeForStop();
+	}
 	if (supervisor == Inkeys::Shutdown::ArmResult::FallbackArmed && IDTLogger)
 		IDTLogger->warn("[退出监督] 外部监督未建立；自身15秒退场已启动，不能保证重启，错误码={}",
 			supervisorError);
 	else if (supervisor != Inkeys::Shutdown::ArmResult::Armed && IDTLogger)
 		IDTLogger->error("[退出监督] 15 秒保护未建立，错误码={}", supervisorError);
 	// 受控退出清理期异常不应再由未处理异常过滤器误判为普通崩溃。
-	CrashHandler::Shutdown();
-	StopMagnifierCoordinator();
+	{
+		ShutdownTrace::Scope trace("set-off-crash-handler");
+		CrashHandler::Shutdown();
+	}
+	{
+		ShutdownTrace::Scope trace("set-off-magnifier");
+		StopMagnifierCoordinator();
+	}
 }
 
 namespace Inkeys::Shutdown
@@ -381,10 +439,14 @@ namespace Inkeys::Shutdown
 	{
 		// 失败清理owner已能自守截止；不能在这里重新建线程、Arm、日志或等待业务清理。
 		LONG intent = InterlockedCompareExchange(&offSignalInterop, 1, 0);
+		// 只有赢得意图的一方释放占位，避免与 SetOffSignal 的释放并发重复关闭同一句柄。
+		const bool wonClose = intent == 0;
 		if (intent == 0) intent = 1;
+		RetireLaunchCommands();
 		Inkeys::Window::GetService().BeginShutdown();
 		if (intent == 1 || intent == 2)
 			offSignal.store(static_cast<int>(intent), std::memory_order_release);
+		if (wonClose) Inkeys::Launch::ReleaseForClose();
 		Inkeys::UI::RenderPipeline::WakeForStop();
 		return PublishedShutdownDeadlineTick();
 	}
@@ -528,6 +590,96 @@ namespace
 		return 0;
 	}
 
+	#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	int RunDesktopShortcutTest() noexcept
+	{
+		namespace fs = std::filesystem;
+		const auto root = fs::temp_directory_path() / (L"inkeys-shortcut-shell-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+		const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		if (FAILED(initialized)) return 1;
+		struct Scope { fs::path root; ~Scope() { std::error_code ec; fs::remove_all(root,ec); CoUninitialize(); } } scope{root};
+		try
+		{
+			int failures=0;
+			auto check=[&](bool value,const char* name) { if (!value) { ++failures; std::fprintf(stderr,"[DesktopShortcutShell] FAIL: %s\n",name); } };
+			const auto exe=GetCurrentExePath();
+			using Kind = Inkeys::Business::DesktopShortcut::Kind;
+			for (auto kind : {Kind::App,Kind::Whiteboard})
+			for (bool correct : {false,true}) for (bool create : {false,true})
+			{
+				const auto directory=root/(std::to_wstring(static_cast<int>(kind))+std::to_wstring(correct)+std::to_wstring(create)); fs::create_directories(directory);
+				const auto selected=directory/L"Selected.lnk", old=directory/L"Old.lnk";
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring(),kind),"independent missing-file guarantee succeeds");
+				check(fs::exists(selected)==create,"only creation switch fills a missing shortcut");
+				check(shortcutAssistant.CreateShortcut(old.wstring(),exe,kind),"create real ShellLink fixture");
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring(),kind),"apply frozen guarantee request");
+				check(fs::exists(old)==!correct && fs::exists(selected)==(correct||create),"correction unifies old names independently");
+				check(shortcutAssistant.CreateShortcut(selected.wstring(),(directory/L"Other.exe").wstring(),kind),"create wrong-target fixture");
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring(),kind),"apply target correction");
+				check(shortcutAssistant.MatchesShortcut(selected.wstring(),exe,kind)==(correct||create),"each enabled guarantee repairs selected wrong target");
+				check(!shortcutAssistant.SetShortcut(L"../invalid",true,true,directory.wstring(),kind),"invalid path does not perform shell operations");
+			}
+			const auto caseDirectory=root/L"case-only"; fs::create_directories(caseDirectory);
+			const auto lower=caseDirectory/L"inkeys.lnk";
+			check(shortcutAssistant.CreateShortcut(lower.wstring(),exe)
+				&& shortcutAssistant.SetShortcut(L"Inkeys",true,false,caseDirectory.wstring())
+				&& fs::exists(lower) && shortcutAssistant.IsShortcutPointingToDirectory(lower.wstring(),exe),
+				"case-only selection cannot create and then delete the same Windows file");
+			const auto unicodeDirectory=root/L"unicode-case"; fs::create_directories(unicodeDirectory);
+			const auto unicodeLower=unicodeDirectory/L"ä.lnk";
+			check(shortcutAssistant.CreateShortcut(unicodeLower.wstring(),exe)
+				&& shortcutAssistant.SetShortcut(L"Ä",true,false,unicodeDirectory.wstring())
+				&& fs::exists(unicodeLower) && shortcutAssistant.IsShortcutPointingToDirectory(unicodeLower.wstring(),exe),
+				"Unicode case-only names cannot delete the same Windows file");
+			const auto mixed=root/L"categories"; fs::create_directories(mixed);
+			const auto appOld=mixed/L"OldApp.lnk", boardOld=mixed/L"OldBoard.lnk", custom=mixed/L"CustomArguments.lnk";
+			auto fixture=[&](const fs::path& path,const std::wstring& arguments,int icon) {
+				IShellLinkW* link=nullptr; IPersistFile* file=nullptr;
+				HRESULT result=CoCreateInstance(CLSID_ShellLink,nullptr,CLSCTX_INPROC_SERVER,IID_IShellLinkW,reinterpret_cast<void**>(&link));
+				if (FAILED(result)) return false;
+				result=link->SetPath(exe.c_str());
+				if (SUCCEEDED(result)) result=link->SetArguments(arguments.c_str());
+				if (SUCCEEDED(result)) result=link->SetIconLocation(exe.c_str(),icon);
+				if (SUCCEEDED(result)) result=link->QueryInterface(IID_IPersistFile,reinterpret_cast<void**>(&file));
+				if (SUCCEEDED(result)) { result=file->Save(path.c_str(),TRUE); file->Release(); }
+				link->Release(); return SUCCEEDED(result);
+			};
+			check(shortcutAssistant.CreateShortcut(appOld.wstring(),exe)
+				&& shortcutAssistant.CreateShortcut(boardOld.wstring(),exe,Kind::Whiteboard)
+				&& fixture(custom,L"-Whiteboard"+std::wstring(1100,L' ')+L"-Other",0),"create two categories and long unknown arguments");
+			check(shortcutAssistant.ClassifyShortcut(custom.wstring(),exe)==ShortcutAssistantClass::Classification::NotOurs,
+				"long argument suffix cannot be truncated into a whiteboard classification");
+			check(shortcutAssistant.SetShortcut(L"App",true,false,mixed.wstring())
+				&& !fs::exists(appOld) && fs::exists(boardOld) && fs::exists(custom),"application correction preserves whiteboard and unknown argument links");
+			check(shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& !fs::exists(boardOld) && fs::exists(mixed/L"App.lnk") && fs::exists(custom)
+				&& shortcutAssistant.MatchesShortcut((mixed/L"Board.lnk").wstring(),exe,Kind::Whiteboard),
+				"whiteboard correction preserves application and reads back its exact arguments/icon");
+			const auto board=mixed/L"Board.lnk";
+			check(shortcutAssistant.CreateShortcut(board.wstring(),exe)
+				&& shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard),"wrong category at selected name is corrected");
+			check(fixture(board,L"-Whiteboard",0) && !shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard)
+				&& shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard),"whiteboard wrong icon is corrected despite matching arguments");
+			check(fixture(board,L"  -whiteboard  ",0)
+				&& shortcutAssistant.ClassifyShortcut(board.wstring(),exe)==ShortcutAssistantClass::Classification::Whiteboard
+				&& shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard),"whiteboard trim/case classification is normalized to canonical contents");
+			check(shortcutAssistant.CreateShortcut((mixed/L"board.lnk").wstring(),exe,Kind::Whiteboard)
+				&& shortcutAssistant.SetShortcut(L"BOARD",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& fs::exists(board),"case-only whiteboard name never deletes its own selected link");
+			const auto wrongExe=mixed/L"Different.exe";
+			check(shortcutAssistant.ClassifyShortcut(board.wstring(),wrongExe.wstring())==ShortcutAssistantClass::Classification::NotOurs,
+				"target classification requires exact executable identity rather than a substring");
+			std::fprintf(stderr,"[DesktopShortcutShell] %s: real ShellLink operations in isolated temporary directories\n",failures ? "FAIL" : "PASS");
+			return failures ? 1 : 0;
+		}
+		catch (...) { std::fputs("[DesktopShortcutShell] FAIL: isolated test exception\n",stderr); return 1; }
+	}
+
+	#endif
+
 	int RunConfigBoundaryTest() noexcept
 	{
 		const char* stage = "setup";
@@ -638,6 +790,24 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: expanded JSON replaced the last readable file\n", stderr);
 				return 1;
 			}
+			stage = "single instance startup preference";
+			for (const char* value : { "false", "true", "0", "1", "\"true\"", "null", "[]", "{}" })
+			{
+				const std::string json=std::string("{\"Config\":{\"AllowMultipleInstances\":")+value+"}}";
+				Inkeys::Config policy;
+				if (!writeBytes(mainConfig,json) || !policy.ReadMini({"Config.AllowMultipleInstances"},true)
+					|| policy.Config.AllowMultipleInstances != (strcmp(value,"true")==0) || readBytes(mainConfig)!=json) return 1;
+			}
+			Inkeys::Config emptyPolicy;
+			if (!writeBytes(mainConfig,"{}") || !emptyPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| emptyPolicy.Config.AllowMultipleInstances) return 1;
+			const std::string legacyPolicy=R"({"Config":{"AllowMultipleInstances":true},"UI":{"Bar":{"ButtonLayout":[]}}})";
+			if (!writeBytes(mainConfig,legacyPolicy) || !emptyPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| !emptyPolicy.Config.AllowMultipleInstances || readBytes(mainConfig)!=legacyPolicy) return 1;
+			emptyPolicy.Config.AllowMultipleInstances=false;
+			Inkeys::Config restoredPolicy;
+			if (!emptyPolicy.Write() || !restoredPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
+				|| restoredPolicy.Config.AllowMultipleInstances) return 1;
 			stage = "touch reconnect configuration";
 			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
 			Inkeys::Config reconnectDefaults;
@@ -658,6 +828,78 @@ namespace
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
 					return 1;
 				}
+			}
+			stage = "PPT idle fade scopes";
+			Inkeys::Config idleDefaults;
+			if (!writeBytes(mainConfig,"{}") || !idleDefaults.ReadAll()
+				|| !idleDefaults.PlugIn.PPTHelper.IdleFadeBottomPair
+				|| !idleDefaults.PlugIn.PPTHelper.IdleFadeMiddlePair
+				|| idleDefaults.PlugIn.PPTHelper.IdleFadeMainBar) return 1;
+			for (int mask=0;mask<8;++mask)
+			{
+				idleDefaults.PlugIn.PPTHelper.IdleFadeBottomPair=(mask&1)!=0;
+				idleDefaults.PlugIn.PPTHelper.IdleFadeMiddlePair=(mask&2)!=0;
+				idleDefaults.PlugIn.PPTHelper.IdleFadeMainBar=(mask&4)!=0;
+				idleDefaults.PlugIn.PPTHelper.IdleFadeSeconds=15;
+				idleDefaults.Experimental.Inkeys3.UI3.BackgroundOpacity=45;
+				idleDefaults.Experimental.Inkeys3.UI3.ContentOpacity=55;
+				Inkeys::Config full,mini;
+				if (!idleDefaults.Write() || !full.ReadAll() || !mini.ReadMini({"PlugIn.PPTHelper"},true)) return 1;
+				for (auto* restored:{&full,&mini})
+					if (restored->PlugIn.PPTHelper.IdleFadeBottomPair.load()!=((mask&1)!=0)
+						|| restored->PlugIn.PPTHelper.IdleFadeMiddlePair.load()!=((mask&2)!=0)
+						|| restored->PlugIn.PPTHelper.IdleFadeMainBar.load()!=((mask&4)!=0)
+						|| restored->PlugIn.PPTHelper.IdleFadeSeconds!=15) return 1;
+				if (full.Experimental.Inkeys3.UI3.BackgroundOpacity!=45
+					|| full.Experimental.Inkeys3.UI3.ContentOpacity!=55) return 1;
+			}
+			for (const char* invalid:{"0","1","\"false\"","null","{}","[]"})
+			{
+				const auto json=std::string("{\"PlugIn\":{\"PPTHelper\":{\"IdleFadeBottomPair\":")+invalid
+					+",\"IdleFadeMiddlePair\":"+invalid+",\"IdleFadeMainBar\":"+invalid+"}}}";
+				Inkeys::Config value;
+				if (!writeBytes(mainConfig,json)||!value.ReadAll()||!value.PlugIn.PPTHelper.IdleFadeBottomPair
+					||!value.PlugIn.PPTHelper.IdleFadeMiddlePair||value.PlugIn.PPTHelper.IdleFadeMainBar) return 1;
+			}
+			stage = "performance and general drawing preferences";
+			Inkeys::Config drawingDefaults;
+			if (!writeBytes(mainConfig, "{}") || !drawingDefaults.ReadAll() ||
+				drawingDefaults.UI.FrameRate != 60 || drawingDefaults.Drawing.FrameRate != 120 ||
+				!drawingDefaults.Drawing.MultiTouchEnabled || !drawingDefaults.Drawing.PenTailCorrectionEnabled ||
+				drawingDefaults.Drawing.InkPredictionMode != 2 || drawingDefaults.Drawing.Laser.MultiTouchEnabled ||
+				drawingDefaults.Drawing.Laser.ParticlesEnabled) return 1;
+			for (const int frameRate : { 30, 60, 120, 240 })
+				for (const int prediction : { 0, 1, 2 })
+				{
+					drawingDefaults.UI.FrameRate = frameRate == 30 ? 30 : 60;
+					drawingDefaults.Drawing.FrameRate = frameRate;
+					drawingDefaults.Drawing.InkPredictionMode = prediction;
+					drawingDefaults.Drawing.MultiTouchEnabled = false;
+					drawingDefaults.Drawing.PenTailCorrectionEnabled = prediction != 0;
+					drawingDefaults.Drawing.Laser.MultiTouchEnabled = true;
+					drawingDefaults.Drawing.Laser.ParticlesEnabled = prediction == 1;
+					Inkeys::Config restoredDrawing;
+					if (!drawingDefaults.Write() || !restoredDrawing.ReadAll() ||
+						restoredDrawing.UI.FrameRate.load() != drawingDefaults.UI.FrameRate.load() ||
+						restoredDrawing.Drawing.FrameRate != frameRate || restoredDrawing.Drawing.InkPredictionMode != prediction ||
+						restoredDrawing.Drawing.MultiTouchEnabled || !restoredDrawing.Drawing.Laser.MultiTouchEnabled ||
+						restoredDrawing.Drawing.PenTailCorrectionEnabled.load() != (prediction != 0) ||
+						restoredDrawing.Drawing.Laser.ParticlesEnabled.load() != (prediction == 1)) return 1;
+				}
+			// 全局关闭不清除激光子偏好；类型错误和超宽整数不能变成合法的离散选项。
+			for (const char* invalid : { "true", "false", "30.0", "\"60\"", "-1", "0", "90", "4294967326", "18446744073709551615" })
+			{
+				const auto json = std::string("{\"UI\":{\"FrameRate\":") + invalid +
+					"},\"Drawing\":{\"FrameRate\":" + invalid + "}}";
+				Inkeys::Config invalidDrawing;
+				if (!writeBytes(mainConfig, json) || !invalidDrawing.ReadAll() ||
+					invalidDrawing.UI.FrameRate != 60 || invalidDrawing.Drawing.FrameRate != 120) return 1;
+			}
+			for (const char* invalid : { "true", "false", "1.0", "\"2\"", "-1", "3", "4294967298", "18446744073709551615" })
+			{
+				Inkeys::Config invalidPrediction;
+				if (!writeBytes(mainConfig, std::string("{\"Drawing\":{\"InkPredictionMode\":") + invalid + "}}") ||
+					!invalidPrediction.ReadAll() || invalidPrediction.Drawing.InkPredictionMode != 2) return 1;
 			}
 			stage = "whiteboard theme preference";
 			Inkeys::Config themeConfig;
@@ -744,6 +986,94 @@ namespace
 				{
 					std::fputs("[ConfigBoundary] FAIL: non-bool Draw3 device preferences were accepted\n", stderr);
 					return 1;
+				}
+			}
+			stage = "palm eraser configuration";
+			{
+				using PalmSettings = Inkeys::Drawing::Draw3::PalmEraser::Settings;
+				struct RestorePalmDeviceDefault final
+				{
+					bool previous = Inkeys::ConfigDetail::GetDefaultLargeScreenDevice();
+					~RestorePalmDeviceDefault() { Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(previous); }
+				} restorePalmDefault;
+				const auto palmSnapshot = [](const Inkeys::Config& value)
+				{
+					const auto& saved = value.Drawing.PalmEraser;
+					PalmSettings result;
+					result.enabled = saved.Enabled.load(); result.thresholdPercent = saved.ThresholdPercent.load();
+					result.recognitionWindowMs = saved.RecognitionWindowMs.load();
+					result.parallelWriting = saved.ParallelWriting.load();
+					result.tools = { saved.Tools.Pen.load(), saved.Tools.HardPen.load(), saved.Tools.Highlighter.load(),
+						saved.Tools.Laser.load(), saved.Tools.Eraser.load(), saved.Tools.Shape.load(), saved.Tools.Brush.load() };
+					return result;
+				};
+				const auto requirePalm = [](bool condition, const char* check)
+				{
+					if (!condition) std::fprintf(stderr, "[ConfigBoundary] FAIL: PalmEraser %s\n", check);
+					return condition;
+				};
+				for (const bool largeScreen : { false, true })
+				{
+					Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(largeScreen);
+					PalmSettings defaults; defaults.enabled = largeScreen;
+					Inkeys::Config fresh, mini;
+					if (!requirePalm(writeBytes(mainConfig, "{}") && fresh.ReadAll()
+						&& mini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(fresh) == defaults
+						&& palmSnapshot(mini) == defaults, "frozen device defaults/ReadMini")) return 1;
+					// 缺省大屏即使没有 EDID 仍开启，并用用户确认的100×100系统DIP阈值。
+					Inkeys::Drawing::Draw3::SpeedEraser::DisplayScale noEdid;
+					noEdid.monitor = 1; noEdid.pixelWidth = 1920; noEdid.pixelHeight = 1080;
+					noEdid.logicalOutputKnown = true;
+					const auto fallbackScale = Inkeys::Drawing::Draw3::PalmEraser::ResolvePreviewScale(noEdid);
+					Inkeys::Drawing::Draw3::PalmEraser::State fallbackState;
+					fallbackState.Begin(palmSnapshot(fresh), fallbackScale,
+						Inkeys::Drawing::Draw3::PalmEraser::ToolCategory::Pen, 1000, 1000);
+					(void)fallbackState.Observe({100,100,100,100,
+						Inkeys::Drawing::Draw3::SpeedEraser::ContactAreaUnits::CanvasPixels}, 1050);
+					if (!requirePalm(fallbackScale.available && fallbackScale.estimated
+						&& fallbackState.active == largeScreen, "EDID loss preserves frozen device default and DIP recognition")) return 1;
+					for (const int window : { 100, 150, 250, 500 }) for (const int percent : { 1, 9, 10, 24, 25, 100, 400 })
+					{
+						auto& saved = fresh.Drawing.PalmEraser;
+						saved.Enabled = !largeScreen; saved.ThresholdPercent = percent;
+						saved.RecognitionWindowMs = window; saved.ParallelWriting = window != 250;
+						const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
+							&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
+						for (size_t index = 0; index < fields.size(); ++index) *fields[index] = (index + window + percent) % 2 == 0;
+						const auto expected = palmSnapshot(fresh);
+						Inkeys::Config restored, partial;
+						partial.UI.FrameRate = 30;
+						if (!requirePalm(fresh.Write() && restored.ReadAll()
+							&& partial.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(restored) == expected
+							&& palmSnapshot(partial) == expected && partial.UI.FrameRate == 30,
+							"valid values and seven tools roundtrip")) return 1;
+						Inkeys::Config copied, assigned; copied = restored; assigned = restored;
+						if (!requirePalm(palmSnapshot(copied) == expected && palmSnapshot(assigned) == expected
+							&& restored.GetUploadInfo().find("PalmEraser") == std::string::npos,
+							"copy/assignment/NoUpload")) return 1;
+						copied.ResetToDefaults();
+						if (!requirePalm(palmSnapshot(copied) == defaults, "reset and Brush default")) return 1;
+					}
+					// 类型和宽整数必须在窄化前拒绝，不能把低32位误读为100或150。
+					for (const char* key : { "ThresholdPercent", "RecognitionWindowMs" })
+						for (const char* invalid : { "true", "false", "250.0", "\"250\"", "-1", "0", "401",
+							"4294967396", "4294967446", "18446744073709551615", "null", "{}", "[]" })
+						{
+							const auto json = std::string("{\"Drawing\":{\"PalmEraser\":{\"") + key + "\":" + invalid + "}}}";
+							Inkeys::Config invalidAll, invalidMini;
+							if (!requirePalm(writeBytes(mainConfig, json) && invalidAll.ReadAll()
+								&& invalidMini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(invalidAll) == defaults
+								&& palmSnapshot(invalidMini) == defaults, "strict integer type/range fallback")) return 1;
+						}
+					for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+					{
+						const auto json = std::string("{\"Drawing\":{\"PalmEraser\":{\"Enabled\":") + invalid
+							+ ",\"ParallelWriting\":" + invalid + ",\"Tools\":{\"Brush\":" + invalid + "}}}}";
+						Inkeys::Config invalidAll, invalidMini;
+						if (!requirePalm(writeBytes(mainConfig, json) && invalidAll.ReadAll()
+							&& invalidMini.ReadMini({ "Drawing.PalmEraser" }) && palmSnapshot(invalidAll) == defaults
+							&& palmSnapshot(invalidMini) == defaults, "strict bool fallback")) return 1;
+					}
 				}
 			}
 			stage = "taskbar scale device defaults";
@@ -1480,12 +1810,30 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
-			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。
+			// 先退出启动链；保存隔离仅用临时目录，FineDial 只检查失效/取消提交。
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			const int stateResult = RunStateModeProductionTest();
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1],-1,L"--desktop-shortcut-test",-1,TRUE)==CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			const int queue = Inkeys::UI::Setting::RunBusinessCancellationProductionTest();
+			return queue ? queue : RunDesktopShortcutTest();
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--setting-business-cancellation-test") == 0)
+		{
+			// 无窗口队列取消回归必须先于配置、单实例及产品 HWND 初始化退出。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Setting::RunBusinessCancellationProductionTest();
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--pen-width-production-test") == 0)
 		{
@@ -1503,6 +1851,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenTaperProductionProbe(); });
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-palm-eraser-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPalmEraserProductionProbe(); });
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-width-test") == 0)
 		{
@@ -1544,6 +1898,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		LocalFree(arguments);
 		return result;
 	}
+	// 资源与真实格式化验证在任何配置、互斥体和产品 UI 初始化前退出。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--i18n-locales-test", -1, TRUE) == CSTR_EQUAL)
+	{
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		return IdtTest::RunI18nLocaleTests();
+#else
+		return 2;
+#endif
+	}
+	// 字体事务只使用无 HWND WARP，必须早于所有产品窗口初始化。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--setting-font-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+	{
+#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		return Inkeys::UI::Setting::RunFontLifecycleProductionTest();
+#else
+		return 2;
+#endif
+	}
 	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--pptcom-resource-verification-test", -1, TRUE) == CSTR_EQUAL)
@@ -1567,6 +1941,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--ui3-multitarget-benchmark", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunUi3MultiTargetOffscreenBenchmark();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-workspace-centering-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3WorkspaceCenteringTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ui3-bottom-dock-transition-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunUi3BottomDockTransitionTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--ui3-input-worker-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunSharedInteractionWorkerTests();
@@ -1626,6 +2006,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
 
+	int singleInstanceTestResult = 0;
+	if (Inkeys::Launch::CommandPipe::TryRunTests(singleInstanceTestResult)) return singleInstanceTestResult;
+	if (Inkeys::Launch::TryRunTests(singleInstanceTestResult))
+		return singleInstanceTestResult || !Inkeys::Launch::CommandPipe::IsSingleInstanceTestDriver()
+			? singleInstanceTestResult : Inkeys::Launch::CommandPipe::RunTests();
+
+	// 只在正常入口预热诊断静态对象；不输出、不取时钟，监督/测试早期模式保持原路径。
+	ShutdownTrace::WarmUp();
+	Inkeys::Business::PptWaitTrace::Prepare();
+
 	// 进程级 owner 兜住启动失败返回；Host/RTS 退出后才停止独立输出器。
 	Inkeys::Drawing::Draw3::DiagnosticOutput::Session draw3DiagnosticOutput;
 	bool pptComConsoleOutputEnabled = false;
@@ -1638,45 +2028,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
-		{
-			int typeRoot = 0;
 
-			if (globalPath.find(L"C:\\Program Files\\") != globalPath.npos || globalPath.find(L"C:\\Program Files (x86)\\") != globalPath.npos || globalPath.find(L"C:\\Windows\\") != globalPath.npos) typeRoot = 2;
-			else
-			{
-				wstring time = getTimestamp();
-				wstring path = globalPath + L"IdtRootCheck" + time;
-
-				error_code ec;
-				try {
-					// 创建空白文件
-					wofstream ofs(path);
-					if (!ofs) typeRoot = 1;
-					ofs.close();
-					if (_waccess(path.c_str(), 0) == -1) typeRoot = 1;
-
-					// 删除文件
-					filesystem::remove(path, ec);
-					if (ec) typeRoot = 1;
-					if (_waccess(path.c_str(), 0) == 0) typeRoot = 1;
-				}
-				catch (const filesystem::filesystem_error)
-				{
-					typeRoot = 1;
-				}
-			}
-
-			if (typeRoot == 1)
-			{
-				ShowStartupMessage(L"The current directory permissions are restricted, so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#1)");
-				return 0;
-			}
-			else if (typeRoot == 2)
-			{
-				ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual store), so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#2)");
-				return 0;
-			}
-		}
 
 		wstring appName = GetCurrentExeName();
 		if (!isAsciiPrintable(appName))
@@ -1699,10 +2051,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		}
 	}
+	struct CommandPipeLifetime
+	{
+		~CommandPipeLifetime() { Inkeys::Launch::CommandPipe::server.Stop(); }
+	} commandPipeLifetime;
 	// 防止重复启动
 	{
 		// 相关标识
 		bool superTopComplete = false;
+		LaunchState::openWhiteboard = Inkeys::Launch::CommandPipe::HasWhiteboardArgument();
 
 		{
 			vector<wstring> args = Inkeys::Split::Run(GetCommandLineW(), L'*');
@@ -1714,7 +2071,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				cout << utf16ToUtf8(commandLine) << endl;
 
-				if (commandLine == L"-Restart") LaunchState::restart = true;
+				if (commandLine.rfind(Inkeys::Launch::HandoffPrefix, 0) == 0) addCommandLine = false;
+				else if (commandLine == L"-Whiteboard" || commandLine == L"\"-Whiteboard\"") addCommandLine = false;
+				else if (commandLine == L"-Restart") LaunchState::restart = true;
 				else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
 				else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
 				else if (commandLine == L"-SuperTopComplete") superTopComplete = true, addCommandLine = false;
@@ -1735,41 +2094,85 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		}
 
-	#ifdef IDT_RELEASE
-		// 重启 helper 已等待旧进程真正结束；-Restart/-CrashTry 仍需正常单实例门。
-		if (!LaunchState::warnTry && !superTopComplete)
+		// 内部接力先验真并等待精确父进程；普通参数不再豁免单实例门。
+		if (!isolatedStartupFailure)
 		{
-			wstring currentExeDirectory = GetCurrentExeDirectory();
+			const int handoff = Inkeys::Launch::Adopt();
+			if (handoff < 0)
 			{
-				wstringstream result;
-				for (wchar_t ch : currentExeDirectory)
-				{
-					if (ch < 128 && ch != L'\\' && ch != L':' && ch != L';' && ch != L'"') result << ch;
-					else if (ch < 128) result << L'_';
-					else result << L"U" << std::hex << std::uppercase << static_cast<int>(ch);
-				}
-				currentExeDirectory = result.str();
-			}
-
-			wstring mutexName = L"Inkeys_" + currentExeDirectory;
-			if (mutexName.length() > 255) mutexName = mutexName.substr(0, 255);
-
-			launchMutex = CreateMutexW(
-				NULL,           // 默认安全属性
-				TRUE,           // 请求立即拥有所有权 (bInitialOwner = TRUE)
-				mutexName.c_str()    // 唯一的互斥体名称
-			);
-
-			DWORD lastError = GetLastError();
-			if (launchMutex != NULL && lastError == ERROR_ALREADY_EXISTS)
-			{
-				ShowStartupMessage(L"Inkeys is already running. If no Inkeys window is visible, end the existing Inkeys process and open it again.");
-
+				ShowStartupMessage(L"Inkeys could not validate the startup handoff. The existing instance has been preserved.");
 				return 0;
 			}
+			Inkeys::Config startupPolicy;
+			const auto ownRoot = GetCurrentExeDirectory();
+			const auto savedPath = globalPath;
+			if (handoff > 0) globalPath = Inkeys::Launch::logicalRoot + L"\\";
+			(void)startupPolicy.ReadMini({ "Config.AllowMultipleInstances" }, true);
+			globalPath = savedPath;
+			// Adopt已在Ready前完成全部准入，不能在旧进程退出后再次否决。
+			using CommandAdmission = Inkeys::Launch::CommandPipe::Admission;
+			const auto admission = handoff > 0 ? CommandAdmission::Accepted
+				: Inkeys::Launch::CommandPipe::Admit(ownRoot, LaunchState::openWhiteboard, startupPolicy.Config.AllowMultipleInstances);
+			if (admission == CommandAdmission::Forwarded) return 0;
+			if (admission != CommandAdmission::Accepted)
+			{
+				ShowStartupMessage(admission == CommandAdmission::ForwardFailed
+					? L"Inkeys could not forward the whiteboard request. The existing instance has been preserved."
+					: admission == CommandAdmission::Duplicate
+					? L"Inkeys is already running from this installation directory."
+					: L"Inkeys could not establish its startup protection. Check directory and process permissions.");
+				return 0;
+			}
+			// 准入后立即监听，启动中的请求只置位；失败退出由进程级 owner 丢弃。
+			(void)Inkeys::Launch::CommandPipe::server.Start(Inkeys::Launch::logicalRoot);
+			if (!Inkeys::Launch::CommandPipe::server.LifetimeReady())
+			{
+				ShowStartupMessage(L"Inkeys could not establish its whiteboard startup protection. Check process permissions.");
+				return 0;
+			}
+			if (LaunchState::openWhiteboard) Inkeys::Launch::CommandPipe::server.Queue();
 		}
-	#endif
 		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
+	}
+	// 转发已在上方早退；只有实际冷启动才执行会写文件的目录权限探针。
+	{
+		int typeRoot = 0;
+
+		if (globalPath.find(L"C:\\Program Files\\") != globalPath.npos || globalPath.find(L"C:\\Program Files (x86)\\") != globalPath.npos || globalPath.find(L"C:\\Windows\\") != globalPath.npos) typeRoot = 2;
+		else
+		{
+			wstring time = getTimestamp();
+			wstring path = globalPath + L"IdtRootCheck" + time;
+
+			error_code ec;
+			try {
+				// 创建空白文件
+				wofstream ofs(path);
+				if (!ofs) typeRoot = 1;
+				ofs.close();
+				if (_waccess(path.c_str(), 0) == -1) typeRoot = 1;
+
+				// 删除文件
+				filesystem::remove(path, ec);
+				if (ec) typeRoot = 1;
+				if (_waccess(path.c_str(), 0) == 0) typeRoot = 1;
+			}
+			catch (const filesystem::filesystem_error)
+			{
+				typeRoot = 1;
+			}
+		}
+
+		if (typeRoot == 1)
+		{
+			ShowStartupMessage(L"The current directory permissions are restricted, so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#1)");
+			return 0;
+		}
+		else if (typeRoot == 2)
+		{
+			ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual store), so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#2)");
+			return 0;
+		}
 	}
 	// 崩溃助手初始化
 	{
@@ -1847,6 +2250,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			wstring old_name;
 
 			bool flag = true;
+			bool keepUpdateInstruction = false; // 等待旧进程超时时保留暂存指令，不当作损坏指令删除
 			string jsonContent;
 
 			HANDLE fileHandle = NULL;
@@ -1939,23 +2343,43 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
 
-				int times;
-				for (times = 0; times <= 20; times++)
+				// 接力启动时占位不再证明旧进程已死（关闭会提前释放占位），同样要等根目录 EXE 退出；
+				// 接力路径的等待上限略长于 15 秒强杀，超时保留暂存指令，旧版重启后下次再试。
+				const int maxWaitTimes = Inkeys::Launch::adopted ? 200 : 20;
+				const wstring waitedName = old_name.empty() ? wstring(L"智绘教.exe") : old_name;
+				int times = 0;
+				for (; times <= maxWaitTimes; times++)
 				{
-					if (!old_name.empty())
-					{
-						if (!isProcessRunning((main_path + old_name).c_str()))
-							break;
-					}
-					else
-					{
-						if (!isProcessRunning((main_path + L"智绘教.exe").c_str()))
-							break;
-					}
+					if (!isProcessRunning((main_path + waitedName).c_str()) &&
+						!isProcessRunning((main_path + L"Inkeys.exe").c_str()))
+						break;
 
 					this_thread::sleep_for(chrono::milliseconds(100));
 				}
-				if (times > 20) goto fail;
+				if (times > maxWaitTimes)
+				{
+					keepUpdateInstruction = Inkeys::Launch::adopted;
+					goto fail;
+				}
+				// 兼容旧更新器直接拉起的安装包：只有现有指令/哈希已验真且旧进程退出后才绑定安装根。
+				if (!Inkeys::Launch::adopted)
+				{
+					const auto root = filesystem::path(main_path).lexically_normal().wstring();
+					Inkeys::Config policy; const auto savedPath = globalPath; globalPath = main_path;
+					(void)policy.ReadMini({ "Config.AllowMultipleInstances" }, true); globalPath = savedPath;
+					if (Inkeys::Launch::Acquire(root, policy.Config.AllowMultipleInstances) != Inkeys::Launch::Admission::Accepted)
+					{
+						ShowStartupMessage(L"Inkeys is already running or updating from this installation directory.");
+						return 0; // 准入被拒绝不能删除另一条有效更新指令或启动回滚。
+					}
+				}
+
+				(void)Inkeys::Launch::CommandPipe::server.Start(Inkeys::Launch::logicalRoot);
+				if (!Inkeys::Launch::CommandPipe::server.LifetimeReady())
+				{
+					ShowStartupMessage(L"Inkeys could not establish its whiteboard startup protection. Check process permissions.");
+					return 0;
+				}
 
 				bool rollbackSafe = true;
 				const bool launched = [&]() -> bool
@@ -2008,9 +2432,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 							if (hadTarget) filesystem::remove(backupPath, ec);
 							return false;
 						}
-						const HINSTANCE result = ShellExecuteW(
-							nullptr, nullptr, target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-						if (reinterpret_cast<INT_PTR>(result) > 32) return true;
+						if (StartWhiteboardReplacement(target)) return true;
 						// 启动失败时回滚本次替换；备份在启动成功后仍保留供人工恢复。
 						if (hadTarget)
 							rollbackSafe = MoveFileExW(backupPath, target.c_str(),
@@ -2035,8 +2457,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (!flag)
 			{
 			fail:
+				Inkeys::Launch::CommandPipe::DiscardIntent(LaunchState::openWhiteboard);
 				error_code ec;
-				filesystem::remove(globalPath + L"update.json", ec);
+				if (!keepUpdateInstruction) filesystem::remove(globalPath + L"update.json", ec);
 
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
@@ -2059,9 +2482,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						});
 					if (fallbackName.empty()) break;
 					triedNames[triedCount++] = fallbackName;
-					const HINSTANCE result = ShellExecuteW(nullptr, nullptr,
-						(main_path + fallbackName).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-					if (reinterpret_cast<INT_PTR>(result) > 32) return 0;
+					if (!Inkeys::Launch::Equal(Inkeys::Launch::logicalRoot, filesystem::path(main_path).lexically_normal().wstring()))
+					{
+						Inkeys::Config policy; const auto savedPath = globalPath; globalPath = main_path;
+						(void)policy.ReadMini({ "Config.AllowMultipleInstances" }, true); globalPath = savedPath;
+						if (Inkeys::Launch::Acquire(main_path, policy.Config.AllowMultipleInstances) != Inkeys::Launch::Admission::Accepted) return 0;
+					}
+					const auto fallbackPath = main_path + fallbackName;
+					if (StartWhiteboardReplacement(fallbackPath)) return 0;
 					// 用户取消提升后不能再悄悄尝试另一份旧程序。
 					if (GetLastError() == ERROR_CANCELLED) return 0;
 				}
@@ -2162,10 +2590,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				//符合条件，开始替换版本
 
+				// 退出中的旧实例已提前释放单实例占位，但可能仍在清理并占用根目录 EXE；
+				// 此时交给安装进程会因覆盖失败而丢掉暂存更新。先等其他实例消失（上限略长于 15 秒强杀），
+				// 超时则本次不更新、不改写指令（保留 MandatoryUpdate），正常启动，下次再试。
+				{
+					const DWORD selfProcessId = GetCurrentProcessId();
+					const wstring currentImage = GetCurrentExePath();
+					const wstring replacementTarget = globalPath + L"Inkeys.exe";
+					int waitTimes = 0;
+					for (; waitTimes < 200; ++waitTimes)
+					{
+						if (!isProcessRunning(currentImage, selfProcessId) &&
+							!isProcessRunning(replacementTarget, selfProcessId)) break;
+						this_thread::sleep_for(chrono::milliseconds(100));
+					}
+					if (waitTimes >= 200) flag = false;
+				}
+
 				const wstring oldName = GetCurrentExeName();
-				if (!IsSafeUpdateExecutableName(oldName)) flag = false;
+				if (!flag || !IsSafeUpdateExecutableName(oldName)) flag = false;
 				updateVal["old_name"] = Json::Value(utf16ToUtf8(oldName));
-				if (mandatoryUpdate) updateVal["MandatoryUpdate"] = Json::Value(false);
+				if (mandatoryUpdate && flag) updateVal["MandatoryUpdate"] = Json::Value(false);
 
 				if (flag)
 				{
@@ -2208,13 +2653,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				if (flag)
 				{
-					HINSTANCE hInst = ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
-					if ((INT_PTR)hInst > 32) return 0;
+					if (StartWhiteboardReplacement(globalPath + path)) return 0;
 					flag = false;
 				}
 			}
 			else flag = false;
 
+			if (!flag) Inkeys::Launch::CommandPipe::DiscardIntent(LaunchState::openWhiteboard);
 			// 无效或发布失败的指令不清理未知文件，也不覆盖最后一次有效更新点。
 		}
 	}
@@ -2226,10 +2671,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReadSettingMini();
 
 		HANDLE proc_self = GetCurrentProcess();
-		HANDLE tok_self;
-		OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self);
+		HANDLE tok_self = nullptr;
+		const bool tokenReady = OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self) != FALSE;
 
-		if (setlist.plugInSetting.superTop.enable && !hasUiAccess(tok_self))
+		if (setlist.plugInSetting.superTop.enable && tokenReady && !hasUiAccess(tok_self))
 		{
 			while (true)
 			{
@@ -2361,7 +2806,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						}
 					}
 
-					LaunchSurperTop(LaunchState::commandLine);
+					// SuperTop 三段式只携带此次尚未消费的意图，失败后不重放。
+					const bool whiteboard = Inkeys::Launch::CommandPipe::TakeHandoffIntent(LaunchState::openWhiteboard);
+					LaunchSurperTop(LaunchState::commandLine + (whiteboard ? L" -Whiteboard" : L""));
+					(void)Inkeys::Launch::CommandPipe::server.Start(Inkeys::Launch::logicalRoot);
 				}
 				break;
 			}
@@ -2370,7 +2818,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		error_code ec;
 		filesystem::remove(globalPath + L"superTop_try.signal", ec);
 
-		hasSuperTop = hasUiAccess(tok_self);
+		hasSuperTop = tokenReady && hasUiAccess(tok_self);
+		if (tok_self) CloseHandle(tok_self);
 	}
 
 	// 只有最终进程越过 SuperTop 分支后，才建立唯一 T0 与启动状态。
@@ -2425,6 +2874,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
+		"Experimental.Inkeys3.UI3.StartupPreview.Effect",
+		"Experimental.Inkeys3.UI3.ThemeMode",
+		"Experimental.Inkeys3.UI3.BackgroundOpacity",
+		"Experimental.Inkeys3.UI3.ContentOpacity",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
 		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
 	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
@@ -2477,6 +2930,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		Inkeys::UI::StartupPreview::StartOptions previewOptions;
 		previewOptions.instance = hInstance;
 		previewOptions.startupPlacement = startupPlacement;
+		// Mini 外观随本次预览冻结，设置改动与后续 ReadAll 不会让启动帧切回默认材质。
+		previewOptions.effect = Inkeys::UI::NormalizeStartupPreviewEffect(
+			startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Effect.load());
+		previewOptions.themeMode = Inkeys::NormalizeThemeMode(startupMiniConfig.Experimental.Inkeys3.UI3.ThemeMode.load());
+		previewOptions.backgroundOpacity = Inkeys::NormalizeResidentBackgroundOpacity(
+			startupMiniConfig.Experimental.Inkeys3.UI3.BackgroundOpacity.load());
+		previewOptions.contentOpacity = Inkeys::NormalizeResidentContentOpacity(
+			startupMiniConfig.Experimental.Inkeys3.UI3.ContentOpacity.load());
 		previewOptions.cachedWidthDip =
 			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
@@ -2791,10 +3252,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			// 插件
 			{
 				{
-					setlist.shortcutAssistant.correctLnk = true;
-					setlist.shortcutAssistant.createLnk = false;
-				}
-				{
 					setlist.plugInSetting.superTop.enable = false;
 					setlist.plugInSetting.superTop.indicator = true;
 				}
@@ -2834,55 +3291,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 
 			{
-				// 获取系统默认语言标识符
-				LANGID langId = GetUserDefaultUILanguage();
-				// 获取主语言标识符
-				WORD primaryLangId = PRIMARYLANGID(langId);
-				// 获取子语言标识符
-				WORD subLangId = SUBLANGID(langId);
-
-				// 检查是否为中文
-				if (primaryLangId == LANG_CHINESE)
-				{
-					switch (subLangId) {
-					case SUBLANG_CHINESE_SIMPLIFIED:
-					case SUBLANG_CHINESE_SINGAPORE:
-					{
-						setlist.selectLanguage = 1;
-						break;
-					}
-
-					case SUBLANG_CHINESE_TRADITIONAL:
-					case SUBLANG_CHINESE_HONGKONG:
-					case SUBLANG_CHINESE_MACAU:
-					{
-						setlist.selectLanguage = 2;
-						break;
-					}
-					}
-				}
-				else setlist.selectLanguage = 0;
+				// 首次启动先精确匹配支持的地区，已有配置仍由 ReadSetting 保持。
+				setlist.selectLanguage = Inkeys::Localization::IndexForSystemLanguage(GetUserDefaultUILanguage());
 			}
 			{
 				// 用户保存的 PaintDevice 稍后仍可覆盖；缩放开关只使用启动时冻结的设备缺省。
 				setlist.paintDevice = defaultLargeScreenDevice ? 0 : 1;
 				if (defaultLargeScreenDevice) setlist.liftStraighten = true;
-			}
-			{
-				HDC screenDC = GetDC(nullptr);
-				double scale = 1.0;
-
-				if (screenDC)
-				{
-					int dpiX = GetDeviceCaps(screenDC, LOGPIXELSX);
-					ReleaseDC(nullptr, screenDC);
-
-					// 转换为缩放倍率
-					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
-				}
-
-				// 限制范围 1.0 ~ 1.5
-				setlist.settingGlobalScale = static_cast<float>(clamp(scale, 1.0, 1.5));
 			}
 		}
 
@@ -2891,7 +3306,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			Inkeys::UI::RenderPipeline::SetFrameRate(config.UI.FrameRate);
+			// 偏好在 Host 创建绘制线程前发布；后续每笔锁存，启动预览不改变画布参数。
+			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
+				config.Drawing.MultiTouchEnabled, config.Drawing.PenTailCorrectionEnabled,
+				config.Drawing.InkPredictionMode.load());
+			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(
+				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
+			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
@@ -2950,8 +3373,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			animationSpeedRate = isfinite(animationSpeedRate)
 				? clamp(animationSpeedRate, 0.1, 5.0) : 1.0;
 			config.Experimental.Inkeys3.UI3.Animation.SpeedRate = animationSpeedRate;
+			const int themeMode = Inkeys::NormalizeThemeMode(
+				config.Experimental.Inkeys3.UI3.ThemeMode);
+			// 非法或旧配置统一收敛到可持久化的深色模式 1。
+			config.Experimental.Inkeys3.UI3.ThemeMode = themeMode;
+			// 常驻透明度：背景 0 跟随主题默认，其余与内容一起收敛到 30~100。
+			const int backgroundOpacity = Inkeys::NormalizeResidentBackgroundOpacity(
+				config.Experimental.Inkeys3.UI3.BackgroundOpacity);
+			const int contentOpacity = Inkeys::NormalizeResidentContentOpacity(
+				config.Experimental.Inkeys3.UI3.ContentOpacity);
+			config.Experimental.Inkeys3.UI3.BackgroundOpacity = backgroundOpacity;
+			config.Experimental.Inkeys3.UI3.ContentOpacity = contentOpacity;
 			if (!config.Write() && IDTLogger)
 				IDTLogger->warn("[主线程][IdtMain] main.json 写回失败，保留现存配置文件");
+			Inkeys::UI::Bar::SetThemeMode(themeMode);
+			Inkeys::UI::Bar::SetResidentOpacity(backgroundOpacity, contentOpacity);
 			Inkeys::UI::Bar::SetAnimationOptions(
 				static_cast<bool>(config.Experimental.Inkeys3.UI3.Animation.Enable),
 				animationSpeedRate);
@@ -3024,7 +3460,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		// 非法语言值仅在本次运行中回退英语，避免覆盖用户磁盘配置。
-		if (setlist.selectLanguage < 0 || setlist.selectLanguage > 2)
+		if (!Inkeys::Localization::IsValidIndex(setlist.selectLanguage))
 			setlist.selectLanguage = 0;
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
@@ -3054,9 +3490,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// I18N初始化
 	{
 		// 默认以 zh-CN 作为完整兜底语言，再叠加配置指定的语言
-		if (setlist.selectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
-		else if (setlist.selectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
-		else I18n::load(1, L"JSON", L"en-US");
+		I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(setlist.selectLanguage).code);
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 		ReportStartupMilestoneForManualTest(
@@ -3202,6 +3636,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			fontResourceIDs.emplace_back(IDR_TTF7); // HarmonyOS Sans SC Bold
 			fontResourceIDs.emplace_back(IDR_TTF3); // HarmonyOS Sans TC
 			fontResourceIDs.emplace_back(IDR_TTF8); // HarmonyOS Sans TC Bold
+			fontResourceIDs.emplace_back(IDR_NOTO_JP_REGULAR);
+			fontResourceIDs.emplace_back(IDR_NOTO_JP_BOLD);
+			fontResourceIDs.emplace_back(IDR_NOTO_KR_REGULAR);
+			fontResourceIDs.emplace_back(IDR_NOTO_KR_BOLD);
 
 			IdtFontFileLoader::IsLoaderInitialized();
 			IdtFontCollectionLoader::IsLoaderInitialized();
@@ -3300,10 +3738,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				Inkeys::Gesture::DisableEdgeGestures(hWnd, true);
 			};
-		auto touchRegisterFuc = [&](HWND hWnd) -> void
+		auto touchRegisterFuc = [disableGestureFuc](const char* role)
 			{
-				RegisterTouchWindow(hWnd, 0);
-				disableGestureFuc(hWnd);
+				return [disableGestureFuc,role](HWND hWnd)
+				{
+					// 保留原有单次注册与 flags；GLE 必须在任何诊断查询之前取得。
+					const BOOL registered=RegisterTouchWindow(hWnd,0);
+					const DWORD registrationError=registered?ERROR_SUCCESS:GetLastError();
+					Inkeys::Input::UiPointer::Diagnostics::TouchRegistration(role,hWnd,0,registered,registrationError);
+					disableGestureFuc(hWnd);
+				};
 			};
 
 		SettingWindowBegin();
@@ -3381,9 +3825,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					spec.largeIcon = applicationIcon;
 					spec.smallIcon = applicationIcon;
 					spec.whiteboardMinimizeAllowed = [] { return !Inkeys::UI::Bar::PptPresentationActive(); };
-					spec.whiteboardCloseRequested = [] { RequestWhiteboardActive(false); };
+					spec.whiteboardCloseRequested = [] { NotifyWhiteboardWindowCloseRequested(); };
+					spec.whiteboardViewRequested = [](bool minimized) { NotifyWhiteboardWindowViewRequested(minimized); };
 					spec.whiteboardMinimizedChanged = []
 					{
+						NotifyWhiteboardWindowMinimizedChanged();
 						Inkeys::UI::PageControl::NotifyLayoutChanged();
 						Inkeys::UI::SelectionOverlay::NotifyStateChanged();
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
@@ -3391,7 +3837,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					};
 				}
 				spec.windowProc = proc;
-				spec.created = created;
+				spec.created = [created,role](HWND hwnd)
+				{
+					if(created)created(hwnd);
+					// Window Service 已登记 HWND，且原回调已注册 WM_TOUCH 后再接入五窗路由。
+					if(role==Inkeys::Window::WindowRole::Bar)Inkeys::UI::Bar::RegisterNativeTouchInput(hwnd);
+					else if(role>=Inkeys::Window::WindowRole::PptBottomLeft&&role<=Inkeys::Window::WindowRole::PptMiddleRight)
+						Inkeys::UI::PageControl::RegisterNativeTouchInput(static_cast<std::size_t>(role)-static_cast<std::size_t>(Inkeys::Window::WindowRole::PptBottomLeft),hwnd);
+				};
 				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
 					role <= Inkeys::Window::WindowRole::PptMiddleRight)
 				{
@@ -3428,18 +3881,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			});
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomLeft,
 			L"Inkeys4.BottomLeft;", L"Inkeys Ppt Bottom Left",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("bottom-left"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomRight,
 			L"Inkeys4.BottomRight;", L"Inkeys Ppt Bottom Right",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("bottom-right"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptMiddleLeft,
 			L"Inkeys4.MiddleLeft;", L"Inkeys Ppt Middle Left",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("middle-left"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptMiddleRight,
 			L"Inkeys4.MiddleRight;", L"Inkeys Ppt Middle Right",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("middle-right"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::Bar, L"Inkeys5;", L"Inkeys BarWindow",
-			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc);
+			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc("bar"));
 
 		windowSpecs.push_back(Inkeys::UI::SelectionOverlay::MakeWindowSpec());
 
@@ -3451,8 +3904,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		settingSpec.y = SettingWindowY;
 		settingSpec.width = SettingWindowWidth;
 		settingSpec.height = SettingWindowHeight;
-		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN;
-		settingSpec.exStyle = WS_EX_APPWINDOW;
+		settingSpec.style = Inkeys::Window::SettingWindowStyle;
+		settingSpec.exStyle = Inkeys::Window::SettingWindowExStyle;
 		settingSpec.windowProc = Inkeys::UI::Setting::WindowProc();
 		settingSpec.largeIcon = applicationIcon;
 		settingSpec.smallIcon = applicationIcon;
@@ -3530,6 +3983,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		draw3StartOptions.frameRate = configOnce.Drawing.FrameRate;
 		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
 		draw3StartOptions.enableHardwareAcceleration =
 			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
@@ -3766,6 +4220,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			developerModeExitCode = 6;
 			break;
 		}
+		const auto whiteboardStartup = Inkeys::Startup::ActiveSnapshot();
+		if (!offSignal && !whiteboardStartup.failed && whiteboardStartup.totalUnits
+			&& whiteboardStartup.completedUnits == whiteboardStartup.totalUnits
+			&& Inkeys::Launch::CommandPipe::server.TakeReadyPending())
+		{
+			LaunchState::openWhiteboard = false;
+			RequestWhiteboardFromShortcut();
+		}
 		// Bar 渲染线程只发布有限 DIP；主线程沿既有配置路径去重落盘。
 		double committedStartupWidthDip = 0.0;
 		if (Inkeys::UI::StartupPreview::TakeCommittedStartupBarWidthDip(
@@ -3822,31 +4284,36 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		Inkeys::UI::StartupPreview::Stop();
 		break;
 	}
+	ShutdownTrace::Scope shutdownTrace("main-shutdown");
+	{ ShutdownTrace::Scope trace("main-command-pipe"); Inkeys::Launch::CommandPipe::server.Stop(); }
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
-	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
-	Inkeys::UI::StartupPreview::Stop();
-	// 当前对象编辑先注销输入和共享渲染，随后才停止画布和窗口owner。
-	Inkeys::UI::SelectionOverlay::Release();
-	if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
-	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
-	if (freezeFrameThread.joinable()) freezeFrameThread.join();
-	if (stateMonitoringThread.joinable()) stateMonitoringThread.join();
-	if (magnifierThread.joinable()) magnifierThread.join();
-	if (pptLinkageThread.joinable()) pptLinkageThread.join();
-	if (topWindowThread.joinable()) topWindowThread.join();
+	{ ShutdownTrace::Scope trace("main-topmost-observer"); Inkeys::Window::GetService().SetTopmostRefreshObserver({}); }
+	{ ShutdownTrace::Scope trace("main-startup-preview"); Inkeys::UI::StartupPreview::Stop(); }
+	// 当前对象编辑先注销输入和共享渲染，随后才停止画布和窗口 owner。
+	{ ShutdownTrace::Scope trace("main-selection-overlay"); Inkeys::UI::SelectionOverlay::Release(); }
+	if (whiteboardFeatureEnabled) { ShutdownTrace::Scope trace("main-whiteboard"); Inkeys::UI::Whiteboard::Shutdown(); }
+	if (ui3InitializationThread.joinable()) { ShutdownTrace::Scope trace("main-join-ui3-initialization"); ui3InitializationThread.join(); }
+	if (freezeFrameThread.joinable()) { ShutdownTrace::Scope trace("main-join-freeze"); freezeFrameThread.join(); }
+	if (stateMonitoringThread.joinable()) { ShutdownTrace::Scope trace("main-join-state"); stateMonitoringThread.join(); }
+	if (magnifierThread.joinable()) { ShutdownTrace::Scope trace("main-join-magnifier"); magnifierThread.join(); }
+	if (pptLinkageThread.joinable()) { ShutdownTrace::Scope trace("main-join-ppt"); pptLinkageThread.join(); }
+	if (topWindowThread.joinable()) { ShutdownTrace::Scope trace("main-join-top-window"); topWindowThread.join(); }
 	// 先停止 Draw3 设备/RTS，再由 Window Service 销毁其拥有的 Drawpad HWND。
-	Inkeys::Drawing::Draw3::StopProduct();
+	{ ShutdownTrace::Scope trace("main-stop-draw3"); Inkeys::Drawing::Draw3::StopProduct(); }
 	// 先停止主题变更生产者，再排空最后的配置 FIFO；窗口服务/渲染管线仍在，供 Setting 完成释放。
-	Inkeys::UI::Setting::Shutdown();
-	Inkeys::Window::GetService().StopAndJoin();
-	Inkeys::UI::RenderPipeline::Shutdown();
-	displaySubscription.Reset();
-	Inkeys::Display::Shutdown();
-	(void)draw3DiagnosticOutput.Stop();
+	{ ShutdownTrace::Scope trace("main-setting"); Inkeys::UI::Setting::Shutdown(); }
+	{ ShutdownTrace::Scope trace("main-window"); Inkeys::Window::GetService().StopAndJoin(); }
+	{ ShutdownTrace::Scope trace("main-render-pipeline"); Inkeys::UI::RenderPipeline::Shutdown(); }
+	// 上述UI3初始化/input、state、PPT已join，配置/窗口/渲染已排空；此前只保存数值。
+	Inkeys::Business::PptWaitTrace::FlushAfterProducersJoined();
+	{ ShutdownTrace::Scope trace("main-display-subscription"); displaySubscription.Reset(); }
+	{ ShutdownTrace::Scope trace("main-display"); Inkeys::Display::Shutdown(); }
+	{ ShutdownTrace::Scope trace("main-diagnostic-output"); (void)draw3DiagnosticOutput.Stop(); }
 
-	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
+	{ ShutdownTrace::Scope trace("main-status-log"); IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束"); }
 
 	{
+		ShutdownTrace::Scope trace("main-thread-status-wait");
 		using namespace Inkeys::Thread;
 
 		int WaitingCount = 0;
@@ -3860,22 +4327,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 反初始化 COM 环境
 	{
-		if (pptComModule) FreeLibrary(pptComModule);
-		if (actCtxActivated) DeactivateActCtx(0, ulCookie);
-		if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
-		if (SUCCEEDED(comInitializeResult)) CoUninitialize();
+		ShutdownTrace::Scope trace("main-com-cleanup");
+		if (pptComModule) { ShutdownTrace::Scope step("main-free-ppt-module"); FreeLibrary(pptComModule); }
+		if (actCtxActivated) { ShutdownTrace::Scope step("main-deactivate-context"); DeactivateActCtx(0, ulCookie); }
+		if (hActCtx != INVALID_HANDLE_VALUE) { ShutdownTrace::Scope step("main-release-context"); ReleaseActCtx(hActCtx); }
+		if (SUCCEEDED(comInitializeResult)) { ShutdownTrace::Scope step("main-com-uninitialize"); CoUninitialize(); }
 
-		IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成");
+		{ ShutdownTrace::Scope step("main-com-log"); IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成"); }
 	}
 	// 释放互斥体
 	if (launchMutex)
 	{
 		// ReleaseMutex(hMutex); // 调用 CloseHandle 通常就够了，因为我们是创建者且未等待它
+		ShutdownTrace::Scope trace("main-launch-mutex");
 		CloseHandle(launchMutex);
 		launchMutex = NULL;
 	}
 
-	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
+	{ ShutdownTrace::Scope trace("main-finished-log"); IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序"); }
 
 	return developerModeExitCode;
 }

@@ -83,7 +83,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 
 	SourceKind ClassifySource(uint32_t actualInputType, bool modernApiAvailable,
 		bool capabilitiesKnown, bool integrated, SourceKind pointerKind,
-		bool pointerMatched, bool pointerAmbiguous) noexcept
+		bool pointerMatched, bool pointerAmbiguous, bool pointerUnmapped) noexcept
 	{
 		if (actualInputType == 2 || actualInputType == 3) return SourceKind::Mouse;
 		// Win7 不扩展自动物理识别；能力存在也不等于当前来源/表面已被确认。
@@ -96,6 +96,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 					return SourceKind::Unknown;
 				if (capabilitiesKnown && integrated != (pointerKind == SourceKind::IntegratedPen))
 					return SourceKind::Unknown;
+				// 数位板驱动的虚拟 HID 设备被系统报告为 Integrated，但不会映射到任何显示器；真正的屏幕笔总有显示器句柄。
+				if (pointerKind == SourceKind::IntegratedPen && pointerUnmapped) return SourceKind::ExternalPen;
 				return pointerKind;
 			}
 			return capabilitiesKnown ? (integrated ? SourceKind::IntegratedPen : SourceKind::ExternalPen)
@@ -379,6 +381,28 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config.fineHoldSpeed=config.fineToStandardSpeed*0.20f;
 		config.fineReleaseSpeed=config.fineToStandardSpeed*0.35f;
 		return config;
+	}
+
+	bool DirectInputUsesDpiFallback(const DisplayScale& display) noexcept
+	{
+		// Host 尚未发布绘制输出时不推测；逻辑映射未知的真实输出仍须按解析器提示退化。
+		if (display.monitor == 0) return false;
+		InputSource source;
+		source.mappedMonitor = display.monitor;
+		source.mappedLeft = display.desktopLeft;
+		source.mappedTop = display.desktopTop;
+		source.mappedWidth = display.pixelWidth;
+		source.mappedHeight = display.pixelHeight;
+		// 仅探测该屏幕的直接输入能力，不写入真实设备身份，也不重复标定/旋转/密度校验。
+		for (const auto kind : { SourceKind::Touch, SourceKind::IntegratedPen })
+		{
+			source.kind = kind;
+			const auto config = ResolveConfig(display, DeviceMode::Automatic, source);
+			if (config.response != ResponseModel::IndirectDip &&
+				(config.motionSource == ScaleSource::DipOnly || config.motionSource == ScaleSource::ResolutionDpiHeuristic))
+				return true;
+		}
+		return false;
 	}
 
 	ResolvedInput ResolveInput(const DisplayScale& display,DeviceMode mode,const InputSource& source,

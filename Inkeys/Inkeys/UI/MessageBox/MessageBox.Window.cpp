@@ -8,6 +8,7 @@ module;
 #endif
 #include <Windows.h>
 #include <Windowsx.h>
+#include "../../../resource.h"
 #include <dwmapi.h>
 #include <objidl.h>
 #include <gdiplus.h>
@@ -455,11 +456,15 @@ namespace Inkeys::UI::MessageBox::Detail
 
 		[[nodiscard]] bool ResolveFontFamily(const FontCandidate* candidates,
 			std::size_t count, std::unique_ptr<FontFamily>& family,
-			INT& style)
+			INT& style, PrivateFontCollection* privateFonts = nullptr)
 		{
 			for (std::size_t index = 0; index < count; ++index)
 			{
-				auto next = std::make_unique<FontFamily>(candidates[index].family);
+				auto next = privateFonts
+					? std::make_unique<FontFamily>(candidates[index].family, privateFonts)
+					: std::make_unique<FontFamily>(candidates[index].family);
+				if (next->GetLastStatus() != Ok && privateFonts)
+					next = std::make_unique<FontFamily>(candidates[index].family);
 				if (next->GetLastStatus() != Ok
 					|| !next->IsStyleAvailable(candidates[index].style)) continue;
 				family = std::move(next);
@@ -469,18 +474,47 @@ namespace Inkeys::UI::MessageBox::Detail
 			return false;
 		}
 
+		[[nodiscard]] std::unique_ptr<PrivateFontCollection> LoadLocalizedFonts(LANGID language)
+		{
+			const bool japanese = PRIMARYLANGID(language) == LANG_JAPANESE;
+			if (!japanese && PRIMARYLANGID(language) != LANG_KOREAN) return {};
+			auto fonts = std::make_unique<PrivateFontCollection>();
+			const UINT resources[] = { japanese ? IDR_NOTO_JP_REGULAR : IDR_NOTO_KR_REGULAR,
+				japanese ? IDR_NOTO_JP_BOLD : IDR_NOTO_KR_BOLD };
+			for (const UINT id : resources)
+			{
+				const auto module = GetModuleHandleW(nullptr);
+				const auto resource = FindResourceW(module, MAKEINTRESOURCEW(id), L"TTF");
+				if (!resource) return {}; // 极早期故障/独立宿主仍可走系统字体回退。
+				const DWORD size = SizeofResource(module, resource);
+				const auto loaded = LoadResource(module, resource);
+				const auto data = loaded ? LockResource(loaded) : nullptr;
+				if (!data || size > static_cast<DWORD>(std::numeric_limits<INT>::max())
+					|| fonts->AddMemoryFont(data, static_cast<INT>(size)) != Ok) return {};
+			}
+			return fonts;
+		}
+
+		template<class PositionWindow>
+		[[nodiscard]] bool HideDialogWindow(HWND hwnd, bool topmost, bool hasOwner,
+			PositionWindow&& position) noexcept
+		{
+			if (!hwnd) return false;
+			constexpr UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+			// owned 弹窗降出 topmost 会连带降低 owner；只有独立故障框需要先退 band。
+			if (topmost && !hasOwner) (void)position(HWND_NOTOPMOST, flags);
+			return position(nullptr, flags | SWP_NOZORDER | SWP_HIDEWINDOW);
+		}
+
 		[[nodiscard]] bool HideDialogWindow(HWND hwnd) noexcept
 		{
 			if (!hwnd) return false;
-			const bool topmost = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
-				& WS_EX_TOPMOST) != 0;
-			// ownerless 故障框先独立退出 topmost band，再隐藏并销毁。
-			if (topmost)
-				(void)SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-			return SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-				SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
-				| SWP_NOACTIVATE | SWP_HIDEWINDOW) != FALSE;
+			return HideDialogWindow(hwnd,
+				(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0,
+				GetWindow(hwnd, GW_OWNER) != nullptr, [hwnd](HWND after, UINT flags) noexcept
+				{
+					return SetWindowPos(hwnd, after, 0, 0, 0, 0, flags) != FALSE;
+				});
 		}
 
 		[[nodiscard]] bool WaitForOwnerRestored(HANDLE restoredEvent) noexcept
@@ -497,6 +531,19 @@ namespace Inkeys::UI::MessageBox::Detail
 			}
 		}
 
+		[[nodiscard]] bool SameOwnedWindow(HWND owner,
+			DWORD expectedThread, DWORD expectedProcess) noexcept;
+
+		template<class EnableOwner, class RestoreForeground, class HideDialog>
+		[[nodiscard]] bool CompleteModalHide(bool restoreForeground,
+			EnableOwner&& enable, RestoreForeground&& restore, HideDialog&& hide) noexcept
+		{
+			// 先让 owner 能接收激活，再归还前台；隐藏活动框之前不能留下无人接焦点的空档。
+			enable();
+			if (restoreForeground) restore();
+			return hide();
+		}
+
 		struct DialogSession
 		{
 			OwnedRequest* request = nullptr;
@@ -504,6 +551,8 @@ namespace Inkeys::UI::MessageBox::Detail
 			RECT workArea{};
 			HMONITOR monitor = nullptr;
 			std::unique_ptr<Bitmap> icon;
+			// 私有集合须晚于引用它的 FontFamily 释放，资源内存由 EXE 持有。
+			std::unique_ptr<PrivateFontCollection> localizedFonts;
 			std::unique_ptr<FontFamily> titleFontFamily;
 			std::unique_ptr<FontFamily> bodyFontFamily;
 			INT titleFontStyle = FontStyleRegular;
@@ -535,11 +584,39 @@ namespace Inkeys::UI::MessageBox::Detail
 			bool framePainted = false;
 			HWND previousForeground = nullptr;
 			bool ownerlessForegroundAcquired = false;
+			DWORD ownerThread = 0, ownerProcess = 0;
+			bool ownerDisabledHere = false;
+
+			void RestoreOwnerEnabled() const noexcept
+			{
+				if (ownerDisabledHere && SameOwnedWindow(request->owner, ownerThread, ownerProcess))
+					(void)EnableWindow(request->owner, TRUE);
+			}
+
+			void RestoreOwnerForeground() const noexcept
+			{
+				const HWND owner = request->owner;
+				if (request->cancellation.stop_requested() || !ownerDisabledHere
+					|| !SameOwnedWindow(owner, ownerThread, ownerProcess)
+					|| !IsWindowEnabled(owner) || !IsWindowVisible(owner) || IsIconic(owner)
+					|| (GetWindowLongPtrW(owner, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) return;
+				// 只恢复原 band 内的顺序，不强制显示/还原窗口，也不把普通设置改成永久置顶。
+				(void)SetWindowPos(owner, HWND_TOP, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+				(void)SetForegroundWindow(owner);
+			}
 
 			void HideWindow() noexcept
 			{
-				const bool restoreForeground = !request->owner
-					&& ownerlessForegroundAcquired
+				if (request->owner)
+				{
+					(void)CompleteModalHide(GetForegroundWindow() == hwnd
+						&& !request->cancellation.stop_requested() && ownerDisabledHere,
+						[this] { RestoreOwnerEnabled(); }, [this] { RestoreOwnerForeground(); },
+						[this] { return HideDialogWindow(hwnd); });
+					return;
+				}
+				const bool restoreForeground = ownerlessForegroundAcquired
 					&& GetForegroundWindow() == hwnd;
 				if (!HideDialogWindow(hwnd)) return;
 				if (restoreForeground && previousForeground
@@ -707,6 +784,8 @@ namespace Inkeys::UI::MessageBox::Detail
 				Bitmap measureBitmap(1, 1, PixelFormat32bppPARGB);
 				Graphics graphics(&measureBitmap);
 				graphics.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
+				if (!titleFontFamily && !localizedFonts)
+					localizedFonts = LoadLocalizedFonts(request->language);
 				if (!titleFontFamily)
 				{
 					const bool traditionalChinese = PRIMARYLANGID(request->language)
@@ -726,6 +805,12 @@ namespace Inkeys::UI::MessageBox::Detail
 						{ L"Microsoft YaHei", FontStyleBold },
 						{ L"Segoe UI", FontStyleBold },
 					};
+					const FontCandidate japaneseCandidates[]{
+						{ L"Noto Sans JP", FontStyleBold }, { L"Yu Gothic UI", FontStyleBold },
+						{ L"Meiryo UI", FontStyleBold }, { L"MS Gothic", FontStyleRegular }, { L"Segoe UI", FontStyleBold } };
+					const FontCandidate koreanCandidates[]{
+						{ L"Noto Sans KR", FontStyleBold }, { L"Malgun Gothic", FontStyleBold },
+						{ L"Gulim", FontStyleRegular }, { L"Segoe UI", FontStyleBold } };
 					const FontCandidate latinCandidates[]{
 						{ L"Segoe UI Variable Display Semibold", FontStyleRegular },
 						{ L"Segoe UI Semibold", FontStyleRegular },
@@ -745,8 +830,18 @@ namespace Inkeys::UI::MessageBox::Detail
 						candidates = simplifiedCandidates;
 						candidateCount = _countof(simplifiedCandidates);
 					}
+					else if (PRIMARYLANGID(request->language) == LANG_JAPANESE)
+					{
+						candidates = japaneseCandidates;
+						candidateCount = _countof(japaneseCandidates);
+					}
+					else if (PRIMARYLANGID(request->language) == LANG_KOREAN)
+					{
+						candidates = koreanCandidates;
+						candidateCount = _countof(koreanCandidates);
+					}
 					if (!ResolveFontFamily(candidates, candidateCount,
-						titleFontFamily, titleFontStyle)) return false;
+						titleFontFamily, titleFontStyle, localizedFonts.get())) return false;
 				}
 				if (!bodyFontFamily)
 				{
@@ -767,6 +862,12 @@ namespace Inkeys::UI::MessageBox::Detail
 						{ L"Microsoft YaHei", FontStyleRegular },
 						{ L"Segoe UI", FontStyleRegular },
 					};
+					const FontCandidate japaneseCandidates[]{
+						{ L"Noto Sans JP", FontStyleRegular }, { L"Yu Gothic UI", FontStyleRegular },
+						{ L"Meiryo UI", FontStyleRegular }, { L"MS Gothic", FontStyleRegular }, { L"Segoe UI", FontStyleRegular } };
+					const FontCandidate koreanCandidates[]{
+						{ L"Noto Sans KR", FontStyleRegular }, { L"Malgun Gothic", FontStyleRegular },
+						{ L"Gulim", FontStyleRegular }, { L"Segoe UI", FontStyleRegular } };
 					const FontCandidate latinCandidates[]{
 						{ L"Segoe UI Variable Text", FontStyleRegular },
 						{ L"Segoe UI", FontStyleRegular },
@@ -783,8 +884,18 @@ namespace Inkeys::UI::MessageBox::Detail
 						candidates = simplifiedCandidates;
 						candidateCount = _countof(simplifiedCandidates);
 					}
+					else if (PRIMARYLANGID(request->language) == LANG_JAPANESE)
+					{
+						candidates = japaneseCandidates;
+						candidateCount = _countof(japaneseCandidates);
+					}
+					else if (PRIMARYLANGID(request->language) == LANG_KOREAN)
+					{
+						candidates = koreanCandidates;
+						candidateCount = _countof(koreanCandidates);
+					}
 					if (!ResolveFontFamily(candidates, candidateCount,
-						bodyFontFamily, bodyFontStyle)) return false;
+						bodyFontFamily, bodyFontStyle, localizedFonts.get())) return false;
 				}
 				Font titleFont(titleFontFamily.get(),
 					static_cast<REAL>(ScaleDipValue(20, dpi)), titleFontStyle, UnitPixel);
@@ -1721,7 +1832,6 @@ namespace Inkeys::UI::MessageBox::Detail
 		DWORD ownerProcess = 0;
 		bool ownerWasEnabled = false;
 		bool ownerDisabledHere = false;
-		bool ownerWasForeground = false;
 		HWND previousFocus = nullptr;
 		if (request.owner)
 		{
@@ -1748,7 +1858,6 @@ namespace Inkeys::UI::MessageBox::Detail
 				}
 			}
 			ownerWasEnabled = IsWindowEnabled(request.owner) != FALSE;
-			ownerWasForeground = GetForegroundWindow() == request.owner;
 			if (ownerThread == GetCurrentThreadId()) previousFocus = GetFocus();
 			if (ownerWasEnabled)
 			{
@@ -1764,13 +1873,17 @@ namespace Inkeys::UI::MessageBox::Detail
 			}
 		}
 
+		// 在放行弹窗 UI 线程前发布同一 owner 身份及禁用责任，关闭时由它完成前台交接。
+		session.ownerThread = ownerThread;
+		session.ownerProcess = ownerProcess;
+		session.ownerDisabledHere = ownerDisabledHere;
 		session.createAllowed.store(!request.cancellation.stop_requested(), std::memory_order_release);
 		SetEvent(proceed.Get());
 		bool hiddenObserved = WaitForDialogHidden(session, workerHandle,
 			request.owner && ownerThread == GetCurrentThreadId());
 		if (!hiddenObserved && request.cancellation.stop_requested())
 		{
-			// Stop event 已唤醒 UI 消息等待；先等它真正隐藏，再恢复 owner。
+			// Stop event 已唤醒 UI；等它完成 owner 交接和隐藏，再进入调用线程兜底。
 			hiddenObserved = WaitForDialogHidden(session, workerHandle,
 				request.owner && ownerThread == GetCurrentThreadId(), false);
 		}
@@ -1781,20 +1894,16 @@ namespace Inkeys::UI::MessageBox::Detail
 			if (hwnd && IsWindow(hwnd)) PostMessageW(hwnd, AbortDialogMessage, 0, 0);
 		}
 
-		// owner 恢复只由调用线程执行，且在 HWND 身份仍匹配时恢复原 enabled 状态。
-		if (request.owner && ownerDisabledHere
-			&& SameOwnedWindow(request.owner, ownerThread, ownerProcess))
+		// 创建失败/取消时仍幂等恢复 enabled；前台已由弹窗线程在隐藏前交还，不在后台补抢。
+		session.RestoreOwnerEnabled();
+		if (request.owner && ownerDisabledHere && ownerThread == GetCurrentThreadId()
+			&& SameOwnedWindow(request.owner, ownerThread, ownerProcess)
+			&& GetForegroundWindow() == request.owner)
 		{
-			(void)EnableWindow(request.owner, TRUE);
-			if (ownerWasForeground)
-			{
-				(void)SetForegroundWindow(request.owner);
-				if (ownerThread == GetCurrentThreadId())
-				{
-					(void)SetActiveWindow(request.owner);
-					if (previousFocus && IsWindow(previousFocus)) (void)SetFocus(previousFocus);
-				}
-			}
+			(void)SetActiveWindow(request.owner);
+			if (previousFocus && IsWindow(previousFocus)
+				&& (previousFocus == request.owner || IsChild(request.owner, previousFocus)))
+				(void)SetFocus(previousFocus);
 		}
 		SetEvent(restored.Get());
 		if (worker.joinable()) worker.join();
@@ -1809,6 +1918,59 @@ namespace Inkeys::UI::MessageBox::Detail
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 namespace Inkeys::UI::MessageBox::Test
 {
+	bool VerifyDialogHideOwnerPolicy() noexcept
+	{
+		for (const bool owned : { false, true }) for (const bool topmost : { false, true })
+		{
+			struct Call { HWND after = nullptr; UINT flags = 0; } calls[2];
+			unsigned count = 0;
+			bool ownerTopmost = true;
+			const auto position = [&](HWND after, UINT flags) noexcept
+			{
+				if (count == 2) return false;
+				calls[count++] = { after, flags };
+				// 按 USER32 的 owned-chain 传播语义捕捉误降级，不创建 HWND。
+				if (owned && after == HWND_NOTOPMOST) ownerTopmost = false;
+				return true;
+			};
+			if (!Detail::HideDialogWindow(reinterpret_cast<HWND>(1), topmost, owned, position)
+				|| !ownerTopmost || count != (topmost && !owned ? 2u : 1u)) return false;
+			for (unsigned index = 0; index < count; ++index)
+				if ((calls[index].flags & (SWP_NOOWNERZORDER | SWP_NOACTIVATE))
+					!= (SWP_NOOWNERZORDER | SWP_NOACTIVATE)) return false;
+			if (topmost && !owned && calls[0].after != HWND_NOTOPMOST) return false;
+			if (calls[count - 1].after != nullptr || !(calls[count - 1].flags & SWP_HIDEWINDOW)
+				|| !(calls[count - 1].flags & SWP_NOZORDER)) return false;
+		}
+		if (Detail::HideDialogWindow(reinterpret_cast<HWND>(1), true, true,
+			[](HWND, UINT) noexcept { return false; })) return false;
+		for (const bool dialogForeground : { false, true }) for (const bool hideSucceeded : { false, true })
+		{
+			bool enabled = false, activatedLower = false;
+			int foreground = dialogForeground ? 1 : 3; // 1弹窗、2 owner、3用户已切换的其它窗口。
+			char calls[3]{}; unsigned count = 0;
+			const bool hidden = Detail::CompleteModalHide(dialogForeground, [&]
+			{
+				calls[count++] = 'E'; enabled = true;
+			}, [&]
+			{
+				calls[count++] = 'F';
+				if (!enabled) activatedLower = true;
+				foreground = 2;
+			}, [&]
+			{
+				calls[count++] = 'H';
+				// 旧的“先隐藏后启用”会在此把前台交给下层，后续补恢复也不能抹掉这次错误激活。
+				if (foreground == 1) { activatedLower = !enabled; foreground = enabled ? 2 : 3; }
+				return hideSucceeded;
+			});
+			if (hidden != hideSucceeded || !enabled || activatedLower || calls[0] != 'E'
+				|| count != (dialogForeground ? 3u : 2u) || calls[count - 1] != 'H'
+				|| (dialogForeground && calls[1] != 'F') || foreground != (dialogForeground ? 2 : 3)) return false;
+		}
+		return true;
+	}
+
 	LayoutProbe ProbeLayout(const Request& request, UINT dpi,
 		int workAreaWidth, int workAreaHeight) noexcept
 	{

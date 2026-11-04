@@ -86,6 +86,15 @@ namespace Inkeys::Drawing::Draw3
 		return !productStopping.load(std::memory_order_acquire) && productHost.Running();
 	}
 
+	bool RetryProductCanvasRecovery(const CanvasRecoveryState& expected,
+		const std::function<bool()>& stillDesired) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) && (!stillDesired || stillDesired()) &&
+			productHost.RetryCanvasRecovery(expected, stillDesired);
+	}
+
 	Haptics::Context ProductHapticContext() noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return {};
@@ -134,9 +143,15 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool WaitForProductRuntimeRevision(std::uint64_t revision,
-		std::uint32_t timeoutMilliseconds) noexcept
+		std::uint32_t timeoutMilliseconds, bool waitWhileStopped) noexcept
 	{
-		return productHost.WaitForRuntimeRevision(revision, timeoutMilliseconds);
+		return productHost.WaitForRuntimeRevision(revision, timeoutMilliseconds, waitWhileStopped);
+	}
+
+	void NotifyProductWorkspaceProgress() noexcept
+	{
+		// 固定 Host 生命周期内只唤醒观察者，不进入 productCallMutex 或改变准入事实。
+		productHost.NotifyWorkspaceProgress();
 	}
 
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -169,6 +184,7 @@ namespace Inkeys::Drawing::Draw3
 		// 图形构造与样式必须随绘制属性同代发布，不能遗留桥接中的旧工具参数。
 		merged.shapeTool = state.shapeTool;
 		merged.shapeStyle = state.shapeStyle;
+		merged.whiteboardStyle = state.whiteboardStyle;
 		merged.paintDevice = state.paintDevice;
 		merged.eraserInputs = state.eraserInputs;
 		merged.cursorSettings = state.cursorSettings;
@@ -177,22 +193,35 @@ namespace Inkeys::Drawing::Draw3
 		productHost.PublishState(merged);
 	}
 
-	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept
+	bool SetProductWorkspaceTransitionPending(std::uint64_t epoch, bool pending,
+		std::uint64_t expectedHostGeneration) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) &&
+			productHost.SetWorkspaceTransitionPending(epoch, pending, expectedHostGeneration);
+	}
+
+	void PublishProductWorkspace(Bridge::Workspace workspace,
+		const std::function<bool()>& stillDesired) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire)) return;
+		// 与白板权威发布共用提交锁；旧采样不能在进入/离开后覆盖当前工作区。
+		if (productStopping.load(std::memory_order_acquire) ||
+			(stillDesired && !stillDesired())) return;
 		if (productHost.ProductBridge().PublishWorkspace(workspace))
 			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}
 
 	std::optional<std::uint64_t> PublishProductPresentationTarget(
-		const Bridge::PresentationTarget& target) noexcept
+		const Bridge::PresentationTarget& target,
+		const std::function<bool()>& stillDesired) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return std::nullopt;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire) ||
-			!productHost.Running()) return std::nullopt;
+			!productHost.Running() || (stillDesired && !stillDesired())) return std::nullopt;
 		bool changed = false;
 		const auto revision = productHost.ProductBridge().PublishPresentationTarget(
 			target, &changed);
@@ -218,11 +247,13 @@ namespace Inkeys::Drawing::Draw3
 			productHost.SetPresentationInputSuspended(expected, suspended);
 	}
 
-	void ClearProductPresentationTarget() noexcept
+	void ClearProductPresentationTarget(
+		const std::function<bool()>& stillDesired) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productStopping.load(std::memory_order_acquire) ||
+			(stillDesired && !stillDesired())) return;
 		if (productHost.ProductBridge().ClearPresentationTarget())
 			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}

@@ -36,6 +36,7 @@ import <ranges>;
 import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
+import Inkeys.Other.Config;
 
 // Interaction 实现单元独占窗口消息状态；协调器仅通过窄接口读取或投递。
 bool ReadColorPickerEntryPressed();
@@ -57,6 +58,7 @@ namespace
 	Inkeys::UI::Bar::BarA2CallbackDispatcher endShowDispatcher;
 	std::atomic_uint64_t autoCollapseSceneRevision{ 1 };
 	std::atomic_bool whiteboardActive = false;
+	std::atomic<WorkspaceScene> committedChromeScene = WorkspaceScene::Desktop;
 	std::atomic_bool whiteboardBottomDockRequested = false;
 	std::atomic_bool whiteboardDockLockActive = false;
 }
@@ -290,7 +292,7 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	{
 		lock_guard<mutex> lock(mtx);
 		// 按钮、面板归位和粗细文字使用同一工具代次，再统一发布渲染请求。
-		const auto stateMode = GetStateModeSnapshot();
+		const auto stateMode = Inkeys::UI::Bar::CurrentUi3FiniteMutation() ? GetStateModeSnapshot() : GetCommittedStateModeSnapshot();
 		barButtonSet.StateUpdate(stateMode);
 		// 仅在画笔模式刷新粗细文字，收起过程中保留最后一次有效显示。
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
@@ -329,6 +331,7 @@ namespace Inkeys::UI::Bar
 		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
 		if (!enable) RequestBarBorderCursorSuspend();
 		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 
 	void SetEdgeLightingOptions(bool enable, bool dynamic)
@@ -338,6 +341,27 @@ namespace Inkeys::UI::Bar
 		// 关闭任一级动态光门禁时，统一交给 Bar 窗口线程注销 Raw Input。
 		if (!enable || !dynamic) RequestBarBorderCursorSuspend();
 		barUISet.UpdateRendering(false);
+	}
+
+	void SetThemeMode(int themeMode) noexcept
+	{
+		const bool darkStyle = Inkeys::ThemeModeUsesDarkStyle(themeMode);
+		// 设置线程只发布主题目标，实际材质动画仍由串行渲染线程推进。
+		if (barUISet.barStyle.requestedDarkStyle.exchange(
+			darkStyle, std::memory_order_acq_rel) != darkStyle)
+			barUISet.UpdateRendering(false);
+	}
+
+	void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept
+	{
+		const bool backgroundChanged = barUISet.barStyle.requestedBackgroundOpacity.exchange(
+			backgroundPercent, std::memory_order_acq_rel) != backgroundPercent;
+		const bool contentChanged = barUISet.barStyle.requestedContentOpacity.exchange(
+			contentPercent, std::memory_order_acq_rel) != contentPercent;
+		if (!backgroundChanged && !contentChanged) return;
+		// 主栏帧首应用目标值；分页表面复用同一份已应用值，需要单独唤醒。
+		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 
 	void SetDebugOptions(bool enable, bool showFrameRate)
@@ -409,12 +433,7 @@ namespace Inkeys::UI::Bar
 			changed = pptPresentationActive.exchange(active, std::memory_order_acq_rel) != active;
 			changed = pptSceneState.Publish(session, active) || changed;
 		}
-		if (changed)
-		{
-			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
-			// 进出放映都只收起浮窗。回到桌面时若 Redo 仍可用，显示 2×1，不重新弹出。
-			barUISet.SettleRecallChromeForWorkspace();
-		}
+		// COM 这里只发布后台事实，稳定 chrome/桌面基线由协调 Commit 的通知更新。
 		// 同场窗口锚变化只刷新布局，不重放场次进入和位置恢复。
 		if (changed || windowChanged)
 		{
@@ -450,13 +469,14 @@ namespace Inkeys::UI::Bar
 	}
 	double SceneBottomDockInsetDip() noexcept
 	{
-		return ResolveBarWorkspaceBottomInsetDip(barUISet.barState.fold, WhiteboardActive(),
-			pptDockSceneActive.load(std::memory_order_acquire),
-			Inkeys::Window::GetService().WhiteboardWindowGroupMinimized());
+		const auto workspace = GetWorkspaceSceneSnapshot();
+		return ResolveBarWorkspaceBottomInsetDip(barUISet.barState.fold,
+			workspace.committed == WorkspaceScene::Whiteboard, workspace.committed == WorkspaceScene::Presentation,
+			workspace.committedMinimized);
 	}
 	bool PptBusinessFocusAllowed() noexcept
 	{
-		return PptPresentationActive() && !WhiteboardActive()
+		return PptPresentationActive() && !GetWorkspaceSceneSnapshot().pending && !WhiteboardActive()
 			&& !barUISet.barState.drawAttributeBar.colorPickerOpen
 			&& !barUISet.barState.eraserAttribute;
 	}
@@ -502,19 +522,18 @@ namespace Inkeys::UI::Bar
 
 	void SetWhiteboardActive(bool active) noexcept
 	{
-		const bool changed = whiteboardActive.exchange(active,
-			std::memory_order_acq_rel) != active;
+		const auto scene = GetWorkspaceSceneSnapshot().committed;
+		active = scene == WorkspaceScene::Whiteboard;
+		const bool whiteboardChanged = whiteboardActive.exchange(active, std::memory_order_acq_rel) != active;
+		const bool changed = committedChromeScene.exchange(scene, std::memory_order_acq_rel) != scene;
 		if (changed)
 		{
 			autoCollapseSceneRevision.fetch_add(1, std::memory_order_acq_rel);
-			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
-			barUISet.CollapseAuxiliaryPanels(true);
+			barUISet.SettleRecallChromeForWorkspace();
 		}
-		// 几何和桌面基线由渲染线程统一交接，业务线程不再强制居中或折叠。
-		if (changed && !active)
-			whiteboardDockLockActive.store(false, std::memory_order_release);
-		if (changed || contentStateUpdatesReady.load(std::memory_order_acquire))
-			barUISet.UpdateRendering();
+		// 此缓存仅去重渲染通知；工作区真值始终读统一 Committed。
+		if (whiteboardChanged && !active) whiteboardDockLockActive.store(false, std::memory_order_release);
+		if (changed || contentStateUpdatesReady.load(std::memory_order_acquire)) barUISet.UpdateRendering();
 	}
 
 	void CollapseAuxiliaryPanels(bool cancelCapture) noexcept
@@ -524,7 +543,7 @@ namespace Inkeys::UI::Bar
 
 	bool WhiteboardActive() noexcept
 	{
-		return whiteboardActive.load(std::memory_order_acquire);
+		return GetWorkspaceSceneSnapshot().committed == WorkspaceScene::Whiteboard;
 	}
 
 	void RequestWhiteboardBottomDock() noexcept

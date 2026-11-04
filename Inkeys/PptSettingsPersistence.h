@@ -120,6 +120,8 @@ namespace Inkeys::PptSettings
 	private:
 		std::string Capture()
 		{
+			// 全量设置和单独位置写回都不能把旧加载页 true 带回配置。
+			settings_["ShowLoadingScreen"] = false;
 			SetPositions(settings_, desired_);
 			Json::Value payload = settings_;
 			payload["_InkeysWriteRevision"] = Json::UInt64(++revision_);

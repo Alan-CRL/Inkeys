@@ -1,0 +1,46 @@
+[
+  {
+    "path": ".trellis/spec/native-desktop/canvas-freeze-boundaries.md",
+    "hash": "3676996EF49283B39504842144041BDD2C3D75998A381182C17C368D4444F1DE"
+  },
+  {
+    "path": ".trellis/spec/native-desktop/rendering-and-ui.md",
+    "hash": "C397CDBB1A52176AEC7AC2DA407A18E2AFAB3A2E8FA7B6EEC3B6052769EDD9CA"
+  },
+  {
+    "path": ".trellis/spec/native-desktop/whiteboard.md",
+    "hash": "77A26E22F5F6C613EA0E21F9FCFA09AA2519CE9FF66970078B431542E93AF8C6"
+  },
+  {
+    "path": "Inkeys/IdtState.cpp",
+    "hash": "EC8C9034A75681E4DBEE6132F8D6B4DB041D025B870E8DD1BC3876C49E8AFF6C"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.SessionState.h",
+    "hash": "7FB9FD1C7DC92815EEF48D4F353B74856885FBC8E4CCCFBFDCBC13AE0CC29EFF"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "hash": "BADC9CCBDC2D82D8442DC382806A1DB241574CAF27D6201AFEDD53A49C3CACF7"
+  },
+  {
+    "path": "Inkeys/Inkeys/Window/Window.ShellFullscreen.h",
+    "hash": "A396F4404806CDFF12C54F6CA68D3EC81D1A07A26C535DC2998F61E2EE6F402B"
+  },
+  {
+    "path": "Inkeys/Inkeys/Window/Window.cpp",
+    "hash": "6DB19F372EC38360E54C765E4A182A1830040C80B7D26811062D6396CCDCD1AC"
+  },
+  {
+    "path": "Inkeys/Inkeys/Window/Window.cppm",
+    "hash": "9ED761230D9645C2FDD12E41DE0BE30309EA35189C2FEB50FF5F83C7EC53A11F"
+  },
+  {
+    "path": "InkeysHeadlessTests/setting_session_state_tests.cpp",
+    "hash": "953D51CD4F99A92196A5D6C60E8BE2C2D1C1111CD7E39D0B807ABA737B199892"
+  },
+  {
+    "path": "InkeysHeadlessTests/window_tests.cpp",
+    "hash": "EEACFD4D6840CEC9B270A5CAF3BDFBE955DE6B2B709FA1EA6335534FA25BF4F0"
+  }
+]

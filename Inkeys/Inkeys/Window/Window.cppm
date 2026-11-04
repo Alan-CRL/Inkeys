@@ -4,11 +4,15 @@ module;
 
 #include "../Helper/FailedCleanupDeadline.h"
 
+#include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 export module Inkeys.Window;
@@ -35,11 +39,70 @@ export namespace Inkeys::Window
 		Count,
 	};
 
+	// 先按标准桌面样式创建；旧 Aero 建立系统菜单后仅移除 caption，现代 DWM 保持原样。
+	inline constexpr DWORD SettingWindowStyle = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+	inline constexpr DWORD SettingWindowExStyle = WS_EX_APPWINDOW;
+	[[nodiscard]] SIZE QuerySettingFrameThickness(UINT dpi = 0) noexcept;
+	[[nodiscard]] bool UsesLegacySettingFrame() noexcept;
+	struct SettingPlatformCapabilities
+	{
+		bool legacyFrame = true;
+		bool compositionAlwaysEnabled = false;
+		bool acrylic = false;
+		// Win11 默认圆角；仅用于 resize 边框窗口挖空主窗口外角。
+		bool roundedCorners = false;
+	};
+	[[nodiscard]] constexpr SettingPlatformCapabilities ResolveSettingPlatformCapabilities(
+		DWORD major, DWORD minor, DWORD build) noexcept
+	{
+		const bool modernDwm = major > 6 || (major == 6 && minor >= 2);
+		return { !modernDwm, modernDwm, major > 10 || (major == 10 && build >= 17134),
+			major > 10 || (major == 10 && build >= 22000) };
+	}
+	[[nodiscard]] constexpr bool ResolveSettingCompositionEnabled(
+		SettingPlatformCapabilities platform, bool querySucceeded, bool queriedEnabled) noexcept
+	{
+		return platform.compositionAlwaysEnabled || (querySucceeded && queriedEnabled);
+	}
+	[[nodiscard]] SettingPlatformCapabilities QuerySettingPlatformCapabilities() noexcept;
+	[[nodiscard]] bool IsSettingCompositionEnabled() noexcept;
+	// accent 平台（Win10 RS4+/Win11 且 composition 开启）：零侧边 frame，缩放热区只在窗外。
+	[[nodiscard]] bool UsesSettingOutsideResize() noexcept;
+	[[nodiscard]] bool IsSettingModalWakeCurrent(HWND hwnd, std::uintptr_t generation) noexcept;
+	// RECT 四字段表示正向 inset；客户区和 resize 热区分别使用各自的度量。
+	[[nodiscard]] RECT QuerySettingClientFrameInsets(HWND hwnd = nullptr,
+		bool maximized = false, UINT dpi = 0) noexcept;
 	enum class DrawpadSurfaceVisibility : std::uint8_t
 	{
 		Primary,
 		Presentation,
 		Hidden,
+	};
+
+	struct WorkspaceWindowPolicy
+	{
+		std::uint64_t revision = 0;
+		bool whiteboard = false;
+		bool selectionMode = true;
+		bool hideDrawpad = false;
+		bool minimized = false;
+		bool operator==(const WorkspaceWindowPolicy&) const = default;
+	};
+	struct WorkspaceWindowSurface
+	{
+		HWND hwnd = nullptr;
+		std::uint64_t generation = 0;
+		RECT bounds{};
+	};
+	struct WorkspaceWindowPrepared
+	{
+		WorkspaceWindowPolicy policy;
+		WorkspaceWindowSurface freeze, primary, presentation;
+		std::uint64_t displayGeneration = 0;
+		HMONITOR targetMonitor = nullptr;
+		RECT monitorBounds{};
+		UINT dpiX = 96, dpiY = 96;
+		std::uint64_t safetyRevision = 0;
 	};
 
 	enum class OverlayActivationMode : std::uint8_t
@@ -91,6 +154,14 @@ export namespace Inkeys::Window
 		return true;
 	}
 
+	[[nodiscard]] inline bool DispatchWhiteboardViewIntent(bool managedAnchor, bool whiteboardActive,
+		bool minimized, bool minimizeAllowed, const std::function<void(bool)>& requested) noexcept
+	{
+		if (!managedAnchor || !whiteboardActive || !requested) return false;
+		try { if (!minimized || minimizeAllowed) requested(minimized); } catch (...) {}
+		return true;
+	}
+
 	struct WindowSpec
 	{
 		WindowRole role = WindowRole::Bar;
@@ -119,7 +190,117 @@ export namespace Inkeys::Window
 		// Freeze owner 线程调用业务策略与非阻塞渲染唤醒，窗口层不依赖 UI 模块。
 		std::function<bool()> whiteboardMinimizeAllowed;
 		std::function<void()> whiteboardMinimizedChanged;
+		std::function<void(bool)> whiteboardViewRequested;
 		std::function<void()> whiteboardCloseRequested;
+	};
+
+	enum class CommandPhase { Queued, Executing, Committed, Rejected, Expired, Cancelled };
+
+	// 固定候选只描述原生写集；像素已经由 ULW 定位时只核验 bounds，不能再搬旧位图。
+	enum class WindowCandidateVisibility : std::uint8_t { Preserve, Show, Hide };
+	struct WindowSurfaceState
+	{
+		WindowRole role = WindowRole::Bar;
+		HWND hwnd = nullptr;
+		std::uint64_t generation = 0;
+		RECT bounds{};
+		bool visible = false, iconic = false, known = false;
+		std::uint64_t presentationRevision = 0;
+	};
+	struct WindowCandidateTarget
+	{
+		WindowRole role = WindowRole::Bar;
+		HWND hwnd = nullptr;
+		std::uint64_t generation = 0;
+		RECT bounds{};
+		bool applyBounds = true, verifyBounds = false;
+		WindowCandidateVisibility visibility = WindowCandidateVisibility::Preserve;
+		bool promote = false;
+		std::uint64_t presentationRevision = 0;
+		bool requirePresentationMatch = false;
+	};
+	struct WindowCandidate
+	{
+		std::uint64_t frameSerial = 0, workspaceRevision = 0;
+		std::size_t count = 1;
+		std::array<WindowCandidateTarget, 2> targets{};
+	};
+	struct WindowCandidateReceipt
+	{
+		std::uint64_t revision = 0, frameSerial = 0, workspaceRevision = 0;
+		CommandPhase phase = CommandPhase::Queued;
+		std::size_t count = 0;
+		std::array<WindowSurfaceState, 2> actual{};
+		unsigned completedMask = 0;
+		DWORD error = ERROR_SUCCESS;
+		DWORD rollbackError = ERROR_SUCCESS;
+		double latencyMicroseconds = 0.0;
+		std::int64_t completedTicks = 0;
+	};
+	struct WindowCandidateDiagnostics
+	{
+		std::uint64_t published = 0, coalesced = 0, stale = 0, executed = 0;
+		std::uint64_t boundsChanges = 0, visibilityChanges = 0, promotes = 0;
+		std::size_t queueDepth = 0, maxQueueDepth = 0;
+	};
+
+	// 回执只持有独立完成状态；Service 停止后仍可确认超时命令是否已经退休。
+	class CommandReceipt
+	{
+	public:
+		CommandReceipt() = default;
+		CommandReceipt(std::function<CommandPhase()> phase, std::function<void()> cancel)
+			: phase_(std::move(phase)), cancel_(std::move(cancel)) {}
+		[[nodiscard]] CommandPhase Phase() const { return phase_ ? phase_() : CommandPhase::Rejected; }
+		void Cancel() const { if (cancel_) cancel_(); }
+	private:
+		std::function<CommandPhase()> phase_;
+		std::function<void()> cancel_;
+	};
+
+	class WorkspaceWindowReceipt
+	{
+	public:
+		WorkspaceWindowReceipt() = default;
+		WorkspaceWindowReceipt(std::uint64_t revision, CommandReceipt command,
+			std::function<std::optional<WorkspaceWindowPrepared>()> prepared, std::function<bool()> current)
+			: revision_(revision), command_(std::move(command)), prepared_(std::move(prepared)), current_(std::move(current)) {}
+		[[nodiscard]] explicit operator bool() const noexcept { return revision_ != 0; }
+		[[nodiscard]] std::uint64_t Revision() const noexcept { return revision_; }
+		[[nodiscard]] CommandPhase Phase() const { return command_.Phase(); }
+		void Cancel() const { command_.Cancel(); }
+		[[nodiscard]] bool Current() const { return Phase() == CommandPhase::Committed && current_ && current_(); }
+		[[nodiscard]] std::optional<WorkspaceWindowPrepared> Prepared() const
+		{ return Phase() == CommandPhase::Committed && prepared_ ? prepared_() : std::nullopt; }
+	private:
+		std::uint64_t revision_ = 0;
+		CommandReceipt command_;
+		std::function<std::optional<WorkspaceWindowPrepared>()> prepared_;
+		std::function<bool()> current_;
+	};
+
+	// ULW 与 native bounds 共用一次 CAS 租约；原生回滚未退休时仍持有对应角色。
+	class SurfacePresentationLease
+	{
+	public:
+		SurfacePresentationLease() = default;
+		~SurfacePresentationLease() { Reset(); }
+		SurfacePresentationLease(const SurfacePresentationLease&) = delete;
+		SurfacePresentationLease& operator=(const SurfacePresentationLease&) = delete;
+		SurfacePresentationLease(SurfacePresentationLease&& other) noexcept;
+		SurfacePresentationLease& operator=(SurfacePresentationLease&& other) noexcept;
+		[[nodiscard]] explicit operator bool() const noexcept { return mask_ != 0; }
+		[[nodiscard]] std::uint64_t Revision(WindowRole role) const noexcept;
+		[[nodiscard]] std::uint64_t PixelsChanged(WindowRole role) noexcept;
+		void Reset() noexcept;
+	private:
+		friend class Service;
+		SurfacePresentationLease(std::atomic<std::uint64_t>* active, std::atomic<std::uint64_t>* revisions,
+			std::uint64_t mask, HANDLE wake) : active_(active), revisions_(revisions), mask_(mask), wake_(wake) {}
+		std::atomic<std::uint64_t>* active_ = nullptr;
+		std::atomic<std::uint64_t>* revisions_ = nullptr;
+		std::uint64_t mask_ = 0;
+		HANDLE wake_ = nullptr;
 	};
 
 	class Service
@@ -152,41 +333,71 @@ export namespace Inkeys::Window
 
 		[[nodiscard]] bool Create(WindowSpec spec);
 		[[nodiscard]] bool Destroy(WindowRole role);
-		[[nodiscard]] bool Show(WindowRole role);
-		[[nodiscard]] bool Hide(WindowRole role);
+		[[nodiscard]] bool Show(WindowRole role, std::function<bool()> stillDesired = {});
+		[[nodiscard]] bool Hide(WindowRole role, std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool HideAllUserWindows();
 		// 受控退出用：只投递给各 HWND owner，不等待可能已经卡住的 owner 完成。
 		[[nodiscard]] bool RequestHideAllUserWindows();
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
 			DrawpadSurfaceVisibility visibility,
 			std::function<bool()> stillDesired = {});
-		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
-		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
+		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds, std::function<bool()> stillDesired = {});
+		// 这些入口仅 try-copy 固定快照，返回 0/nullopt 时调用方保留候选并 Retry。
+		[[nodiscard]] SurfacePresentationLease TryAcquirePresentationLease(WindowRole first, WindowRole second = WindowRole::Count) noexcept;
+		[[nodiscard]] std::uint64_t PublishCandidate(const WindowCandidate& candidate);
+		[[nodiscard]] std::optional<WindowCandidateReceipt> TryReadCandidateReceipt(
+			WindowRole primaryRole, std::uint64_t revision) const;
+		void CancelCandidate(WindowRole primaryRole, std::uint64_t revision) noexcept;
+		void RequestCancelCandidatePreservingReceipt(WindowRole primaryRole, std::uint64_t revision) noexcept;
+		[[nodiscard]] std::optional<WindowCandidateReceipt> TryReadCandidateRetirement(WindowRole primaryRole, std::uint64_t revision) const;
+		[[nodiscard]] bool CandidateCurrent(WindowRole primaryRole, std::uint64_t revision) const noexcept;
+		[[nodiscard]] std::optional<WindowSurfaceState> SurfaceSnapshot(WindowRole role) const;
+		void SetCandidateDiagnosticsEnabled(bool enabled) noexcept;
+		[[nodiscard]] WindowCandidateDiagnostics CandidateDiagnostics() const noexcept;
+		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled,
+			std::function<bool()> stillDesired = {});
 		// Setting 保持顶层应用窗口，只在自身 owner thread 动态加入或离开 Drawpad owner 链。
 		[[nodiscard]] bool SetSettingOwnedByDrawpad(bool enabled);
 		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。
 		[[nodiscard]] bool SetExtendedStyleFlags(
 			WindowRole role, DWORD setMask, DWORD clearMask);
+		// 同一请求分两次轻量 owner 回执；准备后返回消息循环，绝不等待 Render/Host。
+		[[nodiscard]] std::optional<WorkspaceWindowPrepared> PrepareWorkspaceWindowPolicy(
+			WorkspaceWindowPolicy policy, std::function<bool()> stillDesired = {});
+		[[nodiscard]] bool CompleteWorkspaceWindowPolicy(WorkspaceWindowPolicy policy,
+			const WorkspaceWindowPrepared& prepared, std::function<bool()> stillDesired = {});
+		[[nodiscard]] WorkspaceWindowReceipt RequestPrepareWorkspaceWindowPolicy(
+			WorkspaceWindowPolicy policy, std::function<bool()> stillDesired = {});
+		[[nodiscard]] WorkspaceWindowReceipt RequestCompleteWorkspaceWindowPolicy(WorkspaceWindowPolicy policy,
+			const WorkspaceWindowPrepared& prepared, std::function<bool()> stillDesired = {});
+		void SetWorkspaceProgressObserver(std::function<void()> callback);
 		// Whiteboard 统一切换 taskbar/activation 样式，所有 HWND 操作仍在 owner thread。
-		[[nodiscard]] bool EnterWhiteboardWindowMode();
-		[[nodiscard]] bool LeaveWhiteboardWindowMode();
+		[[nodiscard]] bool EnterWhiteboardWindowMode(std::function<bool()> stillDesired = {});
+		[[nodiscard]] bool LeaveWhiteboardWindowMode(std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool WhiteboardWindowMode() const noexcept;
 		[[nodiscard]] bool WhiteboardWindowGroupMinimized() const noexcept;
 		// 仅由匹配的 Freeze owner WndProc 调用，不跨线程执行退出回调。
 		[[nodiscard]] bool DispatchWhiteboardClose(HWND hwnd) noexcept;
+		[[nodiscard]] bool DispatchWhiteboardViewRequest(HWND hwnd, bool minimized) noexcept;
+		[[nodiscard]] bool ConfirmWhiteboardWindowView(HWND hwnd, bool minimized) noexcept;
 		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
 		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
+		// 仅在打开白板时异步排队一次激活；true 只表示已接纳，不等待或保证系统授予前台。
+		[[nodiscard]] bool RequestWhiteboardActivation(std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool CancelPointerCapture();
-			// 启动可指定有限等待预算；普通刷新保留原有同步行为。
-			[[nodiscard]] bool RequestTopmostRefresh(DWORD timeoutMilliseconds = INFINITE);
+			// 所有跨线程命令默认有限等待；false 后可由回执区分仍在撤回的在途操作。
+			[[nodiscard]] bool RequestTopmostRefresh(DWORD timeoutMilliseconds = 1500);
+			[[nodiscard]] CommandReceipt LastCommandReceipt() const;
 			// 成功 refresh 后在内部锁外调用；传空函数可注销并 drain 正在执行的回调。
 			void SetTopmostRefreshObserver(std::function<void()> callback);
-			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
+			[[nodiscard]] bool SetOverlayTopmost(bool topmost, std::function<bool()> stillDesired = {});
 			[[nodiscard]] bool OverlayTopmost() const noexcept;
 			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。
-			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen);
+			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen, std::function<bool()> stillDesired = {});
 			[[nodiscard]] bool OverlayFullscreen() const noexcept;
 			[[nodiscard]] bool PromotePptWindow(WindowRole role);
+		[[nodiscard]] bool RequestPromotePptWindow(WindowRole role);
+		[[nodiscard]] bool RequestTopmostRefreshAsync();
 
 		[[nodiscard]] bool BindMessages(
 			WindowRole role,

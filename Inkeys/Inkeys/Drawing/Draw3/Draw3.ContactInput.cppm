@@ -228,6 +228,9 @@ export namespace Inkeys::Drawing::Draw3
 		void SetAdmissionBlocked(bool blocked) noexcept;
 		// 快捷键租约独立拥有一位门禁，释放不能打开 PPT/load/fatal 的基础门禁。
 		void SetShortcutAdmissionBlocked(bool blocked) noexcept;
+		// 绘制消费者致命停止后只能在真实停止的下一生命周期重置。
+		void SetConsumerFatal() noexcept;
+		bool ConsumerFatal() const noexcept;
 		// 仅用于检测基础门变化；快捷键租约仍通过合并门阻止新输入。
 		bool BaseAdmissionBlocked() const noexcept;
 		bool AdmissionBlocked() const noexcept;

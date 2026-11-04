@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Native desktop spec index"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Setting window backdrop, ImGui/ImFluent rendering constraints (no vendor edits, no DirectComposition)"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ conventions for Inkeys native code"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Build commands and Win7-Win11 compatibility rules"}

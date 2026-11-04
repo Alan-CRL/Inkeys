@@ -178,6 +178,7 @@ export namespace Inkeys::UI::MessageBox::Test
 
 	[[nodiscard]] bool Validate(const Request& request) noexcept;
 	[[nodiscard]] bool VerifyCancellationAdmission() noexcept;
+	[[nodiscard]] bool VerifyDialogHideOwnerPolicy() noexcept;
 	[[nodiscard]] UINT ResolveFallbackFlags(const Request& request) noexcept;
 	[[nodiscard]] Result MapSystemResult(Buttons buttons, int value) noexcept;
 	[[nodiscard]] int ScaleDip(int dip, UINT dpi) noexcept;

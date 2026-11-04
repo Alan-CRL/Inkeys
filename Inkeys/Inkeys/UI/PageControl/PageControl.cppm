@@ -6,6 +6,7 @@ module;
 
 #include <windows.h>
 #include "../../Business/PptSessionToken.h"
+#include "../Ppt/Ppt.Recovery.h"
 
 #include <algorithm>
 #include <array>
@@ -22,6 +23,7 @@ import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys::UI::PageControl
 {
+	void RegisterNativeTouchInput(std::size_t index,HWND hwnd);
 	enum class Surface : std::uint8_t
 	{
 		BottomLeft,
@@ -574,21 +576,172 @@ export namespace Inkeys::UI::PageControl
 		return result;
 	}
 
+	enum class PptNavigationDirection : std::uint8_t { None, Previous, Next };
+	struct PptNavigationWaiting
+	{
+		std::uint64_t session = 0;
+		std::uint64_t epoch = 0;
+		PptNavigationDirection direction = PptNavigationDirection::None;
+		bool waiting = false;
+	};
+	struct PptNavigationWaitingState
+	{
+		PptNavigationWaiting current;
+		std::uint64_t activeSession = 0;
+		std::uint64_t completedEpoch = 0;
+
+		void BeginSession(std::uint64_t session) noexcept
+		{
+			if (!session || activeSession == session) return;
+			current = {};
+			activeSession = session;
+			completedEpoch = 0;
+		}
+		bool Publish(std::uint64_t session, std::uint64_t epoch,
+			PptNavigationDirection direction) noexcept
+		{
+			if (!session || session != activeSession || !epoch || epoch <= completedEpoch
+				|| direction == PptNavigationDirection::None) return false;
+			if (current.waiting && epoch <= current.epoch) return false;
+			current = { session, epoch, direction, true };
+			return true;
+		}
+		bool Complete(std::uint64_t session, std::uint64_t epoch) noexcept
+		{
+			if (!session || session != activeSession || !epoch) return false;
+			// 完成可能先于锁外发布；即使尚无标记，也记住终态，拒绝迟到 Publish。
+			completedEpoch = (std::max)(completedEpoch, epoch);
+			if (!current.waiting || current.epoch != epoch) return false;
+			current = {};
+			return true;
+		}
+		bool Clear(std::uint64_t session = 0) noexcept
+		{
+			if (session && activeSession != session) return false;
+			const bool changed = current.waiting;
+			current = {};
+			// 退出时退休整场；没有现存标记的在途发布也不能重新建立等待。
+			activeSession = 0;
+			completedEpoch = 0;
+			return changed;
+		}
+	};
+
 	struct PptState
 	{
 		std::uint64_t publicationRevision = 0;
 		std::uint64_t targetRevision = 0;
 		std::uint64_t pageAckEpoch = 0;
+		PptRecovery::State recovery;
 		// 白板期间放映控件不可见，但场次仍存活；菜单可用性不能由可见位推断。
 		bool presentationActive = false;
 		bool presentationVisible = false;
+		// 仅表示已观测到页面仍在准备；不授权输入，也不等同最终UI/Draw3回执。
+		bool pagePreparing = false;
+		// 只供数字文本显示；业务命令、target和ACK始终使用原currentPage/totalPage。
+		bool numericPageOverride = false;
+		int displayedCurrentPage = -1, displayedTotalPage = -1;
 		bool longPressEnabled = false;
+		// 闲置淡化时长（秒），0 表示关闭；来自 PPTHelper.IdleFadeSeconds 的发布快照。
+		int idleFadeSeconds = 0;
+		bool idleFadeBottomPair = true, idleFadeMiddlePair = true, idleFadeMainBar = false;
 		int currentPage = -1;
 		int totalPage = -1;
+		PptNavigationWaiting navigationWaiting;
 		PptLayoutState layout;
 		// 帧内派生的 UI 全局尺度；不属于用户位置/控件倍率，不参与持久化。
 		float uiScale = 0.0F;
 	};
+
+	// 闲置背景/内容在渲染通道分别取上限，显隐透明度与命中始终独立。
+	inline constexpr double PptIdleFadeOutSeconds = 0.5;
+	inline constexpr double PptIdleFadeInSeconds = 0.15;
+	inline constexpr int PptIdleFadeMaximumSeconds = 3600;
+	// 控件发起翻页后，该时长内的页码变化视为控件自身结果，不触发外部翻页淡化。
+	inline constexpr std::chrono::milliseconds PptControlNavigationGrace{ 3000 };
+
+	struct PptIdleFadeInput
+	{
+		int timeoutSeconds = 0;
+		bool eligible = false;
+		bool engaged = false;
+		bool externalTurn = false;
+		std::chrono::steady_clock::time_point activity{};
+		std::chrono::steady_clock::time_point now{};
+	};
+
+	struct PptIdleFadeDecision
+	{
+		bool dimmed = false;
+		std::chrono::steady_clock::time_point wake = std::chrono::steady_clock::time_point::max();
+	};
+
+	[[nodiscard]] constexpr PptIdleFadeDecision ResolvePptIdleFade(
+		const PptIdleFadeInput& input) noexcept
+	{
+		if (!input.eligible || input.timeoutSeconds <= 0 || input.engaged) return {};
+		if (input.externalTurn) return { true };
+		const auto deadline = input.activity + std::chrono::seconds(
+			(std::min)(input.timeoutSeconds, PptIdleFadeMaximumSeconds));
+		if (input.now >= deadline) return { true };
+		return { false, deadline };
+	}
+
+	struct PptIdleFadeSnapshot
+	{
+		std::uint64_t session = 0;
+		int timeoutSeconds = 0;
+		bool visible = false, mainBar = false;
+		bool operator==(const PptIdleFadeSnapshot&) const = default;
+	};
+	[[nodiscard]] PptIdleFadeSnapshot ReadPptIdleFadeSnapshot() noexcept;
+
+	// 主栏由渲染 owner 记生命周期/保护边沿；输入只发布活动时间，外部翻页不参与。
+	struct PptMainIdleFadeState
+	{
+		std::uint64_t session = 0;
+		bool eligible = false, protectedLastFrame = false;
+		std::chrono::steady_clock::time_point resetAt{};
+		[[nodiscard]] PptIdleFadeDecision Update(const PptIdleFadeSnapshot& snapshot,
+			bool sceneEligible, bool engaged, bool panelOpen,
+			std::chrono::steady_clock::time_point activity,
+			std::chrono::steady_clock::time_point now) noexcept
+		{
+			const bool next = sceneEligible && snapshot.visible && snapshot.mainBar
+				&& snapshot.session != 0 && snapshot.timeoutSeconds > 0;
+			const bool protectedNow = engaged || panelOpen;
+			if (!next || !eligible || session != snapshot.session
+				|| (protectedLastFrame && !protectedNow)) resetAt = now;
+			session = snapshot.session; eligible = next; protectedLastFrame = protectedNow;
+			return ResolvePptIdleFade({snapshot.timeoutSeconds, next, protectedNow, false,
+				(std::max)(resetAt, activity), now});
+		}
+	};
+
+	[[nodiscard]] constexpr bool IsPptExternalPageTurn(
+		std::uint64_t previousSession, int previousPage,
+		std::uint64_t session, int page, bool controlNavigationRecent) noexcept
+	{
+		return session != 0 && session == previousSession
+			&& previousPage >= 0 && page >= 0 && page != previousPage
+			&& !controlNavigationRecent;
+	}
+
+	[[nodiscard]] inline bool IsPptPagePreparing(const PptState& state) noexcept
+	{
+		return state.pagePreparing && state.presentationActive && state.presentationVisible
+			&& state.layout.session != 0
+			&& (state.recovery.kind == PptRecovery::Kind::None || state.recovery.kind == PptRecovery::Kind::Recovering);
+	}
+
+	[[nodiscard]] inline bool IsPptNavigationWaiting(
+		const PptState& state, bool next) noexcept
+	{
+		const auto& waiting = state.navigationWaiting;
+		return waiting.waiting && waiting.epoch != 0 && waiting.session == state.layout.session
+			&& waiting.direction == (next ? PptNavigationDirection::Next
+				: PptNavigationDirection::Previous);
+	}
 
 	[[nodiscard]] inline bool IsPptDragFrameOwned(
 		const PptDragCommitTracker& tracker, const PptState& frame,
@@ -670,6 +823,7 @@ export namespace Inkeys::UI::PageControl
 		bool acknowledged = false;
 		std::uint8_t presentedPpt = 0;
 		std::uint8_t pendingPptPresentation = 0;
+		PptRecovery::State recovery;
 
 		void BeginSurface(std::uint8_t mask) noexcept
 		{
@@ -687,7 +841,7 @@ export namespace Inkeys::UI::PageControl
 		{
 			if (session != state.layout.session || target != state.targetRevision
 				|| current != state.currentPage || total != state.totalPage
-				|| pageAckEpoch != state.pageAckEpoch)
+				|| pageAckEpoch != state.pageAckEpoch || recovery != state.recovery)
 			{
 				const auto visible = presentedPpt;
 				const auto pending = pendingPptPresentation;
@@ -695,6 +849,7 @@ export namespace Inkeys::UI::PageControl
 					state.currentPage, state.totalPage, state.pageAckEpoch };
 				presentedPpt = visible;
 				pendingPptPresentation = pending;
+				recovery = state.recovery;
 			}
 			// 隐藏目标不是 HWND 已隐藏；淡出旧数字或未完成的呈现仍须交接。
 			const auto requiredMask = static_cast<std::uint8_t>(visibleMask
@@ -707,7 +862,8 @@ export namespace Inkeys::UI::PageControl
 		{
 			if (session != state.layout.session || target != state.targetRevision
 				|| current != state.currentPage || total != state.totalPage
-				|| pageAckEpoch != state.pageAckEpoch) return false;
+				|| pageAckEpoch != state.pageAckEpoch || recovery != state.recovery
+				|| state.recovery.kind != PptRecovery::Kind::None || state.recovery.revision != 0) return false;
 			committed |= mask;
 			if (acknowledged || session == 0 || target == 0
 				|| current == 0 || current < -1 || total <= 0 ||
@@ -750,14 +906,27 @@ export namespace Inkeys::UI::PageControl
 			};
 		return left.targetRevision == right.targetRevision
 			&& left.pageAckEpoch == right.pageAckEpoch
+			&& left.recovery == right.recovery
 			&& left.layout.session == right.layout.session
 			&& left.layout.epoch == right.layout.epoch
 			&& left.layout.pairVersions == right.layout.pairVersions
 			&& left.presentationActive == right.presentationActive
 			&& left.presentationVisible == right.presentationVisible
+			&& left.pagePreparing == right.pagePreparing
+			&& left.numericPageOverride == right.numericPageOverride
+			&& left.displayedCurrentPage == right.displayedCurrentPage
+			&& left.displayedTotalPage == right.displayedTotalPage
 			&& left.longPressEnabled == right.longPressEnabled
+			&& left.idleFadeSeconds == right.idleFadeSeconds
+			&& left.idleFadeBottomPair == right.idleFadeBottomPair
+			&& left.idleFadeMiddlePair == right.idleFadeMiddlePair
+			&& left.idleFadeMainBar == right.idleFadeMainBar
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage
+			&& left.navigationWaiting.session == right.navigationWaiting.session
+			&& left.navigationWaiting.epoch == right.navigationWaiting.epoch
+			&& left.navigationWaiting.direction == right.navigationWaiting.direction
+			&& left.navigationWaiting.waiting == right.navigationWaiting.waiting
 			&& SameFloat(left.layout.bottomPairWidth,
 				right.layout.bottomPairWidth)
 			&& SameFloat(left.layout.bottomPairHeight,
@@ -803,6 +972,7 @@ export namespace Inkeys::UI::PageControl
 		std::function<void()> endShow;
 		std::function<void(std::size_t, PptLayoutState)> commitPosition;
 		std::function<void(std::uint64_t, std::uint64_t, int, int, std::uint64_t)> pagePresented;
+		std::function<void(PptRecovery::State)> retryCanvas;
 	};
 
 	struct WhiteboardCallbacks

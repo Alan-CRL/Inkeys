@@ -8,6 +8,7 @@
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../../resource.h"
+#include "Bar.ThemeMaterial.h"
 #include <d3d11.h>
 #include <filesystem>
 #include <iostream>
@@ -24,6 +25,7 @@
 #include <vector>
 #include <bit>
 #include <limits>
+#include <cmath>
 #include "Bar.PresentationProbe.h"
 #include "Bar.MainLayoutPolicy.h"
 #include "../StartupPlacement.h"
@@ -38,6 +40,7 @@ import Inkeys.UI.PageControl;
 import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
+import Inkeys.Conv.Text;
 
 extern const double BarThicknessTooltipPadding;
 extern const double BarThicknessTooltipCloseReserve;
@@ -54,6 +57,38 @@ namespace Inkeys::UI::Bar
 		const RECT& logicalBounds, LONG presentationOutset) noexcept;
 	namespace
 	{
+		class MissingGlyphProbe final : public IDWriteTextRenderer
+		{
+		public:
+			bool missing = false;
+			HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** output) override
+			{
+				if (!output) return E_POINTER;
+				*output = nullptr;
+				if (id != __uuidof(IUnknown) && id != __uuidof(IDWriteTextRenderer)
+					&& id != __uuidof(IDWritePixelSnapping)) return E_NOINTERFACE;
+				*output = static_cast<IDWriteTextRenderer*>(this); return S_OK;
+			}
+			ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
+			ULONG STDMETHODCALLTYPE Release() override { return 1; }
+			HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(void*, BOOL* disabled) override
+			{ *disabled = TRUE; return S_OK; }
+			HRESULT STDMETHODCALLTYPE GetCurrentTransform(void*, DWRITE_MATRIX* matrix) override
+			{ *matrix = { 1, 0, 0, 1, 0, 0 }; return S_OK; }
+			HRESULT STDMETHODCALLTYPE GetPixelsPerDip(void*, FLOAT* pixels) override
+			{ *pixels = 1; return S_OK; }
+			HRESULT STDMETHODCALLTYPE DrawGlyphRun(void*, FLOAT, FLOAT, DWRITE_MEASURING_MODE,
+				const DWRITE_GLYPH_RUN* run, const DWRITE_GLYPH_RUN_DESCRIPTION*, IUnknown*) override
+			{
+				for (UINT32 index = 0; index < run->glyphCount; ++index)
+					missing |= run->glyphIndices[index] == 0;
+				return S_OK;
+			}
+			HRESULT STDMETHODCALLTYPE DrawUnderline(void*, FLOAT, FLOAT, const DWRITE_UNDERLINE*, IUnknown*) override { return S_OK; }
+			HRESULT STDMETHODCALLTYPE DrawStrikethrough(void*, FLOAT, FLOAT, const DWRITE_STRIKETHROUGH*, IUnknown*) override { return S_OK; }
+			HRESULT STDMETHODCALLTYPE DrawInlineObject(void*, FLOAT, FLOAT, IDWriteInlineObject*, BOOL, BOOL, IUnknown*) override { return S_OK; }
+		};
+
 		class WhiteboardButtonStyleFixture : public BarButtonSetClass
 		{
 		public:
@@ -162,7 +197,8 @@ namespace Inkeys::UI::Bar
 		if(FAILED(com))return 2;
 		if(FAILED(RenderPipeline::Initialize())){CoUninitialize();return 3;}
 		IdtFontFileLoader::IsLoaderInitialized();IdtFontCollectionLoader::IsLoaderInitialized();
-		const std::array<UINT,4> fonts{IDR_TTF1,IDR_TTF7,IDR_TTF3,IDR_TTF8};
+		const std::array<UINT,8> fonts{IDR_TTF1,IDR_TTF7,IDR_TTF3,IDR_TTF8,
+			IDR_NOTO_JP_REGULAR,IDR_NOTO_JP_BOLD,IDR_NOTO_KR_REGULAR,IDR_NOTO_KR_BOLD};
 		const HRESULT fontCollectionHr=RenderPipeline::InitializeFontCollection(
 			IdtFontFileLoader::GetLoader(),IdtFontCollectionLoader::GetLoader(),fonts);
 		std::filesystem::create_directories(L"Build/eraser-b");
@@ -170,6 +206,36 @@ namespace Inkeys::UI::Bar
 		int failures=0;
 		auto expect=[&](bool ok,const char* why){if(!ok){++failures;report<<"[EraserVisual] FAIL "<<why<<'\n';}};
 		expect(SUCCEEDED(fontCollectionHr),"SC/TC font collection initializes");
+		{
+			// 使用真实主栏 Shape 绘制通道验证 cap 与收展显隐独立，半收起不能仍停在30%。
+			BarUIRendering renderer;
+			const bool ready=SUCCEEDED(renderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),80,40));
+			expect(ready,"idle main body owns a real offscreen renderer");
+			if(ready){
+				BarUiShapeClass body;body.Initialization(40,20,80,40,0,0,0,RGB(30,30,30),std::nullopt);
+				body.enable.Initialization(true);body.themeSurface=true;body.residentSurface=true;
+				body.lightFillOpacityScale=1.10;
+				const auto draw=[&](double pct,double idle){
+					body.pct.SetDirect(pct);renderer.SetFrameZoom(1);renderer.SetResidentIdleFade(idle);
+					auto* dc=renderer.GetDeviceContext();dc->SetDpi(96,96);dc->SetTransform(D2D1::IdentityMatrix());
+					renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,80,40));
+					const bool drew=renderer.Shape(dc,body,{0,0});renderer.FinishFrameDrawCommands(dc);
+					expect((drew||pct==0)&&SUCCEEDED(renderer.EndFrameDraw(dc)),"idle main body draws through production Shape");
+					return static_cast<int>(ReadEraserTestPixel(dc,renderer.GetTargetBitmap(),40,20)[3]);
+				};
+				for(double light:{0.0,1.0}){
+					body.lightMaterial=light;
+					for(double pct:{.8,.6,.4,.2,.0}){
+						const int actual=draw(pct,1);
+						expect(std::abs(actual-static_cast<int>(std::lround(255*.3*pct/.8)))<=2,
+							"idle body shrink preserves independent visibility through every intermediate frame");
+					}
+					const int full=draw(.8,0),half=draw(.4,0);
+					expect(std::abs(half*2-full)<=2,"normal body visibility is unchanged when idle is off");
+				}
+				renderer.SetResidentIdleFade(0);renderer.DiscardDeviceResources();
+			}
+		}
 		// screenPoint/serial 保持不变，验证直移吸收和显示原点变更不依赖下一次 WM_MOUSEMOVE。
 		{
 			const bool savedEdge = BarUiEdgeLightingEnabled;
@@ -330,6 +396,198 @@ namespace Inkeys::UI::Bar
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
 		owner.spec.ConfigureLocalizedTypography();
 		owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
+		// 同一生产 Word 路径对照独立推导的整数字号，不用截图观感代替最终像素尺寸验证。
+		{
+			// 只在离屏测试局部公开受保护的缓存检查入口，生产接口保持不变。
+			struct FontTestRenderer : BarUIRendering
+			{
+				using BarUIRendering::BarUIRendering;
+				using BarUIRendering::GetThicknessFineDialLabelLayout;
+			};
+			FontTestRenderer fonts(&owner), reference(&owner);
+			const bool ready = SUCCEEDED(fonts.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128))
+				&& SUCCEEDED(reference.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128));
+			expect(ready, "font pixel policy creates offscreen targets");
+			if (ready)
+			{
+				struct FontCase { FLOAT dpi, scaleX, scaleY; bool pixels; };
+				for (const auto item : {FontCase{96,1,1,false}, FontCase{144,1.03F,0.91F,false},
+					FontCase{192,0.95F,0.83F,false}, FontCase{192,1.03F,0.91F,true}})
+				{
+					constexpr double zoom = 0.6, contentScale = 0.85;
+					const double deviceScale = item.scaleY * (item.pixels ? 1.0 : item.dpi / 96.0);
+					const double expectedPixels = std::floor(13.0 * zoom * deviceScale);
+					const double expectedSize = expectedPixels / deviceScale * contentScale;
+					const auto draw = [&](BarUIRendering& renderer, bool allow, double logicalSize)
+					{
+						renderer.UpdateFontRenderingPolicy(allow); renderer.SetFrameZoom(zoom);
+						auto* dc = renderer.GetDeviceContext(); dc->SetDpi(item.dpi, item.dpi);
+						dc->SetUnitMode(item.pixels ? D2D1_UNIT_MODE_PIXELS : D2D1_UNIT_MODE_DIPS);
+						dc->SetTransform(D2D1::IdentityMatrix());
+						const float units = item.pixels ? 1.0F : 96.0F / item.dpi;
+						renderer.BeginFrameDraw(dc, D2D1::RectF(0,0,256 * units,128 * units));
+						dc->SetTransform(D2D1::Matrix3x2F::Scale(item.scaleX,item.scaleY)
+							* D2D1::Matrix3x2F::Translation(3.25F,2.75F));
+						BarUiWordClass word(0,0,180,70,L"字号 123",logicalSize,RGB(20,20,20));
+						word.enable.Initialization(true); word.pct.SetDirect(1); word.contentScale=contentScale;
+						const bool drew = renderer.Word(dc,word,{10,10},DWRITE_FONT_WEIGHT_NORMAL);
+						renderer.FinishFrameDrawCommands(dc); dc->SetTransform(D2D1::IdentityMatrix());
+						expect(drew && SUCCEEDED(renderer.EndFrameDraw(dc)), "font Word renders through the real D2D path");
+						return ReadSvgProofPixels(dc,renderer.GetTargetBitmap());
+					};
+					const auto actual=draw(fonts,false,13.0);
+					const auto expected=draw(reference,true,expectedSize/(zoom*contentScale));
+					expect(!actual.empty() && actual==expected,
+						"Word pixels retain continuous content scale around the projected stationary target");
+					const auto fractional=draw(fonts,true,13.0);
+					expect(fractional!=actual, "fractional preference preserves a distinct untruncated Word render");
+					expect(draw(fonts,false,13.0)==actual, "font preference switches back without stale cached text");
+				}
+				auto* dc=fonts.GetDeviceContext(); dc->SetDpi(96,96); dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);
+				dc->SetTransform(D2D1::IdentityMatrix()); fonts.UpdateFontRenderingPolicy(false);
+				auto* label=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(label && label->layout && static_cast<IDWriteTextFormat*>(label->layout.Get())->GetFontSize()==6.0F,
+					"fine dial uses truncated pixels in its actual DWrite layout");
+				expect(label==fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc),
+					"fine dial reuses the same effective font layout");
+				dc->SetTransform(D2D1::Matrix3x2F::Scale(1.03F,0.91F));
+				auto* scaled=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(scaled && scaled->layout
+					&& std::abs(static_cast<IDWriteTextFormat*>(scaled->layout.Get())->GetFontSize()*0.91-5.0)<0.00001,
+					"fine dial cache keys include final font size after external transform");
+				fonts.UpdateFontRenderingPolicy(true);
+				label=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
+				expect(label && std::abs(static_cast<IDWriteTextFormat*>(label->layout.Get())->GetFontSize()-6.3F)<0.00001F,
+					"fine dial refreshes layout when fractional fonts are enabled");
+				fonts.UpdateFontRenderingPolicy(false);
+				expect(fonts.ResolveFontSize(dc,0.5)==0.0F, "subpixel font is skipped rather than enlarged");
+				dc->SetDpi(120,192); dc->SetTransform(D2D1::Matrix3x2F(1,0,0.6F,0.8F,0,0));
+				const double rotatedScale=std::hypot(0.6*1.25,0.8*2.0);
+				expect(std::abs(fonts.ResolveFontSize(dc,7.8)*rotatedScale-std::floor(7.8*rotatedScale))<0.00001,
+					"font height includes both axes of rotated/sheared DPI mapping");
+
+				// 真实公共按钮绘制覆盖按压目标和 FLOAT 当前矩阵抵消曾导致的 13px->12px 边界。
+				{
+					dc->SetDpi(96,96);dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
+					fonts.SetFrameZoom(1);fonts.UpdateFontRenderingPolicy(false);
+					BarButtonClass button;
+					button.button.Initialization(0,0,80,80,4,4,1,RGB(240,240,240),RGB(20,20,20));
+					button.button.enable.Initialization(true);button.button.pct.SetDirect(1);
+					button.name.Initialization(0,0,70,24,L"Press",13,RGB(20,20,20));
+					button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
+					BarButtonDrawOptions options;options.drawIcon=false;
+					auto time=std::chrono::steady_clock::now();
+					const auto drawButton=[&](double dt){
+						time+=std::chrono::nanoseconds(1)+std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(dt));
+						fonts.BeginFontFrame(time,{dt,1,true,false},1);fonts.SetFontTargetScale(1);
+						dc->SetTransform(D2D1::IdentityMatrix());fonts.BeginFrameDraw(dc,D2D1::RectF(0,0,256,128));
+						expect(DrawBarButtonVisual(fonts,dc,button,{10,10},options),"real font press button draws");
+						const double first=button.name.fontCorrection.Current();
+						(void)DrawBarButtonVisual(fonts,dc,button,{10,10},options);
+						expect(button.name.fontCorrection.Current()==first,"duplicate real button draw advances font once");
+						fonts.FinishFrameDrawCommands(dc);expect(SUCCEEDED(fonts.EndFrameDraw(dc)),"font press frame commits D2D commands");
+						return 13.0*static_cast<double>(button.pressScale.val)*first;
+					};
+					for(const double current:{1.0,0.95,0.96,0.99,1.01,0.9,1.0}){
+						button.pressScale.SetDirect(current);button.pressScale.SetTar(1,0.2);(void)drawButton(0);
+						expect(button.name.fontCorrection.Target()==1.0,"release target stays exactly 13px across FLOAT press matrices");
+					}
+					button.pressScale.SetDirect(1);button.pressScale.SetTar(0.95,0.2);
+					double previous=13;int intermediate=0;
+					for(int tick=0;tick<30;++tick){
+						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						const double pixel=drawButton(0.01);intermediate+=std::abs(pixel-std::round(pixel))>0.00001;
+						expect(std::abs(pixel-previous)<0.2,"real pressed font follows a continuous fractional trajectory");previous=pixel;
+					}
+					expect(intermediate>10&&std::abs(previous-12.0)<0.00001&&!fonts.FontAnimationsActive(),
+						"pressed hold settles at floor(13*0.95) and font scheduler becomes idle");
+					const double held=previous;button.pressScale.SetTar(1,0.2);
+					expect(std::abs(drawButton(0)-held)<0.00001,"release retarget at zero dt preserves current visible font");
+					for(int tick=0;tick<30;++tick){
+						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						previous=drawButton(0.01);
+					}
+					expect(std::abs(previous-13.0)<0.00001&&std::abs(drawButton(0)-previous)<0.00001,
+						"real release ends at 13px without an idle-frame floor jump");
+					// 字号目标不变时，内容过渡可连续经过小数及 Back 回弹；末尾只回到同一个 c。
+					button.name.contentScale=0.83;const double c=button.name.fontCorrection.Current();(void)drawButton(0.01);
+					expect(button.name.fontCorrection.Current()==c,"content midpoint does not retarget stationary font correction");
+					button.name.contentScale=1.03;(void)drawButton(0.01);button.name.contentScale=1;(void)drawButton(0.01);
+					expect(button.name.fontCorrection.Current()==c,"content overshoot and final frame keep continuous correction");
+				}
+
+
+				// 更多的派生尺寸逐帧变化，但文字必须从首帧就使用最终字号目标。
+				for (const auto kind : {BarButtonVisualLayoutKind::StandardTwoTwo,
+					BarButtonVisualLayoutKind::StandardTwoOne})
+				for (const double zoom : {1.0, 0.6})
+				for (const bool allowFractional : {false, true})
+				{
+					const double nominal=ResolveBarButtonVisualMetrics(kind).primaryFontSizeDip;
+					const double expected=allowFractional?nominal*zoom:std::floor(nominal*zoom);
+					const double duration=BarUiDefaultOperationDur,dt=duration/32.0;
+					fonts.SetFrameZoom(zoom);fonts.UpdateFontRenderingPolicy(allowFractional);
+					dc->SetDpi(96,96);dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
+					BarButtonClass button;
+					button.button.Initialization(0,0,70,70,4,4,1,RGB(240,240,240),RGB(20,20,20));
+					button.button.enable.Initialization(true);button.button.pct.SetDirect(1);
+					button.name.Initialization(0,0,70,24,kind==BarButtonVisualLayoutKind::StandardTwoTwo?L"设置":L"组件",nominal,RGB(20,20,20));
+					button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
+					BarButtonDrawOptions options;options.drawIcon=false;
+					auto time=std::chrono::steady_clock::now();
+					const auto drawFrame=[&](double elapsed){
+						time+=std::chrono::nanoseconds(1)+std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(elapsed));
+						fonts.BeginFontFrame(time,{elapsed,1,true,false},zoom);fonts.SetFontTargetScale(1);
+						dc->SetTransform(D2D1::IdentityMatrix());fonts.BeginFrameDraw(dc,D2D1::RectF(0,0,256,128));
+						expect(DrawBarButtonVisual(fonts,dc,button,{10,10},options),"More label draws through the production button path");
+						const double size=fonts.ResolveWordFontSize(dc,button.name,button.name.size.val*zoom);
+						fonts.FinishFrameDrawCommands(dc);expect(SUCCEEDED(fonts.EndFrameDraw(dc)),"More font frame commits D2D commands");
+						return size;
+					};
+					BarUiValueClass scale{0.01};
+					const BarUiCurveSpecClass opening{BarUiCurveEnum::EaseOutBack,BarUiCurveEnum::EaseOutBack,0,false};
+					const BarUiCurveSpecClass closing{BarUiCurveEnum::EaseInBack,BarUiCurveEnum::EaseInBack,0,false};
+					const auto moreFrame=[&](double elapsed){
+						ConfigureBarButtonVisualTargets(button,kind,duration,scale.val,true,std::nullopt,scale.tar);
+						return drawFrame(elapsed);
+					};
+					// 隐藏布局不消费字体修正；覆盖首次可见尺寸尚不足 1px 的边界。
+					ConfigureBarButtonVisualTargets(button,kind,duration,0.01,true,std::nullopt,0.01);
+					scale.SetTar(1,duration,std::nullopt,false,opening);
+					expect(std::abs(moreFrame(0)-expected*0.01)<0.00001,"first visible More label projects the final size even below one pixel");
+					bool overshoot=false;
+					double settled=0;
+					for(int tick=0;tick<36;++tick){
+						if(!scale.IsSame())(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});
+						overshoot|=scale.val>1;settled=moreFrame(dt);
+						expect(std::abs(settled-expected*static_cast<double>(scale.val))<0.00001,
+							"More opening retains its raw scale curve without a second font-growth animation");
+					}
+					expect(overshoot&&scale.IsSame()&&!fonts.FontAnimationsActive()
+						&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
+						"More opening and overshoot settle at the final font size with no idle-frame growth");
+					scale.SetTar(0.16,duration,std::nullopt,false,closing);
+					for(int tick=0;tick<8;++tick){(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});(void)moreFrame(dt);}
+					const double interrupted=moreFrame(0);
+					scale.SetTar(1,duration,std::nullopt,false,opening);
+					expect(std::abs(moreFrame(0)-interrupted)<0.00001,"reopening More at zero dt preserves the current label size");
+					for(int tick=0;tick<36;++tick){
+						if(!scale.IsSame())(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});
+						settled=moreFrame(dt);
+					}
+					expect(!fonts.FontAnimationsActive()&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
+						"reversed More opening has no font growth after the panel settles");
+					// 同一溢出按钮回到主栏时，不得沿用紧凑面板的静止字号覆盖。
+					scale.SetDirect(0.16);(void)moreFrame(duration);
+					ConfigureBarButtonVisualTargets(button,kind,duration,1,false);
+					button.name.size.SetDirect(button.name.size.tar);
+					expect(button.name.fontTargetSize<0&&std::abs(drawFrame(duration)-expected)<0.00001,
+						"moving a More button back to the main bar restores its ordinary font target");
+				}
+			}
+			fonts.DiscardDeviceResources(); reference.DiscardDeviceResources();
+		}
+
 		// 早期 CLI 未读取配置；准备已规范化的内存布局，避免 Load 触发迁移写盘。
 		auto a2Fixture=Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
 		for(auto& entry:a2Fixture)
@@ -400,6 +658,25 @@ namespace Inkeys::UI::Bar
 			&& freezeModeButton->size==BarButtonSizeEnum::twoOne
 			&& selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
 			"setting mode updates compact buttons while tool and empty content stay unchanged");
+		// 在工具状态不变时切语言，必须绕过旧styleKey缓存且保留按钮身份。
+		for (const auto& language : Inkeys::Localization::Locales)
+		{
+			expect(I18n::load(1,L"JSON",language.code),"load live language while drawing in separate mode");
+			owner.barButtonSet.RefreshLocalizedText();
+			owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
+			expect(selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel)
+				&& selectModeButton->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+				"active separate-mode label updates without tool change");
+			selectModeButton->name.AdvanceContentTransition(0.1,1.0);
+			expect(selectModeButton->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
+				"old text fade cannot resurrect previous language after immediate switch");
+			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
+				&& pierceModeButton->size==BarButtonSizeEnum::twoOne && freezeModeButton->size==BarButtonSizeEnum::twoOne,
+				"live language preserves drawing mode and compact paired buttons");
+			expectStableButtons();
+		}
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"restore locale after live state labels");
+		owner.barButtonSet.RefreshLocalizedText();owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
 		// 复用设置的真实组件同步链；业务 key 不变时不能覆写分离式的有效半高网格。
 		owner.barButtonSet.RegisterBuiltInComponents();
 		const bool savedExplorer=setlist.component.shortcutButton.appliance.explorer;
@@ -597,11 +874,13 @@ namespace Inkeys::UI::Bar
 			const auto savedA1=Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot();
 			const auto savedA2=Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
 			int matrixCases=0;
+			Inkeys::Testing::WorkspaceSceneScope workspaceScope;
 			for(int count:{0,1,2,3,4,2,1,0})
 			for(int mode:{0,1})for(int scene:{0,1,2})for(bool content:{false,true})
 			for(const auto tool:{StateModeSelectEnum::IdtSelection,StateModeSelectEnum::IdtPen,
 				StateModeSelectEnum::IdtShape,StateModeSelectEnum::IdtEraser,StateModeSelectEnum::IdtClickThrough})
 			{
+				(void)workspaceScope.Set(scene==2 ? WorkspaceScene::Whiteboard : scene==1 ? WorkspaceScene::Presentation : WorkspaceScene::Desktop);
 				SetWhiteboardActive(scene==2);Freeze::SetWhiteboardActive(scene==2);
 				SetPptPresentationActive(scene==1);Freeze::SetPresentationActive(scene==1);
 				SetSelectAndClickThroughMode(mode);SetCurrentPageHasContent(content);switchTool(tool);
@@ -629,12 +908,35 @@ namespace Inkeys::UI::Bar
 					"repeated Load and projection preserve all effective geometry and stable identities");
 				++matrixCases;
 			}
+			// 真实准备路径必须在三种稳定工作区保持形状面板展开，同时保留统一收起条件。
+			auto* geometryModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Geometry];
+			for(int scene:{0,1,2})
+			{
+				(void)workspaceScope.Set(scene==2 ? WorkspaceScene::Whiteboard : scene==1 ? WorkspaceScene::Presentation : WorkspaceScene::Desktop);
+				SetWhiteboardActive(scene==2);Freeze::SetWhiteboardActive(scene==2);
+				SetPptPresentationActive(scene==1);Freeze::SetPresentationActive(scene==1);
+				SetCurrentPageHasContent(true);owner.barState.fold=false;ChangeStateModeToShape();owner.UpdateRendering();
+				owner.barState.geometryAttribute=true;owner.UpdateRendering();
+				expect(owner.barState.geometryAttribute,
+					"Shape panel stays open through production preparation in Desktop, Presentation and Whiteboard");
+				ChangeStateModeToPen();owner.barState.geometryAttribute=true;owner.UpdateRendering();
+				expect(!owner.barState.geometryAttribute,"Shape panel closes when the active tool is not Shape");
+				ChangeStateModeToShape();owner.barState.fold=false;owner.UpdateRendering();
+				owner.barState.fold=true;owner.barState.geometryAttribute=true;owner.UpdateRendering();
+				expect(!owner.barState.geometryAttribute,"Shape panel closes when the main bar folds");
+				owner.barState.fold=false;owner.UpdateRendering();
+				geometryModeButton->hide=true;owner.barState.geometryAttribute=true;
+				owner.barButtonSet.PrepareMainPanels(GetStateModeSnapshot());
+				expect(!owner.barState.geometryAttribute,"Shape panel closes when its main button is invisible");
+				owner.UpdateRendering();
+			}
 			report<<"[MainPresentation] componentMatrixCases="<<matrixCases<<'\n';
 			expect(WhiteboardActive() && !HideWhiteboardSnapIndicator()
 				&& ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,true,true,true)
 				&& !ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,false,true,true)
 				&& !ResolveBarBottomDockIndicatorTarget(BarBottomDockMode::BottomDocked,true,true,false),
 				"active Whiteboard permits eligible drag feedback while entry and unchanged gestures stay hidden");
+			(void)workspaceScope.Set(WorkspaceScene::Desktop);
 			SetWhiteboardActive(false);Freeze::SetWhiteboardActive(false);
 			SetPptPresentationActive(false);Freeze::SetPresentationActive(false);
 			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();SetCurrentPageHasContent(false);reload(0);
@@ -900,19 +1202,16 @@ namespace Inkeys::UI::Bar
 			b->name.pct.SetDirect(1);b->icon.pct.SetDirect(1);
 		}
 		std::filesystem::create_directories(L"Build/eraser-b/visuals");
-		struct LocalizedBarCase{const wchar_t* language;const wchar_t* fileTag;const wchar_t* family;const wchar_t* locale;};
-		const std::array localizedBarCases{
-			LocalizedBarCase{L"zh-CN",L"zh-cn",L"HarmonyOS Sans SC",L"zh-cn"},
-			LocalizedBarCase{L"zh-TW",L"zh-tw",L"HarmonyOS Sans TC",L"zh-tw"},
-			LocalizedBarCase{L"en-US",L"en-us",L"HarmonyOS Sans SC",L"en-us"}};
-		const std::array<const char*,21> fixedLabelKeys{
+
+		const std::array<const char*,23> fixedLabelKeys{
 			I18nKey.UI.Bar.MainButtons.SelectLabel,I18nKey.UI.Bar.MainButtons.MoveLabel,
 			I18nKey.UI.Bar.MainButtons.DrawLabel,I18nKey.UI.Bar.MainButtons.LaserLabel,
 			I18nKey.UI.Bar.MainButtons.HighlighterLabel,I18nKey.UI.Bar.MainButtons.HardPenLabel,
 			I18nKey.UI.Bar.MainButtons.SoftPenLabel,I18nKey.UI.Bar.MainButtons.EraserLabel,
 			I18nKey.UI.Bar.MainButtons.AreaEraserLabel,I18nKey.UI.Bar.MainButtons.GeometryLabel,
 			I18nKey.UI.Bar.MainButtons.RectangleLabel,I18nKey.UI.Bar.MainButtons.StraightLineLabel,
-			I18nKey.UI.Bar.MainButtons.UndoLabel,I18nKey.UI.Bar.MainButtons.ClearLabel,
+			I18nKey.UI.Bar.MainButtons.UndoLabel,I18nKey.UI.Bar.MainButtons.RedoLabel,
+			I18nKey.UI.Bar.MainButtons.ReturnToShowLabel,I18nKey.UI.Bar.MainButtons.ClearLabel,
 			I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel,
 			I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel,
 			I18nKey.UI.Bar.MainButtons.FreezeLabel,I18nKey.UI.Bar.MainButtons.EndPresentationLabel,
@@ -922,19 +1221,58 @@ namespace Inkeys::UI::Bar
 			I18nKey.UI.Bar.DrawAttributes.HighlighterLabel,I18nKey.UI.Bar.DrawAttributes.HardPenLabel,
 			I18nKey.UI.Bar.DrawAttributes.SoftPenLabel,I18nKey.UI.Bar.DrawAttributes.FreeLineLabel,
 			I18nKey.UI.Bar.DrawAttributes.AnnotationLineLabel};
-		for(const auto& language:localizedBarCases)
+		for(const auto& language:Inkeys::Localization::Locales)
 		{
-			expect(I18n::load(1,L"JSON",language.language),"bar language loads for layout audit");
-			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
-			expect(owner.spec.GetFontFamily()==language.family && owner.spec.GetTextLocale()==language.locale,
+			expect(I18n::load(1,L"JSON",language.code),"bar language loads for layout audit");
+			expect(owner.spec.RefreshLocalizedTypography(),"new locale revision refreshes typography without device recreation");
+			owner.barButtonSet.RefreshLocalizedText();
+			expect(owner.barButtonSet.GetMoreButton()->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.MoreLabel),
+				"production label refresh updates More in place");
+			expect(!owner.spec.RefreshLocalizedTypography(),"consumed locale revision does not invalidate every frame");
+			updateLocalizedPresetLabels();
+			report << "[I18nLayout] " << language.codeUtf8 << '\n';
+			auto reportBounds = [&](const char* key, const wstring& text, double fontSize,
+				D2D1_SIZE_F bounds, double maxWidth, double maxHeight, const char* stage)
+			{
+				auto printable = utf16ToUtf8(text);
+				for (size_t offset = 0; (offset = printable.find('\n', offset)) != string::npos; offset += 2)
+					printable.replace(offset, 1, "\\n");
+				report << "[I18nBounds] " << language.codeUtf8 << " stage=" << stage
+					<< " key=" << key << " font=" << fontSize << " measured=" << bounds.width << 'x' << bounds.height
+					<< " slot=" << maxWidth << 'x' << maxHeight << " text=" << printable << '\n';
+			};
+			ComPtr<IDWriteTextFormat> localizedFormat;
+			const auto factory = RenderPipeline::DWriteFactory();
+			const auto collection = RenderPipeline::FontCollection();
+			const HRESULT formatHr = factory->CreateTextFormat(language.fontFamily, collection.Get(),
+				DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+				13.0F, language.code, &localizedFormat);
+			expect(SUCCEEDED(formatHr), "actual selected family creates a localized DWrite format");
+			if (localizedFormat)
+			{
+				for (const auto& [key, value] : I18n::i18n)
+				{
+					if (value.empty()) continue;
+					const auto text = I18n::getW(key);
+					ComPtr<IDWriteTextLayout> layout;
+					MissingGlyphProbe probe;
+					const bool created = SUCCEEDED(factory->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()),
+						localizedFormat.Get(), 16000.0F, 16000.0F, &layout));
+					const bool complete = created && SUCCEEDED(layout->Draw(nullptr, &probe, 0, 0)) && !probe.missing;
+					if (!complete) report << "[I18nGlyph] " << language.codeUtf8 << ' ' << key << '\n';
+					expect(complete, "actual DWrite glyph runs contain no missing characters");
+				}
+			}
+
+			expect(owner.spec.GetFontFamily()==language.fontFamily && owner.spec.GetTextLocale()==language.code,
 				"localized font family and DWrite locale match language");
 			{
 				WhiteboardButtonStyleFixture style;
 				auto* button=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Whiteboard];
 				style.preset[(int)BarButtonPresetEnum::Whiteboard]=button;
 				BarUiSVGClass resumeIcon,closeIcon;
-				resumeIcon.InitializationFromResource(L"UI",L"barWhiteboard");
-				closeIcon.InitializationFromResource(L"UI",L"barDismiss");
+				resumeIcon.InitializationFromResource(L"UI",L"barResumeWhiteboard");
+				closeIcon.InitializationFromResource(L"UI",L"barCloseSmall");
 				expect(!resumeIcon.svg.GetVal().empty() && !closeIcon.svg.GetVal().empty(),
 					"Whiteboard resume and close SVG resources are available for real content checks");
 				const bool savedFold=owner.barState.fold;
@@ -958,57 +1296,119 @@ namespace Inkeys::UI::Bar
 				expect(button->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel),
 					"inactive whiteboard ignores a stale minimized flag");
 			}
+			// 独立注册表模拟每种语言的冷启动，验证真实组件标签与元数据而非模板副本。
+			BarButtonSetClass localizedComponents;
+			localizedComponents.RegisterBuiltInComponents();
+			const struct { const char* id; const char* category; const char* title; const char* label; } componentCases[]{
+				{ "Component.ShortcutButton.Appliance.Explorer", I18nKey.SettingsUI.Component.SoftwareSection, I18nKey.SettingsUI.Component.ExplorerTitle, I18nKey.UI.Bar.Components.ExplorerLabel },
+				{ "Component.ShortcutButton.Appliance.Taskmgr", I18nKey.SettingsUI.Component.SoftwareSection, I18nKey.SettingsUI.Component.TaskManagerTitle, I18nKey.UI.Bar.Components.TaskManagerLabel },
+				{ "Component.ShortcutButton.Appliance.Control", I18nKey.SettingsUI.Component.SoftwareSection, I18nKey.SettingsUI.Component.ControlPanelTitle, I18nKey.UI.Bar.Components.ControlPanelLabel },
+				{ "Component.ShortcutButton.System.Desktop", I18nKey.SettingsUI.Component.SystemSection, I18nKey.SettingsUI.Component.ShowDesktopTitle, I18nKey.UI.Bar.Components.ShowDesktopLabel },
+				{ "Component.ShortcutButton.System.LockWorkStation", I18nKey.SettingsUI.Component.SystemSection, I18nKey.SettingsUI.Component.LockScreenTitle, I18nKey.UI.Bar.Components.LockScreenLabel },
+				{ "Component.ShortcutButton.Keyboard.Keyboardesc", I18nKey.SettingsUI.Component.KeyboardSection, I18nKey.SettingsUI.Component.EscapeTitle, I18nKey.UI.Bar.Components.EscapeLabel },
+				{ "Component.ShortcutButton.Keyboard.KeyboardAltF4", I18nKey.SettingsUI.Component.KeyboardSection, I18nKey.SettingsUI.Component.AltF4Title, nullptr },
+				{ "Component.ShortcutButton.RollCall.IslandCaller1", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.IslandCaller1Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.IslandCaller2", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.IslandCaller2Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.SecRandom1", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.SecRandom1Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.SecRandom2", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.SecRandom2Title, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.SecRandom2Compat", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.SecRandom2CompatTitle, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.RollCall.NamePicker", I18nKey.SettingsUI.Component.RollCallSection, I18nKey.SettingsUI.Component.NamePickerTitle, I18nKey.UI.Bar.Components.RollCallLabel },
+				{ "Component.ShortcutButton.Linkage.ClassislandSettings", I18nKey.SettingsUI.Component.ClassIslandSection, I18nKey.SettingsUI.Component.ClassIslandSettingsTitle, I18nKey.UI.Bar.Components.ClassIslandSettingsLabel },
+				{ "Component.ShortcutButton.Linkage.ClassislandProfile", I18nKey.SettingsUI.Component.ClassIslandSection, I18nKey.SettingsUI.Component.ClassIslandProfileTitle, I18nKey.UI.Bar.Components.ClassIslandProfileLabel },
+				{ "Component.ShortcutButton.Linkage.ClassislandClassswap", I18nKey.SettingsUI.Component.ClassIslandSection, I18nKey.SettingsUI.Component.ClassIslandSwapTitle, I18nKey.UI.Bar.Components.ClassIslandSwapLabel },
+			};
+			for(const auto& componentCase:componentCases)
+			{
+				BarButtonRegistrationClass registration;
+				const bool found=localizedComponents.TryGetRegistration(componentCase.id,registration) && registration.button;
+				expect(found,"actual built-in component registers in each locale");
+				if(!found)continue;
+				const auto text=registration.button->name.content.GetTar();
+				expect(text==(componentCase.label?IW(componentCase.label):L"Alt+F4")
+					&& registration.categoryName==IW(componentCase.category) && registration.settingsName==IW(componentCase.title),
+					"actual component label and settings metadata use the selected locale");
+				const double fontSize=owner.spec.FitButtonLabelFontSize(text,metrics.primaryFontSizeDip,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip);
+				const auto bounds=owner.spec.MeasureText(text,fontSize,DWRITE_FONT_WEIGHT_BOLD);
+				if(bounds.width>metrics.primarySlotWidthDip+0.5f)reportBounds(componentCase.label?componentCase.label:componentCase.id,text,fontSize,bounds,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,"component");
+				expect(bounds.width<=metrics.primarySlotWidthDip+0.5f,"localized component fits its unchanged toolbar slot");
+			}
 			for(const auto* key:fixedLabelKeys)
-				expect(owner.spec.MeasureText(IW(key),metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=metrics.primarySlotWidthDip+0.5f,
-					"localized fixed label fits the existing 70 DIP slot");
+			{
+				const auto text=IW(key);
+				const double fontSize=owner.spec.FitButtonLabelFontSize(text,metrics.primaryFontSizeDip,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip);
+				const auto bounds=owner.spec.MeasureText(text,fontSize,DWRITE_FONT_WEIGHT_BOLD);
+				const bool fits=bounds.width<=metrics.primarySlotWidthDip+0.5f;
+				if(!fits)reportBounds(key,text,fontSize,bounds,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,"fixed");
+				expect(fits,"localized fixed label fits the existing 70 DIP slot");
+			}
 			for(const auto* key:{I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.FreezeLabel})
-				expect(owner.spec.MeasureText(IW(key),twoOneMetrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=twoOneMetrics.primarySlotWidthDip+0.5f,
-					"localized Whiteboard and Freeze labels fit the existing 37 DIP slot");
+			{
+				const auto text=IW(key);
+				const double fontSize=owner.spec.FitButtonLabelFontSize(text,twoOneMetrics.primaryFontSizeDip,twoOneMetrics.primarySlotWidthDip,twoOneMetrics.primarySlotHeightDip);
+				const auto bounds=owner.spec.MeasureText(text,fontSize,DWRITE_FONT_WEIGHT_BOLD);
+				const bool fits=bounds.width<=twoOneMetrics.primarySlotWidthDip+0.5f;
+				if(!fits)reportBounds(key,text,fontSize,bounds,twoOneMetrics.primarySlotWidthDip,twoOneMetrics.primarySlotHeightDip,"compact");
+				expect(fits,"localized Whiteboard and Freeze labels fit the existing 37 DIP slot");
+			}
 			for(const auto preset:{BarButtonPresetEnum::Select,BarButtonPresetEnum::Pierce})
 			{
 				auto* b=owner.barButtonSet.preset[(int)preset];
-				auto label=IW(preset==BarButtonPresetEnum::Select ? I18nKey.UI.Bar.MainButtons.SelectClearLabel
-					: I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
+				const auto* key=preset==BarButtonPresetEnum::Select ? I18nKey.UI.Bar.MainButtons.SelectClearLabel
+					: I18nKey.UI.Bar.MainButtons.ClickThroughLabel;
+				auto label=IW(key);
 				// 直接测量真实语言资源，不在测试里重复生产代码的英文改写。
-				expect(std::count(label.begin(),label.end(),L'\n')==(I18n::isIdentifying(L"en-US")?1:0),
-					"localized Select Clear and Click-through resources keep English two-line and Chinese single-line labels");
+				expect(std::count(label.begin(),label.end(),L'\n')<=1,
+					"localized short labels keep the resource contract of at most two lines");
 				b->name.SetStringImmediate(label);b->TransitionContent(L"",label);
 				for(const auto kind:{BarButtonVisualLayoutKind::StandardTwoTwo,BarButtonVisualLayoutKind::StandardTwoOne})
 				{
 					if(preset==BarButtonPresetEnum::Select && kind==BarButtonVisualLayoutKind::StandardTwoOne)continue;
 					const auto slot=ResolveBarButtonVisualMetrics(kind);
-					const auto measured=owner.spec.MeasureText(label,b->LabelFontSize(slot.primaryFontSizeDip),DWRITE_FONT_WEIGHT_BOLD);
-					expect(measured.width>0 && measured.width<=slot.primarySlotWidthDip+0.5f &&
-						measured.height>0 && measured.height<=slot.primarySlotHeightDip+0.5f,
-						"Select Clear and Click-through three-language DWrite bounds fit original slots");
-					if(label.find(L'\n')!=wstring::npos)
+					const double fittedSize=owner.spec.FitButtonLabelFontSize(label,b->LabelFontSize(slot.primaryFontSizeDip),slot.primarySlotWidthDip,slot.primarySlotHeightDip);
+					const auto measured=owner.spec.MeasureText(label,fittedSize,DWRITE_FONT_WEIGHT_BOLD);
+					const bool fits=measured.width>0 && measured.width<=slot.primarySlotWidthDip+0.5f &&
+						measured.height>0 && measured.height<=slot.primarySlotHeightDip+0.5f;
+					if(!fits)reportBounds(key,label,fittedSize,measured,slot.primarySlotWidthDip,slot.primarySlotHeightDip,"short");
+					expect(fits,"localized Select Clear and Click-through DWrite bounds fit original slots");
+					// 只有 Select 在短标签与清空标签之间换字；Pierce 实际只保持同一穿透文案。
+					if(label.find(L'\n')!=wstring::npos && preset==BarButtonPresetEnum::Select)
 					{
 						// 真实换字过渡的中点前后都测量当前字号，防止目标文案提前裁切。
 						BarButtonClass transitioning(*b);
-						transitioning.name.SetStringImmediate(L"Select");
+						const auto shortLabel=IW(I18nKey.UI.Bar.MainButtons.SelectLabel);
+						transitioning.name.SetStringImmediate(shortLabel);
 						transitioning.name.size.SetDirect(slot.primaryFontSizeDip);
 						transitioning.TransitionContent(L"",label);
 						for(const double dt:{0.0,0.19,0.02,0.05,0.5})
 						{
 							transitioning.name.AdvanceContentTransition(dt,1.0);
-							const auto bounds=owner.spec.MeasureText(transitioning.name.content.GetVal(),
-								transitioning.name.size.val,DWRITE_FONT_WEIGHT_BOLD);
-							expect(bounds.width<=slot.primarySlotWidthDip+0.5f && bounds.height<=slot.primarySlotHeightDip+0.5f,
-								"incoming multiline label fits before, at and after the transparent midpoint");
+							const double currentSize=owner.spec.FitButtonLabelFontSize(transitioning.name.content.GetVal(),transitioning.name.size.val,slot.primarySlotWidthDip,slot.primarySlotHeightDip);
+							const auto bounds=owner.spec.MeasureText(transitioning.name.content.GetVal(),currentSize,DWRITE_FONT_WEIGHT_BOLD);
+							const bool transitionFits=bounds.width<=slot.primarySlotWidthDip+0.5f && bounds.height<=slot.primarySlotHeightDip+0.5f;
+							if(!transitionFits)reportBounds(key,transitioning.name.content.GetVal(),currentSize,bounds,slot.primarySlotWidthDip,slot.primarySlotHeightDip,"transition");
+							expect(transitionFits,"incoming multiline label fits before, at and after the transparent midpoint");
 						}
-						transitioning.TransitionContent(L"",L"Select");
+						transitioning.TransitionContent(L"",shortLabel);
 						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==9.0,
 							"outgoing multiline label keeps compact font until content changes");
 						transitioning.name.AdvanceContentTransition(1.0,1.0);
 						expect(transitioning.LabelFontSize(slot.primaryFontSizeDip)==slot.primaryFontSizeDip,
 							"short label restores standard font after content transition");
 					}
+					else if(preset==BarButtonPresetEnum::Pierce)
+					{
+						BarButtonClass stable(*b);stable.name.SetStringImmediate(label);
+						expect(!stable.TransitionContent(L"",label),"Pierce keeps its actual localized content when refreshed");
+					}
 				}
 			}
 			updateLocalizedPresetLabels();
 			for(const auto* key:penMenuLabelKeys)
-				expect(owner.spec.MeasureText(IW(key),12.0,DWRITE_FONT_WEIGHT_NORMAL).width<=80.5f,
-					"localized pen menu label fits its measured text slot");
+			{
+				const auto text=IW(key);const auto bounds=owner.spec.MeasureText(text,12.0,DWRITE_FONT_WEIGHT_NORMAL);
+				if(bounds.width>80.5f)reportBounds(key,text,12.0,bounds,80.0,0.0,"pen-menu");
+				expect(bounds.width<=80.5f,"localized pen menu label fits its measured text slot");
+			}
 			{
 				// P2按实际语言测量同宽列；使用生产布局的文字槽，保留严格宽度约束。
 				const bool savedGeometry = owner.barState.geometryAttribute, savedDraw = owner.barState.drawAttribute;
@@ -1038,6 +1438,7 @@ namespace Inkeys::UI::Bar
 			{
 				const auto title=owner.spec.MeasureText(IW(key),BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
 				const double width=std::ceil((std::max)(title.width,annotationBody.width))+BarThicknessTooltipPadding*2+BarThicknessTooltipCloseReserve;
+				if(!(width>0 && width<=1000))reportBounds(key,IW(key),BarThicknessTooltipTitleFontSize,title,1000,0,"annotation-popup");
 				expect(width>0 && width<=1000,"localized annotation popup expands within the offscreen work area");
 			}
 			const auto annotationTitleText=IW(I18nKey.UI.Bar.DrawAttributes.AnnotationFixedUnsupportedTitle);
@@ -1050,6 +1451,7 @@ namespace Inkeys::UI::Bar
 			const auto overflowTitle=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
 			const double overflowWidth=std::ceil((std::max)(overflowTitle.width,overflowBody.width))+BarThicknessTooltipPadding*2+BarThicknessTooltipCloseReserve;
 			const double overflowHeight=std::ceil(overflowTitle.height+BarThicknessTooltipLineGap+overflowBody.height)+BarThicknessTooltipPadding*2;
+			if(!(overflowWidth>0 && overflowWidth<=1000))reportBounds(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle,overflowTitleText,BarThicknessTooltipTitleFontSize,overflowTitle,1000,0,"overflow-popup");
 			expect(overflowWidth>0 && overflowWidth<=1000,"localized overflow popup expands within the offscreen work area");
 			const double rgbLabelWidth=(std::max)({owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel),13.0).width,
 				owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel),13.0).width,
@@ -1058,6 +1460,7 @@ namespace Inkeys::UI::Bar
 			const double opacityLabelWidth=owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0).width;
 			const double opacityValueWidth=owner.spec.MeasureText(L"100%",13.0).width;
 			const double footerRequiredWidth=(rgbLabelWidth+rgbValueWidth)*3+opacityLabelWidth+opacityValueWidth+4*3.0+2*6.0+10.0;
+			if(footerRequiredWidth>BarColorPickerPanelWidth)reportBounds(I18nKey.UI.Bar.ColorPicker.OpacityLabel,IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0,D2D1::SizeF(static_cast<float>(footerRequiredWidth),0),BarColorPickerPanelWidth,0,"color-footer");
 			expect(footerRequiredWidth<=BarColorPickerPanelWidth,"localized color footer keeps RGB and opacity columns separate");
 
 			for(const double zoom:{0.65,1.0,1.5})
@@ -1119,7 +1522,7 @@ namespace Inkeys::UI::Bar
 					drawAuditText(footerValues[i],footerLabelX[i]+labelWidth+footerLabelGap,footerTop,valueWidth,footerHeight,13);
 				}
 				expect(SUCCEEDED(dc->EndDraw()),"localized fixed bar renders");
-				const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"bar-i18n-"+std::wstring(language.fileTag)+L"-"+std::to_wstring(static_cast<int>(zoom*100))+L".png");
+				const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"bar-i18n-"+std::wstring(language.code)+L"-"+std::to_wstring(static_cast<int>(zoom*100))+L".png");
 				expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"localized fixed bar PNG readback");
 			}
 		}
@@ -1197,10 +1600,15 @@ namespace Inkeys::UI::Bar
 				{
 					const auto rect=layout.items[id];ExMessage m{};m.x=static_cast<short>((rect.left+rect.right)/2);m.y=static_cast<short>((rect.top+rect.bottom)/2);
 					m.message=WM_LBUTTONDOWN;m.lbutton=true;expect(owner.eraserAttribute.Pointer(owner,m),"control accepts down");
-					m.message=WM_LBUTTONUP;m.lbutton=false;expect(owner.eraserAttribute.Pointer(owner,m,cancel),"control accepts up");
+					bool accepted=false;
+					m.message=WM_LBUTTONUP;m.lbutton=false;expect(owner.eraserAttribute.Pointer(owner,m,cancel,false,&accepted),"control accepts up");
+					return accepted;
 				};
 				click(8);expect(EraserPreferencesSnapshot().sensitivity==Inkeys::Drawing::Draw3::SpeedEraser::Sensitivity::High && owner.barState.eraserSensitivityOpen,"sensitivity updates without closing menu");
-				click(9);expect(owner.barState.eraserSensitivityOpen,"disabled settings does nothing");
+				expect(!click(9,true),"cancelled settings gesture is not accepted");
+				expect(click(9) && owner.barState.eraserSensitivityOpen
+					&& EraserPreferencesSnapshot().sensitivity==Inkeys::Drawing::Draw3::SpeedEraser::Sensitivity::High,
+					"enabled settings accepts the pointer without changing eraser preferences");
 				const auto beforeCorner=EraserPreferencesSnapshot().baseSize;const auto smallHit=layout.items[1];ExMessage corner{};
 				corner.x=static_cast<short>(smallHit.left+0.5);corner.y=static_cast<short>(smallHit.top+0.5);
 				corner.message=WM_LBUTTONDOWN;corner.lbutton=true;owner.eraserAttribute.Pointer(owner,corner);
@@ -1699,6 +2107,76 @@ namespace Inkeys::UI::Bar
 					}
 					expect(CurrentUi3SvgScope() == nullptr && probe->CountersAfterOwnerStopped().clockReads == nullBefore.clockReads
 						&& probe->CountersAfterOwnerStopped().drawSubmit == nullBefore.drawSubmit, "B326 null scope adds no observation clock or draw counter");
+					// 独立数值计量不能安装验真probe，也不能改变真实cache/绘制决策。
+					static std::int64_t numericClockReads = 0;
+					const auto numericClock = []() noexcept -> std::int64_t { return ++numericClockReads * 1000; };
+					numericClockReads = 0;
+					Ui3SvgStageTimings outerTiming, innerTiming;
+					{
+						SvgStageTimingScope absent(nullptr, numericClock);
+						Ui3SvgStageTimer timer(Ui3SvgStage::Parse);
+					}
+					expect(numericClockReads == 0 && CurrentUi3SvgScope() == nullptr, "N01 default/null numeric scope reads no clock and installs no proof");
+					{
+						SvgStageTimingScope outer(&outerTiming, numericClock);
+						{ Ui3SvgStageTimer timer(Ui3SvgStage::Parse); }
+						{
+							SvgStageTimingScope inner(&innerTiming, numericClock);
+							{ Ui3SvgStageTimer timer(Ui3SvgStage::Raster); }
+							{ SvgStageTimingScope absent(nullptr, numericClock); Ui3SvgStageTimer timer(Ui3SvgStage::Upload); }
+						}
+						{ Ui3SvgStageTimer timer(Ui3SvgStage::Draw); }
+					}
+					expect(numericClockReads == 6 && outerTiming.clockReads == 4 && innerTiming.clockReads == 2
+						&& outerTiming.calls[0] == 1 && outerTiming.calls[3] == 1 && innerTiming.calls[1] == 1
+						&& outerTiming.elapsedMs[0] > 0 && outerTiming.elapsedMs[3] > 0 && innerTiming.elapsedMs[1] > 0
+						&& CurrentUi3SvgScope() == nullptr, "N02 numeric-only stages and nested/null scopes restore without proof state");
+					Ui3SvgStageTimings combinedTiming;
+					const auto combinedBefore = probe->CountersAfterOwnerStopped();
+					const auto numericReadsBefore = numericClockReads;
+					{
+						SvgObservationScope observed(probe.get(), true);
+						auto* originalScope = CurrentUi3SvgScope();
+						{ SvgStageTimingScope timing(&combinedTiming, numericClock); Ui3SvgStageTimer timer(Ui3SvgStage::Upload); }
+						expect(CurrentUi3SvgScope() == originalScope, "N03 numeric timing preserves the active proof scope identity");
+					}
+					const auto combinedAfter = probe->CountersAfterOwnerStopped();
+					expect(combinedAfter.clockReads == combinedBefore.clockReads + 2 && numericClockReads == numericReadsBefore
+						&& combinedTiming.clockReads == 2 && combinedTiming.calls[2] == 1
+						&& std::abs(combinedAfter.uploadMs - combinedBefore.uploadMs - combinedTiming.elapsedMs[2]) < 0.0000001,
+						"N04 dual sinks share one clock pair and retain original probe timing semantics");
+					const auto bitmapBeforeTiming = svg.cacheBitmap.Get();
+					auto renderNumeric = [&](Ui3SvgStageTimings* timing)
+					{
+						SvgStageTimingScope numeric(timing);
+						expect(CurrentUi3SvgScope() == nullptr, "N05 numeric-only real renderer keeps proof absent");
+						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
+						(void)renderer.Svg(dc, svg, BarUiInheritClass(16,16));
+						expect(SUCCEEDED(dc->EndDraw()), "N05 real numeric timing draw completes");
+						return ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+					};
+					Ui3SvgStageTimings realTiming;
+					const auto numericOffPixels = renderNumeric(nullptr), numericOnPixels = renderNumeric(&realTiming);
+					expect(numericOffPixels == numericOnPixels && numericOnPixels.size() == svgSize * svgSize * 4
+						&& svg.cacheBitmap.Get() == bitmapBeforeTiming && realTiming.calls[0] == 0 && realTiming.calls[1] == 0
+						&& realTiming.calls[2] == 0 && realTiming.calls[3] == 1 && realTiming.clockReads == 2
+						&& probe->CountersAfterOwnerStopped().clockReads == combinedAfter.clockReads
+						&& probe->CountersAfterOwnerStopped().drawSubmit == combinedAfter.drawSubmit,
+						"N06 numeric on/off is BGRA exact with unchanged actual cache and no proof operations");
+					Ui3SvgStageTimings overheadTiming;
+					constexpr unsigned overheadIterations = 4096;
+					const auto measureTimingCost = [&](Ui3SvgStageTimings* timing)
+					{
+						SvgStageTimingScope numeric(timing);
+						const auto started = std::chrono::steady_clock::now();
+						for (unsigned i = 0; i < overheadIterations; ++i) { Ui3SvgStageTimer timer(Ui3SvgStage::Draw); }
+						return std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - started).count() / overheadIterations;
+					};
+					const double inactivePairNs = measureTimingCost(nullptr), activePairNs = measureTimingCost(&overheadTiming);
+					expect(overheadTiming.calls[3] == overheadIterations && overheadTiming.clockReads == overheadIterations * 2,
+						"N07 bounded timing overhead control records exactly one clock pair per stage");
+					report << "[Ui3SvgNumericTiming] iterations=" << overheadIterations << " inactive-pair-ns=" << inactivePairNs
+						<< " active-pair-ns=" << activePairNs << " extra-pair-ns=" << activePairNs - inactivePairNs << '\n';
 					// H1：全Clear之后的未知写不能因成功EndDraw被早先Clear追认。
 					auto unknownReplayFrame = [&](bool unknownBeforeClear)
 					{
@@ -2482,6 +2960,23 @@ namespace Inkeys::UI::Bar
 				&& scene.SetBounds({0,0,305,80},1.0F);
 			(void)scene.Advance(std::chrono::steady_clock::now());
 			expect(configured,"production PageSurface icon configures");
+			const bool savedFractional=Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
+			const auto policyTime=std::chrono::steady_clock::now();
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;
+			(void)scene.Advance(policyTime);(void)scene.ConsumeDamage();
+			expect(!scene.IsInvalidated(),"font policy fixture starts with consumed damage");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=true;
+			(void)scene.Advance(policyTime);
+			expect(scene.IsInvalidated(),"same-time idle PageSurface invalidates on font policy change");
+			scene.SetOpacity(0,0);
+			(void)scene.Advance(policyTime+std::chrono::milliseconds(1));(void)scene.ConsumeDamage();
+			expect(!scene.IsInvalidated(),"hidden font policy fixture starts without geometry damage");
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;
+			(void)scene.Advance(policyTime+std::chrono::milliseconds(1));
+			expect(scene.IsInvalidated(),"hidden PageSurface applies font policy before restoring visibility");
+			scene.SetOpacity(1,0);
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=savedFractional;
+
 			const RECT presentation=scene.PresentationBounds();
 			const UINT width=static_cast<UINT>(presentation.right-presentation.left);
 			const UINT height=static_cast<UINT>(presentation.bottom-presentation.top);
@@ -2544,13 +3039,75 @@ namespace Inkeys::UI::Bar
 						{
 							const auto at=(static_cast<size_t>(sampleY)*width+sampleX)*4;
 							const auto expected=GetThemeColor(BarThemeColorEnum::Surface);
-							const auto premultiplied=[](int channel){return static_cast<int>(std::lround(channel*BarMainBarFillOpacity));};
+							// 分页常驻底板与主栏同一常驻透明度：Dark 0.80、Light 端更实。
+							const double residentOpacity=GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity);
+							const auto premultiplied=[&](int channel){return static_cast<int>(std::lround(channel*residentOpacity));};
 							expect(std::abs(int(themed[at+3])-premultiplied(255))<=1
 								&&std::abs(int(themed[at])-premultiplied(GetBValue(expected)))<=2
 								&&std::abs(int(themed[at+1])-premultiplied(GetGValue(expected)))<=2
 								&&std::abs(int(themed[at+2])-premultiplied(GetRValue(expected)))<=2,
 								"PageSurface dark/light pixels follow the same UI3 surface color as the main bar");
 						}
+					}
+					{
+						// 用户常驻背景透明度：深浅两端都必须真实改变分页底板与主栏常驻表面的像素透明度。
+						const int savedBackground=owner.barStyle.backgroundOpacity;
+						auto readAlpha=[&](const std::vector<unsigned char>& pixels,UINT x,UINT y,UINT stride)
+							{return int(pixels[(static_cast<size_t>(y)*stride+x)*4+3]);};
+						for(const bool dark:{true,false})for(const int userOpacity:{0,50,100})
+						{
+							owner.barStyle.darkStyle=dark;owner.barStyle.backgroundOpacity=userOpacity;
+							for(int frame=0;frame<40;++frame){frameTime+=std::chrono::milliseconds(20);(void)scene.Advance(frameTime);}
+							const double expectedOpacity=userOpacity>0?userOpacity/100.0
+								:GetThemeDefaultResidentBackgroundOpacity(dark);
+							std::vector<unsigned char> themed;
+							if(drawPageSurface(epochA,width,height,themed))
+							{
+								const UINT sampleX=static_cast<UINT>(77-presentation.left),sampleY=static_cast<UINT>(40-presentation.top);
+								if(sampleX<width&&sampleY<height)
+									expect(std::abs(readAlpha(themed,sampleX,sampleY,width)-int(std::lround(255*expectedOpacity)))<=1,
+										"PageSurface background follows the user resident opacity in Dark and Light");
+							}
+							// 主栏常驻表面：与生产初始化一致的 themeSurface + residentSurface 形状。
+							BarUiShapeClass mainBar(0.0,0.0,60.0,40.0,8.0,8.0,1.0,
+								GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::Surface),
+								GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::SurfaceFrame));
+							mainBar.enable.Initialization(true);mainBar.pct.SetDirect(BarMainBarFillOpacity);
+							mainBar.framePct.emplace(0.0);mainBar.themeSurface=true;mainBar.residentSurface=true;
+							mainBar.lightFillOpacityScale=BarThemeMaterial::LightResidentSurfaceOpacityScale;
+							mainBar.lightMaterial=dark?0.0:1.0;
+							bool drewMainBar=false;std::vector<unsigned char> barPixels;
+							if(SUCCEEDED(scene.EnsureDeviceResources(epochA,width,height)))
+								if(auto* context=scene.DeviceContext())
+								{
+									const D2D1_RECT_F all=D2D1::RectF(0,0,static_cast<FLOAT>(width),static_cast<FLOAT>(height));
+									scene.Renderer().BeginFrameDraw(context,all);
+									context->Clear(D2D1::ColorF(0,0,0,0));
+									(void)scene.Renderer().Shape(context,mainBar,BarUiInheritClass(10.0,10.0));
+									scene.Renderer().FinishFrameDrawCommands(context);
+									if(SUCCEEDED(scene.Renderer().EndFrameDraw(context)))
+									{
+										ComPtr<ID2D1Image> image;context->GetTarget(&image);ComPtr<ID2D1Bitmap1> target;
+										ComPtr<ID2D1Bitmap1> readable;
+										const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+											D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
+										D2D1_MAPPED_RECT mapped{};
+										if(image&&SUCCEEDED(image.As(&target))
+											&&SUCCEEDED(context->CreateBitmap(target->GetPixelSize(),nullptr,0,&props,&readable))
+											&&SUCCEEDED(readable->CopyFromBitmap(nullptr,target.Get(),nullptr))
+											&&SUCCEEDED(readable->Map(D2D1_MAP_OPTIONS_READ,&mapped)))
+										{
+											barPixels.assign(mapped.bits+30*mapped.pitch+40*4,mapped.bits+30*mapped.pitch+40*4+4);
+											readable->Unmap();drewMainBar=true;
+										}
+									}
+								}
+							expect(drewMainBar,"main bar resident surface renders offscreen");
+							if(drewMainBar)
+								expect(std::abs(int(barPixels[3])-int(std::lround(255*expectedOpacity)))<=1,
+									"main bar resident surface follows the user background opacity in Dark and Light");
+						}
+						owner.barStyle.backgroundOpacity=savedBackground;
 					}
 					owner.barStyle.darkStyle=originalTheme;
 					for(int frame=0;frame<40;++frame){frameTime+=std::chrono::milliseconds(20);(void)scene.Advance(frameTime);}
