@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-2.md`
-- **Total Sessions**: 153
-- **Last Active**: 2026-11-01
+- **Active File**: `journal-3.md`
+- **Total Sessions**: 171
+- **Last Active**: 2026-11-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,8 +19,9 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1081 | Active |
-| `journal-1.md` | ~2579 | Archived |
+| `journal-3.md` | ~106 | Active |
+| `journal-2.md` | ~2010 | Archived |
+| `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -30,10 +31,48 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 170 | 2026-11-04 | 光标细边与共享下拉边界修复收尾 | `15200e7b`, `2d3eb582` | `temp/state` |
+| 169 | 2026-11-04 | PPT闲置淡化、底栏主栏与设置内联动画收尾 | `f485146eab917aec5706d74482dfbdf8740d7636`, `c208677aa58bba98fef0b09007baa3b80f4c93e5` | `temp/state` |
+| 169 | 2026-11-04 | 启动动画多效果与主题透明度适配完成 | - | `bugfix/theme` |
+| 168 | 2026-11-04 | 白板桌面快捷方式与启动转发验收收尾 | `40ba6efec7767d64b2206079bc157640c062b3c9` | `temp/state` |
+| 167 | 2026-11-03 | UI3 pointer-source arbitration for tablet pen and touch input | `f9aeefbd`, `25749d67` | `bugfix/color` |
+| 166 | 2026-11-03 | Touch注册与Pointer来源诊断补齐 | - | `bugfix/color` |
+| 165 | 2026-11-03 | 五窗独立Touch与数位板跨窗修复 | - | `bugfix/color` |
+| 164 | 2026-11-02 | M6主栏与翻页详细输入诊断 | - | `bugfix/color` |
+| 163 | 2026-11-03 | 回收无关测试预览图 | - | `temp/state` |
+| 162 | 2026-11-03 | 快捷方式设置与保障整合 | - | `temp/state` |
+| 161 | 2026-11-02 | 二十语言扩展验收提交与归档 | `100fda717084aeac1e3b377c24b141d9412a118a`, `ef05d1b6d8d74f7c8996174520fbc31ddbec313b` | `feature/i18n` |
+| 160 | 2026-11-02 | 共享画笔样式与跨场景颜色粗细 | - | `bugfix/color` |
+| 159 | 2026-11-02 | 验收并归档设置字体与语言热切换 | `6a8fd4ea` | `feature/i18n` |
+| 158 | 2026-11-02 | Setting FreeType、动态图集与语言热切换 | - | `feature/i18n` |
+| 157 | 2026-11-02 | 白板快捷键、分页过渡与动画速率设置收尾 | `7f37a527` | `bugfix/mode` |
+| 156 | 2026-11-02 | 国际化任务验收归档 | `e5f0574e`, `f6194712` | `feature/i18n` |
+| 155 | 2026-11-02 | 日韩Noto设置字体校准完成 | - | `feature/i18n` |
+| 154 | 2026-11-02 | 十一语言国际化扩展与翻译修正完成 | - | `feature/i18n` |
 | 153 | 2026-11-01 | Setting translucent shell: WinUI 3 single-layer material | `1922b699`, `652f4409`, `f99e94f8` | `bugfix/settingui` |
+| 152 | 2026-11-01 | 环形加载指示器验收提交与归档 | `47dd6314` | `bugfix/mode` |
+| 151 | 2026-11-01 | 按人工反馈放大细线环并改为半秒显示 | - | `bugfix/mode` |
+| 150 | 2026-11-01 | 实现延迟一秒显示的页码环形加载指示器 | - | `bugfix/mode` |
 | 149 | 2026-11-01 | 手掌橡皮人工验收与任务收尾 | `4a9caa11`, `b5dd13bb` | `feature/erase` |
+| 148 | 2026-11-01 | 按用户决定结束并归档PPT调查任务 | `7e649000` | `bugfix/mode` |
+| 147 | 2026-11-01 | 页码右上角进度角标与数字即时更新实机通过 | - | `bugfix/mode` |
+| 146 | 2026-11-01 | 恢复进度三点移至页码右上并修复正常数字动画 | - | `bugfix/mode` |
+| 145 | 2026-11-01 | 现场确认正常页面准备误走文字状态动画 | - | `bugfix/mode` |
+| 144 | 2026-11-01 | 复现页码短状态动画并准备窄策略取证 | - | `bugfix/mode` |
+| 143 | 2026-11-01 | 调查PPT数字页码偶发文字过渡 | - | `bugfix/mode` |
+| 142 | 2026-11-01 | 提交PPT等待反馈修复与诊断阶段成果 | `555ba5ce` | `bugfix/mode` |
+| 141 | 2026-11-01 | 页面准备三点提示实机验收通过 | - | `bugfix/mode` |
+| 140 | 2026-11-01 | 修复命令完成后页面准备阶段三点提前消失 | - | `bugfix/mode` |
+| 139 | 2026-11-01 | 复核正常退出并准备等待可见性链路诊断 | - | `bugfix/mode` |
+| 138 | 2026-11-01 | 记录正常退出超时并准备分阶段定位 | - | `bugfix/mode` |
+| 137 | 2026-11-01 | 实现 ROT 导航让出与确定性清理修复 | - | `bugfix/mode` |
+| 136 | 2026-11-01 | 细分 Observe 读取与释放并准备安全调度定位 | - | `bugfix/mode` |
+| 135 | 2026-11-01 | 准备 PPT 导航分段诊断与人工采集入口 | - | `bugfix/mode` |
 | 135 | 2026-11-01 | 设置性能、绘图控制与画布诊断完成归档 | `ead40db9` | `setting/performance` |
+| 134 | 2026-10-31 | 修复分支审阅发现的 PPT 身份与等待及白板恢复问题 | - | `bugfix/mode` |
 | 133 | 2026-10-31 | 修复重连接触身份残留并完成人工验收 | `74b8d3cb` | `bugfix/ink` |
+| 132 | 2026-10-30 | 统一分页状态动画与白板立即翻页 | `192ff6d5` | `bugfix/mode` |
+| 131 | 2026-10-30 | 修复白板形状选择窗口无法展开 | `3e0df72b` | `bugfix/mode` |
 | 130 | 2026-10-27 | UI3 吸附释放交接与最终收窗收尾归档 | `48dda087`, `b7f237f0` | `bugfix/cut` |
 | 129 | 2026-10-25 | Draw3 DComp 交接与激光过期修复 | `dffdd2ac` | `bugfix/cut` |
 | 128 | 2026-10-25 | 设置视觉重建与笔速橡皮精修验收归档 | `bc494cd384d783b39156aba77dbbf8f5f2f769cc`, `e4beb2ca8cf83bb1fad12ae466daec812add58cf` | `fluent` |
@@ -139,6 +178,8 @@
 | 15 | 2026-09-22 | UI3 i18n 格式串异常防护 | `0409256f` | `feature/ui3-i18n` |
 | 14 | 2026-09-22 | 收敛桌面定格 Magnification 链路 | `ba14ddd6`, `7df93730` | `bugfix/settingui` |
 | 13 | 2026-09-17 | Archive completed August and September tasks | `43d59ec3`, `fafa7009`, `9266a4ab`, `d272f888`, `3308faec` | `feature/eraser` |
+| 12 | 2026-09-11 | 修正主按钮统一 SVG 与绘制态指示 | - | `theme` |
+| 11 | 2026-09-11 | Bar 浅色主题与完整收展材质 | - | `theme` |
 | 10 | 2026-09-10 | 采用用户认可的底栏基线并结案 | `24efcde4` | `draw` |
 | 9 | 2026-09-09 | 底栏捕获旧帧误确认与果冻起点修复 | - | `draw` |
 | 8 | 2026-09-09 | 主栏底栏显示续修与回归验证 | - | `draw` |

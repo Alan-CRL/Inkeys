@@ -127,7 +127,24 @@ namespace Inkeys::UI::MessageBox::Detail
 		}
 		if (PRIMARYLANGID(language) == LANG_CHINESE)
 			return { L"确定", L"取消", L"是", L"否" };
-		return { L"OK", L"Cancel", L"Yes", L"No" };
+		switch (PRIMARYLANGID(language))
+		{
+		case LANG_JAPANESE: return { L"OK", L"キャンセル", L"はい", L"いいえ" };
+		case LANG_KOREAN: return { L"확인", L"취소", L"예", L"아니요" };
+		case LANG_FRENCH: return { L"OK", L"Annuler", L"Oui", L"Non" };
+		case LANG_GERMAN: return { L"OK", L"Abbrechen", L"Ja", L"Nein" };
+		case LANG_SPANISH: return { L"Aceptar", L"Cancelar", L"Sí", L"No" };
+		case LANG_PORTUGUESE: return { L"OK", L"Cancelar", L"Sim", L"Não" };
+		case LANG_RUSSIAN: return { L"ОК", L"Отмена", L"Да", L"Нет" };
+		case LANG_INDONESIAN: return { L"OK", L"Batal", L"Ya", L"Tidak" };
+		case LANG_VIETNAMESE: return { L"OK", L"Hủy", L"Có", L"Không" };
+		case LANG_TURKISH: return { L"Tamam", L"İptal", L"Evet", L"Hayır" };
+		case LANG_ITALIAN: return { L"OK", L"Annulla", L"Sì", L"No" };
+		case LANG_POLISH: return { L"OK", L"Anuluj", L"Tak", L"Nie" };
+		case LANG_UKRAINIAN: return { L"Гаразд", L"Скасувати", L"Так", L"Ні" };
+		case LANG_ROMANIAN: return { L"OK", L"Anulare", L"Da", L"Nu" };
+		default: return { L"OK", L"Cancel", L"Yes", L"No" };
+		}
 	}
 
 	int BuildButtonSpecs(Buttons buttons, const ButtonLabelSet& labels,

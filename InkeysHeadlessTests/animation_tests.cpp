@@ -49,10 +49,14 @@ int RunStartupProgressTests();
 int RunStartupPreviewStateTests();
 int RunConfigMetadataTests();
 int RunBarPresentationAlphaTests();
+int RunBarThemeTests();
+int RunBarLogoTests();
+int RunBarLogoProfileExport(const char* outputPath);
+int RunBarThemePaletteExport(const char* outputPath);
 int RunUi3HarnessDisabledTests();
 int RunSettingSessionStateTests();
 int RunSettingEraserDemoTests();
-int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false, bool attentionOnly = false, bool generalOnly = false);
+int RunSettingDesignTests(bool copyOnly = false, bool eraserOnly = false, bool attentionOnly = false, bool generalOnly = false, bool fontPagesOnly = false);
 int RunPptUiTests();
 int RunPptSessionTests();
 int RunPageControlTests();
@@ -76,6 +80,7 @@ int RunPresentationDescriptorTests();
 int RunUiPointerTests();
 int RunAutoCollapseTests();
 int RunKeyboardShortcutConfigTests();
+int RunDesktopShortcutConfigTests();
 int RunKeyboardShortcutInputTests();
 int RunAutoCollapseInteractionTests();
 int RunMouseHookTransportTests();
@@ -1701,17 +1706,30 @@ namespace
 	}
 }
 
+int RunSettingFontBenchmarkTests();
+
 int main(int argc, char** argv)
 {
+	if (argc == 2 && std::string_view(argv[1]) == "--page-control-only")
+		return RunPageControlTests();
+	// PPT解析与诊断协议均为纯值/无窗口测试，可独立定位请求时序。
+	if (argc == 2 && std::string_view(argv[1]) == "--ppt-session-only")
+		return RunPptSessionTests();
 	// 窗口契约可单独复跑，避免定位 USER32 交错时重复耗时的算法矩阵。
 	if (argc == 2 && std::string_view(argv[1]) == "--window-contract-only")
 		return RunWindowTests();
+	if ((argc == 2 && std::string_view(argv[1]) == "--setting-font-benchmark-only")
+		|| (argc == 3 && std::string_view(argv[2]) == "--setting-font-benchmark-only"))
+		return RunSettingFontBenchmarkTests();
 	bool benchmark = false;
 	bool penWidthOnly = false;
+	bool startupPreviewOnly = false;
 	bool settingHomeOnly = false;
 	bool settingCopyOnly = false;
 	bool settingAttentionOnly = false;
 	bool settingGeneralOnly = false;
+	bool desktopShortcutOnly = false;
+	bool settingFontPagesOnly = false;
 	bool settingEraserOnly = false;
 	bool palmEraserOnly = false;
 	bool settingEraserDemoOnly = false;
@@ -1720,15 +1738,20 @@ int main(int argc, char** argv)
 	bool exitVisibilityGateOnly = false;
 	bool messageBoxFirstFrameChild = false;
 	const char* messageBoxVisualOutput = nullptr;
+	const char* barThemePaletteOutput = nullptr;
+	const char* barLogoProfileOutput = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
 		penWidthOnly |= argument == "--pen-width-only";
+		startupPreviewOnly |= argument == "--startup-preview-only";
 		settingHomeOnly |= argument == "--setting-home-only";
 		settingCopyOnly |= argument == "--setting-copy-only";
 		settingAttentionOnly |= argument == "--setting-attention-only";
 		settingGeneralOnly |= argument == "--setting-general-only";
+		desktopShortcutOnly |= argument == "--desktop-shortcut-only";
+		settingFontPagesOnly |= argument == "--setting-font-pages-only";
 		settingEraserOnly |= argument == "--setting-eraser-only";
 		palmEraserOnly |= argument == "--palm-eraser-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
@@ -1739,7 +1762,15 @@ int main(int argc, char** argv)
 		exitVisibilityGateOnly |= argument == "--exit-visibility-gate-test";
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
+		if (argument == "--bar-logo-profile-output" && index + 1 < argc)
+			barLogoProfileOutput = argv[++index];
+		if (argument == "--bar-theme-palette-output" && index + 1 < argc)
+			barThemePaletteOutput = argv[++index];
 	}
+	if (barLogoProfileOutput)
+		return RunBarLogoProfileExport(barLogoProfileOutput);
+	if (barThemePaletteOutput)
+		return RunBarThemePaletteExport(barThemePaletteOutput);
 	if (penWidthOnly) return RunPenWidthTests();
 	if (messageBoxFirstFrameChild)
 		return RunMessageBoxFirstFrameChildTest();
@@ -1765,6 +1796,13 @@ int main(int argc, char** argv)
 #endif
 	}
 
+	// 专项入口仍先应用 --no-window 的系统/CRT 错误对话框屏障。
+	if (startupPreviewOnly)
+	{
+		const int failures = RunStartupProgressTests() + RunStartupPreviewStateTests();
+		std::cout << "[StartupPreviewOnly] failures=" << failures << '\n';
+		return failures == 0 ? 0 : 1;
+	}
 	if (palmEraserOnly) return RunPalmEraserTests() == 0 ? 0 : 1;
 	if (settingEraserDemoOnly)
 	{
@@ -1780,6 +1818,9 @@ int main(int argc, char** argv)
 		std::cout << "[SettingEraser] settings=" << settings << " speed=" << speed << " attributes=" << attributes << " palm=" << palm << '\n';
 		return settings + speed + attributes + palm == 0 ? 0 : 1;
 	}
+	if (settingFontPagesOnly) return RunSettingDesignTests(false,false,false,false,true)==0 ? 0 : 1;
+	// 快捷方式专项只运行配置和实际设置控件，避免引入其他功能的可视化输出。
+	if (desktopShortcutOnly) return RunDesktopShortcutConfigTests() + RunSettingDesignTests(false,false,false,true) == 0 ? 0 : 1;
 	if (settingGeneralOnly) return RunSettingDesignTests(false,false,false,true)==0 ? 0 : 1;
 	if (settingAttentionOnly) return RunSettingDesignTests(false,false,true)==0 ? 0 : 1;
 	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;
@@ -1812,6 +1853,8 @@ int main(int argc, char** argv)
 	failureCount += RunStartupPreviewStateTests();
 	failureCount += RunConfigMetadataTests();
 	failureCount += RunBarPresentationAlphaTests();
+	failureCount += RunBarThemeTests();
+	failureCount += RunBarLogoTests();
 	failureCount += RunUi3HarnessDisabledTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunSettingDesignTests();
@@ -1840,6 +1883,7 @@ int main(int argc, char** argv)
 	failureCount += RunUiPointerTests();
 	failureCount += RunAutoCollapseTests();
 	failureCount += RunKeyboardShortcutConfigTests();
+	failureCount += RunDesktopShortcutConfigTests();
 	failureCount += RunKeyboardShortcutInputTests();
 	failureCount += RunAutoCollapseInteractionTests();
 	failureCount += RunMouseHookTransportTests();

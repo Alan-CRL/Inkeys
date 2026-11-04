@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "目标SettingUI所属层、原生窗口与共享渲染线程边界"}
+{"file": ".trellis/tasks/11-02-settingui-style-motion/research/spec-layout.md", "reason": "响应式测高、真实业务action单次执行、滚动宿主与现有动画复用合同"}
+{"file": ".trellis/tasks/11-02-settingui-style-motion/research/spec-home-frame.md", "reason": "字标开屏/提交缓存/输入屏障及Win7窗口框架兼容合同"}
+{"file": ".trellis/tasks/11-02-settingui-style-motion/research/spec-build-resources.md", "reason": "完整ARM64构建、无窗口验证、资源清理和诊断边界"}
+{"file": ".trellis/tasks/11-02-settingui-style-motion/research/current-implementation.md", "reason": "实际生产入口、历史决策、用户已确认规则、量化探针和未定位事项"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "搜索并复用已有tween/会话/资源生命周期，禁止平行造状态源"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "本任务更新的页面入场/条件高度/正文轨道/材质与resize精确合同，覆盖规划基线旧行为"}

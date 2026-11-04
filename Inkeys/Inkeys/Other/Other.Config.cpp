@@ -2,6 +2,8 @@ module;
 
 #include "../../IdtMain.h"
 #include "../../PptSettingsPersistence.h"
+#include "../Business/DesktopShortcut.h"
+#include "../UI/StartupPreview.Effect.h"
 
 #include <atomic>
 #include <initializer_list>
@@ -580,6 +582,15 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 
 			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
 			{
+				if (JoinPath(groupPath, name) == "Application.WhiteboardShortcut.NamePreset")
+				{
+					// 白板只接受精确整数 0..2，避免超宽整数窄化成有效预设。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : 0;
+					return;
+				}
+
 				if (JoinPath(groupPath, name) == "UI.Bar.SelectAndClickThroughMode")
 				{
 					// 仅整数 1 启用分离式；类型错误、越界及未知值统一回到合并式。
@@ -598,6 +609,14 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (path == "Experimental.Inkeys3.UI3.StartupPreview.Effect")
+				{
+					// 先验整数类型及宽度，禁止浮点/布尔或超宽整数被窄化成有效效果。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(candidate));
+					return;
+				}
 				if (path == "Drawing.PalmEraser.ThresholdPercent" || path == "Drawing.PalmEraser.RecognitionWindowMs")
 				{
 					// 先验证原始整数类型和宽度，禁止浮点、布尔或超宽整数窄化成合法偏好。
@@ -643,9 +662,36 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 
 				if (path == "Drawing.Cursor.MouseStyle" || path == "Drawing.Cursor.PenStyle")
 				{
-					// 两种类型只接受整数 0/1；非法值各自恢复系统/圆形默认，不能强转成笔形。
+					// 旧版“鼠标/笔”类型只接受整数 0/1；非法值恢复默认，不能强转成笔形。
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
+					return;
+				}
+				if (path == "PlugIn.PPTHelper.IdleFadeSeconds")
+				{
+					// 仅接受设置下拉提供的 0/5/10/15/30；其他类型或数值回退默认 10，避免界面与实际时长不一致。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate == 0 || candidate == 5 || candidate == 10 || candidate == 15 || candidate == 30
+						? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.Cursor.DotHideOnContact")
+				{
+					// 四态设备选择只接受窄整数，拒绝布尔、浮点和超宽数值。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 3 ? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.Cursor.Mouse" || path == "Drawing.Cursor.Touch" ||
+					path == "Drawing.Cursor.ScreenPen" || path == "Drawing.Cursor.Tablet")
+				{
+					// 各设备光标样式先验整数类型和宽度；-1/非法/不属于该设备的值（如非触摸的“无光标”）表示沿用旧版配置或默认。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const bool touch = path == "Drawing.Cursor.Touch";
+					value = candidate >= (touch ? 0 : 1) && candidate <= 5 ? candidate : -1;
 					return;
 				}
 				if (path == "UI.Bar.IconOrder" || path == "UI.Bar.ExpandDirectionAdjustment")
@@ -800,6 +846,47 @@ namespace Inkeys::ConfigDetail
 
 namespace Inkeys
 {
+	std::pair<int, std::wstring> Config::GetShortcutNamePreference() const
+	{
+		std::shared_lock lock(rwMutex);
+		const auto& shortcut = Application.Shortcut;
+		return { Business::DesktopShortcut::NormalizePreset(shortcut.NamePreset.load(), shortcut.CustomName), shortcut.CustomName };
+	}
+
+	bool Config::SetShortcutNamePreference(int preset, std::wstring customName)
+	{
+		using namespace Business::DesktopShortcut;
+		if (preset < Default || preset > Custom || (preset == Custom && !IsValidName(customName))) return false;
+		// 名称对与整个 Config 的异步快照复制共用锁，不能只保护写盘队列。
+		std::unique_lock lock(rwMutex);
+		auto& shortcut = Application.Shortcut;
+		if (shortcut.NamePreset.load() == preset && shortcut.CustomName == customName) return false;
+		shortcut.NamePreset = preset;
+		shortcut.CustomName = std::move(customName);
+		return true;
+	}
+
+	std::pair<int, std::wstring> Config::GetWhiteboardShortcutNamePreference() const
+	{
+		std::shared_lock lock(rwMutex);
+		const auto& shortcut = Application.WhiteboardShortcut;
+		return { Business::DesktopShortcut::NormalizePreset(shortcut.NamePreset.load(), shortcut.CustomName,
+			true, 0, Business::DesktopShortcut::Kind::Whiteboard), shortcut.CustomName };
+	}
+
+	bool Config::SetWhiteboardShortcutNamePreference(int preset, std::wstring customName)
+	{
+		using namespace Business::DesktopShortcut;
+		if (preset < Default || preset > WhiteboardCustom || (preset == WhiteboardCustom && !IsValidName(customName))) return false;
+		// 白板名称对与应用名称一样受 Config 快照锁保护。
+		std::unique_lock lock(rwMutex);
+		auto& shortcut = Application.WhiteboardShortcut;
+		if (shortcut.NamePreset.load() == preset && shortcut.CustomName == customName) return false;
+		shortcut.NamePreset = preset;
+		shortcut.CustomName = std::move(customName);
+		return true;
+	}
+
 	bool Config::ReadAll()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
@@ -1029,6 +1116,11 @@ namespace Inkeys
 	{
 		ReadDocumentHandler handler(root, paths, includeWriteOnly);
 		TraverseSchema(handler);
+		auto& shortcut = Application.Shortcut;
+		shortcut.NamePreset = Business::DesktopShortcut::NormalizePreset(shortcut.NamePreset.load(), shortcut.CustomName);
+		auto& whiteboard = Application.WhiteboardShortcut;
+		whiteboard.NamePreset = Business::DesktopShortcut::NormalizePreset(whiteboard.NamePreset.load(), whiteboard.CustomName,
+			true, 0, Business::DesktopShortcut::Kind::Whiteboard);
 	}
 
 	void Config::OverlayDocument(Json::Value& root)

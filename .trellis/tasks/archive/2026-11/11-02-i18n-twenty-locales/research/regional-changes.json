@@ -1,0 +1,126 @@
+{
+  "en-GB": {
+    "Language": {
+      "source": "en-US",
+      "localized": "en-GB"
+    },
+    "UI/Bar/BottomDock/Centered": {
+      "source": "Centered",
+      "localized": "Centred"
+    },
+    "UI/Bar/MainButtons/WhiteboardBackgroundColorLabel": {
+      "source": "Background color",
+      "localized": "Background colour"
+    },
+    "UI/Bar/ColorPicker/HoldColorLabel": {
+      "source": "Hold to lock color",
+      "localized": "Hold to lock colour"
+    },
+    "UI/Bar/Errors/TransparentBackgroundWarning": {
+      "source": "Inkeys cannot display its transparent background correctly.\n\nRight-click Inkeys.exe, open Properties → Compatibility, and clear Reduced color mode.\nOn Windows 7, enable an Aero theme.\n\nRestart Inkeys and try again.\nIf the problem persists, contact the developer from the Settings home page.",
+      "localized": "Inkeys cannot display its transparent background correctly.\n\nRight-click Inkeys.exe, open Properties → Compatibility, and clear Reduced colour mode.\nOn Windows 7, enable an Aero theme.\n\nRestart Inkeys and try again.\nIf the problem persists, contact the developer from the Settings home page."
+    },
+    "SettingsUI/Design/DrawAction": {
+      "source": "Customize writing",
+      "localized": "Customise writing"
+    },
+    "SettingsUI/Design/PresetDescription": {
+      "source": "Your favorite pens, ready to use",
+      "localized": "Your favourite pens, ready to use"
+    },
+    "SettingsUI/Design/BehaviorSection": {
+      "source": "Behavior",
+      "localized": "Behaviour"
+    },
+    "SettingsUI/Design/GeneralInteraction": {
+      "source": "Behavior & safety",
+      "localized": "Behaviour & safety"
+    },
+    "SettingsUI/Design/WindowBehaviorSection": {
+      "source": "Window behavior",
+      "localized": "Window behaviour"
+    },
+    "SettingsUI/Regular/ToolbarExpansionDirection/Centerline": {
+      "source": "Screen centerline",
+      "localized": "Screen centreline"
+    },
+    "SettingsUI/Regular/AutoCollapse/Description": {
+      "source": "Drawing includes pens, shapes, and the laser pointer. Bottom-docked mode includes centered docking. Outside clicks exclude the toolbar and its menus, properties, and pop-up panels.",
+      "localized": "Drawing includes pens, shapes, and the laser pointer. Bottom-docked mode includes centred docking. Outside clicks exclude the toolbar and its menus, properties, and pop-up panels."
+    },
+    "SettingsUI/Regular/Behavior/N": {
+      "source": "Behavior",
+      "localized": "Behaviour"
+    },
+    "SettingsUI/Preset/StartupPlacement/E": {
+      "source": "The centered bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button.",
+      "localized": "The centred bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button."
+    },
+    "SettingsUI/Preset/StartupPlacement/CenteredBottomBar": {
+      "source": "Centered bottom bar",
+      "localized": "Centred bottom bar"
+    },
+    "SettingsUI/PlugIn/DesktopDrawpadBlocker/LicenseDescription": {
+      "source": "This plugin is for learning, discussion, and research only; it must not be used for any other purpose.\nDesktopDrawpadBlocker is open-source software released under the GPLv3 license.\nPublished on GitHub: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nWe hope this program is useful, but provide no warranty of quality.\nUsers are responsible for the effects and consequences of using this plugin; use constitutes acceptance of this agreement.",
+      "localized": "This plugin is for learning, discussion, and research only; it must not be used for any other purpose.\nDesktopDrawpadBlocker is open-source software released under the GPLv3 licence.\nPublished on GitHub: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nWe hope this program is useful, but provide no warranty of quality.\nUsers are responsible for the effects and consequences of using this plugin; use constitutes acceptance of this agreement."
+    },
+    "SettingsUI/DebugSoftware/CanvasInformation": {
+      "source": "Canvas initialization information",
+      "localized": "Canvas initialisation information"
+    }
+  },
+  "es-MX": {
+    "Language": {
+      "source": "es-ES",
+      "localized": "es-MX"
+    },
+    "Dialogs/WorkspaceTransitionFailure/Whiteboard": {
+      "source": "No se completó el cambio a la ventana de pizarra. Se han detenido los reintentos automáticos. Pulsa de nuevo el botón de pizarra de la barra principal para cancelar el cambio, o reinténtalo desde la página Dibujo de Ajustes.",
+      "localized": "No se completó el cambio a la ventana de pizarra. Se han detenido los reintentos automáticos. Haz clic de nuevo en el botón de pizarra de la barra principal para cancelar el cambio, o reinténtalo desde la página Dibujo de Ajustes."
+    },
+    "Dialogs/WorkspaceTransitionFailure/Return": {
+      "source": "No se completó la salida de la pizarra. Se han detenido los reintentos automáticos. Pulsa de nuevo el botón de pizarra de la barra principal para volver a ella, o reinténtalo desde la página Dibujo de Ajustes.",
+      "localized": "No se completó la salida de la pizarra. Se han detenido los reintentos automáticos. Haz clic de nuevo en el botón de pizarra de la barra principal para volver a ella, o reinténtalo desde la página Dibujo de Ajustes."
+    },
+    "SettingsUI/Regular/SelectAndClickThrough/CombinedDescription": {
+      "source": "Usa Selección para manejar el ordenador tanto sin trazos como manteniéndolos visibles.",
+      "localized": "Usa Selección para manejar la computadora tanto sin trazos como manteniéndolos visibles."
+    },
+    "SettingsUI/Regular/SelectAndClickThrough/SeparateDescription": {
+      "source": "Usa Selección para borrar los trazos y manejar el ordenador, o Paso de clics para interactuar con las ventanas inferiores manteniendo los trazos visibles.",
+      "localized": "Usa Selección para borrar los trazos y manejar la computadora, o Paso de clics para interactuar con las ventanas inferiores manteniendo los trazos visibles."
+    },
+    "SettingsUI/Regular/AutoCollapse/OutsideClick": {
+      "source": "Plegar la barra al pulsar fuera en modo Selección o Paso de clics",
+      "localized": "Plegar la barra al hacer clic fuera en modo Selección o Paso de clics"
+    },
+    "SettingsUI/Regular/Behavior/CheckingRetract": {
+      "source": "Plegar al pulsar fuera de la barra principal",
+      "localized": "Plegar al hacer clic fuera de la barra principal"
+    },
+    "SettingsUI/Regular/Behavior/CheckingRetractE": {
+      "source": "Solo se aplica al pulsar fuera de la barra principal en modo Selección o Paso de clics.",
+      "localized": "Solo se aplica al hacer clic fuera de la barra principal en modo Selección o Paso de clics."
+    },
+    "SettingsUI/Draw/Cursor/Description": {
+      "source": "La opción del ratón solo afecta a los lápices suaves y duros. Los resaltadores siempre muestran el grosor; las formas usan el cursor del sistema. El cursor del lápiz es circular por defecto. El borde del cursor no se resalta con lápices de pantalla, pero sí con tabletas gráficas y lápices no reconocidos.",
+      "localized": "La opción del mouse solo afecta a los lápices suaves y duros. Los resaltadores siempre muestran el grosor; las formas usan el cursor del sistema. El cursor del lápiz es circular de forma predeterminada. El borde del cursor no se resalta con lápices de pantalla, pero sí con tabletas gráficas y lápices no reconocidos."
+    },
+    "SettingsUI/Draw/Cursor/MouseStyle": {
+      "source": "Ratón",
+      "localized": "Mouse"
+    },
+    "SettingsUI/Draw/Effect/Device/MousePenE": {
+      "source": "Para ordenadores, tabletas y pantallas grandes controladas con ratón, con entrada de ratón, lápiz, tableta gráfica o táctil.",
+      "localized": "Para computadoras, tabletas y pantallas grandes controladas con mouse, con entrada de mouse, lápiz, tableta gráfica o táctil."
+    },
+    "SettingsUI/Draw/Eraser/Input/MouseLeft": {
+      "source": "Botón izquierdo del ratón",
+      "localized": "Botón izquierdo del mouse"
+    },
+    "SettingsUI/Draw/Eraser/Input/MouseRight": {
+      "source": "Botón derecho del ratón",
+      "localized": "Botón derecho del mouse"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "产品光标合同:配置、工具/来源表、验证矩阵"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "来源分类、Touch 归属/过滤、光标诊断"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "绘制设置页与配置写入路径"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "设置页 UI/渲染约束"}

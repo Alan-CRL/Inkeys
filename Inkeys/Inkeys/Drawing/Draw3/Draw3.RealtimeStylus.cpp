@@ -435,6 +435,30 @@ namespace Inkeys::Drawing::Draw3
 				if(!devices(&count,nullptr) || count==0 || count>64)return {};
 				std::vector<POINTER_DEVICE_INFO> list(count);
 				if(!devices(&count,list.data()) || count>list.size())return {};
+				// 仅诊断：记录系统全部指针设备（含产品名、monitor），用于核对来源分类依据。
+				if(CursorDiagnosticsEnabled())
+				{
+					for(UINT32 i=0;i<count;++i)
+					{
+						const auto& info=list[i];
+						char product[160]{};
+						WideCharToMultiByte(CP_UTF8,0,info.productString,-1,product,static_cast<int>(sizeof(product)-1),nullptr,nullptr);
+						RECT dr{},sr{};
+						const bool rectOk=rects(info.device,&dr,&sr)!=FALSE;
+						UINT32 cursorCount=0;
+						cursors(info.device,&cursorCount,nullptr);
+						const char* kindName=info.pointerDeviceType==POINTER_DEVICE_TYPE_INTEGRATED_PEN?"IntegratedPen":
+							info.pointerDeviceType==POINTER_DEVICE_TYPE_EXTERNAL_PEN?"ExternalPen":
+							info.pointerDeviceType==POINTER_DEVICE_TYPE_TOUCH?"Touch":
+							info.pointerDeviceType==POINTER_DEVICE_TYPE_TOUCH_PAD?"TouchPad":"Other";
+						RecordCursorDiagnostic("pointer-device index=%u type=%u kind=%s monitor=%p device=%p startingCursorId=%lu maxContacts=%u cursors=%u rectOk=%u deviceRect=(%ld,%ld,%ld,%ld) screenRect=(%ld,%ld,%ld,%ld) product=\"%s\"",
+							static_cast<unsigned>(i),static_cast<unsigned>(info.pointerDeviceType),kindName,
+							reinterpret_cast<void*>(info.monitor),reinterpret_cast<void*>(info.device),
+							static_cast<unsigned long>(info.startingCursorId),static_cast<unsigned>(info.maxActiveContacts),
+							static_cast<unsigned>(cursorCount),rectOk?1u:0u,
+							dr.left,dr.top,dr.right,dr.bottom,sr.left,sr.top,sr.right,sr.bottom,product);
+					}
+				}
 				auto result=std::make_shared<PointerSourceList>();
 				for(UINT32 i=0;i<count;++i)
 				{
@@ -877,7 +901,8 @@ namespace Inkeys::Drawing::Draw3
 				if(matched && !ambiguous)result=*it;
 			}
 			result.kind=SpeedEraser::ClassifySource(decoder.sourceDeviceKnown?static_cast<uint32_t>(decoder.deviceType):4u,
-				decoder.modernSourceApi,decoder.capabilitiesKnown,decoder.integrated,result.kind,matched,ambiguous);
+				decoder.modernSourceApi,decoder.capabilitiesKnown,decoder.integrated,result.kind,matched,ambiguous,
+				matched && !ambiguous && result.mappedWidth>0 && result.mappedMonitor==0);
 			result.recognition=ambiguous || (matched && result.kind==SpeedEraser::SourceKind::Unknown)
 				? SpeedEraser::SourceRecognition::Conflict
 				: matched ? SpeedEraser::SourceRecognition::PointerCursor
@@ -1594,12 +1619,51 @@ namespace Inkeys::Drawing::Draw3
 						previous, tick, std::memory_order_relaxed);
 			}
 
+			// 笔来源判定的输入与结果；仅在这些值变化时记录，不随逐包刷屏。
+			void RecordPenSourceDiagnostic(const RtsContextDecoder& decoder,
+				const StylusInfo& stylusInfo, const SpeedEraser::InputSource& source,
+				bool inverted) noexcept
+			{
+				if (!CursorDiagnosticsEnabled()) return;
+				size_t pointerSourceCount = 0, pointerMatchCount = 0;
+				SpeedEraser::SourceKind pointerRaw = SpeedEraser::SourceKind::Unknown;
+				if (decoder.pointerSources)
+				{
+					const auto& list = *decoder.pointerSources;
+					pointerSourceCount = list.size();
+					for (const auto& item : list)
+						if (item.cursorId == stylusInfo.cid)
+						{
+							if (pointerMatchCount++ == 0) pointerRaw = item.kind;
+						}
+				}
+				uint64_t key = 1469598103934665603ull;
+				const auto mix = [&key](uint64_t value) noexcept { key = (key ^ value) * 1099511628211ull; };
+				mix(stylusInfo.tcid); mix(stylusInfo.cid); mix(decoder.generation);
+				mix(static_cast<uint64_t>(source.kind)); mix(static_cast<uint64_t>(source.recognition));
+				mix(static_cast<uint64_t>(pointerRaw)); mix(pointerMatchCount); mix(pointerSourceCount);
+				mix((decoder.sourceDeviceKnown ? 1u : 0u) | (decoder.capabilitiesKnown ? 2u : 0u) |
+					(decoder.integrated ? 4u : 0u) | (decoder.modernSourceApi ? 8u : 0u) | (inverted ? 16u : 0u));
+				if (lastPenSourceDiagnosticKey_.exchange(key, std::memory_order_relaxed) == key) return;
+				RecordCursorDiagnostic("pen-source tcid=%u cid=%u gen=%llu source=%s recognition=%u deviceKnown=%u capsKnown=%u integrated=%u modernApi=%u pointerSources=%zu pointerMatches=%zu pointerRaw=%s inverted=%u mappedMonitor=%p mappedRect=(%d,%d,%d,%d)",
+					static_cast<unsigned>(stylusInfo.tcid), static_cast<unsigned>(stylusInfo.cid),
+					static_cast<unsigned long long>(decoder.generation),
+					SpeedEraser::SourceKindName(source.kind), static_cast<unsigned>(source.recognition),
+					decoder.sourceDeviceKnown ? 1u : 0u, decoder.capabilitiesKnown ? 1u : 0u,
+					decoder.integrated ? 1u : 0u, decoder.modernSourceApi ? 1u : 0u,
+					pointerSourceCount, pointerMatchCount, SpeedEraser::SourceKindName(pointerRaw),
+					inverted ? 1u : 0u, reinterpret_cast<void*>(source.mappedMonitor),
+					source.mappedLeft, source.mappedTop, source.mappedWidth, source.mappedHeight);
+			}
+
 			void PublishPenCursor(const RtsContextDecoder* decoder,
 				const StylusInfo* stylusInfo, bool inContact,
 				const ContactSnapshot& snapshot) noexcept
 			{
 				if (!drawingCursorSink_ || !decoder || !stylusInfo ||
 					decoder->deviceType != InputDeviceType::Pen) return;
+				RecordPenSourceDiagnostic(*decoder, *stylusInfo, snapshot.source,
+					stylusInfo->bIsInvertedCursor != FALSE);
 				DrawingCursorSample sample;
 				sample.x = snapshot.position.x;
 				sample.y = snapshot.position.y;
@@ -1807,6 +1871,7 @@ namespace Inkeys::Drawing::Draw3
 			std::mutex stateWriterMutex_;
 			std::atomic<uint32_t> stateGate_ = 0;
 			std::atomic<ULONGLONG> lastInputPacketDiagnosticTick_ = 0;
+			std::atomic<uint64_t> lastPenSourceDiagnosticKey_ = 0;
 			RtsDecoderCache decoderCache_;
 			RtsActiveBindingTable activeBindings_;
 		};
@@ -2228,6 +2293,16 @@ namespace Inkeys::Drawing::Draw3
 		if(pen.kind!=SourceKind::IntegratedPen || tablet.kind!=SourceKind::ExternalPen ||
 			pen.contextId!=11 || tablet.contextId!=22 || pen.generation!=5)return false;
 		if(SourceForCursor(integrated,18).kind!=SourceKind::Unknown)return false;
+		{
+			// 已映射到矩形但无显示器句柄的 Integrated 视为数位板；未映射矩形（读取失败）保持原判定。
+			auto virtualList=std::make_shared<PointerSourceList>();
+			InputSource v=a;v.cursorId=19;v.mappedMonitor=0;
+			InputSource w=a;w.cursorId=20;w.mappedMonitor=0;w.mappedWidth=0;w.mappedHeight=0;
+			virtualList->push_back(v);virtualList->push_back(w);
+			auto virtualDecoder=integrated;virtualDecoder.pointerSources=virtualList;
+			if(SourceForCursor(virtualDecoder,19).kind!=SourceKind::ExternalPen)return false;
+			if(SourceForCursor(virtualDecoder,20).kind!=SourceKind::IntegratedPen)return false;
+		}
 		integrated.modernSourceApi=false;
 		if(SourceForCursor(integrated,17).kind!=SourceKind::Unknown)return false;
 		integrated.modernSourceApi=true;integrated.pointerSources.reset();

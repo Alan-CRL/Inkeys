@@ -5,6 +5,9 @@
 
 #include <iostream>
 #include <string_view>
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.WhiteboardModel.h"
+
+#include "../Inkeys/Inkeys/UI/Whiteboard/Whiteboard.BackgroundState.h"
 
 import Inkeys.UI.Bar.SurfaceLayout;
 import Inkeys.UI.Whiteboard;
@@ -19,6 +22,127 @@ namespace
 		if (condition) return;
 		++failureCount;
 		std::cerr << "FAIL whiteboard: " << name << '\n';
+	}
+
+	void TestBackgroundInvalidation()
+	{
+		using Inkeys::UI::WhiteboardDetail::BackgroundState;
+		BackgroundState background;
+		background.Reset();
+		(void)background.Publish(true, 3);
+		const BackgroundState::Frame frame{background.Desired(),
+			reinterpret_cast<HWND>(1), 7, {-1920, -1080, 0, 0}};
+		Check(background.Prepare(frame), "initial background pixels can be prepared");
+		background.Invalidate();
+		Check(!background.Prepare(frame) && !background.Prepared(3),
+			"late native ACK cannot revive pixels retired by theme or display invalidation");
+	}
+
+	void TestBackgroundNativeReceipts()
+	{
+		using namespace Inkeys::UI::WhiteboardDetail;
+		using namespace Inkeys::Window;
+		BackgroundState background;
+		background.Reset();
+		(void)background.Publish(true, 11);
+		const BackgroundState::Surface surface{reinterpret_cast<HWND>(1), 7};
+		Check(background.Bind(background.Desired(), surface), "background candidate binds its native generation");
+		const BackgroundState::Frame frame{background.Desired(), surface.hwnd, surface.generation,
+			{-1920, -1080, 0, 0}, background.ContentRevision(), 9};
+		WindowCandidateReceipt receipt;
+		receipt.revision = 41;
+		receipt.frameSerial = frame.frameSerial;
+		receipt.workspaceRevision = frame.request.revision;
+		receipt.count = 1;
+		receipt.completedMask = 1;
+		receipt.actual[0] = {WindowRole::Freeze, surface.hwnd, surface.generation,
+			frame.bounds, false, false, true, 0};
+		const auto matches = [&](const auto& candidate, bool committed = true, bool visible = false)
+		{ return BackgroundFrameMatchesReceipt(frame, 41, candidate, committed, visible); };
+		Check(!background.Prepared(11) && !matches(receipt, false),
+			"pixels and queued native work do not publish BackgroundPrepared");
+		Check(matches(receipt) && !matches(receipt, true, true),
+			"hidden matching pixels may prepare but cannot acknowledge active visibility");
+		for (int mismatch = 0; mismatch != 8; ++mismatch)
+		{
+			auto stale = receipt;
+			switch (mismatch)
+			{
+			case 0: ++stale.revision; break;
+			case 1: ++stale.frameSerial; break;
+			case 2: ++stale.workspaceRevision; break;
+			case 3: stale.completedMask = 0; break;
+			case 4: stale.count = 2; break;
+			case 5: ++stale.actual[0].generation; break;
+			case 6: --stale.actual[0].bounds.left; break;
+			case 7: stale.actual[0].known = false; break;
+			}
+			Check(!matches(stale) && !background.Prepared(11),
+				"stale, partial, foreign-generation or unknown native receipts cannot prepare pixels");
+		}
+		Check(background.Prepare(frame) && background.FrameCurrent(frame),
+			"fully matched native and pixel identities can publish preparation");
+		auto pixelFrame = frame;
+		pixelFrame.presentationRevision = 5;
+		receipt.actual[0].presentationRevision = 6;
+		Check(!BackgroundFrameMatchesReceipt(pixelFrame, 41, receipt, true, false),
+			"native receipt for another pixel transaction cannot prepare background");
+		receipt.actual[0].presentationRevision = 5;
+		Check(BackgroundFrameMatchesReceipt(pixelFrame, 41, receipt, true, false),
+			"native receipt binds exact successful pixel transaction");
+		receipt.actual[0].visible = true;
+		Check(matches(receipt, true, true), "owner complete visibility permits active acknowledgement");
+		receipt.actual[0].iconic = true;
+		Check(!matches(receipt, true, true), "minimized native background never acknowledges active");
+		background.Invalidate();
+		Check(!background.FrameCurrent(frame) && !background.Prepare(frame),
+			"theme, DPI or device invalidation rejects an otherwise exact late native receipt");
+		background.RetireHeld(surface);
+		Check(background.Bind(background.Desired(), {surface.hwnd, 8}) && !background.FrameCurrent(frame),
+			"same HWND recreated with new generation cannot reuse old pixel ACK");
+		(void)background.Publish(false, 12);
+		const auto closing = background.Desired();
+		const BackgroundState::Surface closingSurface{surface.hwnd, 8};
+		receipt.workspaceRevision = closing.revision;
+		receipt.actual[0].generation = closingSurface.generation;
+		receipt.actual[0].visible = false;
+		Check(!BackgroundInactiveMatchesReceipt(closing, closingSurface, frame.frameSerial, 41, receipt, false)
+			&& !background.InactiveCommitted(closing), "inactive ACK waits for committed native Hide");
+		Check(BackgroundInactiveMatchesReceipt(closing, closingSurface, frame.frameSerial, 41, receipt, true),
+			"actual Hide acknowledges inactive even while minimized");
+		receipt.actual[0].visible = true;
+		Check(!BackgroundInactiveMatchesReceipt(closing, closingSurface, frame.frameSerial, 41, receipt, true),
+			"reported completion with visible native surface cannot acknowledge Hide");
+		(void)background.Publish(true, 13);
+		Check(!background.CommitInactive(closing) && !background.Prepare(frame),
+			"late inactive or active ACK after reversal cannot confirm a newer request");
+	}
+
+	void TestBackgroundColorClassification()
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		struct BackgroundCase { std::uint32_t rgb; bool light; std::string_view name; };
+		constexpr BackgroundCase backgrounds[]{
+			{0x123B32, false, "dark green background selects the dark color memory"},
+			{0x172A46, false, "dark blue background selects the dark color memory"},
+			{0x000000, false, "black background selects the dark color memory"},
+			{0xFFFFFF, true, "white background selects the light color memory"},
+			{0xE5E7EB, true, "light gray background selects the light color memory"},
+			{0xF5F1E6, true, "cream background selects the light color memory"},
+			{0x808080, false, "the exact luminance threshold belongs to the dark class"},
+			{0x818181, true, "gray above the luminance threshold belongs to the light class"},
+			{0x00FF00, true, "green luminance is evaluated in the RGB channel order"},
+			{0xFF0000, false, "red luminance is evaluated in the RGB channel order"}};
+		constexpr WhiteboardPattern patterns[]{WhiteboardPattern::Blank,
+			WhiteboardPattern::Dots, WhiteboardPattern::Grid};
+		// 直接调用生产分类；主题纹理只影响背景绘制，不改变颜色记忆所属类别。
+		for (const auto& background : backgrounds)
+		for (const auto pattern : patterns)
+		{
+			const WhiteboardTheme theme{background.rgb, pattern};
+			Check(ValidWhiteboardTheme(theme), "background classification fixtures are valid themes");
+			Check(IsLightWhiteboardBackground(theme.backgroundRgb) == background.light, background.name);
+		}
 	}
 
 	void TestPageState()
@@ -183,6 +307,9 @@ namespace
 
 int RunWhiteboardUiTests()
 {
+	TestBackgroundInvalidation();
+	TestBackgroundNativeReceipts();
+	TestBackgroundColorClassification();
 	TestPageState();
 	TestSceneLayout();
 	TestSurfaceLayoutContracts();

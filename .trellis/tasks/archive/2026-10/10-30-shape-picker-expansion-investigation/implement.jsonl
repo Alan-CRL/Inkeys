@@ -1,0 +1,2 @@
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"后续修复必须保持 Geometry toggle 合同及 workspace 转换时一次性收起辅助面板的行为。"}
+{"file":".trellis/tasks/10-30-shape-picker-expansion-investigation/research/shape-picker-three-modes.md","reason":"已定位直接原因、三态影响范围、最小修复边界与回归验证建议。"}

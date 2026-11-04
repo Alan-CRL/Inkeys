@@ -138,7 +138,7 @@ bool isAsciiPrintable(const wstring& input)
 }
 
 // 程序进程状态获取
-bool isProcessRunning(const std::wstring& processPath)
+bool isProcessRunning(const std::wstring& processPath, DWORD ignoredProcessId)
 {
 	// 使用 try-catch 保护，防止非法路径字符导致 filesystem 崩溃
 	try {
@@ -153,6 +153,11 @@ bool isProcessRunning(const std::wstring& processPath)
 
 		if (Process32FirstW(snapshot, &entry)) {
 			do {
+				// 调用者可排除自身（例如启动期等待其他同路径实例退出）
+				if (ignoredProcessId && entry.th32ProcessID == ignoredProcessId) {
+					continue;
+				}
+
 				// 打开进程句柄
 				HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
 				if (process == NULL) {

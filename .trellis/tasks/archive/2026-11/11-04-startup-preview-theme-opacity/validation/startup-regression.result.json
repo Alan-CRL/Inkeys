@@ -1,0 +1,9 @@
+{
+  "startedUtc": "2026-11-04T04:26:24.7725002+00:00",
+  "endedUtc": "2026-11-04T04:26:36.4367051+00:00",
+  "exitCode": 1,
+  "arguments": [
+    "--no-window",
+    "--startup-preview-only"
+  ]
+}

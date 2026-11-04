@@ -23,8 +23,11 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "../../Window/Window.MessageDispatch.h"
 #include "Setting.SessionState.h"
+#include "imgui/misc/freetype/imgui_freetype.h"
 #include "../StartupPlacement.h"
+#include "../StartupPreview.Effect.h"
 #include "Setting.Pages.h"
+#include "Setting.PageTransition.h"
 #include "Setting.HomeEntryCache.h"
 #include "Setting.EraserDemoGpu.h"
 #include "../../../resource.h"
@@ -35,6 +38,7 @@ module;
 #include <shlwapi.h>
 #include <dwmapi.h>
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 #include <chrono>
@@ -85,6 +89,9 @@ namespace
 	atomic<bool> settingInitialized = false;
 	atomic<bool> settingSessionShouldStop = false;
 	atomic<bool> settingWindowActive = true;
+	atomic<bool> settingOptionalChromeVisible = false; // 与 HWND hit-test 共享本帧开屏可见性。
+	Inkeys::UI::Setting::BackdropMode settingPaletteBackdropMode =
+		Inkeys::UI::Setting::BackdropMode::Solid; // 仅渲染线程：与已应用的 palette 同批冻结。
 	atomic<Inkeys::UI::Setting::BackdropMode> settingBackdropMode =
 		Inkeys::UI::Setting::BackdropMode::Solid;
 	atomic<Inkeys::UI::Setting::InteractiveWindowOperation>
@@ -99,6 +106,22 @@ namespace
 	mutex settingDrainMutex;
 	condition_variable settingDrainCondition;
 	bool settingSessionDrained = true;
+	// 仅共享渲染线程访问；注销先于协程局部草稿销毁，避免留下悬空捕获。
+	function<void()> settingCommitPendingEdits;
+	struct SettingPendingEditsScope
+	{
+		explicit SettingPendingEditsScope(function<void()> commit)
+		{ settingCommitPendingEdits = std::move(commit); }
+		~SettingPendingEditsScope() { settingCommitPendingEdits = {}; }
+	};
+	void CommitPendingSettingEdits()
+	{
+		if (settingCommitPendingEdits) settingCommitPendingEdits();
+	}
+	void CommitSettingEditsBeforeSuspend(const Inkeys::UI::Setting::SessionDecision& decision)
+	{
+		if (decision.releasePresentation || decision.resetInput) CommitPendingSettingEdits();
+	}
 	mutex settingInitializeMutex;
 	condition_variable settingInitializeCondition;
 	bool settingInitializeCompleted = false;
@@ -233,6 +256,7 @@ namespace
 	constexpr wchar_t SettingClientDpiProperty[] = L"Inkeys.Setting.ClientDpi";
 
 	using Inkeys::UI::Setting::SettingAccentState;
+	Inkeys::UI::Setting::SettingBackdropState settingNativeBackdrop;
 	bool settingFrameDarkMode = false; // 仅 HWND owner 读取/更新，交互结束恢复同一主题。
 
 	struct SettingAccentPolicy
@@ -313,22 +337,18 @@ namespace
 	[[nodiscard]] Inkeys::UI::Setting::BackdropMode
 		ApplySettingBackdrop(HWND hwnd, bool darkMode) noexcept
 	{
-		DisableSettingBackdrop(hwnd);
+		if (!hwnd) return Inkeys::UI::Setting::BackdropMode::Solid;
 		// Win10 RS4+ 与 Win11 统一使用 accent 动态模糊；更早系统直接 Solid，不提供 Aero 回退。
-		if (!hwnd || !Inkeys::Window::IsSettingCompositionEnabled()
-			|| !Inkeys::Window::QuerySettingPlatformCapabilities().acrylic)
-			return Inkeys::UI::Setting::BackdropMode::Solid;
+		bool eligible = Inkeys::Window::IsSettingCompositionEnabled()
+			&& Inkeys::Window::QuerySettingPlatformCapabilities().acrylic;
 		HIGHCONTRASTW highContrast{ sizeof(highContrast) };
-		if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast), &highContrast, 0)
-			&& (highContrast.dwFlags & HCF_HIGHCONTRASTON))
-			return Inkeys::UI::Setting::BackdropMode::Solid;
-
-		// 不设置系统 backdrop/Mica：其与壁纸静态合成，不随下层窗口变化。
-		const auto backdrop = Inkeys::UI::Setting::ResolveBackdropMode(
-			SetSettingAcrylic(hwnd, true, darkMode));
-		if (backdrop == Inkeys::UI::Setting::BackdropMode::Solid)
-			DisableSettingBackdrop(hwnd);
-		return backdrop;
+		if (eligible && SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast), &highContrast, 0)
+			&& (highContrast.dwFlags & HCF_HIGHCONTRASTON)) eligible = false;
+		// 不设置系统 backdrop/Mica；等价请求保持已经成功应用的 BlurBehind，不先撤销。
+		return Inkeys::UI::Setting::ResolveBackdropMode(settingNativeBackdrop.Apply(
+			reinterpret_cast<std::uintptr_t>(hwnd), eligible, darkMode,
+			[&] { return SetSettingAcrylic(hwnd, true, darkMode); },
+			[&] { DisableSettingBackdrop(hwnd); }));
 	}
 
 	[[nodiscard]] UINT QuerySettingDpi(HWND hwnd) noexcept
@@ -379,6 +399,7 @@ namespace
 		// ImGui/ImFluent 只在渲染线程帧边界换色，系统主题消息不覆盖用户偏好。
 		const auto backdrop = settingBackdropMode.load(memory_order_acquire);
 		Design::ApplyPalette(setlist.settingDarkMode, backdrop);
+		settingPaletteBackdropMode = backdrop;
 		ImFluent::GetStyle().NavItemHeight = 36.0F;
 		Widgets::style.ApplyGlobal(Design::ScrollbarTrackSize);
 		Design::ApplyScrollbars();
@@ -412,8 +433,8 @@ namespace
 		const COLORREF borderColor = DWMWA_COLOR_DEFAULT;
 		(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
 		const auto backdrop = ApplySettingBackdrop(hwnd, darkMode);
-		// 材质应用/撤销后重新确认框架 margin，不依赖 DWM 是否保留旧值。
-		ApplySettingFrameMargins(hwnd, true);
+		// 普通主题重应用不重复提交 frame；composition 改变的消息会强制重设。
+		ApplySettingFrameMargins(hwnd);
 		if (settingBackdropMode.exchange(backdrop, memory_order_acq_rel) != backdrop)
 		{
 			// 可选材质成功/回退后，由渲染线程统一更新表面及根背景的 alpha。
@@ -734,8 +755,9 @@ namespace
 		if (geometry.close.Contains(x, y)) return HTCLOSE;
 		if (geometry.maximize.Contains(x, y)) return HTMAXBUTTON;
 		if (geometry.minimize.Contains(x, y)) return HTMINBUTTON;
-		if (geometry.themeToggle.Contains(x, y) || geometry.feedback.Contains(x, y) || geometry.debug.Contains(x, y)
-			|| (geometry.versionVisible && geometry.version.Contains(x, y)))
+		if (settingOptionalChromeVisible.load(memory_order_acquire)
+			&& (geometry.themeToggle.Contains(x, y) || geometry.feedback.Contains(x, y) || geometry.debug.Contains(x, y)
+				|| (geometry.versionVisible && geometry.version.Contains(x, y))))
 			return HTCLIENT;
 		if (geometry.icon.Contains(x, y)) return HTSYSMENU;
 
@@ -898,6 +920,7 @@ namespace
 		ClearInstallerAndSetChannel,
 		ClearInstallerAndSetArchitecture,
 		CreateShortcut,
+		EnsureShortcut,
 		ConfigureDdb,
 		RestartDdb,
 		WriteDdb,
@@ -923,6 +946,8 @@ namespace
 		bool flag = false;
 		bool secondaryFlag = false;
 		int showCommand = SW_SHOW;
+		I18n::TextSnapshot dialogText;
+		Inkeys::Business::DesktopShortcut::Kind shortcutKind = Inkeys::Business::DesktopShortcut::Kind::App;
 	};
 
 	class SettingBusinessQueue
@@ -1054,13 +1079,11 @@ namespace
 				[[fallthrough]];
 			case SettingBusinessKind::Information:
 			{
-				const auto title = I18n::getWOr(
-					I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
-				const auto okLabel = I18n::getWOr(
-					I18nKey.Dialogs.Common.OK, L"OK");
+				const auto& title = command.dialogText.text[0];
+				const auto& okLabel = command.dialogText.text[1];
 				auto request = Inkeys::UI::MessageBox::MakeOkRequest(
 					title.c_str(), command.text.c_str());
-				request.language = I18n::languageId();
+				request.language = command.dialogText.language;
 				request.cancellation = token;
 				request.labels.ok = okLabel.c_str();
 				request.owner = Inkeys::Window::GetService().Handle(
@@ -1073,15 +1096,12 @@ namespace
 			}
 			case SettingBusinessKind::ConfirmRestart:
 			{
-				const auto title = I18n::getWOr(
-					I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
-				const auto okLabel = I18n::getWOr(
-					I18nKey.Dialogs.Common.OK, L"OK");
-				const auto cancelLabel = I18n::getWOr(
-					I18nKey.Dialogs.Common.Cancel, L"Cancel");
+				const auto& title = command.dialogText.text[0];
+				const auto& okLabel = command.dialogText.text[1];
+				const auto& cancelLabel = command.dialogText.text[2];
 				auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
 					title.c_str(), command.text.c_str());
-				request.language = I18n::languageId();
+				request.language = command.dialogText.language;
 				request.cancellation = token;
 				request.labels.ok = okLabel.c_str();
 				request.labels.cancel = cancelLabel.c_str();
@@ -1119,11 +1139,22 @@ namespace
 				return WriteSettingJson(command.jsonPayload);
 			}
 			case SettingBusinessKind::CreateShortcut:
-				if (_waccess(command.text.c_str(), 0) == -1
-					|| !shortcutAssistant.IsShortcutPointingToDirectory(
-						command.text, command.directory))
-					shortcutAssistant.CreateShortcut(command.text, command.directory);
-				return true;
+			case SettingBusinessKind::EnsureShortcut:
+			{
+				// FIFO worker 独占本次冻结的名称/路径；COM 初始化也留在执行线程。
+				const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+				if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE) return false;
+				struct ComScope { HRESULT result; ~ComScope() { if (SUCCEEDED(result)) CoUninitialize(); } } com{ initialized };
+				if (!Inkeys::Business::DesktopShortcut::IsValidName(command.text, command.parameters.size())
+					|| command.parameters.empty()) return false;
+				if (command.kind == SettingBusinessKind::EnsureShortcut)
+					return shortcutAssistant.SetShortcut(command.text, command.flag, command.secondaryFlag, command.parameters, command.shortcutKind, command.directory);
+				const auto path = (filesystem::path(command.parameters) / (command.text + L".lnk")).wstring();
+				if (_waccess(path.c_str(), 0) != -1 && shortcutAssistant.MatchesShortcut(path, command.directory, command.shortcutKind)) return true;
+				const bool succeeded = shortcutAssistant.CreateShortcut(path, command.directory, command.shortcutKind);
+				if (succeeded) SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+				return succeeded;
+			}
 			case SettingBusinessKind::ConfigureDdb:
 			{
 				const wstring& executable = command.text;
@@ -1228,6 +1259,15 @@ namespace
 
 	void QueueBusiness(SettingBusinessCommand command)
 	{
+		// 同一渲染帧入队的正文与公共文案冻结在一起；worker 不再读取后来的语言。
+		if (command.dialogText.text.size() < 3 && (command.kind == SettingBusinessKind::Information
+			|| command.kind == SettingBusinessKind::ConfirmRestart
+			|| command.kind == SettingBusinessKind::WorkspaceTransitionFailureNotice))
+		{
+			command.dialogText.text = { L"Inkeys Tips", L"OK", L"Cancel" };
+			(void)I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.Common.OK,
+				I18nKey.Dialogs.Common.Cancel }, command.dialogText);
+		}
 		// 在生产者线程冻结配置内容，worker 只消费 owned payload 并执行 I/O。
 		switch (command.kind)
 		{
@@ -1295,6 +1335,39 @@ namespace
 		// 设置渲染与 Draw3 都会提交：捕获到入队保持同序，避免旧主题快照后入队覆盖新值。
 		lock_guard lock(configWriteQueueMutex);
 		QueueBusiness({ SettingBusinessKind::WriteConfig });
+	}
+
+	bool CommitDesktopShortcutNamePreference(const Design::DesktopShortcutDraft& draft, std::size_t directoryLength,
+		const Design::DesktopShortcutDraft* other = nullptr)
+	{
+		using namespace Inkeys::Business::DesktopShortcut;
+		const bool whiteboard = draft.names.kind == Kind::Whiteboard;
+		auto customName = utf8ToUtf16(draft.customName);
+		if (draft.preset == CustomPreset(draft.names.kind) && !IsValidName(customName, directoryLength)) return false;
+		const auto name = Design::ResolveDesktopShortcutDraftName(draft);
+		if (other && Design::DesktopShortcutDraftNamesCollide(draft, *other)) return false;
+		const auto otherPreference = whiteboard ? Inkeys::config.GetShortcutNamePreference() : Inkeys::config.GetWhiteboardShortcutNamePreference();
+		const auto otherNames = other ? other->names : CaptureDesktopShortcutNames(whiteboard ? Kind::App : Kind::Whiteboard);
+		if (NamesCollide(name, ResolveName(otherPreference.first, otherPreference.second, otherNames))) return false;
+		if (!IsValidName(customName)) customName = whiteboard
+			? Inkeys::config.GetWhiteboardShortcutNamePreference().second : Inkeys::config.GetShortcutNamePreference().second;
+		return whiteboard ? Inkeys::config.SetWhiteboardShortcutNamePreference(draft.preset, std::move(customName))
+			: Inkeys::config.SetShortcutNamePreference(draft.preset, std::move(customName));
+	}
+
+	SettingBusinessCommand MakeDesktopShortcutCommand(SettingBusinessKind kind, const wstring& directory,
+		const Inkeys::Business::DesktopShortcut::NameOptions& names)
+	{
+		const bool whiteboard = names.kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+		const auto preference = whiteboard ? Inkeys::config.GetWhiteboardShortcutNamePreference() : Inkeys::config.GetShortcutNamePreference();
+		SettingBusinessCommand command;
+		command.kind = kind; command.shortcutKind = names.kind;
+		command.text = Inkeys::Business::DesktopShortcut::ResolveName(preference.first, preference.second, names);
+		command.directory = GetCurrentExePath();
+		command.parameters = directory;
+		command.flag = whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CorrectLnk.load() : Inkeys::config.Application.Shortcut.CorrectLnk.load();
+		command.secondaryFlag = whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CreateLnk.load() : Inkeys::config.Application.Shortcut.CreateLnk.load();
+		return command;
 	}
 
 	void QueueShellExecute(wstring target, wstring verb = {},
@@ -1641,6 +1714,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_NCDESTROY:
+		settingNativeBackdrop.Invalidate();
 		(void)RemovePropW(hWnd, SettingClientDpiProperty);
 		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 	case WM_CAPTURECHANGED:
@@ -1761,6 +1835,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	case WM_DWMCOMPOSITIONCHANGED:
+		settingNativeBackdrop.Invalidate();
 		// composition 开关会改变恢复态顶部/侧边 inset，立即重算而不等待用户 resize。
 		SetWindowPos(hWnd, nullptr, 0, 0, 0, 0,
 			SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1768,6 +1843,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		ApplySettingFrameMargins(hWnd, true);
 		[[fallthrough]];
 	case WM_THEMECHANGED:
+		settingNativeBackdrop.Invalidate();
+		[[fallthrough]];
 	case WM_SETTINGCHANGE:
 		// 系统边框宽度等度量变化后同步外侧热区。
 		SyncSettingResizeBorder(hWnd);
@@ -1868,77 +1945,9 @@ void SettingWindowBegin()
 	return font != nullptr;
 }
 
-[[nodiscard]] bool RebuildSettingFonts()
+void BindSettingFonts()
 {
 	ImGuiIO& io = ImGui::GetIO();
-	io.Fonts->Clear();
-	ImFontMain = nullptr;
-	ImFontStrong = nullptr;
-	ImFontDesignMain = nullptr;
-	ImFontDesignStrong = nullptr;
-	ImFontDesignIcons = nullptr;
-	ImGui::GetStyle().FontScaleDpi = settingGlobalScale;
-
-	static constexpr ImWchar excludedGlyphs[] = { 0xe81e, 0xe81e, 0 };
-	const bool traditionalChinese = I18n::isIdentifying(L"zh-TW");
-	auto addTextFace = [&](UINT primaryResource, UINT fallbackResource,
-		ImFont** result)
-		{
-			ImFontConfig textConfig;
-			textConfig.OversampleH = 1;
-			textConfig.OversampleV = 1;
-			textConfig.RasterizerDensity = settingGlobalScale;
-			textConfig.FontDataOwnedByAtlas = false;
-			textConfig.GlyphExcludeRanges = excludedGlyphs;
-			if (!AddSettingFontResource(primaryResource, 30.0F,
-				&textConfig, result))
-				return false;
-
-			if (traditionalChinese)
-			{
-				// 繁体字库后合并简体字形，保持完整的中文回退。
-				textConfig.MergeMode = true;
-				if (!AddSettingFontResource(fallbackResource, 30.0F,
-					&textConfig))
-					return false;
-			}
-
-			ImFontConfig iconConfig;
-			iconConfig.OversampleH = 1;
-			iconConfig.OversampleV = 1;
-			iconConfig.RasterizerDensity = settingGlobalScale;
-			iconConfig.FontDataOwnedByAtlas = false;
-			iconConfig.GlyphOffset.y = 10.0F;
-			iconConfig.PixelSnapH = true;
-			iconConfig.MergeMode = true;
-			if (!AddSettingFontResource(257U, 36.0F, &iconConfig))
-				return false;
-			iconConfig.GlyphOffset.y = 4.0F;
-			return AddSettingFontResource(262U, 32.0F, &iconConfig);
-		};
-
-	const UINT regularResource = traditionalChinese ? 258U : 198U;
-	const UINT strongResource = traditionalChinese ? 298U : 297U;
-	if (!addTextFace(regularResource, 198U, &ImFontMain)
-		|| !addTextFace(strongResource, 297U, &ImFontStrong))
-		return false;
-
-	// 校准字体仅绑定新 Shell/Home/General，避免改变旧页 TextWrapped 的行距。
-	auto addDesignFace = [&](UINT resource, UINT fallback, ImFont** result)
-		{
-			auto config = Inkeys::UI::Setting::Design::HarmonyFontConfig(settingGlobalScale);
-			if (!AddSettingFontResource(resource,
-				Inkeys::UI::Setting::Design::FontReferenceSize, &config, result)) return false;
-			if (!traditionalChinese) return true;
-			config.MergeMode = true;
-			return AddSettingFontResource(fallback,
-				Inkeys::UI::Setting::Design::FontReferenceSize, &config);
-		};
-	if (!addDesignFace(regularResource, 198U, &ImFontDesignMain)
-		|| !addDesignFace(strongResource, 297U, &ImFontDesignStrong)) return false;
-	auto designIconConfig = Inkeys::UI::Setting::Design::IconFontConfig(settingGlobalScale);
-	if (!AddSettingFontResource(257U, Inkeys::UI::Setting::Design::FontReferenceSize,
-		&designIconConfig, &ImFontDesignIcons)) return false;
 	ImFluent::SetIconFont(ImFontDesignIcons);
 
 	io.FontDefault = ImFontMain;
@@ -1957,8 +1966,152 @@ void SettingWindowBegin()
 		ImFontStrong, 40.0F);
 	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Display,
 		ImFontStrong, 68.0F);
+}
+
+static int settingPendingLanguage = -1;
+
+[[nodiscard]] bool RebuildSettingFonts(const Inkeys::Localization::Locale& locale = I18n::locale())
+{
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Clear();
+	// 与字体测试同一入口：FreeType 加载器、基线像素对齐和灰度 Alpha8 图集。
+	Inkeys::UI::Setting::Design::ConfigureFreeTypeAtlas(*io.Fonts);
+	ImFontMain = nullptr;
+	ImFontStrong = nullptr;
+	ImFontDesignMain = nullptr;
+	ImFontDesignStrong = nullptr;
+	ImFontDesignIcons = nullptr;
+	ImGui::GetStyle().FontScaleDpi = settingGlobalScale;
+
+	static constexpr ImWchar excludedGlyphs[] = { 0xe81e, 0xe81e, 0 };
+	const std::array<UINT, 4> regularFallbacks{
+		IDR_TTF1, IDR_TTF3, IDR_NOTO_JP_REGULAR, IDR_NOTO_KR_REGULAR };
+	const std::array<UINT, 4> strongFallbacks{
+		IDR_TTF7, IDR_TTF8, IDR_NOTO_JP_BOLD, IDR_NOTO_KR_BOLD };
+	auto addTextFace = [&](UINT primaryResource, const auto& fallbacks,
+		bool design, ImFont** result)
+		{
+			const bool notoPrimary = primaryResource == IDR_NOTO_JP_REGULAR || primaryResource == IDR_NOTO_JP_BOLD
+				|| primaryResource == IDR_NOTO_KR_REGULAR || primaryResource == IDR_NOTO_KR_BOLD;
+			auto add = [&](UINT resource, bool merge)
+				{
+					const bool noto = resource == IDR_NOTO_JP_REGULAR || resource == IDR_NOTO_JP_BOLD
+						|| resource == IDR_NOTO_KR_REGULAR || resource == IDR_NOTO_KR_BOLD;
+					using namespace Inkeys::UI::Setting::Design;
+					// 每个合并源按自己的字族和角色校准，旧 Harmony 脸保持原始尺度。
+					auto config = FreeTypeTextFontConfig(noto,
+						design ? TextFontRole::Design : TextFontRole::Legacy, notoPrimary);
+					config.GlyphExcludeRanges = excludedGlyphs;
+					config.MergeMode = merge;
+					return AddSettingFontResource(resource,
+						Inkeys::UI::Setting::Design::FontReferenceSize, &config, merge ? nullptr : result);
+				};
+			if (!add(primaryResource, false)) return false;
+			// 主语言先占字形，其他字库仅补缺；语言页在任何当前语言下都含日/韩母语名。
+			for (const UINT resource : fallbacks)
+				if (resource != primaryResource && !add(resource, true)) return false;
+			if (design) return true;
+
+			ImFontConfig iconConfig;
+			iconConfig.OversampleH = 1;
+			iconConfig.OversampleV = 1;
+			iconConfig.RasterizerDensity = settingGlobalScale;
+			iconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
+			iconConfig.FontDataOwnedByAtlas = false;
+			iconConfig.GlyphOffset.y = 10.0F;
+			iconConfig.PixelSnapH = true;
+			iconConfig.MergeMode = true;
+			if (!AddSettingFontResource(IDR_TTF2, 36.0F, &iconConfig)) return false;
+			iconConfig.GlyphOffset.y = 4.0F;
+			return AddSettingFontResource(IDR_TTF4, 32.0F, &iconConfig);
+		};
+	if (!addTextFace(locale.regularFont, regularFallbacks, false, &ImFontMain)
+		|| !addTextFace(locale.boldFont, strongFallbacks, false, &ImFontStrong)
+		|| !addTextFace(locale.regularFont, regularFallbacks, true, &ImFontDesignMain)
+		|| !addTextFace(locale.boldFont, strongFallbacks, true, &ImFontDesignStrong)) return false;
+	auto designIconConfig = Inkeys::UI::Setting::Design::IconFontConfig(settingGlobalScale);
+	designIconConfig.FontLoader = ImFontAtlasGetFontLoaderForStbTruetype();
+	if (!AddSettingFontResource(257U, Inkeys::UI::Setting::Design::FontReferenceSize,
+		&designIconConfig, &ImFontDesignIcons)) return false;
+	BindSettingFonts();
 	// 先初始化 resident atlas；动态字体的真实字号/字形仍在遮罩下首帧准备。
 	return io.Fonts->Build();
+}
+
+// 所有调用都在帧边界；旧 atlas 的纹理必须先释放，再撤销队列/注册和元数据。
+void DisposeSettingAtlas(ImFontAtlas* atlas)
+{
+    auto& textures = ImGui::GetPlatformIO().Textures;
+    for (auto* texture : atlas->TexList)
+    {
+        if (texture->BackendUserData)
+        {
+            texture->SetStatus(ImTextureStatus_WantDestroy);
+            texture->UnusedFrames = 1;
+            ImGui_ImplDX11_UpdateTexture(texture);
+        }
+        textures.find_erase(texture);
+    }
+    ImGui::UnregisterFontAtlas(atlas);
+    atlas->OwnerContext = nullptr;
+    IM_DELETE(atlas);
+}
+
+[[nodiscard]] bool ReplaceSettingFonts(const Inkeys::Localization::Locale& locale,
+    I18n::PreparedLanguage* language = nullptr)
+{
+    auto& io = ImGui::GetIO();
+    ImFontAtlas* previous = io.Fonts;
+    const std::array<ImFont*, 5> saved{ ImFontMain, ImFontStrong,
+        ImFontDesignMain, ImFontDesignStrong, ImFontDesignIcons };
+    const float previousScale = ImGui::GetStyle().FontScaleDpi;
+    ImFontAtlas* candidate = nullptr;
+    try { candidate = IM_NEW(ImFontAtlas)(); } catch (...) { return false; }
+    candidate->OwnerContext = GImGui;
+    candidate->RendererHasTextures = true;
+    ImGui::RegisterFontAtlas(candidate);
+    io.Fonts = candidate;
+    bool ready = false;
+    try
+    {
+        ready = RebuildSettingFonts(locale);
+        if (ready) ImGui::SetCurrentFont(ImFontMain, 14.0F, 0.0F);
+        if (ready)
+        {
+            for (auto* texture : candidate->TexList)
+            {
+                ImGui_ImplDX11_UpdateTexture(texture);
+                if (texture->Status != ImTextureStatus_OK) { ready = false; break; }
+            }
+        }
+        if (ready) ready = !ImGuiFreeType::HasFontLoadFailure(candidate);
+        if (ready && language) ready = I18n::commit(std::move(*language));
+    }
+    catch (...) { ready = false; }
+    if (!ready)
+    {
+        io.Fonts = previous;
+        ImFontMain = saved[0]; ImFontStrong = saved[1];
+        ImFontDesignMain = saved[2]; ImFontDesignStrong = saved[3]; ImFontDesignIcons = saved[4];
+        ImGui::GetStyle().FontScaleDpi = previousScale;
+        BindSettingFonts();
+        ImGui::SetCurrentFont(ImFontMain, 14.0F, 0.0F);
+        DisposeSettingAtlas(candidate);
+        return false;
+    }
+    // 当前帧尚未 NewFrame，撤销上一帧图集引用；窗口/导航状态保持原 context。
+    DisposeSettingAtlas(previous);
+    settingHomeEntryCache.Reset();
+    settingFrameSubmission.Reset();
+    return true;
+}
+// 生产帧边界和无窗口回归共用同一决策，避免同字族切换误重建图集。
+[[nodiscard]] bool ApplyPreparedSettingLanguage(const Inkeys::Localization::Locale& locale,
+    I18n::PreparedLanguage& prepared, bool rebuildFonts)
+{
+    const auto& current = I18n::locale();
+    return locale.regularFont == current.regularFont && locale.boldFont == current.boldFont && !rebuildFonts
+        ? I18n::commit(std::move(prepared)) : ReplaceSettingFonts(locale, &prepared);
 }
 
 SettingSessionCoroutine RunSettingSession()
@@ -2347,12 +2500,17 @@ SettingSessionCoroutine RunSettingSession()
 
 		int SelectLanguage = setlist.selectLanguage;
 		bool StartUp = setlist.startUp;
-		bool CreateLnk = setlist.shortcutAssistant.createLnk;
-		bool CorrectLnk = setlist.shortcutAssistant.correctLnk;
 
 		int SetSkinMode = setlist.SetSkinMode;
 		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load());
 		bool BarZoomSavePending = false;
+		int ThemeMode = Inkeys::NormalizeThemeMode(
+			Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode);
+		int BackgroundOpacity = Inkeys::NormalizeResidentBackgroundOpacity(
+			Inkeys::config.Experimental.Inkeys3.UI3.BackgroundOpacity);
+		int ContentOpacity = Inkeys::NormalizeResidentContentOpacity(
+			Inkeys::config.Experimental.Inkeys3.UI3.ContentOpacity);
+		bool ResidentOpacitySavePending = false;
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
@@ -2472,26 +2630,75 @@ SettingSessionCoroutine RunSettingSession()
 
 		int settingTab = 0;
 		int settingPlugInTab = 0;
+		int settingLinkageTab = 0;
 		Design::DrawingSubpage drawingSubpage = Design::DrawingSubpage::Overview;
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
 		Design::HomeMotionState homeMotion;
+		Design::PageMotionState pageMotion;
+		Design::PageTransitionState pageTransition;
 		Design::SettingOpenNavigation openNavigation;
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 		SettingEntryProfiler entryProfiler;
 #endif
 		std::uint64_t consumedHideSerial=0;
 		bool resetHomeScroll=false;
+		const auto desktopShortcutDirectory = GetDesktopShortcutDirectory();
+		Design::DesktopShortcutDraft desktopShortcutDraft, whiteboardShortcutDraft{ Inkeys::Business::DesktopShortcut::Kind::Whiteboard };
+		auto initializeShortcut = [&](Design::DesktopShortcutDraft& draft)
+		{
+			using namespace Inkeys::Business::DesktopShortcut;
+			const bool whiteboard = draft.names.kind == Kind::Whiteboard;
+			const auto preference = whiteboard ? Inkeys::config.GetWhiteboardShortcutNamePreference() : Inkeys::config.GetShortcutNamePreference();
+			draft.names = CaptureDesktopShortcutNames(draft.names.kind);
+			draft.preset = NormalizePreset(preference.first, preference.second, draft.names.simplifiedChinese,
+				desktopShortcutDirectory.size(), draft.names.kind);
+			draft.customName = utf16ToUtf8(preference.second);
+			draft.lastValidName = ResolveName(draft.preset, preference.second, draft.names);
+			draft.directoryLength = desktopShortcutDirectory.size();
+			draft.desktopAvailable = !desktopShortcutDirectory.empty();
+			if (draft.preset != preference.first && (whiteboard
+				? Inkeys::config.SetWhiteboardShortcutNamePreference(draft.preset, preference.second)
+				: Inkeys::config.SetShortcutNamePreference(draft.preset, preference.second))) QueueConfigWrite();
+		};
+		initializeShortcut(desktopShortcutDraft); initializeShortcut(whiteboardShortcutDraft);
+		auto commitDesktopShortcutName = [&](Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App)
+		{
+			const bool whiteboard = kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+			const auto& draft = whiteboard ? whiteboardShortcutDraft : desktopShortcutDraft;
+			const auto& other = whiteboard ? desktopShortcutDraft : whiteboardShortcutDraft;
+			if (CommitDesktopShortcutNamePreference(draft, desktopShortcutDirectory.size(), &other)) QueueConfigWrite();
+		};
+		auto queueDesktopShortcut = [&](SettingBusinessKind action, Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App)
+		{
+			const bool whiteboard = kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+			const auto& draft = whiteboard ? whiteboardShortcutDraft : desktopShortcutDraft;
+			const auto& other = whiteboard ? desktopShortcutDraft : whiteboardShortcutDraft;
+			if (Design::IsDesktopShortcutDraftValid(draft, other))
+			{
+				auto command = MakeDesktopShortcutCommand(action, desktopShortcutDirectory, draft.names);
+				const auto otherPreference = whiteboard ? Inkeys::config.GetShortcutNamePreference() : Inkeys::config.GetWhiteboardShortcutNamePreference();
+				// 名称提交失败时不能改用旧配置创建，也不能覆盖另一类已保存名称。
+				if (Inkeys::Business::DesktopShortcut::NamesCollide(command.text, Design::ResolveDesktopShortcutDraftName(draft))
+					&& !Inkeys::Business::DesktopShortcut::NamesCollide(command.text,
+						Inkeys::Business::DesktopShortcut::ResolveName(otherPreference.first, otherPreference.second, other.names)))
+					QueueBusiness(std::move(command));
+			}
+		};
 		auto commitGeneralSliders = [&]()
 		{
+			commitDesktopShortcutName();
+			commitDesktopShortcutName(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
 			// 导航可能使拖动控件下一帧不再渲染，离页时仍完成已有的释放保存合同。
-			if (BarZoomSavePending || Experimental.Inkeys3.AnimationSpeedSavePending)
+			if (BarZoomSavePending || Experimental.Inkeys3.AnimationSpeedSavePending || ResidentOpacitySavePending)
 			{
 				QueueConfigWrite();
 				BarZoomSavePending = false;
 				Experimental.Inkeys3.AnimationSpeedSavePending = false;
+				ResidentOpacitySavePending = false;
 			}
 		};
+		const SettingPendingEditsScope pendingEditsScope{commitGeneralSliders};
 		auto navigateTo = [&](Design::NavigationDestination requested)
 		{
 			requested = Design::NormalizeDestination(requested);
@@ -2532,11 +2739,27 @@ SettingSessionCoroutine RunSettingSession()
 			std::pair<int,int> captionMaskVertices{ 0, 0 }; // 半透明 caption 占位在 entryTitleDraw 中的顶点区间。
 			bool entryRootSuppressed=false;
 			bool eraserDemoVisited=false;
+			for (auto* draft : { &desktopShortcutDraft, &whiteboardShortcutDraft })
+			{
+				draft->names = CaptureDesktopShortcutNames(draft->names.kind);
+				const auto preference = draft->names.kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard
+					? Inkeys::config.GetWhiteboardShortcutNamePreference() : Inkeys::config.GetShortcutNamePreference();
+				draft->lastValidName = Inkeys::Business::DesktopShortcut::ResolveName(preference.first, preference.second, draft->names);
+				if (draft->preset == Inkeys::Business::DesktopShortcut::Brand && !draft->names.simplifiedChinese)
+				{
+					draft->preset = Inkeys::Business::DesktopShortcut::Default;
+					// 品牌在非简中已按缺省解析，仍须保存规范 ID；文件动作另行检查双类冲突。
+					const bool changed = draft->names.kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard
+						? Inkeys::config.SetWhiteboardShortcutNamePreference(draft->preset, preference.second)
+						: Inkeys::config.SetShortcutNamePreference(draft->preset, preference.second);
+					if (changed) QueueConfigWrite();
+				}
+			}
 			Design::FrameSubmissionKey submissionKey;
 			const bool submissionInput=!GImGui->InputEventsTrail.empty();
 			if (submissionInput) settingFrameSubmission.Reset();
 			// 本帧 backdrop/底色一致快照；caption 的主题点击只在下帧 ApplySettingTheme 换色。
-			const auto entryBackdrop=settingBackdropMode.load(memory_order_acquire);
+			const auto entryBackdrop=settingPaletteBackdropMode;
 			const bool transparentBackdrop=entryBackdrop!=Inkeys::UI::Setting::BackdropMode::Solid;
 			const ImVec4 clearColorValue=ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
 			std::uint64_t hideSerial, showSerial;
@@ -2599,13 +2822,13 @@ SettingSessionCoroutine RunSettingSession()
 					tabExperimental,
 					tabFeedback = 15,
 					tabPerformance = 16,
+					tabLinkage = 17,
 				};
 				enum settingPlugInTabEnum
 				{
 					tabPlug1,
 					tabPlug2,
-					tabPlug3,
-					tabSuperTop,
+					tabSuperTop = 3,
 					tabPlugDDB
 				};
 
@@ -2644,6 +2867,22 @@ SettingSessionCoroutine RunSettingSession()
 					Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate);
 				const auto shellGeometry = Inkeys::UI::Setting::Design::ResolveShellGeometry(
 					widthDip, static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
+
+				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
+					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
+					!navigationState.BlockContentInput() && settingWindowActive.load(memory_order_acquire),
+					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
+					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
+					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
+				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
+				const bool optionalChromeVisible = !entryInputBlock && Design::HomeEntryChromeVisible(homeMotion);
+				{
+					lock_guard stateLock(settingStateMutex);
+					// Hide→Show 可发生在旧帧绘制中，旧会话不能覆盖新开屏的命中屏障。
+					if (settingSessionState.IsVisible() && settingSessionState.ShowSerial() == showSerial
+						&& settingSessionState.HideSerial() == hideSerial)
+						settingOptionalChromeVisible.store(optionalChromeVisible, memory_order_release);
+				}
 
 				// TitleBar 与三个 caption buttons 始终由 Inkeys 自绘；DWM 只做
 				// 可选的外框/阴影/圆角增强，因此 Win7 关闭 Aero 时也不会退回
@@ -2698,67 +2937,71 @@ SettingSessionCoroutine RunSettingSession()
 								titleColor, titleText.c_str(), nullptr, 0.0F, &titleClip);
 						ImFluent::PopFont();
 
-						if (titleBarGeometry.versionVisible)
+						// 只隐藏业务入口；原生 caption 按钮始终可用，取消帧仍禁止点穿。
+						if (optionalChromeVisible)
 						{
-							const ImRect versionBounds = ToImRect(titleBarGeometry.version, origin);
-							ImGui::SetCursorScreenPos(versionBounds.Min);
-							if (ImGui::InvisibleButton("##setting-titlebar-version",
-								versionBounds.GetSize()))
+							if (titleBarGeometry.versionVisible)
 							{
-								// RightHeader 版本入口与导航中的“软件版本”复用同一路由。
-								settingTab = settingTabEnum::tab6;
+								const ImRect versionBounds = ToImRect(titleBarGeometry.version, origin);
+								ImGui::SetCursorScreenPos(versionBounds.Min);
+								if (ImGui::InvisibleButton("##setting-titlebar-version",
+									versionBounds.GetSize()))
+								{
+									// RightHeader 版本入口与导航中的“软件版本”复用同一路由。
+									settingTab = settingTabEnum::tab6;
+								}
+								const bool versionHovered = ImGui::IsItemHovered();
+								const bool versionHeld = ImGui::IsItemActive();
+								if (versionHovered)
+								{
+									const float insetY = 4.0F * settingGlobalScale;
+									drawList->AddRectFilled(
+										{ versionBounds.Min.x, versionBounds.Min.y + insetY },
+										{ versionBounds.Max.x, versionBounds.Max.y - insetY },
+										SettingChromeColor(versionHeld
+											? ImFluentCol_SubtleFillTertiary
+											: ImFluentCol_SubtleFillSecondary),
+										4.0F * settingGlobalScale);
+								}
+								ImFluent::PushFont(ImFluentTextStyle_Caption);
+								const ImVec2 versionSize = ImGui::CalcTextSize(versionLabel.c_str());
+								drawList->AddText({
+									versionBounds.Min.x + (versionBounds.GetWidth() - versionSize.x) * 0.5F,
+									versionBounds.Min.y + (versionBounds.GetHeight() - versionSize.y) * 0.5F },
+									SettingChromeColor(ImFluentCol_TextPrimary,
+										active ? 1.0F : 0.55F), versionLabel.c_str());
+								ImFluent::PopFont();
 							}
-							const bool versionHovered = ImGui::IsItemHovered();
-							const bool versionHeld = ImGui::IsItemActive();
-							if (versionHovered)
+
+							const ImRect themeBounds = ToImRect(titleBarGeometry.themeToggle, origin);
+							ImGui::SetCursorScreenPos(themeBounds.Min);
+							if (ImGui::InvisibleButton("##setting-theme-toggle", themeBounds.GetSize(),
+								ImGuiButtonFlags_EnableNav))
 							{
-								const float insetY = 4.0F * settingGlobalScale;
-								drawList->AddRectFilled(
-									{ versionBounds.Min.x, versionBounds.Min.y + insetY },
-									{ versionBounds.Max.x, versionBounds.Max.y - insetY },
-									SettingChromeColor(versionHeld
-										? ImFluentCol_SubtleFillTertiary
-										: ImFluentCol_SubtleFillSecondary),
-									4.0F * settingGlobalScale);
+								setlist.settingDarkMode = !Design::IsDarkMode();
+								WriteSetting();
+								// 下一帧先换色，再 PushFluentStyle；主题切换不重建 atlas/device。
+								settingThemeSerial.fetch_add(1, memory_order_release);
+								Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
 							}
-							ImFluent::PushFont(ImFluentTextStyle_Caption);
-							const ImVec2 versionSize = ImGui::CalcTextSize(versionLabel.c_str());
-							drawList->AddText({
-								versionBounds.Min.x + (versionBounds.GetWidth() - versionSize.x) * 0.5F,
-								versionBounds.Min.y + (versionBounds.GetHeight() - versionSize.y) * 0.5F },
-								SettingChromeColor(ImFluentCol_TextPrimary,
-									active ? 1.0F : 0.55F), versionLabel.c_str());
-							ImFluent::PopFont();
-						}
+							if (ImGui::IsItemHovered())
+							{
+								const float inset = 4.0F * settingGlobalScale;
+								drawList->AddRectFilled({ themeBounds.Min.x, themeBounds.Min.y + inset },
+									{ themeBounds.Max.x, themeBounds.Max.y - inset },
+									SettingChromeColor(ImGui::IsItemActive()
+										? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
+							}
+							ImFluent::DrawIcon(Design::IsDarkMode() ? "\xee\x9c\x86" : "\xee\x9c\x88",
+								themeBounds.Min, themeBounds.Max, Design::NavigationGlyphSize,
+								SettingChromeColor(ImFluentCol_TextPrimary, active ? 1.0F : 0.55F));
 
-						const ImRect themeBounds = ToImRect(titleBarGeometry.themeToggle, origin);
-						ImGui::SetCursorScreenPos(themeBounds.Min);
-						if (ImGui::InvisibleButton("##setting-theme-toggle", themeBounds.GetSize(),
-							ImGuiButtonFlags_EnableNav))
-						{
-							setlist.settingDarkMode = !Design::IsDarkMode();
-							WriteSetting();
-							// 下一帧先换色，再 PushFluentStyle；主题切换不重建 atlas/device。
-							settingThemeSerial.fetch_add(1, memory_order_release);
-							Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
-						}
-						if (ImGui::IsItemHovered())
-						{
-							const float inset = 4.0F * settingGlobalScale;
-							drawList->AddRectFilled({ themeBounds.Min.x, themeBounds.Min.y + inset },
-								{ themeBounds.Max.x, themeBounds.Max.y - inset },
-								SettingChromeColor(ImGui::IsItemActive()
-									? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
-						}
-						ImFluent::DrawIcon(Design::IsDarkMode() ? "\xee\x9c\x86" : "\xee\x9c\x88",
-							themeBounds.Min, themeBounds.Max, Design::NavigationGlyphSize,
-							SettingChromeColor(ImFluentCol_TextPrimary, active ? 1.0F : 0.55F));
+							if (Design::RenderFeedbackButton(titleBarGeometry.feedback, destination.page == Design::PageId::Feedback,
+								navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Feedback });
 
-						if (Design::RenderFeedbackButton(titleBarGeometry.feedback, destination.page == Design::PageId::Feedback,
-							navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Feedback });
-
-						if (Design::RenderDebugButton(titleBarGeometry.debug, destination.page == Design::PageId::Debug,
-							navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Debug });
+							if (Design::RenderDebugButton(titleBarGeometry.debug, destination.page == Design::PageId::Debug,
+								navigationState, active ? 1.0F : 0.55F)) navigateTo({ Design::PageId::Debug });
+						}
 
 						ImFluent::PushFont(ImFluentTextStyle_Body);
 						RenderSettingCaptionButton(drawList, setting_window, origin,
@@ -2776,20 +3019,37 @@ SettingSessionCoroutine RunSettingSession()
 
 				// 内容与导航单独排布；窄窗覆盖展开不改变正文宽度及其滚动位置。
 				synchronizeDestination();
-				const float contentAlpha = Design::ContentAlpha(navigationState);
+				const auto requestedDestination = destination;
+				const int requestedTab = settingTab, requestedPlugin = settingPlugInTab, requestedLinkage = settingLinkageTab;
+				const auto requestedDrawing = drawingSubpage;
+				const int requestedSubpage = settingTab == settingTabEnum::tab4 ? settingPlugInTab
+					: settingTab == settingTabEnum::tabLinkage ? settingLinkageTab
+					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
+					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0;
+				const auto displayedRoute = pageTransition.Resolve({settingTab, requestedSubpage},
+					navigationDelta, Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate,
+					resetHomeScroll || openAction != Design::SettingOpenNavigation::Action::None
+					|| homeMotion.EntryActive() || homeMotion.entry == Design::HomeMotionState::Entry::Pending);
+				const bool holdingPage = pageTransition.Holding();
+				if (holdingPage)
+				{
+					// 淡出期间只替换正文绘制路由，导航仍保留最新目标和未活动的子页状态。
+					settingTab = displayedRoute.page;
+					destination = Design::DestinationForPage(settingTab);
+					if (destination.page == Design::PageId::General)
+						destination.section = static_cast<Design::GeneralSection>(displayedRoute.subpage);
+					if (destination.page == Design::PageId::Plugins) settingPlugInTab = displayedRoute.subpage;
+					if (destination.page == Design::PageId::Linkage) settingLinkageTab = displayedRoute.subpage;
+					if (destination.page == Design::PageId::Draw)
+						drawingSubpage = static_cast<Design::DrawingSubpage>(displayedRoute.subpage);
+				}
+				if (holdingPage) Design::SuppressDepartingPageInput(pageMotion);
 				bool blockContentInput = navigationState.BlockContentInput();
 				std::uint64_t entryFontSerial;
 				{
 					lock_guard stateLock(settingStateMutex);
 					entryFontSerial=settingSessionState.FontRebuildSerial();
 				}
-				Design::ConfigureHomeMotion(homeMotion,destination.page==Design::PageId::Home,showSerial,
-					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
-					!blockContentInput && settingWindowActive.load(memory_order_acquire),
-					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
-					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
-					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
-				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				blockContentInput|=entryInputBlock;
 				const auto& contentGeometry = shellGeometry.content;
 				const auto entryKey=Design::MakeHomeEntryFrameKey(
@@ -2804,6 +3064,15 @@ SettingSessionCoroutine RunSettingSession()
 				const bool skipEntryBackground=Design::BeginHomeEntryFrame(homeMotion,entryKey,
 					!blockContentInput && !navigationState.flyoutOpen
 					&& !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel));
+				const int pageSubpage = settingTab == settingTabEnum::tab4 ? settingPlugInTab
+					: settingTab == settingTabEnum::tabLinkage ? settingLinkageTab
+					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
+					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0;
+				const auto pageRoute = (static_cast<std::uint64_t>(settingTab) << 32)
+					| static_cast<std::uint32_t>(pageSubpage);
+				// 真正导航才重播；字标开屏复用原快照，不在结束后追加一轮页面动画。
+				Design::ConfigurePageMotion(pageMotion, pageRoute,
+					homeMotion.EntryActive() || homeMotion.entry == Design::HomeMotionState::Entry::Pending, resetHomeScroll, I18n::revision(), holdingPage);
 				// 写完后捕获真实无字标页；渐退/归位复用 GPU 像素，终态前才恢复 child 排布。
 				if (!skipEntryBackground)
 				{
@@ -2817,13 +3086,12 @@ SettingSessionCoroutine RunSettingSession()
 					{ Widgets::Dip(shellGeometry.gutter), Widgets::Dip(28.0F) });
 				ImGui::PushID(settingTab);
 				// 插件/绘制详情及通用子页各自保存滚动状态，标签翻译不参与窗口标识。
-				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab
-					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
-					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0);
+				ImGui::PushID(pageSubpage);
 				Design::BeginScrollChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
-					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll,
-					homeMotion.home && (homeMotion.EntryActive() || homeMotion.entry==Design::HomeMotionState::Entry::Pending));
+					(blockContentInput || holdingPage) ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None,resetHomeScroll,
+					homeMotion.home && (homeMotion.EntryActive() || homeMotion.entry==Design::HomeMotionState::Entry::Pending),
+					true, Design::PageScrollbarAlpha(pageMotion) * pageTransition.Opacity(), &pageMotion);
 				ImGuiWindow* contentWindow = ImGui::GetCurrentWindow();
 				resetHomeScroll=false;
 				const auto root=ImGui::GetMainViewport(); const auto clip=contentWindow->ClipRect;
@@ -2832,6 +3100,7 @@ SettingSessionCoroutine RunSettingSession()
 					{clip.Min.x,clip.Min.y,clip.Max.x,clip.Max.y});
 				ImGui::PopStyleVar();
 				ImGui::PopStyleColor();
+				Design::BeginPageMotion(pageMotion);
 				// 所有设置页面共享校准字体；离开内容区后再恢复标题栏字体。
 				Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
 				ImFluent::PushFont(ImFluentTextStyle_Body);
@@ -2915,25 +3184,21 @@ SettingSessionCoroutine RunSettingSession()
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
 
 					{
-						vector<string> languages{
-							IA(I18nKey.SettingsUI.Language.UI.Language.en_US),
-							IA(I18nKey.SettingsUI.Language.UI.Language.zh_CN),
-							IA(I18nKey.SettingsUI.Language.UI.Language.zh_TW)
-						};
-						const int previousLanguage = SelectLanguage;
+						vector<string> languages;
+						languages.reserve(Inkeys::Localization::Locales.size());
+						for (const int index : Inkeys::Localization::DisplayOrder)
+							languages.emplace_back(Inkeys::Localization::NativeLabel(Inkeys::Localization::Locales[index]));
+						SelectLanguage = settingPendingLanguage >= 0 ? settingPendingLanguage : setlist.selectLanguage;
+						// Combo 行号只用于展示，发布和保存仍使用稳定的语言索引。
+						int displayLanguage = Inkeys::Localization::DisplayIndexForLocale(SelectLanguage);
+						const int previousLanguage = displayLanguage;
 						if (Design::ComboRow("##language-ui",
 							IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
 							IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774",
-							SelectLanguage, languages, IA(I18nKey.SettingsUI.Language.UI.SelectNote).c_str())
-							&& previousLanguage != SelectLanguage
-							&& setlist.selectLanguage != SelectLanguage)
+							displayLanguage, languages)
+							&& previousLanguage != displayLanguage)
 						{
-							setlist.selectLanguage = SelectLanguage;
-							WriteSetting();
-							if (SelectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
-							else if (SelectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
-							else I18n::load(1, L"JSON", L"en-US");
-							QueueConfirmRestart(IW(I18nKey.SettingsUI.Language.UI.Warn));
+							settingPendingLanguage = Inkeys::Localization::LocaleIndexForDisplay(displayLanguage);
 						}
 					}
 					break;
@@ -3075,14 +3340,17 @@ SettingSessionCoroutine RunSettingSession()
 						settingCICD.url.empty() ? nullptr : IA(I18nKey.SettingsUI.Version.Info.CICDInfo).c_str()))
 						settingTab = settingTabEnum::tabCICD;
 
-					if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew
-						&& Design::ButtonRow("##version-manual-update", IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str(),
-							nullptr, "\ue895", IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str()))
+					if (Design::ConditionalBlock block{"##version-manual-visibility",
+						AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew}; block)
 					{
-						mandatoryUpdate = true;
-						AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+						if (Design::ButtonRow("##version-manual-update", IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str(),
+								nullptr, "\ue895", IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str()))
+						{
+							mandatoryUpdate = true;
+							AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+						}
 					}
-					if (inconsistentArchitecture)
+					if (Design::ConditionalBlock block{"##version-architecture-visibility", inconsistentArchitecture}; block)
 					{
 						Design::Notice("##version-architecture-warning",
 							IA(I18nKey.SettingsUI.Version.N).c_str(),
@@ -3295,7 +3563,17 @@ SettingSessionCoroutine RunSettingSession()
 						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
 					draft.settingEntryAnimation = setlist.settingEntryAnimation;
+					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
+						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
+					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
+					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
+					// 背景未自定义时显示当前主栏主题的默认值；内容透明度直接显示保存值。
+					draft.backgroundOpacityDefault = static_cast<float>(GetThemeDefaultResidentBackgroundOpacity(
+						Inkeys::ThemeModeUsesDarkStyle(ThemeMode)));
+					draft.backgroundOpacity = BackgroundOpacity == Inkeys::ResidentBackgroundOpacityThemeDefault
+						? draft.backgroundOpacityDefault : static_cast<float>(BackgroundOpacity) / 100.0F;
+					draft.contentOpacity = static_cast<float>(ContentOpacity) / 100.0F;
 					// 每帧冻结本页偏好，页面只产出事件，运行时通知仍留在既有 FIFO 业务域。
 					draft.selectMode = GetSelectAndClickThroughMode();
 					const int iconOrder = Inkeys::config.UI.Bar.IconOrder.load();
@@ -3332,7 +3610,41 @@ SettingSessionCoroutine RunSettingSession()
 						draft.shortcutHookStatus = std::move(hookStatus);
 						draft.shortcutStatusWarning = shortcutStatus.hotkeyError || shortcutStatus.hookError;
 					}
+					desktopShortcutDraft.correct = Inkeys::config.Application.Shortcut.CorrectLnk;
+					desktopShortcutDraft.create = Inkeys::config.Application.Shortcut.CreateLnk;
+					whiteboardShortcutDraft.correct = Inkeys::config.Application.WhiteboardShortcut.CorrectLnk;
+					whiteboardShortcutDraft.create = Inkeys::config.Application.WhiteboardShortcut.CreateLnk;
+					draft.desktopShortcut = desktopShortcutDraft;
+					draft.whiteboardShortcut = whiteboardShortcutDraft;
 					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination.section);
+					if (destination.section == Design::GeneralSection::DesktopShortcuts)
+					{
+						desktopShortcutDraft = std::move(draft.desktopShortcut);
+						whiteboardShortcutDraft = std::move(draft.whiteboardShortcut);
+						auto applyShortcutEvents = [&](Design::DesktopShortcutDraft& shortcut, bool nameChanged, bool create, bool correctChanged, bool createChanged)
+						{
+							const auto kind = shortcut.names.kind;
+							const bool whiteboard = kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+							if (nameChanged || create) commitDesktopShortcutName(kind);
+							if (create) queueDesktopShortcut(SettingBusinessKind::CreateShortcut, kind);
+							if (correctChanged)
+							{
+								(whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CorrectLnk : Inkeys::config.Application.Shortcut.CorrectLnk) = shortcut.correct;
+								QueueConfigWrite();
+								if (shortcut.correct) queueDesktopShortcut(SettingBusinessKind::EnsureShortcut, kind);
+							}
+							if (createChanged)
+							{
+								(whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CreateLnk : Inkeys::config.Application.Shortcut.CreateLnk) = shortcut.create;
+								QueueConfigWrite();
+								if (shortcut.correct) queueDesktopShortcut(SettingBusinessKind::EnsureShortcut, kind);
+							}
+						};
+						applyShortcutEvents(desktopShortcutDraft, events.desktopNamePresetChanged || events.desktopNameCommitted,
+							events.createShortcut, events.desktopCorrectChanged, events.desktopCreateChanged);
+						applyShortcutEvents(whiteboardShortcutDraft, events.whiteboardNamePresetChanged || events.whiteboardNameCommitted,
+							events.createWhiteboardShortcut, events.whiteboardCorrectChanged, events.whiteboardCreateChanged);
+					}
 					// 页面只返回一次交互结果，所有副作用继续留在既有 FIFO/配置接线域。
 					if (destination.section == Design::GeneralSection::Basic)
 					{
@@ -3343,24 +3655,8 @@ SettingSessionCoroutine RunSettingSession()
 							setlist.startUp = StartUp;
 							WriteSetting();
 						}
-						if (events.createShortcut)
-						{
-							wchar_t desktopPath[MAX_PATH];
-							if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE))
-							{
-								SettingBusinessCommand command;
-								command.kind = SettingBusinessKind::CreateShortcut;
-								command.text = wstring(desktopPath) + L"\\" + IW(I18nKey.Widget.LnkName) + L".lnk";
-								command.directory = GetCurrentExePath();
-								QueueBusiness(std::move(command));
-							}
-						}
-						if (events.shortcutOptions)
-						{
-							settingPlugInTab = settingPlugInTabEnum::tabPlug3;
-							settingTab = settingTabEnum::tab4;
-						}
 					}
+
 					if (events.startupPlacementChanged)
 					{
 						Inkeys::config.UI.Bar.StartupPlacement = draft.startupPlacement;
@@ -3368,12 +3664,66 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					if (destination.section == Design::GeneralSection::Appearance)
 					{
+						if (events.themeModeChanged)
+						{
+							ThemeMode = Inkeys::NormalizeThemeMode(draft.themeMode + Inkeys::ThemeModeDark);
+							if (Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode != ThemeMode)
+							{
+								// 先更新配置和运行时目标，再异步持久化本次选择。
+								Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode = ThemeMode;
+								Inkeys::UI::Bar::SetThemeMode(ThemeMode);
+								QueueConfigWrite();
+							}
+						}
+						if (events.settingThemeModeChanged)
+						{
+							const bool settingDark = draft.settingThemeMode == 0;
+							if (setlist.settingDarkMode != settingDark)
+							{
+								// 与标题栏切换按钮同一路径：下一帧先换色，不重建 atlas/device。
+								setlist.settingDarkMode = settingDark;
+								WriteSetting();
+								settingThemeSerial.fetch_add(1, memory_order_release);
+								Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+							}
+						}
+						{
+							int nextBackground = BackgroundOpacity;
+							if (events.backgroundOpacityReset)
+								nextBackground = Inkeys::ResidentBackgroundOpacityThemeDefault;
+							else if (events.backgroundOpacityChanged)
+								nextBackground = Inkeys::NormalizeResidentBackgroundOpacity(
+									static_cast<int>(lround(draft.backgroundOpacity * 100.0F)));
+							const int nextContent = Inkeys::NormalizeResidentContentOpacity(
+								static_cast<int>(lround(draft.contentOpacity * 100.0F)));
+							if (nextBackground != BackgroundOpacity || nextContent != ContentOpacity)
+							{
+								// 拖动中实时预览，松手或点击重置后再持久化。
+								BackgroundOpacity = nextBackground;
+								ContentOpacity = nextContent;
+								Inkeys::config.Experimental.Inkeys3.UI3.BackgroundOpacity = BackgroundOpacity;
+								Inkeys::config.Experimental.Inkeys3.UI3.ContentOpacity = ContentOpacity;
+								Inkeys::UI::Bar::SetResidentOpacity(BackgroundOpacity, ContentOpacity);
+								ResidentOpacitySavePending = true;
+							}
+							if (ResidentOpacitySavePending && !events.backgroundOpacityActive && !events.contentOpacityActive)
+							{
+								QueueConfigWrite();
+								ResidentOpacitySavePending = false;
+							}
+						}
 						if (events.startupPreviewChanged
 							&& Experimental.Inkeys3.StartupPreviewPreferenceState.SetConfigured(draft.startupPreview))
 						{
 							Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable = draft.startupPreview;
 							if (Experimental.Inkeys3.StartupPreviewPreferenceState.ConsumeWritePending())
 								QueueConfigWrite();
+						}
+						if (events.startupEffectChanged)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect =
+								static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(draft.startupEffect));
+							QueueConfigWrite();
 						}
 						if (events.settingEntryAnimationChanged)
 						{
@@ -3387,25 +3737,12 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 						}
 						Experimental.Inkeys3.AnimationEnable = draft.animation;
-						Experimental.Inkeys3.AnimationSpeedRate = draft.animationRate;
 						if (events.animationChanged)
 						{
 							if (!draft.animation) Design::SnapNavigationAnimations(navigationState);
 							Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable = draft.animation;
 							Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
 							QueueConfigWrite();
-						}
-						if (draft.animation && fabs(draft.animationRate - static_cast<float>(
-							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001F)
-						{
-							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate = static_cast<double>(draft.animationRate);
-							Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
-							Experimental.Inkeys3.AnimationSpeedSavePending = true;
-						}
-						if (!events.animationRateActive && Experimental.Inkeys3.AnimationSpeedSavePending)
-						{
-							QueueConfigWrite();
-							Experimental.Inkeys3.AnimationSpeedSavePending = false;
 						}
 						Experimental.Inkeys3.DynamicEdgeLighting = draft.dynamicEdgeLighting;
 						if (events.dynamicEdgeLightingChanged)
@@ -3499,6 +3836,43 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
+					if (drawingSubpage == Design::DrawingSubpage::Cursor)
+					{
+						namespace Cursor = Inkeys::Drawing::Draw3;
+						using Cursor::CursorDevice;
+						auto& cursor = Inkeys::config.Drawing.Cursor;
+						const int legacyMouseStyle = cursor.MouseStyle.load(), legacyPenStyle = cursor.PenStyle.load();
+						const auto deviceStyle = [&](CursorDevice device, int configured) {
+							return Cursor::RestoreDeviceCursorStyle(device, configured, legacyMouseStyle, legacyPenStyle);
+						};
+						static const bool injectedSourceAvailable = GetProcAddress(
+							GetModuleHandleW(L"user32.dll"), "GetCurrentInputMessageSource") != nullptr;
+						Design::CursorPageDraft draft;
+						draft.mouse = Cursor::CursorStyleToItemIndex(CursorDevice::Mouse, deviceStyle(CursorDevice::Mouse, cursor.Mouse.load()));
+						draft.touch = Cursor::CursorStyleToItemIndex(CursorDevice::Touch, deviceStyle(CursorDevice::Touch, cursor.Touch.load()));
+						draft.screenPen = Cursor::CursorStyleToItemIndex(CursorDevice::ScreenPen, deviceStyle(CursorDevice::ScreenPen, cursor.ScreenPen.load()));
+						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
+						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
+						draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(cursor.DotHideOnContact.load()));
+						draft.injectedAvailable = injectedSourceAvailable;
+						const auto events = Design::RenderCursorPage(draft);
+						if (events.back)
+							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
+						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse || events.dotHideOnContact)
+						{
+							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
+							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
+							if (events.mouse) cursor.Mouse = styleValue(CursorDevice::Mouse, draft.mouse);
+							if (events.touch) cursor.Touch = styleValue(CursorDevice::Touch, draft.touch);
+							if (events.screenPen) cursor.ScreenPen = styleValue(CursorDevice::ScreenPen, draft.screenPen);
+							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
+							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
+							if (events.dotHideOnContact) cursor.DotHideOnContact = draft.dotHideOnContact;
+							SyncDraw3State();
+							QueueConfigWrite();
+						}
+						break;
+					}
 					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
 					{
 						namespace Palm = Inkeys::Drawing::Draw3::PalmEraser;
@@ -3587,26 +3961,30 @@ SettingSessionCoroutine RunSettingSession()
 					Design::PageHeader(IA(I18nKey.SettingsUI.Draw.N).c_str());
 
 					const auto workspaceFailure = WorkspaceTransitionFailureRevision();
-					if (workspaceFailure != 0 && Design::Notice("##workspace-recovery",
-						IA(I18nKey.UI.Bar.CanvasRecovery.Failed).c_str(),
-						IA(I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str(),
-						ImFluentInfoSeverity_Warning, IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas).c_str()))
+					if (Design::ConditionalBlock block{"##workspace-recovery-visibility", workspaceFailure != 0}; block)
 					{
-						// 按钮携带用户看到的协调故障版本，不借用 Host 故障令牌或执行时的新版本。
-						SettingBusinessCommand retry;
-						retry.kind = SettingBusinessKind::RetryWorkspaceTransition;
-						retry.workspaceFailureRevision = workspaceFailure;
-						QueueBusiness(std::move(retry));
+						if (Design::Notice("##workspace-recovery",
+							IA(I18nKey.UI.Bar.CanvasRecovery.Failed).c_str(),
+							IA(I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str(),
+							ImFluentInfoSeverity_Warning, IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas).c_str()))
+						{
+							// 按钮携带用户看到的协调故障版本，不借用 Host 故障令牌或执行时的新版本。
+							SettingBusinessCommand retry;
+							retry.kind = SettingBusinessKind::RetryWorkspaceTransition;
+							retry.workspaceFailureRevision = workspaceFailure;
+							QueueBusiness(std::move(retry));
+						}
 					}
 					const auto canvasRuntime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-					if (canvasRuntime.recovery.status != Inkeys::Drawing::Draw3::CanvasRecoveryStatus::None)
+					if (Design::ConditionalBlock block{"##canvas-recovery-visibility",
+						canvasRuntime.recovery.status != Inkeys::Drawing::Draw3::CanvasRecoveryStatus::None}; block)
 					{
 						const bool protectedConflict = canvasRuntime.recovery.status ==
 							Inkeys::Drawing::Draw3::CanvasRecoveryStatus::ProtectedConflict;
 						ImGui::BeginDisabled(canvasRuntime.consumerFatal || !canvasRuntime.recovery.retryAvailable);
 						if (Design::Notice("##canvas-recovery",
-							IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.Conflict : I18nKey.UI.Bar.CanvasRecovery.Failed).c_str(),
-							IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.ProtectedHint : I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str(),
+							block.RetainText("title", IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.Conflict : I18nKey.UI.Bar.CanvasRecovery.Failed).c_str()),
+							block.RetainText("description", IA(protectedConflict ? I18nKey.UI.Bar.CanvasRecovery.ProtectedHint : I18nKey.UI.Bar.CanvasRecovery.RecoveryHint).c_str()),
 							ImFluentInfoSeverity_Warning, IA(I18nKey.UI.Bar.CanvasRecovery.RetryCanvas).c_str()))
 						{
 							// 捕获当前呈现的令牌；业务执行时再次核验，旧点击不能重试后来场景。
@@ -3681,20 +4059,9 @@ SettingSessionCoroutine RunSettingSession()
 					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
-					auto& cursor = Inkeys::config.Drawing.Cursor;
-					const vector<string> cursorStyles{ IA(I18nKey.SettingsUI.Draw.Cursor.DefaultStyle), IA(I18nKey.SettingsUI.Draw.Cursor.DrawingStyle) };
-					int mouseStyle = cursor.MouseStyle.load() == 1 ? 1 : 0, penStyle = cursor.PenStyle.load() == 1 ? 1 : 0;
-					const bool mouseStyleChanged = Design::ComboRow("##鼠标光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.MouseStyle).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Cursor.Description).c_str(), "\ue962", mouseStyle, cursorStyles);
-					const bool penStyleChanged = Design::ComboRow("##笔光标样式", IA(I18nKey.SettingsUI.Draw.Cursor.PenStyle).c_str(),
-						nullptr, "\uedc6", penStyle, cursorStyles);
-					if (mouseStyleChanged || penStyleChanged)
-					{
-						cursor.MouseStyle = mouseStyle;
-						cursor.PenStyle = penStyle;
-						SyncDraw3State();
-						QueueConfigWrite();
-					}
+					if (Design::NavigationRow("##cursor-entry", IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str(),
+						IA(I18nKey.SettingsUI.Draw.Cursor.EntryDescription).c_str(), "\ue962"))
+						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Cursor);
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
 					bool laserMultiTouchEnabled = drawingOptions.Laser.MultiTouchEnabled;
@@ -3783,13 +4150,6 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						Design::PageHeader(IA(I18nKey.SettingsUI.PlugIn.N).c_str());
 						Design::PageContentStart();
-						const string pptStatus = pptComVersion.substr(0, 7) == L"Error: "
-							? IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError)
-							: utf16ToUtf8(pptComVersion);
-						renderPluginOverviewCard("ppt-helper",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(), pptStatus,
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str(), 5,
-							settingPlugInTabEnum::tabPlug2, IA(I18nKey.SettingsUI.PlugIn.PPTHelper.SupportNote).c_str());
 						renderPluginOverviewCard("super-top",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(), "20260202a",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.E).c_str(), 10,
@@ -3799,40 +4159,345 @@ SettingSessionCoroutine RunSettingSession()
 							utf16ToUtf8(ddbInteractionSetList.DdbEdition),
 							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.E).c_str(), 8,
 							settingPlugInTabEnum::tabPlugDDB);
-						renderPluginOverviewCard("shortcut-helper",
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.N).c_str(), "20250223a",
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.E).c_str(), 6,
-							settingPlugInTabEnum::tabPlug3);
+
 						break;
 					}
 
-					case settingPlugInTabEnum::tabPlug2:
+					case settingPlugInTabEnum::tabSuperTop:
 					{
+						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(),
+							"20260202a");
+						Design::Notice("##super-top-notice",
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Warn).c_str(),
+							ImFluentInfoSeverity_Warning);
+						Design::SectionHeader(
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.N).c_str());
+						const string superTopDescription = hasSuperTop
+							? IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1)
+							: IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2);
+						renderToggleCard("##super-top-enable",
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTop).c_str(),
+							superTopDescription.c_str(), "\ue718",
+							PlugInSetting.SuperTop.Enable, [&](bool value)
+							{
+								setlist.plugInSetting.superTop.enable = value;
+								WriteSetting();
+							}, IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopNote).c_str());
+						// 指示器继续使用已有配置，只展示说明，不在此改写实际值。
+						Design::SettingRow("##super-top-indicator",
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.IndicatorE).c_str(),
+							"\ue841", 0.0F, 0.0F, [](const auto&) {});
+						break;
+					}
+
+					case settingPlugInTabEnum::tabPlugDDB:
+					{
+						const auto& ddb = I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker;
+						renderPluginHeader(
+							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str(),
+							utf16ToUtf8(ddbInteractionSetList.DdbEdition).c_str(),
+							L"https://github.com/Alan-CRL/DesktopDrawpadBlocker");
+						Design::Notice("##ddb-license-notice",
+							IA(ddb.LicenseTitle).c_str(),
+							IA(ddb.LicenseDescription).c_str(),
+							ImFluentInfoSeverity_Warning);
+
+						Design::SectionHeader(IA(ddb.UseSection).c_str());
+						renderToggleCard("##ddb-enable", IA(ddb.EnableTitle).c_str(),
+							IA(ddb.EnableDescription).c_str(), "\ue7ba",
+							Ddb.Enable, [&](bool value)
+							{
+								ddbInteractionSetList.enable = value;
+								SettingBusinessCommand command;
+								command.kind = SettingBusinessKind::ConfigureDdb;
+								command.flag = value;
+								command.secondaryFlag = ddbInteractionSetList.runAsAdmin;
+								command.text = pluginPath
+									+ L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe";
+								command.directory = pluginPath + L"DesktopDrawpadBlocker";
+								command.parameters = GetCurrentExePath();
+								command.digest = ddbInteractionSetList.DdbSHA256;
+								QueueBusiness(std::move(command));
+							});
+
+						Design::SectionHeader(IA(ddb.GeneralSection).c_str());
+						renderToggleCard("##ddb-admin", IA(ddb.AdministratorTitle).c_str(),
+							IA(ddb.AdministratorDescription).c_str(), "\ue72e",
+							Ddb.RunAsAdmin, [&](bool value)
+							{
+								ddbInteractionSetList.runAsAdmin = value;
+								WriteSetting();
+								SettingBusinessCommand command;
+								command.kind = SettingBusinessKind::RestartDdb;
+								command.flag = value;
+								command.text = pluginPath
+									+ L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe";
+								QueueBusiness(std::move(command));
+							});
+						{
+							int intervalIndex = ddbInteractionSetList.sleepTime == 500 ? 0
+								: (ddbInteractionSetList.sleepTime == 1000 ? 1
+									: (ddbInteractionSetList.sleepTime == 3000 ? 2
+										: (ddbInteractionSetList.sleepTime == 10000 ? 4 : 3)));
+							const int previousIntervalIndex = intervalIndex;
+							vector<string> intervals{
+								IA(ddb.IntervalShort), IA(ddb.IntervalMediumShort), IA(ddb.IntervalMedium), IA(ddb.IntervalMediumLong), IA(ddb.IntervalLong)
+							};
+							if (Design::ComboRow("##ddb-interval",
+								IA(ddb.IntervalTitle).c_str(),
+								IA(ddb.IntervalDescription).c_str(), "\ue916",
+								intervalIndex, intervals)
+								&& previousIntervalIndex != intervalIndex)
+							{
+								if (intervalIndex == 0) ddbInteractionSetList.sleepTime = 500;
+								else if (intervalIndex == 1) ddbInteractionSetList.sleepTime = 1000;
+								else if (intervalIndex == 2) ddbInteractionSetList.sleepTime = 3000;
+								else if (intervalIndex == 4) ddbInteractionSetList.sleepTime = 10000;
+								else ddbInteractionSetList.sleepTime = 5000;
+								WriteSetting();
+								QueueDdbWriteInteraction(true, false);
+							}
+						}
+
+						Design::SectionHeader(IA(ddb.PrecisionSection).c_str());
+						struct DdbInterceptRow
+						{
+							const char* id;
+							const char* title;
+							const char* description;
+							bool* value;
+							const char* note = nullptr;
+						};
+						// 数组保存稳定 key，不能保存临时译文的 c_str 指针。
+						const DdbInterceptRow interceptRows[] = {
+							{ "##ddb-seewo3", ddb.Seewo3Title, nullptr,
+								&Ddb.intercept.SeewoWhiteboard3Floating },
+							{ "##ddb-seewo5", ddb.Seewo5Title, nullptr,
+								&Ddb.intercept.SeewoWhiteboard5Floating },
+							{ "##ddb-seewo5c", ddb.Seewo5CTitle, nullptr,
+								&Ddb.intercept.SeewoWhiteboard5CFloating },
+							{ "##ddb-pinco-sidebar", ddb.PincoSidebarTitle, nullptr,
+								&Ddb.intercept.SeewoPincoSideBarFloating },
+							{ "##ddb-pinco-drawing", ddb.PincoDrawingTitle, ddb.IncludesPptNote,
+								&Ddb.intercept.SeewoPincoDrawingFloating },
+							{ "##ddb-seewo-ppt", ddb.SeewoPptTitle, nullptr,
+								&Ddb.intercept.SeewoPPTFloating },
+							{ "##ddb-iwb-assistant", ddb.IwbAssistantTitle, nullptr,
+								&Ddb.intercept.SeewoIwbAssistantFloating },
+							{ "##ddb-yiou", ddb.YiouTitle, ddb.IncludesPptNote,
+								&Ddb.intercept.YiouBoardFloating },
+							{ "##ddb-aiclass", ddb.AiClassTitle, nullptr,
+								&Ddb.intercept.AiClassFloating },
+							{ "##ddb-classinx", ddb.ClassInXTitle, nullptr,
+								&Ddb.intercept.ClassInXFloating },
+							{ "##ddb-intelligent-class", ddb.IntelligentClassTitle, ddb.IncludesPptNote, &Ddb.intercept.IntelligentClassFloating },
+							{ "##ddb-changyan4", ddb.ChangYan4Title, ddb.RestoresWhiteboardNote,
+								&Ddb.intercept.ChangYanFloating, ddb.AdministratorNote },
+							{ "##ddb-changyan5", ddb.ChangYan5Title, ddb.RestoresWhiteboardNote,
+								&Ddb.intercept.ChangYan5Floating, ddb.AdministratorNote },
+							{ "##ddb-iclass30-sidebar", ddb.Iclass30SidebarTitle, ddb.AdministratorNote, &Ddb.intercept.Iclass30SidebarFloating },
+							{ "##ddb-iclass30-drawing", ddb.Iclass30DrawingTitle, ddb.WindowTrackingNote,
+								&Ddb.intercept.Iclass30Floating, ddb.AdministratorNote },
+							{ "##ddb-seewo-desktop-sidebar", ddb.SeewoDesktopSidebarTitle, ddb.SeewoDesktopVersionsNote,
+								&Ddb.intercept.SeewoDesktopSideBarFloating, ddb.AdministratorNote },
+							{ "##ddb-seewo-desktop-drawing", ddb.SeewoDesktopDrawingTitle, ddb.SeewoDesktopVersionsNote,
+								&Ddb.intercept.SeewoDesktopDrawingFloating, ddb.AdministratorNote }
+						};
+						bool interceptChanged = false;
+						for (const auto& row : interceptRows)
+						{
+							const auto title = IA(row.title);
+							const auto description = row.description ? IA(row.description) : string{};
+							const auto note = row.note ? IA(row.note) : string{};
+							if (Design::ToggleRow(row.id, title.c_str(), row.description ? description.c_str() : nullptr, "\uecaa", *row.value, row.note ? note.c_str() : nullptr))
+								interceptChanged = true;
+						}
+						if (interceptChanged)
+						{
+							auto& stored = ddbInteractionSetList.intercept;
+							stored.SeewoWhiteboard3Floating = Ddb.intercept.SeewoWhiteboard3Floating;
+							stored.SeewoWhiteboard5Floating = Ddb.intercept.SeewoWhiteboard5Floating;
+							stored.SeewoWhiteboard5CFloating = Ddb.intercept.SeewoWhiteboard5CFloating;
+							stored.SeewoPincoSideBarFloating = Ddb.intercept.SeewoPincoSideBarFloating;
+							stored.SeewoPincoDrawingFloating = Ddb.intercept.SeewoPincoDrawingFloating;
+							stored.SeewoPPTFloating = Ddb.intercept.SeewoPPTFloating;
+							stored.SeewoIwbAssistantFloating = Ddb.intercept.SeewoIwbAssistantFloating;
+							stored.YiouBoardFloating = Ddb.intercept.YiouBoardFloating;
+							stored.AiClassFloating = Ddb.intercept.AiClassFloating;
+							stored.ClassInXFloating = Ddb.intercept.ClassInXFloating;
+							stored.IntelligentClassFloating = Ddb.intercept.IntelligentClassFloating;
+							stored.ChangYanFloating = Ddb.intercept.ChangYanFloating;
+							stored.ChangYan5Floating = Ddb.intercept.ChangYan5Floating;
+							stored.Iclass30SidebarFloating = Ddb.intercept.Iclass30SidebarFloating;
+							stored.Iclass30Floating = Ddb.intercept.Iclass30Floating;
+							stored.SeewoDesktopSideBarFloating = Ddb.intercept.SeewoDesktopSideBarFloating;
+							stored.SeewoDesktopDrawingFloating = Ddb.intercept.SeewoDesktopDrawingFloating;
+							WriteSetting();
+							QueueDdbWriteInteraction(true, false);
+						}
+						break;
+					}
+					}
+					break;
+				}
+
+				case settingTabEnum::tabComponent:
+				{
+					const auto& component = I18nKey.SettingsUI.Component;
+					Design::PageHeader(IA(component.N).c_str());
+					auto renderComponentToggle = [&](const char* id, const char* title,
+						const char* description, const char* glyph, bool& value, auto& stored)
+					{
+						Design::ToggleRow(id, title, description, glyph, value);
+						if (stored != value)
+						{
+							stored = value;
+							WriteSetting();
+							SyncUi3BuiltInComponents();
+						}
+					};
+					auto componentSection = [&](const char* title)
+					{
+						Design::SectionHeader(title);
+					};
+
+					componentSection(IA(component.SoftwareSection).c_str());
+					renderComponentToggle("component-explorer", IA(component.ExplorerTitle).c_str(), nullptr,
+						"\ue838", ComponentShortcutButtonApplianceExplorer,
+						setlist.component.shortcutButton.appliance.explorer);
+					renderComponentToggle("component-taskmgr", IA(component.TaskManagerTitle).c_str(), nullptr,
+						"\ue9d9", ComponentShortcutButtonApplianceTaskmgr,
+						setlist.component.shortcutButton.appliance.taskmgr);
+					renderComponentToggle("component-control", IA(component.ControlPanelTitle).c_str(), nullptr,
+						"\ue713", ComponentShortcutButtonApplianceControl,
+						setlist.component.shortcutButton.appliance.control);
+
+					componentSection(IA(component.SystemSection).c_str());
+					renderComponentToggle("component-desktop", IA(component.ShowDesktopTitle).c_str(), nullptr,
+						"\ue7f4", ComponentShortcutButtonSystemDesktop,
+						setlist.component.shortcutButton.system.desktop);
+					renderComponentToggle("component-lock", IA(component.LockScreenTitle).c_str(), nullptr,
+						"\ue72e", ComponentShortcutButtonSystemLockWorkStation,
+						setlist.component.shortcutButton.system.lockWorkStation);
+
+					componentSection(IA(component.KeyboardSection).c_str());
+					renderComponentToggle("component-escape", IA(component.EscapeTitle).c_str(), nullptr,
+						"\ue765", ComponentShortcutButtonKeyboardKeyboardesc,
+						setlist.component.shortcutButton.keyboard.keyboardesc);
+					renderComponentToggle("component-alt-f4", IA(component.AltF4Title).c_str(), nullptr,
+						"\ue765", ComponentShortcutButtonKeyboardKeyboardAltF4,
+						setlist.component.shortcutButton.keyboard.keyboardAltF4);
+
+					componentSection(IA(component.RollCallSection).c_str());
+					renderComponentToggle("component-island-caller-1",
+						IA(component.IslandCaller1Title).c_str(),
+						IA(component.IslandCallerRequirement).c_str(),
+						"\ue716", ComponentShortcutButtonRollCallIslandCaller1,
+						setlist.component.shortcutButton.rollCall.IslandCaller1);
+					renderComponentToggle("component-island-caller-2",
+						IA(component.IslandCaller2Title).c_str(),
+						IA(component.IslandCallerRequirement).c_str(),
+						"\ue716", ComponentShortcutButtonRollCallIslandCaller2,
+						setlist.component.shortcutButton.rollCall.IslandCaller2);
+					renderComponentToggle("component-sec-random-1", IA(component.SecRandom1Title).c_str(),
+						IA(component.SecRandomUrlRequirement).c_str(), "\ue716",
+						ComponentShortcutButtonRollCallSecRandom1,
+						setlist.component.shortcutButton.rollCall.SecRandom1);
+					renderComponentToggle("component-sec-random-2", IA(component.SecRandom2Title).c_str(),
+						IA(component.SecRandomIpcRequirement).c_str(), "\ue716",
+						ComponentShortcutButtonRollCallSecRandom2,
+						setlist.component.shortcutButton.rollCall.SecRandom2);
+					renderComponentToggle("component-sec-random-compat",
+						IA(component.SecRandom2CompatTitle).c_str(), IA(component.SecRandomUrlRequirement).c_str(), "\ue716",
+						ComponentShortcutButtonRollCallSecRandom2Compat,
+						setlist.component.shortcutButton.rollCall.SecRandom2Compat);
+					renderComponentToggle("component-name-picker", IA(component.NamePickerTitle).c_str(),
+						IA(component.NamePickerRequirement).c_str(), "\ue716",
+						ComponentShortcutButtonRollCallNamePicker,
+						setlist.component.shortcutButton.rollCall.NamePicker);
+
+					componentSection(IA(component.ClassIslandSection).c_str());
+					Design::Notice("##classisland-protocol-notice",
+						"ClassIsland",
+						IA(component.ClassIslandProtocolNote).c_str(),
+						ImFluentInfoSeverity_Informational);
+					renderComponentToggle("component-classisland-settings",
+						IA(component.ClassIslandSettingsTitle).c_str(), nullptr, "\ue713",
+						ComponentShortcutButtonLinkageClassislandSettings,
+						setlist.component.shortcutButton.linkage.classislandSettings);
+					renderComponentToggle("component-classisland-profile",
+						IA(component.ClassIslandProfileTitle).c_str(), nullptr, "\ue70f",
+						ComponentShortcutButtonLinkageClassislandProfile,
+						setlist.component.shortcutButton.linkage.classislandProfile);
+					renderComponentToggle("component-classisland-swap",
+						IA(component.ClassIslandSwapTitle).c_str(),
+						IA(component.ClassIslandSwapNote).c_str(), "\ue70f",
+						ComponentShortcutButtonLinkageClassislandClassswap,
+						setlist.component.shortcutButton.linkage.classislandClassswap);
+					break;
+				}
+				// 联动
+				case settingTabEnum::tabLinkage:
+				{
+					const auto renderLinkageHeader = [&](const char* title, const char* subtitle)
+						{
+							if (Design::IconButton("##linkage-back", "\ue72b"))
+								settingLinkageTab = 0;
+							Design::PageHeader(title, subtitle);
+							Design::PageContentStart();
+						};
+					const auto renderToggleCard = [&](const char* id, const char* title,
+						const char* description, const char* glyph, bool& value, auto&& changed, const char* note = nullptr)
+						{
+							if (Design::ToggleRow(id, title, description, glyph, value, note))
+								changed(value);
+						};
+
+					switch (settingLinkageTab)
+					{
+					case 0:
+					{
+						Design::PageHeader(IA(I18nKey.SettingsUI.Linkage.N).c_str());
+						Design::PageContentStart();
+						// 沿用插件概览卡片与 PluginFlag 纹理；版本号只在详情页显示。
+						if (Design::NavigationRow("ppt-linkage", IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str(), nullptr,
+							(ImTextureID)(intptr_t)TextureSettingSign[5], IM_COL32_WHITE,
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.SupportNote).c_str()))
+							settingLinkageTab = 1;
+						break;
+					}
+
+					case 1:
+					{
+						string pptVersion = utf16ToUtf8(pptComVersion);
 						const string pptVersionText = pptComVersion.substr(0, 7) == L"Error: "
 							? IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError)
-							: utf16ToUtf8(pptComVersion);
-						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
+							: vformat(IA(I18nKey.SettingsUI.Linkage.CoreVersion), make_format_args(pptVersion));
+						renderLinkageHeader(IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
 							pptVersionText.c_str());
-						if (pptComVersion.substr(0, 7) == L"Error: ")
+						if (Design::ConditionalBlock block{"##ppt-version-visibility", pptComVersion.substr(0, 7) == L"Error: "}; block)
 						{
 							const string error = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Error)
 								+ utf16ToUtf8(pptComVersion);
 							Design::Notice("##ppt-version-error",
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError).c_str(),
-								error.c_str(),
+								block.RetainText("description", error.c_str()),
 								ImFluentInfoSeverity_Warning);
 						}
 						if (Design::Notice("##ppt-setup-notice",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
+							IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tip).c_str(),
 							ImFluentInfoSeverity_Informational,
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
 							ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-com",
 								nullptr, nullptr, SW_SHOW);
-						if (pptComSetlist.setAdmin)
+						if (Design::ConditionalBlock block{"##ppt-admin-visibility", pptComSetlist.setAdmin}; block)
 						{
 							if (Design::Notice("##ppt-admin-notice",
-								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
+								IA(I18nKey.SettingsUI.Linkage.PPT).c_str(),
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Warn).c_str(),
 								ImFluentInfoSeverity_Warning,
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
@@ -3868,6 +4533,32 @@ SettingSessionCoroutine RunSettingSession()
 								Inkeys::UI::Ppt::NotifyConfigurationChanged(
 									Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
 							});
+						const int idleFadeOptions[]{ 0, 5, 10, 15, 30 };
+						const int idleFadeSeconds = Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds.load();
+						int idleFadeIndex = 2;
+						for (int option = 0; option < 5; ++option)
+							if (idleFadeOptions[option] == idleFadeSeconds) idleFadeIndex = option;
+						std::vector<std::string> idleFadeItems{
+							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFadeOff) };
+						for (int option = 1; option < 5; ++option)
+							idleFadeItems.push_back(vformat(
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.IdleFadeSeconds),
+								make_format_args(idleFadeOptions[option])));
+						Design::PptIdleFadeDraft idleFadeDraft{
+							Inkeys::config.PlugIn.PPTHelper.IdleFadeBottomPair.load(),
+							Inkeys::config.PlugIn.PPTHelper.IdleFadeMiddlePair.load(),
+							Inkeys::config.PlugIn.PPTHelper.IdleFadeMainBar.load(), idleFadeIndex };
+						const auto idleFadeEvents = Design::RenderPptIdleFadeRow(idleFadeDraft, idleFadeItems);
+						if (idleFadeEvents.timeout || idleFadeEvents.bottomPair || idleFadeEvents.middlePair || idleFadeEvents.mainBar)
+						{
+							// 时长与范围共用一张卡片，只写本帧改变的字段并合并一次保存/通知。
+							if (idleFadeEvents.timeout) Inkeys::config.PlugIn.PPTHelper.IdleFadeSeconds = idleFadeOptions[idleFadeDraft.timeoutIndex];
+							if (idleFadeEvents.bottomPair) Inkeys::config.PlugIn.PPTHelper.IdleFadeBottomPair = idleFadeDraft.bottomPair;
+							if (idleFadeEvents.middlePair) Inkeys::config.PlugIn.PPTHelper.IdleFadeMiddlePair = idleFadeDraft.middlePair;
+							if (idleFadeEvents.mainBar) Inkeys::config.PlugIn.PPTHelper.IdleFadeMainBar = idleFadeDraft.mainBar;
+							QueueConfigWrite();
+							Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::IdleFade);
+						}
 
 						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.N).c_str());
@@ -4019,304 +4710,7 @@ SettingSessionCoroutine RunSettingSession()
 							});
 						break;
 					}
-
-					case settingPlugInTabEnum::tabSuperTop:
-					{
-						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(),
-							"20260202a");
-						Design::Notice("##super-top-notice",
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Warn).c_str(),
-							ImFluentInfoSeverity_Warning);
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.N).c_str());
-						const string superTopDescription = hasSuperTop
-							? IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1)
-							: IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2);
-						renderToggleCard("##super-top-enable",
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTop).c_str(),
-							superTopDescription.c_str(), "\ue718",
-							PlugInSetting.SuperTop.Enable, [&](bool value)
-							{
-								setlist.plugInSetting.superTop.enable = value;
-								WriteSetting();
-							}, IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopNote).c_str());
-						// 指示器继续使用已有配置，只展示说明，不在此改写实际值。
-						Design::SettingRow("##super-top-indicator",
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.IndicatorE).c_str(),
-							"\ue841", 0.0F, 0.0F, [](const auto&) {});
-						break;
 					}
-
-					case settingPlugInTabEnum::tabPlug3:
-					{
-						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.N).c_str(),
-							"20250223a");
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.N).c_str());
-						renderToggleCard("##shortcut-correct",
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnk).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE).c_str(),
-							"\ue71b", CorrectLnk, [&](bool value)
-							{
-								setlist.shortcutAssistant.correctLnk = value;
-								WriteSetting();
-								if (value) shortcutAssistant.SetShortcut();
-							});
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.N).c_str());
-						renderToggleCard("##shortcut-create",
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE).c_str(),
-							"\ue71b", CreateLnk, [&](bool value)
-							{
-								setlist.shortcutAssistant.createLnk = value;
-								WriteSetting();
-								if (setlist.shortcutAssistant.correctLnk)
-									shortcutAssistant.SetShortcut();
-							});
-						break;
-					}
-
-					case settingPlugInTabEnum::tabPlugDDB:
-					{
-						renderPluginHeader(
-							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str(),
-							utf16ToUtf8(ddbInteractionSetList.DdbEdition).c_str(),
-							L"https://github.com/Alan-CRL/DesktopDrawpadBlocker");
-						Design::Notice("##ddb-license-notice",
-							"GPLv3 开源插件",
-							"插件仅供学习交流和研究使用，不得用于其他任何用途。\n同类软件悬浮窗拦截助手(DesktopDrawpadBlocker)是依据 GPLv3 许可协议发布的开源软件。\n并在 Github 仓库得到发布：https://github.com/Alan-CRL/DesktopDrawpadBlocker\n我们发布这款程序，希望它有用，但不承诺任何质量保证责任。\n用户在使用该插件时，需自行承担由此产生的后果和影响，使用插件则视为同意此协议。",
-							ImFluentInfoSeverity_Warning);
-
-						Design::SectionHeader("使用插件");
-						renderToggleCard("##ddb-enable", "启用插件",
-							"默认模式下插件随软件开启和关闭。", "\ue7ba",
-							Ddb.Enable, [&](bool value)
-							{
-								ddbInteractionSetList.enable = value;
-								SettingBusinessCommand command;
-								command.kind = SettingBusinessKind::ConfigureDdb;
-								command.flag = value;
-								command.secondaryFlag = ddbInteractionSetList.runAsAdmin;
-								command.text = pluginPath
-									+ L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe";
-								command.directory = pluginPath + L"DesktopDrawpadBlocker";
-								command.parameters = GetCurrentExePath();
-								command.digest = ddbInteractionSetList.DdbSHA256;
-								QueueBusiness(std::move(command));
-							});
-
-						Design::SectionHeader("常规选项");
-						renderToggleCard("##ddb-admin", "以管理员身份启动插件",
-							"切换时需等待插件响应。", "\ue72e",
-							Ddb.RunAsAdmin, [&](bool value)
-							{
-								ddbInteractionSetList.runAsAdmin = value;
-								WriteSetting();
-								SettingBusinessCommand command;
-								command.kind = SettingBusinessKind::RestartDdb;
-								command.flag = value;
-								command.text = pluginPath
-									+ L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe";
-								QueueBusiness(std::move(command));
-							});
-						{
-							int intervalIndex = ddbInteractionSetList.sleepTime == 500 ? 0
-								: (ddbInteractionSetList.sleepTime == 1000 ? 1
-									: (ddbInteractionSetList.sleepTime == 3000 ? 2
-										: (ddbInteractionSetList.sleepTime == 10000 ? 4 : 3)));
-							const int previousIntervalIndex = intervalIndex;
-							vector<string> intervals{
-								"短（500ms）", "较短（1s）", "中等（3s）", "较长（5s）", "长（10s）"
-							};
-							if (Design::ComboRow("##ddb-interval",
-								"拦截间隔",
-								"更短的间隔可以更快拦截出现的窗口，但会占用更多的CPU资源。", "\ue916",
-								intervalIndex, intervals)
-								&& previousIntervalIndex != intervalIndex)
-							{
-								if (intervalIndex == 0) ddbInteractionSetList.sleepTime = 500;
-								else if (intervalIndex == 1) ddbInteractionSetList.sleepTime = 1000;
-								else if (intervalIndex == 2) ddbInteractionSetList.sleepTime = 3000;
-								else if (intervalIndex == 4) ddbInteractionSetList.sleepTime = 10000;
-								else ddbInteractionSetList.sleepTime = 5000;
-								WriteSetting();
-								QueueDdbWriteInteraction(true, false);
-							}
-						}
-
-						Design::SectionHeader("精确控制");
-						struct DdbInterceptRow
-						{
-							const char* id;
-							const char* title;
-							const char* description;
-							bool* value;
-							const char* note = nullptr;
-						};
-						const DdbInterceptRow interceptRows[] = {
-							{ "##ddb-seewo3", "希沃白板3 桌面画笔悬浮窗", nullptr,
-								&Ddb.intercept.SeewoWhiteboard3Floating },
-							{ "##ddb-seewo5", "希沃白板5 桌面画笔悬浮窗", nullptr,
-								&Ddb.intercept.SeewoWhiteboard5Floating },
-							{ "##ddb-seewo5c", "希沃轻白板（5C） 桌面画笔悬浮窗", nullptr,
-								&Ddb.intercept.SeewoWhiteboard5CFloating },
-							{ "##ddb-pinco-sidebar", "希沃品课教师端 侧栏悬浮窗", nullptr,
-								&Ddb.intercept.SeewoPincoSideBarFloating },
-							{ "##ddb-pinco-drawing", "希沃品课教师端 桌面画笔悬浮窗", "包括PPT控件。",
-								&Ddb.intercept.SeewoPincoDrawingFloating },
-							{ "##ddb-seewo-ppt", "希沃PPT小工具", nullptr,
-								&Ddb.intercept.SeewoPPTFloating },
-							{ "##ddb-iwb-assistant", "希沃课堂助手 PPT小工具", nullptr,
-								&Ddb.intercept.SeewoIwbAssistantFloating },
-							{ "##ddb-yiou", "欧帝白板 桌面画笔悬浮窗", "包括PPT控件。",
-								&Ddb.intercept.YiouBoardFloating },
-							{ "##ddb-aiclass", "AiClass 桌面画笔悬浮窗", nullptr,
-								&Ddb.intercept.AiClassFloating },
-							{ "##ddb-classinx", "ClassIn X 桌面画笔悬浮窗", nullptr,
-								&Ddb.intercept.ClassInXFloating },
-							{ "##ddb-intelligent-class", "天喻教育云互动课堂 桌面画笔悬浮窗", "包括PPT控件。", &Ddb.intercept.IntelligentClassFloating },
-							{ "##ddb-changyan4", "畅言智慧课堂4.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。",
-								&Ddb.intercept.ChangYanFloating, "需要DDB管理员权限。" },
-							{ "##ddb-changyan5", "畅言智慧课堂5.0 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复。",
-								&Ddb.intercept.ChangYan5Floating, "需要DDB管理员权限。" },
-							{ "##ddb-iclass30-sidebar", "C30智能教学 侧栏悬浮窗", "需要DDB管理员权限。", &Ddb.intercept.Iclass30SidebarFloating },
-							{ "##ddb-iclass30-drawing", "C30智能教学 桌面画笔悬浮窗", "包括PPT控件。支持在白板时自动恢复，支持窗口追踪。",
-								&Ddb.intercept.Iclass30Floating, "需要DDB管理员权限。" },
-							{ "##ddb-seewo-desktop-sidebar", "希沃桌面 侧栏悬浮窗", "1.0/2.0/2.5/3.0 普教版/高教版 通用",
-								&Ddb.intercept.SeewoDesktopSideBarFloating, "需要DDB管理员权限。" },
-							{ "##ddb-seewo-desktop-drawing", "希沃桌面 桌面画笔悬浮窗", "1.0/2.0/2.5/3.0 普教版/高教版 通用",
-								&Ddb.intercept.SeewoDesktopDrawingFloating, "需要DDB管理员权限。" }
-						};
-						bool interceptChanged = false;
-						for (const auto& row : interceptRows)
-						{
-							if (Design::ToggleRow(row.id, row.title, row.description, "\uecaa", *row.value, row.note))
-								interceptChanged = true;
-						}
-						if (interceptChanged)
-						{
-							auto& stored = ddbInteractionSetList.intercept;
-							stored.SeewoWhiteboard3Floating = Ddb.intercept.SeewoWhiteboard3Floating;
-							stored.SeewoWhiteboard5Floating = Ddb.intercept.SeewoWhiteboard5Floating;
-							stored.SeewoWhiteboard5CFloating = Ddb.intercept.SeewoWhiteboard5CFloating;
-							stored.SeewoPincoSideBarFloating = Ddb.intercept.SeewoPincoSideBarFloating;
-							stored.SeewoPincoDrawingFloating = Ddb.intercept.SeewoPincoDrawingFloating;
-							stored.SeewoPPTFloating = Ddb.intercept.SeewoPPTFloating;
-							stored.SeewoIwbAssistantFloating = Ddb.intercept.SeewoIwbAssistantFloating;
-							stored.YiouBoardFloating = Ddb.intercept.YiouBoardFloating;
-							stored.AiClassFloating = Ddb.intercept.AiClassFloating;
-							stored.ClassInXFloating = Ddb.intercept.ClassInXFloating;
-							stored.IntelligentClassFloating = Ddb.intercept.IntelligentClassFloating;
-							stored.ChangYanFloating = Ddb.intercept.ChangYanFloating;
-							stored.ChangYan5Floating = Ddb.intercept.ChangYan5Floating;
-							stored.Iclass30SidebarFloating = Ddb.intercept.Iclass30SidebarFloating;
-							stored.Iclass30Floating = Ddb.intercept.Iclass30Floating;
-							stored.SeewoDesktopSideBarFloating = Ddb.intercept.SeewoDesktopSideBarFloating;
-							stored.SeewoDesktopDrawingFloating = Ddb.intercept.SeewoDesktopDrawingFloating;
-							WriteSetting();
-							QueueDdbWriteInteraction(true, false);
-						}
-						break;
-					}
-					}
-					break;
-				}
-
-				case settingTabEnum::tabComponent:
-				{
-					Design::PageHeader("组件");
-					auto renderComponentToggle = [&](const char* id, const char* title,
-						const char* description, const char* glyph, bool& value, auto& stored)
-					{
-						Design::ToggleRow(id, title, description, glyph, value);
-						if (stored != value)
-						{
-							stored = value;
-							WriteSetting();
-							SyncUi3BuiltInComponents();
-						}
-					};
-					auto componentSection = [&](const char* title)
-					{
-						Design::SectionHeader(title);
-					};
-
-					componentSection("软件");
-					renderComponentToggle("component-explorer", "启动 文件资源管理器", nullptr,
-						"\ue838", ComponentShortcutButtonApplianceExplorer,
-						setlist.component.shortcutButton.appliance.explorer);
-					renderComponentToggle("component-taskmgr", "启动 任务管理器", nullptr,
-						"\ue9d9", ComponentShortcutButtonApplianceTaskmgr,
-						setlist.component.shortcutButton.appliance.taskmgr);
-					renderComponentToggle("component-control", "启动 控制面板", nullptr,
-						"\ue713", ComponentShortcutButtonApplianceControl,
-						setlist.component.shortcutButton.appliance.control);
-
-					componentSection("系统");
-					renderComponentToggle("component-desktop", "显示 桌面", nullptr,
-						"\ue7f4", ComponentShortcutButtonSystemDesktop,
-						setlist.component.shortcutButton.system.desktop);
-					renderComponentToggle("component-lock", "锁屏", nullptr,
-						"\ue72e", ComponentShortcutButtonSystemLockWorkStation,
-						setlist.component.shortcutButton.system.lockWorkStation);
-
-					componentSection("键盘模拟");
-					renderComponentToggle("component-escape", "按下 ESC", nullptr,
-						"\ue765", ComponentShortcutButtonKeyboardKeyboardesc,
-						setlist.component.shortcutButton.keyboard.keyboardesc);
-					renderComponentToggle("component-alt-f4", "按下 Alt+F4", nullptr,
-						"\ue765", ComponentShortcutButtonKeyboardKeyboardAltF4,
-						setlist.component.shortcutButton.keyboard.keyboardAltF4);
-
-					componentSection("点名器");
-					renderComponentToggle("component-island-caller-1",
-						"IslandCaller 1 随机点名",
-						"需要安装 ClassIsland 插件 IslandCaller，并需要 ClassIsland 注册 Url 协议。",
-						"\ue716", ComponentShortcutButtonRollCallIslandCaller1,
-						setlist.component.shortcutButton.rollCall.IslandCaller1);
-					renderComponentToggle("component-island-caller-2",
-						"IslandCaller 2 单人点名",
-						"需要安装 ClassIsland 插件 IslandCaller，并需要 ClassIsland 注册 Url 协议。",
-						"\ue716", ComponentShortcutButtonRollCallIslandCaller2,
-						setlist.component.shortcutButton.rollCall.IslandCaller2);
-					renderComponentToggle("component-sec-random-1", "SecRandom 1 闪抽",
-						"需要 SecRandom 注册 Url 协议。", "\ue716",
-						ComponentShortcutButtonRollCallSecRandom1,
-						setlist.component.shortcutButton.rollCall.SecRandom1);
-					renderComponentToggle("component-sec-random-2", "SecRandom 2 闪抽",
-						"需要 SecRandom 注册 Ipc 协议。", "\ue716",
-						ComponentShortcutButtonRollCallSecRandom2,
-						setlist.component.shortcutButton.rollCall.SecRandom2);
-					renderComponentToggle("component-sec-random-compat",
-						"SecRandom 2 闪抽（兼容）", "需要 SecRandom 注册 Url 协议。", "\ue716",
-						ComponentShortcutButtonRollCallSecRandom2Compat,
-						setlist.component.shortcutButton.rollCall.SecRandom2Compat);
-					renderComponentToggle("component-name-picker", "NamePicker 随机点名",
-						"需要 NamePicker 注册 Url 协议。", "\ue716",
-						ComponentShortcutButtonRollCallNamePicker,
-						setlist.component.shortcutButton.rollCall.NamePicker);
-
-					componentSection("ClassIsland 联动");
-					Design::Notice("##classisland-protocol-notice",
-						"ClassIsland",
-						"需要在 ClassIsland 应用设置 中注册 Url 导航协议。",
-						ImFluentInfoSeverity_Informational);
-					renderComponentToggle("component-classisland-settings",
-						"ClassIsland 应用设置", nullptr, "\ue713",
-						ComponentShortcutButtonLinkageClassislandSettings,
-						setlist.component.shortcutButton.linkage.classislandSettings);
-					renderComponentToggle("component-classisland-profile",
-						"ClassIsland 档案编辑", nullptr, "\ue70f",
-						ComponentShortcutButtonLinkageClassislandProfile,
-						setlist.component.shortcutButton.linkage.classislandProfile);
-					renderComponentToggle("component-classisland-swap",
-						"ClassIsland 快速换课",
-						"在 ClassIsland 当前没有加载课表时，此组件不起作用。", "\ue70f",
-						ComponentShortcutButtonLinkageClassislandClassswap,
-						setlist.component.shortcutButton.linkage.classislandClassswap);
 					break;
 				}
 				case settingTabEnum::tabPerformance:
@@ -4369,8 +4763,30 @@ SettingSessionCoroutine RunSettingSession()
 				}
 				case settingTabEnum::tabExperimental:
 				{
-					Design::PageHeader("实验室");
+					Design::PageHeader(IA(I18nKey.SettingsUI.Experimental.N).c_str());
 					Design::SectionHeader("Inkeys3");
+
+					// 仅迁移入口：沿用动画开关、实时预览与松手/离页保存，不改配置键。
+					bool animationRateActive = false;
+					if (Experimental.Inkeys3.AnimationEnable)
+					{
+						Design::SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
+							IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", Experimental.Inkeys3.AnimationSpeedRate,
+							0.1F, 5.0F, animationRateActive, "%.1fx");
+						auto& rate = Experimental.Inkeys3.AnimationSpeedRate;
+						rate = round(rate * 10.0F) / 10.0F;
+						if (fabs(rate - static_cast<float>(Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001F)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate = static_cast<double>(rate);
+							Inkeys::UI::Bar::SetAnimationOptions(Experimental.Inkeys3.AnimationEnable, rate);
+							Experimental.Inkeys3.AnimationSpeedSavePending = true;
+						}
+					}
+					if (!animationRateActive && Experimental.Inkeys3.AnimationSpeedSavePending)
+					{
+						QueueConfigWrite();
+						Experimental.Inkeys3.AnimationSpeedSavePending = false;
+					}
 
 					Experimental.Inkeys3.AllowFractionalFontSize =
 						Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
@@ -4407,29 +4823,31 @@ SettingSessionCoroutine RunSettingSession()
 							{ imageWidth, imageWidth * sponsorAspect });
 					}
 					Design::EndCard();
-					Design::RenderSponsorThanks("成功赞助后，可以联系作者将您的昵称和赞助的金额添加到社区名片中以表示感谢。", sponsorWidth);
+					Design::RenderSponsorThanks(IA(I18nKey.SettingsUI.Sponsor.Thanks).c_str(), sponsorWidth);
 					break;
 				}
 				case settingTabEnum::tab9:
 				{
 					Design::PageHeader(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str());
-					Design::SectionHeader("UI3 渲染调试");
-					if (Design::ToggleRow("##experimental-dirty-debug", "脏区调试",
-						"显示 UI3 每帧实际提交的脏区边界。", "\ue90f", Experimental.Inkeys3.DebugMode))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.RenderingSection).c_str());
+					if (Design::ToggleRow("##experimental-dirty-debug", IA(I18nKey.SettingsUI.DebugSoftware.DirtyRegions.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.DirtyRegions.E).c_str(), "\ue90f", Experimental.Inkeys3.DebugMode))
 					{
 						Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable = Experimental.Inkeys3.DebugMode;
 						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
 						QueueConfigWrite();
 					}
-					if (Experimental.Inkeys3.DebugMode
-						&& Design::ToggleRow("##experimental-frame-rate", "显示帧率",
-							"每秒更新上一秒平均帧率和无等待帧率。", "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
+					if (Design::ConditionalBlock block{"##debug-frame-rate-visibility", Experimental.Inkeys3.DebugMode}; block)
 					{
-						Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate = Experimental.Inkeys3.ShowFrameRate;
-						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
-						QueueConfigWrite();
+						if (Design::ToggleRow("##experimental-frame-rate", IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.N).c_str(),
+								IA(I18nKey.SettingsUI.DebugSoftware.FrameRate.E).c_str(), "\ue9d9", Experimental.Inkeys3.ShowFrameRate))
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate = Experimental.Inkeys3.ShowFrameRate;
+							Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
+							QueueConfigWrite();
+						}
 					}
-					Design::SectionHeader("控制台输出");
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)
 					{
@@ -4588,7 +5006,7 @@ SettingSessionCoroutine RunSettingSession()
 					Design::CopyButton("##copy-canvas-information", IA(I18nKey.Operate.Copy).c_str(), canvasInformation.c_str());
 					ImGui::PopID();
 
-					Design::SectionHeader("显示器与 EDID");
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.DisplayInformation).c_str());
 					std::string edidText = "EDID (Extended Display Identification Data)\n";
 					if (!displaySnapshot)
 					{
@@ -4646,10 +5064,12 @@ SettingSessionCoroutine RunSettingSession()
 					break;
 				}
 				}
+				// 只淡出当前实际旧页内容，正文底色保持稳定；轨道透明度已在Begin中组合一次。
+				if (holdingPage) Design::ApplyContentAlpha(ImGui::GetCurrentWindow(), pageTransition.Opacity());
 				ImGui::EndChild();
 				ImFluent::PopFont();
 				Design::BindTextFonts(ImFontMain, ImFontStrong);
-				Design::ApplyContentAlpha(contentWindow, Experimental.Inkeys3.AnimationEnable ? contentAlpha : 1.0F);
+				Design::EndPageMotion();
 				Design::CompleteHomeEntryLayout(homeMotion);
 				ImGui::EndChild();
 				ImGui::PopID();
@@ -4670,6 +5090,11 @@ SettingSessionCoroutine RunSettingSession()
 					ImGui::PopStyleVar();
 					ImGui::PopStyleColor();
 				}
+				if (holdingPage)
+				{
+					settingTab = requestedTab; destination = requestedDestination;
+					settingPlugInTab = requestedPlugin; settingLinkageTab = requestedLinkage; drawingSubpage = requestedDrawing;
+				}
 				Inkeys::UI::Setting::Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
 				ImFluent::PushFont(ImFluentTextStyle_Body);
 				synchronizeDestination();
@@ -4688,6 +5113,7 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					navigateTo(navigationAction.destination);
 					if (settingTab == settingTabEnum::tab4) settingPlugInTab = settingPlugInTabEnum::tabPlug1;
+					if (settingTab == settingTabEnum::tabLinkage) settingLinkageTab = 0;
 					if (settingTab == settingTabEnum::tab3)
 						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
 				}
@@ -4722,6 +5148,16 @@ SettingSessionCoroutine RunSettingSession()
 			ImFluent::PopFluentStyle();
 			ImGui::EndFrame();
 			ImGui::Render();
+            if (ImGuiFreeType::HasFontLoadFailure(io.Fonts))
+            {
+                // 缺字回退可能已进入缓存：禁止Present该帧，下一安全帧必须替换整张atlas。
+                { lock_guard stateLock(settingStateMutex); settingSessionState.QueueFontRebuild(); }
+                settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
+                Design::CompleteHomeEntryFrame(homeMotion,false,false);
+                settingFrameResult = ResolveSettingResourceFailure("FreeTypeLoad", E_FAIL);
+                co_await suspend_always{};
+                continue;
+            }
 			Design::FilterHomeEntryDrawData(homeMotion,ImGui::GetDrawData(),entryRootDraw,entryTitleDraw,ImGui::GetForegroundDrawList());
 			const float clearColor[4] = {
 				transparentBackdrop ? 0.0F : clearColorValue.x * clearColorValue.w,
@@ -4853,8 +5289,10 @@ namespace
 		settingNavigationClockIdle = true; settingFrameSubmission.Reset();
 		if (!settingSession.Done())
 		{
-			settingSessionShouldStop.store(true, memory_order_release);
 			unique_lock imguiLock(settingImguiMutex);
+			// 退出可发生在隐藏后尚无新 ImGui 帧时，先提交有效草稿再排空协程。
+			CommitPendingSettingEdits();
+			settingSessionShouldStop.store(true, memory_order_release);
 			SettingRenderScope renderScope;
 			settingSession.Resume(imguiLock);
 		}
@@ -4896,6 +5334,8 @@ namespace
 			}
 		}
 
+		// Hide 后可能直接休眠：在释放 RTV、清输入或提前返回前提交，不强行恢复无呈现协程。
+		CommitSettingEditsBeforeSuspend(decision);
 		if (decision.releasePresentation || decision.rebuildDeviceResources || decision.rebuildFonts || decision.resize)
 		{ settingHomeEntryCache.Reset(); settingFrameSubmission.Reset(); }
 		// 预览自行按画布宽度分桶调整目标纹理，普通窗口缩放不重编译播放着色器。
@@ -4984,12 +5424,34 @@ namespace
 			settingSessionState.CommitEpoch(context.epoch.generation);
 		}
 
+        if (settingPendingLanguage >= 0 && !settingSession.Done())
+        {
+            const int target = std::exchange(settingPendingLanguage, -1);
+            const auto& locale = Inkeys::Localization::LocaleForIndex(target);
+            I18n::PreparedLanguage prepared;
+            lock_guard imguiLock(settingImguiMutex);
+            if (I18n::prepare(1, L"JSON", locale.code, prepared)
+                && ApplyPreparedSettingLanguage(locale, prepared, decision.rebuildFonts))
+            {
+                settingHomeEntryCache.Reset(); settingFrameSubmission.Reset();
+                Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
+                Inkeys::UI::Setting::Design::ApplyScrollbars();
+                // 语言 revision 不会自行唤醒 idle 客户端；可见表面须主动提交新文案。
+                Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+                Inkeys::UI::PageControl::NotifyLayoutChanged();
+                setlist.selectLanguage = target;
+                QueueWriteSetting();
+                lock_guard stateLock(settingStateMutex);
+                settingSessionState.QueueFontRebuild();
+                fontRebuildSerial = settingSessionState.FontRebuildSerial();
+                settingSessionState.ConsumeFontRebuild(fontRebuildSerial);
+                decision.rebuildFonts = false;
+            }
+        }
 		if (decision.rebuildFonts && !settingSession.Done())
 		{
 			lock_guard imguiLock(settingImguiMutex);
-			ImGui_ImplDX11_InvalidateDeviceObjects();
-			if (!RebuildSettingFonts()
-				|| !ImGui_ImplDX11_CreateDeviceObjects())
+			if (!ReplaceSettingFonts(I18n::locale()))
 				return pauseNavigationClock(ResolveSettingResourceFailure("RebuildFonts", ImGui_ImplDX11_GetLastResult()));
 			Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
 			Inkeys::UI::Setting::Design::ApplyScrollbars();
@@ -5097,6 +5559,8 @@ namespace
 		if (!settingInitialized.load(memory_order_acquire)) return;
 		{
 			lock_guard stateLock(settingStateMutex);
+			if (!settingSessionState.IsVisible())
+				settingOptionalChromeVisible.store(false, memory_order_release);
 			settingSessionState.RequestShow(target);
 		}
 		// 复用 HWND owner 线程的恢复与激活；不能从 Bar 输入线程直接操作 ImGui 或窗口。
@@ -5114,8 +5578,15 @@ namespace Inkeys::UI::Setting
 		notice.workspaceFailureRevision = revision;
 		const auto key = whiteboardTarget ? I18nKey.Dialogs.WorkspaceTransitionFailure.Whiteboard :
 			whiteboardInvolved ? I18nKey.Dialogs.WorkspaceTransitionFailure.Return : I18nKey.Dialogs.WorkspaceTransitionFailure.Primary;
-		notice.text = I18n::getWOr(key,
-			L"工作区切换未完成，已停止自动重试。请前往设置的绘图页重试。");
+		// 此入口可由业务线程调用，正文也必须与按钮/字族在同一读锁下冻结。
+		if (I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.Common.OK,
+			I18nKey.Dialogs.Common.Cancel, key }, notice.dialogText))
+			notice.text = notice.dialogText.text[3];
+		else
+		{
+			notice.dialogText.text = { L"Inkeys Tips", L"OK", L"Cancel" };
+			notice.text = L"The workspace transition failed. Automatic retries have stopped. Retry from the Drawing settings page.";
+		}
 		QueueBusiness(std::move(notice));
 	}
 
@@ -5275,6 +5746,135 @@ WNDPROC SettingWindowProc() noexcept
 
 namespace Inkeys::UI::Setting
 {
+    int RunFontLifecycleProductionTest() noexcept
+    {
+        int failures = 0;
+        auto check = [&](bool value, const char* label) { if (!value) { ++failures; std::fprintf(stderr, "[font-lifecycle] %s\n", label); } };
+        ID3D11Device* device = nullptr; ID3D11DeviceContext* context = nullptr;
+        ID3D11Texture2D* target = nullptr; ID3D11RenderTargetView* view = nullptr;
+        const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
+        if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, &level, 1,
+            D3D11_SDK_VERSION, &device, nullptr, &context))) return 1;
+        D3D11_TEXTURE2D_DESC desc{}; desc.Width = 900; desc.Height = 600; desc.MipLevels = desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+        if (FAILED(device->CreateTexture2D(&desc, nullptr, &target))
+            || FAILED(device->CreateRenderTargetView(target, nullptr, &view)))
+        {
+            if (target) target->Release(); context->Release(); device->Release(); return 1;
+        }
+        ImGui::CreateContext(); ImGui::GetIO().IniFilename = nullptr;
+        ImGui::GetIO().DisplaySize = { 900,600 }; ImGui::GetIO().DeltaTime = 1.0F/60.0F;
+        bool backend = ImGui_ImplDX11_Init(device, context);
+        try
+        {
+            check(backend, "backend initialization");
+            if (backend && I18n::load(1,L"JSON",L"zh-CN") && RebuildSettingFonts())
+            {
+                const auto checkAtlasPolicy = [&] {
+                    const auto* atlas = ImGui::GetIO().Fonts;
+                    check(atlas->TexDesiredFormat == ImTextureFormat_Alpha8
+                        && (atlas->FontLoaderFlags & ImGuiFreeTypeLoaderFlags_SnapAscentToPixelGrid),
+                        "production atlas uses Alpha8 and pixel-aligned baselines");
+                };
+                checkAtlasPolicy();
+                auto draw = [&](bool expectedFailure = false)
+                {
+                    ImGui_ImplDX11_NewFrame(); ImGui::NewFrame();
+                    ImGui::Begin("font-lifecycle###persistent");
+                    if (ImGui::GetFrameCount() == 1) ImGui::GetStateStorage()->SetInt(17,1234);
+                    ImGui::PushFont(ImFontDesignMain,14.0F);
+                    ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Language.UI.Select).c_str());
+                    ImGui::PopFont(); ImGui::End(); ImGui::Render();
+                    context->OMSetRenderTargets(1,&view,nullptr);
+                    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+                    check(expectedFailure ? FAILED(ImGui_ImplDX11_GetLastResult()) : SUCCEEDED(ImGui_ImplDX11_GetLastResult()),"rendered dynamic glyph upload/result");
+                };
+                draw();
+                auto* persistent = ImGui::FindWindowByName("font-lifecycle###persistent");
+                const auto* originalContext = GImGui;
+                // 真正的补缺字号分配失败不能伪装为“不含此字”；cmap查询本身不分配字号。
+                auto* testAtlas=ImGui::GetIO().Fonts;
+                auto resource=FindResourceW(GetModuleHandleW(nullptr),MAKEINTRESOURCEW(IDR_NOTO_KR_REGULAR),L"TTF");
+                void* koreanData=LockResource(LoadResource(GetModuleHandleW(nullptr),resource));
+                ImFontConfig* koreanSource=nullptr;
+                for (auto& source : testAtlas->Sources)
+                    if (source.MergeMode && source.FontData==koreanData) { koreanSource=&source; break; }
+                check(koreanSource!=nullptr,"find real Korean fallback source");
+                if (koreanSource)
+                {
+                    const auto* loader=ImGuiFreeType::GetFontLoader();
+                    auto* unvisitedSize=ImFontDesignMain->GetFontBaked(17.0F);
+                    bool failAllocation=true;
+                    ImGuiFreeType::SetAllocatorFunctions(+[](size_t size,void* state)->void*
+                    {
+                        auto& fail=*static_cast<bool*>(state);
+                        if (fail) { fail=false; return nullptr; }
+                        return ImGui::MemAlloc(size);
+                    },+[](void* memory,void*) { ImGui::MemFree(memory); },&failAllocation);
+                    check(!loader->FontSrcContainsGlyph(testAtlas,koreanSource,0xD800)
+                        && failAllocation && !ImGuiFreeType::HasFontLoadFailure(testAtlas),"genuinely absent glyph is not loader failure");
+                    check(loader->FontSrcContainsGlyph(testAtlas,koreanSource,0xAC00)
+                        && failAllocation && !ImGuiFreeType::HasFontLoadFailure(testAtlas),"coverage probe does not allocate size");
+                    check(unvisitedSize->FindGlyphNoFallback(0xAC00)==nullptr
+                        && !failAllocation && ImGuiFreeType::HasFontLoadFailure(testAtlas),"first merged FT size allocation failure is sticky");
+                    ImGuiFreeType::SetAllocatorFunctions(+[](size_t size,void*)->void* { return ImGui::MemAlloc(size); },
+                        +[](void* memory,void*) { ImGui::MemFree(memory); });
+                    check(ReplaceSettingFonts(I18n::locale()) && !ImGuiFreeType::HasFontLoadFailure(ImGui::GetIO().Fonts),
+                        "new atlas recovers from poisoned lookup state");
+                    draw();
+                }
+                for (int cycle=0; cycle<3; ++cycle)
+                    for (const auto& locale : Inkeys::Localization::Locales)
+                    {
+                        I18n::PreparedLanguage next;
+                        check(I18n::prepare(1,L"JSON",locale.code,next),"prepare language");
+                        auto* previousAtlas = ImGui::GetIO().Fonts;
+                        const auto& current = I18n::locale();
+                        const bool reuse = cycle != 0 && locale.regularFont == current.regularFont && locale.boldFont == current.boldFont;
+                        check(ApplyPreparedSettingLanguage(locale,next,cycle == 0),"production font decision stages or reuses and commits");
+                        checkAtlasPolicy();
+                        check((ImGui::GetIO().Fonts == previousAtlas) == reuse,"same-family locale reuses atlas while rebuild replaces it");
+                        draw(); draw();
+                        check(GImGui==originalContext && persistent==ImGui::FindWindowByName("font-lifecycle###persistent")
+                            && persistent->StateStorage.GetInt(17)==1234,"context/window storage retained");
+                        check(GImGui->FontAtlases.Size==1,"single registered active atlas after retirement");
+                    }
+#if defined(INKEYS_IMGUI_DX11_TESTING) || (defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS)
+                I18n::PreparedLanguage uploadFailure;
+                check(I18n::prepare(1,L"JSON",L"ja-JP",uploadFailure),"prepare upload failure");
+                auto* retainedAtlas=ImGui::GetIO().Fonts;
+                const auto retainedRevision=I18n::revision();
+                ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure_Texture,E_OUTOFMEMORY);
+                check(!ReplaceSettingFonts(Inkeys::Localization::LocaleForIndex(4),&uploadFailure),"candidate upload fails");
+                check(ImGui::GetIO().Fonts==retainedAtlas && I18n::revision()==retainedRevision,
+                    "upload failure retains prior language/font");
+                draw();
+                // 发布后的设备纹理重建仍走原失败/重试合同，不把失败 DrawData 交给 Present。
+                ImGui_ImplDX11_InvalidateDeviceObjects();
+                ImGui_ImplDX11_TestFailNext(ImGui_ImplDX11_TestFailure_Texture,E_OUTOFMEMORY);
+                draw(true); draw();
+                check(I18n::revision()==retainedRevision,"postcommit backend retry does not republish locale");
+#endif
+                I18n::PreparedLanguage stale;
+                check(I18n::prepare(1,L"JSON",L"ja-JP",stale),"prepare failure fixture");
+                --stale.baseRevision;
+                auto* before = ImGui::GetIO().Fonts; const auto revision=I18n::revision();
+                check(!ReplaceSettingFonts(Inkeys::Localization::LocaleForIndex(4),&stale),"stale publication rejects staged atlas");
+                check(ImGui::GetIO().Fonts==before && I18n::revision()==revision && GImGui->FontAtlases.Size==1,
+                    "failed candidate preserves prior atlas and language");
+                draw();
+            }
+            else check(false,"initial language/fonts");
+        }
+        catch (...) { check(false,"unexpected exception"); }
+        if (backend) ImGui_ImplDX11_Shutdown();
+        ImFluent::ResetContext(); ImGui::DestroyContext();
+        ImFontMain=nullptr; ImFontStrong=nullptr; ImFontDesignMain=nullptr; ImFontDesignStrong=nullptr; ImFontDesignIcons=nullptr;
+        view->Release(); target->Release(); context->Release(); device->Release();
+        std::printf("[font-lifecycle] failures=%d\n",failures);
+        return failures ? 1 : 0;
+    }
 	int RunBusinessCancellationProductionTest() noexcept
 	{
 		if (settingInitialized.load() || Inkeys::Window::GetService().Running()) return 2;
@@ -5321,7 +5921,132 @@ namespace Inkeys::UI::Setting
 			const bool drained = probe.writes == 2 && probe.external == 0;
 			if (!queue.Start()) return 1;
 			queue.Enqueue(write); queue.Stop();
-			const bool passed = bounded && drained && probe.cancelled && probe.writes == 3;
+			bool shortcutPassed = false;
+			{
+				Inkeys::Config savedConfig; savedConfig = Inkeys::config;
+				struct Restore { Inkeys::Config& saved; ~Restore() { Inkeys::config=saved; } } restore{savedConfig};
+				// 不创建 HWND/ImGui 帧：真实 Hide 决策和关闭排空都必须提交草稿，销毁后不再调用捕获。
+				bool pendingEditsPassed = false;
+				{
+					Design::DesktopShortcutDraft app, board(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+					app.preset = Inkeys::Business::DesktopShortcut::Custom; app.customName = "App before hide";
+					board.preset = Inkeys::Business::DesktopShortcut::WhiteboardCustom; board.customName = "Board before hide";
+					Inkeys::UI::Setting::SessionState session;
+					session.CommitEpoch(1); session.SetVisible(true);
+					unsigned commits = 0;
+					{
+						const SettingPendingEditsScope scope{[&] {
+							++commits;
+							(void)CommitDesktopShortcutNamePreference(app, 30, &board);
+							(void)CommitDesktopShortcutNamePreference(board, 30, &app);
+						}};
+						CommitSettingEditsBeforeSuspend(session.Resolve(1, true, true));
+						const bool visibleUnchanged = commits == 0;
+						session.SetVisible(false);
+						const auto hidden = session.Resolve(1, true, true);
+						CommitSettingEditsBeforeSuspend(hidden);
+						const bool hiddenSaved = !hidden.HasPresentationWork() && commits == 1
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App before hide"
+							&& Inkeys::config.GetWhiteboardShortcutNamePreference().second == L"Board before hide";
+						session.ConsumeInputReset(session.InputResetSerial()); session.SetVisible(true);
+						app.customName = "App after quick reopen";
+						session.SetVisible(false); session.SetVisible(true);
+						const auto reopened = session.Resolve(1, true, false);
+						CommitSettingEditsBeforeSuspend(reopened);
+						const bool quickReopenSaved = reopened.resetInput && !reopened.releasePresentation
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App after quick reopen";
+						app.customName = "App before shutdown";
+						CommitPendingSettingEdits();
+						const bool shutdownSaved = Inkeys::config.GetShortcutNamePreference().second == L"App before shutdown";
+						app.customName = "CON"; board.customName = "App before shutdown";
+						CommitPendingSettingEdits();
+						pendingEditsPassed = visibleUnchanged && hiddenSaved && quickReopenSaved && shutdownSaved
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App before shutdown"
+							&& Inkeys::config.GetWhiteboardShortcutNamePreference().second == L"Board before hide";
+					}
+					const auto retiredCommits = commits;
+					CommitPendingSettingEdits();
+					pendingEditsPassed &= !settingCommitPendingEdits && commits == retiredCommits;
+				}
+				if (!pendingEditsPassed) { std::fputs("[SettingPendingEdits] FAIL: hidden/reopen/shutdown commit or retirement\n", stderr); return 1; }
+				struct FrozenProbe
+				{
+					mutex mutex; condition_variable condition;
+					bool release=false, entered=false, valid=true; int received=0;
+				} frozen;
+				const auto capture = +[](const SettingBusinessCommand& command, stop_token, void* context) {
+					auto& state=*static_cast<FrozenProbe*>(context); unique_lock lock(state.mutex);
+					if (command.kind==SettingBusinessKind::Information)
+					{
+						state.entered=true; state.condition.notify_all();
+						state.condition.wait_for(lock,chrono::seconds(2),[&] { return state.release; });
+					}
+					else
+					{
+						const bool whiteboard = command.shortcutKind==Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+						state.valid &= (command.kind==SettingBusinessKind::CreateShortcut || command.kind==SettingBusinessKind::EnsureShortcut)
+							&& command.text==(whiteboard ? L"Board original" : L"Inkeys(Original)") && command.parameters==L"C:\\frozen-desktop"
+							&& command.flag==!whiteboard && command.secondaryFlag==whiteboard;
+						++state.received; state.condition.notify_all();
+					}
+					return true;
+				};
+				SettingBusinessQueue shortcutQueue(capture,&frozen);
+				if (!shortcutQueue.Start()) return 1;
+				shortcutQueue.Enqueue(dialog);
+				{
+					unique_lock lock(frozen.mutex);
+					if (!frozen.condition.wait_for(lock,chrono::seconds(2),[&] { return frozen.entered; })) { lock.unlock(); shortcutQueue.Stop(); return 1; }
+				}
+				Design::DesktopShortcutDraft draft; draft.preset=Inkeys::Business::DesktopShortcut::Custom; draft.customName="Before leaving";
+				const bool committed=CommitDesktopShortcutNamePreference(draft,30)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving";
+				draft.customName="CON";
+				const bool invalidRetained=!CommitDesktopShortcutNamePreference(draft,30)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving";
+				Design::DesktopShortcutDraft board(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+				board.preset=Inkeys::Business::DesktopShortcut::WhiteboardCustom; board.customName="before leaving";
+				draft.customName="Before leaving";
+				const auto previousBoard=Inkeys::config.GetWhiteboardShortcutNamePreference();
+				const bool collisionRetained=!CommitDesktopShortcutNamePreference(board,30,&draft)
+					&& Inkeys::config.GetWhiteboardShortcutNamePreference()==previousBoard;
+				board.customName="Board original";
+				const bool boardCommitted=CommitDesktopShortcutNamePreference(board,30,&draft)
+					&& Inkeys::config.GetWhiteboardShortcutNamePreference().second==L"Board original";
+				draft.customName="board ORIGINAL";
+				const bool reverseCollisionRetained=!CommitDesktopShortcutNamePreference(draft,30,&board)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving";
+				board.lastValidName=L"Board original"; board.customName="CON";
+				const bool invalidOtherRetained=!CommitDesktopShortcutNamePreference(draft,30,&board)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving";
+				Design::DesktopShortcutDraft staleApp, staleBoard(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+				staleApp.preset=Inkeys::Business::DesktopShortcut::Custom; staleBoard.preset=Inkeys::Business::DesktopShortcut::WhiteboardCustom;
+				staleApp.customName="Board original"; staleBoard.customName="Before leaving";
+				const bool staleOtherRetained=!CommitDesktopShortcutNamePreference(staleApp,30,&staleBoard)
+					&& !CommitDesktopShortcutNamePreference(staleBoard,30,&staleApp)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving"
+					&& Inkeys::config.GetWhiteboardShortcutNamePreference().second==L"Board original";
+				Inkeys::config.SetShortcutNamePreference(Inkeys::Business::DesktopShortcut::Annotation,L"");
+				Inkeys::config.Application.Shortcut.CorrectLnk=true; Inkeys::config.Application.Shortcut.CreateLnk=false;
+				Inkeys::Business::DesktopShortcut::NameOptions names; names.presets[2]=L"Inkeys(Original)";
+				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::CreateShortcut,L"C:\\frozen-desktop",names));
+				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::EnsureShortcut,L"C:\\frozen-desktop",names));
+				Inkeys::config.Application.WhiteboardShortcut.CorrectLnk=false; Inkeys::config.Application.WhiteboardShortcut.CreateLnk=true;
+				Inkeys::Business::DesktopShortcut::NameOptions boardNames(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::CreateShortcut,L"C:\\frozen-desktop",boardNames));
+				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::EnsureShortcut,L"C:\\frozen-desktop",boardNames));
+				Inkeys::config.SetWhiteboardShortcutNamePreference(Inkeys::Business::DesktopShortcut::WhiteboardCustom,L"Board changed after enqueue");
+				Inkeys::config.Application.WhiteboardShortcut.CorrectLnk=true; Inkeys::config.Application.WhiteboardShortcut.CreateLnk=false;
+				Inkeys::config.SetShortcutNamePreference(Inkeys::Business::DesktopShortcut::Custom,L"After enqueue");
+				Inkeys::config.Application.Shortcut.CorrectLnk=false; Inkeys::config.Application.Shortcut.CreateLnk=true; names.presets[2]=L"Changed language";
+				{
+					unique_lock lock(frozen.mutex); frozen.release=true; frozen.condition.notify_all();
+					shortcutPassed=frozen.condition.wait_for(lock,chrono::seconds(2),[&] { return frozen.received==4; })
+						&& frozen.valid && committed && invalidRetained && collisionRetained && boardCommitted && reverseCollisionRetained && invalidOtherRetained && staleOtherRetained;
+				}
+				shortcutQueue.Stop();
+			}
+			const bool passed = bounded && drained && probe.cancelled && probe.writes == 3 && shortcutPassed;
 			std::fprintf(stderr, "[SettingBusinessCancellation] %s: dialog stop, durable FIFO drain, external cancellation, restart\n", passed ? "PASS" : "FAIL");
 			return passed ? 0 : 1;
 		}

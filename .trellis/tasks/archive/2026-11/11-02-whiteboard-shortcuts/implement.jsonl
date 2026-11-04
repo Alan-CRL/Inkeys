@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/keyboard-shortcuts.md", "reason": "shortcut ownership/modal/whiteboard menu contract"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "whiteboard lifecycle phases"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PageControl exit content freeze and workspace transition contracts"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Animation rate setting location and save behavior"}

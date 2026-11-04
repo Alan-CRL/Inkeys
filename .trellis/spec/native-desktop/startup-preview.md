@@ -1,10 +1,10 @@
 # Startup Preview and Fast Bar Display
 
-本规范记录 Inkeys UI3 启动预览的可执行长期合同。它只适用于最终进程越过 SuperTop 后的启动编排、`Inkeys.UI.StartupPreview`、共享 RenderPipeline client、Bar presentation alpha、真实启动进度和相关配置/测试。旧图片资源、BIN/cache、模糊和 proxy 方案均已废弃。
+本规范记录 Inkeys UI3 启动预览的可执行长期合同。它只适用于最终进程越过 SuperTop 后的启动编排、`Inkeys.UI.StartupPreview`、共享 RenderPipeline client、Bar presentation alpha、真实启动进度和相关配置/测试。旧图片资源、BIN/cache 和 proxy 方案均已废弃；当前效果是程序化绘制，可使用共享 D2D 的基础图元、效果与 SpriteBatch。
 
 ## 1. Scope and non-goals
 
-- Preview 是完全程序化的、无文字无图标无按钮分隔的半透明深色占位。居中启动为完整主栏圆角矩形（fill0.8），角落启动为折叠主按钮80 DIP/n=3超椭圆（fill0.6）；颜色复用正式Dark Surface，描边复用白0.18。
+- Preview 是完全程序化的、无文字无图标无按钮分隔的半透明占位，支持掠光、柔光流彩（原彩虹晕染）、像素拼装。居中为主栏圆角矩形，随用户主题取深色/雾白；角落为80 DIP/n=3超椭圆并始终使用深色。背景/内容透明度由 Mini 冻结，默认展开深色0.8/浅色0.92、角落0.6；自定义背景沿正式主按钮比例。
 - 正式 Bar 仍是唯一业务 UI；Preview 不复制 Bar target，不建立第二个 D3D/D2D device、render thread、WinUI Runtime、DirectComposition 或 Win10-only effect。
 - 不改变 SuperTop/单实例边界、PptCOM activation manifest 资源 221、Draw3 独立 device、普通 Cache 目录或与 Preview 无关的 CRC/SHA/Gaussian 代码。
 
@@ -51,6 +51,10 @@ mini config 只读取：
 | --- | --- |
 | `Experimental.Inkeys3.UI3.StartupPreview.Enable` | `true`；设置页改动下次启动生效 |
 | `Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip` | `470.0`；总宽度 DIP |
+| `Experimental.Inkeys3.UI3.StartupPreview.Effect` | 整数0掠光/1柔光流彩（原彩虹晕染）/2像素拼装；缺失/非法回退0 |
+| `Experimental.Inkeys3.UI3.ThemeMode` | 1深色/2浅色；角落仍取深色材质 |
+| `Experimental.Inkeys3.UI3.BackgroundOpacity` | 0主题默认；显式30~100，背景与光效整组合成 |
+| `Experimental.Inkeys3.UI3.ContentOpacity` | 默认100，30~100，独立控制进度轨道/填充 |
 | `UI.Bar.Zoom2` | 用户倍率，默认1.0；不迁移旧Zoom |
 | `UI.Bar.UseTaskbarHeightAsScaleBase` | 整数0关闭、1任务栏基础量、2任务栏真实量；旧bool false→0/true→2；冻结大屏缺省1、其余0。预览与真实Bar共用DPI/固定48DIP/真实任务栏三态解析，Shell缺样也不得把基础量退回普通DPI |
 | `UI.Bar.StartupPlacement` | 0居中展开底栏、1左下角主按钮、2右下角主按钮；缺失/非法回退0 |
@@ -106,15 +110,15 @@ create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；�
 
 ## 6. Programmatic shape and shimmer
 
-每帧先绘制一个连续外形：居中模式为MainBar Dark Surface `#181818`、alpha0.8、高度/圆角80/8 DIP；角落模式为同色alpha0.6、80×80 DIP/n=3超椭圆，复用无状态路径构造。白色1 DIP描边alpha0.18计入可见包络：80名义按钮包络81DIP，默认470名义展开宽包络471DIP。颜色通道与 alpha 必须由 MainBar 和 Preview 共用的具名常量提供，避免两边漂移。描边必须向内绘制；禁止文字、图标、按钮槽、分隔线或假主栏内容。
+底板的居中几何为高度/圆角80/8 DIP，角落为80×80 DIP/n=3超椭圆；主题颜色复用 Bar 角色。默认深色仍为 `#181818`，浅色 `#FBFBFB`；透明度和三种效果见第16节。1 DIP描边计入可见包络：80名义按钮包络81DIP，默认470名义展开宽包络471DIP。Shared Bar/Preview 的颜色和默认alpha必须用同源常量或生产策略测试锁定，避免漂移。像素效果运动段可暂时分散外形，但归位终点必须与同一底板RGBA等价。禁止文字、图标、按钮槽、分隔线或假主栏内容。
 
-尺寸变化时缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态 opacity mask。反光用默认左上到右下的斜向多段线性渐变 brush（宽低强度漫反射、窄核心、柔和尾光）配合 `ID2D1DeviceContext::FillOpacityMask`；调用前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复原 mode。居中条形进度或角落进度环在 shimmer 后最后合成，不进入 mask。
+尺寸变化时缓存组内归一底板及包含内描边/抗锯齿边缘的静态 opacity mask；用户背景透明度在整组最后应用一次。反光用默认左上到右下的斜向多段线性渐变 brush（宽低强度漫反射、窄核心、柔和尾光）配合 `ID2D1DeviceContext::FillOpacityMask`；调用前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复原 mode。居中条形进度或角落进度环在 shimmer 后最后合成，不进入 mask。
 
 相位以 Preview 首次显示的本地 `steady_clock` epoch 为基准。默认周期为 4.0 秒：前 70%（2.8 秒）用 `phase=(1-cos(pi*t))/2` 实现两端慢、中间快的非线性扫过，后 30%（1.2 秒）保持在完整离屏终点，以拉长两次反光经过的间隔。默认 shimmer gradient 的 X/Y 跨度绝对值必须相等，使可见高光带与水平线夹角固定45°；不得由宽高比或固定像素下限决定斜角。三种位置及DPI/zoom共用该方向，保留既有梯度向量长度和多段soft-tail宽度。纯行程函数必须根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算端点：phase 0 支撑完全在左上侧外，phase 1 支撑完全在右下侧外，中点穿过 mask，停驻期间和 wrap 两侧都是 base-only。不得用固定 magic 行程掩盖跳闪。
 
 ## 7. Progress visual and handoff
 
-首个 Preview ULW alpha 0 frame committed 且 owner 请求显示后调用一次 `MarkPreviewShown`；重复通知不重置。Preview 整窗以 300ms 渐显。显示后满3秒仍未完成才约180ms渐显进度。2026-10-14用户现场反馈覆盖原三位置统一环形方案：居中底栏恢复旧水平条形进度，最大192 DIP、左右至少12 DIP留白、居中显示，轨道max(1px,1DIP)、指示填充max(3px,3DIP)、圆角端点；左右角落保留32 DIP外径、3 DIP描边、圆头、顶部顺时针环形进度。正常轨道灰白0.24，0%不伪造填充；最终失败0%轨道立即红。3秒内正常完成不显示。两种进度比例由 Preview 自己维护的 300ms smoothstep 时间轴追赶真实 ratio：新目标先采样当前插值值再连续 retarget，帧率无关且不得超过 actual；完成不直接跳 1，失败颜色立即红并冻结首次失败目标。条形进度或进度环在 shimmer 后绘制。
+首个 Preview ULW alpha 0 frame committed 且 owner 请求显示后调用一次 `MarkPreviewShown`；重复通知不重置。掠光/柔光流彩 Preview 整窗以300ms渐显；PixelAssembly 保留首帧ULW alpha0，显示后窗alpha255，由每颗像素随自身飞行进度渐显，避免与窗alpha重复压暗入场。显示后满3秒仍未完成才约180ms渐显进度。2026-10-14用户现场反馈覆盖原三位置统一环形方案：居中底栏恢复旧水平条形进度，最大192 DIP、左右至少12 DIP留白、居中显示，轨道max(1px,1DIP)、指示填充max(3px,3DIP)、圆角端点；左右角落保留32 DIP外径、3 DIP描边、圆头、顶部顺时针环形进度。正常轨道深色灰白0.24，浅色为有对比的深灰；0%不伪造填充；最终失败0%轨道立即红。3秒内正常完成不显示。两种进度比例由 Preview 自己维护的 300ms smoothstep 时间轴追赶真实 ratio：新目标先采样当前插值值再连续 retarget，帧率无关且不得超过 actual；完成不直接跳 1，失败颜色立即红并冻结首次失败目标。条形进度或进度环在 shimmer 后绘制。
 
 Bar 的 presentation alpha 始终区分 requested/attempted/committed；完整 GetDC -> ULW -> ReleaseDC -> EndDraw -> `presentCompletion.IsCommitted()` 前不得推进 committed。alpha 改变强制 full-window ULW，失败保留旧 committed 并请求重试；业务 dirty transaction 不受污染。无 Preview 时 Bar 以 255；有 Preview 时先以 0 committed。
 
@@ -178,7 +182,7 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 ## 13. Tests required
 
 - **纯逻辑**：`ResolveCachedStartupBarWidthDip`、默认 380/470 推导、DPI×zoom 舍入、`CalculateStartupBarTotalWidthDip` target-vs-animation、去重发布、milestone/failure/100% gate。
-- **动画/alpha**：Preview 使用 MainBar Dark Surface `#181818` / `0.8` 和白色边框 alpha `0.18`；shimmer 默认 gradient 同时包含 X/Y 分量，4.0 秒周期内 2.8 秒非线性扫过、1.2 秒离屏停驻；Preview 300ms 渐显；progress 300ms smoothstep retarget；normal handoff 根据 committed-visible progress 冻结 300/1000ms，渐隐期间 shimmer/progress 继续推进，Preview alpha 0 committed 后 Bar 才按同档位整窗渐显；首次重试颜色、最终 fatal 红帧和 recovery 不退化。
+- **动画/alpha**：Preview 使用 MainBar Dark Surface `#181818` / `0.8` 和白色边框 alpha `0.18`；shimmer 默认 gradient 同时包含 X/Y 分量，4.0 秒周期内 2.8 秒非线性扫过、1.2 秒离屏停驻；掠光/柔光流彩 Preview 300ms窗渐显，PixelAssembly 由像素逐颗渐显且只首帧窗alpha0；progress 300ms smoothstep retarget；normal handoff 根据 committed-visible progress 冻结 300/1000ms，渐隐期间 shimmer/progress 继续推进，Preview alpha 0 committed 后 Bar 才按同档位整窗渐显；首次重试颜色、最终 fatal 红帧和 recovery 不退化。
 - **窗口/渲染**：ULW 三个 geometry 指针始终非空；owner-thread lifecycle、click swallow、presentation mutex、mask antialias restore、Bar-before-Preview scheduler、device generation 重建。
 - **集成/静态**：旧 JSON 兼容、smoke 字段、manual delay hook 正/负向、`rg` 残留审查、`git diff --check`、完整 Solution/headless；Win7、DPI、多屏、SuperTop/UIAccess 和真实系统失败在可用环境执行并记录。
 
@@ -316,3 +320,62 @@ PublishStartupBarWidthDip(CalculateStartupBarTotalWidthDip(mainWidth, layoutWidt
 - Mini 通过一次 `Display::QueryTaskbarMonitorInfo` 同时取得目标屏几何/真实 DPI/任务栏样本，冻结 `StartOptions.desktopDockLine` 与 UI基准，避免分别查询拼接不同显隐时刻；不初始化 observer；普通设备不提前枚举 EDID。为统一按设备分类的缩放默认值，仅 READY 触控设备在 Mini 前执行一次现有 Display::Initialize，冻结主屏物理分类并供后续完整初始化及设备默认赋值复用，不重复枚举；这可能增加触控机器预览出现前等待。schema 本身不触发硬件查询。
 - `ResolveStartupPreviewBounds`、`ResolveStartupPlacementBounds` 与正式 CenteredBottomBar 使用同一可选桌面线。PPT/Whiteboard 场景优先级仍在正式 Bar 层；两角浮动启动语义不变。查询失败时回退既有几何与真实 DPI，不伪造底部 autoHide。
 - Preview 的同线纯几何回归属于无窗口证据；真实首帧与正式 Bar 交接仍按已有呈现验收边界记录。
+
+## 16. 多效果、分层透明度与像素入场（2026-11-04）
+
+### Scope / Trigger
+
+修改启动效果选择、深浅材质、透明度、粒子运动和扩大呈现区域时适用。2026-11-04 用户在第四版基础上反馈彩虹过淡发脏、像素卡顿且光晕过重，已确认第五版样式（`.trellis/tasks/11-04-startup-preview-effect-polish/research/startup-effects-review-v5.html`）：高彩度相邻色相彩虹、汇聚落位、短速度线、像素块加大；完整配置契约见 [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md#启动加载效果选择合同2026-11-04)。
+
+### Signatures
+
+- `StartupPreviewEffect { Shimmer=0, Aurora=1, PixelAssembly=2 }` 与 `NormalizeStartupPreviewEffect(int)`。
+- `StartOptions.effect/themeMode/backgroundOpacity/contentOpacity`：启动前冻结的效果、主题和两项整数百分比。
+- `StartupPreview.Effects.Policy.h`：`Effects::ResolveAppearance`、`ScatterBounds`、`PresentationBounds`、`BuildParticles`、`Evaluate/Position`、`ParticleOpacity/ParticleScale/FlashOpacity`、`AssemblyReady`、`Oklch`、`GlowHueCenter/MakeGlowPalette/GlowField/GlowOpacity`。
+- `StartupPreview.Effects.Drawing.h`：`Drawing::EffectRenderer::Initialize/Prepare/DrawBackground/ContentBounds`，生产和原生离屏测试共用；`Initialize` 的 `allowSpriteBatch=false` 仅供测试强制回退路径。
+
+### Contracts
+
+- 有效浅色只用于居中主栏；角落独立主按钮始终深色，但三种效果均可选择。背景默认深色0.8/浅色0.92、角落0.6；显式背景百分比在角落乘0.75，内容独立30~100%。
+- 背景组包括底板、描边、掠光、柔光流彩、像素、速度线与落位微光，归一绘制后最后一次应用用户背景透明度；进度在组外绘制并单独乘内容透明度。ULW SourceConstantAlpha 只承担整窗交接，不能将用户两项偏好合并为单一窗透明度。
+- 柔光流彩（原“彩虹晕染”，2026-11-04 用户确认改名并批准 `research/soft-glow-review-v6.html`；枚举仍为 `Aurora`、配置值仍为1、i18n key 仍为 `Aurora`，只改显示名，中文“柔光流彩”/英文“Soft glow”）：固定轮廓内的 OKLCH 色场，色相锁定粉紫系——`GlowHueCenter` 在306°~330°缓慢漂移，色块偏移为±22°、摆动±5°，整体约280°~357°（薰衣草→兰花粉→樱花粉→玫瑰），不得再出现蓝/青/红橙。`GlowField` 在1/4分辨率CPU生成（7个移动色块按权重线性混合色相，色块中心更亮），上传后经一次 HARD 边界轻模糊、线性放大，以预乘 source-over 裁入实际轮廓。浅色保持用户喜欢的淡粉质感：L.77~.84/C.16、横向低权重底色铺满、强度0.46、镜面光0.35。深色与浅色同一连续铺色方式（2026-11-04 用户比较 `research/soft-glow-review-v7.html` 后选定，取代 v6 的透明间隙方案）：色块间为深梅紫/暗玫瑰 L.33/C.11，色块中心升到 L.58/C.18，强度0.8、镜面光0.05；全程不使用高明度浅色，避免浅色半透明叠在暗底上整体发灰，也避免透明间隙形成竖向明暗柱。不得回到彩虹全色相、深色高明度淡彩、深色透明间隙、互补色相邻或四周羽化。
+- 像素源取自实际底板RGBA；全透明块不参与，半透明边缘保留。背景形状不能被替换成稀疏点阵。像素块约5.5DIP、上限2048，只在资源/几何失效时构造，不能随DPI平方增长。
+- 汇聚落位（取代先外散再回收）：来源区域居中约1.5W×2.4H且底边中心对齐目标，角落外扩半圈并裁入有效工作区。主栏的视觉汇聚点位于目标下方1.2H，像素从上方与两侧沿轻微弧线（两端偏移为0）以三次缓出飞入；角落按中心辐射。落位时刻由中心向两端分波（约0.62~2.18s，同波随机错开），飞行约0.78~1.14s；像素随进度在前35%渐显、尺寸由0.55倍放大到1。落位后约0.22s点状微光（深色浅青0.5、浅色深青0.28）。2.18s最晚落位保证2.4s时微光结束且全部像素与底板一致，随后直接进入掠光等待。
+- 速度线取代模糊青尾：每颗像素只绘制最近45ms位移的主题青色渐变短线（深0.34/浅0.30），随速度伸缩，停下即消失；不得恢复历史缓冲、模糊累积光晕或外散爆开。全部内容是 elapsed 的纯函数，30/60/120Hz 在同一时刻逐字节一致，设备重建不重播。
+- 像素、速度线与微光用 `ID2D1DeviceContext3` SpriteBatch 每帧三次批绘制（速度线→像素→微光），精灵颜色为 `(1,1,1,alpha)` 只调制不透明度；不支持时回退逐个 `DrawBitmap(opacity)`，两条路径的离屏像素必须一致。
+- 呈现只提交脏区：`ContentBounds` 给出本帧内容（目标底板与在飞像素/速度线外扩2px），与上一成功提交帧求并集作为 `UPDATELAYEREDWINDOWINFO::prcDirty`；资源重建或首帧整窗提交。拼好后只回读并提交主栏区域，扩大的透明窗口不再逐帧整窗 ULW。
+- 以下为已废弃第四版拖尾的历史约束，仅在重新引入历史缓冲时适用：历史扩散/点迹注入只按固定30Hz整数格推进，不足1/30s余量保留；跳帧/资源重建的有界回放起点对齐同一格。最终余光淡出消费真实elapsed，30/60/120Hz调用在同一时刻应得到相同像素；不得仅按dt缩放衰减而每次回调都做一次固定sigma模糊/注入。Effect输入不得同时作为当前target；RGBA保持预乘，透明处不得被ColorMatrix填成不透明色块。GaussianBlur SOFT会产生负输出边界，历史绘制必须显式使用零目标偏移与`(0,0,historyWidth,historyHeight)`源矩形，避免逐轮偏移。历史尺寸向上取整后，合成目标应为`historyWidth/historyScale × historyHeight/historyScale`并由目标裁剪，或使用等价精确源裁剪；不能把完整取整纹理拉回原width/height而改变注入坐标的逆比例。缓存随尺寸/epoch重建并保留本次seed/时间，不重新播放入场。
+- 正式目标bounds和扩展presentation bounds分离；target相对窗口offset用于底板/进度/掠光，不能以扩展尺寸当作主栏尺寸，不能写回扩大后的缓存宽度。像素大小、位移、模糊与进度共用UIBase×Zoom/DPI单次换算。
+- PixelAssembly成功交接必须额外满足 elapsed>=2.4s；此门只约束视觉交接，不阻塞真实初始化或伪造进度。其他效果保持快速交接；failure/exit不等待拼装门。成功仍依照 committed Preview0 -> Bar255 顺序，保留有无可见进度的300/1000ms档位。
+
+### Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 旧/非法Effect | 默认掠光；其他配置不变 |
+| 提前加载完成且选择PixelAssembly | 播完2.4s汇聚落位，再进入顺序渐隐/渐显 |
+| 最终失败/退出 | 不被2.4s门阻塞；失败首帧主题红，0%不伪造完成 |
+| 背景低透明度 + 柔光流彩/反光/速度线 | 背景组按一次opacity合成，不叠成更实的底板；内容独立 |
+| 像素飞行 | 每颗在飞行中段与目标有可见距离，中心先于两端落位 |
+| 归位完成 | 与同一底板RGBA一致，无残留拖尾，脏区收回主栏，掠光等待 |
+| 资源尺寸/epoch改变 | 清理旧图与effects输入，重建同一快照；时间/seed不重置 |
+| Effect初始化/提交失败 | 走既有Retry/device-loss/bypass，不遗留不可见正式Bar |
+
+### Good / Base / Bad Cases
+
+Good：浅色底栏使用淡彩色场，背景透明度变化不带动进度，粒子模式精准归位后只剩掠光。Base：旧配置保持原掠光。Bad：角落跟随全局变白、用整窗alpha控制两种透明度、柔光流彩漂出粉紫系、深色叠高明度淡彩发灰、互补色混成灰褐、恢复模糊累积青色光晕、拼好后仍整窗ULW、将扩展窗口宽度缓存为正式栏宽。
+
+### Tests Required
+
+真实Config Mini/All/写回、设置选择与输入退出；三位置、深浅、DPI/Zoom、负坐标、bounds裁剪、粒子上限/无效输入；RGBA非透明取样与半透明边缘、飞行可见位移/中心先落位/精确终点/微光在2.4s前结束、柔光流彩色场最小彩度≥45且绿色通道始终最低（粉紫锁定）、深浅都连续铺满、深色最亮≤230/最暗≤120/明暗差≥60、脏区覆盖飞行像素并在拼好后收回主栏、SpriteBatch与回退路径像素一致；生产WARP/D2D离屏图验证高彩度色场、无羽化、预乘alpha/分组透明度/进度置顶、循环首尾与设备重建。底板比较在不同呈现尺寸/平移下要求尺寸与alpha严格相同，RGB仅允许已实测的1个8位量化单位，不随DPI放宽；相同呈现条件下的30/60/120Hz比较仍为逐字节一致。最终记录完整Debug|ARM64 Solution与`--no-window`结果；不以无窗口证据宣称真实HWND/GUI或Win7运行验证。
+
+### Wrong vs Correct
+
+```cpp
+// Wrong：为提高透明度反复降低每个背景图元，重叠处仍叠实。
+DrawBase(userOpacity);
+DrawGlow(userOpacity);
+// Correct：内部材料先合成，统一一次背景透明度；进度独立。
+effects.DrawBackground(context); // 内部消费已冻结的backgroundOpacity
+DrawProgress(contentOpacity * progressReveal);
+```

@@ -152,6 +152,7 @@ namespace Inkeys::UI::Setting::Design
 			Entry{ PageId::General, I18nKey.SettingsUI.Regular.N, "\ue713" },
 			Entry{ PageId::Draw, I18nKey.SettingsUI.Draw.N, "\uee56" },
 			Entry{ PageId::Performance, I18nKey.SettingsUI.Performance.N, "\uec4a" },
+			Entry{ PageId::Linkage, I18nKey.SettingsUI.Linkage.N, "\ue71b" },
 			Entry{ PageId::Plugins, I18nKey.SettingsUI.PlugIn.N, "\ue74c" },
 			Entry{ PageId::Components, I18nKey.SettingsUI.Component.N, "\ue70b" },
 			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\ue9d9" },
@@ -159,8 +160,8 @@ namespace Inkeys::UI::Setting::Design
 		};
 		const std::array childKeys{ I18nKey.SettingsUI.Design.GeneralBasic,
 			I18nKey.SettingsUI.Design.GeneralAppearance, I18nKey.SettingsUI.Design.GeneralInteraction,
-			I18nKey.SettingsUI.Design.GeneralStorage, I18nKey.SettingsUI.HotKey.N };
-		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e", "\ue765" };
+			I18nKey.SettingsUI.Design.GeneralStorage, I18nKey.SettingsUI.HotKey.N, I18nKey.SettingsUI.DesktopShortcut.N };
+		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e", "\ue765", "\ue71b" };
 		static_assert(childKeys.size() == GeneralSectionCount && childGlyphs.size() == GeneralSectionCount);
 		static_assert(middleEntries.size() == NavigationMiddleItemCount);
 		auto navigate = [&](NavigationDestination destination, bool dismissOverlay = true) {

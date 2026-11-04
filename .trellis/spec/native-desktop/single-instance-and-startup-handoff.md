@@ -5,7 +5,7 @@
 
 ## 2. Signatures
 - `Config.AllowMultipleInstances: IdtAtomic<bool> = false`；`Config::ReadMini(paths, bool readOnly=false)`。早期读取该键必须传true，不能触发旧Bar布局迁移写盘。缺键/非法bool/读取失败回缺省false。
-- `Inkeys::Launch::Acquire(root, allow) -> Admission::{Accepted,Duplicate,Error}`；`Adopt() -> 0/1/-1`（无包/验真并接任/失败）；`Handoff::{Arguments,Publish,Wait}`；`StartReplacement(image)`。
+- `Inkeys::Launch::Acquire(root, allow) -> Admission::{Accepted,Duplicate,Error}`；`Adopt() -> 0/1/-1`（无包/验真并接任/失败）；`Handoff::{Arguments,Publish,Wait}`；`StartReplacement(image, extraArguments={})`（扩展参数只允许空或 `-Whiteboard`）。
 - `Packet`固定版本、byteSize与uint64句柄字段，布局/offset/size静态断言。不能用uintptr_t做跨架构wire字段；接收端转换前检查本机指针范围。
 - VERSIONINFO `StringFileInfo/080404b0/StartupHandoffProtocol = 1`。三态 `Protocol::{Current,Legacy,Unsupported}`，未知/坏资源/查询失败不可当Legacy。
 - `--inkeys-startup-handoff=Local\Inkeys.Handoff.<nonce>`只承载短寿命包名，不构成豁免。消费后从`LaunchState::commandLine`剔除。
@@ -54,3 +54,52 @@ Wrong：先发RootReady让旧root退出，再resume final去检查准入。
 Correct：final先完成准入并发新Ready，helper再确认旧root退出，最后放行业务。
 Wrong：`sizeof(uintptr_t)`随发布架构变化却直接memcpy包。
 Correct：固定uint64 wire及布局断言，转换前验证目标指针范围。
+
+## 场景：受限白板启动转发（2026-11-04）
+
+### 1. Scope / Trigger
+
+任务 `11-04-whiteboard-desktop-shortcut` 有限扩展目录单实例：同目录实例可接收“打开白板”，不形成通用 IPC、远程命令、路径传输或多实例数据合并。
+
+### 2. Signatures
+
+- `Launch::CommandPipe::{IsWhiteboardArgument, HasWhiteboardArgument, Admit, Send}`；`Admission::{Accepted,Forwarded,ForwardFailed,Duplicate,Error}`。
+- `CommandPipe::Server::{Start,LifetimeReady,BeginExit,Stop,Queue,TakePending,TakeReadyPending}`、`ProbeLifetime(root)`；请求固定16字节 `{uint32 magic=0x57424B49, version=1, command=1, reserved=0}`，回执1字节。
+- `LaunchState::openWhiteboard` 是本次启动意图；`RequestWhiteboardFromShortcut()` 复用既有工作区入口；`RetireLaunchCommands()` 为正常及崩溃退场的非阻塞拒收入口。
+
+### 3. Contracts
+
+- 仅 `CommandLineToArgvW` 精确参数 `-Whiteboard` 产生意图。Adopt 通过者继续交接，不向即将退出的原实例转发。其他启动先探测管道：Accepted直接退出，失败提示退出；不存在才 Acquire，Duplicate再有限重试约3秒。允许多开也先转发，无可用实例时才启动。
+- 转发位于 update.json、安装目录写权限探测和 SuperTop 之前，已有实例分支不改文件、不应用更新、不提权、不启动替代实例。
+- 管道名含会话、目录 fileID presence 身份及监听进程 PID；消息模式限制整包长度，拒绝远程客户端。DACL仅当前用户和SYSTEM，Medium完整性标签；双方校验实际对端PID的用户SID、会话与逻辑安装根。
+- 每个监听者使用独立 PID 后缀端点，客户端通过只读进程快照发现候选，并要求系统返回的实际服务端 PID 等于后缀，再校验用户/会话/目录。候选探测、重试与 I/O 共用一个绝对截止；只有端点全部不存在才按 Missing 准入，其他失败不允许另开一份。同名多实例在本机实测会保留首创建者 PID，不能靠放松身份校验兼容；独立端点确保首监听者退出后其余可用。
+- 只在准入后建立 `Local\<PresenceName>.CommandLifetime` 事件（当前用户/SYSTEM DACL，客户端仅 SYNCHRONIZE 只读），独立于 Stop 和原 ReleaseForClose 持有到进程退场；重新绑定安装根时保留已登记根。禁止多开的白板入口在端点不存在时探测该标记，存在则有限重试/失败，不在旧进程清理期间另开一份。两个未准入冷启动没有标记，仍由原 Acquire 原子决定赢家；普通应用重开与允许多开策略保持。初次或重新绑定根的必需标记建立失败应提示退出，不能默默继续；管道监听本身失败但标记已建立时允许本地冷启动意图继续消费。
+- 启动中只设置一个合并意图位，真实启动进度全部完成后主流程一次消费；已有白板保持幂等，最小化只恢复同一窗口组。Accepted只表示接纳，不承诺白板呈现成功。
+- 更新/SuperTop前停止监听并冻结尚未消费的意图，仅在该合法交接携带 `-Whiteboard`；交接或更新失败丢弃本次意图。正常/崩溃重启不保留该参数。
+- 正常退场、监督器退场和已确认的崩溃重启均先拒收，再进入Window关停门；不可只检查offSignal，因为崩溃意图槽可为3而offSignal仍为0。I/O用overlapped事件与停止事件取消，主关停屏障join，不能阻塞Flush或无限等客户端。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| 无参数重复启动 | 原重复启动提示，原实例不变 |
+| 白板参数且现有监听者 | 回执后退出，待更新文件留给原实例 |
+| 原实例启动中 | 合并排队，就绪后一次处理 |
+| 退出、坏包、版本/长度错误、错误目录/用户 | 拒绝，不退化为第二份实例 |
+| 新进程冷启动经过更新/SuperTop | 合法交接携带一次意图；失败作废 |
+| 多监听者，首份退出 | 其余继续可连接 |
+
+### 5. Good / Base / Bad Cases
+
+Good：白板快捷方式唤醒原目录实例且不碰待更新文件；Base：没有实例时普通启动完成后进入白板；Bad：转发前先做目录写入探测，或崩溃退出仍回Accepted却无人处理。
+
+### 6. Tests Required
+
+`--single-instance-tests` 在原专项通过后追加白板管道专项；`--whiteboard-command-tests` 可独立定位。私有copy真实进程覆盖多监听、首份退出、启动排队/重复合并、并发冷启动唯一赢家、监听失败保留本地意图、原 presence 已释放但进程仍清理时拒白板重开、退出/超时、错误目录/抢注服务端、坏包/超长/版本、更新文件独占哨兵、参数白名单及真实handoff携带意图。`--state-mode-production-test` 覆盖活动幂等、最小化恢复与桌面/PPT沿原工作区入口。完整Debug ARM64 Solution、shutdown lease/config专项须记录真实退出码。
+
+不同用户、真实UIAccess/跨完整性、Win7和真实更新/回滚/SuperTop全链的运行证据须独立注明；同用户私有copy通过不能代替这些实机边界。
+
+### 7. Wrong vs Correct
+
+Wrong：将连接失败解释为允许绕过presence另开一份，或把已接受的请求交给退出中的窗口线程。
+Correct：有限截止并失败退出；所有退场入口先拒收，Accepted仅排队固定意图，工作区服务就绪后主流程消费一次。

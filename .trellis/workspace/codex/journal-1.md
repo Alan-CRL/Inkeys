@@ -258,6 +258,20 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 - 本问题已按用户最终验收关闭；不继续调试或追加修复。
 
 
+## Session 11: Bar 浅色主题与完整收展材质
+<!-- trellis-session: v=2 fp=e1c84ae15360a024 -->
+
+**Date**: 2026-09-11
+**Task**: Bar 浅色主题与完整收展材质
+**Branch**: `theme`
+
+### Summary
+
+从 draw 4478887c 建立独立 theme worktree；完成浅色角色、全笔色及整体轮廓、随收展连续切换的光影材质。完整 ARM64 Solution、全部无窗口测试、SVG 静态与离屏像素验证通过。按要求未启动产品窗口、未提交 commit。
+
+### Main Changes
+
+- 浅色 Bar 与深色悬浮入口使用逐对象连续材质，主笔保持真实色与独立屏幕，普通 SVG 造型不变。
 ## Session 13: Archive completed August and September tasks
 <!-- trellis-session: v=2 fp=1b86ed45d2f2f566 -->
 
@@ -463,6 +477,8 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 
 ### Testing
 
+- [OK] ARM64 host MSBuild 完整 InkeysRepo.sln Debug|ARM64 通过；InkeysHeadlessTests.exe --no-window 通过。
+- [OK] 30 个普通 SVG 与六种笔色离屏检查通过；20 个已跟踪文本修改的 BOM/EOL 检查通过。
 - [OK] InkeysRepo.sln Debug|ARM64 原生MSBuild完整构建及最终增量构建 exit 0；InkeysHeadlessTests.exe --no-window exit 0。
 - [OK] 真实动画模块/脏区算法/光影函数计数探针及独立审查通过，新增C4127已修复。
 
@@ -472,6 +488,23 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 
 ### Next Steps
 
+- 如需检查真实桌面视觉，在另行允许 GUI 的会话验证系统主题、白色文档覆盖和鼠标动态光；当前主题改动保留未提交。
+
+
+## Session 12: 修正主按钮统一 SVG 与绘制态指示
+<!-- trellis-session: v=2 fp=b37c62517880500d -->
+
+**Date**: 2026-09-11
+**Task**: 修正主按钮统一 SVG 与绘制态指示
+**Branch**: `theme`
+
+### Summary
+
+按人工测试反馈恢复原深色渐变，主图标使用一个SVG内部属性动画；浅色保持真实整笔色，非绘制模式回到默认中性。完整ARM64构建、无窗口测试和150组离屏状态通过。未提交commit、未启动GUI。
+
+### Main Changes
+
+- 统一Logo实例/资源、独立外观缓存快照、恢复Pen/Shape门控与原换色动画；保留其余Bar材质与原draw stash。
 - 如故障用户仍遇到卡顿，依据现有日志中的[UI3Diag]分段信息判断主导阶段；真实Scene hooks/GUI效果仍待运行反馈。
 
 ## Session 19: 触摸橡皮擦光标残留修复与验收
@@ -528,6 +561,8 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 
 ### Testing
 
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过，最终增量22.9秒；全部--no-window测试通过。
+- [OK] 150组生产属性离屏检查通过；36组原Dark SVG节点合成逐像素一致，旧双位图量化差异有界；30个普通SVG不变。
 - [OK] InkeysRepo.sln Debug|ARM64、InkeysHeadlessTests --no-window、PptCOM.Tests、Draw3 hidden含真实保存/冷恢复/重排、Bar/PageControl offscreen、i18n、diff check均exit0。
 
 ### Status
@@ -536,6 +571,7 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 
 ### Next Steps
 
+- 使用Build/LogoIndicatorFix/ARM64/Debug/Inkeys.exe进行用户人工验收；当前修正未提交。
 - 按任务research/manual-validation.md进行真实Office/WPS、键盘/硬件、多屏/任务栏和CPU/端到端延迟验收；当前NOT VERIFIED，任务保留in_progress，不提前归档。
 
 

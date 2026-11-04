@@ -2,9 +2,13 @@
 #include "imfluent/imfluent_internal.h"
 #include "Setting.Theme.h"
 #include "imgui/imgui_internal.h"
+#include "imgui/imgui_impl_dx11.h"
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <vector>
+#include <utility>
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -95,6 +99,228 @@ namespace Inkeys::UI::Setting::Design
 
 		float rowAnimationDelta = 0.0F, rowAnimationRate = 1.0F;
 		bool rowAnimationsEnabled = false;
+		PageMotionState* activePageMotion = nullptr;
+		ImGuiWindow* pageMotionOwner = nullptr;
+		int pageMotionDepth = 0, conditionalMotionDepth = 0;
+		bool pageMotionUserScroll = false;
+		std::vector<PageBlockScope> cardMotionScopes;
+		std::vector<ImGuiID> conditionalMotionParents;
+		// 本帧并入父列表的child命令index区间；外层块位移时同步平移这些原child裁剪。
+		struct MergedDrawRange { ImDrawList* list; unsigned begin, end; };
+		std::vector<MergedDrawRange> mergedDrawRanges;
+		struct TrackedBelowPopup { std::uintptr_t context = 0; ImGuiID id = 0; int frame = -1; };
+		TrackedBelowPopup trackedBelowPopup;
+
+		void CloseBelowPopup(ImGuiID id, bool restoreFocus = true)
+		{
+			if (!id) return;
+			for (int level = 0; level < GImGui->OpenPopupStack.Size; ++level)
+				if (GImGui->OpenPopupStack[level].PopupId == id)
+				{
+					const auto* popup = GImGui->OpenPopupStack[level].Window;
+					ImGui::ClosePopupToLevel(level, restoreFocus && GImGui->NavWindow == popup);
+					break;
+				}
+		}
+
+		float MotionEase(float progress)
+		{
+			const float remaining = 1.0F - std::clamp(progress, 0.0F, 1.0F);
+			return 1.0F - remaining * remaining * remaining;
+		}
+
+		bool MotionInput(const ImVec4& bounds, bool pointer)
+		{
+			const auto& io = ImGui::GetIO();
+			const bool inside = ImRect({ bounds.x, bounds.y }, { bounds.z, bounds.w }).Contains(io.MousePos);
+			if (pointer && inside && (io.MouseWheel != 0 || io.MouseWheelH != 0
+				|| ImGui::IsMouseClicked(0) || ImGui::IsMouseClicked(1)
+				|| ImGui::IsMouseReleased(0) || ImGui::IsMouseReleased(1))) return true;
+			for (auto key : { ImGuiKey_Tab, ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
+				ImGuiKey_UpArrow, ImGuiKey_DownArrow, ImGuiKey_LeftArrow, ImGuiKey_RightArrow,
+				ImGuiKey_PageUp, ImGuiKey_PageDown, ImGuiKey_Home, ImGuiKey_End })
+				if (ImGui::IsKeyPressed(key)) return true;
+			return io.InputQueueCharacters.Size > 0;
+		}
+
+		void OffsetMotionDraw(ImGuiWindow* window, int firstVertex, float offset)
+		{
+			if (offset == 0.0F) return;
+			for (int index = firstVertex; index < window->DrawList->VtxBuffer.Size; ++index)
+				window->DrawList->VtxBuffer[index].pos.y += offset;
+		}
+
+		void OffsetMotionClip(ImDrawCmd& command, float offset)
+		{
+			command.ClipRect.y = (std::max)(pageMotionOwner->ClipRect.Min.y, command.ClipRect.y + offset);
+			command.ClipRect.w = (std::min)(pageMotionOwner->ClipRect.Max.y, command.ClipRect.w + offset);
+			command.ClipRect.w = (std::max)(command.ClipRect.y, command.ClipRect.w);
+		}
+
+		void OffsetMotionChild(ImGuiWindow* window, float offset)
+		{
+			OffsetMotionDraw(window, 0, offset);
+			for (auto& command : window->DrawList->CmdBuffer)
+				if (!command.UserCallback) OffsetMotionClip(command, offset);
+			for (auto* child : window->DC.ChildWindows)
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) OffsetMotionChild(child, offset);
+		}
+
+		void OffsetMergedClips(ImDrawList* list, int firstIndex, float offset)
+		{
+			if (offset == 0.0F) return;
+			for (const auto& range : mergedDrawRanges)
+				if (range.list == list && range.begin >= static_cast<unsigned>(firstIndex))
+					for (auto& command : list->CmdBuffer)
+						if (!command.UserCallback && command.IdxOffset >= range.begin && command.IdxOffset < range.end)
+							OffsetMotionClip(command, offset);
+		}
+
+		// 无整块合成backend时的退路；透明度为0时逐顶点结果与整块合成完全等价。
+		void FadeMotionDraw(ImDrawList* list, int firstVertex, float alpha)
+		{
+			for (int index = firstVertex; index < list->VtxBuffer.Size; ++index)
+			{
+				auto& vertex = list->VtxBuffer[index];
+				const ImU32 opacity = static_cast<ImU32>(std::round((vertex.col >> IM_COL32_A_SHIFT) * alpha));
+				vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (opacity << IM_COL32_A_SHIFT);
+			}
+		}
+
+		void FadeMotionChild(ImGuiWindow* window, float alpha)
+		{
+			FadeMotionDraw(window->DrawList, 0, alpha);
+			for (auto* child : window->DC.ChildWindows)
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) FadeMotionChild(child, alpha);
+		}
+
+		// 按ImGui实际提交顺序（自身列表后接各child）把child几何并入块所在列表，原child列表清空不再提交。
+		void MergeChildDraw(ImDrawList* target, ImGuiWindow* child)
+		{
+			if (!child->Active || child->Hidden) return;
+			auto* source = child->DrawList;
+			if (source->_Splitter._Count > 1) source->ChannelsMerge();
+			const unsigned vertexBase = target->VtxBuffer.Size, indexBase = target->IdxBuffer.Size;
+			const int dataBase = target->_CallbacksDataBuf.Size;
+			for (auto command : source->CmdBuffer)
+			{
+				if (command.ElemCount == 0 && !command.UserCallback) continue;
+				command.VtxOffset += vertexBase; command.IdxOffset += indexBase;
+				if (command.UserCallback && command.UserCallbackDataSize > 0) command.UserCallbackDataOffset += dataBase;
+				target->CmdBuffer.push_back(command);
+			}
+			auto append = [](auto& destination, const auto& values) {
+				const int size = destination.Size;
+				destination.resize(size + values.Size);
+				if (values.Size) std::memcpy(destination.Data + size, values.Data, values.Size * sizeof(values.Data[0]));
+			};
+			append(target->VtxBuffer, source->VtxBuffer); append(target->IdxBuffer, source->IdxBuffer);
+			append(target->_CallbacksDataBuf, source->_CallbacksDataBuf);
+			if (target->IdxBuffer.Size > static_cast<int>(indexBase))
+				mergedDrawRanges.push_back({ target, indexBase, static_cast<unsigned>(target->IdxBuffer.Size) });
+			source->CmdBuffer.resize(0); source->VtxBuffer.resize(0); source->IdxBuffer.resize(0);
+			source->_CallbacksDataBuf.resize(0);
+			source->_CmdHeader.VtxOffset = 0; source->_VtxCurrentIdx = 0;
+			source->AddDrawCmd();
+			source->_VtxWritePtr = source->VtxBuffer.Data; source->_IdxWritePtr = source->IdxBuffer.Data;
+			for (auto* nested : child->DC.ChildWindows) MergeChildDraw(target, nested);
+		}
+
+		// 把块的父列表区间及其本帧child树包进透明度组：backend先按原alpha合成整块，再整体乘opacity一次。
+		void CommitOpacityGroup(ImGuiWindow* window, int firstIndex, int firstVertex, int firstChild, float opacity)
+		{
+			if (!std::isfinite(opacity) || opacity >= 1.0F) return;
+			opacity = (std::max)(0.0F, opacity);
+			auto* list = window->DrawList;
+			if (opacity <= 0.0F || list->_Splitter._Count > 1 || !ImGui_ImplDX11_SupportsOpacityGroups()
+				|| !(ImGui::GetIO().BackendFlags & ImGuiBackendFlags_RendererHasVtxOffset))
+			{
+				FadeMotionDraw(list, firstVertex, opacity);
+				for (int index = firstChild; index < window->DC.ChildWindows.Size; ++index)
+				{
+					auto* child = window->DC.ChildWindows[index];
+					if (child->Active && child->LastFrameActive == GImGui->FrameCount) FadeMotionChild(child, opacity);
+				}
+				return;
+			}
+			const int vertices = list->VtxBuffer.Size;
+			for (int index = firstChild; index < window->DC.ChildWindows.Size; ++index) MergeChildDraw(list, window->DC.ChildWindows[index]);
+			auto& commands = list->CmdBuffer;
+			const auto first = static_cast<unsigned>(firstIndex);
+			// 前一兄弟组的结束哨兵可能与本组起点同index，必须留在开始哨兵之前。
+			int at = commands.Size;
+			while (at > 0 && (commands[at - 1].IdxOffset > first
+				|| (commands[at - 1].IdxOffset == first && commands[at - 1].UserCallback != ImGui_ImplDX11_OpacityGroupEnd))) --at;
+			if (at > 0 && !commands[at - 1].UserCallback && commands[at - 1].IdxOffset + commands[at - 1].ElemCount > first)
+			{
+				// 块从命令中途开始时按真实index边界拆分，前段仍在组外。
+				ImDrawCmd tail = commands[at - 1];
+				commands[at - 1].ElemCount = first - tail.IdxOffset;
+				tail.ElemCount -= commands[at - 1].ElemCount; tail.IdxOffset = first;
+				commands.insert(commands.Data + at, tail);
+			}
+			std::uint32_t bits = 0; std::memcpy(&bits, &opacity, sizeof(bits));
+			ImDrawCmd marker = commands[(std::min)(at, commands.Size - 1)];
+			marker.ElemCount = 0; marker.IdxOffset = first;
+			marker.UserCallback = ImGui_ImplDX11_OpacityGroupBegin;
+			marker.UserCallbackData = reinterpret_cast<void*>(static_cast<std::uintptr_t>(bits));
+			marker.UserCallbackDataSize = 0; marker.UserCallbackDataOffset = -1;
+			commands.insert(commands.Data + at, marker);
+			marker.UserCallback = ImGui_ImplDX11_OpacityGroupEnd; marker.IdxOffset = list->IdxBuffer.Size;
+			if (!commands.back().UserCallback && commands.back().ElemCount == 0) commands.back() = marker;
+			else commands.push_back(marker);
+			if (list->VtxBuffer.Size != vertices) { list->_CmdHeader.VtxOffset = list->VtxBuffer.Size; list->_VtxCurrentIdx = 0; }
+			list->AddDrawCmd();
+			list->_VtxWritePtr = list->VtxBuffer.Data + list->VtxBuffer.Size;
+			list->_IdxWritePtr = list->IdxBuffer.Data + list->IdxBuffer.Size;
+		}
+
+		void ClipConditionalDraw(ImGuiWindow* window, int firstIndex, float top, float bottom)
+		{
+			auto& commands = window->DrawList->CmdBuffer;
+			for (int index = 0; index < commands.Size; ++index)
+			{
+				const auto command = commands[index];
+				if (command.ElemCount == 0 || command.IdxOffset + command.ElemCount <= static_cast<unsigned>(firstIndex)) continue;
+				if (command.IdxOffset < static_cast<unsigned>(firstIndex))
+				{
+					// PopClipRect可能合并相邻命令；按真实index边界拆分，不能连带裁掉前一块。
+					ImDrawCmd tail = command;
+					commands[index].ElemCount = static_cast<unsigned>(firstIndex) - command.IdxOffset;
+					tail.IdxOffset = static_cast<unsigned>(firstIndex);
+					tail.ElemCount -= commands[index].ElemCount;
+					commands.insert(commands.Data + index + 1, tail);
+					++index;
+				}
+				auto& clip = commands[index].ClipRect;
+				clip.y = (std::max)(clip.y, top);
+				clip.w = (std::max)(clip.y, (std::min)(clip.w, bottom));
+			}
+		}
+
+		void ClipConditionalChild(ImGuiWindow* window, float top, float bottom)
+		{
+			ClipConditionalDraw(window, 0, top, bottom);
+			for (auto* child : window->DC.ChildWindows)
+				if (child->Active && child->LastFrameActive == GImGui->FrameCount) ClipConditionalChild(child, top, bottom);
+		}
+
+		void CompensateConditionalHeight(ImGuiWindow* window, float top, float previous, float current)
+		{
+			const float delta = current - previous;
+			// 贴底补偿已在宿主Begin之前应用，不能再次按各块累加。
+			if (activePageMotion->pinnedBottom) return;
+			if (pageMotionUserScroll || delta == 0.0F || top + (std::max)(current, previous) > pageMotionOwner->ClipRect.Min.y) return;
+			// 变化完全在视口上方时同步重基准后续布局，避免等下一帧补scroll造成抖动。
+			pageMotionOwner->Scroll.y = (std::max)(0.0F, pageMotionOwner->Scroll.y + delta);
+			for (auto* ancestor = window; ancestor; ancestor = ancestor->ParentWindow)
+			{
+				ancestor->DC.CursorPos.y -= delta; ancestor->DC.CursorMaxPos.y -= delta;
+				ancestor->DC.CursorStartPos.y -= delta; ancestor->DC.CursorPosPrevLine.y -= delta;
+				if (ancestor == pageMotionOwner) break;
+			}
+		}
+
 
 		std::string stateOn = "On";
 		std::string stateOff = "Off";
@@ -217,6 +443,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void Text(const char* text, ImFluentTextStyle style, ImU32 color)
 	{
+		PageBlockScope motion("##text");
 		const ImVec2 position = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		const float height = TextHeight(text, width, style);
@@ -228,25 +455,26 @@ namespace Inkeys::UI::Setting::Design
 	{
 		float InfoTextInset(ImFluentTextStyle style) { return Pixels(Metrics(style).lineHeight + 6.0F); }
 
-		float InfoTextHeight(const char* text, float widthPixels, ImFluentTextStyle style)
+		float InfoTextHeight(const char* text, float widthPixels, ImFluentTextStyle style, bool showIcon = true)
 		{
 			if (!text || !*text) return 0.0F;
 			return (std::max)(Pixels(Metrics(style).lineHeight),
-				TextHeight(text, (std::max)(1.0F, widthPixels - InfoTextInset(style)), style));
+				TextHeight(text, (std::max)(1.0F, widthPixels - (showIcon ? InfoTextInset(style) : 0.0F)), style));
 		}
 
-		void InfoTextAt(const char* text, ImVec2 position, float widthPixels, ImFluentTextStyle style)
+		void InfoTextAt(const char* text, ImVec2 position, float widthPixels, ImFluentTextStyle style, bool showIcon = true)
 		{
 			if (!text || !*text) return;
 			const auto metrics = Metrics(style);
-			const float slot = Pixels(metrics.lineHeight), inset = InfoTextInset(style);
-			ImFluent::DrawIcon("\uf167", position, { position.x + slot, position.y + slot }, metrics.size, Accent);
+			const float slot = Pixels(metrics.lineHeight), inset = showIcon ? InfoTextInset(style) : 0.0F;
+			if (showIcon) ImFluent::DrawIcon("\uf167", position, { position.x + slot, position.y + slot }, metrics.size, Accent);
 			TextAt(text, { position.x + inset, position.y }, (std::max)(1.0F, widthPixels - inset), style, TextPrimary);
 		}
 	}
 
 	void InfoText(const char* text, ImFluentTextStyle style)
 	{
+		PageBlockScope motion("##info-text");
 		if (!text || !*text) return;
 		const auto position = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
@@ -299,7 +527,7 @@ namespace Inkeys::UI::Setting::Design
 			bool settled;
 			ImVec4 previousColors[3];
 		public:
-			explicit ScrollbarStyleScope(ImGuiWindow* existing, bool input = true, bool settleLayout = false)
+			explicit ScrollbarStyleScope(ImGuiWindow* existing, bool input = true, bool settleLayout = false, float visualAlpha = 1.0F)
 				: window(existing), phase(0.0F), settled(settleLayout)
 			{
 				previousSize = ImGui::GetStyle().ScrollbarSize;
@@ -340,7 +568,7 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::GetStyle().ScrollbarPadding = Pixels(ScrollbarPadding) * phase;
 				for (auto color : { ImGuiCol_ScrollbarGrab, ImGuiCol_ScrollbarGrabHovered, ImGuiCol_ScrollbarGrabActive })
 				{
-					ImVec4 value = ImGui::GetStyle().Colors[color]; value.w *= phase;
+					ImVec4 value = ImGui::GetStyle().Colors[color]; value.w *= phase * std::clamp(visualAlpha, 0.0F, 1.0F);
 					ImGui::GetStyle().Colors[color] = value;
 				}
 			}
@@ -492,7 +720,7 @@ namespace Inkeys::UI::Setting::Design
 		if (owner) CaptureDrag(owner);
 	}
 
-	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop, bool settleScrollbarLayout)
+	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop, bool settleScrollbarLayout, bool stableBodyLayout, float visualAlpha, PageMotionState* motion)
 	{
 		auto* existing=ChildWindow(id);
 		if (resetToTop && existing)
@@ -505,11 +733,55 @@ namespace Inkeys::UI::Setting::Design
 			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-rebase"),1);
 		}
 		if (resetToTop) ImGui::SetNextWindowScroll({0,0});
+		// 正文宽度是当前布局预算，不继承AutoResize子页上一帧的旧宽度。
+		const float bodyContentWidth = (std::max)(0.0F, ImTrunc(size.x) - ImGui::GetStyle().WindowPadding.x * 2.0F);
+		if (stableBodyLayout) ImGui::SetNextWindowContentSize({bodyContentWidth, 0});
+		if (stableBodyLayout && motion && existing)
+		{
+			auto& state = *motion;
+			const bool userScroll = MotionInput(state.bounds, true) || ImGui::IsAnyMouseDown()
+				|| ImGui::GetIO().MouseWheel != 0 || ImGui::GetIO().MouseWheelH != 0;
+			if (userScroll || resetToTop) state.pinnedBottom = false;
+			const bool resized = state.owner == existing->ID && (state.viewport.x != ImTrunc(size.x) || state.viewport.y != ImTrunc(size.y));
+			if (resized)
+			{
+				state.contentHeight = state.predictedDelta = 0; state.pinnedBottom = false;
+				for (auto& [key, condition] : state.conditions)
+					if (condition.generation == state.generation)
+					{ condition.reveal.Reset(condition.reveal.target); condition.height = condition.occupied = 0; }
+			}
+			if (state.owner == existing->ID && state.contentHeight > 0 && !resized)
+			{
+				// AutoResizeY的native测高晚一帧；使用已提交真实内容和本帧条件增量消除贴底漂移。
+				ImGui::SetNextWindowContentSize({bodyContentWidth, (std::max)(0.0F, state.contentHeight + state.predictedDelta)});
+				if (state.pinnedBottom && !userScroll)
+					ImGui::SetNextWindowScroll({0, (std::max)(0.0F, state.contentHeight + state.predictedDelta
+							+ existing->WindowPadding.y * 2.0F - existing->InnerRect.GetHeight())});
+			}
+		}
 		auto* parent = ImGui::GetCurrentWindow();
 		settleScrollbarLayout |= parent->StateStorage.GetInt(WindowStateId(parent, "##scrollbar-settled-frame"), -2) == GImGui->FrameCount;
-		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs), settleScrollbarLayout);
+		ScrollbarStyleScope scrollbar(existing, !(flags & ImGuiWindowFlags_NoMouseInputs), settleScrollbarLayout || stableBodyLayout, visualAlpha);
 		const bool visible = ImGui::BeginChild(id, size, childFlags, flags);
-		scrollbar.Finish(ImGui::GetCurrentWindow());
+		auto* window = ImGui::GetCurrentWindow();
+		scrollbar.Finish(window);
+		if (stableBodyLayout && window->ScrollbarY)
+		{
+			// 轨道占用现有右侧gutter，不再随出现/消失挤压正文；须在任何内容item提交前执行一次。
+			const float compensation = (std::min)(window->ScrollbarSizes.x, window->WindowPadding.x);
+			window->InnerRect.Max.x += compensation;
+			window->ScrollMax.x = (std::max)(0.0F, window->ScrollMax.x - compensation);
+			const float previousScroll = window->Scroll.x;
+			window->Scroll.x = (std::min)(window->Scroll.x, window->ScrollMax.x);
+			const float rebase = previousScroll - window->Scroll.x;
+			// native内容范围也须使用同一gutter预算，否则看不到横条仍能被水平滚轮移走8DIP。
+			window->WorkRect.Min.x += rebase; window->WorkRect.Max.x += rebase;
+			window->ParentWorkRect.Min.x += rebase; window->ParentWorkRect.Max.x += rebase;
+			window->ContentRegionRect.Min.x += rebase; window->ContentRegionRect.Max.x += rebase;
+			window->DC.CursorStartPos.x += rebase; window->DC.CursorPos.x += rebase;
+			window->DC.CursorMaxPos.x += rebase; window->DC.CursorPosPrevLine.x += rebase;
+			window->DC.Indent.x += rebase;
+		}
 		return visible;
 	}
 
@@ -540,6 +812,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void PageHeader(const char* title, const char* description)
 	{
+		PageBlockScope motion("##page-header");
 		Text(title, ImFluentTextStyle_Title);
 		if (description && *description)
 			Text(description, ImFluentTextStyle_Body, TextSecondary);
@@ -547,6 +820,7 @@ namespace Inkeys::UI::Setting::Design
 
 	void SectionHeader(const char* title)
 	{
+		PageBlockScope motion("##section-header", true);
 		AdvanceGap(SectionGap);
 		Text(title, ImFluentTextStyle_BodyStrong);
 		AdvanceGap(8.0F);
@@ -568,17 +842,317 @@ namespace Inkeys::UI::Setting::Design
 		return (std::max)(72.0F, ControlTextWidth(label) / Pixels(1.0F) + 32.0F);
 	}
 
+	namespace
+	{
+		float PredictConditionalHeight(PageMotionState& state, ImGuiID key)
+		{
+			auto& condition = state.conditions.at(key);
+			if (condition.predictionFrame == ImGui::GetFrameCount()) return condition.predicted;
+			float full = condition.height;
+			for (auto& [childKey, child] : state.conditions)
+				if (child.parent == key && child.generation == state.generation && child.frame == ImGui::GetFrameCount() - 1)
+					full += PredictConditionalHeight(state, childKey) - child.occupied;
+			condition.predicted = std::round((std::max)(0.0F, full) * condition.reveal.value);
+			condition.predictionFrame = ImGui::GetFrameCount();
+			return condition.predicted;
+		}
+	}
+
+	void ConfigurePageMotion(PageMotionState& state, std::uint64_t routeKey, bool opening, bool reset, std::uint64_t layoutRevision, bool exiting)
+	{
+		const auto context = reinterpret_cast<std::uintptr_t>(ImGui::GetCurrentContext());
+		if (state.context != context) { state = {}; state.context = context; }
+		const bool newFrame = state.frame != ImGui::GetFrameCount();
+		const auto& io = ImGui::GetIO();
+		const auto atlas = reinterpret_cast<std::uintptr_t>(io.Fonts);
+		const auto font = reinterpret_cast<std::uintptr_t>(io.Fonts->Fonts.empty() ? nullptr : io.Fonts->Fonts[0]);
+		const float scale = ImGui::GetStyle().FontScaleDpi;
+		const bool layoutChanged = state.initialized && (state.layoutRevision != layoutRevision
+			|| state.layoutAtlas != atlas || state.layoutFont != font || state.layoutScale != scale);
+		if (layoutChanged)
+		{
+			// 字体/语言/倍率只重测几何，不制造新的导航或沿用旧高度预测。
+			state.contentHeight = 0; state.pinnedBottom = false;
+			for (auto& [key, condition] : state.conditions)
+			{ condition.reveal.Reset(condition.reveal.target); condition.height = condition.occupied = 0; }
+		}
+		state.layoutRevision = layoutRevision; state.layoutAtlas = atlas; state.layoutFont = font; state.layoutScale = scale;
+		const bool changed = !state.initialized || state.route != routeKey || reset;
+		if (changed)
+		{
+			state.route = routeKey; ++state.generation; state.initialized = true;
+			state.elapsed = rowAnimationsEnabled && !opening ? 0.0F : PageMotionTiming::Total;
+			state.hadBlocks = false; state.owner = 0; state.contentHeight = 0; state.pinnedBottom = false;
+			state.blockProgress.clear();
+		}
+		else if (!exiting && state.frame != ImGui::GetFrameCount() && state.hadBlocks)
+			state.elapsed = (std::min)(PageMotionTiming::Total, state.elapsed + rowAnimationDelta * rowAnimationRate);
+		// 开屏结束只恢复页面，不再派发一轮逐块入场；取消输入不消费原始事件。
+		if (opening || !rowAnimationsEnabled || (!changed && !exiting && MotionInput(state.bounds, true))) state.elapsed = PageMotionTiming::Total;
+		state.opening = opening; state.exiting = exiting; state.frame = ImGui::GetFrameCount(); state.visibleOrder = 0;
+		state.navigationFrame = changed; state.lastBlockTop = -1.0e20F;
+		state.blockOccurrences.clear(); mergedDrawRanges.clear();
+		if (state.elapsed >= PageMotionTiming::FadeEnd) state.blockProgress.clear();
+		state.predictedDelta = 0.0F;
+		// 先推进已登记的条件高度，再开始正文布局；首个目标变化帧只登记目标和测高。
+		for (auto& [key, condition] : state.conditions)
+			if (newFrame && !layoutChanged && condition.generation == state.generation && condition.frame == ImGui::GetFrameCount() - 1)
+				condition.reveal.Advance(exiting ? 0.0F : rowAnimationDelta, 0.180F / rowAnimationRate, rowAnimationsEnabled && !opening);
+		for (auto& [key, condition] : state.conditions)
+			if (condition.parent == 0 && condition.generation == state.generation && condition.frame == ImGui::GetFrameCount() - 1)
+				state.predictedDelta += PredictConditionalHeight(state, key) - condition.occupied;
+	}
+
+	void ApplyGroupOpacity(ImGuiWindow* window, float opacity)
+	{
+		if (window) CommitOpacityGroup(window, 0, 0, 0, opacity);
+	}
+
+	void SuppressDepartingPageInput(const PageMotionState& state)
+	{
+		auto* owner = ImGui::FindWindowByID(state.owner);
+		if (!owner) return;
+		auto belongs = [owner](ImGuiWindow* window) {
+			for (; window; window = window->ParentWindow) if (window == owner) return true;
+			return false;
+		};
+		auto& context = *GImGui;
+		// 只撤销旧正文的输入归属，不把控件变灰，也不影响侧栏和标题栏操作。
+		if (belongs(context.ActiveIdWindow)) ImGui::ClearActiveID();
+		// NewFrame的hover仍可能来自上一帧，首个淡出帧也不能重新取得旧Slider。
+		if (belongs(context.HoveredWindow)) context.HoveredWindow = nullptr;
+		if (belongs(context.HoveredWindowUnderMovingWindow)) context.HoveredWindowUnderMovingWindow = nullptr;
+		// 滚轮/导航可能已在NewFrame排队，只清理旧正文及其上一帧实际子树。
+		auto clearScrollTargets = [](auto&& self, ImGuiWindow* window) -> void {
+			window->ScrollTarget = { FLT_MAX, FLT_MAX };
+			for (auto* child : window->DC.ChildWindows) self(self, child);
+		};
+		clearScrollTargets(clearScrollTargets, owner);
+		if (belongs(context.NavWindow))
+		{
+			context.NavId = context.NavActivateId = context.NavActivateDownId = 0;
+			context.NavActivatePressedId = context.NavNextActivateId = 0;
+		}
+	}
+
+	void ResumeSkippedPageOpening()
+	{
+		// 首次实际布局不容纳字标时改播普通页面入场，用户主动取消仍由原开屏落定。
+		if (activePageMotion && activePageMotion->opening)
+		{
+			activePageMotion->opening = false;
+			activePageMotion->elapsed = 0.0F;
+		}
+	}
+
+	float PageScrollbarAlpha(const PageMotionState& state)
+	{
+		// 滑块随正文入场渐显；离页时由调用方叠加同一退场透明度。
+		return rowAnimationsEnabled && !state.opening ? MotionEase(state.elapsed / PageMotionTiming::FadeEnd) : 1.0F;
+	}
+
+	void BeginPageMotion(PageMotionState& state)
+	{
+		IM_ASSERT(activePageMotion == nullptr);
+		activePageMotion = &state; pageMotionOwner = ImGui::GetCurrentWindow(); pageMotionDepth = 0;
+		const auto bounds = pageMotionOwner->Rect();
+		// 命中范围包含尚未可见的native轨道，按下先落定再由同一原生控件处理。
+		state.bounds = { bounds.Min.x, bounds.Min.y, bounds.Max.x, bounds.Max.y };
+		if (!state.navigationFrame && !state.exiting && MotionInput(state.bounds, true)) state.elapsed = PageMotionTiming::Total;
+		pageMotionUserScroll = ImGui::GetIO().MouseWheel != 0.0F || ImGui::IsAnyMouseDown()
+			|| MotionInput(state.bounds, false);
+		const bool atBottom = pageMotionOwner->ScrollMax.y > 0.0F
+			&& std::abs(pageMotionOwner->Scroll.y - pageMotionOwner->ScrollMax.y) <= Pixels(1.0F);
+		if (pageMotionUserScroll) state.pinnedBottom = false;
+		else if (atBottom) state.pinnedBottom = true;
+	}
+
+	void EndPageMotion()
+	{
+		IM_ASSERT(pageMotionDepth == 0 && conditionalMotionDepth == 0 && cardMotionScopes.empty());
+		float bottom = pageMotionOwner->DC.CursorStartPos.y;
+		bool measuredChild = false;
+		for (auto* child : pageMotionOwner->DC.ChildWindows)
+			if (child->Active && child->LastFrameActive == GImGui->FrameCount && (child->ChildFlags & ImGuiChildFlags_AutoResizeY))
+			{
+				bottom = (std::max)(bottom, child->DC.CursorMaxPos.y + child->WindowPadding.y);
+				measuredChild = true;
+			}
+		if (!measuredChild) bottom = pageMotionOwner->DC.CursorMaxPos.y;
+		activePageMotion->contentHeight = (std::max)(0.0F, bottom - pageMotionOwner->DC.CursorStartPos.y);
+		activePageMotion->owner = pageMotionOwner->ID;
+		activePageMotion->viewport = pageMotionOwner->Size;
+		// 名称控件离页/隐藏后不再提交，不能让旧弹层保留输入归属。
+		if (trackedBelowPopup.context == reinterpret_cast<std::uintptr_t>(GImGui)
+			&& trackedBelowPopup.frame != GImGui->FrameCount)
+		{
+			CloseBelowPopup(trackedBelowPopup.id, false);
+			trackedBelowPopup = {};
+		}
+		activePageMotion = nullptr; pageMotionOwner = nullptr;
+	}
+
+	PageBlockScope::PageBlockScope(const char* id, bool section) : section_(section)
+	{
+		if (!activePageMotion || pageMotionDepth != 0) return;
+		state_ = activePageMotion; window_ = ImGui::GetCurrentWindow(); id_ = window_->GetID(id);
+		origin_ = ImGui::GetCursorScreenPos(); firstVertex_ = window_->DrawList->VtxBuffer.Size;
+		firstIndex_ = window_->DrawList->IdxBuffer.Size; firstChild_ = window_->DC.ChildWindows.Size;
+		++pageMotionDepth;
+	}
+
+	PageBlockScope::PageBlockScope(PageBlockScope&& other) noexcept
+		: state_(std::exchange(other.state_, nullptr)), window_(other.window_), origin_(other.origin_),
+		firstVertex_(other.firstVertex_), firstIndex_(other.firstIndex_), firstChild_(other.firstChild_),
+		opacity_(other.opacity_), id_(other.id_), section_(other.section_) {}
+
+	PageBlockScope::~PageBlockScope() { Finish(); }
+
+	void PageBlockScope::Finish()
+	{
+		if (!state_) return;
+		--pageMotionDepth;
+		const float bottom = (std::max)(origin_.y, window_->DC.CursorPos.y);
+		const auto& clip = pageMotionOwner->ClipRect;
+		if (!window_->SkipItems && origin_.y < clip.Max.y && bottom > clip.Min.y)
+		{
+			const int order = std::abs(origin_.y - state_->lastBlockTop) <= Pixels(1.0F)
+				? state_->lastBlockOrder : state_->visibleOrder;
+			const float delay = (std::min)(PageMotionTiming::MaxDelay, order * PageMotionTiming::Stagger);
+			if (!section_) state_->visibleOrder = (std::max)(state_->visibleOrder, order + 1);
+			state_->lastBlockTop = origin_.y; state_->lastBlockOrder = order;
+			state_->hadBlocks = true;
+			const bool animated = rowAnimationsEnabled && !state_->opening;
+			float position = animated ? MotionEase((state_->elapsed - delay) / PageMotionTiming::Move) : 1.0F;
+			const float fade = std::clamp((state_->elapsed - delay) / PageMotionTiming::Fade, 0.0F, 1.0F);
+			// 透明度单独走平滑S曲线，避免位移到位时文字也瞬间变为全实。
+			float alpha = animated ? fade * fade * (3.0F - 2.0F * fade) : 1.0F;
+			if (state_->elapsed < PageMotionTiming::FadeEnd && !state_->opening)
+			{
+				const int occurrence = state_->blockOccurrences[id_]++;
+				const ImGuiID key = ImHashData(&occurrence, sizeof(occurrence), id_);
+				auto& previous = state_->blockProgress[key];
+				// 异步提示插到前方时顺序号会改变，同一可见块不能因此向后退或重新变淡。
+				alpha = previous.opacity = (std::max)(previous.opacity, alpha);
+				position = previous.position = (std::max)(previous.position, position);
+			}
+			const float offset = Pixels(12.0F) * (1.0F - position);
+			// 仅平移当前块的新顶点及其本帧 child；真实占位与事件保持唯一终态布局。
+			if (offset != 0.0F)
+			{
+				OffsetMotionDraw(window_, firstVertex_, offset);
+				OffsetMergedClips(window_->DrawList, firstIndex_, offset);
+				for (int index = firstChild_; index < window_->DC.ChildWindows.Size; ++index)
+				{
+					auto* child = window_->DC.ChildWindows[index];
+					if (child->Active && child->LastFrameActive == GImGui->FrameCount) OffsetMotionChild(child, offset);
+				}
+			}
+			// 位移完成后整块合成一次；同范围的条件显隐透明度已乘入，不重复嵌套。
+			CommitOpacityGroup(window_, firstIndex_, firstVertex_, firstChild_, alpha * opacity_);
+		}
+		mergedDrawRanges.clear();
+		state_ = nullptr;
+	}
+
+	namespace
+	{
+		ConditionalMotionState* PrepareConditionalMotion(ImGuiID key, bool visible)
+		{
+			if (!activePageMotion) return nullptr;
+			auto& condition = activePageMotion->conditions[key];
+			if (condition.generation != activePageMotion->generation)
+			{
+				condition.generation = activePageMotion->generation;
+				condition.reveal.Reset(visible ? 1.0F : 0.0F); condition.height = condition.occupied = 0.0F;
+			}
+			condition.reveal.Target(visible ? 1.0F : 0.0F);
+			if (!rowAnimationsEnabled || activePageMotion->opening) condition.reveal.Reset(visible ? 1.0F : 0.0F);
+			return &condition;
+		}
+	}
+
+	ConditionalBlock::ConditionalBlock(const char* id, bool visible) : block_(id), visible_(visible)
+	{
+		if (!activePageMotion) { render_ = visible; return; }
+		window_ = ImGui::GetCurrentWindow(); accountHeight_ = conditionalMotionDepth == 0;
+		const ImGuiID local = window_->GetID(id);
+		const ImGuiID key = ImHashData(&activePageMotion->route, sizeof(activePageMotion->route), local);
+		motion_ = PrepareConditionalMotion(key, visible);
+		motion_->parent = conditionalMotionParents.empty() ? 0 : conditionalMotionParents.back();
+		motion_->frame = ImGui::GetFrameCount();
+		render_ = visible || motion_->reveal.value > 0.0F;
+		origin_ = ImGui::GetCursorScreenPos();
+		if (!render_)
+		{
+			if (accountHeight_ && motion_->height > 0.0F) CompensateConditionalHeight(window_, origin_.y, motion_->occupied, 0.0F);
+			motion_->occupied = 0.0F;
+			return;
+		}
+		previousMaximum_ = window_->DC.CursorMaxPos;
+		firstChild_ = window_->DC.ChildWindows.Size; firstVertex_ = window_->DrawList->VtxBuffer.Size;
+		firstIndex_ = window_->DrawList->IdxBuffer.Size;
+		++conditionalMotionDepth; conditionalMotionParents.push_back(key);
+		// 保留原条件分支的真实游标布局；额外EndGroup会把已裁剪子块的旧Rect和间距重新算入父高度。
+		ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0F);
+		ImGui::BeginDisabled(!visible || motion_->reveal.value < 0.9999F); disabled_ = true;
+	}
+
+	const char* ConditionalBlock::RetainText(const char* key, const char* current)
+	{
+		if (!motion_) return current ? current : "";
+		auto& text = motion_->text[ImHashStr(key)];
+		if (visible_) text = current ? current : "";
+		return text.c_str();
+	}
+
+	ConditionalBlock::~ConditionalBlock()
+	{
+		if (!motion_ || !render_) return;
+		if (disabled_) { ImGui::EndDisabled(); ImGui::PopStyleVar(); }
+		--conditionalMotionDepth; conditionalMotionParents.pop_back();
+		const float fullHeight = (std::max)(0.0F, window_->DC.CursorPos.y - origin_.y);
+		const float value = rowAnimationsEnabled ? motion_->reveal.value : (visible_ ? 1.0F : 0.0F);
+		// 预测和实际占位使用同一物理像素取整，避免native滚动取整逐帧累积。
+		const float height = std::round(fullHeight * value);
+		const float oldHeight = motion_->occupied;
+		const bool continuing = motion_->height > 0.0F;
+		motion_->height = fullHeight; motion_->occupied = height;
+		if (value < 0.9999F)
+		{
+			ClipConditionalDraw(window_, firstIndex_, origin_.y, origin_.y + height);
+			for (int index = firstChild_; index < window_->DC.ChildWindows.Size; ++index)
+				ClipConditionalChild(window_->DC.ChildWindows[index], origin_.y, origin_.y + height);
+			window_->DrawList->AddDrawCmd();
+			// 自身就是顶层块时交给块在位移后一并合成；嵌套条件块单独成组，外层再整体合成。
+			if (block_.Active()) block_.MultiplyOpacity(value);
+			else CommitOpacityGroup(window_, firstIndex_, firstVertex_, firstChild_, value);
+			window_->DC.CursorPos = { origin_.x, origin_.y + height };
+			window_->DC.CursorMaxPos.y = (std::max)(previousMaximum_.y, origin_.y + height);
+			window_->DC.CursorPosPrevLine = window_->DC.CursorPos;
+			window_->DC.CurrLineSize = window_->DC.PrevLineSize = { 0.0F, 0.0F };
+			window_->DC.IsSameLine = window_->DC.IsSetPos = false;
+		}
+		if (accountHeight_ && continuing) CompensateConditionalHeight(window_, origin_.y, oldHeight, height);
+	}
+
 	void ConfigureRowAnimations(float delta, bool enabled, float rate)
 	{
 		rowAnimationDelta = std::isfinite(delta) ? std::clamp(delta, 0.0F, 0.25F) : 0.0F;
 		rowAnimationRate = std::isfinite(rate) ? std::clamp(rate, 0.1F, 5.0F) : 1.0F;
 		rowAnimationsEnabled = enabled;
+		if (!enabled && activePageMotion)
+		{
+			activePageMotion->elapsed = PageMotionTiming::Total;
+			for (auto& [id, condition] : activePageMotion->conditions) condition.reveal.Reset(condition.reveal.target);
+		}
 	}
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
-		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note)
+		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note, bool showNoteIcon, const InlineRowContent* inlineContent)
 	{
+		PageBlockScope motion(id);
 		// 只有普通说明之外的补充才画 i；单独一段前提仍按原说明排版和着色。
 		if ((!description || !*description) && note && *note)
 		{
@@ -586,6 +1160,7 @@ namespace Inkeys::UI::Setting::Design
 			note = nullptr;
 		}
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		const float initialCursorStartY = ImGui::GetCurrentWindow()->DC.CursorStartPos.y;
 		const float width = ImGui::GetContentRegionAvail().x;
 		const auto measure = MeasureRow(width / Pixels(1.0F), actionWidthDip,
 			actionHeightDip, iconTexture != 0 || (glyph && *glyph));
@@ -621,22 +1196,40 @@ namespace Inkeys::UI::Setting::Design
 		const float inlineDescriptionHeight = TextHeight(description, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
 		const float descriptionHeight = TextHeight(description,
 			Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
-		const float noteHeight = InfoTextHeight(note, Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
-		const float inlineNoteHeight = InfoTextHeight(note, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
+		const float noteHeight = InfoTextHeight(note, Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption, showNoteIcon);
+		const float inlineNoteHeight = InfoTextHeight(note, Pixels(measure.textWidth), ImFluentTextStyle_Caption, showNoteIcon);
 		const auto row = ResolveRowWithNote(measure, titleHeight / Pixels(1.0F),
 			descriptionHeight / Pixels(1.0F), inlineDescriptionHeight / Pixels(1.0F),
 			noteHeight / Pixels(1.0F), inlineNoteHeight / Pixels(1.0F), tween.value);
 		// 整行占位同时登记尾部间隙，最后一行后直接 EndChild 也不会越过内容边界。
-		ImGui::Dummy({ width, Pixels(row.height + RowGap) });
+		const float inlinePadding = inlineContent ? Pixels(ImFluent::GetStyle().CardPadding) : 0.0F;
+		const float inlineWidth = (std::max)(1.0F, width - inlinePadding * 2.0F);
+		const float inlineHeight = inlineContent && inlineContent->height ? (std::max)(0.0F, inlineContent->height(inlineWidth)) : 0.0F;
+		const float fullInlineHeight = inlineContent ? inlinePadding * 2.0F + inlineHeight : 0.0F;
+		float occupiedInlineHeight = fullInlineHeight;
+		if (inlineContent && inlineContent->visibilityId)
+		{
+			ImGui::PushID(id);
+			const ImGuiID local = ImGui::GetID(inlineContent->visibilityId);
+			const ImGuiID key = activePageMotion ? ImHashData(&activePageMotion->route, sizeof(activePageMotion->route), local) : 0;
+			const auto* condition = PrepareConditionalMotion(key, inlineContent->visible);
+			occupiedInlineHeight = condition ? std::round(fullInlineHeight * condition->reveal.value)
+				: inlineContent->visible ? fullInlineHeight : 0.0F;
+			ImGui::PopID();
+		}
+		const float headerHeight = inlineContent && inlineContent->visibilityId
+			? std::round(origin.y + Pixels(row.height)) - origin.y : Pixels(row.height);
+		const float fullHeight = headerHeight + occupiedInlineHeight;
+		ImGui::Dummy({ width, inlineContent ? fullHeight + Pixels(RowGap) : Pixels(row.height + RowGap) });
 		ImDrawList* draw = ImGui::GetWindowDrawList();
-		const ImVec2 bottom(origin.x + width, origin.y + Pixels(row.height));
+		const ImVec2 bottom(origin.x + width, origin.y + fullHeight);
 		DrawCardSurface(draw, origin, bottom, fill, border, Pixels(4.0F));
 		TextAt(title, { origin.x + Pixels(row.title.left), origin.y + Pixels(row.title.top) },
 			Pixels(row.title.Width()));
 		TextAt(description, { origin.x + Pixels(row.description.left), origin.y + Pixels(row.description.top) },
 			Pixels(row.description.Width()), ImFluentTextStyle_Caption, TextSecondary);
 		InfoTextAt(note, { origin.x + Pixels(row.note.left), origin.y + Pixels(row.note.top) },
-			Pixels(row.note.Width()), ImFluentTextStyle_Caption);
+			Pixels(row.note.Width()), ImFluentTextStyle_Caption, showNoteIcon);
 		// PNG 默认保留原色，单色透明图案可由调用方显式指定前景色。
 		if (iconTexture)
 			draw->AddImage(iconTexture,
@@ -655,8 +1248,34 @@ namespace Inkeys::UI::Setting::Design
 		action(actionPixels);
 		ImGui::PopItemWidth();
 		ImGui::PopID();
+		if (inlineContent)
+		{
+			const float divider = std::round(origin.y + Pixels(row.height));
+			const auto renderInline = [&] {
+				draw->AddLine({ origin.x + 1.0F, divider }, { bottom.x - 1.0F, divider }, border, 1.0F);
+				const LayoutRect body{ origin.x + inlinePadding, divider + inlinePadding,
+					bottom.x - inlinePadding, divider + inlinePadding + inlineHeight };
+				ImGui::SetCursorScreenPos({ body.left, body.top });
+				if (inlineContent->render) inlineContent->render(body);
+			};
+			if (inlineContent->visibilityId)
+			{
+				// 外框先按同一个条件进度测高；仅内联内容交给原条件块裁剪/渐隐。
+				ImGui::SetCursorScreenPos({ origin.x, divider }); ImGui::PushID(id);
+				if (ConditionalBlock block{ inlineContent->visibilityId, inlineContent->visible }; block)
+				{
+					renderInline();
+					ImGui::SetCursorScreenPos({ origin.x, divider + fullInlineHeight });
+				}
+				ImGui::PopID();
+			}
+			else renderInline();
+		}
+		// 视口上方的条件高度变化会同步重基准布局，结束游标不能覆盖这次补偿。
+		const float conditionalOffset = inlineContent && inlineContent->visibilityId
+			? ImGui::GetCurrentWindow()->DC.CursorStartPos.y - initialCursorStartY : 0.0F;
 		// ItemSize 会截到物理像素；结束游标使用同一取整，避免分数 DPI 多出半像素。
-		ImGui::SetCursorScreenPos({ origin.x, std::floor(bottom.y + Pixels(RowGap)) });
+		ImGui::SetCursorScreenPos({ origin.x, std::floor(bottom.y + Pixels(RowGap)) + conditionalOffset });
 	}
 
 	bool ToggleAction(const LayoutRect& bounds, bool& value)
@@ -678,6 +1297,26 @@ namespace Inkeys::UI::Setting::Design
 		const bool changed = Slider("##slider", &value, minimum, maximum, "%.2f");
 		active = ImGui::IsItemActive();
 		value = std::round(value * 100.0F) / 100.0F;
+		return changed;
+	}
+
+	bool SliderResetAction(const LayoutRect& bounds, float& value, float minimum,
+		float maximum, bool& active, bool& reset, const char* resetTooltip, const char* format)
+	{
+		char output[64];
+		if (format) ImFormatString(output, IM_ARRAYSIZE(output), format, value);
+		else ImFormatString(output, IM_ARRAYSIZE(output), "%d%%", static_cast<int>(std::round(value * 100.0F)));
+		const float numberWidth = (std::min)(Pixels(72.0F), (std::max)(Pixels(40.0F), TextWidth(output)));
+		const float resetSize = Pixels(ControlHeight);
+		const float gap = Pixels(12.0F);
+		TextAt(output, { bounds.left, bounds.top + Pixels(6.0F) }, numberWidth);
+		ImGui::SetCursorScreenPos({ bounds.left + numberWidth + gap, bounds.top });
+		ImGui::SetNextItemWidth((std::max)(Pixels(24.0F), bounds.Width() - numberWidth - resetSize - gap * 2.0F));
+		const bool changed = Slider("##slider", &value, minimum, maximum, format ? format : "%.2f");
+		active = ImGui::IsItemActive();
+		ImGui::SetCursorScreenPos({ bounds.right - resetSize, bounds.top });
+		reset = IconButton("##reset", "\xee\x9c\xac", { resetSize, resetSize });
+		if (resetTooltip && ImGui::IsItemHovered()) ImFluent::SetItemTooltip("%s", resetTooltip);
 		return changed;
 	}
 
@@ -1106,13 +1745,14 @@ namespace Inkeys::UI::Setting::Design
 
 	}
 
-	bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags )
+	bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags, BelowComboMotion* motion, std::uint64_t revision )
 	{
 	    ControlFontScope font;
 	    using namespace ImFluent;
 	    ImGuiWindow * w = ImGui::GetCurrentWindow();
 	    if ( w->SkipItems )
 	    {
+	        if (motion) { CloseBelowPopup(motion->popup); *motion = {}; }
 	        return false;
 	    }
 
@@ -1139,6 +1779,7 @@ namespace Inkeys::UI::Setting::Design
 	    ImGui::ItemSize( bb );
 	    if ( !ImGui::ItemAdd( bb, id ) )
 	    {
+	        if (motion) { CloseBelowPopup(motion->popup); *motion = {}; }
 	        return false;
 	    }
 
@@ -1148,7 +1789,30 @@ namespace Inkeys::UI::Setting::Design
 	    const bool disabled = ( GImGui->LastItemData.ItemFlags & ImGuiItemFlags_Disabled );
 
 	    const ImGuiID popup_id = ImHashStr( "##fl_cb_popup", 0, id );
-	    const bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
+	    bool popup_open = ImGui::IsPopupOpen( popup_id, ImGuiPopupFlags_None );
+	    bool scopedBlocked = false;
+	    if (motion)
+	    {
+	        std::vector<std::string> currentItems;
+	        for (int index = 0; index < items_count; ++index) currentItems.emplace_back(items[index] ? items[index] : "");
+	        const auto context = reinterpret_cast<std::uintptr_t>(GImGui);
+	        const auto atlas = ImGui::GetIO().Fonts->TexData ? ImGui::GetIO().Fonts->TexData->UniqueID : 0;
+	        const bool invalid = motion->context != context || motion->popup != popup_id || motion->revision != revision
+	            || motion->atlas != atlas || motion->scale != Pixels(1.0F) || motion->items != currentItems
+	            || (motion->frame != GImGui->FrameCount && motion->frame != GImGui->FrameCount - 1);
+	        if (invalid)
+	        {
+	            if (motion->context == context) CloseBelowPopup(motion->popup);
+	            *motion = {}; motion->context = context; motion->popup = popup_id; motion->revision = revision;
+	            motion->atlas = atlas; motion->scale = Pixels(1.0F); motion->items = std::move(currentItems);
+	            popup_open = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+	        }
+	        bool blocked = disabled || (activePageMotion && activePageMotion->exiting);
+	        for (auto* owner = w; owner; owner = owner->ParentWindow)
+	            blocked |= (owner->Flags & ImGuiWindowFlags_NoMouseInputs) != 0;
+	        scopedBlocked = blocked;
+	        if (blocked) { CloseBelowPopup(popup_id); motion->reveal.Reset(0.0F); popup_open = false; }
+	    }
 
 	    // 仅自身弹层允许入口再次点击收起；实际 HoveredWindow 仍隔离被弹层覆盖的其他控件。
 	    const bool click_in_bb  = ImGui::IsMouseClicked( ImGuiMouseButton_Left )
@@ -1160,7 +1824,7 @@ namespace Inkeys::UI::Setting::Design
 	    const bool key_open = !popup_open && !disabled
 	        && ( IsFocusedItemChordPressed( id, actions.TogglePopup, false )
 	            || IsFocusedItemChordPressed( id, actions.OpenPopup, false ) );
-	    const bool toggle       = ( click_in_bb || nav_activate || key_open ) && !disabled;
+	    const bool toggle       = ( click_in_bb || nav_activate || key_open ) && !disabled && !scopedBlocked;
 
 	    if ( toggle )
 	    {
@@ -1220,21 +1884,70 @@ namespace Inkeys::UI::Setting::Design
 	    bool changed              = false;
 	    const int popup_max_items = ResolveComboPopupMaxItems( flags );
 	    const float popup_max_h   = CalcComboPopupMaxHeight( popup_max_items, h );
-	    ImGui::SetNextWindowPos( ImVec2( bb.Min.x, bb.Max.y + FluentDpx( style.SpacingXSmall ) ) );
-	    ImGui::SetNextWindowSizeConstraints( ImVec2( bb.GetWidth(), 0.f ), ImVec2( bb.GetWidth(), popup_max_h ) );
+	    const bool logicalOpen = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+	    bool decoration = false;
+	    const auto* viewport = ImGui::GetWindowViewport();
+	    const float gap = FluentDpx(style.SpacingXSmall);
+	    const float below = (std::max)(0.0F, viewport->WorkPos.y + viewport->WorkSize.y - Pixels(4) - bb.Max.y - gap);
+	    const float above = (std::max)(0.0F, bb.Min.y - gap - viewport->WorkPos.y - Pixels(4));
+	    const float natural = items_count * h + (std::max)(0, items_count - 1) * ImGui::GetStyle().ItemSpacing.y + gap * 2.0F;
+	    const float desired = (std::min)(natural, popup_max_h);
+	    // 优先向下；放不下且上方更宽裕时向上，两侧均不足则在较大一侧滚动。
+	    const bool opensAbove = below < desired && above > below;
+	    const float available = opensAbove ? above : below;
+	    const float availableWidth = (std::max)(1.0F, viewport->WorkPos.x + viewport->WorkSize.x - bb.Min.x - Pixels(4));
+	    const ImVec2 popupSize((std::min)(bb.GetWidth(), availableWidth), (std::min)(desired, available));
+	    ImVec2 popupPosition(bb.Min.x, opensAbove ? bb.Min.y - gap - popupSize.y : bb.Max.y + gap);
+	    if (available <= 0) CloseBelowPopup(popup_id);
+	    if (motion)
+	    {
+	        if (available <= 0) motion->reveal.Reset(0);
+	        const float target = logicalOpen && available > 0 ? 1.0F : 0.0F;
+	        const bool targetChanged = motion->reveal.target != target;
+	        motion->reveal.Target(target);
+	        if (motion->frame != GImGui->FrameCount)
+	            motion->reveal.Advance(!targetChanged && motion->frame == GImGui->FrameCount - 1 ? rowAnimationDelta : 0.0F,
+	                0.180F / rowAnimationRate, rowAnimationsEnabled);
+	        motion->frame = GImGui->FrameCount;
+	        decoration = !ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None) && motion->reveal.value > 0.0001F;
+	        // 展开与退出沿当前方向平移，始终限制在所选一侧的客户区预算内。
+	        const float offset = (std::min)(Pixels(12) * (1.0F - motion->reveal.value), (std::max)(0.0F, available - popupSize.y));
+	        popupPosition.y += opensAbove ? -offset : offset;
+	        motion->position = popupPosition; motion->size = popupSize;
+	        if (motion->reveal.value > 0 || logicalOpen)
+	            trackedBelowPopup = { reinterpret_cast<std::uintptr_t>(GImGui), popup_id, GImGui->FrameCount };
+	    }
+	    ImGui::SetNextWindowPos(popupPosition);
+	    ImGui::SetNextWindowSizeConstraints({ popupSize.x, 1 }, { popupSize.x, (std::max)(1.0F, popupSize.y) });
+	    ImGui::SetNextWindowSize(popupSize);
+	    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, { 1, 1 });
 
 	    PushOverlayWindowStyle( style.SpacingXSmall, style.SpacingXSmall );
-	    const ImGuiWindowFlags cb_wflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+	    ImGuiWindowFlags cb_wflags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
 	    ImGuiWindow* popup_window = nullptr;
 	    for ( const auto& popup : GImGui->OpenPopupStack ) if ( popup.PopupId == popup_id ) popup_window = popup.Window;
+	    char decorationName[40]; ImFormatString(decorationName, sizeof(decorationName), "##BelowComboExit_%08x", popup_id);
+	    if (decoration)
 	    {
-	    ScrollbarStyleScope scrollbar(popup_window);
-	    if ( ImGui::BeginPopupEx( popup_id, cb_wflags ) )
+	        popup_window = ImGui::FindWindowByName(decorationName);
+	        ImGui::SetNextWindowScroll({ -1, motion->scroll });
+	        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_PopupBg));
+	        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ImGui::GetStyle().PopupRounding);
+	        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, ImGui::GetStyle().PopupBorderSize);
+	    }
+	    {
+	    ScrollbarStyleScope scrollbar(popup_window, !decoration);
+	    // 退出装饰不是 Popup，不进入 OpenPopupStack，也不取得鼠标、滚轮或导航焦点。
+	    const bool renderPopup = decoration ? ImGui::Begin(decorationName, nullptr, cb_wflags | ImGuiWindowFlags_NoInputs
+	        | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus) : ImGui::BeginPopupEx(popup_id, cb_wflags);
+	    if (renderPopup)
 	    {
 	        auto* popup_host = ImGui::GetCurrentWindow();
 	        scrollbar.Finish(popup_host);
+	        if (motion && !decoration) motion->selected = current_item ? *current_item : -1;
+	        if (decoration) ImGui::BringWindowToDisplayFront(popup_host);
 	        int focus_only = -1;
-	        if ( gctx.NavWindow == popup_host && gctx.NavId != 0 )
+	        if ( !decoration && gctx.NavWindow == popup_host && gctx.NavId != 0 )
 	        {
 	            if ( IsChordPressedOwned( actions.FirstItem, popup_id, false ) ) focus_only = 0;
 	            if ( IsChordPressedOwned( actions.LastItem, popup_id, false ) ) focus_only = items_count - 1;
@@ -1252,16 +1965,17 @@ namespace Inkeys::UI::Setting::Design
 	                if ( !items[ i ] )
 	                    continue;
 	                ImGui::PushID( i );
-	                const bool sel = ( current_item && *current_item == i );
-	                if ( ImFluent::Selectable( items[ i ], sel, NULL, h ) )
+	                const bool sel = decoration ? motion->selected == i : (current_item && *current_item == i);
+	                if ( ImFluent::Selectable( items[ i ], sel, NULL, h ) && !decoration )
 	                {
 	                    if ( current_item )
 	                        *current_item = i;
 	                    changed = true;
+	                    if (motion) motion->selected = i;
 	                    ImGui::CloseCurrentPopup();
 	                }
 	                const auto item_id = gctx.LastItemData.ID;
-	                if ( sel ) ImGui::SetItemDefaultFocus();
+	                if ( sel && !decoration ) ImGui::SetItemDefaultFocus();
 	                if ( i == 0 ) ConsumeNavArrow( item_id, ImGuiDir_Up );
 	                if ( i == items_count - 1 ) ConsumeNavArrow( item_id, ImGuiDir_Down );
 	                if ( i == focus_only )
@@ -1275,22 +1989,27 @@ namespace Inkeys::UI::Setting::Design
 	            }
 	        }
 	        // 只关闭原本已展开的列表，避免本帧 F4 打开后又立即关闭。
-	        if ( popup_open && ( IsActionPressed( actions.TogglePopup )
+	        if ( !decoration && popup_open && ( IsActionPressed( actions.TogglePopup )
 	            || IsActionPressed( actions.ClosePopup ) || ImGui::IsKeyPressed( ImGuiKey_Tab, false ) ) )
 	            ImGui::CloseCurrentPopup();
-	        ImGui::EndPopup();
+	        if (motion && !decoration) motion->scroll = popup_host->Scroll.y;
+	        if (motion) ApplyGroupOpacity(popup_host, motion->reveal.value);
+	        if (!decoration) ImGui::EndPopup();
 	    }
+	    if (decoration) ImGui::End();
 	    }
+	    if (decoration) { ImGui::PopStyleVar(2); ImGui::PopStyleColor(); }
 	    PopOverlayWindowStyle();
+	    ImGui::PopStyleVar();
 
 	    return changed;
 	}
 
-	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items)
+	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items, BelowComboMotion* motion, std::uint64_t revision)
 	{
 		std::vector<const char*> views;
 		for (const auto& item : items) views.push_back(item.c_str());
-		return ComboBox(label, value, views.data(), static_cast<int>(views.size()));
+		return ComboBox(label, value, views.data(), static_cast<int>(views.size()), 0, motion, revision);
 	}
 
 	bool Slider(const char* label, float* value, float minimum, float maximum,
@@ -1328,6 +2047,7 @@ namespace Inkeys::UI::Setting::Design
 
 	bool BeginCard(const char* id, const ImVec2& size, ImFluentCardStyle style)
 	{
+		cardMotionScopes.emplace_back(id);
 		ScrollbarStyleScope scrollbar(ChildWindow(id));
 		const auto& cardStyle = ImFluent::GetStyle();
 		const ImU32 fill = ImFluent::GetColorU32(style == ImFluentCardStyle_Outlined
@@ -1351,7 +2071,11 @@ namespace Inkeys::UI::Setting::Design
 		return visible;
 	}
 
-	void EndCard() { ImFluent::EndCard(); }
+	void EndCard()
+	{
+		ImFluent::EndCard();
+		cardMotionScopes.pop_back();
+	}
 
 	void CheckboxGroup(const char* id, const char* title, const char* glyph,
 		std::initializer_list<CheckboxSpec> items)
@@ -1438,7 +2162,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value, const char* note)
+		const char* glyph, bool& value, const char* note, const InlineRowContent* inlineContent)
 	{
 		const float labelWidth = (std::max)(TextWidth(stateOn.c_str()), TextWidth(stateOff.c_str()));
 		bool changed = false;
@@ -1447,19 +2171,65 @@ namespace Inkeys::UI::Setting::Design
 			{
 				changed = ToggleAction(bounds, value);
 				TextAt(value ? stateOn.c_str() : stateOff.c_str(), { bounds.left, bounds.top }, labelWidth);
-			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note, true, inlineContent);
 		return changed;
 	}
 
+	InlineRowContent InlineCombo(const char* id, const char* label, int& value,
+		const std::vector<std::string>& items, bool& changed, const char* visibilityId, bool visible)
+	{
+		InlineRowContent content;
+		content.visibilityId = visibilityId; content.visible = visible;
+		content.height = [](float) { return Pixels(ControlHeight); };
+		content.render = [id, label, &value, &items, &changed](const LayoutRect& bounds)
+		{
+			// 下拉宽度沿用 ComboRow 规则并右对齐到父行操作列；标签占剩余宽度并垂直居中。
+			float comboWidth = 160.0F;
+			for (const auto& item : items)
+				comboWidth = (std::max)(comboWidth, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+			const float width = (std::min)(Pixels((std::min)(320.0F, comboWidth)), (std::max)(1.0F, bounds.Width() * 0.6F));
+			const float labelWidth = (std::max)(1.0F, bounds.Width() - width - Pixels(ControlSpacing));
+			ImGui::PushID(id);
+			// 与 SettingRow 同一提交标记，内联项也可按稳定 ID 判断本帧是否真实提交。
+			ImGui::GetStateStorage()->SetInt(ImGui::GetID("##description-frame"), ImGui::GetFrameCount());
+			TextAt(label, { bounds.left, bounds.top + (Pixels(ControlHeight) - TextHeight(label, labelWidth)) * 0.5F }, labelWidth);
+			ImGui::SetCursorScreenPos({ bounds.right - width, bounds.top });
+			ImGui::SetNextItemWidth(width);
+			if (ComboBox("##select", &value, items)) changed = true;
+			ImGui::PopID();
+		};
+		return content;
+	}
+
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items, const char* note)
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note, bool showNoteIcon)
 	{
 		float width = 160.0F;
 		for (const auto& item : items)
 			width = (std::max)(width, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
 		bool changed = false;
 		SettingRow(id, title, description, glyph, (std::min)(320.0F, width), ControlHeight,
-			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note);
+			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note, showNoteIcon);
+		return changed;
+	}
+
+	bool ComboPreviewRow(const char* id, const char* title, const char* description,
+		const char* glyph, int& value, const std::vector<std::string>& items,
+		const std::function<void(const LayoutRect&)>& preview, const char* note)
+	{
+		constexpr float previewWidth = 44.0F, previewGap = 12.0F;
+		float width = 160.0F;
+		for (const auto& item : items)
+			width = (std::max)(width, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+		bool changed = false;
+		SettingRow(id, title, description, glyph, previewWidth + previewGap + (std::min)(320.0F, width), ControlHeight,
+			[&](const LayoutRect& bounds)
+			{
+				preview({ bounds.left, bounds.top, bounds.left + Pixels(previewWidth), bounds.bottom });
+				ImGui::SetCursorScreenPos({ bounds.left + Pixels(previewWidth + previewGap), bounds.top });
+				ImGui::SetNextItemWidth((std::max)(1.0F, bounds.Width() - Pixels(previewWidth + previewGap)));
+				changed = ComboBox("##select", &value, items);
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note);
 		return changed;
 	}
 
@@ -1548,6 +2318,7 @@ namespace Inkeys::UI::Setting::Design
 
 	bool NavigationRow(const char* id, const char* title, const char* description, const char* glyph, ImTextureID iconTexture, ImU32 iconTint, const char* note)
 	{
+		PageBlockScope motion(id);
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const float width = ImGui::GetContentRegionAvail().x;
 		SettingRow(id, title, description, glyph, 24.0F, 24.0F, [&](const LayoutRect& bounds)

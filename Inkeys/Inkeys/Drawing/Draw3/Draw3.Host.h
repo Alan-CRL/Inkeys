@@ -62,15 +62,15 @@ namespace Inkeys::Drawing::Draw3
 			}
 			bool WaitForChange(std::uint64_t revision,
 				std::uint32_t timeoutMilliseconds,
-				const std::atomic_bool& running) const noexcept
+				const std::atomic_bool& running, bool waitWhileStopped = false) const noexcept
 			{
 				std::unique_lock lock(mutex_);
 				return condition_.wait_for(lock,
 					std::chrono::milliseconds(timeoutMilliseconds),
-					[this, revision, &running]
+					[this, revision, &running, waitWhileStopped]
 					{
 						return Revision() != revision
-							|| !running.load(std::memory_order_acquire);
+							|| (!waitWhileStopped && !running.load(std::memory_order_acquire));
 					});
 			}
 			void NotifyAll() const noexcept
@@ -349,6 +349,7 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		Bridge::WhiteboardStyleToken whiteboardStyle;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		bool whiteboardLoadPending = false;
@@ -431,7 +432,9 @@ namespace Inkeys::Drawing::Draw3
 		bool WaitForContentRevision(std::uint64_t revision,
 			std::uint32_t timeoutMilliseconds) const noexcept;
 		bool WaitForRuntimeRevision(std::uint64_t revision,
-			std::uint32_t timeoutMilliseconds) const noexcept;
+			std::uint32_t timeoutMilliseconds, bool waitWhileStopped = false) const noexcept;
+		// 只推进通知版本，不写 Frame/UI-ready；原生/背景完成复用同一个无丢醒握手。
+		void NotifyWorkspaceProgress() noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Haptics::Context HapticContext() const noexcept;

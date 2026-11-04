@@ -71,8 +71,8 @@ namespace Inkeys::UI::Setting::Design
 		return result;
 	}
 
-	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage, Shortcuts };
-	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::Shortcuts) + 1;
+	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage, Shortcuts, DesktopShortcuts };
+	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::DesktopShortcuts) + 1;
 
 	struct NavigationTween
 	{
@@ -82,7 +82,8 @@ namespace Inkeys::UI::Setting::Design
 		float elapsed = 0.0F;
 		float progress = 0.0F;
 
-		explicit NavigationTween(float initial = 0.0F) noexcept
+		NavigationTween() noexcept = default; // 非 explicit，允许聚合成员和 `= {}` 重置。
+		explicit NavigationTween(float initial) noexcept
 			: value(initial), target(initial), start(initial) {}
 		void Reset(float next) noexcept { value = target = start = next; elapsed = progress = 0.0F; }
 		void Target(float next) noexcept
@@ -133,7 +134,7 @@ namespace Inkeys::UI::Setting::Design
 		LayoutRect parentBounds, chevronBounds, flyoutBounds;
 		std::array<LayoutRect, GeneralSectionCount> childBounds{}, flyoutChildBounds{};
 		std::array<LayoutRect, 4> footerBounds{};
-		std::array<LayoutRect, 7> middleBounds{};
+		std::array<LayoutRect, 8> middleBounds{};
 		std::uint32_t parentItemId = 0;
 		std::uint32_t childFocusId = 0;
 		std::uint32_t childWindowItemId = 0;
@@ -263,7 +264,8 @@ namespace Inkeys::UI::Setting::Design
 
 	inline constexpr float NavigationRowHeight = 36.0F;
 	inline constexpr float NavigationSeparatorBand = 12.0F;
-	inline constexpr size_t NavigationMiddleItemCount = 7;
+	inline constexpr size_t NavigationMiddleItemCount = 8;
+	static_assert(std::tuple_size_v<decltype(NavigationState::middleBounds)> == NavigationMiddleItemCount);
 
 	struct NavigationPaneGeometry
 	{

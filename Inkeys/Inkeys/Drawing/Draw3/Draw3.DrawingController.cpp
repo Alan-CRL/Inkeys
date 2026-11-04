@@ -1,4 +1,4 @@
-﻿module;
+module;
 #include "Draw3.DiagnosticOutput.h"
 #include "Assets/EraserGripVisual.h"
 
@@ -114,6 +114,38 @@ namespace Inkeys::Drawing::Draw3
 		void ExtendWhiteboardThemes(std::vector<WhiteboardTheme>& themes, std::size_t target, std::size_t current)
 		{
 			if (target >= themes.size()) themes.resize(target + 1, themes[current]);
+		}
+
+		void CompleteFailedWhiteboardPageLoad(WindowController& window,
+			const DrawingControllerRuntimeObserver& observer, CanvasCommandType original,
+			std::uint64_t generation, std::size_t page, std::size_t pageCount)
+		{
+			if (observer.commandProcessed) observer.commandProcessed(observer.context, original, page, pageCount);
+			// 失败只补原白板页呈现，不能让迟到的通用 SetPage 切换或创建其他场景页面。
+			CanvasCommand recovery;
+			recovery.type = CanvasCommandType::RePresentWhiteboardPage;
+			recovery.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Whiteboard);
+			recovery.requireSceneMatch = true;
+			recovery.whiteboardGeneration = generation;
+			recovery.pageIndex = page;
+			recovery.sceneClosedAdmission = true;
+			window.EnqueueCanvasCommand(recovery);
+		}
+
+		template <typename Present>
+		bool ApplyWhiteboardPageRecoveryCommand(const CanvasCommand& command,
+			Bridge::Workspace workspace, bool loading, bool exitPrepared, std::uint64_t generation,
+			std::size_t page, Present&& present)
+		{
+			// 失败已清空 loading；最终退出 ACK、退出重入或换页后，旧补回执必须作废。
+			if (command.type != CanvasCommandType::RePresentWhiteboardPage ||
+				!command.requireSceneMatch || !command.sceneClosedAdmission ||
+				command.workspace != static_cast<std::uint8_t>(Bridge::Workspace::Whiteboard) ||
+				workspace != Bridge::Workspace::Whiteboard || loading || exitPrepared ||
+				command.whiteboardGeneration == 0 || command.whiteboardGeneration != generation ||
+				command.pageIndex != page) return false;
+			present(command);
+			return true;
 		}
 
 		bool ApplyWhiteboardThemeCommand(const CanvasCommand& command, Bridge::Workspace workspace,
@@ -4652,31 +4684,31 @@ namespace Inkeys::Drawing::Draw3
 			using namespace Inkeys::Business::PenWidth;
 			WindowController window; // 不附着 HWND，不初始化 Host/RTS/GPU。
 			{
-				const CursorSettings raw{ MouseCursorStyle::System, PenCursorStyle::PenIcon };
-				const auto expectCursorProjection = [&](MouseCursorStyle expected)
+				const CursorSettings raw{}; // 默认：鼠标系统光标
+				const auto expectCursorProjection = [&](CursorStyle expected)
 				{
 					const auto effective = ResolveCursorSettingsForDrawingTool(window.EffectiveDrawingCursorTool(), raw);
-					window.SetMouseUsesSystemCursor(effective.mouseStyle == MouseCursorStyle::System);
-					check(effective.mouseStyle == expected &&
-						window.GetMouseUsesSystemCursor() == (expected == MouseCursorStyle::System) &&
-						effective.penStyle == PenCursorStyle::PenIcon && raw.mouseStyle == MouseCursorStyle::System,
+					window.SetMouseUsesSystemCursor(effective.mouse == CursorStyle::Arrow);
+					check(effective.mouse == expected &&
+						window.GetMouseUsesSystemCursor() == (expected == CursorStyle::Arrow) &&
+						effective.screenPen == raw.screenPen && raw.mouse == CursorStyle::Arrow,
 						"actual-tool cursor projection preserves raw preferences and synchronizes the Window policy");
 				};
 				// 使用真实 Window 的活动工具锁存/释放，不创建 contact、HWND 或新测试入口。
 				window.SetActiveDrawingCursorTool(DrawingTool::Highlighter);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::SolidLine);
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveDrawingCursorTool(DrawingTool::SolidLine);
 				window.SetActiveTool(DrawingTool::Highlighter);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.ClearActiveDrawingCursorTool();
-				expectCursorProjection(MouseCursorStyle::Drawing);
+				expectCursorProjection(CursorStyle::Pen);
 				window.SetActiveTool(DrawingTool::Pen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::HardPen);
-				expectCursorProjection(MouseCursorStyle::System);
+				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::Pen);
 			}
 			const auto configuration = CreateStrokeModelConfiguration(96);
@@ -4711,6 +4743,39 @@ namespace Inkeys::Drawing::Draw3
 					window.SetProductVisualStyle(0x123456FF, highlighter.resolvedWidthDip, context);
 					check(nearlyEqual(CanvasDiameterForTool(DrawingTool::Highlighter, window.ProductVisualStyleSnapshot(), 1),
 						test.highlighter[index]), "ordinary highlighter uses new DIP presets with one target scale");
+				}
+			}
+			// 复用真实 Window 样式邮箱和 Controller 的 DPI 入口，连续改变目标 DPI；不创建 HWND。
+			{
+				DrawingCursorSample pen{ .x = 32.0f, .y = 48.0f, .valid = true };
+				pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
+				CursorSettings cursor;
+				cursor.dotHideOnContact = DotCursorHideMode::Off;
+				for (const double dpi : { 96.0, 144.0, 192.0, 264.0, 96.0 })
+				{
+					Context context; context.effectiveDpi = dpi;
+					window.SetProductVisualStyle(0x123456FF, 3.0, context);
+					const auto style = window.ProductVisualStyleSnapshot();
+					ConfigureProductInkCursorAppearances(window, style, configuration.dpiScale);
+					const float scale = ProductTargetScale(style);
+					for (const auto selected : { CursorStyle::Arrow, CursorStyle::Pen, CursorStyle::HighlightPen, CursorStyle::Dot })
+					{
+						cursor.screenPen = selected;
+						const auto visual = ResolvePrimaryDrawingCursorVisual(pen, {}, DrawingCursorPointerAuthority::Pen,
+							window.CursorAppearanceForTool(DrawingTool::Pen), window.CursorAppearanceForTool(DrawingTool::Eraser),
+							false, false, false, true, &cursor, true, scale);
+						const double expectedWidth = (selected == CursorStyle::Arrow ? 13.0 : selected == CursorStyle::Dot ? 5.0 : 24.0) * dpi / 96.0;
+						const double expectedHeight = selected == CursorStyle::Arrow ? 19.5 * dpi / 96.0 : expectedWidth;
+						const double expectedEdge = selected == CursorStyle::Arrow ? (std::max)(1.0, 0.5 * dpi / 96.0)
+							: (selected == CursorStyle::HighlightPen ? 1.25 : 0.5) * dpi / 96.0;
+						check(visual.visible && nearlyEqual(visual.appearance.width, expectedWidth) &&
+							nearlyEqual(visual.appearance.height, expectedHeight) && nearlyEqual(visual.appearance.outlineWidth, expectedEdge),
+							"real Window style updates feed one system DPI scale to cursor geometry and edges");
+						check(nearlyEqual(visual.x, pen.x) && nearlyEqual(visual.y, pen.y) &&
+							nearlyEqual(visual.appearance.centerOffsetX, selected == CursorStyle::Dot ? 0.0 : expectedWidth / 2.0) &&
+							nearlyEqual(visual.appearance.centerOffsetY, selected == CursorStyle::Dot ? 0.0 : expectedHeight / 2.0),
+							"system DPI changes preserve the input hotspot while moving only the cursor quad center");
+					}
 				}
 			}
 			struct LargeCase { int width; int height; std::array<double, 3> brush; std::array<double, 3> highlighter; };
@@ -6941,6 +7006,66 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
+			// 真实失败完成入队与消费函数均无 HWND；正常补呈现不再进入 SetPage 分支。
+			struct FailedLoadCapture
+			{
+				int completed = 0;
+				CanvasCommandType type = CanvasCommandType::Clear;
+				std::size_t page = 0;
+				std::size_t count = 0;
+			} failedLoad;
+			DrawingControllerRuntimeObserver failedObserver;
+			failedObserver.context = &failedLoad;
+			failedObserver.commandProcessed = [](void* context, CanvasCommandType type, std::size_t page, std::size_t count)
+			{
+				auto& capture = *static_cast<FailedLoadCapture*>(context);
+				++capture.completed; capture.type = type; capture.page = page; capture.count = count;
+			};
+			WindowController recoveryQueue;
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::NextPage, 9, 7, 10);
+			CanvasCommand recovery;
+			check(recoveryQueue.TryDequeueCanvasCommand(recovery) && !recoveryQueue.HasPendingCanvasCommand() &&
+				recovery.type == CanvasCommandType::RePresentWhiteboardPage && failedLoad.completed == 1 &&
+				failedLoad.type == CanvasCommandType::NextPage && failedLoad.page == 7 && failedLoad.count == 10,
+				"failed cold load settles the original command once and queues only original-page presentation");
+			int presentRequests = 0;
+			const auto present = [&](const CanvasCommand&) { ++presentRequests; };
+			check(ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 9, 7, present) &&
+				presentRequests == 1 && failedLoad.completed == 1,
+				"same whiteboard failure requests a genuine present without settling the page command twice");
+			for (const auto workspace : { Bridge::Workspace::Desktop, Bridge::Workspace::Presentation })
+				check(!ApplyWhiteboardPageRecoveryCommand(recovery, workspace, false, false, 9, 7, present),
+					"failed-load recovery cannot present or change a different workspace");
+			check(!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 11, 7, present),
+				"exit and reenter on the same whiteboard page retires the old recovery");
+			check(!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false, false, 9, 8, present) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, true, false, 9, 7, present) &&
+				presentRequests == 1, "page changes and another cold load cannot consume the original-page recovery");
+			CanvasCommand exit; exit.type = CanvasCommandType::SetWorkspace;
+			exit.workspace = static_cast<std::uint8_t>(Bridge::Workspace::Desktop);
+			recoveryQueue.EnqueueCanvasCommand(exit);
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::PreviousPage, 12, 7, 10);
+			CanvasCommand queued;
+			check(recoveryQueue.TryDequeueCanvasCommand(queued) && queued.type == CanvasCommandType::SetWorkspace &&
+				recoveryQueue.TryDequeueCanvasCommand(recovery) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Desktop, false, false, 13, 0, present) &&
+				!recoveryQueue.HasPendingCanvasCommand() && presentRequests == 1 && failedLoad.completed == 2,
+				"FIFO exit ahead of failed-load recovery leaves desktop pages and its admission untouched");
+			// PersistenceCompleted 已追加恢复时，队列中更早的最终保存 ACK 也必须退休它。
+			CanvasCommand prepareExit; prepareExit.type = CanvasCommandType::PrepareExitAutoSave;
+			recoveryQueue.EnqueueCanvasCommand(prepareExit);
+			CompleteFailedWhiteboardPageLoad(recoveryQueue, failedObserver, CanvasCommandType::NextPage, 15, 7, 10);
+			PresentationCurrentLoadRetry exitBarrier;
+			int finalAcks = 0;
+			check(recoveryQueue.TryDequeueCanvasCommand(queued) && queued.type == CanvasCommandType::PrepareExitAutoSave,
+				"final save barrier is queued ahead of failed-load recovery");
+			ProcessPresentationExitBarrier(exitBarrier, [] {}, [&] { ++finalAcks; });
+			check(recoveryQueue.TryDequeueCanvasCommand(recovery) &&
+				!ApplyWhiteboardPageRecoveryCommand(recovery, Bridge::Workspace::Whiteboard, false,
+					exitBarrier.ExitPrepared(), 15, 7, present) && presentRequests == 1 &&
+				failedLoad.completed == 3 && finalAcks == 1 && !recoveryQueue.HasPendingCanvasCommand(),
+				"final ACK rejects a matching late recovery without presenting or completing the original command twice");
+
 			const auto id = draw3::uink::CreateUInkGuid();
 			if (!id) return 1;
 			uint64_t nextHistoryRasterStateToken = 1000;
@@ -10018,12 +10143,12 @@ namespace Inkeys::Drawing::Draw3
 	{
 		const CursorSettings effective = ResolveCursorSettingsForDrawingTool(
 			window_.EffectiveDrawingCursorTool(), settings);
-		const bool system = effective.mouseStyle == MouseCursorStyle::System;
+		const bool system = effective.mouse == CursorStyle::Arrow;
 		const bool systemChanged = window_.GetMouseUsesSystemCursor() != system;
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
-		const uint32_t packed = 4u | (settings.mouseStyle == MouseCursorStyle::Drawing ? 1u : 0u) |
-			(settings.penStyle == PenCursorStyle::PenIcon ? 2u : 0u);
+		window_.SetInjectedMouseAsTablet(settings.injectedMouseAsTablet);
+		const uint32_t packed = PackCursorSettings(settings);
 		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
@@ -10352,6 +10477,7 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<WhiteboardPageState> whiteboardPages(1);
 		std::optional<std::size_t> whiteboardLoading;
 		std::uint64_t whiteboardLoadingGeneration = 0;
+		CanvasCommandType whiteboardLoadingCommand = CanvasCommandType::NextPage;
 		bool whiteboardReadFailed = false;
 		const auto whiteboardFileGuid = draw3::uink::CreateUInkGuid();
 		WhiteboardStore whiteboardStore(observer_.whiteboardRoot, [&]
@@ -10729,6 +10855,7 @@ namespace Inkeys::Drawing::Draw3
 										state.cold = false; installed = true;
 										CanvasCommand command; command.type = CanvasCommandType::SetPage; command.pageIndex = result.page;
 										command.whiteboardGeneration = whiteboardGeneration;
+										command.sceneClosedAdmission = true;
 										window_.EnqueueCanvasCommand(command);
 									}
 								}
@@ -10737,7 +10864,12 @@ namespace Inkeys::Drawing::Draw3
 					}
 					catch (...) {}
 					whiteboardReadFailed = !installed;
-					if (!installed) whiteboardLoading.reset();
+					if (!installed)
+					{
+						whiteboardLoading.reset();
+						CompleteFailedWhiteboardPageLoad(window_, observer_, whiteboardLoadingCommand,
+							whiteboardGeneration, currentPageIndex_, doc->Pages().size());
+					}
 				}
 				else
 				{
@@ -13347,10 +13479,8 @@ namespace Inkeys::Drawing::Draw3
 					mouseSample.inContact = false;
 			}
 			const uint32_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
-			CursorSettings cursorSettings{
-				.mouseStyle = (cursorSettingsBits & 1u) != 0 ? MouseCursorStyle::Drawing : MouseCursorStyle::System,
-				.penStyle = (cursorSettingsBits & 2u) != 0 ? PenCursorStyle::PenIcon : PenCursorStyle::Circle
-			};
+			CursorSettings cursorSettings = UnpackCursorSettings(cursorSettingsBits);
+			const bool cursorSettingsValid = (cursorSettingsBits & kCursorSettingsValidBit) != 0;
 			DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const DrawingCursorPointerAuthority cursorAuthority = window_.CursorOwner();
 			const bool primaryUsesPen = cursorAuthority == DrawingCursorPointerAuthority::Pen ||
@@ -13370,11 +13500,11 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			if(primaryRuntime)cursorTool=primaryRuntime->tool;
-			if ((cursorSettingsBits & 4u) != 0)
+			if (cursorSettingsValid)
 			{
 				// 同一实际工具投影同时控制系统箭头和应用预览，不能用新选择覆盖活动笔画。
 				cursorSettings = ResolveCursorSettingsForDrawingTool(cursorTool, cursorSettings);
-				window_.SetMouseUsesSystemCursor(cursorSettings.mouseStyle == MouseCursorStyle::System);
+				window_.SetMouseUsesSystemCursor(cursorSettings.mouse == CursorStyle::Arrow);
 			}
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -13407,7 +13537,7 @@ namespace Inkeys::Drawing::Draw3
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
 					mouseUsesSystemCursor,
-					(cursorSettingsBits & 4u) != 0 ? &cursorSettings : nullptr,
+					cursorSettingsValid ? &cursorSettings : nullptr,
 					cursorTool == DrawingTool::Pen || cursorTool == DrawingTool::HardPen,
 					ProductTargetScale(currentProductVisualStyle));
 				if (primary.visible &&
@@ -13475,6 +13605,20 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					continue;
 				}
+				// 触摸落笔光标：仅软/硬笔，逐接触各一个；荧光笔、形状等保持无光标。
+				if (cursorSettingsValid && cursorSettings.touch != CursorStyle::None &&
+					runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
+					runtime->metricDeviceType == InputDeviceType::Touch &&
+					(runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen))
+				{
+					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
+					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
+						snapshot.position.x, snapshot.position.y,
+						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touch,
+						ProductTargetScale(runtime->visualStyle));
+					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
+					continue;
+				}
 				if (!runtime || runtime->ended || runtime->awaitingReconnect || runtime->palmObservationOnly ||
 					runtime->metricDeviceType != InputDeviceType::Touch ||
 					runtime->tool != DrawingTool::Eraser) continue;
@@ -13513,6 +13657,9 @@ namespace Inkeys::Drawing::Draw3
 				key = key * 17u + (penSample.inverted ? 1u : 0u);
 				key = key * 17u + (mouseSample.valid ? 1u : 0u);
 				key = key * 17u + (mouseSample.inContact ? 1u : 0u);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.kind);
+				key = key * 17u + static_cast<uint64_t>(penSample.source.recognition);
+				key = key * 17u + static_cast<uint64_t>(mouseSample.source.kind);
 				const double nowMilliseconds = GetQpcTimeMilliseconds();
 				const bool activeCursor = !currentCursorVisuals.empty() ||
 					!laserTipVisuals.empty() || penSample.valid || mouseSample.valid || liveTouchCount;
@@ -13523,7 +13670,14 @@ namespace Inkeys::Drawing::Draw3
 					lastCursorVisualDiagnosticKey = key;
 					nextCursorVisualDiagnosticMilliseconds = nowMilliseconds + 100.0;
 					cursorVisualDiagnosticRecorded = true;
-					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u",
+					// 与 frame 同门禁/限频，单列短记录以免挤出 320 字节日志中的来源字段。
+					const double displayDpi = std::isfinite(observedSpeedEraserDisplayScale.dipPerPixelX) &&
+						observedSpeedEraserDisplayScale.dipPerPixelX > 0.0 ? 96.0 / observedSpeedEraserDisplayScale.dipPerPixelX : 0.0;
+					RecordCursorDiagnostic("frame-scale cursorDpi=%.1f cursorScale=%.3f contextRevision=%llu displayDpi=%.1f viewport=%.0fx%.0f",
+						currentProductVisualStyle.penWidthContext.effectiveDpi, ProductTargetScale(currentProductVisualStyle),
+						static_cast<unsigned long long>(currentProductVisualStyle.penWidthContext.revision), displayDpi,
+						renderer_.viewportWidth, renderer_.viewportHeight);
+					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u penSource=%s/%u/cid%u mouseSource=%s/%u",
 						static_cast<unsigned>(cursorTool), static_cast<unsigned>(window_.CursorOwner()),
 						primaryCursorCount, currentCursorVisuals.size() - primaryCursorCount,
 						primaryLaserTipCount, laserTipVisuals.size() - primaryLaserTipCount,
@@ -13531,7 +13685,12 @@ namespace Inkeys::Drawing::Draw3
 						penSample.inContact ? 1u : 0u, penSample.inverted ? 1u : 0u,
 						mouseSample.valid ? 1u : 0u, mouseSample.inContact ? 1u : 0u,
 						mouseSpeedEraser().HasPosition() ? 1u : 0u,
-						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u);
+						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u,
+						SpeedEraser::SourceKindName(penSample.source.kind),
+						static_cast<unsigned>(penSample.source.recognition),
+						static_cast<unsigned>(penSample.source.cursorId),
+						SpeedEraser::SourceKindName(mouseSample.source.kind),
+						static_cast<unsigned>(mouseSample.source.recognition));
 					for (size_t index = 0; index < currentCursorVisuals.size(); ++index)
 					{
 						const auto& visual = currentCursorVisuals[index];
@@ -14875,6 +15034,12 @@ namespace Inkeys::Drawing::Draw3
 					consumeWhiteboardCompletions();
 					continue;
 				}
+				if (command.type == CanvasCommandType::RePresentWhiteboardPage)
+				{
+					ApplyWhiteboardPageRecoveryCommand(command, activeWorkspace, whiteboardLoading.has_value(),
+						currentLoadRetry.ExitPrepared(), whiteboardGeneration, currentPageIndex_, acknowledgeUnchangedScene);
+					continue;
+				}
 				struct ShortcutCompletionGuard
 				{
 					DrawingControllerRuntimeObserver& observer;
@@ -14892,7 +15057,11 @@ namespace Inkeys::Drawing::Draw3
 					shortcutResult.result = observer_.shortcutCommandAllowed && shortcutContext.available
 						? observer_.shortcutCommandAllowed(observer_.context, *command.shortcut, shortcutContext)
 						: Shortcuts::Result::Stale;
-					if (shortcutResult.result != Shortcuts::Result::Applied) continue;
+					if (shortcutResult.result != Shortcuts::Result::Applied)
+					{
+						acknowledgeUnchangedScene(command);
+						continue;
+					}
 					shortcutResult.result = Shortcuts::Result::Failed;
 				}
 				if (metricsState_) metricsState_->frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::Command);
@@ -15635,6 +15804,12 @@ namespace Inkeys::Drawing::Draw3
 					reportCommand(command.type);
 					continue;
 				}
+				struct PageCommandReadyGuard
+				{
+					const CanvasCommand& command;
+					decltype(acknowledgeUnchangedScene)& acknowledge;
+					~PageCommandReadyGuard() { acknowledge(command); }
+				} pageCommandReady{ command, acknowledgeUnchangedScene };
 				renderer_.InvalidateTrustedL2Snapshot();
 				trustedSnapshotSignatureValid = false;
 				const size_t pageCount = document_->Pages().size();
@@ -15714,9 +15889,13 @@ namespace Inkeys::Drawing::Draw3
 					{
 						whiteboardLoading = targetPageIndex;
 						whiteboardLoadingGeneration = whiteboardGeneration;
+						whiteboardLoadingCommand = command.type;
 						whiteboardReadFailed = false;
 						if (!whiteboardStore.Load(targetPageIndex, draw3::uink::UInkGuid(document_->PageAt(targetPageIndex)->PageGuid().Bytes()), whiteboardLoadingGeneration))
-						{ whiteboardLoading.reset(); whiteboardReadFailed = true; }
+						{
+							whiteboardLoading.reset(); whiteboardReadFailed = true;
+							reportCommand(command.type);
+						}
 						publishWhiteboard();
 						continue;
 					}
@@ -15756,6 +15935,11 @@ namespace Inkeys::Drawing::Draw3
 					CompositionRestorePathName(restored.path) << std::endl;
 				publishCurrentPageContent();
 				reportCommand(command.type);
+				if (command.type == CanvasCommandType::SetPage && command.whiteboardGeneration != 0)
+				{
+					// 冷页完成除内部 SetPage 外，还必须恰好结算一次最初的翻页命令。
+					reportCommand(whiteboardLoadingCommand);
+				}
 			}
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。

@@ -312,6 +312,12 @@
     <ClInclude Include="IdtAtomic.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.ThemeMaterial.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h">
       <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClInclude>
@@ -376,6 +382,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtI18n.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtI18nLocales.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtStart.h">
@@ -483,6 +492,9 @@
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Launch\IdtCommandPipe.h">
+      <Filter>头文件\Launch</Filter>
+    </ClInclude>
     <ClInclude Include="Launch\IdtLaunchState.h">
       <Filter>头文件\Launch</Filter>
     </ClInclude>
@@ -505,6 +517,12 @@
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h">
@@ -1742,6 +1760,9 @@
     <ClCompile Include="additional\imgui\imgui.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
+    <ClCompile Include="additional\imgui\misc\freetype\imgui_freetype.cpp">
+      <Filter>头文件\Additional\Imgui</Filter>
+    </ClCompile>
     <ClCompile Include="additional\imgui\imgui_draw.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
@@ -2262,6 +2283,9 @@
     <Image Include="src\icon.ico">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\whiteboard.ico">
+      <Filter>资源文件</Filter>
+    </Image>
     <Image Include="src\sign3.png">
       <Filter>资源文件</Filter>
     </Image>
@@ -2292,40 +2316,7 @@
     <Image Include="src\setting\SettingSponsor.png">
       <Filter>资源文件</Filter>
     </Image>
-    <Image Include="src\ClassIsland.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\IslandCaller.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\desktop.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\explorer.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\keyboardesc.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\altf4.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\control.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\lockworkstation.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\taskmgr.png">
-      <Filter>资源文件</Filter>
-    </Image>
     <Image Include="src\PluginFlag4.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\NamePicker.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\SecRandom.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>
@@ -2336,7 +2327,8 @@
     <None Include="src\UI\logo1.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\logo2.svg">
+    </None>
+    <None Include="src\UI\whiteboardLnk.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\Frame 94.svg">
@@ -2384,16 +2376,10 @@
     <None Include="src\UI\barWhiteboard.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barDismiss.svg">
-      <Filter>资源文件</Filter>
-    </None>
     <None Include="src\UI\barEraser.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barAutoEraser.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barDivider.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barClean.svg">
@@ -2423,6 +2409,9 @@
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.cso">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </None>
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
@@ -2433,6 +2422,33 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\i18n\zh-TW.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\id-ID.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\vi-VN.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\tr-TR.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\it-IT.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\pl-PL.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\uk-UA.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\es-MX.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\ro-RO.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\en-GB.jsonc">
       <Filter>资源文件</Filter>
     </None>
     <None Include="IdtFloating.cpp">
@@ -2506,6 +2522,18 @@
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
       <Filter>资源文件</Filter>
     </Font>
+    <Font Include="src\ttf\NotoSansJP-Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansJP-Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansKR-Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansKR-Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
     <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Regular.ttf">
       <Filter>资源文件</Filter>
     </Font>
@@ -2520,6 +2548,9 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.hlsl">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </FxCompile>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.hlsl">
@@ -2710,6 +2741,66 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barAdd.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barReturnShow.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barResumeWhiteboard.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barMove.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barEraserSpeedSetting.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compExplorer.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compTaskManager.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compControlPanel.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compShowDesktop.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compLockScreen.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compEscape.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compAltF4.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallRandom.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallSingle.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallQuick.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallQuick2.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallQuickCompat.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compNamePicker.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compClassSettings.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compClassProfile.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compClassSwap.svg">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

@@ -105,6 +105,19 @@ inline constexpr struct I18nKeyRoot
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
                 const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
             } MainButtons{};
+            struct Node__UI__Bar__Components
+            {
+                const char* ExplorerLabel = "UI/Bar/Components/ExplorerLabel";
+                const char* TaskManagerLabel = "UI/Bar/Components/TaskManagerLabel";
+                const char* ControlPanelLabel = "UI/Bar/Components/ControlPanelLabel";
+                const char* ShowDesktopLabel = "UI/Bar/Components/ShowDesktopLabel";
+                const char* LockScreenLabel = "UI/Bar/Components/LockScreenLabel";
+                const char* EscapeLabel = "UI/Bar/Components/EscapeLabel";
+                const char* RollCallLabel = "UI/Bar/Components/RollCallLabel";
+                const char* ClassIslandSettingsLabel = "UI/Bar/Components/ClassIslandSettingsLabel";
+                const char* ClassIslandProfileLabel = "UI/Bar/Components/ClassIslandProfileLabel";
+                const char* ClassIslandSwapLabel = "UI/Bar/Components/ClassIslandSwapLabel";
+            } Components{};
             struct Node__UI__Bar__DrawAttributes
             {
                 const char* BrushLabel = "UI/Bar/DrawAttributes/BrushLabel";
@@ -147,6 +160,7 @@ inline constexpr struct I18nKeyRoot
                 const char* PresentFailed = "UI/Bar/CanvasRecovery/PresentFailed";
                 const char* Failed = "UI/Bar/CanvasRecovery/Failed";
                 const char* Recovering = "UI/Bar/CanvasRecovery/Recovering";
+                const char* Loading = "UI/Bar/CanvasRecovery/Loading";
                 const char* Retry = "UI/Bar/CanvasRecovery/Retry";
                 const char* Wait = "UI/Bar/CanvasRecovery/Wait";
                 const char* RetryCanvas = "UI/Bar/CanvasRecovery/RetryCanvas";
@@ -254,6 +268,8 @@ inline constexpr struct I18nKeyRoot
             const char* AnimationSection = "SettingsUI/Design/AnimationSection";
             const char* LightingSection = "SettingsUI/Design/LightingSection";
             const char* ScalingSection = "SettingsUI/Design/ScalingSection";
+            const char* ThemeSection = "SettingsUI/Design/ThemeSection";
+            const char* OpacitySection = "SettingsUI/Design/OpacitySection";
             const char* WindowBehaviorSection = "SettingsUI/Design/WindowBehaviorSection";
             const char* SafetyRecoverySection = "SettingsUI/Design/SafetyRecoverySection";
             const char* ShortcutGlobalSection = "SettingsUI/Design/ShortcutGlobalSection";
@@ -479,6 +495,13 @@ inline constexpr struct I18nKeyRoot
                 const char* AutoStartE = "SettingsUI/Regular/StartUp/AutoStartE";
                 const char* LoadingAnimation = "SettingsUI/Regular/StartUp/LoadingAnimation";
                 const char* LoadingAnimationE = "SettingsUI/Regular/StartUp/LoadingAnimationE";
+                struct Node__SettingsUI__Regular__StartUp__StartupEffect
+                {
+                    const char* N = "SettingsUI/Regular/StartUp/StartupEffect/N";
+                    const char* Shimmer = "SettingsUI/Regular/StartUp/StartupEffect/Shimmer";
+                    const char* Aurora = "SettingsUI/Regular/StartUp/StartupEffect/Aurora";
+                    const char* PixelAssembly = "SettingsUI/Regular/StartUp/StartupEffect/PixelAssembly";
+                } StartupEffect{};
                 struct Node__SettingsUI__Regular__StartUp__SettingEntryAnimation
                 {
                     const char* N = "SettingsUI/Regular/StartUp/SettingEntryAnimation/N";
@@ -505,14 +528,28 @@ inline constexpr struct I18nKeyRoot
                 const char* EdgeLightingE = "SettingsUI/Regular/Appearance/EdgeLightingE";
                 const char* DynamicEdgeLighting = "SettingsUI/Regular/Appearance/DynamicEdgeLighting";
                 const char* DynamicEdgeLightingE = "SettingsUI/Regular/Appearance/DynamicEdgeLightingE";
+                const char* ResetDefault = "SettingsUI/Regular/Appearance/ResetDefault";
+                struct Node__SettingsUI__Regular__Appearance__SettingTheme
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/SettingTheme/N";
+                    const char* E = "SettingsUI/Regular/Appearance/SettingTheme/E";
+                } SettingTheme{};
+                struct Node__SettingsUI__Regular__Appearance__BackgroundOpacity
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/BackgroundOpacity/N";
+                    const char* E = "SettingsUI/Regular/Appearance/BackgroundOpacity/E";
+                } BackgroundOpacity{};
+                struct Node__SettingsUI__Regular__Appearance__ContentOpacity
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/ContentOpacity/N";
+                    const char* E = "SettingsUI/Regular/Appearance/ContentOpacity/E";
+                } ContentOpacity{};
                 struct Node__SettingsUI__Regular__Appearance__Theme
                 {
                     const char* N = "SettingsUI/Regular/Appearance/Theme/N";
                     const char* E = "SettingsUI/Regular/Appearance/Theme/E";
-                    const char* Skip1 = "SettingsUI/Regular/Appearance/Theme/Skip1";
-                    const char* Skip2 = "SettingsUI/Regular/Appearance/Theme/Skip2";
-                    const char* Skip3 = "SettingsUI/Regular/Appearance/Theme/Skip3";
-                    const char* Skip4 = "SettingsUI/Regular/Appearance/Theme/Skip4";
+                    const char* Dark = "SettingsUI/Regular/Appearance/Theme/Dark";
+                    const char* Light = "SettingsUI/Regular/Appearance/Theme/Light";
                 } Theme{};
                 struct Node__SettingsUI__Regular__Appearance__TaskbarScaleBase
                 {
@@ -620,11 +657,55 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Draw__Cursor
             {
                 const char* N = "SettingsUI/Draw/Cursor/N";
-                const char* Description = "SettingsUI/Draw/Cursor/Description";
-                const char* MouseStyle = "SettingsUI/Draw/Cursor/MouseStyle";
-                const char* PenStyle = "SettingsUI/Draw/Cursor/PenStyle";
-                const char* DefaultStyle = "SettingsUI/Draw/Cursor/DefaultStyle";
-                const char* DrawingStyle = "SettingsUI/Draw/Cursor/DrawingStyle";
+                const char* EntryDescription = "SettingsUI/Draw/Cursor/EntryDescription";
+                const char* Devices = "SettingsUI/Draw/Cursor/Devices";
+                const char* PenDevices = "SettingsUI/Draw/Cursor/PenDevices";
+                struct Node__SettingsUI__Draw__Cursor__Mouse
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Mouse/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Mouse/E";
+                } Mouse{};
+                struct Node__SettingsUI__Draw__Cursor__Touch
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Touch/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Touch/E";
+                } Touch{};
+                struct Node__SettingsUI__Draw__Cursor__ScreenPen
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/ScreenPen/N";
+                    const char* E = "SettingsUI/Draw/Cursor/ScreenPen/E";
+                } ScreenPen{};
+                struct Node__SettingsUI__Draw__Cursor__Tablet
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Tablet/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Tablet/E";
+                } Tablet{};
+                struct Node__SettingsUI__Draw__Cursor__Style
+                {
+                    const char* None = "SettingsUI/Draw/Cursor/Style/None";
+                    const char* Arrow = "SettingsUI/Draw/Cursor/Style/Arrow";
+                    const char* Pen = "SettingsUI/Draw/Cursor/Style/Pen";
+                    const char* HighlightPen = "SettingsUI/Draw/Cursor/Style/HighlightPen";
+                    const char* Dot = "SettingsUI/Draw/Cursor/Style/Dot";
+                    const char* HighlightDot = "SettingsUI/Draw/Cursor/Style/HighlightDot";
+                } Style{};
+                struct Node__SettingsUI__Draw__Cursor__InjectedMouse
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/InjectedMouse/N";
+                    const char* E = "SettingsUI/Draw/Cursor/InjectedMouse/E";
+                    const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
+                } InjectedMouse{};
+                const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
+                struct Node__SettingsUI__Draw__Cursor__DotHideOnContact
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/DotHideOnContact/N";
+                    const char* E = "SettingsUI/Draw/Cursor/DotHideOnContact/E";
+                    const char* Off = "SettingsUI/Draw/Cursor/DotHideOnContact/Off";
+                    const char* ScreenPen = "SettingsUI/Draw/Cursor/DotHideOnContact/ScreenPen";
+                    const char* Tablet = "SettingsUI/Draw/Cursor/DotHideOnContact/Tablet";
+                    const char* Both = "SettingsUI/Draw/Cursor/DotHideOnContact/Both";
+                } DotHideOnContact{};
+                const char* Note = "SettingsUI/Draw/Cursor/Note";
             } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {
@@ -750,8 +831,15 @@ inline constexpr struct I18nKeyRoot
                 const char* E = "SettingsUI/Performance/DirectComposition/E";
             } DirectComposition{};
         } Performance{};
+        struct Node__SettingsUI__Linkage
+        {
+            const char* N = "SettingsUI/Linkage/N";
+            const char* PPT = "SettingsUI/Linkage/PPT";
+            const char* CoreVersion = "SettingsUI/Linkage/CoreVersion";
+        } Linkage{};
         struct Node__SettingsUI__Experimental
         {
+            const char* N = "SettingsUI/Experimental/N";
             struct Node__SettingsUI__Experimental__UI3
             {
                 struct Node__SettingsUI__Experimental__UI3__AllowFractionalFontSize
@@ -829,6 +917,13 @@ inline constexpr struct I18nKeyRoot
                     const char* BottomBoth = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/BottomBoth";
                     const char* MiddleBoth = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/MiddleBoth";
                     const char* BottomMiddle = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/BottomMiddle";
+                    const char* IdleFade = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFade";
+                    const char* IdleFadeE = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeE";
+                    const char* IdleFadeOff = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeOff";
+                    const char* IdleFadeSeconds = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeSeconds";
+                    const char* IdleFadeBottomPair = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeBottomPair";
+                    const char* IdleFadeMiddlePair = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeMiddlePair";
+                    const char* IdleFadeMainBar = "SettingsUI/PlugIn/PPTHelper/WidgetDisplay/IdleFadeMainBar";
                 } WidgetDisplay{};
                 struct Node__SettingsUI__PlugIn__PPTHelper__WidgetPosition
                 {
@@ -885,6 +980,44 @@ inline constexpr struct I18nKeyRoot
             {
                 const char* N = "SettingsUI/PlugIn/DesktopDrawpadBlocker/N";
                 const char* E = "SettingsUI/PlugIn/DesktopDrawpadBlocker/E";
+                const char* LicenseTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/LicenseTitle";
+                const char* LicenseDescription = "SettingsUI/PlugIn/DesktopDrawpadBlocker/LicenseDescription";
+                const char* UseSection = "SettingsUI/PlugIn/DesktopDrawpadBlocker/UseSection";
+                const char* EnableTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/EnableTitle";
+                const char* EnableDescription = "SettingsUI/PlugIn/DesktopDrawpadBlocker/EnableDescription";
+                const char* GeneralSection = "SettingsUI/PlugIn/DesktopDrawpadBlocker/GeneralSection";
+                const char* AdministratorTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/AdministratorTitle";
+                const char* AdministratorDescription = "SettingsUI/PlugIn/DesktopDrawpadBlocker/AdministratorDescription";
+                const char* IntervalTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntervalTitle";
+                const char* IntervalDescription = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntervalDescription";
+                const char* IntervalShort = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntervalShort";
+                const char* IntervalMediumShort = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntervalMediumShort";
+                const char* IntervalMedium = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntervalMedium";
+                const char* IntervalMediumLong = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntervalMediumLong";
+                const char* IntervalLong = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntervalLong";
+                const char* PrecisionSection = "SettingsUI/PlugIn/DesktopDrawpadBlocker/PrecisionSection";
+                const char* Seewo3Title = "SettingsUI/PlugIn/DesktopDrawpadBlocker/Seewo3Title";
+                const char* Seewo5Title = "SettingsUI/PlugIn/DesktopDrawpadBlocker/Seewo5Title";
+                const char* Seewo5CTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/Seewo5CTitle";
+                const char* PincoSidebarTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/PincoSidebarTitle";
+                const char* PincoDrawingTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/PincoDrawingTitle";
+                const char* SeewoPptTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/SeewoPptTitle";
+                const char* IwbAssistantTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IwbAssistantTitle";
+                const char* YiouTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/YiouTitle";
+                const char* AiClassTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/AiClassTitle";
+                const char* ClassInXTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/ClassInXTitle";
+                const char* IntelligentClassTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IntelligentClassTitle";
+                const char* ChangYan4Title = "SettingsUI/PlugIn/DesktopDrawpadBlocker/ChangYan4Title";
+                const char* ChangYan5Title = "SettingsUI/PlugIn/DesktopDrawpadBlocker/ChangYan5Title";
+                const char* Iclass30SidebarTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/Iclass30SidebarTitle";
+                const char* Iclass30DrawingTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/Iclass30DrawingTitle";
+                const char* SeewoDesktopSidebarTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/SeewoDesktopSidebarTitle";
+                const char* SeewoDesktopDrawingTitle = "SettingsUI/PlugIn/DesktopDrawpadBlocker/SeewoDesktopDrawingTitle";
+                const char* IncludesPptNote = "SettingsUI/PlugIn/DesktopDrawpadBlocker/IncludesPptNote";
+                const char* RestoresWhiteboardNote = "SettingsUI/PlugIn/DesktopDrawpadBlocker/RestoresWhiteboardNote";
+                const char* WindowTrackingNote = "SettingsUI/PlugIn/DesktopDrawpadBlocker/WindowTrackingNote";
+                const char* SeewoDesktopVersionsNote = "SettingsUI/PlugIn/DesktopDrawpadBlocker/SeewoDesktopVersionsNote";
+                const char* AdministratorNote = "SettingsUI/PlugIn/DesktopDrawpadBlocker/AdministratorNote";
             } DesktopDrawpadBlocker{};
             struct Node__SettingsUI__PlugIn__LnkHelper
             {
@@ -907,7 +1040,48 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Component
         {
             const char* N = "SettingsUI/Component/N";
+            const char* SoftwareSection = "SettingsUI/Component/SoftwareSection";
+            const char* SystemSection = "SettingsUI/Component/SystemSection";
+            const char* KeyboardSection = "SettingsUI/Component/KeyboardSection";
+            const char* RollCallSection = "SettingsUI/Component/RollCallSection";
+            const char* ClassIslandSection = "SettingsUI/Component/ClassIslandSection";
+            const char* ExplorerTitle = "SettingsUI/Component/ExplorerTitle";
+            const char* TaskManagerTitle = "SettingsUI/Component/TaskManagerTitle";
+            const char* ControlPanelTitle = "SettingsUI/Component/ControlPanelTitle";
+            const char* ShowDesktopTitle = "SettingsUI/Component/ShowDesktopTitle";
+            const char* LockScreenTitle = "SettingsUI/Component/LockScreenTitle";
+            const char* EscapeTitle = "SettingsUI/Component/EscapeTitle";
+            const char* AltF4Title = "SettingsUI/Component/AltF4Title";
+            const char* IslandCaller1Title = "SettingsUI/Component/IslandCaller1Title";
+            const char* IslandCaller2Title = "SettingsUI/Component/IslandCaller2Title";
+            const char* SecRandom1Title = "SettingsUI/Component/SecRandom1Title";
+            const char* SecRandom2Title = "SettingsUI/Component/SecRandom2Title";
+            const char* SecRandom2CompatTitle = "SettingsUI/Component/SecRandom2CompatTitle";
+            const char* NamePickerTitle = "SettingsUI/Component/NamePickerTitle";
+            const char* ClassIslandSettingsTitle = "SettingsUI/Component/ClassIslandSettingsTitle";
+            const char* ClassIslandProfileTitle = "SettingsUI/Component/ClassIslandProfileTitle";
+            const char* ClassIslandSwapTitle = "SettingsUI/Component/ClassIslandSwapTitle";
+            const char* IslandCallerRequirement = "SettingsUI/Component/IslandCallerRequirement";
+            const char* SecRandomUrlRequirement = "SettingsUI/Component/SecRandomUrlRequirement";
+            const char* SecRandomIpcRequirement = "SettingsUI/Component/SecRandomIpcRequirement";
+            const char* NamePickerRequirement = "SettingsUI/Component/NamePickerRequirement";
+            const char* ClassIslandProtocolNote = "SettingsUI/Component/ClassIslandProtocolNote";
+            const char* ClassIslandSwapNote = "SettingsUI/Component/ClassIslandSwapNote";
         } Component{};
+        struct Node__SettingsUI__DesktopShortcut
+        {
+            const char* N = "SettingsUI/DesktopShortcut/N";
+            const char* ApplicationSection = "SettingsUI/DesktopShortcut/ApplicationSection";
+            const char* WhiteboardSection = "SettingsUI/DesktopShortcut/WhiteboardSection";
+            const char* NameLabel = "SettingsUI/DesktopShortcut/NameLabel";
+            const char* CustomName = "SettingsUI/DesktopShortcut/CustomName";
+            const char* CustomHint = "SettingsUI/DesktopShortcut/CustomHint";
+            const char* InvalidName = "SettingsUI/DesktopShortcut/InvalidName";
+            const char* NameConflict = "SettingsUI/DesktopShortcut/NameConflict";
+            const char* PresetWhiteboard = "SettingsUI/DesktopShortcut/PresetWhiteboard";
+            const char* PresetAnnotation = "SettingsUI/DesktopShortcut/PresetAnnotation";
+            const char* PresetAnnotationTool = "SettingsUI/DesktopShortcut/PresetAnnotationTool";
+        } DesktopShortcut{};
         struct Node__SettingsUI__HotKey
         {
             const char* N = "SettingsUI/HotKey/N";
@@ -943,6 +1117,7 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Sponsor
         {
             const char* N = "SettingsUI/Sponsor/N";
+            const char* Thanks = "SettingsUI/Sponsor/Thanks";
         } Sponsor{};
         struct Node__SettingsUI__RestartSoftware
         {
@@ -955,7 +1130,20 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__DebugSoftware
         {
             const char* N = "SettingsUI/DebugSoftware/N";
+            const char* RenderingSection = "SettingsUI/DebugSoftware/RenderingSection";
+            struct Node__SettingsUI__DebugSoftware__DirtyRegions
+            {
+                const char* N = "SettingsUI/DebugSoftware/DirtyRegions/N";
+                const char* E = "SettingsUI/DebugSoftware/DirtyRegions/E";
+            } DirtyRegions{};
+            struct Node__SettingsUI__DebugSoftware__FrameRate
+            {
+                const char* N = "SettingsUI/DebugSoftware/FrameRate/N";
+                const char* E = "SettingsUI/DebugSoftware/FrameRate/E";
+            } FrameRate{};
+            const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
+            const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";
         } DebugSoftware{};
         struct Node__SettingsUI__Update
         {

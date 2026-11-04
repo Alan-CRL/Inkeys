@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>启动动画效果改进样式稿 v5</title>
+<style>
+:root{color-scheme:light dark;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+body{margin:0;padding:20px;background:light-dark(#f3f3f3,#1c1c1c);color:light-dark(#1a1a1a,#f2f2f2)}
+h1{font-size:18px;margin:0 0 6px}
+p{margin:0 0 12px;font-size:13px;color:light-dark(#555,#bbb);max-width:900px;line-height:1.6}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:12px}
+.controls label{display:grid;gap:4px;font-size:13px}
+select,button{font:inherit;padding:5px 10px;border-radius:5px;border:1px solid light-dark(#ccc,#555);background:light-dark(#fff,#2d2d2d);color:inherit;min-height:32px}
+input[type=range]{width:160px;accent-color:#00a99d}
+.stage{position:relative;border-radius:8px;overflow:hidden;max-width:1024px}
+canvas{display:block;width:100%;aspect-ratio:1024/460}
+.status{font-size:12px;margin-top:6px;color:light-dark(#666,#aaa);font-variant-numeric:tabular-nums}
+ul{font-size:13px;line-height:1.7;max-width:900px;color:light-dark(#444,#ccc)}
+</style>
+</head>
+<body>
+<h1>启动动画改进样式稿 v5</h1>
+<p>演示颜色、运动与层级，不是原生 D2D 截图。可切换主题、效果，并用慢放观察细节；“彩虹晕染（旧）”用于对比当前实现。</p>
+<div class="controls">
+  <label>效果<select id="effect">
+    <option value="aurora">彩虹晕染（新）</option>
+    <option value="auroraOld">彩虹晕染（旧，对比）</option>
+    <option value="pixel" selected>像素拼装（新：汇聚落位）</option>
+  </select></label>
+  <label>主栏主题<select id="theme"><option value="dark">深色</option><option value="light">中性雾白</option></select></label>
+  <label>桌面<select id="wall"><option value="dark">深色壁纸</option><option value="light">浅色壁纸</option></select></label>
+  <label>播放速度 <span id="speedText">1.00×</span><input id="speed" type="range" min="0.15" max="1" step="0.05" value="1"></label>
+  <button id="replay">重播</button>
+  <button id="pause">暂停</button>
+</div>
+<div class="stage"><canvas id="c"></canvas></div>
+<div class="status" id="status"></div>
+<ul>
+  <li><b>彩虹晕染</b>：OKLCH 等感知亮度高彩度色；同一时刻只出现约 130° 内的相邻色相窗口（青→蓝→紫→粉→珊瑚），窗口随时间缓慢漂移，不再让互补色叠出灰褐；色块在低分辨率层绘制后一次模糊融合；深色以 Screen、浅色以 Multiply 合成，强度约 0.45 / 0.46，基底仍清楚透出。</li>
+  <li><b>像素拼装</b>：不再先外散。像素从上方与两侧的较小区域（约 1.5W×2.4H）以弧线淡入飞来，由中心向两端分波落位，落位时减速并有极短的点状微光；每颗只带一条随速度伸缩的短速度线，停下即无尾；全部 2.4 秒内落完，之后转入掠光等待。</li>
+  <li><b>粒度</b>：像素块约 5.5 DIP，数量约为原来的一半；原生实现以 SpriteBatch 单次批绘制并只提交脏区域。</li>
+</ul>
+<script>
+(() => {
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+const $ = id => document.getElementById(id);
+const SW = 1024, SH = 460;
+const BAR = { w: 560, h: 56, r: 8 };
+const TASKBAR = 40;
+BAR.x = (SW - BAR.w) / 2; BAR.y = SH - TASKBAR - 14 - BAR.h;
+const ASSEMBLY = 2.4, TILE = 5.5;
+let paused = false, dpr = 1, start = performance.now(), clock = 0, last = performance.now(), particles = [], targetKey = '';
+const targetCanvas = document.createElement('canvas'), tctx = targetCanvas.getContext('2d');
+const low = document.createElement('canvas'), lctx = low.getContext('2d');
+
+// ---------- color ----------
+function oklch(L, C, h, a = 1) {
+  const hr = h * Math.PI / 180, A = C * Math.cos(hr), B = C * Math.sin(hr);
+  const l = (L + .3963377774 * A + .2158037573 * B) ** 3;
+  const m = (L - .1055613458 * A - .0638541728 * B) ** 3;
+  const s = (L - .0894841775 * A - 1.2914855480 * B) ** 3;
+  let r = 4.0767416621 * l - 3.3077115913 * m + .2309699292 * s;
+  let g = -1.2684380046 * l + 2.6097574011 * m - .3413193965 * s;
+  let b = -.0041960863 * l - .7034186147 * m + 1.7076147010 * s;
+  const f = x => { x = Math.min(1, Math.max(0, x)); return Math.round(255 * (x <= .0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - .055)); };
+  return `rgba(${f(r)},${f(g)},${f(b)},${a})`;
+}
+function oldRainbow(hue, a = 1) { // 复刻当前 RainbowColor：低彩度粉彩
+  const h = hue / 60, c = .5676, x = c * (1 - Math.abs(h % 2 - 1)), m = .3862, s = Math.floor(h) % 6;
+  const t = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][s];
+  return `rgba(${Math.round((t[0] + m) * 255)},${Math.round((t[1] + m) * 255)},${Math.round((t[2] + m) * 255)},${a})`;
+}
+const theme = () => $('theme').value === 'light' ? {
+  light: true, surface: '#fbfbfb', frame: 'rgba(139,139,139,.55)', op: .9,
+  trail: [0, 106, 99], flash: 'rgba(0,150,140,', shimmer: 'rgba(255,255,255,.95)'
+} : {
+  light: false, surface: '#181818', frame: 'rgba(255,255,255,.225)', op: .8,
+  trail: [88, 255, 236], flash: 'rgba(200,255,248,', shimmer: 'rgba(255,255,255,.16)'
+};
+
+// ---------- shapes ----------
+function rr(c, x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, w, h, r); }
+function drawBase(c, th, ox = 0, oy = 0) {
+  rr(c, ox + .5, oy + .5, BAR.w - 1, BAR.h - 1, BAR.r); c.fillStyle = th.surface; c.fill();
+  c.lineWidth = 1; c.strokeStyle = th.frame; c.stroke();
+}
+function drawShimmer(c, th, t) {
+  const cyc = 2.2, p = (t % cyc) / cyc, e = p < .5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
+  const cx = BAR.x - 160 + (BAR.w + 320) * e;
+  const g = c.createLinearGradient(cx - 90, BAR.y, cx + 90, BAR.y + BAR.h);
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, th.shimmer); g.addColorStop(1, 'rgba(255,255,255,0)');
+  c.save(); rr(c, BAR.x, BAR.y, BAR.w, BAR.h, BAR.r); c.clip(); c.fillStyle = g; c.fillRect(BAR.x, BAR.y, BAR.w, BAR.h); c.restore();
+}
+
+// ---------- rainbow (new) ----------
+const blobs = Array.from({ length: 7 }, (_, i) => ({
+  phase: i * 2.1 + .7, sp: .23 + (i * .37 % 1) * .22, off: [-62, 18, -24, 62, -4, 40, -44][i], ry: 1 + (i * .61 % 1) * .5
+}));
+function drawAurora(th, t) {
+  const s = .25, lw = Math.ceil(BAR.w * s), lh = Math.ceil(BAR.h * s);
+  if (low.width !== lw || low.height !== lh) { low.width = lw; low.height = lh; }
+  const hc = 255 + 70 * Math.sin(t * .13);           // 色相窗口中心缓慢漂移
+  const L = th.light ? .80 : .74, C = th.light ? .16 : .17;
+  lctx.setTransform(s, 0, 0, s, 0, 0); lctx.globalCompositeOperation = 'source-over';
+  const bg = lctx.createLinearGradient(0, 0, BAR.w, BAR.h);
+  bg.addColorStop(0, oklch(L, C, hc - 40)); bg.addColorStop(.5, oklch(L, C, hc)); bg.addColorStop(1, oklch(L, C, hc + 40));
+  lctx.fillStyle = bg; lctx.fillRect(0, 0, BAR.w, BAR.h);    // 内侧无空白
+  for (const b of blobs) {
+    const x = BAR.w * (.5 + .5 * Math.sin(b.phase + t * b.sp)), y = BAR.h * (.5 + .55 * Math.sin(b.phase * 1.7 + t * (b.sp + .11)));
+    const rx = BAR.w * (.16 + .05 * Math.sin(t * .7 + b.phase)), ry = BAR.h * .9 * b.ry;
+    const hue = hc + b.off + 10 * Math.sin(t * .5 + b.phase);
+    lctx.save(); lctx.translate(x, y); lctx.scale(rx / ry, 1);
+    const g = lctx.createRadialGradient(0, 0, 0, 0, 0, ry);
+    g.addColorStop(0, oklch(L, C + .02, hue, 1)); g.addColorStop(.55, oklch(L, C, hue, .7)); g.addColorStop(1, oklch(L, C, hue, 0));
+    lctx.fillStyle = g; lctx.fillRect(-ry, -ry, ry * 2, ry * 2); lctx.restore();
+  }
+  ctx.save(); rr(ctx, BAR.x, BAR.y, BAR.w, BAR.h, BAR.r); ctx.clip();
+  ctx.globalAlpha = th.op; ctx.fillStyle = th.surface; ctx.fillRect(BAR.x, BAR.y, BAR.w, BAR.h);
+  ctx.globalCompositeOperation = th.light ? 'multiply' : 'screen';
+  ctx.globalAlpha = th.op * (th.light ? .46 : .45);
+  ctx.filter = 'blur(6px)'; ctx.drawImage(low, BAR.x - 8, BAR.y - 8, BAR.w + 16, BAR.h + 16); ctx.filter = 'none';
+  ctx.globalCompositeOperation = 'source-over';
+  // 柔和高光：缓慢游走的低强度镜面点 + 顶边细亮线
+  const gx = BAR.x + BAR.w * (.5 + .42 * Math.sin(t * .31)), gl = ctx.createRadialGradient(gx, BAR.y, 0, gx, BAR.y, BAR.w * .22);
+  gl.addColorStop(0, `rgba(255,255,255,${th.light ? .35 : .10})`); gl.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = th.op; ctx.fillStyle = gl; ctx.fillRect(BAR.x, BAR.y, BAR.w, BAR.h);
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = th.op; rr(ctx, BAR.x + .5, BAR.y + .5, BAR.w - 1, BAR.h - 1, BAR.r); ctx.strokeStyle = th.frame; ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.globalAlpha = th.op * .45; drawShimmer(ctx, th, t); ctx.restore();
+}
+function drawAuroraOld(th, t) {
+  ctx.save(); rr(ctx, BAR.x, BAR.y, BAR.w, BAR.h, BAR.r); ctx.clip();
+  ctx.globalAlpha = th.op; ctx.fillStyle = th.surface; ctx.fillRect(BAR.x, BAR.y, BAR.w, BAR.h);
+  const hues = [174, 270, 38, 321, 214, 147, 293, 193, 346, 237, 28, 172, 255, 315, 202, 142];
+  ctx.globalAlpha = th.op * .2;
+  hues.forEach((h, i) => {
+    const ph = i * 1.37 + .3, sp = .25 + (i * .53 % 1) * .35;
+    const x = BAR.x + BAR.w * (.5 + .58 * Math.sin(ph + t * sp)), y = BAR.y + BAR.h * (.5 + .72 * Math.sin(ph * 1.7 + t * (sp + .16)));
+    const r = BAR.h * (1 + (i * .29 % 1) * .8);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, oldRainbow(h, .61)); g.addColorStop(.35, oldRainbow(h, .55)); g.addColorStop(.72, oldRainbow(h, .18)); g.addColorStop(1, oldRainbow(h, 0));
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  });
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = th.op; rr(ctx, BAR.x + .5, BAR.y + .5, BAR.w - 1, BAR.h - 1, BAR.r); ctx.strokeStyle = th.frame; ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.globalAlpha = th.op * .45; drawShimmer(ctx, th, t); ctx.restore();
+}
+
+// ---------- pixel assembly (new) ----------
+function rnd(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s >>> 8) / 16777216; }; }
+function buildParticles(th) {
+  const k = 2; targetCanvas.width = BAR.w * k; targetCanvas.height = BAR.h * k;
+  tctx.setTransform(k, 0, 0, k, 0, 0); tctx.clearRect(0, 0, BAR.w, BAR.h); drawBase(tctx, th);
+  const data = tctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height).data;
+  const r = rnd(20261104), cx = BAR.x + BAR.w / 2, list = [];
+  const sink = { x: cx, y: BAR.y + BAR.h * 2.2 };           // 视觉汇聚点在主栏下方：粒子来自上方和两侧
+  for (let y = 0; y < BAR.h; y += TILE) for (let x = 0; x < BAR.w; x += TILE) {
+    const w = Math.min(TILE, BAR.w - x), h = Math.min(TILE, BAR.h - y);
+    let a = 0;
+    for (let yy = Math.floor(y * k); yy < Math.ceil((y + h) * k); yy++) for (let xx = Math.floor(x * k); xx < Math.ceil((x + w) * k); xx++) a += data[(yy * targetCanvas.width + xx) * 4 + 3];
+    if (!a) continue;
+    const tx = BAR.x + x + w / 2, ty = BAR.y + y + h / 2;
+    let dx = tx - sink.x, dy = ty - sink.y; const len = Math.hypot(dx, dy); dx /= len; dy /= len;
+    const ang = Math.atan2(dy, dx) + (r() - .5) * .9, dist = 70 + r() * 170;
+    let sx = tx + Math.cos(ang) * dist, sy = ty + Math.sin(ang) * dist * .75;
+    sx = Math.min(cx + BAR.w * .75, Math.max(cx - BAR.w * .75, sx)); sy = Math.max(BAR.y + BAR.h - BAR.h * 2.4, Math.min(BAR.y + BAR.h, sy));
+    const spread = Math.abs(tx - cx) / (BAR.w / 2);
+    const arrive = Math.min(2.22, .62 + 1.38 * Math.pow(spread, .85) + r() * .2);
+    const dur = .78 + r() * .36;
+    list.push({ sx: x, sy: y, w, h, tx, ty, ox: sx, oy: sy, arrive, begin: Math.max(0, arrive - dur), bend: (r() - .5) * 46 });
+  }
+  return list;
+}
+function pos(p, t) {
+  const u = Math.min(1, Math.max(0, (t - p.begin) / (p.arrive - p.begin))), e = 1 - (1 - u) ** 3;
+  const dx = p.tx - p.ox, dy = p.ty - p.oy, len = Math.hypot(dx, dy) || 1, b = p.bend * Math.sin(Math.PI * u) * (1 - u);
+  return { x: p.ox + dx * e - dy / len * b, y: p.oy + dy * e + dx / len * b, u };
+}
+const smooth = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+function drawPixel(th, t) {
+  const key = th.light + '';
+  if (key !== targetKey) { particles = buildParticles(th); targetKey = key; }
+  if (t >= ASSEMBLY) {
+    ctx.save(); ctx.globalAlpha = th.op; ctx.translate(BAR.x, BAR.y); drawBase(ctx, th); ctx.restore();
+    ctx.save(); ctx.globalAlpha = th.op; drawShimmer(ctx, th, t - ASSEMBLY); ctx.restore();
+    return;
+  }
+  const [tr, tg, tb] = th.trail;
+  ctx.save(); ctx.globalAlpha = 1; ctx.lineCap = 'round';
+  // 速度线：只取最近 ~45ms 的位移，停下即无尾
+  for (const p of particles) {
+    if (t < p.begin || t > p.arrive) continue;
+    const a = pos(p, t), b = pos(p, Math.max(p.begin, t - .045));
+    const sp = Math.hypot(a.x - b.x, a.y - b.y); if (sp < 1.2) continue;
+    const g = ctx.createLinearGradient(b.x, b.y, a.x, a.y), alpha = (th.light ? .30 : .34) * smooth(a.u / .3) * th.op;
+    g.addColorStop(0, `rgba(${tr},${tg},${tb},0)`); g.addColorStop(1, `rgba(${tr},${tg},${tb},${alpha})`);
+    ctx.strokeStyle = g; ctx.lineWidth = TILE * .55; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(a.x, a.y); ctx.stroke();
+  }
+  ctx.restore();
+  for (const p of particles) {
+    if (t < p.begin) continue;
+    const a = pos(p, t), alpha = smooth(a.u / .35), sc = .55 + .45 * smooth(a.u / .6);
+    const w = p.w * sc, h = p.h * sc;
+    ctx.globalAlpha = alpha * th.op;
+    ctx.drawImage(targetCanvas, p.sx * 2, p.sy * 2, p.w * 2, p.h * 2, a.x - w / 2, a.y - h / 2, w, h);
+    const f = (t - p.arrive) / .22;                 // 落位微光
+    if (f >= 0 && f < 1) { ctx.globalAlpha = th.op; ctx.fillStyle = th.flash + (th.light ? .28 : .5) * (1 - f) ** 2 + ')'; ctx.fillRect(p.tx - p.w / 2, p.ty - p.h / 2, p.w, p.h); }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- scene ----------
+function drawDesktop() {
+  const light = $('wall').value === 'light';
+  const g = ctx.createLinearGradient(0, 0, SW, SH);
+  if (light) { g.addColorStop(0, '#d9e4ee'); g.addColorStop(1, '#eef0e6'); } else { g.addColorStop(0, '#1d2633'); g.addColorStop(1, '#2b2233'); }
+  ctx.fillStyle = g; ctx.fillRect(0, 0, SW, SH);
+  ctx.fillStyle = light ? 'rgba(243,243,243,.92)' : 'rgba(32,32,32,.92)'; ctx.fillRect(0, SH - TASKBAR, SW, TASKBAR);
+}
+function frame(now) {
+  const speed = +$('speed').value; if (!paused) clock += (now - last) / 1000 * speed; last = now;
+  const effect = $('effect').value, th = theme();
+  const loop = effect === 'pixel' ? ASSEMBLY + 3 : 1e9; const t = clock % loop;
+  ctx.setTransform(dpr * canvas.width / dpr / SW, 0, 0, dpr * canvas.width / dpr / SW, 0, 0);
+  drawDesktop();
+  if (effect === 'aurora') drawAurora(th, t); else if (effect === 'auroraOld') drawAuroraOld(th, t); else drawPixel(th, t);
+  $('status').textContent = effect === 'pixel'
+    ? `t = ${t.toFixed(2)}s · 粒子 ${particles.length} · ${t < ASSEMBLY ? '汇聚落位中' : '拼好，掠光等待'}`
+    : `t = ${t.toFixed(1)}s`;
+  requestAnimationFrame(frame);
+}
+function size() { dpr = Math.min(devicePixelRatio || 1, 2); const r = canvas.getBoundingClientRect(); canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.width * SH / SW * dpr); }
+addEventListener('resize', size); size();
+$('replay').onclick = () => { clock = 0; };
+$('pause').onclick = () => { paused = !paused; $('pause').textContent = paused ? '继续' : '暂停'; };
+window.seek = t => { clock = t; paused = true; $('pause').textContent = '继续'; };
+$('speed').oninput = () => { $('speedText').textContent = (+$('speed').value).toFixed(2) + '×'; };
+['effect', 'theme'].forEach(id => $(id).onchange = () => { clock = 0; });
+requestAnimationFrame(t => { last = t; frame(t); });
+})();
+</script>
+</body>
+</html>

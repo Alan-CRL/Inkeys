@@ -172,3 +172,270 @@ if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision(
 - 合法BasicControl以及Unknown会话事实沿用既有资格；缺少可信墨迹target/HWND时可在真实隐藏并穿透画布后完成仅控制呈现，不伪造InkReady，不为不存在的墨迹target永久等待。受保护/fatal安全退场仍核对完整故障身份，不清独立故障门。
 - 白板内的放映开始、结束和换文稿更新后台可信会话事实；关闭白板时按最新事实返回Presentation或Desktop，不恢复已经结束的旧会话。普通翻页不推进工作区交接版本，继续使用session/target、slot、输出及UI-ready身份。
 - 验证须覆盖W→P的实际页码准备、PPT结束后W→D、过期UI-ready、BasicControl和Unknown；离屏测试不代表Office/WPS及系统任务栏实机验收。
+
+## 分页异步原生确认（2026-10-28）
+
+PageControl 的页码/UI-ready 同时要求像素事务和 Window Service 当前 candidate 的完整真实回执。固定帧命中与 damage revision 随候选捕获；旧 session/target/pageAckEpoch、workspace/publication、设备或 HWND generation 的完成不得提交后来帧。新几何/身份 native pending 期间禁止对应新输入；保留合法已准入手势不等于提前确认新页。普通 Show 不作为 promote，显式 Pointer Down 提升与可见性分开。具体 candidate/receipt 与失败矩阵见 [窗口候选合同](../native-desktop/rendering-and-ui.md#ui3-原生窗口候选与真实回执2026-10-28)。
+
+成对拖动只在当前 mask=3 的真实回执后提交；owner 与 ULW 通过 role lease/presentationRevision 互斥。最后 Move+Up 无后续消息也保留 pending 并收敛；旧像素/旧 session/旧 pair 回执不能覆盖新位置。Pointer Down 的 RequestPromotePptWindow 是独立异步事件，不受逐帧 candidate latest-wins 覆盖。
+
+## Scenario: 普通翻页快速描述符与导航等待反馈（2026-10-30）
+
+### 1. Scope / Trigger
+
+修改 `PresentationDescriptorReader`、普通/周期 descriptor 刷新、PPT owner 命令顺序或 Previous/Next 等待视觉时适用。目标是避免动态媒体和长文稿把全文稿 COM 扫描放大成秒级无响应，同时不放宽墨迹身份门。
+
+### 2. Signatures
+
+- `ReadFastShow(presentation, slideShowWindow, stableTopology, out pageStatus, out requiresFullTopology)` 读取新鲜 `FullName/Name`、当前 `View.State`、同次 `SlideIndex/SlideID` 和 `Slides.Count`；完整 `ReadShow` 继续负责有序全量拓扑。
+- `stablePresentationTopology` 是 owner 私有的最后一次完整 `StableSlideIds` 纯值缓存；公开 descriptor schema 与 COM ABI 不变。
+- native `PublishNavigationWaiting(session,epoch,next)`、`CompleteNavigationWaiting(session,epoch)`、`ClearNavigationWaiting(session=0)` 只发布命令视觉等待，不产生页回执。`PageControl::PptState.pagePreparing`（默认false）与 `IsPptPagePreparing(state)` 独立表达已观测的页面准备。
+- `INKEYS_PPTCOM_TRACE=1` 开启 managed fast/full/owner 聚合诊断；`INKEYS_PPT_TIMING=1` 同时开启 native `[PptNav]` 与既有 `[PptSync]`。两者默认关闭。
+
+### 3. Contracts
+
+- fast 仅在相同有效 binding 与放映 session、文稿身份仍由本次新鲜 `FullName/Name` 确认、非 EndScreen、页数一致、当前索引合法且当前 SlideID 等于缓存该索引 ID 时复用拓扑；周期到期本身不授权全量 `Slides.Item`。
+- 无缓存、binding/session/文稿身份/页数变化、当前 ID 缺失或不匹配、显式失效、EndScreen 及无法安全分类的错误必须 full 或走既有安全降级。只有当前 generation 的完整成功才能重建缓存；busy、部分读取和普通失败不得污染它。
+- 非当前页重排允许延迟发现；访问到不一致索引时，完整校验成功前不得发布该页可信墨迹目标。fast 不复用旧场 HWND/PID。
+- owner 每轮先完成最新页面/场次观察，再按进入时有界邮箱排水，最后进行非必要 descriptor 维护；不得为了命令优先使用旧 stamp 操作已变化页面，也不得让持续新命令饿死维护。
+- 命令等待反馈携带 session/epoch/direction；重复点击保留原 epoch，完成未翻页、换场、退出和 shutdown 必须清除或替换。三点不确定标记保留真实旧页码和布局，不参与 Draw3 ready、PageControl ack 或输入准入。`PptNavigationWaitingState.BeginSession` 只由真实场次发布建立活动身份；`Complete` 即使早于 `Publish` 也记录同场完成 epoch，迟到/旧发布不得复活等待；`Clear` 退休场次，无标记时也拒绝在途旧发布。
+
+- 页面准备从Ppt同一stateMutex快照投影：positions Active、PPT Visible、非零session、PageStateMode::Pending或Recovering进度，且按当前session过滤后的recovery为None或Recovering。pagePreparing进ArePptStatesEquivalent，保持同数字模式切换的重绘；BuildPageContent在PPT准备阶段提供方向标记，由Scene合并为页码区域右上角单组三点，OR原命令方向等待，不借旧方向/epoch。白板明确隔离，错误/重试保留原文案。
+- InkReady/BasicControl使pagePreparing为false，清点与新页码由同一成功UI事务显示；false不证明Draw3最终ACK/输入已开放。原target/Present/UI ack门、命令水位与single-flight均不变。命令Complete后到首次Pending尚无忙证据的区间不补假进度，不用TTL或等待target变化来猜同页动画/no-op；键盘触发真实Pending同样可显示准备点。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 同场普通翻页或周期 fast | 全量 `Slides.Item` 次数为 0，raw/descriptor 当前页一致后才推进 target |
+| 当前 ID 不匹配后 full busy/失败 | 可疑缓存失效，不能下轮静默复用 |
+| fast busy 后恢复 | 保留最后完整缓存；恢复 fast 仍重新核对新鲜身份、当前页与页数；身份 busy 不携带旧路径冒充当前文稿 |
+| 同 binding 另存/首次保存/结束后重放 | 重新确认 FullName/Name，新 session 首次完整验证；旧文件身份不得进入新目标 |
+| 非当前页重排后被访问 | 先 full 并验证有序唯一拓扑，再开放该页输入 |
+| 命令完成但页未变/同页动画/no-op | 清除命令等待并允许重试；仅真实Pending保留通用准备点，不伪造页码/ready或永久等待换页 |
+| 命令已Complete、raw/descriptor失配或新页未呈现 | 原Pending保留旧数字，页码区域右上角显示单组三点；恢复InkReady/BasicControl同帧去点 |
+| HWND0 BasicControl/同场recovery/白板隐藏 | 不等待不存在的墨迹ACK；错误/重试和白板语义优先，不残留通用PPT点 |
+| 导航 Complete 先于 Publish | 记住终态并拒绝该 epoch 及更旧发布，不能留下永久等待 |
+| 旧 session/epoch 完成或退出 | 不得清除新场等待；shutdown 清空全部等待 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：普通第 3→4 页 fast 只核对当前页，点击后的等待标记不替代 `descriptor_accepted → canvas_presented → page_ui_ack → input_open`。
+- Base：非当前页重排暂未改变当前 ID 时可 fast；访问受影响页时 full。
+- Bad：固定 3 秒到期就扫描全文稿；命令先于最新观察执行；full busy仍保留不匹配缓存；把命令Complete当页面已呈现或用等待标记提前开放画布。
+
+### 6. Tests Required
+
+- `PptCOM.Tests` 断言同场 fast/周期全量 Item=0、同 COM identity 的另存/首存及结束重放、身份 busy/失败/意外 COM 标量、迟到 generation、失效矩阵、非当前页重排、fast/full 释放账本及真实 service 的观察→命令→维护顺序。
+- `InkeysHeadlessTests.exe --page-control-only` 覆盖等待生命周期、Complete→Publish、旧epoch/场次乱序、退出/shutdown后迟到发布、pagePreparing状态比较、命令Complete后Pending双点、BasicControl/recovery/白板隔离及ready/旧ACK不变；`--ppt-session-only`保留数值协议。真实`--bar-eraser-offscreen-test`覆盖四surface三倍率、同页3/N Pending持续双点、InkReady4/N同帧去点、BasicControl target0清除、partial=full与采样启停BGRA一致。完整`--no-window`另行回归。
+- 完整 `InkeysRepo.sln Debug|ARM64`、同步同次 DLL/TLB 并核对 EXE 内嵌 DLL。真实 Office 冷/暖鼠标键盘进入/离开动态媒体页须记录 fast/full 与 QPC；未运行的 WPS/版本标 NOT VERIFIED。
+
+### 7. Wrong vs Correct
+
+~~~csharp
+// Wrong：周期到期或普通翻页都重新枚举全文稿。
+candidate = presentationDescriptorReader.ReadShow(application, presentation, window, revision, out pageStatus);
+
+// Correct：先核对当前证据；只有失效或必须重建时才 full。
+candidate = presentationDescriptorReader.ReadFastShow(presentation, window, stable, out pageStatus, out requiresFull);
+if (requiresFull)
+{
+    stablePresentationTopology = null;
+    candidate = presentationDescriptorReader.ReadShow(application, presentation, window, revision, out pageStatus);
+}
+~~~
+
+~~~cpp
+// 同一发布快照先过滤recovery，再投影真实Pending；视觉不生成ready。
+state.pagePreparing = state.presentationActive && state.presentationVisible
+    && state.layout.session != 0
+    && (pageState.mode == PageStateMode::Pending || state.recovery.kind == PptRecovery::Kind::Recovering)
+    && (state.recovery.kind == PptRecovery::Kind::None || state.recovery.kind == PptRecovery::Kind::Recovering);
+content.navigationWaitingPrevious = !content.whiteboard
+    && (IsPptPagePreparing(ppt) || IsPptNavigationWaiting(ppt, false));
+content.navigationWaitingNext = !content.whiteboard
+    && (IsPptPagePreparing(ppt) || IsPptNavigationWaiting(ppt, true));
+~~~
+
+## Scenario: 导航分段性能诊断（2026-11-01）
+
+### 1. Scope / Trigger
+
+定位控件请求总等待与owner执行不一致（例如1228ms对141ms），仅增加观测，不改变队列/调度/超时/COM访问/焦点或ready行为。人工PPT与GUI复测由用户执行，AI只构建和跑无窗口验证。
+
+### 2. Signatures
+
+- 进程启动开关 `INKEYS_PPT_PERF=1`，默认关闭；既有 `INKEYS_PPT_TIMING=1` 可同时采集PptSync。
+- 数值协议 `[PptPerf] v=1 source=native|managed pid tid qpc frequency span parent event=begin|end|instant stage op`。
+- native附加 `local_session/epoch/result/hr`；managed附加 `request/show_session/binding/result/executing/completed/cancelled`。各source独立编号，不把本地场次与managed场次、epoch与request强行相等。
+- 用户入口 `Scripts/Start-PptNavigationDiagnostic.cmd` / `.ps1 [-PrepareOnly]`；离线 `Scripts/analyze-ppt-navigation.py <采集目录或日志> --json <输出文件>`，自测 `--self-test`。
+
+### 3. Contracts
+
+- QPC/Stopwatch为共同时间基准，记录frequency；取时先于格式化与sink。native-request在入锁前开始，native-queue在成功push后锁内捕获，出队结束也锁内取时；实际写日志都在锁外。
+- native阶段为native-request/native-queue/native-business/native-com/native-focus，附加complete/discard/com-error事件；COM的returned不冒充Office已成功翻页。
+- managed阶段为managed-request/mailbox-wait/owner/command-precheck/view-get/invoke，维护为observe/maintain-binding/rot/descriptor/descriptor-fast/descriptor-full/annotation/caption。mailbox-enqueue/dequeue/stop-drain/skipped/complete仅保存纯值，不创建或跨线程缓存RCW。
+- Observe细分为`observe-active-presentation/presentations-count/presentation-identity/show-count/window-get/window-presentation/window-presentation-identity/total/view-get/view-state/current/hwnd/window-identity/session-commit`（每项均带`observe-`前缀）；释放分组为`observe-view-release/retired-window-release/temporaries-release`。这些只包裹原调用，不增加读值、比较、转移或释放。
+- 共享getter子项为`read-current-slide-get/index/release`、`read-slides-get/count/release`、`read-show-windows-get/count/release`和`read-presentations-get/count/release`（各项使用完整前缀）。它们嵌套在相应Observe分组或command-precheck下，不能把一次对象取得当成多个独立读取。
+- 禁用不格式化或读QPC；输出失败不得穿透业务或改变IErrorInfo，禁止Marshal.GetHRForException。managed原始stderr仅在新开关显式启用时打开，独立于ConsoleOutput.PptCOM，不创建可见控制台、不改Console全局出口。
+- 2秒wait返回与owner结束分别记录；executing超时仍可晚完成，不推断取消、不自动重试。原dynamic与每次取得finally释放合同保持不变。
+- 分析按pid/source/span配对并核对不可变身份；跨层在native-com内寻找唯一managed-request（先同OS线程，再唯一时间包含）；封送换线程允许，歧义保持unknown。维护重叠仅统计实际owner线程，嵌套维护不重复累加。
+- `maintenance_overlap[]`子阶段结构包含`total_ms/overlap_ms/children/breakdown_status`及`accounted_total_ms/accounted_overlap_ms/unattributed_total_ms/unattributed_overlap_ms/notes`。仅沿同owner线程、有效parent与时间包含的直接子项递归展示；只在直接子项完整且互不重叠时计算accounted，孙级不能再次加进父级。unattributed是实测父区间减直接子项，不能据此猜为某个Office调用。
+- 旧v1无子阶段时`children=null`、`breakdown_status=unavailable`，父总时长/旧聚合仍有效；没有记录不是0ms。子边界缺失、身份/时钟冲突、越界、parent非法或兄弟重叠时标partial，相应不能证明的统计保持null/unknown。
+- 入口固定本工作区EXE/工作目录，记录产物SHA、内嵌DLL一致性、诊断标记、HEAD、PID与QPC/UTC锚；已有Inkeys时拒绝启动，由用户正常退出，不kill。仅子进程设置开关，不改配置/PPT或永久环境；正常退出后复制原生日志，异常/中断保持明确状态。
+- 使用已安装且执行策略允许的PowerShell宿主，不修改/绕过执行策略。PrepareOnly只验证并写元数据，不启动产品窗口。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 开关关闭 / Console设为Null | 前者0字节；后者显式开关开启仍有成对stderr事件 |
+| writer抛错 / COM成员失败 | 业务原返回/异常与IErrorInfo不变，既有释放完成 |
+| producer锁等待 | 计入request总时间/剩余，不误算为成功入队后的驻留 |
+| 超时后owner晚完成 | 分别保留wait-return、owner end，不声称取消 |
+| begin/end身份冲突、记录缺失或时钟频率冲突 | partial/unknown，不凭行顺序或不同编号猜配 |
+| 有维护/键盘日志但无控件请求 | no-native-navigation，不称为已分析到控件慢样本 |
+| 旧Observe聚合无子阶段 | 父区间有效，children=null/unavailable，不倒填0ms或误报已定位成员 |
+| 细分读取/释放开关启停、busy/missing/断连/换场 | 读取次序/次数、释放账本/顺序和原状态结果完全一致 |
+| 已有实例、旧EXE无标记或内嵌DLL不一致 | 正式采集拒绝，保留元数据/明确错误 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：一条Previous分清native队列、COM进出、精确邮箱驻留、owner执行及focus。
+- Base：纯键盘没有native-request时仍可保留维护数据，并明确没有控件样本。
+- Bad：用文本写出顺序配对、把整个native-com当View.Next、跨线程ROT误归因于owner、把timeout当取消或日志缺失当0ms。
+
+### 6. Tests Required
+
+Managed既有dynamic/释放账本、启用/禁用、writer异常、IErrorInfo、实际请求和维护、停止排空/取消/2秒超时晚完成；native `InkeysHeadlessTests.exe --ppt-session-only` 测生产诊断helper的禁用零调用、跨线程乱序、异常闭合、context恢复、精确入队和输出故障。分析器测试长队列/焦点、嵌套去重、精确邮箱、超时晚完成、乱序/重复/缺失、pid/clock/身份冲突、无控件及异线程维护排除。入口PrepareOnly和PS AST无GUI检查，完整Debug|ARM64、同次DLL/TLB与EXE资源哈希交接；Observe细分还须对照启用/禁用时的原操作序列、acquisition/release和场次状态，覆盖正常、Count0、missing/busy/断连、换窗/结束及迟到generation；分析树须测试getter/release嵌套、直接子项去重、旧无子项、部分/非法子项与未归属统计。具体Observe成员归因待用户细分版日志，不能由原聚合记录倒推。
+
+### 7. Wrong vs Correct
+
+- Wrong：在获取业务队列mutex前记queue begin，或在COM wait超时后写cancelled=1。
+- Correct：push成功后取queue时刻，锁外输出；按原request状态分别记录wait与owner，未知仍为未知。
+
+## Scenario: 导航等待时安全让出 ROT 发现（2026-11-01）
+
+### 1. Scope / Trigger
+
+已实测导航在ROT/Observe后排队，先只减少未完成的非必要发现查询；完整Observe与墨迹准入不改。不能承诺中断已进入的COM或消除全部Office延迟。
+
+### 2. Signatures
+
+- `ScanActivePowerPoint(targetApp, pending, out bestPriority, out targetPriority, out deferred)` 为内部扫描，原 `GetAnyActivePowerPoint` 保留无让出入口。
+- `CanDeferRotDiscovery(expected)` 只提供推迟发现的缓存资格，不是命令现场proof；`SlideShowOwnerMailbox.HasPendingNavigationRequests`在原gate下只检查Next/Previous类型。
+- 既有默认关闭PptPerf记录 `rot-deferred` / `rot-forced`；不改公开COM/TLB或descriptor/session JSON。
+
+### 3. Contracts
+
+- 仅app/presentation/window root非空、缓存场次Active且session/binding匹配、descriptor为StableSlideIds/PageIndexFallback且非重试恢复时可让出；HWND0不阻断合法基础控制。未绑定/Unknown/TransientBusy/Unavailable走原完整发现。
+- 检查点只在原COM调用返回后、取得与转移记账完整时执行；post-Enum.Next检查必须在单moniker try/finally内。不得在scanner持临时图时递归排水/切root。
+- Deferred先清空best选择别名与两priority，不转移partial winner；单项finally释放window/presentation/candidate/comObject/moniker/bindctx，外层释放列表/枚举器/ROT。相同identity的不同取得仍逐笔配平，禁止GC/FinalRelease/循环Release或跨轮缓存枚举器/RCW。
+- owner最多连续让出一次到期扫描；下一次到期完整尝试，非Deferred完整尝试或FullCleanup重置预算。原500ms维护节奏与2秒请求超时不改，发现可能多等一轮，外部COM耗时没有硬上界。
+- pending谓词仅查询队列只读操作类型，已超时但尚未出队的导航也可能消耗这一次机会；不授予其执行权，原TryBeginExecution/取消及新鲜场次检查仍决定零Invoke。
+- scanner返回/释放完毕后仍走原完整Observe→有界排水；不直接用cached IsCurrent替代现场校验，不推迟原raw/descriptor/Present/ack链。基础控制与墨迹ready的原分离保持。
+- scanner旧诊断出口也不得抛错使未转移winner失去释放路径；测试只注入系统ROT取得/释放边界，生产普通成员仍在现有accessor中实际dynamic，不引入反射或新类型包装。
+
+### 4. Validation & Error Matrix
+
+| 情况 | 必须行为 |
+| --- | --- |
+| pending在取得moniker/候选/partial winner后出现 | Deferred，清选择和priority，全部本轮取得释放，root不受影响 |
+| 同identity多次返回/不同winner替换 | 不因变量别名多释放，也不漏落选/取消时的取得 |
+| GetROT失败但out非空/取得后抛错 | 原finally释放这笔取得；诊断失败不能打断其它清理 |
+| 一次Deferred后仍持续pending | 下一到期完整尝试，避免发现饿死 |
+| Unknown/恢复/未绑定或仅非导航请求 | 不因本策略延期发现 |
+| 完整Observe识别Count0/换窗/换文稿 | 旧请求拒绝，不能因扫描曾Deferred而Invoke旧/新错误目标 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：原COM返回后发现导航，取消部分扫描并彻底释放，再现场观察和处理请求。
+- Base：无pending或必须完整发现时保持原扫描选择/优先级和唯一winner转移。
+- Bad：return null却保留best导致finally跳过它；或扫描内递归执行请求、返回partial best、用GC补漏。
+
+### 6. Tests Required
+
+实际scanner的每类检查点、post-Next moniker、partial/multiwinner、同identity重复取得、HRESULT/out非空与取得后异常、throwing writer、实际CreateBindCtx释放计数；完整转移与每笔账本/root仍可用。服务harness默认不得读取用户真实ROT，显式fixture独占其fake provider，生产默认系统边界不变。健康/恢复/Unknown/未绑定/PageIndexFallback/HWND0/非导航资格、让出公平预算与cleanup重置；真实client排队、scanner先解资源再Observe/单次Invoke，以及Count0/换窗旧请求零Invoke。既有dynamic、busy、确定性释放、超时/Stop与细分诊断回归、完整Debug|ARM64及DLL/TLB交接仍须通过；实际收益待用户人工日志。
+
+### 7. Wrong vs Correct
+
+- Wrong：在Enum.Next得到moniker后、单项finally之外检查并return；best仍指列表winner却在Deferred中不转移。
+- Correct：所有新增return均在其合法释放scope内，先取消winner选择，再由原finally逐笔清理；返回owner后才观察/排水。
+
+等待不可见时，业务enqueue不证明UI接受/绘制/提交；默认关闭的PptWait固定数值链路与同attempt/pending回执证据合同见 [UI3 Render Diagnostics](../native-desktop/ui3-render-diagnostics.md#scenario-ppt-导航等待的有限数值链路2026-11-01)。该诊断不改COM/场次/页码/ready；离屏三点像素通过不能替代用户实机可见性验收。
+
+## Scenario: 恢复进度页码角标与稳定数字（2026-11-01）
+
+### 1. Scope / Trigger
+正常新目标也会发布Recovering；进度不应使数字进入Status文字动画。前后翻页和准备共用页码右上角三点，不在箭头上画。
+
+### 2. Signatures
+Ppt私有StablePageNumbers::Observe(session,current,total,mode)；PptState新增numericPageOverride/displayedCurrentPage/displayedTotalPage（默认无override）。字段仅用于显示，不进入COM/wire schema。
+
+### 3. Contracts
+- Recovering保留原非None控制状态，PptInfo强制Pending/target0、Ppt PagePresented拒绝、Host输入门、Retry资格全不改变。只有内容分类改为Numeric+Preparing；真正Conflict/ReadFailed/PresentFailed/Failed保留Status文案与Retry，Recovering期间中心原不可交互规则保留。白板switching文字不变。
+- 同stateMutex快照先过滤同场recovery；Pending或Recovering使用明确视觉override。稳定缓存只在实际PublishPageState的合法InkReady/BasicControl数字更新，初始化/换场/退场清除；无缓存显示-/-，不能fallback到未来控制数字。Recovering先到旧InkReady与None先到仍Pending都不能泄露未来数字。
+- currentPage/totalPage/target/pageAckEpoch仍是原控制身份；显示override只生成文字并参与equivalence，不授权ACK、输入或改变EndShow判别。真实Ready/Basic取消override，更新数字与去点同帧。
+- Scene把任一navigationWaiting方向合并到Page(id3)局部右上角，中心y=top+7DIP、x=right-20/-15/-10DIP，半径1.6DIP，按原scale变换；不改布局/字号，角标包络与主次文字槽分离，Arrow无点。waiting变更损伤Page区域，清除不留残影；每面仅3点/1branch。
+
+### 4. Validation & Error Matrix
+| 条件 | 必须行为 |
+| --- | --- |
+| control4/Pending或Recovering、稳定显示3 | 仍显示3和角标，控制4/target0/ACK不变 |
+| 初次无稳定值 | -/-与准备角标，不能提前展示目标数字 |
+| InkReady4或BasicControl | 同帧显示实际数字并清准备角标，原UI/input门保持 |
+| 真正错误/冲突/可重试 | 原文字/动作保持，不能清恢复态绕过Pending |
+| 左/右翻页方向切换 | 同一Page角标位置，箭头像素不因等待变化 |
+
+### 5. Good / Base / Bad Cases
+Good：Recovering前后Numeric即时，旧页数字在准备中保持，之后真实新数字同帧替换。Base：默认无视觉override的旧构造仍沿原currentPage。Bad：把Recovering清None止动画、用未来目标数字填画面、为去点提前ACK、把缓存显示值用于业务。
+
+### 6. Tests Required
+page-control-only覆盖缓存合法ready/basic/EndScreen/换场重置、显示与控制隔离、旧ACK与EndShow语义；真实离屏覆盖四surface三倍率、左右方向同角标/箭头不变/数字本体不遮/partial=full/清除、9999与999槽包络，control4显示3的双乱序快照及Ready4同帧去点。旧Recovering0/20ms复现改成不再Status/不动画；真实ReadFailed/Conflict状态过渡保留，数值采样启停BGRA等价。
+
+### 7. Wrong vs Correct
+Wrong：直接覆写控制currentPage为旧3，或把正常恢复进度当文字Status。
+Correct：保留control4+Pending，视觉override3+Page角标；只有实际ready发布更新数字，故障控制与纯显示分离。
+
+当前Page角标已由旧三点更新为持续等待满500ms后出现的环形指示器；左右方向共用原角落、数字/控制/ACK语义不变，旧三点计数仅历史样本。实际视觉/调度契约见rendering-and-ui.md“Page右上角延迟环形指示器”。
+
+## Scenario: 翻页控件闲置淡化与“联动”设置页（2026-11-02）
+
+### 1. Scope / Trigger
+修改四个PPT翻页控件透明度、外部翻页识别、`PPTHelper.IdleFadeSeconds`或设置“联动”页时适用。
+
+### 2. Signatures
+- `config.PlugIn.PPTHelper.IdleFadeSeconds: IdtAtomic<int>=10`，NoUpload；仅接受JSON整数0(关闭)/5/10/15/30，其他类型/数值/超宽整数读盘回退10，界面与实际时长一致。
+- `PptState.idleFadeSeconds`由`Ppt::PublishSnapshot`写入，参与`ArePptStatesEquivalent`；设置变更调用`Ppt::NotifyConfigurationChanged(ConfigGroup::IdleFade)`仅重发快照。
+- `PageControl.cppm`：`ResolvePptIdleFade`、`IsPptExternalPageTurn`、`PptIdleFadeOpacity=0.4`、`PptControlNavigationGrace=3s`。
+- 设置：`PageId::Linkage=17`/`settingTabEnum::tabLinkage`，侧栏在“性能”下；`NavigationState::middleBounds`长度必须等于`NavigationMiddleItemCount`（static_assert）。
+
+### 3. Contracts
+- Scene透明度目标=可见?(淡化?0.4:1):0，只在`ConfigureSurface`渲染线程设置；显隐沿用工作区过渡，淡出0.5s、恢复0.15s。淡化不改变命中。
+- 每个控件独立：每次进入“可见且PptCompact”（含白板→PPT时底部控件不经隐藏的模式切换）即重置为不透明并计时；真实鼠标悬停(非touch/非指针合成)与接受的按下视为占用；Leave/Up/Cancel/CaptureChanged重新计时。`InvokeDirection`与控件HWND上的WM_MOUSEWHEEL登记控件翻页并重新计时；`MarkIdleActivity`无条件请求一帧，避免与渲染线程淡化决策竞态。
+- 外部翻页=同场次页码变化且距控件翻页超过宽限；递增全局序号，所有未占用控件立即淡化，交互消费序号后恢复。新场次重置全部计时。白板模式复用的底部控件不淡化。
+- 输入worker/发布线程只写原子信号；截止时间经`idleDeadlines`在`PageControlInputTick`唤醒渲染，生命周期结束清为max。
+
+### 4. Tests Required
+`InkeysHeadlessTests --no-window`的`TestPptIdleFadePolicy`；侧栏条目数变化须同步`setting_design_tests`中的中段高度与按下标点击的行。
+
+### 5. Wrong vs Correct
+Wrong：在LL键盘钩子识别PgDn等键触发淡化，或在显隐分支外直接`SetOpacity(1)`覆盖淡化。
+Correct：由页码外部变化统一覆盖翻页笔/键盘/滚轮，透明度只经`opacityTarget`单点决策。
+
+## Scenario: 翻页控件进入/退出淡变期间冻结内容（2026-11-02）
+
+### 1. Scope / Trigger
+修改 `ConfigureSurface` 内容重建条件、`BuildPageContent` 的白板 switching 映射，或宿主白板工作区交接的页状态发布时适用。
+
+### 2. Contracts
+- 控件进入隐藏（`desiredMode==Hidden` 且已配置）后不再按新发布重建内容，保留离场前的文字、启用状态与 switching 外观；被跳过的修订不写入 `observedRevision`，重新可见时按最新发布重建。
+- 白板 `switching` 仅在稳定白板内（`!::WhiteboardSwitching()`）映射为“加载中/请稍候”和禁用外观；工作区进入/退出期间宿主置 switching 只锁输入（`WhiteboardWorkspaceSwitching`/输入快照），不改变可见内容。
+- 根因：宿主在交接时依次发布 `PublishExpandedLayoutTarget`、`PublishPageState(...,true)`、`PublishPageState(...,false)`；PPT 结束同时发布 page=-1。旧逻辑在淡入/淡出途中逐次重建内容，文字在页码/加载中间切换、按钮在启用/禁用间往返，表现为文字闪烁与背景渐变来回。
+
+### 3. Tests Required
+`Inkeys.exe --bar-eraser-offscreen-test`（PageControl `RunOffscreenTests`）的分步工作区场景：白板进入/退出、PPT 开始/结束四段整体透明度单调，且淡出期间 `configuredContent` 文字/switching 与正文尺寸不变。
+
+### 4. Wrong vs Correct
+Wrong：隐藏后仍对每次发布 `ConfigurePagination`，或把交接期 switching 直接当作页面加载状态。
+Correct：淡出冻结最后可见内容；交接期 switching 只作输入门禁。

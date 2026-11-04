@@ -1,16 +1,84 @@
-﻿#pragma once
+#pragma once
 
 #include "Draw3.Bridge.h"
 
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace Inkeys::Drawing::Draw3
 {
+	enum class DCompRetirementResult : std::uint8_t
+	{
+		Completed,
+		Failed,
+		Timeout,
+		Busy,
+	};
+	struct DCompRetirementSlot
+	{
+		struct State
+		{
+			bool completed = false;
+			bool succeeded = false;
+		};
+		std::mutex mutex;
+		std::condition_variable wake;
+		std::shared_ptr<State> active;
+	};
+	inline DCompRetirementSlot& GetDCompRetirementSlot() noexcept
+	{
+		static auto* slot = new DCompRetirementSlot;
+		return *slot;
+	}
+	template<class Wait>
+	[[nodiscard]] DCompRetirementResult WaitForDCompRetirement(Wait wait,
+		std::chrono::milliseconds timeout = std::chrono::milliseconds(1000))
+	{
+		auto& slot = GetDCompRetirementSlot();
+		std::shared_ptr<DCompRetirementSlot::State> state;
+		{
+			std::scoped_lock lock(slot.mutex);
+			if (slot.active) return DCompRetirementResult::Busy;
+			state = std::make_shared<DCompRetirementSlot::State>();
+			slot.active = state;
+		}
+		try
+		{
+			std::thread([state, &slot, wait = std::move(wait)]() mutable
+			{
+				bool succeeded = false;
+				try { succeeded = wait(); }
+				catch (...) {}
+				{
+					std::scoped_lock lock(slot.mutex);
+					state->succeeded = succeeded;
+					state->completed = true;
+					if (slot.active == state) slot.active.reset();
+				}
+				slot.wake.notify_all();
+			}).detach();
+		}
+		catch (...)
+		{
+			std::scoped_lock lock(slot.mutex);
+			if (slot.active == state) slot.active.reset();
+			return DCompRetirementResult::Failed;
+		}
+		std::unique_lock lock(slot.mutex);
+		if (!slot.wake.wait_for(lock, timeout, [&] { return state->completed; }))
+			return DCompRetirementResult::Timeout;
+		return state->succeeded ? DCompRetirementResult::Completed : DCompRetirementResult::Failed;
+	}
+
 	// DComp 输出交接只在目标 revision 的首个成功全帧 Present 后消费一次屏障。
 	struct DCompHandoffBarrierState
 	{

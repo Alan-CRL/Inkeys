@@ -828,14 +828,23 @@ namespace ImFluent
         if ( !continuous )
         {
             s->SetInt( kId, ( int )target );
+            s->SetInt( kId + 2, ( int )target );
             return target;
         }
         ImU32 cur = ( ImU32 )s->GetInt( kId, ( int )target );
+        // INKEYS PATCH: 从本次目标变化的起点按累计时间插值，避免每帧U32取整使尾部alpha永久停滞。
+        if ( ( ImU32 )s->GetInt( kId + 2, ( int )target ) != target )
+        {
+            s->SetInt( kId + 2, ( int )target );
+            s->SetInt( kId + 3, ( int )cur );
+            s->SetFloat( kId + 4, 0.f );
+        }
         if ( cur == target )
             return target;
-        const float dt = ImGui::GetIO().DeltaTime;
-        const float t  = ( seconds <= 0.f ) ? 1.f : 1.f - expf( -dt / seconds );
-        cur            = LerpColorU32( cur, target, t );
+        const float elapsed = s->GetFloat( kId + 4 ) + ImGui::GetIO().DeltaTime;
+        const float t = ( seconds <= 0.f ) ? 1.f : 1.f - expf( -elapsed / seconds );
+        cur = LerpColorU32( ( ImU32 )s->GetInt( kId + 3, ( int )cur ), target, t );
+        s->SetFloat( kId + 4, elapsed );
         s->SetInt( kId, ( int )cur );
         return cur;
     }

@@ -34,6 +34,7 @@ import Inkeys.Window;
 import Inkeys.Startup.Progress;
 
 #include "IdtPlug-in.h"
+#include "resource.h"
 #include "Inkeys/UI/Ppt/Ppt.Recovery.h"
 
 #include "IdtConfiguration.h"
@@ -51,6 +52,8 @@ import Inkeys.Startup.Progress;
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PptTiming.h"
 #include "Inkeys/Business/PptSession.h"
+#include "PptNavigationDiagnostics.h"
+#include "ShutdownProgressTrace.h"
 
 #ifdef MessageBox
 #undef MessageBox
@@ -73,6 +76,19 @@ namespace
 	using Inkeys::Business::PptFocusRequest;
 	using Inkeys::Business::PptFocusForeground;
 	using Inkeys::Business::PptFocusState;
+	namespace PptPerf = Inkeys::Business::PptPerf;
+	void WritePptPerfEvent(const PptPerf::Event& value)
+	{
+		if (!IDTLogger) return;
+		char line[512]{};
+		const int count = PptPerf::Format(line, sizeof(line), value);
+		if (count) IDTLogger->info("{}", std::string_view(line, static_cast<std::size_t>(count)));
+	}
+	PptPerf::Recorder& PptPerfRecorder() noexcept
+	{
+		static PptPerf::Recorder recorder(PptPerf::Enabled(), WritePptPerfEvent);
+		return recorder;
+	}
 	// 仅初始化前生产探针使用，替换外部 HWND/COM 副作用；正常启动始终为空。
 	struct PptFocusTestHooks
 	{
@@ -118,33 +134,76 @@ namespace
 		PptUiBusinessCommand command{};
 		PptSessionToken session{};
 		std::uint64_t requestId = 0;
+		std::uint64_t navigationEpoch = 0;
 		std::string settingsPayload;
 		PptFocusForeground focusForeground;
 		std::uint64_t inputWorkspaceEpoch = 0;
+		PptPerf::Stamp perfRequest;
+		PptPerf::Stamp perfQueue;
 	};
 	mutex pptUiBusinessMutex;
 	condition_variable pptUiBusinessCondition;
 	deque<PptUiBusinessRequest> pptUiBusinessCommands;
 	atomic_bool pptUiPageCommandOutstanding = false;
+	atomic_uint64_t pptUiNavigationEpoch = 0;
 	Inkeys::Business::PptEndShowGate pptEndShowGate;
 	constexpr auto PptPageStateCheckInterval = chrono::milliseconds(16);
 	constexpr auto PptIdleStateCheckInterval = chrono::milliseconds(100);
 	constexpr auto PptVisibilityPublishInterval = chrono::milliseconds(500);
+
+	void TracePptNavigation(const char* stage, std::uint64_t session,
+		std::uint64_t epoch, const char* direction) noexcept
+	{
+		static const bool enabled = []
+		{
+			wchar_t value[8]{};
+			return GetEnvironmentVariableW(L"INKEYS_PPT_TIMING", value, 8) > 0 && value[0] == L'1';
+		}();
+		if (enabled && IDTLogger)
+			IDTLogger->info("[PptNav] stage={} session={} epoch={} direction={}",
+				stage, session, epoch, direction);
+	}
 
 	void QueuePptUiBusinessCommand(PptUiBusinessCommand command, std::uint64_t requestId = 0,
 		const PptSessionToken* expected = nullptr, const PptFocusForeground* foreground = nullptr)
 	{
 		const bool pageCommand = command == PptUiBusinessCommand::Previous ||
 			command == PptUiBusinessCommand::Next;
-		if (pageCommand && pptUiPageCommandOutstanding.exchange(true)) return;
+		if (pageCommand && pptUiPageCommandOutstanding.exchange(true))
+		{
+			PptPerfRecorder().Instant("native-discard", { 0, 0, 0,
+				command == PptUiBusinessCommand::Next ? "Next" : "Previous" }, "outstanding");
+			return;
+		}
 		PptUiBusinessRequest request{ command, expected ? *expected : CapturePptSession(), requestId };
 		request.focusForeground = foreground ? *foreground : CapturePptForeground();
-		if(pageCommand)request.inputWorkspaceEpoch=PptInputWorkspaceEpoch();
+		if(pageCommand)
+		{
+			request.inputWorkspaceEpoch=PptInputWorkspaceEpoch();
+			request.navigationEpoch = pptUiNavigationEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+		}
+		const auto navigationSession = request.session.localSession;
+		const auto navigationEpoch = request.navigationEpoch;
+		if (pageCommand)
+		{
+			const PptPerf::Context context{ 0, navigationSession, navigationEpoch,
+				command == PptUiBusinessCommand::Next ? "Next" : "Previous" };
+			request.perfRequest = PptPerfRecorder().Capture("native-request", context);
+		}
+		const auto perfRequest = request.perfRequest;
+		PptPerf::Stamp perfQueue;
 		try
 		{
 			lock_guard lock(pptUiBusinessMutex);
 			if (command == PptUiBusinessCommand::EndShow && !pptEndShowGate.TryBegin(request.session)) return;
 			pptUiBusinessCommands.push_back(std::move(request));
+			if (perfRequest.span)
+			{
+				// 只在成功 push 后取入队时刻，生产者锁等待不能算成队列驻留；锁内不写日志。
+				auto queued = perfRequest.context; queued.parent = perfRequest.span;
+				perfQueue = PptPerfRecorder().Capture("native-queue", queued);
+				pptUiBusinessCommands.back().perfQueue = perfQueue;
+			}
 		}
 		catch (...)
 		{
@@ -155,7 +214,20 @@ namespace
 				pptEndShowGate.Complete(request.session);
 			}
 			if (requestId) Inkeys::UI::Bar::CompleteEndShowRequest(requestId);
+			PptPerfRecorder().Begin(perfRequest);
+			PptPerfRecorder().End(perfRequest, "enqueue-error");
 			return;
+		}
+		// 只保存纯值 begin 时刻；日志必须在释放业务锁后写，允许消费者先写出 end。
+		PptPerfRecorder().Begin(perfRequest);
+		PptPerfRecorder().Begin(perfQueue);
+		// 只在成功入队且释放业务锁后发布纯值；重复点击不会替换原 epoch。
+		if (pageCommand)
+		{
+			Inkeys::UI::Ppt::PublishNavigationWaiting(navigationSession, navigationEpoch,
+				command == PptUiBusinessCommand::Next);
+			TracePptNavigation("enqueue", navigationSession, navigationEpoch,
+				command == PptUiBusinessCommand::Next ? "next" : "previous");
 		}
 		pptUiBusinessCondition.notify_one();
 	}
@@ -430,15 +502,21 @@ bool ExitPptSlideShowAnnotationTool(const IPptCOMServerPtr& pptCom)
 
 	return ret;
 }
+namespace ShutdownTrace = Inkeys::Shutdown::ProgressTrace;
+
 void GetPptState()
 {
 	Inkeys::Thread::StatusGuard guard("GetPptState");
+	ShutdownTrace::Scope workerTrace("ppt-state-worker");
 
 	while (!offSignal)
 	{
 		if (!CheckPptCom())
 		{
-			ResetPptComSnapshot();
+			{
+				ShutdownTrace::Scope trace("ppt-check-failed-reset");
+				ResetPptComSnapshot();
+			}
 			PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
 
 			for (int i = 0; i <= 20 && !offSignal; i++)
@@ -452,7 +530,11 @@ void GetPptState()
 
 		try
 		{
-			if (pptCom != nullptr) tmp = pptCom->PptComService();
+			if (pptCom != nullptr)
+			{
+				ShutdownTrace::Scope trace("ppt-managed-service");
+				tmp = pptCom->PptComService();
+			}
 		}
 		catch (_com_error err)
 		{
@@ -462,7 +544,10 @@ void GetPptState()
 		}
 
 		PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
-		ResetPptComSnapshot();
+		{
+			ShutdownTrace::Scope trace("ppt-service-snapshot-reset");
+			ResetPptComSnapshot();
+		}
 
 		if (tmp <= 0)
 		{
@@ -475,14 +560,22 @@ void GetPptState()
 void NextPptSlides(int check)
 {
 	auto pptCom = GetPptComSnapshot();
-	if (pptCom == nullptr) return;
+	if (pptCom == nullptr)
+	{
+		PptPerfRecorder().Instant("native-discard", PptPerf::current, "no-server");
+		return;
+	}
 
 	try
 	{
+		PptPerf::Scope callTrace(PptPerfRecorder(), "native-com", PptPerf::current, PptPerf::current.parent != 0);
 		pptCom->NextSlideShow((bool)(check == -1));
+		// void 接口只证明已返回，不能将 managed 超时/拒绝冒充 Office 执行成功。
+		callTrace.Result("returned");
 	}
-	catch (_com_error)
+	catch (_com_error error)
 	{
+		PptPerfRecorder().Instant("native-com-error", PptPerf::current, "com-error", error.Error());
 	}
 
 	return;
@@ -490,14 +583,22 @@ void NextPptSlides(int check)
 void PreviousPptSlides()
 {
 	auto pptCom = GetPptComSnapshot();
-	if (pptCom == nullptr) return;
+	if (pptCom == nullptr)
+	{
+		PptPerfRecorder().Instant("native-discard", PptPerf::current, "no-server");
+		return;
+	}
 
 	try
 	{
+		PptPerf::Scope callTrace(PptPerfRecorder(), "native-com", PptPerf::current, PptPerf::current.parent != 0);
 		pptCom->PreviousSlideShow();
+		// void 接口只证明已返回，不能将 managed 超时/拒绝冒充 Office 执行成功。
+		callTrace.Result("returned");
 	}
-	catch (_com_error)
+	catch (_com_error error)
 	{
+		PptPerfRecorder().Instant("native-com-error", PptPerf::current, "com-error", error.Error());
 	}
 
 	return;
@@ -579,21 +680,36 @@ namespace
 	}
 	bool FocusPptSession(const PptFocusRequest& request)
 	{
+		PptPerf::Scope focusTrace(PptPerfRecorder(), "native-focus", PptPerf::current, PptPerf::current.parent != 0);
 		const auto state = CapturePptFocusState(request.session);
-		if (!Inkeys::Business::CanFocusPptSession(request, state)) return false;
-		if (state.foreground.window == request.session.showWindow) return true;
-		if (!IsCurrentPptSession(request.session)) return false;
+		if (!Inkeys::Business::CanFocusPptSession(request, state))
+		{
+			focusTrace.Result("not-allowed");
+			return false;
+		}
+		if (state.foreground.window == request.session.showWindow)
+		{
+			focusTrace.Result("already-foreground");
+			return true;
+		}
+		if (!IsCurrentPptSession(request.session))
+		{
+			focusTrace.Result("stale-session");
+			return false;
+		}
 		if (pptFocusTestHooks)
 		{
 			++pptFocusTestHooks->activations;
 			pptFocusTestHooks->state.foreground = {
 				request.session.showWindow, request.session.processId };
+			focusTrace.Result("test");
 			return true;
 		}
 		const HWND target = reinterpret_cast<HWND>(request.session.showWindow);
 		(void)SetForegroundWindow(target);
 		const bool focused = GetForegroundWindow() == target;
 		if (!focused && IDTLogger) IDTLogger->debug("[PPT] foreground handoff denied session={}", request.session.localSession);
+		focusTrace.Result(focused ? "focused" : "denied");
 		return focused;
 	}
 	bool FocusPptSession(const PptSessionToken& token)
@@ -609,10 +725,18 @@ namespace
 		const auto command = request.command;
 		if (command != PptUiBusinessCommand::Focus && command != PptUiBusinessCommand::Previous
 			&& command != PptUiBusinessCommand::Next) return false;
-		if (!IsCurrentPptSession(request.session)) return true;
+		if (!IsCurrentPptSession(request.session))
+		{
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "stale-session");
+			return true;
+		}
 		// 已排队的翻页不能跨白板意图往返；只约束 page action，不误退有效的显式焦点请求。
 		if(command!=PptUiBusinessCommand::Focus && (!request.inputWorkspaceEpoch
-			|| request.inputWorkspaceEpoch!=PptInputWorkspaceEpoch()))return true;
+			|| request.inputWorkspaceEpoch!=PptInputWorkspaceEpoch()))
+		{
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "workspace-rejected");
+			return true;
+		}
 		if (command == PptUiBusinessCommand::Previous)
 		{
 			if (pptFocusTestHooks) ++pptFocusTestHooks->previous;
@@ -623,6 +747,8 @@ namespace
 			if (pptFocusTestHooks) ++pptFocusTestHooks->next;
 			else NextPptSlides(PptInfoState.CurrentPage);
 		}
+		else if (command == PptUiBusinessCommand::Next)
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "no-page");
 		// Down/Up、Move 与长按不会改变前台身份；不得用 LastInput 变化取消正常翻页交接。
 		(void)FocusPptSession(PptFocusRequest{ request.session, request.focusForeground });
 		return true;
@@ -860,6 +986,8 @@ void PptInfo()
 	auto EndSession = [&]
 	{
 		auto session = CapturePptSession();
+		Inkeys::UI::Ppt::ClearNavigationWaiting(session.localSession);
+		TracePptNavigation("session-clear", session.localSession, 0, "none");
 		if (!session.active) return;
 		pptControlAvailable.store(false, std::memory_order_release);
 		pptWindowControlAvailable.store(false, std::memory_order_release);
@@ -1412,6 +1540,7 @@ void PPTLinkageMain()
 	while (!offSignal)
 	{
 		PptUiBusinessRequest request{};
+		PptPerf::Event dequeued;
 		{
 			unique_lock lock(pptUiBusinessMutex);
 			pptUiBusinessCondition.wait_for(lock, chrono::milliseconds(100), []
@@ -1422,7 +1551,16 @@ void PPTLinkageMain()
 			if (pptUiBusinessCommands.empty()) continue;
 			request = pptUiBusinessCommands.front();
 			pptUiBusinessCommands.pop_front();
+			dequeued = PptPerfRecorder().CaptureEnd(request.perfQueue, "dequeued");
 		}
+		PptPerfRecorder().Emit(dequeued);
+		PptPerf::Scope requestTrace(PptPerfRecorder(), request.perfRequest);
+		requestTrace.Result("native-completed");
+		PptPerf::Context context = request.perfRequest.context;
+		context.parent = request.perfRequest.span;
+		PptPerf::Scope businessTrace(PptPerfRecorder(), "native-business", context, request.perfRequest.span != 0);
+		context.parent = businessTrace.Id();
+		PptPerf::ContextScope perfContext(context);
 		const auto command = request.command;
 
 		// 模态框和 COM 在业务线程执行；不得持有渲染、Scene 或窗口提交锁。
@@ -1436,10 +1574,17 @@ void PPTLinkageMain()
 			PptUiBusinessCommand command;
 			std::uint64_t request;
 			PptSessionToken session;
+			std::uint64_t navigationEpoch;
 			~CompleteRequest()
 			{
 				if (command == PptUiBusinessCommand::Previous || command == PptUiBusinessCommand::Next)
+				{
 					pptUiPageCommandOutstanding = false;
+					Inkeys::UI::Ppt::CompleteNavigationWaiting(session.localSession, navigationEpoch);
+					TracePptNavigation("complete", session.localSession, navigationEpoch,
+						command == PptUiBusinessCommand::Next ? "next" : "previous");
+					PptPerfRecorder().Instant("native-complete", PptPerf::current, "native-return");
+				}
 				if (command == PptUiBusinessCommand::EndShow)
 				{
 					lock_guard lock(pptUiBusinessMutex);
@@ -1447,9 +1592,18 @@ void PPTLinkageMain()
 				}
 				if (request) Inkeys::UI::Bar::CompleteEndShowRequest(request);
 			}
-		} completion{ command, request.requestId, request.session };
-		if (!IsCurrentPptSession(request.session)) continue;
-		if (DispatchPptFocusBusinessAction(request)) continue;
+		} completion{ command, request.requestId, request.session, request.navigationEpoch };
+		if (!IsCurrentPptSession(request.session))
+		{
+			PptPerfRecorder().Instant("native-discard", PptPerf::current, "stale-session");
+			businessTrace.Result("discarded");
+			continue;
+		}
+		if (DispatchPptFocusBusinessAction(request))
+		{
+			businessTrace.Result("handled");
+			continue;
+		}
 		if (command == PptUiBusinessCommand::ViewShow)
 		{
 			ViewPptShow();
@@ -1464,12 +1618,14 @@ void PPTLinkageMain()
 				if (IDTLogger) IDTLogger->warn("[PPT] confirmed exit unavailable: session capability missing");
 				continue;
 			}
-			const auto title = IW(I18nKey.Dialogs.Common.TipsTitle);
-			const auto body = IW(I18nKey.Dialogs.EndPresentation.Body);
+			I18n::TextSnapshot localized;
+			if (!I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.EndPresentation.Body }, localized)) continue;
+			const auto& title = localized.text[0];
+			const auto& body = localized.text[1];
 			auto dialog = Inkeys::UI::MessageBox::MakeOkCancelRequest(title.c_str(), body.c_str());
 			dialog.defaultResult = Inkeys::UI::MessageBox::Result::Cancel;
 			dialog.dismissResult = Inkeys::UI::MessageBox::Result::Cancel;
-			dialog.language = I18n::languageId();
+			dialog.language = localized.language;
 			dialog.fallback.enabled = false;
 			dialog.owner = Inkeys::Window::GetService().Handle(Inkeys::Window::WindowRole::Bar);
 			dialog.requireOwner = true;
@@ -1505,29 +1661,44 @@ void PPTLinkageMain()
 		if (!exited && IDTLogger) IDTLogger->warn("[PPT] exit request was not accepted");
 
 	}
-	Inkeys::UI::Bar::SetEndShowRequestCallback({});
-	Inkeys::UI::Bar::SetBusinessFocusCallback({});
+	ShutdownTrace::Scope shutdownTrace("ppt-linkage-shutdown");
+	{
+		ShutdownTrace::Scope trace("ppt-clear-callbacks");
+		Inkeys::UI::Bar::SetEndShowRequestCallback({});
+		Inkeys::UI::Bar::SetBusinessFocusCallback({});
+	}
 	// 先让观察线程发布真实会话结束，再排空最终不可变保存请求。
-	if (infoThread.joinable()) infoThread.join();
-	Inkeys::UI::Ppt::Shutdown();
+	if (infoThread.joinable()) { ShutdownTrace::Scope trace("ppt-join-info"); infoThread.join(); }
+	{ ShutdownTrace::Scope trace("ppt-ui-shutdown"); Inkeys::UI::Ppt::Shutdown(); }
 	deque<PptUiBusinessRequest> remaining;
 	{
-		lock_guard lock(pptUiBusinessMutex);
-		remaining.swap(pptUiBusinessCommands);
-		pptUiPageCommandOutstanding = false;
-		pptEndShowGate.Reset();
+		// 诊断输出在队列锁外，不能把日志 I/O 塞进业务临界区。
+		ShutdownTrace::Scope trace("ppt-drain-business");
+		{
+			lock_guard lock(pptUiBusinessMutex);
+			remaining.swap(pptUiBusinessCommands);
+			pptUiPageCommandOutstanding = false;
+			pptEndShowGate.Reset();
+		}
+		for (const auto& request : remaining)
+		{
+			PptPerfRecorder().End(request.perfQueue, "shutdown");
+			PptPerfRecorder().End(request.perfRequest, "shutdown");
+			if (request.command == PptUiBusinessCommand::PersistSettings)
+				(void)WritePptComSettingJson(request.settingsPayload);
+		}
 	}
-	for (const auto& request : remaining)
-		if (request.command == PptUiBusinessCommand::PersistSettings)
-			(void)WritePptComSettingJson(request.settingsPayload);
 
 	int i = 1;
-	for (; i <= 5; i++)
 	{
-		using namespace Inkeys::Thread;
+		ShutdownTrace::Scope trace("ppt-service-status-wait");
+		for (; i <= 5; i++)
+		{
+			using namespace Inkeys::Thread;
 
-		if (!GetStatus("GetPptState") && !GetStatus("PptInfo")) break;
-		this_thread::sleep_for(chrono::milliseconds(500));
+			if (!GetStatus("GetPptState") && !GetStatus("PptInfo")) break;
+			this_thread::sleep_for(chrono::milliseconds(500));
+		}
 	}
 }
 
@@ -1715,125 +1886,205 @@ void StartDesktopDrawpadBlocker()
 
 // 快捷方式保障助手 插件
 ShortcutAssistantClass shortcutAssistant;
-void ShortcutAssistantClass::SetShortcut()
+Inkeys::Business::DesktopShortcut::NameOptions CaptureDesktopShortcutNames(Inkeys::Business::DesktopShortcut::Kind kind)
 {
-	wchar_t desktopPath[MAX_PATH];
-	wstring DesktopPath;
-
-	if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE)) DesktopPath = wstring(desktopPath) + L"\\";
-	else return;
-
-	if (setlist.shortcutAssistant.correctLnk)
+	Inkeys::Business::DesktopShortcut::NameOptions options(kind);
+	I18n::TextSnapshot snapshot;
+	if (I18n::capture({ I18nKey.SettingsUI.DesktopShortcut.PresetAnnotation,
+		I18nKey.SettingsUI.DesktopShortcut.PresetAnnotationTool, I18nKey.SettingsUI.DesktopShortcut.PresetWhiteboard }, snapshot) && snapshot.text.size() == 3)
 	{
-		if (_waccess((DesktopPath + IW("Widget/LnkName") + L".lnk").c_str(), 0) == 0)
+		options.simplifiedChinese = snapshot.language == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
+		if (kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard) options.presets[0] = std::move(snapshot.text[2]);
+		else
 		{
-			// 存在对应名称的 Lnk
-			if (!IsShortcutPointingToDirectory(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath()))
-			{
-				// 不指向当前的程序路径
-				error_code ec;
-				filesystem::remove(DesktopPath + IW("Widget/LnkName") + L".lnk", ec);
-
-				CreateShortcut(DesktopPath + IW("Widget/LnkName").c_str() + L".lnk", GetCurrentExePath());
-			}
+			options.presets[2] = std::move(snapshot.text[0]);
+			options.presets[3] = std::move(snapshot.text[1]);
 		}
-		{
-			for (const auto& entry : filesystem::directory_iterator(DesktopPath))
-			{
-				if (filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
-				{
-					if (entry.path().wstring() != DesktopPath + IW("Widget/LnkName").c_str() + L".lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
-					{
-						// 存在指向当前的程序路径的快捷方式，但是其名称并不正确
-						error_code ec;
-						filesystem::remove(entry.path().wstring(), ec);
+	}
+	return options;
+}
 
-						CreateShortcut(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath());
+std::wstring GetDesktopShortcutDirectory()
+{
+	wchar_t path[MAX_PATH]{};
+	return SHGetSpecialFolderPathW(nullptr, path, CSIDL_DESKTOP, FALSE) ? path : L"";
+}
+
+namespace
+{
+	using DesktopShortcutKind = Inkeys::Business::DesktopShortcut::Kind;
+	struct DesktopShortcutContents
+	{
+		std::wstring target, arguments, icon;
+		int iconIndex = 0;
+	};
+
+	bool ReadDesktopShortcut(const std::wstring& path, DesktopShortcutContents& contents)
+	{
+		IShellLinkW* link = nullptr;
+		HRESULT result = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(&link));
+		if (FAILED(result)) return false;
+		IPersistFile* file = nullptr;
+		result = link->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&file));
+		if (SUCCEEDED(result))
+		{
+			result = file->Load(path.c_str(), STGM_READ);
+			file->Release();
+		}
+		wchar_t target[MAX_PATH]{}, arguments[32768]{}, icon[MAX_PATH]{};
+		if (SUCCEEDED(result)) result = link->GetPath(target, MAX_PATH, nullptr, SLGP_RAWPATH);
+		if (SUCCEEDED(result)) result = link->GetArguments(arguments, static_cast<int>(std::size(arguments)));
+		// 接近缓冲上限时拒绝分类，不能把截断的未知参数当白板请求。
+		if (SUCCEEDED(result) && std::wcslen(arguments) == std::size(arguments) - 1) result = E_INVALIDARG;
+		if (SUCCEEDED(result)) result = link->GetIconLocation(icon, MAX_PATH, &contents.iconIndex);
+		link->Release();
+		if (FAILED(result)) return false;
+		contents.target = target; contents.arguments = arguments; contents.icon = icon;
+		return true;
+	}
+
+	ShortcutAssistantClass::Classification ClassifyDesktopShortcut(const DesktopShortcutContents& contents, const std::wstring& target)
+	{
+		using Classification = ShortcutAssistantClass::Classification;
+		using Inkeys::Business::DesktopShortcut::NamesCollide;
+		if (!NamesCollide(contents.target, target)) return Classification::NotOurs;
+		if (contents.arguments.empty()) return Classification::App;
+		const auto begin = contents.arguments.find_first_not_of(L" \t\r\n");
+		if (begin == std::wstring::npos) return Classification::NotOurs;
+		const auto end = contents.arguments.find_last_not_of(L" \t\r\n");
+		return NamesCollide(std::wstring_view(contents.arguments).substr(begin, end - begin + 1), L"-Whiteboard")
+			? Classification::Whiteboard : Classification::NotOurs;
+	}
+
+	bool EnumerateDesktopShortcuts(const std::wstring& directory, std::vector<std::filesystem::path>& files)
+	{
+		std::error_code ec;
+		std::filesystem::directory_iterator it(directory, ec), end;
+		if (ec) return false;
+		for (; it != end; it.increment(ec))
+		{
+			if (ec) return false;
+			if (it->is_regular_file(ec) && Inkeys::Business::DesktopShortcut::NamesCollide(it->path().extension().wstring(), L".lnk")) files.push_back(it->path());
+			if (ec) return false;
+		}
+		return !ec;
+	}
+
+	bool EnsureDesktopShortcut(ShortcutAssistantClass& assistant, const std::wstring& name, bool correct, bool create,
+		const std::wstring& directory, DesktopShortcutKind kind, const std::wstring& target, const std::vector<std::filesystem::path>& files)
+	{
+		if (directory.empty() || !Inkeys::Business::DesktopShortcut::IsValidName(name, directory.size())) return false;
+		const auto path = (std::filesystem::path(directory) / (name + L".lnk")).wstring();
+		bool succeeded = true;
+		if (correct)
+		{
+			if (_waccess(path.c_str(), 0) == 0 && !assistant.MatchesShortcut(path, target, kind))
+				succeeded = assistant.CreateShortcut(path, target, kind);
+			const auto classification = kind == DesktopShortcutKind::Whiteboard
+				? ShortcutAssistantClass::Classification::Whiteboard : ShortcutAssistantClass::Classification::App;
+			for (const auto& old : files)
+			{
+				if (!Inkeys::Business::DesktopShortcut::NamesCollide(old.wstring(), path)
+					&& assistant.ClassifyShortcut(old.wstring(), target) == classification)
+				{
+					// 两类只统一同类旧名称；先保存新链接，成功后才能删除旧链接。
+					if (assistant.CreateShortcut(path, target, kind))
+					{
+						std::error_code ec; std::filesystem::remove(old, ec);
+						if (ec) succeeded = false;
 					}
+					else succeeded = false;
 				}
 			}
 		}
+		if (create && (_waccess(path.c_str(), 0) == -1 || !assistant.MatchesShortcut(path, target, kind)))
+			succeeded = assistant.CreateShortcut(path, target, kind) && succeeded;
+		return succeeded;
 	}
-	if (setlist.shortcutAssistant.createLnk)
-	{
-		if (_waccess((DesktopPath + IW("Widget/LnkName").c_str() + L".lnk").c_str(), 0) == -1 ||
-			!IsShortcutPointingToDirectory((DesktopPath + IW("Widget/LnkName").c_str() + L".lnk"), GetCurrentExePath()))
-		{
-			CreateShortcut(DesktopPath + IW("Widget/LnkName").c_str() + L".lnk", GetCurrentExePath());
-		}
-	}
-
-	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
-	return;
 }
+
+bool ShortcutAssistantClass::SetShortcut()
+{
+	using namespace Inkeys::Business::DesktopShortcut;
+	const auto desktopDirectory = GetDesktopShortcutDirectory();
+	if (desktopDirectory.empty()) return false;
+	std::vector<std::filesystem::path> files;
+	if (!EnumerateDesktopShortcuts(desktopDirectory, files)) return false;
+	const auto target = GetCurrentExePath();
+	const auto applicationNames = CaptureDesktopShortcutNames(), whiteboardNames = CaptureDesktopShortcutNames(Kind::Whiteboard);
+	auto [appPreset, appCustom] = Inkeys::config.GetShortcutNamePreference();
+	auto [boardPreset, boardCustom] = Inkeys::config.GetWhiteboardShortcutNamePreference();
+	appPreset = NormalizePreset(appPreset, appCustom, applicationNames.simplifiedChinese, desktopDirectory.size());
+	boardPreset = NormalizePreset(boardPreset, boardCustom, whiteboardNames.simplifiedChinese, desktopDirectory.size(), Kind::Whiteboard);
+	const auto appName = ResolveName(appPreset, appCustom, applicationNames);
+	auto boardName = ResolveName(boardPreset, boardCustom, whiteboardNames);
+	if (NamesCollide(appName, boardName))
+	{
+		boardPreset = Default; boardName = ResolveName(Default, boardCustom, whiteboardNames);
+		if (IDTLogger) IDTLogger->warn("[DesktopShortcut] 白板名称与应用程序名称冲突，回退缺省白板名称");
+	}
+	const bool appChanged = Inkeys::config.SetShortcutNamePreference(appPreset, appCustom);
+	const bool boardChanged = Inkeys::config.SetWhiteboardShortcutNamePreference(boardPreset, boardCustom);
+	if (appChanged || boardChanged) Inkeys::config.Write();
+	bool succeeded = EnsureDesktopShortcut(*this, appName, Inkeys::config.Application.Shortcut.CorrectLnk,
+		Inkeys::config.Application.Shortcut.CreateLnk, desktopDirectory, Kind::App, target, files);
+	// 手改配置仍冲突时跳过白板保障，不能覆盖应用链接。
+	if (!NamesCollide(appName, boardName))
+		succeeded = EnsureDesktopShortcut(*this, boardName, Inkeys::config.Application.WhiteboardShortcut.CorrectLnk,
+			Inkeys::config.Application.WhiteboardShortcut.CreateLnk, desktopDirectory, Kind::Whiteboard, target, files) && succeeded;
+	else if (IDTLogger) IDTLogger->warn("[DesktopShortcut] 缺省名称仍冲突，已跳过白板保障");
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+	return succeeded;
+}
+
+bool ShortcutAssistantClass::SetShortcut(const std::wstring& name, bool correct, bool create,
+	const std::wstring& desktopDirectory, DesktopShortcutKind kind, const std::wstring& targetExePath)
+{
+	if (desktopDirectory.empty() || !Inkeys::Business::DesktopShortcut::IsValidName(name, desktopDirectory.size())) return false;
+	std::vector<std::filesystem::path> files;
+	if (correct && !EnumerateDesktopShortcuts(desktopDirectory, files)) return false;
+	const bool succeeded = EnsureDesktopShortcut(*this, name, correct, create, desktopDirectory, kind,
+		targetExePath.empty() ? GetCurrentExePath() : targetExePath, files);
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+	return succeeded;
+}
+
+ShortcutAssistantClass::Classification ShortcutAssistantClass::ClassifyShortcut(const std::wstring& path, const std::wstring& target)
+{
+	DesktopShortcutContents contents;
+	return ReadDesktopShortcut(path, contents) ? ClassifyDesktopShortcut(contents, target) : Classification::NotOurs;
+}
+
+bool ShortcutAssistantClass::MatchesShortcut(const std::wstring& path, const std::wstring& target, DesktopShortcutKind kind)
+{
+	DesktopShortcutContents contents;
+	if (!ReadDesktopShortcut(path, contents)) return false;
+	const auto classification = ClassifyDesktopShortcut(contents, target);
+	if (kind == DesktopShortcutKind::Whiteboard)
+		return classification == Classification::Whiteboard && contents.arguments == L"-Whiteboard"
+			&& Inkeys::Business::DesktopShortcut::NamesCollide(contents.icon, target) && contents.iconIndex == -IDI_ICON2;
+	return classification == Classification::App && contents.arguments.empty()
+		&& ((contents.icon.empty() && contents.iconIndex == 0)
+			|| (Inkeys::Business::DesktopShortcut::NamesCollide(contents.icon, target) && (contents.iconIndex == 0 || contents.iconIndex == -IDI_ICON1)));
+}
+
 bool ShortcutAssistantClass::IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory)
 {
-	IShellLink* psl;
-	//CoInitialize(NULL);
-
-	// 创建一个IShellLink对象
-	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
-	if (SUCCEEDED(hres))
-	{
-		IPersistFile* ppf;
-
-		// 获取IShellLink的IPersistFile接口
-		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-		if (SUCCEEDED(hres))
-		{
-			// 打开快捷方式文件
-			hres = ppf->Load(shortcutPath.c_str(), STGM_READ);
-			if (SUCCEEDED(hres))
-			{
-				WIN32_FIND_DATAW wfd;
-				ZeroMemory(&wfd, sizeof(wfd));
-				// 获取快捷方式的目标路径
-				hres = psl->GetPath(wfd.cFileName, MAX_PATH, NULL, SLGP_RAWPATH);
-				if (SUCCEEDED(hres))
-				{
-					// 检查目标路径是否与指定目录相匹配
-					if (std::wstring(wfd.cFileName).find(targetDirectory) != std::wstring::npos)
-					{
-						return true;
-					}
-				}
-			}
-			ppf->Release();
-		}
-		psl->Release();
-	}
-	//CoUninitialize();
-
-	return false;
+	DesktopShortcutContents contents;
+	return ReadDesktopShortcut(shortcutPath, contents) && Inkeys::Business::DesktopShortcut::NamesCollide(contents.target, targetDirectory);
 }
-bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath)
+
+bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath, DesktopShortcutKind kind)
 {
-	//CoInitialize(NULL);
-
-	// 创建一个IShellLink对象
-	IShellLink* psl;
-	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
-
-	if (SUCCEEDED(hres))
-	{
-		// 设置快捷方式的目标路径
-		psl->SetPath(targetExePath.c_str());
-
-		// 创建一个IShellLink对象的IPersistFile接口
-		IPersistFile* ppf;
-		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-
-		if (SUCCEEDED(hres))
-		{
-			// 保存快捷方式
-			hres = ppf->Save(shortcutPath.c_str(), TRUE);
-			ppf->Release();
-		}
-
-		psl->Release();
-	}
-
-	//CoUninitialize();
-
-	return SUCCEEDED(hres);
+	IShellLinkW* link = nullptr;
+	HRESULT result = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(&link));
+	if (FAILED(result)) return false;
+	result = link->SetPath(targetExePath.c_str());
+	if (SUCCEEDED(result)) result = link->SetArguments(kind == DesktopShortcutKind::Whiteboard ? L"-Whiteboard" : L"");
+	if (SUCCEEDED(result) && kind == DesktopShortcutKind::Whiteboard) result = link->SetIconLocation(targetExePath.c_str(), -IDI_ICON2);
+	IPersistFile* file = nullptr;
+	if (SUCCEEDED(result)) result = link->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&file));
+	if (SUCCEEDED(result)) { result = file->Save(shortcutPath.c_str(), TRUE); file->Release(); }
+	link->Release();
+	return SUCCEEDED(result);
 }

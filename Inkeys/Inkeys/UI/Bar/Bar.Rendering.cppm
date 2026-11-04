@@ -8,6 +8,9 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include "Bar.ThemeMaterial.h"
+#include <map>
+#include <tuple>
 
 export module Inkeys.UI.Bar:Rendering;
 
@@ -27,8 +30,8 @@ constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderCursorLightRadius = 240.0;
 constexpr double BarBorderLightIntensity = 1.0;
-constexpr double BarBorderFrameDiffuseOpacity = 0.30;
-constexpr double BarBorderPenDiffuseOpacity = 0.20;
+constexpr double BarBorderFrameDiffuseOpacity = BarThemeMaterial::DarkFrameDiffuseOpacity;
+constexpr double BarBorderPenDiffuseOpacity = BarThemeMaterial::DarkPenDiffuseOpacity;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
 
@@ -98,10 +101,13 @@ public:
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, const BarUiInheritClass& inh);
-	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
+	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER, bool fitButtonLabel = false);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
+	double FitButtonLabelFontSize(const wstring& content, double fontSize, double width, double height,
+		DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_BOLD);
 	void ConfigureLocalizedTypography();
+	bool RefreshLocalizedTypography();
 	bool UpdateFontRenderingPolicy(bool allowFractional) noexcept;
 	[[nodiscard]] FLOAT ResolveFontSize(ID2D1DeviceContext* context, double fontSize, double nominalTarget = -1.0);
 	[[nodiscard]] FLOAT ResolveWordFontSize(ID2D1DeviceContext* context, const BarUiWordClass& word,
@@ -165,6 +171,14 @@ public:
 	{
 		return frameZoom;
 	}
+	// 常驻内容（主栏/主按钮/分页的图标与文字）透明度倍率；调用方在绘制完常驻内容后恢复为 1。
+	// 仅常驻对象绘制段启用，退出该段必须恢复，避免污染属性/更多等面板。
+	void SetResidentIdleFade(double progress) noexcept
+	{ residentIdleFade = BarThemeMaterial::ClampWeight(progress); }
+	void SetResidentContentOpacity(double opacity) noexcept
+	{
+		residentContentOpacity = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+	}
 	HRESULT EnsureDeviceResources(const Ui3RenderDeviceEpoch& epoch,
 		UINT32 targetWidth, UINT32 targetHeight);
 	[[nodiscard]] ID2D1DeviceContext* GetDeviceContext() const noexcept
@@ -221,6 +235,12 @@ public:
 				? radius.height : 0.0F;
 	}
 
+	// 供页面表面绘制旋转圆环；沿用受保护的 DrawProgressRing 实现（同色轨道与进度，仅不透明度不同）。
+	void DrawRing(ID2D1DeviceContext* deviceContext, D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
+		FLOAT progress, COLORREF color, FLOAT trackOpacity, FLOAT progressOpacity)
+	{
+		DrawProgressRing(deviceContext, center, radius, strokeWidth, progress, color, color, trackOpacity, progressOpacity);
+	}
 protected:
 	BarFormatCache* GetTypographyCache();
 	BarUIRenderingServices services_;
@@ -326,7 +346,8 @@ protected:
 
 	// 返回强引用，避免缓存扩容或换 epoch 时使当前帧仍在使用的 brush 失效。
 	ComPtr<ID2D1RadialGradientBrush> GetFrameGradientBrush(
-		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
+		ID2D1DeviceContext* deviceContext, COLORREF color,
+		BarBorderLightSourceEnum lightSource, FLOAT radiusScale = 1.0F);
 	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
 	ID2D1LinearGradientBrush* GetThicknessPreviewGradientBrush(
@@ -381,11 +402,19 @@ protected:
 		const D2D1_RECT_F& geometryBounds,
 		ID2D1RadialGradientBrush* brush, FLOAT opacity);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
+		const BarThemeMaterial::Material& material,
 		BarUiFrameLightColorEnum frameLightColor,
 		bool primaryLightEnabled, double cursorLightIntensityScale,
+		double lightCursorLightIntensityScale,
 		double baseFramePct, double lightPct, FLOAT strokeWidth,
 		const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry, int geometryVariantQuarter = 0);
+	void DrawSurfaceMaterialShadows(ID2D1DeviceContext* deviceContext,
+		const BarThemeMaterial::Material& material, double opacity,
+		const D2D1_ROUNDED_RECT* roundedRect, ID2D1Geometry* geometry);
+	void DrawSurfaceMaterialHighlight(ID2D1DeviceContext* deviceContext,
+		const BarThemeMaterial::Material& material, double opacity,
+		const D2D1_ROUNDED_RECT* roundedRect, ID2D1Geometry* geometry);
 
 	ComPtr<ID2D1DeviceContext> deviceContext;
 	ComPtr<ID2D1Bitmap1> targetBitmap;
@@ -444,6 +473,8 @@ protected:
 	unsigned long long frameDiffuseExactMaskUseSerial = 0;
 	unsigned long long frameDiffuseExactMaskPromotionFrameSerial = 0;
 	double frameZoom = 1.0;
+	double residentContentOpacity = 1.0;
+	double residentIdleFade = 0.0;
 	bool frameDirtyClipActive = false;
 	D2D1_RECT_F frameDirtyClipRect{};
 	D2D1_RECT_F frameDirtyClipDeviceRect{};
@@ -476,6 +507,8 @@ protected:
 	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
 	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
+	ComPtr<ID2D1LinearGradientBrush> surfaceHighlightBrush;
+	bool surfaceHighlightUnavailable = false;
 	array<ThicknessPreviewGradientBrushCacheClass, 64>
 		thicknessPreviewGradientBrushCache{};
 	std::uint64_t thicknessPreviewGradientUseSerial = 0;
@@ -499,8 +532,11 @@ protected:
 	bool fontTargetTransformReady = false;
 	BarUiAnimationAdvanceContextClass fontFrameContext;
 	BarUiFontCorrectionClass directFontCorrection, fineDialFontCorrection;
+	std::uint64_t localeRevision = 0;
 	wstring fontFamily = L"HarmonyOS Sans SC";
 	wstring textLocale = L"zh-cn";
+	using ButtonLabelFitKey = std::tuple<wstring,double,double,double,unsigned>;
+	std::map<ButtonLabelFitKey,double> buttonLabelFitCache;
 	SuperellipseGeometryCacheClass superellipseGeometryCache;
 	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
