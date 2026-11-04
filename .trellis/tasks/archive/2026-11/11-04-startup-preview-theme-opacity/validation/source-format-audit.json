@@ -1,0 +1,648 @@
+[
+  {
+    "path": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 691,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 738,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": ".trellis/spec/native-desktop/index.md",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 68,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 68,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": ".trellis/spec/native-desktop/startup-preview.md",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 318,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 379,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "Inkeys/IdtI18nKeys.g.h",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1108,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1116,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/IdtMain.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 4094,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 4107,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/Inkeys/Other/Other.Config.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1121,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1130,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/Inkeys/Other/Other.Config.cppm",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 736,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 738,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1406,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1414,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.Pages.h",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 348,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 350,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 5772,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 5781,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/StartupPreview/StartupPreview.Drawing.h",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 177,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 179,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/StartupPreview/StartupPreview.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1163,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1097,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "Inkeys/Inkeys/UI/StartupPreview/StartupPreview.cppm",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 86,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 91,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "Inkeys/src/i18n/de-DE.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/en-GB.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/en-US.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/es-ES.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/es-MX.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/fr-FR.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/id-ID.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/it-IT.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/ja-JP.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/ko-KR.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/pl-PL.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/pt-BR.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/ro-RO.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/ru-RU.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/tr-TR.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/uk-UA.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/vi-VN.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/zh-CN.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/zh-HK.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "Inkeys/src/i18n/zh-TW.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  },
+  {
+    "path": "InkeysHeadlessTests/animation_tests.cpp",
+    "before": {
+      "bom": true,
+      "crlf": 0,
+      "lf": 1884,
+      "utf8": true
+    },
+    "after": {
+      "bom": true,
+      "crlf": 1893,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "InkeysHeadlessTests/config_metadata_tests.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 642,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 701,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "InkeysHeadlessTests/setting_design_tests.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 7256,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 7320,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "InkeysHeadlessTests/startup_preview_state_tests.cpp",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 876,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1139,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "original worktree CRLF / git core.autocrlf=true; HEAD stores LF"
+  },
+  {
+    "path": "Scripts/i18n.zh-CN.snapshot.jsonc",
+    "before": {
+      "bom": false,
+      "crlf": 0,
+      "lf": 1105,
+      "utf8": true
+    },
+    "after": {
+      "bom": false,
+      "crlf": 1113,
+      "lf": 0,
+      "utf8": true
+    },
+    "ok": true,
+    "baseline": "captured original worktree format"
+  }
+]

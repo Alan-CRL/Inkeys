@@ -2,6 +2,7 @@ module;
 
 #include "../../IdtMain.h"
 #include "../../IdtConfiguration.h"
+#include "../UI/StartupPreview.Effect.h"
 
 #include <cstdint>
 #include <initializer_list>
@@ -480,6 +481,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowFractionalFontSize, false) \
 				GROUP(StartupPreview, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Effect, static_cast<int>(::Inkeys::UI::StartupPreviewEffect::Shimmer)) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \
 				) \
 				GROUP(Debug, \

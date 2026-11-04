@@ -53,9 +53,56 @@
 - 背景为绝对值：用户值即展开主栏的填充透明度；主按钮（收起 0.6 基准）、底部吸附指示与分页按与主栏 0.80 基准的比例同步。内容透明度是图标/文字的倍率。两者只作用于常驻表面（主栏、主按钮、吸附指示、PPT/白板分页），弹出面板、属性栏、菜单保持原透明度。
 - 启动在 `ReadAll()` 后归一并写回内存，再调用 `Inkeys::UI::Bar::SetResidentOpacity()`；该函数只交换 `BarStyleClass::requested*Opacity` 并唤醒 Bar 与 `PptPageMask()`，渲染线程在帧首应用并整幅重画，分页在 Advance 中比较已应用值。
 - “常规 > 外观 > 透明度”分区两条滑块（30%~100%）带“恢复默认”按钮。拖动实时发布，松手、重置或离页时再 `QueueConfigWrite()`；背景重置写回 `0`，滑块显示当前主栏主题的默认值。动画速率（默认 1.0x）与主栏缩放（默认 100%）滑块同样带“恢复默认”，重置后沿原有释放保存路径。
-- Startup Preview 仍使用主题默认透明度绘制占位，与自定义背景透明度交接时可能有一次可见跳变。
+- Startup Preview 在 `ReadMini()` 阶段冻结同一主题及两项透明度，背景/反光/柔光流彩/像素速度线作为背景组，进度轨道/填充单独消费内容透明度；角落保持深色并使用主按钮比例。最终整窗淡入淡出不替代这两项材质透明度。
 
 无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/92%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
+## 启动加载效果选择合同（2026-11-04）
+
+### 1. Scope / Trigger
+
+启动动画效果的持久化、Mini 快照、设置选择与对应渲染交接；视觉/生命周期细节见 [startup-preview.md](startup-preview.md)。
+
+### 2. Signatures
+
+- `Experimental.Inkeys3.UI3.StartupPreview.Effect : IdtAtomic<int> = 0`。
+- `StartupPreview.Effect.h`：`StartupPreviewEffect { Shimmer=0, Aurora=1, PixelAssembly=2 }`、`NormalizeStartupPreviewEffect(int)`。
+- `StartOptions.effect/themeMode/backgroundOpacity/contentOpacity` 是本次预览的冻结输入。
+- `GeneralDraft.startupEffect` / `GeneralEvents.startupEffectChanged` 贯通设置选择与保存。
+
+### 3. Contracts
+
+- `ReadMini`/`ReadAll` 仅接受真实 JSON 整数 0/1/2；未知值、非整数类型、超宽整数均回退 0，不允许先窄化再命中有效值。旧配置缺失效果仍为“掠光”。
+- `IdtMain` 的 Mini 路径同时选择 Effect、ThemeMode、BackgroundOpacity、ContentOpacity；归一后传给 StartOptions，不等待完整配置加载才选择外观。
+- “常规 > 外观 > 启动加载动画”开启时，在正下方 `ConditionalBlock` 中显示 `ComboRow`，选项为“掠光 / 柔光流彩 / 像素拼装”（柔光流彩原名彩虹晕染，key 仍为 `Aurora`）；关闭收起该行但保留效果值。条件退出时沿共用输入禁用规则，不产生隐藏控件事件。
+- 效果选择通过 `QueueConfigWrite()` 保存且下次启动生效；不重新启动当前预览，不清除宽度缓存。新文案遵循现有二十语源/键生成合同。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| 缺失/非法/超宽 Effect | 回到 Shimmer，保留无关配置 |
+| Preview Enable=false | 保留选择；不显示选择行或启动预览 |
+| 关闭后再开启 | 选择值不丢失，行随既有条件动画恢复 |
+| 当前会话改效果 | 保存下次偏好，本次冻结外观不变 |
+
+### 5. Good / Base / Bad Cases
+
+Good：Mini 已取得 PixelAssembly + Light + 两项透明度后启动正确预览。Base：旧 main.json 沿原掠光启动。Bad：效果与主题直到 ReadAll 后才切换；或关闭开关时把用户选择重置为默认。
+
+### 6. Tests Required
+
+真实 Config Mini/All、缺失/错类型/超宽整数、写回/重读及冻结快照；真实 ImGui 选择、开关折叠/恢复、两主题/缩放、禁动画输入与事件隔离。完整 ARM64 Solution 与 `--no-window` 验证按主项目规则执行。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：宽整数可被窄化为有效选项。
+const int candidate = static_cast<int>(jsonValue.asInt64());
+// Correct：先验证原始整数类型与可表示范围，再归一。
+const int candidate = integerType && jsonValue.isInt() ? jsonValue.asInt() : -1;
+value = static_cast<int>(NormalizeStartupPreviewEffect(candidate));
+```
+
 ## 设置页废弃配置清理合同
 
 ### 1. Scope / Trigger

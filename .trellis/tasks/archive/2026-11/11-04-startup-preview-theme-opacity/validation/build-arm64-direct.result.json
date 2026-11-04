@@ -1,0 +1,7 @@
+{
+  "status": "canceled",
+  "phase": "MSBuild worker-node startup",
+  "wrapperExitCode": 1,
+  "compilerDiagnostics": false,
+  "evidence": "Elevated read-only process inspection found one ARM64 MSBuild parent and five repeated nodemode children, no cl.exe; output remained blank. Retrying serial /m:1 with normal verbosity to avoid node IPC in sandbox. Source and project configuration unchanged for environment."
+}

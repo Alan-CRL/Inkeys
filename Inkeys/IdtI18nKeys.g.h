@@ -495,6 +495,14 @@ inline constexpr struct I18nKeyRoot
                 const char* AutoStartE = "SettingsUI/Regular/StartUp/AutoStartE";
                 const char* LoadingAnimation = "SettingsUI/Regular/StartUp/LoadingAnimation";
                 const char* LoadingAnimationE = "SettingsUI/Regular/StartUp/LoadingAnimationE";
+                struct Node__SettingsUI__Regular__StartUp__StartupEffect
+                {
+                    const char* N = "SettingsUI/Regular/StartUp/StartupEffect/N";
+                    const char* E = "SettingsUI/Regular/StartUp/StartupEffect/E";
+                    const char* Shimmer = "SettingsUI/Regular/StartUp/StartupEffect/Shimmer";
+                    const char* Aurora = "SettingsUI/Regular/StartUp/StartupEffect/Aurora";
+                    const char* PixelAssembly = "SettingsUI/Regular/StartUp/StartupEffect/PixelAssembly";
+                } StartupEffect{};
                 struct Node__SettingsUI__Regular__StartUp__SettingEntryAnimation
                 {
                     const char* N = "SettingsUI/Regular/StartUp/SettingEntryAnimation/N";

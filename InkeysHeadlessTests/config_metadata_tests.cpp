@@ -389,6 +389,65 @@ int RunConfigMetadataTests()
 		&& modeConfig.UI.Bar.SelectAndClickThroughMode.load() == 1 && modeConfig.UI.Bar.Zoom2.load() == 2.5,
 		"ReadMini loads separate mode without changing unrelated fields");
 
+
+	// 启动效果及外观使用生产 Mini/All 读写链，确认早期快照不影响无关配置。
+	{
+		constexpr const char* effectPath = "Experimental.Inkeys3.UI3.StartupPreview.Effect";
+		Inkeys::Config preview;
+		check(preview.Experimental.Inkeys3.UI3.StartupPreview.Effect.load() == 0, "startup effect defaults to shimmer");
+		const auto upload = preview.GetUploadInfo();
+		const std::array<std::pair<int, int>, 3> opacityCases{ { {0, 100}, {30, 73}, {100, 30} } };
+		for (int effect = 0; effect <= 2; ++effect)
+			for (int theme : { Inkeys::ThemeModeDark, Inkeys::ThemeModeLight })
+				for (const auto& [background, content] : opacityCases)
+				{
+					auto& style = preview.Experimental.Inkeys3.UI3;
+					style.StartupPreview.Effect = effect; style.ThemeMode = theme;
+					style.BackgroundOpacity = background; style.ContentOpacity = content;
+					check(preview.Write(), "startup appearance preferences write");
+					Inkeys::Config mini;
+					mini.UI.Bar.Zoom2 = 2.5;
+					check(mini.ReadMini({ effectPath, "Experimental.Inkeys3.UI3.ThemeMode",
+						"Experimental.Inkeys3.UI3.BackgroundOpacity", "Experimental.Inkeys3.UI3.ContentOpacity" })
+						&& mini.Experimental.Inkeys3.UI3.StartupPreview.Effect.load() == effect
+						&& mini.Experimental.Inkeys3.UI3.ThemeMode.load() == theme
+						&& mini.Experimental.Inkeys3.UI3.BackgroundOpacity.load() == background
+						&& mini.Experimental.Inkeys3.UI3.ContentOpacity.load() == content && mini.UI.Bar.Zoom2.load() == 2.5,
+						"startup Mini reads both layers, theme and effect without unrelated changes");
+					Inkeys::Config restarted;
+					check(restarted.ReadAll() && restarted.Experimental.Inkeys3.UI3.StartupPreview.Effect.load() == effect
+						&& restarted.Experimental.Inkeys3.UI3.ThemeMode.load() == theme
+						&& restarted.Experimental.Inkeys3.UI3.BackgroundOpacity.load() == background
+						&& restarted.Experimental.Inkeys3.UI3.ContentOpacity.load() == content,
+						"startup appearance survives full restart read");
+				}
+		check(preview.GetUploadInfo() == upload, "startup appearance preferences are not uploaded");
+		Inkeys::Config frozen;
+		frozen = preview;
+		preview.Experimental.Inkeys3.UI3.StartupPreview.Effect = 0;
+		check(frozen.Write() && ReadJson(file)["Experimental"]["Inkeys3"]["UI3"]["StartupPreview"]["Effect"].asInt() == 2,
+			"queued configuration snapshot retains captured startup effect");
+		Json::Value document(Json::objectValue);
+		writeModeDocument(document);
+		preview.Experimental.Inkeys3.UI3.StartupPreview.Effect = 2;
+		preview.UI.Bar.Zoom2 = 2.5;
+		check(preview.ReadMini({ effectPath }) && preview.Experimental.Inkeys3.UI3.StartupPreview.Effect.load() == 0
+			&& preview.UI.Bar.Zoom2.load() == 2.5, "old config without effect keeps shimmer and unrelated preferences");
+		for (const Json::Value& invalid : { Json::Value(), Json::Value(-1), Json::Value(3), Json::Value(true),
+			Json::Value("1"), Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)),
+			Json::Value(Json::UInt64(18446744073709551615ULL)), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		{
+			document["Experimental"]["Inkeys3"]["UI3"]["StartupPreview"]["Effect"] = invalid;
+			writeModeDocument(document);
+			preview.Experimental.Inkeys3.UI3.StartupPreview.Effect = 2;
+			check(preview.ReadAll() && preview.Experimental.Inkeys3.UI3.StartupPreview.Effect.load() == 0,
+				"full read rejects invalid startup effect types and wide integers");
+			preview.Experimental.Inkeys3.UI3.StartupPreview.Effect = 2; preview.UI.Bar.Zoom2 = 2.5;
+			check(preview.ReadMini({ effectPath }) && preview.Experimental.Inkeys3.UI3.StartupPreview.Effect.load() == 0
+				&& preview.UI.Bar.Zoom2.load() == 2.5, "Mini rejects invalid startup effect without truncation");
+		}
+	}
+
 	// 主栏两项使用生产 schema，覆盖所有合法值、严格类型校验及异步保存所用的冻结副本。
 	for (int field = 0; field < 2; ++field)
 	{

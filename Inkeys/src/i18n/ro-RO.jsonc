@@ -492,6 +492,14 @@
         "AutoStartE": "Pornește Inkeys când utilizatorul curent se conectează la Windows.",
         "LoadingAnimation": "Animație la pornire",
         "LoadingAnimationE": "Afișează animația de încărcare la pornirea Inkeys.",
+        "StartupEffect":
+        {
+          "N": "Efect de pornire",
+          "E": "Alege efectul de încărcare pentru următoarea pornire.",
+          "Shimmer": "Reflexie glisantă",
+          "Aurora": "Strălucire blândă",
+          "PixelAssembly": "Asamblare din pixeli"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animație de deschidere a setărilor",

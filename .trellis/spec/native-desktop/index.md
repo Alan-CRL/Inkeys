@@ -32,7 +32,7 @@
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
 - [draw3-cursors.md](draw3-cursors.md)：鼠标/笔类型选择、荧光笔独立预览与设备固定高亮、始终隐藏 Touch 与 Win7 生命周期边界。
 - [single-instance-and-startup-handoff.md](single-instance-and-startup-handoff.md)：目录单实例、多开偏好、更新/重启与SuperTop连续占位交接。
-- [startup-preview.md](startup-preview.md)：SuperTop 后启动预览、程序化灰色占位、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
+- [startup-preview.md](startup-preview.md)：SuperTop 后三种启动效果、深浅/分层透明度、像素入场、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
 
 PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../ppt-interop/index.md)。
 

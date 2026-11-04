@@ -292,6 +292,7 @@ namespace Inkeys::UI::Setting::Design
 		// 常驻透明度为绝对值（0.30~1.00）；背景默认值随主栏主题变化，供显示与重置。
 		float backgroundOpacity = 0.80F, backgroundOpacityDefault = 0.80F;
 		float contentOpacity = 1.0F;
+		int startupEffect = 0;
 	};
 
 	struct GeneralEvents
@@ -307,6 +308,7 @@ namespace Inkeys::UI::Setting::Design
 		bool safetyModeChanged = false;
 		bool allowMultipleInstancesChanged = false;
 		bool startupPreviewChanged = false;
+		bool startupEffectChanged = false;
 		bool settingEntryAnimationChanged = false;
 		bool animationChanged = false;
 		bool dynamicEdgeLightingChanged = false;

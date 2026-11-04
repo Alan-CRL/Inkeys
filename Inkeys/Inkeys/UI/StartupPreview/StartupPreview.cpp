@@ -23,7 +23,7 @@ module;
 #include <thread>
 
 #include "../StartupPlacement.h"
-#include "StartupPreview.Drawing.h"
+#include "StartupPreview.Effects.Drawing.h"
 
 module Inkeys.UI.StartupPreview;
 import Inkeys.UI.RenderPipeline;
@@ -311,7 +311,7 @@ namespace Inkeys::UI::StartupPreview
 			}
 
 			[[nodiscard]] BOOL PresentPixels(HDC source, BYTE alpha,
-				UINT width, UINT height) noexcept
+				UINT width, UINT height, const RECT& dirty) noexcept
 			{
 				if (!state_ || !source || width == 0 || height == 0) return FALSE;
 				auto state = state_;
@@ -337,6 +337,8 @@ namespace Inkeys::UI::StartupPreview
 				update.pptSrc = &sourcePoint;
 				update.hdcSrc = source;
 				update.pblend = &blend;
+				// 脏区之外沿用窗口已提交像素；扩大的粒子窗口在拼好后只回读并提交主栏区域。
+				update.prcDirty = &dirty;
 				update.dwFlags = ULW_ALPHA;
 				return UpdateLayeredWindowIndirect(window, &update);
 			}
@@ -398,37 +400,26 @@ namespace Inkeys::UI::StartupPreview
 		struct RenderResources final
 		{
 			std::uint64_t generation = 0;
-			UINT width = 0;
-			UINT height = 0;
+			UINT width = 0, height = 0;
 			ComPtr<ID2D1DeviceContext> context;
 			ComPtr<ID2D1Bitmap1> target;
-			ComPtr<ID2D1Bitmap1> mask;
-			ComPtr<ID2D1Geometry> shape;
 			ComPtr<ID2D1StrokeStyle> ringStroke;
 			ComPtr<ID2D1GdiInteropRenderTarget> gdi;
-			ComPtr<ID2D1SolidColorBrush> baseFill;
-			ComPtr<ID2D1SolidColorBrush> frameStroke;
-			ComPtr<ID2D1LinearGradientBrush> shimmer;
-			ComPtr<ID2D1SolidColorBrush> progressTrack;
-			ComPtr<ID2D1SolidColorBrush> progressFill;
+			ComPtr<ID2D1SolidColorBrush> progressTrack, progressFill;
+			Drawing::EffectRenderer effect;
+			Effects::Appearance appearance;
+			// 上一次成功提交的内容范围；资源重建后为空，下一帧整窗提交。
+			RECT committedContent{};
+			bool hasCommittedContent = false;
 
 			void Reset() noexcept
 			{
+				effect.Reset();
 				if (context) context->SetTarget(nullptr);
-				shape.Reset();
-				ringStroke.Reset();
-				progressFill.Reset();
-				progressTrack.Reset();
-				shimmer.Reset();
-				frameStroke.Reset();
-				baseFill.Reset();
-				gdi.Reset();
-				mask.Reset();
-				target.Reset();
-				context.Reset();
-				generation = 0;
-				width = 0;
-				height = 0;
+				ringStroke.Reset(); progressFill.Reset(); progressTrack.Reset();
+				gdi.Reset(); target.Reset(); context.Reset();
+				generation = 0; width = 0; height = 0;
+				committedContent = {}; hasCommittedContent = false;
 			}
 		};
 
@@ -447,6 +438,8 @@ namespace Inkeys::UI::StartupPreview
 		struct Runtime final
 		{
 			StartOptions options;
+			Effects::Rect targetRect{}, scatterRect{};
+			std::uint32_t effectSeed = 1;
 			PreviewOwner owner;
 			RenderResources resources;
 			std::chrono::steady_clock::time_point shimmerEpoch{};
@@ -508,134 +501,55 @@ namespace Inkeys::UI::StartupPreview
 		[[nodiscard]] HRESULT EnsureResources(Runtime& runtime,
 			const FrameContext& frame, UINT width, UINT height)
 		{
-			if (!frame.epoch.d2dDevice || width == 0 || height == 0)
-				return E_INVALIDARG;
+			if (!frame.epoch.d2dDevice || width == 0 || height == 0) return E_INVALIDARG;
 			auto& resources = runtime.resources;
-			if (resources.generation == frame.epoch.generation
-				&& resources.width == width && resources.height == height
-				&& resources.context && resources.target && resources.mask
-				&& resources.gdi) return S_OK;
-
+			if (resources.generation == frame.epoch.generation && resources.width == width
+				&& resources.height == height && resources.context && resources.target && resources.gdi) return S_OK;
 			RenderResources next;
-			next.generation = frame.epoch.generation;
-			next.width = width;
-			next.height = height;
-			HRESULT result = frame.epoch.d2dDevice->CreateDeviceContext(
-				D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &next.context);
+			next.generation = frame.epoch.generation; next.width = width; next.height = height;
+			HRESULT result = frame.epoch.d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &next.context);
 			if (FAILED(result)) return result;
-			const auto targetProperties = D2D1::BitmapProperties1(
-				D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_GDI_COMPATIBLE,
-				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-					D2D1_ALPHA_MODE_PREMULTIPLIED));
-			result = next.context->CreateBitmap(D2D1::SizeU(width, height), nullptr,
-				0, &targetProperties, &next.target);
-			if (FAILED(result)) return result;
-			const auto maskProperties = D2D1::BitmapProperties1(
-				D2D1_BITMAP_OPTIONS_TARGET,
-				D2D1::PixelFormat(DXGI_FORMAT_A8_UNORM,
-					D2D1_ALPHA_MODE_PREMULTIPLIED));
-			result = next.context->CreateBitmap(D2D1::SizeU(width, height), nullptr,
-				0, &maskProperties, &next.mask);
-			if (FAILED(result)) return result;
-			result = next.context.As(&next.gdi);
-			if (FAILED(result)) return result;
-
-			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(
-					static_cast<float>(StartupPreviewSurfaceColorChannel),
-					static_cast<float>(StartupPreviewSurfaceColorChannel),
-					static_cast<float>(StartupPreviewSurfaceColorChannel), 1.f),
-				&next.baseFill);
-			if (FAILED(result)) return result;
-			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(
-					static_cast<float>(StartupPreviewSurfaceFrameColorChannel),
-					static_cast<float>(StartupPreviewSurfaceFrameColorChannel),
-					static_cast<float>(StartupPreviewSurfaceFrameColorChannel), 1.f),
-				&next.frameStroke);
-			if (FAILED(result)) return result;
-			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(1.f, 1.f, 1.f, 0.24f), &next.progressTrack);
-			if (FAILED(result)) return result;
-			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(0.38f, 0.80f, 1.f, 1.f), &next.progressFill);
-			if (FAILED(result)) return result;
-
-			const auto gradient = ResolveStartupPreviewShimmerGradient(width, height);
-			result = Drawing::CreateShimmer(next.context.Get(),
-				D2D1::Point2F(static_cast<float>(gradient.startX), static_cast<float>(gradient.startY)),
-				D2D1::Point2F(static_cast<float>(gradient.endX), static_cast<float>(gradient.endY)),
-				&next.shimmer);
-			if (FAILED(result)) return result;
-			ComPtr<ID2D1Factory> factory;
-			next.context->GetFactory(&factory);
+			const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_GDI_COMPATIBLE,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+			result = next.context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, &properties, &next.target);
+			if (SUCCEEDED(result)) result = next.context.As(&next.gdi);
+			if (SUCCEEDED(result)) result = next.context->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, .24f), &next.progressTrack);
+			if (SUCCEEDED(result)) result = next.context->CreateSolidColorBrush(D2D1::ColorF(.38f, .8f, 1.f), &next.progressFill);
+			ComPtr<ID2D1Factory> factory; next.context->GetFactory(&factory);
+			if (SUCCEEDED(result)) result = Drawing::CreateRingStroke(factory.Get(), &next.ringStroke);
 			const bool floating = runtime.options.startupPlacement != StartupPlacement::CenteredBottomBar;
-			result = Drawing::CreateShape(factory.Get(), static_cast<float>(width),
-				static_cast<float>(height), DpiScale(runtime), floating, &next.shape);
+			next.appearance = Effects::ResolveAppearance(runtime.options.themeMode,
+				runtime.options.backgroundOpacity, runtime.options.contentOpacity, floating);
+			if (SUCCEEDED(result)) result = next.effect.Initialize(next.context.Get(), width, height,
+				runtime.targetRect, runtime.scatterRect, DpiScale(runtime), floating,
+				runtime.options.effect, next.appearance, runtime.effectSeed);
 			if (FAILED(result)) return result;
-			result = Drawing::CreateRingStroke(factory.Get(), &next.ringStroke);
-			if (FAILED(result)) return result;
-
-			// A8 mask 缓存实际外形与描边的最终alpha；反光不会越过超椭圆透明角。
-			next.context->SetTarget(next.mask.Get());
-			next.context->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-			next.context->BeginDraw();
-			next.context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
-			const float scale = DpiScale(runtime);
-
-			ComPtr<ID2D1SolidColorBrush> maskFill;
-			ComPtr<ID2D1SolidColorBrush> maskStroke;
-			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(1.f, 1.f, 1.f,
-					static_cast<float>(floating ? StartupPreviewFloatingFillAlpha : StartupPreviewFillAlpha)), &maskFill);
-			if (SUCCEEDED(result)) result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(1.f, 1.f, 1.f,
-					static_cast<float>(StartupPreviewFrameAlpha)), &maskStroke);
-			if (SUCCEEDED(result))
-			{
-				next.context->FillGeometry(next.shape.Get(), maskFill.Get());
-				next.context->DrawGeometry(next.shape.Get(), maskStroke.Get(), scale);
-			}
-			const HRESULT maskEnd = next.context->EndDraw();
-			if (FAILED(result)) return result;
-			if (FAILED(maskEnd)) return maskEnd;
-			next.context->SetTarget(next.target.Get());
-			next.context->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-			resources.Reset();
-			resources = std::move(next);
+			resources.Reset(); resources = std::move(next);
 			return S_OK;
 		}
 
-		void DrawShimmer(Runtime& runtime, const FrameContext& frame,
-			float contentOpacity)
+		[[nodiscard]] double EffectElapsed(const Runtime& runtime,
+			std::chrono::steady_clock::time_point now) noexcept
 		{
-			auto& resources = runtime.resources;
-			if (!resources.mask || !resources.shimmer || contentOpacity <= 0.f) return;
-			const double width = static_cast<double>(resources.width);
-			const double height = static_cast<double>(resources.height);
+			return runtime.shownTime == std::chrono::steady_clock::time_point{} ? 0.0
+				: (std::max)(0.0, std::chrono::duration<double>(now - runtime.shownTime).count());
+		}
+
+		[[nodiscard]] HRESULT PrepareBackground(Runtime& runtime, const FrameContext& frame)
+		{
+			const double width = Effects::Width(runtime.targetRect), height = Effects::Height(runtime.targetRect);
 			const GeometryRect maskBounds{ 0.0, 0.0, width, height };
 			const auto gradient = ResolveStartupPreviewShimmerGradient(width, height);
-			const double supportLength = std::hypot(gradient.endX - gradient.startX,
-				gradient.endY - gradient.startY);
-			const auto travel = ResolveShimmerTravel(
-				maskBounds, gradient, (std::max)(8.0, supportLength * 0.10));
-			const double cycle = runtime.shimmerEpoch
-				== std::chrono::steady_clock::time_point{} ? 0.0
-				: ResolveShimmerCycleRatio(frame.frameTime,
-					runtime.shimmerEpoch,
-					std::chrono::duration<double>(
-						StartupPreviewShimmerCycleSeconds));
-			const auto translation = ResolveShimmerTranslation(
-				travel, EaseShimmerPhase(cycle));
-			resources.shimmer->SetStartPoint(D2D1::Point2F(
-				static_cast<float>(gradient.startX + translation.x),
-				static_cast<float>(gradient.startY + translation.y)));
-			resources.shimmer->SetEndPoint(D2D1::Point2F(
-				static_cast<float>(gradient.endX + translation.x),
-				static_cast<float>(gradient.endY + translation.y)));
-			resources.shimmer->SetOpacity(contentOpacity);
-			Drawing::DrawShimmer(resources.context.Get(), resources.mask.Get(),
-				resources.shimmer.Get(), static_cast<float>(width), static_cast<float>(height));
+			const double supportLength = std::hypot(gradient.endX - gradient.startX, gradient.endY - gradient.startY);
+			const auto travel = ResolveShimmerTravel(maskBounds, gradient, (std::max)(8.0, supportLength * .10));
+			const double elapsed = EffectElapsed(runtime, frame.frameTime);
+			const double shimmerElapsed = runtime.options.effect == StartupPreviewEffect::PixelAssembly
+				? (std::max)(0.0, elapsed - Effects::AssemblySeconds) : elapsed;
+			const auto translation = ResolveShimmerTranslation(travel,
+				EaseShimmerPhase(std::fmod(shimmerElapsed, StartupPreviewShimmerCycleSeconds) / StartupPreviewShimmerCycleSeconds));
+			return runtime.resources.effect.Prepare(elapsed,
+				D2D1::Point2F(static_cast<float>(gradient.startX + translation.x), static_cast<float>(gradient.startY + translation.y)),
+				D2D1::Point2F(static_cast<float>(gradient.endX + translation.x), static_cast<float>(gradient.endY + translation.y)));
 		}
 
 		[[nodiscard]] HRESULT DrawProgress(Runtime& runtime,
@@ -649,13 +563,15 @@ namespace Inkeys::UI::StartupPreview
 				now, snapshot.actualRatio, success, failed);
 			if (contentOpacity <= 0.f || visual.opacity <= 0.001) return S_OK;
 			const float scale = DpiScale(runtime);
-			const float width = static_cast<float>(runtime.resources.width);
-			const float height = static_cast<float>(runtime.resources.height);
+			const float width = Effects::Width(runtime.targetRect);
+			const float height = Effects::Height(runtime.targetRect);
 			const float opacity = Clamp01(visual.opacity * contentOpacity);
+			runtime.resources.context->SetTransform(D2D1::Matrix3x2F::Translation(runtime.targetRect.left, runtime.targetRect.top));
 			const HRESULT result = Drawing::DrawProgress(runtime.resources.context.Get(), runtime.resources.ringStroke.Get(),
 				runtime.resources.progressTrack.Get(), runtime.resources.progressFill.Get(),
 				runtime.options.startupPlacement, width, height, scale,
-				visual.displayedRatio, opacity, visual.failureColorProgress >= 1.0);
+				visual.displayedRatio, opacity, visual.failureColorProgress >= 1.0, runtime.resources.appearance.light);
+			runtime.resources.context->SetTransform(D2D1::Matrix3x2F::Identity());
 			progressVisible = result == S_OK;
 			return result;
 		}
@@ -730,7 +646,8 @@ namespace Inkeys::UI::StartupPreview
 			const int barAlpha = runtime->committedBarAlpha.load(std::memory_order_acquire);
 			if (barAlpha == 0 && runtime->phase == Phase::WaitingForBar)
 			{
-				const auto handoff = runtime->handoff.BarAlpha0Committed(success);
+				const auto handoff = runtime->handoff.BarAlpha0Committed(success && Effects::AssemblyReady(
+					runtime->options.effect, EffectElapsed(*runtime, frame.frameTime)));
 				if (handoff.requestPreviewFadeOut)
 				{
 					// handoff 启动时冻结档位，后续提交不再改变双方时长。
@@ -761,7 +678,8 @@ namespace Inkeys::UI::StartupPreview
 			std::uint8_t windowAlpha = 255;
 			if (!runtime->firstFrameCommitted.load(std::memory_order_acquire))
 				windowAlpha = 0;
-			else if (runtime->shownTime != std::chrono::steady_clock::time_point{})
+			else if (runtime->options.effect != StartupPreviewEffect::PixelAssembly
+				&& runtime->shownTime != std::chrono::steady_clock::time_point{})
 				windowAlpha = ResolveFadeInAlpha(
 					std::chrono::duration_cast<std::chrono::milliseconds>(
 						frame.frameTime - runtime->shownTime),
@@ -782,20 +700,21 @@ namespace Inkeys::UI::StartupPreview
 			if (runtime->phase == Phase::Failure) windowAlpha = 255;
 
 			auto& resources = runtime->resources;
+			const HRESULT backgroundResult = PrepareBackground(*runtime, frame);
+			if (FAILED(backgroundResult))
+			{
+				if (backgroundResult == D2DERR_RECREATE_TARGET) resources.Reset();
+				if (barReady) RecoverOpaqueBar(runtime);
+				return IsSharedDeviceLoss(backgroundResult) ? FrameResult::DeviceLost : FrameResult::Retry;
+			}
 			resources.context->SetTarget(resources.target.Get());
 			resources.context->BeginDraw();
 			resources.context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
-			// 整窗淡入淡出只由ULW执行；两种外形共享实际mask和基础绘制。
-			Drawing::DrawShape(resources.context.Get(), resources.shape.Get(),
-				resources.baseFill.Get(), resources.frameStroke.Get(), DpiScale(*runtime),
-				static_cast<float>(runtime->options.startupPlacement == StartupPlacement::CenteredBottomBar
-					? StartupPreviewFillAlpha : StartupPreviewFloatingFillAlpha),
-				static_cast<float>(StartupPreviewFrameAlpha));
-			// 固定合成层级：反光先绘制，进度条始终最后绘制在其上方。
-			DrawShimmer(*runtime, frame, 1.f);
+			// 背景及所有光影先整组合成，进度独立置顶；用户alpha和ULW交接alpha各只应用一次。
+			resources.effect.DrawBackground(resources.context.Get());
 			bool progressVisible = false;
-			const HRESULT progressResult = DrawProgress(
-				*runtime, snapshot, frame.frameTime, success, 1.f, progressVisible);
+			const HRESULT progressResult = DrawProgress(*runtime, snapshot, frame.frameTime,
+				success, resources.appearance.contentOpacity, progressVisible);
 			if (FAILED(progressResult))
 			{
 				// 圆弧构造失败不能冒充可见进度或最终红帧；按既有资源失败路径重试/绕过。
@@ -814,6 +733,9 @@ namespace Inkeys::UI::StartupPreview
 				return IsSharedDeviceLoss(end)
 					? FrameResult::DeviceLost : FrameResult::Retry;
 			}
+			const RECT content = resources.effect.ContentBounds();
+			RECT dirty{ 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
+			if (resources.hasCommittedContent) UnionRect(&dirty, &content, &resources.committedContent);
 			HDC source = nullptr;
 			HRESULT getDc = resources.gdi->GetDC(
 				D2D1_DC_INITIALIZE_MODE_COPY, &source);
@@ -823,7 +745,7 @@ namespace Inkeys::UI::StartupPreview
 			{
 				// per-pixel alpha 保留在 D2D surface，整窗淡入淡出只走 SourceConstantAlpha。
 				update = runtime->owner.PresentPixels(source,
-					windowAlpha, width, height);
+					windowAlpha, width, height, dirty);
 				release = resources.gdi->ReleaseDC(nullptr);
 			}
 			else if (SUCCEEDED(getDc)) getDc = E_POINTER;
@@ -848,6 +770,8 @@ namespace Inkeys::UI::StartupPreview
 			}
 			runtime->firstHandoffFailure = {};
 			runtime->committedPreviewAlpha = windowAlpha;
+			resources.committedContent = content;
+			resources.hasCommittedContent = true;
 			// 只有真实 ULW 成功的可见帧才有资格切换慢速 handoff 档位。
 			runtime->handoffTiming.PreviewFrameCommitted(
 				progressVisible, windowAlpha);
@@ -937,6 +861,8 @@ namespace Inkeys::UI::StartupPreview
 			}
 			auto runtime = std::make_shared<Runtime>();
 			runtime->options = options;
+			runtime->options.effect = NormalizeStartupPreviewEffect(static_cast<int>(options.effect));
+			runtime->effectSeed = GetTickCount() ^ GetCurrentProcessId();
 			runtime->options.startupPlacement = NormalizeStartupPlacement(static_cast<int>(options.startupPlacement));
 			runtime->options.cachedWidthDip = ResolveCachedStartupBarWidthDip(
 				options.cachedWidthDip);
@@ -955,6 +881,25 @@ namespace Inkeys::UI::StartupPreview
 					runtime->options.cachedWidthDip, DefaultStartupBarHeightDip,
 					runtime->options.dpi, runtime->options.barZoom, runtime->options.startupPlacement, runtime->options.uiBaseScale,
 					runtime->options.desktopDockLine);
+			// 粒子窗口可以外扩，但正式目标坐标和逻辑宽度缓存保持不变。
+			const Effects::Rect target{ static_cast<float>(bounds.left), static_cast<float>(bounds.top),
+				static_cast<float>(bounds.right), static_cast<float>(bounds.bottom) };
+			const Effects::Rect work{ static_cast<float>(workArea.left), static_cast<float>(workArea.top),
+				static_cast<float>(workArea.right), static_cast<float>(workArea.bottom) };
+			auto presentation = target;
+			auto scatter = target;
+			if (runtime->options.effect == StartupPreviewEffect::PixelAssembly)
+			{
+				scatter = Effects::ScatterBounds(target, work,
+					runtime->options.startupPlacement != StartupPlacement::CenteredBottomBar);
+				presentation = Effects::PresentationBounds(target, scatter, work, DpiScale(*runtime));
+			}
+			runtime->targetRect = { target.left - presentation.left, target.top - presentation.top,
+				target.right - presentation.left, target.bottom - presentation.top };
+			runtime->scatterRect = { scatter.left - presentation.left, scatter.top - presentation.top,
+				scatter.right - presentation.left, scatter.bottom - presentation.top };
+			bounds = RECT{ static_cast<LONG>(presentation.left), static_cast<LONG>(presentation.top),
+				static_cast<LONG>(presentation.right), static_cast<LONG>(presentation.bottom) };
 			if (!runtime->owner.Start(runtime->options.instance, bounds)) return false;
 			runtime->active.store(true, std::memory_order_release);
 			{

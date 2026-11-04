@@ -1722,6 +1722,7 @@ int main(int argc, char** argv)
 		return RunSettingFontBenchmarkTests();
 	bool benchmark = false;
 	bool penWidthOnly = false;
+	bool startupPreviewOnly = false;
 	bool settingHomeOnly = false;
 	bool settingCopyOnly = false;
 	bool settingAttentionOnly = false;
@@ -1742,6 +1743,7 @@ int main(int argc, char** argv)
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
 		penWidthOnly |= argument == "--pen-width-only";
+		startupPreviewOnly |= argument == "--startup-preview-only";
 		settingHomeOnly |= argument == "--setting-home-only";
 		settingCopyOnly |= argument == "--setting-copy-only";
 		settingAttentionOnly |= argument == "--setting-attention-only";
@@ -1791,6 +1793,13 @@ int main(int argc, char** argv)
 #endif
 	}
 
+	// 专项入口仍先应用 --no-window 的系统/CRT 错误对话框屏障。
+	if (startupPreviewOnly)
+	{
+		const int failures = RunStartupProgressTests() + RunStartupPreviewStateTests();
+		std::cout << "[StartupPreviewOnly] failures=" << failures << '\n';
+		return failures == 0 ? 0 : 1;
+	}
 	if (palmEraserOnly) return RunPalmEraserTests() == 0 ? 0 : 1;
 	if (settingEraserDemoOnly)
 	{

@@ -492,6 +492,14 @@
         "AutoStartE": "当前用户登录 Windows 时自动启动智绘教Inkeys。",
         "LoadingAnimation": "启动加载动画",
         "LoadingAnimationE": "显示软件启动过程中的加载动画。",
+        "StartupEffect":
+        {
+          "N": "启动效果",
+          "E": "选择下次启动时播放的加载效果。",
+          "Shimmer": "掠光",
+          "Aurora": "柔光流彩",
+          "PixelAssembly": "像素拼装"
+        },
         "SettingEntryAnimation":
         {
           "N": "设置界面开屏动画",

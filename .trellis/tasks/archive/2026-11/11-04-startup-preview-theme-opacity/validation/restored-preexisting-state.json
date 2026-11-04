@@ -1,0 +1,15 @@
+{
+  "restoredMissingFiles": [
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/fine-active.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/fine-dark-result.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/fine-result.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/fine-start.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/sweep-active.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/sweep-fixed-finished.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/sweep-result.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/sweep-speed-finished.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/sweep-start.png",
+    ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals/sweep-warmup.png"
+  ],
+  "skippedToPreserveChanges": []
+}

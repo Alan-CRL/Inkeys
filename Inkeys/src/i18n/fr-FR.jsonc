@@ -492,6 +492,14 @@
         "AutoStartE": "Lancer Inkeys à la connexion de l’utilisateur actuel à Windows.",
         "LoadingAnimation": "Animation de chargement au démarrage",
         "LoadingAnimationE": "Afficher l’animation de chargement au démarrage d’Inkeys.",
+        "StartupEffect":
+        {
+          "N": "Effet au démarrage",
+          "E": "Choisissez l’effet de chargement pour le prochain démarrage.",
+          "Shimmer": "Reflet glissant",
+          "Aurora": "Lueur douce",
+          "PixelAssembly": "Assemblage de pixels"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animation d’ouverture des paramètres",

@@ -492,6 +492,14 @@
         "AutoStartE": "Inicia o Inkeys automaticamente quando o usuário atual entra no Windows.",
         "LoadingAnimation": "Animação de inicialização",
         "LoadingAnimationE": "Exibe uma animação de carregamento durante a inicialização do Inkeys.",
+        "StartupEffect":
+        {
+          "N": "Efeito de inicialização",
+          "E": "Escolha o efeito de carregamento para a próxima inicialização.",
+          "Shimmer": "Reflexo deslizante",
+          "Aurora": "Brilho suave",
+          "PixelAssembly": "Montagem de pixels"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animação de abertura das opções",

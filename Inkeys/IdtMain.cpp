@@ -48,6 +48,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
 #include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
 #include "Inkeys/UI/StartupPlacement.h"
+#include "Inkeys/UI/StartupPreview.Effect.h"
 #include "PptSettingsPersistence.h"
 #include "ShutdownProgressTrace.h"
 #include "PptWaitingDiagnostics.h"
@@ -2625,6 +2626,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
+		"Experimental.Inkeys3.UI3.StartupPreview.Effect",
+		"Experimental.Inkeys3.UI3.ThemeMode",
+		"Experimental.Inkeys3.UI3.BackgroundOpacity",
+		"Experimental.Inkeys3.UI3.ContentOpacity",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
 		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
 	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
@@ -2677,6 +2682,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		Inkeys::UI::StartupPreview::StartOptions previewOptions;
 		previewOptions.instance = hInstance;
 		previewOptions.startupPlacement = startupPlacement;
+		// Mini 外观随本次预览冻结，设置改动与后续 ReadAll 不会让启动帧切回默认材质。
+		previewOptions.effect = Inkeys::UI::NormalizeStartupPreviewEffect(
+			startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Effect.load());
+		previewOptions.themeMode = Inkeys::NormalizeThemeMode(startupMiniConfig.Experimental.Inkeys3.UI3.ThemeMode.load());
+		previewOptions.backgroundOpacity = Inkeys::NormalizeResidentBackgroundOpacity(
+			startupMiniConfig.Experimental.Inkeys3.UI3.BackgroundOpacity.load());
+		previewOptions.contentOpacity = Inkeys::NormalizeResidentContentOpacity(
+			startupMiniConfig.Experimental.Inkeys3.UI3.ContentOpacity.load());
 		previewOptions.cachedWidthDip =
 			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.

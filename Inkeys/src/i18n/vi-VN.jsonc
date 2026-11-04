@@ -492,6 +492,14 @@
         "AutoStartE": "Tự chạy Inkeys khi người dùng hiện tại đăng nhập Windows.",
         "LoadingAnimation": "Hiệu ứng tải khi khởi động",
         "LoadingAnimationE": "Hiển thị hiệu ứng tải khi Inkeys khởi động.",
+        "StartupEffect":
+        {
+          "N": "Hiệu ứng khởi động",
+          "E": "Chọn hiệu ứng tải cho lần khởi động tiếp theo.",
+          "Shimmer": "Vệt sáng lướt",
+          "Aurora": "Ánh sáng dịu",
+          "PixelAssembly": "Ghép điểm ảnh"
+        },
         "SettingEntryAnimation":
         {
           "N": "Hiệu ứng mở Thiết lập",

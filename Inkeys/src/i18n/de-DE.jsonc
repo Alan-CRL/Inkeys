@@ -492,6 +492,14 @@
         "AutoStartE": "Inkeys starten, wenn sich der aktuelle Benutzer bei Windows anmeldet.",
         "LoadingAnimation": "Ladeanimation beim Start",
         "LoadingAnimationE": "Beim Start von Inkeys die Ladeanimation anzeigen.",
+        "StartupEffect":
+        {
+          "N": "Starteffekt",
+          "E": "Animation für den nächsten Start auswählen.",
+          "Shimmer": "Lichtschimmer",
+          "Aurora": "Sanfter Schimmer",
+          "PixelAssembly": "Pixelaufbau"
+        },
         "SettingEntryAnimation":
         {
           "N": "Animation beim Öffnen der Einstellungen",

@@ -492,6 +492,14 @@
         "AutoStartE": "Geçerli kullanıcı Windows'ta oturum açtığında Inkeys'i başlatın.",
         "LoadingAnimation": "Başlangıç yükleme animasyonu",
         "LoadingAnimationE": "Inkeys başlatılırken yükleme animasyonunu gösterin.",
+        "StartupEffect":
+        {
+          "N": "Başlangıç efekti",
+          "E": "Bir sonraki başlangıç için yükleme efektini seçin.",
+          "Shimmer": "Işık geçişi",
+          "Aurora": "Yumuşak parıltı",
+          "PixelAssembly": "Piksel birleşimi"
+        },
         "SettingEntryAnimation":
         {
           "N": "Ayarları açma animasyonu",

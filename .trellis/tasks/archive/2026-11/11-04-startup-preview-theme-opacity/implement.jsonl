@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "桌面/配置/渲染归属与验证边界"}
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "原启动进度、几何、owner/ULW、失败和交接合同；本任务批准范围覆盖旧深色单效果限制"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "深浅角色、角落深色与主按钮透明度比例"}
+{"file": ".trellis/tasks/11-04-startup-preview-theme-opacity/research/configuration-contract-excerpt.md", "reason": "相关配置/主题/透明度/二十语生成合同摘录，避免全篇注入截断"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "ConditionalBlock与内联控件展开/退出和禁动画"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "原生solution/headless验证；以当前用户ARM64构建指令为准"}
+{"file": ".trellis/tasks/11-04-startup-preview-theme-opacity/research/startup-appearance.md", "reason": "原有启动外观链路与工作区基线；新增范围见后续研究"}
+{"file": ".trellis/tasks/11-04-startup-preview-theme-opacity/research/histart-and-style-review.md", "reason": "HiStart算法、D2D允许范围、用户样式修正和待确认设计"}
+{"file": ".trellis/tasks/11-04-startup-preview-theme-opacity/research/style-revision-4.md", "reason": "最新整合视觉合同：深浅都淡色/仅裁剪无羽化；内部像素明显流动并同时归位，覆盖前几版样式"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "模块/并发/格式习惯"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "D2D effect和bitmap资源/设备丢失边界"}
+{"file": ".trellis/tasks/11-04-startup-preview-theme-opacity/research/implementation-coordination.md", "reason": "本次批准状态、并行所有权和冻结接口"}

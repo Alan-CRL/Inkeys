@@ -2,6 +2,7 @@ module;
 
 #include "../../IdtMain.h"
 #include "../../PptSettingsPersistence.h"
+#include "../UI/StartupPreview.Effect.h"
 
 #include <atomic>
 #include <initializer_list>
@@ -598,6 +599,14 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 
 				const auto path = JoinPath(groupPath, name);
+				if (path == "Experimental.Inkeys3.UI3.StartupPreview.Effect")
+				{
+					// 先验整数类型及宽度，禁止浮点/布尔或超宽整数被窄化成有效效果。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(candidate));
+					return;
+				}
 				if (path == "Drawing.PalmEraser.ThresholdPercent" || path == "Drawing.PalmEraser.RecognitionWindowMs")
 				{
 					// 先验证原始整数类型和宽度，禁止浮点、布尔或超宽整数窄化成合法偏好。

@@ -1,0 +1,17 @@
+{
+  "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+  "arguments": [
+    "InkeysRepo.sln",
+    "/t:Build",
+    "/m:1",
+    "/p:Configuration=Debug",
+    "/p:Platform=ARM64",
+    "/nr:false",
+    "/nologo",
+    "/v:normal"
+  ],
+  "startedUtc": "2026-11-04T04:12:05.991164+00:00",
+  "endedUtc": "2026-11-04T04:13:28.0139451+00:00",
+  "exitCode": 1,
+  "timedOut": false
+}
