@@ -3272,6 +3272,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			// 写回会补齐缺失键；迁移判定必须在写回前记录原文件是否已有新键。
+			const bool statusIndicatorSuperTopStored =
+				config.ReadAllHasValue("Experimental.Inkeys3.UI3.StatusIndicator.SuperTop");
 			Inkeys::UI::RenderPipeline::SetFrameRate(config.UI.FrameRate);
 			// 偏好在 Host 创建绘制线程前发布；后续每笔锁存，启动预览不改变画布参数。
 			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
@@ -3395,6 +3398,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			InitializePenWidthPreferences(penWidthStartupContext);
 			if (!WriteSetting() && IDTLogger)
 				IDTLogger->warn("[主线程][IdtMain] deploy.json 写回失败，保留现存配置文件");
+			{
+				// 超级置顶提示从旧 deploy.json PlugIn.SuperTop.Indicator 一次性迁到 main.json；之后旧键不再使用。
+				auto& status = config.Experimental.Inkeys3.UI3.StatusIndicator;
+				if (!statusIndicatorSuperTopStored)
+				{
+					status.SuperTop = static_cast<bool>(setlist.plugInSetting.superTop.indicator);
+					if (!config.Write() && IDTLogger)
+						IDTLogger->warn("[主线程][IdtMain] 状态指示器配置迁移写回失败");
+				}
+				Inkeys::UI::Bar::SetStatusIndicatorOptions(status.Enable, status.PptSlideshow,
+					status.SuperTop, status.NewVersion);
+			}
 		}
 
 		// 初次读取配置后的操作
@@ -3464,6 +3479,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	// 插件初始化
 	{
+		if (hasSuperTop) Inkeys::UI::Bar::PublishSuperTopStatusIndicator();
 		// 桌面快捷方式初始化
 		if (!isolatedStartupFailure) shortcutAssistant.SetShortcut();
 		// 启动 DesktopDrawpadBlocker

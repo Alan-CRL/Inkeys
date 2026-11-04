@@ -46,6 +46,12 @@
         "Mode": "Tryb dolnego paska",
         "Centered": "Na środku"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Pokaz slajdów",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nowa wersja"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Wyczyść",
@@ -967,8 +973,6 @@
           "SuperTop": "Włącz SuperTop",
           "SuperTopE1": "Program uruchamia się w trzech etapach, aby utrzymać okna na wierzchu.\n(SuperTop jest aktywny)",
           "SuperTopE2": "Program uruchamia się w trzech etapach, aby utrzymać okna na wierzchu.\n(SuperTop nie jest aktywny)",
-          "Indicator": "Wskaźnik SuperTop",
-          "IndicatorE": "Gdy SuperTop jest aktywny, wyświetla pinezkę w prawym górnym rogu głównej ikony.",
           "SuperTopNote": "Uruchom ponownie Inkeys, aby zastosować. Ustawienie na wierzchu podczas uruchamiania może się nie powieść."
         },
         "SupportNote": "Wymaga systemu Windows 8 lub nowszego."
@@ -1065,6 +1069,20 @@
       "ClassIslandProtocolNote": "Zarejestruj protokół nawigacji URL w ustawieniach ClassIsland.",
       "ClassIslandSwapNote": "Ten komponent nie działa, gdy ClassIsland nie ma wczytanego planu lekcji."
     },
+    "StatusIndicator":
+    {
+      "N": "Wskaźnik stanu",
+      "E": "Pokazuje na przycisku głównym stany, takie jak pokaz slajdów, SuperTop i nowa wersja: nowy stan pojawia się jako kapsuła, a po 3 sekundach zwija się do małego kafelka na krawędzi przycisku głównego.",
+      "Enable":
+      {
+        "N": "Włącz wskaźnik stanu",
+        "E": "Po wyłączeniu wszystkie podpowiedzi stanu są ukryte; po ponownym włączeniu nadal istniejące stany pojawiają się od razu jako zwinięte kafelki."
+      },
+      "Types": "Pokazuj te stany",
+      "TypeSlideshow": "Pokaz slajdów",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nowa wersja"
+    },
     "DesktopShortcut":
     {
       "N": "Skróty",
@@ -1137,6 +1155,14 @@
       {
         "N": "Pokaż liczbę klatek na sekundę",
         "E": "Co sekundę aktualizuj średnią liczbę klatek i liczbę klatek bez oczekiwania z poprzedniej sekundy."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Wskaźnik stanu",
+        "N": "Testuj wskaźnik stanu",
+        "E": "Dodaj lub usuń losowe stany testowe, aby sprawdzić animację, długi tekst i pierścień postępu.",
+        "Add": "Dodaj losowy stan",
+        "Remove": "Usuń jeden stan"
       },
       "ConsoleSection": "Wyjście konsoli",
       "CanvasInformation": "Informacje o inicjalizacji płótna",

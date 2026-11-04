@@ -46,6 +46,12 @@
         "Mode": "Mode bilah bawah",
         "Centered": "Tengah"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Tayangan slide",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Versi baru"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Hapus",
@@ -967,8 +973,6 @@
           "SuperTop": "Aktifkan SuperTop",
           "SuperTopE1": "Aplikasi memakai proses awal tiga tahap agar jendelanya tetap paling atas.\n(SuperTop aktif)",
           "SuperTopE2": "Aplikasi memakai proses awal tiga tahap agar jendelanya tetap paling atas.\n(SuperTop tidak aktif)",
-          "Indicator": "Indikator SuperTop",
-          "IndicatorE": "Tampilkan ikon pin di sudut kanan atas ikon utama setelah berhasil diaktifkan.",
           "SuperTopNote": "Mulai ulang Inkeys untuk menerapkan. Proses menjadikan jendela paling atas dapat gagal saat memulai."
         },
         "SupportNote": "Memerlukan Windows 8 atau lebih baru."
@@ -1065,6 +1069,20 @@
       "ClassIslandProtocolNote": "Daftarkan protokol navigasi URL di setelan ClassIsland.",
       "ClassIslandSwapNote": "Komponen ini tidak berfungsi jika ClassIsland belum memuat jadwal kelas."
     },
+    "StatusIndicator":
+    {
+      "N": "Indikator status",
+      "E": "Menampilkan status seperti tayangan slide, SuperTop, dan versi baru pada tombol utama: status baru muncul sebagai kapsul lalu terlipat menjadi ubin kecil di tepi tombol utama setelah 3 detik.",
+      "Enable":
+      {
+        "N": "Aktifkan indikator status",
+        "E": "Jika dimatikan, semua petunjuk status disembunyikan; saat diaktifkan kembali, status yang masih ada langsung tampil sebagai ubin terlipat."
+      },
+      "Types": "Tampilkan status berikut",
+      "TypeSlideshow": "Tayangan slide",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Versi baru"
+    },
     "DesktopShortcut":
     {
       "N": "Pintasan",
@@ -1137,6 +1155,14 @@
       {
         "N": "Tampilkan laju bingkai",
         "E": "Perbarui rata-rata laju bingkai dan laju tanpa batas dari detik sebelumnya setiap detik."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indikator status",
+        "N": "Uji indikator status",
+        "E": "Tambah atau hapus status uji acak untuk memeriksa animasi, teks panjang, dan cincin progres.",
+        "Add": "Tambah status acak",
+        "Remove": "Hapus satu status"
       },
       "ConsoleSection": "Keluaran konsol",
       "CanvasInformation": "Info inisialisasi kanvas",

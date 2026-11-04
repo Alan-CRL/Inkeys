@@ -1,5 +1,7 @@
 module;
 #include "../../../IdtMain.h"
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "Bar.StatusIndicator.h"
 #include "Bar.InteractionWorker.h"
 #include "Bar.BottomDock.h"
@@ -17,6 +19,8 @@ module Inkeys.UI.Bar;
 import :Main;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.Setting;
+import Inkeys.Net.Update;
 
 using namespace Inkeys::UI::Bar;
 using Microsoft::WRL::ComPtr;
@@ -60,6 +64,18 @@ namespace
 		target.left=(std::min)(target.left,add.left);target.top=(std::min)(target.top,add.top);
 		target.right=(std::max)(target.right,add.right);target.bottom=(std::max)(target.bottom,add.bottom);
 	}
+	// 正式状态的文案在绘制时按当前语言取，切换语言后无需重新发布。
+	std::wstring DisplayText(const StatusIndicatorSpec& spec)
+	{
+		switch(spec.kind)
+		{
+		case StatusIndicatorKind::PptSlideshow:
+		case StatusIndicatorKind::WpsSlideshow: return IW(I18nKey.UI.Bar.StatusIndicator.Slideshow);
+		case StatusIndicatorKind::SuperTop: return IW(I18nKey.UI.Bar.StatusIndicator.SuperTop);
+		case StatusIndicatorKind::NewVersion: return IW(I18nKey.UI.Bar.StatusIndicator.NewVersion);
+		default: return spec.text;
+		}
+	}
 	// 光晕、点光漫反射与描边抗锯齿的外扩（DIP）。
 	double GlowOutsetDip() noexcept { return BarRenderingAttribute::pointLightDiffuseExtraWidth+2; }
 	bool HitRoundedRect(const StatusIndicatorRect& r,double radius,double x,double y,double pad) noexcept
@@ -79,6 +95,20 @@ namespace Inkeys::UI::Bar
 	{ Command c;c.kind=CommandKind::Progress;c.key=key;c.progress=progress;c.complete=complete;Queue(std::move(c)); }
 	void SetStatusIndicatorOptions(bool enable,bool ppt,bool superTop,bool newVersion)
 	{ Command c;c.kind=CommandKind::Options;c.options={enable,ppt,superTop,newVersion};Queue(std::move(c)); }
+	void PublishSuperTopStatusIndicator()
+	{
+		StatusIndicatorSpec spec;spec.key=StatusIndicatorSources::SuperTopKey;spec.kind=StatusIndicatorKind::SuperTop;
+		spec.accentArgb=StatusIndicatorSources::SuperTopArgb;spec.icon=StatusIndicatorIcon::Pin;
+		PublishStatusIndicator(spec);
+	}
+	void PublishPptStatusIndicator(std::uint64_t session,bool wps)
+	{
+		StatusIndicatorSpec spec;spec.key=StatusIndicatorSources::PptKey(session);
+		spec.kind=wps?StatusIndicatorKind::WpsSlideshow:StatusIndicatorKind::PptSlideshow;
+		spec.accentArgb=wps?StatusIndicatorSources::WpsArgb:StatusIndicatorSources::PowerPointArgb;spec.icon=StatusIndicatorIcon::Slideshow;
+		PublishStatusIndicator(spec);
+	}
+	void RetirePptStatusIndicator(std::uint64_t session) { RetireStatusIndicator(StatusIndicatorSources::PptKey(session)); }
 	void DebugAddRandomStatusIndicator() { Command c;c.kind=CommandKind::Add;Queue(std::move(c)); }
 	void DebugRemoveStatusIndicator() { Command c;c.kind=CommandKind::Remove;Queue(std::move(c)); }
 	std::size_t StatusIndicatorCount() noexcept { return countSnapshot.load(std::memory_order_acquire); }
@@ -103,7 +133,8 @@ bool BarStatusIndicatorPanel::Advance(BarUISetClass& owner,double dt,double spee
 		case CommandKind::Outside:model_.ClickOutside(now);break;
 		case CommandKind::Click:
 			if(c.role==StatusIndicatorRole::Capsule)model_.ClickExpanded(c.key,now);
-			else (void)model_.ClickDocked(c.key,now); // 正式动作在后续状态源阶段接入。
+			else if(model_.ClickDocked(c.key,now)==StatusIndicatorAction::OpenSoftwareVersion)
+				Inkeys::UI::Setting::ShowSoftwareVersion(); // 同橡皮自动粗细齿轮：走设置 Show FIFO 与开屏策略。
 			break;
 		case CommandKind::Add:
 			{
@@ -128,7 +159,7 @@ bool BarStatusIndicatorPanel::Advance(BarUISetClass& owner,double dt,double spee
 	}
 	// 测量与正式绘制共用同一字体、粗体和DIP；模型无需依赖DWrite。
 	for(const auto& entry:model_.Entries())
-		model_.SetTextWidth(entry.spec.key,owner.spec.MeasureText(entry.spec.text,StatusIndicatorStyle::TextSize,DWRITE_FONT_WEIGHT_BOLD).width);
+		model_.SetTextWidth(entry.spec.key,owner.spec.MeasureText(DisplayText(entry.spec),StatusIndicatorStyle::TextSize,DWRITE_FONT_WEIGHT_BOLD).width);
 	if(!simulated_.empty()&&now>=simulatedSampleAt_)
 	{
 		simulatedSampleAt_=now+.1;
@@ -209,19 +240,38 @@ RECT BarStatusIndicatorPanel::OverflowBounds() const
 }
 void BarStatusIndicatorPanel::CommitPresented()
 {
-	Presented next;next.zoom=zoom_;next.entries.reserve(layout_.entries.size());
+	Presented next;next.zoom=zoom_;next.main=input_;next.entries.reserve(layout_.entries.size());
 	for(const auto& item:layout_.entries)
 		if(item.role!=StatusIndicatorRole::None)next.entries.push_back(item);
 	std::lock_guard lock(presentedMutex_);presented_=std::move(next);
 }
+std::chrono::steady_clock::time_point BarStatusIndicatorPanel::PollUpdateSource(std::chrono::steady_clock::time_point now)
+{
+	if(now<nextUpdatePoll_)return nextUpdatePoll_;
+	// 更新模块无变化通知：只读其状态与字节进度（状态为非原子枚举，仅用于展示，异常值被忽略）。
+	const int state=static_cast<int>(AutomaticUpdateState);
+	const auto action=updateTracker_.Step(state,downloadNewProgramState.downloadedSize.load(std::memory_order_relaxed),
+		downloadNewProgramState.fileSize.load(std::memory_order_relaxed));
+	if(action.publish)
+	{
+		StatusIndicatorSpec spec;spec.key=StatusIndicatorSources::NewVersionKey;spec.kind=StatusIndicatorKind::NewVersion;
+		spec.action=StatusIndicatorAction::OpenSoftwareVersion;spec.accentArgb=StatusIndicatorSources::NewVersionArgb;
+		spec.icon=StatusIndicatorIcon::NewVersion;PublishStatusIndicator(spec);
+	}
+	if(action.progress)PublishStatusIndicatorProgress(StatusIndicatorSources::NewVersionKey,static_cast<float>(action.value),action.complete);
+	if(action.retire)RetireStatusIndicator(StatusIndicatorSources::NewVersionKey);
+	nextUpdatePoll_=now+(updateTracker_.IsDownloading()?std::chrono::milliseconds(100):std::chrono::milliseconds(1000));
+	return nextUpdatePoll_;
+}
 std::chrono::steady_clock::time_point BarStatusIndicatorPanel::PollDeadline(std::chrono::steady_clock::time_point now)
 {
+	const auto updatePoll=PollUpdateSource(now);
 	auto ticks=deadlineTicks_.load(std::memory_order_acquire);
-	if(!ticks)return std::chrono::steady_clock::time_point::max();
+	if(!ticks)return updatePoll;
 	const std::chrono::steady_clock::time_point deadline{std::chrono::steady_clock::duration(ticks)};
-	if(now<deadline)return deadline;
+	if(now<deadline)return (std::min)(deadline,updatePoll);
 	if(deadlineTicks_.compare_exchange_strong(ticks,0,std::memory_order_acq_rel))barUISet.UpdateRendering(false);
-	return std::chrono::steady_clock::time_point::max();
+	return updatePoll;
 }
 bool BarStatusIndicatorPanel::ResetPointerFeedback()
 {
@@ -246,6 +296,8 @@ bool BarStatusIndicatorPanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 			// 停靠方块很小，命中区外扩到 DockHitMin，但只在方块自身周围。
 			const double pad=it->role==StatusIndicatorRole::Dock
 				?(std::max)(0.0,(StatusIndicatorStyle::DockHitMin-it->bounds.Width())/2):0.0;
+			// 停靠方块压在主按钮边框上：伸进主按钮内部超过 MainButtonYield 的部分让给主按钮，避免误展开。
+			if(it->role==StatusIndicatorRole::Dock&&StatusIndicatorInsideMainButton(presented.main,x,y,StatusIndicatorStyle::MainButtonYield))continue;
 			if(HitRoundedRect(it->bounds,it->radius,x,y,pad)){hit=it->key;role=it->role;break;}
 		}
 		if(owner.BottomDockPresentedSnapshot().serial==before.serial)break;
@@ -456,8 +508,9 @@ void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 			context->PushLayer(D2D1::LayerParameters1(clip,inner.Get(),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::IdentityMatrix(),
 				1.0F,fade.Get(),D2D1_LAYER_OPTIONS1_NONE),nullptr);
 			auto [wordIt,created]=words_.try_emplace(item.key);auto& word=wordIt->second;
-			if(created){word.Initialization(0,0,1,StatusIndicatorStyle::CapsuleHeight,entry->spec.text,StatusIndicatorStyle::TextSize,accent);word.enable.Initialization(true);}
-			word.SetStringImmediate(entry->spec.text);word.color.SetDirect(accent);word.pct.SetDirect(item.textOpacity);
+			if(created){word.Initialization(0,0,1,StatusIndicatorStyle::CapsuleHeight,DisplayText(entry->spec),StatusIndicatorStyle::TextSize,accent);word.enable.Initialization(true);}
+			const auto text=DisplayText(entry->spec);
+			word.SetStringImmediate(text);word.color.SetDirect(accent);word.pct.SetDirect(item.textOpacity);
 			word.w.SetDirect((std::max)(entry->textWidth*item.textScale+4.0,item.textClip.Width()));word.h.SetDirect(item.bounds.Height());
 			word.size.SetDirect(StatusIndicatorStyle::TextSize*item.textScale);word.fontTargetSize=StatusIndicatorStyle::TextSize;
 			renderer.Word(context,word,BarUiInheritClass(item.textX,item.bounds.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);

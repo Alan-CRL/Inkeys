@@ -25,16 +25,17 @@
 - 验证：鼠标、笔、触摸三种输入；Fan 越界与收缩后视口正确。
 
 ## 阶段 4 — 设置、配置、跳转
-- [ ] `main.json` schema `StatusIndicator` 组；旧 `PlugIn.SuperTop.Indicator` 一次迁移；启动同步 `SetStatusIndicatorOptions`。
-- [ ] 常规 → 外观与动画新分节：总开关 + `CheckboxGroup`；移除插件页超级置顶指示器展示行。
-- [ ] `ShowSoftwareVersion` 全链路（目标枚举、Action、dispatch、fadeOnly 目标判定、导出），扩展 `CheckSettingOpenNavigation`。
-- [ ] i18n：zh-CN 新键 → `pwsh ./Scripts/i18n.ps1 sync` → 补全 10 种语言 → `check`。
+- [x] `main.json` schema `StatusIndicator` 组；旧 `PlugIn.SuperTop.Indicator` 一次迁移（`ReadAllHasValue` 写回前记录）；启动同步 `SetStatusIndicatorOptions`。
+- [x] 常规 → “状态指示器”独立子页（v3 决策）：总开关 + `CheckboxGroup`；移除插件页超级置顶指示器展示行及其 i18n 键。
+- [x] `ShowSoftwareVersion` 全链路（目标枚举、Action、dispatch、fadeOnly 目标判定、导出），扩展 `CheckSettingOpenNavigation`。
+- [x] i18n：zh-CN 新键 → `i18n.ps1 sync` → 补全其余 19 种语言（含此前缺失的调试页文案）→ `check` 通过。
 - 验证：设置无窗口测试（布局/行记录）、配置旧文件迁移（有旧键 false / 无旧键 / 已有新键三种）。
 
 ## 阶段 5 — 状态源
-- [ ] PPT/WPS：`Bar::PublishPptSession` 真实边沿 → Publish/Retire；同会话重锚不触发；白板期间保留。
-- [ ] 超级置顶：启动后 `hasSuperTop` → Publish 一次。
-- [ ] 新版本：Bar 侧 1s 截止轮询 `AutomaticUpdateState`；静默/非静默分支；进度环（≤10Hz 读取、单调化、100% 后校验阶段、`UpdateRestart` 后 3s 渐隐、失败保留圆形）；点击跳转软件版本页。
+- [x] PPT/WPS：`IdtPlug-in.cpp` 新场次开始边沿 → `PublishPptStatusIndicator`，`EndSession` → `RetirePptStatusIndicator`；同会话重锚不触发；白板期间保留。
+- [x] 超级置顶：I18n 就绪后 `hasSuperTop` → `PublishSuperTopStatusIndicator` 一次。
+- [x] 新版本：交互 worker `PollDeadline` 轮询（下载中 10Hz、其余 1Hz）经 `StatusIndicatorUpdateTracker` 归一；未静默=检测即弹出，静默=下载 >0% 弹出并带进度，`UpdateRestart` 完成，失败结束进度保留状态，Latest/Newer 注销；点击跳转软件版本页。
+- [x] 人工验证反馈修复：停靠方块伸进主按钮内部的命中让给主按钮（`StatusIndicatorInsideMainButton`）。
 - 验证：真实 PowerPoint/WPS 放映开始/结束/白板往返；Release 构建或设置页触发更新检查观察下载进度环（Debug 构建默认不启动自动更新）。
 
 ## 阶段 6 — 收尾

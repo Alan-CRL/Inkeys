@@ -2779,6 +2779,11 @@ SettingSessionCoroutine RunSettingSession()
 				Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 				settingFrameSubmission.Reset();
 			}
+			if (openAction == Design::SettingOpenNavigation::Action::SoftwareVersion)
+			{
+				navigateTo({ Design::PageId::Version });
+				settingFrameSubmission.Reset();
+			}
 			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
 			ImFluent::PushFluentStyle();
@@ -2854,8 +2859,9 @@ SettingSessionCoroutine RunSettingSession()
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
 					!navigationState.BlockContentInput() && settingWindowActive.load(memory_order_acquire),
 					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
-					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
-					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
+					openNavigation.fadeOnly && (openNavigation.target==Inkeys::UI::Setting::SettingOpenTarget::SoftwareVersion
+						? destination.page==Design::PageId::Version
+						: destination.page==Design::PageId::Draw && drawingSubpage==Design::DrawingSubpage::SpeedEraser));
 				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				const bool optionalChromeVisible = !entryInputBlock && Design::HomeEntryChromeVisible(homeMotion);
 				{
@@ -3548,6 +3554,12 @@ SettingSessionCoroutine RunSettingSession()
 					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
 						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
+					{
+						auto& status = Inkeys::config.Experimental.Inkeys3.UI3.StatusIndicator;
+						draft.statusIndicator = status.Enable;
+						draft.statusIndicatorTypes = { static_cast<bool>(status.PptSlideshow),
+							static_cast<bool>(status.SuperTop), static_cast<bool>(status.NewVersion) };
+					}
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
 					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
 					// 背景未自定义时显示当前主栏主题的默认值；内容透明度直接显示保存值。
@@ -3775,6 +3787,18 @@ SettingSessionCoroutine RunSettingSession()
 							WriteSetting();
 							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
+					}
+					if (events.statusIndicatorChanged || std::ranges::any_of(events.statusIndicatorTypesChanged, std::identity{}))
+					{
+						auto& status = Inkeys::config.Experimental.Inkeys3.UI3.StatusIndicator;
+						status.Enable = draft.statusIndicator;
+						status.PptSlideshow = draft.statusIndicatorTypes[0];
+						status.SuperTop = draft.statusIndicatorTypes[1];
+						status.NewVersion = draft.statusIndicatorTypes[2];
+						// 先发布到主栏 owner，再落盘；过滤不注销状态，重新开启时以收起态恢复。
+						Inkeys::UI::Bar::SetStatusIndicatorOptions(draft.statusIndicator,
+							draft.statusIndicatorTypes[0], draft.statusIndicatorTypes[1], draft.statusIndicatorTypes[2]);
+						QueueConfigWrite();
 					}
 					if (events.allowMultipleInstancesChanged)
 					{
@@ -4166,11 +4190,6 @@ SettingSessionCoroutine RunSettingSession()
 								setlist.plugInSetting.superTop.enable = value;
 								WriteSetting();
 							}, IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopNote).c_str());
-						// 指示器继续使用已有配置，只展示说明，不在此改写实际值。
-						Design::SettingRow("##super-top-indicator",
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.IndicatorE).c_str(),
-							"\ue841", 0.0F, 0.0F, [](const auto&) {});
 						break;
 					}
 
@@ -5672,6 +5691,7 @@ namespace Inkeys::UI::Setting
 	void Show() { ShowSetting(SettingOpenTarget::Current); }
 
 	void ShowSpeedEraser() { ShowSetting(SettingOpenTarget::SpeedEraser); }
+	void ShowSoftwareVersion() { ShowSetting(SettingOpenTarget::SoftwareVersion); }
 
 	void Hide()
 	{

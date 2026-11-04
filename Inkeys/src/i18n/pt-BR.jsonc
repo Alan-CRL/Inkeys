@@ -46,6 +46,12 @@
         "Mode": "Barra inferior",
         "Centered": "Centralizada"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Apresentação",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nova versão"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Limpar",
@@ -967,8 +973,6 @@
           "SuperTop": "Ativar SuperTop",
           "SuperTopE1": "O programa usa uma inicialização em três etapas para manter as janelas no topo.\n(Ativo no momento)",
           "SuperTopE2": "O programa usa uma inicialização em três etapas para manter as janelas no topo.\n(Inativo no momento)",
-          "Indicator": "Indicador do SuperTop",
-          "IndicatorE": "Exibe um alfinete no canto superior direito do ícone principal quando o SuperTop está ativo.",
           "SuperTopNote": "Reinicie o Inkeys para aplicar. A ativação durante a inicialização pode falhar."
         },
         "SupportNote": "Compatível apenas com Windows 8 ou posterior."
@@ -1064,6 +1068,20 @@
       "NamePickerRequirement": "Requer o registro do protocolo de URL do NamePicker.",
       "ClassIslandProtocolNote": "Registre o protocolo de navegação por URL nas configurações do ClassIsland.",
       "ClassIslandSwapNote": "Este componente não tem efeito quando o ClassIsland não tem uma grade de aulas carregada."
+    },
+    "StatusIndicator":
+    {
+      "N": "Indicador de status",
+      "E": "Mostra no botão principal estados como apresentação, SuperTop e novas versões: um novo estado aparece como cápsula e, após 3 segundos, recolhe-se em um pequeno bloco na borda do botão principal.",
+      "Enable":
+      {
+        "N": "Ativar indicador de status",
+        "E": "Desativado, todos os avisos de status ficam ocultos; ao reativar, os estados que ainda existem aparecem diretamente como blocos recolhidos."
+      },
+      "Types": "Mostrar estes estados",
+      "TypeSlideshow": "Apresentação",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nova versão"
     },
     "DesktopShortcut":
     {

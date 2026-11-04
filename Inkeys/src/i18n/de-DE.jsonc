@@ -46,6 +46,12 @@
         "Mode": "Modus der unteren Leiste",
         "Centered": "Zentriert"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Präsentation",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Neue Version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Leeren",
@@ -967,8 +973,6 @@
           "SuperTop": "SuperTop aktivieren",
           "SuperTopE1": "Die Anwendung nutzt einen dreistufigen Start, um ihre Fenster im Vordergrund zu halten.\n(SuperTop ist aktiv)",
           "SuperTopE2": "Die Anwendung nutzt einen dreistufigen Start, um ihre Fenster im Vordergrund zu halten.\n(SuperTop ist nicht aktiv)",
-          "Indicator": "SuperTop-Anzeige",
-          "IndicatorE": "Bei erfolgreicher Aktivierung oben rechts am Hauptsymbol eine Stecknadel anzeigen.",
           "SuperTopNote": "Zum Anwenden Inkeys neu starten. Der Start im Vordergrund kann scheitern."
         },
         "SupportNote": "Erfordert Windows 8 oder neuer."
@@ -1064,6 +1068,20 @@
       "NamePickerRequirement": "Erfordert die Registrierung des NamePicker-URL-Protokolls.",
       "ClassIslandProtocolNote": "Das URL-Navigationsprotokoll in den ClassIsland-Einstellungen registrieren.",
       "ClassIslandSwapNote": "Diese Komponente hat keine Wirkung, wenn in ClassIsland kein Stundenplan geladen ist."
+    },
+    "StatusIndicator":
+    {
+      "N": "Statusanzeige",
+      "E": "Zeigt Zustände wie Präsentation, SuperTop und neue Versionen an der Hauptschaltfläche an: Ein neuer Zustand erscheint als Kapsel und klappt nach 3 Sekunden zu einer kleinen Kachel am Rand der Hauptschaltfläche ein.",
+      "Enable":
+      {
+        "N": "Statusanzeige aktivieren",
+        "E": "Wenn deaktiviert, werden alle Statushinweise ausgeblendet; nach dem erneuten Aktivieren erscheinen noch bestehende Zustände direkt als eingeklappte Kacheln."
+      },
+      "Types": "Diese Zustände anzeigen",
+      "TypeSlideshow": "Präsentation",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Neue Version"
     },
     "DesktopShortcut":
     {

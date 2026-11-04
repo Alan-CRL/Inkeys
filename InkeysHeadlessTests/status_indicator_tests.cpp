@@ -584,6 +584,47 @@ int RunStatusIndicatorTests()
 		check(model.Count() == 0 && model.FrozenFanCount() == 0 && !model.NeedsFrames(), "retired fan returns to idle");
 	}
 
+	// Docked tiles sit on the main button border: the part inside the button yields to the main button.
+	{
+		const auto input = FoldedInput();
+		check(StatusIndicatorInsideMainButton(input, 526, 470, MainButtonYield), "tile lower half inside the button yields");
+		check(!StatusIndicatorInsideMainButton(input, 526, 458, MainButtonYield), "tile part outside the button stays hittable");
+		check(!StatusIndicatorInsideMainButton(input, 500, 462.5, MainButtonYield), "the 3 DIP rim next to the border stays with the tile");
+		check(StatusIndicatorInsideMainButton(input, 500, 500, MainButtonYield), "button center is never a tile hit");
+	}
+
+	// New version source: publish once, silent download progress, completion and retirement.
+	{
+		using Tracker = StatusIndicatorUpdateTracker;
+		Tracker tracker;
+		auto a = tracker.Step(1, 0, 0);
+		check(!a.publish && !a.progress && !tracker.Published(), "checking for updates publishes nothing");
+		a = tracker.Step(Tracker::Downloading, 0, 1000);
+		check(!a.publish && !tracker.Published(), "silent download waits for progress above 0%");
+		a = tracker.Step(Tracker::Downloading, 100, 1000);
+		check(a.publish && a.progress && Near(a.value, 0.1) && tracker.IsDownloading(), "first bytes publish the capsule with progress");
+		a = tracker.Step(Tracker::Downloading, 101, 1000);
+		check(!a.publish && !a.progress, "tiny increments are throttled");
+		a = tracker.Step(Tracker::Downloading, 20, 1000);
+		check(!a.progress, "line reset does not report a lower value");
+		a = tracker.Step(Tracker::Downloading, 600, 1000);
+		check(a.progress && Near(a.value, 0.6), "progress keeps increasing");
+		a = tracker.Step(Tracker::Restart, 1000, 1000);
+		check(!a.publish && a.progress && a.complete && Near(a.value, 1), "staged update completes the ring");
+		a = tracker.Step(Tracker::Restart, 1000, 1000);
+		check(!a.progress, "completion is reported once");
+		a = tracker.Step(Tracker::Latest, 0, 0);
+		check(a.retire && !tracker.Published(), "latest version retires the state");
+
+		Tracker manual;
+		a = manual.Step(Tracker::New, 0, 0);
+		check(a.publish && !a.progress, "update found without silent update publishes without a ring");
+		a = manual.Step(Tracker::Downloading, 500, 1000);
+		check(!a.publish && a.progress && Near(a.value, 0.5), "later download reuses the published state");
+		a = manual.Step(Tracker::DownloadFail, 500, 1000);
+		check(a.progress && a.value < 0 && manual.Published(), "download failure ends the ring but keeps the state");
+	}
+
 	// Click state machine.
 	{
 		StatusIndicatorModel single; double now = 0;

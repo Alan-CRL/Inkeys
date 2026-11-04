@@ -46,6 +46,12 @@
         "Mode": "下部バー",
         "Centered": "中央"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "スライドショー",
+        "SuperTop": "SuperTop",
+        "NewVersion": "新バージョン"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "消去",
@@ -967,8 +973,6 @@
           "SuperTop": "SuperTopを有効化",
           "SuperTopE1": "3段階の起動処理でウィンドウを最前面に保持します。\n（現在有効）",
           "SuperTopE2": "3段階の起動処理でウィンドウを最前面に保持します。\n（現在無効）",
-          "Indicator": "SuperTopの状態表示",
-          "IndicatorE": "SuperTopが有効になると、メインアイコンの右上にピンを表示します。",
           "SuperTopNote": "再起動後に反映されます。起動時の最前面化が失敗する場合があります。"
         },
         "SupportNote": "Windows 8以降に対応します。"
@@ -1064,6 +1068,20 @@
       "NamePickerRequirement": "NamePicker URL プロトコルの登録が必要です。",
       "ClassIslandProtocolNote": "ClassIsland のアプリ設定で URL ナビゲーションプロトコルを登録してください。",
       "ClassIslandSwapNote": "ClassIsland で時間割が読み込まれていない場合、このコンポーネントは機能しません。"
+    },
+    "StatusIndicator":
+    {
+      "N": "ステータスインジケーター",
+      "E": "スライドショー、SuperTop、新バージョンなどの状態をメインボタンに表示します。新しい状態はカプセルで表示され、3 秒後にメインボタンの枠上の小さなタイルに収まります。",
+      "Enable":
+      {
+        "N": "ステータスインジケーターを有効化",
+        "E": "オフにするとすべての状態表示を隠します。再びオンにすると、残っている状態は収納されたタイルとして直接表示されます。"
+      },
+      "Types": "表示する状態",
+      "TypeSlideshow": "スライドショー",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "新バージョン"
     },
     "DesktopShortcut":
     {

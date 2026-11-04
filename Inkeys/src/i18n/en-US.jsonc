@@ -46,6 +46,12 @@
         "Mode": "Bottom bar mode",
         "Centered": "Centered"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Slideshow",
+        "SuperTop": "SuperTop",
+        "NewVersion": "New version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Clear",
@@ -967,8 +973,6 @@
           "SuperTop": "Enable SuperTop",
           "SuperTopE1": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is currently active)",
           "SuperTopE2": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is not active)",
-          "Indicator": "SuperTop Indicator",
-          "IndicatorE": "Displays a pin icon on the top-right corner of the main application icon when successfully enabled.",
           "SuperTopNote": "Restart Inkeys to apply. The topmost launch may fail."
         },
         "SupportNote": "Requires Windows 8 or newer."
@@ -1064,6 +1068,20 @@
       "NamePickerRequirement": "Requires registration of the NamePicker URL protocol.",
       "ClassIslandProtocolNote": "Register the URL navigation protocol in ClassIsland settings.",
       "ClassIslandSwapNote": "This component has no effect when ClassIsland has no timetable loaded."
+    },
+    "StatusIndicator":
+    {
+      "N": "Status indicator",
+      "E": "Shows states such as slideshow, SuperTop and new versions on the main button: a new state pops up as a capsule and folds into a small tile on the main button border after 3 seconds.",
+      "Enable":
+      {
+        "N": "Enable status indicator",
+        "E": "When off, all status hints are hidden; when turned back on, states that still exist appear directly as folded tiles."
+      },
+      "Types": "Show these states",
+      "TypeSlideshow": "Slideshow",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "New version"
     },
     "DesktopShortcut":
     {

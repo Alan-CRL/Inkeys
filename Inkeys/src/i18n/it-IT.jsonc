@@ -46,6 +46,12 @@
         "Mode": "Modalità barra inferiore",
         "Centered": "Al centro"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Presentazione",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nuova versione"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Svuota",
@@ -967,8 +973,6 @@
           "SuperTop": "Attiva SuperTop",
           "SuperTopE1": "L'app usa un avvio in tre fasi per mantenere le finestre in primo piano.\n(SuperTop attualmente attivo)",
           "SuperTopE2": "L'app usa un avvio in tre fasi per mantenere le finestre in primo piano.\n(SuperTop non attivo)",
-          "Indicator": "Indicatore SuperTop",
-          "IndicatorE": "Mostra una puntina nell'angolo superiore destro dell'icona principale quando SuperTop è attivo.",
           "SuperTopNote": "Riavvia Inkeys per applicare. L'avvio in primo piano potrebbe non riuscire."
         },
         "SupportNote": "Richiede Windows 8 o successivo."
@@ -1065,6 +1069,20 @@
       "ClassIslandProtocolNote": "Registra il protocollo di navigazione URL nelle impostazioni di ClassIsland.",
       "ClassIslandSwapNote": "Il componente non ha effetto se ClassIsland non ha caricato un orario delle lezioni."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicatore di stato",
+      "E": "Mostra sul pulsante principale stati come presentazione, SuperTop e nuove versioni: un nuovo stato compare come capsula e dopo 3 secondi si richiude in un piccolo riquadro sul bordo del pulsante principale.",
+      "Enable":
+      {
+        "N": "Attiva indicatore di stato",
+        "E": "Se disattivato, tutti gli avvisi di stato sono nascosti; quando lo riattivi, gli stati ancora presenti compaiono direttamente come riquadri chiusi."
+      },
+      "Types": "Mostra questi stati",
+      "TypeSlideshow": "Presentazione",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nuova versione"
+    },
     "DesktopShortcut":
     {
       "N": "Collegamenti",
@@ -1137,6 +1155,14 @@
       {
         "N": "Mostra frequenza fotogrammi",
         "E": "Aggiorna ogni secondo la frequenza media e quella senza attese del secondo precedente."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicatore di stato",
+        "N": "Prova indicatore di stato",
+        "E": "Aggiungi o rimuovi stati di prova casuali per verificare animazione, testo lungo e anello di avanzamento.",
+        "Add": "Aggiungi stato casuale",
+        "Remove": "Rimuovi uno stato"
       },
       "ConsoleSection": "Output console",
       "CanvasInformation": "Informazioni di inizializzazione della tela",

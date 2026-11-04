@@ -3277,6 +3277,22 @@ namespace
 			"detail entry starts without rendering Home");
 		Design::ConfigureHomeMotion(motion, false, session.ShowSerial(), 0, true, 1);
 		checks.Expect(!motion.EntryActive(), "leaving the target cancels the overlay without a delayed route");
+
+		// 新版本状态直达软件版本页：同一 Show/开屏规则，并记住目标供“仍在目标页”判定。
+		{
+			SessionState version; Design::SettingOpenNavigation route;
+			version.RequestShow(SettingOpenTarget::SoftwareVersion);
+			const auto action = route.Consume(version.GetOpenRequest(), version.IsVisible(), version.ShowSerial(), version.HideSerial(),
+				ShouldPlaySettingEntryAnimation(1, version.ShowSerial()));
+			checks.Expect(action == Action::SoftwareVersion && route.target == SettingOpenTarget::SoftwareVersion && route.fadeOnly,
+				"software version entry routes to the Version page with the first-open fade");
+			version.RequestShow(SettingOpenTarget::SoftwareVersion);
+			checks.Expect(route.Consume(version.GetOpenRequest(), version.IsVisible(), version.ShowSerial(), version.HideSerial(), true)
+				== Action::SoftwareVersion && !route.fadeOnly, "visible settings navigate to Version without replaying the entry");
+			version.RequestShow(SettingOpenTarget::SpeedEraser);
+			checks.Expect(route.Consume(version.GetOpenRequest(), version.IsVisible(), version.ShowSerial(), version.HideSerial(), true)
+				== Action::SpeedEraser && route.target == SettingOpenTarget::SpeedEraser, "a newer eraser route replaces the Version target");
+		}
 	}
 
 	void CheckSpeedEraserEntry(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
@@ -3893,11 +3909,14 @@ namespace
 				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
 				&& std::none_of(events.autoCollapseChanged.begin(), events.autoCollapseChanged.end(), [](bool value) { return value; })
-				&& std::none_of(events.shortcutsChanged.begin(), events.shortcutsChanged.end(), [](bool value) { return value; });
+				&& std::none_of(events.shortcutsChanged.begin(), events.shortcutsChanged.end(), [](bool value) { return value; })
+				&& !events.statusIndicatorChanged
+				&& std::none_of(events.statusIndicatorTypesChanged.begin(), events.statusIndicatorTypesChanged.end(), [](bool value) { return value; });
 		};
 		const ImVec2 outside(-100, -100);
 		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Appearance,
-			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts, Design::GeneralSection::DesktopShortcuts })
+			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts, Design::GeneralSection::DesktopShortcuts,
+			Design::GeneralSection::StatusIndicator })
 		{
 			draw(section, outside, false); const auto frame = draw(section, outside, false);
 			checks.Expect(frame.vertices > 0 && noEdits(frame.events), "actual general subpage renders without creating idle edits");

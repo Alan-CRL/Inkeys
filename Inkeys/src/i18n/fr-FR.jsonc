@@ -46,6 +46,12 @@
         "Mode": "Mode barre inférieure",
         "Centered": "Centrée"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Diaporama",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nouvelle version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Effacer",
@@ -967,8 +973,6 @@
           "SuperTop": "Activer SuperTop",
           "SuperTopE1": "L’application utilise un démarrage en trois étapes pour rester au premier plan.\n(SuperTop est actif)",
           "SuperTopE2": "L’application utilise un démarrage en trois étapes pour rester au premier plan.\n(SuperTop n’est pas actif)",
-          "Indicator": "Indicateur SuperTop",
-          "IndicatorE": "Afficher une épingle en haut à droite de l’icône principale lorsque SuperTop est actif.",
           "SuperTopNote": "Redémarrez Inkeys pour appliquer. Le maintien au premier plan peut échouer au démarrage."
         },
         "SupportNote": "Nécessite Windows 8 ou ultérieur."
@@ -1064,6 +1068,20 @@
       "NamePickerRequirement": "Nécessite l’enregistrement du protocole URL de NamePicker.",
       "ClassIslandProtocolNote": "Enregistrer le protocole de navigation URL dans les paramètres de ClassIsland.",
       "ClassIslandSwapNote": "Ce composant est sans effet si aucun emploi du temps n’est chargé dans ClassIsland."
+    },
+    "StatusIndicator":
+    {
+      "N": "Indicateur d'état",
+      "E": "Affiche sur le bouton principal des états comme le diaporama, SuperTop ou une nouvelle version : un nouvel état apparaît sous forme de capsule, puis se replie en une petite tuile sur le bord du bouton principal après 3 secondes.",
+      "Enable":
+      {
+        "N": "Activer l'indicateur d'état",
+        "E": "Désactivé, tous les indicateurs d'état sont masqués ; une fois réactivé, les états toujours présents s'affichent directement sous forme de tuiles repliées."
+      },
+      "Types": "Afficher ces états",
+      "TypeSlideshow": "Diaporama",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nouvelle version"
     },
     "DesktopShortcut":
     {

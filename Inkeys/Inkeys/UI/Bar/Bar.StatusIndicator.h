@@ -44,7 +44,7 @@ namespace Inkeys::UI::Bar
         inline constexpr double CapsuleHeight=30,CapsuleRadius=6,CapsuleIcon=18,CapsuleGap=6,TextSize=13,TextLineHeight=17;
         inline constexpr double CapsulePadding=(CapsuleHeight-TextLineHeight)/2,CapsuleMaxWidth=160,TextFade=8;
         inline constexpr double StackStep=4,StackLayers=3,EnterScale=.35,EnterPeakScale=1.12;
-        inline constexpr double DockSize=18,DockRadius=4,DockIcon=12,DockStep=6,DockInset=14,DockOpacity=.5,DockHitMin=24;
+        inline constexpr double DockSize=18,DockRadius=4,DockIcon=12,DockStep=6,DockInset=14,DockOpacity=.5,DockHitMin=24,MainButtonYield=3;
         inline constexpr double FanSize=28,FanRadius=6,FanIcon=17,FanGap=4,FanClear=6,FanLayerGap=32,FanSpanDegrees=130;
         inline constexpr double FrameWidth=1,RingWidth=1.5,BreathPeriod=1.6,ScrollPause=.3;
         inline constexpr double Enter=.42,Dismiss=.30,Exit=.28,Fan=.32,Select=.24,RingFade=.24,Presence=.28;
@@ -53,6 +53,14 @@ namespace Inkeys::UI::Bar
         inline constexpr double FlightDelay=.10,FlightLift=12,LandAt=.97,LandBumpVelocity=1.6;
         inline constexpr double SpringStep=1.0/120,SpringMaxDt=.5;
         inline constexpr double Pi=3.14159265358979323846;
+    }
+
+    // 正式状态源的固定 key 与强调色（PowerPoint 橘红、WPS 红、超级置顶深蓝、新版本绿）。
+    namespace StatusIndicatorSources
+    {
+        inline constexpr std::uint64_t SuperTopKey=0x5354000000000001ULL,NewVersionKey=0x4E56000000000001ULL,PptKeyBase=0x5050000000000000ULL;
+        inline constexpr std::uint32_t PowerPointArgb=0xFFC43E1Cu,WpsArgb=0xFFE8352Bu,SuperTopArgb=0xFF1F4FB8u,NewVersionArgb=0xFF2EA043u;
+        inline constexpr std::uint64_t PptKey(std::uint64_t session) noexcept { return PptKeyBase|(session&0x0000FFFFFFFFFFFFULL); }
     }
 
     struct StatusIndicatorSpringParams { double omega=18,damping=.72; };
@@ -761,6 +769,63 @@ namespace Inkeys::UI::Bar
         bool fanOpen_=false,drawing_=false,animations_=true;
     };
 
+    // 新版本状态源：把更新模块的轮询快照归一为发布/进度/注销动作。
+    // state 取 AutomaticUpdateStateEnum 的整数值，避免纯策略依赖更新模块。
+    struct StatusIndicatorUpdateAction
+    {
+        bool publish=false,retire=false,progress=false,complete=false;
+        double value=-1; // progress 为 true 时有效；<0 表示本周期结束（失败/未静默）
+    };
+    class StatusIndicatorUpdateTracker
+    {
+    public:
+        enum State : int { NotStarted=0,Downloading=5,DownloadFail=6,DownloadDamage=7,Restart=8,Latest=9,Newer=10,New=11 };
+        bool Published() const noexcept { return published_; }
+        bool IsDownloading() const noexcept { return lastState_==Downloading; }
+        StatusIndicatorUpdateAction Step(int state,std::uint64_t downloaded,std::uint64_t size) noexcept
+        {
+            StatusIndicatorUpdateAction a;
+            const auto publish=[&]{ if(!published_){a.publish=true;published_=true;} };
+            switch(state)
+            {
+            case New:
+                // 未开启静默更新：检测到即弹出，没有进度环。
+                publish();
+                if(lastValue_>=0||completeSent_){a.progress=true;a.value=-1;lastValue_=-1;completeSent_=false;}
+                break;
+            case Downloading:
+                // 静默下载：开始且进度大于 0 时才出现；同周期只上报增长。
+                if(size>0&&downloaded>0)
+                {
+                    const double value=(std::min)(1.0,static_cast<double>(downloaded)/static_cast<double>(size));
+                    publish();
+                    if(lastValue_<0||value-lastValue_>=.002){a.progress=true;a.value=value;lastValue_=value;}
+                }
+                break;
+            case Restart:
+                // 已下载待重启安装：新版本仍存在，进度完成后 3s 淡出由模型处理。
+                publish();
+                if(!completeSent_){a.progress=true;a.complete=true;a.value=1;completeSent_=true;}
+                break;
+            case DownloadFail:
+            case DownloadDamage:
+                if(published_&&lastValue_>=0){a.progress=true;a.value=-1;lastValue_=-1;}
+                break;
+            case Latest:
+            case Newer:
+                if(published_){a.retire=true;published_=false;lastValue_=-1;completeSent_=false;}
+                break;
+            default:break; // 检查中/信息失败：保持现状
+            }
+            lastState_=state;
+            return a;
+        }
+    private:
+        bool published_=false,completeSent_=false;
+        int lastState_=-1;
+        double lastValue_=-1;
+    };
+
     // ---------------- 纯布局 ----------------
 
     struct StatusIndicatorRect
@@ -830,6 +895,13 @@ namespace Inkeys::UI::Bar
         bool fanMirrored=false;
     };
 
+    // 点是否位于主按钮超椭圆内且距边框超过 inset（停靠方块的命中让给主按钮）。
+    inline bool StatusIndicatorInsideMainButton(const StatusIndicatorLayoutInput& input,double x,double y,double inset) noexcept
+    {
+        const double a=input.mainWidth/2-inset,b=input.mainHeight/2-inset,n=input.mainN>0?input.mainN:3;
+        if(!(a>0&&b>0))return false;
+        return std::pow(std::abs(x-input.mainCenterX)/a,n)+std::pow(std::abs(y-input.mainCenterY)/b,n)<1;
+    }
     inline double StatusIndicatorDirection(const StatusIndicatorLayoutInput& input) noexcept
     { return input.below>=.5?1.0:-1.0; }
     // 胶囊竖直中心：主按钮上边框（倒转为下边框），换边时插值。

@@ -114,6 +114,7 @@ private:
 	struct Presented
 	{
 	 std::vector<Inkeys::UI::Bar::StatusIndicatorEntryLayout> entries; // 仅可命中项
+	 Inkeys::UI::Bar::StatusIndicatorLayoutInput main; // 同帧主按钮几何：主按钮内部让给主按钮命中
 	 double zoom=1;
 	};
 	mutable std::mutex presentedMutex_;
@@ -138,6 +139,10 @@ private:
 	unsigned long long deviceGeneration_=0;
 	double zoom_=1,simulatedSampleAt_=0;
 	Inkeys::UI::Bar::StatusIndicatorSpring orientation_;
+	// 新版本轮询只在交互 worker 上推进（PollDeadline），下载中 10Hz、其余 1Hz。
+	Inkeys::UI::Bar::StatusIndicatorUpdateTracker updateTracker_;
+	std::chrono::steady_clock::time_point nextUpdatePoll_{};
+	std::chrono::steady_clock::time_point PollUpdateSource(std::chrono::steady_clock::time_point now);
 	bool belowTarget_=false,orientationInitialized_=false;
 	bool initialized_=false,feedbackActive_=false,changed_=false;
 	void DrawRing(BarUIRendering&, ID2D1DeviceContext*, const BarUiSuperellipseClass&, double material, double content);
@@ -1406,6 +1411,11 @@ namespace Inkeys::UI::Bar
 	export using ::Inkeys::UI::Bar::StatusIndicatorIcon;
 	export using ::Inkeys::UI::Bar::StatusIndicatorSpec;
 	export void PublishStatusIndicator(const StatusIndicatorSpec&);
+	// 超级置顶在启动时确定、运行中不变：启动成功后发布一次，常驻到退出。
+	export void PublishSuperTopStatusIndicator();
+	// PPT/WPS 放映场次的开始与结束边沿（PptInfo 线程）。
+	export void PublishPptStatusIndicator(std::uint64_t session, bool wps);
+	export void RetirePptStatusIndicator(std::uint64_t session);
 	export void RetireStatusIndicator(std::uint64_t key);
 	export void PublishStatusIndicatorProgress(std::uint64_t key,float progress,bool complete);
 	export void SetStatusIndicatorOptions(bool enable,bool ppt,bool superTop,bool newVersion);

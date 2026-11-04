@@ -46,6 +46,12 @@
         "Mode": "底欄模式",
         "Centered": "置中"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "放映模式",
+        "SuperTop": "超級置頂",
+        "NewVersion": "新版本"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "清空",
@@ -967,8 +973,6 @@
           "SuperTop": "超級置頂",
           "SuperTopE1": "軟件透過三段式啟動進行置頂。\n（目前已經超級置頂）",
           "SuperTopE2": "軟件透過三段式啟動進行置頂。\n（目前尚未超級置頂）",
-          "Indicator": "超級置頂指示器",
-          "IndicatorE": "軟件成功被超級置頂時，在主圖示右上角顯示一個大頭針。",
           "SuperTopNote": "重新啟動軟件後生效；啟動過程中可能出現置頂失敗。"
         },
         "SupportNote": "僅支援 Windows 8 及以上系統。"
@@ -1064,6 +1068,20 @@
       "NamePickerRequirement": "需要註冊 NamePicker URL 通訊協定。",
       "ClassIslandProtocolNote": "需要在 ClassIsland 應用程式設定中註冊 URL 導覽通訊協定。",
       "ClassIslandSwapNote": "ClassIsland 未載入課表時，此元件不會生效。"
+    },
+    "StatusIndicator":
+    {
+      "N": "狀態指示器",
+      "E": "在主按鈕上提示放映模式、超級置頂和新版本等狀態：新狀態以膠囊彈出，3 秒後收起為主按鈕邊框上的小方塊。",
+      "Enable":
+      {
+        "N": "啟用狀態指示器",
+        "E": "關閉後隱藏全部狀態提示；重新開啟時，仍存在的狀態直接以收起方塊顯示。"
+      },
+      "Types": "提示以下狀態",
+      "TypeSlideshow": "放映模式",
+      "TypeSuperTop": "超級置頂",
+      "TypeNewVersion": "新版本"
     },
     "DesktopShortcut":
     {
