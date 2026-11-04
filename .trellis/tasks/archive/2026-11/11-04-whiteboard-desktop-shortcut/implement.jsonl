@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/desktop-shortcuts.md", "reason": "桌面快捷方式合同"}
+{"file": ".trellis/spec/native-desktop/single-instance-and-startup-handoff.md", "reason": "单实例/交接/更新链合同，转发通道插入点"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "进入白板、最小化恢复与工作区合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置、i18n 与资源规范"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "错误/日志/资源"}
+{"file": ".trellis/tasks/archive/2026-11/11-03-shortcut-settings-integration/design.md", "reason": "前置任务设计"}
+{"file": ".trellis/tasks/archive/2026-11/11-03-shortcut-settings-integration/research/validation.md", "reason": "前置任务验证入口"}
