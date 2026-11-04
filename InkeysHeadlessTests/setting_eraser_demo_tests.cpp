@@ -403,7 +403,8 @@ int RunSettingEraserDemoTests()
 	if (!Load(checks,factory.Get(),device.Get(),root/L"Inkeys/src/setting/EraserDemoFine.png",atlases[0])
 		|| !Load(checks,factory.Get(),device.Get(),root/L"Inkeys/src/setting/EraserDemoSweep.png",atlases[1])) return checks.failures;
 	const std::array<ID3D11ShaderResourceView*,2> images{atlases[0].view.Get(),atlases[1].view.Get()};
-	const auto output=root/L".trellis/tasks/09-06-setting-winui3-design-rebuild/research/eraser-demo-visuals";
+	// 回归图片属于构建产物，避免每次测试重建已归档的任务目录。
+	const auto output=root/L"Build/Tests/eraser-demo-visuals";
 	std::filesystem::create_directories(output);
 	Design::EraserDemoPlayer player;
 	auto prepare=[&](float dt=Step, bool animations=true, float rate=1, bool dark=false, bool visible=true, float width=768) {
