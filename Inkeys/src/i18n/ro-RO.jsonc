@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Indicator de stare",
-      "E": "Afișează pe butonul principal stări precum prezentarea, SuperTop și versiunile noi: o stare nouă apare ca o capsulă și, după 3 secunde, se strânge într-o placă mică pe marginea butonului principal.",
+      "E": "Afișează pe butonul principal stări precum modul prezentare, SuperTop și actualizările software.",
       "Enable":
       {
         "N": "Activează indicatorul de stare",
-        "E": "Când este dezactivat, toate indicațiile de stare sunt ascunse; la reactivare, stările încă existente apar direct ca plăci strânse."
+        "E": "Când este dezactivat, butonul principal nu mai afișează indicații de stare."
       },
       "Types": "Afișează aceste stări",
       "TypeSlideshow": "Prezentare",

@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Chỉ báo trạng thái",
-      "E": "Hiển thị các trạng thái như trình chiếu, SuperTop và phiên bản mới trên nút chính: trạng thái mới bật lên dạng viên nang và sau 3 giây thu gọn thành ô nhỏ trên viền nút chính.",
+      "E": "Hiển thị các trạng thái như chế độ trình chiếu, SuperTop và cập nhật phần mềm trên nút chính.",
       "Enable":
       {
         "N": "Bật chỉ báo trạng thái",
-        "E": "Khi tắt, mọi gợi ý trạng thái đều bị ẩn; khi bật lại, các trạng thái vẫn còn sẽ hiện ngay dưới dạng ô thu gọn."
+        "E": "Khi tắt, nút chính không còn hiển thị gợi ý trạng thái."
       },
       "Types": "Hiển thị các trạng thái sau",
       "TypeSlideshow": "Trình chiếu",

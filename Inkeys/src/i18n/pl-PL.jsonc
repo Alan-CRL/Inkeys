@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Wskaźnik stanu",
-      "E": "Pokazuje na przycisku głównym stany, takie jak pokaz slajdów, SuperTop i nowa wersja: nowy stan pojawia się jako kapsuła, a po 3 sekundach zwija się do małego kafelka na krawędzi przycisku głównego.",
+      "E": "Pokazuje na przycisku głównym stany, takie jak tryb pokazu slajdów, SuperTop i aktualizacje oprogramowania.",
       "Enable":
       {
         "N": "Włącz wskaźnik stanu",
-        "E": "Po wyłączeniu wszystkie podpowiedzi stanu są ukryte; po ponownym włączeniu nadal istniejące stany pojawiają się od razu jako zwinięte kafelki."
+        "E": "Po wyłączeniu przycisk główny nie pokazuje żadnych podpowiedzi stanu."
       },
       "Types": "Pokazuj te stany",
       "TypeSlideshow": "Pokaz slajdów",

@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Durum göstergesi",
-      "E": "Slayt gösterisi, SuperTop ve yeni sürüm gibi durumları ana düğmede gösterir: yeni bir durum kapsül olarak açılır ve 3 saniye sonra ana düğme kenarında küçük bir karoya katlanır.",
+      "E": "Slayt gösterisi modu, SuperTop ve yazılım güncellemeleri gibi durumları ana düğmede gösterir.",
       "Enable":
       {
         "N": "Durum göstergesini aç",
-        "E": "Kapalıyken tüm durum ipuçları gizlenir; yeniden açıldığında hâlâ var olan durumlar doğrudan katlanmış karolar olarak görünür."
+        "E": "Kapalıyken ana düğme hiçbir durum ipucu göstermez."
       },
       "Types": "Bu durumları göster",
       "TypeSlideshow": "Slayt gösterisi",

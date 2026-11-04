@@ -225,7 +225,7 @@ int RunStatusIndicatorTests()
 		check(down && Near(CenterY(*down), 540), "inverted capsule centered on bottom border");
 	}
 
-	// Collapse motion: morph into icon, arc flight, docked tiles yield only on landing; frame-rate independent.
+	// Collapse motion: morph into icon, inward flight under the queue, docked tiles yield only on landing; frame-rate independent.
 	{
 		const auto input = FoldedInput();
 		StatusIndicatorModel model; double now = 0;
@@ -235,23 +235,32 @@ int RunStatusIndicatorTests()
 		const double oldX = CenterX(*FindLayout(ResolveStatusIndicatorLayout(model, input), 1));
 		model.Publish(Spec(2, Kind::Debug), now);
 		model.SetTextWidth(2, 80);
+		model.Publish(Spec(3, Kind::Debug), now); // 排在其后，收起时成为队首
 		const double expire = now + Hold + kFrame;
 		Run(model, now, expire);
 		check(model.Find(2)->phase == Phase::Collapsing && !model.Find(2)->landed, "second starts collapsing");
 		Run(model, now, now + FlightDelay * 0.5);
 		check(model.Find(2)->flight.position == 0 && model.Find(2)->morph.position > 0, "morph starts before flight");
-		bool lifted = false, yieldedEarly = false, landedSeen = false;
+		bool dipped = false, yieldedEarly = false, landedSeen = false, crossed = false, endedBelow = false;
+		int previousOrder = 0;
 		while (model.Find(2)->phase == Phase::Collapsing && now < expire + 3)
 		{
 			Run(model, now, now + kFrame);
 			const auto layout = ResolveStatusIndicatorLayout(model, input);
-			const auto* fly = FindLayout(layout, 2); const auto* docked = FindLayout(layout, 1);
-			if (fly && model.Find(2)->flight.position > 0.3 && model.Find(2)->flight.position < 0.7 && fly->bounds.top < 460 - DockSize / 2)
-				lifted = true;
+			const auto* fly = FindLayout(layout, 2); const auto* docked = FindLayout(layout, 1); const auto* front = FindLayout(layout, 3);
+			if (fly && fly->bounds.top >= 460 + CapsuleHeight / 2) dipped = true;
 			if (!model.Find(2)->landed && docked && !Near(CenterX(*docked), oldX, 1e-6)) yieldedEarly = true;
 			if (model.Find(2)->landed) landedSeen = true;
+			// 与新队首的层级关系只能在两者不相交时改变。
+			if (fly && front)
+			{
+				const int order = fly->z > front->z ? 1 : -1;
+				if (previousOrder != 0 && order != previousOrder && fly->bounds.Intersects(front->bounds)) crossed = true;
+				previousOrder = order; endedBelow = order < 0;
+			}
 		}
-		check(lifted, "flight arcs outward above the border");
+		check(dipped, "flight first dips inward out of the capsule area");
+		check(!crossed && endedBelow, "flying tile switches below the queue only after clearing it");
 		check(!yieldedEarly, "docked tile waits for the landing before yielding");
 		check(landedSeen && model.Find(2)->phase == Phase::Docked, "flying tile lands and docks");
 		Run(model, now, now + 1.0);
@@ -623,6 +632,27 @@ int RunStatusIndicatorTests()
 		check(!a.publish && a.progress && Near(a.value, 0.5), "later download reuses the published state");
 		a = manual.Step(Tracker::DownloadFail, 500, 1000);
 		check(a.progress && a.value < 0 && manual.Published(), "download failure ends the ring but keeps the state");
+	}
+
+	// A new state closes the re-expanded capsule or the open fan so it owns the anchor.
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::SuperTop), now);
+		Run(model, now, 4.5);
+		model.ClickDocked(1, now);
+		Run(model, now, now + 0.8);
+		check(model.Reexpanded(), "super top re-expanded for reading");
+		model.Publish(Spec(2, Kind::PptSlideshow), now);
+		check(!model.Reexpanded() && model.Find(1)->morphTarget == 1 && model.FrontKey() == 2,
+			"new slideshow state closes the re-expanded capsule at once");
+		Run(model, now, now + 4.5);
+		model.Publish(Spec(3, Kind::Debug), now);
+		Run(model, now, now + 4.5);
+		model.ClickDocked(1, now);
+		check(model.FanOpen(), "fan open with several docked tiles");
+		model.ClickDocked(2, now);
+		model.Publish(Spec(4, Kind::Debug), now);
+		check(!model.FanOpen() && model.Selected() == 0, "new state closes the fan and its selection");
 	}
 
 	// Click state machine.

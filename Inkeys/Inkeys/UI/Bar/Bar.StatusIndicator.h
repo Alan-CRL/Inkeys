@@ -50,7 +50,8 @@ namespace Inkeys::UI::Bar
         inline constexpr double Enter=.42,Dismiss=.30,Exit=.28,Fan=.32,Select=.24,RingFade=.24,Presence=.28;
         inline constexpr double FanAutoClose=3.0,ProgressCompleteLinger=3.0,ProgressRate=8;
         // 收起：文字段欠阻尼收进图标，方块延迟后沿弧线飞向停靠槽，着陆轻弹。
-        inline constexpr double FlightDelay=.10,FlightLift=12,LandAt=.97,LandBumpVelocity=1.6;
+        // 飞行先向内（正常向下、倒转向上）离开展开胶囊区域，再从内侧回到停靠槽；FlightSink 为三次贝塞尔控制点内移量。
+        inline constexpr double FlightDelay=.10,FlightSink=44,LandAt=.97,LandBumpVelocity=1.6;
         inline constexpr double SpringStep=1.0/120,SpringMaxDt=.5;
         inline constexpr double Pi=3.14159265358979323846;
     }
@@ -309,7 +310,7 @@ namespace Inkeys::UI::Bar
             if(!visible&&spec.lifetime==StatusIndicatorLifetime::Notification)return StatusIndicatorPublishResult::Rejected;
             if(entries_.size()>=StatusIndicatorStyle::Capacity&&!Evict())return StatusIndicatorPublishResult::Rejected;
             StatusIndicatorEntry e;e.spec=spec;e.order=++order_;e.visible=visible;
-            if(visible){e.phase=StatusIndicatorPhase::Expanded;e.snapStack=true;}
+            if(visible){e.phase=StatusIndicatorPhase::Expanded;e.snapStack=true;DismissSelection();}
             else{SnapDocked(e);e.presence=0;}
             entries_.push_back(std::move(e));
             RefreshFront(now);
@@ -591,6 +592,13 @@ namespace Inkeys::UI::Bar
             if(e.spec.lifetime==StatusIndicatorLifetime::Notification){e.phase=StatusIndicatorPhase::Dismissing;return;}
             e.phase=StatusIndicatorPhase::Collapsing;e.landed=false;
             e.morphTarget=1;e.morphDelay=0;e.flightTarget=1;e.flightDelay=StatusIndicatorStyle::FlightDelay;
+        }
+        // 新状态到来：先收回正在查看的重新展开胶囊或同心弧，让新胶囊独占锚点。
+        void DismissSelection() noexcept
+        {
+            if(auto* e=Reexpanded()?FindMutable(selected_):nullptr)CloseReexpand(*e);
+            if(fanOpen_){fanOpen_=false;fanDeadline_=now_;}
+            selected_=0;
         }
         void CloseReexpand(StatusIndicatorEntry& e) noexcept
         {
@@ -949,12 +957,36 @@ namespace Inkeys::UI::Bar
     {
         struct Point { double x=0,y=0; };
         inline Point LerpPoint(Point a,Point b,double t) noexcept { return {a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t}; }
-        inline Point Bezier(Point a,Point c,Point b,double t) noexcept
-        {
-            const double u=1-t;
-            return {u*u*a.x+2*u*t*c.x+t*t*b.x,u*u*a.y+2*u*t*c.y+t*t*b.y};
-        }
         inline StatusIndicatorRect Box(Point c,double w,double h) noexcept { return {c.x-w/2,c.y-h/2,c.x+w/2,c.y+h/2}; }
+        // 收起/重新展开飞行路径：起点竖直向内离开胶囊，内侧横移，再竖直回到停靠槽。
+        struct FlightPath
+        {
+            Point p0,p1,p2,p3;
+            double clearAt=1; // 首次完全离开展开胶囊区域的参数；之前在胶囊之上，之后切到胶囊之下
+            Point At(double t) const noexcept
+            {
+                // 弹簧越界时沿端点切线外推，保留着陆回弹。
+                if(t>1)return {p3.x+(t-1)*3*(p3.x-p2.x),p3.y+(t-1)*3*(p3.y-p2.y)};
+                if(t<0)return {p0.x+t*3*(p1.x-p0.x),p0.y+t*3*(p1.y-p0.y)};
+                const double u=1-t;
+                return {u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y};
+            }
+        };
+        inline double FlightSize(double t) noexcept
+        { return StatusIndicatorCurve::Lerp(StatusIndicatorStyle::CapsuleHeight,StatusIndicatorStyle::DockSize,StatusIndicatorCurve::Clamp01(t)); }
+        inline FlightPath ResolveFlightPath(Point start,Point end,double dir,double edgeY) noexcept
+        {
+            using namespace StatusIndicatorStyle;
+            FlightPath path{start,{start.x,start.y-dir*FlightSink},{end.x,end.y-dir*FlightSink},end};
+            // 采样求离开点：方块外沿越过胶囊内侧边（锚点处胶囊高 CapsuleHeight）。
+            for(int i=0;i<=96;++i)
+            {
+                const double t=static_cast<double>(i)/96;
+                const double inward=-dir*(path.At(t).y-edgeY);
+                if(inward-FlightSize(t)/2>=CapsuleHeight/2+.5){path.clearAt=t;break;}
+            }
+            return path;
+        }
         inline StatusIndicatorRect ScaleRect(const StatusIndicatorRect& r,double s,Point pivot) noexcept
         {
             return {pivot.x+(r.left-pivot.x)*s,pivot.y+(r.top-pivot.y)*s,pivot.x+(r.right-pivot.x)*s,pivot.y+(r.bottom-pivot.y)*s};
@@ -1051,17 +1083,15 @@ namespace Inkeys::UI::Bar
             }
             else if(e.Morphing()&&!(e.phase==StatusIndicatorPhase::Exiting)&&!(fanP>0&&e.phase==StatusIndicatorPhase::Docked))
             {
-                // 收起/重新展开：形变（宽度收进图标，左端不动）+ 沿二次贝塞尔飞行（控制点向外抬起）。
+                // 收起/重新展开：形变（宽度收进图标，左端不动）+ 先向内离开胶囊、再从内侧回到停靠槽的三次贝塞尔飞行。
                 const double m=e.morph.position,f=e.flight.position;
                 const double left0=cx-fullWidth/2;
                 const double morphWidth=(std::max)(CapsuleHeight*.9,Lerp(fullWidth,CapsuleHeight,m));
                 const Point start{left0+CapsuleHeight/2,edgeY};
                 const Point end=dockPoint(e.landed?e.dock.position:0);
-                const double outer=dir<0?(std::min)(start.y,end.y):(std::max)(start.y,end.y);
-                const Point control{(start.x+end.x)/2,outer+dir*FlightLift};
-                const double q=std::clamp(f,0.0,1.15);
-                const Point at=Bezier(start,control,end,q);
-                const double size=Lerp(CapsuleHeight,DockSize,Clamp01(f))*(std::max)(0.0,e.bump.position);
+                const auto path=ResolveFlightPath(start,end,dir,edgeY);
+                const Point at=path.At(std::clamp(f,-0.15,1.15));
+                const double size=FlightSize(f)*(std::max)(0.0,e.bump.position);
                 const double width=(std::max)(size,Lerp(morphWidth,size,SmoothRange(0,.3,f)));
                 StatusIndicatorRect rect{at.x-size/2,at.y-size/2,at.x-size/2+width,at.y+size/2};
                 Capsule(l,rect,e.textWidth,fullWidth,scrollFor(e,e.phase==StatusIndicatorPhase::Docked?now-e.selectStart:e.scrollElapsed));
@@ -1074,7 +1104,8 @@ namespace Inkeys::UI::Bar
                 // 已在锚点的重新展开胶囊可点击收回。
                 l.role=e.phase==StatusIndicatorPhase::Docked&&model.Selected()==e.spec.key&&f<.05?StatusIndicatorRole::Capsule:StatusIndicatorRole::None;
                 const bool settledInDock=e.landed&&f>=LandAt;
-                z=settledInDock?2000+static_cast<int>(e.dockSerial%1000):3500;overflow=!settledInDock;
+                // 层级只在完全离开胶囊区域时切换：之前在展开胶囊之上，之后在其下、停靠方块之上；往返对称。
+                z=settledInDock?2000+static_cast<int>(e.dockSerial%1000):f>=path.clearAt?2500:3500;overflow=!settledInDock;
             }
             else
             {
@@ -1088,7 +1119,8 @@ namespace Inkeys::UI::Bar
                     const double k=Clamp01(fanP*1.15-slot*.012);const double g=OutBack(k);
                     p=LerpPoint(p,fanPoint(slot),g);
                     size=Lerp(DockSize,FanSize,g);radius=Lerp(DockRadius,FanRadius,Clamp01(g));icon=Lerp(DockIcon,FanIcon,Clamp01(g));
-                    opacity=Lerp(DockOpacity,1,fanBlend);z=4000+static_cast<int>(slot*10);overflow=true;
+                    // 弧上方块与停靠层同处展开胶囊之下，展开/收回途中不穿过胶囊；只有选中胶囊升到最上。
+                    opacity=Lerp(DockOpacity,1,fanBlend);z=2600+static_cast<int>(slot*10);overflow=true;
                     l.role=fanP>.5?StatusIndicatorRole::Fan:StatusIndicatorRole::Dock;
                 }
                 l.shape=StatusIndicatorShape::Tile;l.bounds=Box(p,size,size);l.radius=radius;
@@ -1146,10 +1178,13 @@ namespace Inkeys::UI::Bar
             const double layer=(std::min)((std::max)(0.0,e.stack.position),StackLayers);
             const auto rect=Box({cx,edgeY+dir*layer*StackStep},fullWidth,CapsuleHeight);
             out.reserveBounds=UnionStatusIndicatorRect(out.reserveBounds,ScaleRect(rect,EnterPeakScale,{cx,edgeY}));
-            const Point end=dockPoint(0);
-            out.reserveBounds=UnionStatusIndicatorRect(out.reserveBounds,
-                OutsetStatusIndicatorRect(Box({(rect.left+CapsuleHeight/2+end.x)/2,edgeY+dir*FlightLift/2},
-                    std::abs(end.x-rect.left)+CapsuleHeight,CapsuleHeight+FlightLift),2));
+            const auto path=ResolveFlightPath({rect.left+CapsuleHeight/2,edgeY},dockPoint(0),dir,edgeY);
+            for(int i=-2;i<=34;++i)
+            {
+                const double t=static_cast<double>(i)/32;
+                out.reserveBounds=UnionStatusIndicatorRect(out.reserveBounds,
+                    OutsetStatusIndicatorRect(Box(path.At(t),CapsuleHeight,CapsuleHeight),2));
+            }
         }
         if(model.FanOpen()||fanP>0)
         {

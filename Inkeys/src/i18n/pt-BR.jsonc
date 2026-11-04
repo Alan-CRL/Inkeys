@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Indicador de status",
-      "E": "Mostra no botão principal estados como apresentação, SuperTop e novas versões: um novo estado aparece como cápsula e, após 3 segundos, recolhe-se em um pequeno bloco na borda do botão principal.",
+      "E": "Mostra no botão principal estados como o modo de apresentação, o SuperTop e as atualizações do software.",
       "Enable":
       {
         "N": "Ativar indicador de status",
-        "E": "Desativado, todos os avisos de status ficam ocultos; ao reativar, os estados que ainda existem aparecem diretamente como blocos recolhidos."
+        "E": "Quando desativado, o botão principal deixa de mostrar avisos de status."
       },
       "Types": "Mostrar estes estados",
       "TypeSlideshow": "Apresentação",

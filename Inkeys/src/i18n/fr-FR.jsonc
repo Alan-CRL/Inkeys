@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Indicateur d'état",
-      "E": "Affiche sur le bouton principal des états comme le diaporama, SuperTop ou une nouvelle version : un nouvel état apparaît sous forme de capsule, puis se replie en une petite tuile sur le bord du bouton principal après 3 secondes.",
+      "E": "Affiche sur le bouton principal des états tels que le mode diaporama, SuperTop et les mises à jour du logiciel.",
       "Enable":
       {
         "N": "Activer l'indicateur d'état",
-        "E": "Désactivé, tous les indicateurs d'état sont masqués ; une fois réactivé, les états toujours présents s'affichent directement sous forme de tuiles repliées."
+        "E": "Désactivé, le bouton principal n'affiche plus aucun indicateur d'état."
       },
       "Types": "Afficher ces états",
       "TypeSlideshow": "Diaporama",

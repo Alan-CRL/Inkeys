@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Indicatore di stato",
-      "E": "Mostra sul pulsante principale stati come presentazione, SuperTop e nuove versioni: un nuovo stato compare come capsula e dopo 3 secondi si richiude in un piccolo riquadro sul bordo del pulsante principale.",
+      "E": "Mostra sul pulsante principale stati come la modalità presentazione, SuperTop e gli aggiornamenti del software.",
       "Enable":
       {
         "N": "Attiva indicatore di stato",
-        "E": "Se disattivato, tutti gli avvisi di stato sono nascosti; quando lo riattivi, gli stati ancora presenti compaiono direttamente come riquadri chiusi."
+        "E": "Se disattivato, il pulsante principale non mostra più alcun avviso di stato."
       },
       "Types": "Mostra questi stati",
       "TypeSlideshow": "Presentazione",

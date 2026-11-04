@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Statusanzeige",
-      "E": "Zeigt Zustände wie Präsentation, SuperTop und neue Versionen an der Hauptschaltfläche an: Ein neuer Zustand erscheint als Kapsel und klappt nach 3 Sekunden zu einer kleinen Kachel am Rand der Hauptschaltfläche ein.",
+      "E": "Zeigt Laufzeitzustände wie Präsentationsmodus, SuperTop und Softwareupdates an der Hauptschaltfläche an.",
       "Enable":
       {
         "N": "Statusanzeige aktivieren",
-        "E": "Wenn deaktiviert, werden alle Statushinweise ausgeblendet; nach dem erneuten Aktivieren erscheinen noch bestehende Zustände direkt als eingeklappte Kacheln."
+        "E": "Wenn deaktiviert, zeigt die Hauptschaltfläche keine Statushinweise mehr an."
       },
       "Types": "Diese Zustände anzeigen",
       "TypeSlideshow": "Präsentation",

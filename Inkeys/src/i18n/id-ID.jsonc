@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Indikator status",
-      "E": "Menampilkan status seperti tayangan slide, SuperTop, dan versi baru pada tombol utama: status baru muncul sebagai kapsul lalu terlipat menjadi ubin kecil di tepi tombol utama setelah 3 detik.",
+      "E": "Menampilkan status seperti mode tayangan slide, SuperTop, dan pembaruan perangkat lunak pada tombol utama.",
       "Enable":
       {
         "N": "Aktifkan indikator status",
-        "E": "Jika dimatikan, semua petunjuk status disembunyikan; saat diaktifkan kembali, status yang masih ada langsung tampil sebagai ubin terlipat."
+        "E": "Jika dimatikan, tombol utama tidak lagi menampilkan petunjuk status."
       },
       "Types": "Tampilkan status berikut",
       "TypeSlideshow": "Tayangan slide",

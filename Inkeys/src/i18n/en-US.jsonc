@@ -1072,11 +1072,11 @@
     "StatusIndicator":
     {
       "N": "Status indicator",
-      "E": "Shows states such as slideshow, SuperTop and new versions on the main button: a new state pops up as a capsule and folds into a small tile on the main button border after 3 seconds.",
+      "E": "Shows runtime states such as slideshow mode, SuperTop and software updates on the main button.",
       "Enable":
       {
         "N": "Enable status indicator",
-        "E": "When off, all status hints are hidden; when turned back on, states that still exist appear directly as folded tiles."
+        "E": "When off, the main button no longer shows any status hints."
       },
       "Types": "Show these states",
       "TypeSlideshow": "Slideshow",
