@@ -1,68 +1,47 @@
-# Design: 按设备光标模型与专页
+# Design：DPI 与按设备小圆点接触隐藏
 
-## 现状(源码已确认)
+## 改动边界
 
-- `Draw3.CursorSettings.h`:`MouseCursorStyle{System,Drawing}`、`PenCursorStyle{Circle,PenIcon}`、`CursorSettings{mouseStyle,penStyle}`。
-- 配置 `Drawing.Cursor.{MouseStyle,PenStyle}`(`Other.Config.cpp` 约 644 行校验、880 行清理旧键);`IdtState.cpp:517` 读入 `state.cursorSettings`;`Setting.cpp:3683` 两个 `ComboRow`。
-- `DrawingController` 把设置打包为 `std::atomic<uint32_t> cursorSettings_`(bit0 mouse、bit1 pen、bit2 valid);`Draw3.Bridge.h::ResolveCursorSettingsForTool` 做工具投影。
-- `Draw3.PenCursor.cpp::ResolvePrimaryDrawingCursorVisual`:`highlight=!screenPen`;`penIconAllowed` 门控画笔图标;Touch authority 返回无样本(即无自绘触摸光标)。
-- 设置页子页导航:`Setting.Pages.h` `DrawingSubpage{Overview,SpeedEraser,PalmEraser}` + `NavigateDrawingSubpage`,入口 `RenderDrawingEraserEntries`。
+行为缺口位于 Draw3 生产光标解析和产品显示上下文接线，而非设置预览。设置只编辑配置草稿，沿已有 deferred `SyncDraw3State()` 与冻结 `QueueConfigWrite()` 发布；不在 ImGui 锁内访问 Controller/HWND。
 
-## 数据模型
+实测确认固定样式已经只乘一次 `dpiScale`，Controller 的 `ProductTargetScale(currentProductVisualStyle)` 来自 `PenWidth::Context.effectiveDpi / 96`；正式和完整 guarded PS 均正确跟随 96/144/192/264 DPI，没有发现旧链漏乘。192 DPI 下 Windows 实际箭头可见 bbox 为 25×39 px，而自绘真实 GPU 为 23×38 px（原 appearance 24×38 px），因此在共享常量处将箭头参考大小校准为 13×19.5 DIP：宽度计入既有轮廓最右仅占参考盒 95% 的留白，高度取实测 39/2。保留 HLSL 的 12×19 归一轮廓与尖端热点，不改 shader，不额外乘 DPI。设置预览使用同一常量并按原参考盒归一。小圆点沿用已换算的笔宽与最小直径，不重复缩放墨迹。
 
-```cpp
-enum class DeviceCursorStyle : uint8_t { Default = 0, PenIcon = 1, Dot = 2, HighlightDot = 3, None = 4 };
-// Default: Mouse→System, ScreenPen/Tablet/Touch→Circle。None 仅 Touch 合法。
-enum class PenHighlightMode : uint8_t { Off = 0, DigitizerOnly = 1, Always = 2 };
-struct CursorSettings {
-    DeviceCursorStyle mouse = Default, touch = None, screenPen = Default, tablet = Default;
-    PenHighlightMode penHighlight = DigitizerOnly;
-};
-```
+## 数据与解析
 
-- 取值 0/1 与旧 `MouseStyle/PenStyle` 同义,旧配置无需转换即可被新枚举读取。
-- `Restore*(int)`:按设备校验合法范围(非 Touch 拒绝 4),非法→该设备默认。
+- 在现有 `Drawing.Cursor` schema 增加 NoUpload 整数字段，四态 0=关闭、1=仅屏幕笔、2=仅数位板、3=两者，默认 1；严格拒绝 bool/float/超宽/越界输入。配置归一与 CursorSettings 使用统一枚举/还原规则。
+- 扩展 `CursorSettings` 值快照及单原子打包；保留现有四设备样式、注入识别位与有效位语义，额外两位存新模式。Bridge 的复制/相等判断须包含新值，不能静止时修改无效。
+- 先按既有规则解析所用设备行与样式，再决定接触可见性。产品接入路径取消旧“笔接触一律隐藏”的门控；仅软/硬笔的 Dot/HighlightDot 且设备命中模式时隐藏。nullptr 独立接口保留旧 contact 开关语义，不无故改变独立 demo。
+- 主光标不替代 Touch 的逐 runtime 路径。Unknown/Conflict 和注入鼠标沿数位板行；真实鼠标即使选 Dot 也不受新模式影响。倒转笔橡皮优先于样式隐藏；Highlighter/Shape 专用外观不套 Dot 隐藏条件。
+- 不新增线程、全局 ShowCursor 计数、输入过滤或 contact 身份变更。
 
-## 配置
+## 设置与国际化
 
-`Drawing.Cursor` 下新增 `TouchStyle/ScreenPenStyle/TabletStyle/PenHighlightMode`(均 `NoUpload` 整数)。读取规则:
+`CursorPageDraft/Events` 增加模式索引/变化事件；沿当前设备设置写回方式，只写变化字段并复用一次同步与保存。信息条继续紧邻数位板识别开关，其后增加“精细控制”区及 ComboRow。新字段名称/说明/四选项完整翻译 20 语言，运行现有生成链，保持源文件编码和换行。
 
-- `MouseStyle`:原键沿用。
-- `ScreenPenStyle/TabletStyle` 缺失时回落到旧 `PenStyle`(一次性迁移语义:首次写盘后写出新键;旧 `PenStyle` 键保留不再写,或继续写为屏幕笔值——实现时选更少歧义者并在 spec 写明)。
-- `TouchStyle` 缺失=None(4);`PenHighlightMode` 缺失=1。
-- 校验沿用 `Other.Config.cpp` 的“JSON 整数且范围内”模式,拒绝 bool/float/超宽。
+## 预期必要修改面
 
-## 渲染解析(Controller / PenCursor)
+- Draw3.CursorSettings.h、Draw3.PenCursor.cpp：模式、快照打包与可见性；Controller/Window/Host 的修改仅限 DPI 调研证实的缺口。
+- Other.Config.cppm/.cpp、IdtState.cpp：schema、严格校验与产品快照加载。
+- Setting.Pages.h/.cpp、Setting.cpp：草稿、事件、控件、位置与 deferred 写回。
+- 对应 Headless 光标/配置/Bridge/设置测试；i18n 各语言与生成头/快照；draw3-cursors.md：新可执行合同。
+- 不计划改 shader；只有生产尺寸问题的证据要求时才同步 CPU/GPU，并明确记录必要性。
 
-1. 打包:32 位 `cursorSettings_` 重排为 `valid(1) | mouse(3) | touch(3) | screenPen(3) | tablet(3) | highlight(2)`,足够容纳,仍单次原子交换;Window 侧 `mouseUsesSystemCursor` 投影不变(`mouse==Default`)。
-2. 样本→设备行:Mouse 样本→mouse;Pen 样本按 `SourceKind`:IntegratedPen→screenPen;ExternalPen→tablet;Unknown/Conflict→tablet(沿用“固定高亮”现状);Touch→touch。
-3. 外观:
-   - Default 对笔设备=现有圆形(随笔宽);Default 对鼠标=系统光标(不自绘,保持现状)。
-   - PenIcon:沿用现有几何/热点。
-   - Dot/HighlightDot:固定小尺寸(初值约 8 DIP×DPI,待预览定),复用 Circle 着色路径,仅替换直径与描边;不进入 `CanvasDiameterForTool`;高亮变体直接复用现有高亮描边常量(1.25 DIP×DPI、0.96 灰白,与荧光笔既有高亮一致),不新增颜色/线宽。
-   - 高亮描边判定(圆形/PenIcon,Pen 样本):`Off→false`;`Always→true`;`DigitizerOnly→!(screenPen)`(现状)。Mouse 自绘光标保持始终高亮。
-4. 工具投影:`ResolveCursorSettingsForTool` 保持“Pen/HardPen 应用设备样式;Highlighter 矩形、形状、橡皮、激光走既有策略”。设备样式不得覆盖荧光笔矩形与形状圆形。
-5. 触摸:新增逐接触的 Touch 光标可视。无 hover,仅 contact 期间在每根接触手指的位置各画一个所选样式(类比现有逐 Touch runtime 的橡皮圆环生命周期:Down 生成、Up/Cancel 清除)。仅 Pen/HardPen 软硬笔应用;荧光笔、激光、形状、橡皮的触摸行为保持原样(荧光笔触摸无光标)。需要先读 `input-and-ink.md` 中 Touch owner/suppress 与逐 runtime 圆环合同,新增视觉不得破坏“系统触摸箭头始终隐藏”“Touch 终态不恢复旧 Hover”。
-6. 荧光笔/激光笔:`ResolveMouseCursorStyleForTool` 与 Laser 解析路径不接入设备样式;回归测试断言四设备×全部样式下荧光笔/激光的可视结果与改动前逐项一致。
+## 风险与回滚
 
-## 设置页
+默认大小校准由 Windows 实际箭头和生产 GPU 可见像素差异支持；GPU fixture 在 192 DPI 严格检查 25×39 bbox，不能把 appearance 理论盒或透明位图画布当作结果。真实同屏观感仍须用户回核，不宣称发现了旧 DPI 漏乘。保留既有 Cursor 诊断 Enabled/100ms 分支，新增短 frame-scale 记录当前 Context DPI/比例/版本、Display 标尺 DPI 和 viewport，以便真实运行定位；不在关闭诊断时新增采样。来源分类与 Pointer/RTS mailbox 生命周期不变。新增配置可忽略回退，不迁移旧样式；回滚本轮文件即可恢复原行为。GUI 与真实 DPI/设备表现由用户明确授权后验证或自行验收。
 
-- `DrawingSubpage` 增 `Cursor`;`Overview` 原“光标”区替换为一个入口条目(`RenderDrawingCursorEntries`,仿 `RenderDrawingEraserEntries`),返回处理与橡皮子页一致。
-- 专页布局:
-  - 区段“按设备”:4 个 `ComboRow`,条目右侧(下拉左侧)内联预览块(约 32×32 DIP),用 ImGui draw list 复刻 shader 外观(圆形环、PenIcon 位图/路径、点)。预览受高亮模式影响;预览是近似,不替代实际绘制验收。
-  - 区段“笔设备”:高亮模式 `ComboRow`(关闭/仅数位板/始终)。
-- 选项列表按设备生成(触摸多“无光标”),下拉索引与枚举值用显式映射表,不直接把索引当枚举(参照预测模式处理)。
-- 数据流:`SetXxx` 写 `Inkeys::config.Drawing.Cursor`→`SyncDraw3State()`→`QueueConfigWrite()`;预览读取同一份配置,不触碰 Controller。
-- i18n:`SettingsUI.Draw.Cursor` 增 Page/Device 名/样式名/高亮模式名/说明;运行 i18n sync/check 并更新 `IdtI18nKeys.g.h`。
+## 实测收敛（2026-11-04）
 
-## 兼容、回滚
+用户确认同屏自绘“鼠标”箭头比系统箭头小。生产与 guarded PS 实测均正常随 DPI 换算；192 DPI 自绘实际可见 23×38 px/429 像素，当前系统实际箭头为 25×39 px/493 像素。故修复定位为自绘轮廓的默认可见大小校准，而非再乘 DPI：参考轮廓最右点占盒宽 0.95，共享尺寸盒改 13×19.5 DIP，预览按同一参考映射，要求真实 GPU 在192 DPI输出25×39。保留尖端热点与shader数学，笔宽、其它样式不变。原有光标诊断在既有门禁/100ms分支新增短frame-scale记录供实机核对。
 
-- 回滚点:枚举与配置迁移独立于 UI;若专页有问题可保留模型而临时恢复两下拉(`PenStyle` 同时映射 screenPen/tablet)。
-- 旧版本读取新配置:未知键被保留;`MouseStyle`/(旧)`PenStyle` 取值范围与旧版一致,不会致旧版崩溃。
-- 与子任务 A:仅通过 `SourceKind`→设备行映射函数耦合;A 若改分类,B 不需改模型。
+## 实机反馈修正（revision 2）
 
-## 风险
+用户已确认大小正确，实际差异为自绘黑边按1 DIP在200%变成2像素。只给 Arrow 增加共享 `CursorArrowOutlineWidthPx(scale)`，名义0.5 DIP、至少1物理像素，200%为1像素；renderer与设置预览同源。描边仍在原轮廓内部，保持外框、热点、shader数学、其它样式。用实际GPU黑边/白填充像素断言区分旧2px与新1px，不能只检查理论参数。
 
-- 触摸自绘光标引入新的 Touch 视觉归属,与 `input-and-ink.md` 的 Touch suppress/owner 合同相交,需先读 spec 并补测试。
-- Win7 guarded shader:仅复用既有 Circle/PenIcon 着色类型,不新增 GPU type;若小圆点需要新 type,须同步 Win7 guarded 数组(`draw3-cursors.md` 要求)。
-- 预览与实际外观漂移:以同一组参数常量驱动二者。
+下拉缺陷位于 Setting.Controls.cpp 的共享 ComboBox：普通路径固定位置+AutoResize越出客户端，显式motion路径只按below截断。最小改动为统一当前viewport工作区的上下预算，默认向下，below小于所需高度且above更多时向上；选中侧高度不足则滚动。保持按钮X对齐，不能侧向盖住左侧说明。动画偏移按方向朝入口收拢，退出装饰仍不接收输入，反向/resize始终不越viewport。延续 BelowComboMotion 名称，不为修复引入新窗口或重新设计状态。
+
+预期必要变更：CursorSettings/PenCursor的Arrow边宽、Controller/Renderer与contact测试预期、Setting.Pages预览；Setting.Controls cpp/h及setting_design_tests；对应spec与任务记录。本轮不新增i18n文案、不改持久化或设备分类。只运行受影响的无窗口设置专项和生产像素/DPI检查，并完整solution Debug|ARM64构建；必要时因失败扩大回归，不重复不受影响的耗时性能基准。
+
+## 共享消费者核对
+
+用户补充要求所有同类下拉统一修复。已盘点当前产品设置源码：教学安全 `RenderGeneral(Interaction)` 的 `ComboRow("teaching-safety")` 与其它 ComboRow/ComboPreviewRow 均调用共享 Design::ComboBox；直接使用的手掌橡皮比例、PPT闲置时长、快捷方式预设、诊断页下拉也调用同一入口。当前产品没有绕过该封装直接使用ImGui/ImFluent的Combo/BeginCombo入口。已有产品修复已覆盖，新增真实教学安全位于客户区底部后向上并可点击末项的回归证明通用性，不追加页面特判。

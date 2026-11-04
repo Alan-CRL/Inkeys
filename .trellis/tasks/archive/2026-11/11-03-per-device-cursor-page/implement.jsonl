@@ -1,4 +1,8 @@
-{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "产品光标合同:配置、工具/来源表、验证矩阵"}
-{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "来源分类、Touch 归属/过滤、光标诊断"}
-{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "绘制设置页与配置写入路径"}
-{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "设置页 UI/渲染约束"}
+{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "生产光标、设备分类、样式与生命周期合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "RTS/Pointer 与 Touch 归属、来源过滤边界"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置严格校验、deferred 写入与 20 语言生成链"}
+{"file": ".trellis/spec/native-desktop/pen-width.md", "reason": "显示上下文、DIP 到像素转换及同代 DPI 合同"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "绘制设置接线与线程约束"}
+{"file": ".trellis/tasks/archive/2026-11/11-03-per-device-cursor-page/research/2026-11-04-continuation.md", "reason": "原任务决策、本轮源码证据与最小改动边界"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "共享下拉避让、滚动和动画合同"}
+{"file": ".trellis/tasks/archive/2026-11/11-03-per-device-cursor-page/research/revision-2-scope.md", "reason": "用户实机反馈、图片含义和修正边界"}
