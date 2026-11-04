@@ -2310,40 +2310,7 @@
     <Image Include="src\setting\SettingSponsor.png">
       <Filter>资源文件</Filter>
     </Image>
-    <Image Include="src\ClassIsland.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\IslandCaller.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\desktop.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\explorer.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\keyboardesc.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\altf4.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\control.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\lockworkstation.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\quick\taskmgr.png">
-      <Filter>资源文件</Filter>
-    </Image>
     <Image Include="src\PluginFlag4.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\NamePicker.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="src\SecRandom.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>
@@ -2352,9 +2319,6 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\logo1.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\logo2.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\Frame 94.svg">
@@ -2402,16 +2366,10 @@
     <None Include="src\UI\barWhiteboard.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barDismiss.svg">
-      <Filter>资源文件</Filter>
-    </None>
     <None Include="src\UI\barEraser.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barAutoEraser.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barDivider.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barClean.svg">
@@ -2773,6 +2731,66 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barAdd.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barReturnShow.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barResumeWhiteboard.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barMove.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barEraserSpeedSetting.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compExplorer.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compTaskManager.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compControlPanel.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compShowDesktop.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compLockScreen.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compEscape.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compAltF4.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallRandom.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallSingle.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallQuick.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallQuick2.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compRollCallQuickCompat.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compNamePicker.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compClassSettings.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compClassProfile.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\compClassSwap.svg">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

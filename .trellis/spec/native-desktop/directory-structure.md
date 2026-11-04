@@ -49,7 +49,7 @@
 | Inkeys/SuperTop/ | UIAccess/置顶辅助相关代码和 token 声明 |
 | Inkeys/src/i18n/ | zh-CN、zh-TW、en-US JSONC 文案 |
 | Inkeys/src/ppt/ | PPT 控件相关图像资源 |
-| Inkeys/src/quick/、setting/、ttf/、UI/ | UI3 共用快捷操作、当前设置图片、字体和 SVG 资源；UI2 专用图标、旧首页整图及 skin/ppt PNG 已退役 |
+| Inkeys/src/setting/、ttf/、UI/ | 当前设置图片、字体和 SVG 资源（Bar 图标规范见 [bar-icons.md](bar-icons.md)）；组件快捷操作 PNG 已由 `UI/comp*.svg` 取代；UI2 专用图标、旧首页整图及 skin/ppt PNG 已退役 |
 | Inkeys/exe/、binarypackage/ | 已存在 DesktopDrawpadBlocker.exe 等随附二进制；EasyX 分架构静态库已删除 |
 | Inkeys/additional/ | Dear ImGui 后端、stb、WinToast、zip、hash 等随附第三方代码 |
 | Inkeys/additional/HiMsg/ | Win32 消息队列 Git submodule；主仓只固定上游 commit，不嵌套其 Vcpkg |

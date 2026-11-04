@@ -1241,8 +1241,8 @@ namespace Inkeys::UI::Bar
 				auto* button=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Whiteboard];
 				style.preset[(int)BarButtonPresetEnum::Whiteboard]=button;
 				BarUiSVGClass resumeIcon,closeIcon;
-				resumeIcon.InitializationFromResource(L"UI",L"barWhiteboard");
-				closeIcon.InitializationFromResource(L"UI",L"barDismiss");
+				resumeIcon.InitializationFromResource(L"UI",L"barResumeWhiteboard");
+				closeIcon.InitializationFromResource(L"UI",L"barCloseSmall");
 				expect(!resumeIcon.svg.GetVal().empty() && !closeIcon.svg.GetVal().empty(),
 					"Whiteboard resume and close SVG resources are available for real content checks");
 				const bool savedFold=owner.barState.fold;
