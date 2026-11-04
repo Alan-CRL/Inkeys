@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Zusätzliche Optionen",
-          "CreateLnk": "Desktop-Verknüpfung erstellen",
+          "CreateLnk": "Desktop-Verknüpfung beim Start erstellen",
           "CreateLnkE": "Erstellt beim Programmstart eine Desktopverknüpfung, falls noch keine vorhanden ist."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Verknüpfungen",
       "ApplicationSection": "Anwendung",
+      "WhiteboardSection": "Whiteboard",
       "NameLabel": "Name der Verknüpfung",
       "CustomName": "Benutzerdefiniert",
       "CustomHint": "Namen der Verknüpfung eingeben",
       "InvalidName": "Geben Sie einen gültigen Windows-Dateinamen ein. Leere oder reservierte Namen, ungültige Zeichen und zu lange Pfade sind nicht zulässig.",
-      "GuaranteeSection": "Verknüpfungsschutz",
+      "NameConflict": "Die Verknüpfungen für die Anwendung und das Whiteboard müssen unterschiedliche Namen haben.",
+      "PresetWhiteboard": "Inkeys Whiteboard",
       "PresetAnnotation": "Inkeys(Anmerkung)",
       "PresetAnnotationTool": "Inkeys(Anmerkungstool)"
     },

@@ -689,3 +689,34 @@ Settings原子配置→frame配置快照→完整稳定宽度→受锁约束的s
 - 仅有效当前白板页真正接受的主题修改更新偏好；初始化、冷恢复、重复/stale/错页/加载中请求不写回。新进程首张页读取偏好，同进程新页继续继承当前页。
 - 配置经现有 Setting FIFO 异步写盘，跨生产者的完整配置捕获与入队必须在同一短临界区保持同序，锁内不执行文件 I/O；Draw3 不做磁盘 I/O；正常退出先停止 Draw3 再排空配置队列，Window Service 与 RenderPipeline 在 Setting 释放后停止。
 - 回归使用真实配置 roundtrip、新实例重读及 Controller 同源初始化/主题命令门禁；GUI 重启观感需另行明确授权。
+
+## 场景：白板快捷方式图标资源（2026-11-04）
+
+### 1. Scope / Trigger
+
+修改白板快捷方式图标或资源 ID 时适用；图标设计来自用户最终确认的蓝色点阵卡片与白色书写线。
+
+### 2. Signatures
+
+源 `Inkeys/src/UI/whiteboardLnk.svg`，产物 `Inkeys/src/whiteboard.ico`；`IDI_ICON2=332`。主图标 `IDI_ICON1=191` 保持最小图标组 ID。
+
+### 3. Contracts
+
+ICO 包含16/20/24/32/40/48/64/128/256的32位 PNG 帧，RC 注册第二图标，vcxproj/filters 同步登记 ICO 和 SVG。ShellLink 使用负资源 ID `-332`，不依赖图标序号。原 `icon.ico` 字节不修改，不引入产品构建依赖。
+
+### 4. Validation & Error Matrix
+
+缺帧、组 ID 不符、内嵌 PNG 与 ICO 帧不一致或负 ID 无法提取均视为资源验证失败；图标设计须先经过用户预览确认。
+
+### 5. Good / Base / Bad Cases
+
+Good：第二图标固定资源 ID、主图标原样；Base：应用链接仍取原图标；Bad：新增比191更小的图标 ID，改变 Shell 默认程序图标。
+
+### 6. Tests Required
+
+任务 `research/icon-resource-check.py` 对最终 EXE 无窗口读取图标组、逐帧比对 PNG，并按负 ID 提取各尺寸；记录完整 Solution 构建与运行证据，不启动产品 GUI。
+
+### 7. Wrong vs Correct
+
+Wrong：把第二图标资源排成最小 ID 或只验证 ICO 文件存在。
+Correct：保留191为最小组，白板用332，并验证最终内嵌资源和负 ID 的实际提取。

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Windows.h>
 #include <array>
 #include <cwctype>
 #include <string>
@@ -7,11 +8,22 @@
 
 namespace Inkeys::Business::DesktopShortcut
 {
+	enum class Kind { App, Whiteboard };
+	inline constexpr int WhiteboardCustom = 2;
+	inline constexpr int CustomPreset(Kind kind) noexcept { return kind == Kind::Whiteboard ? WhiteboardCustom : 4; }
+	inline constexpr int PresetCount(Kind kind, bool simplifiedChinese) noexcept
+	{ return kind == Kind::Whiteboard ? (simplifiedChinese ? 3 : 2) : (simplifiedChinese ? 5 : 4); }
 	inline constexpr int Default = 0, Brand = 1, Annotation = 2, AnnotationTool = 3, Custom = 4;
 	struct NameOptions
 	{
+		Kind kind = Kind::App;
 		bool simplifiedChinese = false;
 		std::array<std::wstring, 4> presets{ L"Inkeys", L"智绘教Inkeys", L"Inkeys(Annotation)", L"Inkeys(AnnotationTool)" };
+		NameOptions() = default;
+		explicit NameOptions(Kind value) : kind(value)
+		{
+			if (kind == Kind::Whiteboard) presets = { L"Inkeys Whiteboard", L"智绘教Inkeys白板", L"", L"" };
+		}
 	};
 
 	inline bool IsValidName(std::wstring_view name, std::size_t directoryLength = 0) noexcept
@@ -50,30 +62,44 @@ namespace Inkeys::Business::DesktopShortcut
 		return true;
 	}
 
-	inline int NormalizePreset(int preset, std::wstring_view customName, bool simplifiedChinese = true, std::size_t directoryLength = 0) noexcept
+	inline bool NamesCollide(std::wstring_view first, std::wstring_view second) noexcept
 	{
-		if (preset < Default || preset > Custom || (preset == Brand && !simplifiedChinese)
-			|| (preset == Custom && !IsValidName(customName, directoryLength))) return Default;
+		return !first.empty() && first.size() == second.size()
+			&& CompareStringOrdinal(first.data(), static_cast<int>(first.size()), second.data(), static_cast<int>(second.size()), TRUE) == CSTR_EQUAL;
+	}
+
+	inline int NormalizePreset(int preset, std::wstring_view customName, bool simplifiedChinese = true,
+		std::size_t directoryLength = 0, Kind kind = Kind::App) noexcept
+	{
+		if (preset < Default || preset > CustomPreset(kind) || (preset == Brand && !simplifiedChinese)
+			|| (preset == CustomPreset(kind) && !IsValidName(customName, directoryLength))) return Default;
 		return preset;
 	}
 
 	inline std::wstring ResolveName(int preset, std::wstring_view customName, const NameOptions& options)
 	{
-		preset = NormalizePreset(preset, customName, options.simplifiedChinese);
-		return preset == Custom ? std::wstring(customName) : options.presets[preset];
+		preset = NormalizePreset(preset, customName, options.simplifiedChinese, 0, options.kind);
+		return preset == CustomPreset(options.kind) ? std::wstring(customName) : options.presets[preset];
 	}
 
-	inline int PresetForIndex(int index, bool simplifiedChinese) noexcept
+	inline int PresetForIndex(int index, bool simplifiedChinese, Kind kind = Kind::App) noexcept
 	{
+		if (kind == Kind::Whiteboard)
+		{
+			constexpr std::array<int, 3> chinese{ Brand, Default, WhiteboardCustom };
+			constexpr std::array<int, 2> other{ Default, WhiteboardCustom };
+			if (index < 0 || index >= PresetCount(kind, simplifiedChinese)) return Default;
+			return simplifiedChinese ? chinese[index] : other[index];
+		}
 		constexpr std::array<int, 5> chinese{ Brand, Default, Annotation, AnnotationTool, Custom };
 		constexpr std::array<int, 4> other{ Default, Annotation, AnnotationTool, Custom };
 		if (index < 0 || index >= (simplifiedChinese ? 5 : 4)) return Default;
 		return simplifiedChinese ? chinese[index] : other[index];
 	}
-	inline int IndexForPreset(int preset, bool simplifiedChinese) noexcept
+	inline int IndexForPreset(int preset, bool simplifiedChinese, Kind kind = Kind::App) noexcept
 	{
-		for (int index = 0; index < (simplifiedChinese ? 5 : 4); ++index)
-			if (PresetForIndex(index, simplifiedChinese) == preset) return index;
+		for (int index = 0; index < PresetCount(kind, simplifiedChinese); ++index)
+			if (PresetForIndex(index, simplifiedChinese, kind) == preset) return index;
 		return simplifiedChinese ? 1 : 0;
 	}
 }

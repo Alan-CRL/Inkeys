@@ -158,6 +158,7 @@ std::uint64_t WorkspaceTransitionFailureRevision() noexcept;
 bool RetryWorkspaceTransitionIfRevision(std::uint64_t revision) noexcept;
 bool CancelFailedWhiteboardTransitionIfRevision(std::uint64_t revision) noexcept;
 bool RequestWhiteboardWindowView(bool minimized) noexcept;
+void RequestWhiteboardFromShortcut() noexcept;
 void NotifyWhiteboardWindowMinimizedChanged() noexcept;
 void NotifyWhiteboardWindowViewRequested(bool minimized) noexcept;
 void NotifyWhiteboardWindowCloseRequested() noexcept;

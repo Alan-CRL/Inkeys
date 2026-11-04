@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Opcje dodatkowe",
-          "CreateLnk": "Utwórz skrót na pulpicie",
+          "CreateLnk": "Utwórz skrót na pulpicie przy uruchomieniu",
           "CreateLnkE": "Przy uruchamianiu tworzy skrót na pulpicie, jeśli jeszcze nie istnieje."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Skróty",
       "ApplicationSection": "Aplikacja",
+      "WhiteboardSection": "Tablica",
       "NameLabel": "Nazwa skrótu",
       "CustomName": "Własna",
       "CustomHint": "Wpisz nazwę skrótu",
       "InvalidName": "Wpisz prawidłową nazwę pliku Windows. Puste lub zastrzeżone nazwy, niedozwolone znaki i zbyt długie ścieżki nie są dozwolone.",
-      "GuaranteeSection": "Ochrona skrótów",
+      "NameConflict": "Skróty aplikacji i tablicy muszą mieć różne nazwy.",
+      "PresetWhiteboard": "Inkeys Tablica",
       "PresetAnnotation": "Inkeys(Adnotacje)",
       "PresetAnnotationTool": "Inkeys(NarzędzieAdnotacji)"
     },

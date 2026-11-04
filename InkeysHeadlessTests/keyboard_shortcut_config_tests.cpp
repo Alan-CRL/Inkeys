@@ -126,6 +126,20 @@ int RunDesktopShortcutConfigTests()
 	for (bool locale : { false, true }) for (int index=0; index<(locale ? 5 : 4); ++index)
 		check(IndexForPreset(PresetForIndex(index,locale),locale) == index, "persistent preset identity is independent of combo index");
 
+	NameOptions boardChinese(Kind::Whiteboard); boardChinese.simplifiedChinese = true; boardChinese.presets[0] = L"Inkeys白板";
+	NameOptions boardEnglish(Kind::Whiteboard);
+	check(ResolveName(Default,L"",boardChinese)==L"Inkeys白板" && ResolveName(Default,L"",boardEnglish)==L"Inkeys Whiteboard",
+		"whiteboard has a localized distinct default name");
+	check(ResolveName(Brand,L"",boardChinese)==L"智绘教Inkeys白板" && ResolveName(Brand,L"",boardEnglish)==L"Inkeys Whiteboard",
+		"whiteboard brand falls back outside simplified Chinese");
+	check(ResolveName(WhiteboardCustom,L"我的白板",boardChinese)==L"我的白板"
+		&& NormalizePreset(4,L"valid",true,0,Kind::Whiteboard)==Default, "whiteboard uses its own three persistent IDs");
+	for (bool locale : {false,true}) for (int index=0; index<PresetCount(Kind::Whiteboard,locale); ++index)
+		check(IndexForPreset(PresetForIndex(index,locale,Kind::Whiteboard),locale,Kind::Whiteboard)==index,
+			"whiteboard combo order retains the independent preset identity");
+	check(NamesCollide(L"Inkeys",L"inkeys") && NamesCollide(L"Ä",L"ä") && !NamesCollide(L"Inkeys",L"Inkeys白板"),
+		"cross-category collision uses Windows ordinal case-insensitive comparison");
+
 	const auto root = fs::temp_directory_path() / (L"inkeys-desktop-shortcuts-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
 	struct Restore { fs::path root; std::wstring previous = globalPath; ~Restore() { globalPath=previous; std::error_code ec; fs::remove_all(root,ec); } } restore{root};
 	const auto file = root / L"Inkeys" / L"Config" / L"main.json";
@@ -162,6 +176,56 @@ int RunDesktopShortcutConfigTests()
 	std::thread producer([&] { for (int i=0;i<500;++i) config.SetShortcutNamePreference(Custom,L"name"+std::to_wstring(i)); finished=true; });
 	while (!finished.load()) { Inkeys::Config snapshot; snapshot=config; const auto name=snapshot.GetShortcutNamePreference(); check(name.first==Custom && IsValidName(name.second), "name pair stays valid during concurrent snapshots"); }
 	producer.join();
+	config.ResetToDefaults();
+	check(config.GetWhiteboardShortcutNamePreference()==std::pair<int,std::wstring>{Default,L""}
+		&& config.Application.WhiteboardShortcut.CorrectLnk && !config.Application.WhiteboardShortcut.CreateLnk,
+		"whiteboard defaults are independent and require no migration");
+	config.SetShortcutNamePreference(Custom,L"Application frozen");
+	config.Application.Shortcut.CorrectLnk=false; config.Application.Shortcut.CreateLnk=true;
+	const auto appPreference=config.GetShortcutNamePreference(); const auto upload=config.GetUploadInfo();
+	for (int preset=Default; preset<=WhiteboardCustom; ++preset)
+	{
+		config.SetWhiteboardShortcutNamePreference(preset,L"我的白板 α");
+		for (bool correct : {false,true}) for (bool create : {false,true})
+		{
+			config.Application.WhiteboardShortcut.CorrectLnk=correct; config.Application.WhiteboardShortcut.CreateLnk=create;
+			check(config.Write(),"write whiteboard preference");
+			Inkeys::Config restored;
+			check(restored.ReadAll() && restored.GetWhiteboardShortcutNamePreference()==config.GetWhiteboardShortcutNamePreference()
+				&& restored.Application.WhiteboardShortcut.CorrectLnk==correct && restored.Application.WhiteboardShortcut.CreateLnk==create,
+				"whiteboard IDs, text and two switches round-trip");
+			check(restored.GetShortcutNamePreference()==appPreference && !restored.Application.Shortcut.CorrectLnk
+				&& restored.Application.Shortcut.CreateLnk && config.GetUploadInfo()==upload,"whiteboard does not change application preference or upload payload");
+		}
+	}
+	const auto validBoard=config.GetWhiteboardShortcutNamePreference();
+	check(!config.SetWhiteboardShortcutNamePreference(WhiteboardCustom,L"CON")
+		&& !config.SetWhiteboardShortcutNamePreference(Custom,L"valid") && config.GetWhiteboardShortcutNamePreference()==validBoard,
+		"invalid whiteboard text or preset cannot replace a valid pair");
+	for (const auto& invalid : {Json::Value(-1),Json::Value(3),Json::Value(true),Json::Value("2"),Json::Value(2.0),
+		Json::Value(static_cast<Json::UInt64>(0x100000002ULL))})
+	{
+		Json::Value document(Json::objectValue); document["Application"]["WhiteboardShortcut"]["NamePreset"]=invalid;
+		check(write(document) && config.ReadMini({"Application.WhiteboardShortcut"})
+			&& config.GetWhiteboardShortcutNamePreference().first==Default && config.GetShortcutNamePreference()==appPreference,
+			"invalid or wide whiteboard ID falls back without changing application fields");
+	}
+	Json::Value invalidBoardCustom(Json::objectValue);
+	invalidBoardCustom["Application"]["WhiteboardShortcut"]["NamePreset"]=WhiteboardCustom;
+	invalidBoardCustom["Application"]["WhiteboardShortcut"]["CustomName"]="CON";
+	invalidBoardCustom["Application"]["WhiteboardShortcut"]["CorrectLnk"]="false";
+	invalidBoardCustom["Application"]["WhiteboardShortcut"]["CreateLnk"]=1;
+	check(write(invalidBoardCustom) && config.ReadMini({"Application.WhiteboardShortcut"})
+		&& config.GetWhiteboardShortcutNamePreference().first==Default && config.Application.WhiteboardShortcut.CorrectLnk
+		&& !config.Application.WhiteboardShortcut.CreateLnk,"invalid whiteboard text/bools use schema defaults");
+	config.SetWhiteboardShortcutNamePreference(WhiteboardCustom,L"frozen whiteboard"); frozen=config;
+	config.SetWhiteboardShortcutNamePreference(WhiteboardCustom,L"later whiteboard");
+	check(frozen.GetWhiteboardShortcutNamePreference().second==L"frozen whiteboard","whiteboard FIFO snapshot owns its text");
+	finished=false;
+	std::thread boardProducer([&] { for (int i=0;i<500;++i) config.SetWhiteboardShortcutNamePreference(WhiteboardCustom,L"board"+std::to_wstring(i)); finished=true; });
+	while (!finished.load()) { Inkeys::Config snapshot; snapshot=config; const auto name=snapshot.GetWhiteboardShortcutNamePreference();
+		check(name.first==WhiteboardCustom && IsValidName(name.second),"whiteboard pair remains valid during concurrent config capture"); }
+	boardProducer.join();
 	std::cout<<"Desktop shortcut config tests: "<<failures<<" failures\n";
 	return failures;
 }

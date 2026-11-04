@@ -286,11 +286,17 @@ namespace Inkeys::UI::Setting::Design
 		Business::DesktopShortcut::NameOptions names;
 		int preset = Business::DesktopShortcut::Default;
 		std::string customName;
+		std::wstring lastValidName;
 		std::size_t directoryLength = 0;
 		bool desktopAvailable = true;
 		bool correct = true, create = false;
 		BelowComboMotion namePopup;
+		DesktopShortcutDraft() = default;
+		explicit DesktopShortcutDraft(Business::DesktopShortcut::Kind kind) : names(kind) {}
 	};
+	std::wstring ResolveDesktopShortcutDraftName(const DesktopShortcutDraft& draft);
+	bool DesktopShortcutDraftNamesCollide(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
+	bool IsDesktopShortcutDraftValid(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
 
 	struct GeneralDraft
 	{
@@ -319,6 +325,7 @@ namespace Inkeys::UI::Setting::Design
 		float backgroundOpacity = 0.80F, backgroundOpacityDefault = 0.80F;
 		float contentOpacity = 1.0F;
 		DesktopShortcutDraft desktopShortcut;
+		DesktopShortcutDraft whiteboardShortcut{ Business::DesktopShortcut::Kind::Whiteboard };
 	};
 
 	struct GeneralEvents
@@ -327,6 +334,9 @@ namespace Inkeys::UI::Setting::Design
 		bool createShortcut = false;
 		bool desktopNamePresetChanged = false, desktopNameCommitted = false;
 		bool desktopCorrectChanged = false, desktopCreateChanged = false;
+		bool createWhiteboardShortcut = false;
+		bool whiteboardNamePresetChanged = false, whiteboardNameCommitted = false;
+		bool whiteboardCorrectChanged = false, whiteboardCreateChanged = false;
 		bool barZoomChanged = false;
 		bool barZoomActive = false;
 		bool edgeLightingChanged = false;

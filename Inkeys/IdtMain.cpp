@@ -85,6 +85,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Net/UpdatePathSafety.h"
 #include "Launch/IdtLaunchState.h"
 #include "Launch/IdtSingleInstance.h"
+#include "Launch/IdtCommandPipe.h"
 #include "SuperTop/IdtSuperTop.h"
 
 #include <atomic>
@@ -172,6 +173,18 @@ namespace
 		request.fallback.modality =
 			Inkeys::UI::MessageBox::SystemModality::System;
 		(void)Inkeys::UI::MessageBox::Show(request);
+	}
+
+	bool StartWhiteboardReplacement(const std::wstring& image)
+	{
+		using namespace Inkeys::Launch::CommandPipe;
+		const bool requested = TakeHandoffIntent(LaunchState::openWhiteboard);
+		const bool started = Inkeys::Launch::StartReplacement(image, requested ? WhiteboardArgument : L"");
+		const DWORD replacementError = GetLastError();
+		// 替换失败的这次意图作废；原进程继续时只接收后续新请求。
+		if (!started) (void)server.Start(Inkeys::Launch::logicalRoot);
+		SetLastError(replacementError); // 保留取消提升等原始失败原因。
+		return started;
 	}
 
 	void ReportStartupMilestoneForManualTest(
@@ -344,6 +357,11 @@ namespace
 
 namespace ShutdownTrace = Inkeys::Shutdown::ProgressTrace;
 
+void RetireLaunchCommands() noexcept
+{
+	Inkeys::Launch::CommandPipe::server.BeginExit();
+}
+
 void SetOffSignal(int signal)
 {
 	if (signal != 1 && signal != 2) return;
@@ -354,6 +372,7 @@ void SetOffSignal(int signal)
 	auto* preArmRecorder = ShutdownTrace::PreparedRecorder();
 	const auto acceptedTrace = ShutdownTrace::Capture(preArmRecorder, "set-off");
 	const auto windowTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-window-begin");
+	RetireLaunchCommands();
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto windowEnd = ShutdownTrace::CaptureEnd(preArmRecorder, windowTrace);
 	const auto armTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-arm");
@@ -418,6 +437,7 @@ namespace Inkeys::Shutdown
 		// 只有赢得意图的一方释放占位，避免与 SetOffSignal 的释放并发重复关闭同一句柄。
 		const bool wonClose = intent == 0;
 		if (intent == 0) intent = 1;
+		RetireLaunchCommands();
 		Inkeys::Window::GetService().BeginShutdown();
 		if (intent == 1 || intent == 2)
 			offSignal.store(static_cast<int>(intent), std::memory_order_release);
@@ -578,19 +598,21 @@ namespace
 			int failures=0;
 			auto check=[&](bool value,const char* name) { if (!value) { ++failures; std::fprintf(stderr,"[DesktopShortcutShell] FAIL: %s\n",name); } };
 			const auto exe=GetCurrentExePath();
+			using Kind = Inkeys::Business::DesktopShortcut::Kind;
+			for (auto kind : {Kind::App,Kind::Whiteboard})
 			for (bool correct : {false,true}) for (bool create : {false,true})
 			{
-				const auto directory=root/(std::to_wstring(correct)+std::to_wstring(create)); fs::create_directories(directory);
+				const auto directory=root/(std::to_wstring(static_cast<int>(kind))+std::to_wstring(correct)+std::to_wstring(create)); fs::create_directories(directory);
 				const auto selected=directory/L"Selected.lnk", old=directory/L"Old.lnk";
-				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring()),"independent missing-file guarantee succeeds");
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring(),kind),"independent missing-file guarantee succeeds");
 				check(fs::exists(selected)==create,"only creation switch fills a missing shortcut");
-				check(shortcutAssistant.CreateShortcut(old.wstring(),exe),"create real ShellLink fixture");
-				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring()),"apply frozen guarantee request");
+				check(shortcutAssistant.CreateShortcut(old.wstring(),exe,kind),"create real ShellLink fixture");
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring(),kind),"apply frozen guarantee request");
 				check(fs::exists(old)==!correct && fs::exists(selected)==(correct||create),"correction unifies old names independently");
-				check(shortcutAssistant.CreateShortcut(selected.wstring(),(directory/L"Other.exe").wstring()),"create wrong-target fixture");
-				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring()),"apply target correction");
-				check(shortcutAssistant.IsShortcutPointingToDirectory(selected.wstring(),exe)==(correct||create),"each enabled guarantee repairs selected wrong target");
-				check(!shortcutAssistant.SetShortcut(L"../invalid",true,true,directory.wstring()),"invalid path does not perform shell operations");
+				check(shortcutAssistant.CreateShortcut(selected.wstring(),(directory/L"Other.exe").wstring(),kind),"create wrong-target fixture");
+				check(shortcutAssistant.SetShortcut(L"Selected",correct,create,directory.wstring(),kind),"apply target correction");
+				check(shortcutAssistant.MatchesShortcut(selected.wstring(),exe,kind)==(correct||create),"each enabled guarantee repairs selected wrong target");
+				check(!shortcutAssistant.SetShortcut(L"../invalid",true,true,directory.wstring(),kind),"invalid path does not perform shell operations");
 			}
 			const auto caseDirectory=root/L"case-only"; fs::create_directories(caseDirectory);
 			const auto lower=caseDirectory/L"inkeys.lnk";
@@ -604,6 +626,47 @@ namespace
 				&& shortcutAssistant.SetShortcut(L"Ä",true,false,unicodeDirectory.wstring())
 				&& fs::exists(unicodeLower) && shortcutAssistant.IsShortcutPointingToDirectory(unicodeLower.wstring(),exe),
 				"Unicode case-only names cannot delete the same Windows file");
+			const auto mixed=root/L"categories"; fs::create_directories(mixed);
+			const auto appOld=mixed/L"OldApp.lnk", boardOld=mixed/L"OldBoard.lnk", custom=mixed/L"CustomArguments.lnk";
+			auto fixture=[&](const fs::path& path,const std::wstring& arguments,int icon) {
+				IShellLinkW* link=nullptr; IPersistFile* file=nullptr;
+				HRESULT result=CoCreateInstance(CLSID_ShellLink,nullptr,CLSCTX_INPROC_SERVER,IID_IShellLinkW,reinterpret_cast<void**>(&link));
+				if (FAILED(result)) return false;
+				result=link->SetPath(exe.c_str());
+				if (SUCCEEDED(result)) result=link->SetArguments(arguments.c_str());
+				if (SUCCEEDED(result)) result=link->SetIconLocation(exe.c_str(),icon);
+				if (SUCCEEDED(result)) result=link->QueryInterface(IID_IPersistFile,reinterpret_cast<void**>(&file));
+				if (SUCCEEDED(result)) { result=file->Save(path.c_str(),TRUE); file->Release(); }
+				link->Release(); return SUCCEEDED(result);
+			};
+			check(shortcutAssistant.CreateShortcut(appOld.wstring(),exe)
+				&& shortcutAssistant.CreateShortcut(boardOld.wstring(),exe,Kind::Whiteboard)
+				&& fixture(custom,L"-Whiteboard"+std::wstring(1100,L' ')+L"-Other",0),"create two categories and long unknown arguments");
+			check(shortcutAssistant.ClassifyShortcut(custom.wstring(),exe)==ShortcutAssistantClass::Classification::NotOurs,
+				"long argument suffix cannot be truncated into a whiteboard classification");
+			check(shortcutAssistant.SetShortcut(L"App",true,false,mixed.wstring())
+				&& !fs::exists(appOld) && fs::exists(boardOld) && fs::exists(custom),"application correction preserves whiteboard and unknown argument links");
+			check(shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& !fs::exists(boardOld) && fs::exists(mixed/L"App.lnk") && fs::exists(custom)
+				&& shortcutAssistant.MatchesShortcut((mixed/L"Board.lnk").wstring(),exe,Kind::Whiteboard),
+				"whiteboard correction preserves application and reads back its exact arguments/icon");
+			const auto board=mixed/L"Board.lnk";
+			check(shortcutAssistant.CreateShortcut(board.wstring(),exe)
+				&& shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard),"wrong category at selected name is corrected");
+			check(fixture(board,L"-Whiteboard",0) && !shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard)
+				&& shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard),"whiteboard wrong icon is corrected despite matching arguments");
+			check(fixture(board,L"  -whiteboard  ",0)
+				&& shortcutAssistant.ClassifyShortcut(board.wstring(),exe)==ShortcutAssistantClass::Classification::Whiteboard
+				&& shortcutAssistant.SetShortcut(L"Board",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& shortcutAssistant.MatchesShortcut(board.wstring(),exe,Kind::Whiteboard),"whiteboard trim/case classification is normalized to canonical contents");
+			check(shortcutAssistant.CreateShortcut((mixed/L"board.lnk").wstring(),exe,Kind::Whiteboard)
+				&& shortcutAssistant.SetShortcut(L"BOARD",true,false,mixed.wstring(),Kind::Whiteboard)
+				&& fs::exists(board),"case-only whiteboard name never deletes its own selected link");
+			const auto wrongExe=mixed/L"Different.exe";
+			check(shortcutAssistant.ClassifyShortcut(board.wstring(),wrongExe.wstring())==ShortcutAssistantClass::Classification::NotOurs,
+				"target classification requires exact executable identity rather than a substring");
 			std::fprintf(stderr,"[DesktopShortcutShell] %s: real ShellLink operations in isolated temporary directories\n",failures ? "FAIL" : "PASS");
 			return failures ? 1 : 0;
 		}
@@ -1877,7 +1940,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
 
 	int singleInstanceTestResult = 0;
-	if (Inkeys::Launch::TryRunTests(singleInstanceTestResult)) return singleInstanceTestResult;
+	if (Inkeys::Launch::CommandPipe::TryRunTests(singleInstanceTestResult)) return singleInstanceTestResult;
+	if (Inkeys::Launch::TryRunTests(singleInstanceTestResult))
+		return singleInstanceTestResult || !Inkeys::Launch::CommandPipe::IsSingleInstanceTestDriver()
+			? singleInstanceTestResult : Inkeys::Launch::CommandPipe::RunTests();
 
 	// 只在正常入口预热诊断静态对象；不输出、不取时钟，监督/测试早期模式保持原路径。
 	ShutdownTrace::WarmUp();
@@ -1895,45 +1961,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
-		{
-			int typeRoot = 0;
 
-			if (globalPath.find(L"C:\\Program Files\\") != globalPath.npos || globalPath.find(L"C:\\Program Files (x86)\\") != globalPath.npos || globalPath.find(L"C:\\Windows\\") != globalPath.npos) typeRoot = 2;
-			else
-			{
-				wstring time = getTimestamp();
-				wstring path = globalPath + L"IdtRootCheck" + time;
-
-				error_code ec;
-				try {
-					// 创建空白文件
-					wofstream ofs(path);
-					if (!ofs) typeRoot = 1;
-					ofs.close();
-					if (_waccess(path.c_str(), 0) == -1) typeRoot = 1;
-
-					// 删除文件
-					filesystem::remove(path, ec);
-					if (ec) typeRoot = 1;
-					if (_waccess(path.c_str(), 0) == 0) typeRoot = 1;
-				}
-				catch (const filesystem::filesystem_error)
-				{
-					typeRoot = 1;
-				}
-			}
-
-			if (typeRoot == 1)
-			{
-				ShowStartupMessage(L"The current directory permissions are restricted, so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#1)");
-				return 0;
-			}
-			else if (typeRoot == 2)
-			{
-				ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual store), so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#2)");
-				return 0;
-			}
-		}
 
 		wstring appName = GetCurrentExeName();
 		if (!isAsciiPrintable(appName))
@@ -1956,10 +1984,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		}
 	}
+	struct CommandPipeLifetime
+	{
+		~CommandPipeLifetime() { Inkeys::Launch::CommandPipe::server.Stop(); }
+	} commandPipeLifetime;
 	// 防止重复启动
 	{
 		// 相关标识
 		bool superTopComplete = false;
+		LaunchState::openWhiteboard = Inkeys::Launch::CommandPipe::HasWhiteboardArgument();
 
 		{
 			vector<wstring> args = Inkeys::Split::Run(GetCommandLineW(), L'*');
@@ -1972,6 +2005,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				cout << utf16ToUtf8(commandLine) << endl;
 
 				if (commandLine.rfind(Inkeys::Launch::HandoffPrefix, 0) == 0) addCommandLine = false;
+				else if (commandLine == L"-Whiteboard" || commandLine == L"\"-Whiteboard\"") addCommandLine = false;
 				else if (commandLine == L"-Restart") LaunchState::restart = true;
 				else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
 				else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
@@ -2009,17 +2043,69 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			(void)startupPolicy.ReadMini({ "Config.AllowMultipleInstances" }, true);
 			globalPath = savedPath;
 			// Adopt已在Ready前完成全部准入，不能在旧进程退出后再次否决。
-			const auto admission = handoff > 0 ? Inkeys::Launch::Admission::Accepted
-				: Inkeys::Launch::Acquire(ownRoot, startupPolicy.Config.AllowMultipleInstances);
-			if (admission != Inkeys::Launch::Admission::Accepted)
+			using CommandAdmission = Inkeys::Launch::CommandPipe::Admission;
+			const auto admission = handoff > 0 ? CommandAdmission::Accepted
+				: Inkeys::Launch::CommandPipe::Admit(ownRoot, LaunchState::openWhiteboard, startupPolicy.Config.AllowMultipleInstances);
+			if (admission == CommandAdmission::Forwarded) return 0;
+			if (admission != CommandAdmission::Accepted)
 			{
-				ShowStartupMessage(admission == Inkeys::Launch::Admission::Duplicate
+				ShowStartupMessage(admission == CommandAdmission::ForwardFailed
+					? L"Inkeys could not forward the whiteboard request. The existing instance has been preserved."
+					: admission == CommandAdmission::Duplicate
 					? L"Inkeys is already running from this installation directory."
 					: L"Inkeys could not establish its startup protection. Check directory and process permissions.");
 				return 0;
 			}
+			// 准入后立即监听，启动中的请求只置位；失败退出由进程级 owner 丢弃。
+			(void)Inkeys::Launch::CommandPipe::server.Start(Inkeys::Launch::logicalRoot);
+			if (!Inkeys::Launch::CommandPipe::server.LifetimeReady())
+			{
+				ShowStartupMessage(L"Inkeys could not establish its whiteboard startup protection. Check process permissions.");
+				return 0;
+			}
+			if (LaunchState::openWhiteboard) Inkeys::Launch::CommandPipe::server.Queue();
 		}
 		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
+	}
+	// 转发已在上方早退；只有实际冷启动才执行会写文件的目录权限探针。
+	{
+		int typeRoot = 0;
+
+		if (globalPath.find(L"C:\\Program Files\\") != globalPath.npos || globalPath.find(L"C:\\Program Files (x86)\\") != globalPath.npos || globalPath.find(L"C:\\Windows\\") != globalPath.npos) typeRoot = 2;
+		else
+		{
+			wstring time = getTimestamp();
+			wstring path = globalPath + L"IdtRootCheck" + time;
+
+			error_code ec;
+			try {
+				// 创建空白文件
+				wofstream ofs(path);
+				if (!ofs) typeRoot = 1;
+				ofs.close();
+				if (_waccess(path.c_str(), 0) == -1) typeRoot = 1;
+
+				// 删除文件
+				filesystem::remove(path, ec);
+				if (ec) typeRoot = 1;
+				if (_waccess(path.c_str(), 0) == 0) typeRoot = 1;
+			}
+			catch (const filesystem::filesystem_error)
+			{
+				typeRoot = 1;
+			}
+		}
+
+		if (typeRoot == 1)
+		{
+			ShowStartupMessage(L"The current directory permissions are restricted, so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#1)");
+			return 0;
+		}
+		else if (typeRoot == 2)
+		{
+			ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual store), so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#2)");
+			return 0;
+		}
 	}
 	// 崩溃助手初始化
 	{
@@ -2221,6 +2307,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					}
 				}
 
+				(void)Inkeys::Launch::CommandPipe::server.Start(Inkeys::Launch::logicalRoot);
+				if (!Inkeys::Launch::CommandPipe::server.LifetimeReady())
+				{
+					ShowStartupMessage(L"Inkeys could not establish its whiteboard startup protection. Check process permissions.");
+					return 0;
+				}
+
 				bool rollbackSafe = true;
 				const bool launched = [&]() -> bool
 					{
@@ -2272,7 +2365,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 							if (hadTarget) filesystem::remove(backupPath, ec);
 							return false;
 						}
-						if (Inkeys::Launch::StartReplacement(target)) return true;
+						if (StartWhiteboardReplacement(target)) return true;
 						// 启动失败时回滚本次替换；备份在启动成功后仍保留供人工恢复。
 						if (hadTarget)
 							rollbackSafe = MoveFileExW(backupPath, target.c_str(),
@@ -2297,6 +2390,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (!flag)
 			{
 			fail:
+				Inkeys::Launch::CommandPipe::DiscardIntent(LaunchState::openWhiteboard);
 				error_code ec;
 				if (!keepUpdateInstruction) filesystem::remove(globalPath + L"update.json", ec);
 
@@ -2328,7 +2422,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						if (Inkeys::Launch::Acquire(main_path, policy.Config.AllowMultipleInstances) != Inkeys::Launch::Admission::Accepted) return 0;
 					}
 					const auto fallbackPath = main_path + fallbackName;
-					if (Inkeys::Launch::StartReplacement(fallbackPath)) return 0;
+					if (StartWhiteboardReplacement(fallbackPath)) return 0;
 					// 用户取消提升后不能再悄悄尝试另一份旧程序。
 					if (GetLastError() == ERROR_CANCELLED) return 0;
 				}
@@ -2492,12 +2586,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				if (flag)
 				{
-					if (Inkeys::Launch::StartReplacement(globalPath + path)) return 0;
+					if (StartWhiteboardReplacement(globalPath + path)) return 0;
 					flag = false;
 				}
 			}
 			else flag = false;
 
+			if (!flag) Inkeys::Launch::CommandPipe::DiscardIntent(LaunchState::openWhiteboard);
 			// 无效或发布失败的指令不清理未知文件，也不覆盖最后一次有效更新点。
 		}
 	}
@@ -2644,7 +2739,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						}
 					}
 
-					LaunchSurperTop(LaunchState::commandLine);
+					// SuperTop 三段式只携带此次尚未消费的意图，失败后不重放。
+					const bool whiteboard = Inkeys::Launch::CommandPipe::TakeHandoffIntent(LaunchState::openWhiteboard);
+					LaunchSurperTop(LaunchState::commandLine + (whiteboard ? L" -Whiteboard" : L""));
+					(void)Inkeys::Launch::CommandPipe::server.Start(Inkeys::Launch::logicalRoot);
 				}
 				break;
 			}
@@ -4041,6 +4139,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			developerModeExitCode = 6;
 			break;
 		}
+		const auto whiteboardStartup = Inkeys::Startup::ActiveSnapshot();
+		if (!offSignal && !whiteboardStartup.failed && whiteboardStartup.totalUnits
+			&& whiteboardStartup.completedUnits == whiteboardStartup.totalUnits
+			&& Inkeys::Launch::CommandPipe::server.TakeReadyPending())
+		{
+			LaunchState::openWhiteboard = false;
+			RequestWhiteboardFromShortcut();
+		}
 		// Bar 渲染线程只发布有限 DIP；主线程沿既有配置路径去重落盘。
 		double committedStartupWidthDip = 0.0;
 		if (Inkeys::UI::StartupPreview::TakeCommittedStartupBarWidthDip(
@@ -4098,6 +4204,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		break;
 	}
 	ShutdownTrace::Scope shutdownTrace("main-shutdown");
+	{ ShutdownTrace::Scope trace("main-command-pipe"); Inkeys::Launch::CommandPipe::server.Stop(); }
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
 	{ ShutdownTrace::Scope trace("main-topmost-observer"); Inkeys::Window::GetService().SetTopmostRefreshObserver({}); }
 	{ ShutdownTrace::Scope trace("main-startup-preview"); Inkeys::UI::StartupPreview::Stop(); }

@@ -930,6 +930,7 @@ namespace
 		bool secondaryFlag = false;
 		int showCommand = SW_SHOW;
 		I18n::TextSnapshot dialogText;
+		Inkeys::Business::DesktopShortcut::Kind shortcutKind = Inkeys::Business::DesktopShortcut::Kind::App;
 	};
 
 	class SettingBusinessQueue
@@ -1130,10 +1131,10 @@ namespace
 				if (!Inkeys::Business::DesktopShortcut::IsValidName(command.text, command.parameters.size())
 					|| command.parameters.empty()) return false;
 				if (command.kind == SettingBusinessKind::EnsureShortcut)
-					return shortcutAssistant.SetShortcut(command.text, command.flag, command.secondaryFlag, command.parameters);
+					return shortcutAssistant.SetShortcut(command.text, command.flag, command.secondaryFlag, command.parameters, command.shortcutKind, command.directory);
 				const auto path = (filesystem::path(command.parameters) / (command.text + L".lnk")).wstring();
-				if (_waccess(path.c_str(), 0) != -1 && shortcutAssistant.IsShortcutPointingToDirectory(path, command.directory)) return true;
-				const bool succeeded = shortcutAssistant.CreateShortcut(path, command.directory);
+				if (_waccess(path.c_str(), 0) != -1 && shortcutAssistant.MatchesShortcut(path, command.directory, command.shortcutKind)) return true;
+				const bool succeeded = shortcutAssistant.CreateShortcut(path, command.directory, command.shortcutKind);
 				if (succeeded) SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 				return succeeded;
 			}
@@ -1319,27 +1320,36 @@ namespace
 		QueueBusiness({ SettingBusinessKind::WriteConfig });
 	}
 
-	bool CommitDesktopShortcutNamePreference(const Design::DesktopShortcutDraft& draft, std::size_t directoryLength)
+	bool CommitDesktopShortcutNamePreference(const Design::DesktopShortcutDraft& draft, std::size_t directoryLength,
+		const Design::DesktopShortcutDraft* other = nullptr)
 	{
+		using namespace Inkeys::Business::DesktopShortcut;
+		const bool whiteboard = draft.names.kind == Kind::Whiteboard;
 		auto customName = utf8ToUtf16(draft.customName);
-		if (draft.preset == Inkeys::Business::DesktopShortcut::Custom
-			&& !Inkeys::Business::DesktopShortcut::IsValidName(customName, directoryLength)) return false;
-		if (!Inkeys::Business::DesktopShortcut::IsValidName(customName))
-			customName = Inkeys::config.GetShortcutNamePreference().second;
-		return Inkeys::config.SetShortcutNamePreference(draft.preset, std::move(customName));
+		if (draft.preset == CustomPreset(draft.names.kind) && !IsValidName(customName, directoryLength)) return false;
+		const auto name = Design::ResolveDesktopShortcutDraftName(draft);
+		if (other && Design::DesktopShortcutDraftNamesCollide(draft, *other)) return false;
+		const auto otherPreference = whiteboard ? Inkeys::config.GetShortcutNamePreference() : Inkeys::config.GetWhiteboardShortcutNamePreference();
+		const auto otherNames = other ? other->names : CaptureDesktopShortcutNames(whiteboard ? Kind::App : Kind::Whiteboard);
+		if (NamesCollide(name, ResolveName(otherPreference.first, otherPreference.second, otherNames))) return false;
+		if (!IsValidName(customName)) customName = whiteboard
+			? Inkeys::config.GetWhiteboardShortcutNamePreference().second : Inkeys::config.GetShortcutNamePreference().second;
+		return whiteboard ? Inkeys::config.SetWhiteboardShortcutNamePreference(draft.preset, std::move(customName))
+			: Inkeys::config.SetShortcutNamePreference(draft.preset, std::move(customName));
 	}
 
 	SettingBusinessCommand MakeDesktopShortcutCommand(SettingBusinessKind kind, const wstring& directory,
 		const Inkeys::Business::DesktopShortcut::NameOptions& names)
 	{
-		const auto preference = Inkeys::config.GetShortcutNamePreference();
+		const bool whiteboard = names.kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+		const auto preference = whiteboard ? Inkeys::config.GetWhiteboardShortcutNamePreference() : Inkeys::config.GetShortcutNamePreference();
 		SettingBusinessCommand command;
-		command.kind = kind;
+		command.kind = kind; command.shortcutKind = names.kind;
 		command.text = Inkeys::Business::DesktopShortcut::ResolveName(preference.first, preference.second, names);
 		command.directory = GetCurrentExePath();
 		command.parameters = directory;
-		command.flag = Inkeys::config.Application.Shortcut.CorrectLnk;
-		command.secondaryFlag = Inkeys::config.Application.Shortcut.CreateLnk;
+		command.flag = whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CorrectLnk.load() : Inkeys::config.Application.Shortcut.CorrectLnk.load();
+		command.secondaryFlag = whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CreateLnk.load() : Inkeys::config.Application.Shortcut.CreateLnk.load();
 		return command;
 	}
 
@@ -2616,29 +2626,51 @@ SettingSessionCoroutine RunSettingSession()
 		std::uint64_t consumedHideSerial=0;
 		bool resetHomeScroll=false;
 		const auto desktopShortcutDirectory = GetDesktopShortcutDirectory();
-		Design::DesktopShortcutDraft desktopShortcutDraft;
+		Design::DesktopShortcutDraft desktopShortcutDraft, whiteboardShortcutDraft{ Inkeys::Business::DesktopShortcut::Kind::Whiteboard };
+		auto initializeShortcut = [&](Design::DesktopShortcutDraft& draft)
 		{
-			const auto preference = Inkeys::config.GetShortcutNamePreference();
-			desktopShortcutDraft.names = CaptureDesktopShortcutNames();
-			desktopShortcutDraft.preset = Inkeys::Business::DesktopShortcut::NormalizePreset(preference.first,
-				preference.second, desktopShortcutDraft.names.simplifiedChinese, desktopShortcutDirectory.size());
-			desktopShortcutDraft.customName = utf16ToUtf8(preference.second);
-			desktopShortcutDraft.directoryLength = desktopShortcutDirectory.size();
-			desktopShortcutDraft.desktopAvailable = !desktopShortcutDirectory.empty();
-			if (desktopShortcutDraft.preset != preference.first
-				&& Inkeys::config.SetShortcutNamePreference(desktopShortcutDraft.preset, preference.second)) QueueConfigWrite();
-		}
-		auto commitDesktopShortcutName = [&]()
-		{
-			if (CommitDesktopShortcutNamePreference(desktopShortcutDraft, desktopShortcutDirectory.size())) QueueConfigWrite();
+			using namespace Inkeys::Business::DesktopShortcut;
+			const bool whiteboard = draft.names.kind == Kind::Whiteboard;
+			const auto preference = whiteboard ? Inkeys::config.GetWhiteboardShortcutNamePreference() : Inkeys::config.GetShortcutNamePreference();
+			draft.names = CaptureDesktopShortcutNames(draft.names.kind);
+			draft.preset = NormalizePreset(preference.first, preference.second, draft.names.simplifiedChinese,
+				desktopShortcutDirectory.size(), draft.names.kind);
+			draft.customName = utf16ToUtf8(preference.second);
+			draft.lastValidName = ResolveName(draft.preset, preference.second, draft.names);
+			draft.directoryLength = desktopShortcutDirectory.size();
+			draft.desktopAvailable = !desktopShortcutDirectory.empty();
+			if (draft.preset != preference.first && (whiteboard
+				? Inkeys::config.SetWhiteboardShortcutNamePreference(draft.preset, preference.second)
+				: Inkeys::config.SetShortcutNamePreference(draft.preset, preference.second))) QueueConfigWrite();
 		};
-		auto queueDesktopShortcut = [&](SettingBusinessKind kind)
+		initializeShortcut(desktopShortcutDraft); initializeShortcut(whiteboardShortcutDraft);
+		auto commitDesktopShortcutName = [&](Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App)
 		{
-			QueueBusiness(MakeDesktopShortcutCommand(kind, desktopShortcutDirectory, desktopShortcutDraft.names));
+			const bool whiteboard = kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+			const auto& draft = whiteboard ? whiteboardShortcutDraft : desktopShortcutDraft;
+			const auto& other = whiteboard ? desktopShortcutDraft : whiteboardShortcutDraft;
+			if (CommitDesktopShortcutNamePreference(draft, desktopShortcutDirectory.size(), &other)) QueueConfigWrite();
+		};
+		auto queueDesktopShortcut = [&](SettingBusinessKind action, Inkeys::Business::DesktopShortcut::Kind kind = Inkeys::Business::DesktopShortcut::Kind::App)
+		{
+			const bool whiteboard = kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+			const auto& draft = whiteboard ? whiteboardShortcutDraft : desktopShortcutDraft;
+			const auto& other = whiteboard ? desktopShortcutDraft : whiteboardShortcutDraft;
+			if (Design::IsDesktopShortcutDraftValid(draft, other))
+			{
+				auto command = MakeDesktopShortcutCommand(action, desktopShortcutDirectory, draft.names);
+				const auto otherPreference = whiteboard ? Inkeys::config.GetShortcutNamePreference() : Inkeys::config.GetWhiteboardShortcutNamePreference();
+				// 名称提交失败时不能改用旧配置创建，也不能覆盖另一类已保存名称。
+				if (Inkeys::Business::DesktopShortcut::NamesCollide(command.text, Design::ResolveDesktopShortcutDraftName(draft))
+					&& !Inkeys::Business::DesktopShortcut::NamesCollide(command.text,
+						Inkeys::Business::DesktopShortcut::ResolveName(otherPreference.first, otherPreference.second, other.names)))
+					QueueBusiness(std::move(command));
+			}
 		};
 		auto commitGeneralSliders = [&]()
 		{
 			commitDesktopShortcutName();
+			commitDesktopShortcutName(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
 			// 导航可能使拖动控件下一帧不再渲染，离页时仍完成已有的释放保存合同。
 			if (BarZoomSavePending || Experimental.Inkeys3.AnimationSpeedSavePending || ResidentOpacitySavePending)
 			{
@@ -2688,12 +2720,21 @@ SettingSessionCoroutine RunSettingSession()
 			std::pair<int,int> captionMaskVertices{ 0, 0 }; // 半透明 caption 占位在 entryTitleDraw 中的顶点区间。
 			bool entryRootSuppressed=false;
 			bool eraserDemoVisited=false;
-			desktopShortcutDraft.names = CaptureDesktopShortcutNames();
-			if (desktopShortcutDraft.preset == Inkeys::Business::DesktopShortcut::Brand
-				&& !desktopShortcutDraft.names.simplifiedChinese)
+			for (auto* draft : { &desktopShortcutDraft, &whiteboardShortcutDraft })
 			{
-				desktopShortcutDraft.preset = Inkeys::Business::DesktopShortcut::Default;
-				commitDesktopShortcutName(); // 语言改变只保存新预设，不能修改桌面快捷方式。
+				draft->names = CaptureDesktopShortcutNames(draft->names.kind);
+				const auto preference = draft->names.kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard
+					? Inkeys::config.GetWhiteboardShortcutNamePreference() : Inkeys::config.GetShortcutNamePreference();
+				draft->lastValidName = Inkeys::Business::DesktopShortcut::ResolveName(preference.first, preference.second, draft->names);
+				if (draft->preset == Inkeys::Business::DesktopShortcut::Brand && !draft->names.simplifiedChinese)
+				{
+					draft->preset = Inkeys::Business::DesktopShortcut::Default;
+					// 品牌在非简中已按缺省解析，仍须保存规范 ID；文件动作另行检查双类冲突。
+					const bool changed = draft->names.kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard
+						? Inkeys::config.SetWhiteboardShortcutNamePreference(draft->preset, preference.second)
+						: Inkeys::config.SetShortcutNamePreference(draft->preset, preference.second);
+					if (changed) QueueConfigWrite();
+				}
 			}
 			Design::FrameSubmissionKey submissionKey;
 			const bool submissionInput=!GImGui->InputEventsTrail.empty();
@@ -3550,25 +3591,38 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					desktopShortcutDraft.correct = Inkeys::config.Application.Shortcut.CorrectLnk;
 					desktopShortcutDraft.create = Inkeys::config.Application.Shortcut.CreateLnk;
+					whiteboardShortcutDraft.correct = Inkeys::config.Application.WhiteboardShortcut.CorrectLnk;
+					whiteboardShortcutDraft.create = Inkeys::config.Application.WhiteboardShortcut.CreateLnk;
 					draft.desktopShortcut = desktopShortcutDraft;
+					draft.whiteboardShortcut = whiteboardShortcutDraft;
 					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination.section);
 					if (destination.section == Design::GeneralSection::DesktopShortcuts)
 					{
 						desktopShortcutDraft = std::move(draft.desktopShortcut);
-						if (events.desktopNamePresetChanged || events.desktopNameCommitted || events.createShortcut) commitDesktopShortcutName();
-						if (events.createShortcut) queueDesktopShortcut(SettingBusinessKind::CreateShortcut);
-						if (events.desktopCorrectChanged)
+						whiteboardShortcutDraft = std::move(draft.whiteboardShortcut);
+						auto applyShortcutEvents = [&](Design::DesktopShortcutDraft& shortcut, bool nameChanged, bool create, bool correctChanged, bool createChanged)
 						{
-							Inkeys::config.Application.Shortcut.CorrectLnk = desktopShortcutDraft.correct;
-							QueueConfigWrite();
-							if (desktopShortcutDraft.correct) queueDesktopShortcut(SettingBusinessKind::EnsureShortcut);
-						}
-						if (events.desktopCreateChanged)
-						{
-							Inkeys::config.Application.Shortcut.CreateLnk = desktopShortcutDraft.create;
-							QueueConfigWrite();
-							if (desktopShortcutDraft.correct) queueDesktopShortcut(SettingBusinessKind::EnsureShortcut);
-						}
+							const auto kind = shortcut.names.kind;
+							const bool whiteboard = kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
+							if (nameChanged || create) commitDesktopShortcutName(kind);
+							if (create) queueDesktopShortcut(SettingBusinessKind::CreateShortcut, kind);
+							if (correctChanged)
+							{
+								(whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CorrectLnk : Inkeys::config.Application.Shortcut.CorrectLnk) = shortcut.correct;
+								QueueConfigWrite();
+								if (shortcut.correct) queueDesktopShortcut(SettingBusinessKind::EnsureShortcut, kind);
+							}
+							if (createChanged)
+							{
+								(whiteboard ? Inkeys::config.Application.WhiteboardShortcut.CreateLnk : Inkeys::config.Application.Shortcut.CreateLnk) = shortcut.create;
+								QueueConfigWrite();
+								if (shortcut.correct) queueDesktopShortcut(SettingBusinessKind::EnsureShortcut, kind);
+							}
+						};
+						applyShortcutEvents(desktopShortcutDraft, events.desktopNamePresetChanged || events.desktopNameCommitted,
+							events.createShortcut, events.desktopCorrectChanged, events.desktopCreateChanged);
+						applyShortcutEvents(whiteboardShortcutDraft, events.whiteboardNamePresetChanged || events.whiteboardNameCommitted,
+							events.createWhiteboardShortcut, events.whiteboardCorrectChanged, events.whiteboardCreateChanged);
 					}
 					// 页面只返回一次交互结果，所有副作用继续留在既有 FIFO/配置接线域。
 					if (destination.section == Design::GeneralSection::Basic)
@@ -5839,9 +5893,10 @@ namespace Inkeys::UI::Setting
 					}
 					else
 					{
+						const bool whiteboard = command.shortcutKind==Inkeys::Business::DesktopShortcut::Kind::Whiteboard;
 						state.valid &= (command.kind==SettingBusinessKind::CreateShortcut || command.kind==SettingBusinessKind::EnsureShortcut)
-							&& command.text==L"Inkeys(Original)" && command.parameters==L"C:\\frozen-desktop"
-							&& command.flag && !command.secondaryFlag;
+							&& command.text==(whiteboard ? L"Board original" : L"Inkeys(Original)") && command.parameters==L"C:\\frozen-desktop"
+							&& command.flag==!whiteboard && command.secondaryFlag==whiteboard;
 						++state.received; state.condition.notify_all();
 					}
 					return true;
@@ -5859,17 +5914,45 @@ namespace Inkeys::UI::Setting
 				draft.customName="CON";
 				const bool invalidRetained=!CommitDesktopShortcutNamePreference(draft,30)
 					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving";
+				Design::DesktopShortcutDraft board(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+				board.preset=Inkeys::Business::DesktopShortcut::WhiteboardCustom; board.customName="before leaving";
+				draft.customName="Before leaving";
+				const auto previousBoard=Inkeys::config.GetWhiteboardShortcutNamePreference();
+				const bool collisionRetained=!CommitDesktopShortcutNamePreference(board,30,&draft)
+					&& Inkeys::config.GetWhiteboardShortcutNamePreference()==previousBoard;
+				board.customName="Board original";
+				const bool boardCommitted=CommitDesktopShortcutNamePreference(board,30,&draft)
+					&& Inkeys::config.GetWhiteboardShortcutNamePreference().second==L"Board original";
+				draft.customName="board ORIGINAL";
+				const bool reverseCollisionRetained=!CommitDesktopShortcutNamePreference(draft,30,&board)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving";
+				board.lastValidName=L"Board original"; board.customName="CON";
+				const bool invalidOtherRetained=!CommitDesktopShortcutNamePreference(draft,30,&board)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving";
+				Design::DesktopShortcutDraft staleApp, staleBoard(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+				staleApp.preset=Inkeys::Business::DesktopShortcut::Custom; staleBoard.preset=Inkeys::Business::DesktopShortcut::WhiteboardCustom;
+				staleApp.customName="Board original"; staleBoard.customName="Before leaving";
+				const bool staleOtherRetained=!CommitDesktopShortcutNamePreference(staleApp,30,&staleBoard)
+					&& !CommitDesktopShortcutNamePreference(staleBoard,30,&staleApp)
+					&& Inkeys::config.GetShortcutNamePreference().second==L"Before leaving"
+					&& Inkeys::config.GetWhiteboardShortcutNamePreference().second==L"Board original";
 				Inkeys::config.SetShortcutNamePreference(Inkeys::Business::DesktopShortcut::Annotation,L"");
 				Inkeys::config.Application.Shortcut.CorrectLnk=true; Inkeys::config.Application.Shortcut.CreateLnk=false;
 				Inkeys::Business::DesktopShortcut::NameOptions names; names.presets[2]=L"Inkeys(Original)";
 				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::CreateShortcut,L"C:\\frozen-desktop",names));
 				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::EnsureShortcut,L"C:\\frozen-desktop",names));
+				Inkeys::config.Application.WhiteboardShortcut.CorrectLnk=false; Inkeys::config.Application.WhiteboardShortcut.CreateLnk=true;
+				Inkeys::Business::DesktopShortcut::NameOptions boardNames(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::CreateShortcut,L"C:\\frozen-desktop",boardNames));
+				shortcutQueue.Enqueue(MakeDesktopShortcutCommand(SettingBusinessKind::EnsureShortcut,L"C:\\frozen-desktop",boardNames));
+				Inkeys::config.SetWhiteboardShortcutNamePreference(Inkeys::Business::DesktopShortcut::WhiteboardCustom,L"Board changed after enqueue");
+				Inkeys::config.Application.WhiteboardShortcut.CorrectLnk=true; Inkeys::config.Application.WhiteboardShortcut.CreateLnk=false;
 				Inkeys::config.SetShortcutNamePreference(Inkeys::Business::DesktopShortcut::Custom,L"After enqueue");
 				Inkeys::config.Application.Shortcut.CorrectLnk=false; Inkeys::config.Application.Shortcut.CreateLnk=true; names.presets[2]=L"Changed language";
 				{
 					unique_lock lock(frozen.mutex); frozen.release=true; frozen.condition.notify_all();
-					shortcutPassed=frozen.condition.wait_for(lock,chrono::seconds(2),[&] { return frozen.received==2; })
-						&& frozen.valid && committed && invalidRetained;
+					shortcutPassed=frozen.condition.wait_for(lock,chrono::seconds(2),[&] { return frozen.received==4; })
+						&& frozen.valid && committed && invalidRetained && collisionRetained && boardCommitted && reverseCollisionRetained && invalidOtherRetained && staleOtherRetained;
 				}
 				shortcutQueue.Stop();
 			}

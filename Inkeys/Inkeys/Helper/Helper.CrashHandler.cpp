@@ -480,6 +480,7 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 		GetOffSignalInteropPointer(), crashMode, false);
 	auto armCrashRestart = []() noexcept -> bool
 	{
+		RetireLaunchCommands();
 		// 仅成功抢到重启意图后关闭 HWND 显示门；手动提示尚未确认时不触碰窗口。
 		Inkeys::Window::GetService().BeginShutdown();
 		// 异常路径只建立低层进程监督，不进入业务退出、窗口或保存锁。

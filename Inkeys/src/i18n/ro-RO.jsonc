@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Opțiuni suplimentare",
-          "CreateLnk": "Creare comandă rapidă pe desktop",
+          "CreateLnk": "Creare comandă rapidă pe desktop la pornire",
           "CreateLnkE": "La pornire, creează o comandă rapidă pe desktop dacă nu există deja."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Comenzi rapide",
       "ApplicationSection": "Aplicație",
+      "WhiteboardSection": "Tablă albă",
       "NameLabel": "Numele comenzii rapide",
       "CustomName": "Personalizat",
       "CustomHint": "Introduceți un nume",
       "InvalidName": "Introduceți un nume de fișier Windows valid. Numele goale sau rezervate, caracterele nevalide și căile prea lungi nu sunt permise.",
-      "GuaranteeSection": "Protecția comenzilor rapide",
+      "NameConflict": "Comenzile rapide pentru aplicație și tabla albă trebuie să aibă nume diferite.",
+      "PresetWhiteboard": "Inkeys Tablă Albă",
       "PresetAnnotation": "Inkeys(Adnotare)",
       "PresetAnnotationTool": "Inkeys(InstrumentAdnotare)"
     },

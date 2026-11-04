@@ -139,6 +139,7 @@ CUSTOMIZEICO10          PNG                     "src\\SecRandom.png"
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDI_ICON1               ICON                    "src\\icon.ico"
+IDI_ICON2               ICON                    "src\\whiteboard.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////

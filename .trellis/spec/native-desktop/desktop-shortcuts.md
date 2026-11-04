@@ -27,7 +27,7 @@
 - 用途预设走各语言 i18n 资源，名称统一半角括号且不额外添加空格；品牌 `智绘教Inkeys` 只在简中显示。
 - 从预设进入自定义，以切换前的显示名称填入；恢复已保存的自定义直接读原文。草稿跨帧保留，不每帧由配置覆盖。
 - 名称/语言变化只更新配置，不创建、删除或重命名桌面文件。有效自定义在回车、编辑结束、离页/设置隐藏时提交；无效草稿不覆盖最后有效配置。
-- 手动创建只操作所选名称；启动保障及原开关即时应用沿用原独立条件。修正可统一指向当前 exe 的其他名称；补建不依赖修正开关。
+- 手动创建只操作所选名称；启动保障及原开关即时应用沿用原独立条件。修正只统一目标与参数属于同类的其他名称；补建不依赖修正开关。
 - 设置 Create/Ensure 请求冻结名称、exe、桌面目录与开关，worker 才进行 COM/文件操作；不能执行时重新读取活动语言或自定义草稿。UI 渲染线程不得扫描桌面或执行 ShellLink I/O。
 - CustomName 是字符串，不能使用 IdtAtomic（只支持无锁平凡类型）。必须和全 Config 快照复制共用 rwMutex；QueueConfigWrite 的入队锁不代替字段同步。
 - 文件路径身份使用 `CompareStringOrdinal(..., TRUE)` 按 Windows 不区分大小写的规则比较，不能用默认 C locale 的 `_wcsicmp` 代替；所选名称仅改变大小写时，修正不能把同一目标文件当旧名删除。
@@ -45,7 +45,7 @@
 | 合法 Unicode 自定义名称 | 原文保存；操作层附加 .lnk，不清洗或截断文本 |
 | 创建/保障 I/O 失败 | 返回失败，不由 UI 伪报成功；修正旧名时先成功保存目标再删除旧链接 |
 
-文件名按当前 ShellLink/路径能力校验；保留设备名带扩展名和 COM/LPT 上标数字也受限。依据：[Windows 文件名规则](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)、[IShellLinkW::GetPath](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishelllinkw-getpath)。本任务不扩展原助手的跨版本名称/目标识别策略。
+文件名按当前 ShellLink/路径能力校验；保留设备名带扩展名和 COM/LPT 上标数字也受限。依据：[Windows 文件名规则](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)、[IShellLinkW::GetPath](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishelllinkw-getpath)。两类按完整目标路径与参数分类，不以目标路径子串判断；跨版本历史名称库不在本任务范围。
 
 ## 5. Good / Base / Bad Cases
 
@@ -73,3 +73,47 @@ config.SetShortcutNamePreference(preset, customName);
 QueueConfigWrite();
 // 仅显式创建/原保障动作触发时，冻结解析名称、路径和开关后 QueueBusiness。
 ```
+
+## 场景：白板快捷方式扩展（2026-11-04）
+
+### 1. Scope / Trigger
+
+任务 `11-04-whiteboard-desktop-shortcut` 扩展已归档 11-03 的应用快捷方式合同。设置页按应用程序、白板排列，每类都是创建条目、内联名称和两个保障开关，不再有独立保障标题。
+
+### 2. Signatures
+
+- `DesktopShortcut::Kind::{App, Whiteboard}`；`NameOptions.kind`、`CustomPreset(kind)`、`PresetCount(kind, simplifiedChinese)` 与原解析函数共用一个预设映射源。
+- `NamesCollide(wstring_view, wstring_view)` 用 `CompareStringOrdinal(..., TRUE)`，两类 Windows 文件名不区分大小写比较。
+- Config 新增 `Get/SetWhiteboardShortcutNamePreference`，名称对继续共用 Config 私有快照锁。
+- `ShortcutAssistantClass::{ClassifyShortcut, MatchesShortcut, CreateShortcut, SetShortcut}` 接受种类；设置 FIFO 的 `shortcutKind` 与名称、目标 exe、目录、开关一同冻结。
+
+### 3. Contracts
+
+- `Application.WhiteboardShortcut` 四字段均 NoUpload：`NamePreset:int=0`、`CustomName:wstring=空`、`CorrectLnk:bool=true`、`CreateLnk:bool=false`。0 缺省本地化 Inkeys 白板、1 简中品牌智绘教Inkeys白板、2 自定义。只接受真实整数 0..2；不迁移旧配置。
+- 白板简中索引顺序 `[1,0,2]`，其他语言 `[0,2]`；品牌非简中归一并保存为0。白板名称不得与应用当前解析名称相同，双向检查草稿；冲突显示就地提示并禁用创建，不覆盖最后有效偏好。
+- 白板 ShellLink 为当前 exe + 精确 `-Whiteboard` + `IconLocation(exe,-IDI_ICON2)`；应用类为空参数和原程序图标。分类只接受完整目标路径匹配：空参数为 App，去首尾空白后仅有大小写不敏感 `-Whiteboard` 为 Whiteboard；未知参数为 NotOurs。校正会把白板参数规范为精确形式。
+- 修正只删除同类旧名；先成功保存目标再删旧名，大小写同名不能自删。选定文件的目标、类别、参数或图标错误按修正语义重建。启动共用桌面枚举和一次 Shell 通知。
+- 手改配置发生同名时，白板回退缺省；仍冲突则只跳过白板保障并记录日志。设置线程不执行桌面 I/O，名称/语言变化只保存配置。
+
+### 4. Validation & Error Matrix
+
+| 输入 | 结果 |
+| --- | --- |
+| 白板预设缺失、类型错误、越界或超宽整数 | 0，其他字段独立按 schema 缺省 |
+| 任一类草稿与另一类重名 | 两类就地提示，禁止此次提交/创建 |
+| 指向本 exe 且带未知、超长或空白参数 | 不作为应用或白板旧名删除 |
+| 两类同时保障 | 各自只清理同类，互不删除 |
+| 创建新名失败 | 保留旧链接，返回失败 |
+
+### 5. Good / Base / Bad Cases
+
+Good：应用 Inkeys 与白板 Inkeys白板 各自统一旧名；Base：白板修正开、补建关，不凭空创建；Bad：仅按 exe 路径清理所有 .lnk，或把下拉行号当持久化 ID。
+
+### 6. Tests Required
+
+`InkeysHeadlessTests.exe --desktop-shortcut-only --no-window` 覆盖真实 Config 与实际设置控件，含预设映射、名称冲突、两类事件与布局。产品 `--desktop-shortcut-test` 用私有临时目录真实 ShellLink 覆盖参数、图标、长未知参数、隔离和大小写保护；完整 Debug ARM64 Solution 与 i18n check。运行结果见任务 validation，不能由此文档推定通过。
+
+### 7. Wrong vs Correct
+
+Wrong：`GetArguments` 用小缓冲后把截断内容用于删除决策；只按路径匹配所有同 exe 链接。
+Correct：完整读取参数并拒绝容量饱和，按精确目标与受限参数分类，同类修正后再删除旧名。

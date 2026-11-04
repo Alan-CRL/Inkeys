@@ -534,6 +534,7 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h" />
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
+    <ClInclude Include="Launch\IdtCommandPipe.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
@@ -1170,6 +1171,7 @@
 	<Image Include="src\message_box\error.png" />
     <Image Include="src\ClassIsland.png" />
     <Image Include="src\icon.ico" />
+    <Image Include="src\whiteboard.ico" />
     <Image Include="src\IslandCaller.png" />
     <Image Include="src\NamePicker.png" />
     <Image Include="src\PluginFlag1.png" />
@@ -1268,6 +1270,7 @@
     <None Include="src\UI\Frame 94.svg" />
     <None Include="src\UI\logo1.svg" />
     <None Include="src\UI\logo2.svg" />
+    <None Include="src\UI\whiteboardLnk.svg" />
   </ItemGroup>
   <Import Project="additional\ink_stroke_modeler\ink_stroke_modeler.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

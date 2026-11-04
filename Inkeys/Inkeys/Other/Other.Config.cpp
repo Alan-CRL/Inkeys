@@ -581,6 +581,15 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 
 			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
 			{
+				if (JoinPath(groupPath, name) == "Application.WhiteboardShortcut.NamePreset")
+				{
+					// 白板只接受精确整数 0..2，避免超宽整数窄化成有效预设。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 0 && candidate <= 2 ? candidate : 0;
+					return;
+				}
+
 				if (JoinPath(groupPath, name) == "UI.Bar.SelectAndClickThroughMode")
 				{
 					// 仅整数 1 启用分离式；类型错误、越界及未知值统一回到合并式。
@@ -840,6 +849,27 @@ namespace Inkeys
 		return true;
 	}
 
+	std::pair<int, std::wstring> Config::GetWhiteboardShortcutNamePreference() const
+	{
+		std::shared_lock lock(rwMutex);
+		const auto& shortcut = Application.WhiteboardShortcut;
+		return { Business::DesktopShortcut::NormalizePreset(shortcut.NamePreset.load(), shortcut.CustomName,
+			true, 0, Business::DesktopShortcut::Kind::Whiteboard), shortcut.CustomName };
+	}
+
+	bool Config::SetWhiteboardShortcutNamePreference(int preset, std::wstring customName)
+	{
+		using namespace Business::DesktopShortcut;
+		if (preset < Default || preset > WhiteboardCustom || (preset == WhiteboardCustom && !IsValidName(customName))) return false;
+		// 白板名称对与应用名称一样受 Config 快照锁保护。
+		std::unique_lock lock(rwMutex);
+		auto& shortcut = Application.WhiteboardShortcut;
+		if (shortcut.NamePreset.load() == preset && shortcut.CustomName == customName) return false;
+		shortcut.NamePreset = preset;
+		shortcut.CustomName = std::move(customName);
+		return true;
+	}
+
 	bool Config::ReadAll()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
@@ -1071,6 +1101,9 @@ namespace Inkeys
 		TraverseSchema(handler);
 		auto& shortcut = Application.Shortcut;
 		shortcut.NamePreset = Business::DesktopShortcut::NormalizePreset(shortcut.NamePreset.load(), shortcut.CustomName);
+		auto& whiteboard = Application.WhiteboardShortcut;
+		whiteboard.NamePreset = Business::DesktopShortcut::NormalizePreset(whiteboard.NamePreset.load(), whiteboard.CustomName,
+			true, 0, Business::DesktopShortcut::Kind::Whiteboard);
 	}
 
 	void Config::OverlayDocument(Json::Value& root)

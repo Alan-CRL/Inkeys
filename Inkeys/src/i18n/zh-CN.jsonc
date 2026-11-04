@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "拓展选项",
-          "CreateLnk": "创建桌面快捷方式",
+          "CreateLnk": "启动时创建桌面快捷方式",
           "CreateLnkE": "软件启动时，若桌面不存在软件的快捷方式，则创建一个。"
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "快捷方式",
       "ApplicationSection": "应用程序",
+      "WhiteboardSection": "白板",
       "NameLabel": "快捷方式名称",
       "CustomName": "自定义",
       "CustomHint": "输入快捷方式名称",
       "InvalidName": "请输入有效的 Windows 文件名；名称不能为空，也不能包含非法字符、保留名称或超出路径长度限制。",
-      "GuaranteeSection": "快捷方式保障",
+      "NameConflict": "应用程序和白板的快捷方式名称不能相同。",
+      "PresetWhiteboard": "Inkeys白板",
       "PresetAnnotation": "Inkeys(批注)",
       "PresetAnnotationTool": "Inkeys(批注工具)"
     },

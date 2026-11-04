@@ -408,6 +408,12 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CorrectLnk, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CreateLnk, false) \
 		) \
+		GROUP(WhiteboardShortcut, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, NamePreset, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", std::wstring, CustomName, L"") \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CorrectLnk, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CreateLnk, false) \
+		) \
 	) \
 	GROUP(Input, \
 		GROUP(Shortcuts, \
@@ -556,6 +562,8 @@ namespace Inkeys
 		bool SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept;
 		std::pair<int, std::wstring> GetShortcutNamePreference() const;
 		bool SetShortcutNamePreference(int preset, std::wstring customName);
+		std::pair<int, std::wstring> GetWhiteboardShortcutNamePreference() const;
+		bool SetWhiteboardShortcutNamePreference(int preset, std::wstring customName);
 		std::string GetUploadInfo();
 		std::wstring GetFilePath() const;
 		void ResetToDefaults();

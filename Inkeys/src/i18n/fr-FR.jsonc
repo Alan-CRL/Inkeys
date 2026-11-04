@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Options supplémentaires",
-          "CreateLnk": "Créer un raccourci de bureau",
+          "CreateLnk": "Créer un raccourci de bureau au démarrage",
           "CreateLnkE": "Au démarrage, crée un raccourci sur le bureau s’il n’existe pas déjà."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Raccourcis",
       "ApplicationSection": "Application",
+      "WhiteboardSection": "Tableau blanc",
       "NameLabel": "Nom du raccourci",
       "CustomName": "Personnalisé",
       "CustomHint": "Saisir un nom de raccourci",
       "InvalidName": "Saisissez un nom de fichier Windows valide. Les noms vides ou réservés, les caractères interdits et les chemins trop longs ne sont pas autorisés.",
-      "GuaranteeSection": "Protection des raccourcis",
+      "NameConflict": "Les raccourcis de l’application et du tableau blanc doivent porter des noms différents.",
+      "PresetWhiteboard": "Inkeys Tableau blanc",
       "PresetAnnotation": "Inkeys(Annotation)",
       "PresetAnnotationTool": "Inkeys(OutilAnnotation)"
     },

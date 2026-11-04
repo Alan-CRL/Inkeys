@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Additional Options",
-          "CreateLnk": "Create desktop shortcut",
+          "CreateLnk": "Create desktop shortcut on startup",
           "CreateLnkE": "On startup, create a desktop shortcut if one does not already exist."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Shortcuts",
       "ApplicationSection": "Application",
+      "WhiteboardSection": "Whiteboard",
       "NameLabel": "Shortcut name",
       "CustomName": "Custom",
       "CustomHint": "Enter a shortcut name",
       "InvalidName": "Enter a valid Windows filename. Empty names, invalid characters, reserved names and paths that are too long are not allowed.",
-      "GuaranteeSection": "Shortcut protection",
+      "NameConflict": "Application and whiteboard shortcuts must have different names.",
+      "PresetWhiteboard": "Inkeys Whiteboard",
       "PresetAnnotation": "Inkeys(Annotation)",
       "PresetAnnotationTool": "Inkeys(AnnotationTool)"
     },

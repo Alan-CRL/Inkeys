@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Opsi tambahan",
-          "CreateLnk": "Buat pintasan desktop",
+          "CreateLnk": "Buat pintasan desktop saat aplikasi dimulai",
           "CreateLnkE": "Saat aplikasi dimulai, buat pintasan desktop jika belum ada."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Pintasan",
       "ApplicationSection": "Aplikasi",
+      "WhiteboardSection": "Papan tulis",
       "NameLabel": "Nama pintasan",
       "CustomName": "Kustom",
       "CustomHint": "Masukkan nama pintasan",
       "InvalidName": "Masukkan nama berkas Windows yang valid. Nama kosong atau terlarang, karakter tidak valid, dan jalur yang terlalu panjang tidak diizinkan.",
-      "GuaranteeSection": "Perlindungan pintasan",
+      "NameConflict": "Pintasan aplikasi dan papan tulis harus memiliki nama yang berbeda.",
+      "PresetWhiteboard": "Inkeys Papan Tulis",
       "PresetAnnotation": "Inkeys(Anotasi)",
       "PresetAnnotationTool": "Inkeys(AlatAnotasi)"
     },

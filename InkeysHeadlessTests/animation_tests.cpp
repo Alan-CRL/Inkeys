@@ -1727,6 +1727,7 @@ int main(int argc, char** argv)
 	bool settingCopyOnly = false;
 	bool settingAttentionOnly = false;
 	bool settingGeneralOnly = false;
+	bool desktopShortcutOnly = false;
 	bool settingFontPagesOnly = false;
 	bool settingEraserOnly = false;
 	bool palmEraserOnly = false;
@@ -1747,6 +1748,7 @@ int main(int argc, char** argv)
 		settingCopyOnly |= argument == "--setting-copy-only";
 		settingAttentionOnly |= argument == "--setting-attention-only";
 		settingGeneralOnly |= argument == "--setting-general-only";
+		desktopShortcutOnly |= argument == "--desktop-shortcut-only";
 		settingFontPagesOnly |= argument == "--setting-font-pages-only";
 		settingEraserOnly |= argument == "--setting-eraser-only";
 		palmEraserOnly |= argument == "--palm-eraser-only";
@@ -1808,6 +1810,8 @@ int main(int argc, char** argv)
 		return settings + speed + attributes + palm == 0 ? 0 : 1;
 	}
 	if (settingFontPagesOnly) return RunSettingDesignTests(false,false,false,false,true)==0 ? 0 : 1;
+	// 快捷方式专项只运行配置和实际设置控件，避免引入其他功能的可视化输出。
+	if (desktopShortcutOnly) return RunDesktopShortcutConfigTests() + RunSettingDesignTests(false,false,false,true) == 0 ? 0 : 1;
 	if (settingGeneralOnly) return RunSettingDesignTests(false,false,false,true)==0 ? 0 : 1;
 	if (settingAttentionOnly) return RunSettingDesignTests(false,false,true)==0 ? 0 : 1;
 	if (settingCopyOnly) return RunSettingDesignTests(true)==0 ? 0 : 1;

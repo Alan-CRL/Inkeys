@@ -3565,7 +3565,8 @@ namespace
 				return ImGui::GetStateStorage()->GetInt(id, -1) == ImGui::GetFrameCount();
 			};
 			frame.operation = rowSeen("##选择与穿透"); frame.layout = rowSeen("主栏图标顺序") && rowSeen("主栏展开方向调整");
-			frame.desktopShortcuts = rowSeen("desktop-shortcut-create") && rowSeen("desktop-shortcut-correct") && rowSeen("desktop-shortcut-auto-create");
+			frame.desktopShortcuts = rowSeen("desktop-shortcut-create") && rowSeen("desktop-shortcut-correct") && rowSeen("desktop-shortcut-auto-create")
+				&& rowSeen("whiteboard-shortcut-create") && rowSeen("whiteboard-shortcut-correct") && rowSeen("whiteboard-shortcut-auto-create");
 			frame.collapse = rowSeen("栏外点击自动收起"); frame.startupPreview = rowSeen("startup-preview");
 			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
 			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
@@ -3583,6 +3584,8 @@ namespace
 		};
 		auto noEdits = [](const Design::GeneralEvents& events) {
 			return !events.desktopNamePresetChanged && !events.desktopNameCommitted && !events.desktopCorrectChanged && !events.desktopCreateChanged
+				&& !events.whiteboardNamePresetChanged && !events.whiteboardNameCommitted && !events.whiteboardCorrectChanged
+				&& !events.whiteboardCreateChanged && !events.createWhiteboardShortcut
 				&& !events.startupChanged && !events.createShortcut
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
@@ -3769,6 +3772,93 @@ namespace
 			checks.Expect(draft.desktopShortcut.customName=="Saved by blur" && (blurDown.events.desktopNameCommitted || blurUp.events.desktopNameCommitted)
 				&& !blurDown.events.createShortcut,"real focus loss produces the name-save event without a file action");
 		}
+		// 白板复用相同布局与真实控件，持久化 ID 和应用类不同。
+		using ShortcutKind = Inkeys::Business::DesktopShortcut::Kind;
+		draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+		focus(Design::GeneralSection::DesktopShortcuts,"whiteboard-shortcut-correct","##toggle");
+		io.AddKeyEvent(ImGuiKey_Space,true); auto boardDown=desktopDraw();
+		io.AddKeyEvent(ImGuiKey_Space,false); auto boardUp=desktopDraw();
+		checks.Expect(!draft.whiteboardShortcut.correct && !draft.whiteboardShortcut.create && !draft.desktopShortcut.correct
+			&& (boardDown.events.whiteboardCorrectChanged || boardUp.events.whiteboardCorrectChanged)
+			&& !boardDown.events.desktopCorrectChanged && !boardUp.events.desktopCorrectChanged,
+			"whiteboard correction has an independent real toggle event");
+		focus(Design::GeneralSection::DesktopShortcuts,"whiteboard-shortcut-auto-create","##toggle");
+		io.AddKeyEvent(ImGuiKey_Space,true); boardDown=desktopDraw();
+		io.AddKeyEvent(ImGuiKey_Space,false); boardUp=desktopDraw();
+		checks.Expect(draft.whiteboardShortcut.create && !draft.desktopShortcut.create
+			&& (boardDown.events.whiteboardCreateChanged || boardUp.events.whiteboardCreateChanged)
+			&& !boardDown.events.desktopCreateChanged && !boardUp.events.desktopCreateChanged,
+			"whiteboard creation guarantee does not change the application switch");
+		draft.whiteboardShortcut.names.simplifiedChinese=true;
+		draft.whiteboardShortcut.names.presets[0]=L"Inkeys白板";
+		draft.whiteboardShortcut.preset=Inkeys::Business::DesktopShortcut::Default;
+		auto boardCard=[&]() -> ImGuiWindow* {
+			for (auto* window : GImGui->Windows) if (strstr(window->Name,"##whiteboard-shortcut-name") && window->LastFrameActive==ImGui::GetFrameCount()) return window;
+			return nullptr;
+		};
+		desktopDraw(); desktopDraw();
+		if (auto* card=boardCard())
+		{
+			ImGui::FocusWindow(card); ImGui::SetNavID(card->GetID("##desktop-shortcut-preset"),ImGuiNavLayer_Main,card->NavRootFocusScopeId,ImRect{});
+			desktopDraw(); io.AddKeyEvent(ImGuiKey_Enter,true); desktopDraw(); io.AddKeyEvent(ImGuiKey_Enter,false); desktopDraw();
+			ImGuiWindow* popup=GImGui->OpenPopupStack.empty() ? nullptr : GImGui->OpenPopupStack.back().Window;
+			checks.Expect(popup!=nullptr,"whiteboard preset combo opens with its independent stable ID");
+			if (popup)
+			{
+				const int last=2; const auto custom=IA(I18nKey.SettingsUI.DesktopShortcut.CustomName);
+				const auto id=ImHashStr(custom.c_str(),0,ImHashData(&last,sizeof(last),popup->ID));
+				ImGui::FocusWindow(popup); ImGui::SetNavID(id,ImGuiNavLayer_Main,popup->NavRootFocusScopeId,ImRect{});
+				desktopDraw(); io.AddKeyEvent(ImGuiKey_Enter,true); const auto chosen=desktopDraw();
+				io.AddKeyEvent(ImGuiKey_Enter,false); desktopDraw();
+				checks.Expect(draft.whiteboardShortcut.preset==Inkeys::Business::DesktopShortcut::WhiteboardCustom
+					&& draft.whiteboardShortcut.customName=="Inkeys白板" && chosen.events.whiteboardNamePresetChanged
+					&& !chosen.events.desktopNamePresetChanged && !chosen.events.createWhiteboardShortcut,
+					"whiteboard custom selection seeds the displayed name using ID2 without file actions");
+			}
+		}
+		else checks.Expect(false,"whiteboard inline name card is actually rendered");
+		for (float width : {440.0F,1100.0F})
+		{
+			io.DisplaySize.x=width*scale; desktopDraw(); desktopDraw();
+			if (auto* card=boardCard())
+			{
+				auto rect=[&](const char* id) {
+					ImGui::FocusWindow(card); ImGui::SetNavID(card->GetID(id),ImGuiNavLayer_Main,card->NavRootFocusScopeId,ImRect{});
+					desktopDraw(); checks.Expect(GImGui->NavIdIsAlive,"whiteboard name control retains stable navigation identity");
+					return ImGui::WindowRectRelToAbs(card,card->NavRectRel[ImGuiNavLayer_Main]);
+				};
+				const auto input=rect("##desktop-shortcut-custom"), combo=rect("##desktop-shortcut-preset");
+				checks.Expect(input.Max.x<=combo.Min.x && input.GetWidth()>0 && combo.GetWidth()>0,
+					"whiteboard shares the non-overlapping input/combo layout at narrow and wide widths");
+			}
+		}
+		io.DisplaySize.x=1100*scale;
+		draft.desktopShortcut.preset=Inkeys::Business::DesktopShortcut::Custom; draft.desktopShortcut.customName="Shared name";
+		draft.whiteboardShortcut.preset=Inkeys::Business::DesktopShortcut::WhiteboardCustom; draft.whiteboardShortcut.customName="Separate board";
+		const auto validBoardFrame=desktopDraw();
+		draft.whiteboardShortcut.customName="SHARED NAME";
+		const auto conflicted=desktopDraw();
+		checks.Expect(!Design::IsDesktopShortcutDraftValid(draft.desktopShortcut,draft.whiteboardShortcut)
+			&& !Design::IsDesktopShortcutDraftValid(draft.whiteboardShortcut,draft.desktopShortcut)
+			&& !conflicted.events.createShortcut && !conflicted.events.createWhiteboardShortcut
+			&& !conflicted.events.desktopNameCommitted && !conflicted.events.whiteboardNameCommitted
+			&& conflicted.height>validBoardFrame.height,"cross-category case-insensitive conflict shows an inline error for both and suppresses create/save");
+		draft.desktopShortcut.lastValidName=L"Shared name";
+		draft.whiteboardShortcut.lastValidName=L"Separate board";
+		draft.desktopShortcut.customName="Separate board"; draft.whiteboardShortcut.customName="Shared name";
+		const auto crossedDrafts=desktopDraw();
+		checks.Expect(!Design::IsDesktopShortcutDraftValid(draft.desktopShortcut,draft.whiteboardShortcut)
+			&& !Design::IsDesktopShortcutDraftValid(draft.whiteboardShortcut,draft.desktopShortcut)
+			&& !crossedDrafts.events.createShortcut && !crossedDrafts.events.createWhiteboardShortcut,
+			"two rejected crossed drafts cannot claim the other category's last saved name");
+		draft.whiteboardShortcut.customName="CON"; draft.desktopShortcut.customName="SEPARATE BOARD";
+		const auto invalidOther=desktopDraw();
+		checks.Expect(!Design::IsDesktopShortcutDraftValid(draft.desktopShortcut,draft.whiteboardShortcut)
+			&& !invalidOther.events.createShortcut,"an invalid counterpart draft still protects its last valid saved name");
+		draft.desktopShortcut.customName="Shared name";
+		draft.whiteboardShortcut.customName="Separate board";
+		checks.Expect(Design::IsDesktopShortcutDraftValid(draft.desktopShortcut,draft.whiteboardShortcut)
+			&& Design::IsDesktopShortcutDraftValid(draft.whiteboardShortcut,draft.desktopShortcut),"correcting either name makes both categories valid again");
 		auto hidden = draw(Design::GeneralSection::Appearance, outside, false);
 		draft.animation = true; draft.edgeLighting = true;
 		draw(Design::GeneralSection::Appearance, outside, false);

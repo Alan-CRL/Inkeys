@@ -5,6 +5,7 @@
 #include <objbase.h>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <cstdint>
 #include <cstring>
@@ -279,10 +280,12 @@ namespace Inkeys::Launch
 		}
 		FreeLibrary(library); return protocol;
 	}
-	inline bool StartCompatibleReplacement(const std::wstring& image)
+	inline bool StartCompatibleReplacement(const std::wstring& image, std::wstring_view extraArguments = {})
 	{
-		if(!presence.Get() || !WithinRoot(image,logicalRoot) || HandoffProtocol(image)!=Protocol::Legacy)return false;
+		if((!extraArguments.empty() && extraArguments != L"-Whiteboard") || !presence.Get()
+			|| !WithinRoot(image,logicalRoot) || HandoffProtocol(image)!=Protocol::Legacy)return false;
 		std::wstring command=L"\""+image+L"\"";
+		if (!extraArguments.empty()) command += L" " + std::wstring(extraArguments);
 		STARTUPINFOW startup{sizeof(startup)}; PROCESS_INFORMATION created{};
 		if(!CreateProcessW(image.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_SUSPENDED,nullptr,nullptr,&startup,&created))return false;
 		Handle process(created.hProcess),thread(created.hThread); HANDLE remote=nullptr;
@@ -292,13 +295,16 @@ namespace Inkeys::Launch
 		TerminateProcess(process.Get(),ERROR_CANCELLED);(void)WaitForSingleObject(process.Get(),1000);return false;
 	}
 
-	inline bool StartReplacement(const std::wstring& image)
+	inline bool StartReplacement(const std::wstring& image, std::wstring_view extraArguments = {})
 	{
+		// 更新交接仅允许传递这一个一次性意图，不能成为任意命令行转发入口。
+		if (!extraArguments.empty() && extraArguments != L"-Whiteboard") return false;
 		const auto protocol=HandoffProtocol(image);
 		if (protocol==Protocol::Unsupported) return false;
-		if (protocol==Protocol::Legacy) return StartCompatibleReplacement(image);
+		if (protocol==Protocol::Legacy) return StartCompatibleReplacement(image, extraArguments);
 		Handoff handoff; if (!handoff.Valid() || !WithinRoot(image, logicalRoot)) return false;
 		std::wstring command = L"\"" + image + L"\" " + handoff.Arguments();
+		if (!extraArguments.empty()) command += L" " + std::wstring(extraArguments);
 		STARTUPINFOW startup{sizeof(startup)}; PROCESS_INFORMATION created{};
 		if (!CreateProcessW(image.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &created)) return false;
 		Handle process(created.hProcess), thread(created.hThread);

@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "추가 옵션",
-          "CreateLnk": "바탕 화면 바로 가기 만들기",
+          "CreateLnk": "시작 시 바탕 화면 바로 가기 만들기",
           "CreateLnkE": "시작할 때 바탕 화면 바로 가기가 없으면 만듭니다."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "바로 가기",
       "ApplicationSection": "응용 프로그램",
+      "WhiteboardSection": "화이트보드",
       "NameLabel": "바로 가기 이름",
       "CustomName": "사용자 지정",
       "CustomHint": "바로 가기 이름 입력",
       "InvalidName": "유효한 Windows 파일 이름을 입력하세요. 빈 이름, 잘못된 문자, 예약된 이름 및 너무 긴 경로는 사용할 수 없습니다.",
-      "GuaranteeSection": "바로 가기 보호",
+      "NameConflict": "애플리케이션과 화이트보드 바로 가기의 이름은 달라야 합니다.",
+      "PresetWhiteboard": "Inkeys 화이트보드",
       "PresetAnnotation": "Inkeys(주석)",
       "PresetAnnotationTool": "Inkeys(주석도구)"
     },

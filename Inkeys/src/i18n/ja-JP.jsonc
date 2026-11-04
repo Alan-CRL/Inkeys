@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "追加設定",
-          "CreateLnk": "デスクトップにショートカットを作成",
+          "CreateLnk": "起動時にデスクトップのショートカットを作成",
           "CreateLnkE": "起動時にデスクトップのショートカットがない場合は作成します。"
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "ショートカット",
       "ApplicationSection": "アプリケーション",
+      "WhiteboardSection": "ホワイトボード",
       "NameLabel": "ショートカット名",
       "CustomName": "カスタム",
       "CustomHint": "ショートカット名を入力",
       "InvalidName": "有効な Windows ファイル名を入力してください。空の名前、無効な文字、予約名、長すぎるパスは使用できません。",
-      "GuaranteeSection": "ショートカットの保護",
+      "NameConflict": "アプリケーションとホワイトボードのショートカットには異なる名前を指定してください。",
+      "PresetWhiteboard": "Inkeys ホワイトボード",
       "PresetAnnotation": "Inkeys(注釈)",
       "PresetAnnotationTool": "Inkeys(注釈ツール)"
     },

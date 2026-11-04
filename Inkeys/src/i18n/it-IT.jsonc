@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Opzioni aggiuntive",
-          "CreateLnk": "Crea collegamento sul desktop",
+          "CreateLnk": "Crea collegamento sul desktop all’avvio",
           "CreateLnkE": "All’avvio, crea un collegamento sul desktop se non esiste già."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Collegamenti",
       "ApplicationSection": "Applicazione",
+      "WhiteboardSection": "Lavagna",
       "NameLabel": "Nome del collegamento",
       "CustomName": "Personalizzato",
       "CustomHint": "Inserisci un nome",
       "InvalidName": "Inserisci un nome di file Windows valido. Non sono consentiti nomi vuoti o riservati, caratteri non validi e percorsi troppo lunghi.",
-      "GuaranteeSection": "Protezione dei collegamenti",
+      "NameConflict": "I collegamenti dell’applicazione e della lavagna devono avere nomi diversi.",
+      "PresetWhiteboard": "Inkeys Lavagna",
       "PresetAnnotation": "Inkeys(Annotazione)",
       "PresetAnnotationTool": "Inkeys(StrumentoAnnotazione)"
     },

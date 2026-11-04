@@ -492,6 +492,9 @@
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Launch\IdtCommandPipe.h">
+      <Filter>头文件\Launch</Filter>
+    </ClInclude>
     <ClInclude Include="Launch\IdtLaunchState.h">
       <Filter>头文件\Launch</Filter>
     </ClInclude>
@@ -2280,6 +2283,9 @@
     <Image Include="src\icon.ico">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\whiteboard.ico">
+      <Filter>资源文件</Filter>
+    </Image>
     <Image Include="src\sign3.png">
       <Filter>资源文件</Filter>
     </Image>
@@ -2355,6 +2361,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\logo2.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\whiteboardLnk.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\Frame 94.svg">

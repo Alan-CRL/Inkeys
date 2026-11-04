@@ -34,6 +34,7 @@ import Inkeys.Window;
 import Inkeys.Startup.Progress;
 
 #include "IdtPlug-in.h"
+#include "resource.h"
 #include "Inkeys/UI/Ppt/Ppt.Recovery.h"
 
 #include "IdtConfiguration.h"
@@ -1885,16 +1886,20 @@ void StartDesktopDrawpadBlocker()
 
 // 快捷方式保障助手 插件
 ShortcutAssistantClass shortcutAssistant;
-Inkeys::Business::DesktopShortcut::NameOptions CaptureDesktopShortcutNames()
+Inkeys::Business::DesktopShortcut::NameOptions CaptureDesktopShortcutNames(Inkeys::Business::DesktopShortcut::Kind kind)
 {
-	Inkeys::Business::DesktopShortcut::NameOptions options;
+	Inkeys::Business::DesktopShortcut::NameOptions options(kind);
 	I18n::TextSnapshot snapshot;
 	if (I18n::capture({ I18nKey.SettingsUI.DesktopShortcut.PresetAnnotation,
-		I18nKey.SettingsUI.DesktopShortcut.PresetAnnotationTool }, snapshot) && snapshot.text.size() == 2)
+		I18nKey.SettingsUI.DesktopShortcut.PresetAnnotationTool, I18nKey.SettingsUI.DesktopShortcut.PresetWhiteboard }, snapshot) && snapshot.text.size() == 3)
 	{
 		options.simplifiedChinese = snapshot.language == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
-		options.presets[2] = std::move(snapshot.text[0]);
-		options.presets[3] = std::move(snapshot.text[1]);
+		if (kind == Inkeys::Business::DesktopShortcut::Kind::Whiteboard) options.presets[0] = std::move(snapshot.text[2]);
+		else
+		{
+			options.presets[2] = std::move(snapshot.text[0]);
+			options.presets[3] = std::move(snapshot.text[1]);
+		}
 	}
 	return options;
 }
@@ -1905,123 +1910,181 @@ std::wstring GetDesktopShortcutDirectory()
 	return SHGetSpecialFolderPathW(nullptr, path, CSIDL_DESKTOP, FALSE) ? path : L"";
 }
 
-bool ShortcutAssistantClass::SetShortcut()
+namespace
 {
-	const auto options = CaptureDesktopShortcutNames();
-	auto [preset, customName] = Inkeys::config.GetShortcutNamePreference();
-	const auto desktopDirectory = GetDesktopShortcutDirectory();
-	const int normalized = Inkeys::Business::DesktopShortcut::NormalizePreset(preset, customName, options.simplifiedChinese, desktopDirectory.size());
-	if (normalized != preset && Inkeys::config.SetShortcutNamePreference(normalized, customName))
-		Inkeys::config.Write(); // 启动阶段归一不可用的简中专用预设，不迁移旧配置。
-	return SetShortcut(Inkeys::Business::DesktopShortcut::ResolveName(normalized, customName, options),
-		Inkeys::config.Application.Shortcut.CorrectLnk, Inkeys::config.Application.Shortcut.CreateLnk,
-		desktopDirectory);
-}
-
-bool ShortcutAssistantClass::SetShortcut(const std::wstring& name, bool correct, bool create,
-	const std::wstring& desktopDirectory)
-{
-	if (desktopDirectory.empty() || !Inkeys::Business::DesktopShortcut::IsValidName(name, desktopDirectory.size())) return false;
-	const auto target = GetCurrentExePath();
-	const auto path = (filesystem::path(desktopDirectory) / (name + L".lnk")).wstring();
-	bool succeeded = true;
-	if (correct)
+	using DesktopShortcutKind = Inkeys::Business::DesktopShortcut::Kind;
+	struct DesktopShortcutContents
 	{
-		if (_waccess(path.c_str(), 0) == 0 && !IsShortcutPointingToDirectory(path, target))
-			succeeded = CreateShortcut(path, target);
-		error_code ec;
-		filesystem::directory_iterator it(desktopDirectory, ec), end;
+		std::wstring target, arguments, icon;
+		int iconIndex = 0;
+	};
+
+	bool ReadDesktopShortcut(const std::wstring& path, DesktopShortcutContents& contents)
+	{
+		IShellLinkW* link = nullptr;
+		HRESULT result = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(&link));
+		if (FAILED(result)) return false;
+		IPersistFile* file = nullptr;
+		result = link->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&file));
+		if (SUCCEEDED(result))
+		{
+			result = file->Load(path.c_str(), STGM_READ);
+			file->Release();
+		}
+		wchar_t target[MAX_PATH]{}, arguments[32768]{}, icon[MAX_PATH]{};
+		if (SUCCEEDED(result)) result = link->GetPath(target, MAX_PATH, nullptr, SLGP_RAWPATH);
+		if (SUCCEEDED(result)) result = link->GetArguments(arguments, static_cast<int>(std::size(arguments)));
+		// 接近缓冲上限时拒绝分类，不能把截断的未知参数当白板请求。
+		if (SUCCEEDED(result) && std::wcslen(arguments) == std::size(arguments) - 1) result = E_INVALIDARG;
+		if (SUCCEEDED(result)) result = link->GetIconLocation(icon, MAX_PATH, &contents.iconIndex);
+		link->Release();
+		if (FAILED(result)) return false;
+		contents.target = target; contents.arguments = arguments; contents.icon = icon;
+		return true;
+	}
+
+	ShortcutAssistantClass::Classification ClassifyDesktopShortcut(const DesktopShortcutContents& contents, const std::wstring& target)
+	{
+		using Classification = ShortcutAssistantClass::Classification;
+		using Inkeys::Business::DesktopShortcut::NamesCollide;
+		if (!NamesCollide(contents.target, target)) return Classification::NotOurs;
+		if (contents.arguments.empty()) return Classification::App;
+		const auto begin = contents.arguments.find_first_not_of(L" \t\r\n");
+		if (begin == std::wstring::npos) return Classification::NotOurs;
+		const auto end = contents.arguments.find_last_not_of(L" \t\r\n");
+		return NamesCollide(std::wstring_view(contents.arguments).substr(begin, end - begin + 1), L"-Whiteboard")
+			? Classification::Whiteboard : Classification::NotOurs;
+	}
+
+	bool EnumerateDesktopShortcuts(const std::wstring& directory, std::vector<std::filesystem::path>& files)
+	{
+		std::error_code ec;
+		std::filesystem::directory_iterator it(directory, ec), end;
 		if (ec) return false;
 		for (; it != end; it.increment(ec))
 		{
 			if (ec) return false;
-			if (it->is_regular_file(ec) && it->path().extension() == L".lnk"
-				&& CompareStringOrdinal(it->path().c_str(), -1, path.c_str(), -1, TRUE) != CSTR_EQUAL
-				&& IsShortcutPointingToDirectory(it->path().wstring(), target))
+			if (it->is_regular_file(ec) && Inkeys::Business::DesktopShortcut::NamesCollide(it->path().extension().wstring(), L".lnk")) files.push_back(it->path());
+			if (ec) return false;
+		}
+		return !ec;
+	}
+
+	bool EnsureDesktopShortcut(ShortcutAssistantClass& assistant, const std::wstring& name, bool correct, bool create,
+		const std::wstring& directory, DesktopShortcutKind kind, const std::wstring& target, const std::vector<std::filesystem::path>& files)
+	{
+		if (directory.empty() || !Inkeys::Business::DesktopShortcut::IsValidName(name, directory.size())) return false;
+		const auto path = (std::filesystem::path(directory) / (name + L".lnk")).wstring();
+		bool succeeded = true;
+		if (correct)
+		{
+			if (_waccess(path.c_str(), 0) == 0 && !assistant.MatchesShortcut(path, target, kind))
+				succeeded = assistant.CreateShortcut(path, target, kind);
+			const auto classification = kind == DesktopShortcutKind::Whiteboard
+				? ShortcutAssistantClass::Classification::Whiteboard : ShortcutAssistantClass::Classification::App;
+			for (const auto& old : files)
 			{
-				// 保留原保障语义；先成功保存目标，再删除本程序的旧名称快捷方式。
-				if (CreateShortcut(path, target))
+				if (!Inkeys::Business::DesktopShortcut::NamesCollide(old.wstring(), path)
+					&& assistant.ClassifyShortcut(old.wstring(), target) == classification)
 				{
-					filesystem::remove(it->path(), ec);
-					if (ec) succeeded = false;
+					// 两类只统一同类旧名称；先保存新链接，成功后才能删除旧链接。
+					if (assistant.CreateShortcut(path, target, kind))
+					{
+						std::error_code ec; std::filesystem::remove(old, ec);
+						if (ec) succeeded = false;
+					}
+					else succeeded = false;
 				}
-				else succeeded = false;
 			}
 		}
-		if (ec) succeeded = false;
+		if (create && (_waccess(path.c_str(), 0) == -1 || !assistant.MatchesShortcut(path, target, kind)))
+			succeeded = assistant.CreateShortcut(path, target, kind) && succeeded;
+		return succeeded;
 	}
-	if (create && (_waccess(path.c_str(), 0) == -1 || !IsShortcutPointingToDirectory(path, target)))
-		succeeded = CreateShortcut(path, target) && succeeded;
+}
+
+bool ShortcutAssistantClass::SetShortcut()
+{
+	using namespace Inkeys::Business::DesktopShortcut;
+	const auto desktopDirectory = GetDesktopShortcutDirectory();
+	if (desktopDirectory.empty()) return false;
+	std::vector<std::filesystem::path> files;
+	if (!EnumerateDesktopShortcuts(desktopDirectory, files)) return false;
+	const auto target = GetCurrentExePath();
+	const auto applicationNames = CaptureDesktopShortcutNames(), whiteboardNames = CaptureDesktopShortcutNames(Kind::Whiteboard);
+	auto [appPreset, appCustom] = Inkeys::config.GetShortcutNamePreference();
+	auto [boardPreset, boardCustom] = Inkeys::config.GetWhiteboardShortcutNamePreference();
+	appPreset = NormalizePreset(appPreset, appCustom, applicationNames.simplifiedChinese, desktopDirectory.size());
+	boardPreset = NormalizePreset(boardPreset, boardCustom, whiteboardNames.simplifiedChinese, desktopDirectory.size(), Kind::Whiteboard);
+	const auto appName = ResolveName(appPreset, appCustom, applicationNames);
+	auto boardName = ResolveName(boardPreset, boardCustom, whiteboardNames);
+	if (NamesCollide(appName, boardName))
+	{
+		boardPreset = Default; boardName = ResolveName(Default, boardCustom, whiteboardNames);
+		if (IDTLogger) IDTLogger->warn("[DesktopShortcut] 白板名称与应用程序名称冲突，回退缺省白板名称");
+	}
+	const bool appChanged = Inkeys::config.SetShortcutNamePreference(appPreset, appCustom);
+	const bool boardChanged = Inkeys::config.SetWhiteboardShortcutNamePreference(boardPreset, boardCustom);
+	if (appChanged || boardChanged) Inkeys::config.Write();
+	bool succeeded = EnsureDesktopShortcut(*this, appName, Inkeys::config.Application.Shortcut.CorrectLnk,
+		Inkeys::config.Application.Shortcut.CreateLnk, desktopDirectory, Kind::App, target, files);
+	// 手改配置仍冲突时跳过白板保障，不能覆盖应用链接。
+	if (!NamesCollide(appName, boardName))
+		succeeded = EnsureDesktopShortcut(*this, boardName, Inkeys::config.Application.WhiteboardShortcut.CorrectLnk,
+			Inkeys::config.Application.WhiteboardShortcut.CreateLnk, desktopDirectory, Kind::Whiteboard, target, files) && succeeded;
+	else if (IDTLogger) IDTLogger->warn("[DesktopShortcut] 缺省名称仍冲突，已跳过白板保障");
 	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 	return succeeded;
 }
+
+bool ShortcutAssistantClass::SetShortcut(const std::wstring& name, bool correct, bool create,
+	const std::wstring& desktopDirectory, DesktopShortcutKind kind, const std::wstring& targetExePath)
+{
+	if (desktopDirectory.empty() || !Inkeys::Business::DesktopShortcut::IsValidName(name, desktopDirectory.size())) return false;
+	std::vector<std::filesystem::path> files;
+	if (correct && !EnumerateDesktopShortcuts(desktopDirectory, files)) return false;
+	const bool succeeded = EnsureDesktopShortcut(*this, name, correct, create, desktopDirectory, kind,
+		targetExePath.empty() ? GetCurrentExePath() : targetExePath, files);
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+	return succeeded;
+}
+
+ShortcutAssistantClass::Classification ShortcutAssistantClass::ClassifyShortcut(const std::wstring& path, const std::wstring& target)
+{
+	DesktopShortcutContents contents;
+	return ReadDesktopShortcut(path, contents) ? ClassifyDesktopShortcut(contents, target) : Classification::NotOurs;
+}
+
+bool ShortcutAssistantClass::MatchesShortcut(const std::wstring& path, const std::wstring& target, DesktopShortcutKind kind)
+{
+	DesktopShortcutContents contents;
+	if (!ReadDesktopShortcut(path, contents)) return false;
+	const auto classification = ClassifyDesktopShortcut(contents, target);
+	if (kind == DesktopShortcutKind::Whiteboard)
+		return classification == Classification::Whiteboard && contents.arguments == L"-Whiteboard"
+			&& Inkeys::Business::DesktopShortcut::NamesCollide(contents.icon, target) && contents.iconIndex == -IDI_ICON2;
+	return classification == Classification::App && contents.arguments.empty()
+		&& ((contents.icon.empty() && contents.iconIndex == 0)
+			|| (Inkeys::Business::DesktopShortcut::NamesCollide(contents.icon, target) && (contents.iconIndex == 0 || contents.iconIndex == -IDI_ICON1)));
+}
+
 bool ShortcutAssistantClass::IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory)
 {
-	IShellLink* psl;
-	bool matches = false;
-
-	// 创建一个IShellLink对象
-	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
-	if (SUCCEEDED(hres))
-	{
-		IPersistFile* ppf;
-
-		// 获取IShellLink的IPersistFile接口
-		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-		if (SUCCEEDED(hres))
-		{
-			// 打开快捷方式文件
-			hres = ppf->Load(shortcutPath.c_str(), STGM_READ);
-			if (SUCCEEDED(hres))
-			{
-				WIN32_FIND_DATAW wfd;
-				ZeroMemory(&wfd, sizeof(wfd));
-				// 获取快捷方式的目标路径
-				hres = psl->GetPath(wfd.cFileName, MAX_PATH, NULL, SLGP_RAWPATH);
-				if (SUCCEEDED(hres))
-				{
-					// 检查目标路径是否与指定目录相匹配
-					if (std::wstring(wfd.cFileName).find(targetDirectory) != std::wstring::npos)
-					{
-						matches = true;
-					}
-				}
-			}
-			ppf->Release();
-		}
-		psl->Release();
-	}
-	return matches;
+	DesktopShortcutContents contents;
+	return ReadDesktopShortcut(shortcutPath, contents) && Inkeys::Business::DesktopShortcut::NamesCollide(contents.target, targetDirectory);
 }
-bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath)
+
+bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath, DesktopShortcutKind kind)
 {
-	//CoInitialize(NULL);
-
-	// 创建一个IShellLink对象
-	IShellLink* psl;
-	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
-
-	if (SUCCEEDED(hres))
-	{
-		// 设置快捷方式的目标路径
-		hres = psl->SetPath(targetExePath.c_str());
-		if (FAILED(hres)) { psl->Release(); return false; }
-
-		// 创建一个IShellLink对象的IPersistFile接口
-		IPersistFile* ppf;
-		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-
-		if (SUCCEEDED(hres))
-		{
-			// 保存快捷方式
-			hres = ppf->Save(shortcutPath.c_str(), TRUE);
-			ppf->Release();
-		}
-
-		psl->Release();
-	}
-
-	//CoUninitialize();
-
-	return SUCCEEDED(hres);
+	IShellLinkW* link = nullptr;
+	HRESULT result = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(&link));
+	if (FAILED(result)) return false;
+	result = link->SetPath(targetExePath.c_str());
+	if (SUCCEEDED(result)) result = link->SetArguments(kind == DesktopShortcutKind::Whiteboard ? L"-Whiteboard" : L"");
+	if (SUCCEEDED(result) && kind == DesktopShortcutKind::Whiteboard) result = link->SetIconLocation(targetExePath.c_str(), -IDI_ICON2);
+	IPersistFile* file = nullptr;
+	if (SUCCEEDED(result)) result = link->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&file));
+	if (SUCCEEDED(result)) { result = file->Save(shortcutPath.c_str(), TRUE); file->Release(); }
+	link->Release();
+	return SUCCEEDED(result);
 }

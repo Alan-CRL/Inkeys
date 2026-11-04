@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Ek seçenekler",
-          "CreateLnk": "Masaüstü kısayolu oluştur",
+          "CreateLnk": "Başlangıçta masaüstü kısayolu oluştur",
           "CreateLnkE": "Uygulama başlatıldığında masaüstü kısayolu yoksa oluşturur."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Kısayollar",
       "ApplicationSection": "Uygulama",
+      "WhiteboardSection": "Beyaz tahta",
       "NameLabel": "Kısayol adı",
       "CustomName": "Özel",
       "CustomHint": "Kısayol adı girin",
       "InvalidName": "Geçerli bir Windows dosya adı girin. Boş veya ayrılmış adlara, geçersiz karakterlere ve çok uzun yollara izin verilmez.",
-      "GuaranteeSection": "Kısayol koruması",
+      "NameConflict": "Uygulama ve beyaz tahta kısayollarının adları farklı olmalıdır.",
+      "PresetWhiteboard": "Inkeys Beyaz Tahta",
       "PresetAnnotation": "Inkeys(Açıklama)",
       "PresetAnnotationTool": "Inkeys(AçıklamaAracı)"
     },

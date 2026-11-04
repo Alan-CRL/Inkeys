@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Opções adicionais",
-          "CreateLnk": "Criar atalho na área de trabalho",
+          "CreateLnk": "Criar atalho na área de trabalho ao iniciar",
           "CreateLnkE": "Ao iniciar o aplicativo, cria um atalho na área de trabalho caso ele não exista."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Atalhos",
       "ApplicationSection": "Aplicativo",
+      "WhiteboardSection": "Quadro branco",
       "NameLabel": "Nome do atalho",
       "CustomName": "Personalizado",
       "CustomHint": "Digite um nome para o atalho",
       "InvalidName": "Digite um nome de arquivo válido do Windows. Nomes vazios ou reservados, caracteres inválidos e caminhos longos demais não são permitidos.",
-      "GuaranteeSection": "Proteção de atalhos",
+      "NameConflict": "Os atalhos do aplicativo e do quadro branco devem ter nomes diferentes.",
+      "PresetWhiteboard": "Inkeys Quadro Branco",
       "PresetAnnotation": "Inkeys(Anotação)",
       "PresetAnnotationTool": "Inkeys(FerramentaAnotação)"
     },

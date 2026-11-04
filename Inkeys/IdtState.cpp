@@ -1494,6 +1494,19 @@ bool RequestWhiteboardWindowView(bool minimized) noexcept
 	return CloseWorkspaceAdmission(request);
 }
 
+void RequestWhiteboardFromShortcut() noexcept
+{
+	if (offSignal || !IsWhiteboardFeatureEnabled()) return;
+	const auto before = ReadWorkspaceHandoff();
+	if (before.desired == Workspace::Whiteboard)
+	{
+		// 已显示/进入中的白板保持幂等；最小化只恢复同一窗口组，不退出再进入。
+		if (before.minimized) (void)RequestWhiteboardWindowView(false);
+		return;
+	}
+	RequestWhiteboardActive(true);
+}
+
 void NotifyWhiteboardWindowMinimizedChanged() noexcept
 {
 	// WndProc 只发通知；禁止在窗口 owner 内等待 Product 的控制锁。
@@ -2664,9 +2677,19 @@ int RunStateModeProductionTest() noexcept
 			NotifyWhiteboardWindowViewRequested(true);
 			(void)RequestWhiteboardWindowView(false);
 			require(!WorkspaceRequestCurrent(publicViewCancel) && whiteboardNativeRequest.load() == 0, "public-view-cancel-does-not-open-aba-gap");
+			const auto shortcutShowing = ReadWorkspaceHandoff().revision;
+			RequestWhiteboardFromShortcut();
+			require(ReadWorkspaceHandoff().revision == shortcutShowing, "shortcut-visible-whiteboard-is-idempotent");
+			(void)RequestWorkspace(Workspace::Whiteboard, true);
+			RequestWhiteboardFromShortcut();
+			require(!ReadWorkspaceHandoff().minimized && ReadWorkspaceHandoff().desired == Workspace::Whiteboard,
+				"shortcut-restores-same-whiteboard-without-exit");
 			NotifyWhiteboardWindowCloseRequested();
 			(void)ConsumeNativeWhiteboardRequests();
 			require(ReadWorkspaceHandoff().desired == Workspace::Desktop, "window-close-only-queues-until-coordinator-accepts");
+			RequestWhiteboardFromShortcut();
+			require(ReadWorkspaceHandoff().desired == Workspace::Whiteboard, "shortcut-primary-uses-existing-whiteboard-entry");
+			(void)RequestWorkspace(Workspace::Desktop);
 			NotifyWhiteboardWindowViewRequested(true);
 			require(whiteboardNativeRequest.load() == 0, "native-view-callback-rejects-even-primary-epoch");
 			{ std::scoped_lock lock(workspaceHandoffMutex); workspaceHandoff = savedCoordinator; ProjectWorkspaceHandoffLocked(); }

@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "擴充選項",
-          "CreateLnk": "建立桌面捷徑",
+          "CreateLnk": "啟動時建立桌面捷徑",
           "CreateLnkE": "軟件啟動時，若桌面沒有軟件的捷徑，則建立一個。"
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "捷徑",
       "ApplicationSection": "應用程式",
+      "WhiteboardSection": "白板",
       "NameLabel": "捷徑名稱",
       "CustomName": "自訂",
       "CustomHint": "輸入捷徑名稱",
       "InvalidName": "請輸入有效的 Windows 檔案名稱；不可空白，也不可包含無效字元、保留名稱或超出路徑長度限制。",
-      "GuaranteeSection": "捷徑保障",
+      "NameConflict": "應用程式和白板的捷徑名稱不能相同。",
+      "PresetWhiteboard": "Inkeys白板",
       "PresetAnnotation": "Inkeys(批註)",
       "PresetAnnotationTool": "Inkeys(批註工具)"
     },

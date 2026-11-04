@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Opciones adicionales",
-          "CreateLnk": "Crear acceso directo en el escritorio",
+          "CreateLnk": "Crear acceso directo en el escritorio al iniciar",
           "CreateLnkE": "Al iniciar el programa, crea un acceso directo en el escritorio si no existe."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Accesos directos",
       "ApplicationSection": "Aplicación",
+      "WhiteboardSection": "Pizarrón",
       "NameLabel": "Nombre del acceso directo",
       "CustomName": "Personalizado",
       "CustomHint": "Ingresa un nombre",
       "InvalidName": "Ingresa un nombre de archivo válido de Windows. No se permiten nombres vacíos o reservados, caracteres no válidos ni rutas demasiado largas.",
-      "GuaranteeSection": "Protección de accesos directos",
+      "NameConflict": "Los accesos directos de la aplicación y del pizarrón deben tener nombres distintos.",
+      "PresetWhiteboard": "Inkeys Pizarrón",
       "PresetAnnotation": "Inkeys(Anotación)",
       "PresetAnnotationTool": "Inkeys(HerramientaAnotación)"
     },

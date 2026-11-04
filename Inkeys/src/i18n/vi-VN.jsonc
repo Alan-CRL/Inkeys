@@ -1009,7 +1009,7 @@
         "Expansion":
         {
           "N": "Tùy chọn bổ sung",
-          "CreateLnk": "Tạo lối tắt màn hình",
+          "CreateLnk": "Tạo lối tắt màn hình khi khởi động",
           "CreateLnkE": "Khi khởi động ứng dụng, tạo lối tắt trên màn hình nền nếu chưa có."
         }
       }
@@ -1049,11 +1049,13 @@
     {
       "N": "Lối tắt",
       "ApplicationSection": "Ứng dụng",
+      "WhiteboardSection": "Bảng trắng",
       "NameLabel": "Tên lối tắt",
       "CustomName": "Tùy chỉnh",
       "CustomHint": "Nhập tên lối tắt",
       "InvalidName": "Nhập tên tệp Windows hợp lệ. Không được để trống, dùng ký tự không hợp lệ, tên dành riêng hoặc đường dẫn quá dài.",
-      "GuaranteeSection": "Bảo vệ lối tắt",
+      "NameConflict": "Lối tắt ứng dụng và bảng trắng phải có tên khác nhau.",
+      "PresetWhiteboard": "Inkeys Bảng Trắng",
       "PresetAnnotation": "Inkeys(ChúThích)",
       "PresetAnnotationTool": "Inkeys(CôngCụChúThích)"
     },
