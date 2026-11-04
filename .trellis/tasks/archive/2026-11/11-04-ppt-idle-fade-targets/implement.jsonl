@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "原生模块边界与实施前决策门"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小修改、module 导出身份、共享状态与格式"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 Solution 与原生 ARM64 MSBuild、无窗口边界"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "常驻背景/内容与弹出面板隔离、连续材质"}
+{"file": ".trellis/tasks/archive/2026-11/11-04-ppt-idle-fade-targets/research/spec-context.md", "reason": "配置/i18n/输入/渲染/Setting 大规范的相关合同和原文定位"}
+{"file": ".trellis/tasks/archive/2026-11/11-04-ppt-idle-fade-targets/research/current-implementation.md", "reason": "生产代码锚点、已确认决定、现有 deadline 和无窗口入口"}
+{"file": ".trellis/spec/native-desktop/ppt-idle-fade.md", "reason": "本次新增的取上限、独立计时、属性保护与验证合同"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "可选内联条件动画、父行高度与视口上方锚点合同"}
