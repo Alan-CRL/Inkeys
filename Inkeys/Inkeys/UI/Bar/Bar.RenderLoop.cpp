@@ -7701,7 +7701,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		currentAnimationSpeedRate, frameZoom,
 		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtPen
 			|| state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtShape
-			|| state.spec.SnapshotFrameLighting().drawingPenColorBlend > 0.0001);
+			|| state.spec.SnapshotFrameLighting().drawingPenColorBlend > 0.0001,
+		frame.bottomDockDragActive);
 	if (statusChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 	{
 		const auto config = Inkeys::UI::PageControl::ReadPptIdleFadeSnapshot();
@@ -8645,7 +8646,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			const auto workBottom=unmap(state.activeWorkArea.right-origin.x,state.activeWorkArea.bottom-origin.y);
 			Inkeys::UI::Bar::StatusIndicatorLayoutInput input;
 			input.mainCenterX=mainButton->x.val;input.mainCenterY=mainButton->y.val;
-			input.mainWidth=mainButton->w.val;input.mainHeight=mainButton->h.val;
+			input.mainWidth=mainButton->w.val;input.mainHeight=mainButton->h.val;input.mainN=mainButton->n->val;
 			input.baseBounds={baseTop.x,baseTop.y,baseBottom.x,baseBottom.y};
 			input.work={workTop.x,workTop.y,workBottom.x,workBottom.y};
 			owner_.statusIndicator.Layout(input,frameZoom);
@@ -11669,10 +11670,11 @@ bool presetButton = button.presetIndex >= 0;
 						state.spec.SetResidentContentOpacity(1.0);
 					}
 				}
-				state.spec.SetResidentIdleFade(0);
+				// 状态指示器属于主按钮常驻层：随用户背景/内容透明度与 PPT 闲置淡化一起变化。
 				SetGripTransform();
 				owner_.statusIndicator.Draw(state.spec,barDeviceContext,
 					*state.superellipseMap[BarUISetSuperellipseEnum::MainButton],state.mainButtonLightMaterial.val);
+				state.spec.SetResidentIdleFade(0);
 				BarRenderingAttribute::UnionRectInPlace(state.current,statusBounds);
 				// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
 				for (BarUISetShapeEnum moreShape : {

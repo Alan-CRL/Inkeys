@@ -142,3 +142,27 @@ size_t StatusIndicatorCount();                                   // 供调试按
 | 25 个条目性能 | 文本布局缓存（`formatCache`）+ 圆形批量绘制；以调试页 25 个压测帧时间 |
 
 回滚：功能整体受总开关控制；代码以单独提交分阶段落地（见 implement.md），可按阶段回退。
+
+## v2 重设计（2026-11-04，取代上文 §4 布局、§5 线宽、§6 绘制与 §7 中单圆形规则）
+
+依据 prd “Decisions v2” 与已确认预览稿 `research/indicator-v2-preview.html`。
+
+### 布局（`Bar.StatusIndicator.h`，纯函数）
+- 输入新增 `mainN`（超椭圆指数）与 `below`（0 向上 / 1 向下，倒转跟随 `widgetPosition.primaryBar`，拖动中锁存，换边由 `orientation_` 弹簧插值）。
+- 胶囊：高 30、圆角 6、左侧 18 DIP 图标方块、图文间距 6、13 DIP 粗体、内边距 (30-17)/2、宽上限 160；水平居中主按钮，竖直中心 = `StatusIndicatorEdgeY`（上/下边框）。后排与队首等宽（`width` 弹簧），向外每层错开 4 DIP，最多 3 层。
+- 停靠方块：18 DIP、圆角 4、图标 12；中心落在超椭圆边框 `x = 右端 - 14` 处（`StatusIndicatorSuperHalfHeight`），旧的向左错开 6，夹入 baseBounds；越界（着陆轻弹）时计为 overflow。
+- 同心弧：方块 28 DIP 紧挨（间距 4），首层半径 = 超椭圆 50° 外径 + 6 + 14，层距 32，单层跨度 130°，以正上/正下为中心对称，index 0 最新在最右；工作区不足时镜像。弧上选中以方块为中心展开为胶囊。
+- 输出每项圆角矩形 `bounds/radius`、图标中心与尺寸、文字区/滚动/两端渐隐标记、整项 `opacity`、`role`（Capsule/Dock/Fan）与 z；`reserveBounds` 为出现回弹峰值、飞行弧线与同心弧（含选中胶囊）的首帧预留包络。
+
+### 收起动画
+- `morph`（Morph 弹簧 ω20 ζ0.62）0→1：宽度向左端图标收缩，文字随之淡出；`flight`（Flight 弹簧 ω13 ζ0.74）延迟 0.1s 后 0→1：沿二次贝塞尔飞向槽 0，控制点向外抬起 12 DIP，尺寸 30→18、圆角 6→4，透明度在后 45% 降到 0.5。
+- 越过 0.97 才“着陆”：此刻分配 dockSerial 占槽，其余方块随之让位，并给 `bump` 弹簧（ω26 ζ0.35）一次冲量形成轻弹。延迟在帧内到期只推进剩余时间，30/120Hz 同一时刻几何一致。
+- 单方块点击 `ClickDocked` → 重新展开：flight 立即→0、morph 延迟→0（逆过程）；到达锚点后为可点击胶囊，再点、点外部或 3s 后按收起曲线返回。
+
+### 绘制（`Bar.StatusIndicator.cpp`）
+- 表面：`BarUiShapeClass`（themeSurface + residentSurface + 浅色缩放），与主按钮同一材质权重；用户背景透明度与 PPT 闲置淡化由常驻表面规则统一处理（指示器绘制移入主按钮 idle fade 作用域）。
+- 边框：1 DIP 强调显示色 `DrawPointLightFrame`（点光同主栏），透明度 0.9×常驻内容透明度（含闲置淡化）。强调显示色 = OKLCH 按材质校正（深色 L≥0.72、浅色 L≤0.52）。
+- 遮挡式组合成：每项用 `rect EXCLUDE ∪上层外形` 几何遮罩 + 整项 opacity 单次 PushLayer；下层外露部分完整绘制，无逐元素半透明叠加。
+- 文字：几何遮罩 = 胶囊内侧圆角，滚动时线性渐变 opacity brush 两端渐隐；图标/文字乘常驻内容透明度。
+- 悬停/按压：方块内 hover 填充 + 按压缩放，复用主栏按钮曲线；胶囊无按钮式反馈。
+- 环/进度环：1.5 DIP；仅 `BarUiEdgeLightingEnabled` 时以几何预模糊遮罩 + 强调色实色画刷绘制光晕，再叠点光细线。

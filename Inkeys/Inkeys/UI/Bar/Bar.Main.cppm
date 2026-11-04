@@ -94,8 +94,9 @@ class BarRenderLoopCoordinator;
 class BarStatusIndicatorPanel
 {
 public:
-	bool Advance(BarUISetClass&, double dt, double speed, double zoom, bool drawing);
-	void Layout(const Inkeys::UI::Bar::StatusIndicatorLayoutInput&, double zoom);
+	// dragLocked：主栏拖动中锁存倒转方向，松手后再以弹簧换边。
+	bool Advance(BarUISetClass&, double dt, double speed, double zoom, bool drawing, bool dragLocked);
+	void Layout(Inkeys::UI::Bar::StatusIndicatorLayoutInput, double zoom);
 	void Draw(BarUIRendering&, ID2D1DeviceContext*, const BarUiSuperellipseClass&, double lightMaterial);
 	void CommitPresented();
 	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled, bool contactPointer, bool* accepted);
@@ -112,8 +113,7 @@ private:
 	Inkeys::UI::Bar::StatusIndicatorLayoutInput input_;
 	struct Presented
 	{
-	 struct Hit { Inkeys::UI::Bar::StatusIndicatorEntryLayout geometry; bool expanded=false; };
-	 std::vector<Hit> entries;
+	 std::vector<Inkeys::UI::Bar::StatusIndicatorEntryLayout> entries; // 仅可命中项
 	 double zoom=1;
 	};
 	mutable std::mutex presentedMutex_;
@@ -137,7 +137,11 @@ private:
 	std::array<double,3> ringKey_{};
 	unsigned long long deviceGeneration_=0;
 	double zoom_=1,simulatedSampleAt_=0;
+	Inkeys::UI::Bar::StatusIndicatorSpring orientation_;
+	bool belowTarget_=false,orientationInitialized_=false;
 	bool initialized_=false,feedbackActive_=false,changed_=false;
+	void DrawRing(BarUIRendering&, ID2D1DeviceContext*, const BarUiSuperellipseClass&, double material, double content);
+	void DrawStroke(BarUIRendering&, ID2D1DeviceContext*, ID2D1Geometry*, COLORREF, double opacity, double material, int variant);
 };
 
 class BarEraserAttributePanel

@@ -49,4 +49,5 @@
 ## 阶段 2'/3' — v2 重设计（2026-11-04，取代阶段 2/3 的视觉与部分交互）
 - [x] 合并 `temp/state`（cd244350），Debug|ARM64 完整构建、无窗口测试、`--bar-eraser-offscreen-test` 通过。
 - [x] 状态图标按实心语言重绘（`research/status_icon_build.py`，lint 7/7）；HTML 预览稿 `research/indicator-v2-preview.html`。
-- [ ] 用户确认预览稿的尺寸/颜色/动画后：按 prd “Decisions v2” 重写 `Bar.StatusIndicator.h` 布局与收起动画、`.cpp` 绘制（主栏 `BarUiShapeClass` 材质、遮挡裁剪 + `PushPanelOpacity` 单次合成、圆角文字遮罩与渐隐、光晕）、交互（单方块重新展开、主栏按钮式悬停）、RenderLoop 倒转输入与胶囊扩窗包络；更新无窗口与离屏测试。
+- [x] 合并 `temp/state`（4732db1b）后按用户确认的预览稿实施：按 prd “Decisions v2” 重写 `Bar.StatusIndicator.h` 布局与收起动画、`.cpp` 绘制（主栏 `BarUiShapeClass` 材质、遮挡裁剪 + `PushPanelOpacity` 单次合成、圆角文字遮罩与渐隐、光晕）、交互（单方块重新展开、主栏按钮式悬停）、RenderLoop 倒转输入与胶囊扩窗包络；更新无窗口与离屏测试。
+- 验证（2026-11-04）：Debug|ARM64 完整构建 0 错误；`InkeysHeadlessTests.exe --no-window` 0 失败（含倒转、着陆让位、帧率无关、单方块重新展开新用例）；`Inkeys.exe --bar-eraser-offscreen-test` 0 失败；状态图标 lint 7/7；`git diff --check` 通过。真实窗口观感、鼠标/笔/触摸与透明度/光影组合仍需用户人工验收。

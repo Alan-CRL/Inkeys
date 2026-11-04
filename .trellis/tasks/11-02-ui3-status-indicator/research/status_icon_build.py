@@ -4,7 +4,7 @@ import math
 import sys
 from pathlib import Path
 
-LIB = Path(__file__).resolve().parents[2] / "11-03-bar-icon-redesign" / "research"
+LIB = next(Path(__file__).resolve().parents[2].glob("**/11-03-bar-icon-redesign/research"))
 sys.path.insert(0, str(LIB))
 from icon_lib import U, arrow_head, box, circ, knock, line, poly, rotate, rr, scale, soften, move, to_svg  # noqa: E402
 
