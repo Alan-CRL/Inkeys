@@ -211,7 +211,8 @@ namespace Inkeys::UI::Bar
 			const auto text=GetThemeColor(BarThemeColorEnum::TextPrimary);
 			pageTotal.Initialization(0,20,70,25,L"",13,text);
 			unsaved.Initialization(5,-32,295,27,L"",14,text);
-			for(auto& word:headings){word.Initialization(0,0,220,25,L"",12,text);word.enable.Initialization(true);}
+			// 白板主题分区标题与主栏标题同为 13 DIP 粗体。
+			for(auto& word:headings){word.Initialization(0,0,220,25,L"",BarButtonTwoTwoLabelFontSizeDip,text);word.enable.Initialization(true);}
 			unsaved.enable.Initialization(true);
 			for(auto& shape:previewBackgrounds){InitializeShape(shape,{0,0,70,70},RGB(18,59,50),4,1,1);shape.frameRendering=BarUiFrameRenderingEnum::Solid;}
 		}
@@ -223,7 +224,7 @@ namespace Inkeys::UI::Bar
 			button.button.framePrimaryLightEnabled=false;
 			button.button.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
 			button.name.Initialization(0,20,70,25,L"",13,text);
-			button.icon.Initialization(0,-10,text,std::nullopt);
+			button.icon.Initialization(0,-10,GetThemeColor(BarThemeColorEnum::IconPrimary),std::nullopt);
 			button.icon.enable.Initialization(false);
 		}
 		BarButtonClass& Button(BarSurfaceButtonId id)
@@ -529,7 +530,10 @@ namespace Inkeys::UI::Bar
 				previews[i].icon.y.SetDirect(i<6?0:BarButtonTwoTwoIconOffsetYDip);
 				previewBackgrounds[i].fill->SetDirect(i<6?RGB((ThemeColors[i]>>16)&255,(ThemeColors[i]>>8)&255,ThemeColors[i]&255):
 					RGB((next.backgroundRgb>>16)&255,(next.backgroundRgb>>8)&255,next.backgroundRgb&255));
-				previewBackgrounds[i].frame->SetDirect(RGB(144,144,144));
+				// 浅色用色块边框角色（约 18% 黑）；深色保持原 #909090 实线。
+				const bool lightPreview=GetThemeLightWeight()>0.5;
+				previewBackgrounds[i].frame->SetDirect(lightPreview?GetThemeColor(BarThemeColorEnum::SwatchFrame):RGB(144,144,144));
+				previewBackgrounds[i].framePct->SetDirect(lightPreview?0.18:1.0);
 				SetShapeBounds(previewBackgrounds[i],Bounds(previews[i].button),0,true);
 			}
 			for(std::size_t i=0;i<headings.size();++i){headings[i].content.SetVal(next.sectionLabels[i]);headings[i].content.SetTar(next.sectionLabels[i]);}
@@ -667,7 +671,19 @@ namespace Inkeys::UI::Bar
 				if(!backgroundOnly)root.pct.SetTar(GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity));
 				divider.fill->SetTar(border);dragHandle.fill->SetTar(border);
 				pageTotal.color.SetTar(text);unsaved.color.SetTar(text);for(auto& word:headings)word.color.SetTar(text);
+				const bool lightPreview=GetThemeLightWeight()>0.5;
+				for(auto& shape:previewBackgrounds){
+					shape.frame->SetTar(lightPreview?GetThemeColor(BarThemeColorEnum::SwatchFrame):RGB(144,144,144));
+					shape.framePct->SetTar(lightPreview?0.18:1.0);
+				}
 				appliedSurfaceColor=surface;
+			}
+			{
+				// 分页不经主栏材质动画，直接取主题端点，使边缘光强度与中性光色和主栏一致。
+				const double lightMaterial=GetThemeLightWeight();
+				for(auto* shape:{&root,&menu,&theme,&divider,&dragHandle})shape->lightMaterial=lightMaterial;
+				for(auto& shape:previewBackgrounds)shape.lightMaterial=lightMaterial;
+				for(BarSurfaceButtonId id=1;id<=17;++id)Button(id).button.lightMaterial=lightMaterial;
 			}
 			{
 				// 用户常驻透明度变化：分页底板跟随主栏绝对值，图标/文字倍率在绘制时读取，均需整幅重画。
@@ -697,7 +713,8 @@ namespace Inkeys::UI::Bar
 					auto& button=Button(id);const bool visible=(id<=5&&button.IsVisible())
 						|| (id>=6&&id<=8&&menuMotion.Visible()) || (id>=9&&themeMotion.Visible());
 					bool enabled=!content.switching&&PropertyButtonEnabled(id);if(id>=2&&id<=4)enabled&=content.enabled[id-2];if(id==7)enabled&=!content.pptActive;
-					COLORREF text=GetThemeColor(BarThemeColorEnum::TextPrimary);
+					// 与主栏一致：图标用 IconPrimary、文字用 TextPrimary；只有压在白板底色上的样式预览按背景亮度覆盖。
+					std::optional<COLORREF> text;
 					if(id>=15){const auto rgb=content.backgroundRgb;const unsigned lum=((rgb>>16)&255)*299+((rgb>>8)&255)*587+(rgb&255)*114;
 						text=GetThemeColor(lum>128000?BarThemeModeEnum::Light:BarThemeModeEnum::Dark,BarThemeColorEnum::TextPrimary);}
 					const bool selected=id>=9&&(id<15?ThemeColors[id-9]==content.backgroundRgb:static_cast<int>(id-15)==content.pattern);
@@ -785,7 +802,7 @@ namespace Inkeys::UI::Bar
                 auto* track=ringTrack.Get();auto* foreground=ringForeground.Get();
                 const auto color=[&](COLORREF value){return D2D1::ColorF(GetRValue(value)/255.0F,GetGValue(value)/255.0F,GetBValue(value)/255.0F,static_cast<FLOAT>(indicator.opacity));};
                 if(track)track->SetColor(color(GetThemeColor(BarThemeColorEnum::SurfaceFrame)));
-                if(foreground)foreground->SetColor(color(GetThemeColor(BarThemeColorEnum::TextPrimary)));
+                if(foreground)foreground->SetColor(color(GetThemeColor(BarThemeColorEnum::IconPrimary)));
                 if(ringFailed||!ringArc||!stroke||!track||!foreground){ringFailed=true;return true;}
                 D2D1_MATRIX_3X2_F original;context->GetTransform(&original);
                 const auto r=Bounds(item.button);const float z=static_cast<float>(target.GetFrameZoom());
@@ -814,7 +831,7 @@ namespace Inkeys::UI::Bar
 			if(child){
 				DrawShape(dc,divider);
 				for(std::size_t i=0;i<headings.size();++i)
-					renderer.Word(dc,headings[i],{350,ThemeBounds.top+(i?191.0:5.0)},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
+					renderer.Word(dc,headings[i],{350,ThemeBounds.top+(i?191.0:5.0)},DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
 				for(BarSurfaceButtonId id=9;id<=17;++id)DrawButton(dc,id);
 			}else{
 				for(BarSurfaceButtonId id=6;id<=8;++id)DrawButton(dc,id);

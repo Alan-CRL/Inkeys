@@ -35,3 +35,16 @@
 ## 构建环境与回滚
 
 在本 worktree 使用原生 ARM64 MSBuild 完整 Solution 带入 PptCOM。可复用原 worktree 的已安装第三方依赖，不能复用未提交产品源码或 object；输出写入本 worktree ignored Build/Cache。三个审查单元为颜色/材质 helper、renderer、主按钮资源与集成；禁止 stash/reset/移动 draw 现场。
+
+## 续作 v3：浅色主栏配色重设计（2026-11-04）
+
+22. [x] 设计稿 `research/light-v3-preview.html`；开发者确认：品牌青、强调色浅底选中态、细边 + 柔和投影。
+23. [x] 角色与策略：重写 `LightColor()` 中性雾白表并反算叠加类预混色；调整常驻透明度、外框、选中底比例；EdgeLight 与外框解耦、强度 1.0；单圈柔和投影与外扩上界。
+24. [x] 主按钮：屏幕 9% 中性黑、对比度自适应外轮廓。
+25. [x] 分页：图标 IconPrimary、加载环、主题切换唤醒、表面材质跟随 Bar 主题权重。
+26. [x] 白板主题标题粗体 13 DIP；颜色色块 SwatchFrame 边框、主题切换重着色、中性边缘光；白板预览色块框。
+27. [x] 排查初始化一次性取色导致的深色残留并修正。
+28. [x] 更新 headless 测试与 `bar-theme-material.md` 规范；ARM64 完整构建、`InkeysHeadlessTests.exe --no-window`、`git diff --check`、编码/CRLF 检查。
+28.1 [x] 修正离屏测试中过期的分页常驻透明度断言（自 1469722a 起浅色端更实）；`--bar-eraser-offscreen-test` 0 失败。
+28.2 [x] 修复开发者验收发现的回归：用户背景/内容透明度与主题落地只标记损伤、静止主栏不提交新帧，补 `presentDecision.RequireVisualRetry()`；新增分页/主栏常驻表面透明度离屏像素测试与源级契约测试。
+29. [ ] 开发者 GUI 验收（白/深/彩色背景，展开/收起，绘制态各笔色，分页与白板菜单，深色模式回归）。

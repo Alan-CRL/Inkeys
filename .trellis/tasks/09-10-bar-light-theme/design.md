@@ -45,3 +45,28 @@
 ## 兼容与回滚
 
 配置 schema 只新增一个默认深色的整数叶子，不迁移旧皮肤字段。颜色/材质、Logo、设置集成分别审查；Dark 端点保持原 renderer 参数，PageControl 显式 Dark 语义仍有效。回滚时移除设置卡片与 `ThemeMode` 入口，并让 Bar 固定回默认 Dark；配置文件中遗留的新键由现有宽容读取策略忽略。所有改动留为 theme 未提交差异；未经 GUI 验证不声明视觉实机通过。
+
+## 续作 v3 技术方案
+
+### 角色与策略（`Bar.ThemeMaterial.h`、`Bar.Theme.cppm`）
+
+- 替换 `LightColor()` 浅色表为中性雾白：Surface `#FBFBFB`、IconPrimary `#2B2B2B`、TextPrimary `#1A1A1A`、Accent/SelectedFill `#006A63`、EdgeLight `#3A3A3A`；SurfaceFrame/Divider/PressedFill/SubtleFill/SwatchFrame 按「对象原有透明度 × Light 比例下的等效黑色占比」反算为中性灰（公式：`C = 251 - target×251 / opacity`，实现时与常量一起写入注释和测试）。
+- `LightResidentSurfaceOpacityScale` 1.10→1.15（0.92）；`LightFrameOpacityScale` 1.75→1.0（外框由预混色直接给出 8%）；`LightSelectedFillOpacityScale` 0.60→0.50（0.20→0.10）。
+- `Resolve()` Light 端：`edgeLight` 取 EdgeLight 角色（与外框解耦）；`LightEdgeLightIntensity` 1.5→1.0；恢复单圈投影参数（ambient：黑、opacity 0.08、radius 6、offsetY 2；key 保持 0；顶部高光保持 0），radius+offset 不超过既有 `SurfaceShadowOutsetDip=8`，不改窗口外扩。
+- `DrawPointLightFrame` 的「以实际边框色覆盖 edgeLight」改为按材质权重在边框色与 EdgeLight 间混合，选中按钮（显式边缘光色）不受影响。
+- Dark `SwatchFrame` 基色改为 Dark 外框色，使色块改用该角色后 Dark 观感不变。
+
+### 主按钮（`Bar.LogoAppearance.h`）
+
+`screenFill` Light 端为黑、`screenOpacity` 由 0.22 按材质权重过渡到 0.09；`outlineOpacity` 改为 `light × OutlineForPen(penFill)`，后者按笔色对 Surface 的对比度在 [3:1, 1:1] 间线性给出 0→0.55；非绘制态笔身 IconPrimary 对比足够，因此无描边。SVG 结构不变。
+
+### 遗留修复
+
+- 分页：`Bar.Scene.cpp` 按钮初始化与逐帧 retarget 不再把 TextPrimary 作为 contentOverride（主题预览色块 `id>=15` 保留按背景亮度的覆盖）；加载环弧改 IconPrimary；`InitializeShape` 的表面材质每帧取 Bar 主题权重（`barLightMaterial` current）。`Bar.Main.cpp` `SetThemeMode()` 追加 `RenderPipeline::Request(PptPageMask())`。
+- 白板主题标题：`Bar.Scene.cpp` 标题字号用 `BarButtonTwoTwoLabelFontSizeDip`、绘制权重 BOLD。
+- 色块：`Bar.Initialization.cpp` 色块边框改 SwatchFrame；`Bar.RenderLoop.cpp` 色块帧更新中同步 retarget 边框色，透明度经 `GetThemeSurfaceFrameOpacity` 解析；白板主题预览色块框改同一角色。
+- 主题切换处理（`Bar.RenderLoop.cpp` 主题分支）补齐只在初始化取色的形状/文字，逐一核对 Initialization 中 `GetThemeColor` 的一次性调用。
+
+### 测试与规范
+
+更新 headless 中浅色角色、对比度、投影端点与连续性、边缘光解耦、选中底透明度、主按钮自适应描边、分页图标角色的断言；`.trellis/spec/native-desktop/bar-theme-material.md` 以「中性雾白」替换「青瓷」合同并记录 v3 投影与指示器规则。Dark 端点回归断言保持不变。

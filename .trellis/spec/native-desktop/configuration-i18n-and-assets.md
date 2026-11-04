@@ -48,14 +48,14 @@
 
 ## UI3 常驻透明度配置合同
 
-持久化路径为 `Experimental.Inkeys3.UI3.BackgroundOpacity` 与 `ContentOpacity`，均为整数百分比。背景默认 `0`（`ResidentBackgroundOpacityThemeDefault`，跟随主题：Dark 80%、Light 88%），其余值经 `NormalizeResidentBackgroundOpacity()` 收敛到 30~100；内容默认 `100`，经 `NormalizeResidentContentOpacity()` 收敛到 30~100。
+持久化路径为 `Experimental.Inkeys3.UI3.BackgroundOpacity` 与 `ContentOpacity`，均为整数百分比。背景默认 `0`（`ResidentBackgroundOpacityThemeDefault`，跟随主题：Dark 80%、Light 92%），其余值经 `NormalizeResidentBackgroundOpacity()` 收敛到 30~100；内容默认 `100`，经 `NormalizeResidentContentOpacity()` 收敛到 30~100。
 
 - 背景为绝对值：用户值即展开主栏的填充透明度；主按钮（收起 0.6 基准）、底部吸附指示与分页按与主栏 0.80 基准的比例同步。内容透明度是图标/文字的倍率。两者只作用于常驻表面（主栏、主按钮、吸附指示、PPT/白板分页），弹出面板、属性栏、菜单保持原透明度。
 - 启动在 `ReadAll()` 后归一并写回内存，再调用 `Inkeys::UI::Bar::SetResidentOpacity()`；该函数只交换 `BarStyleClass::requested*Opacity` 并唤醒 Bar 与 `PptPageMask()`，渲染线程在帧首应用并整幅重画，分页在 Advance 中比较已应用值。
 - “常规 > 外观 > 透明度”分区两条滑块（30%~100%）带“恢复默认”按钮。拖动实时发布，松手、重置或离页时再 `QueueConfigWrite()`；背景重置写回 `0`，滑块显示当前主栏主题的默认值。动画速率（默认 1.0x）与主栏缩放（默认 100%）滑块同样带“恢复默认”，重置后沿原有释放保存路径。
 - Startup Preview 仍使用主题默认透明度绘制占位，与自定义背景透明度交接时可能有一次可见跳变。
 
-无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/88%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
+无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/92%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
 ## 设置页废弃配置清理合同
 
 ### 1. Scope / Trigger

@@ -16,6 +16,19 @@ namespace BarLogoAppearance
 
 	constexpr bool IsDrawingMode(bool pen, bool shape) noexcept { return pen || shape; }
 
+	// 浅色屏幕为 9% 中性黑，替代图标灰 0.22 的灰块；深色端保持 0.22。
+	inline constexpr double DarkScreenOpacity = 0.22;
+	inline constexpr double LightScreenOpacity = 0.09;
+	// 外轮廓只给低对比笔色：对表面 ≥3:1 时为 0（深色笔不描边），接近 1:1（白、浅黄）时最高 0.55。
+	inline constexpr double LightOutlineMaxOpacity = 0.55;
+
+	inline double LightOutlineOpacity(Color lightPenFill) noexcept
+	{
+		using namespace BarThemeMaterial;
+		const double contrast = ContrastRatio(lightPenFill, LightColor(ColorRole::Surface));
+		return std::clamp((3.0 - contrast) / 2.0, 0.0, 1.0) * LightOutlineMaxOpacity;
+	}
+
 	inline Snapshot Resolve(double lightWeight, double drawingWeight, Color actualPenColor) noexcept
 	{
 		using namespace BarThemeMaterial;
@@ -23,13 +36,14 @@ namespace BarLogoAppearance
 		const double drawing = ClampWeight(drawingWeight);
 		const double ink = drawing * (1.0 - light);
 		// 深色保留白色笔底及原渐变；浅色才把真实 RGB 填入整笔。
-		// 浅色非绘制态笔身使用图标色；屏幕为图标色 0.22，任何背景下都比表面深约 1.4:1，
-		// 笔身对屏幕仍不低于 4.5:1。深浅两端恰好共用 0.22，只在颜色上过渡。
+		// 浅色非绘制态笔身使用图标色；屏幕为 9% 中性黑，只作衬底不抢笔身。
+		const Color lightPenFill = MixColor(LightColor(ColorRole::IconPrimary), actualPenColor, drawing);
 		return {
-			MixColor(Rgb(255, 255, 255), MixColor(LightColor(ColorRole::IconPrimary), actualPenColor, drawing), light),
-			MixColor(Rgb(255, 255, 255), LightColor(ColorRole::IconPrimary), light),
+			MixColor(Rgb(255, 255, 255), lightPenFill, light),
+			MixColor(Rgb(255, 255, 255), Rgb(0, 0, 0), light),
 			ink > 0.0 ? actualPenColor & 0x00FFFFFFU : 0U,
-			0.22, ink, 0.85 * light
+			Mix(DarkScreenOpacity, LightScreenOpacity, light), ink,
+			light * LightOutlineOpacity(lightPenFill)
 		};
 	}
 

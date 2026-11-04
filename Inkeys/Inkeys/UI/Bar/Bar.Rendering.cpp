@@ -2529,10 +2529,10 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing;
 	double penColorBlend = useDrawingLightTransition
 		? clamp(frameDrawingPenColorBlend, 0.0, 1.0) : 0.0;
-	// 边缘光基色始终取本对象实际绘制的边框色，深浅两端同一规则：
-	// 表面/分隔线为灰，选中按钮为主题青，绘制时再向笔色过渡。
+	// 边缘光基色取本对象实际绘制的边框色：选中按钮为主题青；中性边框在浅色端
+	// 过渡到 EdgeLight 深灰（8% 黑的边框本身作光色不可见），绘制时再向笔色过渡。
 	auto lightingMaterial = material;
-	lightingMaterial.edgeLight = color;
+	lightingMaterial.edgeLight = BarThemeMaterial::ObjectEdgeLight(material.lightWeight, color);
 	const auto primaryLighting = BarThemeMaterial::ResolveLighting(
 		lightingMaterial, frameDrawingPenColor, penColorBlend);
 	const auto cursorLighting = BarThemeMaterial::ResolveCursorLighting(
