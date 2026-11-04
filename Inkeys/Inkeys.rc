@@ -103,32 +103,10 @@ PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
 SETTINGSPONSOR          PNG                     "src\\setting\\SettingSponsor.png"
 
-CUSTOMIZEICO1           PNG                     "src\\ClassIsland.png"
-
-CUSTOMIZEICO2           PNG                     "src\\IslandCaller.png"
-
-CUSTOMIZEICO3           PNG                     "src\\quick\\desktop.png"
-
-CUSTOMIZEICO4           PNG                     "src\\quick\\explorer.png"
-
-CUSTOMIZEICO5           PNG                     "src\\quick\\keyboardesc.png"
-
-CUSTOMIZEICO6           PNG                     "src\\quick\\altf4.png"
-
-CUSTOMIZEICO7           PNG                     "src\\quick\\control.png"
-
-CUSTOMIZEICO8           PNG                     "src\\quick\\lockworkstation.png"
-
-CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
-
 PLUGINFLAG4             PNG                     "src\\PluginFlag4.png"
 
 
 
-
-CUSTOMIZEICO11          PNG                     "src\\NamePicker.png"
-
-CUSTOMIZEICO10          PNG                     "src\\SecRandom.png"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -139,6 +117,7 @@ CUSTOMIZEICO10          PNG                     "src\\SecRandom.png"
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDI_ICON1               ICON                    "src\\icon.ico"
+IDI_ICON2               ICON                    "src\\whiteboard.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -161,6 +140,14 @@ IDR_TTF6                TTF                     "src\\ttf\\HarmonyOS_Sans_Conden
 IDR_TTF7                TTF                     "src\\ttf\\HarmonyOS_SansSC_Bold.ttf"
 
 IDR_TTF8                TTF                     "src\\ttf\\HarmonyOS_SansTC_Bold.ttf"
+
+IDR_NOTO_JP_REGULAR     TTF                     "src\\ttf\\NotoSansJP-Regular.ttf"
+
+IDR_NOTO_JP_BOLD        TTF                     "src\\ttf\\NotoSansJP-Bold.ttf"
+
+IDR_NOTO_KR_REGULAR     TTF                     "src\\ttf\\NotoSansKR-Regular.ttf"
+
+IDR_NOTO_KR_BOLD        TTF                     "src\\ttf\\NotoSansKR-Bold.ttf"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -214,6 +201,7 @@ BEGIN
             VALUE "InternalName", "Inkeys"
             VALUE "LegalCopyright", "Copyright © 2023-2026 AlanCRL(陈润林) 工作室"
             VALUE "ProductName", "Inkeys"
+            VALUE "StartupHandoffProtocol", "1"
         END
     END
     BLOCK "VarFileInfo"
@@ -234,6 +222,40 @@ IDR_EN_US               JSON                    "src\\i18n\\en-US.jsonc"
 
 IDR_ZH_TW               JSON                    "src\\i18n\\zh-TW.jsonc"
 
+IDR_ZH_HK               JSON                    "src\\i18n\\zh-HK.jsonc"
+
+IDR_JA_JP               JSON                    "src\\i18n\\ja-JP.jsonc"
+
+IDR_KO_KR               JSON                    "src\\i18n\\ko-KR.jsonc"
+
+IDR_FR_FR               JSON                    "src\\i18n\\fr-FR.jsonc"
+
+IDR_DE_DE               JSON                    "src\\i18n\\de-DE.jsonc"
+
+IDR_ES_ES               JSON                    "src\\i18n\\es-ES.jsonc"
+
+IDR_PT_BR               JSON                    "src\\i18n\\pt-BR.jsonc"
+
+IDR_RU_RU               JSON                    "src\\i18n\\ru-RU.jsonc"
+
+IDR_ID_ID               JSON                    "src\\i18n\\id-ID.jsonc"
+
+IDR_VI_VN               JSON                    "src\\i18n\\vi-VN.jsonc"
+
+IDR_TR_TR               JSON                    "src\\i18n\\tr-TR.jsonc"
+
+IDR_IT_IT               JSON                    "src\\i18n\\it-IT.jsonc"
+
+IDR_PL_PL               JSON                    "src\\i18n\\pl-PL.jsonc"
+
+IDR_UK_UA               JSON                    "src\\i18n\\uk-UA.jsonc"
+
+IDR_ES_MX               JSON                    "src\\i18n\\es-MX.jsonc"
+
+IDR_RO_RO               JSON                    "src\\i18n\\ro-RO.jsonc"
+
+IDR_EN_GB               JSON                    "src\\i18n\\en-GB.jsonc"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -242,11 +264,7 @@ IDR_ZH_TW               JSON                    "src\\i18n\\zh-TW.jsonc"
 
 LOGO1                   UI                      "src\\UI\\logo1.svg"
 
-LOGO2                   UI                      "src\\UI\\logo2.svg"
-
 FRAME94                 UI                      "src\\UI\\Frame 94.svg"
-
-BARDIVIDER              UI                      "src\\UI\\barDivider.svg"
 
 BARSELECT               UI                      "src\\UI\\barSelect.svg"
 
@@ -261,8 +279,6 @@ BARLASER                UI                      "src\\UI\\barLaser.svg"
 BARFREEZE               UI                      "src\\UI\\barFreeze.svg"
 
 BARWHITEBOARD           UI                      "src\\UI\\barWhiteboard.svg"
-
-BARDISMISS              UI                      "src\\UI\\barDismiss.svg"
 
 BARSETTING              UI                      "src\\UI\\barSetting.svg"
 
@@ -313,6 +329,47 @@ BARENDSHOW              UI                      "src\\UI\\barEndShow.svg"
 
 BARADD                  UI                      "src\\UI\\barAdd.svg"
 
+BARRETURNSHOW           UI                      "src\\UI\\barReturnShow.svg"
+
+BARRESUMEWHITEBOARD     UI                      "src\\UI\\barResumeWhiteboard.svg"
+
+BARMOVE                 UI                      "src\\UI\\barMove.svg"
+
+
+BARERASERSPEEDSETTING   UI                      "src\\UI\\barEraserSpeedSetting.svg"
+
+COMPEXPLORER            UI                      "src\\UI\\compExplorer.svg"
+
+COMPTASKMANAGER         UI                      "src\\UI\\compTaskManager.svg"
+
+COMPCONTROLPANEL        UI                      "src\\UI\\compControlPanel.svg"
+
+COMPSHOWDESKTOP         UI                      "src\\UI\\compShowDesktop.svg"
+
+COMPLOCKSCREEN          UI                      "src\\UI\\compLockScreen.svg"
+
+COMPESCAPE              UI                      "src\\UI\\compEscape.svg"
+
+COMPALTF4               UI                      "src\\UI\\compAltF4.svg"
+
+COMPROLLCALLRANDOM      UI                      "src\\UI\\compRollCallRandom.svg"
+
+COMPROLLCALLSINGLE      UI                      "src\\UI\\compRollCallSingle.svg"
+
+COMPROLLCALLQUICK       UI                      "src\\UI\\compRollCallQuick.svg"
+
+COMPROLLCALLQUICK2      UI                      "src\\UI\\compRollCallQuick2.svg"
+
+COMPROLLCALLQUICKCOMPAT UI                      "src\\UI\\compRollCallQuickCompat.svg"
+
+COMPNAMEPICKER          UI                      "src\\UI\\compNamePicker.svg"
+
+COMPCLASSSETTINGS       UI                      "src\\UI\\compClassSettings.svg"
+
+COMPCLASSPROFILE        UI                      "src\\UI\\compClassProfile.svg"
+
+COMPCLASSSWAP           UI                      "src\\UI\\compClassSwap.svg"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -320,6 +377,7 @@ BARADD                  UI                      "src\\UI\\barAdd.svg"
 //
 
 IDR_SHADERS1            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Assets\\ImGui\\imgui_ps.cso"
+IDR_SETTING_IMGUI_ALPHA_PS            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Assets\\ImGui\\imgui_alpha_ps.cso"
 
 IDR_SETTING_ERASER_DEMO_PS            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Assets\\ImGui\\imgui_eraser_demo_ps.cso"
 

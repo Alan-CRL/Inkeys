@@ -2,10 +2,15 @@
 #include "Setting.HomeBrand.h"
 #include "imfluent/imfluent_internal.h"
 #include <cstring>
+#include <cfloat>
+#include <format>
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
 #include "imgui/imgui_internal.h"
+#include "../../Drawing/Draw3/Draw3.CursorSettings.h"
+
+import Inkeys.Conv.Text;
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -231,6 +236,12 @@ namespace Inkeys::UI::Setting::Design
 		pose.origin=state.entryStart; pose.width=state.entryStartWidth; pose.opacity=1;
 		pose.writing=time>=HomeEntryTiming::WritingEnd ? 1.0F
 			: std::clamp((time-HomeEntryTiming::Wait)/HomeEntryTiming::Writing,0.0F,1.0F);
+		// 详情入口写完即原地渐隐；主页仍保留停留与归位。
+		if (state.fadeOnly)
+		{
+			pose.opacity=1-HomeBrand::Smooth(std::clamp((time-HomeEntryTiming::WritingEnd)/HomeEntryTiming::Dock,0.0F,1.0F));
+			return pose;
+		}
 		// 六笔完全写好后保持 600ms；1.90s 前不透出界面、不移动字标。
 		if (time<=HomeEntryTiming::DockStart) return pose;
 		const float phase=std::clamp((time-HomeEntryTiming::DockStart)/HomeEntryTiming::Dock,0.0F,1.0F), u=HomeBrand::Smooth(phase), v=1-u;
@@ -253,11 +264,14 @@ namespace Inkeys::UI::Setting::Design
 		return pose;
 	}
 
+	namespace { void ResolveHomeEntryLayout(HomeMotionState& state); }
+
 	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip)
 	{
 		state.clientContent=clientContent; state.contentClip=contentClip;
 		state.viewportReady=clientContent.z>clientContent.x && clientContent.w>clientContent.y
 			&& contentClip.z>contentClip.x && contentClip.w>contentClip.y;
+		if (state.fadeOnly) ResolveHomeEntryLayout(state);
 	}
 
 	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
@@ -303,7 +317,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 		if (!allowFreeze) { FinishHomeEntry(state); return false; }
 		if (!prep.ready || !state.EntryActive()) return false;
-		const float next=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
+		const float next=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
 		if (!prep.revealReady && next>=HomeEntryTiming::WritingEnd)
 		{
 			// 书写完成后仍保持不透明：至少两次完整排布且 native 已消费当前测量后，再截无字标页。
@@ -311,14 +325,14 @@ namespace Inkeys::UI::Setting::Design
 			state.entryElapsed=(std::max)(state.entryElapsed,HomeEntryTiming::WritingEnd);
 			return false;
 		}
-		if (next>=HomeEntryTiming::Total && !prep.restoreReady)
+		if (next>=state.EntryTotal() && !prep.restoreReady)
 		{
 			// 终态前在缓存遮挡下恢复真实 child，至少两帧且尺寸就绪才解除遮挡。
 			prep.restorePending=true;
 			return false;
 		}
 		state.entryElapsed=next;
-		if (next>=HomeEntryTiming::Total) { FinishHomeEntry(state); return false; }
+		if (next>=state.EntryTotal()) { FinishHomeEntry(state); return false; }
 		// style alpha 非 1 时蒙版未真正不透明；截图就绪前仍需绘制实际底层。
 		if (!prep.revealReady && key.material[0]!=1) return false;
 		prep.skipBackground=true; prep.fullFrame=false; ++prep.skippedFrames;
@@ -442,6 +456,12 @@ namespace Inkeys::UI::Setting::Design
 		return true;
 	}
 
+	ImU32 HomeEntryMaskColor(const HomeMotionState& state)
+	{
+		const float opacity=state.EntryActive() ? ResolveHomeEntryPose(state).opacity : 0.0F;
+		return (AppBase & ~IM_COL32_A_MASK)|(static_cast<ImU32>(std::round(opacity*255))<<IM_COL32_A_SHIFT);
+	}
+
 	void RenderHomeEntryOverlay(const HomeMotionState& state)
 	{
 		if (!state.EntryActive()) return;
@@ -449,12 +469,16 @@ namespace Inkeys::UI::Setting::Design
 		const auto bounds=state.clientContent;
 		draw->PushClipRect({bounds.x,bounds.y},{bounds.z,bounds.w},false);
 		if (pose.opacity>0)
-		{
-			const ImU32 solid=AppBase;
-			draw->AddRectFilled({bounds.x,bounds.y},{bounds.z,bounds.w},
-				(solid & ~IM_COL32_A_MASK)|(static_cast<ImU32>(std::round(pose.opacity*255))<<IM_COL32_A_SHIFT));
-		}
+			draw->AddRectFilled({bounds.x,bounds.y},{bounds.z,bounds.w},HomeEntryMaskColor(state));
+		const int firstVertex=draw->VtxBuffer.Size;
 		HomeBrand::DrawWriting(draw,pose.origin,pose.width,IsDarkMode(),pose.writing);
+		if (state.fadeOnly)
+			for (int i=firstVertex;i<draw->VtxBuffer.Size;++i)
+			{
+				auto& color=draw->VtxBuffer[i].col;
+				const auto alpha=static_cast<ImU32>(std::round(((color>>IM_COL32_A_SHIFT)&0xff)*pose.opacity));
+				color=(color & ~IM_COL32_A_MASK)|(alpha<<IM_COL32_A_SHIFT);
+			}
 		draw->PopClipRect();
 	}
 
@@ -483,8 +507,8 @@ namespace Inkeys::UI::Setting::Design
 				state.brandOrigin.x,state.brandOrigin.y,state.brandWidth,HomeBrand::Height(state.brandWidth),dpi};
 			if (state.entryLayoutValidated && state.entryLayoutKey==key)
 			{
-				if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
-				if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
+				if (!state.preparation.managed) state.entryElapsed=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
+				if (state.entryElapsed>=state.EntryTotal()) FinishHomeEntry(state);
 				return;
 			}
 			state.entryLayoutKey=key; state.entryLayoutValidated=true;
@@ -495,9 +519,10 @@ namespace Inkeys::UI::Setting::Design
 				return origin.x-margin>=rect.x && origin.y-margin>=rect.y
 					&& origin.x+size.x+margin<=rect.z && origin.y+size.y+margin<=rect.w;
 			};
-			bool fits=contains(state.contentClip,state.heroOrigin,state.heroSize,0);
+			bool fits=state.fadeOnly || contains(state.contentClip,state.heroOrigin,state.heroSize,0);
 			// 在同一真实布局上验证完整曲线包络；首帧 AutoResize clip 未测量也不影响前景覆盖。
 			HomeMotionState probe; probe.entry=HomeMotionState::Entry::Playing;
+			probe.fadeOnly=state.fadeOnly;
 			probe.brandOrigin=state.brandOrigin; probe.brandWidth=state.brandWidth;
 			probe.entryStart=state.entryStart; probe.entryStartWidth=state.entryStartWidth;
 			for (int i=0;fits && i<=64;++i)
@@ -511,24 +536,15 @@ namespace Inkeys::UI::Setting::Design
 			{
 				state.entry=HomeMotionState::Entry::Playing; state.entryElapsed=0; ++state.entries;
 			}
-			else if (!state.preparation.managed) state.entryElapsed=(std::min)(HomeEntryTiming::Total,state.entryElapsed+state.delta);
-			if (state.entryElapsed>=HomeEntryTiming::Total) FinishHomeEntry(state);
+			else if (!state.preparation.managed) state.entryElapsed=(std::min)(state.EntryTotal(),state.entryElapsed+state.delta);
+			if (state.entryElapsed>=state.EntryTotal()) FinishHomeEntry(state);
 		}
 	}
 
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha)
 	{
-		// 内容自绘文字/图标也直接写入顶点颜色；统一处理整棵子窗口，避免只淡入库控件。
-		if (!window || alpha >= 1.0F) return;
-		alpha = std::clamp(alpha, 0.0F, 1.0F);
-		for (auto& vertex : window->DrawList->VtxBuffer)
-		{
-			const ImU32 originalAlpha = (vertex.col >> IM_COL32_A_SHIFT) & 0xff;
-			const ImU32 fadedAlpha = static_cast<ImU32>(std::round(originalAlpha * alpha));
-			vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (fadedAlpha << IM_COL32_A_SHIFT);
-		}
-		for (ImGuiWindow* child : window->DC.ChildWindows)
-			ApplyContentAlpha(child, alpha);
+		// 旧页整棵内容（含自绘文字/图标和子卡片）作为一块淡出；块内重叠控件不各自透出下层。
+		ApplyGroupOpacity(window, alpha);
 	}
 
 	CicdAction RenderCicdDetails(const CicdContent& content)
@@ -559,6 +575,316 @@ namespace Inkeys::UI::Setting::Design
 		if (BeginCard("##cicd-details", { width, height })) Text(details.c_str());
 		EndCard();
 		return action;
+	}
+
+	DrawingSubpage RenderDrawingEraserEntries(DrawingSubpage current)
+	{
+		const auto& eraser = I18nKey.SettingsUI.Draw.Eraser;
+		if (NavigationRow("##speed-eraser-entry", IA(eraser.Kind.Speed).c_str(),
+			IA(eraser.SpeedEraser.EntryDescription).c_str(), "\ued62"))
+			current = DrawingSubpage::SpeedEraser;
+		if (NavigationRow("##palm-eraser-entry", IA(eraser.PalmEraser.N).c_str(),
+			IA(eraser.PalmEraser.EntryDescription).c_str(), "\ue7c9"))
+			current = DrawingSubpage::PalmEraser;
+		return current;
+	}
+
+	namespace
+	{
+		// 与 Draw3 实际光标共用尺寸/描边常量；预览是近似，不替代真实绘制验收。
+		void DrawCursorPreview(const LayoutRect& rect, Inkeys::Drawing::Draw3::CursorStyle style)
+		{
+			namespace Cursor = Inkeys::Drawing::Draw3;
+			ImDrawList* draw = ImGui::GetWindowDrawList();
+			const ImVec2 min(rect.left, rect.top), max(rect.right, rect.bottom);
+			const float corner = Pixels(4.0F);
+			draw->AddRectFilled(min, max, IM_COL32(52, 54, 60, 255), corner);
+			draw->AddRect(min, max, IM_COL32(255, 255, 255, 36), corner);
+			const ImVec2 center((min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F);
+			const ImU32 ink = IM_COL32(255, 15, 0, 255);
+			const bool highlight = Cursor::IsHighlightedCursorStyle(style);
+			const float unit = Pixels(1.0F);
+			const float edgeWidth = (std::max)(1.0F, (highlight ? Cursor::kCursorHighlightEdgeDip : Cursor::kCursorPlainEdgeDip) * unit);
+			const ImU32 edge = highlight ? IM_COL32(245, 245, 245, 255) : IM_COL32(184, 184, 184, 255);
+			switch (style)
+			{
+			case Cursor::CursorStyle::Arrow:
+			{
+				// 与 GPU 共用 12x19 归一化参考轮廓，按校准后的 DIP 尺寸显示。
+				const ImVec2 origin(center.x - Cursor::kCursorArrowWidthDip * 0.5F * unit,
+					center.y - Cursor::kCursorArrowHeightDip * 0.5F * unit);
+				constexpr float arrow[7][2]{ {0.0F, 0.0F}, {0.0F, 16.5F}, {3.8F, 12.8F}, {6.6F, 19.0F},
+					{9.1F, 17.9F}, {6.4F, 11.9F}, {11.4F, 11.9F} };
+				ImVec2 points[7];
+				for (int index = 0; index < 7; ++index)
+					points[index] = { origin.x + arrow[index][0] / 12.0F * Cursor::kCursorArrowWidthDip * unit,
+						origin.y + arrow[index][1] / 19.0F * Cursor::kCursorArrowHeightDip * unit };
+				const ImU32 white = IM_COL32(255, 255, 255, 255);
+				const ImVec2 head1[3]{ points[0], points[1], points[2] };
+				const ImVec2 head2[3]{ points[0], points[2], points[5] };
+				const ImVec2 head3[3]{ points[0], points[5], points[6] };
+				const ImVec2 tail[4]{ points[2], points[3], points[4], points[5] };
+				draw->AddConvexPolyFilled(head1, 3, white);
+				draw->AddConvexPolyFilled(head2, 3, white);
+				draw->AddConvexPolyFilled(head3, 3, white);
+				draw->AddConvexPolyFilled(tail, 4, white);
+				draw->AddPolyline(points, 7, IM_COL32(0, 0, 0, 255), ImDrawFlags_Closed, Cursor::CursorArrowOutlineWidthPx(unit));
+				break;
+			}
+			case Cursor::CursorStyle::None:
+			{
+				const float radius = 7.0F * unit;
+				const ImU32 dim = IM_COL32(200, 200, 200, 120);
+				draw->AddCircle(center, radius, dim, 0, (std::max)(1.0F, unit));
+				draw->AddLine({ center.x - radius * 0.7F, center.y + radius * 0.7F },
+					{ center.x + radius * 0.7F, center.y - radius * 0.7F }, dim, (std::max)(1.0F, unit));
+				break;
+			}
+			case Cursor::CursorStyle::Dot:
+			case Cursor::CursorStyle::HighlightDot:
+			{
+				// 小圆点沿用实际光标的圆形预览（随笔宽，这里取常见笔宽）。
+				const float radius = 5.0F * unit;
+				draw->AddCircleFilled(center, radius, IM_COL32(255, 15, 0, 64));
+				draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				break;
+			}
+			case Cursor::CursorStyle::Pen:
+			case Cursor::CursorStyle::HighlightPen:
+			{
+				// 左上尖端为热点，笔身向右下；热点放在预览块左上区域以完整容纳 24 DIP 笔形。
+				const ImVec2 tip(center.x - 12.0F * unit, center.y - 12.0F * unit);
+				constexpr float axis = 0.70710678F;
+				const auto at = [&](float along, float across)
+				{
+					return ImVec2(tip.x + (along * axis + across * axis) * unit, tip.y + (along * axis - across * axis) * unit);
+				};
+				const ImVec2 points[5]{ at(0, 0), at(6, 3.4F), at(30, 3.4F), at(30, -3.4F), at(6, -3.4F) };
+				draw->AddConvexPolyFilled(points, 5, ink);
+				draw->AddPolyline(points, 5, edge, ImDrawFlags_Closed, edgeWidth);
+				break;
+			}
+			}
+		}
+	}
+
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft)
+	{
+		namespace Cursor = Inkeys::Drawing::Draw3;
+		using Cursor::CursorDevice;
+		using Cursor::CursorStyle;
+		CursorPageEvents events;
+		const auto& cursor = I18nKey.SettingsUI.Draw.Cursor;
+		events.back = IconButton("##cursor-back", "\ue72b");
+		PageHeader(IA(cursor.N).c_str());
+		PageContentStart();
+
+		const std::string styleNames[6]{ IA(cursor.Style.None), IA(cursor.Style.Arrow), IA(cursor.Style.Pen),
+			IA(cursor.Style.HighlightPen), IA(cursor.Style.Dot), IA(cursor.Style.HighlightDot) };
+		// 下拉项顺序即枚举顺序；触摸从“无光标”开始，其余设备从“鼠标”开始。
+		const auto itemsFor = [&](CursorDevice device)
+		{
+			std::vector<std::string> items;
+			for (int value = device == CursorDevice::Touch ? 0 : 1; value <= 5; ++value) items.push_back(styleNames[value]);
+			return items;
+		};
+		const auto row = [&](const char* id, const char* title, const char* description, const char* glyph,
+			CursorDevice device, int& index)
+		{
+			index = std::clamp(index, 0, Cursor::CursorStyleItemCount(device) - 1);
+			return ComboPreviewRow(id, title, description, glyph, index, itemsFor(device),
+				[&](const LayoutRect& area) { DrawCursorPreview(area, Cursor::CursorStyleFromItemIndex(device, index)); });
+		};
+
+		SectionHeader(IA(cursor.Devices).c_str());
+		events.mouse = row("##cursor-mouse", IA(cursor.Mouse.N).c_str(), IA(cursor.Mouse.E).c_str(), "\ue962",
+			CursorDevice::Mouse, draft.mouse);
+		events.touch = row("##cursor-touch", IA(cursor.Touch.N).c_str(), IA(cursor.Touch.E).c_str(), "\ue7c9",
+			CursorDevice::Touch, draft.touch);
+		events.screenPen = row("##cursor-screen-pen", IA(cursor.ScreenPen.N).c_str(), IA(cursor.ScreenPen.E).c_str(), "\uedc6",
+			CursorDevice::ScreenPen, draft.screenPen);
+		events.tablet = row("##cursor-tablet", IA(cursor.Tablet.N).c_str(), IA(cursor.Tablet.E).c_str(), "\ue70f",
+			CursorDevice::Tablet, draft.tablet);
+
+		SectionHeader(IA(cursor.PenDevices).c_str());
+		ImFluent::BeginDisabled(!draft.injectedAvailable);
+		events.injectedMouse = ToggleRow("##cursor-injected-mouse", IA(cursor.InjectedMouse.N).c_str(),
+			IA(cursor.InjectedMouse.E).c_str(), "\ue946", draft.injectedMouse,
+			draft.injectedAvailable ? nullptr : IA(cursor.InjectedMouse.Unavailable).c_str());
+		ImFluent::EndDisabled();
+		{
+			// 说明以分号分成两行：前半为标题行，后半为说明行；无分号时整句作标题。
+			const std::string note = IA(cursor.Note);
+			size_t split = std::string::npos, skip = 1;
+			// 全角分号以 UTF-8 字节转义书写，不受源文件编码转换影响。
+			for (const char* separator : { "\xEF\xBC\x9B", ";" })
+			{
+				const size_t found = note.find(separator);
+				if (found != std::string::npos && (split == std::string::npos || found < split))
+				{ split = found; skip = std::strlen(separator); }
+			}
+			const auto trim = [](std::string text)
+			{
+				const size_t first = text.find_first_not_of(" 	");
+				const size_t last = text.find_last_not_of(" 	");
+				return first == std::string::npos ? std::string() : text.substr(first, last - first + 1);
+			};
+			const std::string title = trim(split == std::string::npos ? note : note.substr(0, split));
+			const std::string detail = split == std::string::npos ? std::string() : trim(note.substr(split + skip));
+			Notice("##cursor-note", title.c_str(), detail.c_str(), ImFluentInfoSeverity_Informational);
+		}
+		SectionHeader(IA(cursor.FineControl).c_str());
+		const auto& hide = cursor.DotHideOnContact;
+		draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(draft.dotHideOnContact));
+		events.dotHideOnContact = ComboRow("##cursor-dot-hide", IA(hide.N).c_str(), IA(hide.E).c_str(), "\ue7b3",
+			draft.dotHideOnContact, { IA(hide.Off), IA(hide.ScreenPen), IA(hide.Tablet), IA(hide.Both) });
+		return events;
+	}
+
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft)
+	{
+		PalmEraserEvents events;
+		const auto& palm = I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
+		events.back = IconButton("##palm-eraser-back", "\ue72b");
+		PageHeader(IA(palm.N).c_str());
+		PageContentStart();
+		const float width = ImGui::GetContentRegionAvail().x;
+		const float padding = Pixels(ImFluent::GetStyle().CardPadding);
+		const float innerWidth = (std::max)(1.0F, width - padding * 2.0F);
+		if (ConditionalBlock block{"##palm-size-visibility", draft.physicalSizeWarning}; block)
+		{
+			Notice("##palm-eraser-size-warning", IA(palm.SizeWarningTitle).c_str(),
+				IA(palm.SizeWarningDescription).c_str(), ImFluentInfoSeverity_Warning);
+		}
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.BasicSettings).c_str());
+		events.enabledChanged = ToggleRow("##palm-eraser-enabled", IA(palm.Enabled).c_str(),
+			nullptr, "\ue7c9", draft.enabled);
+		constexpr std::array<int, 4> windows{ 100, 150, 250, 500 };
+		const auto found = std::find(windows.begin(), windows.end(), draft.recognitionWindowMs);
+		int windowIndex = found == windows.end() ? 1 : static_cast<int>(found - windows.begin());
+		events.recognitionWindowChanged = ComboRow("##palm-eraser-window", IA(palm.RecognitionWindow).c_str(),
+			IA(palm.RecognitionWindowDescription).c_str(), "\ue823", windowIndex,
+			{ "100ms", "150ms" + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), "250ms", "500ms" });
+		if (events.recognitionWindowChanged) draft.recognitionWindowMs = windows[windowIndex];
+
+		const std::array<const char*, 4> ratios{ "1:1", "4:3", "2:1", "1:2" };
+		constexpr std::array<double, 4> aspects{ 1, 4.0 / 3.0, 2, .5 };
+		// 比例只属于当前页面；切换比例不改变手掌阈值或触发配置保存。
+		auto* pageStorage = ImGui::GetStateStorage();
+		const auto ratioStateId = ImGui::GetID("##palm-eraser-preview-ratio-state");
+		int ratioIndex = std::clamp(pageStorage->GetInt(ratioStateId, 0), 0, 3);
+		const double noteArea = draft.referenceAreaPixels * draft.thresholdPercent / 100.0;
+		std::string thresholdNote;
+		if (std::isfinite(noteArea) && noteArea > 0)
+		{
+			const double widthPx = std::sqrt(noteArea * aspects[ratioIndex]), heightPx = std::sqrt(noteArea / aspects[ratioIndex]);
+			const double areaCm2 = draft.referenceAreaCm2 * draft.thresholdPercent / 100.0;
+			if (!draft.previewEstimated && std::isfinite(areaCm2) && areaCm2 > 0)
+			{
+				const double widthCm = std::sqrt(areaCm2 * aspects[ratioIndex]), heightCm = std::sqrt(areaCm2 / aspects[ratioIndex]);
+				thresholdNote = std::vformat(IA(palm.ThresholdSizePhysical), std::make_format_args(widthCm, heightCm, widthPx, heightPx));
+			}
+			else thresholdNote = std::vformat(IA(palm.ThresholdSizePixels), std::make_format_args(widthPx, heightPx));
+		}
+
+		const auto reset = IA(I18nKey.Operate.Reset);
+		const float resetWidth = ButtonWidth(reset.c_str()), numberWidth = 40.0F;
+		const float actionWidth = numberWidth + 12.0F + 120.0F + ControlSpacing + resetWidth;
+		const auto measure = MeasureRow(width / Pixels(1), actionWidth, ControlHeight);
+		const bool resetBelow = measure.actionWidth < numberWidth + 12.0F + 24.0F + ControlSpacing + resetWidth;
+		// 滑块和重置属于同一条目；极窄时只在条目内部换行，不增加独立重置卡片。
+		SettingRow("##palm-eraser-threshold", IA(palm.Threshold).c_str(), IA(palm.ThresholdDescription).c_str(),
+			"\ue7c9", actionWidth, resetBelow ? ControlHeight * 2 + ControlSpacing : ControlHeight,
+			[&](const LayoutRect& bounds) {
+				char percentage[24]; ImFormatString(percentage, IM_ARRAYSIZE(percentage), "%d%%", draft.thresholdPercent);
+				TextAt(percentage, { bounds.left, bounds.top + Pixels(6) }, Pixels(numberWidth));
+				const float sliderLeft = bounds.left + Pixels(numberWidth + 12);
+				const float buttonLeft = bounds.right - Pixels(resetWidth);
+				ImGui::SetCursorScreenPos({ sliderLeft, bounds.top });
+				ImGui::SetNextItemWidth((std::max)(1.0F, (resetBelow ? bounds.right : buttonLeft - Pixels(ControlSpacing)) - sliderLeft));
+				events.thresholdChanged = SliderInt("##slider", &draft.thresholdPercent, 1, 400, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SetCursorScreenPos({ buttonLeft, bounds.top + (resetBelow ? Pixels(ControlHeight + ControlSpacing) : 0) });
+				if (Button((reset + "###reset").c_str(), { Pixels(resetWidth), Pixels(ControlHeight) }))
+				{
+					events.thresholdReset = true;
+					events.thresholdChanged |= draft.thresholdPercent != 100;
+					draft.thresholdPercent = 100;
+				}
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, thresholdNote.c_str());
+
+		const double area = draft.referenceAreaPixels * draft.thresholdPercent / 100.0;
+		const bool available = std::isfinite(area) && area > 0;
+		const auto previewTitle = IA(palm.PreviewTitle);
+		const auto previewDescription = IA(!available ? palm.PreviewUnavailable
+			: draft.previewEstimated ? palm.PreviewEstimated : palm.PreviewDescription);
+		const float titleHeight = TextHeight(previewTitle.c_str(), innerWidth, ImFluentTextStyle_BodyStrong);
+		const float descriptionHeight = TextHeight(previewDescription.c_str(), innerWidth, ImFluentTextStyle_Caption);
+		const float headingHeight = titleHeight + Pixels(8) + descriptionHeight;
+		const ImVec2 size = available ? ImVec2(static_cast<float>(std::sqrt(area * aspects[ratioIndex])),
+			static_cast<float>(std::sqrt(area / aspects[ratioIndex]))) : ImVec2();
+		const float comboWidth = Pixels(112), inset = 2.0F;
+		// 图形直接使用绘制输出像素；下拉悬浮于左上角，不挤占或换行图形。
+		const float canvasWidth = (std::max)(size.x + inset * 2, comboWidth);
+		const float canvasHeight = (std::max)(size.y + inset * 2, Pixels(ControlHeight));
+		const float scrollReserve = canvasWidth > innerWidth ? Pixels(ScrollbarTrackSize + ScrollbarPadding) : 0;
+		const float previewHeight = headingHeight + (available ? Pixels(16) + canvasHeight + scrollReserve : 0);
+		const float previewCardHeight = std::ceil(previewHeight + padding * 2);
+		ImGui::SetNextWindowSizeConstraints({ 0, previewCardHeight }, { FLT_MAX, previewCardHeight });
+		ImGui::SetNextWindowContentSize({ 0, previewHeight });
+		if (BeginCard("##palm-eraser-preview", { width, previewCardHeight }))
+		{
+			const auto origin = ImGui::GetCursorScreenPos();
+			TextAt(previewTitle.c_str(), origin, innerWidth, ImFluentTextStyle_BodyStrong);
+			TextAt(previewDescription.c_str(), { origin.x, origin.y + titleHeight + Pixels(8) }, innerWidth,
+				ImFluentTextStyle_Caption, TextSecondary);
+			if (available)
+			{
+				ImGui::SetCursorScreenPos({ origin.x, origin.y + headingHeight + Pixels(16) });
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+				// 通用滚动补间只跟随纵向溢出；此处固定横轨，避免开启动画时轨道被压成零。
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, Pixels(ScrollbarTrackSize));
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarPadding, Pixels(ScrollbarPadding));
+				ImGui::SetNextWindowContentSize({ canvasWidth, canvasHeight });
+				if (ImGui::BeginChild("##palm-eraser-preview-shapes", { innerWidth, canvasHeight + scrollReserve },
+					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar))
+				{
+					const auto top = ImGui::GetCursorScreenPos();
+					const ImVec2 start(top.x + (std::max)(inset, (innerWidth - size.x) * .5F), top.y + inset);
+					ImGui::GetWindowDrawList()->AddRect(start, { start.x + size.x, start.y + size.y },
+						Accent, Pixels(8), 0, 2.0F);
+					// 后绘制控件，使其可遮挡边框；恢复游标后仅按整个预览包络占位。
+					ImGui::SetCursorScreenPos(top); ImGui::SetNextItemWidth(comboWidth);
+					if (ComboBox("##palm-eraser-preview-ratio", &ratioIndex, ratios.data(), static_cast<int>(ratios.size())))
+						pageStorage->SetInt(ratioStateId, ratioIndex);
+					ImGui::SetCursorScreenPos(top);
+					ImGui::Dummy({ canvasWidth, canvasHeight });
+				}
+				ImGui::EndChild(); ImGui::PopStyleVar(3);
+			}
+			// 完整高度始终进入外层页面滚动；超宽示例只在预览块横向查看。
+			ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, previewHeight });
+		}
+		EndCard();
+		const auto& pen = I18nKey.UI.Bar.DrawAttributes;
+		CheckboxGroup("##palm-eraser-tools", IA(palm.EnabledTools).c_str(), "\uedc6", {
+			{ IA(pen.SoftPenLabel), &draft.tools[0], &events.toolsChanged[0] },
+			{ IA(pen.HardPenLabel), &draft.tools[1], &events.toolsChanged[1] },
+			{ IA(pen.HighlighterLabel), &draft.tools[2], &events.toolsChanged[2] },
+			{ IA(pen.LaserLabel), &draft.tools[3], &events.toolsChanged[3] },
+			{ IA(I18nKey.UI.Centre.Eraser), &draft.tools[4], &events.toolsChanged[4] },
+			{ IA(I18nKey.UI.Bar.MainButtons.GeometryLabel), &draft.tools[5], &events.toolsChanged[5] },
+			{ IA(pen.BrushLabel), &draft.tools[6], &events.toolsChanged[6] } });
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
+		std::string parallelNote;
+		// 全局多指关闭时优先说明；提示不依赖手掌总开关，也不替用户修改其他偏好。
+		if (draft.parallelWriting)
+		{
+			if (!draft.multiTouchEnabled) parallelNote = IA(palm.ParallelWritingMultiTouchNote);
+			else if (!draft.laserMultiTouchEnabled) parallelNote = IA(palm.ParallelWritingLaserMultiTouchNote);
+		}
+		events.parallelWritingChanged = ToggleRow("##palm-eraser-parallel", IA(palm.ParallelWriting).c_str(),
+			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting, parallelNote.c_str());
+		return events;
 	}
 
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter)
@@ -649,7 +975,7 @@ namespace Inkeys::UI::Setting::Design
 			ImGui::Dummy({ innerWidth, contentHeight });
 		}
 		EndCard();
-		if (draft.physicalSizeWarning)
+		if (ConditionalBlock block{"##speed-size-visibility", draft.physicalSizeWarning}; block)
 		{
 			PageContentStart();
 			Notice("##speed-eraser-size-warning", IA(speed.SizeWarningTitle).c_str(),
@@ -674,7 +1000,8 @@ namespace Inkeys::UI::Setting::Design
 			{ entries[4], &draft.enabled[4], &events.enabledChanged[4] } });
 
 		// 显示条件只跟随本帧开关与设备选择，隐藏时保留原有精细偏好。
-		if (draft.automaticEnabled && (draft.enabled[2] || draft.enabled[3] || draft.enabled[4]))
+		if (ConditionalBlock block{"##eraser-fine-visibility",
+			draft.automaticEnabled && (draft.enabled[2] || draft.enabled[3] || draft.enabled[4])}; block)
 		{
 			SectionHeader(IA(speed.FineControl).c_str());
 			const std::vector<std::string> responses{ IA(eraser.Response.Auto),
@@ -684,29 +1011,83 @@ namespace Inkeys::UI::Setting::Design
 			for (int pen = 0; pen < 2; ++pen)
 			{
 				const int entry = pen + 3;
-				if (!draft.enabled[entry]) continue;
 				ImGui::PushID(entry);
-				int response = std::clamp(draft.penResponses[pen], first, 2) - first;
-				events.penResponseChanged[pen] = ComboRow("##eraser-response", entries[entry].c_str(),
-					IA(eraser.ResponseFor).c_str(), "\uedc6", response, availableResponses);
-				// Win7 隐藏 Auto 项后仍返回稳定枚举，只在用户真正选择时更新草稿。
-				if (events.penResponseChanged[pen]) draft.penResponses[pen] = response + first;
+				if (ConditionalBlock responseBlock{"##eraser-response-visibility", draft.enabled[entry]}; responseBlock)
+				{
+					int response = std::clamp(draft.penResponses[pen], first, 2) - first;
+					events.penResponseChanged[pen] = ComboRow("##eraser-response", entries[entry].c_str(),
+						IA(eraser.ResponseFor).c_str(), "\uedc6", response, availableResponses);
+					// Win7 隐藏 Auto 项后仍返回稳定枚举，只在用户真正选择时更新草稿。
+					if (events.penResponseChanged[pen]) draft.penResponses[pen] = response + first;
+				}
 				ImGui::PopID();
 			}
-			if (draft.enabled[2])
+			if (ConditionalBlock touchBlock{"##eraser-touch-visibility", draft.enabled[2]}; touchBlock)
 				events.touchAreaChanged = ToggleRow("##eraser-touch-area", IA(eraser.TouchArea.N).c_str(),
-					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea);
+					IA(eraser.TouchArea.E).c_str(), "\ue7c9", draft.touchArea, IA(eraser.TouchArea.Note).c_str());
 		}
 		return events;
 	}
 
 	void RenderSponsorThanks(const char* text, float widthPixels)
 	{
+		PageBlockScope motion("##sponsor-thanks-motion");
 		const float width = (std::max)(1.0F, widthPixels);
-		const auto layout = MeasureInline({ { text } }, width, ImFluentTextStyle_Body, true);
+		const auto origin = ImGui::GetCursorScreenPos();
+		ImFluent::PushFont(ImFluentTextStyle_Body);
+		const float size = ImGui::GetFontSize(), lineHeight = Pixels(BodyText.lineHeight);
+		auto* baked = ImGui::GetFontBaked();
+		const float glyphScale = size / baked->Size;
+		// 换行按advance，但真实字图可越过advance；为两端墨迹和居中取整各留半物理像素。
+		float leftOverhang = 0.0F, rightOverhang = 0.0F;
+		const char* scan = text; const char* textEnd = text + std::strlen(text);
+		while (scan < textEnd)
+		{
+			unsigned int point = 0; const int length = ImTextCharFromUtf8(&point, scan, textEnd);
+			if (length <= 0) break;
+			scan += length;
+			const auto* glyph = baked->FindGlyph(static_cast<ImWchar>(point));
+			if (!glyph->Visible) continue;
+			leftOverhang = (std::max)(leftOverhang, -glyph->X0 * glyphScale);
+			rightOverhang = (std::max)(rightOverhang, (glyph->X1 - glyph->AdvanceX) * glyphScale);
+		}
+		auto layout = MeasureInline({ { text } }, (std::max)(1.0F, width - leftOverhang - rightOverhang - 1.0F), ImFluentTextStyle_Body, true);
+		float top = 0.0F, bottom = layout.height;
+		for (auto& fragment : layout.fragments)
+		{
+			// 换行尾部空白和字形左右边距不属于可见文字，不能用 advance 宽度作视觉居中。
+			while (!fragment.text.empty() && (fragment.text.back() == ' ' || fragment.text.back() == '\t')) fragment.text.pop_back();
+			float advance = 0.0F, left = FLT_MAX, right = -FLT_MAX, inkTop = FLT_MAX, inkBottom = -FLT_MAX;
+			const char* cursor = fragment.text.c_str(); const char* end = cursor + fragment.text.size();
+			while (cursor < end)
+			{
+				unsigned int point = 0; const int length = ImTextCharFromUtf8(&point, cursor, end);
+				if (length <= 0) break;
+				cursor += length;
+				const auto* glyph = baked->FindGlyph(static_cast<ImWchar>(point));
+				if (glyph->Visible)
+				{
+					left = (std::min)(left, advance + glyph->X0 * glyphScale);
+					right = (std::max)(right, advance + glyph->X1 * glyphScale);
+					inkTop = (std::min)(inkTop, glyph->Y0 * glyphScale);
+					inkBottom = (std::max)(inkBottom, glyph->Y1 * glyphScale);
+				}
+				advance += glyph->AdvanceX * glyphScale;
+			}
+			if (left == FLT_MAX) continue;
+			fragment.x = (width - (right - left)) * 0.5F - left;
+			fragment.width = advance;
+			const float drawY = std::round(origin.y + fragment.y + (lineHeight - size) * 0.5F) - origin.y;
+			top = (std::min)(top, drawY + inkTop);
+			bottom = (std::max)(bottom, drawY + inkBottom);
+		}
+		// 与 DrawInline 的像素取整一致，完整登记变音符号和下伸部的真实高度。
+		const float shift = std::ceil(-top);
+		for (auto& fragment : layout.fragments) fragment.y += shift;
+		layout.height = std::ceil(bottom + shift);
+		ImFluent::PopFont();
 		HomeAction ignored = HomeAction::None;
-		// 复用逐行居中换行，正文色跟随浅深主题，图片卡片之外仍登记完整文字高度。
-		DrawInline("##sponsor-thanks", layout, ImGui::GetCursorScreenPos(), ImFluentTextStyle_Body, TextPrimary, ignored);
+		DrawInline("##sponsor-thanks", layout, origin, ImFluentTextStyle_Body, TextPrimary, ignored);
 		ImGui::Dummy({ width, layout.height });
 	}
 
@@ -748,6 +1129,64 @@ namespace Inkeys::UI::Setting::Design
 		return action;
 	}
 
+	PptIdleFadeEvents RenderPptIdleFadeRow(PptIdleFadeDraft& draft, const std::vector<std::string>& items)
+	{
+		PptIdleFadeEvents events;
+		const auto& keys = I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay;
+		const std::array labels{ IA(keys.IdleFadeBottomPair), IA(keys.IdleFadeMiddlePair), IA(keys.IdleFadeMainBar) };
+		const std::array values{ &draft.bottomPair, &draft.middlePair, &draft.mainBar };
+		const std::array changed{ &events.bottomPair, &events.middlePair, &events.mainBar };
+		float widest = 0, comboWidth = 160;
+		for (const auto& label : labels) widest = (std::max)(widest, ControlTextWidth(label.c_str()) + Pixels(32));
+		for (const auto& item : items) comboWidth = (std::max)(comboWidth, ControlTextWidth(item.c_str()) / Pixels(1) + 48);
+		const auto columnsFor = [&](float width) { return width >= (std::max)(Pixels(440), widest * 2 + Pixels(16)) ? 2 : 1; };
+		InlineRowContent scopes;
+		scopes.visibilityId = "##ppt-idle-fade-options"; scopes.visible = draft.timeoutIndex != 0;
+		scopes.height = [&](float width) {
+			const int rows = (3 + columnsFor(width) - 1) / columnsFor(width);
+			return rows * Pixels(ControlHeight) + (rows - 1) * Pixels(ControlSpacing);
+		};
+		scopes.render = [&](const LayoutRect& bounds) {
+			// 三项只占父卡片的内联区，不再建立额外标题、图标或卡片。
+			const int columns = columnsFor(bounds.Width());
+			const float columnWidth = (bounds.Width() - Pixels(16) * (columns - 1)) / columns;
+			ImGui::PushID("##ppt-idle-fade-scopes"); ImFluent::BeginDisabled(draft.timeoutIndex == 0);
+			for (int index = 0; index < 3; ++index)
+			{
+				ImGui::SetCursorScreenPos({ bounds.left + (index % columns) * (columnWidth + Pixels(16)),
+					bounds.top + (index / columns) * Pixels(ControlHeight + ControlSpacing) });
+				ImGui::PushID(index); *changed[index] = Checkbox((labels[index] + "###scope").c_str(), values[index]); ImGui::PopID();
+			}
+			ImFluent::EndDisabled(); ImGui::PopID();
+		};
+		SettingRow("##ppt-idle-fade", IA(keys.IdleFade).c_str(), IA(keys.IdleFadeE).c_str(), "\ue7b3",
+			(std::min)(320.0F, comboWidth), ControlHeight,
+			[&](const LayoutRect&) { events.timeout = ComboBox("##select", &draft.timeoutIndex, items); },
+			Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &scopes);
+		return events;
+	}
+
+	std::wstring ResolveDesktopShortcutDraftName(const DesktopShortcutDraft& draft)
+	{
+		return draft.preset == Business::DesktopShortcut::CustomPreset(draft.names.kind)
+			? utf8ToUtf16(draft.customName) : Business::DesktopShortcut::ResolveName(draft.preset, L"", draft.names);
+	}
+
+	bool DesktopShortcutDraftNamesCollide(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other)
+	{
+		const auto name = ResolveDesktopShortcutDraftName(draft);
+		// 被拒绝的草稿不能替代最后有效名称；两份名称都受保护，避免交叉编辑抢占。
+		return Business::DesktopShortcut::NamesCollide(name, ResolveDesktopShortcutDraftName(other))
+			|| Business::DesktopShortcut::NamesCollide(name, other.lastValidName);
+	}
+
+	bool IsDesktopShortcutDraftValid(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other)
+	{
+		const auto name = ResolveDesktopShortcutDraftName(draft);
+		return draft.desktopAvailable && Business::DesktopShortcut::IsValidName(name, draft.directoryLength)
+			&& !DesktopShortcutDraftNamesCollide(draft, other);
+	}
+
 	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section)
 	{
 		GeneralEvents events;
@@ -756,6 +1195,7 @@ namespace Inkeys::UI::Setting::Design
 		const char* title = section == GeneralSection::Appearance ? I18nKey.SettingsUI.Design.GeneralAppearance
 			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
 			: section == GeneralSection::Shortcuts ? I18nKey.SettingsUI.HotKey.N
+			: section == GeneralSection::DesktopShortcuts ? I18nKey.SettingsUI.DesktopShortcut.N
 			: I18nKey.SettingsUI.Design.GeneralBasic;
 		PageHeader(IA(title).c_str());
 		// 仅渲染当前子页；未显示字段继续使用同一草稿，不触发写回或重置。
@@ -801,33 +1241,54 @@ namespace Inkeys::UI::Setting::Design
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
 				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
 				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) });
-			const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
-			const std::string create = IA(I18nKey.Operate.Create);
-			const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b",
-				{ { "create", create }, { "more", more } });
-			events.createShortcut = shortcutAction == 0;
-			events.shortcutOptions = shortcutAction == 1;
+				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) },
+				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
+
 		}
 		if (section == GeneralSection::Appearance)
 		{
-			SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
 			const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
+			const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
+			const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+			const std::vector<std::string> themeOptions{ IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Dark),
+				IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Light) };
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.ThemeSection).c_str());
+			// 主栏主题只影响 UI3 Bar；设置窗口配色单独选择，与标题栏切换按钮共用同一偏好。
+			events.themeModeChanged = ComboRow("##主栏主题", IA(I18nKey.SettingsUI.Regular.Appearance.Theme.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.Theme.E).c_str(), "\ue790", draft.themeMode, themeOptions);
+			events.settingThemeModeChanged = ComboRow("##设置主题", IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.E).c_str(), "\ue771", draft.settingThemeMode, themeOptions);
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.OpacitySection).c_str());
+			// 只作用于常驻的主栏、主按钮与分页；弹出面板保持原透明度以保证可读。
+			SettingRow("bar-background-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.E).c_str(), "\uef1f", resetSliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { events.backgroundOpacityChanged = SliderResetAction(bounds, draft.backgroundOpacity,
+					0.30F, 1.00F, events.backgroundOpacityActive, events.backgroundOpacityReset, resetLabel.c_str()); });
+			if (events.backgroundOpacityReset) draft.backgroundOpacity = draft.backgroundOpacityDefault;
+			bool contentOpacityReset = false;
+			SettingRow("bar-content-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.E).c_str(), "\ue8a9", resetSliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { events.contentOpacityChanged = SliderResetAction(bounds, draft.contentOpacity,
+					0.30F, 1.00F, events.contentOpacityActive, contentOpacityReset, resetLabel.c_str()); });
+			if (contentOpacityReset) { draft.contentOpacity = 1.0F; events.contentOpacityChanged = true; }
+
+			SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
 			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
 			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
-			// 总开关只控制可见性，隐藏子项时保留它们的保存值。
-			if (draft.animation)
-			{
-				SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
-					IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", draft.animationRate,
-					0.1F, 5.0F, events.animationRateActive, "%.1fx");
-				draft.animationRate = round(draft.animationRate * 10.0F) / 10.0F;
-			}
+			// 效果选择是加载动画卡片的内联下半区：关闭时随条件动画收起并保留偏好，选择仍由现有配置队列保存。
+			const std::string startupEffectLabel = IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N);
+			const std::vector<std::string> startupEffects{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
+				IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
+				IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) };
+			const auto startupEffect = InlineCombo("startup-effect", startupEffectLabel.c_str(), draft.startupEffect,
+				startupEffects, events.startupEffectChanged, "##startup-effect-visibility", draft.startupPreview);
 			events.startupPreviewChanged = ToggleRow("startup-preview",
 				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview);
+				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
+				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str(), &startupEffect);
 			events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
@@ -838,7 +1299,7 @@ namespace Inkeys::UI::Setting::Design
 			SectionHeader(IA(I18nKey.SettingsUI.Design.LightingSection).c_str());
 			events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
-			if (draft.edgeLighting)
+			if (ConditionalBlock block{"##edge-lighting-visibility", draft.edgeLighting}; block)
 				events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
 					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
@@ -849,9 +1310,12 @@ namespace Inkeys::UI::Setting::Design
 				{ IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Off),
 				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Base),
 				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Actual) });
+			bool barZoomReset = false;
 			SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", sliderWidth, 32.0F,
-				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderAction(bounds, draft.barZoom, 0.50F, 2.00F, events.barZoomActive); });
+				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", resetSliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderResetAction(bounds, draft.barZoom, 0.50F, 2.00F,
+					events.barZoomActive, barZoomReset, resetLabel.c_str()); });
+			if (barZoomReset) { draft.barZoom = 1.0F; events.barZoomChanged = true; }
 		}
 		if (section == GeneralSection::Interaction)
 		{
@@ -883,14 +1347,22 @@ namespace Inkeys::UI::Setting::Design
 			events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
 				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
-				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) });
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) },
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
+			events.allowMultipleInstancesChanged = ToggleRow("allow-multiple-instances",
+				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.E).c_str(), "\ue7f4", draft.allowMultipleInstances);
 		}
 		if (section == GeneralSection::Shortcuts)
 		{
 			Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.HotKey.E).c_str());
-			if (!draft.shortcutGlobalStatus.empty() || !draft.shortcutHookStatus.empty())
-				Notice("##hotkey-status", draft.shortcutGlobalStatus.c_str(), draft.shortcutHookStatus.c_str(),
+			if (ConditionalBlock block{"##hotkey-status-visibility",
+				!draft.shortcutGlobalStatus.empty() || !draft.shortcutHookStatus.empty()}; block)
+			{
+				Notice("##hotkey-status", block.RetainText("title", draft.shortcutGlobalStatus.c_str()),
+					block.RetainText("description", draft.shortcutHookStatus.c_str()),
 					draft.shortcutStatusWarning ? ImFluentInfoSeverity_Warning : ImFluentInfoSeverity_Informational);
+			}
 			const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
 			const std::string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
 				IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
@@ -906,9 +1378,90 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::PushID(item);
 				const std::string shortcutTitle = names[item] + "  (" + combinations[item] + ")";
 				events.shortcutsChanged[item] = ToggleRow("##启用固定快捷键", shortcutTitle.c_str(), descriptions[item].c_str(),
-					"\ue765", draft.shortcuts[item]);
+					"\ue765", draft.shortcuts[item], item == 5 ? IA(I18nKey.SettingsUI.HotKey.FreezeNote).c_str() : nullptr);
 				ImGui::PopID();
 			}
+		}
+		if (section == GeneralSection::DesktopShortcuts)
+		{
+			using namespace Business::DesktopShortcut;
+			const auto& keys = I18nKey.SettingsUI.DesktopShortcut;
+			// 两类使用相同控件/动画，只以稳定 ID 与独立草稿区分。
+			auto renderCategory = [&](DesktopShortcutDraft& shortcut, const DesktopShortcutDraft& other,
+				const char* title, const char* prefix, bool& nameCommitted, bool& presetChanged,
+				bool& createRequested, bool& correctChanged, bool& createChanged)
+			{
+				const auto valid = [&] { return IsDesktopShortcutDraftValid(shortcut, other); };
+				const auto error = [&] { return IA(DesktopShortcutDraftNamesCollide(shortcut, other) ? keys.NameConflict : keys.InvalidName); };
+				const int custom = CustomPreset(shortcut.names.kind);
+				SectionHeader(IA(title).c_str());
+				const std::string create = IA(I18nKey.Operate.Create), invalidName = error();
+				const std::string nameId = std::string("##") + prefix + "-name";
+				InlineRowContent inlineName;
+				inlineName.height = [&](float width) {
+					return Pixels(ControlHeight) + (valid() ? 0.0F : Pixels(8) + (std::max)(Pixels(20),
+						TextHeight(invalidName.c_str(), (std::max)(1.0F, width - Pixels(24)), ImFluentTextStyle_Caption)));
+				};
+				inlineName.render = [&](const LayoutRect& bounds) {
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+					// 透明 child 只承载控件和输入；外框与分隔线由上方 SettingRow 统一绘制。
+					if (ImGui::BeginChild(nameId.c_str(), { bounds.Width(), bounds.Height() },
+						ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+					{
+						const auto origin = ImGui::GetCursorScreenPos();
+						const float innerWidth = ImGui::GetContentRegionAvail().x;
+						const float gap = Pixels(ControlSpacing);
+						const float comboWidth = (std::min)(Pixels(300), (std::max)(1.0F, (innerWidth - gap) * .55F));
+						const float leftWidth = (std::max)(1.0F, innerWidth - comboWidth - gap);
+						std::vector<std::string> names;
+						for (int index = 0; index < PresetCount(shortcut.names.kind, shortcut.names.simplifiedChinese); ++index)
+						{
+							const int preset = PresetForIndex(index, shortcut.names.simplifiedChinese, shortcut.names.kind);
+							names.push_back(preset == custom ? IA(keys.CustomName) : utf16ToUtf8(shortcut.names.presets[preset]));
+						}
+						if (shortcut.preset == custom)
+						{
+							ImGui::SetNextItemWidth(leftWidth);
+							nameCommitted = TextBox("##desktop-shortcut-custom", shortcut.customName,
+								IA(keys.CustomHint).c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
+							nameCommitted |= ImGui::IsItemDeactivatedAfterEdit();
+						}
+						else TextAt(IA(keys.NameLabel).c_str(), { origin.x, origin.y + Pixels(5) }, leftWidth);
+						ImGui::SetCursorScreenPos({ origin.x + innerWidth - comboWidth, origin.y });
+						ImGui::SetNextItemWidth(comboWidth);
+						int index = IndexForPreset(shortcut.preset, shortcut.names.simplifiedChinese, shortcut.names.kind);
+						const auto previous = ResolveName(shortcut.preset, utf8ToUtf16(shortcut.customName), shortcut.names);
+						if (ComboBox("##desktop-shortcut-preset", &index, names, &shortcut.namePopup, I18n::revision()))
+						{
+							shortcut.preset = PresetForIndex(index, shortcut.names.simplifiedChinese, shortcut.names.kind);
+							// 从预设进入自定义时使用当时的显示名；重开已保存的自定义不走此分支。
+							if (shortcut.preset == custom) shortcut.customName = utf16ToUtf8(previous);
+							presetChanged = true;
+						}
+						ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, Pixels(ControlHeight) });
+						if (!valid()) InfoText(error().c_str());
+					}
+					ImGui::EndChild(); ImGui::PopStyleVar();
+				};
+				SettingRow((std::string(prefix) + "-create").c_str(), IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
+					IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b", ButtonWidth(create.c_str()), ControlHeight,
+					[&](const LayoutRect& bounds) {
+						ImGui::PushID("create"); ImFluent::BeginDisabled(!valid());
+						createRequested = Button((create + "###button").c_str(), { bounds.Width(), bounds.Height() });
+						ImFluent::EndDisabled(); ImGui::PopID();
+					}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineName);
+				correctChanged = ToggleRow((std::string(prefix) + "-correct").c_str(),
+					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnk).c_str(),
+					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE).c_str(), "\ue71b", shortcut.correct);
+				createChanged = ToggleRow((std::string(prefix) + "-auto-create").c_str(),
+					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk).c_str(),
+					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE).c_str(), "\ue71b", shortcut.create);
+				if (!valid()) { createRequested = false; nameCommitted = false; }
+			};
+			renderCategory(draft.desktopShortcut, draft.whiteboardShortcut, keys.ApplicationSection, "desktop-shortcut",
+				events.desktopNameCommitted, events.desktopNamePresetChanged, events.createShortcut, events.desktopCorrectChanged, events.desktopCreateChanged);
+			renderCategory(draft.whiteboardShortcut, draft.desktopShortcut, keys.WhiteboardSection, "whiteboard-shortcut",
+				events.whiteboardNameCommitted, events.whiteboardNamePresetChanged, events.createWhiteboardShortcut, events.whiteboardCorrectChanged, events.whiteboardCreateChanged);
 		}
 		return events;
 	}
@@ -917,6 +1470,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		HomeAction action = HomeAction::None;
 		const auto& palette = GetPalette();
+		PageBlockScope heroMotion("##home-hero-motion");
 		PageHeader(IA(I18nKey.SettingsUI.Home.N).c_str(), IA(I18nKey.SettingsUI.Design.HomeWelcome).c_str());
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(20.0F));
 		const ImVec2 heroOrigin = ImGui::GetCursorScreenPos();
@@ -956,6 +1510,7 @@ namespace Inkeys::UI::Setting::Design
 				&& ImRect(heroOrigin,{heroOrigin.x+width,heroOrigin.y+heroHeight}).Overlaps(clip);
 			motion->brandOrigin={heroOrigin.x+(width-brandWidth)*.5F,heroOrigin.y+top}; motion->brandWidth=brandWidth;
 			ResolveHomeEntryLayout(*motion);
+			if (motion->entry == HomeMotionState::Entry::Skipped) ResumeSkippedPageOpening();
 		}
 		DrawHomeBrand(draw,{heroOrigin.x+(width-brandWidth)*.5F,heroOrigin.y+top},brandWidth,motion);
 		float y=heroOrigin.y+top+brandHeight+Pixels(32);
@@ -975,6 +1530,7 @@ namespace Inkeys::UI::Setting::Design
 		if (HomeIconButton("##home-sponsor",sponsor.c_str(),"\ueb51",
 			{buttonsInline ? bx+buttonWidth+Pixels(12) : bx,y+Pixels(buttonsInline ? 0.0F : 44.0F)},buttonWidth,true,motion)) action=HomeAction::Support;
 
+		heroMotion.Finish();
 		const ImVec2 copyrightOrigin(heroOrigin.x,heroOrigin.y+heroHeight+Pixels(16));
 		const std::string copyrightText = IA(I18nKey.SettingsUI.Design.HomeCopyright);
 		const std::string redistribution = IA(I18nKey.SettingsUI.Design.HomeRedistribution);
@@ -984,7 +1540,9 @@ namespace Inkeys::UI::Setting::Design
 			{IA(I18nKey.SettingsUI.Design.HomeLicenseSuffix)}},copyWidth,ImFluentTextStyle_Caption,true);
 		const float redistributionHeight = TextHeight(redistribution.c_str(),copyWidth,ImFluentTextStyle_Caption);
 		const float copyrightBlockHeight = copyrightHeight+Pixels(4)+license.height+Pixels(2)+redistributionHeight;
-		ImGui::SetCursorScreenPos(copyrightOrigin); ImGui::Dummy({width,copyrightBlockHeight});
+		ImGui::SetCursorScreenPos(copyrightOrigin);
+		PageBlockScope copyrightMotion("##home-copyright-motion");
+		ImGui::Dummy({width,copyrightBlockHeight});
 		const ImVec2 copyrightAfter = ImGui::GetCursorScreenPos();
 		y=copyrightOrigin.y;
 		CenteredCopy(copyrightText.c_str(),{copyrightOrigin.x+inset,y},copyWidth,ImFluentTextStyle_Body,TextPrimary,action);
@@ -993,6 +1551,7 @@ namespace Inkeys::UI::Setting::Design
 		y+=license.height+Pixels(2);
 		CenteredCopy(redistribution.c_str(),{copyrightOrigin.x+inset,y},copyWidth,ImFluentTextStyle_Caption,TextSecondary,action);
 		ImGui::SetCursorScreenPos({copyrightAfter.x,copyrightAfter.y+Pixels(24)});
+		copyrightMotion.Finish();
 
 		SectionHeader(IA(I18nKey.SettingsUI.Design.Explore).c_str());
 		struct Feature { const char* title; const char* description; const char* icon; HomeAction action; ImU32 tint; ImU32 ink; };
@@ -1013,6 +1572,7 @@ namespace Inkeys::UI::Setting::Design
 				featureOrigin.y + (featureColumns ? 0.0F : static_cast<float>(index) * (featureHeight + Pixels(8.0F))));
 			ImGui::PushID(static_cast<int>(index));
 			ImGui::SetCursorScreenPos(origin);
+			PageBlockScope featureMotion("##home-feature-motion");
 			if (Button("##feature", { featureWidth, featureHeight })) action = feature.action;
 			AllowContentDrag();
 			draw->AddRectFilled({ origin.x + 1.0F, origin.y + 1.0F }, { origin.x + featureWidth - 1.0F, origin.y + Pixels(84.0F) }, feature.tint, Pixels(4.0F));
@@ -1041,6 +1601,7 @@ namespace Inkeys::UI::Setting::Design
 			const float descriptionHeight = TextHeight(description, copyWidth, ImFluentTextStyle_Caption);
 			const float height = (std::max)(Pixels(60.0F), titleHeight + descriptionHeight + Pixels(24.0F));
 			ImGui::PushID(id);
+			PageBlockScope entryMotion("##home-common-motion");
 			if (Button("##entry", { entryWidth, height })) action = target;
 			AllowContentDrag();
 			ImFluent::DrawIcon(icon, { origin.x + Pixels(12.0F), origin.y }, { origin.x + Pixels(40.0F), origin.y + height }, 20.0F, TextPrimary);
@@ -1120,6 +1681,7 @@ namespace Inkeys::UI::Setting::Design
 		const float authorBottom = ImGui::GetItemRectMax().y;
 		ImGui::SetCursorScreenPos({ bottomOrigin.x, (std::max)(commonBottom, authorBottom) + Pixels(20.0F) });
 
+		PageBlockScope footerMotion("##home-footer-motion");
 		ImFluent::BeginWrapPanel(Pixels(16.0F), Pixels(8.0F));
 		const std::array footer{
 			std::pair{ IA(I18nKey.SettingsUI.Design.TermsOfUse), HomeAction::TermsOfUse },
@@ -1133,6 +1695,7 @@ namespace Inkeys::UI::Setting::Design
 			Link(link.first.c_str(), link.first.c_str(), link.second, action);
 		}
 		ImFluent::EndWrapPanel();
+		footerMotion.Finish();
 		Text(IA(I18nKey.SettingsUI.Home.Prompt).c_str(), ImFluentTextStyle_Caption, TextSecondary);
 		return action;
 	}

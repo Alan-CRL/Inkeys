@@ -1,0 +1,30 @@
+{
+  "id": "i18n-twenty-locales",
+  "name": "i18n-twenty-locales",
+  "title": "扩展 Inkeys 至 20 种语言与地区选项",
+  "description": "基于 feature/i18n 追加九种语言，复用 FreeType 与热切换架构，保持索引兼容并验证翻译、字体及布局。",
+  "status": "completed",
+  "dev_type": "native-desktop",
+  "scope": "i18n-locales-fonts-and-display-order",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": "2026-11-02",
+  "branch": "feature/i18n",
+  "base_branch": "feature/i18n",
+  "worktree_path": null,
+  "commit": "100fda717084aeac1e3b377c24b141d9412a118a",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户已确认改动生效并授权提交、结束；功能提交100fda717084aeac1e3b377c24b141d9412a118a，已归档。在既有feature/i18n分支直接开发，无PR，未push。旧RU侧栏既有超宽按范围保留。",
+  "meta": {
+    "implementation_complete": true,
+    "automated_validation": "passed_with_documented_legacy_ru_navigation",
+    "user_accepted": true
+  }
+}

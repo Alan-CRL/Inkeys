@@ -2,6 +2,7 @@
 #include "Draw3.Host.h"
 #include "Draw3.PresentationState.h"
 #include "Draw3.HapticDiagnostics.h"
+#include "Draw3.Product.h"
 #include <dxgi.h>
 #include "Draw3.PptTiming.h"
 #include "Draw3.SpeedEraser.h"
@@ -398,12 +399,69 @@ namespace Inkeys::Drawing::Draw3
 		Inkeys::Business::PenWidth::Context appliedPenWidthContext;
 		std::uintptr_t appliedPenWidthMonitor = 0;
 		bool penWidthContextPrepared = false;
+		// 初始化信息只在 owner 的状态边界更新；设置页不借用图形资源。
+		mutable std::mutex canvasInformationMutex;
+		std::uint64_t canvasInformationGeneration = 0;
+		std::string canvasLifecycle = "尚未初始化";
+		std::string canvasGraphics = "图形设备与交换链：尚未初始化\n";
+		std::string canvasInput = "输入后端：尚未启用\n";
+		std::string canvasInformation = "画布尚未初始化";
+
+		void UpdateCanvasInformation(const char* lifecycle = nullptr,
+			const std::string* graphicsText = nullptr, const std::string* inputText = nullptr,
+			bool beginGeneration = false) noexcept
+		{
+			try
+			{
+				std::scoped_lock lock(canvasInformationMutex);
+				if (beginGeneration)
+				{
+					++canvasInformationGeneration;
+					canvasGraphics = "图形设备与交换链：尚未初始化\n";
+					canvasInput = "输入后端：尚未启用\n";
+				}
+				if (lifecycle) canvasLifecycle = lifecycle;
+				if (graphicsText) canvasGraphics = *graphicsText;
+				if (inputText) canvasInput = *inputText;
+				canvasInformation = "画布状态：" + canvasLifecycle + "\n初始化代次："
+					+ std::to_string(canvasInformationGeneration) + "\n" + canvasGraphics + canvasInput;
+			}
+			catch (...) {} // 可选诊断失败不得干扰启动/退出协议。
+		}
+
+		static void ObserveCanvasGraphics(void* context, const std::string& information) noexcept
+		{
+			if (auto* self = static_cast<Impl*>(context))
+				self->UpdateCanvasInformation(nullptr, &information);
+		}
+
+		void CaptureCanvasInputInformation(HostInputMode selected) noexcept
+		{
+			try
+			{
+				const char* name = selected == HostInputMode::RtsExtended ? "RealTimeStylus (RTS，扩展属性)" :
+					selected == HostInputMode::RtsBasicXY ? "RealTimeStylus (RTS，基础 X/Y)" :
+					selected == HostInputMode::Win32Mouse ? "Win32 鼠标兼容回退" : "不可用";
+				const std::string information = std::string("输入后端：") + name + "\n" + stylus.StartupInformation();
+				UpdateCanvasInformation(nullptr, nullptr, &information);
+			}
+			catch (...) {} // 诊断分配失败不使已就绪的输入后端变成失败。
+		}
+
 		GraphicsDeviceResources graphics;
 		InkRenderer renderer;
 		TransparentPresentationController presentation;
 		RealTimeStylusInput stylus;
 		std::unique_ptr<DrawingController> drawing;
 		std::atomic_bool interruptedStrokeReconnectEnabled = true;
+		// 一份原子快照保存通用偏好；绘制 owner 应用，不能跨线程借用 Controller。
+		std::atomic_uint32_t generalDrawingOptions = 3u | (2u << 2);
+		std::atomic_uint32_t laserOptions = 0;
+		uint32_t appliedGeneralDrawingOptions = UINT32_MAX;
+		uint32_t appliedLaserOptions = UINT32_MAX;
+		mutable std::mutex palmEraserOptionsMutex;
+		PalmEraser::Settings palmEraserOptions;
+		std::optional<PalmEraser::Settings> appliedPalmEraserOptions;
 		std::atomic_bool drawingHapticsEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
@@ -434,6 +492,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
 		mutable std::mutex whiteboardMutex;
+		Bridge::WhiteboardStyleToken whiteboardStyle;
+		bool whiteboardStylePending = false;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		std::atomic_bool whiteboardLoadPending = false;
@@ -751,7 +811,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto desired = bridge.Snapshot();
 			const auto expected = desired.presentationTarget
 				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget)) : std::nullopt;
-			return workspaceTransitionPending || inputStopping.load(std::memory_order_acquire) ||
+			return whiteboardStylePending || workspaceTransitionPending || inputStopping.load(std::memory_order_acquire) ||
 				input.ConsumerFatal() || CanvasRecoveryBlocksAdmission(recovery,
 					recoveryReportAvailable ? &reportedRecovery : nullptr) ||
 				shortcutSelectionHandoffPending || commandScenePending ||
@@ -827,6 +887,7 @@ namespace Inkeys::Drawing::Draw3
 			if (inputStopping.load(std::memory_order_acquire)) reasons |= 1u;
 			if (commandScenePending) reasons |= 2u;
 			if (workspaceTransitionPending) reasons |= 1024u;
+			if (desired.workspace == Bridge::Workspace::Whiteboard && whiteboardStylePending) reasons |= 2048u;
 			if (input.ConsumerFatal()) reasons |= 256u;
 			if (CanvasRecoveryBlocksAdmission(recovery,
 				recoveryReportAvailable ? &reportedRecovery : nullptr)) reasons |= 512u;
@@ -898,6 +959,7 @@ namespace Inkeys::Drawing::Draw3
 			selectionMode.store(true, std::memory_order_release);
 			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
 			whiteboardLoadPending.store(false, std::memory_order_release);
+			whiteboardStyle = {}; whiteboardStylePending = false;
 			{
 				std::scoped_lock lock(presentationTargetMutex);
 				readyPresentationTarget.reset();
@@ -1144,7 +1206,15 @@ namespace Inkeys::Drawing::Draw3
 		{
 			auto* self = static_cast<Impl*>(context);
 			{
-				std::scoped_lock lock(self->whiteboardMutex);
+				std::scoped_lock lock(self->presentationTargetMutex, self->whiteboardMutex);
+				Bridge::WhiteboardStyleToken token{ self->acceptedStrokes.HostGeneration(), generation, page, theme.backgroundRgb, self->whiteboardStyle.serial };
+				if (!pending && token != self->whiteboardStyle)
+				{
+					// 在回执对外可见前关住新Down；同页主题修改也必须有独立身份。
+					++token.serial;
+					self->whiteboardStyle = token;
+					self->whiteboardStylePending = true;
+				}
 				self->whiteboardTheme = theme;
 				self->whiteboardGeneration = generation;
 				self->whiteboardLoadPending.store(pending, std::memory_order_release);
@@ -1155,10 +1225,6 @@ namespace Inkeys::Drawing::Draw3
 				self->whiteboardContentRevision = contentVersion;
 				self->whiteboardCanUndo = self->canUndo.load(std::memory_order_acquire);
 				self->whiteboardCanRedo = self->canRedo.load(std::memory_order_acquire);
-			}
-			{
-				// 白板冷加载与 PPT、快捷键租约各自关门，恢复只更新基础准入。
-				std::scoped_lock lock(self->presentationTargetMutex);
 				self->RefreshPresentationInputGateLocked();
 			}
 			self->PublishRuntimeRevision();
@@ -1634,7 +1700,32 @@ namespace Inkeys::Drawing::Draw3
 			const bool reconnectEnabled = interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 			if (drawing && drawing->GetInterruptedStrokeReconnectEnabled() != reconnectEnabled)
 				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
-			if (drawing) drawing->SetDrawingHapticsEnabled(drawingHapticsEnabled.load(std::memory_order_acquire));
+			if (drawing)
+			{
+				PalmEraser::Settings palmOptions;
+				{ std::scoped_lock lock(palmEraserOptionsMutex); palmOptions = palmEraserOptions; }
+				if (!appliedPalmEraserOptions || *appliedPalmEraserOptions != palmOptions)
+				{
+					drawing->SetPalmEraserOptions(palmOptions);
+					appliedPalmEraserOptions = palmOptions;
+				}
+				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
+				if (general != appliedGeneralDrawingOptions)
+				{
+					drawing->SetGeneralDrawingOptions((general & 1u) != 0, (general & 2u) != 0,
+						static_cast<InkPredictionMode>((general >> 2) & 3u));
+					appliedGeneralDrawingOptions = general;
+				}
+				const uint32_t savedLaser = laserOptions.load(std::memory_order_acquire);
+				const uint32_t effectiveLaser = (savedLaser & 2u) | ((general & 1u) ? savedLaser & 1u : 0u);
+				if (effectiveLaser != appliedLaserOptions)
+				{
+					drawing->SetLaserMultiTouchDrawingEnabled((effectiveLaser & 1u) != 0);
+					drawing->SetLaserParticlesEnabled((effectiveLaser & 2u) != 0);
+					appliedLaserOptions = effectiveLaser;
+				}
+				drawing->SetDrawingHapticsEnabled(drawingHapticsEnabled.load(std::memory_order_acquire));
+			}
 			PumpDisplayScale();
 			{
 				std::scoped_lock lock(presentationTargetMutex);
@@ -1739,6 +1830,12 @@ namespace Inkeys::Drawing::Draw3
 				preferencesChanged = appliedProductRevision != state.revision || appliedTool != state.tool;
 				appliedProductRevision = state.revision;
 				appliedTool = state.tool;
+				// 清本次样式原因不能释放其他工作区/加载/恢复门。
+				if (state.workspace != Bridge::Workspace::Whiteboard)
+					whiteboardStylePending = false;
+				else if (state.whiteboardStyle == whiteboardStyle && state.whiteboardStyle.hostGeneration != 0)
+					whiteboardStylePending = false;
+				RefreshPresentationInputGateLocked();
 			}
 			if (selectionChanged || preferencesChanged) PublishRuntimeRevision();
 		}
@@ -1812,6 +1909,17 @@ namespace Inkeys::Drawing::Draw3
 				canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
 			default: return;
 			}
+			if (command.workspace == Bridge::Workspace::Whiteboard &&
+				workspace.load(std::memory_order_acquire) == Bridge::Workspace::Whiteboard &&
+				(canvas.type == CanvasCommandType::NextPage || canvas.type == CanvasCommandType::PreviousPage))
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				// 与 PPT 页边界一致：立即关闭新 Down，并由现有 admission revision 封口旧 contact。
+				commandScenePending = true;
+				canvas.sceneClosedAdmission = true;
+				RefreshPresentationInputGateLocked();
+				PublishRuntimeRevision();
+			}
 			canvas.shortcut = std::move(command.shortcut);
 			if (!canvas.shortcut && canvas.type != CanvasCommandType::PrepareExitAutoSave)
 			{
@@ -1863,6 +1971,7 @@ namespace Inkeys::Drawing::Draw3
 			if (running.load(std::memory_order_acquire) || drawingThread.joinable() ||
 				attachedWindow.load(std::memory_order_acquire) ||
 				attachedPresentationWindow.load(std::memory_order_acquire)) return false;
+			UpdateCanvasInformation("正在初始化", nullptr, nullptr, true);
 			LogDraw3BuildIdentity();
 			LogDraw3WindowState("start-request", hwnd, presentationHwnd);
 			BeginRuntimeMetricsRun(options);
@@ -1871,6 +1980,7 @@ namespace Inkeys::Drawing::Draw3
 				options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind2 ||
 				!hwnd || !presentationHwnd || !IsWindow(hwnd) || !IsWindow(presentationHwnd))
 			{
+				UpdateCanvasInformation("初始化失败（窗口或呈现请求不可用）");
 				SealRuntimeMetricsRun(true);
 				return false;
 			}
@@ -1892,6 +2002,7 @@ namespace Inkeys::Drawing::Draw3
 			ExternalWindowCallbacks windowCallbacks{};
 			if (!window.AttachExternal(hwnd, windowCallbacks))
 			{
+				UpdateCanvasInformation("初始化失败（附着画布窗口失败）");
 				failedCleanup.BeginKnownFailure();
 				attachedWindow.store(nullptr, std::memory_order_release);
 				attachedPresentationWindow.store(nullptr, std::memory_order_release);
@@ -1958,7 +2069,12 @@ namespace Inkeys::Drawing::Draw3
 						<< " featureLevel=0x" << std::hex << static_cast<unsigned>(graphics.featureLevel)
 						<< std::dec << std::endl;
 					// 已知失败后先激活；普通设备初始化尚未返回时不设置冷启动上限。
-					if (!graphicsInitialized) failedCleanup.BeginKnownFailure();
+					if (!graphicsInitialized)
+					{
+						failedCleanup.BeginKnownFailure();
+						const std::string failure = "图形设备：创建失败\n";
+						UpdateCanvasInformation(nullptr, &failure);
+					}
 					if (graphicsInitialized && startOptions.startupMilestone)
 						startOptions.startupMilestone(startOptions.startupContext,
 							HostStartupStage::GraphicsReady);
@@ -1968,7 +2084,7 @@ namespace Inkeys::Drawing::Draw3
 						committedWidth.store(size.width, std::memory_order_release);
 						committedHeight.store(size.height, std::memory_order_release);
 						const TransparentPresentationCallbacks presentationCallbacks{
-							&this->styleCallbacks, &ApplyStyle
+							&this->styleCallbacks, &ApplyStyle, this, &ObserveCanvasGraphics
 						};
 						TransparentPresentationOptions presentationOptions{};
 						presentationOptions.requireMode =
@@ -2033,8 +2149,11 @@ namespace Inkeys::Drawing::Draw3
 							<< " stopped=" << (token.stop_requested() ? 1 : 0) << std::endl;
 						if (inputApproved)
 						{
+							const auto timingProfile = startOptions.frameRate == 30 ? StrokeTimingProfileId::Fps30
+								: startOptions.frameRate == 60 ? StrokeTimingProfileId::Fps60
+								: startOptions.frameRate == 240 ? StrokeTimingProfileId::Fps240 : StrokeTimingProfileId::Fps120;
 							StrokeModelConfiguration configuration =
-								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle));
+								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle), timingProfile);
 							configuration.interruptedStrokeReconnectEnabled =
 								interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
@@ -2067,6 +2186,9 @@ namespace Inkeys::Drawing::Draw3
 							observer.recoveryRetryAllowed = &RecoveryRetryAllowed;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
+							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
+							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
+							appliedPalmEraserOptions.reset();
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -2123,6 +2245,7 @@ namespace Inkeys::Drawing::Draw3
 					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3] startup failed: unknown exception\n");
 					initialized = false;
 				}
+				UpdateCanvasInformation(initialized ? "就绪" : "初始化失败");
 				// Signal 由此 owner 按值持有，覆盖失败握手与随后全部 GPU 释放。
 				if (!initialized) failedCleanup.BeginKnownFailure();
 				if (!initialized && runtimeMetrics.enabled.load(std::memory_order_acquire))
@@ -2154,6 +2277,8 @@ namespace Inkeys::Drawing::Draw3
 						window.RequestExit();
 					}
 				}
+				if (initialized) UpdateCanvasInformation(runtimeMetrics.runFailed.load(std::memory_order_acquire)
+					? "绘制异常，已停止（以下为本代最后记录）" : "已停止（以下为本代最后记录）");
 				// Run 正常、异常或 stop 返回时都补齐活动结束，再释放 controller。
 				EndDrawingActivity();
 				CaptureRuntimeMetricsMetadata(true);
@@ -2177,6 +2302,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
+				UpdateCanvasInformation("初始化失败（无法创建绘制线程）");
 				// owner 创建失败也先监督，再排空已建立的 worker 并解除外部窗口附着。
 				failedCleanup.BeginKnownFailure();
 				running.store(false, std::memory_order_release);
@@ -2249,6 +2375,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			inputMode.store(selected, std::memory_order_release);
+			CaptureCanvasInputInformation(selected);
 			const char* modeName = selected == HostInputMode::RtsExtended ? "RtsExtended" :
 				selected == HostInputMode::RtsBasicXY ? "RtsBasicXY" :
 				selected == HostInputMode::Win32Mouse ? "Win32Mouse" : "Disabled";
@@ -2264,6 +2391,7 @@ namespace Inkeys::Drawing::Draw3
 			failedCleanup.BeginKnownFailure();
 			// 意外异常不降级；仍完成握手，避免绘制 owner 永久等待。
 			inputInitialized = false;
+			UpdateCanvasInformation("初始化失败（输入初始化异常）");
 		}
 		{
 			std::scoped_lock startupLock(startupMutex);
@@ -2351,6 +2479,7 @@ namespace Inkeys::Drawing::Draw3
 				SealRuntimeMetricsRun();
 				return;
 			}
+			if (running.load(std::memory_order_acquire)) UpdateCanvasInformation("正在停止");
 			// 先关闭 contact 准入，仍保留业务命令通道供下面发布最终保存屏障。
 			CloseInputAdmission();
 			{
@@ -2428,6 +2557,11 @@ namespace Inkeys::Drawing::Draw3
 		return impl_->WriteRuntimeMetrics(absoluteOutputPath);
 	}
 	bool Host::Running() const noexcept { return impl_->running.load(std::memory_order_acquire); }
+	std::string Host::CanvasInformation() const
+	{
+		std::scoped_lock lock(impl_->canvasInformationMutex);
+		return impl_->canvasInformation;
+	}
 	std::optional<HostHiddenPersistenceSnapshot> Host::HiddenPersistenceSnapshot() const noexcept
 	{
 		// startOptions 在当前 generation 不变，Stop 不改写此字段；禁止并行下一 Start。
@@ -2495,6 +2629,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
 		{
 			std::scoped_lock lock(impl_->whiteboardMutex);
+			snapshot.whiteboardStyle = impl_->whiteboardStyle;
 			snapshot.whiteboardTheme = impl_->whiteboardTheme;
 			snapshot.whiteboardGeneration = impl_->whiteboardGeneration;
 			snapshot.whiteboardLoadPending = impl_->whiteboardLoadPending;
@@ -2513,7 +2648,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				snapshot.currentPageIndex = impl_->whiteboardPageIndex;
 				snapshot.pageCount = impl_->whiteboardPageCount;
-				snapshot.whiteboardTheme = impl_->whiteboardTheme;
+				snapshot.whiteboardStyle = impl_->whiteboardStyle;
+			snapshot.whiteboardTheme = impl_->whiteboardTheme;
 				snapshot.whiteboardGeneration = impl_->whiteboardGeneration;
 				snapshot.whiteboardLoadPending = impl_->whiteboardLoadPending;
 				snapshot.whiteboardUnsaved = impl_->whiteboardUnsaved;
@@ -2571,10 +2707,15 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool Host::WaitForRuntimeRevision(std::uint64_t revision,
-		std::uint32_t timeoutMilliseconds) const noexcept
+		std::uint32_t timeoutMilliseconds, bool waitWhileStopped) const noexcept
 	{
 		return impl_->runtimeRevision.WaitForChange(
-			revision, timeoutMilliseconds, impl_->running);
+			revision, timeoutMilliseconds, impl_->running, waitWhileStopped);
+	}
+
+	void Host::NotifyWorkspaceProgress() noexcept
+	{
+		impl_->PublishRuntimeRevision();
 	}
 
 	bool Host::WaitForContentRevision(std::uint64_t revision,
@@ -2686,6 +2827,39 @@ namespace Inkeys::Drawing::Draw3
 			return;
 		// Start/Stop 不清除此期望值；空闲时也唤醒，关闭后及时正常提交等待接续的笔画。
 		(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept
+	{
+		const uint32_t mode = predictionMode >= 0 && predictionMode <= 2 ? static_cast<uint32_t>(predictionMode) : 2u;
+		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (penTailCorrectionEnabled ? 2u : 0u) | (mode << 2);
+		if (impl_->generalDrawingOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept
+	{
+		// 保存原始子偏好；总开关只影响 owner 计算的有效值，重新开启后可恢复。
+		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (particlesEnabled ? 2u : 0u);
+		if (impl_->laserOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetPalmEraserOptions(const PalmEraser::Settings& options)
+	{
+		const auto normalized = PalmEraser::NormalizeSettings(options);
+		{
+			std::scoped_lock lock(impl_->palmEraserOptionsMutex);
+			if (impl_->palmEraserOptions == normalized) return;
+			impl_->palmEraserOptions = normalized;
+		}
+		// 只发布期望快照，Controller 仍只由绘制 owner 访问。
+		(void)impl_->input.PublishControlWake();
+	}
+	PalmEraser::Settings Host::PalmEraserOptions() const
+	{
+		std::scoped_lock lock(impl_->palmEraserOptionsMutex);
+		return impl_->palmEraserOptions;
 	}
 
 	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)
@@ -2828,6 +3002,26 @@ namespace Inkeys::Drawing::Draw3
 		{
 			Host host;
 			auto& state = *host.impl_;
+			check(host.CanvasInformation() == "画布尚未初始化", "canvas information begins unavailable");
+			state.UpdateCanvasInformation("正在初始化", nullptr, nullptr, true);
+			const std::string firstGraphics = "Hardware / DirectComposition / FLIP_SEQUENTIAL\n";
+			const std::string firstInput = "RTS Extended\n";
+			Host::Impl::ObserveCanvasGraphics(&state, firstGraphics);
+			state.UpdateCanvasInformation("就绪", nullptr, &firstInput);
+			check(host.CanvasInformation().find(firstGraphics + firstInput) != std::string::npos,
+				"canvas information merges actual graphics callback and input publication");
+			state.UpdateCanvasInformation("正在初始化", nullptr, nullptr, true);
+			check(host.CanvasInformation().find("Hardware") == std::string::npos &&
+				host.CanvasInformation().find("RTS Extended") == std::string::npos,
+				"new canvas generation removes old successful graphics and input");
+			const std::string fallbackGraphics = "WARP / ULW / ordinary\n";
+			const std::string fallbackInput = "Win32Mouse / RTS failed\n";
+			Host::Impl::ObserveCanvasGraphics(&state, fallbackGraphics);
+			state.UpdateCanvasInformation("就绪", nullptr, &fallbackInput);
+			state.UpdateCanvasInformation("已停止（以下为本代最后记录）");
+			check(host.CanvasInformation().find(fallbackGraphics + fallbackInput) != std::string::npos &&
+				host.CanvasInformation().find("已停止") != std::string::npos,
+				"stopped canvas labels retained fallback facts as last generation records");
 			check(!host.SetWorkspaceTransitionPending(1, true, 1), "stopped Host refuses transition publication");
 			// 只建立准入所需运行前提；使用真实 Impl/Coordinator，不 Start、附着 HWND 或启动 owner。
 			state.input.ResetForNextRun();
@@ -2986,6 +3180,19 @@ namespace Inkeys::Drawing::Draw3
 			check(state.input.AdmissionBlocked() &&
 				host.SetWorkspaceTransitionPending(restoreEpoch, false, firstRun.hostGeneration) &&
 				!state.input.AdmissionBlocked(), "only matching restore retirement reopens otherwise ready Pen admission");
+			// 实际观察入口、Bridge快照和owner应用确认组成完整无窗口样式门回归。
+			Host::Impl::ObserveWhiteboard(&state, {0xffffff, WhiteboardPattern::Blank}, 41, false, false, 0, 1, false, 0);
+			check(state.whiteboardStylePending && state.input.AdmissionBlocked(), "theme closes Down before business observes it");
+			const auto lightStyle = host.RuntimeSnapshot().whiteboardStyle;
+			Host::Impl::ObserveWhiteboard(&state, {0, WhiteboardPattern::Blank}, 41, false, false, 0, 1, false, 0);
+			whiteboard.whiteboardStyle = lightStyle; host.PublishState(whiteboard); state.PumpBridgeState();
+			check(state.whiteboardStylePending && state.input.AdmissionBlocked(), "same-page old-theme ACK cannot release new style");
+			whiteboard.whiteboardStyle = host.RuntimeSnapshot().whiteboardStyle;
+			state.whiteboardLoadPending.store(true, std::memory_order_release);
+			host.PublishState(whiteboard); state.PumpBridgeState();
+			check(!state.whiteboardStylePending && state.input.AdmissionBlocked(), "style ACK preserves independent cold-load gate");
+			Host::Impl::ObserveWhiteboard(&state, {0, WhiteboardPattern::Blank}, 41, false, false, 0, 1, false, 0);
+			check(!state.whiteboardStylePending && !state.input.AdmissionBlocked(), "same-theme repeat is idempotent after matching application");
 			host.PublishState(desktop); state.PumpBridgeState();
 			Host::Impl::ObserveWorkspace(&state, Bridge::Workspace::Desktop, 0, 1, nullptr);
 			inkShortcut.scope.workspace = Bridge::Workspace::Desktop;

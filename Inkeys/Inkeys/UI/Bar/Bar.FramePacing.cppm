@@ -265,6 +265,9 @@ export namespace Inkeys::UI::Bar
 		bool presented_ = false;
 	};
 
+	// 共享调度器专用的无自旋等待；失败交由调用者沿原deadline回退。
+	[[nodiscard]] bool TryWaitForRemainingFrameTime(double requestedWaitMs) noexcept;
+
 	// 默认使用 waitable timer；Win7/创建或等待失败时在内部有界回退。
 	void WaitForRemainingFrameTime(double requestedWaitMs);
 
@@ -584,6 +587,12 @@ namespace Inkeys::UI::Bar
 	constexpr FramePacingWaitPolicy FramePacingWaitPolicy::Default() noexcept
 	{
 		return { FramePacingWaitStrategy::WaitableTimer, 0.25, 0.25, 1.5 };
+	}
+
+	bool TryWaitForRemainingFrameTime(double requestedWaitMs) noexcept
+	{
+		if (!(requestedWaitMs > 0.0) || !std::isfinite(requestedWaitMs)) return false;
+		return FramePacingGetThreadTimer().Wait(requestedWaitMs).result == FramePacingWaitableTimerResult::Completed;
 	}
 
 	void WaitForRemainingFrameTime(double requestedWaitMs)

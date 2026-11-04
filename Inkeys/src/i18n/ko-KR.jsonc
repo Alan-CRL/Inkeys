@@ -1,0 +1,1173 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "ko-KR",
+  "Widget":
+  {
+    "LnkName": "Inkeys(화면 주석 도구)"
+  },
+  "Operate":
+  {
+    "Reset": "초기화",
+    "Repair": "복구",
+    "Copy": "복사",
+    "Create": "만들기"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "선택",
+      "SelectClean": "선택(지우기)",
+      "Pen": "펜",
+      "Eraser": "지우개",
+      "Options": "옵션"
+    },
+    "Pen":
+    {
+      "Pen": "펜",
+      "Highlighter": "형광펜",
+      "Thinkness": "굵\n기",
+      "Write": "쓰기",
+      "Line": "직선",
+      "Square": "사각형"
+    },
+    "Operate":
+    {
+      "Revoke": "실행 취소",
+      "Recall": "복원",
+      "Freeze": "화면 고정",
+      "Pierce": "입력 통과"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "하단 도구 모음",
+        "Centered": "가운데"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "지우기",
+        "ClearCanvasHint": "현재 캔버스의 주석 모두 지우기",
+        "AutomaticLabel": "자동 굵기",
+        "SensitivityLabel": "민감도",
+        "LowLabel": "낮음",
+        "MediumLabel": "보통",
+        "HighLabel": "높음",
+        "SmallSize": "작게",
+        "MediumSize": "보통",
+        "LargeSize": "크게",
+        "BaseSizeHint": "자동 크기 조절 시 기준 크기",
+        "MixedHint": "장치마다 설정이 다릅니다\n클릭하면 모든 장치에 자동 크기 적용",
+        "SettingsHint": "자동 크기 설정은 아직 사용할 수 없습니다"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "선택",
+        "SelectClearLabel": "비우고 선택",
+        "ClickThroughLabel": "통과",
+        "MoveLabel": "이동",
+        "DrawLabel": "그리기",
+        "LaserLabel": "레이저",
+        "HighlighterLabel": "형광펜",
+        "HardPenLabel": "하드펜",
+        "SoftPenLabel": "소프트펜",
+        "EraserLabel": "지우개",
+        "AreaEraserLabel": "영역지우기",
+        "GeometryLabel": "도형",
+        "RectangleLabel": "사각형",
+        "StraightLineLabel": "직선",
+        "UndoLabel": "실행취소",
+        "RedoLabel": "다시실행",
+        "ClearLabel": "모두지우기",
+        "WhiteboardWindowTitle": "Inkeys 화이트보드",
+        "WhiteboardPreviousLabel": "이전 페이지",
+        "WhiteboardNextLabel": "다음 페이지",
+        "WhiteboardAddPageLabel": "페이지 추가",
+        "WhiteboardLabel": "보드",
+        "ResumeWhiteboardLabel": "보드복귀",
+        "CloseWhiteboardLabel": "보드닫기",
+        "ReturnToShowLabel": "발표복귀",
+        "MinimizeWhiteboardLabel": "보드 최소화",
+        "WhiteboardThemeLabel": "테마",
+        "WhiteboardBackgroundColorLabel": "배경색",
+        "WhiteboardBackgroundStyleLabel": "배경 종류",
+        "WhiteboardBlankLabel": "빈 배경",
+        "WhiteboardDotsLabel": "점무늬",
+        "WhiteboardGridLabel": "격자",
+        "WhiteboardUnsavedLabel": "저장되지 않은 페이지가 있습니다",
+        "FreezeLabel": "고정",
+        "EndPresentationLabel": "발표종료",
+        "SettingsLabel": "설정",
+        "MoreLabel": "더보기"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "파일",
+        "TaskManagerLabel": "작업 관리",
+        "ControlPanelLabel": "제어판",
+        "ShowDesktopLabel": "바탕화면",
+        "LockScreenLabel": "잠금",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "이름 추첨",
+        "ClassIslandSettingsLabel": "CI 설정",
+        "ClassIslandProfileLabel": "프로필",
+        "ClassIslandSwapLabel": "수업 변경"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "브러시",
+        "LaserLabel": "레이저 포인터",
+        "HighlighterLabel": "형광펜",
+        "HardPenLabel": "하드펜",
+        "SoftPenLabel": "소프트펜",
+        "FreeLineLabel": "자유선",
+        "AnnotationLineLabel": "안내선",
+        "HoldThicknessLabel": "길게 눌러 굵기 고정",
+        "ThicknessFormat": "굵기 {}",
+        "AnnotationUnavailableTitle": "안내선은 아직 사용할 수 없습니다",
+        "AnnotationFixedUnsupportedTitle": "고정 굵기 안내선은 아직 지원하지 않습니다",
+        "AnnotationDescription": "그리기 방향을 수평·수직·45° 대각선으로 고정",
+        "ThicknessOverflowTitle": "선 굵기가 미리 보기 범위를 초과합니다",
+        "ThicknessOverflowBody": "미리 보기와 실제 선의 굵기가 다를 수 있습니다."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "직선",
+        "RectangleLabel": "사각형"
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "불투명도",
+        "HoldColorLabel": "길게 눌러 색상 고정"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "프레임: {:.2f} FPS | 제한 없음: {:.2f} FPS",
+        "FrameRateUnavailable": "프레임: -- FPS | 제한 없음: -- FPS"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "충돌",
+        "ReadFailed": "읽기",
+        "PresentFailed": "표시",
+        "Failed": "오류",
+        "Recovering": "복원 중",
+        "Loading": "로딩 중",
+        "Retry": "재시도",
+        "Wait": "대기",
+        "RetryCanvas": "캔버스 재시도",
+        "ProtectedHint": "문서의 페이지 순서나 식별 정보가 바뀌어 기존 필기를 보호하고 있습니다. 문서를 원래 상태로 되돌린 후 다시 시도하세요.",
+        "RecoveryHint": "캔버스 복원이 완료되지 않았습니다. 다시 시도해도 필기 보호는 유지됩니다."
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys에서 투명 배경을 올바르게 표시할 수 없습니다.\n\nInkeys.exe를 마우스 오른쪽 단추로 누르고 ‘속성 → 호환성’에서 ‘축소된 컬러 모드’를 해제하세요.\nWindows 7에서는 Aero 테마를 켜세요.\n\n문제가 계속되면 설정 홈에서 개발자에게 문의하세요.\nInkeys를 다시 시작한 후 확인하세요."
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "화이트보드 창으로 전환하지 못해 자동 재시도를 중지했습니다. 주 도구 모음의 보드 단추를 다시 누르면 이번 전환을 취소할 수 있습니다. 또는 설정의 ‘그리기’ 페이지에서 다시 시도하세요.",
+      "Return": "화이트보드를 종료하지 못해 자동 재시도를 중지했습니다. 주 도구 모음의 보드 단추를 다시 누르면 보드로 돌아갑니다. 또는 설정의 ‘그리기’ 페이지에서 다시 시도하세요.",
+      "Primary": "데스크톱과 발표 작업 영역 사이의 전환을 완료하지 못해 자동 재시도를 중지했습니다. 설정의 ‘그리기’ 페이지에서 다시 시도하세요."
+    },
+    "Common":
+    {
+      "TipsTitle": "Inkeys 알림",
+      "ErrorTitle": "Inkeys 오류",
+      "OK": "확인",
+      "Cancel": "취소",
+      "Yes": "예",
+      "No": "아니요"
+    },
+    "EndPresentation":
+    {
+      "Body": "현재 슬라이드 쇼를 종료할까요?"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "프로그램 창을 만들 수 없거나 창 생성이 차단되어 Inkeys가 예기치 않게 종료되었습니다. Inkeys를 다시 시작한 후 시도하세요. (#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "자동 업데이트 모듈이 시작되지 않았습니다. 현재 버전이 공식 릴리스가 아님을 의미합니다.\n‘소프트웨어 버전’에서 ‘소프트웨어 복구’를 선택하세요."
+    },
+    "CloseInkeys":
+    {
+      "Body": "Inkeys를 종료할까요?"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys에 문제가 발생했습니다. ‘확인’을 선택하면 Inkeys를 다시 시작하고 복원을 시도합니다."
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Inkeys 옵션",
+    "Design":
+    {
+      "NavigationTitle": "설정",
+      "SwitchToDark": "어두운 테마로 전환",
+      "SwitchToLight": "밝은 테마로 전환",
+      "Preferences": "환경 설정",
+      "RecommendedSuffix": "(권장)",
+      "SupportGroup": "지원 및 유지 관리",
+      "Experimental": "실험적 기능",
+      "HomeWelcome": "Inkeys3에 오신 것을 환영합니다",
+      "HeroTitle": "부드러운 필기, 아름다운 움직임.",
+      "HeroJoin": " ",
+      "HeroDescription": "보고 쓰는 모든 순간을 즐겁게.",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "이 프로그램은 ",
+      "HomeLicenseSuffix": " 라이선스로 배포됩니다.",
+      "HomeRedistribution": "라이선스 조건에 따라 누구나 코드를 열람·수정·재배포할 수 있습니다.",
+      "HomeOpenSourceTitle": "당신을 위한 무료 오픈 소스",
+      "HomeRepositoryPrefix": "Inkeys 코드는 ",
+      "HomeRepositoryJoin": " 및 ",
+      "HomeRepositorySuffix": "에 공개되어 있습니다.",
+      "HomeStarAction": "GitHub에서 별표 주기",
+      "HomeSponsorAction": "Inkeys 후원",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "필기 경험 조정",
+      "Tutorial": "사용 안내",
+      "Explore": "추천 설정",
+      "DrawDescription": "필기와 지우개",
+      "AppearanceDescription": "애니메이션·조명·도구 모음 배율",
+      "PresetDescription": "즐겨 쓰는 펜을 바로 사용",
+      "PluginDescription": "발표 및 수업 도구 연결",
+      "CommonSettings": "자주 쓰는 설정",
+      "GeneralDescription": "조작 모드·도구 모음 배치·시작 방법",
+      "ShortcutsDescription": "전역 조작 및 주석 편집 단축키",
+      "DisplayLanguage": "표시 언어",
+      "Improve": "Inkeys 개선에 참여",
+      "Contact": "개발자에게 문의",
+      "TermsOfUse": "이용 약관",
+      "Website": "공식 웹사이트",
+      "StartupSection": "시작",
+      "AppearanceSection": "모양",
+      "BehaviorSection": "동작",
+      "CompatibilitySection": "호환성",
+      "GeneralBasic": "기본",
+      "GeneralAppearance": "모양 및 애니메이션",
+      "GeneralInteraction": "동작 및 안전",
+      "GeneralStorage": "저장 및 구성",
+      "OperationModeSection": "조작 모드",
+      "IconArrangementSection": "아이콘 배치",
+      "AnimationSection": "애니메이션",
+      "LightingSection": "조명",
+      "ScalingSection": "배율",
+      "ThemeSection": "테마",
+      "OpacitySection": "불투명도",
+      "WindowBehaviorSection": "창 동작",
+      "SafetyRecoverySection": "안전 및 복원",
+      "ShortcutGlobalSection": "전역 조작",
+      "ShortcutEditingSection": "주석 편집",
+      "ShortcutAuxiliarySection": "보조 조작",
+      "GeneralSubtitle": "시작 방법, 인터페이스 크기와 일상적인 사용 환경을 설정합니다.",
+      "EdgeLighting": "가장자리 조명 사용",
+      "EdgeLightingDescription": "끄면 기본 테두리만 남기고 점광 및 부드러운 조명 효과를 끕니다.",
+      "TopWindowSummary": "그리지 않을 때 창을 맨 위로 다시 올리는 빈도를 설정합니다.",
+      "TopWindowDetails": "자세히",
+      "AvoidFullscreenSummary": "다시 시작해야 합니다. 그리지 않거나 입력 통과 모드일 때 전체 화면을 차지하지 않도록 합니다.",
+      "AvoidFullscreenDetails": "사용 안내",
+      "Enabled": "켬",
+      "Disabled": "끔",
+      "ClickToCopy": "클릭하여 복사",
+      "Copied": "복사됨",
+      "RestartRequired": "Inkeys를 다시 시작하면 적용됩니다.",
+      "NextStartupRequired": "다음에 Inkeys를 시작할 때 적용됩니다."
+    },
+    "Home":
+    {
+      "N": "홈",
+      "Prompt": "이 버전은 Inkeys 3 미리 보기 버전이며 최종 품질을 나타내지 않습니다.",
+      "Developer": "Inkeys 창립 개발자",
+      "Group": "GitHub Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Bilibili 공식 채널",
+      "FeedBack": "문제·제안 보내기"
+    },
+    "Feedback":
+    {
+      "N": "피드백",
+      "Description": "문제나 제안을 보내 Inkeys 개선에 참여하세요.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "GitHub에 문제나 제안을 올려 공개적으로 진행 상황을 확인하고 의견을 나눌 수 있습니다."
+      },
+      "Questionnaire":
+      {
+        "N": "설문으로 보내기",
+        "E": "설문을 통해 사용 중 겪은 문제나 개선 의견을 보내세요."
+      },
+      "Qr":
+      {
+        "N": "QR 코드로 보내기",
+        "E": "QR 코드를 스캔하여 설문으로 문제나 제안을 보내세요."
+      },
+      "ContactSection": "커뮤니티 및 개발자 연락처",
+      "CommunityDescription": "GitHub Discussions에서 사용 중 겪은 문제나 개선 의견을 나누세요.",
+      "ContactDescription": "개발자에게 이메일로 문제나 제안을 보낼 수 있습니다.",
+      "AuthorQQ": "개발자 QQ"
+    },
+    "Language":
+    {
+      "N": "언어",
+      "UI":
+      {
+        "N": "표시 언어",
+        "Select": "언어 선택",
+        "SelectE": "인터페이스의 표시 언어를 설정합니다.",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "언어 변경은 즉시 적용됩니다. 다시 시작할 필요가 없습니다.",
+        "SelectNote": "즉시 적용됩니다. 다시 시작할 필요가 없습니다."
+      }
+    },
+    "Configuration":
+    {
+      "N": "구성 저장",
+      "Clean":
+      {
+        "N": "구성 정리",
+        "Enable": "구성 자동 정리 사용",
+        "EnableE": "시작하거나 구성을 저장할 때 현재 구성 템플릿에 없는 추가 항목을 삭제합니다.",
+        "EnableNote": "이전 버전으로 되돌린 후 업데이트하거나 구성을 가져오면 일부 항목이 사라지고 기본값으로 돌아갈 수 있습니다."
+      },
+      "CanvasSave":
+      {
+        "N": "캔버스 저장",
+        "Enable": "데스크톱 캔버스 자동 저장",
+        "EnableE": "데스크톱 캔버스를 지우거나 프로그램을 종료할 때 내용이 있는 캔버스를 자동 저장하여 나중에 기록에서 복원할 수 있게 합니다.",
+        "SaveTime":
+        {
+          "N": "보관 기간",
+          "E": "설정한 기간이 지난 캔버스 기록을 시작할 때 정리합니다.",
+          "1d": "1일",
+          "3d": "3일",
+          "5d": "5일",
+          "10d": "10일",
+          "30d": "30일",
+          "Never": "삭제 안 함"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "소프트웨어 버전",
+      "ManualUpdate":
+      {
+        "N": "새 버전이 있습니다",
+        "ManualUpdate": "수동 업데이트"
+      },
+      "LimitUpdate":
+      {
+        "N": "자동 업데이트가 차단되었습니다.\n\n새 버전은 시스템 호환성이 변경되어 업데이트 후 시작하지 못할 수 있습니다. 자세한 내용에서 시스템 요구 사항을 확인한 후 직접 다운로드하여 업데이트하세요. 현재 채널의 복구 기능도 일시적으로 사용할 수 없습니다.",
+        "Info": "자세히"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3가 정식 출시되었습니다!\n\n아래 단추에서 Inkeys3의 자세한 정보를 확인하세요. 현재 채널의 복구 기능은 일시적으로 사용할 수 없습니다.",
+        "Download": "지금 업데이트"
+      },
+      "VersionTip": "프로그램과 시스템의 아키텍처가 다릅니다. 성능이 떨어지고 사용 환경에 영향을 줄 수 있습니다. 아래 ‘소프트웨어 복구’에서 ‘복구 시 아키텍처 수정’을 켜거나, 페이지 하단에서 대상 아키텍처를 직접 선택하여 복구하세요.",
+      "Info":
+      {
+        "N": "버전 정보",
+        "ReleaseVersion": "릴리스 버전",
+        "ReleaseDate": "릴리스 날짜",
+        "ReleaseArch": "프로그램 및 시스템 아키텍처:",
+        "ReleaseTag": "릴리스 빌드(RELEASE)",
+        "DebugTag": "디버그 빌드(DEBUG)",
+        "ManualBuild": "수동 빌드",
+        "AutoBuild": "자동 빌드(CI/CD)",
+        "CICDInfo": "자동 빌드 세부 정보"
+      },
+      "UserInfo":
+      {
+        "N": "사용자 정보",
+        "CopyUserId": "사용자 ID 복사",
+        "UserId": "사용자 ID"
+      },
+      "Repair":
+      {
+        "N": "소프트웨어 복구",
+        "RepairSoftware": "소프트웨어 복구",
+        "RepairSoftwareE": "선택한 채널의 최신 버전을 다시 설치합니다",
+        "RepairArch": "복구 시 아키텍처 수정"
+      },
+      "Update":
+      {
+        "N": "업데이트 설정",
+        "AutoUpate": "자동 업데이트(알림 없음)",
+        "ChannelTip": "정식 채널(LTS)은 안정성이 높은 최신 버전을 제공합니다. (권장)\n미리 보기 채널(Insider)은 안정성이 낮으며 보안 소프트웨어에서 경고가 발생할 수 있습니다.\n초기 채널(Canary)은 Inkeys3의 초기 개발 버전으로, 일반적인 사용은 권장하지 않습니다.",
+        "Channel":
+        {
+          "N": "대상 업데이트 채널",
+          "LTS": "정식 채널(LTS)",
+          "Insider": "미리 보기 채널(Insider)",
+          "Canary": "초기 채널(Canary)"
+        },
+        "Arch":
+        {
+          "N": "대상 아키텍처",
+          "E": "주의: 현재 시스템과 다른 아키텍처를 선택하면 시작하지 못하거나 성능이 크게 저하될 수 있습니다.",
+          "64": "64비트",
+          "32": "32비트",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "버전 상태"
+    },
+    "CICD":
+    {
+      "N": "자동 빌드 세부 정보",
+      "Repository": "빌드 저장소",
+      "Branch": "빌드 브랜치",
+      "Submitter": "커밋 작성자",
+      "BuildTime": "빌드 시간",
+      "BuildSystem": "빌드 시스템",
+      "BuildSystemVersion": "빌드 시스템 버전",
+      "RunnerImageSystem": "실행기 OS 이미지",
+      "RunnerImageVersion": "실행기 이미지 버전",
+      "MSBuildVersion": "MSBuild 버전"
+    },
+    "Regular":
+    {
+      "N": "일반",
+      "SelectAndClickThrough":
+      {
+        "N": "선택 및 입력 통과",
+        "Combined": "통합형",
+        "Separate": "분리형",
+        "CombinedDescription": "‘선택’으로 컴퓨터를 조작합니다. 필기가 없는 상태와 필기를 남겨 둔 상태를 모두 포함합니다.",
+        "SeparateDescription": "‘선택’은 필기를 지우고 컴퓨터를 조작하며, ‘입력 통과’는 필기를 남긴 채 아래 창을 조작합니다.",
+        "ClickThrough": "입력 통과",
+        "ClickThroughDescription": "화면의 필기를 남기고 클릭과 터치가 주석 레이어를 통과하게 하여 아래 창을 조작합니다."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "주 도구 모음 아이콘 순서",
+        "FollowMainButton": "주 단추 기준",
+        "FollowMainButtonReverse": "주 단추 기준(역순)",
+        "LeftToRight": "왼쪽에서 오른쪽",
+        "RightToLeft": "오른쪽에서 왼쪽"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "주 도구 모음 펼침 방향",
+        "Centerline": "화면 중앙선",
+        "WhenSpaceInsufficient": "공간이 부족할 때만"
+      },
+      "AutoCollapse":
+      {
+        "N": "자동 접기",
+        "Drawing": "그릴 때 주 도구 모음 접기",
+        "Erasing": "지울 때 주 도구 모음 접기",
+        "Dragging": "주 도구 모음을 끌 때 접기",
+        "OutsideClick": "선택·입력 통과 중 도구 모음 밖을 누르면 접기",
+        "Description": "그리기에는 펜·도형·레이저가 포함됩니다. 하단 모드는 가운데 배치도 포함합니다. 도구 모음 자체와 메뉴·속성·팝업 패널은 바깥 영역에 포함하지 않습니다.",
+        "Off": "끔",
+        "NonBottom": "하단 모드가 아닐 때",
+        "Always": "항상"
+      },
+      "StartUp":
+      {
+        "N": "자동 시작 및 시작 동작",
+        "AutoStart": "로그인 시 자동 시작",
+        "AutoStartE": "현재 사용자 계정으로 로그인하면 Inkeys를 시작합니다.",
+        "LoadingAnimation": "시작 로딩 애니메이션",
+        "LoadingAnimationE": "Inkeys가 시작되는 동안 로딩 애니메이션을 표시합니다.",
+        "StartupEffect":
+        {
+          "N": "시작 효과",
+          "Shimmer": "빛 스윕",
+          "Aurora": "부드러운 빛결",
+          "PixelAssembly": "픽셀 조립"
+        },
+        "SettingEntryAnimation":
+        {
+          "N": "설정 화면 시작 애니메이션",
+          "E": "설정 화면을 열 때의 애니메이션 동작을 설정합니다",
+          "Off": "끔",
+          "First": "처음에만",
+          "Always": "항상"
+        },
+        "Link":
+        {
+          "N": "바탕 화면 바로 가기 만들기",
+          "E": "아래에서 선택한 이름으로 바탕 화면 바로 가기를 만듭니다.",
+          "More": "추가 옵션"
+        }
+      },
+      "Appearance":
+      {
+        "N": "모양",
+        "AnimationEnable": "애니메이션 사용",
+        "AnimationEnableE": "끄면 UI3 주 도구 모음과 설정 화면의 탐색 및 페이지 애니메이션을 즉시 완료합니다.",
+        "AnimationRate": "애니메이션 속도",
+        "AnimationRateE": "UI3 주 도구 모음과 설정 화면의 애니메이션 속도를 0.1배~5.0배로 조정합니다.",
+        "EdgeLighting": "가장자리 조명",
+        "EdgeLightingE": "끄면 기본 테두리만 남기고 점광 및 부드러운 조명 효과를 끕니다.",
+        "DynamicEdgeLighting": "동적 가장자리 조명",
+        "DynamicEdgeLightingE": "커서 위치에 따라 조명이 움직입니다",
+        "ResetDefault": "기본값으로 복원",
+        "SettingTheme":
+        {
+          "N": "설정 테마",
+          "E": "설정 창의 어두운/밝은 모양을 전환합니다. 제목 표시줄의 전환 단추와 동기화됩니다."
+        },
+        "BackgroundOpacity":
+        {
+          "N": "주 도구 모음 배경 불투명도",
+          "E": "주 도구 모음·주 단추·페이지 제어부의 배경 불투명도를 조정합니다. 팝업 패널에는 영향을 주지 않습니다."
+        },
+        "ContentOpacity":
+        {
+          "N": "주 도구 모음 내용 불투명도",
+          "E": "주 도구 모음·주 단추·페이지 제어부의 아이콘과 텍스트 불투명도를 조정합니다."
+        },
+        "Theme":
+        {
+          "N": "주 도구 모음 테마",
+          "E": "주 도구 모음의 어두운/밝은 모양을 전환합니다. 변경 사항은 즉시 적용됩니다.",
+          "Dark": "어두운 모드",
+          "Light": "밝은 모드"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "작업 표시줄 기준 배율",
+          "E": "100%에서 ‘기준 크기’의 높이는 48 DIP로 고정되며, ‘실제 크기’는 작업 표시줄 두께를 따릅니다.",
+          "Off": "끔",
+          "Base": "작업 표시줄 기준 크기",
+          "Actual": "작업 표시줄 실제 크기"
+        },
+        "BarZoom":
+        {
+          "N": "주 도구 모음 UI 배율",
+          "E": "주 도구 모음·단추·PPT 제어부의 배율을 실시간으로 조정합니다.",
+          "Ind": "{:.2f}배"
+        }
+      },
+      "Behavior":
+      {
+        "N": "기타 동작",
+        "TopWindow":
+        {
+          "N": "맨 위로 올리기 간격",
+          "E": "그리기 모드가 아닐 때 이 간격으로 창을 맨 위로 다시 올리며, 그리는 동안에는 일시 중지합니다. 간격이 짧으면 다른 창의 방해가 줄지만 CPU 사용량이 늘어납니다. 다른 창이 계속 가리면 플러그인의 SuperTop을 사용해 보세요.",
+          "100ms": "가장 짧게(100 ms)",
+          "500ms": "짧게(500 ms)",
+          "1s": "조금 짧게(1초)",
+          "3s": "보통(3초)",
+          "5s": "조금 길게(5초)",
+          "10s": "길게(10초)",
+          "30s": "가장 길게(30초)"
+        },
+        "RightClickClose": "주 아이콘을 우클릭하여 종료",
+        "RightClickCloseE": "확인 대화 상자가 표시됩니다.",
+        "DrawingRetract": "펜으로 그릴 때 주 도구 모음 접기",
+        "ErasingRetract": "지우개 사용 중 주 도구 모음 접기",
+        "DraggingRetract": "주 도구 모음을 끌 때 접기",
+        "CheckingRetract": "바깥 영역을 누르면 접기",
+        "CheckingRetractE": "선택 또는 입력 통과 모드에서 주 도구 모음 밖을 클릭할 때만 적용됩니다."
+      },
+      "Tentative":
+      {
+        "N": "실험적 기능",
+        "SafeMode":
+        {
+          "N": "충돌 시 처리 방법",
+          "E": "Inkeys가 비정상 종료될 때 수행할 동작입니다.",
+          "Mode1": "알림 후 다시 시작",
+          "Mode2": "알림 없이 다시 시작",
+          "Mode3": "시스템 충돌 처리기에 맡기기",
+          "Mode4": "바로 종료",
+          "Note": "시작 중 발생한 오류는 계속 알림으로 표시합니다."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "여러 인스턴스 실행 허용",
+          "E": "현재 설치 폴더에서 여러 Inkeys 인스턴스를 동시에 실행할 수 있습니다. 끄면 추가 실행을 막으며, 이미 실행 중인 인스턴스에는 영향을 주지 않습니다."
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "그리기",
+      "General":
+      {
+        "N": "일반",
+        "MultiTouch":
+        {
+          "N": "여러 손가락으로 그리기",
+          "E": "여러 손가락으로 동시에 쓰거나 그릴 수 있습니다. 끄면 한 손가락의 그리기에만 반응합니다."
+        },
+        "PenTailCorrection":
+        {
+          "N": "획 끝 보정",
+          "E": "펜을 뗄 때 획 끝이 갑자기 꺾이는 현상을 줄여 자연스럽게 마무리합니다."
+        },
+        "InkPrediction":
+        {
+          "N": "필기 예측",
+          "E": "필기 지연감을 줄입니다. ‘정밀’은 이후의 움직임을 예측하고, ‘빠르게’는 최근 입력 위치까지 획을 보충합니다. 끄면 예측 획을 그리지 않습니다.",
+          "Precise": "정밀",
+          "Fast": "빠르게",
+          "Disabled": "끔"
+        }
+      },
+      "Laser":
+      {
+        "N": "레이저 포인터",
+        "MultiTouch":
+        {
+          "N": "여러 손가락 레이저",
+          "E": "BETA: 여러 손가락으로 레이저 포인터를 동시에 사용할 수 있습니다."
+        },
+        "Particles":
+        {
+          "N": "레이저 입자 효과",
+          "E": "BETA: 레이저 궤적 주위에 입자 효과를 표시합니다."
+        }
+      },
+      "Haptics":
+      {
+        "N": "펜 촉각 피드백",
+        "Drawing": "그리기 촉각 피드백",
+        "Buttons": "단추 촉각 피드백"
+      },
+      "Cursor":
+      {
+        "N": "커서",
+        "EntryDescription": "입력 장치별로 그리는 동안 표시할 커서를 설정하고 미리 봅니다.",
+        "Devices": "장치별 설정",
+        "PenDevices": "펜 태블릿 인식",
+        "Mouse":
+        {
+          "N": "마우스",
+          "E": "마우스와 터치패드입니다."
+        },
+        "Touch":
+        {
+          "N": "터치",
+          "E": "손가락을 대면 손가락마다 커서가 하나씩 표시되고, 떼면 사라집니다."
+        },
+        "ScreenPen":
+        {
+          "N": "화면용 펜",
+          "E": "화면에 직접 쓰는 펜입니다."
+        },
+        "Tablet":
+        {
+          "N": "펜 태블릿",
+          "E": "외부 펜 태블릿과 입력 출처를 확인할 수 없는 펜입니다."
+        },
+        "Style":
+        {
+          "None": "커서 없음",
+          "Arrow": "마우스",
+          "Pen": "펜",
+          "HighlightPen": "펜(강조)",
+          "Dot": "작은 점",
+          "HighlightDot": "작은 점(강조)"
+        },
+        "InjectedMouse":
+        {
+          "N": "드라이버가 주입한 펜 태블릿 인식",
+          "E": "Windows Ink를 사용하지 않는 펜 태블릿은 보통 ‘드라이버가 주입한 마우스’로 입력됩니다. 켜면 이 마우스에 펜 태블릿의 커서 설정을 적용합니다. 원격 데스크톱처럼 마우스를 주입하는 소프트웨어도 잘못 인식될 수 있습니다.",
+          "Unavailable": "이 시스템에서는 입력 출처를 구분할 수 없어 이 옵션을 사용할 수 없습니다."
+        },
+        "FineControl": "세부 제어",
+        "DotHideOnContact":
+        {
+          "N": "펜이 닿으면 작은 점 커서를 자동으로 숨기기",
+          "E": "두 가지 작은 점 스타일에 모두 적용됩니다. 선택한 장치가 닿으면 커서를 숨기고, 가까이 띄워 둔 동안에는 표시합니다.",
+          "Off": "끄기",
+          "ScreenPen": "화면 펜만",
+          "Tablet": "펜 태블릿만",
+          "Both": "화면 펜 및 펜 태블릿"
+        },
+        "Note": "화면용 펜, 펜 태블릿, 터치에서 ‘마우스’는 앱이 직접 그리는 화살표입니다. 형광펜과 레이저 포인터의 커서, 도형 도구, 지우개 전용 커서는 이 옵션의 영향을 받지 않습니다."
+      },
+      "Effect":
+      {
+        "N": "그리기 환경",
+        "Device":
+        {
+          "N": "조작 모드 선택",
+          "Touch": "대형 화면 터치 모드",
+          "MousePen": "데스크톱 모드",
+          "TouchE": "교실이나 회의실 등에서 대형 터치 화면에 직접 쓰고 조작할 때 적합합니다.",
+          "MousePenE": "개인용 PC·태블릿·마우스로 조작하는 대형 화면에 적합하며, 마우스·펜·펜 태블릿·터치를 함께 지원합니다."
+        }
+      },
+      "Touch":
+      {
+        "N": "터치",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "끊긴 획 이어 그리기",
+          "E": "터치로 쓰는 동안 접촉이 잠깐 끊겼다가 같은 방향으로 돌아오면 두 획을 하나로 이어 선의 끊김을 줄입니다. 끄면 손을 뗄 때마다 현재 획을 끝냅니다."
+        }
+      },
+      "Eraser":
+      {
+        "N": "지우개",
+        "Automatic": "속도 반응형 지우개 사용",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "정밀 지우기",
+          "DemoFineDescription": "안내선을 따라 천천히 지워 주변 표시와 선을 남깁니다.",
+          "DemoSweepTitle": "넓게 지우기",
+          "DemoSweepDescription": "연속으로 왕복하며 지우면 굵기가 커져 넓은 필기 영역을 빠르게 지울 수 있습니다.",
+          "EntryDescription": "지우려는 의도에 맞춰 굵기를 자동 조절",
+          "Introduction": "화면 크기·입력 장치·움직임을 함께 고려하여 지우려는 의도를 추정하고 지우개 크기를 동적으로 조정합니다.",
+          "BasicSettings": "기본 설정",
+          "EnabledDevices": "사용할 장치",
+          "FineControl": "정밀 조정",
+          "SizeWarningTitle": "신뢰할 수 있는 화면 크기를 얻을 수 없습니다",
+          "SizeWarningDescription": "그리기 화면의 정확한 물리 크기를 알 수 없어 터치와 화면용 펜은 DPI로 추정합니다. 지우개 크기가 의도와 다를 수 있습니다."
+        },
+        "PalmEraser":
+        {
+          "N": "손바닥 지우개",
+          "EntryDescription": "도구를 바꾸지 않고 넓은 터치로 바로 지우기",
+          "Introduction": "손바닥을 화면에 대면 도구를 바꾸지 않고 지울 수 있습니다. 접촉 후 인식 시간 내에 지우개 크기를 정하며, 손을 떼도 원래 도구는 그대로 유지됩니다.",
+          "Enabled": "손바닥 지우개 사용",
+          "SizeWarningTitle": "신뢰할 수 있는 화면 크기를 얻을 수 없습니다",
+          "SizeWarningDescription": "그리기 화면의 정확한 물리 크기를 알 수 없어 100×100 시스템 DIP를 기본 면적 임계값으로 사용합니다. 손바닥 지우개는 계속 사용할 수 있지만 실제 크기는 다를 수 있으므로 배율을 조정하세요.",
+          "RecognitionWindow": "인식 시간",
+          "RecognitionWindowDescription": "화면에 닿은 후 이 시간 안에 손바닥을 인식하고 크기를 정합니다. 조건을 만족하면 바로 지우기 시작합니다.",
+          "Threshold": "터치 면적 임계값",
+          "ThresholdDescription": "배율을 높이면 오인식이 줄고, 낮추면 손바닥을 더 쉽게 인식합니다.",
+          "ThresholdSizePhysical": "현재 임계값: {:.2f}cm × {:.2f}cm({:.0f}px × {:.0f}px)",
+          "ThresholdSizePixels": "현재 임계값: {:.0f}px × {:.0f}px",
+          "PreviewTitle": "터치 면적 예시(현재 그리기 화면)",
+          "PreviewDescription": "테두리 안의 면적은 현재 그리기 화면의 픽셀 임계값입니다. 미리 보기 비율을 바꿔 확인할 수 있습니다. 다른 화면에서는 실제 크기가 다를 수 있습니다.",
+          "PreviewEstimated": "100×100 시스템 DIP의 기본 면적과 현재 배율로 추정한 픽셀 임계값입니다. 미리 보기 비율을 바꿀 수 있으며 실제 크기는 다를 수 있습니다.",
+          "PreviewUnavailable": "현재 그리기 화면의 크기 기준을 아직 사용할 수 없어 면적 예시를 표시할 수 없습니다.",
+          "EnabledTools": "적용 도구",
+          "ParallelWritingMultiTouchNote": "여러 손가락 그리기가 꺼져 있어 지우면서 동시에 쓸 수 없습니다.",
+          "ParallelWritingLaserMultiTouchNote": "여러 손가락 레이저가 꺼져 있어 레이저에서는 지우면서 동시에 쓸 수 없습니다.",
+          "ParallelWriting": "지우면서 동시에 쓰기",
+          "ParallelWritingDescription": "손바닥 지우개를 사용하는 동안에도 다른 입력을 중단하지 않아 계속 그릴 수 있습니다. 두 명 이상이 동시에 쓸 때 적합합니다."
+        },
+        "Input":
+        {
+          "MouseLeft": "마우스 왼쪽 단추",
+          "MouseRight": "마우스 오른쪽 단추",
+          "Touch": "터치",
+          "PenTip": "펜촉",
+          "PenTail": "펜 뒤쪽"
+        },
+        "Kind":
+        {
+          "Fixed": "고정 굵기",
+          "Speed": "속도 반응형 지우개"
+        },
+        "ResponseFor": "속도 반응 적용 대상",
+        "Response":
+        {
+          "Auto": "자동 감지",
+          "ScreenPen": "화면용 펜",
+          "Digitizer": "펜 태블릿"
+        },
+        "TouchArea":
+        {
+          "N": "터치 속도 지우개의 접촉 면적 보정",
+          "E": "지우개를 항상 손가락보다 약간 크게 하여 손가락이 지우개 커서를 가리지 않게 합니다.",
+          "Note": "대형 화면에서는 사용을 권장하지 않습니다."
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "프리셋",
+      "StartupPlacement":
+      {
+        "N": "시작 위치",
+        "E": "가운데 하단 모음은 주 도구 모음을 펼쳐 표시합니다. 왼쪽 아래나 오른쪽 아래의 플로팅 창은 주 단추만 표시합니다.",
+        "CenteredBottomBar": "가운데 하단 모음",
+        "BottomLeftFloating": "왼쪽 아래 플로팅 창",
+        "BottomRightFloating": "오른쪽 아래 플로팅 창"
+      }
+    },
+    "Performance":
+    {
+      "N": "성능",
+      "FrameRateSection": "프레임 속도",
+      "InterfaceFrameRate":
+      {
+        "N": "인터페이스 프레임 속도",
+        "E": "주 도구 모음·설정·페이지 제어부의 부드러움을 조정합니다. 낮추면 리소스 사용량이 줄어듭니다. 변경은 즉시 적용됩니다."
+      },
+      "CanvasFrameRate":
+      {
+        "N": "캔버스 프레임 속도",
+        "E": "필기 중 캔버스의 새로 고침 빈도를 조정합니다. 높이면 필기가 부드러워지지만 리소스 사용량이 늘어납니다."
+      },
+      "RenderingSection": "렌더링 및 호환성",
+      "DirectComposition":
+      {
+        "N": "DirectComposition 우선 사용",
+        "E": "지원되는 장치에서 시스템 합성 기능으로 캔버스를 표시합니다. 사용할 수 없으면 호환 방식으로 자동 전환합니다."
+      }
+    },
+    "Linkage":
+    {
+      "N": "연동",
+      "PPT": "PPT 연동",
+      "CoreVersion": "코어 버전 {}"
+    },
+    "Experimental":
+    {
+      "N": "실험실",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "인터페이스 글꼴에 소수 픽셀 크기 허용",
+          "E": "끄면 정지 상태의 주 도구 모음과 제어부 글꼴 크기를 정수 픽셀로 내림합니다. 확대·축소와 전환 애니메이션은 계속 부드럽게 변합니다. 즉시 적용됩니다."
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "그리기 하드웨어 가속 사용",
+          "E": "GPU로 캔버스 그리기를 가속합니다. 끄면 소프트웨어 그리기를 사용합니다.",
+          "Note": "그리기 오류나 심한 지연이 생기면 꺼 보세요. 다시 시작한 후 적용됩니다."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Zhaoxin 장치 호환 모드 사용",
+          "E": "Zhaoxin GPU에서 호환 업로드 방식을 사용하며 다른 GPU에는 영향을 주지 않습니다. 끄고 그리기 성능을 비교할 수 있습니다."
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "펜 촉각 피드백 진단",
+          "E": "펜 입력·단추 요청·촉각 장치 전송 결과를 출력하여 진동하지 않는 원인을 찾도록 돕습니다."
+        },
+        "TouchArea":
+        {
+          "N": "입력·지우개 진단 콘솔 출력",
+          "E": "디스플레이 EDID·해상도·DPI와 터치 면적·입력 좌표·장치 유형·지우개 크기의 스냅샷을 제한된 빈도로 출력합니다."
+        },
+        "PptCOM":
+        {
+          "N": "PptCOM 콘솔 출력",
+          "E": "PptCOM 진단 정보를 콘솔에 출력합니다."
+        },
+        "Draw3":
+        {
+          "N": "Draw3 콘솔 출력",
+          "E": "Draw3 장치와 드라이버 환경을 콘솔에 출력합니다."
+        },
+        "Cursor":
+        {
+          "N": "커서 디버그 정보",
+          "E": "커서 입력의 소유권과 실제 그리기 결과를 콘솔에 출력합니다."
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "플러그인",
+      "PPTHelper":
+      {
+        "N": "PPT 발표 도우미 3 Lite",
+        "E": "슬라이드 쇼 중 발표 및 펜 제어 단추를 표시합니다. 페이지마다 독립된 캔버스를 사용하여 필기를 해당 페이지에 고정합니다. 기존 기능과 외부 장치 사용에는 영향을 주지 않습니다.",
+        "VersionError": "버전 알 수 없음(플러그인 오류)",
+        "Solve": "해결 방법",
+        "Sync": "동기화 조정",
+        "Reset": "초기화",
+        "Tip": "슬라이드 쇼를 올바르게 감지하려면 Inkeys와 PowerPoint/WPS의 실행 권한을 같게 맞추세요. 문제가 계속되면 해결 방법을 참고하세요.",
+        "Warn": "PowerPoint/WPS가 항상 관리자 권한으로 실행되도록 설정되어 있습니다. 발표 프로세스를 감지하고 PPT 연동을 사용하려면 Inkeys도 관리자 권한으로 실행해야 합니다. 발표 소프트웨어를 항상 관리자 권한으로 실행하지 않으려면 해결 방법을 참고하세요.",
+        "Error": "플러그인을 불러오지 못했습니다. .NET Framework 4.x가 설치되지 않았거나 시스템 COM 환경에 문제가 있을 수 있습니다.\n세부 정보: ",
+        "BasicLogic":
+        {
+          "N": "기본 동작",
+          "LoadPage": "로딩 페이지 표시",
+          "LoadPageE": "이 기능은 비활성화되었습니다. PPT 로딩 페이지는 더 이상 표시하지 않습니다."
+        },
+        "WidgetDisplay":
+        {
+          "N": "제어부 표시",
+          "BottomBoth": "하단 양쪽 제어부 표시",
+          "MiddleBoth": "중앙 양쪽 제어부 표시",
+          "BottomMiddle": "하단 주 도구 모음 제어부 표시",
+          "IdleFade": "유휴 시 흐리게",
+          "IdleFadeE": "슬라이드 쇼 중 선택한 컨트롤은 사용하지 않으면 흐려지고, 포인터를 올리거나 클릭하거나 끌면 복원됩니다. 외부에서 페이지를 바꾸면 페이지 컨트롤도 흐려집니다. 기본 도구 모음은 하단 도킹 모드(가운데 배치 포함)에서 유휴 시간이 지난 후에만 흐려지며, 연결된 패널이 열려 있으면 원래 불투명도를 유지합니다.",
+          "IdleFadeOff": "끄기",
+          "IdleFadeSeconds": "{}초",
+          "IdleFadeBottomPair": "양쪽 하단",
+          "IdleFadeMiddlePair": "양쪽 중앙",
+          "IdleFadeMainBar": "기본 도구 모음(하단 도킹만)"
+        },
+        "WidgetPosition":
+        {
+          "N": "제어부 위치",
+          "Reset": "제어부 위치 초기화",
+          "Remember": "제어부 위치 기억"
+        },
+        "WidgetScale":
+        {
+          "N": "제어부 배율",
+          "Ind": "{:.2f}배",
+          "Page":
+          {
+            "BottomSideBoth": "하단 양쪽 제어부 배율",
+            "MiddleSideBoth": "중앙 양쪽 제어부 배율"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "하단 주 도구 모음 제어부 배율"
+          }
+        },
+        "Tentative":
+        {
+          "N": "실험적 기능",
+          "CloseWpp": "중단되어 남은 WPP 발표 프로세스 종료 허용",
+          "CloseWppE": "다시 시작한 후 적용됩니다. WPS 발표를 종료해도 WPP 프로세스가 남아 다음 발표를 감지하지 못하는 경우가 있습니다. 이 옵션은 남은 프로세스의 종료를 돕습니다. 프로세스를 종료하기 전에 저장하지 않은 내용이 없는지 확인하세요.",
+          "AutoTakeOver": "발표 필기 넘겨받기",
+          "AutoTakeOverE": "PPT 기본 필기 기능이 감지되면 Inkeys 그리기 모드로 전환하고 PPT 기본 필기를 끕니다.",
+          "AutoTakeOverOnce": "발표마다 한 번만 넘겨받기",
+          "AutoTakeOverOnceE": "PPT 기본 필기를 사용하려는 경우 반복 전환이 방해하지 않도록 합니다.",
+          "AutoTakeOverExpand": "넘겨받은 후 주 도구 모음 펼치기",
+          "EnablePageButtonLongPress": "페이지 단추를 길게 눌러 연속 이동"
+        },
+        "SupportNote": "Microsoft PowerPoint 2007 이상 및 Kingsoft WPS 2013 이상을 지원합니다."
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "UIAccess를 사용하여 일반 프로그램과 작업 표시줄 등 지원되는 시스템 UI 위에 Inkeys를 표시합니다.",
+        "Warn": "SuperTop은 BETA 기능으로 불안정할 수 있습니다.\n시작 시 권한 상승을 요청하기 위해 자신을 다시 실행한 뒤 새 인스턴스를 시작합니다.\n이 과정이 실패하여 관리자 권한으로 시작되면 PPT 연동에 영향을 줄 수 있습니다.\nUAC가 표시되면 프로그램의 출처와 게시자를 확인한 후 허용하세요.\n보안 소프트웨어가 경고하면 파일 출처와 서명을 확인하고 모든 경고를 오탐으로 단정하지 마세요.",
+        "Capability":
+        {
+          "N": "기본 기능",
+          "SuperTop": "SuperTop 사용",
+          "SuperTopE1": "3단계 시작 과정으로 창을 맨 위에 유지합니다.\n(현재 활성)",
+          "SuperTopE2": "3단계 시작 과정으로 창을 맨 위에 유지합니다.\n(현재 비활성)",
+          "Indicator": "SuperTop 상태 표시",
+          "IndicatorE": "SuperTop이 활성화되면 주 아이콘 오른쪽 위에 핀을 표시합니다.",
+          "SuperTopNote": "다시 시작한 후 적용됩니다. 시작 중 맨 위로 올리기가 실패할 수 있습니다."
+        },
+        "SupportNote": "Windows 8 이상에서만 지원합니다."
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "교육용 일체형 기기에서는 일부 화이트보드 소프트웨어의 플로팅 펜 도구를 직접 끌 수 없어 여러 도구가 바탕 화면에 겹칠 수 있습니다. 교사가 도구를 혼동하여 주석을 계속 쓰지 못하는 문제를 줄이기 위해 DesktopDrawpadBlocker를 제공합니다.",
+        "LicenseTitle": "GPLv3 오픈 소스 플러그인",
+        "LicenseDescription": "이 플러그인은 학습, 교류 및 연구 목적으로만 사용할 수 있으며 그 외의 용도로는 사용할 수 없습니다.\n동종 소프트웨어의 떠 있는 창을 차단하는 도우미인 DesktopDrawpadBlocker는 GPLv3 라이선스에 따라 배포되는 오픈 소스 소프트웨어입니다.\nGitHub 저장소에 공개되어 있습니다: https://github.com/Alan-CRL/DesktopDrawpadBlocker\n이 프로그램이 유용하기를 바라지만 품질에 대한 보증은 제공하지 않습니다.\n플러그인을 사용하면 이 약관에 동의한 것으로 간주되며, 그로 인한 결과와 영향은 사용자 본인이 책임져야 합니다.",
+        "UseSection": "플러그인 사용",
+        "EnableTitle": "플러그인 사용 설정",
+        "EnableDescription": "기본 모드에서는 플러그인이 Inkeys와 함께 시작되고 종료됩니다.",
+        "GeneralSection": "일반 옵션",
+        "AdministratorTitle": "관리자 권한으로 플러그인 실행",
+        "AdministratorDescription": "이 설정을 변경할 때는 플러그인이 응답할 때까지 기다려야 합니다.",
+        "IntervalTitle": "차단 간격",
+        "IntervalDescription": "간격을 줄이면 새로 나타나는 창을 더 빨리 차단하지만 CPU 사용량이 늘어납니다.",
+        "IntervalShort": "짧게(500ms)",
+        "IntervalMediumShort": "조금 짧게(1초)",
+        "IntervalMedium": "보통(3초)",
+        "IntervalMediumLong": "조금 길게(5초)",
+        "IntervalLong": "길게(10초)",
+        "PrecisionSection": "세부 제어",
+        "Seewo3Title": "希沃白板3 바탕 화면 펜 창",
+        "Seewo5Title": "希沃白板5 바탕 화면 펜 창",
+        "Seewo5CTitle": "希沃轻白板(5C) 바탕 화면 펜 창",
+        "PincoSidebarTitle": "希沃品课教师端 사이드바 창",
+        "PincoDrawingTitle": "希沃品课教师端 바탕 화면 펜 창",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 PPT 도구",
+        "YiouTitle": "欧帝白板 바탕 화면 펜 창",
+        "AiClassTitle": "AiClass 바탕 화면 펜 창",
+        "ClassInXTitle": "ClassIn X 바탕 화면 펜 창",
+        "IntelligentClassTitle": "天喻教育云互动课堂 바탕 화면 펜 창",
+        "ChangYan4Title": "畅言智慧课堂4.0 바탕 화면 펜 창",
+        "ChangYan5Title": "畅言智慧课堂5.0 바탕 화면 펜 창",
+        "Iclass30SidebarTitle": "C30智能教学 사이드바 창",
+        "Iclass30DrawingTitle": "C30智能教学 바탕 화면 펜 창",
+        "SeewoDesktopSidebarTitle": "希沃桌面 사이드바 창",
+        "SeewoDesktopDrawingTitle": "希沃桌面 바탕 화면 펜 창",
+        "IncludesPptNote": "PPT 제어 기능을 포함합니다.",
+        "RestoresWhiteboardNote": "PPT 제어 기능을 포함하며 화이트보드 모드에서 자동 복원을 지원합니다.",
+        "WindowTrackingNote": "PPT 제어 기능을 포함하며 화이트보드 모드에서 자동 복원과 창 추적을 지원합니다.",
+        "SeewoDesktopVersionsNote": "1.0/2.0/2.5/3.0의 일반 교육용 및 고등 교육용 버전에 공통으로 적용됩니다.",
+        "AdministratorNote": "DDB 관리자 권한이 필요합니다."
+      },
+      "LnkHelper":
+      {
+        "N": "바로 가기 도우미",
+        "E": "업데이트로 프로그램 파일 이름이 바뀌어도 기존 Inkeys 바로 가기가 올바르게 작동하도록 시작 시 확인합니다. 바탕 화면에 바로 가기가 없을 때 새로 만들 수도 있습니다.",
+        "Capability":
+        {
+          "N": "기본 기능",
+          "FixLnk": "바탕 화면 바로 가기 대상 및 이름 수정",
+          "FixLnkE": "시작 시 기존 바탕 화면 바로 가기를 수정합니다. 자동 업데이트로 프로그램 파일 이름이 바뀔 수 있으므로 켜 두는 것이 좋습니다."
+        },
+        "Expansion":
+        {
+          "N": "추가 옵션",
+          "CreateLnk": "시작 시 바탕 화면 바로 가기 만들기",
+          "CreateLnkE": "시작할 때 바탕 화면 바로 가기가 없으면 만듭니다."
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "구성 요소",
+      "SoftwareSection": "앱",
+      "SystemSection": "시스템",
+      "KeyboardSection": "키 입력 보내기",
+      "RollCallSection": "이름 추첨 도구",
+      "ClassIslandSection": "ClassIsland 연동",
+      "ExplorerTitle": "파일 탐색기 열기",
+      "TaskManagerTitle": "작업 관리자 열기",
+      "ControlPanelTitle": "제어판 열기",
+      "ShowDesktopTitle": "바탕 화면 표시",
+      "LockScreenTitle": "화면 잠금",
+      "EscapeTitle": "Esc 누르기",
+      "AltF4Title": "Alt+F4 누르기",
+      "IslandCaller1Title": "IslandCaller 1 무작위 호명",
+      "IslandCaller2Title": "IslandCaller 2 한 명 호명",
+      "SecRandom1Title": "SecRandom 1 빠른 추첨",
+      "SecRandom2Title": "SecRandom 2 빠른 추첨",
+      "SecRandom2CompatTitle": "SecRandom 2 빠른 추첨(호환)",
+      "NamePickerTitle": "NamePicker 무작위 호명",
+      "ClassIslandSettingsTitle": "ClassIsland 앱 설정",
+      "ClassIslandProfileTitle": "ClassIsland 프로필 편집",
+      "ClassIslandSwapTitle": "ClassIsland 빠른 수업 변경",
+      "IslandCallerRequirement": "ClassIsland에 IslandCaller 플러그인을 설치하고 ClassIsland URL 프로토콜을 등록해야 합니다.",
+      "SecRandomUrlRequirement": "SecRandom URL 프로토콜을 등록해야 합니다.",
+      "SecRandomIpcRequirement": "SecRandom IPC 프로토콜을 등록해야 합니다.",
+      "NamePickerRequirement": "NamePicker URL 프로토콜을 등록해야 합니다.",
+      "ClassIslandProtocolNote": "ClassIsland 앱 설정에서 URL 탐색 프로토콜을 등록해야 합니다.",
+      "ClassIslandSwapNote": "ClassIsland에 시간표가 로드되지 않은 경우 이 구성 요소는 작동하지 않습니다."
+    },
+    "DesktopShortcut":
+    {
+      "N": "바로 가기",
+      "ApplicationSection": "응용 프로그램",
+      "WhiteboardSection": "화이트보드",
+      "NameLabel": "바로 가기 이름",
+      "CustomName": "사용자 지정",
+      "CustomHint": "바로 가기 이름 입력",
+      "InvalidName": "유효한 Windows 파일 이름을 입력하세요. 빈 이름, 잘못된 문자, 예약된 이름 및 너무 긴 경로는 사용할 수 없습니다.",
+      "NameConflict": "애플리케이션과 화이트보드 바로 가기의 이름은 달라야 합니다.",
+      "PresetWhiteboard": "Inkeys 화이트보드",
+      "PresetAnnotation": "Inkeys(주석)",
+      "PresetAnnotationTool": "Inkeys(주석도구)"
+    },
+    "HotKey":
+    {
+      "N": "단축키",
+      "E": "아래 고정 조합을 각각 켜거나 끌 수 있습니다. 사용자 지정 조합은 아직 지원하지 않습니다.\n전역 전환을 제외한 단축키는 주석 작성 중에만 유효합니다. 설정 텍스트 입력과 모달 대화 상자가 우선하며, 선택·입력 통과 모드에서는 현재 프로그램이 처리합니다.\n전역 전환은 일반 설정 편집 중에도 유효합니다. 프로그램의 모달 대화 상자에서는 동작을 멈추지만 조합은 예약된 상태로 유지합니다. AltGr가 Ctrl + Alt와 겹칠 수 있으므로 필요하면 전역 전환을 끄세요.\n단축키는 PPT 페이지 이동을 넘겨받지 않습니다.",
+      "ToggleAnnotationN": "전역 주석 전환",
+      "ToggleAnnotationE": "주석 작성과 선택을 전환합니다. 통합형은 선택 시 필기를 유지하고, 분리형은 현재 페이지를 먼저 지웁니다. 돌아올 때 마지막 주석 도구를 복원하며 화면 고정은 복원하지 않습니다.",
+      "UndoN": "실행 취소",
+      "UndoE": "현재 페이지의 작업을 취소합니다. 길게 누르면 반복합니다. 기록이 비어 있어도 아래 프로그램에 실행 취소를 전달하지 않습니다.",
+      "RedoYN": "다시 실행",
+      "RedoYE": "현재 페이지의 작업을 다시 실행합니다. 길게 누르면 반복합니다. 이 조합과 Ctrl + Shift + Z는 각각 켜거나 끌 수 있습니다.",
+      "RedoShiftZN": "다시 실행(다른 조합)",
+      "RedoShiftZE": "Ctrl + Y와 같은 다시 실행 동작이며 별도로 켜거나 끌 수 있습니다.",
+      "ClearN": "현재 페이지 지우기",
+      "ClearE": "첫 번째 누름은 도구를 유지한 채 지우며 빈 페이지여도 선택으로 바꾸지 않습니다. Ctrl을 누른 채 Delete를 놓았다가 다시 누르면 두 모드 모두 선택으로 바뀝니다. Delete를 길게 누르는 것은 두 번으로 세지 않습니다. 중간에 새로 그리거나 다른 작업을 하면 이 순서를 초기화합니다.",
+      "FreezeN": "화면 고정",
+      "FreezeE": "화면 고정을 전환합니다.",
+      "Registering": "전역 전환 등록 중",
+      "Disabling": "전역 전환 해제 중",
+      "UnregisterFailed": "전역 전환 등록 해제 실패: 조합은 계속 예약됩니다",
+      "Registered": "전역 전환 활성화됨",
+      "Disabled": "전역 전환 비활성화됨",
+      "NotRunning": "키보드 서비스가 아직 실행되지 않았습니다",
+      "RegisterFailed": "전역 전환 등록 실패: 다른 프로그램이 사용 중일 수 있습니다",
+      "SynchronizationPending": "키 상태를 동기화하고 있습니다. 관리자 권한이 아닌 창으로 전환하여 키를 놓은 후 다시 시도하세요.",
+      "HookReady": "주석 단축키가 준비되었습니다",
+      "HookFailed": "키보드 훅이 설치되지 않아 주석 단축키를 사용할 수 없습니다",
+      "FreezeNote": "PPT와 화이트보드 작업 영역에서는 사용할 수 없습니다. 사용할 수 없어도 같은 조합을 아래 프로그램에 전달하지 않습니다."
+    },
+    "Community":
+    {
+      "N": "커뮤니티"
+    },
+    "Sponsor":
+    {
+      "N": "후원하기",
+      "Thanks": "후원 후 개발자에게 연락하면 감사의 뜻으로 커뮤니티 페이지에 별명과 후원 금액을 추가할 수 있습니다."
+    },
+    "RestartSoftware":
+    {
+      "N": "다시 시작"
+    },
+    "ExitSoftware":
+    {
+      "N": "종료"
+    },
+    "DebugSoftware":
+    {
+      "N": "디버그",
+      "RenderingSection": "UI3 렌더링 디버그",
+      "DirtyRegions":
+      {
+        "N": "변경 영역 디버그",
+        "E": "UI3가 매 프레임 실제로 제출한 변경 영역의 경계를 표시합니다."
+      },
+      "FrameRate":
+      {
+        "N": "프레임 속도 표시",
+        "E": "이전 1초의 평균 프레임 속도와 대기 없는 프레임 속도를 매초 갱신합니다."
+      },
+      "ConsoleSection": "콘솔 출력",
+      "CanvasInformation": "캔버스 초기화 정보",
+      "DisplayInformation": "디스플레이 및 EDID"
+    },
+    "Update":
+    {
+      "Check": "업데이트 확인",
+      "Channel":
+      {
+        "LTS": "정식 채널",
+        "Insider": "미리 보기 채널",
+        "Dev": "개발 채널",
+        "Canary": "초기 채널",
+        "Other": "기타 채널"
+      },
+      "NotStarted": "업데이트 확인이 시작되지 않았습니다",
+      "ObtainInformation": "업데이트 정보 가져오는 중",
+      "InformationFail": "업데이트 정보를 가져오지 못했습니다",
+      "InformationDamage": "다운로드한 업데이트 정보가 손상되었습니다",
+      "InformationUnStandardized": "업데이트 정보 형식이 올바르지 않습니다",
+      "Downloading": "업데이트 다운로드 중(회선 {})",
+      "DownloadFail": "최신 버전을 다운로드하지 못했습니다",
+      "DownloadDamage": "다운로드한 파일이 손상되었습니다",
+      "Restart": "다시 시작하여 최신 버전으로 업데이트",
+      "Latest": "이미 최신 버전입니다",
+      "Newer": "공식 최신 버전보다 새로운 버전입니다",
+      "New": "새 버전이 있습니다",
+      "Repair": "복구 시도",
+      "ManualDownload": "최신 버전 수동 다운로드",
+      "UpdateNow": "지금 업데이트"
+    }
+  }
+}

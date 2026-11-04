@@ -123,7 +123,14 @@ public:
 class BarStyleClass
 {
 public:
+	// 窗口线程只发布目标，实际主题由串行渲染线程在帧首应用。
+	std::atomic<bool> requestedDarkStyle = true;
 	IdtAtomic<bool> darkStyle = true;
+	// 常驻表面透明度百分比：背景 0 表示跟随主题默认；同样由渲染线程在帧首应用。
+	std::atomic<int> requestedBackgroundOpacity = 0;
+	std::atomic<int> requestedContentOpacity = 100;
+	IdtAtomic<int> backgroundOpacity = 0;
+	IdtAtomic<int> contentOpacity = 100;
 	IdtAtomic<double> dpiZoom = 1.0;
 	// UI 基准独立于真实 DPI，画笔尺寸仍只使用 dpiZoom。
 	IdtAtomic<double> uiBaseZoom = 1.0;

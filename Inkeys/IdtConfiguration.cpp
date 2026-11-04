@@ -386,13 +386,6 @@ bool ReadSetting()
 						ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"].asBool();
 				}
 			}
-			if (setlistVal["PlugIn"].isMember("ShortcutAssistant") && setlistVal["PlugIn"]["ShortcutAssistant"].isObject())
-			{
-				if (setlistVal["PlugIn"]["ShortcutAssistant"].isMember("CorrectLnk") && setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].isBool())
-					setlist.shortcutAssistant.correctLnk = setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].asBool();
-				if (setlistVal["PlugIn"]["ShortcutAssistant"].isMember("CreateLnk") && setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].isBool())
-					setlist.shortcutAssistant.createLnk = setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].asBool();
-			}
 
 			if (setlistVal["PlugIn"].isMember("SuperTop") && setlistVal["PlugIn"]["SuperTop"].isObject())
 			{
@@ -621,10 +614,8 @@ string CaptureSettingJson()
 					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating);
 				}
 			}
-			{
-				setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"] = Json::Value(setlist.shortcutAssistant.correctLnk);
-				setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"] = Json::Value(setlist.shortcutAssistant.createLnk);
-			}
+			// 快捷方式配置已归 main.json；即使关闭 AutoClean 也不保留旧的活动字段。
+			setlistVal["PlugIn"].removeMember("ShortcutAssistant");
 
 			{
 				setlistVal["PlugIn"]["SuperTop"]["Enable"] = Json::Value(setlist.plugInSetting.superTop.enable);

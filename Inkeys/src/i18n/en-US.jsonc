@@ -4,7 +4,7 @@
   "Language": "en-US",
   "Widget":
   {
-    "LnkName": "智绘教Inkeys (Screen Annotation Tool)"
+    "LnkName": "Inkeys (Screen Annotation Tool)"
   },
   "Operate":
   {
@@ -18,7 +18,7 @@
     "Centre":
     {
       "Select": "Select",
-      "SelectClean": "Select(Del)",
+      "SelectClean": "Select (Clear)",
       "Pen": "Pen",
       "Eraser": "Eraser",
       "Options": "Options"
@@ -26,7 +26,7 @@
     "Pen":
     {
       "Pen": "Pen",
-      "Highlighter": "Hlight",
+      "Highlighter": "Highlighter",
       "Thinkness": "Si\nze",
       "Write": "Write",
       "Line": "Line",
@@ -36,8 +36,8 @@
     {
       "Revoke": "Undo",
       "Recall": "Restore",
-      "Freeze": "Hold",
-      "Pierce": "Pass"
+      "Freeze": "Freeze",
+      "Pierce": "Click-through"
     },
     "Bar":
     {
@@ -86,9 +86,9 @@
         "WhiteboardNextLabel": "Next",
         "WhiteboardAddPageLabel": "Add page",
         "WhiteboardLabel": "Board",
-        "ResumeWhiteboardLabel": "Resume",
+        "ResumeWhiteboardLabel": "To board",
         "CloseWhiteboardLabel": "Close",
-        "ReturnToShowLabel": "Resume",
+        "ReturnToShowLabel": "To show",
         "MinimizeWhiteboardLabel": "Minimize whiteboard",
         "WhiteboardThemeLabel": "Theme",
         "WhiteboardBackgroundColorLabel": "Background color",
@@ -97,10 +97,23 @@
         "WhiteboardDotsLabel": "Dots",
         "WhiteboardGridLabel": "Grid",
         "WhiteboardUnsavedLabel": "Some pages are not saved",
-        "FreezeLabel": "Lock",
-        "EndPresentationLabel": "End Show",
+        "FreezeLabel": "Freeze",
+        "EndPresentationLabel": "End show",
         "SettingsLabel": "Settings",
         "MoreLabel": "More"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "Files",
+        "TaskManagerLabel": "Tasks",
+        "ControlPanelLabel": "Control",
+        "ShowDesktopLabel": "Desktop",
+        "LockScreenLabel": "Lock",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "Pick name",
+        "ClassIslandSettingsLabel": "CI settings",
+        "ClassIslandProfileLabel": "Profiles",
+        "ClassIslandSwapLabel": "Swap class"
       },
       "DrawAttributes":
       {
@@ -110,8 +123,8 @@
         "HardPenLabel": "Hard Pen",
         "SoftPenLabel": "Soft Pen",
         "FreeLineLabel": "Freehand",
-        "AnnotationLineLabel": "Annotation",
-        "HoldThicknessLabel": "Hold to lock size",
+        "AnnotationLineLabel": "Annot. line",
+        "HoldThicknessLabel": "Hold to lock width",
         "ThicknessFormat": "Size {}",
         "AnnotationUnavailableTitle": "Annotation is not available yet",
         "AnnotationFixedUnsupportedTitle": "Annotation with fixed size is not supported yet",
@@ -134,16 +147,17 @@
       },
       "Diagnostics":
       {
-        "FrameRateFormat": "Frame rate: {:.2f} FPS | Unlimited: {:.2f} FPS",
-        "FrameRateUnavailable": "Frame rate: -- FPS | Unlimited: -- FPS"
+        "FrameRateFormat": "FPS: {:.2f} | Uncapped: {:.2f}",
+        "FrameRateUnavailable": "FPS: -- | Uncapped: --"
       },
       "CanvasRecovery":
       {
-        "Conflict": "Bind",
+        "Conflict": "Conflict",
         "ReadFailed": "Read",
-        "PresentFailed": "View",
+        "PresentFailed": "Display",
         "Failed": "Error",
-        "Recovering": "Busy",
+        "Recovering": "Recovering",
+        "Loading": "Load",
         "Retry": "Retry",
         "Wait": "Wait",
         "RetryCanvas": "Retry canvas",
@@ -152,7 +166,7 @@
       },
       "Errors":
       {
-        "TransparentBackgroundWarning": "Inkeys cannot display the transparent background correctly.\n\nExecutable properties -> disable simplified color mode\nWindows 7 users: enable the Aero theme\n\nContact the developer from the Options home page.\nRestart Inkeys and try again."
+        "TransparentBackgroundWarning": "Inkeys cannot display its transparent background correctly.\n\nRight-click Inkeys.exe, open Properties → Compatibility, and clear Reduced color mode.\nOn Windows 7, enable an Aero theme.\n\nRestart Inkeys and try again.\nIf the problem persists, contact the developer from the Settings home page."
       }
     }
   },
@@ -196,13 +210,14 @@
   },
   "SettingsUI":
   {
-    "N": "智绘教Inkeys Options",
+    "N": "Inkeys Options",
     "Design":
     {
       "NavigationTitle": "Settings",
       "SwitchToDark": "Switch to dark theme",
       "SwitchToLight": "Switch to light theme",
       "Preferences": "Preferences",
+      "RecommendedSuffix": " (Recommended)",
       "SupportGroup": "Support and maintenance",
       "Experimental": "Experimental options",
       "HomeWelcome": "Welcome to Inkeys3",
@@ -212,7 +227,7 @@
       "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
       "HomeLicensePrefix": "This program is licensed under the ",
       "HomeLicenseSuffix": ".",
-      "HomeRedistribution": "Anyone can view, modify, and distribute this code.",
+      "HomeRedistribution": "Under the terms of GPLv3, anyone may inspect, modify, and redistribute this project’s code.",
       "HomeOpenSourceTitle": "Open source and free, made for you",
       "HomeRepositoryPrefix": "Inkeys code is hosted on ",
       "HomeRepositoryJoin": " and ",
@@ -250,6 +265,8 @@
       "AnimationSection": "Animations",
       "LightingSection": "Lighting",
       "ScalingSection": "Scaling",
+      "ThemeSection": "Theme",
+      "OpacitySection": "Opacity",
       "WindowBehaviorSection": "Window behavior",
       "SafetyRecoverySection": "Safety and recovery",
       "ShortcutGlobalSection": "Global actions",
@@ -258,20 +275,22 @@
       "GeneralSubtitle": "Startup, interface size and everyday preferences.",
       "EdgeLighting": "Enable edge lighting",
       "EdgeLightingDescription": "When off, keep the basic border without point or soft lighting.",
-      "TopWindowSummary": "How often the window stays on top while not drawing.",
+      "TopWindowSummary": "How often Inkeys brings its window back to the top when not drawing.",
       "TopWindowDetails": "Details",
       "AvoidFullscreenSummary": "Restart required. Avoid full screen when not drawing or in click-through mode.",
       "AvoidFullscreenDetails": "Usage notes",
       "Enabled": "On",
       "Disabled": "Off",
       "ClickToCopy": "Click to copy",
-      "Copied": "Copied"
+      "Copied": "Copied",
+      "RestartRequired": "Restart Inkeys to apply.",
+      "NextStartupRequired": "Changes take effect the next time Inkeys starts."
     },
     "Home":
     {
       "N": "Home",
       "Prompt": "This is a preview version of Inkeys 3 and does not represent the final quality.",
-      "Developer": "智绘教Inkeys Developer",
+      "Developer": "Inkeys Developer",
       "Group": "GitHub Discussions",
       "GroupE": "Inkeys/discussions",
       "BilibiliChannel": "Bilibili Channel",
@@ -308,34 +327,36 @@
       {
         "N": "UI Language",
         "Select": "Select Language",
-        "SelectE": "Choose language | [Restart Required]",
+        "SelectE": "Set the display language for the interface.",
         "Language":
         {
-          "en-US": "English(Beta)",
-          "zh-CN": "简体中文",
-          "zh-TW": "繁體中文(Beta)"
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
         },
-        "Warn": "The language change requires a restart to take full effect. Restart Inkeys now?"
+        "Warn": "Language changes apply immediately. No restart is needed.",
+        "SelectNote": "Applies immediately. No restart required."
       }
     },
     "Configuration":
     {
-      "N": "Config & Save",
+      "N": "Configuration and storage",
       "Clean":
       {
         "N": "Config Cleanup",
         "Enable": "Enable cleanup",
-        "EnableE": "Removes extra config options when saving or launching. May result in loss of some settings after downgrade/upgrade or import. Lost options will reset to defaults."
+        "EnableE": "Remove options outside the current version's configuration template when starting or saving.",
+        "EnableNote": "After downgrading and upgrading again, or importing a configuration, some options may be lost and reset to defaults."
       },
       "CanvasSave":
       {
-        "N": "Canvas History",
+        "N": "Canvas saving",
         "Enable": "Enable desktop canvas auto-save",
         "EnableE": "Automatically save a non-empty desktop canvas when it is cleared or when the app exits, so it can be restored from canvas history.",
         "SaveTime":
         {
-          "N": "Keep duration",
-          "E": "Delete expired canvases on startup if they exceed the set duration.",
+          "N": "History retention period",
+          "E": "On startup, delete saved canvases older than the selected retention period.",
           "1d": "1 day",
           "3d": "3 days",
           "5d": "5 days",
@@ -363,13 +384,13 @@
         "N": "Inkeys3 has been officially released!\n\nYou can use the button below to learn more about Inkeys3. Note that the repair feature in the current channel will be temporarily unavailable.",
         "Download": "Update now"
       },
-      "VersionTip": "Incompatible software and system architecture may cause performance issues. It's recommended to repair the software in the 'Software Repair' section below (select 'Fix architecture'), or select the target architecture below and repair.",
+      "VersionTip": "The application architecture does not match your system, which may reduce performance. In Software Repair below, enable “Fix architecture during repair”, or select the target architecture manually before repairing.",
       "Info":
       {
         "N": "Version Info",
         "ReleaseVersion": "Release Version:",
         "ReleaseDate": "Release Date:",
-        "ReleaseArch": "Software Architecture | System Architecture:",
+        "ReleaseArch": "Application and system architectures",
         "ReleaseTag": "Release Build (RELEASE)",
         "DebugTag": "Debug Build (DEBUG)",
         "ManualBuild": "Manual Build",
@@ -393,7 +414,7 @@
       {
         "N": "Update Preferences",
         "AutoUpate": "Auto Update (silent)",
-        "ChannelTip": "Stable Channel (LTS): most stable version (recommended)\nInsider Channel: preview versions, may be falsely reported as viruses.\nCanary Channel: pushes an early version of Inkeys3, which is not recommended for use.",
+        "ChannelTip": "Stable (LTS): latest stable release, recommended for everyday use.\nInsider: preview releases; stability may be lower and security software may raise alerts.\nCanary: early Inkeys 3 builds, not recommended for everyday use.",
         "Channel":
         {
           "N": "Update Channel",
@@ -404,12 +425,13 @@
         "Arch":
         {
           "N": "Target Architecture",
-          "E": "Warning: Architecture mismatches may cause the software to fail or run poorly.",
+          "E": "Warning: A target architecture that does not match your system may prevent Inkeys from launching or cause severe performance issues.",
           "64": "64-bit",
           "32": "32-bit",
           "Arm64": "Arm64"
         }
-      }
+      },
+      "StatusTitle": "Version status"
     },
     "CICD":
     {
@@ -467,9 +489,16 @@
       {
         "N": "Startup",
         "AutoStart": "Auto start on login",
-        "AutoStartE": "Launch 智绘教Inkeys when the user logs in.",
+        "AutoStartE": "Launch Inkeys when the current user signs in to Windows.",
         "LoadingAnimation": "Startup loading animation",
-        "LoadingAnimationE": "Show the loading animation the next time Inkeys starts.",
+        "LoadingAnimationE": "Show the loading animation while Inkeys starts.",
+        "StartupEffect":
+        {
+          "N": "Startup effect",
+          "Shimmer": "Shimmer",
+          "Aurora": "Soft glow",
+          "PixelAssembly": "Pixel assembly"
+        },
         "SettingEntryAnimation":
         {
           "N": "Settings opening animation",
@@ -481,7 +510,7 @@
         "Link":
         {
           "N": "Create Desktop Shortcut",
-          "E": "Auto-correct name and create shortcut, click 'More Options' for details.",
+          "E": "Create a desktop shortcut using the name selected below.",
           "More": "More Options"
         }
       },
@@ -496,19 +525,33 @@
         "EdgeLightingE": "When disabled, only the basic border remains; point lights and soft glow effects are turned off.",
         "DynamicEdgeLighting": "Dynamic edge lighting",
         "DynamicEdgeLightingE": "The lighting dynamically follows the pointer position.",
+        "ResetDefault": "Reset to default",
+        "SettingTheme":
+        {
+          "N": "Settings theme",
+          "E": "Switch the Settings window between dark and light. Stays in sync with the title bar toggle."
+        },
+        "BackgroundOpacity":
+        {
+          "N": "Bar background opacity",
+          "E": "Adjust the background opacity of the main bar, main button and page controls. Pop-up panels are not affected."
+        },
+        "ContentOpacity":
+        {
+          "N": "Bar content opacity",
+          "E": "Adjust the opacity of icons and text on the main bar, main button and page controls."
+        },
         "Theme":
         {
-          "N": "Theme",
-          "E": "Recommended skin will use the official setting automatically.",
-          "Skip1": "Recommended Skin",
-          "Skip2": "Default Skin",
-          "Skip3": "Minimal Clock",
-          "Skip4": "Year of Horse"
+          "N": "Bar Theme",
+          "E": "Switch the bar between dark and light appearance. Changes apply immediately.",
+          "Dark": "Dark Mode",
+          "Light": "Light Mode"
         },
         "TaskbarScaleBase":
         {
-          "N": "Taskbar scale base",
-          "E": "At 100%: base is 48 DIP; actual follows taskbar size.",
+          "N": "Taskbar-based scaling",
+          "E": "At 100% scale, Taskbar base size fixes the main bar height at 48 DIP; Actual taskbar size follows the taskbar thickness.",
           "Off": "Off",
           "Base": "Taskbar base size",
           "Actual": "Actual taskbar size"
@@ -526,40 +569,82 @@
         "TopWindow":
         {
           "N": "Topmost Interval",
-          "E": "How often to keep window on top in non-draw mode. Shorter=more responsive but higher CPU use. Use 'Super Top' plugin if interference persists.",
+          "E": "When not drawing, Inkeys reasserts its topmost position at the selected interval; this pauses when you put the pen down. Shorter intervals can reduce interference from other windows but may increase CPU usage. If needed, try the SuperTop plugin.",
           "100ms": "Very Short (100ms)",
           "500ms": "Short (500ms)",
-          "1s": "Medium-Short (1s)",
+          "1s": "Somewhat short (1 s)",
           "3s": "Medium (3s)",
-          "5s": "Medium-Long (5s)",
+          "5s": "Somewhat long (5 s)",
           "10s": "Long (10s)",
           "30s": "Very Long (30s)"
         },
-        "RightClickClose": "Close on right-click icon",
+        "RightClickClose": "Right-click the main icon to exit Inkeys",
         "RightClickCloseE": "Shows a confirmation dialog.",
-        "DrawingRetract": "Hide main bar while drawing",
-        "ErasingRetract": "Hide main bar when erasing",
-        "DraggingRetract": "Hide main bar when dragging",
-        "CheckingRetract": "Hide main bar on click",
-        "CheckingRetractE": "Only in select/penetrate mode, works on non-mainbar areas."
+        "DrawingRetract": "Collapse the main toolbar while drawing",
+        "ErasingRetract": "Collapse the main toolbar while erasing",
+        "DraggingRetract": "Collapse the main toolbar while dragging it",
+        "CheckingRetract": "Collapse when clicking outside the main toolbar",
+        "CheckingRetractE": "Only applies when clicking outside the main toolbar in Select or Click-through mode."
       },
       "Tentative":
       {
         "N": "Experimental Options",
         "SafeMode":
         {
-          "N": "Crash Safe Mode",
-          "E": "Action on crash (startup errors still show dialog)",
+          "N": "Crash handling",
+          "E": "Choose what happens when the application crashes.",
           "Mode1": "Show error dialog and restart",
           "Mode2": "Silent restart",
           "Mode3": "Let system handle",
-          "Mode4": "Quit directly"
+          "Mode4": "Quit directly",
+          "Note": "Errors during startup still display a prompt."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "Allow multiple instances",
+          "E": "Allow multiple instances to run from this installation folder. Turning this off prevents additional instances from starting without closing those already running."
         }
       }
     },
     "Draw":
     {
       "N": "Drawing",
+      "General":
+      {
+        "N": "General",
+        "MultiTouch":
+        {
+          "N": "Multi-finger drawing",
+          "E": "Write or draw with several fingers at the same time. When disabled, only single-finger drawing is accepted."
+        },
+        "PenTailCorrection":
+        {
+          "N": "Pen-up tip correction",
+          "E": "Reduce abrupt bends at the end of a stroke when lifting the pen for a more natural finish."
+        },
+        "InkPrediction":
+        {
+          "N": "Ink prediction",
+          "E": "Reduce visible ink lag while writing. Precise mode estimates the next movement; Fast mode extends ink to the latest input position. Off disables predicted ink.",
+          "Precise": "Precise",
+          "Fast": "Fast",
+          "Disabled": "Off"
+        }
+      },
+      "Laser":
+      {
+        "N": "Laser pointer",
+        "MultiTouch":
+        {
+          "N": "Multi-finger laser pointer",
+          "E": "BETA: Use the laser pointer with several fingers at the same time."
+        },
+        "Particles":
+        {
+          "N": "Laser pointer particles",
+          "E": "BETA: Display particles around the laser trail."
+        }
+      },
       "Haptics":
       {
         "N": "Pen Haptic Feedback",
@@ -569,15 +654,59 @@
       "Cursor":
       {
         "N": "Cursor",
-        "Description": "The mouse option applies only to soft and hard pens. Highlighters always preview width; shapes use the system cursor. The default pen cursor is circular. Screen pens have no highlighted edges; pen tablets and unrecognized pens have highlighted edges.",
-        "MouseStyle": "Mouse",
-        "PenStyle": "Pen",
-        "DefaultStyle": "Default cursor",
-        "DrawingStyle": "Pen-shaped cursor"
+        "EntryDescription": "Choose the drawing cursor for each input device and preview it.",
+        "Devices": "By device",
+        "PenDevices": "Pen tablet detection",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse and touchpad."
+        },
+        "Touch":
+        {
+          "N": "Touch",
+          "E": "Each finger that is drawing shows its own cursor, which disappears when lifted."
+        },
+        "ScreenPen":
+        {
+          "N": "Screen pen",
+          "E": "A pen that writes directly on the screen."
+        },
+        "Tablet":
+        {
+          "N": "Pen tablet",
+          "E": "External pen tablets and pens whose source cannot be recognized."
+        },
+        "Style":
+        {
+          "None": "No cursor",
+          "Arrow": "Mouse",
+          "Pen": "Pen",
+          "HighlightPen": "Pen (highlighted)",
+          "Dot": "Small dot",
+          "HighlightDot": "Small dot (highlighted)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Recognize driver-injected tablets",
+          "E": "Pen tablets without Windows Ink usually arrive as a mouse injected by the driver. When on, that mouse uses the pen tablet cursor settings; software that also injects a mouse, such as remote desktop, may be misdetected.",
+          "Unavailable": "This system cannot tell input sources apart, so this option is unavailable."
+        },
+        "FineControl": "Fine controls",
+        "DotHideOnContact":
+        {
+          "N": "Automatically hide the small dot cursor on contact",
+          "E": "Applies to both small dot styles. The cursor hides when the selected device touches down and remains visible while hovering.",
+          "Off": "Off",
+          "ScreenPen": "Screen pen only",
+          "Tablet": "Pen tablet only",
+          "Both": "Screen pen and pen tablet"
+        },
+        "Note": "On screen pens, pen tablets and touch, \"Mouse\" is an arrow drawn by the app itself; the highlighter, laser pointer, shape tools and eraser keep their own cursors regardless of these options."
       },
       "Effect":
       {
-        "N": "Drawing Performance",
+        "N": "Drawing environment",
         "Device":
         {
           "N": "Choose an interaction mode",
@@ -614,6 +743,30 @@
           "SizeWarningTitle": "Reliable screen dimensions are unavailable",
           "SizeWarningDescription": "The current drawing screen lacks reliable physical dimensions. Touch and screen pens will use DPI estimates, so eraser size may not match your erasing intent."
         },
+        "PalmEraser":
+        {
+          "N": "Palm eraser",
+          "EntryDescription": "Erase with a broad touch without switching tools",
+          "Introduction": "Place your palm on the screen to erase without switching tools. The eraser size is determined during the recognition window after contact; lifting your palm keeps your original tool selected.",
+          "Enabled": "Enable palm eraser",
+          "SizeWarningTitle": "Reliable screen dimensions unavailable",
+          "SizeWarningDescription": "The current drawing screen has no reliable physical dimensions. Palm erasing is still available, using a base area threshold of 100×100 system DIPs. Its physical size may vary; adjust the percentage to suit your screen.",
+          "RecognitionWindow": "Recognition window",
+          "RecognitionWindowDescription": "Recognize your palm and determine its size within this time after touch begins. Erasing starts as soon as the conditions are met.",
+          "Threshold": "Touch area threshold",
+          "ThresholdDescription": "Increase the percentage to reduce accidental activation, or decrease it for easier palm recognition.",
+          "ThresholdSizePhysical": "Current threshold: {:.2f}cm × {:.2f}cm ({:.0f}px × {:.0f}px)",
+          "ThresholdSizePixels": "Current threshold: {:.0f}px × {:.0f}px",
+          "PreviewTitle": "Touch area examples (current drawing screen)",
+          "PreviewDescription": "The outlined area shows the current drawing screen’s pixel threshold. Switch the preview ratio to view different proportions. Its physical size may differ on another screen.",
+          "PreviewEstimated": "This estimated pixel threshold uses a base area of 100×100 system DIPs and the current percentage. Select a ratio to change its shape; its physical size may vary.",
+          "PreviewUnavailable": "The current drawing screen's scale is unavailable, so area examples cannot be shown yet.",
+          "EnabledTools": "Applicable tools",
+          "ParallelWritingMultiTouchNote": "Multi-touch drawing is off, so writing while erasing cannot take effect.",
+          "ParallelWritingLaserMultiTouchNote": "Multi-touch laser input is off, so writing while erasing cannot take effect with the laser pen.",
+          "ParallelWriting": "Enable writing while erasing",
+          "ParallelWritingDescription": "Activating the palm eraser leaves other input uninterrupted, so drawing can continue. (For two or more people writing together.)"
+        },
         "Input":
         {
           "MouseLeft": "Left mouse button",
@@ -627,7 +780,7 @@
           "Fixed": "Fixed thickness",
           "Speed": "Speed-sensitive eraser"
         },
-        "ResponseFor": "Speed response device",
+        "ResponseFor": "Speed sensitivity applies to",
         "Response":
         {
           "Auto": "Auto-detect",
@@ -637,7 +790,8 @@
         "TouchArea":
         {
           "N": "Contact-area assistance for the touch speed eraser",
-          "E": "Keeps the eraser slightly wider than your finger so it does not cover the eraser cursor. Not recommended for large displays."
+          "E": "Keep the eraser slightly wider than the finger so that the finger does not obscure its cursor.",
+          "Note": "Not recommended for large-screen devices."
         }
       }
     },
@@ -647,14 +801,42 @@
       "StartupPlacement":
       {
         "N": "Position after startup",
-        "E": "The centered bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button. Changes take effect the next time Inkeys starts.",
+        "E": "The centered bottom bar starts expanded. The bottom-left and bottom-right floating windows show only the main button.",
         "CenteredBottomBar": "Centered bottom bar",
         "BottomLeftFloating": "Bottom-left floating window",
         "BottomRightFloating": "Bottom-right floating window"
       }
     },
+    "Performance":
+    {
+      "N": "Performance",
+      "FrameRateSection": "Frame rate",
+      "InterfaceFrameRate":
+      {
+        "N": "Interface frame rate",
+        "E": "Adjust the smoothness of the toolbar, settings, and page controls. Lower frame rates can reduce resource usage. Changes take effect immediately."
+      },
+      "CanvasFrameRate":
+      {
+        "N": "Canvas frame rate",
+        "E": "Adjust how often the canvas updates while writing. Higher frame rates can make ink smoother while using more resources."
+      },
+      "RenderingSection": "Rendering and compatibility",
+      "DirectComposition":
+      {
+        "N": "Prefer DirectComposition",
+        "E": "Use system composition to display the canvas on supported devices, with automatic compatibility fallback when unavailable."
+      }
+    },
+    "Linkage":
+    {
+      "N": "Linkage",
+      "PPT": "PPT Linkage",
+      "CoreVersion": "Core version {}"
+    },
     "Experimental":
     {
+      "N": "Labs",
       "UI3":
       {
         "AllowFractionalFontSize":
@@ -668,40 +850,41 @@
         "HardwareAcceleration":
         {
           "N": "Enable drawing hardware acceleration",
-          "E": "Use the GPU to draw the canvas. Try disabling this to use software rendering if drawing is incorrect or very slow. Restart Inkeys to apply."
+          "E": "Use the GPU to draw the canvas, or software rendering when disabled.",
+          "Note": "Try disabling this if drawing is incorrect or very slow. Restart Inkeys to apply."
         },
         "ZhaoxinCompatibility":
         {
           "N": "Enable Zhaoxin compatibility mode",
-          "E": "Use a compatible upload path on Zhaoxin GPUs. Other GPUs are unaffected. Disable to compare drawing performance. Restart Inkeys to apply."
+          "E": "Use a compatible upload path on Zhaoxin GPUs. Other GPUs are unaffected. Disable to compare drawing performance."
         }
       },
       "ConsoleOutput":
       {
         "Haptics":
         {
-          "N": "Test pen haptic feedback",
-          "E": "Restart the app after enabling to log pen input, button requests, and haptic device send results."
+          "N": "Pen haptic feedback diagnostics",
+          "E": "Log pen input, button requests, and haptic device send results to help diagnose missing vibration."
         },
         "TouchArea":
         {
           "N": "Input and eraser diagnostics console output",
-          "E": "On the next launch, output rate-limited snapshots of display EDID, resolution and DPI, touch area, input coordinates, device type, and eraser size."
+          "E": "Output rate-limited snapshots of display EDID, resolution and DPI, touch area, input coordinates, device type, and eraser size."
         },
         "PptCOM":
         {
           "N": "PptCOM console output",
-          "E": "Output PptCOM diagnostics to the console on the next launch."
+          "E": "Output PptCOM diagnostics to the console."
         },
         "Draw3":
         {
           "N": "Draw3 console output",
-          "E": "Output Draw3 device and driver information to the console on the next launch."
+          "E": "Output Draw3 device and driver information to the console."
         },
         "Cursor":
         {
           "N": "Cursor diagnostics",
-          "E": "Output cursor input ownership and rendered visuals to the console on the next launch."
+          "E": "Output cursor input ownership and rendered visuals to the console."
         }
       }
     },
@@ -711,14 +894,14 @@
       "PPTHelper":
       {
         "N": "PPT Presentation Helper 3 Lite",
-        "E": "Provides presentation and brush control buttons during a slideshow. Each page has its own independent canvas, allowing ink annotations to remain fixed on the page. Does not affect original functionalities or external devices. Supports Microsoft PowerPoint 2007, Kingsoft WPS 2013, and later versions.",
+        "E": "Provides presentation and brush control buttons during a slideshow. Each page has its own independent canvas, allowing ink annotations to remain fixed on the page. Does not affect original functionalities or external devices.",
         "VersionError": "Unknown version (Plugin error)",
         "Solve": "Solution",
-        "Sync": "Sync ADJ",
+        "Sync": "Sync adjustments",
         "Reset": "Reset",
-        "Tip": "To use the plugin, please ensure that the permissions for the Inkeys application and the PPT application are the same for proper detection. If issues persist, please refer to the solution.",
+        "Tip": "To use the plugin, run Inkeys and PowerPoint/WPS with the same privilege level so the slideshow process can be detected. If problems persist, see the solution.",
         "Warn": "Detected that your PowerPoint/WPS is set to 'Always run as administrator'. This means our application must also run with administrator privileges to detect the slideshow process and enable PPT integration. If you prefer not to run your presentation software as an administrator, please refer to the solution.",
-        "Error": "An error occurred during plugin loading. This may be because .NET Framework 4.x is not installed or an exception occurred in the global COM environment.\nCode ",
+        "Error": "The plugin could not load. .NET Framework 4.x may be missing, or the COM environment may be unavailable.\nDetails: ",
         "BasicLogic":
         {
           "N": "Basic Logic",
@@ -728,9 +911,16 @@
         "WidgetDisplay":
         {
           "N": "Widget Display",
-          "BottomBoth": "Show bottom-side widgets",
-          "MiddleBoth": "Show middle-side widgets",
-          "BottomMiddle": "Show bottom main bar widget"
+          "BottomBoth": "Show controls at both bottom corners",
+          "MiddleBoth": "Show controls on both sides at mid-height",
+          "BottomMiddle": "Show controls on the bottom toolbar",
+          "IdleFade": "Fade when idle",
+          "IdleFadeE": "During a slideshow, selected controls fade when idle and return on hover, click or drag. External page changes also fade page controls. The main toolbar fades only when docked at the bottom (including centered mode), after its idle timeout and keeps its normal opacity while any of its panels is open.",
+          "IdleFadeOff": "Off",
+          "IdleFadeSeconds": "{} s",
+          "IdleFadeBottomPair": "Both bottom corners",
+          "IdleFadeMiddlePair": "Both sides at mid-height",
+          "IdleFadeMainBar": "Main toolbar (docked mode only)"
         },
         "WidgetPosition":
         {
@@ -744,51 +934,92 @@
           "Ind": "{:.2f}x scale",
           "Page":
           {
-            "BottomSideBoth": "Bottom-side widgets scale",
-            "MiddleSideBoth": "Middle-side widgets scale"
+            "BottomSideBoth": "Bottom corner control scale",
+            "MiddleSideBoth": "Mid-side control scale"
           },
           "State":
           {
-            "BottomSideMiddle": "Bottom main bar widget scale"
+            "BottomSideMiddle": "Bottom toolbar control scale"
           }
         },
         "Tentative":
         {
           "N": "Experimental Options",
           "CloseWpp": "Allow closing of stuck/orphaned WPP presentation processes",
-          "CloseWppE": "Requires a restart to take effect. After exiting a presentation in KingSoft WPS, the original WPP process sometimes doesn't close properly and remains stuck. This prevents the app from detecting new presentations and enabling integration. Enabling this option helps terminate these stuck processes. It is safe for your files and is recommended.",
+          "CloseWppE": "Requires a restart. Attempts to close WPP processes left behind after a WPS slideshow exits, to improve detection of the next slideshow.",
           "AutoTakeOver": "Take over presentation ink annotations",
           "AutoTakeOverE": "When PPT native annotations are detected, switch to the app's drawing mode and turn off PPT native annotations.",
           "AutoTakeOverOnce": "Take over at most once per presentation",
-          "AutoTakeOverOnceE": "Avoid interfering when PPT native annotations are intentionally needed.",
+          "AutoTakeOverOnceE": "Avoid repeatedly taking over when PPT native annotations are intentionally needed.",
           "AutoTakeOverExpand": "Expand the main bar after takeover succeeds",
-          "EnablePageButtonLongPress": "Enable long-press page turning buttons"
-        }
+          "EnablePageButtonLongPress": "Enable page turning by holding the navigation buttons"
+        },
+        "SupportNote": "Supports Microsoft PowerPoint 2007 or later and Kingsoft WPS 2013 or later."
       },
       "SuperTop":
       {
         "N": "SuperTop",
-        "E": "Uses UiAccess technology to keep the application window on top of other regular software, and even above system elements like the Taskbar, Alt+Tab switcher, on-screen keyboard, and the lock screen. Requires Windows 8 or newer.",
-        "Warn": "The SuperTop feature is in BETA and may be unstable.\nThe application restarts itself upon launch to request elevated privileges, then launches a new instance.\nThis process may fail, resulting in an incorrect launch with administrator rights, which can interfere with PPT integration.\nA UAC (User Account Control) prompt will appear; please click 'Yes' or disable UAC prompts (not recommended).\nIt might be flagged by antivirus software; this is a false positive and is normal.",
+        "E": "Use UIAccess to display the window above supported system UI and application windows.",
+        "Warn": "The SuperTop plugin is in Beta and may be unstable.\nAt startup, Inkeys restarts itself to request elevated privileges, then launches a new instance.\nThis process may fail; running with administrator privileges can affect PPT integration.\nElevation may trigger a UAC prompt. Verify the source and publisher before allowing it.\nIf security software raises an alert, check the file source and signature instead of disabling protection.",
         "Capability":
         {
           "N": "Basic Capabilities",
-          "SuperTop": "Enable Super SuperTop",
-          "SuperTopE1": "The application uses a three-stage launch to enable this feature, which may occasionally fail. A restart is required.\n(Currently successful)",
-          "SuperTopE2": "The application uses a three-stage launch to enable this feature, which may occasionally fail. A restart is required.\n(Currently failed)",
+          "SuperTop": "Enable SuperTop",
+          "SuperTopE1": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is currently active)",
+          "SuperTopE2": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is not active)",
           "Indicator": "SuperTop Indicator",
-          "IndicatorE": "Displays a pin icon on the top-right corner of the main application icon when successfully enabled."
-        }
+          "IndicatorE": "Displays a pin icon on the top-right corner of the main application icon when successfully enabled.",
+          "SuperTopNote": "Restart Inkeys to apply. The topmost launch may fail."
+        },
+        "SupportNote": "Requires Windows 8 or newer."
       },
       "DesktopDrawpadBlocker":
       {
         "N": "DesktopDrawpadBlocker 3 Lite",
-        "E": "On all-in-one educational machines, some whiteboard software's floating window toolbar cannot be turned off directly, leading to multiple drawing tools appearing on the desktop. This often causes teachers to mix up different tools, making it impossible to continue annotations and severely impacting teaching efficiency. Thus, DesktopDrawpadBlocker was created."
+        "E": "On all-in-one educational machines, some whiteboard software's floating window toolbar cannot be turned off directly, leading to multiple drawing tools appearing on the desktop. This often causes teachers to mix up different tools, making it impossible to continue annotations and severely impacting teaching efficiency. Thus, DesktopDrawpadBlocker was created.",
+        "LicenseTitle": "GPLv3 open-source plugin",
+        "LicenseDescription": "This plugin is for learning, discussion, and research only; it must not be used for any other purpose.\nDesktopDrawpadBlocker is open-source software released under the GPLv3 license.\nPublished on GitHub: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nWe hope this program is useful, but provide no warranty of quality.\nUsers are responsible for the effects and consequences of using this plugin; use constitutes acceptance of this agreement.",
+        "UseSection": "Using the plugin",
+        "EnableTitle": "Enable plugin",
+        "EnableDescription": "In the default mode, the plugin starts and stops with Inkeys.",
+        "GeneralSection": "General options",
+        "AdministratorTitle": "Run the plugin as administrator",
+        "AdministratorDescription": "Wait for the plugin to respond when changing this setting.",
+        "IntervalTitle": "Blocking interval",
+        "IntervalDescription": "Shorter intervals block newly appearing windows sooner, but use more CPU resources.",
+        "IntervalShort": "Short (500 ms)",
+        "IntervalMediumShort": "Somewhat short (1 s)",
+        "IntervalMedium": "Medium (3 s)",
+        "IntervalMediumLong": "Somewhat long (5 s)",
+        "IntervalLong": "Long (10 s)",
+        "PrecisionSection": "Detailed control",
+        "Seewo3Title": "希沃白板3 — desktop pen window",
+        "Seewo5Title": "希沃白板5 — desktop pen window",
+        "Seewo5CTitle": "希沃轻白板（5C） — desktop pen window",
+        "PincoSidebarTitle": "希沃品课教师端 — floating sidebar",
+        "PincoDrawingTitle": "希沃品课教师端 — desktop pen window",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 — PPT tools",
+        "YiouTitle": "欧帝白板 — desktop pen window",
+        "AiClassTitle": "AiClass — desktop pen window",
+        "ClassInXTitle": "ClassIn X — desktop pen window",
+        "IntelligentClassTitle": "天喻教育云互动课堂 — desktop pen window",
+        "ChangYan4Title": "畅言智慧课堂4.0 — desktop pen window",
+        "ChangYan5Title": "畅言智慧课堂5.0 — desktop pen window",
+        "Iclass30SidebarTitle": "C30智能教学 — floating sidebar",
+        "Iclass30DrawingTitle": "C30智能教学 — desktop pen window",
+        "SeewoDesktopSidebarTitle": "希沃桌面 — floating sidebar",
+        "SeewoDesktopDrawingTitle": "希沃桌面 — desktop pen window",
+        "IncludesPptNote": "Includes PPT controls.",
+        "RestoresWhiteboardNote": "Includes PPT controls. Supports automatic restoration in whiteboard mode.",
+        "WindowTrackingNote": "Includes PPT controls. Supports automatic restoration in whiteboard mode and window tracking.",
+        "SeewoDesktopVersionsNote": "Works with versions 1.0/2.0/2.5/3.0, for both general and higher education.",
+        "AdministratorNote": "Requires DDB administrator privileges."
       },
       "LnkHelper":
       {
         "N": "Shortcut Helper",
-        "E": "Ensures that existing 智绘教Inkeys shortcuts remain valid after application updates, which can change the program's file name. Optionally, it can also create a new desktop shortcut if one does not already exist.",
+        "E": "Ensures that existing Inkeys shortcuts remain valid after application updates, which can change the program’s file name. Optionally creates a desktop shortcut if one does not already exist.",
         "Capability":
         {
           "N": "Basic Capabilities",
@@ -798,14 +1029,55 @@
         "Expansion":
         {
           "N": "Additional Options",
-          "CreateLnk": "Create desktop shortcut",
-          "CreateLnkE": "Creates a desktop shortcut if one doesn't already exist."
+          "CreateLnk": "Create desktop shortcut on startup",
+          "CreateLnkE": "On startup, create a desktop shortcut if one does not already exist."
         }
       }
     },
     "Component":
     {
-      "N": "Components"
+      "N": "Components",
+      "SoftwareSection": "Applications",
+      "SystemSection": "System",
+      "KeyboardSection": "Keyboard simulation",
+      "RollCallSection": "Name pickers",
+      "ClassIslandSection": "ClassIsland integration",
+      "ExplorerTitle": "Open File Explorer",
+      "TaskManagerTitle": "Open Task Manager",
+      "ControlPanelTitle": "Open Control Panel",
+      "ShowDesktopTitle": "Show desktop",
+      "LockScreenTitle": "Lock screen",
+      "EscapeTitle": "Press Esc",
+      "AltF4Title": "Press Alt+F4",
+      "IslandCaller1Title": "IslandCaller 1: pick a random name",
+      "IslandCaller2Title": "IslandCaller 2: pick one name",
+      "SecRandom1Title": "SecRandom 1: quick pick",
+      "SecRandom2Title": "SecRandom 2: quick pick",
+      "SecRandom2CompatTitle": "SecRandom 2: quick pick (compatible)",
+      "NamePickerTitle": "NamePicker: random name",
+      "ClassIslandSettingsTitle": "ClassIsland settings",
+      "ClassIslandProfileTitle": "ClassIsland profile editor",
+      "ClassIslandSwapTitle": "ClassIsland quick class swap",
+      "IslandCallerRequirement": "Requires the IslandCaller plugin in ClassIsland and registration of the ClassIsland URL protocol.",
+      "SecRandomUrlRequirement": "Requires registration of the SecRandom URL protocol.",
+      "SecRandomIpcRequirement": "Requires registration of the SecRandom IPC protocol.",
+      "NamePickerRequirement": "Requires registration of the NamePicker URL protocol.",
+      "ClassIslandProtocolNote": "Register the URL navigation protocol in ClassIsland settings.",
+      "ClassIslandSwapNote": "This component has no effect when ClassIsland has no timetable loaded."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Shortcuts",
+      "ApplicationSection": "Application",
+      "WhiteboardSection": "Whiteboard",
+      "NameLabel": "Shortcut name",
+      "CustomName": "Custom",
+      "CustomHint": "Enter a shortcut name",
+      "InvalidName": "Enter a valid Windows filename. Empty names, invalid characters, reserved names and paths that are too long are not allowed.",
+      "NameConflict": "Application and whiteboard shortcuts must have different names.",
+      "PresetWhiteboard": "Inkeys Whiteboard",
+      "PresetAnnotation": "Inkeys(Annotation)",
+      "PresetAnnotationTool": "Inkeys(AnnotationTool)"
     },
     "HotKey":
     {
@@ -822,7 +1094,7 @@
       "ClearN": "Clear current page",
       "ClearE": "The first press clears and keeps the tool, even on an empty page. Keep Ctrl held, release Delete, then press Delete again to enter Select in either style. Holding Delete does not count twice. New strokes or other actions reset this sequence.",
       "FreezeN": "Freeze",
-      "FreezeE": "Toggle screen Freeze. Unavailable in PowerPoint and Whiteboard workspaces. When unavailable, the combination still does not reach the application underneath.",
+      "FreezeE": "Toggle screen freeze.",
       "Registering": "Registering the global toggle",
       "Disabling": "Disabling the global toggle",
       "UnregisterFailed": "Global toggle unregistration failed; the combination remains reserved",
@@ -830,9 +1102,10 @@
       "Disabled": "Global toggle is disabled",
       "NotRunning": "Keyboard service is not running",
       "RegisterFailed": "Global toggle registration failed; another program may be using it",
-      "SynchronizationPending": "Synchronizing key state. Release keys in a normal-permission window, then retry.",
+      "SynchronizationPending": "Synchronizing key state. Switch to a non-elevated window, release the keys, then retry.",
       "HookReady": "Annotation shortcuts are ready",
-      "HookFailed": "Keyboard hook is not installed; annotation shortcuts are unavailable"
+      "HookFailed": "Keyboard hook is not installed; annotation shortcuts are unavailable",
+      "FreezeNote": "Unavailable in PPT and whiteboard workspaces. When unavailable, the combination is not passed to the underlying application."
     },
     "Community":
     {
@@ -840,7 +1113,8 @@
     },
     "Sponsor":
     {
-      "N": "Sponsor Us"
+      "N": "Sponsor Us",
+      "Thanks": "After sponsoring, contact the author to have your nickname and contribution added to the community card as a thank-you."
     },
     "RestartSoftware":
     {
@@ -852,11 +1126,25 @@
     },
     "DebugSoftware":
     {
-      "N": "[Debug]"
+      "N": "Debug tools",
+      "RenderingSection": "UI3 rendering diagnostics",
+      "DirtyRegions":
+      {
+        "N": "Dirty region diagnostics",
+        "E": "Show the boundaries of dirty regions actually submitted in each UI3 frame."
+      },
+      "FrameRate":
+      {
+        "N": "Show frame rate",
+        "E": "Update the previous second’s average and uncapped frame rates once per second."
+      },
+      "ConsoleSection": "Console output",
+      "CanvasInformation": "Canvas initialization information",
+      "DisplayInformation": "Displays and EDID"
     },
     "Update":
     {
-      "Check": "Check",
+      "Check": "Check for updates",
       "Channel":
       {
         "LTS": "Stable Channel",
@@ -868,14 +1156,14 @@
       "NotStarted": "Update check not started",
       "ObtainInformation": "Fetching update info",
       "InformationFail": "Failed to fetch update info",
-      "InformationDamage": "Downloaded info corrupted",
+      "InformationDamage": "Downloaded update information is corrupted",
       "InformationUnStandardized": "Invalid update info",
       "Downloading": "Downloading update (Line {})",
       "DownloadFail": "Download failed",
-      "DownloadDamage": "File damaged",
+      "DownloadDamage": "Downloaded update file is corrupted",
       "Restart": "Restart to update to latest version",
       "Latest": "Already up-to-date",
-      "Newer": "Newer than official latest",
+      "Newer": "Current version is newer than the latest official release",
       "New": "New version found",
       "Repair": "Try Repair",
       "ManualDownload": "Manual Download",

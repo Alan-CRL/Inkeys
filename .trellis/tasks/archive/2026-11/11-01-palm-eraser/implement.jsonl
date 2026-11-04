@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "主产品边界；按索引和研究导航完整读取输入/配置/线程长spec，不能依赖截断注入"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "现有橡皮工具/属性/详情子页/Warning与无窗口验证"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "每笔锁存、严格单Touch、真实续接优先及激光多指约束"}
+{"file": ".trellis/tasks/11-01-palm-eraser/research/current-path-and-planning-decisions.md", "reason": "当前有效源码证据、Brush与断触接续合同、长spec读取导航；已停止研究不参与实施"}
+{"file": ".trellis/spec/native-desktop/palm-eraser.md", "reason": "本期已落地的面积/DIP回退、转换/并行/续接和设置合同"}

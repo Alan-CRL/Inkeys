@@ -1,0 +1,49 @@
+{
+  "fonttools": "4.60.1",
+  "fonts": [
+    {
+      "file": "NotoSansJP-Regular.ttf",
+      "family": "Noto Sans JP",
+      "style": "Regular",
+      "weight": 400,
+      "size": 5766884,
+      "sha256": "57458d02bb14502d7ae98abe1e2f79b52783ceda9e4628df145faae23a3d31d2",
+      "source_sha256": "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f",
+      "source": "https://github.com/google/fonts/blob/66a36c8c94b1a5d992ee4e7f392fccfe4945767c/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
+      "license": "NotoSansJP-OFL.txt"
+    },
+    {
+      "file": "NotoSansJP-Bold.ttf",
+      "family": "Noto Sans JP",
+      "style": "Bold",
+      "weight": 700,
+      "size": 5761680,
+      "sha256": "611dbdbda88a7a34c44232b90c71161b65178a82649bdc6e365a30f61ab28237",
+      "source_sha256": "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f",
+      "source": "https://github.com/google/fonts/blob/66a36c8c94b1a5d992ee4e7f392fccfe4945767c/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
+      "license": "NotoSansJP-OFL.txt"
+    },
+    {
+      "file": "NotoSansKR-Regular.ttf",
+      "family": "Noto Sans KR",
+      "style": "Regular",
+      "weight": 400,
+      "size": 6224868,
+      "sha256": "4609a7b62a6da24cae3a8b73ecde7003581b8f60662d60cc8f55a3793de07763",
+      "source_sha256": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252",
+      "source": "https://github.com/google/fonts/blob/b38c5c93af322c45f633e17ac440ec1e6c94d489/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
+      "license": "NotoSansKR-OFL.txt"
+    },
+    {
+      "file": "NotoSansKR-Bold.ttf",
+      "family": "Noto Sans KR",
+      "style": "Bold",
+      "weight": 700,
+      "size": 6222712,
+      "sha256": "cf93c6acfa4c4adcb580d156aa46fc3614ed0310f1e2ef23b5954476e85c872e",
+      "source_sha256": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252",
+      "source": "https://github.com/google/fonts/blob/b38c5c93af322c45f633e17ac440ec1e6c94d489/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
+      "license": "NotoSansKR-OFL.txt"
+    }
+  ]
+}

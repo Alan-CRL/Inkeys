@@ -1,0 +1,32 @@
+{
+  "Inkeys/Inkeys/Other/Other.Config.cppm": {
+    "bom": false,
+    "crlf": 736,
+    "lf": 736
+  },
+  "Inkeys/Inkeys/Other/Other.Config.cpp": {
+    "bom": false,
+    "crlf": 1121,
+    "lf": 1121
+  },
+  "Inkeys/IdtConfiguration.h": {
+    "bom": false,
+    "crlf": 324,
+    "lf": 324
+  },
+  "Inkeys/IdtConfiguration.cpp": {
+    "bom": false,
+    "crlf": 1412,
+    "lf": 1412
+  },
+  "Inkeys/IdtMain.cpp": {
+    "bom": false,
+    "crlf": 4094,
+    "lf": 4094
+  },
+  "Inkeys/Inkeys/UI/Bar/Bar.Presentation.Test.cpp": {
+    "bom": false,
+    "crlf": 1491,
+    "lf": 1491
+  }
+}

@@ -11,6 +11,9 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/Window/Window.CommandCompletion.h"
+#include "../Inkeys/Inkeys/Window/Window.CandidateMailbox.h"
+#include "../Inkeys/Inkeys/Window/Window.PresentationLease.h"
+#include "../Inkeys/Inkeys/Window/Window.NativeEventMailbox.h"
 #include "../Inkeys/Inkeys/Window/Window.ZOrderPolicy.h"
 #include "../Inkeys/Inkeys/Window/Window.SafetyOverride.h"
 #include "../Inkeys/Inkeys/Window/Window.ShellFullscreen.h"
@@ -612,6 +615,112 @@ int RunWindowCommandCompletionTests()
 	{
 		if (!passed) { ++failures; std::cerr << "FAIL " << name << '\n'; }
 	};
+	{
+		using Mailbox = Inkeys::Window::Detail::CandidateMailbox<int, int, 4>;
+		Mailbox box;
+		const auto a = box.Publish(0, 1, 10);
+		const auto b = box.Publish(0, 1, 20);
+		check(a.revision && b.revision > a.revision && b.coalesced && b.depth == 1, "coalescing keeps one fixed slot");
+		const auto latest = box.Take(0);
+		check(latest && latest->candidate == 20 && box.Current(*latest) && !box.Take(0), "latest wins instead of playing history");
+		const auto newer = box.Publish(0, 1, 30);
+		check(!box.Current(*latest) && !box.Complete(*latest, 20) && !box.TryRead(0, b.revision), "late completion cannot overwrite new candidate");
+		const auto pair = box.Publish(1, 6, 40);
+		const auto inFlightPair = box.Take(1);
+		check(inFlightPair && box.Current(*inFlightPair), "pair begins with both role revisions");
+		check(box.Publish(2, 4, 50).revision && !box.Current(*inFlightPair), "one newer member cancels entire pair");
+		box.Cancel(0, newer.revision);
+		const auto cancelled = box.Take(0);
+		check(cancelled && !box.Current(*cancelled), "cancelled queued candidate cannot execute");
+		box.Cancel(2, pair.revision);
+		const auto surviving = box.Take(2);
+		check(surviving && box.Current(*surviving), "old cancellation cannot cancel newer revision");
+		check(box.Complete(*surviving, 50) && box.TryRead(2, surviving->revision) == 50, "exact receipt only");
+		check(box.Publish(1, 6, 70).revision && !box.TryRead(2, surviving->revision), "new pair invalidates prior singleton receipt");
+		const auto oldReceipt = box.Publish(3, 8, 80);
+		const auto beforePolicy = box.Take(3);
+		check(beforePolicy && box.Complete(*beforePolicy, 80), "native state begins with complete receipt");
+		box.InvalidateRoles(8);
+		check(!box.Current(*beforePolicy) && !box.TryRead(3, oldReceipt.revision), "policy native mutation retires prior candidate receipt");
+		const auto afterPolicy = box.Publish(3, 8, 90);
+		check(afterPolicy.revision && box.Current(3, afterPolicy.revision), "new candidate can reconcile changed policy state");
+		check(!Inkeys::Window::Detail::CandidatePumpHasWork(2, 2), "blocked recovery slot does not self-wake");
+		check(Inkeys::Window::Detail::CandidatePumpHasWork(6, 2), "another free candidate slot can drain during recovery");
+		box.Reset();
+		check(!box.Current(*surviving) && !box.TryRead(2, surviving->revision), "reset invalidates old epoch");
+		check(box.Publish(2, 4, 60).revision > surviving->revision, "reset never reuses revision");
+	}
+	{
+		std::atomic<std::uint64_t> leases = 0;
+		check(TryAcquirePresentationBits(leases, 3), "pair lease acquires both roles atomically");
+		check(!TryAcquirePresentationBits(leases, 1) && !TryAcquirePresentationBits(leases, 6), "UI/native overlap cannot acquire a half pair");
+		check(TryAcquirePresentationBits(leases, 4), "unrelated render client continues while pair owner holds lease");
+		ReleasePresentationBits(leases, 3);
+		check(leases.load() == 4 && TryAcquirePresentationBits(leases, 3), "retired pair releases only its own roles");
+		ReleasePresentationBits(leases, 7);
+		check(leases.load() == 0, "all presentation leases retire without leaked role bits");
+		CandidateMailbox<int, int, 4> mailbox;
+		const auto first = mailbox.Publish(0, 3, 11);
+		const auto blocked = mailbox.Take(0);
+		check(first.revision && blocked.has_value(), "geometry candidate enters owner dispatch");
+		mailbox.Defer(*blocked);
+		const auto replacement = mailbox.Publish(0, 3, 22);
+		mailbox.Defer(*blocked);
+		const auto latest = mailbox.Take(0);
+		check(replacement.coalesced && latest && latest->candidate == 22 && !mailbox.Take(0), "lease delay still executes only latest geometry");
+	}
+	{
+		auto completion = std::make_shared<CommandCompletion>(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		auto result = std::make_shared<std::optional<Inkeys::Window::WorkspaceWindowPrepared>>();
+		auto truth = std::make_shared<std::atomic<std::uint64_t>>(7);
+		Inkeys::Window::WorkspaceWindowReceipt receipt(41,
+			Inkeys::Window::CommandReceipt([completion] { return static_cast<Inkeys::Window::CommandPhase>(completion->Phase()); }, [completion] { completion->Cancel(); }),
+			[result] { return *result; }, [truth] { return truth->load() == 7; });
+		check(static_cast<bool>(receipt) && receipt.Revision() == 41 && !receipt.Prepared() && !receipt.Current(), "queued workspace request cannot expose prepared data");
+		check(completion->Begin(), "async workspace owner begins exact request");
+		result->emplace(); (*result)->policy.revision = 41;
+		check(!receipt.Prepared(), "payload written before native terminal phase remains unavailable");
+		check(completion->Commit(true) && receipt.Prepared() && receipt.Prepared()->policy.revision == 41 && receipt.Current(), "committed explicit workspace receipt exposes matched result");
+		truth->fetch_add(1);
+		check(!receipt.Current(), "later native workspace truth invalidates old completion proof");
+		CommandCompletion expired(std::chrono::steady_clock::now() - std::chrono::milliseconds(1));
+		check(expired.Phase() == CommandPhase::Expired && !expired.Begin(), "queued async deadline expires without caller blocking or owner Begin");
+		CommandCompletion errors({});
+		errors.RecordNativeFailure(ERROR_ACCESS_DENIED); errors.RecordNativeFailure(ERROR_CANCELLED);
+		errors.RecordRollbackFailure(ERROR_GEN_FAILURE);
+		check(errors.NativeError() == ERROR_ACCESS_DENIED && errors.RollbackError() == ERROR_GEN_FAILURE, "pair preserves first native failure independently of rollback failure");
+	}
+	{
+		using Events = Inkeys::Window::Detail::NativeEventMailbox<std::array<std::uint64_t, 3>>;
+		Events events; std::uint64_t previous = 0;
+		for (std::uint64_t i = 1; i <= 10000; ++i)
+		{
+			const auto revision = events.Publish({ i % 4, i, i ^ 0x5a5a });
+			check(revision != 0, "owner-delayed event mailbox always admits serialized pointer down");
+			if (previous) check(!events.Current(previous), "newest pointer down wins across role order");
+			previous = revision;
+		}
+		const auto latestEvent = events.Take();
+		check(latestEvent && latestEvent->payload[1] == 10000 && latestEvent->payload[2] == (10000 ^ 0x5a5a)
+			&& !events.Take(), "owner receives exact latest fixed identity payload once");
+		events.Invalidate(); check(!events.Current(previous), "shutdown invalidates accepted native event identity");
+	}
+	{
+		CandidateMailbox<int, int, 4> retired;
+		const auto request = retired.Publish(0, 1, 1); const auto work = retired.Take(0);
+		retired.RequestCancel(0, request.revision);
+		int nativeCommits = 0;
+		check(!retired.TryCommit(*work, [&] { ++nativeCommits; return true; }) && nativeCommits == 0,
+			"cancellation before commit forces owner retirement instead of success");
+		check(!retired.Defer(*work), "cancellation during lease deferral cannot lose retirement responsibility");
+		check(retired.Complete(*work, -1) && retired.TryReadRetirement(0, request.revision) == -1 && !retired.TryRead(0, request.revision),
+			"cancelled terminal geometry is readable only through retirement API");
+		const auto next = retired.Publish(0, 1, 2); const auto committed = retired.Take(0);
+		check(retired.TryCommit(*committed, [] { return true; }), "native transaction wins atomic commit boundary");
+		retired.Cancel(0, next.revision); retired.RequestCancel(0, next.revision);
+		check(retired.Complete(*committed, 2) && retired.TryRead(0, next.revision) == 2,
+			"late cancellation preserves physically committed unread move");
+	}
 	for (const bool value : { false, true })
 	{
 		std::promise<bool> completion;
@@ -1125,8 +1234,10 @@ int RunWindowCommandCompletionTests()
 	}
 	{
 		WindowSafetyOverride safety;
-		safety.Latch(7, true, false);
-		safety.Latch(7, false, true);
+		check(safety.Latch(7, true, false), "first safety hide creates a physical protection revision");
+		check(!safety.Latch(7, true, false), "identical hidden safety intent preserves workspace prepared revision");
+		check(safety.Latch(7, false, true), "new clickthrough protection advances safety revision");
+		check(!safety.Latch(7, true, true), "equivalent combined safety intent is idempotent");
 		check(!safety.Visible(7, true) && (safety.Style(7, 0) & WS_EX_TRANSPARENT),
 			"later safe hide and transparency survive old visible/input snapshot");
 		check(safety.Visible(8, true) && safety.Style(8, 0) == 0,

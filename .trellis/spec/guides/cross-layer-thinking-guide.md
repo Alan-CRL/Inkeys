@@ -40,8 +40,8 @@ Win32 window message
 
 ### Owner WndProc to render/presentation thread
 
-- owner WndProc 不得阻塞等待一个可能被渲染线程持有、且渲染线程又可能同步等待 owner 执行 Window Service 提交的锁。PageControl 直移只能 `try_lock`；每个候选先发布 latest-wins 绝对布局，锁忙或窗口移动失败时保留 pending 并显式请求 pair render，下一条输入或渲染兜底都必须收敛到最新绝对目标，不能假定一定还有后续 `WM_MOUSEMOVE`。
-- PageControl 普通拖动纯平移成功只顺序移动成对 HWND、推进内部 bounds/mailbox revision 并同步第三光源接受区；不得调用 `Scene::SetBounds`、制造 visual damage 或请求渲染；中轴吸附的短促 Y 动画中间直移仅发布过期帧屏障、不确认最终 pair，并显式请求续帧，实际几何到位后才提交。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
+- UI render callback 与 Window owner 之间禁止同步等待；owner WndProc 不得等待呈现锁。PageControl 直移通过 fixed candidate/receipt 与 try-only role lease；每个候选先发布 latest-wins 绝对布局，锁忙或窗口移动失败时保留 pending 并显式请求 pair render，下一条输入或渲染兜底都必须收敛到最新绝对目标，不能假定一定还有后续 `WM_MOUSEMOVE`。
+- PageControl 普通拖动由 Window owner 顺序移动成对 HWND，UI 只在当前完整 mask 回执后推进内部 bounds/mailbox revision 与第三光源接受区；不得调用 `Scene::SetBounds` 或制造 visual damage；回执消费续帧不能变成重复绘制；中轴吸附的短促 Y 动画中间直移仅发布过期帧屏障、不确认最终 pair，并显式请求续帧，实际几何到位后才提交。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
 - `SetCapture` 转移旧 capture 与 `ReleaseCapture` 都可能同步重入 `WM_CAPTURECHANGED`。PageControl Down 必须先在锁外完成旧 capture 清退，再在短锁内复核并建立新 gesture/tracker；不可把捕获简单挪到新 tracker 已建立之后，否则旧 Cancel 会回滚同 pair 新状态。`WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
 - 透明 presentation margin 与共享圆角背景之外的像素必须继续返回 `HTTRANSPARENT`。PPT 的“非按钮背景可拖动”只覆盖实际背景 shape，不等于整个矩形 HWND 都可接收输入。
 

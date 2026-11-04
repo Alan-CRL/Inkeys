@@ -1,0 +1,88 @@
+{
+  "sha256": {
+    "Build/ARM64/Debug/Inkeys.exe": "10388622e637b7c6022b5da52a7b0d5fd42473b1bc8fa401bf67c8bc81e6c8cf",
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe": "1839fbf38998e75e58c75fe040dd2a4303ae9f038004323fbc7f00bf5f05fcfd",
+    "Inkeys/src/icon.ico": "fa0011110a625cb1e8eac068b785b10448618e5af8a4245729876c9f824a0037",
+    "Inkeys/src/whiteboard.ico": "5d4ff953f7fd788b7dbefbcb93c6459d948913ab40bc46f6dbeb84220efd38e4"
+  },
+  "tests": [
+    {
+      "name": "desktop-headless",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 23.51
+    },
+    {
+      "name": "desktop-shell",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 1.67
+    },
+    {
+      "name": "desktop-malformed",
+      "exit": 2,
+      "expected": 2,
+      "pass": true,
+      "seconds": 0.13
+    },
+    {
+      "name": "single-instance",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 26.1
+    },
+    {
+      "name": "shutdown-lease",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 2.11
+    },
+    {
+      "name": "config-boundary",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 1.81
+    },
+    {
+      "name": "state-mode",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 0.15
+    },
+    {
+      "name": "supertop-token",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 0.23
+    },
+    {
+      "name": "i18n-runtime",
+      "exit": 0,
+      "expected": 0,
+      "pass": true,
+      "seconds": 1.0
+    }
+  ],
+  "buildExit": 0,
+  "iconResourceCheck": "PASS",
+  "i18nCheck": "PASS",
+  "startupLabelFollowup": {
+    "title": "启动时创建桌面快捷方式",
+    "locales": 20,
+    "i18nSyncExit": 0,
+    "i18nCheckExit": 0,
+    "solutionBuildExit": 0,
+    "desktopHeadlessExit": 0,
+    "artifactSHA256": {
+      "Build/ARM64/Debug/Inkeys.exe": "6cd55d008ad4db051985c353ef83cee7b3204719976cfd82f99c75d902818bb3",
+      "Build/ARM64/Debug/InkeysHeadlessTests.exe": "8a6d4da1220c2a0ee24093841c644e6d77fbabb2fffcef177bcdfba7f29a7d7c"
+    }
+  }
+}

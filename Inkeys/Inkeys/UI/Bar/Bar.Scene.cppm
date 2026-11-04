@@ -35,11 +35,15 @@ export namespace Inkeys::UI::Bar
 
 	using BarSurfaceButtonId = std::uint32_t;
 	inline constexpr BarSurfaceButtonId BarSurfaceNoButton = 0;
+	enum class BarPageContentKind : std::uint8_t { Numeric, Status };
 	struct BarPageSurfaceContent
 	{
+		BarPageContentKind kind = BarPageContentKind::Numeric;
 		unsigned surface = 0;
+		std::uint64_t loadingSession = 0;
 		bool whiteboard = false, switching = false, pptActive = false;
 		bool nextIsAdd = false, nextIsEndShow = false, unsaved = false;
+		bool navigationWaitingPrevious = false, navigationWaitingNext = false;
 		int menu = 0;
 		std::array<bool, 3> enabled{ true, true, true };
 		std::array<bool, 3> interactive{ true, true, true };
@@ -122,6 +126,7 @@ export namespace Inkeys::UI::Bar
 		bool SetBounds(RECT, float) noexcept;
 		void SetFontTargetScale(double) noexcept;
 		void SetOpacity(double, double durationSeconds = 0.2) noexcept;
+		void SetIdleFade(bool dimmed, double durationSeconds) noexcept;
 		void SetHooks(BarSurfaceHooks);
 		void SetSharedLightingSubscribed(bool) noexcept;
 		static void PublishSharedLighting(const BarSurfaceSharedLighting&) noexcept;
@@ -143,13 +148,19 @@ export namespace Inkeys::UI::Bar
 		void HandleFrameEndDrawResult(HRESULT);
 		// 输入仅查询上次成功提交的快照，候选帧失败不能提前移动命中区域。
 		void CommitPresented(bool inputEnabled = true) noexcept;
+		// 固定候选快照只保留最新帧；异步原生回执不能确认后来推进的命中或清除新 damage。
+		[[nodiscard]] std::uint64_t CapturePresentationCandidate() noexcept;
+		[[nodiscard]] bool IsPresentationCandidateCurrent(std::uint64_t serial) const noexcept;
+		[[nodiscard]] bool CommitPresentationCandidate(std::uint64_t serial,
+			bool inputEnabled = true) noexcept;
 		[[nodiscard]] std::uint64_t PresentedGeneration() const noexcept;
 		[[nodiscard]] std::optional<POINT> PresentationToLogical(POINT) const noexcept;
 		[[nodiscard]] bool HitTestBackground(POINT) const noexcept;
 		[[nodiscard]] BarSurfaceButtonId HitTest(POINT) const noexcept;
 		[[nodiscard]] BarSurfaceButtonId HitTestPresentation(POINT) const noexcept;
 		[[nodiscard]] BarSurfaceInputSample SamplePointer(POINT) const noexcept;
-		BarSurfacePointerResult ApplyPointer(BarSurfacePointerEventKind,BarSurfaceButtonId) noexcept;
+		BarSurfacePointerResult ApplyPointer(BarSurfacePointerEventKind,BarSurfaceButtonId,
+			std::optional<POINT> screenPoint = std::nullopt) noexcept;
 		BarSurfacePointerResult PointerMove(POINT) noexcept;
 		BarSurfacePointerResult PointerLeave() noexcept;
 		BarSurfacePointerResult PointerDown(POINT) noexcept;
@@ -159,6 +170,9 @@ export namespace Inkeys::UI::Bar
 		void SuspendForIdle(std::chrono::steady_clock::time_point) noexcept;
 		[[nodiscard]] bool AnimationActive() const noexcept;
 		[[nodiscard]] bool PopupAnimationActive() const noexcept;
+		void SetLoadingIndicatorVisible(bool) noexcept;
+		[[nodiscard]] bool LoadingIndicatorAnimationActive() const noexcept;
+		[[nodiscard]] std::chrono::steady_clock::time_point LoadingIndicatorDeadline() const noexcept;
 		BarSurfaceRenderResult Render(ID2D1DeviceContext*, std::chrono::steady_clock::time_point);
 	private:
 		struct Impl;

@@ -141,6 +141,9 @@ export namespace Inkeys::UI::Whiteboard
 		return state;
 	}
 
+	// 由既有 PageControl 屏外入口调用，不创建其它 owner 或真实屏幕窗口。
+	int RunHiddenBackgroundTests(const RECT& bounds, const std::function<bool()>& gateOwner,
+		const std::function<void()>& releaseOwner);
 	bool Initialize(BusinessCallbacks callbacks);
 	void Shutdown() noexcept;
 	[[nodiscard]] WNDPROC WindowProc() noexcept;

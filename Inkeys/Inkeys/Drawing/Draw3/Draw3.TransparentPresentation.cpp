@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -19,6 +19,8 @@
 #include <dxgi1_3.h>
 #include <exception>
 #include <initializer_list>
+#include <iomanip>
+#include <string>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -620,24 +622,28 @@ namespace Inkeys::Drawing::Draw3
 
 			~DirectCompositionPresenter()
 			{
-				Reset();
-				if (dcompModule) FreeLibrary(dcompModule);
+				if (Reset() && dcompModule) FreeLibrary(dcompModule);
 			}
 
-			void Reset()
+			bool Reset()
 			{
 				if (compositionTarget)
 					(void)compositionTarget->SetRoot(nullptr);
 				if (compositionDevice)
 				{
-					// 先把 visual tree 从外部 HWND 解挂并等待提交完成，避免后续 DWM/ULW 样式切换仍被旧 DComp target 占用。
-					if (SUCCEEDED(compositionDevice->Commit()))
-						(void)compositionDevice->WaitForCommitCompletion();
+					// 先把 visual tree 从外部 HWND 解挂；退休等待有界，超时不得复用旧表面或启动第二退休 worker。
+					const auto device = compositionDevice;
+					const auto retired = WaitForDCompRetirement([device]
+					{
+						return SUCCEEDED(device->Commit()) && SUCCEEDED(device->WaitForCommitCompletion());
+					});
+					if (retired != DCompRetirementResult::Completed) return false;
 				}
 				rootVisual.Reset();
 				compositionTarget.Reset();
 				compositionDevice.Reset();
 				window = nullptr;
+				return true;
 			}
 
 			bool Initialize(HWND inputWindow, IDXGIDevice* dxgiDevice, IDXGISwapChain1* swapChain,
@@ -772,22 +778,88 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t requestedOutputRevision = 0;
 		DCompHandoffBarrierState dcompHandoffBarrier{};
 		TransparentPresentObservation lastObservation{};
+		std::string deviceInformation;
+		bool waitableSwapChain = false;
+
+		void CaptureDeviceInformation()
+		{
+			std::ostringstream text;
+			if (!graphics || !graphics->device)
+			{
+				deviceInformation = "图形设备：不可用\n";
+				return;
+			}
+			text << "图形设备：" << (graphics->driverType == D3D_DRIVER_TYPE_WARP ? "WARP（软件绘制）" : "Hardware（硬件 GPU）")
+				<< "\nD3D Feature Level：" << FormatDiagnosticFeatureLevel(graphics->featureLevel) << "\n";
+			if (options.enableHardwareAcceleration && graphics->driverType == D3D_DRIVER_TYPE_WARP)
+				text << "硬件设备创建失败，已回退到软件绘制。\n";
+			DXGI_ADAPTER_DESC adapter{};
+			const HRESULT descriptionResult = graphics->adapter ? graphics->adapter->GetDesc(&adapter) : E_NOINTERFACE;
+			if (SUCCEEDED(descriptionResult))
+			{
+				char name[512]{};
+				if (WideCharToMultiByte(CP_UTF8, 0, adapter.Description, -1, name, sizeof(name), nullptr, nullptr))
+					text << "适配器：" << name << "\n";
+				else text << "适配器名称：不可用\n";
+				text << std::hex << std::uppercase << "VendorId=0x" << adapter.VendorId
+					<< "  DeviceId=0x" << adapter.DeviceId << "  SubSysId=0x" << adapter.SubSysId
+					<< "  Revision=0x" << adapter.Revision << std::dec << "\n"
+					<< std::fixed << std::setprecision(1)
+					<< "专用显存：" << adapter.DedicatedVideoMemory / (1024.0 * 1024.0) << " MiB"
+					<< "  专用系统内存：" << adapter.DedicatedSystemMemory / (1024.0 * 1024.0) << " MiB"
+					<< "  共享内存：" << adapter.SharedSystemMemory / (1024.0 * 1024.0) << " MiB\n";
+			}
+			else text << "适配器信息：不可用（HRESULT：" << FormatDiagnosticHResult(descriptionResult) << "）\n";
+			LARGE_INTEGER version{};
+			const HRESULT versionResult = graphics->adapter
+				? graphics->adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &version) : E_NOINTERFACE;
+			if (SUCCEEDED(versionResult))
+				text << "用户态图形驱动（UMD）版本：" << HIWORD(version.HighPart) << "." << LOWORD(version.HighPart)
+					<< "." << HIWORD(version.LowPart) << "." << LOWORD(version.LowPart) << "\n";
+			else text << "用户态图形驱动（UMD）版本：不可用（HRESULT：" << FormatDiagnosticHResult(versionResult) << "）\n";
+			deviceInformation = text.str();
+		}
+
+		void PublishInformation(bool refreshDevice, const char* state) noexcept
+		{
+			if (!callbacks.informationChanged) return;
+			try
+			{
+				// 设备枚举只在初始化/恢复发生；Resize 仅刷新真实交换链描述。
+				if (refreshDevice) CaptureDeviceInformation();
+				std::ostringstream text;
+				text << "图形状态：" << state << "\n" << deviceInformation;
+				DXGI_SWAP_CHAIN_DESC1 description{};
+				const HRESULT result = swapChain ? swapChain->GetDesc1(&description) : E_NOINTERFACE;
+				if (SUCCEEDED(result))
+				{
+					text << "主画布呈现：" << (IsDirectCompositionMode(activeMode) ? "DirectComposition" : "UpdateLayeredWindow (ULW)")
+						<< "\n辅助前置表面：UpdateLayeredWindow (ULW)\n交换链类型：" << (IsDirectCompositionMode(activeMode) ? "Composition" : "HWND")
+						<< "\n" << FormatDiagnosticSwapChain(description, waitableSwapChain);
+				}
+				else text << "窗口呈现与交换链：不可用（HRESULT：" << FormatDiagnosticHResult(result) << "）\n";
+				if (FAILED(lastFailure)) text << "最近一次图形错误：HRESULT：" << FormatDiagnosticHResult(lastFailure) << "\n";
+				callbacks.informationChanged(callbacks.informationContext, text.str());
+			}
+			catch (...) {} // 信息展示失败不能改变绘图和恢复结果。
+		}
 		UlwDirtyRectPresenter primaryUlwPresenter;
 		UlwDirtyRectPresenter selectionUlwPresenter;
 		DirectCompositionPresenter directCompositionPresenter;
 		DwmBlurBehindPresenter dwmBlurPresenter;
 		DwmExtendedFramePresenter dwmExtendedPresenter;
 
-		void ResetPresenters()
+		bool ResetPresenters()
 		{
 			primaryUlwPresenter.Reset();
 			selectionUlwPresenter.Reset();
-			directCompositionPresenter.Reset();
+			const bool retired = directCompositionPresenter.Reset();
 			dwmBlurPresenter.Reset();
 			dwmExtendedPresenter.Reset();
 			presentFailureLogged = false;
 			presentSuccessLogged = false;
 			lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
+			return retired;
 		}
 
 		HRESULT DeviceFailureOr(HRESULT fallback) const noexcept
@@ -802,15 +874,19 @@ namespace Inkeys::Drawing::Draw3
 
 		void SetFailure(HRESULT result) noexcept
 		{
+			const bool firstFailure = !recoveryPending;
 			lastFailure = DeviceFailureOr(result);
 			recoveryPending = true;
+			if (firstFailure) PublishInformation(false, "等待恢复");
 		}
 
-		void ReleaseAttempt()
+		bool ReleaseAttempt()
 		{
-			ResetPresenters();
+			const bool retired = ResetPresenters();
 			if (renderer) renderer->ReleaseResources();
 			swapChain.Reset();
+			waitableSwapChain = false;
+			return retired;
 		}
 
 		bool ConfigureWindow(TransparentPresentMode mode)
@@ -889,6 +965,7 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 
+			waitableSwapChain = true;
 			DiagnosticOutput::Line() << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
@@ -964,7 +1041,11 @@ namespace Inkeys::Drawing::Draw3
 				const ULONGLONG deadline = releaseSignal.BeginKnownFailure();
 				terminalOuterSignal.BeginKnownFailure(deadline);
 			};
-			ReleaseAttempt(); // 每次尝试前清掉上一条路径留下的交换链和 presenter。
+			if (!ReleaseAttempt())
+			{
+				beginFailure();
+				return false; // 旧 DComp 未退休前禁止任何后续模式初始化。
+			}
 			// 自动、强制及恢复共用此入口；首发禁用两种历史 DWM 透明模式。
 			if (!IsDirectCompositionMode(mode) && !IsUlwMode(mode))
 			{
@@ -1062,6 +1143,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->width = 0;
 		impl_->height = 0;
 		impl_->options = {};
+		impl_->deviceInformation.clear();
 		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		impl_->requestedOutputRevision = 0;
 		impl_->dcompHandoffBarrier = {};
@@ -1099,6 +1181,7 @@ namespace Inkeys::Drawing::Draw3
 			!IsWindow(selectionWindow))
 		{
 			options.failedCleanup.BeginKnownFailure();
+			impl_->PublishInformation(true, "初始化失败（窗口不可用）");
 			return false;
 		}
 		const auto tryStartupMode = [&](TransparentPresentMode mode, bool terminal)
@@ -1114,7 +1197,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!initialized)
 				{
 					outerSignal.BeginKnownFailure(releaseSignal.BeginKnownFailure());
-					impl_->ReleaseAttempt();
+					if (!impl_->ReleaseAttempt()) return false;
 					if (!terminal)
 					{
 						const size_t nextIndex = TransparentPresentModeIndex(mode) + 1;
@@ -1132,6 +1215,7 @@ namespace Inkeys::Drawing::Draw3
 			// 下一模式是新的普通初始化；前一失败释放必须完成并真正 join 后才继续。
 			// 默认 empty Signal 不 Prepare，不增加 monitor 线程。
 			releaseCleanup.CompleteOrFatal();
+			if (initialized || terminal) impl_->PublishInformation(true, initialized ? "就绪" : "初始化失败");
 			return initialized;
 		};
 		if (options.requireMode)
@@ -1189,7 +1273,11 @@ namespace Inkeys::Drawing::Draw3
 		const bool deviceLost = IsGraphicsDeviceLostError(failure);
 		const TransparentPresentMode failedMode = impl_->activeMode;
 		impl_->recoveryPending = false;
-		impl_->ReleaseAttempt();
+		if (!impl_->ReleaseAttempt())
+		{
+			impl_->lastFailure = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+			return false;
+		}
 		RECT clientRect = {};
 		if (GetClientRect(impl_->primaryWindow, &clientRect) &&
 			clientRect.right > clientRect.left && clientRect.bottom > clientRect.top)
@@ -1205,6 +1293,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!InitializeGraphicsDevice(*impl_->graphics, impl_->options.enableHardwareAcceleration))
 			{
 				impl_->lastFailure = failure;
+				impl_->PublishInformation(true, "设备恢复失败");
 				return false;
 			}
 		}
@@ -1215,10 +1304,12 @@ namespace Inkeys::Drawing::Draw3
 			if (impl_->TryInitialize(impl_->options.requiredMode))
 			{
 				impl_->lastFailure = S_OK;
+				impl_->PublishInformation(true, "恢复完成");
 				return true;
 			}
 			impl_->ReleaseAttempt();
 			impl_->lastFailure = failure;
+			impl_->PublishInformation(true, "呈现恢复失败");
 			return false;
 		}
 
@@ -1231,11 +1322,13 @@ namespace Inkeys::Drawing::Draw3
 			if (impl_->TryInitialize(kTransparentPresentModes[index]))
 			{
 				impl_->lastFailure = S_OK;
+				impl_->PublishInformation(true, "恢复完成");
 				return true;
 			}
 			impl_->ReleaseAttempt();
 		}
 		impl_->lastFailure = failure;
+		impl_->PublishInformation(true, "呈现恢复失败");
 		return false;
 	}
 
@@ -1261,6 +1354,7 @@ namespace Inkeys::Drawing::Draw3
 		if (succeeded)
 			succeeded = impl_->selectionUlwPresenter.Resize(width, height);
 		if (!succeeded) impl_->SetFailure(E_FAIL);
+		else impl_->PublishInformation(false, "就绪");
 		return succeeded;
 	}
 

@@ -1,0 +1,281 @@
+[FrameSubmission] snapshot-budget=1048576 exact-fields=17 invalidation-keys=12
+[HomeOffscreen] driver=warp adapter=Microsoft Basic Render Driver vendor=5140 device=140 feature-level=11.0 width=1000 height=1100
+[HomeWARP] cold-entry clipped=1 full-visible=2 opaque-skipped=9 entries=1 elapsed=0.15
+[HomeWARP] texture lifecycle: real E_INVALIDARG, both-phase injected OOM/removed/reset, legacy null partial, repeated teardown, Map rollback and recreation checked; device removal is simulated.
+[HomeScrollbarLayout] dark=0 variant=0 stage=capture work=272,60,968,1538 work=272,60,968,1538 layout=1478,1478,1478,466,0,1068,2,742, layout=1478,1478,1478,0,0,1478,0,0,
+[HomeScrollbarLayout] dark=0 variant=0 stage=first-live work=272,60,968,1538 work=272,60,968,1538 layout=1478,1478,1478,466,0,1068,2,742, layout=1478,1478,1478,0,0,1478,0,0,
+[HomeScrollbarPixelDifference] dark=0 variant=0 pixels=0 bounds=3.40282e+38,3.40282e+38,-3.40282e+38,-3.40282e+38
+[HomeScrollbarCache] dark=0 scale=1 width=1000 bar=1 reserve=8 capture-width=696 first-live-width=696 exact-background-pixels=967932 differing=0 capture-frames=4 restore-frames=2 native-layout-ready=1
+[HomeScrollbarLayout] dark=0 variant=1 stage=capture work=340,75,720,2122 work=340,75,720,2122 layout=2047,2047,2047,1057,0,1060,1.6,424, layout=2047,2047,2047,0,0,2047,0,0,
+[HomeScrollbarLayout] dark=0 variant=1 stage=first-live work=340,75,720,2122 work=340,75,720,2122 layout=2047,2047,2047,1057,0,1060,1.6,424, layout=2047,2047,2047,0,0,2047,0,0,
+[HomeScrollbarPixelDifference] dark=0 variant=1 pixels=0 bounds=3.40282e+38,3.40282e+38,-3.40282e+38,-3.40282e+38
+[HomeScrollbarCache] dark=0 scale=1.25 width=760 bar=1 reserve=10 capture-width=380 first-live-width=380 exact-background-pixels=1056944 differing=0 capture-frames=4 restore-frames=2 native-layout-ready=1
+[HomeScrollbarLayout] dark=0 variant=2 stage=capture work=172,35,975,1081.4 work=261,35,885,811 layout=775,775,775,0,0,1080,0,0, layout=776,776,776,0,0,776,0,0,
+[HomeScrollbarLayout] dark=0 variant=2 stage=first-live work=172,35,975,1081.4 work=261,35,885,811 layout=775,775,775,0,0,1080,0,0, layout=776,776,776,0,0,776,0,0,
+[HomeScrollbarPixelDifference] dark=0 variant=2 pixels=0 bounds=3.40282e+38,3.40282e+38,-3.40282e+38,-3.40282e+38
+[HomeScrollbarCache] dark=0 scale=0.6 width=1000 bar=0 reserve=0 capture-width=803 first-live-width=803 exact-background-pixels=1052440 differing=0 capture-frames=2 restore-frames=2 native-layout-ready=1
+[HomeScrollbarLayout] dark=1 variant=0 stage=capture work=272,60,968,1514 work=272,60,968,1514 layout=1454,1454,1454,442,0,1068,2,754, layout=1454,1454,1454,0,0,1454,0,0,
+[HomeScrollbarLayout] dark=1 variant=0 stage=first-live work=272,60,968,1514 work=272,60,968,1514 layout=1454,1454,1454,442,0,1068,2,754, layout=1454,1454,1454,0,0,1454,0,0,
+[HomeScrollbarPixelDifference] dark=1 variant=0 pixels=0 bounds=3.40282e+38,3.40282e+38,-3.40282e+38,-3.40282e+38
+[HomeScrollbarCache] dark=1 scale=1 width=1000 bar=1 reserve=8 capture-width=696 first-live-width=696 exact-background-pixels=967932 differing=0 capture-frames=4 restore-frames=2 native-layout-ready=1
+[HomeScrollbarLayout] dark=1 variant=1 stage=capture work=340,75,720,2122 work=340,75,720,2122 layout=2047,2047,2047,1057,0,1060,1.6,424, layout=2047,2047,2047,0,0,2047,0,0,
+[HomeScrollbarLayout] dark=1 variant=1 stage=first-live work=340,75,720,2122 work=340,75,720,2122 layout=2047,2047,2047,1057,0,1060,1.6,424, layout=2047,2047,2047,0,0,2047,0,0,
+[HomeScrollbarPixelDifference] dark=1 variant=1 pixels=0 bounds=3.40282e+38,3.40282e+38,-3.40282e+38,-3.40282e+38
+[HomeScrollbarCache] dark=1 scale=1.25 width=760 bar=1 reserve=10 capture-width=380 first-live-width=380 exact-background-pixels=1056944 differing=0 capture-frames=4 restore-frames=2 native-layout-ready=1
+[HomeScrollbarLayout] dark=1 variant=2 stage=capture work=172,35,975,1081.4 work=261,35,885,811 layout=775,775,775,0,0,1080,0,0, layout=776,776,776,0,0,776,0,0,
+[HomeScrollbarLayout] dark=1 variant=2 stage=first-live work=172,35,975,1081.4 work=261,35,885,811 layout=775,775,775,0,0,1080,0,0, layout=776,776,776,0,0,776,0,0,
+[HomeScrollbarPixelDifference] dark=1 variant=2 pixels=0 bounds=3.40282e+38,3.40282e+38,-3.40282e+38,-3.40282e+38
+[HomeScrollbarCache] dark=1 scale=0.6 width=1000 bar=0 reserve=0 capture-width=803 first-live-width=803 exact-background-pixels=1052440 differing=0 capture-frames=2 restore-frames=2 native-layout-ready=1
+[HomeScrollbarCache] original-control cold-width=704 terminal-width=696 width-gap=8 cold-reserve=0 terminal-reserve=8
+[HomeWARP] stable-theme=light frames=21 identical-readbacks=20
+[HomeWARP] opaque-command list=root/caption elems=234 vtx-offset=0 texture=2686015226920 clip=0,0,1000,32
+[HomeWARP] opaque-command list=root/caption elems=6 vtx-offset=0 texture=2686015226920 clip=1,1,999,32
+[HomeWARP] opaque-command list=foreground elems=27294 vtx-offset=0 texture=2686015226920 clip=0,32,1000,1100
+[HomeWARP] prepared-entry theme=light full-warm-frames=2 elapsed-preparation-us=58472.9 fast-frames=8 bounded-state-bytes=192
+[HomeWARP] k-cap scale=1 solid-samples=153 gaps=0
+[HomeWARP] k-cap scale=1.875 solid-samples=546 gaps=0
+[HomeWARP] k-cap scale=4 solid-samples=2501 gaps=0
+[HomeWARP] transparent-ink solid=23207 AA=2402 lower=1314 outside=0
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] writing-caps zoom=1 solid-samples=331 gaps=0
+[HomeWARP] writing-caps zoom=1.875 solid-samples=1387 gaps=0
+[HomeWARP] writing-caps zoom=4 solid-samples=6854 gaps=0
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] ink-sheen identical-rgba=1
+[HomeWARP] pixels mode=parallax changed=25641 outside=0 logo-box=25547 background=0 background-max-channel-delta=0 full-max-channel-delta=244 radius=0
+[HomeWARP] pixels mode=parallax changed=26757 outside=0 logo-box=26597 background=0 background-max-channel-delta=0 full-max-channel-delta=244 radius=0
+[HomeWARP] pixels mode=parallax changed=26850 outside=0 logo-box=26819 background=0 background-max-channel-delta=0 full-max-channel-delta=244 radius=0
+[HomeWARP] pixels mode=parallax changed=25880 outside=0 logo-box=25861 background=0 background-max-channel-delta=0 full-max-channel-delta=244 radius=0
+[HomeWARP] solid-root theme=light exact-phase-comparisons=8 exact-title-border-pixels=306112 fallback-cases=3
+[HomeWARP] cache-materials=6 phases-per-material=3 comparison=exact-RGBA
+[HomeSubmission] exact-static initial-submit=1 skips=12 hold-skips=10 timer-advanced=true failure-real-retry=true
+[HomeSubmission] clear/copy-candidates materials=7 phases=4 poisoned-target=true comparison=exact-RGBA
+[HomeWARP] overlay-decomposition fixed-phases=hold,dock,settle comparison=exact-RGBA
+[HomeWARP] stable-theme=dark frames=21 identical-readbacks=20
+[HomeWARP] opaque-command list=root/caption elems=234 vtx-offset=0 texture=2686015226920 clip=0,0,1000,32
+[HomeWARP] opaque-command list=root/caption elems=6 vtx-offset=0 texture=2686015226920 clip=1,1,999,32
+[HomeWARP] opaque-command list=foreground elems=27294 vtx-offset=0 texture=2686015226920 clip=0,32,1000,1100
+[HomeWARP] prepared-entry theme=dark full-warm-frames=2 elapsed-preparation-us=39727 fast-frames=8 bounded-state-bytes=192
+[HomeWARP] k-cap scale=1 solid-samples=153 gaps=0
+[HomeWARP] k-cap scale=1.875 solid-samples=546 gaps=0
+[HomeWARP] k-cap scale=4 solid-samples=2501 gaps=0
+[HomeWARP] transparent-ink solid=23207 AA=2402 lower=1314 outside=0
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] writing-caps zoom=1 solid-samples=331 gaps=0
+[HomeWARP] writing-caps zoom=1.875 solid-samples=1387 gaps=0
+[HomeWARP] writing-caps zoom=4 solid-samples=6854 gaps=0
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] text-sheen changed=0 max-channel-delta=0 alpha-changes=0 stable-geometry=1
+[HomeWARP] ink-sheen identical-rgba=1
+[HomeWARP] pixels mode=parallax changed=22909 outside=0 logo-box=22815 background=0 background-max-channel-delta=0 full-max-channel-delta=211 radius=0
+[HomeWARP] pixels mode=parallax changed=23945 outside=0 logo-box=23785 background=0 background-max-channel-delta=0 full-max-channel-delta=211 radius=0
+[HomeWARP] pixels mode=parallax changed=24126 outside=0 logo-box=24095 background=0 background-max-channel-delta=0 full-max-channel-delta=211 radius=0
+[HomeWARP] pixels mode=parallax changed=23158 outside=0 logo-box=23139 background=0 background-max-channel-delta=0 full-max-channel-delta=211 radius=0
+[HomeWARP] solid-root theme=dark exact-phase-comparisons=8 exact-title-border-pixels=306112 fallback-cases=3
+[HomeWARP] cache-materials=6 phases-per-material=3 comparison=exact-RGBA
+[HomeSubmission] exact-static initial-submit=1 skips=12 hold-skips=10 timer-advanced=true failure-real-retry=true
+[HomeSubmission] clear/copy-candidates materials=7 phases=4 poisoned-target=true comparison=exact-RGBA
+[HomeWARP] overlay-decomposition fixed-phases=hold,dock,settle comparison=exact-RGBA
+[HomeSubmission] live-controls hover=true delayed-tooltip=1 actual-key-input=true caret-submits=5 caret-skips=147 caption/data-changes=true
+[HomeWARP] benchmark=static frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1605.5 p95=2553 submit-complete-event-us median=14186.4 p95=29694.3 vertices=14027 indices=58494 batches=10 driver=warp backend-us median=138.4 p95=420 wait-us median=14053 p95=29488.1 total-us median=15803.3 p95=31694.4 unlimited-fps median=63.2779 p95-time-fps=31.5513 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=idle frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1665.4 p95=3997.3 submit-complete-event-us median=14204.6 p95=29930 vertices=14027 indices=58494 batches=10 driver=warp backend-us median=149 p95=701.5 wait-us median=14049.6 p95=29770.5 total-us median=15873.5 p95=32077 unlimited-fps median=62.9981 p95-time-fps=31.175 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=moving frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=3836.6 p95=5487.3 submit-complete-event-us median=34995.5 p95=52655.2 vertices=14027 indices=58494 batches=10 driver=warp backend-us median=229.9 p95=350.1 wait-us median=34637.8 p95=52445.2 total-us median=38826.6 p95=56777.1 unlimited-fps median=25.7555 p95-time-fps=17.6127 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=100
+[HomeWARP] benchmark=returning frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=3771 p95=5322 submit-complete-event-us median=34798.8 p95=48110.3 vertices=14027 indices=58494 batches=10 driver=warp backend-us median=249.9 p95=821.4 wait-us median=34415 p95=47801 total-us median=38549.1 p95=52201.4 unlimited-fps median=25.9409 p95-time-fps=19.1566 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=200
+[HomeWARP] benchmark=writing frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=3215.5 p95=5965 submit-complete-event-us median=43293.3 p95=60624.2 vertices=14192 indices=10458 batches=11 driver=warp backend-us median=246.6 p95=451.4 wait-us median=43041.3 p95=60341.5 total-us median=46779.1 p95=66358.3 unlimited-fps median=21.3771 p95-time-fps=15.0697 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=hold frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=2939.8 p95=4157.3 submit-complete-event-us median=42575.3 p95=58214.8 vertices=14031 indices=58500 batches=11 driver=warp backend-us median=228 p95=545.1 wait-us median=42285.2 p95=57984.5 total-us median=45708.1 p95=61588.4 unlimited-fps median=21.878 p95-time-fps=16.2368 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=dock frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1895.8 p95=2524.6 submit-complete-event-us median=29240 p95=30322.5 vertices=14031 indices=58500 batches=11 driver=warp backend-us median=174.8 p95=438.5 wait-us median=29034.1 p95=30129 total-us median=31159.7 p95=32018.8 unlimited-fps median=32.0927 p95-time-fps=31.2317 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=settle frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1737.7 p95=2457.5 submit-complete-event-us median=14110.8 p95=29736 vertices=14027 indices=58494 batches=11 driver=warp backend-us median=157.3 p95=295.7 wait-us median=13960.9 p95=29607 total-us median=15837.6 p95=31560.8 unlimited-fps median=63.1409 p95-time-fps=31.6849 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=writing-fast frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1030.7 p95=1612.4 submit-complete-event-us median=14462.1 p95=15297.3 vertices=12204 indices=5790 batches=3 driver=warp backend-us median=112.2 p95=171.1 wait-us median=14324.5 p95=15164.1 total-us median=15544 p95=16065.5 unlimited-fps median=64.3335 p95-time-fps=62.2452 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=hold-fast frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=933.4 p95=2794.8 submit-complete-event-us median=14685.8 p95=29618.4 vertices=12043 indices=53832 batches=3 driver=warp backend-us median=141.9 p95=459.2 wait-us median=14535.5 p95=29176.2 total-us median=15620.9 p95=31892.1 unlimited-fps median=64.0168 p95-time-fps=31.3557 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=dock-prepared frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1308 p95=1866.9 submit-complete-event-us median=17555.1 p95=28296.3 vertices=12043 indices=53832 batches=3 driver=warp backend-us median=194.2 p95=453.9 wait-us median=17336.3 p95=28050.1 total-us median=18962 p95=29651.8 unlimited-fps median=52.7371 p95-time-fps=33.7248 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=settle-prepared frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1235.3 p95=1677.5 submit-complete-event-us median=8332.1 p95=14779.6 vertices=12039 indices=53826 batches=3 driver=warp backend-us median=179 p95=382.9 wait-us median=8021.6 p95=14606.9 total-us median=9864.2 p95=16175.8 unlimited-fps median=101.377 p95-time-fps=61.8207 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-writing-full-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1423 p95=2727.6 submit-complete-event-us median=14639.5 p95=23339.6 vertices=12204 indices=5790 batches=3 driver=warp backend-us median=141.5 p95=204.9 wait-us median=14478.9 p95=23184.6 total-us median=16601.8 p95=25833.3 unlimited-fps median=60.2344 p95-time-fps=38.7097 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-writing-suppressed-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1431 p95=2534.6 submit-complete-event-us median=14504.3 p95=25220.8 vertices=12172 indices=5652 batches=3 driver=warp backend-us median=141.6 p95=415.4 wait-us median=14334.1 p95=23716.4 total-us median=16395.6 p95=26568.9 unlimited-fps median=60.992 p95-time-fps=37.638 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=1 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-hold-full-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1271.1 p95=1902.2 submit-complete-event-us median=15730.1 p95=21666.9 vertices=12043 indices=53832 batches=3 driver=warp backend-us median=182.5 p95=462.4 wait-us median=15528.8 p95=21424.9 total-us median=17061.4 p95=23210 unlimited-fps median=58.6118 p95-time-fps=43.0849 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-hold-suppressed-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1406.6 p95=2034 submit-complete-event-us median=16007.4 p95=20755.2 vertices=12011 indices=53694 batches=3 driver=warp backend-us median=185.8 p95=293.2 wait-us median=15844.3 p95=20564.2 total-us median=17504.4 p95=22245.3 unlimited-fps median=57.1285 p95-time-fps=44.9533 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=1 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-dock-full-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1296.9 p95=1917.5 submit-complete-event-us median=18210.8 p95=23076.7 vertices=12043 indices=53832 batches=3 driver=warp backend-us median=193 p95=266.6 wait-us median=18004.6 p95=22618.5 total-us median=19453.4 p95=24051.5 unlimited-fps median=51.4049 p95-time-fps=41.5774 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-dock-suppressed-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1381.9 p95=2003.6 submit-complete-event-us median=17021.2 p95=21562.6 vertices=12011 indices=53694 batches=3 driver=warp backend-us median=190.9 p95=387.8 wait-us median=16851 p95=21382.1 total-us median=18436.6 p95=23025.7 unlimited-fps median=54.2399 p95-time-fps=43.4297 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=1 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-settle-full-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1135.9 p95=1455.3 submit-complete-event-us median=5947.6 p95=11692.4 vertices=12039 indices=53826 batches=3 driver=warp backend-us median=159.5 p95=235.5 wait-us median=5778.9 p95=11507.5 total-us median=7144.7 p95=13053.9 unlimited-fps median=139.964 p95-time-fps=76.6055 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=solid-settle-suppressed-root frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1273.2 p95=1720.8 submit-complete-event-us median=7227.8 p95=11988.6 vertices=12007 indices=53688 batches=3 driver=warp backend-us median=162.2 p95=250.5 wait-us median=7015.5 p95=11857.1 total-us median=8717 p95=13190.7 unlimited-fps median=114.718 p95-time-fps=75.811 imgui-allocs=0 opaque-fast=1 solid-clear=1 root-suppressed=1 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=wait-full frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1996.1 p95=3023.9 submit-complete-event-us median=44446.8 p95=54222.1 vertices=2060 indices=4914 batches=11 driver=warp backend-us median=215.1 p95=403.6 wait-us median=44207.3 p95=53984.4 total-us median=46429.6 p95=57346.4 unlimited-fps median=21.538 p95-time-fps=17.4379 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=wait-fast frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=249.9 p95=478.5 submit-complete-event-us median=11334 p95=14269.4 vertices=72 indices=246 batches=3 driver=warp backend-us median=100.6 p95=155.2 wait-us median=11240.7 p95=14191.8 total-us median=11611.7 p95=14665.6 unlimited-fps median=86.12 p95-time-fps=68.1868 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=prepare-warm-fonts frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=2115.9 p95=4744.6 submit-complete-event-us median=47953.5 p95=64429.7 vertices=2060 indices=4914 batches=11 driver=warp backend-us median=217.3 p95=889.4 wait-us median=47506.9 p95=64163 total-us median=50427.9 p95=67975.4 unlimited-fps median=19.8303 p95-time-fps=14.7112 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=restore frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=2793.9 p95=4785.9 submit-complete-event-us median=8847.5 p95=14131.8 vertices=12119 indices=54168 batches=3 driver=warp backend-us median=181 p95=705.1 wait-us median=8659 p95=13953.8 total-us median=11697.1 p95=19265 unlimited-fps median=85.4913 p95-time-fps=51.9076 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=capture frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=3218.4 p95=6102.7 submit-complete-event-us median=56514.3 p95=72353.8 vertices=14031 indices=58500 batches=11 driver=warp backend-us median=524.7 p95=1068.8 wait-us median=55968.9 p95=71720 total-us median=60167.4 p95=76629.2 unlimited-fps median=16.6203 p95-time-fps=13.0499 imgui-allocs=200 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeSubmission] benchmark=hold-fixed-full driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1491.8 p95=2744.5 compare-us median=0.2 p95=0.3 backend-us median=208.3 p95=719 wait-us median=23750.1 p95=123837 total-us median=25320 p95=127375 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12043 indices=53832 batches=3 unlimited-render-fps=39.4945
+[HomeSubmission] benchmark=hold-fixed-no-ink driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1130.8 p95=2183.3 compare-us median=0.1 p95=0.3 backend-us median=133 p95=397.1 wait-us median=14203.3 p95=15122 total-us median=15490.2 p95=16100.9 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=72 indices=246 batches=3 unlimited-render-fps=64.5569
+[HomeSubmission] benchmark=hold-fixed-no-cover driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1421 p95=2854.1 compare-us median=0.2 p95=0.3 backend-us median=169.7 p95=517.5 wait-us median=13909.5 p95=14751.6 total-us median=15530.5 p95=16123 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12039 indices=53826 batches=3 unlimited-render-fps=64.3894
+[HomeSubmission] benchmark=hold-fixed-copy-title driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1301 p95=4023.1 compare-us median=0.2 p95=0.3 backend-us median=123.4 p95=571.9 wait-us median=13986.7 p95=15069.1 total-us median=15539.7 p95=16298.9 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=68 indices=240 batches=2 unlimited-render-fps=64.3513
+[HomeSubmission] benchmark=hold-solid-clear-control driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=932.5 p95=1364 compare-us median=0.1 p95=0.3 backend-us median=143.6 p95=255.9 wait-us median=14282.5 p95=15015 total-us median=15501.3 p95=16119.1 actual-submits=100 skips=0 clears=100 copies=0 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=1 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12011 indices=53694 batches=3 unlimited-render-fps=64.5107
+[HomeSubmission] benchmark=hold-solid-clear-candidate driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=825.7 p95=1236.5 compare-us median=0.1 p95=0.3 backend-us median=114.4 p95=185.5 wait-us median=14509.9 p95=15219.5 total-us median=15563.6 p95=16086.1 actual-submits=100 skips=0 clears=0 copies=0 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=1 candidate-clear=1 clear-omitted=1 clear-policy=experiment-only-not-in-product vertices=12015 indices=53700 batches=4 unlimited-render-fps=64.2525
+[HomeSubmission] benchmark=dock-fixed-full driver=warp phase=2.16 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=855.5 p95=1406 compare-us median=0.1 p95=0.3 backend-us median=151.6 p95=401.1 wait-us median=14403 p95=15105.3 total-us median=15555.9 p95=16225.9 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12043 indices=53832 batches=3 unlimited-render-fps=64.2843
+[HomeSubmission] benchmark=dock-fixed-no-ink driver=warp phase=2.16 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1056 p95=1533.2 compare-us median=0.2 p95=0.3 backend-us median=122.4 p95=331.4 wait-us median=14245.9 p95=15012.6 total-us median=15527.8 p95=16121.1 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=72 indices=246 batches=3 unlimited-render-fps=64.4006
+[HomeSubmission] benchmark=dock-fixed-no-cover driver=warp phase=2.16 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1408.3 p95=2844.2 compare-us median=0.2 p95=0.4 backend-us median=189.5 p95=421.5 wait-us median=13883.5 p95=14697.5 total-us median=15542 p95=16122.1 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12039 indices=53826 batches=3 unlimited-render-fps=64.3418
+[HomeSubmission] benchmark=dock-fixed-copy-title driver=warp phase=2.16 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1512.9 p95=3138.8 compare-us median=0.2 p95=0.4 backend-us median=178 p95=998.5 wait-us median=13843.3 p95=24427.5 total-us median=15554.2 p95=25870.8 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=68 indices=240 batches=2 unlimited-render-fps=64.2913
+[HomeSubmission] benchmark=settle-fixed-full driver=warp phase=2.54 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=947.2 p95=2473.5 compare-us median=0.1 p95=0.3 backend-us median=237.2 p95=819.7 wait-us median=14352.4 p95=43395 total-us median=15478.2 p95=45955.2 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12039 indices=53826 batches=3 unlimited-render-fps=64.607
+[HomeSubmission] benchmark=settle-fixed-no-ink driver=warp phase=2.54 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1445.4 p95=7804.5 compare-us median=0.1 p95=0.3 backend-us median=168.2 p95=1326.8 wait-us median=12475.2 p95=20167.6 total-us median=15042.8 p95=30430.9 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=68 indices=240 batches=2 unlimited-render-fps=66.477
+[HomeSubmission] benchmark=settle-fixed-no-cover driver=warp phase=2.54 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=888.3 p95=2510.4 compare-us median=0.1 p95=0.3 backend-us median=207.4 p95=659.3 wait-us median=14452.8 p95=19199.3 total-us median=15559.3 p95=21993.1 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12039 indices=53826 batches=3 unlimited-render-fps=64.2702
+[HomeSubmission] benchmark=settle-fixed-copy-title driver=warp phase=2.54 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1304.7 p95=3506.4 compare-us median=0.1 p95=0.3 backend-us median=164.9 p95=872.3 wait-us median=14133.2 p95=18664.9 total-us median=15616.3 p95=21399.3 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=68 indices=240 batches=2 unlimited-render-fps=64.0357
+[HomeSubmission] benchmark=settle-solid-clear-control driver=warp phase=2.54 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1034.3 p95=4005.1 compare-us median=0.1 p95=0.3 backend-us median=159.4 p95=1143 wait-us median=14447.5 p95=26458.2 total-us median=15795.6 p95=30442 actual-submits=100 skips=0 clears=100 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=1 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12007 indices=53688 batches=3 unlimited-render-fps=63.3088
+[HomeSubmission] benchmark=settle-solid-clear-candidate driver=warp phase=2.54 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1362.5 p95=6340.5 compare-us median=0.1 p95=0.3 backend-us median=195.3 p95=736.1 wait-us median=14130.9 p95=33156.9 total-us median=15952.1 p95=34517.4 actual-submits=100 skips=0 clears=0 copies=100 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=1 candidate-clear=1 clear-omitted=1 clear-policy=experiment-only-not-in-product vertices=12011 indices=53694 batches=4 unlimited-render-fps=62.6877
+[HomeSubmission] benchmark=hold-copy-omitted driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1204.1 p95=3180.2 compare-us median=0.1 p95=0.3 backend-us median=191.4 p95=1175.6 wait-us median=20429.9 p95=73791.8 total-us median=21856.8 p95=76267.8 actual-submits=100 skips=0 clears=100 copies=0 captures=0 snapshot-bytes=0 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12043 indices=53832 batches=3 unlimited-render-fps=45.7524
+[HomeSubmission] benchmark=hold-duplicate-skip driver=warp phase=1.6 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=567.4 p95=1330.6 compare-us median=83.2 p95=207.3 backend-us median=0 p95=0 wait-us median=0 p95=0 total-us median=677 p95=1415.8 actual-submits=0 skips=100 clears=0 copies=0 captures=0 snapshot-bytes=348692 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=12043 indices=53832 batches=3 rate-label=CPU-callback-only-no-display-FPS
+[HomeSubmission] benchmark=static-duplicate-skip driver=warp phase=0 frames=100 warmup=20 width=1000 height=1100 theme=light build=Debug cpu-us median=1595.9 p95=4770 compare-us median=75.5 p95=140.4 backend-us median=0 p95=0 wait-us median=0 p95=0 total-us median=1681.6 p95=5211.3 actual-submits=0 skips=100 clears=0 copies=0 captures=0 snapshot-bytes=397996 snapshot-capacity=1048576 solid=0 candidate-clear=0 clear-omitted=0 clear-policy=production-clear vertices=14027 indices=58494 batches=10 rate-label=CPU-callback-only-no-display-FPS
+[HomeOffscreen] driver=hardware adapter=Qualcomm(R) Adreno(TM) X1-85 GPU vendor=1297040209 device=909329200 feature-level=11.0 width=1000 height=1100
+[HomeWARP] benchmark=static frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1653.9 p95=3614.3 submit-complete-event-us median=908.6 p95=2697 vertices=14027 indices=58494 batches=10 driver=hardware backend-us median=63.4 p95=204.7 wait-us median=831.4 p95=2255.8 total-us median=2610.6 p95=4868.2 unlimited-fps median=383.054 p95-time-fps=205.415 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=wait-full frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=717.3 p95=1693.4 submit-complete-event-us median=745.5 p95=2109.5 vertices=2060 indices=4914 batches=11 driver=hardware backend-us median=50.3 p95=138.2 wait-us median=682.6 p95=1966.6 total-us median=1489 p95=3009.5 unlimited-fps median=671.592 p95-time-fps=332.281 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=wait-fast frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=34.9 p95=183 submit-complete-event-us median=195 p95=802.5 vertices=72 indices=246 batches=3 driver=hardware backend-us median=18.1 p95=89.3 wait-us median=170 p95=635 total-us median=239 p95=1225.3 unlimited-fps median=4184.1 p95-time-fps=816.127 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=writing-full frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1558.3 p95=3109.1 submit-complete-event-us median=955.9 p95=2617 vertices=14192 indices=10458 batches=11 driver=hardware backend-us median=71.8 p95=239.6 wait-us median=879.1 p95=2236.2 total-us median=2618.8 p95=5041.3 unlimited-fps median=381.854 p95-time-fps=198.362 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=writing-fast frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=932.2 p95=2268.3 submit-complete-event-us median=658.3 p95=1927.2 vertices=12204 indices=5790 batches=3 driver=hardware backend-us median=56.3 p95=248.1 wait-us median=600.7 p95=1868.4 total-us median=1646.6 p95=3619.7 unlimited-fps median=607.312 p95-time-fps=276.266 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=hold-full frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1256.9 p95=2285.5 submit-complete-event-us median=1003.3 p95=2674.7 vertices=14031 indices=58500 batches=11 driver=hardware backend-us median=76.1 p95=146.8 wait-us median=913.6 p95=2611.8 total-us median=2364.5 p95=4987.9 unlimited-fps median=422.922 p95-time-fps=200.485 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=hold-cached frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=635.6 p95=2220 submit-complete-event-us median=742.2 p95=2468.3 vertices=12043 indices=53832 batches=3 driver=hardware backend-us median=77.2 p95=175.8 wait-us median=649.5 p95=2345.9 total-us median=1418.1 p95=3417.6 unlimited-fps median=705.169 p95-time-fps=292.603 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=dock-full frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1165.3 p95=1905 submit-complete-event-us median=955.1 p95=2159.9 vertices=14031 indices=58500 batches=11 driver=hardware backend-us median=58.3 p95=147.1 wait-us median=886 p95=2076.4 total-us median=2145.3 p95=3460.7 unlimited-fps median=466.135 p95-time-fps=288.959 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=dock-cached frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=538.5 p95=1593.7 submit-complete-event-us median=686.7 p95=2079.5 vertices=12043 indices=53832 batches=3 driver=hardware backend-us median=55.1 p95=171.9 wait-us median=628.1 p95=1971.5 total-us median=1276.5 p95=3112.5 unlimited-fps median=783.392 p95-time-fps=321.285 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=settle-full frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1513.8 p95=5632.8 submit-complete-event-us median=917.8 p95=2552.9 vertices=14027 indices=58494 batches=11 driver=hardware backend-us median=67.2 p95=256.1 wait-us median=841.4 p95=2442 total-us median=2636.8 p95=6917.8 unlimited-fps median=379.248 p95-time-fps=144.555 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=settle-cached frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=818.8 p95=3733 submit-complete-event-us median=661.2 p95=2512 vertices=12039 indices=53826 batches=3 driver=hardware backend-us median=52 p95=268.3 wait-us median=588.1 p95=2244.8 total-us median=1521.4 p95=5209.6 unlimited-fps median=657.289 p95-time-fps=191.953 imgui-allocs=0 opaque-fast=1 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=capture frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1467.1 p95=3574.4 submit-complete-event-us median=1091.4 p95=3237 vertices=14031 indices=58500 batches=11 driver=hardware backend-us median=470.6 p95=1313.4 wait-us median=605.4 p95=2260.1 total-us median=2668.5 p95=5366.9 unlimited-fps median=374.742 p95-time-fps=186.327 imgui-allocs=200 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=prepare-warm-fonts frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=741.1 p95=1488.9 submit-complete-event-us median=708.5 p95=2195.7 vertices=2060 indices=4914 batches=11 driver=hardware backend-us median=40.4 p95=80.2 wait-us median=665.7 p95=2164.4 total-us median=1492.2 p95=3624.6 unlimited-fps median=670.151 p95-time-fps=275.893 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeWARP] benchmark=restore frames=100 warmup=20 scale=1 theme=light build=Debug cpu-us median=1405.9 p95=3021.5 submit-complete-event-us median=653.5 p95=2327.3 vertices=12119 indices=54168 batches=3 driver=hardware backend-us median=62.8 p95=274.8 wait-us median=584.2 p95=2167 total-us median=2157.3 p95=5519.6 unlimited-fps median=463.542 p95-time-fps=181.173 imgui-allocs=0 opaque-fast=0 solid-clear=0 root-suppressed=0 prep-state-bytes=192 cache-growth=0 cache-rebuilds=0
+[HomeOffscreen] Timed samples use EVENT/Flush completion, no Sleep/Present/readback or FPS cap; pixel correctness uses separate staging Copy/Map. CPU build/backend-call/wait/total are wall times, not pure GPU query time. 1000x1100 Home+Navigation+Overlay excludes native caption/business images/shared clients/Present; throughput is not display FPS. HomeWARP benchmark lines force real rendering; HomeSubmission duplicate samples report CPU callbacks and actual-submit/skip counts without display FPS. Ablations hold fixed original phases/geometry, retain clear and cache/title, and remove only original ink/cover ranges.
+[EdidCardDrawData] scale=1 frames=40 outlineBoundarySamples=160
+[HomeBrandDesign] scale=1 frames=2177 linkTaps=144 entry-plays=32 entry-skips=28
+[HomeEntryPreparation] total=2.66 ready-frames=2 invalidation-keys=27 bounded-state-bytes=192
+[HomeMotionCull] scale=1 viewport=800 scroll=459 max=459 brandBottom=-75.7703 clipTop=16
+[HomeMotionCull] scale=1 viewport=300 scroll=960 max=960 brandBottom=-576.77 clipTop=16
+[HomeMotion] scale=1 entries=1 cacheBuilds=1 allocations=1
+[HierarchyDrawData] scale=1 frames=735 navigations=28 businessActions=0 bodyActions=0
+[DebugNavigationDrawData] scale=1 frames=594
+[IndicatorSponsorDrawData] scale=1 frames=981
+[HamburgerColors] scale=1 mode=0 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1 mode=1 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1 mode=2 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1 mode=0 dark=1 hover=53.5686 held=48.8667 leave=32.1412 alpha=2
+[HamburgerColors] scale=1 mode=1 dark=1 hover=52.5882 held=48.8667 leave=32.1412 alpha=2
+[HamburgerColors] scale=1 mode=2 dark=1 hover=52.5882 held=48.8667 leave=32.1412 alpha=2
+[HamburgerDrawData] scale=1 frames=546
+[NavigationScrollbarDragDrawData] scale=1 frames=701
+[HeldEnterDrag] scale=1 delta=270 target=3.40282e+38 owned=0 active=0 hovered=none
+[ComboShortEndpoint] scale=1 fade=1 bar=0 reserve=0 max=0 content=68 inner=72 size=72 padding=2
+[ComboNativeShortEndpoint] scale=1 bar=0 reserve=0 max=0 content=68 inner=72 size=72 padding=2
+[ComboEmptyEndpoint] scale=1 bar=0 reserve=0 max=0
+[DragScrollDrawData] scale=1 frames=387 rootMovingFrames=3
+[HomeScrollbarEnter] scale=1 step=0 bar=0 reserve=0 width=794 alpha=0
+[HomeScrollbarEnter] scale=1 step=1 bar=1 reserve=0 width=794 alpha=0
+[HomeScrollbarEnter] scale=1 step=2 bar=1 reserve=2.24863 width=791.751 alpha=29
+[HomeScrollbarExit] scale=1 step=0 bar=1 reserve=8 width=786 alpha=104
+[HomeScrollbarExit] scale=1 step=1 bar=0 reserve=8 width=786 alpha=104
+[HomeScrollbarExit] scale=1 step=2 bar=0 reserve=5.75137 width=788.249 alpha=75
+[HomeScrollbarEnter] scale=1 step=0 bar=0 reserve=0 width=794 alpha=0
+[HomeScrollbarEnter] scale=1 step=1 bar=1 reserve=0 width=794 alpha=0
+[HomeScrollbarEnter] scale=1 step=2 bar=1 reserve=4.76368 width=789.236 alpha=83
+[HomeScrollbarExit] scale=1 step=0 bar=1 reserve=8 width=786 alpha=140
+[HomeScrollbarExit] scale=1 step=1 bar=0 reserve=8 width=786 alpha=140
+[HomeScrollbarExit] scale=1 step=2 bar=0 reserve=3.23632 width=790.764 alpha=57
+[HomeCpuSubmission] scale=1 legacy=0 held=0 samples=100 medianUs=1657.1 p95Us=2287.7
+[HomeCpuSubmission] scale=1 legacy=0 held=1 samples=100 medianUs=1517.8 p95Us=2105.8
+[HomeCpuSubmission] scale=1 legacy=1 held=0 samples=100 medianUs=1638.2 p95Us=2989.3
+[HomeCpuSubmission] scale=1 legacy=1 held=1 samples=100 medianUs=1640.1 p95Us=2778.3
+[HomeScrollFollowup] scale=1 frames=739
+[HoverDrawData] scale=1 frames=328 samples=315 violations=0 worst=0.000492036
+[HoverDrawData] kind=0 samples=84 violations=0 worst=0.000430644
+[HoverDrawData] kind=1 samples=84 violations=0 worst=0.000492036
+[HoverDrawData] kind=2 samples=88 violations=0 worst=0
+[HoverDrawData] kind=3 samples=4 violations=0 worst=0
+[HoverDrawData] kind=4 samples=55 violations=0 worst=0
+[EdidCardDrawData] scale=1.25 frames=40 outlineBoundarySamples=240
+[HomeBrandDesign] scale=1.25 frames=600 linkTaps=0 entry-plays=32 entry-skips=28
+[EdidCardDrawData] scale=1.5 frames=40 outlineBoundarySamples=160
+[HomeBrandDesign] scale=1.5 frames=600 linkTaps=0 entry-plays=32 entry-skips=28
+[HierarchyDrawData] scale=1.5 frames=735 navigations=28 businessActions=0 bodyActions=0
+[DebugNavigationDrawData] scale=1.5 frames=594
+[IndicatorSponsorDrawData] scale=1.5 frames=981
+[HamburgerColors] scale=1.5 mode=0 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1.5 mode=1 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1.5 mode=2 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1.5 mode=0 dark=1 hover=53.5686 held=48.8667 leave=32.1412 alpha=2
+[HamburgerColors] scale=1.5 mode=1 dark=1 hover=52.5882 held=48.8667 leave=32.1412 alpha=2
+[HamburgerColors] scale=1.5 mode=2 dark=1 hover=52.5882 held=48.8667 leave=32.1412 alpha=2
+[HamburgerDrawData] scale=1.5 frames=546
+[NavigationScrollbarDragDrawData] scale=1.5 frames=701
+[HeldEnterDrag] scale=1.5 delta=355 target=3.40282e+38 owned=0 active=0 hovered=none
+[ComboShortEndpoint] scale=1.5 fade=1 bar=0 reserve=0 max=0 content=102 inner=108 size=108 padding=3
+[ComboNativeShortEndpoint] scale=1.5 bar=0 reserve=0 max=0 content=102 inner=108 size=108 padding=3
+[ComboEmptyEndpoint] scale=1.5 bar=0 reserve=0 max=0
+[DragScrollDrawData] scale=1.5 frames=387 rootMovingFrames=3
+[HomeScrollbarEnter] scale=1.5 step=0 bar=0 reserve=0 width=1191 alpha=0
+[HomeScrollbarEnter] scale=1.5 step=1 bar=1 reserve=0 width=1191 alpha=0
+[HomeScrollbarEnter] scale=1.5 step=2 bar=1 reserve=3.37294 width=1187.63 alpha=29
+[HomeScrollbarExit] scale=1.5 step=0 bar=1 reserve=12 width=1179 alpha=104
+[HomeScrollbarExit] scale=1.5 step=1 bar=0 reserve=12 width=1179 alpha=104
+[HomeScrollbarExit] scale=1.5 step=2 bar=0 reserve=8.62706 width=1182.37 alpha=75
+[HomeScrollbarEnter] scale=1.5 step=0 bar=0 reserve=0 width=1191 alpha=0
+[HomeScrollbarEnter] scale=1.5 step=1 bar=1 reserve=0 width=1191 alpha=0
+[HomeScrollbarEnter] scale=1.5 step=2 bar=1 reserve=7.14552 width=1183.85 alpha=83
+[HomeScrollbarExit] scale=1.5 step=0 bar=1 reserve=12 width=1179 alpha=140
+[HomeScrollbarExit] scale=1.5 step=1 bar=0 reserve=12 width=1179 alpha=140
+[HomeScrollbarExit] scale=1.5 step=2 bar=0 reserve=4.85448 width=1186.15 alpha=57
+[HomeCpuSubmission] scale=1.5 legacy=0 held=0 samples=100 medianUs=1728.2 p95Us=2935.3
+[HomeCpuSubmission] scale=1.5 legacy=0 held=1 samples=100 medianUs=1809.2 p95Us=2815.9
+[HomeCpuSubmission] scale=1.5 legacy=1 held=0 samples=100 medianUs=1893.6 p95Us=2715.6
+[HomeCpuSubmission] scale=1.5 legacy=1 held=1 samples=100 medianUs=1769.2 p95Us=2273.4
+[HomeScrollFollowup] scale=1.5 frames=739
+[EdidCardDrawData] scale=2 frames=40 outlineBoundarySamples=240
+[HomeBrandDesign] scale=2 frames=600 linkTaps=0 entry-plays=32 entry-skips=28
+[EdidCardDrawData] scale=1.875 frames=40 outlineBoundarySamples=160
+[HomeBrandDesign] scale=1.875 frames=600 linkTaps=0 entry-plays=32 entry-skips=28
+[HomeEntryPreparation] total=2.66 ready-frames=2 invalidation-keys=27 bounded-state-bytes=192
+[HomeMotionCull] scale=1.875 viewport=1500 scroll=855 max=855 brandBottom=-136.444 clipTop=30
+[HomeMotionCull] scale=1.875 viewport=562.5 scroll=1200 max=1793 brandBottom=-481.444 clipTop=30
+[HomeMotion] scale=1.875 entries=1 cacheBuilds=1 allocations=1
+[HierarchyDrawData] scale=1.875 frames=735 navigations=28 businessActions=0 bodyActions=0
+[DebugNavigationDrawData] scale=1.875 frames=594
+[IndicatorSponsorDrawData] scale=1.875 frames=981
+[HamburgerColors] scale=1.875 mode=0 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1.875 mode=1 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1.875 mode=2 dark=0 hover=231.235 held=226.133 leave=242.875 alpha=2
+[HamburgerColors] scale=1.875 mode=0 dark=1 hover=53.5686 held=48.8667 leave=32.1412 alpha=2
+[HamburgerColors] scale=1.875 mode=1 dark=1 hover=52.5882 held=48.8667 leave=32.1412 alpha=2
+[HamburgerColors] scale=1.875 mode=2 dark=1 hover=52.5882 held=48.8667 leave=32.1412 alpha=2
+[HamburgerDrawData] scale=1.875 frames=546
+[NavigationScrollbarDragDrawData] scale=1.875 frames=701
+[HeldEnterDrag] scale=1.875 delta=418 target=3.40282e+38 owned=0 active=0 hovered=none
+[ComboShortEndpoint] scale=1.875 fade=0 bar=1 reserve=15 max=0.5 content=127 inner=134 size=134 padding=3.75
+[ComboNativeShortEndpoint] scale=1.875 bar=1 reserve=15 max=0.5 content=127 inner=134 size=134 padding=3.75
+[ComboEmptyEndpoint] scale=1.875 bar=0 reserve=0 max=0
+[DragScrollDrawData] scale=1.875 frames=387 rootMovingFrames=3
+[HomeScrollbarEnter] scale=1.875 step=0 bar=0 reserve=0 width=1488 alpha=0
+[HomeScrollbarEnter] scale=1.875 step=1 bar=1 reserve=0 width=1488 alpha=0
+[HomeScrollbarEnter] scale=1.875 step=2 bar=1 reserve=4.21617 width=1483.78 alpha=29
+[HomeScrollbarExit] scale=1.875 step=0 bar=1 reserve=15 width=1473 alpha=104
+[HomeScrollbarExit] scale=1.875 step=1 bar=0 reserve=15 width=1473 alpha=104
+[HomeScrollbarExit] scale=1.875 step=2 bar=0 reserve=10.7838 width=1477.22 alpha=75
+[HomeScrollbarEnter] scale=1.875 step=0 bar=0 reserve=0 width=1488 alpha=0
+[HomeScrollbarEnter] scale=1.875 step=1 bar=1 reserve=0 width=1488 alpha=0
+[HomeScrollbarEnter] scale=1.875 step=2 bar=1 reserve=8.9319 width=1479.07 alpha=83
+[HomeScrollbarExit] scale=1.875 step=0 bar=1 reserve=15 width=1473 alpha=140
+[HomeScrollbarExit] scale=1.875 step=1 bar=0 reserve=15 width=1473 alpha=140
+[HomeScrollbarExit] scale=1.875 step=2 bar=0 reserve=6.0681 width=1481.93 alpha=57
+[HomeCpuSubmission] scale=1.875 legacy=0 held=0 samples=100 medianUs=1151.5 p95Us=1997.5
+[HomeCpuSubmission] scale=1.875 legacy=0 held=1 samples=100 medianUs=1211.2 p95Us=5199.3
+[HomeCpuSubmission] scale=1.875 legacy=1 held=0 samples=100 medianUs=1181.7 p95Us=5043.2
+[HomeCpuSubmission] scale=1.875 legacy=1 held=1 samples=100 medianUs=1159.2 p95Us=2703.3
+[HomeScrollFollowup] scale=1.875 frames=739
+[HoverDrawData] scale=1.875 frames=328 samples=315 violations=0 worst=0.000492036
+[HoverDrawData] kind=0 samples=84 violations=0 worst=0.000430644
+[HoverDrawData] kind=1 samples=84 violations=0 worst=0.000492036
+[HoverDrawData] kind=2 samples=88 violations=0 worst=0
+[HoverDrawData] kind=3 samples=4 violations=0 worst=0
+[HoverDrawData] kind=4 samples=55 violations=0 worst=0
+[EdidCardDrawData] scale=3 frames=40 outlineBoundarySamples=240
+[HomeBrandDesign] scale=3 frames=600 linkTaps=0 entry-plays=32 entry-skips=28
+[EdidCardDrawData] scale=4 frames=40 outlineBoundarySamples=160
+[HomeBrandDesign] scale=4 frames=600 linkTaps=0 entry-plays=32 entry-skips=28

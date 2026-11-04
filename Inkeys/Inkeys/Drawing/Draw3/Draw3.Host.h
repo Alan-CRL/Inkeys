@@ -6,6 +6,7 @@
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 
@@ -61,15 +62,15 @@ namespace Inkeys::Drawing::Draw3
 			}
 			bool WaitForChange(std::uint64_t revision,
 				std::uint32_t timeoutMilliseconds,
-				const std::atomic_bool& running) const noexcept
+				const std::atomic_bool& running, bool waitWhileStopped = false) const noexcept
 			{
 				std::unique_lock lock(mutex_);
 				return condition_.wait_for(lock,
 					std::chrono::milliseconds(timeoutMilliseconds),
-					[this, revision, &running]
+					[this, revision, &running, waitWhileStopped]
 					{
 						return Revision() != revision
-							|| !running.load(std::memory_order_acquire);
+							|| (!waitWhileStopped && !running.load(std::memory_order_acquire));
 					});
 			}
 			void NotifyAll() const noexcept
@@ -276,6 +277,7 @@ namespace Inkeys::Drawing::Draw3
 		// 启动时按值捕获；呈现回退与设备丢失后的恢复沿用本代偏好。
 		bool enableHardwareAcceleration = true;
 		bool enableZhaoxinCompatibility = true;
+		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -347,6 +349,7 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		Bridge::WhiteboardStyleToken whiteboardStyle;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		bool whiteboardLoadPending = false;
@@ -406,6 +409,8 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 只复制初始化/恢复边界发布的文本，不在设置线程访问图形或 RTS 对象。
+		std::string CanvasInformation() const;
 		bool RetryCanvasRecovery(const CanvasRecoveryState& expected,
 			const std::function<bool()>& stillDesired = {}) noexcept;
 		// 异步 UI 起笔通知只验证场景/生命周期；短笔结束后同场景仍有效。
@@ -414,6 +419,10 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
 		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
+		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
+		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
+		void SetPalmEraserOptions(const PalmEraser::Settings& options);
+		PalmEraser::Settings PalmEraserOptions() const;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;
@@ -423,7 +432,9 @@ namespace Inkeys::Drawing::Draw3
 		bool WaitForContentRevision(std::uint64_t revision,
 			std::uint32_t timeoutMilliseconds) const noexcept;
 		bool WaitForRuntimeRevision(std::uint64_t revision,
-			std::uint32_t timeoutMilliseconds) const noexcept;
+			std::uint32_t timeoutMilliseconds, bool waitWhileStopped = false) const noexcept;
+		// 只推进通知版本，不写 Frame/UI-ready；原生/背景完成复用同一个无丢醒握手。
+		void NotifyWorkspaceProgress() noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Haptics::Context HapticContext() const noexcept;

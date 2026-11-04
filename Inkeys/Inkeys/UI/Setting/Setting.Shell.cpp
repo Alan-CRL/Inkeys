@@ -102,7 +102,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
-		NavigationState& state, NavigationDestination selected)
+		NavigationState& state, NavigationDestination selected, bool translucentBackdrop)
 	{
 		selected = NormalizeDestination(selected);
 		const auto& pane = geometry.pane;
@@ -151,15 +151,17 @@ namespace Inkeys::UI::Setting::Design
 		const std::array middleEntries{
 			Entry{ PageId::General, I18nKey.SettingsUI.Regular.N, "\ue713" },
 			Entry{ PageId::Draw, I18nKey.SettingsUI.Draw.N, "\uee56" },
+			Entry{ PageId::Performance, I18nKey.SettingsUI.Performance.N, "\uec4a" },
+			Entry{ PageId::Linkage, I18nKey.SettingsUI.Linkage.N, "\ue71b" },
 			Entry{ PageId::Plugins, I18nKey.SettingsUI.PlugIn.N, "\ue74c" },
 			Entry{ PageId::Components, I18nKey.SettingsUI.Component.N, "\ue70b" },
-			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\uec4a" },
+			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\ue9d9" },
 			Entry{ PageId::Version, I18nKey.SettingsUI.Version.N, "\ue946" }
 		};
 		const std::array childKeys{ I18nKey.SettingsUI.Design.GeneralBasic,
 			I18nKey.SettingsUI.Design.GeneralAppearance, I18nKey.SettingsUI.Design.GeneralInteraction,
-			I18nKey.SettingsUI.Design.GeneralStorage, I18nKey.SettingsUI.HotKey.N };
-		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e", "\ue765" };
+			I18nKey.SettingsUI.Design.GeneralStorage, I18nKey.SettingsUI.HotKey.N, I18nKey.SettingsUI.DesktopShortcut.N };
+		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e", "\ue765", "\ue71b" };
 		static_assert(childKeys.size() == GeneralSectionCount && childGlyphs.size() == GeneralSectionCount);
 		static_assert(middleEntries.size() == NavigationMiddleItemCount);
 		auto navigate = [&](NavigationDestination destination, bool dismissOverlay = true) {
@@ -210,11 +212,17 @@ namespace Inkeys::UI::Setting::Design
 		const auto fixedFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 		const auto childFlags = ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened;
 		ImGui::SetCursorPos({ Pixels(pane.left), Pixels(pane.top) });
-		ImGui::PushStyleColor(ImGuiCol_ChildBg, AppBase);
+		// 侧栏只在 pane 外层铺一次直角底色，嵌套 child 不再叠色。半透明材质下平铺时由根窗口统一铺底；
+		// 窄窗覆盖正文时改用不透明主题底色，避免正文文字透出。
+		const bool overlaysContent = geometry.pane.right > geometry.content.left + 0.5F;
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, !translucentBackdrop ? AppBase
+			: overlaysContent ? PaletteForTheme(IsDarkMode()).appBase : IM_COL32(0, 0, 0, 0));
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0.0F, Pixels(RowGap) });
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0F);
 		ImGui::BeginChild("##settings-pane", { Pixels(pane.Width()), Pixels(pane.Height()) },
 			ImGuiChildFlags_NavFlattened, fixedFlags);
+		ImGui::PopStyleVar(); ImGui::PopStyleColor();
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { Pixels(4.0F), 0.0F });
 
 		// 顶部固定区与底部固定区先测量，中段承担全部树形列表滚动。
@@ -447,7 +455,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 		ImGui::EndChild();
 		ImGui::PopStyleVar(); ImGui::EndChild();
-		ImGui::PopStyleVar(2); ImGui::PopStyleColor();
+		ImGui::PopStyleVar(2);
 		if (toggled) state.Toggle();
 		if (result.kind != NavigationActionKind::None)
 		{

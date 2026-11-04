@@ -1,0 +1,25 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!-- 白板快捷方式图标：与程序图标同一张蓝色点阵卡片，中间的笔和圆换成一笔横贯画面的白色书写线。 -->
+<!-- 卡片：尺寸、圆角、渐变与程序图标一致 -->
+<rect id="card" y="32" width="256" height="192" rx="10" fill="url(#card-fill)"/>
+<!-- 点阵：5 列 × 4 行，四周留边对称，被书写线压住的点不画 -->
+<g id="dots" fill="white" fill-opacity="0.55">
+<circle cx="28" cy="60" r="7"/><circle cx="78" cy="60" r="7"/><circle cx="128" cy="60" r="7"/><circle cx="178" cy="60" r="7"/><circle cx="228" cy="60" r="7"/>
+<circle cx="28" cy="105" r="7"/><circle cx="128" cy="105" r="7"/><circle cx="228" cy="105" r="7"/>
+<circle cx="28" cy="151" r="7"/><circle cx="78" cy="151" r="7"/><circle cx="178" cy="151" r="7"/><circle cx="228" cy="151" r="7"/>
+<circle cx="28" cy="196" r="7"/><circle cx="78" cy="196" r="7"/><circle cx="128" cy="196" r="7"/><circle cx="178" cy="196" r="7"/><circle cx="228" cy="196" r="7"/>
+</g>
+<!-- 书写线柔和投影 -->
+<path id="stroke-shadow" d="M46 152C66 96 92 94 104 130C114 158 134 156 148 120C158 94 182 88 210 108" stroke="#0072C8" stroke-opacity="0.4" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 4)" filter="url(#blur)"/>
+<!-- 一笔白色书写线 -->
+<path id="stroke" d="M46 152C66 96 92 94 104 130C114 158 134 156 148 120C158 94 182 88 210 108" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+<defs>
+<filter id="blur" x="0" y="40" width="256" height="190" filterUnits="userSpaceOnUse">
+<feGaussianBlur stdDeviation="4"/>
+</filter>
+<linearGradient id="card-fill" x1="128" y1="32" x2="128" y2="224" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00D1FF"/>
+<stop offset="1" stop-color="#0093FF"/>
+</linearGradient>
+</defs>
+</svg>

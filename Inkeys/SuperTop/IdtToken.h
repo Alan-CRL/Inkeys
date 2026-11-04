@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../Launch/IdtSingleInstance.h"
 
 #include <iostream>
 
@@ -65,7 +66,7 @@ namespace UiAccess
 		}
 		static bool GetProcessToken(DWORD pid, IdtHandle& process, IdtHandle& ret)
 		{
-			IdtHandle source(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+			IdtHandle source(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE | PROCESS_DUP_HANDLE,
 				FALSE, pid));
 			if (!source) return false;
 			HANDLE rawToken = nullptr, rawDuplicate = nullptr;
@@ -235,21 +236,25 @@ namespace UiAccess
 	class RunToken
 	{
 	public:
+		static bool ConfirmParentExit(HANDLE parent, HANDLE ready, HANDLE accepted, DWORD timeout = 10000)
+		{
+			return SetEvent(ready) && WaitForSingleObject(accepted, timeout) == WAIT_OBJECT_0
+				&& WaitForSingleObject(parent, timeout) == WAIT_OBJECT_0;
+		}
 		static bool ResumeAfterParentExit(HANDLE process, HANDLE thread,
 			HANDLE parent, HANDLE ready, HANDLE accepted, DWORD timeout = 10000)
 		{
 			// 创建成功才确认交接；超时的 helper 不能迟到启动第二个实例。
-			if (SetEvent(ready) && WaitForSingleObject(accepted, timeout) == WAIT_OBJECT_0
-				&& WaitForSingleObject(parent, timeout) == WAIT_OBJECT_0
+			if (ConfirmParentExit(parent, ready, accepted, timeout)
 				&& ResumeThread(thread) != static_cast<DWORD>(-1)) return true;
 			TerminateProcess(process, ERROR_CANCELLED);
 			(void)WaitForSingleObject(process, 1000);
 			return false;
 		}
 		static bool RunTokenProgram(const IdtHandle& token, wstring param,
-			HANDLE parent = nullptr, HANDLE ready = nullptr, HANDLE accepted = nullptr)
+			HANDLE parent = nullptr, HANDLE ready = nullptr, HANDLE accepted = nullptr, Inkeys::Launch::Handoff* handoff = nullptr)
 		{
-			if (!token || (!!parent != !!ready) || (!!parent != !!accepted)) return false;
+			if (!token || (!!parent != !!ready) || (!!parent != !!accepted) || (handoff && !parent)) return false;
 
 			vector<wchar_t> buffer(param.begin(), param.end());
 			buffer.push_back(L'\0');
@@ -274,7 +279,17 @@ namespace UiAccess
 			if (ok)
 			{
 				IdtHandle process(pi.hProcess), thread(pi.hThread);
-				if (parent && !ResumeAfterParentExit(process.get(), thread.get(), parent, ready, accepted))
+				if (handoff)
+				{
+					// final只先运行Adopt预检并等待helper退出；验真Ready后才允许旧root退场。
+					if (!handoff->Publish(process.get()) || ResumeThread(thread.get()) == static_cast<DWORD>(-1)
+						|| !handoff->Wait(process.get()) || !ConfirmParentExit(parent, ready, accepted))
+					{
+						TerminateProcess(process.get(), ERROR_CANCELLED);
+						(void)WaitForSingleObject(process.get(), 1000); return false;
+					}
+				}
+				else if (parent && !ResumeAfterParentExit(process.get(), thread.get(), parent, ready, accepted))
 					return false;
 				wcout << L"已降权启动同目录下的 Inkeys.exe！\n";// system("pause");
 				return true;

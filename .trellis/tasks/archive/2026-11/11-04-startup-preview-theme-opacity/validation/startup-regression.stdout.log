@@ -1,0 +1,5 @@
+[StartupEffectEquivalence] theme=1 placement=0 scale=1 mismatched=3 maxRGBA=1 maxAlpha=0
+[StartupPreviewState] failed: assembled pixel surface exactly equals shimmer at the same local phase after the trail disappears
+[StartupEffectEquivalence] theme=1 placement=0 scale=1.5625 mismatched=1 maxRGBA=1 maxAlpha=0
+[StartupPreviewState] failed: assembled pixel surface exactly equals shimmer at the same local phase after the trail disappears
+[StartupPreviewOnly] failures=2

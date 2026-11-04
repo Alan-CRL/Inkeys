@@ -1,0 +1,22 @@
+{
+  ".trellis/spec/native-desktop/index.md": "f2025d0181102f36ba43b99d636dd2d229cd0190e334d210301736570d4ab7ed",
+  "Inkeys/IdtI18nKeys.g.h": "c709b68bd5fba711682adb59180b0df992b2e769ba61580efe4e5659bae5521d",
+  "Inkeys/IdtMain.cpp": "8656b28095389f309558d5c7bdea65462a4b67e8a66983d6b33fed9b5662f4ff",
+  "Inkeys/Inkeys.rc": "db9cb0f1ce565bb35f72e1943379ce3a3df56d9a1606264dac74ed302303791d",
+  "Inkeys/Inkeys/Helper/ShutdownSupervisor.cpp": "083833eeb36ad7fb73b36d7c311a6d8683c6c77e85cb5efa5713f98d5ca3a013",
+  "Inkeys/Inkeys/Other/Other.Config.cpp": "0f0a704e08c17b72919d9546c12498ce77d2a6f70d1e9a04aaa93a487cd0d4b9",
+  "Inkeys/Inkeys/Other/Other.Config.cppm": "f33d202dbc46f21479131ac93385578bd42cc096e5b119dad9534ac3d14fabc4",
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": "2a12ce9473a78fb1d0edf404a85e06fc3ca627865afa17d6ea6b5e908a5fc371",
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.h": "f92f665894e730ce13166273f8f27fcf8169637866f579b26a1171e713d10c51",
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": "dbe22c261ac7cf17b6c1534bc08206f2d04a1422ea6a938fb50a16e4bc9ba26f",
+  "Inkeys/SuperTop/IdtSuperTop.cpp": "1a5823508f806cd999ee418b8544c23f9a2761cb2148567ca4acb158208406bb",
+  "Inkeys/SuperTop/IdtToken.h": "0ff3cfae9a98887a4b46d6758e575b5e5a42c0a6f22e307179ed59e08e369787",
+  "Inkeys/src/i18n/en-US.jsonc": "21f1640dca645bef0e281cf9fdd0f7e9ef9cf41a82bbfd09eb1113c2fccd9695",
+  "Inkeys/src/i18n/zh-CN.jsonc": "87d8a78a81d3e6d2d50801b843ff588c3e8c78c0f4e9d263919a9db9ce218c27",
+  "Inkeys/src/i18n/zh-TW.jsonc": "5ac2422b22961ca1028ec73e4bcc391d4b37945f2f0b18a65e1b5971e8497f86",
+  "InkeysHeadlessTests/animation_tests.cpp": "af103faa4ea881645466dedf3b308fa6d7227be3b2be5fb4be07b39539151784",
+  "InkeysHeadlessTests/setting_design_tests.cpp": "ca18f39d4f8597ce621e0ba1edba711c74562e4b83b3c112709e045e698a5c04",
+  "Scripts/i18n.zh-CN.snapshot.jsonc": "87d8a78a81d3e6d2d50801b843ff588c3e8c78c0f4e9d263919a9db9ce218c27",
+  "Inkeys/Launch/IdtSingleInstance.h": "c078a832c8240de04c174f4106611ab72f9bc82a9441324d844ca4fb2e15d64b",
+  "Build/ARM64/Debug/Inkeys.exe": "9eef6da14440a3e5f87e82cfba523c63ecc5c105d9b471a204fca150fcbfc84a"
+}

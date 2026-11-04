@@ -1,0 +1,18 @@
+{
+  "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+  "arguments": [
+    "InkeysRepo.sln",
+    "/t:Build",
+    "/m:1",
+    "/p:Configuration=Debug",
+    "/p:Platform=ARM64",
+    "/nr:false",
+    "/nologo",
+    "/v:minimal",
+    "/p:OutDir=D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-startup-preview-theme-opacity\\validation\\bin\\"
+  ],
+  "startedUtc": "2026-11-04T04:17:02.6188275+00:00",
+  "endedUtc": "2026-11-04T04:17:34.5059832+00:00",
+  "exitCode": 0,
+  "timedOut": false
+}

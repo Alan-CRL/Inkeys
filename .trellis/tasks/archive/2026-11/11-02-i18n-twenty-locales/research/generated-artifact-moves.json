@@ -1,0 +1,52 @@
+[
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\fine-active.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\fine-active.png",
+    "sha256": "C3EF81F4AD6A60990001E65999000B0AFB59B7550D535A105107CE147B327E5E"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\fine-dark-result.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\fine-dark-result.png",
+    "sha256": "AE8EC6622C5A32AB5EFFE94992A2646286153E48D842AAD67B16616B4C9D0F23"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\fine-result.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\fine-result.png",
+    "sha256": "DB66A8880AFBB2E30F340C1C36D4E392DE830CCCD3F68FC477ECECEB588BC469"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\fine-start.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\fine-start.png",
+    "sha256": "A2CEF1260C2ED8BA715DB54C6F79BC4947C520C1B32D36E12E1B1D652A67A137"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\sweep-active.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\sweep-active.png",
+    "sha256": "4F54E7537DF00BCC90CA0AC71926DB3D9E25DC29796141B25E22A21C41FDC1D3"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\sweep-fixed-finished.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\sweep-fixed-finished.png",
+    "sha256": "90EC54492F6741A722FBDE1BAF744CCF6123A456FB406CB22A1C13BE0D5AC650"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\sweep-result.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\sweep-result.png",
+    "sha256": "90EC54492F6741A722FBDE1BAF744CCF6123A456FB406CB22A1C13BE0D5AC650"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\sweep-speed-finished.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\sweep-speed-finished.png",
+    "sha256": "65E009D7844A39379BD0380BFCB5093E17E947F0FB766E3025FD62EB94F78432"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\sweep-start.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\sweep-start.png",
+    "sha256": "F5C3E6F5BB7E9C88FDC5CDC647D27163066C2708A582C14D6F6451B427FC1384"
+  },
+  {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\.trellis\\tasks\\09-06-setting-winui3-design-rebuild\\research\\eraser-demo-visuals\\sweep-warmup.png",
+    "destination": "D:\\Project\\Inkeys\\Repo\\Inkeys-draw\\Build\\i18n-twenty-locales\\eraser-demo-visuals\\sweep-warmup.png",
+    "sha256": "AF919B64F618156247DDD8E882727FD8E78F52077F231E30EEEAF058122B4329"
+  }
+]

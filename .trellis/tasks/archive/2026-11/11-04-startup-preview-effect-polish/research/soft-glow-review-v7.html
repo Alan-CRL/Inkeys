@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>柔光流彩样式稿 v7</title>
+<style>
+:root{color-scheme:light dark;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+body{margin:0;padding:20px;background:light-dark(#f3f3f3,#1c1c1c);color:light-dark(#1a1a1a,#f2f2f2)}
+h1{font-size:18px;margin:0 0 6px}
+p{margin:0 0 12px;font-size:13px;color:light-dark(#555,#bbb);max-width:900px;line-height:1.6}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:12px}
+.controls label{display:grid;gap:4px;font-size:13px}
+select,button{font:inherit;padding:5px 10px;border-radius:5px;border:1px solid light-dark(#ccc,#555);background:light-dark(#fff,#2d2d2d);color:inherit;min-height:32px}
+input[type=range]{width:160px;accent-color:#00a99d}
+.stage{border-radius:8px;overflow:hidden;max-width:1024px}
+canvas{display:block;width:100%;aspect-ratio:1024/460}
+.status{font-size:12px;margin-top:6px;color:light-dark(#666,#aaa);font-variant-numeric:tabular-nums}
+ul{font-size:13px;line-height:1.7;max-width:900px;color:light-dark(#444,#ccc)}
+</style>
+</head>
+<body>
+<h1>柔光流彩深色对比 v7</h1>
+<p>上方为当前原生 v6（深色：暗底间隙 + 深饱和色块），下方为 v7（深色：与浅色相同的连续铺色，只是整体换成深梅紫底 + 更亮更艳的色块中心）。浅色两行算法相同，仅作对照。演示稿非原生 D2D 截图。</p>
+<div class="controls">
+  <label>主栏主题<select id="theme"><option value="dark">深色</option><option value="light">中性雾白</option></select></label>
+  <label>桌面<select id="wall"><option value="dark">深色壁纸</option><option value="light">浅色壁纸</option></select></label>
+  <label>播放速度 <span id="speedText">1.00×</span><input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"></label>
+  <label>显示进度条<select id="progress"><option value="1">显示</option><option value="0">隐藏</option></select></label>
+  <button id="pause">暂停</button>
+</div>
+<div class="stage"><canvas id="c"></canvas></div>
+<div class="status" id="status"></div>
+<ul>
+  <li><b>v6 深色</b>：不铺底色，覆盖度随色块强度变化，色块之间露出底板；高色块易形成竖向明暗柱。</li>
+  <li><b>v7 深色</b>：与浅色完全相同的连续铺色方式（低权重底色铺满、色块改变色相与明度），只把明度整体压低：色块间为深梅紫/暗玫瑰（L≈0.33，C≈0.11），色块中心升到更亮更艳的薰衣草玫瑰（L≈0.58，C≈0.18）；强度 0.8，镜面光 0.05。没有浅色参与，所以不会发灰。</li>
+  <li>色相锁定与浅色设计与 v6 相同。</li>
+</ul>
+<script>
+(() => {
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), $ = id => document.getElementById(id);
+const SW = 1024, SH = 460, BAR = { w: 560, h: 56, r: 8 }, SCALE = 4;
+BAR.x = (SW - BAR.w) / 2;
+const ROWS = [{ y: 120, label: 'v6 当前原生（暗底间隙）', mode: 'v6' }, { y: 270, label: 'v7 连续深色铺色', mode: 'v7' }];
+let clock = 0, last = performance.now(), paused = false, dpr = 1;
+
+function oklch(L, C, h) {
+  const hr = h * Math.PI / 180, A = C * Math.cos(hr), B = C * Math.sin(hr);
+  const l = (L + .3963377774 * A + .2158037573 * B) ** 3, m = (L - .1055613458 * A - .0638541728 * B) ** 3, s = (L - .0894841775 * A - 1.2914855480 * B) ** 3;
+  const enc = v => { v = Math.min(1, Math.max(0, v)); return v <= .0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - .055; };
+  return [enc(4.0767416621 * l - 3.3077115913 * m + .2309699292 * s), enc(-1.2684380046 * l + 2.6097574011 * m - .3413193965 * s), enc(-.0041960863 * l - .7034186147 * m + 1.7076147010 * s)];
+}
+function palette(dim, bright, c1, c2) {
+  const p = { dim: [], bright: [] };
+  for (let h = 0; h < 360; h++) { p.dim.push(oklch(dim, c1, h)); p.bright.push(oklch(bright, c2, h)); }
+  return p;
+}
+const PAL = {
+  v5dark: palette(.70, .78, .17, .17), v5light: palette(.77, .84, .16, .16),
+  v6dark: palette(.46, .60, .16, .19), v6light: palette(.77, .84, .16, .16),
+  v7dark: palette(.33, .58, .11, .18), v7light: palette(.77, .84, .16, .16)
+};
+const phases = [.7, 2.8, 4.9, 7.0, 9.1, 11.2, 13.3], speeds = [.23, .3114, .3928, .2542, .3356, .417, .2784];
+const offsets = [-62, 18, -24, 62, -4, 40, -44], heights = [1, 1.305, 1.11, 1.415, 1.22, 1.025, 1.33];
+function sample(row, hue) { hue = ((hue % 360) + 360) % 360; const a = Math.floor(hue) % 360, b = (a + 1) % 360, f = hue - Math.floor(hue); return [0, 1, 2].map(i => row[a][i] + (row[b][i] - row[a][i]) * f); }
+
+// 与原生 RainbowField 相同的色场；v6 收窄色相并在深色下输出逐像素透明度。
+function field(mode, light, t, w, h, image) {
+  const v6 = mode !== 'v5', pal = PAL[mode + (light ? 'light' : 'dark')];
+  const center = v6 ? 318 + 12 * Math.sin(t * .13) : 255 + 70 * Math.sin(t * .13);
+  const spread = v6 ? .35 : 1, wobble = v6 ? 5 : 10, baseSpan = v6 ? 14 : 40;
+  const blobs = phases.map((ph, i) => ({
+    x: .5 + .5 * Math.sin(ph + t * speeds[i]), y: .5 + .55 * Math.sin(ph * 1.7 + t * (speeds[i] + .11)),
+    rx: .16 + .05 * Math.sin(t * .7 + ph), ry: .9 * heights[i], hue: center + offsets[i] * spread + wobble * Math.sin(t * .5 + ph)
+  }));
+  const dark = mode === 'v6' && !light, d = image.data;
+  for (let y = 0; y < h; y++) {
+    const v = (y + .5) * SCALE / BAR.h;
+    for (let x = 0; x < w; x++) {
+      const u = (x + .5) * SCALE / BAR.w;
+      let weight = dark ? 0 : .08, hue = dark ? 0 : (center - baseSpan + 2 * baseSpan * u) * .08, peak = 0, sum = 0;
+      for (const b of blobs) {
+        const dx = (u - b.x) / b.rx, dy = (v - b.y) / b.ry, wt = Math.exp(-(dx * dx + dy * dy) * 2.2);
+        weight += wt; hue += wt * b.hue; peak = Math.max(peak, wt); sum += wt;
+      }
+      if (weight < 1e-6) { hue = center; weight = 1; }
+      hue /= weight;
+      const a = sample(pal.dim, hue), c = sample(pal.bright, hue), k = (x + y * w) * 4;
+      // 深色：覆盖度随色块强度变化，色块之间透出深色底板。
+      const alpha = dark ? 1 - Math.exp(-1.7 * sum) : 1;
+      for (let i = 0; i < 3; i++) d[k + i] = Math.round(255 * Math.min(1, Math.max(0, a[i] + (c[i] - a[i]) * peak)));
+      d[k + 3] = Math.round(255 * alpha);
+    }
+  }
+}
+
+const low = document.createElement('canvas'), lctx = low.getContext('2d');
+low.width = Math.ceil(BAR.w / SCALE); low.height = Math.ceil(BAR.h / SCALE);
+const image = lctx.createImageData(low.width, low.height);
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function shimmer(y, light, t, alpha) {
+  const p = (t % 4) / 4, e = p < .7 ? (1 - Math.cos(Math.PI * p / .7)) / 2 : 1, cx = BAR.x - 160 + (BAR.w + 320) * e;
+  const g = ctx.createLinearGradient(cx - 60, y - 60, cx + 60, y + BAR.h + 60), col = light ? '255,255,255' : '255,255,255';
+  g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(.5, `rgba(${col},${(light ? .9 : .2) * alpha})`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.fillStyle = g; ctx.fillRect(BAR.x, y, BAR.w, BAR.h);
+}
+function drawBar(row, light, t) {
+  const op = light ? .92 : .8, y = row.y;
+  field(row.mode, light, t, low.width, low.height, image); lctx.putImageData(image, 0, 0);
+  ctx.save(); rr(BAR.x, y, BAR.w, BAR.h, BAR.r); ctx.clip();
+  ctx.globalAlpha = op; ctx.fillStyle = light ? '#fbfbfb' : '#181818'; ctx.fillRect(BAR.x, y, BAR.w, BAR.h);
+  const v6dark = row.mode !== 'v5' && !light;
+  ctx.globalAlpha = op * (light ? .46 : v6dark ? .8 : .45);
+  ctx.imageSmoothingEnabled = true; ctx.filter = 'blur(4px)';
+  ctx.drawImage(low, BAR.x, y, low.width * SCALE, low.height * SCALE); ctx.filter = 'none';
+  const gx = BAR.x + BAR.w * (.5 + .42 * Math.sin(t * .31)), gl = ctx.createRadialGradient(gx, y, 0, gx, y, BAR.w * .22);
+  gl.addColorStop(0, `rgba(255,255,255,${light ? .35 : v6dark ? .05 : .10})`); gl.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = op; ctx.fillStyle = gl; ctx.fillRect(BAR.x, y, BAR.w, BAR.h);
+  shimmer(y, light, t, .45);
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = op; rr(BAR.x + .5, y + .5, BAR.w - 1, BAR.h - 1, BAR.r);
+  ctx.strokeStyle = light ? 'rgba(139,139,139,.55)' : 'rgba(255,255,255,.225)'; ctx.stroke(); ctx.restore();
+  if ($('progress').value === '1') {
+    const pw = 192, px = BAR.x + (BAR.w - pw) / 2, cy = y + BAR.h / 2, ratio = (t % 6) / 6;
+    ctx.fillStyle = light ? 'rgba(26,26,26,.22)' : 'rgba(255,255,255,.24)'; ctx.fillRect(px, cy - .5, pw, 1);
+    ctx.fillStyle = light ? '#006a63' : '#61ccff'; rr(px, cy - 1.5, pw * ratio, 3, 1.5); ctx.fill();
+  }
+  ctx.fillStyle = $('wall').value === 'light' ? '#333' : '#ddd'; ctx.font = '14px "Microsoft YaHei"';
+  ctx.fillText(row.label, BAR.x, y - 12);
+}
+function frame(now) {
+  if (!paused) clock += (now - last) / 1000 * +$('speed').value; last = now;
+  const light = $('theme').value === 'light', wallLight = $('wall').value === 'light';
+  ctx.setTransform(canvas.width / SW, 0, 0, canvas.width / SW, 0, 0);
+  const g = ctx.createLinearGradient(0, 0, SW, SH);
+  if (wallLight) { g.addColorStop(0, '#d9e4ee'); g.addColorStop(1, '#eef0e6'); } else { g.addColorStop(0, '#1d2633'); g.addColorStop(1, '#2b2233'); }
+  ctx.fillStyle = g; ctx.fillRect(0, 0, SW, SH);
+  for (const row of ROWS) drawBar(row, light, clock);
+  $('status').textContent = `t = ${clock.toFixed(1)}s · v6 色相中心 ${(318 + 12 * Math.sin(clock * .13)).toFixed(0)}°`;
+  requestAnimationFrame(frame);
+}
+function size() { const r = canvas.getBoundingClientRect(); dpr = Math.min(devicePixelRatio || 1, 2); canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.width * SH / SW * dpr); }
+addEventListener('resize', size); size();
+$('speed').oninput = () => { $('speedText').textContent = (+$('speed').value).toFixed(2) + '×'; };
+$('pause').onclick = () => { paused = !paused; $('pause').textContent = paused ? '继续' : '暂停'; };
+window.seek = t => { clock = t; paused = true; $('pause').textContent = '继续'; };
+requestAnimationFrame(t => { last = t; frame(t); });
+})();
+</script>
+</body>
+</html>

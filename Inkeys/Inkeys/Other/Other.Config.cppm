@@ -2,6 +2,7 @@ module;
 
 #include "../../IdtMain.h"
 #include "../../IdtConfiguration.h"
+#include "../UI/StartupPreview.Effect.h"
 
 #include <cstdint>
 #include <initializer_list>
@@ -19,6 +20,39 @@ import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys
 {
+	inline constexpr int ThemeModeDark = 1;
+	inline constexpr int ThemeModeLight = 2;
+
+	// 主题配置只接受 1/2；旧配置缺失或异常值统一回退深色。
+	constexpr int NormalizeThemeMode(int themeMode) noexcept
+	{
+		return themeMode == ThemeModeLight ? ThemeModeLight : ThemeModeDark;
+	}
+
+	constexpr bool ThemeModeUsesDarkStyle(int themeMode) noexcept
+	{
+		return NormalizeThemeMode(themeMode) == ThemeModeDark;
+	}
+
+	// 常驻表面透明度（百分比）：背景 0 表示跟随主题默认值，其余与内容透明度均限制在 30~100。
+	inline constexpr int ResidentOpacityMinimumPercent = 30;
+	inline constexpr int ResidentOpacityMaximumPercent = 100;
+	inline constexpr int ResidentBackgroundOpacityThemeDefault = 0;
+	inline constexpr int ResidentContentOpacityDefault = 100;
+
+	constexpr int NormalizeResidentBackgroundOpacity(int percent) noexcept
+	{
+		if (percent == ResidentBackgroundOpacityThemeDefault) return percent;
+		if (percent < ResidentOpacityMinimumPercent) return ResidentOpacityMinimumPercent;
+		return percent > ResidentOpacityMaximumPercent ? ResidentOpacityMaximumPercent : percent;
+	}
+
+	constexpr int NormalizeResidentContentOpacity(int percent) noexcept
+	{
+		if (percent < ResidentOpacityMinimumPercent) return ResidentOpacityMinimumPercent;
+		return percent > ResidentOpacityMaximumPercent ? ResidentOpacityMaximumPercent : percent;
+	}
+
 	enum class ConfigUploadMode
 	{
 		NoUpload,
@@ -337,6 +371,7 @@ namespace Inkeys::ConfigDetail
 #define INKEYS_CONFIG_SCHEMA(GROUP, X, H) \
 	GROUP(Config, \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoClean, false) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowMultipleInstances, false) \
 	) \
 	GROUP(Info, \
 		H(true, true, "id", std::wstring, UserId, &::userId) \
@@ -348,6 +383,7 @@ namespace Inkeys::ConfigDetail
 		H(true, true, "ch", std::string, UpdateChannel, ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex)) \
 	) \
 GROUP(UI, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 60) \
 			GROUP(Bar, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom2, 1.0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, UseTaskbarHeightAsScaleBase, ConfigDetail::GetDefaultLargeScreenDevice() ? 1 : 0) \
@@ -366,6 +402,20 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Application, \
+		GROUP(Shortcut, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, NamePreset, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", std::wstring, CustomName, L"") \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CorrectLnk, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CreateLnk, false) \
+		) \
+		GROUP(WhiteboardShortcut, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, NamePreset, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", std::wstring, CustomName, L"") \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CorrectLnk, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CreateLnk, false) \
+		) \
+	) \
 	GROUP(Input, \
 		GROUP(Shortcuts, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ToggleAnnotation, true) \
@@ -377,6 +427,14 @@ GROUP(UI, \
 		) \
 	) \
 	GROUP(Drawing, \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 120) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, true) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTailCorrectionEnabled, true) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InkPredictionMode, 2) \
+		GROUP(Laser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParticlesEnabled, false) \
+		) \
 		GROUP(Whiteboard, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<WhiteboardThemePreference>, DefaultTheme, WhiteboardThemePreference{}) \
 		) \
@@ -387,6 +445,12 @@ GROUP(UI, \
 		GROUP(Cursor, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseStyle, 0) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenStyle, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Mouse, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Touch, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ScreenPen, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Tablet, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InjectedMouseAsTablet, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, DotHideOnContact, 1) \
 		) \
 		GROUP(Eraser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
@@ -399,6 +463,21 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTail, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTipResponse, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTailResponse, -1) \
+		) \
+		GROUP(PalmEraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, ConfigDetail::GetDefaultLargeScreenDevice()) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThresholdPercent, 100) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RecognitionWindowMs, 150) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParallelWriting, true) \
+			GROUP(Tools, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, HardPen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Highlighter, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Laser, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Eraser, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Shape, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Brush, true) \
+			) \
 		) \
 	) \
 	GROUP(Experimental, \
@@ -418,9 +497,11 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
 			) \
 			GROUP(UI3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThemeMode, ThemeModeDark) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BackgroundOpacity, ResidentBackgroundOpacityThemeDefault) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ContentOpacity, ResidentContentOpacityDefault) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowFractionalFontSize, false) \
 				GROUP(StartupPreview, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Effect, static_cast<int>(::Inkeys::UI::StartupPreviewEffect::Shimmer)) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \
 				) \
 				GROUP(Debug, \
@@ -443,6 +524,10 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOver, false) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOverOnce, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOverExpand, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IdleFadeSeconds, 10) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeBottomPair, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMiddlePair, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMainBar, false) \
 			GROUP(Tentative, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnablePageButtonLongPress, false) \
 			) \
@@ -477,9 +562,14 @@ namespace Inkeys
 		Inkeys::Config& operator=(const Inkeys::Config& other);
 
 		bool ReadAll();
-		bool ReadMini(std::initializer_list<std::string_view> paths);
+		// 启动准入可只读所选偏好，禁止兼容布局迁移写盘。
+		bool ReadMini(std::initializer_list<std::string_view> paths, bool readOnly = false);
 		bool Write();
 		bool SetWhiteboardThemeDefault(std::uint32_t backgroundRgb, std::uint32_t pattern) noexcept;
+		std::pair<int, std::wstring> GetShortcutNamePreference() const;
+		bool SetShortcutNamePreference(int preset, std::wstring customName);
+		std::pair<int, std::wstring> GetWhiteboardShortcutNamePreference() const;
+		bool SetWhiteboardShortcutNamePreference(int preset, std::wstring customName);
 		std::string GetUploadInfo();
 		std::wstring GetFilePath() const;
 		void ResetToDefaults();
@@ -508,7 +598,7 @@ namespace Inkeys
 			#undef INKEYS_CONFIG_TRAVERSE_H_VALUE
 		}
 
-bool ReadImpl(const std::vector<std::string>& paths);
+bool ReadImpl(const std::vector<std::string>& paths, bool readOnly = false);
 			void ApplyDefaults(const std::vector<std::string>& paths);
 			void ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths, bool includeWriteOnly = false);
 			void OverlayDocument(Json::Value& root);

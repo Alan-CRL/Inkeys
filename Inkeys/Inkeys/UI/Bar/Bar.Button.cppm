@@ -110,7 +110,7 @@ public:
 			? 9.0 : standardFontSize;
 	}
 	// 图标和文字只在内容实际变化时启动同一套缩放、淡出与回弹过程。
-	bool TransitionContent(const wstring& iconResourceName, const wstring& label);
+	bool TransitionContent(const wstring& iconResourceName, const wstring& label, bool immediateLabel = false);
 
 public:
 	// 基准元数据由注册/Load更新；运行时有效值只由统一主栏投影提交。
@@ -267,6 +267,7 @@ bool RegisterButton(
 		BarMoreButtonSnapshotClass GetMoreButtonSnapshot() const;
 		BarButtonClass* GetMoreButton() const { return moreButton.get(); }
 		void PresetInitialization();
+		void RefreshLocalizedText();
 		void RegisterBuiltInComponents();
 		void StateUpdate();
 		void StateUpdate(const StateModeClass& stateMode);
@@ -280,11 +281,11 @@ bool RegisterButton(
 		void ResetIconCaches();
 
 	protected:
-		void UpdateDrawButtonStyle(const StateModeClass& stateMode);
-		void UpdateWhiteboardButtonStyle(bool active, bool minimized);
-		void ApplyMainPresentationLocked(const StateModeClass& stateMode);
-		void UpdateEraserButtonStyle(const StateModeClass& stateMode);
-		void UpdateGeometryButtonStyle(const StateModeClass& stateMode);
+		void UpdateDrawButtonStyle(const StateModeClass& stateMode, bool immediateLabel = false);
+		void UpdateWhiteboardButtonStyle(bool active, bool minimized, bool immediateLabel = false);
+		void ApplyMainPresentationLocked(const StateModeClass& stateMode, bool immediateLabel = false);
+		void UpdateEraserButtonStyle(const StateModeClass& stateMode, bool immediateLabel = false);
+		void UpdateGeometryButtonStyle(const StateModeClass& stateMode, bool immediateLabel = false);
 		void PresetHoming(const StateModeClass& stateMode);
 		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtonSizeEnum size);
 		static BarButtonSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);

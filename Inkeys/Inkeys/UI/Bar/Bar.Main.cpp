@@ -36,6 +36,7 @@ import <ranges>;
 import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
+import Inkeys.Other.Config;
 
 // Interaction 实现单元独占窗口消息状态；协调器仅通过窄接口读取或投递。
 bool ReadColorPickerEntryPressed();
@@ -330,6 +331,7 @@ namespace Inkeys::UI::Bar
 		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
 		if (!enable) RequestBarBorderCursorSuspend();
 		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 
 	void SetEdgeLightingOptions(bool enable, bool dynamic)
@@ -339,6 +341,27 @@ namespace Inkeys::UI::Bar
 		// 关闭任一级动态光门禁时，统一交给 Bar 窗口线程注销 Raw Input。
 		if (!enable || !dynamic) RequestBarBorderCursorSuspend();
 		barUISet.UpdateRendering(false);
+	}
+
+	void SetThemeMode(int themeMode) noexcept
+	{
+		const bool darkStyle = Inkeys::ThemeModeUsesDarkStyle(themeMode);
+		// 设置线程只发布主题目标，实际材质动画仍由串行渲染线程推进。
+		if (barUISet.barStyle.requestedDarkStyle.exchange(
+			darkStyle, std::memory_order_acq_rel) != darkStyle)
+			barUISet.UpdateRendering(false);
+	}
+
+	void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept
+	{
+		const bool backgroundChanged = barUISet.barStyle.requestedBackgroundOpacity.exchange(
+			backgroundPercent, std::memory_order_acq_rel) != backgroundPercent;
+		const bool contentChanged = barUISet.barStyle.requestedContentOpacity.exchange(
+			contentPercent, std::memory_order_acq_rel) != contentPercent;
+		if (!backgroundChanged && !contentChanged) return;
+		// 主栏帧首应用目标值；分页表面复用同一份已应用值，需要单独唤醒。
+		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 
 	void SetDebugOptions(bool enable, bool showFrameRate)

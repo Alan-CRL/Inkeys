@@ -4,6 +4,7 @@
 #include "Setting.HomeBrand.h"
 #include "Setting.SessionState.h"
 #include "Setting.EraserDemo.h"
+#include "../../Business/DesktopShortcut.h"
 
 struct ImGuiWindow;
 
@@ -14,7 +15,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		Home = 0, Language = 1, Build = 2, Configuration = 3, General = 4,
 		Draw = 5, Plugins = 8, Components = 9,
-		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14, Feedback = 15,
+		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14, Feedback = 15, Performance = 16, Linkage = 17,
 	};
 
 	struct NavigationDestination
@@ -80,7 +81,7 @@ namespace Inkeys::UI::Setting::Design
 	// 入场时间只在这一处定义；准备字体/首帧提交的等待不占用书写时长。
 	struct HomeEntryTiming
 	{
-		static constexpr float Wait = .24F, Writing = 1.06F, Hold = .60F, Dock = .54F, Settle = .22F;
+		static constexpr float Wait = .14F, Writing = .90F, Hold = .32F, Dock = .44F, Settle = .18F;
 		static constexpr float WritingEnd = Wait + Writing, DockStart = WritingEnd + Hold;
 		static constexpr float SettleStart = DockStart + Dock, Total = SettleStart + Settle;
 	};
@@ -107,6 +108,8 @@ namespace Inkeys::UI::Setting::Design
 		Entry entry = Entry::Idle;
 		bool home = false, enabled = true, pointerAllowed = true, brandVisible = false, heroVisible = false;
 		bool viewportReady = false;
+		bool fadeOnly = false; // 详情入口只原地渐隐，不向主页横幅归位。
+		[[nodiscard]] float EntryTotal() const noexcept { return fadeOnly ? HomeEntryTiming::WritingEnd + HomeEntryTiming::Dock : HomeEntryTiming::Total; }
 		bool entryLayoutValidated = false;
 		std::array<float,17> entryLayoutKey{};
 		float delta = 0, x = 0, y = 0, entryElapsed = 0;
@@ -127,15 +130,25 @@ namespace Inkeys::UI::Setting::Design
 		[[nodiscard]] bool EntryActive() const noexcept { return entry==Entry::Playing; }
 	};
 
+	// 遮盖层完全淡去后才恢复可选标题栏操作，准备帧也不能提前泄露入口。
+	[[nodiscard]] inline bool HomeEntryChromeVisible(const HomeMotionState& state) noexcept
+	{
+		return state.entry != HomeMotionState::Entry::Pending
+			&& (!state.EntryActive() || state.entryElapsed >= (state.fadeOnly
+				? HomeEntryTiming::WritingEnd + HomeEntryTiming::Dock : HomeEntryTiming::SettleStart));
+	}
+
 	inline void FinishHomeEntry(HomeMotionState& state) noexcept
 	{
 		state.entry=HomeMotionState::Entry::Finished; state.x=state.y=0;
 	}
 	// 仅真实 Hide→Show 序号触发；内部返回主页和普通激活不能重播。
 	inline void ConfigureHomeMotion(HomeMotionState& state, bool home, std::uint64_t showSerial,
-		float delta, bool enabled, float rate, bool pointerAllowed = true, bool entryAllowed = true) noexcept
+		float delta, bool enabled, float rate, bool pointerAllowed = true, bool entryAllowed = true, bool fadeOnly = false) noexcept
 	{
 		const bool enter=state.showSerial!=showSerial;
+		state.fadeOnly=fadeOnly;
+		home |= fadeOnly;
 		state.home=home; state.showSerial=showSerial; state.enabled=enabled; state.pointerAllowed=pointerAllowed;
 		state.delta=enabled && std::isfinite(delta) && std::isfinite(rate)
 			? std::clamp(delta,0.0F,.05F)*std::clamp(rate,.1F,5.0F) : 0;
@@ -159,6 +172,8 @@ namespace Inkeys::UI::Setting::Design
 	HomeEntryPose ResolveHomeEntryPose(const HomeMotionState& state);
 	void ConfigureHomeEntryViewport(HomeMotionState& state, ImVec4 clientContent, ImVec4 contentClip);
 	void RenderHomeEntryOverlay(const HomeMotionState& state);
+	// 开屏遮罩当前颜色（主题 AppBase RGB，alpha 为遮罩不透明度）；未播放时 alpha 为 0。
+	[[nodiscard]] ImU32 HomeEntryMaskColor(const HomeMotionState& state);
 	bool CanOmitHomeEntryRootBackground(const HomeMotionState& state, bool solidBackdrop,
 		float styleAlpha, ImVec4 windowBackground) noexcept;
 	HomeEntryFrameKey MakeHomeEntryFrameKey(ImVec4 contentBounds, float gutter, std::uint64_t epoch,
@@ -182,33 +197,25 @@ namespace Inkeys::UI::Setting::Design
 	{
 		enum class Action { None, Home, SpeedEraser };
 		std::uint64_t consumed = 0, showSerial = 0, hideSerial = 0;
-		bool pending = false;
+		bool fadeOnly = false;
 
 		Action Consume(const SettingOpenRequest& request, bool visible,
 			std::uint64_t currentShow, std::uint64_t currentHide, bool entryAllowed) noexcept
 		{
-			if (!visible || showSerial != currentShow || hideSerial != currentHide) pending = false;
+			if (!visible || showSerial != currentShow || hideSerial != currentHide) fadeOnly = false;
 			if (request.serial == consumed) return Action::None;
-			consumed = request.serial; pending = false;
+			consumed = request.serial; fadeOnly = false;
 			if (!visible || request.showSerial != currentShow || request.hideSerial != currentHide
 				|| request.target != SettingOpenTarget::SpeedEraser) return Action::None;
 			showSerial = currentShow; hideSerial = currentHide;
-			pending = request.opening && entryAllowed;
-			return pending ? Action::Home : Action::SpeedEraser;
-		}
-
-		bool Complete(const HomeMotionState& motion, bool home) noexcept
-		{
-			if (!home) pending = false;
-			if (!pending || motion.showSerial != showSerial || motion.EntryActive()
-				|| motion.entry == HomeMotionState::Entry::Pending) return false;
-			// 完成、尺寸跳过或输入取消均只交接一次，不重播或补偿首次机会。
-			pending = false;
-			return true;
+			// 首帧就选中目标页，开屏只覆盖其上，不再等待主页动画后跳转。
+			fadeOnly = request.opening && entryAllowed;
+			return Action::SpeedEraser;
 		}
 	};
 
-	enum class DrawingSubpage : int { Overview, SpeedEraser };
+	enum class DrawingSubpage : int { Overview, SpeedEraser, PalmEraser, Cursor };
+	DrawingSubpage RenderDrawingEraserEntries(DrawingSubpage current);
 
 	inline void NavigateDrawingSubpage(NavigationState& navigation, DrawingSubpage& current,
 		DrawingSubpage requested) noexcept
@@ -240,6 +247,69 @@ namespace Inkeys::UI::Setting::Design
 	};
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter = {});
 
+	struct PalmEraserDraft
+	{
+		bool enabled = false;
+		int recognitionWindowMs = 150, thresholdPercent = 100;
+		bool parallelWriting = true;
+		// 每帧只读的多指偏好，只控制说明提示，不写回手掌设置。
+		bool multiTouchEnabled = true, laserMultiTouchEnabled = true;
+		std::array<bool, 7> tools{ true, true, true, true, true, true, true };
+		// 来自绘制输出已应用标尺的 100% 面积；页面本帧调倍率即可同步预览。
+		double referenceAreaPixels = 0, referenceAreaCm2 = 0;
+		bool previewEstimated = false, physicalSizeWarning = false;
+	};
+	struct PalmEraserEvents
+	{
+		bool back = false, enabledChanged = false, recognitionWindowChanged = false;
+		bool thresholdChanged = false, thresholdReset = false, parallelWritingChanged = false;
+		std::array<bool, 7> toolsChanged{};
+	};
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
+	// 光标专页草稿：四个设备各自的下拉项索引（触摸首项为“无光标”，其余设备首项为“鼠标”）。
+	struct CursorPageDraft
+	{
+		int mouse = 0, touch = 0, screenPen = 0, tablet = 0;
+		int dotHideOnContact = 1;
+		bool injectedMouse = false;
+		bool injectedAvailable = true;
+	};
+	struct CursorPageEvents
+	{
+		bool back = false;
+		bool mouse = false, touch = false, screenPen = false, tablet = false;
+		bool injectedMouse = false, dotHideOnContact = false;
+	};
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
+
+	struct PptIdleFadeDraft
+	{
+		bool bottomPair = true, middlePair = true, mainBar = false;
+		int timeoutIndex = 2;
+	};
+	struct PptIdleFadeEvents
+	{
+		bool bottomPair = false, middlePair = false, mainBar = false, timeout = false;
+	};
+	PptIdleFadeEvents RenderPptIdleFadeRow(PptIdleFadeDraft& draft, const std::vector<std::string>& items);
+
+	struct DesktopShortcutDraft
+	{
+		Business::DesktopShortcut::NameOptions names;
+		int preset = Business::DesktopShortcut::Default;
+		std::string customName;
+		std::wstring lastValidName;
+		std::size_t directoryLength = 0;
+		bool desktopAvailable = true;
+		bool correct = true, create = false;
+		BelowComboMotion namePopup;
+		DesktopShortcutDraft() = default;
+		explicit DesktopShortcutDraft(Business::DesktopShortcut::Kind kind) : names(kind) {}
+	};
+	std::wstring ResolveDesktopShortcutDraftName(const DesktopShortcutDraft& draft);
+	bool DesktopShortcutDraftNamesCollide(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
+	bool IsDesktopShortcutDraftValid(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
+
 	struct GeneralDraft
 	{
 		bool startup;
@@ -260,26 +330,44 @@ namespace Inkeys::UI::Setting::Design
 		std::string shortcutGlobalStatus, shortcutHookStatus;
 		bool shortcutStatusWarning = false;
 		int settingEntryAnimation = 1;
+		bool allowMultipleInstances = false;
+		int themeMode = 0; // 0=深色，1=浅色；配置值映射在 Setting.cpp 完成。
+		int settingThemeMode = 1; // 设置窗口自身配色，选项顺序与主栏主题一致：0=深色，1=浅色。
+		// 常驻透明度为绝对值（0.30~1.00）；背景默认值随主栏主题变化，供显示与重置。
+		float backgroundOpacity = 0.80F, backgroundOpacityDefault = 0.80F;
+		float contentOpacity = 1.0F;
+		DesktopShortcutDraft desktopShortcut;
+		DesktopShortcutDraft whiteboardShortcut{ Business::DesktopShortcut::Kind::Whiteboard };
+		int startupEffect = 0;
 	};
 
 	struct GeneralEvents
 	{
 		bool startupChanged = false;
 		bool createShortcut = false;
-		bool shortcutOptions = false;
+		bool desktopNamePresetChanged = false, desktopNameCommitted = false;
+		bool desktopCorrectChanged = false, desktopCreateChanged = false;
+		bool createWhiteboardShortcut = false;
+		bool whiteboardNamePresetChanged = false, whiteboardNameCommitted = false;
+		bool whiteboardCorrectChanged = false, whiteboardCreateChanged = false;
 		bool barZoomChanged = false;
 		bool barZoomActive = false;
 		bool edgeLightingChanged = false;
 		bool topIntervalChanged = false;
 		bool rightClickCloseChanged = false;
 		bool safetyModeChanged = false;
+		bool allowMultipleInstancesChanged = false;
 		bool startupPreviewChanged = false;
+		bool startupEffectChanged = false;
 		bool settingEntryAnimationChanged = false;
 		bool animationChanged = false;
-		bool animationRateActive = false;
 		bool dynamicEdgeLightingChanged = false;
 		bool startupPlacementChanged = false;
 		bool taskbarScaleBaseChanged = false;
+		bool themeModeChanged = false;
+		bool settingThemeModeChanged = false;
+		bool backgroundOpacityChanged = false, backgroundOpacityActive = false, backgroundOpacityReset = false;
+		bool contentOpacityChanged = false, contentOpacityActive = false;
 		bool selectModeChanged = false, iconOrderChanged = false, expansionDirectionChanged = false;
 		std::array<bool, 4> autoCollapseChanged{};
 		std::array<bool, 6> shortcutsChanged{};
@@ -299,8 +387,9 @@ namespace Inkeys::UI::Setting::Design
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha);
 	HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
 	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section = GeneralSection::Basic);
+	// translucentBackdrop 取调用方本帧 backdrop 快照，与根清屏/标题栏/正文同源。
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
-		NavigationState& state, NavigationDestination selected);
+		NavigationState& state, NavigationDestination selected, bool translucentBackdrop = false);
 	// >=0 是 PageId；-1 无事件，-2 社区，-3 重启，-4 退出。
 	int RenderNavigationPane(const ShellGeometry& geometry,
 		NavigationState& state, int selectedPage);

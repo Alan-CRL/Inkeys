@@ -4,6 +4,7 @@ import Inkeys.Helper.CrashHandler;
 #define NOMINMAX
 #endif
 #include "ShutdownSupervisor.h"
+#include "../../../Launch/IdtSingleInstance.h"
 #include "FailedCleanupDeadline.h"
 #include "FailedCleanupRealCases.h"
 
@@ -445,9 +446,14 @@ namespace Inkeys::Shutdown
 									if (InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeBytes))
 									{
 										attributes.initialized = true;
-										HANDLE inherited[] = { parent.value, childAcknowledge.value };
-										if (UpdateProcThreadAttribute(startup.lpAttributeList, 0,
-											PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
+										// 重启监督器连续持有原实例占位；测试隔离分支不接触产品目录。
+										const bool relayLease = intent != Intent::Close && Launch::presence.Get();
+										Handle childLease;
+										const bool leaseReady = !relayLease || DuplicateHandle(GetCurrentProcess(), Launch::presence.Get(),
+											GetCurrentProcess(), &childLease.value, SYNCHRONIZE, TRUE, 0);
+										HANDLE inherited[] = { parent.value, childAcknowledge.value, childLease.value };
+										if (leaseReady && UpdateProcThreadAttribute(startup.lpAttributeList, 0,
+											PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(HANDLE) * (relayLease ? 3 : 2), nullptr, nullptr))
 										{
 											std::wstring arguments = std::wstring(kSupervisorMode)
 												+ L" " + std::to_wstring(GetCurrentProcessId()
@@ -457,6 +463,9 @@ namespace Inkeys::Shutdown
 												+ L" " + std::to_wstring(deadline)
 												+ (intent == Intent::CrashRestart ? L" X"
 													: (intent == Intent::Restart ? L" R" : L" C"));
+											if (relayLease)
+												arguments += L" --instance-lease=" + std::to_wstring(reinterpret_cast<uintptr_t>(childLease.value))
+													+ L" " + Quote(Launch::logicalRoot);
 											if (testDirectory) arguments += L" " + Quote(testDirectory);
 											if (simulateEarlyExitForTest) arguments += L" --test-ack-exit";
 											if (simulateLateDeathForTest) arguments += L" --test-delayed-parent-exit";
@@ -511,7 +520,7 @@ namespace Inkeys::Shutdown
 
 		[[nodiscard]] int RunSupervisorChild(int argc, wchar_t* const argv[])
 		{
-			if (argc != 7 && argc != 8 && argc != 9) return 21;
+			if (argc != 7 && argc != 8 && argc != 9 && argc != 10) return 21;
 			unsigned long long pidValue = 0, parentValue = 0, acknowledgeValue = 0, deadlineValue = 0;
 			if (!ParseUnsigned(argv[2], pidValue) || pidValue == 0 || pidValue > MAXDWORD
 				|| !ParseUnsigned(argv[3], parentValue) || parentValue == 0
@@ -521,12 +530,15 @@ namespace Inkeys::Shutdown
 				|| !ParseUnsigned(argv[5], deadlineValue) || deadlineValue == 0
 				|| (wcscmp(argv[6], L"C") != 0 && wcscmp(argv[6], L"R") != 0
 					&& wcscmp(argv[6], L"X") != 0)) return 22;
-			const std::wstring testDirectory = argc >= 8 ? argv[7] : L"";
+			constexpr wchar_t leasePrefix[] = L"--instance-lease=";
+			const bool relayLease = argc >= 9 && wcsncmp(argv[7], leasePrefix, ARRAYSIZE(leasePrefix) - 1) == 0;
+			const std::wstring testDirectory = relayLease ? (argc == 10 ? argv[9] : L"") : (argc >= 8 ? argv[7] : L"");
+			if (argc == 10 && !relayLease) return 23;
 			if (!testDirectory.empty() && !IsTestDirectory(testDirectory)) return 23;
-			if (argc == 9 && (testDirectory.empty()
+			if (argc == 9 && !relayLease && (testDirectory.empty()
 				|| (wcscmp(argv[8], L"--test-ack-exit") != 0
 					&& wcscmp(argv[8], L"--test-delayed-parent-exit") != 0))) return 23;
-			const bool delayedParentExitTest = argc == 9
+			const bool delayedParentExitTest = argc == 9 && !relayLease
 				&& wcscmp(argv[8], L"--test-delayed-parent-exit") == 0;
 			const ULONGLONG now = GetTickCount64();
 			if (deadlineValue > now && deadlineValue - now > 60000) return 22;
@@ -541,8 +553,21 @@ namespace Inkeys::Shutdown
 			std::wstring ownImage, parentImage;
 			if (!CurrentImagePath(ownImage) || !ProcessImagePath(parent, parentImage)
 				|| !SameExecutableFile(ownImage, parentImage)) return 25;
+			if (relayLease)
+			{
+				unsigned long long leaseValue = 0;
+				if (wcscmp(argv[6], L"C") == 0 || !ParseUnsigned(argv[7] + ARRAYSIZE(leasePrefix) - 1, leaseValue)
+					|| !leaseValue || leaseValue > std::numeric_limits<uintptr_t>::max()) return 24;
+				const HANDLE lease = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(leaseValue));
+				DWORD leaseFlags = 0;
+				const std::wstring root = argv[8];
+				if (!GetHandleInformation(lease, &leaseFlags) || !(leaseFlags & HANDLE_FLAG_INHERIT)
+					|| !Launch::WithinRoot(ownImage, root) || !Launch::WithinRoot(parentImage, root)
+					|| !Launch::IsPresence(lease, Launch::PresenceName(root))) return 24;
+				Launch::presence.Reset(lease); Launch::logicalRoot = root;
+			}
 			if (!SetEvent(acknowledge)) return 26;
-			if (argc == 9 && !delayedParentExitTest)
+			if (argc == 9 && !relayLease && !delayedParentExitTest)
 				{ Sleep(500); return 31; } // 仅测试：握手后 supervisor 自己提前退出。
 			const ULONGLONG waitStart = GetTickCount64();
 			const DWORD waitMilliseconds = deadlineValue <= waitStart ? 0 :
@@ -577,10 +602,21 @@ namespace Inkeys::Shutdown
 					+ L" " + std::to_wstring(static_cast<DWORD>(pidValue));
 				if (crashRestart) arguments += L" -CrashTry";
 			}
+			// 合法替换接力已有占位；即使关闭多开后还有别的实例，也不会误拦这一份重启。
+			Launch::Handoff handoff;
+			if (relayLease && !handoff.Valid()) return 30;
+			if (relayLease) arguments += L" " + handoff.Arguments();
 			PROCESS_INFORMATION restarted{};
-			if (!StartSameExecutable(ownImage, arguments, false, 0, nullptr, restarted)) return 30;
-			CloseHandle(restarted.hThread);
-			CloseHandle(restarted.hProcess);
+			if (!StartSameExecutable(ownImage, arguments, false, relayLease ? CREATE_SUSPENDED : 0, nullptr, restarted)) return 30;
+			Handle restartedProcess(restarted.hProcess), restartedThread(restarted.hThread);
+			if (relayLease && (!handoff.Publish(restartedProcess.value)
+				|| ResumeThread(restartedThread.value) == static_cast<DWORD>(-1)
+				|| !handoff.Wait(restartedProcess.value)))
+			{
+				TerminateProcess(restartedProcess.value, ERROR_CANCELLED);
+				(void)WaitForSingleObject(restartedProcess.value, kDeathWaitMilliseconds);
+				return 30;
+			}
 			return 0;
 		}
 
@@ -640,6 +676,12 @@ namespace Inkeys::Shutdown
 		{
 			if (argc != 4 || !IsTestDirectory(argv[3])) return 41;
 			const wchar_t* scenario = argv[2];
+			if (EqualNoCase(scenario, L"restart-lease"))
+			{
+				std::wstring image;
+				if (!CurrentImagePath(image) || !IsTestDirectory(ImageDirectory(image))
+					|| Launch::Acquire(ImageDirectory(image), true) != Launch::Admission::Accepted) return 47;
+			}
 			if (EqualNoCase(scenario, L"manual-pending-close"))
 			{
 				LONG intentSlot = 0;
@@ -664,7 +706,7 @@ namespace Inkeys::Shutdown
 			bool natural = false;
 			bool duplicate = false;
 			if (EqualNoCase(scenario, L"close-natural")) natural = true;
-			else if (EqualNoCase(scenario, L"restart-natural")) { intent = Intent::Restart; natural = true; }
+			else if (EqualNoCase(scenario, L"restart-natural") || EqualNoCase(scenario, L"restart-lease")) { intent = Intent::Restart; natural = true; }
 			else if (EqualNoCase(scenario, L"crash-natural")) { intent = Intent::CrashRestart; natural = true; }
 			else if (EqualNoCase(scenario, L"close-hung15")) {}
 			else if (EqualNoCase(scenario, L"restart-hung-short")) { intent = Intent::Restart; deadline = 3000; }
@@ -711,9 +753,15 @@ namespace Inkeys::Shutdown
 		[[nodiscard]] int RunTestRestarted(int argc, wchar_t* const argv[])
 		{
 			unsigned long long oldPid = 0;
-			if ((argc != 4 && argc != 5) || !IsTestDirectory(argv[2])
+			if ((argc != 4 && argc != 5 && argc != 6) || !IsTestDirectory(argv[2])
 				|| !ParseUnsigned(argv[3], oldPid) || oldPid == 0 || oldPid > MAXDWORD)
 				return 51;
+			// 接力fixture同样运行生产验真与Ready/父退出握手，不进入产品GUI。
+			const bool handoff = argc > 4 && wcsncmp(argv[argc-1], Launch::HandoffPrefix,
+				ARRAYSIZE(Launch::HandoffPrefix)-1) == 0;
+			if (!handoff && argc == 6) return 51;
+			if (handoff && Launch::Adopt() != 1) return 54;
+			if (handoff) --argc;
 			// 测试子进程把 helper 真正选出的启动参数写入 marker。
 			const int argumentKind = argc == 4 ? 1
 				: (wcscmp(argv[4], L"-CrashTry") == 0 ? 2 : 0);
@@ -810,10 +858,14 @@ namespace Inkeys::Shutdown
 		{
 			std::wstring directory;
 			if (!MakeTestDirectory(scenario, directory)) return false;
+			const bool leaseCase = EqualNoCase(scenario, L"restart-lease");
+			const std::wstring copiedImage = directory + L"\\Inkeys.exe";
+			if (leaseCase && !CopyFileW(image.c_str(), copiedImage.c_str(), TRUE))
+			{ RemoveTestDirectory(directory, 0); return false; }
 			const std::wstring arguments = std::wstring(kTestParentMode) + L" " + scenario
 				+ L" " + Quote(directory);
 			PROCESS_INFORMATION process{};
-			if (!StartSameExecutable(image, arguments, false, CREATE_NO_WINDOW, nullptr, process))
+			if (!StartSameExecutable(leaseCase ? copiedImage : image, arguments, false, CREATE_NO_WINDOW, nullptr, process))
 			{
 				RemoveTestDirectory(directory, 0);
 				return false;
@@ -839,6 +891,10 @@ namespace Inkeys::Shutdown
 			bool passed = first == static_cast<DWORD>(fallbackArm ? ArmResult::FallbackArmed : ArmResult::Armed)
 				&& second == static_cast<DWORD>(EqualNoCase(scenario, L"duplicate")
 					? ArmResult::AlreadyArmed : ArmResult::Armed);
+			// 另一份允许模式实例仍持presence时，合法替换也必须完成。
+			Handle otherInstance(leaseCase ? OpenMutexW(SYNCHRONIZE, FALSE,
+				(L"Local\\" + Launch::PresenceName(directory)).c_str()) : nullptr);
+			if (leaseCase && !otherInstance.Valid()) passed = false;
 			const ULONGLONG armedObserved = GetTickCount64();
 			const DWORD wait = WaitForSingleObject(child.value,
 				deadline + (EqualNoCase(scenario, L"late-death-restart") ? 10000 : 5000));
@@ -885,6 +941,7 @@ namespace Inkeys::Shutdown
 				passed = passed && restartCount == 0;
 			}
 			PrintCaseObservation(process.dwProcessId, exitCode, elapsed, restartCount);
+			if (leaseCase) DeleteFileW(copiedImage.c_str());
 			RemoveTestDirectory(directory, process.dwProcessId);
 			return passed;
 		}
@@ -2509,6 +2566,7 @@ namespace Inkeys::Shutdown
 				passed = passed && outcome;
 			};
 			check("natural-close", RunProcessCase(image, L"close-natural", 15000, true, false));
+			check("restart-continuous-lease", RunProcessCase(image, L"restart-lease", 15000, true, true));
 			check("natural-restart", RunProcessCase(image, L"restart-natural", 15000, true, true));
 			check("crash-restart-natural", RunProcessCase(image, L"crash-natural", 15000, true, true));
 			check("forced-restart", RunProcessCase(image, L"restart-hung-short", 3000, false, true));
@@ -2788,6 +2846,11 @@ namespace Inkeys::Shutdown
 				{
 					if (argc == 2) exitCode = RunNoGuiTests();
 					else if (argc == 3 && EqualNoCase(argv[2], L"--failed-arm-only")) exitCode = RunNoGuiTests(true);
+					else if (argc == 3 && EqualNoCase(argv[2], L"--instance-lease-only"))
+					{
+						std::wstring image;
+						exitCode = CurrentImagePath(image) && RunProcessCase(image, L"restart-lease", 15000, true, true) ? 0 : 62;
+					}
 					else if (argc == 3 && EqualNoCase(argv[2], L"--startup-failure-only")) exitCode = RunStartupFailureTests();
 					else if (argc == 4 && EqualNoCase(argv[2], L"--startup-failure-only")
 						&& ParseStartupFailureSite(argv[3]) != StartupFailureSite::None)

@@ -9,10 +9,13 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <memory>
+#include <vector>
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
 #include "Bar.InteractionWorker.h"
+#include "../../Input/UiTouchRouting.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../StartupPlacement.h"
 #include "Bar.PresentationProbe.h"
@@ -86,6 +89,7 @@ class BarRenderLoopCoordinator;
 
 class BarEraserAttributePanel
 {
+	friend class BarUISetClass; // 仅 render owner 在候选命中事务中读取当前 frame_。
 public:
 	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
 		RECT workArea, POINT origin, double rigidX, double rigidY,
@@ -103,6 +107,7 @@ public:
 	Inkeys::UI::Bar::EraserAttributePresentation PresentationSnapshot() const;
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
+	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible() || menuMotion_.Visible(); }
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
@@ -145,6 +150,7 @@ private:
 // 撤回属性：单 70x70 Redo 按钮，开合/换边/命中语义与橡皮属性一致，无子菜单。
 class BarRecallAttributePanel
 {
+	friend class BarUISetClass; // 与橡皮面板使用同一成功呈现边界。
 public:
 	bool Advance(BarUISetClass& owner, const Inkeys::UI::Bar::RecallChromeView& chrome,
 		bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
@@ -162,6 +168,7 @@ public:
 	Inkeys::UI::Bar::RecallAttributePresentation PresentationSnapshot() const;
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
+	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible(); }
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	void Initialize();
@@ -416,6 +423,7 @@ enum class BarUISetSuperellipseEnum : int
 enum class BarUISetSvgEnum : int
 {
 	logo1,
+	// 着色层已并入 logo1 外观；保留序号供 UI3 SVG 诊断探针稳定映射，不再创建对象。
 	logoInk,
 	MorePanelClose,
 
@@ -573,6 +581,7 @@ struct BarBottomDockPresentedSnapshot
 // UI 总集
 export class BarUISetClass
 {
+	friend int Inkeys::UI::Bar::RunSharedInteractionWorkerTests() noexcept;
 public:
 	BarUISetClass() : spec(this) {};
 
@@ -616,6 +625,7 @@ public:
 		double layoutXDip, double layoutYDip) const;
 	bool HitTestPresentedShape(const BarUiSuperellipseClass& shape,
 		double layoutXDip, double layoutYDip) const;
+	Inkeys::Input::UiPointer::Touch::Probe ProbeTouchScreen(POINT screen) const;
 
 	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
 	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
@@ -1002,17 +1012,34 @@ public:
 	}
 
 protected:
-	void PreparePresentedButtonHits();
+	void PreparePresentedButtonHits(const StateModeClass& stateMode);
 	void PublishPresentedButtonHits();
 	mutable std::mutex presentedButtonHitsMutex_;
 	std::unordered_map<const BarButtonClass*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedButtonHits_, candidateButtonHits_;
 	std::unordered_map<const void*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedVisualHits_, candidateVisualHits_;
+	enum class TouchRegionSpace { Rigid, Body, Grip };
+	struct PresentedTouchRegion
+	{
+		Inkeys::UI::Bar::BarButtonHitSnapshot geometry;
+		TouchRegionSpace space = TouchRegionSpace::Rigid;
+		Inkeys::Input::UiPointer::Touch::Hit disposition = Inkeys::Input::UiPointer::Touch::Hit::Miss;
+	};
+	struct PresentedTouchRegions
+	{
+		std::vector<PresentedTouchRegion> regions;
+		std::uint64_t semantic = 0;
+	};
+	// 只在成功 commit 时交换不可变小值快照；native probe 不读动画或控件对象。
+	std::shared_ptr<const PresentedTouchRegions> presentedTouchRegions_, candidateTouchRegions_;
+	double presentedTouchRebaseXDip_ = 0.0, presentedTouchRebaseYDip_ = 0.0;
 	void BeginBottomDockTransition() noexcept
 	{
 		Inkeys::UI::Bar::BeginBarBottomDockTransition(bottomDockTransitionSerial);
 	}
 	unsigned long long FinishBottomDockTransition(bool deferWindowMove = false) noexcept
 	{
+		// 全部输入/显示/工作区写者共用此屏障，稳定偶数发布前退休旧位图的原生直移。
+		if (deferWindowMove) CancelNativeDirectWindowMove(true);
 		return Inkeys::UI::Bar::FinishBarBottomDockTransition(
 			bottomDockTransitionSerial, bottomDockDeferredTransitionSerial, deferWindowMove);
 	}
@@ -1083,6 +1110,7 @@ protected:
 				}
 			};
 			shiftHits(presentedButtonHits_); shiftHits(presentedVisualHits_);
+			presentedTouchRebaseXDip_ += dx; presentedTouchRebaseYDip_ += dy;
 		}
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
@@ -1136,6 +1164,24 @@ protected:
 	atomic<LONG> directWindowPresentedTranslationY = 0;
 	RECT committedWindowScreenBounds{};
 	bool committedWindowScreenBoundsReady = false;
+	std::uint64_t committedWindowPresentationRevision = 0;
+	HWND committedWindowHandle = nullptr;
+	std::uint64_t committedWindowGeneration = 0;
+	struct NativeDirectMove
+	{
+		HWND hwnd = nullptr;
+		std::uint64_t generation = 0, frameSerial = 0, session = 0, transitionSerial = 0, presentationRevision = 0;
+		RECT bounds{};
+		POINT translation{};
+	} nativeDirectMove;
+	atomic<std::uint64_t> nativeDirectMoveRevision = 0;
+	std::uint64_t nativeDirectMoveSerial = 0;
+	// 载荷沿既有几何锁发布；窗口原生执行和回滚由同一个 Service owner 持有。
+	bool RequestNativeDirectWindowMoveLocked(POINT translation, unsigned long long transitionSerial,
+		std::uint64_t leasedPresentationRevision = 0) noexcept;
+	bool ConsumeNativeDirectWindowMoveLocked(std::uint64_t presentationRevision) noexcept;
+	void CancelNativeDirectWindowMove(bool preserveCompleted = false) noexcept;
+	void PollNativeDirectWindowMove() noexcept;
 	Inkeys::Display::Subscription displaySubscription;
 	atomic<unsigned long long> pendingDisplaySerial = 0;
 	mutex pendingDisplayPublishMutex;
@@ -1255,12 +1301,15 @@ namespace Inkeys::UI::Bar
 	};
 
 	export WNDPROC WindowProc() noexcept;
+	export void RegisterNativeTouchInput(HWND window);
 	export std::function<Inkeys::UI::RenderPipeline::FrameResult(
 		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
 		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
 	export int RunUi3MultiTargetOffscreenBenchmark();
 	export int RunUi3WorkspaceCenteringTest();
 	export int RunUi3BottomDockTransitionTest();
+	export int RunBarNativeDirectMoveTests(const std::function<bool()>& gateOwner,
+		const std::function<void()>& releaseOwner);
 	bool RunUi3BottomDockInteractionSequence(BarUISetClass& owner,
 		const std::function<bool(const char*, POINT)>& render,
 		double downNormalizedY,
@@ -1270,7 +1319,9 @@ namespace Inkeys::UI::Bar
 		bool expandAfterClick = false);
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
+	export int RunBarTouchProbeProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
+	export int RunKeyboardShortcutWhiteboardProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization(Inkeys::UI::StartupPlacement startupPlacement =
@@ -1281,12 +1332,23 @@ namespace Inkeys::UI::Bar
 	export PresentationAlphaDiagnostics SnapshotPresentationAlphaDiagnostics() noexcept;
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
+	export void SetThemeMode(int themeMode) noexcept;
+	// 背景百分比 0 表示跟随主题默认；调用方负责先按配置规则归一。
+	export void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
 	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
 	export void RefreshToolState() noexcept;
+	export struct PptIdleInputSnapshot
+	{
+		std::chrono::steady_clock::time_point activity{};
+		bool hovered = false, pressed = false;
+	};
+	export PptIdleInputSnapshot SnapshotPptIdleInput() noexcept;
+	export void ResetPptIdleInput() noexcept;
+	export void PublishPptIdleDeadline(std::chrono::steady_clock::time_point) noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
 	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;

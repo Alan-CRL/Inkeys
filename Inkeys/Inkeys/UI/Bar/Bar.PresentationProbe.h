@@ -388,13 +388,37 @@ namespace Inkeys::UI::Bar
 		Ui3SvgScopeState state_;
 		Ui3SvgScopeState* previous_ = nullptr;
 	};
+	inline constexpr std::size_t Ui3SvgStageCount = static_cast<std::size_t>(Ui3SvgStage::Draw) + 1;
+	struct Ui3SvgStageTimings
+	{
+		std::array<std::uint64_t, Ui3SvgStageCount> calls{};
+		std::array<double, Ui3SvgStageCount> elapsedMs{};
+		std::uint64_t clockReads = 0;
+	};
+	using Ui3SvgTimingClock = std::int64_t (*)() noexcept;
+	// 独立于SVG验真：只由当前owner写固定数值，不改变观察/缓存/绘制路径。
+	class SvgStageTimingScope
+	{
+	public:
+		explicit SvgStageTimingScope(Ui3SvgStageTimings*, Ui3SvgTimingClock = nullptr) noexcept;
+		~SvgStageTimingScope();
+		SvgStageTimingScope(const SvgStageTimingScope&) = delete;
+		SvgStageTimingScope& operator=(const SvgStageTimingScope&) = delete;
+	private:
+		Ui3SvgStageTimings* previous_ = nullptr;
+		Ui3SvgTimingClock previousClock_ = nullptr;
+	};
 	class Ui3SvgStageTimer
 	{
 	public:
 		explicit Ui3SvgStageTimer(Ui3SvgStage) noexcept;
 		~Ui3SvgStageTimer();
 	private:
+		[[nodiscard]] std::int64_t ReadTicks() noexcept;
 		Ui3SvgProbe* probe_ = nullptr;
+		Ui3SvgStageTimings* timings_ = nullptr;
+		Ui3SvgTimingClock readTicks_ = nullptr;
+		std::size_t stage_ = 0;
 		double* elapsed_ = nullptr;
 		std::int64_t started_ = 0;
 	};

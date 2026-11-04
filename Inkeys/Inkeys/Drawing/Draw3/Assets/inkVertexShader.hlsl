@@ -74,7 +74,7 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
-    if ((type >= 4 && type <= 6) || type == 21)
+    if ((type >= 4 && type <= 6) || type == 21 || type == 22)
     {
         InkPoint cursor = InkData[globalBufferOffset];
         InkPoint style = InkData[globalBufferOffset + 1];

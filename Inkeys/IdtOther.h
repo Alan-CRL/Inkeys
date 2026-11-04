@@ -10,7 +10,7 @@ bool checkIsNetwork();
 bool isValidString(const wstring& str);
 bool isAsciiPrintable(const wstring& input);
 
-bool isProcessRunning(const std::wstring& processPath);
+bool isProcessRunning(const std::wstring& processPath, DWORD ignoredProcessId = 0);
 int ProcessRunningCnt(const std::wstring& processPath);
 
 bool SetStartupState(bool bAutoRun, wstring path, const wstring& nameclass);

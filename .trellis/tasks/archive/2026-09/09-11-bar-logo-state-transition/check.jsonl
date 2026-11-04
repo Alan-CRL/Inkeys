@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "UI3 scope"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Encoding, state ownership and Chinese comments"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Full ARM64 Solution and PptCOM"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing animation and pen source helpers"}
+{"file": ".trellis/tasks/archive/2026-09/09-11-bar-logo-state-transition/research/baseline.md", "reason": "Baseline and superseded previous requirements"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "Updated one-SVG/default-state contract for this correction"}

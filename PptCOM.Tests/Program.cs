@@ -37,7 +37,9 @@ namespace PptCOM.Tests
         public string FailureStage;
         public Exception Failure;
         public Action<string> AfterAcquire;
+        public Action<string> BeforeAccess;
         public readonly List<string> Invoked = new List<string>();
+        public readonly List<string> Operations = new List<string>();
         public readonly Dictionary<string, int> Acquired = new Dictionary<string, int>();
         public readonly Dictionary<string, int> Released = new Dictionary<string, int>();
         public readonly List<string> ReleaseOrder = new List<string>();
@@ -45,6 +47,8 @@ namespace PptCOM.Tests
 
         private void ThrowIfRequested(string stage)
         {
+            Operations.Add(stage);
+            if (BeforeAccess != null) BeforeAccess(stage);
             if (FailureStage == stage) throw Failure;
         }
 

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 Host、输入、独立设备和跨线程所有权"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置归属、既有键兼容和国际化"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "界面30/60统一节拍和设置控件边界"}
+{"file": ".trellis/tasks/archive/2026-11/10-31-settings-performance-drawing-diagnostics/research/settings-and-frame-rates.md", "reason": "最新界面/画布两套帧率与迁移证据"}
+{"file": ".trellis/tasks/archive/2026-11/10-31-settings-performance-drawing-diagnostics/research/draw3-controls-and-canvas-info.md", "reason": "Draw3现有能力、准入风险和初始化数据来源"}
+{"file": ".trellis/tasks/archive/2026-11/10-31-settings-performance-drawing-diagnostics/research/general-drawing-options.md", "reason": "通用三项、现有预测/完成态修正及每笔锁存证据"}
+{"file": ".trellis/spec/native/terminal-tail-reconstruction.md", "reason": "抬笔修正必须遵循现行Adaptive完成态合同，不误读阶段2历史"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "本次实现的配置、生效边界与初始化信息合同"}

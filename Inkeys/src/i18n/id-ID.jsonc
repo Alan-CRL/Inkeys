@@ -1,0 +1,1173 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "id-ID",
+  "Widget":
+  {
+    "LnkName": "Inkeys (Alat Anotasi Layar)"
+  },
+  "Operate":
+  {
+    "Reset": "Atur ulang",
+    "Repair": "Perbaiki",
+    "Copy": "Salin",
+    "Create": "Buat"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "Pilih",
+      "SelectClean": "Pilih (Hapus)",
+      "Pen": "Pena",
+      "Eraser": "Penghapus",
+      "Options": "Opsi"
+    },
+    "Pen":
+    {
+      "Pen": "Pena",
+      "Highlighter": "Penyorot",
+      "Thinkness": "Te\nbal",
+      "Write": "Tulis",
+      "Line": "Garis",
+      "Square": "Persegi panjang"
+    },
+    "Operate":
+    {
+      "Revoke": "Urungkan",
+      "Recall": "Pulihkan",
+      "Freeze": "Bekukan",
+      "Pierce": "Tembus klik"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "Mode bilah bawah",
+        "Centered": "Tengah"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "Hapus",
+        "ClearCanvasHint": "Hapus anotasi pada kanvas ini",
+        "AutomaticLabel": "Ukuran otomatis",
+        "SensitivityLabel": "Kepekaan",
+        "LowLabel": "Rendah",
+        "MediumLabel": "Sedang",
+        "HighLabel": "Tinggi",
+        "SmallSize": "Kecil",
+        "MediumSize": "Sedang",
+        "LargeSize": "Besar",
+        "BaseSizeHint": "Ukuran dasar saat ukuran otomatis aktif",
+        "MixedHint": "Pengaturan perangkat berbeda\nKlik untuk mengaktifkan ukuran otomatis pada semua perangkat",
+        "SettingsHint": "Pengaturan ukuran otomatis belum tersedia"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "Pilih",
+        "SelectClearLabel": "Pilih\n(Hapus)",
+        "ClickThroughLabel": "Tembus\nklik",
+        "MoveLabel": "Geser",
+        "DrawLabel": "Gambar",
+        "LaserLabel": "Laser",
+        "HighlighterLabel": "Sorot",
+        "HardPenLabel": "Pena Keras",
+        "SoftPenLabel": "Pena Lunak",
+        "EraserLabel": "Hapus",
+        "AreaEraserLabel": "Hapus Area",
+        "GeometryLabel": "Bentuk",
+        "RectangleLabel": "Persegi pjg.",
+        "StraightLineLabel": "Garis",
+        "UndoLabel": "Urung",
+        "RedoLabel": "Ulangi",
+        "ClearLabel": "Bersihkan",
+        "WhiteboardWindowTitle": "Papan Tulis Inkeys",
+        "WhiteboardPreviousLabel": "Sebelum",
+        "WhiteboardNextLabel": "Berikut",
+        "WhiteboardAddPageLabel": "Tambah",
+        "WhiteboardLabel": "Papan",
+        "ResumeWhiteboardLabel": "Ke papan",
+        "CloseWhiteboardLabel": "Tutup",
+        "ReturnToShowLabel": "Ke tayangan",
+        "MinimizeWhiteboardLabel": "Minimalkan papan tulis",
+        "WhiteboardThemeLabel": "Tema",
+        "WhiteboardBackgroundColorLabel": "Warna latar",
+        "WhiteboardBackgroundStyleLabel": "Pola latar",
+        "WhiteboardBlankLabel": "Kosong",
+        "WhiteboardDotsLabel": "Titik",
+        "WhiteboardGridLabel": "Kisi",
+        "WhiteboardUnsavedLabel": "Beberapa halaman belum disimpan",
+        "FreezeLabel": "Beku",
+        "EndPresentationLabel": "Akhiri",
+        "SettingsLabel": "Setelan",
+        "MoreLabel": "Lainnya"
+      },
+      "Components":
+      {
+        "ExplorerLabel": "Berkas",
+        "TaskManagerLabel": "Tugas",
+        "ControlPanelLabel": "Kontrol",
+        "ShowDesktopLabel": "Desktop",
+        "LockScreenLabel": "Kunci",
+        "EscapeLabel": "Esc",
+        "RollCallLabel": "Acak Nama",
+        "ClassIslandSettingsLabel": "Setelan CI",
+        "ClassIslandProfileLabel": "Profil",
+        "ClassIslandSwapLabel": "Ganti Kelas"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "Kuas",
+        "LaserLabel": "Pena Laser",
+        "HighlighterLabel": "Penyorot",
+        "HardPenLabel": "Pena Keras",
+        "SoftPenLabel": "Pena Lunak",
+        "FreeLineLabel": "Bebas",
+        "AnnotationLineLabel": "Garis Anotasi",
+        "HoldThicknessLabel": "Tahan untuk mengunci ketebalan",
+        "ThicknessFormat": "Tebal {}",
+        "AnnotationUnavailableTitle": "Garis anotasi belum tersedia",
+        "AnnotationFixedUnsupportedTitle": "Garis anotasi dengan ketebalan tetap belum didukung",
+        "AnnotationDescription": "Batasi arah gambar ke horizontal, vertikal, atau diagonal 45°",
+        "ThicknessOverflowTitle": "Ketebalan tinta melebihi area pratinjau",
+        "ThicknessOverflowBody": "Ketebalan pada pratinjau mungkin berbeda dari goresan sebenarnya."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "Garis",
+        "RectangleLabel": "Psg. pjg."
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "Opasitas",
+        "HoldColorLabel": "Tahan untuk mengunci warna"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "FPS: {:.2f} | Tanpa batas: {:.2f}",
+        "FrameRateUnavailable": "FPS: -- | Tanpa batas: --"
+      },
+      "CanvasRecovery":
+      {
+        "Conflict": "Konflik",
+        "ReadFailed": "Baca",
+        "PresentFailed": "Tampil",
+        "Failed": "Galat",
+        "Recovering": "Memulihkan",
+        "Loading": "Muat",
+        "Retry": "Coba lagi",
+        "Wait": "Tunggu",
+        "RetryCanvas": "Coba ulang kanvas",
+        "ProtectedHint": "Urutan atau identitas dokumen berubah. Tinta yang ada dilindungi. Kembalikan dokumen ke keadaan semula, lalu coba lagi.",
+        "RecoveryHint": "Pemulihan kanvas belum selesai. Mencoba lagi tidak akan melewati perlindungan tinta."
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys tidak dapat menampilkan latar transparan dengan benar.\n\nKlik kanan Inkeys.exe, buka Properti → Kompatibilitas, lalu nonaktifkan Mode warna yang dikurangi.\nPada Windows 7, aktifkan tema Aero.\n\nMulai ulang Inkeys lalu coba lagi.\nJika masalah berlanjut, hubungi pengembang dari beranda Setelan."
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "WorkspaceTransitionFailure":
+    {
+      "Whiteboard": "Peralihan jendela papan tulis belum selesai. Percobaan ulang otomatis dihentikan. Klik lagi tombol papan tulis pada bilah utama untuk membatalkan peralihan, atau coba lagi dari halaman Menggambar di Setelan.",
+      "Return": "Keluar dari papan tulis belum selesai. Percobaan ulang otomatis dihentikan. Klik lagi tombol papan tulis pada bilah utama untuk kembali ke papan tulis, atau coba lagi dari halaman Menggambar di Setelan.",
+      "Primary": "Peralihan antara ruang kerja desktop dan presentasi belum selesai. Percobaan ulang otomatis dihentikan. Coba lagi dari halaman Menggambar di Setelan."
+    },
+    "Common":
+    {
+      "TipsTitle": "Info Inkeys",
+      "ErrorTitle": "Galat Inkeys",
+      "OK": "OK",
+      "Cancel": "Batal",
+      "Yes": "Ya",
+      "No": "Tidak"
+    },
+    "EndPresentation":
+    {
+      "Body": "Akhiri tayangan slide saat ini?"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys berhenti secara tak terduga karena jendela program gagal dibuat atau diblokir. Mulai ulang Inkeys lalu coba lagi. (#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "Modul pembaruan otomatis belum aktif, menandakan versi ini bukan rilis resmi.\nBuka Versi Perangkat Lunak lalu pilih Perbaiki Perangkat Lunak."
+    },
+    "CloseInkeys":
+    {
+      "Body": "Tutup Inkeys?"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys mengalami masalah. Pilih OK untuk memulai ulang dan mencoba memulihkan Inkeys."
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "Opsi Inkeys",
+    "Design":
+    {
+      "NavigationTitle": "Setelan",
+      "SwitchToDark": "Ganti ke tema gelap",
+      "SwitchToLight": "Ganti ke tema terang",
+      "Preferences": "Preferensi",
+      "RecommendedSuffix": " (Disarankan)",
+      "SupportGroup": "Dukungan dan pemeliharaan",
+      "Experimental": "Opsi eksperimental",
+      "HomeWelcome": "Selamat datang di Inkeys3",
+      "HeroTitle": "Tinta mengalir. Gerakan memukau.",
+      "HeroJoin": " ",
+      "HeroDescription": "Anotasi layar yang nyaman digunakan dan indah dipandang.",
+      "HomeCopyright": "Copyright © 2023-2026 AlanCRL (Chen Runlin / Chen Yunlam) Studio",
+      "HomeLicensePrefix": "Program ini dilisensikan berdasarkan ",
+      "HomeLicenseSuffix": ".",
+      "HomeRedistribution": "Berdasarkan ketentuan GPLv3, siapa pun boleh melihat, mengubah, dan mendistribusikan ulang kode proyek ini.",
+      "HomeOpenSourceTitle": "Sumber terbuka dan gratis, dibuat untuk Anda",
+      "HomeRepositoryPrefix": "Kode Inkeys dihosting di ",
+      "HomeRepositoryJoin": " dan ",
+      "HomeRepositorySuffix": ".",
+      "HomeStarAction": "Beri Star di GitHub",
+      "HomeSponsorAction": "Dukung Inkeys",
+      "HomeLicenseName": "GNU General Public License v3.0",
+      "HomeGitHubName": "GitHub",
+      "HomeGitCodeName": "GitCode",
+      "DrawAction": "Sesuaikan pengalaman menulis",
+      "Tutorial": "Panduan awal",
+      "Explore": "Setelan yang disarankan",
+      "DrawDescription": "Opsi tinta dan penghapus",
+      "AppearanceDescription": "Animasi, pencahayaan, dan skala bilah utama",
+      "PresetDescription": "Pena favorit, siap digunakan",
+      "PluginDescription": "Hubungkan alat presentasi dan kelas",
+      "CommonSettings": "Setelan umum",
+      "GeneralDescription": "Mode operasi, susunan bilah, dan cara memulai",
+      "ShortcutsDescription": "Pintasan tindakan global dan penyuntingan anotasi",
+      "DisplayLanguage": "Bahasa tampilan",
+      "Improve": "Bantu sempurnakan Inkeys",
+      "Contact": "Hubungi pengembang",
+      "TermsOfUse": "Ketentuan penggunaan",
+      "Website": "Situs web",
+      "StartupSection": "Mulai",
+      "AppearanceSection": "Tampilan",
+      "BehaviorSection": "Perilaku",
+      "CompatibilitySection": "Kompatibilitas",
+      "GeneralBasic": "Dasar",
+      "GeneralAppearance": "Tampilan dan animasi",
+      "GeneralInteraction": "Perilaku dan keamanan",
+      "GeneralStorage": "Penyimpanan dan konfigurasi",
+      "OperationModeSection": "Mode operasi",
+      "IconArrangementSection": "Susunan ikon",
+      "AnimationSection": "Animasi",
+      "LightingSection": "Pencahayaan",
+      "ScalingSection": "Skala",
+      "ThemeSection": "Tema",
+      "OpacitySection": "Opasitas",
+      "WindowBehaviorSection": "Perilaku jendela",
+      "SafetyRecoverySection": "Keamanan dan pemulihan",
+      "ShortcutGlobalSection": "Tindakan global",
+      "ShortcutEditingSection": "Penyuntingan anotasi",
+      "ShortcutAuxiliarySection": "Tindakan tambahan",
+      "GeneralSubtitle": "Cara memulai, ukuran antarmuka, dan preferensi sehari-hari.",
+      "EdgeLighting": "Aktifkan pencahayaan tepi",
+      "EdgeLightingDescription": "Saat nonaktif, hanya bingkai dasar yang ditampilkan tanpa efek cahaya titik atau lembut.",
+      "TopWindowSummary": "Seberapa sering Inkeys mengembalikan jendela ke paling atas saat tidak menggambar.",
+      "TopWindowDetails": "Detail",
+      "AvoidFullscreenSummary": "Perlu mulai ulang. Hindari layar penuh saat tidak menggambar atau dalam mode tembus klik.",
+      "AvoidFullscreenDetails": "Catatan penggunaan",
+      "Enabled": "Aktif",
+      "Disabled": "Nonaktif",
+      "ClickToCopy": "Klik untuk menyalin",
+      "Copied": "Tersalin",
+      "RestartRequired": "Mulai ulang Inkeys untuk menerapkan.",
+      "NextStartupRequired": "Perubahan berlaku saat Inkeys dimulai berikutnya."
+    },
+    "Home":
+    {
+      "N": "Beranda",
+      "Prompt": "Ini adalah versi pratinjau Inkeys 3 dan tidak mencerminkan kualitas akhir.",
+      "Developer": "Pengembang Pendiri Inkeys",
+      "Group": "GitHub Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Kanal Bilibili",
+      "FeedBack": "Masalah / Saran"
+    },
+    "Feedback":
+    {
+      "N": "Umpan balik",
+      "Description": "Laporkan masalah atau sampaikan saran untuk menyempurnakan Inkeys.",
+      "Issues":
+      {
+        "N": "GitHub Issues",
+        "E": "Laporkan masalah atau saran melalui GitHub agar dapat dibahas dan ditindaklanjuti secara terbuka."
+      },
+      "Questionnaire":
+      {
+        "N": "Kuesioner umpan balik",
+        "E": "Laporkan masalah atau saran melalui kuesioner umpan balik."
+      },
+      "Qr":
+      {
+        "N": "Pindai untuk memberi masukan",
+        "E": "Pindai kode QR untuk melaporkan masalah atau saran melalui kuesioner."
+      },
+      "ContactSection": "Komunitas dan kontak pengembang",
+      "CommunityDescription": "Bahas masalah atau saran bersama komunitas di GitHub Discussions.",
+      "ContactDescription": "Kirim masalah atau saran kepada pengembang melalui email.",
+      "AuthorQQ": "QQ Pengembang"
+    },
+    "Language":
+    {
+      "N": "Bahasa",
+      "UI":
+      {
+        "N": "Bahasa antarmuka",
+        "Select": "Pilih bahasa",
+        "SelectE": "Bahasa yang digunakan pada antarmuka.",
+        "Language":
+        {
+          "en-US": "English · en-US · Beta",
+          "zh-CN": "简体中文 · zh-CN",
+          "zh-TW": "繁體中文（台灣） · zh-TW · Beta"
+        },
+        "Warn": "Perubahan bahasa langsung berlaku. Inkeys tidak perlu dimulai ulang.",
+        "SelectNote": "Langsung berlaku. Tidak perlu mulai ulang."
+      }
+    },
+    "Configuration":
+    {
+      "N": "Konfigurasi dan penyimpanan",
+      "Clean":
+      {
+        "N": "Pembersihan konfigurasi",
+        "Enable": "Aktifkan pembersihan",
+        "EnableE": "Hapus opsi di luar templat konfigurasi versi ini saat memulai atau menyimpan konfigurasi.",
+        "EnableNote": "Setelah menurunkan lalu meningkatkan versi, atau mengimpor konfigurasi, beberapa opsi mungkin hilang dan kembali ke nilai bawaan."
+      },
+      "CanvasSave":
+      {
+        "N": "Penyimpanan kanvas",
+        "Enable": "Simpan otomatis kanvas desktop",
+        "EnableE": "Simpan kanvas desktop yang berisi tinta secara otomatis saat dibersihkan atau aplikasi ditutup, agar dapat dipulihkan dari riwayat kanvas.",
+        "SaveTime":
+        {
+          "N": "Masa penyimpanan riwayat",
+          "E": "Saat memulai, hapus kanvas tersimpan yang melampaui masa penyimpanan.",
+          "1d": "1 hari",
+          "3d": "3 hari",
+          "5d": "5 hari",
+          "10d": "10 hari",
+          "30d": "30 hari",
+          "Never": "Jangan pernah hapus"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "Versi perangkat lunak",
+      "ManualUpdate":
+      {
+        "N": "Versi baru tersedia",
+        "ManualUpdate": "Perbarui manual"
+      },
+      "LimitUpdate":
+      {
+        "N": "Pembaruan otomatis diblokir!\n\nPersyaratan kompatibilitas sistem berubah pada versi baru. Pembaruan otomatis diblokir karena aplikasi mungkin tidak dapat dijalankan setelah pembaruan. Periksa detail untuk memastikan sistem Anda memenuhi persyaratan baru, lalu unduh dan perbarui secara manual. Fitur perbaikan pada kanal saat ini untuk sementara tidak tersedia.",
+        "Info": "Detail"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3 telah resmi dirilis!\n\nGunakan tombol di bawah untuk mengetahui lebih lanjut tentang Inkeys3. Fitur perbaikan pada kanal saat ini untuk sementara tidak tersedia.",
+        "Download": "Perbarui sekarang"
+      },
+      "VersionTip": "Arsitektur aplikasi tidak sesuai dengan sistem Anda dan dapat menurunkan kinerja. Di Perbaikan Perangkat Lunak, aktifkan “Sesuaikan arsitektur saat perbaikan”, atau pilih arsitektur tujuan secara manual sebelum memperbaiki.",
+      "Info":
+      {
+        "N": "Info versi",
+        "ReleaseVersion": "Versi rilis:",
+        "ReleaseDate": "Tanggal rilis:",
+        "ReleaseArch": "Arsitektur aplikasi dan sistem",
+        "ReleaseTag": "Build rilis (RELEASE)",
+        "DebugTag": "Build debug (DEBUG)",
+        "ManualBuild": "Build manual",
+        "AutoBuild": "Build otomatis (CI/CD)",
+        "CICDInfo": "Detail build"
+      },
+      "UserInfo":
+      {
+        "N": "Info pengguna",
+        "CopyUserId": "Salin ID pengguna",
+        "UserId": "ID pengguna"
+      },
+      "Repair":
+      {
+        "N": "Perbaikan perangkat lunak",
+        "RepairSoftware": "Perbaiki",
+        "RepairSoftwareE": "Instal ulang ke versi terbaru pada kanal yang dipilih",
+        "RepairArch": "Sesuaikan arsitektur saat perbaikan"
+      },
+      "Update":
+      {
+        "N": "Preferensi pembaruan",
+        "AutoUpate": "Pembaruan otomatis (senyap)",
+        "ChannelTip": "Stabil (LTS): rilis stabil terbaru, disarankan untuk penggunaan sehari-hari.\nInsider: rilis pratinjau; stabilitas mungkin lebih rendah dan perangkat lunak keamanan dapat menampilkan peringatan.\nCanary: build awal Inkeys 3, tidak disarankan untuk penggunaan sehari-hari.",
+        "Channel":
+        {
+          "N": "Kanal pembaruan",
+          "LTS": "Kanal Stabil (LTS)",
+          "Insider": "Kanal Insider",
+          "Canary": "Kanal Canary"
+        },
+        "Arch":
+        {
+          "N": "Arsitektur tujuan",
+          "E": "Peringatan: Arsitektur yang tidak sesuai dengan sistem dapat membuat Inkeys gagal dijalankan atau menimbulkan masalah kinerja serius.",
+          "64": "64-bit",
+          "32": "32-bit",
+          "Arm64": "Arm64"
+        }
+      },
+      "StatusTitle": "Status versi"
+    },
+    "CICD":
+    {
+      "N": "Detail build",
+      "Repository": "Repositori",
+      "Branch": "Cabang",
+      "Submitter": "Pengirim commit",
+      "BuildTime": "Waktu build",
+      "BuildSystem": "Sistem build",
+      "BuildSystemVersion": "Versi sistem build",
+      "RunnerImageSystem": "Sistem citra runner",
+      "RunnerImageVersion": "Versi citra runner",
+      "MSBuildVersion": "Versi MSBuild"
+    },
+    "Regular":
+    {
+      "N": "Umum",
+      "SelectAndClickThrough":
+      {
+        "N": "Pilih dan tembus klik",
+        "Combined": "Gabungan",
+        "Separate": "Terpisah",
+        "CombinedDescription": "Gunakan Pilih untuk mengoperasikan komputer, baik tanpa tinta maupun dengan tinta tetap terlihat.",
+        "SeparateDescription": "Gunakan Pilih untuk menghapus tinta lalu mengoperasikan komputer, atau Tembus klik untuk mengoperasikan jendela di bawahnya dengan tinta tetap terlihat.",
+        "ClickThrough": "Tembus klik",
+        "ClickThroughDescription": "Biarkan tinta terlihat sambil meneruskan klik dan sentuhan melalui lapisan anotasi ke jendela di bawahnya."
+      },
+      "ToolbarIconOrder":
+      {
+        "N": "Urutan ikon bilah utama",
+        "FollowMainButton": "Ikuti tombol utama",
+        "FollowMainButtonReverse": "Ikuti tombol utama (terbalik)",
+        "LeftToRight": "Kiri ke kanan",
+        "RightToLeft": "Kanan ke kiri"
+      },
+      "ToolbarExpansionDirection":
+      {
+        "N": "Arah pengembangan bilah utama",
+        "Centerline": "Garis tengah layar",
+        "WhenSpaceInsufficient": "Saat ruang tidak cukup"
+      },
+      "AutoCollapse":
+      {
+        "N": "Ciutkan otomatis",
+        "Drawing": "Ciutkan bilah saat menggambar",
+        "Erasing": "Ciutkan bilah saat menghapus",
+        "Dragging": "Ciutkan bilah saat digeser",
+        "OutsideClick": "Ciutkan bilah saat mengeklik di luar dalam mode Pilih atau Tembus klik",
+        "Description": "Menggambar mencakup pena, bentuk, dan laser. Mode bilah bawah mencakup penempatan tengah. Klik di luar tidak mencakup bilah, menu, properti, atau panel munculan.",
+        "Off": "Nonaktif",
+        "NonBottom": "Saat bukan bilah bawah",
+        "Always": "Selalu"
+      },
+      "StartUp":
+      {
+        "N": "Perilaku awal",
+        "AutoStart": "Mulai otomatis saat masuk",
+        "AutoStartE": "Jalankan Inkeys saat pengguna ini masuk ke Windows.",
+        "LoadingAnimation": "Animasi pemuatan awal",
+        "LoadingAnimationE": "Tampilkan animasi pemuatan saat Inkeys dimulai.",
+        "StartupEffect":
+        {
+          "N": "Efek mulai",
+          "Shimmer": "Kilau melintas",
+          "Aurora": "Pendar lembut",
+          "PixelAssembly": "Rangkaian piksel"
+        },
+        "SettingEntryAnimation":
+        {
+          "N": "Animasi pembukaan Setelan",
+          "E": "Atur perilaku animasi pembukaan Setelan.",
+          "Off": "Nonaktif",
+          "First": "Pembukaan pertama",
+          "Always": "Selalu"
+        },
+        "Link":
+        {
+          "N": "Buat pintasan desktop",
+          "E": "Buat pintasan desktop menggunakan nama yang dipilih di bawah.",
+          "More": "Opsi lainnya"
+        }
+      },
+      "Appearance":
+      {
+        "N": "Tampilan",
+        "AnimationEnable": "Aktifkan animasi",
+        "AnimationEnableE": "Saat nonaktif, animasi bilah utama UI3 serta navigasi dan halaman Setelan langsung selesai.",
+        "AnimationRate": "Kecepatan animasi",
+        "AnimationRateE": "Atur kecepatan animasi bilah utama UI3 dan Setelan dari 0.1x hingga 5.0x.",
+        "EdgeLighting": "Pencahayaan tepi",
+        "EdgeLightingE": "Saat nonaktif, hanya bingkai dasar yang tersisa; cahaya titik dan pendar lembut dimatikan.",
+        "DynamicEdgeLighting": "Pencahayaan tepi dinamis",
+        "DynamicEdgeLightingE": "Cahaya mengikuti posisi penunjuk secara dinamis.",
+        "ResetDefault": "Kembalikan ke bawaan",
+        "SettingTheme":
+        {
+          "N": "Tema pengaturan",
+          "E": "Mengubah jendela pengaturan antara tampilan gelap dan terang; tersinkron dengan tombol di bilah judul."
+        },
+        "BackgroundOpacity":
+        {
+          "N": "Opasitas latar bilah",
+          "E": "Mengatur opasitas latar bilah utama, tombol utama, dan kontrol halaman. Panel pop-up tidak terpengaruh."
+        },
+        "ContentOpacity":
+        {
+          "N": "Opasitas konten bilah",
+          "E": "Mengatur opasitas ikon dan teks pada bilah utama, tombol utama, dan kontrol halaman."
+        },
+        "Theme":
+        {
+          "N": "Tema bilah",
+          "E": "Mengubah bilah utama antara tampilan gelap dan terang. Perubahan langsung diterapkan.",
+          "Dark": "Mode gelap",
+          "Light": "Mode terang"
+        },
+        "TaskbarScaleBase":
+        {
+          "N": "Dasar skala bilah tugas",
+          "E": "Pada skala 100%, Ukuran dasar bilah tugas menetapkan tinggi bilah utama menjadi 48 DIP; Ukuran aktual bilah tugas mengikuti ketebalan bilah tugas.",
+          "Off": "Nonaktif",
+          "Base": "Ukuran dasar bilah tugas",
+          "Actual": "Ukuran aktual bilah tugas"
+        },
+        "BarZoom":
+        {
+          "N": "Skala UI bilah",
+          "E": "Sesuaikan skala bilah utama, tombol, dan kontrol PPT secara langsung.",
+          "Ind": "Skala {:.2f}x"
+        }
+      },
+      "Behavior":
+      {
+        "N": "Perilaku",
+        "TopWindow":
+        {
+          "N": "Interval paling atas",
+          "E": "Saat tidak menggambar, Inkeys mengembalikan jendela ke paling atas sesuai interval yang dipilih; berhenti sementara saat pena menyentuh layar. Interval yang lebih pendek mengurangi gangguan jendela lain tetapi dapat meningkatkan penggunaan CPU. Jika perlu, coba plugin SuperTop.",
+          "100ms": "Sangat singkat (100ms)",
+          "500ms": "Singkat (500ms)",
+          "1s": "Agak singkat (1 s)",
+          "3s": "Sedang (3s)",
+          "5s": "Agak lama (5 s)",
+          "10s": "Lama (10s)",
+          "30s": "Sangat lama (30s)"
+        },
+        "RightClickClose": "Klik kanan ikon utama untuk menutup Inkeys",
+        "RightClickCloseE": "Menampilkan dialog konfirmasi.",
+        "DrawingRetract": "Ciutkan bilah utama saat menggambar",
+        "ErasingRetract": "Ciutkan bilah utama saat menghapus",
+        "DraggingRetract": "Ciutkan bilah utama saat digeser",
+        "CheckingRetract": "Ciutkan saat mengeklik di luar bilah utama",
+        "CheckingRetractE": "Hanya berlaku saat mengeklik di luar bilah utama dalam mode Pilih atau Tembus klik."
+      },
+      "Tentative":
+      {
+        "N": "Opsi eksperimental",
+        "SafeMode":
+        {
+          "N": "Penanganan crash",
+          "E": "Pilih tindakan saat aplikasi mengalami crash.",
+          "Mode1": "Tampilkan dialog galat lalu mulai ulang",
+          "Mode2": "Mulai ulang senyap",
+          "Mode3": "Serahkan ke sistem",
+          "Mode4": "Langsung keluar",
+          "Note": "Galat saat memulai tetap menampilkan pesan."
+        },
+        "AllowMultipleInstances":
+        {
+          "N": "Izinkan beberapa instans",
+          "E": "Izinkan beberapa instans berjalan dari folder instalasi ini. Menonaktifkannya mencegah instans tambahan dimulai tanpa menutup instans yang sudah berjalan."
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "Menggambar",
+      "General":
+      {
+        "N": "Umum",
+        "MultiTouch":
+        {
+          "N": "Menggambar dengan banyak jari",
+          "E": "Tulis atau gambar dengan beberapa jari sekaligus. Saat nonaktif, hanya gambar dengan satu jari yang diterima."
+        },
+        "PenTailCorrection":
+        {
+          "N": "Koreksi ujung saat angkat pena",
+          "E": "Kurangi tekukan mendadak pada ujung goresan saat mengangkat pena agar akhir goresan lebih alami."
+        },
+        "InkPrediction":
+        {
+          "N": "Prediksi tinta",
+          "E": "Kurangi rasa tertinggalnya tinta saat menulis. Mode Presisi memperkirakan gerakan berikutnya; mode Cepat memperpanjang tinta ke posisi masukan terbaru. Nonaktif mematikan tinta prediksi.",
+          "Precise": "Presisi",
+          "Fast": "Cepat",
+          "Disabled": "Nonaktif"
+        }
+      },
+      "Laser":
+      {
+        "N": "Penunjuk laser",
+        "MultiTouch":
+        {
+          "N": "Laser banyak jari",
+          "E": "BETA: Gunakan laser dengan beberapa jari sekaligus."
+        },
+        "Particles":
+        {
+          "N": "Partikel laser",
+          "E": "BETA: Tampilkan partikel di sekitar jejak laser."
+        }
+      },
+      "Haptics":
+      {
+        "N": "Umpan balik haptik pena",
+        "Drawing": "Getaran saat menggambar",
+        "Buttons": "Getaran tombol"
+      },
+      "Cursor":
+      {
+        "N": "Kursor",
+        "EntryDescription": "Atur kursor yang ditampilkan saat menggambar untuk setiap perangkat input, lengkap dengan pratinjau.",
+        "Devices": "Per perangkat",
+        "PenDevices": "Deteksi tablet grafis",
+        "Mouse":
+        {
+          "N": "Mouse",
+          "E": "Mouse dan touchpad."
+        },
+        "Touch":
+        {
+          "N": "Sentuh",
+          "E": "Saat jari menyentuh layar, setiap jari menampilkan satu kursor yang hilang setelah jari diangkat."
+        },
+        "ScreenPen":
+        {
+          "N": "Pena layar",
+          "E": "Pena yang menulis langsung di layar."
+        },
+        "Tablet":
+        {
+          "N": "Tablet grafis",
+          "E": "Tablet grafis eksternal dan pena yang sumbernya tidak dapat dikenali."
+        },
+        "Style":
+        {
+          "None": "Tanpa kursor",
+          "Arrow": "Mouse",
+          "Pen": "Pena",
+          "HighlightPen": "Pena (disorot)",
+          "Dot": "Titik kecil",
+          "HighlightDot": "Titik kecil (disorot)"
+        },
+        "InjectedMouse":
+        {
+          "N": "Kenali tablet grafis yang disuntikkan driver",
+          "E": "Tablet grafis tanpa Windows Ink biasanya masuk sebagai “mouse yang disuntikkan driver”. Jika diaktifkan, mouse tersebut memakai pengaturan kursor tablet; perangkat lunak lain yang juga menyuntikkan mouse, seperti desktop jarak jauh, dapat terdeteksi secara keliru.",
+          "Unavailable": "Sistem ini tidak dapat membedakan sumber input, sehingga opsi ini tidak tersedia."
+        },
+        "FineControl": "Kontrol terperinci",
+        "DotHideOnContact":
+        {
+          "N": "Sembunyikan kursor titik kecil secara otomatis saat menyentuh",
+          "E": "Berlaku untuk kedua gaya titik kecil. Kursor tersembunyi saat perangkat yang dipilih menyentuh permukaan dan tetap terlihat saat melayang.",
+          "Off": "Nonaktif",
+          "ScreenPen": "Hanya pena layar",
+          "Tablet": "Hanya tablet pena",
+          "Both": "Pena layar dan tablet pena"
+        },
+        "Note": "Pada pena layar, tablet grafis, dan sentuhan, “Mouse” berupa panah yang digambar sendiri oleh aplikasi; kursor penyorot dan penunjuk laser, alat bentuk, serta kursor khusus penghapus tidak terpengaruh oleh opsi ini."
+      },
+      "Effect":
+      {
+        "N": "Lingkungan menggambar",
+        "Device":
+        {
+          "N": "Pilih mode interaksi",
+          "Touch": "Mode sentuh layar besar",
+          "MousePen": "Mode desktop",
+          "TouchE": "Untuk menulis dan mengoperasikan langsung layar sentuh besar di kelas, ruang rapat, dan tempat serupa.",
+          "MousePenE": "Untuk PC, tablet, dan layar besar yang dioperasikan dengan mouse, mendukung mouse, pena, tablet grafis, dan sentuhan."
+        }
+      },
+      "Touch":
+      {
+        "N": "Sentuh",
+        "InterruptedStrokeReconnect":
+        {
+          "N": "Sambungkan goresan terputus",
+          "E": "Saat kontak sentuh hilang sesaat lalu berlanjut ke arah semula, aplikasi mencoba menyambungkan kedua bagian menjadi satu goresan untuk mengurangi celah. Saat nonaktif, setiap angkatan jari mengakhiri goresan."
+        }
+      },
+      "Eraser":
+      {
+        "N": "Penghapus",
+        "Automatic": "Aktifkan penghapus peka kecepatan",
+        "SpeedEraser":
+        {
+          "DemoFineTitle": "Menghapus dengan presisi",
+          "DemoFineDescription": "Hapus perlahan sepanjang garis bantu tanpa menghapus label dan garis di sekitarnya.",
+          "DemoSweepTitle": "Menghapus area luas",
+          "DemoSweepDescription": "Gerakan bolak-balik memperlebar penghapus secara bertahap agar area luas lebih cepat bersih.",
+          "EntryDescription": "Sesuaikan ukuran penghapus secara cerdas dengan tujuan Anda",
+          "Introduction": "Perkirakan tujuan penghapusan dari ukuran layar, perangkat masukan, dan gerakan untuk menyesuaikan ukuran penghapus secara dinamis.",
+          "BasicSettings": "Setelan dasar",
+          "EnabledDevices": "Perangkat aktif",
+          "FineControl": "Kontrol presisi",
+          "SizeWarningTitle": "Ukuran layar yang andal tidak tersedia",
+          "SizeWarningDescription": "Ukuran fisik layar gambar saat ini tidak dapat diandalkan. Sentuhan dan pena layar memakai perkiraan DPI, sehingga ukuran penghapus mungkin tidak sesuai tujuan Anda."
+        },
+        "PalmEraser":
+        {
+          "N": "Penghapus telapak tangan",
+          "EntryDescription": "Hapus dengan sentuhan lebar tanpa berganti alat",
+          "Introduction": "Tempelkan telapak tangan ke layar untuk menghapus tanpa berganti alat. Ukuran penghapus ditentukan selama jendela pengenalan setelah kontak; mengangkat telapak tangan tetap mempertahankan alat sebelumnya.",
+          "Enabled": "Aktifkan penghapus telapak tangan",
+          "SizeWarningTitle": "Ukuran layar yang andal tidak tersedia",
+          "SizeWarningDescription": "Ukuran fisik layar gambar saat ini tidak dapat diandalkan. Penghapus telapak tangan tetap dapat dipakai dengan ambang area dasar 100×100 DIP sistem. Ukuran fisiknya mungkin berbeda; sesuaikan persentase menurut layar Anda.",
+          "RecognitionWindow": "Jendela pengenalan",
+          "RecognitionWindowDescription": "Kenali telapak tangan dan tentukan ukurannya dalam waktu ini setelah kontak dimulai. Penghapusan langsung dimulai begitu syarat terpenuhi.",
+          "Threshold": "Ambang luas sentuhan",
+          "ThresholdDescription": "Naikkan persentase untuk mengurangi aktivasi tidak sengaja, atau turunkan agar telapak tangan lebih mudah dikenali.",
+          "ThresholdSizePhysical": "Ambang saat ini: {:.2f}cm × {:.2f}cm ({:.0f}px × {:.0f}px)",
+          "ThresholdSizePixels": "Ambang saat ini: {:.0f}px × {:.0f}px",
+          "PreviewTitle": "Contoh luas sentuhan (layar gambar saat ini)",
+          "PreviewDescription": "Area dalam bingkai menunjukkan ambang piksel pada layar gambar saat ini. Ubah rasio pratinjau untuk melihat proporsi lain. Ukuran fisiknya mungkin berbeda pada layar lain.",
+          "PreviewEstimated": "Perkiraan ambang piksel ini memakai area dasar 100×100 DIP sistem dan persentase saat ini. Pilih rasio untuk mengubah bentuk; ukuran fisiknya mungkin berbeda.",
+          "PreviewUnavailable": "Skala layar gambar saat ini belum tersedia sehingga contoh luas belum dapat ditampilkan.",
+          "EnabledTools": "Alat yang berlaku",
+          "ParallelWritingMultiTouchNote": "Menggambar multisentuh nonaktif, sehingga menulis sambil menghapus tidak dapat diterapkan.",
+          "ParallelWritingLaserMultiTouchNote": "Laser multisentuh nonaktif, sehingga menulis sambil menghapus tidak berlaku pada pena laser.",
+          "ParallelWriting": "Aktifkan menulis sambil menghapus",
+          "ParallelWritingDescription": "Mengaktifkan penghapus telapak tangan tidak mengganggu masukan lain, sehingga menggambar dapat dilanjutkan. (Untuk dua orang atau lebih yang menulis bersama.)"
+        },
+        "Input":
+        {
+          "MouseLeft": "Tombol kiri mouse",
+          "MouseRight": "Tombol kanan mouse",
+          "Touch": "Sentuh",
+          "PenTip": "Ujung pena",
+          "PenTail": "Penghapus pena"
+        },
+        "Kind":
+        {
+          "Fixed": "Ketebalan tetap",
+          "Speed": "Penghapus peka kecepatan"
+        },
+        "ResponseFor": "Respons kecepatan berlaku untuk",
+        "Response":
+        {
+          "Auto": "Deteksi otomatis",
+          "ScreenPen": "Pena layar",
+          "Digitizer": "Tablet grafis"
+        },
+        "TouchArea":
+        {
+          "N": "Bantuan luas kontak untuk penghapus sentuh peka kecepatan",
+          "E": "Buat penghapus sedikit lebih lebar dari jari agar jari tidak menutupi kursornya.",
+          "Note": "Tidak disarankan untuk perangkat layar besar."
+        }
+      }
+    },
+    "Preset":
+    {
+      "N": "Prasetel",
+      "StartupPlacement":
+      {
+        "N": "Posisi setelah memulai",
+        "E": "Bilah bawah tengah mulai dalam keadaan terbuka. Jendela mengambang kiri bawah dan kanan bawah hanya menampilkan tombol utama.",
+        "CenteredBottomBar": "Bilah bawah tengah",
+        "BottomLeftFloating": "Jendela mengambang kiri bawah",
+        "BottomRightFloating": "Jendela mengambang kanan bawah"
+      }
+    },
+    "Performance":
+    {
+      "N": "Kinerja",
+      "FrameRateSection": "Laju bingkai",
+      "InterfaceFrameRate":
+      {
+        "N": "Laju bingkai antarmuka",
+        "E": "Atur kelancaran bilah, Setelan, dan kontrol halaman. Laju bingkai lebih rendah dapat mengurangi penggunaan sumber daya. Perubahan langsung berlaku."
+      },
+      "CanvasFrameRate":
+      {
+        "N": "Laju bingkai kanvas",
+        "E": "Atur seberapa sering kanvas diperbarui saat menulis. Laju lebih tinggi membuat tinta lebih halus tetapi memakai lebih banyak sumber daya."
+      },
+      "RenderingSection": "Perenderan dan kompatibilitas",
+      "DirectComposition":
+      {
+        "N": "Utamakan DirectComposition",
+        "E": "Gunakan komposisi sistem untuk menampilkan kanvas pada perangkat yang mendukung; otomatis beralih ke cara kompatibel jika tidak tersedia."
+      }
+    },
+    "Linkage":
+    {
+      "N": "Integrasi",
+      "PPT": "Integrasi PPT",
+      "CoreVersion": "Versi inti {}"
+    },
+    "Experimental":
+    {
+      "N": "Laboratorium",
+      "UI3":
+      {
+        "AllowFractionalFontSize":
+        {
+          "N": "Izinkan font antarmuka pada ukuran piksel pecahan",
+          "E": "Saat nonaktif, ukuran piksel font pada bilah utama dan kontrol yang diam dibulatkan ke bawah. Animasi skala dan transisi tetap mulus. Langsung berlaku."
+        }
+      },
+      "Draw3":
+      {
+        "HardwareAcceleration":
+        {
+          "N": "Aktifkan akselerasi perangkat keras untuk menggambar",
+          "E": "Gunakan GPU untuk menggambar kanvas, atau perenderan perangkat lunak saat nonaktif.",
+          "Note": "Coba nonaktifkan jika gambar bermasalah atau sangat lambat. Mulai ulang Inkeys untuk menerapkan."
+        },
+        "ZhaoxinCompatibility":
+        {
+          "N": "Aktifkan mode kompatibilitas Zhaoxin",
+          "E": "Gunakan jalur unggah kompatibel pada GPU Zhaoxin. GPU lain tidak terpengaruh. Nonaktifkan untuk membandingkan kinerja menggambar."
+        }
+      },
+      "ConsoleOutput":
+      {
+        "Haptics":
+        {
+          "N": "Diagnostik haptik pena",
+          "E": "Catat masukan pena, permintaan tombol, dan hasil pengiriman ke perangkat haptik untuk mendiagnosis getaran yang tidak muncul."
+        },
+        "TouchArea":
+        {
+          "N": "Keluaran konsol diagnostik masukan dan penghapus",
+          "E": "Keluarkan cuplikan berkala terbatas tentang EDID, resolusi dan DPI layar, luas sentuhan, koordinat masukan, jenis perangkat, dan ukuran penghapus."
+        },
+        "PptCOM":
+        {
+          "N": "Keluaran konsol PptCOM",
+          "E": "Keluarkan diagnostik PptCOM ke konsol."
+        },
+        "Draw3":
+        {
+          "N": "Keluaran konsol Draw3",
+          "E": "Keluarkan informasi perangkat dan driver Draw3 ke konsol."
+        },
+        "Cursor":
+        {
+          "N": "Diagnostik kursor",
+          "E": "Keluarkan pemilik masukan kursor dan hasil perenderannya ke konsol."
+        }
+      }
+    },
+    "PlugIn":
+    {
+      "N": "Plugin",
+      "PPTHelper":
+      {
+        "N": "Asisten Presentasi PPT 3 Lite",
+        "E": "Sediakan tombol kontrol presentasi dan pena selama tayangan slide. Setiap halaman memiliki kanvas sendiri agar anotasi tinta tetap melekat pada halaman. Tidak memengaruhi fungsi asli atau perangkat eksternal.",
+        "VersionError": "Versi tidak diketahui (galat plugin)",
+        "Solve": "Solusi",
+        "Sync": "Penyesuaian tersinkron",
+        "Reset": "Atur ulang",
+        "Tip": "Jalankan Inkeys dan PowerPoint/WPS dengan tingkat hak akses yang sama agar proses tayangan slide terdeteksi. Jika masalah berlanjut, lihat solusi.",
+        "Warn": "PowerPoint/WPS terdeteksi selalu dijalankan sebagai administrator. Inkeys juga harus dijalankan sebagai administrator untuk mendeteksi tayangan slide dan mengaktifkan integrasi PPT. Jika Anda tidak ingin aplikasi presentasi selalu dijalankan sebagai administrator, lihat solusi.",
+        "Error": "Plugin gagal dimuat. .NET Framework 4.x mungkin belum terinstal atau lingkungan COM bermasalah.\nDetail: ",
+        "BasicLogic":
+        {
+          "N": "Logika dasar",
+          "LoadPage": "Tampilkan halaman pemuatan",
+          "LoadPageE": "Fitur ini dinonaktifkan. Halaman pemuatan PPT tidak ditampilkan lagi."
+        },
+        "WidgetDisplay":
+        {
+          "N": "Tampilan kontrol",
+          "BottomBoth": "Tampilkan kontrol di kedua sudut bawah",
+          "MiddleBoth": "Tampilkan kontrol di kedua sisi tengah",
+          "BottomMiddle": "Tampilkan kontrol pada bilah bawah",
+          "IdleFade": "Pudar saat tidak digunakan",
+          "IdleFadeE": "Saat presentasi, kontrol yang dipilih memudar ketika tidak aktif dan pulih saat diarahkan, diklik, atau diseret. Perubahan halaman dari luar juga memudarkan kontrol halaman. Bilah utama hanya memudar setelah batas waktu tidak aktif saat ditambatkan di bawah, termasuk mode tengah dan tetap pada opasitas normal selama salah satu panelnya terbuka.",
+          "IdleFadeOff": "Mati",
+          "IdleFadeSeconds": "{} dtk",
+          "IdleFadeBottomPair": "Kedua sudut bawah",
+          "IdleFadeMiddlePair": "Kedua sisi di tengah",
+          "IdleFadeMainBar": "Bilah utama (hanya mode dok)"
+        },
+        "WidgetPosition":
+        {
+          "N": "Posisi kontrol",
+          "Reset": "Atur ulang posisi kontrol",
+          "Remember": "Ingat posisi kontrol"
+        },
+        "WidgetScale":
+        {
+          "N": "Skala kontrol",
+          "Ind": "Skala {:.2f}x",
+          "Page":
+          {
+            "BottomSideBoth": "Skala kontrol sudut bawah",
+            "MiddleSideBoth": "Skala kontrol sisi tengah"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "Skala kontrol bilah bawah"
+          }
+        },
+        "Tentative":
+        {
+          "N": "Opsi eksperimental",
+          "CloseWpp": "Izinkan penutupan proses presentasi WPP yang macet atau tertinggal",
+          "CloseWppE": "Perlu mulai ulang. Coba tutup proses WPP yang tertinggal setelah tayangan WPS berakhir agar tayangan berikutnya lebih mudah terdeteksi.",
+          "AutoTakeOver": "Ambil alih anotasi presentasi",
+          "AutoTakeOverE": "Saat anotasi bawaan PPT terdeteksi aktif, Inkeys beralih ke mode menggambar dan mematikan anotasi bawaan PPT.",
+          "AutoTakeOverOnce": "Ambil alih paling banyak sekali per tayangan",
+          "AutoTakeOverOnceE": "Hindari pengambilalihan berulang saat anotasi bawaan PPT memang diperlukan.",
+          "AutoTakeOverExpand": "Buka bilah utama setelah pengambilalihan berhasil",
+          "EnablePageButtonLongPress": "Aktifkan pindah halaman dengan menahan tombol navigasi"
+        },
+        "SupportNote": "Mendukung Microsoft PowerPoint 2007 atau lebih baru dan Kingsoft WPS 2013 atau lebih baru."
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "Gunakan UIAccess agar jendela tampil di atas antarmuka sistem dan aplikasi yang didukung.",
+        "Warn": "Plugin SuperTop masih Beta dan mungkin tidak stabil.\nSaat memulai, Inkeys menjalankan ulang dirinya untuk meminta peningkatan hak akses, lalu membuka instans baru.\nProses ini dapat gagal; menjalankan sebagai administrator dapat memengaruhi integrasi PPT.\nPeningkatan hak akses dapat menampilkan UAC. Periksa sumber dan penerbit sebelum mengizinkan.\nJika perangkat lunak keamanan memberi peringatan, periksa sumber dan tanda tangan berkas, jangan langsung mematikan perlindungan.",
+        "Capability":
+        {
+          "N": "Kemampuan dasar",
+          "SuperTop": "Aktifkan SuperTop",
+          "SuperTopE1": "Aplikasi memakai proses awal tiga tahap agar jendelanya tetap paling atas.\n(SuperTop aktif)",
+          "SuperTopE2": "Aplikasi memakai proses awal tiga tahap agar jendelanya tetap paling atas.\n(SuperTop tidak aktif)",
+          "Indicator": "Indikator SuperTop",
+          "IndicatorE": "Tampilkan ikon pin di sudut kanan atas ikon utama setelah berhasil diaktifkan.",
+          "SuperTopNote": "Mulai ulang Inkeys untuk menerapkan. Proses menjadikan jendela paling atas dapat gagal saat memulai."
+        },
+        "SupportNote": "Memerlukan Windows 8 atau lebih baru."
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "Pada komputer kelas terpadu, bilah pena mengambang dari sebagian aplikasi papan tulis tidak dapat langsung dimatikan sehingga beberapa alat gambar muncul sekaligus di desktop. Guru mudah tertukar memakai alat yang berbeda dan tidak dapat melanjutkan anotasi, mengganggu pengajaran. DesktopDrawpadBlocker dibuat untuk mengatasi hal ini.",
+        "LicenseTitle": "Plugin sumber terbuka GPLv3",
+        "LicenseDescription": "Plugin ini hanya untuk belajar, berdiskusi, dan meneliti; tidak boleh digunakan untuk tujuan lain.\nDesktopDrawpadBlocker adalah perangkat lunak sumber terbuka yang dirilis dengan lisensi GPLv3.\nDiterbitkan di GitHub: https://github.com/Alan-CRL/DesktopDrawpadBlocker\nKami berharap program ini bermanfaat, tetapi tidak memberikan jaminan kualitas.\nPengguna bertanggung jawab atas akibat dan dampak penggunaan plugin; penggunaan berarti menyetujui perjanjian ini.",
+        "UseSection": "Menggunakan plugin",
+        "EnableTitle": "Aktifkan plugin",
+        "EnableDescription": "Pada mode bawaan, plugin mulai dan berhenti bersama Inkeys.",
+        "GeneralSection": "Opsi umum",
+        "AdministratorTitle": "Jalankan plugin sebagai administrator",
+        "AdministratorDescription": "Tunggu respons plugin saat mengubah setelan ini.",
+        "IntervalTitle": "Interval pemblokiran",
+        "IntervalDescription": "Interval lebih pendek memblokir jendela baru lebih cepat, tetapi memakai lebih banyak CPU.",
+        "IntervalShort": "Singkat (500 ms)",
+        "IntervalMediumShort": "Agak singkat (1 s)",
+        "IntervalMedium": "Sedang (3 s)",
+        "IntervalMediumLong": "Agak lama (5 s)",
+        "IntervalLong": "Lama (10 s)",
+        "PrecisionSection": "Kontrol terperinci",
+        "Seewo3Title": "希沃白板3 — jendela pena desktop",
+        "Seewo5Title": "希沃白板5 — jendela pena desktop",
+        "Seewo5CTitle": "希沃轻白板（5C） — jendela pena desktop",
+        "PincoSidebarTitle": "希沃品课教师端 — bilah sisi mengambang",
+        "PincoDrawingTitle": "希沃品课教师端 — jendela pena desktop",
+        "SeewoPptTitle": "希沃PPT小工具",
+        "IwbAssistantTitle": "希沃课堂助手 — alat PPT",
+        "YiouTitle": "欧帝白板 — jendela pena desktop",
+        "AiClassTitle": "AiClass — jendela pena desktop",
+        "ClassInXTitle": "ClassIn X — jendela pena desktop",
+        "IntelligentClassTitle": "天喻教育云互动课堂 — jendela pena desktop",
+        "ChangYan4Title": "畅言智慧课堂4.0 — jendela pena desktop",
+        "ChangYan5Title": "畅言智慧课堂5.0 — jendela pena desktop",
+        "Iclass30SidebarTitle": "C30智能教学 — bilah sisi mengambang",
+        "Iclass30DrawingTitle": "C30智能教学 — jendela pena desktop",
+        "SeewoDesktopSidebarTitle": "希沃桌面 — bilah sisi mengambang",
+        "SeewoDesktopDrawingTitle": "希沃桌面 — jendela pena desktop",
+        "IncludesPptNote": "Termasuk kontrol PPT.",
+        "RestoresWhiteboardNote": "Termasuk kontrol PPT. Mendukung pemulihan otomatis dalam mode papan tulis.",
+        "WindowTrackingNote": "Termasuk kontrol PPT. Mendukung pemulihan otomatis dalam mode papan tulis dan pelacakan jendela.",
+        "SeewoDesktopVersionsNote": "Untuk versi 1.0/2.0/2.5/3.0, edisi pendidikan umum maupun pendidikan tinggi.",
+        "AdministratorNote": "Memerlukan hak administrator DDB."
+      },
+      "LnkHelper":
+      {
+        "N": "Asisten pintasan",
+        "E": "Pastikan pintasan Inkeys yang ada tetap valid saat aplikasi dimulai, karena pembaruan dapat mengubah nama berkas program dan merusak pintasan. Secara opsional, buat pintasan desktop jika belum ada.",
+        "Capability":
+        {
+          "N": "Kemampuan dasar",
+          "FixLnk": "Perbaiki tujuan dan nama pintasan desktop",
+          "FixLnkE": "Perbaiki pintasan desktop yang ada saat memulai. Disarankan karena pembaruan otomatis dapat mengubah nama berkas program sehingga pintasan tidak valid."
+        },
+        "Expansion":
+        {
+          "N": "Opsi tambahan",
+          "CreateLnk": "Buat pintasan desktop saat aplikasi dimulai",
+          "CreateLnkE": "Saat aplikasi dimulai, buat pintasan desktop jika belum ada."
+        }
+      }
+    },
+    "Component":
+    {
+      "N": "Komponen",
+      "SoftwareSection": "Aplikasi",
+      "SystemSection": "Sistem",
+      "KeyboardSection": "Simulasi papan ketik",
+      "RollCallSection": "Pemilih nama",
+      "ClassIslandSection": "Integrasi ClassIsland",
+      "ExplorerTitle": "Buka File Explorer",
+      "TaskManagerTitle": "Buka Pengelola Tugas",
+      "ControlPanelTitle": "Buka Panel Kontrol",
+      "ShowDesktopTitle": "Tampilkan desktop",
+      "LockScreenTitle": "Kunci layar",
+      "EscapeTitle": "Tekan Esc",
+      "AltF4Title": "Tekan Alt+F4",
+      "IslandCaller1Title": "IslandCaller 1: pilih nama acak",
+      "IslandCaller2Title": "IslandCaller 2: pilih satu nama",
+      "SecRandom1Title": "SecRandom 1: pilih cepat",
+      "SecRandom2Title": "SecRandom 2: pilih cepat",
+      "SecRandom2CompatTitle": "SecRandom 2: pilih cepat (kompatibel)",
+      "NamePickerTitle": "NamePicker: nama acak",
+      "ClassIslandSettingsTitle": "Setelan ClassIsland",
+      "ClassIslandProfileTitle": "Editor profil ClassIsland",
+      "ClassIslandSwapTitle": "Ganti kelas cepat ClassIsland",
+      "IslandCallerRequirement": "Memerlukan plugin IslandCaller pada ClassIsland dan pendaftaran protokol URL ClassIsland.",
+      "SecRandomUrlRequirement": "Memerlukan pendaftaran protokol URL SecRandom.",
+      "SecRandomIpcRequirement": "Memerlukan pendaftaran protokol IPC SecRandom.",
+      "NamePickerRequirement": "Memerlukan pendaftaran protokol URL NamePicker.",
+      "ClassIslandProtocolNote": "Daftarkan protokol navigasi URL di setelan ClassIsland.",
+      "ClassIslandSwapNote": "Komponen ini tidak berfungsi jika ClassIsland belum memuat jadwal kelas."
+    },
+    "DesktopShortcut":
+    {
+      "N": "Pintasan",
+      "ApplicationSection": "Aplikasi",
+      "WhiteboardSection": "Papan tulis",
+      "NameLabel": "Nama pintasan",
+      "CustomName": "Kustom",
+      "CustomHint": "Masukkan nama pintasan",
+      "InvalidName": "Masukkan nama berkas Windows yang valid. Nama kosong atau terlarang, karakter tidak valid, dan jalur yang terlalu panjang tidak diizinkan.",
+      "NameConflict": "Pintasan aplikasi dan papan tulis harus memiliki nama yang berbeda.",
+      "PresetWhiteboard": "Inkeys Papan Tulis",
+      "PresetAnnotation": "Inkeys(Anotasi)",
+      "PresetAnnotationTool": "Inkeys(AlatAnotasi)"
+    },
+    "HotKey":
+    {
+      "N": "Tombol pintas",
+      "E": "Kombinasi tetap berikut dapat diaktifkan satu per satu; pintasan khusus belum tersedia.\nSelain sakelar anotasi global, pintasan hanya berlaku saat membuat anotasi. Masukan teks Setelan dan dialog modal diprioritaskan. Dalam mode Pilih atau Tembus klik, pintasan diteruskan ke aplikasi saat ini.\nSakelar global tetap aktif saat penyuntingan biasa di Setelan. Dialog modal aplikasi menjeda tindakannya tetapi tetap mencadangkan kombinasinya. AltGr pada papan ketik internasional dapat berbenturan dengan Ctrl + Alt; nonaktifkan sakelar global jika perlu.\nPintasan papan ketik tidak mengambil alih navigasi PowerPoint.",
+      "ToggleAnnotationN": "Sakelar anotasi global",
+      "ToggleAnnotationE": "Beralih antara anotasi dan Pilih. Mode Gabungan mempertahankan tinta saat masuk ke Pilih; mode Terpisah menghapus halaman saat ini terlebih dahulu. Saat kembali, alat anotasi terakhir dipulihkan, tanpa memulihkan Bekukan.",
+      "UndoN": "Urungkan",
+      "UndoE": "Urungkan tindakan pada halaman saat ini. Tahan untuk mengulang. Jika riwayat kosong, Urungkan tidak diteruskan ke aplikasi di bawahnya.",
+      "RedoYN": "Ulangi",
+      "RedoYE": "Ulangi tindakan pada halaman saat ini. Tahan untuk mengulang. Kombinasi ini dan Ctrl + Shift + Z memiliki sakelar terpisah.",
+      "RedoShiftZN": "Ulangi (alternatif)",
+      "RedoShiftZE": "Tindakan Ulangi sama dengan Ctrl + Y, dengan sakelar aktif tersendiri.",
+      "ClearN": "Bersihkan halaman saat ini",
+      "ClearE": "Tekanan pertama menghapus dan mempertahankan alat, bahkan pada halaman kosong. Tetap tahan Ctrl, lepaskan Delete, lalu tekan Delete lagi untuk masuk ke Pilih pada kedua mode. Menahan Delete tidak dihitung dua kali. Goresan baru atau tindakan lain mereset urutan ini.",
+      "FreezeN": "Bekukan",
+      "FreezeE": "Aktifkan atau nonaktifkan pembekuan layar.",
+      "Registering": "Mendaftarkan sakelar global",
+      "Disabling": "Menonaktifkan sakelar global",
+      "UnregisterFailed": "Gagal membatalkan pendaftaran sakelar global; kombinasi tetap dicadangkan",
+      "Registered": "Sakelar global aktif",
+      "Disabled": "Sakelar global nonaktif",
+      "NotRunning": "Layanan papan ketik belum berjalan",
+      "RegisterFailed": "Gagal mendaftarkan sakelar global; kombinasi mungkin dipakai program lain",
+      "SynchronizationPending": "Menyinkronkan status tombol. Beralihlah ke jendela tanpa peningkatan hak akses, lepaskan tombol, lalu coba lagi.",
+      "HookReady": "Pintasan anotasi siap",
+      "HookFailed": "Hook papan ketik belum terpasang; pintasan anotasi tidak tersedia",
+      "FreezeNote": "Tidak tersedia pada ruang kerja PPT dan papan tulis. Saat tidak tersedia, kombinasi tidak diteruskan ke aplikasi di bawahnya."
+    },
+    "Community":
+    {
+      "N": "Komunitas"
+    },
+    "Sponsor":
+    {
+      "N": "Dukung kami",
+      "Thanks": "Setelah memberi dukungan, hubungi pengembang agar nama panggilan dan jumlah dukungan Anda ditambahkan ke kartu komunitas sebagai ucapan terima kasih."
+    },
+    "RestartSoftware":
+    {
+      "N": "Mulai ulang"
+    },
+    "ExitSoftware":
+    {
+      "N": "Keluar"
+    },
+    "DebugSoftware":
+    {
+      "N": "Alat debug",
+      "RenderingSection": "Diagnostik perenderan UI3",
+      "DirtyRegions":
+      {
+        "N": "Diagnostik area berubah",
+        "E": "Tampilkan batas area berubah yang benar-benar dikirim pada setiap bingkai UI3."
+      },
+      "FrameRate":
+      {
+        "N": "Tampilkan laju bingkai",
+        "E": "Perbarui rata-rata laju bingkai dan laju tanpa batas dari detik sebelumnya setiap detik."
+      },
+      "ConsoleSection": "Keluaran konsol",
+      "CanvasInformation": "Info inisialisasi kanvas",
+      "DisplayInformation": "Layar dan EDID"
+    },
+    "Update":
+    {
+      "Check": "Periksa pembaruan",
+      "Channel":
+      {
+        "LTS": "Kanal Stabil",
+        "Insider": "Kanal Insider",
+        "Dev": "Kanal Pengembangan",
+        "Canary": "Kanal Canary",
+        "Other": "Kanal lain"
+      },
+      "NotStarted": "Pemeriksaan pembaruan belum dimulai",
+      "ObtainInformation": "Mengambil info pembaruan",
+      "InformationFail": "Gagal mengambil info pembaruan",
+      "InformationDamage": "Info pembaruan yang diunduh rusak",
+      "InformationUnStandardized": "Info pembaruan tidak valid",
+      "Downloading": "Mengunduh pembaruan (Jalur {})",
+      "DownloadFail": "Unduhan gagal",
+      "DownloadDamage": "Berkas pembaruan yang diunduh rusak",
+      "Restart": "Mulai ulang untuk memperbarui ke versi terbaru",
+      "Latest": "Sudah versi terbaru",
+      "Newer": "Versi saat ini lebih baru dari rilis resmi terbaru",
+      "New": "Versi baru ditemukan",
+      "Repair": "Coba perbaiki",
+      "ManualDownload": "Unduh manual",
+      "UpdateNow": "Perbarui sekarang"
+    }
+  }
+}

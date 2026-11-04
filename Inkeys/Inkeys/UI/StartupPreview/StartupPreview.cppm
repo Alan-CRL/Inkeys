@@ -5,6 +5,7 @@ module;
 #endif
 #include <windows.h>
 #include "../StartupPlacement.h"
+#include "../StartupPreview.Effect.h"
 
 #include <chrono>
 #include <cstdint>
@@ -30,6 +31,10 @@ export namespace Inkeys::UI::StartupPreview
 	struct StartOptions final
 	{
 		bool enabled = StartupPreviewEnabledByDefault;
+		StartupPreviewEffect effect = StartupPreviewEffect::Shimmer;
+		int themeMode = 1;
+		int backgroundOpacity = 0;
+		int contentOpacity = 100;
 		StartupPlacement startupPlacement = StartupPlacement::CenteredBottomBar;
 		HINSTANCE instance = nullptr;
 		double cachedWidthDip = DefaultCachedStartupBarWidthDip;

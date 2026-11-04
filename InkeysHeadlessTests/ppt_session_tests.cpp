@@ -1,9 +1,37 @@
 #include "../Inkeys/Inkeys/Business/PptSession.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/PptNavigationDiagnostics.h"
+#include "../Inkeys/ShutdownProgressTrace.h"
+#include "../Inkeys/PptWaitingDiagnostics.h"
 
 #include <iostream>
 #include <string>
+#include <stdexcept>
+#include <vector>
+#include <array>
+#include <thread>
+
+namespace
+{
+	using PerfEvent = Inkeys::Business::PptPerf::Event;
+	std::vector<PerfEvent>* perfEvents = nullptr;
+	std::int64_t perfClock = 100;
+	int perfClockCalls = 0;
+	unsigned long perfThread = 11;
+	std::int64_t PerfNow() { ++perfClockCalls; return perfClock++; }
+	std::int64_t PerfFrequency() { return 1000; }
+	unsigned long PerfProcess() { return 7; }
+	unsigned long PerfThread() { return perfThread; }
+	void PerfCapture(const PerfEvent& value) { perfEvents->push_back(value); }
+	void PerfThrow(const PerfEvent&) { throw std::runtime_error("diagnostic sink"); }
+	std::int64_t ShutdownNow() { SetLastError(801); return PerfNow(); }
+	void ShutdownCapture(const PerfEvent& value) { SetLastError(802); PerfCapture(value); }
+	void ShutdownThrow(const PerfEvent&) { SetLastError(803); throw std::runtime_error("shutdown sink"); }
+	bool WaitOutputThrows(const char*,std::size_t) { SetLastError(910);throw std::runtime_error("wait output"); }
+	std::int64_t WaitInvalidClock() { return 0; }
+
+}
 
 int RunPptSessionTests()
 {
@@ -14,6 +42,264 @@ int RunPptSessionTests()
 	{
 		if (!ok) { ++failures; std::cerr << "FAIL " << text << '\n'; }
 	};
+	{
+		namespace Wait=Inkeys::Business::PptWaitTrace;
+		Wait::Record slots[4];const PptPerf::Clock clock{ShutdownNow,PerfFrequency,PerfProcess,PerfThread};
+		Wait::Recorder disabled(nullptr,0,clock);perfClockCalls=0;SetLastError(901);
+		Wait::Fields fields;fields.session=7;fields.epoch=11;fields.flags=Wait::Waiting;
+		disabled.Capture(Wait::Stage::Publish,fields,Wait::Result::Accepted);
+		{Wait::DrawScope scope(fields,&disabled);Wait::DrawStarted();Wait::DotBrush(true);Wait::DotIssued();}
+		check(perfClockCalls==0&&disabled.AfterProducersJoined().seen==0&&GetLastError()==901,
+			"disabled waiting capture performs no sampling or slot writes and preserves LastError");
+		Wait::Recorder recorder(slots,4,clock);
+		{
+			Wait::DrawScope scope(fields,&recorder);Wait::DrawStarted();Wait::DotBrush(true);Wait::DotIssued();
+			{Wait::DrawScope muted(fields,nullptr);Wait::DotBrush(false);Wait::DotIssued();}
+			Wait::DotIssued();Wait::DotIssued();
+			scope.Pixels(Wait::Result::Submitted,true,23,S_OK,0);
+		}
+		auto counts=recorder.AfterProducersJoined();
+		check(counts.seen==3&&counts.retained==3&&counts.dropped==0&&counts.invalid==0
+			&&slots[1].stage==Wait::Stage::Draw&&slots[1].fields.dots==3&&slots[1].fields.branches==1
+			&&slots[2].fields.attempt==slots[1].fields.attempt&&slots[2].fields.pixelRevision==23
+			&&(slots[2].fields.flags&Wait::PixelsSubmitted)&&GetLastError()==901&&Wait::drawSample==nullptr,
+			"draw TLS restores nested muted scopes and keeps real dots and successful pixels on the same attempt");
+		recorder.Capture(Wait::Stage::NativeReceipt,fields,Wait::Result::ReceiptRejected);
+		recorder.Capture(Wait::Stage::NativeReceipt,fields,Wait::Result::ReceiptCommitted);
+		counts=recorder.AfterProducersJoined();
+		check(counts.seen==5&&counts.retained==4&&counts.dropped==1&&slots[3].result==Wait::Result::ReceiptRejected,
+			"full waiting buffer retains the prefix and reports loss instead of overwriting a failure with recovery");
+		SetLastError(902);const auto errors=Wait::FlushAfterProducersJoined(recorder,WaitOutputThrows);
+		check(errors==5&&GetLastError()==902,"waiting export failures cannot escape or overwrite caller LastError");
+		char text[2048];const int n=Wait::Format(text,sizeof(text),slots[2],3);
+		check(n>0&&std::string(text).find("pixel_revision=23")!=std::string::npos
+			&&std::string(text).find("stage=pixels-result result=submitted")!=std::string::npos,
+			"waiting records export immutable numeric identity and exact software boundary");
+		// 内容policy与导航/Draw TLS独立，scope只给出当前配置的纯值身份，不采字符串。
+		Wait::Fields contentFields=fields;contentFields.surface=0;contentFields.revision=41;
+		const auto beforeMutedClock=perfClockCalls;
+		{ Wait::ContentScope muted(contentFields,&disabled);Wait::CaptureContentPolicy(contentFields); }
+		check(Wait::contentSample==nullptr&&disabled.AfterProducersJoined().seen==0&&perfClockCalls==beforeMutedClock,
+			"disabled content policy context neither records nor leaks TLS");
+		Wait::Record policies[8];Wait::Recorder policyRecorder(policies,8,clock);const auto beforePolicyClock=perfClockCalls;
+		{
+			Wait::ContentScope outer(contentFields,&policyRecorder);
+			check(Wait::contentSample&&Wait::contentSample->fields.epoch==0&&Wait::contentSample->fields.direction==0,
+				"content policy context cannot borrow the navigation epoch or direction");
+			auto sample=Wait::contentSample->fields;sample.contentPolicy=static_cast<unsigned>(Wait::ContentPolicy::Animated);
+			sample.oldKind=0;sample.newKind=1;sample.setterChanges=3;Wait::CaptureContentPolicy(sample);
+			{ Wait::ContentScope muted(contentFields,nullptr);Wait::CaptureContentPolicy(sample);
+			  check(Wait::contentSample==nullptr,"nested null content context masks the outer configuration"); }
+			{ auto other=contentFields;other.session=8;other.revision=42;Wait::ContentScope inner(other,&policyRecorder);
+			  Wait::CaptureContentPolicy(Wait::contentSample->fields); }
+			Wait::CaptureContentPolicy(Wait::contentSample->fields);
+		}
+		check(policyRecorder.AfterProducersJoined().retained==3&&perfClockCalls-beforePolicyClock==3
+			&&policies[0].stage==Wait::Stage::ContentPolicy&&policies[0].fields.setterChanges==3
+			&&policies[1].fields.session==8&&policies[2].fields.session==7
+			&&policies[2].fields.revision==41&&Wait::contentSample==nullptr&&Wait::drawSample==nullptr,
+			"content policy samples preserve nested snapshot identity and actual setter results without cross-TLS leakage");
+		check(Wait::ContentMilli(1.0)==1000&&Wait::ContentMilli(-1.0)==-1
+			&&Wait::ContentMilli((std::numeric_limits<double>::quiet_NaN)())==-1
+			&&Wait::ContentMilli((std::numeric_limits<double>::infinity)())==-1,
+			"content scale and opacity retain explicit unknown values instead of fabricating finite measurements");
+		auto maximal=policies[0];auto& maxFields=maximal.fields;
+		for(auto* value:{&maxFields.session,&maxFields.epoch,&maxFields.positionSession,&maxFields.activeSession,&maxFields.activeEpoch,
+			&maxFields.completedEpoch,&maxFields.layoutSession,&maxFields.layoutEpoch,&maxFields.publication,&maxFields.previousPublication,
+			&maxFields.revision,&maxFields.previousRevision,&maxFields.candidate,&maxFields.frame,&maxFields.attempt,&maxFields.pixelRevision,&maxFields.sceneSerial})
+			*value=(std::numeric_limits<std::uint64_t>::max)();
+		for(auto* value:{&maxFields.direction,&maxFields.mode,&maxFields.flags,&maxFields.branches,&maxFields.dots,&maxFields.recoveryKind,
+			&maxFields.contentPolicy,&maxFields.contentChanges,&maxFields.setterChanges})*value=(std::numeric_limits<unsigned>::max)();
+		for(auto* value:{&maxFields.hr,&maxFields.oldKind,&maxFields.newKind,&maxFields.primaryScaleBefore,&maxFields.primaryPctBefore,
+			&maxFields.secondaryScaleBefore,&maxFields.secondaryPctBefore,&maxFields.primaryScaleAfter,&maxFields.primaryPctAfter,
+			&maxFields.secondaryScaleAfter,&maxFields.secondaryPctAfter})*value=(std::numeric_limits<long>::min)();
+		maxFields.error=(std::numeric_limits<unsigned long>::max)();maxFields.surface=(std::numeric_limits<int>::min)();
+		maxFields.contentCurrentPage=maxFields.contentTotalPage=(std::numeric_limits<int>::min)();
+		maximal.pid=maximal.tid=(std::numeric_limits<unsigned long>::max)();maximal.qpc=maximal.frequency=(std::numeric_limits<std::int64_t>::max)();
+		const auto maximalLength=Wait::Format(text,sizeof(text),maximal,(std::numeric_limits<std::uint64_t>::max)());
+		check(maximalLength>0&&maximalLength<static_cast<int>(sizeof(text))
+			&&std::string(text).find("secondary_pct_after_milli=")!=std::string::npos,
+			"the complete maximum-width numeric content record fits the fixed 2048 byte export buffer");
+		Wait::Record invalidSlot[1];Wait::Recorder invalid(invalidSlot,1,{WaitInvalidClock,PerfFrequency,PerfProcess,PerfThread});
+		invalid.Capture(Wait::Stage::Publish,fields,Wait::Result::Accepted);
+		check(invalid.AfterProducersJoined().retained==1&&invalid.AfterProducersJoined().invalid==1,
+			"invalid waiting clocks remain represented in the retained denominator");
+		std::array<Wait::Record,512> concurrentSlots;
+		Wait::Recorder concurrent(concurrentSlots.data(),concurrentSlots.size());
+		std::array<std::thread,4> producers;
+		for(std::size_t worker=0;worker<producers.size();++worker)producers[worker]=std::thread([&,worker]{
+			for(unsigned item=0;item<100;++item){auto value=fields;value.epoch=worker*100+item+1;
+				concurrent.Capture(Wait::Stage::Model,value,Wait::Result::Accepted);}
+		});
+		for(auto& producer:producers)producer.join();
+		const auto concurrentCounts=concurrent.AfterProducersJoined();std::array<bool,401> seen{};bool unique=true;
+		for(std::size_t i=0;i<concurrentCounts.retained;++i){const auto epoch=concurrentSlots[i].fields.epoch;
+			if(!epoch||epoch>=seen.size()||seen[epoch])unique=false;else seen[epoch]=true;}
+		check(concurrentCounts.seen==400&&concurrentCounts.retained==400&&concurrentCounts.dropped==0
+			&&concurrentCounts.invalid==0&&unique,"joined multi-producer waiting capture publishes each independent slot exactly once");
+	}
+	{
+		using namespace Inkeys::Business::PptPerf;
+		const Clock clock{ PerfNow, PerfFrequency, PerfProcess, PerfThread };
+		std::vector<Event> events; perfEvents = &events;
+		perfClockCalls = 0;
+		Recorder disabled(false, PerfCapture, clock);
+		{
+			Scope trace(disabled, "native-business", { 0, 17, 23, "Previous" });
+			disabled.Instant("native-discard", {}, "outstanding");
+		}
+		check(events.empty() && perfClockCalls == 0, "disabled native diagnostics never sample the clock or write a record");
+		Recorder recorder(true, PerfCapture, clock);
+		const auto request = recorder.Capture("native-request", { 0, 17, 23, "Previous" });
+		perfClock += 1000; // 模拟入队前的生产者锁等待，队列计时必须从成功接纳开始。
+		const auto queued = recorder.Capture("native-queue", { request.span, 17, 23, "Previous" });
+		// 消费者可先写出 end；时间戳仍是原始边界，而不是logger实际写入时刻。
+		perfThread = 29;
+		const auto dequeued = recorder.CaptureEnd(queued, "dequeued");
+		check(queued.qpc - request.qpc == 1001 && dequeued.stamp.qpc - queued.qpc == 1,
+			"producer admission delay stays outside exact queue residence timing");
+		recorder.Emit(dequeued);
+		recorder.Begin(request); recorder.Begin(queued);
+		check(events.size() == 3 && events[0].stamp.qpc > queued.qpc &&
+			events[0].stamp.span == queued.span && events[0].stamp.thread == 29 && queued.thread == 11,
+			"queue telemetry preserves its cross-thread identity and captured time despite out-of-order sinks");
+		{
+			Scope resumed(recorder, request);
+			resumed.Result("native-completed");
+			Scope business(recorder, "native-business", { request.span, 17, 23, "Previous" });
+			{
+				ContextScope context({ business.Id(), 17, 23, "Previous" });
+				check(current.parent == business.Id() && current.epoch == 23,
+					"native request context carries only the matching operation and local identity");
+				try
+				{
+					Scope call(recorder, "native-com", current);
+					throw std::runtime_error("original business error");
+				}
+				catch (const std::runtime_error& error)
+				{
+					check(std::string(error.what()) == "original business error", "diagnostic scopes preserve the original exception");
+				}
+			}
+			check(current.parent == 0 && current.epoch == 0, "request context cannot leak into the next business command");
+		}
+		check(events.size() == 8 && std::string(events[5].event) == "end" && std::string(events[5].result) == "exception"
+			&& events[5].stamp.context.parent == events[3].stamp.span &&
+			events.back().stamp.span == request.span && std::string(events.back().event) == "end",
+			"exceptional COM span closes before its parents and the deferred root is completed exactly once");
+		char formatted[512]{};
+		const auto sample = events.empty() ? Event{} : events.front();
+		const int count = Format(formatted, sizeof(formatted), sample);
+		const std::string line(formatted);
+		check(count > 0 && line.find("[PptPerf] v=1 source=native pid=7 tid=29") == 0
+			&& line.find("event=end stage=native-queue op=Previous local_session=17 epoch=23") != std::string::npos,
+			"native numeric trace protocol contains cross-layer clock/thread and distinct local request identity");
+		char truncatedBuffer[8]{};
+		check(Format(truncatedBuffer, sizeof(truncatedBuffer), sample) == 0, "truncated native telemetry is dropped rather than parsed as a complete record");
+		Recorder throwing(true, PerfThrow, clock);
+		int businessSteps = 0;
+		{
+			Scope trace(throwing, "native-focus", { request.span, 17, 23, "Previous" });
+			++businessSteps;
+			trace.Result("denied");
+		}
+		check(businessSteps == 1, "throwing diagnostic sink cannot skip business work or escape its cleanup");
+		perfEvents = nullptr; perfThread = 11;
+	}
+	{
+		namespace Trace = Inkeys::Shutdown::ProgressTrace;
+		// 首次读取环境/初始化 Recorder 也必须保住紧邻 Win32 调用的错误码。
+		SetLastError(701);
+		(void)Trace::Enabled();
+		check(GetLastError() == 701, "first shutdown flag read preserves LastError");
+		auto& defaultRecorder = Trace::DefaultRecorder();
+		check(GetLastError() == 701, "first shutdown recorder initialization preserves LastError");
+		Trace::WarmUp();
+		check(Trace::PreparedRecorder() == &defaultRecorder && GetLastError() == 701,
+			"shutdown warm-up publishes the shared recorder without changing LastError");
+
+		const Trace::Clock clock{ ShutdownNow, PerfFrequency, PerfProcess, PerfThread };
+		std::vector<Trace::Event> events; perfEvents = &events;
+		perfClockCalls = 0;
+		Trace::Recorder disabled(false, ShutdownCapture, clock);
+		{
+			Trace::Scope trace(disabled, "test-disabled");
+			const auto stamp = Trace::Capture(disabled, "test-disabled-buffer");
+			Trace::Emit(disabled, Trace::CaptureEnd(disabled, stamp));
+			Trace::Begin(disabled, stamp);
+		}
+		const auto absent = Trace::Capture(static_cast<Trace::Recorder*>(nullptr), "test-unprepared");
+		(void)Trace::CaptureEnd(static_cast<Trace::Recorder*>(nullptr), absent);
+		check(events.empty() && perfClockCalls == 0 && GetLastError() == 701,
+			"disabled and unprepared shutdown diagnostics never sample or emit and preserve LastError");
+
+		Trace::Recorder recorder(true, ShutdownCapture, clock);
+		const auto buffered = Trace::Capture(&recorder, "test-buffered");
+		const auto bufferedEnd = Trace::CaptureEnd(&recorder, buffered, "returned", 42);
+		check(events.empty() && perfClockCalls == 2 && GetLastError() == 701,
+			"pre-Arm shutdown capture stores only values and preserves LastError");
+		Trace::Begin(recorder, buffered); Trace::Emit(recorder, bufferedEnd);
+		check(events.size() == 2 && events[0].stamp.span == events[1].stamp.span
+			&& events[0].stamp.qpc < events[1].stamp.qpc && GetLastError() == 701,
+			"buffered shutdown boundaries keep one identity after deferred emission");
+		char formatted[512]{};
+		const int count = Trace::Format(formatted, sizeof(formatted), bufferedEnd);
+		const std::string line(formatted);
+		char truncated[8]{};
+		check(count > 0 && line.find("[ShutdownTrace] v=1 source=native pid=7 tid=11") == 0
+			&& line.find("event=end stage=test-buffered result=returned error=42") != std::string::npos
+			&& Trace::Format(truncated, sizeof(truncated), bufferedEnd) == 0 && GetLastError() == 701,
+			"shutdown protocol is distinct, numeric and drops truncated records while preserving LastError");
+
+		events.clear();
+		{
+			Trace::Scope parent(recorder, "test-parent");
+			{
+				Trace::Scope child(recorder, "test-child");
+				SetLastError(702); // 诊断析构必须保留业务调用刚产生的错误，而不是旧值。
+			}
+			check(GetLastError() == 702, "nested shutdown scope preserves the latest business LastError");
+		}
+		check(events.size() == 4 && events[0].stamp.span == events[3].stamp.span
+			&& events[1].stamp.span == events[2].stamp.span && events[0].stamp.span != events[1].stamp.span
+			&& std::string(events[0].event) == "begin" && std::string(events[2].event) == "end"
+			&& GetLastError() == 702, "nested shutdown spans pair without affecting business errors");
+		try
+		{
+			Trace::Scope trace(recorder, "test-exception");
+			throw std::runtime_error("original shutdown error");
+		}
+		catch (const std::runtime_error& error)
+		{
+			check(std::string(error.what()) == "original shutdown error", "shutdown scopes preserve original exceptions");
+		}
+		check(events.size() == 6 && std::string(events.back().result) == "exception",
+			"exceptional shutdown scopes close their original span");
+
+		Trace::Recorder failing(true, ShutdownThrow, clock);
+		SetLastError(703);
+		int businessSteps = 0;
+		{
+			Trace::Scope trace(failing, "test-sink-failure");
+			check(GetLastError() == 703, "failed shutdown begin output preserves LastError");
+			++businessSteps;
+		}
+		check(businessSteps == 1 && GetLastError() == 703,
+			"shutdown output failure cannot escape, skip business work or change LastError");
+		// 不创建窗口/控制台；临时无效 stderr 验证原始输出失败后安全返回。
+		const HANDLE originalError = GetStdHandle(STD_ERROR_HANDLE);
+		const BOOL redirected = SetStdHandle(STD_ERROR_HANDLE, INVALID_HANDLE_VALUE);
+		bool rawPreserved = false;
+		if (redirected)
+		{
+			SetLastError(704);
+			Trace::WriteRaw(bufferedEnd);
+			rawPreserved = GetLastError() == 704;
+			(void)SetStdHandle(STD_ERROR_HANDLE, originalError);
+		}
+		check(redirected && rawPreserved, "missing shutdown stderr is harmless and preserves LastError");
+		perfEvents = nullptr;
+	}
 	const std::wstring descriptor = LR"({"schemaVersion":1,"provider":"PowerPoint","status":"StableSlideIds","fullName":"C:\\slides\\a.pptx","presentationName":"a.pptx","applicationProcessId":12,"slideShowHwnd":34,"currentPage":2,"totalPage":3,"currentSlideId":202,"slideIds":[101,202,303],"bindingRevision":9})";
 	const auto envelope = [&](std::wstring lifecycle, std::wstring status,
 		std::wstring nested = L"")

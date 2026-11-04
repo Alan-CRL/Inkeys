@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PalmEraser.h"
 
 #include "IdtMain.h"
 
@@ -157,6 +158,7 @@ std::uint64_t WorkspaceTransitionFailureRevision() noexcept;
 bool RetryWorkspaceTransitionIfRevision(std::uint64_t revision) noexcept;
 bool CancelFailedWhiteboardTransitionIfRevision(std::uint64_t revision) noexcept;
 bool RequestWhiteboardWindowView(bool minimized) noexcept;
+void RequestWhiteboardFromShortcut() noexcept;
 void NotifyWhiteboardWindowMinimizedChanged() noexcept;
 void NotifyWhiteboardWindowViewRequested(bool minimized) noexcept;
 void NotifyWhiteboardWindowCloseRequested() noexcept;
@@ -190,6 +192,7 @@ void RestorePenWidthSelections(Inkeys::Business::PenWidth::Selection brush,
     const COLORREF* brushColor = nullptr, const COLORREF* highlighterColor = nullptr);
 int RunPenWidthStateProductionTest() noexcept;
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
+bool SetPenColorIfRevision(COLORREF targetColor, std::uint64_t revision, bool setMemory = true);
 float GetPenWidth();
 float GetPenWidth(const StateModeClass& snapshot) noexcept;
 COLORREF GetPenColor();
@@ -229,6 +232,8 @@ void SyncDraw3State();
 void InitializeEraserInputPreferences();
 Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot();
 void SetGlobalEraserPreference(int baseDiameterDip = -1, int sensitivity = -1, int automatic = -1);
+Inkeys::Drawing::Draw3::PalmEraser::Settings PalmEraserPreferencesSnapshot();
+bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings& options);
 bool AutomaticPenResponseAvailable() noexcept;
 int EraserWidthPreference(int entry);
 int EraserPenResponsePreference(int entry);
@@ -250,6 +255,8 @@ void RequestWhiteboardActive(bool active) noexcept;
 bool WhiteboardRequested() noexcept;
 bool WhiteboardActive() noexcept;
 bool WhiteboardTransactionActive() noexcept;
+// 仅进入/退出过渡（阶段非稳定或请求与稳定阶段不一致）；稳定打开的白板不算。
+bool WhiteboardSwitching() noexcept;
 // 0 表示白板事务期间不可准入；非零身份仅随白板意图切换，普通翻页不退休它。
 std::uint64_t PptInputWorkspaceEpoch() noexcept;
 // 仅场景事实允许在 Exiting 提前恢复；业务输入仍等待完整离场。

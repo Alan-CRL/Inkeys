@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <windows.h>
 
 export module Inkeys.Drawing.Draw3.realtime_stylus;
@@ -45,6 +46,8 @@ export namespace Inkeys::Drawing::Draw3
 		void Shutdown() noexcept;
 		bool IsInitialized() const noexcept;
 		bool UsesBasicPacketDescription() const noexcept;
+		// 生命周期 owner 在 Initialize 返回后复制至 Host，不暴露 COM 或逐点诊断。
+		std::string StartupInformation() const;
 		// Host 选定后端并放行输入前开启；候选期的 Down 不会跨越此门。
 		void EnableContactPublication() noexcept;
 		// 空来源补打已缓存的 Touch context；指定来源严格匹配 context/generation/cursor。

@@ -124,16 +124,15 @@ void TopWindow()
 			|| Inkeys::Startup::ActiveSnapshot().failed) return;
 		if (LaunchState::warnTry)
 		{
-			const auto title = I18n::getWOr(
-				I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
-			const auto body = I18n::getWOr(
-				I18nKey.Dialogs.WindowCreationFailed.Body,
-				L"Inkeys exited unexpectedly because a program window could not be created or was blocked. Restart Inkeys and try again. (#5)");
-			const auto okLabel = I18n::getWOr(
-				I18nKey.Dialogs.Common.OK, L"OK");
+			I18n::TextSnapshot localized;
+			if (!I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.WindowCreationFailed.Body,
+				I18nKey.Dialogs.Common.OK }, localized))
+				localized.text = { L"Inkeys Tips", L"Inkeys exited unexpectedly because a program window could not be created or was blocked. Restart Inkeys and try again. (#5)", L"OK" };
+			const auto& title = localized.text[0]; const auto& body = localized.text[1];
+			const auto& okLabel = localized.text[2];
 			auto request = Inkeys::UI::MessageBox::MakeOkRequest(
 				title.c_str(), body.c_str());
-			request.language = I18n::languageId();
+			request.language = localized.language;
 			request.labels.ok = okLabel.c_str();
 			request.ownerlessTopmostAtCreation = true;
 			request.fallback.modality =

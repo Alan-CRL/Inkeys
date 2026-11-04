@@ -1,0 +1,2 @@
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"核查白板共享 UI3、分页与窗口合同，避免修复影响工作区交接。"}
+{"file":".trellis/tasks/10-30-shape-picker-expansion-investigation/research/shape-picker-three-modes.md","reason":"质量检查应覆盖三态展开保持、切工具/折叠/隐藏负例及真实 GUI 验证边界。"}

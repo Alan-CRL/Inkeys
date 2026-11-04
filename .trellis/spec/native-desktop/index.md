@@ -9,23 +9,32 @@
 - [directory-structure.md](directory-structure.md)：Solution、目录、文件归属与第三方边界。
 - [build-and-compatibility.md](build-and-compatibility.md)：构建入口、Harness 发布边界、artifact 交接合同和 Windows 兼容约束。
 - [cpp-conventions.md](cpp-conventions.md)：命名、模块、注释、共享状态和并发习惯。
-- [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工。
+- [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工及Setting FreeType动态图集。
+- [bar-theme-material.md](bar-theme-material.md)：Bar 颜色角色、整笔指示器、逐对象材质、完整收展过渡与阴影范围。
+- [ppt-idle-fade.md](ppt-idle-fade.md)：PPT 闲置淡化三范围、背景/内容独立上限、主栏交互与附属面板保护。
+- [bar-icons.md](bar-icons.md)：Bar SVG 图标设计语言、占位色着色、专属资源映射与 lint/预览流程。
+- [setting-motion.md](setting-motion.md)：Setting页面入场、条件块、稳定正文轨道、开屏标题栏及resize/材质连续性。
 - [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [ui-pointer-session.md](ui-pointer-session.md)：Bar/PPT 私有 Raw Mouse、WM_TOUCH 来源会话、窗口外拖动与取消合同。
 - [mouse-hook-and-autocollapse.md](mouse-hook-and-autocollapse.md)：有界鼠标 Hook、PPT 滚轮业务入口与独立 Inkeys3 自动收起策略。
 - [keyboard-shortcuts.md](keyboard-shortcuts.md)：固定快捷键、按压归属、启动同步、条件画布命令与清空选择事务。
+- [desktop-shortcuts.md](desktop-shortcuts.md)：桌面快捷方式名称、双开关保障、main.json 配置与设置 FIFO 合同。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [canvas-freeze-boundaries.md](canvas-freeze-boundaries.md)：Draw3 标准流隔离、PPT IoError 有限重试、橡皮 idle Move 握手与 Setting 隐藏输入会话。
-- [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
+- [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、二十语言映射、菜单排序与热切换、国际化生成链及字体资源归属。
+- [settings-performance-and-drawing.md](settings-performance-and-drawing.md)：性能页、两套帧率、通用绘图每笔锁存和画布初始化信息合同。
+- [settings-attention-notes.md](settings-attention-notes.md)：设置说明下的信息提示、响应式测高、文案分离与无窗口专项。
 - [pen-haptics.md](pen-haptics.md)：笔触觉 Host 注入、设备绑定、UI3 接触凭据、失败回退与无窗口验证合同。
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
 - [eraser-attributes.md](eraser-attributes.md)：UI3橡皮属性、全局尺寸/灵敏度、五入口事务及Clear回撤/重做合同。
+- [palm-eraser.md](palm-eraser.md)：面积识别、10000系统DIP²回退、临时工具转换、并行/邻域、断触接续及设置实尺合同。
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
 - [draw3-cursors.md](draw3-cursors.md)：鼠标/笔类型选择、荧光笔独立预览与设备固定高亮、始终隐藏 Touch 与 Win7 生命周期边界。
-- [startup-preview.md](startup-preview.md)：SuperTop 后启动预览、程序化灰色占位、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
+- [single-instance-and-startup-handoff.md](single-instance-and-startup-handoff.md)：目录单实例、多开偏好、更新/重启与SuperTop连续占位交接。
+- [startup-preview.md](startup-preview.md)：SuperTop 后三种启动效果、深浅/分层透明度、像素入场、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
 
 PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../ppt-interop/index.md)。
 
