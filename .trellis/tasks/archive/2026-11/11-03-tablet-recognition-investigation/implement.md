@@ -16,3 +16,4 @@
 - 2026-11-03(第二轮):首轮日志分析见 `research/ink-mode-source-log.md`。结论:Ink 模式 M6 被 Windows 报告为 Integrated Pen(monitor=NULL,Surface 笔为有效句柄);非 Ink 为 origin=INJECTED 的鼠标。用户决策:①先转储全部指针设备再验证 monitor 规则;②非 Ink 用“注入鼠标”信号做可选开关(默认关)。已加 `pointer-device` 转储日志(`ReadPointerSources`,仅 Cursor 诊断开启时),Debug|ARM64 构建通过,待用户再抓一轮(M6 Ink 开)。
 - 2026-11-03(第三轮):设备全表确认 M6 实际输入的设备是 monitor 为空的虚拟 HID。已在 `ClassifySource` 加 `pointerUnmapped`(Integrated+有矩形+monitor 空→ExternalPen)、`SourceForCursor` 传入、`RtsSourceRoutingForTesting` 与 `speed_eraser_tests` 加用例;`draw3-cursors.md` 已记规则。Debug|ARM64 完整构建通过(首次遇 LNK1000 增量链接内部错误,重试通过),`InkeysHeadlessTests.exe --no-window` exit 0。待实机验证(M6 高亮/橡皮手感)。
 - 非 Ink 注入鼠标识别(默认关的可选开关):依赖设置页,转入 B 的 PRD(R5)实现;信号为 `GetCurrentInputMessageSource` 的 device=MOUSE 且 origin=INJECTED,真鼠标为 HARDWARE。
+- 2026-11-04:Windows Ink 下 M6 识别为数位板已验证(高亮、橡皮手感正常);非 Ink 注入鼠标识别已作为默认关闭的开关在 B 中落地并验收通过。其它品牌数位板/带屏数位屏未验证。任务完成。

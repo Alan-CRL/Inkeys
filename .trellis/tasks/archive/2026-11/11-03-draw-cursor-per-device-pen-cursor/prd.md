@@ -28,10 +28,10 @@
 
 ## 跨子任务验收
 
-- [ ] 用户在专页可为四类设备分别选光标,重启后保留;旧 `MouseStyle/PenStyle` 用户升级后外观不变(触摸除外,见 B)。
-- [ ] 数位板在 Windows Ink 模式下按“仅数位板”默认高亮(A 修复若需要)。
-- [ ] 非 Ink 数位板:有结论文档;能识别则接入,不能则文档说明并提示手动方案。
-- [ ] 全部变更遵守 `.trellis/spec/native-desktop/draw3-cursors.md` 与 `input-and-ink.md`;完成后更新这两份 spec。
+- [x] 用户在专页可为四类设备分别选光标,重启后保留;旧 `MouseStyle/PenStyle` 用户升级后外观不变(触摸除外,见 B)。
+- [x] 数位板在 Windows Ink 模式下按“仅数位板”默认高亮(A 修复若需要)。
+- [x] 非 Ink 数位板:有结论文档;能识别则接入,不能则文档说明并提示手动方案。
+- [x] 全部变更遵守 `.trellis/spec/native-desktop/draw3-cursors.md` 与 `input-and-ink.md`;完成后更新这两份 spec。
 
 ## Out of Scope
 
