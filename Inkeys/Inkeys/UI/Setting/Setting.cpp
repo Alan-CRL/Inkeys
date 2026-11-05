@@ -5284,6 +5284,15 @@ SettingSessionCoroutine RunSettingSession()
 
 namespace
 {
+	// 先注销并排空帧回调，再排空常驻会话；否则迟到的隐藏请求会在最终清理后重新创建会话。
+	template<class Unregister, class PostControl>
+	bool QueueFinalSettingDrain(Unregister unregister, PostControl postControl,
+		Inkeys::UI::RenderPipeline::ControlTask drain)
+	{
+		unregister();
+		return postControl(std::move(drain));
+	}
+
 	void DrainSettingSessionOnRenderThread() noexcept
 	{
 		settingNavigationClockIdle = true; settingFrameSubmission.Reset();
@@ -5659,7 +5668,9 @@ namespace Inkeys::UI::Setting
 			settingSessionState.SetVisible(false);
 		}
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
-		const bool drainPosted = Inkeys::UI::RenderPipeline::PostControl([]
+		const bool drainPosted = QueueFinalSettingDrain(
+			[] { Inkeys::UI::RenderPipeline::Unregister(Inkeys::UI::RenderPipeline::Client::Settings); },
+			[](auto drain) { return Inkeys::UI::RenderPipeline::PostControl(std::move(drain)); }, []
 			{
 				DrainSettingSessionOnRenderThread();
 				lock_guard stateLock(settingStateMutex);
@@ -5675,8 +5686,6 @@ namespace Inkeys::UI::Setting
 			IDTLogger->error(
 				"[Setting] 渲染管线已停止，无法在线程内排空设置会话");
 		}
-		Inkeys::UI::RenderPipeline::Unregister(
-			Inkeys::UI::RenderPipeline::Client::Settings);
 		settingBusinessQueue.Stop();
 	}
 
@@ -5875,6 +5884,117 @@ namespace Inkeys::UI::Setting
         std::printf("[font-lifecycle] failures=%d\n",failures);
         return failures ? 1 : 0;
     }
+	namespace
+	{
+		bool RunSettingShutdownRenderingCase(bool oldOrder, bool holdCallback)
+		{
+			using namespace Inkeys::UI::RenderPipeline;
+			struct Probe
+			{
+				mutex mutex;
+				condition_variable changed;
+				SessionState session;
+				bool entered = false, release = false, unregisterEntered = false, cleanupPosted = false;
+				bool drainRan = false, afterSettingsSlot = false, resident = true, drained = false;
+				unsigned recreated = 0;
+			} probe;
+			probe.session.CommitEpoch(1);
+			probe.session.SetVisible(false);
+			Scheduler scheduler;
+			jthread stopping;
+			struct Cleanup
+			{
+				Probe& probe; Scheduler& scheduler; jthread& stopping;
+				~Cleanup()
+				{
+					{ lock_guard lock(probe.mutex); probe.release = true; }
+					probe.changed.notify_all();
+					if (stopping.joinable()) stopping.join();
+					scheduler.Stop();
+				}
+			} cleanup{ probe, scheduler, stopping };
+			if (!scheduler.Register(Client::Settings, [&](const auto&)
+				{
+					unique_lock lock(probe.mutex);
+					probe.entered = true; probe.changed.notify_all();
+					if (holdCallback && !probe.drainRan) probe.changed.wait(lock, [&] { return probe.release; });
+					// 复用真实隐藏会话决策：没有 resident 时，即使不可见也会先初始化常驻部分。
+					if (probe.session.Resolve(1, probe.resident, false).initializeResident)
+					{
+						probe.resident = true; probe.drained = false; ++probe.recreated;
+						probe.session.CommitEpoch(1);
+					}
+					return FrameResult::Idle;
+				}) || !scheduler.Register(Client::WhiteboardFreeze, [&](const auto&)
+				{
+					lock_guard lock(probe.mutex);
+					// 真实调度顺序中，此 sentinel 必须经过 Settings 的 dispatch slot 后才执行。
+					if (probe.drainRan) { probe.afterSettingsSlot = true; probe.changed.notify_all(); }
+					return FrameResult::Idle;
+				}) || !scheduler.Start()) return false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.entered; })) return false;
+			}
+			const auto drain = [&]
+			{
+				{
+					lock_guard lock(probe.mutex);
+					probe.resident = false; probe.drained = true; probe.drainRan = true;
+					probe.session.ReleaseResident();
+				}
+				// 对应最终清理后到达的 Hide/业务完成请求，不依赖 Sleep 争抢 waiter。
+				scheduler.Request(Mask(Client::Settings) | Mask(Client::WhiteboardFreeze));
+			};
+			bool queued = false;
+			if (oldOrder) queued = scheduler.PostControl(drain);
+			else
+			{
+				stopping = jthread([&]
+				{
+					queued = QueueFinalSettingDrain([&]
+						{
+							{ lock_guard lock(probe.mutex); probe.unregisterEntered = true; }
+							probe.changed.notify_all();
+							scheduler.Unregister(Client::Settings);
+						}, [&](auto task)
+						{
+							{ lock_guard lock(probe.mutex); probe.cleanupPosted = true; }
+							return scheduler.PostControl(std::move(task));
+						}, drain);
+				});
+				if (holdCallback)
+				{
+					unique_lock lock(probe.mutex);
+					if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.unregisterEntered; })
+						|| probe.cleanupPosted || probe.drainRan) return false;
+					probe.release = true; probe.changed.notify_all();
+				}
+				stopping.join();
+			}
+			if (!queued) return false;
+			bool expected = false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.afterSettingsSlot; })) return false;
+				expected = oldOrder ? probe.resident && !probe.drained && probe.recreated == 1
+					: !probe.resident && probe.drained && probe.recreated == 0;
+			}
+			if (oldOrder) scheduler.Unregister(Client::Settings);
+			return expected;
+		}
+
+		bool RunSettingShutdownRenderingTests()
+		{
+			const bool negative = RunSettingShutdownRenderingCase(true, false);
+			const bool hidden = RunSettingShutdownRenderingCase(false, false);
+			const bool active = RunSettingShutdownRenderingCase(false, true);
+			std::fprintf(stderr, "[SettingShutdownRendering] old-order-recreated=%d hidden-drained=%d active-callback-drained=%d\n",
+				negative, hidden, active);
+			return negative && hidden && active;
+		}
+	}
+
 	int RunBusinessCancellationProductionTest() noexcept
 	{
 		if (settingInitialized.load() || Inkeys::Window::GetService().Running()) return 2;
@@ -5903,6 +6023,7 @@ namespace Inkeys::UI::Setting
 		};
 		try
 		{
+			if (!RunSettingShutdownRenderingTests()) return 1;
 			SettingBusinessQueue queue(execute, &probe);
 			if (!queue.Start()) return 1;
 			SettingBusinessCommand dialog; dialog.kind = SettingBusinessKind::Information; queue.Enqueue(dialog);

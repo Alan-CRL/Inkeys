@@ -9,6 +9,7 @@ namespace Inkeys::Shutdown
 	{
 		Close,
 		Restart,
+		UpdateRestart,
 		CrashRestart
 	};
 

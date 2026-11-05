@@ -377,9 +377,11 @@ void SetOffSignal(int signal)
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto windowEnd = ShutdownTrace::CaptureEnd(preArmRecorder, windowTrace);
 	const auto armTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-arm");
-	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
-		signal == 2 ? Inkeys::Shutdown::Intent::Restart
-		: Inkeys::Shutdown::Intent::Close);
+	// 已确认待更新时等旧进程完整退出；普通重启在窗口隐藏后提前接力。
+	const auto shutdownIntent = signal == 1 ? Inkeys::Shutdown::Intent::Close
+		: AutomaticUpdateState.load() == AutomaticUpdateStateEnum::UpdateRestart
+		? Inkeys::Shutdown::Intent::UpdateRestart : Inkeys::Shutdown::Intent::Restart;
+	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(shutdownIntent);
 	const DWORD supervisorError = GetLastError();
 	const auto armEnd = ShutdownTrace::CaptureEnd(preArmRecorder, armTrace, "returned",
 		static_cast<long>(supervisorError));
@@ -393,9 +395,7 @@ void SetOffSignal(int signal)
 	{
 		// 首次普通owner的合法Arm已双失败，当前线程接管原截止，先于任何隐藏/日志/清理等待。
 		Inkeys::UI::RenderPipeline::WakeForStop();
-		Inkeys::Shutdown::EnforceFailedShutdownDeadline(
-			signal == 2 ? Inkeys::Shutdown::Intent::Restart
-			: Inkeys::Shutdown::Intent::Close);
+		Inkeys::Shutdown::EnforceFailedShutdownDeadline(shutdownIntent);
 	}
 	// Failed 接管仍先于任何输出；Arm 若未返回，本轮缓冲记录不会假装已经写出。
 	auto& shutdownRecorder = ShutdownTrace::DefaultRecorder();

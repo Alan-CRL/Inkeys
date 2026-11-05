@@ -404,3 +404,41 @@ Native无窗口helper覆盖cold flag/Recorder准备、未预热空capture、禁�
 
 - Wrong：为定位Arm先输出begin，或借新诊断改变15秒超时以让采集显示exit0。
 - Correct：预热后的POD捕获先留内存，原监督返回后输出，依原退出码和完整阶段链判断。
+
+## Scenario: 隐藏设置会话退出时先停帧再排空（2026-11-05）
+
+### 1. Scope / Trigger
+
+从白板或其他界面退出时，设置窗口即使隐藏也有常驻会话。`main-setting` 未返回并触发15秒兜底时，须检查最终清理与待处理 Settings 帧的先后关系，不能仅因操作来自白板而归因墨迹保存。
+
+### 2. Signatures
+
+`Inkeys::UI::Setting::Shutdown() noexcept`、`Scheduler::Unregister(Client::Settings)`、`PostControl(ControlTask)`、`DrainSettingSessionOnRenderThread()`。
+
+### 3. Contracts
+
+- 最终会话清理投递前，先注销 Settings 帧回调并等待在途回调返回；注销后到达的 Hide/业务完成请求不能重新创建 resident。
+- ImGui/D3D/草稿提交及协程销毁仍在渲染线程执行；主线程等待实际排空，再停止并排空业务 FIFO。共享调度器在此期间保持运行，不能把注销客户端当作停止整个管线。
+- 不得在等待 `settingSessionDrained` 之后才注销回调：调度器先执行 control，随后仍可执行同批待处理帧；重建会话会将该布尔量重新置为 false，使主线程永久等待。
+- 不得直接以 `!settingInitialized` 拦截首帧；Initialize 本来就要等首帧预热成功后才发布 initialized。原15秒监督和探针保持，不以增加超时掩盖竞态。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须结果 |
+| --- | --- |
+| 最终清理后仍有 Settings 请求 | 不再进入帧回调，不重建会话，drained 不回到 false |
+| Settings 回调正在执行 | 先等待该回调完成，再投递最终清理 |
+| 隐藏且调度器空闲 | control 仍能唤醒并完成排空，不要求创建可见窗口 |
+
+### 5. Good / Base / Bad Cases
+
+Good：先停 Settings 帧再清常驻资源；Base：正常初始化和隐藏缓存保留；Bad：清理通知完成后，迟到帧又将 drained 置回 false。
+
+### 6. Tests Required
+
+`Inkeys.exe --setting-business-cancellation-test` 覆盖真实 Scheduler/SessionState 的迟到请求与在途帧排空；旧顺序负例必须能重建 resident，生产顺序必须阻止重建。门和 sentinel 强制交错，不靠重复运行或固定 sleep 猜时序。完整 Debug|ARM64 Solution 及相关无窗口回归通过后，由用户复测白板退出；无窗口回归不替代实机退出验收。
+
+### 7. Wrong vs Correct
+
+Wrong：PostControl(final drain) → wait(drained) → Unregister(Settings)。
+Correct：Unregister(Settings) 并排空在途帧 → PostControl(final drain) → wait(drained) → 业务 FIFO Stop。
