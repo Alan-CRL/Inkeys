@@ -1138,6 +1138,11 @@
         "N": "Afișare rată de cadre",
         "E": "Actualizează o dată pe secundă rata medie și rata fără așteptare din secunda precedentă."
       },
+      "DelayWaiting":
+      {
+        "N": "Întârzie operațiile în așteptare",
+        "E": "Prelungește încărcarea pentru observarea animațiilor."
+      },
       "ConsoleSection": "Ieșire în consolă",
       "CanvasInformation": "Informații despre inițializarea pânzei",
       "DisplayInformation": "Monitoare și EDID"

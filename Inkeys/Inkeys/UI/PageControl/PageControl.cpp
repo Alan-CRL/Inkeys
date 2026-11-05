@@ -821,6 +821,42 @@ namespace Inkeys::UI::PageControl
 			}
 		}
 
+		// 调试等待仅属于控件，不写回真实业务快照或页面 ready/ACK。
+		struct DebugNavigationDelay
+		{
+			std::chrono::steady_clock::time_point deadline{};
+			std::size_t surface = 0;
+			bool next = false, whiteboard = false;
+			std::uint64_t session = 0, epoch = 0;
+			int page = 0;
+			bool Pending() const noexcept { return deadline.time_since_epoch().count() != 0; }
+			bool Matches(const PptState& ppt, const WhiteboardState& board) const noexcept
+			{
+				if (!Pending()) return false;
+				if (whiteboard) return board.active && !board.switching
+					&& board.generation == session && board.currentPage == page;
+				return !board.active && !board.expandedLayoutTarget && !board.switching
+					&& ppt.presentationVisible && ppt.presentationActive
+					&& ppt.layout.session == session && ppt.layout.epoch == epoch
+					&& ppt.currentPage == page && ppt.recovery.kind == PptRecovery::Kind::None;
+			}
+		};
+		DebugNavigationDelay debugNavigationDelay; // snapshotMutex 保护，最多一个待发请求。
+		void RetireDebugNavigationForSurface(std::size_t index) noexcept
+		{
+			bool retired=false;
+			{ std::scoped_lock lock(snapshotMutex);
+			  if(debugNavigationDelay.Pending()&&debugNavigationDelay.surface==index){
+				debugNavigationDelay={};publishedRevision.fetch_add(1,std::memory_order_release);retired=true;
+			  } }
+			if(retired){RequestAll();Inkeys::UI::Bar::WakeInteractionWorker();}
+		}
+		void RetireStaleDebugNavigationLocked() noexcept
+		{
+			// 在发布边沿退休，页面离开后又返回也不能复活旧点击。
+			if(!debugNavigationDelay.Matches(publishedPpt,publishedWhiteboard))debugNavigationDelay={};
+		}
+
 		[[nodiscard]] std::pair<PptState, WhiteboardState> Snapshot() noexcept
 		{
 			std::scoped_lock lock(snapshotMutex);
@@ -878,9 +914,11 @@ namespace Inkeys::UI::PageControl
 				: std::to_wstring((std::min)(maximum, value));
 		}
 
-		void InvokeDirection(std::size_t surfaceIndex,bool next,WorkspaceMode expectedMode=WorkspaceMode::Hidden)
+		void InvokeDirection(std::size_t surfaceIndex,bool next,WorkspaceMode expectedMode=WorkspaceMode::Hidden,bool allowDebugDelay=true)
 		{
 			if (surfaceIndex >= surfaces.size()) return;
+			{ std::scoped_lock lock(snapshotMutex);
+			  if (debugNavigationDelay.Matches(publishedPpt,publishedWhiteboard)) return; }
 			std::function<void()> callback;
 			const auto [ppt, whiteboard] = Snapshot();
 			const auto liveMode=ResolveWorkspaceMode(SurfaceFor(surfaceIndex),ppt,whiteboard);
@@ -913,6 +951,20 @@ namespace Inkeys::UI::PageControl
 			}
 			UiDiag::Log(SurfaceName(surfaceIndex),nullptr,"action",callback?"direction_callback_dispatched":"no_direction_callback",0,nullptr,"next=%d mode=%u ppt_visible=%d whiteboard_active=%d page=%d total=%d",next,static_cast<unsigned>(liveMode),ppt.presentationVisible,whiteboard.active,ppt.currentPage,ppt.totalPage);
 			if (!callback) return;
+			if (allowDebugDelay && Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations
+				&& (whiteboard.active ? (next ? whiteboard.nextEnabled && whiteboard.nextInteractive
+					: whiteboard.previousEnabled && whiteboard.previousInteractive)
+					: ppt.presentationActive && ppt.currentPage > 0 && ppt.recovery.kind == PptRecovery::Kind::None))
+			{
+				// 先展示等待，再交给业务队列，人工延迟不消耗 COM/加载的真实超时预算。
+				{ std::scoped_lock lock(snapshotMutex);
+				  debugNavigationDelay = {std::chrono::steady_clock::now()+std::chrono::seconds(10),
+					surfaceIndex,next,whiteboard.active,whiteboard.active?whiteboard.generation:ppt.layout.session,
+					ppt.layout.epoch,whiteboard.active?whiteboard.currentPage:ppt.currentPage};
+				  publishedRevision.fetch_add(1,std::memory_order_release); }
+				RequestAll(); Inkeys::UI::Bar::WakeInteractionWorker();
+				return;
+			}
 			// 先登记控件发起的翻页，随后的页码发布不能被误判为翻页笔/键盘翻页。
 			const auto now = std::chrono::steady_clock::now();
 			lastControlNavigation.store(now.time_since_epoch().count(), std::memory_order_release);
@@ -1033,6 +1085,18 @@ namespace Inkeys::UI::PageControl
 			content.patternLabels={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBlankLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardDotsLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardGridLabel)};
 			content.sectionLabels={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundColorLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundStyleLabel)};
 			content.backgroundRgb=whiteboard.backgroundRgb;content.pattern=whiteboard.pattern;
+			{ std::scoped_lock lock(snapshotMutex);
+			  if(debugNavigationDelay.Matches(ppt,whiteboard)) {
+				content.interactive={false,false,false};
+				if(content.whiteboard){
+					content.switching=true;content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
+					content.currentPage=IW(I18nKey.UI.Bar.CanvasRecovery.Loading);
+					content.totalPage=IW(I18nKey.UI.Bar.CanvasRecovery.Wait);
+				}else{
+					content.navigationWaitingPrevious=!debugNavigationDelay.next;
+					content.navigationWaitingNext=debugNavigationDelay.next;
+				}
+			  } }
 			return content;
 		}
 
@@ -2727,6 +2791,25 @@ namespace Inkeys::UI::PageControl
 		}
 
         std::chrono::steady_clock::time_point PageControlLongPressTick(std::chrono::steady_clock::time_point,void*);
+        std::chrono::steady_clock::time_point DebugNavigationTick(std::chrono::steady_clock::time_point now,std::size_t index)
+        {
+            DebugNavigationDelay pending; bool dispatch=false;
+            const auto lifecycle=inputLifecycle.load(std::memory_order_acquire);
+            const auto input=InputSnapshot(index);
+            { std::scoped_lock lock(snapshotMutex);
+              if(!debugNavigationDelay.Pending()||debugNavigationDelay.surface!=index)return std::chrono::steady_clock::time_point::max();
+              pending=debugNavigationDelay;
+              const bool valid=pending.Matches(publishedPpt,publishedWhiteboard)&&input.visible
+                  && input.mode==(pending.whiteboard?WorkspaceMode::WhiteboardExpanded:WorkspaceMode::PptCompact);
+              if(valid&&now<pending.deadline)return pending.deadline;
+              dispatch=valid;debugNavigationDelay={};publishedRevision.fetch_add(1,std::memory_order_release);
+            }
+            RequestAll();
+            // 退休观察状态后重新走原准入检查；旧页、旧场次和隐藏控件不得迟到翻页。
+            if(dispatch&&initialized.load(std::memory_order_acquire)
+                && lifecycle==inputLifecycle.load(std::memory_order_acquire))InvokeDirection(index,pending.next,input.mode,false);
+            return std::chrono::steady_clock::time_point::max();
+        }
         std::chrono::steady_clock::time_point PageControlInputTick(std::chrono::steady_clock::time_point now,void* context)
         {
             const auto* registration=static_cast<InputRegistrationContext*>(context);
@@ -2736,7 +2819,7 @@ namespace Inkeys::UI::PageControl
             bool due=false;const auto deadline=loadingDeadlines[registration->index].Consume(now,due);
             bool idleDue=false;const auto idleDeadline=idleDeadlines[registration->index].Consume(now,idleDue);
             if(due||idleDue)RequestSurface(registration->index); // 只唤醒，Scene按最新loading/session重新判定。
-            return (std::min)({deadline,idleDeadline,PageControlLongPressTick(now,context)});
+            return (std::min)({deadline,idleDeadline,DebugNavigationTick(now,registration->index),PageControlLongPressTick(now,context)});
         }
 		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context);
 		void PageControlInputEvent(const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context)
@@ -3372,6 +3455,8 @@ namespace Inkeys::UI::PageControl
 			auto& client = pointerClients[index];
 			PointerInput::Touch::DrainCancels();
 			if(message==PointerInput::Touch::CancelWakeMessage)return 0;
+			// 隐藏边沿立即退休观察；不能等 tick，否则隐藏后重现会复活旧点击。
+			if(message==WM_DESTROY||(message==WM_SHOWWINDOW&&!wParam))RetireDebugNavigationForSurface(index);
 			if(message==WM_CANCELMODE||message==WM_DESTROY||(message==WM_SHOWWINDOW&&!wParam))PointerInput::Touch::CancelWindow(hwnd);
 			if(message==WM_CAPTURECHANGED&&!releasingPageCapture)PointerInput::Touch::CancelTargetWindow(hwnd);
 			if(message==WM_DESTROY)PointerInput::Touch::RetireTarget(hwnd);
@@ -3651,6 +3736,61 @@ namespace Inkeys::UI::PageControl
             Check(PageControlInputTick(now,&registration)==due,"real PageControl input tick preserves visual deadline with no pointer or long press");
             loadingDeadlines[0].ticks.store(saved);idleDeadlines[0].ticks.store(savedIdle);surfaces[0].pressStarted=press;surfaces[0].lastRepeat=repeat;initialized.store(previous);
         }
+		{
+			// 无窗口驱动生产延迟入口与截止，验证不写业务状态、不堆积和旧会话取消。
+			const auto savedPpt=publishedPpt;const auto savedBoard=publishedWhiteboard;
+			const auto savedDelay=debugNavigationDelay;const auto savedInput=InputSnapshot(0);
+			const auto savedCallbacks=pptCallbacks;const auto savedRevision=publishedRevision.load();
+			const bool savedInitialized=initialized.exchange(true);
+			const bool savedOption=Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations;
+			unsigned calls=0;pptCallbacks.nextPage=[&]{++calls;};
+			publishedPpt={};publishedPpt.presentationVisible=publishedPpt.presentationActive=true;
+			publishedPpt.currentPage=2;publishedPpt.totalPage=5;publishedPpt.layout.session=881;
+			publishedWhiteboard={};debugNavigationDelay={};
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,881);}
+			Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations=false;
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			Check(calls==1&&!debugNavigationDelay.Pending(),"disabled delay dispatches immediately");
+			Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations=true;
+			const auto start=std::chrono::steady_clock::now();InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			const auto due=debugNavigationDelay.deadline;
+			Check(calls==1&&due>=start+std::chrono::seconds(10),"click stages ten seconds before real business request");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			Check(debugNavigationDelay.deadline==due,"second click does not stack or extend observation");
+			const auto content=BuildPageContent(0,WorkspaceMode::PptCompact,publishedPpt,publishedWhiteboard);
+			Check(content.navigationWaitingNext&&!content.interactive[2]&&!publishedPpt.navigationWaiting.waiting,
+				"observation affects page surface only, not real navigation state");
+			Check(DebugNavigationTick(due-std::chrono::milliseconds(1),0)==due&&calls==1,"no dispatch before deadline");
+			(void)DebugNavigationTick(due,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"deadline dispatches once without restarting delay");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);++publishedPpt.layout.session;
+			(void)DebugNavigationTick(debugNavigationDelay.deadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"new PPT session cancels deferred click");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);++publishedPpt.currentPage;
+			(void)DebugNavigationTick(debugNavigationDelay.deadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"external page change cancels deferred click");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);++publishedPpt.currentPage;
+			RetireStaleDebugNavigationLocked();--publishedPpt.currentPage;
+			Check(!debugNavigationDelay.Pending(),"page departure and return cannot revive retired observation");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			const auto hiddenDeadline=debugNavigationDelay.deadline;
+			RetireDebugNavigationForSurface(0); // 模拟原生隐藏边沿，重现不恢复旧意图。
+			(void)DebugNavigationTick(hiddenDeadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"hide then show before tick cannot revive delayed click");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			initialized.store(false);(void)DebugNavigationTick(debugNavigationDelay.deadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"shutdown blocks already staged deadline dispatch");
+			initialized.store(true);
+			WhiteboardState board;board.active=true;board.generation=7;board.currentPage=3;
+			DebugNavigationDelay wb{due,0,true,true,7,0,3};
+			Check(wb.Matches(publishedPpt,board),"whiteboard delay binds page generation");
+			++board.generation;Check(!wb.Matches(publishedPpt,board),"whiteboard re-entry retires old observation");
+			publishedPpt=savedPpt;publishedWhiteboard=savedBoard;debugNavigationDelay=savedDelay;
+			pptCallbacks=savedCallbacks;publishedRevision.store(savedRevision);
+			initialized.store(savedInitialized);
+			Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations=savedOption;
+			{std::scoped_lock lock(inputSnapshotMutex);inputPresentations[0]=savedInput;}
+		}
 		constexpr std::array<std::uint32_t,6> expectedColors{0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
 		Check(WhiteboardVisual::ThemeColors==expectedColors,"palette row order is green, navy, black then white, light gray, ivory");
 		{
@@ -5986,6 +6126,7 @@ namespace Inkeys::UI::PageControl
 		}
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
+		{ std::scoped_lock lock(snapshotMutex); debugNavigationDelay={}; }
 		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		for(auto& deadline:idleDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		whiteboardMenuEpoch.store(0,std::memory_order_release);
@@ -6113,6 +6254,7 @@ namespace Inkeys::UI::PageControl
 				|| publishedPpt.idleFadeMainBar != merged.idleFadeMainBar;
 			changed = !ArePptStatesEquivalent(publishedPpt, merged);
 			publishedPpt = merged;
+			RetireStaleDebugNavigationLocked();
 			if (changed) publishedRevision.fetch_add(1, std::memory_order_release);
 			if(changed)waitFields.flags|=WaitTrace::Changed;
 			waitFields.revision=publishedRevision.load(std::memory_order_relaxed);
@@ -6137,6 +6279,7 @@ namespace Inkeys::UI::PageControl
 			const bool menuIdentityChanged = next.menu != publishedWhiteboard.menu
 				|| next.currentPage != publishedWhiteboard.currentPage || next.generation != publishedWhiteboard.generation;
 			publishedWhiteboard = next;
+			RetireStaleDebugNavigationLocked();
 			if(menuIdentityChanged)PublishWhiteboardMenuIdentityLocked();
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}

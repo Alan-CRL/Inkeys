@@ -104,3 +104,23 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 176: 调试等待操作延迟开关
+<!-- trellis-session: v=2 fp=358bcd06943bea4a -->
+
+**Date**: 2026-11-05
+**Task**: 调试等待操作延迟开关
+**Branch**: `debug/wait`
+
+### Summary
+
+完成默认关闭的调试开关，启动复用慢速成功模式，主动点击白板/PPT分页以非阻塞10s观察后派发；复核修复隐藏/停机退休。国际化、diff检查、ARM64 Debug Solution（临时非增量链接）、分页离屏与启动专项均通过。代理未进行GUI验证；用户确认改动生效并授权提交，未push。
+
+### Git Commits
+
+本次功能与归档记录一并提交。
+
+### Status
+
+[OK] **Completed**

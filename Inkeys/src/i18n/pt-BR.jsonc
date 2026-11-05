@@ -1138,6 +1138,11 @@
         "N": "Mostrar taxa de quadros",
         "E": "Atualiza a cada segundo a taxa média do segundo anterior e a taxa sem espera."
       },
+      "DelayWaiting":
+      {
+        "N": "Atrasar operações de espera",
+        "E": "Prolonga o carregamento para observar as animações."
+      },
       "ConsoleSection": "Saída no console",
       "CanvasInformation": "Informações de inicialização do desenho",
       "DisplayInformation": "Monitores e EDID"

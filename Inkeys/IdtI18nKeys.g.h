@@ -1141,6 +1141,11 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/FrameRate/N";
                 const char* E = "SettingsUI/DebugSoftware/FrameRate/E";
             } FrameRate{};
+            struct Node__SettingsUI__DebugSoftware__DelayWaiting
+            {
+                const char* N = "SettingsUI/DebugSoftware/DelayWaiting/N";
+                const char* E = "SettingsUI/DebugSoftware/DelayWaiting/E";
+            } DelayWaiting{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";

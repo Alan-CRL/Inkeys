@@ -1138,6 +1138,11 @@
         "N": "Pokaż liczbę klatek na sekundę",
         "E": "Co sekundę aktualizuj średnią liczbę klatek i liczbę klatek bez oczekiwania z poprzedniej sekundy."
       },
+      "DelayWaiting":
+      {
+        "N": "Opóźnij operacje oczekiwania",
+        "E": "Wydłuża ładowanie, aby obserwować animacje."
+      },
       "ConsoleSection": "Wyjście konsoli",
       "CanvasInformation": "Informacje o inicjalizacji płótna",
       "DisplayInformation": "Ekrany i EDID"

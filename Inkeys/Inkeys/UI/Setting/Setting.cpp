@@ -4847,6 +4847,13 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 						}
 					}
+					bool delayWaiting = Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations;
+					if (Design::ToggleRow("##debug-delay-waiting", IA(I18nKey.SettingsUI.DebugSoftware.DelayWaiting.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.DelayWaiting.E).c_str(), "\ue9d9", delayWaiting))
+					{
+						Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations = delayWaiting;
+						QueueConfigWrite();
+					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)

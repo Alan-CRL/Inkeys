@@ -1138,6 +1138,11 @@
         "N": "Kare hızını göster",
         "E": "Önceki saniyenin ortalama ve beklemesiz kare hızını saniyede bir güncelleyin."
       },
+      "DelayWaiting":
+      {
+        "N": "Bekleyen işlemleri geciktir",
+        "E": "Animasyonları gözlemlemek için yükleme süresini uzatır."
+      },
       "ConsoleSection": "Konsol çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",
       "DisplayInformation": "Ekranlar ve EDID"

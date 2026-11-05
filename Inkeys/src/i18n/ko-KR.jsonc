@@ -1138,6 +1138,11 @@
         "N": "프레임 속도 표시",
         "E": "이전 1초의 평균 프레임 속도와 대기 없는 프레임 속도를 매초 갱신합니다."
       },
+      "DelayWaiting":
+      {
+        "N": "대기 작업 지연",
+        "E": "로딩 대기를 연장하여 애니메이션을 확인합니다."
+      },
       "ConsoleSection": "콘솔 출력",
       "CanvasInformation": "캔버스 초기화 정보",
       "DisplayInformation": "디스플레이 및 EDID"

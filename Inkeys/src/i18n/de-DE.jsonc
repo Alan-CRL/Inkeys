@@ -1138,6 +1138,11 @@
         "N": "Bildrate anzeigen",
         "E": "Einmal pro Sekunde die durchschnittliche und unbegrenzte Bildrate der vorherigen Sekunde aktualisieren."
       },
+      "DelayWaiting":
+      {
+        "N": "Wartevorgänge verzögern",
+        "E": "Ladezeiten zum Beobachten der Animationen verlängern."
+      },
       "ConsoleSection": "Konsolenausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",
       "DisplayInformation": "Bildschirme und EDID"

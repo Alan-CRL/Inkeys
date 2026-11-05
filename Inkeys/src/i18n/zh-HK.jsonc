@@ -1138,6 +1138,11 @@
         "N": "顯示幀率",
         "E": "每秒更新上一秒的平均幀率及無等待幀率。"
       },
+      "DelayWaiting":
+      {
+        "N": "為等待操作延遲",
+        "E": "延長載入等待，便於觀察動畫。"
+      },
       "ConsoleSection": "主控台輸出",
       "CanvasInformation": "畫布初始化資訊",
       "DisplayInformation": "顯示器與 EDID"
