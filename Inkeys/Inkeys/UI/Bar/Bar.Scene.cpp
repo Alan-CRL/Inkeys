@@ -818,7 +818,8 @@ namespace Inkeys::UI::Bar
                 const float corner=item.button.rw?static_cast<float>(item.button.rw->val):static_cast<float>(BarButtonCornerRadiusDip);
                 const float width=static_cast<float>(r.Width())-2*inset,height=static_cast<float>(r.Height())-2*inset;
                 if(width<=PageLoadingStyle::Width||height<=PageLoadingStyle::Width)return true;
-                const float radius=(std::max)(.5F,(std::min)({corner-inset,width/2,height/2}));
+                // 圆角与按钮自身圆角一致（环中心线取按钮圆角），仅在放不下时收小。
+                const float radius=(std::max)(.5F,(std::min)({corner,width/2,height/2}));
                 const RingKey key{width,height,radius};
                 Microsoft::WRL::ComPtr<ID2D1Factory> factory;context->GetFactory(factory.GetAddressOf());
                 if(!factory){ringFailed=true;return true;}

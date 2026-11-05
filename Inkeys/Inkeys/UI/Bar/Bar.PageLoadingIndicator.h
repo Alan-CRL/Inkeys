@@ -14,7 +14,7 @@ namespace Inkeys::UI::Bar
         inline constexpr auto Delay=std::chrono::milliseconds(500);
         inline constexpr double FadeInSeconds=.180,FadeOutSeconds=.140;
         // 环沿页码按钮边框内侧：线宽、与边框内缘的间隙、抗锯齿外扩（均为 DIP）。
-        inline constexpr float Width=1.5F,Gap=1.0F,AntialiasOutset=1.5F;
+        inline constexpr float Width=2.5F,Gap=1.0F,AntialiasOutset=1.5F;
         // 非线性环：一个周期内头部先行、尾部追赶，弧长在 [MinArc,MaxArc] 之间伸缩，
         // 同时叠加缓慢的整体旋转；全部以周长比例表示。
         inline constexpr double CycleSeconds=1.4,CycleTravel=.75,BaseTurnsPerCycle=.3,MinArc=.10,StaticArc=.25;

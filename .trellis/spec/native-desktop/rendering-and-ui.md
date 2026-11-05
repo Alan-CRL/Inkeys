@@ -2740,7 +2740,7 @@ Correct：发布后保留 pending，非阻塞读取完整匹配回执；仅最�
 - **页码槽状态表**（左=当前页码槽，右=原 `/N` 槽）：白板/PPT 翻页等待=左页码不变、右 `Wait`，加载环+整窗口变浅；PPT `Recovering`=右 `Recovering`，同上；失败类可重试=左原因词、右 `Retry`，页码按钮可点且不变浅、无环，上/下一页不可点并变浅；失败类不可重试（终态）=左页码不变、右原因词，环退场，整窗口保持变浅且不可点。`Loading` 文案已删除。
 - **500ms 门控**：`deadline=now+500ms`；文字切换、变浅、环都在 `reached` 之后才发生；回到 `None` 立即关门并清 deadline；`Loading→FinalFailed` 等非 `None` 间切换不重置 deadline。变浅（180ms/140ms 曲线）与环淡入淡出各自轨道；文字到点直接 `TransitionToString`，纯页码间仍 Immediate。可重试失败的页码按钮在 `reached` 之前保持不可点。上/下一页在 `recovery.kind!=None` 时命中即锁（`interactive=false`），视觉变浅仍等门控。
 - **变浅**：视觉 enabled 由 `LoadingDimmed(id)` 决定（Loading/终态=全部按钮；可重试失败=仅不可点的上/下一页）；命中仍用 `interactive/enabled`，二者独立。通用禁用变浅只覆盖图标与主文字，`pageTotal` 由 Scene 独立持有，必须在 `AdvanceBarButtonVisual` 前用 `GetThemeDisabledContentOpacity()` 同口径 `pct.SetTar`，否则 `/N` 或状态词不变浅。
-- **环几何**：沿页码按钮边框内侧的圆角矩形（内缩=边框厚度+间隙+半线宽，圆角取按钮 `rw`），起点顶边中点顺时针；线宽 1.5DIP、无轨道、`IconPrimary`、圆角端帽。用缓存 `ID2D1PathGeometry` + 每帧自定义 dash（`dashes={(L-W)/W,(P-(L-W))/W}`，`dashOffset=(P-start*P)/W`）描边，圆角端帽向两端各延伸半个线宽故弧长扣除一个线宽；尺寸/圆角变化重建路径，设备丢失/新一段失败时 `ResetRingResources`。
+- **环几何**：沿页码按钮边框内侧的圆角矩形（内缩=边框厚度+间隙+半线宽，中心线圆角直接取按钮 `rw`（与按钮圆角一致，放不下才收小）），起点顶边中点顺时针；线宽 2.5DIP、无轨道、`IconPrimary`、圆角端帽。用缓存 `ID2D1PathGeometry` + 每帧自定义 dash（`dashes={(L-W)/W,(P-(L-W))/W}`，`dashOffset=(P-start*P)/W`）描边，圆角端帽向两端各延伸半个线宽故弧长扣除一个线宽；尺寸/圆角变化重建路径，设备丢失/新一段失败时 `ResetRingResources`。
 - **非线性运动**：`PageLoadingArcAt` 以头部先行/尾部追赶的 in-out 缓动配合每周期 0.3 圈的基础旋转，弧长在 `MinArc=.10` 与约 .6 周长之间伸缩；仅 `ring>0` 且动画开启时推进 `phase`，退场后保留，设备资源重建不影响相位；全局动画关闭用固定弧（长 .25，起点 0）。
 - 装饰资源失败只跳过环，不影响数字/状态/业务；`NeedsFrames` 稳定（终态失败/可重试失败/静态环）后必须能 Idle；到期仍由原子 deadline + `WakeInteractionWorker`。
 - 损伤：环可见期间每帧只损伤页码按钮包络（+`AntialiasOutset`），各按钮变浅过渡由自身视觉结果登记。
