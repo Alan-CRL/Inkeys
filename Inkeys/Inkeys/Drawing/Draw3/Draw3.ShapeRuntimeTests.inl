@@ -248,5 +248,62 @@ int RunShapeInteractionProductionTest()
 	check(!CanRedoClearAfterOperations(redoBoundary),"pending Replace redo takes precedence over Clear redo");
 	redoBoundary.operationCursor = 1;
 	check(CanRedoClearAfterOperations(redoBoundary),"Clear redo becomes available only after all document operations");
+	// 绘制线程最新预览槽：同手势只保留最后一条；同手势终结直接取代；其他命令前先执行旧预览；每帧最多一次。
+	{
+		ShapePreviewSlot slot; ShapeUiAction base; base.identity.session = 90; base.handleId = 3; base.down = {5,6};
+		base.kind = ShapeUiActionKind::PreviewEdit;
+		std::shared_ptr<const ShapeUiAction> flushed;
+		for (int index = 0; index < 64; ++index)
+		{
+			auto preview = std::make_shared<ShapeUiAction>(base); preview->point = {static_cast<float>(index),0};
+			if (auto flush = slot.AcceptPreview(preview)) flushed = flush;
+		}
+		check(!flushed && slot.coalesced == 63 && slot.held && slot.held->point.x == 63,"64 same-gesture previews collapse into the newest held preview");
+		auto latest = slot.AtBatchEnd();
+		check(latest && latest->point.x == 63 && !slot.held,"batch end executes only the newest preview once");
+		slot.executedThisFrame = 1;
+		slot.AcceptPreview(std::make_shared<ShapeUiAction>(base));
+		check(!slot.AtBatchEnd() && slot.held,"second preview in the same frame waits for the next frame");
+		slot.BeginFrame();
+		check(slot.AtBatchEnd() && !slot.held,"next frame drains the deferred preview");
+		slot.AcceptPreview(std::make_shared<ShapeUiAction>(base));
+		check(!slot.BeforeCommand(nullptr,true) && slot.held,"same-scene declaration does not interrupt preview coalescing");
+		auto commit = base; commit.kind = ShapeUiActionKind::CommitEdit; const auto coalescedBefore = slot.coalesced;
+		check(!slot.BeforeCommand(&commit,false) && !slot.held && slot.coalesced == coalescedBefore + 1,
+			"same-gesture commit supersedes the pending preview because it carries the final point");
+		slot.AcceptPreview(std::make_shared<ShapeUiAction>(base));
+		check(slot.BeforeCommand(nullptr,false) && !slot.held,"unrelated command runs only after the older pending preview");
+		auto other = base; other.handleId = 4;
+		slot.AcceptPreview(std::make_shared<ShapeUiAction>(base));
+		const auto older = slot.AcceptPreview(std::make_shared<ShapeUiAction>(other));
+		check(older && older->handleId == 3 && slot.held && slot.held->handleId == 4,"different gesture flushes the older preview first");
+		auto foreignCommit = commit; foreignCommit.identity.session = 91;
+		check(slot.BeforeCommand(&foreignCommit,false) && !slot.held,"another session terminal cannot drop this gesture preview");
+	}
+	// 画布焦点：所有失焦原因的落定/丢弃决策表，以及待落定项必须是 Z 序可见后缀。
+	{
+		using R = CanvasFocusEndReason;
+		bool table = true;
+		for (unsigned index = 0; index < static_cast<unsigned>(R::Count); ++index)
+		{
+			const auto reason = static_cast<R>(index);
+			const bool rebuild = reason == R::PageSwitch || reason == R::Resize || reason == R::DeviceLost || reason == R::ViewportRefresh;
+			table = table && ResolveCanvasFocusEnd(reason) == (rebuild ? CanvasFocusEndAction::Drop : CanvasFocusEndAction::Materialize);
+		}
+		check(table,"every focus-loss reason materializes except whole-L2 rebuilds, which drop L1");
+		const auto last = pages[0].history.LastVisibleItem();
+		if (last && last->index > 0 && pages[0].history.Items()[last->index - 1].visible)
+		{
+			PendingL2Item top; top.item = *last;
+			PendingL2Item middle; middle.item = pages[0].history.Items()[last->index - 1].id;
+			check(CanvasFocusSession::IsVisibleSuffix(pages[0].history,std::span<const PendingL2Item>(&top,1)),"topmost visible item is a valid focus-layer suffix");
+			check(!CanvasFocusSession::IsVisibleSuffix(pages[0].history,std::span<const PendingL2Item>(&middle,1)),"an item below another visible item is rejected as focus-layer content");
+			const std::array<PendingL2Item,2> both{middle,top};
+			check(CanvasFocusSession::IsVisibleSuffix(pages[0].history,both),"a contiguous visible tail is a valid multi-item suffix");
+			CanvasFocusSession session; session.pending = {top};
+			check(session.Active() && session.Find(*last) && !session.Find(middle.item),"focus session finds only its pending item");
+		}
+		else check(false,"focus suffix fixture has two visible tail items");
+	}
 	std::fprintf(stderr,"[Shape.Interaction] failures=%d\n",failures); return failures;
 }

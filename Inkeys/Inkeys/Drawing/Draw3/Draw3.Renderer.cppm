@@ -260,6 +260,10 @@ export namespace Inkeys::Drawing::Draw3
 			float originX = 0, float originY = 0, float displayScale = 1);
 		bool DrawShapeRenderData(const ::draw3::shapes::RenderData& data,
 			float originX = 0, float originY = 0);
+		// 一次性候选（编辑拖动预览）不进入 id/revision 缓存，避免预览修订挤出其他图形。
+		bool DrawTransientShapeObject(const ::draw3::shapes::ShapeObject& object,
+			float originX = 0, float originY = 0, float displayScale = 1);
+		std::size_t ShapeRenderCacheSize() const noexcept;
 		// 页面权威安装清空派生缓存；单对象重放可仅淘汰其全部历史修订。
 		void ClearShapeRenderCache() noexcept;
 		void InvalidateShapeCache(const ::draw3::shapes::ObjectId& id) noexcept;

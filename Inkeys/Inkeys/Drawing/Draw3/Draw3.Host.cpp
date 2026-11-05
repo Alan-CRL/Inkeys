@@ -3292,8 +3292,10 @@ namespace Inkeys::Drawing::Draw3
 	{
 		std::scoped_lock lock(impl_->commandPublishMutex);
 		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
-		const auto result = impl_->bridge.PublishShapeAction(action);
-		if (result == Bridge::CommandResult::Accepted) impl_->input.PublishReservedCommandWake();
+		bool coalesced = false;
+		const auto result = impl_->bridge.PublishShapeAction(action, &coalesced);
+		// 覆盖已排队预览时其原有唤醒仍在，预留的新唤醒必须退回，保持唤醒与命令一一对应。
+		if (result == Bridge::CommandResult::Accepted && !coalesced) impl_->input.PublishReservedCommandWake();
 		else impl_->input.CancelReservedCommandWake();
 		return result;
 	}

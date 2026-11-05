@@ -12,6 +12,7 @@ import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.ink_prediction;
+import Inkeys.Drawing.Draw3.ink_history_gpu;
 import draw3.uink_file;
 import draw3.uink_draw3_import;
 
@@ -4205,6 +4206,240 @@ namespace Inkeys::Drawing::Draw3
 			Report("FAIL", "unexpected hidden integration exception");
 		}
 		if (failures == 0) Report("PASS", "all hidden integration checks");
+		return failures == 0 ? 0 : 1;
+	}
+	int RunShapeFocusHiddenTest() noexcept
+	{
+		_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
+		_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+		_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+		int failures = 0;
+		try
+		{
+			Inkeys::Window::Service service(64);
+			StyleContext style{ &service };
+			struct StopBeforeWindowDestruction
+			{
+				Inkeys::Window::Service& service;
+				~StopBeforeWindowDestruction() { StopProduct(); service.StopAndJoin(); }
+			} stopGuard{ service };
+			const std::wstring suffix = std::to_wstring(GetCurrentProcessId()) + L".ShapeFocus";
+			std::vector<Inkeys::Window::WindowSpec> specs;
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::MagnifierHost,
+				L"Inkeys.Draw3.Hidden.Magnifier." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::Freeze,
+				L"Inkeys.Draw3.Hidden.Freeze." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::DrawpadPresentation,
+				L"Inkeys.Draw3.Hidden.Presentation." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::Drawpad,
+				L"Inkeys.Draw3.Hidden.Drawpad." + suffix, DrawpadMsgCallback, 320, 240));
+			if (!Check(service.Start(specs), "SF00 create invisible legacy Window Service", failures)) return 1;
+			const HWND drawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+			const HWND presentation = service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation);
+			const HostStyleCallbacks callbacks{ &style, &ApplyDrawpadStyle };
+			HostStartOptions options{ HostPresentationMode::UlwDirtyRect };
+			options.allowDirectComposition = false;
+			options.enableHiddenTestContactInjection = true;
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options), "SF01 real Host starts", failures)) return 1;
+			Bridge::ProductState state;
+			state.tool = Bridge::Tool::Shape;
+			state.shapeTool.preset = draw3::shapes::PresetKind::Rectangle;
+			state.shapeTool.creationMode = draw3::shapes::DefaultCreationMode(draw3::shapes::PresetKind::Rectangle);
+			state.shapeStyle.width = 3; state.shapeStyle.strokeRgb = 0x1E8CDCu; state.shapeStyle.strokeOpacity = 1;
+			state.selectionMode = false;
+			state.autoSaveEnabled = false;
+			PublishProductState(state);
+			if (!Check(WaitUntil([]
+			{
+				const auto snapshot = ProductHost().RuntimeSnapshot();
+				return !snapshot.selectionMode && snapshot.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+					snapshot.readyOutputRevision == snapshot.requestedOutputRevision;
+			}, 3s), "SF02 primary drawing output ready", failures)) return 1;
+			const auto send = [&](HiddenTestContactPhase phase, int x, int y)
+			{
+				DWORD_PTR accepted = 0;
+				return SendMessageTimeoutW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase) | kHiddenTestExternalPenFlag, MAKELPARAM(x, y),
+					SMTO_BLOCK | SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 2000, &accepted) != 0 && accepted == 0;
+			};
+			const auto editorOpen = []
+			{
+				const auto shape = ProductShapeUiSnapshot();
+				return shape && shape->object && !shape->editGestureActive && !ProductHost().RuntimeSnapshot().pen.active;
+			};
+			const auto editorClosed = []
+			{
+				const auto shape = ProductShapeUiSnapshot();
+				return !shape || !shape->object;
+			};
+			// 画一个矩形；抬笔后应自动进入编辑，且对象只在焦点层（无 tile 重放、无落定）。
+			unsigned shapes = 0;
+			const auto drawShape = [&](int x, int y, const char* name)
+			{
+				const auto before = SnapshotShapePreviewMetrics();
+				const auto restores = CompositionRestoreCallsTotal();
+				++shapes;
+				const bool posted = send(HiddenTestContactPhase::Down, x, y) && send(HiddenTestContactPhase::Move, x + 30, y + 20) &&
+					send(HiddenTestContactPhase::Move, x + 70, y + 50) && send(HiddenTestContactPhase::Up, x + 70, y + 50);
+				const bool opened = posted && WaitUntil([&]
+				{
+					return editorOpen() && SnapshotShapePreviewMetrics().focusDraws > before.focusDraws;
+				}, 3s);
+				return Check(opened && CompositionRestoreCallsTotal() == restores &&
+					ProductHost().RuntimeSnapshot().currentPageHasContent, name, failures);
+			};
+			const auto publish = [](Inkeys::Drawing::Draw3::ShapeUiAction action)
+			{
+				for (int attempt = 0; attempt < 50; ++attempt)
+				{
+					const auto result = PublishShapeUiAction(action);
+					if (result == Bridge::CommandResult::Accepted) return true;
+					if (result != Bridge::CommandResult::QueueFull) return false;
+					std::this_thread::sleep_for(5ms);
+				}
+				return false;
+			};
+			ResetShapePreviewMetrics();
+			if (!drawShape(40, 40, "SF03 completed rectangle opens editor with the object only in the focus layer")) return 1;
+			// 手势：Begin + 40 次 Preview + Commit；全程无页面复制、无清缓存、无 tile 重放。
+			{
+				const auto snapshot = ProductShapeUiSnapshot();
+				const draw3::shapes::EditHandle* handle = nullptr;
+				// 取右下角缩放点向外拖，保证候选始终是有效矩形。
+				if (snapshot) for (const auto& h : snapshot->handles)
+					if (h.kind == draw3::shapes::EditHandleKind::Scale && (!handle || h.position.x + h.position.y > handle->position.x + handle->position.y)) handle = &h;
+				if (!Check(snapshot && handle, "SF04 editor exposes a scale handle", failures)) return 1;
+				const auto before = SnapshotShapePreviewMetrics();
+				const auto restores = CompositionRestoreCallsTotal();
+				const auto revision = snapshot->object->revision;
+				Inkeys::Drawing::Draw3::ShapeUiAction action;
+				action.identity = snapshot->identity; action.handleId = handle->id; action.down = action.point = handle->position;
+				action.kind = Inkeys::Drawing::Draw3::ShapeUiActionKind::BeginEdit;
+				bool posted = publish(action) && WaitUntil([] { const auto s = ProductShapeUiSnapshot(); return s && s->editGestureActive; }, 2s);
+				action.kind = Inkeys::Drawing::Draw3::ShapeUiActionKind::PreviewEdit;
+				for (int step = 1; posted && step <= 40; ++step)
+				{
+					action.point = { handle->position.x + step * 2.0f, handle->position.y + step * 1.0f };
+					posted = publish(action);
+					if (step % 4 == 0) std::this_thread::sleep_for(8ms); // 模拟 move 高于帧率的突发：每帧仍只执行最新预览。
+				}
+				action.kind = Inkeys::Drawing::Draw3::ShapeUiActionKind::CommitEdit;
+				posted = posted && publish(action);
+				const bool committed = posted && WaitUntil([revision]
+				{
+					const auto s = ProductShapeUiSnapshot();
+					return s && s->object && !s->editGestureActive && s->object->revision > revision;
+				}, 3s);
+				const auto after = SnapshotShapePreviewMetrics();
+				Check(committed, "SF05 drag gesture commits through the production controller", failures);
+				Check(after.canvasCopies == before.canvasCopies && after.compositionDiscards == before.compositionDiscards &&
+					CompositionRestoreCallsTotal() == restores, "SF06 edit session never copies the page, wipes caches or replays tiles", failures);
+				Check(after.focusExecuted > before.focusExecuted && after.legacyExecuted == before.legacyExecuted &&
+					after.focusFallbacks == 0 && after.maxPerFrame <= 1, "SF07 previews draw only the focus layer, at most one per frame", failures);
+				Check(after.materializations == before.materializations, "SF08 commit keeps the object in the focus layer", failures);
+				std::fprintf(stderr, "[Draw3Hidden] shape-focus previews_sent=40 executed=%llu coalesced_bridge=%llu coalesced_draw=%llu max_per_frame=%llu max_pending=%llu latency_samples=%llu latency_avg_us=%llu latency_max_us=%llu\n",
+					static_cast<unsigned long long>(after.focusExecuted - before.focusExecuted),
+					static_cast<unsigned long long>(after.bridgeCoalesced - before.bridgeCoalesced),
+					static_cast<unsigned long long>(after.controllerCoalesced - before.controllerCoalesced),
+					static_cast<unsigned long long>(after.maxPerFrame), static_cast<unsigned long long>(after.maxPendingInBridge),
+					static_cast<unsigned long long>(after.latencySamples),
+					static_cast<unsigned long long>(after.latencySamples ? after.latencyTotalMicroseconds / after.latencySamples : 0),
+					static_cast<unsigned long long>(after.latencyMaxMicroseconds));
+			}
+			// 每个失焦触发：先关闭编辑框，再落定（或撤销/重建时丢弃）焦点层，且不重放 tile。
+			const auto expectEnd = [&](const char* name, std::uint64_t materialized, std::uint64_t dropped, std::uint64_t undone)
+			{
+				const auto before = SnapshotShapePreviewMetrics();
+				return [&, name, materialized, dropped, undone, before]
+				{
+					const bool closed = WaitUntil(editorClosed, 3s) && WaitUntil([&]
+					{
+						const auto now = SnapshotShapePreviewMetrics();
+						return now.materializations - before.materializations == materialized &&
+							now.focusDrops - before.focusDrops >= dropped && now.focusUndoDrops - before.focusUndoDrops == undone;
+					}, 3s);
+					const auto now = SnapshotShapePreviewMetrics();
+					if (!closed) std::fprintf(stderr, "[Draw3Hidden] %s materialized=%llu dropped=%llu undone=%llu\n", name,
+						static_cast<unsigned long long>(now.materializations - before.materializations),
+						static_cast<unsigned long long>(now.focusDrops - before.focusDrops),
+						static_cast<unsigned long long>(now.focusUndoDrops - before.focusUndoDrops));
+					return Check(closed && now.focusFallbacks == 0, name, failures);
+				};
+			};
+			// Esc / 关闭浮层：CloseEditor。
+			{
+				const auto restores = CompositionRestoreCallsTotal();
+				auto verify = expectEnd("SF09 Esc closes the editor and materializes once", 1, 0, 0);
+				Inkeys::Drawing::Draw3::ShapeUiAction close;
+				close.kind = Inkeys::Drawing::Draw3::ShapeUiActionKind::CloseEditor; close.identity = ProductShapeUiSnapshot()->identity;
+				publish(close); verify();
+				Check(CompositionRestoreCallsTotal() == restores && ProductHost().RuntimeSnapshot().currentPageHasContent,
+					"SF10 materialize rasterizes into L2 without tile replay and keeps document content", failures);
+			}
+			// 下一笔 Down：先落定旧图形，再开始新图形；新图形随后进入焦点层。
+			drawShape(150, 40, "SF11 second rectangle opens a new editor");
+			{
+				const auto before = SnapshotShapePreviewMetrics();
+				drawShape(150, 140, "SF12 next Down materializes the previous shape first, then opens the new one");
+				Check(SnapshotShapePreviewMetrics().materializations == before.materializations + 1, "SF12 exactly one materialization for the replaced editor", failures);
+			}
+			// 编辑中撤销该对象：丢弃 L1，L2 不动（不重放、不落定）。
+			{
+				const auto restores = CompositionRestoreCallsTotal();
+				auto verify = expectEnd("SF13 undo during edit drops the focus layer without touching L2", 0, 1, 1);
+				Check(PublishProductCommand(Bridge::CommandType::Undo) == Bridge::CommandResult::Accepted, "SF13 publish Undo", failures);
+				verify();
+				Check(CompositionRestoreCallsTotal() == restores && ProductHost().RuntimeSnapshot().currentPageHasContent,
+					"SF14 undo of the focus object is CPU-only; earlier materialized shapes remain", failures);
+			}
+			// 切换工具。
+			drawShape(40, 140, "SF15 rectangle before tool switch");
+			{
+				auto verify = expectEnd("SF16 tool switch materializes", 1, 0, 0);
+				auto pen = state; pen.tool = Bridge::Tool::Pen; PublishProductState(pen); verify();
+				PublishProductState(state);
+			}
+			// 进入选择模式。
+			drawShape(220, 100, "SF17 rectangle before selection mode");
+			{
+				auto verify = expectEnd("SF18 selection mode materializes", 1, 0, 0);
+				auto selection = state; selection.selectionMode = true; PublishProductState(selection); verify();
+				PublishProductState(state);
+				WaitUntil([] { return !ProductHost().RuntimeSnapshot().selectionMode; }, 2s);
+			}
+			// 画布外失焦（PPT 放映按键、窗口最小化共用同一入口）。
+			drawShape(60, 90, "SF19 rectangle before external focus loss");
+			{
+				auto verify = expectEnd("SF20 external focus loss materializes", 1, 0, 0);
+				RequestShapeEditorFocusLoss(); verify();
+			}
+			// Redo 不可用时的 Clear。
+			drawShape(120, 90, "SF21 rectangle before Clear");
+			{
+				auto verify = expectEnd("SF22 Clear materializes before clearing", 1, 0, 0);
+				Check(PublishProductCommand(Bridge::CommandType::Clear) == Bridge::CommandResult::Accepted, "SF22 publish Clear", failures);
+				verify();
+				Check(WaitUntil([] { return !ProductHost().RuntimeSnapshot().currentPageHasContent; }, 2s), "SF23 Clear leaves no content", failures);
+			}
+			// 尺寸变化：L2 从文档整体重建（含该项），焦点层只丢弃，绝不重复绘制。
+			drawShape(80, 60, "SF24 rectangle before resize");
+			{
+				auto verify = expectEnd("SF25 resize drops the focus layer and rebuilds L2 from the document", 0, 1, 0);
+				SetWindowPos(drawpad, nullptr, 0, 0, 360, 260, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+				verify();
+				Check(ProductHost().RuntimeSnapshot().currentPageHasContent, "SF26 resized page still contains the shape", failures);
+			}
+			StopProduct();
+		}
+		catch (...)
+		{
+			++failures;
+			Report("FAIL", "SF unexpected shape focus hidden test exception");
+		}
+		if (failures == 0) Report("PASS", "SF shape focus layer production wiring and focus-loss triggers");
 		return failures == 0 ? 0 : 1;
 	}
 }

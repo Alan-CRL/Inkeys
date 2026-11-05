@@ -38,7 +38,18 @@ namespace Inkeys::UI::SelectionOverlay
 		bool translatingTouch=false,releasingCapture=false,touchActive=false;
 		constexpr UINT ReleaseCaptureMessage=WM_APP+0x375;
 		void Request() noexcept {RenderPipeline::Request(Client::SelectionOverlay);}
-		void Refresh(void*) noexcept {Request();RenderPipeline::Request(Client::Bar);}
+		// refresh回调由Draw3在同一互斥内串行调用；主栏只关心构造提示与编辑会话开闭，不随每次拖动预览重绘。
+		struct BarRefreshKey{bool object=false,construction=false;std::uint64_t session=0;};
+		BarRefreshKey barRefreshKey;
+		void Refresh(void*) noexcept
+		{
+			Request();
+			const auto snapshot=Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+			const BarRefreshKey next{snapshot&&snapshot->object.has_value(),snapshot&&snapshot->construction.active,snapshot?snapshot->identity.session:0};
+			if(next.construction||next.object!=barRefreshKey.object||next.construction!=barRefreshKey.construction||next.session!=barRefreshKey.session)
+				RenderPipeline::Request(Client::Bar);
+			barRefreshKey=next;
+		}
 		FrameResult Render(const FrameContext& frame)
 		{
 			const auto target=std::atomic_load(&scene);
@@ -54,11 +65,18 @@ namespace Inkeys::UI::SelectionOverlay
 			}
 			RECT bar{};if(const HWND h=service.Handle(WindowRole::Bar))GetWindowRect(h,&bar);
 			target->Configure(snapshot,work,bar);target->Advance(frame.frameTime);
-			if(!target->Visible()||service.WhiteboardWindowGroupMinimized())
+			// 窗口组最小化视为画布失焦：每次最小化只请求一次关闭，由绘制线程落定图形。
+			static bool minimizedFocusLossSent=false;
+			const bool minimized=service.WhiteboardWindowGroupMinimized();
+			if(minimized&&!minimizedFocusLossSent&&snapshot&&snapshot->object){Inkeys::Drawing::Draw3::RequestShapeEditorFocusLoss();minimizedFocusLossSent=true;}
+			if(!minimized)minimizedFocusLossSent=false;
+			if(!target->Visible()||minimized)
 			{
 				(void)service.Hide(WindowRole::SelectionOverlay);target->CommitPresented(false);return FrameResult::Idle;
 			}
 			const RECT bounds=target->Bounds();
+			// 快照、布局、动画与光照均未变化时不重复回读/ULW；窗口与命中沿用上次成功帧。
+			if(!target->NeedsPresent())return target->AnimationActive()?FrameResult::Continue:FrameResult::Idle;
 			const HRESULT resource=target->EnsureDeviceResources(frame.epoch);
 			if(FAILED(resource))return resource==D2DERR_RECREATE_TARGET?FrameResult::DeviceLost:FrameResult::Retry;
 				const HRESULT present = target->Present([hwnd](const UPDATELAYEREDWINDOWINFO& info){return UpdateLayeredWindowIndirect(hwnd,&info);});

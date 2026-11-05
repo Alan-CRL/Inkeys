@@ -148,6 +148,9 @@ export namespace Inkeys::Drawing::Draw3
 		size_t hotEntries = 0, residentNodes = 0;
 	};
 
+	// 诊断：进程内所有 cache 的 RestoreComposition 调用总数（隐藏窗口测试断言焦点期间不重放 tile）。
+	uint64_t CompositionRestoreCallsTotal() noexcept;
+
 	class InkHistoryGpuCache
 	{
 	public:
@@ -186,6 +189,9 @@ export namespace Inkeys::Drawing::Draw3
 			SignedTileCoordinate tile, int canvasWidth, int canvasHeight);
 		void DiscardCompositionCache() noexcept;
 		InkHistoryGpuResidency Residency() const noexcept;
+
+		// 诊断：累计 RestoreComposition 调用次数，用于断言编辑焦点期间不重放 tile。
+		uint64_t CompositionRestoreCount() const noexcept;
 
 	private:
 		struct Impl;

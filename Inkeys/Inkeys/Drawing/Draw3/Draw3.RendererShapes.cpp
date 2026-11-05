@@ -163,10 +163,33 @@ namespace Inkeys::Drawing::Draw3
 		if (!::draw3::shapes::BuildRenderData(object, data, { displayScale, 0.25f })) return false;
 		// 候选绘制成功后才进入缓存，失败资源不会留下可复用的成功记录。
 		if (!DrawShapeRenderData(data, originX, originY)) return false;
+		// 同一对象只保留最新修订：编辑预览/重物化产生的大量修订不会挤出页面上的其他图形。
+		const auto sameObject = std::find_if(shapeRenderCache_.begin(), shapeRenderCache_.end(),
+			[&](const ShapeRenderCacheEntry& entry) { return entry.id == object.id && entry.displayScale == displayScale; });
+		if (sameObject != shapeRenderCache_.end())
+		{
+			sameObject->revision = object.revision; sameObject->data = std::move(data);
+			return true;
+		}
 		// 有界缓存避免长会话删除对象后永久保留所有旧修订。
 		if (shapeRenderCache_.size() >= 128) shapeRenderCache_.erase(shapeRenderCache_.begin());
 		shapeRenderCache_.push_back({ object.id, object.revision, displayScale, std::move(data) });
 		return true;
+	}
+
+	bool InkRenderer::DrawTransientShapeObject(const ::draw3::shapes::ShapeObject& object,
+		float originX, float originY, float displayScale)
+	{
+		// 拖动预览的修订只存在一帧，直接构建并绘制，不写入长期缓存。
+		if (!std::isfinite(displayScale) || displayScale <= 0) return false;
+		::draw3::shapes::RenderData data;
+		return ::draw3::shapes::BuildRenderData(object, data, { displayScale, 0.25f }) &&
+			DrawShapeRenderData(data, originX, originY);
+	}
+
+	std::size_t InkRenderer::ShapeRenderCacheSize() const noexcept
+	{
+		return shapeRenderCache_.size();
 	}
 
 	void InkRenderer::ClearShapeRenderCache() noexcept

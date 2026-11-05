@@ -38,7 +38,40 @@ auto shapeBoundsRect = [&](const draw3::shapes::Bounds& bounds) -> RECT
 		SaturatingCeilToLong(bounds.right),SaturatingCeilToLong(bounds.bottom)},size.width,size.height);
 };
 RECT betweenShapeBounds{};
-// Preview也在原RenderItem层位重放；仅复制低频图形编辑候选，普通画笔仍走原追加热路径。
+// 拖动预览吞吐：槽、上屏延迟起点与单手势统计只由唯一绘制线程访问。
+ShapePreviewSlot shapePreviewSlot;
+int64_t shapePreviewLatencyStart = 0;
+struct ShapeGestureStats
+{
+	uint64_t restoreBase = 0, previews = 0, focus = 0, legacy = 0, latencySamples = 0, latencyTotal = 0, latencyMax = 0;
+	ShapePreviewCountersSnapshot base;
+	bool fallbackLogged = false;
+} shapeGestureStats;
+auto recordShapePreviewPresented = [&]()
+{
+	if (!shapePreviewLatencyStart) return;
+	const auto elapsed = ShapePreviewClockMicroseconds() - shapePreviewLatencyStart; shapePreviewLatencyStart = 0;
+	if (elapsed < 0) return;
+	const auto value = static_cast<uint64_t>(elapsed); auto& metrics = ShapePreviewMetrics();
+	metrics.latencySamples.fetch_add(1,std::memory_order_relaxed); metrics.latencyTotalMicroseconds.fetch_add(value,std::memory_order_relaxed);
+	RaiseShapePreviewMaximum(metrics.latencyMaxMicroseconds,value);
+	++shapeGestureStats.latencySamples; shapeGestureStats.latencyTotal += value; shapeGestureStats.latencyMax = (std::max)(shapeGestureStats.latencyMax,value);
+};
+auto logShapeGestureSummary = [&](const char* result)
+{
+	if (!shapeGestureStats.previews) return;
+	const auto now = SnapshotShapePreviewMetrics(); const auto& base = shapeGestureStats.base;
+	DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
+		"[Draw3.ShapeEdit] action=gesture_end result=%s previews=%llu focus=%llu legacy=%llu tile_replays=%llu coalesced_bridge=%llu coalesced_draw=%llu latency_avg_us=%llu latency_max_us=%llu\n",
+		result,static_cast<unsigned long long>(shapeGestureStats.previews),static_cast<unsigned long long>(shapeGestureStats.focus),
+		static_cast<unsigned long long>(shapeGestureStats.legacy),
+		static_cast<unsigned long long>(historyGpuCache.CompositionRestoreCount() - shapeGestureStats.restoreBase),static_cast<unsigned long long>(now.bridgeCoalesced - base.bridgeCoalesced),
+		static_cast<unsigned long long>(now.controllerCoalesced - base.controllerCoalesced),
+		static_cast<unsigned long long>(shapeGestureStats.latencySamples ? shapeGestureStats.latencyTotal / shapeGestureStats.latencySamples : 0),
+		static_cast<unsigned long long>(shapeGestureStats.latencyMax));
+	shapeGestureStats = {};
+};
+// 旧路径（回退开关或不在焦点层的编辑）：Preview 也在原 RenderItem 层位重放，复制候选并清缓存。
 auto replayShapeEdit = [&](const std::optional<draw3::shapes::ShapeObject>& after,RECT& dirty,bool commit) -> bool
 {
 	if (!shapeUi.editor.item || !shapeUi.editor.object || !document_ || currentPageIndex_ >= pageRuntimeStates.size()) return false;
@@ -47,6 +80,8 @@ auto replayShapeEdit = [&](const std::optional<draw3::shapes::ShapeObject>& afte
 	auto& runtime = pageRuntimeStates[currentPageIndex_]; const auto* original = runtime.history.Find(*shapeUi.editor.item);
 	if (!original || !original->visible || original->strokeIndex >= canvas->Strokes().size() ||
 		canvas->Strokes()[original->strokeIndex].Shape() != shapeUi.editor.object) return false;
+	if (!commit && after) shapeUi.editor.legacyPreview = true;
+	if (!commit) ShapePreviewMetrics().canvasCopies.fetch_add(1,std::memory_order_relaxed);
 	InkCanvas candidate = *canvas; CanvasPageRuntimeState candidateRuntime = runtime;
 	std::vector<SignedTileCoordinate> tiles = original->compositionTiles;
 	if (shapeUi.editor.preview)
@@ -67,6 +102,7 @@ auto replayShapeEdit = [&](const std::optional<draw3::shapes::ShapeObject>& afte
 	const HistoryCanvasIdentity identity{page->PageGuid(),kDefaultDeviceKey}; const auto key = currentRasterKey();
 	const auto metricsBefore = metricsState_ ? metricsSignature(size.width,size.height) : ContentMetricRasterSignature{};
 	if (metricsState_) metricsState_->BeginLocalWrite(metricsBefore);
+	if (!commit) ShapePreviewMetrics().compositionDiscards.fetch_add(1,std::memory_order_relaxed);
 	historyGpuCache.DiscardHotPreimages(); historyGpuCache.DiscardCompositionCache(); compositionMaintenance.clear();
 	renderer_.InvalidateTrustedL2Snapshot(); trustedSnapshotSignatureValid = false;
 	const CompositionRestoreRequest request{identity,key,&candidate,&candidateRuntime.history,tiles,
@@ -109,18 +145,216 @@ auto replayShapeEdit = [&](const std::optional<draw3::shapes::ShapeObject>& afte
 	}
 	return true;
 };
+// 焦点层绘制：把全部待落定项画进 L1（不触碰 L2/tile/缓存）；编辑中的项以当前候选代替显示。
+std::vector<InkPoint> focusPointScratch; HighlighterGeometry focusHighlighterScratch;
+auto drawFocusLayer = [&](RECT& dirty) -> bool
+{
+	auto& focus = shapeUi.focus; if (!focus.Active()) return true;
+	UnionRectInPlace(dirty,focus.l1Bounds); focus.l1Bounds = {}; focus.redraw = false;
+	renderer_.ClearOperatorLayer(renderer_.layerL1);
+	if (!document_) return false;
+	const auto size = window_.Size();
+	for (const auto& entry : focus.pending)
+	{
+		const auto* page = entry.pageIndex == currentPageIndex_ ? document_->PageAt(entry.pageIndex) : nullptr;
+		const auto* canvas = page && page->PageGuid() == entry.page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+		if (!canvas || entry.pageIndex >= pageRuntimeStates.size()) return false;
+		const auto* state = pageRuntimeStates[entry.pageIndex].history.Find(entry.item);
+		if (!state || !state->visible || state->strokeIndex >= canvas->Strokes().size()) return false;
+		const draw3::shapes::ShapeObject* transient = shapeUi.editor.item && *shapeUi.editor.item == entry.item &&
+			shapeUi.editor.preview ? &*shapeUi.editor.preview : nullptr;
+		const StoredStrokeRasterTarget target{&renderer_.layerL1,canvas->Viewport().x,canvas->Viewport().y,size.width,size.height};
+		const auto drawn = DrawFocusLayerItem(canvas->Strokes()[state->strokeIndex],transient,renderer_,target,
+			focusPointScratch,focusHighlighterScratch);
+		if (!drawn.succeeded) return false;
+		UnionRectInPlace(focus.l1Bounds,drawn.dirty);
+	}
+	UnionRectInPlace(dirty,focus.l1Bounds);
+	ShapePreviewMetrics().focusDraws.fetch_add(1,std::memory_order_relaxed);
+	return true;
+};
+// 丢弃焦点层：L2 本就不含待落定项（撤销）或即将从文档整体重建（含该项），都不再光栅化。
+auto dropFocusLayer = [&](RECT& dirty)
+{
+	auto& focus = shapeUi.focus; if (!focus.Active()) return;
+	UnionRectInPlace(dirty,focus.l1Bounds); focus.l1Bounds = {}; focus.pending.clear(); focus.redraw = false;
+	renderer_.ClearOperatorLayer(renderer_.layerL1);
+	ShapePreviewMetrics().focusDrops.fetch_add(1,std::memory_order_relaxed);
+};
+// 可信快照是唯一读取完整 L2 的路径：L2 变化后立即按新内容刷新，平移回退不会缺少刚落定的图形。
+auto refreshTrustedSnapshotAfterL2Write = [&]()
+{
+	renderer_.InvalidateTrustedL2Snapshot(); trustedSnapshotSignatureValid = false;
+	if (!viewportVisibleClear || !document_ || currentPageIndex_ >= pageRuntimeStates.size()) return;
+	const auto* page = document_->PageAt(currentPageIndex_); const auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+	if (!canvas || !renderer_.RefreshTrustedL2Snapshot(canvas->Viewport().x,canvas->Viewport().y)) return;
+	trustedSnapshotSignatureValid = true; trustedSnapshotPageIndex = currentPageIndex_;
+	trustedSnapshotRevision = pageRuntimeStates[currentPageIndex_].history.Revision(); trustedSnapshotViewport = canvas->Viewport();
+};
+// 回退开关：焦点层绘制或落定失败时，按权威文档对该项 tile 重放（缓存与文档一致，无需复制/清缓存）。
+auto restoreItemTilesAuthoritative = [&](const PendingL2Item& entry,RECT& dirty) -> bool
+{
+	if (!document_ || entry.pageIndex != currentPageIndex_ || entry.pageIndex >= pageRuntimeStates.size()) return true;
+	const auto* page = document_->PageAt(entry.pageIndex); const auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+	const auto& runtime = pageRuntimeStates[entry.pageIndex]; const auto* state = runtime.history.Find(entry.item);
+	if (!canvas || !state || page->PageGuid() != entry.page) return true;
+	const auto size = window_.Size(); const auto viewport = canvas->Viewport();
+	const CompositionRestoreRequest request{{page->PageGuid(),kDefaultDeviceKey},currentRasterKey(),canvas,&runtime.history,state->compositionTiles,
+		runtime.history.Items().size(),viewport.x,viewport.y,size.width,size.height,true};
+	const auto restored = historyGpuCache.RestoreComposition(request); UnionRectInPlace(dirty,restored.dirty);
+	if (restored.path != CompositionRestorePath::Failed) return true;
+	viewportVisibleClear = false; viewportRefreshPending = true; viewportRefreshClearsTransient = false;
+	return false;
+};
+// 落定：把最终对象一次光栅化进 L2（与完成笔画首次提交相同的 L1→L2 算子），随后释放 L1。
+auto materializeFocusLayer = [&](RECT& dirty)
+{
+	auto& focus = shapeUi.focus; if (!focus.Active()) return;
+	auto pending = std::move(focus.pending); focus.pending.clear(); focus.redraw = false;
+	UnionRectInPlace(dirty,focus.l1Bounds); focus.l1Bounds = {};
+	std::sort(pending.begin(),pending.end(),[](const PendingL2Item& a,const PendingL2Item& b) { return a.item.index < b.item.index; });
+	const auto size = window_.Size();
+	for (const auto& entry : pending)
+	{
+		// L2 已不属于该页时由换页重建从文档恢复；已撤销的项 L2 本就不含。
+		if (!document_ || entry.pageIndex != currentPageIndex_ || entry.pageIndex >= pageRuntimeStates.size()) continue;
+		auto* page = document_->PageAt(entry.pageIndex); auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+		if (!canvas || page->PageGuid() != entry.page) continue;
+		auto& runtime = pageRuntimeStates[entry.pageIndex]; const auto* state = runtime.history.Find(entry.item);
+		if (!state || !state->visible || state->strokeIndex >= canvas->Strokes().size()) continue;
+		if (!CanvasFocusSession::IsVisibleSuffix(runtime.history,std::span<const PendingL2Item>(&entry,1)))
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,"[Draw3.ShapeEdit] action=materialize warning=not_z_suffix\n");
+		const auto viewport = canvas->Viewport();
+		renderer_.ClearOperatorLayer(renderer_.layerL1);
+		if (!shapeUi.construction) renderer_.ClearOperatorLayer(renderer_.layerL0);
+		// 未经编辑时补齐抬笔时推迟的热前像，撤销仍可走 hot path；编辑过的项由 journal 路径撤销。
+		HotPreimageCaptureResult capture;
+		const bool unedited = runtime.rasterState == entry.beforeState;
+		if (unedited)
+			capture = historyGpuCache.CapturePreimage({{page->PageGuid(),kDefaultDeviceKey},entry.item,currentRasterKey(),
+				entry.beforeState,entry.afterState,state->undoTiles,viewport.x,viewport.y,size.width,size.height});
+		const StoredStrokeRasterTarget target{&renderer_.layerL1,viewport.x,viewport.y,size.width,size.height};
+		const auto drawn = DrawFocusLayerItem(canvas->Strokes()[state->strokeIndex],nullptr,renderer_,target,
+			focusPointScratch,focusHighlighterScratch);
+		const bool submitted = drawn.succeeded && ResolveFocusLayerToL2(renderer_,renderer_.layerL1,drawn.dirty);
+		if (capture.status == HotPreimageCaptureStatus::Captured && (!submitted || !historyGpuCache.CommitPreimage(capture.ticket)))
+			historyGpuCache.CancelPreimage(capture.ticket);
+		renderer_.ClearOperatorLayer(renderer_.layerL1);
+		if (submitted)
+		{
+			if (unedited) runtime.rasterState = entry.afterState;
+			UnionRectInPlace(dirty,drawn.dirty);
+		}
+		else
+		{
+			ShapePreviewMetrics().focusFallbacks.fetch_add(1,std::memory_order_relaxed);
+			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,"[Draw3.ShapeEdit] action=materialize result=fallback path=authoritative_replay\n");
+			if (restoreItemTilesAuthoritative(entry,dirty) && unedited) runtime.rasterState = entry.afterState;
+		}
+	}
+	viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(viewportVisibleClear,true);
+	refreshTrustedSnapshotAfterL2Write();
+	ShapePreviewMetrics().materializations.fetch_add(1,std::memory_order_relaxed);
+	if (metricsState_) { metricsState_->InvalidateLiveRasters(); metricsState_->renderAttempt = true; metricsState_->InvalidateL2(); }
+};
+// 焦点层不可用（L1 绘制失败）：按权威路径把项写回 L2，本编辑剩余部分改走旧路径。
+auto abandonFocusLayer = [&](RECT& dirty)
+{
+	auto& focus = shapeUi.focus; if (!focus.Active()) return;
+	ShapePreviewMetrics().focusFallbacks.fetch_add(1,std::memory_order_relaxed);
+	DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,"[Draw3.ShapeEdit] action=focus_layer result=fallback path=authoritative_replay\n");
+	auto pending = std::move(focus.pending); focus.pending.clear(); focus.redraw = false;
+	UnionRectInPlace(dirty,focus.l1Bounds); focus.l1Bounds = {};
+	renderer_.ClearOperatorLayer(renderer_.layerL1);
+	shapeUi.editor.preview.reset(); shapeUi.editor.legacyPreview = true;
+	for (const auto& entry : pending)
+		if (restoreItemTilesAuthoritative(entry,dirty) && entry.pageIndex < pageRuntimeStates.size() &&
+			pageRuntimeStates[entry.pageIndex].rasterState == entry.beforeState) pageRuntimeStates[entry.pageIndex].rasterState = entry.afterState;
+	refreshTrustedSnapshotAfterL2Write();
+};
+auto editorInFocusLayer = [&]() noexcept
+{
+	return shapeUi.editor.item && !shapeUi.editor.legacyPreview && shapeUi.focus.Find(*shapeUi.editor.item) != nullptr;
+};
+// 编辑中的撤销若正好撤销焦点层项本身，只丢 L1，L2 不动。
+auto focusIsUndoTarget = [&]() -> bool
+{
+	if (!shapeUi.focus.Active() || !document_ || currentPageIndex_ >= pageRuntimeStates.size()) return false;
+	auto& runtime = pageRuntimeStates[currentPageIndex_]; EnsureOperationJournal(runtime);
+	if (runtime.operationCursor <= runtime.operationFloor) return false;
+	const auto& operation = runtime.operations[runtime.operationCursor - 1];
+	const auto last = runtime.history.LastVisibleItem();
+	const auto* entry = shapeUi.focus.Find(operation.item);
+	return operation.kind == CanvasOperationKind::Append && last && *last == operation.item && entry &&
+		entry->pageIndex == currentPageIndex_ && last->index >= runtime.undoFloor;
+};
+// 编辑框失焦的内部动作；focusAction 为空表示保留焦点层交给后续操作（编辑中撤销该项）。
+auto closeShapeEditor = [&](RECT& dirty,std::optional<CanvasFocusEndAction> focusAction,bool closeConstruction)
+{
+	if (shapeUi.editor.gestureActive) logShapeGestureSummary("closed");
+	// 不在焦点层的旧路径编辑已把预览写入 L2；落定类失焦需按权威文档恢复，重建类失焦由重建覆盖。
+	if (focusAction == CanvasFocusEndAction::Materialize && shapeUi.editor.preview && !editorInFocusLayer())
+		(void)replayShapeEdit(std::nullopt,dirty,false);
+	shapeUi.editor = {};
+	if (closeConstruction)
+	{
+		shapeUi.pendingObject.reset(); shapeUi.pendingItem.reset(); shapeUi.pendingCompletedQpc = 0;
+		if (shapeUi.construction)
+		{
+			UnionRectInPlace(dirty,shapeBoundsRect(shapeUi.construction->renderData.bounds));
+			shapeUi.construction->session.Cancel(); shapeUi.construction->cancelled = true; shapeUi.construction.reset();
+			shapeUi.constructionVisualDirty = true;
+		}
+		UnionRectInPlace(dirty,betweenShapeBounds); betweenShapeBounds = {};
+		renderer_.ClearOperatorLayer(renderer_.layerL0);
+	}
+	if (focusAction == CanvasFocusEndAction::Materialize) materializeFocusLayer(dirty);
+	else if (focusAction == CanvasFocusEndAction::Drop)
+	{
+		// 重建类失焦：L2 将从文档重建并包含该项，状态令牌同步到 after，避免与 before 令牌混用热前像。
+		for (const auto& entry : shapeUi.focus.pending)
+		{
+			const auto* page = document_ && entry.pageIndex < pageRuntimeStates.size() ? document_->PageAt(entry.pageIndex) : nullptr;
+			if (page && page->PageGuid() == entry.page && pageRuntimeStates[entry.pageIndex].rasterState == entry.beforeState)
+				pageRuntimeStates[entry.pageIndex].rasterState = entry.afterState;
+		}
+		dropFocusLayer(dirty);
+	}
+};
+// 唯一的失焦入口：任何其他操作都先经此关闭编辑框并落定（或丢弃）L1，再执行该操作。
+endCanvasFocus = [&](CanvasFocusEndReason reason,RECT& dirty)
+{
+	if (shapeUi.focus.Active())
+	{
+		const auto index = static_cast<std::size_t>(reason);
+		if (index < shapeUi.focusEndCounts.size()) ++shapeUi.focusEndCounts[index];
+	}
+	// 新接触只结束编辑框；进行中的多笔构造由接触本身继续。
+	closeShapeEditor(dirty,ResolveCanvasFocusEnd(reason),reason != CanvasFocusEndReason::NewContact);
+};
 closeShapeSessions = [&](RECT& dirty,bool restore)
 {
-	if (restore && shapeUi.editor.preview) (void)replayShapeEdit(std::nullopt,dirty,false);
-	shapeUi.editor = {}; shapeUi.pendingObject.reset(); shapeUi.pendingItem.reset(); shapeUi.pendingCompletedQpc = 0;
-	if (shapeUi.construction)
-	{
-		UnionRectInPlace(dirty,shapeBoundsRect(shapeUi.construction->renderData.bounds));
-		shapeUi.construction->session.Cancel(); shapeUi.construction->cancelled = true; shapeUi.construction.reset();
-		shapeUi.constructionVisualDirty = true;
-	}
-	UnionRectInPlace(dirty,betweenShapeBounds); betweenShapeBounds = {};
-	renderer_.ClearOperatorLayer(renderer_.layerL0);
+	endCanvasFocus(restore ? CanvasFocusEndReason::SceneChange : CanvasFocusEndReason::PageSwitch,dirty);
+};
+// 焦点层编辑提交：CPU 文档/journal 与旧路径相同，L1 改为显示最终对象，L2 不动。
+auto commitFocusShapeEdit = [&](const draw3::shapes::ShapeObject& after,RECT& dirty) -> bool
+{
+	if (!shapeUi.editor.item || !shapeUi.editor.object || !document_ || currentPageIndex_ >= pageRuntimeStates.size()) return false;
+	auto* page = document_->PageAt(currentPageIndex_); auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+	if (!canvas) return false;
+	auto& runtime = pageRuntimeStates[currentPageIndex_];
+	const auto edit = CommitRuntimeShapeEditCpu(*canvas,runtime,*shapeUi.editor.item,*shapeUi.editor.object,after,allocateRasterStateToken);
+	shapeUi.editor.preview.reset();
+	if (!edit) { if (!drawFocusLayer(dirty)) abandonFocusLayer(dirty); return false; }
+	shapeUi.editor.object = after; markPresentationMutation();
+	// 编辑即使不改变hasContent，也要发出真实内容修订，冷页/保存不能误判为未变。
+	if (++currentContentRevision_ == 0) ++currentContentRevision_;
+	contentRevisionNeedsPresent = true;
+	if (observer_.currentPageContentChanged) observer_.currentPageContentChanged(observer_.context,currentPageHasContent(),currentContentRevision_);
+	publishCurrentPageContent();
+	if (metricsState_) { metricsState_->PruneStored(*canvas,runtime); metricsState_->InvalidateLiveRasters(); metricsState_->renderAttempt = true; }
+	if (!drawFocusLayer(dirty)) abandonFocusLayer(dirty);
+	return true;
 };
 auto publishShapeUi = [&]()
 {
@@ -173,6 +407,21 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 	auto& runtime = pageRuntimeStates[currentPageIndex_]; const auto viewport = canvas->Viewport();
 	object.revision = nextShapeRevision(object.id,object.revision); if (!object.revision) return false;
 	object.transform.dx += viewport.x; object.transform.dy += viewport.y;
+	if (ShapeFocusLayerEnabled().load(std::memory_order_relaxed) && !shapeUi.focus.Active())
+	{
+		// 焦点层：CPU 文档/journal 照常追加，L2 暂不含该对象，覆盖率只画进 L1。
+		const auto created = AppendRuntimeConstructedShapeCpu(*canvas,runtime,object,allocateRasterStateToken);
+		if (!created) return false;
+		runtime.rasterState = created->beforeState;
+		renderer_.ClearOperatorLayer(renderer_.layerL0);
+		shapeUi.focus.pending = {{created->renderItem,object.id,page->PageGuid(),currentPageIndex_,created->beforeState,created->afterState}};
+		if (!drawFocusLayer(dirty)) abandonFocusLayer(dirty);
+		shapeUi.pendingObject = std::move(object); shapeUi.pendingItem = created->renderItem; shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
+		markPresentationMutation(); publishCurrentPageContent();
+		if (observer_.strokeCompleted) observer_.strokeCompleted(observer_.context,Bridge::CompletedStrokeKind::Shape);
+		if (metricsState_) { metricsState_->PruneStored(*canvas,runtime); metricsState_->InvalidateLiveRasters(); metricsState_->InvalidateL2(); }
+		return true;
+	}
 	InkCanvas candidate = *canvas; CanvasPageRuntimeState candidateRuntime = runtime;
 	const auto created = AppendRuntimeConstructedShapeCpu(candidate,candidateRuntime,object,allocateRasterStateToken);
 	if (!created) return false;
@@ -203,17 +452,17 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 beginShapeContact = [&](RuntimeStroke& runtime)
 {
 	// 空白落笔直接交给原画布；只关闭当前编辑，不搜索任何旧对象。
-	if (shapeUi.editor.object)
+	// 新落笔会占用 L1/L0：先让编辑框失焦并把待落定图形落定到 L2。
+	if (shapeUi.editor.object || shapeUi.focus.Active())
 	{
-		RECT ignored{}; if (shapeUi.editor.preview) (void)replayShapeEdit(std::nullopt,ignored,false);
-		shapeUi.editor = {}; window_.RequestFullPresent();
+		RECT ignored{}; endCanvasFocus(CanvasFocusEndReason::NewContact,ignored); window_.RequestFullPresent();
 	}
 	if (active.empty()) { shapeUi.pendingObject.reset(); shapeUi.pendingItem.reset(); shapeUi.pendingCompletedQpc = 0; }
 	if (runtime.shape.generic) runtime.shape.nextRevision = nextShapeRevision;
 	const bool multi = runtime.shape.generic && draw3::shapes::GetToolCapabilities(runtime.shape.tool.preset).multiStage;
 	if (!multi)
 	{
-		if (shapeUi.construction) { RECT ignored{}; closeShapeSessions(ignored,false); renderer_.ClearOperatorLayer(renderer_.layerL0); window_.RequestFullPresent(); }
+		if (shapeUi.construction) { RECT ignored{}; endCanvasFocus(CanvasFocusEndReason::ToolChange,ignored); renderer_.ClearOperatorLayer(renderer_.layerL0); window_.RequestFullPresent(); }
 		return true;
 	}
 	const auto scene = shapeScene();
@@ -258,14 +507,14 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 	if (!shapeUi.published || !SameShapeUiScene(action.identity,scene.identity)) return;
 	if (action.kind == ShapeUiActionKind::CloseEditor && shapeUi.construction &&
 		action.identity.session == shapeUi.construction->identity.session && action.identity.objectId == shapeUi.construction->identity.objectId)
-	{ closeShapeSessions(dirty,false); publishShapeUi(); return; }
+	{ endCanvasFocus(CanvasFocusEndReason::Escape,dirty); publishShapeUi(); return; }
 	const bool constructionAction = action.kind == ShapeUiActionKind::ConstructionComplete ||
 		action.kind == ShapeUiActionKind::ConstructionBack || action.kind == ShapeUiActionKind::ConstructionCancel;
 	if (constructionAction)
 	{
 		if (!shapeUi.construction || !ShapeConstructionActionIdentityMatches(*shapeUi.construction,shapeUi.published.get(),action,scene.identity)) return;
 		if (action.kind == ShapeUiActionKind::ConstructionBack) backShapeConstruction(dirty);
-		else if (action.kind == ShapeUiActionKind::ConstructionCancel) closeShapeSessions(dirty,false);
+		else if (action.kind == ShapeUiActionKind::ConstructionCancel) endCanvasFocus(CanvasFocusEndReason::Escape,dirty);
 		else
 		{
 			const auto saved = shapeUi.construction->session;
@@ -282,17 +531,23 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 		action.kind == ShapeUiActionKind::CommitEdit || action.kind == ShapeUiActionKind::CancelEdit);
 	if (!ShapeEditorActionIdentityMatches(shapeUi.editor,shapeUi.published.get(),action,scene.identity)) return;
 	if (action.kind == ShapeUiActionKind::CloseEditor)
-	{ closeShapeSessions(dirty,true); publishShapeUi(); return; }
+	{ endCanvasFocus(CanvasFocusEndReason::Escape,dirty); publishShapeUi(); return; }
 	if (action.kind == ShapeUiActionKind::BeginEdit)
 	{
 		if (shapeUi.editor.gestureActive) return;
 		if (!shapeUi.editor.gesture.Begin(*shapeUi.editor.object,action.handleId,action.down,{scene.displayScale,.25f})) return;
 		shapeUi.editor.gestureIdentity = action.identity; shapeUi.editor.down = action.down;
-		shapeUi.editor.handleId = action.handleId; shapeUi.editor.gestureActive = true; publishShapeUi(); return;
+		shapeUi.editor.handleId = action.handleId; shapeUi.editor.gestureActive = true;
+		shapeGestureStats = {}; shapeGestureStats.base = SnapshotShapePreviewMetrics();
+		shapeGestureStats.restoreBase = historyGpuCache.CompositionRestoreCount();
+		publishShapeUi(); return;
 	}
 	if (action.kind == ShapeUiActionKind::CancelEdit)
 	{
-		if (shapeUi.editor.preview) (void)replayShapeEdit(std::nullopt,dirty,false);
+		// 焦点层：取消只把 L1 重画回原对象；旧路径按权威文档恢复 L2。
+		if (editorInFocusLayer()) { shapeUi.editor.preview.reset(); if (!drawFocusLayer(dirty)) abandonFocusLayer(dirty); }
+		else if (shapeUi.editor.preview) (void)replayShapeEdit(std::nullopt,dirty,false);
+		if (shapeUi.editor.gestureActive) logShapeGestureSummary("cancelled");
 		shapeUi.editor.gesture.Cancel(); shapeUi.editor.gestureActive = false; publishShapeUi(); return;
 	}
 	std::optional<draw3::shapes::ShapeObject> candidate;
@@ -307,12 +562,45 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 		if (shapeUi.editor.gesture.Preview(action.point,revision)) candidate = shapeUi.editor.gesture.Candidate();
 	}
 	const bool commit = action.kind != ShapeUiActionKind::PreviewEdit;
+	const bool endsGesture = commit && inGesture;
+	const bool focused = editorInFocusLayer();
 	if (candidate)
 	{
-		if (!replayShapeEdit(candidate,dirty,commit)) shapeUi.editor.gestureActive = false;
+		bool applied = false;
+		if (!commit)
+		{
+			// 焦点层：只在 L1 重画这一个候选；L1 不可用时才退回旧的整页候选重放。
+			auto& metrics = ShapePreviewMetrics();
+			if (focused)
+			{
+				shapeUi.editor.preview = candidate; applied = drawFocusLayer(dirty);
+				if (!applied) abandonFocusLayer(dirty);
+			}
+			if (applied) { metrics.focusExecuted.fetch_add(1,std::memory_order_relaxed); ++shapeGestureStats.focus; }
+			else
+			{
+				applied = replayShapeEdit(candidate,dirty,false);
+				metrics.legacyExecuted.fetch_add(1,std::memory_order_relaxed); ++shapeGestureStats.legacy;
+			}
+			metrics.executed.fetch_add(1,std::memory_order_relaxed); ++shapeGestureStats.previews;
+			RaiseShapePreviewMaximum(metrics.maxPerFrame,++shapePreviewSlot.executedThisFrame);
+			if (applied && action.enqueueMicroseconds &&
+				(!shapePreviewLatencyStart || action.enqueueMicroseconds < shapePreviewLatencyStart))
+				shapePreviewLatencyStart = action.enqueueMicroseconds;
+		}
+		else applied = focused ? commitFocusShapeEdit(*candidate,dirty) : replayShapeEdit(candidate,dirty,commit);
+		if (!applied) shapeUi.editor.gestureActive = false;
 	}
-	else if (commit && shapeUi.editor.preview) (void)replayShapeEdit(std::nullopt,dirty,false);
-	if (commit) { shapeUi.editor.gesture.Cancel(); shapeUi.editor.gestureActive = false; }
+	else if (commit && shapeUi.editor.preview)
+	{
+		if (focused) { shapeUi.editor.preview.reset(); if (!drawFocusLayer(dirty)) abandonFocusLayer(dirty); }
+		else (void)replayShapeEdit(std::nullopt,dirty,false);
+	}
+	if (commit)
+	{
+		if (endsGesture) logShapeGestureSummary(candidate ? "committed" : "empty");
+		shapeUi.editor.gesture.Cancel(); shapeUi.editor.gestureActive = false;
+	}
 	publishShapeUi();
 };
 auto validateShapeUiContext = [&](RECT& dirty)
@@ -324,7 +612,17 @@ auto validateShapeUiContext = [&](RECT& dirty)
 	if (shapeUi.construction) invalid |= !SameShapeUiScene(shapeUi.construction->identity,scene.identity) ||
 		tool != DrawingTool::Shape || visual.shapeTool != shapeUi.construction->tool;
 	if (invalid && (shapeUi.editor.object || shapeUi.construction))
-	{ closeShapeSessions(dirty,true); renderer_.ClearOperatorLayer(renderer_.layerL0); window_.RequestFullPresent(); }
+	{
+		const bool sceneChanged = shapeUi.editor.object ? !SameShapeUiScene(shapeUi.editor.identity,scene.identity) :
+			!SameShapeUiScene(shapeUi.construction->identity,scene.identity);
+		endCanvasFocus(window_.SelectionMode() ? CanvasFocusEndReason::SelectionMode :
+			sceneChanged ? CanvasFocusEndReason::SceneChange : CanvasFocusEndReason::ToolChange,dirty);
+		renderer_.ClearOperatorLayer(renderer_.layerL0); window_.RequestFullPresent();
+	}
+	// 不变式：待落定项只在其编辑框打开期间留在 L1；编辑框未接管或已关闭则立即落定。
+	if (shapeUi.focus.Active() && !editorInFocusLayer()) { endCanvasFocus(CanvasFocusEndReason::OverlayClosed,dirty); window_.RequestFullPresent(); }
+	// 共享层重建清空 L1 后补画焦点层。
+	if (shapeUi.focus.Active() && shapeUi.focus.redraw && !drawFocusLayer(dirty)) abandonFocusLayer(dirty);
 };
 auto renderPendingShapeConstruction = [&](RECT& dirty,bool& failed,bool layersRebuilt)
 {
@@ -367,7 +665,7 @@ auto drainActiveShapeControlBarrier = [&](RECT& dirty)
 		else if (cancellingAction) processShapeUiAction(*pending.shapeAction,dirty);
 		else
 		{
-			if (sceneBarrier && shapeUi.construction) closeShapeSessions(dirty,false);
+			if (sceneBarrier && shapeUi.construction) endCanvasFocus(CanvasFocusEndReason::SceneChange,dirty);
 			shapeDeferredCommands.push_back(std::move(pending));
 		}
 	}

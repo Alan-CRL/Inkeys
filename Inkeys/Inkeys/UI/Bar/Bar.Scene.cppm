@@ -206,6 +206,8 @@ export namespace Inkeys::UI::Bar
 		void Draw();
 		HRESULT Present(const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>&);
 		void CommitPresented(bool inputEnabled = true);
+		// 自上次成功提交后输入快照、布局、动画或光照有变化才需要回读与 ULW。
+		bool NeedsPresent() const noexcept;
 		ShapeEditorHit Hit(POINT screen) const;
 		bool Pointer(UINT message, POINT screen, bool captureOwned = true, std::uint64_t expectedPresentation = 0, short wheelDelta = 0);
 		std::uint64_t PresentedGeneration() const;

@@ -62,6 +62,14 @@ namespace Inkeys::UI::Bar
 			p.x.SetDirect(x+w/2); p.y.SetDirect(y+h/2); p.w.SetDirect(w); p.h.SetDirect(h); p.UpInh({x,y});
 		}
 		bool HasOpacity(BarButtonClass& p) { return p.icon.pct.val > .000001 || p.name.pct.val > .000001 || p.button.pct.val > .000001; }
+		bool SameEditorLighting(const BarSurfaceSharedLighting& a,const BarSurfaceSharedLighting& b) noexcept
+		{
+			return a.primaryScreenX==b.primaryScreenX&&a.primaryScreenY==b.primaryScreenY&&a.primaryRadiusPixels==b.primaryRadiusPixels&&
+				a.cursorScreenX==b.cursorScreenX&&a.cursorScreenY==b.cursorScreenY&&a.cursorRadiusPixels==b.cursorRadiusPixels&&
+				a.cursorIntensity==b.cursorIntensity&&a.drawingPenColor==b.drawingPenColor&&a.drawingPenColorBlend==b.drawingPenColorBlend&&
+				a.drawingLightOpacity==b.drawingLightOpacity&&a.primaryVisible==b.primaryVisible&&a.cursorVisible==b.cursorVisible&&
+				a.edgeLightingEnabled==b.edgeLightingEnabled;
+		}
 		bool SaveEditorPng(const std::filesystem::path& path,const BYTE* bytes,UINT width,UINT height,UINT stride)
 		{
 			Microsoft::WRL::ComPtr<IWICImagingFactory> factory;Microsoft::WRL::ComPtr<IWICStream> stream;
@@ -242,6 +250,21 @@ namespace Inkeys::UI::Bar
 		struct HandleVisual { std::uint32_t id; BarUiShapeClass circle; BarUiValueClass press{1}; };
 		std::vector<std::unique_ptr<HandleVisual>> handles;
 		std::atomic_uint32_t hoveredHandle=UINT32_MAX, pressedHandle=UINT32_MAX;
+		// 拖动跟手：交互worker用共享核心EditSession先行计算候选，绘制线程快照只用于校正与收尾。
+		EditSession localEdit;
+		bool localEditActive=false;
+		std::uint64_t localRevision=0;
+		std::shared_ptr<const ShapeUiSnapshot> localSnapshot;
+		std::shared_ptr<const GeometryResult> localGeometry;
+		bool localPending=false;
+		std::uint64_t localUpGeneration=0;
+		std::chrono::steady_clock::time_point localUpTime{};
+		// 渲染线程私有：本帧输入来源与是否需要重新呈现。
+		std::shared_ptr<const ShapeUiSnapshot> sourceSnapshot, sourceLocal;
+		bool tracking=false, holdingLocal=false, presentPending=true, lightingValid=false;
+		BarSurfaceSharedLighting presentedLighting{};
+		std::optional<ShapeObject> localBoundsObject;
+		float localBoundsScale=0;
 		Impl()
 		{
 			renderer.ConfigureLocalizedTypography();
@@ -297,6 +320,24 @@ namespace Inkeys::UI::Bar
 		}
 		Vec2 CanvasPoint(const Frame& frame, POINT p) const
 		{return {static_cast<float>(p.x-frame.snapshot->canvasOriginX),static_cast<float>(p.y-frame.snapshot->canvasOriginY)};}
+		std::uint64_t localBaseRevision=0;
+		// 与绘制线程同一EditSession算法：本地候选只驱动控制点/外框显示，不进入文档。
+		void TrackLocal(const Frame& frame, Vec2 point, bool up, std::uint64_t upGeneration)
+		{
+			if(!localEditActive||!frame.snapshot)return;
+			std::shared_ptr<ShapeUiSnapshot> local;std::shared_ptr<GeometryResult> world;
+			if(localEdit.Preview(point,localBaseRevision+(++localRevision)))if(const auto& next=localEdit.Candidate())
+			{
+				local=std::make_shared<ShapeUiSnapshot>(*frame.snapshot);local->object=*next;local->editGestureActive=true;
+				local->handles=BuildEditHandles(*next,{local->displayScale,.25f});
+				world=std::make_shared<GeometryResult>();
+				if(BuildGeometry(*next,*world,{local->displayScale,.25f}))local->bounds=world->bounds;else world.reset();
+			}
+			std::scoped_lock lock(inputMutex);
+			if(local){localSnapshot=std::move(local);localGeometry=std::move(world);}
+			// 抬手后保持最后候选直到绘制线程发布手势结束快照，避免松手瞬间回弹再追赶。
+			if(up){localEditActive=false;if(localSnapshot){localPending=true;localUpTime=std::chrono::steady_clock::now();localUpGeneration=upGeneration;}}
+		}
 		ShapeEditorHit Hit(const Frame& frame, POINT p) const
 		{
 			ShapeEditorHit hit;if(!frame.visible||!frame.snapshot||!frame.snapshot->object)return hit;
@@ -326,20 +367,55 @@ namespace Inkeys::UI::Bar
 			if(body.kind!=HitKind::None){hit.occupied=true;hit.body=true;}
 			return hit;
 		}
+		void UpdateLocalBounds(const ShapeObject& object, float displayScale)
+		{
+			// 旋转拖动只改transform，本地外框几何不变时不再重建。
+			auto local=object;local.transform={};
+			if(localBoundsObject&&*localBoundsObject==local&&localBoundsScale==displayScale)return;
+			GeometryResult localGeometry;if(BuildGeometry(local,localGeometry,{displayScale}))localBounds=localGeometry.bounds;
+			localBoundsObject=std::move(local);localBoundsScale=displayScale;
+		}
 		void Configure(std::shared_ptr<const ShapeUiSnapshot> next, RECT nextWork, RECT nextBar)
 		{
-			const bool same=snapshot&&next&&snapshot->identity==next->identity;
-			if(!same || !EqualRect(&work,&nextWork) || !EqualRect(&bar,&nextBar))
+			const auto updateWidths=[&]
 			{
-				if(next&&next->object)
+				if(!snapshot||!snapshot->object)return;
+				const auto state=GetStateModeSnapshot();std::array<float,3> nextWidths{};
+				for(int i=0;i<3;++i)nextWidths[i]=static_cast<float>(GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenSoftPen,i,state).resolvedWidthDip*scale);
+				if(nextWidths!=widths){widths=nextWidths;presentPending=true;}
+			};
+			std::shared_ptr<const ShapeUiSnapshot> local;std::shared_ptr<const GeometryResult> localWorld;
+			{
+				std::scoped_lock lock(inputMutex);
+				if(localSnapshot)
 				{
-					GeometryResult built;if(BuildGeometry(*next->object,built,{next->displayScale}))
-					{
-						geometry=std::move(built);auto local=*next->object;local.transform={};
-						GeometryResult localGeometry;if(BuildGeometry(local,localGeometry,{next->displayScale}))localBounds=localGeometry.bounds;
-					}
-					else next.reset();
+					const auto& a=localSnapshot->identity;
+					bool drop=!next||!next->object||next->identity.session!=a.session||next->identity.documentGeneration!=a.documentGeneration||next->identity.displayGeneration!=a.displayGeneration||next->identity.pageId!=a.pageId;
+					// 抬手后等绘制线程发布手势结束的新快照再交还；Commit被拒或丢失时限时回落到权威快照。
+					if(!drop&&localPending)drop=(next->identity.generation!=localUpGeneration&&!next->editGestureActive)||std::chrono::steady_clock::now()-localUpTime>std::chrono::milliseconds(500);
+					if(drop){localSnapshot.reset();localGeometry.reset();localPending=false;}
+					else{local=localSnapshot;localWorld=localGeometry;}
 				}
+				holdingLocal=localSnapshot&&localPending;
+			}
+			tracking=local!=nullptr;
+			if(next==sourceSnapshot&&local==sourceLocal&&EqualRect(&work,&nextWork)&&EqualRect(&bar,&nextBar)){updateWidths();return;}
+			presentPending=true;sourceSnapshot=next;sourceLocal=local;
+			if(local&&next&&next->object&&local->object)
+			{
+				// 身份与场景沿用最新权威快照，对象/控制点/外框取本地候选；世界几何已由worker构建一次。
+				auto merged=std::make_shared<ShapeUiSnapshot>(*next);
+				merged->object=local->object;merged->handles=local->handles;merged->bounds=local->bounds;merged->editGestureActive=true;
+				if(localWorld)geometry=*localWorld;else{GeometryResult built;if(BuildGeometry(*merged->object,built,{merged->displayScale}))geometry=std::move(built);}
+				UpdateLocalBounds(*merged->object,merged->displayScale);next=std::move(merged);
+			}
+			else if(next&&next->object&&(!snapshot||snapshot->object!=next->object||snapshot->displayScale!=next->displayScale||!snapshot->object))
+			{
+				GeometryResult built;if(BuildGeometry(*next->object,built,{next->displayScale}))
+				{
+					geometry=std::move(built);UpdateLocalBounds(*next->object,next->displayScale);
+				}
+				else next.reset();
 			}
 			if(!next || !next->object || (snapshot&&next->identity.session!=snapshot->identity.session))
 			{
@@ -350,9 +426,7 @@ namespace Inkeys::UI::Bar
 			const double nextScale=snapshot?(std::max)(.5f,snapshot->displayScale):1;
 			if(scale!=nextScale)initialized=false;scale=nextScale;
 			opacity.SetTar(requestedVisible?1:0,BarButtonDefaultOperationDurationSeconds);
-			if(!snapshot||!snapshot->object)return;
-			const auto state=GetStateModeSnapshot();
-			for(int i=0;i<3;++i)widths[i]=static_cast<float>(GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenSoftPen,i,state).resolvedWidthDip*scale);
+			updateWidths();
 		}
 		bool Advance(std::chrono::steady_clock::time_point now)
 		{
@@ -421,6 +495,20 @@ namespace Inkeys::UI::Bar
 			{
 				RECT body{static_cast<LONG>(snapshot->canvasOriginX+b.left-8*scale),static_cast<LONG>(snapshot->canvasOriginY+b.top-8*scale),static_cast<LONG>(snapshot->canvasOriginX+b.right+8*scale),static_cast<LONG>(snapshot->canvasOriginY+b.bottom+8*scale)};
 				UnionRect(&nextBounds,&nextBounds,&body);
+			}
+			if(tracking&&initialized&&!EmptyRect(bounds))
+			{
+				// 拖动期间窗口只按块外扩、不收缩，避免逐帧重建D2D target；手势结束后再按内容收回。
+				RECT grown{};UnionRect(&grown,&bounds,&nextBounds);
+				if(!EqualRect(&grown,&bounds))
+				{
+					const double block=(std::max)(64.,std::round(256*scale));
+					if(grown.left<bounds.left)grown.left=static_cast<LONG>(std::floor(grown.left/block)*block);
+					if(grown.top<bounds.top)grown.top=static_cast<LONG>(std::floor(grown.top/block)*block);
+					if(grown.right>bounds.right)grown.right=static_cast<LONG>(std::ceil(grown.right/block)*block);
+					if(grown.bottom>bounds.bottom)grown.bottom=static_cast<LONG>(std::ceil(grown.bottom/block)*block);
+				}
+				nextBounds=grown;
 			}
 			if(!EqualRect(&bounds,&nextBounds))
 			{
@@ -538,8 +626,12 @@ namespace Inkeys::UI::Bar
 				const auto r=AdvanceBarShapeVisual(v.circle,{dt,speed,static_cast<bool>(BarUiAnimationEnabled)});active|=r.active;changed|=r.changed;
 			}
 			std::erase_if(handles,[&](const auto& v){return std::none_of(snapshot->handles.begin(),snapshot->handles.end(),[&](const auto& h){return h.id==v->id;});});
-			renderer.SetFrameLightingSnapshot(ResolveBarSurfaceFrameLightingSnapshot(ReadShapeEditorSharedLighting(),bounds,0));
-			candidate=std::move(next);initialized=true;return changed||active;
+			const auto lighting=ReadShapeEditorSharedLighting();
+			if(!lightingValid||!SameEditorLighting(lighting,presentedLighting)){presentPending=true;presentedLighting=lighting;lightingValid=true;}
+			renderer.SetFrameLightingSnapshot(ResolveBarSurfaceFrameLightingSnapshot(lighting,bounds,0));
+			candidate=std::move(next);initialized=true;presentPending|=changed||active;
+			// 抬手后等待权威快照期间保持续帧，Commit被拒且无新快照时也能按500ms期限回落，不残留本地候选。
+			active|=holdingLocal;return changed||active;
 		}
 		void DrawButton(unsigned id)
 		{
@@ -678,7 +770,7 @@ namespace Inkeys::UI::Bar
 		const HRESULT end=p.renderer.EndFrameDraw(dc);
 		if(FAILED(end))return end;if(FAILED(get))return get;if(FAILED(release))return release;return presented?S_OK:E_FAIL;
 	}
-	void ShapeEditorSurface::CommitPresented(bool enabled){std::scoped_lock lock(impl_->inputMutex);const auto generation=impl_->presented.presentationGeneration+1;impl_->presented=impl_->candidate;impl_->presented.presentationGeneration=generation;impl_->presented.input&=enabled;}
+	void ShapeEditorSurface::CommitPresented(bool enabled){std::scoped_lock lock(impl_->inputMutex);const auto generation=impl_->presented.presentationGeneration+1;impl_->presented=impl_->candidate;impl_->presented.presentationGeneration=generation;impl_->presented.input&=enabled;impl_->presentPending=!enabled;}
 	ShapeEditorHit ShapeEditorSurface::Hit(POINT screen)const{std::scoped_lock lock(impl_->inputMutex);return impl_->Hit(impl_->presented,screen);}
 	void ShapeEditorSurface::SetActionSink(std::function<void(const ShapeUiAction&)> sink){std::scoped_lock lock(impl_->inputMutex);impl_->actionSink=std::move(sink);}
 	void ShapeEditorSurface::ReleaseDeviceResources(){impl_->renderer.DiscardDeviceResources();for(auto& b:impl_->buttons)if(b)b->icon.ResetCache();}
@@ -686,8 +778,11 @@ namespace Inkeys::UI::Bar
 	bool ShapeEditorSurface::Pointer(UINT message,POINT point,bool captureOwned,std::uint64_t expectedPresentation,short wheelDelta)
 	{
 		auto& p=*impl_;Impl::Frame frame;ShapeEditorHit hit;
-		{std::scoped_lock lock(p.inputMutex);frame=p.presented;hit=p.Hit(frame,point);}
-		if((expectedPresentation&&expectedPresentation!=frame.presentationGeneration&&!p.gesture&&!p.scrollDragging)||message==WM_CANCELMODE||message==WM_CAPTURECHANGED||(!captureOwned&&(p.gesture||p.paletteGesture||p.scrollDragging))){CancelPointer();return true;}
+		// 拖动中只需最新帧做坐标换算，跳过逐move的控制点/本体命中。
+		{std::scoped_lock lock(p.inputMutex);frame=p.presented;if(!p.gesture)hit=p.Hit(frame,point);}
+		// Down/悬停按已成功呈现的最新帧命中；只要事件对应的帧确实呈现过，就不因之后又呈现了新帧而吞掉按下。
+		const bool presentedEarlier=(message==WM_LBUTTONDOWN||message==WM_MOUSEMOVE)&&expectedPresentation<frame.presentationGeneration;
+		if((expectedPresentation&&expectedPresentation!=frame.presentationGeneration&&!presentedEarlier&&!p.gesture&&!p.scrollDragging)||message==WM_CANCELMODE||message==WM_CAPTURECHANGED||(!captureOwned&&(p.gesture||p.paletteGesture||p.scrollDragging))){CancelPointer();return true;}
 		if(message==WM_MOUSEWHEEL)
 		{
 			const double lx=(point.x-frame.bounds.left)/frame.scale,ly=(point.y-frame.bounds.top)/frame.scale;
@@ -708,8 +803,11 @@ namespace Inkeys::UI::Bar
 			if(!frame.snapshot||frame.snapshot->identity.session!=p.gestureIdentity.session||frame.snapshot->identity.documentGeneration!=p.gestureIdentity.documentGeneration||frame.snapshot->identity.displayGeneration!=p.gestureIdentity.displayGeneration){CancelPointer();return true;}
 			if(message==WM_MOUSEMOVE||message==WM_LBUTTONUP)
 			{
-				ShapeUiAction a;a.identity=p.gestureIdentity;a.kind=message==WM_LBUTTONUP?ShapeUiActionKind::CommitEdit:ShapeUiActionKind::PreviewEdit;a.handleId=p.handle;a.down=p.down;a.point=p.CanvasPoint(frame,point);p.Emit(a);
-				if(message==WM_LBUTTONUP){p.gesture=false;p.pressedHandle=UINT32_MAX;}
+				const bool up=message==WM_LBUTTONUP;std::uint64_t upGeneration=0;
+				if(up){const auto current=ProductShapeUiSnapshot();upGeneration=current?current->identity.generation:frame.snapshot->identity.generation;}
+				ShapeUiAction a;a.identity=p.gestureIdentity;a.kind=up?ShapeUiActionKind::CommitEdit:ShapeUiActionKind::PreviewEdit;a.handleId=p.handle;a.down=p.down;a.point=p.CanvasPoint(frame,point);p.Emit(a);
+				p.TrackLocal(frame,a.point,up,upGeneration);
+				if(up){p.gesture=false;p.pressedHandle=UINT32_MAX;}
 			}return true;
 		}
 		if(p.paletteGesture)
@@ -719,7 +817,9 @@ namespace Inkeys::UI::Bar
 		if(message==WM_LBUTTONDOWN&&hit.occupied&&!hit.button&&(hit.body||hit.handle))
 		{
 			p.gesture=true;p.gestureIdentity=hit.identity;p.handle=hit.body?0:hit.handle;p.down=p.CanvasPoint(frame,point);p.pressedHandle=p.handle;
-			ShapeUiAction a;a.kind=ShapeUiActionKind::BeginEdit;a.identity=hit.identity;a.handleId=p.handle;a.down=a.point=p.down;if(!p.Emit(a)){p.gesture=false;p.pressedHandle=UINT32_MAX;}return true;
+			ShapeUiAction a;a.kind=ShapeUiActionKind::BeginEdit;a.identity=hit.identity;a.handleId=p.handle;a.down=a.point=p.down;if(!p.Emit(a)){p.gesture=false;p.pressedHandle=UINT32_MAX;return true;}
+			p.localEditActive=p.localEdit.Begin(*frame.snapshot->object,p.handle,p.down,{frame.snapshot->displayScale,.25f});
+			p.localBaseRevision=frame.snapshot->object->revision;p.localRevision=0;return true;
 		}
 		if(message==WM_LBUTTONDOWN&&hit.button==PaletteHit){p.paletteGesture=true;return true;}
 		ButtonPointerEvent event=message==WM_LBUTTONDOWN?ButtonPointerEvent::Down:message==WM_LBUTTONUP?ButtonPointerEvent::Up:message==WM_MOUSELEAVE?ButtonPointerEvent::Leave:ButtonPointerEvent::Move;
@@ -731,9 +831,12 @@ namespace Inkeys::UI::Bar
 	}
 	void ShapeEditorSurface::CancelPointer()
 	{
-		auto& p=*impl_;if(p.gesture){ShapeUiAction a;a.kind=ShapeUiActionKind::CancelEdit;a.identity=p.gestureIdentity;p.Emit(a);}
+		auto& p=*impl_;const bool dragging=p.gesture;if(p.gesture){ShapeUiAction a;a.kind=ShapeUiActionKind::CancelEdit;a.identity=p.gestureIdentity;p.Emit(a);}
 		std::scoped_lock lock(p.inputMutex);p.gesture=p.paletteGesture=p.scrollDragging=false;p.pointer.Reset();p.hover=p.pressed=0;p.hoveredHandle=UINT32_MAX;p.pressedHandle=UINT32_MAX;
+		// 取消拖动立即退回权威快照；已抬手等待提交的本地候选不受普通取消影响。
+		if(dragging){p.localEdit.Cancel();p.localEditActive=false;p.localSnapshot.reset();p.localGeometry.reset();p.localPending=false;}
 	}
+	bool ShapeEditorSurface::NeedsPresent()const noexcept{return impl_->presentPending;}
 	bool ShapeEditorSurface::Keyboard(BYTE key,bool down)
 	{
 		auto& p=*impl_;Impl::Frame frame;{std::scoped_lock lock(p.inputMutex);frame=p.presented;}
@@ -964,6 +1067,82 @@ namespace Inkeys::UI::Bar
 			if(!pixels.empty())expect(SaveEditorPng(std::filesystem::path(L"Build/shape-p34-ui")/(L"editor-small-"+std::to_wstring(static_cast<int>(scale*100))+L".png"),pixels.data(),receipt.cx,receipt.cy,receipt.cx*4),"small-work fixed-pixel preview emits actual PNG evidence");
 		}
 
+		// 高频拖动：真实Bridge对同一手势预览latest-wins，终结意图在队列拥塞时仍按序送达。
+		{
+			++scenes;auto state=std::make_shared<ShapeUiSnapshot>();state->identity.session=88;state->identity.objectId[0]=8;state->object=ShapeObject{};state->object->id=state->identity.objectId;
+			Bridge::StateBridge bridge(6);bool full=false;
+			ShapeIntentSender sender{[&](const ShapeUiAction& a){return full?Bridge::CommandResult::QueueFull:bridge.PublishShapeAction(a);},[&]{return state;}};
+			ShapeUiAction a;a.identity=state->identity;a.kind=ShapeUiActionKind::BeginEdit;a.handleId=3;a.down={10,10};expect(sender.Send(a),"coalescing fixture accepts BeginEdit");
+			a.kind=ShapeUiActionKind::PreviewEdit;bool previewsAccepted=true;
+			for(int i=0;i<1000;++i){a.point={static_cast<float>(i),static_cast<float>(2*i)};previewsAccepted&=sender.Send(a);}
+			expect(previewsAccepted,"1000 high-frequency moves never hit queue capacity");
+			full=true;a.kind=ShapeUiActionKind::CommitEdit;a.point={2000,3000};expect(sender.Send(a),"congested commit is retained as a terminal intent");
+			a.kind=ShapeUiActionKind::PreviewEdit;expect(!sender.Send(a),"a preview behind a pending terminal is dropped instead of overtaking it");
+			full=false;const auto now=std::chrono::steady_clock::now();expect(sender.Tick(now)==std::chrono::steady_clock::time_point::max(),"retry delivers the pending commit");
+			Bridge::Command command;std::vector<ShapeUiAction> drained;while(bridge.TryConsume(command))if(command.shapeAction)drained.push_back(*command.shapeAction);
+			expect(drained.size()==3&&drained[0].kind==ShapeUiActionKind::BeginEdit&&drained[1].kind==ShapeUiActionKind::PreviewEdit&&drained[2].kind==ShapeUiActionKind::CommitEdit,
+				"Begin, one latest preview and Commit remain in FIFO order");
+			if(drained.size()==3)expect(drained[1].point.x==999&&drained[1].point.y==1998&&drained[2].point.x==2000,"surviving preview is the newest move and Commit carries the final point");
+		}
+		// 本地跟手：Draw3快照不更新时控制点仍按共享核心候选移动；拖动期间窗口不逐帧重建；抬手后等权威快照交还。
+		{
+			++scenes;ToolSpec tool;tool.preset=PresetKind::Rectangle;tool.creationMode=DefaultCreationMode(PresetKind::Rectangle);
+			ShapeStyle shapeStyle;shapeStyle.width=4;ObjectId id{};id[0]=9;
+			auto shape=MakePresetShape(tool,{200,200},{420,330},shapeStyle,id);expect(shape.has_value(),"tracking fixture creates a rectangle");
+			if(shape)
+			{
+				auto snapshot=std::make_shared<ShapeUiSnapshot>();snapshot->object=*shape;snapshot->identity.session=5;snapshot->identity.generation=1;snapshot->identity.objectId=id;
+				snapshot->identity.documentGeneration=1;snapshot->identity.displayGeneration=1;snapshot->displayScale=1;snapshot->handles=BuildEditHandles(*shape,{1.f,.25f});
+				GeometryResult geometry;BuildGeometry(*shape,geometry,{1.f,.25f});snapshot->bounds=geometry.bounds;
+				ShapeEditorSurface scene;std::vector<ShapeUiAction> actions;scene.SetActionSink([&](const auto& action){actions.push_back(action);});
+				const RECT work{0,0,1600,1000};
+				auto frame=[&]{scene.Configure(snapshot,work,{});now+=std::chrono::milliseconds(17);scene.Advance(now);
+					const bool needed=scene.NeedsPresent();if(needed&&SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch()))&&SUCCEEDED(scene.Present([](const auto&)->BOOL{return TRUE;})))scene.CommitPresented();return needed;};
+				for(int f=0;f<70;++f)frame();
+				expect(!frame(),"settled editor with unchanged snapshot skips readback and ULW");
+				const EditHandle* scaleHandle=nullptr;for(const auto& h:snapshot->handles)if(h.kind==EditHandleKind::Scale){scaleHandle=&h;break;}
+				expect(scaleHandle!=nullptr,"rectangle exposes a scale handle");
+				if(scaleHandle)
+				{
+					const POINT down{static_cast<LONG>(scaleHandle->position.x),static_cast<LONG>(scaleHandle->position.y)};
+					// 事件携带的是更早一帧的呈现代次；按下仍以最近成功呈现帧命中，不被吞掉。
+					const auto presented=scene.PresentedGeneration();actions.clear();
+					scene.Pointer(WM_LBUTTONDOWN,down,true,presented>1?presented-1:presented);
+					expect(!actions.empty()&&actions.front().kind==ShapeUiActionKind::BeginEdit,"Down against an earlier successfully presented frame still begins the gesture");
+					const auto sameShape=[](ShapeObject a,ShapeObject b){a.revision=b.revision=0;return a==b;};
+					const std::uint32_t begun=actions.empty()?scaleHandle->id:actions.front().handleId;
+					EditSession reference;expect(reference.Begin(*shape,begun,{static_cast<float>(down.x),static_cast<float>(down.y)},{1.f,.25f}),"reference session begins");
+					unsigned recreated=0,tracked=0;auto* target=scene.Renderer().GetTargetBitmap();RECT previousBounds=scene.Bounds();bool monotonic=true;
+					for(int step=1;step<=40;++step)
+					{
+						const POINT move{down.x+step*5,down.y+step*3};scene.Pointer(WM_MOUSEMOVE,move,true,scene.PresentedGeneration());frame();
+						if(scene.Renderer().GetTargetBitmap()!=target){++recreated;target=scene.Renderer().GetTargetBitmap();}
+						const RECT b=scene.Bounds();monotonic&=b.left<=previousBounds.left&&b.top<=previousBounds.top&&b.right>=previousBounds.right&&b.bottom>=previousBounds.bottom;previousBounds=b;
+						if(reference.Preview({static_cast<float>(move.x),static_cast<float>(move.y)},100+step)&&reference.Candidate())
+						{
+							const auto& shown=scene.impl_->presented.snapshot;const auto expectedHandles=BuildEditHandles(*reference.Candidate(),{1.f,.25f});
+							if(shown&&shown->object&&sameShape(*shown->object,*reference.Candidate())&&shown->handles==expectedHandles)++tracked;
+						}
+					}
+					expect(tracked==40,"every move shows the shared-core candidate handles before any Draw3 snapshot arrives");
+					expect(monotonic&&recreated<=4,"drag window grows in blocks and avoids per-frame target recreation");
+					expect(actions.size()==41,"each move still emits one preview intent for Bridge coalescing");
+					const POINT up{down.x+200,down.y+120};scene.Pointer(WM_LBUTTONUP,up,true,scene.PresentedGeneration());frame();
+					expect(actions.back().kind==ShapeUiActionKind::CommitEdit,"Up emits the commit with the final point");
+					reference.Preview({static_cast<float>(up.x),static_cast<float>(up.y)},200);
+					const auto held=scene.impl_->presented.snapshot;
+					expect(held&&held->object&&reference.Candidate()&&sameShape(*held->object,*reference.Candidate()),"after Up the local candidate stays until Draw3 confirms, so handles do not snap back");
+					if(reference.Candidate())
+					{
+						snapshot=std::make_shared<ShapeUiSnapshot>(*snapshot);snapshot->object=*reference.Candidate();snapshot->identity.generation=7;
+						snapshot->handles=BuildEditHandles(*snapshot->object,{1.f,.25f});GeometryResult g;BuildGeometry(*snapshot->object,g,{1.f,.25f});snapshot->bounds=g.bounds;
+					}
+					for(int f=0;f<70;++f)frame();
+					expect(scene.impl_->presented.snapshot&&scene.impl_->presented.snapshot->identity.generation==7&&!scene.impl_->tracking,"authoritative post-commit snapshot replaces the local candidate");
+					expect(!frame(),"after the gesture settles no further presentation is requested");
+				}
+			}
+		}
 		SetThemeStyleSource(nullptr);RenderPipeline::Shutdown();CoUninitialize();
 		report<<"scenes="<<scenes<<" commits="<<commits<<" checks="<<checks<<" failures="<<failures<<'\n';
 		std::fprintf(stderr,"Shape editor scenes=%d commits=%d checks=%d failures=%d\n",scenes,commits,checks,failures);return failures?1:0;

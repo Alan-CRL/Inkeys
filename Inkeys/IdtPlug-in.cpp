@@ -559,6 +559,8 @@ void GetPptState()
 
 void NextPptSlides(int check)
 {
+	// 放映操作（含只推进动画的按键）先让图形编辑框失焦并落定，再执行放映命令。
+	Inkeys::Drawing::Draw3::RequestShapeEditorFocusLoss();
 	auto pptCom = GetPptComSnapshot();
 	if (pptCom == nullptr)
 	{
@@ -582,6 +584,8 @@ void NextPptSlides(int check)
 }
 void PreviousPptSlides()
 {
+	// 放映操作（含只推进动画的按键）先让图形编辑框失焦并落定，再执行放映命令。
+	Inkeys::Drawing::Draw3::RequestShapeEditorFocusLoss();
 	auto pptCom = GetPptComSnapshot();
 	if (pptCom == nullptr)
 	{
@@ -605,6 +609,8 @@ void PreviousPptSlides()
 }
 void EndPptShow()
 {
+	// 放映操作（含只推进动画的按键）先让图形编辑框失焦并落定，再执行放映命令。
+	Inkeys::Drawing::Draw3::RequestShapeEditorFocusLoss();
 	auto pptCom = GetPptComSnapshot();
 	if (pptCom == nullptr) return;
 

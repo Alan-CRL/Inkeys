@@ -11475,6 +11475,8 @@ namespace Inkeys::Drawing::Draw3
 		std::function<bool(RuntimeStroke&)> beginShapeContact;
 		std::function<void(RuntimeStroke&)> finishShapeContact;
 		std::function<void(RECT&,bool)> closeShapeSessions;
+		// 画布焦点唯一失焦入口（编辑框 + L1 待落定项）；在 ShapeRuntimeActions.inl 中赋值。
+		std::function<void(CanvasFocusEndReason,RECT&)> endCanvasFocus;
 		std::vector<CanvasPageRuntimeState> pageRuntimeStates;
 		pageRuntimeStates.reserve(8);
 		pageRuntimeStates.emplace_back();
@@ -14324,6 +14326,13 @@ namespace Inkeys::Drawing::Draw3
 							contentDelta.x, contentDelta.y,
 							translation.viewportDelta.x, translation.viewportDelta.y,
 							panMotion.velocity.x, panMotion.velocity.y);
+					if ((translation.viewportDelta.x != 0.0f || translation.viewportDelta.y != 0.0f) &&
+						endCanvasFocus && (shapeUi.focus.Active() || shapeUi.editor.object))
+					{
+						// 平移前先失焦落定，可信快照随即包含该图形，平移回退画面不缺内容。
+						RECT focusDirty = {}; endCanvasFocus(CanvasFocusEndReason::ViewportChange,focusDirty);
+						window_.RequestFullPresent();
+					}
 					if ((translation.viewportDelta.x != 0.0f ||
 						translation.viewportDelta.y != 0.0f) &&
 						canvas->SetViewport({ viewport.x, viewport.y, 1.0f }))
@@ -15105,7 +15114,7 @@ namespace Inkeys::Drawing::Draw3
 			int width, int height)
 		{
 			// 统一权威安装入口也覆盖异步load，不能复用旧页的对象修订缓存或编辑会话。
-			if (closeShapeSessions) closeShapeSessions(frameDirty,false);
+			if (endCanvasFocus) endCanvasFocus(CanvasFocusEndReason::PageSwitch,frameDirty);
 			++shapeUi.documentGeneration; renderer_.ClearShapeRenderCache();
 			// 逻辑换页/工作区/恢复/Clear 立即退休旧起笔，不等待 Present 或物理接触归零。
 			if (++acceptedStrokeSceneGeneration == 0) ++acceptedStrokeSceneGeneration;
@@ -15630,6 +15639,8 @@ namespace Inkeys::Drawing::Draw3
 				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
 			EnsureOperationJournal(runtime);
+			// 撤销目标不是焦点层项时，先落定焦点层，L2 恢复路径才面对完整画面。
+			if (shapeUi.focus.Active() && !focusIsUndoTarget()) endCanvasFocus(CanvasFocusEndReason::Undo,frameDirty);
 			if (runtime.operationCursor <= runtime.operationFloor) return false;
 			if (runtime.operations[runtime.operationCursor - 1].kind == CanvasOperationKind::Replace)
 				return applyReplacementHistory(false,frameDirty);
@@ -15657,15 +15668,35 @@ namespace Inkeys::Drawing::Draw3
 			const InkViewport viewport = canvas->Viewport();
 			const auto metricsBeforeUndo = metricsState_ ? metricsSignature(size.width, size.height) : ContentMetricRasterSignature{};
 			if (metricsState_) metricsState_->BeginLocalWrite(metricsBeforeUndo);
-			const bool metricsHotAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
-			const HotPreimageRestoreResult hotRestore = historyGpuCache.RestorePreimage(
-				canvasIdentity, *itemId, rasterKey, runtime.rasterState,
-				viewport.x, viewport.y, size.width, size.height);
-			if (metricsState_) metricsState_->RasterReturned(metricsHotAttempt, true,
-				hotRestore.restored && !IsEmptyRect(hotRestore.dirty)); // 当前实现false仅前置/未命中返回，未到Copy；void Copy无失败回执。
+			// 焦点层中的项：L2 本就不含它，撤销只丢弃 L1，不触碰 L2/tile。
+			const PendingL2Item* focusEntry = shapeUi.focus.Find(*itemId);
+			const bool focusPending = focusEntry && focusEntry->pageIndex == currentPageIndex_;
+			HotPreimageRestoreResult hotRestore;
+			if (!focusPending)
+			{
+				const bool metricsHotAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
+				hotRestore = historyGpuCache.RestorePreimage(
+					canvasIdentity, *itemId, rasterKey, runtime.rasterState,
+					viewport.x, viewport.y, size.width, size.height);
+				if (metricsState_) metricsState_->RasterReturned(metricsHotAttempt, true,
+					hotRestore.restored && !IsEmptyRect(hotRestore.dirty));
+			} // 当前实现false仅前置/未命中返回，未到Copy；void Copy无失败回执。
 			const char* path = "failed";
 			RECT dirty = {};
-			if (hotRestore.restored)
+			if (focusPending)
+			{
+				if (!runtime.history.UndoLastVisible(*itemId))
+				{
+					endCanvasFocus(CanvasFocusEndReason::Undo,frameDirty);
+					requestAuthoritativeRecovery();
+					return false;
+				}
+				runtime.rasterState = runtime.beforeStates[itemId->index];
+				dropFocusLayer(dirty);
+				ShapePreviewMetrics().focusUndoDrops.fetch_add(1,std::memory_order_relaxed);
+				path = "focus_layer";
+			}
+			else if (hotRestore.restored)
 			{
 				if (!runtime.history.UndoLastVisible(*itemId))
 				{
@@ -16184,8 +16215,22 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (command.type == CanvasCommandType::ShapeInteraction)
 				{
+					// 预览进最新槽，批次末每帧最多执行一次；其他意图保持原 FIFO。
+					if (command.shapeAction && command.shapeAction->kind == ShapeUiActionKind::PreviewEdit)
+					{
+						if (auto flush = shapePreviewSlot.AcceptPreview(command.shapeAction)) processShapeUiAction(*flush,frameDirty);
+						continue;
+					}
+					if (auto flush = shapePreviewSlot.BeforeCommand(command.shapeAction.get(),false)) processShapeUiAction(*flush,frameDirty);
 					if (command.shapeAction) processShapeUiAction(*command.shapeAction,frameDirty);
 					continue;
+				}
+				{
+					// Host 为每条命令重复投递的同场景声明不改变编辑上下文，不打断预览合并。
+					const bool sceneDeclaration = (command.type == CanvasCommandType::SetWorkspace ||
+						command.type == CanvasCommandType::SetPresentationTarget) &&
+						!ShapeCommandChangesScene(command,activeWorkspace,currentPageIndex_,activePresentationTarget);
+					if (auto flush = shapePreviewSlot.BeforeCommand(nullptr,sceneDeclaration)) processShapeUiAction(*flush,frameDirty);
 				}
 				if (command.type == CanvasCommandType::Undo && shapeUi.construction && shapeUi.construction->session.Status().active)
 				{
@@ -16194,7 +16239,14 @@ namespace Inkeys::Drawing::Draw3
 				if (command.type == CanvasCommandType::Clear || command.type == CanvasCommandType::Undo || command.type == CanvasCommandType::Redo ||
 					ShapeCommandChangesScene(command,activeWorkspace,currentPageIndex_,activePresentationTarget) || command.type == CanvasCommandType::TranslateViewport)
 				{
-					closeShapeSessions(frameDirty,true); ++shapeUi.documentGeneration;
+					const auto focusReason = command.type == CanvasCommandType::Clear ? CanvasFocusEndReason::Clear :
+						command.type == CanvasCommandType::Undo ? CanvasFocusEndReason::Undo :
+						command.type == CanvasCommandType::Redo ? CanvasFocusEndReason::Redo :
+						command.type == CanvasCommandType::TranslateViewport ? CanvasFocusEndReason::ViewportChange : CanvasFocusEndReason::SceneChange;
+					// 编辑中撤销焦点层项本身：只关闭编辑框，L1 交给撤销丢弃，L2 不动；其余一律先失焦落定。
+					if (command.type == CanvasCommandType::Undo && focusIsUndoTarget()) closeShapeEditor(frameDirty,std::nullopt,true);
+					else endCanvasFocus(focusReason,frameDirty);
+					++shapeUi.documentGeneration;
 					renderer_.ClearShapeRenderCache();
 				}
 
@@ -17112,6 +17164,13 @@ namespace Inkeys::Drawing::Draw3
 					reportCommand(whiteboardLoadingCommand);
 				}
 			}
+			// 槽内最新预览在批次末执行；本帧已执行过则留到下一帧（下一帧开头必经此处，不会进入 idle）。
+			if (auto latest = shapePreviewSlot.AtBatchEnd()) processShapeUiAction(*latest,frameDirty);
+			if (shapePreviewSlot.coalesced)
+			{
+				ShapePreviewMetrics().controllerCoalesced.fetch_add(shapePreviewSlot.coalesced,std::memory_order_relaxed);
+				shapePreviewSlot.coalesced = 0;
+			}
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		{
@@ -17149,6 +17208,7 @@ namespace Inkeys::Drawing::Draw3
 		while (true)
 		{
 			FlushCursorDiagnostics();
+			shapePreviewSlot.BeginFrame();
 			const bool selectionMode = window_.SelectionMode();
 			const bool selectionUsesAuxiliary =
 				Bridge::SelectionUsesAuxiliaryOutput(selectionMode, activeWorkspace);
@@ -17262,6 +17322,8 @@ namespace Inkeys::Drawing::Draw3
 				const WindowSize recoveredSize = window_.Size();
 				const RECT fullCanvas = GetFullCanvasRect(
 					recoveredSize.width, recoveredSize.height);
+				// 设备丢失时 L1 一并丢失；L2 从 CPU 文档重建，直接按已落定处理。
+				if (shapeUi.focus.Active()) { RECT focusDirty = {}; endCanvasFocus(CanvasFocusEndReason::DeviceLost,focusDirty); }
 				renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
@@ -17351,6 +17413,8 @@ namespace Inkeys::Drawing::Draw3
 					historyGpuCache.DiscardCompositionCache();
 				}
 				else ++rasterPipelineGeneration;
+				// Resize 后 L2 从文档整体重建（已含待落定项），焦点层只丢弃。
+				if (shapeUi.focus.Active()) { RECT focusDirty = {}; endCanvasFocus(CanvasFocusEndReason::Resize,focusDirty); }
 				// Footprint 是 Canvas-local 真值，窗口 Resize 不需要遍历全页重算。
 				renderer_.ClearRTV(
 					renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
@@ -17400,6 +17464,7 @@ namespace Inkeys::Drawing::Draw3
 				activeLayerRebuildPending = !rebuilt.succeeded;
 				rasterSubmissionFailed |= !rebuilt.succeeded;
 				forceFullPresent = true;
+				shapeUi.focus.redraw = shapeUi.focus.Active(); // 共享层重建清空了 L1 中的待落定项。
 			}
 			DrawingCursorSample priorityPenSample;
 			DrawingCursorSample priorityMouseSample;
@@ -17450,6 +17515,8 @@ namespace Inkeys::Drawing::Draw3
 						if (viewportRefreshClearsTransient) metricsState_->InvalidateLiveRasters();
 						metricsState_->BeginVisibleReplay(metricsSignature(size.width, size.height));
 					}
+					// 可见区从文档整体重放（含待落定项），焦点层只丢弃，避免与重放结果叠画。
+					if (shapeUi.focus.Active()) { RECT focusDirty = {}; endCanvasFocus(CanvasFocusEndReason::ViewportRefresh,focusDirty); }
 					renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
 					if (viewportRefreshClearsTransient)
 					{
@@ -17823,8 +17890,9 @@ namespace Inkeys::Drawing::Draw3
 				continue;
 			}
 
+			// 槽内仍有留到下一帧的预览时不能进入 idle，否则其唤醒已被消费，需等下一次输入才执行。
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
-				!speedEraserHoverAnimating &&
+				!speedEraserHoverAnimating && !shapePreviewSlot.held &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty))
 			{
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
@@ -18578,6 +18646,12 @@ namespace Inkeys::Drawing::Draw3
 			drainActiveShapeControlBarrier(frameDirty);
 			if (hasEndedStroke)
 			{
+				// 焦点层候选：本批最后一笔、且结束后不再有任何活动接触；只有它可留在 L1 且保持 Z 序最上层。
+				RuntimeStroke* focusLayerCandidate = nullptr;
+				if (ShapeFocusLayerEnabled().load(std::memory_order_relaxed) && !shapeUi.focus.Active() &&
+					std::none_of(active.begin(), active.end(), [](const RuntimeStroke* runtime) { return runtime && !runtime->ended; }))
+					for (RuntimeStroke* runtime : active)
+						if (runtime && runtime->ended && runtime->tool != DrawingTool::Laser) focusLayerCandidate = runtime;
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
 				for (RuntimeStroke* runtime : active)
@@ -18648,7 +18722,10 @@ namespace Inkeys::Drawing::Draw3
 									runtime->rebuildPoints, completedHighlighterScratch);
 								RECT completedStrokeDirty = completedStrokeRaster.dirty;
 								const RenderItemState* addedItem = pageRuntime.history.Find(renderItem);
-								if (addedItem && completedStrokeRaster.succeeded)
+								// 自动进入编辑的图形不写入 L2：覆盖率留在 L1，热前像推迟到落定时采集。
+								const bool deferToFocusLayer = runtime == focusLayerCandidate && storedStroke.Shape() &&
+									runtime->lastInputSnapshot.qpc >= shapeUi.pendingCompletedQpc;
+								if (addedItem && completedStrokeRaster.succeeded && !deferToFocusLayer)
 								{
 									preimageCapture = historyGpuCache.CapturePreimage({
 										{ page->PageGuid(), kDefaultDeviceKey },
@@ -18703,7 +18780,13 @@ namespace Inkeys::Drawing::Draw3
 								completedStrokeDirty = ClampRectToCanvas(
 									completedStrokeDirty, size.width, size.height);
 								bool submitted = completedStrokeRaster.succeeded;
-								if (submitted && !IsEmptyRect(completedStrokeDirty))
+								if (submitted && deferToFocusLayer)
+								{
+									shapeUi.focus.pending = {{ renderItem, storedStroke.Shape()->id, page->PageGuid(),
+										currentPageIndex_, committed->beforeState, afterState }};
+									runtime->metricVisible = true;
+								}
+								else if (submitted && !IsEmptyRect(completedStrokeDirty))
 								{
 									// 每条 Stroke 独立 resolve，保留高亮透明度和擦除的文档顺序。
 									submitted = renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
@@ -18721,7 +18804,7 @@ namespace Inkeys::Drawing::Draw3
 									shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
 									shapeUi.pendingCompletedQpc = runtime->lastInputSnapshot.qpc;
 								}
-								pageRuntime.rasterState = afterState;
+								if (!(submitted && deferToFocusLayer)) pageRuntime.rasterState = afterState; // 焦点层项：L2 仍是 before 状态。
 								if (metricsState_)
 									metricsState_->CompleteLocalWrite(metricsBeforeWrite, metricsSignature(size.width, size.height), submitted);
 								pageRuntime.clearRedoAvailable = false;
@@ -18758,6 +18841,8 @@ namespace Inkeys::Drawing::Draw3
 					renderer_, size.width, size.height, shapePrimitiveScratch);
 				rasterSubmissionFailed |= !rebuilt.succeeded;
 				UnionRectInPlace(frameDirty, rebuilt.dirty);
+				// 共享层重建后把刚完成的待落定图形画进 L1（只此一个对象，不重放 tile）。
+				if (shapeUi.focus.Active() && !drawFocusLayer(frameDirty)) abandonFocusLayer(frameDirty);
 
 				std::erase_if(active, [&](RuntimeStroke* runtime)
 					{
@@ -18954,7 +19039,8 @@ namespace Inkeys::Drawing::Draw3
 					? snapshotPage->FindCanvas(kDefaultDeviceKey) : nullptr;
 				const uint64_t snapshotRevision = currentPageIndex_ < pageRuntimeStates.size()
 					? pageRuntimeStates[currentPageIndex_].history.Revision() : 0;
-				if (viewportVisibleClear && snapshotCanvas &&
+				// 焦点期间 L2 不含待落定项；快照改由落定时刷新，避免可信快照与可见画面不一致。
+				if (viewportVisibleClear && snapshotCanvas && !shapeUi.focus.Active() &&
 					(!trustedSnapshotSignatureValid ||
 						trustedSnapshotPageIndex != currentPageIndex_ ||
 						trustedSnapshotRevision != snapshotRevision ||
@@ -19098,6 +19184,7 @@ namespace Inkeys::Drawing::Draw3
 							*activePresentationTarget))))
 					publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
 				contentRevisionNeedsPresent = false;
+				recordShapePreviewPresented(); // 预览意图入队到本帧成功上屏的延迟。
 				// 文稿身份只能在目标 CPU 文档完成重放并成功提交一帧后成为 ready。
 				if (!viewportRecoveryPending && !viewportRefreshPending)
 					publishWorkspaceReadyAfterPresent();

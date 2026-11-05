@@ -293,6 +293,81 @@ namespace
 			"A Redo keeps the A scene before the latest B target")) ++failures;
 	}
 
+	// 编辑拖动：同一手势的预览 latest-wins，终结意图与其他手势保序不丢。
+	void TestShapePreviewCoalescing(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::ShapeUiAction;
+		using Inkeys::Drawing::Draw3::ShapeUiActionKind;
+		StateBridge bridge(8);
+		ShapeUiAction begin;
+		begin.kind = ShapeUiActionKind::BeginEdit;
+		begin.identity.session = 7;
+		begin.identity.generation = 3;
+		begin.handleId = 2;
+		begin.down = { 10, 20 };
+		bool coalesced = true;
+		if (!Expect(bridge.PublishShapeAction(begin, &coalesced) == CommandResult::Accepted && !coalesced,
+			"begin intent enters FIFO without coalescing")) ++failures;
+		ShapeUiAction preview = begin;
+		preview.kind = ShapeUiActionKind::PreviewEdit;
+		unsigned merged = 0;
+		for (int index = 0; index < 500; ++index)
+		{
+			preview.point = { static_cast<float>(index), static_cast<float>(index * 2) };
+			if (bridge.PublishShapeAction(preview, &coalesced) != CommandResult::Accepted)
+			{
+				++failures; Expect(false, "high-frequency preview is never rejected by queue capacity");
+				break;
+			}
+			merged += coalesced ? 1u : 0u;
+		}
+		if (!Expect(merged == 499, "499 of 500 previews overwrite the pending latest slot")) ++failures;
+		ShapeUiAction commit = preview;
+		commit.kind = ShapeUiActionKind::CommitEdit;
+		commit.point = { 600, 700 };
+		if (!Expect(bridge.PublishShapeAction(commit, &coalesced) == CommandResult::Accepted && !coalesced,
+			"commit is appended in order")) ++failures;
+		// 终结之后的同身份预览不得跨越 Commit 合并到前一条。
+		preview.point = { 1, 1 };
+		if (!Expect(bridge.PublishShapeAction(preview, &coalesced) == CommandResult::Accepted && !coalesced,
+			"preview after a terminal starts a new slot")) ++failures;
+		ShapeUiAction other = preview;
+		other.handleId = 9;
+		if (!Expect(bridge.PublishShapeAction(other, &coalesced) == CommandResult::Accepted && !coalesced,
+			"different gesture keeps its own preview")) ++failures;
+		// 普通画布命令之后的预览不得跨越它合并到更早位置。
+		if (!Expect(bridge.Publish(CommandType::Undo) == CommandResult::Accepted, "undo enters between previews")) ++failures;
+		other.point = { 3, 3 };
+		if (!Expect(bridge.PublishShapeAction(other, &coalesced) == CommandResult::Accepted && !coalesced,
+			"preview after a canvas command is not merged across it")) ++failures;
+		Command command{};
+		const ShapeUiActionKind expected[] = { ShapeUiActionKind::BeginEdit, ShapeUiActionKind::PreviewEdit,
+			ShapeUiActionKind::CommitEdit, ShapeUiActionKind::PreviewEdit, ShapeUiActionKind::PreviewEdit,
+			ShapeUiActionKind::PreviewEdit, ShapeUiActionKind::PreviewEdit };
+		std::uint64_t previousSequence = 0;
+		for (unsigned index = 0; index < 7; ++index)
+		{
+			if (!Expect(bridge.TryConsume(command), "coalesced queue keeps every command")) { ++failures; break; }
+			if (index == 5)
+			{
+				if (!Expect(command.type == CommandType::Undo && command.sequence > previousSequence,
+					"canvas command keeps its position")) ++failures;
+				previousSequence = command.sequence;
+				continue;
+			}
+			if (!Expect(command.type == CommandType::ShapeInteraction &&
+				command.shapeAction && command.shapeAction->kind == expected[index] && command.sequence > previousSequence,
+				"coalesced queue preserves terminal order")) { ++failures; break; }
+			previousSequence = command.sequence;
+			if (index == 1 && !Expect(command.shapeAction->point.x == 499 && command.shapeAction->point.y == 998 &&
+				command.shapeAction->enqueueMicroseconds != 0, "surviving preview is the newest point and carries enqueue time")) ++failures;
+			if (index == 2 && !Expect(command.shapeAction->point.x == 600, "commit carries the final gesture point")) ++failures;
+			if (index == 4 && !Expect(command.shapeAction->handleId == 9 && command.shapeAction->point.x == 1, "second gesture preview is not merged")) ++failures;
+			if (index == 6 && !Expect(command.shapeAction->point.x == 3, "post-command preview stays after the canvas command")) ++failures;
+		}
+		if (!Expect(!bridge.TryConsume(command), "no extra command remains after coalescing")) ++failures;
+	}
+
 	void TestUnsupportedAndLifecycle(int& failures)
 	{
 		StateBridge bridge(2);
@@ -1247,6 +1322,7 @@ int RunDraw3BridgeTests()
 	TestMouseCursorToolProjection(failures);
 	TestPresentationSessionIdentity(failures);
 	TestCommandQueue(failures);
+	TestShapePreviewCoalescing(failures);
 	TestUnsupportedAndLifecycle(failures);
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);

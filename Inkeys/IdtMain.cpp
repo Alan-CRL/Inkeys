@@ -2003,6 +2003,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-shape-focus-hidden-test", -1, TRUE) == CSTR_EQUAL)
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunShapeFocusHiddenTest(); });
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
 

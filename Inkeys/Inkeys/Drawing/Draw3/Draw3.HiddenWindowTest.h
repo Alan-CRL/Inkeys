@@ -6,6 +6,8 @@ namespace Inkeys::Drawing::Draw3
 	int RunHiddenWindowIntegrationTest(bool eraserOnly = false) noexcept;
 	// caller 先创建新私有绝对 root；仅真实不可见 ULW Host 生命周期小 smoke，不作性能结论。
 	int RunHiddenWindowRuntimeMetricsSmoke(const wchar_t* privateOutputRoot) noexcept;
+	// 不可见 ULW Host：图形编辑焦点层（L1 待落定）的生产接线与全部可注入失焦触发。
+	int RunShapeFocusHiddenTest() noexcept;
 	// 仅不可见 HWND，比较真实 WARP 清屏、正式 Cursor 与关闭混合的像素读回。
 	int RunRendererPixelTest() noexcept;
 	// 同一不可见像素矩阵仅请求 Hardware FL11；明确不可用返回3，禁止WARP回退。

@@ -42,6 +42,16 @@ namespace Inkeys::Drawing::Draw3
 			return Bridge::CommandResult::NotRunning;
 		return productHost.PublishShapeAction(action);
 	}
+	void RequestShapeEditorFocusLoss() noexcept
+	{
+		// 只发布当前快照身份的 CloseEditor；绘制线程按普通 Close 语义先关闭编辑框再落定。
+		const auto snapshot = ProductShapeUiSnapshot();
+		if (!snapshot || !snapshot->object) return;
+		ShapeUiAction action;
+		action.kind = ShapeUiActionKind::CloseEditor;
+		action.identity = snapshot->identity;
+		(void)PublishShapeUiAction(action);
+	}
 
 	Bridge::CommandResult RequestWhiteboardTheme(const WhiteboardTheme& theme,
 		std::uint64_t generation, std::size_t page) noexcept

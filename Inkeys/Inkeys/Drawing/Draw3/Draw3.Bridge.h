@@ -301,7 +301,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
-		CommandResult PublishShapeAction(const ShapeUiAction&) noexcept;
+		// PreviewEdit 对同一手势 latest-wins；coalesced=true 表示覆盖了未消费预览，调用方不得再登记新唤醒。
+		CommandResult PublishShapeAction(const ShapeUiAction&, bool* coalesced = nullptr) noexcept;
 		CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		CommandResult PublishShortcut(CommandType type,
 			std::shared_ptr<const Shortcuts::Request> request) noexcept;

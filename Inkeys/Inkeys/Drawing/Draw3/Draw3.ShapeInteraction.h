@@ -1,6 +1,8 @@
 ﻿#pragma once
 
 #include "../../../../inkStrokeModelerTest/draw3/shape_interaction.h"
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
@@ -40,7 +42,81 @@ namespace Inkeys::Drawing::Draw3
 		draw3::shapes::Vec2 down, point;
 		draw3::shapes::ShapeStyle style;
 		std::uint32_t sides = 3;
+		std::int64_t enqueueMicroseconds = 0; // 仅诊断：Bridge入队时刻，用于计算入队到上屏延迟。
 	};
+
+	// 同一编辑手势的预览只需最新一条；Commit携带最终点，可取代尚未执行的预览。
+	inline bool SameShapeEditGesture(const ShapeUiAction& a, const ShapeUiAction& b) noexcept
+	{
+		return a.identity == b.identity && a.handleId == b.handleId && a.down.x == b.down.x && a.down.y == b.down.y;
+	}
+
+	inline std::int64_t ShapePreviewClockMicroseconds() noexcept
+	{
+		return std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
+
+	// 编辑预览吞吐计数；只用于诊断与离屏验证，不参与任何业务准入。
+	struct ShapePreviewCounters
+	{
+		std::atomic<std::uint64_t> published{0}, bridgeCoalesced{0}, controllerCoalesced{0}, executed{0};
+		std::atomic<std::uint64_t> focusExecuted{0}, legacyExecuted{0}, focusFallbacks{0};
+		std::atomic<std::uint64_t> canvasCopies{0}, compositionDiscards{0};
+		std::atomic<std::uint64_t> focusDraws{0}, materializations{0}, focusDrops{0}, focusUndoDrops{0};
+		std::atomic<std::uint64_t> maxPerFrame{0}, maxPendingInBridge{0};
+		std::atomic<std::uint64_t> latencySamples{0}, latencyTotalMicroseconds{0}, latencyMaxMicroseconds{0};
+	};
+	struct ShapePreviewCountersSnapshot
+	{
+		std::uint64_t published = 0, bridgeCoalesced = 0, controllerCoalesced = 0, executed = 0;
+		std::uint64_t focusExecuted = 0, legacyExecuted = 0, focusFallbacks = 0;
+		std::uint64_t canvasCopies = 0, compositionDiscards = 0;
+		std::uint64_t focusDraws = 0, materializations = 0, focusDrops = 0, focusUndoDrops = 0;
+		std::uint64_t maxPerFrame = 0, maxPendingInBridge = 0;
+		std::uint64_t latencySamples = 0, latencyTotalMicroseconds = 0, latencyMaxMicroseconds = 0;
+	};
+	inline ShapePreviewCounters& ShapePreviewMetrics() noexcept
+	{
+		static ShapePreviewCounters counters;
+		return counters;
+	}
+	// 焦点层总开关（回滚点）：false 时刚完成的图形照旧在抬笔时写入 L2，编辑走旧的权威重放路径。
+	inline std::atomic<bool>& ShapeFocusLayerEnabled() noexcept
+	{
+		static std::atomic<bool> enabled{true};
+		return enabled;
+	}
+	inline void RaiseShapePreviewMaximum(std::atomic<std::uint64_t>& target, std::uint64_t value) noexcept
+	{
+		std::uint64_t current = target.load(std::memory_order_relaxed);
+		while (current < value && !target.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
+	}
+	inline ShapePreviewCountersSnapshot SnapshotShapePreviewMetrics() noexcept
+	{
+		const auto& c = ShapePreviewMetrics();
+		ShapePreviewCountersSnapshot s;
+		s.published = c.published.load(); s.bridgeCoalesced = c.bridgeCoalesced.load();
+		s.controllerCoalesced = c.controllerCoalesced.load(); s.executed = c.executed.load();
+		s.focusExecuted = c.focusExecuted.load(); s.legacyExecuted = c.legacyExecuted.load(); s.focusFallbacks = c.focusFallbacks.load();
+		s.canvasCopies = c.canvasCopies.load(); s.compositionDiscards = c.compositionDiscards.load();
+		s.focusDraws = c.focusDraws.load(); s.materializations = c.materializations.load();
+		s.focusDrops = c.focusDrops.load(); s.focusUndoDrops = c.focusUndoDrops.load();
+		s.maxPerFrame = c.maxPerFrame.load(); s.maxPendingInBridge = c.maxPendingInBridge.load();
+		s.latencySamples = c.latencySamples.load(); s.latencyTotalMicroseconds = c.latencyTotalMicroseconds.load();
+		s.latencyMaxMicroseconds = c.latencyMaxMicroseconds.load();
+		return s;
+	}
+	inline void ResetShapePreviewMetrics() noexcept
+	{
+		auto& c = ShapePreviewMetrics();
+		for (auto* value : {&c.published, &c.bridgeCoalesced, &c.controllerCoalesced, &c.executed, &c.focusExecuted,
+			&c.legacyExecuted, &c.focusFallbacks, &c.canvasCopies, &c.compositionDiscards, &c.focusDraws, &c.materializations,
+			&c.focusDrops, &c.focusUndoDrops, &c.maxPerFrame, &c.maxPendingInBridge, &c.latencySamples,
+			&c.latencyTotalMicroseconds, &c.latencyMaxMicroseconds})
+			value->store(0, std::memory_order_relaxed);
+	}
+
 	std::shared_ptr<const ShapeUiSnapshot> ProductShapeUiSnapshot() noexcept;
 	Bridge::CommandResult PublishShapeUiAction(const ShapeUiAction&) noexcept;
 	// drawing owner发布不可变快照；refresh只调度UI帧，不直接进入窗口/文档锁。
@@ -48,4 +124,6 @@ namespace Inkeys::Drawing::Draw3
 	using ShapeUiRefresh = void(*)(void*) noexcept;
 	// 清空callback会等待正在执行的refresh退出；必须在销毁UI context之前调用。
 	void SetShapeUiRefreshCallback(ShapeUiRefresh callback, void* context) noexcept;
+	// 画布外的焦点丢失（PPT 放映按键/翻页、窗口最小化等）：若当前有编辑框则请求关闭，由绘制线程落定。
+	void RequestShapeEditorFocusLoss() noexcept;
 }

@@ -70,3 +70,18 @@
 - Shape颜色为0xRRGGBB，UI调色组件/ContentSolidBrush使用COLORREF，跨适配层显式转换。ContentSolidBrush返回共享缓存画刷：取下一种颜色前须完成上一种绘制，不能保存两个同源指针后才Fill/Stroke。选中沿用已有colorSelect徽标而非修改共享资源。
 - 离屏fixture必须像生产一样每次呈现前Ensure当前bounds的device resources，并核ULW receipt与target像素尺寸；打开扩展区后沿用旧target会把颜色/文字裁掉。成功alpha/几何命中不证明SVG或文字可见，须检查实际内容像素并有空白/选中底块负例。固定颜色SVG的抗锯齿测试采用资源自身的真实背景，不能拿父按钮底色套混色公式。
 - 构造提示沿原pill水平锚点，但新面板高度不等于旧12pt提示高度；正常工作区须按实际panelHeight留主栏上方5DIP间距，不能直接沿旧pill的top/center混用产生重叠。小空间动作正常尺寸换行，参数扩展区可滚动。
+
+## 编辑焦点层与预览合并（2026-11-05，11-05-shape-ux-edit-performance）
+
+- 预览合并：同一 session/gesture 的 `PreviewEdit` 在 Bridge 中按 latest-wins 覆盖；反向扫描遇到任何非图形命令即停止，不能越过 Undo、Clear、翻页等命令。绘制线程用 `ShapePreviewSlot` 每帧最多执行一次预览。Begin、Commit、Cancel、Close 与属性意图都保持 FIFO 且不丢弃。Commit 携带最终点，可以替换尚未执行的预览。
+- 焦点层：刚完成并自动进入编辑的 Shape（批内最后一笔、没有其他活动接触）在抬笔时只写 CPU 文档、journal 和自动保存，像素画在 L1，不进 L2；每帧按 L2+L1 合成。预览、属性修改、Commit 只清除并重画 L1 中这一个对象，不复制画布，不清缓存，不重放 tile。多接触时退回旧路径。
+- 失焦：所有触发统一走 `EndCanvasFocus(reason)`，先关闭编辑器，再落定（L1→L2 一次）或丢弃 L1。
+  - 落定：新的 Down（包括橡皮）、工具或选择模式切换、Clear、对其他项的 Undo/Redo、场景/页面/工作区切换、视口平移（在 SetViewport 之前）、PPT 放映动作、Esc/CloseEditor、窗口最小化。
+  - 丢弃 L1：翻页、尺寸变化、设备丢失、视口刷新。此时 L2 从 CPU 文档重建，必须把 rasterState 推进到 after 令牌。
+  - 编辑中 Undo 该对象：丢弃 L1，L2 不变。
+  - 抬笔时跳过的撤回快照，在落定时补拍（仅限未被编辑过的对象）。
+  - 可信 L2 快照在焦点层期间不刷新，落定后立即刷新。
+  - 「L2 尚未包含的对象」只由绘制线程持有（页面 GUID + 索引），必须是 Z 序后缀，当前最多一个。不能放进会被撤回快照复制的 `CanvasPageRuntimeState`。
+  - 回退开关 `ShapeFocusLayerEnabled()`：L1 绘制或落定失败时，记录日志并按文档重放受影响的 tile。
+- 编辑浮层：控制点和外框由 UI worker 用共享核心在本地即时计算（跟手），绘制线程回传的快照只用于校正。允许画布上的图形比控制点晚 1–2 帧。拖动期间窗口只增不减（按 256 DIP 扩大），内容不变时不 Present。重写 `Bar.ShapeEditor.cpp` 时必须保留这三点。
+- 验证：`--draw3-shape-focus-hidden-test`（真实 Host、注入笔输入、整个会话零 tile 重放）；`--draw3-shape-renderer-test` 覆盖首帧和落定结果与旧路径逐字节一致，以及 4K/2000 笔基准。
