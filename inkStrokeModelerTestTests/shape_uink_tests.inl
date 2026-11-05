@@ -105,9 +105,11 @@
 			}
 		}
 
-		// 外部无元数据的直角/大圆角矩形不得被旧固定 4px 圆角路径改写。
-		for (float radius : { 0.0f, 20.0f, 4.0f })
+		// 外部无元数据的直角/大圆角/非缩放档位圆角矩形不得被旧固定 4 DIP 圆角路径改写；
+		// 125%/150%/200%/400% 屏写出的旧矩形圆角为 4*dpiScale，仍须识别为旧矩形。
+		for (float radius : { 0.0f, 20.0f, 4.0f, 5.0f, 6.0f, 8.0f, 16.0f, 7.5f, 6.5f })
 		{
+			const bool legacyRadius = radius == 4 || radius == 5 || radius == 6 || radius == 8 || radius == 16;
 			auto rectangleDocument = *exported.document;
 			auto rectangle = std::get<UInkShape>(rectangleDocument.canvases[0].content[1]);
 			rectangle.extra.reset(); rectangle.fill.reset(); rectangle.contentId = rectangle.undoId = 0;
@@ -120,7 +122,7 @@
 			if (importedRectangle.snapshot)
 			{
 				const auto& item = importedRectangle.snapshot->canvases[0].strokes[0];
-				UINK_CHECK(state, item.shape && item.style.kind == (radius == 4 ? Draw3UInkStrokeKind::OutlineRectangle : Draw3UInkStrokeKind::Shape));
+				UINK_CHECK(state, item.shape && item.style.kind == (legacyRadius ? Draw3UInkStrokeKind::OutlineRectangle : Draw3UInkStrokeKind::Shape));
 				if (item.shape && radius == 0) UINK_CHECK(state, item.shape->geometry.radius == 0);
 			}
 		}

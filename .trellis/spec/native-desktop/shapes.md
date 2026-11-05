@@ -9,7 +9,7 @@
 - InkCanvas::AppendShape仅接收Create命令，经纯ApplyCommand校验后追加一个逻辑历史项。编辑命令的用户交互/运行期历史接线留Phase3。
 - 旧四形适配保留兼容渲染；所附Shape必须与旧端点/样式一致。UUID失败拒绝本次创建。超出共享核心可表示范围的旧有限坐标仍可沿原有无参数fallback读取，不冒称完整参数化编辑。
 - 几何像素单位沿现有画布约定；曲线屏幕误差≤0.25px。圆只接受等比几何变换。简单凹多边形支持，无孔洞/自交填充；椭圆描边采用误差受控路径避免细长端部近似距离失真。
-- 兼容例外：旧矩形Geometry.radius保存名义4 DIP，BuildGeometry按BuildOptions.displayScale转换并钳制半短边；通用矩形radius是画布像素。调用旧矩形命中/控制点查询时须传当前DPI比例。
+- 兼容例外：旧矩形Geometry.radius保存名义4 DIP，BuildGeometry按BuildOptions.displayScale转换并钳制半短边；通用矩形radius是画布像素。调用旧矩形命中/控制点查询时须传当前DPI比例。旧导出圆角为min(4×dpiScale,半短边)且文件不存dpiScale；无元数据导入按100%~400%标准缩放档位（1/1.25/1.5/1.75/2/2.25/2.5/3/3.5/4）容差匹配识别旧矩形，其余圆角保留为通用矩形（20等非档位值不得改写）。
 
 ## GPU合同
 - 新shapeVertexShader/shapePixelShader/shape.hlsli独立于原ink与Win7 guarded程序。资源ID307/308；沿现有FXC临时副本/CSO/RC链。
@@ -56,7 +56,7 @@
 - `InkCanvas::ReplaceStroke/ReplaceShape`在同索引替换，稳定对象ID、层序不变。页面统一operation journal/cursor管理Append与Replace，替换项保存语义before/after，不另建Shape专用撤销栈。普通笔追加不因编辑机制增加全页扫描。
 - Preview在排除原项的相同层位重放候选；提交需候选GPU有序恢复成功，再安装CPU/journal。失败恢复原画面并保留权威恢复请求，不发布候选UI真值。旧、新及上次预览tile共同失效，淘汰创建hot preimage及不适用的composition缓存。
 - revision使用页持有的不可复用运行期分配器，覆盖预览、Undo/Redo重物化及新分支；不能直接把语义快照旧revision交缓存。页面/文档权威安装必须清Shape renderer cache，关闭旧会话并推进身份；异步PPT/冷页恢复也不能绕过。
-- UInk外层保持10；新增typed construction写`inkeysShape v3`并兼容v1/v2，Compound根/引用wire版本严格一致，标准几何承担可显示降级。白板历史v3保存journal/cursor/floor、隐藏redo、最近Clear前完整区间与后继continuation，兼容旧v1/v2。Clear前历史快照截断递归；恢复前候选全分支校验，损坏不改原状态。
+- UInk外层保持10；新增typed construction写`inkeysShape v3`并兼容v1/v2，Compound根/引用wire版本严格一致，标准几何承担可显示降级。白板历史v3保存journal/cursor/floor、隐藏redo、最近Clear前完整区间与后继continuation，兼容旧v1/v2。Clear前历史快照截断递归；恢复前候选全分支校验，损坏不改原状态。冷页items须一一引用不同strokes；未被引用的strokes是「画布已追加、历史追加失败」的孤儿，读取时丢弃并压紧索引，不得整页失败；items多于strokes、越界、重复引用仍拒绝。
 - 编辑、编辑Undo/Redo即使hasContent不变也发mutation/内容修订，触发既有保存请求；PPT有编辑历史的warm页不能仅用visible导出替代CPU历史。桌面/PPT跨进程只恢复既有文件撤销边界，不额外恢复编辑框或完整编辑栈。
 - 验证必须覆盖生产Controller的raw/predicted/Cancel/Fatal/多接触与同层编辑路径、真实UI3离屏及GPU，而非仅纯工厂。无HWND测试不能替代Win7/Win10/实体笔触屏与真实DWM层叠人工验收。
 
