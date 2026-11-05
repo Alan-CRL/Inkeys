@@ -845,8 +845,9 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, Pixels(ScrollbarTrackSize));
 				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarPadding, Pixels(ScrollbarPadding));
 				ImGui::SetNextWindowContentSize({ canvasWidth, canvasHeight });
+				// 预览沿用外层卡片背景，避免子窗口再次叠加半透明底色。
 				if (ImGui::BeginChild("##palm-eraser-preview-shapes", { innerWidth, canvasHeight + scrollReserve },
-					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar))
+					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoBackground))
 				{
 					const auto top = ImGui::GetCursorScreenPos();
 					const ImVec2 start(top.x + (std::max)(inset, (innerWidth - size.x) * .5F), top.y + inset);
