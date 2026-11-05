@@ -28,11 +28,27 @@ function Write-JsonFile($Path, $Value) {
     else { [IO.File]::Move($temporary, $Path) }
 }
 
+function Get-InstallationProcessScope([string]$ProcessImage, [string]$InstallationDirectory) {
+    if ([string]::IsNullOrWhiteSpace($ProcessImage)) { return 'unknown-path' }
+    try {
+        # .NET Framework 没有 IsPathFullyQualified；盘符相对路径与当前盘根路径都属于未知。
+        if ($ProcessImage -notmatch '^[A-Za-z]:[\\/]' -and $ProcessImage -notmatch '^[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]') { return 'unknown-path' }
+        $rootPath = [IO.Path]::GetFullPath($InstallationDirectory)
+        $root = $rootPath.TrimEnd([char[]]'\/')
+        $directory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ProcessImage)).TrimEnd([char[]]'\/')
+        $installer = [IO.Path]::GetFullPath([IO.Path]::Combine($rootPath, 'installer')).TrimEnd([char[]]'\/')
+        # 只守本安装目录及其 installer；相似前缀的其他 worktree 不属于本轮交接。
+        if ([StringComparer]::OrdinalIgnoreCase.Equals($directory, $root) -or [StringComparer]::OrdinalIgnoreCase.Equals($directory, $installer)) { return 'same-installation' }
+        return 'foreign-installation'
+    } catch { return 'unknown-path' } # 路径不可查询/解析时保守阻止启动，不能静默放行。
+}
+
 function Get-RunningInkeys {
     @(Get-Process -Name Inkeys -ErrorAction SilentlyContinue | ForEach-Object {
         $image = $null
         try { $image = $_.Path } catch { }
-        [ordered]@{ pid = $_.Id; path = $image }
+        $scope = Get-InstallationProcessScope $image (Split-Path -Parent $exePath)
+        if ($scope -ne 'foreign-installation') { [ordered]@{ pid = $_.Id; path = $image; scope = $scope } }
     })
 }
 
@@ -385,6 +401,29 @@ function Invoke-Series([int]$Count, [string]$MockScript = '') {
     }
 }
 
+function Test-InstallationProcessScopes {
+    $root = 'D:\Project\Inkeys\Repo\Inkeys\Build\ARM64\Debug'
+    $cases = @(
+        @{ image = $root + '\Inkeys.exe'; root = $root; expected = 'same-installation' },
+        @{ image = $root.ToLowerInvariant() + '\.\Inkeys.exe'; root = $root + '\'; expected = 'same-installation' },
+        @{ image = $root + '\temporary\..\Inkeys.exe'; root = $root + '\.\'; expected = 'same-installation' },
+        @{ image = $root + '\installer\Inkeys.exe'; root = $root; expected = 'same-installation' },
+        @{ image = $root + '\installer\nested\Inkeys.exe'; root = $root; expected = 'foreign-installation' },
+        @{ image = 'D:\Project\Inkeys\Repo\Inkeys-draw\Build\ARM64\Debug\Inkeys.exe'; root = $root; expected = 'foreign-installation' },
+        @{ image = $root + '-draw\Inkeys.exe'; root = $root; expected = 'foreign-installation' },
+        @{ image = 'D:\Inkeys.exe'; root = 'D:\'; expected = 'same-installation' },
+        @{ image = 'D:\installer\Inkeys.exe'; root = 'D:\'; expected = 'same-installation' },
+        @{ image = $null; root = $root; expected = 'unknown-path' },
+        @{ image = ''; root = $root; expected = 'unknown-path' },
+        @{ image = 'Inkeys.exe'; root = $root; expected = 'unknown-path' },
+        @{ image = 'D:Inkeys.exe'; root = $root; expected = 'unknown-path' },
+        @{ image = '\Inkeys.exe'; root = $root; expected = 'unknown-path' }
+    )
+    foreach ($sample in $cases) {
+        if ((Get-InstallationProcessScope $sample.image $sample.root) -ne $sample.expected) { throw ('Installation scope test failed: ' + $sample.image) }
+    }
+}
+
 function Test-TraceParser {
     $fixture = @(
         '[ShutdownTrace] source=native pid=42 span=1 event=end stage=set-off qpc=120 frequency=1000',
@@ -454,6 +493,7 @@ $session = [ordered]@{
 Save-Session
 try {
     if ($SelfTest) {
+        Test-InstallationProcessScopes
         Test-TraceParser
         $mockPath = Join-Path $sessionRoot 'mock-child.ps1'
         [IO.File]::WriteAllText($mockPath, @'
