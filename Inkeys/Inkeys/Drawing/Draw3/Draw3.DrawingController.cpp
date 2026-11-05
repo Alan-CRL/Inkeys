@@ -878,23 +878,35 @@ namespace Inkeys::Drawing::Draw3
 				!value["interval"].isUInt() || !value["previousClear"].isBool() || !value["clearRedo"].isBool()) return false;
 			auto* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
 			if (!canvas) return false;
-			std::set<draw3::shapes::ObjectId> objectIds;
-			for (const auto& v : value["strokes"])
-			{
-				auto stroke = WhiteboardStrokeFromJson(v);
-				if (!stroke || (stroke->Shape() && !objectIds.insert(stroke->Shape()->id).second) ||
-					!canvas->AppendStroke(std::move(*stroke))) return false;
-			}
-			// 每个最终项必须恰好有一个render索引；同ID的operation before/after不在此去重。
-			if (value["items"].size() != canvas->Strokes().size()) return false;
-			std::set<size_t> strokeIndices;
-			std::vector<uint8_t> visible;
-			std::vector<uint32_t> redo;
-			for (const auto& item : value["items"])
+			// 每个最终项必须恰好引用一个不同的 stroke；同ID的operation before/after不在此去重。
+			// 生产路径可能留下「已追加画布但历史追加失败」的孤儿笔迹：它从未进入历史且不可见，
+			// 读取时丢弃并压紧索引，避免整页丢失；item 多于 stroke、越界或重复引用仍视为损坏。
+			const auto& items = value["items"];
+			if (items.size() > value["strokes"].size()) return false;
+			std::vector<std::optional<size_t>> strokeRemap(value["strokes"].size());
+			for (const auto& item : items)
 			{
 				if (!item.isArray() || item.size() != 3 || !item[0].isUInt64() || !item[1].isBool() || !item[2].isBool()) return false;
 				const auto index = item[0].asUInt64();
-				if (index >= canvas->Strokes().size() || !strokeIndices.insert(static_cast<size_t>(index)).second) return false;
+				if (index >= strokeRemap.size() || strokeRemap[static_cast<size_t>(index)]) return false;
+				strokeRemap[static_cast<size_t>(index)] = 0;
+			}
+			std::set<draw3::shapes::ObjectId> objectIds;
+			for (Json::ArrayIndex sourceIndex = 0; sourceIndex < value["strokes"].size(); ++sourceIndex)
+			{
+				auto stroke = WhiteboardStrokeFromJson(value["strokes"][sourceIndex]);
+				if (!stroke) return false;
+				if (!strokeRemap[sourceIndex]) continue;
+				if (stroke->Shape() && !objectIds.insert(stroke->Shape()->id).second) return false;
+				const auto appended = canvas->AppendStroke(std::move(*stroke));
+				if (!appended) return false;
+				strokeRemap[sourceIndex] = *appended;
+			}
+			std::vector<uint8_t> visible;
+			std::vector<uint32_t> redo;
+			for (const auto& item : items)
+			{
+				const auto index = *strokeRemap[static_cast<size_t>(item[0].asUInt64())];
 				auto footprint = BuildStrokeTileFootprint(canvas->Strokes()[index]);
 				if (!footprint || !runtime.history.AppendStroke(index, std::move(*footprint), !item[2].asBool())) return false;
 				visible.push_back(item[1].asBool());
@@ -7750,6 +7762,35 @@ namespace Inkeys::Drawing::Draw3
 		check(restoredCanvas && ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,true,allocate) &&
 			SameShapeSemantics(*restoredCanvas->Strokes()[0].Shape(),edited) &&
 			ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,true,allocate),"cold redo replays edit before hidden ink");
+		// 「已追加画布但历史追加失败」的孤儿笔迹不能让整页读取失败：丢弃孤儿、压紧索引后与原页等价。
+		for (const bool middle : {false,true})
+		{
+			auto orphaned = hidden;
+			const Json::Value orphan = hidden["strokes"][1];
+			if (middle)
+			{
+				orphaned["strokes"] = Json::Value(Json::arrayValue);
+				for (Json::ArrayIndex i = 0; i < hidden["strokes"].size(); ++i)
+				{
+					if (i == 1) orphaned["strokes"].append(orphan);
+					orphaned["strokes"].append(hidden["strokes"][i]);
+				}
+				for (auto& item : orphaned["items"])
+					if (item[0].asUInt64() >= 1) item[0] = Json::UInt64(item[0].asUInt64() + 1);
+			}
+			else orphaned["strokes"].append(orphan);
+			InkPage orphanPage{InkGuid(pageId)}; CanvasPageRuntimeState orphanRuntime;
+			auto* orphanCanvas = RestoreWhiteboardHistory(orphaned,orphanPage,orphanRuntime)
+				? orphanPage.FindCanvas(kDefaultDeviceKey) : nullptr;
+			check(orphanCanvas && orphanCanvas->Strokes().size() == 2 && orphanRuntime.history.Items().size() == 2 &&
+				orphanRuntime.operationCursor == 1 && orphanRuntime.operations.size() == 3 && orphanRuntime.history.RedoDepth() == 1 &&
+				ApplyRuntimeJournalCpu(*orphanCanvas,orphanRuntime,true,allocate) &&
+				SameShapeSemantics(*orphanCanvas->Strokes()[0].Shape(),edited) &&
+				ApplyRuntimeJournalCpu(*orphanCanvas,orphanRuntime,true,allocate) && orphanRuntime.history.LastVisibleItem() &&
+				orphanCanvas->Strokes()[orphanRuntime.history.Items()[orphanRuntime.history.LastVisibleItem()->index].strokeIndex].Points().size() ==
+					canvas->Strokes()[1].Points().size(),
+				middle ? "orphan stroke between items is dropped and later indices compacted" : "trailing orphan stroke is dropped on cold load");
+		}
 		auto beforeBranch = *canvas->Strokes()[0].Shape(), branch = beforeBranch;
 		branch.geometry.start.y += 300; branch.revision = runtime.shapeRevisionAllocator.Next(branch.id,beforeBranch.revision);
 		runtime.clearRedoAvailable = true;
@@ -7802,7 +7843,7 @@ namespace Inkeys::Drawing::Draw3
 			malformed["version"] = 2;
 			if (corruption == 0) malformed["strokes"][1] = malformed["strokes"][0];
 			else if (corruption == 1) malformed["items"][1][0] = malformed["items"][0][0];
-			else { Json::Value removed; malformed["items"].removeIndex(1,&removed); }
+			else { Json::Value removed; malformed["strokes"].removeIndex(1,&removed); }
 			const auto previousCursor = restoredRuntime.operationCursor;
 			const auto previousCount = restored.FindCanvas(kDefaultDeviceKey)->Strokes().size();
 			check(!RestoreWhiteboardHistory(malformed,restored,restoredRuntime) &&

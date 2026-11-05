@@ -4133,8 +4133,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 		if (!Inkeys::UI::SelectionOverlay::Acquire())
 		{
+			// 与窗口层级失败同序退场；Acquire 失败时未进入 running，无需 Release。
 			SetOffSignal(1);
+			windowService.SetTopmostRefreshObserver({});
 			PublishFatalStartupFailure(0xB003u, L"图形编辑表面初始化失败。");
+			if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
+			Inkeys::UI::Setting::Shutdown();
+			Inkeys::Drawing::Draw3::StopProduct();
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
 		}
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
 	}

@@ -95,9 +95,20 @@ namespace draw3::uink
 				rectangle->rotation != 0.0f || static_cast<bool>(shape.stroke) ==
 					static_cast<bool>(shape.fill)) return std::nullopt;
 			// 只有旧 renderer 的固定圆角才走兼容路径，其余矩形必须保留标准参数。
-			const float legacyRadius = std::min(4.0f, std::min(rectangle->width, rectangle->height) * 0.5f);
-			if (rectangle->cornerRadiusX != legacyRadius || rectangle->cornerRadiusY != legacyRadius)
-				return std::nullopt;
+			// 旧导出写 min(4*dpiScale, 半短边) 而文件不存 dpiScale，故按 Windows 标准缩放档位（至 400%）逐一匹配。
+			if (rectangle->cornerRadiusX != rectangle->cornerRadiusY) return std::nullopt;
+			const float halfShort = std::min(rectangle->width, rectangle->height) * 0.5f;
+			bool legacyRadius = false;
+			for (const float scale : { 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f, 3.5f, 4.0f })
+			{
+				const float expected = std::min(4.0f * scale, halfShort);
+				if (std::abs(rectangle->cornerRadiusX - expected) <= expected * 1e-5f)
+				{
+					legacyRadius = true;
+					break;
+				}
+			}
+			if (!legacyRadius) return std::nullopt;
 			float width = 1.0f;
 			if (shape.stroke)
 			{

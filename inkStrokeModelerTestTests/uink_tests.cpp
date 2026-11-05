@@ -3654,6 +3654,25 @@ namespace
 		UINK_CHECK(state, rectangle && NearlyEqual(rectangle->cornerRadiusX, 8.0f));
 		UINK_CHECK(state, EncodeUInkDocument(*exported.document).status == UInkEncodeStatus::Success);
 
+		// 高 DPI 屏保存的旧矩形（圆角 4*dpiScale）重新导入时仍走旧四图形兼容路径。
+		for (const float dpiScale : { 2.0f, 1.5f })
+		{
+			Draw3UInkCaptureOptions scaledOptions = options;
+			scaledOptions.dpiScale = dpiScale;
+			const Draw3UInkCaptureResult scaledCapture = CaptureDraw3UInkExportSnapshot(collection, scaledOptions);
+			const Draw3UInkExportResult scaledExport = scaledCapture.snapshot
+				? ExportDraw3SnapshotToUInk(*scaledCapture.snapshot) : Draw3UInkExportResult{};
+			UINK_CHECK(state, scaledExport.status == Draw3UInkExportStatus::Success && scaledExport.document);
+			if (!scaledExport.document) continue;
+			const Draw3UInkImportResult reimported = ImportDraw3UInkDocument(*scaledExport.document);
+			UINK_CHECK(state, reimported.status == Draw3UInkImportStatus::Success && reimported.snapshot);
+			if (!reimported.snapshot || reimported.snapshot->canvases[0].strokes.size() != 7) continue;
+			const auto& reimportedStrokes = reimported.snapshot->canvases[0].strokes;
+			UINK_CHECK(state, reimportedStrokes[5].style.kind == Draw3UInkStrokeKind::OutlineRectangle);
+			UINK_CHECK(state, reimportedStrokes[6].style.kind == Draw3UInkStrokeKind::FilledRectangle);
+			UINK_CHECK(state, reimportedStrokes[5].shape && reimportedStrokes[6].shape);
+		}
+
 		Draw3UInkExportSnapshot invalid = *captured.snapshot;
 		invalid.canvases[0].strokes[0].points[0].width = 0.0f;
 		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==

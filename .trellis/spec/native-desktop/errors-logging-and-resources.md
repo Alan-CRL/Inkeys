@@ -177,7 +177,7 @@ if (supervisor == ArmResult::Failed) {
 
 ### 1. Scope / Trigger
 
-wWinMain已经确认无法继续启动（D001/D002/D003/D004/D005及窗口/Host/分页等fatal分支），或Bar首次就绪前发布B001/B002。这里只保护已知失败后的日志/提示/清理；正常构造尚未返回的OS/driver调用及可恢复DComp→ULW不能无条件当Close。
+wWinMain已经确认无法继续启动（D001/D002/D003/D004/D005及窗口/Host/分页等fatal分支），或Bar首次就绪前发布B001/B002；SelectionOverlay Acquire失败的B003同属fatal，须按窗口层级失败同序清理并return 1，不得继续启动链。这里只保护已知失败后的日志/提示/清理；正常构造尚未返回的OS/driver调用及可恢复DComp→ULW不能无条件当Close。
 
 ### 2. Signatures
 
