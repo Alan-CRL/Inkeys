@@ -104,3 +104,42 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 177: 重启与设置退出修复验收归档
+<!-- trellis-session: v=2 fp=b75a4b2e55903361 -->
+
+**Date**: 2026-11-05
+**Task**: 重启与设置退出修复验收归档
+**Branch**: `chore/ui`
+
+### Summary
+
+用户接受当前修复并要求结束归档；26轮全部exit0、Settings关停均为毫秒级，默认关闭的探针继续保留，剩余退出长尾明确延后。
+
+### Main Changes
+
+- 普通R隐藏后提前交接，已知更新U及崩溃X等待旧父退出；Settings先注销并排空帧，再做最终resident清理。
+- 采集器修复其他worktree同名进程误判，14个目录范围正负例；原始18轮及6+20轮日志保留，只提交紧凑汇总。
+- 归档 .trellis/tasks/archive/2026-11/11-05-restart-shutdown-investigation；记录探针命令、版本哈希、结论和follow-up，不归档其他历史任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b0db5fc56a55610677a6838eef7670b1fc06daa` | fix(lifecycle): avoid restart and settings shutdown waits |
+| `407f91951f91c35fdbf35c627a8f8af48d399faf` | fix(diagnostics): scope shutdown collection to its installation |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64原生MSBuild exit0；完整--no-window同一PID最终exit0，初始等待超时后未重跑。
+- [OK] 设置旧顺序负例、隐藏idle及在途回调排空通过；字体生命周期、重启/单实例/监督器回归通过。
+- [OK] 用户26轮均exit0，main-setting1.0781~9.7916ms，中位总关闭观测1277.91375ms，4轮>=3秒；新版20轮完整完成。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 需要继续时从归档follow-up.md恢复：先区分系统ExitTime与观测延迟，再调查main后、PPT及窗口/Draw3长尾；C10 foreign-session reader已有单独未定位失败，Win7/UAC/跨架构不宣称通过。
