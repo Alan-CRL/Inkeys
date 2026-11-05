@@ -157,3 +157,9 @@ Correct: 独立构建 PptCOM → 选择本次 DLL/TLB ID → native 下载 ID �
 - `Tips.txt` 的中英文快速开始文案由 workflow 生成，保留已有构建信息尾段。
 
 验证应在隔离目录执行实际 `Compress-Archive` 命令，枚举三架构完整包与更新包的 ZIP entries，并检查带日期及纯版本号的名称、更新 URL、包大小和 Tips 文本。不能仅凭命令或仓库中存在文件推断发布包内容。
+
+## ARM64 主机构建命令（2026-11-05）
+
+- ARM64 开发机上用 arm64 版 MSBuild 主机整体构建：`<VS>\MSBuild\Current\Bin\arm64\MSBuild.exe InkeysRepo.sln -p:Configuration=Debug -p:Platform=ARM64 -m`。
+- 增量链接偶发 `LNK1000` 崩溃，重跑即可，不视为代码问题。
+- 新增 `.cppm` 必须同步 `Inkeys.vcxproj` 与 `.filters`（测试工程同理）。

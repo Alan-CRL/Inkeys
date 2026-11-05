@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Raster",
         "WhiteboardUnsavedLabel": "Einige Seiten sind nicht gespeichert",
         "FreezeLabel": "Fixieren",
+        "CanvasDebugLabel": "Debug-Ansicht",
         "EndPresentationLabel": "Showende",
         "SettingsLabel": "Optionen",
         "MoreLabel": "Mehr"
@@ -1137,6 +1138,12 @@
       {
         "N": "Bildrate anzeigen",
         "E": "Einmal pro Sekunde die durchschnittliche und unbegrenzte Bildrate der vorherigen Sekunde aktualisieren."
+      },
+      "CanvasSection": "Zeichenfläche",
+      "CanvasDebug":
+      {
+        "N": "Zeichenfläche debuggen",
+        "E": "Zeigt unter der Zeichenfläche Bildrate, Hardwarelast und Eingabepunkt-Informationen an und fügt der Hauptleiste eine Schaltfläche für die visuelle Fehlersuche hinzu."
       },
       "ConsoleSection": "Konsolenausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",

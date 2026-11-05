@@ -525,3 +525,11 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 - 生产无窗口probe只证明实际共用拒收操作、ContactInputCoordinator/DrainIngressBatch或Host实际准入接缝；私有Run/Service未动态执行部分另做源码审查，不冒充真实Win32/RTS设备/任务栏实测。
 
 - 过渡准入setter绑定真实HostGeneration及请求epoch：旧run的相同数字epoch不能设置或撤销新Host的门。完成只撤自身Pending原因，不能清加载、恢复、停止或fatal原因；最小化Whiteboard继续闭门，恢复使用新视图版本。工具完成凭据读取owner实际appliedProductRevision/appliedTool，不用Bridge已发布revision冒充应用成功。
+
+## 画布调试选项通路（2026-11-05）
+
+- 通路：设置页/启动同步/状态位变化 → `Host::SetCanvasDebugOptions` → `DrawingController::canvasDebugOptions_`（仅绘制线程读取，Host 原子即可，未加 WindowControl 原子）。
+- “可视化模式”位以**进入时的 state-mode revision** 保存：`IsCanvasDebugVisualActive()` = 开关开且该 revision 仍为当前。任何工具/模式切换都会 bump revision 从而自动退出，无需逐个改 `ChangeStateModeTo*`；开关关闭也会清除。
+- 注意：同笔/同形状重复点击会 bump revision 但不走 `SyncDraw3State`，这两条路径需显式 `PublishCanvasDebugOptions()`。
+- 已知限制：绘制设备或笔宽上下文变化也会 bump revision 并静默退出可视化模式，A1 按钮状态下次 Bar 刷新才同步。
+- 实现细节与探测接触合同见 `native/runtime-and-rendering.md` 同名场景。

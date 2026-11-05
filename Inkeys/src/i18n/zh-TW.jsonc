@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "網格",
         "WhiteboardUnsavedLabel": "部分頁面未儲存",
         "FreezeLabel": "定格",
+        "CanvasDebugLabel": "可視化除錯",
         "EndPresentationLabel": "結束放映",
         "SettingsLabel": "設定",
         "MoreLabel": "更多"
@@ -1137,6 +1138,12 @@
       {
         "N": "顯示影格率",
         "E": "每秒更新前一秒的平均影格率與無等待影格率。"
+      },
+      "CanvasSection": "畫布",
+      "CanvasDebug":
+      {
+        "N": "畫布除錯",
+        "E": "在畫布底層顯示畫面更新率、硬體負載與輸入點資訊，並在主列提供可視化除錯按鈕。"
       },
       "ConsoleSection": "主控台輸出",
       "CanvasInformation": "畫布初始化資訊",

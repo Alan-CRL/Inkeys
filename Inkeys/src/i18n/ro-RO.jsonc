@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Grilă",
         "WhiteboardUnsavedLabel": "Unele pagini nu sunt salvate",
         "FreezeLabel": "Îngheț",
+        "CanvasDebugLabel": "Depanare vizuală",
         "EndPresentationLabel": "Încheiere",
         "SettingsLabel": "Setări",
         "MoreLabel": "Mai multe"
@@ -1137,6 +1138,12 @@
       {
         "N": "Afișare rată de cadre",
         "E": "Actualizează o dată pe secundă rata medie și rata fără așteptare din secunda precedentă."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Depanare canvas",
+        "E": "Afișează sub canvas rata de cadre, încărcarea hardware și informații despre punctele de intrare și adaugă un buton de depanare vizuală în bara principală."
       },
       "ConsoleSection": "Ieșire în consolă",
       "CanvasInformation": "Informații despre inițializarea pânzei",

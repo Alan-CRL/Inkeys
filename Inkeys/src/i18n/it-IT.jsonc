@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Griglia",
         "WhiteboardUnsavedLabel": "Alcune pagine non sono state salvate",
         "FreezeLabel": "Ferma",
+        "CanvasDebugLabel": "Debug visivo",
         "EndPresentationLabel": "Termina",
         "SettingsLabel": "Impost.",
         "MoreLabel": "Altro"
@@ -1137,6 +1138,12 @@
       {
         "N": "Mostra frequenza fotogrammi",
         "E": "Aggiorna ogni secondo la frequenza media e quella senza attese del secondo precedente."
+      },
+      "CanvasSection": "Tela",
+      "CanvasDebug":
+      {
+        "N": "Debug della tela",
+        "E": "Mostra sotto la tela frequenza dei fotogrammi, carico hardware e informazioni sui punti di input, e aggiunge un pulsante di debug visivo alla barra principale."
       },
       "ConsoleSection": "Output console",
       "CanvasInformation": "Informazioni di inizializzazione della tela",

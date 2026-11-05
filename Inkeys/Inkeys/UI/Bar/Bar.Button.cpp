@@ -621,6 +621,30 @@ void BarButtonSetClass::PresetInitialization()
 		preset[(int)BarButtonPresetEnum::Pierce] = obj;
 	}
 
+	// 画布调试可视化：默认隐藏，画布调试开启时由统一主栏投影显示。
+	{
+		mainCanvasDebugButton = std::make_shared<BarButtonClass>();
+		auto* obj = mainCanvasDebugButton.get();
+		obj->size = BarButtonSizeEnum::twoTwo;
+		obj->preset = BarButtonPresetEnum::CanvasDebug;
+		obj->hide = true;
+		obj->userVisible = true;
+		obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+			IW(I18nKey.UI.Bar.MainButtons.CanvasDebugLabel), 0.0);
+		obj->name.enable.Initialization(true);
+		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->button.enable.Initialization(true);
+		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+		obj->icon.InitializationFromResource(L"UI", L"barCanvasDebug");
+		obj->icon.enable.Initialization(true);
+		obj->clickFunc = []
+			{
+				if (!ToggleCanvasDebugVisualFromButton()) Inkeys::UI::Bar::Haptics::RejectButtonAction();
+			};
+		obj->state = &barButtonState[(int)BarButtonPresetEnum::CanvasDebug];
+		preset[(int)BarButtonPresetEnum::CanvasDebug] = obj;
+	}
+
 	// 定格
 	{
 		BarButtonClass* obj = new BarButtonClass;
@@ -972,6 +996,9 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	const bool compactSelection = !whiteboard && selection && !hasContent;
 	const bool freezeAvailable = Inkeys::UI::Freeze::IsAvailable();
 	const bool freezeActive = Inkeys::UI::Freeze::IsActive();
+	// 画布调试开关与可视化位均为无锁读取，不会在表现锁内嵌套模式锁。
+	const bool canvasDebugEnabled = IsCanvasDebugEnabled();
+	const bool canvasDebugVisual = IsCanvasDebugVisualActive();
 	const bool settingVisible = Inkeys::UI::Setting::IsVisible();
 	const bool fold = barUISet.barState.fold;
 	const bool hasMoreButtons = GetMoreButtonSnapshot().HasButtons();
@@ -1023,6 +1050,10 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 		case BarButtonPresetEnum::EndShow:
 			hide = !a2.endShowVisible;
 			break;
+		case BarButtonPresetEnum::CanvasDebug:
+			hide = !canvasDebugEnabled;
+			state = canvasDebugVisual ? BarWidgetState::Selected : BarWidgetState::None;
+			break;
 		case BarButtonPresetEnum::Recall:
 			size = recall.undoExpanded ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
 			hide = !recall.mainUndoVisible;
@@ -1051,6 +1082,7 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	}
 	for (const auto& divider : boundaryDividers) apply(divider.get());
 	apply(moreButton.get()); apply(mainRedoButton.get()); apply(mainPierceButton.get());
+	apply(mainCanvasDebugButton.get());
 	barUISet.barState.recallAttribute = recall.popupOpen;
 	// 内容仍从当前动画值过渡；同目标不会重启文字或图标动画。
 	// 长标签换行由语言资源指定，翻译调整不再依赖英文原文匹配。
@@ -1074,6 +1106,7 @@ void BarButtonSetClass::RefreshLocalizedText()
 	if (auto* button = preset[(int)BarButtonPresetEnum::Setting]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.SettingsLabel));
 	if (moreButton) moreButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.MoreLabel));
 	if (mainRedoButton) mainRedoButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.RedoLabel));
+	if (mainCanvasDebugButton) mainCanvasDebugButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.CanvasDebugLabel));
 	drawButtonStyleKey = -1; eraserButtonStyleKey = -1; geometryButtonStyleKey = -1;
 	unique_lock registrationsLock(registrationMutex);
 	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Explorer"); it != registrations.end()) {
@@ -1599,6 +1632,22 @@ void BarButtonSetClass::Load()
 	if (moreButton) activeButtons.push_back(moreButton);
 	AppendBoundaryDivider(activeButtons, 1); // B | A2
 	AppendFixedButtons(normalizedA2, activeButtons);
+	if (mainCanvasDebugButton)
+	{
+		// 紧跟最后一个 A1 工具（几何/橡皮/绘制/选择），固定区被用户精简时退到最前。
+		auto insertAt = activeButtons.begin();
+		for (const BarButtonPresetEnum anchor : { BarButtonPresetEnum::Select, BarButtonPresetEnum::Draw,
+			BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Geometry })
+		{
+			const auto found = std::find_if(activeButtons.begin(), activeButtons.end(),
+				[anchor](const shared_ptr<BarButtonClass>& button)
+				{
+					return button && button->preset == anchor;
+				});
+			if (found != activeButtons.end()) insertAt = found + 1;
+		}
+		activeButtons.insert(insertAt, mainCanvasDebugButton);
+	}
 	if (mainPierceButton)
 	{
 		const auto freeze = std::find_if(activeButtons.begin(), activeButtons.end(),

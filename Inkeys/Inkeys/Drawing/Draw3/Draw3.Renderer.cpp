@@ -483,6 +483,7 @@ namespace Inkeys::Drawing::Draw3
 		highlighterPrimitiveSRV.Reset();
 		operatorSampler.Reset();
 		ReleaseTrustedL2SnapshotPipeline();
+		ReleaseDebugOverlayResources();
 		strokeOperatorBlendState.Reset();
 		operatorResolveBlendState.Reset();
 		laserCoverageBlendState.Reset();

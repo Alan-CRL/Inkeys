@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "方眼",
         "WhiteboardUnsavedLabel": "未保存のページがあります",
         "FreezeLabel": "固定",
+        "CanvasDebugLabel": "可視化デバッグ",
         "EndPresentationLabel": "発表終了",
         "SettingsLabel": "設定",
         "MoreLabel": "その他"
@@ -1137,6 +1138,12 @@
       {
         "N": "フレームレートを表示",
         "E": "直前1秒の平均フレームレートと待機なしのフレームレートを毎秒更新します。"
+      },
+      "CanvasSection": "キャンバス",
+      "CanvasDebug":
+      {
+        "N": "キャンバスのデバッグ",
+        "E": "キャンバスの下にフレームレート、ハードウェア負荷、入力点の情報を表示し、メインバーに可視化デバッグ用のボタンを追加します。"
       },
       "ConsoleSection": "コンソール出力",
       "CanvasInformation": "キャンバスの初期化情報",

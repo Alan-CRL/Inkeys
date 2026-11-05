@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Cuadrícula",
         "WhiteboardUnsavedLabel": "Hay páginas sin guardar",
         "FreezeLabel": "Fijar",
+        "CanvasDebugLabel": "Depurar visual",
         "EndPresentationLabel": "Fin pase",
         "SettingsLabel": "Ajustes",
         "MoreLabel": "Más"
@@ -1137,6 +1138,12 @@
       {
         "N": "Mostrar frecuencia de fotogramas",
         "E": "Actualizar cada segundo las frecuencias media y sin límite del segundo anterior."
+      },
+      "CanvasSection": "Lienzo",
+      "CanvasDebug":
+      {
+        "N": "Depuración del lienzo",
+        "E": "Muestra bajo el lienzo la velocidad de fotogramas, la carga del hardware y la información de los puntos de entrada, y añade un botón de depuración visual a la barra principal."
       },
       "ConsoleSection": "Salida de consola",
       "CanvasInformation": "Información de inicialización del lienzo",

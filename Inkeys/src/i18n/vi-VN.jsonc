@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Lưới",
         "WhiteboardUnsavedLabel": "Một số trang chưa được lưu",
         "FreezeLabel": "Giữ",
+        "CanvasDebugLabel": "Gỡ lỗi trực quan",
         "EndPresentationLabel": "Kết thúc",
         "SettingsLabel": "Thiết lập",
         "MoreLabel": "Thêm"
@@ -1137,6 +1138,12 @@
       {
         "N": "Hiện tốc độ khung hình",
         "E": "Mỗi giây cập nhật tốc độ khung hình trung bình và không chờ của giây trước."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Gỡ lỗi canvas",
+        "E": "Hiển thị tốc độ khung hình, tải phần cứng và thông tin điểm nhập bên dưới canvas, đồng thời thêm nút gỡ lỗi trực quan vào thanh chính."
       },
       "ConsoleSection": "Đầu ra bảng điều khiển",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",

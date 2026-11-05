@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Siatka",
         "WhiteboardUnsavedLabel": "Niektóre strony nie są zapisane",
         "FreezeLabel": "Zamroź",
+        "CanvasDebugLabel": "Debug wizualny",
         "EndPresentationLabel": "Zakończ",
         "SettingsLabel": "Ustawienia",
         "MoreLabel": "Więcej"
@@ -1137,6 +1138,12 @@
       {
         "N": "Pokaż liczbę klatek na sekundę",
         "E": "Co sekundę aktualizuj średnią liczbę klatek i liczbę klatek bez oczekiwania z poprzedniej sekundy."
+      },
+      "CanvasSection": "Kanwa",
+      "CanvasDebug":
+      {
+        "N": "Debugowanie kanwy",
+        "E": "Wyświetla pod kanwą liczbę klatek na sekundę, obciążenie sprzętu i informacje o punktach wejścia oraz dodaje do paska głównego przycisk debugowania wizualnego."
       },
       "ConsoleSection": "Wyjście konsoli",
       "CanvasInformation": "Informacje o inicjalizacji płótna",

@@ -101,6 +101,7 @@ inline constexpr struct I18nKeyRoot
                 const char* WhiteboardGridLabel = "UI/Bar/MainButtons/WhiteboardGridLabel";
                 const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
                 const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
+                const char* CanvasDebugLabel = "UI/Bar/MainButtons/CanvasDebugLabel";
                 const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
                 const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
@@ -1141,6 +1142,12 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/FrameRate/N";
                 const char* E = "SettingsUI/DebugSoftware/FrameRate/E";
             } FrameRate{};
+            const char* CanvasSection = "SettingsUI/DebugSoftware/CanvasSection";
+            struct Node__SettingsUI__DebugSoftware__CanvasDebug
+            {
+                const char* N = "SettingsUI/DebugSoftware/CanvasDebug/N";
+                const char* E = "SettingsUI/DebugSoftware/CanvasDebug/E";
+            } CanvasDebug{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";

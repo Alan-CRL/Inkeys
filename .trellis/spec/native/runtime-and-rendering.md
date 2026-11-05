@@ -1105,3 +1105,44 @@ Correct：`封存 UInk Type 6 -> fresh runtime + 全量透明 Present -> durable
 - 所有适配器统一按 DirectComposition、DWM extended frame、ULW 的顺序尝试；厂商、架构或 OS 标签本身不能作为提前降级依据。
 - 若要增加设备或驱动专用兼容路径，必须记录 OS、VendorId、DeviceId、SubSysId、Revision、UMD driver version 和真实桌面背景视觉结果；首选模式失败时仍按既有清理和回退协议继续。
 - ULW 的 `1/255` alpha 只存在于 CPU 输出副本以维持窗口命中，不能写回 L0/L1/L2 或改变墨迹 alpha。
+
+## Scenario: 画布调试背景板与可视化标记（2026-11-05）
+
+### 1. Scope / Trigger
+- 触发：设置“画布调试”开启后，Draw3 绘制线程在合成阶段多画一块调试板，并在可视化模式下画触摸标记；会改动合成路径、脏区与 idle 等待。任务：`11-05-canvas-debug-overlay`。
+
+### 2. Signatures
+- `Host::SetCanvasDebugOptions({enabled, visual})` → `DrawingController::canvasDebugOptions_`（原子，bit0=enabled，bit1=visual；`==3` 才是可视化探测）。
+- 采样/板子/标记 CPU 侧：`Draw3.CanvasDebug.cppm/.cpp`；GPU 侧：`Draw3.RendererDebugOverlay.cpp`（复用 shape-20 pass，“under”混合）。
+- 合成：`CompositeLayersToBackBuffer` 与平移回退路径均为 `CopyResource(L2) → ApplyOperatorLayers(L1/L0) → DrawDebugPlateUnder`。
+
+### 3. Contracts
+- 板子在**全部笔迹层（L2/L1/L0）之下**，只在板子矩形内用 under 混合；矩形外沿用原 `CopyResource` 快路径。不得把板子画进 L0/L1/L2（否则实时橡皮会擦掉板子）。
+- 关闭时合成结果必须与基线逐字节一致；关闭路径只允许一次原子读取/布尔判断，不创建资源、不加脏区、idle 仍走原阻塞 `WaitDequeue`。
+- 脏区：板子“旧∪新”、每个标记（含文字）“上一帧∪当前帧”并入 `frameDirty`，最终提交脏区取并集；DPI 变化重建图集前必须先取 `VisibleBounds()` 并入脏区，关闭/设备重建/ClearCanvas 同理清理旧区域。
+- 热路径无格式化/分配：文字只在 0.5s 快照或行变化时生成；板子缓存纹理仅在内容变化时重绘。
+- 开启时 idle 用带超时（≤0.5s）的 `WaitForWake`，唤醒代数在 `tryConsumeOneIngress` 之前捕获，避免丢唤醒。
+
+### 4. Validation & Error Matrix
+- 调试开启且板子可见 → `auxiliaryCleanVerificationPending` 不得触发每轮强制全量 ULW present，否则 Selection 模式空页面会忙循环；条件需包含 `!(overlay && overlay->PlateVisible())`。
+- 设备丢失恢复 → `ReleaseResources` 释放调试 GPU 资源，`Ensure…` 报告 `recreated` 后重传并整板置脏。
+
+### 5. Good/Base/Bad Cases
+- Good：写字/擦除/翻页经过板子区域，已提交笔迹压在板子上，擦除处露出板子。
+- Base：调试关闭，合成与脏区与未引入功能前一致。
+- Bad：板子尺寸或 DPI 变化后旧区域残留；Selection 空页面 CPU 满载。
+
+### 6. Tests Required
+- `Inkeys.exe --draw3-canvas-debug-test`：关闭时合成 == L2 逐字节；板子矩形外像素与基线一致；透明 L2 处显示板色、不透明 L2 在上、半透明正确混合；局部脏区只改自身像素；擦除处露板。
+- `InkeysHeadlessTests.exe --no-window --canvas-debug-only`：板子几何/脏区、FPS/无限制 FPS/帧负载、行生命周期、列对齐、DPI 变化旧新脏区。
+
+### 7. Wrong vs Correct
+- Wrong：把板子画进 L2 纹理，或每帧 `CopyResource` 整个脏区后再整块重画板。
+- Correct：矩形内 under 混合、矩形外原快路径、板子缓存纹理按需重绘。
+
+## Scenario: 可视化探测接触（2026-11-05）
+
+- 可视化模式（`canvasDebugOptions_ == 3`）下，Down 在 `initializeStroke` 前走 `registerCanvasDebugProbe(handle)`：接触照常经 `ContactInputCoordinator` 入队，但**不创建 `RuntimeStroke`**，因此无笔画/擦除/手掌橡皮动作/撤销历史/触感/触摸平移。
+- 不复用 `DiscardSelectionDown`：被隔离的接触读不到后续 Move/压力/面积。
+- 每帧 `pumpCanvasDebugProbes()` 刷新快照，Up/Cancel 回收句柄，`sealPresentationContacts` 清空。
+- 手掌橡皮红框实/虚：仅 Touch 接触、手掌橡皮总开关开、`area >= ThresholdAreaPixels()` 且长宽比 ≤ 3.5（同 `PalmEraser::State::Observe`）；cm 文字仅 `DisplayScale.physicalAvailable`。

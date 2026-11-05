@@ -462,6 +462,9 @@ namespace Inkeys::Drawing::Draw3
 		mutable std::mutex palmEraserOptionsMutex;
 		PalmEraser::Settings palmEraserOptions;
 		std::optional<PalmEraser::Settings> appliedPalmEraserOptions;
+		// 位0=画布调试开关，位1=可视化模式；绘制 owner 在 PumpBridgeState 应用。
+		std::atomic_uint32_t canvasDebugOptions = 0;
+		uint32_t appliedCanvasDebugOptions = UINT32_MAX;
 		std::atomic_bool drawingHapticsEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
@@ -1709,6 +1712,12 @@ namespace Inkeys::Drawing::Draw3
 					drawing->SetPalmEraserOptions(palmOptions);
 					appliedPalmEraserOptions = palmOptions;
 				}
+				const uint32_t canvasDebug = canvasDebugOptions.load(std::memory_order_acquire);
+				if (canvasDebug != appliedCanvasDebugOptions)
+				{
+					drawing->SetCanvasDebugOptions((canvasDebug & 1u) != 0, (canvasDebug & 2u) != 0);
+					appliedCanvasDebugOptions = canvasDebug;
+				}
 				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
 				if (general != appliedGeneralDrawingOptions)
 				{
@@ -2189,6 +2198,7 @@ namespace Inkeys::Drawing::Draw3
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
 							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
 							appliedPalmEraserOptions.reset();
+							appliedCanvasDebugOptions = UINT32_MAX;
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -2860,6 +2870,24 @@ namespace Inkeys::Drawing::Draw3
 	{
 		std::scoped_lock lock(impl_->palmEraserOptionsMutex);
 		return impl_->palmEraserOptions;
+	}
+
+	void Host::SetCanvasDebugOptions(bool enabled, bool visual) noexcept
+	{
+		// 可视化模式只在画布调试开启时有意义；保存规范化后的期望值，Controller 由绘制 owner 应用。
+		const uint32_t next = enabled ? (1u | (visual ? 2u : 0u)) : 0u;
+		if (impl_->canvasDebugOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	bool Host::CanvasDebugEnabled() const noexcept
+	{
+		return (impl_->canvasDebugOptions.load(std::memory_order_acquire) & 1u) != 0;
+	}
+
+	bool Host::CanvasDebugVisual() const noexcept
+	{
+		return (impl_->canvasDebugOptions.load(std::memory_order_acquire) & 2u) != 0;
 	}
 
 	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)

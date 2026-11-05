@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Grille",
         "WhiteboardUnsavedLabel": "Certaines pages ne sont pas enregistrées",
         "FreezeLabel": "Figer",
+        "CanvasDebugLabel": "Débogage visuel",
         "EndPresentationLabel": "Fin diapo",
         "SettingsLabel": "Réglages",
         "MoreLabel": "Plus"
@@ -1137,6 +1138,12 @@
       {
         "N": "Afficher la fréquence d’images",
         "E": "Mettre à jour chaque seconde les fréquences moyenne et sans limite de la seconde précédente."
+      },
+      "CanvasSection": "Canevas",
+      "CanvasDebug":
+      {
+        "N": "Débogage du canevas",
+        "E": "Affiche sous le canevas la fréquence d'images, la charge matérielle et les informations des points d'entrée, et ajoute un bouton de débogage visuel à la barre principale."
       },
       "ConsoleSection": "Sortie console",
       "CanvasInformation": "Informations d’initialisation du canevas",

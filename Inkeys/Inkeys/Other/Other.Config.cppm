@@ -485,6 +485,7 @@ GROUP(UI, \
 			GROUP(Draw3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnect, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CanvasDebug, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \

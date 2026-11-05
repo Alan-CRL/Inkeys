@@ -768,3 +768,10 @@ Good：第二图标固定资源 ID、主图标原样；Base：应用链接仍取
 
 Wrong：把第二图标资源排成最小 ID 或只验证 ICO 文件存在。
 Correct：保留191为最小组，白板用332，并验证最终内嵌资源和负 ID 的实际提取。
+
+## 场景：画布调试配置与 A1 运行时按钮（2026-11-05）
+
+- 配置键：`Experimental.Inkeys3.Draw3.CanvasDebug`（`ConfigUploadMode::NoUpload`，默认 false），放 Draw3 组而非 `UI3.Debug`（后者是 UI3 脏区调试）。设置页“调试软件”用 `Design::ToggleRow`，热生效 + `QueueConfigWrite()`，不使用带“需重启”提示的 `consoleToggle`。
+- A1 “可视化调试”按钮是**运行时按钮**（仿穿透/重做）：不在 `FixedButtonsA1`，不经 `IsFixedButtonsA1Id`/`NormalizeFixedZone`，仅开关开启时插入 A1 末尾工具之后；图标 `src/UI/barCanvasDebug.svg`。
+- 进入可视化模式若当前是 Selection/ClickThrough，需先恢复 `lastAnnotationMode`（默认 Pen），否则 Draw3 收不到接触；白板切换中拒绝切换。
+- i18n：新增键后必须补全 20 个 locale 才能通过 check；Windows PowerShell 5 会拒绝未签名脚本，使用 `pwsh -ExecutionPolicy Bypass -File Scripts/i18n.ps1 sync` / `check`。

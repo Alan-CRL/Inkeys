@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "网格",
         "WhiteboardUnsavedLabel": "部分页面未保存",
         "FreezeLabel": "定格",
+        "CanvasDebugLabel": "可视化调试",
         "EndPresentationLabel": "结束放映",
         "SettingsLabel": "设置",
         "MoreLabel": "更多"
@@ -1137,6 +1138,12 @@
       {
         "N": "显示帧率",
         "E": "每秒更新上一秒平均帧率和无等待帧率。"
+      },
+      "CanvasSection": "画布",
+      "CanvasDebug":
+      {
+        "N": "画布调试",
+        "E": "在画布底层显示帧率、硬件压力与输入点信息，并在主栏提供可视化调试按钮。"
       },
       "ConsoleSection": "控制台输出",
       "CanvasInformation": "画布初始化信息",

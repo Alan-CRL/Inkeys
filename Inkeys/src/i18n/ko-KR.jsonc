@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "격자",
         "WhiteboardUnsavedLabel": "저장되지 않은 페이지가 있습니다",
         "FreezeLabel": "고정",
+        "CanvasDebugLabel": "시각화 디버그",
         "EndPresentationLabel": "발표종료",
         "SettingsLabel": "설정",
         "MoreLabel": "더보기"
@@ -1137,6 +1138,12 @@
       {
         "N": "프레임 속도 표시",
         "E": "이전 1초의 평균 프레임 속도와 대기 없는 프레임 속도를 매초 갱신합니다."
+      },
+      "CanvasSection": "캔버스",
+      "CanvasDebug":
+      {
+        "N": "캔버스 디버그",
+        "E": "캔버스 아래에 프레임 속도, 하드웨어 부하, 입력 지점 정보를 표시하고 메인 바에 시각화 디버그 버튼을 추가합니다."
       },
       "ConsoleSection": "콘솔 출력",
       "CanvasInformation": "캔버스 초기화 정보",

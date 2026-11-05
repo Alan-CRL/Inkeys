@@ -423,6 +423,10 @@ namespace Inkeys::Drawing::Draw3
 		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);
 		PalmEraser::Settings PalmEraserOptions() const;
+		// 画布调试：enabled 为设置开关，visual 为可视化模式；绘制 owner 应用，关闭时无额外开销。
+		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
+		bool CanvasDebugEnabled() const noexcept;
+		bool CanvasDebugVisual() const noexcept;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;

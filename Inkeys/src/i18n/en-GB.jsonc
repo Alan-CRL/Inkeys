@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Grid",
         "WhiteboardUnsavedLabel": "Some pages are not saved",
         "FreezeLabel": "Freeze",
+        "CanvasDebugLabel": "Visual debug",
         "EndPresentationLabel": "End show",
         "SettingsLabel": "Settings",
         "MoreLabel": "More"
@@ -1137,6 +1138,12 @@
       {
         "N": "Show frame rate",
         "E": "Update the previous second’s average and uncapped frame rates once per second."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Canvas debugging",
+        "E": "Show frame rate, hardware load and input point details beneath the canvas, and add a visual debug button to the main bar."
       },
       "ConsoleSection": "Console output",
       "CanvasInformation": "Canvas initialisation information",

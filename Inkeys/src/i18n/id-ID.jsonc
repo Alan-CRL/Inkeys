@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Kisi",
         "WhiteboardUnsavedLabel": "Beberapa halaman belum disimpan",
         "FreezeLabel": "Beku",
+        "CanvasDebugLabel": "Debug visual",
         "EndPresentationLabel": "Akhiri",
         "SettingsLabel": "Setelan",
         "MoreLabel": "Lainnya"
@@ -1137,6 +1138,12 @@
       {
         "N": "Tampilkan laju bingkai",
         "E": "Perbarui rata-rata laju bingkai dan laju tanpa batas dari detik sebelumnya setiap detik."
+      },
+      "CanvasSection": "Kanvas",
+      "CanvasDebug":
+      {
+        "N": "Debug kanvas",
+        "E": "Tampilkan frame rate, beban perangkat keras, dan informasi titik input di bawah kanvas, serta tambahkan tombol debug visual pada bilah utama."
       },
       "ConsoleSection": "Keluaran konsol",
       "CanvasInformation": "Info inisialisasi kanvas",

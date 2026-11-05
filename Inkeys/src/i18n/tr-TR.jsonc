@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Izgara",
         "WhiteboardUnsavedLabel": "Bazı sayfalar kaydedilmedi",
         "FreezeLabel": "Dondur",
+        "CanvasDebugLabel": "Görsel hata ayıklama",
         "EndPresentationLabel": "Bitir",
         "SettingsLabel": "Ayarlar",
         "MoreLabel": "Diğer"
@@ -1137,6 +1138,12 @@
       {
         "N": "Kare hızını göster",
         "E": "Önceki saniyenin ortalama ve beklemesiz kare hızını saniyede bir güncelleyin."
+      },
+      "CanvasSection": "Tuval",
+      "CanvasDebug":
+      {
+        "N": "Tuval hata ayıklama",
+        "E": "Tuvalin altında kare hızını, donanım yükünü ve giriş noktası bilgilerini gösterir; ana çubuğa görsel hata ayıklama düğmesi ekler."
       },
       "ConsoleSection": "Konsol çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",

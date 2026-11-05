@@ -1758,6 +1758,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererUploadValidation(); });
 		}
+		// 画布调试板合成顺序/关闭字节一致/标记原语像素读回；仅离屏 WARP，无 HWND。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-canvas-debug-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunCanvasDebugOverlayValidation(); });
+		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
@@ -3281,6 +3289,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
 			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
+			// 画布调试开关来自配置；可视化位启动时恒为未选中。
+			PublishCanvasDebugOptions();
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
