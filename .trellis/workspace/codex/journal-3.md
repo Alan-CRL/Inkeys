@@ -143,3 +143,25 @@
 ### Next Steps
 
 - 需要继续时从归档follow-up.md恢复：先区分系统ExitTime与观测延迟，再调查main后、PPT及窗口/Draw3长尾；C10 foreign-session reader已有单独未定位失败，Win7/UAC/跨架构不宣称通过。
+
+
+## Session 180: 完善设置绘制光标样式与透明度
+<!-- trellis-session: v=2 fp=8a89c5244b2e7f82 -->
+
+**Date**: 2026-11-06
+**Task**: 完善设置绘制光标样式与透明度
+**Branch**: `chore/ui`
+
+### Summary
+
+完成高亮光标黑边与动态白环、四类透明度配置、浅色预览及二十语言文案；通过构建、i18n 与 Draw3 无窗口验证，用户确认人工测试通过；完整 headless 的既有无关断言已在任务记录中保留说明。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c7f3f353` | feat(settings): refine cursor appearance and opacity |
+
+### Status
+
+[OK] **Completed**
