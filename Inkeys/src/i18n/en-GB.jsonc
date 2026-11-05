@@ -157,7 +157,6 @@
         "PresentFailed": "Display",
         "Failed": "Error",
         "Recovering": "Recovering",
-        "Loading": "Load",
         "Retry": "Retry",
         "Wait": "Wait",
         "RetryCanvas": "Retry canvas",
