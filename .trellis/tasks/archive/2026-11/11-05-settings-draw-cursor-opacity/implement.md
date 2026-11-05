@@ -75,3 +75,7 @@ git status --short
 - 完整 `InkeysHeadlessTests.exe --no-window` 已运行但非绿色：除上述 RenderScheduler 定时诊断外，还包含既有共享卡片与 equal-aspect 图片 presenter 断言；这些区域不在本任务修改范围，未为其扩大变更。
 - BOM/EOL 对照与 `git diff --ignore-submodules=all --check` 通过；未留下滑块临时诊断输出。
 - 未执行真实设置 GUI、多输入设备、真实桌面背景或 Win7 实机视觉验证。
+
+## 8. 人工验收（2026-11-06）
+
+- 用户确认人工测试通过，接受本任务交付；Win7 实机等未单独执行的环境项不据此视为已验证。
