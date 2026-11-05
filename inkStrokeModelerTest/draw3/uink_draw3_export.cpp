@@ -351,7 +351,8 @@ namespace draw3::uink
 			const auto canvases = CanonicalCanvases(snapshot);
 			for (std::size_t canonicalIndex = 0; canonicalIndex < canvases.size(); ++canonicalIndex)
 			{
-				Draw3UInkCanvasSnapshot sourceCanvas = canvases[canonicalIndex];
+				// 规范页在本轮只读，避免再复制整页点数据与操作列表。
+				const auto& sourceCanvas = canvases[canonicalIndex];
 				if (sourceCanvas.pageGuid.IsZero() || !std::isfinite(sourceCanvas.viewport.x) ||
 					!std::isfinite(sourceCanvas.viewport.y) ||
 					!IsFinitePositive(sourceCanvas.viewport.scale) ||

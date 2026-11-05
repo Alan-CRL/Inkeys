@@ -2195,6 +2195,20 @@ namespace Inkeys::UI::PageControl
 		};
 		thread_local HiddenWindowPerformanceTiming* hiddenWindowPerformanceTiming = nullptr;
 
+		void ReleaseHiddenSurfaceResources(SurfaceState& state, bool hiddenCommitted)
+		{
+			if (!hiddenCommitted || state.targetVisible || state.bounds.active || state.scene.AnimationActive()
+				|| state.pointerActive || state.dragging || state.dragPending || state.pressedCaptureTicket
+				|| !state.scene.DeviceContext()) return;
+			// 原生命令与输入提交仍保留，只归还已隐藏客户端的像素与图形缓存。
+			state.scene.ReleaseDeviceResources();
+			state.backingCapacity = { 1, 1 };
+			state.committedPresentationReady = false;
+			state.committedBackingCapacity = {};
+			state.committedDeviceGeneration = 0;
+			state.forceFullPresentation = true;
+		}
+
 		struct NativeSurfaceFrame
 		{
 			Inkeys::Window::WindowCandidate candidate;
@@ -2348,6 +2362,11 @@ namespace Inkeys::UI::PageControl
 			const auto acknowledged = pending.snapshot.ppt;
 			const auto mask = pending.pptFrame ? static_cast<std::uint8_t>(1U << index) : std::uint8_t{};
 			pending.revision = 0;
+			if (!pending.shouldShow && !pending.keepAnimating)
+			{
+				receiptLease.Reset();
+				ReleaseHiddenSurfaceResources(state, true);
+			}
 			presentationLock.unlock(); renderLock.unlock(); receiptLease.Reset();
 			FlushCommittedDrag(DragPairIndex(index));
 			AcknowledgePage(acknowledged, mask);
@@ -2597,6 +2616,7 @@ namespace Inkeys::UI::PageControl
 				const bool inputChanged = !NativeFrameIdentityCurrent(inputFrame, renderSnapshot, frameContext,
 					*native, monitor, dpiScale, uiScale, frameDirectMoveRevision)
 					|| inputFrame.mode != state.configuredMode || inputFrame.shouldShow != shouldShow
+					|| inputFrame.inputLocked != state.inputLocked
 					|| !SameRect(inputFrame.presentation, presentation);
 				if (inputChanged) nativeInputBarrier[index].store(true, std::memory_order_release);
 				if (shouldShow)
@@ -2679,9 +2699,12 @@ namespace Inkeys::UI::PageControl
 				&& NativeFrameIdentityCurrent(confirmed, renderSnapshot, frameContext, *native,
 					monitor, dpiScale, uiScale, frameDirectMoveRevision)
 				&& confirmed.shouldShow == shouldShow && native->visible == shouldShow
+				&& confirmed.inputLocked == state.inputLocked
 				&& (!shouldShow || (!native->iconic && SameRect(native->bounds, presentation)
 					&& SameRect(confirmed.presentation, presentation))))
 			{
+				// Hide 确认时尚未结束的捕获，可在终态后的已确认隐藏快路补做退休。
+				ReleaseHiddenSurfaceResources(state, !shouldShow && !keepAnimating);
 				if (!keepAnimating) state.scene.SuspendForIdle(frameContext.frameTime);
 				return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
 			}
@@ -5365,8 +5388,58 @@ namespace Inkeys::UI::PageControl
 			while(std::chrono::steady_clock::now()<end){Step();if(predicate())return true;std::this_thread::sleep_for(1ms);}return predicate();};
 		auto ppt=Snapshot().first;ppt.layout.bottomPairScale=1;ppt.layout.middlePairScale=1;ppt.layout.showBottomPair=true;ppt.layout.showMiddlePair=false;
 		ppt.presentationActive=ppt.presentationVisible=true;++ppt.publicationRevision;PublishPptState(ppt);PublishWhiteboardState({});
-		Check(Until([&]{return !InputSnapshot(0).locked&&!InputSnapshot(0).nativePending&&!InputSnapshot(1).nativePending
-			&&!nativeFrames[0].revision&&!nativeFrames[1].revision&&!surfaces[0].scene.AnimationActive()&&!surfaces[1].scene.AnimationActive();}),"pair fixture reaches fully acknowledged interactive idle frame");
+		const bool pairReady = Until([&]{return !InputSnapshot(0).locked&&!InputSnapshot(0).nativePending&&!InputSnapshot(1).nativePending
+			&&!nativeFrames[0].revision&&!nativeFrames[1].revision&&!surfaces[0].scene.AnimationActive()&&!surfaces[1].scene.AnimationActive();});
+		Check(pairReady,"pair fixture reaches fully acknowledged interactive idle frame");
+		if (!pairReady)
+			for (const std::size_t index : {0u, 1u})
+			{
+				const auto input = InputSnapshot(index);
+				auto& state = surfaces[index];
+				std::fprintf(stderr,"[PageDirectNative] ready-detail surface=%zu visible=%d locked=%d native_pending=%d state_visible=%d state_locked=%d bounds=%d layout=%d animation=%d fonts=%d native_revision=%llu input_publication=%llu published=%llu mode=%u session=%llu\n",
+					index,input.visible,input.locked,input.nativePending,state.targetVisible,state.inputLocked,state.bounds.active,
+					state.scene.Geometry().layoutAnimating,state.scene.AnimationActive(),state.scene.Renderer().FontAnimationsActive(),
+					static_cast<unsigned long long>(nativeFrames[index].revision),static_cast<unsigned long long>(input.nativePublicationRevision),
+					static_cast<unsigned long long>(publishedRevision.load()),static_cast<unsigned>(input.mode),static_cast<unsigned long long>(input.pptSession));
+			}
+		if (pairReady)
+		{
+			// 重放一个真实延迟到达的“过渡中仍锁定”候选，像素/几何与当前帧完全相同。
+			// 这能稳定覆盖没有新像素时的锁元数据交接，不靠额外业务revision刷新或直接解锁。
+			auto late = confirmedNativeFrames[0];
+			late.inputLocked = true;
+			late.pixels.pixelsSubmitted = false;
+			late.candidate.frameSerial = ++nextNativeFrameSerial[0];
+			late.sceneSerial = surfaces[0].scene.CapturePresentationCandidate();
+			late.revision = service.PublishCandidate(late.candidate);
+			Check(late.revision != 0, "late locked candidate enters the real native owner queue");
+			nativeInputBarrier[0].store(true, std::memory_order_release);
+			nativeFrames[0] = std::move(late);
+			bool lateConsumed = false;
+			const auto lateDeadline = std::chrono::steady_clock::now() + 5s;
+			while (!lateConsumed && std::chrono::steady_clock::now() < lateDeadline)
+			{
+				const auto actual = service.SurfaceSnapshot(Roles[0]);
+				const auto snapshot = SnapshotForRender();
+				const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
+				const FrameContext context{Inkeys::UI::RenderPipeline::GetDeviceEpoch(),
+					Inkeys::UI::RenderPipeline::GetSharedAssets(), std::chrono::steady_clock::now()};
+				if (actual) lateConsumed = ConsumeNativeSurfaceReceipt(0, snapshot, context, *actual,
+					monitor, dpiScale, uiScale, directMoveRevision.load(std::memory_order_acquire));
+				if (!lateConsumed) std::this_thread::sleep_for(1ms);
+			}
+			Check(lateConsumed && InputSnapshot(0).locked && !surfaces[0].inputLocked
+				&& !surfaces[0].scene.AnimationActive(), "real old-frame ACK preserves its locked metadata after visual settling");
+			const bool lockGate = gateOwner && gateOwner();
+			Check(lockGate, "lock-only reconciliation pauses the real native owner");
+			Step();
+			Check(nativeFrames[0].revision && !nativeFrames[0].inputLocked
+				&& InputSnapshot(0).locked && InputSnapshot(0).nativePending,
+				"lock-only change queues a new confirmation while old input remains barred");
+			if (releaseOwner) releaseOwner();
+			Check(Until([&] { return !InputSnapshot(0).locked && !InputSnapshot(0).nativePending
+				&& !nativeFrames[0].revision; }), "only the matching real owner ACK reopens settled input");
+		}
 		for(const bool failSecond:{false,true})
 		{
 			const auto pairCommitsBefore = hiddenTestNativePairCommits;
@@ -5704,6 +5777,17 @@ namespace Inkeys::UI::PageControl
 				// 隐藏后故意拒绝一侧 Show：像素已成功不等于 native 已完成。
 				ppt.presentationActive = false; ppt.presentationVisible = false; ++ppt.publicationRevision;
 				PublishPptState(ppt); Check(WaitFor([&] { return VisibleMask() == 0; }), "native-failure fixture first hides peers");
+				const auto hiddenTargetsReleased = [&]
+				{
+					std::scoped_lock renderLock(renderTransactionMutex);
+					for (auto& state : surfaces)
+						if (state.scene.Renderer().GetTargetBitmapSize().width != 0 || state.scene.DeviceContext()) return false;
+					return true;
+				};
+				Check(WaitFor(hiddenTargetsReleased), "real Hide receipts retire all hidden PageControl targets");
+				RequestAll();
+				std::this_thread::sleep_for(60ms);
+				Check(hiddenTargetsReleased(), "hidden control wakes do not rebuild retired backing");
 				hiddenTestBlockedNativeSurface.store(0);
 				const auto previousAck = acknowledged.load();
 				ppt.presentationActive = true; ppt.presentationVisible = true; ++ppt.targetRevision; ++ppt.publicationRevision;

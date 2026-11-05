@@ -120,6 +120,13 @@ export namespace Inkeys::Drawing::Draw3
 		TransparentPresentMode ActiveMode() const;
 		// 返回绘制线程上一次真实 Present 的 ULW alpha/dirty-rect 观测。
 		TransparentPresentObservation LastPresentObservation() const;
+		// 绘制 owner 的名义像素载荷，仅用于生命周期观测，不等同进程/驱动驻留字节。
+		std::uint64_t AuxiliaryReadbackPayloadBytes() const noexcept;
+		// 仅提升已有辅助视觉帧；资源缺失本身不能制造空闲 Present。
+		bool AuxiliaryReadbackNeedsFullPresent() const noexcept;
+		// 仅在 Window Service 隐藏回执通过 Host 代际校验后，由绘制 owner 回收读回像素。
+		bool ReleaseAuxiliaryReadbackResources(TransparentOutputTarget target,
+			std::uint64_t outputRevision, std::uint64_t contentRevision) noexcept;
 		// 返回当前模式是否通过 GPU/DWM 读取 backbuffer alpha。
 		bool IsGpuTransparentComposition() const;
 		// 返回当前交换链供渲染器缩放使用。

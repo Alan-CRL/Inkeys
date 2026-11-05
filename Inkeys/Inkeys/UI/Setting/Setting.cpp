@@ -40,6 +40,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 #include <chrono>
 #endif
@@ -682,14 +683,9 @@ namespace
 		return settingTitleBarGeometry;
 	}
 
-	[[nodiscard]] bool LoadSettingWindowIconTexture(HWND hwnd) noexcept
+	[[nodiscard]] bool LoadSettingIconTexture(HICON icon) noexcept
 	{
 		constexpr int iconTextureSize = 64;
-		HICON icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL2, 0));
-		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0));
-		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0));
-		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICONSM));
-		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICON));
 		if (!icon) return false;
 
 		BITMAPINFO bitmapInfo{};
@@ -741,6 +737,16 @@ namespace
 		if (memoryDc) DeleteDC(memoryDc);
 		if (screenDc) ReleaseDC(nullptr, screenDc);
 		return loaded;
+	}
+
+	[[nodiscard]] bool LoadSettingWindowIconTexture(HWND hwnd) noexcept
+	{
+		HICON icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL2, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICONSM));
+		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICON));
+		return LoadSettingIconTexture(icon);
 	}
 
 	[[nodiscard]] LRESULT HitTestSettingClientTitleBar(
@@ -2114,6 +2120,101 @@ void DisposeSettingAtlas(ImFontAtlas* atlas)
         ? I18n::commit(std::move(prepared)) : ReplaceSettingFonts(locale, &prepared);
 }
 
+namespace
+{
+	struct SettingResourceTexture
+	{
+		std::size_t slot;
+		LPCWSTR name;
+		int width, height;
+		SettingTextureConversion conversion;
+		bool scale;
+	};
+	const std::array<SettingResourceTexture, 10> settingResourceTextures = {{
+		{ 5, L"PluginFlag1", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 6, L"PluginFlag2", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 8, L"PluginFlag3", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 10, L"PluginFlag4", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 3, L"Profile_Picture", 45, 45, SettingTextureConversion::StraightBgra, true },
+		{ 7, L"Home_Feedback", 100, 100, SettingTextureConversion::WhiteAlphaMask, true },
+		{ 11, L"SETTING_GITHUB", 64, 64, SettingTextureConversion::WhiteAlphaMask, true },
+		{ 12, MAKEINTRESOURCEW(IDR_SETTING_ERASER_DEMO_FINE), 2304, 432, SettingTextureConversion::StraightBgra, false },
+		{ 13, MAKEINTRESOURCEW(IDR_SETTING_ERASER_DEMO_SWEEP), 2304, 432, SettingTextureConversion::StraightBgra, false },
+		{ 9, L"SettingSponsor", 650, 460, SettingTextureConversion::StraightBgra, true }
+	}};
+	constexpr std::size_t requiredSettingTextureIndexes[] = { 0, 3, 5, 6, 7, 8, 9, 10, 11 };
+
+	SettingTextureRecipe SettingRecipe(const SettingResourceTexture& source, float scale) noexcept
+	{
+		return { source.name, source.scale ? static_cast<int>(source.width * scale) : 0,
+			source.scale ? static_cast<int>(source.height * scale) : 0,
+			source.scale ? 0 : source.width, source.scale ? 0 : source.height, source.conversion };
+	}
+
+	bool DecodeSettingTexture(const SettingTextureRecipe& recipe,
+		std::vector<unsigned char>& data, int& width, int& height)
+	{
+		Inkeys::Graphics::DibSurface surface;
+		if (!recipe.resourceName || !LoadSurfaceFromResource(&surface, L"PNG", recipe.resourceName,
+			recipe.requestedWidth, recipe.requestedHeight) || surface.empty()) return false;
+		width = surface.width(); height = surface.height();
+		if ((recipe.expectedWidth && width != recipe.expectedWidth)
+			|| (recipe.expectedHeight && height != recipe.expectedHeight)) return false;
+		const auto pixels = surface.pixels();
+		data.resize(pixels.size() * 4);
+		for (std::size_t pixel = 0; pixel < pixels.size(); ++pixel)
+		{
+			const unsigned color = pixels[pixel], alpha = color >> 24;
+			for (unsigned channel = 0; channel < 3; ++channel)
+				data[pixel * 4 + channel] = static_cast<unsigned char>(
+					recipe.conversion == SettingTextureConversion::WhiteAlphaMask
+						? 255U : alpha ? ((color >> (channel * 8)) & 255) * 255 / alpha : 0U);
+			data[pixel * 4 + 3] = static_cast<unsigned char>(alpha);
+		}
+		return true;
+	}
+
+	bool LoadSettingResourceTexture(std::size_t slot, const SettingTextureRecipe& recipe, bool remember) noexcept
+	{
+		try
+		{
+			std::vector<unsigned char> pixels;
+			int width = 0, height = 0;
+			if (!DecodeSettingTexture(recipe, pixels, width, height)) return false;
+			// 已验证的配方也供可选 atlas 在后续 epoch 重试；解码像素不常驻。
+			if (remember) settingTextureRecipes[slot] = recipe;
+			return LoadTextureFromMemory(pixels.data(), width, height, &TextureSettingSign[slot]);
+		}
+		catch (...) { return false; }
+	}
+
+	void InitializeSettingResourceTextures(float scale) noexcept
+	{
+		for (const auto& source : settingResourceTextures)
+			(void)LoadSettingResourceTexture(source.slot, SettingRecipe(source, scale), true);
+	}
+}
+
+bool RecreateSettingTextures()
+{
+	CleanupSettingTextures();
+	for (std::size_t index = 0; index < settingTextureRecipes.size(); ++index)
+	{
+		bool loaded = true;
+		if (settingTextureRecipes[index].resourceName)
+			loaded = LoadSettingResourceTexture(index, settingTextureRecipes[index], false);
+		else if (!settingTexturePixels[index].empty())
+			loaded = LoadTextureFromMemory(settingTexturePixels[index].data(), settingSign[index].width,
+				settingSign[index].height, &TextureSettingSign[index]);
+		if (!loaded && index < 12)
+		{
+			CleanupSettingTextures();
+			return false;
+		}
+	}
+	return true;
+}
+
 SettingSessionCoroutine RunSettingSession()
 {
 	// 设置 I/O 等业务投递 FIFO worker；确认的退出意图直接建立 15 秒保护。
@@ -2163,283 +2264,10 @@ SettingSessionCoroutine RunSettingSession()
 		}
 		settingSessionEpoch = settingFrameContext.epoch.generation;
 
-			// 初始化
-			{
-				// 图像加载
-				{
-					Inkeys::Graphics::DibSurface SettingSign;
-
-					// 主页改由矢量品牌动效绘制，不再解码旧 SettingUI2 的整页 PNG。
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[5].width = SettingSign.width();
-						int height = settingSign[5].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[6].width = SettingSign.width();
-						int height = settingSign[6].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[8].width = SettingSign.width();
-						int height = settingSign[8].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag4", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[10].width = SettingSign.width();
-						int height = settingSign[10].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[10]);
-						delete[] data;
-
-						(void)ret;
-					}
-
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale);
-					{
-						int width = settingSign[3].width = SettingSign.width();
-						int height = settingSign[3].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale);
-					{
-						int width = settingSign[7].width = SettingSign.width();
-						int height = settingSign[7].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								// 仅把 RGB 规整为可着色遮罩，原二维码的每个透明度/模块保持不变。
-								data[(y * width + x) * 4 + 0] = 255;
-								data[(y * width + x) * 4 + 1] = 255;
-								data[(y * width + x) * 4 + 2] = 255;
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
-						delete[] data;
-
-						(void)ret;
-					}
-
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SETTING_GITHUB", 64 * settingGlobalScale, 64 * settingGlobalScale);
-					{
-						const int width = SettingSign.width(), height = SettingSign.height();
-						const auto& pixels = SettingSign.pixels();
-						vector<unsigned char> data(static_cast<size_t>(width) * height * 4, 255);
-						// 官方透明白色标记只取原 alpha，正文主题色在绘制时叠加；缓存随既有 epoch 重建。
-						for (size_t index = 0; index < pixels.size(); ++index)
-							data[index * 4 + 3] = static_cast<unsigned char>(pixels[index] >> 24);
-						(void)LoadTextureFromMemory(data.data(), width, height, &TextureSettingSign[11]);
-					}
-
-					// 时间遮罩必须保持原始尺寸与通道值；可选演示加载失败不阻断设置页。
-					const int eraserResources[] = { IDR_SETTING_ERASER_DEMO_FINE, IDR_SETTING_ERASER_DEMO_SWEEP };
-					for (size_t scene = 0; scene < std::size(eraserResources); ++scene)
-					{
-						Inkeys::Graphics::DibSurface atlas;
-						if (!LoadSurfaceFromResource(&atlas, L"PNG", MAKEINTRESOURCE(eraserResources[scene]))
-							|| atlas.width() != 2304 || atlas.height() != 432) continue;
-						const auto& pixels = atlas.pixels();
-						vector<unsigned char> data(pixels.size() * 4);
-						for (size_t pixel = 0; pixel < pixels.size(); ++pixel)
-						{
-							const unsigned alpha = pixels[pixel] >> 24;
-							// DibSurface 是预乘 BGRA；还原直通道墨迹，不做二维码那样的单色化。
-							for (unsigned channel = 0; channel < 3; ++channel)
-								data[pixel * 4 + channel] = alpha ? static_cast<unsigned char>(
-									((pixels[pixel] >> (channel * 8)) & 255) * 255 / alpha) : 0;
-							data[pixel * 4 + 3] = static_cast<unsigned char>(alpha);
-						}
-						(void)LoadTextureFromMemory(data.data(), atlas.width(), atlas.height(), &TextureSettingSign[12 + scene]);
-					}
-
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale);
-					{
-						int width = settingSign[9].width = SettingSign.width();
-						int height = settingSign[9].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
-						delete[] data;
-
-						(void)ret;
-					}
-				}
-			}
+			InitializeSettingResourceTextures(settingGlobalScale);
 			(void)LoadSettingWindowIconTexture(setting_window);
 			// 1/2 是已退役的旧主页槽位；保留其他共享纹理的既有编号。
-			constexpr size_t requiredTextureIndexes[] = { 0, 3, 5, 6, 7, 8, 9, 10, 11 };
-			if (ranges::any_of(requiredTextureIndexes,
+			if (ranges::any_of(requiredSettingTextureIndexes,
 				[](size_t index) { return TextureSettingSign[index] == nullptr; }))
 			{
 				settingFrameResult = ResolveSettingResourceFailure("ResidentTextures");
@@ -5746,6 +5574,157 @@ WNDPROC SettingWindowProc() noexcept
 
 namespace Inkeys::UI::Setting
 {
+	int RunTextureRecoveryProductionTest() noexcept
+	{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		if (settingInitialized.load() || g_pd3dDevice || Inkeys::Window::GetService().Running()) return 2;
+		int failures = 0;
+		const auto check = [&](bool passed, const char* message)
+		{
+			if (passed) return;
+			++failures;
+			std::fprintf(stderr, "[setting-texture-recovery] %s\n", message);
+		};
+		const auto readTexture = [&](std::size_t slot, std::vector<unsigned char>& output)
+		{
+			if (!TextureSettingSign[slot]) return false;
+			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+			TextureSettingSign[slot]->GetResource(resource.GetAddressOf());
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, staging;
+			if (FAILED(resource.As(&texture))) return false;
+			D3D11_TEXTURE2D_DESC desc{}; texture->GetDesc(&desc);
+			if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) return false;
+			desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			if (FAILED(g_pd3dDevice->CreateTexture2D(&desc, nullptr, staging.GetAddressOf()))) return false;
+			g_pd3dDeviceContext->CopyResource(staging.Get(), texture.Get());
+			D3D11_MAPPED_SUBRESOURCE mapped{};
+			if (FAILED(g_pd3dDeviceContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+			try { output.resize(static_cast<std::size_t>(desc.Width) * desc.Height * 4); }
+			catch (...) { g_pd3dDeviceContext->Unmap(staging.Get(), 0); throw; }
+			for (UINT row = 0; row < desc.Height; ++row)
+				std::memcpy(output.data() + static_cast<std::size_t>(row) * desc.Width * 4,
+					static_cast<const unsigned char*>(mapped.pData) + static_cast<std::size_t>(row) * mapped.RowPitch,
+					static_cast<std::size_t>(desc.Width) * 4);
+			g_pd3dDeviceContext->Unmap(staging.Get(), 0);
+			return true;
+		};
+		// 参考实现保留原初始化逐通道规则，与生产配方转换独立核对真实资源像素。
+		const auto referencePixels = [](const SettingResourceTexture& source, float scale,
+			std::vector<unsigned char>& output)
+		{
+			Inkeys::Graphics::DibSurface surface;
+			const int width = source.scale ? static_cast<int>(source.width * scale) : 0;
+			const int height = source.scale ? static_cast<int>(source.height * scale) : 0;
+			if (!LoadSurfaceFromResource(&surface, L"PNG", source.name, width, height)) return false;
+			output.resize(surface.pixels().size() * 4);
+			for (std::size_t pixel = 0; pixel < surface.pixels().size(); ++pixel)
+			{
+				const DWORD color = surface.pixels()[pixel];
+				const unsigned char alpha = static_cast<unsigned char>((color & 0xFF000000) >> 24);
+				if (source.conversion == SettingTextureConversion::WhiteAlphaMask)
+					output[pixel * 4] = output[pixel * 4 + 1] = output[pixel * 4 + 2] = 255;
+				else
+				{
+					output[pixel * 4] = alpha ? static_cast<unsigned char>((color & 0xFF) * 255 / alpha) : 0;
+					output[pixel * 4 + 1] = alpha ? static_cast<unsigned char>(((color & 0xFF00) >> 8) * 255 / alpha) : 0;
+					output[pixel * 4 + 2] = alpha ? static_cast<unsigned char>(((color & 0xFF0000) >> 16) * 255 / alpha) : 0;
+				}
+				output[pixel * 4 + 3] = alpha;
+			}
+			return true;
+		};
+		const auto noViews = []
+		{
+			return std::ranges::all_of(TextureSettingSign, [](auto* view) { return view == nullptr; });
+		};
+		const auto pixelCapacity = []
+		{
+			std::size_t bytes = 0;
+			for (const auto& pixels : settingTexturePixels) bytes += pixels.capacity();
+			return bytes;
+		};
+		HICON icon = nullptr;
+		try
+		{
+			icon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ICON1),
+				IMAGE_ICON, 64, 64, LR_DEFAULTCOLOR));
+			check(icon != nullptr, "load actual icon without HWND");
+			for (const float scale : { 1.0F, 2.0F })
+			{
+				CleanupSettingTextures(); CleanupSettingTextureCache(); CleanupDeviceD3D();
+				Inkeys::UI::RenderPipeline::DeviceEpoch first{}, second{};
+				const auto createDevice = [](auto& epoch)
+				{
+					const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
+					return SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+						D3D11_CREATE_DEVICE_BGRA_SUPPORT, &level, 1, D3D11_SDK_VERSION,
+						epoch.d3dDevice.GetAddressOf(), nullptr, epoch.immediateContext.GetAddressOf()));
+				};
+				if (!createDevice(first) || !createDevice(second)) { check(false, "create two real WARP epochs"); break; }
+				check(AcquireDeviceLease(first), "acquire initial epoch");
+				InitializeSettingResourceTextures(scale);
+				check(LoadSettingIconTexture(icon), "upload real window icon");
+				check(std::ranges::all_of(requiredSettingTextureIndexes,
+					[](std::size_t slot) { return TextureSettingSign[slot] != nullptr; }), "all required slots uploaded");
+				check(TextureSettingSign[1] == nullptr && TextureSettingSign[2] == nullptr && TextureSettingSign[4] == nullptr,
+					"retired slots remain unused");
+				std::array<std::vector<unsigned char>, 14> reference;
+				reference[0] = settingTexturePixels[0];
+				for (const auto& source : settingResourceTextures)
+				{
+					check(referencePixels(source, scale, reference[source.slot]), "decode independent reference");
+					std::vector<unsigned char> actual;
+					check(readTexture(source.slot, actual) && actual == reference[source.slot],
+						"initial GPU bytes match original resource conversion");
+					check(settingTexturePixels[source.slot].capacity() == 0, "PNG decoded pixels are not retained");
+				}
+				check(pixelCapacity() == 64 * 64 * 4, "only 16KiB raw icon remains resident");
+				CleanupSettingTextures(); CleanupDeviceD3D();
+				check(AcquireDeviceLease(second) && RecreateSettingTextures(), "rebuild from source recipes on new epoch");
+				for (std::size_t slot = 0; slot < reference.size(); ++slot)
+				{
+					if (reference[slot].empty()) continue;
+					std::vector<unsigned char> actual;
+					check(readTexture(slot, actual) && actual == reference[slot], "new epoch GPU pixels remain identical");
+				}
+				const auto source = settingTextureRecipes[3];
+				settingTextureRecipes[3].resourceName = L"INKEYS_MISSING_TEXTURE_RECOVERY_RESOURCE";
+				check(!RecreateSettingTextures() && noViews(), "missing required resource rolls back every candidate");
+				settingTextureRecipes[3] = source;
+				check(RecreateSettingTextures(), "missing required source can retry");
+				for (const int required : { 0, 9 })
+					for (const bool failView : { false, true })
+					{
+						settingTextureTestFailSlot = required; settingTextureTestFailView = failView;
+						check(!RecreateSettingTextures() && noViews(), "required texture/view OOM rolls back all SRVs");
+						settingTextureTestFailSlot = -1;
+						check(RecreateSettingTextures(), "GPU creation failure remains retryable");
+					}
+				for (const std::size_t optional : { std::size_t{12}, std::size_t{13} })
+				{
+					settingTextureTestFailSlot = static_cast<int>(optional); settingTextureTestFailView = true;
+					check(RecreateSettingTextures() && TextureSettingSign[optional] == nullptr,
+						"optional atlas failure preserves required images");
+					settingTextureTestFailSlot = -1;
+					check(RecreateSettingTextures(), "optional atlas source retained for next retry");
+				}
+				std::printf("[setting-texture-recovery] scale=%.1f active_slots=11 resident_cpu_bytes=%zu hwnd=0\n",
+					scale, pixelCapacity());
+			}
+		}
+		catch (...) { check(false, "unexpected exception"); }
+		settingTextureTestFailSlot = -1; settingTextureTestFailView = false;
+		CleanupSettingTextures(); CleanupSettingTextureCache(); CleanupDeviceD3D();
+		if (icon) DestroyIcon(icon);
+		check(noViews() && pixelCapacity() == 0 && std::ranges::none_of(settingTextureRecipes,
+			[](const auto& source) { return source.resourceName != nullptr; }), "shutdown releases views and all recovery storage");
+		std::printf("[setting-texture-recovery] failures=%d hwnd=0\n", failures);
+		return failures ? 1 : 0;
+#else
+		return 2;
+#endif
+	}
+
     int RunFontLifecycleProductionTest() noexcept
     {
         int failures = 0;

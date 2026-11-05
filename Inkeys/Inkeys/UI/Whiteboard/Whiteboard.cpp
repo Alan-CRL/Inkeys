@@ -148,9 +148,20 @@ namespace Inkeys::UI::Whiteboard
 				|| hr == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
 		}
 
+		void ReleaseInactiveBackgroundResources()
+		{
+			std::scoped_lock renderLock(backgroundRenderMutex);
+			// 仅退休当前客户端的像素资源；文稿、主题与共享 WARP epoch 均保持。
+			backgroundScene.ReleaseDeviceResources();
+			configuredBackgroundScreen = {};
+			configuredBackgroundScale = 0;
+			renderedBackgroundTarget.store({});
+		}
+
 		bool CommitBackgroundInactive(const WhiteboardDetail::BackgroundState::Request& request)
 		{
 			if (!backgroundState.CommitInactive(request)) return false;
+			ReleaseInactiveBackgroundResources();
 			Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
 			return true;
 		}
@@ -215,7 +226,11 @@ namespace Inkeys::UI::Whiteboard
 					&& !service.CandidateCurrent(WindowRole::Freeze, backgroundSubmission->nativeRevision))))
 				DiscardBackgroundSubmission();
 			// 已经释放的共享 Freeze 不再被白板重复隐藏；退出确认始终先于最小化暂停。
-			if (!request.active && backgroundState.InactiveCommitted(request)) return FrameResult::Idle;
+			if (!request.active && backgroundState.InactiveCommitted(request))
+			{
+				ReleaseInactiveBackgroundResources();
+				return FrameResult::Idle;
+			}
 			if (!request.active && !backgroundState.Held())
 				return CommitBackgroundInactive(request) ? FrameResult::Idle : FrameResult::Retry;
 			const auto native = service.SurfaceSnapshot(WindowRole::Freeze);
@@ -254,12 +269,23 @@ namespace Inkeys::UI::Whiteboard
 					&& WhiteboardDetail::CompleteBackgroundInactive(backgroundState, request,
 						[&](const auto& surface) { return surface == *held && current(); });
 				DiscardBackgroundSubmission();
-				if (committed) Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
+				if (committed)
+				{
+					commitLease.Reset();
+					ReleaseInactiveBackgroundResources();
+					Inkeys::Drawing::Draw3::NotifyProductWorkspaceProgress();
+				}
 				return committed ? FrameResult::Idle : FrameResult::Retry;
 			}
 			if (service.WhiteboardWindowGroupMinimized())
 			{
 				if (backgroundSubmission) { DiscardBackgroundSubmission(); backgroundState.Invalidate(); }
+				if (!native->visible || native->iconic)
+				{
+					// 只有 owner 已发布真实隐藏/最小化，才归还背景；恢复沿原门完整重建。
+					backgroundState.Invalidate();
+					ReleaseInactiveBackgroundResources();
+				}
 				return FrameResult::Idle;
 			}
 			const HWND hwnd = native->hwnd;
@@ -483,6 +509,8 @@ namespace Inkeys::UI::Whiteboard
 		hiddenBackgroundHoldReceipt = false;
 		Check(Until([&] { return BackgroundPrepared(101); }), "full matching owner receipt prepares first background");
 		Check(!BackgroundMatchesActive(true, 101), "prepared hidden pixels cannot masquerade as final visible background");
+		Check(backgroundScene.Renderer().GetTargetBitmapSize().width > 0 && backgroundScene.DeviceContext(),
+			"prepared background owns real WARP target resources");
 		Check(service.Show(WindowRole::Freeze) && Until([&] { return BackgroundMatchesActive(true, 101); })
 			&& hiddenBackgroundPixelCount == firstPixels,
 			"published real native visibility completes Active without another pixel submission");
@@ -496,12 +524,25 @@ namespace Inkeys::UI::Whiteboard
 		Check(std::chrono::steady_clock::now() - hideStarted < 250ms
 			&& !BackgroundMatchesActive(false, 102) && hiddenBackgroundPixelCount == firstPixels,
 			"inactive callbacks neither wait for owner nor repaint nor acknowledge queued Hide");
+		Check(backgroundScene.Renderer().GetTargetBitmapSize().width > 0,
+			"pending Hide keeps target until real owner retirement");
 		if (releaseOwner) releaseOwner();
 		Check(Until([&] { return BackgroundMatchesActive(false, 102); }), "real Hide receipt completes inactive ACK");
+		Check(backgroundScene.Renderer().GetTargetBitmapSize().width == 0 && !backgroundScene.DeviceContext(),
+			"real inactive ACK releases the full-screen target and private context");
+		for (unsigned repeat = 0; repeat < 8; ++repeat) (void)Step();
+		Check(backgroundScene.Renderer().GetTargetBitmapSize().width == 0
+			&& hiddenBackgroundPixelCount == firstPixels,
+			"inactive callbacks do not rebuild pixels after retirement");
+		Check(Inkeys::UI::RenderPipeline::GetDeviceEpoch().d3dDevice.Get() == epoch.d3dDevice.Get(),
+			"retiring the client leaves shared WARP device unchanged");
 
 		Check(backgroundState.Publish(true, 103), "reentry request is accepted");
 		hiddenBackgroundHoldReceipt = true;
 		Check(Until([&] { return backgroundSubmission && backgroundSubmission->nativeRevision; }), "reentry publishes pixels before delayed ACK");
+		Check(backgroundScene.Renderer().GetTargetBitmapSize().width > 0
+			&& hiddenBackgroundPixelCount > firstPixels,
+			"reentry rebuilds a real target and submits fresh pixels before ready");
 		const auto retiredFrame = backgroundSubmission ? backgroundSubmission->frame : WhiteboardDetail::BackgroundState::Frame{};
 		backgroundState.Invalidate(); CancelBackgroundCandidate();
 		{ std::scoped_lock pageLock(pageStateMutex); themeRgb = 0x172A46; themePattern = 2; }
@@ -519,6 +560,8 @@ namespace Inkeys::UI::Whiteboard
 			&& !backgroundState.FrameCurrent(oldDeviceFrame), "device generation discards old pixel candidate before acknowledging rebuilt resources");
 		Check(backgroundState.Publish(false, 105), "final cleanup request is accepted");
 		Check(Until([&] { return BackgroundMatchesActive(false, 105); }), "final native Hide retires shared Freeze ownership");
+		Check(backgroundScene.Renderer().GetTargetBitmapSize().width == 0 && !backgroundScene.DeviceContext(),
+			"final Hide returns all background target resources");
 		CancelBackgroundCandidate(); DiscardBackgroundSubmission();
 		(void)service.Hide(WindowRole::Freeze);
 		backgroundScene.Reset(); backgroundState.Reset();

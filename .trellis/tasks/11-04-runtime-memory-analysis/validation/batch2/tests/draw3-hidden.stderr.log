@@ -1,0 +1,106 @@
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x150FB2 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0x150FB2 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0x150FB2 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0x150FB2 valid=1 visible=1 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0x150FB2 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[Draw3Hidden] command_persistence_root=D:\Project\Inkeys\Repo\Inkeys\Build\MemoryDiagnostics\batch2\after-bin\Draw3HiddenPptCommands\37076-2358593282427
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[DrawpadSurface] event=visibility-applied requested=primary role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0x9D0306 valid=1 visible=1 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0x9D0306 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0x9D0306 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[Draw3DiagnosticOutput] dropped=2 full=0 contention=2 closing=0 truncated=0
+[Draw3Hidden] FAIL: hidden contact reached Draw3 consumer and presented
+[Draw3Hidden] FAIL: stored stroke publishes current page content
+[Draw3Hidden] FAIL: switching to a blank page publishes no content
+[Draw3Hidden] FAIL: content revision advances on a boolean state change
+[Draw3Hidden] FAIL: returning to the first page restores its content state
+[Draw3Hidden] FAIL: clear publishes an empty current page
+[Draw3Hidden] FAIL: undo restores content removed by clear
+[Draw3Hidden] FAIL: undo clear republishes current page content
+[ClearRoundtrip] page=1 content=1 revision=3 previous=2 presents=9 previousPresents=8
+[Draw3Hidden] FAIL: undo-restored page keeps its content after page round-trip
+[Draw3Hidden] FAIL: Clear-restored canvas keeps older strokes undoable
+[ClearRedoContinuation] workspace=Desktop begin
+[ClearRedoContinuation] workspace=Desktop result=PASS
+[ClearRedoContinuation] workspace=Presentation begin
+[ClearRedoContinuation] workspace=Presentation result=PASS
+[Draw3Hidden] FAIL: whiteboard has independent ink
+[Draw3Hidden] FAIL: first whiteboard page has independent ink
+[Draw3Hidden] FAIL: nonempty whiteboard pages advance content revision
+[Draw3Hidden] FAIL: whiteboard warm-page command starts with accepted still-down ink
+[Draw3Hidden] FAIL: whiteboard warm page seals and becomes ready without physical Up
+[Draw3Hidden] FAIL: whiteboard warm ready accepts a fresh Down
+[Draw3Hidden] FAIL: whiteboard cold-page command starts with accepted still-down ink
+[Draw3Hidden] FAIL: whiteboard cold page opens only after strict load and real Present
+[Draw3Hidden] FAIL: whiteboard cold ready accepts a fresh Down
+[Draw3Hidden] FAIL: whiteboard returns to first page before no-op boundary
+[Draw3Hidden] FAIL: whiteboard first-page Previous acknowledges unchanged scene and reopens input
+[Draw3Hidden] FAIL: whiteboard first-page no-op does not lock the next stroke
+[Draw3Hidden] FAIL: whiteboard resumes the second page after immediate-boundary regressions
+[Draw3Hidden] FAIL: whiteboard Clear Undo restores annotation
+[Draw3Hidden] FAIL: completed shape updates the last stroke kind
+[Draw3Hidden] FAIL: drawing thread consumes pen dwell Down
+[Draw3Hidden] FAIL: release Down consumed
+[Draw3Hidden] persistence_root=D:\Project\Inkeys\Repo\Inkeys\Build\MemoryDiagnostics\batch2\after-bin\Draw3HiddenPptPersistence\37076-2362988168532
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[Draw3Hidden] PASS: real Host held-contact save, drain, cold reload and SlideID reorder
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[DrawpadSurface] event=visibility-applied requested=primary role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=1 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=primary role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=window-destroying requested=hidden role=Drawpad hwnd=0x17003A owner=0x310CF8 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=window-destroying requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0x17003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=window-destroyed requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-destroyed requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=window-destroying requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-destroying requested=hidden role=DrawpadPresentation hwnd=0x310CF8 owner=0x3F1216 previous=0xC0D80 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(44,56,428,312)
+[DrawpadSurface] event=window-destroyed requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-destroyed requested=hidden role=DrawpadPresentation hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x242134A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0x18003A owner=0x320CF8 previous=0x242134A valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x18003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[DrawpadSurface] event=visibility-applied requested=primary role=Drawpad hwnd=0x18003A owner=0x320CF8 previous=0xA10306 valid=1 visible=1 topmost=0 layered=1 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x18003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x18003A owner=0x320CF8 previous=0xA10306 valid=1 visible=0 topmost=0 layered=1 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x18003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x18003A owner=0x320CF8 previous=0xA10306 valid=1 visible=0 topmost=0 layered=1 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x18003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[Draw3Hidden] command_persistence_root=D:\Project\Inkeys\Repo\Inkeys\Build\MemoryDiagnostics\batch2\after-bin\Draw3HiddenPptCommands\37076-2363000153099
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[DrawpadSurface] event=visibility-applied requested=primary role=Drawpad hwnd=0x18003A owner=0x320CF8 previous=0xA20306 valid=1 visible=1 topmost=0 layered=1 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x18003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x18003A owner=0x320CF8 previous=0xA20306 valid=1 visible=0 topmost=0 layered=1 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x18003A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x18003A owner=0x320CF8 previous=0xA20306 valid=1 visible=0 topmost=0 layered=1 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x320CF8 owner=0x401216 previous=0x18003A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[Draw3Hidden] FAIL: hidden contact reached Draw3 consumer and presented
+[Draw3Hidden] FAIL: stored stroke publishes current page content
+[Draw3Hidden] FAIL: switching to a blank page publishes no content
+[Draw3Hidden] FAIL: content revision advances on a boolean state change
+[Draw3Hidden] FAIL: returning to the first page restores its content state
+[Draw3Hidden] FAIL: clear publishes an empty current page
