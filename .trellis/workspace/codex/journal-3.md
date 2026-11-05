@@ -172,3 +172,68 @@ Setting PNG配方、Laser选中/退出纹理、辅助ULW owner隐藏回执、Fre
 ### Next Steps
 
 - 候选1保存峰值去重与6历史缓存页策略按用户要求后续评估；未commit/push。
+
+
+## Session 174: 候选1保存快照释放调查
+<!-- trellis-session: v=2 fp=90e132b3a33366f2 -->
+
+**Date**: 2026-11-05
+**Task**: 候选1保存快照释放调查
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+在e225c210基础审计保存副本生命周期；Desktop/PPT/白板大保存缓冲可正常销毁，合法Load与Clear恢复持有单列。未改生产或候选6。
+
+### Main Changes
+
+- 仅共享测试三cpp和一个测试头新增默认关闭固定地址释放观察；真实worker门证明持有后free，记录源缓冲不外推全堆。
+- 保存/加载所有权、元数据增长和Drain析构竞态写入研究、结果与资源生命周期规格。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 共享inkStrokeModelerTest.sln Debug|ARM64最终退出0；首次新增测试作用域C2601已修正并留失败日志。
+- [OK] 释放探针16服务阶段及1容量负控通过；同一Age2二进制5项CPU回归、bad argc90通过，BOM/CRLF与source身份一致。
+- [OK] 已有产品4项离屏/CPU和共享2项保存基线通过；无Computer Use/Office，未采全堆ETW，不保证OS提交量即时归零。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 建议候选1去重/COW继续后置；候选6按用户要求不修改，本轮测试/文档未commit或push。
+
+
+## Session 175: 内存优化任务完成归档
+<!-- trellis-session: v=2 fp=99b58d623a7a2a1d -->
+
+**Date**: 2026-11-05
+**Task**: 内存优化任务完成归档
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+用户确认内存优化任务完成；归档runtime-memory-analysis，保留候选1释放调查与质量门，候选6不修改；按授权随后签名提交并推送当前分支。
+
+### Main Changes
+
+- 任务移至archive/2026-11，清除活动任务指针，更新上下文清单归档路径；本机.vs缓存不纳入提交。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e225c210` | perf(memory): release inactive graphics resources |
+
+### Testing
+
+- [OK] 沿用已通过的ARM64构建、释放探针和相关CPU回归；本轮仅收尾文档与归档，不重复运行。
+
+### Status
+
+[OK] **Completed**

@@ -21,6 +21,8 @@
 #include <windows.h>
 #include <DirectXMath.h>
 
+#include "snapshot_lifetime_probe.h"
+
 import draw3.contact_input;
 import draw3.haptic_feedback;
 import draw3.ink_document;
@@ -33,6 +35,8 @@ import draw3.runtime_metrics;
 int RunHighlighterGeometryTests();
 int RunCanvasNavigationTests();
 int RunDesktopAutoSaveTests();
+int RunDesktopSaveSnapshotLifetimeTests();
+int RunPresentationSaveSnapshotLifetimeTests();
 int RunDesktopAutoSaveIndexBoundsTests();
 int RunPresentationAutoSaveTests();
 int RunPresentationAutoSaveAtomicChild(const wchar_t* root,
@@ -3383,6 +3387,84 @@ uint64_t PresentationCollectionAllocationFailuresForTesting() noexcept
 }
 #endif
 
+namespace SnapshotLifetimeProbe
+{
+	namespace
+	{
+		struct Buffer { std::uintptr_t address = 0; std::size_t bytes = 0; bool freed = false; };
+		SRWLOCK observationLock = SRWLOCK_INIT;
+		std::atomic<bool> enabled = false;
+		Buffer buffers[256]{};
+		std::size_t count = 0;
+		bool overflow = false;
+	}
+
+	void Begin() noexcept
+	{
+		AcquireSRWLockExclusive(&observationLock);
+		count = 0;
+		overflow = false;
+		for (auto& buffer : buffers) buffer = {};
+		enabled.store(true, std::memory_order_release);
+		ReleaseSRWLockExclusive(&observationLock);
+	}
+
+	void End() noexcept { enabled.store(false, std::memory_order_release); }
+
+	std::size_t Count() noexcept
+	{
+		AcquireSRWLockExclusive(&observationLock);
+		const auto result = count;
+		ReleaseSRWLockExclusive(&observationLock);
+		return result;
+	}
+
+	void Watch(const void* memory, std::size_t bytes) noexcept
+	{
+		AcquireSRWLockExclusive(&observationLock);
+		const auto address = reinterpret_cast<std::uintptr_t>(memory);
+		bool duplicate = false;
+		for (std::size_t index = 0; index < count; ++index)
+			duplicate |= buffers[index].address == address && !buffers[index].freed;
+		if (!enabled.load(std::memory_order_relaxed) || !memory || !bytes || duplicate || count == std::size(buffers))
+			overflow = true;
+		else buffers[count++] = { address, bytes, false };
+		ReleaseSRWLockExclusive(&observationLock);
+	}
+
+	Statistics Read(Range range) noexcept
+	{
+		AcquireSRWLockExclusive(&observationLock);
+		Statistics result;
+		result.overflow = overflow || range.first > count || range.count > count - range.first;
+		if (!result.overflow)
+			for (std::size_t index = range.first; index < range.first + range.count; ++index)
+			{
+				++result.buffers;
+				result.bytes += buffers[index].bytes;
+				if (buffers[index].freed)
+				{
+					++result.freedBuffers;
+					result.freedBytes += buffers[index].bytes;
+				}
+			}
+		ReleaseSRWLockExclusive(&observationLock);
+		return result;
+	}
+
+	void Free(void* memory) noexcept
+	{
+		if (!enabled.load(std::memory_order_acquire)) { std::free(memory); return; }
+		// free 返回后才发布释放证据；锁跨 free，避免地址复用被误记为旧载荷销毁。
+		const auto address = reinterpret_cast<std::uintptr_t>(memory);
+		AcquireSRWLockExclusive(&observationLock);
+		std::free(memory);
+		for (std::size_t index = 0; index < count; ++index)
+			if (buffers[index].address == address && !buffers[index].freed) buffers[index].freed = true;
+		ReleaseSRWLockExclusive(&observationLock);
+	}
+}
+
 void* operator new(size_t size)
 {
 	gAllocationCount.fetch_add(1, std::memory_order_relaxed);
@@ -3405,26 +3487,47 @@ void* operator new[](size_t size)
 
 void operator delete(void* memory) noexcept
 {
-	std::free(memory);
+	SnapshotLifetimeProbe::Free(memory);
 }
 
 void operator delete[](void* memory) noexcept
 {
-	std::free(memory);
+	SnapshotLifetimeProbe::Free(memory);
 }
 
 void operator delete(void* memory, size_t) noexcept
 {
-	std::free(memory);
+	SnapshotLifetimeProbe::Free(memory);
 }
 
 void operator delete[](void* memory, size_t) noexcept
 {
-	std::free(memory);
+	SnapshotLifetimeProbe::Free(memory);
 }
 
 int wmain(int argc, wchar_t* argv[])
 {
+	// 保存生命周期专项只走 CPU/临时文件，必须在默认窗口与 GPU 测试前返回。
+	if (argc >= 2 && wcscmp(argv[1], L"--save-snapshot-lifetime-only") == 0)
+	{
+		if (argc != 2) return 90;
+		int failures = 0;
+		{
+			SnapshotLifetimeProbe::Scope scope;
+			std::vector<std::byte> bytes(1024 * 1024);
+			SnapshotLifetimeProbe::WatchVector(bytes);
+			const SnapshotLifetimeProbe::Range range{ 0, SnapshotLifetimeProbe::Count() };
+			bytes.clear();
+			if (SnapshotLifetimeProbe::Released(range)) ++failures;
+			std::vector<std::byte>().swap(bytes);
+			if (!SnapshotLifetimeProbe::Released(range)) ++failures;
+			SnapshotLifetimeProbe::Report("observer-clear-keeps-capacity-control", range);
+		}
+		failures += RunDesktopSaveSnapshotLifetimeTests();
+		failures += RunPresentationSaveSnapshotLifetimeTests();
+		std::cout << "[SnapshotLifetime] failures=" << failures << '\n';
+		return failures == 0 ? 0 : 1;
+	}
 	if (argc == 2 && wcscmp(argv[1], L"--local-tail-integration-only") == 0)
 	{
 		TestState state; TestLocalTailFinalization(state);

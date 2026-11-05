@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-覆盖 Setting 图片恢复、Draw3 Laser、辅助 Selection ULW，以及 Freeze/Whiteboard/Bar/PageControl 的可重建像素资源。目标是普通静止与功能退出后的稳定占用下降；可自行释放的初始化/解码峰值允许存在。L0/L1/L2、UI共享WARP与Draw3独立hardware-first/fallback分工、正常画质和合法文档/历史不改变。
+覆盖 Setting 图片恢复、Draw3 Laser、辅助 Selection ULW、Freeze/Whiteboard/Bar/PageControl 的可重建像素资源，以及保存/加载CPU快照的释放判定。目标是普通静止与功能退出后的稳定占用下降；可自行释放的初始化/解码峰值允许存在。L0/L1/L2、UI共享WARP与Draw3独立hardware-first/fallback分工、正常画质和合法文档/历史不改变。
 
 ## 2. Signatures
 
@@ -13,6 +13,7 @@
 - `HostRuntimeSnapshot::auxiliaryReadbackPayloadBytes` 是名义纹理+DIB载荷，不是OS提交量。
 - 内部 `AuxiliaryReleaseRequest` 含 `hostGeneration/productRevision/outputRevision/contentRevision/successfulPresents/target/width/height`，按值投递，不跨线程借用表面指针。
 - Setting内部`SettingTextureRecipe`记录稳定`resourceName`、请求与实际宽高、`StraightBgra/WhiteAlphaMask`转换，不存长期解码PNG像素。
+- 共享测试进程 `inkStrokeModelerTestTests.exe --save-snapshot-lifetime-only` 仅运行CPU保存/加载释放探针，不进入默认窗口/GPU套件；不新增产品命令行入口。
 
 ## 3. Contracts
 
@@ -40,6 +41,14 @@ Freeze真实启动透明帧成功后可归还DIB；没有像素的idle循环直�
 
 PageControl的confirmed输入身份必须同时比较`inputLocked`；视觉/几何静止也不能沿用旧锁。锁变化先关闭nativeInputBarrier，沿正式candidate与Window owner ACK发布新输入快照，ACK前保留旧锁/nativePending，ACK后才收敛Idle；不能靠额外业务revision或直接写false替代。
 
+### 保存/加载CPU快照
+
+Desktop保存终态把大snapshot搬入本轮局部，在下次等待前销毁；PPT发布完成前将save/load请求赋空；Whiteboard每轮request离开作用域析构。失败与异常同样退休保存payload。不要将这些路径改成仅clear嵌套points，留下整个外层高水位。
+
+`pending/queuedSnapshotBytes==0`、Whiteboard `Drain()`返回均可能先于本轮request析构，不是严格释放完成门。验证须在worker仍活着、Save回执尚未领取时观察登记分配真正经过delete；全局new/delete观察器只属于测试进程，固定容量、默认关闭、不自行分配，不修改既有分配失败注入或malloc/free行为。地址观察只覆盖已登记缓冲，中间副本需另审计，不能据此宣称全堆无泄漏或OS提交量归零。
+
+成功Load完成回执合法持有shared/value快照；`CloseAndDrain()`只排空join worker，不丢弃未领取结果。消费端释放最后owner后才应销毁，失败Clear恢复点、Redo与retained业务页不能按idle无条件删除。Desktop会话幂等记录、PPT失败索引修复账/拓扑与文件权限账也可保留元数据，不能与已退休的大笔迹数组混计。
+
 ## 4. Validation & Error Matrix
 
 | 条件 | 行为 |
@@ -66,7 +75,8 @@ PageControl的confirmed输入身份必须同时比较`inputLocked`；视觉/几�
 - `--draw3-auxiliary-resource-lifecycle-test`：真实透明帧、精确隐藏票据、过期/非空拒绝、远端像素完整再入、resize及空闲提交数稳定。
 - `--freeze-resource-lifecycle-test`、`--ui3-idle-capacity-test`：真实DIB/原生layered提交和WARP大→小target及像素，失败/再入/重复idle复用。
 - `--page-control-hidden-test`、`--draw3-hidden-test`与既有像素/故障回归：保持正式输入/ready/页/背景合同。fixture必须先发布Drawing并等真实Primary；模拟Whiteboard owner只回传精确匹配、已呈现的style token，再等Host恢复准入，不能为测试放宽产品门。
-- 新CLI先按argv识别，坏argc或harness关闭均早退2，不能落普通GUI启动。执行无窗口/离屏/隐藏测试时分别记录其范围。
+- 产品CLI先按argv识别，坏argc或harness关闭均早退2，不能落普通GUI启动。执行无窗口/离屏/隐藏测试时分别记录其范围。
+- `--save-snapshot-lifetime-only`：真实worker与独有临时目录；Desktop覆盖成功/写或索引失败/重试/停止，PPT覆盖成功/索引失败/异常/替换/停止，两者Load检查最后owner释放；白板地址探针仅成功/文件系统失败。登记points与外层缓冲的实际释放，对clear保留容量作负控；保持既有CPU保存/文件回归通过。共享测试坏argc沿测试入口错误码返回，不套用产品入口的2。
 
 ## 7. Wrong vs Correct
 

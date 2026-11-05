@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 173
+- **Total Sessions**: 175
 - **Last Active**: 2026-11-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~174 | Active |
+| `journal-3.md` | ~239 | Active |
 | `journal-2.md` | ~2029 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 175 | 2026-11-05 | 内存优化任务完成归档 | `e225c210` | `diagnostic/memery` |
+| 174 | 2026-11-05 | 候选1保存快照释放调查 | - | `diagnostic/memery` |
 | 173 | 2026-11-05 | 静止内存第二批2–5资源回收 | - | `diagnostic/memery` |
 | 172 | 2026-11-05 | 内存采样与首批低风险优化 | - | `diagnostic/memery` |
 | 170 | 2026-11-04 | 光标细边与共享下拉边界修复收尾 | `15200e7b`, `2d3eb582` | `temp/state` |
