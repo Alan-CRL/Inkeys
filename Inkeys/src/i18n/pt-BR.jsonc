@@ -693,6 +693,11 @@
           "Unavailable": "Este sistema não consegue distinguir a origem da entrada; a opção não está disponível."
         },
         "FineControl": "Controles precisos",
+        "OpacitySection": "Opacidade",
+        "PenOpacity": "Opacidade do cursor da caneta",
+        "HighlightPenFillOpacity": "Opacidade de preenchimento do cursor da caneta (destacada)",
+        "DotOpacity": "Opacidade do cursor de ponto pequeno",
+        "HighlightDotFillOpacity": "Opacidade de preenchimento do cursor de ponto pequeno (destacado)",
         "DotHideOnContact":
         {
           "N": "Ocultar automaticamente o cursor de ponto pequeno ao tocar",

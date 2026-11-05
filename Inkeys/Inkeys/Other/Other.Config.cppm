@@ -451,6 +451,10 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Tablet, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InjectedMouseAsTablet, false) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, DotHideOnContact, 1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenOpacity, 50) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, HighlightPenFillOpacity, 50) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, DotOpacity, 25) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, HighlightDotFillOpacity, 50) \
 		) \
 		GROUP(Eraser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \

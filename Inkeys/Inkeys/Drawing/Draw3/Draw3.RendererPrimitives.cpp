@@ -335,7 +335,7 @@ namespace Inkeys::Drawing::Draw3
 		const InkPoint cursorData[2] = {
 			{ visual.x + appearance.centerOffsetX, visual.y + appearance.centerOffsetY,
 				appearance.width * 0.5f, appearance.height * 0.5f },
-			{ appearance.outlineWidth, appearance.fillAlpha, appearance.outlineOpacity + 1.0f, 0.0f }
+			{ appearance.outlineWidth, appearance.fillAlpha, appearance.outlineOpacity + 1.0f, appearance.outerOutlineWidth }
 		};
 
 		const HRESULT inkUploadResult = UploadStructuredBuffer(inkDataBuffer.Get(), cursorData, sizeof(cursorData),

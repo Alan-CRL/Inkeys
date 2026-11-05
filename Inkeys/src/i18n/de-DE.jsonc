@@ -693,6 +693,11 @@
           "Unavailable": "Dieses System kann die Eingabequelle nicht unterscheiden; die Option ist nicht verfügbar."
         },
         "FineControl": "Feinsteuerung",
+        "OpacitySection": "Deckkraft",
+        "PenOpacity": "Stift-Cursor-Deckkraft",
+        "HighlightPenFillOpacity": "Fülldeckkraft des Stift-Cursors (hervorgehoben)",
+        "DotOpacity": "Deckkraft des kleinen Punktcursors",
+        "HighlightDotFillOpacity": "Fülldeckkraft des kleinen Punktcursors (hervorgehoben)",
         "DotHideOnContact":
         {
           "N": "Kleinen Punktcursor beim Aufsetzen automatisch ausblenden",

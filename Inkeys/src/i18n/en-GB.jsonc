@@ -693,6 +693,11 @@
           "Unavailable": "This system cannot tell input sources apart, so this option is unavailable."
         },
         "FineControl": "Fine controls",
+        "OpacitySection": "Opacity",
+        "PenOpacity": "Pen cursor opacity",
+        "HighlightPenFillOpacity": "Pen (highlighted) cursor fill opacity",
+        "DotOpacity": "Small dot cursor opacity",
+        "HighlightDotFillOpacity": "Small dot (highlighted) cursor fill opacity",
         "DotHideOnContact":
         {
           "N": "Automatically hide the small dot cursor on contact",

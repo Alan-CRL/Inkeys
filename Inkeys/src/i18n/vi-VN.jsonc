@@ -693,6 +693,11 @@
           "Unavailable": "Hệ thống này không thể phân biệt nguồn nhập nên tùy chọn không khả dụng."
         },
         "FineControl": "Điều khiển chi tiết",
+        "OpacitySection": "Độ mờ",
+        "PenOpacity": "Độ mờ của con trỏ bút",
+        "HighlightPenFillOpacity": "Độ mờ phần tô của con trỏ bút (làm nổi bật)",
+        "DotOpacity": "Độ mờ của con trỏ chấm nhỏ",
+        "HighlightDotFillOpacity": "Độ mờ phần tô của con trỏ chấm nhỏ (làm nổi bật)",
         "DotHideOnContact":
         {
           "N": "Tự động ẩn con trỏ chấm nhỏ khi chạm bút",

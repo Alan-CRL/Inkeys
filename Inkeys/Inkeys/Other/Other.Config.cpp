@@ -684,6 +684,15 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					value = candidate >= 0 && candidate <= 3 ? candidate : defaultValue.load();
 					return;
 				}
+				if (path == "Drawing.Cursor.PenOpacity" || path == "Drawing.Cursor.HighlightPenFillOpacity" ||
+					path == "Drawing.Cursor.DotOpacity" || path == "Drawing.Cursor.HighlightDotFillOpacity")
+				{
+					// 百分比只接受窄整数；非法输入恢复各字段自己的 schema 默认值。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate >= 25 && candidate <= 100 ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "Drawing.Cursor.Mouse" || path == "Drawing.Cursor.Touch" ||
 					path == "Drawing.Cursor.ScreenPen" || path == "Drawing.Cursor.Tablet")
 				{

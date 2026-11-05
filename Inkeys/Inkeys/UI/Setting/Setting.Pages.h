@@ -273,12 +273,15 @@ namespace Inkeys::UI::Setting::Design
 		int dotHideOnContact = 1;
 		bool injectedMouse = false;
 		bool injectedAvailable = true;
+		// Pen、HighlightPen、Dot、HighlightDot 的独立不透明度。
+		std::array<float, 4> opacity{ 0.50F, 0.50F, 0.25F, 0.50F };
 	};
 	struct CursorPageEvents
 	{
 		bool back = false;
 		bool mouse = false, touch = false, screenPen = false, tablet = false;
 		bool injectedMouse = false, dotHideOnContact = false;
+		std::array<bool, 4> opacityChanged{}, opacityActive{}, opacityReset{};
 	};
 	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
 

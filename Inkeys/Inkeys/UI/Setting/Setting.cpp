@@ -3116,6 +3116,13 @@ SettingSessionCoroutine RunSettingSession()
 				const int contentPage = destination.page == Design::PageId::General
 					&& destination.section == Design::GeneralSection::Storage
 					? settingTabEnum::tabConfiguration : settingTab;
+				static bool cursorOpacitySavePending = false;
+				if ((contentPage != settingTabEnum::tab3 || drawingSubpage != Design::DrawingSubpage::Cursor) &&
+					cursorOpacitySavePending)
+				{
+					QueueConfigWrite();
+					cursorOpacitySavePending = false;
+				}
 				switch (contentPage)
 				{
 					// 主页
@@ -3854,11 +3861,15 @@ SettingSessionCoroutine RunSettingSession()
 						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
 						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
 						draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(cursor.DotHideOnContact.load()));
+						draft.opacity = { cursor.PenOpacity.load() / 100.0F, cursor.HighlightPenFillOpacity.load() / 100.0F,
+							cursor.DotOpacity.load() / 100.0F, cursor.HighlightDotFillOpacity.load() / 100.0F };
 						draft.injectedAvailable = injectedSourceAvailable;
 						const auto events = Design::RenderCursorPage(draft);
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
-						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse || events.dotHideOnContact)
+						const bool deviceChanged = events.mouse || events.touch || events.screenPen || events.tablet ||
+							events.injectedMouse || events.dotHideOnContact;
+						if (deviceChanged)
 						{
 							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
 							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
@@ -3868,8 +3879,30 @@ SettingSessionCoroutine RunSettingSession()
 							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
 							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
 							if (events.dotHideOnContact) cursor.DotHideOnContact = draft.dotHideOnContact;
-							SyncDraw3State();
+						}
+						bool opacityChanged = false, opacityActive = false;
+						IdtAtomic<int>* opacityFields[4]{ &cursor.PenOpacity, &cursor.HighlightPenFillOpacity,
+							&cursor.DotOpacity, &cursor.HighlightDotFillOpacity };
+						for (int index = 0; index < 4; ++index)
+						{
+							if (events.opacityChanged[index])
+							{
+								*opacityFields[index] = static_cast<int>(std::lround(draft.opacity[index] * 100.0F));
+								opacityChanged = true;
+							}
+							opacityActive |= events.opacityActive[index];
+						}
+						if (deviceChanged || opacityChanged) SyncDraw3State();
+						if (deviceChanged)
+						{
 							QueueConfigWrite();
+							cursorOpacitySavePending = false;
+						}
+						else if (opacityChanged) cursorOpacitySavePending = true;
+						if (cursorOpacitySavePending && !opacityActive)
+						{
+							QueueConfigWrite();
+							cursorOpacitySavePending = false;
 						}
 						break;
 					}

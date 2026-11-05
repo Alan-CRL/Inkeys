@@ -3591,6 +3591,9 @@ namespace
 		{
 			CursorPageDraft draft; draft.injectedAvailable = false; bool bottomCase = false;
 			ImGuiWindow* host = nullptr; int edits = 0; ImRect note;
+			std::array<int, 4> opacityEdits{}, opacityResets{};
+			std::array<bool, 4> opacityActiveSeen{};
+			int darkPreviewVertices = 0, quarterInkVertices = 0;
 			auto draw = [&](ImVec2 mouse = ImVec2(-100, -100)) {
 				io.DisplaySize = { (width + 32) * scale, (bottomCase ? 480 : 2400) * scale }; io.AddMousePosEvent(mouse.x, mouse.y);
 				ImGui::NewFrame(); ConfigureRowAnimations(0, false, 1);
@@ -3599,15 +3602,28 @@ namespace
 				host = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
 				const auto events = RenderCursorPage(draft);
 				edits += events.dotHideOnContact ? 1 : 0;
+				for (int index = 0; index < 4; ++index)
+				{
+					opacityEdits[index] += events.opacityChanged[index] ? 1 : 0;
+					opacityResets[index] += events.opacityReset[index] ? 1 : 0;
+					opacityActiveSeen[index] |= events.opacityActive[index];
+				}
 				checks.Expect(!events.back && !events.mouse && !events.touch && !events.screenPen && !events.tablet && !events.injectedMouse,
 					"cursor fine control never edits unrelated device preferences");
 				note = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+				darkPreviewVertices = quarterInkVertices = 0;
 				for (const auto& vertex : host->DrawList->VtxBuffer)
+				{
 					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Informational]) note.Add(vertex.pos);
+					darkPreviewVertices += vertex.col == IM_COL32(52, 54, 60, 255) ? 1 : 0;
+					quarterInkVertices += vertex.col == IM_COL32(255, 15, 0, 64) ? 1 : 0;
+				}
 				ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
 			};
 			for (int pass = 0; pass < 3; ++pass) draw();
 			checks.Expect(draft.dotHideOnContact == 1 && edits == 0, "cursor contact hiding defaults to screen pen without a write event");
+			checks.Expect(draft.opacity == CursorPageDraft{}.opacity && darkPreviewVertices == 0,
+				"cursor opacity defaults are stable and the light preview has no fixed dark rectangle");
 			const auto rowId = ImHashStr("##cursor-dot-hide", 0, host->ID);
 			const auto comboId = ImHashStr("##select", 0, rowId);
 			auto focusRect = [&](ImGuiID id) {
@@ -3622,6 +3638,40 @@ namespace
 			checks.Expect(combo.Min.x >= host->Pos.x && combo.Max.x <= host->Pos.x + host->Size.x
 				&& host->ScrollMax.x == 0, "cursor fine control fits both narrow and wide layouts");
 			auto chord = [&](ImGuiKey key) { io.AddKeyEvent(key, true); draw(); io.AddKeyEvent(key, false); draw(); };
+			auto click = [&](ImVec2 point) {
+				draw(point); io.AddMouseButtonEvent(0, true); draw(point);
+				io.AddMouseButtonEvent(0, false); draw(point); draw(outside);
+			};
+			const char* opacityRows[4]{ "##cursor-pen-opacity", "##cursor-highlight-pen-opacity",
+				"##cursor-dot-opacity", "##cursor-highlight-dot-opacity" };
+			constexpr float opacityDefaults[4]{ 0.50F, 0.50F, 0.25F, 0.50F };
+			for (int index = 0; index < 4; ++index)
+			{
+				const auto before = draft.opacity;
+				const auto row = ImHashStr(opacityRows[index], 0, host->ID);
+				const auto slider = focusRect(ImHashStr("##slider", 0, row));
+				click({ slider.Min.x + 1.0F, slider.GetCenter().y });
+				checks.Expect(Near(draft.opacity[index], 0.25F) && opacityActiveSeen[index],
+					"actual cursor opacity slider reaches its 25 percent minimum");
+				for (int other = 0; other < 4; ++other) if (other != index)
+					checks.Expect(Near(draft.opacity[other], before[other]),
+						"editing one cursor opacity leaves the other three unchanged");
+				click({ std::nextafter(slider.Max.x, slider.Min.x), slider.GetCenter().y });
+				checks.Expect(Near(draft.opacity[index], 1.0F) &&
+					opacityEdits[index] >= (Near(before[index], 0.25F) ? 1 : 2),
+					"actual cursor opacity slider reaches 100 percent and emits edit events");
+				// 图标按钮只要求鼠标可用；按 SliderResetAction 的既有间距点击其真实区域。
+				const ImVec2 resetCenter{ slider.Max.x + Pixels(12.0F + ControlHeight * 0.5F), slider.GetCenter().y };
+				click(resetCenter);
+				checks.Expect(Near(draft.opacity[index], opacityDefaults[index]) && opacityResets[index] == 1,
+					"cursor opacity reset restores its style-specific default exactly once");
+			}
+			draft.mouse = 1; draft.opacity[0] = 0.25F; draw();
+			checks.Expect(quarterInkVertices > 0, "actual cursor preview uses the edited 25 percent pen fill");
+			ApplyPalette(true); draw();
+			checks.Expect(darkPreviewVertices > 0, "dark cursor preview retains its existing dark background");
+			ApplyPalette(false); draw();
+			checks.Expect(darkPreviewVertices == 0, "switching back to light removes the dark preview background");
 			for (int mode = 0; mode < 4; ++mode)
 			{
 				focusRect(comboId); chord(ImGuiKey_F4); chord(ImGuiKey_Home);

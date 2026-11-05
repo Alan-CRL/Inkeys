@@ -693,6 +693,11 @@
           "Unavailable": "Ten system nie potrafi odróżnić źródła wejścia, więc opcja jest niedostępna."
         },
         "FineControl": "Precyzyjne sterowanie",
+        "OpacitySection": "Krycie",
+        "PenOpacity": "Krycie kursora pióra",
+        "HighlightPenFillOpacity": "Krycie wypełnienia kursora pióra (wyróżnione)",
+        "DotOpacity": "Krycie kursora małej kropki",
+        "HighlightDotFillOpacity": "Krycie wypełnienia kursora małej kropki (wyróżniona)",
         "DotHideOnContact":
         {
           "N": "Automatycznie ukrywaj mały kursor punktowy przy kontakcie",

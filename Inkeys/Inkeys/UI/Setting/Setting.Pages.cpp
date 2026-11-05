@@ -592,20 +592,57 @@ namespace Inkeys::UI::Setting::Design
 	namespace
 	{
 		// 与 Draw3 实际光标共用尺寸/描边常量；预览是近似，不替代真实绘制验收。
-		void DrawCursorPreview(const LayoutRect& rect, Inkeys::Drawing::Draw3::CursorStyle style)
+		std::array<ImVec2, 5> InsetCursorPreviewPolygon(const ImVec2 points[5], float distance)
+		{
+			const auto cross = [](ImVec2 left, ImVec2 right) { return left.x * right.y - left.y * right.x; };
+			float area = 0.0F;
+			for (int index = 0; index < 5; ++index) area += cross(points[index], points[(index + 1) % 5]);
+			const float direction = area >= 0.0F ? 1.0F : -1.0F;
+			std::array<ImVec2, 5> result{};
+			for (int index = 0; index < 5; ++index)
+			{
+				const ImVec2 previous = points[(index + 4) % 5], current = points[index], next = points[(index + 1) % 5];
+				const ImVec2 edges[2]{ { current.x - previous.x, current.y - previous.y },
+					{ next.x - current.x, next.y - current.y } };
+				ImVec2 normals[2]{};
+				for (int edge = 0; edge < 2; ++edge)
+				{
+					const float length = (std::max)(0.0001F, std::sqrt(edges[edge].x * edges[edge].x + edges[edge].y * edges[edge].y));
+					normals[edge] = { -edges[edge].y / length * direction, edges[edge].x / length * direction };
+				}
+				const ImVec2 origin{ previous.x + normals[0].x * distance, previous.y + normals[0].y * distance };
+				const ImVec2 other{ current.x + normals[1].x * distance, current.y + normals[1].y * distance };
+				const float denominator = cross(edges[0], edges[1]);
+				if (std::abs(denominator) < 0.0001F)
+					result[index] = { current.x + (normals[0].x + normals[1].x) * 0.5F * distance,
+						current.y + (normals[0].y + normals[1].y) * 0.5F * distance };
+				else
+				{
+					const float t = cross({ other.x - origin.x, other.y - origin.y }, edges[1]) / denominator;
+					result[index] = { origin.x + edges[0].x * t, origin.y + edges[0].y * t };
+				}
+			}
+			return result;
+		}
+
+		void DrawCursorPreview(const LayoutRect& rect, Inkeys::Drawing::Draw3::CursorStyle style, float opacity)
 		{
 			namespace Cursor = Inkeys::Drawing::Draw3;
 			ImDrawList* draw = ImGui::GetWindowDrawList();
 			const ImVec2 min(rect.left, rect.top), max(rect.right, rect.bottom);
 			const float corner = Pixels(4.0F);
-			draw->AddRectFilled(min, max, IM_COL32(52, 54, 60, 255), corner);
-			draw->AddRect(min, max, IM_COL32(255, 255, 255, 36), corner);
+			const bool dark = IsDarkMode();
+			draw->AddRectFilled(min, max, dark ? IM_COL32(52, 54, 60, 255) : Card, corner);
+			draw->AddRect(min, max, dark ? IM_COL32(255, 255, 255, 36) : Stroke, corner);
 			const ImVec2 center((min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F);
-			const ImU32 ink = IM_COL32(255, 15, 0, 255);
+			const int opacityByte = static_cast<int>(std::round(std::clamp(opacity, 0.25F, 1.0F) * 255.0F));
+			const ImU32 ink = IM_COL32(255, 15, 0, opacityByte);
 			const bool highlight = Cursor::IsHighlightedCursorStyle(style);
 			const float unit = Pixels(1.0F);
-			const float edgeWidth = (std::max)(1.0F, (highlight ? Cursor::kCursorHighlightEdgeDip : Cursor::kCursorPlainEdgeDip) * unit);
-			const ImU32 edge = highlight ? IM_COL32(245, 245, 245, 255) : IM_COL32(184, 184, 184, 255);
+			const float edgeWidth = style == Cursor::CursorStyle::HighlightDot
+				? Cursor::CursorHighlightDotEdgeWidthPx(10.0F * unit, unit)
+				: (std::max)(1.0F, (highlight ? Cursor::kCursorHighlightEdgeDip : Cursor::kCursorPlainEdgeDip) * unit);
+			const ImU32 edge = highlight ? IM_COL32(245, 245, 245, 255) : IM_COL32(184, 184, 184, opacityByte);
 			switch (style)
 			{
 			case Cursor::CursorStyle::Arrow:
@@ -645,8 +682,17 @@ namespace Inkeys::UI::Setting::Design
 			{
 				// 小圆点沿用实际光标的圆形预览（随笔宽，这里取常见笔宽）。
 				const float radius = 5.0F * unit;
-				draw->AddCircleFilled(center, radius, IM_COL32(255, 15, 0, 64));
-				draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				if (highlight)
+				{
+					draw->AddCircleFilled(center, radius, IM_COL32(0, 0, 0, 255));
+					draw->AddCircleFilled(center, radius - Cursor::kCursorHighlightOuterEdgePx, edge);
+					draw->AddCircleFilled(center, radius - Cursor::kCursorHighlightOuterEdgePx - edgeWidth, ink);
+				}
+				else
+				{
+					draw->AddCircleFilled(center, radius, ink);
+					draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				}
 				break;
 			}
 			case Cursor::CursorStyle::Pen:
@@ -660,8 +706,19 @@ namespace Inkeys::UI::Setting::Design
 					return ImVec2(tip.x + (along * axis + across * axis) * unit, tip.y + (along * axis - across * axis) * unit);
 				};
 				const ImVec2 points[5]{ at(0, 0), at(6, 3.4F), at(30, 3.4F), at(30, -3.4F), at(6, -3.4F) };
-				draw->AddConvexPolyFilled(points, 5, ink);
-				draw->AddPolyline(points, 5, edge, ImDrawFlags_Closed, edgeWidth);
+				if (highlight)
+				{
+					const auto light = InsetCursorPreviewPolygon(points, Cursor::kCursorHighlightOuterEdgePx);
+					const auto fill = InsetCursorPreviewPolygon(points, Cursor::kCursorHighlightOuterEdgePx + edgeWidth);
+					draw->AddConvexPolyFilled(points, 5, IM_COL32(0, 0, 0, 255));
+					draw->AddConvexPolyFilled(light.data(), 5, edge);
+					draw->AddConvexPolyFilled(fill.data(), 5, ink);
+				}
+				else
+				{
+					draw->AddConvexPolyFilled(points, 5, ink);
+					draw->AddPolyline(points, 5, edge, ImDrawFlags_Closed, edgeWidth);
+				}
 				break;
 			}
 			}
@@ -688,12 +745,20 @@ namespace Inkeys::UI::Setting::Design
 			for (int value = device == CursorDevice::Touch ? 0 : 1; value <= 5; ++value) items.push_back(styleNames[value]);
 			return items;
 		};
+		const auto opacityIndex = [](CursorStyle style)
+		{
+			return style == CursorStyle::HighlightPen ? 1 : style == CursorStyle::Dot ? 2
+				: style == CursorStyle::HighlightDot ? 3 : 0;
+		};
 		const auto row = [&](const char* id, const char* title, const char* description, const char* glyph,
 			CursorDevice device, int& index)
 		{
 			index = std::clamp(index, 0, Cursor::CursorStyleItemCount(device) - 1);
 			return ComboPreviewRow(id, title, description, glyph, index, itemsFor(device),
-				[&](const LayoutRect& area) { DrawCursorPreview(area, Cursor::CursorStyleFromItemIndex(device, index)); });
+				[&](const LayoutRect& area) {
+					const auto style = Cursor::CursorStyleFromItemIndex(device, index);
+					DrawCursorPreview(area, style, draft.opacity[opacityIndex(style)]);
+				});
 		};
 
 		SectionHeader(IA(cursor.Devices).c_str());
@@ -732,6 +797,33 @@ namespace Inkeys::UI::Setting::Design
 			const std::string title = trim(split == std::string::npos ? note : note.substr(0, split));
 			const std::string detail = split == std::string::npos ? std::string() : trim(note.substr(split + skip));
 			Notice("##cursor-note", title.c_str(), detail.c_str(), ImFluentInfoSeverity_Informational);
+		}
+
+		SectionHeader(IA(cursor.OpacitySection).c_str());
+		const float opacityActionWidth = (ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F)
+			+ SliderResetExtraWidthDip;
+		const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+		const char* opacityIds[4]{ "##cursor-pen-opacity", "##cursor-highlight-pen-opacity",
+			"##cursor-dot-opacity", "##cursor-highlight-dot-opacity" };
+		const char* opacityTitles[4]{ cursor.PenOpacity, cursor.HighlightPenFillOpacity,
+			cursor.DotOpacity, cursor.HighlightDotFillOpacity };
+		constexpr CursorStyle opacityStyles[4]{ CursorStyle::Pen, CursorStyle::HighlightPen,
+			CursorStyle::Dot, CursorStyle::HighlightDot };
+		for (int index = 0; index < 4; ++index)
+		{
+			SettingRow(opacityIds[index], IA(opacityTitles[index]).c_str(), nullptr, index < 2 ? "\ue70f" : "\ue7c9",
+				opacityActionWidth, ControlHeight, [&](const LayoutRect& bounds) {
+					events.opacityChanged[index] = SliderResetAction(bounds, draft.opacity[index], 0.25F, 1.0F,
+						events.opacityActive[index], events.opacityReset[index], resetLabel.c_str());
+				});
+			if (events.opacityChanged[index])
+				draft.opacity[index] = std::round(draft.opacity[index] * 100.0F) / 100.0F;
+			if (events.opacityReset[index])
+			{
+				const float value = Cursor::DefaultCursorOpacityPercent(opacityStyles[index]) / 100.0F;
+				events.opacityChanged[index] |= draft.opacity[index] != value;
+				draft.opacity[index] = value;
+			}
 		}
 		SectionHeader(IA(cursor.FineControl).c_str());
 		const auto& hide = cursor.DotHideOnContact;

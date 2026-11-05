@@ -693,6 +693,11 @@
           "Unavailable": "이 시스템에서는 입력 출처를 구분할 수 없어 이 옵션을 사용할 수 없습니다."
         },
         "FineControl": "세부 제어",
+        "OpacitySection": "불투명도",
+        "PenOpacity": "펜 커서 불투명도",
+        "HighlightPenFillOpacity": "펜(강조) 커서 채우기 불투명도",
+        "DotOpacity": "작은 점 커서 불투명도",
+        "HighlightDotFillOpacity": "작은 점(강조) 커서 채우기 불투명도",
         "DotHideOnContact":
         {
           "N": "펜이 닿으면 작은 점 커서를 자동으로 숨기기",

@@ -696,6 +696,11 @@ inline constexpr struct I18nKeyRoot
                     const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
                 } InjectedMouse{};
                 const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
+                const char* OpacitySection = "SettingsUI/Draw/Cursor/OpacitySection";
+                const char* PenOpacity = "SettingsUI/Draw/Cursor/PenOpacity";
+                const char* HighlightPenFillOpacity = "SettingsUI/Draw/Cursor/HighlightPenFillOpacity";
+                const char* DotOpacity = "SettingsUI/Draw/Cursor/DotOpacity";
+                const char* HighlightDotFillOpacity = "SettingsUI/Draw/Cursor/HighlightDotFillOpacity";
                 struct Node__SettingsUI__Draw__Cursor__DotHideOnContact
                 {
                     const char* N = "SettingsUI/Draw/Cursor/DotHideOnContact/N";

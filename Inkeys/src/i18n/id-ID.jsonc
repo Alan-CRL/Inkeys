@@ -693,6 +693,11 @@
           "Unavailable": "Sistem ini tidak dapat membedakan sumber input, sehingga opsi ini tidak tersedia."
         },
         "FineControl": "Kontrol terperinci",
+        "OpacitySection": "Opasitas",
+        "PenOpacity": "Opasitas kursor pena",
+        "HighlightPenFillOpacity": "Opasitas isian kursor pena (disorot)",
+        "DotOpacity": "Opasitas kursor titik kecil",
+        "HighlightDotFillOpacity": "Opasitas isian kursor titik kecil (disorot)",
         "DotHideOnContact":
         {
           "N": "Sembunyikan kursor titik kecil secara otomatis saat menyentuh",

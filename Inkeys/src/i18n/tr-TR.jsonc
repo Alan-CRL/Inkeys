@@ -693,6 +693,11 @@
           "Unavailable": "Bu sistem giriş kaynağını ayırt edemediği için seçenek kullanılamıyor."
         },
         "FineControl": "Hassas denetimler",
+        "OpacitySection": "Opaklık",
+        "PenOpacity": "Kalem imleci opaklığı",
+        "HighlightPenFillOpacity": "Kalem (vurgulu) imleci dolgu opaklığı",
+        "DotOpacity": "Küçük nokta imleci opaklığı",
+        "HighlightDotFillOpacity": "Küçük nokta (vurgulu) imleci dolgu opaklığı",
         "DotHideOnContact":
         {
           "N": "Küçük nokta imlecini temas sırasında otomatik gizle",

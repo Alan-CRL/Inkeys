@@ -693,6 +693,11 @@
           "Unavailable": "目前系統無法區分輸入來源，此選項不可用。"
         },
         "FineControl": "精細控制",
+        "OpacitySection": "不透明度",
+        "PenOpacity": "畫筆游標不透明度",
+        "HighlightPenFillOpacity": "畫筆（高亮）游標填色不透明度",
+        "DotOpacity": "小圓點游標不透明度",
+        "HighlightDotFillOpacity": "小圓點（高亮）游標填色不透明度",
         "DotHideOnContact":
         {
           "N": "小圓點游標落筆後自動隱藏",

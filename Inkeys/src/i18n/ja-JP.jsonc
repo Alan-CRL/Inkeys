@@ -693,6 +693,11 @@
           "Unavailable": "このシステムでは入力元を区別できないため、この設定は使用できません。"
         },
         "FineControl": "詳細制御",
+        "OpacitySection": "不透明度",
+        "PenOpacity": "ペン カーソルの不透明度",
+        "HighlightPenFillOpacity": "ペン（強調）カーソル塗りの不透明度",
+        "DotOpacity": "小さな点カーソルの不透明度",
+        "HighlightDotFillOpacity": "小さな点（強調）カーソル塗りの不透明度",
         "DotHideOnContact":
         {
           "N": "ペンを置いたときに小さな点のカーソルを自動的に隠す",

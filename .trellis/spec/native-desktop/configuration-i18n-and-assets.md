@@ -58,6 +58,12 @@
 无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/92%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
 PPT 闲置淡化不改写这两个正常偏好；三范围配置与 30%/60% 独立上限见 [PPT 闲置淡化合同](ppt-idle-fade.md)。
 
+## Draw3 光标透明度配置合同（2026-11-05）
+
+`Drawing.Cursor.PenOpacity`、`HighlightPenFillOpacity`、`DotOpacity`、`HighlightDotFillOpacity` 是 `main.json` 中的 NoUpload 整数百分比，合法范围均为 25..100，默认依次为 50/50/25/50。缺项、非整数、超宽和越界值恢复对应字段默认，不影响设备样式或旧 `MouseStyle/PenStyle` 回落。
+
+四项经 Config→State→Bridge→Controller 的完整值快照发布；普通 Pen/Dot 控制整体 alpha，高亮变体只控制填充。设置页复用 `SliderResetAction` 和 FIFO 冻结保存，拖动即时同步，松手、重置或离页写盘。视觉与打包细节见 [Draw3 产品光标合同](draw3-cursors.md)。
+
 ## 启动加载效果选择合同（2026-11-04）
 
 ### 1. Scope / Trigger

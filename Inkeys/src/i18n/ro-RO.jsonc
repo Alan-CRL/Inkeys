@@ -693,6 +693,11 @@
           "Unavailable": "Acest sistem nu poate distinge sursa intrării, deci opțiunea nu este disponibilă."
         },
         "FineControl": "Control fin",
+        "OpacitySection": "Opacitate",
+        "PenOpacity": "Opacitatea cursorului creionului",
+        "HighlightPenFillOpacity": "Opacitatea umplerii cursorului creionului (evidențiat)",
+        "DotOpacity": "Opacitatea cursorului cu punct mic",
+        "HighlightDotFillOpacity": "Opacitatea umplerii cursorului cu punct mic (evidențiat)",
         "DotHideOnContact":
         {
           "N": "Ascunde automat cursorul cu punct mic la contact",

@@ -693,6 +693,11 @@
           "Unavailable": "Ce système ne peut pas distinguer la source de saisie ; l’option n’est pas disponible."
         },
         "FineControl": "Réglages fins",
+        "OpacitySection": "Opacité",
+        "PenOpacity": "Opacité du curseur de stylo",
+        "HighlightPenFillOpacity": "Opacité de remplissage du curseur de stylo (en surbrillance)",
+        "DotOpacity": "Opacité du curseur de petit point",
+        "HighlightDotFillOpacity": "Opacité de remplissage du curseur de petit point (en surbrillance)",
         "DotHideOnContact":
         {
           "N": "Masquer automatiquement le petit point au contact",
