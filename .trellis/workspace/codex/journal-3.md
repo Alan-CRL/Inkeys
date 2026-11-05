@@ -124,3 +124,36 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 179: Unify whiteboard/PPT page-turn loading animation
+<!-- trellis-session: v=2 fp=537fbd792b53e8bf -->
+
+**Date**: 2026-11-05
+**Task**: Unify whiteboard/PPT page-turn loading animation
+**Branch**: `debug/wait`
+
+### Summary
+
+One 500ms-gated indicator now drives status word, dimming and a non-linear inner-edge ring for whiteboard and PPT; page-slot state table, i18n width fixes, Loading key removed.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9ddb5365` | feat(bar): unify page-turn loading state for whiteboard and PPT |
+| `ad7d1302` | fix(i18n): shorten page status words and drop unused Loading key |
+| `70d5ca9a` | docs(trellis): plan unified page loading task and update rendering spec |
+| `97321dc2` | fix(bar): thicken page loading ring and match button corner radius |
+
+### Testing
+
+- [OK] ARM64 Debug solution build, InkeysHeadlessTests --no-window, Inkeys.exe --bar-eraser-offscreen-test (failures=0), --ui3-input-worker-test, i18n.ps1 check
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None; user verified visually and approved.
