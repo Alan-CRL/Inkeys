@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 171
-- **Last Active**: 2026-11-04
+- **Total Sessions**: 178
+- **Last Active**: 2026-11-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,8 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~106 | Active |
-| `journal-2.md` | ~2010 | Archived |
+| `journal-3.md` | ~144 | Active |
+| `journal-2.md` | ~2054 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 178 | 2026-11-05 | 图形整改：规划、编辑性能与图标（检查点） | `238f3afb`, `a58400aa`, `e2f33d86`, `4d00bf11` | `feature/shape` |
 | 170 | 2026-11-04 | 光标细边与共享下拉边界修复收尾 | `15200e7b`, `2d3eb582` | `temp/state` |
 | 169 | 2026-11-04 | PPT闲置淡化、底栏主栏与设置内联动画收尾 | `f485146eab917aec5706d74482dfbdf8740d7636`, `c208677aa58bba98fef0b09007baa3b80f4c93e5` | `temp/state` |
 | 169 | 2026-11-04 | 启动动画多效果与主题透明度适配完成 | - | `bugfix/theme` |

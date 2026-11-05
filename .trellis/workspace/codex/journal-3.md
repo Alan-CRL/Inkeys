@@ -104,3 +104,41 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 178: 图形整改：规划、编辑性能与图标（检查点）
+<!-- trellis-session: v=2 fp=d5a9916fb0dc3706 -->
+
+**Date**: 2026-11-05
+**Task**: 图形整改：规划、编辑性能与图标（检查点）
+**Branch**: `feature/shape`
+
+### Summary
+
+拆分图形交互与样式整改为6子任务；edit-performance 以 L1 焦点层+预览合并完成；图标统一；P7 套索调研归档；按用户检查点停在 edit-interaction 之前。
+
+### Main Changes
+
+- 编辑中的图形停留 L1，失焦统一落定；预览 latest-wins；浮层本地跟手
+- 28 个图形 SVG 统一风格；数据兼容修复合并（e4d33796）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `238f3afb` | chore(task): plan shape interaction and style rework |
+| `a58400aa` | feat(ui3): unify shape category icon style |
+| `e2f33d86` | docs(task): archive lasso and mid-Z move research for phase 7 |
+| `4d00bf11` | perf(shapes): keep edited shape in L1 and coalesce edit previews |
+
+### Testing
+
+- [OK] [OK] Debug|ARM64 构建；12 项离屏/无头回归 exit 0；4K/2000 笔基准焦点层每帧约 26-39ms
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 读 .trellis/tasks/11-05-shape-ux-rework/handoff.md，start edit-interaction
