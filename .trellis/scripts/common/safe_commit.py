@@ -183,11 +183,13 @@ def safe_archive_paths_to_add(
         # tree would also sweep in untracked files that belong to OTHER
         # archived tasks (e.g. their local validation binaries/backups).
         if archive_dir.is_dir():
-            for dest in sorted(archive_dir.glob(f"*/{task_name}")):
-                if dest.is_dir():
+            # Exact lookup per month directory: ``glob`` would treat
+            # ``[``/``]``/``*``/``?`` in a task slug as pattern characters.
+            for month_dir in sorted(archive_dir.iterdir()):
+                if (month_dir / task_name).is_dir():
                     paths.append(
                         f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}/"
-                        f"{dest.parent.name}/{dest.name}"
+                        f"{month_dir.name}/{task_name}"
                     )
         for child_name in modified_children or []:
             paths.append(f"{DIR_WORKFLOW}/{DIR_TASKS}/{child_name}")
