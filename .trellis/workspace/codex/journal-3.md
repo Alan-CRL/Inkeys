@@ -106,6 +106,30 @@
 [OK] **Completed**
 
 
+## Session 172: 内存采样与首批低风险优化
+<!-- trellis-session: v=2 fp=d9bcd7710a8ffc83 -->
+
+**Date**: 2026-11-05
+**Task**: 内存采样与首批低风险优化
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+保持三层画布、UI共享WARP与Draw3独立hardware-first；停用3张无消费者全屏DIB并消除4处快照深复制。两次60秒启动Private均值571.26→510.16MiB，下降61.10MiB（10.70%）。
+
+### Main Changes
+
+- 仅6个产品源码的局部修改；保留legacy数据与启动里程碑；现有资源规格补充所有权边界。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln before/after Debug|ARM64与共享inkStrokeModelerTest.sln均退出0。
+- [OK] 10项相关回归最终全通过；UInk首次缺少测试目录，补目录后仅重跑该项通过；66条history语义记录一致。
+- [OK] 双设备/后端、L0/L1/L2与流畅度静态审查通过；4次60秒采样与EXE/PDB匹配已保存。
 ## Session 176: 调试等待操作延迟开关
 <!-- trellis-session: v=2 fp=358bcd06943bea4a -->
 
@@ -125,6 +149,94 @@
 
 [OK] **Completed**
 
+### Next Steps
+
+- 高风险按需纹理、Freeze/Setting资源恢复、历史回收与进一步legacy去重尚未实施，等待用户确认；WPR补采需Windows管理员权限。
+
+
+## Session 173: 静止内存第二批2–5资源回收
+<!-- trellis-session: v=2 fp=91b5bceaac311c90 -->
+
+**Date**: 2026-11-05
+**Task**: 静止内存第二批2–5资源回收
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+Setting PNG配方、Laser选中/退出纹理、辅助ULW owner隐藏回执、Freeze/白板/隐藏UI回收。Private510.85→429.35MiB（-81.50MiB/-15.95%），白板返回WS残留30.12→8.01MiB。
+
+### Main Changes
+
+- 保持L0/L1/L2、UI共享WARP/Draw3独立hardware-first及画质；1/6未改。修正Laser掌擦退休和既有inputLocked确认缺口，沿真实owner ACK。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过；MSVC增量链接内部错误仅清生成ILK解决，无项目/源码绕过。
+- [OK] 25项latest适用验证全部通过；早期失败、旧binary复现和目标重跑历史完整保留；最终EXE/PDB Age7匹配。
+- [OK] 前后各两次60秒静止与真实命令管道白板往返；No Computer Use、无Office/用户文档；流畅度静态审查。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 候选1保存峰值去重与6历史缓存页策略按用户要求后续评估；未commit/push。
+
+
+## Session 174: 候选1保存快照释放调查
+<!-- trellis-session: v=2 fp=90e132b3a33366f2 -->
+
+**Date**: 2026-11-05
+**Task**: 候选1保存快照释放调查
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+在e225c210基础审计保存副本生命周期；Desktop/PPT/白板大保存缓冲可正常销毁，合法Load与Clear恢复持有单列。未改生产或候选6。
+
+### Main Changes
+
+- 仅共享测试三cpp和一个测试头新增默认关闭固定地址释放观察；真实worker门证明持有后free，记录源缓冲不外推全堆。
+- 保存/加载所有权、元数据增长和Drain析构竞态写入研究、结果与资源生命周期规格。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 共享inkStrokeModelerTest.sln Debug|ARM64最终退出0；首次新增测试作用域C2601已修正并留失败日志。
+- [OK] 释放探针16服务阶段及1容量负控通过；同一Age2二进制5项CPU回归、bad argc90通过，BOM/CRLF与source身份一致。
+- [OK] 已有产品4项离屏/CPU和共享2项保存基线通过；无Computer Use/Office，未采全堆ETW，不保证OS提交量即时归零。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 建议候选1去重/COW继续后置；候选6按用户要求不修改，本轮测试/文档未commit或push。
+
+
+## Session 175: 内存优化任务完成归档
+<!-- trellis-session: v=2 fp=99b58d623a7a2a1d -->
+
+**Date**: 2026-11-05
+**Task**: 内存优化任务完成归档
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+用户确认内存优化任务完成；归档runtime-memory-analysis，保留候选1释放调查与质量门，候选6不修改；按授权随后签名提交并推送当前分支。
+
+### Main Changes
+
+- 任务移至archive/2026-11，清除活动任务指针，更新上下文清单归档路径；本机.vs缓存不纳入提交。
 
 ## Session 179: Unify whiteboard/PPT page-turn loading animation
 <!-- trellis-session: v=2 fp=537fbd792b53e8bf -->
@@ -141,6 +253,11 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 
 | Hash | Message |
 |------|---------|
+| `e225c210` | perf(memory): release inactive graphics resources |
+
+### Testing
+
+- [OK] 沿用已通过的ARM64构建、释放探针和相关CPU回归；本轮仅收尾文档与归档，不重复运行。
 | `9ddb5365` | feat(bar): unify page-turn loading state for whiteboard and PPT |
 | `ad7d1302` | fix(i18n): shorten page status words and drop unused Loading key |
 | `70d5ca9a` | docs(trellis): plan unified page loading task and update rendering spec |

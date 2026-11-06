@@ -374,6 +374,8 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t readyOutputRevision = 0;
 		std::uint64_t presentedContentRevision = 0;
 		bool auxiliaryFullFrameClean = false;
+		// 辅助 staging+DIB 的名义像素载荷，0 表示 owner 已归还读回资源。
+		std::uint64_t auxiliaryReadbackPayloadBytes = 0;
 		std::uint64_t runtimeRevision = 0;
 		RECT lastDirtyRect{};
 		SpeedEraser::Diagnostics eraser;
@@ -435,6 +437,8 @@ namespace Inkeys::Drawing::Draw3
 			std::uint32_t timeoutMilliseconds, bool waitWhileStopped = false) const noexcept;
 		// 只推进通知版本，不写 Frame/UI-ready；原生/背景完成复用同一个无丢醒握手。
 		void NotifyWorkspaceProgress() noexcept;
+		// 仅在 Window Service 已成功隐藏辅助窗且场景仍匹配后发布；绘制 owner 再校验回收。
+		void AcknowledgeAuxiliarySurfaceHidden(const HostRuntimeSnapshot& expected) noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Haptics::Context HapticContext() const noexcept;

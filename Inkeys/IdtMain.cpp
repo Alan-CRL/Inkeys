@@ -1707,6 +1707,63 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 资源生命周期入口先验参并早退，关闭 harness 也不得进入普通产品启动。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--setting-texture-recovery-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::UI::Setting::RunTextureRecoveryProductionTest();
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-laser-resources-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunLaserResourceLifecycleValidation(); });
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-auxiliary-resource-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunAuxiliaryPresentationResourceLifecycleTest(); });
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--ui3-idle-capacity-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::UI::Bar::RunIdleBackingResourceLifecycleTest();
+#else
+			return 2;
+#endif
+		}
+		// 资源回收使用真实不可见 layered HWND；坏参数及关闭harness始终在普通启动前退出。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--freeze-resource-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return RunFreezeSurfaceResourceLifecycleTest();
+#else
+			return 2;
+#endif
+		}
 		// 诊断输出自检严格早退，harness 关闭时也不能落入普通 GUI。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-diagnostic-output-test", -1, TRUE) == CSTR_EQUAL)
@@ -3099,12 +3156,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	// DPI初始化
 	{
-		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处只保留旧 surface resize。
-		{
-			(void)alpha_drawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			(void)tester.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			(void)pptdrawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-		}
+		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处保留原启动进度槽。
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 		ReportStartupMilestoneForManualTest(

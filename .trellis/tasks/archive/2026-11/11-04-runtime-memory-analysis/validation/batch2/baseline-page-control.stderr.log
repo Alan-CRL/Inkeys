@@ -1,0 +1,16 @@
+[WindowCandidateNative] failures=0
+[WorkspaceWindowNative] failures=0 notifications=5
+[PageDirectNative] FAIL pair fixture reaches fully acknowledged interactive idle frame
+[PageDirectNative] FAIL real input handler admits Page drag session
+[PageDirectNative] FAIL Move plus final Up retains pair ownership before complete mask3 ACK
+[PageDirectNative] FAIL production input queued the latest two-window native candidate
+[PageDirectNative] FAIL actual native pair terminal phase is verified before any fallback or replacement pixels
+[PageDirectNative] FAIL released pair consumes exactly one actual mask3 receipt; rejected pair cannot be counted through fallback
+[PageDirectNative] FAIL real input handler admits Page drag session
+[PageDirectNative] FAIL Move plus final Up retains pair ownership before complete mask3 ACK
+[PageDirectNative] FAIL production input queued the latest two-window native candidate
+[PageDirectNative] FAIL actual native pair terminal phase is verified before any fallback or replacement pixels
+[PageDirectNative] failures=10
+[BarNativeMove] failures=0
+[WhiteboardNative] failures=0 pixels=5
+[PageControlHidden] failures=10

@@ -1,0 +1,20 @@
+# PageDirectNative首个ready失败的定位
+
+- 新旧冻结EXE同入口均退出1，首错均为pair fixture reaches fully acknowledged interactive idle frame，后9条drag/actual mask3为该未就绪状态的连锁。主会话已记录baseline-page-control.result.json的first_pair_failure_reproduced=true。WindowCandidateNative/WorkspaceWindowNative/BarNativeMove/WhiteboardNative在两版均0。
+- 本批产品回收门仅作用于已实际提交的隐藏、targetVisible=false、无动画/gesture/capture的client；没有改变ShouldLockSurfaceInput、InputSnapshot native publication校验或page/drag提交门。不能为了本失败放宽这些门。
+- RunHiddenPageDirectMoveTests在前面的live rendering结束、四个客户端Unregister后，用同一生产RenderSurface手动Step。它从Snapshot().first继承PPT状态，只覆写两组scale/show/active/visible/publication，然后要求底栏input locked=false、两个nativePending=false、pending native frame=0、Scene.AnimationActive=false。
+- 已在同一ready断言失败时添加仅fixture诊断，打印visible/locked/nativePending、state target/input锁、bounds/layout/Scene/fonts动画、native pending revision及input/global publication、mode/session。原条件与5s期限不变，下一次集成运行后根据实际失败字段定位，不凭猜测修复。
+
+## 诊断版精确结果与根因
+
+新日志tests-final/page-control-hidden.stderr.log显示左窗visible=1、input.locked=1，但state.inputLocked=0、bounds/layout/Scene/fonts全0，nativePending=0、pending revision=0、input/global publication同为17、mode=PptCompact/session1。右窗相同身份而locked=0。
+
+产品input快照仅由CommitInputPresentationLocked写入；ConsumeNativeSurfaceReceipt用同一个pending.inputLocked提交input并拷贝confirmedNativeFrames。锁状态已经在ConfigureSurface由真实几何收敛为false，但RenderSurface的inputChanged与confirmed idle快路只比较身份/模式/可见性/位置，未比较inputLocked。因此最后被确认的过渡中锁可在视觉已静止、没有新像素时永久保留，manual pair fixture没有下一次业务发布去偶然刷新它。
+
+建议的最小修复：inputChanged纳入confirmed.inputLocked与state.inputLocked不等，使旧业务输入立刻进入native barrier；confirmed idle快路要求锁一致，否则沿现有候选/真实owner ACK更新input。不直接写locked=false，不改变期限、几何阈值、失败回退或ACK条件。首个现有ready断言已经稳定覆盖该缺口。此为冻结旧版同样具备的产品提交缺口，待主会话确认是否作为本批重显输入可靠性的必要修复纳入。
+
+## 已批准的最小修复与回归
+
+主会话已批准将锁状态的两处比较作为第5项隐藏重显/输入确认可靠性的必要边界纳入。inputChanged在锁变化时关闭native barrier，confirmed idle快路只在锁一致时复用；正式ShouldLockSurfaceInput、候选发布、窗口owner ACK和输入提交函数均未放宽。
+
+已有首个ready断言继续保留。另补确定性回归：在真实稳定画面上发布一个metadata-only旧锁候选，走真实Window owner确认及原ConsumeNativeSurfaceReceipt，使旧输入锁真实提交；随后暂停owner并用正常RenderSurface Step发现锁变化，断言新候选已排队、旧锁与nativePending在ACK前仍保持，最后只在真实新owner ACK后重开。没有直接把input.locked改false、没有额外业务revision刷新、没有伪称提交新像素。仅PageControl.cpp改动，未构建运行。

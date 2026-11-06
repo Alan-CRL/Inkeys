@@ -69,6 +69,17 @@ using Inkeys::UI::RenderPipeline::FrameStageTimer;
 
 namespace
 {
+	[[nodiscard]] bool CanShrinkIdleBarBacking(SIZE current, SIZE required, bool geometrySettled) noexcept
+	{
+		if (!geometrySettled || required.cx <= 0 || required.cy <= 0
+			|| current.cx < required.cx || current.cy < required.cy) return false;
+		const auto currentPixels = static_cast<std::uint64_t>(current.cx) * current.cy;
+		const auto requiredPixels = static_cast<std::uint64_t>(required.cx) * required.cy;
+		// 仅回收明显过大的历史容量，保留小型高频表面并避免取整附近反复重建。
+		return currentPixels > requiredPixels * 2
+			&& currentPixels - requiredPixels >= 1024ull * 1024ull / 4;
+	}
+
 	[[nodiscard]] double SelectedFillOpacity(double darkOpacity = 0.20) noexcept
 	{
 		return BarThemeMaterial::SelectedFillOpacity(
@@ -9667,9 +9678,15 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			// 仅真实突破时留两侧像素裕量，避免DPI/光影边界取整造成2px二次创建；不逐帧叠加。
 			const LONG paddedHeight = plannedHeight <= (numeric_limits<LONG>::max)() - viewportPadding * 2
 				? plannedHeight + viewportPadding * 2 : plannedHeight;
+			// 紧凑宽度不得低于本帧预约宽度，否则下一帧会重新扩宽并反复触发 capacityEpochChanged。
+			const SIZE compactSize{
+				max(requestedWidth, static_cast<LONG>(ceil(requiredCapacity.size.cx * capacityZoomRatio))), paddedHeight };
+			const bool shrinkBacking = CanShrinkIdleBarBacking(state.capacitySize, compactSize,
+				!reserveAnimationEnvelope && !state.debugFrameSleepLatch.IsPending()
+					&& !frame.bottomDockReleaseInputFlush);
 			const SIZE reservedSize{
-				max(state.capacitySize.cx, static_cast<LONG>(ceil(requiredCapacity.size.cx * capacityZoomRatio))),
-				plannedHeight > state.capacitySize.cy ? paddedHeight : state.capacitySize.cy };
+				shrinkBacking ? compactSize.cx : max(state.capacitySize.cx, compactSize.cx),
+				shrinkBacking ? compactSize.cy : plannedHeight > state.capacitySize.cy ? paddedHeight : state.capacitySize.cy };
 			const auto capacityDecision = ResolveBarWindowCapacity(
 				reservedSize, frameAnchor, capacityContentBounds,
 				storageBounds, 2, candidateViewport);
@@ -13839,5 +13856,77 @@ namespace Inkeys::UI::Bar
 		auto coordinator = std::make_shared<BarRenderLoopCoordinator>(owner, std::move(present));
 		return [coordinator](const Inkeys::UI::RenderPipeline::FrameContext& frame)
 		{ return coordinator->RenderFrame(frame); };
+	}
+}
+
+
+namespace Inkeys::UI::Bar
+{
+	int RunIdleBackingResourceLifecycleTest() noexcept
+	{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		namespace Pipeline = Inkeys::UI::RenderPipeline;
+		int failures = 0;
+		const auto check = [&](bool value, const char* message)
+		{
+			if (!value) { ++failures; std::fprintf(stderr, "[BarIdleBacking] FAIL %s\n", message); }
+		};
+		const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		if (FAILED(com)) return 2;
+		const HRESULT pipeline = Pipeline::Initialize();
+		if (FAILED(pipeline)) { CoUninitialize(); return 2; }
+		const auto epoch = Pipeline::GetDeviceEpoch();
+		BarUIRendering renderer;
+		const SIZE large{1024, 1024}, compact{128, 96};
+		check(SUCCEEDED(renderer.EnsureDeviceResources(epoch, large.cx, large.cy)), "real WARP backing is allocated");
+		auto* largeBitmap = renderer.GetTargetBitmap();
+		check(!CanShrinkIdleBarBacking(large, compact, false), "active geometry keeps its envelope");
+		check(!CanShrinkIdleBarBacking({192, 128}, compact, true), "small common backing stays resident");
+		check(!CanShrinkIdleBarBacking(large, {2048, 96}, true), "growing geometry does not compact another axis");
+		check(CanShrinkIdleBarBacking(large, compact, true), "settled large historical backing is eligible");
+		check(renderer.GetTargetBitmap() == largeBitmap, "eligibility checks do not mutate the live target");
+		check(SUCCEEDED(renderer.EnsureDeviceResources(epoch, compact.cx, compact.cy)), "production renderer rebuilds the compact target");
+		const auto size = renderer.GetTargetBitmapSize();
+		check(size.width == static_cast<UINT>(compact.cx) && size.height == static_cast<UINT>(compact.cy), "actual texture dimensions drop to required backing");
+		auto* context = renderer.GetDeviceContext();
+		auto* bitmap = renderer.GetTargetBitmap();
+		if (context && bitmap)
+		{
+			context->BeginDraw();
+			context->Clear(D2D1::ColorF(1.0F, 0.0F, 0.0F, 1.0F));
+			check(SUCCEEDED(context->EndDraw()), "compact target accepts a complete redraw");
+			Microsoft::WRL::ComPtr<ID2D1Bitmap1> readable;
+			const auto properties = D2D1::BitmapProperties1(
+				D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW, bitmap->GetPixelFormat());
+			const HRESULT created = context->CreateBitmap(bitmap->GetPixelSize(), nullptr, 0, &properties, &readable);
+			check(SUCCEEDED(created) && readable && SUCCEEDED(readable->CopyFromBitmap(nullptr, bitmap, nullptr)), "compact pixels copy back through real D2D");
+			D2D1_MAPPED_RECT mapped{};
+			if (readable && SUCCEEDED(readable->Map(D2D1_MAP_OPTIONS_READ, &mapped)))
+			{
+				const auto offset = static_cast<std::size_t>(compact.cy - 1) * mapped.pitch + (compact.cx - 1) * 4;
+				check(mapped.bits[offset] == 0 && mapped.bits[offset+1] == 0
+					&& mapped.bits[offset+2] == 255 && mapped.bits[offset+3] == 255,
+					"full redraw reaches the far edge without stale pixels");
+				readable->Unmap();
+			}
+			else check(false, "compact readback maps");
+		}
+		else check(false, "compact target has usable rendering context");
+		auto* compactBitmap = renderer.GetTargetBitmap();
+		check(!CanShrinkIdleBarBacking(compact, compact, true)
+			&& SUCCEEDED(renderer.EnsureDeviceResources(epoch, compact.cx, compact.cy))
+			&& renderer.GetTargetBitmap() == compactBitmap, "repeated idle dimensions reuse compact target");
+		check(Pipeline::GetDeviceEpoch().d3dDevice.Get() == epoch.d3dDevice.Get(), "client compaction keeps the common device");
+		renderer.DiscardDeviceResources();
+		check(!renderer.GetTargetBitmap() && !renderer.GetDeviceContext(), "client target can fully retire");
+		Pipeline::Shutdown();
+		CoUninitialize();
+		std::fprintf(stderr, "[BarIdleBacking] failures=%d resource_bytes_large=%llu resource_bytes_compact=%llu\n",
+			failures, static_cast<unsigned long long>(large.cx) * large.cy * 4,
+			static_cast<unsigned long long>(compact.cx) * compact.cy * 4);
+		return failures ? 1 : 0;
+#else
+		return 2;
+#endif
 	}
 }

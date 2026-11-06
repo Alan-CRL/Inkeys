@@ -5,6 +5,8 @@
 #include <windows.h>
 #include <json/json.h>
 
+#include "snapshot_lifetime_probe.h"
+
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.h"
 
 #include <filesystem>
@@ -3467,6 +3469,148 @@ namespace
 		std::error_code error;
 		fs::remove_all(root, error);
 	}
+
+	Draw3UInkExportSnapshot MakeLifetimeSnapshot(const Bridge::PresentationTarget& target)
+	{
+		auto snapshot = MakeSnapshot(target, true);
+		auto& points = snapshot.canvases.front().strokes.front().points;
+		points.resize(131072);
+		for (std::size_t index = 0; index < points.size(); ++index)
+			points[index] = { static_cast<float>(index % 1024), static_cast<float>(index / 1024), 4.0f };
+		// 覆盖产品私有 producer 的 active/legacy 双投影，观察两份原始点缓冲。
+		snapshot.activeCanvases = snapshot.canvases;
+		return snapshot;
+	}
+
+	void LifetimeWorkerGate(void* context, PresentationCompletionTestStage stage) noexcept
+	{
+		if (stage == PresentationCompletionTestStage::WorkerOperation)
+			static_cast<SnapshotLifetimeProbe::Gate*>(context)->BlockOnce();
+	}
+
+	void TestPresentationSnapshotLifetime(TestState& state, const char* name,
+		PresentationAutoSaveTestFaultInjection faults, bool stop)
+	{
+		const auto root = MakeRoot();
+		const auto target = MakeTarget();
+		SnapshotLifetimeProbe::Scope observation;
+		SnapshotLifetimeProbe::Gate gate;
+		PresentationAutoSaveService service;
+		const bool gated = !stop && !faults.throwWorkerOperation;
+		if (gated)
+		{
+			faults.completionHook = LifetimeWorkerGate;
+			faults.completionContext = &gate;
+		}
+		SetPresentationAutoSaveTestFaultInjection(faults);
+		const bool started = gate.IsValid() && service.Start(root.wstring());
+		PRESENTATION_CHECK(state, started);
+		if (!started) { ResetPresentationAutoSaveTestFaultInjection(); return; }
+		PresentationSaveRequest request{ target, 1, MakeLifetimeSnapshot(target) };
+		const auto watched = SnapshotLifetimeProbe::ObserveSnapshot(request.snapshot);
+		PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Read(watched).bytes >= 3 * 1024 * 1024);
+		PRESENTATION_CHECK(state, service.SubmitSave(std::move(request)) == PresentationPersistenceSubmitStatus::Accepted);
+		if (gated)
+		{
+			PRESENTATION_CHECK(state, gate.WaitEntered());
+			const auto held = SnapshotLifetimeProbe::Read(watched);
+			PRESENTATION_CHECK(state, held.freedBuffers == 0);
+			std::cout << "[SnapshotLifetime] case=" << name << " worker_held_buffers=" << held.buffers << '\n';
+			gate.Release();
+		}
+		if (stop) service.CloseAndDrain();
+		else PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Wait([&]
+		{
+			const auto diagnostics = service.Diagnostics();
+			return diagnostics.committed + diagnostics.failed == 1;
+		}));
+		// 原请求必须在发布终态前销毁；完成队列仍未消费，worker/service 仍保留。
+		PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return SnapshotLifetimeProbe::Released(watched); }));
+		SnapshotLifetimeProbe::Report(name, watched);
+		std::shared_ptr<const PresentationPersistenceCompletion> saved;
+		PRESENTATION_CHECK(state, service.TryTakeCompletion(saved) && saved);
+		const bool failed = faults.failIndexCommit || faults.throwWorkerOperation;
+		PRESENTATION_CHECK(state, saved && saved->status == (failed ? PresentationPersistenceStatus::IoError : PresentationPersistenceStatus::Committed));
+		PRESENTATION_CHECK(state, saved && !saved->loadedSnapshot);
+
+		if (!failed && !stop)
+		{
+			PRESENTATION_CHECK(state, service.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted);
+			std::shared_ptr<const PresentationPersistenceCompletion> loaded;
+			PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return service.TryTakeCompletion(loaded); }));
+			PRESENTATION_CHECK(state, loaded && loaded->status == PresentationPersistenceStatus::Loaded && loaded->loadedSnapshot);
+			if (loaded && loaded->loadedSnapshot)
+			{
+				auto consumer = loaded->loadedSnapshot;
+				std::weak_ptr<const Draw3UInkExportSnapshot> weak = consumer;
+				const auto loadedBuffers = SnapshotLifetimeProbe::ObserveSnapshot(*consumer);
+				loaded.reset();
+				PRESENTATION_CHECK(state, !weak.expired() && !SnapshotLifetimeProbe::Released(loadedBuffers));
+				consumer.reset();
+				PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return weak.expired() && SnapshotLifetimeProbe::Released(loadedBuffers); }));
+				SnapshotLifetimeProbe::Report("presentation-load-last-consumer", loadedBuffers);
+			}
+		}
+		service.CloseAndDrain();
+		PRESENTATION_CHECK(state, !gate.TimedOut());
+		ResetPresentationAutoSaveTestFaultInjection();
+		std::error_code error;
+		fs::remove_all(root, error);
+	}
+
+	void TestPresentationReplacementLifetime(TestState& state)
+	{
+		const auto root = MakeRoot();
+		const auto target = MakeTarget();
+		SnapshotLifetimeProbe::Scope observation;
+		SnapshotLifetimeProbe::Gate gate;
+		PresentationAutoSaveService service;
+		PresentationAutoSaveTestFaultInjection faults;
+		faults.completionHook = LifetimeWorkerGate;
+		faults.completionContext = &gate;
+		SetPresentationAutoSaveTestFaultInjection(faults);
+		const bool started = gate.IsValid() && service.Start(root.wstring());
+		PRESENTATION_CHECK(state, started);
+		if (!started) { ResetPresentationAutoSaveTestFaultInjection(); return; }
+		PresentationSaveRequest first{ target, 1, MakeLifetimeSnapshot(target) };
+		const auto firstBuffers = SnapshotLifetimeProbe::ObserveSnapshot(first.snapshot);
+		PRESENTATION_CHECK(state, service.SubmitSave(std::move(first)) == PresentationPersistenceSubmitStatus::Accepted);
+		PRESENTATION_CHECK(state, gate.WaitEntered());
+		PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Read(firstBuffers).freedBuffers == 0);
+		PresentationSaveRequest second{ target, 2, MakeLifetimeSnapshot(target) };
+		const auto replacedBuffers = SnapshotLifetimeProbe::ObserveSnapshot(second.snapshot);
+		PRESENTATION_CHECK(state, service.SubmitSave(std::move(second)) == PresentationPersistenceSubmitStatus::Accepted);
+		PresentationSaveRequest latest{ target, 3, MakeLifetimeSnapshot(target) };
+		const auto latestBuffers = SnapshotLifetimeProbe::ObserveSnapshot(latest.snapshot);
+		PRESENTATION_CHECK(state, service.SubmitSave(std::move(latest)) == PresentationPersistenceSubmitStatus::ReplacedPending);
+		PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Released(replacedBuffers));
+		PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Read(firstBuffers).freedBuffers == 0 &&
+			SnapshotLifetimeProbe::Read(latestBuffers).freedBuffers == 0);
+		SnapshotLifetimeProbe::Report("presentation-pending-replaced", replacedBuffers);
+		gate.Release();
+		PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return service.Diagnostics().committed == 2; }));
+		PRESENTATION_CHECK(state, SnapshotLifetimeProbe::Wait([&]
+		{
+			return SnapshotLifetimeProbe::Released(firstBuffers) && SnapshotLifetimeProbe::Released(latestBuffers);
+		}));
+		SnapshotLifetimeProbe::Report("presentation-first-unpolled", firstBuffers);
+		SnapshotLifetimeProbe::Report("presentation-latest-unpolled", latestBuffers);
+		service.CloseAndDrain();
+		PRESENTATION_CHECK(state, !gate.TimedOut() && service.Diagnostics().replacedPending == 1);
+		unsigned completions = 0;
+		bool sawLatest = false;
+		PresentationPersistenceCompletion completion;
+		while (service.TryTakeCompletion(completion))
+		{
+			++completions;
+			sawLatest |= completion.status == PresentationPersistenceStatus::Committed && completion.mutationRevision == 3;
+		}
+		PRESENTATION_CHECK(state, completions == 2 && sawLatest);
+		ResetPresentationAutoSaveTestFaultInjection();
+		std::error_code error;
+		fs::remove_all(root, error);
+	}
+
 }
 
 int RunPresentationAutoSaveAtomicChild(const wchar_t* root,
@@ -3627,6 +3771,21 @@ int RunPresentationAutoSaveTests()
 	TestCompletionAllocationFailuresRetainTerminal(state);
 #endif
 	TestClearIntervalsPersistAndLoad(state);
+	ResetPresentationAutoSaveTestFaultInjection();
+	return state.failures;
+}
+
+int RunPresentationSaveSnapshotLifetimeTests()
+{
+	TestState state;
+	ResetPresentationAutoSaveTestFaultInjection();
+	TestPresentationSnapshotLifetime(state, "presentation-success-unpolled", {}, false);
+	TestPresentationSnapshotLifetime(state, "presentation-index-failure-unpolled", { true }, false);
+	PresentationAutoSaveTestFaultInjection exception;
+	exception.throwWorkerOperation = true;
+	TestPresentationSnapshotLifetime(state, "presentation-worker-exception-unpolled", exception, false);
+	TestPresentationReplacementLifetime(state);
+	TestPresentationSnapshotLifetime(state, "presentation-stop-drain", {}, true);
 	ResetPresentationAutoSaveTestFaultInjection();
 	return state.failures;
 }

@@ -1,0 +1,9 @@
+{
+  "exitCode": 0,
+  "startedUtc": "2026-11-04T16:31:22.556497+00:00",
+  "endedUtc": "2026-11-04T16:32:47.0929112+00:00",
+  "budgetSeconds": 1200,
+  "msbuild": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+  "configuration": "Debug|ARM64",
+  "solution": "inkStrokeModelerTest.sln"
+}
