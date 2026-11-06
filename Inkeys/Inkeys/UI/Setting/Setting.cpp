@@ -2439,6 +2439,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
+				bool CanvasDebug = IsCanvasDebugEnabled();
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
 				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
@@ -3911,11 +3912,25 @@ SettingSessionCoroutine RunSettingSession()
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
 					bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
-					if (Design::ToggleRow("##断触接续", IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.E).c_str(), "\ue7c9", reconnectEnabled))
+					auto& reconnectConfig = Inkeys::config.Experimental.Inkeys3.Draw3;
+					bool reconnectTouch = reconnectConfig.InterruptedStrokeReconnectTouch;
+					bool reconnectPenTail = reconnectConfig.InterruptedStrokeReconnectPenTail;
+					bool reconnectTouchChanged = false, reconnectPenTailChanged = false;
+					const auto& reconnectKeys = I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect;
+					// 适用设备内联在开关下方，开关关闭时用控件自带的条件动画收起；两项各自保留选择。
+					const auto reconnectDevices = Design::InlineCheckboxes("##断触接续-设备", {
+						{ IA(reconnectKeys.Touch), &reconnectTouch, &reconnectTouchChanged },
+						{ IA(reconnectKeys.PenTail), &reconnectPenTail, &reconnectPenTailChanged } },
+						"##reconnect-devices-visibility", reconnectEnabled);
+					const bool reconnectToggled = Design::ToggleRow("##断触接续", IA(reconnectKeys.N).c_str(),
+						IA(reconnectKeys.E).c_str(), "\ue7c9", reconnectEnabled, nullptr, &reconnectDevices);
+					if (reconnectToggled || reconnectTouchChanged || reconnectPenTailChanged)
 					{
-						Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = reconnectEnabled;
+						reconnectConfig.InterruptedStrokeReconnect = reconnectEnabled;
+						reconnectConfig.InterruptedStrokeReconnectTouch = reconnectTouch;
+						reconnectConfig.InterruptedStrokeReconnectPenTail = reconnectPenTail;
 						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(reconnectTouch, reconnectPenTail);
 						QueueConfigWrite();
 					}
 
@@ -4681,6 +4696,14 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations = delayWaiting;
 						QueueConfigWrite();
+					}
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.CanvasSection).c_str());
+					Experimental.Inkeys3.CanvasDebug = IsCanvasDebugEnabled();
+					if (Design::ToggleRow("##experimental-canvas-debug", IA(I18nKey.SettingsUI.DebugSoftware.CanvasDebug.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.CanvasDebug.E).c_str(), "\ue9d9", Experimental.Inkeys3.CanvasDebug))
+					{
+						// 热生效且不持久化：每次启动都需要重新打开；同步 Draw3 与主栏按钮，不需要重启。
+						SetCanvasDebugEnabled(Experimental.Inkeys3.CanvasDebug);
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,

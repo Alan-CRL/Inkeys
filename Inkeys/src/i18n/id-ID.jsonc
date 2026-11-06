@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Kisi",
         "WhiteboardUnsavedLabel": "Beberapa halaman belum disimpan",
         "FreezeLabel": "Beku",
+        "CanvasDebugLabel": "Debug visual",
         "EndPresentationLabel": "Akhiri",
         "SettingsLabel": "Setelan",
         "MoreLabel": "Lainnya"
@@ -721,7 +722,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Sambungkan goresan terputus",
-          "E": "Saat kontak sentuh hilang sesaat lalu berlanjut ke arah semula, aplikasi mencoba menyambungkan kedua bagian menjadi satu goresan untuk mengurangi celah. Saat nonaktif, setiap angkatan jari mengakhiri goresan."
+          "Touch": "Sentuh",
+          "PenTail": "Penghapus pena",
+          "E": "Saat menulis, mendeteksi putusnya sentuhan berdasarkan maksud menggambar dan memperbaikinya, serta dapat melanjutkan status menggambar."
         }
       },
       "Eraser":
@@ -1136,6 +1139,12 @@
       {
         "N": "Tampilkan laju bingkai",
         "E": "Perbarui rata-rata laju bingkai dan laju tanpa batas dari detik sebelumnya setiap detik."
+      },
+      "CanvasSection": "Kanvas",
+      "CanvasDebug":
+      {
+        "N": "Debug kanvas",
+        "E": "Tampilkan frame rate, beban perangkat keras, dan informasi titik input di bawah kanvas, serta tambahkan tombol debug visual pada bilah utama."
       },
       "DelayWaiting":
       {

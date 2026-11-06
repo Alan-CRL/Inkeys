@@ -454,6 +454,8 @@ namespace Inkeys::Drawing::Draw3
 		RealTimeStylusInput stylus;
 		std::unique_ptr<DrawingController> drawing;
 		std::atomic_bool interruptedStrokeReconnectEnabled = true;
+		std::atomic_uint32_t interruptedStrokeReconnectDevices = 3; // bit0 触摸，bit1 笔尾
+		uint32_t appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
 		// 一份原子快照保存通用偏好；绘制 owner 应用，不能跨线程借用 Controller。
 		std::atomic_uint32_t generalDrawingOptions = 3u | (2u << 2);
 		std::atomic_uint32_t laserOptions = 0;
@@ -462,6 +464,10 @@ namespace Inkeys::Drawing::Draw3
 		mutable std::mutex palmEraserOptionsMutex;
 		PalmEraser::Settings palmEraserOptions;
 		std::optional<PalmEraser::Settings> appliedPalmEraserOptions;
+		// 位0=画布调试开关，位1=可视化模式；绘制 owner 在 PumpBridgeState 应用。
+		std::atomic_uint32_t canvasDebugOptions = 0;
+		uint32_t appliedCanvasDebugOptions = UINT32_MAX;
+		uint32_t appliedCanvasDebugInputMode = UINT32_MAX;
 		std::atomic_bool drawingHapticsEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
@@ -1723,12 +1729,34 @@ namespace Inkeys::Drawing::Draw3
 				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
 			if (drawing)
 			{
+				const uint32_t reconnectDevices = interruptedStrokeReconnectDevices.load(std::memory_order_acquire);
+				if (reconnectDevices != appliedInterruptedStrokeReconnectDevices)
+				{
+					drawing->SetInterruptedStrokeReconnectDevices(reconnectDevices);
+					appliedInterruptedStrokeReconnectDevices = reconnectDevices;
+				}
+			}
+			if (drawing)
+			{
 				PalmEraser::Settings palmOptions;
 				{ std::scoped_lock lock(palmEraserOptionsMutex); palmOptions = palmEraserOptions; }
 				if (!appliedPalmEraserOptions || *appliedPalmEraserOptions != palmOptions)
 				{
 					drawing->SetPalmEraserOptions(palmOptions);
 					appliedPalmEraserOptions = palmOptions;
+				}
+				const uint32_t canvasDebug = canvasDebugOptions.load(std::memory_order_acquire);
+				if (canvasDebug != appliedCanvasDebugOptions)
+				{
+					drawing->SetCanvasDebugOptions((canvasDebug & 1u) != 0, (canvasDebug & 2u) != 0);
+					appliedCanvasDebugOptions = canvasDebug;
+				}
+				// 输入通路只在启动/回退时变化；与 HostInputMode 数值一致，仅供调试板显示。
+				const uint32_t inputPath = static_cast<uint32_t>(inputMode.load(std::memory_order_acquire));
+				if (inputPath != appliedCanvasDebugInputMode)
+				{
+					drawing->SetCanvasDebugInputMode(static_cast<uint8_t>(inputPath));
+					appliedCanvasDebugInputMode = inputPath;
 				}
 				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
 				if (general != appliedGeneralDrawingOptions)
@@ -2250,6 +2278,9 @@ namespace Inkeys::Drawing::Draw3
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
 							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
 							appliedPalmEraserOptions.reset();
+							appliedCanvasDebugOptions = UINT32_MAX;
+							appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
+							appliedCanvasDebugInputMode = UINT32_MAX;
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
@@ -2916,6 +2947,14 @@ namespace Inkeys::Drawing::Draw3
 		(void)impl_->input.PublishControlWake();
 	}
 
+	void Host::SetInterruptedStrokeReconnectDevices(bool touch, bool penTail) noexcept
+	{
+		const uint32_t mask = (touch ? 1u : 0u) | (penTail ? 2u : 0u);
+		if (impl_->interruptedStrokeReconnectDevices.exchange(mask, std::memory_order_acq_rel) == mask)
+			return;
+		(void)impl_->input.PublishControlWake(); // 取消勾选后及时正常提交仍在等待接续的笔画。
+	}
+
 	void Host::SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept
 	{
 		const uint32_t mode = predictionMode >= 0 && predictionMode <= 2 ? static_cast<uint32_t>(predictionMode) : 2u;
@@ -2947,6 +2986,24 @@ namespace Inkeys::Drawing::Draw3
 	{
 		std::scoped_lock lock(impl_->palmEraserOptionsMutex);
 		return impl_->palmEraserOptions;
+	}
+
+	void Host::SetCanvasDebugOptions(bool enabled, bool visual) noexcept
+	{
+		// 可视化模式只在画布调试开启时有意义；保存规范化后的期望值，Controller 由绘制 owner 应用。
+		const uint32_t next = enabled ? (1u | (visual ? 2u : 0u)) : 0u;
+		if (impl_->canvasDebugOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	bool Host::CanvasDebugEnabled() const noexcept
+	{
+		return (impl_->canvasDebugOptions.load(std::memory_order_acquire) & 1u) != 0;
+	}
+
+	bool Host::CanvasDebugVisual() const noexcept
+	{
+		return (impl_->canvasDebugOptions.load(std::memory_order_acquire) & 2u) != 0;
 	}
 
 	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)

@@ -73,6 +73,7 @@ int RunDraw3RtsStartupTests();
 int RunDraw3MouseInputTests();
 int RunSpeedEraserTests();
 int RunPalmEraserTests();
+int RunCanvasDebugTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
 int RunRecallAttributeTests();
@@ -1732,6 +1733,7 @@ int main(int argc, char** argv)
 	bool settingFontPagesOnly = false;
 	bool settingEraserOnly = false;
 	bool palmEraserOnly = false;
+	bool canvasDebugOnly = false;
 	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
@@ -1754,6 +1756,7 @@ int main(int argc, char** argv)
 		settingFontPagesOnly |= argument == "--setting-font-pages-only";
 		settingEraserOnly |= argument == "--setting-eraser-only";
 		palmEraserOnly |= argument == "--palm-eraser-only";
+		canvasDebugOnly |= argument == "--canvas-debug-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
@@ -1804,6 +1807,7 @@ int main(int argc, char** argv)
 		return failures == 0 ? 0 : 1;
 	}
 	if (palmEraserOnly) return RunPalmEraserTests() == 0 ? 0 : 1;
+	if (canvasDebugOnly) return RunCanvasDebugTests() == 0 ? 0 : 1;
 	if (settingEraserDemoOnly)
 	{
 		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
@@ -1876,6 +1880,7 @@ int main(int argc, char** argv)
 	failureCount += RunUpdateSecurityTests();
 	failureCount += RunSpeedEraserTests();
 	failureCount += RunPalmEraserTests();
+	failureCount += RunCanvasDebugTests();
 	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunRecallAttributeTests();

@@ -106,6 +106,16 @@
 [OK] **Completed**
 
 
+## Session 181: Canvas debug overlay, visual mode and per-device stroke reconnect
+<!-- trellis-session: v=2 fp=9617f1f5915e6606 -->
+
+**Date**: 2026-11-06
+**Task**: Canvas debug overlay, visual mode and per-device stroke reconnect
+**Branch**: `debug/drawpad`
+
+### Summary
+
+Added the Draw3 canvas debug plate (FPS, load, 60s chart, aligned contact table with source/path/id/phase/seq/altitude/azimuth/speed/latency) and a visual debug mode exclusive with the other tools; the switch is runtime-only. Added touch / pen-tail checkboxes for interrupted stroke reconnect and reworded its description in all locales.
 ## Session 172: 内存采样与首批低风险优化
 <!-- trellis-session: v=2 fp=d9bcd7710a8ffc83 -->
 
@@ -253,6 +263,9 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 
 | Hash | Message |
 |------|---------|
+| `e0711662` | feat(draw3): add canvas debug overlay and visual debug mode |
+| `1565cb61` | feat(draw3): refine canvas debug plate, visual mode and contact table |
+| `0df57184` | feat(draw3): choose devices for interrupted stroke reconnect |
 | `e225c210` | perf(memory): release inactive graphics resources |
 
 ### Testing

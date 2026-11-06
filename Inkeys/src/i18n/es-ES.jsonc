@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Cuadrícula",
         "WhiteboardUnsavedLabel": "Hay páginas sin guardar",
         "FreezeLabel": "Fijar",
+        "CanvasDebugLabel": "Depurar visual",
         "EndPresentationLabel": "Fin pase",
         "SettingsLabel": "Ajustes",
         "MoreLabel": "Más"
@@ -721,7 +722,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Unir trazos interrumpidos",
-          "E": "Si el contacto táctil se interrumpe brevemente y continúa en la misma dirección, la aplicación intenta unir ambas partes para reducir los huecos. Si se desactiva, levantar el dedo termina el trazo."
+          "Touch": "Táctil",
+          "PenTail": "Borrador del lápiz",
+          "E": "Al escribir, detecta las interrupciones del contacto según la intención de dibujo y las corrige, y puede continuar el estado de dibujo."
         }
       },
       "Eraser":
@@ -1136,6 +1139,12 @@
       {
         "N": "Mostrar frecuencia de fotogramas",
         "E": "Actualizar cada segundo las frecuencias media y sin límite del segundo anterior."
+      },
+      "CanvasSection": "Lienzo",
+      "CanvasDebug":
+      {
+        "N": "Depuración del lienzo",
+        "E": "Muestra bajo el lienzo la velocidad de fotogramas, la carga del hardware y la información de los puntos de entrada, y añade un botón de depuración visual a la barra principal."
       },
       "DelayWaiting":
       {

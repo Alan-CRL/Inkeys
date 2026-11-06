@@ -2843,6 +2843,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			AnchorHiddenButton(BarButtonPresetEnum::Freeze, BarButtonPresetEnum::Freeze);
 			// 穿透隐藏时也跟随定格列，不能保留收窄前主栏右侧的旧坐标。
 			AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze);
+			// 画布调试按钮隐藏时收拢到前一可见成员，显示时从该处展开。
+			AnchorHiddenButton(BarButtonPresetEnum::CanvasDebug, BarButtonPresetEnum::CanvasDebug);
 			AnchorHiddenButton(BarButtonPresetEnum::EndShow, BarButtonPresetEnum::Freeze);
 		}
 		presentationLock.unlock();
@@ -7696,7 +7698,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive,
-		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser);
+		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser && !IsCanvasDebugVisualActive());
 	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
 	const bool recallIdleDismissed = frame.recallIdleDismissed;
 	const bool recallChanged = owner_.recallAttribute.Advance(owner_, frame.recallChrome, frame.recallAnchorVisible, animationDtSeconds,

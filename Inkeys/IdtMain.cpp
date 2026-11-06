@@ -814,11 +814,22 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: touch reconnect default was not enabled\n", stderr);
 				return 1;
 			}
+			// 适用设备（触摸 / 笔尾）旧配置缺键时默认都开启，且各自独立往返。
+			if (!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch ||
+				!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail)
+			{
+				std::fputs("[ConfigBoundary] FAIL: touch reconnect device defaults were not enabled\n", stderr);
+				return 1;
+			}
 			for (const bool enabled : { false, true })
 			{
 				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail = !enabled;
 				Inkeys::Config restoredReconnect;
 				if (!reconnectDefaults.Write() || !restoredReconnect.ReadAll() ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch.load() != enabled ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail.load() == enabled ||
 					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
 				{
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
@@ -1814,6 +1825,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererUploadValidation(); });
+		}
+		// 画布调试板合成顺序/关闭字节一致/标记原语像素读回；仅离屏 WARP，无 HWND。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-canvas-debug-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunCanvasDebugOverlayValidation(); });
 		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
@@ -3337,10 +3356,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
 			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
+			// 画布调试开关来自配置；可视化位启动时恒为未选中。
+			PublishCanvasDebugOptions();
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
 				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
+			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch,
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail);
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();

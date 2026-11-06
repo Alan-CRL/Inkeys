@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Grid",
         "WhiteboardUnsavedLabel": "Some pages are not saved",
         "FreezeLabel": "Freeze",
+        "CanvasDebugLabel": "Visual debug",
         "EndPresentationLabel": "End show",
         "SettingsLabel": "Settings",
         "MoreLabel": "More"
@@ -721,7 +722,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconnect interrupted strokes",
-          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
+          "Touch": "Touch",
+          "PenTail": "Pen eraser",
+          "E": "Detects touch interruptions while writing based on drawing intent and corrects them, and can resume the drawing state."
         }
       },
       "Eraser":
@@ -1136,6 +1139,12 @@
       {
         "N": "Show frame rate",
         "E": "Update the previous second’s average and uncapped frame rates once per second."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Canvas debugging",
+        "E": "Show frame rate, hardware load and input point details beneath the canvas, and add a visual debug button to the main bar."
       },
       "DelayWaiting":
       {

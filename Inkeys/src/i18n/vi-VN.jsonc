@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Lưới",
         "WhiteboardUnsavedLabel": "Một số trang chưa được lưu",
         "FreezeLabel": "Giữ",
+        "CanvasDebugLabel": "Gỡ lỗi trực quan",
         "EndPresentationLabel": "Kết thúc",
         "SettingsLabel": "Thiết lập",
         "MoreLabel": "Thêm"
@@ -721,7 +722,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Nối nét bị ngắt",
-          "E": "Khi mất tiếp xúc ngắn rồi tiếp tục theo hướng cũ, ứng dụng sẽ thử nối hai phần thành một nét để giảm đứt đoạn. Khi tắt, mỗi lần nhấc ngón tay sẽ kết thúc nét hiện tại."
+          "Touch": "Cảm ứng",
+          "PenTail": "Đuôi bút",
+          "E": "Khi viết, nhận biết tình trạng mất tiếp xúc dựa trên ý định vẽ và hiệu chỉnh, đồng thời có thể tiếp nối trạng thái vẽ."
         }
       },
       "Eraser":
@@ -1136,6 +1139,12 @@
       {
         "N": "Hiện tốc độ khung hình",
         "E": "Mỗi giây cập nhật tốc độ khung hình trung bình và không chờ của giây trước."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Gỡ lỗi canvas",
+        "E": "Hiển thị tốc độ khung hình, tải phần cứng và thông tin điểm nhập bên dưới canvas, đồng thời thêm nút gỡ lỗi trực quan vào thanh chính."
       },
       "DelayWaiting":
       {

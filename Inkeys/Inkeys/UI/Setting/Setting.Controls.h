@@ -146,6 +146,10 @@ namespace Inkeys::UI::Setting::Design
 	// 收起期间禁交互、保留选择且不产生事件。返回值引用的参数须存活到对应行提交结束。
 	InlineRowContent InlineCombo(const char* id, const char* label, int& value,
 		const std::vector<std::string>& items, bool& changed, const char* visibilityId = nullptr, bool visible = true);
+	// 父行下方的一组复选框内联区（宽度足够时两列）；visibilityId 非空时随 visible 用条件动画展开/收起。
+	// 每项的 value/changed 指针须存活到对应行提交结束；收起期间不产生事件。
+	InlineRowContent InlineCheckboxes(const char* id, std::vector<CheckboxSpec> items,
+		const char* visibilityId = nullptr, bool visible = true);
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true);
 	// 与 ComboRow 相同，但在下拉框左侧预留一块预览区；preview 收到该区域的物理像素矩形。

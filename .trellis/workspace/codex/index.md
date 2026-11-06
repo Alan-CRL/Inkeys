@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 179
-- **Last Active**: 2026-11-05
+- **Total Sessions**: 181
+- **Last Active**: 2026-11-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~276 | Active |
+| `journal-3.md` | ~289 | Active |
 | `journal-2.md` | ~2029 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 181 | 2026-11-06 | Canvas debug overlay, visual mode and per-device stroke reconnect | `e0711662`, `1565cb61`, `0df57184` | `debug/drawpad` |
 | 179 | 2026-11-05 | Unify whiteboard/PPT page-turn loading animation | `9ddb5365`, `ad7d1302`, `70d5ca9a`, `97321dc2` | `debug/wait` |
 | 176 | 2026-11-05 | 调试等待操作延迟开关 | - | `debug/wait` |
 | 175 | 2026-11-05 | 内存优化任务完成归档 | `e225c210` | `diagnostic/memery` |
