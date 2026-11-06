@@ -11915,7 +11915,11 @@ namespace Inkeys::Drawing::Draw3
 				const DrawingTool tool = (invertedEraser || rightEraser) ? DrawingTool::Eraser : batchTool;
 				if (tool == DrawingTool::Laser && !prepareLaserSelectionResources())
 				{
+					// Discard 后 producer 可复用 record；先保存已登记的 Touch 身份，再退休手势接触。
+					const uint64_t rejectedTouchKey = deviceType == InputDeviceType::Touch
+						? CanvasTouchKey(handle) : 0;
 					RejectStrokeInitialization(input_, handle, down);
+					if (rejectedTouchKey) touchGesture.OnTouchUp(rejectedTouchKey);
 					return false;
 				}
 				if (metricsState_)

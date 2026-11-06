@@ -2198,10 +2198,12 @@ namespace Inkeys::UI::PageControl
 		void ReleaseHiddenSurfaceResources(SurfaceState& state, bool hiddenCommitted)
 		{
 			if (!hiddenCommitted || state.targetVisible || state.bounds.active || state.scene.AnimationActive()
-				|| state.pointerActive || state.dragging || state.dragPending || state.pressedCaptureTicket
-				|| !state.scene.DeviceContext()) return;
+				|| state.pointerActive || state.dragging || state.dragPending || state.pressedCaptureTicket) return;
+			// 设备资源可能已被失败路径释放，但 backing 水位仍在；两者都空才无需处理。
+			const bool deviceHeld = state.scene.DeviceContext() != nullptr;
+			if (!deviceHeld && state.backingCapacity.cx == 1 && state.backingCapacity.cy == 1) return;
 			// 原生命令与输入提交仍保留，只归还已隐藏客户端的像素与图形缓存。
-			state.scene.ReleaseDeviceResources();
+			if (deviceHeld) state.scene.ReleaseDeviceResources();
 			state.backingCapacity = { 1, 1 };
 			state.committedPresentationReady = false;
 			state.committedBackingCapacity = {};

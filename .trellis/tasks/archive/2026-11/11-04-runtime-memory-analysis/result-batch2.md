@@ -48,7 +48,7 @@ Private提交、驻留Working Set、图形资源payload互相不能直接加总�
 - **25项适用验证最终全部通过**。包括新5个资源probe、5个坏argc早退、掌擦内容、WARP/hardware像素/上传/映射/失败、隐藏Host、分页/白板原生隐藏退役/再入、Desktop/PPT存储及启动进度。完整扫的24项0，加分页锁修复后只重跑受影响的page-control-hidden与ui-idle-capacity，均0；不宣称所有项目均在同一binary重新跑过。
 - [最终按名称合并结果](validation/batch2/test-results-latest.json)、[完整扫](validation/batch2/tests-final/test-results.json)、[分页确认重跑](validation/batch2/tests-confirmation-final/test-results-page-control-hidden-ui-idle-capacity.json)。首次失败、冻结基线复现和已确认级联等待的停止原因均保留。
 - 新资源测试为真实无窗口/离屏或自动关闭的原生隐藏窗口；Setting/Laser无可靠普通产品外部控制接口，未伪造快捷键。其局部资源/像素/控制路径通过，不冒充全产品交互内存曲线。
-- 原编码/BOM/工作区CRLF、最小相关diff与静态资源/线程/代际合同复核；[审查](validation/batch2/check-review.md)与[资源规格](../../spec/native-desktop/memory-resource-lifecycle.md)。
+- 原编码/BOM/工作区CRLF、最小相关diff与静态资源/线程/代际合同复核；[审查](validation/batch2/check-review.md)与[资源规格](../../../../spec/native-desktop/memory-resource-lifecycle.md)。
 
 ## 保持与限制
 
