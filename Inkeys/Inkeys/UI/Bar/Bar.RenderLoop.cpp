@@ -2854,10 +2854,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				? max(0.0, static_cast<double>(mainBar->ft.value().tar) / 2.0)
 				: 0.0;
 			const bool floatingStartup = !whiteboardDockPlacement
-				&& owner_.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar;
+				&& Inkeys::UI::StartupPlacementIsFolded(owner_.startupPlacement);
 			const bool opensRight = whiteboardDockPlacement
 				? static_cast<bool>(state.barState.widgetPosition.mainBar)
-				: owner_.startupPlacement != Inkeys::UI::StartupPlacement::BottomRightFloating;
+				: Inkeys::UI::StartupPlacementOpensRight(owner_.startupPlacement);
 			const double bodyLeftDip = opensRight
 				? -mainButton->GetW() / 2.0 - mainFrameHalfDip
 				: -mainButton->GetW() / 2.0 - 10.0 - totalWidth
@@ -2896,7 +2896,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					: visible.left - bodyLeftDip * placementZoom;
 				screenCenterY = floatingStartup
 					? (static_cast<double>(visible.top) + visible.bottom) / 2.0
-					: visible.bottom - (state.mainButtonBaseSize + strokeWidthDip) * placementZoom / 2.0;
+					: Inkeys::UI::StartupPlacementAtTop(owner_.startupPlacement)
+						// 顶栏仍是 Floating：按可见包络上沿反推主按钮中心，不使用底栏吸附线。
+						? visible.top + (state.mainButtonBaseSize + strokeWidthDip) * placementZoom / 2.0
+						: visible.bottom - (state.mainButtonBaseSize + strokeWidthDip) * placementZoom / 2.0;
 			}
 
 			if (whiteboardDockPlacement && frame.bottomDockCenterMode == BarBottomDockCenterMode::Free)
@@ -13614,6 +13617,35 @@ BarRenderLoopCoordinator::RenderFrame(
 				UpdateSceneMonitor(state.desktopMonitor);
 				state.desktopRestorePending = true;
 			}
+			else if (transition == BarWorkspaceTransition::Enter
+				&& ShouldTakeOverBarWorkspaceEntry(
+					workspace.committed == WorkspaceScene::Whiteboard
+						? Inkeys::config.UI.Bar.Workspace.Whiteboard.AutoDockMask.load()
+						: Inkeys::config.UI.Bar.Workspace.Ppt.AutoDockMask.load(),
+					owner_.bottomDockMode.load(memory_order_acquire), state.barState.fold))
+			{
+				// 设置命中的进入前状态：统一变为居中底栏并展开；桌面基线已在上方捕获，退出时整体还原。
+				const int direction = workspace.committed == WorkspaceScene::Whiteboard
+					? Inkeys::config.UI.Bar.Workspace.Whiteboard.Direction.load()
+					: Inkeys::config.UI.Bar.Workspace.Ppt.Direction.load();
+				owner_.BeginBottomDockTransition();
+				owner_.bottomDockMode.store(BarBottomDockMode::BottomDocked, memory_order_relaxed);
+				owner_.bottomDockCenterMode.store(BarBottomDockCenterMode::Centered, memory_order_relaxed);
+				owner_.bottomDockPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
+				owner_.bottomDockCenterPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
+				owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
+				owner_.bottomDockCenterElasticOffsetDip.store(0.0, memory_order_relaxed);
+				owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
+				(void)owner_.FinishBottomDockTransition(true);
+				state.barState.fold = false;
+				// 居中态锁存展开方向：同时写入布局侧缓存，避免被旧侧覆盖。
+				const bool side = ResolveBarWorkspaceEntrySide(direction, state.barState.widgetPosition.mainBar);
+				state.barState.widgetPosition.mainBar = side;
+				state.mainBarLayoutSide = side;
+				if (Inkeys::UI::Bar::WhiteboardActive()) UpdateSceneMonitor(nullptr);
+				else UpdatePptSceneMonitor(PptPresentationWindow());
+				state.pptDockPlacementPending = true;
+			}
 			else if (ShouldPlaceBarWorkspaceDock(state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire)))
 			{
 				// 仅已有展开底栏跟随场景屏幕；普通底栏保留横向位置及展开方向。
@@ -13720,8 +13752,7 @@ BarRenderLoopCoordinator::RenderFrame(
 	if (!state.initialBottomDockPlacementApplied)
 	{
 		const bool initialSide = !state.whiteboardDockPlacementPending
-			&& owner_.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar
-			? owner_.startupPlacement == Inkeys::UI::StartupPlacement::BottomLeftFloating
+			? Inkeys::UI::StartupPlacementOpensRight(owner_.startupPlacement)
 			: ResolveBarBottomDockInitialMainBarSide(
 				state.whiteboardDockPlacementPending, state.barState.widgetPosition.mainBar);
 		// 首次方向缓存先于 PositionUpdate 建立，避免桌面默认侧或白板既有侧被覆盖。

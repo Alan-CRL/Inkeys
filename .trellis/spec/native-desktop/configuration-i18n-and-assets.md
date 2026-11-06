@@ -620,8 +620,8 @@ H(true, true, "ch", std::string, UpdateChannel,
 - 验证：无 HWND ImGui 回放覆盖下拉双向选择、三语/缩放卡片布局；另以生产调度边界的线程回归覆盖锁内提交与 FIFO 顺序。只把 Sync 替换为计数器的控件回放不能验证卡死修复。
 
 ## 启动位置预设配置合同
-- UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏展开、1左角主按钮、2右角主按钮。读盘仅接受JSON int/uint且isInt()可表示的0..2；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。
-- 启动后位置说明和现有combo位于通用→基本的启动行为分类，不提供Preset导航页。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
+- UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏（向右展开）、1左下角主按钮、2右下角主按钮；2026-11-06 追加3居中底栏（向左展开）、4居中顶栏（向右展开）、5居中顶栏（向左展开）、6悬浮窗底栏居中，0..2 旧值含义不变。居中顶栏是展开的 Floating+Free 初始落点（上沿贴工作区上沿、水平居中），不引入顶栏模式或吸附。读盘仅接受JSON int/uint且isInt()可表示的0..6；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。
+- 启动后位置位于“通用 → 位置”页的桌面场景分类，拆成“类型（居中底栏/居中顶栏/悬浮窗）+位置（底/顶栏：向右/向左展开；悬浮窗：左下角/右下角/底栏居中）”两个联动下拉，仍是同一个枚举（`StartupPlacementType/Position/FromSelection`）；不提供Preset导航页。同页 PPT/白板场景分类写 `UI.Bar.Workspace.{Ppt,Whiteboard}.AutoDockMask`（int，仅 0..15，默认1）与 `.Direction`（int 0..2，默认0），非法类型/越界回默认；复选框为 bit0 底栏（含居中）、bit1 底栏折叠、bit2 悬浮、bit3 悬浮折叠。进入策略见 rendering-and-ui.md 场景入口条目。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
 - 下拉仅更新偏好并QueueConfigWrite冻结副本，明确下次启动生效，不触发本次Bar移动/折叠或锁内窗口同步。
 - 所有新标题/说明/三选项为zh-CN/zh-TW/en-US，通过i18n sync/check生成头与快照。
 - 新增导航必须检测整个侧栏与固定页脚/分隔线边界，不以单个新页面回放替代整体布局验证。

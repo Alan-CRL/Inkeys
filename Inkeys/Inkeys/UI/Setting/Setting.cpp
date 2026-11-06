@@ -3573,6 +3573,14 @@ SettingSessionCoroutine RunSettingSession()
 					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
 						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
+					{
+						using Inkeys::UI::Bar::NormalizeBarWorkspaceAutoDockMask;
+						const auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						draft.pptDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Ppt.AutoDockMask.load());
+						draft.whiteboardDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Whiteboard.AutoDockMask.load());
+						draft.pptDockDirection = std::clamp(workspace.Ppt.Direction.load(), 0, 2);
+						draft.whiteboardDockDirection = std::clamp(workspace.Whiteboard.Direction.load(), 0, 2);
+					}
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
 					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
 					// 背景未自定义时显示当前主栏主题的默认值；内容透明度直接显示保存值。
@@ -3667,6 +3675,17 @@ SettingSessionCoroutine RunSettingSession()
 					if (events.startupPlacementChanged)
 					{
 						Inkeys::config.UI.Bar.StartupPlacement = draft.startupPlacement;
+						QueueConfigWrite();
+					}
+					if (events.pptDockMaskChanged || events.pptDockDirectionChanged
+						|| events.whiteboardDockMaskChanged || events.whiteboardDockDirectionChanged)
+					{
+						// 场景进入策略只在下次进入 PPT/白板时由渲染线程读取，立即保存即可。
+						auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						if (events.pptDockMaskChanged) workspace.Ppt.AutoDockMask = draft.pptDockMask;
+						if (events.pptDockDirectionChanged) workspace.Ppt.Direction = draft.pptDockDirection;
+						if (events.whiteboardDockMaskChanged) workspace.Whiteboard.AutoDockMask = draft.whiteboardDockMask;
+						if (events.whiteboardDockDirectionChanged) workspace.Whiteboard.Direction = draft.whiteboardDockDirection;
 						QueueConfigWrite();
 					}
 					if (destination.section == Design::GeneralSection::Appearance)

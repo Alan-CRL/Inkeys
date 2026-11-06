@@ -342,6 +342,9 @@ namespace Inkeys::UI::Setting::Design
 		DesktopShortcutDraft desktopShortcut;
 		DesktopShortcutDraft whiteboardShortcut{ Business::DesktopShortcut::Kind::Whiteboard };
 		int startupEffect = 0;
+		// 场景进入策略：掩码 bit0 底栏、bit1 底栏折叠、bit2 悬浮窗、bit3 悬浮窗折叠；方向 0 不改变、1 向右、2 向左。
+		int pptDockMask = 1, pptDockDirection = 0;
+		int whiteboardDockMask = 1, whiteboardDockDirection = 0;
 	};
 
 	struct GeneralEvents
@@ -366,6 +369,8 @@ namespace Inkeys::UI::Setting::Design
 		bool animationChanged = false;
 		bool dynamicEdgeLightingChanged = false;
 		bool startupPlacementChanged = false;
+		bool pptDockMaskChanged = false, pptDockDirectionChanged = false;
+		bool whiteboardDockMaskChanged = false, whiteboardDockDirectionChanged = false;
 		bool taskbarScaleBaseChanged = false;
 		bool themeModeChanged = false;
 		bool settingThemeModeChanged = false;

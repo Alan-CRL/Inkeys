@@ -9,6 +9,7 @@
 #include <array>
 #include "imgui/imgui_internal.h"
 #include "../../Drawing/Draw3/Draw3.CursorSettings.h"
+#include "../StartupPlacement.h"
 
 import Inkeys.Conv.Text;
 
@@ -1286,6 +1287,7 @@ namespace Inkeys::UI::Setting::Design
 		// 存储页由原配置保存业务分支承载，避免在此重复提交标题或控件。
 		if (section == GeneralSection::Storage) return events;
 		const char* title = section == GeneralSection::Appearance ? I18nKey.SettingsUI.Design.GeneralAppearance
+			: section == GeneralSection::Position ? I18nKey.SettingsUI.Position.N
 			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
 			: section == GeneralSection::Shortcuts ? I18nKey.SettingsUI.HotKey.N
 			: section == GeneralSection::DesktopShortcuts ? I18nKey.SettingsUI.DesktopShortcut.N
@@ -1328,15 +1330,91 @@ namespace Inkeys::UI::Setting::Design
 			SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
 			events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
-			// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置。
-			events.startupPlacementChanged = ComboRow("##启动后位置",
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.N).c_str(),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
-				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) },
-				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
+		}
+		if (section == GeneralSection::Position)
+		{
+			const auto& position = I18nKey.SettingsUI.Position;
+			SectionHeader(IA(position.DesktopSection).c_str());
+			// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置；类型与位置是同一枚举的展示拆分。
+			const auto placement = Inkeys::UI::NormalizeStartupPlacement(draft.startupPlacement);
+			int placementType = Inkeys::UI::StartupPlacementType(placement);
+			int placementPosition = Inkeys::UI::StartupPlacementPosition(placement);
+			const std::vector<std::string> typeItems{ IA(position.TypeBottomBar), IA(position.TypeTopBar), IA(position.TypeFloating) };
+			const std::vector<std::string> positionItems = placementType == 2
+				? std::vector<std::string>{ IA(position.FloatBottomLeft), IA(position.FloatBottomRight), IA(position.FloatBottomCenter) }
+				: std::vector<std::string>{ IA(position.ExpandRight), IA(position.ExpandLeft) };
+			bool typeChanged = false, positionChanged = false;
+			const std::string positionLabel = IA(position.PositionLabel);
+			const std::string startupTitle = IA(I18nKey.SettingsUI.Preset.StartupPlacement.N);
+			const std::string startupDescription = IA(position.StartupE);
+			const std::string startupNote = IA(I18nKey.SettingsUI.Design.NextStartupRequired);
+			float typeWidth = 160.0F;
+			for (const auto& item : typeItems) typeWidth = (std::max)(typeWidth, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+			const InlineRowContent positionContent = InlineCombo("startup-position", positionLabel.c_str(),
+				placementPosition, positionItems, positionChanged);
+			SettingRow("##启动后位置", startupTitle.c_str(), startupDescription.c_str(), "\ue707",
+				(std::min)(320.0F, typeWidth), ControlHeight,
+				[&](const LayoutRect&) { typeChanged = ComboBox("##select", &placementType, typeItems); },
+				Card, Stroke, 0, IM_COL32_WHITE, false, startupNote.c_str(), true, &positionContent);
+			if (typeChanged || positionChanged)
+			{
+				// 切换类型时位置回到该类型的首项，避免旧下标落到另一类选项上。
+				if (typeChanged) placementPosition = 0;
+				draft.startupPlacement = static_cast<int>(Inkeys::UI::StartupPlacementFromSelection(placementType, placementPosition));
+				events.startupPlacementChanged = true;
+			}
 
+			// PPT / 白板场景：同一布局，复选框决定进入前的哪些主栏状态会自动变成居中底栏。
+			const auto workspaceRow = [&](const char* id, const char* title, const char* description, const char* glyph,
+				int& mask, int& direction, bool& maskChanged, bool& directionChanged)
+			{
+				const std::array<std::string, 4> labels{ IA(position.StateBottom), IA(position.StateBottomFolded),
+					IA(position.StateFloating), IA(position.StateFloatingFolded) };
+				const std::vector<std::string> directions{ IA(position.DirectionKeep), IA(position.ExpandRight), IA(position.ExpandLeft) };
+				const std::string directionLabel = IA(position.MainButtonDirection);
+				float widest = 0;
+				for (const auto& label : labels) widest = (std::max)(widest, ControlTextWidth(label.c_str()) + Pixels(32));
+				const auto columnsFor = [&](float width) { return width >= (std::max)(Pixels(440), widest * 2 + Pixels(16)) ? 2 : 1; };
+				InlineRowContent content;
+				content.height = [&](float width) {
+					const int rows = (4 + columnsFor(width) - 1) / columnsFor(width);
+					return (rows + 1) * Pixels(ControlHeight) + rows * Pixels(ControlSpacing);
+				};
+				content.render = [&](const LayoutRect& bounds) {
+					const int columns = columnsFor(bounds.Width());
+					const float columnWidth = (bounds.Width() - Pixels(16) * (columns - 1)) / columns;
+					const int rows = (4 + columns - 1) / columns;
+					ImGui::PushID(id);
+					for (int index = 0; index < 4; ++index)
+					{
+						ImGui::SetCursorScreenPos({ bounds.left + (index % columns) * (columnWidth + Pixels(16)),
+							bounds.top + (index / columns) * Pixels(ControlHeight + ControlSpacing) });
+						bool checked = (mask >> index) & 1;
+						ImGui::PushID(index);
+						if (Checkbox((labels[index] + "###state").c_str(), &checked))
+						{
+							mask = checked ? (mask | (1 << index)) : (mask & ~(1 << index));
+							maskChanged = true;
+						}
+						ImGui::PopID();
+					}
+					const float top = bounds.top + rows * Pixels(ControlHeight + ControlSpacing);
+					const auto combo = InlineCombo("##direction", directionLabel.c_str(), direction, directions, directionChanged);
+					combo.render({ bounds.left, top, bounds.right, top + Pixels(ControlHeight) });
+					ImGui::PopID();
+				};
+				SettingRow(id, title, description, glyph, 0.0F, 0.0F, [](const LayoutRect&) {},
+					Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &content);
+			};
+			SectionHeader(IA(position.PptSection).c_str());
+			const std::string pptTitle = IA(position.PptAutoDock), pptDescription = IA(position.PptAutoDockE);
+			workspaceRow("##ppt-auto-dock", pptTitle.c_str(), pptDescription.c_str(), "\ue7b3",
+				draft.pptDockMask, draft.pptDockDirection, events.pptDockMaskChanged, events.pptDockDirectionChanged);
+			SectionHeader(IA(position.WhiteboardSection).c_str());
+			const std::string whiteboardTitle = IA(position.WhiteboardAutoDock), whiteboardDescription = IA(position.WhiteboardAutoDockE);
+			workspaceRow("##whiteboard-auto-dock", whiteboardTitle.c_str(), whiteboardDescription.c_str(), "\ue70f",
+				draft.whiteboardDockMask, draft.whiteboardDockDirection,
+				events.whiteboardDockMaskChanged, events.whiteboardDockDirectionChanged);
 		}
 		if (section == GeneralSection::Appearance)
 		{

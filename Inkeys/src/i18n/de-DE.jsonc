@@ -800,6 +800,33 @@
         }
       }
     },
+    "Position":
+    {
+      "N": "Position",
+      "DesktopSection": "Desktop",
+      "PptSection": "Präsentation",
+      "WhiteboardSection": "Whiteboard",
+      "StartupE": "Legt fest, wo die Leiste beim nächsten Start erscheint. Die zentrierte obere Leiste ist nur eine Startposition und rastet nicht ein.",
+      "TypeBottomBar": "Zentrierte untere Leiste",
+      "TypeTopBar": "Zentrierte obere Leiste",
+      "TypeFloating": "Schwebendes Fenster",
+      "PositionLabel": "Position",
+      "ExpandRight": "Nach rechts aufklappen",
+      "ExpandLeft": "Nach links aufklappen",
+      "FloatBottomLeft": "Unten links",
+      "FloatBottomRight": "Unten rechts",
+      "FloatBottomCenter": "Unten mittig",
+      "PptAutoDock": "Beim Start der Präsentation in die zentrierte untere Leiste wechseln",
+      "PptAutoDockE": "Befindet sich die Leiste vorher in einem aktivierten Zustand, wird sie beim Start der Präsentation zur aufgeklappten zentrierten unteren Leiste und danach wiederhergestellt.",
+      "WhiteboardAutoDock": "Beim Öffnen des Whiteboards in die zentrierte untere Leiste wechseln",
+      "WhiteboardAutoDockE": "Befindet sich die Leiste vorher in einem aktivierten Zustand, wird sie beim Öffnen des Whiteboards zur aufgeklappten zentrierten unteren Leiste und danach wiederhergestellt.",
+      "StateBottom": "Zustand untere Leiste",
+      "StateBottomFolded": "Zustand untere Leiste (eingeklappt)",
+      "StateFloating": "Zustand schwebendes Fenster",
+      "StateFloatingFolded": "Zustand schwebendes Fenster (eingeklappt)",
+      "MainButtonDirection": "Richtung der Hauptschaltfläche",
+      "DirectionKeep": "Nicht ändern"
+    },
     "Preset":
     {
       "N": "Vorgaben",

@@ -800,6 +800,33 @@
         }
       }
     },
+    "Position":
+    {
+      "N": "位置",
+      "DesktopSection": "桌面場景",
+      "PptSection": "PPT 場景",
+      "WhiteboardSection": "白板場景",
+      "StartupE": "決定下次啟動時主列出現的位置。置中頂列只是初始位置，不會吸附。",
+      "TypeBottomBar": "置中底列",
+      "TypeTopBar": "置中頂列",
+      "TypeFloating": "懸浮視窗",
+      "PositionLabel": "位置",
+      "ExpandRight": "向右展開",
+      "ExpandLeft": "向左展開",
+      "FloatBottomLeft": "左下角",
+      "FloatBottomRight": "右下角",
+      "FloatBottomCenter": "底列置中",
+      "PptAutoDock": "開始放映時自動進入置中底列模式",
+      "PptAutoDockE": "進入前的主列處於已勾選的狀態時，放映開始後會自動變為置中底列並展開；結束放映後還原。",
+      "WhiteboardAutoDock": "進入白板時自動進入置中底列模式",
+      "WhiteboardAutoDockE": "進入前的主列處於已勾選的狀態時，進入白板後會自動變為置中底列並展開；退出白板後還原。",
+      "StateBottom": "底列狀態",
+      "StateBottomFolded": "底列狀態（摺疊）",
+      "StateFloating": "懸浮視窗狀態",
+      "StateFloatingFolded": "懸浮視窗狀態（摺疊）",
+      "MainButtonDirection": "主按鈕方向",
+      "DirectionKeep": "不改變"
+    },
     "Preset":
     {
       "N": "預設組合",

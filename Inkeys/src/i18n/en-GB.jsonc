@@ -800,6 +800,33 @@
         }
       }
     },
+    "Position":
+    {
+      "N": "Position",
+      "DesktopSection": "Desktop",
+      "PptSection": "Presentation",
+      "WhiteboardSection": "Whiteboard",
+      "StartupE": "Sets where the toolbar appears on the next launch. The centered top bar is only an initial position and does not snap.",
+      "TypeBottomBar": "Centered bottom bar",
+      "TypeTopBar": "Centered top bar",
+      "TypeFloating": "Floating window",
+      "PositionLabel": "Position",
+      "ExpandRight": "Expand right",
+      "ExpandLeft": "Expand left",
+      "FloatBottomLeft": "Bottom-left corner",
+      "FloatBottomRight": "Bottom-right corner",
+      "FloatBottomCenter": "Bottom center",
+      "PptAutoDock": "Enter centered bottom bar mode when a slideshow starts",
+      "PptAutoDockE": "If the toolbar is in a checked state beforehand, it becomes an expanded centered bottom bar when the slideshow starts, and is restored when the slideshow ends.",
+      "WhiteboardAutoDock": "Enter centered bottom bar mode when entering the whiteboard",
+      "WhiteboardAutoDockE": "If the toolbar is in a checked state beforehand, it becomes an expanded centered bottom bar when the whiteboard opens, and is restored when the whiteboard closes.",
+      "StateBottom": "Bottom bar state",
+      "StateBottomFolded": "Bottom bar state (collapsed)",
+      "StateFloating": "Floating window state",
+      "StateFloatingFolded": "Floating window state (collapsed)",
+      "MainButtonDirection": "Main button direction",
+      "DirectionKeep": "No change"
+    },
     "Preset":
     {
       "N": "Presets",

@@ -55,6 +55,32 @@ namespace Inkeys::UI::Bar
 	{
 		return !folded && mode == BarBottomDockMode::BottomDocked;
 	}
+	// 场景进入策略掩码：进入前主栏状态（含居中底栏）→ 是否自动变为居中底栏。
+	inline constexpr int BarWorkspaceAutoDockBottom = 1;
+	inline constexpr int BarWorkspaceAutoDockBottomFolded = 2;
+	inline constexpr int BarWorkspaceAutoDockFloating = 4;
+	inline constexpr int BarWorkspaceAutoDockFloatingFolded = 8;
+	inline constexpr int BarWorkspaceAutoDockMaskAll = 15;
+	inline constexpr int BarWorkspaceAutoDockMaskDefault = BarWorkspaceAutoDockBottom;
+	[[nodiscard]] constexpr int NormalizeBarWorkspaceAutoDockMask(int mask) noexcept
+	{
+		return mask >= 0 && mask <= BarWorkspaceAutoDockMaskAll ? mask : BarWorkspaceAutoDockMaskDefault;
+	}
+	[[nodiscard]] constexpr int ClassifyBarWorkspaceEntryState(BarBottomDockMode mode, bool folded) noexcept
+	{
+		return mode == BarBottomDockMode::BottomDocked
+			? (folded ? BarWorkspaceAutoDockBottomFolded : BarWorkspaceAutoDockBottom)
+			: (folded ? BarWorkspaceAutoDockFloatingFolded : BarWorkspaceAutoDockFloating);
+	}
+	[[nodiscard]] constexpr bool ShouldTakeOverBarWorkspaceEntry(int mask, BarBottomDockMode mode, bool folded) noexcept
+	{
+		return (NormalizeBarWorkspaceAutoDockMask(mask) & ClassifyBarWorkspaceEntryState(mode, folded)) != 0;
+	}
+	// 方向：0 不改变、1 向右展开（主按钮在左）、2 向左展开；返回新的 mainBar 侧（true=向右展开）。
+	[[nodiscard]] constexpr bool ResolveBarWorkspaceEntrySide(int direction, bool currentSide) noexcept
+	{
+		return direction == 1 ? true : direction == 2 ? false : currentSide;
+	}
 	[[nodiscard]] constexpr double ResolveBarWorkspaceBottomInsetDip(
 		bool folded, bool whiteboard, bool presentation, bool minimized) noexcept
 	{

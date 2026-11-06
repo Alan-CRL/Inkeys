@@ -391,6 +391,16 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ExpandDirectionAdjustment, 1) \
+				GROUP(Workspace, \
+					GROUP(Ppt, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, AutoDockMask, 1) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+					) \
+					GROUP(Whiteboard, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, AutoDockMask, 1) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+					) \
+				) \
 				GROUP(AutoCollapse, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Drawing, 1) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Erasing, 0) \

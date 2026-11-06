@@ -624,7 +624,7 @@ namespace Inkeys::UI::Bar
 				if (!RunPhase("PptToWhiteboard", [&] { workspaceScope_->Set(WorkspaceScene::Whiteboard); SetWhiteboardActive(true); }, false)) return failures_;
 				if (!RunPhase("WhiteboardToPpt", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); SetWhiteboardActive(false); }, false)) return failures_;
 				if (!RunPhase("FinalLeavePpt", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, true)) return failures_;
-				if (!RunRapidReverse() || !RunRestoreAnimationsOff()) return failures_;
+				if (!RunRapidReverse() || !RunRestoreAnimationsOff() || !RunEntryPolicyMatrix()) return failures_;
 				std::fprintf(stderr, "[UI3WorkspaceCentering] case=%s complete failures=%d\n",
 					caseName_.c_str(), failures_);
 				return failures_;
@@ -1961,6 +1961,100 @@ namespace Inkeys::UI::Bar
 				if (!runShort("RapidReenterDuringLeave", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); PublishPptSession(1, true, nullptr); }, 6)) return false;
 				if (!runShort("RapidFinalLeaveAfterReenter", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, 52)) return false;
 				return SetTool(false) && Settle();
+			}
+
+			// 设置页“场景进入策略”：进入前五种主栏状态 × 勾选/未勾选 × 三种方向，进入后与退出后的形态都必须符合契约。
+			bool RunEntryPolicyMatrix()
+			{
+				struct Access : BarUISetClass
+				{
+					static void SetDockState(BarUISetClass& bar, bool docked, bool centered, bool folded)
+					{
+						(bar.*&Access::BeginBottomDockTransition)();
+						(bar.*&Access::bottomDockMode).store(docked ? BarBottomDockMode::BottomDocked
+							: BarBottomDockMode::Floating, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockCenterMode).store(centered ? BarBottomDockCenterMode::Centered
+							: BarBottomDockCenterMode::Free, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockPhase).store(BarBottomDockPhase::Stable, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockCenterPhase).store(BarBottomDockPhase::Stable, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockElasticOffsetDip).store(0.0, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockCenterElasticOffsetDip).store(0.0, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockRecoveryActive).store(false, std::memory_order_relaxed);
+						(void)(bar.*&Access::FinishBottomDockTransition)(true);
+						bar.barState.fold = folded;
+					}
+				};
+				auto& workspace = Inkeys::config.UI.Bar.Workspace;
+				const int savedMask = workspace.Ppt.AutoDockMask.load(), savedDirection = workspace.Ppt.Direction.load();
+				struct RestoreConfig
+				{
+					int mask, direction;
+					~RestoreConfig()
+					{
+						Inkeys::config.UI.Bar.Workspace.Ppt.AutoDockMask = mask;
+						Inkeys::config.UI.Bar.Workspace.Ppt.Direction = direction;
+					}
+				} restoreConfig{ savedMask, savedDirection };
+				struct Pre { const char* name; bool docked, centered, folded; int bit; };
+				const Pre states[] = {
+					{ "BottomCentered", true, true, false, BarWorkspaceAutoDockBottom },
+					{ "BottomFree", true, false, false, BarWorkspaceAutoDockBottom },
+					{ "BottomFolded", true, false, true, BarWorkspaceAutoDockBottomFolded },
+					{ "Floating", false, false, false, BarWorkspaceAutoDockFloating },
+					{ "FloatingFolded", false, false, true, BarWorkspaceAutoDockFloatingFolded } };
+				const auto runFrames = [&](const char* phase)
+					{
+						for (unsigned frame = 0; frame < 60; ++frame)
+							if (!Step(phase, nullptr, frame, false)) return false;
+						return Settle();
+					};
+				for (const auto& pre : states)
+					for (const int mask : { 0, 15 })
+						for (const int direction : { 0, 1, 2 })
+						{
+							if (!SetTool(false) || !Settle()) return false;
+							Access::SetDockState(*owner_, pre.docked, pre.centered, pre.folded);
+							owner_->UpdateRendering(false);
+							if (!Settle()) return false;
+							const bool baselineSide = owner_->barState.widgetPosition.mainBar;
+							workspace.Ppt.AutoDockMask = mask;
+							workspace.Ppt.Direction = direction;
+							workspaceScope_->Set(WorkspaceScene::Presentation);
+							PublishPptSession(1, true, nullptr);
+							if (!runFrames("EntryPolicyEnter")) return false;
+							const auto entered = owner_->BottomDockPresentedSnapshot();
+							const bool takeOver = (mask & pre.bit) != 0;
+							const bool expectedSide = takeOver && direction != 0 ? direction == 1 : baselineSide;
+							bool entryOk;
+							if (takeOver)
+								entryOk = entered.mode == BarBottomDockMode::BottomDocked
+									&& entered.centerMode == BarBottomDockCenterMode::Centered
+									&& entered.centerPhase == BarBottomDockPhase::Stable && !owner_->barState.fold
+									&& owner_->barState.widgetPosition.mainBar == expectedSide
+									&& std::abs(entered.visualBodyCenterScreenX
+										- ResolveBarBottomDockMonitorCenterScreenX(entered.monitorBounds)) <= 0.05;
+							else
+								entryOk = (entered.mode == BarBottomDockMode::BottomDocked) == pre.docked
+									&& owner_->barState.fold == pre.folded;
+							workspaceScope_->Set(WorkspaceScene::Desktop);
+							PublishPptSession(1, false, nullptr);
+							if (!runFrames("EntryPolicyLeave")) return false;
+							const auto left = owner_->BottomDockPresentedSnapshot();
+							const bool restoreOk = (left.mode == BarBottomDockMode::BottomDocked) == pre.docked
+								&& (left.centerMode == BarBottomDockCenterMode::Centered) == pre.centered
+								&& owner_->barState.fold == pre.folded
+								&& owner_->barState.widgetPosition.mainBar == baselineSide;
+							std::fprintf(stderr,
+								"[UI3WorkspaceCentering] case=%s phase=EntryPolicy pre=%s mask=%d direction=%d enter=%s restore=%s\n",
+								caseName_.c_str(), pre.name, mask, direction, entryOk ? "PASS" : "FAIL", restoreOk ? "PASS" : "FAIL");
+							if (!entryOk || !restoreOk) ++failures_;
+						}
+				workspace.Ppt.AutoDockMask = savedMask;
+				workspace.Ppt.Direction = savedDirection;
+				// 回到居中展开基线，供后续用例继续使用。
+				Access::SetDockState(*owner_, true, true, false);
+				owner_->UpdateRendering(false);
+				return Settle();
 			}
 
 			bool RunRestoreAnimationsOff()

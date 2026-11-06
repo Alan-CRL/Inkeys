@@ -800,6 +800,33 @@
         }
       }
     },
+    "Position":
+    {
+      "N": "Posisi",
+      "DesktopSection": "Desktop",
+      "PptSection": "Presentasi",
+      "WhiteboardSection": "Papan tulis",
+      "StartupE": "Menentukan lokasi bilah muncul pada peluncuran berikutnya. Bilah atas di tengah hanya posisi awal dan tidak menempel.",
+      "TypeBottomBar": "Bilah bawah di tengah",
+      "TypeTopBar": "Bilah atas di tengah",
+      "TypeFloating": "Jendela mengambang",
+      "PositionLabel": "Posisi",
+      "ExpandRight": "Perluas ke kanan",
+      "ExpandLeft": "Perluas ke kiri",
+      "FloatBottomLeft": "Kiri bawah",
+      "FloatBottomRight": "Kanan bawah",
+      "FloatBottomCenter": "Tengah bawah",
+      "PptAutoDock": "Masuk ke mode bilah bawah di tengah saat tayangan slide dimulai",
+      "PptAutoDockE": "Jika sebelumnya bilah berada dalam keadaan yang dicentang, bilah otomatis menjadi bilah bawah di tengah yang terbuka saat tayangan dimulai dan dipulihkan setelah selesai.",
+      "WhiteboardAutoDock": "Masuk ke mode bilah bawah di tengah saat masuk ke papan tulis",
+      "WhiteboardAutoDockE": "Jika sebelumnya bilah berada dalam keadaan yang dicentang, bilah otomatis menjadi bilah bawah di tengah yang terbuka saat papan tulis dibuka dan dipulihkan setelah ditutup.",
+      "StateBottom": "Keadaan bilah bawah",
+      "StateBottomFolded": "Keadaan bilah bawah (diciutkan)",
+      "StateFloating": "Keadaan jendela mengambang",
+      "StateFloatingFolded": "Keadaan jendela mengambang (diciutkan)",
+      "MainButtonDirection": "Arah tombol utama",
+      "DirectionKeep": "Tidak diubah"
+    },
     "Preset":
     {
       "N": "Prasetel",
