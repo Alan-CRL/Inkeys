@@ -163,3 +163,20 @@ IdtMain 启动同步 / Setting 热更新 ──► Host::SetCanvasDebugOptions �
 - 呈现帧中 `frameDirty` 非空时,再并入当前全部标记 bounds(标记每个呈现帧完整重绘,其区域必须先被重新合成,避免半透明像素叠加,与 cursor 同一规则);标记在 `DrawTransientDrawingCursor` 之后、`PresentFrame` 之前绘制,只写 backbuffer。
 - prev bounds 在 `Update` 时就提交(不等 Present 成功):Present/栅格失败都会 `RequestFullPresent`/`activeLayerRebuildPending`,下一帧整屏重合成,不会遗留残影。
 - 设备恢复:`ReleaseResources` 会释放调试资源;下一迭代 `EnsureDebugOverlayResources` 报告 `recreated`,调用 `MarkGpuStale` 重新上传并脏化板子/标记区域。创建失败只记录一次并在本会话禁用覆盖层 GPU 部分。
+
+## 修订(用户反馈)
+- 可视化是与所有工具互斥的模式:进入后选择/绘制/橡皮/几何/穿透按钮一律显示未选中,点击任一工具即退出(含点击底层借用身份对应的工具);按钮位于 A1 “清空”之后。
+- 打开“画布调试”开关自动进入可视化;要测试绘制等需自行切换工具。启动时持久化为开启不自动进入。
+- 画布调试开关不持久化(已移除 `Experimental.Inkeys3.Draw3.CanvasDebug` 配置键),改为 `IdtState.cpp` 内的进程内原子,每次启动默认关闭。
+- 可视化标记存在的帧是真实画布帧,计入帧率;只有纯板子自刷新帧不计入(此前触摸时帧率显示为 0)。
+
+## 修订:接触表扩展(用户反馈)
+- 新增列:`Src`(设备来源分类 ExtPen/IntPen/Touch/Pad/Mouse)、`Path`(输入通路 RTS / RTS-XY / Win32)、`Id`(RTS `tabletContextId:contactId`,鼠标兼容通路为 `--`)、`Alt`(高度角 = 90° - tilt)、`Azi`(方位角 = 360° - orientation)、`Spd px/s`、`Spd cm/s`(无可信 EDID 为 `--`)。原 `Tilt`/`Dir` 列由 `Alt`/`Azi` 取代。
+- 性能区新增 `Input` 行:整体输入通路(`HostInputMode` 数值:1 RTS 扩展、2 RTS 基础 X/Y、3 Win32 鼠标),由 `Host` 在 `PumpBridgeState` 推给 `DrawingController::SetCanvasDebugInputMode`。
+- 速度由 Overlay 用相邻输入快照的坐标差与 QPC 差测得(≥4ms 结算 + 指数平滑,100ms 无新输入归零),不依赖橡皮的运动估计(后者只在速度橡皮模式存在)。因 Move 快照是 latest-wins,测得的是被绘制线程读到的采样之间的平均速度。
+
+## 修订:阶段/序号/延迟与板子锚点(用户反馈)
+- 接触表再增列:`Phase`(Down/Move/Up/Cancel,取自快照 `ContactPhase`)、`Seq`(记录发布序号/2,即已发布次数;Move 是 latest-wins,不等于 RTS 包数)、`Lat ms`(输入到上屏延迟)。
+- 延迟 = 绘制线程读到的最新输入快照的 QPC 时间戳 → 承载它的那一帧 `Present` 返回;每个新快照只结算一次,指数平滑;调试板自刷新帧不结算。不含 DWM 扫描输出(至多再多一个刷新周期)。
+- 板子位置改为悬浮:锚点 = 全部列、满行数的最大板子在画布内水平、竖直居中的位置(`(画布 - 容量) / 2`,下限 0)。内容变化时左端、上端不动,只向右、向下生长;紧凑状态因此位于水平居中偏左、竖直居中的上沿。四个圆角都圆(不再贴边)。脏区仍是 prev ∪ cur。
+- `Id` 列改为 `cid:x`:cid 是 RTS cursor/stylus id(`record->ContactId()`);x 是断触续接前一个接触的 cid,不是续接为 0。不再显示 tablet context id(真机上它是很大的数,且对排查续接没有帮助)。x 由 `RuntimeStroke::debugPreviousContactId` 提供,在唯一的生产接管点 `AdoptReconnectedContact` 之后写入,链式续接显示紧邻的上一个 cid。可视化探测接触不会续接,x 恒为 0;要看续接需切到绘制工具。

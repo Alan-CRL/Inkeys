@@ -2115,6 +2115,7 @@ namespace Inkeys::Drawing::Draw3
 			ContactSnapshot deferredUpSnapshot = {};
 			DirectX::XMFLOAT2 reconnectDirection = {};
 			int64_t reconnectDeadlineQpc = 0;
+			uint32_t debugPreviousContactId = 0; // 断触续接前一个接触的 cid，仅供画布调试板显示。
 			uint32_t laserParticleSeed = 0;
 			uint64_t laserLayerId = 0;
 			uint32_t laserParticleSeedCursor = 0;
@@ -10203,6 +10204,11 @@ namespace Inkeys::Drawing::Draw3
 		canvasDebugOptions_.store(next, std::memory_order_release);
 	}
 
+	void DrawingController::SetCanvasDebugInputMode(uint8_t mode) noexcept
+	{
+		canvasDebugInputMode_.store(mode, std::memory_order_release);
+	}
+
 	bool DrawingController::GetCanvasDebugEnabled() const noexcept
 	{
 		return (canvasDebugOptions_.load(std::memory_order_acquire) & 1u) != 0;
@@ -11279,7 +11285,7 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 		auto makeCanvasDebugSample = [&](const ContactHandle& handle,
-			const ContactSnapshot& snapshot) -> CanvasDebug::ContactSample
+			const ContactSnapshot& snapshot, uint32_t previousContactId = 0) -> CanvasDebug::ContactSample
 		{
 			CanvasDebug::ContactSample out;
 			const InputDeviceType type = handle.record->DeviceType();
@@ -11296,28 +11302,59 @@ namespace Inkeys::Drawing::Draw3
 			default: out.kind = CanvasDebug::ContactKind::MouseRight; break;
 			}
 			out.terminal = snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled;
+			const bool mouse = type == InputDeviceType::MouseLeft || type == InputDeviceType::MouseRight;
+			out.hasRtsIds = !mouse;
+			out.contactId = handle.record->ContactId();
+			out.previousContactId = previousContactId;
+			// 鼠标只可能来自 Win32 兼容通路；其余设备走 RTS，扩展/基础由 Host 整体选定。
+			if (mouse) out.path = CanvasDebug::InputPath::Win32Mouse;
+			else
+			{
+				const uint8_t mode = canvasDebugInputMode_.load(std::memory_order_acquire);
+				out.path = mode == 1 ? CanvasDebug::InputPath::RtsExtended
+					: mode == 2 ? CanvasDebug::InputPath::RtsBasicXY : CanvasDebug::InputPath::Unknown;
+			}
+			switch (snapshot.source.kind)
+			{
+			case SpeedEraser::SourceKind::Mouse: out.source = CanvasDebug::SourceClass::Mouse; break;
+			case SpeedEraser::SourceKind::ExternalPen: out.source = CanvasDebug::SourceClass::ExternalPen; break;
+			case SpeedEraser::SourceKind::IntegratedPen: out.source = CanvasDebug::SourceClass::IntegratedPen; break;
+			case SpeedEraser::SourceKind::Touch: out.source = CanvasDebug::SourceClass::Touch; break;
+			case SpeedEraser::SourceKind::TouchPad: out.source = CanvasDebug::SourceClass::TouchPad; break;
+			default: out.source = CanvasDebug::SourceClass::Unknown; break;
+			}
+			out.qpc = snapshot.qpc;
+			switch (snapshot.phase)
+			{
+			case ContactPhase::Down: out.stage = CanvasDebug::ContactStage::Down; break;
+			case ContactPhase::Move: out.stage = CanvasDebug::ContactStage::Move; break;
+			case ContactPhase::Up: out.stage = CanvasDebug::ContactStage::Up; break;
+			case ContactPhase::Cancelled: out.stage = CanvasDebug::ContactStage::Cancelled; break;
+			}
+			out.publishCount = snapshot.sequence / 2;
 			out.x = snapshot.position.x;
 			out.y = snapshot.position.y;
 			out.pressure = snapshot.pressure;
 			out.tilt = snapshot.tilt;
 			out.orientation = snapshot.orientation;
+			// 可信物理标尺同时服务面积（cm）和速度（cm/s），与是否有面积无关。
+			if (!canvasDebugDisplayFresh)
+			{
+				canvasDebugDisplay = window_.SpeedEraserDisplayScaleSnapshot();
+				canvasDebugDisplayFresh = true;
+			}
+			if (canvasDebugDisplay.physicalAvailable && canvasDebugDisplay.cmPerPixelX > 0.0f &&
+				canvasDebugDisplay.cmPerPixelY > 0.0f)
+			{
+				out.cmPerPixelX = canvasDebugDisplay.cmPerPixelX;
+				out.cmPerPixelY = canvasDebugDisplay.cmPerPixelY;
+			}
 			const SizeF& area = snapshot.contactSize;
 			if (std::isfinite(area.width) && std::isfinite(area.height) &&
 				area.width > 0.0f && area.height > 0.0f)
 			{
 				out.areaWidthPx = area.width;
 				out.areaHeightPx = area.height;
-				if (!canvasDebugDisplayFresh)
-				{
-					canvasDebugDisplay = window_.SpeedEraserDisplayScaleSnapshot();
-					canvasDebugDisplayFresh = true;
-				}
-				if (canvasDebugDisplay.physicalAvailable && canvasDebugDisplay.cmPerPixelX > 0.0f &&
-					canvasDebugDisplay.cmPerPixelY > 0.0f)
-				{
-					out.cmPerPixelX = canvasDebugDisplay.cmPerPixelX;
-					out.cmPerPixelY = canvasDebugDisplay.cmPerPixelY;
-				}
 				// 只有 Touch 且手掌橡皮已开启才存在识别阈值，实线框判定与识别同源。
 				if (type == InputDeviceType::Touch && palmEraserOptions_.enabled)
 					out.palmThresholdAreaPx = canvasDebugPalmThreshold(snapshot.source);
@@ -11355,7 +11392,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!runtime || runtime->ended || runtime->awaitingReconnect || !runtime->handle.record) continue;
 				ContactSnapshot latest = runtime->lastInputSnapshot;
 				input_.TryReadSnapshot(runtime->handle, latest);
-				overlay.ObserveContact(makeCanvasDebugSample(runtime->handle, latest));
+				overlay.ObserveContact(makeCanvasDebugSample(runtime->handle, latest, runtime->debugPreviousContactId));
 			}
 			for (const CanvasGestureContactRuntime& contact : gestureContacts)
 			{
@@ -11377,6 +11414,12 @@ namespace Inkeys::Drawing::Draw3
 			params.dpiScale = static_cast<float>(configuration_.dpiScale);
 			params.targetFps = configuration_.timingProfile.target_fps;
 			params.markers = options == 3u;
+			{
+				const uint8_t inputMode = canvasDebugInputMode_.load(std::memory_order_acquire);
+				params.inputPath = inputMode == 1 ? CanvasDebug::InputPath::RtsExtended
+					: inputMode == 2 ? CanvasDebug::InputPath::RtsBasicXY
+					: inputMode == 3 ? CanvasDebug::InputPath::Win32Mouse : CanvasDebug::InputPath::Unknown;
+			}
 			RECT dirty = overlay.Update(params);
 
 			if (!canvasDebugGpuUnavailable)
@@ -12331,6 +12374,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
 						AdoptReconnectedContact(*reconnectRuntime, handle);
+						reconnectRuntime->debugPreviousContactId = reconnectPreviousContactId;
 						BeginTailInputDiagnostic(*reconnectRuntime, down, true,
 							reconnectRuntime->stroke.tailInputDiagnostic.enabled);
 						reconnectRuntime->lastSpeedSnapshot = down;
@@ -12498,6 +12542,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->deferredUpSnapshot = {};
 				runtime->reconnectDirection = {};
 				runtime->reconnectDeadlineQpc = 0;
+				runtime->debugPreviousContactId = 0; // RuntimeStroke 来自复用池，必须清掉上一条笔画的续接来源。
 				runtime->reconnectPredictedResults.clear();
 				runtime->reconnectManualTestRanges.clear();
 				runtime->shape.Reset();
@@ -18274,13 +18319,22 @@ namespace Inkeys::Drawing::Draw3
 			if (canvasDebugOverlay)
 			{
 				// 脏区完全落在调试注入范围内且没有强制全帧时，是调试板自己的刷新帧，不计入帧率。
+				// 可视化标记存在时每个呈现帧都在重绘标记，那是真实的画布帧，必须计入。
 				const bool debugOnlyFrame = canvasDebugInjected && !forceFullPresent &&
+					IsEmptyRect(canvasDebugOverlay->MarkerBounds()) &&
 					frameDirty.left >= canvasDebugInjectedBounds.left &&
 					frameDirty.top >= canvasDebugInjectedBounds.top &&
 					frameDirty.right <= canvasDebugInjectedBounds.right &&
 					frameDirty.bottom <= canvasDebugInjectedBounds.bottom;
 				canvasDebugOverlay->OnFrame(canvasFrameElapsedMilliseconds,
 					presentSucceeded && !debugOnlyFrame);
+				if (presentSucceeded && !debugOnlyFrame)
+				{
+					// 输入到上屏：快照时间戳到承载它的 Present 返回；DWM 扫描输出还会再多至多一个刷新周期。
+					LARGE_INTEGER presentedQpc = {};
+					QueryPerformanceCounter(&presentedQpc);
+					canvasDebugOverlay->OnPresented(presentedQpc.QuadPart);
+				}
 			}
 			previousCanvasFrameWorkMilliseconds = (std::max)(0.0,
 				canvasFrameElapsedMilliseconds - lastPresentDurationMs_);

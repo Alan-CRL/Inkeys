@@ -7687,7 +7687,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive,
-		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser);
+		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser && !IsCanvasDebugVisualActive());
 	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
 	const bool recallIdleDismissed = frame.recallIdleDismissed;
 	const bool recallChanged = owner_.recallAttribute.Advance(owner_, frame.recallChrome, frame.recallAnchorVisible, animationDtSeconds,

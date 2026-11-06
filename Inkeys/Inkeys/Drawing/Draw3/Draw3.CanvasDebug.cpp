@@ -25,7 +25,7 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 
 		constexpr int kFirstGlyph = 32;
 		constexpr int kGlyphCount = 95; // ASCII 32..126
-		constexpr std::size_t kMaxColumns = 12;
+		constexpr std::size_t kMaxColumns = 16;
 		constexpr int kPerfChars = 32;      // 性能区/曲线宽度（字符数）。
 		constexpr int kLabelChars = 16;     // 标记标签最多字符数。
 		constexpr int kLabelLines = 2;
@@ -136,17 +136,16 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 			}
 		}
 
-		// 右侧两个圆角的覆盖率（左边贴屏幕边缘，保持直角）。
-		std::uint32_t RightCornerCoverage(int x, int y, int width, int height, int radius) noexcept
+		// 四个圆角的覆盖率（板子悬浮在画布中，不贴边）。
+		std::uint32_t CornerCoverage(int x, int y, int width, int height, int radius) noexcept
 		{
 			if (radius <= 0) return 255;
 			float centerX = 0.0f, centerY = 0.0f;
-			if (x >= width - radius)
-			{
-				if (y < radius) { centerX = static_cast<float>(width - radius); centerY = static_cast<float>(radius); }
-				else if (y >= height - radius) { centerX = static_cast<float>(width - radius); centerY = static_cast<float>(height - radius); }
-				else return 255;
-			}
+			if (x < radius) centerX = static_cast<float>(radius);
+			else if (x >= width - radius) centerX = static_cast<float>(width - radius);
+			else return 255;
+			if (y < radius) centerY = static_cast<float>(radius);
+			else if (y >= height - radius) centerY = static_cast<float>(height - radius);
 			else return 255;
 			const float dx = x + 0.5f - centerX;
 			const float dy = y + 0.5f - centerY;
@@ -217,27 +216,112 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 
 		constexpr float kRadiansToDegrees = 57.2957795f;
 
-		void FormatTilt(const ContactSample& s, char* out, std::size_t n)
+		// 高度角：笔与屏幕平面的夹角，90° 为垂直于屏幕；等于 90° - 倾斜。
+		void FormatAltitude(const ContactSample& s, char* out, std::size_t n)
 		{
-			if (Known(s.tilt)) std::snprintf(out, n, "%d", RoundToInt(s.tilt * kRadiansToDegrees, 0, 360));
+			if (Known(s.tilt)) std::snprintf(out, n, "%d", RoundToInt(90.0f - s.tilt * kRadiansToDegrees, 0, 90));
 			else std::snprintf(out, n, "--");
 		}
 
-		void FormatDirection(const ContactSample& s, char* out, std::size_t n)
+		// 方位角：笔身在屏幕平面内的指向（0..359°）；内部方向 orientation = 360° - 方位角。
+		void FormatAzimuth(const ContactSample& s, char* out, std::size_t n)
 		{
-			if (Known(s.orientation)) std::snprintf(out, n, "%d", RoundToInt(s.orientation * kRadiansToDegrees, 0, 360));
+			if (!Known(s.orientation)) { std::snprintf(out, n, "--"); return; }
+			int degrees = RoundToInt(360.0f - s.orientation * kRadiansToDegrees, 0, 720);
+			degrees %= 360;
+			std::snprintf(out, n, "%d", degrees);
+		}
+
+		void FormatPath(const ContactSample& s, char* out, std::size_t n)
+		{
+			const char* name = "--";
+			switch (s.path)
+			{
+			case InputPath::RtsExtended: name = "RTS"; break;
+			case InputPath::RtsBasicXY: name = "RTS-XY"; break;
+			case InputPath::Win32Mouse: name = "Win32"; break;
+			default: break;
+			}
+			std::snprintf(out, n, "%s", name);
+		}
+
+		void FormatSource(const ContactSample& s, char* out, std::size_t n)
+		{
+			const char* name = "--";
+			switch (s.source)
+			{
+			case SourceClass::Mouse: name = "Mouse"; break;
+			case SourceClass::ExternalPen: name = "ExtPen"; break;
+			case SourceClass::IntegratedPen: name = "IntPen"; break;
+			case SourceClass::Touch: name = "Touch"; break;
+			case SourceClass::TouchPad: name = "Pad"; break;
+			default: break;
+			}
+			std::snprintf(out, n, "%s", name);
+		}
+
+		void FormatId(const ContactSample& s, char* out, std::size_t n)
+		{
+			// cid:x —— x 为断触续接前一个接触的 cid，不是续接为 0。
+			if (s.hasRtsIds) std::snprintf(out, n, "%u:%u", s.contactId, s.previousContactId);
+			else std::snprintf(out, n, "--");
+		}
+
+		void FormatStage(const ContactSample& s, char* out, std::size_t n)
+		{
+			const char* name = "--";
+			switch (s.stage)
+			{
+			case ContactStage::Down: name = "Down"; break;
+			case ContactStage::Move: name = "Move"; break;
+			case ContactStage::Up: name = "Up"; break;
+			case ContactStage::Cancelled: name = "Cancel"; break;
+			default: break;
+			}
+			std::snprintf(out, n, "%s", name);
+		}
+
+		void FormatPublishCount(const ContactSample& s, char* out, std::size_t n)
+		{
+			if (s.stage == ContactStage::Unknown) std::snprintf(out, n, "--");
+			else std::snprintf(out, n, "%llu", static_cast<unsigned long long>(std::min<std::uint64_t>(s.publishCount, 9999999ull)));
+		}
+
+		void FormatLatency(const ContactSample& s, char* out, std::size_t n)
+		{
+			if (Known(s.latencyMs)) std::snprintf(out, n, "%.1f", std::min(s.latencyMs, 999.9f));
+			else std::snprintf(out, n, "--");
+		}
+
+		void FormatSpeedPx(const ContactSample& s, char* out, std::size_t n)
+		{
+			if (Known(s.speedPxPerSec)) std::snprintf(out, n, "%d", RoundToInt(s.speedPxPerSec, 0, 99999));
+			else std::snprintf(out, n, "--");
+		}
+
+		void FormatSpeedCm(const ContactSample& s, char* out, std::size_t n)
+		{
+			if (Known(s.speedCmPerSec)) std::snprintf(out, n, "%.1f", std::min(s.speedCmPerSec, 999.9f));
 			else std::snprintf(out, n, "--");
 		}
 
 		constexpr Column kColumns[] = {
 			{ "Type", 6, false, FormatType },
+			{ "Src", 6, false, FormatSource },
+			{ "Path", 6, false, FormatPath },
+			{ "Id", 13, false, FormatId },
+			{ "Phase", 6, false, FormatStage },
+			{ "Seq", 7, true, FormatPublishCount },
 			{ "X", 5, true, FormatX },
 			{ "Y", 5, true, FormatY },
 			{ "Prs", 5, true, FormatPressure },
+			{ "Alt", 3, true, FormatAltitude },
+			{ "Azi", 3, true, FormatAzimuth },
 			{ "Area px", 9, true, FormatAreaPx },
 			{ "Area cm", 9, true, FormatAreaCm },
-			{ "Tilt", 4, true, FormatTilt },
-			{ "Dir", 4, true, FormatDirection },
+			{ "Spd px/s", 8, true, FormatSpeedPx },
+			{ "Spd cm/s", 8, true, FormatSpeedCm },
+			{ "Lat ms", 6, true, FormatLatency },
 		};
 		constexpr std::size_t kColumnCount = std::size(kColumns);
 		static_assert(kColumnCount <= kMaxColumns);
@@ -278,7 +362,7 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		{
 			int y = m.padding;
 			y += m.lineHeight + m.gap;            // 标题
-			y += 2 * m.lineHeight + m.gap;        // 性能两行
+			y += 3 * m.lineHeight + m.gap;        // 性能三行（含输入通路）
 			y += m.chartHeight + m.gap;           // 曲线
 			if (rows > 0)
 			{
@@ -356,6 +440,9 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		SYSTEM_INFO info = {};
 		GetSystemInfo(&info);
 		processorCount_ = std::max<int>(1, static_cast<int>(info.dwNumberOfProcessors));
+		LARGE_INTEGER frequency = {};
+		if (QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0)
+			qpcFrequency_ = static_cast<double>(frequency.QuadPart);
 	}
 
 	// 用 GDI 一次性把 ASCII 字形渲染成灰度覆盖率；绘制阶段只做内存拷贝，不再调用 GDI。
@@ -482,11 +569,92 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 			target->order = ++orderCounter_;
 			target->labelValid = false;
 			target->rasterized = {};
+			target->speedQpc = 0;
+			target->speedPx = target->speedCm = kUnknown;
+			target->speedAdvanced = false;
+			target->speedAdvanceMs = 0.0;
+			target->latencyQpc = 0;
+			target->latencyMs = kUnknown;
 			rowsStructureDirty_ = true;
 		}
 		if (target->terminal) { target->seen = true; return; } // 已结束的行不再接受更新。
+		// 速度：相邻输入快照的坐标差 / QPC 差；至少相隔 4 ms 才结算，避免高回报率下的量化噪声，
+		// 再做指数平滑。Move 快照是 latest-wins，所以这里测到的是被绘制线程读到的采样之间的平均速度。
+		if (sample.qpc > 0)
+		{
+			if (target->speedQpc == 0)
+			{
+				target->speedQpc = sample.qpc;
+				target->speedAnchorX = sample.x;
+				target->speedAnchorY = sample.y;
+			}
+			else if (sample.qpc > target->speedQpc)
+			{
+				const double seconds = static_cast<double>(sample.qpc - target->speedQpc) / qpcFrequency_;
+				if (seconds >= 0.004)
+				{
+					const double dx = static_cast<double>(sample.x) - target->speedAnchorX;
+					const double dy = static_cast<double>(sample.y) - target->speedAnchorY;
+					const float px = static_cast<float>(std::sqrt(dx * dx + dy * dy) / seconds);
+					target->speedPx = target->speedPx < 0.0f ? px : target->speedPx * 0.6f + px * 0.4f;
+					if (sample.cmPerPixelX > 0.0f && sample.cmPerPixelY > 0.0f)
+					{
+						const double cx = dx * sample.cmPerPixelX;
+						const double cy = dy * sample.cmPerPixelY;
+						const float cm = static_cast<float>(std::sqrt(cx * cx + cy * cy) / seconds);
+						target->speedCm = target->speedCm < 0.0f ? cm : target->speedCm * 0.6f + cm * 0.4f;
+					}
+					else target->speedCm = kUnknown;
+					target->speedQpc = sample.qpc;
+					target->speedAnchorX = sample.x;
+					target->speedAnchorY = sample.y;
+					target->speedAdvanced = true;
+				}
+			}
+		}
 		target->sample = sample;
+		target->sample.speedPxPerSec = target->speedPx;
+		target->sample.speedCmPerSec = target->speedCm;
+		target->sample.latencyMs = target->latencyMs;
 		target->seen = true;
+	}
+
+	bool Overlay::ContactSpeed(std::uint64_t key, float& pxPerSec, float& cmPerSec) const noexcept
+	{
+		for (const Slot& slot : slots_)
+			if (slot.used && slot.sample.key == key)
+			{
+				pxPerSec = slot.speedPx;
+				cmPerSec = slot.speedCm;
+				return true;
+			}
+		return false;
+	}
+
+	void Overlay::OnPresented(std::int64_t nowQpc) noexcept
+	{
+		for (Slot& slot : slots_)
+		{
+			if (!slot.used || slot.terminal || slot.sample.qpc <= 0 || slot.sample.qpc == slot.latencyQpc) continue;
+			slot.latencyQpc = slot.sample.qpc; // 同一个输入快照只结算一次。
+			if (nowQpc < slot.sample.qpc) continue;
+			const float milliseconds = static_cast<float>(
+				static_cast<double>(nowQpc - slot.sample.qpc) * 1000.0 / qpcFrequency_);
+			if (!Finite(milliseconds) || milliseconds > 10000.0f) continue;
+			slot.latencyMs = slot.latencyMs < 0.0f ? milliseconds : slot.latencyMs * 0.6f + milliseconds * 0.4f;
+			slot.sample.latencyMs = slot.latencyMs;
+		}
+	}
+
+	bool Overlay::ContactLatency(std::uint64_t key, float& milliseconds) const noexcept
+	{
+		for (const Slot& slot : slots_)
+			if (slot.used && slot.sample.key == key)
+			{
+				milliseconds = slot.latencyMs;
+				return true;
+			}
+		return false;
 	}
 
 	void Overlay::OnFrame(double workMs, bool counted) noexcept
@@ -637,7 +805,7 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 			for (int x = 0; x < plateWidth_; ++x)
 			{
 				const std::uint32_t alpha = kBackgroundAlpha *
-					RightCornerCoverage(x, y, plateWidth_, plateHeight_, m.cornerRadius) / 255;
+					CornerCoverage(x, y, plateWidth_, plateHeight_, m.cornerRadius) / 255;
 				surface.pixels[static_cast<std::size_t>(y) * surface.stride + x] = Premultiplied(kBackground, alpha);
 			}
 
@@ -666,6 +834,20 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		DrawGlyphs(surface, coverage, cw, ch, left + 14 * cw, y, "Proc CPU", kDim);
 		std::snprintf(text, sizeof(text), "%7.1f%%", std::min(cpuPercent_, 999.9));
 		DrawGlyphs(surface, coverage, cw, ch, left + 24 * cw, y, text, kText);
+		y += m.lineHeight;
+		{
+			const char* path = "--";
+			switch (inputPath_)
+			{
+			case InputPath::RtsExtended: path = "RTS extended"; break;
+			case InputPath::RtsBasicXY: path = "RTS basic X/Y"; break;
+			case InputPath::Win32Mouse: path = "Win32 mouse"; break;
+			default: break;
+			}
+			DrawGlyphs(surface, coverage, cw, ch, left, y, "Input", kDim);
+			DrawGlyphs(surface, coverage, cw, ch, left + 6 * cw, y, path, kText);
+			shownInputPath_ = inputPath_;
+		}
 		y += m.lineHeight + m.gap;
 
 		// 帧率曲线：任务管理器风格，最近 60 秒，右侧为最新。
@@ -883,13 +1065,28 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		canvasWidth_ = params.canvasWidth;
 		canvasHeight_ = params.canvasHeight;
 
+		inputPath_ = params.inputPath;
 		SettleSnapshot(params.nowMs, params.targetFps);
+		if (inputPath_ != shownInputPath_) perfDirty_ = true;
 		if (perfDirty_) { needRaster = true; perfDirty_ = false; }
 
 		// 接触表维护：未再观察到或已 Up 的行转为“保留”，超时后移除。
 		for (Slot& slot : slots_)
 		{
 			if (!slot.used) continue;
+			if (slot.speedAdvanced)
+			{
+				slot.speedAdvanced = false;
+				slot.speedAdvanceMs = params.nowMs;
+			}
+			else if (!slot.terminal && slot.speedPx > 0.0f && params.nowMs - slot.speedAdvanceMs > 100.0)
+			{
+				// 输入停止（或手指/笔静止不再上报）：速度归零，而不是停在最后一个值。
+				slot.speedPx = 0.0f;
+				if (slot.speedCm > 0.0f) slot.speedCm = 0.0f;
+				slot.sample.speedPxPerSec = slot.speedPx;
+				slot.sample.speedCmPerSec = slot.speedCm;
+			}
 			if (!slot.terminal && (slot.sample.terminal || !slot.seen))
 			{
 				slot.terminal = true;
@@ -903,6 +1100,11 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 				slot.labelValid = false;
 				slot.labelUpload = false;
 				slot.sample = {};
+				slot.speedQpc = 0;
+				slot.speedPx = slot.speedCm = kUnknown;
+				slot.speedAdvanced = false;
+				slot.latencyQpc = 0;
+				slot.latencyMs = kUnknown;
 				rowsStructureDirty_ = true;
 			}
 			else if (!slot.terminal)
@@ -912,7 +1114,13 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 				if (a.kind != b.kind || a.x != b.x || a.y != b.y || a.pressure != b.pressure ||
 					a.tilt != b.tilt || a.orientation != b.orientation ||
 					a.areaWidthPx != b.areaWidthPx || a.areaHeightPx != b.areaHeightPx ||
-					a.cmPerPixelX != b.cmPerPixelX || a.cmPerPixelY != b.cmPerPixelY)
+					a.cmPerPixelX != b.cmPerPixelX || a.cmPerPixelY != b.cmPerPixelY ||
+					a.path != b.path || a.source != b.source || a.stage != b.stage ||
+					a.publishCount != b.publishCount ||
+					std::lround(a.latencyMs * 10.0f) != std::lround(b.latencyMs * 10.0f) ||
+					a.contactId != b.contactId || a.previousContactId != b.previousContactId ||
+					RoundToInt(a.speedPxPerSec, -1, 99999) != RoundToInt(b.speedPxPerSec, -1, 99999) ||
+					std::lround(a.speedCmPerSec * 10.0f) != std::lround(b.speedCmPerSec * 10.0f))
 					rowValuesDirty_ = true;
 			}
 		}
@@ -929,8 +1137,11 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 			plateUpload_ = true;
 		}
 
-		const int top = std::max(0, (canvasHeight_ - plateHeight_) / 2);
-		plateRect_ = { 0, top, plateWidth_, top + plateHeight_ };
+		// 锚点固定为“展开到最大（全部列、满行数）时水平、竖直居中”的位置：平时较窄的板子
+		// 因此位于水平居中偏左处，内容变化时左端和上端不动，只向右、向下生长。
+		const int left = std::max(0, (canvasWidth_ - capacityWidth_) / 2);
+		const int top = std::max(0, (canvasHeight_ - capacityHeight_) / 2);
+		plateRect_ = { left, top, left + plateWidth_, top + plateHeight_ };
 		if (needRaster || gpuStale_ || !SameRect(plateRect_, committedPlateRect_))
 		{
 			UnionInto(dirty, committedPlateRect_);

@@ -81,6 +81,8 @@ namespace
 	std::atomic_uint64_t stateModeTransitionRevision = 0;
 	// 进入可视化调试时的模式修订；0 表示未进入。任何后续修订变化都使该位自动失效。
 	std::atomic_uint64_t canvasDebugVisualRevision = 0;
+	// 画布调试开关只在本次运行有效，不进入配置；每次启动都是关闭。
+	std::atomic_bool canvasDebugEnabled = false;
 	std::atomic_uint64_t draw3ExitSelectionModeRevision = 0;
 	std::mutex eraserPreferencesMutex;
 	std::mutex palmEraserPreferencesMutex;
@@ -2185,7 +2187,7 @@ bool ToggleFreezeFromButton()
 
 bool IsCanvasDebugEnabled() noexcept
 {
-	return Inkeys::config.Experimental.Inkeys3.Draw3.CanvasDebug.load();
+	return canvasDebugEnabled.load(std::memory_order_acquire);
 }
 
 bool IsCanvasDebugVisualActive() noexcept
@@ -2201,15 +2203,40 @@ void PublishCanvasDebugOptions() noexcept
 		IsCanvasDebugEnabled(), IsCanvasDebugVisualActive());
 }
 
+// 持有 stateModeTransitionMutex。可视化是独立于所有工具的互斥模式：
+// 底层仍借用一个标注工具身份让 Draw3 收到接触，但主栏对外只高亮可视化按钮。
+static void EnterCanvasDebugVisualLocked()
+{
+	if (IsComputerInteractionMode(stateMode.StateModeSelect))
+	{
+		// 选择/穿透下 Draw3 不接收接触；先恢复最近的标注工具身份（不改笔型、宽度和颜色记忆）。
+		auto mode = stateMode.lastAnnotationMode;
+		if (mode != StateModeSelectEnum::IdtPen && mode != StateModeSelectEnum::IdtShape &&
+			mode != StateModeSelectEnum::IdtEraser) mode = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelect = mode;
+		stateMode.StateModeSelectTarget = mode;
+		stateMode.StateModeSelectEcho = mode;
+		BackgroundColorMode = mode == StateModeSelectEnum::IdtEraser ? 0 :
+			(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+	}
+	const auto revision = stateModeTransitionRevision.fetch_add(
+		1, std::memory_order_release) + 1;
+	canvasDebugVisualRevision.store(revision, std::memory_order_release);
+}
+
 void SetCanvasDebugEnabled(bool enabled)
 {
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
-		Inkeys::config.Experimental.Inkeys3.Draw3.CanvasDebug = enabled;
-		// 关闭等于退出一切画布调试；重新开启时可视化默认未选中。
+		const bool wasEnabled = IsCanvasDebugEnabled();
+		canvasDebugEnabled.store(enabled, std::memory_order_release);
+		// 关闭等于退出一切画布调试；打开则自动进入可视化，要测试绘制等需自行切换工具。
 		canvasDebugVisualRevision.store(0, std::memory_order_release);
+		if (enabled && !wasEnabled && !WhiteboardSwitching() && !WhiteboardTransactionActive())
+			EnterCanvasDebugVisualLocked();
 		PublishCanvasDebugOptions();
 	}
+	SyncDraw3State();
 	Inkeys::UI::Bar::RefreshToolState();
 }
 
@@ -2225,24 +2252,7 @@ bool ToggleCanvasDebugVisualFromButton()
 			canvasDebugVisualRevision.store(0, std::memory_order_release);
 			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 		}
-		else
-		{
-			if (IsComputerInteractionMode(stateMode.StateModeSelect))
-			{
-				// 选择/穿透下 Draw3 不接收接触；先恢复最近的标注工具身份（不改笔型、宽度和颜色记忆）。
-				auto mode = stateMode.lastAnnotationMode;
-				if (mode != StateModeSelectEnum::IdtPen && mode != StateModeSelectEnum::IdtShape &&
-					mode != StateModeSelectEnum::IdtEraser) mode = StateModeSelectEnum::IdtPen;
-				stateMode.StateModeSelect = mode;
-				stateMode.StateModeSelectTarget = mode;
-				stateMode.StateModeSelectEcho = mode;
-				BackgroundColorMode = mode == StateModeSelectEnum::IdtEraser ? 0 :
-					(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
-			}
-			const auto revision = stateModeTransitionRevision.fetch_add(
-				1, std::memory_order_release) + 1;
-			canvasDebugVisualRevision.store(revision, std::memory_order_release);
-		}
+		else EnterCanvasDebugVisualLocked();
 	}
 	SyncDraw3State();
 	Inkeys::UI::Bar::RefreshToolState();

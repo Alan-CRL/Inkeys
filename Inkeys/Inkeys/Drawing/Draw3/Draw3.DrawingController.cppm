@@ -133,6 +133,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 画布调试：enabled 为设置开关，visual 为可视化模式（visual 仅在 enabled 时生效）。
 		// 可视化模式下新 contact 不建笔、不擦除、不触发手掌橡皮、不写历史，只登记为调试探测接触。
 		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
+		// 整体输入通路（与 HostInputMode 数值一致：0 不可用，1 RTS 扩展，2 RTS 基础 X/Y，3 Win32 鼠标），仅用于调试板显示。
+		void SetCanvasDebugInputMode(uint8_t mode) noexcept;
 		bool GetCanvasDebugEnabled() const noexcept;
 		bool GetCanvasDebugVisual() const noexcept;
 		bool GetInvertedPenEraserEnabled() const noexcept;
@@ -189,6 +191,7 @@ export namespace Inkeys::Drawing::Draw3
 		PalmEraser::Settings palmEraserOptions_;
 		// 位0=画布调试开关，位1=可视化模式；关闭时绘制线程只多一次原子读取。
 		std::atomic<uint32_t> canvasDebugOptions_ = 0;
+		std::atomic<uint8_t> canvasDebugInputMode_ = 0;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;

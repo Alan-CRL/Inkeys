@@ -2611,7 +2611,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
-				bool CanvasDebug = Inkeys::config.Experimental.Inkeys3.Draw3.CanvasDebug;
+				bool CanvasDebug = IsCanvasDebugEnabled();
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
 				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
@@ -4849,13 +4849,12 @@ SettingSessionCoroutine RunSettingSession()
 						}
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.CanvasSection).c_str());
-					Experimental.Inkeys3.CanvasDebug = Inkeys::config.Experimental.Inkeys3.Draw3.CanvasDebug.load();
+					Experimental.Inkeys3.CanvasDebug = IsCanvasDebugEnabled();
 					if (Design::ToggleRow("##experimental-canvas-debug", IA(I18nKey.SettingsUI.DebugSoftware.CanvasDebug.N).c_str(),
 						IA(I18nKey.SettingsUI.DebugSoftware.CanvasDebug.E).c_str(), "\ue9d9", Experimental.Inkeys3.CanvasDebug))
 					{
-						// 热生效：写配置、退出/进入画布调试并同步 Draw3 与主栏按钮，不需要重启。
+						// 热生效且不持久化：每次启动都需要重新打开；同步 Draw3 与主栏按钮，不需要重启。
 						SetCanvasDebugEnabled(Experimental.Inkeys3.CanvasDebug);
-						QueueConfigWrite();
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,

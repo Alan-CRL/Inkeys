@@ -465,6 +465,7 @@ namespace Inkeys::Drawing::Draw3
 		// 位0=画布调试开关，位1=可视化模式；绘制 owner 在 PumpBridgeState 应用。
 		std::atomic_uint32_t canvasDebugOptions = 0;
 		uint32_t appliedCanvasDebugOptions = UINT32_MAX;
+		uint32_t appliedCanvasDebugInputMode = UINT32_MAX;
 		std::atomic_bool drawingHapticsEnabled = true;
 		std::jthread drawingThread;
 		std::atomic_bool running = false;
@@ -1718,6 +1719,13 @@ namespace Inkeys::Drawing::Draw3
 					drawing->SetCanvasDebugOptions((canvasDebug & 1u) != 0, (canvasDebug & 2u) != 0);
 					appliedCanvasDebugOptions = canvasDebug;
 				}
+				// 输入通路只在启动/回退时变化；与 HostInputMode 数值一致，仅供调试板显示。
+				const uint32_t inputPath = static_cast<uint32_t>(inputMode.load(std::memory_order_acquire));
+				if (inputPath != appliedCanvasDebugInputMode)
+				{
+					drawing->SetCanvasDebugInputMode(static_cast<uint8_t>(inputPath));
+					appliedCanvasDebugInputMode = inputPath;
+				}
 				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
 				if (general != appliedGeneralDrawingOptions)
 				{
@@ -2199,6 +2207,7 @@ namespace Inkeys::Drawing::Draw3
 							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
 							appliedPalmEraserOptions.reset();
 							appliedCanvasDebugOptions = UINT32_MAX;
+							appliedCanvasDebugInputMode = UINT32_MAX;
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"

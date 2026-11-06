@@ -84,9 +84,11 @@ namespace
 		const RECT first = overlay.Update(Params(1000.0));
 		check(overlay.PlateVisible(), "plate visible after the first update");
 		const RECT plate = overlay.PlateRect();
-		check(plate.left == 0 && plate.right == overlay.PlateWidth() && plate.bottom - plate.top == overlay.PlateHeight(),
-			"plate hugs the left edge and matches its bitmap size");
-		check(std::abs((plate.top + plate.bottom) / 2 - 300) <= 1, "plate is vertically centered");
+		const int anchorLeft = std::max(0, (800 - overlay.PlateCapacityWidth()) / 2);
+		const int anchorTop = std::max(0, (600 - overlay.PlateCapacityHeight()) / 2);
+		check(plate.left == anchorLeft && plate.right - plate.left == overlay.PlateWidth() &&
+			plate.bottom - plate.top == overlay.PlateHeight(), "plate matches its bitmap size at the anchor");
+		check(plate.top == anchorTop, "the top edge is anchored where the full table would be vertically centered");
 		check(Contains(first, plate), "first update dirties the whole plate");
 		check(overlay.ConsumePlateUpload() && !overlay.ConsumePlateUpload(), "plate upload is requested once per redraw");
 
@@ -96,6 +98,7 @@ namespace
 		check((body >> 24) > 150 && ((body >> 16) & 0xFF) <= (body >> 24), "plate body is translucent premultiplied");
 		const std::uint32_t corner = pixels[0 * stride + overlay.PlateWidth() - 1];
 		check((corner >> 24) < 60, "right-hand corners are rounded");
+		check((pixels[0] >> 24) < 60, "left-hand corners are rounded because the plate floats");
 		int bright = 0;
 		for (int y = 0; y < overlay.PlateHeight(); ++y)
 			for (int x = 0; x < overlay.PlateWidth(); ++x)
@@ -273,9 +276,113 @@ namespace
 					maximumColumn = std::max(maximumColumn, x);
 				}
 		check(maximumColumn >= 0, "different values render differently");
-		// Type 占 6 字符 + 1 间隔，X 列为接下来的 5 个字符。
-		check(minimumColumn >= padding + 7 * cell && maximumColumn < padding + 12 * cell,
+		// Type/Src/Path 各 6、Id 13、Phase 6、Seq 7 字符，各加 1 间隔后 X 列从第 50 个字符开始，宽 5。
+		check(minimumColumn >= padding + 50 * cell && maximumColumn < padding + 55 * cell,
 			"columns stay aligned when the X value gets longer");
+	}
+
+	// 内容变化时左端和上端不动，只向右、向下生长。
+	void CheckAnchoredGrowth(Checks& check)
+	{
+		const auto Wide = [](double now)
+		{
+			FrameParams params = Params(now);
+			params.canvasWidth = 1800;
+			params.canvasHeight = 1000;
+			return params;
+		};
+		Overlay overlay;
+		overlay.Update(Wide(1000.0));
+		const RECT compact = overlay.PlateRect();
+		check(compact.left > 0 && compact.right < 900, "the compact plate sits left of the horizontal center");
+		overlay.BeginContacts();
+		overlay.ObserveContact(Touch(1, 100, 200));
+		overlay.Update(Wide(1010.0));
+		const RECT grown = overlay.PlateRect();
+		check(grown.left == compact.left && grown.top == compact.top, "the left and top edges stay put when a row appears");
+		check(grown.right > compact.right && grown.bottom > compact.bottom, "the plate grows to the right and downward");
+		overlay.BeginContacts();
+		overlay.Update(Wide(1020.0));
+		overlay.BeginContacts();
+		const RECT dirty = overlay.Update(Wide(3000.0)); // 抬起保留期之后行消失。
+		const RECT shrunk = overlay.PlateRect();
+		check(shrunk.left == compact.left && shrunk.top == compact.top && shrunk.right == compact.right &&
+			shrunk.bottom == compact.bottom, "the plate returns to the compact rectangle");
+		check(Contains(dirty, grown), "shrinking dirties the previous larger rectangle");
+	}
+
+	// 速度由相邻输入快照测得；输入停止后衰减为 0；没有时间戳则保持未知。
+	void CheckSpeedAndInputPath(Checks& check)
+	{
+		LARGE_INTEGER frequency = {};
+		QueryPerformanceFrequency(&frequency);
+		const std::int64_t second = frequency.QuadPart;
+
+		Overlay overlay;
+		const auto observe = [&](double now, ContactSample sample)
+		{
+			overlay.BeginContacts();
+			overlay.ObserveContact(sample);
+			overlay.Update(Params(now));
+		};
+		ContactSample sample = Touch(1, 0.0f, 100.0f, 40, 30, 1000.0f, 0.05f);
+		sample.qpc = 10 * second;
+		observe(1000.0, sample);
+		float px = 0.0f, cm = 0.0f;
+		check(overlay.ContactSpeed(1, px, cm) && px < 0.0f && cm < 0.0f, "the first sample has no speed yet");
+
+		sample.x = 100.0f;
+		sample.qpc = 10 * second + second / 10; // 0.1 s 内移动 100 px。
+		observe(1100.0, sample);
+		check(overlay.ContactSpeed(1, px, cm) && std::abs(px - 1000.0f) < 1.0f, "speed is distance over the input timestamps");
+		check(std::abs(cm - 50.0f) < 0.1f, "speed in cm/s uses the trusted physical scale");
+
+		observe(1150.0, sample); // 同一个快照再次读到：不是新输入。
+		check(overlay.ContactSpeed(1, px, cm) && std::abs(px - 1000.0f) < 1.0f, "re-reading the same snapshot keeps the speed");
+		observe(1300.0, sample);
+		check(overlay.ContactSpeed(1, px, cm) && px == 0.0f && cm == 0.0f, "speed decays to zero when input stops");
+
+		Overlay unknownTime;
+		unknownTime.BeginContacts();
+		unknownTime.ObserveContact(Touch(2, 0, 0));
+		unknownTime.Update(Params(1000.0));
+		unknownTime.BeginContacts();
+		unknownTime.ObserveContact(Touch(2, 50, 0));
+		unknownTime.Update(Params(1100.0));
+		check(unknownTime.ContactSpeed(2, px, cm) && px < 0.0f, "samples without timestamps never report a speed");
+
+		// 整体输入通路变化必须重绘并脏化板子，否则性能区的 Input 行会过期。
+		Overlay path;
+		path.Update(Params(1000.0));
+		FrameParams rtsExtended = Params(1010.0);
+		rtsExtended.inputPath = InputPath::RtsExtended;
+		check(!Empty(path.Update(rtsExtended)), "an input path change dirties the plate");
+
+		// 阶段、发布次数和输入到上屏延迟。
+		Overlay latency;
+		ContactSample timed = Touch(3, 10, 10);
+		timed.qpc = 20 * second;
+		timed.stage = ContactStage::Move;
+		timed.publishCount = 7;
+		latency.BeginContacts();
+		latency.ObserveContact(timed);
+		latency.Update(Params(1000.0));
+		float milliseconds = 0.0f;
+		check(latency.ContactLatency(3, milliseconds) && milliseconds < 0.0f, "latency is unknown before the first present");
+		latency.OnPresented(20 * second + second / 100); // 10 ms 之后上屏。
+		check(latency.ContactLatency(3, milliseconds) && std::abs(milliseconds - 10.0f) < 0.1f,
+			"latency is the input timestamp to the present return");
+		latency.OnPresented(20 * second + second / 50); // 同一个快照不会重复结算。
+		check(latency.ContactLatency(3, milliseconds) && std::abs(milliseconds - 10.0f) < 0.1f,
+			"an input snapshot is settled once");
+		timed.qpc = 20 * second + second / 10;
+		latency.BeginContacts();
+		latency.ObserveContact(timed);
+		latency.OnPresented(20 * second + second / 10 + second / 50); // 新快照，20 ms。
+		check(latency.ContactLatency(3, milliseconds) && milliseconds > 10.0f && milliseconds < 20.0f,
+			"latency is smoothed across snapshots");
+		rtsExtended.nowMs = 1020.0;
+		check(Empty(path.Update(rtsExtended)), "an unchanged input path adds no dirty area");
 	}
 }
 
@@ -288,6 +395,8 @@ int RunCanvasDebugTests()
 	CheckContactsAndMarkers(check);
 	CheckDpiChangeKeepsStaleBounds(check);
 	CheckColumnAlignment(check);
+	CheckSpeedAndInputPath(check);
+	CheckAnchoredGrowth(check);
 	std::cout << "[CanvasDebug] failures=" << check.failures << '\n';
 	return check.failures;
 }

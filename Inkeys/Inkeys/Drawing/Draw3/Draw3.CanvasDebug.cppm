@@ -24,6 +24,12 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 	inline constexpr double kContactLingerMs = 1000.0;      // 抬起后保留的时间。
 
 	enum class ContactKind : std::uint8_t { Touch, Pen, PenEraser, MouseLeft, MouseRight };
+	// 输入通路：与 Host 的 HostInputMode 数值一致（0 未知/不可用，1 RTS 扩展属性，2 RTS 基础 X/Y，3 Win32 鼠标兼容）。
+	enum class InputPath : std::uint8_t { Unknown = 0, RtsExtended = 1, RtsBasicXY = 2, Win32Mouse = 3 };
+	// 接触生命周期阶段，与 ContactPhase 同序（Unknown 表示尚无快照）。
+	enum class ContactStage : std::uint8_t { Unknown, Down, Move, Up, Cancelled };
+	// 设备来源分类，与 SpeedEraser::SourceKind 同序，但本单元不依赖它。
+	enum class SourceClass : std::uint8_t { Unknown, Mouse, ExternalPen, IntegratedPen, Touch, TouchPad };
 
 	// 绘制线程读取到的单个接触最新状态；负值表示未知。
 	struct ContactSample
@@ -34,8 +40,24 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		float x = 0.0f;
 		float y = 0.0f;
 		float pressure = -1.0f;
-		float tilt = -1.0f;        // 弧度
-		float orientation = -1.0f; // 弧度
+		float tilt = -1.0f;        // 弧度，自竖直方向（高度角 = 90° - 倾斜）
+		float orientation = -1.0f; // 弧度（方位角 = 360° - 方向）
+		// RTS 输入编号（tablet context id / cursor id）；鼠标兼容通路没有，hasRtsIds=false。
+		bool hasRtsIds = false;
+		std::uint32_t contactId = 0;         // RTS cursor/stylus id（cid）
+		// 断触续接：这条笔画接续自上一个接触时，为上一个接触的 cid；不是续接为 0。
+		std::uint32_t previousContactId = 0;
+		InputPath path = InputPath::Unknown;
+		SourceClass source = SourceClass::Unknown;
+		ContactStage stage = ContactStage::Unknown;
+		// 接触记录的发布序号（每次发布 +2，奇数表示正在写入）；这里存 序号/2 = 已发布次数。
+		std::uint64_t publishCount = 0;
+		// 输入到上屏延迟（毫秒）：快照时间戳到承载它的那一帧 Present 返回；由 Overlay 测得，负值未知。
+		float latencyMs = -1.0f;
+		// 输入时间戳（QPC）；0 表示未知。速度由 Overlay 根据相邻快照测得，调用方不需要填写。
+		std::int64_t qpc = 0;
+		float speedPxPerSec = -1.0f; // 负值=尚无足够样本
+		float speedCmPerSec = -1.0f; // 负值=未知（无可信 EDID 或无样本）
 		float areaWidthPx = -1.0f;
 		float areaHeightPx = -1.0f;
 		// 与手掌橡皮实际判定同源的阈值（px²）；<=0 表示该接触不可能被识别为手掌。
@@ -72,6 +94,7 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		float dpiScale = 1.0f;
 		double targetFps = 60.0;
 		bool markers = false; // 可视化模式：生成标记。
+		InputPath inputPath = InputPath::Unknown; // 当前整体输入通路，显示在性能区。
 	};
 
 	// 最近一次 0.5s 结算的快照，仅供测试和诊断读取。
@@ -99,6 +122,9 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 
 		// 每个真正呈现的帧完成后调用；counted=false 的调试自刷新帧不计入帧率。
 		void OnFrame(double workMs, bool counted) noexcept;
+		// 承载最新输入的那一帧 Present 返回之后调用（QPC 计数）；每个新输入快照只结算一次延迟。
+		void OnPresented(std::int64_t nowQpc) noexcept;
+		bool ContactLatency(std::uint64_t key, float& milliseconds) const noexcept;
 
 		// 距离下一次必须更新的毫秒数；没有挂起工作时返回负值。
 		double MillisecondsUntilNextUpdate(double nowMs) const noexcept;
@@ -128,6 +154,8 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		{
 			return { fps_, unlimitedFps_, loadPercent_, cpuPercent_, chartCount_ };
 		}
+		// 读取指定接触当前的测得速度（供测试/诊断）；找不到接触返回 false，未知值为负。
+		bool ContactSpeed(std::uint64_t key, float& pxPerSec, float& cmPerSec) const noexcept;
 		int GlyphCellWidth() const noexcept { return atlas_.cellWidth; }
 		int GlyphCellHeight() const noexcept { return atlas_.cellHeight; }
 
@@ -161,6 +189,16 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 			int labelHeight = 0;
 			bool labelUpload = false;
 			std::uint32_t labelRevision = 0;
+			// 速度：用相邻输入快照的坐标差和 QPC 差测得，指数平滑；Update 负责停止输入后的衰减。
+			std::int64_t speedQpc = 0;
+			float speedAnchorX = 0.0f;
+			float speedAnchorY = 0.0f;
+			float speedPx = -1.0f;
+			float speedCm = -1.0f;
+			bool speedAdvanced = false;
+			double speedAdvanceMs = 0.0;
+			std::int64_t latencyQpc = 0;
+			float latencyMs = -1.0f;
 		};
 
 		void BuildAtlas(float dpiScale);
@@ -189,6 +227,9 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		double previousCpuWallMs_ = 0.0;
 		bool cpuBaselineValid_ = false;
 		int processorCount_ = 1;
+		double qpcFrequency_ = 1.0;
+		InputPath shownInputPath_ = InputPath::Unknown;
+		InputPath inputPath_ = InputPath::Unknown;
 		bool perfDirty_ = false;
 		// 上次绘制到板子上的性能文本与曲线；仅显示内容变化时才重绘，静止画布无多余脏区。
 		std::array<long, 4> shownPerf_ = {};
