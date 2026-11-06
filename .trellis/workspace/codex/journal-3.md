@@ -165,3 +165,26 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 182: 位置设置页与 PPT/白板进入自动居中底栏
+<!-- trellis-session: v=2 fp=a413d270b49c1963 -->
+
+**Date**: 2026-11-06
+**Task**: 位置设置页与 PPT/白板进入自动居中底栏
+**Branch**: `chore/ui`
+
+### Summary
+
+新增通用-位置页：桌面启动位置扩展为类型+位置联动下拉（含居中顶栏、悬浮窗底栏居中），PPT/白板进入按进入前主栏状态勾选自动变为居中底栏并可选展开方向；修复折叠/悬浮接管时展开与居中互相覆盖。遗留：折叠状态进入 PPT（自动居中）动画不自然且脏区遗漏，见归档任务 followup.md。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b10c5858` | feat(bar): add position settings page with workspace auto-dock policy |
+| `fa57e5f5` | fix(bar): stop expand and centering fighting on workspace entry takeover |
+
+### Status
+
+[OK] **Completed**

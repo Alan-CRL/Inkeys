@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 180
+- **Total Sessions**: 182
 - **Last Active**: 2026-11-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~167 | Active |
+| `journal-3.md` | ~190 | Active |
 | `journal-2.md` | ~2029 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 182 | 2026-11-06 | 位置设置页与 PPT/白板进入自动居中底栏 | `b10c5858`, `fa57e5f5` | `chore/ui` |
 | 180 | 2026-11-06 | 完善设置绘制光标样式与透明度 | `c7f3f353` | `chore/ui` |
 | 177 | 2026-11-05 | 重启与设置退出修复验收归档 | `1b0db5fc56a55610677a6838eef7670b1fc06daa`, `407f91951f91c35fdbf35c627a8f8af48d399faf` | `chore/ui` |
 | 170 | 2026-11-04 | 光标细边与共享下拉边界修复收尾 | `15200e7b`, `2d3eb582` | `temp/state` |
