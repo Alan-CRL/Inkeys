@@ -1273,7 +1273,7 @@ namespace Inkeys::UI::Bar
 				style.preset[(int)BarButtonPresetEnum::Whiteboard]=button;
 				BarUiSVGClass resumeIcon,closeIcon;
 				resumeIcon.InitializationFromResource(L"UI",L"barResumeWhiteboard");
-				closeIcon.InitializationFromResource(L"UI",L"barCloseSmall");
+				closeIcon.InitializationFromResource(L"UI",L"barCloseWhiteboard");
 				expect(!resumeIcon.svg.GetVal().empty() && !closeIcon.svg.GetVal().empty(),
 					"Whiteboard resume and close SVG resources are available for real content checks");
 				const bool savedFold=owner.barState.fold;
@@ -1643,15 +1643,15 @@ namespace Inkeys::UI::Bar
 				?narrow.geometry.previews[0].left-narrow.geometry.dividers[1].right
 				:narrow.geometry.dividers[0].left-narrow.geometry.previews[2].right;
 			const double narrowAutomaticGap=narrow.geometry.reversed
-				?narrow.geometry.dividers[0].left-narrow.geometry.automatic.right
+				?narrow.geometry.dividers[0].left-narrow.geometry.palm.right
 				:narrow.geometry.automatic.left-narrow.geometry.dividers[1].right;
 			expect(narrow.panelVisible && narrow.geometry.horizontalOverflow && narrow.geometry.panel.Width()<=narrowWidth &&
 				std::abs((narrow.geometry.previews[1].left-narrow.geometry.previews[0].right)-EraserAttributeCircleGapDip)<0.001 &&
 				std::abs((narrow.geometry.previews[2].left-narrow.geometry.previews[1].right)-EraserAttributeCircleGapDip)<0.001 &&
 				std::abs(narrowCircleEndGap-EraserAttributeCircleGapDip)<0.001 &&
-				std::abs(narrow.geometry.items[0].left-narrow.geometry.dividers[0].right-EraserAttributeStandardGapDip)<0.001 &&
-				std::abs(narrow.geometry.dividers[1].left-narrow.geometry.items[0].right-EraserAttributeStandardGapDip)<0.001 &&
-				std::abs(narrowAutomaticGap-EraserAttributeStandardGapDip)<0.001 &&
+				std::abs(narrow.geometry.items[0].left-narrow.geometry.dividers[0].right-EraserAttributeDividerGapDip)<0.001 &&
+				std::abs(narrow.geometry.dividers[1].left-narrow.geometry.items[0].right-EraserAttributeDividerGapDip)<0.001 &&
+				std::abs(narrowAutomaticGap-EraserAttributeDividerGapDip)<0.001 &&
 				std::abs(narrow.geometry.automatic.Width()-BarButtonTwoSideDip-EraserAttributeAutomaticArrowWidthDip)<0.001 &&
 				std::abs(narrow.geometry.items[4].Width()-BarButtonTwoSideDip)<0.001 &&
 				std::abs(narrow.geometry.items[5].Width()-EraserAttributeAutomaticArrowWidthDip)<0.001,

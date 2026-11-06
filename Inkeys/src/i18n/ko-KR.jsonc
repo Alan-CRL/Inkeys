@@ -693,6 +693,11 @@
           "Unavailable": "이 시스템에서는 입력 출처를 구분할 수 없어 이 옵션을 사용할 수 없습니다."
         },
         "FineControl": "세부 제어",
+        "OpacitySection": "불투명도",
+        "PenOpacity": "펜 커서 불투명도",
+        "HighlightPenFillOpacity": "펜(강조) 커서 채우기 불투명도",
+        "DotOpacity": "작은 점 커서 불투명도",
+        "HighlightDotFillOpacity": "작은 점(강조) 커서 채우기 불투명도",
         "DotHideOnContact":
         {
           "N": "펜이 닿으면 작은 점 커서를 자동으로 숨기기",
@@ -796,6 +801,33 @@
           "Note": "대형 화면에서는 사용을 권장하지 않습니다."
         }
       }
+    },
+    "Position":
+    {
+      "N": "위치",
+      "DesktopSection": "바탕 화면",
+      "PptSection": "프레젠테이션",
+      "WhiteboardSection": "화이트보드",
+      "StartupE": "다음 실행 시 도구 모음이 나타나는 위치를 정합니다. 가운데 상단 바는 초기 위치일 뿐이며 달라붙지 않습니다.",
+      "TypeBottomBar": "가운데 하단 바",
+      "TypeTopBar": "가운데 상단 바",
+      "TypeFloating": "플로팅 창",
+      "PositionLabel": "위치",
+      "ExpandRight": "오른쪽으로 펼치기",
+      "ExpandLeft": "왼쪽으로 펼치기",
+      "FloatBottomLeft": "왼쪽 아래",
+      "FloatBottomRight": "오른쪽 아래",
+      "FloatBottomCenter": "하단 가운데",
+      "PptAutoDock": "슬라이드 쇼 시작 시 가운데 하단 바 모드로 자동 전환",
+      "PptAutoDockE": "진입 전 도구 모음이 선택한 상태이면 슬라이드 쇼가 시작될 때 펼쳐진 가운데 하단 바로 자동 전환되고, 종료하면 원래대로 복원됩니다.",
+      "WhiteboardAutoDock": "화이트보드 진입 시 가운데 하단 바 모드로 자동 전환",
+      "WhiteboardAutoDockE": "진입 전 도구 모음이 선택한 상태이면 화이트보드에 들어갈 때 펼쳐진 가운데 하단 바로 자동 전환되고, 종료하면 원래대로 복원됩니다.",
+      "StateBottom": "하단 바 상태",
+      "StateBottomFolded": "하단 바 상태(접힘)",
+      "StateFloating": "플로팅 상태",
+      "StateFloatingFolded": "플로팅 상태(접힘)",
+      "MainButtonDirection": "메인 버튼 방향",
+      "DirectionKeep": "변경 안 함"
     },
     "Preset":
     {

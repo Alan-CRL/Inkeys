@@ -693,6 +693,11 @@
           "Unavailable": "Questo sistema non riesce a distinguere l’origine dell’input; l’opzione non è disponibile."
         },
         "FineControl": "Controlli di precisione",
+        "OpacitySection": "Opacità",
+        "PenOpacity": "Opacità del cursore della penna",
+        "HighlightPenFillOpacity": "Opacità di riempimento del cursore della penna (evidenziata)",
+        "DotOpacity": "Opacità del cursore del punto piccolo",
+        "HighlightDotFillOpacity": "Opacità di riempimento del cursore del punto piccolo (evidenziato)",
         "DotHideOnContact":
         {
           "N": "Nascondi automaticamente il cursore a punto piccolo al contatto",
@@ -796,6 +801,33 @@
           "Note": "Sconsigliata sui dispositivi a grande schermo."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Posizione",
+      "DesktopSection": "Desktop",
+      "PptSection": "Presentazione",
+      "WhiteboardSection": "Lavagna",
+      "StartupE": "Imposta dove compare la barra al prossimo avvio. La barra superiore centrata è solo una posizione iniziale e non si aggancia.",
+      "TypeBottomBar": "Barra inferiore centrata",
+      "TypeTopBar": "Barra superiore centrata",
+      "TypeFloating": "Finestra mobile",
+      "PositionLabel": "Posizione",
+      "ExpandRight": "Espandi a destra",
+      "ExpandLeft": "Espandi a sinistra",
+      "FloatBottomLeft": "In basso a sinistra",
+      "FloatBottomRight": "In basso a destra",
+      "FloatBottomCenter": "In basso al centro",
+      "PptAutoDock": "Passa alla barra inferiore centrata all’avvio della presentazione",
+      "PptAutoDockE": "Se prima la barra si trova in uno stato selezionato, all’avvio della presentazione diventa una barra inferiore centrata ed espansa e al termine viene ripristinata.",
+      "WhiteboardAutoDock": "Passa alla barra inferiore centrata all’ingresso nella lavagna",
+      "WhiteboardAutoDockE": "Se prima la barra si trova in uno stato selezionato, all’ingresso nella lavagna diventa una barra inferiore centrata ed espansa e all’uscita viene ripristinata.",
+      "StateBottom": "Stato barra inferiore",
+      "StateBottomFolded": "Stato barra inferiore (compressa)",
+      "StateFloating": "Stato finestra mobile",
+      "StateFloatingFolded": "Stato finestra mobile (compressa)",
+      "MainButtonDirection": "Direzione del pulsante principale",
+      "DirectionKeep": "Non modificare"
     },
     "Preset":
     {

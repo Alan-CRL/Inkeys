@@ -285,6 +285,7 @@ BARSETTING              UI                      "src\\UI\\barSetting.svg"
 BARERASER               UI                      "src\\UI\\barEraser.svg"
 
 BARAUTOERASER           UI                      "src\\UI\\barAutoEraser.svg"
+BARPALMERASER           UI                      "src\\UI\\barPalmEraser.svg"
 
 BARCLEAN                UI                      "src\\UI\\barClean.svg"
 
@@ -321,6 +322,7 @@ BARINFO                 UI                      "src\\UI\\barInfo.svg"
 BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
 
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
+BARCLOSEWHITEBOARD      UI                      "src\\UI\\barCloseWhiteboard.svg"
 
 BARMORE                 UI                      "src\\UI\\barMore.svg"
 BARMENU                 UI                      "src\\UI\\barMenu.svg"

@@ -1254,6 +1254,8 @@ namespace
 
 	SettingBusinessQueue settingBusinessQueue;
 	mutex configWriteQueueMutex;
+	// 拖动透明度期间只合并保存请求；窗口隐藏或关闭时由 Hide/Shutdown 补写。
+	atomic<bool> cursorOpacitySavePending{ false };
 	thread_local bool settingRenderingOnCurrentThread = false;
 
 	struct SettingRenderScope
@@ -2945,6 +2947,9 @@ SettingSessionCoroutine RunSettingSession()
 				const int contentPage = destination.page == Design::PageId::General
 					&& destination.section == Design::GeneralSection::Storage
 					? settingTabEnum::tabConfiguration : settingTab;
+				if ((contentPage != settingTabEnum::tab3 || drawingSubpage != Design::DrawingSubpage::Cursor) &&
+					cursorOpacitySavePending.exchange(false))
+					QueueConfigWrite();
 				switch (contentPage)
 				{
 					// 主页
@@ -3395,6 +3400,14 @@ SettingSessionCoroutine RunSettingSession()
 					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
 						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
+					{
+						using Inkeys::UI::Bar::NormalizeBarWorkspaceAutoDockMask;
+						const auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						draft.pptDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Ppt.AutoDockMask.load());
+						draft.whiteboardDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Whiteboard.AutoDockMask.load());
+						draft.pptDockDirection = std::clamp(workspace.Ppt.Direction.load(), 0, 2);
+						draft.whiteboardDockDirection = std::clamp(workspace.Whiteboard.Direction.load(), 0, 2);
+					}
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
 					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
 					// 背景未自定义时显示当前主栏主题的默认值；内容透明度直接显示保存值。
@@ -3489,6 +3502,17 @@ SettingSessionCoroutine RunSettingSession()
 					if (events.startupPlacementChanged)
 					{
 						Inkeys::config.UI.Bar.StartupPlacement = draft.startupPlacement;
+						QueueConfigWrite();
+					}
+					if (events.pptDockMaskChanged || events.pptDockDirectionChanged
+						|| events.whiteboardDockMaskChanged || events.whiteboardDockDirectionChanged)
+					{
+						// 场景进入策略只在下次进入 PPT/白板时由渲染线程读取，立即保存即可。
+						auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						if (events.pptDockMaskChanged) workspace.Ppt.AutoDockMask = draft.pptDockMask;
+						if (events.pptDockDirectionChanged) workspace.Ppt.Direction = draft.pptDockDirection;
+						if (events.whiteboardDockMaskChanged) workspace.Whiteboard.AutoDockMask = draft.whiteboardDockMask;
+						if (events.whiteboardDockDirectionChanged) workspace.Whiteboard.Direction = draft.whiteboardDockDirection;
 						QueueConfigWrite();
 					}
 					if (destination.section == Design::GeneralSection::Appearance)
@@ -3683,11 +3707,19 @@ SettingSessionCoroutine RunSettingSession()
 						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
 						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
 						draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(cursor.DotHideOnContact.load()));
+						// 与 PublishDraw3StateLocked 同口径规范化，越界配置不让滑块与实际渲染不一致。
+						draft.opacity = {
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Pen, cursor.PenOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightPen, cursor.HighlightPenFillOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Dot, cursor.DotOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load()) / 100.0F };
 						draft.injectedAvailable = injectedSourceAvailable;
 						const auto events = Design::RenderCursorPage(draft);
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
-						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse || events.dotHideOnContact)
+						const bool deviceChanged = events.mouse || events.touch || events.screenPen || events.tablet ||
+							events.injectedMouse || events.dotHideOnContact;
+						if (deviceChanged)
 						{
 							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
 							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
@@ -3697,9 +3729,28 @@ SettingSessionCoroutine RunSettingSession()
 							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
 							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
 							if (events.dotHideOnContact) cursor.DotHideOnContact = draft.dotHideOnContact;
-							SyncDraw3State();
-							QueueConfigWrite();
 						}
+						bool opacityChanged = false, opacityActive = false;
+						IdtAtomic<int>* opacityFields[4]{ &cursor.PenOpacity, &cursor.HighlightPenFillOpacity,
+							&cursor.DotOpacity, &cursor.HighlightDotFillOpacity };
+						for (int index = 0; index < 4; ++index)
+						{
+							if (events.opacityChanged[index])
+							{
+								*opacityFields[index] = static_cast<int>(std::lround(draft.opacity[index] * 100.0F));
+								opacityChanged = true;
+							}
+							opacityActive |= events.opacityActive[index];
+						}
+						if (deviceChanged || opacityChanged) SyncDraw3State();
+						if (deviceChanged)
+						{
+							QueueConfigWrite();
+							cursorOpacitySavePending = false;
+						}
+						else if (opacityChanged) cursorOpacitySavePending = true;
+						if (!opacityActive && cursorOpacitySavePending.exchange(false))
+							QueueConfigWrite();
 						break;
 					}
 					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
@@ -5142,6 +5193,15 @@ SettingSessionCoroutine RunSettingSession()
 
 namespace
 {
+	// 先注销并排空帧回调，再排空常驻会话；否则迟到的隐藏请求会在最终清理后重新创建会话。
+	template<class Unregister, class PostControl>
+	bool QueueFinalSettingDrain(Unregister unregister, PostControl postControl,
+		Inkeys::UI::RenderPipeline::ControlTask drain)
+	{
+		unregister();
+		return postControl(std::move(drain));
+	}
+
 	void DrainSettingSessionOnRenderThread() noexcept
 	{
 		settingNavigationClockIdle = true; settingFrameSubmission.Reset();
@@ -5516,8 +5576,11 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
-		const bool drainPosted = Inkeys::UI::RenderPipeline::PostControl([]
+		const bool drainPosted = QueueFinalSettingDrain(
+			[] { Inkeys::UI::RenderPipeline::Unregister(Inkeys::UI::RenderPipeline::Client::Settings); },
+			[](auto drain) { return Inkeys::UI::RenderPipeline::PostControl(std::move(drain)); }, []
 			{
 				DrainSettingSessionOnRenderThread();
 				lock_guard stateLock(settingStateMutex);
@@ -5533,8 +5596,6 @@ namespace Inkeys::UI::Setting
 			IDTLogger->error(
 				"[Setting] 渲染管线已停止，无法在线程内排空设置会话");
 		}
-		Inkeys::UI::RenderPipeline::Unregister(
-			Inkeys::UI::RenderPipeline::Client::Settings);
 		settingBusinessQueue.Stop();
 	}
 
@@ -5552,6 +5613,7 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
@@ -5884,6 +5946,117 @@ namespace Inkeys::UI::Setting
         std::printf("[font-lifecycle] failures=%d\n",failures);
         return failures ? 1 : 0;
     }
+	namespace
+	{
+		bool RunSettingShutdownRenderingCase(bool oldOrder, bool holdCallback)
+		{
+			using namespace Inkeys::UI::RenderPipeline;
+			struct Probe
+			{
+				mutex mutex;
+				condition_variable changed;
+				SessionState session;
+				bool entered = false, release = false, unregisterEntered = false, cleanupPosted = false;
+				bool drainRan = false, afterSettingsSlot = false, resident = true, drained = false;
+				unsigned recreated = 0;
+			} probe;
+			probe.session.CommitEpoch(1);
+			probe.session.SetVisible(false);
+			Scheduler scheduler;
+			jthread stopping;
+			struct Cleanup
+			{
+				Probe& probe; Scheduler& scheduler; jthread& stopping;
+				~Cleanup()
+				{
+					{ lock_guard lock(probe.mutex); probe.release = true; }
+					probe.changed.notify_all();
+					if (stopping.joinable()) stopping.join();
+					scheduler.Stop();
+				}
+			} cleanup{ probe, scheduler, stopping };
+			if (!scheduler.Register(Client::Settings, [&](const auto&)
+				{
+					unique_lock lock(probe.mutex);
+					probe.entered = true; probe.changed.notify_all();
+					if (holdCallback && !probe.drainRan) probe.changed.wait(lock, [&] { return probe.release; });
+					// 复用真实隐藏会话决策：没有 resident 时，即使不可见也会先初始化常驻部分。
+					if (probe.session.Resolve(1, probe.resident, false).initializeResident)
+					{
+						probe.resident = true; probe.drained = false; ++probe.recreated;
+						probe.session.CommitEpoch(1);
+					}
+					return FrameResult::Idle;
+				}) || !scheduler.Register(Client::WhiteboardFreeze, [&](const auto&)
+				{
+					lock_guard lock(probe.mutex);
+					// 真实调度顺序中，此 sentinel 必须经过 Settings 的 dispatch slot 后才执行。
+					if (probe.drainRan) { probe.afterSettingsSlot = true; probe.changed.notify_all(); }
+					return FrameResult::Idle;
+				}) || !scheduler.Start()) return false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.entered; })) return false;
+			}
+			const auto drain = [&]
+			{
+				{
+					lock_guard lock(probe.mutex);
+					probe.resident = false; probe.drained = true; probe.drainRan = true;
+					probe.session.ReleaseResident();
+				}
+				// 对应最终清理后到达的 Hide/业务完成请求，不依赖 Sleep 争抢 waiter。
+				scheduler.Request(Mask(Client::Settings) | Mask(Client::WhiteboardFreeze));
+			};
+			bool queued = false;
+			if (oldOrder) queued = scheduler.PostControl(drain);
+			else
+			{
+				stopping = jthread([&]
+				{
+					queued = QueueFinalSettingDrain([&]
+						{
+							{ lock_guard lock(probe.mutex); probe.unregisterEntered = true; }
+							probe.changed.notify_all();
+							scheduler.Unregister(Client::Settings);
+						}, [&](auto task)
+						{
+							{ lock_guard lock(probe.mutex); probe.cleanupPosted = true; }
+							return scheduler.PostControl(std::move(task));
+						}, drain);
+				});
+				if (holdCallback)
+				{
+					unique_lock lock(probe.mutex);
+					if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.unregisterEntered; })
+						|| probe.cleanupPosted || probe.drainRan) return false;
+					probe.release = true; probe.changed.notify_all();
+				}
+				stopping.join();
+			}
+			if (!queued) return false;
+			bool expected = false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.afterSettingsSlot; })) return false;
+				expected = oldOrder ? probe.resident && !probe.drained && probe.recreated == 1
+					: !probe.resident && probe.drained && probe.recreated == 0;
+			}
+			if (oldOrder) scheduler.Unregister(Client::Settings);
+			return expected;
+		}
+
+		bool RunSettingShutdownRenderingTests()
+		{
+			const bool negative = RunSettingShutdownRenderingCase(true, false);
+			const bool hidden = RunSettingShutdownRenderingCase(false, false);
+			const bool active = RunSettingShutdownRenderingCase(false, true);
+			std::fprintf(stderr, "[SettingShutdownRendering] old-order-recreated=%d hidden-drained=%d active-callback-drained=%d\n",
+				negative, hidden, active);
+			return negative && hidden && active;
+		}
+	}
+
 	int RunBusinessCancellationProductionTest() noexcept
 	{
 		if (settingInitialized.load() || Inkeys::Window::GetService().Running()) return 2;
@@ -5912,6 +6085,7 @@ namespace Inkeys::UI::Setting
 		};
 		try
 		{
+			if (!RunSettingShutdownRenderingTests()) return 1;
 			SettingBusinessQueue queue(execute, &probe);
 			if (!queue.Start()) return 1;
 			SettingBusinessCommand dialog; dialog.kind = SettingBusinessKind::Information; queue.Enqueue(dialog);

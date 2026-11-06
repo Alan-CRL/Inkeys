@@ -693,6 +693,11 @@
           "Unavailable": "このシステムでは入力元を区別できないため、この設定は使用できません。"
         },
         "FineControl": "詳細制御",
+        "OpacitySection": "不透明度",
+        "PenOpacity": "ペン カーソルの不透明度",
+        "HighlightPenFillOpacity": "ペン（強調）カーソル塗りの不透明度",
+        "DotOpacity": "小さな点カーソルの不透明度",
+        "HighlightDotFillOpacity": "小さな点（強調）カーソル塗りの不透明度",
         "DotHideOnContact":
         {
           "N": "ペンを置いたときに小さな点のカーソルを自動的に隠す",
@@ -796,6 +801,33 @@
           "Note": "大型画面での利用は推奨しません。"
         }
       }
+    },
+    "Position":
+    {
+      "N": "位置",
+      "DesktopSection": "デスクトップ",
+      "PptSection": "プレゼン",
+      "WhiteboardSection": "ホワイトボード",
+      "StartupE": "次回起動時にツールバーが表示される位置を指定します。中央の上部バーは初期位置のみで、吸着しません。",
+      "TypeBottomBar": "中央の下部バー",
+      "TypeTopBar": "中央の上部バー",
+      "TypeFloating": "フローティングウィンドウ",
+      "PositionLabel": "位置",
+      "ExpandRight": "右に展開",
+      "ExpandLeft": "左に展開",
+      "FloatBottomLeft": "左下",
+      "FloatBottomRight": "右下",
+      "FloatBottomCenter": "下部中央",
+      "PptAutoDock": "スライドショー開始時に中央下部バーモードへ自動で入る",
+      "PptAutoDockE": "開始前のツールバーがチェックした状態にある場合、スライドショーの開始時に展開した中央下部バーへ自動で切り替わり、終了後に元へ戻ります。",
+      "WhiteboardAutoDock": "ホワイトボード開始時に中央下部バーモードへ自動で入る",
+      "WhiteboardAutoDockE": "開始前のツールバーがチェックした状態にある場合、ホワイトボードの開始時に展開した中央下部バーへ自動で切り替わり、終了後に元へ戻ります。",
+      "StateBottom": "下部バーの状態",
+      "StateBottomFolded": "下部バーの状態（折りたたみ）",
+      "StateFloating": "フローティングの状態",
+      "StateFloatingFolded": "フローティングの状態（折りたたみ）",
+      "MainButtonDirection": "メインボタンの方向",
+      "DirectionKeep": "変更しない"
     },
     "Preset":
     {

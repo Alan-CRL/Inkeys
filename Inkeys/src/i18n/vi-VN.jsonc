@@ -693,6 +693,11 @@
           "Unavailable": "Hệ thống này không thể phân biệt nguồn nhập nên tùy chọn không khả dụng."
         },
         "FineControl": "Điều khiển chi tiết",
+        "OpacitySection": "Độ mờ",
+        "PenOpacity": "Độ mờ của con trỏ bút",
+        "HighlightPenFillOpacity": "Độ mờ phần tô của con trỏ bút (làm nổi bật)",
+        "DotOpacity": "Độ mờ của con trỏ chấm nhỏ",
+        "HighlightDotFillOpacity": "Độ mờ phần tô của con trỏ chấm nhỏ (làm nổi bật)",
         "DotHideOnContact":
         {
           "N": "Tự động ẩn con trỏ chấm nhỏ khi chạm bút",
@@ -796,6 +801,33 @@
           "Note": "Không khuyên bật trên thiết bị màn hình lớn."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Vị trí",
+      "DesktopSection": "Màn hình nền",
+      "PptSection": "Trình chiếu",
+      "WhiteboardSection": "Bảng trắng",
+      "StartupE": "Chọn vị trí thanh công cụ xuất hiện ở lần khởi động tiếp theo. Thanh trên ở giữa chỉ là vị trí ban đầu và không bám dính.",
+      "TypeBottomBar": "Thanh dưới ở giữa",
+      "TypeTopBar": "Thanh trên ở giữa",
+      "TypeFloating": "Cửa sổ nổi",
+      "PositionLabel": "Vị trí",
+      "ExpandRight": "Mở rộng sang phải",
+      "ExpandLeft": "Mở rộng sang trái",
+      "FloatBottomLeft": "Góc dưới trái",
+      "FloatBottomRight": "Góc dưới phải",
+      "FloatBottomCenter": "Giữa phía dưới",
+      "PptAutoDock": "Tự động vào chế độ thanh dưới ở giữa khi bắt đầu trình chiếu",
+      "PptAutoDockE": "Nếu trước đó thanh công cụ ở trạng thái đã chọn, thanh sẽ tự chuyển thành thanh dưới ở giữa đã mở rộng khi bắt đầu trình chiếu và được khôi phục khi kết thúc.",
+      "WhiteboardAutoDock": "Tự động vào chế độ thanh dưới ở giữa khi vào bảng trắng",
+      "WhiteboardAutoDockE": "Nếu trước đó thanh công cụ ở trạng thái đã chọn, thanh sẽ tự chuyển thành thanh dưới ở giữa đã mở rộng khi vào bảng trắng và được khôi phục khi thoát.",
+      "StateBottom": "Trạng thái thanh dưới",
+      "StateBottomFolded": "Trạng thái thanh dưới (thu gọn)",
+      "StateFloating": "Trạng thái cửa sổ nổi",
+      "StateFloatingFolded": "Trạng thái cửa sổ nổi (thu gọn)",
+      "MainButtonDirection": "Hướng nút chính",
+      "DirectionKeep": "Không thay đổi"
     },
     "Preset":
     {

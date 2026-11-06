@@ -517,7 +517,7 @@ namespace Inkeys::UI::StartupPreview
 			if (SUCCEEDED(result)) result = next.context->CreateSolidColorBrush(D2D1::ColorF(.38f, .8f, 1.f), &next.progressFill);
 			ComPtr<ID2D1Factory> factory; next.context->GetFactory(&factory);
 			if (SUCCEEDED(result)) result = Drawing::CreateRingStroke(factory.Get(), &next.ringStroke);
-			const bool floating = runtime.options.startupPlacement != StartupPlacement::CenteredBottomBar;
+			const bool floating = StartupPlacementIsFolded(runtime.options.startupPlacement);
 			next.appearance = Effects::ResolveAppearance(runtime.options.themeMode,
 				runtime.options.backgroundOpacity, runtime.options.contentOpacity, floating);
 			if (SUCCEEDED(result)) result = next.effect.Initialize(next.context.Get(), width, height,
@@ -841,7 +841,7 @@ namespace Inkeys::UI::StartupPreview
 		UINT dpi, double zoom, StartupPlacement placement, double uiBaseScale,
 		double desktopDockLine) noexcept
 	{
-		const bool floating = placement != StartupPlacement::CenteredBottomBar;
+		const bool floating = StartupPlacementIsFolded(placement);
 		const double visibleWidthDip = (floating ? 80.0 : widthDip) + 1.0;
 		const double visibleHeightDip = (floating ? 80.0 : heightDip) + 1.0;
 		return ResolveStartupPlacementBounds(placement, monitorBounds, workArea,
@@ -891,7 +891,7 @@ namespace Inkeys::UI::StartupPreview
 			if (runtime->options.effect == StartupPreviewEffect::PixelAssembly)
 			{
 				scatter = Effects::ScatterBounds(target, work,
-					runtime->options.startupPlacement != StartupPlacement::CenteredBottomBar);
+					StartupPlacementIsFolded(runtime->options.startupPlacement));
 				presentation = Effects::PresentationBounds(target, scatter, work, DpiScale(*runtime));
 			}
 			runtime->targetRect = { target.left - presentation.left, target.top - presentation.top,
@@ -1093,7 +1093,7 @@ namespace Inkeys::UI::StartupPreview
 		const auto runtime = SnapshotRuntime();
 		if (!runtime) return {};
 		return {
-			runtime->options.startupPlacement == StartupPlacement::CenteredBottomBar
+			!StartupPlacementIsFolded(runtime->options.startupPlacement)
 				? runtime->options.cachedWidthDip : 80.0,
 			runtime->active.load(std::memory_order_acquire),
 			runtime->firstFrameCommitted.load(std::memory_order_acquire),

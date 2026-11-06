@@ -3591,6 +3591,9 @@ namespace
 		{
 			CursorPageDraft draft; draft.injectedAvailable = false; bool bottomCase = false;
 			ImGuiWindow* host = nullptr; int edits = 0; ImRect note;
+			std::array<int, 4> opacityEdits{}, opacityResets{};
+			std::array<bool, 4> opacityActiveSeen{};
+			int darkPreviewVertices = 0, quarterInkVertices = 0;
 			auto draw = [&](ImVec2 mouse = ImVec2(-100, -100)) {
 				io.DisplaySize = { (width + 32) * scale, (bottomCase ? 480 : 2400) * scale }; io.AddMousePosEvent(mouse.x, mouse.y);
 				ImGui::NewFrame(); ConfigureRowAnimations(0, false, 1);
@@ -3599,15 +3602,28 @@ namespace
 				host = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
 				const auto events = RenderCursorPage(draft);
 				edits += events.dotHideOnContact ? 1 : 0;
+				for (int index = 0; index < 4; ++index)
+				{
+					opacityEdits[index] += events.opacityChanged[index] ? 1 : 0;
+					opacityResets[index] += events.opacityReset[index] ? 1 : 0;
+					opacityActiveSeen[index] |= events.opacityActive[index];
+				}
 				checks.Expect(!events.back && !events.mouse && !events.touch && !events.screenPen && !events.tablet && !events.injectedMouse,
 					"cursor fine control never edits unrelated device preferences");
 				note = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+				darkPreviewVertices = quarterInkVertices = 0;
 				for (const auto& vertex : host->DrawList->VtxBuffer)
+				{
 					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Informational]) note.Add(vertex.pos);
+					darkPreviewVertices += vertex.col == IM_COL32(52, 54, 60, 255) ? 1 : 0;
+					quarterInkVertices += vertex.col == IM_COL32(255, 15, 0, 64) ? 1 : 0;
+				}
 				ImFluent::PopFont(); ImGui::End(); ImGui::Render(); CheckDrawData(checks);
 			};
 			for (int pass = 0; pass < 3; ++pass) draw();
 			checks.Expect(draft.dotHideOnContact == 1 && edits == 0, "cursor contact hiding defaults to screen pen without a write event");
+			checks.Expect(draft.opacity == CursorPageDraft{}.opacity && darkPreviewVertices == 0,
+				"cursor opacity defaults are stable and the light preview has no fixed dark rectangle");
 			const auto rowId = ImHashStr("##cursor-dot-hide", 0, host->ID);
 			const auto comboId = ImHashStr("##select", 0, rowId);
 			auto focusRect = [&](ImGuiID id) {
@@ -3622,6 +3638,40 @@ namespace
 			checks.Expect(combo.Min.x >= host->Pos.x && combo.Max.x <= host->Pos.x + host->Size.x
 				&& host->ScrollMax.x == 0, "cursor fine control fits both narrow and wide layouts");
 			auto chord = [&](ImGuiKey key) { io.AddKeyEvent(key, true); draw(); io.AddKeyEvent(key, false); draw(); };
+			auto click = [&](ImVec2 point) {
+				draw(point); io.AddMouseButtonEvent(0, true); draw(point);
+				io.AddMouseButtonEvent(0, false); draw(point); draw(outside);
+			};
+			const char* opacityRows[4]{ "##cursor-pen-opacity", "##cursor-highlight-pen-opacity",
+				"##cursor-dot-opacity", "##cursor-highlight-dot-opacity" };
+			constexpr float opacityDefaults[4]{ 0.50F, 0.50F, 0.25F, 0.50F };
+			for (int index = 0; index < 4; ++index)
+			{
+				const auto before = draft.opacity;
+				const auto row = ImHashStr(opacityRows[index], 0, host->ID);
+				const auto slider = focusRect(ImHashStr("##slider", 0, row));
+				click({ slider.Min.x + 1.0F, slider.GetCenter().y });
+				checks.Expect(Near(draft.opacity[index], 0.25F) && opacityActiveSeen[index],
+					"actual cursor opacity slider reaches its 25 percent minimum");
+				for (int other = 0; other < 4; ++other) if (other != index)
+					checks.Expect(Near(draft.opacity[other], before[other]),
+						"editing one cursor opacity leaves the other three unchanged");
+				click({ std::nextafter(slider.Max.x, slider.Min.x), slider.GetCenter().y });
+				checks.Expect(Near(draft.opacity[index], 1.0F) &&
+					opacityEdits[index] >= (Near(before[index], 0.25F) ? 1 : 2),
+					"actual cursor opacity slider reaches 100 percent and emits edit events");
+				// 图标按钮只要求鼠标可用；按 SliderResetAction 的既有间距点击其真实区域。
+				const ImVec2 resetCenter{ slider.Max.x + Pixels(12.0F + ControlHeight * 0.5F), slider.GetCenter().y };
+				click(resetCenter);
+				checks.Expect(Near(draft.opacity[index], opacityDefaults[index]) && opacityResets[index] == 1,
+					"cursor opacity reset restores its style-specific default exactly once");
+			}
+			draft.mouse = 1; draft.opacity[0] = 0.25F; draw();
+			checks.Expect(quarterInkVertices > 0, "actual cursor preview uses the edited 25 percent pen fill");
+			ApplyPalette(true); draw();
+			checks.Expect(darkPreviewVertices > 0, "dark cursor preview retains its existing dark background");
+			ApplyPalette(false); draw();
+			checks.Expect(darkPreviewVertices == 0, "switching back to light removes the dark preview background");
 			for (int mode = 0; mode < 4; ++mode)
 			{
 				focusRect(comboId); chord(ImGuiKey_F4); chord(ImGuiKey_Home);
@@ -3891,12 +3941,13 @@ namespace
 				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.startupEffectChanged && !events.animationChanged
 				&& !events.dynamicEdgeLightingChanged
 				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
+				&& !events.pptDockMaskChanged && !events.pptDockDirectionChanged && !events.whiteboardDockMaskChanged && !events.whiteboardDockDirectionChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
 				&& std::none_of(events.autoCollapseChanged.begin(), events.autoCollapseChanged.end(), [](bool value) { return value; })
 				&& std::none_of(events.shortcutsChanged.begin(), events.shortcutsChanged.end(), [](bool value) { return value; });
 		};
 		const ImVec2 outside(-100, -100);
-		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Appearance,
+		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Position, Design::GeneralSection::Appearance,
 			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts, Design::GeneralSection::DesktopShortcuts })
 		{
 			draw(section, outside, false); const auto frame = draw(section, outside, false);
@@ -4527,20 +4578,20 @@ namespace
 		checks.Expect(state.generalExpanded && selected.page == PageId::General && selected.section == GeneralSection::Basic,
 			"real parent label enters default basic and expands the group");
 		// 第五个子页在展开树中可选中，折叠/展开仍记住同一目的地。
-		size.y = 1000; frame = idle(); click(state.childBounds[4]); frame = idle();
+		size.y = 1000; frame = idle(); click(state.childBounds[5]); frame = idle();
 		checks.Expect(selected.section == GeneralSection::Shortcuts && state.lastGeneralSection == GeneralSection::Shortcuts,
 			"fifth inline child selects the independent shortcuts page");
 		click(state.parentBounds); frame = idle(); click(state.parentBounds); frame = idle();
 		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Shortcuts,
 			"parent fold and reopen preserve the fifth shortcut child");
-		click(state.childBounds[5]); frame = idle();
+		click(state.childBounds[6]); frame = idle();
 		checks.Expect(selected.section == GeneralSection::DesktopShortcuts && state.lastGeneralSection == GeneralSection::DesktopShortcuts,
 			"sixth inline child selects desktop shortcuts after keyboard shortcuts");
 		click(state.parentBounds); frame = idle(); click(state.parentBounds); frame = idle();
 		checks.Expect(state.generalExpanded && selected.section == GeneralSection::DesktopShortcuts,
 			"fold and reopen preserve the sixth desktop-shortcut child");
 		click(state.childBounds[0]); frame = idle(); size.y = 700; requestedScroll = 0; frame = idle(); requestedScroll = -1;
-		click(state.childBounds[1]); frame = idle();
+		click(state.childBounds[2]); frame = idle();
 		checks.Expect(selected.section == GeneralSection::Appearance && state.lastGeneralSection == GeneralSection::Appearance,
 			"real inline child commits its composite destination and remembered child");
 		const int beforeAppearanceFold = navigations;
@@ -4552,7 +4603,7 @@ namespace
 		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Appearance
 			&& navigations == beforeAppearanceFold,
 			"parent label reopens its remembered appearance page without redundant navigation");
-		click(state.childBounds[3]); frame = idle();
+		click(state.childBounds[4]); frame = idle();
 		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
 		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId,
 			"a real child owns keyboard focus before its parent is clicked to fold");
@@ -4566,7 +4617,7 @@ namespace
 		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Storage
 			&& navigations == beforeStorageFold,
 			"reopening the parent restores storage without changing its body destination");
-		click(state.childBounds[1]); frame = idle();
+		click(state.childBounds[2]); frame = idle();
 		focusParent(frame); key(ImGuiKey_LeftArrow); frame = idle();
 		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance,
 			"keyboard left folds without changing the remembered page");
@@ -4585,9 +4636,9 @@ namespace
 		// 点击动画中完全被裁掉的子项区域，不能激活该子项；同一区域的可见根项允许正常响应。
 		state.generalExpanded = false; frame = idle();
 		animated = true; rate = 0.1F; state.generalExpanded = true; frame = draw(outside, false);
-		checks.Expect(frame.group && state.childBounds[3].top >= frame.group->InnerClipRect.Max.y,
+		checks.Expect(frame.group && state.childBounds[4].top >= frame.group->InnerClipRect.Max.y,
 			"real opening child-window clip excludes the storage item at the beginning of the animation");
-		click(state.childBounds[3]); frame = idle();
+		click(state.childBounds[4]); frame = idle();
 		checks.Expect(selected != Design::NavigationDestination{ PageId::General, GeneralSection::Storage },
 			"clicking the fully clipped storage item cannot activate an invisible general child");
 		if (frame.group)
@@ -4601,7 +4652,7 @@ namespace
 				"the visible clipped portion of a real child still accepts mouse activation");
 		}
 		rate = 5; frame = idle(5); animated = false; frame = idle();
-		click(state.childBounds[1]); frame = idle();
+		click(state.childBounds[2]); frame = idle();
 		state.Toggle(); selected = { PageId::Home, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
 		frame = idle();
 		click(state.parentBounds); frame = idle();
@@ -4621,15 +4672,15 @@ namespace
 		click(state.parentBounds); frame = idle();
 		checks.Expect(Contains(state.flyoutBounds, state.flyoutChildBounds.back()),
 			"compact popup geometry contains all general children");
-		click(state.flyoutChildBounds[4]); frame = idle();
+		click(state.flyoutChildBounds[5]); frame = idle();
 		checks.Expect(!state.flyoutOpen && selected.section == GeneralSection::Shortcuts,
 			"fifth compact popup child enters the same independent shortcuts page");
 		click(state.parentBounds); frame = idle();
-		click(state.flyoutChildBounds[5]); frame = idle();
+		click(state.flyoutChildBounds[6]); frame = idle();
 		checks.Expect(!state.flyoutOpen && selected.section == GeneralSection::DesktopShortcuts,
 			"sixth compact popup child enters desktop shortcuts after keyboard shortcuts");
 		click(state.parentBounds); frame = idle();
-		click(state.flyoutChildBounds[3]); frame = idle();
+		click(state.flyoutChildBounds[4]); frame = idle();
 		checks.Expect(!state.flyoutOpen && selected.page == PageId::General && selected.section == GeneralSection::Storage,
 			"real popup child selects storage and closes the popup");
 		click(state.parentBounds); frame = idle();
@@ -4676,7 +4727,7 @@ namespace
 		click(state.parentBounds); frame = idle(); key(ImGuiKey_Escape); frame = idle();
 		checks.Expect(!state.flyoutOpen && ImGui::GetCurrentContext()->NavId == state.parentItemId,
 			"escape closes the actual popup and returns focus to its compact parent");
-		size = ImVec2(720, 520); frame = idle(); state.Toggle(); frame = idle();
+		size = ImVec2(720, 560); frame = idle(); state.Toggle(); frame = idle();
 		checks.Expect(state.overlayOpen && Near(frame.shell.content.left, 48), "narrow expansion retains compact body reservation");
 		state.generalExpanded = false; selected = { PageId::Home, GeneralSection::Basic };
 		Design::NotifyNavigationDestination(state, selected); frame = idle();
@@ -4756,7 +4807,7 @@ namespace
 		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
 		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId,
 			"a real inline child can hold focus before a responsive mode change");
-		size = ImVec2(720, 520); frame = idle();
+		size = ImVec2(720, 560); frame = idle();
 		checks.Expect(!state.Expanded() && ImGui::GetCurrentContext()->NavId == state.parentItemId,
 			"resizing a focused inline child into compact navigation restores visible parent focus");
 
@@ -4827,7 +4878,7 @@ namespace
 			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent,
 			"parent expansion with animations disabled restores its remembered page and full child height");
 		// 正文自身尚在淡入时收起父行，也应继续同一份正文过渡，而非重新开始。
-		animated = true; click(state.childBounds[3]); frame = draw(outside, false);
+		animated = true; click(state.childBounds[4]); frame = draw(outside, false);
 		const float fadingBody = frame.contentAlpha;
 		const float fadingProgress = state.contentReveal.progress, fadingTarget = state.contentReveal.target;
 		const int beforeFadingFold = navigations;
@@ -5219,12 +5270,12 @@ namespace
 		requestedScroll = 0; frame = idle(3); requestedScroll = -1;
 		if (frame.group)
 		{
-			const ImVec2 padding(frame.group->InnerClipRect.Min.x + 2 * scale, center(state.childBounds[1]).y);
+			const ImVec2 padding(frame.group->InnerClipRect.Min.x + 2 * scale, center(state.childBounds[2]).y);
 			const float beforeInlineScroll = frame.scroll; const int beforeInlineNavigation = navigations;
 			draw(padding, false); draw(padding, true); draw({ padding.x, padding.y - 15 * scale }, true); frame = draw({ padding.x, padding.y - 15 * scale }, true);
 			checks.Expect(Near(frame.scroll - beforeInlineScroll, 15 * scale, 1) && Near(frame.group->Scroll.y, 0) && navigations == beforeInlineNavigation,
 				"actual inline child padding drag scrolls navigation once while its fixed clip child stays at zero");
-			expectAttached(frame, state.childBounds[1]); draw(padding, false); frame = idle();
+			expectAttached(frame, state.childBounds[2]); draw(padding, false); frame = idle();
 		}
 		// 正常最小窗的五项浮层可完整容纳；再给真实 renderer 更短客户裁剪，覆盖其溢出分支。
 		Design::NavigationState flyoutState; state = flyoutState; size = ImVec2(960, 520); dark = false; animated = true;

@@ -693,6 +693,11 @@
           "Unavailable": "Este sistema no puede distinguir el origen de la entrada; la opción no está disponible."
         },
         "FineControl": "Control preciso",
+        "OpacitySection": "Opacidad",
+        "PenOpacity": "Opacidad del cursor de lápiz",
+        "HighlightPenFillOpacity": "Opacidad de relleno del cursor de lápiz (resaltado)",
+        "DotOpacity": "Opacidad del cursor de punto pequeño",
+        "HighlightDotFillOpacity": "Opacidad de relleno del cursor de punto pequeño (resaltado)",
         "DotHideOnContact":
         {
           "N": "Ocultar automáticamente el cursor de punto pequeño al apoyar el lápiz",
@@ -796,6 +801,33 @@
           "Note": "No se recomienda en dispositivos de pantalla grande."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Posición",
+      "DesktopSection": "Escritorio",
+      "PptSection": "Presentación",
+      "WhiteboardSection": "Pizarra",
+      "StartupE": "Define dónde aparece la barra en el próximo inicio. La barra superior centrada es solo una posición inicial y no se acopla.",
+      "TypeBottomBar": "Barra inferior centrada",
+      "TypeTopBar": "Barra superior centrada",
+      "TypeFloating": "Ventana flotante",
+      "PositionLabel": "Posición",
+      "ExpandRight": "Expandir a la derecha",
+      "ExpandLeft": "Expandir a la izquierda",
+      "FloatBottomLeft": "Esquina inferior izquierda",
+      "FloatBottomRight": "Esquina inferior derecha",
+      "FloatBottomCenter": "Centro inferior",
+      "PptAutoDock": "Entrar en modo de barra inferior centrada al iniciar la presentación",
+      "PptAutoDockE": "Si antes la barra está en un estado marcado, se convierte en una barra inferior centrada y expandida al iniciar la presentación y se restaura al terminar.",
+      "WhiteboardAutoDock": "Entrar en modo de barra inferior centrada al abrir la pizarra",
+      "WhiteboardAutoDockE": "Si antes la barra está en un estado marcado, se convierte en una barra inferior centrada y expandida al abrir la pizarra y se restaura al cerrarla.",
+      "StateBottom": "Estado de barra inferior",
+      "StateBottomFolded": "Estado de barra inferior (contraída)",
+      "StateFloating": "Estado de ventana flotante",
+      "StateFloatingFolded": "Estado de ventana flotante (contraída)",
+      "MainButtonDirection": "Dirección del botón principal",
+      "DirectionKeep": "Sin cambios"
     },
     "Preset":
     {

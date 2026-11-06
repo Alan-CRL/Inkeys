@@ -2396,6 +2396,9 @@
     <None Include="src\UI\barAutoEraser.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barPalmEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barClean.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -2726,6 +2729,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barCloseSmall.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barCloseWhiteboard.svg">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

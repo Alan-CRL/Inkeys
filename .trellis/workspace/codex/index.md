@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 181
+- **Total Sessions**: 182
 - **Last Active**: 2026-11-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~289 | Active |
+| `journal-3.md` | ~350 | Active |
 | `journal-2.md` | ~2029 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,8 +31,11 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 182 | 2026-11-06 | 位置设置页与 PPT/白板进入自动居中底栏 | `b10c5858`, `fa57e5f5` | `chore/ui` |
 | 181 | 2026-11-06 | Canvas debug overlay, visual mode and per-device stroke reconnect | `e0711662`, `1565cb61`, `0df57184` | `debug/drawpad` |
+| 180 | 2026-11-06 | 完善设置绘制光标样式与透明度 | `c7f3f353` | `chore/ui` |
 | 179 | 2026-11-05 | Unify whiteboard/PPT page-turn loading animation | `9ddb5365`, `ad7d1302`, `70d5ca9a`, `97321dc2` | `debug/wait` |
+| 177 | 2026-11-05 | 重启与设置退出修复验收归档 | `1b0db5fc56a55610677a6838eef7670b1fc06daa`, `407f91951f91c35fdbf35c627a8f8af48d399faf` | `chore/ui` |
 | 176 | 2026-11-05 | 调试等待操作延迟开关 | - | `debug/wait` |
 | 175 | 2026-11-05 | 内存优化任务完成归档 | `e225c210` | `diagnostic/memery` |
 | 174 | 2026-11-05 | 候选1保存快照释放调查 | - | `diagnostic/memery` |

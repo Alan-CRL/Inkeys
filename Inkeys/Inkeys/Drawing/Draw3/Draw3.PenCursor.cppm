@@ -36,6 +36,8 @@ export namespace Inkeys::Drawing::Draw3
 		float opacity = 1.0f;
 		float fillAlpha = 0.5f;
 		float outlineWidth = 0.5f;
+		// 仅高亮样式使用：最外圈纯黑边的物理像素宽度，向内占用原轮廓。
+		float outerOutlineWidth = 0.0f;
 		float outlineRed = 184.0f / 255.0f;
 		float outlineGreen = 184.0f / 255.0f;
 		float outlineBlue = 184.0f / 255.0f;
@@ -266,7 +268,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 触摸接触点的软/硬笔光标；None 不生成 visual，由调用方逐接触调用，抬起后随 runtime 消失。
 	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& penAppearance, CursorStyle style,
-		float dpiScale = 1.0f) noexcept;
+		float dpiScale = 1.0f, const CursorSettings* productSettings = nullptr) noexcept;
 	// 计算包含 1px AA 和 shader quad padding 的画布内脏区。
 	RECT DrawingCursorVisualBounds(const DrawingCursorVisual& visual,
 		int canvasWidth, int canvasHeight) noexcept;

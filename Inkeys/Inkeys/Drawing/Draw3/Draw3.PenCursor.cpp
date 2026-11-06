@@ -29,7 +29,8 @@ namespace Inkeys::Drawing::Draw3
 
 		// 把设备样式应用到软/硬笔的光标外观：不改变热点，只改变几何与描边。
 		// Arrow 为自绘的白底黑边箭头（鼠标设备的 Arrow 是真实系统光标，不经过这里）。
-		void ApplyCursorStyle(DrawingCursorAppearance& appearance, CursorStyle style, float scale) noexcept
+		void ApplyCursorStyle(DrawingCursorAppearance& appearance, CursorStyle style, float scale,
+			int opacityPercent) noexcept
 		{
 			if (style == CursorStyle::Arrow)
 			{
@@ -42,6 +43,7 @@ namespace Inkeys::Drawing::Draw3
 				appearance.opacity = 1.0f;
 				appearance.fillAlpha = 1.0f;
 				appearance.outlineWidth = CursorArrowOutlineWidthPx(scale);
+				appearance.outerOutlineWidth = 0.0f;
 				appearance.outlineOpacity = 1.0f;
 				appearance.outlineRed = appearance.outlineGreen = appearance.outlineBlue = 0.0f;
 				return;
@@ -54,8 +56,14 @@ namespace Inkeys::Drawing::Draw3
 				appearance.centerOffsetY = appearance.height * 0.5f;
 			}
 			const bool highlight = IsHighlightedCursorStyle(style);
-			appearance.outlineWidth = (highlight ? kCursorHighlightEdgeDip : kCursorPlainEdgeDip) * scale;
-			appearance.outlineOpacity = highlight ? 1.0f : appearance.opacity * appearance.fillAlpha;
+			const float opacity = NormalizeCursorOpacityPercent(style, opacityPercent) / 100.0f;
+			appearance.outlineWidth = style == CursorStyle::HighlightDot
+				? CursorHighlightDotEdgeWidthPx(appearance.width, scale)
+				: (highlight ? kCursorHighlightEdgeDip : kCursorPlainEdgeDip) * scale;
+			appearance.outerOutlineWidth = highlight ? kCursorHighlightOuterEdgePx : 0.0f;
+			appearance.opacity = highlight ? 1.0f : opacity;
+			appearance.fillAlpha = highlight ? opacity : 1.0f;
+			appearance.outlineOpacity = highlight ? 1.0f : opacity;
 			appearance.outlineRed = appearance.outlineGreen = appearance.outlineBlue =
 				highlight ? 0.96f : 184.0f / 255.0f;
 		}
@@ -74,6 +82,7 @@ namespace Inkeys::Drawing::Draw3
 				FloatEqual(left.blue, right.blue) && FloatEqual(left.opacity, right.opacity) &&
 				FloatEqual(left.fillAlpha, right.fillAlpha) &&
 				FloatEqual(left.outlineWidth, right.outlineWidth) &&
+				FloatEqual(left.outerOutlineWidth, right.outerOutlineWidth) &&
 				FloatEqual(left.outlineRed, right.outlineRed) &&
 				FloatEqual(left.outlineGreen, right.outlineGreen) &&
 				FloatEqual(left.outlineBlue, right.outlineBlue) &&
@@ -297,6 +306,8 @@ namespace Inkeys::Drawing::Draw3
 			std::isfinite(appearance.red) && std::isfinite(appearance.green) &&
 			std::isfinite(appearance.blue) && std::isfinite(appearance.opacity) &&
 			std::isfinite(appearance.fillAlpha) && std::isfinite(appearance.outlineWidth) &&
+			std::isfinite(appearance.outerOutlineWidth) && appearance.outerOutlineWidth >= 0.0f &&
+			appearance.outerOutlineWidth <= kMaximumCursorExtentPx &&
 			std::isfinite(appearance.outlineRed) && std::isfinite(appearance.outlineGreen) &&
 			std::isfinite(appearance.outlineBlue) &&
 			std::isfinite(appearance.outlineOpacity) &&
@@ -383,7 +394,8 @@ namespace Inkeys::Drawing::Draw3
 			if (penIconAllowed)
 			{
 				// 设备样式只作用于软/硬笔；荧光笔矩形、图形圆形和其它工具保持原几何与原高亮规则。
-				ApplyCursorStyle(visual.appearance, style, scale);
+				ApplyCursorStyle(visual.appearance, style, scale,
+					productSettings ? CursorOpacityPercent(*productSettings, style) : DefaultCursorOpacityPercent(style));
 			}
 			else
 			{
@@ -628,7 +640,7 @@ namespace Inkeys::Drawing::Draw3
 
 	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& penAppearance, CursorStyle style,
-		float dpiScale) noexcept
+		float dpiScale, const CursorSettings* productSettings) noexcept
 	{
 		DrawingCursorVisual visual;
 		if (style == CursorStyle::None || !std::isfinite(x) || !std::isfinite(y) ||
@@ -639,7 +651,8 @@ namespace Inkeys::Drawing::Draw3
 		visual.x = x;
 		visual.y = y;
 		visual.appearance = penAppearance;
-		ApplyCursorStyle(visual.appearance, style, scale);
+		ApplyCursorStyle(visual.appearance, style, scale,
+			productSettings ? CursorOpacityPercent(*productSettings, style) : DefaultCursorOpacityPercent(style));
 		if (!IsValidDrawingCursorAppearance(visual.appearance)) visual.visible = false;
 		return visual;
 	}

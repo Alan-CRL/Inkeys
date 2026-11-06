@@ -693,6 +693,11 @@
           "Unavailable": "Acest sistem nu poate distinge sursa intrării, deci opțiunea nu este disponibilă."
         },
         "FineControl": "Control fin",
+        "OpacitySection": "Opacitate",
+        "PenOpacity": "Opacitatea cursorului creionului",
+        "HighlightPenFillOpacity": "Opacitatea umplerii cursorului creionului (evidențiat)",
+        "DotOpacity": "Opacitatea cursorului cu punct mic",
+        "HighlightDotFillOpacity": "Opacitatea umplerii cursorului cu punct mic (evidențiat)",
         "DotHideOnContact":
         {
           "N": "Ascunde automat cursorul cu punct mic la contact",
@@ -796,6 +801,33 @@
           "Note": "Nerecomandat pentru dispozitive cu ecran mare."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Poziție",
+      "DesktopSection": "Desktop",
+      "PptSection": "Prezentare",
+      "WhiteboardSection": "Tablă",
+      "StartupE": "Stabilește unde apare bara la următoarea pornire. Bara de sus centrată este doar o poziție inițială și nu se lipește.",
+      "TypeBottomBar": "Bară de jos centrată",
+      "TypeTopBar": "Bară de sus centrată",
+      "TypeFloating": "Fereastră flotantă",
+      "PositionLabel": "Poziție",
+      "ExpandRight": "Extinde spre dreapta",
+      "ExpandLeft": "Extinde spre stânga",
+      "FloatBottomLeft": "Colțul din stânga jos",
+      "FloatBottomRight": "Colțul din dreapta jos",
+      "FloatBottomCenter": "Jos, centru",
+      "PptAutoDock": "Intră în modul bară de jos centrată la începutul prezentării",
+      "PptAutoDockE": "Dacă înainte bara se află într-o stare bifată, la începutul prezentării devine o bară de jos centrată și extinsă, iar la final este restaurată.",
+      "WhiteboardAutoDock": "Intră în modul bară de jos centrată la intrarea în tablă",
+      "WhiteboardAutoDockE": "Dacă înainte bara se află într-o stare bifată, la intrarea în tablă devine o bară de jos centrată și extinsă, iar la ieșire este restaurată.",
+      "StateBottom": "Starea barei de jos",
+      "StateBottomFolded": "Starea barei de jos (restrânsă)",
+      "StateFloating": "Starea ferestrei flotante",
+      "StateFloatingFolded": "Starea ferestrei flotante (restrânsă)",
+      "MainButtonDirection": "Direcția butonului principal",
+      "DirectionKeep": "Fără modificare"
     },
     "Preset":
     {

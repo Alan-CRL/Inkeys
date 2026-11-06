@@ -158,10 +158,10 @@ namespace Inkeys::UI::Setting::Design
 			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\ue9d9" },
 			Entry{ PageId::Version, I18nKey.SettingsUI.Version.N, "\ue946" }
 		};
-		const std::array childKeys{ I18nKey.SettingsUI.Design.GeneralBasic,
+		const std::array childKeys{ I18nKey.SettingsUI.Design.GeneralBasic, I18nKey.SettingsUI.Position.N,
 			I18nKey.SettingsUI.Design.GeneralAppearance, I18nKey.SettingsUI.Design.GeneralInteraction,
 			I18nKey.SettingsUI.Design.GeneralStorage, I18nKey.SettingsUI.HotKey.N, I18nKey.SettingsUI.DesktopShortcut.N };
-		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e", "\ue765", "\ue71b" };
+		const std::array childGlyphs{ "\ue713", "\ue707", "\ue790", "\ue72e", "\ue81e", "\ue765", "\ue71b" };
 		static_assert(childKeys.size() == GeneralSectionCount && childGlyphs.size() == GeneralSectionCount);
 		static_assert(middleEntries.size() == NavigationMiddleItemCount);
 		auto navigate = [&](NavigationDestination destination, bool dismissOverlay = true) {

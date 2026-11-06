@@ -131,7 +131,7 @@ private:
 	IdtAtomic<bool> visible_ = false;
 	bool returnToSelectionOnClear_ = false;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
-	std::array<BarButtonClass,10> buttons_;
+	std::array<BarButtonClass,11> buttons_;
 	std::array<BarUiShapeClass,2> dividers_;
 	BarUiShapeClass automaticDivider_;
 	BarUiSVGClass automaticArrow_;
@@ -143,6 +143,7 @@ private:
 	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	unsigned long long deviceGeneration_ = 0;
 	int selectedSize_ = 32, sensitivity_ = 1;
+	bool palmEnabled_ = false;
 	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
 };

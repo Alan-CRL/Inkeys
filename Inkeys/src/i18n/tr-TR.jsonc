@@ -693,6 +693,11 @@
           "Unavailable": "Bu sistem giriş kaynağını ayırt edemediği için seçenek kullanılamıyor."
         },
         "FineControl": "Hassas denetimler",
+        "OpacitySection": "Opaklık",
+        "PenOpacity": "Kalem imleci opaklığı",
+        "HighlightPenFillOpacity": "Kalem (vurgulu) imleci dolgu opaklığı",
+        "DotOpacity": "Küçük nokta imleci opaklığı",
+        "HighlightDotFillOpacity": "Küçük nokta (vurgulu) imleci dolgu opaklığı",
         "DotHideOnContact":
         {
           "N": "Küçük nokta imlecini temas sırasında otomatik gizle",
@@ -796,6 +801,33 @@
           "Note": "Büyük ekranlı cihazlarda önerilmez."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Konum",
+      "DesktopSection": "Masaüstü",
+      "PptSection": "Sunu",
+      "WhiteboardSection": "Beyaz tahta",
+      "StartupE": "Araç çubuğunun bir sonraki açılışta nerede görüneceğini belirler. Ortalanmış üst çubuk yalnızca başlangıç konumudur ve yapışmaz.",
+      "TypeBottomBar": "Ortalanmış alt çubuk",
+      "TypeTopBar": "Ortalanmış üst çubuk",
+      "TypeFloating": "Yüzen pencere",
+      "PositionLabel": "Konum",
+      "ExpandRight": "Sağa aç",
+      "ExpandLeft": "Sola aç",
+      "FloatBottomLeft": "Sol alt köşe",
+      "FloatBottomRight": "Sağ alt köşe",
+      "FloatBottomCenter": "Alt orta",
+      "PptAutoDock": "Slayt gösterisi başlarken ortalanmış alt çubuk moduna geç",
+      "PptAutoDockE": "Çubuk öncesinde işaretli bir durumdaysa, slayt gösterisi başlarken açık ve ortalanmış alt çubuğa dönüşür; gösteri bitince eski haline getirilir.",
+      "WhiteboardAutoDock": "Beyaz tahtaya girerken ortalanmış alt çubuk moduna geç",
+      "WhiteboardAutoDockE": "Çubuk öncesinde işaretli bir durumdaysa, beyaz tahtaya girerken açık ve ortalanmış alt çubuğa dönüşür; çıkınca eski haline getirilir.",
+      "StateBottom": "Alt çubuk durumu",
+      "StateBottomFolded": "Alt çubuk durumu (daraltılmış)",
+      "StateFloating": "Yüzen pencere durumu",
+      "StateFloatingFolded": "Yüzen pencere durumu (daraltılmış)",
+      "MainButtonDirection": "Ana düğme yönü",
+      "DirectionKeep": "Değiştirme"
     },
     "Preset":
     {

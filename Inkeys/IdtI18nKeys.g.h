@@ -696,6 +696,11 @@ inline constexpr struct I18nKeyRoot
                     const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
                 } InjectedMouse{};
                 const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
+                const char* OpacitySection = "SettingsUI/Draw/Cursor/OpacitySection";
+                const char* PenOpacity = "SettingsUI/Draw/Cursor/PenOpacity";
+                const char* HighlightPenFillOpacity = "SettingsUI/Draw/Cursor/HighlightPenFillOpacity";
+                const char* DotOpacity = "SettingsUI/Draw/Cursor/DotOpacity";
+                const char* HighlightDotFillOpacity = "SettingsUI/Draw/Cursor/HighlightDotFillOpacity";
                 struct Node__SettingsUI__Draw__Cursor__DotHideOnContact
                 {
                     const char* N = "SettingsUI/Draw/Cursor/DotHideOnContact/N";
@@ -800,6 +805,33 @@ inline constexpr struct I18nKeyRoot
                 } TouchArea{};
             } Eraser{};
         } Draw{};
+        struct Node__SettingsUI__Position
+        {
+            const char* N = "SettingsUI/Position/N";
+            const char* DesktopSection = "SettingsUI/Position/DesktopSection";
+            const char* PptSection = "SettingsUI/Position/PptSection";
+            const char* WhiteboardSection = "SettingsUI/Position/WhiteboardSection";
+            const char* StartupE = "SettingsUI/Position/StartupE";
+            const char* TypeBottomBar = "SettingsUI/Position/TypeBottomBar";
+            const char* TypeTopBar = "SettingsUI/Position/TypeTopBar";
+            const char* TypeFloating = "SettingsUI/Position/TypeFloating";
+            const char* PositionLabel = "SettingsUI/Position/PositionLabel";
+            const char* ExpandRight = "SettingsUI/Position/ExpandRight";
+            const char* ExpandLeft = "SettingsUI/Position/ExpandLeft";
+            const char* FloatBottomLeft = "SettingsUI/Position/FloatBottomLeft";
+            const char* FloatBottomRight = "SettingsUI/Position/FloatBottomRight";
+            const char* FloatBottomCenter = "SettingsUI/Position/FloatBottomCenter";
+            const char* PptAutoDock = "SettingsUI/Position/PptAutoDock";
+            const char* PptAutoDockE = "SettingsUI/Position/PptAutoDockE";
+            const char* WhiteboardAutoDock = "SettingsUI/Position/WhiteboardAutoDock";
+            const char* WhiteboardAutoDockE = "SettingsUI/Position/WhiteboardAutoDockE";
+            const char* StateBottom = "SettingsUI/Position/StateBottom";
+            const char* StateBottomFolded = "SettingsUI/Position/StateBottomFolded";
+            const char* StateFloating = "SettingsUI/Position/StateFloating";
+            const char* StateFloatingFolded = "SettingsUI/Position/StateFloatingFolded";
+            const char* MainButtonDirection = "SettingsUI/Position/MainButtonDirection";
+            const char* DirectionKeep = "SettingsUI/Position/DirectionKeep";
+        } Position{};
         struct Node__SettingsUI__Preset
         {
             const char* N = "SettingsUI/Preset/N";

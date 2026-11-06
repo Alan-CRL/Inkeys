@@ -615,6 +615,14 @@ namespace
 			CursorModel::CursorDevice::Tablet, cursor.Tablet.load(), legacyMouseStyle, legacyPenStyle);
 		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
 		state.cursorSettings.dotHideOnContact = CursorModel::RestoreDotCursorHideMode(cursor.DotHideOnContact.load());
+		state.cursorSettings.penOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::Pen, cursor.PenOpacity.load());
+		state.cursorSettings.highlightPenFillOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::HighlightPen, cursor.HighlightPenFillOpacity.load());
+		state.cursorSettings.dotOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::Dot, cursor.DotOpacity.load());
+		state.cursorSettings.highlightDotFillOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load());
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.whiteboardStyle = whiteboardStyleToken;

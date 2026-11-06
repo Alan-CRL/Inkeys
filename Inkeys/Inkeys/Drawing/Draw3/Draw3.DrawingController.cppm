@@ -199,8 +199,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<uint32_t> interruptedStrokeReconnectDevices_ = 3;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;
 		std::atomic<bool> translucentInkCursorEnabled_ = false;
-		// 位 2 为产品策略已接入；位 0/1 保存原始鼠标/笔类型，按实际工具临时投影。
-		std::atomic<uint32_t> cursorSettings_ = 0;
+		// 低位保存设备样式与产品策略，高位保存四种样式的独立百分比。
+		std::atomic<uint64_t> cursorSettings_ = 0;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;

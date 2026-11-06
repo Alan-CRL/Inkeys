@@ -693,6 +693,11 @@
           "Unavailable": "Ten system nie potrafi odróżnić źródła wejścia, więc opcja jest niedostępna."
         },
         "FineControl": "Precyzyjne sterowanie",
+        "OpacitySection": "Krycie",
+        "PenOpacity": "Krycie kursora pióra",
+        "HighlightPenFillOpacity": "Krycie wypełnienia kursora pióra (wyróżnione)",
+        "DotOpacity": "Krycie kursora małej kropki",
+        "HighlightDotFillOpacity": "Krycie wypełnienia kursora małej kropki (wyróżniona)",
         "DotHideOnContact":
         {
           "N": "Automatycznie ukrywaj mały kursor punktowy przy kontakcie",
@@ -796,6 +801,33 @@
           "Note": "Niezalecane na urządzeniach z dużym ekranem."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Położenie",
+      "DesktopSection": "Pulpit",
+      "PptSection": "Prezentacja",
+      "WhiteboardSection": "Tablica",
+      "StartupE": "Określa, gdzie pasek pojawi się przy następnym uruchomieniu. Wyśrodkowany pasek górny to tylko położenie początkowe i nie przyciąga się.",
+      "TypeBottomBar": "Wyśrodkowany pasek dolny",
+      "TypeTopBar": "Wyśrodkowany pasek górny",
+      "TypeFloating": "Okno swobodne",
+      "PositionLabel": "Położenie",
+      "ExpandRight": "Rozwijaj w prawo",
+      "ExpandLeft": "Rozwijaj w lewo",
+      "FloatBottomLeft": "Lewy dolny róg",
+      "FloatBottomRight": "Prawy dolny róg",
+      "FloatBottomCenter": "Dół, środek",
+      "PptAutoDock": "Przechodź do trybu wyśrodkowanego paska dolnego po rozpoczęciu pokazu",
+      "PptAutoDockE": "Jeśli pasek wcześniej był w zaznaczonym stanie, po rozpoczęciu pokazu stanie się rozwiniętym, wyśrodkowanym paskiem dolnym, a po zakończeniu zostanie przywrócony.",
+      "WhiteboardAutoDock": "Przechodź do trybu wyśrodkowanego paska dolnego po wejściu do tablicy",
+      "WhiteboardAutoDockE": "Jeśli pasek wcześniej był w zaznaczonym stanie, po wejściu do tablicy stanie się rozwiniętym, wyśrodkowanym paskiem dolnym, a po wyjściu zostanie przywrócony.",
+      "StateBottom": "Stan paska dolnego",
+      "StateBottomFolded": "Stan paska dolnego (zwiniętego)",
+      "StateFloating": "Stan okna swobodnego",
+      "StateFloatingFolded": "Stan okna swobodnego (zwiniętego)",
+      "MainButtonDirection": "Kierunek przycisku głównego",
+      "DirectionKeep": "Bez zmian"
     },
     "Preset":
     {

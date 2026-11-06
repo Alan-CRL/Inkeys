@@ -10263,7 +10263,7 @@ namespace Inkeys::Drawing::Draw3
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
 		window_.SetInjectedMouseAsTablet(settings.injectedMouseAsTablet);
-		const uint32_t packed = PackCursorSettings(settings);
+		const uint64_t packed = PackCursorSettings(settings);
 		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
@@ -14016,7 +14016,7 @@ namespace Inkeys::Drawing::Draw3
 				if (AbsoluteQpcSeconds(mouseSample.qpc, qpcFrequency) <= mouseSpeedEraser().LastEventSeconds())
 					mouseSample.inContact = false;
 			}
-			const uint32_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
+			const uint64_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
 			CursorSettings cursorSettings = UnpackCursorSettings(cursorSettingsBits);
 			const bool cursorSettingsValid = (cursorSettingsBits & kCursorSettingsValidBit) != 0;
 			DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
@@ -14153,7 +14153,7 @@ namespace Inkeys::Drawing::Draw3
 					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
 						snapshot.position.x, snapshot.position.y,
 						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touch,
-						ProductTargetScale(runtime->visualStyle));
+						ProductTargetScale(runtime->visualStyle), &cursorSettings);
 					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
 					continue;
 				}
