@@ -379,3 +379,27 @@ DrawGlow(userOpacity);
 effects.DrawBackground(context); // 内部消费已冻结的backgroundOpacity
 DrawProgress(contentOpacity * progressReveal);
 ```
+
+## 调试等待观察开关（2026-11-05）
+
+### Scope / Trigger
+调试页“为等待操作延迟”仅提供启动与主动点击分页的动画观察入口；不扩展 SuperTop/提权交接覆盖。
+
+### Signatures
+`Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations`：`IdtAtomic<bool>`、默认 `false`、NoUpload，经现有 main.json 保存；说明为“延长加载等待，便于观察动画。”
+
+### Contracts
+启动 Mini 读取后只启用 `startupPreviewManualDelayRequested`；继续使用 `ReportStartupMilestoneForManualTest` 的 3200ms/600ms 分阶段慢速成功模式。Preview 未活动时不延迟，不授权重试/失败注入。
+主动点击 `PageControl::InvokeDirection` 在控件层暂存单个 10s 意图，通过现有输入 worker tick 到期后派发真实业务请求；只投影现有 loading 视觉，不改真实状态、ready/ACK，不消耗 COM/存储超时。快捷键、滚轮、外部翻页及自动恢复不注入。
+
+### Validation / Error Matrix
+关闭→立即走原路径；重复点击→不叠加或续期；页/会话/白板 generation 改变、隐藏、销毁或停机→退休；到期→重新准入且最多派发一次；真实失败→原有处理。结束放映不延迟。
+
+### Good / Base / Bad
+Good：点击后观察转圈，10s 后真实翻页；Base：默认关闭；Bad：全局 Sleep 或在公共 loading 状态上无差别放慢。
+
+### Tests Required
+PageControl 离屏生产路径覆盖开关关闭、10s 截止、重复点击、视觉/业务隔离、页/会话退休、隐藏重现及停机；运行入口 `Inkeys.exe --bar-eraser-offscreen-test`。配合国际化 check、Debug|ARM64 Solution 构建，不以 headless 结果声称 GUI 观感已验证。
+
+### Wrong vs Correct
+Wrong：持有真实翻页请求 10s 使原超时到期。Correct：在点击入口等待 10s 后才提交真实请求，保持原协议和超时预算。

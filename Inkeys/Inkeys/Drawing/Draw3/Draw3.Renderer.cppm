@@ -194,6 +194,7 @@ export namespace Inkeys::Drawing::Draw3
 	int RunRendererUploadValidation() noexcept;
 	// 无窗口生产验证：画布调试板在 L2/L1/L0 之下、关闭时字节一致，以及标记原语的真实像素读回。
 	int RunCanvasDebugOverlayValidation() noexcept;
+	int RunLaserResourceLifecycleValidation() noexcept;
 
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
@@ -276,11 +277,17 @@ export namespace Inkeys::Drawing::Draw3
 		// 以不混合的矩形写零局部清理单笔 scratch。
 		bool ClearLaserCoverageRect(RECT rect);
 		bool ClearLaserLiveCoverageRect(RECT rect);
+		// Laser 大纹理只在工具控制边界准备；失败不发布半套资源。
+		bool EnsureLaserResources(UINT width, UINT height);
+		bool LaserResourcesAvailable() const noexcept;
+		void ReleaseLaserResources() noexcept;
+		// 当前持有纹理的名义像素字节，不包含驱动/进程内存口径。
+		uint64_t LaserResourceBytes() const noexcept;
 		// Bake 只改独立 scratch；全部 pass 成功后才交换成可见稳定颜色。
 		bool BeginLaserBake();
 		ID3D11RenderTargetView* LaserBakeTarget() const noexcept;
 		void CommitLaserBake() noexcept;
-		// 仅在绘制线程选择 Laser 后创建 L0 coverage；失败会永久降级到完整重绘。
+		// 仅在绘制线程选择 Laser 后创建 L0 coverage；失败在本次资源会话降级到完整重绘。
 		bool EnsureLaserIncrementalCoverageResources();
 		bool LaserIncrementalCoverageAvailable() const noexcept;
 		void ClearLaserIncrementalCoverage();
@@ -288,7 +295,7 @@ export namespace Inkeys::Drawing::Draw3
 		void DrawLaserDots(std::span<const LaserDot> dots);
 		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
 		void DrawLaserParticles();
-		// 在主循环开始前提交零像素 draw call，迫使驱动提前 JIT 编译所有激光着色器路径。
+		// 以零像素 draw call 预热可用路径；主体在选择时就绪后再预热完整 Laser 路径。
 		// 消除 Qualcomm/Adreno 等延迟编译驱动的首笔卡顿；对 Nvidia/AMD/Intel/WARP 无额外开销。
 		void WarmUpLaserShaders() noexcept;
 		// 按 DPI 与所选颜色配置白芯、实体外套、散射和固定漫反射尺寸。
@@ -368,6 +375,10 @@ export namespace Inkeys::Drawing::Draw3
 	private:
 		friend int RunRendererUploadValidation() noexcept;
 		friend int RunCanvasDebugOverlayValidation() noexcept;
+		friend int RunLaserResourceLifecycleValidation() noexcept;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		bool failLaserPreparationAfterColor_ = false;
+#endif
 		bool useDefaultStructuredUpload_ = false;
 		bool CreateFixedResources(D3D_DRIVER_TYPE driver);
 		HRESULT UploadStructuredBuffer(ID3D11Buffer* buffer, const void* data, UINT bytes,

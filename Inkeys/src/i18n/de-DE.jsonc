@@ -157,8 +157,7 @@
         "ReadFailed": "Lesen",
         "PresentFailed": "Anzeige",
         "Failed": "Fehler",
-        "Recovering": "Wiederherst.",
-        "Loading": "Laden",
+        "Recovering": "Wiederh.",
         "Retry": "Erneut",
         "Wait": "Warten",
         "RetryCanvas": "Zeichenfläche erneut laden",
@@ -1146,6 +1145,11 @@
       {
         "N": "Zeichenfläche debuggen",
         "E": "Zeigt unter der Zeichenfläche Bildrate, Hardwarelast und Eingabepunkt-Informationen an und fügt der Hauptleiste eine Schaltfläche für die visuelle Fehlersuche hinzu."
+      },
+      "DelayWaiting":
+      {
+        "N": "Wartevorgänge verzögern",
+        "E": "Ladezeiten zum Beobachten der Animationen verlängern."
       },
       "ConsoleSection": "Konsolenausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",

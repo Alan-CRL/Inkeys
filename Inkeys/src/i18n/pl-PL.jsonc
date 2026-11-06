@@ -157,8 +157,7 @@
         "ReadFailed": "Odczyt",
         "PresentFailed": "Ekran",
         "Failed": "Błąd",
-        "Recovering": "Przywracanie",
-        "Loading": "Wczytaj",
+        "Recovering": "Przywr.",
         "Retry": "Ponów",
         "Wait": "Czekaj",
         "RetryCanvas": "Ponów płótno",
@@ -1146,6 +1145,11 @@
       {
         "N": "Debugowanie kanwy",
         "E": "Wyświetla pod kanwą liczbę klatek na sekundę, obciążenie sprzętu i informacje o punktach wejścia oraz dodaje do paska głównego przycisk debugowania wizualnego."
+      },
+      "DelayWaiting":
+      {
+        "N": "Opóźnij operacje oczekiwania",
+        "E": "Wydłuża ładowanie, aby obserwować animacje."
       },
       "ConsoleSection": "Wyjście konsoli",
       "CanvasInformation": "Informacje o inicjalizacji płótna",

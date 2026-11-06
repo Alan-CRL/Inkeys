@@ -157,8 +157,7 @@
         "ReadFailed": "Baca",
         "PresentFailed": "Tampil",
         "Failed": "Galat",
-        "Recovering": "Memulihkan",
-        "Loading": "Muat",
+        "Recovering": "Pemulihan",
         "Retry": "Coba lagi",
         "Wait": "Tunggu",
         "RetryCanvas": "Coba ulang kanvas",
@@ -1146,6 +1145,11 @@
       {
         "N": "Debug kanvas",
         "E": "Tampilkan frame rate, beban perangkat keras, dan informasi titik input di bawah kanvas, serta tambahkan tombol debug visual pada bilah utama."
+      },
+      "DelayWaiting":
+      {
+        "N": "Tunda operasi yang menunggu",
+        "E": "Perpanjang waktu pemuatan untuk mengamati animasi."
       },
       "ConsoleSection": "Keluaran konsol",
       "CanvasInformation": "Info inisialisasi kanvas",

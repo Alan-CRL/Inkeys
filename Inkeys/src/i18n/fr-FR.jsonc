@@ -157,8 +157,7 @@
         "ReadFailed": "Lecture",
         "PresentFailed": "Affichage",
         "Failed": "Erreur",
-        "Recovering": "Restauration",
-        "Loading": "Chargement",
+        "Recovering": "Restaur.",
         "Retry": "Réessayer",
         "Wait": "Patienter",
         "RetryCanvas": "Recharger le canevas",
@@ -1146,6 +1145,11 @@
       {
         "N": "Débogage du canevas",
         "E": "Affiche sous le canevas la fréquence d'images, la charge matérielle et les informations des points d'entrée, et ajoute un bouton de débogage visuel à la barre principale."
+      },
+      "DelayWaiting":
+      {
+        "N": "Prolonger les opérations en attente",
+        "E": "Prolonge le chargement pour observer les animations."
       },
       "ConsoleSection": "Sortie console",
       "CanvasInformation": "Informations d’initialisation du canevas",

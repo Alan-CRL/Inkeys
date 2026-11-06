@@ -539,6 +539,17 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::uint64_t> readyOutputRevision = 0;
 		std::atomic<std::uint64_t> presentedContentRevision = 0;
 		std::atomic_bool auxiliaryFullFrameClean = false;
+		std::atomic_uint64_t auxiliaryReadbackPayloadBytes = 0;
+		struct AuxiliaryReleaseRequest
+		{
+			std::uint64_t hostGeneration = 0, productRevision = 0;
+			std::uint64_t outputRevision = 0, contentRevision = 0, successfulPresents = 0;
+			HostOutputTarget target = HostOutputTarget::PrimaryDrawpad;
+			int width = 0, height = 0;
+			bool operator==(const AuxiliaryReleaseRequest&) const = default;
+		};
+		std::mutex auxiliaryReleaseMutex;
+		std::optional<AuxiliaryReleaseRequest> pendingAuxiliaryRelease;
 		Detail::HostRuntimeRevisionSignal runtimeRevision;
 		Detail::HostDrawingActivityState drawingActivity;
 		Detail::HostAcceptedStrokeState acceptedStrokes;
@@ -994,6 +1005,11 @@ namespace Inkeys::Drawing::Draw3
 			readyOutputRevision.store(0, std::memory_order_release);
 			presentedContentRevision.store(0, std::memory_order_release);
 			auxiliaryFullFrameClean.store(false, std::memory_order_release);
+			auxiliaryReadbackPayloadBytes.store(0, std::memory_order_release);
+			{
+				std::scoped_lock lock(auxiliaryReleaseMutex);
+				pendingAuxiliaryRelease.reset();
+			}
 			runtimeRevision.Reset();
 			drawingActivity.Reset();
 			lastDirtyLeft.store(0, std::memory_order_release);
@@ -1029,7 +1045,9 @@ namespace Inkeys::Drawing::Draw3
 			self->lastDirtyTop.store(dirty.top, std::memory_order_relaxed);
 			self->lastDirtyRight.store(dirty.right, std::memory_order_relaxed);
 			self->lastDirtyBottom.store(dirty.bottom, std::memory_order_relaxed);
-			bool runtimeChanged = false;
+			bool runtimeChanged = self->auxiliaryReadbackPayloadBytes.exchange(
+				self->presentation.AuxiliaryReadbackPayloadBytes(), std::memory_order_acq_rel) !=
+				self->presentation.AuxiliaryReadbackPayloadBytes();
 			const HostOutputTarget outputTarget =
 				ToHostOutputTarget(observation.outputTarget);
 			const bool diagnosticTargetChanged = !self->presentDiagnosticInitialized ||
@@ -1127,6 +1145,9 @@ namespace Inkeys::Drawing::Draw3
 			if (!self) return;
 			self->committedWidth.store(width, std::memory_order_release);
 			self->committedHeight.store(height, std::memory_order_release);
+			self->auxiliaryFullFrameClean.store(false, std::memory_order_release);
+			self->auxiliaryReadbackPayloadBytes.store(
+				self->presentation.AuxiliaryReadbackPayloadBytes(), std::memory_order_release);
 			self->resizeCount.fetch_add(1, std::memory_order_acq_rel);
 		}
 
@@ -1980,6 +2001,45 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		void PumpAuxiliaryRelease()
+		{
+			std::optional<AuxiliaryReleaseRequest> request;
+			{
+				std::scoped_lock lock(auxiliaryReleaseMutex);
+				request.swap(pendingAuxiliaryRelease);
+			}
+			if (!request || !running.load(std::memory_order_acquire) ||
+				!lastPresentSucceeded.load(std::memory_order_acquire) ||
+				auxiliaryReadbackPayloadBytes.load(std::memory_order_acquire) == 0) return;
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				if (request->hostGeneration != acceptedStrokes.HostGeneration() ||
+					request->productRevision != appliedProductRevision) return;
+			}
+			if (bridge.Snapshot().revision != request->productRevision ||
+				requestedOutputTarget.load(std::memory_order_acquire) != request->target ||
+				readyOutputTarget.load(std::memory_order_acquire) != request->target ||
+				requestedOutputRevision.load(std::memory_order_acquire) != request->outputRevision ||
+				readyOutputRevision.load(std::memory_order_acquire) != request->outputRevision ||
+				presentedContentRevision.load(std::memory_order_acquire) != request->contentRevision ||
+				contentRevision.load(std::memory_order_acquire) != request->contentRevision ||
+				successfulPresentCount.load(std::memory_order_acquire) != request->successfulPresents ||
+				committedWidth.load(std::memory_order_acquire) != request->width ||
+				committedHeight.load(std::memory_order_acquire) != request->height ||
+				(request->target == HostOutputTarget::SelectionUlw &&
+					(currentPageHasContent.load(std::memory_order_acquire) ||
+						!auxiliaryFullFrameClean.load(std::memory_order_acquire)))) return;
+			const auto target = request->target == HostOutputTarget::SelectionUlw
+				? TransparentOutputTarget::SelectionUlw : TransparentOutputTarget::PrimaryDrawpad;
+			if (presentation.ReleaseAuxiliaryReadbackResources(target,
+				request->outputRevision, request->contentRevision))
+			{
+				// 不请求全帧：回收自己的控制 wake 不得把刚归还的空白缓冲建回来。
+				auxiliaryReadbackPayloadBytes.store(0, std::memory_order_release);
+				PublishRuntimeRevision();
+			}
+		}
+
 		static void ConsumeBridge(void* context, ControlWakeKind kind)
 		{
 			auto* self = static_cast<Impl*>(context);
@@ -1989,6 +2049,7 @@ namespace Inkeys::Drawing::Draw3
 			self->PumpPresentationCompletions();
 			if (kind == ControlWakeKind::Command) self->PumpOneBridgeCommand();
 			self->PumpBridgeState();
+			self->PumpAuxiliaryRelease();
 		}
 
 		bool Start(HWND hwnd, HWND presentationHwnd,
@@ -2318,6 +2379,7 @@ namespace Inkeys::Drawing::Draw3
 				hapticClicks.Stop();
 				haptics.Shutdown();
 				presentation.Shutdown();
+				auxiliaryReadbackPayloadBytes.store(0, std::memory_order_release);
 				renderer.ReleaseResources();
 				graphics = {};
 				running.store(false, std::memory_order_release);
@@ -2715,6 +2777,8 @@ namespace Inkeys::Drawing::Draw3
 			impl_->presentedContentRevision.load(std::memory_order_acquire);
 		snapshot.auxiliaryFullFrameClean =
 			impl_->auxiliaryFullFrameClean.load(std::memory_order_acquire);
+		snapshot.auxiliaryReadbackPayloadBytes =
+			impl_->auxiliaryReadbackPayloadBytes.load(std::memory_order_acquire);
 		snapshot.lastDirtyRect.left = impl_->lastDirtyLeft.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.top = impl_->lastDirtyTop.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.right = impl_->lastDirtyRight.load(std::memory_order_relaxed);
@@ -2742,6 +2806,29 @@ namespace Inkeys::Drawing::Draw3
 	{
 		return impl_->runtimeRevision.WaitForChange(
 			revision, timeoutMilliseconds, impl_->running, waitWhileStopped);
+	}
+
+	void Host::AcknowledgeAuxiliarySurfaceHidden(const HostRuntimeSnapshot& expected) noexcept
+	{
+		if (!expected.running || !expected.firstFrameReady || !expected.lastPresentSucceeded ||
+			expected.auxiliaryReadbackPayloadBytes == 0 || expected.hostGeneration == 0 ||
+			expected.requestedOutputTarget != expected.readyOutputTarget ||
+			expected.requestedOutputRevision != expected.readyOutputRevision ||
+			expected.presentedContentRevision != expected.contentRevision ||
+			(expected.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+				(expected.currentPageHasContent || !expected.auxiliaryFullFrameClean))) return;
+		const Impl::AuxiliaryReleaseRequest request{ expected.hostGeneration,
+			expected.appliedProductRevision, expected.readyOutputRevision,
+			expected.presentedContentRevision, expected.successfulPresentCount,
+			expected.readyOutputTarget, expected.committedWidth, expected.committedHeight };
+		try
+		{
+			std::scoped_lock lock(impl_->auxiliaryReleaseMutex);
+			if (impl_->pendingAuxiliaryRelease == request) return;
+			impl_->pendingAuxiliaryRelease = request;
+		}
+		catch (...) { return; } // 优化请求失败保留缓冲，不改变显示或 ready。
+		(void)impl_->input.PublishControlWake();
 	}
 
 	void Host::NotifyWorkspaceProgress() noexcept

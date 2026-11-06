@@ -269,6 +269,8 @@ namespace Inkeys::Drawing::Draw3
 			bool presentFailureLogged = false;
 			bool pixelDiagnosticLogged = false;
 			bool forceFullUlwUpdate = false;
+			bool needsFullReadback = true;
+			bool committedFullFrameClean = false;
 			ULONGLONG lastPixelDiagnosticTick = 0;
 			POINT lastDestination{};
 			SIZE lastDestinationSize{};
@@ -370,15 +372,30 @@ namespace Inkeys::Drawing::Draw3
 				dibHeight = 0;
 			}
 
-			void Reset()
+			std::uint64_t ReadbackPayloadBytes() const noexcept
+			{
+				return (stagingTexture ? static_cast<std::uint64_t>(stagingWidth) * stagingHeight * 4 : 0) +
+					(dibBits ? static_cast<std::uint64_t>(dibWidth) * dibHeight * 4 : 0);
+			}
+
+			void ReleaseReadbackResources() noexcept
 			{
 				ReleaseDib();
 				stagingTexture.Reset();
+				stagingWidth = stagingHeight = 0;
+				// HWND 的已提交画面和真实观察仍有效；下一次读回必须完整填充新 DIB。
+				needsFullReadback = true;
+			}
+
+			void Reset()
+			{
+				ReleaseReadbackResources();
 				device.Reset();
 				context.Reset();
 				stagingWidth = 0;
 				stagingHeight = 0;
 				window = nullptr;
+				committedFullFrameClean = false;
 				lastObservation = {};
 				presentSuccessLogged = false;
 				presentFailureLogged = false;
@@ -427,6 +444,8 @@ namespace Inkeys::Drawing::Draw3
 				if (memoryDC && dibBitmap && dibBits && dibWidth == width && dibHeight == height) return true;
 
 				ReleaseDib();
+				needsFullReadback = true;
+				committedFullFrameClean = false;
 				memoryDC = CreateCompatibleDC(nullptr);
 				if (!memoryDC) return false;
 				BITMAPINFO bitmapInfo = {};
@@ -456,7 +475,8 @@ namespace Inkeys::Drawing::Draw3
 				return true;
 			}
 
-			bool Initialize(HWND inputWindow, ID3D11Device* inputDevice, ID3D11DeviceContext* inputContext, UINT width, UINT height)
+			bool Initialize(HWND inputWindow, ID3D11Device* inputDevice, ID3D11DeviceContext* inputContext, UINT width, UINT height,
+				bool prepareReadback = true)
 			{
 				Reset();
 				window = inputWindow;
@@ -469,7 +489,8 @@ namespace Inkeys::Drawing::Draw3
 				if (forceFullUlwUpdate)
 					DiagnosticOutput::Line() << "[Draw3Diag][ulw-control] role=" << diagnosticRole
 						<< " INKEYS_DRAW3_ULW_FULL_UPDATE=1 dirtyParameter=null" << std::endl;
-				return window && device && context && Resize(width, height);
+				return window && IsWindow(window) && device && context && width != 0 && height != 0 &&
+					(!prepareReadback || Resize(width, height));
 			}
 
 			bool Resize(UINT width, UINT height)
@@ -495,16 +516,27 @@ namespace Inkeys::Drawing::Draw3
 					}
 					return false;
 				};
-				if (!context || !stagingTexture || !finalTexture)
+				if (!context || !device || !finalTexture)
 					return fail("resource");
+				D3D11_TEXTURE2D_DESC finalDescription = {};
+				finalTexture->GetDesc(&finalDescription);
+				if (!stagingTexture || stagingWidth != finalDescription.Width ||
+					stagingHeight != finalDescription.Height)
+				{
+					needsFullReadback = true;
+					committedFullFrameClean = false;
+					if (!CreateStagingTexture(finalDescription.Width, finalDescription.Height))
+						return fail("staging");
+				}
 				if (!EnsureWindowDib())
 				{
 					const DWORD error = GetLastError();
 					return fail("window-dib", error,
 						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
 				}
-				D3D11_TEXTURE2D_DESC finalDescription = {};
-				finalTexture->GetDesc(&finalDescription);
+				// 回收/尺寸重建后不能局部填充一张新 DIB，也不能沿用旧空白证明。
+				if (needsFullReadback) presentFull = true;
+				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
 				finalTextureWidth = finalDescription.Width;
 				finalTextureHeight = finalDescription.Height;
 				// Resize 可与本帧交错：拷贝范围必须同时受 GPU 两端纹理和当前 DIB 限制。
@@ -606,6 +638,9 @@ namespace Inkeys::Drawing::Draw3
 					LogPresentEvent(presentFailureLogged ? "recovery" : "success", dirty, presentFull);
 					presentSuccessLogged = true;
 				}
+				needsFullReadback = false;
+				if (presentFull) committedFullFrameClean = copyResult.fullFrameAllZeroAlpha;
+				else if (!copyResult.allZeroAlpha) committedFullFrameClean = false;
 				presentFailureLogged = false;
 				return true;
 			}
@@ -1027,9 +1062,9 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 			if (!primaryInitialized) return false;
-			// 辅助窗出生即带固定 layered/transparent 样式，只建立 CPU 读回目标。
+			// 辅助窗保留固定样式/设备借用，像素在真正需要辅助 Present 时才建立。
 			return selectionUlwPresenter.Initialize(selectionWindow,
-				graphics->device.Get(), graphics->context.Get(), width, height);
+				graphics->device.Get(), graphics->context.Get(), width, height, false);
 		}
 
 		bool TryInitialize(TransparentPresentMode mode,
@@ -1334,6 +1369,7 @@ namespace Inkeys::Drawing::Draw3
 
 	bool TransparentPresentationController::Resize(UINT width, UINT height)
 	{
+		const bool sizeChanged = impl_->width != width || impl_->height != height;
 		impl_->width = width;
 		impl_->height = height;
 		bool succeeded = false;
@@ -1351,8 +1387,12 @@ namespace Inkeys::Drawing::Draw3
 			succeeded = impl_->dwmExtendedPresenter.Update(); break;
 		default: break;
 		}
-		if (succeeded)
-			succeeded = impl_->selectionUlwPresenter.Resize(width, height);
+		if (succeeded && sizeChanged)
+		{
+			// 辅助完整帧会按真实纹理/窗口尺寸重建，Resize 不把闲置大缓冲建回来。
+			impl_->selectionUlwPresenter.ReleaseReadbackResources();
+			impl_->selectionUlwPresenter.committedFullFrameClean = false;
+		}
 		if (!succeeded) impl_->SetFailure(E_FAIL);
 		else impl_->PublishInformation(false, "就绪");
 		return succeeded;
@@ -1437,6 +1477,33 @@ namespace Inkeys::Drawing::Draw3
 			impl_->presentSuccessLogged = true;
 		}
 		return succeeded;
+	}
+
+	std::uint64_t TransparentPresentationController::AuxiliaryReadbackPayloadBytes() const noexcept
+	{
+		return impl_->selectionUlwPresenter.ReadbackPayloadBytes();
+	}
+
+	bool TransparentPresentationController::AuxiliaryReadbackNeedsFullPresent() const noexcept
+	{
+		return impl_->requestedOutputTarget == TransparentOutputTarget::SelectionUlw &&
+			impl_->selectionUlwPresenter.needsFullReadback;
+	}
+
+	bool TransparentPresentationController::ReleaseAuxiliaryReadbackResources(
+		TransparentOutputTarget target, std::uint64_t outputRevision,
+		std::uint64_t contentRevision) noexcept
+	{
+		// 调用者已经取得 Window Service 隐藏回执；这里仅验证 owner 上的真实呈现版本。
+		if (impl_->recoveryPending || !impl_->presentSuccessLogged || impl_->presentFailureLogged ||
+			impl_->requestedOutputTarget != target || impl_->requestedOutputRevision != outputRevision ||
+			impl_->lastObservation.outputTarget != target ||
+			impl_->lastObservation.outputRevision != outputRevision ||
+			impl_->lastObservation.presentedContentRevision != contentRevision ||
+			(target == TransparentOutputTarget::SelectionUlw &&
+				!impl_->selectionUlwPresenter.committedFullFrameClean)) return false;
+		impl_->selectionUlwPresenter.ReleaseReadbackResources();
+		return true;
 	}
 
 	bool TransparentPresentationController::RefreshAfterCompositionChanged()

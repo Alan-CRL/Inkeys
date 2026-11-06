@@ -1,0 +1,5 @@
+run,pid,exit_code_after_WM_CLOSE,duration_seconds,samples,gdi_handles_final,tail_private_median_MiB,tail_working_set_median_MiB,peak_private_bytes_MiB,peak_working_set_bytes_MiB
+before-startup,55316,6,61.015,240,38,570.79296875,585.70703125,586.609375,602.12109375
+before-startup-repeat,53276,6,60.906,240,38,571.7265625,577.4375,578.22265625,586.0234375
+after-startup,4996,6,60.672,239,32,510.609375,519.94140625,513.74609375,524.03125
+after-startup-repeat,18988,6,60.891,240,32,509.71484375,514.55078125,514.24609375,522.55078125

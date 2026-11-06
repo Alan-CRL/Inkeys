@@ -157,8 +157,7 @@
         "ReadFailed": "Leitura",
         "PresentFailed": "Exibição",
         "Failed": "Erro",
-        "Recovering": "Restaurando",
-        "Loading": "Carregando",
+        "Recovering": "Restaur.",
         "Retry": "Tentar",
         "Wait": "Aguarde",
         "RetryCanvas": "Tentar a tela de desenho novamente",
@@ -1146,6 +1145,11 @@
       {
         "N": "Depuração da tela",
         "E": "Mostra abaixo da tela a taxa de quadros, a carga do hardware e as informações dos pontos de entrada, e adiciona um botão de depuração visual à barra principal."
+      },
+      "DelayWaiting":
+      {
+        "N": "Atrasar operações de espera",
+        "E": "Prolonga o carregamento para observar as animações."
       },
       "ConsoleSection": "Saída no console",
       "CanvasInformation": "Informações de inicialização do desenho",

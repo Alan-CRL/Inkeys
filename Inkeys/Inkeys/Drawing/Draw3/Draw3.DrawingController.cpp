@@ -1695,10 +1695,10 @@ namespace Inkeys::Drawing::Draw3
 						Bridge::SlideBindingMode::StableSlideId
 						&& pageIndex < target.totalPages
 						? std::optional<std::int32_t>(target.slideIds[pageIndex]) : std::nullopt;
-					const auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
+					auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
 						slideId, false);
 					if (!output) return std::nullopt;
-					snapshot.activeCanvases.push_back(*output);
+					snapshot.activeCanvases.push_back(std::move(*output));
 				}
 				// 保留 legacy canvases 投影，兼容旧的 UInk 测试与读取器。
 				snapshot.canvases = snapshot.activeCanvases;
@@ -2485,6 +2485,26 @@ namespace Inkeys::Drawing::Draw3
 			runtime.ended = runtime.cancelled = true;
 			runtime.awaitingReconnect = false;
 			return true;
+		}
+
+		template<class CompleteModel, class FinishMouse>
+		void RetireLaserToolRuntimes(std::span<RuntimeStroke*> active,
+			ContactInputCoordinator& input, CompleteModel&& completeModel, FinishMouse&& finishMouse)
+		{
+			for (RuntimeStroke* runtime : active)
+			{
+				// 掌擦已锁存为持久 Eraser；原来选过 Laser 不代表仍属于激光临时会话。
+				if (!runtime || runtime->tool != DrawingTool::Laser) continue;
+				if (!runtime->ended)
+				{
+					ContactSnapshot terminal = runtime->lastInputSnapshot;
+					terminal.phase = ContactPhase::Cancelled;
+					completeModel(*runtime, terminal, true);
+				}
+				runtime->cancelled = true;
+				finishMouse(*runtime);
+				input.DiscardUntilTerminal(runtime->handle);
+			}
 		}
 
 		float RuntimeSpeedEraserContactDiameter(const RuntimeStroke& runtime) noexcept
@@ -5551,6 +5571,86 @@ namespace Inkeys::Drawing::Draw3
 				runtime.shape.active = IsShapeDrawingTool(tool);
 				runtime.palm.Begin(preferences, scale, PalmToolCategory(tool), 1000, 1000);
 			};
+			// 使用同一生产退休循环与真实 mailbox，保留活动和已终态的 Laser 来源掌擦。
+			for (const bool endedBeforeExit : { false, true })
+			{
+				ContactInputCoordinator input;
+				RuntimeStroke palm(configuration.expectedSpeed), laser(configuration.expectedSpeed);
+				seed(palm, DrawingTool::Laser); seed(laser, DrawingTool::Laser);
+				ContactSnapshot down = sample; down.phase = ContactPhase::Down; down.qpc = 1000;
+				ContactRecord* palmRecord = nullptr; ContactRecord* laserRecord = nullptr;
+				check(input.PublishDown(0xFC51, 1, InputDeviceType::Touch, down) && input.TryDequeue(palmRecord)
+					&& palmRecord, "Laser-selected palm owns a real Down route");
+				check(input.PublishDown(0xFC52, 2, InputDeviceType::Pen, down) && input.TryDequeue(laserRecord)
+					&& laserRecord, "transient Laser owns a separate real route");
+				if (!palmRecord || !laserRecord) continue;
+				palm.handle = { palmRecord, palmRecord->Generation() };
+				laser.handle = { laserRecord, laserRecord->Generation() };
+				auto acceptedPalm = palm.palm;
+				check(acceptedPalm.Observe(ContactAreaFromSnapshot(sample), sample.qpc)
+					&& PromotePalmRuntime(palm, acceptedPalm, sample, configuration, 1000),
+					"real promotion latches the accepted palm as Eraser");
+				const auto guid = [](uint8_t marker)
+				{
+					std::array<uint8_t, 16> bytes{}; bytes[0] = marker; bytes[15] = 0xA5;
+					return InkGuid(bytes);
+				};
+				InkCanvasCollection document(guid(0xC1));
+				const auto pageIndex = document.AppendPage(guid(0xC2));
+				InkPage* page = pageIndex ? document.PageAt(*pageIndex) : nullptr;
+				InkCanvas* canvas = page ? page->GetOrCreateCanvas(kDefaultDeviceKey) : nullptr;
+				check(canvas != nullptr, "palm regression owns a real CPU canvas");
+				if (!canvas) continue;
+				std::vector<CanvasPageRuntimeState> runtimes(1);
+				palm.ownerWorkspaceGuid = document.WorkspaceGuid(); palm.ownerPageGuid = page->PageGuid();
+				palm.ownerPageIndex = 0; palm.viewport = canvas->Viewport();
+				const auto consumePalm = [&](ContactPhase phase, int64_t qpc, float x)
+				{
+					ContactSnapshot snapshot = sample; snapshot.position.x = x; snapshot.qpc = qpc; snapshot.phase = phase;
+					const bool published = phase == ContactPhase::Up
+						? input.PublishUp(0xFC51, 1, snapshot) : input.PublishMove(0xFC51, 1, snapshot);
+					if (!published || !input.TryReadSnapshot(palm.handle, snapshot)) return false;
+					const double time = static_cast<double>(qpc - palm.qpcOrigin) / 1000;
+					const ink::stroke_model::Input modeled{
+						.event_type = phase == ContactPhase::Up ? ink::stroke_model::Input::EventType::kUp : ink::stroke_model::Input::EventType::kMove,
+						.position = { x, sample.position.y }, .time = ink::stroke_model::Time(time),
+						.pressure = 1, .tilt = 0, .orientation = 0 };
+					palm.lastModelInputTime = time;
+					if (!UpdateRuntimeContactModel(palm, modeled, time, palm.stroke.modeledResults, configuration.modelParams).ok()) return false;
+					AppendRuntimeModeledPoints(palm, -1, time);
+					palm.lastInputSnapshot = snapshot; palm.lastConsumedSequence = snapshot.sequence;
+					if (phase == ContactPhase::Up) { palm.palm.End(); palm.ended = true; }
+					return true;
+				};
+				check(consumePalm(ContactPhase::Move, 1100, 120), "accepted palm Move produces real model geometry");
+				if (endedBeforeExit) check(consumePalm(ContactPhase::Up, 1120, 140), "palm may finish before Laser exit");
+				std::array<RuntimeStroke*, 2> contacts{ &palm, &laser };
+				unsigned cancelledModels = 0, finishedMouse = 0;
+				RetireLaserToolRuntimes(contacts, input,
+					[&](RuntimeStroke& runtime, const ContactSnapshot&, bool cancelled)
+					{ ++cancelledModels; runtime.ended = true; runtime.cancelled = cancelled; },
+					[&](RuntimeStroke&) { ++finishedMouse; });
+				check(laser.cancelled && laser.ended && cancelledModels == 1 && finishedMouse == 1
+					&& !palm.cancelled && palm.tool == DrawingTool::Eraser && palm.selectedTool == DrawingTool::Laser,
+					"tool exit retires Laser without cancelling accepted palm content");
+				if (!endedBeforeExit)
+					check(consumePalm(ContactPhase::Move, 1120, 140) && consumePalm(ContactPhase::Up, 1140, 160),
+						"active palm route still accepts Move and Up after Laser retirement");
+				InkRasterStateToken nextToken = 1;
+				const auto committed = CommitRuntimeStoredStrokeCpu(palm, document, runtimes, 0, 0,
+					StoredStrokeCommitMode::NormalUp, [&] { return nextToken++; });
+				check(committed && canvas->Strokes().size() == 1
+					&& canvas->Strokes()[0].Style().inkType == StoredInkType::Eraser
+					&& runtimes[0].history.Items().size() == 1,
+					"completed Laser-origin palm persists as a real Eraser history item");
+				if (committed)
+					check(runtimes[0].history.UndoLastVisible(committed->renderItem)
+						&& runtimes[0].history.RedoLastUndone(committed->renderItem),
+						"retained palm content remains undoable and redoable");
+				input.Recycle(palm.handle);
+				(void)input.PublishUp(0xFC52, 2, down); input.Recycle(laser.handle);
+			}
+
 			RuntimeStroke other(configuration.expectedSpeed);
 			seed(other, DrawingTool::HardPen);
 			for (const auto tool : { DrawingTool::Pen, DrawingTool::HardPen, DrawingTool::Highlighter,
@@ -11149,6 +11249,8 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<LaserStrokeLayer> laserStrokeLayers;
 		LaserCoverageMode laserCoverageMode = LaserCoverageMode::Inactive;
 		bool laserIncrementalEnsureAttempted = false;
+		bool laserResourcesReady = false;
+		bool laserResourceSelection = false;
 		uint64_t nextLaserLayerId = 1;
 		std::vector<LaserTipVisual> laserTipVisuals;
 		std::vector<ShapePrimitive> shapePrimitiveScratch;
@@ -11186,6 +11288,20 @@ namespace Inkeys::Drawing::Draw3
 		// 有效状态：只在激光生命周期为 Inactive 时才同步开关，
 		// 避免开关在绘制中/Hold/Fade 期间立即生效打断当前笔画或粒子动画。
 		bool particlesEnabledEffective = particlesWereEnabled;
+		auto prepareLaserSelectionResources = [&]() -> bool
+		{
+			if (window_.SelectionMode() || window_.ActiveTool() != DrawingTool::Laser) return false;
+			if (laserResourcesReady && !renderer_.LaserResourcesAvailable()) laserIncrementalEnsureAttempted = false;
+			if (!laserIncrementalEnsureAttempted)
+			{
+				laserIncrementalEnsureAttempted = true;
+				const WindowSize size = window_.Size();
+				laserResourcesReady = renderer_.EnsureLaserResources(size.width, size.height);
+				if (laserResourcesReady) renderer_.EnsureLaserIncrementalCoverageResources();
+				else DiagnosticOutput::Line() << "[Laser] resources unavailable until tool re-entry or graphics reset." << std::endl;
+			}
+			return laserResourcesReady;
+		};
 		const int originalThreadPriority = GetThreadPriority(GetCurrentThread());
 		const bool drawingPriorityRaised = originalThreadPriority != THREAD_PRIORITY_ERROR_RETURN &&
 			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL) != FALSE;
@@ -12159,6 +12275,15 @@ namespace Inkeys::Drawing::Draw3
 					selectedToolSupportsOverride);
 				const bool rightEraser=deviceType==InputDeviceType::MouseRight && selectedToolSupportsOverride && !window_.SelectionMode();
 				const DrawingTool tool = (invertedEraser || rightEraser) ? DrawingTool::Eraser : batchTool;
+				if (tool == DrawingTool::Laser && !prepareLaserSelectionResources())
+				{
+					// Discard 后 producer 可复用 record；先保存已登记的 Touch 身份，再退休手势接触。
+					const uint64_t rejectedTouchKey = deviceType == InputDeviceType::Touch
+						? CanvasTouchKey(handle) : 0;
+					RejectStrokeInitialization(input_, handle, down);
+					if (rejectedTouchKey) touchGesture.OnTouchUp(rejectedTouchKey);
+					return false;
+				}
 				if (metricsState_)
 				{
 					if (!metricsState_->frameOpen) metricsState_->Begin(GetQpcTimeMilliseconds());
@@ -13293,6 +13418,42 @@ namespace Inkeys::Drawing::Draw3
 				activePresentationTarget->targetRevision);
 		};
 
+		auto synchronizeLaserResources = [&]()
+		{
+			const bool selected = !window_.SelectionMode() && window_.ActiveTool() == DrawingTool::Laser;
+			if (selected && !laserResourceSelection) laserIncrementalEnsureAttempted = false;
+			laserResourceSelection = selected;
+			if (selected && prepareLaserSelectionResources()) return;
+			if (!selected)
+			{
+				laserIncrementalEnsureAttempted = false;
+				laserResourcesReady = false;
+			}
+			if (laserLifecycle.phase == LaserTrailPhase::Inactive && laserStrokeLayers.empty() &&
+				renderer_.LaserResourceBytes() == 0) return;
+			// 工具离开是 Laser 临时会话的终态；不把已按下的旧路由转交给新工具。
+			RetireLaserToolRuntimes(active, input_, completeModelUp, finishMouseSpeedEraser);
+			if (metricsState_) metricsState_->ObserveIndependentClear();
+			laserLifecycle = {};
+			laserOpacity = 0.0f;
+			laserStableBounds = {};
+			laserLiveBounds = {};
+			laserStrokeLayers.clear();
+			laserCoverageMode = LaserCoverageMode::Inactive;
+			pendingLaserBakeDirty = {};
+			pendingLaserBakeFailed = false;
+			laserTipVisuals.clear();
+			laserParticleEmissionRequests.clear();
+			laserParticleDirtyTracker.Clear();
+			previousLaserParticleBounds = {};
+			previousLaserTipBounds = {};
+			lastLaserParticleSimulationQpc = 0;
+			renderer_.ReleaseLaserResources();
+			laserResourcesReady = false;
+			if (!selected) laserIncrementalEnsureAttempted = false;
+			window_.RequestFullPresent(); // 全帧重绘清除已提交的旧 Laser/粒子像素。
+		};
+
 			bool commandBoundaryPending = false;
 			auto processCommand = [&](ContactRecord* record)
 			{
@@ -13304,6 +13465,7 @@ namespace Inkeys::Drawing::Draw3
 							input_.LastDequeuedControlWakeKind());
 					if (window_.HasPendingCanvasCommand()) commandBoundaryPending = true;
 					sealPresentationContacts();
+					synchronizeLaserResources();
 					return;
 				}
 				const ContactHandle handle{ record, record->Generation() };
@@ -16507,12 +16669,7 @@ namespace Inkeys::Drawing::Draw3
 				DiagnosticOutput::Line() << "Recovered Draw3 graphics with mode " <<
 					TransparentPresentModeName(presentation_.ActiveMode()) << "." << std::endl;
 			}
-			if (!laserIncrementalEnsureAttempted &&
-				window_.ActiveTool() == DrawingTool::Laser)
-			{
-				laserIncrementalEnsureAttempted = true;
-				renderer_.EnsureLaserIncrementalCoverageResources();
-			}
+			synchronizeLaserResources();
 			if (active.empty()) window_.ClearActiveDrawingCursorTool();
 			const bool drawingCursorRequested = window_.ConsumeDrawingCursorRenderRequest();
 			const double previousFrameMs = lastActiveFrameStartMs > 0.0
@@ -16547,6 +16704,8 @@ namespace Inkeys::Drawing::Draw3
 			if (ProcessPendingResize(false))
 			{
 				const WindowSize size = window_.Size();
+				laserIncrementalEnsureAttempted = false;
+				synchronizeLaserResources();
 				historyGpuCache.DiscardHotPreimages();
 				trustedSnapshotSignatureValid = false;
 				compositionMaintenance.clear();
@@ -18107,6 +18266,8 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(frameDirty, canvasDebugOverlay->MarkerBounds());
 			}
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
+			// 读回缓冲重建前先完整合成；空闲回收本身不能制造新帧。
+			if (!IsEmptyRect(frameDirty) && presentation_.AuxiliaryReadbackNeedsFullPresent()) forceFullPresent = true;
 			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
 			if (metricsState_)
 			{

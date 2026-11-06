@@ -1172,6 +1172,10 @@ namespace
 			}
 			draw3PresentationExitRefreshPending = false;
 		}
+		// 仅原生 owner 成对显隐成功且场景仍匹配后，通知绘制 owner 回收隐藏辅助窗的读回像素。
+		if (visibility != Inkeys::Window::DrawpadSurfaceVisibility::Presentation &&
+			runtime.auxiliaryReadbackPayloadBytes != 0)
+			Inkeys::Drawing::Draw3::ProductHost().AcknowledgeAuxiliarySurfaceHidden(runtime);
 		LogDraw3PresentationGateReady(runtime, desired.revision, modeRevision);
 		draw3PresentationRetryPending.store(false, std::memory_order_release);
 		if (ExitSelectionHandoffPending() && desired.selectionMode &&

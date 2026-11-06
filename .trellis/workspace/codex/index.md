@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~130 | Active |
+| `journal-3.md` | ~289 | Active |
 | `journal-2.md` | ~2029 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -32,6 +32,12 @@
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
 | 181 | 2026-11-06 | Canvas debug overlay, visual mode and per-device stroke reconnect | `e0711662`, `1565cb61`, `0df57184` | `debug/drawpad` |
+| 179 | 2026-11-05 | Unify whiteboard/PPT page-turn loading animation | `9ddb5365`, `ad7d1302`, `70d5ca9a`, `97321dc2` | `debug/wait` |
+| 176 | 2026-11-05 | 调试等待操作延迟开关 | - | `debug/wait` |
+| 175 | 2026-11-05 | 内存优化任务完成归档 | `e225c210` | `diagnostic/memery` |
+| 174 | 2026-11-05 | 候选1保存快照释放调查 | - | `diagnostic/memery` |
+| 173 | 2026-11-05 | 静止内存第二批2–5资源回收 | - | `diagnostic/memery` |
+| 172 | 2026-11-05 | 内存采样与首批低风险优化 | - | `diagnostic/memery` |
 | 170 | 2026-11-04 | 光标细边与共享下拉边界修复收尾 | `15200e7b`, `2d3eb582` | `temp/state` |
 | 169 | 2026-11-04 | PPT闲置淡化、底栏主栏与设置内联动画收尾 | `f485146eab917aec5706d74482dfbdf8740d7636`, `c208677aa58bba98fef0b09007baa3b80f4c93e5` | `temp/state` |
 | 169 | 2026-11-04 | 启动动画多效果与主题透明度适配完成 | - | `bugfix/theme` |

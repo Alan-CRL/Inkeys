@@ -158,7 +158,6 @@
         "PresentFailed": "Afișare",
         "Failed": "Eroare",
         "Recovering": "Restabilire",
-        "Loading": "Încărcare",
         "Retry": "Reîncercare",
         "Wait": "Așteptați",
         "RetryCanvas": "Reîncearcă pânza",
@@ -1146,6 +1145,11 @@
       {
         "N": "Depanare canvas",
         "E": "Afișează sub canvas rata de cadre, încărcarea hardware și informații despre punctele de intrare și adaugă un buton de depanare vizuală în bara principală."
+      },
+      "DelayWaiting":
+      {
+        "N": "Întârzie operațiile în așteptare",
+        "E": "Prelungește încărcarea pentru observarea animațiilor."
       },
       "ConsoleSection": "Ieșire în consolă",
       "CanvasInformation": "Informații despre inițializarea pânzei",

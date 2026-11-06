@@ -157,8 +157,7 @@
         "ReadFailed": "Lectura",
         "PresentFailed": "Pantalla",
         "Failed": "Error",
-        "Recovering": "Restaurando",
-        "Loading": "Cargando",
+        "Recovering": "Restaur.",
         "Retry": "Reintentar",
         "Wait": "Esperar",
         "RetryCanvas": "Reintentar lienzo",
@@ -1146,6 +1145,11 @@
       {
         "N": "Depuración del lienzo",
         "E": "Muestra bajo el lienzo la velocidad de fotogramas, la carga del hardware y la información de los puntos de entrada, y añade un botón de depuración visual a la barra principal."
+      },
+      "DelayWaiting":
+      {
+        "N": "Retrasar las operaciones de espera",
+        "E": "Prolonga la carga para observar las animaciones."
       },
       "ConsoleSection": "Salida de consola",
       "CanvasInformation": "Información de inicialización del lienzo",

@@ -701,7 +701,7 @@ namespace Inkeys::Drawing::Draw3
 			completion.operation = DesktopPersistenceOperation::Load;
 			completion.fileGuid = fileGuid;
 			const auto read = ReadUInkFile(path);
-			const auto imported = read.document
+			auto imported = read.document
 				? ImportDraw3UInkDocument(*read.document)
 				: draw3::uink::Draw3UInkImportResult{};
 			if (read.status != UInkReadStatus::Complete ||
@@ -712,6 +712,7 @@ namespace Inkeys::Drawing::Draw3
 				completion.status = DesktopPersistenceStatus::IoError;
 			else
 			{
+				// imported 保持可移动，校验后接管快照，避免 const 让移动退化为深复制。
 				auto snapshot = std::move(*imported.snapshot);
 				completion.status = DesktopPersistenceStatus::Loaded;
 				for (auto& canvas : snapshot.canvases)

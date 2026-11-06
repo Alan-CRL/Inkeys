@@ -158,7 +158,6 @@
         "PresentFailed": "Hiển thị",
         "Failed": "Lỗi",
         "Recovering": "Khôi phục",
-        "Loading": "Tải",
         "Retry": "Thử lại",
         "Wait": "Chờ",
         "RetryCanvas": "Thử lại trang vẽ",
@@ -1146,6 +1145,11 @@
       {
         "N": "Gỡ lỗi canvas",
         "E": "Hiển thị tốc độ khung hình, tải phần cứng và thông tin điểm nhập bên dưới canvas, đồng thời thêm nút gỡ lỗi trực quan vào thanh chính."
+      },
+      "DelayWaiting":
+      {
+        "N": "Trì hoãn thao tác chờ",
+        "E": "Kéo dài thời gian tải để quan sát hiệu ứng."
       },
       "ConsoleSection": "Đầu ra bảng điều khiển",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",

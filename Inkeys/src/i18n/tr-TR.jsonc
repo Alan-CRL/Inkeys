@@ -158,8 +158,7 @@
         "PresentFailed": "Görüntü",
         "Failed": "Hata",
         "Recovering": "Kurtarılıyor",
-        "Loading": "Yükle",
-        "Retry": "Yeniden dene",
+        "Retry": "Tekrar",
         "Wait": "Bekleyin",
         "RetryCanvas": "Tuvali yeniden dene",
         "ProtectedHint": "Belgenin sırası veya kimliği değişti. Mevcut mürekkep korunuyor. Belgeyi önceki durumuna döndürüp yeniden deneyin.",
@@ -1146,6 +1145,11 @@
       {
         "N": "Tuval hata ayıklama",
         "E": "Tuvalin altında kare hızını, donanım yükünü ve giriş noktası bilgilerini gösterir; ana çubuğa görsel hata ayıklama düğmesi ekler."
+      },
+      "DelayWaiting":
+      {
+        "N": "Bekleyen işlemleri geciktir",
+        "E": "Animasyonları gözlemlemek için yükleme süresini uzatır."
       },
       "ConsoleSection": "Konsol çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",
