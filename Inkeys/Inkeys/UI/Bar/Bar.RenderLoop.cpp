@@ -9678,10 +9678,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			// 仅真实突破时留两侧像素裕量，避免DPI/光影边界取整造成2px二次创建；不逐帧叠加。
 			const LONG paddedHeight = plannedHeight <= (numeric_limits<LONG>::max)() - viewportPadding * 2
 				? plannedHeight + viewportPadding * 2 : plannedHeight;
-			const LONG compactHeight = plannedHeight <= (numeric_limits<LONG>::max)() - viewportPadding * 2
-				? plannedHeight + viewportPadding * 2 : plannedHeight;
+			// 紧凑宽度不得低于本帧预约宽度，否则下一帧会重新扩宽并反复触发 capacityEpochChanged。
 			const SIZE compactSize{
-				static_cast<LONG>(ceil(requiredCapacity.size.cx * capacityZoomRatio)), compactHeight };
+				max(requestedWidth, static_cast<LONG>(ceil(requiredCapacity.size.cx * capacityZoomRatio))), paddedHeight };
 			const bool shrinkBacking = CanShrinkIdleBarBacking(state.capacitySize, compactSize,
 				!reserveAnimationEnvelope && !state.debugFrameSleepLatch.IsPending()
 					&& !frame.bottomDockReleaseInputFlush);

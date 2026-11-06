@@ -3391,12 +3391,32 @@ namespace SnapshotLifetimeProbe
 {
 	namespace
 	{
-		struct Buffer { std::uintptr_t address = 0; std::size_t bytes = 0; bool freed = false; };
+		struct Buffer { std::uintptr_t address = 0, base = 0; std::size_t bytes = 0; bool freed = false; };
 		SRWLOCK observationLock = SRWLOCK_INIT;
 		std::atomic<bool> enabled = false;
 		Buffer buffers[256]{};
 		std::size_t count = 0;
 		bool overflow = false;
+
+		// operator delete 收到的是真实分配基址；x86/x64 MSVC STL 对 >=4096 字节的默认 allocator 缓冲
+		// 做 32 字节手动对齐，原始基址存放在用户指针前一个字，data() 与基址因此不同。
+		std::uintptr_t ResolveAllocationBase(const void* memory, std::size_t bytes) noexcept
+		{
+			const auto address = reinterpret_cast<std::uintptr_t>(memory);
+#if defined(_M_IX86) || defined(_M_X64)
+			constexpr std::size_t bigAllocationThreshold = 4096;
+			// Debug 额外多存一个哨兵字，取两者较大的上界。
+			constexpr std::size_t nonUserSize = 2 * sizeof(void*) + 32 - 1;
+			if (memory && bytes >= bigAllocationThreshold)
+			{
+				const auto base = reinterpret_cast<const std::uintptr_t*>(memory)[-1];
+				if (base < address && address - base <= nonUserSize) return base;
+			}
+#else
+			(void)bytes;
+#endif
+			return address;
+		}
 	}
 
 	void Begin() noexcept
@@ -3428,7 +3448,7 @@ namespace SnapshotLifetimeProbe
 			duplicate |= buffers[index].address == address && !buffers[index].freed;
 		if (!enabled.load(std::memory_order_relaxed) || !memory || !bytes || duplicate || count == std::size(buffers))
 			overflow = true;
-		else buffers[count++] = { address, bytes, false };
+		else buffers[count++] = { address, ResolveAllocationBase(memory, bytes), bytes, false };
 		ReleaseSRWLockExclusive(&observationLock);
 	}
 
@@ -3460,7 +3480,7 @@ namespace SnapshotLifetimeProbe
 		AcquireSRWLockExclusive(&observationLock);
 		std::free(memory);
 		for (std::size_t index = 0; index < count; ++index)
-			if (buffers[index].address == address && !buffers[index].freed) buffers[index].freed = true;
+			if (buffers[index].base == address && !buffers[index].freed) buffers[index].freed = true;
 		ReleaseSRWLockExclusive(&observationLock);
 	}
 }

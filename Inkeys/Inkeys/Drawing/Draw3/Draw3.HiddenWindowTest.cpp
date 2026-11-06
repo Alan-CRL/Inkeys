@@ -2547,11 +2547,12 @@ namespace Inkeys::Drawing::Draw3
 		try
 		{
 			Inkeys::Window::Service service(64);
+			StyleContext style{ &service };
 			struct StopBeforeWindows
 			{
 				Inkeys::Window::Service& service;
 				~StopBeforeWindows() { StopProduct(); service.StopAndJoin(); }
-			} stop{ service };
+			} stop{ service }; // 声明在 style 后：早退也先真 Stop，再销毁回调上下文和 HWND。
 			constexpr int size = 64;
 			const auto suffix = std::to_wstring(GetCurrentProcessId());
 			std::vector<Inkeys::Window::WindowSpec> specs;
@@ -2564,7 +2565,6 @@ namespace Inkeys::Drawing::Draw3
 			if (!Check(service.Start(specs), "auxiliary lifecycle starts hidden owner HWNDs", failures)) return 1;
 			const HWND drawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
 			const HWND auxiliary = service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation);
-			StyleContext style{ &service };
 			{
 				GraphicsDeviceResources graphics;
 				if (!Check(InitializeGraphicsDevice(graphics, false),
