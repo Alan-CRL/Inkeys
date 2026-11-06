@@ -1307,6 +1307,7 @@ namespace Inkeys::UI::Bar
 		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
 		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
 	export int RunUi3MultiTargetOffscreenBenchmark();
+	export int RunIdleBackingResourceLifecycleTest() noexcept;
 	export int RunUi3WorkspaceCenteringTest();
 	export int RunUi3BottomDockTransitionTest();
 	export int RunBarNativeDirectMoveTests(const std::function<bool()>& gateOwner,

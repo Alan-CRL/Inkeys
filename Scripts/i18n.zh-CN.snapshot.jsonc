@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "网格",
         "WhiteboardUnsavedLabel": "部分页面未保存",
         "FreezeLabel": "定格",
+        "CanvasDebugLabel": "可视化调试",
         "EndPresentationLabel": "结束放映",
         "SettingsLabel": "设置",
         "MoreLabel": "更多"
@@ -156,8 +157,7 @@
         "ReadFailed": "读取",
         "PresentFailed": "显示",
         "Failed": "故障",
-        "Recovering": "恢复",
-        "Loading": "加载",
+        "Recovering": "恢复中",
         "Retry": "重试",
         "Wait": "稍候",
         "RetryCanvas": "重试画布",
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "断触接续",
-          "E": "触摸书写时，若屏幕短暂丢失接触后又沿原方向恢复，将尝试把两段笔迹接成一笔，减少断线。关闭后，每次抬起都会结束当前笔画。"
+          "Touch": "触摸",
+          "PenTail": "笔（笔尾）",
+          "E": "书写时根据绘制意图判断断触问题并修正，同时可以接续绘制状态。"
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "显示帧率",
         "E": "每秒更新上一秒平均帧率和无等待帧率。"
+      },
+      "CanvasSection": "画布",
+      "CanvasDebug":
+      {
+        "N": "画布调试",
+        "E": "在画布底层显示帧率、硬件压力与输入点信息，并在主栏提供可视化调试按钮。"
+      },
+      "DelayWaiting":
+      {
+        "N": "为等待操作延迟",
+        "E": "延长加载等待，便于观察动画。"
       },
       "ConsoleSection": "控制台输出",
       "CanvasInformation": "画布初始化信息",

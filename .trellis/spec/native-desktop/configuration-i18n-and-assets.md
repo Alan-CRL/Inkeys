@@ -774,3 +774,16 @@ Good：第二图标固定资源 ID、主图标原样；Base：应用链接仍取
 
 Wrong：把第二图标资源排成最小 ID 或只验证 ICO 文件存在。
 Correct：保留191为最小组，白板用332，并验证最终内嵌资源和负 ID 的实际提取。
+
+## 场景：画布调试配置与 A1 运行时按钮（2026-11-05）
+
+- 画布调试开关**不进入 `Inkeys::Config`**：只是 `IdtState.cpp` 里的进程内原子（`IsCanvasDebugEnabled()` / `SetCanvasDebugEnabled()`），每次启动默认关闭，设置页不调用 `QueueConfigWrite()`。设置页“调试软件”用 `Design::ToggleRow`，热生效，不使用带“需重启”提示的 `consoleToggle`。
+- A1 “可视化调试”按钮是**运行时按钮**（仿穿透/重做）：不在 `FixedButtonsA1`，不经 `IsFixedButtonsA1Id`/`NormalizeFixedZone`，仅开关开启时插入 A1 的“清空”按钮之后（清空被精简则退到最前）；图标 `src/UI/barCanvasDebug.svg`。
+- 进入可视化模式若当前是 Selection/ClickThrough，需先恢复 `lastAnnotationMode`（默认 Pen），否则 Draw3 收不到接触；白板切换中拒绝切换。
+- i18n：新增键后必须补全 20 个 locale 才能通过 check；Windows PowerShell 5 会拒绝未签名脚本，使用 `pwsh -ExecutionPolicy Bypass -File Scripts/i18n.ps1 sync` / `check`。
+
+### 断触接续的适用设备(设置-绘制-触摸)
+- 配置:`Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch` / `InterruptedStrokeReconnectPenTail`(`IdtAtomic<bool>`,默认 true,NoUpload),与总开关 `InterruptedStrokeReconnect` 同组;旧配置缺键默认都开。两项各自独立,总开关关闭时不生效但保留各自选择。
+- 设置页:总开关 `ToggleRow` 的 `InlineRowContent` 内联区,用 `Design::InlineCheckboxes`(“触摸”、“笔（笔尾）”),`visibilityId` + `visible = 总开关` 复用控件自带的条件动画收起/展开;收起期间不可交互、不产生事件。
+- 运行态:`Host::SetInterruptedStrokeReconnectDevices(touch, penTail)` → `DrawingController::SetInterruptedStrokeReconnectDevices(mask)`(bit0 触摸、bit1 笔尾)。只在两个接管点(新 Down 的候选匹配、Up 的延迟提交)用 `reconnectDeviceAllowed(identity)` 过滤;`IsInterruptedStrokeReconnectIdentitySupported` 仍是“能力”判定,不要把用户选择写进它。
+- 自测:`Inkeys.exe --config-boundary-test` 覆盖两个键的默认值与往返。

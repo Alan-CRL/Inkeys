@@ -66,6 +66,7 @@ import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.canvas_navigation;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.pen_cursor;
+import Inkeys.Drawing.Draw3.canvas_debug;
 import draw3.uink_file;
 import draw3.uink_page_file;
 
@@ -1694,10 +1695,10 @@ namespace Inkeys::Drawing::Draw3
 						Bridge::SlideBindingMode::StableSlideId
 						&& pageIndex < target.totalPages
 						? std::optional<std::int32_t>(target.slideIds[pageIndex]) : std::nullopt;
-					const auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
+					auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
 						slideId, false);
 					if (!output) return std::nullopt;
-					snapshot.activeCanvases.push_back(*output);
+					snapshot.activeCanvases.push_back(std::move(*output));
 				}
 				// 保留 legacy canvases 投影，兼容旧的 UInk 测试与读取器。
 				snapshot.canvases = snapshot.activeCanvases;
@@ -2114,6 +2115,7 @@ namespace Inkeys::Drawing::Draw3
 			ContactSnapshot deferredUpSnapshot = {};
 			DirectX::XMFLOAT2 reconnectDirection = {};
 			int64_t reconnectDeadlineQpc = 0;
+			uint32_t debugPreviousContactId = 0; // 断触续接前一个接触的 cid，仅供画布调试板显示。
 			uint32_t laserParticleSeed = 0;
 			uint64_t laserLayerId = 0;
 			uint32_t laserParticleSeedCursor = 0;
@@ -2485,6 +2487,26 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
+		template<class CompleteModel, class FinishMouse>
+		void RetireLaserToolRuntimes(std::span<RuntimeStroke*> active,
+			ContactInputCoordinator& input, CompleteModel&& completeModel, FinishMouse&& finishMouse)
+		{
+			for (RuntimeStroke* runtime : active)
+			{
+				// 掌擦已锁存为持久 Eraser；原来选过 Laser 不代表仍属于激光临时会话。
+				if (!runtime || runtime->tool != DrawingTool::Laser) continue;
+				if (!runtime->ended)
+				{
+					ContactSnapshot terminal = runtime->lastInputSnapshot;
+					terminal.phase = ContactPhase::Cancelled;
+					completeModel(*runtime, terminal, true);
+				}
+				runtime->cancelled = true;
+				finishMouse(*runtime);
+				input.DiscardUntilTerminal(runtime->handle);
+			}
+		}
+
 		float RuntimeSpeedEraserContactDiameter(const RuntimeStroke& runtime) noexcept
 		{
 			return runtime.eraserSize.effectiveDiameterPx;
@@ -2523,6 +2545,13 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t lastConsumedSequence = 0;
 			CanvasTouchDisposition disposition = CanvasTouchDisposition::Suppressed;
 			bool terminalPending = false;
+		};
+
+		// 画布调试可视化模式下的探测接触：只持有 handle 并跟踪最新快照，不建笔。
+		struct CanvasDebugProbeContact
+		{
+			ContactHandle handle = {};
+			ContactSnapshot snapshot = {};
 		};
 
 		uint64_t CanvasTouchKey(const ContactHandle& handle) noexcept
@@ -5542,6 +5571,86 @@ namespace Inkeys::Drawing::Draw3
 				runtime.shape.active = IsShapeDrawingTool(tool);
 				runtime.palm.Begin(preferences, scale, PalmToolCategory(tool), 1000, 1000);
 			};
+			// 使用同一生产退休循环与真实 mailbox，保留活动和已终态的 Laser 来源掌擦。
+			for (const bool endedBeforeExit : { false, true })
+			{
+				ContactInputCoordinator input;
+				RuntimeStroke palm(configuration.expectedSpeed), laser(configuration.expectedSpeed);
+				seed(palm, DrawingTool::Laser); seed(laser, DrawingTool::Laser);
+				ContactSnapshot down = sample; down.phase = ContactPhase::Down; down.qpc = 1000;
+				ContactRecord* palmRecord = nullptr; ContactRecord* laserRecord = nullptr;
+				check(input.PublishDown(0xFC51, 1, InputDeviceType::Touch, down) && input.TryDequeue(palmRecord)
+					&& palmRecord, "Laser-selected palm owns a real Down route");
+				check(input.PublishDown(0xFC52, 2, InputDeviceType::Pen, down) && input.TryDequeue(laserRecord)
+					&& laserRecord, "transient Laser owns a separate real route");
+				if (!palmRecord || !laserRecord) continue;
+				palm.handle = { palmRecord, palmRecord->Generation() };
+				laser.handle = { laserRecord, laserRecord->Generation() };
+				auto acceptedPalm = palm.palm;
+				check(acceptedPalm.Observe(ContactAreaFromSnapshot(sample), sample.qpc)
+					&& PromotePalmRuntime(palm, acceptedPalm, sample, configuration, 1000),
+					"real promotion latches the accepted palm as Eraser");
+				const auto guid = [](uint8_t marker)
+				{
+					std::array<uint8_t, 16> bytes{}; bytes[0] = marker; bytes[15] = 0xA5;
+					return InkGuid(bytes);
+				};
+				InkCanvasCollection document(guid(0xC1));
+				const auto pageIndex = document.AppendPage(guid(0xC2));
+				InkPage* page = pageIndex ? document.PageAt(*pageIndex) : nullptr;
+				InkCanvas* canvas = page ? page->GetOrCreateCanvas(kDefaultDeviceKey) : nullptr;
+				check(canvas != nullptr, "palm regression owns a real CPU canvas");
+				if (!canvas) continue;
+				std::vector<CanvasPageRuntimeState> runtimes(1);
+				palm.ownerWorkspaceGuid = document.WorkspaceGuid(); palm.ownerPageGuid = page->PageGuid();
+				palm.ownerPageIndex = 0; palm.viewport = canvas->Viewport();
+				const auto consumePalm = [&](ContactPhase phase, int64_t qpc, float x)
+				{
+					ContactSnapshot snapshot = sample; snapshot.position.x = x; snapshot.qpc = qpc; snapshot.phase = phase;
+					const bool published = phase == ContactPhase::Up
+						? input.PublishUp(0xFC51, 1, snapshot) : input.PublishMove(0xFC51, 1, snapshot);
+					if (!published || !input.TryReadSnapshot(palm.handle, snapshot)) return false;
+					const double time = static_cast<double>(qpc - palm.qpcOrigin) / 1000;
+					const ink::stroke_model::Input modeled{
+						.event_type = phase == ContactPhase::Up ? ink::stroke_model::Input::EventType::kUp : ink::stroke_model::Input::EventType::kMove,
+						.position = { x, sample.position.y }, .time = ink::stroke_model::Time(time),
+						.pressure = 1, .tilt = 0, .orientation = 0 };
+					palm.lastModelInputTime = time;
+					if (!UpdateRuntimeContactModel(palm, modeled, time, palm.stroke.modeledResults, configuration.modelParams).ok()) return false;
+					AppendRuntimeModeledPoints(palm, -1, time);
+					palm.lastInputSnapshot = snapshot; palm.lastConsumedSequence = snapshot.sequence;
+					if (phase == ContactPhase::Up) { palm.palm.End(); palm.ended = true; }
+					return true;
+				};
+				check(consumePalm(ContactPhase::Move, 1100, 120), "accepted palm Move produces real model geometry");
+				if (endedBeforeExit) check(consumePalm(ContactPhase::Up, 1120, 140), "palm may finish before Laser exit");
+				std::array<RuntimeStroke*, 2> contacts{ &palm, &laser };
+				unsigned cancelledModels = 0, finishedMouse = 0;
+				RetireLaserToolRuntimes(contacts, input,
+					[&](RuntimeStroke& runtime, const ContactSnapshot&, bool cancelled)
+					{ ++cancelledModels; runtime.ended = true; runtime.cancelled = cancelled; },
+					[&](RuntimeStroke&) { ++finishedMouse; });
+				check(laser.cancelled && laser.ended && cancelledModels == 1 && finishedMouse == 1
+					&& !palm.cancelled && palm.tool == DrawingTool::Eraser && palm.selectedTool == DrawingTool::Laser,
+					"tool exit retires Laser without cancelling accepted palm content");
+				if (!endedBeforeExit)
+					check(consumePalm(ContactPhase::Move, 1120, 140) && consumePalm(ContactPhase::Up, 1140, 160),
+						"active palm route still accepts Move and Up after Laser retirement");
+				InkRasterStateToken nextToken = 1;
+				const auto committed = CommitRuntimeStoredStrokeCpu(palm, document, runtimes, 0, 0,
+					StoredStrokeCommitMode::NormalUp, [&] { return nextToken++; });
+				check(committed && canvas->Strokes().size() == 1
+					&& canvas->Strokes()[0].Style().inkType == StoredInkType::Eraser
+					&& runtimes[0].history.Items().size() == 1,
+					"completed Laser-origin palm persists as a real Eraser history item");
+				if (committed)
+					check(runtimes[0].history.UndoLastVisible(committed->renderItem)
+						&& runtimes[0].history.RedoLastUndone(committed->renderItem),
+						"retained palm content remains undoable and redoable");
+				input.Recycle(palm.handle);
+				(void)input.PublishUp(0xFC52, 2, down); input.Recycle(laser.handle);
+			}
+
 			RuntimeStroke other(configuration.expectedSpeed);
 			seed(other, DrawingTool::HardPen);
 			for (const auto tool : { DrawingTool::Pen, DrawingTool::HardPen, DrawingTool::Highlighter,
@@ -10105,6 +10214,12 @@ namespace Inkeys::Drawing::Draw3
 		return interruptedStrokeReconnectEnabled_.load(std::memory_order_acquire);
 	}
 
+	void DrawingController::SetInterruptedStrokeReconnectDevices(uint32_t mask) noexcept
+	{
+		interruptedStrokeReconnectDevices_.store(mask & 3u, std::memory_order_release);
+		input_.PublishControlWake(); // 取消勾选后立即提交仍在等待接续的 Up。
+	}
+
 	void DrawingController::SetDrawingCursorDuringContactEnabled(bool enabled) noexcept
 	{
 		if (drawingCursorDuringContactEnabled_.exchange(
@@ -10188,6 +10303,28 @@ namespace Inkeys::Drawing::Draw3
 		return laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire);
 	}
 
+	void DrawingController::SetCanvasDebugOptions(bool enabled, bool visual) noexcept
+	{
+		const uint32_t next = enabled ? (1u | (visual ? 2u : 0u)) : 0u;
+		// 只影响之后到达的 Down；已建笔的 contact 按原路径正常收尾。
+		canvasDebugOptions_.store(next, std::memory_order_release);
+	}
+
+	void DrawingController::SetCanvasDebugInputMode(uint8_t mode) noexcept
+	{
+		canvasDebugInputMode_.store(mode, std::memory_order_release);
+	}
+
+	bool DrawingController::GetCanvasDebugEnabled() const noexcept
+	{
+		return (canvasDebugOptions_.load(std::memory_order_acquire) & 1u) != 0;
+	}
+
+	bool DrawingController::GetCanvasDebugVisual() const noexcept
+	{
+		return canvasDebugOptions_.load(std::memory_order_acquire) == 3u;
+	}
+
 	bool DrawingController::SetLaserHoldDurationSeconds(double seconds) noexcept
 	{
 		if (!std::isfinite(seconds) || seconds < 0.0 ||
@@ -10245,8 +10382,11 @@ namespace Inkeys::Drawing::Draw3
 		renderer_.CopyResource(renderer_.backBufferTexture.Get(), renderer_.layerL2Texture.Get(), dirty); // L2 是已经稳定的底层画布。
 		const OperatorLayerMergeMode mergeMode = orderLiveOverStable
 			? OperatorLayerMergeMode::Ordered : OperatorLayerMergeMode::CoverageUnion;
-		return renderer_.ApplyOperatorLayers(renderer_.backBufferRTV.Get(),
+		const bool applied = renderer_.ApplyOperatorLayers(renderer_.backBufferRTV.Get(),
 			renderer_.layerL1, renderer_.layerL0, dirty, mergeMode);
+		// 画布调试板位于全部墨迹层之下；调试关闭时该调用只检查一个布尔值。
+		if (applied) (void)renderer_.DrawDebugPlateUnder(dirty);
+		return applied;
 	}
 
 	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
@@ -11082,6 +11222,9 @@ namespace Inkeys::Drawing::Draw3
 		CanvasPanMotionState panMotion;
 		std::vector<CanvasGestureContactRuntime> gestureContacts;
 		gestureContacts.reserve(kPreheatedStrokeCount);
+		// 可视化调试探测接触；调试关闭时始终为空，不产生任何开销。
+		std::vector<CanvasDebugProbeContact> debugProbeContacts;
+		debugProbeContacts.reserve(kPreheatedStrokeCount);
 		bool suppressPenUntilRelease = false;
 		CanvasVector previousPanCentroid = {};
 		bool panCentroidValid = false;
@@ -11106,6 +11249,8 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<LaserStrokeLayer> laserStrokeLayers;
 		LaserCoverageMode laserCoverageMode = LaserCoverageMode::Inactive;
 		bool laserIncrementalEnsureAttempted = false;
+		bool laserResourcesReady = false;
+		bool laserResourceSelection = false;
 		uint64_t nextLaserLayerId = 1;
 		std::vector<LaserTipVisual> laserTipVisuals;
 		std::vector<ShapePrimitive> shapePrimitiveScratch;
@@ -11143,6 +11288,20 @@ namespace Inkeys::Drawing::Draw3
 		// 有效状态：只在激光生命周期为 Inactive 时才同步开关，
 		// 避免开关在绘制中/Hold/Fade 期间立即生效打断当前笔画或粒子动画。
 		bool particlesEnabledEffective = particlesWereEnabled;
+		auto prepareLaserSelectionResources = [&]() -> bool
+		{
+			if (window_.SelectionMode() || window_.ActiveTool() != DrawingTool::Laser) return false;
+			if (laserResourcesReady && !renderer_.LaserResourcesAvailable()) laserIncrementalEnsureAttempted = false;
+			if (!laserIncrementalEnsureAttempted)
+			{
+				laserIncrementalEnsureAttempted = true;
+				const WindowSize size = window_.Size();
+				laserResourcesReady = renderer_.EnsureLaserResources(size.width, size.height);
+				if (laserResourcesReady) renderer_.EnsureLaserIncrementalCoverageResources();
+				else DiagnosticOutput::Line() << "[Laser] resources unavailable until tool re-entry or graphics reset." << std::endl;
+			}
+			return laserResourcesReady;
+		};
 		const int originalThreadPriority = GetThreadPriority(GetCurrentThread());
 		const bool drawingPriorityRaised = originalThreadPriority != THREAD_PRIORITY_ERROR_RETURN &&
 			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL) != FALSE;
@@ -11179,6 +11338,325 @@ namespace Inkeys::Drawing::Draw3
 				static_cast<unsigned long long>(currentSnapshot.sequence),
 				static_cast<unsigned long long>(anchor.sequence),
 				static_cast<unsigned>(snapshot.phase), anchor.terminalPending ? 1u : 0u);
+		};
+
+		// 断触接续只对勾选的设备生效：触摸看 bit0，笔尾（倒转笔橡皮）看 bit1。
+		auto reconnectDeviceAllowed = [&](const InterruptedStrokeReconnectIdentity& identity) noexcept
+		{
+			const uint32_t mask = interruptedStrokeReconnectDevices_.load(std::memory_order_acquire);
+			return identity.deviceType == InputDeviceType::Touch ? (mask & 1u) != 0 : (mask & 2u) != 0;
+		};
+
+		auto registerCanvasDebugProbe = [&](ContactHandle handle)
+		{
+			if (!handle.record) return;
+			// contact 仍留在 Coordinator 的 Producing 路由，Move 继续覆盖最新快照；
+			// 这里不创建 RuntimeStroke，因此不会建模、绘制、擦除、触发手掌橡皮或写历史。
+			CanvasDebugProbeContact probe;
+			probe.handle = handle;
+			probe.snapshot = handle.record->DownSnapshot();
+			ContactSnapshot latest = probe.snapshot;
+			if (input_.TryReadSnapshot(handle, latest)) probe.snapshot = latest;
+			debugProbeContacts.push_back(probe);
+		};
+
+		auto pumpCanvasDebugProbes = [&]()
+		{
+			if (debugProbeContacts.empty()) return;
+			for (CanvasDebugProbeContact& probe : debugProbeContacts)
+			{
+				ContactSnapshot latest = probe.snapshot;
+				if (input_.TryReadSnapshot(probe.handle, latest)) probe.snapshot = latest;
+				// 覆盖层在 prepareCanvasDebug 中统一读取 probe.snapshot（设备类型、位置、压力、面积、倾斜）。
+			}
+			std::erase_if(debugProbeContacts, [&](CanvasDebugProbeContact& probe)
+				{
+					if (probe.snapshot.phase != ContactPhase::Up &&
+						probe.snapshot.phase != ContactPhase::Cancelled) return false;
+					input_.Recycle(probe.handle);
+					return true;
+				});
+		};
+
+		// ---- 画布调试覆盖层（绘制线程独占）：关闭时 canvasDebugOverlay 为空，不产生任何开销 ----
+		renderer_.SetDebugPlate({}, false); // 上一次 Run 遗留的板子不能在本次关闭状态下继续合成。
+		std::unique_ptr<CanvasDebug::Overlay> canvasDebugOverlay;
+		bool canvasDebugGpuUnavailable = false;
+		struct CanvasDebugThresholdCache
+		{
+			bool valid = false;
+			SpeedEraser::InputSource source = {};
+			uint64_t generation = 0;
+			uint64_t revision = 0;
+			PalmEraser::Settings settings = {};
+			float thresholdAreaPx = 0.0f;
+		} canvasDebugThreshold;
+		SpeedEraser::DisplayScale canvasDebugDisplay = {};
+		bool canvasDebugDisplayFresh = false;
+
+		// 手掌橡皮实际判定同源的面积阈值：来源/标尺/设置不变时复用缓存。
+		auto canvasDebugPalmThreshold = [&](const SpeedEraser::InputSource& source) -> float
+		{
+			CanvasDebugThresholdCache& cache = canvasDebugThreshold;
+			if (!cache.valid || cache.generation != canvasDebugDisplay.generation ||
+				cache.revision != canvasDebugDisplay.revision || !(cache.settings == palmEraserOptions_) ||
+				!(cache.source == source))
+			{
+				cache.valid = true;
+				cache.generation = canvasDebugDisplay.generation;
+				cache.revision = canvasDebugDisplay.revision;
+				cache.settings = palmEraserOptions_;
+				cache.source = source;
+				cache.thresholdAreaPx = static_cast<float>(PalmEraser::ThresholdAreaPixels(
+					palmEraserOptions_, PalmEraser::ResolveScale(canvasDebugDisplay, source)));
+			}
+			return cache.thresholdAreaPx;
+		};
+
+		auto makeCanvasDebugSample = [&](const ContactHandle& handle,
+			const ContactSnapshot& snapshot, uint32_t previousContactId = 0) -> CanvasDebug::ContactSample
+		{
+			CanvasDebug::ContactSample out;
+			const InputDeviceType type = handle.record->DeviceType();
+			out.key = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(handle.record)) * 1000003ull +
+				handle.generation;
+			switch (type)
+			{
+			case InputDeviceType::Touch: out.kind = CanvasDebug::ContactKind::Touch; break;
+			case InputDeviceType::Pen:
+				out.kind = snapshot.isInvertedCursor
+					? CanvasDebug::ContactKind::PenEraser : CanvasDebug::ContactKind::Pen;
+				break;
+			case InputDeviceType::MouseLeft: out.kind = CanvasDebug::ContactKind::MouseLeft; break;
+			default: out.kind = CanvasDebug::ContactKind::MouseRight; break;
+			}
+			out.terminal = snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled;
+			const bool mouse = type == InputDeviceType::MouseLeft || type == InputDeviceType::MouseRight;
+			out.hasRtsIds = !mouse;
+			out.contactId = handle.record->ContactId();
+			out.previousContactId = previousContactId;
+			// 鼠标只可能来自 Win32 兼容通路；其余设备走 RTS，扩展/基础由 Host 整体选定。
+			if (mouse) out.path = CanvasDebug::InputPath::Win32Mouse;
+			else
+			{
+				const uint8_t mode = canvasDebugInputMode_.load(std::memory_order_acquire);
+				out.path = mode == 1 ? CanvasDebug::InputPath::RtsExtended
+					: mode == 2 ? CanvasDebug::InputPath::RtsBasicXY : CanvasDebug::InputPath::Unknown;
+			}
+			switch (snapshot.source.kind)
+			{
+			case SpeedEraser::SourceKind::Mouse: out.source = CanvasDebug::SourceClass::Mouse; break;
+			case SpeedEraser::SourceKind::ExternalPen: out.source = CanvasDebug::SourceClass::ExternalPen; break;
+			case SpeedEraser::SourceKind::IntegratedPen: out.source = CanvasDebug::SourceClass::IntegratedPen; break;
+			case SpeedEraser::SourceKind::Touch: out.source = CanvasDebug::SourceClass::Touch; break;
+			case SpeedEraser::SourceKind::TouchPad: out.source = CanvasDebug::SourceClass::TouchPad; break;
+			default: out.source = CanvasDebug::SourceClass::Unknown; break;
+			}
+			out.qpc = snapshot.qpc;
+			switch (snapshot.phase)
+			{
+			case ContactPhase::Down: out.stage = CanvasDebug::ContactStage::Down; break;
+			case ContactPhase::Move: out.stage = CanvasDebug::ContactStage::Move; break;
+			case ContactPhase::Up: out.stage = CanvasDebug::ContactStage::Up; break;
+			case ContactPhase::Cancelled: out.stage = CanvasDebug::ContactStage::Cancelled; break;
+			}
+			out.publishCount = snapshot.sequence / 2;
+			out.x = snapshot.position.x;
+			out.y = snapshot.position.y;
+			out.pressure = snapshot.pressure;
+			out.tilt = snapshot.tilt;
+			out.orientation = snapshot.orientation;
+			// 可信物理标尺同时服务面积（cm）和速度（cm/s），与是否有面积无关。
+			if (!canvasDebugDisplayFresh)
+			{
+				canvasDebugDisplay = window_.SpeedEraserDisplayScaleSnapshot();
+				canvasDebugDisplayFresh = true;
+			}
+			if (canvasDebugDisplay.physicalAvailable && canvasDebugDisplay.cmPerPixelX > 0.0f &&
+				canvasDebugDisplay.cmPerPixelY > 0.0f)
+			{
+				out.cmPerPixelX = canvasDebugDisplay.cmPerPixelX;
+				out.cmPerPixelY = canvasDebugDisplay.cmPerPixelY;
+			}
+			const SizeF& area = snapshot.contactSize;
+			if (std::isfinite(area.width) && std::isfinite(area.height) &&
+				area.width > 0.0f && area.height > 0.0f)
+			{
+				out.areaWidthPx = area.width;
+				out.areaHeightPx = area.height;
+				// 只有 Touch 且手掌橡皮已开启才存在识别阈值，实线框判定与识别同源。
+				if (type == InputDeviceType::Touch && palmEraserOptions_.enabled)
+					out.palmThresholdAreaPx = canvasDebugPalmThreshold(snapshot.source);
+			}
+			return out;
+		};
+
+		// 每个绘制迭代一次：采样接触、结算快照、同步 GPU 位图，并把板子/标记变化并入 frameDirty。
+		// injected 是本迭代由调试层注入的范围，用于判断“仅调试自刷新帧”。
+		auto prepareCanvasDebug = [&](RECT& frameDirty, RECT& injected, bool& injectedAny)
+		{
+			injected = {};
+			injectedAny = false;
+			const uint32_t options = canvasDebugOptions_.load(std::memory_order_acquire);
+			if ((options & 1u) == 0)
+			{
+				if (canvasDebugOverlay)
+				{
+					// 关闭：用上一次板子/标记范围重新合成以清除残影，并释放 GPU 资源。
+					UnionRectInPlace(frameDirty, canvasDebugOverlay->VisibleBounds());
+					canvasDebugOverlay.reset();
+					renderer_.SetDebugPlate({}, false);
+					renderer_.ReleaseDebugOverlayResources();
+					canvasDebugGpuUnavailable = false;
+				}
+				return;
+			}
+			if (!canvasDebugOverlay) canvasDebugOverlay = std::make_unique<CanvasDebug::Overlay>();
+			CanvasDebug::Overlay& overlay = *canvasDebugOverlay;
+			const WindowSize size = window_.Size();
+			canvasDebugDisplayFresh = false;
+			overlay.BeginContacts();
+			for (const RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect || !runtime->handle.record) continue;
+				ContactSnapshot latest = runtime->lastInputSnapshot;
+				input_.TryReadSnapshot(runtime->handle, latest);
+				overlay.ObserveContact(makeCanvasDebugSample(runtime->handle, latest, runtime->debugPreviousContactId));
+			}
+			for (const CanvasGestureContactRuntime& contact : gestureContacts)
+			{
+				if (!contact.handle.record) continue;
+				ContactSnapshot latest = contact.snapshot;
+				input_.TryReadSnapshot(contact.handle, latest);
+				overlay.ObserveContact(makeCanvasDebugSample(contact.handle, latest));
+			}
+			for (const CanvasDebugProbeContact& probe : debugProbeContacts)
+			{
+				if (!probe.handle.record) continue;
+				overlay.ObserveContact(makeCanvasDebugSample(probe.handle, probe.snapshot));
+			}
+
+			CanvasDebug::FrameParams params;
+			params.nowMs = GetQpcTimeMilliseconds();
+			params.canvasWidth = size.width;
+			params.canvasHeight = size.height;
+			params.dpiScale = static_cast<float>(configuration_.dpiScale);
+			params.targetFps = configuration_.timingProfile.target_fps;
+			params.markers = options == 3u;
+			{
+				const uint8_t inputMode = canvasDebugInputMode_.load(std::memory_order_acquire);
+				params.inputPath = inputMode == 1 ? CanvasDebug::InputPath::RtsExtended
+					: inputMode == 2 ? CanvasDebug::InputPath::RtsBasicXY
+					: inputMode == 3 ? CanvasDebug::InputPath::Win32Mouse : CanvasDebug::InputPath::Unknown;
+			}
+			RECT dirty = overlay.Update(params);
+
+			if (!canvasDebugGpuUnavailable)
+			{
+				bool recreated = false;
+				if (!renderer_.EnsureDebugOverlayResources(
+					static_cast<UINT>(overlay.PlateCapacityWidth()),
+					static_cast<UINT>(overlay.PlateCapacityHeight()),
+					static_cast<UINT>(overlay.LabelTileWidth()),
+					static_cast<UINT>(overlay.LabelTileHeight()),
+					static_cast<UINT>(CanvasDebug::kMaxContacts), &recreated))
+				{
+					canvasDebugGpuUnavailable = true;
+					renderer_.SetDebugPlate({}, false);
+					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,
+						"[Draw3.CanvasDebug] GPU overlay resources unavailable; overlay disabled for this session\n");
+				}
+				else
+				{
+					if (recreated)
+					{
+						// 设备重建/尺寸变化后纹理为空：整块重新上传并重新合成板子与标记区域。
+						overlay.MarkGpuStale();
+						UnionRectInPlace(dirty, overlay.PlateRect());
+						UnionRectInPlace(dirty, overlay.MarkerBounds());
+					}
+					if (overlay.ConsumePlateUpload())
+						renderer_.UploadDebugPlate(overlay.PlatePixels(),
+							static_cast<UINT>(overlay.PlateWidth()), static_cast<UINT>(overlay.PlateHeight()),
+							static_cast<UINT>(overlay.PlateCapacityWidth()));
+					for (size_t slot = 0; slot < CanvasDebug::kMaxContacts; ++slot)
+					{
+						int labelWidth = 0, labelHeight = 0;
+						if (overlay.ConsumeLabelUpload(slot, labelWidth, labelHeight))
+							renderer_.UploadDebugLabel(static_cast<UINT>(slot), overlay.LabelPixels(slot),
+								static_cast<UINT>(labelWidth), static_cast<UINT>(labelHeight),
+								static_cast<UINT>(overlay.LabelTileWidth()));
+					}
+					renderer_.SetDebugPlate(overlay.PlateRect(), overlay.PlateVisible());
+				}
+			}
+			dirty = ClampRectToCanvas(dirty, size.width, size.height);
+			if (!IsEmptyRect(dirty))
+			{
+				UnionRectInPlace(frameDirty, dirty);
+				injected = dirty;
+				UnionRectInPlace(injected, overlay.MarkerBounds());
+				injectedAny = true;
+			}
+		};
+
+		// 标记画在全部笔迹/激光/光标之上，只写 backbuffer，不进入 L0/L1/L2。
+		auto drawCanvasDebugMarkers = [&]()
+		{
+			constexpr DirectX::XMFLOAT4 kRed = { 1.0f, 0.25f, 0.25f, 1.0f };
+			for (size_t slot = 0; slot < canvasDebugOverlay->Markers().size(); ++slot)
+			{
+				const CanvasDebug::MarkerView& marker = canvasDebugOverlay->Markers()[slot];
+				if (!marker.active) continue;
+				DrawingCursorVisual visual;
+				visual.visible = true;
+				visual.x = marker.x;
+				visual.y = marker.y;
+				DrawingCursorAppearance& appearance = visual.appearance;
+				appearance.shape = DrawingCursorShape::Circle;
+				appearance.red = appearance.outlineRed = 0.0f;
+				appearance.green = appearance.outlineGreen = 0.90f;
+				appearance.blue = appearance.outlineBlue = 0.46f;
+				appearance.opacity = 1.0f;
+				// 绿色圆框（无填充）：包住输入点，手指测试时可见“这里有个点”。
+				appearance.width = appearance.height = marker.ringRadius * 2.0f;
+				appearance.fillAlpha = 0.0f;
+				appearance.outlineWidth = marker.ringStroke;
+				renderer_.DrawTransientDrawingCursor(visual);
+				// 绿色实心点：输入点坐标。
+				appearance.width = appearance.height = marker.dotRadius * 2.0f;
+				appearance.fillAlpha = 1.0f;
+				appearance.outlineWidth = 0.0f;
+				renderer_.DrawTransientDrawingCursor(visual);
+				if (marker.hasBox)
+				{
+					const float half = marker.boxStroke * 0.5f;
+					if (marker.solidBox)
+					{
+						const std::array<ShapePrimitive, 1> box = { ShapePrimitive{
+							{ marker.boxLeft, marker.boxTop, half, 0.0f },
+							{ marker.boxRight, marker.boxBottom, 0.0f, 0.0f } } };
+						renderer_.DrawDebugMarkerShapes(box, ShapePrimitiveKind::OutlineRectangle, kRed, 0.0f);
+					}
+					else
+					{
+						// 虚线由 pixel shader 解析（4:6 中心线节奏），不在 CPU 展开短划。
+						const std::array<ShapePrimitive, 4> edges = {
+							ShapePrimitive{ { marker.boxLeft, marker.boxTop, half, 0.0f },
+								{ marker.boxRight, marker.boxTop, 0.0f, 0.0f } },
+							ShapePrimitive{ { marker.boxRight, marker.boxTop, half, 0.0f },
+								{ marker.boxRight, marker.boxBottom, 0.0f, 0.0f } },
+							ShapePrimitive{ { marker.boxRight, marker.boxBottom, half, 0.0f },
+								{ marker.boxLeft, marker.boxBottom, 0.0f, 0.0f } },
+							ShapePrimitive{ { marker.boxLeft, marker.boxBottom, half, 0.0f },
+								{ marker.boxLeft, marker.boxTop, 0.0f, 0.0f } } };
+						renderer_.DrawDebugMarkerShapes(edges, ShapePrimitiveKind::DashedLine, kRed, 0.0f);
+					}
+				}
+				if (marker.hasLabel)
+					renderer_.DrawDebugLabel(static_cast<UINT>(slot), marker.labelX, marker.labelY,
+						static_cast<UINT>(marker.labelWidth), static_cast<UINT>(marker.labelHeight));
+			}
 		};
 
 		auto hasLiveSuppressedPenContact = [&]() noexcept
@@ -11797,6 +12275,15 @@ namespace Inkeys::Drawing::Draw3
 					selectedToolSupportsOverride);
 				const bool rightEraser=deviceType==InputDeviceType::MouseRight && selectedToolSupportsOverride && !window_.SelectionMode();
 				const DrawingTool tool = (invertedEraser || rightEraser) ? DrawingTool::Eraser : batchTool;
+				if (tool == DrawingTool::Laser && !prepareLaserSelectionResources())
+				{
+					// Discard 后 producer 可复用 record；先保存已登记的 Touch 身份，再退休手势接触。
+					const uint64_t rejectedTouchKey = deviceType == InputDeviceType::Touch
+						? CanvasTouchKey(handle) : 0;
+					RejectStrokeInitialization(input_, handle, down);
+					if (rejectedTouchKey) touchGesture.OnTouchUp(rejectedTouchKey);
+					return false;
+				}
 				if (metricsState_)
 				{
 					if (!metricsState_->frameOpen) metricsState_->Begin(GetQpcTimeMilliseconds());
@@ -11841,7 +12328,8 @@ namespace Inkeys::Drawing::Draw3
 				RuntimeStroke* diagnosticRuntime = nullptr;
 				InterruptedStrokeReconnectResult diagnosticResult;
 				if (GetInterruptedStrokeReconnectEnabled() &&
-					IsInterruptedStrokeReconnectIdentitySupported(downIdentity))
+					IsInterruptedStrokeReconnectIdentitySupported(downIdentity) &&
+					reconnectDeviceAllowed(downIdentity))
 				{
 					for (RuntimeStroke* candidate : active)
 					{
@@ -12025,6 +12513,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
 						AdoptReconnectedContact(*reconnectRuntime, handle);
+						reconnectRuntime->debugPreviousContactId = reconnectPreviousContactId;
 						BeginTailInputDiagnostic(*reconnectRuntime, down, true,
 							reconnectRuntime->stroke.tailInputDiagnostic.enabled);
 						reconnectRuntime->lastSpeedSnapshot = down;
@@ -12192,6 +12681,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->deferredUpSnapshot = {};
 				runtime->reconnectDirection = {};
 				runtime->reconnectDeadlineQpc = 0;
+				runtime->debugPreviousContactId = 0; // RuntimeStroke 来自复用池，必须清掉上一条笔画的续接来源。
 				runtime->reconnectPredictedResults.clear();
 				runtime->reconnectManualTestRanges.clear();
 				runtime->shape.Reset();
@@ -12651,6 +13141,7 @@ namespace Inkeys::Drawing::Draw3
 				const bool deferUp = snapshot.phase == ContactPhase::Up && !IsMouseSpeedEraser(runtime) &&
 					GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)) &&
+					reconnectDeviceAllowed(ReconnectIdentity(runtime)) &&
 					runtime.tool != DrawingTool::Laser && !runtime.shape.active;
 				const bool endpointTool =
 					(runtime.tool == DrawingTool::Pen ||
@@ -12875,7 +13366,8 @@ namespace Inkeys::Drawing::Draw3
 			const uint64_t revision = input_.AdmissionRevision();
 			if (revision == observedAdmissionRevision) return;
 			observedAdmissionRevision = revision;
-			if (!input_.AdmissionBlocked() && active.empty() && gestureContacts.empty()) return;
+			if (!input_.AdmissionBlocked() && active.empty() && gestureContacts.empty() &&
+				debugProbeContacts.empty()) return;
 			// 页边界只收尾已经被绘制线程接受的最后位置，不消费边界后的 Move。
 			// 持久笔迹继续走同一 Stored/L2/保存事务；物理路由在提交后隔离到 Up。
 			for (RuntimeStroke* runtime : active)
@@ -12891,6 +13383,9 @@ namespace Inkeys::Drawing::Draw3
 			for (const auto& contact : gestureContacts)
 				input_.DiscardUntilTerminal(contact.handle);
 			gestureContacts.clear();
+			for (const auto& probe : debugProbeContacts)
+				input_.DiscardUntilTerminal(probe.handle);
+			debugProbeContacts.clear();
 			touchGesture.Reset();
 			panMotion = {};
 			panCentroidValid = false;
@@ -12923,6 +13418,42 @@ namespace Inkeys::Drawing::Draw3
 				activePresentationTarget->targetRevision);
 		};
 
+		auto synchronizeLaserResources = [&]()
+		{
+			const bool selected = !window_.SelectionMode() && window_.ActiveTool() == DrawingTool::Laser;
+			if (selected && !laserResourceSelection) laserIncrementalEnsureAttempted = false;
+			laserResourceSelection = selected;
+			if (selected && prepareLaserSelectionResources()) return;
+			if (!selected)
+			{
+				laserIncrementalEnsureAttempted = false;
+				laserResourcesReady = false;
+			}
+			if (laserLifecycle.phase == LaserTrailPhase::Inactive && laserStrokeLayers.empty() &&
+				renderer_.LaserResourceBytes() == 0) return;
+			// 工具离开是 Laser 临时会话的终态；不把已按下的旧路由转交给新工具。
+			RetireLaserToolRuntimes(active, input_, completeModelUp, finishMouseSpeedEraser);
+			if (metricsState_) metricsState_->ObserveIndependentClear();
+			laserLifecycle = {};
+			laserOpacity = 0.0f;
+			laserStableBounds = {};
+			laserLiveBounds = {};
+			laserStrokeLayers.clear();
+			laserCoverageMode = LaserCoverageMode::Inactive;
+			pendingLaserBakeDirty = {};
+			pendingLaserBakeFailed = false;
+			laserTipVisuals.clear();
+			laserParticleEmissionRequests.clear();
+			laserParticleDirtyTracker.Clear();
+			previousLaserParticleBounds = {};
+			previousLaserTipBounds = {};
+			lastLaserParticleSimulationQpc = 0;
+			renderer_.ReleaseLaserResources();
+			laserResourcesReady = false;
+			if (!selected) laserIncrementalEnsureAttempted = false;
+			window_.RequestFullPresent(); // 全帧重绘清除已提交的旧 Laser/粒子像素。
+		};
+
 			bool commandBoundaryPending = false;
 			auto processCommand = [&](ContactRecord* record)
 			{
@@ -12934,6 +13465,7 @@ namespace Inkeys::Drawing::Draw3
 							input_.LastDequeuedControlWakeKind());
 					if (window_.HasPendingCanvasCommand()) commandBoundaryPending = true;
 					sealPresentationContacts();
+					synchronizeLaserResources();
 					return;
 				}
 				const ContactHandle handle{ record, record->Generation() };
@@ -12951,6 +13483,12 @@ namespace Inkeys::Drawing::Draw3
 				{
 					// 磁盘恢复完成前拒绝新输入，避免旧文件覆盖刚落下的墨迹。
 					input_.DiscardUntilTerminal(handle);
+					return;
+				}
+				if (canvasDebugOptions_.load(std::memory_order_acquire) == 3u)
+				{
+					// 画布调试可视化模式：接触照常出队，但只登记为探测接触，不建笔/擦除/手掌橡皮/历史。
+					registerCanvasDebugProbe(handle);
 					return;
 				}
 				initializeStroke(handle); // 出队后立即固定本地 generation。
@@ -16131,12 +16669,7 @@ namespace Inkeys::Drawing::Draw3
 				DiagnosticOutput::Line() << "Recovered Draw3 graphics with mode " <<
 					TransparentPresentModeName(presentation_.ActiveMode()) << "." << std::endl;
 			}
-			if (!laserIncrementalEnsureAttempted &&
-				window_.ActiveTool() == DrawingTool::Laser)
-			{
-				laserIncrementalEnsureAttempted = true;
-				renderer_.EnsureLaserIncrementalCoverageResources();
-			}
+			synchronizeLaserResources();
 			if (active.empty()) window_.ClearActiveDrawingCursorTool();
 			const bool drawingCursorRequested = window_.ConsumeDrawingCursorRenderRequest();
 			const double previousFrameMs = lastActiveFrameStartMs > 0.0
@@ -16171,6 +16704,8 @@ namespace Inkeys::Drawing::Draw3
 			if (ProcessPendingResize(false))
 			{
 				const WindowSize size = window_.Size();
+				laserIncrementalEnsureAttempted = false;
+				synchronizeLaserResources();
 				historyGpuCache.DiscardHotPreimages();
 				trustedSnapshotSignatureValid = false;
 				compositionMaintenance.clear();
@@ -16267,6 +16802,7 @@ namespace Inkeys::Drawing::Draw3
 			LARGE_INTEGER navigationQpc = {};
 			QueryPerformanceCounter(&navigationQpc);
 			updateCanvasNavigation(navigationQpc.QuadPart);
+			pumpCanvasDebugProbes();
 			if (viewportRefreshPending || viewportRecoveryPending)
 			{
 				const WindowSize size = window_.Size();
@@ -16579,7 +17115,9 @@ namespace Inkeys::Drawing::Draw3
 			if (selectionMode && !currentPageHasContent() &&
 				auxiliaryCleanVerificationPending && active.empty() &&
 				laserLifecycle.phase == LaserTrailPhase::Inactive &&
-				!particleAnimationActive)
+				!particleAnimationActive &&
+				// 画布调试板常驻时窗口永远不会全透明；继续强制全帧校验会让绘制线程无等待地满速呈现。
+				!(canvasDebugOverlay && canvasDebugOverlay->PlateVisible()))
 			{
 				// 最后一帧瞬态内容结束后做全帧 ULW 校验，不能按局部脏区推断窗口已净。
 				forceFullPresent = true;
@@ -16618,7 +17156,13 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const bool navigationActive = touchGesture.PanActive() ||
 				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
-				!gestureContacts.empty() || viewportRefreshPending || viewportRecoveryPending;
+				!gestureContacts.empty() || !debugProbeContacts.empty() ||
+				viewportRefreshPending || viewportRecoveryPending;
+			// 画布调试：板子/标记变化必须在 idle 判定之前并入 frameDirty，否则静止画布不会刷新它们。
+			RECT canvasDebugInjectedBounds = {};
+			bool canvasDebugInjected = false;
+			if (canvasDebugOptions_.load(std::memory_order_acquire) != 0 || canvasDebugOverlay)
+				prepareCanvasDebug(frameDirty, canvasDebugInjectedBounds, canvasDebugInjected);
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
 				!speedEraserHoverAnimating &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty) &&
@@ -16711,8 +17255,14 @@ namespace Inkeys::Drawing::Draw3
 					if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 					continue;
 				}
+				// 画布调试开启时，静止画布也要每 0.5s 醒来结算快照；关闭时保持原有零唤醒阻塞。
+				const double canvasDebugWaitMs = canvasDebugOverlay
+					? canvasDebugOverlay->MillisecondsUntilNextUpdate(GetQpcTimeMilliseconds()) : -1.0;
 				if (const auto retryWait = currentLoadRetryWait())
-					input_.WaitForWake(idleWakeGeneration, *retryWait);
+					input_.WaitForWake(idleWakeGeneration, canvasDebugWaitMs > 0.0
+						? (std::min)(*retryWait, canvasDebugWaitMs) : *retryWait);
+				else if (canvasDebugWaitMs > 0.0)
+					input_.WaitForWake(idleWakeGeneration, canvasDebugWaitMs);
 				else
 				{
 					input_.WaitDequeue(record);
@@ -17710,7 +18260,14 @@ namespace Inkeys::Drawing::Draw3
 				// 其他几何触发 Present 时也要先重建光标区，避免半透明像素在旧 backbuffer 上重复叠加。
 				UnionRectInPlace(frameDirty, cursorVisualBounds(currentCursorVisuals));
 			}
+			if (canvasDebugOverlay && !IsEmptyRect(frameDirty))
+			{
+				// 标记每个呈现帧都完整重绘，因此其区域必须先被重新合成，避免半透明像素叠加。
+				UnionRectInPlace(frameDirty, canvasDebugOverlay->MarkerBounds());
+			}
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
+			// 读回缓冲重建前先完整合成；空闲回收本身不能制造新帧。
+			if (!IsEmptyRect(frameDirty) && presentation_.AuxiliaryReadbackNeedsFullPresent()) forceFullPresent = true;
 			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
 			if (metricsState_)
 			{
@@ -17795,6 +18352,7 @@ namespace Inkeys::Drawing::Draw3
 						: OperatorLayerMergeMode::CoverageUnion;
 					compositeSucceeded = renderer_.ApplyOperatorLayers(renderer_.backBufferRTV.Get(),
 						renderer_.layerL1, renderer_.layerL0, frameDirty, mergeMode);
+					if (compositeSucceeded) (void)renderer_.DrawDebugPlateUnder(frameDirty);
 				}
 				else compositeSucceeded = CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				if (!compositeSucceeded)
@@ -17832,6 +18390,9 @@ namespace Inkeys::Drawing::Draw3
 						}
 						for (const DrawingCursorVisual& visual : currentCursorVisuals)
 							renderer_.DrawTransientDrawingCursor(visual);
+						if (canvasDebugOverlay && !canvasDebugGpuUnavailable && canvasDebugOptions_.load(
+							std::memory_order_acquire) == 3u)
+							drawCanvasDebugMarkers();
 						if (metricsState_ && snapshotCanvas && currentPageIndex_ < pageRuntimeStates.size())
 						{
 							if (!viewportVisibleClear || viewportRefreshPending || viewportRecoveryPending)
@@ -17931,6 +18492,26 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const double canvasFrameElapsedMilliseconds =
 				GetQpcTimeMilliseconds() - frameStartMs;
+			if (canvasDebugOverlay)
+			{
+				// 脏区完全落在调试注入范围内且没有强制全帧时，是调试板自己的刷新帧，不计入帧率。
+				// 可视化标记存在时每个呈现帧都在重绘标记，那是真实的画布帧，必须计入。
+				const bool debugOnlyFrame = canvasDebugInjected && !forceFullPresent &&
+					IsEmptyRect(canvasDebugOverlay->MarkerBounds()) &&
+					frameDirty.left >= canvasDebugInjectedBounds.left &&
+					frameDirty.top >= canvasDebugInjectedBounds.top &&
+					frameDirty.right <= canvasDebugInjectedBounds.right &&
+					frameDirty.bottom <= canvasDebugInjectedBounds.bottom;
+				canvasDebugOverlay->OnFrame(canvasFrameElapsedMilliseconds,
+					presentSucceeded && !debugOnlyFrame);
+				if (presentSucceeded && !debugOnlyFrame)
+				{
+					// 输入到上屏：快照时间戳到承载它的 Present 返回；DWM 扫描输出还会再多至多一个刷新周期。
+					LARGE_INTEGER presentedQpc = {};
+					QueryPerformanceCounter(&presentedQpc);
+					canvasDebugOverlay->OnPresented(presentedQpc.QuadPart);
+				}
+			}
 			previousCanvasFrameWorkMilliseconds = (std::max)(0.0,
 				canvasFrameElapsedMilliseconds - lastPresentDurationMs_);
 			previousCanvasPresentMilliseconds = lastPresentDurationMs_;

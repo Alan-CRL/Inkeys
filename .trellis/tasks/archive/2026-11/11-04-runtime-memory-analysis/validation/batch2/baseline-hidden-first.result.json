@@ -1,0 +1,8 @@
+{
+  "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+  "first_input_failure_reproduced": true,
+  "stopped_after_observation": true,
+  "exit_code": 1,
+  "seconds": 15.484,
+  "scope": "Comparison of first failure only, not a complete baseline test pass/fail"
+}

@@ -498,6 +498,8 @@ GROUP(UI, \
 		GROUP(Inkeys3, \
 			GROUP(Draw3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnect, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectTouch, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectPenTail, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
@@ -521,6 +523,7 @@ GROUP(UI, \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DelayWaitingOperations, false) \
 				) \
 				GROUP(EdgeLighting, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \

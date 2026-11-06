@@ -101,6 +101,7 @@ inline constexpr struct I18nKeyRoot
                 const char* WhiteboardGridLabel = "UI/Bar/MainButtons/WhiteboardGridLabel";
                 const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
                 const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
+                const char* CanvasDebugLabel = "UI/Bar/MainButtons/CanvasDebugLabel";
                 const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
                 const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
@@ -160,7 +161,6 @@ inline constexpr struct I18nKeyRoot
                 const char* PresentFailed = "UI/Bar/CanvasRecovery/PresentFailed";
                 const char* Failed = "UI/Bar/CanvasRecovery/Failed";
                 const char* Recovering = "UI/Bar/CanvasRecovery/Recovering";
-                const char* Loading = "UI/Bar/CanvasRecovery/Loading";
                 const char* Retry = "UI/Bar/CanvasRecovery/Retry";
                 const char* Wait = "UI/Bar/CanvasRecovery/Wait";
                 const char* RetryCanvas = "UI/Bar/CanvasRecovery/RetryCanvas";
@@ -730,6 +730,8 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Draw__Touch__InterruptedStrokeReconnect
                 {
                     const char* N = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/N";
+                    const char* Touch = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/Touch";
+                    const char* PenTail = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/PenTail";
                     const char* E = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/E";
                 } InterruptedStrokeReconnect{};
             } Touch{};
@@ -1173,6 +1175,17 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/FrameRate/N";
                 const char* E = "SettingsUI/DebugSoftware/FrameRate/E";
             } FrameRate{};
+            const char* CanvasSection = "SettingsUI/DebugSoftware/CanvasSection";
+            struct Node__SettingsUI__DebugSoftware__CanvasDebug
+            {
+                const char* N = "SettingsUI/DebugSoftware/CanvasDebug/N";
+                const char* E = "SettingsUI/DebugSoftware/CanvasDebug/E";
+            } CanvasDebug{};
+            struct Node__SettingsUI__DebugSoftware__DelayWaiting
+            {
+                const char* N = "SettingsUI/DebugSoftware/DelayWaiting/N";
+                const char* E = "SettingsUI/DebugSoftware/DelayWaiting/E";
+            } DelayWaiting{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";

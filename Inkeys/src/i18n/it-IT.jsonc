@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Griglia",
         "WhiteboardUnsavedLabel": "Alcune pagine non sono state salvate",
         "FreezeLabel": "Ferma",
+        "CanvasDebugLabel": "Debug visivo",
         "EndPresentationLabel": "Termina",
         "SettingsLabel": "Impost.",
         "MoreLabel": "Altro"
@@ -157,7 +158,6 @@
         "PresentFailed": "Schermo",
         "Failed": "Errore",
         "Recovering": "Recupero",
-        "Loading": "Carica",
         "Retry": "Riprova",
         "Wait": "Attendi",
         "RetryCanvas": "Riprova la tela",
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Ricollega tratti interrotti",
-          "E": "Se il contatto si interrompe brevemente durante la scrittura touch e riprende nella stessa direzione, l'app tenta di unire le due parti in un solo tratto, riducendo le interruzioni. Se disattivato, ogni sollevamento del dito termina il tratto."
+          "Touch": "Touch",
+          "PenTail": "Gomma della penna",
+          "E": "Durante la scrittura rileva le interruzioni del tocco in base all’intento di disegno e le corregge, e può riprendere lo stato di disegno."
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "Mostra frequenza fotogrammi",
         "E": "Aggiorna ogni secondo la frequenza media e quella senza attese del secondo precedente."
+      },
+      "CanvasSection": "Tela",
+      "CanvasDebug":
+      {
+        "N": "Debug della tela",
+        "E": "Mostra sotto la tela frequenza dei fotogrammi, carico hardware e informazioni sui punti di input, e aggiunge un pulsante di debug visivo alla barra principale."
+      },
+      "DelayWaiting":
+      {
+        "N": "Ritarda le operazioni in attesa",
+        "E": "Prolunga il caricamento per osservare le animazioni."
       },
       "ConsoleSection": "Output console",
       "CanvasInformation": "Informazioni di inizializzazione della tela",

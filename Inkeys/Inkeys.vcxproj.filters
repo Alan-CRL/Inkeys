@@ -2108,6 +2108,12 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2211,6 +2217,9 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererDebugOverlay.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp">
@@ -2358,6 +2367,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barPierce.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barCanvasDebug.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barHighlighter1.svg">

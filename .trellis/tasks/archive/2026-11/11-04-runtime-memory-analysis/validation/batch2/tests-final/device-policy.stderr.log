@@ -1,0 +1,2 @@
+[Draw3DiagnosticFormatting] PASS: SDK names, flags, samples, HRESULT and RTS summaries
+[Draw3DevicePolicy] PASS: direct WARP, hardware preference and failure fallback

@@ -1,0 +1,35 @@
+{
+  "machine": "0xaa64",
+  "codeview": {
+    "guid": "dec2b641-190f-41cb-a28d-6702b43dc823",
+    "age": 2,
+    "pdb_path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.pdb"
+  },
+  "pdb_identity": {
+    "guid": "dec2b641-190f-41cb-a28d-6702b43dc823",
+    "age": 2
+  },
+  "pdb_matches_exe": true,
+  "head": "e225c210a64be114ed9d83709ac0978d80feedc5",
+  "configuration": "Debug|ARM64; /MT NDEBUG",
+  "path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+  "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797",
+  "source_files": [
+    {
+      "path": "inkStrokeModelerTestTests\\contact_input_tests.cpp",
+      "sha256": "c5e64f596b331e0eb8b3266503e4c7b216055bc34b9907309f11615a252be9b0"
+    },
+    {
+      "path": "inkStrokeModelerTestTests\\desktop_autosave_tests.cpp",
+      "sha256": "456d1c722893f1fe2c5207c39550ffb18460d6de68f18bd4aed279311c8c6143"
+    },
+    {
+      "path": "inkStrokeModelerTestTests\\presentation_autosave_tests.cpp",
+      "sha256": "37cbb88366652ba324a1e2130295e302e5da0d6703afa80ccf1aa52b2295992a"
+    },
+    {
+      "path": "inkStrokeModelerTestTests\\snapshot_lifetime_probe.h",
+      "sha256": "d50c0135ee948f0ff007c53714c33cea8d916263a788e80082fbb0626151dc06"
+    }
+  ]
+}

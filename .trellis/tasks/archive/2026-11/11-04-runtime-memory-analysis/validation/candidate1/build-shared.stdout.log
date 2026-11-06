@@ -1,0 +1,56 @@
+
+  Scanning sources for module dependencies...
+  inkStrokeModelerTest.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\ARM64\Debug\inkStrokeModelerTest.exe
+  Scanning sources for module dependencies...
+  presentation_autosave_tests.cpp
+  Compiling...
+  presentation_autosave_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Business\PenWidthPolicy.hpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18): warning C4244: '=': conversion from 'const wchar_t' to 'char', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18):
+      the template instantiation context (the oldest one first) is
+          D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3657,32):
+          see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_const_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+          with
+          [
+              _Elem=wchar_t,
+              _Iter=std::_String_const_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+              _Alloc=std::allocator<char>
+          ]
+              D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3657,2):
+              see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'RunPresentationAutoSaveSessionChild'
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(812,17):
+          see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<const wchar_t*,const wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+          with
+          [
+              _Size_type=unsigned __int64,
+              _Iter=const wchar_t *,
+              _Sent=const wchar_t *,
+              _Size=unsigned __int64
+          ]
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(968,18):
+          see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<const wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+          with
+          [
+              _OutIt=char *,
+              _Size=unsigned __int64,
+              _InIt=const wchar_t *,
+              _SizeTy=unsigned __int64
+          ]
+  
+  inkStrokeModelerTestTests.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\ARM64\Debug\inkStrokeModelerTestTests.exe

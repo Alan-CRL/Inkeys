@@ -1,0 +1,13 @@
+LaserResources stage=ordinary_init resource_bytes=0 width=64 height=64 hwnd=0
+LaserResources stage=selected resource_bytes=32768 width=64 height=64 hwnd=0
+LaserResources stage=live_and_bake resource_bytes=65536 width=64 height=64 hwnd=0
+LaserResources stage=left resource_bytes=0 width=64 height=64 hwnd=0
+LaserResources stage=selected resource_bytes=32768 width=64 height=64 hwnd=0
+LaserResources stage=live_and_bake resource_bytes=65536 width=64 height=64 hwnd=0
+LaserResources stage=left resource_bytes=0 width=64 height=64 hwnd=0
+LaserResources stage=selected resource_bytes=32768 width=64 height=64 hwnd=0
+LaserResources stage=live_and_bake resource_bytes=65536 width=64 height=64 hwnd=0
+LaserResources stage=left resource_bytes=0 width=64 height=64 hwnd=0
+LaserResources stage=selected_resized resource_bytes=92160 width=96 height=80 hwnd=0
+LaserResources stage=recovery_left resource_bytes=0 width=32 height=48 hwnd=0
+LaserResources failures=0 hwnd=0 resource_bytes_are_nominal=1

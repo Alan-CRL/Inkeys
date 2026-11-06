@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Grade",
         "WhiteboardUnsavedLabel": "Há páginas não salvas",
         "FreezeLabel": "Fixar",
+        "CanvasDebugLabel": "Depuração visual",
         "EndPresentationLabel": "Encerrar",
         "SettingsLabel": "Opções",
         "MoreLabel": "Mais"
@@ -156,8 +157,7 @@
         "ReadFailed": "Leitura",
         "PresentFailed": "Exibição",
         "Failed": "Erro",
-        "Recovering": "Restaurando",
-        "Loading": "Carregando",
+        "Recovering": "Restaur.",
         "Retry": "Tentar",
         "Wait": "Aguarde",
         "RetryCanvas": "Tentar a tela de desenho novamente",
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconectar traços interrompidos",
-          "E": "Ao escrever por toque, se o contato se perder brevemente e retornar na mesma direção, tenta unir os dois trechos em um só traço. Quando desativado, cada retirada encerra o traço atual."
+          "Touch": "Toque",
+          "PenTail": "Extremidade traseira da caneta",
+          "E": "Ao escrever, detecta interrupções do toque com base na intenção de desenho e as corrige, e pode continuar o estado de desenho."
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "Mostrar taxa de quadros",
         "E": "Atualiza a cada segundo a taxa média do segundo anterior e a taxa sem espera."
+      },
+      "CanvasSection": "Tela",
+      "CanvasDebug":
+      {
+        "N": "Depuração da tela",
+        "E": "Mostra abaixo da tela a taxa de quadros, a carga do hardware e as informações dos pontos de entrada, e adiciona um botão de depuração visual à barra principal."
+      },
+      "DelayWaiting":
+      {
+        "N": "Atrasar operações de espera",
+        "E": "Prolonga o carregamento para observar as animações."
       },
       "ConsoleSection": "Saída no console",
       "CanvasInformation": "Informações de inicialização do desenho",

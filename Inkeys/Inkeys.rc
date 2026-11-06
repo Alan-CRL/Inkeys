@@ -291,6 +291,8 @@ BARCLEAN                UI                      "src\\UI\\barClean.svg"
 
 BARPIERCE               UI                      "src\\UI\\barPierce.svg"
 
+BARCANVASDEBUG          UI                      "src\\UI\\barCanvasDebug.svg"
+
 BARRECALL               UI                      "src\\UI\\barRecall.svg"
 
 BARREDO                 UI                      "src\\UI\\barRedo.svg"

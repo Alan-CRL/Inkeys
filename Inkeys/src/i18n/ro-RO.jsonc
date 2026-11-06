@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Grilă",
         "WhiteboardUnsavedLabel": "Unele pagini nu sunt salvate",
         "FreezeLabel": "Îngheț",
+        "CanvasDebugLabel": "Depanare vizuală",
         "EndPresentationLabel": "Încheiere",
         "SettingsLabel": "Setări",
         "MoreLabel": "Mai multe"
@@ -157,7 +158,6 @@
         "PresentFailed": "Afișare",
         "Failed": "Eroare",
         "Recovering": "Restabilire",
-        "Loading": "Încărcare",
         "Retry": "Reîncercare",
         "Wait": "Așteptați",
         "RetryCanvas": "Reîncearcă pânza",
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconectarea trăsăturilor întrerupte",
-          "E": "Dacă atingerea se întrerupe scurt și reia aceeași direcție, programul încearcă să unească cele două segmente într-o singură trăsătură, reducând golurile. Când opțiunea este dezactivată, ridicarea degetului încheie trăsătura."
+          "Touch": "Atingere",
+          "PenTail": "Radiera creionului",
+          "E": "În timpul scrisului, detectează întreruperile atingerii pe baza intenției de desen și le corectează, putând continua starea de desenare."
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "Afișare rată de cadre",
         "E": "Actualizează o dată pe secundă rata medie și rata fără așteptare din secunda precedentă."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Depanare canvas",
+        "E": "Afișează sub canvas rata de cadre, încărcarea hardware și informații despre punctele de intrare și adaugă un buton de depanare vizuală în bara principală."
+      },
+      "DelayWaiting":
+      {
+        "N": "Întârzie operațiile în așteptare",
+        "E": "Prelungește încărcarea pentru observarea animațiilor."
       },
       "ConsoleSection": "Ieșire în consolă",
       "CanvasInformation": "Informații despre inițializarea pânzei",

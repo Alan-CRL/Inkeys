@@ -2201,6 +2201,50 @@ namespace Inkeys::UI::Setting::Design
 		return content;
 	}
 
+	InlineRowContent InlineCheckboxes(const char* id, std::vector<CheckboxSpec> items,
+		const char* visibilityId, bool visible)
+	{
+		InlineRowContent content;
+		content.visibilityId = visibilityId; content.visible = visible;
+		// 列数规则与 CheckboxGroup 一致：每列放得下最宽的一项且总宽不小于 440 DIP 才分两列。
+		const auto columnsFor = [items](float width)
+		{
+			float widest = 0.0F;
+			for (const auto& item : items)
+				widest = (std::max)(widest, ControlTextWidth(item.label.c_str()) + Pixels(32.0F));
+			return width >= (std::max)(Pixels(440.0F), widest * 2.0F + Pixels(16.0F)) ? 2 : 1;
+		};
+		content.height = [items, columnsFor](float width)
+		{
+			const int columns = columnsFor(width);
+			const int rows = (static_cast<int>(items.size()) + columns - 1) / columns;
+			return rows * Pixels(ControlHeight) + (std::max)(0, rows - 1) * Pixels(ControlSpacing);
+		};
+		content.render = [id, items, columnsFor, visible](const LayoutRect& bounds)
+		{
+			const int columns = columnsFor(bounds.Width());
+			const float gap = Pixels(16.0F);
+			const float columnWidth = (bounds.Width() - gap * (columns - 1)) / columns;
+			ImGui::PushID(id);
+			// 与 SettingRow 同一提交标记，内联项也可按稳定 ID 判断本帧是否真实提交。
+			ImGui::GetStateStorage()->SetInt(ImGui::GetID("##description-frame"), ImGui::GetFrameCount());
+			ImFluent::BeginDisabled(!visible); // 收起动画期间保留显示但不可交互。
+			int index = 0;
+			for (const auto& item : items)
+			{
+				ImGui::SetCursorScreenPos({ bounds.left + (index % columns) * (columnWidth + gap),
+					bounds.top + (index / columns) * Pixels(ControlHeight + ControlSpacing) });
+				ImGui::PushID(index++);
+				const std::string label = item.label + "###inline-checkbox";
+				if (item.value && item.changed) *item.changed = Checkbox(label.c_str(), item.value);
+				ImGui::PopID();
+			}
+			ImFluent::EndDisabled();
+			ImGui::PopID();
+		};
+		return content;
+	}
+
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note, bool showNoteIcon)
 	{

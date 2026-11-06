@@ -159,7 +159,8 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	int InkRenderer::DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
-		ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, InkOperatorKind operatorKind)
+		ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, InkOperatorKind operatorKind,
+		ID3D11BlendState* blendStateOverride, float cornerRadiusOverride)
 	{
 		if (primitives.empty()) return 0;
 		if (!IsLineShapePrimitive(kind) && !IsRectangleShapePrimitive(kind)) return -1;
@@ -195,7 +196,8 @@ namespace Inkeys::Drawing::Draw3
 			constants->shapeType = static_cast<float>(static_cast<uint32_t>(kind));
 			constants->bufferOffset = bufferOffset;
 			constants->operatorKind = static_cast<uint32_t>(operatorKind);
-			constants->padding[0] = shapeRoundedCornerRadiusPixels_;
+			constants->padding[0] = cornerRadiusOverride >= 0.0f
+				? cornerRadiusOverride : shapeRoundedCornerRadiusPixels_;
 			constants->padding[1] = 0.0f;
 			constants->padding[2] = 0.0f;
 			context->Unmap(globalCB.Get(), 0);
@@ -209,7 +211,8 @@ namespace Inkeys::Drawing::Draw3
 			context->VSSetConstantBuffers(0, 1, constantBuffers);
 			context->PSSetShader(pixelShader.Get(), nullptr, 0);
 			context->PSSetConstantBuffers(0, 1, constantBuffers);
-			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
+			context->OMSetBlendState(blendStateOverride ? blendStateOverride
+				: strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
 			context->RSSetState(rasterState.Get());
 			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
 

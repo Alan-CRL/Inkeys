@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Izgara",
         "WhiteboardUnsavedLabel": "Bazı sayfalar kaydedilmedi",
         "FreezeLabel": "Dondur",
+        "CanvasDebugLabel": "Görsel hata ayıklama",
         "EndPresentationLabel": "Bitir",
         "SettingsLabel": "Ayarlar",
         "MoreLabel": "Diğer"
@@ -157,8 +158,7 @@
         "PresentFailed": "Görüntü",
         "Failed": "Hata",
         "Recovering": "Kurtarılıyor",
-        "Loading": "Yükle",
-        "Retry": "Yeniden dene",
+        "Retry": "Tekrar",
         "Wait": "Bekleyin",
         "RetryCanvas": "Tuvali yeniden dene",
         "ProtectedHint": "Belgenin sırası veya kimliği değişti. Mevcut mürekkep korunuyor. Belgeyi önceki durumuna döndürüp yeniden deneyin.",
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Kesilen çizgileri birleştir",
-          "E": "Dokunma kısa süreli kesilip aynı yönde devam ederse uygulama, boşlukları azaltmak için iki parçayı tek çizgide birleştirmeyi dener. Kapalıyken parmağı kaldırmak çizgiyi bitirir."
+          "Touch": "Dokunma",
+          "PenTail": "Kalem silgisi",
+          "E": "Yazarken, çizim niyetine göre dokunma kesintilerini belirler ve düzeltir; ayrıca çizim durumunu sürdürebilir."
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "Kare hızını göster",
         "E": "Önceki saniyenin ortalama ve beklemesiz kare hızını saniyede bir güncelleyin."
+      },
+      "CanvasSection": "Tuval",
+      "CanvasDebug":
+      {
+        "N": "Tuval hata ayıklama",
+        "E": "Tuvalin altında kare hızını, donanım yükünü ve giriş noktası bilgilerini gösterir; ana çubuğa görsel hata ayıklama düğmesi ekler."
+      },
+      "DelayWaiting":
+      {
+        "N": "Bekleyen işlemleri geciktir",
+        "E": "Animasyonları gözlemlemek için yükleme süresini uzatır."
       },
       "ConsoleSection": "Konsol çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",

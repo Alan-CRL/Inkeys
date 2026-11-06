@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Siatka",
         "WhiteboardUnsavedLabel": "Niektóre strony nie są zapisane",
         "FreezeLabel": "Zamroź",
+        "CanvasDebugLabel": "Debug wizualny",
         "EndPresentationLabel": "Zakończ",
         "SettingsLabel": "Ustawienia",
         "MoreLabel": "Więcej"
@@ -156,8 +157,7 @@
         "ReadFailed": "Odczyt",
         "PresentFailed": "Ekran",
         "Failed": "Błąd",
-        "Recovering": "Przywracanie",
-        "Loading": "Wczytaj",
+        "Recovering": "Przywr.",
         "Retry": "Ponów",
         "Wait": "Czekaj",
         "RetryCanvas": "Ponów płótno",
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Łącz przerwane ślady",
-          "E": "Gdy podczas pisania dotyk na chwilę zanika i powraca w tym samym kierunku, program próbuje połączyć obie części w jeden ślad, ograniczając przerwy. Po wyłączeniu każde podniesienie palca kończy ślad."
+          "Touch": "Dotyk",
+          "PenTail": "Gumka pióra",
+          "E": "Podczas pisania wykrywa przerwy w dotyku na podstawie intencji rysowania i je koryguje, a także może kontynuować stan rysowania."
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "Pokaż liczbę klatek na sekundę",
         "E": "Co sekundę aktualizuj średnią liczbę klatek i liczbę klatek bez oczekiwania z poprzedniej sekundy."
+      },
+      "CanvasSection": "Kanwa",
+      "CanvasDebug":
+      {
+        "N": "Debugowanie kanwy",
+        "E": "Wyświetla pod kanwą liczbę klatek na sekundę, obciążenie sprzętu i informacje o punktach wejścia oraz dodaje do paska głównego przycisk debugowania wizualnego."
+      },
+      "DelayWaiting":
+      {
+        "N": "Opóźnij operacje oczekiwania",
+        "E": "Wydłuża ładowanie, aby obserwować animacje."
       },
       "ConsoleSection": "Wyjście konsoli",
       "CanvasInformation": "Informacje o inicjalizacji płótna",

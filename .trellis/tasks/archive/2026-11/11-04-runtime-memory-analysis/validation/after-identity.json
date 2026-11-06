@@ -1,0 +1,28 @@
+{
+  "machine": "0xaa64",
+  "codeview": {
+    "guid": "cb974d06-de5b-43b7-95ce-5ab9365bfc90",
+    "age": 3,
+    "pdb_path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.pdb"
+  },
+  "pdb_identity": {
+    "guid": "cb974d06-de5b-43b7-95ce-5ab9365bfc90",
+    "age": 3
+  },
+  "pdb_matches_exe": true,
+  "head": "ddfe8a200fea7694ff066cc10114a729a9027885",
+  "configuration": "Debug|ARM64",
+  "files": [
+    {
+      "path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+      "bytes": 101153792,
+      "sha256": "9b16dcc496c6cf69f717bcf0532ed6de347a4ecb9177a1d82873702d4cd22acb"
+    },
+    {
+      "path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.pdb",
+      "bytes": 168349696,
+      "sha256": "dfea602f390b912a6413645c0dafa81b70b8c5621231a61d06125c9298a2e332"
+    }
+  ],
+  "source_diff_sha256": "3bd512bf3fd9fd0df4fdf91d68e1589e00c002a3014acf9c353c3e8d08c56723"
+}

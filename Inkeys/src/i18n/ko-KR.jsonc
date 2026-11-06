@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "격자",
         "WhiteboardUnsavedLabel": "저장되지 않은 페이지가 있습니다",
         "FreezeLabel": "고정",
+        "CanvasDebugLabel": "시각화 디버그",
         "EndPresentationLabel": "발표종료",
         "SettingsLabel": "설정",
         "MoreLabel": "더보기"
@@ -157,9 +158,8 @@
         "PresentFailed": "표시",
         "Failed": "오류",
         "Recovering": "복원 중",
-        "Loading": "로딩 중",
         "Retry": "재시도",
-        "Wait": "대기",
+        "Wait": "대기 중",
         "RetryCanvas": "캔버스 재시도",
         "ProtectedHint": "문서의 페이지 순서나 식별 정보가 바뀌어 기존 필기를 보호하고 있습니다. 문서를 원래 상태로 되돌린 후 다시 시도하세요.",
         "RecoveryHint": "캔버스 복원이 완료되지 않았습니다. 다시 시도해도 필기 보호는 유지됩니다."
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "끊긴 획 이어 그리기",
-          "E": "터치로 쓰는 동안 접촉이 잠깐 끊겼다가 같은 방향으로 돌아오면 두 획을 하나로 이어 선의 끊김을 줄입니다. 끄면 손을 뗄 때마다 현재 획을 끝냅니다."
+          "Touch": "터치",
+          "PenTail": "펜 뒤쪽",
+          "E": "필기 중 그리기 의도를 바탕으로 터치 끊김을 판단해 보정하고, 그리기 상태를 이어서 유지할 수 있습니다."
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "프레임 속도 표시",
         "E": "이전 1초의 평균 프레임 속도와 대기 없는 프레임 속도를 매초 갱신합니다."
+      },
+      "CanvasSection": "캔버스",
+      "CanvasDebug":
+      {
+        "N": "캔버스 디버그",
+        "E": "캔버스 아래에 프레임 속도, 하드웨어 부하, 입력 지점 정보를 표시하고 메인 바에 시각화 디버그 버튼을 추가합니다."
+      },
+      "DelayWaiting":
+      {
+        "N": "대기 작업 지연",
+        "E": "로딩 대기를 연장하여 애니메이션을 확인합니다."
       },
       "ConsoleSection": "콘솔 출력",
       "CanvasInformation": "캔버스 초기화 정보",

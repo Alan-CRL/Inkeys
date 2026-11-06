@@ -374,6 +374,8 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t readyOutputRevision = 0;
 		std::uint64_t presentedContentRevision = 0;
 		bool auxiliaryFullFrameClean = false;
+		// 辅助 staging+DIB 的名义像素载荷，0 表示 owner 已归还读回资源。
+		std::uint64_t auxiliaryReadbackPayloadBytes = 0;
 		std::uint64_t runtimeRevision = 0;
 		RECT lastDirtyRect{};
 		SpeedEraser::Diagnostics eraser;
@@ -419,10 +421,16 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
 		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
+		// 断触接续适用的设备：触摸 / 笔尾（橡皮端）；只在总开关开启时生效，默认两者都开。
+		void SetInterruptedStrokeReconnectDevices(bool touch, bool penTail) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
 		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);
 		PalmEraser::Settings PalmEraserOptions() const;
+		// 画布调试：enabled 为设置开关，visual 为可视化模式；绘制 owner 应用，关闭时无额外开销。
+		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
+		bool CanvasDebugEnabled() const noexcept;
+		bool CanvasDebugVisual() const noexcept;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;
@@ -435,6 +443,8 @@ namespace Inkeys::Drawing::Draw3
 			std::uint32_t timeoutMilliseconds, bool waitWhileStopped = false) const noexcept;
 		// 只推进通知版本，不写 Frame/UI-ready；原生/背景完成复用同一个无丢醒握手。
 		void NotifyWorkspaceProgress() noexcept;
+		// 仅在 Window Service 已成功隐藏辅助窗且场景仍匹配后发布；绘制 owner 再校验回收。
+		void AcknowledgeAuxiliarySurfaceHidden(const HostRuntimeSnapshot& expected) noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Haptics::Context HapticContext() const noexcept;

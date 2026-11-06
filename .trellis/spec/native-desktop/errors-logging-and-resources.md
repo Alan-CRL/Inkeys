@@ -47,6 +47,13 @@ Draw3 输入/橡皮控制台诊断仅在显式开关启用时发布：显示/EDI
 
 `【合理推断】` 在局部功能中沿用目标资源的现有所有者和释放点。raw pointer → smart pointer、detached thread → jthread 等会改变生命周期和退出顺序，应作为可验证的独立改动，而不是顺带“清理”。
 
+### 内存优化的既有所有权边界
+
+- `【直接确认】` `IdtImage.cpp` 的 `alpha_drawpad/tester/pptdrawpad` 仅保留默认空构造和既有 extern；产品 ClCompile 中已无消费者，`IdtMain.cpp` 不再为它们做整屏 resize。保留 `LegacySurfaceReady` 日志/里程碑；旧 Draw2 源码仍是工程 None 项。不能为了保留历史符号重新创建整屏 DIB；有效的 Freeze/Draw3/UI 表面不属于这些空占位。
+- `【直接确认】` UInk 导出循环以 `const auto& sourceCanvas` 读取局部规范页；Desktop/PPT 导入结果保持非 const，再将独占 snapshot 移入后续投影。`std::move(*constOptional)` 仍会选择深复制，不能仅凭出现 `std::move` 就认为转移了容器。移动后不再读取来源，异步请求仍按值拥有数据，现有 active/retained/legacy 投影与输出格式不变。
+- `【修改约束】` 内存优化继续保持 UI 共享 WARP 与 Draw3 独立 hardware-first/fallback device、L0/L1/L2 和原渲染线程合同。优先去除无消费者分配和不必要值副本；将大分配、解码、资源重建移入首笔、Undo、切页或首次显示路径属于另行评估的行为变化。
+- `【验证】` 先解析工程 ClCompile/None 再查全部读写方；保留文件 BOM/CRLF及启动里程碑顺序；通过主产品构建、现有 UInk/保存恢复测试及相同配置的前后内存采样。像素载荷、缓存预算、Private Bytes、Working Set、映像/映射的统计口径不得重复相加。
+
 ## 已能追溯的清理路径
 
 仓库没有一条可证明适用于所有子系统的统一“七步清理顺序”。可直接确认的是各自路径：

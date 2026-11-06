@@ -98,6 +98,7 @@
         "WhiteboardGridLabel": "Grille",
         "WhiteboardUnsavedLabel": "Certaines pages ne sont pas enregistrées",
         "FreezeLabel": "Figer",
+        "CanvasDebugLabel": "Débogage visuel",
         "EndPresentationLabel": "Fin diapo",
         "SettingsLabel": "Réglages",
         "MoreLabel": "Plus"
@@ -156,8 +157,7 @@
         "ReadFailed": "Lecture",
         "PresentFailed": "Affichage",
         "Failed": "Erreur",
-        "Recovering": "Restauration",
-        "Loading": "Chargement",
+        "Recovering": "Restaur.",
         "Retry": "Réessayer",
         "Wait": "Patienter",
         "RetryCanvas": "Recharger le canevas",
@@ -727,7 +727,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Raccorder les traits interrompus",
-          "E": "Si le contact tactile s’interrompt brièvement puis reprend dans la même direction, l’application tente de réunir les deux parties du trait pour réduire les coupures. Si désactivé, lever le doigt termine le trait."
+          "Touch": "Tactile",
+          "PenTail": "Gomme du stylo",
+          "E": "Pendant l’écriture, détecte les interruptions de contact d’après l’intention de tracé et les corrige, et peut reprendre l’état du tracé."
         }
       },
       "Eraser":
@@ -1169,6 +1171,17 @@
       {
         "N": "Afficher la fréquence d’images",
         "E": "Mettre à jour chaque seconde les fréquences moyenne et sans limite de la seconde précédente."
+      },
+      "CanvasSection": "Canevas",
+      "CanvasDebug":
+      {
+        "N": "Débogage du canevas",
+        "E": "Affiche sous le canevas la fréquence d'images, la charge matérielle et les informations des points d'entrée, et ajoute un bouton de débogage visuel à la barre principale."
+      },
+      "DelayWaiting":
+      {
+        "N": "Prolonger les opérations en attente",
+        "E": "Prolonge le chargement pour observer les animations."
       },
       "ConsoleSection": "Sortie console",
       "CanvasInformation": "Informations d’initialisation du canevas",
