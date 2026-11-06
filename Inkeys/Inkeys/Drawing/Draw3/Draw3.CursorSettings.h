@@ -63,9 +63,10 @@ namespace Inkeys::Drawing::Draw3
 	constexpr float CursorHighlightDotEdgeWidthPx(float diameter, float scale) noexcept
 	{
 		const float scaledMaximum = kCursorHighlightEdgeDip * scale;
+		const float maximum = scaledMaximum < kCursorHighlightOuterEdgePx ? kCursorHighlightOuterEdgePx : scaledMaximum;
 		const float proportional = diameter / 8.0f;
 		return proportional < kCursorHighlightOuterEdgePx ? kCursorHighlightOuterEdgePx
-			: proportional > scaledMaximum ? scaledMaximum : proportional;
+			: proportional > maximum ? maximum : proportional;
 	}
 
 	constexpr bool IsPenCursorStyle(CursorStyle style) noexcept

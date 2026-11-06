@@ -3707,8 +3707,12 @@ SettingSessionCoroutine RunSettingSession()
 						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
 						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
 						draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(cursor.DotHideOnContact.load()));
-						draft.opacity = { cursor.PenOpacity.load() / 100.0F, cursor.HighlightPenFillOpacity.load() / 100.0F,
-							cursor.DotOpacity.load() / 100.0F, cursor.HighlightDotFillOpacity.load() / 100.0F };
+						// 与 PublishDraw3StateLocked 同口径规范化，越界配置不让滑块与实际渲染不一致。
+						draft.opacity = {
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Pen, cursor.PenOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightPen, cursor.HighlightPenFillOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Dot, cursor.DotOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load()) / 100.0F };
 						draft.injectedAvailable = injectedSourceAvailable;
 						const auto events = Design::RenderCursorPage(draft);
 						if (events.back)

@@ -817,7 +817,7 @@
       "ExpandLeft": "向左展开",
       "FloatBottomLeft": "左下角",
       "FloatBottomRight": "右下角",
-      "FloatBottomCenter": "底栏居中",
+      "FloatBottomCenter": "底部居中",
       "PptAutoDock": "开始放映时自动进入居中底栏模式",
       "PptAutoDockE": "进入前的主栏处于已勾选的状态时，放映开始后自动变为居中底栏并展开；退出放映后还原。",
       "WhiteboardAutoDock": "进入白板时自动进入居中底栏模式",

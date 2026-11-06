@@ -106,35 +106,6 @@
 [OK] **Completed**
 
 
-## Session 177: 重启与设置退出修复验收归档
-<!-- trellis-session: v=2 fp=b75a4b2e55903361 -->
-
-**Date**: 2026-11-05
-**Task**: 重启与设置退出修复验收归档
-**Branch**: `chore/ui`
-
-### Summary
-
-用户接受当前修复并要求结束归档；26轮全部exit0、Settings关停均为毫秒级，默认关闭的探针继续保留，剩余退出长尾明确延后。
-
-### Main Changes
-
-- 普通R隐藏后提前交接，已知更新U及崩溃X等待旧父退出；Settings先注销并排空帧，再做最终resident清理。
-- 采集器修复其他worktree同名进程误判，14个目录范围正负例；原始18轮及6+20轮日志保留，只提交紧凑汇总。
-- 归档 .trellis/tasks/archive/2026-11/11-05-restart-shutdown-investigation；记录探针命令、版本哈希、结论和follow-up，不归档其他历史任务。
-
-### Git Commits
-
-| Hash | Message |
-|------|---------|
-| `1b0db5fc56a55610677a6838eef7670b1fc06daa` | fix(lifecycle): avoid restart and settings shutdown waits |
-| `407f91951f91c35fdbf35c627a8f8af48d399faf` | fix(diagnostics): scope shutdown collection to its installation |
-
-### Testing
-
-- [OK] 完整InkeysRepo.sln Debug|ARM64原生MSBuild exit0；完整--no-window同一PID最终exit0，初始等待超时后未重跑。
-- [OK] 设置旧顺序负例、隐藏idle及在途回调排空通过；字体生命周期、重启/单实例/监督器回归通过。
-- [OK] 用户26轮均exit0，main-setting1.0781~9.7916ms，中位总关闭观测1277.91375ms，4轮>=3秒；新版20轮完整完成。
 ## Session 181: Canvas debug overlay, visual mode and per-device stroke reconnect
 <!-- trellis-session: v=2 fp=9617f1f5915e6606 -->
 
@@ -190,25 +161,6 @@ Added the Draw3 canvas debug plate (FPS, load, 60s chart, aligned contact table 
 
 ### Next Steps
 
-- 需要继续时从归档follow-up.md恢复：先区分系统ExitTime与观测延迟，再调查main后、PPT及窗口/Draw3长尾；C10 foreign-session reader已有单独未定位失败，Win7/UAC/跨架构不宣称通过。
-
-
-## Session 180: 完善设置绘制光标样式与透明度
-<!-- trellis-session: v=2 fp=8a89c5244b2e7f82 -->
-
-**Date**: 2026-11-06
-**Task**: 完善设置绘制光标样式与透明度
-**Branch**: `chore/ui`
-
-### Summary
-
-完成高亮光标黑边与动态白环、四类透明度配置、浅色预览及二十语言文案；通过构建、i18n 与 Draw3 无窗口验证，用户确认人工测试通过；完整 headless 的既有无关断言已在任务记录中保留说明。
-
-### Git Commits
-
-| Hash | Message |
-|------|---------|
-| `c7f3f353` | feat(settings): refine cursor appearance and opacity |
 - 高风险按需纹理、Freeze/Setting资源恢复、历史回收与进一步legacy去重尚未实施，等待用户确认；WPR补采需Windows管理员权限。
 
 
@@ -241,17 +193,6 @@ Setting PNG配方、Laser选中/退出纹理、辅助ULW owner隐藏回执、Fre
 
 [OK] **Completed**
 
-
-## Session 182: 位置设置页与 PPT/白板进入自动居中底栏
-<!-- trellis-session: v=2 fp=a413d270b49c1963 -->
-
-**Date**: 2026-11-06
-**Task**: 位置设置页与 PPT/白板进入自动居中底栏
-**Branch**: `chore/ui`
-
-### Summary
-
-新增通用-位置页：桌面启动位置扩展为类型+位置联动下拉（含居中顶栏、悬浮窗底栏居中），PPT/白板进入按进入前主栏状态勾选自动变为居中底栏并可选展开方向；修复折叠/悬浮接管时展开与居中互相覆盖。遗留：折叠状态进入 PPT（自动居中）动画不自然且脏区遗漏，见归档任务 followup.md。
 ### Next Steps
 
 - 候选1保存峰值去重与6历史缓存页策略按用户要求后续评估；未commit/push。
@@ -322,8 +263,6 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 
 | Hash | Message |
 |------|---------|
-| `b10c5858` | feat(bar): add position settings page with workspace auto-dock policy |
-| `fa57e5f5` | fix(bar): stop expand and centering fighting on workspace entry takeover |
 | `e0711662` | feat(draw3): add canvas debug overlay and visual debug mode |
 | `1565cb61` | feat(draw3): refine canvas debug plate, visual mode and contact table |
 | `0df57184` | feat(draw3): choose devices for interrupted stroke reconnect |
@@ -348,3 +287,86 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 ### Next Steps
 
 - None; user verified visually and approved.
+
+## Session 177: 重启与设置退出修复验收归档
+<!-- trellis-session: v=2 fp=b75a4b2e55903361 -->
+
+**Date**: 2026-11-05
+**Task**: 重启与设置退出修复验收归档
+**Branch**: `chore/ui`
+
+### Summary
+
+用户接受当前修复并要求结束归档；26轮全部exit0、Settings关停均为毫秒级，默认关闭的探针继续保留，剩余退出长尾明确延后。
+
+### Main Changes
+
+- 普通R隐藏后提前交接，已知更新U及崩溃X等待旧父退出；Settings先注销并排空帧，再做最终resident清理。
+- 采集器修复其他worktree同名进程误判，14个目录范围正负例；原始18轮及6+20轮日志保留，只提交紧凑汇总。
+- 归档 .trellis/tasks/archive/2026-11/11-05-restart-shutdown-investigation；记录探针命令、版本哈希、结论和follow-up，不归档其他历史任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b0db5fc56a55610677a6838eef7670b1fc06daa` | fix(lifecycle): avoid restart and settings shutdown waits |
+| `407f91951f91c35fdbf35c627a8f8af48d399faf` | fix(diagnostics): scope shutdown collection to its installation |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64原生MSBuild exit0；完整--no-window同一PID最终exit0，初始等待超时后未重跑。
+- [OK] 设置旧顺序负例、隐藏idle及在途回调排空通过；字体生命周期、重启/单实例/监督器回归通过。
+- [OK] 用户26轮均exit0，main-setting1.0781~9.7916ms，中位总关闭观测1277.91375ms，4轮>=3秒；新版20轮完整完成。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 需要继续时从归档follow-up.md恢复：先区分系统ExitTime与观测延迟，再调查main后、PPT及窗口/Draw3长尾；C10 foreign-session reader已有单独未定位失败，Win7/UAC/跨架构不宣称通过。
+
+
+## Session 180: 完善设置绘制光标样式与透明度
+<!-- trellis-session: v=2 fp=8a89c5244b2e7f82 -->
+
+**Date**: 2026-11-06
+**Task**: 完善设置绘制光标样式与透明度
+**Branch**: `chore/ui`
+
+### Summary
+
+完成高亮光标黑边与动态白环、四类透明度配置、浅色预览及二十语言文案；通过构建、i18n 与 Draw3 无窗口验证，用户确认人工测试通过；完整 headless 的既有无关断言已在任务记录中保留说明。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c7f3f353` | feat(settings): refine cursor appearance and opacity |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 182: 位置设置页与 PPT/白板进入自动居中底栏
+<!-- trellis-session: v=2 fp=a413d270b49c1963 -->
+
+**Date**: 2026-11-06
+**Task**: 位置设置页与 PPT/白板进入自动居中底栏
+**Branch**: `chore/ui`
+
+### Summary
+
+新增通用-位置页：桌面启动位置扩展为类型+位置联动下拉（含居中顶栏、悬浮窗底栏居中），PPT/白板进入按进入前主栏状态勾选自动变为居中底栏并可选展开方向；修复折叠/悬浮接管时展开与居中互相覆盖。遗留：折叠状态进入 PPT（自动居中）动画不自然且脏区遗漏，见归档任务 followup.md。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b10c5858` | feat(bar): add position settings page with workspace auto-dock policy |
+| `fa57e5f5` | fix(bar): stop expand and centering fighting on workspace entry takeover |
+
+### Status
+
+[OK] **Completed**

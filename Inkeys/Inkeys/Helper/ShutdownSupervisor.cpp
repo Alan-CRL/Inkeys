@@ -613,6 +613,9 @@ namespace Inkeys::Shutdown
 			if (argc == 9 && !relayLease && !delayedParentExitTest)
 				{ Sleep(500); return 31; } // 仅测试：握手后 supervisor 自己提前退出。
 			const bool ordinaryRestart = wcscmp(argv[6], L"R") == 0;
+			// 带租约时 v2 提前交接要求本进程物理目录等于逻辑根（同 Handoff::Publish）；否则改走旧进程退出后的 v1。
+			const bool earlyHandoff = ordinaryRestart && (!relayLease
+				|| Launch::PresenceName(Launch::Directory(Launch::Image())) == Launch::PresenceName(Launch::logicalRoot));
 			bool launchAttempted = false;
 			int restartResult = 0;
 			const auto launchReplacement = [&](bool beforeParentExit) -> int
@@ -654,7 +657,7 @@ namespace Inkeys::Shutdown
 				if (wait != WAIT_TIMEOUT) break;
 				const ULONGLONG current = GetTickCount64();
 				if (current >= deadlineValue) break;
-				if (ordinaryRestart && !launchAttempted && ParentWindowsHidden(static_cast<DWORD>(pidValue))
+				if (earlyHandoff && !launchAttempted && ParentWindowsHidden(static_cast<DWORD>(pidValue))
 					&& (!hiddenForTest.Valid() || WaitForSingleObject(hiddenForTest.value, 0) == WAIT_OBJECT_0))
 				{
 					launchAttempted = true;
@@ -663,7 +666,7 @@ namespace Inkeys::Shutdown
 				}
 				// 轮询的对象始终是已握手的精确父句柄；隐藏后立即交接，后台清理仍受原截止监督。
 				const DWORD remaining = static_cast<DWORD>(deadlineValue - current);
-				wait = WaitForSingleObject(parent, ordinaryRestart && !launchAttempted ? (std::min<DWORD>)(remaining, 20) : remaining);
+				wait = WaitForSingleObject(parent, earlyHandoff && !launchAttempted ? (std::min<DWORD>)(remaining, 20) : remaining);
 				if (wait != WAIT_TIMEOUT || GetTickCount64() >= deadlineValue) break;
 			}
 			if (wait == WAIT_TIMEOUT)

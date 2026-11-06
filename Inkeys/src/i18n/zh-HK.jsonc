@@ -817,7 +817,7 @@
       "ExpandLeft": "向左展開",
       "FloatBottomLeft": "左下角",
       "FloatBottomRight": "右下角",
-      "FloatBottomCenter": "底列置中",
+      "FloatBottomCenter": "底部置中",
       "PptAutoDock": "開始放映時自動進入置中底列模式",
       "PptAutoDockE": "進入前的主列處於已勾選的狀態時，放映開始後會自動變為置中底列並展開；結束放映後還原。",
       "WhiteboardAutoDock": "進入白板時自動進入置中底列模式",
