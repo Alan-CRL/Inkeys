@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Unterbrochene Striche verbinden",
-          "E": "Setzt die Berührung kurz aus und in derselben Richtung fort, versucht die Anwendung, beide Teile zu einem Strich zu verbinden und Lücken zu verringern. Deaktiviert beendet das Abheben des Fingers den Strich."
+          "Touch": "Touch",
+          "PenTail": "Stiftradierer",
+          "E": "Erkennt Unterbrechungen der Berührung beim Schreiben anhand der Zeichenabsicht, korrigiert sie und kann den Zeichenzustand fortsetzen."
         }
       },
       "Eraser":

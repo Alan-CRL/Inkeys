@@ -180,3 +180,6 @@ IdtMain 启动同步 / Setting 热更新 ──► Host::SetCanvasDebugOptions �
 - 延迟 = 绘制线程读到的最新输入快照的 QPC 时间戳 → 承载它的那一帧 `Present` 返回;每个新快照只结算一次,指数平滑;调试板自刷新帧不结算。不含 DWM 扫描输出(至多再多一个刷新周期)。
 - 板子位置改为悬浮:锚点 = 全部列、满行数的最大板子在画布内水平、竖直居中的位置(`(画布 - 容量) / 2`,下限 0)。内容变化时左端、上端不动,只向右、向下生长;紧凑状态因此位于水平居中偏左、竖直居中的上沿。四个圆角都圆(不再贴边)。脏区仍是 prev ∪ cur。
 - `Id` 列改为 `cid:x`:cid 是 RTS cursor/stylus id(`record->ContactId()`);x 是断触续接前一个接触的 cid,不是续接为 0。不再显示 tablet context id(真机上它是很大的数,且对排查续接没有帮助)。x 由 `RuntimeStroke::debugPreviousContactId` 提供,在唯一的生产接管点 `AdoptReconnectedContact` 之后写入,链式续接显示紧邻的上一个 cid。可视化探测接触不会续接,x 恒为 0;要看续接需切到绘制工具。
+
+## 顺带改动:断触接续适用设备
+与画布调试无关,但同一分支提交:设置-绘制-触摸的“断触接续”开关下方内联“触摸”“笔（笔尾）”两个复选框(默认都开,持久化),总开关关闭时用控件动画收起。详见 `configuration-i18n-and-assets.md` 的“断触接续的适用设备”。

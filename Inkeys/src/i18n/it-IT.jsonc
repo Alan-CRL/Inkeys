@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Ricollega tratti interrotti",
-          "E": "Se il contatto si interrompe brevemente durante la scrittura touch e riprende nella stessa direzione, l'app tenta di unire le due parti in un solo tratto, riducendo le interruzioni. Se disattivato, ogni sollevamento del dito termina il tratto."
+          "Touch": "Touch",
+          "PenTail": "Gomma della penna",
+          "E": "Durante la scrittura rileva le interruzioni del tocco in base all’intento di disegno e le corregge, e può riprendere lo stato di disegno."
         }
       },
       "Eraser":

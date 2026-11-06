@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Nối nét bị ngắt",
-          "E": "Khi mất tiếp xúc ngắn rồi tiếp tục theo hướng cũ, ứng dụng sẽ thử nối hai phần thành một nét để giảm đứt đoạn. Khi tắt, mỗi lần nhấc ngón tay sẽ kết thúc nét hiện tại."
+          "Touch": "Cảm ứng",
+          "PenTail": "Đuôi bút",
+          "E": "Khi viết, nhận biết tình trạng mất tiếp xúc dựa trên ý định vẽ và hiệu chỉnh, đồng thời có thể tiếp nối trạng thái vẽ."
         }
       },
       "Eraser":

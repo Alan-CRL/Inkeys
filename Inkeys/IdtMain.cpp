@@ -814,11 +814,22 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: touch reconnect default was not enabled\n", stderr);
 				return 1;
 			}
+			// 适用设备（触摸 / 笔尾）旧配置缺键时默认都开启，且各自独立往返。
+			if (!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch ||
+				!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail)
+			{
+				std::fputs("[ConfigBoundary] FAIL: touch reconnect device defaults were not enabled\n", stderr);
+				return 1;
+			}
 			for (const bool enabled : { false, true })
 			{
 				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail = !enabled;
 				Inkeys::Config restoredReconnect;
 				if (!reconnectDefaults.Write() || !restoredReconnect.ReadAll() ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch.load() != enabled ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail.load() == enabled ||
 					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
 				{
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
@@ -3295,6 +3306,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
 				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
+			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch,
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail);
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();

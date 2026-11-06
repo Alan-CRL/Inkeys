@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconectarea trăsăturilor întrerupte",
-          "E": "Dacă atingerea se întrerupe scurt și reia aceeași direcție, programul încearcă să unească cele două segmente într-o singură trăsătură, reducând golurile. Când opțiunea este dezactivată, ridicarea degetului încheie trăsătura."
+          "Touch": "Atingere",
+          "PenTail": "Radiera creionului",
+          "E": "În timpul scrisului, detectează întreruperile atingerii pe baza intenției de desen și le corectează, putând continua starea de desenare."
         }
       },
       "Eraser":

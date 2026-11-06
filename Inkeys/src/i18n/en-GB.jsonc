@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconnect interrupted strokes",
-          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
+          "Touch": "Touch",
+          "PenTail": "Pen eraser",
+          "E": "Detects touch interruptions while writing based on drawing intent and corrects them, and can resume the drawing state."
         }
       },
       "Eraser":

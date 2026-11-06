@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Raccorder les traits interrompus",
-          "E": "Si le contact tactile s’interrompt brièvement puis reprend dans la même direction, l’application tente de réunir les deux parties du trait pour réduire les coupures. Si désactivé, lever le doigt termine le trait."
+          "Touch": "Tactile",
+          "PenTail": "Gomme du stylo",
+          "E": "Pendant l’écriture, détecte les interruptions de contact d’après l’intention de tracé et les corrige, et peut reprendre l’état du tracé."
         }
       },
       "Eraser":

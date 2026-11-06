@@ -419,6 +419,8 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
 		// 保存期望值并唤醒绘制线程，启动前设置也保留到下一次 Start。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
+		// 断触接续适用的设备：触摸 / 笔尾（橡皮端）；只在总开关开启时生效，默认两者都开。
+		void SetInterruptedStrokeReconnectDevices(bool touch, bool penTail) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
 		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);

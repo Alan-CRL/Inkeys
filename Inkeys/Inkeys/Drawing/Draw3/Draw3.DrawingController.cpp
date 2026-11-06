@@ -10114,6 +10114,12 @@ namespace Inkeys::Drawing::Draw3
 		return interruptedStrokeReconnectEnabled_.load(std::memory_order_acquire);
 	}
 
+	void DrawingController::SetInterruptedStrokeReconnectDevices(uint32_t mask) noexcept
+	{
+		interruptedStrokeReconnectDevices_.store(mask & 3u, std::memory_order_release);
+		input_.PublishControlWake(); // 取消勾选后立即提交仍在等待接续的 Up。
+	}
+
 	void DrawingController::SetDrawingCursorDuringContactEnabled(bool enabled) noexcept
 	{
 		if (drawingCursorDuringContactEnabled_.exchange(
@@ -11218,6 +11224,13 @@ namespace Inkeys::Drawing::Draw3
 				static_cast<unsigned>(snapshot.phase), anchor.terminalPending ? 1u : 0u);
 		};
 
+		// 断触接续只对勾选的设备生效：触摸看 bit0，笔尾（倒转笔橡皮）看 bit1。
+		auto reconnectDeviceAllowed = [&](const InterruptedStrokeReconnectIdentity& identity) noexcept
+		{
+			const uint32_t mask = interruptedStrokeReconnectDevices_.load(std::memory_order_acquire);
+			return identity.deviceType == InputDeviceType::Touch ? (mask & 1u) != 0 : (mask & 2u) != 0;
+		};
+
 		auto registerCanvasDebugProbe = [&](ContactHandle handle)
 		{
 			if (!handle.record) return;
@@ -12190,7 +12203,8 @@ namespace Inkeys::Drawing::Draw3
 				RuntimeStroke* diagnosticRuntime = nullptr;
 				InterruptedStrokeReconnectResult diagnosticResult;
 				if (GetInterruptedStrokeReconnectEnabled() &&
-					IsInterruptedStrokeReconnectIdentitySupported(downIdentity))
+					IsInterruptedStrokeReconnectIdentitySupported(downIdentity) &&
+					reconnectDeviceAllowed(downIdentity))
 				{
 					for (RuntimeStroke* candidate : active)
 					{
@@ -13002,6 +13016,7 @@ namespace Inkeys::Drawing::Draw3
 				const bool deferUp = snapshot.phase == ContactPhase::Up && !IsMouseSpeedEraser(runtime) &&
 					GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)) &&
+					reconnectDeviceAllowed(ReconnectIdentity(runtime)) &&
 					runtime.tool != DrawingTool::Laser && !runtime.shape.active;
 				const bool endpointTool =
 					(runtime.tool == DrawingTool::Pen ||

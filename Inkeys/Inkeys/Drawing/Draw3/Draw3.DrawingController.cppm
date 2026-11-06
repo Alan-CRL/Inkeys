@@ -142,6 +142,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 即时控制 Touch 断触修正；关闭时已有候选会立即按正常 Up 收尾。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
 		bool GetInterruptedStrokeReconnectEnabled() const noexcept;
+		// bit0 触摸，bit1 笔尾；总开关关闭时无效。
+		void SetInterruptedStrokeReconnectDevices(uint32_t mask) noexcept;
 		// 即时控制普通 Pen/Highlighter 落笔时是否继续显示应用内光标。
 		void SetDrawingCursorDuringContactEnabled(bool enabled) noexcept;
 		bool GetDrawingCursorDuringContactEnabled() const noexcept;
@@ -194,6 +196,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<uint8_t> canvasDebugInputMode_ = 0;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
+		std::atomic<uint32_t> interruptedStrokeReconnectDevices_ = 3;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;
 		std::atomic<bool> translucentInkCursorEnabled_ = false;
 		// 位 2 为产品策略已接入；位 0/1 保存原始鼠标/笔类型，按实际工具临时投影。

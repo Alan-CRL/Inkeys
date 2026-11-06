@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconectar traços interrompidos",
-          "E": "Ao escrever por toque, se o contato se perder brevemente e retornar na mesma direção, tenta unir os dois trechos em um só traço. Quando desativado, cada retirada encerra o traço atual."
+          "Touch": "Toque",
+          "PenTail": "Extremidade traseira da caneta",
+          "E": "Ao escrever, detecta interrupções do toque com base na intenção de desenho e as corrige, e pode continuar o estado de desenho."
         }
       },
       "Eraser":

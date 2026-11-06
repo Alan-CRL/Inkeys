@@ -454,6 +454,8 @@ namespace Inkeys::Drawing::Draw3
 		RealTimeStylusInput stylus;
 		std::unique_ptr<DrawingController> drawing;
 		std::atomic_bool interruptedStrokeReconnectEnabled = true;
+		std::atomic_uint32_t interruptedStrokeReconnectDevices = 3; // bit0 触摸，bit1 笔尾
+		uint32_t appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
 		// 一份原子快照保存通用偏好；绘制 owner 应用，不能跨线程借用 Controller。
 		std::atomic_uint32_t generalDrawingOptions = 3u | (2u << 2);
 		std::atomic_uint32_t laserOptions = 0;
@@ -1706,6 +1708,15 @@ namespace Inkeys::Drawing::Draw3
 				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
 			if (drawing)
 			{
+				const uint32_t reconnectDevices = interruptedStrokeReconnectDevices.load(std::memory_order_acquire);
+				if (reconnectDevices != appliedInterruptedStrokeReconnectDevices)
+				{
+					drawing->SetInterruptedStrokeReconnectDevices(reconnectDevices);
+					appliedInterruptedStrokeReconnectDevices = reconnectDevices;
+				}
+			}
+			if (drawing)
+			{
 				PalmEraser::Settings palmOptions;
 				{ std::scoped_lock lock(palmEraserOptionsMutex); palmOptions = palmEraserOptions; }
 				if (!appliedPalmEraserOptions || *appliedPalmEraserOptions != palmOptions)
@@ -2207,6 +2218,7 @@ namespace Inkeys::Drawing::Draw3
 							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
 							appliedPalmEraserOptions.reset();
 							appliedCanvasDebugOptions = UINT32_MAX;
+							appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
 							appliedCanvasDebugInputMode = UINT32_MAX;
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
@@ -2846,6 +2858,14 @@ namespace Inkeys::Drawing::Draw3
 			return;
 		// Start/Stop 不清除此期望值；空闲时也唤醒，关闭后及时正常提交等待接续的笔画。
 		(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetInterruptedStrokeReconnectDevices(bool touch, bool penTail) noexcept
+	{
+		const uint32_t mask = (touch ? 1u : 0u) | (penTail ? 2u : 0u);
+		if (impl_->interruptedStrokeReconnectDevices.exchange(mask, std::memory_order_acq_rel) == mask)
+			return;
+		(void)impl_->input.PublishControlWake(); // 取消勾选后及时正常提交仍在等待接续的笔画。
 	}
 
 	void Host::SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept

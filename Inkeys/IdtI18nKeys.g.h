@@ -726,6 +726,8 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Draw__Touch__InterruptedStrokeReconnect
                 {
                     const char* N = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/N";
+                    const char* Touch = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/Touch";
+                    const char* PenTail = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/PenTail";
                     const char* E = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/E";
                 } InterruptedStrokeReconnect{};
             } Touch{};

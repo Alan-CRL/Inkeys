@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Unir trazos interrumpidos",
-          "E": "Si el contacto táctil se interrumpe brevemente y continúa en la misma dirección, la aplicación intenta unir ambas partes para reducir los huecos. Si se desactiva, levantar el dedo termina el trazo."
+          "Touch": "Táctil",
+          "PenTail": "Borrador del lápiz",
+          "E": "Al escribir, detecta las interrupciones del contacto según la intención de dibujo y las corrige, y puede continuar el estado de dibujo."
         }
       },
       "Eraser":

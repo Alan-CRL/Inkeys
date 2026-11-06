@@ -4084,11 +4084,25 @@ SettingSessionCoroutine RunSettingSession()
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
 					bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
-					if (Design::ToggleRow("##断触接续", IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.E).c_str(), "\ue7c9", reconnectEnabled))
+					auto& reconnectConfig = Inkeys::config.Experimental.Inkeys3.Draw3;
+					bool reconnectTouch = reconnectConfig.InterruptedStrokeReconnectTouch;
+					bool reconnectPenTail = reconnectConfig.InterruptedStrokeReconnectPenTail;
+					bool reconnectTouchChanged = false, reconnectPenTailChanged = false;
+					const auto& reconnectKeys = I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect;
+					// 适用设备内联在开关下方，开关关闭时用控件自带的条件动画收起；两项各自保留选择。
+					const auto reconnectDevices = Design::InlineCheckboxes("##断触接续-设备", {
+						{ IA(reconnectKeys.Touch), &reconnectTouch, &reconnectTouchChanged },
+						{ IA(reconnectKeys.PenTail), &reconnectPenTail, &reconnectPenTailChanged } },
+						"##reconnect-devices-visibility", reconnectEnabled);
+					const bool reconnectToggled = Design::ToggleRow("##断触接续", IA(reconnectKeys.N).c_str(),
+						IA(reconnectKeys.E).c_str(), "\ue7c9", reconnectEnabled, nullptr, &reconnectDevices);
+					if (reconnectToggled || reconnectTouchChanged || reconnectPenTailChanged)
 					{
-						Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = reconnectEnabled;
+						reconnectConfig.InterruptedStrokeReconnect = reconnectEnabled;
+						reconnectConfig.InterruptedStrokeReconnectTouch = reconnectTouch;
+						reconnectConfig.InterruptedStrokeReconnectPenTail = reconnectPenTail;
 						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(reconnectTouch, reconnectPenTail);
 						QueueConfigWrite();
 					}
 

@@ -723,7 +723,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Kesilen çizgileri birleştir",
-          "E": "Dokunma kısa süreli kesilip aynı yönde devam ederse uygulama, boşlukları azaltmak için iki parçayı tek çizgide birleştirmeyi dener. Kapalıyken parmağı kaldırmak çizgiyi bitirir."
+          "Touch": "Dokunma",
+          "PenTail": "Kalem silgisi",
+          "E": "Yazarken, çizim niyetine göre dokunma kesintilerini belirler ve düzeltir; ayrıca çizim durumunu sürdürebilir."
         }
       },
       "Eraser":
