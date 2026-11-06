@@ -412,7 +412,7 @@ namespace Inkeys::UI::Bar
 				text(4,wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 					(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90));
 			if(content.moreLabel!=next.moreLabel)text(5,L"barMenu",next.moreLabel);
-			const wchar_t* icons[]={L"barCloseSmall",L"barMinimize",L"barPalette"};
+			const wchar_t* icons[]={L"barCloseWhiteboard",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i)if(content.actionLabels[i]!=next.actionLabels[i])text(static_cast<BarSurfaceButtonId>(6+i),icons[i],next.actionLabels[i]);
 			for(std::size_t i=0;i<next.patternLabels.size();++i)if(content.patternLabels[i]!=next.patternLabels[i])text(static_cast<BarSurfaceButtonId>(15+i),L"colorSelect",next.patternLabels[i]);
 			for(std::size_t i=0;i<headings.size();++i)if(content.sectionLabels[i]!=next.sectionLabels[i]){
@@ -526,7 +526,7 @@ namespace Inkeys::UI::Bar
 				if(button->button.framePct)button->button.framePct->SetDirect(0);
 				if(button->button.frameLightPct)button->button.frameLightPct->SetDirect(0);
 			}
-			const wchar_t* icons[]={L"barCloseSmall",L"barMinimize",L"barPalette"};
+			const wchar_t* icons[]={L"barCloseWhiteboard",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i){
 				const double y=MenuBounds.top+5+i*(BarButtonOneSideDip+5);
 				ConfigureButton(actions[i],BarButtonVisualLayoutKind::StandardFourOne,{195,y,335,y+32.5},icons[i],next.actionLabels[i],0,0,true);

@@ -2716,6 +2716,9 @@
     <None Include="src\UI\barCloseSmall.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barCloseWhiteboard.svg">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\UI\barShapeStraightLine.svg">

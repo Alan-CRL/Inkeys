@@ -1265,6 +1265,7 @@
     <None Include="src\UI\barInfo.svg" />
     <None Include="src\UI\barQuestion.svg" />
     <None Include="src\UI\barCloseSmall.svg" />
+    <None Include="src\UI\barCloseWhiteboard.svg" />
     <None Include="src\UI\barThicknessAdjust.svg" />
     <None Include="src\UI\fluentCheckmark12Filled.svg" />
     <None Include="src\UI\barPierce.svg" />
