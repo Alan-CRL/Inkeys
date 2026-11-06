@@ -157,7 +157,6 @@
         "PresentFailed": "Display",
         "Failed": "Error",
         "Recovering": "Recovering",
-        "Loading": "Load",
         "Retry": "Retry",
         "Wait": "Wait",
         "RetryCanvas": "Retry canvas",
@@ -1137,6 +1136,11 @@
       {
         "N": "Show frame rate",
         "E": "Update the previous second’s average and uncapped frame rates once per second."
+      },
+      "DelayWaiting":
+      {
+        "N": "Delay waiting operations",
+        "E": "Extend loading waits to observe animations."
       },
       "ConsoleSection": "Console output",
       "CanvasInformation": "Canvas initialization information",

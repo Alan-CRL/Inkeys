@@ -130,6 +130,20 @@
 - [OK] InkeysRepo.sln before/after Debug|ARM64与共享inkStrokeModelerTest.sln均退出0。
 - [OK] 10项相关回归最终全通过；UInk首次缺少测试目录，补目录后仅重跑该项通过；66条history语义记录一致。
 - [OK] 双设备/后端、L0/L1/L2与流畅度静态审查通过；4次60秒采样与EXE/PDB匹配已保存。
+## Session 176: 调试等待操作延迟开关
+<!-- trellis-session: v=2 fp=358bcd06943bea4a -->
+
+**Date**: 2026-11-05
+**Task**: 调试等待操作延迟开关
+**Branch**: `debug/wait`
+
+### Summary
+
+完成默认关闭的调试开关，启动复用慢速成功模式，主动点击白板/PPT分页以非阻塞10s观察后派发；复核修复隐藏/停机退休。国际化、diff检查、ARM64 Debug Solution（临时非增量链接）、分页离屏与启动专项均通过。代理未进行GUI验证；用户确认改动生效并授权提交，未push。
+
+### Git Commits
+
+本次功能与归档记录一并提交。
 
 ### Status
 
@@ -224,6 +238,17 @@ Setting PNG配方、Laser选中/退出纹理、辅助ULW owner隐藏回执、Fre
 
 - 任务移至archive/2026-11，清除活动任务指针，更新上下文清单归档路径；本机.vs缓存不纳入提交。
 
+## Session 179: Unify whiteboard/PPT page-turn loading animation
+<!-- trellis-session: v=2 fp=537fbd792b53e8bf -->
+
+**Date**: 2026-11-05
+**Task**: Unify whiteboard/PPT page-turn loading animation
+**Branch**: `debug/wait`
+
+### Summary
+
+One 500ms-gated indicator now drives status word, dimming and a non-linear inner-edge ring for whiteboard and PPT; page-slot state table, i18n width fixes, Loading key removed.
+
 ### Git Commits
 
 | Hash | Message |
@@ -233,7 +258,19 @@ Setting PNG配方、Laser选中/退出纹理、辅助ULW owner隐藏回执、Fre
 ### Testing
 
 - [OK] 沿用已通过的ARM64构建、释放探针和相关CPU回归；本轮仅收尾文档与归档，不重复运行。
+| `9ddb5365` | feat(bar): unify page-turn loading state for whiteboard and PPT |
+| `ad7d1302` | fix(i18n): shorten page status words and drop unused Loading key |
+| `70d5ca9a` | docs(trellis): plan unified page loading task and update rendering spec |
+| `97321dc2` | fix(bar): thicken page loading ring and match button corner radius |
+
+### Testing
+
+- [OK] ARM64 Debug solution build, InkeysHeadlessTests --no-window, Inkeys.exe --bar-eraser-offscreen-test (failures=0), --ui3-input-worker-test, i18n.ps1 check
 
 ### Status
 
 [OK] **Completed**
+
+### Next Steps
+
+- None; user verified visually and approved.

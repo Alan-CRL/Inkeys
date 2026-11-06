@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Bar/PageControl 所在层的开发前检查与质量检查"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "D2D/DWrite 渲染与 UI 分工"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "Bar 颜色角色（IconPrimary/disabled 变浅）与材质"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板分页 switching 与底栏恢复合同"}
+{"file": ".trellis/spec/native-desktop/ppt-idle-fade.md", "reason": "PPT 分页表面淡化与内容透明度合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "i18n 生成链（sync/check）与语言文件合同"}
+{"file": ".trellis/spec/native-desktop/ui3-render-diagnostics.md", "reason": "帧诊断与空闲不渲染约束"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建与验证命令"}
+{"file": ".trellis/tasks/11-05-unify-page-turn-loading-anim/design.md", "reason": "技术设计"}
+{"file": ".trellis/tasks/11-05-unify-page-turn-loading-anim/implement.md", "reason": "执行计划"}

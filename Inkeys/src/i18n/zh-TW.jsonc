@@ -156,8 +156,7 @@
         "ReadFailed": "讀取",
         "PresentFailed": "顯示",
         "Failed": "故障",
-        "Recovering": "復原",
-        "Loading": "載入",
+        "Recovering": "復原中",
         "Retry": "重試",
         "Wait": "稍候",
         "RetryCanvas": "重試畫布",
@@ -1137,6 +1136,11 @@
       {
         "N": "顯示影格率",
         "E": "每秒更新前一秒的平均影格率與無等待影格率。"
+      },
+      "DelayWaiting":
+      {
+        "N": "為等待操作延遲",
+        "E": "延長載入等待，便於觀察動畫。"
       },
       "ConsoleSection": "主控台輸出",
       "CanvasInformation": "畫布初始化資訊",

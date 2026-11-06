@@ -2897,12 +2897,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
+		"Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations",
 		"Experimental.Inkeys3.UI3.StartupPreview.Effect",
 		"Experimental.Inkeys3.UI3.ThemeMode",
 		"Experimental.Inkeys3.UI3.BackgroundOpacity",
 		"Experimental.Inkeys3.UI3.ContentOpacity",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
 		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
+	// 调试开关只启用慢速成功观察，不授权失败注入。
+	if (startupMiniConfig.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations)
+		startupPreviewManualDelayRequested.store(true, std::memory_order_release);
 	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
 	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
 		startupMiniConfig.UI.Bar.StartupPlacement.load());
