@@ -601,6 +601,9 @@ struct BarRenderLoopState
 	bool whiteboardMinimized = false;
 	BarBottomDockCenterMode whiteboardRestoreCenterMode = BarBottomDockCenterMode::Free;
 	bool pptDockPlacementPending = false;
+	// 场景进入策略接管了非“展开居中底栏”（或翻转了展开方向）：根 X 只由 0.4 秒放置动画持有，
+	// 动画期间暂停按当前宽度实时居中，避免两者每帧互相覆盖。
+	bool workspaceEntryRootTween = false;
 	Inkeys::UI::Bar::BarWorkspaceSceneState workspaceScene;
 	BarBottomDockMode desktopDockMode = BarBottomDockMode::Floating;
 	BarBottomDockCenterMode desktopCenterMode = BarBottomDockCenterMode::Free;
@@ -1490,6 +1493,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	state.barStyle.zoom = currentZoom;
 		if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
 			state.whiteboardDockAnimationActive = false;
+		if (!state.whiteboardDockAnimationActive && !state.pptDockPlacementPending) state.workspaceEntryRootTween = false;
 		if (state.taskbarDockAnimationActive && state.displayCenterY.IsSame())
 			state.taskbarDockAnimationActive = false;
 		if (!dragging && state.initialBottomDockPlacementApplied
@@ -5691,7 +5695,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			frame.bottomDockMode == BarBottomDockMode::BottomDocked,
 			frame.bottomDockCenterMode, frame.bottomDockCenterPhase,
 			frame.bottomDockDragActive, !state.barState.fold,
-			centerSpringPending, centerFarEdgeSpringPending,
+			centerSpringPending, centerFarEdgeSpringPending || state.workspaceEntryRootTween,
 			state.displayTransitionActive, state.whiteboardDockAnimationActive))
 		{
 			const double mainButtonStrokeDip = mainButton->ft.has_value()
@@ -9295,7 +9299,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				state.bottomDockFrameCenterMode,
 				state.bottomDockFrameCenterPhase,
 				frame.bottomDockDragActive, !state.barState.fold,
-				false, false, state.displayTransitionActive, state.whiteboardDockAnimationActive))
+				false, state.workspaceEntryRootTween, state.displayTransitionActive, state.whiteboardDockAnimationActive))
 			{
 				const auto mainButtonWidth = ValueRange(mainButton->w);
 				const auto mainButtonStroke = mainButton->ft.has_value()
@@ -13599,6 +13603,7 @@ BarRenderLoopCoordinator::RenderFrame(
 			}
 			state.pptDockPlacementPending = false;
 			state.whiteboardDockPlacementPending = false;
+			state.workspaceEntryRootTween = false;
 			if (transition == BarWorkspaceTransition::Leave)
 			{
 				owner_.BeginBottomDockTransition();
@@ -13628,6 +13633,9 @@ BarRenderLoopCoordinator::RenderFrame(
 				const int direction = workspace.committed == WorkspaceScene::Whiteboard
 					? Inkeys::config.UI.Bar.Workspace.Whiteboard.Direction.load()
 					: Inkeys::config.UI.Bar.Workspace.Ppt.Direction.load();
+				const bool alreadyCentered = owner_.bottomDockMode.load(memory_order_relaxed) == BarBottomDockMode::BottomDocked
+					&& owner_.bottomDockCenterMode.load(memory_order_relaxed) == BarBottomDockCenterMode::Centered
+					&& !state.barState.fold;
 				owner_.BeginBottomDockTransition();
 				owner_.bottomDockMode.store(BarBottomDockMode::BottomDocked, memory_order_relaxed);
 				owner_.bottomDockCenterMode.store(BarBottomDockCenterMode::Centered, memory_order_relaxed);
@@ -13640,6 +13648,7 @@ BarRenderLoopCoordinator::RenderFrame(
 				state.barState.fold = false;
 				// 居中态锁存展开方向：同时写入布局侧缓存，避免被旧侧覆盖。
 				const bool side = ResolveBarWorkspaceEntrySide(direction, state.barState.widgetPosition.mainBar);
+				state.workspaceEntryRootTween = !alreadyCentered || side != static_cast<bool>(state.barState.widgetPosition.mainBar);
 				state.barState.widgetPosition.mainBar = side;
 				state.mainBarLayoutSide = side;
 				if (Inkeys::UI::Bar::WhiteboardActive()) UpdateSceneMonitor(nullptr);

@@ -2002,10 +2002,31 @@ namespace Inkeys::UI::Bar
 					{ "BottomFolded", true, false, true, BarWorkspaceAutoDockBottomFolded },
 					{ "Floating", false, false, false, BarWorkspaceAutoDockFloating },
 					{ "FloatingFolded", false, false, true, BarWorkspaceAutoDockFloatingFolded } };
+				double traceMaxError = 0.0, traceMaxStep = 0.0;
+				unsigned traceReversals = 0;
 				const auto runFrames = [&](const char* phase)
 					{
+						double previousX = std::numeric_limits<double>::quiet_NaN(), previousDelta = 0.0;
+						traceMaxError = traceMaxStep = 0.0; traceReversals = 0;
 						for (unsigned frame = 0; frame < 60; ++frame)
+						{
 							if (!Step(phase, nullptr, frame, false)) return false;
+							const auto snapshot = owner_->BottomDockPresentedSnapshot();
+							const double x = snapshot.mainCenterScreenX;
+							if (std::isfinite(previousX))
+							{
+								const double delta = x - previousX;
+								if (std::abs(delta) > 0.01)
+								{
+									if (previousDelta * delta < 0.0) ++traceReversals;
+									previousDelta = delta;
+								}
+								traceMaxStep = (std::max)(traceMaxStep, std::abs(delta));
+							}
+							previousX = x;
+							traceMaxError = (std::max)(traceMaxError, std::abs(snapshot.visualBodyCenterScreenX
+								- ResolveBarBottomDockMonitorCenterScreenX(snapshot.monitorBounds)));
+						}
 						return Settle();
 					};
 				for (const auto& pre : states)
@@ -2022,12 +2043,16 @@ namespace Inkeys::UI::Bar
 							workspaceScope_->Set(WorkspaceScene::Presentation);
 							PublishPptSession(1, true, nullptr);
 							if (!runFrames("EntryPolicyEnter")) return false;
+							const double enterError = traceMaxError, enterStep = traceMaxStep;
+							const unsigned enterReversals = traceReversals;
 							const auto entered = owner_->BottomDockPresentedSnapshot();
 							const bool takeOver = (mask & pre.bit) != 0;
 							const bool expectedSide = takeOver && direction != 0 ? direction == 1 : baselineSide;
 							bool entryOk;
 							if (takeOver)
 								entryOk = entered.mode == BarBottomDockMode::BottomDocked
+									// 展开与居中不能互相覆盖：进入动画期间根 X 不得往返。
+									&& enterReversals == 0
 									&& entered.centerMode == BarBottomDockCenterMode::Centered
 									&& entered.centerPhase == BarBottomDockPhase::Stable && !owner_->barState.fold
 									&& owner_->barState.widgetPosition.mainBar == expectedSide
@@ -2045,8 +2070,8 @@ namespace Inkeys::UI::Bar
 								&& owner_->barState.fold == pre.folded
 								&& owner_->barState.widgetPosition.mainBar == baselineSide;
 							std::fprintf(stderr,
-								"[UI3WorkspaceCentering] case=%s phase=EntryPolicy pre=%s mask=%d direction=%d enter=%s restore=%s\n",
-								caseName_.c_str(), pre.name, mask, direction, entryOk ? "PASS" : "FAIL", restoreOk ? "PASS" : "FAIL");
+								"[UI3WorkspaceCentering] case=%s phase=EntryPolicy pre=%s mask=%d direction=%d enter=%s restore=%s maxErr=%.2f maxStep=%.2f reversals=%u\n",
+								caseName_.c_str(), pre.name, mask, direction, entryOk ? "PASS" : "FAIL", restoreOk ? "PASS" : "FAIL", enterError, enterStep, enterReversals);
 							if (!entryOk || !restoreOk) ++failures_;
 						}
 				workspace.Ppt.AutoDockMask = savedMask;
