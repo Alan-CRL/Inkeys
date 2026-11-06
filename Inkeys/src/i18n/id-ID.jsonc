@@ -156,8 +156,7 @@
         "ReadFailed": "Baca",
         "PresentFailed": "Tampil",
         "Failed": "Galat",
-        "Recovering": "Memulihkan",
-        "Loading": "Muat",
+        "Recovering": "Pemulihan",
         "Retry": "Coba lagi",
         "Wait": "Tunggu",
         "RetryCanvas": "Coba ulang kanvas",
@@ -1137,6 +1136,11 @@
       {
         "N": "Tampilkan laju bingkai",
         "E": "Perbarui rata-rata laju bingkai dan laju tanpa batas dari detik sebelumnya setiap detik."
+      },
+      "DelayWaiting":
+      {
+        "N": "Tunda operasi yang menunggu",
+        "E": "Perpanjang waktu pemuatan untuk mengamati animasi."
       },
       "ConsoleSection": "Keluaran konsol",
       "CanvasInformation": "Info inisialisasi kanvas",

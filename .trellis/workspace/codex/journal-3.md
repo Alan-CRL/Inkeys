@@ -104,3 +104,56 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 176: 调试等待操作延迟开关
+<!-- trellis-session: v=2 fp=358bcd06943bea4a -->
+
+**Date**: 2026-11-05
+**Task**: 调试等待操作延迟开关
+**Branch**: `debug/wait`
+
+### Summary
+
+完成默认关闭的调试开关，启动复用慢速成功模式，主动点击白板/PPT分页以非阻塞10s观察后派发；复核修复隐藏/停机退休。国际化、diff检查、ARM64 Debug Solution（临时非增量链接）、分页离屏与启动专项均通过。代理未进行GUI验证；用户确认改动生效并授权提交，未push。
+
+### Git Commits
+
+本次功能与归档记录一并提交。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 179: Unify whiteboard/PPT page-turn loading animation
+<!-- trellis-session: v=2 fp=537fbd792b53e8bf -->
+
+**Date**: 2026-11-05
+**Task**: Unify whiteboard/PPT page-turn loading animation
+**Branch**: `debug/wait`
+
+### Summary
+
+One 500ms-gated indicator now drives status word, dimming and a non-linear inner-edge ring for whiteboard and PPT; page-slot state table, i18n width fixes, Loading key removed.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9ddb5365` | feat(bar): unify page-turn loading state for whiteboard and PPT |
+| `ad7d1302` | fix(i18n): shorten page status words and drop unused Loading key |
+| `70d5ca9a` | docs(trellis): plan unified page loading task and update rendering spec |
+| `97321dc2` | fix(bar): thicken page loading ring and match button corner radius |
+
+### Testing
+
+- [OK] ARM64 Debug solution build, InkeysHeadlessTests --no-window, Inkeys.exe --bar-eraser-offscreen-test (failures=0), --ui3-input-worker-test, i18n.ps1 check
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None; user verified visually and approved.

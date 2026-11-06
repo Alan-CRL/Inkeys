@@ -156,8 +156,7 @@
         "ReadFailed": "Lecture",
         "PresentFailed": "Affichage",
         "Failed": "Erreur",
-        "Recovering": "Restauration",
-        "Loading": "Chargement",
+        "Recovering": "Restaur.",
         "Retry": "Réessayer",
         "Wait": "Patienter",
         "RetryCanvas": "Recharger le canevas",
@@ -1137,6 +1136,11 @@
       {
         "N": "Afficher la fréquence d’images",
         "E": "Mettre à jour chaque seconde les fréquences moyenne et sans limite de la seconde précédente."
+      },
+      "DelayWaiting":
+      {
+        "N": "Prolonger les opérations en attente",
+        "E": "Prolonge le chargement pour observer les animations."
       },
       "ConsoleSection": "Sortie console",
       "CanvasInformation": "Informations d’initialisation du canevas",

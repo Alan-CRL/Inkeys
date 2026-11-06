@@ -157,7 +157,6 @@
         "PresentFailed": "Schermo",
         "Failed": "Errore",
         "Recovering": "Recupero",
-        "Loading": "Carica",
         "Retry": "Riprova",
         "Wait": "Attendi",
         "RetryCanvas": "Riprova la tela",
@@ -1137,6 +1136,11 @@
       {
         "N": "Mostra frequenza fotogrammi",
         "E": "Aggiorna ogni secondo la frequenza media e quella senza attese del secondo precedente."
+      },
+      "DelayWaiting":
+      {
+        "N": "Ritarda le operazioni in attesa",
+        "E": "Prolunga il caricamento per osservare le animazioni."
       },
       "ConsoleSection": "Output console",
       "CanvasInformation": "Informazioni di inizializzazione della tela",

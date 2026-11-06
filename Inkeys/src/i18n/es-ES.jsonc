@@ -156,8 +156,7 @@
         "ReadFailed": "Lectura",
         "PresentFailed": "Pantalla",
         "Failed": "Error",
-        "Recovering": "Restaurando",
-        "Loading": "Cargando",
+        "Recovering": "Restaur.",
         "Retry": "Reintentar",
         "Wait": "Esperar",
         "RetryCanvas": "Reintentar lienzo",
@@ -1137,6 +1136,11 @@
       {
         "N": "Mostrar frecuencia de fotogramas",
         "E": "Actualizar cada segundo las frecuencias media y sin límite del segundo anterior."
+      },
+      "DelayWaiting":
+      {
+        "N": "Retrasar las operaciones de espera",
+        "E": "Prolonga la carga para observar las animaciones."
       },
       "ConsoleSection": "Salida de consola",
       "CanvasInformation": "Información de inicialización del lienzo",

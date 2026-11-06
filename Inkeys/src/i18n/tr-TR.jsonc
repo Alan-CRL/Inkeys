@@ -157,8 +157,7 @@
         "PresentFailed": "Görüntü",
         "Failed": "Hata",
         "Recovering": "Kurtarılıyor",
-        "Loading": "Yükle",
-        "Retry": "Yeniden dene",
+        "Retry": "Tekrar",
         "Wait": "Bekleyin",
         "RetryCanvas": "Tuvali yeniden dene",
         "ProtectedHint": "Belgenin sırası veya kimliği değişti. Mevcut mürekkep korunuyor. Belgeyi önceki durumuna döndürüp yeniden deneyin.",
@@ -1137,6 +1136,11 @@
       {
         "N": "Kare hızını göster",
         "E": "Önceki saniyenin ortalama ve beklemesiz kare hızını saniyede bir güncelleyin."
+      },
+      "DelayWaiting":
+      {
+        "N": "Bekleyen işlemleri geciktir",
+        "E": "Animasyonları gözlemlemek için yükleme süresini uzatır."
       },
       "ConsoleSection": "Konsol çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",
