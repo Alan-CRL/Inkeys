@@ -111,7 +111,7 @@ namespace Inkeys::UI
 		{
 			// 顶栏仅是初始落点：贴工作区上沿，上方有任务栏时工作区已让出该高度。
 			const LONG left = std::clamp(centeredLeft, monitor.left, (std::max)(monitor.left, monitor.right - width));
-			const LONG top = std::clamp(work.top, work.top, (std::max)(work.top, work.bottom - height));
+			const LONG top = work.top;
 			return { left, top, left + width, top + height };
 		}
 		const LONG left = placement == StartupPlacement::BottomLeftFloating ? work.left + margin

@@ -293,6 +293,13 @@ namespace
 		}
 	};
 
+// 只接受 32 位整数；浮点、布尔、字符串及超宽整数统一返回 -1，不能窄化成有效值。
+int ReadNarrowInt(const Json::Value& jsonValue)
+{
+	const bool integerType = jsonValue.type() == Json::intValue || jsonValue.type() == Json::uintValue;
+	return integerType && jsonValue.isInt() ? jsonValue.asInt() : -1;
+}
+
 bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSizeKind& outSize)
 		{
 			if (!jsonValue.isString()) return false;
@@ -602,8 +609,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				if (JoinPath(groupPath, name) == "UI.Bar.StartupPlacement")
 				{
 					// 启动位置只接受整数 0..6；非法类型或超宽整数不能窄化成有效位置。
-					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
-					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const int candidate = ReadNarrowInt(*jsonValue);
 					value = candidate >= 0 && candidate <= 6 ? candidate : 0;
 					return;
 				}
@@ -617,8 +623,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					if (workspaceMask || workspaceDirection)
 					{
 						// 场景进入策略：掩码仅低 4 位、方向仅 0..2；非法类型或越界回默认值。
-						const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
-						const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+						const int candidate = ReadNarrowInt(*jsonValue);
 						const bool accepted = workspaceMask ? candidate >= 0 && candidate <= 15 : candidate >= 0 && candidate <= 2;
 						value = accepted ? candidate : defaultValue.load();
 						return;
@@ -705,8 +710,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					path == "Drawing.Cursor.DotOpacity" || path == "Drawing.Cursor.HighlightDotFillOpacity")
 				{
 					// 百分比只接受窄整数；非法输入恢复各字段自己的 schema 默认值。
-					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
-					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const int candidate = ReadNarrowInt(*jsonValue);
 					value = candidate >= 25 && candidate <= 100 ? candidate : defaultValue.load();
 					return;
 				}

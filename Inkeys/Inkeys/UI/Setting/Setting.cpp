@@ -1254,6 +1254,8 @@ namespace
 
 	SettingBusinessQueue settingBusinessQueue;
 	mutex configWriteQueueMutex;
+	// 拖动透明度期间只合并保存请求；窗口隐藏或关闭时由 Hide/Shutdown 补写。
+	atomic<bool> cursorOpacitySavePending{ false };
 	thread_local bool settingRenderingOnCurrentThread = false;
 
 	struct SettingRenderScope
@@ -2945,13 +2947,9 @@ SettingSessionCoroutine RunSettingSession()
 				const int contentPage = destination.page == Design::PageId::General
 					&& destination.section == Design::GeneralSection::Storage
 					? settingTabEnum::tabConfiguration : settingTab;
-				static bool cursorOpacitySavePending = false;
 				if ((contentPage != settingTabEnum::tab3 || drawingSubpage != Design::DrawingSubpage::Cursor) &&
-					cursorOpacitySavePending)
-				{
+					cursorOpacitySavePending.exchange(false))
 					QueueConfigWrite();
-					cursorOpacitySavePending = false;
-				}
 				switch (contentPage)
 				{
 					// 主页
@@ -3747,11 +3745,8 @@ SettingSessionCoroutine RunSettingSession()
 							cursorOpacitySavePending = false;
 						}
 						else if (opacityChanged) cursorOpacitySavePending = true;
-						if (cursorOpacitySavePending && !opacityActive)
-						{
+						if (!opacityActive && cursorOpacitySavePending.exchange(false))
 							QueueConfigWrite();
-							cursorOpacitySavePending = false;
-						}
 						break;
 					}
 					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
@@ -5577,6 +5572,7 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
 		const bool drainPosted = QueueFinalSettingDrain(
 			[] { Inkeys::UI::RenderPipeline::Unregister(Inkeys::UI::RenderPipeline::Client::Settings); },
@@ -5613,6 +5609,7 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
