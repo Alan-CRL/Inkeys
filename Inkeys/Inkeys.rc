@@ -285,6 +285,7 @@ BARSETTING              UI                      "src\\UI\\barSetting.svg"
 BARERASER               UI                      "src\\UI\\barEraser.svg"
 
 BARAUTOERASER           UI                      "src\\UI\\barAutoEraser.svg"
+BARPALMERASER           UI                      "src\\UI\\barPalmEraser.svg"
 
 BARCLEAN                UI                      "src\\UI\\barClean.svg"
 

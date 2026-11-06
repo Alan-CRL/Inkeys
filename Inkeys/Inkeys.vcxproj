@@ -1228,6 +1228,7 @@
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barAutoEraser.svg" />
+    <None Include="src\UI\barPalmEraser.svg" />
     <None Include="src\UI\barShapeStraightLine.svg" />
     <None Include="src\UI\barShapeRectangle.svg" />
     <None Include="src\UI\color\colorSun.svg" />
