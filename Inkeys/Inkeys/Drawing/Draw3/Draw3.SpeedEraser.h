@@ -137,7 +137,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		Missing, Unverified, OutsideMetrics, CanvasPixels,
 		MissingAxis, AxisUnitsMissing, SpanUnitsMissing, UnsupportedLengthUnits,
 		InvalidAxisResolution, InvalidSpanResolution, InvalidAxisRange, InvalidSpanRange,
-		InvalidPositionScale, ConversionNonFinite
+		InvalidPositionScale, ConversionNonFinite, InvalidDigitizerScale
 	};
 	enum class ContactAreaReason { Disabled, NotScreenTouch, MappingUnknown, Missing, UnitsUnknown,
 		OutsideMetrics, NonFinite, NonPositive, TooSmall, TooLarge, AspectRatio, Outlier, WaitingForMove, Confirming, Ready, Expired,
@@ -188,7 +188,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool unitConverted = false, resolutionAdjusted = false;
 	};
 	ContactLengthTransform ResolveContactLengthTransform(const ContactLengthMetrics& axis,
-		const ContactLengthMetrics& span, float positionScale) noexcept;
+		const ContactLengthMetrics& span, float inkToCanvasScale, float inkToDigitizerScale) noexcept;
 	ContactAreaSample ConvertContactArea(float rawWidth, float rawHeight,
 		const ContactLengthTransform& width, const ContactLengthTransform& height) noexcept;
 	ContactAreaReason ContactAreaMetadataReason(ContactAreaUnits units) noexcept;

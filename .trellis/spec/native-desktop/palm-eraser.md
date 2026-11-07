@@ -23,7 +23,7 @@
 - 缺省大屏分类复用ConfigDetail::GetDefaultLargeScreenDevice，与用户保存的PaintDevice、换屏或EDID当前可用位分开。EDID失效不关闭已启用功能，也不覆盖保存的开关。
 - 可信显示物理映射/有效现有标定用25cm²=2500mm²；不可用时改用100×100系统DIP=10000DIP²。两者都按面积乘ThresholdPercent/100。估算路径用`dipPerPixelX/Y`换画布像素，100DIP在100%/150%系统缩放分别对应100/150px，不把系统DIP再乘设置UI缩放。
 - 实际InputDeviceType必须是Touch，明确TouchPad/Mouse/Pen不能识别；旧来源Unknown只允许保守DIP回退。面积必须已有CanvasPixels元数据、宽高有限且为正、max/min≤3.5，不能靠压力/DPI猜未知面积单位。
-- State锁存独立Down偏好与标尺，观察既有合并快照中的有效最大面积；不承诺硬件全部包峰值。面积达到阈值即激活，圆直径为2×sqrt(areaPx/π)。截止QPC样本可接收，之后Advance锁尺；第一次物理Up提前封窗冻结。
+- State锁存独立Down偏好与标尺，观察既有合并快照中的有效最大面积；不承诺硬件全部包峰值。识别指标保持areaPx=W×H，达到原阈值即激活；2026-11-06按用户选择A，定尺改为椭圆近似等面积圆，直径sqrt(W×H)、半径为直径的一半。识别、阈值、配置和设置矩形预览均不额外乘π/4。截止QPC样本可接收，之后Advance锁尺；第一次物理Up提前封窗冻结。
 - 窗口内尺寸更新只影响新增擦除几何，旧realPoints半径不回写；窗口后及成功接续不重新采样或增长。不使用SpeedEraser面积辅助的2..96DIP上限/拖动资格或速度尺寸控制器。
 
 ### 转换、并行和续接
@@ -52,6 +52,7 @@
 | 场景 | 结果 |
 | --- | --- |
 | 面积/比例合格，窗口未结束 | 当次即转本触点橡皮，旧原工具临时内容清除 |
+| 合格已激活面积100×100px / 160×90px | 圆直径分别100px / 120px；光标和新增几何一致 |
 | 面积单位缺失、非法、过扁或窗口外首次达标 | 保持原工具，不猜单位或迟触发 |
 | 原地摊掌、无后续Move到截止 | 可激活并准时锁尺，不依赖位移 |
 | 原橡皮转Palm、临时尺寸变大 | 旧擦除及半径保留，仅后续点使用新尺寸 |
@@ -75,7 +76,7 @@
 
 - `InkeysHeadlessTests.exe --no-window --setting-eraser-only`：真实ImGui入口/控件、三语/主题/窄宽/DPI、Brush可编辑、窗口推荐、只重置倍率、预览顶点等面积与像素独立性、未满宽居中/超宽横滚、标准i尺寸提示的可信/估算/不可用分支与四种比例、1%下限、策略/现有橡皮回归。
 - 页面顺序断言用真实控件矩形/Warning背景DrawData，并结合标题与分组源码顺序；Design::TextAt直接AddText不进入ImGui日志，不能把日志缺项当作界面缺项。
-- `InkeysHeadlessTests.exe --no-window`全范围回归；纯策略单独可用`--palm-eraser-only`，覆盖2500mm²/10000DIP²、倍率、系统缩放、无面积/比例/时间边界、状态锁存及pool复用。
+- `InkeysHeadlessTests.exe --no-window`全范围回归；纯策略单独可用`--palm-eraser-only`，覆盖2500mm²/10000DIP²、倍率、系统缩放、无面积/比例/时间边界、状态锁存及pool复用；另断言100×100→100、160×90→120、交换宽高/同比缩放、阈值等于/略低/略高，防止把识别面积也改成椭圆面积。
 - 产品早期`--draw3-palm-eraser-test`：生产CPU转换/失败回滚、各原工具、擦除旧点保留、观察only/邻域/单指、真实续接身份和模型失败、Laser强制收尾、四档model profile的长空档Move/Up。该probe不是完整Run或GPU像素/硬件证据。
 - `--config-boundary-test`：真实Config ReadAll/ReadMini/写盘/赋值/Reset/NoUpload、非法类型/宽整数、冻结大屏与EDID失效下DIP识别；不增加Config复制构造绕过shared_mutex。
 - 三语i18n sync/check、完整InkeysRepo.sln Debug|ARM64、原生ARM64 MSBuild及编码/EOL/minimal diff检查；GUI/实机未测应明确说明。

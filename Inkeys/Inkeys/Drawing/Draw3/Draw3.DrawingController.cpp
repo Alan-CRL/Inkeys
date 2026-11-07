@@ -5678,6 +5678,12 @@ namespace Inkeys::Drawing::Draw3
 					layers.push_back({ .id = 11, .runtime = &other, .bounds = {50, 60, 70, 80} });
 				}
 				check(PromotePalmRuntime(runtime, candidate, sample, configuration, 1000), "production promotion prepares and commits a real model");
+				// 同一生产尺寸同时送入光标与新增擦除点，旧半径的保留在下方单独验证。
+				DrawingCursorAppearance palmAppearance{};
+				ApplySpeedEraserCursorDiameter(palmAppearance,runtime.stroke.widthEstimator.baseDiameter);
+				check(runtime.palm.diameterPx == 100 && palmAppearance.width == 100 && palmAppearance.height == 100 &&
+					!runtime.stroke.realPoints.empty() && runtime.stroke.realPoints.back().r == 50,
+					"100 square contact yields matching 100 pixel cursor and 50 pixel erasure radius");
 				check(runtime.palm.active && runtime.tool == DrawingTool::Eraser && runtime.selectedTool == tool &&
 					runtime.stroke.widthMode == StrokeWidthMode::Fixed && !runtime.shape.active && runtime.qpcOrigin == 1000,
 					"promotion keeps original selected tool and time origin with local fixed eraser");
@@ -5702,6 +5708,10 @@ namespace Inkeys::Drawing::Draw3
 				auto larger = sample; larger.qpc = 1100; larger.contactSize = {200, 200};
 				check(grown.Observe(ContactAreaFromSnapshot(larger), larger.qpc) &&
 					PromotePalmRuntime(runtime, grown, larger, configuration, 1000), "stationary maximum growth uses the production fixed-size path");
+				ApplySpeedEraserCursorDiameter(palmAppearance,runtime.stroke.widthEstimator.baseDiameter);
+				check(runtime.palm.diameterPx == 200 && palmAppearance.width == 200 && palmAppearance.height == 200 &&
+					!runtime.stroke.realPoints.empty() && runtime.stroke.realPoints.back().r == 100,
+					"grown palm cursor and new geometry share the ellipse-area diameter");
 				check(runtime.stroke.realPoints.size() > oldPoints.size() &&
 					std::equal(oldPoints.begin(), oldPoints.end(), runtime.stroke.realPoints.begin(),
 						[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }),

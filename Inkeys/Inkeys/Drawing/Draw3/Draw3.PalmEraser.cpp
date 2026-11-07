@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <numbers>
 
 namespace Inkeys::Drawing::Draw3::PalmEraser
 {
@@ -116,7 +115,8 @@ namespace Inkeys::Drawing::Draw3::PalmEraser
 		if (std::max(width, height) / std::min(width, height) > 3.5) return false;
 		const double area = width * height;
 		if (area <= maximumAreaPx) return false;
-		const double diameter = 2.0 * std::sqrt(area / std::numbers::pi);
+		// 识别仍用外框 W×H；圆形橡皮按同宽高椭圆的等面积直径定尺。
+		const double diameter = std::sqrt(area);
 		if (!Positive(diameter) || diameter > std::numeric_limits<float>::max()) return false;
 
 		maximumAreaPx = area;

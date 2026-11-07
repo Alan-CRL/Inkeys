@@ -1793,8 +1793,8 @@ int RunSpeedEraserTests()
 	{
 		// 合成明确 PROPERTY_METRICS，只验证产品换算，不冒充 Surface 实测。
 		const ContactLengthMetrics axis{2,1000,100,30100,true},span{2,100,0,10000,true};
-		const auto x=ResolveContactLengthTransform(axis,span,0.1f);
-		const auto y=ResolveContactLengthTransform(axis,span,0.2f);
+		const auto x=ResolveContactLengthTransform(axis,span,0.1f,1.0f);
+		const auto y=ResolveContactLengthTransform(axis,span,0.2f,1.0f);
 		expect(x.status==ContactAreaUnits::CanvasPixels && x.resolutionAdjusted && !x.unitConverted,
 			"same length unit with different resolutions is convertible");
 		Near(x.spanToAxis,10,0.00001,"resolution ratio maps span to coordinate logical length");
@@ -1803,22 +1803,75 @@ int RunSpeedEraserTests()
 		Near(sample.heightPx,20,0.00001,"Y uses its own linear position transform");
 		Near(sample.rawWidth,30,0,"conversion preserves original packet width");
 		auto same=span;same.resolution=1000;
-		const auto sameTransform=ResolveContactLengthTransform(axis,same,0.1f);
+		const auto sameTransform=ResolveContactLengthTransform(axis,same,0.1f,1.0f);
 		expect(!sameTransform.resolutionAdjusted && !sameTransform.unitConverted,"equal metadata needs no unit or resolution adaptation");
 		Near(ConvertContactArea(300,200,sameTransform,sameTransform).widthPx,30,0.00001,"same-resolution length remains compatible");
 		auto inches=span;inches.units=1;inches.resolution=254;
-		const auto inchTransform=ResolveContactLengthTransform(axis,inches,0.1f);
+		const auto inchTransform=ResolveContactLengthTransform(axis,inches,0.1f,1.0f);
 		expect(inchTransform.unitConverted && inchTransform.resolutionAdjusted &&
 			inchTransform.status==ContactAreaUnits::CanvasPixels,"inch contact and centimeter coordinate metadata convert");
 		Near(ConvertContactArea(30,20,inchTransform,inchTransform).widthPx,30,0.00001,"inch/cm conversion includes exactly one unit ratio");
 		auto inchAxis=axis;inchAxis.units=1;inchAxis.resolution=2540;
-		const auto reverse=ResolveContactLengthTransform(inchAxis,span,0.1f);
+		const auto reverse=ResolveContactLengthTransform(inchAxis,span,0.1f,1.0f);
 		Near(ConvertContactArea(30,20,reverse,reverse).widthPx,30,0.00001,"centimeter contact and inch coordinate metadata convert");
-		const auto reflected=ResolveContactLengthTransform(axis,span,-0.1f);
+		const auto reflected=ResolveContactLengthTransform(axis,span,-0.1f,1.0f);
 		Near(ConvertContactArea(30,20,reflected,reflected).widthPx,30,0.00001,"a reflected position axis keeps contact length positive");
+		const auto reflectedDigitizer=ResolveContactLengthTransform(axis,span,0.1f,-2.0f);
+		Near(ConvertContactArea(30,20,reflectedDigitizer,reflectedDigitizer).widthPx,15,0.00001,
+			"a reflected digitizer axis contributes its inverse magnitude to length");
+		auto shiftedSpan=span;shiftedSpan.logicalMin=5;
+		const auto shifted=ResolveContactLengthTransform(axis,shiftedSpan,0.1f,1.0f);
+		Near(ConvertContactArea(5,20,shifted,shifted).widthPx,5,0.00001,
+			"declared contact minimum is a validity bound, not a length translation");
+
+		// 同一个 2 英寸显示跨度与 1 英寸接触，只改变设备计数精度，像素长度必须相同。
+		const ContactLengthMetrics inchContact{2,1000,0,5080,true};
+		for(float countsPerInk:{0.25f,1.0f,8.0f})
+		{
+			const ContactLengthMetrics encodedAxis{2,1000*countsPerInk,100,
+				100+static_cast<int32_t>(5080*countsPerInk),true};
+			const auto encoded=ResolveContactLengthTransform(encodedAxis,inchContact,96.0f/2540.0f,countsPerInk);
+			const auto inch=ConvertContactArea(2540,1270,encoded,encoded);
+			expect(inch.units==ContactAreaUnits::CanvasPixels,"equivalent digitizer encoding remains valid");
+			Near(inch.widthPx,96,0.0001,"one physical inch is 96 pixels for every digitizer encoding");
+			Near(inch.heightPx,48,0.0001,"half an inch shares the same encoding-independent mapping");
+			Near(ConvertContactArea(5080,5080,encoded,encoded).widthPx,192,0.0001,
+				"full declared physical axis span restores the 192 pixel display span");
+		}
+		const ContactLengthMetrics denseAxis{2,8000,0,40640,true},sparseAxis{2,250,0,1270,true};
+		const ContactLengthMetrics inchHeight{1,200,0,400,true};
+		const auto denseX=ResolveContactLengthTransform(denseAxis,inchContact,96.0f/2540.0f,8.0f);
+		const auto sparseY=ResolveContactLengthTransform(sparseAxis,inchHeight,144.0f/2540.0f,0.25f);
+		const auto anisotropic=ConvertContactArea(2540,100,denseX,sparseY);
+		Near(anisotropic.widthPx,96,0.0001,"X uses its own digitizer scale with centimeter contact units");
+		Near(anisotropic.heightPx,72,0.0001,"Y uses its own inverse scale and inch contact units");
+		for(float invalidScale:{0.0f,-0.0f,std::numeric_limits<float>::infinity(),
+			-std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()})
+		{
+			const auto invalid=ResolveContactLengthTransform(axis,span,0.1f,invalidScale);
+			const auto widthInvalid=ConvertContactArea(30,20,invalid,y);
+			const auto heightInvalid=ConvertContactArea(30,20,x,invalid);
+			expect(invalid.status==ContactAreaUnits::InvalidDigitizerScale &&
+				widthInvalid.units==ContactAreaUnits::InvalidDigitizerScale &&
+				heightInvalid.units==ContactAreaUnits::InvalidDigitizerScale &&
+				widthInvalid.widthPx<0 && heightInvalid.heightPx<0 && heightInvalid.rawHeight==20,
+				"invalid digitizer scale rejects either axis while retaining raw contact dimensions");
+		}
+		const auto tinyDigitizer=ResolveContactLengthTransform(axis,span,1.0f,std::numeric_limits<float>::denorm_min());
+		expect(tinyDigitizer.status==ContactAreaUnits::ConversionNonFinite,
+			"finite nonzero digitizer scale cannot overflow the canvas conversion");
+		const float largestScale=std::numeric_limits<float>::max();
+		const auto cancellingScales=ResolveContactLengthTransform(axis,span,largestScale,largestScale);
+		Near(ConvertContactArea(30,20,cancellingScales,cancellingScales).widthPx,300,0.0001,
+			"large finite scales cancel before any narrowing or intermediate float multiplication");
+		expect(ConvertContactArea(largestScale,20,cancellingScales,cancellingScales).units==ContactAreaUnits::ConversionNonFinite,
+			"converted raw length overflow never narrows to a usable canvas value");
+		expect(ContactAreaMetadataReason(ContactAreaUnits::InvalidDigitizerScale)==ContactAreaReason::InvalidTransform &&
+			std::string(ContactAreaUnitsName(ContactAreaUnits::InvalidDigitizerScale))=="unverified-invalid-digitizer-scale",
+			"diagnostics distinguish invalid digitizer metadata from window position scale");
 		const auto checkInvalid=[&](ContactLengthMetrics a,ContactLengthMetrics w,float scale,ContactAreaUnits expected)
 		{
-			const auto transform=ResolveContactLengthTransform(a,w,scale);
+			const auto transform=ResolveContactLengthTransform(a,w,scale,1.0f);
 			const auto rejected=ConvertContactArea(30,20,transform,y);
 			expect(transform.status==expected && rejected.units==expected && rejected.widthPx<0 &&
 				rejected.heightPx<0 && rejected.rawWidth==30,"invalid metadata preserves raw values without inventing pixels");
@@ -1862,7 +1915,7 @@ int RunSpeedEraserTests()
 		auto display=areaDisplay;display.dipPerPixelX=display.dipPerPixelY=96.0f/dpi;
 		const auto config=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
 		const ContactLengthMetrics axis{2,1000,0,30000,true},span{2,100,0,10000,true};
-		const auto transform=ResolveContactLengthTransform(axis,span,0.1f*dpi/96);
+		const auto transform=ResolveContactLengthTransform(axis,span,0.1f*dpi/96,1.0f);
 		const auto area=ConvertContactArea(30,20,transform,transform);
 		Controller controller;controller.Reset(0,0,0,StartKind::Touch,config,0,&area);
 		Near(controller.DiameterDip(),16,0.001,"converted metadata retains Touch small Down");
@@ -1880,8 +1933,8 @@ int RunSpeedEraserTests()
 	{
 		auto display=areaDisplay;display.dipPerPixelX=0.5f;display.dipPerPixelY=0.75f;
 		const ContactLengthMetrics axis{2,1000,0,30000,true},span{2,100,0,10000,true};
-		const auto x=ResolveContactLengthTransform(axis,span,0.2f);
-		const auto y=ResolveContactLengthTransform(axis,span,0.1f/0.75f);
+		const auto x=ResolveContactLengthTransform(axis,span,0.2f,1.0f);
+		const auto y=ResolveContactLengthTransform(axis,span,0.1f/0.75f,1.0f);
 		const auto area=ConvertContactArea(30,20,x,y);
 		const auto config=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
 		Controller c;c.Reset(0,0,0,StartKind::Touch,config,0,&area);

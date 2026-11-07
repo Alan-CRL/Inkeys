@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
-#include <numbers>
 
 namespace
 {
@@ -204,16 +203,33 @@ int RunPalmEraserTests()
 	display.dipPerPixelX = std::numeric_limits<float>::quiet_NaN();
 	expect(!Palm::ResolvePreviewScale(display).available, "invalid DPI has no invented millimeters");
 
+	// 椭圆模型只决定圆直径；默认 DIP 识别门槛仍是外框面积 10000。
+	for (const auto& dimensions : std::array{ std::array{100.0f,100.0f,100.0f},
+		std::array{160.0f,90.0f,120.0f}, std::array{90.0f,160.0f,120.0f}, std::array{320.0f,180.0f,240.0f} })
+	{
+		Palm::State sized;
+		sized.Begin(settings, dpi96, Palm::ToolCategory::Pen, 1000, 1000);
+		expect(sized.Observe(Area(dimensions[0],dimensions[1]), 1000) && sized.active
+			&& Near(sized.diameterPx, dimensions[2]), "ellipse-area diameter is symmetric and scales with the full contact bounds");
+	}
+	for (const float height : { 99.0f, 100.0f, 101.0f })
+	{
+		Palm::State boundary;
+		boundary.Begin(settings, dpi96, Palm::ToolCategory::Pen, 1000, 1000);
+		expect(boundary.Observe(Area(100,height), 1000) && boundary.active == (height >= 100)
+			&& Near(boundary.maximumAreaPx, 100*height), "ellipse sizing preserves below/equal/above rectangle recognition threshold");
+	}
+
 	Palm::State state;
 	state.Begin(settings, unitScale, Palm::ToolCategory::Pen, 1000, 1000);
 	expect(state.eligible && !state.active && !state.locked && state.deadlineQpc == 1150, "new contact latches bounded recognition");
 	expect(state.Observe(Area(49, 50), 1000) && !state.active, "below-threshold contact remains original tool");
 	expect(!state.Observe(Area(100, 100), 999) && state.maximumAreaPx == 2450, "sample before independent Down is ignored");
 	expect(state.Observe(Area(50, 50), 1100) && state.active
-		&& Near(state.diameterPx, 100 / std::sqrt(std::numbers::pi)), "threshold equality activates immediately without movement");
+		&& Near(state.diameterPx, 50), "threshold equality activates immediately without movement");
 	const auto firstDiameter = state.diameterPx;
 	expect(!state.Observe(Area(40, 40), 1110) && state.diameterPx == firstDiameter, "smaller sample cannot shrink accepted maximum");
-	expect(state.Observe(Area(100, 100), 1150) && Near(state.diameterPx, 200 / std::sqrt(std::numbers::pi)),
+	expect(state.Observe(Area(100, 100), 1150) && Near(state.diameterPx, 100),
 		"deadline-inclusive larger sample updates provisional diameter");
 	expect(!state.Advance(1150) && !state.locked, "deadline equality permits its real sample");
 	expect(state.Advance(1151) && state.locked && !state.Advance(1160), "idle advance locks exactly once after deadline");
@@ -244,7 +260,7 @@ int RunPalmEraserTests()
 	state = staged;
 	expect(state.active && state.maximumAreaPx == 10000, "successful promotion can commit prepared state");
 
-	for (int unit = 0; unit <= static_cast<int>(Speed::ContactAreaUnits::ConversionNonFinite); ++unit)
+	for (int unit = 0; unit <= static_cast<int>(Speed::ContactAreaUnits::InvalidDigitizerScale); ++unit)
 	{
 		if (unit == static_cast<int>(Speed::ContactAreaUnits::CanvasPixels)) continue;
 		state.Begin(settings, unitScale, Palm::ToolCategory::Pen, 1000, 1000);
@@ -264,7 +280,7 @@ int RunPalmEraserTests()
 		expect(state.Observe(boundary, 1000) && state.active, "aspect ratio equality at 3.5 remains valid");
 	}
 	state.Begin(settings, unitScale, Palm::ToolCategory::Pen, 1000, 1000);
-	expect(state.Observe(Area(500, 500), 1000) && state.diameterPx > 500,
+	expect(state.Observe(Area(500, 500), 1000) && Near(state.diameterPx, 500),
 		"palm uses full real area independently of speed eraser span and diameter caps");
 	for (int tool = 0; tool < 7; ++tool)
 	{

@@ -499,7 +499,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	}
 
 	ContactLengthTransform ResolveContactLengthTransform(const ContactLengthMetrics& axis,
-		const ContactLengthMetrics& span, float positionScale) noexcept
+		const ContactLengthMetrics& span, float inkToCanvasScale, float inkToDigitizerScale) noexcept
 	{
 		ContactLengthTransform result;
 		result.logicalMin=span.logicalMin;result.logicalMax=span.logicalMax;
@@ -516,11 +516,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if(!std::isfinite(span.resolution) || span.resolution<=0)return fail(ContactAreaUnits::InvalidSpanResolution);
 		if(axis.logicalMax<=axis.logicalMin)return fail(ContactAreaUnits::InvalidAxisRange);
 		if(span.logicalMin<0 || span.logicalMax<=span.logicalMin)return fail(ContactAreaUnits::InvalidSpanRange);
-		if(!std::isfinite(positionScale) || positionScale==0)return fail(ContactAreaUnits::InvalidPositionScale);
-		// 相对长度只经过现有位置变换的线性部分：不减逻辑原点、不用平移、不再乘 contextScale。
-		// rawSpan / spanResolution * (spanCm / axisCm) * axisResolution * abs(positionScale)
+		if(!std::isfinite(inkToCanvasScale) || inkToCanvasScale==0)return fail(ContactAreaUnits::InvalidPositionScale);
+		if(!std::isfinite(inkToDigitizerScale) || inkToDigitizerScale==0)return fail(ContactAreaUnits::InvalidDigitizerScale);
+		// spanToAxis 得到设备轴计数，先除当前设备的 ink→digitizer 倍率，再映射到画布。
+		// 宽高是相对长度，不减逻辑原点、不应用位置平移；反向轴仍取正长度。
 		result.spanToAxis=static_cast<double>(axis.resolution)/span.resolution*(spanCm/axisCm);
-		result.spanToCanvas=result.spanToAxis*std::abs(static_cast<double>(positionScale));
+		result.spanToCanvas=result.spanToAxis*std::abs(static_cast<double>(inkToCanvasScale)/inkToDigitizerScale);
 		if(!std::isfinite(result.spanToCanvas) || result.spanToCanvas<=0 ||
 			result.spanToCanvas>std::numeric_limits<float>::max())
 			return fail(ContactAreaUnits::ConversionNonFinite);
@@ -559,7 +560,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		case ContactAreaUnits::UnsupportedLengthUnits:return ContactAreaReason::UnsupportedLengthUnits;
 		case ContactAreaUnits::InvalidAxisResolution:case ContactAreaUnits::InvalidSpanResolution:return ContactAreaReason::InvalidResolution;
 		case ContactAreaUnits::InvalidAxisRange:case ContactAreaUnits::InvalidSpanRange:return ContactAreaReason::InvalidRange;
-		case ContactAreaUnits::InvalidPositionScale:return ContactAreaReason::InvalidTransform;
+		case ContactAreaUnits::InvalidPositionScale:case ContactAreaUnits::InvalidDigitizerScale:return ContactAreaReason::InvalidTransform;
 		case ContactAreaUnits::ConversionNonFinite:return ContactAreaReason::NonFinite;
 		default:return ContactAreaReason::UnitsUnknown;
 		}
@@ -588,6 +589,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		case ContactAreaUnits::InvalidAxisRange:return "unverified-invalid-axis-range";
 		case ContactAreaUnits::InvalidSpanRange:return "unverified-invalid-span-range";
 		case ContactAreaUnits::InvalidPositionScale:return "unverified-invalid-position-scale";
+		case ContactAreaUnits::InvalidDigitizerScale:return "unverified-invalid-digitizer-scale";
 		case ContactAreaUnits::ConversionNonFinite:return "unverified-nonfinite-conversion";
 		default:return "missing";
 		}
