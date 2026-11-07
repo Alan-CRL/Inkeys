@@ -720,8 +720,7 @@
           "ScreenPen": "Solo penna su schermo",
           "Tablet": "Solo tavoletta grafica",
           "Both": "Penna su schermo e tavoletta grafica"
-        },
-        "Note": "Con penna su schermo, tavoletta grafica e touch, «Mouse» è una freccia disegnata dall’app stessa; i puntatori di evidenziatore e puntatore laser, gli strumenti per le forme e il puntatore dedicato della gomma non sono influenzati da queste opzioni."
+        }
       },
       "Effect":
       {

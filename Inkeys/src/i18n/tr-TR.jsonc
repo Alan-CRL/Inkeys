@@ -720,8 +720,7 @@
           "ScreenPen": "Yalnızca ekran kalemi",
           "Tablet": "Yalnızca grafik tablet",
           "Both": "Ekran kalemi ve grafik tablet"
-        },
-        "Note": "Ekran kalemi, grafik tablet ve dokunmada “Fare”, uygulamanın kendisinin çizdiği bir oktur; vurgulayıcı ve lazer işaretçi imleçleri, şekil araçları ve silgiye özel imleç bu seçeneklerden etkilenmez."
+        }
       },
       "Effect":
       {

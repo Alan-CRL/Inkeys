@@ -3650,8 +3650,9 @@ namespace
 				return ImGui::WindowRectRelToAbs(host, host->NavRectRel[ImGuiNavLayer_Main]);
 			};
 			const auto combo = focusRect(comboId);
-			checks.Expect(note.Min.y < note.Max.y && note.Max.y < combo.Min.y,
-				"blue cursor notice is above the final fine control row");
+			// 设备光标说明已按用户要求移除，光标页不再绘制蓝色信息块。
+			checks.Expect(note.Min.y > note.Max.y,
+				"cursor page no longer draws the removed blue device-cursor notice");
 			checks.Expect(combo.Min.x >= host->Pos.x && combo.Max.x <= host->Pos.x + host->Size.x
 				&& host->ScrollMax.x == 0, "cursor fine control fits both narrow and wide layouts");
 			auto chord = [&](ImGuiKey key) { io.AddKeyEvent(key, true); draw(); io.AddKeyEvent(key, false); draw(); };

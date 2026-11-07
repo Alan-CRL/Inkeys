@@ -720,8 +720,7 @@
           "ScreenPen": "Doar creion pe ecran",
           "Tablet": "Doar tabletă grafică",
           "Both": "Creion pe ecran și tabletă grafică"
-        },
-        "Note": "La creionul de ecran, tableta grafică și atingere, „Mouse” este o săgeată desenată chiar de aplicație; cursoarele evidențiatorului și ale pointerului laser, instrumentele de forme și cursorul dedicat radierei nu sunt afectate de aceste opțiuni."
+        }
       },
       "Effect":
       {

@@ -720,8 +720,7 @@
           "ScreenPen": "Tylko pióro ekranowe",
           "Tablet": "Tylko tablet graficzny",
           "Both": "Pióro ekranowe i tablet graficzny"
-        },
-        "Note": "W przypadku pióra ekranowego, tabletu graficznego i dotyku „Mysz” to strzałka rysowana przez samą aplikację; kursory zakreślacza i wskaźnika laserowego, narzędzia kształtów oraz osobny kursor gumki nie zależą od tych opcji."
+        }
       },
       "Effect":
       {

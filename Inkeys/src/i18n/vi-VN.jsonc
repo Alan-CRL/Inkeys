@@ -720,8 +720,7 @@
           "ScreenPen": "Chỉ bút màn hình",
           "Tablet": "Chỉ bảng vẽ",
           "Both": "Bút màn hình và bảng vẽ"
-        },
-        "Note": "Với bút màn hình, bảng vẽ và cảm ứng, “Chuột” là mũi tên do chính ứng dụng vẽ; con trỏ của bút nhớ dòng và con trỏ laser, công cụ hình và con trỏ riêng của tẩy không bị các tùy chọn này ảnh hưởng."
+        }
       },
       "Effect":
       {

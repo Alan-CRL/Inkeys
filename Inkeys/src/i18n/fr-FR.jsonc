@@ -720,8 +720,7 @@
           "ScreenPen": "Stylet sur écran uniquement",
           "Tablet": "Tablette graphique uniquement",
           "Both": "Stylet sur écran et tablette graphique"
-        },
-        "Note": "Avec le stylet d’écran, la tablette graphique et le tactile, « Souris » est une flèche dessinée par l’application ; les curseurs du surligneur et du pointeur laser, les outils de formes et le curseur propre à la gomme ne sont pas affectés par ces options."
+        }
       },
       "Effect":
       {

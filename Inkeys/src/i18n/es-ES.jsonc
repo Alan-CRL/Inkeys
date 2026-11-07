@@ -720,8 +720,7 @@
           "ScreenPen": "Solo lápiz de pantalla",
           "Tablet": "Solo tableta gráfica",
           "Both": "Lápiz de pantalla y tableta gráfica"
-        },
-        "Note": "Con lápiz de pantalla, tableta gráfica y táctil, «Ratón» es una flecha que dibuja la propia aplicación; los cursores del resaltador y del puntero láser, las herramientas de formas y el cursor propio del borrador no cambian con estas opciones."
+        }
       },
       "Effect":
       {

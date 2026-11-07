@@ -720,8 +720,7 @@
           "ScreenPen": "Screen pen only",
           "Tablet": "Pen tablet only",
           "Both": "Screen pen and pen tablet"
-        },
-        "Note": "On screen pens, pen tablets and touch, \"Mouse\" is an arrow drawn by the app itself; the highlighter, laser pointer, shape tools and eraser keep their own cursors regardless of these options."
+        }
       },
       "Effect":
       {

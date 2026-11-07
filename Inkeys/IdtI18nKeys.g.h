@@ -724,7 +724,6 @@ inline constexpr struct I18nKeyRoot
                     const char* Tablet = "SettingsUI/Draw/Cursor/DotHideOnContact/Tablet";
                     const char* Both = "SettingsUI/Draw/Cursor/DotHideOnContact/Both";
                 } DotHideOnContact{};
-                const char* Note = "SettingsUI/Draw/Cursor/Note";
             } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {

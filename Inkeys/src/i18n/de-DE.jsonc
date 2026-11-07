@@ -720,8 +720,7 @@
           "ScreenPen": "Nur Bildschirmstift",
           "Tablet": "Nur Grafiktablett",
           "Both": "Bildschirmstift und Grafiktablett"
-        },
-        "Note": "Bei Bildschirmstift, Grafiktablett und Touch zeichnet die App „Maus“ als eigenen Pfeil; die Zeiger von Textmarker und Laserpointer, Formwerkzeuge und der spezielle Radierer-Zeiger bleiben von diesen Optionen unberührt."
+        }
       },
       "Effect":
       {

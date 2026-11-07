@@ -720,8 +720,7 @@
           "ScreenPen": "Somente caneta de tela",
           "Tablet": "Somente mesa digitalizadora",
           "Both": "Caneta de tela e mesa digitalizadora"
-        },
-        "Note": "Com caneta na tela, mesa digitalizadora e toque, “Mouse” é uma seta desenhada pelo próprio aplicativo; os ponteiros do marca-texto e do laser, as ferramentas de formas e o ponteiro próprio da borracha não são afetados por estas opções."
+        }
       },
       "Effect":
       {
