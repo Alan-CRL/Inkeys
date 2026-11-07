@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.EraserCursor.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 #include <algorithm>
@@ -602,9 +603,145 @@ namespace
 	}
 }
 
+namespace
+{
+	int RunEraserCursorRasterTests()
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (!condition) { ++failures; std::cerr << "[EraserCursor] failed: " << name << '\n'; }
+		};
+		const auto pixel = [](const EraserCursorMip& mip, float x, float y, uint32_t channel = 0)
+		{
+			const auto ix = static_cast<uint32_t>(std::floor(mip.width * 0.5f + x));
+			const auto iy = static_cast<uint32_t>(std::floor(mip.height * 0.5f + y));
+			return mip.bgra[(static_cast<size_t>(iy) * mip.width + ix) * 4 + channel];
+		};
+		const auto marked = [](const EraserCursorMip& mip, float radius)
+		{
+			uint32_t count = 0;
+			for (uint32_t y = 0; y < mip.height; ++y)
+			for (uint32_t x = 0; x < mip.width; ++x)
+			{
+				const float dx = x + 0.5f - mip.width * 0.5f, dy = y + 0.5f - mip.height * 0.5f;
+				if (dx * dx + dy * dy < radius * radius &&
+					mip.bgra[(static_cast<size_t>(y) * mip.width + x) * 4] < 250) ++count;
+			}
+			return count;
+		};
+		for (const auto shape : { EraserShape::Circle, EraserShape::Rectangle, EraserShape::Square })
+		for (const auto pattern : { EraserCursorPattern::Grips, EraserCursorPattern::Inkeys, EraserCursorPattern::Sparkle })
+		for (const auto theme : { EraserCursorTheme::Light, EraserCursorTheme::Dark })
+		for (const uint32_t side : { 16u, 23u, 24u, 32u, 39u, 40u, 64u })
+		{
+			const auto raster = RasterizeEraserCursor({ shape, pattern, theme }, side, 6);
+			const uint32_t height = static_cast<uint32_t>(std::ceil(side * (shape == EraserShape::Rectangle ? 1.5f : 1.0f))) + 4;
+			check(!raster.levels.empty() && raster.levels[0].width == side + 4 && raster.levels[0].height == height,
+				"short side and shape aspect determine padded raster dimensions");
+			uint32_t width = side + 4, h = height, expectedLevels = 1;
+			while (width > 1 || h > 1) { width = std::max(1u, width / 2); h = std::max(1u, h / 2); ++expectedLevels; }
+			check(raster.levels.size() == expectedLevels, "full mip chain includes the one by one level");
+			width = side + 4; h = height;
+			for (const auto& mip : raster.levels)
+			{
+				check(mip.width == width && mip.height == h && mip.bgra.size() == static_cast<size_t>(width) * h * 4,
+					"each mip uses D3D floor half dimensions and matching storage");
+				bool premultiplied = true;
+				for (size_t p = 0; p < mip.bgra.size(); p += 4)
+					premultiplied &= mip.bgra[p] <= mip.bgra[p + 3] && mip.bgra[p + 1] <= mip.bgra[p + 3] && mip.bgra[p + 2] <= mip.bgra[p + 3];
+				check(premultiplied, "BGRA remains premultiplied throughout the mip chain");
+				if (pattern == EraserCursorPattern::Grips)
+				{
+					bool symmetric = true;
+					for (uint32_t y = 0; y < mip.height; ++y)
+					for (uint32_t x = 0; x < mip.width; ++x)
+					for (uint32_t c = 0; c < 4; ++c)
+					{
+						const int value = mip.bgra[(static_cast<size_t>(y) * mip.width + x) * 4 + c];
+						const int reflectedX = mip.bgra[(static_cast<size_t>(y) * mip.width + mip.width - 1 - x) * 4 + c];
+						const int reflectedY = mip.bgra[(static_cast<size_t>(mip.height - 1 - y) * mip.width + x) * 4 + c];
+						symmetric &= std::abs(value - reflectedX) <= 1 && std::abs(value - reflectedY) <= 1;
+					}
+					check(symmetric, "area box mips preserve symmetric grips at odd dimensions");
+				}
+				width = std::max(1u, width / 2); h = std::max(1u, h / 2);
+			}
+			const auto& first = raster.levels.front();
+			bool transparentBorder = true;
+			for (uint32_t x = 0; x < first.width; ++x)
+				transparentBorder &= first.bgra[x * 4 + 3] == 0 && first.bgra[((first.height - 1) * first.width + x) * 4 + 3] == 0;
+			for (uint32_t y = 0; y < first.height; ++y)
+				transparentBorder &= first.bgra[(y * first.width) * 4 + 3] == 0 && first.bgra[(y * first.width + first.width - 1) * 4 + 3] == 0;
+			check(transparentBorder, "all three shapes have zero alpha beyond their AA edge");
+			// 包围盒内的角点也必须透明，防止圆/圆角矩形误退化为实心直角 quad。
+			check(first.bgra[((static_cast<size_t>(first.height) - 3) * first.width + first.width - 3) * 4 + 3] == 0,
+				"shape bounding-box corner remains outside the rounded contour");
+		}
+		for (const auto shape : { EraserShape::Circle, EraserShape::Rectangle, EraserShape::Square })
+		{
+			const auto light = RasterizeEraserCursor({ shape, EraserCursorPattern::Grips, EraserCursorTheme::Light }, 64, 6);
+			const auto dark = RasterizeEraserCursor({ shape, EraserCursorPattern::Grips, EraserCursorTheme::Dark }, 64, 6);
+			check(pixel(light.levels[0], 0, 0) == 255 && pixel(light.levels[0], 0, 0, 3) == 255,
+				"light interior center is opaque white");
+			check(pixel(dark.levels[0], 0, 0) == 40 && pixel(dark.levels[0], 0, 0, 3) == 255,
+				"dark interior center is opaque channel 40");
+			check(pixel(light.levels[0], 30, 0) == 207 && pixel(dark.levels[0], 30, 0) == 110,
+				"light and dark outline palette channels match the approved values");
+			check(pixel(light.levels[0], 7, 0) == 207 && pixel(dark.levels[0], 7, 0) == 110,
+				"grips always use the outline palette");
+		}
+		for (const auto pattern : { EraserCursorPattern::Inkeys, EraserCursorPattern::Sparkle })
+		{
+			const uint32_t threshold = pattern == EraserCursorPattern::Inkeys ? 24u : 20u;
+			const auto hidden = RasterizeEraserCursor({ EraserShape::Circle, pattern }, threshold - 1, 6);
+			const auto shown = RasterizeEraserCursor({ EraserShape::Circle, pattern }, threshold, 6);
+			check(marked(hidden.levels[0], (threshold - 1) * 0.35f) == 0, "pattern is absent below its physical bake threshold");
+			check(marked(shown.levels[0], threshold * 0.35f) > 0, "pattern appears at its physical bake threshold");
+		}
+		const auto tinyGrips = RasterizeEraserCursor({}, 16, 6);
+		check(marked(tinyGrips.levels[0], 16 * 0.35f) > 0, "grips remain visible below other pattern thresholds");
+		const auto star39 = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle }, 39, 6);
+		const auto star40 = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle }, 40, 6);
+		check(pixel(star39.levels[0], 12, 0) == 255 && pixel(star40.levels[0], 12, 0) < 255,
+			"D1 secondary star appears at short side forty");
+		const auto lightLogo = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Inkeys }, 96, 6);
+		const auto darkLogo = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Inkeys, EraserCursorTheme::Dark }, 96, 6);
+		check(pixel(lightLogo.levels[0], -4, 12) == 207 && pixel(darkLogo.levels[0], -4, 12) == 110,
+			"analytic logo eraser uses the outline gray with no indicator");
+		check(pixel(lightLogo.levels[0], -15, -6) == 207 && pixel(darkLogo.levels[0], -15, -6) == 110,
+			"logo screen uses the outline gray");
+		const auto lightStar = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle }, 96, 6);
+		const auto darkStar = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle, EraserCursorTheme::Dark }, 96, 6);
+		check(pixel(lightStar.levels[0], 0.15f * 96, -0.15f * 96) == 207 && pixel(darkStar.levels[0], 0.15f * 96, -0.15f * 96) == 110,
+			"sparkle marks use the outline gray");
+		check(ResolveEraserCursorCornerRadius(32, 1, 64) == 12 && ResolveEraserCursorCornerRadius(64, 2, 64) == 12,
+			"six DIP corner scales once with DPI and the bake ratio");
+		check(ResolveEraserCursorCornerRadius(4, 4, 32) == 16, "corner radius is capped at half the short side");
+		const auto capped = RasterizeEraserCursor({ EraserShape::Square }, 32, 100);
+		const auto halfSide = RasterizeEraserCursor({ EraserShape::Square }, 32, 16);
+		check(capped.levels[0].bgra == halfSide.levels[0].bgra, "raster itself enforces the corner cap");
+		// GPU 缓存直接比较此生产配方；位置从未进入配方，档内缩放继承已烘焙档位。
+		const auto first = ResolveEraserCursorRecipe({}, 32, 1, 32);
+		check(first == ResolveEraserCursorRecipe({}, 32, 1, 32, &first), "identical repeated requests reuse their recipe");
+		check(first == ResolveEraserCursorRecipe({}, 32, 1, 40, &first), "movement and dynamic size through one point two five do not invalidate");
+		const auto grown = ResolveEraserCursorRecipe({}, 32, 1, 40.01f, &first);
+		check(grown.shortSidePx == 64 && !(grown == first), "crossing the growth threshold upgrades the power of two bake");
+		check(grown == ResolveEraserCursorRecipe({}, 32, 1, 16, &grown), "shrinking retains the existing bake");
+		const auto changed = ResolveEraserCursorRecipe({ EraserShape::Square }, 32, 1, 32, &grown);
+		check(!(changed == grown) && changed.shortSidePx == 32, "appearance change starts a fresh cache recipe");
+		check(!(ResolveEraserCursorRecipe({}, 24, 1, 32, &first) == first) &&
+			!(ResolveEraserCursorRecipe({}, 32, 2, 32, &first) == first), "base size and DPI changes invalidate independently");
+		check(ResolveEraserCursorRecipe({}, 1, 1, 1).shortSidePx == 32 &&
+			ResolveEraserCursorRecipe({}, 4096, 1, 8192).shortSidePx == 1024, "bake tiers obey the thirty two and one thousand twenty four bounds");
+		return failures;
+	}
+}
+
 int RunSpeedEraserTests()
 {
-	int failures = RunFineBandRegressions() + RunDirectInputScaleWarningTests();
+	int failures = RunFineBandRegressions() + RunDirectInputScaleWarningTests() + RunEraserCursorRasterTests();
 	auto expect = [&](bool condition, const char* name)
 	{
 		if (!condition) { ++failures; std::cerr << "[SpeedEraser] failed: " << name << '\n'; }

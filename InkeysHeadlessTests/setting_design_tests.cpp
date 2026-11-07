@@ -2846,7 +2846,9 @@ namespace
 			std::array<int, 7> toolEdits{}; int enabledEdits = 0, windowEdits = 0, thresholdEdits = 0, resetEvents = 0, parallelEdits = 0, backEvents = 0;
 			auto noEdits = [](const PalmEraserEvents& events) {
 				return !events.back && !events.enabledChanged && !events.recognitionWindowChanged && !events.thresholdChanged
-					&& !events.thresholdReset && !events.parallelWritingChanged
+					&& !events.thresholdReset && !events.parallelWritingChanged && !events.shapeChanged && !events.sizeModeChanged
+					&& !events.sizeMultiplierChanged && !events.sizeMultiplierReset
+					&& std::none_of(events.sizeMethodsChanged.begin(), events.sizeMethodsChanged.end(), [](bool value) { return value; })
 					&& std::none_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool value) { return value; });
 			};
 			auto draw = [&](ImVec2 mouse, bool down, bool captureText = false, bool animated = false) {
@@ -2908,25 +2910,40 @@ namespace
 				// 复用标准 i 字形定位；其后紧跟 Caption 正文，校验本帧期望提示的真实字形。
 				ImGui::PushFont(icons, CaptionText.size);
 				const auto* info = ImGui::GetFontBaked()->FindGlyphNoFallback(static_cast<ImWchar>(0xf167));
-				int noteStart = -1;
+				std::vector<int> noteStarts;
 				if (info) for (int index = 0; index + 3 < page->DrawList->VtxBuffer.Size; ++index)
 				{
 					const auto& one = page->DrawList->VtxBuffer[index]; const auto& three = page->DrawList->VtxBuffer[index + 2];
 					if (one.col == Accent && one.uv.x == info->U0 && one.uv.y == info->V0 && three.uv.x == info->U1 && three.uv.y == info->V1)
-					{ noteStart = index + 4; break; }
+						noteStarts.push_back(index + 4);
 				}
-				ImGui::PopFont(); frame.noteVisible = noteStart >= 0; frame.noteMatches = frame.noteVisible && !expectedNote.empty();
+				ImGui::PopFont();
 				ImFluent::PushFont(ImFluentTextStyle_Caption);
-				for (const char* cursor = expectedNote.c_str(); *cursor && frame.noteMatches;)
+				auto textAt = [&](int start, const std::string& text) {
+					for (const char* cursor = text.c_str(); *cursor;)
+					{
+						unsigned codepoint; cursor += ImTextCharFromUtf8(&codepoint, cursor, nullptr);
+						const auto* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
+						if (!glyph || !glyph->Visible) continue;
+						if (start + 3 >= page->DrawList->VtxBuffer.Size) return false;
+						const auto& one = page->DrawList->VtxBuffer[start]; const auto& three = page->DrawList->VtxBuffer[start + 2];
+						if (!(one.col == TextPrimary && three.col == TextPrimary && one.uv.x == glyph->U0 && one.uv.y == glyph->V0
+							&& three.uv.x == glyph->U1 && three.uv.y == glyph->V1)) return false;
+						start += 4;
+					}
+					return true;
+				};
+				// 手掌大小分组及其后的说明恒带 i；遇到粗细方式说明即停止，只检查其上方阈值与边擦边写的提示。
+				const char* sizeNotes[]{ palmKeys.SizeModeDynamicNote, palmKeys.SizeModeFollowDefaultNote, palmKeys.SizeModeFixedNote };
+				const auto sizeNote = IA(sizeNotes[std::clamp(draft.sizeMode, 0, 2)]);
+				int noteStart = -1;
+				for (const int start : noteStarts)
 				{
-					unsigned codepoint; cursor += ImTextCharFromUtf8(&codepoint, cursor, nullptr);
-					const auto* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
-					if (!glyph || !glyph->Visible) continue;
-					if (noteStart + 3 >= page->DrawList->VtxBuffer.Size) { frame.noteMatches = false; break; }
-					const auto& one = page->DrawList->VtxBuffer[noteStart]; const auto& three = page->DrawList->VtxBuffer[noteStart + 2];
-					frame.noteMatches = one.col == TextPrimary && three.col == TextPrimary && one.uv.x == glyph->U0 && one.uv.y == glyph->V0
-						&& three.uv.x == glyph->U1 && three.uv.y == glyph->V1; noteStart += 4;
+					if (textAt(start, sizeNote)) break;
+					if (noteStart < 0) noteStart = start;
 				}
+				frame.noteVisible = noteStart >= 0;
+				frame.noteMatches = frame.noteVisible && !expectedNote.empty() && textAt(noteStart, expectedNote);
 				ImFluent::PopFont();
 				for (const auto& vertex : page->DrawList->VtxBuffer)
 					if (vertex.col == GetPalette().notice[ImFluentInfoSeverity_Warning])
@@ -3716,6 +3733,283 @@ namespace
 		}
 		io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle; io.DisplaySize = oldSize;
 		std::cout << "[CursorPage] scale=" << scale << " locale=" << I18n::getA("SettingsUI/Draw/Cursor/N") << '\n';
+	}
+
+	void CheckEraserCursorCard(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using namespace Design;
+		namespace Cursor = Inkeys::Drawing::Draw3;
+		BindTextFonts(regular,strong); ImFluent::SetIconFont(icons);
+		auto& io=ImGui::GetIO(); const auto oldSize=io.DisplaySize; const auto oldFlags=io.ConfigFlags;
+		const bool oldTrickle=io.ConfigInputTrickleEventQueue;
+		io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue=false;
+		const auto& keys=I18nKey.SettingsUI.Draw.Cursor.Eraser;
+		const char* labels[]{keys.Circle,keys.Rectangle,keys.Square,keys.Grips,keys.Inkeys,keys.Sparkle};
+		for(const char* key : { keys.N,keys.Appearance,keys.E,keys.Light,keys.Dark,keys.Circle,keys.Rectangle,keys.Square,keys.Grips,keys.Inkeys,keys.Sparkle })
+			checks.Expect(IA(key)!=key,"eraser cursor locale resolves every new key");
+		for(bool dark : {false,true}) for(float width : {340.0F,780.0F})
+		{
+			ApplyPalette(dark); CursorPageDraft draft;
+			std::array<LayoutRect,6> tiles{}; std::array<Cursor::EraserCursorAppearance,6> appearances{};
+			std::array<int,6> labelFirst{};
+			const std::array<std::string,9> textSamples{IA(keys.Appearance),IA(keys.E),IA(keys.Circle),IA(keys.Rectangle),IA(keys.Square),
+				IA(keys.Grips),IA(keys.Inkeys),IA(keys.Sparkle),IA(I18nKey.SettingsUI.Draw.Cursor.PenDevices)};
+			const std::array<ImFluentTextStyle,9> textStyles{ImFluentTextStyle_Body,ImFluentTextStyle_Caption,
+				ImFluentTextStyle_Caption,ImFluentTextStyle_Caption,ImFluentTextStyle_Caption,ImFluentTextStyle_Caption,
+				ImFluentTextStyle_Caption,ImFluentTextStyle_Caption,ImFluentTextStyle_BodyStrong};
+			std::array<int,9> textVertices{};
+			ImGuiWindow* host=nullptr; std::array<int,3> edits{}; size_t count=0;
+			const auto draw=[&](ImVec2 mouse=ImVec2(-100,-100))
+			{
+				io.DisplaySize={(width+32)*scale,3200*scale};io.AddMousePosEvent(mouse.x,mouse.y);
+				ImGui::NewFrame();ConfigureRowAnimations(0,false,1);
+				ImGui::SetNextWindowPos({0,0});ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##eraser-cursor-card-cpu",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+				host=ImGui::GetCurrentWindow();ImFluent::PushFont(ImFluentTextStyle_Body);count=0;
+				// 字体 baked 对象只在有效窗口帧内读取；帧后验证只消费期望顶点数。
+				for(size_t sample=0;sample<textSamples.size();++sample)
+				{
+					ImFluent::PushFont(textStyles[sample]);int visible=0;
+					for(const char* cursor=textSamples[sample].c_str();*cursor;)
+					{
+						unsigned point;cursor+=ImTextCharFromUtf8(&point,cursor,nullptr);
+						const auto* glyph=ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(point));
+						if(point>=32&&glyph&&glyph->Visible)++visible;
+					}
+					ImFluent::PopFont();textVertices[sample]=visible*4;
+				}
+				const auto events=RenderCursorPage(draft,[&](const LayoutRect& bounds,Cursor::EraserCursorAppearance appearance){
+					if(count<tiles.size()){tiles[count]=bounds;appearances[count]=appearance;labelFirst[count]=host->DrawList->VtxBuffer.Size;}++count;
+				});
+				edits[0]+=events.eraserShape;edits[1]+=events.eraserPattern;edits[2]+=events.eraserTheme;
+				checks.Expect(!events.mouse&&!events.touch&&!events.screenPen&&!events.tablet&&!events.injectedMouse&&
+					!events.dotHideOnContact,"eraser selector edits only its own draft dimensions");
+				ImFluent::PopFont();ImGui::End();ImGui::Render();CheckDrawData(checks);
+			};
+			for(int frame=0;frame<3;++frame)draw();
+			const auto comboId=ImHashStr("##select",0,ImHashStr("##eraser-cursor",0,host->ID));
+			ImGui::FocusWindow(host);ImGui::SetNavID(comboId,ImGuiNavLayer_Main,host->NavRootFocusScopeId,ImRect{});draw();
+			// 从生产 DrawList 的连续卡片填充顶点定位真实外框，不新增产品测试挂钩。
+			auto* list=host->DrawList;
+			LayoutRect card{},followingCard{};int followingFirst=list->VtxBuffer.Size;bool foundCard=false;
+			const ImU32 cardRgb=GetPalette().card&~IM_COL32_A_MASK;
+			for(int first=0;first<list->VtxBuffer.Size;)
+			{
+				if((list->VtxBuffer[first].col&~IM_COL32_A_MASK)!=cardRgb){++first;continue;}
+				int end=first;LayoutRect surface{FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX};
+				while(end<list->VtxBuffer.Size&&(list->VtxBuffer[end].col&~IM_COL32_A_MASK)==cardRgb)
+				{
+					const auto point=list->VtxBuffer[end++].pos;
+					surface.left=(std::min)(surface.left,point.x);surface.right=(std::max)(surface.right,point.x);
+					surface.top=(std::min)(surface.top,point.y);surface.bottom=(std::max)(surface.bottom,point.y);
+				}
+				if(!foundCard&&Contains(surface,tiles[0])&&Contains(surface,tiles[5])){card=surface;foundCard=true;}
+				else if(foundCard&&surface.top>card.bottom+1&&surface.Width()>Pixels(72))
+				{followingCard=surface;followingFirst=first;break;}
+				first=end;
+			}
+			checks.Expect(foundCard&&followingCard.Height()>0,"actual eraser card and following fine-control card surfaces are present");
+			const auto expectedVertices=[&](const char* text,ImFluentTextStyle style)
+			{
+				for(size_t sample=0;sample<textSamples.size();++sample)
+					if(textStyles[sample]==style&&textSamples[sample]==text)return textVertices[sample];
+				return -1;
+			};
+			const auto checkInk=[&](const char* text,ImFluentTextStyle style,ImU32 color,int first,int end,
+				const LayoutRect& area,const LayoutRect* exclude=nullptr)
+			{
+				int vertices=0;LayoutRect ink{FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX};std::vector<bool> selected(list->VtxBuffer.Size,false);
+				for(int at=first;at<end;++at)
+				{
+					const auto& vertex=list->VtxBuffer[at];const auto point=vertex.pos;
+					if(vertex.col!=color||point.x<area.left-1||point.x>area.right+1||point.y<area.top-1||point.y>area.bottom+1||
+						(exclude&&point.x>=exclude->left&&point.x<=exclude->right&&point.y>=exclude->top&&point.y<=exclude->bottom))continue;
+					++vertices;selected[at]=true;ink.left=(std::min)(ink.left,point.x);ink.right=(std::max)(ink.right,point.x);
+					ink.top=(std::min)(ink.top,point.y);ink.bottom=(std::max)(ink.bottom,point.y);
+				}
+				bool clipped=false;
+				for(const auto& command:list->CmdBuffer)if(!command.UserCallback)
+					for(unsigned at=command.IdxOffset;at<command.IdxOffset+command.ElemCount;++at)
+					{
+						const auto vertex=command.VtxOffset+list->IdxBuffer[at];if(!selected[vertex])continue;
+						const auto point=list->VtxBuffer[vertex].pos;
+						clipped|=point.x<command.ClipRect.x||point.x>command.ClipRect.z||point.y<command.ClipRect.y||point.y>command.ClipRect.w;
+					}
+				checks.Expect(vertices==expectedVertices(text,style)&&ink.Width()>0&&!clipped,
+					"actual localized eraser text emits every glyph inside its card and submitted clip");
+				return ink;
+			};
+			const auto comboRect=ImGui::WindowRectRelToAbs(host,host->NavRectRel[ImGuiNavLayer_Main]);
+			const LayoutRect action{comboRect.Min.x-1,comboRect.Min.y-1,comboRect.Max.x+1,comboRect.Max.y+1};
+			const LayoutRect header{card.left,card.top,card.right,tiles[0].top-Pixels(ImFluent::GetStyle().CardPadding+4)};
+			const auto titleInk=checkInk(IA(keys.Appearance).c_str(),ImFluentTextStyle_Body,TextPrimary,0,labelFirst[0],header,&action);
+			const auto descriptionInk=checkInk(IA(keys.E).c_str(),ImFluentTextStyle_Caption,TextSecondary,0,labelFirst[0],header,&action);
+			checks.Expect(Contains(card,titleInk)&&Contains(card,descriptionInk)&&Disjoint(titleInk,descriptionInk)&&
+				Disjoint(titleInk,action)&&Disjoint(descriptionInk,action),"actual card title and explanation fit and avoid the theme dropdown");
+			for(size_t index=0;index<tiles.size();++index)
+			{
+				const auto tile=tiles[index];const LayoutRect label{tile.left,tile.bottom+Pixels(6),tile.right,card.bottom};
+				const auto ink=checkInk(IA(labels[index]).c_str(),ImFluentTextStyle_Caption,index==0||index==3?TextPrimary:TextSecondary,
+					labelFirst[index],index+1<tiles.size()?labelFirst[index+1]:followingFirst,label);
+				checks.Expect(Contains(card,ink)&&ink.bottom<followingCard.top,"actual preview labels stay in the card before subsequent content");
+			}
+			const LayoutRect after{card.left,tiles[5].bottom,card.right,followingCard.top};
+			const auto followingInk=checkInk(IA(I18nKey.SettingsUI.Draw.Cursor.PenDevices).c_str(),ImFluentTextStyle_BodyStrong,
+				TextPrimary,labelFirst[5],followingFirst,after);
+			checks.Expect(followingInk.top>card.bottom&&followingInk.bottom<followingCard.top,
+				"actual following tablet-recognition heading is below the complete eraser card without overlap");
+			checks.Expect(count==6 && host->ScrollMax.x==0,"all six eraser previews fit without horizontal clipping");
+			for(size_t index=0;index<tiles.size();++index)
+			{
+				const auto tile=tiles[index];
+				checks.Expect(Near(tile.Width(),72*scale)&&Near(tile.Height(),72*scale)&&
+					tile.left>=host->Pos.x&&tile.right<=host->Pos.x+host->Size.x,"preview buttons keep their 72 DIP size at narrow and wide widths");
+				const float bottom=tile.bottom+Pixels(6)+TextHeight(IA(labels[index]).c_str(),tile.Width(),ImFluentTextStyle_Caption);
+				checks.Expect(bottom<host->Pos.y+host->Size.y,"translated preview labels have their complete measured height");
+				for(size_t next=index+1;next<tiles.size();++next)
+					if(tiles[next].top>tile.top+1) checks.Expect(tiles[next].top>=bottom+Pixels(8)-1,
+						"wrapped preview rows leave space for the full translated label");
+			}
+			const auto click=[&](size_t index){const auto rect=tiles[index];const ImVec2 center((rect.left+rect.right)/2,(rect.top+rect.bottom)/2);
+				draw(center);io.AddMouseButtonEvent(0,true);draw(center);io.AddMouseButtonEvent(0,false);draw(center);draw();};
+			for(int index : {1,2,0}){click(index);checks.Expect(draft.eraserShape==index,"clicking each shape updates the actual page draft");}
+			for(int index : {1,2,0}){click(index+3);checks.Expect(draft.eraserPattern==index,"clicking each pattern updates the actual page draft");}
+			checks.Expect(edits[0]==3&&edits[1]==3&&edits[2]==0,"shape and pattern clicks dispatch exactly one event each");
+			const auto selector=ImHashStr("##eraser-cursor-options",0,host->ID);
+			const int group=0,index=2;
+			const auto option=ImHashStr("##preview",0,ImHashData(&index,sizeof(index),ImHashData(&group,sizeof(group),selector)));
+			ImGui::FocusWindow(host);ImGui::SetNavID(option,ImGuiNavLayer_Main,host->NavRootFocusScopeId,ImRect{});
+			GImGui->NavCursorVisible=true;draw();
+			checks.Expect(GImGui->NavId==option&&GImGui->NavIdIsAlive,"preview buttons participate in real keyboard focus navigation");
+			const auto chord=[&](ImGuiKey key){io.AddKeyEvent(key,true);draw();io.AddKeyEvent(key,false);draw();};
+			chord(ImGuiKey_Space);checks.Expect(draft.eraserShape==2&&edits[0]==4,"keyboard activation selects the focused shape");
+			const auto combo=ImHashStr("##select",0,ImHashStr("##eraser-cursor",0,host->ID));
+			ImGui::FocusWindow(host);ImGui::SetNavID(combo,ImGuiNavLayer_Main,host->NavRootFocusScopeId,ImRect{});draw();
+			chord(ImGuiKey_F4);chord(ImGuiKey_End);chord(ImGuiKey_Enter);draw();
+			checks.Expect(draft.eraserTheme==1&&edits[2]==1,"light and dark dropdown updates only the eraser appearance theme");
+			for(size_t item=0;item<6;++item)
+				checks.Expect(appearances[item].theme==Cursor::EraserCursorTheme::Dark&&
+					(item<3?appearances[item].pattern==static_cast<Cursor::EraserCursorPattern>(draft.eraserPattern):
+					appearances[item].shape==static_cast<Cursor::EraserShape>(draft.eraserShape)),
+					"every preview receives the selected shape or pattern and independent eraser theme");
+		}
+		{
+			// 手掌页“橡皮光标”分类：4 个形状预览（跟随默认 + 三形状），明暗/纹样只读取全局草稿。
+			const auto& palmKeys=I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
+			for(const char* key : { palmKeys.CursorNoticeTitle,palmKeys.CursorNoticeDescription,palmKeys.Shape,palmKeys.ShapeDescription,palmKeys.FollowDefault })
+				checks.Expect(IA(key)!=key,"palm eraser cursor locale resolves every new key");
+			ApplyPalette(false);PalmEraserDraft draft;draft.eraserShape=1;draft.eraserPattern=2;draft.eraserTheme=1;
+			std::array<LayoutRect,4> tiles{};std::array<Cursor::EraserCursorAppearance,4> appearances{};size_t count=0;int edits=0;
+			ImGuiWindow* host=nullptr;bool sizeModeVisible=false,sizeMethodVisible=false,sizeMultiplierVisible=false;
+			std::array<int,3> methodEdits{};int modeEdits=0,multiplierEdits=0,multiplierResets=0;
+			const auto draw=[&](ImVec2 mouse=ImVec2(-100,-100))
+			{
+				io.DisplaySize={812*scale,3200*scale};io.AddMousePosEvent(mouse.x,mouse.y);
+				ImGui::NewFrame();ConfigureRowAnimations(0,false,1);
+				ImGui::SetNextWindowPos({0,0});ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##palm-eraser-shape-cpu",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoSavedSettings);
+				host=ImGui::GetCurrentWindow();ImFluent::PushFont(ImFluentTextStyle_Body);count=0;
+				const auto events=RenderPalmEraser(draft,[&](const LayoutRect& bounds,Cursor::EraserCursorAppearance appearance){
+					if(count<tiles.size()){tiles[count]=bounds;appearances[count]=appearance;}++count;});
+				edits+=events.shapeChanged;modeEdits+=events.sizeModeChanged;
+				for(size_t index=0;index<methodEdits.size();++index)methodEdits[index]+=events.sizeMethodsChanged[index];
+				multiplierEdits+=events.sizeMultiplierChanged;multiplierResets+=events.sizeMultiplierReset;
+				const auto seen=[&](const char* row){return host->StateStorage.GetInt(
+					ImHashStr("##description-frame",0,ImHashStr(row,0,host->ID)),-1)==ImGui::GetFrameCount();};
+				sizeModeVisible=seen("##palm-eraser-size-mode");sizeMethodVisible=seen("##palm-eraser-size-method");
+				sizeMultiplierVisible=seen("##palm-eraser-size-multiplier");
+				ImFluent::PopFont();ImGui::End();ImGui::Render();CheckDrawData(checks);
+			};
+			for(int frame=0;frame<3;++frame)draw();
+			checks.Expect(count==4,"palm page shows follow-default plus three shape previews");
+			checks.Expect(appearances[0].shape==Cursor::EraserShape::Rectangle&&appearances[3].shape==Cursor::EraserShape::Square&&
+				appearances[2].pattern==Cursor::EraserCursorPattern::Sparkle&&appearances[1].theme==Cursor::EraserCursorTheme::Dark,
+				"palm previews use the default shape for follow and the global pattern and theme");
+			const auto click=[&](size_t index){const auto rect=tiles[index];const ImVec2 center((rect.left+rect.right)/2,(rect.top+rect.bottom)/2);
+				draw(center);io.AddMouseButtonEvent(0,true);draw(center);io.AddMouseButtonEvent(0,false);draw(center);draw();};
+			click(3);checks.Expect(draft.shape==2&&edits==1,"clicking a palm shape selects an independent shape");
+			click(0);checks.Expect(draft.shape==-1&&edits==2,"clicking follow default restores following the regular eraser");
+			checks.Expect(sizeModeVisible&&sizeMethodVisible&&sizeMultiplierVisible,
+				"dynamic palm size shows both the method and multiplier controls");
+			const auto focus=[&](const char* row,const char* control){
+				const auto id=ImHashStr(control,0,ImHashStr(row,0,host->ID));
+				ImGui::FocusWindow(host);ImGui::SetNavID(id,ImGuiNavLayer_Main,host->NavRootFocusScopeId,ImRect{});
+				GImGui->NavCursorVisible=true;draw();
+				checks.Expect(GImGui->NavId==id&&GImGui->NavIdIsAlive,"palm size control registers real keyboard navigation");
+				return ImGui::WindowRectRelToAbs(host,host->NavRectRel[ImGuiNavLayer_Main]);};
+			const auto chord=[&](ImGuiKey key){io.AddKeyEvent(key,true);draw();io.AddKeyEvent(key,false);draw();};
+			focus("##palm-eraser-size-mode","##select");chord(ImGuiKey_F4);chord(ImGuiKey_End);chord(ImGuiKey_Enter);draw();
+			checks.Expect(draft.sizeMode==2&&modeEdits==1&&sizeModeVisible&&!sizeMethodVisible&&!sizeMultiplierVisible,
+				"fixed palm size hides method and multiplier without hiding its mode control");
+			draft.sizeMode=1;draw();
+			checks.Expect(!sizeMethodVisible&&!sizeMultiplierVisible,"follow-default fixed palm size hides dynamic controls");
+			focus("##palm-eraser-size-mode","##select");chord(ImGuiKey_F4);chord(ImGuiKey_Home);chord(ImGuiKey_Enter);draw();
+			checks.Expect(draft.sizeMode==0&&modeEdits==2&&sizeMethodVisible&&sizeMultiplierVisible,
+				"returning to dynamic palm size restores its controls with one mode event");
+			const char* methodKeys[3][4]{
+				{palmKeys.MethodEllipseArea,palmKeys.MethodRectangleArea,palmKeys.MethodInscribedCircle,palmKeys.MethodCircumscribedCircle},
+				{palmKeys.MethodRectangleArea,palmKeys.MethodEllipseArea,palmKeys.MethodInscribedRectangle,palmKeys.MethodCircumscribedRectangle},
+				{palmKeys.MethodEllipseArea,palmKeys.MethodRectangleArea,palmKeys.MethodInscribedSquare,palmKeys.MethodCircumscribedSquare}};
+			for(const bool follow : {false,true})for(int shape=0;shape<3;++shape)
+			{
+				draft.shape=follow?-1:shape;draft.eraserShape=follow?shape:(shape+1)%3;draft.sizeMethods={};draw();
+				const auto before=methodEdits;
+				focus("##palm-eraser-size-method","##select");chord(ImGuiKey_F4);draw();
+				ImGuiWindow* popup=GImGui->OpenPopupStack.empty()?nullptr:GImGui->OpenPopupStack.back().Window;
+				checks.Expect(popup!=nullptr,"palm size method opens the actual option popup");
+				if(!popup)continue;
+				for(int option=0;option<4;++option)
+				{
+					std::string label=IA(methodKeys[shape][option]);
+					if(option==0)label+=IA(I18nKey.SettingsUI.Design.RecommendedSuffix);
+					const auto id=ImHashStr(label.c_str(),0,ImHashData(&option,sizeof(option),popup->ID));
+					ImGui::FocusWindow(popup);ImGui::SetNavID(id,ImGuiNavLayer_Main,popup->NavRootFocusScopeId,ImRect{});draw();
+					checks.Expect(GImGui->NavId==id&&GImGui->NavIdIsAlive,
+						"palm method options match the effective explicit or followed shape and recommended order");
+				}
+				chord(ImGuiKey_Enter);draw();
+				for(int index=0;index<3;++index)checks.Expect(draft.sizeMethods[index]==(index==shape?3:0)&&
+					methodEdits[index]==before[index]+(index==shape?1:0),
+					"changing a palm size method writes only the effective shape method and one event");
+			}
+			// 手掌大小分组：三行按序不重叠且不越出页面；下拉框须完整容纳每个本地化选项（含推荐后缀），不靠截断。
+			const auto fits=[&](const std::string& label,const ImRect& select){
+				const bool result=Design::ControlTextWidth(label.c_str())+Pixels(40.0F)<=select.GetWidth()+.5F;
+				if(!result)std::cerr<<"[PalmSizeFit] scale="<<scale<<" text="<<label<<" textPx="<<Design::ControlTextWidth(label.c_str())
+					<<" selectPx="<<select.GetWidth()<<std::endl;
+				return result;};
+			for(int shape=0;shape<3;++shape)
+			{
+				draft.shape=shape;draft.sizeMode=0;draw();
+				const auto mode=focus("##palm-eraser-size-mode","##select");
+				const auto method=focus("##palm-eraser-size-method","##select");
+				const auto slider=focus("##palm-eraser-size-multiplier","##slider");
+				checks.Expect(mode.GetHeight()>0&&method.GetHeight()>0&&slider.GetHeight()>0&&
+					mode.Max.y<=method.Min.y&&method.Max.y<=slider.Min.y,
+					"palm size rows keep mode, method and multiplier in order without overlap");
+				for(const auto& rect:{mode,method,slider})
+					checks.Expect(rect.Min.x>=host->InnerRect.Min.x-.5F&&rect.Max.x<=host->InnerRect.Max.x+.5F,
+						"palm size controls stay inside the actual page width");
+				for(int option=0;option<4;++option)
+				{
+					std::string label=IA(methodKeys[shape][option]);
+					if(option==0)label+=IA(I18nKey.SettingsUI.Design.RecommendedSuffix);
+					checks.Expect(fits(label,method),"palm size method dropdown fits every localized option without truncation");
+				}
+				for(const auto& label:{IA(palmKeys.SizeModeDynamic)+IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+					IA(palmKeys.SizeModeFollowDefault),IA(palmKeys.SizeModeFixed)})
+					checks.Expect(fits(label,mode),"palm size mode dropdown fits every localized option without truncation");
+			}
+			draft.shape=-1;
+			draft.sizeMultiplierPercent=250;draw();
+			// 图标按钮只要求鼠标可用；与透明度用例一样按 SliderResetAction 的既有间距点击真实区域。
+			const auto slider=focus("##palm-eraser-size-multiplier","##slider");
+			const ImVec2 center{slider.Max.x+Pixels(12.0F+ControlHeight*0.5F),slider.GetCenter().y};
+			draw(center);io.AddMouseButtonEvent(0,true);draw(center);io.AddMouseButtonEvent(0,false);draw(center);draw();
+			checks.Expect(draft.sizeMultiplierPercent==100&&multiplierEdits==1&&multiplierResets==1,
+				"palm size multiplier icon reset writes 100 percent with one edit event");
+		}
+		io.ConfigFlags=oldFlags;io.ConfigInputTrickleEventQueue=oldTrickle;io.DisplaySize=oldSize;ApplyPalette(false);
 	}
 
 	void CheckPptIdleFadeScopes(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
@@ -7976,6 +8270,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "cursor tests load actual locale resources");
 				const auto fontIndex = localeFontIndex(locale);
 				CheckCursorPageControls(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckEraserCursorCard(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			continue;
 		}
@@ -8019,6 +8314,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				CheckPalmEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale,
 					scale == 1.0F || scale == 1.875F);
 				CheckSpeedEraserDemoPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckEraserCursorCard(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			if (scale == 1.0F || scale == 1.875F) CheckDrawingSubpageScroll(checks, fonts[0], fonts[1], fonts.back(), scale);
 			continue;

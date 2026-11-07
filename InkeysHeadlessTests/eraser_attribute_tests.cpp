@@ -62,6 +62,35 @@ int RunEraserAttributeTests()
 			!EraserAttributeCircleContains(small,BarButtonGapDip,EraserRectCenterX(small)+hitRadius-0.01,EraserRectCenterY(small)+hitRadius-0.01),
 			"size preset hit testing is a true circle rather than its bounding rectangle");
 	}
+	for (auto shape : { Inkeys::Drawing::Draw3::EraserShape::Circle, Inkeys::Drawing::Draw3::EraserShape::Rectangle,
+		Inkeys::Drawing::Draw3::EraserShape::Square })
+	for (double dpi : { 1.0, 1.875, 4.0 }) for (double ui : { 0.5, 1.0, 2.0 })
+	{
+		EraserAttributeLayoutInput input; input.shape=shape; input.dpiScale=dpi; input.zoom=dpi*ui;
+		input.main={500,420,880,500}; input.anchor={650,425,720,495}; input.work={0,0,1800,1000};
+		const auto layout=ResolveEraserAttributeLayout(input);
+		expect(layout.shape==shape && std::abs(layout.previewCornerRadius*input.zoom-6*dpi)<0.001,
+			"presented shape and 6 DIP corner radius retain the actual output DPI");
+		for(size_t index=0;index<3;++index)
+		{
+			const auto rect=layout.previews[index];
+			const auto half=Inkeys::Drawing::Draw3::ResolveEraserHalfSize(shape,input.diametersDip[index]/2);
+			expect(std::abs(rect.Width()*input.zoom-half.x*2*dpi)<0.001 &&
+				std::abs(rect.Height()*input.zoom-half.y*2*dpi)<0.001,"shape preview uses independent half width and height");
+			const double x=EraserRectCenterX(rect), y=EraserRectCenterY(rect);
+			expect(EraserAttributePreviewContains(rect,layout.shape,layout.previewCornerRadius,0,x,rect.top+0.01) &&
+				!EraserAttributePreviewContains(rect,layout.shape,layout.previewCornerRadius,0,rect.right+0.01,y) &&
+				!EraserAttributePreviewContains(rect,layout.shape,layout.previewCornerRadius,0,rect.right-0.01,rect.bottom-0.01),
+				"preview center edges hit while the outside and rounded bounding corners do not");
+			const auto outline=EraserAttributeSelectionOutline(rect,1);
+			expect(std::abs(outline.Width()-rect.Width()-7)<0.001 && std::abs(outline.Height()-rect.Height()-7)<0.001,
+				"selection ring expands both shape axes by the independent gap and half stroke");
+		}
+		const auto pose=EraserSurfacePose{ 0.75,0,0 };
+		const auto transformed=TransformEraserAttributeLayout(layout,pose,pose);
+		expect(transformed.shape==shape && std::abs(transformed.previewCornerRadius-layout.previewCornerRadius*0.75)<0.001,
+			"shape and corner radius survive the presented pose transform");
+	}
 	InputSettings settings;
 	expect(settings.automaticEnabled && settings.baseSize==BaseSize::Medium && settings.sensitivity==Sensitivity::Medium,"new global defaults are automatic on and32/medium");
 	for(int invalid:{-1,0,15,33,160,999})expect(RestoreBaseSize(invalid)==BaseSize::Medium,"invalid size restores to32");

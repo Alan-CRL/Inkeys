@@ -25,7 +25,9 @@ namespace Inkeys::Drawing::Draw3
 				style.inkType == StoredInkType::Highlighter ||
 				style.inkType == StoredInkType::Eraser ||
 				IsStoredShapeType(style.inkType);
-			return knownType && std::isfinite(style.opacity) &&
+			return knownType && static_cast<uint8_t>(style.eraserShape) <= 2 &&
+				(style.inkType == StoredInkType::Eraser || style.eraserShape == EraserShape::Circle) &&
+				std::isfinite(style.opacity) &&
 				style.opacity >= 0.0f && style.opacity <= 1.0f;
 		}
 

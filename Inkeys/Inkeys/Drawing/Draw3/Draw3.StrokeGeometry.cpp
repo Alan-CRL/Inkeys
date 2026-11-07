@@ -892,6 +892,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!std::isfinite(canvasOffsetX) || !std::isfinite(canvasOffsetY))
 			return std::nullopt;
+		if (style.inkType == StoredInkType::Eraser) style.eraserShape = stroke.eraserShape;
 		std::vector<StoredInkPoint> points;
 		TailFinalizeTrace trace;
 		std::optional<size_t> changedSegment;
@@ -1009,6 +1010,12 @@ namespace Inkeys::Drawing::Draw3
 		const bool highlighter = stroke.Style().inkType == StoredInkType::Highlighter;
 		const auto pointPadding = [&](const StoredInkPoint& point) noexcept
 		{
+			if (stroke.Style().inkType == StoredInkType::Eraser &&
+				stroke.Style().eraserShape != EraserShape::Circle)
+			{
+				const auto half = ResolveEraserHalfSize(stroke.Style().eraserShape, point.width * 0.5f);
+				return std::pair<double, double>{ double(half.x) + 3.0, double(half.y) + 3.0 };
+			}
 			return highlighter
 				? std::pair<double, double>{
 					static_cast<double>(point.width) * 0.5 /
@@ -1122,6 +1129,13 @@ namespace Inkeys::Drawing::Draw3
 				continue;
 			}
 
+			if (style.inkType == StoredInkType::Eraser && style.eraserShape != EraserShape::Circle)
+			{
+				if (DrawEraserStrokeOrDot(renderer, pointScratch, style.eraserShape, color) < 0) return {};
+				UnionRectInPlace(dirty, RectFromEraserPoints(pointScratch, style.eraserShape,
+					target.width, target.height));
+				continue;
+			}
 			const InkOperatorKind operatorKind = style.inkType == StoredInkType::Eraser
 				? InkOperatorKind::Erase : InkOperatorKind::Draw;
 			if (renderer.DrawStrokeOrDot(pointScratch,
@@ -1947,6 +1961,39 @@ namespace Inkeys::Drawing::Draw3
 		return ClampRectToCanvas(rect, width, height);
 	}
 
+	RECT RectFromEraserPoints(std::span<const InkPoint> points, EraserShape shape, int width, int height)
+	{
+		if (shape == EraserShape::Circle) return RectFromStrokePoints(points, width, height);
+		RECT rect = {};
+		for (const auto& point : points)
+		{
+			if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.r)) continue;
+			const auto half = ResolveEraserHalfSize(shape, point.r);
+			UnionRectInPlace(rect, RECT{
+				SaturatingFloorToLong(double(point.x) - half.x - 3.0),
+				SaturatingFloorToLong(double(point.y) - half.y - 3.0),
+				SaturatingCeilToLong(double(point.x) + half.x + 3.0),
+				SaturatingCeilToLong(double(point.y) + half.y + 3.0) });
+		}
+		return ClampRectToCanvas(rect, width, height);
+	}
+
+	int DrawEraserStrokeOrDot(InkRenderer& renderer, std::span<const InkPoint> points,
+		EraserShape shape, DirectX::XMFLOAT4 color)
+	{
+		if (shape == EraserShape::Circle)
+			return renderer.DrawStrokeOrDot(points, color, StrokeShape::RoundCapsule, InkOperatorKind::Erase);
+		// 只转换上传副本；真实点的标量半径和时间线保持原样。
+		std::vector<InkPoint> rectangles;
+		rectangles.reserve(points.size());
+		for (const auto& point : points)
+		{
+			const auto half = ResolveEraserHalfSize(shape, point.r);
+			rectangles.push_back({ point.x, point.y, half.x, half.y });
+		}
+		return renderer.DrawStrokeOrDot(rectangles, color, StrokeShape::EraseRectSweep, InkOperatorKind::Erase);
+	}
+
 	RECT RectFromShapePrimitive(const ShapePrimitive& primitive,
 		ShapePrimitiveKind kind, int width, int height)
 	{
@@ -2540,6 +2587,14 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		renderer.SetOperatorTarget(renderer.layerL1);
+		if (stroke.eraserShape != EraserShape::Circle)
+		{
+			if (DrawEraserStrokeOrDot(renderer, newPoints, stroke.eraserShape, kTransparentLayerClearColor) < 0)
+				return { {}, false };
+			if (!stroke.realPoints.empty()) stroke.committedIndex = latestIndex;
+			stroke.hasCommittedGeometry = true;
+			return { RectFromEraserPoints(newPoints, stroke.eraserShape, width, height), true };
+		}
 		if (renderer.DrawStrokeOrDot(newPoints, kTransparentLayerClearColor,
 			shape, InkOperatorKind::Erase) < 0) return { {}, false };
 		if (!stroke.realPoints.empty()) stroke.committedIndex = latestIndex;

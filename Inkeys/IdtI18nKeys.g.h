@@ -695,6 +695,20 @@ inline constexpr struct I18nKeyRoot
                     const char* E = "SettingsUI/Draw/Cursor/InjectedMouse/E";
                     const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
                 } InjectedMouse{};
+                struct Node__SettingsUI__Draw__Cursor__Eraser
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Eraser/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Eraser/E";
+                    const char* Appearance = "SettingsUI/Draw/Cursor/Eraser/Appearance";
+                    const char* Light = "SettingsUI/Draw/Cursor/Eraser/Light";
+                    const char* Dark = "SettingsUI/Draw/Cursor/Eraser/Dark";
+                    const char* Circle = "SettingsUI/Draw/Cursor/Eraser/Circle";
+                    const char* Rectangle = "SettingsUI/Draw/Cursor/Eraser/Rectangle";
+                    const char* Square = "SettingsUI/Draw/Cursor/Eraser/Square";
+                    const char* Grips = "SettingsUI/Draw/Cursor/Eraser/Grips";
+                    const char* Inkeys = "SettingsUI/Draw/Cursor/Eraser/Inkeys";
+                    const char* Sparkle = "SettingsUI/Draw/Cursor/Eraser/Sparkle";
+                } Eraser{};
                 const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
                 const char* OpacitySection = "SettingsUI/Draw/Cursor/OpacitySection";
                 const char* PenOpacity = "SettingsUI/Draw/Cursor/PenOpacity";
@@ -776,6 +790,33 @@ inline constexpr struct I18nKeyRoot
                     const char* ParallelWritingLaserMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingLaserMultiTouchNote";
                     const char* ParallelWriting = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWriting";
                     const char* ParallelWritingDescription = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingDescription";
+                    const char* CursorNoticeTitle = "SettingsUI/Draw/Eraser/PalmEraser/CursorNoticeTitle";
+                    const char* CursorNoticeDescription = "SettingsUI/Draw/Eraser/PalmEraser/CursorNoticeDescription";
+                    const char* Shape = "SettingsUI/Draw/Eraser/PalmEraser/Shape";
+                    const char* ShapeDescription = "SettingsUI/Draw/Eraser/PalmEraser/ShapeDescription";
+                    const char* FollowDefault = "SettingsUI/Draw/Eraser/PalmEraser/FollowDefault";
+                    const char* SizeSection = "SettingsUI/Draw/Eraser/PalmEraser/SizeSection";
+                    const char* SizeMode = "SettingsUI/Draw/Eraser/PalmEraser/SizeMode";
+                    const char* SizeModeDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeDescription";
+                    const char* SizeModeDynamic = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeDynamic";
+                    const char* SizeModeFollowDefault = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFollowDefault";
+                    const char* SizeModeFixed = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFixed";
+                    const char* SizeModeDynamicNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeDynamicNote";
+                    const char* SizeModeFollowDefaultNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFollowDefaultNote";
+                    const char* SizeModeFixedNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFixedNote";
+                    const char* SizeMethod = "SettingsUI/Draw/Eraser/PalmEraser/SizeMethod";
+                    const char* SizeMethodDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeMethodDescription";
+                    const char* MethodEllipseArea = "SettingsUI/Draw/Eraser/PalmEraser/MethodEllipseArea";
+                    const char* MethodRectangleArea = "SettingsUI/Draw/Eraser/PalmEraser/MethodRectangleArea";
+                    const char* MethodInscribedCircle = "SettingsUI/Draw/Eraser/PalmEraser/MethodInscribedCircle";
+                    const char* MethodCircumscribedCircle = "SettingsUI/Draw/Eraser/PalmEraser/MethodCircumscribedCircle";
+                    const char* MethodInscribedRectangle = "SettingsUI/Draw/Eraser/PalmEraser/MethodInscribedRectangle";
+                    const char* MethodCircumscribedRectangle = "SettingsUI/Draw/Eraser/PalmEraser/MethodCircumscribedRectangle";
+                    const char* MethodInscribedSquare = "SettingsUI/Draw/Eraser/PalmEraser/MethodInscribedSquare";
+                    const char* MethodCircumscribedSquare = "SettingsUI/Draw/Eraser/PalmEraser/MethodCircumscribedSquare";
+                    const char* SizeMethodShapeNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeMethodShapeNote";
+                    const char* SizeMultiplier = "SettingsUI/Draw/Eraser/PalmEraser/SizeMultiplier";
+                    const char* SizeMultiplierDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeMultiplierDescription";
                 } PalmEraser{};
                 struct Node__SettingsUI__Draw__Eraser__Input
                 {

@@ -3,7 +3,7 @@
   "name": "palm-eraser-phase2-custom",
   "title": "手掌橡皮擦除样式与大小自定义设置",
   "description": "手掌橡皮设置新增擦除样式(跟随默认/三形状)、粗细计算方式(动态/固定/固定不含笔速)、各形状大小计算方式及动态倍率(25%-300%)。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

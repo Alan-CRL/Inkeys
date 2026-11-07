@@ -6,9 +6,10 @@
 
 ## 2. Signatures
 
-- `PalmEraser::Settings { enabled, thresholdPercent, recognitionWindowMs, parallelWriting, tools[7] }`，`ToolCategory::{Pen,HardPen,Highlighter,Laser,Eraser,Shape,Brush}`位于Draw3.PalmEraser.h。
+- `PalmEraser::Settings { enabled, thresholdPercent, recognitionWindowMs, parallelWriting, tools[7], shape, sizeMode, sizeMethods[3], sizeMultiplierPercent }`，`ToolCategory::{Pen,HardPen,Highlighter,Laser,Eraser,Shape,Brush}`位于Draw3.PalmEraser.h。
 - `ResolveScale(DisplayScale,InputSource)`、`ResolvePreviewScale(DisplayScale)`、`ThresholdAreaPixels(Settings,Scale)`；Scale区分可信mm/px与估算系统DIP/px，不伪造EDID密度。
-- `PalmEraser::State::{Begin,Observe,Advance,End}`：可在副本上观察，转换准备成功后由owner提交。
+- `PalmEraser::State::{Begin,Observe,Advance,End}`：可在副本上观察，转换准备成功后由owner提交。Begin额外接收独立Down锁存的普通橡皮形状，经`ResolveShape`存入`State::shape`。
+- `PalmEraser::ContactEraserDiameter(EraserShape, method, W, H, multiplierPercent)`：形状×方法×倍率→等面积圆的等效直径（非法返回0）。
 - `Host::{SetPalmEraserOptions,PalmEraserOptions}`发布/复制期望值；PumpBridgeState在绘制owner应用Controller，不能借设置渲染线程跨线程操作Controller。
 - `PalmEraserPreferencesSnapshot()`、`SetPalmEraserPreference(Settings)->bool`为产品设置入口；setter自行调用既有RequestConfigWrite冻结保存，页面不能再排一次。
 - `PalmEraserDraft::{referenceAreaPixels,referenceAreaCm2}`都是100%参考面积；前者来自实际像素阈值，后者仅在可信物理标尺下由px²×mm/px×mm/px÷100得到，不写入配置。
@@ -24,13 +25,14 @@
 - 可信显示物理映射/有效现有标定用25cm²=2500mm²；不可用时改用100×100系统DIP=10000DIP²。两者都按面积乘ThresholdPercent/100。估算路径用`dipPerPixelX/Y`换画布像素，100DIP在100%/150%系统缩放分别对应100/150px，不把系统DIP再乘设置UI缩放。
 - 实际InputDeviceType必须是Touch，明确TouchPad/Mouse/Pen不能识别；旧来源Unknown只允许保守DIP回退。面积必须已有CanvasPixels元数据、宽高有限且为正、max/min≤3.5，不能靠压力/DPI猜未知面积单位。
 - State锁存独立Down偏好与标尺，观察既有合并快照中的有效最大面积；不承诺硬件全部包峰值。识别指标保持areaPx=W×H，达到原阈值即激活；2026-11-06按用户选择A，定尺改为椭圆近似等面积圆，直径sqrt(W×H)、半径为直径的一半。识别、阈值、配置和设置矩形预览均不额外乘π/4。截止QPC样本可接收，之后Advance锁尺；第一次物理Up提前封窗冻结。
+- 2026-11-07 大小自定义（custom 子任务）：`Shape` -1..2（-1跟随）、`SizeMode` 0动态/1固定跟随默认橡皮/2固定不支持笔速、`SizeMethodCircle/Rectangle/Square` 0..3（每形状各自顺序，0恒为推荐）、`SizeMultiplierPercent` 25..300默认100，均严格整数校验、非法回落默认。动态时直径=`ContactEraserDiameter`（公式表见任务 design.md §3），圆形+方法0+100%与sqrt(W×H)逐位一致；竖长矩形默认“矩形等面积”。固定方式不取接触面积，直径=Down锁存的`FixedDiameterPx(fixedDiameterDip)`；方式1且全局自动粗细开启时复用Touch `SpeedEraser::Controller`（面积辅助关闭、默认大小起步），否则Fixed。识别仍为W×H阈值，不受方式/方法/倍率影响。
 - 窗口内尺寸更新只影响新增擦除几何，旧realPoints半径不回写；窗口后及成功接续不重新采样或增长。不使用SpeedEraser面积辅助的2..96DIP上限/拖动资格或速度尺寸控制器。
 
 ### 转换、并行和续接
 
 - Palm仅覆盖本Runtime实际tool为Eraser/Fixed，保留selectedTool/global选择/其他接触。原绘制转手掌先准备新模型，再移除本触点CPU几何/Shape/自有Laser层并重建共享L0/L1；不清L2或文档。原实际工具已是橡皮时保留已接受擦除及旧半径，只改后续尺寸，不能恢复已擦内容。
 - 原地面积变化必须被消费，不能被“位置未变”早退吞掉。截止不依赖继续Move；休眠复用既有deadline及Move订阅/sequence/generation握手。
-- 邻域半径为r+max(0.15r,4px)（画布px，经`PalmExclusionContains`判定，形状扩展须改此一处）。近邻新独立触点锁存禁止手掌；同批先激活者/Down顺序确定性仲裁。成功续接前的有限候选保留邻域预约。
+- 邻域：圆形半径r+max(0.15r,4px)；竖长矩形/正方形按等效直径换算半宽hx、半高hy，各轴外扩max(0.15h,4px)（画布px，统一经`PalmExclusionContains`判定）。尺寸取当前实际直径（笔速手掌用`eraserSize.effectiveDiameterPx`），激活帧抬笔用激活时冻结值。手掌续接不按普通橡皮形状过滤，继承旧笔锁存形状。近邻新独立触点锁存禁止手掌；同批先激活者/Down顺序确定性仲裁。成功续接前的有限候选保留邻域预约。
 - 2026-11-07 ParallelWriting=true时：手掌首次激活帧以冻结的激活位置/尺寸，对范围内其他未结束、非手掌、非仅观察的Touch按并行关闭同一收尾（正常Up、保留墨迹、DiscardUntilTerminal、不可续接）只执行一次；之后手掌移动/增长靠近书写触点不截断。激活期间（含续接期限）落点在并行手掌范围内的新Touch Down拒收并隔离到真实终态，移出范围也不出墨；续接时范围内只允许接回手掌自身。笔/鼠标不受影响。
 - 全局多指关闭拒收额外新独立Touch；真正断触接续优先，不当作额外独立输入。激光仍受其原多指子偏好约束。
 - ParallelWriting=true保留其他已准入绘制；false正常收尾其他绘制并保留墨迹，物理手掌期间不接收新绘制，旧route隔离到真实终态。新Touch可仅观察面积成为远处手掌，仅观察状态不得产生modeler几何/光标/Stored，超时或终态取消回收。
@@ -42,7 +44,7 @@
 ### 设置详情
 
 - 新绘制子页PalmEraser紧跟笔速橡皮入口，复用子页PushID/导航/返回/滚动；不增加根侧栏或改变笔速齿轮的打开目标。
-- 页标题→条件Warning→基本设置（首项总开关）→窗口下拉→面积倍率及同条目重置→像素预览→七工具勾选→精细控制；无介绍块。150ms显示推荐后缀；reset只改倍率，关总开关仍可编辑偏好。
+- 页标题→条件Warning→基本设置（首项总开关）→窗口下拉→面积倍率及同条目重置→像素预览→精细控制（七工具勾选、边擦边写）→手掌橡皮大小（粗细计算方式下拉+当前方式i；仅动态显示：大小计算方式下拉〔选项随生效形状，首项推荐，i显示当前形状〕、擦除大小倍率滑块+图标重置）→橡皮光标（i信息块+形状预览选择）；无介绍块。150ms显示推荐后缀；reset只改倍率，关总开关仍可编辑偏好。
 - 边擦边写行的标准i仅在ParallelWriting=true且全局多指或激光多指关闭时显示。读取Drawing.MultiTouchEnabled及Drawing.Laser.MultiTouchEnabled的当帧只读draft，不改变偏好；全局关闭优先提示全部无法生效，否则只提示激光笔下无法生效。两个多指均开或边擦边写关时无提示，不额外受手掌总开关影响。
 - Brush现在可勾选且保存，默认true；无Brush工具选择功能不意味着把偏好灰显。Shape统一映射已有几何工具，工具类别不按DrawingTool枚举位置推断。
 - 预览与识别同用已应用绘图输出快照；根据同一阈值显示单个主题accent色圆角矩形描边（不填充），默认1:1；左上角悬浮Combo可选1:1、4:3、2:1、1:2。比例是页面状态，不写入偏好；Combo悬浮于边框上方，不挤占矩形布局或换行；按用户确认保留原控件透明度，允许边框透出，不另加不透明底色。图形直接用像素，文字留白正常UI缩放；边框未撑满时独立水平居中，下拉仍在预览左上角，超宽可横向查看；不能缩小伪装实尺。阈值说明仅保留调倍率的用户说明；下方复用标准SettingRow note显示i及当前比例/倍率的cm×cm和px×px。可信物理面积由同一参考像素面积乘mm/px的面积换算给draft；估算仅px，未发布不虚构尺寸。
@@ -80,6 +82,7 @@
 - 页面顺序断言用真实控件矩形/Warning背景DrawData，并结合标题与分组源码顺序；Design::TextAt直接AddText不进入ImGui日志，不能把日志缺项当作界面缺项。
 - `InkeysHeadlessTests.exe --no-window`全范围回归；纯策略单独可用`--palm-eraser-only`，覆盖2500mm²/10000DIP²、倍率、系统缩放、无面积/比例/时间边界、状态锁存及pool复用；另断言100×100→100、160×90→120、交换宽高/同比缩放、阈值等于/略低/略高，防止把识别面积也改成椭圆面积。
 - 产品早期`--draw3-palm-eraser-test`：生产CPU转换/失败回滚、各原工具、擦除旧点保留、观察only/邻域/单指、真实续接身份和模型失败、Laser强制收尾、四档model profile的长空档Move/Up。该probe不是完整Run或GPU像素/硬件证据。
+- `--palm-eraser-only`另覆盖12种方法×3宽高×3倍率与默认逐位一致；`--draw3-palm-eraser-test`覆盖三种粗细方式×全局自动粗细、笔速增长与回缩唤醒、当前尺寸屏蔽、矩形双轴边界、笔速手掌续接。
 - `--config-boundary-test`：真实Config ReadAll/ReadMini/写盘/赋值/Reset/NoUpload、非法类型/宽整数、冻结大屏与EDID失效下DIP识别；不增加Config复制构造绕过shared_mutex。
 - 三语i18n sync/check、完整InkeysRepo.sln Debug|ARM64、原生ARM64 MSBuild及编码/EOL/minimal diff检查；GUI/实机未测应明确说明。
 

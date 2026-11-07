@@ -241,6 +241,7 @@ void SyncDraw3State();
 void InitializeEraserInputPreferences();
 Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot();
 void SetGlobalEraserPreference(int baseDiameterDip = -1, int sensitivity = -1, int automatic = -1);
+void SetEraserCursorPreference(int shape = -1, int pattern = -1, int theme = -1);
 Inkeys::Drawing::Draw3::PalmEraser::Settings PalmEraserPreferencesSnapshot();
 bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings& options);
 bool AutomaticPenResponseAvailable() noexcept;

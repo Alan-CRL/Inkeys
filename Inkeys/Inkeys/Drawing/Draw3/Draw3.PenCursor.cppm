@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.EraserCursor.h"
 #include "Draw3.CursorSettings.h"
 
 #include <atomic>
@@ -21,7 +22,8 @@ export namespace Inkeys::Drawing::Draw3
 		Rectangle,
 		EraserGripCircle,
 		PenIcon,
-		Arrow
+		Arrow,
+		EraserSprite
 	};
 
 	// 描述应用内瞬态光标外观；颜色分量使用 [0,1]，尺寸使用画布像素。
@@ -46,6 +48,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 图形中心相对输入热点的偏移；笔形左上尖端仍精确对应原 sample。
 		float centerOffsetX = 0.0f;
 		float centerOffsetY = 0.0f;
+		// 精灵配方与动态尺寸分开；移动和档内缩放不触发烘焙。
+		EraserCursorAppearance eraserCursor = {};
+		float eraserBaseShortSide = 0.0f;
+		float eraserDpiScale = 1.0f;
 	};
 
 	// 仅表示持久 cursor owner；Touch 只可作为事件类型，不得长期接管 owner。

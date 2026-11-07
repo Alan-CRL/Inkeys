@@ -804,6 +804,75 @@ namespace
 			Inkeys::Config restoredPolicy;
 			if (!emptyPolicy.Write() || !restoredPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
 				|| restoredPolicy.Config.AllowMultipleInstances) return 1;
+			stage = "eraser cursor configuration";
+			{
+				Inkeys::Config appearance;
+				auto& eraser = appearance.Drawing.Eraser;
+				const std::array fields{ &eraser.Shape, &eraser.CursorPattern, &eraser.CursorTheme };
+				const std::array names{ "Shape", "CursorPattern", "CursorTheme" };
+				const auto upload = appearance.GetUploadInfo();
+				for (size_t index = 0; index < fields.size(); ++index)
+				{
+					const std::string path = std::string("Drawing.Eraser.") + names[index];
+					if (fields[index]->load() != 0 || !writeBytes(mainConfig, "{}")) return 1;
+					*fields[index] = 1;
+					if (!appearance.ReadMini({path}) || fields[index]->load() != 0) return 1;
+					// 布尔/浮点/超宽整数不能经过窄化伪装成合法外观值。
+					for (const char* raw : { "0", "1", "2", "-1", "3", "99", "true", "1.0", "\"1\"", "null", "[]", "{}",
+						"4294967296", "4294967297", "18446744073709551615", "-4294967296", "-4294967295" })
+					{
+						const std::string json = std::string("{\"Drawing\":{\"Eraser\":{\"") + names[index] + "\":" + raw + "}}}";
+						const int expected = strcmp(raw,"1") == 0 ? 1 : index != 2 && strcmp(raw,"2") == 0 ? 2 : 0;
+						*fields[index] = 99;
+						if (!writeBytes(mainConfig,json) || !appearance.ReadMini({path}) || fields[index]->load() != expected) return 1;
+						*fields[index] = 99;
+						if (!appearance.ReadAll() || fields[index]->load() != expected) return 1;
+					}
+				}
+				eraser.Shape=2; eraser.CursorPattern=2; eraser.CursorTheme=1;
+				Inkeys::Config frozen; frozen=appearance;
+				eraser.Shape=0; eraser.CursorPattern=0; eraser.CursorTheme=0;
+				Inkeys::Config restored;
+				if (!frozen.Write() || !restored.ReadAll() || restored.Drawing.Eraser.Shape.load()!=2 ||
+					restored.Drawing.Eraser.CursorPattern.load()!=2 || restored.Drawing.Eraser.CursorTheme.load()!=1 ||
+					frozen.GetUploadInfo()!=upload) return 1;
+				// 手掌独立形状：缺键为 -1（跟随），只接受 -1..2 的窄整数。
+				auto& palmShape = appearance.Drawing.PalmEraser.Shape;
+				if (palmShape.load() != -1) return 1;
+				for (const char* raw : { "-1", "0", "1", "2", "3", "-2", "true", "1.0", "\"1\"", "null", "4294967297" })
+				{
+					const std::string json = std::string("{\"Drawing\":{\"PalmEraser\":{\"Shape\":") + raw + "}}}";
+					const int expected = strcmp(raw,"0") == 0 ? 0 : strcmp(raw,"1") == 0 ? 1 : strcmp(raw,"2") == 0 ? 2 : -1;
+					palmShape = 99;
+					if (!writeBytes(mainConfig,json) || !appearance.ReadMini({"Drawing.PalmEraser.Shape"}) || palmShape.load() != expected) return 1;
+				}
+				stage = "palm eraser size configuration";
+				auto& palm = appearance.Drawing.PalmEraser;
+				const std::array sizeFields{ &palm.SizeMode, &palm.SizeMethodCircle, &palm.SizeMethodRectangle,
+					&palm.SizeMethodSquare, &palm.SizeMultiplierPercent };
+				const std::array sizeNames{ "SizeMode", "SizeMethodCircle", "SizeMethodRectangle", "SizeMethodSquare", "SizeMultiplierPercent" };
+				for (size_t index = 0; index < sizeFields.size(); ++index)
+				{
+					const std::string path = std::string("Drawing.PalmEraser.") + sizeNames[index];
+					const int defaultValue = index == 4 ? 100 : 0;
+					if (sizeFields[index]->load() != defaultValue || !writeBytes(mainConfig, "{}")) return 1;
+					*sizeFields[index] = 99;
+					if (!appearance.ReadMini({path}) || sizeFields[index]->load() != defaultValue) return 1;
+					// 覆盖全部合法枚举、倍率两端和相邻越界值，以及不能窄化的原始类型。
+					for (const char* raw : { "0", "1", "2", "3", "4", "-1", "24", "25", "100", "300", "301",
+						"true", "false", "1.0", "100.0", "\"1\"", "null", "[]", "{}", "4294967296", "4294967297",
+						"4294967396", "18446744073709551615", "-4294967296", "-4294967295" })
+					{
+						const std::string json = std::string("{\"Drawing\":{\"PalmEraser\":{\"") + sizeNames[index] + "\":" + raw + "}}}";
+						const int expected = index == 4 ? (strcmp(raw,"25") == 0 ? 25 : strcmp(raw,"300") == 0 ? 300 : 100)
+							: strcmp(raw,"1") == 0 ? 1 : strcmp(raw,"2") == 0 ? 2 : index != 0 && strcmp(raw,"3") == 0 ? 3 : 0;
+						*sizeFields[index] = 99;
+						if (!writeBytes(mainConfig,json) || !appearance.ReadMini({path}) || sizeFields[index]->load() != expected) return 1;
+						*sizeFields[index] = 99;
+						if (!appearance.ReadAll() || sizeFields[index]->load() != expected) return 1;
+					}
+				}
+			}
 			stage = "touch reconnect configuration";
 			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
 			Inkeys::Config reconnectDefaults;
@@ -1010,6 +1079,9 @@ namespace
 					result.enabled = saved.Enabled.load(); result.thresholdPercent = saved.ThresholdPercent.load();
 					result.recognitionWindowMs = saved.RecognitionWindowMs.load();
 					result.parallelWriting = saved.ParallelWriting.load();
+					result.sizeMode = saved.SizeMode.load();
+					result.sizeMethods = { saved.SizeMethodCircle.load(), saved.SizeMethodRectangle.load(), saved.SizeMethodSquare.load() };
+					result.sizeMultiplierPercent = saved.SizeMultiplierPercent.load();
 					result.tools = { saved.Tools.Pen.load(), saved.Tools.HardPen.load(), saved.Tools.Highlighter.load(),
 						saved.Tools.Laser.load(), saved.Tools.Eraser.load(), saved.Tools.Shape.load(), saved.Tools.Brush.load() };
 					return result;
@@ -1044,6 +1116,9 @@ namespace
 						auto& saved = fresh.Drawing.PalmEraser;
 						saved.Enabled = !largeScreen; saved.ThresholdPercent = percent;
 						saved.RecognitionWindowMs = window; saved.ParallelWriting = window != 250;
+						saved.SizeMode = window % 3;
+						saved.SizeMethodCircle = percent % 4; saved.SizeMethodRectangle = (percent + 1) % 4;
+						saved.SizeMethodSquare = (percent + 2) % 4; saved.SizeMultiplierPercent = 25 + percent % 276;
 						const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
 							&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
 						for (size_t index = 0; index < fields.size(); ++index) *fields[index] = (index + window + percent) % 2 == 0;

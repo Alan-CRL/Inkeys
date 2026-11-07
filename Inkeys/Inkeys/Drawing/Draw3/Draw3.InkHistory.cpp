@@ -1,5 +1,7 @@
 ﻿module;
 
+#include "Draw3.SpeedEraser.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -472,6 +474,11 @@ namespace Inkeys::Drawing::Draw3
 				if (highlighter)
 					return PointD{ kHighlighterHalfWidth + kFootprintAaPadding,
 						kHighlighterHalfHeight + kFootprintAaPadding };
+				if (inkType == StoredInkType::Eraser && stroke.Style().eraserShape != EraserShape::Circle)
+				{
+					const auto half = ResolveEraserHalfSize(stroke.Style().eraserShape, point.width * 0.5f);
+					return PointD{ double(half.x) + kFootprintAaPadding, double(half.y) + kFootprintAaPadding };
+				}
 				const double radius = static_cast<double>(point.width) * 0.5 + kFootprintAaPadding;
 				return PointD{ radius, radius };
 			};
@@ -553,11 +560,17 @@ namespace Inkeys::Drawing::Draw3
 			const bool highlighter = stroke.Style().inkType == StoredInkType::Highlighter;
 			for (const StoredInkPoint& point : points)
 			{
-				const double expandX = highlighter
+				double expandX = highlighter
 					? kHighlighterHalfWidth + kFootprintAaPadding
 					: static_cast<double>(point.width) * 0.5 + kFootprintAaPadding;
-				const double expandY = highlighter
+				double expandY = highlighter
 					? kHighlighterHalfHeight + kFootprintAaPadding : expandX;
+				if (stroke.Style().inkType == StoredInkType::Eraser && stroke.Style().eraserShape != EraserShape::Circle)
+				{
+					const auto half = ResolveEraserHalfSize(stroke.Style().eraserShape, point.width * 0.5f);
+					expandX = double(half.x) + kFootprintAaPadding;
+					expandY = double(half.y) + kFootprintAaPadding;
+				}
 				left = (std::min)(left, static_cast<double>(point.x) - expandX);
 				top = (std::min)(top, static_cast<double>(point.y) - expandY);
 				right = (std::max)(right, static_cast<double>(point.x) + expandX);

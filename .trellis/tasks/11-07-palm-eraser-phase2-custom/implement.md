@@ -1,15 +1,16 @@
-# 实施计划：手掌橡皮擦除样式与大小自定义
+# 实施计划：手掌橡皮大小自定义（R2–R4、R6）
 
-前置：`11-07-palm-eraser-phase2-shapes` 已完成并合入当前分支；`11-07-palm-eraser-phase2-blocking` 已提供 `PalmExclusionContains`。
+前置：shapes（含 R1 手掌形状）与 blocking 已在工作区（未提交）；基线快照 `refs/inkeys-baseline/custom-start`。
 
-1. 复核 shapes 落地后的形状枚举、尺寸换算与 `EraserStylePicker` 接口。
-2. 配置 6 项 + 校验 + 默认（含倍率有限性/范围）。
-3. `PalmEraser::Settings` 扩展与偏好传递、Down 锁存（含普通橡皮形状与默认大小快照）。
-4. `State::Observe` 定尺：形状 × 方法 × 倍率 → 等效 r；纯函数 + Headless 数值测试（prd 表全部 12 种组合、倍率边界、默认组合等于现行为）。
-5. 三种粗细方式接入运行时（动态 / 固定跟随默认含笔速 / 固定不含笔速）；生产 probe 覆盖续接与工具转换。
-6. 屏蔽范围矩形扩展（design §4）+ 用例。
-7. 设置 UI 两张卡片 + 条件显示 + i18n sync/补译/check。
-8. 验证：ARM64 原生 MSBuild 完整构建 `InkeysRepo.sln` Debug|ARM64（≥5 分钟，处理 PATH 冲突）；`--palm-eraser-only`、`--setting-eraser-only`、`--no-window` 全量、`--config-boundary-test`、`--draw3-palm-eraser-test`。实机未测列出。
-9. 更新 spec：`palm-eraser.md`（样式、粗细方式、计算方式、倍率、屏蔽形状）。
+分工：Codex（`gpt-6.1-sol`，High，`service_tier=fast`，`workspace-write`）实现第 1–6 步；Claude 审查、补全 19 语译文、完整构建与测试（第 7–8 步）。
 
-回到规划的条件：笔速控制器无法在不改动 SpeedEraser 合同的前提下用于手掌；设置控件无法复用导致需要新的布局系统。
+1. 配置 5 项 + 严格校验 + 默认；`IdtState` 读写；`IdtMain.cpp` config-boundary 用例（design §1）。
+2. `PalmEraser::Settings` 扩展 + `NormalizeSettings`；`State::Begin` 锁存生效形状（design §2）。
+3. 纯函数 `ContactEraserDiameter` + `Observe` 接入；Headless 数值用例：12 种组合 × {100×100、160×90、极端长宽比 3.5:1}，倍率 25/100/300 线性，默认组合与 `√(WH)` 逐位一致（design §3）。
+4. 三种粗细方式接入 `PromotePalmRuntime` 及运行时；`--draw3-palm-eraser-test` 覆盖三种方式、全局自动粗细开/关、续接与工具转换（design §4，含停止条件）。
+5. 屏蔽范围矩形判定 + 用例（圆形原用例保持）（design §5）。
+6. 设置 UI 分组 + 条件显示 + 保存；`setting_design_tests.cpp` 覆盖条目可见性、下拉选项随形状切换、倍率重置；zh-CN 文案（design §6）。
+7. Claude：`pwsh -NoProfile -File Scripts/i18n.ps1 sync` → 补译 19 语 → check。
+8. 验证：ARM64 原生 MSBuild 完整构建 `InkeysRepo.sln` Debug|ARM64；`--draw3-palm-eraser-test`、`--config-boundary-test`、`--setting-eraser-only`、`--palm-eraser-only`、`--no-window` 全量；更新 spec `palm-eraser.md` 与本任务 validation.md；实机/GUI/Win7 未测列出。
+
+回到规划的条件：笔速控制器无法在不改 SpeedEraser 对外合同的前提下复用（先按固定默认大小实现并报告）；设置控件无法复用导致需要新布局系统。

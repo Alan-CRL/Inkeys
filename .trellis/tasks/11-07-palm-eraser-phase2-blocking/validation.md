@@ -20,4 +20,4 @@
 ## 未验证
 
 - 大屏多触点实机（边擦边写下的真实手掌与邻近手指）、Win7 运行；GUI 未启动。
-- 矩形手掌屏蔽范围（D4）留给 custom 子任务。
+- 矩形手掌屏蔽范围（D4）：已在 custom 子任务 R6 实现并测试，见 `11-07-palm-eraser-phase2-custom/validation.md`。

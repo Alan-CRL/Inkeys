@@ -4,6 +4,7 @@
 #include "Setting.HomeBrand.h"
 #include "Setting.SessionState.h"
 #include "Setting.EraserDemo.h"
+#include "../../Drawing/Draw3/Draw3.EraserCursor.h"
 #include "../../Business/DesktopShortcut.h"
 
 struct ImGuiWindow;
@@ -247,6 +248,7 @@ namespace Inkeys::UI::Setting::Design
 	};
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter = {});
 
+	using EraserCursorPreviewPresenter = std::function<void(const LayoutRect&, Drawing::Draw3::EraserCursorAppearance)>;
 	struct PalmEraserDraft
 	{
 		bool enabled = false;
@@ -255,6 +257,10 @@ namespace Inkeys::UI::Setting::Design
 		// 每帧只读的多指偏好，只控制说明提示，不写回手掌设置。
 		bool multiTouchEnabled = true, laserMultiTouchEnabled = true;
 		std::array<bool, 7> tools{ true, true, true, true, true, true, true };
+		// 手掌独立形状：-1 跟随默认，0..2 为 EraserShape；明暗/纹样/默认形状只读，仅用于预览。
+		int shape = -1, eraserShape = 0, eraserPattern = 0, eraserTheme = 0;
+		int sizeMode = 0, sizeMultiplierPercent = 100;
+		std::array<int, 3> sizeMethods{};
 		// 来自绘制输出已应用标尺的 100% 面积；页面本帧调倍率即可同步预览。
 		double referenceAreaPixels = 0, referenceAreaCm2 = 0;
 		bool previewEstimated = false, physicalSizeWarning = false;
@@ -262,15 +268,18 @@ namespace Inkeys::UI::Setting::Design
 	struct PalmEraserEvents
 	{
 		bool back = false, enabledChanged = false, recognitionWindowChanged = false;
-		bool thresholdChanged = false, thresholdReset = false, parallelWritingChanged = false;
+		bool thresholdChanged = false, thresholdReset = false, parallelWritingChanged = false, shapeChanged = false;
+		bool sizeModeChanged = false, sizeMultiplierChanged = false, sizeMultiplierReset = false, sizeMultiplierActive = false;
+		std::array<bool, 3> sizeMethodsChanged{};
 		std::array<bool, 7> toolsChanged{};
 	};
-	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft, const EraserCursorPreviewPresenter& preview = {});
 	// 光标专页草稿：四个设备各自的下拉项索引（触摸首项为“无光标”，其余设备首项为“鼠标”）。
 	struct CursorPageDraft
 	{
 		int mouse = 0, touch = 0, screenPen = 0, tablet = 0;
 		int dotHideOnContact = 1;
+		int eraserShape = 0, eraserPattern = 0, eraserTheme = 0;
 		bool injectedMouse = false;
 		bool injectedAvailable = true;
 		// Pen、HighlightPen、Dot、HighlightDot 的独立不透明度。
@@ -281,9 +290,10 @@ namespace Inkeys::UI::Setting::Design
 		bool back = false;
 		bool mouse = false, touch = false, screenPen = false, tablet = false;
 		bool injectedMouse = false, dotHideOnContact = false;
+		bool eraserShape = false, eraserPattern = false, eraserTheme = false;
 		std::array<bool, 4> opacityChanged{}, opacityActive{}, opacityReset{};
 	};
-	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft, const EraserCursorPreviewPresenter& preview = {});
 
 	struct PptIdleFadeDraft
 	{

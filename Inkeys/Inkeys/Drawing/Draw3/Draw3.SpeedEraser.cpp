@@ -4,6 +4,64 @@
 #include <cmath>
 #include <limits>
 
+namespace Inkeys::Drawing::Draw3
+{
+	EraserSweepHull BuildEraserRectSweepHull(EraserShape shape,
+		float x0, float y0, float r0, float x1, float y1, float r1) noexcept
+	{
+		EraserSweepHull hull;
+		if (shape == EraserShape::Circle || !std::isfinite(x0) || !std::isfinite(y0) ||
+			!std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(r0) ||
+			!std::isfinite(r1) || r0 <= 0.0f || r1 <= 0.0f) return hull;
+		const auto a = ResolveEraserHalfSize(shape, r0), b = ResolveEraserHalfSize(shape, r1);
+		const std::array<EraserSweepPoint, 8> corners = {{
+			{ x0-a.x, y0-a.y }, { x0+a.x, y0-a.y }, { x0+a.x, y0+a.y }, { x0-a.x, y0+a.y },
+			{ x1-b.x, y1-b.y }, { x1+b.x, y1-b.y }, { x1+b.x, y1+b.y }, { x1-b.x, y1+b.y } }};
+		size_t start = 0;
+		for (size_t i = 1; i < corners.size(); ++i)
+			if (corners[i].x < corners[start].x ||
+				(corners[i].x == corners[start].x && corners[i].y < corners[start].y)) start = i;
+		size_t current = start;
+		// 两个同宽高比矩形的凸包最多六边，gift-wrap 同时处理同心包含和重复角点。
+		do
+		{
+			hull.vertices[hull.count++] = corners[current];
+			size_t next = current;
+			for (size_t i = 0; i < corners.size(); ++i)
+			{
+				const double ax = double(corners[next].x)-corners[current].x;
+				const double ay = double(corners[next].y)-corners[current].y;
+				const double bx = double(corners[i].x)-corners[current].x;
+				const double by = double(corners[i].y)-corners[current].y;
+				const double cross = ax*by-ay*bx;
+				if (next == current || cross < 0.0 ||
+					(cross == 0.0 && bx*bx+by*by > ax*ax+ay*ay)) next = i;
+			}
+			current = next;
+		} while ((corners[current].x != corners[start].x || corners[current].y != corners[start].y) &&
+			hull.count < hull.vertices.size());
+		return hull;
+	}
+
+	float EraserSweepSignedDistance(const EraserSweepHull& hull, EraserSweepPoint point) noexcept
+	{
+		if (hull.count < 3) return (std::numeric_limits<float>::infinity)();
+		double distanceSquared = (std::numeric_limits<double>::infinity)();
+		bool inside = true;
+		for (size_t i = 0; i < hull.count; ++i)
+		{
+			const auto a = hull.vertices[i], b = hull.vertices[(i+1)%hull.count];
+			const double dx = double(b.x)-a.x, dy = double(b.y)-a.y;
+			const double px = double(point.x)-a.x, py = double(point.y)-a.y;
+			inside &= dx*py-dy*px >= 0.0;
+			const double lengthSquared = dx*dx+dy*dy;
+			const double t = lengthSquared > 0.0 ? std::clamp((px*dx+py*dy)/lengthSquared, 0.0, 1.0) : 0.0;
+			distanceSquared = std::min(distanceSquared, (px-t*dx)*(px-t*dx)+(py-t*dy)*(py-t*dy));
+		}
+		return static_cast<float>((inside ? -1.0 : 1.0)*std::sqrt(distanceSquared));
+	}
+}
+
 namespace Inkeys::Drawing::Draw3::SpeedEraser
 {
 	namespace

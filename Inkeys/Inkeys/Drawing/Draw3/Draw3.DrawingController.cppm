@@ -18,6 +18,7 @@ module;
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.EraserCursor.h"
 #include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 
@@ -130,6 +131,10 @@ export namespace Inkeys::Drawing::Draw3
 		void SetInvertedPenEraserEnabled(bool enabled) noexcept;
 		// 由 Host 绘制 owner 应用；每个新独立触点再锁存。
 		void SetPalmEraserOptions(const PalmEraser::Settings& options) noexcept;
+		// 阶段 C 从配置桥接此入口；只影响之后的新笔划。
+		void SetEraserShape(EraserShape shape) noexcept;
+		// Host 绘制 owner 接入阶段 C；形状只影响新 Down，纹样/明暗即时更新。
+		void SetEraserCursorAppearance(EraserCursorAppearance appearance) noexcept;
 		// 画布调试：enabled 为设置开关，visual 为可视化模式（visual 仅在 enabled 时生效）。
 		// 可视化模式下新 contact 不建笔、不擦除、不触发手掌橡皮、不写历史，只登记为调试探测接触。
 		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
@@ -191,6 +196,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 位0/1为多指/尾修正，位2..3为预测模式；默认开/开/Kalman。
 		std::atomic<uint32_t> generalDrawingOptions_ = 11;
 		PalmEraser::Settings palmEraserOptions_;
+		std::atomic<EraserShape> eraserShape_ = EraserShape::Circle;
+		EraserCursorAppearance eraserCursorAppearance_ = {}; // 仅绘制 owner 访问。
 		// 位0=画布调试开关，位1=可视化模式；关闭时绘制线程只多一次原子读取。
 		std::atomic<uint32_t> canvasDebugOptions_ = 0;
 		std::atomic<uint8_t> canvasDebugInputMode_ = 0;

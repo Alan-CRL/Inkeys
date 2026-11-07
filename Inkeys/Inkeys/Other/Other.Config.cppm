@@ -467,6 +467,9 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, HighlightDotFillOpacity, 50) \
 		) \
 		GROUP(Eraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Shape, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, CursorPattern, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, CursorTheme, 0) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BaseDiameterDip, 32) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Sensitivity, 1) \
@@ -483,6 +486,12 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThresholdPercent, 100) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RecognitionWindowMs, 150) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParallelWriting, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Shape, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMode, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMethodCircle, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMethodRectangle, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMethodSquare, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMultiplierPercent, 100) \
 			GROUP(Tools, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, HardPen, true) \

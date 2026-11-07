@@ -13,6 +13,37 @@ float2 SafeNormalize(float2 value, float2 fallbackValue)
     return valueLength > 1e-5 ? value / valueLength : fallbackValue;
 }
 
+float3 GetEraserRectSweepPlane(float2 segment, float2 half0, float2 half1,
+    float2 sideNormal, float2 localMin)
+{
+    float2 cornerSign = float2(sideNormal.x >= 0.0 ? 1.0 : -1.0,
+        sideNormal.y >= 0.0 ? 1.0 : -1.0);
+    // 变尺寸可使支撑角点换象限；仅在 VS 枚举同号角点，不构造凸包数组。
+    [unroll]
+    for (int cornerIndex = 0; cornerIndex < 4; ++cornerIndex)
+    {
+        float2 candidateSign = cornerSign * float2(
+            (cornerIndex & 1) == 0 ? 1.0 : -1.0,
+            (cornerIndex & 2) == 0 ? 1.0 : -1.0);
+        float2 point0 = half0 * candidateSign;
+        float2 point1 = segment + half1 * candidateSign;
+        float2 edge = point1 - point0;
+        float2 normal = float2(-edge.y, edge.x);
+        if (dot(normal, sideNormal) < 0.0) normal = -normal;
+        float normalLength = length(normal);
+        if (normalLength <= 1e-5 || dot(normal, sideNormal) <= 0.0) continue;
+        normal /= normalLength;
+
+        // 矩形支撑函数等价于检查全部八角点；容差以归一化后的像素距离计。
+        float support0 = dot(abs(normal), half0);
+        float support1 = dot(normal, segment) + dot(abs(normal), half1);
+        if (max(support0, support1) <= dot(normal, point0) + 1e-4)
+            return float3(normal, dot(normal, localMin - point0));
+    }
+    // 无效边恒为负，不参与 PS 的最大距离。
+    return float3(0.0, 0.0, -1e20);
+}
+
 PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     PS_INPUT output = (PS_INPUT) 0;
@@ -74,6 +105,22 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
+    if (type == 24)
+    {
+        InkPoint cursor = InkData[globalBufferOffset];
+        float2 center = cursor.pos;
+        // 半宽高已包含 CPU 精灵的透明 AA 留白，不能再次外扩并拉伸 UV。
+        float2 halfSize = float2(cursor.r, cursor.time);
+        float2 worldPos = center + (templatePos * 2.0 - 1.0) * halfSize;
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        output.p1 = center;
+        output.p2 = halfSize;
+        output.uv = templatePos;
+        return output;
+    }
+
     if ((type >= 4 && type <= 6) || type == 21 || type == 22)
     {
         InkPoint cursor = InkData[globalBufferOffset];
@@ -92,6 +139,44 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         output.r2 = style.pos.y;
         // x 编码独立边缘 opacity + 1；y 传递高亮光标的物理像素外黑边宽度。
         output.uv = float2(style.r, style.time);
+        return output;
+    }
+
+    if (type == 23)
+    {
+        // 矩形橡皮保留两端各自尺寸，包围盒不能使用平均半宽高。
+        InkPoint start = InkData[globalBufferOffset + itemIndex];
+        InkPoint end = InkData[globalBufferOffset + itemIndex + 1];
+        float2 half0 = float2(start.r, start.time);
+        float2 half1 = float2(end.r, end.time);
+        float2 segment = end.pos - start.pos;
+        bool zeroLength = dot(segment, segment) <= 1e-10;
+        if (zeroLength) segment = 0.0;
+        float2 localMin = min(-half0, segment - half1);
+        float2 localMax = max(half0, segment + half1);
+        float3 plane0 = float3(0.0, 0.0, -1e20);
+        float3 plane1 = plane0;
+        bool contained = all(abs(segment) + half0 <= half1) ||
+            all(abs(segment) + half1 <= half0);
+        // 零长或包含时只用单矩形 AABB，避免退化斜边影响覆盖。
+        if (!zeroLength && !contained)
+        {
+            float2 sideNormal = float2(-segment.y, segment.x);
+            plane0 = GetEraserRectSweepPlane(segment, half0, half1, sideNormal, localMin);
+            plane1 = GetEraserRectSweepPlane(segment, half0, half1, -sideNormal, localMin);
+        }
+        // type 23 复用全为 nointerpolation 的字段：AABB、两个单位法线及偏移。
+        output.p1 = start.pos + localMin;
+        output.p2 = start.pos + localMax;
+        output.color = float4(plane0.xy, plane1.xy);
+        output.r1 = plane0.z;
+        output.r2 = plane1.z;
+        float2 rectMin = output.p1 - 2.0;
+        float2 rectMax = output.p2 + 2.0;
+        float2 worldPos = lerp(rectMin, rectMax, templatePos);
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
         return output;
     }
 

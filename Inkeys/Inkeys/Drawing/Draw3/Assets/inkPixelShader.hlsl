@@ -1,5 +1,9 @@
 ﻿// inkPixelShader.hlsl
 #include "ink.hlsli"
+
+// t0..t14 / s0 为既有墨迹资源；精灵使用独立线性 clamp 采样。
+Texture2D EraserCursorSprite : register(t15);
+SamplerState EraserCursorSampler : register(s1);
 #include "EraserGripVisual.h"
 
 float sdUnevenCapsule_Vertical(float2 p, float r1, float r2, float h)
@@ -94,6 +98,16 @@ float GetRectangleDist(float2 p, float2 halfSize)
 {
     float2 q = abs(p) - halfSize;
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+}
+
+float GetEraserRectSweepDist(PS_INPUT input)
+{
+    float2 local = input.pixPos - input.p1;
+    float2 axisDistance = max(-local, local - (input.p2 - input.p1));
+    float distanceToSweep = max(axisDistance.x, axisDistance.y);
+    // 外角处为真实距离下界，仅在角点不足 1px 的 AA 带内有差异。
+    return max(distanceToSweep, max(dot(input.color.xy, local) + input.r1,
+        dot(input.color.zw, local) + input.r2));
 }
 
 float GetArrowDist(float2 local, float2 halfSize)
@@ -349,6 +363,17 @@ OperatorOutput main(PS_INPUT input)
         return particleOutput;
     }
 
+    if (type == 24)
+    {
+        // 独立早返回：Win7 guarded 尾部的 type > 22 不能将精灵当作 DefaultInk。
+        float4 color = EraserCursorSprite.Sample(EraserCursorSampler, input.uv) *
+            saturate(input.color.a);
+        OperatorOutput spriteOutput;
+        spriteOutput.add = color;
+        spriteOutput.retain = (1.0 - color.a).xxxx;
+        return spriteOutput;
+    }
+
     if ((type >= 4 && type <= 6) || type == 21 || type == 22)
     {
         float2 local = input.pixPos - input.p1;
@@ -523,6 +548,19 @@ OperatorOutput main(PS_INPUT input)
             output.retain = (liveRetain * stableRetain).xxxx;
         }
         return output;
+    }
+
+    if (type == 23)
+    {
+        float d = GetEraserRectSweepDist(input);
+        // 与圆形橡皮使用相同 AA 和 Add/Retain 擦除输出，独立分支兼容 Win7 guard。
+        float aaWidth = max(fwidth(d) * 1.5, 1e-5);
+        float coverage = 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, d);
+        if (coverage <= 0.0) discard;
+        OperatorOutput eraserOutput;
+        eraserOutput.add = 0.0;
+        eraserOutput.retain = (1.0 - coverage).xxxx;
+        return eraserOutput;
     }
 
     if (type >= 16 && type <= 19)

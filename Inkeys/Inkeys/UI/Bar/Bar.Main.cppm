@@ -141,6 +141,13 @@ private:
 	BarUiWordClass title_;
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	std::array<Microsoft::WRL::ComPtr<ID2D1Bitmap1>,3> previewBitmaps_;
+	std::array<bool,3> previewBitmapAttempted_{};
+	std::array<float,3> previewDiametersPx_{}, previewRasterHalfWidths_{};
+	float previewDpiScale_ = 1;
+	Inkeys::Drawing::Draw3::EraserShape previewShape_ = Inkeys::Drawing::Draw3::EraserShape::Circle;
+	Inkeys::Drawing::Draw3::EraserCursorPattern previewPattern_ = Inkeys::Drawing::Draw3::EraserCursorPattern::Grips;
+	Inkeys::Drawing::Draw3::EraserCursorTheme previewTheme_ = Inkeys::Drawing::Draw3::EraserCursorTheme::Light;
 	unsigned long long deviceGeneration_ = 0;
 	int selectedSize_ = 32, sensitivity_ = 1;
 	bool palmEnabled_ = false;
