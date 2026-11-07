@@ -51,3 +51,33 @@
 
 - 橡皮随接触方向旋转、真实掌形擦除、RTS 坐标换算再修改、画布调试叠加层性能。
 - UInk 1.1 官方字段本身（仅记录）。
+
+## 验收结论
+
+父任务与 blocking、shapes、custom 三个子任务均已完成；已知未修项与未验证场景按以下记录保留。
+
+## PR 前审阅与修复（2026-11-07）
+
+以下为本次文档收尾依据的主 Agent 核实结论与独立运行记录；文档收尾未重新执行构建或测试。
+
+- 审阅方式：Codex `gpt-6.1-sol`（High，Fast，只读）三路独立审阅：手掌逻辑 / 渲染存储 / 设置文档；主 Agent 核实，修复交 Codex `gpt-6.1-sol`（High，Fast，workspace-write）执行两轮。
+- 已修复（提交 `3a055c34`）：
+  1. `Draw3.DrawingController.cpp` 的 `PromotePalmRuntime`：普通活动橡皮（原 tool 已是 Eraser 且有擦除点）转手掌时，保留该笔 Down 锁存的形状，避免手掌所选形状覆盖整笔 eraserShape、改变旧擦除点固化/重放形状；手掌形状与定尺、光标、屏蔽范围同步为该形状。其他原工具（笔 / 荧光笔 / 激光 / 图形）仍用手掌所选形状。`--draw3-palm-eraser-test` 相关断言已改为 Eraser 保留原形状、Pen/Laser 覆盖。
+  2. 两处新增的邻近 Touch 落笔拒收分支（`RejectPalmNeighborTouch`）在调用前保存 MetricKey，并补 `Invalidate(InitRejected)` 退休已登记的 metrics 记录；无低成本夹具，未新增专门测试。
+  3. spec `palm-eraser.md` 中“不使用速度尺寸控制器”限定为动态模式，并补充上述形状保留规则。
+- 已知未修项按用户决定仅记录、不修复：blocking 的两项低概率竞态（中）见 [blocking validation](../11-07-palm-eraser-phase2-blocking/validation.md)“PR 前审阅：已知未修项”；光标纹样显隐使用烘焙尺寸（低）见 [shapes validation](../11-07-palm-eraser-phase2-shapes/validation.md) 同名节。任务完成不代表这些问题已修复，也不代表未测场景已验证。
+
+最终验证结果（主 Agent 独立运行）：
+
+| 项目 | 结果 |
+| --- | --- |
+| `InkeysRepo.sln` Debug\|ARM64 | exit 0 |
+| `--draw3-palm-eraser-test` | PASS |
+| `--config-boundary-test` | PASS |
+| `--draw3-renderer-upload-test` | PASS failures=0 |
+| `InkeysHeadlessTests --no-window` 全量 | exit 0，无失败 |
+| `--palm-eraser-only`（首轮修复后） | cases=2053 failures=0 |
+| `Scripts/i18n.ps1 check` | 通过 |
+| `git diff --check` | 通过 |
+
+仍未验证：真实大屏多触点、GUI 观感、真实 GPU 光标、Win7 运行；此前记录的待母语复核项仍保留。
