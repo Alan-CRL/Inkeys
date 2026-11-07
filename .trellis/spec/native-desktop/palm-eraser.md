@@ -26,7 +26,7 @@
 - 实际InputDeviceType必须是Touch，明确TouchPad/Mouse/Pen不能识别；旧来源Unknown只允许保守DIP回退。面积必须已有CanvasPixels元数据、宽高有限且为正、max/min≤3.5，不能靠压力/DPI猜未知面积单位。
 - State锁存独立Down偏好与标尺，观察既有合并快照中的有效最大面积；不承诺硬件全部包峰值。识别指标保持areaPx=W×H，达到原阈值即激活；2026-11-06按用户选择A，定尺改为椭圆近似等面积圆，直径sqrt(W×H)、半径为直径的一半。识别、阈值、配置和设置矩形预览均不额外乘π/4。截止QPC样本可接收，之后Advance锁尺；第一次物理Up提前封窗冻结。
 - 2026-11-07 大小自定义（custom 子任务）：`Shape` -1..2（-1跟随）、`SizeMode` 0动态/1固定跟随默认橡皮/2固定不支持笔速、`SizeMethodCircle/Rectangle/Square` 0..3（每形状各自顺序，0恒为推荐）、`SizeMultiplierPercent` 25..300默认100，均严格整数校验、非法回落默认。动态时直径=`ContactEraserDiameter`（公式表见任务 design.md §3），圆形+方法0+100%与sqrt(W×H)逐位一致；竖长矩形默认“矩形等面积”。固定方式不取接触面积，直径=Down锁存的`FixedDiameterPx(fixedDiameterDip)`；方式1且全局自动粗细开启时复用Touch `SpeedEraser::Controller`（面积辅助关闭、默认大小起步），否则Fixed。识别仍为W×H阈值，不受方式/方法/倍率影响。
-- 窗口内尺寸更新只影响新增擦除几何，旧realPoints半径不回写；窗口后及成功接续不重新采样或增长。不使用SpeedEraser面积辅助的2..96DIP上限/拖动资格或速度尺寸控制器。
+- 动态模式（SizeMode=0）窗口内尺寸更新只影响新增擦除几何，旧realPoints半径不回写；窗口后及成功接续不重新采样或增长，不使用SpeedEraser面积辅助的2..96DIP上限/拖动资格或速度尺寸控制器。方式1且全局自动粗细开启时遵循Touch笔速动态。普通活动橡皮转手掌时保持该笔Down形状，定尺、光标及屏蔽范围与笔划形状一致。
 
 ### 转换、并行和续接
 

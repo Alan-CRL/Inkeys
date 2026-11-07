@@ -2497,10 +2497,18 @@ namespace Inkeys::Drawing::Draw3
 			return candidate.awaitingReconnect && !candidate.ended && (!neighborBlocked || candidate.palm.active);
 		}
 
-		bool PromotePalmRuntime(RuntimeStroke& runtime, const PalmEraser::State& candidate,
+		bool PromotePalmRuntime(RuntimeStroke& runtime, PalmEraser::State candidate,
 			const ContactSnapshot& sample, const StrokeModelConfiguration& configuration,
 			int64_t qpcFrequency)
 		{
+			// 活动橡皮保留 Down 形状，避免固化/重放时改写旧擦除；定尺也使用同一形状。
+			if (runtime.tool == DrawingTool::Eraser && !runtime.palmObservationOnly && candidate.shape != runtime.stroke.eraserShape)
+			{
+				candidate.shape = runtime.stroke.eraserShape;
+				const auto area = ContactAreaFromSnapshot(sample);
+				if (candidate.settings.sizeMode == 0) candidate.diameterPx = static_cast<float>(PalmEraser::ContactEraserDiameter(
+					candidate.shape, candidate.settings.sizeMethods[static_cast<size_t>(candidate.shape)], area.widthPx, area.heightPx, candidate.settings.sizeMultiplierPercent));
+			}
 			if (!candidate.active || candidate.diameterPx <= 0 || qpcFrequency <= 0) return false;
 			const double time = std::max(0.0, static_cast<double>(sample.qpc - runtime.qpcOrigin) / qpcFrequency);
 			if (runtime.palm.active && candidate.settings.sizeMode != 0)
@@ -5862,17 +5870,23 @@ namespace Inkeys::Drawing::Draw3
 				check(PromotePalmRuntime(runtime, candidate, sample, configuration, 1000), "production promotion prepares and commits a real model");
 				check(runtime.stroke.eraserShape == EraserShape::Rectangle, "palm promotion retains Down eraser shape");
 				{
-					// 手掌独立形状覆盖 Down 形状；越界值规范化为跟随。
+					// 活动橡皮保留 Down 形状，其他工具采用手掌形状；越界值规范化为跟随。
 					RuntimeStroke custom(configuration.expectedSpeed);
 					seed(custom, tool);
 					custom.stroke.eraserShape = EraserShape::Rectangle;
 					auto squareSettings = preferences;
 					squareSettings.shape = static_cast<int>(EraserShape::Square);
+					squareSettings.sizeMethods[1] = 2; // 矩形与正方形选不同方法，防止形状错误被相同直径掩盖。
 					custom.palm.Begin(squareSettings, scale, PalmToolCategory(tool), 1000, 1000, false, EraserShape::Rectangle);
 					auto squareCandidate = custom.palm;
+					const auto expectedShape = tool == DrawingTool::Eraser ? EraserShape::Rectangle : EraserShape::Square;
 					check(squareCandidate.Observe(ContactAreaFromSnapshot(sample), sample.qpc) &&
 						PromotePalmRuntime(custom, squareCandidate, sample, configuration, 1000) &&
-						custom.stroke.eraserShape == EraserShape::Square, "palm shape setting overrides the Down eraser shape");
+						custom.stroke.eraserShape == expectedShape && custom.palm.shape == custom.stroke.eraserShape,
+						"active eraser retains Down shape; other tools use palm shape consistently");
+					check(custom.palm.diameterPx == static_cast<float>(PalmEraser::ContactEraserDiameter(
+						expectedShape, squareSettings.sizeMethods[static_cast<size_t>(expectedShape)], 100, 100, squareSettings.sizeMultiplierPercent)),
+						"palm sizing uses the retained stroke shape");
 					PalmEraser::Settings invalid; invalid.shape = 7;
 					check(PalmEraser::NormalizeSettings(invalid).shape == -1 &&
 						PalmEraser::ResolveShape(PalmEraser::NormalizeSettings(invalid), EraserShape::Rectangle) == EraserShape::Rectangle,
@@ -5924,6 +5938,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					RuntimeStroke sized(configuration.expectedSpeed);
 					seed(sized, tool);
+					sized.stroke.eraserShape = EraserShape::Rectangle; // 模拟 Down 锁存，活动橡皮保留该形状。
 					if (tool == DrawingTool::Eraser)
 					{
 						auto parameters = configuration.modelParams;
@@ -5951,11 +5966,13 @@ namespace Inkeys::Drawing::Draw3
 					check(accepted.Observe(ContactAreaFromSnapshot(sample), sample.qpc) &&
 						PromotePalmRuntime(sized, accepted, sample, configuration, 1000), "all width modes promote each original tool through the real model");
 					const bool speed = mode == 1 && automatic;
-					const float expected = mode == 0 ? 300.0f : 80.0f;
+					const auto expectedShape = tool == DrawingTool::Eraser ? EraserShape::Rectangle : EraserShape::Square;
+					const float expected = mode == 0 ? static_cast<float>(PalmEraser::ContactEraserDiameter(
+						expectedShape, sized.palm.settings.sizeMethods[static_cast<size_t>(expectedShape)], 100, 100, sized.palm.settings.sizeMultiplierPercent)) : 80.0f;
 					check(sized.stroke.widthMode == (speed ? StrokeWidthMode::SpeedEraser : StrokeWidthMode::Fixed) &&
 						sized.resolvedEraser.kind == (speed ? SpeedEraser::EraserKind::Speed : SpeedEraser::EraserKind::Fixed) &&
 						std::abs(PalmRuntimeDiameter(sized) - expected) < .001f && sized.palm.settings.sizeMode == mode &&
-						sized.stroke.eraserShape == EraserShape::Square && sized.palm.shape == EraserShape::Square &&
+						sized.stroke.eraserShape == expectedShape && sized.palm.shape == expectedShape &&
 						sized.selectedTool == tool,
 						"mode and global automatic gate select dynamic or Down-latched DIP default size with one shape");
 					if (speed)
@@ -5965,9 +5982,11 @@ namespace Inkeys::Drawing::Draw3
 					const double speedTime = sized.speedEraserOc.AcceptedSeconds();
 					auto larger = sample; larger.qpc = 1100; larger.contactSize = {200, 200};
 					auto grown = sized.palm;
+					const float grownExpected = mode == 0 ? static_cast<float>(PalmEraser::ContactEraserDiameter(
+						expectedShape, sized.palm.settings.sizeMethods[static_cast<size_t>(expectedShape)], 200, 200, sized.palm.settings.sizeMultiplierPercent)) : expected;
 					check(grown.Observe(ContactAreaFromSnapshot(larger), larger.qpc) &&
 						PromotePalmRuntime(sized, grown, larger, configuration, 1000) &&
-						std::abs(PalmRuntimeDiameter(sized) - (mode == 0 ? 600.0f : expected)) < .001f &&
+						std::abs(PalmRuntimeDiameter(sized) - grownExpected) < .001f &&
 						(!speed || sized.speedEraserOc.AcceptedSeconds() == speedTime),
 						"larger contact updates dynamic sizing without resetting a fixed or running speed eraser");
 					if (speed)
@@ -6008,7 +6027,7 @@ namespace Inkeys::Drawing::Draw3
 						sized.speedEraserOc.PauseForReconnect(3.0);
 						sized.speedEraserOc.ResumeFromReconnect(5000, 200, 3.1);
 						check(std::abs(sized.speedEraserOc.Diameter() - beforeReconnect) < .001f &&
-							sized.stroke.eraserShape == EraserShape::Square, "speed palm reconnect preserves accepted diameter and latched shape");
+							sized.stroke.eraserShape == expectedShape, "speed palm reconnect preserves accepted diameter and latched shape");
 					}
 					sized.palm.End();
 					check(!sized.palm.Observe(ContactAreaFromSnapshot(larger), 1200) && sized.palm.locked,
@@ -12998,8 +13017,13 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
+				// Discard 后 record 可能被复用；提前保存本次登记的 metrics 身份供两处拒收退休。
+				const auto registeredMetricKey = MetricKey(handle);
 				if (!reconnectRuntime && RejectPalmNeighborTouch(input_, touchGesture, handle, deviceType, palmNeighborBlocked))
+				{
+					if (metricsState_) metricsState_->Invalidate(registeredMetricKey, ContentMetricInvalidationReason::InitRejected);
 					return false;
+				}
 				if (reconnectRuntime)
 				{
 					const float reconnectPreviousRawSpeed = reconnectRuntime->filteredInputSpeed;
@@ -13191,7 +13215,11 @@ namespace Inkeys::Drawing::Draw3
 				}
 
 				// 手掌模型续接失败后仍须拒收邻近 Down，不能转成普通独立笔。
-				if (RejectPalmNeighborTouch(input_, touchGesture, handle, deviceType, palmNeighborBlocked)) return false;
+				if (RejectPalmNeighborTouch(input_, touchGesture, handle, deviceType, palmNeighborBlocked))
+				{
+					if (metricsState_) metricsState_->Invalidate(registeredMetricKey, ContentMetricInvalidationReason::InitRejected);
+					return false;
+				}
 				// 真实匹配且模型接续成功已在上方接管返回；失败/不匹配才按新独立笔判定。
 				if (RejectIndependentTouch(input_, touchGesture, handle, deviceType,
 					hasActiveTouch, generalOptions.multiTouchEnabled))
