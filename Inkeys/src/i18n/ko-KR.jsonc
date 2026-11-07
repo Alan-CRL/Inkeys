@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "여러 손가락 그리기가 꺼져 있어 지우면서 동시에 쓸 수 없습니다.",
           "ParallelWritingLaserMultiTouchNote": "여러 손가락 레이저가 꺼져 있어 레이저에서는 지우면서 동시에 쓸 수 없습니다.",
           "ParallelWriting": "지우면서 동시에 쓰기",
-          "ParallelWritingDescription": "손바닥 지우개를 사용하는 동안에도 다른 입력을 중단하지 않아 계속 그릴 수 있습니다. 두 명 이상이 동시에 쓸 때 적합합니다."
+          "ParallelWritingDescription": "손바닥 지우개를 켜면 근처의 터치 쓰기만 끝나고 근처에서 새로 닿는 입력은 막힙니다. 다른 위치에서는 계속 쓸 수 있습니다. 두 명 이상이 동시에 쓸 때 적합합니다."
         },
         "Input":
         {

@@ -2407,18 +2407,59 @@ namespace Inkeys::Drawing::Draw3
 				runtime.lastInputSnapshot.phase != ContactPhase::Cancelled;
 		}
 
+		bool PalmExclusionContains(const PalmEraser::State& palm, PointF center, PointF point) noexcept
+		{
+			const double radius = PalmEraser::ExclusionRadius(palm.diameterPx);
+			return std::hypot(point.x - center.x, point.y - center.y) <= radius;
+		}
+
 		bool PalmNeighborBlocked(const std::vector<RuntimeStroke*>& active, PointF position,
-			int64_t qpc, const RuntimeStroke* self = nullptr) noexcept
+			int64_t qpc, const RuntimeStroke* self = nullptr, bool parallelOnly = false) noexcept
 		{
 			for (const RuntimeStroke* other : active)
 			{
 				if (!other || other == self || other->ended || !other->palm.active) continue;
+				if (parallelOnly && !other->palm.settings.parallelWriting) continue;
 				if (other->awaitingReconnect && qpc > other->reconnectDeadlineQpc) continue;
 				const auto& sample = other->awaitingReconnect ? other->deferredUpSnapshot : other->lastInputSnapshot;
-				const double radius = PalmEraser::ExclusionRadius(other->palm.diameterPx);
-				if (std::hypot(position.x - sample.position.x, position.y - sample.position.y) <= radius) return true;
+				if (PalmExclusionContains(other->palm, sample.position, position)) return true;
 			}
 			return false;
+		}
+
+		struct PalmActivation
+		{
+			RuntimeStroke* runtime;
+			PalmEraser::State palm;
+			PointF center;
+		};
+
+		void RecordPalmActivation(std::vector<PalmActivation>& activations, RuntimeStroke& runtime,
+			const ContactSnapshot& sample, bool wasActive)
+		{
+			// 冻结激活时的范围，同帧后续移动、增长或 Up 不改变这次抬笔判定。
+			if (!wasActive && runtime.palm.settings.parallelWriting)
+				activations.push_back({ &runtime, runtime.palm, sample.position });
+		}
+
+		template<class Finish>
+		void FinishActivatedPalmNeighbors(std::vector<PalmActivation>& activations,
+			const std::vector<RuntimeStroke*>& active, Finish&& finish)
+		{
+			for (const auto& activation : activations)
+				for (RuntimeStroke* other : active)
+				{
+					if (!other || other == activation.runtime || other->ended || other->palm.active ||
+						other->palmObservationOnly || other->metricDeviceType != InputDeviceType::Touch) continue;
+					const auto& sample = other->awaitingReconnect ? other->deferredUpSnapshot : other->lastModelSnapshot;
+					if (PalmExclusionContains(activation.palm, activation.center, sample.position)) finish(*other);
+				}
+			activations.clear(); // 只在激活帧截断，不随手掌移动反复结束旧笔。
+		}
+
+		bool PalmReconnectCandidateAllowed(const RuntimeStroke& candidate, bool neighborBlocked) noexcept
+		{
+			return candidate.awaitingReconnect && !candidate.ended && (!neighborBlocked || candidate.palm.active);
 		}
 
 		bool PromotePalmRuntime(RuntimeStroke& runtime, const PalmEraser::State& candidate,
@@ -2559,6 +2600,15 @@ namespace Inkeys::Drawing::Draw3
 			if (!handle.record) return 0;
 			return static_cast<uint64_t>(handle.record->TabletContextId()) << 32 |
 				handle.record->ContactId();
+		}
+
+		bool RejectPalmNeighborTouch(ContactInputCoordinator& input, CanvasTouchGestureState& gestures,
+			ContactHandle handle, InputDeviceType deviceType, bool neighborBlocked)
+		{
+			if (deviceType != InputDeviceType::Touch || !neighborBlocked) return false;
+			gestures.OnTouchUp(CanvasTouchKey(handle));
+			input.DiscardUntilTerminal(handle);
+			return true;
 		}
 
 		void AdoptReconnectedContact(RuntimeStroke& runtime, ContactHandle handle) noexcept
@@ -5815,6 +5865,171 @@ namespace Inkeys::Drawing::Draw3
 				interruptedLifecycle.phase == LaserTrailPhase::Inactive,
 				"synthetically ended Laser batch can fade completely without another physical Up");
 
+			// 激活范围只处理当时邻近的 Touch，冻结位置/尺寸且只消费一次。
+			{
+				RuntimeStroke hand(configuration.expectedSpeed), nearTouch(configuration.expectedSpeed), farTouch(configuration.expectedSpeed),
+					pendingNear(configuration.expectedSpeed), pendingFar(configuration.expectedSpeed), pen(configuration.expectedSpeed),
+					mouse(configuration.expectedSpeed), observing(configuration.expectedSpeed), ended(configuration.expectedSpeed);
+				seed(hand, DrawingTool::Pen);
+				auto accepted = hand.palm;
+				accepted.Observe(ContactAreaFromSnapshot(sample), sample.qpc);
+				check(PromotePalmRuntime(hand, accepted, sample, configuration, 1000), "activation neighborhood uses real palm promotion");
+				hand.palm.diameterPx = 40;
+				std::vector<PalmActivation> activations;
+				RecordPalmActivation(activations, hand, sample, false);
+				check(activations.empty(), "nonparallel promotion keeps the existing global interruption path");
+				hand.palm.settings.parallelWriting = true;
+				RecordPalmActivation(activations, hand, sample, false);
+				RecordPalmActivation(activations, hand, sample, true);
+				check(activations.size() == 1, "only first successful parallel promotion records activation");
+				for (auto* contact : { &nearTouch, &farTouch, &pendingNear, &pendingFar, &pen, &mouse, &observing, &ended })
+				{
+					seed(*contact, DrawingTool::HardPen);
+					contact->lastModelSnapshot.position = {124, 200};
+				}
+				farTouch.lastModelSnapshot.position = {125, 200};
+				pendingNear.awaitingReconnect = pendingFar.awaitingReconnect = true;
+				pendingNear.deferredUpSnapshot.position = {124, 200}; pendingNear.lastModelSnapshot.position = {500, 200};
+				pendingFar.deferredUpSnapshot.position = {125, 200};
+				pen.metricDeviceType = InputDeviceType::Pen; mouse.metricDeviceType = InputDeviceType::MouseLeft;
+				observing.palmObservationOnly = true; ended.ended = true;
+				std::vector<RuntimeStroke*> contacts{ &hand, &nearTouch, &farTouch, &pendingNear, &pendingFar, &pen, &mouse, &observing, &ended };
+				hand.lastInputSnapshot.position = {500, 200}; hand.palm.diameterPx = 200;
+				hand.palm.End(); hand.ended = true; // 激活后同帧 Up 仍应消费已登记的范围。
+				std::vector<RuntimeStroke*> interrupted;
+				const auto finish = [&](RuntimeStroke& contact) { interrupted.push_back(&contact); contact.ended = true; };
+				FinishActivatedPalmNeighbors(activations, contacts, finish);
+				check(interrupted.size() == 2 && interrupted[0] == &nearTouch && interrupted[1] == &pendingNear && activations.empty(),
+					"activation survives same-frame Up and uses frozen boundary/Up position with device and lifecycle exclusions");
+				hand.ended = false;
+				hand.lastInputSnapshot.position = farTouch.lastModelSnapshot.position;
+				RecordPalmActivation(activations, hand, hand.lastInputSnapshot, true);
+				FinishActivatedPalmNeighbors(activations, contacts, finish);
+				check(interrupted.size() == 2 && !farTouch.ended, "later palm movement and growth do not interrupt existing writing");
+				check(PalmExclusionContains(hand.palm, {0, 0}, {115, 0}) &&
+					!PalmExclusionContains(hand.palm, {0, 0}, {115.01f, 0}), "large circular exclusion keeps fifteen percent canvas-pixel padding");
+			}
+
+			// 同一生产拒收接缝验证真实 mailbox 和手势清理，移出范围也必须等物理终态。
+			for (const auto device : { InputDeviceType::Touch, InputDeviceType::Pen, InputDeviceType::MouseLeft })
+				for (const bool parallel : { false, true }) for (const bool inside : { false, true })
+					for (const bool cancelled : { false, true })
+			{
+				ContactInputCoordinator input; input.EnableDiagnostics(true);
+				CanvasTouchGestureState gestures;
+				RuntimeStroke hand(configuration.expectedSpeed);
+				seed(hand, DrawingTool::Eraser);
+				hand.palm.active = true; hand.palm.diameterPx = 40; hand.palm.settings.parallelWriting = parallel;
+				std::vector<RuntimeStroke*> contacts{ &hand };
+				auto down = sample; down.position.x = inside ? 124.0f : 125.0f;
+				ContactRecord* record = nullptr;
+				check(input.PublishDown(0xFC61, 1, device, down) && input.TryDequeue(record) && record,
+					"neighborhood admission owns a real physical Down");
+				if (!record) continue;
+				const ContactHandle handle{ record, record->Generation() };
+				if (device == InputDeviceType::Touch)
+					gestures.OnTouchDown(CanvasTouchKey(handle), down.qpc, 1000, false, true);
+				const bool blocked = PalmNeighborBlocked(contacts, down.position, down.qpc, nullptr, true);
+				const bool rejected = RejectPalmNeighborTouch(input, gestures, handle, device, blocked);
+				check(rejected == (device == InputDeviceType::Touch && parallel && inside),
+					"only nearby Touch Down is rejected with parallel palm active");
+				if (rejected)
+				{
+					down.position = {500, 200}; down.qpc += 10;
+					ContactSnapshot latest;
+					check(!input.PublishMove(0xFC61, 1, down) && !input.TryReadSnapshot(handle, latest) && gestures.ContactCount() == 0,
+						"rejected Touch cannot ink after moving outside and retires its gesture key");
+				}
+				check(cancelled ? input.PublishCancelled(0xFC61, 1, down) : input.PublishUp(0xFC61, 1, down),
+					"physical Up or Cancel still closes rejected or admitted route");
+				if (!rejected) input.Recycle(handle);
+				check(input.DiagnosticsSnapshot().occupiedSlots == 0, "physical Up reclaims neighborhood admission route");
+			}
+
+			// 普通 Up 的真实模型、存储与物理路由组合，不创建 Host 或窗口。
+			for (const bool pending : { false, true })
+			{
+				ContactInputCoordinator input; input.EnableDiagnostics(true);
+				CanvasTouchGestureState gestures;
+				RuntimeStroke writing(configuration.expectedSpeed), hand(configuration.expectedSpeed);
+				writing.inUse = true; writing.metricDeviceType = InputDeviceType::Touch;
+				writing.selectedTool = writing.tool = DrawingTool::HardPen; writing.qpcOrigin = 1000;
+				ResetNominalStroke(writing, 5, configuration, StrokeWidthMode::Fixed);
+				auto parameters = configuration.modelParams;
+				parameters.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+				check(writing.stroke.modeler.Reset(parameters).ok(), "interrupted writer owns a real model");
+				const auto model = [](ink::stroke_model::Input::EventType event, float x, double time)
+				{
+					return ink::stroke_model::Input{ .event_type = event, .position = { x, 0 },
+						.time = ink::stroke_model::Time(time), .pressure = 1, .tilt = 0, .orientation = 0 };
+				};
+				check(writing.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kDown, 0, 0),
+					writing.stroke.modeledResults).ok(), "interrupted writer accepts Down");
+				for (int i = 1; i <= 12; ++i)
+					check(writing.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kMove, i * 5.0f, i * .01),
+						writing.stroke.modeledResults).ok(), "interrupted writer accepts real Move history");
+				AppendNewModeledPoints(writing.stroke);
+				const auto acceptedPoints = writing.stroke.realPoints;
+				ContactSnapshot down; down.position = {0, 0}; down.qpc = 1000;
+				ContactRecord* record = nullptr;
+				check(input.PublishDown(0xFC62, 1, InputDeviceType::Touch, down) && input.TryDequeue(record) && record,
+					"interrupted writer has a real route");
+				if (!record) continue;
+				writing.handle = {record, record->Generation()}; writing.touchGestureKey = CanvasTouchKey(writing.handle);
+				gestures.OnTouchDown(writing.touchGestureKey, down.qpc, 1000, false, true);
+				ContactSnapshot last; last.position = {60, 0}; last.qpc = 1120; last.phase = ContactPhase::Move;
+				writing.lastModelSnapshot = last;
+				if (pending)
+				{
+					check(input.PublishUp(0xFC62, 1, last) && input.TryReadSnapshot(writing.handle, last), "pending writer owns frozen physical Up");
+					writing.awaitingReconnect = true; writing.deferredUpSnapshot = last; writing.reconnectDeadlineQpc = 1200;
+				}
+				hand.palm.active = true; hand.palm.diameterPx = 40; hand.palm.settings.parallelWriting = true;
+				std::vector<PalmActivation> activations;
+				RecordPalmActivation(activations, hand, last, false);
+				std::vector<RuntimeStroke*> contacts{ &hand, &writing };
+				FinishActivatedPalmNeighbors(activations, contacts, [&](RuntimeStroke& runtime)
+				{
+					const auto terminal = runtime.awaitingReconnect ? runtime.deferredUpSnapshot : runtime.lastModelSnapshot;
+					check(runtime.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kUp, terminal.position.x, .13),
+						runtime.stroke.modeledResults).ok(), "neighborhood interruption uses normal model Up");
+					AppendNewModeledPoints(runtime.stroke);
+					runtime.ended = true; runtime.cancelled = false; runtime.awaitingReconnect = false; runtime.reconnectDeadlineQpc = 0;
+					gestures.OnTouchUp(runtime.touchGestureKey);
+				});
+				check(writing.ended && !writing.cancelled && !PalmReconnectCandidateAllowed(writing, false) &&
+					writing.stroke.realPoints.size() >= acceptedPoints.size() &&
+					std::equal(acceptedPoints.begin(), acceptedPoints.end(), writing.stroke.realPoints.begin(),
+						[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }),
+					"normal interruption retains accepted ink and cannot reconnect");
+				std::array<uint8_t, 16> workspaceBytes{}, pageBytes{};
+				workspaceBytes[0] = 0xC3; pageBytes[0] = 0xC4;
+				InkCanvasCollection document{ InkGuid(workspaceBytes) };
+				const auto pageIndex = document.AppendPage(InkGuid(pageBytes));
+				InkPage* page = pageIndex ? document.PageAt(*pageIndex) : nullptr;
+				InkCanvas* canvas = page ? page->GetOrCreateCanvas(kDefaultDeviceKey) : nullptr;
+				check(canvas != nullptr, "interrupted writer owns a CPU canvas");
+				if (canvas)
+				{
+					writing.ownerWorkspaceGuid = document.WorkspaceGuid(); writing.ownerPageGuid = page->PageGuid();
+					writing.ownerPageIndex = 0; writing.viewport = canvas->Viewport();
+					std::vector<CanvasPageRuntimeState> runtimes(1); InkRasterStateToken token = 1;
+					const auto committed = CommitRuntimeStoredStrokeCpu(writing, document, runtimes, 0, 0,
+						StoredStrokeCommitMode::NormalUp, [&] { return token++; });
+					check(committed && canvas->Strokes().size() == 1 && runtimes[0].history.Items().size() == 1,
+						"interrupted writer persists as one normal history stroke");
+					if (committed) check(runtimes[0].history.UndoLastVisible(committed->renderItem) &&
+						runtimes[0].history.RedoLastUndone(committed->renderItem), "interrupted writer remains independently undoable");
+				}
+				input.DiscardUntilTerminal(writing.handle);
+				const auto retainedCount = writing.stroke.realPoints.size();
+				last.position = {500, 0}; last.qpc = 1140;
+				check(!input.PublishMove(0xFC62, 1, last) && writing.stroke.realPoints.size() == retainedCount && gestures.ContactCount() == 0,
+					"interrupted route cannot publish new Move ink");
+				if (!pending) check(input.PublishUp(0xFC62, 1, last), "real Up terminates synthetically ended writer");
+				check(input.DiagnosticsSnapshot().occupiedSlots == 0, "live and pending interrupted routes are fully reclaimed");
+			}
+
 			RuntimeStroke palm(configuration.expectedSpeed), observer(configuration.expectedSpeed);
 			seed(palm, DrawingTool::Pen);
 			auto candidate = palm.palm;
@@ -5828,6 +6043,13 @@ namespace Inkeys::Drawing::Draw3
 			palm.awaitingReconnect = true; palm.deferredUpSnapshot = sample; palm.reconnectDeadlineQpc = 1200;
 			check(!PalmBlocksDrawing(palm) && PalmNeighborBlocked(active, sample.position, 1200) &&
 				!PalmNeighborBlocked(active, sample.position, 1201), "pending handoff keeps finite exclusion without physical writing block");
+			palm.palm.settings.parallelWriting = true;
+			check(PalmNeighborBlocked(active, sample.position, 1200, nullptr, true) &&
+				!PalmNeighborBlocked(active, sample.position, 1201, nullptr, true),
+				"parallel Down exclusion reserves frozen Up through inclusive reconnect deadline");
+			palm.palm.settings.parallelWriting = false;
+			check(!PalmNeighborBlocked(active, sample.position, 1200, nullptr, true),
+				"nonparallel reconnect wait retains its previous independent admission behavior");
 			observer.inUse = true; observer.palmObservationOnly = true;
 			observer.qpcOrigin = 1000; observer.lastModelSnapshot = sample;
 			observer.palm.Begin(preferences, scale, PalmEraser::ToolCategory::Pen, 1000, 1000);
@@ -5891,6 +6113,14 @@ namespace Inkeys::Drawing::Draw3
 				identity.tool = static_cast<uint32_t>(continued.selectedTool);
 				check(EvaluateRuntimeReconnectCandidate(continued, identity, incoming, 1000, 1).matched,
 					"same original selection matches old actual tool without relaxing motion criteria");
+				RuntimeStroke blockingHand(configuration.expectedSpeed);
+				blockingHand.palm.active = true; blockingHand.palm.settings.parallelWriting = true;
+				blockingHand.palm.diameterPx = 100; blockingHand.lastInputSnapshot = incoming;
+				std::vector<RuntimeStroke*> neighborhood{ &blockingHand };
+				const bool blocked = PalmNeighborBlocked(neighborhood, incoming.position, incoming.qpc, nullptr, true);
+				check(blocked && PalmReconnectCandidateAllowed(continued, blocked) == isPalm &&
+					PalmReconnectCandidateAllowed(continued, false),
+					"blocked Down filters ordinary reconnect while retaining palm handoff priority");
 				const auto oldHandle = continued.handle;
 				const float oldDiameter = continued.palm.diameterPx;
 				const auto status = continued.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kMove, 70,
@@ -12018,6 +12248,7 @@ namespace Inkeys::Drawing::Draw3
 		RECT pendingPalmDirty = {};
 		bool palmLayersNeedRebuild = false;
 		int64_t palmInterruptQpc = 0;
+		std::vector<PalmActivation> palmActivations;
 		auto hasBlockingPalm = [&]()
 		{
 			return std::any_of(active.begin(), active.end(), [&](const RuntimeStroke* runtime)
@@ -12050,6 +12281,7 @@ namespace Inkeys::Drawing::Draw3
 			UnionRectInPlace(oldDirty, runtime.stroke.currentL0Rect);
 			UnionRectInPlace(oldDirty, runtime.stroke.lastL0Rect);
 			if (!PromotePalmRuntime(runtime, candidate, sample, configuration_, qpcFrequency)) return false;
+			RecordPalmActivation(palmActivations, runtime, sample, wasActive);
 			if (!wasActive && !candidate.settings.parallelWriting)
 				palmInterruptQpc = std::max(palmInterruptQpc, sample.qpc);
 			if (!wasActive && oldTool != DrawingTool::Eraser)
@@ -12333,6 +12565,9 @@ namespace Inkeys::Drawing::Draw3
 					suppressPressure
 				};
 
+				// 先保留手掌自身续接；范围内普通笔划不得通过续接绕过落笔拒收。
+				const bool palmNeighborBlocked = deviceType == InputDeviceType::Touch &&
+					PalmNeighborBlocked(active, down.position, down.qpc, nullptr, true);
 				RuntimeStroke* reconnectRuntime = nullptr;
 				InterruptedStrokeReconnectResult reconnectResult;
 				RuntimeStroke* diagnosticRuntime = nullptr;
@@ -12343,7 +12578,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					for (RuntimeStroke* candidate : active)
 					{
-						if (!candidate || !candidate->awaitingReconnect || candidate->ended) continue;
+						if (!candidate || !PalmReconnectCandidateAllowed(*candidate, palmNeighborBlocked)) continue;
 						if (!candidate->palm.active && palmInterruptQpc > 0 && candidate->qpcOrigin <= palmInterruptQpc) continue;
 						if (!candidate->palm.active && (tool == DrawingTool::Laser || IsShapeDrawingTool(tool))) continue;
 						const auto result = EvaluateRuntimeReconnectCandidate(*candidate, downIdentity,
@@ -12418,6 +12653,8 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
+				if (!reconnectRuntime && RejectPalmNeighborTouch(input_, touchGesture, handle, deviceType, palmNeighborBlocked))
+					return false;
 				if (reconnectRuntime)
 				{
 					const float reconnectPreviousRawSpeed = reconnectRuntime->filteredInputSpeed;
@@ -12608,6 +12845,8 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
+				// 手掌模型续接失败后仍须拒收邻近 Down，不能转成普通独立笔。
+				if (RejectPalmNeighborTouch(input_, touchGesture, handle, deviceType, palmNeighborBlocked)) return false;
 				// 真实匹配且模型接续成功已在上方接管返回；失败/不匹配才按新独立笔判定。
 				if (RejectIndependentTouch(input_, touchGesture, handle, deviceType,
 					hasActiveTouch, generalOptions.multiTouchEnabled))
@@ -17349,6 +17588,26 @@ namespace Inkeys::Drawing::Draw3
 					touchGesture.OnTouchUp(runtime->touchGestureKey);
 				}
 			}
+			auto finishInterrupted = [&](RuntimeStroke& runtime)
+			{
+				ContactSnapshot terminal = runtime.awaitingReconnect ? runtime.deferredUpSnapshot : runtime.lastModelSnapshot;
+				terminal.phase = ContactPhase::Up;
+				runtime.stroke.predictedResults.clear();
+				runtime.stroke.predictedPoints.clear();
+				completeModelUp(runtime, terminal, false);
+				if (runtime.tool == DrawingTool::Laser)
+				{
+					const WindowSize laserSize = window_.Size();
+					FinalizeLaserRuntime(laserStrokeLayers, runtime, laserLifecycle,
+						terminal.qpc, false, configuration_.dpiScale, laserSize.width, laserSize.height);
+				}
+				runtime.lastInputSnapshot = terminal;
+				finishMouseSpeedEraser(runtime);
+				if (runtime.touchGestureKey) touchGesture.OnTouchUp(runtime.touchGestureKey);
+				if (runtime.metricDeviceType == InputDeviceType::Pen && haptics_ &&
+					window_.EndHapticContact(runtime.handle.record->ContactId(), runtime.handle.generation, false,
+						runtime.handle.record->TabletContextId())) haptics_->StopFeedback();
+			};
 			const bool blockingPalm = hasBlockingPalm();
 			if (blockingPalm || palmInterruptQpc > 0)
 			{
@@ -17356,25 +17615,10 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (!runtime || runtime->ended || runtime->palm.active || runtime->palmObservationOnly) continue;
 					if (!blockingPalm && runtime->qpcOrigin > palmInterruptQpc) continue;
-					ContactSnapshot terminal = runtime->awaitingReconnect ? runtime->deferredUpSnapshot : runtime->lastModelSnapshot;
-					terminal.phase = ContactPhase::Up;
-					runtime->stroke.predictedResults.clear();
-					runtime->stroke.predictedPoints.clear();
-					completeModelUp(*runtime, terminal, false);
-					if (runtime->tool == DrawingTool::Laser)
-					{
-						const WindowSize laserSize = window_.Size();
-						FinalizeLaserRuntime(laserStrokeLayers, *runtime, laserLifecycle,
-							terminal.qpc, false, configuration_.dpiScale, laserSize.width, laserSize.height);
-					}
-					runtime->lastInputSnapshot = terminal;
-					finishMouseSpeedEraser(*runtime);
-					if (runtime->touchGestureKey) touchGesture.OnTouchUp(runtime->touchGestureKey);
-					if (runtime->metricDeviceType == InputDeviceType::Pen && haptics_ &&
-						window_.EndHapticContact(runtime->handle.record->ContactId(), runtime->handle.generation, false,
-							runtime->handle.record->TabletContextId())) haptics_->StopFeedback();
+					finishInterrupted(*runtime);
 				}
 			}
+			FinishActivatedPalmNeighbors(palmActivations, active, finishInterrupted);
 			palmInterruptQpc = 0;
 			hasEndedStroke = hasEndedStroke || std::any_of(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime) { return runtime && runtime->ended; });

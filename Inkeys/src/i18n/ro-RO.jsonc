@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Desenarea cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu poate funcționa.",
           "ParallelWritingLaserMultiTouchNote": "Intrarea laser cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu funcționează pentru laser.",
           "ParallelWriting": "Activare scriere în timpul ștergerii",
-          "ParallelWritingDescription": "Activarea radierei cu palma nu întrerupe alte intrări, astfel că desenarea poate continua. (Pentru două sau mai multe persoane care scriu împreună.)"
+          "ParallelWritingDescription": "Activarea radierei cu palma încheie doar scrierea tactilă din apropiere și blochează atingerile noi în jurul ei; în alte zone se poate scrie în continuare. (Pentru două sau mai multe persoane care scriu împreună.)"
         },
         "Input":
         {

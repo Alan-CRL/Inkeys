@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Rysowanie wieloma palcami jest wyłączone, więc pisanie podczas wymazywania nie działa.",
           "ParallelWritingLaserMultiTouchNote": "Laser obsługiwany wieloma palcami jest wyłączony, więc pisanie podczas wymazywania nie działa ze wskaźnikiem laserowym.",
           "ParallelWriting": "Włącz pisanie podczas wymazywania",
-          "ParallelWritingDescription": "Uruchomienie gumki dłonią nie przerywa innych operacji wejściowych, więc można nadal rysować. (Dla co najmniej dwóch osób piszących jednocześnie.)"
+          "ParallelWritingDescription": "Uruchomienie gumki dłonią kończy tylko pisanie dotykiem w jej pobliżu i blokuje tam nowe dotknięcia; w innych miejscach można dalej pisać. (Dla co najmniej dwóch osób piszących jednocześnie.)"
         },
         "Input":
         {

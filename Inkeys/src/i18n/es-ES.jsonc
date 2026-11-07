@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "El dibujo con varios dedos está desactivado, por lo que no se puede escribir mientras se borra.",
           "ParallelWritingLaserMultiTouchNote": "La entrada láser con varios dedos está desactivada, por lo que no se puede escribir con el láser mientras se borra.",
           "ParallelWriting": "Permitir escribir mientras se borra",
-          "ParallelWritingDescription": "Activar el borrador con la palma no interrumpe otras entradas, de modo que se puede seguir dibujando. Para que varias personas escriban a la vez."
+          "ParallelWritingDescription": "Al activar el borrador con la palma solo se detiene la escritura táctil cercana y se bloquean nuevos toques a su alrededor; en otras zonas se puede seguir escribiendo. Para que varias personas escriban a la vez."
         },
         "Input":
         {

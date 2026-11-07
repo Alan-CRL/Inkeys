@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Zeichnen mit mehreren Fingern ist aus; gleichzeitiges Schreiben und Radieren ist daher nicht verfügbar.",
           "ParallelWritingLaserMultiTouchNote": "Die Mehrfinger-Lasereingabe ist aus; gleichzeitiges Schreiben und Radieren ist mit dem Laser daher nicht verfügbar.",
           "ParallelWriting": "Schreiben während des Radierens erlauben",
-          "ParallelWritingDescription": "Der Handflächenradierer unterbricht keine anderen Eingaben, sodass weitergezeichnet werden kann. Für mehrere gleichzeitig schreibende Personen."
+          "ParallelWritingDescription": "Der Handflächenradierer beendet beim Aktivieren nur Touch-Eingaben in seiner Nähe und blockiert dort neues Aufsetzen; an anderen Stellen kann weitergeschrieben werden. Für mehrere gleichzeitig schreibende Personen."
         },
         "Input":
         {

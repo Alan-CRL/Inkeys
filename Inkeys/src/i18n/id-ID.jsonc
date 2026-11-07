@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Menggambar multisentuh nonaktif, sehingga menulis sambil menghapus tidak dapat diterapkan.",
           "ParallelWritingLaserMultiTouchNote": "Laser multisentuh nonaktif, sehingga menulis sambil menghapus tidak berlaku pada pena laser.",
           "ParallelWriting": "Aktifkan menulis sambil menghapus",
-          "ParallelWritingDescription": "Mengaktifkan penghapus telapak tangan tidak mengganggu masukan lain, sehingga menggambar dapat dilanjutkan. (Untuk dua orang atau lebih yang menulis bersama.)"
+          "ParallelWritingDescription": "Mengaktifkan penghapus telapak tangan hanya mengakhiri tulisan sentuh di dekatnya dan memblokir sentuhan baru di sekitarnya; menulis di tempat lain tetap dapat dilanjutkan. (Untuk dua orang atau lebih yang menulis bersama.)"
         },
         "Input":
         {

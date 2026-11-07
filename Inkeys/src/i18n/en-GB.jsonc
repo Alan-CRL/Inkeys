@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Multi-touch drawing is off, so writing while erasing cannot take effect.",
           "ParallelWritingLaserMultiTouchNote": "Multi-touch laser input is off, so writing while erasing cannot take effect with the laser pen.",
           "ParallelWriting": "Enable writing while erasing",
-          "ParallelWritingDescription": "Activating the palm eraser leaves other input uninterrupted, so drawing can continue. (For two or more people writing together.)"
+          "ParallelWritingDescription": "Activating the palm eraser only ends touch writing near it and blocks new touches there; writing elsewhere can continue. (For two or more people writing together.)"
         },
         "Input":
         {

@@ -1,0 +1,30 @@
+{
+  "id": "palm-eraser-phase2",
+  "name": "palm-eraser-phase2",
+  "title": "手掌橡皮第二阶段：屏蔽修复、擦除样式与自定义",
+  "description": "修复边擦边写时手掌橡皮附近触点误写；新增竖长矩形/圆角正方形擦除样式及着色器与光标重设计；为手掌橡皮和普通橡皮提供擦除样式、大小计算方式与倍率等设置，并适配主栏橡皮属性预览。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-07",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-07-palm-eraser-phase2-blocking",
+    "11-07-palm-eraser-phase2-shapes",
+    "11-07-palm-eraser-phase2-custom"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

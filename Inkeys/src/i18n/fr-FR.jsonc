@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Le dessin à plusieurs doigts est désactivé ; dessiner pendant le gommage est donc indisponible.",
           "ParallelWritingLaserMultiTouchNote": "Le laser à plusieurs doigts est désactivé ; dessiner au laser pendant le gommage est donc indisponible.",
           "ParallelWriting": "Autoriser le dessin pendant le gommage",
-          "ParallelWritingDescription": "L’activation de la gomme avec la paume n’interrompt pas les autres entrées : le dessin peut continuer. Pour écrire à plusieurs en même temps."
+          "ParallelWritingDescription": "L’activation de la gomme avec la paume n’arrête que l’écriture tactile à proximité et bloque les nouveaux contacts autour d’elle ; ailleurs, l’écriture peut continuer. Pour écrire à plusieurs en même temps."
         },
         "Input":
         {

@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "複数の指での描画が無効なため、消去と描画を同時に行えません。",
           "ParallelWritingLaserMultiTouchNote": "複数の指でのレーザー操作が無効なため、レーザーでは消去と描画を同時に行えません。",
           "ParallelWriting": "消去と描画を同時に行う",
-          "ParallelWritingDescription": "手のひら消しゴム使用中も他の入力を中断せず、描画を続けられます。2人以上で同時に書く場合に適しています。"
+          "ParallelWritingDescription": "手のひら消しゴムの起動時は、その近くのタッチ書き込みだけを終了し、近くでの新しいタッチを受け付けません。他の場所では書き続けられます。2人以上で同時に書く場合に適しています。"
         },
         "Input":
         {

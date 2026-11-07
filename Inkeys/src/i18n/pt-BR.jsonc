@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "O desenho com vários dedos está desativado. Não é possível apagar e escrever ao mesmo tempo.",
           "ParallelWritingLaserMultiTouchNote": "O laser com vários dedos está desativado. Não é possível apagar e escrever ao mesmo tempo com o laser.",
           "ParallelWriting": "Permitir apagar e escrever ao mesmo tempo",
-          "ParallelWritingDescription": "A borracha com a palma não interrompe outras entradas, permitindo continuar desenhando. Útil quando duas ou mais pessoas escrevem ao mesmo tempo."
+          "ParallelWritingDescription": "Ao ativar a borracha com a palma, apenas a escrita por toque próxima é encerrada e novos toques ao redor são bloqueados; em outros lugares é possível continuar escrevendo. Útil quando duas ou mais pessoas escrevem ao mesmo tempo."
         },
         "Input":
         {

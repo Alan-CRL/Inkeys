@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Đã tắt vẽ nhiều ngón nên không thể vừa viết vừa tẩy.",
           "ParallelWritingLaserMultiTouchNote": "Đã tắt laser nhiều ngón nên không thể vừa viết vừa tẩy với bút laser.",
           "ParallelWriting": "Bật vừa viết vừa tẩy",
-          "ParallelWritingDescription": "Bật tẩy bằng lòng bàn tay không ngắt các đầu vào khác nên vẫn có thể vẽ tiếp. (Dành cho hai hoặc nhiều người cùng viết.)"
+          "ParallelWritingDescription": "Khi bật tẩy bằng lòng bàn tay, chỉ nét viết cảm ứng ở gần bị kết thúc và các lần chạm mới quanh đó bị chặn; ở vị trí khác vẫn có thể viết tiếp. (Dành cho hai hoặc nhiều người cùng viết.)"
         },
         "Input":
         {

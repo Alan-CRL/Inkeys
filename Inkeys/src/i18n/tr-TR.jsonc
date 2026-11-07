@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Çoklu dokunmayla çizim kapalı; silerken yazma kullanılamaz.",
           "ParallelWritingLaserMultiTouchNote": "Çoklu dokunmayla lazer kapalı; lazer kalemle silerken yazma kullanılamaz.",
           "ParallelWriting": "Silerken yazmayı aç",
-          "ParallelWritingDescription": "Avuç içi silgisi etkinleştiğinde diğer girdiler kesilmez, çizim devam edebilir. (Birlikte yazan iki veya daha fazla kişi için.)"
+          "ParallelWritingDescription": "Avuç içi silgisi etkinleştiğinde yalnızca yakınındaki dokunmatik yazma sonlanır ve çevresinde yeni dokunuşlar engellenir; diğer yerlerde yazmaya devam edilebilir. (Birlikte yazan iki veya daha fazla kişi için.)"
         },
         "Input":
         {

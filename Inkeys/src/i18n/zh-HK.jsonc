@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "多指繪圖已關閉，邊擦邊寫無法生效。",
           "ParallelWritingLaserMultiTouchNote": "多指鐳射筆已關閉，邊擦邊寫在鐳射筆下無法生效。",
           "ParallelWriting": "啟用邊擦邊寫",
-          "ParallelWritingDescription": "啟用手掌擦膠時不會中斷其他輸入，繪圖可以繼續進行。（適用於雙人或多人書寫時）"
+          "ParallelWritingDescription": "啟用手掌擦膠時只會結束其附近的觸控書寫，並阻止在其附近落筆；其他位置可繼續書寫。（適用於雙人或多人書寫時）"
         },
         "Input":
         {

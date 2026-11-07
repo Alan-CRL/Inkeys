@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "多指绘图已关闭，边擦边写无法生效。",
           "ParallelWritingLaserMultiTouchNote": "多指激光笔已关闭，边擦边写在激光笔下无法生效。",
           "ParallelWriting": "启用边擦边写",
-          "ParallelWritingDescription": "激活手掌橡皮时不会中断其他的输入，绘制可以继续进行。（适用于双人或多人书写时）"
+          "ParallelWritingDescription": "激活手掌橡皮时仅结束其附近的触摸书写，并阻止在其附近落笔；其他位置可继续书写。（适用于双人或多人书写时）"
         },
         "Input":
         {

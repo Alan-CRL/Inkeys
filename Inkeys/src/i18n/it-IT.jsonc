@@ -772,7 +772,7 @@
           "ParallelWritingMultiTouchNote": "Il disegno con più dita è disattivato: la scrittura durante la cancellazione non può funzionare.",
           "ParallelWritingLaserMultiTouchNote": "Il laser con più dita è disattivato: la scrittura durante la cancellazione non può funzionare con la penna laser.",
           "ParallelWriting": "Consenti scrittura durante la cancellazione",
-          "ParallelWritingDescription": "La gomma con il palmo non interrompe gli altri input, permettendo di continuare a disegnare. (Per due o più persone che scrivono insieme.)"
+          "ParallelWritingDescription": "Attivando la gomma con il palmo si interrompe solo la scrittura touch vicina e si bloccano nuovi tocchi nei dintorni; altrove si può continuare a scrivere. (Per due o più persone che scrivono insieme.)"
         },
         "Input":
         {
