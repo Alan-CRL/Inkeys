@@ -166,3 +166,12 @@ size_t StatusIndicatorCount();                                   // 供调试按
 - 文字：几何遮罩 = 胶囊内侧圆角，滚动时线性渐变 opacity brush 两端渐隐；图标/文字乘常驻内容透明度。
 - 悬停/按压：方块内 hover 填充 + 按压缩放，复用主栏按钮曲线；胶囊无按钮式反馈。
 - 环/进度环：1.5 DIP；仅 `BarUiEdgeLightingEnabled` 时以几何预模糊遮罩 + 强调色实色画刷绘制光晕，再叠点光细线。
+
+## v4 环单通道与进度让位（2026-11-07）
+
+- StatusIndicatorEntry::progress 自有 active/complete/target/display/completeAt；后台 display 同样指数平滑追随 target，删除 progress_ 单槽与 Progress()/RingColor()。目标源只在 DesiredRing 中选择：绘制门禁 → Front() → 沿用 idleProgress 的可见未退场进度。DropStaleReferences 清理失效 idleProgress，图层不依赖条目生命周期。
+- StatusIndicatorRingState 持有 outgoing/current 两层和 idleProgress；层持有 key/progress/argb/value/opacity/delay/breathStart，并冻结淡出层颜色、段长与校验呼吸标记。StatusIndicatorLayout::rings 是两元素数组，[0] 旧层、[1] 当前层；普通环 value 恒 1，进度段从超椭圆顶部顺时针截取。DrawRing 按数组顺序逐层绘制，遮罩 variant 区分整圈、进度段和 value；Bounds 以任一层 opacity>0 判可见。
+- RingOut=.20s、RingGap=.12s、RingIn=.30s。切换身份包含 key/progress/argb，同 key 换色也切层。旧层线性 opacity 向 0 推进，新层等待 RingGap×旧层剩余 opacity 后向 1 推进，输出用 InOutSine 解析；快速换主比较实际可见透明度，只留下更显眼的一层。延迟在帧内到期只推进余量，并按帧内开始时刻设置独立 breathStart；动画关闭清空 outgoing/delay 并立即落定。
+- Advance 先处理队首/条目，再 AdvanceProgress，最后 AdvanceRing。完成资格同时检查本帧 DesiredRing 与该源的进度层确实可见（同 key 换色时可沿用淡出层）；因此后台完成立即结束，新队首接走已完成进度时也在同帧 active=false，不会因上一帧 owner 而多停留。确认完成只把 target 置 1，进度段从当前值平滑走满（避免跳变），停留截止仍为 completeAt+3s；未确认的 100% 继续呼吸。
+- NeedsFrames 覆盖旧层、当前层 delay/opacity、目标源身份差异及任一条目 display!=target；TimeDrivenActive 按可见普通环或校验段的逐层呼吸续帧；WakeDeadline 遍历全部完成周期。模拟下载逐条推进每个 key，避免多进度留下未完成的旧周期。
+- 无头回归覆盖原色双层/短暂重叠/快速换主、队列中间进度实时接棒与恢复、前后台完成及停留中让位、多个进度的稳定 idle owner、绘制门禁、无动画直切、条目移除后的淡出和 60/144Hz 同时刻透明度。

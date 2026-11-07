@@ -47,7 +47,9 @@ namespace Inkeys::UI::Bar
         inline constexpr double DockSize=18,DockRadius=4,DockIcon=12,DockStep=6,DockInset=14,DockOpacity=.5,DockHitMin=24,MainButtonYield=3;
         inline constexpr double FanSize=28,FanRadius=6,FanIcon=17,FanGap=4,FanClear=6,FanLayerGap=32,FanSpanDegrees=130;
         inline constexpr double FrameWidth=1,RingWidth=1.5,BreathPeriod=1.6,ScrollPause=.3;
-        inline constexpr double Enter=.42,Dismiss=.30,Exit=.28,Fan=.32,Select=.24,RingFade=.24,Presence=.28;
+        inline constexpr double Enter=.42,Dismiss=.30,Exit=.28,Fan=.32,Select=.24,Presence=.28;
+        // 换主先淡出再淡入，间隔按旧层剩余不透明度缩放。
+        inline constexpr double RingOut=.20,RingIn=.30,RingGap=.12;
         inline constexpr double FanAutoClose=3.0,ProgressCompleteLinger=3.0,ProgressRate=8;
         // 收起：文字段欠阻尼收进图标，方块延迟后沿弧线飞向停靠槽，着陆轻弹。
         // 飞行先向内（正常向下、倒转向上）离开展开胶囊区域，再从内侧回到停靠槽；FlightSink 为三次贝塞尔控制点内移量。
@@ -172,9 +174,17 @@ namespace Inkeys::UI::Bar
         }
     };
 
+    // 每项独立保存进度周期，后台 display 也持续追随 target。
+    struct StatusIndicatorProgressState
+    {
+        bool active=false,complete=false;
+        double target=0,display=0,completeAt=0;
+    };
+
     struct StatusIndicatorEntry
     {
         StatusIndicatorSpec spec;
+        StatusIndicatorProgressState progress;
         StatusIndicatorPhase phase=StatusIndicatorPhase::Expanded;
         bool visible=true;   // 配置过滤结果；隐藏条目保留注册但淡出
         bool holding=false;  // 仅队首计时
@@ -201,18 +211,18 @@ namespace Inkeys::UI::Bar
         }
     };
 
-    struct StatusIndicatorRingState
-    {
-        std::uint64_t owner=0;
-        std::uint32_t fromArgb=0,toArgb=0;
-        double colorT=1,opacity=0,breathStart=0;
-    };
-
-    struct StatusIndicatorProgressState
+    // 淡出层冻结颜色与进度值，条目删除后仍可画完；两层各自保留呼吸相位。
+    struct StatusIndicatorRingLayer
     {
         std::uint64_t key=0;
-        bool active=false,complete=false; // active=当前下载周期可见
-        double target=0,display=0,opacity=0,completeAt=0;
+        bool progress=false,verifying=false;
+        std::uint32_t argb=0;
+        double value=1,opacity=0,delay=0,breathStart=0;
+    };
+    struct StatusIndicatorRingState
+    {
+        StatusIndicatorRingLayer outgoing,current;
+        std::uint64_t idleProgress=0;
     };
 
     inline double StatusIndicatorTextLimit() noexcept
@@ -336,13 +346,14 @@ namespace Inkeys::UI::Bar
         bool SetProgress(std::uint64_t key,double progress,bool complete,double now) noexcept
         {
             now_=now;
-            if(!Find(key))return false;
-            auto& p=progress_;
-            if(p.key!=key)p=StatusIndicatorProgressState{.key=key};
+            auto* e=FindMutable(key);
+            if(!e)return false;
+            auto& p=e->progress;
             if(complete)
             {
-                const bool changed=!p.complete||!p.active;
-                if(!p.active){p.active=true;p.display=(std::min)(p.display,1.0);}
+                // 只有正在前台显示的进度才停留；后台完成不能在稍后重新抢环。
+                const bool showing=ShowingProgress(key),changed=p.active&&(!p.complete||!showing);
+                if(!showing){p.active=p.complete=false;p.target=p.display=1;return changed;}
                 if(!p.complete){p.complete=true;p.completeAt=now;}
                 p.target=1;
                 return changed;
@@ -465,8 +476,9 @@ namespace Inkeys::UI::Bar
                 changed|=StepStatusIndicatorProgress(e.select,e.spec.key==selected_&&fanOpen_?1.0:0.0,sdt,Select,animations);
 
             changed|=AdvanceSlots(sdt,animations);
-            changed|=AdvanceRing(now,sdt,animations);
+            // 先结束已让位的完成周期，再选择本帧环源。
             changed|=AdvanceProgress(now,sdt,animations);
+            changed|=AdvanceRing(now,sdt,std::isfinite(dt)?(std::max)(0.0,dt):0.0,animations);
             if(now!=previousNow&&TimeDrivenActive())changed=true;
             return changed;
         }
@@ -485,8 +497,10 @@ namespace Inkeys::UI::Bar
                 if(e.visible&&e.phase==StatusIndicatorPhase::Expanded&&(!e.stack.Settled(e.stackTarget)||e.width.velocity!=0))return true;
                 if(e.InDock()&&!e.dock.Settled(e.dockTarget))return true;
             }
-            if(fan_!=(fanOpen_?1.0:0.0)||ring_.colorT<1||ring_.opacity!=(RingWanted()?1.0:0.0))return true;
-            if(progress_.opacity!=(ProgressWanted()?1.0:0.0)||progress_.display!=progress_.target)return true;
+            if(fan_!=(fanOpen_?1.0:0.0))return true;
+            const auto& cur=ring_.current;
+            if(ring_.outgoing.opacity>0||cur.delay>0||cur.opacity!=(cur.key?1.0:0.0)||!SameRingSource(DesiredRing(),cur))return true;
+            for(const auto& e:entries_)if(e.progress.display!=e.progress.target)return true;
             return false;
         }
 
@@ -497,7 +511,9 @@ namespace Inkeys::UI::Bar
             if(const auto* front=Front();front&&front->holding)deadline=(std::min)(deadline,front->holdEnd);
             if(fanOpen_)deadline=(std::min)(deadline,fanDeadline_);
             if(Reexpanded())if(const auto* e=Find(selected_))deadline=(std::min)(deadline,e->selectStart+StatusIndicatorStyle::Hold);
-            if(progress_.active&&progress_.complete)deadline=(std::min)(deadline,progress_.completeAt+StatusIndicatorStyle::ProgressCompleteLinger);
+            for(const auto& e:entries_)
+                if(e.progress.active&&e.progress.complete)
+                    deadline=(std::min)(deadline,e.progress.completeAt+StatusIndicatorStyle::ProgressCompleteLinger);
             return deadline;
         }
 
@@ -545,14 +561,22 @@ namespace Inkeys::UI::Bar
         // 单方块就地重新展开（无同心弧时的选中）。
         bool Reexpanded() const noexcept { return selected_&&!fanOpen_&&fan_<=0; }
         const StatusIndicatorRingState& Ring() const noexcept { return ring_; }
-        const StatusIndicatorProgressState& Progress() const noexcept { return progress_; }
+        bool ShowingProgress(std::uint64_t key) const noexcept
+        {
+            const auto want=DesiredRing();
+            if(!key||want.key!=key||!want.progress)return false;
+            // 同 key 换色时旧进度层仍可见；已让给其他目标的淡出层不再算前台。
+            for(const auto* layer:{&ring_.outgoing,&ring_.current})
+                if(layer->key==key&&layer->progress&&layer->opacity>0)return true;
+            return false;
+        }
         double Now() const noexcept { return now_; }
         bool Animations() const noexcept { return animations_; }
         bool DrawingActive() const noexcept { return drawing_; }
-        double Breath() const noexcept
+        double Breath(const StatusIndicatorRingLayer& layer) const noexcept
         {
             using namespace StatusIndicatorStyle;
-            return .775+.225*std::sin(2*Pi*(now_-ring_.breathStart)/BreathPeriod);
+            return .775+.225*std::sin(2*Pi*(now_-layer.breathStart)/BreathPeriod);
         }
 
     private:
@@ -653,8 +677,7 @@ namespace Inkeys::UI::Bar
         void DropStaleReferences() noexcept
         {
             if(selected_&&!Find(selected_))selected_=0;
-            if(progress_.key&&!Find(progress_.key))progress_={};
-            if(ring_.owner&&!Find(ring_.owner))ring_.owner=0;
+            if(ring_.idleProgress&&!Find(ring_.idleProgress))ring_.idleProgress=0;
         }
         void FreezeFanForExit() noexcept
         {
@@ -703,60 +726,91 @@ namespace Inkeys::UI::Bar
             }
             return changed;
         }
-        bool RingWanted() const noexcept { return Front()&&!drawing_; }
-        bool ProgressWanted() const noexcept
+        struct RingSource { std::uint64_t key=0;bool progress=false;std::uint32_t argb=0; };
+        static bool ProgressCandidate(const StatusIndicatorEntry& e) noexcept { return e.visible&&!e.Leaving()&&e.progress.active; }
+        static bool SameRingSource(const RingSource& source,const StatusIndicatorRingLayer& layer) noexcept
+        { return source.key==layer.key&&source.progress==layer.progress&&source.argb==layer.argb; }
+        RingSource DesiredRing() const noexcept
         {
-            const auto* e=progress_.key?Find(progress_.key):nullptr;
-            return progress_.active&&e&&e->visible&&!e->Leaving()&&!drawing_;
+            if(drawing_)return {};
+            if(const auto* front=Front())return {front->spec.key,front->progress.active,front->spec.accentArgb};
+            const StatusIndicatorEntry* pick=nullptr;
+            for(const auto& e:entries_)
+            {
+                if(!ProgressCandidate(e))continue;
+                if(e.spec.key==ring_.idleProgress){pick=&e;break;}
+                if(!pick)pick=&e;
+            }
+            return pick?RingSource{pick->spec.key,true,pick->spec.accentArgb}:RingSource{};
         }
-        bool AdvanceRing(double now,double sdt,bool animations) noexcept
+        bool AdvanceRing(double now,double sdt,double dt,bool animations) noexcept
         {
             using namespace StatusIndicatorStyle;
             bool changed=false;
-            const auto* front=Front();
-            if(front)
+            auto& cur=ring_.current;auto& out=ring_.outgoing;
+            const auto want=DesiredRing();
+            if(!Front()&&want.progress)ring_.idleProgress=want.key;
+            if(!SameRingSource(want,cur))
             {
-                const auto accent=front->spec.accentArgb;
-                if(ring_.owner!=front->spec.key||ring_.toArgb!=accent)
-                {
-                    if(ring_.opacity<=0){ring_.fromArgb=ring_.toArgb=accent;ring_.colorT=1;}
-                    else{ring_.fromArgb=RingColor();ring_.toArgb=accent;ring_.colorT=0;}
-                    ring_.owner=front->spec.key;changed=true;
-                }
+                // 快速换主只保留视觉上更显眼的一层，避免出现第三层；淡出层不再跟随条目字段。
+                if(cur.key&&cur.opacity>0&&RingOpacity(cur)>=RingOpacity(out))out=cur;
+                cur=StatusIndicatorRingLayer{.key=want.key,.progress=want.progress,.argb=want.argb};
+                if(cur.key)cur.delay=RingGap*out.opacity;
+                changed=true;
             }
-            else if(ring_.owner){ring_.owner=0;changed=true;}
-            const bool want=RingWanted();
-            if(want&&ring_.opacity<=0)ring_.breathStart=now;
-            changed|=StepStatusIndicatorProgress(ring_.opacity,want?1.0:0.0,sdt,RingFade,animations);
-            changed|=StepStatusIndicatorProgress(ring_.colorT,1,sdt,RingFade,animations);
+            if(const auto* e=cur.key?Find(cur.key):nullptr;cur.progress&&e)
+            {
+                changed|=cur.value!=e->progress.display;
+                cur.value=e->progress.display;
+                cur.verifying=e->progress.active&&!e->progress.complete&&cur.value>=1;
+            }
+            if(!animations){changed|=out.opacity>0||cur.delay>0;out={};cur.delay=0;}
+            changed|=StepStatusIndicatorProgress(out.opacity,0,sdt,RingOut,animations);
+            if(out.opacity<=0&&out.key){out={};changed=true;}
+            double remaining=sdt;
+            if(cur.delay>0){const double used=(std::min)(cur.delay,remaining);cur.delay-=used;remaining-=used;changed|=used>0;}
+            if(cur.delay<=0)
+            {
+                // 延迟在帧内到期，只消费剩余时间；呼吸从真正开始淡入的时刻起算。
+                if(cur.key&&cur.opacity<=0)cur.breathStart=now-(sdt>0?dt*remaining/sdt:0);
+                changed|=StepStatusIndicatorProgress(cur.opacity,cur.key?1.0:0.0,remaining,RingIn,animations);
+            }
             return changed;
         }
         bool AdvanceProgress(double now,double sdt,bool animations) noexcept
         {
             using namespace StatusIndicatorStyle;
-            auto& p=progress_;bool changed=false;
-            if(p.active&&p.complete&&now>=p.completeAt+ProgressCompleteLinger){p.active=false;changed=true;}
-            changed|=StepStatusIndicatorProgress(p.opacity,ProgressWanted()?1.0:0.0,sdt,RingFade,animations);
-            const double old=p.display;
-            if(!animations)p.display=p.target;
-            else
+            bool changed=false;
+            for(auto& e:entries_)
             {
-                p.display+=(p.target-p.display)*(1-std::exp(-ProgressRate*sdt));
-                if(std::abs(p.target-p.display)<.001)p.display=p.target;
+                auto& p=e.progress;
+                if(p.active&&p.complete&&(now>=p.completeAt+ProgressCompleteLinger||!ShowingProgress(e.spec.key)))
+                {
+                    p.active=false;changed=true;
+                }
+                const double old=p.display;
+                if(!animations)p.display=p.target;
+                else
+                {
+                    p.display+=(p.target-p.display)*(1-std::exp(-ProgressRate*sdt));
+                    if(std::abs(p.target-p.display)<.001)p.display=p.target;
+                }
+                changed|=old!=p.display;
             }
-            return changed||old!=p.display;
+            return changed;
         }
     public:
-        std::uint32_t RingColor() const noexcept
+        double RingOpacity(const StatusIndicatorRingLayer& layer) const noexcept
         {
-            return StatusIndicatorCurve::LerpArgb(ring_.fromArgb,ring_.toArgb,StatusIndicatorCurve::InOutSine(ring_.colorT));
+            const bool breathing=animations_&&(!layer.progress||layer.verifying);
+            return StatusIndicatorCurve::InOutSine(layer.opacity)*(breathing?Breath(layer):1.0);
         }
         // 呼吸、文字滚动与 100% 校验阶段属于时间驱动画面，显示期内需要连续帧。
         bool TimeDrivenActive() const noexcept
         {
             using namespace StatusIndicatorStyle;
-            if(animations_&&ring_.opacity>0)return true;
-            if(animations_&&progress_.opacity>0&&progress_.display>=1&&!progress_.complete)return true;
+            for(const auto* layer:{&ring_.outgoing,&ring_.current})
+                if(animations_&&layer->opacity>0&&(!layer->progress||layer->verifying))return true;
             for(const auto& e:entries_)
             {
                 if(StatusIndicatorTextOverflow(e.textWidth)<=0)continue;
@@ -770,7 +824,6 @@ namespace Inkeys::UI::Bar
         std::vector<StatusIndicatorEntry> entries_;
         StatusIndicatorOptions options_;
         StatusIndicatorRingState ring_;
-        StatusIndicatorProgressState progress_;
         std::uint64_t order_=0,dockSerial_=0,selected_=0;
         std::size_t frozenFanCount_=0;
         double now_=0,fan_=0,fanDeadline_=0;
@@ -888,16 +941,18 @@ namespace Inkeys::UI::Bar
         bool overflow=false;          // 允许越过 baseBounds（胶囊、同心弧、飞行中）
     };
 
-    struct StatusIndicatorRingLayout { std::uint64_t owner=0;std::uint32_t argb=0;double opacity=0,width=StatusIndicatorStyle::RingWidth; };
-    struct StatusIndicatorProgressLayout { std::uint64_t key=0;std::uint32_t argb=0;double value=0,opacity=0,width=StatusIndicatorStyle::RingWidth; };
+    struct StatusIndicatorRingLayout
+    {
+        std::uint64_t owner=0;bool progress=false;std::uint32_t argb=0;
+        double value=1,opacity=0,width=StatusIndicatorStyle::RingWidth;
+    };
 
     struct StatusIndicatorFanPlacement { double x=0,y=0;std::size_t layer=0;bool mirrored=false; };
 
     struct StatusIndicatorLayout
     {
         std::vector<StatusIndicatorEntryLayout> entries; // 已按 z 升序
-        StatusIndicatorRingLayout ring;
-        StatusIndicatorProgressLayout progress;
+        std::array<StatusIndicatorRingLayout,2> rings; // [0] 淡出层，[1] 当前层，依次绘制
         StatusIndicatorRect normalBounds,overflowBounds;
         StatusIndicatorRect reserveBounds; // 越界几何的动画峰值包络（首帧即预留）
         bool fanMirrored=false;
@@ -1205,15 +1260,13 @@ namespace Inkeys::UI::Bar
         }
 
         const auto& ring=model.Ring();
-        const double ringFade=InOutSine(ring.opacity);
-        out.ring.owner=ring.owner;out.ring.argb=model.RingColor();
-        out.ring.opacity=ringFade*(model.Animations()?model.Breath():1.0);
-        const auto& progress=model.Progress();
-        if(const auto* e=progress.key?model.Find(progress.key):nullptr)
+        const std::array<const StatusIndicatorRingLayer*,2> layers{&ring.outgoing,&ring.current};
+        for(std::size_t i=0;i<layers.size();++i)
         {
-            out.progress.key=progress.key;out.progress.argb=e->spec.accentArgb;out.progress.value=Clamp01(progress.display);
-            const bool verifying=progress.display>=1&&!progress.complete&&model.Animations();
-            out.progress.opacity=InOutSine(progress.opacity)*(verifying?model.Breath():1.0);
+            const auto& layer=*layers[i];auto& r=out.rings[i];
+            r.owner=layer.key;r.progress=layer.progress;r.argb=layer.argb;
+            r.value=layer.progress?Clamp01(layer.value):1.0;
+            r.opacity=model.RingOpacity(layer);
         }
         return out;
     }

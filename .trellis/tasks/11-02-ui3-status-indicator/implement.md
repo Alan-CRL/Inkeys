@@ -52,3 +52,8 @@
 - [x] 状态图标按实心语言重绘（`research/status_icon_build.py`，lint 7/7）；HTML 预览稿 `research/indicator-v2-preview.html`。
 - [x] 合并 `temp/state`（4732db1b）后按用户确认的预览稿实施：按 prd “Decisions v2” 重写 `Bar.StatusIndicator.h` 布局与收起动画、`.cpp` 绘制（主栏 `BarUiShapeClass` 材质、遮挡裁剪 + `PushPanelOpacity` 单次合成、圆角文字遮罩与渐隐、光晕）、交互（单方块重新展开、主栏按钮式悬停）、RenderLoop 倒转输入与胶囊扩窗包络；更新无窗口与离屏测试。
 - 验证（2026-11-04）：Debug|ARM64 完整构建 0 错误；`InkeysHeadlessTests.exe --no-window` 0 失败（含倒转、着陆让位、帧率无关、单方块重新展开新用例）；`Inkeys.exe --bar-eraser-offscreen-test` 0 失败；状态图标 lint 7/7；`git diff --check` 通过。真实窗口观感、鼠标/笔/触摸与透明度/光影组合仍需用户人工验收。
+
+## v4 — 环单通道与进度让位（2026-11-07）
+- [x] 实现逐条目进度、队首/空闲进度单通道仲裁、原色双层淡出/延迟淡入、完成仅前台停留及让位当帧结束；同步双层绘制/Bounds/模拟下载/离屏断言，迁移并补充无头回归，更新 PRD/设计与规范合同。
+- 实现由 Codex（gpt-6.1-sol High）完成，主 Agent 审查后把“前台完成立即置满”改回平滑走满并同步测试。
+- 验证（2026-11-08）：Debug|ARM64 完整构建 0 错误；`InkeysHeadlessTests.exe --no-window` 0 失败；`Inkeys.exe --bar-eraser-offscreen-test` exit 0（含双层环同屏绘制用例）；`git diff --check` 通过。真实窗口中的淡出/淡入观感与真实下载流程仍需人工验收。

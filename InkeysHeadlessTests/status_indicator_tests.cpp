@@ -163,7 +163,7 @@ int RunStatusIndicatorTests()
 		Run(model, now, 2.95);
 		check(model.Find(1)->holding && Near(model.Find(1)->holdEnd, 3.0), "front holds from publish");
 		check(!model.Find(2)->holding && model.Find(2)->phase == Phase::Expanded, "queued entry does not count down");
-		check(model.Ring().owner == 1 && model.RingColor() == kRed, "ring owned by front");
+		check(model.Ring().current.key == 1 && model.Ring().current.argb == kRed, "ring owned by front");
 		check(Near(model.WakeDeadline(), 3.0), "wake deadline is front hold end");
 		const auto input = FoldedInput();
 		{
@@ -177,7 +177,8 @@ int RunStatusIndicatorTests()
 		check(model.Find(1)->phase == Phase::Collapsing, "front collapses on expiry");
 		check(model.Find(2)->holding && model.Find(2)->holdStart >= 3.0 && Near(model.Find(2)->holdEnd, model.Find(2)->holdStart + 3.0),
 			"next entry starts hold when it becomes front");
-		check(model.Ring().owner == 2 && model.Ring().colorT < 1, "ring crossfades to new front color");
+		check(model.Ring().current.key == 2 && model.Ring().outgoing.key == 1
+			&& model.Ring().outgoing.opacity > 0 && model.Ring().current.delay > 0, "ring fades old front before showing new front");
 		const double top0 = FindLayout(ResolveStatusIndicatorLayout(model, input), 2)->bounds.top;
 		const double slot0 = model.Find(2)->stack.position;
 		Run(model, now, now + 0.08);
@@ -187,12 +188,12 @@ int RunStatusIndicatorTests()
 		Run(model, now, 4.5);
 		check(model.Find(2)->stack.position == 0 && model.Find(1)->phase == Phase::Docked, "slide settles at front slot");
 		check(Near(model.Find(2)->width.position, StatusIndicatorCapsuleWidth(100), 0.1), "new front widens to its own text");
-		check(model.RingColor() == kBlue, "ring color settles to new owner");
+		check(model.Ring().current.argb == kBlue, "ring color settles to new owner");
 		const double holdEnd = model.Find(2)->holdEnd;
 		Run(model, now, holdEnd - 0.05);
 		check(model.Find(2)->phase == Phase::Expanded, "second hold keeps full 3s");
 		Run(model, now, holdEnd + 0.05);
-		check(model.Find(2)->phase == Phase::Collapsing && model.Ring().owner == 0, "ring released when queue empties");
+		check(model.Find(2)->phase == Phase::Collapsing && model.Ring().current.key == 0, "ring released when queue empties");
 	}
 
 	// Capsule geometry: vertical center on the main button top border, icon left, centered text.
@@ -466,31 +467,31 @@ int RunStatusIndicatorTests()
 		Run(model, now, 4.0);
 		check(model.SetProgress(9, 0.3, false, now), "progress starts cycle");
 		Run(model, now, 5.0);
-		check(Near(model.Progress().display, 0.3, 1e-3) && model.Progress().opacity == 1, "progress ring shows value");
+		check(Near(model.Find(9)->progress.display, 0.3, 1e-3) && model.Ring().current.opacity == 1, "progress ring shows value");
 		model.SetProgress(9, 0.5, false, now);
-		check(!model.SetProgress(9, 0.0, false, now) && model.Progress().target == 0.5, "reset to zero absorbed");
+		check(!model.SetProgress(9, 0.0, false, now) && model.Find(9)->progress.target == 0.5, "reset to zero absorbed");
 		Run(model, now, 6.0);
-		check(Near(model.Progress().display, 0.5, 1e-3), "display never decreases");
+		check(Near(model.Find(9)->progress.display, 0.5, 1e-3), "display never decreases");
 		model.SetDrawingActive(true);
 		Run(model, now, 6.5);
-		check(model.Progress().opacity == 0 && Near(model.Progress().display, 0.5, 1e-3), "drawing hides progress without losing it");
+		check(model.Ring().current.opacity == 0 && Near(model.Find(9)->progress.display, 0.5, 1e-3), "drawing hides progress without losing it");
 		model.SetDrawingActive(false);
 		check(model.SetProgress(9, -1, false, now), "failure ends cycle");
 		Run(model, now, 7.0);
-		check(model.Progress().opacity == 0 && model.Find(9) != nullptr, "failed ring fades, entry kept");
+		check(model.Ring().current.opacity == 0 && model.Find(9) != nullptr, "failed ring fades, entry kept");
 		model.SetProgress(9, 0.2, false, now);
-		check(model.Progress().display == 0 && model.Progress().target == 0.2, "new cycle restarts from zero");
+		check(model.Find(9)->progress.display == 0 && model.Find(9)->progress.target == 0.2, "new cycle restarts from zero");
 		Run(model, now, 8.0);
 		check(model.SetProgress(9, 1.0, true, now), "complete");
 		const double completeAt = now;
 		check(Near(model.WakeDeadline(), completeAt + ProgressCompleteLinger), "linger deadline");
 		Run(model, now, completeAt + 2.9);
-		check(model.Progress().active && model.Progress().display == 1 && model.Progress().opacity == 1, "complete ring lingers");
+		check(model.Find(9)->progress.active && model.Find(9)->progress.display == 1 && model.Ring().current.opacity == 1, "complete ring lingers");
 		const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
-		check(layout.progress.key == 9 && layout.progress.value == 1 && layout.progress.argb == kGreen
-			&& Near(layout.progress.width, RingWidth), "progress layout is a thin line");
+		check(layout.rings[1].owner == 9 && layout.rings[1].value == 1 && layout.rings[1].argb == kGreen
+			&& layout.rings[1].progress && Near(layout.rings[1].width, RingWidth), "progress layout is a thin line");
 		Run(model, now, completeAt + 3.5);
-		check(!model.Progress().active && model.Progress().opacity == 0 && model.Find(9), "ring fades after linger");
+		check(!model.Find(9)->progress.active && model.Ring().current.opacity == 0 && model.Find(9), "ring fades after linger");
 		check(!model.NeedsFrames() && model.WakeDeadline() == inf, "idle after progress");
 	}
 
@@ -499,20 +500,203 @@ int RunStatusIndicatorTests()
 		StatusIndicatorModel model; double now = 0;
 		model.Publish(Spec(1, Kind::Debug), now);
 		Run(model, now, 0.5);
-		check(model.Ring().opacity == 1, "ring visible when not drawing");
+		check(model.Ring().current.opacity == 1, "ring visible when not drawing");
 		model.SetDrawingActive(true);
 		Run(model, now, 1.0);
-		check(model.Ring().opacity == 0 && Near(model.Find(1)->holdEnd, 3.0), "drawing hides ring, hold unchanged");
+		check(model.Ring().current.opacity == 0 && Near(model.Find(1)->holdEnd, 3.0), "drawing hides ring, hold unchanged");
 		check(!model.NeedsFrames() && Near(model.WakeDeadline(), 3.0), "hidden ring idles until deadline");
 		model.SetDrawingActive(false);
 		Run(model, now, 1.5);
-		check(model.Ring().opacity == 1, "ring returns while owner still holds");
+		check(model.Ring().current.opacity == 1, "ring returns while owner still holds");
 		const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
-		check(layout.ring.owner == 1 && Near(layout.ring.width, RingWidth)
-			&& layout.ring.opacity >= 0.55 && layout.ring.opacity <= 1.0, "ring layout breathes as a thin line");
+		check(layout.rings[1].owner == 1 && Near(layout.rings[1].width, RingWidth)
+			&& layout.rings[1].opacity >= 0.55 && layout.rings[1].opacity <= 1.0, "ring layout breathes as a thin line");
 		model.SetDrawingActive(true);
 		Run(model, now, 3.1);
 		check(model.Find(1)->phase != Phase::Expanded, "hold expires while drawing");
+	}
+
+	// 环只有一个目标源；换主按原色双层淡出/淡入，快速切换也不产生第三层。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::Debug, Life::Persistent, Action::None, kRed), now);
+		model.Publish(Spec(2, Kind::Debug, Life::Persistent, Action::None, kBlue), now);
+		model.Publish(Spec(3, Kind::Debug, Life::Persistent, Action::None, kGreen), now);
+		Run(model, now, 1.0);
+		model.ClickExpanded(1, now); model.Advance(now, 0, 1, true);
+		check(model.Ring().outgoing.key == 1 && model.Ring().outgoing.opacity == 1
+			&& model.Ring().current.key == 2 && model.Ring().current.opacity == 0
+			&& Near(model.Ring().current.delay, RingGap), "switch begins with old layer and delayed new layer");
+		Run(model, now, 1.06);
+		check(model.Ring().outgoing.opacity < 1 && model.Ring().current.opacity == 0, "old ring fades before new ring enters");
+		bool overlap = false, colors = true;
+		while (now < 1.5 - 1e-9)
+		{
+			Run(model, now, (std::min)(1.5, now + kFrame));
+			const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
+			overlap |= layout.rings[0].opacity > 0 && layout.rings[1].opacity > 0;
+			for (const auto& ring : layout.rings)
+				if (ring.owner) colors &= ring.argb == (ring.owner == 1 ? kRed : kBlue);
+		}
+		check(overlap && colors, "ring layers overlap briefly with no interpolated colors");
+		check(Near(model.Ring().current.breathStart, 1.0 + RingGap), "breath begins at actual fade-in time");
+		model.Publish(Spec(2, Kind::Debug, Life::Persistent, Action::None, kGreen), now);
+		check(model.NeedsFrames(), "same-owner accent change schedules a transition");
+		model.Advance(now, 0, 1, true);
+		check(model.Ring().outgoing.argb == kBlue && model.Ring().current.argb == kGreen,
+			"same-owner color change keeps both original colors");
+		Run(model, now, 1.65);
+		const auto old = model.Ring().outgoing;
+		check(model.RingOpacity(old) > model.RingOpacity(model.Ring().current), "old layer is more prominent during rapid switch");
+		model.ClickExpanded(2, now); model.Advance(now, 0, 1, true);
+		const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
+		check(layout.rings.size() == 2 && layout.rings[0].owner == old.key && layout.rings[0].argb == old.argb
+			&& layout.rings[1].owner == 3 && Near(model.Ring().current.delay, RingGap * old.opacity),
+			"rapid switch keeps only more prominent outgoing layer and scales delay");
+		Run(model, now, 2.2);
+		model.Publish(Spec(4, Kind::Debug, Life::Persistent, Action::None, kRed), now);
+		model.ClickExpanded(3, now); model.Advance(now, 0, 1, true);
+		check(model.Ring().outgoing.key == 3 && model.Ring().current.key == 4, "rapid switch also keeps current when it is more prominent");
+	}
+
+	// 队列中的后台进度一直跟随实时值：轮到队首独占 3s，随后让位，再在空闲时恢复。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::Debug, Life::Persistent, Action::None, kRed), now);
+		model.Publish(Spec(2, Kind::NewVersion), now);
+		model.Publish(Spec(3, Kind::Debug, Life::Persistent, Action::None, kBlue), now);
+		model.SetProgress(2, .2, false, now);
+		Run(model, now, 1.0); model.SetProgress(2, .7, false, now);
+		Run(model, now, 2.9);
+		check(model.Ring().current.key == 1 && !model.Ring().current.progress
+			&& Near(model.Find(2)->progress.display, .7, .001), "queued progress smooths without stealing front ring");
+		Run(model, now, 3.5);
+		check(model.FrontKey() == 2 && model.ShowingProgress(2) && Near(model.Ring().current.value, .7, .001)
+			&& Near(model.Find(2)->holdEnd - model.Find(2)->holdStart, Hold), "progress front shows real-time segment for its own hold");
+		model.SetProgress(2, .85, false, now);
+		const double end = model.Find(2)->holdEnd;
+		Run(model, now, end - .05);
+		check(model.ShowingProgress(2) && Near(model.Ring().current.value, .85, .001), "front progress remains real-time through hold");
+		Run(model, now, end + .5);
+		check(model.FrontKey() == 3 && model.Ring().current.key == 3 && !model.Ring().current.progress,
+			"following normal front owns the ring");
+		model.SetProgress(2, .95, false, now);
+		Run(model, now, model.Find(3)->holdEnd + .5);
+		check(!model.Front() && model.ShowingProgress(2) && Near(model.Ring().current.value, .95, .001), "empty queue restores live progress");
+		model.Publish(Spec(4, Kind::Debug), now); model.Advance(now, 0, 1, true);
+		check(model.Ring().current.key == 4 && !model.ShowingProgress(2) && model.Find(2)->progress.active,
+			"new status takes ring while keeping unfinished progress");
+		Run(model, now, model.Find(4)->holdEnd + .5);
+		check(model.ShowingProgress(2), "progress resumes after later status finishes");
+	}
+
+	// 完成只给正在前台显示的进度停留；后台完成或停留中让位均立即结束周期。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::Debug), now); model.Publish(Spec(2, Kind::NewVersion), now);
+		model.SetProgress(2, .4, false, now); Run(model, now, .5);
+		model.SetProgress(2, 1, true, now);
+		check(!model.Find(2)->progress.active && !model.Find(2)->progress.complete, "background completion ends immediately");
+		Run(model, now, 7.5);
+		check(!model.Ring().current.key && !model.Find(2)->progress.active, "background completion is never restored");
+		model.SetProgress(2, .2, false, now); Run(model, now, now + .5);
+		model.SetProgress(2, 1, true, now); Run(model, now, now + 1.0);
+		check(model.Find(2)->progress.active && model.Ring().current.value == 1, "foreground completion animates to a full ring");
+		model.Publish(Spec(2, Kind::NewVersion, Life::Persistent, Action::None, kBlue), now);
+		model.Advance(now, 0, 1, true);
+		Run(model, now, now + .4);
+		check(model.Find(2)->progress.active && model.ShowingProgress(2), "same-progress color transition keeps completion linger");
+		model.Publish(Spec(3, Kind::Debug), now);
+		model.Advance(now, 0, 1, true);
+		check(!model.Find(2)->progress.active && model.Ring().current.key == 3,
+			"completed progress ends in the same frame that a new front takes over");
+		Run(model, now, model.Find(3)->holdEnd + .5);
+		check(!model.Ring().current.key, "yielded completed progress does not return");
+	}
+
+	// 多个进度空闲时粘住同一个 key，完成停留后只接续尚未完成的另一个。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::Debug), now); model.Publish(Spec(2, Kind::Debug), now);
+		model.ClickExpanded(1, now); model.ClickExpanded(2, now);
+		model.SetProgress(1, .4, false, now); model.SetProgress(2, .2, false, now);
+		Run(model, now, 1.5);
+		check(model.ShowingProgress(1) && model.Ring().idleProgress == 1 && model.Find(2)->progress.active,
+			"two independent progress cycles select one idle owner");
+		model.SetProgress(2, .8, false, now); Run(model, now, 2.0);
+		check(model.ShowingProgress(1) && Near(model.Find(2)->progress.display, .8, .02), "other progress updates without alternating ring owner");
+		model.Publish(Spec(3, Kind::Debug), now); Run(model, now, 2.5);
+		check(model.Ring().current.key == 3 && model.Ring().idleProgress == 1, "front preempts idle progress without losing selection");
+		Run(model, now, model.Find(3)->holdEnd + .5);
+		check(model.ShowingProgress(1), "idle selection survives front preemption");
+		model.SetProgress(1, 1, true, now);
+		const double completed = now;
+		Run(model, now, completed + ProgressCompleteLinger - .01);
+		check(model.ShowingProgress(1) && model.Find(1)->progress.active && model.Ring().current.value == 1,
+			"selected completion keeps full ring for three seconds");
+		Run(model, now, completed + ProgressCompleteLinger + .5);
+		check(!model.Find(1)->progress.active && model.ShowingProgress(2) && model.Ring().idleProgress == 2,
+			"second unfinished progress takes ring after completion linger");
+		model.SetProgress(2, -1, false, now); Run(model, now, now + .5);
+		check(!model.Ring().current.key && model.Find(2) && !model.Find(2)->progress.active, "progress failure releases ring and retains entry");
+	}
+
+	// 同一条目普通环与进度段也走双层；100% 未确认时呼吸，绘制中暂停显示但保留周期。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::Debug), now); Run(model, now, .5);
+		model.SetProgress(1, .5, false, now); model.Advance(now, 0, 1, true);
+		check(!model.Ring().outgoing.progress && model.Ring().current.progress && model.Ring().current.delay > 0,
+			"normal ring to progress segment uses the same transition");
+		Run(model, now, 1.0); model.SetProgress(1, 1, false, now); Run(model, now, 2.0);
+		check(model.TimeDrivenActive() && model.Ring().current.verifying && model.RingOpacity(model.Ring().current) < 1,
+			"unconfirmed full progress keeps breathing");
+		model.SetDrawingActive(true); model.Advance(now, 0, 1, true);
+		check(!model.Ring().current.key && model.Ring().outgoing.opacity > 0 && model.Find(1)->progress.active,
+			"drawing clears target and starts ring fade without losing progress");
+		Run(model, now, 2.5);
+		check(!model.Ring().outgoing.key && !model.NeedsFrames(), "hidden settled progress idles while drawing");
+		model.SetDrawingActive(false); Run(model, now, 2.9);
+		check(model.ShowingProgress(1), "progress restores when drawing ends");
+		model.SetProgress(1, -1, false, now); model.Advance(now, 0, 1, true);
+		check(model.Ring().outgoing.progress && !model.Ring().current.progress && model.Ring().current.key == 1,
+			"progress failure restores normal front with a transition");
+	}
+
+	// 淡出层独立于注册表，过滤后立即删除条目也不丢失旧颜色和段长。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::NewVersion), now); model.ClickExpanded(1, now); model.SetProgress(1, .6, false, now);
+		Run(model, now, 1.0); const auto before = model.Ring().current;
+		check(model.Ring().idleProgress == 1, "idle progress key is retained before removal");
+		model.SetOptions({ true, true, true, false }, now); model.Retire(1, now);
+		model.Advance(now, 0, 1, true);
+		const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
+		check(!model.Find(1) && model.Ring().idleProgress == 0 && layout.rings[0].owner == 1
+			&& layout.rings[0].argb == before.argb && layout.rings[0].value == before.value && layout.rings[0].opacity > 0,
+			"removed entry leaves its frozen outgoing layer drawable");
+		Run(model, now, now + RingOut + .01);
+		check(!model.Ring().outgoing.key && !model.NeedsFrames(), "removed layer fades to idle");
+	}
+
+	// 60/144Hz 在相同采样时刻得到一致的两层透明度与独立呼吸相位。
+	{
+		auto sample = [&](double frame, double elapsed)
+		{
+			StatusIndicatorModel model; double now = 0;
+			model.Publish(Spec(1, Kind::Debug, Life::Persistent, Action::None, kRed), now);
+			model.Publish(Spec(2, Kind::Debug, Life::Persistent, Action::None, kBlue), now);
+			model.Advance(now, 0, 1, true); Run(model, now, 1.0, true, frame);
+			model.ClickExpanded(1, now); model.Advance(now, 0, 1, true);
+			Run(model, now, 1.0 + elapsed, true, frame);
+			return ResolveStatusIndicatorLayout(model, FoldedInput());
+		};
+		for (const double elapsed : { .06, .12, .15, .19, .25, .5 })
+		{
+			const auto a = sample(1.0 / 60, elapsed), b = sample(1.0 / 144, elapsed);
+			check(Near(a.rings[0].opacity, b.rings[0].opacity, 1e-6) && Near(a.rings[1].opacity, b.rings[1].opacity, 1e-6),
+				"ring opacities are frame-rate independent");
+		}
 	}
 
 	// Display accent: lifted on the dark material, darkened on the light one.
@@ -530,11 +714,13 @@ int RunStatusIndicatorTests()
 		model.Publish(Spec(1, Kind::Debug), now);
 		model.Publish(Spec(2, Kind::Debug, Life::Notification), now);
 		now += kFrame; model.Advance(now, kFrame, 1.0, false);
-		check(model.Find(1)->appear == 1 && model.Ring().opacity == 1, "appear snaps");
+		check(model.Find(1)->appear == 1 && model.Ring().current.opacity == 1, "appear snaps");
 		now = 3.01; model.Advance(now, kFrame, 1.0, false);
 		check(model.Find(1)->phase == Phase::Docked && model.Find(1)->morph.position == 1 && model.Find(1)->landed,
 			"collapse snaps to docked");
 		check(model.Find(2)->holding && model.Find(2)->stack.position == 0, "next front snaps into slot");
+		check(model.Ring().current.key == 2 && model.Ring().current.opacity == 1 && model.Ring().current.delay == 0
+			&& model.Ring().outgoing.key == 0, "ring owner switches immediately without outgoing layer when animations disabled");
 		now = 6.02; model.Advance(now, kFrame, 1.0, false);
 		check(model.Find(2) == nullptr, "notification dismiss snaps");
 		model.Retire(1, now);

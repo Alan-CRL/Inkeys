@@ -163,9 +163,11 @@ bool BarStatusIndicatorPanel::Advance(BarUISetClass& owner,double dt,double spee
 	if(!simulated_.empty()&&now>=simulatedSampleAt_)
 	{
 		simulatedSampleAt_=now+.1;
-		const auto [key,start]=simulated_.back();
-		const double progress=std::clamp((now-start)/6.0,0.0,1.0);
-		changed_|=model_.SetProgress(key,progress,progress>=1,now);
+		for(const auto& [key,start]:simulated_)
+		{
+			const double progress=std::clamp((now-start)/6.0,0.0,1.0);
+			changed_|=model_.SetProgress(key,progress,progress>=1,now);
+		}
 		std::erase_if(simulated_,[&](const auto& p){return now>=p.second+6;});
 	}
 	std::erase_if(simulated_,[&](const auto& p){return !model_.Find(p.first);});
@@ -227,7 +229,7 @@ RECT BarStatusIndicatorPanel::Bounds() const
 {
 	const double outset=GlowOutsetDip()*zoom_;
 	RECT result=BoundsPixels(UnionStatusIndicatorRect(layout_.normalBounds,layout_.overflowBounds),zoom_,outset);
-	if(layout_.ring.opacity>0||layout_.progress.opacity>0)
+	if(std::any_of(layout_.rings.begin(),layout_.rings.end(),[](const auto& ring){return ring.opacity>0;}))
 		Union(result,BoundsPixels({input_.mainCenterX-input_.mainWidth/2,input_.mainCenterY-input_.mainHeight/2,
 			input_.mainCenterX+input_.mainWidth/2,input_.mainCenterY+input_.mainHeight/2},zoom_,outset));
 	return result;
@@ -356,7 +358,7 @@ void BarStatusIndicatorPanel::DrawStroke(BarUIRendering& renderer,ID2D1DeviceCon
 
 void BarStatusIndicatorPanel::DrawRing(BarUIRendering& renderer,ID2D1DeviceContext* context,const BarUiSuperellipseClass& main,double material,double content)
 {
-	if(layout_.ring.opacity<=0&&layout_.progress.opacity<=0)return;
+	if(std::none_of(layout_.rings.begin(),layout_.rings.end(),[](const auto& ring){return ring.opacity>0;}))return;
 	const double width=main.w.val*zoom_,height=main.h.val*zoom_,n=main.n->val;
 	const std::array<double,3> key{width,height,n};
 	ComPtr<ID2D1Factory> factory;context->GetFactory(&factory);
@@ -371,29 +373,34 @@ void BarStatusIndicatorPanel::DrawRing(BarUIRendering& renderer,ID2D1DeviceConte
 	ComPtr<ID2D1TransformedGeometry> positioned;
 	factory->CreateTransformedGeometry(ringGeometry_.Get(),D2D1::Matrix3x2F::Translation(left,top),&positioned);
 	const int shapeVariant=static_cast<int>(lround(n*4))&255;
-	if(positioned&&layout_.ring.opacity>0&&layout_.progress.opacity<=0)
+	// 按淡出层、当前层顺序绘制；颜色与段长由各层持有，不再用进度硬切普通环。
+	for(const auto& ring:layout_.rings)
 	{
-		const auto accent=Accent(StatusIndicatorColor::Display(layout_.ring.argb,material));
-		DrawStroke(renderer,context,positioned.Get(),accent,layout_.ring.opacity*content,material,0x20000000|shapeVariant);
+		if(ring.opacity<=0)continue;
+		const auto accent=Accent(StatusIndicatorColor::Display(ring.argb,material));
+		if(!ring.progress)
+		{
+			if(positioned)DrawStroke(renderer,context,positioned.Get(),accent,ring.opacity*content,material,0x20000000|shapeVariant);
+			continue;
+		}
+		if(ring.value<=0)continue;
+		// 进度段从顶部中点顺时针按路径长度截取，下方原边框为轨道。
+		FLOAT length=0;
+		if(FAILED(ringGeometry_->ComputeLength(nullptr,&length)))continue;
+		ComPtr<ID2D1PathGeometry> progress;ComPtr<ID2D1GeometrySink> sink;
+		if(FAILED(factory->CreatePathGeometry(&progress))||FAILED(progress->Open(&sink)))continue;
+		const int segments=(std::max)(1,static_cast<int>(ceil(192*ring.value)));
+		for(int i=0;i<=segments;++i)
+		{
+			D2D1_POINT_2F point{};ringGeometry_->ComputePointAtLength(static_cast<FLOAT>(length*ring.value*i/segments),nullptr,&point,nullptr);
+			point.x+=left;point.y+=top;if(i==0)sink->BeginFigure(point,D2D1_FIGURE_BEGIN_HOLLOW);else sink->AddLine(point);
+		}
+		sink->EndFigure(D2D1_FIGURE_END_OPEN);
+		if(FAILED(sink->Close()))continue;
+		// 模式与段长共同区分遮罩，不能复用完整边框或另一层进度的遮罩。
+		const int variant=0x40000000|shapeVariant|(static_cast<int>(lround(ring.value*1024))<<8);
+		DrawStroke(renderer,context,progress.Get(),accent,ring.opacity*content,material,variant);
 	}
-	if(layout_.progress.opacity<=0||layout_.progress.value<=0)return;
-	// 进度段：从超椭圆顶部中点顺时针按路径长度截取，下方原边框为轨道。
-	FLOAT length=0;
-	if(FAILED(ringGeometry_->ComputeLength(nullptr,&length)))return;
-	ComPtr<ID2D1PathGeometry> progress;ComPtr<ID2D1GeometrySink> sink;
-	if(FAILED(factory->CreatePathGeometry(&progress))||FAILED(progress->Open(&sink)))return;
-	const int segments=(std::max)(1,static_cast<int>(ceil(192*layout_.progress.value)));
-	for(int i=0;i<=segments;++i)
-	{
-		D2D1_POINT_2F point{};ringGeometry_->ComputePointAtLength(static_cast<FLOAT>(length*layout_.progress.value*i/segments),nullptr,&point,nullptr);
-		point.x+=left;point.y+=top;if(i==0)sink->BeginFigure(point,D2D1_FIGURE_BEGIN_HOLLOW);else sink->AddLine(point);
-	}
-	sink->EndFigure(D2D1_FIGURE_END_OPEN);
-	if(FAILED(sink->Close()))return;
-	// 分段长度纳入遮罩缓存身份，不能复用完整边框或旧进度的遮罩。
-	const int variant=0x40000000|shapeVariant|(static_cast<int>(lround(layout_.progress.value*1024))<<8);
-	DrawStroke(renderer,context,progress.Get(),Accent(StatusIndicatorColor::Display(layout_.progress.argb,material)),
-		layout_.progress.opacity*content,material,variant);
 }
 
 void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* context,const BarUiSuperellipseClass& main,double lightMaterial)
@@ -582,8 +589,8 @@ int BarStatusIndicatorPanel::RunOffscreenTest(BarUISetClass& owner)
 	{std::lock_guard lock(presentedMutex_);check(!presented_.entries.empty()&&presented_.entries.back().role==StatusIndicatorRole::Fan);}
 
 	PublishStatusIndicatorProgress(first.key,.6f,false);Advance(owner,1,1,1,false,false);layout();
-	check(std::abs(model_.Progress().display-.6)<.001&&layout_.progress.opacity>0);
-	Advance(owner,1,1,1,true,false);layout();check(layout_.progress.opacity==0&&layout_.ring.opacity==0);
+	check(std::abs(model_.Find(first.key)->progress.display-.6)<.001&&layout_.rings[1].progress&&layout_.rings[1].opacity>0);
+	Advance(owner,1,1,1,true,false);layout();check(std::none_of(layout_.rings.begin(),layout_.rings.end(),[](const auto& ring){return ring.opacity>0;}));
 	Advance(owner,1,1,1,false,false);layout();CommitPresented();
 	auto& renderer=owner.spec;renderer.SetFrameZoom(1);
 	const auto ready=renderer.EnsureDeviceResources(Inkeys::UI::RenderPipeline::GetDeviceEpoch(),800,800);
@@ -605,8 +612,14 @@ int BarStatusIndicatorPanel::RunOffscreenTest(BarUISetClass& owner)
 		model_.ClickDocked(second.key,Now());model_.Advance(Now(),1,1,false);
 		model_.ClickDocked(second.key,Now());model_.Advance(Now(),1,1,false);layout();draw();
 		check(model_.Selected()==second.key&&words_.count(second.key)==1);
+		// 真正绘制同时可见的进度淡出层与普通淡入层，覆盖两种遮罩身份。
+		auto third=second;third.key++;third.accentArgb=0xFF1F4FB8;
+		const double ringNow=Now();model_.Publish(third,ringNow);model_.Advance(ringNow,0,1,true);
+		model_.Advance(ringNow+.15,.15,1,true);layout();
+		check(layout_.rings[0].progress&&!layout_.rings[1].progress&&layout_.rings[0].opacity>0&&layout_.rings[1].opacity>0);
+		draw();
 	}
-	model_.Retire(first.key,Now());layout();CommitPresented();
+	model_.Retire(first.key,model_.Now());layout();CommitPresented();
 	{std::lock_guard lock(presentedMutex_);check(std::none_of(presented_.entries.begin(),presented_.entries.end(),[&](const auto& hit){return hit.key==first.key&&hit.role!=StatusIndicatorRole::None;}));}
 	// 清理测试发布，后续离屏用例沿用原始主栏状态和动画偏好。
 	model_=StatusIndicatorModel{};layout_={};simulated_.clear();hover_.clear();press_.clear();words_.clear();pointer_.Reset();
