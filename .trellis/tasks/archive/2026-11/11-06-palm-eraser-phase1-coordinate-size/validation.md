@@ -53,3 +53,11 @@
 - InkeysHeadlessTests --no-window --palm-eraser-only：152 项 0 失败；--no-window 全量：exit 0，stderr 为空，SpeedEraser failures=0，PASS animation correctness。
 - Inkeys --draw3-palm-eraser-test：PASS。
 - RtsSharedScaleCompatibilityForTesting 仅在 DRAW3_TESTING 构建中编译，本轮未执行；实机书写流畅度、Surface/异常机接触尺寸、Win7 仍未验证。
+
+## 2026-11-07 用户实机验收与收尾
+
+- 设备：用户 Surface Pro 11（ARM64，Debug）。
+- 触摸：卡死未复现；接触面积略偏大但处于合理范围，且无随接触增大而偏差放大的倍率型误差，判定换算正确，暂不调整。偏大部分为数字化器报告的接触外框（与 WPF WISP 的 raw/Resolution 物理长度解释一致）。
+- 绘制抽动：与 42f4b9a8 基线一致，主要在开启画布调试叠加层时出现，非本任务引入，不在本阶段处理。
+- 未执行：Win7 x86/x64、其他异常设备、多显示器实机；作为已知未验证项保留。
+- 结论：用户确认第一阶段收尾，最终提交 ba76c4ec。
