@@ -740,6 +740,8 @@ namespace draw3::uink
 					!std::isfinite(ink.opacity) || ink.opacity < 0.0f || ink.opacity > 1.0f ||
 					!ValidateColor(ink.color, "ink.color") || !ValidateExtra(ink.extra))
 					return Fail("ink");
+				if (ink.eraserShape > 2 || (ink.eraserShape != 0 && ink.declaredInkType != 0))
+					return Fail("ink.inkeysEraserShape");
 				float previousX = 0.0f;
 				float previousY = 0.0f;
 				for (size_t index = 0; index < ink.points.size(); ++index)
@@ -762,7 +764,7 @@ namespace draw3::uink
 			void PackInk(const UInkInk& ink)
 			{
 				uint32_t count = 8 + static_cast<uint32_t>(ink.renderOnlyWhenLatest +
-					ink.extra.has_value());
+					ink.extra.has_value() + (ink.declaredInkType == 0 && ink.eraserShape != 0));
 				packer_.pack_map(count);
 				PackKey("type"); packer_.pack_fix_uint16(kInkType);
 				PackKey("contentId"); packer_.pack_fix_uint32(ink.contentId);
@@ -794,6 +796,11 @@ namespace draw3::uink
 					PackKey("renderOnlyWhenLatest"); packer_.pack_true();
 				}
 				if (ink.extra) { PackKey("extra"); PackExtra(*ink.extra); }
+				// 圆形不增加键，保持原文件字节；UInk 1.1 升为官方字段。
+				if (ink.declaredInkType == 0 && ink.eraserShape != 0)
+				{
+					PackKey("inkeysEraserShape"); packer_.pack_uint8(ink.eraserShape);
+				}
 			}
 
 			bool ValidateShape(const UInkShape& shape)

@@ -726,7 +726,7 @@ namespace Inkeys::UI::Setting::Design
 		}
 	}
 
-	CursorPageEvents RenderCursorPage(CursorPageDraft& draft)
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft, const EraserCursorPreviewPresenter& preview)
 	{
 		namespace Cursor = Inkeys::Drawing::Draw3;
 		using Cursor::CursorDevice;
@@ -772,33 +772,44 @@ namespace Inkeys::UI::Setting::Design
 		events.tablet = row("##cursor-tablet", IA(cursor.Tablet.N).c_str(), IA(cursor.Tablet.E).c_str(), "\ue70f",
 			CursorDevice::Tablet, draft.tablet);
 
+		// 橡皮光标为独立分类，位于“按设备设置”与“数位板识别”之间。
+		SectionHeader(IA(cursor.Eraser.N).c_str());
+		{
+			const auto& eraser = cursor.Eraser;
+			draft.eraserShape = draft.eraserShape >= 0 && draft.eraserShape <= 2 ? draft.eraserShape : 0;
+			draft.eraserPattern = draft.eraserPattern >= 0 && draft.eraserPattern <= 2 ? draft.eraserPattern : 0;
+			draft.eraserTheme = draft.eraserTheme == 1 ? 1 : 0;
+			std::vector<PreviewSelectorGroup> groups(2);
+			groups[0].selectedIndex = &draft.eraserShape; groups[0].changed = &events.eraserShape;
+			groups[1].selectedIndex = &draft.eraserPattern; groups[1].changed = &events.eraserPattern;
+			groups[1].separatorBefore = true;
+			const char* shapeLabels[]{ eraser.Circle, eraser.Rectangle, eraser.Square };
+			const char* patternLabels[]{ eraser.Grips, eraser.Inkeys, eraser.Sparkle };
+			for (int index = 0; index < 3; ++index)
+			{
+				groups[0].items.push_back({ IA(shapeLabels[index]), [&, index](const LayoutRect& area) {
+					if (preview) preview(area, { static_cast<Cursor::EraserShape>(index),
+						static_cast<Cursor::EraserCursorPattern>(draft.eraserPattern), static_cast<Cursor::EraserCursorTheme>(draft.eraserTheme) }); } });
+				groups[1].items.push_back({ IA(patternLabels[index]), [&, index](const LayoutRect& area) {
+					if (preview) preview(area, { static_cast<Cursor::EraserShape>(draft.eraserShape),
+						static_cast<Cursor::EraserCursorPattern>(index), static_cast<Cursor::EraserCursorTheme>(draft.eraserTheme) }); } });
+			}
+			const auto inlineContent = InlinePreviewSelector("##eraser-cursor-options", std::move(groups));
+			const std::vector<std::string> themes{ IA(eraser.Light), IA(eraser.Dark) };
+			const float comboWidth = (std::max)(160.0F, (std::max)(ControlTextWidth(themes[0].c_str()),
+				ControlTextWidth(themes[1].c_str())) / Pixels(1) + 48.0F);
+			SettingRow("##eraser-cursor", IA(eraser.Appearance).c_str(), IA(eraser.E).c_str(), nullptr,
+				comboWidth, ControlHeight, [&](const LayoutRect&) {
+					events.eraserTheme = ComboBox("##select", &draft.eraserTheme, themes);
+				}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineContent);
+		}
+
 		SectionHeader(IA(cursor.PenDevices).c_str());
 		ImFluent::BeginDisabled(!draft.injectedAvailable);
 		events.injectedMouse = ToggleRow("##cursor-injected-mouse", IA(cursor.InjectedMouse.N).c_str(),
 			IA(cursor.InjectedMouse.E).c_str(), "\ue946", draft.injectedMouse,
 			draft.injectedAvailable ? nullptr : IA(cursor.InjectedMouse.Unavailable).c_str());
 		ImFluent::EndDisabled();
-		{
-			// 说明以分号分成两行：前半为标题行，后半为说明行；无分号时整句作标题。
-			const std::string note = IA(cursor.Note);
-			size_t split = std::string::npos, skip = 1;
-			// 全角分号以 UTF-8 字节转义书写，不受源文件编码转换影响。
-			for (const char* separator : { "\xEF\xBC\x9B", ";" })
-			{
-				const size_t found = note.find(separator);
-				if (found != std::string::npos && (split == std::string::npos || found < split))
-				{ split = found; skip = std::strlen(separator); }
-			}
-			const auto trim = [](std::string text)
-			{
-				const size_t first = text.find_first_not_of(" 	");
-				const size_t last = text.find_last_not_of(" 	");
-				return first == std::string::npos ? std::string() : text.substr(first, last - first + 1);
-			};
-			const std::string title = trim(split == std::string::npos ? note : note.substr(0, split));
-			const std::string detail = split == std::string::npos ? std::string() : trim(note.substr(split + skip));
-			Notice("##cursor-note", title.c_str(), detail.c_str(), ImFluentInfoSeverity_Informational);
-		}
 
 		SectionHeader(IA(cursor.OpacitySection).c_str());
 		const float opacityActionWidth = (ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F)
@@ -834,7 +845,7 @@ namespace Inkeys::UI::Setting::Design
 		return events;
 	}
 
-	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft)
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft, const EraserCursorPreviewPresenter& preview)
 	{
 		PalmEraserEvents events;
 		const auto& palm = I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
@@ -959,6 +970,8 @@ namespace Inkeys::UI::Setting::Design
 			ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, previewHeight });
 		}
 		EndCard();
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
+		// 适用工具归入精细控制，位于边擦边写上方。
 		const auto& pen = I18nKey.UI.Bar.DrawAttributes;
 		CheckboxGroup("##palm-eraser-tools", IA(palm.EnabledTools).c_str(), "\uedc6", {
 			{ IA(pen.SoftPenLabel), &draft.tools[0], &events.toolsChanged[0] },
@@ -968,7 +981,6 @@ namespace Inkeys::UI::Setting::Design
 			{ IA(I18nKey.UI.Centre.Eraser), &draft.tools[4], &events.toolsChanged[4] },
 			{ IA(I18nKey.UI.Bar.MainButtons.GeometryLabel), &draft.tools[5], &events.toolsChanged[5] },
 			{ IA(pen.BrushLabel), &draft.tools[6], &events.toolsChanged[6] } });
-		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
 		std::string parallelNote;
 		// 全局多指关闭时优先说明；提示不依赖手掌总开关，也不替用户修改其他偏好。
 		if (draft.parallelWriting)
@@ -978,6 +990,73 @@ namespace Inkeys::UI::Setting::Design
 		}
 		events.parallelWritingChanged = ToggleRow("##palm-eraser-parallel", IA(palm.ParallelWriting).c_str(),
 			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting, parallelNote.c_str());
+		SectionHeader(IA(palm.SizeSection).c_str());
+		draft.sizeMode = draft.sizeMode >= 0 && draft.sizeMode <= 2 ? draft.sizeMode : 0;
+		const char* sizeNotes[]{ palm.SizeModeDynamicNote, palm.SizeModeFollowDefaultNote, palm.SizeModeFixedNote };
+		events.sizeModeChanged = ComboRow("##palm-eraser-size-mode", IA(palm.SizeMode).c_str(),
+			IA(palm.SizeModeDescription).c_str(), "\ue7c9", draft.sizeMode,
+			{ IA(palm.SizeModeDynamic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+				IA(palm.SizeModeFollowDefault), IA(palm.SizeModeFixed) }, IA(sizeNotes[draft.sizeMode]).c_str());
+		if (ConditionalBlock block{ "##palm-eraser-dynamic-size", draft.sizeMode == 0 }; block)
+		{
+			const auto& eraser = I18nKey.SettingsUI.Draw.Cursor.Eraser;
+			const int defaultShape = draft.eraserShape >= 0 && draft.eraserShape <= 2 ? draft.eraserShape : 0;
+			const int shape = draft.shape >= 0 && draft.shape <= 2 ? draft.shape : defaultShape;
+			const char* methodKeys[3][4]{
+				{ palm.MethodEllipseArea, palm.MethodRectangleArea, palm.MethodInscribedCircle, palm.MethodCircumscribedCircle },
+				{ palm.MethodRectangleArea, palm.MethodEllipseArea, palm.MethodInscribedRectangle, palm.MethodCircumscribedRectangle },
+				{ palm.MethodEllipseArea, palm.MethodRectangleArea, palm.MethodInscribedSquare, palm.MethodCircumscribedSquare } };
+			std::vector<std::string> methods;
+			for (const char* key : methodKeys[shape]) methods.push_back(IA(key));
+			methods[0] += IA(I18nKey.SettingsUI.Design.RecommendedSuffix);
+			const char* shapeKeys[]{ eraser.Circle, eraser.Rectangle, eraser.Square };
+			const auto shapeName = IA(shapeKeys[shape]);
+			const auto shapeNote = std::vformat(IA(palm.SizeMethodShapeNote), std::make_format_args(shapeName));
+			// 每种形状分别记住方法；跟随默认时只编辑当前生效形状的那一项。
+			int& method = draft.sizeMethods[shape];
+			method = method >= 0 && method <= 3 ? method : 0;
+			events.sizeMethodsChanged[shape] = ComboRow("##palm-eraser-size-method", IA(palm.SizeMethod).c_str(),
+				IA(palm.SizeMethodDescription).c_str(), "\ue7c9", method, methods, shapeNote.c_str());
+			const float multiplierWidth = (ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F)
+				+ SliderResetExtraWidthDip;
+			const auto resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+			float multiplier = static_cast<float>(draft.sizeMultiplierPercent);
+			SettingRow("##palm-eraser-size-multiplier", IA(palm.SizeMultiplier).c_str(), IA(palm.SizeMultiplierDescription).c_str(),
+				"\ue7c9", multiplierWidth, ControlHeight, [&](const LayoutRect& bounds) {
+					events.sizeMultiplierChanged = SliderResetAction(bounds, multiplier, 25.0F, 300.0F,
+						events.sizeMultiplierActive, events.sizeMultiplierReset, resetLabel.c_str(), "%.0f%%"); });
+			if (events.sizeMultiplierChanged) draft.sizeMultiplierPercent = std::clamp(static_cast<int>(std::round(multiplier)), 25, 300);
+			if (events.sizeMultiplierReset)
+			{
+				events.sizeMultiplierChanged |= draft.sizeMultiplierPercent != 100;
+				draft.sizeMultiplierPercent = 100;
+			}
+		}
+		{
+			namespace Cursor = Inkeys::Drawing::Draw3;
+			const auto& eraser = I18nKey.SettingsUI.Draw.Cursor.Eraser;
+			// 明暗与纹样全局共用，这里只说明来源；手掌只能另选形状。
+			SectionHeader(IA(eraser.N).c_str());
+			Notice("##palm-eraser-cursor-note", IA(palm.CursorNoticeTitle).c_str(),
+				IA(palm.CursorNoticeDescription).c_str(), ImFluentInfoSeverity_Informational);
+			const int defaultShape = draft.eraserShape >= 0 && draft.eraserShape <= 2 ? draft.eraserShape : 0;
+			const auto pattern = static_cast<Cursor::EraserCursorPattern>(
+				draft.eraserPattern >= 0 && draft.eraserPattern <= 2 ? draft.eraserPattern : 0);
+			const auto theme = draft.eraserTheme == 1 ? Cursor::EraserCursorTheme::Dark : Cursor::EraserCursorTheme::Light;
+			// 选择器索引 0 为“跟随默认”（预览默认形状），其余依次为三种形状。
+			int selected = draft.shape >= 0 && draft.shape <= 2 ? draft.shape + 1 : 0;
+			std::vector<PreviewSelectorGroup> groups(1);
+			groups[0].selectedIndex = &selected; groups[0].changed = &events.shapeChanged;
+			const char* labels[]{ palm.FollowDefault, eraser.Circle, eraser.Rectangle, eraser.Square };
+			for (int index = 0; index < 4; ++index)
+				groups[0].items.push_back({ IA(labels[index]), [&, index](const LayoutRect& area) {
+					if (preview) preview(area, { static_cast<Cursor::EraserShape>(index == 0 ? defaultShape : index - 1),
+						pattern, theme }); } });
+			const auto inlineContent = InlinePreviewSelector("##palm-eraser-shape-options", std::move(groups));
+			SettingRow("##palm-eraser-shape", IA(palm.Shape).c_str(), IA(palm.ShapeDescription).c_str(), nullptr,
+				0, 0, [](const LayoutRect&) {}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineContent);
+			if (events.shapeChanged) draft.shape = selected - 1;
+		}
 		return events;
 	}
 

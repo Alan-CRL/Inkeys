@@ -698,6 +698,36 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 						? candidate : defaultValue.load();
 					return;
 				}
+				if (path == "Drawing.Eraser.Shape" || path == "Drawing.Eraser.CursorPattern" || path == "Drawing.Eraser.CursorTheme")
+				{
+					// 必须先检查原始整数类型和宽度，防止窄化后误命中合法枚举。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const int maximum = path == "Drawing.Eraser.CursorTheme" ? 1 : 2;
+					value = candidate >= 0 && candidate <= maximum ? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.PalmEraser.Shape")
+				{
+					// -1 为跟随普通橡皮，0..2 为独立形状；非整数或越界回落默认（跟随）。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -2;
+					value = candidate >= -1 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.PalmEraser.SizeMode" || path == "Drawing.PalmEraser.SizeMethodCircle"
+					|| path == "Drawing.PalmEraser.SizeMethodRectangle" || path == "Drawing.PalmEraser.SizeMethodSquare"
+					|| path == "Drawing.PalmEraser.SizeMultiplierPercent")
+				{
+					// 大小偏好先验原始整数类型和宽度，非法类型或越界值恢复各自默认值。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const bool multiplier = path == "Drawing.PalmEraser.SizeMultiplierPercent";
+					const int minimum = multiplier ? 25 : 0;
+					const int maximum = multiplier ? 300 : path == "Drawing.PalmEraser.SizeMode" ? 2 : 3;
+					value = candidate >= minimum && candidate <= maximum ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "Drawing.Cursor.DotHideOnContact")
 				{
 					// 四态设备选择只接受窄整数，拒绝布尔、浮点和超宽数值。

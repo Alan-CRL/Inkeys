@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 182
+- **Total Sessions**: 183
 - **Last Active**: 2026-11-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~350 | Active |
+| `journal-3.md` | ~407 | Active |
 | `journal-2.md` | ~2029 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 183 | 2026-11-06 | 手掌橡皮第一阶段：RTS坐标、面积与定尺修复 | - | `bugfix/hand-erase` |
 | 182 | 2026-11-06 | 位置设置页与 PPT/白板进入自动居中底栏 | `b10c5858`, `fa57e5f5` | `chore/ui` |
 | 181 | 2026-11-06 | Canvas debug overlay, visual mode and per-device stroke reconnect | `e0711662`, `1565cb61`, `0df57184` | `debug/drawpad` |
 | 180 | 2026-11-06 | 完善设置绘制光标样式与透明度 | `c7f3f353` | `chore/ui` |

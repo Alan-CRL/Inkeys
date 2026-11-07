@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.EraserCursor.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 #include <algorithm>
@@ -602,9 +603,145 @@ namespace
 	}
 }
 
+namespace
+{
+	int RunEraserCursorRasterTests()
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (!condition) { ++failures; std::cerr << "[EraserCursor] failed: " << name << '\n'; }
+		};
+		const auto pixel = [](const EraserCursorMip& mip, float x, float y, uint32_t channel = 0)
+		{
+			const auto ix = static_cast<uint32_t>(std::floor(mip.width * 0.5f + x));
+			const auto iy = static_cast<uint32_t>(std::floor(mip.height * 0.5f + y));
+			return mip.bgra[(static_cast<size_t>(iy) * mip.width + ix) * 4 + channel];
+		};
+		const auto marked = [](const EraserCursorMip& mip, float radius)
+		{
+			uint32_t count = 0;
+			for (uint32_t y = 0; y < mip.height; ++y)
+			for (uint32_t x = 0; x < mip.width; ++x)
+			{
+				const float dx = x + 0.5f - mip.width * 0.5f, dy = y + 0.5f - mip.height * 0.5f;
+				if (dx * dx + dy * dy < radius * radius &&
+					mip.bgra[(static_cast<size_t>(y) * mip.width + x) * 4] < 250) ++count;
+			}
+			return count;
+		};
+		for (const auto shape : { EraserShape::Circle, EraserShape::Rectangle, EraserShape::Square })
+		for (const auto pattern : { EraserCursorPattern::Grips, EraserCursorPattern::Inkeys, EraserCursorPattern::Sparkle })
+		for (const auto theme : { EraserCursorTheme::Light, EraserCursorTheme::Dark })
+		for (const uint32_t side : { 16u, 23u, 24u, 32u, 39u, 40u, 64u })
+		{
+			const auto raster = RasterizeEraserCursor({ shape, pattern, theme }, side, 6);
+			const uint32_t height = static_cast<uint32_t>(std::ceil(side * (shape == EraserShape::Rectangle ? 1.5f : 1.0f))) + 4;
+			check(!raster.levels.empty() && raster.levels[0].width == side + 4 && raster.levels[0].height == height,
+				"short side and shape aspect determine padded raster dimensions");
+			uint32_t width = side + 4, h = height, expectedLevels = 1;
+			while (width > 1 || h > 1) { width = std::max(1u, width / 2); h = std::max(1u, h / 2); ++expectedLevels; }
+			check(raster.levels.size() == expectedLevels, "full mip chain includes the one by one level");
+			width = side + 4; h = height;
+			for (const auto& mip : raster.levels)
+			{
+				check(mip.width == width && mip.height == h && mip.bgra.size() == static_cast<size_t>(width) * h * 4,
+					"each mip uses D3D floor half dimensions and matching storage");
+				bool premultiplied = true;
+				for (size_t p = 0; p < mip.bgra.size(); p += 4)
+					premultiplied &= mip.bgra[p] <= mip.bgra[p + 3] && mip.bgra[p + 1] <= mip.bgra[p + 3] && mip.bgra[p + 2] <= mip.bgra[p + 3];
+				check(premultiplied, "BGRA remains premultiplied throughout the mip chain");
+				if (pattern == EraserCursorPattern::Grips)
+				{
+					bool symmetric = true;
+					for (uint32_t y = 0; y < mip.height; ++y)
+					for (uint32_t x = 0; x < mip.width; ++x)
+					for (uint32_t c = 0; c < 4; ++c)
+					{
+						const int value = mip.bgra[(static_cast<size_t>(y) * mip.width + x) * 4 + c];
+						const int reflectedX = mip.bgra[(static_cast<size_t>(y) * mip.width + mip.width - 1 - x) * 4 + c];
+						const int reflectedY = mip.bgra[(static_cast<size_t>(mip.height - 1 - y) * mip.width + x) * 4 + c];
+						symmetric &= std::abs(value - reflectedX) <= 1 && std::abs(value - reflectedY) <= 1;
+					}
+					check(symmetric, "area box mips preserve symmetric grips at odd dimensions");
+				}
+				width = std::max(1u, width / 2); h = std::max(1u, h / 2);
+			}
+			const auto& first = raster.levels.front();
+			bool transparentBorder = true;
+			for (uint32_t x = 0; x < first.width; ++x)
+				transparentBorder &= first.bgra[x * 4 + 3] == 0 && first.bgra[((first.height - 1) * first.width + x) * 4 + 3] == 0;
+			for (uint32_t y = 0; y < first.height; ++y)
+				transparentBorder &= first.bgra[(y * first.width) * 4 + 3] == 0 && first.bgra[(y * first.width + first.width - 1) * 4 + 3] == 0;
+			check(transparentBorder, "all three shapes have zero alpha beyond their AA edge");
+			// 包围盒内的角点也必须透明，防止圆/圆角矩形误退化为实心直角 quad。
+			check(first.bgra[((static_cast<size_t>(first.height) - 3) * first.width + first.width - 3) * 4 + 3] == 0,
+				"shape bounding-box corner remains outside the rounded contour");
+		}
+		for (const auto shape : { EraserShape::Circle, EraserShape::Rectangle, EraserShape::Square })
+		{
+			const auto light = RasterizeEraserCursor({ shape, EraserCursorPattern::Grips, EraserCursorTheme::Light }, 64, 6);
+			const auto dark = RasterizeEraserCursor({ shape, EraserCursorPattern::Grips, EraserCursorTheme::Dark }, 64, 6);
+			check(pixel(light.levels[0], 0, 0) == 255 && pixel(light.levels[0], 0, 0, 3) == 255,
+				"light interior center is opaque white");
+			check(pixel(dark.levels[0], 0, 0) == 40 && pixel(dark.levels[0], 0, 0, 3) == 255,
+				"dark interior center is opaque channel 40");
+			check(pixel(light.levels[0], 30, 0) == 207 && pixel(dark.levels[0], 30, 0) == 110,
+				"light and dark outline palette channels match the approved values");
+			check(pixel(light.levels[0], 7, 0) == 207 && pixel(dark.levels[0], 7, 0) == 110,
+				"grips always use the outline palette");
+		}
+		for (const auto pattern : { EraserCursorPattern::Inkeys, EraserCursorPattern::Sparkle })
+		{
+			const uint32_t threshold = pattern == EraserCursorPattern::Inkeys ? 24u : 20u;
+			const auto hidden = RasterizeEraserCursor({ EraserShape::Circle, pattern }, threshold - 1, 6);
+			const auto shown = RasterizeEraserCursor({ EraserShape::Circle, pattern }, threshold, 6);
+			check(marked(hidden.levels[0], (threshold - 1) * 0.35f) == 0, "pattern is absent below its physical bake threshold");
+			check(marked(shown.levels[0], threshold * 0.35f) > 0, "pattern appears at its physical bake threshold");
+		}
+		const auto tinyGrips = RasterizeEraserCursor({}, 16, 6);
+		check(marked(tinyGrips.levels[0], 16 * 0.35f) > 0, "grips remain visible below other pattern thresholds");
+		const auto star39 = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle }, 39, 6);
+		const auto star40 = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle }, 40, 6);
+		check(pixel(star39.levels[0], 12, 0) == 255 && pixel(star40.levels[0], 12, 0) < 255,
+			"D1 secondary star appears at short side forty");
+		const auto lightLogo = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Inkeys }, 96, 6);
+		const auto darkLogo = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Inkeys, EraserCursorTheme::Dark }, 96, 6);
+		check(pixel(lightLogo.levels[0], -4, 12) == 207 && pixel(darkLogo.levels[0], -4, 12) == 110,
+			"analytic logo eraser uses the outline gray with no indicator");
+		check(pixel(lightLogo.levels[0], -15, -6) == 207 && pixel(darkLogo.levels[0], -15, -6) == 110,
+			"logo screen uses the outline gray");
+		const auto lightStar = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle }, 96, 6);
+		const auto darkStar = RasterizeEraserCursor({ EraserShape::Circle, EraserCursorPattern::Sparkle, EraserCursorTheme::Dark }, 96, 6);
+		check(pixel(lightStar.levels[0], 0.15f * 96, -0.15f * 96) == 207 && pixel(darkStar.levels[0], 0.15f * 96, -0.15f * 96) == 110,
+			"sparkle marks use the outline gray");
+		check(ResolveEraserCursorCornerRadius(32, 1, 64) == 12 && ResolveEraserCursorCornerRadius(64, 2, 64) == 12,
+			"six DIP corner scales once with DPI and the bake ratio");
+		check(ResolveEraserCursorCornerRadius(4, 4, 32) == 16, "corner radius is capped at half the short side");
+		const auto capped = RasterizeEraserCursor({ EraserShape::Square }, 32, 100);
+		const auto halfSide = RasterizeEraserCursor({ EraserShape::Square }, 32, 16);
+		check(capped.levels[0].bgra == halfSide.levels[0].bgra, "raster itself enforces the corner cap");
+		// GPU 缓存直接比较此生产配方；位置从未进入配方，档内缩放继承已烘焙档位。
+		const auto first = ResolveEraserCursorRecipe({}, 32, 1, 32);
+		check(first == ResolveEraserCursorRecipe({}, 32, 1, 32, &first), "identical repeated requests reuse their recipe");
+		check(first == ResolveEraserCursorRecipe({}, 32, 1, 40, &first), "movement and dynamic size through one point two five do not invalidate");
+		const auto grown = ResolveEraserCursorRecipe({}, 32, 1, 40.01f, &first);
+		check(grown.shortSidePx == 64 && !(grown == first), "crossing the growth threshold upgrades the power of two bake");
+		check(grown == ResolveEraserCursorRecipe({}, 32, 1, 16, &grown), "shrinking retains the existing bake");
+		const auto changed = ResolveEraserCursorRecipe({ EraserShape::Square }, 32, 1, 32, &grown);
+		check(!(changed == grown) && changed.shortSidePx == 32, "appearance change starts a fresh cache recipe");
+		check(!(ResolveEraserCursorRecipe({}, 24, 1, 32, &first) == first) &&
+			!(ResolveEraserCursorRecipe({}, 32, 2, 32, &first) == first), "base size and DPI changes invalidate independently");
+		check(ResolveEraserCursorRecipe({}, 1, 1, 1).shortSidePx == 32 &&
+			ResolveEraserCursorRecipe({}, 4096, 1, 8192).shortSidePx == 1024, "bake tiers obey the thirty two and one thousand twenty four bounds");
+		return failures;
+	}
+}
+
 int RunSpeedEraserTests()
 {
-	int failures = RunFineBandRegressions() + RunDirectInputScaleWarningTests();
+	int failures = RunFineBandRegressions() + RunDirectInputScaleWarningTests() + RunEraserCursorRasterTests();
 	auto expect = [&](bool condition, const char* name)
 	{
 		if (!condition) { ++failures; std::cerr << "[SpeedEraser] failed: " << name << '\n'; }
@@ -1793,8 +1930,8 @@ int RunSpeedEraserTests()
 	{
 		// 合成明确 PROPERTY_METRICS，只验证产品换算，不冒充 Surface 实测。
 		const ContactLengthMetrics axis{2,1000,100,30100,true},span{2,100,0,10000,true};
-		const auto x=ResolveContactLengthTransform(axis,span,0.1f);
-		const auto y=ResolveContactLengthTransform(axis,span,0.2f);
+		const auto x=ResolveContactLengthTransform(axis,span,0.1f,1.0f);
+		const auto y=ResolveContactLengthTransform(axis,span,0.2f,1.0f);
 		expect(x.status==ContactAreaUnits::CanvasPixels && x.resolutionAdjusted && !x.unitConverted,
 			"same length unit with different resolutions is convertible");
 		Near(x.spanToAxis,10,0.00001,"resolution ratio maps span to coordinate logical length");
@@ -1803,22 +1940,75 @@ int RunSpeedEraserTests()
 		Near(sample.heightPx,20,0.00001,"Y uses its own linear position transform");
 		Near(sample.rawWidth,30,0,"conversion preserves original packet width");
 		auto same=span;same.resolution=1000;
-		const auto sameTransform=ResolveContactLengthTransform(axis,same,0.1f);
+		const auto sameTransform=ResolveContactLengthTransform(axis,same,0.1f,1.0f);
 		expect(!sameTransform.resolutionAdjusted && !sameTransform.unitConverted,"equal metadata needs no unit or resolution adaptation");
 		Near(ConvertContactArea(300,200,sameTransform,sameTransform).widthPx,30,0.00001,"same-resolution length remains compatible");
 		auto inches=span;inches.units=1;inches.resolution=254;
-		const auto inchTransform=ResolveContactLengthTransform(axis,inches,0.1f);
+		const auto inchTransform=ResolveContactLengthTransform(axis,inches,0.1f,1.0f);
 		expect(inchTransform.unitConverted && inchTransform.resolutionAdjusted &&
 			inchTransform.status==ContactAreaUnits::CanvasPixels,"inch contact and centimeter coordinate metadata convert");
 		Near(ConvertContactArea(30,20,inchTransform,inchTransform).widthPx,30,0.00001,"inch/cm conversion includes exactly one unit ratio");
 		auto inchAxis=axis;inchAxis.units=1;inchAxis.resolution=2540;
-		const auto reverse=ResolveContactLengthTransform(inchAxis,span,0.1f);
+		const auto reverse=ResolveContactLengthTransform(inchAxis,span,0.1f,1.0f);
 		Near(ConvertContactArea(30,20,reverse,reverse).widthPx,30,0.00001,"centimeter contact and inch coordinate metadata convert");
-		const auto reflected=ResolveContactLengthTransform(axis,span,-0.1f);
+		const auto reflected=ResolveContactLengthTransform(axis,span,-0.1f,1.0f);
 		Near(ConvertContactArea(30,20,reflected,reflected).widthPx,30,0.00001,"a reflected position axis keeps contact length positive");
+		const auto reflectedDigitizer=ResolveContactLengthTransform(axis,span,0.1f,-2.0f);
+		Near(ConvertContactArea(30,20,reflectedDigitizer,reflectedDigitizer).widthPx,15,0.00001,
+			"a reflected digitizer axis contributes its inverse magnitude to length");
+		auto shiftedSpan=span;shiftedSpan.logicalMin=5;
+		const auto shifted=ResolveContactLengthTransform(axis,shiftedSpan,0.1f,1.0f);
+		Near(ConvertContactArea(5,20,shifted,shifted).widthPx,5,0.00001,
+			"declared contact minimum is a validity bound, not a length translation");
+
+		// 同一个 2 英寸显示跨度与 1 英寸接触，只改变设备计数精度，像素长度必须相同。
+		const ContactLengthMetrics inchContact{2,1000,0,5080,true};
+		for(float countsPerInk:{0.25f,1.0f,8.0f})
+		{
+			const ContactLengthMetrics encodedAxis{2,1000*countsPerInk,100,
+				100+static_cast<int32_t>(5080*countsPerInk),true};
+			const auto encoded=ResolveContactLengthTransform(encodedAxis,inchContact,96.0f/2540.0f,countsPerInk);
+			const auto inch=ConvertContactArea(2540,1270,encoded,encoded);
+			expect(inch.units==ContactAreaUnits::CanvasPixels,"equivalent digitizer encoding remains valid");
+			Near(inch.widthPx,96,0.0001,"one physical inch is 96 pixels for every digitizer encoding");
+			Near(inch.heightPx,48,0.0001,"half an inch shares the same encoding-independent mapping");
+			Near(ConvertContactArea(5080,5080,encoded,encoded).widthPx,192,0.0001,
+				"full declared physical axis span restores the 192 pixel display span");
+		}
+		const ContactLengthMetrics denseAxis{2,8000,0,40640,true},sparseAxis{2,250,0,1270,true};
+		const ContactLengthMetrics inchHeight{1,200,0,400,true};
+		const auto denseX=ResolveContactLengthTransform(denseAxis,inchContact,96.0f/2540.0f,8.0f);
+		const auto sparseY=ResolveContactLengthTransform(sparseAxis,inchHeight,144.0f/2540.0f,0.25f);
+		const auto anisotropic=ConvertContactArea(2540,100,denseX,sparseY);
+		Near(anisotropic.widthPx,96,0.0001,"X uses its own digitizer scale with centimeter contact units");
+		Near(anisotropic.heightPx,72,0.0001,"Y uses its own inverse scale and inch contact units");
+		for(float invalidScale:{0.0f,-0.0f,std::numeric_limits<float>::infinity(),
+			-std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()})
+		{
+			const auto invalid=ResolveContactLengthTransform(axis,span,0.1f,invalidScale);
+			const auto widthInvalid=ConvertContactArea(30,20,invalid,y);
+			const auto heightInvalid=ConvertContactArea(30,20,x,invalid);
+			expect(invalid.status==ContactAreaUnits::InvalidDigitizerScale &&
+				widthInvalid.units==ContactAreaUnits::InvalidDigitizerScale &&
+				heightInvalid.units==ContactAreaUnits::InvalidDigitizerScale &&
+				widthInvalid.widthPx<0 && heightInvalid.heightPx<0 && heightInvalid.rawHeight==20,
+				"invalid digitizer scale rejects either axis while retaining raw contact dimensions");
+		}
+		const auto tinyDigitizer=ResolveContactLengthTransform(axis,span,1.0f,std::numeric_limits<float>::denorm_min());
+		expect(tinyDigitizer.status==ContactAreaUnits::ConversionNonFinite,
+			"finite nonzero digitizer scale cannot overflow the canvas conversion");
+		const float largestScale=std::numeric_limits<float>::max();
+		const auto cancellingScales=ResolveContactLengthTransform(axis,span,largestScale,largestScale);
+		Near(ConvertContactArea(30,20,cancellingScales,cancellingScales).widthPx,300,0.0001,
+			"large finite scales cancel before any narrowing or intermediate float multiplication");
+		expect(ConvertContactArea(largestScale,20,cancellingScales,cancellingScales).units==ContactAreaUnits::ConversionNonFinite,
+			"converted raw length overflow never narrows to a usable canvas value");
+		expect(ContactAreaMetadataReason(ContactAreaUnits::InvalidDigitizerScale)==ContactAreaReason::InvalidTransform &&
+			std::string(ContactAreaUnitsName(ContactAreaUnits::InvalidDigitizerScale))=="unverified-invalid-digitizer-scale",
+			"diagnostics distinguish invalid digitizer metadata from window position scale");
 		const auto checkInvalid=[&](ContactLengthMetrics a,ContactLengthMetrics w,float scale,ContactAreaUnits expected)
 		{
-			const auto transform=ResolveContactLengthTransform(a,w,scale);
+			const auto transform=ResolveContactLengthTransform(a,w,scale,1.0f);
 			const auto rejected=ConvertContactArea(30,20,transform,y);
 			expect(transform.status==expected && rejected.units==expected && rejected.widthPx<0 &&
 				rejected.heightPx<0 && rejected.rawWidth==30,"invalid metadata preserves raw values without inventing pixels");
@@ -1862,7 +2052,7 @@ int RunSpeedEraserTests()
 		auto display=areaDisplay;display.dipPerPixelX=display.dipPerPixelY=96.0f/dpi;
 		const auto config=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
 		const ContactLengthMetrics axis{2,1000,0,30000,true},span{2,100,0,10000,true};
-		const auto transform=ResolveContactLengthTransform(axis,span,0.1f*dpi/96);
+		const auto transform=ResolveContactLengthTransform(axis,span,0.1f*dpi/96,1.0f);
 		const auto area=ConvertContactArea(30,20,transform,transform);
 		Controller controller;controller.Reset(0,0,0,StartKind::Touch,config,0,&area);
 		Near(controller.DiameterDip(),16,0.001,"converted metadata retains Touch small Down");
@@ -1880,8 +2070,8 @@ int RunSpeedEraserTests()
 	{
 		auto display=areaDisplay;display.dipPerPixelX=0.5f;display.dipPerPixelY=0.75f;
 		const ContactLengthMetrics axis{2,1000,0,30000,true},span{2,100,0,10000,true};
-		const auto x=ResolveContactLengthTransform(axis,span,0.2f);
-		const auto y=ResolveContactLengthTransform(axis,span,0.1f/0.75f);
+		const auto x=ResolveContactLengthTransform(axis,span,0.2f,1.0f);
+		const auto y=ResolveContactLengthTransform(axis,span,0.1f/0.75f,1.0f);
 		const auto area=ConvertContactArea(30,20,x,y);
 		const auto config=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
 		Controller c;c.Reset(0,0,0,StartKind::Touch,config,0,&area);

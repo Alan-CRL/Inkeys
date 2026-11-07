@@ -1819,6 +1819,12 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
 				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
 			window.SetEraserInputs(state.eraserInputs);
+			if (drawing)
+			{
+				// 仅绘制 owner 消费 Window 的整表快照；形状由 Controller 在 Down 锁存。
+				const auto eraser = window.EraserInputsSnapshot();
+				drawing->SetEraserCursorAppearance({ eraser.shape, eraser.cursorPattern, eraser.cursorTheme });
+			}
 			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext);

@@ -133,6 +133,63 @@ namespace
 	FrameResult settingFrameResult = FrameResult::Idle;
 	bool settingNavigationClockIdle = true; // 仅共享渲染线程访问，跳过恢复帧的隐藏/移动耗时。
 	uint64_t settingSessionEpoch = 0;
+	struct SettingEraserCursorCache
+	{
+		struct Entry
+		{
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture;
+			ImVec2 size{};
+			bool attempted = false;
+		};
+		std::array<Entry, 18> entries;
+		float scale = 0;
+		bool dark = false;
+		void Reset() { for (auto& entry : entries) entry = {}; scale = 0; }
+		void Draw(const Inkeys::UI::Setting::LayoutRect& bounds, Inkeys::Drawing::Draw3::EraserCursorAppearance appearance)
+		{
+			using namespace Inkeys::Drawing::Draw3;
+			const float unit = Design::Pixels(1);
+			if (scale != unit || dark != Design::IsDarkMode())
+			{ Reset(); scale = unit; dark = Design::IsDarkMode(); }
+			const size_t slot = static_cast<size_t>(appearance.shape) * 6 + static_cast<size_t>(appearance.pattern) * 2 + static_cast<size_t>(appearance.theme);
+			auto& entry = entries[slot];
+			if (!entry.attempted && g_pd3dDevice)
+			{
+				entry.attempted = true;
+				const auto half = ResolveEraserHalfSize(appearance.shape, 24 * unit);
+				const float intendedShortSide = (std::min)(half.x, half.y) * 2;
+				const auto bakedSide = static_cast<uint32_t>((std::max)(1.0F, std::round(intendedShortSide)));
+				const float bakeScale = bakedSide / intendedShortSide;
+				auto raster = RasterizeEraserCursor(appearance, bakedSide, 6 * unit * bakeScale);
+				if (!raster.levels.empty())
+				{
+					auto& level = raster.levels.front();
+					// Draw3/D2D 使用预乘图；ImGui 默认混合要求直通 alpha，上传前仅转换通道。
+					for (size_t pixel = 0; pixel < level.bgra.size(); pixel += 4)
+					{
+						const unsigned alpha = level.bgra[pixel + 3];
+						for (size_t channel = 0; channel < 3; ++channel)
+							level.bgra[pixel + channel] = alpha ? static_cast<uint8_t>((std::min)(255u,
+								(level.bgra[pixel + channel] * 255u + alpha / 2) / alpha)) : 0;
+					}
+					D3D11_TEXTURE2D_DESC desc{};
+					desc.Width = level.width; desc.Height = level.height; desc.MipLevels = desc.ArraySize = 1;
+					desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; desc.SampleDesc.Count = 1;
+					desc.Usage = D3D11_USAGE_IMMUTABLE; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+					const D3D11_SUBRESOURCE_DATA data{ level.bgra.data(), level.width * 4, 0 };
+					Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+					if (SUCCEEDED(g_pd3dDevice->CreateTexture2D(&desc, &data, texture.GetAddressOf())))
+						g_pd3dDevice->CreateShaderResourceView(texture.Get(), nullptr, entry.texture.GetAddressOf());
+					entry.size = { level.width / bakeScale, level.height / bakeScale };
+				}
+			}
+			if (!entry.texture) return;
+			const ImVec2 origin((bounds.left + bounds.right - entry.size.x) * 0.5F,
+				(bounds.top + bounds.bottom - entry.size.y) * 0.5F);
+			ImGui::GetWindowDrawList()->AddImage(reinterpret_cast<ImTextureID>(entry.texture.Get()), origin,
+				{ origin.x + entry.size.x, origin.y + entry.size.y });
+		}
+	} settingEraserCursors;
 	Design::EraserDemoPlayer settingEraserDemo; // 与设置共享设备和线程，演示只播放预计算帧。
 	Design::HomeEntryPageCache settingHomeEntryCache; // 唯一共享渲染线程的临时 GPU 页面快照。
 	Design::FrameSubmissionCache settingFrameSubmission; // 有界的上次成功呈现值快照，不持有 GPU 资源。
@@ -149,7 +206,7 @@ namespace
 	FrameResult ResolveSettingResourceFailure(const char* stage, HRESULT result = E_FAIL)
 	{
 		// 先保存失败与设备原因，再清理 lease；泛化 OOM/E_FAIL 也可能来自已移除的设备。
-		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingFrameSubmission.Reset();
+		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset(); settingFrameSubmission.Reset();
 		if (SUCCEEDED(result)) result = E_FAIL;
 		const HRESULT removedReason = g_pd3dDevice ? g_pd3dDevice->GetDeviceRemovedReason() : S_OK;
 		if (result != settingLastResourceFailure || removedReason != settingLastRemovedReason
@@ -2260,7 +2317,7 @@ SettingSessionCoroutine RunSettingSession()
 		if (!AcquireDeviceLease(settingFrameContext.epoch))
 		{
 			settingFrameResult = ResolveSettingResourceFailure("AcquireDeviceLease");
-			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -2275,7 +2332,7 @@ SettingSessionCoroutine RunSettingSession()
 				settingFrameResult = ResolveSettingResourceFailure("ResidentTextures");
 				CleanupSettingTextures();
 				CleanupSettingTextureCache();
-				settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+				settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 				CleanupDeviceD3D();
 				co_return;
 			}
@@ -2306,7 +2363,7 @@ SettingSessionCoroutine RunSettingSession()
 			io.Fonts->Clear();
 			ImFluent::ResetContext();
 			ImGui::DestroyContext();
-			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -3714,7 +3771,16 @@ SettingSessionCoroutine RunSettingSession()
 							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Dot, cursor.DotOpacity.load()) / 100.0F,
 							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load()) / 100.0F };
 						draft.injectedAvailable = injectedSourceAvailable;
-						const auto events = Design::RenderCursorPage(draft);
+						const auto eraser = EraserPreferencesSnapshot();
+						draft.eraserShape = static_cast<int>(eraser.shape);
+						draft.eraserPattern = static_cast<int>(eraser.cursorPattern);
+						draft.eraserTheme = static_cast<int>(eraser.cursorTheme);
+						const auto events = Design::RenderCursorPage(draft, [&](const Inkeys::UI::Setting::LayoutRect& bounds, Cursor::EraserCursorAppearance appearance) {
+							settingEraserCursors.Draw(bounds, appearance);
+						});
+						if (events.eraserShape || events.eraserPattern || events.eraserTheme)
+							SetEraserCursorPreference(events.eraserShape ? draft.eraserShape : -1,
+								events.eraserPattern ? draft.eraserPattern : -1, events.eraserTheme ? draft.eraserTheme : -1);
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
 						const bool deviceChanged = events.mouse || events.touch || events.screenPen || events.tablet ||
@@ -3768,6 +3834,14 @@ SettingSessionCoroutine RunSettingSession()
 						draft.multiTouchEnabled = Inkeys::config.Drawing.MultiTouchEnabled.load();
 						draft.laserMultiTouchEnabled = Inkeys::config.Drawing.Laser.MultiTouchEnabled.load();
 						draft.tools = preferences.tools;
+						draft.shape = preferences.shape;
+						draft.sizeMode = preferences.sizeMode;
+						draft.sizeMethods = preferences.sizeMethods;
+						draft.sizeMultiplierPercent = preferences.sizeMultiplierPercent;
+						const auto eraser = EraserPreferencesSnapshot();
+						draft.eraserShape = static_cast<int>(eraser.shape);
+						draft.eraserPattern = static_cast<int>(eraser.cursorPattern);
+						draft.eraserTheme = static_cast<int>(eraser.cursorTheme);
 						// 预览与识别读取同一已应用绘图输出，不使用设置窗口所在屏幕的 DPI。
 						draft.referenceAreaPixels = Palm::ThresholdAreaPixels(reference, scale);
 						// 仅可信物理映射可显示厘米；DPI 回退仍只显示像素，避免把估算当实尺。
@@ -3775,17 +3849,26 @@ SettingSessionCoroutine RunSettingSession()
 							draft.referenceAreaCm2 = draft.referenceAreaPixels * scale.mmPerPixelX * scale.mmPerPixelY / 100.0;
 						draft.previewEstimated = scale.estimated;
 						draft.physicalSizeWarning = display.monitor != 0 && scale.available && scale.estimated;
-						const auto events = Design::RenderPalmEraser(draft);
+						const auto events = Design::RenderPalmEraser(draft, [&](const Inkeys::UI::Setting::LayoutRect& bounds,
+							Inkeys::Drawing::Draw3::EraserCursorAppearance appearance) {
+							settingEraserCursors.Draw(bounds, appearance);
+						});
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
 						if (events.enabledChanged || events.recognitionWindowChanged || events.thresholdChanged
-							|| events.parallelWritingChanged || std::any_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool changed) { return changed; }))
+							|| events.parallelWritingChanged || events.shapeChanged || events.sizeModeChanged || events.sizeMultiplierChanged
+							|| std::any_of(events.sizeMethodsChanged.begin(), events.sizeMethodsChanged.end(), [](bool changed) { return changed; })
+							|| std::any_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool changed) { return changed; }))
 						{
 							preferences.enabled = draft.enabled;
 							preferences.recognitionWindowMs = draft.recognitionWindowMs;
 							preferences.thresholdPercent = draft.thresholdPercent;
 							preferences.parallelWriting = draft.parallelWriting;
 							preferences.tools = draft.tools;
+							preferences.shape = draft.shape;
+							preferences.sizeMode = draft.sizeMode;
+							preferences.sizeMethods = draft.sizeMethods;
+							preferences.sizeMultiplierPercent = draft.sizeMultiplierPercent;
 							// 偏好入口统一发布 Host 并冻结写盘，页面不重复排队保存。
 							SetPalmEraserPreference(preferences);
 						}
@@ -5179,7 +5262,7 @@ SettingSessionCoroutine RunSettingSession()
 		io.Fonts->Clear();
 		ImFluent::ResetContext();
 		ImGui::DestroyContext();
-		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingFrameSubmission.Reset();
+		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset(); settingFrameSubmission.Reset();
 		CleanupDeviceD3D();
 	settingSessionEpoch = 0;
 	#undef CloseProgram
@@ -5257,7 +5340,7 @@ namespace
 		if (decision.releasePresentation || decision.rebuildDeviceResources || decision.rebuildFonts || decision.resize)
 		{ settingHomeEntryCache.Reset(); settingFrameSubmission.Reset(); }
 		// 预览自行按画布宽度分桶调整目标纹理，普通窗口缩放不重编译播放着色器。
-		if (decision.rebuildDeviceResources) settingEraserDemo.Reset();
+		if (decision.rebuildDeviceResources) { settingEraserDemo.Reset(); settingEraserCursors.Reset(); }
 		if (decision.releasePresentation)
 		{
 			// Hide 只撤销呈现而保留同 epoch 的预览缓存；恢复时不追赶隐藏期间的时间。
@@ -5319,7 +5402,7 @@ namespace
 			if (ImGui::GetIO().BackendRendererUserData)
 				ImGui_ImplDX11_Shutdown();
 			CleanupSettingTextures();
-			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 			CleanupDeviceD3D();
 			const bool acquired = AcquireDeviceLease(context.epoch);
 			long backendInitResult = E_FAIL;
@@ -5333,7 +5416,7 @@ namespace
 					backendInitialized ? ImGui_ImplDX11_GetLastResult() : backendInitResult);
 				if (backendInitialized) ImGui_ImplDX11_Shutdown();
 				CleanupSettingTextures();
-				settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+				settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 				CleanupDeviceD3D();
 				return pauseNavigationClock(failure);
 			}

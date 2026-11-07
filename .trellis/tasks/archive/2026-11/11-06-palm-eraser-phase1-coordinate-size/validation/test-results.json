@@ -1,0 +1,59 @@
+[
+  {
+    "name": "palm-headless",
+    "arguments": [
+      "--no-window",
+      "--palm-eraser-only"
+    ],
+    "exitCode": 0,
+    "timedOut": false,
+    "startedAt": "2026-11-06T19:31:54.3940968+08:00",
+    "finishedAt": "2026-11-06T19:31:55.5062768+08:00",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\InkeysHeadlessTests.exe",
+    "sha256": "8DEF299F61EF2DB92C45BF23AB66565A40A82CAA46E8733B51D87121768D7990",
+    "stdout": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\palm-headless.stdout.log",
+    "stderr": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\palm-headless.stderr.log"
+  },
+  {
+    "name": "rts-production",
+    "arguments": [
+      "--draw3-rts-coordinate-test"
+    ],
+    "exitCode": 0,
+    "timedOut": false,
+    "startedAt": "2026-11-06T19:31:55.6002689+08:00",
+    "finishedAt": "2026-11-06T19:31:56.1393735+08:00",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+    "sha256": "7AF60158D01D6CE010BC30F8932E2C69D4F56A812D5C96CE88D1345F55E26928",
+    "stdout": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\rts-production.stdout.log",
+    "stderr": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\rts-production.stderr.log"
+  },
+  {
+    "name": "palm-production",
+    "arguments": [
+      "--draw3-palm-eraser-test"
+    ],
+    "exitCode": 0,
+    "timedOut": false,
+    "startedAt": "2026-11-06T19:31:56.2736474+08:00",
+    "finishedAt": "2026-11-06T19:31:56.3560457+08:00",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+    "sha256": "7AF60158D01D6CE010BC30F8932E2C69D4F56A812D5C96CE88D1345F55E26928",
+    "stdout": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\palm-production.stdout.log",
+    "stderr": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\palm-production.stderr.log"
+  },
+  {
+    "name": "headless-full",
+    "arguments": [
+      "--no-window"
+    ],
+    "exitCode": -1,
+    "timedOut": true,
+    "startedAt": "2026-11-06T19:31:56.4641907+08:00",
+    "finishedAt": "2026-11-06T19:36:56.5613298+08:00",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\InkeysHeadlessTests.exe",
+    "sha256": "8DEF299F61EF2DB92C45BF23AB66565A40A82CAA46E8733B51D87121768D7990",
+    "stdout": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\headless-full.stdout.log",
+    "stderr": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\headless-full.stderr.log"
+  }
+]

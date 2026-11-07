@@ -692,6 +692,20 @@
           "E": "Las tabletas gráficas sin Windows Ink suelen llegar como un «mouse inyectado por el controlador». Si se activa, ese mouse usa la configuración de cursor de la tableta; el software que también inyecta mouse, como el escritorio remoto, puede detectarse por error.",
           "Unavailable": "Este sistema no puede distinguir el origen de la entrada; la opción no está disponible."
         },
+        "Eraser":
+        {
+          "N": "Cursor del borrador",
+          "E": "La forma también define el área real de borrado (los rectángulos tienen esquinas rectas); el motivo y el modo claro/oscuro solo cambian el aspecto del cursor.",
+          "Appearance": "Apariencia",
+          "Light": "Claro",
+          "Dark": "Oscuro",
+          "Circle": "Círculo",
+          "Rectangle": "Rectángulo",
+          "Square": "Cuadrado",
+          "Grips": "Clásico",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Destello"
+        },
         "FineControl": "Control preciso",
         "OpacitySection": "Opacidad",
         "PenOpacity": "Opacidad del cursor de lápiz",
@@ -706,8 +720,7 @@
           "ScreenPen": "Solo lápiz de pantalla",
           "Tablet": "Solo tableta gráfica",
           "Both": "Lápiz de pantalla y tableta gráfica"
-        },
-        "Note": "Con lápiz de pantalla, tableta gráfica y táctil, «Mouse» es una flecha que dibuja la propia aplicación; los cursores del resaltador y del puntero láser, las herramientas de formas y el cursor propio del borrador no cambian con estas opciones."
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "El dibujo con varios dedos está desactivado, por lo que no se puede escribir mientras se borra.",
           "ParallelWritingLaserMultiTouchNote": "La entrada láser con varios dedos está desactivada, por lo que no se puede escribir con el láser mientras se borra.",
           "ParallelWriting": "Permitir escribir mientras se borra",
-          "ParallelWritingDescription": "Activar el borrador con la palma no interrumpe otras entradas, de modo que se puede seguir dibujando. Para que varias personas escriban a la vez."
+          "ParallelWritingDescription": "Al activar el borrador con la palma solo se detiene la escritura táctil cercana y se bloquean nuevos toques a su alrededor; en otras zonas se puede seguir escribiendo. Para que varias personas escriban a la vez.",
+          "CursorNoticeTitle": "El tema y el patrón siguen la configuración del cursor",
+          "CursorNoticeDescription": "El cursor del borrador con la palma usa el tema y el patrón definidos en “Dibujo › Cursor › Cursor del borrador”. Aquí solo se puede elegir la forma por separado.",
+          "Shape": "Forma del borrador con la palma",
+          "ShapeDescription": "La forma también determina el área que borra realmente la palma. “Seguir el predeterminado” usa la misma forma que el borrador normal.",
+          "FollowDefault": "Seguir el predeterminado",
+          "SizeSection": "Tamaño del borrador con la palma",
+          "SizeMode": "Método de cálculo del grosor",
+          "SizeModeDescription": "Elige cómo se calcula el grosor del borrador con la palma.",
+          "SizeModeDynamic": "Grosor dinámico",
+          "SizeModeFollowDefault": "Fijo (borrador por defecto)",
+          "SizeModeFixed": "Fijo (sin borrador por velocidad)",
+          "SizeModeDynamicNote": "Se calcula a partir del área de contacto",
+          "SizeModeFollowDefaultNote": "Usa el tamaño del borrador predeterminado; varía con la velocidad del lápiz cuando está activado “Tamaño auto”",
+          "SizeModeFixedNote": "Usa siempre el tamaño del borrador predeterminado",
+          "SizeMethod": "Método de cálculo del tamaño",
+          "SizeMethodDescription": "Cómo se convierte el rectángulo de contacto en el tamaño del borrador.",
+          "MethodEllipseArea": "Área de elipse inscrita",
+          "MethodRectangleArea": "Área de rectángulo",
+          "MethodInscribedCircle": "Círculo inscrito",
+          "MethodCircumscribedCircle": "Círculo circunscrito",
+          "MethodInscribedRectangle": "Rectángulo inscrito",
+          "MethodCircumscribedRectangle": "Rectángulo circunscrito",
+          "MethodInscribedSquare": "Cuadrado inscrito",
+          "MethodCircumscribedSquare": "Cuadrado circunscrito",
+          "SizeMethodShapeNote": "Forma actual: {}",
+          "SizeMultiplier": "Multiplicador del tamaño de borrado",
+          "SizeMultiplierDescription": "Ajusta proporcionalmente la longitud del lado o el diámetro del borrador sin afectar el reconocimiento."
         },
         "Input":
         {

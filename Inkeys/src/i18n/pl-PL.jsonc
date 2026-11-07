@@ -692,6 +692,20 @@
           "E": "Tablety graficzne bez Windows Ink zwykle docierają jako „mysz wstrzyknięta przez sterownik”. Po włączeniu ta mysz używa ustawień kursora tabletu; oprogramowanie, które także wstrzykuje mysz, na przykład Pulpit zdalny, może zostać rozpoznane błędnie.",
           "Unavailable": "Ten system nie potrafi odróżnić źródła wejścia, więc opcja jest niedostępna."
         },
+        "Eraser":
+        {
+          "N": "Kursor gumki",
+          "E": "Kształt określa też rzeczywisty obszar wymazywania (prostokąty mają proste narożniki); wzór oraz jasny/ciemny zmieniają tylko wygląd kursora.",
+          "Appearance": "Wygląd",
+          "Light": "Jasny",
+          "Dark": "Ciemny",
+          "Circle": "Koło",
+          "Rectangle": "Prostokąt",
+          "Square": "Kwadrat",
+          "Grips": "Klasyczny",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Iskra"
+        },
         "FineControl": "Precyzyjne sterowanie",
         "OpacitySection": "Krycie",
         "PenOpacity": "Krycie kursora pióra",
@@ -706,8 +720,7 @@
           "ScreenPen": "Tylko pióro ekranowe",
           "Tablet": "Tylko tablet graficzny",
           "Both": "Pióro ekranowe i tablet graficzny"
-        },
-        "Note": "W przypadku pióra ekranowego, tabletu graficznego i dotyku „Mysz” to strzałka rysowana przez samą aplikację; kursory zakreślacza i wskaźnika laserowego, narzędzia kształtów oraz osobny kursor gumki nie zależą od tych opcji."
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "Rysowanie wieloma palcami jest wyłączone, więc pisanie podczas wymazywania nie działa.",
           "ParallelWritingLaserMultiTouchNote": "Laser obsługiwany wieloma palcami jest wyłączony, więc pisanie podczas wymazywania nie działa ze wskaźnikiem laserowym.",
           "ParallelWriting": "Włącz pisanie podczas wymazywania",
-          "ParallelWritingDescription": "Uruchomienie gumki dłonią nie przerywa innych operacji wejściowych, więc można nadal rysować. (Dla co najmniej dwóch osób piszących jednocześnie.)"
+          "ParallelWritingDescription": "Uruchomienie gumki dłonią kończy tylko pisanie dotykiem w jej pobliżu i blokuje tam nowe dotknięcia; w innych miejscach można dalej pisać. (Dla co najmniej dwóch osób piszących jednocześnie.)",
+          "CursorNoticeTitle": "Motyw i wzór są zgodne z ustawieniami kursora",
+          "CursorNoticeDescription": "Kursor gumki dłonią używa motywu i wzoru ustawionych w „Rysowanie › Kursor › Kursor gumki”. Tutaj można osobno wybrać tylko kształt.",
+          "Shape": "Kształt gumki dłonią",
+          "ShapeDescription": "Kształt określa też obszar faktycznie wymazywany dłonią. „Zgodnie z domyślnym” używa tego samego kształtu co zwykła gumka.",
+          "FollowDefault": "Zgodnie z domyślnym",
+          "SizeSection": "Rozmiar gumki dłonią",
+          "SizeMode": "Sposób obliczania grubości",
+          "SizeModeDescription": "Wybierz sposób obliczania grubości gumki dłonią.",
+          "SizeModeDynamic": "Dynamiczna grubość",
+          "SizeModeFollowDefault": "Stała (domyślna gumka)",
+          "SizeModeFixed": "Stała (bez gumki prędkości)",
+          "SizeModeDynamicNote": "Obliczana na podstawie powierzchni kontaktu",
+          "SizeModeFollowDefaultNote": "Używa domyślnego rozmiaru gumki; zmienia się wraz z prędkością pióra, gdy włączona jest „Auto grubość”",
+          "SizeModeFixedNote": "Zawsze używa domyślnego rozmiaru gumki",
+          "SizeMethod": "Sposób obliczania rozmiaru",
+          "SizeMethodDescription": "Sposób przeliczania prostokąta kontaktu na rozmiar gumki.",
+          "MethodEllipseArea": "Pole wpisanej elipsy",
+          "MethodRectangleArea": "Pole prostokąta",
+          "MethodInscribedCircle": "Koło wpisane",
+          "MethodCircumscribedCircle": "Koło opisane",
+          "MethodInscribedRectangle": "Prostokąt wpisany",
+          "MethodCircumscribedRectangle": "Prostokąt opisany",
+          "MethodInscribedSquare": "Kwadrat wpisany",
+          "MethodCircumscribedSquare": "Kwadrat opisany",
+          "SizeMethodShapeNote": "Bieżący kształt: {}",
+          "SizeMultiplier": "Mnożnik rozmiaru wymazywania",
+          "SizeMultiplierDescription": "Skaluje długość boku lub średnicę gumki bez wpływu na rozpoznawanie."
         },
         "Input":
         {

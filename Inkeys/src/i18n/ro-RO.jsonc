@@ -692,6 +692,20 @@
           "E": "Tabletele grafice fără Windows Ink ajung de obicei ca „mouse injectat de driver”. Dacă este activată, acest mouse folosește setările de cursor ale tabletei; programele care injectează și ele mouse, precum Remote Desktop, pot fi detectate greșit.",
           "Unavailable": "Acest sistem nu poate distinge sursa intrării, deci opțiunea nu este disponibilă."
         },
+        "Eraser":
+        {
+          "N": "Cursorul radierei",
+          "E": "Forma stabilește și zona ștearsă efectiv (dreptunghiurile au colțuri drepte); modelul și modul luminos/întunecat schimbă doar aspectul cursorului.",
+          "Appearance": "Aspect",
+          "Light": "Luminos",
+          "Dark": "Întunecat",
+          "Circle": "Cerc",
+          "Rectangle": "Dreptunghi",
+          "Square": "Pătrat",
+          "Grips": "Clasic",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Sclipire"
+        },
         "FineControl": "Control fin",
         "OpacitySection": "Opacitate",
         "PenOpacity": "Opacitatea cursorului creionului",
@@ -706,8 +720,7 @@
           "ScreenPen": "Doar creion pe ecran",
           "Tablet": "Doar tabletă grafică",
           "Both": "Creion pe ecran și tabletă grafică"
-        },
-        "Note": "La creionul de ecran, tableta grafică și atingere, „Mouse” este o săgeată desenată chiar de aplicație; cursoarele evidențiatorului și ale pointerului laser, instrumentele de forme și cursorul dedicat radierei nu sunt afectate de aceste opțiuni."
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "Desenarea cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu poate funcționa.",
           "ParallelWritingLaserMultiTouchNote": "Intrarea laser cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu funcționează pentru laser.",
           "ParallelWriting": "Activare scriere în timpul ștergerii",
-          "ParallelWritingDescription": "Activarea radierei cu palma nu întrerupe alte intrări, astfel că desenarea poate continua. (Pentru două sau mai multe persoane care scriu împreună.)"
+          "ParallelWritingDescription": "Activarea radierei cu palma încheie doar scrierea tactilă din apropiere și blochează atingerile noi în jurul ei; în alte zone se poate scrie în continuare. (Pentru două sau mai multe persoane care scriu împreună.)",
+          "CursorNoticeTitle": "Tema și modelul urmează setările cursorului",
+          "CursorNoticeDescription": "Cursorul radierei cu palma folosește tema și modelul setate în „Desen › Cursor › Cursorul radierei”. Aici se poate alege separat doar forma.",
+          "Shape": "Forma radierei cu palma",
+          "ShapeDescription": "Forma stabilește și zona ștearsă efectiv cu palma. „Urmează implicitul” folosește aceeași formă ca radiera obișnuită.",
+          "FollowDefault": "Urmează implicitul",
+          "SizeSection": "Dimensiunea radierei cu palma",
+          "SizeMode": "Metoda de calcul al grosimii",
+          "SizeModeDescription": "Alegeți cum se calculează grosimea radierei cu palma.",
+          "SizeModeDynamic": "Grosime dinamică",
+          "SizeModeFollowDefault": "Fixă (radiera implicită)",
+          "SizeModeFixed": "Fixă (fără viteză)",
+          "SizeModeDynamicNote": "Calculată în funcție de suprafața de contact",
+          "SizeModeFollowDefaultNote": "Folosește dimensiunea radierei implicite; variază în funcție de viteza stiloului când „Dim. automată” este activată",
+          "SizeModeFixedNote": "Folosește întotdeauna dimensiunea radierei implicite",
+          "SizeMethod": "Metoda de calcul al dimensiunii",
+          "SizeMethodDescription": "Metoda de conversie a dreptunghiului de contact în dimensiunea radierei.",
+          "MethodEllipseArea": "Aria elipsei înscrise",
+          "MethodRectangleArea": "Aria dreptunghiului",
+          "MethodInscribedCircle": "Cerc înscris",
+          "MethodCircumscribedCircle": "Cerc circumscris",
+          "MethodInscribedRectangle": "Dreptunghi înscris",
+          "MethodCircumscribedRectangle": "Dreptunghi circumscris",
+          "MethodInscribedSquare": "Pătrat înscris",
+          "MethodCircumscribedSquare": "Pătrat circumscris",
+          "SizeMethodShapeNote": "Forma curentă: {}",
+          "SizeMultiplier": "Multiplicatorul dimensiunii de ștergere",
+          "SizeMultiplierDescription": "Scalează latura sau diametrul radierei fără a afecta recunoașterea."
         },
         "Input":
         {

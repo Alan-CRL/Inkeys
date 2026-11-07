@@ -135,6 +135,7 @@ export namespace Inkeys::UI::Bar
 		for(size_t i=0;i<layout.items.size();++i)layout.items[i]=(i<6 || i==10?panel:menu).Apply(layout.items[i]);
 		for(auto& r:layout.dividers)r=panel.Apply(r);
 		for(size_t i=0;i<3;++i){layout.previews[i]=panel.Apply(layout.previews[i]);layout.previewClips[i]=panel.Apply(layout.previewClips[i]);layout.previewDiameters[i]*=panel.scale;}
+		layout.previewCornerRadius*=panel.scale;
 		return layout;
 	}
 }

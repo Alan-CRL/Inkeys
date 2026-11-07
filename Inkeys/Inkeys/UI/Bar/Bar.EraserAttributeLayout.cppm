@@ -30,6 +30,8 @@ export namespace Inkeys::UI::Bar
 		std::array<EraserAttributeRect, 11> items{};
 		std::array<EraserAttributeRect, 2> dividers{};
 		std::array<double, 3> previewDiameters{};
+		Inkeys::Drawing::Draw3::EraserShape shape = Inkeys::Drawing::Draw3::EraserShape::Circle;
+		double previewCornerRadius = 6;
 		bool below = false, reversed = false, menuBelow = false, horizontalOverflow = false;
 		friend bool operator==(const EraserAttributeLayout&, const EraserAttributeLayout&) = default;
 	};
@@ -37,6 +39,7 @@ export namespace Inkeys::UI::Bar
 	{
 		EraserAttributeRect main, anchor, work;
 		double dpiScale = 1, zoom = 1;
+		Inkeys::Drawing::Draw3::EraserShape shape = Inkeys::Drawing::Draw3::EraserShape::Circle;
 		bool below = false, reversed = false;
 		int lockedMenuSide = -1;
 		// 直拖或方向过渡沿用已呈现侧，不能因临时工作区坐标立即翻边。
@@ -79,6 +82,23 @@ export namespace Inkeys::UI::Bar
 		const double dx=x-EraserRectCenterX(circle),dy=y-EraserRectCenterY(circle);
 		return dx*dx+dy*dy<=radius*radius;
 	}
+	inline bool EraserAttributePreviewContains(EraserAttributeRect rect,
+		Inkeys::Drawing::Draw3::EraserShape shape, double cornerRadius, double expansion, double x, double y) noexcept
+	{
+		if (shape == Inkeys::Drawing::Draw3::EraserShape::Circle)
+			return EraserAttributeCircleContains(rect, expansion, x, y);
+		const double hx = (std::max)(0.0, rect.Width() / 2 + expansion);
+		const double hy = (std::max)(0.0, rect.Height() / 2 + expansion);
+		const double radius = (std::clamp)(cornerRadius + expansion, 0.0, (std::min)(hx, hy));
+		const double qx = std::abs(x - EraserRectCenterX(rect)) - hx + radius;
+		const double qy = std::abs(y - EraserRectCenterY(rect)) - hy + radius;
+		return std::hypot((std::max)(qx, 0.0), (std::max)(qy, 0.0)) + (std::min)((std::max)(qx, qy), 0.0) <= radius;
+	}
+	inline EraserAttributeRect EraserAttributeSelectionOutline(EraserAttributeRect rect, double scale) noexcept
+	{
+		const double outset = 3.5 * scale; // 外缘留 3 DIP，1 DIP 描边取中心线。
+		return { rect.left - outset, rect.top - outset, rect.right + outset, rect.bottom + outset };
+	}
 	inline constexpr double EraserAttributeCircleGapDip=16.0;
 	inline constexpr double EraserAttributeStandardGapDip=5.0;
 	inline constexpr double EraserAttributeAutomaticArrowWidthDip=20.0;
@@ -90,6 +110,7 @@ export namespace Inkeys::UI::Bar
 		EraserAttributeLayout r;r.anchor=input.anchor;r.work=input.work;
 		const double zoom=std::isfinite(input.zoom) && input.zoom>0?input.zoom:1;
 		const double dpi=std::isfinite(input.dpiScale) && input.dpiScale>0?input.dpiScale:1;
+		r.shape=input.shape;r.previewCornerRadius=6*dpi/zoom;
 		const double height=input.main.Height()>0?input.main.Height():BarMainBarHeightDip;
 		const double button=BarButtonTwoSideDip,arrow=EraserAttributeAutomaticArrowWidthDip;
 		const double autoWidth=button+arrow,available=(std::max)(1.0,input.work.Width());
@@ -99,7 +120,7 @@ export namespace Inkeys::UI::Bar
 		{
 			// 工具DIP先到画布像素，再除UI父倍率；稳定展开恢复为同一个实际直径。
 			r.previewDiameters[i]=DiameterToCanvasPx(input.diametersDip[i],display)/zoom;
-			diameters+=r.previewDiameters[i];
+			diameters+=Inkeys::Drawing::Draw3::ResolveEraserHalfSize(input.shape,static_cast<float>(r.previewDiameters[i]/2)).x*2;
 		}
 		const double stroke=BarButtonFrameThicknessDip;
 		// 所有工作区均使用正常留白；极窄时只裁剪面板，不进入紧凑布局。
@@ -135,8 +156,9 @@ export namespace Inkeys::UI::Bar
 		double cursor=circleStart+circleGap;
 		for(size_t i=0;i<3;++i)
 		{
-			const double d=r.previewDiameters[i],center=cursor+d/2;
-			r.previews[i]={center-d/2,cy-d/2,center+d/2,cy+d/2};cursor+=d+circleGap;
+			const auto half=Inkeys::Drawing::Draw3::ResolveEraserHalfSize(input.shape,static_cast<float>(r.previewDiameters[i]/2));
+			const double center=cursor+half.x;
+			r.previews[i]={center-half.x,cy-half.y,center+half.x,cy+half.y};cursor+=half.x*2+circleGap;
 		}
 		for(size_t i=0;i<3;++i)
 		{
@@ -144,9 +166,8 @@ export namespace Inkeys::UI::Bar
 			const double lower=i==0?circleStart:(r.previews[i-1].right+circle.left)/2;
 			const double upper=i==2?circleEnd:(circle.right+r.previews[i+1].left)/2;
 			r.previewClips[i]=IntersectEraserRect({lower,y,upper,y+height},r.panel);
-			const double hitRadius=circle.Width()/2+BarButtonGapDip;
-			const double center=EraserRectCenterX(circle);
-			r.items[i+1]=IntersectEraserRect({center-hitRadius,cy-hitRadius,center+hitRadius,cy+hitRadius},r.previewClips[i]);
+			r.items[i+1]=IntersectEraserRect({circle.left-BarButtonGapDip,circle.top-BarButtonGapDip,
+				circle.right+BarButtonGapDip,circle.bottom+BarButtonGapDip},r.previewClips[i]);
 		}
 		// 分割线侧留主栏同款 dgap；面板外缘侧保持标准 gap。
 		const double ax=autoStart+(r.reversed?gap:dgap);

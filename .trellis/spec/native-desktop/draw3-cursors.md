@@ -140,3 +140,43 @@ if (pen && sample.inContact && !contactEnabled) return {};
 if (sample.inContact && penIconAllowed &&
     ShouldHideDotCursorOnContact(device, style, settings.dotHideOnContact)) return {};
 ```
+
+## Scenario: 橡皮缓存精灵（阶段 B，2026-11-07）
+
+### 1. Scope / Trigger
+
+主/逐 Touch 橡皮（含笔速、手掌）使用整枚精灵；阶段 C 配置、设置页与主栏预览另行接入。
+
+### 2. Signatures
+
+`Draw3.EraserCursor.h` 提供 `EraserCursorAppearance{shape,pattern,theme}`、`RasterizeEraserCursor(appearance,shortSidePx,cornerRadiusPx)`、`ResolveEraserCursorRecipe(...)`。Controller owner 调用 `SetEraserCursorAppearance(...)`；Renderer 提供 `InvalidateEraserCursorCache()`。GPU type 24，PS 使用 t15/s1，早返回预乘采样色乘 opacity。
+
+### 3. Contracts
+
+默认 Circle/Grips/Light；形状读取活动笔划 Down 锁存值，纹样/明暗即时共用。全帧共用当前基准尺寸/DPI，避免不同 contact 交替重烘焙。短边档为 32..1024 的 2 次幂，绘制短边超过当前档 1.25 倍才升档；圆角为 `min(6*dpi*baked/base,baked/2)`。CPU 生成预乘 BGRA8 及完整盒式 mip，含每边 2px 透明 padding；纹样阈值以传入栅格器的烘焙短边判定，动态尺寸只缩放整枚精灵。每外观保存独立配方与 Draw3 IMMUTABLE 纹理，不跨设备共享，不用 GenerateMips，不在 RTS 工作。
+
+### 4. Validation & Error Matrix
+
+移动/档内缩放复用；基准/DPI/外观变化或设备重建使相应配方失效。上传失败保留失败配方，等配方/设备变化重试，避免逐帧分配。Sprite dirty padding 为 `max(2.5,2*drawShort/1024)`，包含升档阈值和最大档外缩放。
+
+### 5. Good/Base/Bad Cases
+
+Good：活动与 Hover 形状不同仍各自复用纹理；Base：默认浅色抓手；Bad：按移动位置重烘焙、复用图层 point sampler、将精灵加入文档历史。
+
+### 6. Tests Required
+
+Headless 检查尺寸/mip/预乘/边缘与配色/纹样阈值/圆角与配方；既有 `RunRendererUploadValidation` 检查真实纹理 identity、升档与失效；生产 Palm probe 检查形状尺寸、Touch opacity 与 dirty。修改着色器后正式 CSO 与完整 Win7 guarded PS 须构建后用 `Generate-Win7-GuardedShader.ps1` 同步，保留唯一 AA 锚点与最终 return，不能将旧字节码视为验证。
+
+### 7. Wrong vs Correct
+
+Wrong：RTS 回调栅格化，或 `Sample * opacity` 后再次乘 alpha。Correct：绘制 owner 按配方烘焙一次，PS 输出 `samplePremultiplied * opacity`，Retain 为 `1-alpha`。
+
+### 8. 阶段 C：配置、光标页与主栏预览（2026-11-07）
+
+- 配置：`Drawing.Eraser.Shape`（Circle/Rectangle/Square）、`Drawing.Eraser.CursorPattern`（Grips/Inkeys/Sparkle）、`Drawing.Eraser.CursorTheme`（Light/Dark），均 `NoUpload`、`IdtAtomic<int>`、默认 0，非法类型/超宽整数/越界回落默认；橡皮光标明暗与应用主题无关。沿普通橡皮偏好路径到 Draw3 owner，再调用 `SetEraserCursorAppearance`；新笔划 Down 锁存形状。
+- 设置“绘制 → 光标”页独立分类“橡皮光标”（位于“按设备设置”与“数位板识别”之间），其中“外观”卡：标题行明暗下拉；内联 `InlinePreviewSelector`（72 DIP 方块、8 DIP 圆角/间距、组间分割线、选中项 2 DIP 强调色环外扩 3 DIP、圆角 10 DIP、窄宽自动换行、标签按宽度换行），左三形状 | 右三纹样，无下拉。预览与主栏位图都只能调用 `RasterizeEraserCursor`，不得另写公式；按外观/尺寸/DPI/设备缓存。
+- 主栏橡皮属性：尺寸预览、命中、选中环、焦点按形状半宽高与 6 DIP 圆角。
+- 配色：所有纹样（抓手、星光、Inkeys 图标的屏幕与橡皮）统一用描边灰（浅色 207 / 深色 110），填充浅 255 / 深 40；不再使用独立纹样色或半透明屏幕色。
+- 手掌橡皮：`Drawing.PalmEraser.Shape`（`IdtAtomic<int>`，-1 跟随默认 / 0..2 形状，非法回落 -1）→ `PalmEraser::Settings::shape`；`PromotePalmRuntime` 用 `PalmEraser::ResolveShape` 覆盖笔划形状（跟随时保留 Down 锁存），光标随笔划形状。手掌页：“适用工具”在“精细控制”内、“边擦边写”上方；末尾“橡皮光标”分类为 i 信息块（明暗/纹样跟随光标页）+ 形状卡（跟随默认 + 三形状预览，跟随项预览默认形状）。屏蔽范围随生效形状（圆形 r+max(0.15r,4px)，矩形/正方形各轴外扩 max(0.15h,4px)），手掌大小自定义见 palm-eraser.md。
+- `Draw3.EraserCursor.h` 会被包含 `<windows.h>` 的 UI 代码引用：其中一律写 `(std::min)(...)` / `(std::max)(...)`，否则 `min/max` 宏导致 C2589。
+- 测试：`--config-boundary-test`；`InkeysHeadlessTests --no-window --setting-eraser-only`（含橡皮光标卡 20 语/缩放/浅深/窄宽）；`--draw3-renderer-upload-test`；全量 `--no-window`。

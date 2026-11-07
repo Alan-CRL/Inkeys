@@ -88,7 +88,11 @@ namespace Inkeys::Drawing::Draw3
 				FloatEqual(left.outlineBlue, right.outlineBlue) &&
 				FloatEqual(left.outlineOpacity, right.outlineOpacity) &&
 				FloatEqual(left.centerOffsetX, right.centerOffsetX) &&
-				FloatEqual(left.centerOffsetY, right.centerOffsetY);
+				FloatEqual(left.centerOffsetY, right.centerOffsetY) &&
+				(left.shape != DrawingCursorShape::EraserSprite ||
+					(left.eraserCursor == right.eraserCursor &&
+					FloatEqual(left.eraserBaseShortSide, right.eraserBaseShortSide) &&
+					FloatEqual(left.eraserDpiScale, right.eraserDpiScale)));
 		}
 
 		const DrawingCursorSample* SelectPrimarySample(
@@ -318,7 +322,10 @@ namespace Inkeys::Drawing::Draw3
 			std::abs(appearance.centerOffsetY) <= kMaximumCursorExtentPx &&
 			appearance.width > 0.0f && appearance.height > 0.0f &&
 			appearance.width <= kMaximumCursorExtentPx &&
-			appearance.height <= kMaximumCursorExtentPx;
+			appearance.height <= kMaximumCursorExtentPx &&
+			(appearance.shape != DrawingCursorShape::EraserSprite ||
+				(std::isfinite(appearance.eraserBaseShortSide) && appearance.eraserBaseShortSide > 0.0f &&
+				std::isfinite(appearance.eraserDpiScale) && appearance.eraserDpiScale > 0.0f));
 	}
 
 	DrawingCursorVisual ResolvePrimaryDrawingCursorVisual(
@@ -665,10 +672,12 @@ namespace Inkeys::Drawing::Draw3
 			canvasWidth <= 0 || canvasHeight <= 0) return {};
 		const double centerX = static_cast<double>(visual.x) + visual.appearance.centerOffsetX;
 		const double centerY = static_cast<double>(visual.y) + visual.appearance.centerOffsetY;
-		const double halfWidth = static_cast<double>(visual.appearance.width) * 0.5 +
-			kCursorBoundsPaddingPx;
-		const double halfHeight = static_cast<double>(visual.appearance.height) * 0.5 +
-			kCursorBoundsPaddingPx;
+		// 档内最多放大 1.25 倍；超过 1024 档时仍包含同比放大的透明 AA 边缘。
+		const double padding = visual.appearance.shape == DrawingCursorShape::EraserSprite
+			? std::max(2.5, 2.0 * std::min(visual.appearance.width, visual.appearance.height) / 1024.0)
+			: static_cast<double>(kCursorBoundsPaddingPx);
+		const double halfWidth = static_cast<double>(visual.appearance.width) * 0.5 + padding;
+		const double halfHeight = static_cast<double>(visual.appearance.height) * 0.5 + padding;
 		// 先在 double 域裁到画布，再转换为 LONG，避免极大有限坐标触发未定义行为。
 		RECT bounds = {
 			static_cast<LONG>(std::clamp(std::floor(centerX - halfWidth),

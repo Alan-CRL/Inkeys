@@ -1,0 +1,225 @@
+[StartupPreviewState] failed: frozen write payload round-trips selected placement only for next launch
+[StartupPreviewState] failed: frozen write payload round-trips selected placement only for next launch
+[StartupPreviewState] failed: frozen write payload round-trips selected placement only for next launch
+[StartupPreviewState] failed: frozen write payload round-trips selected placement only for next launch
+[StartupPreviewState] failed: frozen write payload round-trips selected placement only for next launch
+[StartupPreviewState] failed: frozen write payload round-trips selected placement only for next launch
+[StartupPreviewState] failed: frozen write payload round-trips selected placement only for next launch
+[ConfigMetadata] failed: write initial metadata
+[ConfigMetadata] failed: file keeps braced id, ev, channel and unknown keys independently of Referer flags
+[ConfigMetadata] failed: write latest channel without read
+[ConfigMetadata] failed: file sees latest bound values
+[ConfigMetadata] failed: write both interaction modes
+[ConfigMetadata] failed: write both interaction modes
+[ConfigMetadata] failed: mode is persisted under UI.Bar
+[ConfigMetadata] failed: restart restores persisted interaction mode
+[ConfigMetadata] failed: frozen configuration copy retains mode independently
+[ConfigMetadata] failed: fractional font policy persists as a JSON bool
+[ConfigMetadata] failed: new process configuration restores fractional font policy
+[ConfigMetadata] failed: font Mini read updates only the selected preference
+[ConfigMetadata] failed: fractional font policy persists as a JSON bool
+[ConfigMetadata] failed: frozen font configuration retains its captured preference
+[ConfigMetadata] failed: write each independent mouse and pen combination
+[ConfigMetadata] failed: write each independent mouse and pen combination
+[ConfigMetadata] failed: both cursor types preserve their own selected value
+[ConfigMetadata] failed: restart restores all four independent cursor type combinations
+[ConfigMetadata] failed: write each independent mouse and pen combination
+[ConfigMetadata] failed: both cursor types preserve their own selected value
+[ConfigMetadata] failed: restart restores all four independent cursor type combinations
+[ConfigMetadata] failed: write each independent mouse and pen combination
+[ConfigMetadata] failed: both cursor types preserve their own selected value
+[ConfigMetadata] failed: restart restores all four independent cursor type combinations
+[ConfigMetadata] failed: write cursor types while preserving unknown configuration
+[ConfigMetadata] failed: saving removes exactly the three retired edge switches even with AutoClean disabled
+[ConfigMetadata] failed: frozen cursor snapshot keeps both captured types independently
+[ConfigMetadata] failed: write dot contact hide mode
+[ConfigMetadata] failed: write dot contact hide mode
+[ConfigMetadata] failed: write dot contact hide mode
+[ConfigMetadata] failed: write dot contact hide mode
+[ConfigMetadata] failed: write the full per-device cursor selection
+[ConfigMetadata] failed: restart restores every per-device cursor selection
+[ConfigMetadata] failed: a deferred frozen config keeps its captured dot contact hide mode
+[ConfigMetadata] failed: write all cursor opacity preferences
+[ConfigMetadata] failed: restart restores all four independent cursor opacity values
+[ConfigMetadata] failed: deferred config write freezes cursor opacity with the rest of the snapshot
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: startup appearance preferences write
+[ConfigMetadata] failed: startup Mini reads both layers, theme and effect without unrelated changes
+[ConfigMetadata] failed: startup appearance survives full restart read
+[ConfigMetadata] failed: queued configuration snapshot retains captured startup effect
+[ConfigMetadata] failed: all toolbar preference values persist under UI.Bar
+[ConfigMetadata] failed: all toolbar preference values persist under UI.Bar
+[ConfigMetadata] failed: restart restores each toolbar preference value
+[ConfigMetadata] failed: ReadMini loads each toolbar value without altering unrelated fields
+[ConfigMetadata] failed: all toolbar preference values persist under UI.Bar
+[ConfigMetadata] failed: restart restores each toolbar preference value
+[ConfigMetadata] failed: ReadMini loads each toolbar value without altering unrelated fields
+[ConfigMetadata] failed: all toolbar preference values persist under UI.Bar
+[ConfigMetadata] failed: restart restores each toolbar preference value
+[ConfigMetadata] failed: ReadMini loads each toolbar value without altering unrelated fields
+[ConfigMetadata] failed: frozen toolbar configuration retains captured preference
+[ConfigMetadata] failed: all toolbar preference values persist under UI.Bar
+[ConfigMetadata] failed: restart restores each toolbar preference value
+[ConfigMetadata] failed: ReadMini loads each toolbar value without altering unrelated fields
+[ConfigMetadata] failed: all toolbar preference values persist under UI.Bar
+[ConfigMetadata] failed: frozen toolbar configuration retains captured preference
+[ConfigMetadata] failed: write scale defaults alongside unknown old Zoom
+[ConfigMetadata] failed: unknown old Zoom is retained without migrating it to Zoom2
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: legacy bool and integer modes serialize as their exact integer mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: legacy bool and integer modes serialize as their exact integer mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write scale defaults alongside unknown old Zoom
+[ConfigMetadata] failed: unknown old Zoom is retained without migrating it to Zoom2
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: legacy bool and integer modes serialize as their exact integer mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: legacy bool and integer modes serialize as their exact integer mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: write normalized taskbar mode
+[ConfigMetadata] failed: frozen scale payload retains both independent captured values
+[ConfigMetadata] failed: all scale modes round-trip through frozen write and restart
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
+[ConfigMetadata] failed: frozen FIFO payload owns both NoUpload theme fields
+[ConfigMetadata] failed: new Config instance reloads the complete last selected background and pattern
+[ConfigMetadata] failed: theme serializes as two exact RGB and pattern integers
