@@ -415,7 +415,9 @@
 	<ClInclude Include="Inkeys\UI\Bar\Bar.ThemeMaterial.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h" />
 	<ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h" />
+	<ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.PatternFollow.h" />
 	<ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h" />
+	<ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardPattern.h" />
 	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
@@ -917,7 +919,9 @@
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
 	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm" />
-	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp" />
+	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp">
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">INKEYS_WHITEBOARD_PATTERN_PROFILE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
 	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cppm" />
 	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cpp" />
 	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Layout.cpp" />
@@ -1142,6 +1146,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererDebugOverlay.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPattern.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">

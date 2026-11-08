@@ -56,6 +56,8 @@ module;
 #include "Draw3.TimerPeriod.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PalmEraser.h"
+#include "Draw3.WhiteboardPattern.h"
+#include "Draw3.MouseInput.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -215,18 +217,6 @@ namespace Inkeys::Drawing::Draw3
 		constexpr size_t kPreheatedStrokeCount = 16;
 		// 颜色/宽度/目标上下文由 WindowController 同锁发布，绘制线程在帧边界采样。
 		thread_local ProductVisualStyle currentProductVisualStyle{};
-
-		const char* CanvasTouchDispositionName(CanvasTouchDisposition disposition) noexcept
-		{
-			switch (disposition)
-			{
-			case CanvasTouchDisposition::Draw: return "draw";
-			case CanvasTouchDisposition::PanCandidate: return "pan-candidate";
-			case CanvasTouchDisposition::Pan: return "pan";
-			case CanvasTouchDisposition::Suppressed: return "suppressed";
-			default: return "unknown";
-			}
-		}
 
 		LONG SaturatingFloorToLong(double value) noexcept
 		{
@@ -2536,6 +2526,12 @@ namespace Inkeys::Drawing::Draw3
 			appearance.outlineWidth = diameter * ERASER_GRIP_OUTLINE_RATIO;
 		}
 
+		// 白板移动模式的平移持有设备类别：触摸与鼠标左键互斥，笔与鼠标右键不是拖动设备。
+		enum class CanvasPanDeviceClass : uint8_t { None, Touch, Mouse };
+
+		// 画布手势接触的归属：移动模式下参与平移，或只跟踪到终态（笔抑制、已作废批次）。
+		enum class CanvasTouchDisposition : uint8_t { Pan, Suppressed };
+
 		struct CanvasGestureContactRuntime
 		{
 			ContactHandle handle = {};
@@ -2545,6 +2541,13 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t lastConsumedSequence = 0;
 			CanvasTouchDisposition disposition = CanvasTouchDisposition::Suppressed;
 			bool terminalPending = false;
+			// 新平移路径（CanvasPanInput）登记的触点；Pen 抑制等旧登记保持 false，只跟踪到终态。
+			bool panManaged = false;
+			// 登记后尚未向动力学提交 Down 样本。
+			bool panDownPending = false;
+			CanvasPanDeviceClass panClass = CanvasPanDeviceClass::None;
+			// 动力学内部身份：单调唯一，不依赖可被生产者复用的 contact key。
+			uint64_t panKey = 0;
 		};
 
 		// 画布调试可视化模式下的探测接触：只持有 handle 并跟踪最新快照，不建笔。
@@ -2560,6 +2563,469 @@ namespace Inkeys::Drawing::Draw3
 			return static_cast<uint64_t>(handle.record->TabletContextId()) << 32 |
 				handle.record->ContactId();
 		}
+
+		// 绘制模式 Touch 的接触身份登记。原 180 ms 双指状态机在“导航被阻塞”时唯一保留的语义：
+		// 同一 key 在上一条同 key 接触的终态被消费前不得再次建笔，key 0 不是有效身份；
+		// 被拒绝的 Down 只跟踪到终态。平移不经此登记（见 CanvasPanInput）。
+		class TouchContactRegistry
+		{
+		public:
+			bool TryRegister(uint64_t key)
+			{
+				if (key == 0 || Contains(key)) return false;
+				keys_.push_back(key);
+				return true;
+			}
+			void Release(uint64_t key) noexcept
+			{
+				const auto found = std::find(keys_.begin(), keys_.end(), key);
+				if (found != keys_.end()) keys_.erase(found);
+			}
+			bool Contains(uint64_t key) const noexcept
+			{
+				return std::find(keys_.begin(), keys_.end(), key) != keys_.end();
+			}
+			size_t Count() const noexcept { return keys_.size(); }
+			void Reset() noexcept { keys_.clear(); }
+
+		private:
+			std::vector<uint64_t> keys_;
+		};
+
+		constexpr CanvasPanDeviceClass CanvasPanClassOf(InputDeviceType device) noexcept
+		{
+			return device == InputDeviceType::Touch ? CanvasPanDeviceClass::Touch
+				: device == InputDeviceType::MouseLeft ? CanvasPanDeviceClass::Mouse
+				: CanvasPanDeviceClass::None;
+		}
+
+		enum class SelectionDownRoute : uint8_t { Stroke, Pan, Discard };
+
+		// Selection 下新 Down 的唯一分流：白板移动模式的 Touch/鼠标左键（且未被另一类设备占有）
+		// 成为平移触点；笔、鼠标右键、另一类设备以及桌面/PPT 的 Selection 一律丢弃到终态。
+		constexpr SelectionDownRoute RouteSelectionDown(bool selectionMode,
+			Bridge::Workspace workspace, InputDeviceType device,
+			CanvasPanDeviceClass latchedClass) noexcept
+		{
+			if (!selectionMode) return SelectionDownRoute::Stroke;
+			const CanvasPanDeviceClass deviceClass = CanvasPanClassOf(device);
+			return Bridge::MoveModePansCanvas(selectionMode, workspace) &&
+				deviceClass != CanvasPanDeviceClass::None &&
+				(latchedClass == CanvasPanDeviceClass::None || latchedClass == deviceClass)
+				? SelectionDownRoute::Pan : SelectionDownRoute::Discard;
+		}
+
+		// 触点物理像素 -> DIP 的显示标尺（SpeedEraser::DisplayScale）；缺失或非法时回退 1。
+		struct CanvasPanScale
+		{
+			double dipPerPixelX = 1.0;
+			double dipPerPixelY = 1.0;
+		};
+
+		CanvasPanScale CanvasPanScaleFromDisplay(const SpeedEraser::DisplayScale& display) noexcept
+		{
+			const auto usable = [](float value) noexcept
+			{ return std::isfinite(value) && value > 0.0f; };
+			CanvasPanScale scale;
+			if (usable(display.dipPerPixelX)) scale.dipPerPixelX = display.dipPerPixelX;
+			if (usable(display.dipPerPixelY)) scale.dipPerPixelY = display.dipPerPixelY;
+			return scale;
+		}
+
+		struct CanvasPanViewportApply
+		{
+			bool viewportChanged = false;
+			bool xClamped = false;
+			bool yClamped = false;
+			CanvasVector viewportDelta = {};
+		};
+
+		// 白板移动模式（摩擦耦合平移）的输入侧：平移触点集合、设备互斥、批次作废与动力学驱动。
+		// 触点登记复用 Run() 的 gestureContacts（同一份快照序号消费与终态回收），
+		// 动力学只在 DIP 内运算；本类不触碰 D3D、文档历史或 revision。
+		class CanvasPanInput
+		{
+		public:
+			struct Frame
+			{
+				CanvasVector contentDeltaPixels = {};
+				CanvasVector velocityPixels = {};
+				CanvasVector velocityDip = {};
+				bool touchPanHeld = false;
+				// 本帧消费到的终态 QPC：交还 Run() 维护笔抑制与 Touch 平移结束时刻。
+				int64_t touchPanEndQpc = 0;
+				int64_t penTerminalQpc = 0;
+				CanvasPanFrameOutput dynamics = {};
+			};
+
+			explicit CanvasPanInput(std::vector<CanvasGestureContactRuntime>& contacts)
+				: contacts_(contacts)
+			{
+				samples_.reserve(kCanvasPanMaximumContacts * 2);
+			}
+
+			// 当前持有平移的设备类别；没有任何平移触点（含已作废批次的残留指）时为 None。
+			CanvasPanDeviceClass OwnerClass() const noexcept
+			{
+				for (const CanvasGestureContactRuntime& contact : contacts_)
+					if (contact.panManaged) return contact.panClass;
+				return CanvasPanDeviceClass::None;
+			}
+			bool HasContacts() const noexcept
+			{
+				return OwnerClass() != CanvasPanDeviceClass::None;
+			}
+			// 仲裁读取最新物理终态，不等 Step 回收；同 QPC 按 Down 先于 Up，仍算重叠。
+			CanvasPanDeviceClass OwnerClass(const ContactInputCoordinator& input, int64_t atQpc = 0) const noexcept
+			{
+				for (const CanvasGestureContactRuntime& contact : contacts_)
+				{
+					if (!contact.panManaged) continue;
+					ContactSnapshot latest = contact.snapshot;
+					input.TryReadSnapshot(contact.handle, latest);
+					if ((latest.phase != ContactPhase::Up && latest.phase != ContactPhase::Cancelled) ||
+						(atQpc > 0 && latest.qpc >= atQpc)) return contact.panClass;
+				}
+				return CanvasPanDeviceClass::None;
+			}
+			bool TouchPanHeld(const ContactInputCoordinator& input, int64_t atQpc = 0) const noexcept
+			{
+				if (deadBatch_) return false;
+				for (const CanvasGestureContactRuntime& contact : contacts_)
+				{
+					if (!contact.panManaged || contact.panClass != CanvasPanDeviceClass::Touch) continue;
+					// 只判断笔到达时已经按下的手指，后来的 Touch 不追溯抑制笔。
+					if (atQpc > 0 && contact.handle.record->DownSnapshot().qpc > atQpc) continue;
+					ContactSnapshot latest = contact.snapshot;
+					input.TryReadSnapshot(contact.handle, latest);
+					if ((latest.phase != ContactPhase::Up && latest.phase != ContactPhase::Cancelled) ||
+						(atQpc > 0 && latest.qpc >= atQpc)) return true;
+				}
+				return false;
+			}
+			bool HasLiveSuppressedPenContact(const ContactInputCoordinator& input) const noexcept
+			{
+				return std::any_of(contacts_.begin(), contacts_.end(),
+					[&](const CanvasGestureContactRuntime& contact)
+					{
+						if (!contact.handle.record || contact.handle.record->DeviceType() != InputDeviceType::Pen)
+							return false;
+						ContactSnapshot latest = contact.snapshot;
+						input.TryReadSnapshot(contact.handle, latest);
+						return latest.phase != ContactPhase::Up && latest.phase != ContactPhase::Cancelled;
+					});
+			}
+			void TrackSuppressedPenDown(ContactHandle handle)
+			{
+				const ContactSnapshot down = handle.record->DownSnapshot();
+				// 保留 Producing 路由直到真实终态，Selection 提前返回也不能丢掉笔抑制身份。
+				contacts_.push_back({ handle, CanvasTouchKey(handle), down, down.position, down.sequence });
+			}
+			bool DynamicsActive() const noexcept { return dynamics_.Active(); }
+			// 绘制线程应保持活动帧与高精度计时器。
+			bool Active() const noexcept
+			{
+				return dynamics_.Active() || std::any_of(contacts_.begin(), contacts_.end(),
+					[](const CanvasGestureContactRuntime& contact)
+					{ return contact.panManaged && contact.disposition == CanvasTouchDisposition::Pan; });
+			}
+			// 只供离屏探针观察实际交给动力学的批次，不另造排序路径。
+			std::span<const CanvasPanContactSample> LastSamplesForProbe() const noexcept { return samples_; }
+			CanvasPanPhase Phase() const noexcept { return dynamics_.Phase(); }
+			// 触摸持有且仍有手按住：窗口层据此隐藏光标并吞掉同时落下的笔。
+			bool TouchPanHeld() const noexcept { return touchPanHeld_; }
+			bool BatchDead() const noexcept { return deadBatch_; }
+			CanvasVector VelocityDip() const noexcept { return dynamics_.ContentVelocity(); }
+			CanvasVector VelocityPixels() const noexcept
+			{
+				const CanvasVector velocity = dynamics_.ContentVelocity();
+				return { static_cast<float>(velocity.x / scale_.dipPerPixelX),
+					static_cast<float>(velocity.y / scale_.dipPerPixelY) };
+			}
+
+			// 登记刚出队且已通过准入的 Down。批次已被作废（Stop 后手指未全部抬起）时登记为
+			// 只跟踪终态的忽略触点。
+			void Register(ContactInputCoordinator& input, ContactHandle handle,
+				const CanvasPanScale& scale)
+			{
+				if (!handle.record) return;
+				if (!HasContacts() && !dynamics_.Active()) scale_ = scale;
+				const ContactSnapshot down = handle.record->DownSnapshot();
+				CanvasGestureContactRuntime contact;
+				contact.handle = handle;
+				contact.key = CanvasTouchKey(handle);
+				contact.snapshot = down;
+				contact.velocityPosition = down.position;
+				contact.lastConsumedSequence = down.sequence;
+				contact.disposition = deadBatch_
+					? CanvasTouchDisposition::Suppressed : CanvasTouchDisposition::Pan;
+				contact.panManaged = true;
+				contact.panDownPending = !deadBatch_;
+				contact.panClass = CanvasPanClassOf(handle.record->DeviceType());
+				contact.panKey = ++nextPanKey_;
+				contacts_.push_back(contact);
+				LogCanvasPan("pan-register key=%llu class=%u dead-batch=%u down=(%.1f,%.1f) qpc=%lld dip-per-pixel=(%.4f,%.4f)",
+					static_cast<unsigned long long>(contact.panKey),
+					static_cast<unsigned>(contact.panClass), deadBatch_ ? 1u : 0u,
+					down.position.x, down.position.y, static_cast<long long>(down.qpc),
+					scale_.dipPerPixelX, scale_.dipPerPixelY);
+				(void)input;
+			}
+
+			// 离开移动模式、翻页、工作区/加载/最小化/Resize、笔落下：清零手势与惯性，
+			// 已登记的触点只跟踪到终态，直到全部抬起前不再重新进入平移。
+			void Stop() noexcept
+			{
+				dynamics_.Stop();
+				touchPanHeld_ = false;
+				for (CanvasGestureContactRuntime& contact : contacts_)
+				{
+					if (!contact.panManaged) continue;
+					contact.disposition = CanvasTouchDisposition::Suppressed;
+					contact.panDownPending = false;
+				}
+				deadBatch_ = HasContacts();
+			}
+
+			// 准入封口已清空并 Discard 全部触点之后调用。
+			void Reset() noexcept
+			{
+				dynamics_.Stop();
+				touchPanHeld_ = false;
+				deadBatch_ = false;
+			}
+
+			// 每帧观察“是否仍处于白板移动模式”；刚离开时立即终止，返回 true。
+			bool ObserveMoveMode(bool pansNow) noexcept
+			{
+				const bool left = moveModeApplied_ && !pansNow;
+				moveModeApplied_ = pansNow;
+				if (left) Stop();
+				return left;
+			}
+
+			// 仅探针保存生产 mailbox 的逐次快照，模拟上游保留真时间戳的排队投递；
+			// 产品仍是单槽 mailbox，不在本修复中增加 producer 队列。
+			void QueueLatestMovesForProbe(const ContactInputCoordinator& input,
+				std::vector<CanvasPanContactSample>& queued)
+			{
+				int64_t newest = 0;
+				for (const CanvasGestureContactRuntime& contact : contacts_)
+				{
+					if (!contact.panManaged || contact.disposition != CanvasTouchDisposition::Pan) continue;
+					ContactSnapshot snapshot;
+					if (input.TryReadSnapshot(contact.handle, snapshot) && snapshot.phase == ContactPhase::Move)
+						Push(contact, snapshot, CanvasPanContactPhase::Move, newest, &queued);
+				}
+			}
+
+			Frame Step(ContactInputCoordinator& input, int64_t nowQpc,
+				int64_t qpcFrequency, bool penHover,
+				std::span<const CanvasPanContactSample> queued = {})
+			{
+				Frame frame;
+				samples_.assign(queued.begin(), queued.end());
+				int64_t newestSampleQpc = 0;
+				for (CanvasGestureContactRuntime& contact : contacts_)
+				{
+					const bool live = contact.panManaged &&
+						contact.disposition == CanvasTouchDisposition::Pan;
+					if (live && contact.panDownPending)
+					{
+						contact.panDownPending = false;
+						Push(contact, contact.snapshot, CanvasPanContactPhase::Down,
+							newestSampleQpc);
+					}
+					ContactSnapshot snapshot = contact.snapshot;
+					const bool read = input.TryReadSnapshot(contact.handle, snapshot);
+					if ((!read && !contact.terminalPending) ||
+						!ShouldConsumeCanvasPanContactSnapshot(snapshot.sequence,
+							contact.lastConsumedSequence, contact.terminalPending)) continue;
+					contact.lastConsumedSequence = snapshot.sequence;
+					contact.snapshot = snapshot;
+					contact.terminalPending = false;
+					const bool terminal = snapshot.phase == ContactPhase::Up ||
+						snapshot.phase == ContactPhase::Cancelled;
+					if (terminal)
+					{
+						if (contact.handle.record &&
+							contact.handle.record->DeviceType() == InputDeviceType::Pen)
+							frame.penTerminalQpc = (std::max)(frame.penTerminalQpc, snapshot.qpc);
+						if (contact.panManaged && contact.panClass == CanvasPanDeviceClass::Touch)
+							frame.touchPanEndQpc = (std::max)(frame.touchPanEndQpc, snapshot.qpc);
+					}
+					if (!live) continue;
+					Push(contact, snapshot,
+						snapshot.phase == ContactPhase::Up ? CanvasPanContactPhase::Up
+						: snapshot.phase == ContactPhase::Cancelled ? CanvasPanContactPhase::Cancelled
+						: CanvasPanContactPhase::Move, newestSampleQpc);
+				}
+				// 容器按登记顺序保存触点，终态到达顺序可能相反；全局按 QPC 排序后再分段释放。
+				// 同 QPC 的 Down 先行，与 OwnerClass 的重叠判定一致；其余同时间样本保持原序。
+				std::stable_sort(samples_.begin(), samples_.end(),
+					[](const CanvasPanContactSample& a, const CanvasPanContactSample& b)
+					{
+						if (a.qpc != b.qpc) return a.qpc < b.qpc;
+						return a.phase == CanvasPanContactPhase::Down && b.phase != CanvasPanContactPhase::Down;
+					});
+				if (dynamics_.Active() || !samples_.empty())
+				{
+					CanvasPanFrameInput in;
+					// 帧时钟不得早于其消费的样本，避免释放年龄出现负值。
+					in.frameQpc = (std::max)(nowQpc, newestSampleQpc);
+					in.qpcFrequency = qpcFrequency;
+					in.contacts = std::span<const CanvasPanContactSample>(samples_);
+					in.penHover = penHover;
+					frame.dynamics = dynamics_.Step(in);
+				}
+				touchPanHeld_ = TouchPanHeld(input);
+				frame.touchPanHeld = touchPanHeld_;
+				std::erase_if(contacts_, [&](CanvasGestureContactRuntime& contact)
+					{
+						if (contact.snapshot.phase != ContactPhase::Up &&
+							contact.snapshot.phase != ContactPhase::Cancelled) return false;
+						input.Recycle(contact.handle);
+						return true;
+					});
+				if (!HasContacts()) deadBatch_ = false;
+				frame.contentDeltaPixels = {
+					static_cast<float>(frame.dynamics.contentDelta.x / scale_.dipPerPixelX),
+					static_cast<float>(frame.dynamics.contentDelta.y / scale_.dipPerPixelY) };
+				frame.velocityDip = frame.dynamics.contentVelocity;
+				frame.velocityPixels = {
+					static_cast<float>(frame.dynamics.contentVelocity.x / scale_.dipPerPixelX),
+					static_cast<float>(frame.dynamics.contentVelocity.y / scale_.dipPerPixelY) };
+				return frame;
+			}
+
+			// 内容 1:1 跟手：内容位移 d 使视口原点移动 -d。触及硬限位的轴同时清零动力学速度。
+			CanvasPanViewportApply ApplyToCanvas(InkCanvas& canvas, CanvasVector contentDeltaPixels) noexcept
+			{
+				CanvasPanViewportApply result;
+				if (contentDeltaPixels.x == 0.0f && contentDeltaPixels.y == 0.0f) return result;
+				CanvasViewportState viewport{ canvas.Viewport().x, canvas.Viewport().y };
+				const CanvasContentTranslationResult translation =
+					ApplyCanvasContentTranslationChecked(viewport, contentDeltaPixels);
+				result.xClamped = translation.xClamped;
+				result.yClamped = translation.yClamped;
+				result.viewportDelta = translation.viewportDelta;
+				if (translation.xClamped || translation.yClamped)
+					dynamics_.ClearAxis(translation.xClamped, translation.yClamped);
+				result.viewportChanged = (translation.viewportDelta.x != 0.0f ||
+					translation.viewportDelta.y != 0.0f) &&
+					canvas.SetViewport({ viewport.x, viewport.y, 1.0f });
+				return result;
+			}
+
+		private:
+			void Push(const CanvasGestureContactRuntime& contact, const ContactSnapshot& snapshot,
+				CanvasPanContactPhase phase, int64_t& newestSampleQpc,
+				std::vector<CanvasPanContactSample>* queued = nullptr)
+			{
+				(queued ? *queued : samples_).push_back({ contact.panKey, snapshot.qpc,
+					static_cast<double>(snapshot.position.x) * scale_.dipPerPixelX,
+					static_cast<double>(snapshot.position.y) * scale_.dipPerPixelY, phase });
+				newestSampleQpc = (std::max)(newestSampleQpc, snapshot.qpc);
+			}
+
+			std::vector<CanvasGestureContactRuntime>& contacts_;
+			std::vector<CanvasPanContactSample> samples_;
+			CanvasPanDynamics dynamics_;
+			CanvasPanScale scale_;
+			uint64_t nextPanKey_ = 0;
+			bool deadBatch_ = false;
+			bool touchPanHeld_ = false;
+			bool moveModeApplied_ = false;
+		};
+
+		// 命令线程出队的 Selection Down 分流：返回 false 表示不是 Selection，继续走建笔路径。
+		bool HandleSelectionDown(ContactInputCoordinator& input, ContactHandle handle,
+			bool selectionMode, Bridge::Workspace workspace, CanvasPanInput& pan,
+			const CanvasPanScale& scale, bool* suppressPenUntilRelease = nullptr)
+		{
+			if (!handle.record) return false;
+			if (selectionMode && handle.record->DeviceType() == InputDeviceType::Pen)
+			{
+				const bool suppressed = pan.TouchPanHeld(input, handle.record->DownSnapshot().qpc) ||
+					pan.HasLiveSuppressedPenContact(input);
+				if (suppressPenUntilRelease) *suppressPenUntilRelease = suppressed;
+				if (suppressed) { pan.TrackSuppressedPenDown(handle); return true; }
+			}
+			const SelectionDownRoute route = RouteSelectionDown(selectionMode, workspace,
+				handle.record->DeviceType(), pan.OwnerClass(input, handle.record->DownSnapshot().qpc));
+			if (route == SelectionDownRoute::Stroke) return false;
+			if (route == SelectionDownRoute::Pan) pan.Register(input, handle, scale);
+			// 三工作区的选择都是电脑操作；被丢弃的接触（含 RTS 鼠标）不得初始化笔迹。
+			else input.DiscardUntilTerminal(handle);
+			return true;
+		}
+
+		struct CanvasPanPenMailbox
+		{
+			bool inRange = false;
+			bool inContact = false;
+		};
+
+		// Run 的优先级检查和导航推进共用真实 mailbox 仲裁，探针也走同一入口。
+		CanvasPanPenMailbox ObserveCanvasPanPenMailbox(WindowController& window,
+			const ContactInputCoordinator& input, const CanvasPanInput& pan,
+			bool& suppressPenUntilRelease, int64_t suppressedPenTerminalQpc)
+		{
+			DrawingCursorSample sample;
+			CanvasPanPenMailbox state;
+			state.inRange = window.ReadPenCursorSample(sample) && sample.valid;
+			state.inContact = state.inRange && IsPenContactSampleFresh(
+				sample.inContact, sample.qpc, suppressedPenTerminalQpc);
+			const bool liveSuppressedPen = pan.HasLiveSuppressedPenContact(input);
+			if (ShouldBeginSuppressingPenContactDuringTouchPan(
+				pan.TouchPanHeld(input, sample.qpc) || liveSuppressedPen, state.inContact))
+			{
+				suppressPenUntilRelease = true;
+				window.SuppressPenContactForTouchPan();
+			}
+			else if (suppressPenUntilRelease && !state.inContact && !liveSuppressedPen)
+				suppressPenUntilRelease = false;
+			return state;
+		}
+
+		// 观察绘制侧“白板移动模式”；窗口鼠标门禁由选择位和已确认工作区同步派生。返回 true 表示刚离开，
+		// 此时平移手势与惯性已被终止（触点只跟踪到终态）。
+		bool PublishCanvasPanMode(WindowController& window, CanvasPanInput& pan,
+			Bridge::Workspace workspace) noexcept
+		{
+			const bool pansNow = Bridge::MoveModePansCanvas(window.SelectionMode(), workspace);
+			return pan.ObserveMoveMode(pansNow);
+		}
+
+		// Selection 整段释放 1 ms 高精度计时器；白板移动模式的平移/惯性活动期必须保持，
+		// 否则逐帧平移会在默认计时器分辨率下抖动。
+		constexpr bool SelectionReleasesTimerPeriod(bool selectionMode, bool canvasPanActive) noexcept
+		{
+			return selectionMode && !canvasPanActive;
+		}
+
+		// 白板视角的会话内侧表：不写 UInk、不改 revision；被驱逐的冷页重载后按页恢复。
+		class WhiteboardViewportMemory
+		{
+		public:
+			void Remember(size_t page, const InkViewport& viewport)
+			{
+				if (viewports_.size() <= page) viewports_.resize(page + 1);
+				viewports_[page] = viewport;
+			}
+			InkViewport Recall(size_t page) const noexcept
+			{
+				return page < viewports_.size() ? viewports_[page] : InkViewport{};
+			}
+			// 把记忆视角写回该页 canvas；SetViewport 拒绝（非有限等）时回退 (0,0)。
+			void Restore(size_t page, InkCanvas& canvas) const noexcept
+			{
+				if (!canvas.SetViewport(Recall(page))) (void)canvas.SetViewport(InkViewport{});
+			}
+
+		private:
+			std::vector<InkViewport> viewports_;
+		};
 
 		void AdoptReconnectedContact(RuntimeStroke& runtime, ContactHandle handle) noexcept
 		{
@@ -3774,15 +4240,6 @@ namespace Inkeys::Drawing::Draw3
 			input.DiscardUntilTerminal(handle);
 		}
 
-		bool DiscardSelectionDown(ContactInputCoordinator& input, ContactHandle handle,
-			bool selectionMode) noexcept
-		{
-			if (!selectionMode) return false;
-			// 三工作区的选择都是电脑操作；RTS 鼠标也不得绕过穿透而初始化笔迹。
-			input.DiscardUntilTerminal(handle);
-			return true;
-		}
-
 		bool IgnoreAdditionalTouch(ContactInputCoordinator& input, ContactHandle handle,
 			InputDeviceType deviceType, bool hasActiveTouchContact, bool multiTouchEnabled) noexcept
 		{
@@ -3798,7 +4255,7 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 		template<class AfterDiscard = IgnoreIndependentTouchDiscard>
-		bool RejectIndependentTouch(ContactInputCoordinator& input, CanvasTouchGestureState& gestures,
+		bool RejectIndependentTouch(ContactInputCoordinator& input, TouchContactRegistry& touchContacts,
 			ContactHandle handle, InputDeviceType deviceType, bool hasActiveTouchContact, bool multiTouchEnabled,
 			AfterDiscard afterDiscard = {}) noexcept
 		{
@@ -3806,7 +4263,7 @@ namespace Inkeys::Drawing::Draw3
 			const uint64_t registeredKey = CanvasTouchKey(handle);
 			if (!IgnoreAdditionalTouch(input, handle, deviceType, hasActiveTouchContact, multiTouchEnabled)) return false;
 			afterDiscard(); // 默认空操作，生产回归在这里精确复现终态/槽复用交错。
-			gestures.OnTouchUp(registeredKey);
+			touchContacts.Release(registeredKey);
 			return true;
 		}
 
@@ -5242,7 +5699,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			ContactInputCoordinator input;
 			input.EnableDiagnostics(true);
-			CanvasTouchGestureState gestures;
+			TouchContactRegistry touchContacts;
 			constexpr uint32_t tablet = 0xF536;
 			const auto down = [&](uint32_t id)
 			{
@@ -5251,14 +5708,14 @@ namespace Inkeys::Drawing::Draw3
 				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
 					!input.TryDequeue(record) || !record) { check(false, "real Down reaches consumer"); return ContactHandle{}; }
 				const ContactHandle handle{ record, record->Generation() };
-				gestures.OnTouchDown(CanvasTouchKey(handle), 100, 1000, false, true);
+				touchContacts.TryRegister(CanvasTouchKey(handle));
 				return handle;
 			};
 			const auto rejected = down(1), other = down(2);
 			if (!rejected.record || !other.record) continue;
 			const uint64_t oldKey = CanvasTouchKey(rejected), otherKey = CanvasTouchKey(other);
 			ContactSnapshot terminal{}; terminal.position = { 12, 0 }; terminal.qpc = 150;
-			check(RejectIndependentTouch(input, gestures, rejected, InputDeviceType::Touch, true, false, [&]() noexcept
+			check(RejectIndependentTouch(input, touchContacts, rejected, InputDeviceType::Touch, true, false, [&]() noexcept
 				{
 					// 这段是确定性的 producer 交错：被隔离接触结束后，同址槽换成新的身份。
 					if (cancelled) input.PublishCancelled(tablet, 1, terminal);
@@ -5272,15 +5729,15 @@ namespace Inkeys::Drawing::Draw3
 			const ContactHandle reused{ replacement, replacement ? replacement->Generation() : 0 };
 			check(dequeued && reused.record == rejected.record && reused.generation != rejected.generation &&
 				CanvasTouchKey(reused) != oldKey, "producer replaced old record identity before gesture retirement");
-			check(!gestures.HasContact(oldKey) && gestures.HasContact(otherKey) && gestures.ContactCount() == 1,
+			check(!touchContacts.Contains(oldKey) && touchContacts.Contains(otherKey) && touchContacts.Count() == 1,
 				"retirement uses captured old key and preserves unrelated gesture");
 			if (dequeued)
 			{
-				gestures.OnTouchDown(CanvasTouchKey(reused), 160, 1000, false, true);
-				input.PublishUp(tablet, 3, terminal); gestures.OnTouchUp(CanvasTouchKey(reused)); input.Recycle(reused);
+				touchContacts.TryRegister(CanvasTouchKey(reused));
+				input.PublishUp(tablet, 3, terminal); touchContacts.Release(CanvasTouchKey(reused)); input.Recycle(reused);
 			}
-			input.PublishUp(tablet, 2, terminal); gestures.OnTouchUp(otherKey); input.Recycle(other);
-			check(gestures.ContactCount() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
+			input.PublishUp(tablet, 2, terminal); touchContacts.Release(otherKey); input.Recycle(other);
+			check(touchContacts.Count() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
 				"producer identity race leaves no gesture or slot residue");
 		}
 		if (!failures) std::fputs("[Draw3TouchDiscardIdentity] PASS: captured key survives Up/Cancel and same-slot reuse\n", stderr);
@@ -5299,7 +5756,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			ContactInputCoordinator input;
 			input.EnableDiagnostics(true);
-			CanvasTouchGestureState gestures;
+			TouchContactRegistry touchContacts;
 			const auto config = CreateStrokeModelConfiguration(96);
 			RuntimeStroke candidate(config.expectedSpeed);
 			candidate.metricDeviceType = InputDeviceType::Touch;
@@ -5327,8 +5784,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!input.PublishDown(tablet, id, InputDeviceType::Touch, snapshot) ||
 					!input.TryDequeue(record) || !record) { check(false, "real Touch route enters coordinator"); return ContactHandle{}; }
 				const ContactHandle handle{ record, record->Generation() };
-				check(gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition ==
-					CanvasTouchDisposition::Draw, "physical Down registers its exact drawing gesture");
+				check(touchContacts.TryRegister(CanvasTouchKey(handle)),
+					"physical Down registers its exact drawing gesture");
 				return handle;
 			};
 			const auto a = down(1, 0, 1000), b = down(2, 200, 1001);
@@ -5336,7 +5793,7 @@ namespace Inkeys::Drawing::Draw3
 			candidate.handle = a; candidate.touchGestureKey = CanvasTouchKey(a);
 			ContactSnapshot terminal{}; terminal.position = { 60, 0 }; terminal.qpc = 1120;
 			check(input.PublishUp(tablet, 1, terminal) && input.TryReadSnapshot(a, terminal), "A physical Up remains available for reconnect");
-			gestures.OnTouchUp(candidate.touchGestureKey);
+			touchContacts.Release(candidate.touchGestureKey);
 			candidate.awaitingReconnect = true; candidate.deferredUpSnapshot = terminal;
 			candidate.reconnectDirection = { 1, 0 }; candidate.filteredInputSpeed = 500;
 			candidate.lastModelInputTime = .12;
@@ -5364,10 +5821,10 @@ namespace Inkeys::Drawing::Draw3
 					adopted = true;
 				}
 			}
-			const bool rejected = !adopted && RejectIndependentTouch(input, gestures, c,
+			const bool rejected = !adopted && RejectIndependentTouch(input, touchContacts, c,
 				InputDeviceType::Touch, true, changed.multiTouchEnabled);
 			check(adopted == (scenario == 0) && rejected == (scenario != 0), "successful reconnect precedes rejection of independent Touch");
-			check(gestures.ContactCount() == (adopted ? 2u : 1u) && gestures.HasContact(CanvasTouchKey(b)),
+			check(touchContacts.Count() == (adopted ? 2u : 1u) && touchContacts.Contains(CanvasTouchKey(b)),
 				"rejected identity retires exactly once while B remains registered");
 			ContactSnapshot bSnapshot;
 			check(input.TryReadSnapshot(b, bSnapshot) && bSnapshot.phase == ContactPhase::Down &&
@@ -5378,12 +5835,12 @@ namespace Inkeys::Drawing::Draw3
 			terminal.qpc = cDown.qpc + 10;
 			if (scenario % 2 == 0) input.PublishUp(tablet, 3, terminal);
 			else input.PublishCancelled(tablet, 3, terminal);
-			if (adopted) gestures.OnTouchUp(candidate.touchGestureKey);
+			if (adopted) touchContacts.Release(candidate.touchGestureKey);
 			input.Recycle(c); input.Recycle(a);
-			check(gestures.ContactCount() == 1 && input.DiagnosticsSnapshot().occupiedSlots == 1,
+			check(touchContacts.Count() == 1 && input.DiagnosticsSnapshot().occupiedSlots == 1,
 				"reconnected or rejected C terminal retires without consuming a slot");
-			input.PublishUp(tablet, 2, terminal); gestures.OnTouchUp(CanvasTouchKey(b)); input.Recycle(b);
-			check(gestures.ContactCount() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
+			input.PublishUp(tablet, 2, terminal); touchContacts.Release(CanvasTouchKey(b)); input.Recycle(b);
+			check(touchContacts.Count() == 0 && input.DiagnosticsSnapshot().occupiedSlots == 0,
 				"all routes and gesture identities retire after the regression");
 		}
 		if (!failures) std::fputs("[Draw3SingleTouchReconnect] PASS: actual match/model handoff and independent-touch rejection\n", stderr);
@@ -5399,11 +5856,11 @@ namespace Inkeys::Drawing::Draw3
 			++failures;
 			std::fprintf(stderr, "[Draw3ReconnectIdentity] FAIL: %s\n", name);
 		};
-		// 使用真实 route 和 FSM；接管调用与生产重连成功分支共用，不能在测试里补写 key。
+		// 使用真实 route 和 Touch 身份登记；接管调用与生产重连成功分支共用，不能在测试里补写 key。
 		for (const uint32_t contactId : { 2u, 10u, 4u, 6u })
 		{
 			ContactInputCoordinator input;
-			CanvasTouchGestureState gestures;
+			TouchContactRegistry touchContacts;
 			RuntimeStroke runtime(1.0f);
 			runtime.metricDeviceType = InputDeviceType::Touch;
 			constexpr uint32_t tablet = 0xF531;
@@ -5424,7 +5881,7 @@ namespace Inkeys::Drawing::Draw3
 			};
 			const auto registerTouch = [&](ContactHandle handle)
 			{
-				return gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition;
+				return touchContacts.TryRegister(CanvasTouchKey(handle));
 			};
 			const auto up = [&](ContactHandle handle, uint64_t gestureKey)
 			{
@@ -5435,26 +5892,26 @@ namespace Inkeys::Drawing::Draw3
 					"Touch Up closes the current physical route");
 				check(input.TryReadSnapshot(handle, terminal) && terminal.phase == ContactPhase::Up,
 					"Touch terminal retains the exact handle generation");
-				gestures.OnTouchUp(gestureKey);
+				touchContacts.Release(gestureKey);
 			};
 			const auto first = down(1);
 			if (!first.record) continue;
-			check(registerTouch(first) == CanvasTouchDisposition::Draw, "ordinary Touch begins drawing");
+			check(registerTouch(first), "ordinary Touch begins drawing");
 			runtime.handle = first;
 			runtime.touchGestureKey = CanvasTouchKey(first);
 			up(runtime.handle, runtime.touchGestureKey);
-			check(gestures.ContactCount() == 0, "ordinary Touch Up retires its gesture identity");
+			check(touchContacts.Count() == 0, "ordinary Touch Up retires its gesture identity");
 			const auto reconnect = down(contactId);
 			if (!reconnect.record) continue;
-			check(registerTouch(reconnect) == CanvasTouchDisposition::Draw, "reconnecting Touch registers the new identity");
+			check(registerTouch(reconnect), "reconnecting Touch registers the new identity");
 			input.Recycle(runtime.handle);
 			AdoptReconnectedContact(runtime, reconnect);
 			const auto unrelated = down(100);
 			if (!unrelated.record) continue;
-			check(registerTouch(unrelated) == CanvasTouchDisposition::Draw, "unrelated Touch remains independently drawable");
+			check(registerTouch(unrelated), "unrelated Touch remains independently drawable");
 			const uint64_t unrelatedKey = CanvasTouchKey(unrelated);
 			up(runtime.handle, runtime.touchGestureKey);
-			check(gestures.ContactCount() == 1 && gestures.HasContact(unrelatedKey),
+			check(touchContacts.Count() == 1 && touchContacts.Contains(unrelatedKey),
 				"reconnected Up retires only the adopted identity and preserves another Touch");
 			input.Recycle(runtime.handle);
 			up(unrelated, unrelatedKey);
@@ -5463,16 +5920,16 @@ namespace Inkeys::Drawing::Draw3
 			if (!reused.record) continue;
 			check(reused.record == first.record && reused.generation != first.generation,
 				"regression reuses a real coordinator slot in a new generation");
-			check(registerTouch(reused) == CanvasTouchDisposition::Draw,
+			check(registerTouch(reused),
 				"same contact ID draws after reconnected Up instead of gesture suppression");
 			up(reused, CanvasTouchKey(reused));
 			input.Recycle(reused);
-			check(gestures.ContactCount() == 0, "all physical Touch contacts finish without stale identities");
+			check(touchContacts.Count() == 0, "all physical Touch contacts finish without stale identities");
 		}
 		{
 			// 连续接管复用同一条 RuntimeStroke，每段真实 Up 都应清掉当段身份。
 			ContactInputCoordinator input;
-			CanvasTouchGestureState gestures;
+			TouchContactRegistry touchContacts;
 			RuntimeStroke runtime(1.0f);
 			runtime.metricDeviceType = InputDeviceType::Touch;
 			int64_t qpc = 1000;
@@ -5486,8 +5943,8 @@ namespace Inkeys::Drawing::Draw3
 					!input.TryDequeue(record) || !record)
 				{ check(false, "chained contact enters coordinator"); break; }
 				const ContactHandle handle{ record, record->Generation() };
-				check(gestures.OnTouchDown(CanvasTouchKey(handle), qpc, 1000, false, true).disposition ==
-					CanvasTouchDisposition::Draw, "chained reconnect and subsequent ID reuse remain drawable");
+				check(touchContacts.TryRegister(CanvasTouchKey(handle)),
+					"chained reconnect and subsequent ID reuse remain drawable");
 				if (runtime.handle.record)
 				{
 					input.Recycle(runtime.handle);
@@ -5500,22 +5957,22 @@ namespace Inkeys::Drawing::Draw3
 				}
 				snapshot.qpc = qpc += 50;
 				check(input.PublishUp(0xF532, id, snapshot), "chained Up closes adopted physical contact");
-				gestures.OnTouchUp(runtime.touchGestureKey);
-				check(gestures.ContactCount() == 0, "chained Up leaves no prior reconnect identity");
+				touchContacts.Release(runtime.touchGestureKey);
+				check(touchContacts.Count() == 0, "chained Up leaves no prior reconnect identity");
 			}
 			input.Recycle(runtime.handle);
 		}
 		{
 			// 笔尾橡皮也允许重连，但不能取得 Touch 手势身份或清掉其它接触。
 			ContactInputCoordinator input;
-			CanvasTouchGestureState gestures;
+			TouchContactRegistry touchContacts;
 			RuntimeStroke runtime(1.0f);
 			runtime.metricDeviceType = InputDeviceType::Pen;
 			runtime.tool = DrawingTool::Eraser;
 			runtime.invertedCursor = true;
 			check(IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)),
 				"non-Touch fixture uses the supported inverted Pen eraser reconnect path");
-			gestures.OnTouchDown(0xF53300000001ULL, 100, 1000, false, true);
+			touchContacts.TryRegister(0xF53300000001ULL);
 			ContactSnapshot snapshot{};
 			snapshot.position = { 10.0f, 10.0f };
 			snapshot.qpc = 100;
@@ -5526,7 +5983,7 @@ namespace Inkeys::Drawing::Draw3
 				const ContactHandle handle{ record, record->Generation() };
 				AdoptReconnectedContact(runtime, handle);
 				check(runtime.handle.record == handle.record && runtime.handle.generation == handle.generation &&
-					runtime.touchGestureKey == 0 && gestures.HasContact(0xF53300000001ULL),
+					runtime.touchGestureKey == 0 && touchContacts.Contains(0xF53300000001ULL),
 					"inverted Pen adopts its input handle without owning or clearing Touch gestures");
 				snapshot.qpc = 150;
 				check(input.PublishUp(0xF534, 2, snapshot), "non-Touch adopted Up closes route");
@@ -5907,6 +6364,1298 @@ namespace Inkeys::Drawing::Draw3
 		return failures;
 	}
 
+	// 白板移动模式平移的生产探针夹具：真实 ContactInputCoordinator、WindowController 原子位、
+	// CanvasPanInput 与 InkCanvas；逐帧顺序与 Run() 一致（出队分流 -> 发布移动模式 -> Step -> 视口应用）。
+	struct CanvasPanProbeRig
+	{
+		static constexpr int64_t kFrequency = 10'000'000;
+		static constexpr uint32_t kTouchTablet = 0xB210, kPenTablet = 0xB211, kMouseTablet = 0xFFFFFFFEu;
+
+		static InkGuid ProbeGuid(uint8_t marker)
+		{
+			std::array<uint8_t, 16> bytes{}; bytes[0] = marker; bytes[15] = 0xA5;
+			return InkGuid(bytes);
+		}
+		static int64_t Qpc(double ms) noexcept
+		{
+			return static_cast<int64_t>(ms * static_cast<double>(kFrequency) / 1000.0);
+		}
+		static ContactSnapshot Snap(ContactPhase phase, double x, double y, double ms)
+		{
+			ContactSnapshot snapshot{};
+			snapshot.position = { static_cast<float>(x), static_cast<float>(y) };
+			snapshot.qpc = Qpc(ms);
+			snapshot.phase = phase;
+			return snapshot;
+		}
+
+		ContactInputCoordinator input;
+		WindowController window;
+		std::vector<CanvasGestureContactRuntime> contacts;
+		CanvasPanInput pan{ contacts };
+		InkCanvasCollection document{ ProbeGuid(0xD0) };
+		Bridge::Workspace workspace = Bridge::Workspace::Whiteboard;
+		CanvasPanScale scale;
+		bool boundary = false;
+		std::vector<ContactHandle> strokeDowns; // 非 Selection：这些 Down 会走 initializeStroke
+		CanvasPanInput::Frame last;
+		CanvasPanViewportApply lastApply;
+		std::vector<CanvasPanContactSample> queuedMoves; // 只供 queued-hitch 模型，保留每次 mailbox 真时间戳
+		bool suppressPenUntilRelease = false;
+		int64_t suppressedPenTerminalQpc = 0;
+		bool priorityPenSuppressed = false, navigationPenSuppressed = false;
+		size_t activePage = 0;
+
+		CanvasPanProbeRig()
+		{
+			input.EnableDiagnostics(true);
+			window.SetSelectionMode(true);
+			(void)TryAppendBlankPage(document);
+		}
+
+		InkCanvas* Canvas(size_t page) noexcept
+		{
+			InkPage* value = document.PageAt(page);
+			return value ? value->FindCanvas(kDefaultDeviceKey) : nullptr;
+		}
+		float ViewportX() noexcept { InkCanvas* c = Canvas(activePage); return c ? c->Viewport().x : 0.0f; }
+		float ViewportY() noexcept { InkCanvas* c = Canvas(activePage); return c ? c->Viewport().y : 0.0f; }
+
+		bool Down(uint32_t tablet, uint32_t id, InputDeviceType device, double x, double y, double ms)
+		{
+			return input.PublishDown(tablet, id, device, Snap(ContactPhase::Down, x, y, ms));
+		}
+		bool Move(uint32_t tablet, uint32_t id, double x, double y, double ms)
+		{
+			return input.PublishMove(tablet, id, Snap(ContactPhase::Move, x, y, ms));
+		}
+		bool Up(uint32_t tablet, uint32_t id, double x, double y, double ms)
+		{
+			return input.PublishUp(tablet, id, Snap(ContactPhase::Up, x, y, ms));
+		}
+
+		void PenMailbox(double ms, bool inContact)
+		{
+			DrawingCursorSample sample;
+			sample.valid = true; sample.inContact = inContact; sample.qpc = Qpc(ms);
+			window.PublishPenCursorSample(sample);
+		}
+
+		CanvasPanInput::Frame Frame(double ms, bool penHover = false)
+		{
+			// 对应 Run 的优先级 Pen 检查：发生在本帧 ingress 再次出队之前。
+			(void)ObserveCanvasPanPenMailbox(window, input, pan, suppressPenUntilRelease, suppressedPenTerminalQpc);
+			priorityPenSuppressed = suppressPenUntilRelease;
+			DrainIngressBatch(input, window, boundary, [&](ContactRecord* record)
+				{
+					if (!record) { input.AcknowledgeControlWake(); return; }
+					const ContactHandle handle{ record, record->Generation() };
+					if (!input.ContactAdmitted(handle)) { input.DiscardUntilTerminal(handle); return; }
+					if (window.SelectionMode() && HandleSelectionDown(input, handle, true, workspace, pan, scale,
+						&suppressPenUntilRelease))
+						return;
+					strokeDowns.push_back(handle);
+				});
+			window.SetCanvasPanWorkspace(workspace == Bridge::Workspace::Whiteboard);
+			(void)PublishCanvasPanMode(window, pan, workspace);
+			// 对应 updateCanvasNavigation：出队后的 mailbox 仲裁决定急停或 hover 制动。
+			const CanvasPanPenMailbox pen = ObserveCanvasPanPenMailbox(window, input, pan,
+				suppressPenUntilRelease, suppressedPenTerminalQpc);
+			navigationPenSuppressed = suppressPenUntilRelease;
+			if (pen.inContact && !suppressPenUntilRelease) pan.Stop();
+			last = pan.Step(input, Qpc(ms), kFrequency, penHover || (pen.inRange && !suppressPenUntilRelease), queuedMoves);
+			queuedMoves.clear();
+			suppressedPenTerminalQpc = (std::max)(suppressedPenTerminalQpc, last.penTerminalQpc);
+			window.SetTouchPanActive(last.touchPanHeld);
+			lastApply = {};
+			if (InkCanvas* canvas = Canvas(activePage))
+				lastApply = pan.ApplyToCanvas(*canvas, last.contentDeltaPixels);
+			return last;
+		}
+	};
+
+
+	// 验证适配器真正提交的批次；不能用直接调用动力学的有序样本替代此回归。
+	int RunCanvasPanAdapterOrderingProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (!condition) { ++failures; std::fprintf(stderr, "[Draw3PanFeel] scenario=adapter-order FAIL=%s\n", name); }
+		};
+		try
+		{
+			using Rig = CanvasPanProbeRig;
+			for (bool tied : { false, true })
+			{
+				Rig rig;
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
+				rig.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 200, 100, 4.0);
+				rig.Frame(8.0);
+				// 容器顺序为 Up100、Up90、Down105；同刻变体增加两只 Down100。
+				rig.Up(Rig::kTouchTablet, 1, 100, 100, 100.0);
+				rig.Up(Rig::kTouchTablet, 2, 200, 100, 90.0);
+				rig.Down(tied ? Rig::kTouchTablet : Rig::kMouseTablet, 3,
+					tied ? InputDeviceType::Touch : InputDeviceType::MouseLeft, 300, 100, tied ? 100.0 : 105.0);
+				if (tied) rig.Down(Rig::kTouchTablet, 4, InputDeviceType::Touch, 400, 100, 100.0);
+				rig.Frame(108.0);
+				const auto batch = rig.pan.LastSamplesForProbe();
+				check(batch.size() == (tied ? 4u : 3u), "batch-size");
+				for (size_t i = 1; i < batch.size(); ++i)
+					check(batch[i - 1].qpc <= batch[i].qpc, "global-qpc-monotonic");
+				if (batch.size() == (tied ? 4u : 3u))
+				{
+					check(batch[0].qpc == Rig::Qpc(90.0), "earliest-terminal-first");
+					if (tied)
+						check(batch[1].phase == CanvasPanContactPhase::Down &&
+							batch[2].phase == CanvasPanContactPhase::Down && batch[1].key < batch[2].key &&
+							batch[3].phase == CanvasPanContactPhase::Up, "equal-qpc-down-first-stable");
+					else check(batch[1].phase == CanvasPanContactPhase::Up &&
+						batch[2].phase == CanvasPanContactPhase::Down &&
+						rig.pan.OwnerClass() == CanvasPanDeviceClass::Mouse, "terminal-set-before-handoff");
+				}
+			}
+		}
+		catch (...) { check(false, "exception"); }
+		return failures;
+	}
+
+
+	// 离屏手感矩阵：只发布真实 contact mailbox，不创建 HWND/GPU，也不复制动力学或视口公式。
+	struct CanvasPanFeelRun
+	{
+		struct Hand
+		{
+			bool held = false, previousHeld = false;
+			uint32_t tablet = CanvasPanProbeRig::kTouchTablet, id = 0;
+			double x = 0.0, y = 0.0, previousX = 0.0, previousY = 0.0;
+		};
+		CanvasPanProbeRig rig;
+		std::array<Hand, 6> hands{};
+		const char* scenario;
+		int fps, subdivisions, failures = 0, slippingFrames = 0, nonfinite = 0;
+		double now = 1000.0, frameMs, maxDv = 0.0, maxDelta = 0.0, lockedRelativeJump = 0.0;
+		double lockedError = 0.0, releaseSpeed = -1.0, releaseRatio = -1.0;
+		double glide = 0.0, glideExpected = -1.0, stopMs = -1.0, releaseMs = -1.0;
+		double slipStartMs = -1.0, lockedMs = -1.0, residual = 0.0, stopX = 0.0, stopY = 0.0;
+		double previousDelta = 0.0, previousVx = 0.0, previousVy = 0.0;
+		double stableLockedDv = 0.0, stableLockedDvBound = -1.0;
+		double tapSpeed = -1.0, tapExpectedSpeed = -1.0, tapDelta = -1.0, tapExpectedDelta = -1.0;
+		bool stopped = false, trackingGlide = false, previousLocked = false;
+		uint32_t random = 0x1A2B3C4Du;
+
+		CanvasPanFeelRun(const char* name, int rate, CanvasPanScale scale, bool subframe)
+			: scenario(name), fps(rate), subdivisions(subframe ? 4 : 1), frameMs(1000.0 / rate)
+		{
+			rig.scale = scale;
+			for (const char* p = name; *p; ++p) random = random * 1664525u + static_cast<unsigned char>(*p);
+			random ^= static_cast<uint32_t>(rate * 31 + (subframe ? 7 : 0));
+			for (size_t i = 0; i < hands.size(); ++i) hands[i].id = static_cast<uint32_t>(i + 1);
+			Check(rig.Canvas(0) != nullptr, "canvas-created");
+			Tick(now);
+		}
+		void Check(bool value, const char* bound)
+		{
+			if (value) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3PanFeel] scenario=%s fps=%d scale=%.6f,%.6f delivery=%s FAIL=%s t_ms=%.3f\n",
+				scenario, fps, rig.scale.dipPerPixelX, rig.scale.dipPerPixelY,
+				subdivisions == 1 ? "frame" : "subframe", bound, now);
+		}
+		double Speed() const noexcept
+		{
+			const CanvasVector v = rig.pan.VelocityDip();
+			return std::hypot(static_cast<double>(v.x), static_cast<double>(v.y));
+		}
+		int Frames(double milliseconds) const noexcept
+		{
+			return (std::max)(1, static_cast<int>(std::ceil(milliseconds / frameMs)));
+		}
+		void Down(size_t slot, double x = 0.0, double y = 0.0,
+			InputDeviceType device = InputDeviceType::Touch, double at = -1.0)
+		{
+			Hand& h = hands[slot]; h.x = h.previousX = x; h.y = h.previousY = y; h.held = true;
+			h.tablet = device == InputDeviceType::MouseLeft ? CanvasPanProbeRig::kMouseTablet : CanvasPanProbeRig::kTouchTablet;
+			Check(rig.Down(h.tablet, h.id, device, 300.0 + x / rig.scale.dipPerPixelX,
+				300.0 + y / rig.scale.dipPerPixelY, at < 0.0 ? now + 0.1 : at), "publish-down");
+		}
+		void Move(size_t slot, double x, double y, double at)
+		{
+			Hand& h = hands[slot]; h.x = x; h.y = y;
+			Check(rig.Move(h.tablet, h.id, 300.0 + x / rig.scale.dipPerPixelX,
+				300.0 + y / rig.scale.dipPerPixelY, at), "publish-move");
+		}
+		void Up(size_t slot, bool cancelled = false, double at = -1.0)
+		{
+			Hand& h = hands[slot]; h.held = false;
+			const double t = at < 0.0 ? now + 0.1 : at;
+			const double x = 300.0 + h.x / rig.scale.dipPerPixelX;
+			const double y = 300.0 + h.y / rig.scale.dipPerPixelY;
+			Check(cancelled ? rig.input.PublishCancelled(h.tablet, h.id,
+				CanvasPanProbeRig::Snap(ContactPhase::Cancelled, x, y, t)) : rig.Up(h.tablet, h.id, x, y, t),
+				cancelled ? "publish-cancel" : "publish-up");
+		}
+		void Tick(double at, bool hover = false, bool checkHand = true)
+		{
+			const double oldX = rig.ViewportX(), oldY = rig.ViewportY();
+			const CanvasPanPhase before = rig.pan.Phase();
+			const double dt = (std::max)(0.0, at - now) / 1000.0;
+			const bool wasTracking = trackingGlide;
+			now = at;
+			double dx = 0.0, dy = 0.0; size_t common = 0, oldCount = 0, count = 0;
+			for (const Hand& h : hands)
+			{
+				if (h.previousHeld) ++oldCount;
+				if (h.held) ++count;
+				if (h.previousHeld && h.held) { dx += h.x - h.previousX; dy += h.y - h.previousY; ++common; }
+			}
+			rig.Frame(now, hover);
+			const auto samples = rig.pan.LastSamplesForProbe();
+			bool ordered = true;
+			for (size_t i = 1; i < samples.size(); ++i)
+			{
+				const auto& a = samples[i - 1]; const auto& b = samples[i];
+				ordered = ordered && a.qpc <= b.qpc && !(a.qpc == b.qpc &&
+					a.phase != CanvasPanContactPhase::Down && b.phase == CanvasPanContactPhase::Down);
+			}
+			Check(ordered, "global-qpc-order-down-first");
+			Check(samples.empty() || samples.back().qpc <= CanvasPanProbeRig::Qpc(now), "no-future-sample-delivery");
+			const CanvasVector v = rig.pan.VelocityDip();
+			const double speed = Speed(), dv = std::hypot(v.x - previousVx, v.y - previousVy);
+			const double px = oldX - rig.ViewportX(), py = oldY - rig.ViewportY();
+			const double delta = std::hypot(px, py);
+			const bool finite = std::isfinite(speed) && std::isfinite(dv) && std::isfinite(delta) &&
+				std::isfinite(rig.last.contentDeltaPixels.x) && std::isfinite(rig.last.contentDeltaPixels.y) &&
+				std::isfinite(rig.last.dynamics.handVelocity.x) && std::isfinite(rig.last.dynamics.handVelocity.y) &&
+				std::isfinite(rig.last.dynamics.releaseSpeed);
+			if (!finite) ++nonfinite;
+			Check(finite, "all-finite");
+			maxDv = (std::max)(maxDv, dv); maxDelta = (std::max)(maxDelta, delta);
+			// AC2 的全局速度封顶推出任意两帧速度向量差 <=2*vmax（包含手势启动/反向/急停）。
+			// feel-bound: 封顶额外容许 0.01 DIP/s、两帧向量差 0.02 DIP/s，仅用于 float 舍入。
+			Check(speed <= 12000.01 && dv <= 24000.02, "speed-cap-and-global-dv-24000.02");
+			// 自由滑行的 dv 由闭式摩擦限定；Slipping 的相对速上限为 2*vmax。
+			// feel-bound: 额外 25 DIP/s 容纳 20 DIP/s 停止截断及 float 量化，不掩盖突然加速。
+			if (!stopped && !rig.lastApply.xClamped && !rig.lastApply.yClamped &&
+				before == CanvasPanPhase::Coasting && count == 0 && samples.empty())
+			{
+				DrawingCursorSample penSample;
+				const bool effectiveHover = hover || (rig.window.ReadPenCursorSample(penSample) && penSample.valid && !rig.navigationPenSuppressed);
+				const double tau = effectiveHover ? 0.06 : 0.30, c = effectiveHover ? 6000.0 : 1000.0;
+				const double oldSpeed = std::hypot(previousVx, previousVy);
+				const double bound = (oldSpeed + c * tau) * (1.0 - std::exp(-(std::min)(dt, 0.1) / tau)) + 25.0;
+				Check(dv <= bound, "coast-closed-form-dv");
+			}
+			if (!stopped && before == CanvasPanPhase::Slipping && rig.pan.Phase() == CanvasPanPhase::Slipping)
+				Check(dv <= (24000.0 / 0.06 + 6000.0) * (std::min)(dt, 0.1) + 25.0,
+					"slip-friction-dv");
+			const bool locked = rig.pan.Phase() == CanvasPanPhase::Locked;
+			if (locked && previousLocked)
+				lockedRelativeJump = (std::max)(lockedRelativeJump,
+					std::fabs(delta - previousDelta) / (std::max)(0.5, previousDelta));
+			if (checkHand && before == CanvasPanPhase::Locked && locked && common != 0 &&
+				!rig.lastApply.xClamped && !rig.lastApply.yClamped)
+			{
+				const double error = std::hypot(px - dx / common / rig.scale.dipPerPixelX,
+					py - dy / common / rig.scale.dipPerPixelY);
+				lockedError = (std::max)(lockedError, error);
+				// AC1/AC2：抓住后的内容必须跟手；0.5px 为需求明确的量化误差上界。
+				Check(error < 0.5, "locked-one-to-one-error-lt-0.5px");
+			}
+			if (rig.pan.Phase() == CanvasPanPhase::Slipping)
+			{
+				++slippingFrames; if (slipStartMs < 0.0) slipStartMs = now;
+			}
+			if (locked && slipStartMs >= 0.0 && lockedMs < 0.0) lockedMs = now - slipStartMs;
+			if (wasTracking) glide += std::hypot(px * rig.scale.dipPerPixelX, py * rig.scale.dipPerPixelY);
+			if (trackingGlide && stopMs < 0.0 && Speed() == 0.0) stopMs = now - releaseMs;
+			if (stopped)
+			{
+				residual = (std::max)(residual, std::hypot(rig.ViewportX() - stopX, rig.ViewportY() - stopY));
+				// R5/AC4：Stop 是精确不变量，不给 1px 容差；后续旧接触也不得复活惯性。
+				Check(residual == 0.0 && !rig.pan.Active(), "stop-zero-residual-and-inactive");
+			}
+			for (Hand& h : hands) { h.previousHeld = h.held; h.previousX = h.x; h.previousY = h.y; }
+			previousVx = v.x; previousVy = v.y; previousDelta = delta; previousLocked = locked;
+			if (rig.last.dynamics.released) RecordRelease();
+		}
+		void Advance(int frames, const std::function<void(double)>& publish = {}, bool hover = false,
+			double hitchMs = 0.0, bool checkHand = true, bool queuedHitch = false)
+		{
+			for (int i = 0; i < frames; ++i)
+			{
+				const double begin = now, gap = i == frames / 2 && hitchMs > 0.0 ? hitchMs : frameMs;
+				// UI hitch 期间 producer 节拍不变，排队样本保留各自 QPC；不额外推进动力学。
+				// 普通投递仍是最新快照；stall 刻意只留下长断口后的样本。
+				const int reports = queuedHitch ? (std::max)(subdivisions,
+					static_cast<int>(std::ceil(gap / frameMs * subdivisions))) : subdivisions;
+				for (int sub = 1; sub <= reports; ++sub)
+					if (publish)
+					{
+						publish(begin + (queuedHitch ? (std::min)(gap, frameMs * sub / subdivisions)
+							: gap * sub / subdivisions));
+						if (queuedHitch) rig.pan.QueueLatestMovesForProbe(rig.input, rig.queuedMoves);
+					}
+				Tick(begin + gap, hover, checkHand);
+			}
+		}
+		void Drag(double speedX, double speedY, double duration = 400.0, double hitch = 0.0)
+		{
+			const double start = now; const std::array<Hand, 6> origin = hands;
+			const int frames = Frames(duration);
+			for (int frame = 0; frame < frames; ++frame)
+			{
+				const CanvasVector beforeVelocity = rig.pan.VelocityDip();
+				const bool beforeLocked = rig.pan.Phase() == CanvasPanPhase::Locked;
+				const double oldDelta = previousDelta;
+				const bool hitched = hitch > 0.0 && frame == frames / 2;
+				Advance(1, [&](double t)
+					{
+						for (size_t i = 0; i < hands.size(); ++i) if (hands[i].held)
+							Move(i, origin[i].x + speedX * (t - start) / 1000.0,
+								origin[i].y + speedY * (t - start) / 1000.0, t);
+					}, false, hitched ? hitch : 0.0, true, hitch > 0.0);
+				if (now - start > 120.0 && beforeLocked && rig.pan.Phase() == CanvasPanPhase::Locked)
+				{
+					const auto v = rig.pan.VelocityDip();
+					const double dv = std::hypot(v.x - beforeVelocity.x, v.y - beforeVelocity.y);
+					// feel-bound: 恒速超过估速窗后，帧间速度只容许 2% 手速 +25 DIP/s；
+					// 启动/脚本变速前 120ms 单独计入全局 max_dv；queued hitch 同样不豁免速度连续性。
+					const double bound = std::hypot(speedX, speedY) * 0.02 + 25.0;
+					stableLockedDv = (std::max)(stableLockedDv, dv); stableLockedDvBound = bound;
+					Check(dv <= bound, "stable-locked-dv-2pct-plus-25");
+					Check(Speed() <= std::hypot(speedX, speedY) * 1.15 + 0.01, "stable-speed-within-script-1.15");
+					// feel-bound: 固定节拍恒速 Locked 的位移变化 <=2% +0.5px 量化；hitch 是显式较长帧，排除。
+					if (!hitched && oldDelta > 0.5 && (frame == 0 || !(hitch > 0.0 && frame - 1 == frames / 2)))
+						Check(std::fabs(previousDelta - oldDelta) <= oldDelta * 0.02 + 0.5, "stable-locked-delta-2pct-plus-0.5px");
+				}
+			}
+		}
+		void Begin(InputDeviceType device = InputDeviceType::Touch)
+		{
+			Down(0, 0.0, 0.0, device); Advance(1);
+		}
+		void RecordRelease(double handSpeed = -1.0)
+		{
+			releaseSpeed = rig.last.dynamics.releaseSpeed;
+			releaseRatio = handSpeed > 0.0 ? releaseSpeed / handSpeed : -1.0;
+			releaseMs = now; trackingGlide = true; glide = 0.0; stopMs = -1.0;
+			// 从真正释放后的速度算闭式，避免把 Up 所在帧的跟手尾段误记成滑行距离。
+			const double v = Speed();
+			glideExpected = v * 0.30 - 1000.0 * 0.30 * 0.30 * std::log(1.0 + v / 300.0);
+			if (v == 0.0) stopMs = 0.0;
+		}
+		void Release(double handSpeed, bool cancelled = false)
+		{
+			for (size_t i = 0; i < hands.size(); ++i) if (hands[i].held) Up(i, cancelled);
+			Advance(1); RecordRelease(handSpeed);
+		}
+		void Coast(bool hover = false, double hitch = 0.0)
+		{
+			bool hitched = false;
+			for (int i = 0; rig.pan.Active() && i < fps * 8; ++i)
+			{
+				const bool gap = hitch > 0.0 && !hitched && i >= fps / 10;
+				Tick(now + (gap ? hitch : frameMs), hover);
+				if (gap) hitched = true;
+			}
+			Check(!rig.pan.Active(), "finite-stop-within-8s"); // feel-bound: 12000 DIP/s 闭式停车 <1.2s，8s 防死循环。
+		}
+		void Seed(double speed = 3000.0)
+		{
+			Begin(); Drag(speed, 0.0); Release(speed);
+			Check(rig.pan.Phase() == CanvasPanPhase::Coasting, "seed-releases-to-coasting");
+		}
+		void ArmStopCheck()
+		{
+			stopped = true; trackingGlide = false; stopX = rig.ViewportX(); stopY = rig.ViewportY();
+		}
+		void MarkStopped()
+		{
+			ArmStopCheck(); stopMs = 0.0;
+			Check(Speed() == 0.0 && !rig.pan.Active(), "immediate-stop");
+		}
+		void Finish()
+		{
+			std::fprintf(stderr,
+				"[Draw3PanFeel] scenario=%s fps=%d scale=%.6f,%.6f delivery=%s max_dv_dip_s=%.6f max_delta_px=%.6f locked_rel_jump=%.6f stop_ms=%.6f glide_dip=%.6f glide_ratio=%.6f release_dip_s=%.6f release_ratio=%.6f residual_px=%.6f slipping_frames=%d locked_ms=%.6f locked_error_px=%.6f nonfinite=%d dv_bound_dip_s=24000.02 stable_locked_dv_dip_s=%.6f stable_locked_dv_bound=%.6f tap_v_dip_s=%.6f tap_free_v_dip_s=%.6f tap_delta_px=%.6f tap_free_delta_px=%.6f failures=%d\n",
+				scenario, fps, rig.scale.dipPerPixelX, rig.scale.dipPerPixelY, subdivisions == 1 ? "frame" : "subframe",
+				maxDv, maxDelta, lockedRelativeJump, stopMs, glide, glideExpected > 0.0 ? glide / glideExpected : -1.0,
+				releaseSpeed, releaseRatio, residual, slippingFrames, lockedMs, lockedError, nonfinite, stableLockedDv, stableLockedDvBound,
+				tapSpeed, tapExpectedSpeed, tapDelta, tapExpectedDelta, failures);
+		}
+	};
+
+	int RunCanvasPanFeelProductionProbe() noexcept
+	{
+		int failures = RunCanvasPanAdapterOrderingProbe(), rows = 0;
+		try
+		{
+			const std::array<CanvasPanScale, 4> scales{ CanvasPanScale{ 1.0, 1.0 },
+				CanvasPanScale{ 1.0 / 1.5, 1.0 / 1.5 }, CanvasPanScale{ 0.5, 0.5 }, CanvasPanScale{ 0.75, 0.5 } };
+			for (int fps : { 30, 60, 120, 240 }) for (CanvasPanScale scale : scales) for (bool subframe : { false, true })
+			{
+				const auto run = [&](const char* name, const std::function<void(CanvasPanFeelRun&)>& script)
+				{
+					CanvasPanFeelRun r(name, fps, scale, subframe); script(r); r.Finish(); failures += r.failures; ++rows;
+				};
+				for (bool coasting : { false, true }) run(coasting ? "tap-coast" : "tap-rest", [&](CanvasPanFeelRun& r)
+				{
+					if (coasting) r.Seed();
+					const double before = r.Speed();
+					CanvasPanFeelRun control("tap-free-control", fps, scale, subframe);
+					if (coasting) control.Seed();
+					const double oldX = r.rig.ViewportX(), controlX = control.rig.ViewportX();
+					// 固定手指接触 20ms，30Hz 时 Down/Up 在同一消费帧内，不能用一帧当轻点时长。
+					const double lift = r.now + 20.1; r.Down(0);
+					r.Advance(r.Frames(20.1), [&](double t) { if (r.hands[0].held && t >= lift) r.Up(0, false, lift); });
+					control.Advance(control.Frames(20.1));
+					// AC2：<30ms 的无 Move 轻点不能变成按住制动；与同节拍自由滑行逐帧对照。
+					// feel-bound: 0.05 DIP/s 与 0.5px 只容纳浮点/视口量化，绝非手摩擦容差。
+					r.tapSpeed = r.Speed(); r.tapExpectedSpeed = control.Speed();
+					r.tapDelta = oldX - r.rig.ViewportX(); r.tapExpectedDelta = controlX - control.rig.ViewportX();
+					r.Check(control.failures == 0 && std::fabs(r.Speed() - control.Speed()) < 0.05 &&
+						std::fabs((oldX - r.rig.ViewportX()) - (controlX - control.rig.ViewportX())) < 0.5,
+						"tap-matches-free-control");
+					r.Check(r.Speed() <= before && !r.rig.pan.HasContacts(), "tap-no-new-velocity");
+					if (coasting) r.Coast(); else r.Check(r.rig.ViewportX() == 0.0f, "tap-zero-delta");
+				});
+				run("tap-coast-33ms-info", [&](CanvasPanFeelRun& r)
+				{
+					r.Seed(); CanvasPanFeelRun control("tap33-free-control", fps, scale, subframe); control.Seed();
+					const double oldX = r.rig.ViewportX(), controlX = control.rig.ViewportX();
+					const double lift = r.now + 33.1; r.Down(0);
+					r.Advance(r.Frames(33.1), [&](double t) { if (r.hands[0].held && t >= lift) r.Up(0, false, lift); });
+					control.Advance(control.Frames(33.1));
+					// 33ms 已越过静止证据门限，允许手摩擦；只记录差异，不套用短轻点的不扰动断言。
+					r.tapSpeed = r.Speed(); r.tapExpectedSpeed = control.Speed();
+					r.tapDelta = oldX - r.rig.ViewportX(); r.tapExpectedDelta = controlX - control.rig.ViewportX();
+					r.Coast();
+				});
+				double heldStopMs = -1.0;
+				run("coast-hold-still", [&](CanvasPanFeelRun& r)
+				{
+					r.Seed(); const double v = r.Speed(), start = r.now;
+					r.Down(0); r.Advance(r.Frames(700.0));
+					heldStopMs = r.lockedMs >= 0.0 ? r.lockedMs + r.frameMs : -1.0;
+					r.Check(r.rig.pan.Phase() == CanvasPanPhase::Locked && r.Speed() == 0.0 && heldStopMs >= 0.0,
+						"long-hold-reaches-locked-zero");
+					const double freeStop = 300.0 * std::log((v + 300.0) / 320.0);
+					r.Check(heldStopMs > 0.0 && heldStopMs < freeStop, "hold-stops-faster-than-free");
+					r.Check(r.now > start, "hold-has-real-frames"); r.Release(0.0);
+					r.Check(r.releaseSpeed == 0.0 && !r.rig.pan.Active(), "hold-release-exact-zero"); r.stopMs = heldStopMs;
+				});
+				for (bool coasting : { false, true }) run(coasting ? "jitter-coast" : "jitter-rest", [&](CanvasPanFeelRun& r)
+				{
+					if (coasting) r.Seed(); r.Begin();
+					r.Advance(r.Frames(600.0), [&](double t)
+						{
+							r.random = r.random * 1664525u + 1013904223u;
+							const double x = static_cast<int>((r.random >> 16) % 5u) - 2;
+							r.random = r.random * 1664525u + 1013904223u;
+							const double y = static_cast<int>((r.random >> 16) % 5u) - 2;
+							r.Move(0, x * scale.dipPerPixelX, y * scale.dipPerPixelY, t);
+						});
+					r.Advance(r.Frames(100.0)); r.Release(0.0);
+					r.Check(r.releaseSpeed == 0.0 && !r.rig.pan.Active(), "jitter-then-hold-no-phantom");
+				});
+				for (double speed : { 100.0, 500.0, 1500.0, 3000.0, 6000.0, 12000.0 })
+				{
+					char name[64]; std::snprintf(name, sizeof(name), "constant-%.0f", speed);
+					run(name, [&](CanvasPanFeelRun& r)
+					{
+						r.Begin(); r.Drag(speed, 0.0); r.Release(speed);
+						// AC3 的普通拖动释放比 0.85..1.15；<250 仍记录估速，但不得产生滑行。
+						r.Check(r.releaseRatio >= 0.85 && r.releaseRatio <= 1.15, "release-ratio-0.85-1.15");
+						if (speed < 250.0) r.Check(!r.rig.pan.Active(), "slow-release-no-inertia");
+						r.Coast();
+						// 需求指定 ±3%，以实测释放速度的独立闭式为基准，排除估速误差。
+						if (r.glideExpected > 0.0) r.Check(std::fabs(r.glide / r.glideExpected - 1.0) <= 0.03, "isolated-glide-within-3pct");
+					});
+				}
+				run("locked-diagonal", [&](CanvasPanFeelRun& r)
+				{ r.Begin(); r.Drag(1500.0, 700.0); r.Advance(r.Frames(100.0)); r.Release(0.0); r.Check(r.Speed() == 0.0, "diagonal-held-release-zero"); });
+				for (bool accelerate : { true, false }) run(accelerate ? "accelerate-lift" : "decelerate-lift", [&](CanvasPanFeelRun& r)
+				{
+					r.Begin(); const double start = r.now, duration = r.Frames(400.0) * r.frameMs / 1000.0;
+					const double initial = accelerate ? 0.0 : 4000.0, final = accelerate ? 3000.0 : 1000.0;
+					const double acceleration = (final - initial) / duration;
+					r.Advance(r.Frames(400.0), [&](double ms) { const double t = (ms - start) / 1000.0; r.Move(0, initial * t + 0.5 * acceleration * t * t, 0.0, ms); });
+					r.Release(final); r.Check(r.releaseRatio >= 0.85 && r.releaseRatio <= 1.15, "ramp-release-ratio-0.85-1.15"); r.Coast();
+				});
+				for (double hold : { 70.0, 100.0 })
+				{
+					char name[64]; std::snprintf(name, sizeof(name), "stop-hold-%.0f", hold);
+					run(name, [&](CanvasPanFeelRun& r) { r.Begin(); r.Drag(3000.0, 0.0); r.Advance(r.Frames(hold)); r.Release(0.0);
+						r.Check(r.releaseSpeed == 0.0 && r.Speed() == 0.0 && !r.rig.pan.Active(), "70ms-release-exact-zero"); });
+				}
+				for (bool faster : { false, true }) run(faster ? "successive-faster-flicks" : "successive-same-flicks", [&](CanvasPanFeelRun& r)
+				{
+					r.Seed(3000.0); double lastSameRelease = -1.0;
+					for (double hand : { 3000.0, 6000.0, 12000.0, 12000.0 })
+					{
+						const double speed = faster ? hand : 3000.0, old = r.Speed();
+						r.Begin(); r.Drag(speed, 0.0, 500.0); r.Release(speed);
+						r.Check(r.Speed() <= (std::max)(old, speed) * 1.15 + 0.01, "flick-not-additive");
+						r.Check(r.Speed() <= 12000.01, "stacking-saturates-12000");
+						// feel-bound: 恒速估速的相邻释放只允许 1 DIP/s 量化差，不允许每次再累加百分比。
+						if (!faster && lastSameRelease >= 0.0) r.Check(r.releaseSpeed <= lastSameRelease + 1.0, "same-flicks-no-growth");
+						if (!faster) lastSameRelease = r.releaseSpeed;
+						if (speed > old * 1.15) r.Check(r.Speed() > old, "faster-hand-grows-speed");
+						r.Advance(1);
+					} r.Coast();
+				});
+				run("coast-hold-then-faster", [&](CanvasPanFeelRun& r)
+				{ r.Seed(); r.Begin(); r.Advance(r.Frames(70.0)); r.Drag(6000.0, 0.0, 500.0);
+					r.Check(r.rig.pan.Phase() == CanvasPanPhase::Locked && r.Speed() >= 6000.0 * 0.85, "same-direction-pulled-to-hand"); r.Release(6000.0); r.Coast(); });
+				run("coast-reverse", [&](CanvasPanFeelRun& r)
+				{
+					r.Seed(); r.Begin(); const double start = r.now; double crossed = -1.0;
+					const double x = r.hands[0].x;
+					for (int i = 0; i < r.Frames(400.0); ++i)
+					{
+						r.Advance(1, [&](double t) { r.Move(0, x - 3000.0 * (t - start) / 1000.0, 0.0, t); });
+						if (crossed < 0.0 && r.rig.pan.VelocityDip().x <= 0.0f) crossed = r.now - start;
+					}
+					r.Check(crossed >= 0.0 && heldStopMs > 0.0 && crossed < heldStopMs, "reverse-brakes-faster-than-hold");
+					r.Release(3000.0); r.Coast();
+				});
+				for (size_t fingers = 2; fingers <= 5; ++fingers)
+				{
+					char name[64]; std::snprintf(name, sizeof(name), "topology-%zu", fingers);
+					run(name, [&](CanvasPanFeelRun& r)
+					{
+						r.Begin();
+						for (size_t i = 1; i < fingers; ++i)
+						{
+							const double x = r.rig.ViewportX(), y = r.rig.ViewportY(); r.Down(i, 200.0 * i, -80.0 * i); r.Advance(1);
+							r.Check(r.rig.ViewportX() == x && r.rig.ViewportY() == y, "add-contact-no-centroid-jump");
+						}
+						r.Drag(1500.0, 300.0);
+						for (size_t i = 1; i < fingers; ++i)
+						{
+							const double x = r.rig.ViewportX(), y = r.rig.ViewportY(); r.Up(i); r.Advance(1);
+							r.Check(r.rig.ViewportX() == x && r.rig.ViewportY() == y, "remove-contact-no-centroid-jump"); r.Drag(1500.0, 300.0, 80.0);
+						}
+						// 先保留原 80ms 停顿/重启输出；60Hz 的 LSQ2 解析比为 17/14，并非拓扑混速。
+						std::fprintf(stderr, "[Draw3PanFeel] scenario=%s fps=%d pause_restart_v_dip_s=%.6f pause_restart_ratio=%.6f INFO=lsq2-before-steady-window\n",
+							r.scenario, fps, r.Speed(), r.Speed() / std::hypot(1500.0, 300.0));
+						// feel-bound: 匀速释放界限只测干净的 100ms 估速窗；暂停/重启另有解析模型单测。
+						r.Drag(1500.0, 300.0, 120.0);
+						r.Release(std::hypot(1500.0, 300.0)); r.Check(r.releaseRatio >= 0.85 && r.releaseRatio <= 1.15, "topology-release-ratio"); r.Coast();
+					});
+					std::snprintf(name, sizeof(name), "moving-topology-%zu", fingers);
+					run(name, [&](CanvasPanFeelRun& r)
+					{
+						r.Begin(); r.Drag(1500.0, 300.0, 200.0);
+						for (size_t i = 1; i < fingers; ++i) { r.Down(i, 200.0 * i, -80.0 * i); r.Drag(1500.0, 300.0, 80.0); }
+						// 同帧减一指/加一指，总数相同但身份更换：只用共同参与者的位移，不用绝对中心点。
+						r.Up(fingers - 1); r.Down(fingers, -400.0, 600.0); r.Drag(1500.0, 300.0, 80.0);
+						for (size_t i = 1; i <= fingers; ++i) if (r.hands[i].held) { r.Up(i); r.Drag(1500.0, 300.0, 80.0); }
+						r.Check(r.lockedError < 0.5, "moving-topology-no-extra-content-delta"); r.Release(std::hypot(1500.0, 300.0)); r.Coast();
+					});
+					for (double stagger : { 0.0, 20.0, 60.0 })
+					{
+						std::snprintf(name, sizeof(name), "stagger-%zu-%.0f", fingers, stagger);
+						run(name, [&](CanvasPanFeelRun& r)
+						{
+							for (size_t i = 0; i < fingers; ++i) r.Down(i, 200.0 * i, 0.0); r.Advance(1); r.Drag(1500.0, 0.0);
+							const double start = r.now; std::array<CanvasPanFeelRun::Hand, 6> origin = r.hands;
+							for (int frame = 0; r.rig.pan.HasContacts() && frame < r.Frames(stagger * fingers + 200.0); ++frame)
+							{
+								const double end = r.now + r.frameMs;
+								for (int sub = 1; sub <= r.subdivisions; ++sub)
+								{
+									const double t = r.now + r.frameMs * sub / r.subdivisions;
+									for (size_t i = 0; i < fingers; ++i) if (r.hands[i].held)
+									{
+										const double lift = start + 0.1 + stagger * i;
+										if (lift <= t) { r.Move(i, origin[i].x + 1500.0 * (lift - start) / 1000.0, 0.0, lift); r.Up(i, false, lift); }
+										else r.Move(i, origin[i].x + 1500.0 * (t - start) / 1000.0, 0.0, t);
+									}
+								} r.Tick(end, false, false);
+							}
+							r.releaseSpeed = r.rig.last.dynamics.releaseSpeed; r.releaseRatio = r.releaseSpeed / 1500.0;
+							r.Check(!r.rig.pan.HasContacts() && r.releaseRatio >= 0.85 && r.releaseRatio <= 1.15, "stagger-release-ratio"); r.Coast();
+						});
+					}
+				}
+				for (double hitch : { 100.0, 250.0 }) for (bool coast : { false, true })
+				{
+					char name[64]; std::snprintf(name, sizeof(name), "hitch-%s-%.0f", coast ? "coast" : "drag", hitch);
+					run(name, [&](CanvasPanFeelRun& r)
+					{
+						if (coast) { r.Seed(6000.0); r.Coast(false, hitch); }
+						else
+						{
+							r.Begin(); r.Drag(6000.0, 0.0, 400.0, hitch); r.Release(6000.0);
+							r.Check(r.releaseRatio >= 0.85 && r.releaseRatio <= 1.15, "queued-hitch-release-ratio"); r.Coast();
+						}
+						r.Check(r.glide <= r.glideExpected * 1.03, "hitch-no-glide-overshoot-3pct");
+					});
+				}
+				for (double stall : { 100.0, 250.0 }) for (bool recover : { false, true })
+				{
+					char name[64]; std::snprintf(name, sizeof(name), "stall-%s-%.0f", recover ? "recover" : "lift-invalid", stall);
+					run(name, [&](CanvasPanFeelRun& r)
+					{
+						r.Begin(); r.Drag(6000.0, 0.0, 200.0);
+						const double start = r.now, x = r.hands[0].x;
+						// producer 停报但绘制照常推进，恢复后的断口使用正常帧 dt，确实触发 40ms 清窗。
+						while (r.now + r.frameMs < start + stall - 1.0e-6) r.Tick(r.now + r.frameMs);
+						r.Move(0, x + 6.0 * stall, 0.0, start + stall); r.Tick(start + stall);
+						r.Check(!r.rig.last.dynamics.handVelocityKnown && r.Speed() == 0.0, "stall-estimate-invalid");
+						if (recover) r.Drag(6000.0, 0.0, 120.0);
+						r.Release(recover ? 6000.0 : 0.0);
+						if (recover) r.Check(r.releaseRatio >= 0.85 && r.releaseRatio <= 1.15, "stall-valid-release-ratio");
+						else r.Check(r.releaseSpeed == 0.0 && !r.rig.pan.Active(), "stall-invalid-lift-no-inertia");
+						r.Coast();
+						r.Check(r.glide <= r.glideExpected * 1.03, "stall-no-glide-overshoot-3pct");
+					});
+				}
+				run("qpc-zero-repeat-backwards", [&](CanvasPanFeelRun& r)
+				{
+					r.Begin(); r.Drag(1500.0, 0.0); const double x = r.rig.ViewportX(), y = r.rig.ViewportY();
+					const CanvasVector v = r.rig.pan.VelocityDip(); const double t = r.now;
+					const auto phase = r.rig.pan.Phase(); const bool active = r.rig.pan.Active();
+					const auto unchanged = [&] { const auto after = r.rig.pan.VelocityDip(); return r.rig.ViewportX() == x && r.rig.ViewportY() == y &&
+						after.x == v.x && after.y == v.y && r.rig.pan.Phase() == phase && r.rig.pan.Active() == active; };
+					r.Tick(t); r.Check(unchanged(), "dt-zero-no-change");
+					for (double qpc : { t, t - r.frameMs })
+					{
+						r.rig.Move(r.hands[0].tablet, 1, 90000.0, 90000.0, qpc); r.Tick(t, false, false);
+						r.Check(unchanged(), "repeat-backward-sample-ignored");
+					}
+					r.Tick(t - r.frameMs, false, false);
+					r.Check(unchanged(), "backward-frame-ignored");
+					r.now = t; r.Advance(r.Frames(100.0)); r.Release(0.0);
+				});
+				for (double sign : { -1.0, 1.0 })
+				{
+					run(sign > 0.0 ? "hard-limit-positive" : "hard-limit-negative", [&](CanvasPanFeelRun& r)
+					{
+						r.Begin(); r.Drag(-sign * 6000.0, 1500.0); r.Release(std::hypot(6000.0, 1500.0));
+						InkCanvas* canvas = r.rig.Canvas(0); if (!canvas) return;
+						r.Check(canvas->SetViewport({ static_cast<float>(sign * (1048576.0 - 1.0)), 0.0f, 1.0f }), "limit-setup");
+						const double y = r.rig.ViewportY(); r.Advance(1, {}, false, 0.0, false);
+						r.Check(r.rig.ViewportX() == sign * 1048576.0 && r.rig.pan.VelocityDip().x == 0.0f &&
+							r.rig.pan.VelocityDip().y > 0.0f && r.rig.ViewportY() < y, "limit-clears-only-hit-axis");
+						r.Check(!std::signbit(r.rig.pan.VelocityDip().x), "limit-no-negative-zero"); r.Coast();
+					});
+				}
+				for (const char* reason : { "pen-contact", "leave-move", "page-turn", "workspace-switch", "whiteboard-loading", "minimize", "resize" })
+				{
+					run(reason, [&](CanvasPanFeelRun& r)
+					{
+						r.Seed(6000.0); r.random = r.random * 1664525u + 1013904223u;
+						r.Advance(1 + static_cast<int>((r.random >> 16) % static_cast<uint32_t>((std::max)(1, fps / 5))));
+						if (std::strcmp(reason, "pen-contact") == 0) r.rig.PenMailbox(r.now + 0.1, true);
+						else if (std::strcmp(reason, "leave-move") == 0) r.rig.window.SetSelectionMode(false);
+						else if (std::strcmp(reason, "workspace-switch") == 0) r.rig.workspace = Bridge::Workspace::Desktop;
+						else r.rig.pan.Stop();
+						// 无窗口时直接调用上述生产钩子的公共 Stop；真实命令/Resize 触发由隐藏窗口测试负责。
+						const double x = r.rig.ViewportX(), y = r.rig.ViewportY(); r.ArmStopCheck(); r.Advance(1);
+						r.Check(r.rig.ViewportX() == x && r.rig.ViewportY() == y, "interrupt-same-frame-no-delta"); r.MarkStopped();
+						r.Advance(r.Frames(1500.0)); r.Check(!r.rig.pan.Active(), "interrupt-stays-inactive");
+					});
+				}
+				run("pen-hover", [&](CanvasPanFeelRun& r)
+				{
+					r.Seed(); CanvasPanFeelRun control("hover-free-control", fps, scale, subframe); control.Seed();
+					const double expected = 300.0 * std::log((r.Speed() + 300.0) / 320.0);
+					r.rig.PenMailbox(r.now + 0.1, false); r.Advance(1); control.Advance(1);
+					r.Check(control.failures == 0 && !r.rig.navigationPenSuppressed && r.Speed() < control.Speed(), "real-hover-mailbox-brakes");
+					r.Coast(); r.Check(r.stopMs >= 0.0 && r.stopMs < expected, "hover-stops-faster-than-free");
+				});
+				for (bool touchFirst : { false, true }) for (bool sameFrame : { false, true })
+				{
+					const char* name = touchFirst ? (sameFrame ? "handoff-touch-mouse-same" : "handoff-touch-mouse-next") :
+						(sameFrame ? "handoff-mouse-touch-same" : "handoff-mouse-touch-next");
+					run(name, [&](CanvasPanFeelRun& r)
+					{
+						const InputDeviceType first = touchFirst ? InputDeviceType::Touch : InputDeviceType::MouseLeft;
+						const InputDeviceType second = touchFirst ? InputDeviceType::MouseLeft : InputDeviceType::Touch;
+						r.Begin(first); r.Drag(3000.0, 0.0); r.Up(0, false, r.now + 0.1);
+						if (!sameFrame) r.Advance(1);
+						r.Down(1, 0.0, 0.0, second, r.now + 0.2); r.Advance(1);
+						r.Check(r.rig.pan.OwnerClass() == (touchFirst ? CanvasPanDeviceClass::Mouse : CanvasPanDeviceClass::Touch), "handoff-new-owner");
+						r.rig.pan.Stop(); r.MarkStopped();
+						r.Down(2, 0.0, 0.0, second); r.Advance(1); // 已作废批次中的新指也只能等终态。
+						r.Drag(5000.0, 0.0, 200.0); r.Up(1); r.Advance(1); r.Up(2); r.Advance(1);
+						r.Check(!r.rig.pan.HasContacts() && !r.rig.pan.Active() && !r.rig.pan.BatchDead(), "handoff-ignored-terminals-drain");
+						r.Advance(r.Frames(1000.0));
+					});
+				}
+				for (const char* name : { "mouse-capture-loss", "mouse-cancel" }) run(name, [&](CanvasPanFeelRun& r)
+				{
+					Detail::MouseInputState<ContactInputCoordinator, ContactSnapshot, InputDeviceType, ContactPhase> mouse;
+					mouse.Start(); r.hands[0].held = true;
+					r.Check(mouse.Down(r.rig.input, decltype(mouse)::Left, 300.0f, 300.0f,
+						CanvasPanProbeRig::Qpc(r.now + 0.1), Detail::MouseSelectionIsolates(r.rig.window.SelectionMode(), r.rig.window.CanvasPanMode())), "real-mouse-down");
+					r.Advance(1); const double start = r.now;
+					r.Advance(r.Frames(400.0), [&](double t)
+						{
+							r.hands[0].x = 3000.0 * (t - start) / 1000.0;
+							mouse.Move(r.rig.input, decltype(mouse)::Left,
+								static_cast<float>(300.0 + r.hands[0].x / scale.dipPerPixelX), 300.0f,
+								CanvasPanProbeRig::Qpc(t), false);
+						});
+					if (std::strcmp(name, "mouse-capture-loss") == 0) mouse.CaptureLost(r.rig.input, CanvasPanProbeRig::Qpc(r.now + 0.1));
+					else mouse.Cancel(r.rig.input, CanvasPanProbeRig::Qpc(r.now + 0.1));
+					r.hands[0].held = false; r.Advance(1);
+					r.Check(!mouse.Active() && r.Speed() == 0.0 && !r.rig.pan.Active(), "real-mouse-cancel-no-inertia"); r.MarkStopped();
+					r.Advance(r.Frames(1000.0)); r.Check(!r.rig.pan.HasContacts(), "mouse-cancel-contact-drained");
+				});
+			}
+		}
+		catch (...) { ++failures; std::fputs("[Draw3PanFeel] FAIL=exception\n", stderr); }
+		std::fprintf(stderr, "[Draw3PanFeel] %s failures=%d rows=%d no_gpu=1 no_hwnd=1\n", failures ? "FAIL" : "PASS", failures, rows);
+		return failures;
+	}
+
+	int RunCanvasPanProductionProbe() noexcept
+	{
+		int failures = RunCanvasPanAdapterOrderingProbe();
+		const auto check = [&failures](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3CanvasPan] FAIL: %s\n", name);
+		};
+		try
+		{
+			using Rig = CanvasPanProbeRig;
+			const auto closeTo = [](double a, double b, double tolerance) { return std::fabs(a - b) <= tolerance; };
+			struct Finger { uint32_t tablet; uint32_t id; double x0; double y0; };
+			// 250 Hz 输入、125 Hz 帧的恒速拖动：每 4 ms 发布一次 Move，每 8 ms 跑一帧。
+			const auto drag = [&](Rig& rig, std::span<const Finger> fingers, double startMs, double endMs,
+				double dx, double dy)
+			{
+				double step = 0.0;
+				for (double t = startMs + 4.0; t <= endMs + 1e-6; t += 4.0)
+				{
+					step += 1.0;
+					for (const Finger& f : fingers)
+						rig.Move(f.tablet, f.id, f.x0 + dx * step, f.y0 + dy * step, t);
+					if (std::fmod(t, 8.0) < 1e-6) rig.Frame(t);
+				}
+			};
+			// 路由纯逻辑：只有白板移动模式的未占用 Touch/鼠标左键进入平移 ----
+			const auto routeOf = [](bool selection, Bridge::Workspace ws, InputDeviceType device,
+				CanvasPanDeviceClass owner) { return RouteSelectionDown(selection, ws, device, owner); };
+			constexpr auto kWb = Bridge::Workspace::Whiteboard;
+			check(routeOf(false, kWb, InputDeviceType::Touch, CanvasPanDeviceClass::None) == SelectionDownRoute::Stroke &&
+				routeOf(true, kWb, InputDeviceType::Touch, CanvasPanDeviceClass::None) == SelectionDownRoute::Pan &&
+				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::None) == SelectionDownRoute::Pan &&
+				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::Mouse) == SelectionDownRoute::Pan &&
+				routeOf(true, kWb, InputDeviceType::Pen, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
+				routeOf(true, kWb, InputDeviceType::MouseRight, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
+				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::Touch) == SelectionDownRoute::Discard &&
+				routeOf(true, kWb, InputDeviceType::Touch, CanvasPanDeviceClass::Mouse) == SelectionDownRoute::Discard &&
+				routeOf(true, Bridge::Workspace::Desktop, InputDeviceType::Touch, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
+				routeOf(true, Bridge::Workspace::Presentation, InputDeviceType::MouseLeft, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard,
+				"selection routing: only whiteboard Touch/MouseLeft pan, latched class is exclusive");
+			check(SelectionReleasesTimerPeriod(true, false) && !SelectionReleasesTimerPeriod(true, true) &&
+				!SelectionReleasesTimerPeriod(false, false) && !SelectionReleasesTimerPeriod(false, true),
+				"Selection keeps the 1 ms timer period while a pan or inertia is active");
+
+			// ---- 单指 Touch 与鼠标左键：Locked 后内容 1:1 跟手 ----
+			for (const InputDeviceType device : { InputDeviceType::Touch, InputDeviceType::MouseLeft })
+			{
+				Rig rig;
+				const uint32_t tablet = device == InputDeviceType::Touch ? Rig::kTouchTablet : Rig::kMouseTablet;
+				const Finger finger{ tablet, 1, 500.0, 400.0 };
+				check(rig.Down(tablet, 1, device, finger.x0, finger.y0, 4.0), "pan Down published");
+				rig.Frame(8.0);
+				check(rig.pan.Phase() == CanvasPanPhase::Locked && rig.pan.HasContacts() &&
+					rig.strokeDowns.empty() && !rig.input.HasQuarantinedContacts(),
+					"Move-mode Down becomes a Locked pan contact, never a stroke");
+				check(rig.pan.TouchPanHeld() == (device == InputDeviceType::Touch),
+					"only Touch raises the window's Touch Pan state");
+				bool exact = true;
+				for (int step = 1; step <= 60; ++step)
+				{
+					const double t = 8.0 + 4.0 * step;
+					const double x = finger.x0 + 3.0 * step, y = finger.y0 + 1.5 * step;
+					rig.Move(tablet, 1, x, y, t);
+					if (std::fmod(t, 8.0) < 1e-6)
+					{
+						rig.Frame(t);
+						exact = exact && closeTo(rig.ViewportX(), -(x - finger.x0), 1e-3) &&
+							closeTo(rig.ViewportY(), -(y - finger.y0), 1e-3);
+					}
+				}
+				check(exact, "Locked pan keeps the content under the finger 1:1 (viewport moves opposite)");
+				check(rig.pan.Active() && rig.window.CanvasPanMode(),
+					"Move mode is published to the window layer for the Win32 mouse fallback");
+			}
+
+			// ---- 多指：任意触点数按质心平移，加减指不跳变 ----
+			{
+				Rig rig;
+				const Finger fingers[] = { { Rig::kTouchTablet, 1, 400, 400 }, { Rig::kTouchTablet, 2, 600, 420 },
+					{ Rig::kTouchTablet, 3, 800, 440 } };
+				for (const Finger& f : fingers)
+					check(rig.Down(f.tablet, f.id, InputDeviceType::Touch, f.x0, f.y0, 4.0), "multi-touch Down published");
+				rig.Frame(8.0);
+				check(rig.pan.HasContacts() && rig.strokeDowns.empty() &&
+					rig.pan.OwnerClass() == CanvasPanDeviceClass::Touch, "three Touch Downs all become pan contacts");
+				drag(rig, fingers, 8.0, 208.0, 2.0, 0.0);
+				check(closeTo(rig.ViewportX(), -100.0, 1e-2) && closeTo(rig.ViewportY(), 0.0, 1e-3),
+					"three-finger centroid pan is 1:1 (no 180 ms window, no multi-touch setting)");
+				const float before = rig.ViewportX();
+				rig.Up(Rig::kTouchTablet, 3, 900.0, 440.0, 212.0);
+				rig.Frame(216.0);
+				check(closeTo(rig.ViewportX(), before, 1e-2), "lifting one finger does not jump the content");
+			}
+			// ---- 释放 -> 惯性；惯性中静止按住：Slipping -> Locked ----
+			{
+				Rig rig;
+				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
+				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
+				rig.Frame(8.0);
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 208.0, 12.0, 0.0); // 3000 px/s
+				rig.Up(finger.tablet, 1, finger.x0 + 600.0, finger.y0, 208.0);
+				rig.Frame(208.0);
+				check(rig.pan.Phase() == CanvasPanPhase::Coasting && !rig.pan.HasContacts() && rig.pan.Active(),
+					"fast release starts friction inertia and recycles the contact");
+				for (double t = 216.0; t <= 272.0; t += 8.0) rig.Frame(t);
+				check(rig.pan.Phase() == CanvasPanPhase::Coasting, "still coasting 64 ms after release");
+				const float beforeGrab = rig.ViewportX();
+				double t = 272.0;
+				rig.Down(Rig::kTouchTablet, 7, InputDeviceType::Touch, 900.0, 300.0, t);
+				bool sawSlipping = false, sawLocked = false;
+				double lockedAt = -1.0;
+				float lockedViewport = 0.0f;
+				for (int frame = 0; frame < 80; ++frame)
+				{
+					t += 8.0;
+					rig.Frame(t);
+					sawSlipping = sawSlipping || rig.pan.Phase() == CanvasPanPhase::Slipping;
+					if (rig.pan.Phase() == CanvasPanPhase::Locked && !sawLocked)
+					{
+						sawLocked = true; lockedAt = t - 272.0; lockedViewport = rig.ViewportX();
+					}
+				}
+				check(sawSlipping && sawLocked, "grabbing a coasting canvas passes through Slipping and ends Locked");
+				check(lockedAt > 0.0 && lockedAt < 350.0,
+					"stationary hand grabs the canvas well before free friction would stop it");
+				check(closeTo(rig.ViewportX(), lockedViewport, 1e-3) && rig.pan.Phase() == CanvasPanPhase::Locked,
+					"once Locked the held canvas no longer drifts");
+				check(rig.ViewportX() < beforeGrab, "slipping still carried the content in the swipe direction");
+				rig.Up(Rig::kTouchTablet, 7, 900.0, 300.0, t + 4.0);
+				rig.Frame(t + 8.0);
+				check(rig.pan.Phase() == CanvasPanPhase::Idle && !rig.pan.Active() && !rig.pan.HasContacts(),
+					"tap-and-release on a grabbed canvas leaves no phantom inertia");
+			}
+
+			// ---- 自由滑行距离符合闭式并最终停止；笔悬停更快减速 ----
+			{
+				double freeTravel = 0.0, brakedTravel = 0.0;
+				for (const bool hover : { false, true })
+				{
+					Rig rig;
+					const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
+					rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
+					rig.Frame(8.0);
+					drag(rig, std::span<const Finger>(&finger, 1), 8.0, 208.0, 12.0, 0.0);
+					rig.Up(finger.tablet, 1, finger.x0 + 600.0, finger.y0, 208.0);
+					rig.Frame(208.0);
+					const float atRelease = rig.ViewportX();
+					int frames = 0;
+					for (double t = 216.0; rig.pan.Active() && frames < 1200; t += 8.0, ++frames)
+						rig.Frame(t, hover);
+					check(!rig.pan.Active() && rig.pan.Phase() == CanvasPanPhase::Idle,
+						"coasting stops by itself (Idle, no animation requested)");
+					(hover ? brakedTravel : freeTravel) = static_cast<double>(atRelease - rig.ViewportX());
+				}
+				const double expected = CanvasPanGlideDistance(3000.0, kCanvasPanFreeFriction);
+				check(freeTravel > expected * 0.75 && freeTravel < expected * 1.25,
+					"free glide distance of a 3000 px/s swipe follows the closed form");
+				check(brakedTravel > 0.0 && brakedTravel < freeTravel * 0.6,
+					"pen hover brakes the inertia with the hand friction");
+			}
+
+			// ---- DIP 换算：125% DPI 下像素位移仍 1:1，惯性距离按 DIP 计算 ----
+			{
+				Rig rig;
+				rig.scale = { 0.75, 0.75 };
+				const Finger finger{ Rig::kTouchTablet, 1, 300.0, 300.0 };
+				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
+				rig.Frame(8.0);
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 112.0, 6.0, 0.0); // 1500 px/s = 1125 DIP/s
+				check(closeTo(rig.ViewportX(), -156.0, 1e-2), "pixel displacement stays 1:1 at 0.75 DIP per pixel");
+				rig.Up(finger.tablet, 1, finger.x0 + 156.0, finger.y0, 112.0);
+				rig.Frame(112.0);
+				const float atRelease = rig.ViewportX();
+				int frames = 0;
+				for (double t = 120.0; rig.pan.Active() && frames < 1200; t += 8.0, ++frames) rig.Frame(t);
+				const double travelPx = static_cast<double>(atRelease - rig.ViewportX());
+				const double expectedPx = CanvasPanGlideDistance(1125.0, kCanvasPanFreeFriction) / 0.75;
+				check(travelPx > expectedPx * 0.7 && travelPx < expectedPx * 1.3,
+					"inertia distance is computed in DIP and converted back to pixels");
+			}
+			// ---- 设备互斥与不可拖动设备 ----
+			{
+				Rig rig;
+				check(rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 100, 100, 4.0) &&
+					rig.Down(Rig::kMouseTablet, 2, InputDeviceType::MouseRight, 120, 120, 4.0),
+					"Pen and MouseRight Downs published");
+				rig.Frame(8.0);
+				check(!rig.pan.HasContacts() && rig.strokeDowns.empty() && rig.input.HasQuarantinedContacts(),
+					"Pen and MouseRight are discarded to terminal in Move mode");
+				rig.Move(Rig::kPenTablet, 1, 400, 100, 12.0);
+				rig.Move(Rig::kMouseTablet, 2, 400, 120, 12.0);
+				rig.Frame(16.0);
+				check(rig.ViewportX() == 0.0f && rig.ViewportY() == 0.0f && !rig.pan.Active(),
+					"discarded Pen/MouseRight Moves never pan");
+				rig.Up(Rig::kPenTablet, 1, 400, 100, 20.0);
+				rig.Up(Rig::kMouseTablet, 2, 400, 120, 20.0);
+				rig.Frame(24.0);
+				check(!rig.input.HasQuarantinedContacts(), "discarded routes drain at their real terminal");
+
+				rig.Down(Rig::kTouchTablet, 5, InputDeviceType::Touch, 300, 300, 28.0);
+				rig.Frame(32.0);
+				rig.Down(Rig::kMouseTablet, 6, InputDeviceType::MouseLeft, 600, 300, 36.0);
+				rig.Frame(40.0);
+				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Touch && rig.input.HasQuarantinedContacts(),
+					"Mouse Down is discarded while Touch owns the pan");
+				rig.Move(Rig::kMouseTablet, 6, 900, 300, 44.0);
+				rig.Frame(48.0);
+				check(rig.ViewportX() == 0.0f, "other-class Move cannot move the canvas");
+				rig.Up(Rig::kMouseTablet, 6, 900, 300, 52.0);
+				rig.Up(Rig::kTouchTablet, 5, 300, 300, 52.0);
+				rig.Frame(56.0);
+				check(!rig.pan.HasContacts() && !rig.input.HasQuarantinedContacts() &&
+					rig.pan.Phase() == CanvasPanPhase::Idle, "both classes release cleanly");
+				rig.Down(Rig::kMouseTablet, 8, InputDeviceType::MouseLeft, 300, 300, 60.0);
+				rig.Frame(64.0);
+				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Mouse, "the other class pans once the latch is free");
+				rig.Down(Rig::kTouchTablet, 9, InputDeviceType::Touch, 500, 300, 68.0);
+				rig.Frame(72.0);
+				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Mouse && rig.input.HasQuarantinedContacts() &&
+					!rig.pan.TouchPanHeld(), "Touch is discarded while Mouse owns the pan and never raises Touch Pan");
+				rig.Up(Rig::kMouseTablet, 8, 300, 300, 76.0);
+				rig.Up(Rig::kTouchTablet, 9, 500, 300, 76.0);
+				rig.Frame(80.0);
+				check(!rig.pan.HasContacts() && !rig.input.HasQuarantinedContacts(), "mouse-owned batch drains");
+			}
+
+			// 最新物理样本仲裁：不通过额外帧提前消费终态。
+			for (bool cancelled : { false, true })
+			{
+				Rig rig;
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
+				rig.Frame(8.0);
+				check(rig.pan.TouchPanHeld(rig.input), "fresh Touch is held before terminal");
+				if (cancelled) rig.input.PublishCancelled(Rig::kTouchTablet, 1,
+					Rig::Snap(ContactPhase::Cancelled, 100, 100, 100.0));
+				else rig.Up(Rig::kTouchTablet, 1, 100, 100, 100.0);
+				check(rig.pan.OwnerClass(rig.input, Rig::Qpc(95.0)) == CanvasPanDeviceClass::Touch,
+					"a Down earlier than the terminal still overlaps the old device");
+				check(!rig.pan.TouchPanHeld(rig.input) &&
+					!ShouldBeginSuppressingPenContactDuringTouchPan(rig.pan.TouchPanHeld(rig.input), true),
+					"Touch terminal before Step does not suppress a later Pen Down");
+				rig.Down(Rig::kMouseTablet, 2, InputDeviceType::MouseLeft, 200, 100, 105.0);
+				rig.Frame(108.0);
+				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Mouse &&
+					!rig.input.HasQuarantinedContacts() && !rig.pan.TouchPanHeld(),
+					"same-frame Up/Cancelled then Mouse Down admits the new device");
+				rig.Move(Rig::kMouseTablet, 2, 230, 100, 112.0);
+				rig.Frame(116.0);
+				check(closeTo(rig.ViewportX(), -30.0, 1e-3), "handed-off Mouse actually pans");
+				rig.Up(Rig::kMouseTablet, 2, 230, 100, 120.0);
+				rig.Frame(124.0);
+			}
+			{
+				Rig rig;
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
+				ContactRecord* record = nullptr;
+				while (rig.input.TryDequeue(record))
+				{
+					if (!record) { rig.input.AcknowledgeControlWake(); continue; }
+					HandleSelectionDown(rig.input, { record, record->Generation() }, true,
+						rig.workspace, rig.pan, rig.scale);
+				}
+				check(ShouldBeginSuppressingPenContactDuringTouchPan(rig.pan.TouchPanHeld(rig.input), true),
+					"new Touch Down suppresses Pen before the first Step");
+				rig.pan.Stop();
+				rig.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 200, 100, 12.0);
+				rig.Frame(16.0);
+				check(!rig.pan.Active() && rig.pan.HasContacts() && rig.pan.BatchDead() &&
+					SelectionReleasesTimerPeriod(true, rig.pan.Active()),
+					"stopped batch tracks new finger without active cadence or timer");
+				rig.Up(Rig::kTouchTablet, 1, 100, 100, 20.0);
+				rig.Frame(24.0);
+				check(rig.pan.BatchDead() && !rig.pan.Active(), "batch remains dead until every finger lifts");
+				rig.Up(Rig::kTouchTablet, 2, 200, 100, 28.0);
+				rig.Frame(32.0);
+				check(!rig.pan.HasContacts() && !rig.pan.BatchDead(), "all suppressed terminals recycled");
+			}
+
+			// 同帧 Pen/Touch 终态：必须经优先级与导航两次真实 mailbox 仲裁，不能只测布尔判定。
+			for (double penDownMs : { 95.0, 100.0, 105.0 })
+			{
+				Rig rig;
+				const Finger finger{ Rig::kTouchTablet, 1, 100.0, 100.0 };
+				rig.Down(finger.tablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
+				rig.Frame(8.0);
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 88.0, 4.0, 0.0);
+				const float before = rig.ViewportX();
+				rig.Up(finger.tablet, 1, 192, 100, 100.0);
+				rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 400, 100, penDownMs);
+				rig.PenMailbox(penDownMs, true);
+				const bool overlaps = penDownMs <= 100.0;
+				check(rig.pan.TouchPanHeld(rig.input, Rig::Qpc(penDownMs)) == overlaps,
+					"Touch physical interval includes Pen before/equal Up, excludes Pen after Up");
+				rig.Frame(108.0);
+				check(rig.priorityPenSuppressed == overlaps && rig.navigationPenSuppressed == overlaps,
+					"both production mailbox sites arbitrate Pen95/100/105 against TouchUp100");
+				if (overlaps)
+				{
+					check(rig.last.dynamics.released && rig.pan.Phase() == CanvasPanPhase::Coasting &&
+						rig.last.contentDeltaPixels.x >= 12.0f && rig.ViewportX() < before &&
+						rig.pan.HasLiveSuppressedPenContact(rig.input),
+						"suppressed Selection Pen preserves unconsumed Touch tail, release and Pen identity");
+					rig.PenMailbox(112.0, true); // 最新 Pen 包已晚于 Touch Up，仍是同一被抑制的接触。
+					rig.Frame(116.0);
+					check(rig.navigationPenSuppressed && rig.pan.Phase() == CanvasPanPhase::Coasting,
+						"suppressed Pen stays suppressed after Touch release");
+					rig.Up(Rig::kPenTablet, 1, 400, 100, 120.0);
+					rig.PenMailbox(120.0, false);
+					if (penDownMs == 100.0)
+					{
+						rig.Frame(124.0);
+						check(!rig.suppressPenUntilRelease && rig.last.penTerminalQpc == Rig::Qpc(120.0) &&
+							rig.pan.Phase() == CanvasPanPhase::Coasting,
+							"Selection Pen terminal is consumed and suppression clears");
+					}
+					// Pen95 分支不插入 hover 帧：旧 Up 与新 Down 同帧仍须解除旧抑制。
+					const float beforeNewPen = rig.ViewportX();
+					rig.Down(Rig::kPenTablet, 2, InputDeviceType::Pen, 400, 100, 128.0);
+					rig.PenMailbox(128.0, true);
+					rig.Frame(132.0);
+					check(!rig.navigationPenSuppressed && rig.pan.Phase() == CanvasPanPhase::Idle &&
+						rig.ViewportX() == beforeNewPen, "later fresh Pen contact brakes the remaining inertia immediately");
+					rig.Up(Rig::kPenTablet, 2, 400, 100, 136.0);
+					rig.PenMailbox(136.0, false);
+					rig.Frame(140.0);
+				}
+				else
+				{
+					check(rig.pan.Phase() == CanvasPanPhase::Idle && !rig.pan.Active() &&
+						rig.ViewportX() == before && rig.last.contentDeltaPixels.x == 0.0f,
+						"Pen105 after TouchUp100 stops before Step with zero residual displacement");
+					rig.Up(Rig::kPenTablet, 1, 400, 100, 112.0);
+					rig.PenMailbox(112.0, false);
+					rig.Frame(116.0);
+				}
+				check(rig.contacts.empty() && !rig.input.HasQuarantinedContacts(), "Pen arbitration routes fully drain");
+			}
+			for (bool touchFirst : { true, false })
+			{
+				Rig rig;
+				// 两个 Down 均未出队；逆序 QPC 还验证未来 Touch 不能追溯抑制先前 Pen。
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, touchFirst ? 4.0 : 8.0);
+				rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 400, 100, 6.0);
+				rig.PenMailbox(6.0, true);
+				rig.Frame(12.0);
+				check(!rig.priorityPenSuppressed && rig.navigationPenSuppressed == touchFirst &&
+					rig.pan.Phase() == (touchFirst ? CanvasPanPhase::Locked : CanvasPanPhase::Idle),
+					"first-frame ingress suppresses Pen only when Touch Down is earlier");
+				rig.Move(Rig::kTouchTablet, 1, 130, 100, 16.0);
+				rig.Frame(20.0);
+				check(closeTo(rig.ViewportX(), touchFirst ? -30.0 : 0.0, 1e-3),
+					"first-frame suppressed Pen keeps Touch pan; earlier Pen stops later Touch");
+				rig.Up(Rig::kTouchTablet, 1, 130, 100, 24.0);
+				rig.Up(Rig::kPenTablet, 1, 400, 100, 24.0);
+				rig.PenMailbox(24.0, false);
+				rig.Frame(28.0);
+			}
+			{
+				Rig free, hover;
+				for (Rig* rig : { &free, &hover })
+				{
+					const Finger finger{ Rig::kTouchTablet, 1, 100.0, 100.0 };
+					rig->Down(finger.tablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
+					rig->Frame(8.0);
+					drag(*rig, std::span<const Finger>(&finger, 1), 8.0, 88.0, 4.0, 0.0);
+					rig->Up(finger.tablet, 1, 192, 100, 100.0);
+					rig->Frame(104.0);
+				}
+				hover.PenMailbox(108.0, false);
+				free.Frame(112.0); hover.Frame(112.0);
+				check(!hover.navigationPenSuppressed && hover.pan.VelocityDip().x > 0.0f &&
+					hover.pan.VelocityDip().x < free.pan.VelocityDip().x,
+					"real Pen hover mailbox still brakes inertia without an immediate Stop");
+			}
+
+			// ---- 桌面/PPT Selection 与绘制工具：绝不平移 ----
+			for (const auto ws : { Bridge::Workspace::Desktop, Bridge::Workspace::Presentation })
+			{
+				Rig rig;
+				rig.workspace = ws;
+				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
+				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
+				rig.Frame(8.0);
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 108.0, 10.0, 0.0);
+				check(!rig.pan.Active() && rig.ViewportX() == 0.0f && rig.input.HasQuarantinedContacts() &&
+					!rig.window.CanvasPanMode(), "desktop/PPT Selection discards Touch and never pans");
+				rig.Up(finger.tablet, 1, 300.0, 300.0, 112.0);
+				rig.Frame(116.0);
+				check(!rig.input.HasQuarantinedContacts(), "desktop/PPT discarded route drains");
+			}
+			{
+				Rig rig;
+				rig.window.SetSelectionMode(false); // 绘制工具
+				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
+				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
+				rig.Frame(8.0);
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 108.0, 10.0, 0.0);
+				check(!rig.pan.Active() && rig.ViewportX() == 0.0f && rig.strokeDowns.size() == 1 &&
+					!rig.window.CanvasPanMode(), "drawing tools keep Down on the stroke path and never pan");
+				rig.Up(finger.tablet, 1, 300.0, 300.0, 112.0);
+				for (const ContactHandle handle : rig.strokeDowns) rig.input.Recycle(handle);
+			}
+			// ---- 终止：离开移动模式 / 工作区切换 / 显式 Stop 都零残余位移，触点只跟踪到终态 ----
+			for (int reason = 0; reason < 4; ++reason)
+			{
+				Rig rig;
+				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
+				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
+				rig.Frame(8.0);
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 208.0, 12.0, 0.0);
+				const bool holding = reason >= 2; // 0/1：释放后惯性；2/3：手仍按住
+				if (!holding)
+				{
+					rig.Up(finger.tablet, 1, finger.x0 + 600.0, finger.y0, 208.0);
+					rig.Frame(216.0);
+					check(rig.pan.Phase() == CanvasPanPhase::Coasting, "stop fixture is coasting");
+				}
+				if (reason == 1) rig.workspace = Bridge::Workspace::Desktop;   // 工作区切换
+				else if (reason == 2) rig.pan.Stop();                           // 翻页/加载/最小化/Resize/落笔
+				else rig.window.SetSelectionMode(false);                        // 离开移动模式
+				rig.Frame(224.0);
+				const float stopped = rig.ViewportX();
+				check(rig.pan.Phase() == CanvasPanPhase::Idle && !rig.pan.Active() &&
+					!rig.window.CanvasPanMode() == (reason != 2),
+					"stop clears the dynamics (a held contact only awaits its terminal)");
+				double t = 224.0;
+				for (int frame = 0; frame < 30; ++frame)
+				{
+					t += 8.0;
+					if (holding) rig.Move(finger.tablet, 1, finger.x0 + 600.0 + 20.0 * frame, finger.y0, t - 4.0);
+					rig.Frame(t);
+				}
+				check(rig.ViewportX() == stopped, "no residual displacement after the stop");
+				if (holding)
+				{
+					check(rig.pan.HasContacts() && rig.pan.BatchDead() &&
+						rig.pan.OwnerClass() == CanvasPanDeviceClass::Touch,
+						"a held finger stays registered but dead until it lifts");
+					rig.Up(finger.tablet, 1, finger.x0 + 1300.0, finger.y0, t + 4.0);
+					rig.Frame(t + 8.0);
+					check(!rig.pan.HasContacts() && !rig.pan.BatchDead() && !rig.input.HasQuarantinedContacts() &&
+						rig.ViewportX() == stopped, "terminal recycles the dead contact and reopens the batch");
+				}
+			}
+			{
+				// 离开后重新进入移动模式：新手指可以重新平移（批次不会永久作废）。
+				Rig rig;
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
+				rig.Frame(8.0);
+				rig.window.SetSelectionMode(false);
+				rig.Frame(16.0);
+				rig.Up(Rig::kTouchTablet, 1, 100, 100, 20.0);
+				rig.Frame(24.0);
+				rig.window.SetSelectionMode(true);
+				rig.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 100, 100, 28.0);
+				rig.Frame(32.0);
+				rig.Move(Rig::kTouchTablet, 2, 160, 100, 36.0);
+				rig.Frame(40.0);
+				check(closeTo(rig.ViewportX(), -60.0, 1e-3), "re-entering Move mode pans with a fresh finger");
+			}
+
+			// ---- 硬限位：触限轴清零速度，不再被惯性推动 ----
+			{
+				Rig rig;
+				InkCanvas* canvas = rig.Canvas(0);
+				check(canvas && canvas->SetViewport({ -1048570.0f, 0.0f, 1.0f }), "viewport near the hard limit");
+				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
+				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
+				rig.Frame(8.0);
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 108.0, 12.0, 0.0);
+				check(rig.ViewportX() == -1048576.0f, "viewport clamps at the hard limit");
+				rig.Up(finger.tablet, 1, finger.x0 + 300.0, finger.y0, 108.0);
+				for (double t = 112.0; t < 400.0; t += 8.0) rig.Frame(t);
+				check(rig.ViewportX() == -1048576.0f && !rig.pan.Active(),
+					"clamped axis keeps no velocity: no inertia pushes against the limit");
+			}
+			// ---- 每页视角：翻页保持、冷页重载恢复、新页 (0,0)、不改文档内容 ----
+			{
+				Rig rig;
+				WhiteboardViewportMemory memory;
+				std::vector<CanvasPageRuntimeState> runtimes;
+				runtimes.emplace_back();
+				const uint32_t tablet = Rig::kTouchTablet;
+				rig.Down(tablet, 1, InputDeviceType::Touch, 500.0, 400.0, 4.0);
+				rig.Frame(8.0);
+				rig.Move(tablet, 1, 620.0, 320.0, 12.0);
+				rig.Frame(16.0);
+				rig.Up(tablet, 1, 620.0, 320.0, 16.0);
+				rig.Frame(20.0);
+				const InkViewport page0 = rig.Canvas(0)->Viewport();
+				check(closeTo(page0.x, -120.0, 1e-3) && closeTo(page0.y, 80.0, 1e-3), "page 0 panned");
+				memory.Remember(0, page0); // Run() 的视口应用块/翻页前随后记下视角
+				rig.pan.Stop();
+				const auto second = TryAppendBlankPage(rig.document);
+				check(second && *second == 1, "page 1 appended");
+				runtimes.emplace_back();
+				check(memory.Recall(1).x == 0.0f && memory.Recall(1).y == 0.0f &&
+					rig.Canvas(1)->Viewport().x == 0.0f && rig.Canvas(1)->Viewport().y == 0.0f,
+					"a new page starts at (0,0) and never inherits the previous view");
+				rig.activePage = 1;
+				rig.Down(tablet, 2, InputDeviceType::Touch, 300.0, 300.0, 24.0);
+				rig.Frame(28.0);
+				rig.Move(tablet, 2, 340.0, 330.0, 32.0);
+				rig.Frame(36.0);
+				rig.Up(tablet, 2, 340.0, 330.0, 36.0);
+				rig.Frame(40.0);
+				const InkViewport page1 = rig.Canvas(1)->Viewport();
+				check(closeTo(page1.x, -40.0, 1e-3) && closeTo(page1.y, -30.0, 1e-3), "page 1 panned independently");
+				memory.Remember(1, page1);
+				check(rig.Canvas(0)->Viewport().x == page0.x && rig.Canvas(0)->Viewport().y == page0.y,
+					"a warm page keeps its own view while another page is current");
+				check(EvictWhiteboardPage(rig.document, runtimes, 0, 1, 1, 1), "page 0 evicted");
+				check(rig.Canvas(0)->Viewport().x == 0.0f && rig.Canvas(0)->Viewport().y == 0.0f &&
+					rig.Canvas(0)->Strokes().empty(), "eviction rebuilds an empty page at (0,0)");
+				InkPage loaded(rig.document.PageAt(0)->PageGuid());
+				check(loaded.GetOrCreateCanvas(kDefaultDeviceKey) != nullptr &&
+					rig.document.ReplacePage(0, std::move(loaded)), "cold page reload installs a fresh canvas");
+				memory.Restore(0, *rig.Canvas(0));
+				check(rig.Canvas(0)->Viewport().x == page0.x && rig.Canvas(0)->Viewport().y == page0.y &&
+					rig.Canvas(0)->Viewport().scale == 1.0f, "evicted page's view is restored after the cold reload");
+				memory.Remember(2, InkViewport{ std::numeric_limits<float>::quiet_NaN(), 0.0f, 1.0f });
+				const auto third = TryAppendBlankPage(rig.document);
+				check(third && *third == 2, "page 2 appended");
+				if (third)
+				{
+					memory.Restore(2, *rig.Canvas(*third));
+					check(rig.Canvas(*third)->Viewport().x == 0.0f && rig.Canvas(*third)->Viewport().y == 0.0f,
+						"a rejected remembered viewport falls back to (0,0)");
+				}
+				check(rig.Canvas(0)->Strokes().empty() && rig.Canvas(1)->Strokes().empty() &&
+					runtimes[0].history.Items().empty() && runtimes[1].history.Items().empty(),
+					"panning and restoring views never touch strokes or history");
+			}
+			(void)closeTo; (void)drag;
+		}
+		catch (...) { check(false, "canvas pan production probe exception"); }
+		if (!failures)
+			std::fputs("[Draw3CanvasPan] PASS: Move-mode routing, Touch/Mouse 1:1 pan, coupling, inertia, DIP, exclusivity, stop, clamp and per-page views; no GPU/HWND\n", stderr);
+		return failures;
+	}
+
 	int RunDraw3ControlFenceProductionProbe() noexcept
 	{
 		int failures = 0;
@@ -6043,6 +7792,10 @@ namespace Inkeys::Drawing::Draw3
 				ContactHandle rejected, accepted;
 				int rejectedDowns = 0, passedDowns = 0;
 				bool boundary = false;
+				std::vector<CanvasGestureContactRuntime> selectionContacts;
+				CanvasPanInput selectionPan(selectionContacts);
+				const bool expectPan = workspace == Bridge::Workspace::Whiteboard && !source.inverted &&
+					(source.device == InputDeviceType::Touch || source.device == InputDeviceType::MouseLeft);
 				const auto consume = [&](ContactRecord* record)
 				{
 					if (!record) { selectionInput.AcknowledgeControlWake(); return; }
@@ -6050,7 +7803,15 @@ namespace Inkeys::Drawing::Draw3
 					check(record->DeviceType() == source.device &&
 						record->DownSnapshot().isInvertedCursor == source.inverted,
 						"selection fixture retains actual device and inverted metadata");
-					if (DiscardSelectionDown(selectionInput, handle, selectionWindow.SelectionMode()))
+					if (selectionWindow.SelectionMode() && expectPan)
+					{
+						// 白板移动模式：Touch/鼠标左键成为平移触点，路由仍由真实 Coordinator 持有。
+						check(HandleSelectionDown(selectionInput, handle, true, workspace,
+							selectionPan, CanvasPanScale{}), "Move mode handles the Selection Down");
+						return;
+					}
+					if (HandleSelectionDown(selectionInput, handle, selectionWindow.SelectionMode(),
+						workspace, selectionPan, CanvasPanScale{}))
 					{
 						rejected = handle; ++rejectedDowns;
 						return;
@@ -6061,6 +7822,21 @@ namespace Inkeys::Drawing::Draw3
 					"selection Down enters the real coordinator");
 				DrainIngressBatch(selectionInput, selectionWindow, boundary, consume);
 				ContactSnapshot current;
+				if (expectPan)
+				{
+					check(!rejected && rejectedDowns == 0 && passedDowns == 0 &&
+						selectionPan.HasContacts() && !selectionInput.HasQuarantinedContacts() &&
+						selectionPan.OwnerClass() == CanvasPanClassOf(source.device),
+						"whiteboard Move mode registers Touch/MouseLeft as a pan contact, not a discard");
+					check(selectionInput.PublishUp(tablet, 1, snapshot(ContactPhase::Up)),
+						"pan contact accepts its real Up");
+					(void)selectionPan.Step(selectionInput, 2, 1000, false);
+					check(!selectionPan.HasContacts() && selectionPan.Phase() == CanvasPanPhase::Idle &&
+						selectionInput.DiagnosticsSnapshot().occupiedSlots == 0 &&
+						selectionInput.DiagnosticsSnapshot().recycled == 1,
+						"pan contact is recycled once at its terminal and a tap leaves no motion");
+					continue;
+				}
 				check(rejected && rejectedDowns == 1 && passedDowns == 0 &&
 					selectionInput.HasQuarantinedContacts() &&
 					!selectionInput.TryReadSnapshot(rejected, current),
@@ -6091,6 +7867,7 @@ namespace Inkeys::Drawing::Draw3
 					selectionInput.DiagnosticsSnapshot().recycled == 2,
 					"rejected and accepted generations each release their real slot once");
 			}
+		failures += RunCanvasPanProductionProbe();
 		return failures;
 	}
 
@@ -10386,7 +12163,39 @@ namespace Inkeys::Drawing::Draw3
 			renderer_.layerL1, renderer_.layerL0, dirty, mergeMode);
 		// 画布调试板位于全部墨迹层之下；调试关闭时该调用只检查一个布尔值。
 		if (applied) (void)renderer_.DrawDebugPlateUnder(dirty);
+		// 白板纹理在最底层（调试板之后的 under）；非白板工作区只检查一个布尔值。
+		if (applied) DrawWhiteboardPatternUnder(dirty);
 		return applied;
+	}
+
+	void DrawingController::DrawWhiteboardPatternUnder(RECT dirty)
+	{
+		if (!whiteboardPatternWorkspace_ || whiteboardPatternKind_ == 0) return;
+		const WindowSize size = window_.Size();
+		// 视口与同帧 L2/快照使用同一份当前页 Canvas 状态；平移时已整屏合成，纹理不新增脏区。
+		InkViewport viewport = {};
+		if (document_)
+		{
+			const InkPage* page = document_->PageAt(currentPageIndex_);
+			const InkCanvas* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (canvas) viewport = canvas->Viewport();
+		}
+		const WhiteboardTheme theme{ whiteboardPatternRgb_,
+			static_cast<WhiteboardPattern>(whiteboardPatternKind_) };
+		const WhiteboardPatternParams params = ResolveWhiteboardPatternForFrame(true, theme,
+			static_cast<double>(viewport.x), static_cast<double>(viewport.y),
+			size.width, size.height, configuration_.dpiScale);
+		if (!renderer_.DrawWhiteboardPatternUnder(params, dirty))
+		{
+			// 纹理是装饰层：失败只记一次，不让本帧墨迹合成失败；恢复路径沿用设备失效处理。
+			static thread_local bool reported = false;
+			if (!reported)
+			{
+				reported = true;
+				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					"[Draw3.Pattern] whiteboard pattern pass failed; the frame is presented without it\n");
+			}
+		}
 	}
 
 	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
@@ -10615,6 +12424,8 @@ namespace Inkeys::Drawing::Draw3
 			bool cold = false, failed = false;
 		};
 		std::vector<WhiteboardPageState> whiteboardPages(1);
+		// 每页视角只在本进程会话内记忆：不写 UInk、不推进页 revision，冷页重载后按页恢复。
+		WhiteboardViewportMemory whiteboardViewports;
 		std::optional<std::size_t> whiteboardLoading;
 		std::uint64_t whiteboardLoadingGeneration = 0;
 		CanvasCommandType whiteboardLoadingCommand = CanvasCommandType::NextPage;
@@ -10763,6 +12574,8 @@ namespace Inkeys::Drawing::Draw3
 			pendingWorkspaceReady.reset();
 			if (recoveryMatchesActive())
 				publishRecoveryProgress(CanvasRecoveryStatus::None, CanvasRecoveryReason::None);
+			// Host 回调可能重开鼠标准入，必须先让首个 Down 看到正确工作区。
+			window_.SetCanvasPanWorkspace(ready.workspace == Bridge::Workspace::Whiteboard);
 			observer_.workspaceChanged(observer_.context, ready.workspace,
 				ready.currentPageIndex, ready.pageCount,
 				ready.presentationTarget ? &*ready.presentationTarget : nullptr);
@@ -10775,6 +12588,14 @@ namespace Inkeys::Drawing::Draw3
 				!activePresentationKey || !activePresentationTarget) return;
 			activePresentationMutationRevision =
 				AdvancePresentationMutationRevision(activePresentationMutationRevision);
+		};
+		// 记下当前白板页的视角（会话内）。只读 canvas，不触碰 revision 或保存请求。
+		auto rememberWhiteboardViewport = [&]()
+		{
+			if (activeWorkspace != Bridge::Workspace::Whiteboard || !document_) return;
+			const InkPage* page = document_->PageAt(currentPageIndex_);
+			const InkCanvas* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (canvas) whiteboardViewports.Remember(currentPageIndex_, canvas->Viewport());
 		};
 		Shortcuts::Context shortcutContext;
 		std::optional<InkGuid> shortcutPageGuid;
@@ -10865,6 +12686,30 @@ namespace Inkeys::Drawing::Draw3
 				whiteboardReadFailed || std::any_of(whiteboardPages.begin(), whiteboardPages.end(),
 					[](const auto& page) { return page.failed; }), currentPageIndex_, document_ ? document_->Pages().size() : 0,
 				currentPageHasContent(), currentContentRevision_);
+		};
+		// 白板背景纹理：把工作区与当前页主题同步给合成路径；外观键（样式/明暗/间距）变化即整屏重合成。
+		// 纹理只写 backbuffer，不进入 L2/历史/快照，所以变化后唯一要做的是整屏重新合成与呈现。
+		// 视口平移已自带整屏合成，相位不入键。
+		// 归属门控：只有 kWhiteboardPatternOwner==Draw3 才产生纹理；默认由 Freeze 绘制，此处恒为未启用，
+		// 渲染器 under pass、appliedWhiteboardPatternKey 与 forceFullPresent 全部惰性（代码仍编译）。
+		WhiteboardPatternKey appliedWhiteboardPatternKey;
+		auto syncWhiteboardPattern = [&](bool& forceFullPresent)
+		{
+			const bool whiteboard = WhiteboardPatternDrawnByDraw3(activeWorkspace == Bridge::Workspace::Whiteboard);
+			WhiteboardTheme theme;
+			if (whiteboard && currentPageIndex_ < whiteboardThemes.size())
+				theme = whiteboardThemes[currentPageIndex_];
+			const WindowSize size = window_.Size();
+			const WhiteboardPatternParams params = ResolveWhiteboardPatternForFrame(whiteboard, theme,
+				0.0, 0.0, size.width, size.height, configuration_.dpiScale);
+			whiteboardPatternWorkspace_ = whiteboard;
+			whiteboardPatternKind_ = static_cast<std::uint8_t>(
+				params.Enabled() ? theme.pattern : WhiteboardPattern::Blank);
+			whiteboardPatternRgb_ = theme.backgroundRgb;
+			const WhiteboardPatternKey key = MakeWhiteboardPatternKey(params);
+			if (key == appliedWhiteboardPatternKey) return;
+			appliedWhiteboardPatternKey = key;
+			forceFullPresent = true;
 		};
 		auto publishCurrentPageContent = [&]()
 		{
@@ -10993,6 +12838,10 @@ namespace Inkeys::Drawing::Draw3
 									{
 										runtimes[result.page] = std::move(runtime); whiteboardThemes[result.page] = theme;
 										state.cold = false; installed = true;
+										// 重载页是新建 canvas（视角 (0,0)）；会话侧表优先，写回翻页前的视角。
+										if (InkPage* loadedPage = doc->PageAt(result.page))
+											if (InkCanvas* loadedCanvas = loadedPage->FindCanvas(kDefaultDeviceKey))
+												whiteboardViewports.Restore(result.page, *loadedCanvas);
 										CanvasCommand command; command.type = CanvasCommandType::SetPage; command.pageIndex = result.page;
 										command.whiteboardGeneration = whiteboardGeneration;
 										command.sceneClosedAdmission = true;
@@ -11196,10 +13045,17 @@ namespace Inkeys::Drawing::Draw3
 			observer_.penDiagnostics(observer_.context, diagnostic);
 		};
 		active.reserve(kPreheatedStrokeCount);
+		// 平移只属于白板移动模式（canvasPan）；绘制模式的 Touch 永不平移，仅登记接触身份。
+		TouchContactRegistry touchContacts;
+		std::vector<CanvasGestureContactRuntime> gestureContacts;
+		gestureContacts.reserve(kPreheatedStrokeCount);
+		CanvasPanInput canvasPan(gestureContacts);
 		bool publishedDrawingActivity = false;
 		auto reconcileDrawingActivity = [&]() noexcept
 		{
-			const bool activeNow = HasPhysicalContact(active) || input_.HasQuarantinedContacts();
+			// 移动模式的平移触点与旧 Selection 隔离触点一样是画布上的活动接触。
+			const bool activeNow = HasPhysicalContact(active) || input_.HasQuarantinedContacts() ||
+				canvasPan.HasContacts();
 			if (activeNow == publishedDrawingActivity) return;
 			publishedDrawingActivity = activeNow;
 			if (observer_.drawingActivityChanged)
@@ -11218,27 +13074,12 @@ namespace Inkeys::Drawing::Draw3
 			window_.SpeedEraserDisplayScaleSnapshot();
 		SpeedEraser::DeviceMode observedSpeedEraserDeviceMode =
 			window_.SpeedEraserDeviceModeSnapshot();
-		CanvasTouchGestureState touchGesture;
-		CanvasPanMotionState panMotion;
-		std::vector<CanvasGestureContactRuntime> gestureContacts;
-		gestureContacts.reserve(kPreheatedStrokeCount);
 		// 可视化调试探测接触；调试关闭时始终为空，不产生任何开销。
 		std::vector<CanvasDebugProbeContact> debugProbeContacts;
 		debugProbeContacts.reserve(kPreheatedStrokeCount);
 		bool suppressPenUntilRelease = false;
-		CanvasVector previousPanCentroid = {};
-		bool panCentroidValid = false;
-		size_t previousPanContactCount = 0;
-		int64_t lastPanInputQpc = 0;
 		int64_t lastTouchPanEndQpc = 0;
 		int64_t suppressedPenTerminalQpc = 0;
-		int64_t lastNavigationQpc = 0;
-		int64_t lastPanReleaseQpc = 0;
-		int64_t nextPanMoveDiagnosticQpc = 0;
-		int64_t nextPanAnomalyDiagnosticQpc = 0;
-		bool inertiaFirstStepDiagnosticPending = false;
-		bool inertiaBrakeStateValid = false;
-		bool previousInertiaBrake = false;
 		LaserTrailLifecycle laserLifecycle;
 		ProductVisualStyle laserTrailVisualStyle = currentProductVisualStyle;
 		float laserOpacity = 0.0f;
@@ -11307,8 +13148,9 @@ namespace Inkeys::Drawing::Draw3
 			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL) != FALSE;
 		// 绘制线程只在活动期占用 CPU；提高一级优先级降低 120 FPS deadline 被后台窗口抢占的概率。
 
-		auto addGestureContact = [&](ContactHandle handle,
-			CanvasTouchDisposition disposition, CanvasPanContactAnchorMode anchorMode)
+		// 登记只跟踪到终态的忽略接触（笔抑制、被拒绝的 Touch Down）。anchorAtDown：
+		// 从 Down 补齐（被拒绝的 Touch）；否则从当前点起步并显式保留已到达终态的消费（笔抑制）。
+		auto addGestureContact = [&](ContactHandle handle, bool anchorAtDown)
 		{
 			if (!handle.record) return;
 			const uint64_t key = CanvasTouchKey(handle);
@@ -11320,24 +13162,18 @@ namespace Inkeys::Drawing::Draw3
 			input_.TryReadSnapshot(handle, currentSnapshot);
 			const bool currentTerminal = currentSnapshot.phase == ContactPhase::Up ||
 				currentSnapshot.phase == ContactPhase::Cancelled;
-			const CanvasPanContactAnchor anchor = ResolveCanvasPanContactAnchor(
-				{ { downSnapshot.position.x, downSnapshot.position.y },
-					downSnapshot.sequence, false },
-				{ { currentSnapshot.position.x, currentSnapshot.position.y },
-					currentSnapshot.sequence, false },
-				anchorMode, currentTerminal);
-			ContactSnapshot snapshot = anchorMode == CanvasPanContactAnchorMode::Down
-				? downSnapshot : currentSnapshot;
+			const ContactSnapshot& snapshot = anchorAtDown ? downSnapshot : currentSnapshot;
+			const bool terminalPending = !anchorAtDown && currentTerminal;
 			gestureContacts.push_back({
 				handle, key, snapshot, snapshot.position,
-				anchor.sequence, disposition, anchor.terminalPending });
+				snapshot.sequence, CanvasTouchDisposition::Suppressed, terminalPending });
 			LogCanvasPan("pan-contact-acquire key=%llu anchor=%s down-sequence=%llu current-sequence=%llu selected-sequence=%llu phase=%u terminal-pending=%u",
 				static_cast<unsigned long long>(key),
-				anchorMode == CanvasPanContactAnchorMode::Down ? "down" : "current",
+				anchorAtDown ? "down" : "current",
 				static_cast<unsigned long long>(downSnapshot.sequence),
 				static_cast<unsigned long long>(currentSnapshot.sequence),
-				static_cast<unsigned long long>(anchor.sequence),
-				static_cast<unsigned>(snapshot.phase), anchor.terminalPending ? 1u : 0u);
+				static_cast<unsigned long long>(snapshot.sequence),
+				static_cast<unsigned>(snapshot.phase), terminalPending ? 1u : 0u);
 		};
 
 		// 断触接续只对勾选的设备生效：触摸看 bit0，笔尾（倒转笔橡皮）看 bit1。
@@ -11661,40 +13497,15 @@ namespace Inkeys::Drawing::Draw3
 
 		auto hasLiveSuppressedPenContact = [&]() noexcept
 		{
-			return std::any_of(gestureContacts.begin(), gestureContacts.end(),
-				[&](const CanvasGestureContactRuntime& contact)
-				{
-					if (!contact.handle.record ||
-						contact.handle.record->DeviceType() != InputDeviceType::Pen)
-						return false;
-					ContactSnapshot latest = contact.snapshot;
-					input_.TryReadSnapshot(contact.handle, latest);
-					return latest.phase != ContactPhase::Up &&
-						latest.phase != ContactPhase::Cancelled;
-				});
+			return canvasPan.HasLiveSuppressedPenContact(input_);
 		};
 
 		auto penDownBelongsToTouchPan = [&](int64_t penDownQpc) noexcept
 		{
-			bool touchPanContactLive = false;
-			int64_t observedTouchPanEndQpc = lastTouchPanEndQpc;
-			for (const CanvasGestureContactRuntime& contact : gestureContacts)
-			{
-				if (contact.handle.record == nullptr ||
-					contact.handle.record->DeviceType() != InputDeviceType::Touch ||
-					touchGesture.Disposition(contact.key) != CanvasTouchDisposition::Pan)
-					continue;
-				ContactSnapshot latest = contact.snapshot;
-				input_.TryReadSnapshot(contact.handle, latest);
-				if (latest.phase != ContactPhase::Up &&
-					latest.phase != ContactPhase::Cancelled)
-					touchPanContactLive = true;
-				else
-					observedTouchPanEndQpc = (std::max)(
-						observedTouchPanEndQpc, latest.qpc);
-			}
+			// 活动 Touch 平移由 updateCanvasNavigation 以 TouchPanHeld 在帧内抑制同时落下的笔；
+			// 这里只处理 Down 已出队的笔：落在最近一次 Touch 平移结束之前，或已有被抑制的笔。
 			return ShouldSuppressPenContactForTouchPan(
-				touchPanContactLive, penDownQpc, observedTouchPanEndQpc,
+				false, penDownQpc, lastTouchPanEndQpc,
 				hasLiveSuppressedPenContact());
 		};
 
@@ -11807,134 +13618,21 @@ namespace Inkeys::Drawing::Draw3
 		{
 			finishMouseSpeedEraser(runtime); // 延后烘干只允许退休自己的票据，不能覆盖新段。
 		};
-		auto cancelTouchDrawingForPan = [&]()
-		{
-			for (RuntimeStroke* runtime : active)
-			{
-				if (!runtime || runtime->ended ||
-					runtime->metricDeviceType != InputDeviceType::Touch ||
-					!touchGesture.HasContact(runtime->touchGestureKey) ||
-					touchGesture.Disposition(runtime->touchGestureKey) !=
-						CanvasTouchDisposition::Pan) continue;
-				if (metricsState_) metricsState_->Invalidate(MetricKey(runtime->handle), ContentMetricInvalidationReason::Cancelled);
-				ContactSnapshot latest = runtime->lastInputSnapshot;
-				input_.TryReadSnapshot(runtime->handle, latest);
-				const bool terminal = latest.phase == ContactPhase::Up ||
-					latest.phase == ContactPhase::Cancelled;
-				if (terminal)
-				{
-					// 已进 mailbox 的终态在 handoff 点同步退休，不能留下无 runtime 的 FSM contact。
-					const CanvasTouchDisposition retired = touchGesture.OnTouchUp(
-						runtime->touchGestureKey);
-					input_.Recycle(runtime->handle);
-					LogCanvasPan("touch-pan-handoff-retire key=%llu qpc=%lld phase=%u disposition=%s",
-						static_cast<unsigned long long>(runtime->touchGestureKey),
-						static_cast<long long>(latest.qpc),
-						static_cast<unsigned>(latest.phase),
-						CanvasTouchDispositionName(retired));
-				}
-				else
-					addGestureContact(runtime->handle, CanvasTouchDisposition::Pan,
-						CanvasPanContactAnchorMode::Current);
-				runtime->handle = {}; // gesture runtime 接管或同步退休后，drawing 不再拥有 handle。
-				runtime->ended = true;
-				runtime->cancelled = true;
-				runtime->awaitingReconnect = false;
-				runtime->visibleDirty = GetFullCanvasRect(
-					window_.Size().width, window_.Size().height);
-			}
-			for (CanvasGestureContactRuntime& contact : gestureContacts)
-				contact.disposition = touchGesture.Disposition(contact.key);
-			// Touch 的任意工具临时层都丢弃，下一帧只从剩余 Pen/Mouse runtime 重建。
-			renderer_.ClearOperatorLayer(renderer_.layerL1);
-			renderer_.ClearOperatorLayer(renderer_.layerL0);
-			if (metricsState_) metricsState_->ObserveIndependentClear();
-			renderer_.ClearAllLaserCoverage();
-			renderer_.ResetLaserParticles();
-			laserLifecycle = {};
-			laserOpacity = 0.0f;
-			laserStableBounds = {};
-			laserLiveBounds = {};
-			laserStrokeLayers.clear();
-			laserCoverageMode = LaserCoverageMode::Inactive;
-			laserParticleDirtyTracker.Clear();
-			viewportRefreshPending = true;
-			viewportRefreshClearsTransient = true;
-		};
-
-		auto rebuildPanContactBaseline = [&](int64_t inputQpc,
-			bool resetVelocitySamples)
-		{
-			const size_t oldContactCount = previousPanContactCount;
-			const int64_t oldLastUpdateQpc = panMotion.lastUpdateQpc;
-			previousPanCentroid = {};
-			previousPanContactCount = 0;
-			for (CanvasGestureContactRuntime& contact : gestureContacts)
-			{
-				if (touchGesture.Disposition(contact.key) !=
-					CanvasTouchDisposition::Pan) continue;
-				// 触点拓扑变化时，位置中心和估速中心必须从同一快照重新起步。
-				contact.velocityPosition = contact.snapshot.position;
-				previousPanCentroid.x += contact.snapshot.position.x;
-				previousPanCentroid.y += contact.snapshot.position.y;
-				++previousPanContactCount;
-			}
-			panCentroidValid = previousPanContactCount > 0;
-			if (panCentroidValid)
-			{
-				previousPanCentroid.x /= static_cast<float>(previousPanContactCount);
-				previousPanCentroid.y /= static_cast<float>(previousPanContactCount);
-				if (resetVelocitySamples)
-					ResetCanvasPanVelocitySamples(panMotion,
-						(std::max)(inputQpc, panMotion.lastUpdateQpc));
-			}
-			LogCanvasPan("pan-baseline reset-velocity=%u input-qpc=%lld last-update-before=%lld last-update-after=%lld contacts-before=%zu contacts-after=%zu centroid=(%.2f,%.2f)",
-				resetVelocitySamples ? 1u : 0u, static_cast<long long>(inputQpc),
-				static_cast<long long>(oldLastUpdateQpc),
-				static_cast<long long>(panMotion.lastUpdateQpc), oldContactCount,
-				previousPanContactCount, previousPanCentroid.x, previousPanCentroid.y);
-			for (const CanvasGestureContactRuntime& contact : gestureContacts)
-			{
-				if (touchGesture.Disposition(contact.key) !=
-					CanvasTouchDisposition::Pan) continue;
-				LogCanvasPan("pan-baseline-contact key=%llu snapshot=(%.2f,%.2f) velocity-position=(%.2f,%.2f) qpc=%lld phase=%u sequence=%llu",
-					static_cast<unsigned long long>(contact.key),
-					contact.snapshot.position.x, contact.snapshot.position.y,
-					contact.velocityPosition.x, contact.velocityPosition.y,
-					static_cast<long long>(contact.snapshot.qpc),
-					static_cast<unsigned>(contact.snapshot.phase),
-					static_cast<unsigned long long>(contact.snapshot.sequence));
-			}
-			const size_t terminalPending = static_cast<size_t>(std::count_if(
-				gestureContacts.begin(), gestureContacts.end(),
-				[&](const CanvasGestureContactRuntime& contact)
-				{
-					return contact.terminalPending && touchGesture.Disposition(contact.key) ==
-						CanvasTouchDisposition::Pan;
-				}));
-			const size_t fsmPanContacts = touchGesture.PanContactCount();
-			const bool lifecycleConsistent = IsCanvasPanLifecycleOwnershipConsistent(
-				touchGesture.PanActive(), fsmPanContacts,
-				previousPanContactCount, terminalPending);
-			LogCanvasPan("pan-lifecycle panActive=%u fsmPanContacts=%zu gestureRuntimePanContacts=%zu terminalPendingPanContacts=%zu consistent=%u",
-				touchGesture.PanActive() ? 1u : 0u, fsmPanContacts,
-				previousPanContactCount, terminalPending,
-				lifecycleConsistent ? 1u : 0u);
-		};
-
+		// 新 Down 可能先于旧 Up 的消费到达：先退休已物理结束的单个旧 Touch 身份，
+		// 否则同 ID 快速重落会被身份登记当作重复而忽略。
 		auto retireEndedTouchBeforeDown = [&](int64_t downQpc)
 		{
-			if (touchGesture.PanActive() || touchGesture.ContactCount() != 1) return;
+			if (touchContacts.Count() != 1) return;
 			auto retire = [&](uint64_t key, ContactHandle handle,
 				ContactSnapshot fallback) -> bool
 				{
-				if (key == 0 || !touchGesture.HasContact(key)) return false;
+				if (key == 0 || !touchContacts.Contains(key)) return false;
 				ContactSnapshot latest = fallback;
 				input_.TryReadSnapshot(handle, latest);
 				if ((latest.phase != ContactPhase::Up &&
 					latest.phase != ContactPhase::Cancelled) ||
 					latest.qpc > downQpc) return false;
-				touchGesture.OnTouchUp(key);
+				touchContacts.Release(key);
 				LogCanvasPan("touch-retire-before-down key=%llu terminal-qpc=%lld down-qpc=%lld",
 					static_cast<unsigned long long>(key),
 					static_cast<long long>(latest.qpc),
@@ -11955,23 +13653,35 @@ namespace Inkeys::Drawing::Draw3
 			}
 		};
 
-		auto interruptNavigationForPenOrMouse = [&](const char* reason)
+		// 窗口层的 Touch 平移态立即撤销，所有已登记的手势接触只跟踪到终态。
+		auto interruptNavigationForPenOrMouse = [&]()
 			{
-				const float speedBefore = CanvasPanSpeed(panMotion);
-				if (touchGesture.PanActive() || panMotion.inertiaActive || speedBefore > 0.0f)
-					LogCanvasPan("navigation-interrupt reason=%s pan=%u inertia=%u velocity=(%.1f,%.1f) speed=%.1f contacts=%zu",
-						reason ? reason : "unknown", touchGesture.PanActive() ? 1u : 0u,
-						panMotion.inertiaActive ? 1u : 0u, panMotion.velocity.x,
-						panMotion.velocity.y, speedBefore, touchGesture.ContactCount());
-				InterruptCanvasPanForDrawing(panMotion, touchGesture);
 				window_.SetTouchPanActive(false);
 				for (CanvasGestureContactRuntime& contact : gestureContacts)
 					contact.disposition = CanvasTouchDisposition::Suppressed;
-				panCentroidValid = false;
-				previousPanContactCount = 0;
-				inertiaFirstStepDiagnosticPending = false;
-				inertiaBrakeStateValid = false;
 			};
+
+		// 统一的画布导航终止：离开移动模式、工作区切换、翻页/画布命令、白板加载、最小化（准入封口）、
+		// Resize、笔落下。立即清零手势与惯性，已登记的触点只跟踪到终态。
+		auto stopCanvasNavigation = [&](const char* reason)
+		{
+			if (canvasPan.Active())
+				LogCanvasPan("navigation-stop reason=%s phase=%u contacts=%zu velocity-dip=(%.1f,%.1f)",
+					reason ? reason : "unknown", static_cast<unsigned>(canvasPan.Phase()),
+					gestureContacts.size(), canvasPan.VelocityDip().x, canvasPan.VelocityDip().y);
+			canvasPan.Stop();
+			interruptNavigationForPenOrMouse();
+		};
+
+		// 把“白板移动模式”发布给窗口层（Win32 鼠标兜底据此放行左键），并在刚离开时终止导航。
+		auto refreshCanvasPanMode = [&]()
+		{
+			if (PublishCanvasPanMode(window_, canvasPan, activeWorkspace))
+			{
+				LogCanvasPan("navigation-stop reason=leave-move-mode");
+				interruptNavigationForPenOrMouse();
+			}
+		};
 
 		auto acquireStroke = [&]() -> RuntimeStroke*
 			{
@@ -12124,8 +13834,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					// Touch 跟手批次中的 Pen 只跟踪到抬笔，不能在惯性阶段补画。
 					suppressPenUntilRelease = true;
-					addGestureContact(handle, CanvasTouchDisposition::Suppressed,
-						CanvasPanContactAnchorMode::Current);
+					addGestureContact(handle, false);
 					return true;
 				}
 				if (deviceType == InputDeviceType::Pen)
@@ -12137,79 +13846,17 @@ namespace Inkeys::Drawing::Draw3
 					deviceType == InputDeviceType::MouseLeft ||
 					deviceType == InputDeviceType::MouseRight)
 				{
-					interruptNavigationForPenOrMouse("drawing-contact");
+					stopCanvasNavigation("drawing-contact");
 				}
 				else if (deviceType == InputDeviceType::Touch)
 				{
-					// 新 Down 可能先于旧 Up 的导航消费到达；先退休已物理结束的旧批次。
+					// 新 Down 可能先于旧 Up 的消费到达；先退休已物理结束的旧身份。
 					retireEndedTouchBeforeDown(down.qpc);
-					const bool blockingContactActive = std::any_of(
-						active.begin(), active.end(), [](const RuntimeStroke* runtime)
-						{
-							return runtime && !runtime->ended && !runtime->awaitingReconnect &&
-								runtime->metricDeviceType != InputDeviceType::Touch;
-						});
-					const bool canvasNavigationBlocked = blockingContactActive ||
-						!kCanvasNavigationProductIntegrationEnabled;
-					const uint64_t key = CanvasTouchKey(handle);
-					const bool inheritedInertia = panMotion.inertiaActive;
-					const size_t contactCountBefore = touchGesture.ContactCount();
-					const int64_t firstDownQpc = touchGesture.FirstDownQpc();
-					const bool batchAllowedBefore = touchGesture.BatchAllowsPan();
-					const double gapMilliseconds = contactCountBefore == 1
-						? QpcDeltaSeconds(down.qpc, firstDownQpc, qpcFrequency) * 1000.0
-						: -1.0;
-					const CanvasTouchDecision touchDecision = touchGesture.OnTouchDown(
-						key, down.qpc, qpcFrequency, inheritedInertia,
-						canvasNavigationBlocked);
-					LogCanvasPan("touch-down key=%llu order=%zu qpc=%lld first-qpc=%lld gap-ms=%.3f within-180=%u blocking=%u inherited-inertia=%u batch-before=%u decision=%s begin=%u joined=%u cancel-draw=%u",
-						static_cast<unsigned long long>(key), contactCountBefore + 1,
-						static_cast<long long>(down.qpc), static_cast<long long>(
-							contactCountBefore == 0 ? down.qpc : firstDownQpc), gapMilliseconds,
-						contactCountBefore == 1 && gapMilliseconds >= 0.0 &&
-							gapMilliseconds <= kCanvasPanGestureWindowSeconds * 1000.0 ? 1u : 0u,
-						canvasNavigationBlocked ? 1u : 0u, inheritedInertia ? 1u : 0u,
-						batchAllowedBefore ? 1u : 0u,
-						CanvasTouchDispositionName(touchDecision.disposition),
-						touchDecision.beginPan ? 1u : 0u,
-						touchDecision.joinedExistingPan ? 1u : 0u,
-						touchDecision.cancelExistingTouchDrawing ? 1u : 0u);
-					if (touchDecision.disposition != CanvasTouchDisposition::Draw)
+					// 绘制模式的 Touch 永不平移（平移只属于白板移动模式，见 canvasPan）；
+					// 重复或零 key 的 Down 只跟踪到终态，不建笔。
+					if (!touchContacts.TryRegister(CanvasTouchKey(handle)))
 					{
-						addGestureContact(handle, touchDecision.disposition,
-							CanvasPanContactAnchorMode::Down);
-						if (touchDecision.beginPan)
-						{
-							const CanvasVector residualVelocity = panMotion.velocity;
-							const int64_t residualSourceQpc = panMotion.lastUpdateQpc;
-							const int64_t velocitySourceQpc = panMotion.lastVelocitySampleQpc;
-							BeginCanvasPan(panMotion, inheritedInertia, down.qpc);
-							const double inertiaAgeMilliseconds = inheritedInertia &&
-								lastPanReleaseQpc > 0
-								? QpcDeltaSeconds(down.qpc, lastPanReleaseQpc,
-									qpcFrequency) * 1000.0 : -1.0;
-							LogCanvasPan("pan-begin inherited=%u residual=(%.1f,%.1f) speed=%.1f contacts=%zu down-qpc=%lld release-qpc=%lld inertia-age-ms=%.3f residual-source-qpc=%lld velocity-source-qpc=%lld",
-								inheritedInertia ? 1u : 0u, residualVelocity.x,
-								residualVelocity.y, std::hypot(residualVelocity.x,
-									residualVelocity.y), touchGesture.GestureContactCount(),
-								static_cast<long long>(down.qpc),
-								static_cast<long long>(lastPanReleaseQpc),
-								inertiaAgeMilliseconds,
-								static_cast<long long>(residualSourceQpc),
-								static_cast<long long>(velocitySourceQpc));
-							window_.SetTouchPanActive(true);
-							lastPanInputQpc = down.qpc;
-							if (touchDecision.cancelExistingTouchDrawing)
-								cancelTouchDrawingForPan();
-							rebuildPanContactBaseline(down.qpc, false);
-							nextPanMoveDiagnosticQpc = down.qpc;
-							inertiaFirstStepDiagnosticPending = false;
-							inertiaBrakeStateValid = false;
-						}
-						else if (touchDecision.joinedExistingPan)
-						{
-							rebuildPanContactBaseline(down.qpc, true);
-						}
+						addGestureContact(handle, true);
 						return true;
 					}
 				}
@@ -12281,7 +13928,7 @@ namespace Inkeys::Drawing::Draw3
 					const uint64_t rejectedTouchKey = deviceType == InputDeviceType::Touch
 						? CanvasTouchKey(handle) : 0;
 					RejectStrokeInitialization(input_, handle, down);
-					if (rejectedTouchKey) touchGesture.OnTouchUp(rejectedTouchKey);
+					if (rejectedTouchKey) touchContacts.Release(rejectedTouchKey);
 					return false;
 				}
 				if (metricsState_)
@@ -12599,7 +14246,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 
 				// 真实匹配且模型接续成功已在上方接管返回；失败/不匹配才按新独立笔判定。
-				if (RejectIndependentTouch(input_, touchGesture, handle, deviceType,
+				if (RejectIndependentTouch(input_, touchContacts, handle, deviceType,
 					hasActiveTouch, generalOptions.multiTouchEnabled))
 				{
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
@@ -12609,7 +14256,7 @@ namespace Inkeys::Drawing::Draw3
 				if (palmReconnectPending && IgnoreAdditionalLaserTouch(input_, handle, batchTool, deviceType, hasActiveLaserTouch,
 					laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire)))
 				{
-					touchGesture.OnTouchUp(registeredTouchKey);
+					touchContacts.Release(registeredTouchKey);
 					return false;
 				}
 				PalmEraser::State newPalm;
@@ -12620,7 +14267,7 @@ namespace Inkeys::Drawing::Draw3
 				if (palmObservationOnly && !newPalm.eligible)
 				{
 					// 被拒收的物理接触必须抬起重落，不能在手掌离开后自动恢复。
-					if (deviceType == InputDeviceType::Touch) touchGesture.OnTouchUp(CanvasTouchKey(handle));
+					if (deviceType == InputDeviceType::Touch) touchContacts.Release(CanvasTouchKey(handle));
 					input_.DiscardUntilTerminal(handle);
 					return false;
 				}
@@ -13091,7 +14738,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						runtime.palm.End();
 						RetirePalmObservation(runtime);
-						touchGesture.OnTouchUp(runtime.touchGestureKey);
+						touchContacts.Release(runtime.touchGestureKey);
 					}
 					return false;
 				}
@@ -13137,7 +14784,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (terminal && runtime.metricDeviceType == InputDeviceType::Touch &&
 					runtime.touchGestureKey != 0)
-					touchGesture.OnTouchUp(runtime.touchGestureKey);
+					touchContacts.Release(runtime.touchGestureKey);
 				const bool deferUp = snapshot.phase == ContactPhase::Up && !IsMouseSpeedEraser(runtime) &&
 					GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)) &&
@@ -13366,6 +15013,8 @@ namespace Inkeys::Drawing::Draw3
 			const uint64_t revision = input_.AdmissionRevision();
 			if (revision == observedAdmissionRevision) return;
 			observedAdmissionRevision = revision;
+			// 页边界/加载/最小化/工作区转换等准入变化一律终止平移手势与惯性，翻页后不遗留速度。
+			if (canvasPan.Active()) canvasPan.Stop();
 			if (!input_.AdmissionBlocked() && active.empty() && gestureContacts.empty() &&
 				debugProbeContacts.empty()) return;
 			// 页边界只收尾已经被绘制线程接受的最后位置，不消费边界后的 Move。
@@ -13386,11 +15035,9 @@ namespace Inkeys::Drawing::Draw3
 			for (const auto& probe : debugProbeContacts)
 				input_.DiscardUntilTerminal(probe.handle);
 			debugProbeContacts.clear();
-			touchGesture.Reset();
-			panMotion = {};
-			panCentroidValid = false;
-			previousPanContactCount = 0;
+			touchContacts.Reset();
 			window_.SetTouchPanActive(false);
+			canvasPan.Reset();
 			leftMouseSpeedEraser.CancelVisual();
 			rightMouseSpeedEraser.CancelVisual();
 			penEraserHoverLane.Invalidate();
@@ -13476,7 +15123,6 @@ namespace Inkeys::Drawing::Draw3
 					input_.DiscardUntilTerminal(handle);
 					return;
 				}
-				if (DiscardSelectionDown(input_, handle, window_.SelectionMode())) return;
 				if ((activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) || Bridge::PresentationInputSuppressed(
 					activeWorkspace, activePresentationLoadPending ||
 					presentationLoadUnresolved()))
@@ -13485,6 +15131,12 @@ namespace Inkeys::Drawing::Draw3
 					input_.DiscardUntilTerminal(handle);
 					return;
 				}
+				// Selection：白板移动模式的 Touch/鼠标左键成为平移触点（不经建笔、不受多指书写开关限制）；
+				// 笔、鼠标右键、另一类设备及桌面/PPT 的 Selection 丢弃到终态。
+				if (window_.SelectionMode() && HandleSelectionDown(input_, handle, true, activeWorkspace,
+					canvasPan, CanvasPanScaleFromDisplay(window_.SpeedEraserDisplayScaleSnapshot()),
+					&suppressPenUntilRelease))
+					return;
 				if (canvasDebugOptions_.load(std::memory_order_acquire) == 3u)
 				{
 					// 画布调试可视化模式：接触照常出队，但只登记为探测接触，不建笔/擦除/手掌橡皮/历史。
@@ -13520,393 +15172,108 @@ namespace Inkeys::Drawing::Draw3
 				return true;
 			};
 
+		// 把“当前显示的白板页”的视口发布给 Freeze（归属 Freeze 时它自己画点阵/网格并随相位重画）。
+		// 只在绘制线程调用，按 (active, moving, page, generation, x, y) 去重；覆盖平移帧、翻页、冷页重载后的
+		// 视角恢复、TranslateViewport 与进入/离开白板。冷页加载期间 currentPageIndex_ 未切换，发布的仍是正显示的旧页。
+		// 回调只做无锁写入与原子唤醒，不等待 UI3；Draw3 归属时不装配也不发布。
+		WhiteboardViewportSample publishedWhiteboardViewport;
+		auto publishWhiteboardViewport = [&]()
+		{
+			if constexpr (!kWhiteboardPatternOwnedByFreeze) return;
+			else
+			{
+				if (!observer_.whiteboardViewportChanged) return;
+				WhiteboardViewportSample next;
+				if (activeWorkspace == Bridge::Workspace::Whiteboard && document_)
+				{
+					const InkPage* page = document_->PageAt(currentPageIndex_);
+					const InkCanvas* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+					if (canvas)
+					{
+						const InkViewport viewport = canvas->Viewport();
+						next.active = true;
+						next.moving = canvasPan.Active();
+						next.page = static_cast<std::uint32_t>(currentPageIndex_);
+						next.generation = whiteboardGeneration;
+						next.x = viewport.x;
+						next.y = viewport.y;
+					}
+				}
+				if (!WhiteboardViewportSampleChanged(publishedWhiteboardViewport, next)) return;
+				publishedWhiteboardViewport = next;
+				observer_.whiteboardViewportChanged(observer_.context, next);
+			}
+		};
+
+		CanvasPanPhase panLoggedPhase = CanvasPanPhase::Idle;
+		int64_t nextPanLogQpc = 0;
 		auto updateCanvasNavigation = [&](int64_t nowQpc)
 		{
-			DrawingCursorSample navigationPenSample;
-			const bool penInRange = window_.ReadPenCursorSample(navigationPenSample) &&
-				navigationPenSample.valid;
-			const bool penInContact = penInRange && IsPenContactSampleFresh(
-				navigationPenSample.inContact, navigationPenSample.qpc,
-				suppressedPenTerminalQpc);
-			if (ShouldBeginSuppressingPenContactDuringTouchPan(
-				touchGesture.PanActive(), penInContact))
-			{
-				suppressPenUntilRelease = true;
-				window_.SuppressPenContactForTouchPan();
-			}
-			else if (suppressPenUntilRelease && !penInContact &&
-				!hasLiveSuppressedPenContact())
-				suppressPenUntilRelease = false;
+			// 命令可能在本帧早些时候切换了工作区或选择模式：先发布移动模式并处理“刚离开”。
+			refreshCanvasPanMode();
+			const CanvasPanPenMailbox pen = ObserveCanvasPanPenMailbox(window_, input_, canvasPan,
+				suppressPenUntilRelease, suppressedPenTerminalQpc);
+			const bool penInRange = pen.inRange;
+			const bool penInContact = pen.inContact;
 			if (penInContact && !suppressPenUntilRelease)
 			{
 				// Pen mailbox 不受 Touch-to-Mouse 提升影响，惯性阶段可在 contact 出队前刹停。
-				interruptNavigationForPenOrMouse("pen-mailbox-contact");
+				stopCanvasNavigation("pen-mailbox-contact");
 			}
-			const bool candidateBeforeUpdate = touchGesture.InertiaCandidateActive();
-			const bool batchAllowedBeforeUpdate = touchGesture.BatchAllowsPan();
-			const int64_t candidateFirstDownQpc = touchGesture.FirstDownQpc();
-			touchGesture.Update(nowQpc, qpcFrequency);
-			if ((candidateBeforeUpdate && !touchGesture.InertiaCandidateActive()) ||
-				(batchAllowedBeforeUpdate && !touchGesture.BatchAllowsPan()))
+
+			// 摩擦耦合平移：消费平移触点快照 -> 动力学（DIP）-> 像素位移。
+			// 笔悬停只在无手的惯性阶段以手摩擦加速制动；落笔已在上方立即急停。
+			const CanvasPanInput::Frame frame = canvasPan.Step(input_, nowQpc, qpcFrequency,
+				penInRange && !suppressPenUntilRelease);
+			if (frame.penTerminalQpc > 0)
+				suppressedPenTerminalQpc = (std::max)(suppressedPenTerminalQpc, frame.penTerminalQpc);
+			if (frame.touchPanEndQpc > 0)
+				lastTouchPanEndQpc = (std::max)(lastTouchPanEndQpc, frame.touchPanEndQpc);
+			// 仅触摸持有且仍有手按住时才进入窗口层的 Touch Pan 态；鼠标拖动保持系统箭头。
+			window_.SetTouchPanActive(frame.touchPanHeld);
+
+			// 标定日志只在显式 RTS diagnostics 下输出：相位变化、释放事件，以及活动期间约每 100 ms 一条。
 			{
-				LogCanvasPan("touch-window-expired now-qpc=%lld first-qpc=%lld elapsed-ms=%.3f candidate-before=%u brake=%u contacts=%zu",
-					static_cast<long long>(nowQpc),
-					static_cast<long long>(candidateFirstDownQpc),
-					QpcDeltaSeconds(nowQpc, candidateFirstDownQpc, qpcFrequency) * 1000.0,
-					candidateBeforeUpdate ? 1u : 0u,
-					touchGesture.InertiaBrakeRequested() ? 1u : 0u,
-					touchGesture.ContactCount());
-			}
-			bool topologyChanged = false;
-			bool panPositionUpdated = false;
-			bool panVelocityInputUpdated = false;
-			bool panTerminalPositionUpdated = false;
-			int64_t newestPanPositionQpc = 0;
-			int64_t newestPanVelocityQpc = 0;
-			int64_t panReleaseQpc = 0;
-			bool panReleaseCancelled = false;
-			for (CanvasGestureContactRuntime& contact : gestureContacts)
-			{
-				ContactSnapshot snapshot = contact.snapshot;
-				const bool snapshotRead = input_.TryReadSnapshot(contact.handle, snapshot);
-				if ((!snapshotRead && !contact.terminalPending) ||
-					!ShouldConsumeCanvasPanContactSnapshot(snapshot.sequence,
-						contact.lastConsumedSequence, contact.terminalPending)) continue;
-				const ContactSnapshot previousSnapshot = contact.snapshot;
-				contact.disposition = touchGesture.Disposition(contact.key);
-				contact.lastConsumedSequence = snapshot.sequence;
-				contact.snapshot = snapshot;
-				contact.terminalPending = false;
-				const CanvasVector point{ snapshot.position.x, snapshot.position.y };
-				if (snapshot.phase == ContactPhase::Move)
+				const CanvasPanFrameOutput& out = frame.dynamics;
+				if (out.phase != panLoggedPhase || out.released ||
+					(out.phase != CanvasPanPhase::Idle && nowQpc >= nextPanLogQpc))
 				{
-					if (contact.disposition == CanvasTouchDisposition::Pan)
-					{
-						contact.velocityPosition = snapshot.position;
-						panPositionUpdated = true;
-						panVelocityInputUpdated = true;
-						newestPanPositionQpc = (std::max)(newestPanPositionQpc, snapshot.qpc);
-						newestPanVelocityQpc = (std::max)(newestPanVelocityQpc, snapshot.qpc);
-					}
-				}
-				else if (snapshot.phase == ContactPhase::Up ||
-					snapshot.phase == ContactPhase::Cancelled)
-				{
-					if (contact.handle.record &&
-						contact.handle.record->DeviceType() == InputDeviceType::Pen)
-						suppressedPenTerminalQpc = (std::max)(
-							suppressedPenTerminalQpc, snapshot.qpc);
-					if (contact.disposition == CanvasTouchDisposition::Pan)
-					{
-						// Up 只提交最终位移；释放速度由此前 Move 样本窗口决定。
-						if (snapshot.phase == ContactPhase::Up &&
-							(snapshot.position.x != previousSnapshot.position.x ||
-								snapshot.position.y != previousSnapshot.position.y))
-						{
-							panPositionUpdated = true;
-							panTerminalPositionUpdated = true;
-							newestPanPositionQpc = (std::max)(newestPanPositionQpc, snapshot.qpc);
-						}
-						panReleaseQpc = (std::max)(panReleaseQpc, snapshot.qpc);
-						panReleaseCancelled = panReleaseCancelled ||
-							snapshot.phase == ContactPhase::Cancelled;
-						lastTouchPanEndQpc = (std::max)(
-							lastTouchPanEndQpc, snapshot.qpc);
-					}
+					LogCanvasPan("pan-step phase=%u held=%zu delta-px=(%.2f,%.2f) v-content-dip=(%.1f,%.1f) v-hand-dip=(%.1f,%.1f) hand-known=%u released=%u release-speed=%.1f release-age-ms=%.1f",
+						static_cast<unsigned>(out.phase), out.heldContacts,
+						frame.contentDeltaPixels.x, frame.contentDeltaPixels.y,
+						out.contentVelocity.x, out.contentVelocity.y,
+						out.handVelocity.x, out.handVelocity.y,
+						out.handVelocityKnown ? 1u : 0u, out.released ? 1u : 0u,
+						out.releaseSpeed, out.releaseAgeSeconds * 1000.0);
+					panLoggedPhase = out.phase;
+					nextPanLogQpc = nowQpc + (std::max)(int64_t{ 1 }, qpcFrequency / 10);
 				}
 			}
 
-			CanvasVector contentDelta = {};
-			if (touchGesture.PanActive())
-			{
-				CanvasVector centroid = {};
-				CanvasVector velocityCentroid = {};
-				size_t count = 0;
-				for (const CanvasGestureContactRuntime& contact : gestureContacts)
-				{
-					if (touchGesture.Disposition(contact.key) != CanvasTouchDisposition::Pan)
-						continue;
-					centroid.x += contact.snapshot.position.x;
-					centroid.y += contact.snapshot.position.y;
-					velocityCentroid.x += contact.velocityPosition.x;
-					velocityCentroid.y += contact.velocityPosition.y;
-					++count;
-				}
-				if (count > 0)
-				{
-					centroid.x /= static_cast<float>(count);
-					centroid.y /= static_cast<float>(count);
-					velocityCentroid.x /= static_cast<float>(count);
-					velocityCentroid.y /= static_cast<float>(count);
-					if (!panCentroidValid || topologyChanged || count != previousPanContactCount)
-					{
-						previousPanCentroid = centroid;
-						panCentroidValid = true;
-						previousPanContactCount = count;
-					}
-					else if (panPositionUpdated)
-					{
-						const CanvasVector centroidDelta{
-							centroid.x - previousPanCentroid.x,
-							centroid.y - previousPanCentroid.y };
-						const bool updateVelocity = panVelocityInputUpdated;
-						const int64_t inputQpc = updateVelocity
-							? newestPanVelocityQpc : newestPanPositionQpc;
-						const CanvasVector velocityDelta = updateVelocity
-							? CanvasVector{ velocityCentroid.x - previousPanCentroid.x,
-								velocityCentroid.y - previousPanCentroid.y }
-							: CanvasVector{};
-						const CanvasVector velocityBeforeUpdate = panMotion.velocity;
-						const double updateDeltaSeconds = QpcDeltaSeconds(inputQpc,
-							panMotion.lastUpdateQpc, qpcFrequency);
-						contentDelta = UpdateCanvasPan(panMotion, centroidDelta,
-							velocityDelta, inputQpc,
-							qpcFrequency, updateVelocity);
-						const float inputDistance = std::hypot(centroidDelta.x, centroidDelta.y);
-						const float outputDistance = std::hypot(contentDelta.x, contentDelta.y);
-						const float speedBeforeUpdate = std::hypot(
-							velocityBeforeUpdate.x, velocityBeforeUpdate.y);
-						const float speedAfterUpdate = CanvasPanSpeed(panMotion);
-						const bool candidateValid = panMotion.releaseVelocityCandidateSource !=
-							CanvasPanReleaseCandidateSource::None;
-						const bool anomalousPanFrame =
-							speedAfterUpdate - speedBeforeUpdate > 2000.0f ||
-							(inputDistance < 2.0f && outputDistance > 24.0f) ||
-							speedAfterUpdate > 6000.0f;
-						if (anomalousPanFrame && inputQpc >= nextPanAnomalyDiagnosticQpc)
-						{
-							// 可疑帧直接打印候选与新手势速度，验证二者从未混入同一数值。
-							LogCanvasPan("pan-anomaly qpc=%lld dt-ms=%.3f contacts=%zu centroid-delta=(%.3f,%.3f) content-delta=(%.3f,%.3f) direct=(%.1f,%.1f) candidate=(%.1f,%.1f) candidate-valid=%u has-new-move=%u velocity-before=(%.1f,%.1f) velocity-after=(%.1f,%.1f) samples=%zu last-sample-qpc=%lld",
-								static_cast<long long>(inputQpc), updateDeltaSeconds * 1000.0,
-								count, centroidDelta.x, centroidDelta.y,
-								contentDelta.x, contentDelta.y, panMotion.directVelocity.x,
-								panMotion.directVelocity.y,
-								panMotion.releaseVelocityCandidate.x,
-								panMotion.releaseVelocityCandidate.y,
-								candidateValid ? 1u : 0u, panMotion.hasNewMove ? 1u : 0u,
-								velocityBeforeUpdate.x, velocityBeforeUpdate.y,
-								panMotion.velocity.x, panMotion.velocity.y,
-								panMotion.velocitySampleCount,
-								static_cast<long long>(panMotion.lastVelocitySampleQpc));
-							nextPanAnomalyDiagnosticQpc = inputQpc +
-								(std::max)(int64_t{ 1 }, qpcFrequency / 10);
-						}
-						if (newestPanPositionQpc >= nextPanMoveDiagnosticQpc)
-						{
-							const double velocityAge = lastPanInputQpc > 0
-								? QpcDeltaSeconds(newestPanPositionQpc,
-									lastPanInputQpc, qpcFrequency) : 0.0;
-							LogCanvasPan("pan-move engine=application contacts=%zu qpc=%lld velocity-sample=%u terminal-position=%u centroid-delta=(%.3f,%.3f) content-delta=(%.3f,%.3f) direct=(%.1f,%.1f) candidate=(%.1f,%.1f) candidate-valid=%u has-new-move=%u samples=%zu sample-age-ms=%.3f",
-								count, static_cast<long long>(newestPanPositionQpc),
-								updateVelocity ? 1u : 0u, panTerminalPositionUpdated ? 1u : 0u,
-								centroidDelta.x, centroidDelta.y,
-								contentDelta.x, contentDelta.y, panMotion.directVelocity.x,
-								panMotion.directVelocity.y,
-								panMotion.releaseVelocityCandidate.x,
-								panMotion.releaseVelocityCandidate.y,
-								candidateValid ? 1u : 0u, panMotion.hasNewMove ? 1u : 0u,
-								panMotion.velocitySampleCount, velocityAge * 1000.0);
-							nextPanMoveDiagnosticQpc = newestPanPositionQpc +
-								(std::max)(int64_t{ 1 }, qpcFrequency / 10);
-						}
-						previousPanCentroid = centroid;
-					}
-					if (panMotion.lastVelocitySampleQpc > 0)
-						lastPanInputQpc = panMotion.lastVelocitySampleQpc;
-				}
-			}
-
-			for (CanvasGestureContactRuntime& contact : gestureContacts)
-			{
-				if (contact.snapshot.phase != ContactPhase::Up &&
-					contact.snapshot.phase != ContactPhase::Cancelled) continue;
-				const CanvasTouchDisposition endedDisposition =
-					touchGesture.OnTouchUp(contact.key);
-				LogCanvasPan("touch-up key=%llu phase=%s qpc=%lld disposition=%s remaining=%zu position=(%.2f,%.2f)",
-					static_cast<unsigned long long>(contact.key),
-					contact.snapshot.phase == ContactPhase::Cancelled ? "cancelled" : "up",
-					static_cast<long long>(contact.snapshot.qpc),
-					CanvasTouchDispositionName(endedDisposition), touchGesture.ContactCount(),
-					contact.snapshot.position.x, contact.snapshot.position.y);
-				if (endedDisposition == CanvasTouchDisposition::Pan)
-				{
-					topologyChanged = true;
-				}
-			}
-			std::erase_if(gestureContacts, [&](CanvasGestureContactRuntime& contact)
-				{
-					if (contact.snapshot.phase != ContactPhase::Up &&
-						contact.snapshot.phase != ContactPhase::Cancelled) return false;
-					input_.Recycle(contact.handle);
-					return true;
-				});
-			const size_t fsmPanContacts = touchGesture.PanContactCount();
-			const size_t gestureRuntimePanContacts = static_cast<size_t>(std::count_if(
-				gestureContacts.begin(), gestureContacts.end(),
-				[&](const CanvasGestureContactRuntime& contact)
-				{
-					return touchGesture.Disposition(contact.key) ==
-						CanvasTouchDisposition::Pan;
-				}));
-			const size_t terminalPendingPanContacts = static_cast<size_t>(std::count_if(
-				gestureContacts.begin(), gestureContacts.end(),
-				[&](const CanvasGestureContactRuntime& contact)
-				{
-					return contact.terminalPending && touchGesture.Disposition(contact.key) ==
-						CanvasTouchDisposition::Pan;
-				}));
-			const bool panLifecycleConsistent = IsCanvasPanLifecycleOwnershipConsistent(
-				touchGesture.PanActive(), fsmPanContacts,
-				gestureRuntimePanContacts, terminalPendingPanContacts);
-			if (topologyChanged || terminalPendingPanContacts > 0 || !panLifecycleConsistent)
-				LogCanvasPan("pan-lifecycle panActive=%u fsmPanContacts=%zu gestureRuntimePanContacts=%zu terminalPendingPanContacts=%zu consistent=%u",
-					touchGesture.PanActive() ? 1u : 0u, fsmPanContacts,
-					gestureRuntimePanContacts, terminalPendingPanContacts,
-					panLifecycleConsistent ? 1u : 0u);
-			window_.SetTouchPanActive(touchGesture.PanActive());
-
-			if (touchGesture.PanActive() && topologyChanged)
-			{
-				rebuildPanContactBaseline((std::max)(panReleaseQpc,
-					newestPanPositionQpc), true);
-			}
-
-			else if (panMotion.inertiaActive)
-			{
-				const bool penBrake = penInRange && !suppressPenUntilRelease;
-				const bool candidateBrake = touchGesture.InertiaBrakeRequested();
-				const bool accelerateStop = penBrake || candidateBrake;
-				if (!inertiaBrakeStateValid || previousInertiaBrake != accelerateStop)
-				{
-					LogCanvasPan("inertia-brake active=%u pen-in-range=%u pen-suppressed=%u candidate-timeout=%u decel=%.1f",
-						accelerateStop ? 1u : 0u, penInRange ? 1u : 0u,
-						suppressPenUntilRelease ? 1u : 0u, candidateBrake ? 1u : 0u,
-						accelerateStop ? kCanvasPanPenBrakeDecelerationDipPerSecondSquared :
-							kCanvasPanInertiaDecelerationDipPerSecondSquared);
-					previousInertiaBrake = accelerateStop;
-					inertiaBrakeStateValid = true;
-				}
-				const double deltaSeconds = QpcDeltaSeconds(
-					nowQpc, lastNavigationQpc, qpcFrequency);
-				if (inertiaFirstStepDiagnosticPending)
-				{
-					LogCanvasPan("inertia-first-step engine=application velocity-before=(%.1f,%.1f) dt-ms=%.3f",
-						panMotion.velocity.x, panMotion.velocity.y, deltaSeconds * 1000.0);
-					inertiaFirstStepDiagnosticPending = false;
-				}
-				const bool wasActive = panMotion.inertiaActive;
-				const float speedBefore = CanvasPanSpeed(panMotion);
-				contentDelta = StepCanvasPanInertia(panMotion,
-					deltaSeconds > 0.0 ? deltaSeconds :
-						1.0 / configuration_.timingProfile.target_fps, accelerateStop);
-				if (wasActive && !panMotion.inertiaActive)
-					LogCanvasPan("inertia-stop engine=application reason=threshold speed-before=%.1f brake=%u",
-						speedBefore, accelerateStop ? 1u : 0u);
-			}
-
-			if ((contentDelta.x != 0.0f || contentDelta.y != 0.0f) && document_)
+			if ((frame.contentDeltaPixels.x != 0.0f || frame.contentDeltaPixels.y != 0.0f) && document_)
 			{
 				InkPage* page = document_->PageAt(currentPageIndex_);
 				InkCanvas* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 				if (canvas)
 				{
-					CanvasViewportState viewport{ canvas->Viewport().x, canvas->Viewport().y };
-					const CanvasContentTranslationResult translation =
-						ApplyCanvasContentTranslationChecked(
-						viewport, contentDelta);
-					if (translation.xClamped)
-					{
-						panMotion.velocity.x = 0.0f;
-						if (panMotion.hasNewMove) panMotion.directVelocity.x = 0.0f;
-					}
-					if (translation.yClamped)
-					{
-						panMotion.velocity.y = 0.0f;
-						if (panMotion.hasNewMove) panMotion.directVelocity.y = 0.0f;
-					}
-					if (translation.xClamped || translation.yClamped)
-						LogCanvasPan("viewport-clamp x=%u y=%u requested=(%.3f,%.3f) applied-viewport=(%.3f,%.3f) velocity=(%.1f,%.1f)",
-							translation.xClamped ? 1u : 0u, translation.yClamped ? 1u : 0u,
-							contentDelta.x, contentDelta.y,
-							translation.viewportDelta.x, translation.viewportDelta.y,
-							panMotion.velocity.x, panMotion.velocity.y);
-					if ((translation.viewportDelta.x != 0.0f ||
-						translation.viewportDelta.y != 0.0f) &&
-						canvas->SetViewport({ viewport.x, viewport.y, 1.0f }))
+					const CanvasPanViewportApply applied =
+						canvasPan.ApplyToCanvas(*canvas, frame.contentDeltaPixels);
+					if (applied.xClamped || applied.yClamped)
+						LogCanvasPan("viewport-clamp x=%u y=%u requested=(%.3f,%.3f) applied-viewport=(%.3f,%.3f)",
+							applied.xClamped ? 1u : 0u, applied.yClamped ? 1u : 0u,
+							frame.contentDeltaPixels.x, frame.contentDeltaPixels.y,
+							applied.viewportDelta.x, applied.viewportDelta.y);
+					if (applied.viewportChanged)
 					{
 						if (metricsState_) metricsState_->InvalidateRaster();
-						markPresentationMutation();
+						// 白板视角只在会话内记忆：不推进页 revision、不触发保存，
+						// 因此不同于 PPT 视口修改，这里不调用 markPresentationMutation。
+						rememberWhiteboardViewport();
 						viewportRefreshPending = true;
 						historyGpuCache.DiscardHotPreimages();
 					}
 				}
 			}
-
-			if (!touchGesture.PanActive() && panCentroidValid)
-			{
-				panCentroidValid = false;
-				previousPanContactCount = 0;
-				const CanvasVector directVelocity = panMotion.directVelocity;
-				const CanvasVector releaseCandidate = panMotion.releaseVelocityCandidate;
-				const bool candidateValid = panMotion.releaseVelocityCandidateSource !=
-					CanvasPanReleaseCandidateSource::None;
-				const bool hasNewMove = panMotion.hasNewMove;
-				const double secondsSinceLastInput = CanvasPanReleaseAgeSeconds(
-					panReleaseQpc, lastPanInputQpc, qpcFrequency, panReleaseCancelled);
-				EndCanvasPan(panMotion, secondsSinceLastInput);
-				const CanvasVector selectedReleaseVelocity =
-					panMotion.selectedReleaseVelocity;
-				const bool directReleaseMismatch = hasNewMove &&
-					(std::abs(selectedReleaseVelocity.x - directVelocity.x) > 0.01f ||
-						std::abs(selectedReleaseVelocity.y - directVelocity.y) > 0.01f);
-				if (directReleaseMismatch)
-					LogCanvasPan("pan-release-anomaly has-new-move=1 direct=(%.1f,%.1f) candidate=(%.1f,%.1f) selected=(%.1f,%.1f) release-source=%s",
-						directVelocity.x, directVelocity.y, releaseCandidate.x,
-						releaseCandidate.y, selectedReleaseVelocity.x,
-						selectedReleaseVelocity.y,
-						CanvasPanReleaseSourceName(panMotion.releaseSource));
-				inertiaFirstStepDiagnosticPending = panMotion.inertiaActive;
-				inertiaBrakeStateValid = false;
-				const char* releaseReason = panReleaseCancelled ? "cancelled" :
-					!std::isfinite(secondsSinceLastInput) ? "invalid-release-time" :
-					secondsSinceLastInput > kCanvasPanReleaseVelocityHorizonSeconds ? "release-stale" :
-					panMotion.lastVelocitySampleQpc <= 0 ? "no-move-samples" :
-					CanvasPanSpeed(panMotion) < 5.0f ? "speed-below-threshold" :
-					"application-inertia";
-				const CanvasPanVelocitySample* firstVelocitySample =
-					panMotion.velocitySampleCount > 0 ? &panMotion.velocitySamples[0] : nullptr;
-				const CanvasPanVelocitySample* lastVelocitySample =
-					panMotion.velocitySampleCount > 0
-					? &panMotion.velocitySamples[panMotion.velocitySampleCount - 1] : nullptr;
-				const double sampleSpanMilliseconds = firstVelocitySample && lastVelocitySample
-					? QpcDeltaSeconds(lastVelocitySample->qpc, firstVelocitySample->qpc,
-						qpcFrequency) * 1000.0 : 0.0;
-				const double sampleSpanX = firstVelocitySample && lastVelocitySample
-					? lastVelocitySample->x - firstVelocitySample->x : 0.0;
-				const double sampleSpanY = firstVelocitySample && lastVelocitySample
-					? lastVelocitySample->y - firstVelocitySample->y : 0.0;
-				LogCanvasPan("pan-release engine=application qpc=%lld last-input-qpc=%lld age-ms=%.3f cancelled=%u samples=%zu sample-first=(%lld,%.2f,%.2f) sample-last=(%lld,%.2f,%.2f) sample-span-ms=%.3f sample-span=(%.2f,%.2f) direct=(%.1f,%.1f) candidate=(%.1f,%.1f) candidate-valid=%u has-new-move=%u selected=(%.1f,%.1f) release-source=%s speed=%.1f inertia=%u reason=%s",
-					static_cast<long long>(panReleaseQpc),
-					static_cast<long long>(lastPanInputQpc),
-					std::isfinite(secondsSinceLastInput) ? secondsSinceLastInput * 1000.0 : -1.0,
-					panReleaseCancelled ? 1u : 0u, panMotion.velocitySampleCount,
-					static_cast<long long>(firstVelocitySample ? firstVelocitySample->qpc : 0),
-					firstVelocitySample ? firstVelocitySample->x : 0.0,
-					firstVelocitySample ? firstVelocitySample->y : 0.0,
-					static_cast<long long>(lastVelocitySample ? lastVelocitySample->qpc : 0),
-					lastVelocitySample ? lastVelocitySample->x : 0.0,
-					lastVelocitySample ? lastVelocitySample->y : 0.0,
-					sampleSpanMilliseconds, sampleSpanX, sampleSpanY,
-					directVelocity.x, directVelocity.y, releaseCandidate.x,
-					releaseCandidate.y, candidateValid ? 1u : 0u,
-					hasNewMove ? 1u : 0u, selectedReleaseVelocity.x,
-					selectedReleaseVelocity.y,
-					CanvasPanReleaseSourceName(panMotion.releaseSource),
-					CanvasPanSpeed(panMotion), panMotion.inertiaActive ? 1u : 0u,
-					releaseReason);
-				if (panReleaseQpc > 0) lastPanReleaseQpc = panReleaseQpc;
-			}
-			lastNavigationQpc = nowQpc;
 		};
 
 		TimerPeriodController timerPeriod({ nullptr,
@@ -15941,6 +17308,8 @@ namespace Inkeys::Drawing::Draw3
 					const Bridge::PresentationTarget& target = requestedTarget;
 					if (target.key.IsZero() || !Bridge::ValidPresentationPage(target)) continue;
 					// 同文稿翻页与跨文稿切换都先固定离开侧最新 revision。
+					if (canvasPan.Active()) stopCanvasNavigation("presentation-target");
+					rememberWhiteboardViewport();
 					(void)capturePresentationAutoSave();
 					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
@@ -16015,10 +17384,17 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (command.type == CanvasCommandType::SetWhiteboardTheme)
 				{
+					const WhiteboardTheme themeBefore = activeWorkspace == Bridge::Workspace::Whiteboard &&
+						currentPageIndex_ < whiteboardThemes.size() ? whiteboardThemes[currentPageIndex_] : WhiteboardTheme{};
 					if (activeWorkspace == Bridge::Workspace::Whiteboard &&
 						ApplyWhiteboardThemeCommand(command, activeWorkspace, whiteboardLoading.has_value(), whiteboardGeneration,
 						currentPageIndex_, whiteboardThemes[currentPageIndex_], whiteboardPages[currentPageIndex_].revision, observer_))
+					{
 						publishWhiteboard();
+						// 仅 Draw3 后备归属需要整屏重合成；Freeze 主题由独立背景路径刷新。
+						if (WhiteboardPatternDrawnByDraw3(true) &&
+							whiteboardThemes[currentPageIndex_] != themeBefore) forceFullPresent = true;
+					}
 					continue;
 				}
 				if (command.type == CanvasCommandType::SetWorkspace)
@@ -16035,6 +17411,9 @@ namespace Inkeys::Drawing::Draw3
 						sceneApplyRetry.Cancel();
 						continue;
 					}
+					// 工作区切换终止手势与惯性；离开白板前记下当前页视角。
+					stopCanvasNavigation("workspace");
+					rememberWhiteboardViewport();
 					(void)capturePresentationAutoSave();
 					const auto keepStagedScene = pendingWorkspaceReady;
 					pendingWorkspaceReady.reset();
@@ -16119,7 +17498,7 @@ namespace Inkeys::Drawing::Draw3
 					continue;
 				}
 				// 页面、撤回/重做和键盘平移都以命令时刻的固定视口为起点。
-				interruptNavigationForPenOrMouse("canvas-command");
+				stopCanvasNavigation("canvas-command");
 				const bool redoClear = command.type == CanvasCommandType::Redo &&
 					currentPageIndex_ < pageRuntimeStates.size() &&
 					pageRuntimeStates[currentPageIndex_].clearRedoAvailable &&
@@ -16420,6 +17799,8 @@ namespace Inkeys::Drawing::Draw3
 				(void)capturePresentationAutoSave();
 				if (activeWorkspace == Bridge::Workspace::Whiteboard)
 				{
+					// 离页前记下当前页视角；被驱逐的冷页重载后由会话侧表恢复。
+					rememberWhiteboardViewport();
 					ExtendWhiteboardThemes(whiteboardThemes, targetPageIndex, currentPageIndex_);
 					whiteboardPages.resize(whiteboardThemes.size());
 					saveWhiteboard();
@@ -16517,6 +17898,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			FlushCursorDiagnostics();
 			const bool selectionMode = window_.SelectionMode();
+			refreshCanvasPanMode();
 			const bool selectionUsesAuxiliary =
 				Bridge::SelectionUsesAuxiliaryOutput(selectionMode, activeWorkspace);
 			const TransparentOutputTarget expectedOutputTarget = selectionUsesAuxiliary
@@ -16531,7 +17913,8 @@ namespace Inkeys::Drawing::Draw3
 				auxiliaryCleanVerificationPending = selectionUsesAuxiliary;
 			}
 			// 选择模式整段释放高精度计时器；进入绘制模式时只尝试一次。
-			timerPeriod.SetSelectionMode(selectionMode);
+			// 白板移动模式的平移/惯性活动期保持 1 ms 计时器，否则帧节拍会抖动。
+			timerPeriod.SetSelectionMode(SelectionReleasesTimerPeriod(selectionMode, canvasPan.Active()));
 			const ProductVisualStyle nextProductVisualStyle =
 				window_.ProductVisualStyleSnapshot();
 			if (!ProductVisualStyleEqual(
@@ -16703,6 +18086,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (ProcessPendingResize(false))
 			{
+				// 窗口尺寸变化后触点坐标系与视口覆盖都已失效：立即终止平移手势与惯性。
+				if (canvasPan.Active()) stopCanvasNavigation("resize");
 				const WindowSize size = window_.Size();
 				laserIncrementalEnsureAttempted = false;
 				synchronizeLaserResources();
@@ -16765,30 +18150,15 @@ namespace Inkeys::Drawing::Draw3
 				rasterSubmissionFailed |= !rebuilt.succeeded;
 				forceFullPresent = true;
 			}
-			DrawingCursorSample priorityPenSample;
+			const CanvasPanPenMailbox priorityPen = ObserveCanvasPanPenMailbox(window_, input_, canvasPan,
+				suppressPenUntilRelease, suppressedPenTerminalQpc);
+			const bool priorityPenInContact = priorityPen.inContact;
 			DrawingCursorSample priorityMouseSample;
-			const bool priorityPenSampleValid =
-				window_.ReadPenCursorSample(priorityPenSample) &&
-				priorityPenSample.valid;
-			const bool priorityPenInContact = priorityPenSampleValid &&
-				IsPenContactSampleFresh(priorityPenSample.inContact,
-					priorityPenSample.qpc, suppressedPenTerminalQpc);
-			if (ShouldBeginSuppressingPenContactDuringTouchPan(
-				touchGesture.PanActive(), priorityPenInContact))
-			{
-				suppressPenUntilRelease = true;
-				window_.SuppressPenContactForTouchPan();
-			}
-			else if (suppressPenUntilRelease && !priorityPenInContact &&
-				!hasLiveSuppressedPenContact())
-				suppressPenUntilRelease = false;
 			const bool priorityMouseInContact =
 				window_.ReadMouseCursorSample(priorityMouseSample) &&
 				priorityMouseSample.valid && priorityMouseSample.inContact;
-			const bool navigationInProgress = touchGesture.PanActive() ||
-				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
-				!gestureContacts.empty();
-			if (navigationInProgress && (touchGesture.PanActive() ||
+			const bool navigationInProgress = canvasPan.Active();
+			if (navigationInProgress && (canvasPan.TouchPanHeld() ||
 				input_.HasPendingWork() || ShouldPrioritizeDrawingContact(
 					navigationInProgress,
 					priorityPenInContact && !suppressPenUntilRelease,
@@ -16802,6 +18172,7 @@ namespace Inkeys::Drawing::Draw3
 			LARGE_INTEGER navigationQpc = {};
 			QueryPerformanceCounter(&navigationQpc);
 			updateCanvasNavigation(navigationQpc.QuadPart);
+			publishWhiteboardViewport(); // 平移帧最早的发布点，Freeze 相位与本帧视口同帧计算。
 			pumpCanvasDebugProbes();
 			if (viewportRefreshPending || viewportRecoveryPending)
 			{
@@ -16837,10 +18208,12 @@ namespace Inkeys::Drawing::Draw3
 						{
 							const CanvasViewportState viewport{
 								canvas->Viewport().x, canvas->Viewport().y };
+							// 预取带随内容速度（像素/秒）前移；动力学已把速度封顶到 12000 DIP/s。
+							const CanvasVector panVelocityPixels = canvasPan.VelocityPixels();
 							const std::optional<CanvasRect> coverage =
 								ComputeCanvasRenderCoverageBounds(viewport,
 									static_cast<float>(size.width), static_cast<float>(size.height),
-									panMotion.velocity, kCompositionTileSize);
+									panVelocityPixels, kCompositionTileSize);
 							if (coverage)
 							{
 								const std::vector<CanvasTileCoordinate> contentTiles =
@@ -16848,7 +18221,7 @@ namespace Inkeys::Drawing::Draw3
 										pageRuntimeStates[currentPageIndex_].history, *coverage);
 								viewportTilePlan = PlanCanvasRenderTiles(contentTiles,
 									viewport, static_cast<float>(size.width),
-									static_cast<float>(size.height), panMotion.velocity,
+									static_cast<float>(size.height), panVelocityPixels,
 									kCompositionTileSize);
 							}
 						}
@@ -16940,7 +18313,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto canvasRevision = window_.HapticPointerRevision();
 				const bool continuousAllowed = (hapticPenContacts() <= 1) && Haptics::ContinuousAllowed(window_.SelectionMode(),
 					window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser,
-					input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), touchGesture.PanActive(),
+					input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), canvasPan.TouchPanHeld(),
 					suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
 				// 绘制开关不作废范围身份，也不停止独立按钮反馈；恢复时允许重设悬停波形。
 				const bool drawingReenabled = drawingHapticsEnabled_ && !previousDrawingHapticsEnabled;
@@ -16962,7 +18335,7 @@ namespace Inkeys::Drawing::Draw3
 				Haptics::CanvasPointerRequest pointer;
 				if (window_.ConsumeHapticPointer(pointer))
 				{
-						if (HapticDiagnostics::Enabled()) HapticDiagnostics::Log("canvas_pointer", "pointer=%u contact=%d revision=%llu allowed=%d pen_contacts=%u tick=%llu selection=%d visible=%d laser=%d admission=%d quarantine=%d pan=%d suppressed=%d", pointer.pointerId, pointer.inContact, static_cast<unsigned long long>(pointer.revision), continuousAllowed, hapticPenContacts(), static_cast<unsigned long long>(GetTickCount64()), window_.SelectionMode(), window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser, input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), touchGesture.PanActive(), suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
+						if (HapticDiagnostics::Enabled()) HapticDiagnostics::Log("canvas_pointer", "pointer=%u contact=%d revision=%llu allowed=%d pen_contacts=%u tick=%llu selection=%d visible=%d laser=%d admission=%d quarantine=%d pan=%d suppressed=%d", pointer.pointerId, pointer.inContact, static_cast<unsigned long long>(pointer.revision), continuousAllowed, hapticPenContacts(), static_cast<unsigned long long>(GetTickCount64()), window_.SelectionMode(), window_.HapticSurfaceVisible(), window_.ActiveTool() == DrawingTool::Laser, input_.AdmissionBlocked(), input_.HasQuarantinedContacts(), canvasPan.TouchPanHeld(), suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan());
 						// 同范围 RTS Down 保留悬停时取得的控制器；仅新范围或失败重试重新解析设备。
 						const bool reuseBinding = hapticCanvasBound && Haptics::SameCanvasBinding(hapticCanvasPointer, pointer);
 						if (!reuseBinding) { haptics_->DetachPointer(); hapticCanvasBound = false; }
@@ -17027,7 +18400,7 @@ namespace Inkeys::Drawing::Draw3
 									dropped.dropped, dropped.lastPointerId, dropped.lastReason);
 							if (!click) break;
 						// UI 操作不能抢占正在书写的笔或 Pan；独立凭据不成为 RTS 的连续绑定。
-							if (!active.empty() || touchGesture.PanActive() || input_.HasQuarantinedContacts()) { HapticDiagnostics::Log("click_gate", "pointer=%u reason=active_or_pan_or_quarantine", click->pointerId); continue; }
+							if (!active.empty() || canvasPan.HasContacts() || input_.HasQuarantinedContacts()) { HapticDiagnostics::Log("click_gate", "pointer=%u reason=active_or_pan_or_quarantine", click->pointerId); continue; }
 						haptics_->DetachPointer();
 						hapticCanvasBound = false;
 						hapticUiSource.reset();
@@ -17154,10 +18527,14 @@ namespace Inkeys::Drawing::Draw3
 						});
 				publishCurrentLoadProgress();
 			}
-			const bool navigationActive = touchGesture.PanActive() ||
-				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
-				!gestureContacts.empty() || !debugProbeContacts.empty() ||
+			// 命令处理后、idle 判定前同步白板纹理；主题/页/工作区变化必须能唤起整屏重合成。
+			syncWhiteboardPattern(forceFullPresent);
+			publishWhiteboardViewport(); // 翻页/冷页视角恢复/TranslateViewport/工作区切换在命令处理后落到这里。
+			const bool navigationActive = canvasPan.Active() ||
+				!debugProbeContacts.empty() ||
 				viewportRefreshPending || viewportRecoveryPending;
+			// Stop/终态可能发生在帧初计时器判定之后，进入等待前同步释放。
+			timerPeriod.SetSelectionMode(SelectionReleasesTimerPeriod(window_.SelectionMode(), canvasPan.Active()));
 			// 画布调试：板子/标记变化必须在 idle 判定之前并入 frameDirty，否则静止画布不会刷新它们。
 			RECT canvasDebugInjectedBounds = {};
 			bool canvasDebugInjected = false;
@@ -17336,7 +18713,7 @@ namespace Inkeys::Drawing::Draw3
 				if (runtime->palmObservationOnly && runtime->palm.locked)
 				{
 					RetirePalmObservation(*runtime);
-					touchGesture.OnTouchUp(runtime->touchGestureKey);
+					touchContacts.Release(runtime->touchGestureKey);
 				}
 			}
 			const bool blockingPalm = hasBlockingPalm();
@@ -17359,7 +18736,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 					runtime->lastInputSnapshot = terminal;
 					finishMouseSpeedEraser(*runtime);
-					if (runtime->touchGestureKey) touchGesture.OnTouchUp(runtime->touchGestureKey);
+					if (runtime->touchGestureKey) touchContacts.Release(runtime->touchGestureKey);
 					if (runtime->metricDeviceType == InputDeviceType::Pen && haptics_ &&
 						window_.EndHapticContact(runtime->handle.record->ContactId(), runtime->handle.generation, false,
 							runtime->handle.record->TabletContextId())) haptics_->StopFeedback();
@@ -18265,6 +19642,9 @@ namespace Inkeys::Drawing::Draw3
 				// 标记每个呈现帧都完整重绘，因此其区域必须先被重新合成，避免半透明像素叠加。
 				UnionRectInPlace(frameDirty, canvasDebugOverlay->MarkerBounds());
 			}
+			// 活动笔画结束后的命令（主题/翻页）可能在上次同步之后才处理；合成前再同步一次。
+			syncWhiteboardPattern(forceFullPresent);
+			publishWhiteboardViewport();
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
 			// 读回缓冲重建前先完整合成；空闲回收本身不能制造新帧。
 			if (!IsEmptyRect(frameDirty) && presentation_.AuxiliaryReadbackNeedsFullPresent()) forceFullPresent = true;
@@ -18342,17 +19722,24 @@ namespace Inkeys::Drawing::Draw3
 				bool compositeSucceeded = true;
 				if (!viewportVisibleClear && snapshotCanvas)
 				{
+					// 内容运动方向与模糊强度都来自动力学速度（DIP/s）；模糊半径随 DPI 缩放到像素。
+					const CanvasVector snapshotMotion = canvasPan.VelocityDip();
 					renderer_.CompositeTrustedL2SnapshotToBackBuffer({
 						snapshotCanvas->Viewport().x, snapshotCanvas->Viewport().y,
-						panMotion.velocity.x, panMotion.velocity.y,
-						CanvasPanFallbackBlurDip(CanvasPanSpeed(panMotion)),
+						snapshotMotion.x, snapshotMotion.y,
+						CanvasPanFallbackBlurDip(std::hypot(snapshotMotion.x, snapshotMotion.y)),
 						configuration_.dpiScale, frameDirty });
 					const OperatorLayerMergeMode mergeMode = orderedPreview
 						? OperatorLayerMergeMode::Ordered
 						: OperatorLayerMergeMode::CoverageUnion;
 					compositeSucceeded = renderer_.ApplyOperatorLayers(renderer_.backBufferRTV.Get(),
 						renderer_.layerL1, renderer_.layerL0, frameDirty, mergeMode);
-					if (compositeSucceeded) (void)renderer_.DrawDebugPlateUnder(frameDirty);
+					if (compositeSucceeded)
+					{
+						(void)renderer_.DrawDebugPlateUnder(frameDirty);
+						// 平移帧与 CompositeLayersToBackBuffer 同序：纹理 under 位于快照/墨迹/调试板之下。
+						DrawWhiteboardPatternUnder(frameDirty);
+					}
 				}
 				else compositeSucceeded = CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				if (!compositeSucceeded)

@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "核对改写后的 Free Canvas Navigation 契约与实现一致，并检查未改动部分（tile 恢复、可信快照、Pen 接管）未回归"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "核对白板页存储/驱逐/冷加载合同未被视角侧表与纹理改动破坏"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "核对 Draw3 集成、Present 回执与白板页合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "核对 contact 生命周期、设备分类与终态回收"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "核对新 under pass 的混合方式、scissor、不污染 L2/快照"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "验证合同：完整解决方案构建、严格 Headless、真实生产路径而非公式测试"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 完整解决方案构建命令与兼容要求"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定与注释风格"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层数据流与边界检查清单"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/inertia-root-cause.md", "reason": "对照根因清单与单测阈值，确认每条 spike/幻影机制都有回归测试"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/move-mode-input-routing.md", "reason": "对照旧 FSM/控制器死代码清单与模式切换钩子，检查遗漏与误删"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/background-pattern-ownership.md", "reason": "对照纹理 pass 的风险清单（非幂等、门控、空页捷径、Freeze 失效判断）"}

@@ -26,9 +26,6 @@ export import Inkeys.Drawing.Draw3.presentation_auto_save;
 
 export namespace Inkeys::Drawing::Draw3
 {
-	// 画布平移尚未纳入产品桥接，保留编译门禁并隐藏实验入口。
-	inline constexpr bool kCanvasNavigationProductIntegrationEnabled = false;
-
 	// 表示当前选择或活动 contact 锁定的绘制工具。
 	enum class DrawingTool
 	{
@@ -187,6 +184,9 @@ export namespace Inkeys::Drawing::Draw3
 		// 选择模式与穿透样式解耦；绘制线程据此管理高精度计时器。
 		bool SelectionMode() const noexcept;
 		void SetSelectionMode(bool enabled) noexcept;
+		// 平移模式由选择位与已确认工作区派生；工作区确认回调前发布，不等待下一绘制帧。
+		bool CanvasPanMode() const noexcept;
+		void SetCanvasPanWorkspace(bool whiteboard) noexcept;
 		bool AutoSaveEnabled() const noexcept;
 		void SetAutoSaveEnabled(bool enabled) noexcept;
 		// Presentation 保持 click-through/不激活；白板绘制面由生命周期事务显式开放激活。
@@ -355,7 +355,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool lastTouchMouseDiagnosticFromPointer_ = false;
 		uint64_t cursorMouseDiagnosticEvent_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
-		std::atomic<bool> selectionMode_ = true;
+		Detail::MouseSelectionModeState mouseSelectionMode_;
 		std::atomic<bool> autoSaveEnabled_ = false;
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;

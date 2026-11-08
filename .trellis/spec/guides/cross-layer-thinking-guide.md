@@ -33,8 +33,8 @@ Win32 window message
 - 不在窗口回调中直接操作 `InkRenderer` 或交换链。
 - RTS 多点同时检查 HWND Tablet Pen Service 属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回值和 `IRealTimeStylus3`；不能只验证 COM 初始化成功。
 - 输入被手势状态机抑制时，沿 `RTS contact -> DrawingController -> WM_POINTER cursor/haptics` 检查所有副作用；“不产生 Stored Stroke”不等于已抑制接触光标、系统光标决策和触觉预启动。跨线程抑制需锁存到对应设备终态，并覆盖 Pointer 与 RTS 任一路径缺失的设备。
-- contact Down 的队列顺序与已有 contact 的合并 snapshot 是两条时间线；处理新 Down 前检查旧单指是否已在 mailbox 发布较早的 `Up/Cancelled`，只退休手势归属，不能跳过旧笔画正常收尾。
-- 平移触点拓扑变化时同时核对几何 centroid、每指估速位置和 QPC 零点；只重建其中一项会把触点加入/移除误算成速度尖峰。
+- contact Down 的队列顺序与已有 contact 的合并 snapshot 是两条时间线；处理新 Down 前旧单指可能已在 mailbox 发布较早的 `Up/Cancelled`，不能因此跳过旧笔画的正常收尾或提前回收 contact。（旧的"出队新 Down 前先退休旧批次手势资格"机制随 180 ms 双指 FSM 一并删除，平移触点按各自终态在 `CanvasPanInput::Step` 回收。）
+- 平移触点数量变化时只重基线内容位移（质心位置），绝不清除或重基线每指的估速器；速度永远来自每指 tracker（`>= 3` 样本且跨度 `>= 20 ms` 才有效），位置质心与速度来源分离。以"上次消费的位置/抬起时刻"重置估速会把加入/移除误算成速度尖峰（旧模型二指甩释放速度最大 2.8–5.6×）。单位也要同源核对：触点与视口是物理像素，动力学与常量是 DIP，经 `dipPerPixel` 换算。
 
 依据：`WindowController::HandleWindowMessage`、`ConsumeResizeRequest`、`DrawingController::ProcessPendingResize`。
 

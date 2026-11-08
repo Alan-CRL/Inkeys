@@ -2222,6 +2222,9 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererDebugOverlay.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPattern.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2641,7 +2644,13 @@
     <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h">
       <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.PatternFollow.h">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardPattern.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h">

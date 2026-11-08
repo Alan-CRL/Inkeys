@@ -14,6 +14,8 @@
 #include <vector>
 #include <wrl/client.h>
 
+#include "Draw3.WhiteboardPattern.h"
+
 export module Inkeys.Drawing.Draw3.renderer;
 
 export import Inkeys.Drawing.Draw3.laser_particles;
@@ -194,6 +196,8 @@ export namespace Inkeys::Drawing::Draw3
 	int RunRendererUploadValidation() noexcept;
 	// 无窗口生产验证：画布调试板在 L2/L1/L0 之下、关闭时字节一致，以及标记原语的真实像素读回。
 	int RunCanvasDebugOverlayValidation() noexcept;
+	// 无窗口生产验证：白板背景纹理 under pass 与旧 Freeze D2D 参考、alpha 不累积、相位和门控的真实像素读回。
+	int RunWhiteboardPatternValidation() noexcept;
 	int RunLaserResourceLifecycleValidation() noexcept;
 
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
@@ -256,7 +260,8 @@ export namespace Inkeys::Drawing::Draw3
 			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw,
 			ID3D11BlendState* blendStateOverride = nullptr,
-			float cornerRadiusOverride = -1.0f);
+			float cornerRadiusOverride = -1.0f,
+			ID3D11RasterizerState* rasterStateOverride = nullptr);
 		// 按 DPI 配置固定 4 DIP 圆角。
 		void ConfigureShapePrimitives(float dpiScale) noexcept;
 		// 以零像素视口预热 shape 16..19，避免首次选用时驱动延迟编译。
@@ -332,6 +337,12 @@ export namespace Inkeys::Drawing::Draw3
 		// 在 backbuffer 上以 over 混合绘制解析 Shape（虚线/实线/矩形边框），不触碰 L0/L1/L2。
 		int DrawDebugMarkerShapes(std::span<const ShapePrimitive> primitives,
 			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, float cornerRadiusPx);
+		// ---- 白板背景纹理：只写 backbuffer 的 under pass，绝不进入 L2/历史/快照 ----
+		// 把点阵/网格画在 backbuffer 已合成内容（L2 + L1/L0 + 调试板）之下。under 混合
+		// （Src=INV_DEST_ALPHA, Dest=ONE）不是幂等的：重复绘制同一像素会累积 alpha，
+		// 因此只写 dirty∩画布并用 scissor 硬约束，调用方保证该矩形刚由 L2 重新拷贝。
+		// params 未启用时为空操作；返回 false 表示 GPU 资源/提交失败（不得重试同一矩形）。
+		bool DrawWhiteboardPatternUnder(const WhiteboardPatternParams& params, RECT dirty) noexcept;
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将 L1/L0 仿射操作统一应用到目标 RGBA。
@@ -375,6 +386,7 @@ export namespace Inkeys::Drawing::Draw3
 	private:
 		friend int RunRendererUploadValidation() noexcept;
 		friend int RunCanvasDebugOverlayValidation() noexcept;
+		friend int RunWhiteboardPatternValidation() noexcept;
 		friend int RunLaserResourceLifecycleValidation() noexcept;
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 		bool failLaserPreparationAfterColor_ = false;
@@ -443,6 +455,12 @@ export namespace Inkeys::Drawing::Draw3
 		UINT debugLabelSlots_ = 0;
 		RECT debugPlateRect_ = {};
 		bool debugPlateVisible_ = false;
+		// 白板背景纹理：复用 shape 16 的零长度/长线 primitive，不新增 HLSL。
+		bool EnsureWhiteboardPatternPipeline() noexcept;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> whiteboardPatternUnderBlendState_;
+		std::vector<ShapePrimitive> whiteboardPatternPrimitives_;
+		// 最近一次 pass 的图元数，仅供性能记录和验证读取。
+		std::size_t whiteboardPatternLastPrimitiveCount_ = 0;
 	};
 }
 

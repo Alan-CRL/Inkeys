@@ -64,6 +64,7 @@ export namespace Inkeys::Drawing::Draw3
 	int RunPresentationCurrentLoadRetryProbe() noexcept;
 	// 无 HWND：复用 Run 的 ingress 批次函数验证命令屏障前后不吞新 Down。
 	int RunDraw3ControlFenceProductionProbe() noexcept;
+	int RunCanvasPanFeelProductionProbe() noexcept;
 	// 无 HWND：复用生产手掌转换、邻域准入与接续身份接缝。
 	int RunPalmEraserProductionProbe() noexcept;
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
@@ -108,6 +109,8 @@ export namespace Inkeys::Drawing::Draw3
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
 		void (*recoveryChanged)(void*, const CanvasRecoveryState&) noexcept = nullptr;
 		bool (*recoveryRetryAllowed)(void*, std::uint64_t) noexcept = nullptr;
+		// 绘制线程直接调用：白板当前页视口变化（平移/翻页/冷页恢复/进入或离开白板）。必须无锁、不等待。
+		void (*whiteboardViewportChanged)(void*, const WhiteboardViewportSample&) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
@@ -179,6 +182,9 @@ export namespace Inkeys::Drawing::Draw3
 		void Run();
 	private:
 		bool CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
+		// 在 backbuffer 已合成内容之下补画白板点阵/网格；仅白板工作区且主题非 Blank 时生效。
+		// dirty 必须是刚由 L2 重新拷贝的矩形（under 混合不幂等）。
+		void DrawWhiteboardPatternUnder(RECT dirty);
 		bool PresentFrame(RECT dirty, bool presentFull);
 
 		ContactInputCoordinator& input_;
@@ -220,5 +226,9 @@ export namespace Inkeys::Drawing::Draw3
 		bool lastPresentSucceeded_ = false;
 		bool graphicsRecoveryPending_ = false;
 		std::uint64_t currentContentRevision_ = 0;
+		// 白板背景纹理的帧状态（仅绘制线程）：Run() 每轮在合成前同步，值取当前页主题。
+		bool whiteboardPatternWorkspace_ = false;
+		std::uint8_t whiteboardPatternKind_ = 0; // WhiteboardPattern 数值，0 = Blank。
+		std::uint32_t whiteboardPatternRgb_ = 0;
 	};
 }

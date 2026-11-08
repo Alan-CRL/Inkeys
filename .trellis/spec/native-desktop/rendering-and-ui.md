@@ -1755,7 +1755,7 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 - `Inactive / Entering / Active / Exiting` 的每次 workspace 转换都先调用 `CollapseAuxiliaryPanels(true)` 并撤销 Whiteboard capture。进入稳定白板时绘制属性、几何属性、更多、笔菜单和粗细预览均保持关闭。
 - More 在左下同一 HWND 向上展开关闭白板、最小化白板、主题样式；主题内联展开六色与空白/点阵/网格预览。左/底主体锚点固定，窗口大小、命中、阴影及 damage 使用同帧几何；不得新增 popup HWND。菜单外点击、Escape、翻页、最小化和工作区切换关闭菜单。Hook 只异步投递收起请求，排除左侧控件本身，原画布点击继续正常处理。
 - 白板主栏 A2 按钮恢复；有效放映存在时为“返回放映”，否则为“关闭白板”，后台 PPT 结束会同步文案；白板组最小化时主栏优先显示 `barWhiteboard` 和“返回白板”/`Resume`，点击仅恢复原窗口组，最小化/恢复边沿立即刷新图标和文字；主栏非最小化关闭与菜单关闭共用 `RequestWhiteboardActive(false)`。
-- 每页主题及笔迹/历史自动保存到进程会话下的多页 `.uink`，不受桌面自动保存开关影响。新页继承当前主题，主题修改不进墨迹撤销栈。色板、纹理、冷页加载和页级内存合同见 [whiteboard.md](whiteboard.md) 与 [draw3-integration.md](draw3-integration.md#whiteboard-页级-uink-与编辑历史合同)。本次替代此前无保存、固定墨绿的初始范围；仍不支持平移、缩放和历史浏览。
+- 每页主题及笔迹/历史自动保存到进程会话下的多页 `.uink`，不受桌面自动保存开关影响。新页继承当前主题，主题修改不进墨迹撤销栈。色板、纹理、冷页加载和页级内存合同见 [whiteboard.md](whiteboard.md) 与 [draw3-integration.md](draw3-integration.md#whiteboard-页级-uink-与编辑历史合同)。本次替代此前无保存、固定墨绿的初始范围；2026-11-06 起白板"移动（Selection）"模式支持画布平移与每页视角（会话内，不改页 revision、不使页变脏，合同见 [whiteboard.md](whiteboard.md#移动模式的画布平移与每页视角2026-11-06) 与 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)），仍不支持缩放、旋转和历史浏览。白板点阵/网格默认由 Freeze 窗口按画布视口重画相位（仅场景脏区的更新，不是内容失效），合同见 [whiteboard.md](whiteboard.md#场景白板点阵网格背景的归属与视口跟随2026-11-06)。
 - Freeze 是 Whiteboard mode 的唯一 `WS_EX_APPWINDOW`、任务栏和 activation anchor；Drawpad 可激活但保留 `WS_EX_TOOLWINDOW`，其余辅助窗口不进入任务栏。整个 owner group 保持 `HWND_NOTOPMOST`，最小化/恢复只恢复此前可见成员。白板仍等待 Draw3 对应输出/内容版本的真实首帧、背景提交及必要窗口事务完成，随后先发布 Active，再异步尝试一次激活。Freeze 的窗口操作由 owner 读回目标 RECT、真实可见且非最小化，并发布固定快照；UI 只消费匹配回执，minimized 时被抑制的请求返回未提交，不得确认背景 Active，恢复通知驱动一次新的真实提交。前台分配失败不阻止后台进入，不周期抢焦点。异步请求仅在同 epoch 且仍为 Entering/Active 的白板意图下执行，退出、新 epoch、隐藏、最小化和停机均拒绝过期激活。
 - 退出必须恢复 `DrawpadPresentation` click-through 并释放白板 dock request/lock；有有效 PPT 则返回放映，没有则回桌面。最终回桌面恢复首次进入前的主栏基线，不再强制 `fold=true`。窗口交接由同一工作区政策的 Prepare/Complete 完成，内部依次撤销显式全屏、离开白板样式、恢复目标 band 与穿透，并核验实际 owner/Z-order；不得再把独立的 `LeaveWhiteboardWindowMode()`、`SetOverlayTopmost(true)` 调用拼成另一套完成条件。
 
@@ -2644,6 +2644,7 @@ fontSize = currentSize * coefficient;
 - 只有完整 GetDC/ULW/ReleaseDC/EndDraw 和当前精确 native 回执都成功，才提交捕获的命中、damage、几何及页码 UI-ready。回执不得提交后来计算的命中；捕获后新 damage 保留。
 - 新几何或业务身份正在等待 ACK 时不接纳对应新输入；已有合法手势及相同几何/身份的旧成功快照不因每个反馈像素刷新而取消。旧快照的保留不授予新身份权限。
 - Whiteboard 成功像素在相同内容/设备/窗口代次下等待 native 回执时复用；主题、DPI、设备、请求改变退休旧像素候选。BackgroundPrepared 只证明匹配请求的像素与几何，最终 Active 仍核验 owner 的 visible/非 iconic 快照；inactive 必须真实 Hide 或已知旧代际退休。
+- 白板平移的相位更新仅产生 scene damage：`Whiteboard::PublishCanvasViewport` 经 `ViewportChannel` 合并最新样本，`RenderBackgroundOnce` 仅在无在途提交时 `backgroundScene.Invalidate()`，不得为相位调用 `backgroundState.Invalidate()` / `CancelBackgroundCandidate()`。在途期间不新增 scene damage（防止确认时 `ConsumeDamage` 吞掉新损伤），只等待当前回执；成功 ACK 每次都 `Prepare(pending.frame)`，随后提交并消费旧 damage。外层 `RenderBackground` 可在同一回调续跑一次来画最新相位，每回调至多提交一个新像素帧；主题失效仍按归属判断，Freeze 归属比较 RGB/纹理，Draw3 归属只比较 RGB。ULW、租约、presentationRevision、窗口身份/几何与真实回执门禁不变，详细合同见 [whiteboard.md](whiteboard.md#场景白板点阵网格背景的归属与视口跟随2026-11-06)。
 - pair 必须完整 mask 与两个实际身份都匹配；第二窗失败回滚第一窗，未完成的恢复继续持有原责任。停机/安全 Hide 的 generation 检查必须在安全覆盖锁存之前完成。
 
 ### 4. Validation & Error Matrix
@@ -2655,14 +2656,15 @@ fontSize = currentSize * coefficient;
 | ULW 成功、原生失败或取消 | 旧成功快照与未确认 damage 保留，按原失败恢复责任重试 |
 | 同请求主题/DPI失效或 HWND generation 改变 | 迟到帧/回执拒绝，不复活 prepared |
 | pair 半完成 | mask 不完整，不能发布成对成功 |
+| 平移相位样本在候选在途时继续到达 | 最新者合并，不重画/取消/内容失效；ACK 后至多链式提交一个新帧 |
 
 ### 5. Good / Base / Bad Cases
 
-Good：ULW 后 owner 精确核验，再提交捕获快照。Base：没有新像素且 native 未决时只续回执。Bad：入队即 ConsumeDamage、拿当前 Scene 确认旧帧，或将逐帧整组排序仅移到另一线程。
+Good：ULW 后 owner 精确核验，再提交捕获快照；Freeze 相位在 ACK 后同回调续帧。Base：没有新像素且 native 未决时只续回执。Bad：入队即 ConsumeDamage、拿当前 Scene 确认旧帧，或将逐帧整组排序仅移到另一线程。Common Mistakes：把平移当内容失效反复取消候选，或在 ACK 前新增 scene damage。
 
 ### 6. Tests Required
 
-真实生产 mailbox/背景状态红绿、owner 延迟时其他客户端推进、普通 Show 零整组提升、幂等显隐、过期/取消/代际、pair 第二窗失败回滚、完整 ACK 前命中/UI-ready 门禁。完整 Debug|ARM64 solution 与相关 no-window/hidden/offscreen/state 回归；性能使用屏外真实四 HWND 的生产 RenderSurface。实际结果及未覆盖项以任务 verification 为准，不能由本合同宣称已通过。
+`RunHiddenBackgroundTests`（`--page-control-hidden-test`）须检查 `pan samples during a pending candidate neither redraw nor cancel it nor invalidate content` 与 `receipt acknowledgement is followed by the next pattern frame in the same callback`。真实生产 mailbox/背景状态红绿、owner 延迟时其他客户端推进、普通 Show 零整组提升、幂等显隐、过期/取消/代际、pair 第二窗失败回滚、完整 ACK 前命中/UI-ready 门禁。完整 Debug|ARM64 solution 与相关 no-window/hidden/offscreen/state 回归；性能使用屏外真实四 HWND 的生产 RenderSurface。实际结果及未覆盖项以任务 verification 为准，不能由本合同宣称已通过。
 
 ### 7. Wrong vs Correct
 

@@ -324,6 +324,7 @@ namespace Inkeys::Drawing::Draw3
 		(void)callbacks; // 产品样式由 HostStyleCallbacks/Window Service 负责。
 		if (!window || !IsWindow(window)) return false;
 		if (externalWindow_.load(std::memory_order_acquire)) return false;
+		mouseSelectionMode_.ResetWorkspace();
 		{
 			// Host generation 之间不得继承上一代异步 completion 或画布命令。
 			const std::scoped_lock lock(canvasCommandMutex_);
@@ -386,6 +387,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 先关闭新消息入口，再清理 HWND 属性和输入状态。
 		const bool wasAttached = externalWindow_.exchange(false, std::memory_order_acq_rel);
+		mouseSelectionMode_.ResetWorkspace();
 		RequestHapticPointerLeave();
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
@@ -506,11 +508,13 @@ namespace Inkeys::Drawing::Draw3
 		const bool up = message == WM_LBUTTONUP || message == WM_RBUTTONUP;
 		const auto button = message == WM_RBUTTONDOWN || message == WM_RBUTTONUP
 			? decltype(mouseInput_)::Right : decltype(mouseInput_)::Left;
+		// 白板移动模式下左键拖动是画布平移（右键仍由控制器丢弃），不按 Selection 隔离。
+		const bool isolateForSelection = mouseSelectionMode_.Isolates();
 		if (down)
 		{
 			// 鼠标兜底不经过 RTS/Pointer Down，也要通知白板收起菜单。
 			NotifyCanvasContactDown();
-			if (mouseInput_.Down(*coordinator, button, x, y, qpc.QuadPart, SelectionMode()))
+			if (mouseInput_.Down(*coordinator, button, x, y, qpc.QuadPart, isolateForSelection))
 			{
 				(void)SetCapture(window);
 				if (GetCapture() != window) mouseInput_.CaptureLost(*coordinator, qpc.QuadPart);
@@ -521,7 +525,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const std::uint32_t held = ((wParam & MK_LBUTTON) ? decltype(mouseInput_)::Left : 0u) |
 				((wParam & MK_RBUTTON) ? decltype(mouseInput_)::Right : 0u);
-			mouseInput_.Move(*coordinator, held, x, y, qpc.QuadPart, SelectionMode());
+			mouseInput_.Move(*coordinator, held, x, y, qpc.QuadPart, isolateForSelection);
 		}
 		if (!mouseInput_.Active()) ReleaseMouseCapture(window);
 		SetTouchCursorSuppressed(false);
@@ -666,17 +670,27 @@ namespace Inkeys::Drawing::Draw3
 
 	bool WindowController::SelectionMode() const noexcept
 	{
-		return selectionMode_.load(std::memory_order_acquire);
+		return mouseSelectionMode_.Selection();
 	}
 
 	void WindowController::SetSelectionMode(bool enabled) noexcept
 	{
-		if (selectionMode_.exchange(enabled, std::memory_order_acq_rel) == enabled)
+		if (!mouseSelectionMode_.SetSelection(enabled))
 			return;
 		// 静止切换也要清理旧瞬态并刷新本窗口光标，不等待下一条移动消息。
 		RequestDrawingCursorRender();
 		QueueSystemCursorRefresh();
 		RequestControlWake();
+	}
+
+	bool WindowController::CanvasPanMode() const noexcept
+	{
+		return mouseSelectionMode_.CanvasPan();
+	}
+
+	void WindowController::SetCanvasPanWorkspace(bool whiteboard) noexcept
+	{
+		mouseSelectionMode_.SetWhiteboard(whiteboard);
 	}
 
 	bool WindowController::AutoSaveEnabled() const noexcept

@@ -524,6 +524,9 @@ namespace Inkeys::Drawing::Draw3
 		operatorSampler.Reset();
 		ReleaseTrustedL2SnapshotPipeline();
 		ReleaseDebugOverlayResources();
+		whiteboardPatternUnderBlendState_.Reset();
+		whiteboardPatternPrimitives_.clear();
+		whiteboardPatternPrimitives_.shrink_to_fit();
 		strokeOperatorBlendState.Reset();
 		operatorResolveBlendState.Reset();
 		laserCoverageBlendState.Reset();

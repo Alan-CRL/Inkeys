@@ -215,6 +215,8 @@ namespace Inkeys::Drawing::Draw3
 			const Inkeys::Business::PenWidth::Context&) noexcept = nullptr;
 		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
+		// 绘制线程同步调用；产品层只可做无锁写入与原子唤醒（新字段必须追加在末尾，聚合初始化为位置式）。
+		void (*whiteboardViewportChanged)(void*, const WhiteboardViewportSample&) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t

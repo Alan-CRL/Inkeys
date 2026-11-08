@@ -1222,6 +1222,14 @@ namespace Inkeys::Drawing::Draw3
 				self->runtimeCallbacks.whiteboardThemeEdited(self->runtimeCallbacks.context, theme);
 		}
 
+		// 直接转发给产品层（不经 Host 快照/条件变量/state 线程），保持视口通道在绘制线程到 UI3 之间只跳一次。
+		static void ObserveWhiteboardViewport(void* context, const WhiteboardViewportSample& sample) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (self && self->runtimeCallbacks.whiteboardViewportChanged)
+				self->runtimeCallbacks.whiteboardViewportChanged(self->runtimeCallbacks.context, sample);
+		}
+
 		static void ObserveWhiteboardExit(void* context, bool durable)
 		{
 			static_cast<Impl*>(context)->whiteboardExitDurable.store(durable, std::memory_order_release);
@@ -1583,6 +1591,9 @@ namespace Inkeys::Drawing::Draw3
 		{
 			(void)drawingActivity.EndIfActive(runtimeCallbacks.context,
 				runtimeCallbacks.drawingActivityChanged);
+			// 绘制线程每个退出点都经此：视口通道复位为“离开白板”，Freeze 不再依据旧样本画相位。
+			if (runtimeCallbacks.whiteboardViewportChanged)
+				runtimeCallbacks.whiteboardViewportChanged(runtimeCallbacks.context, WhiteboardViewportSample{});
 		}
 
 		static bool ApplyStyle(void* context, DWORD setMask, DWORD clearMask)
@@ -2266,6 +2277,7 @@ namespace Inkeys::Drawing::Draw3
 							observer.whiteboardRoot = startOptions.autoSaveRoot;
 							observer.whiteboardDefaultTheme = startOptions.whiteboardDefaultTheme;
 							observer.whiteboardThemeEdited = &ObserveWhiteboardThemeEdited;
+							observer.whiteboardViewportChanged = &ObserveWhiteboardViewport;
 							observer.acceptedStrokeBegan = &ObserveAcceptedStroke;
 							observer.acceptedStrokeSceneChanged = &ObserveAcceptedStrokeScene;
 							observer.shortcutContextChanged = &ObserveShortcutContext;

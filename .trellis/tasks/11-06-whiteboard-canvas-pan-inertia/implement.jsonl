@@ -1,0 +1,13 @@
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "Free Canvas Navigation 契约（L848-931）是本任务要改写的现状规范，含触点批次、惯性、笔接管与 tile 恢复约束"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板工作区/页级存储/驱逐与冷加载合同；L33 平移禁用条款需改写，视角侧表须遵守页内存与保存合同"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 集成合同与白板页级 UInk/编辑历史合同，约束输入路由与控制器改动"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "RTS/Pointer/Mouse 输入、contact 生命周期与设备分类约束"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "UI 指针会话与输入归属，避免平移触点与 UI 命中/捕获冲突"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "Draw3 合成顺序、shape 16/20、under blend 与可信快照约束；新增背景纹理 pass 须同步"}
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "shape 编号占用与 Win7 guarded shader 门限（R2 备选方案前置）"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 InkeysRepo.sln ARM64 构建与兼容合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 模块、命名与注释风格"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "输入→导航→渲染→持久化的跨层数据流检查"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/inertia-root-cause.md", "reason": "惯性根因、数值证据、替换模型参数与 25 条单测清单（含 research/sim 仿真脚本）"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/move-mode-input-routing.md", "reason": "各设备输入路径、丢弃点、需改动的旧 FSM/控制器点、模式切换钩子与测试接入方式"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/background-pattern-ownership.md", "reason": "纹理归属结论、合成插入点、under 非幂等、门控、预乘 alpha 等价性与 Freeze 改动清单"}

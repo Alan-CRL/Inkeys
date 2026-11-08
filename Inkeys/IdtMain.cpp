@@ -1834,6 +1834,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunCanvasDebugOverlayValidation(); });
 		}
+		// 白板背景纹理 under pass：与旧 Freeze D2D 参考逐像素对比、alpha 不累积、相位/门控/不进 L2；仅离屏 WARP，无 HWND。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-whiteboard-pattern-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunWhiteboardPatternValidation(); });
+		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
@@ -2017,6 +2025,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-pending-topology-load-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPendingPresentationTopologyLoadTest(); });
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-canvas-pan-feel-test", -1, TRUE) == CSTR_EQUAL)
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunCanvasPanFeelProductionProbe(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-control-fence-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunDraw3ControlFenceProductionProbe(); });
@@ -4083,6 +4094,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				if (config.SetWhiteboardThemeDefault(theme.backgroundRgb, static_cast<std::uint32_t>(theme.pattern)))
 					Inkeys::UI::Setting::RequestConfigWrite(); // 仅冻结载荷入已有 FIFO，不在绘制线程执行文件 I/O。
+			},
+			[](void*, const Inkeys::Drawing::Draw3::WhiteboardViewportSample& sample) noexcept
+			{
+				// 绘制线程直达 Whiteboard 的无锁视口通道；Draw3 归属或模块未初始化时为空操作。
+				Inkeys::UI::Whiteboard::PublishCanvasViewport(sample);
 			}
 		};
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
