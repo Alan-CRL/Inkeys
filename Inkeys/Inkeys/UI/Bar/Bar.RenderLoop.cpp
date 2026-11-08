@@ -7760,12 +7760,17 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			if (state.pptIdleFade.val != 0)
 			{
 				needRendering = true;state.dirtyRegionTracker.MarkChanged(mainMaterialDirtyKey);
+				state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 			}
 			state.pptIdleFade.SetDirect(0);
 		}
 		state.pptIdleFade.SetTar(decision.dimmed ? 1.0 : 0.0, decision.dimmed
 			? Inkeys::UI::PageControl::PptIdleFadeOutSeconds : Inkeys::UI::PageControl::PptIdleFadeInSeconds);
+		const double previousIdleFade = state.pptIdleFade.val;
 		ChangePct(state.pptIdleFade, false, mainMaterialDirtyKey);
+		// 指示器越出主组边界，淡化中及落定帧都需刷新自身脏区，静止时不额外标记。
+		if (previousIdleFade != state.pptIdleFade.val || !state.pptIdleFade.IsSame())
+			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 	}
 	return needRendering || eraserChanged || recallChanged || recallIdleDismissed || statusChanged;
 }

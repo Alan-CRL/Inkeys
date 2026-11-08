@@ -1,6 +1,6 @@
 {"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Verify dirty-region, viewport, idle-frame and hover/press contracts"}
 {"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "Verify theme/opacity handling of new surfaces"}
-{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "Verify config schema, migration and 11-locale i18n"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "Verify config schema, migration and 20-locale i18n"}
 {"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "Verify software-version direct entry follows the same Show FIFO/fade contract"}
 {"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "Verify slideshow status uses real session edges"}
 {"file": ".trellis/spec/native/quality-and-validation.md", "reason": "Validation requirements"}

@@ -96,6 +96,41 @@ int RunStatusIndicatorTests()
 		check(model.Find(1) == nullptr && model.Count() == 0, "exit animation erases entry");
 	}
 
+	// RepublishExpandedExit：展开态退场中复活，也必须启动收起并最终停止续帧。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::PptSlideshow), now); Run(model, now, 0.5);
+		check(model.Find(1)->phase == Phase::Expanded && !model.Find(1)->landed,
+			"RepublishExpandedExit: expanded before retire");
+		check(model.Retire(1, now), "RepublishExpandedExit: retire succeeds");
+		Run(model, now, now + 0.1);
+		check(model.Publish(Spec(1, Kind::PptSlideshow), now) == Result::Updated,
+			"RepublishExpandedExit: republish revives exiting entry");
+		Run(model, now, now + 5.0);
+		const auto* entry = model.Find(1);
+		check(entry && entry->phase == Phase::Docked && entry->landed && !model.NeedsFrames(),
+			"RepublishExpandedExit: revived entry lands and stops requesting frames");
+	}
+	// RepublishCollapsingExit：延迟尚未结束或弹簧已运动时，复活不能重新启动飞行延迟。
+	for (const double elapsed : { 0.03, 0.16 })
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::PptSlideshow), now); Run(model, now, Hold + elapsed);
+		check(model.Find(1)->phase == Phase::Collapsing && !model.Find(1)->landed,
+			"RepublishCollapsingExit: collapsing before retire");
+		check(model.Retire(1, now), "RepublishCollapsingExit: retire succeeds");
+		Run(model, now, now + 0.01);
+		const double flightDelay = model.Find(1)->flightDelay;
+		check(model.Publish(Spec(1, Kind::PptSlideshow), now) == Result::Updated,
+			"RepublishCollapsingExit: republish revives exiting entry");
+		check(model.Find(1)->flightDelay == flightDelay,
+			"RepublishCollapsingExit: republish preserves remaining flight delay");
+		Run(model, now, now + 5.0);
+		const auto* entry = model.Find(1);
+		check(entry && entry->phase == Phase::Docked && entry->landed && !model.NeedsFrames(),
+			"RepublishCollapsingExit: revived entry lands and stops requesting frames");
+	}
+
 	// Filtering: hidden entries stay registered, re-enabled persistent ones return docked.
 	{
 		StatusIndicatorModel model; double now = 0;
