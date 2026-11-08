@@ -2770,7 +2770,7 @@ Correct：`AssignLoadState` 单一映射 + 单一 500ms 指示器，三个输出
 ## 主栏状态指示器发布与呈现合同（2026-11-02 阶段 1–3，2026-11-04 v2 视觉重设计）
 
 ### 1. Scope / Trigger
-UI3 主按钮的状态胶囊、停靠方块轨道、同心弧展开、指示环/进度环及设置调试入口适用。纯策略在 `Bar.StatusIndicator.h`，生产接线在同名 `.cpp`；正式 PPT/超级置顶/更新源、配置迁移和版本页直达尚属任务后续阶段，不因接口存在而视为接入完成。
+UI3 主按钮的状态胶囊、停靠方块轨道、同心弧展开、指示环/进度环及设置调试入口适用。纯策略在 `Bar.StatusIndicator.h`，生产接线在同名 `.cpp`；正式 PPT/WPS、超级置顶、更新源、配置迁移和版本页直达均已接入。
 
 ### 2. Signatures
 - `PublishStatusIndicator(const StatusIndicatorSpec&)`、`RetireStatusIndicator(uint64_t)`、`PublishStatusIndicatorProgress(uint64_t,float,bool)`、`SetStatusIndicatorOptions(bool,bool,bool,bool)`；均经 Bar Main 分区导出。
@@ -2787,6 +2787,7 @@ UI3 主按钮的状态胶囊、停靠方块轨道、同心弧展开、指示环/
 - 组合成：上层外形以几何遮罩遮挡下层，整项 opacity（停靠 0.5、出现/退场）用一次 PushLayer 合成；禁止逐元素半透明叠加或“看不见就不画”。表面走 themeSurface+residentSurface（用户背景透明度、PPT 闲置淡化），强调色边框/图标/文字乘常驻内容透明度；强调色按材质在 OKLCH 中校正明度。环/进度环 1.5 DIP，仅开启光影时有强调色几何预模糊光晕。
 - Fan 内注销/过滤/驱逐持久状态时，先冻结旧弧容量与各项槽位并启动收起，归零后再释放；不能先用新数量重算离散角度而瞬移。普通圆形轨道继续使用实时补位弹簧。
 - 停靠方块压在主按钮边框上：命中时伸进主按钮超椭圆内部超过 `MainButtonYield`（3 DIP）的部分让给主按钮，避免点击主按钮误展开同心弧。
+- 过滤单方块重新展开态时归一回停靠并清除选择；更新源完成后再次进入 Downloading 清除上周期缓存，由首次正进度经 SetProgress 开启新周期；停靠与着陆层内按当前 dockTarget 排名（0 最新）分配有界 Z 序，禁止对累计 dockSerial 取模。
 - 正式状态源：PPT/WPS 在 `IdtPlug-in.cpp` 新场次开始边沿发布、`EndSession` 注销（同场重新锚定与白板往返不触发）；超级置顶在 I18n 就绪后按 `hasSuperTop` 发布一次；新版本由交互 worker 的 `PollDeadline` 以 `StatusIndicatorUpdateTracker` 读取 `AutomaticUpdateState` 与字节进度（下载中 10Hz、其余 1Hz），点击执行 `Setting::ShowSoftwareVersion()`。正式状态文案在绘制时按当前语言取。
 - 指示器和主按钮使用同一 Grip 变换，命中做同源逆映射；只有完整呈现成功才 CommitPresented。hover/press 复用既有按钮曲线、驻留淡出与抬手后等待移动的抑制，笔反馈只在真实接受点发送。
 - NeedsFrames 只为仍在变化/滚动/呼吸的视觉续帧；绝对截止经已有交互 worker 唤醒，不增线程。发布后首帧前就被过滤/收起的项，必须清掉未初始化槽位标记，避免永久续帧。
@@ -2808,7 +2809,7 @@ UI3 主按钮的状态胶囊、停靠方块轨道、同心弧展开、指示环/
 
 ### 6. Tests Required
 - `status_indicator_tests.cpp` 直接覆盖生产纯模型的去重、过滤、25 上限、队首计时、轨道补位、正常边界/Fan 镜像、滚动、进度、绘制门禁与首帧前取消后的 idle。
-- 完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window`、生产 Bar 离屏专项、11 语言 `i18n.ps1 check`、原编码/EOL 与 `git diff --check`。
+- 完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window`、生产 Bar 离屏专项、20 语言 `i18n.ps1 check`、原编码/EOL 与 `git diff --check`。
 - 鼠标/笔/触摸、真实桌面透明度/光影和动画观感仍需人工验收；离屏通过不能替代设备与 HWND 视觉证据。
 
 ### 7. Wrong vs Correct

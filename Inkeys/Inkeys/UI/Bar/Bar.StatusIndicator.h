@@ -289,6 +289,8 @@ namespace Inkeys::UI::Bar
                 if(!visible)
                 {
                     e.holding=false;
+                    // 重新展开仍属 Docked；过滤时归一目标，避免清除选择后留下无截止的胶囊。
+                    if(e.phase==StatusIndicatorPhase::Docked&&(e.flightTarget<1||e.morphTarget<1))SnapDocked(e);
                     if(selected_==e.spec.key)selected_=0;
                     // 隐藏的通知直接丢弃（淡出后移除）。
                     if(e.spec.lifetime==StatusIndicatorLifetime::Notification&&!e.Leaving())e.phase=StatusIndicatorPhase::Dismissing;
@@ -855,6 +857,8 @@ namespace Inkeys::UI::Bar
                 if(lastValue_>=0||completeSent_){a.progress=true;a.value=-1;lastValue_=-1;completeSent_=false;}
                 break;
             case Downloading:
+                // 完成后再次下载属于新周期；同周期的线路回零仍沿用增长缓存。
+                if(completeSent_){lastValue_=-1;completeSent_=false;}
                 // 静默下载：开始且进度大于 0 时才出现；同周期只上报增长。
                 if(size>0&&downloaded>0)
                 {
@@ -1160,13 +1164,14 @@ namespace Inkeys::UI::Bar
                 l.role=e.phase==StatusIndicatorPhase::Docked&&model.Selected()==e.spec.key&&f<.05?StatusIndicatorRole::Capsule:StatusIndicatorRole::None;
                 const bool settledInDock=e.landed&&f>=LandAt;
                 // 层级只在完全离开胶囊区域时切换：之前在展开胶囊之上，之后在其下、停靠方块之上；往返对称。
-                z=settledInDock?2000+static_cast<int>(e.dockSerial%1000):f>=path.clearAt?2500:3500;overflow=!settledInDock;
+                // 当前排名 0 为最新；使用有界排名，避免累计序号取模后新旧层级反转。
+                z=settledInDock?2000+static_cast<int>(Capacity)-static_cast<int>(e.dockTarget):f>=path.clearAt?2500:3500;overflow=!settledInDock;
             }
             else
             {
                 // 停靠方块 / 同心弧 / 弧上选中胶囊。
                 Point p=dockPoint(e.dock.position);double size=DockSize,radius=DockRadius,icon=DockIcon;
-                opacity=DockOpacity;z=1000+static_cast<int>(e.dockSerial%1000);l.role=StatusIndicatorRole::Dock;
+                opacity=DockOpacity;z=1000+static_cast<int>(Capacity)-static_cast<int>(e.dockTarget);l.role=StatusIndicatorRole::Dock;
                 if(fanP>0)
                 {
                     const double slot=model.FrozenFanCount()?e.frozenFanSlot:e.dock.position;

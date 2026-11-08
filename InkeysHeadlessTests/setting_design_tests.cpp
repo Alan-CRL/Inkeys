@@ -4335,6 +4335,65 @@ namespace
 				&& !hiddenEffect.events.startupEffectChanged && !visibleEffect.events.startupEffectChanged,
 				"startup effect condition preserves selection across themes and narrow layouts without idle edits");
 		}
+		// StatusIndicatorControls：复用本页真实 ID/导航矩形回放；追加在既有按控件次序定位的测试之后。
+		{
+			const auto section = Design::GeneralSection::StatusIndicator;
+			draft.statusIndicator = true; draft.statusIndicatorTypes = { true, false, true };
+			draw(section, outside, false); draw(section, outside, false);
+			const int sectionValue = static_cast<int>(section);
+			const auto groupId = ImHashStr("##status-indicator-types", 0, ImHashData(&sectionValue, sizeof(sectionValue), host->ID));
+			ImGuiWindow* types = nullptr;
+			for (auto* candidate : GImGui->Windows)
+				if (candidate->Active && candidate->ParentWindow == host && candidate->ChildId == groupId) types = candidate;
+			checks.Expect(types != nullptr, "StatusIndicatorControls: actual type checkbox card exists");
+			std::array<ImRect, 3> choices{};
+			if (types) for (int index = 0; index < 3; ++index)
+			{
+				const auto id = ImHashStr("###device", 0, types->GetID(index));
+				ImGui::FocusWindow(types); ImGui::SetNavID(id, ImGuiNavLayer_Main, types->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(section, outside, false);
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive,
+					"StatusIndicatorControls: actual checkbox registers navigation");
+				choices[index] = ImGui::WindowRectRelToAbs(types, types->NavRectRel[ImGuiNavLayer_Main]);
+			}
+			auto toggleMaster = [&] {
+				draw(section, outside, false); focus(section, "status-indicator", "##toggle");
+				io.AddKeyEvent(ImGuiKey_Space, true); auto down = draw(section, outside, false).events;
+				io.AddKeyEvent(ImGuiKey_Space, false); auto up = draw(section, outside, false).events;
+				const int changes = (down.statusIndicatorChanged ? 1 : 0) + (up.statusIndicatorChanged ? 1 : 0);
+				down.statusIndicatorChanged = up.statusIndicatorChanged = false;
+				checks.Expect(changes == 1 && noEdits(down) && noEdits(up),
+					"StatusIndicatorControls: master toggles once with no type or unrelated event");
+			};
+			const auto mixed = draft.statusIndicatorTypes;
+			toggleMaster();
+			checks.Expect(!draft.statusIndicator && draft.statusIndicatorTypes == mixed,
+				"StatusIndicatorControls: disabling master preserves mixed checks");
+			// 点击隐藏前的三个真实命中位置，验证总开关关闭时不能修改子项。
+			if (types) for (const auto& rect : choices)
+			{
+				const auto point = rect.GetCenter(); draw(section, point, false);
+				const auto down = draw(section, point, true).events, up = draw(section, point, false).events;
+				checks.Expect(noEdits(down) && noEdits(up) && !draft.statusIndicator && draft.statusIndicatorTypes == mixed,
+					"StatusIndicatorControls: hidden type controls cannot edit preferences");
+			}
+			toggleMaster(); draw(section, outside, false);
+			checks.Expect(draft.statusIndicator && draft.statusIndicatorTypes == mixed,
+				"StatusIndicatorControls: restoring master restores mixed checks");
+			if (types) for (int index = 0; index < 3; ++index)
+			{
+				const auto before = draft.statusIndicatorTypes;
+				const auto point = choices[index].GetCenter(); draw(section, point, false);
+				auto down = draw(section, point, true).events, up = draw(section, point, false).events;
+				const int changes = (down.statusIndicatorTypesChanged[index] ? 1 : 0) + (up.statusIndicatorTypesChanged[index] ? 1 : 0);
+				down.statusIndicatorTypesChanged[index] = up.statusIndicatorTypesChanged[index] = false;
+				auto expected = before; expected[index] = !expected[index];
+				checks.Expect(changes == 1 && noEdits(down) && noEdits(up) && draft.statusIndicator
+					&& draft.statusIndicatorTypes == expected,
+					"StatusIndicatorControls: each checkbox emits only its own event once");
+			}
+			checks.Expect(noEdits(draw(section, outside, false).events), "StatusIndicatorControls: settled page emits no repeated edits");
+		}
 		Design::ApplyPalette(false);
 		io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);

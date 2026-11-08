@@ -130,6 +130,47 @@ int RunStatusIndicatorTests()
 		check(model.Retire(2, now) && model.Find(2) == nullptr, "retiring hidden entry erases immediately");
 	}
 
+	// ReexpandFilterRestore：单方块展开中/展开后被类型或总开关过滤，恢复必须仍可点击。
+	for (const auto kind : { Kind::PptSlideshow, Kind::SuperTop })
+	for (const bool master : { false, true }) for (const double elapsed : { 0.05, 0.8 })
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, kind), now); Run(model, now, 4.5);
+		model.ClickDocked(1, now); Run(model, now, now + elapsed);
+		check(model.Reexpanded() && model.Find(1)->flightTarget == 0, "ReexpandFilterRestore: re-expanded before filtering");
+		StatusIndicatorOptions options;
+		if (master) options.enable = false;
+		else if (kind == Kind::PptSlideshow) options.ppt = false;
+		else options.superTop = false;
+		model.SetOptions(options, now);
+		check(model.Selected() == 0 && !model.Reexpanded(), "ReexpandFilterRestore: filtering clears selection");
+		Run(model, now, now + 0.5);
+		model.SetOptions({}, now); Run(model, now, now + 0.5);
+		const auto* entry = model.Find(1);
+		const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
+		const auto* tile = FindLayout(layout, 1);
+		check(entry && entry->phase == Phase::Docked && entry->morphTarget == 1 && entry->flightTarget == 1
+			&& entry->morph.position == 1 && entry->flight.position == 1 && model.Selected() == 0,
+			"ReexpandFilterRestore: restored entry has docked geometry and no selection");
+		check(tile && tile->shape == StatusIndicatorShape::Tile && tile->role == StatusIndicatorRole::Dock,
+			"ReexpandFilterRestore: restored tile remains interactive");
+	}
+	// FanFilterRestore：弧上选中不改变 flight/morph 目标，沿用现有冻结收回逻辑。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::PptSlideshow), now); model.Publish(Spec(2, Kind::SuperTop), now);
+		Run(model, now, 8.0); model.ClickDocked(1, now); Run(model, now, now + 0.5);
+		model.ClickDocked(1, now); Run(model, now, now + 0.3);
+		check(model.FanOpen() && model.Selected() == 1, "FanFilterRestore: fan entry selected before filtering");
+		model.SetOptions({ true, false, true, true }, now); Run(model, now, now + 0.5);
+		model.SetOptions({}, now); Run(model, now, now + 0.5);
+		const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
+		const auto* tile = FindLayout(layout, 1);
+		check(!model.FanOpen() && model.Selected() == 0 && model.Find(1)->select == 0
+			&& tile && tile->shape == StatusIndicatorShape::Tile && tile->role == StatusIndicatorRole::Dock,
+			"FanFilterRestore: selected fan entry returns as a docked tile");
+	}
+
 	// Capacity 25 and eviction order.
 	{
 		StatusIndicatorModel model; double now = 0;
@@ -779,6 +820,52 @@ int RunStatusIndicatorTests()
 		check(model.Count() == 0 && model.FrozenFanCount() == 0 && !model.NeedsFrames(), "retired fan returns to idle");
 	}
 
+	// DockSerialBoundaryOrdering：累计停靠跨过 999/1000，新增/移除都按当前排名绘制和命中。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.SetOptions({ false, true, true, true }, now);
+		// 隐藏注册复用生产 SnapDocked 推进序号，不需要保留千个条目。
+		for (std::uint64_t key = 1; key <= 998; ++key)
+		{
+			model.Publish(Spec(key, Kind::Debug), now); model.Retire(key, now);
+		}
+		model.SetOptions({}, now);
+		model.Publish(Spec(999, Kind::Debug), now); model.ClickExpanded(999, now);
+		model.Publish(Spec(1000, Kind::Debug), now); model.ClickExpanded(1000, now);
+		for (int frame = 0; frame < 120 && !model.Find(1000)->landed; ++frame)
+			Run(model, now, now + kFrame);
+		check(model.Find(999)->dockSerial == 999 && model.Find(1000)->dockSerial == 1000,
+			"DockSerialBoundaryOrdering: production landing crosses serial boundary");
+		const auto landing = ResolveStatusIndicatorLayout(model, FoldedInput());
+		const auto* oldLanding = FindLayout(landing, 999); const auto* newLanding = FindLayout(landing, 1000);
+		check(model.Find(999)->phase == Phase::Collapsing && model.Find(1000)->phase == Phase::Collapsing
+			&& oldLanding && newLanding && newLanding->z > oldLanding->z,
+			"DockSerialBoundaryOrdering: newer landing tile is drawn above older tile");
+		Run(model, now, now + 1.5);
+		auto checkOrder = [&](std::uint64_t newest, const char* label) {
+			const auto input = FoldedInput(); const auto layout = ResolveStatusIndicatorLayout(model, input);
+			const auto* older = FindLayout(layout, 999); const auto* newer = FindLayout(layout, newest);
+			check(older && newer && newer->z > older->z, label);
+			if (!older || !newer) return;
+			const double x = (CenterX(*older) + CenterX(*newer)) / 2, y = CenterY(*newer);
+			check(older->bounds.Intersects(newer->bounds) && !StatusIndicatorInsideMainButton(input, x, y, MainButtonYield),
+				"DockSerialBoundaryOrdering: overlap point belongs to the tile region");
+			// 生产命中按绘制结果逆序扫描；中心重叠点避开圆角和外扩边界。
+			std::uint64_t hit = 0;
+			for (auto it = layout.entries.rbegin(); it != layout.entries.rend(); ++it)
+				if (it->role == StatusIndicatorRole::Dock && x >= it->bounds.left && x <= it->bounds.right
+					&& y >= it->bounds.top && y <= it->bounds.bottom) { hit = it->key; break; }
+			check(hit == newest, "DockSerialBoundaryOrdering: newest overlapping tile is hit first");
+		};
+		checkOrder(1000, "DockSerialBoundaryOrdering: serial 1000 stays above serial 999");
+		model.Publish(Spec(1001, Kind::Debug), now); model.ClickExpanded(1001, now);
+		Run(model, now, now + 1.5);
+		checkOrder(1001, "DockSerialBoundaryOrdering: later addition stays above older tiles");
+		model.Retire(1000, now); Run(model, now, now + 1.5);
+		check(model.Find(1000) == nullptr, "DockSerialBoundaryOrdering: middle tile is removed");
+		checkOrder(1001, "DockSerialBoundaryOrdering: removal preserves relative z and hit order");
+	}
+
 	// Docked tiles sit on the main button border: the part inside the button yields to the main button.
 	{
 		const auto input = FoldedInput();
@@ -818,6 +905,42 @@ int RunStatusIndicatorTests()
 		check(!a.publish && a.progress && Near(a.value, 0.5), "later download reuses the published state");
 		a = manual.Step(Tracker::DownloadFail, 500, 1000);
 		check(a.progress && a.value < 0 && manual.Published(), "download failure ends the ring but keeps the state");
+	}
+
+	// UpdateCompletedCycleRestart：完成后的新下载重置节流缓存，并通过现有 SetProgress 协议开新周期。
+	{
+		using Tracker = StatusIndicatorUpdateTracker;
+		Tracker tracker; StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::NewVersion), now);
+		auto a = tracker.Step(Tracker::Downloading, 1000, 1000);
+		check(a.progress && !a.complete && Near(a.value, 1), "UpdateCompletedCycleRestart: first download reaches 100%");
+		model.SetProgress(1, a.value, a.complete, now); model.Advance(now, 0, 1, false);
+		a = tracker.Step(Tracker::Restart, 1000, 1000);
+		check(a.progress && a.complete, "UpdateCompletedCycleRestart: first completion reported");
+		model.SetProgress(1, a.value, a.complete, now);
+		check(model.Find(1)->progress.complete, "UpdateCompletedCycleRestart: model retains first completion");
+		a = tracker.Step(1, 0, 0);
+		check(!a.progress && !a.retire, "UpdateCompletedCycleRestart: checking preserves completed state");
+		a = tracker.Step(Tracker::Downloading, 100, 1000);
+		check(!a.publish && a.progress && !a.complete && Near(a.value, 0.1),
+			"UpdateCompletedCycleRestart: second download reports lower progress");
+		model.SetProgress(1, a.value, a.complete, now);
+		check(model.Find(1)->progress.active && !model.Find(1)->progress.complete
+			&& model.Find(1)->progress.display == 0 && Near(model.Find(1)->progress.target, 0.1),
+			"UpdateCompletedCycleRestart: model starts a fresh progress cycle");
+		a = tracker.Step(Tracker::Downloading, 0, 1000);
+		check(!a.progress, "UpdateCompletedCycleRestart: second-cycle line reset is absorbed");
+		a = tracker.Step(Tracker::Downloading, 50, 1000);
+		check(!a.progress, "UpdateCompletedCycleRestart: second-cycle lower bytes are absorbed");
+		a = tracker.Step(Tracker::Downloading, 1000, 1000);
+		check(a.progress && !a.complete && Near(a.value, 1), "UpdateCompletedCycleRestart: second download reaches 100%");
+		model.SetProgress(1, a.value, a.complete, now); model.Advance(now, 0, 1, false);
+		a = tracker.Step(Tracker::Restart, 1000, 1000);
+		check(a.progress && a.complete, "UpdateCompletedCycleRestart: second completion reported again");
+		model.SetProgress(1, a.value, a.complete, now);
+		check(model.Find(1)->progress.complete, "UpdateCompletedCycleRestart: model completes the second cycle");
+		check(!tracker.Step(Tracker::Restart, 1000, 1000).progress,
+			"UpdateCompletedCycleRestart: second completion is also reported once");
 	}
 
 	// A new state closes the re-expanded capsule or the open fan so it owns the anchor.
