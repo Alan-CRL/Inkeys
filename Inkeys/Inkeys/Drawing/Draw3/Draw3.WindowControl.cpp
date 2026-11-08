@@ -739,6 +739,11 @@ namespace Inkeys::Drawing::Draw3
 		PublishMouseCursorSample(sample);
 	}
 
+	void WindowController::ClearHiddenTestMouseCursor() noexcept
+	{
+		ClearMouseCursorSample();
+	}
+
 	void WindowController::SetEraserInputs(const SpeedEraser::InputSettings& settings)
 	{
 		{std::scoped_lock lock(speedEraserConfigMutex_);if(eraserInputs_==settings)return;eraserInputs_=settings;}
@@ -1160,9 +1165,10 @@ namespace Inkeys::Drawing::Draw3
 				std::memory_order_acquire)),
 			lastCursorTracePointerTypeKnown_.load(std::memory_order_acquire));
 		#endif
-		RequestDrawingCursorRender();
-		if (previous.valid != sample.valid || previous.inContact != sample.inContact)
-			QueueSystemCursorRefresh();
+		const bool stateChanged = previous.valid != sample.valid || previous.inContact != sample.inContact;
+		// 移动模式由系统箭头跟随位置；普通 Move 只更新 mailbox，不能作为控制命令打断画布帧节拍。
+		if (!CanvasPanMode() || stateChanged) RequestDrawingCursorRender();
+		if (stateChanged) QueueSystemCursorRefresh();
 	}
 
 	void WindowController::ClearMouseCursorSample() noexcept

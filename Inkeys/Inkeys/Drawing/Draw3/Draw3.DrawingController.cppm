@@ -185,7 +185,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 在 backbuffer 已合成内容之下补画白板点阵/网格；仅白板工作区且主题非 Blank 时生效。
 		// dirty 必须是刚由 L2 重新拷贝的矩形（under 混合不幂等）。
 		void DrawWhiteboardPatternUnder(RECT dirty);
-		bool PresentFrame(RECT dirty, bool presentFull);
+		bool PresentFrame(RECT dirty, bool presentFull, int64_t* presentReturnQpc = nullptr);
 
 		ContactInputCoordinator& input_;
 		WindowController& window_;

@@ -26,6 +26,7 @@
 - 本轮RTS仍每回调一个批末点，时间为callback arrival QPC；不宣称批内硬件保真，不生成伪240Hz时间。相同轨迹在绘制帧内可以合并呈现，但不能合并丢掉估速历史。
 - 异步多指只更新真实上报那一指的估速；其他指latest-known位置仅供focus几何。加/减指重置focus基线不产生跳变；相反方向抬指清剩余释放历史。
 - 普通Move保持呈现节拍；Down/终态/控制wake的独立generation允许提前结束活动等待，覆盖工作阶段已到达的事件；idle阻塞语义保持。
+- `WindowController::PublishMouseCursorSample`在`CanvasPanMode()`且`valid/inContact`均未变化时，仅更新latest mailbox，不调用`RequestDrawingCursorRender`；移动模式使用系统箭头，逐位置控制wake会抢占tile恢复并打断`WaitForFrameDeadline`。Down/Up状态边沿、clear/leave/cancel、owner/suppression和模式变化维持既有唤醒，非Pan应用光标保持重绘。不得在下游忽略全部control命令来补救。
 
 ### 几何、释放与连续滑动
 
@@ -44,6 +45,7 @@
 - 设置→软件调试→控制台输出有独立“白板平移与惯性诊断”，持久化、默认关闭、按consoleToggle约定重启生效。启动读取配置并初始化共用console/DiagnosticOutput，再启用gate。
 - 不依赖`DRAW3_RTS_DIAGNOSTICS`；关闭或无sink时不取时/格式化。启用记录序号、QPC、线程、timestamp来源和频率；输入/状态/释放/停止日志带样本、速度及原因。空Idle帧不刷屏，终止转换可见。
 - 复用异步有界输出及已有drop/truncation统计，不同步写console、不为平移新增输出线程；日志丢失不冒充事件丢失。日志函数保持GetLastError。
+- 导航活动/viewport恢复期间追加`render`记录：sample/frame QPC、page/viewport、tile recovered/pending与yield、visible-clear、recovery/before-composite/composite/work/frame/present毫秒数、fallback-signature/attempt/ok、present-attempt/ok、成功submit间隔和sample-to-submit年龄。`PresentFrame(..., int64_t* presentReturnQpc=nullptr)`仅在gate启用时交出真实Present返回QPC；此软件返回点先于observer/ready，不能当作DWM光学显示。fallback签名不等同资源有效，false不区分缺资源/无交集/提交失败，且日志不改变失败处理。关闭gate不额外取诊断时钟；空Idle不刷。
 - 不把设置“画布调试”的可视化覆盖层与此console gate混为一谈。
 
 ## 4. Validation & Error Matrix
@@ -57,6 +59,8 @@
 | 相同输入、不同消费fps | 真实样本与释放速度不被呈现采样改变；离散首尾帧位移单列 |
 | 无可靠时间/异常短间隔 | 明确拒绝/退化，不伪造采样时刻 |
 | 鼠标与Touch轮换 | 不混focus，不跨来源继承boost |
+| Pan内高频Mouse纯位置流 | mailbox保持最新，无额外cursor control标记/generation，不提前打断活动deadline |
+| Mouse状态边沿/退出Pan | 仍及时唤醒；非Pan应用光标恢复既有位置重绘 |
 | 关闭诊断 | 无CanvasPan记录，不增加高频格式化 |
 | 开启诊断 | 设置/启动gate连通；真实sink可读，输出丢弃可诊断 |
 
@@ -71,6 +75,7 @@
 - ARM64原生MSBuild构建`InkeysRepo.sln Debug|ARM64`，同次PowerShell规范Path/PATH并禁node reuse，至少5分钟预算。
 - Headless `--no-window --canvas-pan-only`及完整`--no-window`：参考组件黄金值与产品尾段/方向/摩擦/boost/帧率测试分开。
 - `--draw3-control-fence-test` / `--draw3-canvas-pan-feel-test`必须经过真实ContactInput→CanvasPanInput；覆盖末反向+Up、跨帧Down、overflow、短反拖、hitch后立即释放、stop与设备轮换。
+- Mouse唤醒回归通过真实`PublishHiddenTestMouseCursor`→生产publisher→Coordinator接线；1000次burst及持续位置流检查mailbox、pending/control wake与frame deadline（Sleep(1)不代表实测1kHz），另验Down/Up/clear/模式变化及非Pan cursor render。纯动力学/MouseInputState测试不能替代此接线。
 - `--draw3-diagnostic-output-test`验证生产gate启用/关闭、文件sink字节与LastError；config测试验证默认、往返、copy、ReadMini、非法bool、reset与NoUpload；i18n check覆盖20语。
 - GUI/真机测试需要用户明确授权或用户手动执行；自动测试不等于手感验收。实际运行结果写当前task验证记录，规范不冒称PASS。
 
@@ -81,3 +86,6 @@ Correct：统一保留producer事件，按已准入Down水位消费连续前缀�
 
 Wrong：旧startingVelocity3000、当前400、新甩1000仍释放4000；(3000,1500)按轴平方走成4:1。
 Correct：同向残余投影最多得到1400（再按门限/上限裁决），自由曲线保持选定释放方向。
+
+Wrong：仅看到callback→consume约1ms便认定画布已经跟手；只测真实接触Move，遗漏独立WM_MOUSE cursor路径。
+Correct：分别检查cursor control wake、tile恢复、合成和Present节拍；Present返回仅是软件呈现入口的结果，光学延迟与RTS回调前延迟仍需现场证据。

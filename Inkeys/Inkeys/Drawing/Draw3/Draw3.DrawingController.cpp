@@ -2656,6 +2656,7 @@ namespace Inkeys::Drawing::Draw3
 				// 本帧消费到的终态 QPC：交还 Run() 维护笔抑制与 Touch 平移结束时刻。
 				int64_t touchPanEndQpc = 0;
 				int64_t penTerminalQpc = 0;
+				int64_t diagnosticSampleQpc = 0;
 				CanvasPanFrameOutput dynamics = {};
 			};
 
@@ -2923,6 +2924,7 @@ namespace Inkeys::Drawing::Draw3
 				if (previousPhase == CanvasPanPhase::Coasting && dynamics_.Phase() == CanvasPanPhase::Idle)
 					LogCanvasPan("navigation-stop reason=%s epoch=%llu", penHover ? "pen-hover" : "fling-complete-or-cancel",
 						static_cast<unsigned long long>(navigationEpoch_));
+				if (traceInput) frame.diagnosticSampleQpc = newestSampleQpc;
 				frame.velocityDip = frame.dynamics.contentVelocity;
 				frame.velocityPixels = {
 					static_cast<float>(frame.dynamics.contentVelocity.x / scale_.dipPerPixelX),
@@ -7287,6 +7289,108 @@ namespace Inkeys::Drawing::Draw3
 		try
 		{
 			using Rig = CanvasPanProbeRig;
+			// 真正的窗口 publisher -> coordinator 接线：普通高频位置不能伪装成控制工作。
+			{
+				Rig rig;
+				rig.window.SetInputCoordinator(&rig.input);
+				rig.Frame(0.0);
+				const auto settle = [&]()
+				{
+					ContactRecord* record = nullptr;
+					while (rig.input.TryDequeue(record))
+					{
+						check(!record, "cursor-only probe creates no contact Down");
+						if (!record) rig.input.AcknowledgeControlWake();
+					}
+					rig.input.WaitForFrameDeadline(0.0);
+					(void)rig.window.ConsumeDrawingCursorRenderRequest();
+				};
+				const auto checkUrgent = [&](uint64_t before, const char* name)
+				{
+					check(rig.input.CaptureWakeGeneration() != before && rig.input.HasPendingWork() &&
+						rig.window.ConsumeDrawingCursorRenderRequest(), name);
+					const double started = GetQpcTimeMilliseconds();
+					rig.input.WaitForFrameDeadline(1000.0);
+					check(GetQpcTimeMilliseconds() - started < 500.0, "cursor state edge interrupts frame deadline");
+					settle();
+				};
+				settle();
+				DrawingCursorSample sample;
+				sample.valid = true; sample.x = 500.0f; sample.y = 400.0f; sample.qpc = Rig::Qpc(1.0);
+				auto before = rig.input.CaptureWakeGeneration();
+				rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "Mouse enter remains an urgent cursor edge in pan mode");
+				sample.inContact = true;
+				before = rig.input.CaptureWakeGeneration();
+				rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "Mouse Down remains an urgent cursor edge in pan mode");
+				const uint64_t controlWakes = rig.input.DiagnosticsSnapshot().controlWakes;
+				before = rig.input.CaptureWakeGeneration();
+				for (int i = 1; i <= 1000; ++i)
+				{
+					sample.x = 500.0f + static_cast<float>(i); sample.qpc = Rig::Qpc(1.0 + i);
+					rig.window.PublishHiddenTestMouseCursor(sample);
+				}
+				DrawingCursorSample latest;
+				check(rig.window.ReadMouseCursorSample(latest) && latest.valid && latest.inContact &&
+					latest.x == sample.x && latest.qpc == sample.qpc,
+					"pan Mouse mailbox retains the latest of 1000 position samples");
+				check(rig.input.CaptureWakeGeneration() == before &&
+					rig.input.DiagnosticsSnapshot().controlWakes == controlWakes && !rig.input.HasPendingWork() &&
+					!rig.window.ConsumeDrawingCursorRenderRequest(),
+					"1000 pan Mouse position updates create no control wake, pending work or cursor render");
+				// 先握手确认生产线程运行；统计等待期间的发布次数，避免未重叠的流造成假通过。
+				std::atomic<bool> started = false, stop = false;
+				std::atomic<unsigned> moves = 0;
+				std::thread mover([&]()
+				{
+					DrawingCursorSample moving = sample;
+					started.store(true, std::memory_order_release);
+					while (!stop.load(std::memory_order_acquire))
+					{
+						moving.x += 1.0f; moving.qpc += Rig::Qpc(1.0);
+						rig.window.PublishHiddenTestMouseCursor(moving);
+						moves.fetch_add(1, std::memory_order_release);
+						Sleep(1);
+					}
+				});
+				while (!started.load(std::memory_order_acquire) || !moves.load(std::memory_order_acquire))
+					std::this_thread::yield();
+				const unsigned beforeWaitMoves = moves.load(std::memory_order_acquire);
+				const double waitStart = GetQpcTimeMilliseconds();
+				rig.input.WaitForFrameDeadline(100.0);
+				const double waited = GetQpcTimeMilliseconds() - waitStart;
+				const unsigned afterWaitMoves = moves.load(std::memory_order_acquire);
+				stop.store(true, std::memory_order_release);
+				mover.join();
+				check(waited >= 80.0 && afterWaitMoves > beforeWaitMoves &&
+					rig.input.CaptureWakeGeneration() == before && !rig.input.HasPendingWork() &&
+					rig.input.DiagnosticsSnapshot().controlWakes == controlWakes &&
+					!rig.window.ConsumeDrawingCursorRenderRequest(),
+					"continuous pan Mouse positions do not interrupt the active frame deadline");
+				sample.inContact = false;
+				rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "Mouse Up remains urgent after the high-rate stream");
+				before = rig.input.CaptureWakeGeneration();
+				rig.window.ClearHiddenTestMouseCursor();
+				checkUrgent(before, "shared Mouse leave/cancel clear remains urgent in pan mode");
+				check(rig.window.ReadMouseCursorSample(latest) && !latest.valid, "shared clear invalidates the Mouse mailbox");
+				rig.window.PublishHiddenTestMouseCursor(sample); settle();
+				before = rig.input.CaptureWakeGeneration();
+				sample.valid = false; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "Mouse validity edge remains urgent in pan mode");
+				before = rig.input.CaptureWakeGeneration();
+				rig.window.SetSelectionMode(false);
+				checkUrgent(before, "leaving move mode still wakes and refreshes the cursor");
+				sample.valid = true; rig.window.PublishHiddenTestMouseCursor(sample); settle();
+				before = rig.input.CaptureWakeGeneration();
+				sample.x += 1.0f; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "ordinary drawing Mouse position still requests cursor rendering");
+				rig.window.SetSelectionMode(true); rig.window.SetCanvasPanWorkspace(false); settle();
+				before = rig.input.CaptureWakeGeneration();
+				sample.x += 1.0f; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "non-whiteboard Selection retains its original Mouse cursor wake");
+			}
 			const auto closeTo = [](double a, double b, double tolerance) { return std::fabs(a - b) <= tolerance; };
 			struct Finger { uint32_t tablet; uint32_t id; double x0; double y0; };
 			// 250 Hz 输入、125 Hz 帧的恒速拖动：每 4 ms 发布一次 Move，每 8 ms 跑一帧。
@@ -12391,7 +12495,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
+	bool DrawingController::PresentFrame(RECT dirty, bool presentFull, int64_t* presentReturnQpc)
 	{
 		const double presentStartMs = GetQpcTimeMilliseconds();
 		const bool externalFrame = metricsState_ && !metricsState_->runFrameActive;
@@ -12404,7 +12508,8 @@ namespace Inkeys::Drawing::Draw3
 		const bool succeeded = presentation_.Present(
 			dirty, presentFull, currentContentRevision_);
 		LARGE_INTEGER returnQpc = {};
-		if (metricsState_) QueryPerformanceCounter(&returnQpc); // 真返回点，先于观察回调/ready/诊断。
+		if (metricsState_ || presentReturnQpc) QueryPerformanceCounter(&returnQpc); // 真返回点，先于观察回调/ready/诊断。
+		if (presentReturnQpc) *presentReturnQpc = returnQpc.QuadPart;
 		lastPresentDurationMs_ = GetQpcTimeMilliseconds() - presentStartMs;
 		lastPresentSucceeded_ = succeeded;
 		if (metricsState_)
@@ -13315,6 +13420,8 @@ namespace Inkeys::Drawing::Draw3
 		double viewportTileEwmaMilliseconds = 0.5;
 		double previousCanvasFrameWorkMilliseconds = 0.0;
 		double previousCanvasPresentMilliseconds = 0.0;
+		int64_t panDiagnosticSampleQpc = 0, previousPanPresentQpc = 0;
+		uint64_t panDiagnosticFrame = 0;
 		bool trustedSnapshotSignatureValid = false;
 		size_t trustedSnapshotPageIndex = 0;
 		uint64_t trustedSnapshotRevision = 0;
@@ -15417,6 +15524,7 @@ namespace Inkeys::Drawing::Draw3
 			const CanvasPanInput::Frame frame = canvasPan.Step(input_, nowQpc, qpcFrequency,
 				penInRange && !suppressPenUntilRelease,
 				{ static_cast<float>(panSize.width), static_cast<float>(panSize.height) });
+			if (frame.diagnosticSampleQpc > 0) panDiagnosticSampleQpc = frame.diagnosticSampleQpc;
 			if (frame.penTerminalQpc > 0)
 				suppressedPenTerminalQpc = (std::max)(suppressedPenTerminalQpc, frame.penTerminalQpc);
 			if (frame.touchPanEndQpc > 0)
@@ -18376,8 +18484,16 @@ namespace Inkeys::Drawing::Draw3
 			updateCanvasNavigation(navigationQpc.QuadPart);
 			publishWhiteboardViewport(); // 平移帧最早的发布点，Freeze 相位与本帧视口同帧计算。
 			pumpCanvasDebugProbes();
+			const bool tracePanRender = CanvasPanDiagnosticsEnabled() &&
+				(canvasPan.Active() || viewportRefreshPending || viewportRecoveryPending);
+			if (tracePanRender) ++panDiagnosticFrame;
+			else { previousPanPresentQpc = 0; panDiagnosticSampleQpc = 0; }
+			size_t panRecoveredTiles = 0, panPendingTiles = 0;
+			const char* panRecoveryYield = "none";
+			double panRecoveryMilliseconds = 0.0;
 			if (viewportRefreshPending || viewportRecoveryPending)
 			{
+				const double recoveryStartMilliseconds = tracePanRender ? GetQpcTimeMilliseconds() : 0.0;
 				const WindowSize size = window_.Size();
 				if (viewportRefreshPending)
 				{
@@ -18445,13 +18561,15 @@ namespace Inkeys::Drawing::Draw3
 				while (viewportRecoveryPending && recoveredTiles < recoveryBudget.maximumTiles &&
 					viewportTilePlanIndex < viewportTilePlan.tiles.size())
 				{
-					if (input_.HasPendingWork() ||
-						input_.CaptureWakeGeneration() != recoveryWakeGeneration) break;
-					if (!document_ || currentPageIndex_ >= pageRuntimeStates.size()) break;
+					if (input_.HasPendingWork()) { panRecoveryYield = "pending-work"; break; }
+					if (input_.CaptureWakeGeneration() != recoveryWakeGeneration)
+					{ panRecoveryYield = "wake-generation"; break; }
+					if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
+					{ panRecoveryYield = "no-document"; break; }
 					const InkPage* page = document_->PageAt(currentPageIndex_);
 					const InkCanvas* canvas = page
 						? page->FindCanvas(kDefaultDeviceKey) : nullptr;
-					if (!page || !canvas) break;
+					if (!page || !canvas) { panRecoveryYield = "no-canvas"; break; }
 					CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
 					const CanvasPlannedTile planned =
 						viewportTilePlan.tiles[viewportTilePlanIndex];
@@ -18487,6 +18605,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!tileCompleted)
 					{
 						rasterSubmissionFailed = true; // 不完整 L2 不能发布成功 Present 或内容版本。
+						panRecoveryYield = "tile-failed";
 						break;
 					}
 					++viewportTilePlanIndex;
@@ -18495,6 +18614,14 @@ namespace Inkeys::Drawing::Draw3
 						viewportVisibleClear = true;
 				}
 				viewportRecoveryPending = viewportTilePlanIndex < viewportTilePlan.tiles.size();
+				if (tracePanRender)
+				{
+					panRecoveredTiles = recoveredTiles;
+					panPendingTiles = viewportTilePlan.tiles.size() - viewportTilePlanIndex;
+					if (!viewportRecoveryPending) panRecoveryYield = "complete";
+					else if (recoveredTiles >= recoveryBudget.maximumTiles) panRecoveryYield = "budget";
+					panRecoveryMilliseconds = GetQpcTimeMilliseconds() - recoveryStartMilliseconds;
+				}
 				if (metricsState_)
 				{
 					metricsState_->Mark(RuntimeMetricsFrameReason::PartialReplay);
@@ -19893,6 +20020,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			geometryCost.Finish();
 			bool presentSucceeded = false;
+			bool panPresentAttempted = false, panFallbackAttempted = false, panFallbackSucceeded = false;
+			double panCompositeStartMilliseconds = 0.0, panCompositeMilliseconds = 0.0;
+			int64_t panPresentReturnQpc = 0;
 			if (!IsEmptyRect(frameDirty) && !rasterSubmissionFailed)
 			{
 				const bool orderedPreview = frameTool == DrawingTool::Pen &&
@@ -19919,6 +20049,7 @@ namespace Inkeys::Drawing::Draw3
 						trustedSnapshotViewport = snapshotCanvas->Viewport();
 					}
 				}
+				if (tracePanRender) panCompositeStartMilliseconds = GetQpcTimeMilliseconds();
 				MetricsStageScope compositeCost(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
 					RuntimeMetricsCostStage::Composite, metricsState_ ? metricsState_->metricFrequency : 0);
 				bool compositeSucceeded = true;
@@ -19926,11 +20057,12 @@ namespace Inkeys::Drawing::Draw3
 				{
 					// 内容运动方向与模糊强度都来自动力学速度（DIP/s）；模糊半径随 DPI 缩放到像素。
 					const CanvasVector snapshotMotion = canvasPan.VelocityDip();
-					renderer_.CompositeTrustedL2SnapshotToBackBuffer({
+					const bool fallbackSucceeded = renderer_.CompositeTrustedL2SnapshotToBackBuffer({
 						snapshotCanvas->Viewport().x, snapshotCanvas->Viewport().y,
 						snapshotMotion.x, snapshotMotion.y,
 						CanvasPanFallbackBlurDip(std::hypot(snapshotMotion.x, snapshotMotion.y)),
 						configuration_.dpiScale, frameDirty });
+					if (tracePanRender) { panFallbackAttempted = true; panFallbackSucceeded = fallbackSucceeded; }
 					const OperatorLayerMergeMode mergeMode = orderedPreview
 						? OperatorLayerMergeMode::Ordered
 						: OperatorLayerMergeMode::CoverageUnion;
@@ -19996,11 +20128,18 @@ namespace Inkeys::Drawing::Draw3
 								metricsState_->Mark(RuntimeMetricsFrameReason::AuthoritativeWithheld);
 						}
 						compositeCost.Finish();
+						if (tracePanRender)
+						{
+							panCompositeMilliseconds = GetQpcTimeMilliseconds() - panCompositeStartMilliseconds;
+							panPresentAttempted = true;
+						}
 						presentSucceeded = PresentFrame(frameDirty,
-							forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+							forceFullPresent, tracePanRender ? &panPresentReturnQpc : nullptr); // 一帧最多一次 backbuffer 合成和一次 Present。
 					}
 				}
 			}
+			if (tracePanRender && panCompositeStartMilliseconds > 0.0 && !panPresentAttempted)
+				panCompositeMilliseconds = GetQpcTimeMilliseconds() - panCompositeStartMilliseconds;
 			if (rasterSubmissionFailed)
 			{
 				if (metricsState_)
@@ -20081,6 +20220,29 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const double canvasFrameElapsedMilliseconds =
 				GetQpcTimeMilliseconds() - frameStartMs;
+			if (tracePanRender)
+			{
+				const InkPage* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+				const InkCanvas* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+				const InkViewport viewport = canvas ? canvas->Viewport() : InkViewport{};
+				const double ticksToMilliseconds = qpcFrequency > 0 ? 1000.0 / static_cast<double>(qpcFrequency) : 0.0;
+				// 仅真实成功 Present 返回推进间隔；提交年龄不包含 observer/ready，也不代表 DWM 光学上屏。
+				const double submitInterval = presentSucceeded && previousPanPresentQpc > 0
+					? (panPresentReturnQpc - previousPanPresentQpc) * ticksToMilliseconds : -1.0;
+				const double submitAge = panPresentAttempted && panDiagnosticSampleQpc > 0
+					? (panPresentReturnQpc - panDiagnosticSampleQpc) * ticksToMilliseconds : -1.0;
+				LogCanvasPan("render frame=%llu frame-qpc=%lld sample-qpc=%lld page=%zu viewport=(%.3f,%.3f) tiles-recovered=%zu tiles-pending=%zu yield=%s visible-clear=%u recovery-ms=%.3f before-composite-ms=%.3f composite-ms=%.3f work-ms=%.3f frame-ms=%.3f fallback-signature=%u fallback-attempt=%u fallback-ok=%u present-attempt=%u present-ok=%u present-ms=%.3f submit-qpc=%lld submit-interval-ms=%.3f sample-to-submit-ms=%.3f raster-failed=%u",
+					static_cast<unsigned long long>(panDiagnosticFrame), static_cast<long long>(navigationQpc.QuadPart),
+					static_cast<long long>(panDiagnosticSampleQpc), currentPageIndex_, viewport.x, viewport.y,
+					panRecoveredTiles, panPendingTiles, panRecoveryYield, viewportVisibleClear ? 1u : 0u,
+					panRecoveryMilliseconds, panCompositeStartMilliseconds > 0.0 ? panCompositeStartMilliseconds - frameStartMs : -1.0,
+					panCompositeMilliseconds, (std::max)(0.0, canvasFrameElapsedMilliseconds - lastPresentDurationMs_),
+					canvasFrameElapsedMilliseconds, trustedSnapshotSignatureValid ? 1u : 0u,
+					panFallbackAttempted ? 1u : 0u, panFallbackSucceeded ? 1u : 0u,
+					panPresentAttempted ? 1u : 0u, presentSucceeded ? 1u : 0u, lastPresentDurationMs_,
+					static_cast<long long>(panPresentReturnQpc), submitInterval, submitAge, rasterSubmissionFailed ? 1u : 0u);
+				if (presentSucceeded) previousPanPresentQpc = panPresentReturnQpc;
+			}
 			if (canvasDebugOverlay)
 			{
 				// 脏区完全落在调试注入范围内且没有强制全帧时，是调试板自己的刷新帧，不计入帧率。

@@ -28,3 +28,8 @@
 ## 交接约束
 
 本轮commit授权仅本次有效，后续任务不得据此继续自动commit。用户未授权push。不要运行finish-work/archive或自动提交日志；下一会话续接此任务，先更新下一阶段scope/design/implement再实施。当前阶段没有已知未解决的自动回归失败。
+## 鼠标延迟修复续接（2026-11-08，优先于前述阶段计划）
+
+用户先暂停屏幕适配，反馈Mouse拖动画布延迟、Touch正常；本轮已在CanvasPanMode纯Mouse位置发布处移除多余cursor control wake，保留状态边沿/clear/模式变化与非Pan重绘，并新增生产接线回归及render/Present诊断。实施与证据见mouse-latency-scope.md、mouse-latency-analysis.md、mouse-latency-validation.md及research/mouse-latency-*.md。
+
+ARM64完整solution、完整Headless无窗口回归、control-fence、2112行pan-feel、diagnostic-output和平移专项全部通过。用户现明确确认鼠标正确并要求commit，但不结束任务。只提交本轮修复及相关记录；已有scale-stage规划与相关PRD/design/jsonl/task.json脏改动留存，不混入本次commit。任务继续in_progress，不archive/finish-work、不push；后续阶段等待用户继续指令，本次授权不延续。

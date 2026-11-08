@@ -238,6 +238,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
 		// 仅由Host隐藏注入门调用；复用正常光标发布，不安装真实鼠标离窗跟踪。
 		void PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept;
+		// 无 HWND 探针复用离窗/取消共用的清理操作；不模拟 USER32 消息派发。
+		void ClearHiddenTestMouseCursor() noexcept;
 		// 绘制线程发布直接跟手平移状态，窗口线程据此抑制 Pen 接触反馈。
 		void SetTouchPanActive(bool active) noexcept;
 		bool TouchPanActive() const noexcept;
