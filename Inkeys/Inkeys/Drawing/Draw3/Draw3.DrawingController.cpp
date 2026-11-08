@@ -2640,7 +2640,7 @@ namespace Inkeys::Drawing::Draw3
 			CanvasVector viewportDelta = {};
 		};
 
-		// 白板移动模式（摩擦耦合平移）的输入侧：平移触点集合、设备互斥、批次作废与动力学驱动。
+		// 白板移动模式（Chromium 平移）的输入侧：平移触点集合、设备互斥、批次作废与动力学驱动。
 		// 触点登记复用 Run() 的 gestureContacts（同一份快照序号消费与终态回收），
 		// 动力学只在 DIP 内运算；本类不触碰 D3D、文档历史或 revision。
 		class CanvasPanInput
@@ -2821,7 +2821,7 @@ namespace Inkeys::Drawing::Draw3
 
 			Frame Step(ContactInputCoordinator& input, int64_t nowQpc,
 				int64_t qpcFrequency, bool penHover,
-				std::span<const CanvasPanContactSample> queued = {})
+				std::span<const CanvasPanContactSample> queued = {}, CanvasVector viewportSizePixels = {})
 			{
 				Frame frame;
 				samples_.assign(queued.begin(), queued.end());
@@ -2861,12 +2861,12 @@ namespace Inkeys::Drawing::Draw3
 						: CanvasPanContactPhase::Move, newestSampleQpc);
 				}
 				// 容器按登记顺序保存触点，终态到达顺序可能相反；全局按 QPC 排序后再分段释放。
-				// 同 QPC 的 Down 先行，与 OwnerClass 的重叠判定一致；其余同时间样本保持原序。
+				// 同 QPC 按 Down < Move < Up/Cancelled；同阶段保持稳定次序。
 				std::stable_sort(samples_.begin(), samples_.end(),
 					[](const CanvasPanContactSample& a, const CanvasPanContactSample& b)
 					{
 						if (a.qpc != b.qpc) return a.qpc < b.qpc;
-						return a.phase == CanvasPanContactPhase::Down && b.phase != CanvasPanContactPhase::Down;
+						return static_cast<unsigned>(a.phase) < static_cast<unsigned>(b.phase);
 					});
 				if (dynamics_.Active() || !samples_.empty())
 				{
@@ -2876,6 +2876,9 @@ namespace Inkeys::Drawing::Draw3
 					in.qpcFrequency = qpcFrequency;
 					in.contacts = std::span<const CanvasPanContactSample>(samples_);
 					in.penHover = penHover;
+					// 曲线距离上限使用当前客户区尺寸，入口统一从物理像素换算为 DIP。
+					in.viewportSizeDip = { static_cast<float>(viewportSizePixels.x * scale_.dipPerPixelX),
+						static_cast<float>(viewportSizePixels.y * scale_.dipPerPixelY) };
 					frame.dynamics = dynamics_.Step(in);
 				}
 				touchPanHeld_ = TouchPanHeld(input);
@@ -6458,12 +6461,13 @@ namespace Inkeys::Drawing::Draw3
 				});
 			window.SetCanvasPanWorkspace(workspace == Bridge::Workspace::Whiteboard);
 			(void)PublishCanvasPanMode(window, pan, workspace);
-			// 对应 updateCanvasNavigation：出队后的 mailbox 仲裁决定急停或 hover 制动。
+			// 对应 updateCanvasNavigation：出队后的 mailbox 仲裁决定落笔或惯性 hover 急停。
 			const CanvasPanPenMailbox pen = ObserveCanvasPanPenMailbox(window, input, pan,
 				suppressPenUntilRelease, suppressedPenTerminalQpc);
 			navigationPenSuppressed = suppressPenUntilRelease;
 			if (pen.inContact && !suppressPenUntilRelease) pan.Stop();
-			last = pan.Step(input, Qpc(ms), kFrequency, penHover || (pen.inRange && !suppressPenUntilRelease), queuedMoves);
+			last = pan.Step(input, Qpc(ms), kFrequency, penHover || (pen.inRange && !suppressPenUntilRelease),
+				queuedMoves, { 1920.0f, 1080.0f });
 			queuedMoves.clear();
 			suppressedPenTerminalQpc = (std::max)(suppressedPenTerminalQpc, last.penTerminalQpc);
 			window.SetTouchPanActive(last.touchPanHeld);
@@ -6533,15 +6537,15 @@ namespace Inkeys::Drawing::Draw3
 		CanvasPanProbeRig rig;
 		std::array<Hand, 6> hands{};
 		const char* scenario;
-		int fps, subdivisions, failures = 0, slippingFrames = 0, nonfinite = 0;
+		int fps, subdivisions, failures = 0, nonfinite = 0;
 		double now = 1000.0, frameMs, maxDv = 0.0, maxDelta = 0.0, lockedRelativeJump = 0.0;
 		double lockedError = 0.0, releaseSpeed = -1.0, releaseRatio = -1.0;
 		double glide = 0.0, glideExpected = -1.0, stopMs = -1.0, releaseMs = -1.0;
-		double slipStartMs = -1.0, lockedMs = -1.0, residual = 0.0, stopX = 0.0, stopY = 0.0;
+		double residual = 0.0, stopX = 0.0, stopY = 0.0;
 		double previousDelta = 0.0, previousVx = 0.0, previousVy = 0.0;
 		double stableLockedDv = 0.0, stableLockedDvBound = -1.0;
 		double tapSpeed = -1.0, tapExpectedSpeed = -1.0, tapDelta = -1.0, tapExpectedDelta = -1.0;
-		bool stopped = false, trackingGlide = false, previousLocked = false;
+		bool stopped = false, trackingGlide = false, previousLocked = false, previousScrolling = false;
 		uint32_t random = 0x1A2B3C4Du;
 
 		CanvasPanFeelRun(const char* name, int rate, CanvasPanScale scale, bool subframe)
@@ -6599,7 +6603,6 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const double oldX = rig.ViewportX(), oldY = rig.ViewportY();
 			const CanvasPanPhase before = rig.pan.Phase();
-			const double dt = (std::max)(0.0, at - now) / 1000.0;
 			const bool wasTracking = trackingGlide;
 			now = at;
 			double dx = 0.0, dy = 0.0; size_t common = 0, oldCount = 0, count = 0;
@@ -6631,29 +6634,16 @@ namespace Inkeys::Drawing::Draw3
 			if (!finite) ++nonfinite;
 			Check(finite, "all-finite");
 			maxDv = (std::max)(maxDv, dv); maxDelta = (std::max)(maxDelta, delta);
-			// AC2 的全局速度封顶推出任意两帧速度向量差 <=2*vmax（包含手势启动/反向/急停）。
-			// feel-bound: 封顶额外容许 0.01 DIP/s、两帧向量差 0.02 DIP/s，仅用于 float 舍入。
-			Check(speed <= 12000.01 && dv <= 24000.02, "speed-cap-and-global-dv-24000.02");
-			// 自由滑行的 dv 由闭式摩擦限定；Slipping 的相对速上限为 2*vmax。
-			// feel-bound: 额外 25 DIP/s 容纳 20 DIP/s 停止截断及 float 量化，不掩盖突然加速。
-			if (!stopped && !rig.lastApply.xClamped && !rig.lastApply.yClamped &&
-				before == CanvasPanPhase::Coasting && count == 0 && samples.empty())
-			{
-				DrawingCursorSample penSample;
-				const bool effectiveHover = hover || (rig.window.ReadPenCursorSample(penSample) && penSample.valid && !rig.navigationPenSuppressed);
-				const double tau = effectiveHover ? 0.06 : 0.30, c = effectiveHover ? 6000.0 : 1000.0;
-				const double oldSpeed = std::hypot(previousVx, previousVy);
-				const double bound = (oldSpeed + c * tau) * (1.0 - std::exp(-(std::min)(dt, 0.1) / tau)) + 25.0;
-				Check(dv <= bound, "coast-closed-form-dv");
-			}
-			if (!stopped && before == CanvasPanPhase::Slipping && rig.pan.Phase() == CanvasPanPhase::Slipping)
-				Check(dv <= (24000.0 / 0.06 + 6000.0) * (std::min)(dt, 0.1) + 25.0,
-					"slip-friction-dv");
+			// Chromium 只在估速边界逐轴限速；boost 后的 fling 不受原始手速上限约束。
+			if (count != 0)
+				Check(std::abs(rig.last.dynamics.handVelocity.x) <= 17000.0f &&
+					std::abs(rig.last.dynamics.handVelocity.y) <= 17000.0f, "tracker-per-axis-cap-17000");
 			const bool locked = rig.pan.Phase() == CanvasPanPhase::Locked;
 			if (locked && previousLocked)
 				lockedRelativeJump = (std::max)(lockedRelativeJump,
 					std::fabs(delta - previousDelta) / (std::max)(0.5, previousDelta));
-			if (checkHand && before == CanvasPanPhase::Locked && locked && common != 0 &&
+			if (checkHand && before == CanvasPanPhase::Locked && locked && previousScrolling &&
+				rig.last.dynamics.scrolling && common != 0 && common == oldCount && common == count &&
 				!rig.lastApply.xClamped && !rig.lastApply.yClamped)
 			{
 				const double error = std::hypot(px - dx / common / rig.scale.dipPerPixelX,
@@ -6662,11 +6652,6 @@ namespace Inkeys::Drawing::Draw3
 				// AC1/AC2：抓住后的内容必须跟手；0.5px 为需求明确的量化误差上界。
 				Check(error < 0.5, "locked-one-to-one-error-lt-0.5px");
 			}
-			if (rig.pan.Phase() == CanvasPanPhase::Slipping)
-			{
-				++slippingFrames; if (slipStartMs < 0.0) slipStartMs = now;
-			}
-			if (locked && slipStartMs >= 0.0 && lockedMs < 0.0) lockedMs = now - slipStartMs;
 			if (wasTracking) glide += std::hypot(px * rig.scale.dipPerPixelX, py * rig.scale.dipPerPixelY);
 			if (trackingGlide && stopMs < 0.0 && Speed() == 0.0) stopMs = now - releaseMs;
 			if (stopped)
@@ -6677,6 +6662,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			for (Hand& h : hands) { h.previousHeld = h.held; h.previousX = h.x; h.previousY = h.y; }
 			previousVx = v.x; previousVy = v.y; previousDelta = delta; previousLocked = locked;
+			previousScrolling = rig.last.dynamics.scrolling;
 			if (rig.last.dynamics.released) RecordRelease();
 		}
 		void Advance(int frames, const std::function<void(double)>& publish = {}, bool hover = false,
@@ -6703,10 +6689,13 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const double start = now; const std::array<Hand, 6> origin = hands;
 			const int frames = Frames(duration);
+			bool previousFullScrollFrame = false;
 			for (int frame = 0; frame < frames; ++frame)
 			{
 				const CanvasVector beforeVelocity = rig.pan.VelocityDip();
 				const bool beforeLocked = rig.pan.Phase() == CanvasPanPhase::Locked;
+				const bool beforeKnown = rig.last.dynamics.handVelocityKnown;
+				const bool beforeScrolling = rig.last.dynamics.scrolling;
 				const double oldDelta = previousDelta;
 				const bool hitched = hitch > 0.0 && frame == frames / 2;
 				Advance(1, [&](double t)
@@ -6715,20 +6704,26 @@ namespace Inkeys::Drawing::Draw3
 							Move(i, origin[i].x + speedX * (t - start) / 1000.0,
 								origin[i].y + speedY * (t - start) / 1000.0, t);
 					}, false, hitched ? hitch : 0.0, true, hitch > 0.0);
-				if (now - start > 120.0 && beforeLocked && rig.pan.Phase() == CanvasPanPhase::Locked)
+				const bool fullScrollFrame = beforeScrolling && rig.last.dynamics.scrolling &&
+					beforeLocked && rig.pan.Phase() == CanvasPanPhase::Locked && !hitched;
+				if (now - start > 120.0 && !hitched && beforeLocked && beforeKnown &&
+					rig.last.dynamics.handVelocityKnown && rig.pan.Phase() == CanvasPanPhase::Locked)
 				{
 					const auto v = rig.pan.VelocityDip();
 					const double dv = std::hypot(v.x - beforeVelocity.x, v.y - beforeVelocity.y);
 					// feel-bound: 恒速超过估速窗后，帧间速度只容许 2% 手速 +25 DIP/s；
-					// 启动/脚本变速前 120ms 单独计入全局 max_dv；queued hitch 同样不豁免速度连续性。
+					// 启动/脚本变速前120ms只记录；>=40ms断口清窗与其后首个恢复速度另测。
 					const double bound = std::hypot(speedX, speedY) * 0.02 + 25.0;
 					stableLockedDv = (std::max)(stableLockedDv, dv); stableLockedDvBound = bound;
 					Check(dv <= bound, "stable-locked-dv-2pct-plus-25");
 					Check(Speed() <= std::hypot(speedX, speedY) * 1.15 + 0.01, "stable-speed-within-script-1.15");
-					// feel-bound: 固定节拍恒速 Locked 的位移变化 <=2% +0.5px 量化；hitch 是显式较长帧，排除。
-					if (!hitched && oldDelta > 0.5 && (frame == 0 || !(hitch > 0.0 && frame - 1 == frames / 2)))
+					// 首次 ScrollUpdate 径向扣15，不能把其残量与后续整帧比较；只检查释放前连续两个完整跟手帧。
+					// feel-bound: 固定节拍位移变化仍 <=2% +0.5px；hitch 及其相邻比较排除。
+					if (previousFullScrollFrame && fullScrollFrame && oldDelta > 0.5 &&
+						(frame == 0 || !(hitch > 0.0 && frame - 1 == frames / 2)))
 						Check(std::fabs(previousDelta - oldDelta) <= oldDelta * 0.02 + 0.5, "stable-locked-delta-2pct-plus-0.5px");
 				}
+				previousFullScrollFrame = fullScrollFrame;
 			}
 		}
 		void Begin(InputDeviceType device = InputDeviceType::Touch)
@@ -6740,9 +6735,19 @@ namespace Inkeys::Drawing::Draw3
 			releaseSpeed = rig.last.dynamics.releaseSpeed;
 			releaseRatio = handSpeed > 0.0 ? releaseSpeed / handSpeed : -1.0;
 			releaseMs = now; trackingGlide = true; glide = 0.0; stopMs = -1.0;
-			// 从真正释放后的速度算闭式，避免把 Up 所在帧的跟手尾段误记成滑行距离。
+			// 由起滑速度与 DIP 视口独立计算 Physics 终点；已派发释放帧偏移从剩余距离扣除。
+			const auto& out = rig.last.dynamics;
 			const double v = Speed();
-			glideExpected = v * 0.30 - 1000.0 * 0.30 * 0.30 * std::log(1.0 + v / 300.0);
+			const double boostSpeed = std::hypot(out.boosterStartingVelocity.x, out.boosterStartingVelocity.y);
+			const double boost = releaseSpeed > 0.0 ? boostSpeed / releaseSpeed : 1.0;
+			const auto remaining = [&](double velocity, double size, double offset)
+			{
+				const double distance = velocity * velocity / (2.0 * 96.0 * 2.7559e-5 * 1000000.0);
+				return std::copysign((std::min)(distance, std::floor(size * boost * 3.0)), velocity) - offset;
+			};
+			glideExpected = v > 0.0 ? std::hypot(
+				remaining(out.boosterStartingVelocity.x, 1920.0 * rig.scale.dipPerPixelX, out.flingOffset.x),
+				remaining(out.boosterStartingVelocity.y, 1080.0 * rig.scale.dipPerPixelY, out.flingOffset.y)) : 0.0;
 			if (v == 0.0) stopMs = 0.0;
 		}
 		void Release(double handSpeed, bool cancelled = false)
@@ -6759,7 +6764,7 @@ namespace Inkeys::Drawing::Draw3
 				Tick(now + (gap ? hitch : frameMs), hover);
 				if (gap) hitched = true;
 			}
-			Check(!rig.pan.Active(), "finite-stop-within-8s"); // feel-bound: 12000 DIP/s 闭式停车 <1.2s，8s 防死循环。
+			Check(!rig.pan.Active(), "finite-stop-within-8s"); // Physics 时长不超过2秒，8秒仅防死循环。
 		}
 		void Seed(double speed = 3000.0)
 		{
@@ -6778,12 +6783,11 @@ namespace Inkeys::Drawing::Draw3
 		void Finish()
 		{
 			std::fprintf(stderr,
-				"[Draw3PanFeel] scenario=%s fps=%d scale=%.6f,%.6f delivery=%s max_dv_dip_s=%.6f max_delta_px=%.6f locked_rel_jump=%.6f stop_ms=%.6f glide_dip=%.6f glide_ratio=%.6f release_dip_s=%.6f release_ratio=%.6f residual_px=%.6f slipping_frames=%d locked_ms=%.6f locked_error_px=%.6f nonfinite=%d dv_bound_dip_s=24000.02 stable_locked_dv_dip_s=%.6f stable_locked_dv_bound=%.6f tap_v_dip_s=%.6f tap_free_v_dip_s=%.6f tap_delta_px=%.6f tap_free_delta_px=%.6f failures=%d\n",
+				"[Draw3PanFeel] scenario=%s fps=%d scale=%.6f,%.6f delivery=%s max_dv_dip_s=%.6f max_delta_px=%.6f stop_ms=%.6f glide_dip=%.6f remaining_physics_dip=%.6f release_dip_s=%.6f release_ratio=%.6f residual_px=%.6f locked_error_px=%.6f nonfinite=%d failures=%d\n",
 				scenario, fps, rig.scale.dipPerPixelX, rig.scale.dipPerPixelY, subdivisions == 1 ? "frame" : "subframe",
-				maxDv, maxDelta, lockedRelativeJump, stopMs, glide, glideExpected > 0.0 ? glide / glideExpected : -1.0,
-				releaseSpeed, releaseRatio, residual, slippingFrames, lockedMs, lockedError, nonfinite, stableLockedDv, stableLockedDvBound,
-				tapSpeed, tapExpectedSpeed, tapDelta, tapExpectedDelta, failures);
+				maxDv, maxDelta, stopMs, glide, glideExpected, releaseSpeed, releaseRatio, residual, lockedError, nonfinite, failures);
 		}
+
 	};
 
 	int RunCanvasPanFeelProductionProbe() noexcept
@@ -6810,13 +6814,11 @@ namespace Inkeys::Drawing::Draw3
 					const double lift = r.now + 20.1; r.Down(0);
 					r.Advance(r.Frames(20.1), [&](double t) { if (r.hands[0].held && t >= lift) r.Up(0, false, lift); });
 					control.Advance(control.Frames(20.1));
-					// AC2：<30ms 的无 Move 轻点不能变成按住制动；与同节拍自由滑行逐帧对照。
-					// feel-bound: 0.05 DIP/s 与 0.5px 只容纳浮点/视口量化，绝非手摩擦容差。
+					// Chromium 中即使轻点也必须在首个消费帧取消 fling，不能继续匹配自由滑行。
 					r.tapSpeed = r.Speed(); r.tapExpectedSpeed = control.Speed();
 					r.tapDelta = oldX - r.rig.ViewportX(); r.tapExpectedDelta = controlX - control.rig.ViewportX();
-					r.Check(control.failures == 0 && std::fabs(r.Speed() - control.Speed()) < 0.05 &&
-						std::fabs((oldX - r.rig.ViewportX()) - (controlX - control.rig.ViewportX())) < 0.5,
-						"tap-matches-free-control");
+					r.Check(control.failures == 0 && r.Speed() == 0.0 && r.rig.ViewportX() == oldX,
+						"tap-stops-fling-in-first-consumed-frame");
 					r.Check(r.Speed() <= before && !r.rig.pan.HasContacts(), "tap-no-new-velocity");
 					if (coasting) r.Coast(); else r.Check(r.rig.ViewportX() == 0.0f, "tap-zero-delta");
 				});
@@ -6827,21 +6829,21 @@ namespace Inkeys::Drawing::Draw3
 					const double lift = r.now + 33.1; r.Down(0);
 					r.Advance(r.Frames(33.1), [&](double t) { if (r.hands[0].held && t >= lift) r.Up(0, false, lift); });
 					control.Advance(control.Frames(33.1));
-					// 33ms 已越过静止证据门限，允许手摩擦；只记录差异，不套用短轻点的不扰动断言。
+					// 接触时长不影响按下即停；保留同节拍自由曲线作为诊断对照。
 					r.tapSpeed = r.Speed(); r.tapExpectedSpeed = control.Speed();
 					r.tapDelta = oldX - r.rig.ViewportX(); r.tapExpectedDelta = controlX - control.rig.ViewportX();
+					r.Check(r.Speed() == 0.0 && r.rig.ViewportX() == oldX, "33ms-tap-stops-immediately");
 					r.Coast();
 				});
 				double heldStopMs = -1.0;
 				run("coast-hold-still", [&](CanvasPanFeelRun& r)
 				{
-					r.Seed(); const double v = r.Speed(), start = r.now;
-					r.Down(0); r.Advance(r.Frames(700.0));
-					heldStopMs = r.lockedMs >= 0.0 ? r.lockedMs + r.frameMs : -1.0;
-					r.Check(r.rig.pan.Phase() == CanvasPanPhase::Locked && r.Speed() == 0.0 && heldStopMs >= 0.0,
-						"long-hold-reaches-locked-zero");
-					const double freeStop = 300.0 * std::log((v + 300.0) / 320.0);
-					r.Check(heldStopMs > 0.0 && heldStopMs < freeStop, "hold-stops-faster-than-free");
+					r.Seed(); const double start = r.now, before = r.rig.ViewportX();
+					r.Down(0); r.Advance(1);
+					heldStopMs = r.frameMs;
+					r.Check(r.rig.pan.Phase() == CanvasPanPhase::Locked && r.Speed() == 0.0 && r.rig.ViewportX() == before,
+						"Down-cancels-fling-in-first-frame");
+					r.Advance(r.Frames(700.0));
 					r.Check(r.now > start, "hold-has-real-frames"); r.Release(0.0);
 					r.Check(r.releaseSpeed == 0.0 && !r.rig.pan.Active(), "hold-release-exact-zero"); r.stopMs = heldStopMs;
 				});
@@ -6865,12 +6867,12 @@ namespace Inkeys::Drawing::Draw3
 					run(name, [&](CanvasPanFeelRun& r)
 					{
 						r.Begin(); r.Drag(speed, 0.0); r.Release(speed);
-						// AC3 的普通拖动释放比 0.85..1.15；<250 仍记录估速，但不得产生滑行。
+						// LSQ2 恒速释放保持原始速度；30 DIP/s 为 Chromium 起滑门限。
 						r.Check(r.releaseRatio >= 0.85 && r.releaseRatio <= 1.15, "release-ratio-0.85-1.15");
-						if (speed < 250.0) r.Check(!r.rig.pan.Active(), "slow-release-no-inertia");
+						r.Check(r.rig.last.dynamics.boosterStartingVelocity.x > 30.0f || !r.rig.pan.Active(), "fling-requires-axis-speed-above-30");
 						r.Coast();
-						// 需求指定 ±3%，以实测释放速度的独立闭式为基准，排除估速误差。
-						if (r.glideExpected > 0.0) r.Check(std::fabs(r.glide / r.glideExpected - 1.0) <= 0.03, "isolated-glide-within-3pct");
+						// Chromium 在曲线 inactive 时直接结束，不补发终点；总位移不超过独立 Physics 终点。
+						if (r.glideExpected > 0.0) r.Check(r.glide <= r.glideExpected * 1.03, "isolated-glide-within-physics-upper-bound");
 					});
 				}
 				run("locked-diagonal", [&](CanvasPanFeelRun& r)
@@ -6887,7 +6889,10 @@ namespace Inkeys::Drawing::Draw3
 				{
 					char name[64]; std::snprintf(name, sizeof(name), "stop-hold-%.0f", hold);
 					run(name, [&](CanvasPanFeelRun& r) { r.Begin(); r.Drag(3000.0, 0.0); r.Advance(r.Frames(hold)); r.Release(0.0);
-						r.Check(r.releaseSpeed == 0.0 && r.Speed() == 0.0 && !r.rig.pan.Active(), "70ms-release-exact-zero"); });
+						const bool stale = r.rig.last.dynamics.releaseAgeSeconds >= 0.080;
+						r.Check(stale ? (r.releaseSpeed == 0.0 && r.Speed() == 0.0 && !r.rig.pan.Active()) : r.releaseSpeed > 30.0,
+							"release-stops-only-at-80ms-sample-age");
+						r.Coast(); });
 				}
 				for (bool faster : { false, true }) run(faster ? "successive-faster-flicks" : "successive-same-flicks", [&](CanvasPanFeelRun& r)
 				{
@@ -6895,11 +6900,14 @@ namespace Inkeys::Drawing::Draw3
 					for (double hand : { 3000.0, 6000.0, 12000.0, 12000.0 })
 					{
 						const double speed = faster ? hand : 3000.0, old = r.Speed();
-						r.Begin(); r.Drag(speed, 0.0, 500.0); r.Release(speed);
-						r.Check(r.Speed() <= (std::max)(old, speed) * 1.15 + 0.01, "flick-not-additive");
-						r.Check(r.Speed() <= 12000.01, "stacking-saturates-12000");
-						// feel-bound: 恒速估速的相邻释放只允许 1 DIP/s 量化差，不允许每次再累加百分比。
-						if (!faster && lastSameRelease >= 0.0) r.Check(r.releaseSpeed <= lastSameRelease + 1.0, "same-flicks-no-growth");
+						const double oldStarting = r.rig.last.dynamics.boosterStartingVelocity.x;
+						// Down靠近消费帧末端，确保30Hz首个Move仍落在50ms boost窗口内。
+						r.Down(0, 0.0, 0.0, InputDeviceType::Touch, r.now + r.frameMs - 0.1); r.Advance(1);
+						r.Drag(speed, 0.0, 500.0); r.Release(speed);
+						r.Check(std::fabs(r.rig.last.dynamics.boosterStartingVelocity.x - (oldStarting + r.releaseSpeed)) < 0.01,
+							"same-direction-fling-adds-previous-starting-velocity");
+						// 原始 LSQ2 释放速度仍保持恒速；累计 boost 由上面的 starting velocity 断言单独检查。
+						if (!faster && lastSameRelease >= 0.0) r.Check(r.releaseSpeed <= lastSameRelease + 1.0, "same-flicks-raw-release-speed-stable");
 						if (!faster) lastSameRelease = r.releaseSpeed;
 						if (speed > old * 1.15) r.Check(r.Speed() > old, "faster-hand-grows-speed");
 						r.Advance(1);
@@ -6917,7 +6925,8 @@ namespace Inkeys::Drawing::Draw3
 						r.Advance(1, [&](double t) { r.Move(0, x - 3000.0 * (t - start) / 1000.0, 0.0, t); });
 						if (crossed < 0.0 && r.rig.pan.VelocityDip().x <= 0.0f) crossed = r.now - start;
 					}
-					r.Check(crossed >= 0.0 && heldStopMs > 0.0 && crossed < heldStopMs, "reverse-brakes-faster-than-hold");
+					r.Check(crossed >= 0.0 && heldStopMs > 0.0 &&
+						std::llround(crossed * 10000.0) <= std::llround(heldStopMs * 10000.0), "reverse-estimate-switches-after-immediate-cancel");
 					r.Release(3000.0); r.Coast();
 				});
 				for (size_t fingers = 2; fingers <= 5; ++fingers)
@@ -7062,10 +7071,12 @@ namespace Inkeys::Drawing::Draw3
 				run("pen-hover", [&](CanvasPanFeelRun& r)
 				{
 					r.Seed(); CanvasPanFeelRun control("hover-free-control", fps, scale, subframe); control.Seed();
-					const double expected = 300.0 * std::log((r.Speed() + 300.0) / 320.0);
+					const double before = r.rig.ViewportX();
 					r.rig.PenMailbox(r.now + 0.1, false); r.Advance(1); control.Advance(1);
-					r.Check(control.failures == 0 && !r.rig.navigationPenSuppressed && r.Speed() < control.Speed(), "real-hover-mailbox-brakes");
-					r.Coast(); r.Check(r.stopMs >= 0.0 && r.stopMs < expected, "hover-stops-faster-than-free");
+					r.Check(control.failures == 0 && !r.rig.navigationPenSuppressed && r.Speed() == 0.0 &&
+						r.rig.ViewportX() == before && !r.rig.pan.Active() && r.rig.last.dynamics.boosterStartingVelocity.x == 0.0f,
+						"real-hover-mailbox-immediately-stops-and-clears-boost");
+					r.Coast();
 				});
 				for (bool touchFirst : { false, true }) for (bool sameFrame : { false, true })
 				{
@@ -7173,6 +7184,7 @@ namespace Inkeys::Drawing::Draw3
 				check(rig.pan.TouchPanHeld() == (device == InputDeviceType::Touch),
 					"only Touch raises the window's Touch Pan state");
 				bool exact = true;
+				double previousX = finger.x0, previousY = finger.y0;
 				for (int step = 1; step <= 60; ++step)
 				{
 					const double t = 8.0 + 4.0 * step;
@@ -7180,12 +7192,26 @@ namespace Inkeys::Drawing::Draw3
 					rig.Move(tablet, 1, x, y, t);
 					if (std::fmod(t, 8.0) < 1e-6)
 					{
+						const bool scrolling = rig.last.dynamics.scrolling;
+						const double oldX = rig.ViewportX(), oldY = rig.ViewportY();
 						rig.Frame(t);
-						exact = exact && closeTo(rig.ViewportX(), -(x - finger.x0), 1e-3) &&
-							closeTo(rig.ViewportY(), -(y - finger.y0), 1e-3);
+						if (scrolling)
+							exact = exact && closeTo(oldX - rig.ViewportX(), x - previousX, 1e-3) &&
+								closeTo(oldY - rig.ViewportY(), y - previousY, 1e-3);
+						else if (!rig.last.dynamics.scrolling)
+							exact = exact && rig.ViewportX() == oldX && rig.ViewportY() == oldY;
+						else
+						{
+							// Provider 首个Update径向扣15，之后的增量仍是完整跟手位移。
+							const double dx = x - finger.x0, dy = y - finger.y0;
+							const double scale = 1.0 - 15.0 / std::hypot(dx, dy);
+							exact = exact && closeTo(oldX - rig.ViewportX(), dx * scale, 1e-3) &&
+								closeTo(oldY - rig.ViewportY(), dy * scale, 1e-3);
+						}
+						previousX = x; previousY = y;
 					}
 				}
-				check(exact, "Locked pan keeps the content under the finger 1:1 (viewport moves opposite)");
+				check(exact, "pan respects slop and follows each subsequent finger displacement 1:1");
 				check(rig.pan.Active() && rig.window.CanvasPanMode(),
 					"Move mode is published to the window layer for the Win32 mouse fallback");
 			}
@@ -7208,7 +7234,7 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(216.0);
 				check(closeTo(rig.ViewportX(), before, 1e-2), "lifting one finger does not jump the content");
 			}
-			// ---- 释放 -> 惯性；惯性中静止按住：Slipping -> Locked ----
+			// ---- 释放 -> 惯性；第一指按下即取消 fling ----
 			{
 				Rig rig;
 				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
@@ -7216,42 +7242,31 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(8.0);
 				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 208.0, 12.0, 0.0); // 3000 px/s
 				rig.Up(finger.tablet, 1, finger.x0 + 600.0, finger.y0, 208.0);
-				rig.Frame(208.0);
+				rig.Frame(216.0);
 				check(rig.pan.Phase() == CanvasPanPhase::Coasting && !rig.pan.HasContacts() && rig.pan.Active(),
-					"fast release starts friction inertia and recycles the contact");
-				for (double t = 216.0; t <= 272.0; t += 8.0) rig.Frame(t);
+					"fast release starts physics fling and recycles the contact");
+				for (double t = 224.0; t <= 272.0; t += 8.0) rig.Frame(t);
 				check(rig.pan.Phase() == CanvasPanPhase::Coasting, "still coasting 64 ms after release");
 				const float beforeGrab = rig.ViewportX();
 				double t = 272.0;
 				rig.Down(Rig::kTouchTablet, 7, InputDeviceType::Touch, 900.0, 300.0, t);
-				bool sawSlipping = false, sawLocked = false;
-				double lockedAt = -1.0;
-				float lockedViewport = 0.0f;
 				for (int frame = 0; frame < 80; ++frame)
 				{
 					t += 8.0;
 					rig.Frame(t);
-					sawSlipping = sawSlipping || rig.pan.Phase() == CanvasPanPhase::Slipping;
-					if (rig.pan.Phase() == CanvasPanPhase::Locked && !sawLocked)
-					{
-						sawLocked = true; lockedAt = t - 272.0; lockedViewport = rig.ViewportX();
-					}
+					check(rig.pan.Phase() == CanvasPanPhase::Locked && rig.pan.VelocityDip().x == 0.0f &&
+						rig.ViewportX() == beforeGrab && rig.last.contentDeltaPixels.x == 0.0f,
+						"first Down stops fling immediately and held finger never drifts inside slop");
 				}
-				check(sawSlipping && sawLocked, "grabbing a coasting canvas passes through Slipping and ends Locked");
-				check(lockedAt > 0.0 && lockedAt < 350.0,
-					"stationary hand grabs the canvas well before free friction would stop it");
-				check(closeTo(rig.ViewportX(), lockedViewport, 1e-3) && rig.pan.Phase() == CanvasPanPhase::Locked,
-					"once Locked the held canvas no longer drifts");
-				check(rig.ViewportX() < beforeGrab, "slipping still carried the content in the swipe direction");
 				rig.Up(Rig::kTouchTablet, 7, 900.0, 300.0, t + 4.0);
 				rig.Frame(t + 8.0);
 				check(rig.pan.Phase() == CanvasPanPhase::Idle && !rig.pan.Active() && !rig.pan.HasContacts(),
 					"tap-and-release on a grabbed canvas leaves no phantom inertia");
 			}
 
-			// ---- 自由滑行距离符合闭式并最终停止；笔悬停更快减速 ----
+			// ---- Physics fling 有界结束；笔 hover 在下一消费帧零位移急停 ----
 			{
-				double freeTravel = 0.0, brakedTravel = 0.0;
+				double freeTravel = 0.0, brakedTravel = 0.0, expectedTravel = 0.0;
 				for (const bool hover : { false, true })
 				{
 					Rig rig;
@@ -7260,20 +7275,25 @@ namespace Inkeys::Drawing::Draw3
 					rig.Frame(8.0);
 					drag(rig, std::span<const Finger>(&finger, 1), 8.0, 208.0, 12.0, 0.0);
 					rig.Up(finger.tablet, 1, finger.x0 + 600.0, finger.y0, 208.0);
-					rig.Frame(208.0);
+					rig.Frame(216.0);
 					const float atRelease = rig.ViewportX();
+					if (!hover)
+					{
+						const double v = rig.last.dynamics.boosterStartingVelocity.x;
+						expectedTravel = v * v / (2.0 * 96.0 * 2.7559e-5 * 1000000.0) - rig.last.dynamics.flingOffset.x;
+					}
 					int frames = 0;
-					for (double t = 216.0; rig.pan.Active() && frames < 1200; t += 8.0, ++frames)
+					for (double t = 224.0; rig.pan.Active() && frames < 1200; t += 8.0, ++frames)
 						rig.Frame(t, hover);
 					check(!rig.pan.Active() && rig.pan.Phase() == CanvasPanPhase::Idle,
 						"coasting stops by itself (Idle, no animation requested)");
 					(hover ? brakedTravel : freeTravel) = static_cast<double>(atRelease - rig.ViewportX());
 				}
-				const double expected = CanvasPanGlideDistance(3000.0, kCanvasPanFreeFriction);
-				check(freeTravel > expected * 0.75 && freeTravel < expected * 1.25,
-					"free glide distance of a 3000 px/s swipe follows the closed form");
-				check(brakedTravel > 0.0 && brakedTravel < freeTravel * 0.6,
-					"pen hover brakes the inertia with the hand friction");
+				// Chromium Controller 不派发 inactive 终帧，内容位移不超过独立曲线终点。
+				check(freeTravel > 0.0 && freeTravel <= expectedTravel + 0.5,
+					"free fling stays within independent physics remaining distance");
+				check(brakedTravel == 0.0, "pen hover cancels fling with zero additional content displacement");
+
 			}
 
 			// ---- DIP 换算：125% DPI 下像素位移仍 1:1，惯性距离按 DIP 计算 ----
@@ -7283,16 +7303,21 @@ namespace Inkeys::Drawing::Draw3
 				const Finger finger{ Rig::kTouchTablet, 1, 300.0, 300.0 };
 				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
 				rig.Frame(8.0);
-				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 112.0, 6.0, 0.0); // 1500 px/s = 1125 DIP/s
-				check(closeTo(rig.ViewportX(), -156.0, 1e-2), "pixel displacement stays 1:1 at 0.75 DIP per pixel");
+				drag(rig, std::span<const Finger>(&finger, 1), 8.0, 24.0, 6.0, 0.0); // 1500 px/s = 1125 DIP/s
+				const double afterSlop = rig.ViewportX();
+				const Finger continued{ finger.tablet, finger.id, finger.x0 + 24.0, finger.y0 };
+				drag(rig, std::span<const Finger>(&continued, 1), 24.0, 112.0, 6.0, 0.0);
+				check(closeTo(afterSlop - rig.ViewportX(), 132.0, 1e-2), "post-slop pixel displacement stays 1:1 at 0.75 DIP per pixel");
 				rig.Up(finger.tablet, 1, finger.x0 + 156.0, finger.y0, 112.0);
-				rig.Frame(112.0);
+				rig.Frame(120.0);
 				const float atRelease = rig.ViewportX();
+				const double initialOffset = rig.last.dynamics.flingOffset.x;
+				const double releaseVelocity = rig.last.dynamics.boosterStartingVelocity.x;
 				int frames = 0;
-				for (double t = 120.0; rig.pan.Active() && frames < 1200; t += 8.0, ++frames) rig.Frame(t);
+				for (double t = 128.0; rig.pan.Active() && frames < 1200; t += 8.0, ++frames) rig.Frame(t);
 				const double travelPx = static_cast<double>(atRelease - rig.ViewportX());
-				const double expectedPx = CanvasPanGlideDistance(1125.0, kCanvasPanFreeFriction) / 0.75;
-				check(travelPx > expectedPx * 0.7 && travelPx < expectedPx * 1.3,
+				const double expectedPx = (releaseVelocity * releaseVelocity / (2.0 * 96.0 * 2.7559e-5 * 1000000.0) - initialOffset) / 0.75;
+				check(travelPx > 0.0 && travelPx <= expectedPx + 0.5,
 					"inertia distance is computed in DIP and converted back to pixels");
 			}
 			// ---- 设备互斥与不可拖动设备 ----
@@ -7363,9 +7388,13 @@ namespace Inkeys::Drawing::Draw3
 					"same-frame Up/Cancelled then Mouse Down admits the new device");
 				rig.Move(Rig::kMouseTablet, 2, 230, 100, 112.0);
 				rig.Frame(116.0);
-				check(closeTo(rig.ViewportX(), -30.0, 1e-3), "handed-off Mouse actually pans");
-				rig.Up(Rig::kMouseTablet, 2, 230, 100, 120.0);
-				rig.Frame(124.0);
+				check(rig.last.dynamics.scrolling, "handed-off Mouse crosses its own slop");
+				const double afterSlop = rig.ViewportX();
+				rig.Move(Rig::kMouseTablet, 2, 240, 100, 118.0);
+				rig.Frame(120.0);
+				check(closeTo(afterSlop - rig.ViewportX(), 10.0, 1e-3), "handed-off Mouse pans one to one after slop");
+				rig.Up(Rig::kMouseTablet, 2, 240, 100, 124.0);
+				rig.Frame(128.0);
 			}
 			{
 				Rig rig;
@@ -7427,8 +7456,9 @@ namespace Inkeys::Drawing::Draw3
 					{
 						rig.Frame(124.0);
 						check(!rig.suppressPenUntilRelease && rig.last.penTerminalQpc == Rig::Qpc(120.0) &&
-							rig.pan.Phase() == CanvasPanPhase::Coasting,
-							"Selection Pen terminal is consumed and suppression clears");
+							rig.pan.Phase() == CanvasPanPhase::Idle && rig.last.contentDeltaPixels.x == 0.0f &&
+							rig.last.dynamics.boosterStartingVelocity.x == 0.0f,
+							"Selection Pen terminal clears suppression and its hover stops fling");
 					}
 					// Pen95 分支不插入 hover 帧：旧 Up 与新 Down 同帧仍须解除旧抑制。
 					const float beforeNewPen = rig.ViewportX();
@@ -7465,8 +7495,13 @@ namespace Inkeys::Drawing::Draw3
 					"first-frame ingress suppresses Pen only when Touch Down is earlier");
 				rig.Move(Rig::kTouchTablet, 1, 130, 100, 16.0);
 				rig.Frame(20.0);
-				check(closeTo(rig.ViewportX(), touchFirst ? -30.0 : 0.0, 1e-3),
+				check(rig.last.dynamics.scrolling == touchFirst,
 					"first-frame suppressed Pen keeps Touch pan; earlier Pen stops later Touch");
+				const double afterSlop = rig.ViewportX();
+				rig.Move(Rig::kTouchTablet, 1, 140, 100, 21.0);
+				rig.Frame(22.0);
+				check(closeTo(afterSlop - rig.ViewportX(), touchFirst ? 10.0 : 0.0, 1e-3),
+					"Pen arbitration preserves post-slop Touch delta without changing its baseline");
 				rig.Up(Rig::kTouchTablet, 1, 130, 100, 24.0);
 				rig.Up(Rig::kPenTablet, 1, 400, 100, 24.0);
 				rig.PenMailbox(24.0, false);
@@ -7485,9 +7520,10 @@ namespace Inkeys::Drawing::Draw3
 				}
 				hover.PenMailbox(108.0, false);
 				free.Frame(112.0); hover.Frame(112.0);
-				check(!hover.navigationPenSuppressed && hover.pan.VelocityDip().x > 0.0f &&
-					hover.pan.VelocityDip().x < free.pan.VelocityDip().x,
-					"real Pen hover mailbox still brakes inertia without an immediate Stop");
+				check(!hover.navigationPenSuppressed && hover.pan.VelocityDip().x == 0.0f &&
+					hover.pan.Phase() == CanvasPanPhase::Idle && hover.last.contentDeltaPixels.x == 0.0f &&
+					hover.last.dynamics.boosterStartingVelocity.x == 0.0f && free.pan.VelocityDip().x > 0.0f,
+					"real Pen hover mailbox immediately stops inertia and clears booster");
 			}
 
 			// ---- 桌面/PPT Selection 与绘制工具：绝不平移 ----
@@ -7573,7 +7609,7 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(32.0);
 				rig.Move(Rig::kTouchTablet, 2, 160, 100, 36.0);
 				rig.Frame(40.0);
-				check(closeTo(rig.ViewportX(), -60.0, 1e-3), "re-entering Move mode pans with a fresh finger");
+				check(closeTo(rig.ViewportX(), -(60.0 - 15.0), 1e-3), "re-entering Move mode pans with a fresh finger");
 			}
 
 			// ---- 硬限位：触限轴清零速度，不再被惯性推动 ----
@@ -7602,12 +7638,14 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(8.0);
 				rig.Move(tablet, 1, 620.0, 320.0, 12.0);
 				rig.Frame(16.0);
+				// 首次滚动按径向扣15；在Up前冻结视角，避免把释放后的fling算入页级记忆预期。
+				const InkViewport page0 = rig.Canvas(0)->Viewport();
+				const double page0Scale = 1.0 - 15.0 / std::hypot(120.0, -80.0);
+				check(closeTo(page0.x, -120.0 * page0Scale, 1e-3) && closeTo(page0.y, 80.0 * page0Scale, 1e-3), "page 0 panned");
+				rig.pan.Stop();
 				rig.Up(tablet, 1, 620.0, 320.0, 16.0);
 				rig.Frame(20.0);
-				const InkViewport page0 = rig.Canvas(0)->Viewport();
-				check(closeTo(page0.x, -120.0, 1e-3) && closeTo(page0.y, 80.0, 1e-3), "page 0 panned");
 				memory.Remember(0, page0); // Run() 的视口应用块/翻页前随后记下视角
-				rig.pan.Stop();
 				const auto second = TryAppendBlankPage(rig.document);
 				check(second && *second == 1, "page 1 appended");
 				runtimes.emplace_back();
@@ -7619,10 +7657,12 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(28.0);
 				rig.Move(tablet, 2, 340.0, 330.0, 32.0);
 				rig.Frame(36.0);
+				const InkViewport page1 = rig.Canvas(1)->Viewport();
+				const double page1Scale = 1.0 - 15.0 / std::hypot(40.0, 30.0);
+				check(closeTo(page1.x, -40.0 * page1Scale, 1e-3) && closeTo(page1.y, -30.0 * page1Scale, 1e-3), "page 1 panned independently");
+				rig.pan.Stop();
 				rig.Up(tablet, 2, 340.0, 330.0, 36.0);
 				rig.Frame(40.0);
-				const InkViewport page1 = rig.Canvas(1)->Viewport();
-				check(closeTo(page1.x, -40.0, 1e-3) && closeTo(page1.y, -30.0, 1e-3), "page 1 panned independently");
 				memory.Remember(1, page1);
 				check(rig.Canvas(0)->Viewport().x == page0.x && rig.Canvas(0)->Viewport().y == page0.y,
 					"a warm page keeps its own view while another page is current");
@@ -15205,8 +15245,6 @@ namespace Inkeys::Drawing::Draw3
 			}
 		};
 
-		CanvasPanPhase panLoggedPhase = CanvasPanPhase::Idle;
-		int64_t nextPanLogQpc = 0;
 		auto updateCanvasNavigation = [&](int64_t nowQpc)
 		{
 			// 命令可能在本帧早些时候切换了工作区或选择模式：先发布移动模式并处理“刚离开”。
@@ -15221,10 +15259,11 @@ namespace Inkeys::Drawing::Draw3
 				stopCanvasNavigation("pen-mailbox-contact");
 			}
 
-			// 摩擦耦合平移：消费平移触点快照 -> 动力学（DIP）-> 像素位移。
-			// 笔悬停只在无手的惯性阶段以手摩擦加速制动；落笔已在上方立即急停。
+			// Chromium 平移：消费触点快照 -> DIP 内核 -> 像素位移；hover 仅急停 fling。
+			const WindowSize panSize = window_.Size();
 			const CanvasPanInput::Frame frame = canvasPan.Step(input_, nowQpc, qpcFrequency,
-				penInRange && !suppressPenUntilRelease);
+				penInRange && !suppressPenUntilRelease, {},
+				{ static_cast<float>(panSize.width), static_cast<float>(panSize.height) });
 			if (frame.penTerminalQpc > 0)
 				suppressedPenTerminalQpc = (std::max)(suppressedPenTerminalQpc, frame.penTerminalQpc);
 			if (frame.touchPanEndQpc > 0)
@@ -15232,24 +15271,24 @@ namespace Inkeys::Drawing::Draw3
 			// 仅触摸持有且仍有手按住时才进入窗口层的 Touch Pan 态；鼠标拖动保持系统箭头。
 			window_.SetTouchPanActive(frame.touchPanHeld);
 
-			// 标定日志只在显式 RTS diagnostics 下输出：相位变化、释放事件，以及活动期间约每 100 ms 一条。
+			// 仅显式 RTS diagnostics 输出；逐帧记录以便与 Chromium 的输入/曲线逐项对照。
 			{
 				const CanvasPanFrameOutput& out = frame.dynamics;
-				if (out.phase != panLoggedPhase || out.released ||
-					(out.phase != CanvasPanPhase::Idle && nowQpc >= nextPanLogQpc))
+				LogCanvasPan("pan-step phase=%u held=%zu samples=%zu scrolling=%u delta-px=(%.2f,%.2f) v-content-dip=(%.1f,%.1f) focus=(%.2f,%.2f) span=%.2f boost-start=(%.1f,%.1f) boost-current=(%.1f,%.1f) cutoff-s=%.6f fling-offset=(%.2f,%.2f)",
+					static_cast<unsigned>(out.phase), out.heldContacts, out.sampleCount, out.scrolling ? 1u : 0u,
+					frame.contentDeltaPixels.x, frame.contentDeltaPixels.y,
+					out.contentVelocity.x, out.contentVelocity.y, out.focus.x, out.focus.y, out.span,
+					out.boosterStartingVelocity.x, out.boosterStartingVelocity.y,
+					out.boosterCurrentVelocity.x, out.boosterCurrentVelocity.y, out.boosterCutoffSeconds,
+					out.flingOffset.x, out.flingOffset.y);
+				for (size_t i = 0; i < out.pointerCount; ++i)
 				{
-					LogCanvasPan("pan-step phase=%u held=%zu delta-px=(%.2f,%.2f) v-content-dip=(%.1f,%.1f) v-hand-dip=(%.1f,%.1f) hand-known=%u released=%u release-speed=%.1f release-age-ms=%.1f",
-						static_cast<unsigned>(out.phase), out.heldContacts,
-						frame.contentDeltaPixels.x, frame.contentDeltaPixels.y,
-						out.contentVelocity.x, out.contentVelocity.y,
-						out.handVelocity.x, out.handVelocity.y,
-						out.handVelocityKnown ? 1u : 0u, out.released ? 1u : 0u,
-						out.releaseSpeed, out.releaseAgeSeconds * 1000.0);
-					panLoggedPhase = out.phase;
-					nextPanLogQpc = nowQpc + (std::max)(int64_t{ 1 }, qpcFrequency / 10);
+					const auto& pointer = out.pointerDiagnostics[i];
+					LogCanvasPan("pan-pointer key=%llu samples=%zu velocity-dip=(%.1f,%.1f)",
+						static_cast<unsigned long long>(pointer.key), pointer.sampleCount,
+						pointer.velocity.x, pointer.velocity.y);
 				}
 			}
-
 			if ((frame.contentDeltaPixels.x != 0.0f || frame.contentDeltaPixels.y != 0.0f) && document_)
 			{
 				InkPage* page = document_->PageAt(currentPageIndex_);

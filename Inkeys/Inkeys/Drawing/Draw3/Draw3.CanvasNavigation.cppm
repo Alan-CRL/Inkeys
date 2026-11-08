@@ -17,47 +17,43 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr float kCanvasPanSharpSpeedThresholdDipPerSecond = 300.0f;
 	inline constexpr float kCanvasPanMaximumFallbackBlurDip = 12.0f;
 
-	// ---- 摩擦耦合平移动力学（画布内核，纯 CPU）----
-	// 手感相关常量全部集中在本块，待真机标定；单位为 DIP、DIP/s、DIP/s²、秒。
-	// 这些是实验参数，不是持久化或公开接口的兼容契约。
-	inline constexpr double kCanvasPanVelocityLimitDipPerSecond = 12000.0;
-	inline constexpr double kCanvasPanStopSpeedDipPerSecond = 20.0;
-	inline constexpr double kCanvasPanMinimumReleaseSpeedDipPerSecond = 250.0;
-	inline constexpr double kCanvasPanMaximumStepSeconds = 0.100;
-	// 自由摩擦（画布对背景）与手摩擦（手指对画布）：dv/dt = -v/tau - c*sign(v)。
-	inline constexpr double kCanvasPanFreeFrictionTauSeconds = 0.30;
-	inline constexpr double kCanvasPanFreeFrictionCoulombDipPerSecondSquared = 1000.0;
-	inline constexpr double kCanvasPanHandFrictionTauSeconds = 0.06;
-	inline constexpr double kCanvasPanHandFrictionCoulombDipPerSecondSquared = 6000.0;
-	// 释放门限：最后样本到抬起的年龄 <=30 ms 满速，>=70 ms 为零，其间线性。
-	inline constexpr double kCanvasPanReleaseGateFullSeconds = 0.030;
-	inline constexpr double kCanvasPanReleaseGateZeroSeconds = 0.070;
-	inline constexpr double kCanvasPanLiftedHandHoldSeconds = 0.080;
-	// 每触点估速器：窗口、容量、有效性、合并与断口。
+	// Chromium 阈值：ui/events/gesture_detection/{gesture_detector.cc,gesture_configuration.h}。
+	// LSQ2/连甩：ui/events/{velocity_tracker/velocity_tracker.cc,blink/fling_booster.cc}。
+	// 曲线：ui/events/gestures/{physics_based_fling_curve,fling_curve}.cc；贝塞尔：ui/gfx/geometry/cubic_bezier.cc。
+	// 推进时序：components/input/fling_controller.cc。
+	// 单位为 DIP、DIP/s、秒；ppi=96 是本模块 DIP 输入的适配，不是物理屏幕 PPI。
+	inline constexpr double kCanvasPanVelocityLimitDipPerSecond = 17000.0;
+	inline constexpr double kCanvasPanMinimumFlingVelocity = 30.0;
+	inline constexpr float kCanvasPanTouchSlopDip = 15.0f;
+	inline constexpr float kCanvasPanSlopEpsilonDip = 0.05f;
+	inline constexpr float kCanvasPanExpandSlopFactor = 1.0f;
+	inline constexpr float kCanvasPanScrollEpsilonDip = 0.1f;
 	inline constexpr double kCanvasPanTrackerWindowSeconds = 0.100;
 	inline constexpr size_t kCanvasPanTrackerCapacity = 20;
-	inline constexpr size_t kCanvasPanTrackerMinimumSamples = 3;
-	inline constexpr double kCanvasPanTrackerMinimumSpanSeconds = 0.020;
-	inline constexpr double kCanvasPanTrackerMergeSeconds = 0.002;
-	inline constexpr double kCanvasPanTrackerGapSeconds = 0.040;
-	inline constexpr double kCanvasPanTrackerGapFramePaddingSeconds = 0.016;
-	// 手速未知时的“手静止”证据：位移小且已按下足够久；或从未形成有效速度但已同样久不再上报。
-	inline constexpr double kCanvasPanHandStationaryDelaySeconds = 0.030;
-	inline constexpr double kCanvasPanHandStationaryDisplacementDip = 4.0;
 	inline constexpr size_t kCanvasPanMaximumContacts = 16;
+	inline constexpr double kCanvasPanTrackerGapSeconds = 0.040;
+	inline constexpr double kCanvasPanTrackerUpGapSeconds = 0.080;
+	inline constexpr float kCanvasPanPixelsPerInch = 96.0f;
+	inline constexpr float kCanvasPanPixelDeceleration = 2300.0f;
+	inline constexpr float kCanvasPanPhysicalDeceleration = 2.7559e-5f;
+	inline constexpr float kCanvasPanMaximumFlingSeconds = 2.0f;
+	inline constexpr float kCanvasPanFlingBoundsMultiplier = 3.0f;
+	inline constexpr float kCanvasPanBezierP1X = 0.2f;
+	inline constexpr float kCanvasPanBezierP1Y = 1.0f;
+	inline constexpr float kCanvasPanBezierP2X = 0.55f;
+	inline constexpr float kCanvasPanBezierP2Y = 1.0f;
+	inline constexpr double kCanvasPanBezierEpsilon = 1e-7;
+	inline constexpr double kCanvasPanBoostTimeoutSeconds = 0.050;
+	inline constexpr double kCanvasPanBoostMinimumFlingSpeedSquared = 350.0 * 350.0;
+	inline constexpr double kCanvasPanBoostMinimumScrollSpeedSquared = 150.0 * 150.0;
+	inline constexpr double kCanvasPanBoostMinimumIntervalSeconds = 0.001;
+	inline constexpr double kCanvasPanFlingFrameSeconds = 1.0 / 60.0;
+	inline constexpr float kCanvasPanLegacyAlpha = -5.70762e3f;
+	inline constexpr float kCanvasPanLegacyBeta = 1.72e2f;
+	inline constexpr float kCanvasPanLegacyGamma = 3.7f;
 
-	struct CanvasPanFriction
-	{
-		double tauSeconds = 0.0;
-		double coulombDipPerSecondSquared = 0.0;
-	};
-
-	inline constexpr CanvasPanFriction kCanvasPanFreeFriction{
-		kCanvasPanFreeFrictionTauSeconds,
-		kCanvasPanFreeFrictionCoulombDipPerSecondSquared };
-	inline constexpr CanvasPanFriction kCanvasPanHandFriction{
-		kCanvasPanHandFrictionTauSeconds,
-		kCanvasPanHandFrictionCoulombDipPerSecondSquared };
+	enum class CanvasPanFlingCurveKind : uint8_t { PhysicsBased, Legacy };
+	inline constexpr CanvasPanFlingCurveKind kCanvasPanFlingCurveKind = CanvasPanFlingCurveKind::PhysicsBased;
 
 	struct CanvasVector
 	{
@@ -111,10 +107,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool penInContact, bool mouseInContact) noexcept;
 	float CanvasPanFallbackBlurDip(float speedDipPerSecond) noexcept;
 
-	// ---- 摩擦耦合平移动力学：公共接口 ----
-	// 画布与背景之间是较小的自由摩擦；手与画布之间是较大的手摩擦。按下惯性中的画布时，
-	// 相对速度 w = v画布 - v手 按手摩擦衰减，趋零后“抓住”并 1:1 跟手。
-	// 本组类型不依赖窗口/D3D，位置与速度均以 DIP 计；像素换算由调用方完成。
+	// Chromium LSQ2：一个多指 tracker，共享 movement 环；遇到缺失 id 的 movement 即停止回溯。
 	struct CanvasPanVelocityEstimate
 	{
 		bool valid = false;
@@ -122,63 +115,43 @@ export namespace Inkeys::Drawing::Draw3
 		double y = 0.0;
 	};
 
-	struct CanvasPanFrictionStep
+	struct CanvasPanPointer
 	{
-		double distance = 0.0;
-		double speed = 0.0;
+		uint64_t key = 0;
+		double x = 0.0;
+		double y = 0.0;
 	};
 
-	// dv/dt = -v/tau - c 的逐帧精确解（速度模长）：A=v+c*tau，v'=A*e^(-dt/tau)-c*tau。
-	// 低于停止阈值返回 {0,0}；dt 非法返回 {0,speed}；dt 上限为 kCanvasPanMaximumStepSeconds。
-	CanvasPanFrictionStep StepCanvasPanFriction(double speed, double deltaSeconds,
-		CanvasPanFriction friction) noexcept;
-	// 从 speed 滑行到静止的总距离闭式解 v*tau - c*tau^2*ln(1+v/(c*tau))（不含停止阈值截断）。
-	double CanvasPanGlideDistance(double speed, CanvasPanFriction friction) noexcept;
-	// 释放门限：年龄 <=30 ms 为 1，>=70 ms 为 0，其间线性；负值或非有限值为 0。
-	double CanvasPanReleaseGate(double ageSeconds) noexcept;
-
-	// 单个触点的速度估计器：样本为触点绝对位置(DIP)与到达 QPC。
-	// 最近 100 ms、至多 20 个样本；二次最小二乘，取最新样本时刻的一阶导。
 	class CanvasPanVelocityTracker
 	{
 	public:
-		// 非有限输入、非递增 QPC 返回 false 且不改变状态；与同簇起点相隔 <=2 ms 的样本合并，
-		// 间隔超过 max(40 ms, frameSeconds+16 ms) 视为手曾静止并清窗。
-		bool AddSample(int64_t qpc, double x, double y, int64_t qpcFrequency,
-			double frameSeconds = 0.0) noexcept;
-		// 样本不足 3 个或跨度不足 20 ms 时返回 valid=false（不是 0，也不做两点差分）；
-		// 结果按 kCanvasPanVelocityLimitDipPerSecond 等比限幅。
-		CanvasPanVelocityEstimate Estimate(int64_t qpcFrequency) const noexcept;
-		// 视口触限后清除对应轴的速度历史（把该轴历史压平到最新位置）。
-		void ClearAxis(bool x, bool y) noexcept;
+		bool AddMovement(int64_t qpc, std::span<const CanvasPanPointer> pointers,
+			int64_t qpcFrequency) noexcept;
+		void Clear() noexcept;
 		void Reset() noexcept;
-		size_t SampleCount() const noexcept;
+		void ClearPointer(uint64_t key) noexcept;
+		void PointerUp(int64_t qpc, int64_t qpcFrequency) noexcept;
+		void ClearAxis(bool x, bool y) noexcept;
+		CanvasPanVelocityEstimate Estimate(uint64_t key, int64_t qpcFrequency) const noexcept;
+		size_t SampleCount(uint64_t key) const noexcept;
 		int64_t LastSampleQpc() const noexcept;
 
 	private:
-		std::array<CanvasPanVelocitySample, kCanvasPanTrackerCapacity> samples_ = {};
+		struct Movement
+		{
+			int64_t qpc = 0;
+			size_t count = 0;
+			std::array<CanvasPanPointer, kCanvasPanMaximumContacts> pointers = {};
+		};
+		std::array<Movement, kCanvasPanTrackerCapacity> movements_ = {};
+		size_t index_ = 0;
 		size_t count_ = 0;
-		int64_t clusterStartQpc_ = 0;
+		int64_t lastEventQpc_ = 0;
 	};
 
-	enum class CanvasPanPhase : uint8_t
-	{
-		Idle,
-		Coasting, // 无手，自由摩擦
-		Slipping, // 有手但尚未抓住，画布仍按自身速度滑动
-		Locked    // 有手且 1:1 跟手
-	};
+	enum class CanvasPanPhase : uint8_t { Idle, Coasting, Locked };
+	enum class CanvasPanContactPhase : uint8_t { Down, Move, Up, Cancelled };
 
-	enum class CanvasPanContactPhase : uint8_t
-	{
-		Down,
-		Move,
-		Up,
-		Cancelled
-	};
-
-	// 一次触点输入。key 在触点生命周期内必须唯一稳定；同一帧可按时间顺序给出同一触点的多个样本。
-	// 未知 key 的 Down/Move 视为新触点，未知或已抬起触点的 Up/Cancelled 被忽略。
 	struct CanvasPanContactSample
 	{
 		uint64_t key = 0;
@@ -188,86 +161,200 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasPanContactPhase phase = CanvasPanContactPhase::Move;
 	};
 
+	enum class CanvasPanGestureType : uint8_t { ScrollBegin, ScrollUpdate, ScrollEnd, FlingStart, FlingCancel };
+	struct CanvasPanGestureEvent
+	{
+		CanvasPanGestureType type = CanvasPanGestureType::ScrollUpdate;
+		double timeSeconds = 0.0;
+		CanvasVector delta = {};
+		CanvasVector velocity = {};
+		uint32_t sourceDevice = 0;
+		uint32_t modifiers = 0;
+		bool inertial = false;
+		bool preventBoosting = false;
+	};
+
+	struct CanvasPanGestureBatch
+	{
+		std::array<CanvasPanGestureEvent, 2> events = {};
+		size_t count = 0;
+	};
+
+	class CanvasPanGestureDetector
+	{
+	public:
+		CanvasPanGestureBatch Down(int64_t qpc, std::span<const CanvasPanPointer> pointers,
+			uint64_t actionKey, int64_t frequency) noexcept;
+		CanvasPanGestureBatch Move(int64_t qpc, std::span<const CanvasPanPointer> pointers,
+			int64_t frequency) noexcept;
+		CanvasPanGestureBatch Up(int64_t qpc, std::span<const CanvasPanPointer> pointers,
+			uint64_t actionKey, bool cancelled, int64_t frequency) noexcept;
+		void Reset() noexcept;
+		bool Scrolling() const noexcept;
+		CanvasPanVelocityTracker& Tracker() noexcept;
+		const CanvasPanVelocityTracker& Tracker() const noexcept;
+
+	private:
+		CanvasPanVelocityTracker tracker_;
+		CanvasVector lastFocus_ = {};
+		CanvasPanPointer primaryDown_ = {};
+		std::array<CanvasPanPointer, 2> secondaryDown_ = {};
+		size_t secondaryCount_ = 0;
+		size_t maximumPointerCount_ = 0;
+		bool withinSlop_ = true;
+		bool scrollSent_ = false;
+	};
+
+	class CanvasPanFlingBooster
+	{
+	public:
+		CanvasVector GetVelocityForFlingStart(const CanvasPanGestureEvent& event) noexcept;
+		bool ShouldBoostFling(const CanvasPanGestureEvent& event) const noexcept;
+		void ObserveGestureEvent(const CanvasPanGestureEvent& event) noexcept;
+		void ObserveProgressFling(CanvasVector velocity) noexcept;
+		void Reset() noexcept;
+		CanvasVector StartingVelocity() const noexcept;
+		CanvasVector CurrentVelocity() const noexcept;
+		double CutoffSeconds() const noexcept;
+
+	private:
+		CanvasVector startingVelocity_ = {};
+		CanvasVector currentVelocity_ = {};
+		std::optional<double> cutoff_;
+		std::optional<double> previousScrollTime_;
+		uint32_t sourceDevice_ = 0;
+		uint32_t modifiers_ = 0;
+	};
+
+	double SolveCanvasPanCubicBezier(double x, double p1x, double p1y,
+		double p2x = kCanvasPanBezierP2X, double p2y = kCanvasPanBezierP2Y) noexcept;
+
+	class CanvasPanFlingCurve
+	{
+	public:
+		void Start(CanvasVector velocity, CanvasVector viewportSizeDip, float boostMultiplier = 1.0f,
+			CanvasPanFlingCurveKind kind = kCanvasPanFlingCurveKind) noexcept;
+		bool Advance(double elapsedSeconds, CanvasVector& offset, CanvasVector& velocity) noexcept;
+		void ClearAxis(bool x, bool y) noexcept;
+		double Duration() const noexcept;
+		CanvasVector Distance() const noexcept;
+		CanvasVector P1() const noexcept;
+
+	private:
+		CanvasPanFlingCurveKind kind_ = kCanvasPanFlingCurveKind;
+		CanvasVector distance_ = {};
+		CanvasVector p1_ = {};
+		CanvasVector previousOffset_ = {};
+		CanvasVector legacyRatio_ = {};
+		double duration_ = 0.0;
+		double previousSeconds_ = 0.0;
+		double legacyTimeOffset_ = 0.0;
+		double legacyPositionOffset_ = 0.0;
+	};
+
+	class CanvasPanFlingController
+	{
+	public:
+		void Start(const CanvasPanGestureEvent& event, double lastScrollSeconds,
+			CanvasVector viewportSizeDip, CanvasPanFlingBooster& booster) noexcept;
+		CanvasVector Progress(double nowSeconds, CanvasPanFlingBooster& booster) noexcept;
+		void Cancel() noexcept;
+		void StopFling(CanvasPanFlingBooster& booster) noexcept;
+		void ClearAxis(bool x, bool y, CanvasPanFlingBooster& booster) noexcept;
+		bool Active() const noexcept;
+		CanvasVector Velocity() const noexcept;
+		CanvasVector Offset() const noexcept;
+		double StartSeconds() const noexcept;
+
+	private:
+		CanvasPanFlingCurve curve_;
+		CanvasVector cumulative_ = {};
+		CanvasVector velocity_ = {};
+		double startSeconds_ = 0.0;
+		double lastProgressSeconds_ = 0.0;
+		bool active_ = false;
+		bool firstUpdateSent_ = false;
+		bool clearX_ = false;
+		bool clearY_ = false;
+	};
+
 	struct CanvasPanFrameInput
 	{
 		int64_t frameQpc = 0;
 		int64_t qpcFrequency = 0;
 		std::span<const CanvasPanContactSample> contacts = {};
-		bool penHover = false;   // 惯性中以手摩擦(v手=0)加速制动
-		bool penContact = false; // 落笔：立即清空手势与惯性
+		bool penHover = false; // 仅 fling 中立即停止并清 booster；不打断手按住的拖动。
+		bool penContact = false;
+		CanvasVector viewportSizeDip = {}; // 由调用方传入客户区 DIP 尺寸；空视口不启动 fling。
+	};
+
+	struct CanvasPanPointerDiagnostic
+	{
+		uint64_t key = 0;
+		size_t sampleCount = 0;
+		CanvasVector velocity = {};
 	};
 
 	struct CanvasPanFrameOutput
 	{
-		CanvasVector contentDelta = {};    // 本帧内容位移，DIP
-		CanvasVector contentVelocity = {}; // 当前内容速度，DIP/s（供 tile 预测）
+		CanvasVector contentDelta = {};
+		CanvasVector contentVelocity = {};
 		CanvasPanPhase phase = CanvasPanPhase::Idle;
 		size_t heldContacts = 0;
-		// 诊断字段：手速（含停手门限）、最后一只手离开时的释放速度与年龄。
 		CanvasVector handVelocity = {};
 		bool handVelocityKnown = false;
+		bool scrolling = false;
 		bool released = false;
 		double releaseSpeed = 0.0;
 		double releaseAgeSeconds = 0.0;
+		CanvasVector focus = {};
+		double span = 0.0;
+		size_t pointerCount = 0;
+		double scaleDelta = 1.0;
+		size_t sampleCount = 0;
+		std::array<CanvasPanPointerDiagnostic, kCanvasPanMaximumContacts> pointerDiagnostics = {};
+		CanvasVector boosterStartingVelocity = {};
+		CanvasVector boosterCurrentVelocity = {};
+		double boosterCutoffSeconds = 0.0;
+		CanvasVector flingOffset = {};
 	};
 
-	// Idle/Coasting/Slipping/Locked 状态机。每个绘制帧调用一次 Step；
-	// 触点数量变化只重基线内容位移，不清任何估速器。
-	// 非法/倒退的帧时钟被忽略；Cancelled、倒退的 Up 时间与轻点（无 Move）都不会产生惯性。
 	class CanvasPanDynamics
 	{
 	public:
 		CanvasPanFrameOutput Step(const CanvasPanFrameInput& input) noexcept;
-		// 离开移动模式/翻页/切工作区/加载/最小化/Resize/落笔：立即清零。
-		// 调用方此后不应继续提交仍想忽略的旧触点，否则它们会被当作新触点。
 		void Stop() noexcept;
-		// 视口触及硬限位的轴：清零画布速度与该轴的估速历史。
+		void StopFling() noexcept;
 		void ClearAxis(bool x, bool y) noexcept;
 		CanvasPanPhase Phase() const noexcept;
 		bool Active() const noexcept;
 		CanvasVector ContentVelocity() const noexcept;
 		size_t HeldContactCount() const noexcept;
-		// 只供测试/诊断读取，指针仅在下一次 Step/Stop 前有效。
-		const CanvasPanVelocityTracker* FindTracker(uint64_t key) const noexcept;
+		const CanvasPanVelocityTracker& VelocityTracker() const noexcept;
+		// 预置首触点的历史，只供估速/基线，不派发 scroll；本任务不接生产输入。
+		bool SeedContactHistory(uint64_t key, std::span<const CanvasPanVelocitySample> samples,
+			int64_t qpcFrequency) noexcept;
 
 	private:
 		struct Contact
 		{
-			bool used = false;
 			bool held = false;
-			bool joined = false; // 内容位移基线有效
-			bool liftedStep = false;
-			bool cancelledStep = false;
-			uint64_t key = 0;
-			CanvasPanVelocityTracker tracker;
-			double x = 0.0;
-			double y = 0.0;
-			double refX = 0.0;
-			double refY = 0.0;
-			double anchorX = 0.0;
-			double anchorY = 0.0;
-			int64_t anchorQpc = 0;
-			int64_t lastSampleQpc = 0;
-			int64_t upQpc = 0;
-			CanvasPanVelocityEstimate lifted = {}; // 抬起时冻结的（已过停手门限的）速度
+			CanvasPanPointer pointer = {};
+			int64_t lastQpc = 0;
 		};
-
-		CanvasPanFrameOutput FinishStep(const CanvasPanFrameInput& input, double dt) noexcept;
-		Contact* FindHeld(uint64_t key) noexcept;
-		bool HasLiftedRecord(uint64_t key) const noexcept;
-		Contact* Allocate() noexcept;
-		void Ingest(const CanvasPanContactSample& sample, int64_t qpcFrequency,
-			double frameSeconds, bool firstHand) noexcept;
-		CanvasPanVelocityEstimate HandVelocity(int64_t referenceQpc,
-			int64_t qpcFrequency) const noexcept;
-		bool HandStationary(int64_t nowQpc, int64_t qpcFrequency) const noexcept;
-		void EndStep(int64_t nowQpc, size_t heldContacts, int64_t qpcFrequency) noexcept;
-
+		CanvasPanFrameOutput Snapshot(int64_t frequency) const noexcept;
+		void Dispatch(const CanvasPanGestureBatch& batch, const CanvasPanFrameInput& input,
+			CanvasPanFrameOutput& output) noexcept;
 		std::array<Contact, kCanvasPanMaximumContacts> contacts_ = {};
-		CanvasPanPhase phase_ = CanvasPanPhase::Idle;
-		double velocityX_ = 0.0;
-		double velocityY_ = 0.0;
+		CanvasPanGestureDetector detector_;
+		CanvasPanFlingBooster booster_;
+		CanvasPanFlingController fling_;
+		CanvasVector velocity_ = {};
 		int64_t lastFrameQpc_ = 0;
+		int64_t lastInputQpc_ = 0;
+		std::optional<double> lastScrollSeconds_;
+		uint64_t seedKey_ = 0;
+		std::vector<CanvasPanVelocitySample> seedSamples_;
 	};
 
 	struct CanvasRenderBudgetInput

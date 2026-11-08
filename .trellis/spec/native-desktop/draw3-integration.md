@@ -372,6 +372,7 @@ PumpBridgeState();
 - Clear 成功后仍分配新的 raster token，丢弃不兼容的热前像、composition GPU cache/维护、恢复计划和 trusted L2，并重置 Laser/粒子/光标/瞬态层后全量透明呈现；CPU history、当前 viewport 和其他页面保留。Undo 隐藏 Clear 并恢复旧 Stroke，Redo 重新显示 Clear 并清空。
 - 清空按钮采用两步语义：有内容时单击只发布 Clear 并保持模式；无内容且非选择时单击进入选择；空页已选择时使用统一 Disable 灰色且不响应。绘制或穿透有内容时双击由第一击已接受的 Clear 资格使第二击直接进入选择，不等待异步内容回报；发布失败时第二击重试 Clear。Clear 不进入 300ms toggle 点击合并。
 - `timeBeginPeriod(1)` 只在进入非选择模式时幂等尝试；回到选择或绘制线程退出时，仅对成功 begin 配对 `timeEndPeriod(1)`。begin 失败后同一次绘制停留不重试，必须离开并重新进入绘制模式。例外：白板移动模式的平移/惯性活动期间（`SelectionReleasesTimerPeriod(selectionMode, canvasPanActive)` 为 false）保持 1 ms 计时器，空闲的 Selection 仍整段释放。
+- 2026-11-08移动模式导航内核由 `CanvasPanDynamics` 的Chromium阶段1组件持有：共享多指LSQ2、Down取消fling但保留booster、hover仅Coasting立即停并清booster、落笔/原停止钩子Stop。控制器只新增客户区DIP视口与诊断字段接线，不改变Selection门禁、设备互斥、视口应用或tile/背景链。详情与A–E裁决见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)；本轮构建/运行待主Agent验证。
 
 ### 4. Validation & Error Matrix
 

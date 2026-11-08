@@ -179,10 +179,11 @@ Correct：实际当前页主题生成完整token；有效样式应用确认匹�
 
 ## 移动模式的画布平移与每页视角（2026-11-06）
 
-任务依据 `.trellis/tasks/11-06-whiteboard-canvas-pan-inertia/`；完整可执行合同（状态机、估速器、常量意图、终止原因、验证矩阵与未验证项）见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)，本节只记录白板侧边界。
+任务依据 `.trellis/tasks/11-06-whiteboard-canvas-pan-inertia/`（输入/视口/背景）及 `.trellis/tasks/11-08-chromium-touch-fling/`（替代动力学）；完整可执行合同（状态机、估速器、常量意图、终止原因、验证矩阵与未验证项）见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)，本节只记录白板侧边界。
 
 - 白板的"选择"按钮显示为"移动"，不新增 UI。平移只存在于"白板工作区 + 移动（Selection）模式"（`Bridge::MoveModePansCanvas`）；桌面/PPT 的 Selection 仍是穿透的电脑操作，绘制工具下不平移，绘制模式没有双指/手势触发。白板 Selection 的输出仍是 `PrimaryDrawpad`，Drawpad 不穿透。
 - 输入：触摸（任意指数，按质心）与鼠标左键立即成为平移触点；笔、鼠标右键不是拖动设备，继续丢弃到终态；触摸与鼠标同一时刻只允许一类设备持有。Win32 鼠标兜底路径（RTS 不可用）同样在白板移动模式放行左键，触摸被系统提升为单点鼠标，因此只有单点平移，属已知降级。用户的多指书写开关不影响移动模式的多指平移。
+- Chromium阶段1将内容跟随与起滑检测分开：触点Down立即取消fling并保留booster，15+0.05 DIP门限内不移动；多指focus平移与单指UP估速遵从新内核，首次Provider scroll当前少于3指时逐指径向扣15后平均，≥3指不扣、二维全零不派发；controller结束帧不补发。fling中笔hover立即停并清booster，有手按住时保持现有Pen仲裁；程序性Stop重置booster。固定ppi96/expand1、客户区DIP视口与快照时间均为记录在design中的适配，未宣称真机手感等同Edge。
 - 手势、估速、惯性与视口全部由 Draw3 绘制线程持有；UI/Whiteboard 层不参与平移输入、手势与动力学，Freeze 不接收输入、不驱动视口。默认归属下 Freeze 仅被动读取绘制线程发布的“当前显示页视口”只读样本，用来重画点阵/网格相位（Draw3 归属后备下 Freeze 不接收视口），合同见文末“白板点阵/网格背景的归属与视口跟随”。平移不改变页 `revision`、不使页变脏、不触发保存，也不进入墨迹 Undo；UInk 格式不变。
 - 离开移动模式、翻页与其它画布命令、工作区或 PPT 目标切换、白板冷页加载、白板最小化、窗口 Resize、笔落下都立即终止手势与惯性，不遗留速度；仍按着的手指只跟踪到终态，不会因此落笔或重新平移。
 - 每页视角：各页保持自己的视角，新页从 `(0,0)` 起，不继承上一页；白板冷页被驱逐后重载同样恢复离页时的视角。视角只在当前进程会话内记忆（侧表 `WhiteboardViewportMemory`），不依赖也不修改已保存的 UInk 视口；"新进程新建白板"的既有规则不变。

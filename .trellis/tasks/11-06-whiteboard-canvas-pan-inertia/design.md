@@ -16,6 +16,8 @@
 
 ## 2. 动力学模块（纯 CPU）
 
+> 历史方案：本节摩擦耦合/Slipping/旧LSQ限制由 [11-08-chromium-touch-fling](../11-08-chromium-touch-fling/design.md) 阶段1替代；本节保留原决策记录，不再是当前实现合同。新任务仍有首帧slop等待决且本轮未构建，不能据此把全部验收标为完成。
+
 沿用模块 `Inkeys.Drawing.Draw3.canvas_navigation`（已被 `Inkeys.vcxproj` 编译；需加入 `InkeysHeadlessTests.vcxproj`）。旧 `CanvasPanMotionState` 估速/释放/候选逻辑整体由下列类型替换；所有常量集中在 `.cppm` 顶部供标定。
 
 **2.1 估速器 `CanvasPanVelocityTracker`（每触点一个）**
@@ -43,6 +45,8 @@
 - 速度同时被 `kVMax` 限幅，故同向连续甩动逐次增长但封顶（AC2）。
 
 ## 3. 控制器接入
+
+> 后续覆盖：新任务 [11-08-chromium-touch-fling](../11-08-chromium-touch-fling/design.md#7-控制器接入阶段-1-的最小改动) 替换动力学接线、hover制动与诊断；本节的输入门禁、设备互斥、DIP换算、视口应用、停止钩子与背景/tile边界继续保留。涉及旧速度上限/摩擦的描述仅作历史，不作为新模型断言。
 
 - `updateCanvasNavigation`（`:13523-13910`）改为：读取笔 mailbox（保留现有 `suppressPenUntilRelease`/`interruptNavigationForPenOrMouse` 的笔语义；Mouse-left 在移动模式不再触发 `interruptNavigationForPenOrMouse("drawing-contact")`，见 `:12136-12141`）→ 消费 `panContacts` 快照喂给估速器 → `CanvasPanDynamics::Step` → 像素换算 → 现有的视口应用块（`ApplyCanvasContentTranslationChecked`、`SetViewport`、`InvalidateRaster`、`markPresentationMutation`、`viewportRefreshPending`、`DiscardHotPreimages`，`:13807-13843`）原样复用。
 - 单位：触点位置为窗口客户区物理像素（RTS:983-984；进程 Per-Monitor DPI aware），视口也是像素。动力学在 DIP 内运算：入口用 `SpeedEraser::DisplayScale.dipPerPixelX/Y`（Host.cpp:1635-1636）把位置换成 DIP，出口把 `contentDelta` 乘回像素。无显示缩放信息时回退 1。

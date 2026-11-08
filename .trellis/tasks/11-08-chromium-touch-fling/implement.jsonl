@@ -1,0 +1,13 @@
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "Free Canvas Navigation 惯性契约（本任务要改写的现状规范）"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "RTS/Pointer/Mouse 输入、contact 生命周期与设备分类约束"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 集成合同，约束控制器改动"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板平移门禁与页级视口合同"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 构建与兼容合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 模块、命名与注释风格"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "输入→导航→渲染的跨层数据流检查"}
+{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/chromium-fling-model.md", "reason": "Chromium 触摸滚动/fling 模型的精确常量与行为"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/inertia-root-cause.md", "reason": "前置任务的惯性根因与旧模型数值证据"}
+{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/move-mode-input-routing.md", "reason": "各设备输入路径、丢弃点、模式切换钩子与测试接入方式"}
+{"file":".trellis/tasks/11-08-chromium-touch-fling/research/sim/chromium_fling.py","reason":"S1独立标准库公式参考：LSQ2/多指边界/Bezier/Physics/Legacy/booster；Python未运行，由主Agent复算"}
+{"file":".trellis/tasks/11-08-chromium-touch-fling/research/sim/results_chromium.txt","reason":"黄金值运行状态与主Agent回填要求，当前明确未运行"}
+{"file":".trellis/tasks/11-08-chromium-touch-fling/research/stage1-static-review.md","reason":"本轮完整符号核对、静态检查、适配/待决A–E与主Agent构建运行交接"}
