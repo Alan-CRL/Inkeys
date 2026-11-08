@@ -314,7 +314,12 @@ namespace Inkeys::UI::Bar
                 if(e->phase==StatusIndicatorPhase::Exiting&&e->spec.lifetime==StatusIndicatorLifetime::Persistent)
                 {
                     e->vanish=0;
-                    if(e->landed||e->dockSerial)e->phase=StatusIndicatorPhase::Docked;
+                    if(e->landed||e->dockSerial)
+                    {
+                        // 退场已清除选择；重新展开目标须归一，保留原停靠序号，避免留下无截止的胶囊。
+                        if(e->morphTarget<1||e->flightTarget<1)SnapDocked(*e);
+                        else e->phase=StatusIndicatorPhase::Docked;
+                    }
                     // 展开态退场尚未设置收起目标；已有飞行则保留弹簧与剩余延迟。
                     else if(e->morphTarget<1||e->flightTarget<1)Expire(*e);
                     else e->phase=StatusIndicatorPhase::Collapsing;

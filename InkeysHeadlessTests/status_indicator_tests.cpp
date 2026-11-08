@@ -131,6 +131,37 @@ int RunStatusIndicatorTests()
 			"RepublishCollapsingExit: revived entry lands and stops requesting frames");
 	}
 
+	// RepublishReexpandedExit：重新展开中/展开后退场复活，归一回原停靠槽并恢复命中。
+	for (const double elapsed : { 0.05, 0.8 })
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::PptSlideshow), now); Run(model, now, 4.5);
+		const auto dockSerial = model.Find(1)->dockSerial;
+		check(model.Find(1)->phase == Phase::Docked && model.Find(1)->landed && dockSerial != 0
+			&& model.Find(1)->spec.action == Action::None, "RepublishReexpandedExit: single no-action tile is docked");
+		model.ClickDocked(1, now); Run(model, now, now + elapsed);
+		check(model.Reexpanded() && model.Selected() == 1 && model.Find(1)->morphTarget == 0
+			&& model.Find(1)->flightTarget == 0, "RepublishReexpandedExit: tile re-expands before retire");
+		check(model.Retire(1, now), "RepublishReexpandedExit: retire succeeds");
+		Run(model, now, now + 0.1);
+		check(model.Find(1)->phase == Phase::Exiting && model.Find(1)->vanish > 0 && model.Find(1)->vanish < 1,
+			"RepublishReexpandedExit: exit is still in progress");
+		check(model.Publish(Spec(1, Kind::PptSlideshow), now) == Result::Updated,
+			"RepublishReexpandedExit: republish revives exiting entry");
+		check(model.Find(1)->dockSerial == dockSerial, "RepublishReexpandedExit: revival keeps dock serial");
+		Run(model, now, now + 5.0);
+		const auto* entry = model.Find(1);
+		const auto layout = ResolveStatusIndicatorLayout(model, FoldedInput());
+		const auto* tile = FindLayout(layout, 1);
+		check(entry && entry->phase == Phase::Docked && entry->morphTarget == 1 && entry->flightTarget == 1
+			&& entry->landed && entry->dockSerial == dockSerial && !entry->holding && !model.NeedsFrames(),
+			"RepublishReexpandedExit: revived entry settles docked without reordering or continuous frames");
+		check(model.Selected() == 0 && !model.Reexpanded() && !model.FanOpen() && model.FrontKey() == 0
+			&& model.WakeDeadline() == inf, "RepublishReexpandedExit: no selection or hold deadline remains");
+		check(tile && tile->shape == StatusIndicatorShape::Tile && tile->role == StatusIndicatorRole::Dock,
+			"RepublishReexpandedExit: revived tile remains interactive");
+	}
+
 	// Filtering: hidden entries stay registered, re-enabled persistent ones return docked.
 	{
 		StatusIndicatorModel model; double now = 0;
