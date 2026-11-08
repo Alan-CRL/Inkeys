@@ -34,7 +34,7 @@ Win32 window message
 - RTS 多点同时检查 HWND Tablet Pen Service 属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回值和 `IRealTimeStylus3`；不能只验证 COM 初始化成功。
 - 输入被手势状态机抑制时，沿 `RTS contact -> DrawingController -> WM_POINTER cursor/haptics` 检查所有副作用；“不产生 Stored Stroke”不等于已抑制接触光标、系统光标决策和触觉预启动。跨线程抑制需锁存到对应设备终态，并覆盖 Pointer 与 RTS 任一路径缺失的设备。
 - contact Down 的队列顺序与已有 contact 的合并 snapshot 是两条时间线；处理新 Down 前旧单指可能已在 mailbox 发布较早的 `Up/Cancelled`，不能因此跳过旧笔画的正常收尾或提前回收 contact。（旧的"出队新 Down 前先退休旧批次手势资格"机制随 180 ms 双指 FSM 一并删除，平移触点按各自终态在 `CanvasPanInput::Step` 回收。）
-- 修改平移输入时，核对完整多指movement是否进入单个共享tracker：拓扑只重置内容位移基线，反向POINTER_UP按Chromium规则清全部历史，1/2点按LSQ降阶；不得用旧“每指tracker、至少3样本/20ms、绝不清历史”替代当前合同。触点/视口像素与动力学DIP须在同一dipPerPixel边界换算，详情见 [Free Canvas Navigation](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)。
+- 修改平移输入时分别核对producer事件、Down准入水位、导航消费截面和逐指真实估速；不能以一帧完整focus伪造其他指新样本。Stop/overflow后旧触点不得复活，参考组件一致性不等于生产手感验收；见[平移规范](../native-desktop/canvas-pan.md)。
 
 依据：`WindowController::HandleWindowMessage`、`ConsumeResizeRequest`、`DrawingController::ProcessPendingResize`。
 

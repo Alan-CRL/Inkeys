@@ -887,6 +887,11 @@
         {
           "N": "Diagnosticare cursor",
           "E": "Afișează în consolă sursa intrării cursorului și rezultatul randat efectiv."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnosticarea deplasării și inerției tablei",
+          "E": "Înregistrează intrările de deplasare cu mouse-ul și prin atingere, viteza, inerția și motivele opririi pentru investigarea problemelor de mișcare."
         }
       }
     },

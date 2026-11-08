@@ -19,7 +19,7 @@
 
 import Inkeys.Drawing.Draw3.canvas_navigation;
 
-// Chromium 输入适配与纯 CPU 数值测试；背景/Freeze 回归保留在本文件末尾。
+// 白板产品手感与 Chromium 参考数值测试；背景/Freeze 回归保留在本文件末尾。
 namespace
 {
 	using namespace Inkeys::Drawing::Draw3;
@@ -468,8 +468,8 @@ namespace
 		CanvasPanDynamics perAxis;
 		const auto fast = StartFling(perAxis, 0.0, 1, 30000.0, 40000.0);
 		check(fast.phase == CanvasPanPhase::Coasting, "fast diagonal drag starts a fling");
-		check(fast.boosterStartingVelocity.x == 17000.0f && fast.boosterStartingVelocity.y == 17000.0f,
-			"fling velocity clamps per axis rather than by vector length");
+		check(fast.boosterStartingVelocity.x == 7200.0f && fast.boosterStartingVelocity.y == 9600.0f,
+			"product fling caps vector norm at twelve thousand without changing direction");
 		for (const double speed : { 29.0, 31.0 })
 		{
 			CanvasPanDynamics threshold;
@@ -496,8 +496,8 @@ namespace
 		out = StepAt(pending, 9.0, { Contact(2, 9.0, 1000.0, 0.0, CanvasPanContactPhase::Down) });
 		check(out.pointerCount == 2 && out.contentDelta.x == 0.0f && !out.scrolling,
 			"rule 2: second Down inside slop rebases without jumping");
-		check(pending.VelocityTracker().SampleCount(1) == 3 && pending.VelocityTracker().SampleCount(2) == 1,
-			"rule 2: first history survives while new pointer starts from one sample");
+		check(pending.VelocityTracker().SampleCount(1) == 2 && pending.VelocityTracker().SampleCount(2) == 1,
+			"rule 2: another pointer Down does not add a fake sample to first pointer history");
 		out = StepAt(pending, 16.0, { Contact(1, 16.0, 8.0), Contact(2, 16.0, 1010.0) });
 		check(!out.scrolling && out.contentDelta.x == 0.0f, "rule 7: distant second Down has its own independent slop origin");
 		out = StepAt(pending, 24.0, { Contact(1, 24.0, 8.0), Contact(2, 24.0, 1016.0) });
@@ -623,11 +623,11 @@ namespace
 			{ Contact(2, 11.0, 324.0), Contact(1, 10.0, 20.0), Contact(1, 8.0, 16.0) });
 		check(merged.VelocityTracker().LastSampleQpc() == QpcMs(11.0) &&
 			merged.VelocityTracker().SampleCount(1) == 3 && merged.VelocityTracker().SampleCount(2) == 2,
-			"Move samples in one frame become a single shared movement at latest timestamp");
+			"all real Move samples retain their own pointer histories and latest event time");
 		check(out.focus.x == 172.0f && out.pointerCount == 2,
 			"merged Move uses latest per-pointer position after sorting QPC");
 
-		// 拓扑边界前后的连续Move各自合并，不能把旧集合的位移延后到新集合。
+		// 拓扑边界前后的Move分别消费，不能把旧集合的位移延后到新集合。
 		CanvasPanDynamics topology;
 		CanvasViewportState topologyViewport;
 		StepAt(topology, 0.0, { Contact(1, 0.0, 0.0, 0.0, CanvasPanContactPhase::Down) });
@@ -638,8 +638,8 @@ namespace
 		ApplyCanvasContentTranslation(topologyViewport, out.contentDelta);
 		check(out.contentDelta.x == 20.0f && out.contentDelta.y == 0.0f && out.pointerCount == 2 && out.focus.x == 527.0f,
 			"Move Down Move in one frame dispatches ten DIP before and ten after pointer insertion");
-		check(topology.VelocityTracker().SampleCount(1) == 5 && topology.VelocityTracker().SampleCount(2) == 2,
-			"Move Down Move retains separate shared movements across topology boundary");
+		check(topology.VelocityTracker().SampleCount(1) == 4 && topology.VelocityTracker().SampleCount(2) == 2,
+			"Move Down Move retains each pointer real samples without topology-generated samples");
 		out = StepAt(topology, 41.0, { Contact(1, 40.0, 64.0), Contact(2, 33.0, 1020.0, 0.0, CanvasPanContactPhase::Up),
 			Contact(1, 32.0, 54.0), Contact(2, 32.0, 1020.0) });
 		ApplyCanvasContentTranslation(topologyViewport, out.contentDelta);
@@ -674,7 +674,7 @@ namespace
 		check(out.contentDelta.x == 0.0f && !out.scrolling && seeded.VelocityTracker().Estimate(7, kFreq).valid,
 			"seeded samples establish velocity but do not generate scroll events");
 		check.Near(seeded.VelocityTracker().Estimate(7, kFreq).x, 3000.0, 0.5,
-			"admitted first pointer inherits its own LSQ history");
+			"admitted first pointer inherits its own reliable linear tail");
 		out = StepAt(seeded, 32.0, { Contact(7, 32.0, 96.0) });
 		check(out.scrolling, "history does not replace current Down as slop baseline");
 		const auto seededCount = seeded.VelocityTracker().SampleCount(7);
@@ -699,8 +699,8 @@ namespace
 			"rule 12: additional pointer Down does not repeat FlingCancel");
 		StepAt(grab, 42.0, { Contact(3, 42.0, 1100.0, 0.0, CanvasPanContactPhase::Cancelled) });
 		out = StepAt(grab, 43.0, { Contact(2, 43.0, 900.0, 0.0, CanvasPanContactPhase::Cancelled) });
-		check(out.phase == CanvasPanPhase::Idle && out.contentDelta.x == 0 && out.boosterStartingVelocity.x == starting,
-			"rule 11: last Cancelled produces no fling and preserves booster");
+		check(out.phase == CanvasPanPhase::Idle && out.contentDelta.x == 0 && out.boosterStartingVelocity.x == 0,
+			"product cancellation produces no fling and clears the residual boost candidate");
 
 		CanvasPanDynamics hover;
 		StartFling(hover);
@@ -780,6 +780,258 @@ namespace
 		const auto clamped = ApplyCanvasContentTranslationChecked(viewport, { 1, 0 });
 		check(clamped.xClamped && !clamped.yClamped && clamped.viewportDelta.x == 0,
 			"existing hard viewport limit reports only the clamped axis");
+	}
+
+	void TestReliableProductRelease(Checks& check)
+	{
+		CanvasPanReleaseVelocityTracker tracker;
+		const auto add = [&](double ms, double x, double y = 0.0)
+			{ return tracker.AddSample(1, { QpcMs(ms), x, y }, kFreq); };
+		add(0, 0); add(10, 30);
+		check(!tracker.Estimate(1, kFreq).valid, "two points do not launch product inertia");
+		add(20, 60);
+		check.Near(tracker.Estimate(1, kFreq).x, 3000, 1e-8, "three points across twenty milliseconds establish velocity");
+		add(30, 90); add(40, 120); add(50, 150); add(60, 180); add(70, 210); add(80, 240);
+		check(add(90, 210) == CanvasPanSampleDisposition::Reversed && !tracker.Estimate(1, kFreq).valid,
+			"confirmed short reversal clears old direction before new tail qualifies");
+		add(100, 180);
+		check.Near(tracker.Estimate(1, kFreq).x, -3000, 1e-8, "reliable reversed tail cannot retain LSQ2 old sign or overshoot");
+		const auto count = tracker.SampleCount(1);
+		tracker.AddSample(2, { QpcMs(105), 5000, 0 }, kFreq);
+		check(tracker.SampleCount(1) == count && tracker.LastSampleQpc(1) == QpcMs(100),
+			"another pointer event cannot invent a new timestamp or stationary sample");
+
+		tracker.Clear(); add(0, 0); add(10, 30); add(20, 60);
+		check(add(21, 59.8) == CanvasPanSampleDisposition::Accepted && tracker.SampleCount(1) == 4,
+			"subpixel reverse jitter alone does not clear a valid tail");
+		check(add(22, 60) == CanvasPanSampleDisposition::Accepted && tracker.SampleCount(1) == 5,
+			"subpixel round trip preserves velocity evidence");
+		tracker.Clear(); add(0, 0); add(20, 30);
+		check(add(21, 60) == CanvasPanSampleDisposition::TimingRejected && !tracker.Estimate(1, kFreq).valid &&
+			tracker.Reason(1, kFreq) == CanvasPanReleaseReason::TimingRejected,
+			"compressed burst resets speed evidence instead of launching capped seventeen-thousand velocity");
+		tracker.Clear();
+		for (int n = 0; n < 10; ++n) add(n * (1000.0 / 30.0), n * 100.0);
+		check(tracker.Estimate(1, kFreq).valid && tracker.SampleCount(1) >= 3,
+			"thirty Hz real input keeps the left window anchor and can still fling");
+		check.Near(tracker.Estimate(1, kFreq).x, 3000, .02, "low reporting rate linear tail remains accurate");
+
+		// 生产feel探针：240fps每帧4次报告、10MHz QPC截断、float像素再换回DIP。
+		// 12.5DIP / 10416ticks略大于12000，不能按一条超限线段把合法恒速历史清掉。
+		for (const double dipPerPixel : { 1.0, 1.0 / 1.5, 0.5, 0.75 })
+		{
+			CanvasPanDynamics quantized;
+			const auto sampleAt = [&](int report, CanvasPanContactPhase phase)
+			{
+				const double ms = 1000.0 + report * (1000.0 / 960.0);
+				const double position = static_cast<double>(static_cast<float>(300.0 + report * 12.5 / dipPerPixel)) * dipPerPixel;
+				return CanvasPanContactSample{ 1, kOrigin + static_cast<int64_t>(ms * kFreq / 1000.0), position,
+					static_cast<double>(static_cast<float>(300.0)) * dipPerPixel, phase };
+			};
+			const auto down = sampleAt(0, CanvasPanContactPhase::Down);
+			StepAt(quantized, 1000.0, std::span(&down, 1));
+			size_t resets = 0;
+			for (int frame = 0; frame < 96; ++frame)
+			{
+				std::array<CanvasPanContactSample, 4> batch;
+				for (int sub = 0; sub < 4; ++sub) batch[sub] = sampleAt(frame * 4 + sub + 1, CanvasPanContactPhase::Move);
+				const auto out = StepAt(quantized, 1000.0 + (frame + 1) * (1000.0 / 240.0), batch);
+				resets += out.timingResetCount;
+			}
+			auto up = sampleAt(384, CanvasPanContactPhase::Up); up.qpc = QpcMs(1400.1);
+			const auto released = StepAt(quantized, 1404.1667, std::span(&up, 1));
+			check(resets == 0 && released.phase == CanvasPanPhase::Coasting,
+				"quantized legal maximum-speed reports preserve history instead of repeatedly resetting timing");
+			check.Within(released.releaseSpeed, 11999.0, 12000.01,
+				"quantized maximum speed remains accurate and subject to the unchanged vector cap");
+		}
+		tracker.Clear(); add(0, 0); add(20, 30);
+		check(add(21, 60) == CanvasPanSampleDisposition::TimingRejected,
+			"quantization allowance still rejects the real thirty-DIP one-ms compression");
+
+		for (const double reversalDuration : { 10.0, 20.0, 40.0 })
+		{
+			CanvasPanDynamics motion;
+			std::vector<CanvasPanContactSample> samples{ Contact(1, 0, 0, 0, CanvasPanContactPhase::Down) };
+			for (int n = 1; n <= 8; ++n) samples.push_back(Contact(1, n * 10.0, n * 30.0));
+			for (int n = 1; n <= static_cast<int>(reversalDuration / 10.0); ++n)
+				samples.push_back(Contact(1, 80 + n * 10.0, 240 - n * 30.0));
+			const double up = 81 + reversalDuration;
+			samples.push_back(Contact(1, up, 240 - reversalDuration * 3, 0, CanvasPanContactPhase::Up));
+			const auto released = StepAt(motion, 250, samples);
+			check(released.reversalCount == 1 && released.selectedReleaseVelocity.x <= 0,
+				"queued reversal and Up never launch in the old direction");
+			check.Near(released.contentDelta.x, 240 - reversalDuration * 3 - 15, 1e-4,
+				"hitch release retains every real Move geometry without pre-render fling catchup");
+			check((released.phase == CanvasPanPhase::Coasting) == (reversalDuration >= 20),
+				"short reverse releases zero until a complete twenty-millisecond new tail exists");
+			if (reversalDuration >= 20)
+				check.Near(released.selectedReleaseVelocity.x, -3000, .01, "queued tail velocity uses sample times not consumption time");
+		}
+
+		CanvasPanDynamics turning;
+		const auto turnRelease = StepAt(turning, 41, {
+			Contact(1, 0, 0, 0, CanvasPanContactPhase::Down), Contact(1, 10, 20, 0),
+			Contact(1, 20, 40, 0), Contact(1, 30, 40, 20), Contact(1, 40, 20, 20),
+			Contact(1, 41, 20, 20, CanvasPanContactPhase::Up) });
+		check(turnRelease.phase == CanvasPanPhase::Idle && turnRelease.releaseReason == CanvasPanReleaseReason::DirectionConflict,
+			"successive right-angle turns cannot release behind the latest reliable direction");
+
+		tracker.Clear(); add(0, 0, 0); add(10, 30, 30); add(20, 60, 60);
+		tracker.ClearAxis(true, false);
+		check(add(30, 60, 59) == CanvasPanSampleDisposition::Reversed,
+			"clearing one axis keeps the surviving reversal direction normalized");
+		tracker.Clear(); add(0, 0); add(1, .4);
+		check(!tracker.RecentSpeedLimit(1, kFreq, { 400, 0 }), "one short quantized segment cannot cap release velocity");
+		add(2, .8); add(3, 1.2);
+		check.Near(tracker.RecentSpeedLimit(1, kFreq, { 400, 0 }).value_or(0.0), 400, .001,
+			"high-rate real points accumulate enough time and displacement for a reliable terminal segment");
+
+		for (const double reportHz : { 30.0, 60.0, 120.0, 240.0 })
+		{
+			for (const double acceleration : { -7500.0, 0.0, 7500.0 })
+			{
+				CanvasPanDynamics motion;
+				const double initial = acceleration < 0 ? 4000.0 : 1000.0;
+				const int reportCount = static_cast<int>(reportHz * .4);
+				const double stepSeconds = .4 / reportCount;
+				std::vector<CanvasPanContactSample> samples{ Contact(1, 0, 0, 0, CanvasPanContactPhase::Down) };
+				for (int n = 1; n <= reportCount; ++n)
+				{
+					const double t = n * stepSeconds;
+					samples.push_back(Contact(1, t * 1000, initial * t + .5 * acceleration * t * t));
+				}
+				samples.push_back(Contact(1, 401, initial * .4 + .5 * acceleration * .16, 0, CanvasPanContactPhase::Up));
+				const auto released = StepAt(motion, 500, samples);
+				const double terminal = initial + acceleration * .4;
+				if (acceleration < 0)
+				{
+					check(released.releaseTailSpeedLimited, "decelerating release exposes its reliable terminal speed cap");
+					check.Near(released.releaseSpeed, terminal - acceleration * stepSeconds * .5, .05,
+						"decelerating release matches final real segment instead of lagging fifty-ms mean");
+					check.Within(released.releaseSpeed / terminal, .85, 1.15, "deceleration preserves the existing product speed-quality bound");
+				}
+				else if (acceleration == 0)
+					check.Near(released.releaseSpeed, terminal, .05, "terminal cap does not slow constant-speed motion");
+				else
+					check.Within(released.releaseSpeed / terminal, .85, 1.0, "accelerating motion retains conservative linear estimate without cap-induced loss");
+			}
+		}
+
+		for (const double age : { 1.0, 30.0, 50.0, 70.0, 100.0 })
+		{
+			CanvasPanDynamics motion;
+			StepAt(motion, 0, { Contact(1, 0, 0, 0, CanvasPanContactPhase::Down) });
+			StepAt(motion, 10, { Contact(1, 10, 30) });
+			StepAt(motion, 20, { Contact(1, 20, 60) });
+			const auto out = StepAt(motion, 20 + age, { Contact(1, 20 + age, 60, 0, CanvasPanContactPhase::Up) });
+			const double gate = std::clamp((70.0 - age) / 40.0, 0.0, 1.0);
+			check.Near(out.releaseSpeed, 3000 * gate, .01, "release age fades continuously between thirty and seventy milliseconds");
+			check.Near(out.rawReleaseVelocity.x, 3000, .01, "raw release diagnostic is independent from age gate");
+			check(out.contentDelta.x == 0, "release consumption frame does not append inertial catchup");
+		}
+	}
+
+	void TestProductFrictionAndResidual(Checks& check)
+	{
+		CanvasPanFlingCurve curve;
+		curve.Start({ 3000, 1500 }, { 1920, 1080 }, 1, CanvasPanFlingCurveKind::Friction);
+		check.Near(curve.Distance().x / curve.Distance().y, 2.0, 1e-6,
+			"vector friction preserves two-dimensional release direction");
+		const double speed = std::hypot(3000.0, 1500.0);
+		const double distance = speed * .3 - 90 * std::log1p(speed / 300);
+		check.Near(std::hypot(curve.Distance().x, curve.Distance().y), distance, .001,
+			"free glide agrees with independent 708 closed-form distance");
+		for (const double fps : { 30.0, 60.0, 120.0, 240.0 })
+		{
+			CanvasPanFlingBooster booster;
+			CanvasPanFlingController fling;
+			fling.Start(Gesture(CanvasPanGestureType::FlingStart, 1, { 3000, 1500 }), 2, { 1920, 1080 }, booster,
+				CanvasPanFlingCurveKind::Friction);
+			check(fling.Progress(2, booster).x == 0, "product animation begins at presentation without backdated offset");
+			double x = 0, y = 0;
+			for (int n = 1; fling.Active() && n < 2000; ++n)
+			{
+				const auto delta = fling.Progress(2 + n / fps, booster);
+				check(delta.x >= 0 && delta.y >= 0, "friction never reverses while decelerating");
+				x += delta.x; y += delta.y;
+			}
+			check.Near(x, curve.Distance().x, .001, "terminal tail is preserved at every presentation rate");
+			check.Near(y, curve.Distance().y, .001, "diagonal endpoint does not depend on presentation rate");
+		}
+
+		CanvasPanDynamics continued;
+		StartFling(continued);
+		const auto coast = StepAt(continued, 120);
+		const double residual = coast.contentVelocity.x;
+		auto out = StepAt(continued, 121, { Contact(2, 121, 1000, 0, CanvasPanContactPhase::Down) });
+		check(out.contentDelta.x == 0 && out.contentVelocity.x == 0, "recontact stops the prior animation immediately");
+		for (int n = 1; n <= 4; ++n) StepAt(continued, 121 + n * 8,
+			{ Contact(2, 121 + n * 8, 1000 + n * 8) });
+		out = StepAt(continued, 154, { Contact(2, 154, 1032, 0, CanvasPanContactPhase::Up) });
+		check.Near(out.selectedReleaseVelocity.x, 1000, .01, "new release speed is independent of previous fling");
+		check.Near(out.boostedReleaseVelocity.x, 1000 + residual, .01,
+			"same-direction continuation adds current residual instead of historical starting speed");
+		check(out.boostedReleaseVelocity.x < 4000 && out.contentDelta.x == 0,
+			"continuation neither restores initial speed nor advances before the release presentation");
+
+		CanvasPanFlingBooster projected = BoostCandidate(3000);
+		projected.ObserveProgressFling({ 400, 200 });
+		const auto boosted = projected.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.03, { 1000, 0 }), true);
+		check(boosted.x == 1400 && boosted.y == 0, "residual projection cannot introduce an old transverse component");
+		projected = BoostCandidate(12000);
+		projected.ObserveProgressFling({ 12000, 0 });
+		const auto capped = projected.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.03, { 9000, 9000 }), true);
+		check.Near(std::hypot(capped.x, capped.y), 12000, .01, "boost is limited by vector norm after adding residual");
+
+		CanvasPanFlingController limited;
+		CanvasPanFlingBooster limitedBooster;
+		limited.Start(Gesture(CanvasPanGestureType::FlingStart, 1, { 3000, 1500 }), 1, { 1920, 1080 }, limitedBooster,
+			CanvasPanFlingCurveKind::Friction);
+		limited.ClearAxis(true, false, limitedBooster);
+		check(limitedBooster.CurrentVelocity().x == 0 && limitedBooster.CurrentVelocity().y == 1500,
+			"axis clamp clears residual booster velocity before a following Down can observe it");
+
+		for (const auto sources : { std::array<uint64_t, 2>{ 1, 2 }, std::array<uint64_t, 2>{ 2, 1 },
+			std::array<uint64_t, 2>{ 0x100000001ULL, 0x100000002ULL }, std::array<uint64_t, 2>{ 1, 1 } })
+		{
+			CanvasPanDynamics switched;
+			std::vector<CanvasPanContactSample> samples{
+				Contact(1, 0, 0, 0, CanvasPanContactPhase::Down), Contact(1, 10, 30), Contact(1, 20, 60),
+				Contact(1, 30, 90), Contact(1, 31, 90, 0, CanvasPanContactPhase::Up),
+				Contact(2, 32, 1000, 0, CanvasPanContactPhase::Down), Contact(2, 42, 1010), Contact(2, 52, 1020),
+				Contact(2, 62, 1030), Contact(2, 63, 1030, 0, CanvasPanContactPhase::Up) };
+			for (auto& sample : samples) sample.sourceKey = sample.key == 1 ? sources[0] : sources[1];
+			const auto released = StepAt(switched, 100, samples);
+			check.Near(released.boostedReleaseVelocity.x, sources[0] == sources[1] ? 4000.0 : 1000.0, .01,
+				"same-batch source transition clears residual at actual Down while same-source continuation still boosts");
+		}
+
+		CanvasPanDynamics weak;
+		StartFling(weak);
+		StepAt(weak, 40, { Contact(2, 40, 1000, 0, CanvasPanContactPhase::Down) });
+		StepAt(weak, 48, { Contact(2, 48, 1024) });
+		out = StepAt(weak, 49, { Contact(2, 49, 1024, 0, CanvasPanContactPhase::Up) });
+		check(out.phase == CanvasPanPhase::Idle && out.boosterStartingVelocity.x == 0,
+			"weak new tail clears prior residual instead of keeping it for a later gesture");
+
+		CanvasPanDynamics overlap;
+		StepAt(overlap, 0, { Contact(1, 0, 0, 0, CanvasPanContactPhase::Down) });
+		StepAt(overlap, 30, { Contact(1, 30, 90) });
+		out = StepAt(overlap, 40, { Contact(2, 20, 1000, 0, CanvasPanContactPhase::Down) });
+		check(out.heldContacts == 2 && out.contentDelta.x == 0,
+			"new contact lifecycle is accepted even if its timestamp predates another pointer sample");
+		out = StepAt(overlap, 41, { Contact(2, 41, 1010) });
+		check(out.heldContacts == 2 && out.focus.x == 550,
+			"accepted delayed Down allows its following Move to participate normally");
+		CanvasPanDynamics badTerminal;
+		StepAt(badTerminal, 0, { Contact(1, 0, 0, 0, CanvasPanContactPhase::Down) });
+		StepAt(badTerminal, 10, { Contact(1, 10, 30) });
+		StepAt(badTerminal, 20, { Contact(1, 20, 60) });
+		out = StepAt(badTerminal, 30, { Contact(1, 19, 60, 0, CanvasPanContactPhase::Up) });
+		check(out.heldContacts == 0 && out.phase == CanvasPanPhase::Idle &&
+			out.releaseReason == CanvasPanReleaseReason::TimingRejected,
+			"terminal with invalid time closes the contact without velocity or a stuck held state");
 	}
 
 	// ---- 白板背景纹理的 CPU 几何（GPU 像素对比见 Inkeys.exe --draw3-whiteboard-pattern-test）----
@@ -1162,9 +1414,11 @@ int RunDraw3CanvasPanTests()
 	TestFrameSynthesisAndHistory(check);
 	TestCancelPenAndStop(check);
 	TestInvalidSamplesAndTranslation(check);
+	TestReliableProductRelease(check);
+	TestProductFrictionAndResidual(check);
 	TestWhiteboardPatternGeometry(check);
 	TestWhiteboardFreezePatternFollow(check);
 	if (check.failures == 0)
-		std::cout << "PASS Draw3 Chromium canvas pan, whiteboard pattern geometry and Freeze pattern follow\n";
+		std::cout << "PASS Draw3 product canvas pan, Chromium reference, whiteboard pattern geometry and Freeze pattern follow\n";
 	return check.failures;
 }

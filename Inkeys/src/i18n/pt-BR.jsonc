@@ -887,6 +887,11 @@
         {
           "N": "Depuração do ponteiro",
           "E": "Envia ao console a origem da entrada do ponteiro e o resultado real da renderização."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnóstico de deslocamento e inércia do quadro",
+          "E": "Registra entradas de deslocamento por mouse e toque, velocidade, inércia e motivos de parada para investigar problemas de movimento."
         }
       }
     },

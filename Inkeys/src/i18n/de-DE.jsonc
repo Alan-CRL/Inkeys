@@ -887,6 +887,11 @@
         {
           "N": "Zeigerdiagnose",
           "E": "Eingabezuordnung des Zeigers und seine Darstellung in der Konsole ausgeben."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnose von Whiteboard-Verschiebung und Trägheit",
+          "E": "Protokolliert Maus- und Touch-Eingaben, Geschwindigkeit, Trägheit und Stoppgründe zur Untersuchung von Bewegungsproblemen."
         }
       }
     },

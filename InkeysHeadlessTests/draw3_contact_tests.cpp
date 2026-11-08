@@ -1962,12 +1962,111 @@ namespace
 		if (!Expect(!input.AdmissionBlocked() && input.AdmissionRevision() > leaseRevision,
 			"last owner release advances admission revision and allows fresh contacts")) ++failures;
 	}
+	void TestNavigationHistory(int& failures)
+	{
+		const auto check = [&](bool value, const char* message) { if (!Expect(value, message)) ++failures; };
+		for (const auto device : { InputDeviceType::Touch, InputDeviceType::MouseLeft })
+		{
+			ContactInputCoordinator input;
+			const auto sample = [](float x, int64_t qpc, ContactPhase phase)
+			{ auto value = MakeSnapshot(x, 0, phase); value.qpc = qpc; return value; };
+			check(input.PublishDown(71, 1, device, sample(0, 1, ContactPhase::Down)), "navigation Down published");
+			ContactRecord* first = nullptr;
+			check(input.TryDequeue(first) && first, "navigation Down dequeued");
+			if (!first) continue;
+			const ContactHandle handle{ first, first->Generation() };
+			input.PublishMove(71, 1, sample(48, 17, ContactPhase::Move));
+			input.PublishMove(71, 1, sample(96, 33, ContactPhase::Move));
+			input.PublishMove(71, 1, sample(72, 41, ContactPhase::Move));
+			input.PublishUp(71, 1, sample(48, 49, ContactPhase::Up));
+			std::vector<ContactNavigationEvent> events;
+			const auto status = input.DrainNavigationHistory(events);
+			check(events.size() == 5 && status.dropped == 0, "navigation preserves all callback samples through Up");
+			if (events.size() == 5)
+				check(events[3].snapshot.phase == ContactPhase::Move && events[3].snapshot.position.x == 72 &&
+					events[4].snapshot.phase == ContactPhase::Up && events[3].ordinal < events[4].ordinal,
+					"terminal cannot overwrite final reverse Move");
+			ContactSnapshot latest;
+			check(input.TryReadSnapshot(handle, latest) && latest.phase == ContactPhase::Up && latest.position.x == 48,
+				"drawing latest mailbox still keeps original terminal contract");
+			input.Recycle(handle);
+
+			input.PublishDown(71, 2, device, sample(0, 80, ContactPhase::Down));
+			ContactRecord* a = nullptr;
+			check(input.TryDequeue(a) && a, "watermark first Down dequeued");
+			input.DrainNavigationHistory(events);
+			input.PublishDown(71, 3, device, sample(100, 100, ContactPhase::Down));
+			input.PublishUp(71, 2, sample(30, 110, ContactPhase::Up));
+			const auto blocked = input.DrainNavigationHistory(events);
+			check(events.empty() && blocked.pending == 2, "unregistered Down fences later Up in navigation stream");
+			ContactRecord* next = nullptr;
+			check(input.TryDequeue(next) && next, "watermark second Down dequeued");
+			input.DrainNavigationHistory(events);
+			check(events.size() == 2 && events[0].snapshot.phase == ContactPhase::Down &&
+				events[1].snapshot.phase == ContactPhase::Up, "Down and Up delivered together after registration watermark");
+			if (a) input.Recycle({ a, a->Generation() });
+			input.PublishUp(71, 3, sample(100, 120, ContactPhase::Up));
+			if (next) input.Recycle({ next, next->Generation() });
+		}
+	}
+
+	void TestNavigationHistoryOverflow(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.PublishDown(72, 1, InputDeviceType::Touch, MakeSnapshot(0, 0, ContactPhase::Down));
+		ContactRecord* first = nullptr;
+		if (!input.TryDequeue(first) || !first) { ++failures; return; }
+		const uint64_t downEpoch = first->NavigationEpoch();
+		for (size_t i = 0; i <= kContactNavigationHistoryCapacity; ++i)
+			input.PublishMove(72, 1, MakeSnapshot(static_cast<float>(i), 0, ContactPhase::Move));
+		const auto status = input.NavigationHistoryStatus();
+		if (!Expect(status.epoch != downEpoch && status.dropped == kContactNavigationHistoryCapacity &&
+			status.pending <= kContactNavigationHistoryCapacity, "navigation overflow is bounded and invalidates old Down epoch")) ++failures;
+		input.PublishDown(72, 2, InputDeviceType::Touch, MakeSnapshot(0, 0, ContactPhase::Down));
+		ContactRecord* next = nullptr;
+		if (!Expect(input.TryDequeue(next) && next && next->NavigationEpoch() == status.epoch,
+			"fresh Down after historical overflow owns the new complete epoch")) ++failures;
+		input.PublishUp(72, 1, MakeSnapshot(1, 0, ContactPhase::Up));
+		input.PublishUp(72, 2, MakeSnapshot(1, 0, ContactPhase::Up));
+		input.Recycle({ first, first->Generation() });
+		if (next) input.Recycle({ next, next->Generation() });
+	}
+
+	void TestNavigationUrgentFrameWake(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.PublishControlWake();
+		const ULONGLONG before = GetTickCount64();
+		input.WaitForFrameDeadline(1000.0);
+		if (!Expect(GetTickCount64() - before < 500, "already-published control wake interrupts active frame budget")) ++failures;
+		ContactRecord* record = nullptr;
+		while (input.TryDequeue(record)) if (!record) input.AcknowledgeControlWake();
+		std::thread producer([&]() { Sleep(20); input.PublishControlWake(); });
+		const ULONGLONG waiting = GetTickCount64();
+		input.WaitForFrameDeadline(1000.0);
+		producer.join();
+		if (!Expect(GetTickCount64() - waiting < 500, "new control wake interrupts active frame budget")) ++failures;
+
+		ContactInputCoordinator ordinary;
+		ordinary.PublishDown(73, 1, InputDeviceType::Touch, MakeSnapshot(0, 0, ContactPhase::Down));
+		ordinary.WaitForFrameDeadline(0.0); // 消费此前 Down 的 urgent generation。
+		ordinary.ArmIdleMoveWake();
+		std::thread mover([&]() { Sleep(20); ordinary.PublishMove(73, 1, MakeSnapshot(10, 0, ContactPhase::Move)); });
+		const ULONGLONG moveWait = GetTickCount64();
+		ordinary.WaitForFrameDeadline(100.0);
+		mover.join();
+		if (!Expect(GetTickCount64() - moveWait >= 80, "ordinary Move wake does not bypass active frame budget")) ++failures;
+	}
+
 }
 
 int RunDraw3ContactInputTests()
 {
 	int failures = 0;
 	TestContactLifecycle(failures);
+	TestNavigationHistory(failures);
+	TestNavigationHistoryOverflow(failures);
+	TestNavigationUrgentFrameWake(failures);
 	TestShortcutAdmissionGateComposition(failures);
 	TestConsumerFatalAdmissionGate(failures);
 	TestInvalidAndWakeContracts(failures);

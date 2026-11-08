@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "用户已确认当前版本没问题；本轮手感与诊断修复提交，任务继续。后续设备尺度/桌面大屏profile与RTS硬件时间见handoff.md；不得归档或push。",
   "meta": {}
 }

@@ -1451,6 +1451,10 @@ namespace Inkeys::Drawing::Draw3
 				else
 					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
+				if (CanvasPanDiagnosticsEnabled() && decoder->deviceType != InputDeviceType::Pen)
+					LogCanvasPan("rts-batch context=%u cursor=%u reported=%lu retained=1 published=%u sample-qpc=%lld timestamp=callback-arrival",
+						static_cast<unsigned>(stylusInfo->tcid), static_cast<unsigned>(stylusInfo->cid),
+						static_cast<unsigned long>(packetCount), published ? 1u : 0u, static_cast<long long>(snapshot.qpc));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 					lastPacket, &snapshot, true, published);

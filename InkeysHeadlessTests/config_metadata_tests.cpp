@@ -784,6 +784,53 @@ int RunConfigMetadataTests()
 			&&themes.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{0xFFFFFF,2},"invalid runtime preference cannot replace the last successful choice");
 		themes.ResetToDefaults();check(themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"reset restores the green blank theme default");
 	}
+	{
+		// 平移诊断是独立、默认关闭的产品开关；真实配置往返不能误启用其他控制台。
+		const auto writePanDocument = [&](const Json::Value& document)
+		{
+			std::ofstream output(file, std::ios::binary | std::ios::trunc);
+			Json::StreamWriterBuilder writer;
+			output << Json::writeString(writer, document);
+			check(output.good(), "pan diagnostic fixture writes isolated main.json");
+		};
+		Inkeys::Config pan;
+		writePanDocument(Json::Value(Json::objectValue));
+		check(pan.ReadAll() && !pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load(),
+			"pan diagnostics default off when key is missing");
+		const auto upload = pan.GetUploadInfo();
+		for (const bool enabled : { true, false })
+		{
+			pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = enabled;
+			Inkeys::Config frozen; frozen = pan;
+			pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = !enabled;
+			check(frozen.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load() == enabled &&
+				frozen.GetUploadInfo() == upload && frozen.Write(), "pan flag frozen copy and NoUpload write");
+			const auto saved = ReadJson(file)["Experimental"]["Inkeys3"]["ConsoleOutput"]["CanvasPan"];
+			check(saved.isBool() && saved.asBool() == enabled, "pan flag serializes as exact bool");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && restarted.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load() == enabled &&
+				!restarted.Experimental.Inkeys3.ConsoleOutput.Cursor.load() &&
+				!restarted.Experimental.Inkeys3.ConsoleOutput.Draw3.load(), "pan restart is independent of other consoles");
+			restarted.UI.Bar.Zoom2 = 1.25;
+			restarted.Experimental.Inkeys3.ConsoleOutput.CanvasPan = !enabled;
+			check(restarted.ReadMini({ "Experimental.Inkeys3.ConsoleOutput.CanvasPan" }) &&
+				restarted.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load() == enabled &&
+				restarted.UI.Bar.Zoom2.load() == 1.25, "pan Mini loads only the selected flag");
+		}
+		for (const auto& invalid : { Json::Value(), Json::Value(1), Json::Value(1.0),
+			Json::Value("true"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		{
+			Json::Value document(Json::objectValue);
+			document["Experimental"]["Inkeys3"]["ConsoleOutput"]["CanvasPan"] = invalid;
+			writePanDocument(document);
+			pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = true;
+			check(pan.ReadAll() && !pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load(),
+				"invalid pan diagnostic type defaults off without coercion");
+		}
+		pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = true;
+		pan.ResetToDefaults();
+		check(!pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load(), "reset disables pan diagnostics");
+	}
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }

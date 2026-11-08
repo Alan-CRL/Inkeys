@@ -1785,6 +1785,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return Inkeys::Drawing::Draw3::DiagnosticOutput::RunProductionTest([]() noexcept
 			{
 				using namespace Inkeys::Drawing::Draw3;
+				SetCanvasPanDiagnosticsEnabled(true);
+				SetLastError(ERROR_INVALID_DATA);
+				LogCanvasPan("helper=canvas-pan-production value=%d", 42);
+				LogCanvasPan("helper=canvas-pan-last-error preserved=%u", GetLastError() == ERROR_INVALID_DATA ? 1u : 0u);
+				SetCanvasPanDiagnosticsEnabled(false);
+				LogCanvasPan("helper=canvas-pan-disabled");
 				SetCursorDiagnosticsEnabled(true);
 				RecordCursorDiagnostic("helper=production message=中文 value=%d", 42);
 				FlushCursorDiagnostics();
@@ -2075,6 +2081,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
 	bool cursorConsoleOutputEnabled = false;
+	bool canvasPanConsoleOutputEnabled = false;
 	// 白板入口与启动失败、正常退出清理路径使用同一功能开关。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 
@@ -3403,10 +3410,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 			cursorConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.Cursor || win7DiagnosticsEnabled;
+			canvasPanConsoleOutputEnabled = config.Experimental.Inkeys3.ConsoleOutput.CanvasPan;
 			Inkeys::Drawing::Draw3::HapticDiagnostics::SetEnabled(
 				config.Experimental.Inkeys3.ConsoleOutput.Haptics);
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
-				cursorConsoleOutputEnabled || Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled())
+				cursorConsoleOutputEnabled || canvasPanConsoleOutputEnabled || Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled())
 			{
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
@@ -3418,6 +3426,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					"[Draw3Win7Diagnostics] enabled=1 draw3=1 cursor=1\n");
 			Inkeys::Drawing::Draw3::SetCursorDiagnosticsEnabled(
 				cursorConsoleOutputEnabled);
+			Inkeys::Drawing::Draw3::SetCanvasPanDiagnosticsEnabled(canvasPanConsoleOutputEnabled);
 			if (touchAreaConsoleOutputEnabled)
 			{
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();
@@ -4225,7 +4234,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 启动 PPT 联动插件
 	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled &&
-		!touchAreaConsoleOutputEnabled && !cursorConsoleOutputEnabled)
+		!touchAreaConsoleOutputEnabled && !cursorConsoleOutputEnabled && !canvasPanConsoleOutputEnabled)
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();
@@ -4360,6 +4369,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Business::PptWaitTrace::FlushAfterProducersJoined();
 	{ ShutdownTrace::Scope trace("main-display-subscription"); displaySubscription.Reset(); }
 	{ ShutdownTrace::Scope trace("main-display"); Inkeys::Display::Shutdown(); }
+	Inkeys::Drawing::Draw3::SetCanvasPanDiagnosticsEnabled(false);
 	{ ShutdownTrace::Scope trace("main-diagnostic-output"); (void)draw3DiagnosticOutput.Stop(); }
 
 	{ ShutdownTrace::Scope trace("main-status-log"); IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束"); }

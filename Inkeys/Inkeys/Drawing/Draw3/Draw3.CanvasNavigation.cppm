@@ -52,7 +52,20 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr float kCanvasPanLegacyBeta = 1.72e2f;
 	inline constexpr float kCanvasPanLegacyGamma = 3.7f;
 
-	enum class CanvasPanFlingCurveKind : uint8_t { PhysicsBased, Legacy };
+	// 白板产品策略使用真实逐指尾段与向量摩擦；上方 Chromium 常量仅保留数值参考。
+	inline constexpr double kCanvasPanReleaseWindowSeconds = 0.050;
+	inline constexpr double kCanvasPanReleaseMinimumSpanSeconds = 0.020;
+	inline constexpr size_t kCanvasPanReleaseMinimumSamples = 3;
+	inline constexpr size_t kCanvasPanReleaseCapacity = 64;
+	inline constexpr double kCanvasPanReleaseFullAgeSeconds = 0.030;
+	inline constexpr double kCanvasPanReleaseZeroAgeSeconds = 0.070;
+	inline constexpr double kCanvasPanReleaseReversalDip = 1.0;
+	inline constexpr double kCanvasPanReleaseMinimumIntervalSeconds = 0.002;
+	inline constexpr double kCanvasPanProductVelocityLimit = 12000.0;
+	inline constexpr double kCanvasPanFrictionTauSeconds = 0.30;
+	inline constexpr double kCanvasPanFrictionDeceleration = 1000.0;
+
+	enum class CanvasPanFlingCurveKind : uint8_t { PhysicsBased, Legacy, Friction };
 	inline constexpr CanvasPanFlingCurveKind kCanvasPanFlingCurveKind = CanvasPanFlingCurveKind::PhysicsBased;
 
 	struct CanvasVector
@@ -149,6 +162,47 @@ export namespace Inkeys::Drawing::Draw3
 		int64_t lastEventQpc_ = 0;
 	};
 
+	enum class CanvasPanReleaseReason : uint8_t
+	{
+		None, Ready, InsufficientSamples, InsufficientSpan, TimingRejected,
+		Stationary, Stale, Cancelled, WithinSlop, EmptyViewport, DirectionConflict
+	};
+	const char* CanvasPanReleaseReasonName(CanvasPanReleaseReason reason) noexcept;
+	enum class CanvasPanSampleDisposition : uint8_t { Accepted, Reversed, TimingRejected, Rejected };
+
+	// 每指只记录自己的真实测量；另一指更新和拓扑变更不能伪造同时采样。
+	class CanvasPanReleaseVelocityTracker
+	{
+	public:
+		CanvasPanSampleDisposition AddSample(uint64_t key, CanvasPanVelocitySample sample,
+			int64_t frequency) noexcept;
+		void Clear() noexcept;
+		void ClearPointer(uint64_t key) noexcept;
+		void ClearAxis(bool x, bool y) noexcept;
+		CanvasPanVelocityEstimate Estimate(uint64_t key, int64_t frequency) const noexcept;
+		CanvasPanReleaseReason Reason(uint64_t key, int64_t frequency) const noexcept;
+		size_t SampleCount(uint64_t key) const noexcept;
+		double SampleSpanSeconds(uint64_t key, int64_t frequency) const noexcept;
+		std::optional<double> RecentSpeedLimit(uint64_t key, int64_t frequency,
+			CanvasVector estimatedVelocity) const noexcept;
+		int64_t LastSampleQpc(uint64_t key) const noexcept;
+		int64_t LastSampleQpc() const noexcept;
+
+	private:
+		struct History
+		{
+			bool used = false;
+			uint64_t key = 0;
+			std::array<CanvasPanVelocitySample, kCanvasPanReleaseCapacity> samples = {};
+			size_t count = 0;
+			CanvasVector direction = {};
+			std::optional<CanvasPanVelocitySample> reversalAnchor;
+			bool timingRejected = false;
+		};
+		const History* Find(uint64_t key) const noexcept;
+		std::array<History, kCanvasPanMaximumContacts> histories_ = {};
+	};
+
 	enum class CanvasPanPhase : uint8_t { Idle, Coasting, Locked };
 	enum class CanvasPanContactPhase : uint8_t { Down, Move, Up, Cancelled };
 
@@ -159,6 +213,7 @@ export namespace Inkeys::Drawing::Draw3
 		double x = 0.0;
 		double y = 0.0;
 		CanvasPanContactPhase phase = CanvasPanContactPhase::Move;
+		uint64_t sourceKey = 0; // 调用方提供设备类别/来源身份，内核不依赖平台类型。
 	};
 
 	enum class CanvasPanGestureType : uint8_t { ScrollBegin, ScrollUpdate, ScrollEnd, FlingStart, FlingCancel };
@@ -184,11 +239,12 @@ export namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		CanvasPanGestureBatch Down(int64_t qpc, std::span<const CanvasPanPointer> pointers,
-			uint64_t actionKey, int64_t frequency) noexcept;
+			uint64_t actionKey, int64_t frequency, bool trackVelocity = true) noexcept;
 		CanvasPanGestureBatch Move(int64_t qpc, std::span<const CanvasPanPointer> pointers,
-			int64_t frequency) noexcept;
+			int64_t frequency, bool trackVelocity = true) noexcept;
 		CanvasPanGestureBatch Up(int64_t qpc, std::span<const CanvasPanPointer> pointers,
-			uint64_t actionKey, bool cancelled, int64_t frequency) noexcept;
+			uint64_t actionKey, bool cancelled, int64_t frequency,
+			std::optional<CanvasPanVelocityEstimate> releaseOverride = {}) noexcept;
 		void Reset() noexcept;
 		bool Scrolling() const noexcept;
 		CanvasPanVelocityTracker& Tracker() noexcept;
@@ -208,7 +264,8 @@ export namespace Inkeys::Drawing::Draw3
 	class CanvasPanFlingBooster
 	{
 	public:
-		CanvasVector GetVelocityForFlingStart(const CanvasPanGestureEvent& event) noexcept;
+		CanvasVector GetVelocityForFlingStart(const CanvasPanGestureEvent& event,
+			bool projectCurrentResidual = false) noexcept;
 		bool ShouldBoostFling(const CanvasPanGestureEvent& event) const noexcept;
 		void ObserveGestureEvent(const CanvasPanGestureEvent& event) noexcept;
 		void ObserveProgressFling(CanvasVector velocity) noexcept;
@@ -250,13 +307,16 @@ export namespace Inkeys::Drawing::Draw3
 		double previousSeconds_ = 0.0;
 		double legacyTimeOffset_ = 0.0;
 		double legacyPositionOffset_ = 0.0;
+		double frictionInitialSpeed_ = 0.0;
+		CanvasVector frictionDirection_ = {};
 	};
 
 	class CanvasPanFlingController
 	{
 	public:
 		void Start(const CanvasPanGestureEvent& event, double lastScrollSeconds,
-			CanvasVector viewportSizeDip, CanvasPanFlingBooster& booster) noexcept;
+			CanvasVector viewportSizeDip, CanvasPanFlingBooster& booster,
+			CanvasPanFlingCurveKind kind = kCanvasPanFlingCurveKind) noexcept;
 		CanvasVector Progress(double nowSeconds, CanvasPanFlingBooster& booster) noexcept;
 		void Cancel() noexcept;
 		void StopFling(CanvasPanFlingBooster& booster) noexcept;
@@ -268,6 +328,7 @@ export namespace Inkeys::Drawing::Draw3
 
 	private:
 		CanvasPanFlingCurve curve_;
+		bool productFriction_ = false;
 		CanvasVector cumulative_ = {};
 		CanvasVector velocity_ = {};
 		double startSeconds_ = 0.0;
@@ -307,6 +368,17 @@ export namespace Inkeys::Drawing::Draw3
 		bool released = false;
 		double releaseSpeed = 0.0;
 		double releaseAgeSeconds = 0.0;
+		CanvasVector rawReleaseVelocity = {};
+		CanvasVector selectedReleaseVelocity = {};
+		CanvasVector boostedReleaseVelocity = {};
+		CanvasPanReleaseReason releaseReason = CanvasPanReleaseReason::None;
+		size_t releaseSampleCount = 0;
+		double releaseSpanSeconds = 0.0;
+		double releaseTailSpeedLimit = 0.0;
+		bool releaseTailSpeedLimited = false;
+		size_t rejectedSamples = 0;
+		size_t reversalCount = 0;
+		size_t timingResetCount = 0;
 		CanvasVector focus = {};
 		double span = 0.0;
 		size_t pointerCount = 0;
@@ -330,7 +402,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool Active() const noexcept;
 		CanvasVector ContentVelocity() const noexcept;
 		size_t HeldContactCount() const noexcept;
-		const CanvasPanVelocityTracker& VelocityTracker() const noexcept;
+		const CanvasPanReleaseVelocityTracker& VelocityTracker() const noexcept;
 		// 预置首触点的历史，只供估速/基线，不派发 scroll；本任务不接生产输入。
 		bool SeedContactHistory(uint64_t key, std::span<const CanvasPanVelocitySample> samples,
 			int64_t qpcFrequency) noexcept;
@@ -347,11 +419,13 @@ export namespace Inkeys::Drawing::Draw3
 			CanvasPanFrameOutput& output) noexcept;
 		std::array<Contact, kCanvasPanMaximumContacts> contacts_ = {};
 		CanvasPanGestureDetector detector_;
+		CanvasPanReleaseVelocityTracker releaseTracker_;
 		CanvasPanFlingBooster booster_;
 		CanvasPanFlingController fling_;
 		CanvasVector velocity_ = {};
 		int64_t lastFrameQpc_ = 0;
 		int64_t lastInputQpc_ = 0;
+		uint64_t lastSourceKey_ = 0;
 		std::optional<double> lastScrollSeconds_;
 		uint64_t seedKey_ = 0;
 		std::vector<CanvasPanVelocitySample> seedSamples_;

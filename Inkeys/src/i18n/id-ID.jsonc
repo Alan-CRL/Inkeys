@@ -887,6 +887,11 @@
         {
           "N": "Diagnostik kursor",
           "E": "Keluarkan pemilik masukan kursor dan hasil perenderannya ke konsol."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnostik geser dan inersia papan tulis",
+          "E": "Catat input geser mouse dan sentuh, kecepatan, inersia, serta alasan berhenti untuk menyelidiki masalah gerakan."
         }
       }
     },

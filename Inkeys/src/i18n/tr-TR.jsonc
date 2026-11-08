@@ -887,6 +887,11 @@
         {
           "N": "İmleç tanılaması",
           "E": "İmleç girdisi sahipliğini ve çizilen görüntüyü konsola yazdırın."
+        },
+        "CanvasPan":
+        {
+          "N": "Beyaz tahta kaydırma ve atalet tanılaması",
+          "E": "Hareket sorunlarını araştırmak için fare ve dokunma kaydırma girdilerini, hızı, ataleti ve durma nedenlerini kaydeder."
         }
       }
     },

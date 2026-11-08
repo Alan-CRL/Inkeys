@@ -887,6 +887,11 @@
         {
           "N": "Diagnóstico del cursor",
           "E": "Mostrar en la consola la propiedad de las entradas del cursor y su representación visual."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnóstico de desplazamiento e inercia de la pizarra",
+          "E": "Registra la entrada del mouse y táctil, la velocidad, la inercia y los motivos de detención para investigar problemas de movimiento."
         }
       }
     },

@@ -2450,6 +2450,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
 				bool HapticsConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics;
 				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
+				bool CanvasPanConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.CanvasPan;
 			}Inkeys3;
 		}Experimental;
 
@@ -4731,6 +4732,9 @@ SettingSessionCoroutine RunSettingSession()
 					consoleToggle("##console-cursor", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N).c_str(),
 						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E).c_str(),
 						Experimental.Inkeys3.CursorConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor);
+					consoleToggle("##console-canvas-pan", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.CanvasPan.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.CanvasPan.E).c_str(),
+						Experimental.Inkeys3.CanvasPanConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.CanvasPan);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					const auto diagnosticText = [](const char* format, auto... values)
 					{

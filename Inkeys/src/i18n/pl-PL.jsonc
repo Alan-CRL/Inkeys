@@ -887,6 +887,11 @@
         {
           "N": "Diagnostyka kursora",
           "E": "Wyświetlaj w konsoli źródło wejścia kursora i rzeczywisty wynik renderowania."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnostyka przesuwania i bezwładności tablicy",
+          "E": "Rejestruje przesuwanie myszą i dotykiem, prędkość, bezwładność oraz przyczyny zatrzymania, aby zbadać problemy z ruchem."
         }
       }
     },

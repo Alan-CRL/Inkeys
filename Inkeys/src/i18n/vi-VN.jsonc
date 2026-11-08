@@ -887,6 +887,11 @@
         {
           "N": "Chẩn đoán con trỏ",
           "E": "Xuất nguồn sở hữu đầu vào con trỏ và hình ảnh đã vẽ ra bảng điều khiển."
+        },
+        "CanvasPan":
+        {
+          "N": "Chẩn đoán kéo và quán tính bảng trắng",
+          "E": "Ghi lại thao tác kéo bằng chuột và cảm ứng, vận tốc, quán tính và lý do dừng để tìm nguyên nhân của vấn đề chuyển động."
         }
       }
     },
