@@ -17982,6 +17982,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			auto finishInterrupted = [&](RuntimeStroke& runtime)
 			{
+				// 等待续接的笔划在物理 Up 时已退休手势；再次退休会误伤复用同一 key 的新手指。
+				const bool gestureAlreadyRetired = runtime.awaitingReconnect;
 				ContactSnapshot terminal = runtime.awaitingReconnect ? runtime.deferredUpSnapshot : runtime.lastModelSnapshot;
 				terminal.phase = ContactPhase::Up;
 				runtime.stroke.predictedResults.clear();
@@ -17995,7 +17997,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				runtime.lastInputSnapshot = terminal;
 				finishMouseSpeedEraser(runtime);
-				if (runtime.touchGestureKey) touchGesture.OnTouchUp(runtime.touchGestureKey);
+				if (runtime.touchGestureKey && !gestureAlreadyRetired) touchGesture.OnTouchUp(runtime.touchGestureKey);
 				if (runtime.metricDeviceType == InputDeviceType::Pen && haptics_ &&
 					window_.EndHapticContact(runtime.handle.record->ContactId(), runtime.handle.generation, false,
 						runtime.handle.record->TabletContextId())) haptics_->StopFeedback();

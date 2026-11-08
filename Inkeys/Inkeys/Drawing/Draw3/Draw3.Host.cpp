@@ -2289,6 +2289,8 @@ namespace Inkeys::Drawing::Draw3
 							appliedCanvasDebugInputMode = UINT32_MAX;
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
+							const auto eraser = window.EraserInputsSnapshot();
+							drawing->SetEraserCursorAppearance({ eraser.shape, eraser.cursorPattern, eraser.cursorTheme });
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
 								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
 								<< std::dec << std::endl;
