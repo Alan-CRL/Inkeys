@@ -46,6 +46,12 @@
         "Mode": "Bottom bar mode",
         "Centered": "Centered"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Slideshow",
+        "SuperTop": "SuperTop",
+        "NewVersion": "New version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Clear",
@@ -1041,8 +1047,6 @@
           "SuperTop": "Enable SuperTop",
           "SuperTopE1": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is currently active)",
           "SuperTopE2": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is not active)",
-          "Indicator": "SuperTop Indicator",
-          "IndicatorE": "Displays a pin icon on the top-right corner of the main application icon when successfully enabled.",
           "SuperTopNote": "Restart Inkeys to apply. The topmost launch may fail."
         },
         "SupportNote": "Requires Windows 8 or newer."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "Register the URL navigation protocol in ClassIsland settings.",
       "ClassIslandSwapNote": "This component has no effect when ClassIsland has no timetable loaded."
     },
+    "StatusIndicator":
+    {
+      "N": "Status indicator",
+      "E": "Shows runtime states such as slideshow mode, SuperTop and software updates on the main button.",
+      "Enable":
+      {
+        "N": "Enable status indicator",
+        "E": "When off, the main button no longer shows any status hints."
+      },
+      "Types": "Show these states",
+      "TypeSlideshow": "Slideshow",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "New version"
+    },
     "DesktopShortcut":
     {
       "N": "Shortcuts",
@@ -1222,6 +1240,14 @@
       {
         "N": "Delay waiting operations",
         "E": "Extend loading waits to observe animations."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Status indicators",
+        "N": "Test status indicators",
+        "E": "Add or remove random test states to check animations, long text and progress rings.",
+        "Add": "Add random state",
+        "Remove": "Remove one state"
       },
       "ConsoleSection": "Console output",
       "CanvasInformation": "Canvas initialization information",

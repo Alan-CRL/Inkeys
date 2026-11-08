@@ -111,6 +111,47 @@ const int candidate = integerType && jsonValue.isInt() ? jsonValue.asInt() : -1;
 value = static_cast<int>(NormalizeStartupPreviewEffect(candidate));
 ```
 
+## UI3 状态指示器配置合同（2026-11-05）
+
+### 1. Scope / Trigger
+修改主栏状态指示器总开关、类型勾选、旧超级置顶提示迁移或设置“常规 → 状态指示器”子页时适用。
+
+### 2. Signatures
+- `main.json`：`Experimental.Inkeys3.UI3.StatusIndicator.{Enable,PptSlideshow,SuperTop,NewVersion}`，均为 bool，默认 true。
+- `Inkeys::Config::ReadAllHasValue(dottedPath)`：最近一次 `ReadAll` 读到的原文件是否含该键（区分缺失与默认值）。
+- 运行时发布：`Inkeys::UI::Bar::SetStatusIndicatorOptions(enable, ppt, superTop, newVersion)`。
+- 设置：`GeneralSection::StatusIndicator`（常规导航子页，排在最后）；`GeneralDraft::{statusIndicator,statusIndicatorTypes}` / `GeneralEvents::{statusIndicatorChanged,statusIndicatorTypesChanged}`。
+
+### 3. Contracts
+- 启动：`ReadAll` 后、`config.Write()` 补齐缺失键之前记录 `StatusIndicator.SuperTop` 是否已存在；`ReadSetting()` 读完 deploy.json 后，若原先缺失，用旧 `PlugIn.SuperTop.Indicator` 初始化一次并写回 main.json，此后旧键只为文件兼容保留，不再读取或展示。随后调用 `SetStatusIndicatorOptions`。
+- 设置页先改 `Inkeys::config`，再发布到主栏 owner，最后 `QueueConfigWrite()`；总开关关闭只隐藏勾选行，不改写各类型值。插件页不再显示超级置顶指示器行（相关 i18n 键已删除）。
+- 过滤不注销状态：关闭类型/总开关时条目保留注册并淡出，重新开启直接以收起方块恢复，不重放胶囊。
+
+### 4. Validation & Error Matrix
+| 条件 | 结果 |
+| --- | --- |
+| main.json 无 `StatusIndicator.SuperTop`，deploy.json `Indicator=false` | 迁移为 false 并写回 |
+| main.json 已有新键 | 不读旧键，用户新值优先 |
+| main.json 与 deploy.json 均缺失 | 默认 true |
+| 迁移写回失败 | 只记日志，本次运行仍按内存值生效 |
+
+### 5. Good / Base / Bad Cases
+- Good：在写回前记录键存在性，再在读取旧文件后迁移。
+- Base：新用户全部默认开启，不触发迁移写盘之外的副作用。
+- Bad：在 `config.Write()` 之后判断键缺失（写回已补齐默认值，迁移永远不发生）。
+
+### 6. Tests Required
+- `setting_design_tests` 常规子页循环包含 `StatusIndicator` 且空闲不产生编辑；完整构建与 20 语言 `i18n.ps1 check`。
+- 迁移三种组合在真实启动中人工确认（无旧键 / 旧键 false / 已有新键）。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：写回后再判断，缺失键已被默认值补齐。
+config.Write(); if (!config.ReadAllHasValue(path)) Migrate();
+// Correct：先记录，读完旧文件后迁移。
+const bool stored = config.ReadAllHasValue(path); /* ... ReadSetting() ... */ if (!stored) Migrate();
+```
+
 ## 设置页废弃配置清理合同
 
 ### 1. Scope / Trigger

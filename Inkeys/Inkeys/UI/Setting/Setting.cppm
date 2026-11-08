@@ -25,6 +25,8 @@ export namespace Inkeys::UI::Setting
 	void Show();
 	// 从橡皮属性直达详情，仍走同一 Show、激活与开屏策略。
 	void ShowSpeedEraser();
+	// 从主栏新版本状态直达软件版本页，规则同 ShowSpeedEraser。
+	void ShowSoftwareVersion();
 	void Hide();
 	void Toggle();
 	[[nodiscard]] bool IsVisible() noexcept;

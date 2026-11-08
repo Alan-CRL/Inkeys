@@ -46,6 +46,12 @@
         "Mode": "Mod bară inferioară",
         "Centered": "Centrat"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Prezentare",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Versiune nouă"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Golire",
@@ -1041,8 +1047,6 @@
           "SuperTop": "Activare SuperTop",
           "SuperTopE1": "Programul folosește o pornire în trei etape pentru a rămâne deasupra celorlalte ferestre.\n(SuperTop este activ)",
           "SuperTopE2": "Programul folosește o pornire în trei etape pentru a rămâne deasupra celorlalte ferestre.\n(SuperTop nu este activ)",
-          "Indicator": "Indicator SuperTop",
-          "IndicatorE": "Afișează o pioneză în colțul din dreapta sus al pictogramei principale când SuperTop se activează cu succes.",
           "SuperTopNote": "Reporniți Inkeys pentru aplicare; activarea SuperTop poate eșua la pornire."
         },
         "SupportNote": "Necesită Windows 8 sau mai nou."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "Înregistrați protocolul de navigare URL din setările ClassIsland.",
       "ClassIslandSwapNote": "Componenta nu are efect dacă în ClassIsland nu este încărcat un orar."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicator de stare",
+      "E": "Afișează pe butonul principal stări precum modul prezentare, SuperTop și actualizările software.",
+      "Enable":
+      {
+        "N": "Activează indicatorul de stare",
+        "E": "Când este dezactivat, butonul principal nu mai afișează indicații de stare."
+      },
+      "Types": "Afișează aceste stări",
+      "TypeSlideshow": "Prezentare",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Versiune nouă"
+    },
     "DesktopShortcut":
     {
       "N": "Comenzi rapide",
@@ -1222,6 +1240,14 @@
       {
         "N": "Întârzie operațiile în așteptare",
         "E": "Prelungește încărcarea pentru observarea animațiilor."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicator de stare",
+        "N": "Testează indicatorul de stare",
+        "E": "Adaugă sau elimină stări de test aleatorii pentru a verifica animația, textul lung și inelul de progres.",
+        "Add": "Adaugă o stare aleatorie",
+        "Remove": "Elimină o stare"
       },
       "ConsoleSection": "Ieșire în consolă",
       "CanvasInformation": "Informații despre inițializarea pânzei",

@@ -427,6 +427,7 @@ enum class BarDirtyFixedVisual : BarDirtyVisualKey
 	DockTargetIndicator = 0xFFFF000000000007ULL,
 	EraserAttributeGroup = 0xFFFF000000000008ULL,
 	RecallAttributeGroup = 0xFFFF000000000009ULL,
+	StatusIndicator = 0xFFFF00000000000AULL,
 };
 
 [[nodiscard]] BarDirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
@@ -7716,6 +7717,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive);
 	if (recallChanged || recallIdleDismissed) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
+	const bool statusChanged = owner_.statusIndicator.Advance(owner_, animationDtSeconds,
+		currentAnimationSpeedRate, frameZoom,
+		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtPen
+			|| state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtShape
+			|| state.spec.SnapshotFrameLighting().drawingPenColorBlend > 0.0001,
+		frame.bottomDockDragActive);
+	if (statusChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 	{
 		const auto config = Inkeys::UI::PageControl::ReadPptIdleFadeSnapshot();
 		const auto input = Inkeys::UI::Bar::SnapshotPptIdleInput();
@@ -7752,14 +7760,19 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			if (state.pptIdleFade.val != 0)
 			{
 				needRendering = true;state.dirtyRegionTracker.MarkChanged(mainMaterialDirtyKey);
+				state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 			}
 			state.pptIdleFade.SetDirect(0);
 		}
 		state.pptIdleFade.SetTar(decision.dimmed ? 1.0 : 0.0, decision.dimmed
 			? Inkeys::UI::PageControl::PptIdleFadeOutSeconds : Inkeys::UI::PageControl::PptIdleFadeInSeconds);
+		const double previousIdleFade = state.pptIdleFade.val;
 		ChangePct(state.pptIdleFade, false, mainMaterialDirtyKey);
+		// 指示器越出主组边界，淡化中及落定帧都需刷新自身脏区，静止时不额外标记。
+		if (previousIdleFade != state.pptIdleFade.val || !state.pptIdleFade.IsSame())
+			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 	}
-	return needRendering || eraserChanged || recallChanged || recallIdleDismissed;
+	return needRendering || eraserChanged || recallChanged || recallIdleDismissed || statusChanged;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(
@@ -8323,6 +8336,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.geometryAttributeTimeline.IsActive()
 			|| owner_.eraserAttribute.Changed()
 			|| owner_.recallAttribute.Changed()
+			|| owner_.statusIndicator.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributePenThickness.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
@@ -8638,6 +8652,33 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			visibleContentBounds = state.cachedVisibleContentBounds;
 			bottomDockElasticBaseBounds =
 				state.cachedBottomDockElasticBaseBounds;
+		}
+
+
+		// 正常状态夹在不含指示器的原窗口内容中；仅Fan贡献额外视口。
+		{
+			const double gripX=state.bottomDockHorizontalMapping.rigidGripTranslationXDip;
+			const auto unmap=[&](LONG x,LONG y)
+			{
+				const auto point=UnmapBarBottomDockBodyPixelY(static_cast<double>(y),state.bottomDockMapping,frameZoom);
+				return D2D1::Point2F(static_cast<FLOAT>(x/frameZoom-gripX),static_cast<FLOAT>(point/frameZoom));
+			};
+			const auto baseTop=unmap(visibleContentBounds.left,visibleContentBounds.top);
+			const auto baseBottom=unmap(visibleContentBounds.right,visibleContentBounds.bottom);
+			const POINT origin{state.monitorOrigin.x+state.bottomDockFrameTransitionTranslation.x,
+				state.monitorOrigin.y+state.bottomDockFrameTransitionTranslation.y};
+			const auto workTop=unmap(state.activeWorkArea.left-origin.x,state.activeWorkArea.top-origin.y);
+			const auto workBottom=unmap(state.activeWorkArea.right-origin.x,state.activeWorkArea.bottom-origin.y);
+			Inkeys::UI::Bar::StatusIndicatorLayoutInput input;
+			input.mainCenterX=mainButton->x.val;input.mainCenterY=mainButton->y.val;
+			input.mainWidth=mainButton->w.val;input.mainHeight=mainButton->h.val;input.mainN=mainButton->n->val;
+			input.baseBounds={baseTop.x,baseTop.y,baseBottom.x,baseBottom.y};
+			input.work={workTop.x,workTop.y,workBottom.x,workBottom.y};
+			owner_.statusIndicator.Layout(input,frameZoom);
+			if(owner_.statusIndicator.Changed()||!state.mainButtonLightMaterial.IsSame())
+				state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
+			const auto overflow=TransformBottomDockBounds(owner_.statusIndicator.OverflowBounds(),BottomDockBoundsTransform::Grip);
+			BarRenderingAttribute::UnionRectInPlace(visibleContentBounds,overflow);
 		}
 
 		RECT mainGroupBounds{};
@@ -9070,6 +9111,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						cursorLightInfluence));
 		}
 
+		const RECT statusBounds = TransformBottomDockBounds(owner_.statusIndicator.Bounds(), BottomDockBoundsTransform::Grip);
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator),statusBounds);
+		if(observePrimaryLight)BarRenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
+			IntersectBarWindowRect(statusBounds,ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Grip)));
+		if(observeCursorLight)BarRenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
+			IntersectBarWindowRect(statusBounds,cursorLightInfluence));
 		const RECT eraserBounds = TransformBottomDockBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 		const auto eraserKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup);
 		state.dirtyRegionTracker.Observe(eraserKey, eraserBounds);
@@ -9197,6 +9244,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.geometryAttributeTimeline.IsActive()
 			|| owner_.eraserAttribute.Changed()
 			|| owner_.recallAttribute.Changed()
+			|| owner_.statusIndicator.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
 			|| !state.drawAttributeLaserOuterThickness.IsSame()
@@ -11653,7 +11701,12 @@ bool presetButton = button.presetIndex >= 0;
 						state.spec.SetResidentContentOpacity(1.0);
 					}
 				}
+				// 状态指示器属于主按钮常驻层：随用户背景/内容透明度与 PPT 闲置淡化一起变化。
+				SetGripTransform();
+				owner_.statusIndicator.Draw(state.spec,barDeviceContext,
+					*state.superellipseMap[BarUISetSuperellipseEnum::MainButton],state.mainButtonLightMaterial.val);
 				state.spec.SetResidentIdleFade(0);
+				BarRenderingAttribute::UnionRectInPlace(state.current,statusBounds);
 				// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
 				for (BarUISetShapeEnum moreShape : {
 					BarUISetShapeEnum::MorePanel,
@@ -13132,6 +13185,7 @@ bool presetButton = button.presetIndex >= 0;
 				dockTargetIndicatorHitBounds.bottom, memory_order_relaxed);
 			// 命中与坐标映射共同发布；输入前后校验 serial，不能拼接旧映射和新按钮。
 			owner_.PublishPresentedButtonHits();
+			owner_.statusIndicator.CommitPresented();
 			owner_.eraserAttribute.CommitPresented();
 			owner_.recallAttribute.CommitPresented();
 			owner_.bottomDockPresentedMappingSerial.fetch_add(

@@ -46,6 +46,12 @@
         "Mode": "底栏模式",
         "Centered": "居中"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "放映模式",
+        "SuperTop": "超级置顶",
+        "NewVersion": "新版本"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "清空",
@@ -1041,8 +1047,6 @@
           "SuperTop": "超级置顶",
           "SuperTopE1": "软件通过三段式启动进行置顶。\n（当前已经超级置顶）",
           "SuperTopE2": "软件通过三段式启动进行置顶。\n（当前未超级置顶）",
-          "Indicator": "超级置顶指示器",
-          "IndicatorE": "软件成功被超级置顶时，在主图标右上角显示一个大头针。",
           "SuperTopNote": "重启软件后生效；启动过程中可能出现置顶失败。"
         },
         "SupportNote": "仅支持 Windows 8 及以上系统。"
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "需要在 ClassIsland 应用设置 中注册 Url 导航协议。",
       "ClassIslandSwapNote": "在 ClassIsland 当前没有加载课表时，此组件不起作用。"
     },
+    "StatusIndicator":
+    {
+      "N": "状态指示器",
+      "E": "在主按钮上显示放映模式、超级置顶和软件更新等运行状态。",
+      "Enable":
+      {
+        "N": "启用状态指示器",
+        "E": "关闭后，主按钮不再显示任何状态提示。"
+      },
+      "Types": "提示以下状态",
+      "TypeSlideshow": "放映模式",
+      "TypeSuperTop": "超级置顶",
+      "TypeNewVersion": "新版本"
+    },
     "DesktopShortcut":
     {
       "N": "快捷方式",
@@ -1222,6 +1240,14 @@
       {
         "N": "为等待操作延迟",
         "E": "延长加载等待，便于观察动画。"
+      },
+      "StatusIndicator":
+      {
+        "Section": "状态指示器",
+        "N": "测试状态指示器",
+        "E": "添加或删除随机测试状态，检查动画、长文字与进度环。",
+        "Add": "添加随机状态",
+        "Remove": "删除一个状态"
       },
       "ConsoleSection": "控制台输出",
       "CanvasInformation": "画布初始化信息",

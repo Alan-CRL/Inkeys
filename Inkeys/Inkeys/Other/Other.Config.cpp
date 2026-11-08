@@ -964,6 +964,23 @@ namespace Inkeys
 		return readOk;
 	}
 
+	bool Config::ReadAllHasValue(std::string_view dottedPath) const
+	{
+		shared_lock<shared_mutex> lock(rwMutex);
+		if (!hasReadAllDocument) return false;
+		const Json::Value* node = &readAllDocument;
+		std::size_t begin = 0;
+		while (begin <= dottedPath.size())
+		{
+			const std::size_t end = (std::min)(dottedPath.find('.', begin), dottedPath.size());
+			const std::string key(dottedPath.substr(begin, end - begin));
+			if (!node->isObject() || !node->isMember(key)) return false;
+			node = &(*node)[key];
+			begin = end + 1;
+		}
+		return true;
+	}
+
 	bool Config::ReadMini(std::initializer_list<std::string_view> paths, bool readOnly)
 	{
 		unique_lock<shared_mutex> lock(rwMutex);

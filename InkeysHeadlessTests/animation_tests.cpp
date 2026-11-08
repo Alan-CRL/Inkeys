@@ -85,6 +85,7 @@ int RunDesktopShortcutConfigTests();
 int RunKeyboardShortcutInputTests();
 int RunAutoCollapseInteractionTests();
 int RunMouseHookTransportTests();
+int RunStatusIndicatorTests();
 
 namespace
 {
@@ -1892,6 +1893,7 @@ int main(int argc, char** argv)
 	failureCount += RunKeyboardShortcutInputTests();
 	failureCount += RunAutoCollapseInteractionTests();
 	failureCount += RunMouseHookTransportTests();
+	failureCount += RunStatusIndicatorTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

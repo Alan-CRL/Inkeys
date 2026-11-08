@@ -46,6 +46,12 @@
         "Mode": "Chế độ thanh dưới",
         "Centered": "Căn giữa"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Trình chiếu",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Phiên bản mới"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Xóa",
@@ -1041,8 +1047,6 @@
           "SuperTop": "Bật SuperTop",
           "SuperTopE1": "Ứng dụng dùng quy trình khởi động ba giai đoạn để giữ cửa sổ trên cùng.\n(SuperTop đang hoạt động)",
           "SuperTopE2": "Ứng dụng dùng quy trình khởi động ba giai đoạn để giữ cửa sổ trên cùng.\n(SuperTop chưa hoạt động)",
-          "Indicator": "Chỉ báo SuperTop",
-          "IndicatorE": "Hiện biểu tượng ghim ở góc trên phải biểu tượng chính khi bật thành công.",
           "SuperTopNote": "Khởi động lại Inkeys để áp dụng. Việc đưa cửa sổ lên trên cùng có thể thất bại khi khởi động."
         },
         "SupportNote": "Yêu cầu Windows 8 trở lên."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "Đăng ký giao thức điều hướng URL trong thiết lập ClassIsland.",
       "ClassIslandSwapNote": "Thành phần này không có tác dụng khi ClassIsland chưa tải thời khóa biểu."
     },
+    "StatusIndicator":
+    {
+      "N": "Chỉ báo trạng thái",
+      "E": "Hiển thị các trạng thái như chế độ trình chiếu, SuperTop và cập nhật phần mềm trên nút chính.",
+      "Enable":
+      {
+        "N": "Bật chỉ báo trạng thái",
+        "E": "Khi tắt, nút chính không còn hiển thị gợi ý trạng thái."
+      },
+      "Types": "Hiển thị các trạng thái sau",
+      "TypeSlideshow": "Trình chiếu",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Phiên bản mới"
+    },
     "DesktopShortcut":
     {
       "N": "Lối tắt",
@@ -1222,6 +1240,14 @@
       {
         "N": "Trì hoãn thao tác chờ",
         "E": "Kéo dài thời gian tải để quan sát hiệu ứng."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Chỉ báo trạng thái",
+        "N": "Kiểm tra chỉ báo trạng thái",
+        "E": "Thêm hoặc xóa trạng thái thử ngẫu nhiên để kiểm tra hoạt ảnh, văn bản dài và vòng tiến độ.",
+        "Add": "Thêm trạng thái ngẫu nhiên",
+        "Remove": "Xóa một trạng thái"
       },
       "ConsoleSection": "Đầu ra bảng điều khiển",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",

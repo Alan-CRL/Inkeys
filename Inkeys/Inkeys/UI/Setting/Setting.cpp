@@ -2685,6 +2685,11 @@ SettingSessionCoroutine RunSettingSession()
 				Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 				settingFrameSubmission.Reset();
 			}
+			if (openAction == Design::SettingOpenNavigation::Action::SoftwareVersion)
+			{
+				navigateTo({ Design::PageId::Version });
+				settingFrameSubmission.Reset();
+			}
 			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
 			ImFluent::PushFluentStyle();
@@ -2760,8 +2765,9 @@ SettingSessionCoroutine RunSettingSession()
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
 					!navigationState.BlockContentInput() && settingWindowActive.load(memory_order_acquire),
 					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
-					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
-					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
+					openNavigation.fadeOnly && (openNavigation.target==Inkeys::UI::Setting::SettingOpenTarget::SoftwareVersion
+						? destination.page==Design::PageId::Version
+						: destination.page==Design::PageId::Draw && drawingSubpage==Design::DrawingSubpage::SpeedEraser));
 				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				const bool optionalChromeVisible = !entryInputBlock && Design::HomeEntryChromeVisible(homeMotion);
 				{
@@ -3458,6 +3464,10 @@ SettingSessionCoroutine RunSettingSession()
 						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
 					{
+						auto& status = Inkeys::config.Experimental.Inkeys3.UI3.StatusIndicator;
+						draft.statusIndicator = status.Enable;
+						draft.statusIndicatorTypes = { static_cast<bool>(status.PptSlideshow),
+							static_cast<bool>(status.SuperTop), static_cast<bool>(status.NewVersion) };
 						using Inkeys::UI::Bar::NormalizeBarWorkspaceAutoDockMask;
 						const auto& workspace = Inkeys::config.UI.Bar.Workspace;
 						draft.pptDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Ppt.AutoDockMask.load());
@@ -3703,6 +3713,18 @@ SettingSessionCoroutine RunSettingSession()
 							WriteSetting();
 							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
+					}
+					if (events.statusIndicatorChanged || std::ranges::any_of(events.statusIndicatorTypesChanged, std::identity{}))
+					{
+						auto& status = Inkeys::config.Experimental.Inkeys3.UI3.StatusIndicator;
+						status.Enable = draft.statusIndicator;
+						status.PptSlideshow = draft.statusIndicatorTypes[0];
+						status.SuperTop = draft.statusIndicatorTypes[1];
+						status.NewVersion = draft.statusIndicatorTypes[2];
+						// 先发布到主栏 owner，再落盘；过滤不注销状态，重新开启时以收起态恢复。
+						Inkeys::UI::Bar::SetStatusIndicatorOptions(draft.statusIndicator,
+							draft.statusIndicatorTypes[0], draft.statusIndicatorTypes[1], draft.statusIndicatorTypes[2]);
+						QueueConfigWrite();
 					}
 					if (events.allowMultipleInstancesChanged)
 					{
@@ -4161,11 +4183,6 @@ SettingSessionCoroutine RunSettingSession()
 								setlist.plugInSetting.superTop.enable = value;
 								WriteSetting();
 							}, IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopNote).c_str());
-						// 指示器继续使用已有配置，只展示说明，不在此改写实际值。
-						Design::SettingRow("##super-top-indicator",
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.IndicatorE).c_str(),
-							"\ue841", 0.0F, 0.0F, [](const auto&) {});
 						break;
 					}
 
@@ -4839,6 +4856,17 @@ SettingSessionCoroutine RunSettingSession()
 						// 热生效且不持久化：每次启动都需要重新打开；同步 Draw3 与主栏按钮，不需要重启。
 						SetCanvasDebugEnabled(Experimental.Inkeys3.CanvasDebug);
 					}
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Section).c_str());
+					// 只发布调试命令；条目和动画由主栏渲染线程独占，计数读取其原子快照。
+					const int statusAction = Design::ButtonGroupRow("##status-indicator-debug",
+						IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.E).c_str(), "\ue946", {
+							{ "add", IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Add), false,
+								Inkeys::UI::Bar::StatusIndicatorCount() >= 25 },
+							{ "remove", IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Remove), false,
+								Inkeys::UI::Bar::DebugStatusIndicatorCount() == 0 } });
+					if (statusAction == 0) Inkeys::UI::Bar::DebugAddRandomStatusIndicator();
+					else if (statusAction == 1) Inkeys::UI::Bar::DebugRemoveStatusIndicator();
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)
@@ -5685,6 +5713,7 @@ namespace Inkeys::UI::Setting
 	void Show() { ShowSetting(SettingOpenTarget::Current); }
 
 	void ShowSpeedEraser() { ShowSetting(SettingOpenTarget::SpeedEraser); }
+	void ShowSoftwareVersion() { ShowSetting(SettingOpenTarget::SoftwareVersion); }
 
 	void Hide()
 	{

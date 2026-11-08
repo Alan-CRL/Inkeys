@@ -542,6 +542,12 @@ GROUP(UI, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, SpeedRate, 1.0) \
 				) \
+				GROUP(StatusIndicator, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptSlideshow, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SuperTop, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, NewVersion, true) \
+				) \
 			) \
 		) \
 	) \
@@ -588,6 +594,8 @@ namespace Inkeys
 		Inkeys::Config& operator=(const Inkeys::Config& other);
 
 		bool ReadAll();
+		// 最近一次 ReadAll 读到的原文件是否含该点分路径（区分“键缺失”与“值为默认”，供一次性迁移）。
+		[[nodiscard]] bool ReadAllHasValue(std::string_view dottedPath) const;
 		// 启动准入可只读所选偏好，禁止兼容布局迁移写盘。
 		bool ReadMini(std::initializer_list<std::string_view> paths, bool readOnly = false);
 		bool Write();

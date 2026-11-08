@@ -46,6 +46,12 @@
         "Mode": "Alt çubuk modu",
         "Centered": "Ortala"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Slayt gösterisi",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Yeni sürüm"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Temizle",
@@ -1041,8 +1047,6 @@
           "SuperTop": "SuperTop'ı aç",
           "SuperTopE1": "Uygulama, pencerelerini üstte tutmak için üç aşamalı başlatma kullanır.\n(SuperTop etkin)",
           "SuperTopE2": "Uygulama, pencerelerini üstte tutmak için üç aşamalı başlatma kullanır.\n(SuperTop etkin değil)",
-          "Indicator": "SuperTop göstergesi",
-          "IndicatorE": "Başarıyla etkinleştirildiğinde ana simgenin sağ üst köşesinde raptiye gösterir.",
           "SuperTopNote": "Uygulamak için Inkeys'i yeniden başlatın. Başlangıçta üste getirme işlemi başarısız olabilir."
         },
         "SupportNote": "Windows 8 veya üzeri gerektirir."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "ClassIsland ayarlarında URL gezinme protokolünü kaydedin.",
       "ClassIslandSwapNote": "ClassIsland'da ders programı yüklü değilken bu bileşen çalışmaz."
     },
+    "StatusIndicator":
+    {
+      "N": "Durum göstergesi",
+      "E": "Slayt gösterisi modu, SuperTop ve yazılım güncellemeleri gibi durumları ana düğmede gösterir.",
+      "Enable":
+      {
+        "N": "Durum göstergesini aç",
+        "E": "Kapalıyken ana düğme hiçbir durum ipucu göstermez."
+      },
+      "Types": "Bu durumları göster",
+      "TypeSlideshow": "Slayt gösterisi",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Yeni sürüm"
+    },
     "DesktopShortcut":
     {
       "N": "Kısayollar",
@@ -1222,6 +1240,14 @@
       {
         "N": "Bekleyen işlemleri geciktir",
         "E": "Animasyonları gözlemlemek için yükleme süresini uzatır."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Durum göstergesi",
+        "N": "Durum göstergesini test et",
+        "E": "Animasyonu, uzun metni ve ilerleme halkasını denetlemek için rastgele test durumları ekleyin veya kaldırın.",
+        "Add": "Rastgele durum ekle",
+        "Remove": "Bir durumu kaldır"
       },
       "ConsoleSection": "Konsol çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",

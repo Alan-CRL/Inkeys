@@ -46,6 +46,12 @@
         "Mode": "Modus der unteren Leiste",
         "Centered": "Zentriert"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Präsentation",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Neue Version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Leeren",
@@ -1041,8 +1047,6 @@
           "SuperTop": "SuperTop aktivieren",
           "SuperTopE1": "Die Anwendung nutzt einen dreistufigen Start, um ihre Fenster im Vordergrund zu halten.\n(SuperTop ist aktiv)",
           "SuperTopE2": "Die Anwendung nutzt einen dreistufigen Start, um ihre Fenster im Vordergrund zu halten.\n(SuperTop ist nicht aktiv)",
-          "Indicator": "SuperTop-Anzeige",
-          "IndicatorE": "Bei erfolgreicher Aktivierung oben rechts am Hauptsymbol eine Stecknadel anzeigen.",
           "SuperTopNote": "Zum Anwenden Inkeys neu starten. Der Start im Vordergrund kann scheitern."
         },
         "SupportNote": "Erfordert Windows 8 oder neuer."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "Das URL-Navigationsprotokoll in den ClassIsland-Einstellungen registrieren.",
       "ClassIslandSwapNote": "Diese Komponente hat keine Wirkung, wenn in ClassIsland kein Stundenplan geladen ist."
     },
+    "StatusIndicator":
+    {
+      "N": "Statusanzeige",
+      "E": "Zeigt Laufzeitzustände wie Präsentationsmodus, SuperTop und Softwareupdates an der Hauptschaltfläche an.",
+      "Enable":
+      {
+        "N": "Statusanzeige aktivieren",
+        "E": "Wenn deaktiviert, zeigt die Hauptschaltfläche keine Statushinweise mehr an."
+      },
+      "Types": "Diese Zustände anzeigen",
+      "TypeSlideshow": "Präsentation",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Neue Version"
+    },
     "DesktopShortcut":
     {
       "N": "Verknüpfungen",
@@ -1222,6 +1240,14 @@
       {
         "N": "Wartevorgänge verzögern",
         "E": "Ladezeiten zum Beobachten der Animationen verlängern."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Statusanzeigen",
+        "N": "Statusanzeigen testen",
+        "E": "Zufällige Testzustände hinzufügen oder entfernen, um Animationen, lange Texte und Fortschrittsringe zu prüfen.",
+        "Add": "Zufälligen Status hinzufügen",
+        "Remove": "Einen Status entfernen"
       },
       "ConsoleSection": "Konsolenausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",

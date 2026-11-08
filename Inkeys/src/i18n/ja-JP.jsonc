@@ -46,6 +46,12 @@
         "Mode": "下部バー",
         "Centered": "中央"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "スライドショー",
+        "SuperTop": "SuperTop",
+        "NewVersion": "新バージョン"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "消去",
@@ -1041,8 +1047,6 @@
           "SuperTop": "SuperTopを有効化",
           "SuperTopE1": "3段階の起動処理でウィンドウを最前面に保持します。\n（現在有効）",
           "SuperTopE2": "3段階の起動処理でウィンドウを最前面に保持します。\n（現在無効）",
-          "Indicator": "SuperTopの状態表示",
-          "IndicatorE": "SuperTopが有効になると、メインアイコンの右上にピンを表示します。",
           "SuperTopNote": "再起動後に反映されます。起動時の最前面化が失敗する場合があります。"
         },
         "SupportNote": "Windows 8以降に対応します。"
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "ClassIsland のアプリ設定で URL ナビゲーションプロトコルを登録してください。",
       "ClassIslandSwapNote": "ClassIsland で時間割が読み込まれていない場合、このコンポーネントは機能しません。"
     },
+    "StatusIndicator":
+    {
+      "N": "ステータスインジケーター",
+      "E": "スライドショー、SuperTop、ソフトウェア更新などの状態をメインボタンに表示します。",
+      "Enable":
+      {
+        "N": "ステータスインジケーターを有効化",
+        "E": "オフにすると、メインボタンに状態表示を出しません。"
+      },
+      "Types": "表示する状態",
+      "TypeSlideshow": "スライドショー",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "新バージョン"
+    },
     "DesktopShortcut":
     {
       "N": "ショートカット",
@@ -1222,6 +1240,14 @@
       {
         "N": "待機操作を遅延",
         "E": "読み込み待機を延長し、アニメーションを確認します。"
+      },
+      "StatusIndicator":
+      {
+        "Section": "ステータスインジケーター",
+        "N": "ステータスインジケーターをテスト",
+        "E": "ランダムなテスト状態を追加・削除して、アニメーション、長いテキスト、進捗リングを確認します。",
+        "Add": "ランダムな状態を追加",
+        "Remove": "状態を1つ削除"
       },
       "ConsoleSection": "コンソール出力",
       "CanvasInformation": "キャンバスの初期化情報",

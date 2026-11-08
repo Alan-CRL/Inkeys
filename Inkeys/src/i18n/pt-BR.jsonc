@@ -46,6 +46,12 @@
         "Mode": "Barra inferior",
         "Centered": "Centralizada"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Apresentação",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nova versão"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Limpar",
@@ -1041,8 +1047,6 @@
           "SuperTop": "Ativar SuperTop",
           "SuperTopE1": "O programa usa uma inicialização em três etapas para manter as janelas no topo.\n(Ativo no momento)",
           "SuperTopE2": "O programa usa uma inicialização em três etapas para manter as janelas no topo.\n(Inativo no momento)",
-          "Indicator": "Indicador do SuperTop",
-          "IndicatorE": "Exibe um alfinete no canto superior direito do ícone principal quando o SuperTop está ativo.",
           "SuperTopNote": "Reinicie o Inkeys para aplicar. A ativação durante a inicialização pode falhar."
         },
         "SupportNote": "Compatível apenas com Windows 8 ou posterior."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "Registre o protocolo de navegação por URL nas configurações do ClassIsland.",
       "ClassIslandSwapNote": "Este componente não tem efeito quando o ClassIsland não tem uma grade de aulas carregada."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicador de status",
+      "E": "Mostra no botão principal estados como o modo de apresentação, o SuperTop e as atualizações do software.",
+      "Enable":
+      {
+        "N": "Ativar indicador de status",
+        "E": "Quando desativado, o botão principal deixa de mostrar avisos de status."
+      },
+      "Types": "Mostrar estes estados",
+      "TypeSlideshow": "Apresentação",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nova versão"
+    },
     "DesktopShortcut":
     {
       "N": "Atalhos",
@@ -1222,6 +1240,14 @@
       {
         "N": "Atrasar operações de espera",
         "E": "Prolonga o carregamento para observar as animações."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicadores de status",
+        "N": "Testar indicadores de status",
+        "E": "Adicione ou remova estados de teste aleatórios para verificar animações, textos longos e anéis de progresso.",
+        "Add": "Adicionar status aleatório",
+        "Remove": "Remover um status"
       },
       "ConsoleSection": "Saída no console",
       "CanvasInformation": "Informações de inicialização do desenho",

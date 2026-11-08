@@ -285,6 +285,13 @@ BARSETTING              UI                      "src\\UI\\barSetting.svg"
 BARERASER               UI                      "src\\UI\\barEraser.svg"
 
 BARAUTOERASER           UI                      "src\\UI\\barAutoEraser.svg"
+BARSTATUSSLIDESHOW      UI                      "src\\UI\\barStatusSlideshow.svg"
+BARSTATUSPIN            UI                      "src\\UI\\barStatusPin.svg"
+BARSTATUSNEWVERSION     UI                      "src\\UI\\barStatusNewVersion.svg"
+BARSTATUSSTAR           UI                      "src\\UI\\barStatusStar.svg"
+BARSTATUSBELL           UI                      "src\\UI\\barStatusBell.svg"
+BARSTATUSINFO           UI                      "src\\UI\\barStatusInfo.svg"
+BARSTATUSBOLT           UI                      "src\\UI\\barStatusBolt.svg"
 BARPALMERASER           UI                      "src\\UI\\barPalmEraser.svg"
 
 BARCLEAN                UI                      "src\\UI\\barClean.svg"

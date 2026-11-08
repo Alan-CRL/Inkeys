@@ -46,6 +46,12 @@
         "Mode": "Modalità barra inferiore",
         "Centered": "Al centro"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Presentazione",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nuova versione"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Svuota",
@@ -1041,8 +1047,6 @@
           "SuperTop": "Attiva SuperTop",
           "SuperTopE1": "L'app usa un avvio in tre fasi per mantenere le finestre in primo piano.\n(SuperTop attualmente attivo)",
           "SuperTopE2": "L'app usa un avvio in tre fasi per mantenere le finestre in primo piano.\n(SuperTop non attivo)",
-          "Indicator": "Indicatore SuperTop",
-          "IndicatorE": "Mostra una puntina nell'angolo superiore destro dell'icona principale quando SuperTop è attivo.",
           "SuperTopNote": "Riavvia Inkeys per applicare. L'avvio in primo piano potrebbe non riuscire."
         },
         "SupportNote": "Richiede Windows 8 o successivo."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "Registra il protocollo di navigazione URL nelle impostazioni di ClassIsland.",
       "ClassIslandSwapNote": "Il componente non ha effetto se ClassIsland non ha caricato un orario delle lezioni."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicatore di stato",
+      "E": "Mostra sul pulsante principale stati come la modalità presentazione, SuperTop e gli aggiornamenti del software.",
+      "Enable":
+      {
+        "N": "Attiva indicatore di stato",
+        "E": "Se disattivato, il pulsante principale non mostra più alcun avviso di stato."
+      },
+      "Types": "Mostra questi stati",
+      "TypeSlideshow": "Presentazione",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nuova versione"
+    },
     "DesktopShortcut":
     {
       "N": "Collegamenti",
@@ -1222,6 +1240,14 @@
       {
         "N": "Ritarda le operazioni in attesa",
         "E": "Prolunga il caricamento per osservare le animazioni."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicatore di stato",
+        "N": "Prova indicatore di stato",
+        "E": "Aggiungi o rimuovi stati di prova casuali per verificare animazione, testo lungo e anello di avanzamento.",
+        "Add": "Aggiungi stato casuale",
+        "Remove": "Rimuovi uno stato"
       },
       "ConsoleSection": "Output console",
       "CanvasInformation": "Informazioni di inizializzazione della tela",

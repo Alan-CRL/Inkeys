@@ -3294,6 +3294,22 @@ namespace
 			"detail entry starts without rendering Home");
 		Design::ConfigureHomeMotion(motion, false, session.ShowSerial(), 0, true, 1);
 		checks.Expect(!motion.EntryActive(), "leaving the target cancels the overlay without a delayed route");
+
+		// 新版本状态直达软件版本页：同一 Show/开屏规则，并记住目标供“仍在目标页”判定。
+		{
+			SessionState version; Design::SettingOpenNavigation route;
+			version.RequestShow(SettingOpenTarget::SoftwareVersion);
+			const auto action = route.Consume(version.GetOpenRequest(), version.IsVisible(), version.ShowSerial(), version.HideSerial(),
+				ShouldPlaySettingEntryAnimation(1, version.ShowSerial()));
+			checks.Expect(action == Action::SoftwareVersion && route.target == SettingOpenTarget::SoftwareVersion && route.fadeOnly,
+				"software version entry routes to the Version page with the first-open fade");
+			version.RequestShow(SettingOpenTarget::SoftwareVersion);
+			checks.Expect(route.Consume(version.GetOpenRequest(), version.IsVisible(), version.ShowSerial(), version.HideSerial(), true)
+				== Action::SoftwareVersion && !route.fadeOnly, "visible settings navigate to Version without replaying the entry");
+			version.RequestShow(SettingOpenTarget::SpeedEraser);
+			checks.Expect(route.Consume(version.GetOpenRequest(), version.IsVisible(), version.ShowSerial(), version.HideSerial(), true)
+				== Action::SpeedEraser && route.target == SettingOpenTarget::SpeedEraser, "a newer eraser route replaces the Version target");
+		}
 	}
 
 	void CheckSpeedEraserEntry(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
@@ -4239,11 +4255,14 @@ namespace
 				&& !events.pptDockMaskChanged && !events.pptDockDirectionChanged && !events.whiteboardDockMaskChanged && !events.whiteboardDockDirectionChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
 				&& std::none_of(events.autoCollapseChanged.begin(), events.autoCollapseChanged.end(), [](bool value) { return value; })
-				&& std::none_of(events.shortcutsChanged.begin(), events.shortcutsChanged.end(), [](bool value) { return value; });
+				&& std::none_of(events.shortcutsChanged.begin(), events.shortcutsChanged.end(), [](bool value) { return value; })
+				&& !events.statusIndicatorChanged
+				&& std::none_of(events.statusIndicatorTypesChanged.begin(), events.statusIndicatorTypesChanged.end(), [](bool value) { return value; });
 		};
 		const ImVec2 outside(-100, -100);
 		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Position, Design::GeneralSection::Appearance,
-			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts, Design::GeneralSection::DesktopShortcuts })
+			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts, Design::GeneralSection::DesktopShortcuts,
+			Design::GeneralSection::StatusIndicator })
 		{
 			draw(section, outside, false); const auto frame = draw(section, outside, false);
 			checks.Expect(frame.vertices > 0 && noEdits(frame.events), "actual general subpage renders without creating idle edits");
@@ -4610,6 +4629,65 @@ namespace
 			checks.Expect(!hiddenEffect.startupEffect && visibleEffect.startupEffect && draft.startupEffect == 2
 				&& !hiddenEffect.events.startupEffectChanged && !visibleEffect.events.startupEffectChanged,
 				"startup effect condition preserves selection across themes and narrow layouts without idle edits");
+		}
+		// StatusIndicatorControls：复用本页真实 ID/导航矩形回放；追加在既有按控件次序定位的测试之后。
+		{
+			const auto section = Design::GeneralSection::StatusIndicator;
+			draft.statusIndicator = true; draft.statusIndicatorTypes = { true, false, true };
+			draw(section, outside, false); draw(section, outside, false);
+			const int sectionValue = static_cast<int>(section);
+			const auto groupId = ImHashStr("##status-indicator-types", 0, ImHashData(&sectionValue, sizeof(sectionValue), host->ID));
+			ImGuiWindow* types = nullptr;
+			for (auto* candidate : GImGui->Windows)
+				if (candidate->Active && candidate->ParentWindow == host && candidate->ChildId == groupId) types = candidate;
+			checks.Expect(types != nullptr, "StatusIndicatorControls: actual type checkbox card exists");
+			std::array<ImRect, 3> choices{};
+			if (types) for (int index = 0; index < 3; ++index)
+			{
+				const auto id = ImHashStr("###device", 0, types->GetID(index));
+				ImGui::FocusWindow(types); ImGui::SetNavID(id, ImGuiNavLayer_Main, types->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(section, outside, false);
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive,
+					"StatusIndicatorControls: actual checkbox registers navigation");
+				choices[index] = ImGui::WindowRectRelToAbs(types, types->NavRectRel[ImGuiNavLayer_Main]);
+			}
+			auto toggleMaster = [&] {
+				draw(section, outside, false); focus(section, "status-indicator", "##toggle");
+				io.AddKeyEvent(ImGuiKey_Space, true); auto down = draw(section, outside, false).events;
+				io.AddKeyEvent(ImGuiKey_Space, false); auto up = draw(section, outside, false).events;
+				const int changes = (down.statusIndicatorChanged ? 1 : 0) + (up.statusIndicatorChanged ? 1 : 0);
+				down.statusIndicatorChanged = up.statusIndicatorChanged = false;
+				checks.Expect(changes == 1 && noEdits(down) && noEdits(up),
+					"StatusIndicatorControls: master toggles once with no type or unrelated event");
+			};
+			const auto mixed = draft.statusIndicatorTypes;
+			toggleMaster();
+			checks.Expect(!draft.statusIndicator && draft.statusIndicatorTypes == mixed,
+				"StatusIndicatorControls: disabling master preserves mixed checks");
+			// 点击隐藏前的三个真实命中位置，验证总开关关闭时不能修改子项。
+			if (types) for (const auto& rect : choices)
+			{
+				const auto point = rect.GetCenter(); draw(section, point, false);
+				const auto down = draw(section, point, true).events, up = draw(section, point, false).events;
+				checks.Expect(noEdits(down) && noEdits(up) && !draft.statusIndicator && draft.statusIndicatorTypes == mixed,
+					"StatusIndicatorControls: hidden type controls cannot edit preferences");
+			}
+			toggleMaster(); draw(section, outside, false);
+			checks.Expect(draft.statusIndicator && draft.statusIndicatorTypes == mixed,
+				"StatusIndicatorControls: restoring master restores mixed checks");
+			if (types) for (int index = 0; index < 3; ++index)
+			{
+				const auto before = draft.statusIndicatorTypes;
+				const auto point = choices[index].GetCenter(); draw(section, point, false);
+				auto down = draw(section, point, true).events, up = draw(section, point, false).events;
+				const int changes = (down.statusIndicatorTypesChanged[index] ? 1 : 0) + (up.statusIndicatorTypesChanged[index] ? 1 : 0);
+				down.statusIndicatorTypesChanged[index] = up.statusIndicatorTypesChanged[index] = false;
+				auto expected = before; expected[index] = !expected[index];
+				checks.Expect(changes == 1 && noEdits(down) && noEdits(up) && draft.statusIndicator
+					&& draft.statusIndicatorTypes == expected,
+					"StatusIndicatorControls: each checkbox emits only its own event once");
+			}
+			checks.Expect(noEdits(draw(section, outside, false).events), "StatusIndicatorControls: settled page emits no repeated edits");
 		}
 		Design::ApplyPalette(false);
 		io.ConfigFlags = previousFlags; io.ConfigInputTrickleEventQueue = previousTrickle;

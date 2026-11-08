@@ -49,6 +49,12 @@ inline constexpr struct I18nKeyRoot
                 const char* Mode = "UI/Bar/BottomDock/Mode";
                 const char* Centered = "UI/Bar/BottomDock/Centered";
             } BottomDock{};
+            struct Node__UI__Bar__StatusIndicator
+            {
+                const char* Slideshow = "UI/Bar/StatusIndicator/Slideshow";
+                const char* SuperTop = "UI/Bar/StatusIndicator/SuperTop";
+                const char* NewVersion = "UI/Bar/StatusIndicator/NewVersion";
+            } StatusIndicator{};
             struct Node__UI__Bar__EraserAttributes
             {
                 const char* ClearCanvasLabel = "UI/Bar/EraserAttributes/ClearCanvasLabel";
@@ -1044,8 +1050,6 @@ inline constexpr struct I18nKeyRoot
                     const char* SuperTop = "SettingsUI/PlugIn/SuperTop/Capability/SuperTop";
                     const char* SuperTopE1 = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopE1";
                     const char* SuperTopE2 = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopE2";
-                    const char* Indicator = "SettingsUI/PlugIn/SuperTop/Capability/Indicator";
-                    const char* IndicatorE = "SettingsUI/PlugIn/SuperTop/Capability/IndicatorE";
                     const char* SuperTopNote = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopNote";
                 } Capability{};
                 const char* SupportNote = "SettingsUI/PlugIn/SuperTop/SupportNote";
@@ -1142,6 +1146,20 @@ inline constexpr struct I18nKeyRoot
             const char* ClassIslandProtocolNote = "SettingsUI/Component/ClassIslandProtocolNote";
             const char* ClassIslandSwapNote = "SettingsUI/Component/ClassIslandSwapNote";
         } Component{};
+        struct Node__SettingsUI__StatusIndicator
+        {
+            const char* N = "SettingsUI/StatusIndicator/N";
+            const char* E = "SettingsUI/StatusIndicator/E";
+            struct Node__SettingsUI__StatusIndicator__Enable
+            {
+                const char* N = "SettingsUI/StatusIndicator/Enable/N";
+                const char* E = "SettingsUI/StatusIndicator/Enable/E";
+            } Enable{};
+            const char* Types = "SettingsUI/StatusIndicator/Types";
+            const char* TypeSlideshow = "SettingsUI/StatusIndicator/TypeSlideshow";
+            const char* TypeSuperTop = "SettingsUI/StatusIndicator/TypeSuperTop";
+            const char* TypeNewVersion = "SettingsUI/StatusIndicator/TypeNewVersion";
+        } StatusIndicator{};
         struct Node__SettingsUI__DesktopShortcut
         {
             const char* N = "SettingsUI/DesktopShortcut/N";
@@ -1226,6 +1244,14 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/DelayWaiting/N";
                 const char* E = "SettingsUI/DebugSoftware/DelayWaiting/E";
             } DelayWaiting{};
+            struct Node__SettingsUI__DebugSoftware__StatusIndicator
+            {
+                const char* Section = "SettingsUI/DebugSoftware/StatusIndicator/Section";
+                const char* N = "SettingsUI/DebugSoftware/StatusIndicator/N";
+                const char* E = "SettingsUI/DebugSoftware/StatusIndicator/E";
+                const char* Add = "SettingsUI/DebugSoftware/StatusIndicator/Add";
+                const char* Remove = "SettingsUI/DebugSoftware/StatusIndicator/Remove";
+            } StatusIndicator{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";

@@ -1370,6 +1370,7 @@ namespace Inkeys::UI::Setting::Design
 			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
 			: section == GeneralSection::Shortcuts ? I18nKey.SettingsUI.HotKey.N
 			: section == GeneralSection::DesktopShortcuts ? I18nKey.SettingsUI.DesktopShortcut.N
+			: section == GeneralSection::StatusIndicator ? I18nKey.SettingsUI.StatusIndicator.N
 			: I18nKey.SettingsUI.Design.GeneralBasic;
 		PageHeader(IA(title).c_str());
 		// 仅渲染当前子页；未显示字段继续使用同一草稿，不触发写回或重置。
@@ -1602,6 +1603,21 @@ namespace Inkeys::UI::Setting::Design
 			events.allowMultipleInstancesChanged = ToggleRow("allow-multiple-instances",
 				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.E).c_str(), "\ue7f4", draft.allowMultipleInstances);
+		}
+		if (section == GeneralSection::StatusIndicator)
+		{
+			const auto& keys = I18nKey.SettingsUI.StatusIndicator;
+			Notice("##status-indicator-notice", IA(keys.N).c_str(), IA(keys.E).c_str());
+			events.statusIndicatorChanged = ToggleRow("status-indicator", IA(keys.Enable.N).c_str(),
+				IA(keys.Enable.E).c_str(), "\uea8f", draft.statusIndicator);
+			// 显示条件只跟随本帧总开关；隐藏时保留各类勾选值。
+			if (ConditionalBlock block{ "##status-indicator-types-visibility", draft.statusIndicator }; block)
+			{
+				CheckboxGroup("##status-indicator-types", IA(keys.Types).c_str(), "\ue7c3", {
+					{ IA(keys.TypeSlideshow), &draft.statusIndicatorTypes[0], &events.statusIndicatorTypesChanged[0] },
+					{ IA(keys.TypeSuperTop), &draft.statusIndicatorTypes[1], &events.statusIndicatorTypesChanged[1] },
+					{ IA(keys.TypeNewVersion), &draft.statusIndicatorTypes[2], &events.statusIndicatorTypesChanged[2] } });
+			}
 		}
 		if (section == GeneralSection::Shortcuts)
 		{

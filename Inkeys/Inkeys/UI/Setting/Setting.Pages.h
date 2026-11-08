@@ -196,9 +196,11 @@ namespace Inkeys::UI::Setting::Design
 
 	struct SettingOpenNavigation
 	{
-		enum class Action { None, Home, SpeedEraser };
+		enum class Action { None, Home, SpeedEraser, SoftwareVersion };
 		std::uint64_t consumed = 0, showSerial = 0, hideSerial = 0;
 		bool fadeOnly = false;
+		// 最近一次直达的目标；开屏覆盖只在仍停留于该目标页时保留。
+		SettingOpenTarget target = SettingOpenTarget::Current;
 
 		Action Consume(const SettingOpenRequest& request, bool visible,
 			std::uint64_t currentShow, std::uint64_t currentHide, bool entryAllowed) noexcept
@@ -207,11 +209,11 @@ namespace Inkeys::UI::Setting::Design
 			if (request.serial == consumed) return Action::None;
 			consumed = request.serial; fadeOnly = false;
 			if (!visible || request.showSerial != currentShow || request.hideSerial != currentHide
-				|| request.target != SettingOpenTarget::SpeedEraser) return Action::None;
-			showSerial = currentShow; hideSerial = currentHide;
+				|| request.target == SettingOpenTarget::Current) return Action::None;
+			showSerial = currentShow; hideSerial = currentHide; target = request.target;
 			// 首帧就选中目标页，开屏只覆盖其上，不再等待主页动画后跳转。
 			fadeOnly = request.opening && entryAllowed;
-			return Action::SpeedEraser;
+			return request.target == SettingOpenTarget::SoftwareVersion ? Action::SoftwareVersion : Action::SpeedEraser;
 		}
 	};
 
@@ -352,6 +354,9 @@ namespace Inkeys::UI::Setting::Design
 		DesktopShortcutDraft desktopShortcut;
 		DesktopShortcutDraft whiteboardShortcut{ Business::DesktopShortcut::Kind::Whiteboard };
 		int startupEffect = 0;
+		// 状态指示器：总开关 + 放映模式/超级置顶/新版本；总开关关闭时隐藏勾选但保留值。
+		bool statusIndicator = true;
+		std::array<bool, 3> statusIndicatorTypes{ true, true, true };
 		// 场景进入策略：掩码 bit0 底栏、bit1 底栏折叠、bit2 悬浮窗、bit3 悬浮窗折叠；方向 0 不改变、1 向右、2 向左。
 		int pptDockMask = 1, pptDockDirection = 0;
 		int whiteboardDockMask = 1, whiteboardDockDirection = 0;
@@ -389,6 +394,8 @@ namespace Inkeys::UI::Setting::Design
 		bool selectModeChanged = false, iconOrderChanged = false, expansionDirectionChanged = false;
 		std::array<bool, 4> autoCollapseChanged{};
 		std::array<bool, 6> shortcutsChanged{};
+		bool statusIndicatorChanged = false;
+		std::array<bool, 3> statusIndicatorTypesChanged{};
 	};
 
 	struct CicdContent

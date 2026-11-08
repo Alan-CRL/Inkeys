@@ -46,6 +46,12 @@
         "Mode": "하단 도구 모음",
         "Centered": "가운데"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "슬라이드 쇼",
+        "SuperTop": "SuperTop",
+        "NewVersion": "새 버전"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "지우기",
@@ -1041,8 +1047,6 @@
           "SuperTop": "SuperTop 사용",
           "SuperTopE1": "3단계 시작 과정으로 창을 맨 위에 유지합니다.\n(현재 활성)",
           "SuperTopE2": "3단계 시작 과정으로 창을 맨 위에 유지합니다.\n(현재 비활성)",
-          "Indicator": "SuperTop 상태 표시",
-          "IndicatorE": "SuperTop이 활성화되면 주 아이콘 오른쪽 위에 핀을 표시합니다.",
           "SuperTopNote": "다시 시작한 후 적용됩니다. 시작 중 맨 위로 올리기가 실패할 수 있습니다."
         },
         "SupportNote": "Windows 8 이상에서만 지원합니다."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "ClassIsland 앱 설정에서 URL 탐색 프로토콜을 등록해야 합니다.",
       "ClassIslandSwapNote": "ClassIsland에 시간표가 로드되지 않은 경우 이 구성 요소는 작동하지 않습니다."
     },
+    "StatusIndicator":
+    {
+      "N": "상태 표시기",
+      "E": "슬라이드 쇼, SuperTop, 소프트웨어 업데이트 등의 상태를 메인 버튼에 표시합니다.",
+      "Enable":
+      {
+        "N": "상태 표시기 사용",
+        "E": "끄면 메인 버튼에 상태 알림을 표시하지 않습니다."
+      },
+      "Types": "표시할 상태",
+      "TypeSlideshow": "슬라이드 쇼",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "새 버전"
+    },
     "DesktopShortcut":
     {
       "N": "바로 가기",
@@ -1222,6 +1240,14 @@
       {
         "N": "대기 작업 지연",
         "E": "로딩 대기를 연장하여 애니메이션을 확인합니다."
+      },
+      "StatusIndicator":
+      {
+        "Section": "상태 표시기",
+        "N": "상태 표시기 테스트",
+        "E": "무작위 테스트 상태를 추가하거나 삭제하여 애니메이션, 긴 텍스트 및 진행률 링을 확인합니다.",
+        "Add": "무작위 상태 추가",
+        "Remove": "상태 하나 삭제"
       },
       "ConsoleSection": "콘솔 출력",
       "CanvasInformation": "캔버스 초기화 정보",

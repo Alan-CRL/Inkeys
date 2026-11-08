@@ -46,6 +46,12 @@
         "Mode": "Mode barre inférieure",
         "Centered": "Centrée"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Diaporama",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nouvelle version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Effacer",
@@ -1041,8 +1047,6 @@
           "SuperTop": "Activer SuperTop",
           "SuperTopE1": "L’application utilise un démarrage en trois étapes pour rester au premier plan.\n(SuperTop est actif)",
           "SuperTopE2": "L’application utilise un démarrage en trois étapes pour rester au premier plan.\n(SuperTop n’est pas actif)",
-          "Indicator": "Indicateur SuperTop",
-          "IndicatorE": "Afficher une épingle en haut à droite de l’icône principale lorsque SuperTop est actif.",
           "SuperTopNote": "Redémarrez Inkeys pour appliquer. Le maintien au premier plan peut échouer au démarrage."
         },
         "SupportNote": "Nécessite Windows 8 ou ultérieur."
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "Enregistrer le protocole de navigation URL dans les paramètres de ClassIsland.",
       "ClassIslandSwapNote": "Ce composant est sans effet si aucun emploi du temps n’est chargé dans ClassIsland."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicateur d'état",
+      "E": "Affiche sur le bouton principal des états tels que le mode diaporama, SuperTop et les mises à jour du logiciel.",
+      "Enable":
+      {
+        "N": "Activer l'indicateur d'état",
+        "E": "Désactivé, le bouton principal n'affiche plus aucun indicateur d'état."
+      },
+      "Types": "Afficher ces états",
+      "TypeSlideshow": "Diaporama",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nouvelle version"
+    },
     "DesktopShortcut":
     {
       "N": "Raccourcis",
@@ -1222,6 +1240,14 @@
       {
         "N": "Prolonger les opérations en attente",
         "E": "Prolonge le chargement pour observer les animations."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicateurs d’état",
+        "N": "Tester les indicateurs d’état",
+        "E": "Ajoutez ou supprimez des états de test aléatoires pour vérifier les animations, les textes longs et les anneaux de progression.",
+        "Add": "Ajouter un état aléatoire",
+        "Remove": "Supprimer un état"
       },
       "ConsoleSection": "Sortie console",
       "CanvasInformation": "Informations d’initialisation du canevas",

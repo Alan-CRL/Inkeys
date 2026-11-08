@@ -46,6 +46,12 @@
         "Mode": "底欄模式",
         "Centered": "置中"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "放映模式",
+        "SuperTop": "超級置頂",
+        "NewVersion": "新版本"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "清空",
@@ -1041,8 +1047,6 @@
           "SuperTop": "超級置頂",
           "SuperTopE1": "軟體透過三段式啟動進行置頂。\n（目前已經超級置頂）",
           "SuperTopE2": "軟體透過三段式啟動進行置頂。\n（目前尚未超級置頂）",
-          "Indicator": "超級置頂指示器",
-          "IndicatorE": "軟體成功被超級置頂時，在主圖示右上角顯示一個大頭針。",
           "SuperTopNote": "重新啟動軟體後生效；啟動過程中可能出現置頂失敗。"
         },
         "SupportNote": "僅支援 Windows 8 及以上系統。"
@@ -1139,6 +1143,20 @@
       "ClassIslandProtocolNote": "需要在 ClassIsland 的應用程式設定中註冊 URL 導覽通訊協定。",
       "ClassIslandSwapNote": "ClassIsland 目前未載入課表時，此元件不會生效。"
     },
+    "StatusIndicator":
+    {
+      "N": "狀態指示器",
+      "E": "在主按鈕上顯示放映模式、超級置頂和軟體更新等執行狀態。",
+      "Enable":
+      {
+        "N": "啟用狀態指示器",
+        "E": "關閉後，主按鈕不再顯示任何狀態提示。"
+      },
+      "Types": "提示以下狀態",
+      "TypeSlideshow": "放映模式",
+      "TypeSuperTop": "超級置頂",
+      "TypeNewVersion": "新版本"
+    },
     "DesktopShortcut":
     {
       "N": "捷徑",
@@ -1222,6 +1240,14 @@
       {
         "N": "為等待操作延遲",
         "E": "延長載入等待，便於觀察動畫。"
+      },
+      "StatusIndicator":
+      {
+        "Section": "狀態指示器",
+        "N": "測試狀態指示器",
+        "E": "新增或刪除隨機測試狀態，檢查動畫、長文字與進度環。",
+        "Add": "新增隨機狀態",
+        "Remove": "刪除一個狀態"
       },
       "ConsoleSection": "主控台輸出",
       "CanvasInformation": "畫布初始化資訊",
