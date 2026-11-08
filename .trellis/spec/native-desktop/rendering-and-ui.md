@@ -990,7 +990,7 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 - 手动恢复统一使用顶边偏移弹簧与独立形状弹簧：held Docked 的形状误差相对稳定世界底端目标，释放后重基到规范 baseBottom；Floating 是高度相对 baseHeight 偏移，不依抓点位置分支。正高度保护只推开底端并返回 `constrained`，重基形状弹簧及其速度，不能上推顶边。Floating 顶边偏移非零时 rigidGrip、rigidOverlay、绘制/dirty/光源/命中也使用该偏移，不能仍沿旧固定 baseTop 的零刚性偏移。成功快照 `dragActive` 只记录真实成功帧；Up/取消与其不同即先原样接住成功形状，两弹簧速度清零，下一成功帧后才恢复，失败重试不消费该交接。
 - 纵向脱离仅由最后成功的 BottomDocked -> Floating 触发 `SeedBarBottomDockDetach`，按成功屏幕顶/底和候选 base 反推普通/底端弹簧位置，保留当前指针正常平移后的完整高度。首个脱离候选不积分任一弹簧，失败/跳帧仍从同一成功形状重新播种；Recovering 的成功初值可用 `preserveElasticOffset` 超过 24 DIP，既有频率/阻尼及普通输入保护不变，真实范围进入容量预测。
 - 释放吸收将布局移动 A 像素、实际 residual translation 减去 A，成功快照必须同步移动两轴 base/visual/grip 绝对 DIP 端点 A/其成功 zoom。indicatorBounds 是布局像素，按钮/shape hit bounds 是绝对 DIP，二者随吸收平移；scale 和相对弹性/刚性 offset 不平移。吸收不改变屏幕中心；真实 `screenDelta` 才移动 main/raw/body/visual center。保持既有奇偶 serial 和几何锁到命中发布的事务，不用真实 HWND 移动补偿内部坐标。
-- 场景入口由渲染线程的 `BarWorkspaceSceneState` 统一处理：首次布局完成后，Desktop 首次进入 PPT/Whiteboard 才捕获位置、显示器、两种展开方向、fold、dock 和 center 基线。仅已展开 BottomDocked 贴目标屏幕底边 `5 DIP`，保留 Centered/Free；浮动或折叠不改变形态。PPT↔Whiteboard 不覆盖桌面基线，最终离开恢复基线；Y 从最后成功屏幕位置沿既有 0.4 秒动画返回，关闭动画则当帧归位。返回期间复用场景动画所有权，禁止普通底栏归位截断 Y；返回尚未完成又进入工作区时不能把中间位置覆盖为新的桌面基线。原屏幕消失时按显示快照回退并钳制可见目标。此合同替代旧 PPT 进入/退出强制居中以及白板强制展开/退出折叠策略，用户拖动的水平捕获规则不变。
+- 场景入口由渲染线程的 `BarWorkspaceSceneState` 统一处理：首次布局完成后，Desktop 首次进入 PPT/Whiteboard 才捕获位置、显示器、两种展开方向、fold、dock 和 center 基线。进入前主栏状态（底栏含居中底栏 / 底栏折叠 / 悬浮 / 悬浮折叠）由“通用 → 位置”的场景策略（`UI.Bar.Workspace.{Ppt,Whiteboard}.AutoDockMask` bit0..3，默认仅底栏）决定：命中则变为居中底栏、水平居中于目标屏、底沿距屏底 `5 DIP`，折叠态同时展开，`Direction`（0 不改变/1 向右展开/2 向左展开）改写展开方向并同步 `mainBarLayoutSide`；未命中沿用旧行为（仅已展开 BottomDocked 贴底并保留 Centered/Free，浮动或折叠不改变形态）。策略只在 Desktop→PPT/Whiteboard 的 Enter 边沿评估，PPT↔白板互切与 Leave 不重新套用，桌面基线先于接管捕获，退出整体还原。接管前若不是“展开的居中底栏”（折叠/悬浮/普通底栏）或展开方向被翻转，渲染线程置 `workspaceEntryRootTween`：根 X 只由 0.4 秒放置动画持有，期间暂停按当前宽度实时居中（`ShouldDeriveBarBottomDockCenteredRoot` 两处调用都以其作 farEdge 门禁），动画结束或下次场景边沿清除，否则展开宽度动画与放置动画每帧互相覆盖导致根 X 往返、主栏偏离中心。`--ui3-workspace-centering-test` 的进入矩阵断言进入动画期间根 X 无往返。纯函数 `ShouldTakeOverBarWorkspaceEntry` / `ResolveBarWorkspaceEntrySide` 位于 `Bar.BottomDock.h`。PPT↔Whiteboard 不覆盖桌面基线，最终离开恢复基线；Y 从最后成功屏幕位置沿既有 0.4 秒动画返回，关闭动画则当帧归位。返回期间复用场景动画所有权，禁止普通底栏归位截断 Y；返回尚未完成又进入工作区时不能把中间位置覆盖为新的桌面基线。原屏幕消失时按显示快照回退并钳制可见目标。此合同替代旧 PPT 进入/退出强制居中以及白板强制展开/退出折叠策略，用户拖动的水平捕获规则不变。
 - 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于 40 DIP 阈值内时无提示捕获。桌面首次放置必须在首次方向分类前初始化为向右展开（主按钮居左），白板入口保持既有方向。稳定居中展开时保持渲染线程当前布局方向，不得因动态 HWND 包络重新换边；离开居中后普通换向仍按既有关键帧执行。
 - 底栏 `PositionUpdate()` 只能把最后成功呈现的水平模式作为方向分类门禁：`Centered` 时保持当前布局方向；非居中时遵守 `UI.Bar.ExpandDirectionAdjustment`，中轴线模式只有有限且大于零的显示参考宽度才可按中轴分类，空间不足模式在完整稳定目标宽度可用后由主栏布局策略判定。首帧零宽、无效宽度或动态 HWND 包络都不得自行产生新方向。
 - `BottomDocked + Centered + Stable + Expanded` 且无拖拽、水平弹簧或普通显示环境切换时，主按钮 X 是稳定居中的唯一根位置。渲染线程必须在主栏、主按钮和按钮动画值推进后，同时在 Popup、颜色面板、粗细面板等下游绝对几何派生前，以主按钮、主栏及两者当前可见描边的联合外框反推 `mainButton.x`，同步 `displayCenterX`，再重新执行 `MainBar.Inherit(Center, MainButton)`；整个既有继承树必须在同一帧消费新根节点。主栏动画不得因每帧居中派生而重启，属性面板、More、Popup 和提示框不得参与中心计算。实际新的主栏布局批次必须同步重定向在途子按钮的位置动画，即使该子按钮目标未变，也不能继续旧批次的进度或曲线而与新父布局叠加成往返；独立按压、悬停与内容动画仍保持各自所有权。PPT/Whiteboard Enter/Switch/Leave 的竖直过渡由既有 `whiteboardDockAnimationActive` 识别，只把 Y 留给 `displayCenterY`；X 继续按当前联合几何反推。实际根反推和 viewport 根范围共用 `ShouldDeriveBarBottomDockCenteredRoot(..., displayTransitionActive, workspacePlacementActive)` 的完整门禁。捕获、拖拽、脱离、恢复、Free、浮动、折叠和普通显示切换继续由原状态机持有根位置；最终 Leave 保留既有独立恢复路径。
@@ -2724,41 +2724,48 @@ Wrong：`if (PublishCandidate(move)) CommitDragPairDirect();` 或 `if (wake) Com
 
 Correct：发布后保留 pending，非阻塞读取完整匹配回执；仅最终所有像素、窗口、业务身份和输入 fence 条件成立时提交原状态机。
 
-## Scenario: Page 右上角延迟环形指示器（2026-11-01）
+## Scenario: Page 加载状态：整体变浅、内侧边缘环与页码槽状态词（2026-11-05）
+
+本节取代 2026-11-01 的“右上角延迟环形指示器”。白板与 PPT 共用同一个 `PageLoadingIndicator`，旧的白板 `DrawBusyRing`/`Bar.BusyRing.h` 已删除。
 
 ### 1. Scope / Trigger
-PPT方向等待或Pending/Recovering进度由单Page角标表达，替代旧三点；加载事实/稳定数字/故障文字和业务门不变。短加载不显示，持续满0.5秒才入场。
+白板翻页等待、PPT 翻页等待/页面准备、PPT 画布恢复中（`Recovering`）及失败类（冲突/读取/显示/故障）在页码控件上的表现。短暂跳变（<500ms）不出现任何文字、变浅或环。
 
 ### 2. Signatures
-内部Bar.PageLoadingIndicator.h的PageLoadingIndicator::Advance(steady now,session,allowed,loading,dt,speed,animations,Curve)，WakeDeadline/NeedsFrames；稳定PageLoadingDeadline::Publish/Consume。BarPageSurface提供SetLoadingIndicatorVisible、LoadingIndicatorAnimationActive、LoadingIndicatorDeadline；BarPageSurfaceContent.loadingSession仅用于视觉退休。
+- `Bar.PageLoadingIndicator.h`：`PageLoadState { None, Loading, RetryableFailed, FinalFailed }`；`PageLoadingIndicator::Advance(now,session,allowed,state,dt,speed,animations,Curve)`；公共输出 `reached`（文字/变浅门）、`Dim()`、`Ring()`、`phase`；`WakeDeadline/NeedsFrames`；纯函数 `PageLoadingArcAt(phase,animations)`、`PageLoadingEase`；常量在 `PageLoadingStyle`。稳定 `PageLoadingDeadline::Publish/Consume` 不变。
+- `BarPageSurfaceContent`：`loadState`（`BarPageLoadState`，数值同 `PageLoadState`）、`currentPage/totalPage`（恒为常态页码）、`statusPrimary/statusSecondary`（门控到点后替换对应槽，空串=不替换）。`loadingSession`：PPT 为场次，白板用固定非零 `WhiteboardLoadingSession`。
+- `PageControl.cpp::AssignLoadState`：唯一的“业务状态→`loadState`+状态词+`interactive`”映射；`BarPageSurface::SetLoadingIndicatorVisible` 对 PPT 与白板可见态都开放。
 
 ### 3. Contracts
-- 门槛使用绝对steady frameTime，重复true不重置；false边沿即退休requested/deadline，即使同frameTime先false再true也算新段，保留当前显隐值连续退场。新段重新500ms，499ms不显示；不把clamp/idle dt累加为墙钟。
-- 入180ms EaseOutCubic、退140ms EaseInCubic，opacity0..1/scale .75..1无超调；循环250度圆头弧顺时针约1秒一圈，使用原速度。global off显隐即时、固定静态弧，门槛仍0.5秒；SetAnimationOptions请求PptPageMask唤醒Idle静态环，不常驻轮询。
-- 最大外径约12DIP、中心Page局部right-15/top+6.5，track半径5.4线宽0.6用SurfaceFrame，前景同半径线宽1.2用TextPrimary；最大包络及AA余量不碰数字，原scale统一。私有缓存arc/双色brush/圆头stroke，避免ContentSolidBrush单可变brush别名；不逐帧CreatePathGeometry/Open sink，绘后恢复transform。
-- 装饰资源失败只跳过环，不返回页码失败/不升级CanvasRecovery；失败latch按session/新段/epoch有界恢复，失败时不持续空动画回调。场景释放/epoch重建配平四类ComPtr；不调用共享GetRoundStrokeStyle失败日志路径。
-- 延迟期Scene无视觉需求可Idle；render发布/取消per-surface原子deadline并WakeInteractionWorker，原SurfaceInputTick在LongPress早退前合并，worker到期只RequestSurface，Scene复核最新状态。mailbox.Revision在Pump前观察避免丢wake；initialized/generation/注册注销和清槽保护旧回调，不跨线程访问Scene/D2D，不增线程/timer/Scheduler API。
-- 可见进退场/旋转以独立LoadingIndicatorAnimationActive请求帧，不混入旧AnimationActive的窗口保留资格或input锁；隐藏/白板/session变更退休。所有原生/离屏early Idle、PresentScene续帧与SuspendForIdle都须含独立视觉需求，到期dt0/opacity0首帧也继续；退场末帧损伤旧角标后Idle。
-- 每帧仅角标最大包络及旧尾帧损伤，不无条件损伤整个数字槽。数字普通更新仍Immediate，真实错误/Retry/旧ACK/COM控制不变。旧PptWait dots字段不伪造环的3点，dots=0不能推断环未显示。
+- **页码槽状态表**（左=当前页码槽，右=原 `/N` 槽）：白板/PPT 翻页等待=左页码不变、右 `Wait`，加载环+整窗口变浅；PPT `Recovering`=右 `Recovering`，同上；失败类可重试=左原因词、右 `Retry`，页码按钮可点且不变浅、无环，上/下一页不可点并变浅；失败类不可重试（终态）=左页码不变、右原因词，环退场，整窗口保持变浅且不可点。`Loading` 文案已删除。
+- **500ms 门控**：`deadline=now+500ms`；文字切换、变浅、环都在 `reached` 之后才发生；回到 `None` 立即关门并清 deadline；`Loading→FinalFailed` 等非 `None` 间切换不重置 deadline。变浅（180ms/140ms 曲线）与环淡入淡出各自轨道；文字到点直接 `TransitionToString`，纯页码间仍 Immediate。可重试失败的页码按钮在 `reached` 之前保持不可点。上/下一页在 `recovery.kind!=None` 时命中即锁（`interactive=false`），视觉变浅仍等门控。
+- **变浅**：视觉 enabled 由 `LoadingDimmed(id)` 决定（Loading/终态=全部按钮；可重试失败=仅不可点的上/下一页）；命中仍用 `interactive/enabled`，二者独立。通用禁用变浅只覆盖图标与主文字，`pageTotal` 由 Scene 独立持有，必须在 `AdvanceBarButtonVisual` 前用 `GetThemeDisabledContentOpacity()` 同口径 `pct.SetTar`，否则 `/N` 或状态词不变浅。
+- **环几何**：沿页码按钮边框内侧的圆角矩形（内缩=边框厚度+间隙+半线宽，中心线圆角直接取按钮 `rw`（与按钮圆角一致，放不下才收小）），起点顶边中点顺时针；线宽 2.5DIP、无轨道、`IconPrimary`、圆角端帽。用缓存 `ID2D1PathGeometry` + 每帧自定义 dash（`dashes={(L-W)/W,(P-(L-W))/W}`，`dashOffset=(P-start*P)/W`）描边，圆角端帽向两端各延伸半个线宽故弧长扣除一个线宽；尺寸/圆角变化重建路径，设备丢失/新一段失败时 `ResetRingResources`。
+- **非线性运动**：`PageLoadingArcAt` 以头部先行/尾部追赶的 in-out 缓动配合每周期 0.3 圈的基础旋转，弧长在 `MinArc=.10` 与约 .6 周长之间伸缩；仅 `ring>0` 且动画开启时推进 `phase`，退场后保留，设备资源重建不影响相位；全局动画关闭用固定弧（长 .25，起点 0）。
+- 装饰资源失败只跳过环，不影响数字/状态/业务；`NeedsFrames` 稳定（终态失败/可重试失败/静态环）后必须能 Idle；到期仍由原子 deadline + `WakeInteractionWorker`。
+- 损伤：环可见期间每帧只损伤页码按钮包络（+`AntialiasOutset`），各按钮变浅过渡由自身视觉结果登记。
 
 ### 4. Validation & Error Matrix
 | 条件 | 必须行为 |
 | --- | --- |
-| 499/500ms及dt0 | 门槛前无像素，到期保留入场需求；全局off也不提前 |
-| 同目标、方向变、同帧false→true | true不重计，真实false新段重计且旧视觉连续 |
-| 延迟取消/隐藏/session/注销/过期wake | 不闪现或访问已毁Scene，不留旧窗口/空续帧 |
-| 设备重建/装饰创建失败 | 配平/降级，数字ACK不受影响，有界重试 |
-| 静态环全局重启 | 设置请求唤醒，旋转恢复，不依赖鼠标 |
+| 499/500ms 及 dt0 | 门槛前无文字/变浅/环像素；到期保留入场需求；全局动画 off 也不提前 |
+| 同目标、同帧 false→true | 新段重计 500ms，旧环/变浅从当前值连续退场 |
+| Loading→FinalFailed | 环退场、灰色保持、deadline 不重置，稳定后 Idle |
+| 失败类可重试 | 页码按钮可点（门控后）、不变浅、无环；上/下一页变浅 |
+| 设备重建/装饰失败 | 相位保持；失败降级且不影响数字 ACK |
+| 20 语言 | `Wait/Recovering/Retry/原因词` 在右槽宽度（70DIP，无自动缩放）内；左槽原因词按主标签缩放后不小于一半字号 |
 
 ### 5. Good / Base / Bad Cases
-Good：无Pointer Down也由真实worker deadline唤醒，真实callback在500ms dt0后Continue，partial与full相等。Base：短等待整段无环/数字像素不变。Bad：60Hz空画等0.5秒、无限spin延长ShouldKeepWindowVisible、失去同帧false边沿、资源失败阻塞画布。
+Good：真实 worker deadline 唤醒；环、文字、变浅像素 partial 与 full 相等；环与状态词只落在页码按钮内，其余控件与“仅变浅”参照一致。Base：短等待整段无像素变化。Bad：状态文字立即切换而变浅晚半秒；用 `content.switching` 直接驱动视觉；忘记给 `pageTotal` 设变浅；为环保留旧 `ringTrack`。
 
 ### 6. Tests Required
-page-control-only验证纯生产helper499/500/idle/dt0/重启/session/off与原子替换；ui3-input-worker-test用真实注册/WaitUntil验证无手势到期/取消/注销；bar-eraser-offscreen-test验证实际PageControlInputTick无长按、实际callback到期Continue、四面三倍率/灰白像素/最大数字不遮/旋转/显隐/partial清除/epoch重建/globalOff静态，以及同frameTime快速重启。完整InkeysRepo.sln Debug|ARM64和PPT协议回归；GUI交用户，不扩大Office支持。
+`page_control_tests.cpp::TestPageLoadingRingClock`（门控、三轨道、终态失败、弧连续性）；`bar-eraser-offscreen-test`（真实 Scene 像素：门控、环仅在页码按钮内、变浅、四表面/三倍率、设备重建、同帧重启、禁动画、状态文字过渡、20 语言槽宽）；`i18n.ps1 check/sync`。
 
 ### 7. Wrong vs Correct
 Wrong：用动画dt数满1秒、沿共享Animated标记让窗口不退场，或借装饰初始化失败修改页面状态。
 Correct：绝对deadline+原worker唤醒，独立视觉需求/本地缓存资源/实际像素和生命周期验证，所有业务门保持。
+Wrong：把“Loading”写进左槽；让白板与 PPT 各用一套延迟/环；文字先切换、环/变浅走另一个门。
+Correct：`AssignLoadState` 单一映射 + 单一 500ms 指示器，三个输出（文字/变浅/环）共用同一截止。
 
 ## 主栏状态指示器发布与呈现合同（2026-11-02 阶段 1–3，2026-11-04 v2 视觉重设计）
 

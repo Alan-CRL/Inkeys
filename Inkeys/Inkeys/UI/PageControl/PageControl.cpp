@@ -17,6 +17,7 @@ module;
 #include "../Bar/Bar.InteractionWorker.h"
 #include "../Whiteboard/Whiteboard.Theme.h"
 #include "../../../IdtI18n.h"
+#include "../../../IdtI18nLocales.h"
 #include "../../../IdtState.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../Ppt/Ppt.Recovery.h"
@@ -821,6 +822,42 @@ namespace Inkeys::UI::PageControl
 			}
 		}
 
+		// 调试等待仅属于控件，不写回真实业务快照或页面 ready/ACK。
+		struct DebugNavigationDelay
+		{
+			std::chrono::steady_clock::time_point deadline{};
+			std::size_t surface = 0;
+			bool next = false, whiteboard = false;
+			std::uint64_t session = 0, epoch = 0;
+			int page = 0;
+			bool Pending() const noexcept { return deadline.time_since_epoch().count() != 0; }
+			bool Matches(const PptState& ppt, const WhiteboardState& board) const noexcept
+			{
+				if (!Pending()) return false;
+				if (whiteboard) return board.active && !board.switching
+					&& board.generation == session && board.currentPage == page;
+				return !board.active && !board.expandedLayoutTarget && !board.switching
+					&& ppt.presentationVisible && ppt.presentationActive
+					&& ppt.layout.session == session && ppt.layout.epoch == epoch
+					&& ppt.currentPage == page && ppt.recovery.kind == PptRecovery::Kind::None;
+			}
+		};
+		DebugNavigationDelay debugNavigationDelay; // snapshotMutex 保护，最多一个待发请求。
+		void RetireDebugNavigationForSurface(std::size_t index) noexcept
+		{
+			bool retired=false;
+			{ std::scoped_lock lock(snapshotMutex);
+			  if(debugNavigationDelay.Pending()&&debugNavigationDelay.surface==index){
+				debugNavigationDelay={};publishedRevision.fetch_add(1,std::memory_order_release);retired=true;
+			  } }
+			if(retired){RequestAll();Inkeys::UI::Bar::WakeInteractionWorker();}
+		}
+		void RetireStaleDebugNavigationLocked() noexcept
+		{
+			// 在发布边沿退休，页面离开后又返回也不能复活旧点击。
+			if(!debugNavigationDelay.Matches(publishedPpt,publishedWhiteboard))debugNavigationDelay={};
+		}
+
 		[[nodiscard]] std::pair<PptState, WhiteboardState> Snapshot() noexcept
 		{
 			std::scoped_lock lock(snapshotMutex);
@@ -878,9 +915,11 @@ namespace Inkeys::UI::PageControl
 				: std::to_wstring((std::min)(maximum, value));
 		}
 
-		void InvokeDirection(std::size_t surfaceIndex,bool next,WorkspaceMode expectedMode=WorkspaceMode::Hidden)
+		void InvokeDirection(std::size_t surfaceIndex,bool next,WorkspaceMode expectedMode=WorkspaceMode::Hidden,bool allowDebugDelay=true)
 		{
 			if (surfaceIndex >= surfaces.size()) return;
+			{ std::scoped_lock lock(snapshotMutex);
+			  if (debugNavigationDelay.Matches(publishedPpt,publishedWhiteboard)) return; }
 			std::function<void()> callback;
 			const auto [ppt, whiteboard] = Snapshot();
 			const auto liveMode=ResolveWorkspaceMode(SurfaceFor(surfaceIndex),ppt,whiteboard);
@@ -913,6 +952,20 @@ namespace Inkeys::UI::PageControl
 			}
 			UiDiag::Log(SurfaceName(surfaceIndex),nullptr,"action",callback?"direction_callback_dispatched":"no_direction_callback",0,nullptr,"next=%d mode=%u ppt_visible=%d whiteboard_active=%d page=%d total=%d",next,static_cast<unsigned>(liveMode),ppt.presentationVisible,whiteboard.active,ppt.currentPage,ppt.totalPage);
 			if (!callback) return;
+			if (allowDebugDelay && Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations
+				&& (whiteboard.active ? (next ? whiteboard.nextEnabled && whiteboard.nextInteractive
+					: whiteboard.previousEnabled && whiteboard.previousInteractive)
+					: ppt.presentationActive && ppt.currentPage > 0 && ppt.recovery.kind == PptRecovery::Kind::None))
+			{
+				// 先展示等待，再交给业务队列，人工延迟不消耗 COM/加载的真实超时预算。
+				{ std::scoped_lock lock(snapshotMutex);
+				  debugNavigationDelay = {std::chrono::steady_clock::now()+std::chrono::seconds(10),
+					surfaceIndex,next,whiteboard.active,whiteboard.active?whiteboard.generation:ppt.layout.session,
+					ppt.layout.epoch,whiteboard.active?whiteboard.currentPage:ppt.currentPage};
+				  publishedRevision.fetch_add(1,std::memory_order_release); }
+				RequestAll(); Inkeys::UI::Bar::WakeInteractionWorker();
+				return;
+			}
 			// 先登记控件发起的翻页，随后的页码发布不能被误判为翻页笔/键盘翻页。
 			const auto now = std::chrono::steady_clock::now();
 			lastControlNavigation.store(now.time_since_epoch().count(), std::memory_order_release);
@@ -974,13 +1027,54 @@ namespace Inkeys::UI::PageControl
 					id<15 ? pressed.pattern : static_cast<int>(id-15), pressed.generation, pressed.currentPage);
 		}
 
+		// 白板没有PPT场次，固定一个非零身份供加载指示器按“一次等待”门控。
+		static constexpr std::uint64_t WhiteboardLoadingSession=~std::uint64_t{0};
+
+		// 页码槽状态规范：左槽始终保留页码（失败类可重试时换成原因词），右槽换成状态词；
+		// 文字、变浅与加载环都由Scene按同一个500ms门控展示，这里只给出“到点之后”的内容。
+		static void AssignLoadState(PageContent& content,const PptState& ppt)
+		{
+			using Inkeys::UI::Bar::BarPageLoadState;
+			const auto& labels=I18nKey.UI.Bar.CanvasRecovery;
+			const auto kind=ppt.recovery.kind;
+			if(content.whiteboard){
+				if(content.switching){content.loadState=BarPageLoadState::Loading;content.statusSecondary=IW(labels.Wait);}
+			}else if(kind==PptRecovery::Kind::Recovering){
+				// 自动重试中：页码不变、全部锁定，右槽显示“恢复中”。
+				content.loadState=BarPageLoadState::Loading;content.statusSecondary=IW(labels.Recovering);
+				content.interactive={false,false,false};
+			}else if(kind!=PptRecovery::Kind::None){
+				const char* key=labels.Failed;
+				switch(kind){
+				case PptRecovery::Kind::Conflict:key=labels.Conflict;break;
+				case PptRecovery::Kind::ReadFailed:key=labels.ReadFailed;break;
+				case PptRecovery::Kind::PresentFailed:key=labels.PresentFailed;break;
+				default:break;
+				}
+				if(ppt.recovery.retryAvailable){
+					// 可重试：左槽原因词、右槽“重试”，页码按钮可点；上/下一页被画布恢复拦截，保持不可点。
+					content.loadState=BarPageLoadState::RetryableFailed;
+					content.statusPrimary=IW(key);content.statusSecondary=IW(labels.Retry);
+					content.interactive={false,true,false};
+				}else{
+					// 终态失败：页码不变、右槽原因词，整体保持灰色不可点（环退场）。
+					content.loadState=BarPageLoadState::FinalFailed;content.statusSecondary=IW(key);
+					content.interactive={false,false,false};
+				}
+			}else if(content.navigationWaitingPrevious||content.navigationWaitingNext){
+				content.loadState=BarPageLoadState::Loading;content.statusSecondary=IW(labels.Wait);
+			}
+			if(content.loadState!=BarPageLoadState::None)content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
+		}
+
 		[[nodiscard]] PageContent BuildPageContent(std::size_t index,WorkspaceMode mode,
 			const PptState& ppt,const WhiteboardState& whiteboard)
 		{
 			PageContent content;
 			content.surface=static_cast<unsigned>(index);
-			content.loadingSession=ppt.layout.session;
 			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
+			// 白板没有PPT场次；用固定非零身份让加载指示器在白板里同样按“一次等待”门控。
+			content.loadingSession=content.whiteboard?WhiteboardLoadingSession:ppt.layout.session;
 			// 工作区交接期间宿主也会置 switching；它只锁输入，不能把淡入/淡出中的页码换成“加载中”再换回。
 			const bool pageSwitching=whiteboard.switching&&!::WhiteboardSwitching();
 			content.switching=pageSwitching;content.pptActive=ppt.presentationActive;
@@ -992,11 +1086,7 @@ namespace Inkeys::UI::PageControl
 			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
 			if(content.whiteboard){
 				content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);
-				if(pageSwitching){
-					content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
-					content.currentPage=IW(I18nKey.UI.Bar.CanvasRecovery.Loading);
-					content.totalPage=IW(I18nKey.UI.Bar.CanvasRecovery.Wait);
-				}
+
 				content.enabled={whiteboard.previousEnabled,whiteboard.pageEnabled,whiteboard.nextEnabled};
 				content.interactive={whiteboard.previousInteractive,whiteboard.pageInteractive,whiteboard.nextInteractive};
 			}else{
@@ -1004,25 +1094,6 @@ namespace Inkeys::UI::PageControl
 				const int visibleCurrent=ppt.numericPageOverride?ppt.displayedCurrentPage:ppt.currentPage;
 				const int visibleTotal=ppt.numericPageOverride?ppt.displayedTotalPage:ppt.totalPage;
 				content.currentPage=PageNumber(visibleCurrent,maximum);content.totalPage=L"/"+PageNumber(visibleTotal,maximum);
-				if (ppt.recovery.kind == PptRecovery::Kind::Recovering)
-					content.interactive[1]=false; // 进度仍保留恢复控制态，数字显示不变成可点击的重试/浏览。
-				else if (ppt.recovery.kind != PptRecovery::Kind::None)
-				{
-					content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
-					const auto& labels = I18nKey.UI.Bar.CanvasRecovery;
-					const char* key = labels.Failed;
-					switch (ppt.recovery.kind)
-					{
-					case PptRecovery::Kind::Conflict: key = labels.Conflict; break;
-					case PptRecovery::Kind::ReadFailed: key = labels.ReadFailed; break;
-					case PptRecovery::Kind::PresentFailed: key = labels.PresentFailed; break;
-					case PptRecovery::Kind::Recovering: key = labels.Recovering; break;
-					default: break;
-					}
-					content.currentPage = IW(key);
-					content.totalPage = IW(ppt.recovery.retryAvailable ? labels.Retry : labels.Wait);
-					content.interactive[1] = ppt.recovery.retryAvailable;
-				}
 			}
 			content.previousLabel=IW(I18nKey.UI.Bar.MainButtons.WhiteboardPreviousLabel);
 			content.nextLabel=IW(content.whiteboard&&whiteboard.nextIsAdd?I18nKey.UI.Bar.MainButtons.WhiteboardAddPageLabel:
@@ -1033,6 +1104,17 @@ namespace Inkeys::UI::PageControl
 			content.patternLabels={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBlankLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardDotsLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardGridLabel)};
 			content.sectionLabels={IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundColorLabel),IW(I18nKey.UI.Bar.MainButtons.WhiteboardBackgroundStyleLabel)};
 			content.backgroundRgb=whiteboard.backgroundRgb;content.pattern=whiteboard.pattern;
+			{ std::scoped_lock lock(snapshotMutex);
+			  if(debugNavigationDelay.Matches(ppt,whiteboard)) {
+				content.interactive={false,false,false};
+				if(content.whiteboard){
+content.switching=true; // 页码保持不变，等待文字由AssignLoadState统一给出。
+				}else{
+					content.navigationWaitingPrevious=!debugNavigationDelay.next;
+					content.navigationWaitingNext=debugNavigationDelay.next;
+				}
+} }
+			AssignLoadState(content,ppt);
 			return content;
 		}
 
@@ -1345,7 +1427,7 @@ namespace Inkeys::UI::PageControl
 				RetargetBounds(state.bounds,target.logicalBounds,target.scale,animateBounds,now);
 			}
 			AdvanceBounds(state.bounds,now);
-			state.scene.SetLoadingIndicatorVisible(state.targetVisible&&visualMode==WorkspaceMode::PptCompact);
+			state.scene.SetLoadingIndicatorVisible(state.targetVisible&&visualMode!=WorkspaceMode::Hidden);
 			(void)state.scene.Advance(now);
 			if(loadingDeadlines[index].Publish(state.scene.LoadingIndicatorDeadline()))Inkeys::UI::Bar::WakeInteractionWorker();
 			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,
@@ -2195,6 +2277,22 @@ namespace Inkeys::UI::PageControl
 		};
 		thread_local HiddenWindowPerformanceTiming* hiddenWindowPerformanceTiming = nullptr;
 
+		void ReleaseHiddenSurfaceResources(SurfaceState& state, bool hiddenCommitted)
+		{
+			if (!hiddenCommitted || state.targetVisible || state.bounds.active || state.scene.AnimationActive()
+				|| state.pointerActive || state.dragging || state.dragPending || state.pressedCaptureTicket) return;
+			// 设备资源可能已被失败路径释放，但 backing 水位仍在；两者都空才无需处理。
+			const bool deviceHeld = state.scene.DeviceContext() != nullptr;
+			if (!deviceHeld && state.backingCapacity.cx == 1 && state.backingCapacity.cy == 1) return;
+			// 原生命令与输入提交仍保留，只归还已隐藏客户端的像素与图形缓存。
+			if (deviceHeld) state.scene.ReleaseDeviceResources();
+			state.backingCapacity = { 1, 1 };
+			state.committedPresentationReady = false;
+			state.committedBackingCapacity = {};
+			state.committedDeviceGeneration = 0;
+			state.forceFullPresentation = true;
+		}
+
 		struct NativeSurfaceFrame
 		{
 			Inkeys::Window::WindowCandidate candidate;
@@ -2348,6 +2446,11 @@ namespace Inkeys::UI::PageControl
 			const auto acknowledged = pending.snapshot.ppt;
 			const auto mask = pending.pptFrame ? static_cast<std::uint8_t>(1U << index) : std::uint8_t{};
 			pending.revision = 0;
+			if (!pending.shouldShow && !pending.keepAnimating)
+			{
+				receiptLease.Reset();
+				ReleaseHiddenSurfaceResources(state, true);
+			}
 			presentationLock.unlock(); renderLock.unlock(); receiptLease.Reset();
 			FlushCommittedDrag(DragPairIndex(index));
 			AcknowledgePage(acknowledged, mask);
@@ -2597,6 +2700,7 @@ namespace Inkeys::UI::PageControl
 				const bool inputChanged = !NativeFrameIdentityCurrent(inputFrame, renderSnapshot, frameContext,
 					*native, monitor, dpiScale, uiScale, frameDirectMoveRevision)
 					|| inputFrame.mode != state.configuredMode || inputFrame.shouldShow != shouldShow
+					|| inputFrame.inputLocked != state.inputLocked
 					|| !SameRect(inputFrame.presentation, presentation);
 				if (inputChanged) nativeInputBarrier[index].store(true, std::memory_order_release);
 				if (shouldShow)
@@ -2679,9 +2783,12 @@ namespace Inkeys::UI::PageControl
 				&& NativeFrameIdentityCurrent(confirmed, renderSnapshot, frameContext, *native,
 					monitor, dpiScale, uiScale, frameDirectMoveRevision)
 				&& confirmed.shouldShow == shouldShow && native->visible == shouldShow
+				&& confirmed.inputLocked == state.inputLocked
 				&& (!shouldShow || (!native->iconic && SameRect(native->bounds, presentation)
 					&& SameRect(confirmed.presentation, presentation))))
 			{
+				// Hide 确认时尚未结束的捕获，可在终态后的已确认隐藏快路补做退休。
+				ReleaseHiddenSurfaceResources(state, !shouldShow && !keepAnimating);
 				if (!keepAnimating) state.scene.SuspendForIdle(frameContext.frameTime);
 				return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
 			}
@@ -2727,6 +2834,25 @@ namespace Inkeys::UI::PageControl
 		}
 
         std::chrono::steady_clock::time_point PageControlLongPressTick(std::chrono::steady_clock::time_point,void*);
+        std::chrono::steady_clock::time_point DebugNavigationTick(std::chrono::steady_clock::time_point now,std::size_t index)
+        {
+            DebugNavigationDelay pending; bool dispatch=false;
+            const auto lifecycle=inputLifecycle.load(std::memory_order_acquire);
+            const auto input=InputSnapshot(index);
+            { std::scoped_lock lock(snapshotMutex);
+              if(!debugNavigationDelay.Pending()||debugNavigationDelay.surface!=index)return std::chrono::steady_clock::time_point::max();
+              pending=debugNavigationDelay;
+              const bool valid=pending.Matches(publishedPpt,publishedWhiteboard)&&input.visible
+                  && input.mode==(pending.whiteboard?WorkspaceMode::WhiteboardExpanded:WorkspaceMode::PptCompact);
+              if(valid&&now<pending.deadline)return pending.deadline;
+              dispatch=valid;debugNavigationDelay={};publishedRevision.fetch_add(1,std::memory_order_release);
+            }
+            RequestAll();
+            // 退休观察状态后重新走原准入检查；旧页、旧场次和隐藏控件不得迟到翻页。
+            if(dispatch&&initialized.load(std::memory_order_acquire)
+                && lifecycle==inputLifecycle.load(std::memory_order_acquire))InvokeDirection(index,pending.next,input.mode,false);
+            return std::chrono::steady_clock::time_point::max();
+        }
         std::chrono::steady_clock::time_point PageControlInputTick(std::chrono::steady_clock::time_point now,void* context)
         {
             const auto* registration=static_cast<InputRegistrationContext*>(context);
@@ -2736,7 +2862,7 @@ namespace Inkeys::UI::PageControl
             bool due=false;const auto deadline=loadingDeadlines[registration->index].Consume(now,due);
             bool idleDue=false;const auto idleDeadline=idleDeadlines[registration->index].Consume(now,idleDue);
             if(due||idleDue)RequestSurface(registration->index); // 只唤醒，Scene按最新loading/session重新判定。
-            return (std::min)({deadline,idleDeadline,PageControlLongPressTick(now,context)});
+            return (std::min)({deadline,idleDeadline,DebugNavigationTick(now,registration->index),PageControlLongPressTick(now,context)});
         }
 		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context);
 		void PageControlInputEvent(const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context)
@@ -3372,6 +3498,8 @@ namespace Inkeys::UI::PageControl
 			auto& client = pointerClients[index];
 			PointerInput::Touch::DrainCancels();
 			if(message==PointerInput::Touch::CancelWakeMessage)return 0;
+			// 隐藏边沿立即退休观察；不能等 tick，否则隐藏后重现会复活旧点击。
+			if(message==WM_DESTROY||(message==WM_SHOWWINDOW&&!wParam))RetireDebugNavigationForSurface(index);
 			if(message==WM_CANCELMODE||message==WM_DESTROY||(message==WM_SHOWWINDOW&&!wParam))PointerInput::Touch::CancelWindow(hwnd);
 			if(message==WM_CAPTURECHANGED&&!releasingPageCapture)PointerInput::Touch::CancelTargetWindow(hwnd);
 			if(message==WM_DESTROY)PointerInput::Touch::RetireTarget(hwnd);
@@ -3614,7 +3742,7 @@ namespace Inkeys::UI::PageControl
 				if(!state.scene.IsInvalidated())state.forceFullPresentation=true;
 				fixture->last=snapshot;fixture->configured=true;
 			}
-			state.scene.SetLoadingIndicatorVisible(mode==WorkspaceMode::PptCompact);
+			state.scene.SetLoadingIndicatorVisible(mode!=WorkspaceMode::Hidden);
 			(void)state.scene.Advance(frame.frameTime);
 			const RECT presentation=state.scene.PresentationBounds();
 			const SIZE size{presentation.right-presentation.left,presentation.bottom-presentation.top};
@@ -3651,6 +3779,61 @@ namespace Inkeys::UI::PageControl
             Check(PageControlInputTick(now,&registration)==due,"real PageControl input tick preserves visual deadline with no pointer or long press");
             loadingDeadlines[0].ticks.store(saved);idleDeadlines[0].ticks.store(savedIdle);surfaces[0].pressStarted=press;surfaces[0].lastRepeat=repeat;initialized.store(previous);
         }
+		{
+			// 无窗口驱动生产延迟入口与截止，验证不写业务状态、不堆积和旧会话取消。
+			const auto savedPpt=publishedPpt;const auto savedBoard=publishedWhiteboard;
+			const auto savedDelay=debugNavigationDelay;const auto savedInput=InputSnapshot(0);
+			const auto savedCallbacks=pptCallbacks;const auto savedRevision=publishedRevision.load();
+			const bool savedInitialized=initialized.exchange(true);
+			const bool savedOption=Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations;
+			unsigned calls=0;pptCallbacks.nextPage=[&]{++calls;};
+			publishedPpt={};publishedPpt.presentationVisible=publishedPpt.presentationActive=true;
+			publishedPpt.currentPage=2;publishedPpt.totalPage=5;publishedPpt.layout.session=881;
+			publishedWhiteboard={};debugNavigationDelay={};
+			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,881);}
+			Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations=false;
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			Check(calls==1&&!debugNavigationDelay.Pending(),"disabled delay dispatches immediately");
+			Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations=true;
+			const auto start=std::chrono::steady_clock::now();InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			const auto due=debugNavigationDelay.deadline;
+			Check(calls==1&&due>=start+std::chrono::seconds(10),"click stages ten seconds before real business request");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			Check(debugNavigationDelay.deadline==due,"second click does not stack or extend observation");
+			const auto content=BuildPageContent(0,WorkspaceMode::PptCompact,publishedPpt,publishedWhiteboard);
+			Check(content.navigationWaitingNext&&!content.interactive[2]&&!publishedPpt.navigationWaiting.waiting,
+				"observation affects page surface only, not real navigation state");
+			Check(DebugNavigationTick(due-std::chrono::milliseconds(1),0)==due&&calls==1,"no dispatch before deadline");
+			(void)DebugNavigationTick(due,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"deadline dispatches once without restarting delay");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);++publishedPpt.layout.session;
+			(void)DebugNavigationTick(debugNavigationDelay.deadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"new PPT session cancels deferred click");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);++publishedPpt.currentPage;
+			(void)DebugNavigationTick(debugNavigationDelay.deadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"external page change cancels deferred click");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);++publishedPpt.currentPage;
+			RetireStaleDebugNavigationLocked();--publishedPpt.currentPage;
+			Check(!debugNavigationDelay.Pending(),"page departure and return cannot revive retired observation");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			const auto hiddenDeadline=debugNavigationDelay.deadline;
+			RetireDebugNavigationForSurface(0); // 模拟原生隐藏边沿，重现不恢复旧意图。
+			(void)DebugNavigationTick(hiddenDeadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"hide then show before tick cannot revive delayed click");
+			InvokeDirection(0,true,WorkspaceMode::PptCompact);
+			initialized.store(false);(void)DebugNavigationTick(debugNavigationDelay.deadline,0);
+			Check(calls==2&&!debugNavigationDelay.Pending(),"shutdown blocks already staged deadline dispatch");
+			initialized.store(true);
+			WhiteboardState board;board.active=true;board.generation=7;board.currentPage=3;
+			DebugNavigationDelay wb{due,0,true,true,7,0,3};
+			Check(wb.Matches(publishedPpt,board),"whiteboard delay binds page generation");
+			++board.generation;Check(!wb.Matches(publishedPpt,board),"whiteboard re-entry retires old observation");
+			publishedPpt=savedPpt;publishedWhiteboard=savedBoard;debugNavigationDelay=savedDelay;
+			pptCallbacks=savedCallbacks;publishedRevision.store(savedRevision);
+			initialized.store(savedInitialized);
+			Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations=savedOption;
+			{std::scoped_lock lock(inputSnapshotMutex);inputPresentations[0]=savedInput;}
+		}
 		constexpr std::array<std::uint32_t,6> expectedColors{0x123B32,0x172A46,0x000000,0xFFFFFF,0xE5E7EB,0xF5F1E6};
 		Check(WhiteboardVisual::ThemeColors==expectedColors,"palette row order is green, navy, black then white, light gray, ivory");
 		{
@@ -3687,9 +3870,10 @@ namespace Inkeys::UI::PageControl
 			projected.numericPageOverride=true;projected.displayedCurrentPage=3;projected.displayedTotalPage=56;
 			projected.recovery.kind=PptRecovery::Kind::Recovering;
 			const auto oldDigits=BuildPageContent(0,WorkspaceMode::PptCompact,projected,page);
-			Check(oldDigits.currentPage==L"3"&&oldDigits.totalPage==L"/56"&&oldDigits.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric
-				&&!oldDigits.interactive[1]&&projected.currentPage==4&&projected.targetRevision==0,
-				"recovering keeps stable display digits separate from future control and acknowledgement identity");
+Check(oldDigits.currentPage==L"3"&&oldDigits.totalPage==L"/56"&&oldDigits.statusPrimary.empty()
+&&oldDigits.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&oldDigits.statusSecondary==IW(I18nKey.UI.Bar.CanvasRecovery.Recovering)
+&&!oldDigits.interactive[0]&&!oldDigits.interactive[1]&&!oldDigits.interactive[2]&&projected.currentPage==4&&projected.targetRevision==0,
+"recovering keeps stable display digits separate from future control and acknowledgement identity, and gates the Recovering word");
 			projected.recovery={};
 			Check(BuildPageContent(0,WorkspaceMode::PptCompact,projected,page).currentPage==L"3",
 				"a recovery clear before InkReady cannot reveal the future Pending page");
@@ -3704,15 +3888,36 @@ namespace Inkeys::UI::PageControl
 			page.switching=true;
 			const auto recovery=BuildPageContent(0,WorkspaceMode::PptCompact,show,page);
 			const auto loading=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,show,page);
-			Check(normal.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric
-				&&board.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric
-				&&recovery.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric
-				&&recovery.navigationWaitingPrevious&&recovery.navigationWaitingNext&&!recovery.interactive[1]
-				&&loading.kind==Inkeys::UI::Bar::BarPageContentKind::Status,
-				"recovering progress stays numeric and noninteractive while whiteboard loading retains status text");
-			Check(loading.currentPage==IW(I18nKey.UI.Bar.CanvasRecovery.Loading)
-				&&loading.totalPage==IW(I18nKey.UI.Bar.CanvasRecovery.Wait),
-				"whiteboard switching projects localized Loading and Wait into both shared page slots");
+Check(normal.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric&&normal.loadState==Inkeys::UI::Bar::BarPageLoadState::None
+&&board.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric&&board.loadState==Inkeys::UI::Bar::BarPageLoadState::None
+&&recovery.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&recovery.statusSecondary==IW(I18nKey.UI.Bar.CanvasRecovery.Recovering)
+&&recovery.navigationWaitingPrevious&&recovery.navigationWaitingNext&&!recovery.interactive[1],
+"recovering progress is a locked loading state whose gated word is Recovering");
+Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.statusPrimary.empty()
+&&loading.currentPage==std::to_wstring(page.currentPage)&&loading.totalPage==L"/"+std::to_wstring(page.totalPage)
+&&loading.statusSecondary==IW(I18nKey.UI.Bar.CanvasRecovery.Wait),
+"whiteboard switching keeps the current page and gates Wait into the total slot");
+{
+	// 页码槽状态表：翻页等待/恢复/可重试失败/终态失败。
+	using Inkeys::UI::Bar::BarPageLoadState;const auto& Labels=I18nKey.UI.Bar.CanvasRecovery;
+	auto base=show;base.recovery={};base.pagePreparing=false;base.navigationWaiting={7,11,PptNavigationDirection::Next,true};
+	base.layout.session=7;
+	const auto pptWait=BuildPageContent(0,WorkspaceMode::PptCompact,base,{});
+	Check(pptWait.loadState==BarPageLoadState::Loading&&pptWait.statusPrimary.empty()&&pptWait.statusSecondary==IW(Labels.Wait),"PPT page-turn wait gates Wait into the total slot");
+	struct Row{PptRecovery::Kind kind;const char* word;};
+	for(const auto row:{Row{PptRecovery::Kind::Conflict,Labels.Conflict},Row{PptRecovery::Kind::ReadFailed,Labels.ReadFailed},
+		Row{PptRecovery::Kind::PresentFailed,Labels.PresentFailed},Row{PptRecovery::Kind::Failed,Labels.Failed}}){
+		auto failed=base;failed.recovery.kind=row.kind;failed.recovery.retryAvailable=true;
+		const auto retry=BuildPageContent(0,WorkspaceMode::PptCompact,failed,{});
+		Check(retry.loadState==BarPageLoadState::RetryableFailed&&retry.statusPrimary==IW(row.word)&&retry.statusSecondary==IW(Labels.Retry)
+			&&!retry.interactive[0]&&retry.interactive[1]&&!retry.interactive[2],"retryable failure shows the reason and Retry, only the page button clickable");
+		failed.recovery.retryAvailable=false;
+		const auto final=BuildPageContent(0,WorkspaceMode::PptCompact,failed,{});
+		Check(final.loadState==BarPageLoadState::FinalFailed&&final.statusPrimary.empty()&&final.statusSecondary==IW(row.word)
+			&&final.currentPage==retry.currentPage&&!final.interactive[0]&&!final.interactive[1]&&!final.interactive[2],
+			"final failure keeps the page number, shows the reason on the right and locks every page control");
+	}
+}
 		}
 		{
 			Scene candidate;
@@ -3974,7 +4179,7 @@ namespace Inkeys::UI::PageControl
                 context.frameTime+=20ms;Check(callback(context)==FrameResult::Continue,"offscreen controller advances visible ring after threshold");
                 snapshot.ppt.presentationVisible=false;snapshot.ppt.presentationActive=false;context.frameTime+=20ms;Check(callback(context)==FrameResult::Idle,"offscreen hidden controller retires the spinner");
             }
-            // 短等待无像素，长等待的环只改变角标区；四面/三倍率/两个方向共用真实Scene。
+            // 短等待无任何像素变化；长等待的“Wait+变浅+环”按500ms门控出现。四面/三倍率/两个方向共用真实Scene。
             for(std::size_t index=0;index<4;++index)for(const float scale:{1.0F,1.5F,2.0F})
             for(const auto direction:{PptNavigationDirection::Previous,PptNavigationDirection::Next}){
                 auto frame=ppt;frame.currentPage=3;frame.layout.session=7;frame.navigationWaiting={};
@@ -3987,102 +4192,94 @@ namespace Inkeys::UI::PageControl
                 const auto plain=drawScene(partialScene,begin);(void)drawScene(fullScene,begin);
                 partialScene.CommitPresented();(void)partialScene.ConsumeDamage();
                 frame.navigationWaiting={7,11,direction,true};const auto loading=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
+                Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.statusSecondary==IW(I18nKey.UI.Bar.CanvasRecovery.Wait)
+                    &&loading.currentPage==normal.currentPage,"page-turn wait keeps the number and carries Wait for the gate");
                 partialScene.ConfigurePagination(loading);fullScene.ConfigurePagination(loading);
                 Check(drawScene(partialScene,begin,false)==plain,"ring delay begins without a pixel flash");(void)drawScene(fullScene,begin);
                 Check(partialScene.LoadingIndicatorDeadline()==begin+500ms&&!partialScene.LoadingIndicatorAnimationActive(),"delay uses an absolute deadline and can idle");
-                Check(drawScene(partialScene,begin+499ms)==plain,"loading shorter than 500ms remains invisible");
+                Check(drawScene(partialScene,begin+499ms)==plain,"loading shorter than 500ms changes no text, dim or ring pixel");
                 (void)drawScene(fullScene,begin+499ms);(void)drawScene(partialScene,begin+500ms);(void)drawScene(fullScene,begin+500ms);
                 Check(partialScene.LoadingIndicatorAnimationActive(),"threshold dt-zero frame keeps entering motion alive");
                 PageTestPixels ring;
-                for(int step=1;step<=12;++step){
+                for(int step=1;step<=40;++step){
                     const auto stamp=begin+500ms+step*20ms;
                     ring=drawScene(partialScene,stamp,false);Check(ring==drawScene(fullScene,stamp),"animated ring partial damage equals full redraw");
                     partialScene.CommitPresented();(void)partialScene.ConsumeDamage();
                 }
+                const auto settled=begin+500ms+40*20ms;
                 Check(ring!=plain&&!partialScene.AnimationActive()&&partialScene.LoadingIndicatorAnimationActive(),"ring renders and rotates without becoming layout or exit animation");
                 const auto geometry=partialScene.Layout();const auto page=geometry.buttons[PageWidget-1].localPixels;
-                constexpr auto reach=Inkeys::UI::Bar::PageLoadingStyle::OuterRadius+Inkeys::UI::Bar::PageLoadingStyle::AntialiasOutset;
-                const auto centerX=page.right-Inkeys::UI::Bar::PageLoadingStyle::FromRight*scale;
-                const auto centerY=page.top+Inkeys::UI::Bar::PageLoadingStyle::FromTop*scale;
-                const RECT badge{static_cast<LONG>(std::floor(centerX-reach*scale)),static_cast<LONG>(std::floor(centerY-reach*scale)),
-                    static_cast<LONG>(std::ceil(centerX+reach*scale)),static_cast<LONG>(std::ceil(centerY+reach*scale))};
-                const auto region=[&](const PageTestPixels& pixels,RECT bounds,bool omit=false){
+                // 终态失败同样变浅但没有环：作为“只有环/Wait文字不同”的参照。
+                auto failedFrame=frame;failedFrame.navigationWaiting={};failedFrame.recovery.kind=PptRecovery::Kind::Failed;failedFrame.recovery.retryAvailable=false;
+                Scene dimOnlyScene;dimOnlyScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,failedFrame,{}));
+                dimOnlyScene.SetBounds({0,0,width,height},scale);dimOnlyScene.SetOpacity(1,0);(void)drawScene(dimOnlyScene,begin);
+                PageTestPixels dimOnly;for(int step=1;step<=40;++step)dimOnly=drawScene(dimOnlyScene,begin+500ms+step*20ms);
+                const auto region=[&](const PageTestPixels& pixels,RECT bounds,bool outside=false){
                     std::vector<BYTE> bytes;if(pixels.bytes.size()!=static_cast<std::size_t>(pixels.width)*pixels.height*4)return bytes;
-                    for(LONG y=bounds.top;y<bounds.bottom;++y)for(LONG x=bounds.left;x<bounds.right;++x){
-                        if(omit&&x>=badge.left&&x<badge.right&&y>=badge.top&&y<badge.bottom)continue;
-                        const auto row=y-pixels.bounds.top,col=x-pixels.bounds.left;
-                        if(row<0||col<0||row>=static_cast<LONG>(pixels.height)||col>=static_cast<LONG>(pixels.width))continue;
+                    for(UINT row=0;row<pixels.height;++row)for(UINT col=0;col<pixels.width;++col){
+                        const LONG x=pixels.bounds.left+static_cast<LONG>(col),y=pixels.bounds.top+static_cast<LONG>(row);
+                        const bool inside=x>=bounds.left&&x<bounds.right&&y>=bounds.top&&y<bounds.bottom;
+                        if(inside==outside)continue;
                         const auto offset=(static_cast<std::size_t>(row)*pixels.width+col)*4;bytes.insert(bytes.end(),pixels.bytes.begin()+offset,pixels.bytes.begin()+offset+4);
                     }return bytes;
                 };
-                Check(region(ring,page,true)==region(plain,page,true)&&region(ring,badge)!=region(plain,badge),"small ring stays in the page corner without touching numeric glyphs");
-                for(const auto id:{PreviousWidget,NextWidget})Check(region(ring,geometry.buttons[id-1].localPixels)==region(plain,geometry.buttons[id-1].localPixels),"ring never paints on direction arrows");
-                const auto rotated=drawScene(partialScene,begin+800ms);Check(rotated!=ring,"rotation changes actual foreground arc pixels");
-                partialScene.ReleaseDeviceResources();const auto restored=drawScene(partialScene,begin+800ms);Check(restored==rotated,"device resource rebuild preserves waiting phase and arc pixels");
+                Check(region(ring,page,true)==region(dimOnly,page,true),"ring and Wait stay inside the page button; everything else matches the dim-only reference");
+                Check(region(ring,page)!=region(dimOnly,page)&&region(ring,page)!=region(plain,page),"the page button itself carries the ring");
+                for(const auto id:{PreviousWidget,NextWidget})Check(region(ring,geometry.buttons[id-1].localPixels)!=region(plain,geometry.buttons[id-1].localPixels)
+                    &&region(ring,geometry.buttons[id-1].localPixels)==region(dimOnly,geometry.buttons[id-1].localPixels),"direction arrows dim like every other locked control but never get a ring");
+                const auto rotated=drawScene(partialScene,settled+200ms);Check(rotated!=ring,"rotation changes actual foreground arc pixels");
+                partialScene.ReleaseDeviceResources();const auto restored=drawScene(partialScene,settled+200ms);Check(restored==rotated,"device resource rebuild preserves waiting phase and arc pixels");
                 // 真实Scene同帧看到false→true：新段重等500ms，旧环仍从当前值退场，不能冻结或沿用旧门槛。
-                (void)drawScene(fullScene,begin+800ms);fullScene.ConfigurePagination(normal);fullScene.ConfigurePagination(loading);
-                Check(drawScene(fullScene,begin+800ms)==rotated&&fullScene.LoadingIndicatorDeadline()==begin+1300ms,
-                    "same-frame restart preserves current ring pixels and starts a fresh 500ms gate");
-                for(int step=1;step<=10;++step)(void)drawScene(fullScene,begin+800ms+step*20ms,false);
-                Check(drawScene(fullScene,begin+1000ms)==plain&&!fullScene.LoadingIndicatorAnimationActive()
-                    &&fullScene.LoadingIndicatorDeadline()==begin+1300ms,
+                (void)drawScene(fullScene,settled+200ms);fullScene.ConfigurePagination(normal);fullScene.ConfigurePagination(loading);
+                (void)drawScene(fullScene,settled+200ms);
+                Check(fullScene.LoadingIndicatorDeadline()==settled+700ms&&fullScene.LoadingIndicatorAnimationActive(),
+                    "same-frame restart starts a fresh 500ms gate while the old ring still fades out");
+                for(int step=1;step<=10;++step)(void)drawScene(fullScene,settled+200ms+step*20ms,false);
+                Check(!fullScene.LoadingIndicatorAnimationActive()&&fullScene.LoadingIndicatorDeadline()==settled+700ms,
                     "old ring fade completes while the restarted loading segment stays independently delayed");
-                partialScene.ConfigurePagination(normal);(void)drawScene(partialScene,begin+800ms);
-                for(int step=1;step<=10;++step)(void)drawScene(partialScene,begin+800ms+step*20ms,false);
-                Check(drawScene(partialScene,begin+1000ms)==plain&&!partialScene.LoadingIndicatorAnimationActive(),"exit clears final ring pixels and becomes idle");
+                partialScene.ConfigurePagination(normal);const auto exitBegin=settled+400ms;(void)drawScene(partialScene,exitBegin);
+                for(int step=1;step<=60;++step)(void)drawScene(partialScene,exitBegin+step*20ms,false);
+                Check(drawScene(partialScene,exitBegin+1200ms)==plain&&!partialScene.LoadingIndicatorAnimationActive()&&!partialScene.AnimationActive(),
+                    "exit restores the plain number, undimmed controls and becomes idle");
                 // 同场未来控制页不得影响恢复中的已就绪数字；ready仍通过原mode/ACK链。
+                const auto later=exitBegin+3s;
                 frame.navigationWaiting={};frame.pagePreparing=true;frame.currentPage=4;frame.targetRevision=0;
                 frame.numericPageOverride=true;frame.displayedCurrentPage=3;frame.displayedTotalPage=frame.totalPage;frame.recovery.kind=PptRecovery::Kind::Recovering;
                 const auto preparing=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
-                Check(preparing.currentPage==normal.currentPage&&preparing.kind==Inkeys::UI::Bar::BarPageContentKind::Numeric&&!preparing.interactive[1],"loading ring keeps stable digits and recovery interaction semantics");
-                partialScene.ConfigurePagination(preparing);(void)drawScene(partialScene,begin+2s);
-                const auto stablePreparing=drawScene(partialScene,begin+2s);
+                Check(preparing.currentPage==normal.currentPage&&preparing.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading
+                    &&preparing.statusSecondary==IW(I18nKey.UI.Bar.CanvasRecovery.Recovering)&&!preparing.interactive[1],"recovering keeps stable digits, locks controls and gates the Recovering word");
+                partialScene.ConfigurePagination(preparing);(void)drawScene(partialScene,later);
+                const auto stablePreparing=drawScene(partialScene,later);
                 frame.recovery={};partialScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));
-                Check(drawScene(partialScene,begin+2s)==stablePreparing,"None before InkReady retains the stable numeric override");
+                Check(drawScene(partialScene,later)==stablePreparing,"None before InkReady retains the stable numeric override");
                 frame.pagePreparing=false;frame.numericPageOverride=false;
                 const auto ready=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
-                partialScene.ConfigurePagination(ready);const auto readyPixels=drawScene(partialScene,begin+2100ms);
+                partialScene.ConfigurePagination(ready);const auto readyPixels=drawScene(partialScene,later+100ms);
                 Scene readyReference;readyReference.ConfigurePagination(ready);readyReference.SetBounds({0,0,width,height},scale);readyReference.SetOpacity(1,0);
-                Check(readyPixels==drawScene(readyReference,begin+2100ms),"ready numbers replace stable display immediately without a loading-content transition");
+                Check(readyPixels==drawScene(readyReference,later+100ms),"ready numbers replace stable display immediately without a loading-content transition");
                 partialScene.SetLoadingIndicatorVisible(false);Check(partialScene.LoadingIndicatorDeadline()==std::chrono::steady_clock::time_point::max()&&!partialScene.LoadingIndicatorAnimationActive(),"hidden surface retires ring demand and deadline");
-                // 禁动画仍等待500ms；最大数字的实际像素不应被环触及。
+                // 禁动画仍等待500ms；静态环与Wait文字都只落在页码按钮内。
                 BarUiAnimationEnabled=false;frame.navigationWaiting={};frame.pagePreparing=false;frame.numericPageOverride=false;frame.recovery={};
                 frame.currentPage=frame.totalPage=index<2?9999:999;
                 const auto maximum=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
                 Scene maxScene;maxScene.ConfigurePagination(maximum);maxScene.SetBounds({0,0,width,height},scale);maxScene.SetOpacity(1,0);
-                const auto maxPlain=drawScene(maxScene,begin+4s);frame.pagePreparing=true;
-                maxScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));(void)drawScene(maxScene,begin+4s);
-                Check(drawScene(maxScene,begin+4499ms)==maxPlain,"disabled animation never bypasses the loading threshold");
-                const auto maxRing=drawScene(maxScene,begin+4500ms);
-                Check(region(maxPlain,page,true)==region(maxRing,page,true)&&region(maxPlain,badge)!=region(maxRing,badge)
-                    &&!maxScene.LoadingIndicatorAnimationActive(),"static themed ring fits maximum numeric slots and idles");
-                auto emptyNumbers=maximum;emptyNumbers.currentPage=L"";emptyNumbers.totalPage=L"";
-                Scene emptyScene;emptyScene.ConfigurePagination(emptyNumbers);emptyScene.SetBounds({0,0,width,height},scale);emptyScene.SetOpacity(1,0);
-                const auto blank=drawScene(emptyScene,begin+4500ms);
-                const auto plainGlyphs=region(maxPlain,page),blankGlyphs=region(blank,page),ringGlyphs=region(maxRing,page);
-                const auto validImage=[](const PageTestPixels& pixels){
-                    if(!pixels.width||!pixels.height||pixels.width>(std::numeric_limits<std::size_t>::max)()/4/pixels.height)return false;
-                    return static_cast<std::int64_t>(pixels.bounds.right)-pixels.bounds.left==pixels.width
-                        &&static_cast<std::int64_t>(pixels.bounds.bottom)-pixels.bounds.top==pixels.height
-                        &&pixels.bytes.size()==static_cast<std::size_t>(pixels.width)*pixels.height*4;
-                };
-                // 空图或未画出数字不能作为“不遮字”的证据；三幅图须是同尺寸完整像素，且确有字形ink。
-                bool glyphsUnchanged=validImage(maxPlain)&&validImage(blank)&&validImage(maxRing)
-                    &&SameRect(maxPlain.bounds,blank.bounds)&&SameRect(maxPlain.bounds,maxRing.bounds)
-                    &&!plainGlyphs.empty()&&plainGlyphs.size()==blankGlyphs.size()&&plainGlyphs.size()==ringGlyphs.size();
-                std::size_t inkPixels=0;
-                for(std::size_t i=0;glyphsUnchanged&&i+3<plainGlyphs.size();i+=4){
-                    bool ink=false;for(std::size_t c=0;c<4;++c)ink|=plainGlyphs[i+c]!=blankGlyphs[i+c];
-                    if(ink){++inkPixels;for(std::size_t c=0;c<4;++c)glyphsUnchanged&=plainGlyphs[i+c]==ringGlyphs[i+c];}
-                }
-                Check(glyphsUnchanged&&inkPixels>0,"larger progress ring never overwrites actual maximum-width numeric glyph pixels");
+                const auto maxBegin=later+4s;
+                const auto maxPlain=drawScene(maxScene,maxBegin);frame.pagePreparing=true;
+                maxScene.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,frame,{}));(void)drawScene(maxScene,maxBegin);
+                Check(drawScene(maxScene,maxBegin+499ms)==maxPlain,"disabled animation never bypasses the loading threshold");
+                const auto maxRing=drawScene(maxScene,maxBegin+500ms);
+                auto maxFailedFrame=frame;maxFailedFrame.pagePreparing=false;maxFailedFrame.recovery.kind=PptRecovery::Kind::Failed;maxFailedFrame.recovery.retryAvailable=false;
+                Scene maxDim;maxDim.ConfigurePagination(BuildPageContent(index,WorkspaceMode::PptCompact,maxFailedFrame,{}));maxDim.SetBounds({0,0,width,height},scale);maxDim.SetOpacity(1,0);
+                (void)drawScene(maxDim,maxBegin);const auto maxDimOnly=drawScene(maxDim,maxBegin+500ms);
+                Check(maxRing!=maxPlain&&region(maxRing,page,true)==region(maxDimOnly,page,true)&&region(maxRing,page)!=region(maxDimOnly,page)
+                    &&!maxScene.LoadingIndicatorAnimationActive(),"static themed ring fits maximum numeric slots, stays inside the page button and idles");
                 if(scale==2.0F){
-                    const auto pixels=region(maxRing,badge);
+                    const auto pixels=region(maxRing,page);
                     const auto containsColor=[&](COLORREF color){for(std::size_t i=0;i+3<pixels.size();i+=4)
                         if(pixels[i]==GetBValue(color)&&pixels[i+1]==GetGValue(color)&&pixels[i+2]==GetRValue(color)&&pixels[i+3]==255)return true;return false;};
-                    Check(containsColor(GetThemeColor(BarThemeColorEnum::TextPrimary)),"thin foreground retains the theme text color with the shared renderer");
+                    Check(containsColor(GetThemeColor(BarThemeColorEnum::IconPrimary)),"thin foreground uses the bright icon color with the shared renderer");
                 }
-                maxScene.ConfigurePagination(maximum);Check(drawScene(maxScene,begin+4500ms)==maxPlain,"disabled animation hides the ring immediately with clean pixels");
+                maxScene.ConfigurePagination(maximum);Check(drawScene(maxScene,maxBegin+500ms)==maxPlain,"disabled animation hides the ring immediately with clean pixels");
                 BarUiAnimationEnabled=true;
 
             }
@@ -4091,10 +4288,12 @@ namespace Inkeys::UI::PageControl
 			auto next=numeric;next.currentPage=L"8";next.totalPage=L"/29";
 			auto finalNumber=next;finalNumber.currentPage=L"9";finalNumber.totalPage=L"/30";
 			auto cancelledNumber=finalNumber;cancelledNumber.currentPage=L"10";cancelledNumber.totalPage=L"/31";
-			auto statusPpt=ppt;statusPpt.recovery.kind=PptRecovery::Kind::ReadFailed;statusPpt.recovery.retryAvailable=true;
+			auto statusPpt=ppt;statusPpt.layout.session=7;statusPpt.recovery.kind=PptRecovery::Kind::ReadFailed;statusPpt.recovery.retryAvailable=true;
 			const auto recovery=BuildPageContent(0,WorkspaceMode::PptCompact,statusPpt,{});
 			statusPpt.recovery.kind=PptRecovery::Kind::Conflict;
 			const auto interruptedRecovery=BuildPageContent(0,WorkspaceMode::PptCompact,statusPpt,{});
+			Check(recovery.loadState==Inkeys::UI::Bar::BarPageLoadState::RetryableFailed&&interruptedRecovery.loadState==Inkeys::UI::Bar::BarPageLoadState::RetryableFailed,
+				"status transition fixtures are retryable failures (no ring phase in the pixels)");
 			Scene scene;scene.ConfigurePagination(numeric);scene.SetBounds({0,0,240,80},1);scene.SetOpacity(1,0);
 			auto time=origin+30s;(void)drawScene(scene,time);
 			scene.ConfigurePagination(next);const auto immediate=drawScene(scene,time);const auto nextReference=reference(next,time);
@@ -4108,9 +4307,28 @@ namespace Inkeys::UI::PageControl
 				"ordinary whiteboard numeric updates also replace both shared text slots immediately");
 			Scene initialStatus;initialStatus.ConfigurePagination(recovery);initialStatus.SetBounds({0,0,240,80},1);initialStatus.SetOpacity(1,0);
 			Check(!initialStatus.AnimationActive(),"initial status Configure initializes both text slots without starting a content transition");
-			scene.ConfigurePagination(recovery);time+=20ms;(void)drawScene(scene,time);time+=20ms;
+			// 状态文字只在500ms门控到点后才开始过渡：先让Scene记下截止，再越过截止。
+			const auto enter=[&](Scene& target,const PageContent& content){
+				target.ConfigurePagination(content);(void)drawScene(target,time);time+=500ms;(void)drawScene(target,time);
+			};
+			// 参照场景走同一门控并充分稳定；其余按钮的变浅过渡不影响页码按钮自身，因此只比页码按钮区域。
+			const auto gatedReference=[&](const PageContent& content,std::chrono::steady_clock::time_point now,LONG width=240){
+				Scene ref;ref.ConfigurePagination(content);ref.SetBounds({0,0,width,80},1);ref.SetOpacity(1,0);
+				for(auto stamp=now-2s;stamp<now;stamp+=20ms)(void)drawScene(ref,stamp);
+				return drawScene(ref,now);
+			};
+			const auto pageOnly=[&](Scene& target,const PageTestPixels& pixels){
+				const auto rect=target.Layout().buttons[PageWidget-1].localPixels;std::vector<BYTE> bytes;
+				if(pixels.bytes.size()!=static_cast<std::size_t>(pixels.width)*pixels.height*4)return bytes;
+				for(LONG y=rect.top;y<rect.bottom;++y)for(LONG x=rect.left;x<rect.right;++x){
+					const LONG px=x-pixels.bounds.left,py=y-pixels.bounds.top;
+					if(px<0||py<0||static_cast<UINT>(px)>=pixels.width||static_cast<UINT>(py)>=pixels.height)continue;
+					const auto offset=(static_cast<std::size_t>(py)*pixels.width+px)*4;bytes.insert(bytes.end(),pixels.bytes.begin()+offset,pixels.bytes.begin()+offset+4);
+				}return bytes;
+			};
+			enter(scene,recovery);time+=20ms;(void)drawScene(scene,time);time+=20ms;
 			const auto beforeMiddle=drawScene(scene,time);
-			Check(beforeMiddle!=reference(recovery,time)&&scene.AnimationActive(),
+			Check(pageOnly(scene,beforeMiddle)!=pageOnly(scene,gatedReference(recovery,time))&&scene.AnimationActive(),
 				"status entry is still transitioning the outgoing slots before the shared midpoint");
 			scene.ConfigurePagination(recovery);const auto duplicate=drawScene(scene,time);
 			Check(duplicate==beforeMiddle&&scene.AnimationActive(),"an identical status target does not restart either content timeline");
@@ -4118,58 +4336,79 @@ namespace Inkeys::UI::PageControl
 			Check(scene.AnimationActive(),"status entry remains active after crossing the midpoint on the original timeline");
 			scene.ConfigurePagination(finalNumber);(void)drawScene(scene,time);
 			scene.ConfigurePagination(cancelledNumber);const auto cancelled=drawScene(scene,time);
-			Check(cancelled==reference(cancelledNumber,time),
+			Check(pageOnly(scene,cancelled)==pageOnly(scene,gatedReference(cancelledNumber,time)),
 				"the next numeric update immediately cancels an after-midpoint status exit without stale writes");
-			scene.ConfigurePagination(recovery);time+=20ms;(void)drawScene(scene,time);time+=20ms;(void)drawScene(scene,time);
+			enter(scene,recovery);time+=20ms;(void)drawScene(scene,time);time+=20ms;(void)drawScene(scene,time);
 			scene.ConfigurePagination(interruptedRecovery);
 			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
-			Check(drawScene(scene,time)==reference(interruptedRecovery,time)&&!scene.AnimationActive(),
-				"before-midpoint status-to-status interruption finishes on the replacement primary and secondary text");
+			{
+				const auto settledStatus=drawScene(scene,time);
+				Check(pageOnly(scene,settledStatus)==pageOnly(scene,gatedReference(interruptedRecovery,time))&&!scene.AnimationActive(),
+					"before-midpoint status-to-status interruption finishes on the replacement primary and secondary text");
+			}
 			scene.ConfigurePagination(finalNumber);
 			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
-			Check(drawScene(scene,time)==reference(finalNumber,time)&&!scene.AnimationActive(),
-				"status exit uses the interruptible transition and settles on the correct final numeric slots");
-			scene.ConfigurePagination(recovery);
+			{
+				const auto settledNumber=drawScene(scene,time);
+				Check(pageOnly(scene,settledNumber)==pageOnly(scene,gatedReference(finalNumber,time))&&!scene.AnimationActive(),
+					"status exit uses the interruptible transition and settles on the correct final numeric slots");
+			}
+			enter(scene,recovery);
 			for(int frame=0;frame<12;++frame){time+=20ms;(void)drawScene(scene,time);}
 			Check(scene.AnimationActive(),"after-midpoint status content remains interruptible before the original transition finishes");
 			scene.ConfigurePagination(interruptedRecovery);
 			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
-			Check(drawScene(scene,time)==reference(interruptedRecovery,time)&&!scene.AnimationActive(),
-				"after-midpoint status-to-status interruption finishes without restoring the replaced primary or secondary text");
+			{
+				const auto settledStatus=drawScene(scene,time);
+				Check(pageOnly(scene,settledStatus)==pageOnly(scene,gatedReference(interruptedRecovery,time))&&!scene.AnimationActive(),
+					"after-midpoint status-to-status interruption finishes without restoring the replaced primary or secondary text");
+			}
 			scene.ConfigurePagination(finalNumber);
 			for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(scene,time);}
-			Check(drawScene(scene,time)==reference(finalNumber,time)&&!scene.AnimationActive(),
-				"the interrupted status can still exit to stable numeric content");
-			BarUiAnimationEnabled=false;scene.ConfigurePagination(recovery);time+=20ms;
+			{
+				const auto settledNumber=drawScene(scene,time);
+				Check(pageOnly(scene,settledNumber)==pageOnly(scene,gatedReference(finalNumber,time))&&!scene.AnimationActive(),
+					"the interrupted status can still exit to stable numeric content");
+			}
+			BarUiAnimationEnabled=false;scene.ConfigurePagination(recovery);(void)drawScene(scene,time);time+=500ms;
 			const auto disabledEntry=drawScene(scene,time);
-			Check(disabledEntry==reference(recovery,time),"disabled animation enters a status with final pixels in the same frame");
+			Check(pageOnly(scene,disabledEntry)==pageOnly(scene,gatedReference(recovery,time)),"disabled animation enters a status with final pixels in the same frame as the gate");
 			scene.ConfigurePagination(cancelledNumber);time+=20ms;
 			const auto disabledExit=drawScene(scene,time);
-			Check(disabledExit==reference(cancelledNumber,time),"disabled animation exits a status to final numeric pixels in the same frame");
+			Check(pageOnly(scene,disabledExit)==pageOnly(scene,gatedReference(cancelledNumber,time)),"disabled animation exits a status to final numeric pixels in the same frame");
 			BarUiAnimationEnabled=true;
-			for(const wchar_t* language:{L"zh-CN",L"zh-TW",L"en-US"}){
+			// 所有语言：每个状态词都放得进真实DWrite槽位；白板翻页等待保持页码并在右槽放Wait。
+			for(const auto& locale:Inkeys::Localization::Locales){
+				const wchar_t* language=locale.code;
 				Check(I18n::load(1,L"JSON",language),"page status language loads from bundled resources");
+				const auto& labels=I18nKey.UI.Bar.CanvasRecovery;
 				WhiteboardState loadingState=wb;loadingState.switching=true;loadingState.menu=0;
 				const auto loading=BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,loadingState);
-				Check(loading.currentPage==IW(I18nKey.UI.Bar.CanvasRecovery.Loading)
-					&&loading.totalPage==IW(I18nKey.UI.Bar.CanvasRecovery.Wait),
-					"each language projects its localized Loading and Wait resources");
+				Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.statusPrimary.empty()
+					&&loading.currentPage==std::to_wstring(loadingState.currentPage)&&loading.statusSecondary==IW(labels.Wait),
+					"each language projects its localized Wait into the whiteboard total slot while keeping the page number");
 				Scene localized;localized.ConfigurePagination(loading);localized.SetBounds({0,0,305,80},1);localized.SetOpacity(1,0);
 				const auto metrics=Inkeys::UI::Bar::ResolveBarButtonVisualMetrics(Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo);
-				const auto primary=localized.Renderer().MeasureText(loading.currentPage,metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD);
-				const auto secondary=localized.Renderer().MeasureText(loading.totalPage,metrics.secondaryFontSizeDip,DWRITE_FONT_WEIGHT_NORMAL);
-				Check(primary.width>0&&primary.width<=metrics.primarySlotWidthDip+0.5F
-					&&secondary.width>0&&secondary.width<=metrics.secondarySlotWidthDip+0.5F,
-					"three-language status text fits the real primary and secondary DWrite slot widths");
-				PageTestPixels pixels;for(int frame=0;frame<30;++frame){time+=20ms;pixels=drawScene(localized,time);}
+				// 右槽可能出现：Wait/Recovering/Retry/原因词；左槽只在可重试失败时出现原因词。数字页码另有宽度预算，不在此测。
+				for(const char* key:{labels.Wait,labels.Recovering,labels.Retry,labels.Conflict,labels.ReadFailed,labels.PresentFailed,labels.Failed}){
+					const auto secondary=localized.Renderer().MeasureText(IW(key),metrics.secondaryFontSizeDip,DWRITE_FONT_WEIGHT_NORMAL);
+					Check(secondary.width>0&&secondary.width<=metrics.secondarySlotWidthDip+0.5F,(std::string("status word fits the secondary slot: ")+key+" / "+locale.codeUtf8).c_str());
+				}
+				// 左槽是大号页码字体，按钮主标签会按槽宽自动缩放；缩放后的字号不能小于名义字号的一半。
+				for(const char* key:{labels.Conflict,labels.ReadFailed,labels.PresentFailed,labels.Failed}){
+					const auto primary=localized.Renderer().MeasureText(IW(key),metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD);
+					Check(primary.width>0&&primary.width*0.5F<=metrics.primarySlotWidthDip,(std::string("failure reason stays readable after label fitting in the primary slot: ")+key+" / "+locale.codeUtf8).c_str());
+				}
+				if(std::wstring_view(language)!=L"zh-CN"&&std::wstring_view(language)!=L"zh-TW"&&std::wstring_view(language)!=L"en-US")continue;
+				PageTestPixels pixels;for(int frame=0;frame<70;++frame){time+=20ms;pixels=drawScene(localized,time);}
 				const auto page=localized.Layout().buttons[2].localPixels;std::array<unsigned,2> ink{};
-				for(LONG y=page.top+2;y<page.bottom-2;++y)for(LONG x=page.left+2;x<page.right-2;++x){
+				for(LONG y=page.top+6;y<page.bottom-6;++y)for(LONG x=page.left+6;x<page.right-6;++x){
 					const LONG px=x-pixels.bounds.left,py=y-pixels.bounds.top;
 					if(px<0||py<0||static_cast<UINT>(px)>=pixels.width||static_cast<UINT>(py)>=pixels.height)continue;
 					const auto* pixel=pixels.bytes.data()+(static_cast<std::size_t>(py)*pixels.width+px)*4;
 					if(pixel[0]>40&&pixel[1]>40&&pixel[2]>40)++ink[y<(page.top+page.bottom)/2?0:1];
 				}
-				Check(ink[0]>3&&ink[1]>3,"three-language Loading and Wait both draw final disabled-state pixels in their shared button slots");
+				Check(ink[0]>3&&ink[1]>3,"three-language number and Wait both draw final disabled-state pixels in their shared button slots");
 			}
 			Check(I18n::load(1,L"JSON",L"zh-CN"),"page status tests restore the default language");
 			Scene pointerScene;pointerScene.ConfigurePagination(numeric);pointerScene.SetBounds({0,0,240,80},1);pointerScene.SetOpacity(1,0);
@@ -5365,8 +5604,58 @@ namespace Inkeys::UI::PageControl
 			while(std::chrono::steady_clock::now()<end){Step();if(predicate())return true;std::this_thread::sleep_for(1ms);}return predicate();};
 		auto ppt=Snapshot().first;ppt.layout.bottomPairScale=1;ppt.layout.middlePairScale=1;ppt.layout.showBottomPair=true;ppt.layout.showMiddlePair=false;
 		ppt.presentationActive=ppt.presentationVisible=true;++ppt.publicationRevision;PublishPptState(ppt);PublishWhiteboardState({});
-		Check(Until([&]{return !InputSnapshot(0).locked&&!InputSnapshot(0).nativePending&&!InputSnapshot(1).nativePending
-			&&!nativeFrames[0].revision&&!nativeFrames[1].revision&&!surfaces[0].scene.AnimationActive()&&!surfaces[1].scene.AnimationActive();}),"pair fixture reaches fully acknowledged interactive idle frame");
+		const bool pairReady = Until([&]{return !InputSnapshot(0).locked&&!InputSnapshot(0).nativePending&&!InputSnapshot(1).nativePending
+			&&!nativeFrames[0].revision&&!nativeFrames[1].revision&&!surfaces[0].scene.AnimationActive()&&!surfaces[1].scene.AnimationActive();});
+		Check(pairReady,"pair fixture reaches fully acknowledged interactive idle frame");
+		if (!pairReady)
+			for (const std::size_t index : {0u, 1u})
+			{
+				const auto input = InputSnapshot(index);
+				auto& state = surfaces[index];
+				std::fprintf(stderr,"[PageDirectNative] ready-detail surface=%zu visible=%d locked=%d native_pending=%d state_visible=%d state_locked=%d bounds=%d layout=%d animation=%d fonts=%d native_revision=%llu input_publication=%llu published=%llu mode=%u session=%llu\n",
+					index,input.visible,input.locked,input.nativePending,state.targetVisible,state.inputLocked,state.bounds.active,
+					state.scene.Geometry().layoutAnimating,state.scene.AnimationActive(),state.scene.Renderer().FontAnimationsActive(),
+					static_cast<unsigned long long>(nativeFrames[index].revision),static_cast<unsigned long long>(input.nativePublicationRevision),
+					static_cast<unsigned long long>(publishedRevision.load()),static_cast<unsigned>(input.mode),static_cast<unsigned long long>(input.pptSession));
+			}
+		if (pairReady)
+		{
+			// 重放一个真实延迟到达的“过渡中仍锁定”候选，像素/几何与当前帧完全相同。
+			// 这能稳定覆盖没有新像素时的锁元数据交接，不靠额外业务revision刷新或直接解锁。
+			auto late = confirmedNativeFrames[0];
+			late.inputLocked = true;
+			late.pixels.pixelsSubmitted = false;
+			late.candidate.frameSerial = ++nextNativeFrameSerial[0];
+			late.sceneSerial = surfaces[0].scene.CapturePresentationCandidate();
+			late.revision = service.PublishCandidate(late.candidate);
+			Check(late.revision != 0, "late locked candidate enters the real native owner queue");
+			nativeInputBarrier[0].store(true, std::memory_order_release);
+			nativeFrames[0] = std::move(late);
+			bool lateConsumed = false;
+			const auto lateDeadline = std::chrono::steady_clock::now() + 5s;
+			while (!lateConsumed && std::chrono::steady_clock::now() < lateDeadline)
+			{
+				const auto actual = service.SurfaceSnapshot(Roles[0]);
+				const auto snapshot = SnapshotForRender();
+				const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
+				const FrameContext context{Inkeys::UI::RenderPipeline::GetDeviceEpoch(),
+					Inkeys::UI::RenderPipeline::GetSharedAssets(), std::chrono::steady_clock::now()};
+				if (actual) lateConsumed = ConsumeNativeSurfaceReceipt(0, snapshot, context, *actual,
+					monitor, dpiScale, uiScale, directMoveRevision.load(std::memory_order_acquire));
+				if (!lateConsumed) std::this_thread::sleep_for(1ms);
+			}
+			Check(lateConsumed && InputSnapshot(0).locked && !surfaces[0].inputLocked
+				&& !surfaces[0].scene.AnimationActive(), "real old-frame ACK preserves its locked metadata after visual settling");
+			const bool lockGate = gateOwner && gateOwner();
+			Check(lockGate, "lock-only reconciliation pauses the real native owner");
+			Step();
+			Check(nativeFrames[0].revision && !nativeFrames[0].inputLocked
+				&& InputSnapshot(0).locked && InputSnapshot(0).nativePending,
+				"lock-only change queues a new confirmation while old input remains barred");
+			if (releaseOwner) releaseOwner();
+			Check(Until([&] { return !InputSnapshot(0).locked && !InputSnapshot(0).nativePending
+				&& !nativeFrames[0].revision; }), "only the matching real owner ACK reopens settled input");
+		}
 		for(const bool failSecond:{false,true})
 		{
 			const auto pairCommitsBefore = hiddenTestNativePairCommits;
@@ -5704,6 +5993,17 @@ namespace Inkeys::UI::PageControl
 				// 隐藏后故意拒绝一侧 Show：像素已成功不等于 native 已完成。
 				ppt.presentationActive = false; ppt.presentationVisible = false; ++ppt.publicationRevision;
 				PublishPptState(ppt); Check(WaitFor([&] { return VisibleMask() == 0; }), "native-failure fixture first hides peers");
+				const auto hiddenTargetsReleased = [&]
+				{
+					std::scoped_lock renderLock(renderTransactionMutex);
+					for (auto& state : surfaces)
+						if (state.scene.Renderer().GetTargetBitmapSize().width != 0 || state.scene.DeviceContext()) return false;
+					return true;
+				};
+				Check(WaitFor(hiddenTargetsReleased), "real Hide receipts retire all hidden PageControl targets");
+				RequestAll();
+				std::this_thread::sleep_for(60ms);
+				Check(hiddenTargetsReleased(), "hidden control wakes do not rebuild retired backing");
 				hiddenTestBlockedNativeSurface.store(0);
 				const auto previousAck = acknowledged.load();
 				ppt.presentationActive = true; ppt.presentationVisible = true; ++ppt.targetRevision; ++ppt.publicationRevision;
@@ -5986,6 +6286,7 @@ namespace Inkeys::UI::PageControl
 		}
 		referenceCount.store(0, std::memory_order_release);
 		initialized.store(false, std::memory_order_release);
+		{ std::scoped_lock lock(snapshotMutex); debugNavigationDelay={}; }
 		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		for(auto& deadline:idleDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		whiteboardMenuEpoch.store(0,std::memory_order_release);
@@ -6113,6 +6414,7 @@ namespace Inkeys::UI::PageControl
 				|| publishedPpt.idleFadeMainBar != merged.idleFadeMainBar;
 			changed = !ArePptStatesEquivalent(publishedPpt, merged);
 			publishedPpt = merged;
+			RetireStaleDebugNavigationLocked();
 			if (changed) publishedRevision.fetch_add(1, std::memory_order_release);
 			if(changed)waitFields.flags|=WaitTrace::Changed;
 			waitFields.revision=publishedRevision.load(std::memory_order_relaxed);
@@ -6137,6 +6439,7 @@ namespace Inkeys::UI::PageControl
 			const bool menuIdentityChanged = next.menu != publishedWhiteboard.menu
 				|| next.currentPage != publishedWhiteboard.currentPage || next.generation != publishedWhiteboard.generation;
 			publishedWhiteboard = next;
+			RetireStaleDebugNavigationLocked();
 			if(menuIdentityChanged)PublishWhiteboardMenuIdentityLocked();
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}

@@ -576,6 +576,9 @@
     <ClInclude Include="Inkeys\Business\PptSession.h">
       <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Business\DesktopShortcut.h">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
     <ClInclude Include="PptSettingsPersistence.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -2105,6 +2108,12 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2208,6 +2217,9 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererDebugOverlay.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp">
@@ -2327,7 +2339,6 @@
     <None Include="src\UI\logo1.svg">
       <Filter>资源文件</Filter>
     </None>
-    </None>
     <None Include="src\UI\whiteboardLnk.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -2358,6 +2369,9 @@
     <None Include="src\UI\barPierce.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barCanvasDebug.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barHighlighter1.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -2380,6 +2394,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barAutoEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barPalmEraser.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barClean.svg">
@@ -2712,6 +2729,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barCloseSmall.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barCloseWhiteboard.svg">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

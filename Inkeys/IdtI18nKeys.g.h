@@ -107,6 +107,7 @@ inline constexpr struct I18nKeyRoot
                 const char* WhiteboardGridLabel = "UI/Bar/MainButtons/WhiteboardGridLabel";
                 const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
                 const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
+                const char* CanvasDebugLabel = "UI/Bar/MainButtons/CanvasDebugLabel";
                 const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
                 const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
@@ -166,7 +167,6 @@ inline constexpr struct I18nKeyRoot
                 const char* PresentFailed = "UI/Bar/CanvasRecovery/PresentFailed";
                 const char* Failed = "UI/Bar/CanvasRecovery/Failed";
                 const char* Recovering = "UI/Bar/CanvasRecovery/Recovering";
-                const char* Loading = "UI/Bar/CanvasRecovery/Loading";
                 const char* Retry = "UI/Bar/CanvasRecovery/Retry";
                 const char* Wait = "UI/Bar/CanvasRecovery/Wait";
                 const char* RetryCanvas = "UI/Bar/CanvasRecovery/RetryCanvas";
@@ -702,6 +702,11 @@ inline constexpr struct I18nKeyRoot
                     const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
                 } InjectedMouse{};
                 const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
+                const char* OpacitySection = "SettingsUI/Draw/Cursor/OpacitySection";
+                const char* PenOpacity = "SettingsUI/Draw/Cursor/PenOpacity";
+                const char* HighlightPenFillOpacity = "SettingsUI/Draw/Cursor/HighlightPenFillOpacity";
+                const char* DotOpacity = "SettingsUI/Draw/Cursor/DotOpacity";
+                const char* HighlightDotFillOpacity = "SettingsUI/Draw/Cursor/HighlightDotFillOpacity";
                 struct Node__SettingsUI__Draw__Cursor__DotHideOnContact
                 {
                     const char* N = "SettingsUI/Draw/Cursor/DotHideOnContact/N";
@@ -731,6 +736,8 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Draw__Touch__InterruptedStrokeReconnect
                 {
                     const char* N = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/N";
+                    const char* Touch = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/Touch";
+                    const char* PenTail = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/PenTail";
                     const char* E = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/E";
                 } InterruptedStrokeReconnect{};
             } Touch{};
@@ -804,6 +811,33 @@ inline constexpr struct I18nKeyRoot
                 } TouchArea{};
             } Eraser{};
         } Draw{};
+        struct Node__SettingsUI__Position
+        {
+            const char* N = "SettingsUI/Position/N";
+            const char* DesktopSection = "SettingsUI/Position/DesktopSection";
+            const char* PptSection = "SettingsUI/Position/PptSection";
+            const char* WhiteboardSection = "SettingsUI/Position/WhiteboardSection";
+            const char* StartupE = "SettingsUI/Position/StartupE";
+            const char* TypeBottomBar = "SettingsUI/Position/TypeBottomBar";
+            const char* TypeTopBar = "SettingsUI/Position/TypeTopBar";
+            const char* TypeFloating = "SettingsUI/Position/TypeFloating";
+            const char* PositionLabel = "SettingsUI/Position/PositionLabel";
+            const char* ExpandRight = "SettingsUI/Position/ExpandRight";
+            const char* ExpandLeft = "SettingsUI/Position/ExpandLeft";
+            const char* FloatBottomLeft = "SettingsUI/Position/FloatBottomLeft";
+            const char* FloatBottomRight = "SettingsUI/Position/FloatBottomRight";
+            const char* FloatBottomCenter = "SettingsUI/Position/FloatBottomCenter";
+            const char* PptAutoDock = "SettingsUI/Position/PptAutoDock";
+            const char* PptAutoDockE = "SettingsUI/Position/PptAutoDockE";
+            const char* WhiteboardAutoDock = "SettingsUI/Position/WhiteboardAutoDock";
+            const char* WhiteboardAutoDockE = "SettingsUI/Position/WhiteboardAutoDockE";
+            const char* StateBottom = "SettingsUI/Position/StateBottom";
+            const char* StateBottomFolded = "SettingsUI/Position/StateBottomFolded";
+            const char* StateFloating = "SettingsUI/Position/StateFloating";
+            const char* StateFloatingFolded = "SettingsUI/Position/StateFloatingFolded";
+            const char* MainButtonDirection = "SettingsUI/Position/MainButtonDirection";
+            const char* DirectionKeep = "SettingsUI/Position/DirectionKeep";
+        } Position{};
         struct Node__SettingsUI__Preset
         {
             const char* N = "SettingsUI/Preset/N";
@@ -1159,6 +1193,17 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/FrameRate/N";
                 const char* E = "SettingsUI/DebugSoftware/FrameRate/E";
             } FrameRate{};
+            const char* CanvasSection = "SettingsUI/DebugSoftware/CanvasSection";
+            struct Node__SettingsUI__DebugSoftware__CanvasDebug
+            {
+                const char* N = "SettingsUI/DebugSoftware/CanvasDebug/N";
+                const char* E = "SettingsUI/DebugSoftware/CanvasDebug/E";
+            } CanvasDebug{};
+            struct Node__SettingsUI__DebugSoftware__DelayWaiting
+            {
+                const char* N = "SettingsUI/DebugSoftware/DelayWaiting/N";
+                const char* E = "SettingsUI/DebugSoftware/DelayWaiting/E";
+            } DelayWaiting{};
             struct Node__SettingsUI__DebugSoftware__StatusIndicator
             {
                 const char* Section = "SettingsUI/DebugSoftware/StatusIndicator/Section";

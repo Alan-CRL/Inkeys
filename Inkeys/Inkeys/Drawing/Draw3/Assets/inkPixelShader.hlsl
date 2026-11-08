@@ -363,21 +363,25 @@ OperatorOutput main(PS_INPUT input)
             distanceToShape = type == 5 ? GetRectangleDist(local, input.p2)
                 : length(local) - min(input.p2.x, input.p2.y);
         float outerCoverage = CursorCoverage(distanceToShape);
-        float innerCoverage = CursorCoverage(distanceToShape + max(input.r1, 0.0));
+        float outerOutlineWidth = max(input.uv.y, 0.0);
+        float outlineOuterCoverage = CursorCoverage(distanceToShape + outerOutlineWidth);
+        float innerCoverage = CursorCoverage(distanceToShape + outerOutlineWidth + max(input.r1, 0.0));
         if (type == 5 && input.uv.x >= 2.0)
         {
             // 仅显式高亮矩形将左右内缩减半；旧光标和屏幕笔仍使用原内轮廓。
             float2 innerHalfSize = input.p2 - max(input.r1, 0.0) * float2(0.5, 1.0);
             innerCoverage = all(innerHalfSize > 0.0)
-                ? min(outerCoverage, CursorCoverage(GetRectangleDist(local, innerHalfSize))) : 0.0;
+                ? min(outlineOuterCoverage, CursorCoverage(GetRectangleDist(local, innerHalfSize))) : 0.0;
         }
-        float outlineCoverage = max(0.0, outerCoverage - innerCoverage);
+        float outerOutlineCoverage = max(0.0, outerCoverage - outlineOuterCoverage);
+        float outlineCoverage = max(0.0, outlineOuterCoverage - innerCoverage);
         float opacity = saturate(input.color.a);
-        // 填充保留工具 alpha；高亮边缘可单独不透明，旧调用上传 0 时保持原公式。
+        // 外黑边固定不透明；高亮白色边使用独立 opacity，填充保留配置 alpha。
         float edgeOpacity = input.uv.x > 0.0 ? saturate(input.uv.x - 1.0) : opacity;
+        float outerOutlineAlpha = outerOutlineCoverage;
         float outlineAlpha = outlineCoverage * edgeOpacity;
         float fillAlpha = innerCoverage * saturate(input.r2) * opacity;
-        float alpha = outlineAlpha + fillAlpha;
+        float alpha = outerOutlineAlpha + outlineAlpha + fillAlpha;
         float3 outlineColor = saturate(globalPadding);
         float3 rgb = 0.0;
         if (alpha > 0.0)

@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "网格",
         "WhiteboardUnsavedLabel": "部分页面未保存",
         "FreezeLabel": "定格",
+        "CanvasDebugLabel": "可视化调试",
         "EndPresentationLabel": "结束放映",
         "SettingsLabel": "设置",
         "MoreLabel": "更多"
@@ -162,8 +163,7 @@
         "ReadFailed": "读取",
         "PresentFailed": "显示",
         "Failed": "故障",
-        "Recovering": "恢复",
-        "Loading": "加载",
+        "Recovering": "恢复中",
         "Retry": "重试",
         "Wait": "稍候",
         "RetryCanvas": "重试画布",
@@ -699,6 +699,11 @@
           "Unavailable": "当前系统无法区分输入来源，该选项不可用。"
         },
         "FineControl": "精细控制",
+        "OpacitySection": "透明度",
+        "PenOpacity": "画笔光标透明度",
+        "HighlightPenFillOpacity": "画笔（高亮）光标填充透明度",
+        "DotOpacity": "小圆点光标透明度",
+        "HighlightDotFillOpacity": "小圆点（高亮）光标填充透明度",
         "DotHideOnContact":
         {
           "N": "小圆点光标落笔后自动隐藏",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "断触接续",
-          "E": "触摸书写时，若屏幕短暂丢失接触后又沿原方向恢复，将尝试把两段笔迹接成一笔，减少断线。关闭后，每次抬起都会结束当前笔画。"
+          "Touch": "触摸",
+          "PenTail": "笔（笔尾）",
+          "E": "书写时根据绘制意图判断断触问题并修正，同时可以接续绘制状态。"
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "不建议大屏设备启用。"
         }
       }
+    },
+    "Position":
+    {
+      "N": "位置",
+      "DesktopSection": "桌面场景",
+      "PptSection": "PPT 场景",
+      "WhiteboardSection": "白板场景",
+      "StartupE": "决定下次启动时主栏出现的位置。居中顶栏只是初始位置，不会吸附。",
+      "TypeBottomBar": "居中底栏",
+      "TypeTopBar": "居中顶栏",
+      "TypeFloating": "悬浮窗",
+      "PositionLabel": "位置",
+      "ExpandRight": "向右展开",
+      "ExpandLeft": "向左展开",
+      "FloatBottomLeft": "左下角",
+      "FloatBottomRight": "右下角",
+      "FloatBottomCenter": "底部居中",
+      "PptAutoDock": "开始放映时自动进入居中底栏模式",
+      "PptAutoDockE": "进入前的主栏处于已勾选的状态时，放映开始后自动变为居中底栏并展开；退出放映后还原。",
+      "WhiteboardAutoDock": "进入白板时自动进入居中底栏模式",
+      "WhiteboardAutoDockE": "进入前的主栏处于已勾选的状态时，进入白板后自动变为居中底栏并展开；退出白板后还原。",
+      "StateBottom": "底栏状态",
+      "StateBottomFolded": "底栏状态（折叠）",
+      "StateFloating": "悬浮窗状态",
+      "StateFloatingFolded": "悬浮窗状态（折叠）",
+      "MainButtonDirection": "主按钮方向",
+      "DirectionKeep": "不改变"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "显示帧率",
         "E": "每秒更新上一秒平均帧率和无等待帧率。"
+      },
+      "CanvasSection": "画布",
+      "CanvasDebug":
+      {
+        "N": "画布调试",
+        "E": "在画布底层显示帧率、硬件压力与输入点信息，并在主栏提供可视化调试按钮。"
+      },
+      "DelayWaiting":
+      {
+        "N": "为等待操作延迟",
+        "E": "延长加载等待，便于观察动画。"
       },
       "StatusIndicator":
       {

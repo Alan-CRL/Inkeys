@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "Grid",
         "WhiteboardUnsavedLabel": "Some pages are not saved",
         "FreezeLabel": "Freeze",
+        "CanvasDebugLabel": "Visual debug",
         "EndPresentationLabel": "End show",
         "SettingsLabel": "Settings",
         "MoreLabel": "More"
@@ -163,7 +164,6 @@
         "PresentFailed": "Display",
         "Failed": "Error",
         "Recovering": "Recovering",
-        "Loading": "Load",
         "Retry": "Retry",
         "Wait": "Wait",
         "RetryCanvas": "Retry canvas",
@@ -699,6 +699,11 @@
           "Unavailable": "This system cannot tell input sources apart, so this option is unavailable."
         },
         "FineControl": "Fine controls",
+        "OpacitySection": "Opacity",
+        "PenOpacity": "Pen cursor opacity",
+        "HighlightPenFillOpacity": "Pen (highlighted) cursor fill opacity",
+        "DotOpacity": "Small dot cursor opacity",
+        "HighlightDotFillOpacity": "Small dot (highlighted) cursor fill opacity",
         "DotHideOnContact":
         {
           "N": "Automatically hide the small dot cursor on contact",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconnect interrupted strokes",
-          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
+          "Touch": "Touch",
+          "PenTail": "Pen eraser",
+          "E": "Detects touch interruptions while writing based on drawing intent and corrects them, and can resume the drawing state."
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "Not recommended for large-screen devices."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Position",
+      "DesktopSection": "Desktop",
+      "PptSection": "Presentation",
+      "WhiteboardSection": "Whiteboard",
+      "StartupE": "Sets where the toolbar appears on the next launch. The centered top bar is only an initial position and does not snap.",
+      "TypeBottomBar": "Centered bottom bar",
+      "TypeTopBar": "Centered top bar",
+      "TypeFloating": "Floating window",
+      "PositionLabel": "Position",
+      "ExpandRight": "Expand right",
+      "ExpandLeft": "Expand left",
+      "FloatBottomLeft": "Bottom-left corner",
+      "FloatBottomRight": "Bottom-right corner",
+      "FloatBottomCenter": "Bottom center",
+      "PptAutoDock": "Enter centered bottom bar mode when a slideshow starts",
+      "PptAutoDockE": "If the toolbar is in a checked state beforehand, it becomes an expanded centered bottom bar when the slideshow starts, and is restored when the slideshow ends.",
+      "WhiteboardAutoDock": "Enter centered bottom bar mode when entering the whiteboard",
+      "WhiteboardAutoDockE": "If the toolbar is in a checked state beforehand, it becomes an expanded centered bottom bar when the whiteboard opens, and is restored when the whiteboard closes.",
+      "StateBottom": "Bottom bar state",
+      "StateBottomFolded": "Bottom bar state (collapsed)",
+      "StateFloating": "Floating window state",
+      "StateFloatingFolded": "Floating window state (collapsed)",
+      "MainButtonDirection": "Main button direction",
+      "DirectionKeep": "No change"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "Show frame rate",
         "E": "Update the previous second’s average and uncapped frame rates once per second."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Canvas debugging",
+        "E": "Show frame rate, hardware load and input point details beneath the canvas, and add a visual debug button to the main bar."
+      },
+      "DelayWaiting":
+      {
+        "N": "Delay waiting operations",
+        "E": "Extend loading waits to observe animations."
       },
       "StatusIndicator":
       {

@@ -384,6 +384,64 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
+	bool InkRenderer::LaserResourcesAvailable() const noexcept
+	{
+		return laserCompositedColor.texture && laserCompositedColor.rtv &&
+			laserCompositedColor.srv && laserStrokeCoverage.texture &&
+			laserStrokeCoverage.rtv && laserStrokeCoverage.srv;
+	}
+
+	uint64_t InkRenderer::LaserResourceBytes() const noexcept
+	{
+		uint64_t bytes = 0;
+		for (const LaserCoverageResources* layer : { &laserCompositedColor,
+			&laserStrokeCoverage, &laserLiveCoverage, &laserBakeScratchColor_ })
+		{
+			if (!layer->texture) continue;
+			D3D11_TEXTURE2D_DESC description = {};
+			layer->texture->GetDesc(&description);
+			bytes += static_cast<uint64_t>(description.Width) * description.Height * 4;
+		}
+		return bytes;
+	}
+
+	bool InkRenderer::EnsureLaserResources(UINT width, UINT height)
+	{
+		if (!device || !context || width == 0 || height == 0) return false;
+		if (LaserResourcesAvailable())
+		{
+			D3D11_TEXTURE2D_DESC description = {};
+			laserCompositedColor.texture->GetDesc(&description);
+			if (description.Width == width && description.Height == height) return true;
+		}
+		LaserCoverageResources color, coverage;
+		if (!CreateLaserCoverageResources(width, height, color)) return false;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		if (failLaserPreparationAfterColor_) return false;
+#endif
+		if (!CreateLaserCoverageResources(width, height, coverage)) return false;
+		// 候选完整后才替换；失败时旧会话保持，候选由 ComPtr 自动归还。
+		ReleaseLaserResources();
+		laserCompositedColor = std::move(color);
+		laserStrokeCoverage = std::move(coverage);
+		ClearAllLaserCoverage();
+		WarmUpLaserShaders();
+		return true;
+	}
+
+	void InkRenderer::ReleaseLaserResources() noexcept
+	{
+		UnbindLaserCoverageShaderResources();
+		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		laserCompositedColor = {};
+		laserStrokeCoverage = {};
+		laserLiveCoverage = {};
+		laserBakeScratchColor_ = {};
+		laserIncrementalCoverageEnabled_ = false;
+		laserIncrementalCoverageUnavailable_ = false;
+		ResetLaserParticles();
+	}
+
 	bool InkRenderer::CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
 		if (!device || !context || !swapChain || width == 0 || height == 0) return false;
@@ -412,16 +470,7 @@ namespace Inkeys::Drawing::Draw3
 		CreateTrustedL2SnapshotResources(width, height);
 		if (!CreateOperatorLayerResources(width, height, layerL1)) return false; // L1 保存当前笔画已确认前缀操作。
 		if (!CreateOperatorLayerResources(width, height, layerL0)) return false; // L0 保存每帧变化的笔锋和预测操作。
-		if (!CreateLaserCoverageResources(width, height, laserCompositedColor)) return false;
-		if (!CreateLaserCoverageResources(width, height, laserStrokeCoverage)) return false;
-		if (laserIncrementalCoverageEnabled_ &&
-			!CreateLaserCoverageResources(width, height, laserLiveCoverage))
-		{
-			// 可选资源失败只关闭增量，主体和完整重绘路径仍可继续工作。
-			laserLiveCoverage = {};
-			laserIncrementalCoverageEnabled_ = false;
-			laserIncrementalCoverageUnavailable_ = true;
-		}
+		// 可选 Laser 主体由工具选择控制；普通画布不预留整屏激光纹理。
 
 		SetScreenSize(static_cast<float>(width), static_cast<float>(height));
 		return true;
@@ -455,16 +504,7 @@ namespace Inkeys::Drawing::Draw3
 		layerL0.retainRTV.Reset();
 		layerL0.retainSRV.Reset();
 		layerL0.retainTexture.Reset();
-		laserCompositedColor.rtv.Reset();
-		laserCompositedColor.srv.Reset();
-		laserCompositedColor.texture.Reset();
-		laserBakeScratchColor_ = {};
-		laserStrokeCoverage.rtv.Reset();
-		laserStrokeCoverage.srv.Reset();
-		laserStrokeCoverage.texture.Reset();
-		laserLiveCoverage.rtv.Reset();
-		laserLiveCoverage.srv.Reset();
-		laserLiveCoverage.texture.Reset();
+		ReleaseLaserResources();
 	}
 
 	void InkRenderer::ReleaseResources()
@@ -483,6 +523,7 @@ namespace Inkeys::Drawing::Draw3
 		highlighterPrimitiveSRV.Reset();
 		operatorSampler.Reset();
 		ReleaseTrustedL2SnapshotPipeline();
+		ReleaseDebugOverlayResources();
 		strokeOperatorBlendState.Reset();
 		operatorResolveBlendState.Reset();
 		laserCoverageBlendState.Reset();
@@ -515,6 +556,7 @@ namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL2Texture = layerL2Texture; // 临时保留旧稳定层用于拷贝。
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL1AddTexture = layerL1.addTexture;
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL1RetainTexture = layerL1.retainTexture; // L1 的完整仿射操作都要保留。
+		const bool restoreLaserIncremental = LaserIncrementalCoverageAvailable();
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldLaserCompositedTexture =
 			laserCompositedColor.texture;
 		ReleaseSizeDependentResources();
@@ -523,6 +565,8 @@ namespace Inkeys::Drawing::Draw3
 		if (FAILED(swapChain->ResizeBuffers(swapChainDescription.BufferCount, width, height,
 			swapChainDescription.Format, swapChainDescription.Flags))) return false;
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
+		if (oldLaserCompositedTexture && EnsureLaserResources(width, height) && restoreLaserIncremental)
+			EnsureLaserIncrementalCoverageResources();
 
 		ClearRTV(layerL2RTV.Get(), kTransparentLayerClearColor);
 		ClearOperatorLayer(layerL1);
@@ -539,7 +583,7 @@ namespace Inkeys::Drawing::Draw3
 			if (oldL2Texture) CopyResource(layerL2Texture.Get(), oldL2Texture.Get(), keepRect); // 保留已完成笔迹。
 			if (oldL1AddTexture) CopyResource(layerL1.addTexture.Get(), oldL1AddTexture.Get(), keepRect);
 			if (oldL1RetainTexture) CopyResource(layerL1.retainTexture.Get(), oldL1RetainTexture.Get(), keepRect); // 保留正在绘制的稳定前缀。
-			if (oldLaserCompositedTexture)
+			if (oldLaserCompositedTexture && laserCompositedColor.texture)
 				CopyResource(laserCompositedColor.texture.Get(),
 					oldLaserCompositedTexture.Get(), keepRect);
 		}
@@ -730,6 +774,199 @@ namespace Inkeys::Drawing::Draw3
 		if (!particlesReady)
 			ReportLaserParticleUnavailableOnce();
 		return true;
+	}
+
+	int RunLaserResourceLifecycleValidation() noexcept
+	{
+#if !INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		return 2;
+#else
+		try
+		{
+			int failures = 0;
+			const auto check = [&](bool condition, const char* name)
+			{
+				if (!condition) { ++failures; std::fprintf(stderr, "[LaserResources] FAIL %s\n", name); }
+				return condition;
+			};
+			Microsoft::WRL::ComPtr<ID3D11Device> testDevice;
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext> testContext;
+			constexpr D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0 };
+			D3D_FEATURE_LEVEL level = {};
+			if (!check(SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, ARRAYSIZE(levels), D3D11_SDK_VERSION,
+				testDevice.GetAddressOf(), &level, testContext.GetAddressOf())), "real WARP device")) return 1;
+			Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+			Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+			Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
+			if (!check(SUCCEEDED(testDevice.As(&dxgiDevice)) &&
+				SUCCEEDED(dxgiDevice->GetAdapter(adapter.GetAddressOf())) &&
+				SUCCEEDED(adapter->GetParent(IID_PPV_ARGS(factory.GetAddressOf()))), "composition factory without HWND")) return 1;
+			DXGI_SWAP_CHAIN_DESC1 description = {};
+			description.Width = description.Height = 64;
+			description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			description.SampleDesc.Count = 1;
+			description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+			description.BufferCount = 2;
+			description.Scaling = DXGI_SCALING_STRETCH;
+			description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+			description.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+			Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
+			if (!check(SUCCEEDED(factory->CreateSwapChainForComposition(testDevice.Get(), &description,
+				nullptr, swapChain.GetAddressOf())), "offscreen composition swapchain")) return 1;
+			InkRenderer renderer;
+			if (!check(renderer.Init(testDevice.Get(), testContext.Get(), swapChain.Get(),
+				64, 64, D3D_DRIVER_TYPE_WARP, true), "normal renderer initialization")) return 1;
+			const auto report = [&](const char* stage)
+			{
+				std::fprintf(stdout, "LaserResources stage=%s resource_bytes=%llu width=%.0f height=%.0f hwnd=0\n",
+					stage, static_cast<unsigned long long>(renderer.LaserResourceBytes()),
+					renderer.viewportWidth, renderer.viewportHeight);
+			};
+			const auto pixels = [&](ID3D11Texture2D* texture)
+			{
+				std::vector<unsigned char> result;
+				if (!texture) { check(false, "readback source exists"); return result; }
+				D3D11_TEXTURE2D_DESC readDescription = {};
+				texture->GetDesc(&readDescription);
+				readDescription.Usage = D3D11_USAGE_STAGING;
+				readDescription.BindFlags = 0;
+				readDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> readback;
+				if (!check(SUCCEEDED(testDevice->CreateTexture2D(&readDescription, nullptr,
+					readback.GetAddressOf())), "real staging texture")) return result;
+				testContext->OMSetRenderTargets(0, nullptr, nullptr);
+				testContext->CopyResource(readback.Get(), texture);
+				D3D11_MAPPED_SUBRESOURCE mapped = {};
+				if (!check(SUCCEEDED(testContext->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+					"real pixel readback")) return result;
+				result.resize(static_cast<size_t>(readDescription.Width) * readDescription.Height * 4);
+				for (UINT row = 0; row < readDescription.Height; ++row)
+					std::memcpy(result.data() + static_cast<size_t>(row) * readDescription.Width * 4,
+						static_cast<const unsigned char*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch,
+						static_cast<size_t>(readDescription.Width) * 4);
+				testContext->Unmap(readback.Get(), 0);
+				return result;
+			};
+			check(!renderer.LaserResourcesAvailable() && renderer.LaserResourceBytes() == 0,
+				"ordinary startup owns no Laser textures");
+			report("ordinary_init");
+			check(renderer.Resize(swapChain.Get(), 80, 72) && renderer.LaserResourceBytes() == 0 &&
+				renderer.Resize(swapChain.Get(), 64, 64) && renderer.LaserResourceBytes() == 0,
+				"ordinary resize never creates Laser storage");
+			renderer.ClearOperatorLayer(renderer.layerL1);
+			renderer.ClearOperatorLayer(renderer.layerL0);
+			renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+			renderer.SetOperatorTarget(renderer.layerL1);
+			const std::array<InkPoint, 2> pen{ InkPoint{ 8, 8, 2, 0 }, InkPoint{ 40, 8, 2, 1 } };
+			check(renderer.DrawStroke(pen, DirectX::XMFLOAT4(1, 0, 0, 1)) == 0 &&
+				renderer.ApplyOperatorLayers(renderer.backBufferRTV.Get(), renderer.layerL1, renderer.layerL0,
+					{ 0, 0, 64, 64 }), "ordinary Pen composite without Laser");
+			const auto ordinaryPixels = pixels(renderer.backBufferTexture.Get());
+			check(!ordinaryPixels.empty() && ordinaryPixels[(8 * 64 + 20) * 4 + 3] > 240,
+				"ordinary Pen produces actual opaque pixels");
+			renderer.failLaserPreparationAfterColor_ = true;
+			check(!renderer.EnsureLaserResources(64, 64) && renderer.LaserResourceBytes() == 0,
+				"partial allocation failure publishes no Laser group");
+			renderer.failLaserPreparationAfterColor_ = false;
+			std::vector<unsigned char> laserReference;
+			for (int cycle = 0; cycle < 3; ++cycle)
+			{
+				if (!check(renderer.EnsureLaserResources(64, 64), "Laser selection prepares full group")) return 1;
+				check(renderer.LaserResourceBytes() == 2ull * 64 * 64 * 4, "two full-sized selected textures");
+				report("selected");
+				ID3D11Texture2D* selectedColor = renderer.laserCompositedColor.texture.Get();
+				check(renderer.EnsureLaserResources(64, 64) &&
+					renderer.laserCompositedColor.texture.Get() == selectedColor,
+					"same selection does not recreate resources");
+				renderer.failLaserPreparationAfterColor_ = true;
+				check(!renderer.EnsureLaserResources(96, 80) &&
+					renderer.laserCompositedColor.texture.Get() == selectedColor,
+					"replacement failure retains previous complete group");
+				renderer.failLaserPreparationAfterColor_ = false;
+				renderer.ConfigureLaserStyle(1, DirectX::XMFLOAT4(1, 0, 0, 1));
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+				const std::array<InkPoint, 2> laser{ InkPoint{ 8, 24, 2, 0 }, InkPoint{ 40, 24, 2, 1 } };
+				check(renderer.DrawLaserCoverage(laser) == 0 &&
+					renderer.ResolveLaserStrokeCoverage(renderer.laserCompositedColor.rtv.Get(), { 0, 0, 64, 64 }),
+					"selected Laser renders into real committed pixels");
+				const auto colorPixels = pixels(renderer.laserCompositedColor.texture.Get());
+				check(!colorPixels.empty() && colorPixels[(24 * 64 + 20) * 4 + 3] > 0,
+					"selected Laser pixels are visible");
+				if (cycle == 0) laserReference = colorPixels;
+				else check(colorPixels == laserReference, "re-entry pixel output is identical");
+				check(renderer.EnsureLaserIncrementalCoverageResources() && renderer.BeginLaserBake() &&
+					renderer.LaserResourceBytes() == 4ull * 64 * 64 * 4, "live and transactional scratch are accounted");
+				report("live_and_bake");
+				renderer.SetOMTarget(renderer.laserStrokeCoverage.rtv.Get());
+				ID3D11ShaderResourceView* boundColor[] = { renderer.laserCompositedColor.srv.Get() };
+				testContext->PSSetShaderResources(6, 1, boundColor);
+				renderer.ReleaseLaserResources();
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> boundSource;
+				Microsoft::WRL::ComPtr<ID3D11RenderTargetView> boundTarget;
+				testContext->PSGetShaderResources(6, 1, boundSource.GetAddressOf());
+				testContext->OMGetRenderTargets(1, boundTarget.GetAddressOf(), nullptr);
+				check(!boundSource && !boundTarget && !renderer.LaserIncrementalCoverageAvailable() &&
+					renderer.LaserResourceBytes() == 0, "leaving releases every view/texture and binding");
+				report("left");
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+				check(renderer.ApplyOperatorLayers(renderer.backBufferRTV.Get(), renderer.layerL1, renderer.layerL0,
+					{ 0, 0, 64, 64 }) && pixels(renderer.backBufferTexture.Get()) == ordinaryPixels,
+					"ordinary output has no Laser ghost after release");
+			}
+			check(renderer.EnsureLaserResources(64, 64) && renderer.EnsureLaserIncrementalCoverageResources(),
+				"select before resize");
+			renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+			const std::array<InkPoint, 2> resizeLaser{ InkPoint{ 8, 24, 2, 0 }, InkPoint{ 40, 24, 2, 1 } };
+			check(renderer.DrawLaserCoverage(resizeLaser) == 0 &&
+				renderer.ResolveLaserStrokeCoverage(renderer.laserCompositedColor.rtv.Get(), { 0, 0, 64, 64 }),
+				"real committed content before resize");
+			const auto beforeResize = pixels(renderer.laserCompositedColor.texture.Get());
+			check(renderer.Resize(swapChain.Get(), 96, 80) && renderer.LaserResourcesAvailable() &&
+				renderer.LaserResourceBytes() == 3ull * 96 * 80 * 4, "selected resize rebuilds only selected group");
+			const auto afterResize = pixels(renderer.laserCompositedColor.texture.Get());
+			bool resizePixelsMatch = beforeResize.size() == 64 * 64 * 4 && afterResize.size() == 96 * 80 * 4;
+			for (size_t row = 0; resizePixelsMatch && row < 64; ++row)
+				resizePixelsMatch = std::memcmp(beforeResize.data() + row * 64 * 4,
+					afterResize.data() + row * 96 * 4, 64 * 4) == 0;
+			check(resizePixelsMatch, "resize preserves committed Laser pixels in the intersection");
+			report("selected_resized");
+			renderer.ReleaseLaserResources();
+			check(renderer.Resize(swapChain.Get(), 32, 48) && renderer.LaserResourceBytes() == 0,
+				"released resize stays without Laser");
+			renderer.ReleaseResources();
+			Microsoft::WRL::ComPtr<ID3D11Device> recoveredDevice;
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext> recoveredContext;
+			if (!check(SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, ARRAYSIZE(levels), D3D11_SDK_VERSION,
+				recoveredDevice.GetAddressOf(), &level, recoveredContext.GetAddressOf())), "new WARP device epoch")) return 1;
+			Microsoft::WRL::ComPtr<IDXGIDevice> recoveredDxgiDevice;
+			Microsoft::WRL::ComPtr<IDXGIAdapter> recoveredAdapter;
+			Microsoft::WRL::ComPtr<IDXGIFactory2> recoveredFactory;
+			if (!check(SUCCEEDED(recoveredDevice.As(&recoveredDxgiDevice)) &&
+				SUCCEEDED(recoveredDxgiDevice->GetAdapter(recoveredAdapter.GetAddressOf())) &&
+				SUCCEEDED(recoveredAdapter->GetParent(IID_PPV_ARGS(recoveredFactory.GetAddressOf()))),
+				"factory belongs to recovered device epoch")) return 1;
+			Microsoft::WRL::ComPtr<IDXGISwapChain1> recoveredSwapChain;
+			description.Width = 32;
+			description.Height = 48;
+			if (!check(SUCCEEDED(recoveredFactory->CreateSwapChainForComposition(recoveredDevice.Get(), &description,
+				nullptr, recoveredSwapChain.GetAddressOf())), "new epoch swapchain without HWND")) return 1;
+			check(renderer.Init(recoveredDevice.Get(), recoveredContext.Get(), recoveredSwapChain.Get(), 32, 48,
+				D3D_DRIVER_TYPE_WARP, true) && renderer.LaserResourceBytes() == 0 &&
+				renderer.EnsureLaserResources(32, 48), "fresh graphics recovery prepares only after selection");
+			Microsoft::WRL::ComPtr<ID3D11Device> resourceDevice;
+			if (renderer.laserCompositedColor.texture)
+				renderer.laserCompositedColor.texture->GetDevice(resourceDevice.GetAddressOf());
+			check(resourceDevice.Get() == recoveredDevice.Get(), "recovered textures belong to the new device");
+			renderer.ReleaseLaserResources();
+			report("recovery_left");
+			renderer.ReleaseResources();
+			std::fprintf(stdout, "LaserResources failures=%d hwnd=0 resource_bytes_are_nominal=1\n", failures);
+			return failures ? 1 : 0;
+		}
+		catch (...) { std::fputs("[LaserResources] unexpected exception\n", stderr); return 2; }
+#endif
 	}
 
 	int RunRendererUploadValidation() noexcept

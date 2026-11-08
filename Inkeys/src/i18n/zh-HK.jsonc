@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "網格",
         "WhiteboardUnsavedLabel": "部分頁面未儲存",
         "FreezeLabel": "定格",
+        "CanvasDebugLabel": "可視化除錯",
         "EndPresentationLabel": "結束放映",
         "SettingsLabel": "設定",
         "MoreLabel": "更多"
@@ -162,8 +163,7 @@
         "ReadFailed": "讀取",
         "PresentFailed": "顯示",
         "Failed": "故障",
-        "Recovering": "還原",
-        "Loading": "載入",
+        "Recovering": "還原中",
         "Retry": "重試",
         "Wait": "稍候",
         "RetryCanvas": "重試畫布",
@@ -699,6 +699,11 @@
           "Unavailable": "目前系統無法區分輸入來源，此選項不可用。"
         },
         "FineControl": "精細控制",
+        "OpacitySection": "不透明度",
+        "PenOpacity": "畫筆游標不透明度",
+        "HighlightPenFillOpacity": "畫筆（高亮）游標填色不透明度",
+        "DotOpacity": "小圓點游標不透明度",
+        "HighlightDotFillOpacity": "小圓點（高亮）游標填色不透明度",
         "DotHideOnContact":
         {
           "N": "小圓點游標落筆後自動隱藏",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "斷觸接續",
-          "E": "觸控書寫時，若屏幕短暫失去接觸後又沿原方向恢復，將嘗試把兩段筆跡接成一筆，減少斷線。關閉後，每次抬起都會結束目前筆畫。"
+          "Touch": "觸控",
+          "PenTail": "筆（筆尾）",
+          "E": "書寫時根據繪製意圖判斷斷觸問題並修正，同時可以接續繪製狀態。"
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "不建議大屏幕裝置啟用。"
         }
       }
+    },
+    "Position":
+    {
+      "N": "位置",
+      "DesktopSection": "桌面場景",
+      "PptSection": "PPT 場景",
+      "WhiteboardSection": "白板場景",
+      "StartupE": "決定下次啟動時主列出現的位置。置中頂列只是初始位置，不會吸附。",
+      "TypeBottomBar": "置中底列",
+      "TypeTopBar": "置中頂列",
+      "TypeFloating": "懸浮視窗",
+      "PositionLabel": "位置",
+      "ExpandRight": "向右展開",
+      "ExpandLeft": "向左展開",
+      "FloatBottomLeft": "左下角",
+      "FloatBottomRight": "右下角",
+      "FloatBottomCenter": "底部置中",
+      "PptAutoDock": "開始放映時自動進入置中底列模式",
+      "PptAutoDockE": "進入前的主列處於已勾選的狀態時，放映開始後會自動變為置中底列並展開；結束放映後還原。",
+      "WhiteboardAutoDock": "進入白板時自動進入置中底列模式",
+      "WhiteboardAutoDockE": "進入前的主列處於已勾選的狀態時，進入白板後會自動變為置中底列並展開；退出白板後還原。",
+      "StateBottom": "底列狀態",
+      "StateBottomFolded": "底列狀態（摺疊）",
+      "StateFloating": "懸浮視窗狀態",
+      "StateFloatingFolded": "懸浮視窗狀態（摺疊）",
+      "MainButtonDirection": "主按鈕方向",
+      "DirectionKeep": "不改變"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "顯示幀率",
         "E": "每秒更新上一秒的平均幀率及無等待幀率。"
+      },
+      "CanvasSection": "畫布",
+      "CanvasDebug":
+      {
+        "N": "畫布除錯",
+        "E": "在畫布底層顯示影格率、硬件負載與輸入點資訊，並在主列提供可視化除錯按鈕。"
+      },
+      "DelayWaiting":
+      {
+        "N": "為等待操作延遲",
+        "E": "延長載入等待，便於觀察動畫。"
       },
       "StatusIndicator":
       {

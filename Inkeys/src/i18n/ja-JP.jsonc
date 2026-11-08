@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "方眼",
         "WhiteboardUnsavedLabel": "未保存のページがあります",
         "FreezeLabel": "固定",
+        "CanvasDebugLabel": "可視化デバッグ",
         "EndPresentationLabel": "発表終了",
         "SettingsLabel": "設定",
         "MoreLabel": "その他"
@@ -163,9 +164,8 @@
         "PresentFailed": "表示",
         "Failed": "エラー",
         "Recovering": "復元中",
-        "Loading": "読込中",
         "Retry": "再試行",
-        "Wait": "待機",
+        "Wait": "待機中",
         "RetryCanvas": "キャンバスを再試行",
         "ProtectedHint": "文書のページ順序または識別情報が変わったため、既存の書き込みを保護しています。元の文書の状態に戻してから再試行してください。",
         "RecoveryHint": "キャンバスの復元が完了していません。再試行しても書き込みの保護は維持されます。"
@@ -699,6 +699,11 @@
           "Unavailable": "このシステムでは入力元を区別できないため、この設定は使用できません。"
         },
         "FineControl": "詳細制御",
+        "OpacitySection": "不透明度",
+        "PenOpacity": "ペン カーソルの不透明度",
+        "HighlightPenFillOpacity": "ペン（強調）カーソル塗りの不透明度",
+        "DotOpacity": "小さな点カーソルの不透明度",
+        "HighlightDotFillOpacity": "小さな点（強調）カーソル塗りの不透明度",
         "DotHideOnContact":
         {
           "N": "ペンを置いたときに小さな点のカーソルを自動的に隠す",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "途切れた線をつなぐ",
-          "E": "タッチで書いている途中に接触が一瞬途切れ、同じ方向に戻った場合、2つの筆跡を1本につなぐことを試みます。オフにすると、指を離すたびにストロークを終了します。"
+          "Touch": "タッチ",
+          "PenTail": "ペン後端",
+          "E": "筆記中に描画の意図から接触の途切れを判断して補正し、描画状態を引き継ぐことができます。"
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "大型画面での利用は推奨しません。"
         }
       }
+    },
+    "Position":
+    {
+      "N": "位置",
+      "DesktopSection": "デスクトップ",
+      "PptSection": "プレゼン",
+      "WhiteboardSection": "ホワイトボード",
+      "StartupE": "次回起動時にツールバーが表示される位置を指定します。中央の上部バーは初期位置のみで、吸着しません。",
+      "TypeBottomBar": "中央の下部バー",
+      "TypeTopBar": "中央の上部バー",
+      "TypeFloating": "フローティングウィンドウ",
+      "PositionLabel": "位置",
+      "ExpandRight": "右に展開",
+      "ExpandLeft": "左に展開",
+      "FloatBottomLeft": "左下",
+      "FloatBottomRight": "右下",
+      "FloatBottomCenter": "下部中央",
+      "PptAutoDock": "スライドショー開始時に中央下部バーモードへ自動で入る",
+      "PptAutoDockE": "開始前のツールバーがチェックした状態にある場合、スライドショーの開始時に展開した中央下部バーへ自動で切り替わり、終了後に元へ戻ります。",
+      "WhiteboardAutoDock": "ホワイトボード開始時に中央下部バーモードへ自動で入る",
+      "WhiteboardAutoDockE": "開始前のツールバーがチェックした状態にある場合、ホワイトボードの開始時に展開した中央下部バーへ自動で切り替わり、終了後に元へ戻ります。",
+      "StateBottom": "下部バーの状態",
+      "StateBottomFolded": "下部バーの状態（折りたたみ）",
+      "StateFloating": "フローティングの状態",
+      "StateFloatingFolded": "フローティングの状態（折りたたみ）",
+      "MainButtonDirection": "メインボタンの方向",
+      "DirectionKeep": "変更しない"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "フレームレートを表示",
         "E": "直前1秒の平均フレームレートと待機なしのフレームレートを毎秒更新します。"
+      },
+      "CanvasSection": "キャンバス",
+      "CanvasDebug":
+      {
+        "N": "キャンバスのデバッグ",
+        "E": "キャンバスの下にフレームレート、ハードウェア負荷、入力点の情報を表示し、メインバーに可視化デバッグ用のボタンを追加します。"
+      },
+      "DelayWaiting":
+      {
+        "N": "待機操作を遅延",
+        "E": "読み込み待機を延長し、アニメーションを確認します。"
       },
       "StatusIndicator":
       {

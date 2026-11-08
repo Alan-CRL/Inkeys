@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "Izgara",
         "WhiteboardUnsavedLabel": "Bazı sayfalar kaydedilmedi",
         "FreezeLabel": "Dondur",
+        "CanvasDebugLabel": "Görsel hata ayıklama",
         "EndPresentationLabel": "Bitir",
         "SettingsLabel": "Ayarlar",
         "MoreLabel": "Diğer"
@@ -163,8 +164,7 @@
         "PresentFailed": "Görüntü",
         "Failed": "Hata",
         "Recovering": "Kurtarılıyor",
-        "Loading": "Yükle",
-        "Retry": "Yeniden dene",
+        "Retry": "Tekrar",
         "Wait": "Bekleyin",
         "RetryCanvas": "Tuvali yeniden dene",
         "ProtectedHint": "Belgenin sırası veya kimliği değişti. Mevcut mürekkep korunuyor. Belgeyi önceki durumuna döndürüp yeniden deneyin.",
@@ -699,6 +699,11 @@
           "Unavailable": "Bu sistem giriş kaynağını ayırt edemediği için seçenek kullanılamıyor."
         },
         "FineControl": "Hassas denetimler",
+        "OpacitySection": "Opaklık",
+        "PenOpacity": "Kalem imleci opaklığı",
+        "HighlightPenFillOpacity": "Kalem (vurgulu) imleci dolgu opaklığı",
+        "DotOpacity": "Küçük nokta imleci opaklığı",
+        "HighlightDotFillOpacity": "Küçük nokta (vurgulu) imleci dolgu opaklığı",
         "DotHideOnContact":
         {
           "N": "Küçük nokta imlecini temas sırasında otomatik gizle",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Kesilen çizgileri birleştir",
-          "E": "Dokunma kısa süreli kesilip aynı yönde devam ederse uygulama, boşlukları azaltmak için iki parçayı tek çizgide birleştirmeyi dener. Kapalıyken parmağı kaldırmak çizgiyi bitirir."
+          "Touch": "Dokunma",
+          "PenTail": "Kalem silgisi",
+          "E": "Yazarken, çizim niyetine göre dokunma kesintilerini belirler ve düzeltir; ayrıca çizim durumunu sürdürebilir."
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "Büyük ekranlı cihazlarda önerilmez."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Konum",
+      "DesktopSection": "Masaüstü",
+      "PptSection": "Sunu",
+      "WhiteboardSection": "Beyaz tahta",
+      "StartupE": "Araç çubuğunun bir sonraki açılışta nerede görüneceğini belirler. Ortalanmış üst çubuk yalnızca başlangıç konumudur ve yapışmaz.",
+      "TypeBottomBar": "Ortalanmış alt çubuk",
+      "TypeTopBar": "Ortalanmış üst çubuk",
+      "TypeFloating": "Yüzen pencere",
+      "PositionLabel": "Konum",
+      "ExpandRight": "Sağa aç",
+      "ExpandLeft": "Sola aç",
+      "FloatBottomLeft": "Sol alt köşe",
+      "FloatBottomRight": "Sağ alt köşe",
+      "FloatBottomCenter": "Alt orta",
+      "PptAutoDock": "Slayt gösterisi başlarken ortalanmış alt çubuk moduna geç",
+      "PptAutoDockE": "Çubuk öncesinde işaretli bir durumdaysa, slayt gösterisi başlarken açık ve ortalanmış alt çubuğa dönüşür; gösteri bitince eski haline getirilir.",
+      "WhiteboardAutoDock": "Beyaz tahtaya girerken ortalanmış alt çubuk moduna geç",
+      "WhiteboardAutoDockE": "Çubuk öncesinde işaretli bir durumdaysa, beyaz tahtaya girerken açık ve ortalanmış alt çubuğa dönüşür; çıkınca eski haline getirilir.",
+      "StateBottom": "Alt çubuk durumu",
+      "StateBottomFolded": "Alt çubuk durumu (daraltılmış)",
+      "StateFloating": "Yüzen pencere durumu",
+      "StateFloatingFolded": "Yüzen pencere durumu (daraltılmış)",
+      "MainButtonDirection": "Ana düğme yönü",
+      "DirectionKeep": "Değiştirme"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "Kare hızını göster",
         "E": "Önceki saniyenin ortalama ve beklemesiz kare hızını saniyede bir güncelleyin."
+      },
+      "CanvasSection": "Tuval",
+      "CanvasDebug":
+      {
+        "N": "Tuval hata ayıklama",
+        "E": "Tuvalin altında kare hızını, donanım yükünü ve giriş noktası bilgilerini gösterir; ana çubuğa görsel hata ayıklama düğmesi ekler."
+      },
+      "DelayWaiting":
+      {
+        "N": "Bekleyen işlemleri geciktir",
+        "E": "Animasyonları gözlemlemek için yükleme süresini uzatır."
       },
       "StatusIndicator":
       {

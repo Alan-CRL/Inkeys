@@ -250,8 +250,8 @@ void BarStatusIndicatorPanel::CommitPresented()
 std::chrono::steady_clock::time_point BarStatusIndicatorPanel::PollUpdateSource(std::chrono::steady_clock::time_point now)
 {
 	if(now<nextUpdatePoll_)return nextUpdatePoll_;
-	// 更新模块无变化通知：只读其状态与字节进度（状态为非原子枚举，仅用于展示，异常值被忽略）。
-	const int state=static_cast<int>(AutomaticUpdateState);
+	// 更新模块无变化通知：只读其状态与字节进度（仅用于展示，异常值被忽略）。
+	const int state=static_cast<int>(AutomaticUpdateState.load(std::memory_order_relaxed));
 	const auto action=updateTracker_.Step(state,downloadNewProgramState.downloadedSize.load(std::memory_order_relaxed),
 		downloadNewProgramState.fileSize.load(std::memory_order_relaxed));
 	if(action.publish)

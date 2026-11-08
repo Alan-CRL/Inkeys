@@ -26,7 +26,7 @@ int RunEraserAttributeTests()
 		auto cx=[](EraserAttributeRect r){return (r.left+r.right)/2;};
 		auto cy=[](EraserAttributeRect r){return (r.top+r.bottom)/2;};
 		expect(std::abs(cx(l.items[0])-cx(input.anchor))<0.001,"clear remains anchored to the main eraser entry");
-		expect(std::abs(l.panel.Width()-342.0)<0.001,"asymmetric stable panel is342 DIP wide");
+		expect(std::abs(l.panel.Width()-408.0)<0.001,"asymmetric stable panel is408 DIP wide");
 		expect(l.items[3].right<l.items[0].left && l.items[0].right<l.items[4].left,"B order is circular presets / clear / automatic");
 		const EraserAttributeRect automatic{l.items[4].left,l.items[4].top,l.items[5].right,l.items[4].bottom};
 		expect(std::abs(automatic.Width()-90.0)<0.001 && std::abs(automatic.Height()-70.0)<0.001 &&
@@ -47,11 +47,14 @@ int RunEraserAttributeTests()
 			std::abs(l.previews[0].left-l.panel.left-16.0)<0.001 &&
 			std::abs(l.dividers[0].left-l.previews[2].right-16.0)<0.001,
 			"circle group has four16 DIP edge gaps");
-		expect(std::abs(l.items[0].left-l.dividers[0].right-5.0)<0.001 &&
-			std::abs(l.dividers[1].left-l.items[0].right-5.0)<0.001 &&
-			std::abs(l.automatic.left-l.dividers[1].right-5.0)<0.001 &&
-			std::abs(l.panel.right-l.automatic.right-5.0)<0.001,
-			"automatic and central divider spacing uses four5 DIP gaps");
+		expect(std::abs(l.items[0].left-l.dividers[0].right-2.0)<0.001 &&
+			std::abs(l.dividers[1].left-l.items[0].right-2.0)<0.001 &&
+			std::abs(l.automatic.left-l.dividers[1].right-2.0)<0.001 &&
+			std::abs(l.palm.left-l.automatic.right-5.0)<0.001 &&
+			std::abs(l.panel.right-l.palm.right-5.0)<0.001,
+			"divider sides follow the main bar (2 DIP), adjacent buttons and the panel edge keep5 DIP");
+		expect(std::abs(l.palm.Width()-70.0)<0.001 && std::abs(l.palm.Height()-70.0)<0.001 && l.palm==l.items[10],
+			"palm eraser toggle is a standard70x70 button directly adjacent to automatic with no divider or expansion arrow");
 		expect(std::abs(l.items[1].Width()-(l.previews[0].Width()+BarButtonGapDip*2))<0.001,
 			"small circle hit bounds follow the visible circle instead of the old70DIP slot");
 		const auto small=l.previews[0];const double hitRadius=small.Width()/2+BarButtonGapDip;
@@ -131,8 +134,8 @@ int RunEraserAttributeTests()
 			expect(std::abs((l.items[i+1].top+l.items[i+1].bottom)-(l.panel.top+l.panel.bottom))<0.001,"all circle centers vertically centered");
 		}
 		expect(l.items[1].right<=l.items[2].left+0.001 && l.items[2].right<=l.items[3].left+0.001,"circle hit regions remain disjoint after clipping");
-		if(reversed)expect(l.items[4].right<l.items[0].left && l.items[0].right<l.previews[0].left,"B reversal exchanges complete side groups");
-		else expect(l.previews[2].right<l.items[0].left && l.items[0].right<l.items[4].left,"B standard circles/clear/automatic order");
+		if(reversed)expect(l.palm.right<l.items[0].left && l.items[4].right<l.palm.left && l.items[0].right<l.previews[0].left,"B reversal exchanges complete side groups");
+		else expect(l.previews[2].right<l.items[0].left && l.items[0].right<l.items[4].left && l.items[5].right<l.palm.left,"B standard circles/clear/automatic/palm order");
 		const double expectedClear=(std::clamp)(EraserRectCenterX(input.anchor),input.work.left+BarButtonTwoSideDip/2,input.work.right-BarButtonTwoSideDip/2);
 		expect(std::abs(EraserRectCenterX(l.items[0])-expectedClear)<0.001,"clear stays anchored while asymmetric sides extend independently");
 		const double gap1=l.previews[1].left-l.previews[0].right,gap2=l.previews[2].left-l.previews[1].right;
@@ -144,7 +147,7 @@ int RunEraserAttributeTests()
 			?narrow.previews[0].left-narrow.dividers[1].right
 			:narrow.dividers[0].left-narrow.previews[2].right;
 		const double narrowAutomaticGap=input.reversed
-			?narrow.dividers[0].left-narrow.automatic.right
+			?narrow.dividers[0].left-narrow.palm.right
 			:narrow.automatic.left-narrow.dividers[1].right;
 		expect(narrow.horizontalOverflow && narrow.panel.Width()<=300.001 && narrow.previewDiameters==huge.previewDiameters &&
 			narrow.items[0].Width()==BarButtonTwoSideDip && narrow.automatic.Width()==BarButtonTwoSideDip+EraserAttributeAutomaticArrowWidthDip &&
@@ -152,9 +155,9 @@ int RunEraserAttributeTests()
 			std::abs((narrow.previews[1].left-narrow.previews[0].right)-EraserAttributeCircleGapDip)<0.001 &&
 			std::abs((narrow.previews[2].left-narrow.previews[1].right)-EraserAttributeCircleGapDip)<0.001 &&
 			std::abs(narrowCircleEndGap-EraserAttributeCircleGapDip)<0.001 &&
-			std::abs(narrow.items[0].left-narrow.dividers[0].right-EraserAttributeStandardGapDip)<0.001 &&
-			std::abs(narrow.dividers[1].left-narrow.items[0].right-EraserAttributeStandardGapDip)<0.001 &&
-			std::abs(narrowAutomaticGap-EraserAttributeStandardGapDip)<0.001,
+			std::abs(narrow.items[0].left-narrow.dividers[0].right-EraserAttributeDividerGapDip)<0.001 &&
+			std::abs(narrow.dividers[1].left-narrow.items[0].right-EraserAttributeDividerGapDip)<0.001 &&
+			std::abs(narrowAutomaticGap-EraserAttributeDividerGapDip)<0.001,
 			"narrow workspace clips normal-layout overflow without compacting normal gaps or controls");
 		input.lockedMenuSide=1;const auto locked=ResolveEraserAttributeLayout(input);expect(locked.menuBelow,"popup direction lock is independent of pointer");
 	}

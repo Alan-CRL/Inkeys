@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "Grade",
         "WhiteboardUnsavedLabel": "Há páginas não salvas",
         "FreezeLabel": "Fixar",
+        "CanvasDebugLabel": "Depuração visual",
         "EndPresentationLabel": "Encerrar",
         "SettingsLabel": "Opções",
         "MoreLabel": "Mais"
@@ -162,8 +163,7 @@
         "ReadFailed": "Leitura",
         "PresentFailed": "Exibição",
         "Failed": "Erro",
-        "Recovering": "Restaurando",
-        "Loading": "Carregando",
+        "Recovering": "Restaur.",
         "Retry": "Tentar",
         "Wait": "Aguarde",
         "RetryCanvas": "Tentar a tela de desenho novamente",
@@ -699,6 +699,11 @@
           "Unavailable": "Este sistema não consegue distinguir a origem da entrada; a opção não está disponível."
         },
         "FineControl": "Controles precisos",
+        "OpacitySection": "Opacidade",
+        "PenOpacity": "Opacidade do cursor da caneta",
+        "HighlightPenFillOpacity": "Opacidade de preenchimento do cursor da caneta (destacada)",
+        "DotOpacity": "Opacidade do cursor de ponto pequeno",
+        "HighlightDotFillOpacity": "Opacidade de preenchimento do cursor de ponto pequeno (destacado)",
         "DotHideOnContact":
         {
           "N": "Ocultar automaticamente o cursor de ponto pequeno ao tocar",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconectar traços interrompidos",
-          "E": "Ao escrever por toque, se o contato se perder brevemente e retornar na mesma direção, tenta unir os dois trechos em um só traço. Quando desativado, cada retirada encerra o traço atual."
+          "Touch": "Toque",
+          "PenTail": "Extremidade traseira da caneta",
+          "E": "Ao escrever, detecta interrupções do toque com base na intenção de desenho e as corrige, e pode continuar o estado de desenho."
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "Não é recomendado em telas grandes."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Posição",
+      "DesktopSection": "Área de trabalho",
+      "PptSection": "Apresentação",
+      "WhiteboardSection": "Quadro branco",
+      "StartupE": "Define onde a barra aparece na próxima inicialização. A barra superior centralizada é apenas uma posição inicial e não se prende.",
+      "TypeBottomBar": "Barra inferior centralizada",
+      "TypeTopBar": "Barra superior centralizada",
+      "TypeFloating": "Janela flutuante",
+      "PositionLabel": "Posição",
+      "ExpandRight": "Expandir para a direita",
+      "ExpandLeft": "Expandir para a esquerda",
+      "FloatBottomLeft": "Canto inferior esquerdo",
+      "FloatBottomRight": "Canto inferior direito",
+      "FloatBottomCenter": "Centro inferior",
+      "PptAutoDock": "Entrar no modo de barra inferior centralizada ao iniciar a apresentação",
+      "PptAutoDockE": "Se a barra estiver antes em um estado marcado, ela vira uma barra inferior centralizada e expandida ao iniciar a apresentação e é restaurada ao terminar.",
+      "WhiteboardAutoDock": "Entrar no modo de barra inferior centralizada ao abrir o quadro branco",
+      "WhiteboardAutoDockE": "Se a barra estiver antes em um estado marcado, ela vira uma barra inferior centralizada e expandida ao abrir o quadro branco e é restaurada ao fechá-lo.",
+      "StateBottom": "Estado da barra inferior",
+      "StateBottomFolded": "Estado da barra inferior (recolhida)",
+      "StateFloating": "Estado da janela flutuante",
+      "StateFloatingFolded": "Estado da janela flutuante (recolhida)",
+      "MainButtonDirection": "Direção do botão principal",
+      "DirectionKeep": "Não alterar"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "Mostrar taxa de quadros",
         "E": "Atualiza a cada segundo a taxa média do segundo anterior e a taxa sem espera."
+      },
+      "CanvasSection": "Tela",
+      "CanvasDebug":
+      {
+        "N": "Depuração da tela",
+        "E": "Mostra abaixo da tela a taxa de quadros, a carga do hardware e as informações dos pontos de entrada, e adiciona um botão de depuração visual à barra principal."
+      },
+      "DelayWaiting":
+      {
+        "N": "Atrasar operações de espera",
+        "E": "Prolonga o carregamento para observar as animações."
       },
       "StatusIndicator":
       {

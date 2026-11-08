@@ -5,6 +5,8 @@
 #include <windows.h>
 #include <json/json.h>
 
+#include "snapshot_lifetime_probe.h"
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +21,7 @@
 #include <vector>
 
 import Inkeys.Drawing.Draw3.auto_save;
+import Inkeys.Drawing.Draw3.whiteboard_store;
 import draw3.uink_file;
 
 namespace
@@ -875,6 +878,125 @@ namespace
 			loaded.loadedSnapshot && loaded.loadedSnapshot->canvases.size() == 1 &&
 			loaded.loadedSnapshot->canvases.front().strokes.size() == 1);
 	}
+	void EnlargeLifetimeSnapshot(Draw3UInkExportSnapshot& snapshot)
+	{
+		auto& canvas = snapshot.canvases.front();
+		auto& points = canvas.strokes.front().points;
+		points.resize(131072);
+		for (std::size_t index = 0; index < points.size(); ++index)
+			points[index] = { static_cast<float>(index % 1024), static_cast<float>(index / 1024), 3.0f };
+		canvas.operations.emplace_back(canvas.strokes.front());
+	}
+
+	void TestDesktopSnapshotLifetime(TestState& state, const char* name,
+		DesktopAutoSaveTestFaultInjection faults, bool retry, bool stop)
+	{
+		TempDirectory temporary;
+		AUTOSAVE_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		const auto requestId = FormatUInkGuid(*CreateUInkGuid());
+		const auto sessionId = FormatUInkGuid(*CreateUInkGuid());
+		const auto fileId = FormatUInkGuid(*CreateUInkGuid());
+		// 只保留小型身份模板，不能让测试自身额外持有被观察的大快照。
+		const auto seed = MakeRequest(requestId.c_str(), sessionId.c_str(), 1,
+			fileId.c_str(), "2026-11-05", "120000001", 1.0f);
+		const auto root = temporary.Child(L"lifetime");
+		SnapshotLifetimeProbe::Scope observation;
+		SnapshotLifetimeProbe::Gate gate;
+		DesktopAutoSaveService service;
+		const bool started = gate.IsValid() && service.Start(root.wstring(), stop ? nullptr : &gate,
+			stop ? nullptr : &SnapshotLifetimeProbe::Gate::Wake);
+		AUTOSAVE_CHECK(state, started);
+		if (!started) return;
+		FaultScope faultScope(faults);
+		auto request = seed;
+		EnlargeLifetimeSnapshot(request.snapshot);
+		request.estimatedSnapshotBytes = EstimateDesktopAutoSaveSnapshotBytes(request.snapshot);
+		const auto watched = SnapshotLifetimeProbe::ObserveSnapshot(request.snapshot);
+		AUTOSAVE_CHECK(state, SnapshotLifetimeProbe::Read(watched).bytes >= 3 * 1024 * 1024);
+		AUTOSAVE_CHECK(state, service.SubmitPrepared(std::move(request)) == DesktopAutoSaveSubmitStatus::Accepted);
+		if (stop) service.CloseAndDrain();
+		else
+		{
+			AUTOSAVE_CHECK(state, gate.WaitEntered());
+			// 真实 worker 已发布回执但仍在 wake 中，completedSnapshot 此刻必须仍持有原缓冲。
+			const auto held = SnapshotLifetimeProbe::Read(watched);
+			AUTOSAVE_CHECK(state, held.freedBuffers == 0);
+			std::cout << "[SnapshotLifetime] case=" << name << " worker_held_buffers=" << held.buffers << '\n';
+			gate.Release();
+			AUTOSAVE_CHECK(state, WaitForIdle(service, std::chrono::seconds(30)));
+		}
+		// pending=0 可先于锁外析构；必须等实际 free，且此前不取出保存回执。
+		AUTOSAVE_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return SnapshotLifetimeProbe::Released(watched); }));
+		SnapshotLifetimeProbe::Report(name, watched);
+		AUTOSAVE_CHECK(state, service.Diagnostics().pending == 0 && service.Diagnostics().queuedSnapshotBytes == 0);
+		DesktopPersistenceCompletion saved;
+		AUTOSAVE_CHECK(state, service.TryTakeCompletion(saved));
+		const bool failed = faults.failUInkWrite || faults.failIndexCommit;
+		AUTOSAVE_CHECK(state, saved.status == (failed ? DesktopPersistenceStatus::IoError : DesktopPersistenceStatus::Committed));
+		AUTOSAVE_CHECK(state, !saved.loadedSnapshot);
+
+		if (retry)
+		{
+			service.CloseAndDrain();
+			ResetDesktopAutoSaveTestFaultInjection();
+			AUTOSAVE_CHECK(state, service.Start(root.wstring()));
+			auto retried = seed;
+			EnlargeLifetimeSnapshot(retried.snapshot);
+			retried.estimatedSnapshotBytes = EstimateDesktopAutoSaveSnapshotBytes(retried.snapshot);
+			const auto retriedBuffers = SnapshotLifetimeProbe::ObserveSnapshot(retried.snapshot);
+			AUTOSAVE_CHECK(state, service.SubmitPrepared(std::move(retried)) == DesktopAutoSaveSubmitStatus::Accepted);
+			AUTOSAVE_CHECK(state, WaitForIdle(service, std::chrono::seconds(30)));
+			AUTOSAVE_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return SnapshotLifetimeProbe::Released(retriedBuffers); }));
+			SnapshotLifetimeProbe::Report("desktop-index-retry-unpolled", retriedBuffers);
+			AUTOSAVE_CHECK(state, service.TryTakeCompletion(saved) && saved.status == DesktopPersistenceStatus::Committed);
+		}
+		if (!failed && !stop)
+		{
+			AUTOSAVE_CHECK(state, service.SubmitLoad(seed.snapshot.fileGuid) == DesktopAutoSaveSubmitStatus::Accepted);
+			DesktopPersistenceCompletion loaded;
+			AUTOSAVE_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return service.TryTakeCompletion(loaded); }));
+			AUTOSAVE_CHECK(state, loaded.status == DesktopPersistenceStatus::Loaded && loaded.loadedSnapshot);
+			if (loaded.loadedSnapshot)
+			{
+				auto consumer = loaded.loadedSnapshot;
+				std::weak_ptr<const Draw3UInkExportSnapshot> weak = consumer;
+				const auto loadedBuffers = SnapshotLifetimeProbe::ObserveSnapshot(*consumer);
+				loaded = {};
+				AUTOSAVE_CHECK(state, !weak.expired() && !SnapshotLifetimeProbe::Released(loadedBuffers));
+				consumer.reset();
+				AUTOSAVE_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return weak.expired() && SnapshotLifetimeProbe::Released(loadedBuffers); }));
+				SnapshotLifetimeProbe::Report("desktop-load-last-consumer", loadedBuffers);
+			}
+		}
+		service.CloseAndDrain();
+		AUTOSAVE_CHECK(state, !gate.TimedOut());
+	}
+
+	void TestWhiteboardSnapshotLifetime(TestState& state, bool fail)
+	{
+		TempDirectory temporary;
+		AUTOSAVE_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		const auto root = temporary.Child(fail ? L"blocked" : L"store");
+		if (fail) AUTOSAVE_CHECK(state, WriteBytes(root, { std::byte{ 1 } }));
+		SnapshotLifetimeProbe::Scope observation;
+		WhiteboardStore store(root.wstring(), {});
+		WhiteboardStoreRequest request;
+		request.revision = 1;
+		request.snapshot = MakeSnapshot("98765432-0000-4000-8000-000000000001", 1.0f);
+		EnlargeLifetimeSnapshot(request.snapshot);
+		request.pages = { request.snapshot.canvases.front().pageGuid };
+		const auto watched = SnapshotLifetimeProbe::ObserveSnapshot(request.snapshot);
+		AUTOSAVE_CHECK(state, store.Save(std::move(request)));
+		store.Drain();
+		// Drain 不等价于 request 已析构；Store/worker 仍存活时单独等真实 free。
+		AUTOSAVE_CHECK(state, SnapshotLifetimeProbe::Wait([&] { return SnapshotLifetimeProbe::Released(watched); }));
+		SnapshotLifetimeProbe::Report(fail ? "whiteboard-failure-unpolled" : "whiteboard-success-unpolled", watched);
+		WhiteboardStoreCompletion completion;
+		AUTOSAVE_CHECK(state, store.Take(completion) && completion.success == !fail && !completion.document);
+	}
+
 }
 
 int RunDesktopAutoSaveIndexBoundsTests()
@@ -909,5 +1031,19 @@ int RunDesktopAutoSaveTests()
 	ResetDesktopAutoSaveTestFaultInjection();
 	if (state.failures == 0)
 		std::cout << "All Desktop UInk auto-save tests passed." << std::endl;
+	return state.failures;
+}
+
+int RunDesktopSaveSnapshotLifetimeTests()
+{
+	TestState state;
+	ResetDesktopAutoSaveTestFaultInjection();
+	TestDesktopSnapshotLifetime(state, "desktop-success-unpolled", {}, false, false);
+	TestDesktopSnapshotLifetime(state, "desktop-write-failure-unpolled", { 0, true, false }, false, false);
+	TestDesktopSnapshotLifetime(state, "desktop-index-failure-unpolled", { 0, false, true }, true, false);
+	TestDesktopSnapshotLifetime(state, "desktop-stop-drain", { 100, false, false }, false, true);
+	TestWhiteboardSnapshotLifetime(state, false);
+	TestWhiteboardSnapshotLifetime(state, true);
+	ResetDesktopAutoSaveTestFaultInjection();
 	return state.failures;
 }

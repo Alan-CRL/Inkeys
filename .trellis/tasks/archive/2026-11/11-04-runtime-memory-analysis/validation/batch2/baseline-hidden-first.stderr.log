@@ -1,0 +1,20 @@
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x150FB2 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0x141B9A owner=0x310BAA previous=0x150FB2 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x141B9A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x141B9A owner=0x310BAA previous=0x150FB2 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x141B9A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=Drawpad hwnd=0x141B9A owner=0x310BAA previous=0x150FB2 valid=1 visible=1 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x141B9A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x141B9A owner=0x310BAA previous=0x150FB2 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x141B9A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[Draw3Hidden] command_persistence_root=D:\Project\Inkeys\Repo\Inkeys\.trellis\tasks\11-04-runtime-memory-analysis\validation\after-bin\Draw3HiddenPptCommands\44968-2363740786239
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[DrawpadSurface] event=visibility-applied requested=primary role=Drawpad hwnd=0x141B9A owner=0x310BAA previous=0x141072 valid=1 visible=1 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=primary role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x141B9A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=Drawpad hwnd=0x141B9A owner=0x310BAA previous=0x141072 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=presentation role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x141B9A valid=1 visible=1 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=Drawpad hwnd=0x141B9A owner=0x310BAA previous=0x141072 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[DrawpadSurface] event=visibility-applied requested=hidden role=DrawpadPresentation hwnd=0x310BAA owner=0x1704EC previous=0x141B9A valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31680,-31760)
+[Draw3Hidden] FAIL: hidden contact reached Draw3 consumer and presented
+[Draw3Hidden] FAIL: stored stroke publishes current page content

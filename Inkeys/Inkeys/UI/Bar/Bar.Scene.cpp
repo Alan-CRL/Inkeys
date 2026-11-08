@@ -9,7 +9,6 @@ module;
 #include <mutex>
 #include <utility>
 #include <windows.h>
-#include "Bar.BusyRing.h"
 #include "Bar.DirtyRegion.h"
 #include "Bar.ThemeMaterial.h"
 #include "Bar.PageLoadingIndicator.h"
@@ -140,11 +139,15 @@ namespace Inkeys::UI::Bar
 		BarUiPctClass opacity{1},idleFade{0};
 		BarPageSurfaceContent content;
 		PageLoadingIndicator indicator;
-		bool indicatorAllowed=true,indicatorInputDirty=true,indicatorAnimations=true,ringAttempted=false,ringFailed=false;
-		Microsoft::WRL::ComPtr<ID2D1PathGeometry> ringArc;
-		Microsoft::WRL::ComPtr<ID2D1StrokeStyle> ringStroke;
-		Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> ringTrack,ringForeground;
+		bool indicatorAllowed=true,indicatorInputDirty=true,indicatorAnimations=true,ringFailed=false;
+		// 环路径按页码按钮内缩圆角矩形缓存；尺寸/圆角变化时重建，设备丢失时随资源一起丢弃。
+		struct RingKey{float width=0,height=0,radius=0;bool operator==(const RingKey&) const noexcept=default;};
+		Microsoft::WRL::ComPtr<ID2D1PathGeometry> ringPath;
+		Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> ringForeground;
+		RingKey ringKey;float ringPerimeter=0;
 		RECT ringDamage{};
+		// 当前页码槽实际显示的文字；门控到点后才换成状态文字。
+		std::wstring shownCurrent,shownTotal;bool shownStatus=false;
 		BarSurfaceBackgroundSpec background;
 		BarSurfaceHooks hooks;
 		RECT logical{0,0,1,1},presentation{0,0,1,1},damage{};
@@ -152,9 +155,6 @@ namespace Inkeys::UI::Bar
 		double fontTargetScale=0;
 		bool initialized=false,backgroundOnly=false,active=false,invalidated=true,subscribed=false;
 		std::chrono::steady_clock::time_point previousFrame{};
-		// 白板翻页开始计时（steady 时钟，与帧时间同域）；仅 switching 期间有效。
-		std::chrono::steady_clock::time_point switchingSince{};
-		bool switchingTimed=false;
 		FrameAnimationClock animationClock;
 		bool frameSeen=false;
 		std::uint64_t appliedLightingRevision=0;
@@ -245,6 +245,13 @@ namespace Inkeys::UI::Bar
 			// 拓扑改变时缓存隐藏优先顺序；热帧与绘制不再复制固定列表。
 			for(const bool visible:{false,true})for(std::size_t i=1;i<paginationMembers.size();++i)
 				if(paginationMembers[i]->IsVisible()==visible)paginationDrawOrder[count++]=static_cast<BarSurfaceButtonId>(i+1);
+		}
+		// 500ms门控到点后，哪些按钮视觉上变浅：加载/终态失败时整窗口；可重试失败时只有不可点的上/下一页。
+		bool LoadingDimmed(BarSurfaceButtonId id) const noexcept
+		{
+			if(!indicator.reached||content.loadState==BarPageLoadState::None)return false;
+			if(content.loadState==BarPageLoadState::RetryableFailed)return id>=2&&id<=4&&!content.interactive[id-2];
+			return true;
 		}
 		bool PropertyButtonEnabled(BarSurfaceButtonId id) const noexcept
 		{
@@ -371,38 +378,55 @@ namespace Inkeys::UI::Bar
 			value.secondaryScaleAfter=Trace::ContentMilli(static_cast<double>(pageTotal.contentScale));
 			value.secondaryPctAfter=Trace::ContentMilli(static_cast<double>(pageTotal.contentPct));Trace::CaptureContentPolicy(value);
 		}
+		void ResetRingResources() noexcept
+		{
+			ringPath.Reset();ringForeground.Reset();ringKey={};ringPerimeter=0;ringFailed=false;
+		}
+		// 状态文字只在500ms门控到点后替换常态页码；空串表示该槽不替换。
+		std::pair<std::wstring,std::wstring> DisplayedPages(const BarPageSurfaceContent& value) const
+		{
+			const bool status=indicator.reached&&value.loadState!=BarPageLoadState::None;
+			return {status&&!value.statusPrimary.empty()?value.statusPrimary:value.currentPage,
+				status&&!value.statusSecondary.empty()?value.statusSecondary:value.totalPage};
+		}
+		// 以当前 content 与门控状态重算页码槽文字；返回是否改变。
+		bool RefreshDisplayedText()
+		{
+			const auto [current,total]=DisplayedPages(content);
+			const bool status=indicator.reached&&content.loadState!=BarPageLoadState::None;
+			const bool currentChanged=current!=shownCurrent,totalChanged=total!=shownTotal;
+			if(!currentChanged&&!totalChanged&&status==shownStatus)return false;
+			IncludeButton(3);
+			// 纯页码之间的跳变立即生效；进出状态文字走既有的文字过渡。
+			const bool immediate=!status&&!shownStatus;
+			const auto observation=ContentObservationBefore(static_cast<long>(shownStatus),content,
+				immediate?Inkeys::Business::PptWaitTrace::ContentPolicy::Immediate:Inkeys::Business::PptWaitTrace::ContentPolicy::Animated,
+				(currentChanged?1U:0U)|(totalChanged?2U:0U)|(status!=shownStatus?4U:0U));
+			bool primaryChanged,secondaryChanged;
+			if(immediate){
+				primaryChanged=pageButtons[2]->name.SetStringImmediate(current);secondaryChanged=pageTotal.SetStringImmediate(total);
+			}else{
+				primaryChanged=pageButtons[2]->name.TransitionToString(current);secondaryChanged=pageTotal.TransitionToString(total);
+			}
+			CompleteContentObservation(observation,primaryChanged,secondaryChanged);
+			if(BarPptCompactPaginationEnabled&&!content.whiteboard&&content.surface<2){
+				auto shown=content;shown.currentPage=current;shown.totalPage=total;
+				auto& name=pageButtons[2]->name;
+				const bool moving=!name.x.IsSame()||!name.w.IsSame()||!name.size.IsSame()
+					||!pageTotal.x.IsSame()||!pageTotal.w.IsSame()||!pageTotal.y.IsSame()||!pageTotal.size.IsSame();
+				UpdateHorizontalPageWidths(shown,currentChanged,totalChanged,!moving,BarUiDefaultOperationDur);
+			}
+			shownCurrent=current;shownTotal=total;shownStatus=status;
+			return true;
+		}
 		void UpdateContent(const BarPageSurfaceContent& next)
 		{
 			// 同帧false→true也必须退休旧等待；只清截止事实，当前显隐值留给下一Advance连续退场。
-			if((content.navigationWaitingPrevious||content.navigationWaitingNext)
-				&&!(next.navigationWaitingPrevious||next.navigationWaitingNext)){
+			if(content.loadState!=BarPageLoadState::None&&next.loadState==BarPageLoadState::None){
 				indicator.requested=false;indicator.deadline=PageLoadingIndicator::Time::max();
 			}
-			indicatorInputDirty|=content.loadingSession!=next.loadingSession
-				||(content.navigationWaitingPrevious||content.navigationWaitingNext)!=(next.navigationWaitingPrevious||next.navigationWaitingNext);
+			indicatorInputDirty|=content.loadingSession!=next.loadingSession||content.loadState!=next.loadState;
 			// 内容更新不得重新提交布局目标，否则普通翻页会截断正在进行的 PPT/白板转换。
-			const bool currentChanged=content.currentPage!=next.currentPage,totalChanged=content.totalPage!=next.totalPage;
-			const bool kindChanged=content.kind!=next.kind;
-			if(currentChanged||totalChanged||kindChanged){
-				IncludeButton(3);
-				const bool immediate=content.kind==BarPageContentKind::Numeric&&next.kind==BarPageContentKind::Numeric;
-				const auto observation=ContentObservationBefore(static_cast<long>(content.kind),next,
-					immediate?Inkeys::Business::PptWaitTrace::ContentPolicy::Immediate:Inkeys::Business::PptWaitTrace::ContentPolicy::Animated,
-					(currentChanged?1U:0U)|(totalChanged?2U:0U)|(kindChanged?4U:0U));
-				bool primaryChanged,secondaryChanged;
-				if(immediate){
-					primaryChanged=pageButtons[2]->name.SetStringImmediate(next.currentPage);secondaryChanged=pageTotal.SetStringImmediate(next.totalPage);
-				}else{
-					primaryChanged=pageButtons[2]->name.TransitionToString(next.currentPage);secondaryChanged=pageTotal.TransitionToString(next.totalPage);
-				}
-				CompleteContentObservation(observation,primaryChanged,secondaryChanged);
-				if(BarPptCompactPaginationEnabled&&!next.whiteboard&&next.surface<2){
-					auto& name=pageButtons[2]->name;
-					const bool moving=!name.x.IsSame()||!name.w.IsSame()||!name.size.IsSame()
-						||!pageTotal.x.IsSame()||!pageTotal.w.IsSame()||!pageTotal.y.IsSame()||!pageTotal.size.IsSame();
-					UpdateHorizontalPageWidths(next,currentChanged,totalChanged,!moving,BarUiDefaultOperationDur);
-				}
-			}
 			const auto text=[&](BarSurfaceButtonId id,const std::wstring& icon,const std::wstring& label,double angle=0){
 				ConfigureButtonContent(Button(id),icon,label,angle,BarUiDefaultOperationDur,false);IncludeButton(id);
 			};
@@ -412,7 +436,7 @@ namespace Inkeys::UI::Bar
 				text(4,wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 					(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90));
 			if(content.moreLabel!=next.moreLabel)text(5,L"barMenu",next.moreLabel);
-			const wchar_t* icons[]={L"barCloseSmall",L"barMinimize",L"barPalette"};
+			const wchar_t* icons[]={L"barCloseWhiteboard",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i)if(content.actionLabels[i]!=next.actionLabels[i])text(static_cast<BarSurfaceButtonId>(6+i),icons[i],next.actionLabels[i]);
 			for(std::size_t i=0;i<next.patternLabels.size();++i)if(content.patternLabels[i]!=next.patternLabels[i])text(static_cast<BarSurfaceButtonId>(15+i),L"colorSelect",next.patternLabels[i]);
 			for(std::size_t i=0;i<headings.size();++i)if(content.sectionLabels[i]!=next.sectionLabels[i]){
@@ -430,11 +454,8 @@ namespace Inkeys::UI::Bar
 					if(ThemeColors[i]==content.backgroundRgb||ThemeColors[i]==next.backgroundRgb)IncludeButton(static_cast<BarSurfaceButtonId>(9+i));
 			}
 			for(std::size_t i=0;i<next.enabled.size();++i)if(content.enabled[i]!=next.enabled[i]||content.interactive[i]!=next.interactive[i])IncludeButton(static_cast<BarSurfaceButtonId>(2+i));
-			if(content.switching!=next.switching){
-				switchingTimed=next.switching;
-				if(next.switching)switchingSince=std::chrono::steady_clock::now();
+			if(content.switching!=next.switching||content.loadState!=next.loadState)
 				for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
-			}
 			if(content.pptActive!=next.pptActive){
 				IncludeButton(7);
 				// 放映恢复时同步撤销 Minimize 的旧反馈，禁用态不能残留按压底色或释放点击。
@@ -443,7 +464,7 @@ namespace Inkeys::UI::Bar
 					if(hover==7||pressed==7){pointer.Reset();hover=pressed=0;feedbackDirty=true;}
 				}
 			}
-			content=next;
+			content=next;(void)RefreshDisplayedText();
 			const bool menuChanged=menuMotion.Retarget(wb&&next.surface==0&&next.menu!=0,BarUiDefaultOperationDur);
 			const bool themeChanged=themeMotion.Retarget(wb&&next.surface==0&&next.menu==2,BarUiDefaultOperationDur,&menuMotion.Timeline());
 			if(menuChanged||themeChanged)FullDamage();
@@ -501,9 +522,11 @@ namespace Inkeys::UI::Bar
 				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal),rects[2],L"",L"",0,duration,direct);
 			// 页码属于状态输出：不沿文字切换动画延迟页身份。
 			const auto observation=ContentObservationBefore(-1,next,Inkeys::Business::PptWaitTrace::ContentPolicy::Initial,0);
-			const bool primaryChanged=pageButtons[2]->name.SetStringImmediate(next.currentPage);
+			const auto [shownNow,shownTotalNow]=DisplayedPages(next);
+			const bool primaryChanged=pageButtons[2]->name.SetStringImmediate(shownNow);
 			pageButtons[2]->name.enable.Initialization(true);
-			const bool secondaryChanged=pageTotal.SetStringImmediate(next.totalPage);
+			const bool secondaryChanged=pageTotal.SetStringImmediate(shownTotalNow);
+			shownCurrent=shownNow;shownTotal=shownTotalNow;shownStatus=indicator.reached&&next.loadState!=BarPageLoadState::None;
 			CompleteContentObservation(observation,primaryChanged,secondaryChanged);
 			const auto metrics=ResolveBarButtonVisualMetrics(standard?BarButtonVisualLayoutKind::PageTwoTwo:
 				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal));
@@ -514,7 +537,8 @@ namespace Inkeys::UI::Bar
 			slot(pageTotal.w,metrics.secondarySlotWidthDip?metrics.secondarySlotWidthDip:BarButtonTwoSideDip);
 			slot(pageTotal.h,metrics.secondarySlotHeightDip);pageTotal.enable.Initialization(true);
 			if(!standard&&!vertical){
-				UpdateHorizontalPageWidths(next,true,true,direct,duration);
+				auto shown=next;shown.currentPage=shownNow;shown.totalPage=shownTotalNow;
+				UpdateHorizontalPageWidths(shown,true,true,direct,duration);
 			}
 			ConfigureButton(*pageButtons[3],standard?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,rects[3],
 				wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
@@ -526,7 +550,7 @@ namespace Inkeys::UI::Bar
 				if(button->button.framePct)button->button.framePct->SetDirect(0);
 				if(button->button.frameLightPct)button->button.frameLightPct->SetDirect(0);
 			}
-			const wchar_t* icons[]={L"barCloseSmall",L"barMinimize",L"barPalette"};
+			const wchar_t* icons[]={L"barCloseWhiteboard",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i){
 				const double y=MenuBounds.top+5+i*(BarButtonOneSideDip+5);
 				ConfigureButton(actions[i],BarButtonVisualLayoutKind::StandardFourOne,{195,y,335,y+32.5},icons[i],next.actionLabels[i],0,0,true);
@@ -580,6 +604,8 @@ namespace Inkeys::UI::Bar
 					|| (id>=6&&id<=8&&candidate.panelVisible[1]) || (id>=9&&candidate.panelVisible[2]);
 				hit.enabled=hit.visible&&!content.switching&&PropertyButtonEnabled(id);
 				if(id>=2&&id<=4)hit.enabled=hit.enabled&&content.enabled[id-2]&&content.interactive[id-2];
+				// 重试按钮在“重试”文字出现之前保持不可点，避免点到仍显示页码的按钮。
+				if(id==3&&content.loadState==BarPageLoadState::RetryableFailed&&!indicator.reached)hit.enabled=false;
 				if(id==1)hit.enabled=!content.whiteboard;
 				if(id==7)hit.enabled=hit.enabled&&!content.pptActive;
 				if(id==5)hit.enabled=hit.enabled&&content.whiteboard&&content.surface==0;
@@ -652,26 +678,21 @@ namespace Inkeys::UI::Bar
             indicatorInputDirty=false;indicatorAnimations=frame.animationEnabled;
             const auto episode=indicator.episode,indicatorSession=indicator.session;
             const bool indicatorChanged=indicator.Advance(now,content.loadingSession,
-                indicatorAllowed&&!backgroundOnly&&!content.whiteboard,
-                content.navigationWaitingPrevious||content.navigationWaitingNext,dt,speed,frame.animationEnabled,
+                indicatorAllowed&&!backgroundOnly,static_cast<PageLoadState>(content.loadState),dt,speed,frame.animationEnabled,
                 [](bool entering,double t){return BarUiApplyCurve(entering?BarUiCurveEnum::EaseOutCubic:BarUiCurveEnum::EaseInCubic,t);});
-            if((episode!=indicator.episode||indicatorSession!=indicator.session)&&ringFailed){
-                ringArc.Reset();ringStroke.Reset();ringTrack.Reset();ringForeground.Reset();ringFailed=false;ringAttempted=false;
-            }
+            if((episode!=indicator.episode||indicatorSession!=indicator.session)&&ringFailed)ResetRingResources();
+            // 门控到点/撤销时才切换状态文字，短暂的跳变不会出现任何变化。
+            if(indicatorChanged)(void)RefreshDisplayedText();
             if(indicatorChanged){
-                Include(ringDamage);const auto r=Bounds(pageButtons[2]->button);
-                constexpr auto reach=PageLoadingStyle::OuterRadius+PageLoadingStyle::AntialiasOutset;
-                const auto current=Pixels({r.right-PageLoadingStyle::FromRight-reach,r.top+PageLoadingStyle::FromTop-reach,
-                    r.right-PageLoadingStyle::FromRight+reach,r.top+PageLoadingStyle::FromTop+reach},scale);
-                Include(current);ringDamage=indicator.opacity>0?current:RECT{};
+                // 环可见时每帧只重绘页码按钮包络；各按钮变浅的过渡由自身视觉结果登记损伤。
+                Include(ringDamage);
+                const auto r=Bounds(pageButtons[2]->button);
+                constexpr float reach=PageLoadingStyle::AntialiasOutset;
+                const auto current=Pixels({r.left-reach,r.top-reach,r.right+reach,r.bottom+reach},scale);
+                Include(current);ringDamage=indicator.Ring()>0?current:RECT{};
             }
 
 			active=fontPending;bool changed=false,panelsChanged=false;
-			// 翻页卡住期间保持帧推进；圆环可见后每帧重绘页码区以更新角度。
-			if(switchingTimed&&content.whiteboard&&!backgroundOnly){
-				active=true;
-				if(BusyRingVisible(true,std::chrono::duration<double>(now-switchingSince).count()))IncludeButton(3);
-			}
 			const auto surface=GetThemeColor(BarThemeColorEnum::Surface);
 			if(appliedSurfaceColor!=surface){
 				// 普通表面跟随主栏样式，预览内部颜色仍由页面主题独立控制。
@@ -726,7 +747,7 @@ namespace Inkeys::UI::Bar
 				for(BarSurfaceButtonId id=1;id<=17;++id){
 					auto& button=Button(id);const bool visible=(id<=5&&button.IsVisible())
 						|| (id>=6&&id<=8&&menuMotion.Visible()) || (id>=9&&themeMotion.Visible());
-					bool enabled=!content.switching&&PropertyButtonEnabled(id);if(id>=2&&id<=4)enabled&=content.enabled[id-2];if(id==7)enabled&=!content.pptActive;
+					bool enabled=!LoadingDimmed(id)&&PropertyButtonEnabled(id);if(id>=2&&id<=4)enabled&=content.enabled[id-2];if(id==7)enabled&=!content.pptActive;
 					// 与主栏一致：图标用 IconPrimary、文字用 TextPrimary；只有压在白板底色上的样式预览按背景亮度覆盖。
 					std::optional<COLORREF> text;
 					if(id>=15){const auto rgb=content.backgroundRgb;const unsigned lum=((rgb>>16)&255)*299+((rgb>>8)&255)*587+(rgb&255)*114;
@@ -738,6 +759,8 @@ namespace Inkeys::UI::Bar
 					if(id>=9)button.icon.color1.reset();
 					BarButtonAnimationContext animation{dt,speed,static_cast<bool>(BarUiAnimationEnabled)};
 					animation.visible=visible;animation.hoverAllowed=enabled&&id!=1;
+					// 通用禁用变浅只覆盖图标与主文字；总页码槽由 Scene 独立持有，需同口径补上。
+					if(id==3)pageTotal.pct.SetTar(visible?(enabled?1.0:GetThemeDisabledContentOpacity()):0.0,BarButtonHoverTransitionDuration);
 					const auto result=AdvanceBarButtonVisual(button,animation,id==3?&pageTotal:nullptr);
 					active|=result.active;
 					if(result.changed)Include(Pixels({candidate.buttons[id-1].boundsDip.left,candidate.buttons[id-1].boundsDip.top,
@@ -788,64 +811,61 @@ namespace Inkeys::UI::Bar
 					return true;
 				};
 			}
-            if(id==3&&indicator.opacity>0&&!ringFailed)options.content=[&](auto& target,auto* context,auto& item,const auto&){
-                // 固定弧只在冷路径创建；装饰失败不改变数字提交或业务恢复状态。
-                if(!ringAttempted){
-                    ringAttempted=true;Microsoft::WRL::ComPtr<ID2D1Factory> factory;context->GetFactory(factory.GetAddressOf());
-                    Microsoft::WRL::ComPtr<ID2D1PathGeometry> arc;Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
-                    HRESULT hr=factory?factory->CreatePathGeometry(arc.GetAddressOf()):E_FAIL;
-                    if(SUCCEEDED(hr))hr=arc->Open(sink.GetAddressOf());
+            if(id==3&&indicator.Ring()>0&&!ringFailed)options.content=[&](auto& target,auto* context,auto& item,const auto&){
+                // 沿页码按钮边框内侧的圆角矩形画一段弧：无轨道、圆角端帽，弧长与起点由相位推导。
+                const auto r=Bounds(item.button);
+                constexpr float inset=static_cast<float>(BarButtonFrameThicknessDip)+PageLoadingStyle::Gap+PageLoadingStyle::Width/2;
+                const float corner=item.button.rw?static_cast<float>(item.button.rw->val):static_cast<float>(BarButtonCornerRadiusDip);
+                const float width=static_cast<float>(r.Width())-2*inset,height=static_cast<float>(r.Height())-2*inset;
+                if(width<=PageLoadingStyle::Width||height<=PageLoadingStyle::Width)return true;
+                // 圆角与按钮自身圆角一致（环中心线取按钮圆角），仅在放不下时收小。
+                const float radius=(std::max)(.5F,(std::min)({corner,width/2,height/2}));
+                const RingKey key{width,height,radius};
+                Microsoft::WRL::ComPtr<ID2D1Factory> factory;context->GetFactory(factory.GetAddressOf());
+                if(!factory){ringFailed=true;return true;}
+                // 路径只在尺寸变化时重建；装饰失败不改变数字提交或业务恢复状态。
+                if(!ringPath||!(key==ringKey)){
+                    ringPath.Reset();ringPerimeter=0;
+                    Microsoft::WRL::ComPtr<ID2D1PathGeometry> path;Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+                    HRESULT hr=factory->CreatePathGeometry(path.GetAddressOf());
+                    if(SUCCEEDED(hr))hr=path->Open(sink.GetAddressOf());
                     if(SUCCEEDED(hr)){
-                        sink->BeginFigure(D2D1::Point2F(0,-PageLoadingStyle::Radius),D2D1_FIGURE_BEGIN_HOLLOW);
-                        sink->AddArc(D2D1::ArcSegment(D2D1::Point2F(PageLoadingStyle::ArcEndX,PageLoadingStyle::ArcEndY),D2D1::SizeF(PageLoadingStyle::Radius,PageLoadingStyle::Radius),0,D2D1_SWEEP_DIRECTION_CLOCKWISE,D2D1_ARC_SIZE_LARGE));
-                        sink->EndFigure(D2D1_FIGURE_END_OPEN);hr=sink->Close();
+                        const auto point=[](float x,float y){return D2D1::Point2F(x,y);};
+                        const auto corner90=[&](float x,float y){sink->AddArc(D2D1::ArcSegment(point(x,y),D2D1::SizeF(radius,radius),0,D2D1_SWEEP_DIRECTION_CLOCKWISE,D2D1_ARC_SIZE_SMALL));};
+                        // 起点固定为顶边中点，顺时针一圈。
+                        sink->BeginFigure(point(width/2,0),D2D1_FIGURE_BEGIN_HOLLOW);
+                        sink->AddLine(point(width-radius,0));corner90(width,radius);
+                        sink->AddLine(point(width,height-radius));corner90(width-radius,height);
+                        sink->AddLine(point(radius,height));corner90(0,height-radius);
+                        sink->AddLine(point(0,radius));corner90(radius,0);
+                        sink->AddLine(point(width/2,0));
+                        sink->EndFigure(D2D1_FIGURE_END_CLOSED);hr=sink->Close();
                     }
-                    // 指示器私有描边同弧/brush一起缓存；失败不走共享helper的同步logger，也可按新等待重试。
-                    Microsoft::WRL::ComPtr<ID2D1StrokeStyle> stroke;
-                    if(SUCCEEDED(hr)){
-                        const auto properties=D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND,D2D1_CAP_STYLE_ROUND,
-                            D2D1_CAP_STYLE_ROUND,D2D1_LINE_JOIN_ROUND,10.0F,D2D1_DASH_STYLE_SOLID,0.0F);
-                        hr=factory->CreateStrokeStyle(properties,nullptr,0,stroke.GetAddressOf());
-                    }
-                    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> track,foreground;
-                    if(SUCCEEDED(hr))hr=context->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0),track.GetAddressOf());
-                    if(SUCCEEDED(hr))hr=context->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0),foreground.GetAddressOf());
-                    if(SUCCEEDED(hr)){ringArc=std::move(arc);ringStroke=std::move(stroke);ringTrack=std::move(track);ringForeground=std::move(foreground);}else ringFailed=true;
+                    float length=0;
+                    if(SUCCEEDED(hr))hr=path->ComputeLength(nullptr,D2D1_DEFAULT_FLATTENING_TOLERANCE,&length);
+                    if(SUCCEEDED(hr)&&!ringForeground)hr=context->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0),ringForeground.GetAddressOf());
+                    if(FAILED(hr)||length<=PageLoadingStyle::Width*3){ringFailed=true;return true;}
+                    ringPath=std::move(path);ringKey=key;ringPerimeter=length;
                 }
-                auto* stroke=ringStroke.Get();
-                auto* track=ringTrack.Get();auto* foreground=ringForeground.Get();
-                const auto color=[&](COLORREF value){return D2D1::ColorF(GetRValue(value)/255.0F,GetGValue(value)/255.0F,GetBValue(value)/255.0F,static_cast<FLOAT>(indicator.opacity));};
-                if(track)track->SetColor(color(GetThemeColor(BarThemeColorEnum::SurfaceFrame)));
-                if(foreground)foreground->SetColor(color(GetThemeColor(BarThemeColorEnum::IconPrimary)));
-                if(ringFailed||!ringArc||!stroke||!track||!foreground){ringFailed=true;return true;}
+                const float weight=PageLoadingStyle::Width,perimeter=ringPerimeter;
+                const auto arc=PageLoadingArcAt(indicator.phase,indicatorAnimations);
+                // 圆角端帽会向两端各延伸半个线宽，扣除后弧段的可见总长才等于 arc.length。
+                const float visible=(std::clamp)(static_cast<float>(arc.length)*perimeter,weight,perimeter-3*weight);
+                const float dashes[2]={(visible-weight)/weight,(perimeter-(visible-weight))/weight};
+                const float offset=(perimeter-static_cast<float>(arc.start)*perimeter)/weight;
+                Microsoft::WRL::ComPtr<ID2D1StrokeStyle> stroke;
+                const auto properties=D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND,D2D1_CAP_STYLE_ROUND,
+                    D2D1_CAP_STYLE_ROUND,D2D1_LINE_JOIN_ROUND,10.0F,D2D1_DASH_STYLE_CUSTOM,offset);
+                if(FAILED(factory->CreateStrokeStyle(properties,dashes,2,stroke.GetAddressOf())))return true;
+                const auto color=GetThemeColor(BarThemeColorEnum::IconPrimary);
+                ringForeground->SetColor(D2D1::ColorF(GetRValue(color)/255.0F,GetGValue(color)/255.0F,GetBValue(color)/255.0F,static_cast<FLOAT>(indicator.Ring())));
                 D2D1_MATRIX_3X2_F original;context->GetTransform(&original);
-                const auto r=Bounds(item.button);const float z=static_cast<float>(target.GetFrameZoom());
-                const float zoom=z*static_cast<float>(indicator.scale);
-                // 外包络与损伤共用style参数；用户调参不改页码布局或字号。
-                context->SetTransform(D2D1::Matrix3x2F::Rotation(static_cast<FLOAT>(indicator.angle))*D2D1::Matrix3x2F::Scale(zoom,zoom)
-                    *D2D1::Matrix3x2F::Translation(static_cast<FLOAT>((r.right-PageLoadingStyle::FromRight)*z),static_cast<FLOAT>((r.top+PageLoadingStyle::FromTop)*z))*original);
-                context->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(0,0),PageLoadingStyle::Radius,PageLoadingStyle::Radius),track,PageLoadingStyle::TrackWidth);
-                context->DrawGeometry(ringArc.Get(),foreground,PageLoadingStyle::ArcWidth,stroke);
+                const float z=static_cast<float>(target.GetFrameZoom());
+                context->SetTransform(D2D1::Matrix3x2F::Scale(z,z)*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>((r.left+inset)*z),static_cast<FLOAT>((r.top+inset)*z))*original);
+                context->DrawGeometry(ringPath.Get(),ringForeground.Get(),weight,stroke.Get());
                 context->SetTransform(original);return true;
             };
 			DrawBarButtonVisual(renderer,dc,button,Inherit(button.button),options);
-		}
-		// 页码按钮右侧的旋转圆环：用现有 DrawProgressRing 画 28% 弧段并整体旋转。
-		void DrawBusyRing(ID2D1DeviceContext* dc,std::chrono::steady_clock::time_point now)
-		{
-			const auto& hit=candidate.buttons[2];if(!hit.visible)return;
-			const double width=hit.boundsDip.right-hit.boundsDip.left,height=hit.boundsDip.bottom-hit.boundsDip.top;
-			const float radius=static_cast<float>((std::min)(width,height)*0.22);if(radius<=0)return;
-			const D2D1_POINT_2F centre=D2D1::Point2F(static_cast<FLOAT>(hit.boundsDip.right-radius-4.0),
-				static_cast<FLOAT>((hit.boundsDip.top+hit.boundsDip.bottom)/2.0));
-			const double elapsed=std::chrono::duration<double>(now-switchingSince).count();
-			D2D1_MATRIX_3X2_F original;dc->GetTransform(&original);
-			dc->SetTransform(D2D1::Matrix3x2F::Rotation(static_cast<FLOAT>(BusyRingAngleDegrees(elapsed)),centre)
-				*D2D1::Matrix3x2F::Scale(scale,scale)
-				*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(logical.left-presentation.left),static_cast<FLOAT>(logical.top-presentation.top)));
-			const auto colour=GetThemeColor(BarThemeColorEnum::TextPrimary);
-			renderer.DrawRing(dc,centre,radius,(std::max)(1.5F,radius*0.30F),BusyRingArcFraction,colour,0.25F,0.90F);
-			dc->SetTransform(original);
 		}
 		void DrawGroup(ID2D1DeviceContext* dc,bool child)
 		{
@@ -964,7 +984,7 @@ namespace Inkeys::UI::Bar
 	}
 	void BarPageSurface::ReleaseDeviceResources() noexcept
 	{
-		impl_->ringArc.Reset();impl_->ringStroke.Reset();impl_->ringTrack.Reset();impl_->ringForeground.Reset();impl_->ringAttempted=false;impl_->ringFailed=false;
+		impl_->ResetRingResources();
 		impl_->renderer.DiscardDeviceResources();for(BarSurfaceButtonId id=1;id<=17;++id){impl_->Button(id).icon.ResetCache();impl_->Button(id).pngIcon.ResetCache();}
 		impl_->FullDamage();
 	}
@@ -995,7 +1015,7 @@ namespace Inkeys::UI::Bar
 	LONG BarPageSurface::PresentationOutsetPixels() const noexcept{return impl_->Outset();}
 	HRESULT BarPageSurface::EnsureDeviceResources(const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch,UINT w,UINT h)
 	{
-		if(impl_->renderer.GetDeviceGeneration()!=epoch.generation){impl_->ringArc.Reset();impl_->ringStroke.Reset();impl_->ringTrack.Reset();impl_->ringForeground.Reset();impl_->ringAttempted=false;impl_->ringFailed=false;for(BarSurfaceButtonId id=1;id<=17;++id)impl_->Button(id).icon.ResetCache();}
+		if(impl_->renderer.GetDeviceGeneration()!=epoch.generation){impl_->ResetRingResources();for(BarSurfaceButtonId id=1;id<=17;++id)impl_->Button(id).icon.ResetCache();}
 		return impl_->renderer.EnsureDeviceResources(epoch,w,h);
 	}
 	ID2D1DeviceContext* BarPageSurface::DeviceContext() const noexcept{return impl_->renderer.GetDeviceContext();}
@@ -1089,7 +1109,7 @@ namespace Inkeys::UI::Bar
     {
         if(impl_->indicatorAllowed!=visible)impl_->indicatorInputDirty=true;
         impl_->indicatorAllowed=visible;
-        if(!visible){if(impl_->indicator.opacity>0)impl_->Include(impl_->ringDamage);impl_->ringDamage={};impl_->indicator.Reset();}
+        if(!visible){if(impl_->indicator.Ring()>0)impl_->Include(impl_->ringDamage);impl_->ringDamage={};impl_->indicator.Reset();(void)impl_->RefreshDisplayedText();}
     }
     bool BarPageSurface::LoadingIndicatorAnimationActive() const noexcept
     {return impl_->indicatorAllowed&&!impl_->ringFailed&&impl_->indicator.NeedsFrames(static_cast<bool>(BarUiAnimationEnabled));}
@@ -1130,7 +1150,6 @@ namespace Inkeys::UI::Bar
 			// 分页按钮图标/文字属于常驻内容；菜单与主题浮层不受影响。
 			p.renderer.SetResidentContentOpacity(GetThemeResidentContentOpacity());
 			for(const auto id:p.paginationDrawOrder)p.DrawButton(dc,id);
-			if(p.switchingTimed&&p.content.whiteboard&&BusyRingVisible(true,std::chrono::duration<double>(now-p.switchingSince).count()))p.DrawBusyRing(dc,now);
 			if(p.content.whiteboard&&p.content.surface==0&&p.content.unsaved)p.renderer.Word(dc,p.unsaved,{5,-32},DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_LEADING);
 			p.renderer.SetResidentContentOpacity(1.0);
 		}

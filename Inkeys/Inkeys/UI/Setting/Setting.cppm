@@ -15,6 +15,7 @@ export namespace Inkeys::UI::Setting
 	void Shutdown() noexcept;
 	int RunBusinessCancellationProductionTest() noexcept;
 	int RunFontLifecycleProductionTest() noexcept;
+	int RunTextureRecoveryProductionTest() noexcept;
 	// 复用已启动的业务FIFO，不打开设置窗口。
 	void RequestConfigWrite();
 	// 故障边沿投递既有Information FIFO，执行时复核捕获的协调版本。

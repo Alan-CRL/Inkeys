@@ -16,4 +16,6 @@ namespace Inkeys::Drawing::Draw3
 	int RunRendererFailureCommitTest() noexcept;
 	// 无 HWND WARP 故障注入，验证 Laser 双层烘干的失败事务与像素重试。
 	int RunLaserRasterFailureTest() noexcept;
+	// 真实隐藏 ULW/Host：辅助读回按需、owner 隐藏回执回收及重入完整帧。
+	int RunAuxiliaryPresentationResourceLifecycleTest() noexcept;
 }

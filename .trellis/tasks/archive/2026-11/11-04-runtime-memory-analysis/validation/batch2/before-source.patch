@@ -1,0 +1,112 @@
+diff --git a/Inkeys/IdtImage.cpp b/Inkeys/IdtImage.cpp
+index ec9009e2..f0a7c2b3 100644
+--- a/Inkeys/IdtImage.cpp
++++ b/Inkeys/IdtImage.cpp
+@@ -1,10 +1,11 @@
+ ﻿#include "IdtImage.h"
+ 
+ //drawpad画笔
+-Inkeys::Graphics::DibSurface alpha_drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //临时画板
++// 旧 Draw2 整屏画板已无生产消费者，仅保留空对象兼容历史代码。
++Inkeys::Graphics::DibSurface alpha_drawpad; //临时画板
+ Inkeys::Graphics::DibSurface putout; //主画板上叠加的控件内容
+-Inkeys::Graphics::DibSurface tester(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //图形绘制画板
+-Inkeys::Graphics::DibSurface pptdrawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //PPT控件画板
++Inkeys::Graphics::DibSurface tester; //图形绘制画板
++Inkeys::Graphics::DibSurface pptdrawpad; //PPT控件画板
+ 
+ int recall_image_recond, recall_image_reference;
+ shared_mutex RecallImageManipulatedSm;
+diff --git a/Inkeys/IdtMain.cpp b/Inkeys/IdtMain.cpp
+index e7994946..94739c75 100644
+--- a/Inkeys/IdtMain.cpp
++++ b/Inkeys/IdtMain.cpp
+@@ -3095,12 +3095,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
+ 	}
+ 	// DPI初始化
+ 	{
+-		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处只保留旧 surface resize。
+-		{
+-			(void)alpha_drawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+-			(void)tester.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+-			(void)pptdrawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+-		}
++		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处保留原启动进度槽。
+ 
+ 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
+ 		ReportStartupMilestoneForManualTest(
+diff --git a/Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cpp b/Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cpp
+index 76f1fa44..0594f3b5 100644
+--- a/Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cpp
++++ b/Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cpp
+@@ -701,7 +701,7 @@ namespace Inkeys::Drawing::Draw3
+ 			completion.operation = DesktopPersistenceOperation::Load;
+ 			completion.fileGuid = fileGuid;
+ 			const auto read = ReadUInkFile(path);
+-			const auto imported = read.document
++			auto imported = read.document
+ 				? ImportDraw3UInkDocument(*read.document)
+ 				: draw3::uink::Draw3UInkImportResult{};
+ 			if (read.status != UInkReadStatus::Complete ||
+@@ -712,6 +712,7 @@ namespace Inkeys::Drawing::Draw3
+ 				completion.status = DesktopPersistenceStatus::IoError;
+ 			else
+ 			{
++				// imported 保持可移动，校验后接管快照，避免 const 让移动退化为深复制。
+ 				auto snapshot = std::move(*imported.snapshot);
+ 				completion.status = DesktopPersistenceStatus::Loaded;
+ 				for (auto& canvas : snapshot.canvases)
+diff --git a/Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp b/Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp
+index f0dfa614..6b595f7f 100644
+--- a/Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp
++++ b/Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp
+@@ -1694,10 +1694,10 @@ namespace Inkeys::Drawing::Draw3
+ 						Bridge::SlideBindingMode::StableSlideId
+ 						&& pageIndex < target.totalPages
+ 						? std::optional<std::int32_t>(target.slideIds[pageIndex]) : std::nullopt;
+-					const auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
++					auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
+ 						slideId, false);
+ 					if (!output) return std::nullopt;
+-					snapshot.activeCanvases.push_back(*output);
++					snapshot.activeCanvases.push_back(std::move(*output));
+ 				}
+ 				// 保留 legacy canvases 投影，兼容旧的 UInk 测试与读取器。
+ 				snapshot.canvases = snapshot.activeCanvases;
+diff --git a/Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp b/Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp
+index 84f03111..358e66d8 100644
+--- a/Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp
++++ b/Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp
+@@ -1584,7 +1584,7 @@ namespace Inkeys::Drawing::Draw3
+ 				completion.status = PresentationPersistenceStatus::SourceChanged;
+ 				return completion;
+ 			}
+-			const auto imported = ImportApplicationOwnedPresentation(*read.document,
++			auto imported = ImportApplicationOwnedPresentation(*read.document,
+ 				MakeExpectation(*found, request.target));
+ 			const auto indexedWorkspaceGuid = ParseUInkGuid(found->workspaceGuid);
+ 			if (!imported.snapshot || !indexedWorkspaceGuid ||
+@@ -1593,7 +1593,8 @@ namespace Inkeys::Drawing::Draw3
+ 				completion.status = PresentationPersistenceStatus::Invalid;
+ 				return completion;
+ 			}
+-			Draw3UInkExportSnapshot projected = *imported.snapshot;
++			// 校验后接管独占的导入快照，后续区间投影不再需要导入结果。
++			Draw3UInkExportSnapshot projected = std::move(*imported.snapshot);
+ 			if (request.kind == PresentationLoadKind::PreviousInterval)
+ 			{
+ 				if (!request.pageGuid)
+diff --git a/inkStrokeModelerTest/draw3/uink_draw3_export.cpp b/inkStrokeModelerTest/draw3/uink_draw3_export.cpp
+index d0d317df..63ad4c03 100644
+--- a/inkStrokeModelerTest/draw3/uink_draw3_export.cpp
++++ b/inkStrokeModelerTest/draw3/uink_draw3_export.cpp
+@@ -351,7 +351,8 @@ namespace draw3::uink
+ 			const auto canvases = CanonicalCanvases(snapshot);
+ 			for (std::size_t canonicalIndex = 0; canonicalIndex < canvases.size(); ++canonicalIndex)
+ 			{
+-				Draw3UInkCanvasSnapshot sourceCanvas = canvases[canonicalIndex];
++				// 规范页在本轮只读，避免再复制整页点数据与操作列表。
++				const auto& sourceCanvas = canvases[canonicalIndex];
+ 				if (sourceCanvas.pageGuid.IsZero() || !std::isfinite(sourceCanvas.viewport.x) ||
+ 					!std::isfinite(sourceCanvas.viewport.y) ||
+ 					!IsFinitePositive(sourceCanvas.viewport.scale) ||

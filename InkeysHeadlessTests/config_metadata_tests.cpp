@@ -442,6 +442,56 @@ int RunConfigMetadataTests()
 		check(frozenDevice.Write() && ReadJson(file)["Drawing"]["Cursor"]["DotHideOnContact"].asInt() == 3,
 			"a deferred frozen config keeps its captured dot contact hide mode");
 		check(deviceConfig.GetUploadInfo() == cursorUpload, "per-device cursor preferences and dot hiding are not uploaded");
+
+		struct OpacityKey { const char* name; IdtAtomic<int>* value; int defaultValue; };
+		const OpacityKey opacityKeys[] = {
+			{ "PenOpacity", &deviceCursor.PenOpacity, 50 },
+			{ "HighlightPenFillOpacity", &deviceCursor.HighlightPenFillOpacity, 50 },
+			{ "DotOpacity", &deviceCursor.DotOpacity, 25 },
+			{ "HighlightDotFillOpacity", &deviceCursor.HighlightDotFillOpacity, 50 } };
+		const std::vector<Json::Value> invalidOpacities{ Json::Value(0), Json::Value(24), Json::Value(101),
+			Json::Value(true), Json::Value(0.5), Json::Value("50"), Json::Value(),
+			Json::Value(Json::Int64(-4294967295LL)), Json::Value(Json::UInt64(4294967297ULL)) };
+		for (const auto& key : opacityKeys)
+		{
+			check(key.value->load() == key.defaultValue, "cursor opacity uses its style-specific default");
+			const std::string path = std::string("Drawing.Cursor.") + key.name;
+			for (int valid : { 25, 50, 100 })
+			{
+				Json::Value document(Json::objectValue);
+				document["Drawing"]["Cursor"][key.name] = valid;
+				writeModeDocument(document);
+				*key.value = 37;
+				check(deviceConfig.ReadMini({ path }) && key.value->load() == valid,
+					"cursor opacity accepts and mini-reads every percent boundary");
+			}
+			for (const auto& invalid : invalidOpacities)
+			{
+				Json::Value document(Json::objectValue);
+				document["Drawing"]["Cursor"][key.name] = invalid;
+				writeModeDocument(document);
+				*key.value = 37;
+				check(deviceConfig.ReadMini({ path }) && key.value->load() == key.defaultValue,
+					"invalid cursor opacity restores its own default without numeric coercion");
+			}
+		}
+		deviceCursor.PenOpacity = 75;
+		deviceCursor.HighlightPenFillOpacity = 80;
+		deviceCursor.DotOpacity = 90;
+		deviceCursor.HighlightDotFillOpacity = 100;
+		check(deviceConfig.Write(), "write all cursor opacity preferences");
+		Inkeys::Config opacityRestarted;
+		check(opacityRestarted.ReadAll() && opacityRestarted.Drawing.Cursor.PenOpacity.load() == 75 &&
+			opacityRestarted.Drawing.Cursor.HighlightPenFillOpacity.load() == 80 &&
+			opacityRestarted.Drawing.Cursor.DotOpacity.load() == 90 &&
+			opacityRestarted.Drawing.Cursor.HighlightDotFillOpacity.load() == 100,
+			"restart restores all four independent cursor opacity values");
+		Inkeys::Config frozenOpacity;
+		frozenOpacity = deviceConfig;
+		deviceCursor.PenOpacity = 25;
+		check(frozenOpacity.Write() && ReadJson(file)["Drawing"]["Cursor"]["PenOpacity"].asInt() == 75,
+			"deferred config write freezes cursor opacity with the rest of the snapshot");
+		check(deviceConfig.GetUploadInfo() == cursorUpload, "all cursor opacity preferences remain NoUpload");
 	}
 
 

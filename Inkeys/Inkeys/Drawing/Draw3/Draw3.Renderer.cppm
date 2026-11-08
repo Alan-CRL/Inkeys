@@ -192,6 +192,9 @@ export namespace Inkeys::Drawing::Draw3
 
 	// 无窗口生产上传/合成验证：只创建 WARP 离屏资源，不创建 HWND 或交换链。
 	int RunRendererUploadValidation() noexcept;
+	// 无窗口生产验证：画布调试板在 L2/L1/L0 之下、关闭时字节一致，以及标记原语的真实像素读回。
+	int RunCanvasDebugOverlayValidation() noexcept;
+	int RunLaserResourceLifecycleValidation() noexcept;
 
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
@@ -248,9 +251,12 @@ export namespace Inkeys::Drawing::Draw3
 		int DrawHighlighterPrimitives(std::span<const HighlighterPrimitive> primitives,
 			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 同类 Shape 复用 InkData，一批 primitive 只提交一次 Draw。
+		// 后两个参数仅供画布调试标记覆盖到 backbuffer：默认值保持原 L0/L1 operator 行为。
 		int DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
 			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color,
-			InkOperatorKind operatorKind = InkOperatorKind::Draw);
+			InkOperatorKind operatorKind = InkOperatorKind::Draw,
+			ID3D11BlendState* blendStateOverride = nullptr,
+			float cornerRadiusOverride = -1.0f);
 		// 按 DPI 配置固定 4 DIP 圆角。
 		void ConfigureShapePrimitives(float dpiScale) noexcept;
 		// 以零像素视口预热 shape 16..19，避免首次选用时驱动延迟编译。
@@ -271,11 +277,17 @@ export namespace Inkeys::Drawing::Draw3
 		// 以不混合的矩形写零局部清理单笔 scratch。
 		bool ClearLaserCoverageRect(RECT rect);
 		bool ClearLaserLiveCoverageRect(RECT rect);
+		// Laser 大纹理只在工具控制边界准备；失败不发布半套资源。
+		bool EnsureLaserResources(UINT width, UINT height);
+		bool LaserResourcesAvailable() const noexcept;
+		void ReleaseLaserResources() noexcept;
+		// 当前持有纹理的名义像素字节，不包含驱动/进程内存口径。
+		uint64_t LaserResourceBytes() const noexcept;
 		// Bake 只改独立 scratch；全部 pass 成功后才交换成可见稳定颜色。
 		bool BeginLaserBake();
 		ID3D11RenderTargetView* LaserBakeTarget() const noexcept;
 		void CommitLaserBake() noexcept;
-		// 仅在绘制线程选择 Laser 后创建 L0 coverage；失败会永久降级到完整重绘。
+		// 仅在绘制线程选择 Laser 后创建 L0 coverage；失败在本次资源会话降级到完整重绘。
 		bool EnsureLaserIncrementalCoverageResources();
 		bool LaserIncrementalCoverageAvailable() const noexcept;
 		void ClearLaserIncrementalCoverage();
@@ -283,7 +295,7 @@ export namespace Inkeys::Drawing::Draw3
 		void DrawLaserDots(std::span<const LaserDot> dots);
 		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
 		void DrawLaserParticles();
-		// 在主循环开始前提交零像素 draw call，迫使驱动提前 JIT 编译所有激光着色器路径。
+		// 以零像素 draw call 预热可用路径；主体在选择时就绪后再预热完整 Laser 路径。
 		// 消除 Qualcomm/Adreno 等延迟编译驱动的首笔卡顿；对 Nvidia/AMD/Intel/WARP 无额外开销。
 		void WarmUpLaserShaders() noexcept;
 		// 按 DPI 与所选颜色配置白芯、实体外套、散射和固定漫反射尺寸。
@@ -299,6 +311,27 @@ export namespace Inkeys::Drawing::Draw3
 		void ResetLaserParticles() noexcept;
 		// 返回本进程当前 local/non-local GPU 显存占用；旧 DXGI 不支持时返回负值。
 		double QueryVideoMemoryUsageMiB() const noexcept;
+		// ---- 画布调试覆盖层：仅在启用画布调试时创建资源；关闭时全部为空操作 ----
+		// 创建（或按新尺寸重建）板子与标签纹理及其管线；已就绪且尺寸一致时直接返回 true。
+		// recreated 非空时报告本次是否（重新）创建了纹理，调用方据此重新上传内容。
+		bool EnsureDebugOverlayResources(UINT plateWidth, UINT plateHeight,
+			UINT labelWidth, UINT labelHeight, UINT labelSlots, bool* recreated = nullptr) noexcept;
+		bool DebugOverlayResourcesReady() const noexcept;
+		void ReleaseDebugOverlayResources() noexcept;
+		// 位图为预乘 BGRA，行距以像素计；板子位图固定位于纹理左上角。
+		bool UploadDebugPlate(const std::uint32_t* pixels, UINT width, UINT height,
+			UINT stridePixels) noexcept;
+		bool UploadDebugLabel(UINT slot, const std::uint32_t* pixels, UINT width, UINT height,
+			UINT stridePixels) noexcept;
+		// 板子在画布中的位置；visible=false 时合成路径不做任何额外工作。
+		void SetDebugPlate(RECT screenRect, bool visible) noexcept;
+		// 把板子画在 backbuffer 已合成内容（L2 + L1/L0）的下方，只写 dirty ∩ 板子矩形。
+		bool DrawDebugPlateUnder(RECT dirty) noexcept;
+		// 以 over 混合把标签位图画到 backbuffer（调用方保证区域已重新合成）。
+		bool DrawDebugLabel(UINT slot, int x, int y, UINT width, UINT height) noexcept;
+		// 在 backbuffer 上以 over 混合绘制解析 Shape（虚线/实线/矩形边框），不触碰 L0/L1/L2。
+		int DrawDebugMarkerShapes(std::span<const ShapePrimitive> primitives,
+			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, float cornerRadiusPx);
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将 L1/L0 仿射操作统一应用到目标 RGBA。
@@ -341,6 +374,11 @@ export namespace Inkeys::Drawing::Draw3
 
 	private:
 		friend int RunRendererUploadValidation() noexcept;
+		friend int RunCanvasDebugOverlayValidation() noexcept;
+		friend int RunLaserResourceLifecycleValidation() noexcept;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		bool failLaserPreparationAfterColor_ = false;
+#endif
 		bool useDefaultStructuredUpload_ = false;
 		bool CreateFixedResources(D3D_DRIVER_TYPE driver);
 		HRESULT UploadStructuredBuffer(ID3D11Buffer* buffer, const void* data, UINT bytes,
@@ -354,6 +392,8 @@ export namespace Inkeys::Drawing::Draw3
 		void ReleaseTrustedL2SnapshotPipeline() noexcept;
 		void UnbindLaserCoverageShaderResources();
 		bool UpdateLaserStyleConstants(float opacity);
+		bool DrawDebugTexture(ID3D11ShaderResourceView* source, UINT sourceWidth, UINT sourceHeight,
+			RECT target, int sourceLeft, int sourceTop, ID3D11BlendState* blendState) noexcept;
 		bool DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
 			float opacity, float shapeType, ID3D11ShaderResourceView* source,
 			UINT sourceSlot, ID3D11BlendState* blendState,
@@ -388,6 +428,21 @@ export namespace Inkeys::Drawing::Draw3
 		float trustedL2SnapshotViewportX_ = 0.0f;
 		float trustedL2SnapshotViewportY_ = 0.0f;
 		bool trustedL2SnapshotValid_ = false;
+		// 画布调试覆盖层资源：复用 shape 20 的矩形采样 pass，不增加着色器。
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> debugPlateTexture_;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> debugPlateSRV_;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> debugLabelTexture_;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> debugLabelSRV_;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> debugOverlayCB_;
+		Microsoft::WRL::ComPtr<ID3D11SamplerState> debugOverlaySampler_;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> debugUnderBlendState_;
+		UINT debugPlateWidth_ = 0;
+		UINT debugPlateHeight_ = 0;
+		UINT debugLabelWidth_ = 0;
+		UINT debugLabelHeight_ = 0;
+		UINT debugLabelSlots_ = 0;
+		RECT debugPlateRect_ = {};
+		bool debugPlateVisible_ = false;
 	};
 }
 

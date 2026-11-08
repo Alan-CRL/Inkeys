@@ -133,6 +133,8 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
@@ -220,6 +222,7 @@
 	<ClCompile Include="update_security_tests.cpp" />
 	<ClCompile Include="speed_eraser_tests.cpp" />
 	<ClCompile Include="palm_eraser_tests.cpp" />
+	<ClCompile Include="canvas_debug_tests.cpp" />
 	<ClCompile Include="pen_width_tests.cpp" />
 	<ClCompile Include="eraser_attribute_tests.cpp" />
 	<ClCompile Include="recall_attribute_tests.cpp" />

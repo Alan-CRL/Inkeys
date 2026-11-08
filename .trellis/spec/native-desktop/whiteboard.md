@@ -25,7 +25,7 @@
 
 ## 场景与底栏
 
-- 首次 Desktop→PPT/Whiteboard 记录桌面主栏快照。只调整已有底栏贴屏底 5 DIP，保持是否居中；浮动、折叠不强制展开。PPT↔Whiteboard 不重拍基线，不重复折叠/复位；有效放映且启用底栏时，共用底部分页按活动会话事实跨越分步可见性发布，不经过 Hidden 或整栏渐隐/重现。真正结束、配置关闭及白板最小化仍按原显隐合同。最终回 Desktop 恢复基线。同屏、PPT 底栏默认偏移为零且局部倍率为 1 时，分页主体和箭头的底部 Y 在进入白板时保持不变；Drag 槽收起和 More 增宽仍沿原内容形变。
+- 首次 Desktop→PPT/Whiteboard 记录桌面主栏快照。默认只把已展开底栏（含居中）按“位置”页策略变为居中底栏并贴屏底 5 DIP；折叠/悬浮仅在对应勾选命中时才变为居中底栏并展开，未命中保持原形态。详见 rendering-and-ui.md 场景入口条目。PPT↔Whiteboard 不重拍基线，不重复折叠/复位；有效放映且启用底栏时，共用底部分页按活动会话事实跨越分步可见性发布，不经过 Hidden 或整栏渐隐/重现。真正结束、配置关闭及白板最小化仍按原显隐合同。最终回 Desktop 恢复基线。同屏、PPT 底栏默认偏移为零且局部倍率为 1 时，分页主体和箭头的底部 Y 在进入白板时保持不变；Drag 槽收起和 More 增宽仍沿原内容形变。
 - 白板主屏，PPT 放映屏；同屏连续，跨屏适配显示快照/DPI，原显示器消失按既有回退。白板用户拖动吸附也显示标准底栏/居中底栏提示，沿同一手势资格和动画；程序进入、最小化恢复本身不建立提示资格。
 - 最小化是窗口组操作，不是 workspace 退出；两侧分页隐藏，主栏保持显示并回到任务栏居中底栏，恢复不重放入口；PPT 场景禁止最小化白板，菜单最小化行的图标与文字复用 UI3 主题禁用透明度（Dark `0.30`、Light `0.45`）禁用视觉，并关闭悬停/按压/点击；禁用依据是有效放映会话事实，不能由被白板遮挡的分页可见性推导，后台放映结束时须唤醒并恢复可用状态。任务栏锚点使用 exe 图标和国际化 Inkeys 白板标题。任务栏关闭或 Alt+F4 必须转为白板退出请求，沿既有保存/离场事务完成；不能直接销毁共享 Freeze 锚点及其 owned 窗口链。保持 NOTOPMOST、单一任务栏锚点及退出穿透/Z序合同。Shell 全屏通知覆盖 Freeze 与 Drawpad 两个可激活面；激活仅异步重申，最小化、退出和销毁前撤销，恢复重新发布。
 - 进入白板必须等待真实 Draw3 首帧、输出/内容版本、背景提交及必要窗口事务；先发布 Active，再异步尝试一次前台激活。Freeze 的背景提交由 Window owner 读回目标 RECT、真实 visible 且非 iconic，并发布固定回执/快照；UI 和协调器不得自行调用 HWND 查询来裁决 ready；最小化期间被抑制的 SetBounds/Show 返回未提交并保留重试，不得以“未执行但成功”推进 `committedBackgroundActive`。恢复边沿重新唤醒背景提交，不需要再次点击入口。焦点分配失败仍完成后台进入，不按周期抢焦点；同 epoch 的 Entering→Active 不取消已接纳请求，退出、新 epoch、最小化、隐藏或停机必须拒绝。设置的实际 Present 不持 ImGui 输入锁，避免与窗口焦点消息互等。
@@ -81,7 +81,7 @@
 - 白板背景复用Freeze并保持完整主屏rcMonitor，尺寸与DPI读同一Display快照；Desktop/PPT双画布底部1物理像素及旧定格/放大镜规则独立不变。BackgroundPrepared仅证明当前请求、内容失效版本、设备与 HWND 代次的真实像素及窗口回执，实际Active仍需 owner 发布的真实visible/bounds/非iconic；inactive必须真实Hide后确认，且优先于minimized暂停。
 - 白板最小化仍保留页/历史/工具/基线；系统确认只确认当前视图，不另发意图让在途请求自失效。最小化后可直接关闭。后台PPT变化只更新最新Primary事实，不能抢走白板。
 - 普通失败停止无限重复显示/隐藏，保留owner真实责任；只有Rejected证明owner恢复已退休后才恢复Whiteboard源背景/分页，Pending/failed和输入fence继续保留，不能用源预览伪装切换成功。背景ACK、Draw3/PPT ready及背景prepared/final active的无进展等待进入同一可重试失败预算，实际输出/内容/背景进展才重置等待。
-- DComp退休采用共享有界等待，超时/忙碌禁止第二worker、ULW和新HWND；能清除样式才走原ULW，否则经完整legacy窗口链重建并禁止再次选择DComp。旧generation的帧/completion不得确认新恢复，受保护/fatal只可在完整token及真实安全清理后退场，不等待已停消费者普通帧、不清fatal或伪造ready。
+- DComp退休采用共享有界等待，超时/忙碌禁止第二worker、ULW和新HWND；能清除样式才走原ULW，否则运行期进入受保护故障退出；完整legacy窗口链重建仅限启动期UI客户端初始化前。旧generation的帧/completion不得确认新恢复，受保护/fatal只可在完整token及真实安全清理后退场，不等待已停消费者普通帧、不清fatal或伪造ready。
 - Settings/安全UI与画布恢复的阻挡按实际写集区分；新场景Show/关穿透不得越过旧恢复，旧补偿不能作用于新HWND代际。保存/加载和失败warm数据规则不变。
 
 背景渲染遵守 [UI3 原生窗口候选与真实回执](rendering-and-ui.md#ui3-原生窗口候选与真实回执2026-10-28)：成功像素等待 native ACK 时不重复整屏绘制；Invalidate 同时退休旧内容候选，同请求版本不能绕过主题/DPI/设备失效。完整 mask、frameSerial、workspaceRevision、HWND/generation 和实际矩形全部匹配后才 Prepare/ConsumeDamage；inactive 的 Hide 也必须取得精确真实回执。

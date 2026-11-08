@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "Grille",
         "WhiteboardUnsavedLabel": "Certaines pages ne sont pas enregistrées",
         "FreezeLabel": "Figer",
+        "CanvasDebugLabel": "Débogage visuel",
         "EndPresentationLabel": "Fin diapo",
         "SettingsLabel": "Réglages",
         "MoreLabel": "Plus"
@@ -162,8 +163,7 @@
         "ReadFailed": "Lecture",
         "PresentFailed": "Affichage",
         "Failed": "Erreur",
-        "Recovering": "Restauration",
-        "Loading": "Chargement",
+        "Recovering": "Restaur.",
         "Retry": "Réessayer",
         "Wait": "Patienter",
         "RetryCanvas": "Recharger le canevas",
@@ -699,6 +699,11 @@
           "Unavailable": "Ce système ne peut pas distinguer la source de saisie ; l’option n’est pas disponible."
         },
         "FineControl": "Réglages fins",
+        "OpacitySection": "Opacité",
+        "PenOpacity": "Opacité du curseur de stylo",
+        "HighlightPenFillOpacity": "Opacité de remplissage du curseur de stylo (en surbrillance)",
+        "DotOpacity": "Opacité du curseur de petit point",
+        "HighlightDotFillOpacity": "Opacité de remplissage du curseur de petit point (en surbrillance)",
         "DotHideOnContact":
         {
           "N": "Masquer automatiquement le petit point au contact",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Raccorder les traits interrompus",
-          "E": "Si le contact tactile s’interrompt brièvement puis reprend dans la même direction, l’application tente de réunir les deux parties du trait pour réduire les coupures. Si désactivé, lever le doigt termine le trait."
+          "Touch": "Tactile",
+          "PenTail": "Gomme du stylo",
+          "E": "Pendant l’écriture, détecte les interruptions de contact d’après l’intention de tracé et les corrige, et peut reprendre l’état du tracé."
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "Déconseillé sur les appareils à grand écran."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Position",
+      "DesktopSection": "Bureau",
+      "PptSection": "Présentation",
+      "WhiteboardSection": "Tableau blanc",
+      "StartupE": "Définit l’emplacement de la barre au prochain lancement. La barre supérieure centrée n’est qu’une position initiale et ne s’aimante pas.",
+      "TypeBottomBar": "Barre inférieure centrée",
+      "TypeTopBar": "Barre supérieure centrée",
+      "TypeFloating": "Fenêtre flottante",
+      "PositionLabel": "Position",
+      "ExpandRight": "Déployer vers la droite",
+      "ExpandLeft": "Déployer vers la gauche",
+      "FloatBottomLeft": "Coin inférieur gauche",
+      "FloatBottomRight": "Coin inférieur droit",
+      "FloatBottomCenter": "Bas au centre",
+      "PptAutoDock": "Passer en barre inférieure centrée au début du diaporama",
+      "PptAutoDockE": "Si la barre se trouve dans un état coché avant le diaporama, elle devient une barre inférieure centrée et déployée au début, puis est restaurée à la fin.",
+      "WhiteboardAutoDock": "Passer en barre inférieure centrée à l’entrée du tableau blanc",
+      "WhiteboardAutoDockE": "Si la barre se trouve dans un état coché avant l’entrée, elle devient une barre inférieure centrée et déployée à l’ouverture du tableau blanc, puis est restaurée à sa fermeture.",
+      "StateBottom": "État barre inférieure",
+      "StateBottomFolded": "État barre inférieure (repliée)",
+      "StateFloating": "État fenêtre flottante",
+      "StateFloatingFolded": "État fenêtre flottante (repliée)",
+      "MainButtonDirection": "Sens du bouton principal",
+      "DirectionKeep": "Ne pas modifier"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "Afficher la fréquence d’images",
         "E": "Mettre à jour chaque seconde les fréquences moyenne et sans limite de la seconde précédente."
+      },
+      "CanvasSection": "Canevas",
+      "CanvasDebug":
+      {
+        "N": "Débogage du canevas",
+        "E": "Affiche sous le canevas la fréquence d'images, la charge matérielle et les informations des points d'entrée, et ajoute un bouton de débogage visuel à la barre principale."
+      },
+      "DelayWaiting":
+      {
+        "N": "Prolonger les opérations en attente",
+        "E": "Prolonge le chargement pour observer les animations."
       },
       "StatusIndicator":
       {

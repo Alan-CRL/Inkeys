@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "Grilă",
         "WhiteboardUnsavedLabel": "Unele pagini nu sunt salvate",
         "FreezeLabel": "Îngheț",
+        "CanvasDebugLabel": "Depanare vizuală",
         "EndPresentationLabel": "Încheiere",
         "SettingsLabel": "Setări",
         "MoreLabel": "Mai multe"
@@ -163,7 +164,6 @@
         "PresentFailed": "Afișare",
         "Failed": "Eroare",
         "Recovering": "Restabilire",
-        "Loading": "Încărcare",
         "Retry": "Reîncercare",
         "Wait": "Așteptați",
         "RetryCanvas": "Reîncearcă pânza",
@@ -699,6 +699,11 @@
           "Unavailable": "Acest sistem nu poate distinge sursa intrării, deci opțiunea nu este disponibilă."
         },
         "FineControl": "Control fin",
+        "OpacitySection": "Opacitate",
+        "PenOpacity": "Opacitatea cursorului creionului",
+        "HighlightPenFillOpacity": "Opacitatea umplerii cursorului creionului (evidențiat)",
+        "DotOpacity": "Opacitatea cursorului cu punct mic",
+        "HighlightDotFillOpacity": "Opacitatea umplerii cursorului cu punct mic (evidențiat)",
         "DotHideOnContact":
         {
           "N": "Ascunde automat cursorul cu punct mic la contact",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconectarea trăsăturilor întrerupte",
-          "E": "Dacă atingerea se întrerupe scurt și reia aceeași direcție, programul încearcă să unească cele două segmente într-o singură trăsătură, reducând golurile. Când opțiunea este dezactivată, ridicarea degetului încheie trăsătura."
+          "Touch": "Atingere",
+          "PenTail": "Radiera creionului",
+          "E": "În timpul scrisului, detectează întreruperile atingerii pe baza intenției de desen și le corectează, putând continua starea de desenare."
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "Nerecomandat pentru dispozitive cu ecran mare."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Poziție",
+      "DesktopSection": "Desktop",
+      "PptSection": "Prezentare",
+      "WhiteboardSection": "Tablă",
+      "StartupE": "Stabilește unde apare bara la următoarea pornire. Bara de sus centrată este doar o poziție inițială și nu se lipește.",
+      "TypeBottomBar": "Bară de jos centrată",
+      "TypeTopBar": "Bară de sus centrată",
+      "TypeFloating": "Fereastră flotantă",
+      "PositionLabel": "Poziție",
+      "ExpandRight": "Extinde spre dreapta",
+      "ExpandLeft": "Extinde spre stânga",
+      "FloatBottomLeft": "Colțul din stânga jos",
+      "FloatBottomRight": "Colțul din dreapta jos",
+      "FloatBottomCenter": "Jos, centru",
+      "PptAutoDock": "Intră în modul bară de jos centrată la începutul prezentării",
+      "PptAutoDockE": "Dacă înainte bara se află într-o stare bifată, la începutul prezentării devine o bară de jos centrată și extinsă, iar la final este restaurată.",
+      "WhiteboardAutoDock": "Intră în modul bară de jos centrată la intrarea în tablă",
+      "WhiteboardAutoDockE": "Dacă înainte bara se află într-o stare bifată, la intrarea în tablă devine o bară de jos centrată și extinsă, iar la ieșire este restaurată.",
+      "StateBottom": "Starea barei de jos",
+      "StateBottomFolded": "Starea barei de jos (restrânsă)",
+      "StateFloating": "Starea ferestrei flotante",
+      "StateFloatingFolded": "Starea ferestrei flotante (restrânsă)",
+      "MainButtonDirection": "Direcția butonului principal",
+      "DirectionKeep": "Fără modificare"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "Afișare rată de cadre",
         "E": "Actualizează o dată pe secundă rata medie și rata fără așteptare din secunda precedentă."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Depanare canvas",
+        "E": "Afișează sub canvas rata de cadre, încărcarea hardware și informații despre punctele de intrare și adaugă un buton de depanare vizuală în bara principală."
+      },
+      "DelayWaiting":
+      {
+        "N": "Întârzie operațiile în așteptare",
+        "E": "Prelungește încărcarea pentru observarea animațiilor."
       },
       "StatusIndicator":
       {

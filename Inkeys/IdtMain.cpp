@@ -100,8 +100,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.12112";	// 程序发布版本
-wstring editionDate = L"3.0.0-20261028a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.13203";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261104a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -377,9 +377,11 @@ void SetOffSignal(int signal)
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto windowEnd = ShutdownTrace::CaptureEnd(preArmRecorder, windowTrace);
 	const auto armTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-arm");
-	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
-		signal == 2 ? Inkeys::Shutdown::Intent::Restart
-		: Inkeys::Shutdown::Intent::Close);
+	// 已确认待更新时等旧进程完整退出；普通重启在窗口隐藏后提前接力。
+	const auto shutdownIntent = signal == 1 ? Inkeys::Shutdown::Intent::Close
+		: AutomaticUpdateState.load() == AutomaticUpdateStateEnum::UpdateRestart
+		? Inkeys::Shutdown::Intent::UpdateRestart : Inkeys::Shutdown::Intent::Restart;
+	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(shutdownIntent);
 	const DWORD supervisorError = GetLastError();
 	const auto armEnd = ShutdownTrace::CaptureEnd(preArmRecorder, armTrace, "returned",
 		static_cast<long>(supervisorError));
@@ -393,9 +395,7 @@ void SetOffSignal(int signal)
 	{
 		// 首次普通owner的合法Arm已双失败，当前线程接管原截止，先于任何隐藏/日志/清理等待。
 		Inkeys::UI::RenderPipeline::WakeForStop();
-		Inkeys::Shutdown::EnforceFailedShutdownDeadline(
-			signal == 2 ? Inkeys::Shutdown::Intent::Restart
-			: Inkeys::Shutdown::Intent::Close);
+		Inkeys::Shutdown::EnforceFailedShutdownDeadline(shutdownIntent);
 	}
 	// Failed 接管仍先于任何输出；Arm 若未返回，本轮缓冲记录不会假装已经写出。
 	auto& shutdownRecorder = ShutdownTrace::DefaultRecorder();
@@ -814,11 +814,22 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: touch reconnect default was not enabled\n", stderr);
 				return 1;
 			}
+			// 适用设备（触摸 / 笔尾）旧配置缺键时默认都开启，且各自独立往返。
+			if (!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch ||
+				!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail)
+			{
+				std::fputs("[ConfigBoundary] FAIL: touch reconnect device defaults were not enabled\n", stderr);
+				return 1;
+			}
 			for (const bool enabled : { false, true })
 			{
 				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail = !enabled;
 				Inkeys::Config restoredReconnect;
 				if (!reconnectDefaults.Write() || !restoredReconnect.ReadAll() ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch.load() != enabled ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail.load() == enabled ||
 					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
 				{
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
@@ -1707,6 +1718,63 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 资源生命周期入口先验参并早退，关闭 harness 也不得进入普通产品启动。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--setting-texture-recovery-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::UI::Setting::RunTextureRecoveryProductionTest();
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-laser-resources-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunLaserResourceLifecycleValidation(); });
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-auxiliary-resource-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunAuxiliaryPresentationResourceLifecycleTest(); });
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--ui3-idle-capacity-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::UI::Bar::RunIdleBackingResourceLifecycleTest();
+#else
+			return 2;
+#endif
+		}
+		// 资源回收使用真实不可见 layered HWND；坏参数及关闭harness始终在普通启动前退出。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--freeze-resource-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return RunFreezeSurfaceResourceLifecycleTest();
+#else
+			return 2;
+#endif
+		}
 		// 诊断输出自检严格早退，harness 关闭时也不能落入普通 GUI。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-diagnostic-output-test", -1, TRUE) == CSTR_EQUAL)
@@ -1757,6 +1825,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererUploadValidation(); });
+		}
+		// 画布调试板合成顺序/关闭字节一致/标记原语像素读回；仅离屏 WARP，无 HWND。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-canvas-debug-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunCanvasDebugOverlayValidation(); });
 		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
@@ -2840,12 +2916,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
+		"Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations",
 		"Experimental.Inkeys3.UI3.StartupPreview.Effect",
 		"Experimental.Inkeys3.UI3.ThemeMode",
 		"Experimental.Inkeys3.UI3.BackgroundOpacity",
 		"Experimental.Inkeys3.UI3.ContentOpacity",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
 		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
+	// 调试开关只启用慢速成功观察，不授权失败注入。
+	if (startupMiniConfig.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations)
+		startupPreviewManualDelayRequested.store(true, std::memory_order_release);
 	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
 	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
 		startupMiniConfig.UI.Bar.StartupPlacement.load());
@@ -3095,12 +3175,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	// DPI初始化
 	{
-		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处只保留旧 surface resize。
-		{
-			(void)alpha_drawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			(void)tester.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			(void)pptdrawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-		}
+		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处保留原启动进度槽。
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 		ReportStartupMilestoneForManualTest(
@@ -3284,10 +3359,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
 			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
+			// 画布调试开关来自配置；可视化位启动时恒为未选中。
+			PublishCanvasDebugOptions();
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
 				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
+			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch,
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail);
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();
@@ -4024,12 +4104,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
 			drawpad_window, draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks,
 			preferDraw3DirectComposition, StartWindowService);
-		Inkeys::Drawing::Draw3::ConfigureProductLegacyRestart([&]
-		{
-			return StartDraw3ProductWithFallback(windowService, windowSpecs,
-				drawpad_window, draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks,
-				preferDraw3DirectComposition, StartWindowService);
-		});
 		if (!draw3Started)
 		{
 			// Host 初始化失败后的提示和窗口清理可能依赖已停止的绘制线程，先建立监督。

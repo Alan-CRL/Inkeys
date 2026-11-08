@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "격자",
         "WhiteboardUnsavedLabel": "저장되지 않은 페이지가 있습니다",
         "FreezeLabel": "고정",
+        "CanvasDebugLabel": "시각화 디버그",
         "EndPresentationLabel": "발표종료",
         "SettingsLabel": "설정",
         "MoreLabel": "더보기"
@@ -163,9 +164,8 @@
         "PresentFailed": "표시",
         "Failed": "오류",
         "Recovering": "복원 중",
-        "Loading": "로딩 중",
         "Retry": "재시도",
-        "Wait": "대기",
+        "Wait": "대기 중",
         "RetryCanvas": "캔버스 재시도",
         "ProtectedHint": "문서의 페이지 순서나 식별 정보가 바뀌어 기존 필기를 보호하고 있습니다. 문서를 원래 상태로 되돌린 후 다시 시도하세요.",
         "RecoveryHint": "캔버스 복원이 완료되지 않았습니다. 다시 시도해도 필기 보호는 유지됩니다."
@@ -699,6 +699,11 @@
           "Unavailable": "이 시스템에서는 입력 출처를 구분할 수 없어 이 옵션을 사용할 수 없습니다."
         },
         "FineControl": "세부 제어",
+        "OpacitySection": "불투명도",
+        "PenOpacity": "펜 커서 불투명도",
+        "HighlightPenFillOpacity": "펜(강조) 커서 채우기 불투명도",
+        "DotOpacity": "작은 점 커서 불투명도",
+        "HighlightDotFillOpacity": "작은 점(강조) 커서 채우기 불투명도",
         "DotHideOnContact":
         {
           "N": "펜이 닿으면 작은 점 커서를 자동으로 숨기기",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "끊긴 획 이어 그리기",
-          "E": "터치로 쓰는 동안 접촉이 잠깐 끊겼다가 같은 방향으로 돌아오면 두 획을 하나로 이어 선의 끊김을 줄입니다. 끄면 손을 뗄 때마다 현재 획을 끝냅니다."
+          "Touch": "터치",
+          "PenTail": "펜 뒤쪽",
+          "E": "필기 중 그리기 의도를 바탕으로 터치 끊김을 판단해 보정하고, 그리기 상태를 이어서 유지할 수 있습니다."
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "대형 화면에서는 사용을 권장하지 않습니다."
         }
       }
+    },
+    "Position":
+    {
+      "N": "위치",
+      "DesktopSection": "바탕 화면",
+      "PptSection": "프레젠테이션",
+      "WhiteboardSection": "화이트보드",
+      "StartupE": "다음 실행 시 도구 모음이 나타나는 위치를 정합니다. 가운데 상단 바는 초기 위치일 뿐이며 달라붙지 않습니다.",
+      "TypeBottomBar": "가운데 하단 바",
+      "TypeTopBar": "가운데 상단 바",
+      "TypeFloating": "플로팅 창",
+      "PositionLabel": "위치",
+      "ExpandRight": "오른쪽으로 펼치기",
+      "ExpandLeft": "왼쪽으로 펼치기",
+      "FloatBottomLeft": "왼쪽 아래",
+      "FloatBottomRight": "오른쪽 아래",
+      "FloatBottomCenter": "하단 가운데",
+      "PptAutoDock": "슬라이드 쇼 시작 시 가운데 하단 바 모드로 자동 전환",
+      "PptAutoDockE": "진입 전 도구 모음이 선택한 상태이면 슬라이드 쇼가 시작될 때 펼쳐진 가운데 하단 바로 자동 전환되고, 종료하면 원래대로 복원됩니다.",
+      "WhiteboardAutoDock": "화이트보드 진입 시 가운데 하단 바 모드로 자동 전환",
+      "WhiteboardAutoDockE": "진입 전 도구 모음이 선택한 상태이면 화이트보드에 들어갈 때 펼쳐진 가운데 하단 바로 자동 전환되고, 종료하면 원래대로 복원됩니다.",
+      "StateBottom": "하단 바 상태",
+      "StateBottomFolded": "하단 바 상태(접힘)",
+      "StateFloating": "플로팅 상태",
+      "StateFloatingFolded": "플로팅 상태(접힘)",
+      "MainButtonDirection": "메인 버튼 방향",
+      "DirectionKeep": "변경 안 함"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "프레임 속도 표시",
         "E": "이전 1초의 평균 프레임 속도와 대기 없는 프레임 속도를 매초 갱신합니다."
+      },
+      "CanvasSection": "캔버스",
+      "CanvasDebug":
+      {
+        "N": "캔버스 디버그",
+        "E": "캔버스 아래에 프레임 속도, 하드웨어 부하, 입력 지점 정보를 표시하고 메인 바에 시각화 디버그 버튼을 추가합니다."
+      },
+      "DelayWaiting":
+      {
+        "N": "대기 작업 지연",
+        "E": "로딩 대기를 연장하여 애니메이션을 확인합니다."
       },
       "StatusIndicator":
       {

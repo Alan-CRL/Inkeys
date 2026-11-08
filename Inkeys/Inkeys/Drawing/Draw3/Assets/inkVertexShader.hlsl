@@ -90,8 +90,8 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         output.p2 = halfSize;
         output.r1 = style.pos.x;
         output.r2 = style.pos.y;
-        // 0 保留旧光标整体透明度；正值编码独立边缘 opacity + 1。
-        output.uv = float2(style.r, 0.0);
+        // x 编码独立边缘 opacity + 1；y 传递高亮光标的物理像素外黑边宽度。
+        output.uv = float2(style.r, style.time);
         return output;
     }
 

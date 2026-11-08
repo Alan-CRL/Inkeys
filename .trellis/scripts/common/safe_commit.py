@@ -150,7 +150,7 @@ def safe_archive_paths_to_add(
 
     Scoped to ONLY the paths the archive operation actually touched:
 
-      - the archive subtree (where the freshly-moved task lives)
+      - the archived task's own destination directory under the archive
       - the source task directory (for source-side deletes; caller pairs
         this with `git rm --cached` since `git add` won't stage deletes
         for a path that no longer exists in the working tree)
@@ -178,10 +178,19 @@ def safe_archive_paths_to_add(
         # `git add` doesn't choke on the moved-away source). The caller
         # handles the source-side deletes via `git rm --cached`
         # explicitly.
+        # Stage only the archived task's own destination directory
+        # (``archive/<YYYY-MM>/<task_name>``). Staging the whole archive
+        # tree would also sweep in untracked files that belong to OTHER
+        # archived tasks (e.g. their local validation binaries/backups).
         if archive_dir.is_dir():
-            paths.append(
-                f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}"
-            )
+            # Exact lookup per month directory: ``glob`` would treat
+            # ``[``/``]``/``*``/``?`` in a task slug as pattern characters.
+            for month_dir in sorted(archive_dir.iterdir()):
+                if (month_dir / task_name).is_dir():
+                    paths.append(
+                        f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}/"
+                        f"{month_dir.name}/{task_name}"
+                    )
         for child_name in modified_children or []:
             paths.append(f"{DIR_WORKFLOW}/{DIR_TASKS}/{child_name}")
         return paths

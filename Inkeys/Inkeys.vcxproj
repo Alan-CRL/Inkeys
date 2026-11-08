@@ -1082,6 +1082,10 @@
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -1138,6 +1142,7 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererDebugOverlay.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
@@ -1236,6 +1241,7 @@
     <None Include="src\UI\barStatusBell.svg" />
     <None Include="src\UI\barStatusInfo.svg" />
     <None Include="src\UI\barStatusBolt.svg" />
+    <None Include="src\UI\barPalmEraser.svg" />
     <None Include="src\UI\barShapeStraightLine.svg" />
     <None Include="src\UI\barShapeRectangle.svg" />
     <None Include="src\UI\color\colorSun.svg" />
@@ -1273,9 +1279,11 @@
     <None Include="src\UI\barInfo.svg" />
     <None Include="src\UI\barQuestion.svg" />
     <None Include="src\UI\barCloseSmall.svg" />
+    <None Include="src\UI\barCloseWhiteboard.svg" />
     <None Include="src\UI\barThicknessAdjust.svg" />
     <None Include="src\UI\fluentCheckmark12Filled.svg" />
     <None Include="src\UI\barPierce.svg" />
+    <None Include="src\UI\barCanvasDebug.svg" />
     <None Include="src\UI\barRecall.svg" />
     <None Include="src\UI\barRedo.svg" />
     <None Include="src\UI\barSelect.svg" />

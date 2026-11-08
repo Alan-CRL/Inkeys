@@ -419,7 +419,7 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 - Draw3 自己创建 D3D11.1 device/context（默认 hardware-first/WARP-fallback，硬件加速启动偏好关闭时直接 WARP）、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
 - 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 保持现有 FLIP_SEQUENTIAL swap chain、premultiplied top-down 32-bit DIB、`1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零。
 - 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。首发实现以用户实测为兼容约束，保留 FLIP，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
-- 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。DComp退休使用共享有界等待，超时或已有退休在途时禁止第二worker及后续模式初始化；迟到完成只清理旧状态。样式可清除时才在原HWND降级ULW，否则复用完整legacy窗口链重建并禁止再次选择DComp，新Host首帧及文档身份未就绪前不开放输入。
+- 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。DComp退休使用共享有界等待，超时或已有退休在途时禁止第二worker及后续模式初始化；迟到完成只清理旧状态。样式可清除时才在原HWND降级ULW；否则运行期进入受保护故障退出，不在运行期停止Window Service或重建窗口链——Bar/PPT/Setting/白板等UI客户端在初始化时绑定HWND，整链重建会让它们持有已销毁的窗口。完整legacy窗口链重建只允许发生在启动期UI客户端初始化之前。
 - 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
 ## Scenario: DComp 交接上屏屏障与 Laser 最终过期
@@ -525,3 +525,14 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 - 生产无窗口probe只证明实际共用拒收操作、ContactInputCoordinator/DrainIngressBatch或Host实际准入接缝；私有Run/Service未动态执行部分另做源码审查，不冒充真实Win32/RTS设备/任务栏实测。
 
 - 过渡准入setter绑定真实HostGeneration及请求epoch：旧run的相同数字epoch不能设置或撤销新Host的门。完成只撤自身Pending原因，不能清加载、恢复、停止或fatal原因；最小化Whiteboard继续闭门，恢复使用新视图版本。工具完成凭据读取owner实际appliedProductRevision/appliedTool，不用Bridge已发布revision冒充应用成功。
+
+## 画布调试选项通路（2026-11-05）
+
+- 通路：设置页/启动同步/状态位变化 → `Host::SetCanvasDebugOptions` → `DrawingController::canvasDebugOptions_`（仅绘制线程读取，Host 原子即可，未加 WindowControl 原子）。
+- “可视化模式”位以**进入时的 state-mode revision** 保存：`IsCanvasDebugVisualActive()` = 开关开且该 revision 仍为当前。任何工具/模式切换都会 bump revision 从而自动退出，无需逐个改 `ChangeStateModeTo*`；开关关闭也会清除。
+- 注意：同笔/同形状重复点击会 bump revision 但不走 `SyncDraw3State`，这两条路径需显式 `PublishCanvasDebugOptions()`。
+- 已知限制：绘制设备或笔宽上下文变化也会 bump revision 并静默退出可视化模式，A1 按钮状态下次 Bar 刷新才同步。
+- 可视化与选择/绘制/橡皮/几何/穿透互斥：底层虽借用一个标注工具身份让 Draw3 收到接触，Bar 在可视化期间必须把这些工具按钮显示为未选中（`ApplyMainPresentationLocked`、各 `Update*ButtonStyle`、`PresetHoming`、橡皮属性栏），且它们的点击处理不能把“底层身份 == 当前工具”当作已选中（否则只会展开属性栏而不 bump revision，无法退出）。打开“画布调试”开关会自动进入可视化（`SetCanvasDebugEnabled` → `EnterCanvasDebugVisualLocked`）；启动时已持久化为开启则不自动进入。
+- 实现细节与探测接触合同见 `native/runtime-and-rendering.md` 同名场景。
+- 调试板接触表读取的是绘制线程的 `ContactSnapshot`:`source.kind` → `Src`,`record->TabletContextId()/ContactId()` → `Id`,整体输入通路取自 Host 的 `HostInputMode`(经 `SetCanvasDebugInputMode` 下发,数值 1/2/3 = RTS 扩展/RTS 基础 X/Y/Win32 鼠标)。鼠标兼容通路的 contact 没有 RTS 编号。速度在 Overlay 内由相邻快照测得,不是管线里的估计值。
+- 调试板位置:锚点为“最大板子(全部列、满行数)在画布内居中”的左上角,`left = max(0, (canvasW - capacityW) / 2)`、`top = max(0, (canvasH - capacityH) / 2)`;内容变化只改右端、下端,不要再按当前尺寸居中(否则每次增减行整块板子会跳动并扩大脏区)。输入到上屏延迟在 `Present` 成功且非调试自刷新帧之后用 `OnPresented(QPC)` 结算。

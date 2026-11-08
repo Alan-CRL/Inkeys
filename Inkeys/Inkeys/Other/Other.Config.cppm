@@ -391,6 +391,16 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ExpandDirectionAdjustment, 1) \
+				GROUP(Workspace, \
+					GROUP(Ppt, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, AutoDockMask, 1) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+					) \
+					GROUP(Whiteboard, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, AutoDockMask, 1) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+					) \
+				) \
 				GROUP(AutoCollapse, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Drawing, 1) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Erasing, 0) \
@@ -451,6 +461,10 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Tablet, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InjectedMouseAsTablet, false) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, DotHideOnContact, 1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenOpacity, 50) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, HighlightPenFillOpacity, 50) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, DotOpacity, 25) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, HighlightDotFillOpacity, 50) \
 		) \
 		GROUP(Eraser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
@@ -484,6 +498,8 @@ GROUP(UI, \
 		GROUP(Inkeys3, \
 			GROUP(Draw3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnect, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectTouch, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectPenTail, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
@@ -507,6 +523,7 @@ GROUP(UI, \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DelayWaitingOperations, false) \
 				) \
 				GROUP(EdgeLighting, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \

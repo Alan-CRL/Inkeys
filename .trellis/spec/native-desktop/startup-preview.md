@@ -57,7 +57,7 @@ mini config 只读取：
 | `Experimental.Inkeys3.UI3.ContentOpacity` | 默认100，30~100，独立控制进度轨道/填充 |
 | `UI.Bar.Zoom2` | 用户倍率，默认1.0；不迁移旧Zoom |
 | `UI.Bar.UseTaskbarHeightAsScaleBase` | 整数0关闭、1任务栏基础量、2任务栏真实量；旧bool false→0/true→2；冻结大屏缺省1、其余0。预览与真实Bar共用DPI/固定48DIP/真实任务栏三态解析，Shell缺样也不得把基础量退回普通DPI |
-| `UI.Bar.StartupPlacement` | 0居中展开底栏、1左下角主按钮、2右下角主按钮；缺失/非法回退0 |
+| `UI.Bar.StartupPlacement` | 0居中展开底栏（向右）、1左下角主按钮、2右下角主按钮；3居中底栏（向左）、4/5居中顶栏（向右/向左，Floating 展开栏）、6悬浮窗底栏居中（折叠主按钮）；缺失/非法回退0 |
 
 旧 main.json 缺少新字段时使用默认值；曾写入的旧图片/CRC 字段安全忽略。设置页不暴露 cached width。
 
@@ -244,6 +244,7 @@ if (manualDelayRequested && Inkeys::UI::StartupPreview::IsActive())
 - Mini阶段冻结唯一选择并传两种UI；ReadAll及设置修改不得重选本次启动。配置I/O仍冻结payload进入FIFO。
 - Preview早期使用真实主屏有效DPI，正式Bar使用同策略Display快照；pixelScale仅一次UIBase×configZoom。关闭时UIBase=DPI/96；基础量固定为48/80×DPI/96，即使无Shell样本也保持；仅真实量在无可信任务栏时回退DPI/96。不用系统DPI替代真实主屏DPI。
 - 角落间距24DIP按可见轮廓测量，排除透明window padding；工作区为有效边界，不可用回退监视器bounds，保留负坐标。
+- 折叠悬浮（1、2、6，`StartupPlacementIsFolded`）与展开栏（0、3、4、5）的预览/缩放/折叠初始化均以该函数区分，不再用“不等于居中底栏”判断；底栏吸附仅 0、3（`StartupPlacementDocksToBottom`）。
 - 角落在注册渲染前Floating+Free+fold=true；MainBar和子按钮/图标/文字/PNG/描边必须直接初始化透明折叠终态，不能首帧再SetTar收起。
 - 首次布局只应用一次启动位置；左展开向右、右展开向左；后续PPT/白板/拖动吸附保留原策略。corner不以展开栏宽做启动auto-fit而改变按钮与预览缩放。
 - 超椭圆共享仅无状态geometrybuilder；Preview不导入完整Bar renderer。窗口、mask、deviceepoch和线程所有权保留。
@@ -379,3 +380,27 @@ DrawGlow(userOpacity);
 effects.DrawBackground(context); // 内部消费已冻结的backgroundOpacity
 DrawProgress(contentOpacity * progressReveal);
 ```
+
+## 调试等待观察开关（2026-11-05）
+
+### Scope / Trigger
+调试页“为等待操作延迟”仅提供启动与主动点击分页的动画观察入口；不扩展 SuperTop/提权交接覆盖。
+
+### Signatures
+`Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations`：`IdtAtomic<bool>`、默认 `false`、NoUpload，经现有 main.json 保存；说明为“延长加载等待，便于观察动画。”
+
+### Contracts
+启动 Mini 读取后只启用 `startupPreviewManualDelayRequested`；继续使用 `ReportStartupMilestoneForManualTest` 的 3200ms/600ms 分阶段慢速成功模式。Preview 未活动时不延迟，不授权重试/失败注入。
+主动点击 `PageControl::InvokeDirection` 在控件层暂存单个 10s 意图，通过现有输入 worker tick 到期后派发真实业务请求；只投影现有 loading 视觉，不改真实状态、ready/ACK，不消耗 COM/存储超时。快捷键、滚轮、外部翻页及自动恢复不注入。
+
+### Validation / Error Matrix
+关闭→立即走原路径；重复点击→不叠加或续期；页/会话/白板 generation 改变、隐藏、销毁或停机→退休；到期→重新准入且最多派发一次；真实失败→原有处理。结束放映不延迟。
+
+### Good / Base / Bad
+Good：点击后观察转圈，10s 后真实翻页；Base：默认关闭；Bad：全局 Sleep 或在公共 loading 状态上无差别放慢。
+
+### Tests Required
+PageControl 离屏生产路径覆盖开关关闭、10s 截止、重复点击、视觉/业务隔离、页/会话退休、隐藏重现及停机；运行入口 `Inkeys.exe --bar-eraser-offscreen-test`。配合国际化 check、Debug|ARM64 Solution 构建，不以 headless 结果声称 GUI 观感已验证。
+
+### Wrong vs Correct
+Wrong：持有真实翻页请求 10s 使原超时到期。Correct：在点击入口等待 10s 后才提交真实请求，保持原协议和超时预算。

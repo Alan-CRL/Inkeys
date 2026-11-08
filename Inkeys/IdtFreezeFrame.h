@@ -8,3 +8,4 @@ bool WhiteboardFreezeSurfaceOwned() noexcept;
 bool SubmitFreezeSurface(HWND hwnd, UPDATELAYEREDWINDOWINFO* info,
 	bool whiteboardOwner) noexcept;
 void FreezeFrameWindow();
+int RunFreezeSurfaceResourceLifecycleTest() noexcept;

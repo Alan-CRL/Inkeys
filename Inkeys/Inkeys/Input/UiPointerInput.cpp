@@ -1043,22 +1043,29 @@ namespace Inkeys::Input::UiPointer::Touch
     bool PointerMode() noexcept { return PointerInfoQuery()!=nullptr&&!LegacyForced(); }
     bool HandlePointer(HWND origin,UINT message,WPARAM wParam) noexcept
     {
-        if(message!=WM_POINTERDOWN&&message!=WM_POINTERUPDATE&&message!=WM_POINTERUP)return false;
+        if(message!=WM_POINTERDOWN&&message!=WM_POINTERUPDATE&&message!=WM_POINTERUP&&message!=WM_POINTERCAPTURECHANGED)return false;
         if(!PointerMode())return false;
         // 查询和日志不得污染调用方正在检查的错误状态。
         struct ErrorGuard{DWORD value=GetLastError();~ErrorGuard(){SetLastError(value);}} preserve;
-        const auto query=PointerInfoQuery();
         const UINT32 id=GET_POINTERID_WPARAM(wParam);
+        const auto cancelId=[id]()noexcept{
+            const auto snapshot=targets;
+            for(const auto& target:snapshot)
+                if(target.local&&target.local->active&&target.local->latest.input.dwID==id)CancelTarget(target,target.local->identity);
+        };
+        // 系统手势或其他窗口接管捕获后不会再有该 id 的 Up：撤销其路由并释放业务状态；仍交给旁观者与 DefWindowProc。
+        if(message==WM_POINTERCAPTURECHANGED)
+        {
+            Diagnostics::Log("pointer_route",origin,"pointer_capture_changed","cancel_contact",message,nullptr,"pointer=%u",id);
+            cancelId();
+            return false;
+        }
+        const auto query=PointerInfoQuery();
         POINTER_INFO info{};
         if(!query(id,&info))
         {
             // 抬起/移动的查询失败时无法确认接触状态：撤销按该 id 持有的路由，避免残留活动接触挡住后续 Down。
-            if(message!=WM_POINTERDOWN)
-            {
-                const auto snapshot=targets;
-                for(const auto& target:snapshot)
-                    if(target.local&&target.local->active&&target.local->latest.input.dwID==id)CancelTarget(target,target.local->identity);
-            }
+            if(message!=WM_POINTERDOWN)cancelId();
             return false;
         }
         if(info.pointerType!=PT_TOUCH&&info.pointerType!=PT_PEN)return false;

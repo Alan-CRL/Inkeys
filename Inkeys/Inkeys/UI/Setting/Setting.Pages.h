@@ -275,12 +275,15 @@ namespace Inkeys::UI::Setting::Design
 		int dotHideOnContact = 1;
 		bool injectedMouse = false;
 		bool injectedAvailable = true;
+		// Pen、HighlightPen、Dot、HighlightDot 的独立不透明度。
+		std::array<float, 4> opacity{ 0.50F, 0.50F, 0.25F, 0.50F };
 	};
 	struct CursorPageEvents
 	{
 		bool back = false;
 		bool mouse = false, touch = false, screenPen = false, tablet = false;
 		bool injectedMouse = false, dotHideOnContact = false;
+		std::array<bool, 4> opacityChanged{}, opacityActive{}, opacityReset{};
 	};
 	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
 
@@ -344,6 +347,9 @@ namespace Inkeys::UI::Setting::Design
 		// 状态指示器：总开关 + 放映模式/超级置顶/新版本；总开关关闭时隐藏勾选但保留值。
 		bool statusIndicator = true;
 		std::array<bool, 3> statusIndicatorTypes{ true, true, true };
+		// 场景进入策略：掩码 bit0 底栏、bit1 底栏折叠、bit2 悬浮窗、bit3 悬浮窗折叠；方向 0 不改变、1 向右、2 向左。
+		int pptDockMask = 1, pptDockDirection = 0;
+		int whiteboardDockMask = 1, whiteboardDockDirection = 0;
 	};
 
 	struct GeneralEvents
@@ -368,6 +374,8 @@ namespace Inkeys::UI::Setting::Design
 		bool animationChanged = false;
 		bool dynamicEdgeLightingChanged = false;
 		bool startupPlacementChanged = false;
+		bool pptDockMaskChanged = false, pptDockDirectionChanged = false;
+		bool whiteboardDockMaskChanged = false, whiteboardDockDirectionChanged = false;
 		bool taskbarScaleBaseChanged = false;
 		bool themeModeChanged = false;
 		bool settingThemeModeChanged = false;

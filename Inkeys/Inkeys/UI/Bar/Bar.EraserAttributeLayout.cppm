@@ -20,14 +20,14 @@ export namespace Inkeys::UI::Bar
 	};
 	enum class EraserAttributeItem : int
 	{
-		Clear, Small, Medium, Large, Automatic, Extension, Low, Normal, High, Settings,
+		Clear, Small, Medium, Large, Automatic, Extension, Low, Normal, High, Settings, Palm,
 		Count, None = -1
 	};
 	struct EraserAttributeLayout
 	{
-		EraserAttributeRect panel, menu, previewRegion, automatic, automaticDivider, menuTitle, anchor, work;
+		EraserAttributeRect panel, menu, previewRegion, automatic, automaticDivider, palm, menuTitle, anchor, work;
 		std::array<EraserAttributeRect,3> previews{}, previewClips{};
-		std::array<EraserAttributeRect, 10> items{};
+		std::array<EraserAttributeRect, 11> items{};
 		std::array<EraserAttributeRect, 2> dividers{};
 		std::array<double, 3> previewDiameters{};
 		bool below = false, reversed = false, menuBelow = false, horizontalOverflow = false;
@@ -82,6 +82,8 @@ export namespace Inkeys::UI::Bar
 	inline constexpr double EraserAttributeCircleGapDip=16.0;
 	inline constexpr double EraserAttributeStandardGapDip=5.0;
 	inline constexpr double EraserAttributeAutomaticArrowWidthDip=20.0;
+	// 与主栏一致：分割线位于相邻按钮5 DIP间隙正中，线两侧各留 (5-1)/2 DIP。
+	inline constexpr double EraserAttributeDividerGapDip=(EraserAttributeStandardGapDip-1.0)/2;
 	inline EraserAttributeLayout ResolveEraserAttributeLayout(const EraserAttributeLayoutInput& input) noexcept
 	{
 		using namespace Inkeys::Drawing::Draw3::SpeedEraser;
@@ -103,13 +105,15 @@ export namespace Inkeys::UI::Bar
 		// 所有工作区均使用正常留白；极窄时只裁剪面板，不进入紧凑布局。
 		const double gap=EraserAttributeStandardGapDip,circleGap=EraserAttributeCircleGapDip;
 		const double circleSide=diameters+circleGap*4;
-		const double automaticSide=gap+autoWidth+gap;
+		// 手掌橡皮开关紧邻自动粗细组右侧，不加分割线，倒转时整组一起移动。
+		const double dgap=EraserAttributeDividerGapDip;
+		const double automaticSide=gap+dgap+autoWidth+gap+button;
 		const double leftSide=input.reversed?automaticSide:circleSide;
 		const double rightSide=input.reversed?circleSide:automaticSide;
-		const double naturalWidth=leftSide+stroke+gap+button+gap+stroke+rightSide;
+		const double naturalWidth=leftSide+stroke+dgap+button+dgap+stroke+rightSide;
 		const double halfClear=(std::min)(button/2,available/2);
 		const double clearCenter=(std::clamp)(EraserRectCenterX(input.anchor),input.work.left+halfClear,input.work.right-halfClear);
-		const double idealX=clearCenter-(leftSide+stroke+gap+button/2);
+		const double idealX=clearCenter-(leftSide+stroke+dgap+button/2);
 		r.horizontalOverflow=naturalWidth>available || idealX<input.work.left || idealX+naturalWidth>input.work.right;
 		const double panelGap=BarMainButtonToMainBarGapDip;
 		const double down=input.work.bottom-input.main.bottom-panelGap,up=input.main.top-input.work.top-panelGap;
@@ -119,11 +123,11 @@ export namespace Inkeys::UI::Bar
 			input.work.top,(std::max)(input.work.top,input.work.bottom-height));
 		r.panel={(std::max)(idealX,input.work.left),y,(std::min)(idealX+naturalWidth,input.work.right),y+height};
 		const double cy=y+height/2,bh=button;
-		const double clearLeft=idealX+leftSide+stroke+gap;
+		const double clearLeft=idealX+leftSide+stroke+dgap;
 		r.items[0]={clearLeft,cy-bh/2,clearLeft+button,cy+bh/2};
 		const double dh=button-BarButtonGapDip*4;
 		r.dividers[0]={idealX+leftSide,cy-dh/2,idealX+leftSide+stroke,cy+dh/2};
-		r.dividers[1]={r.items[0].right+gap,cy-dh/2,r.items[0].right+gap+stroke,cy+dh/2};
+		r.dividers[1]={r.items[0].right+dgap,cy-dh/2,r.items[0].right+dgap+stroke,cy+dh/2};
 		const double leftStart=idealX,rightStart=r.dividers[1].right;
 		const double circleStart=r.reversed?rightStart:leftStart,autoStart=r.reversed?leftStart:rightStart;
 		const double circleEnd=circleStart+circleSide;
@@ -144,10 +148,12 @@ export namespace Inkeys::UI::Bar
 			const double center=EraserRectCenterX(circle);
 			r.items[i+1]=IntersectEraserRect({center-hitRadius,cy-hitRadius,center+hitRadius,cy+hitRadius},r.previewClips[i]);
 		}
-		const double ax=autoStart+gap;
+		// 分割线侧留主栏同款 dgap；面板外缘侧保持标准 gap。
+		const double ax=autoStart+(r.reversed?gap:dgap);
 		r.automatic={ax,cy-bh/2,ax+autoWidth,cy+bh/2};
 		// 倒转只移动整个分组，A和右侧箭头不镜像，两个动作区保持原语义。
 		r.items[4]={ax,cy-bh/2,ax+button,cy+bh/2};r.items[5]={ax+button,cy-bh/2,ax+autoWidth,cy+bh/2};
+		r.palm=r.items[10]={r.automatic.right+gap,cy-bh/2,r.automatic.right+gap+button,cy+bh/2};
 		// 内部分割线与主栏分割线使用同一高度并保持垂直居中。
 		r.automaticDivider={ax+button-stroke/2,r.dividers[0].top,
 			ax+button+stroke/2,r.dividers[0].bottom};

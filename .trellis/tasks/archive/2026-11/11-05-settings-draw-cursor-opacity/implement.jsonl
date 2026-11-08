@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/draw3-cursors.md","reason":"现有光标样式、快照、resolver、预览、shader 与验证合同。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"Drawing.Cursor 配置归属、FIFO 写盘和二十语言生成链。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"Setting 主题、公共控件、渲染线程与同步边界。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"Cursor InkPoint、UV、预乘 alpha、寄存器与 dirty 约束。"}
+{"file":".trellis/spec/shaders/build-and-encoding.md","reason":"HLSL 编码、FXC、CSO 与资源嵌入链。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"完整 Solution、本机原生架构与生成输出边界。"}

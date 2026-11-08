@@ -40,6 +40,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #if defined(INKEYS_SETTING_ENTRY_PROFILE)
 #include <chrono>
 #endif
@@ -106,6 +107,22 @@ namespace
 	mutex settingDrainMutex;
 	condition_variable settingDrainCondition;
 	bool settingSessionDrained = true;
+	// 仅共享渲染线程访问；注销先于协程局部草稿销毁，避免留下悬空捕获。
+	function<void()> settingCommitPendingEdits;
+	struct SettingPendingEditsScope
+	{
+		explicit SettingPendingEditsScope(function<void()> commit)
+		{ settingCommitPendingEdits = std::move(commit); }
+		~SettingPendingEditsScope() { settingCommitPendingEdits = {}; }
+	};
+	void CommitPendingSettingEdits()
+	{
+		if (settingCommitPendingEdits) settingCommitPendingEdits();
+	}
+	void CommitSettingEditsBeforeSuspend(const Inkeys::UI::Setting::SessionDecision& decision)
+	{
+		if (decision.releasePresentation || decision.resetInput) CommitPendingSettingEdits();
+	}
 	mutex settingInitializeMutex;
 	condition_variable settingInitializeCondition;
 	bool settingInitializeCompleted = false;
@@ -666,14 +683,9 @@ namespace
 		return settingTitleBarGeometry;
 	}
 
-	[[nodiscard]] bool LoadSettingWindowIconTexture(HWND hwnd) noexcept
+	[[nodiscard]] bool LoadSettingIconTexture(HICON icon) noexcept
 	{
 		constexpr int iconTextureSize = 64;
-		HICON icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL2, 0));
-		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0));
-		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0));
-		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICONSM));
-		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICON));
 		if (!icon) return false;
 
 		BITMAPINFO bitmapInfo{};
@@ -725,6 +737,16 @@ namespace
 		if (memoryDc) DeleteDC(memoryDc);
 		if (screenDc) ReleaseDC(nullptr, screenDc);
 		return loaded;
+	}
+
+	[[nodiscard]] bool LoadSettingWindowIconTexture(HWND hwnd) noexcept
+	{
+		HICON icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL2, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICONSM));
+		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICON));
+		return LoadSettingIconTexture(icon);
 	}
 
 	[[nodiscard]] LRESULT HitTestSettingClientTitleBar(
@@ -1232,6 +1254,8 @@ namespace
 
 	SettingBusinessQueue settingBusinessQueue;
 	mutex configWriteQueueMutex;
+	// 拖动透明度期间只合并保存请求；窗口隐藏或关闭时由 Hide/Shutdown 补写。
+	atomic<bool> cursorOpacitySavePending{ false };
 	thread_local bool settingRenderingOnCurrentThread = false;
 
 	struct SettingRenderScope
@@ -1958,7 +1982,8 @@ static int settingPendingLanguage = -1;
 {
 	ImGuiIO& io = ImGui::GetIO();
 	io.Fonts->Clear();
-	io.Fonts->SetFontLoader(ImGuiFreeType::GetFontLoader());
+	// 与字体测试同一入口：FreeType 加载器、基线像素对齐和灰度 Alpha8 图集。
+	Inkeys::UI::Setting::Design::ConfigureFreeTypeAtlas(*io.Fonts);
 	ImFontMain = nullptr;
 	ImFontStrong = nullptr;
 	ImFontDesignMain = nullptr;
@@ -2097,6 +2122,101 @@ void DisposeSettingAtlas(ImFontAtlas* atlas)
         ? I18n::commit(std::move(prepared)) : ReplaceSettingFonts(locale, &prepared);
 }
 
+namespace
+{
+	struct SettingResourceTexture
+	{
+		std::size_t slot;
+		LPCWSTR name;
+		int width, height;
+		SettingTextureConversion conversion;
+		bool scale;
+	};
+	const std::array<SettingResourceTexture, 10> settingResourceTextures = {{
+		{ 5, L"PluginFlag1", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 6, L"PluginFlag2", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 8, L"PluginFlag3", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 10, L"PluginFlag4", 30, 30, SettingTextureConversion::StraightBgra, true },
+		{ 3, L"Profile_Picture", 45, 45, SettingTextureConversion::StraightBgra, true },
+		{ 7, L"Home_Feedback", 100, 100, SettingTextureConversion::WhiteAlphaMask, true },
+		{ 11, L"SETTING_GITHUB", 64, 64, SettingTextureConversion::WhiteAlphaMask, true },
+		{ 12, MAKEINTRESOURCEW(IDR_SETTING_ERASER_DEMO_FINE), 2304, 432, SettingTextureConversion::StraightBgra, false },
+		{ 13, MAKEINTRESOURCEW(IDR_SETTING_ERASER_DEMO_SWEEP), 2304, 432, SettingTextureConversion::StraightBgra, false },
+		{ 9, L"SettingSponsor", 650, 460, SettingTextureConversion::StraightBgra, true }
+	}};
+	constexpr std::size_t requiredSettingTextureIndexes[] = { 0, 3, 5, 6, 7, 8, 9, 10, 11 };
+
+	SettingTextureRecipe SettingRecipe(const SettingResourceTexture& source, float scale) noexcept
+	{
+		return { source.name, source.scale ? static_cast<int>(source.width * scale) : 0,
+			source.scale ? static_cast<int>(source.height * scale) : 0,
+			source.scale ? 0 : source.width, source.scale ? 0 : source.height, source.conversion };
+	}
+
+	bool DecodeSettingTexture(const SettingTextureRecipe& recipe,
+		std::vector<unsigned char>& data, int& width, int& height)
+	{
+		Inkeys::Graphics::DibSurface surface;
+		if (!recipe.resourceName || !LoadSurfaceFromResource(&surface, L"PNG", recipe.resourceName,
+			recipe.requestedWidth, recipe.requestedHeight) || surface.empty()) return false;
+		width = surface.width(); height = surface.height();
+		if ((recipe.expectedWidth && width != recipe.expectedWidth)
+			|| (recipe.expectedHeight && height != recipe.expectedHeight)) return false;
+		const auto pixels = surface.pixels();
+		data.resize(pixels.size() * 4);
+		for (std::size_t pixel = 0; pixel < pixels.size(); ++pixel)
+		{
+			const unsigned color = pixels[pixel], alpha = color >> 24;
+			for (unsigned channel = 0; channel < 3; ++channel)
+				data[pixel * 4 + channel] = static_cast<unsigned char>(
+					recipe.conversion == SettingTextureConversion::WhiteAlphaMask
+						? 255U : alpha ? ((color >> (channel * 8)) & 255) * 255 / alpha : 0U);
+			data[pixel * 4 + 3] = static_cast<unsigned char>(alpha);
+		}
+		return true;
+	}
+
+	bool LoadSettingResourceTexture(std::size_t slot, const SettingTextureRecipe& recipe, bool remember) noexcept
+	{
+		try
+		{
+			std::vector<unsigned char> pixels;
+			int width = 0, height = 0;
+			if (!DecodeSettingTexture(recipe, pixels, width, height)) return false;
+			// 已验证的配方也供可选 atlas 在后续 epoch 重试；解码像素不常驻。
+			if (remember) settingTextureRecipes[slot] = recipe;
+			return LoadTextureFromMemory(pixels.data(), width, height, &TextureSettingSign[slot]);
+		}
+		catch (...) { return false; }
+	}
+
+	void InitializeSettingResourceTextures(float scale) noexcept
+	{
+		for (const auto& source : settingResourceTextures)
+			(void)LoadSettingResourceTexture(source.slot, SettingRecipe(source, scale), true);
+	}
+}
+
+bool RecreateSettingTextures()
+{
+	CleanupSettingTextures();
+	for (std::size_t index = 0; index < settingTextureRecipes.size(); ++index)
+	{
+		bool loaded = true;
+		if (settingTextureRecipes[index].resourceName)
+			loaded = LoadSettingResourceTexture(index, settingTextureRecipes[index], false);
+		else if (!settingTexturePixels[index].empty())
+			loaded = LoadTextureFromMemory(settingTexturePixels[index].data(), settingSign[index].width,
+				settingSign[index].height, &TextureSettingSign[index]);
+		if (!loaded && index < 12)
+		{
+			CleanupSettingTextures();
+			return false;
+		}
+	}
+	return true;
+}
+
 SettingSessionCoroutine RunSettingSession()
 {
 	// 设置 I/O 等业务投递 FIFO worker；确认的退出意图直接建立 15 秒保护。
@@ -2146,283 +2266,10 @@ SettingSessionCoroutine RunSettingSession()
 		}
 		settingSessionEpoch = settingFrameContext.epoch.generation;
 
-			// 初始化
-			{
-				// 图像加载
-				{
-					Inkeys::Graphics::DibSurface SettingSign;
-
-					// 主页改由矢量品牌动效绘制，不再解码旧 SettingUI2 的整页 PNG。
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[5].width = SettingSign.width();
-						int height = settingSign[5].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[6].width = SettingSign.width();
-						int height = settingSign[6].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[8].width = SettingSign.width();
-						int height = settingSign[8].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag4", 30 * settingGlobalScale, 30 * settingGlobalScale);
-					{
-						int width = settingSign[10].width = SettingSign.width();
-						int height = settingSign[10].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[10]);
-						delete[] data;
-
-						(void)ret;
-					}
-
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale);
-					{
-						int width = settingSign[3].width = SettingSign.width();
-						int height = settingSign[3].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
-						delete[] data;
-
-						(void)ret;
-					}
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale);
-					{
-						int width = settingSign[7].width = SettingSign.width();
-						int height = settingSign[7].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								// 仅把 RGB 规整为可着色遮罩，原二维码的每个透明度/模块保持不变。
-								data[(y * width + x) * 4 + 0] = 255;
-								data[(y * width + x) * 4 + 1] = 255;
-								data[(y * width + x) * 4 + 2] = 255;
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
-						delete[] data;
-
-						(void)ret;
-					}
-
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SETTING_GITHUB", 64 * settingGlobalScale, 64 * settingGlobalScale);
-					{
-						const int width = SettingSign.width(), height = SettingSign.height();
-						const auto& pixels = SettingSign.pixels();
-						vector<unsigned char> data(static_cast<size_t>(width) * height * 4, 255);
-						// 官方透明白色标记只取原 alpha，正文主题色在绘制时叠加；缓存随既有 epoch 重建。
-						for (size_t index = 0; index < pixels.size(); ++index)
-							data[index * 4 + 3] = static_cast<unsigned char>(pixels[index] >> 24);
-						(void)LoadTextureFromMemory(data.data(), width, height, &TextureSettingSign[11]);
-					}
-
-					// 时间遮罩必须保持原始尺寸与通道值；可选演示加载失败不阻断设置页。
-					const int eraserResources[] = { IDR_SETTING_ERASER_DEMO_FINE, IDR_SETTING_ERASER_DEMO_SWEEP };
-					for (size_t scene = 0; scene < std::size(eraserResources); ++scene)
-					{
-						Inkeys::Graphics::DibSurface atlas;
-						if (!LoadSurfaceFromResource(&atlas, L"PNG", MAKEINTRESOURCE(eraserResources[scene]))
-							|| atlas.width() != 2304 || atlas.height() != 432) continue;
-						const auto& pixels = atlas.pixels();
-						vector<unsigned char> data(pixels.size() * 4);
-						for (size_t pixel = 0; pixel < pixels.size(); ++pixel)
-						{
-							const unsigned alpha = pixels[pixel] >> 24;
-							// DibSurface 是预乘 BGRA；还原直通道墨迹，不做二维码那样的单色化。
-							for (unsigned channel = 0; channel < 3; ++channel)
-								data[pixel * 4 + channel] = alpha ? static_cast<unsigned char>(
-									((pixels[pixel] >> (channel * 8)) & 255) * 255 / alpha) : 0;
-							data[pixel * 4 + 3] = static_cast<unsigned char>(alpha);
-						}
-						(void)LoadTextureFromMemory(data.data(), atlas.width(), atlas.height(), &TextureSettingSign[12 + scene]);
-					}
-
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale);
-					{
-						int width = settingSign[9].width = SettingSign.width();
-						int height = settingSign[9].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
-						delete[] data;
-
-						(void)ret;
-					}
-				}
-			}
+			InitializeSettingResourceTextures(settingGlobalScale);
 			(void)LoadSettingWindowIconTexture(setting_window);
 			// 1/2 是已退役的旧主页槽位；保留其他共享纹理的既有编号。
-			constexpr size_t requiredTextureIndexes[] = { 0, 3, 5, 6, 7, 8, 9, 10, 11 };
-			if (ranges::any_of(requiredTextureIndexes,
+			if (ranges::any_of(requiredSettingTextureIndexes,
 				[](size_t index) { return TextureSettingSign[index] == nullptr; }))
 			{
 				settingFrameResult = ResolveSettingResourceFailure("ResidentTextures");
@@ -2594,6 +2441,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
+				bool CanvasDebug = IsCanvasDebugEnabled();
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
 				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
@@ -2681,6 +2529,7 @@ SettingSessionCoroutine RunSettingSession()
 				ResidentOpacitySavePending = false;
 			}
 		};
+		const SettingPendingEditsScope pendingEditsScope{commitGeneralSliders};
 		auto navigateTo = [&](Design::NavigationDestination requested)
 		{
 			requested = Design::NormalizeDestination(requested);
@@ -3104,6 +2953,9 @@ SettingSessionCoroutine RunSettingSession()
 				const int contentPage = destination.page == Design::PageId::General
 					&& destination.section == Design::GeneralSection::Storage
 					? settingTabEnum::tabConfiguration : settingTab;
+				if ((contentPage != settingTabEnum::tab3 || drawingSubpage != Design::DrawingSubpage::Cursor) &&
+					cursorOpacitySavePending.exchange(false))
+					QueueConfigWrite();
 				switch (contentPage)
 				{
 					// 主页
@@ -3559,6 +3411,12 @@ SettingSessionCoroutine RunSettingSession()
 						draft.statusIndicator = status.Enable;
 						draft.statusIndicatorTypes = { static_cast<bool>(status.PptSlideshow),
 							static_cast<bool>(status.SuperTop), static_cast<bool>(status.NewVersion) };
+						using Inkeys::UI::Bar::NormalizeBarWorkspaceAutoDockMask;
+						const auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						draft.pptDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Ppt.AutoDockMask.load());
+						draft.whiteboardDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Whiteboard.AutoDockMask.load());
+						draft.pptDockDirection = std::clamp(workspace.Ppt.Direction.load(), 0, 2);
+						draft.whiteboardDockDirection = std::clamp(workspace.Whiteboard.Direction.load(), 0, 2);
 					}
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
 					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
@@ -3654,6 +3512,17 @@ SettingSessionCoroutine RunSettingSession()
 					if (events.startupPlacementChanged)
 					{
 						Inkeys::config.UI.Bar.StartupPlacement = draft.startupPlacement;
+						QueueConfigWrite();
+					}
+					if (events.pptDockMaskChanged || events.pptDockDirectionChanged
+						|| events.whiteboardDockMaskChanged || events.whiteboardDockDirectionChanged)
+					{
+						// 场景进入策略只在下次进入 PPT/白板时由渲染线程读取，立即保存即可。
+						auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						if (events.pptDockMaskChanged) workspace.Ppt.AutoDockMask = draft.pptDockMask;
+						if (events.pptDockDirectionChanged) workspace.Ppt.Direction = draft.pptDockDirection;
+						if (events.whiteboardDockMaskChanged) workspace.Whiteboard.AutoDockMask = draft.whiteboardDockMask;
+						if (events.whiteboardDockDirectionChanged) workspace.Whiteboard.Direction = draft.whiteboardDockDirection;
 						QueueConfigWrite();
 					}
 					if (destination.section == Design::GeneralSection::Appearance)
@@ -3860,11 +3729,19 @@ SettingSessionCoroutine RunSettingSession()
 						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
 						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
 						draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(cursor.DotHideOnContact.load()));
+						// 与 PublishDraw3StateLocked 同口径规范化，越界配置不让滑块与实际渲染不一致。
+						draft.opacity = {
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Pen, cursor.PenOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightPen, cursor.HighlightPenFillOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Dot, cursor.DotOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load()) / 100.0F };
 						draft.injectedAvailable = injectedSourceAvailable;
 						const auto events = Design::RenderCursorPage(draft);
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
-						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse || events.dotHideOnContact)
+						const bool deviceChanged = events.mouse || events.touch || events.screenPen || events.tablet ||
+							events.injectedMouse || events.dotHideOnContact;
+						if (deviceChanged)
 						{
 							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
 							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
@@ -3874,9 +3751,28 @@ SettingSessionCoroutine RunSettingSession()
 							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
 							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
 							if (events.dotHideOnContact) cursor.DotHideOnContact = draft.dotHideOnContact;
-							SyncDraw3State();
-							QueueConfigWrite();
 						}
+						bool opacityChanged = false, opacityActive = false;
+						IdtAtomic<int>* opacityFields[4]{ &cursor.PenOpacity, &cursor.HighlightPenFillOpacity,
+							&cursor.DotOpacity, &cursor.HighlightDotFillOpacity };
+						for (int index = 0; index < 4; ++index)
+						{
+							if (events.opacityChanged[index])
+							{
+								*opacityFields[index] = static_cast<int>(std::lround(draft.opacity[index] * 100.0F));
+								opacityChanged = true;
+							}
+							opacityActive |= events.opacityActive[index];
+						}
+						if (deviceChanged || opacityChanged) SyncDraw3State();
+						if (deviceChanged)
+						{
+							QueueConfigWrite();
+							cursorOpacitySavePending = false;
+						}
+						else if (opacityChanged) cursorOpacitySavePending = true;
+						if (!opacityActive && cursorOpacitySavePending.exchange(false))
+							QueueConfigWrite();
 						break;
 					}
 					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
@@ -4089,11 +3985,25 @@ SettingSessionCoroutine RunSettingSession()
 
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
 					bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
-					if (Design::ToggleRow("##断触接续", IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect.E).c_str(), "\ue7c9", reconnectEnabled))
+					auto& reconnectConfig = Inkeys::config.Experimental.Inkeys3.Draw3;
+					bool reconnectTouch = reconnectConfig.InterruptedStrokeReconnectTouch;
+					bool reconnectPenTail = reconnectConfig.InterruptedStrokeReconnectPenTail;
+					bool reconnectTouchChanged = false, reconnectPenTailChanged = false;
+					const auto& reconnectKeys = I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect;
+					// 适用设备内联在开关下方，开关关闭时用控件自带的条件动画收起；两项各自保留选择。
+					const auto reconnectDevices = Design::InlineCheckboxes("##断触接续-设备", {
+						{ IA(reconnectKeys.Touch), &reconnectTouch, &reconnectTouchChanged },
+						{ IA(reconnectKeys.PenTail), &reconnectPenTail, &reconnectPenTailChanged } },
+						"##reconnect-devices-visibility", reconnectEnabled);
+					const bool reconnectToggled = Design::ToggleRow("##断触接续", IA(reconnectKeys.N).c_str(),
+						IA(reconnectKeys.E).c_str(), "\ue7c9", reconnectEnabled, nullptr, &reconnectDevices);
+					if (reconnectToggled || reconnectTouchChanged || reconnectPenTailChanged)
 					{
-						Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = reconnectEnabled;
+						reconnectConfig.InterruptedStrokeReconnect = reconnectEnabled;
+						reconnectConfig.InterruptedStrokeReconnectTouch = reconnectTouch;
+						reconnectConfig.InterruptedStrokeReconnectPenTail = reconnectPenTail;
 						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(reconnectTouch, reconnectPenTail);
 						QueueConfigWrite();
 					}
 
@@ -4848,6 +4758,21 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 						}
 					}
+					bool delayWaiting = Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations;
+					if (Design::ToggleRow("##debug-delay-waiting", IA(I18nKey.SettingsUI.DebugSoftware.DelayWaiting.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.DelayWaiting.E).c_str(), "\ue9d9", delayWaiting))
+					{
+						Inkeys::config.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations = delayWaiting;
+						QueueConfigWrite();
+					}
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.CanvasSection).c_str());
+					Experimental.Inkeys3.CanvasDebug = IsCanvasDebugEnabled();
+					if (Design::ToggleRow("##experimental-canvas-debug", IA(I18nKey.SettingsUI.DebugSoftware.CanvasDebug.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.CanvasDebug.E).c_str(), "\ue9d9", Experimental.Inkeys3.CanvasDebug))
+					{
+						// 热生效且不持久化：每次启动都需要重新打开；同步 Draw3 与主栏按钮，不需要重启。
+						SetCanvasDebugEnabled(Experimental.Inkeys3.CanvasDebug);
+					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Section).c_str());
 					// 只发布调试命令；条目和动画由主栏渲染线程独占，计数读取其原子快照。
 					const int statusAction = Design::ButtonGroupRow("##status-indicator-debug",
@@ -5296,13 +5221,24 @@ SettingSessionCoroutine RunSettingSession()
 
 namespace
 {
+	// 先注销并排空帧回调，再排空常驻会话；否则迟到的隐藏请求会在最终清理后重新创建会话。
+	template<class Unregister, class PostControl>
+	bool QueueFinalSettingDrain(Unregister unregister, PostControl postControl,
+		Inkeys::UI::RenderPipeline::ControlTask drain)
+	{
+		unregister();
+		return postControl(std::move(drain));
+	}
+
 	void DrainSettingSessionOnRenderThread() noexcept
 	{
 		settingNavigationClockIdle = true; settingFrameSubmission.Reset();
 		if (!settingSession.Done())
 		{
-			settingSessionShouldStop.store(true, memory_order_release);
 			unique_lock imguiLock(settingImguiMutex);
+			// 退出可发生在隐藏后尚无新 ImGui 帧时，先提交有效草稿再排空协程。
+			CommitPendingSettingEdits();
+			settingSessionShouldStop.store(true, memory_order_release);
 			SettingRenderScope renderScope;
 			settingSession.Resume(imguiLock);
 		}
@@ -5344,6 +5280,8 @@ namespace
 			}
 		}
 
+		// Hide 后可能直接休眠：在释放 RTV、清输入或提前返回前提交，不强行恢复无呈现协程。
+		CommitSettingEditsBeforeSuspend(decision);
 		if (decision.releasePresentation || decision.rebuildDeviceResources || decision.rebuildFonts || decision.resize)
 		{ settingHomeEntryCache.Reset(); settingFrameSubmission.Reset(); }
 		// 预览自行按画布宽度分桶调整目标纹理，普通窗口缩放不重编译播放着色器。
@@ -5666,8 +5604,11 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
-		const bool drainPosted = Inkeys::UI::RenderPipeline::PostControl([]
+		const bool drainPosted = QueueFinalSettingDrain(
+			[] { Inkeys::UI::RenderPipeline::Unregister(Inkeys::UI::RenderPipeline::Client::Settings); },
+			[](auto drain) { return Inkeys::UI::RenderPipeline::PostControl(std::move(drain)); }, []
 			{
 				DrainSettingSessionOnRenderThread();
 				lock_guard stateLock(settingStateMutex);
@@ -5683,8 +5624,6 @@ namespace Inkeys::UI::Setting
 			IDTLogger->error(
 				"[Setting] 渲染管线已停止，无法在线程内排空设置会话");
 		}
-		Inkeys::UI::RenderPipeline::Unregister(
-			Inkeys::UI::RenderPipeline::Client::Settings);
 		settingBusinessQueue.Stop();
 	}
 
@@ -5703,6 +5642,7 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
@@ -5755,6 +5695,157 @@ WNDPROC SettingWindowProc() noexcept
 
 namespace Inkeys::UI::Setting
 {
+	int RunTextureRecoveryProductionTest() noexcept
+	{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		if (settingInitialized.load() || g_pd3dDevice || Inkeys::Window::GetService().Running()) return 2;
+		int failures = 0;
+		const auto check = [&](bool passed, const char* message)
+		{
+			if (passed) return;
+			++failures;
+			std::fprintf(stderr, "[setting-texture-recovery] %s\n", message);
+		};
+		const auto readTexture = [&](std::size_t slot, std::vector<unsigned char>& output)
+		{
+			if (!TextureSettingSign[slot]) return false;
+			Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+			TextureSettingSign[slot]->GetResource(resource.GetAddressOf());
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, staging;
+			if (FAILED(resource.As(&texture))) return false;
+			D3D11_TEXTURE2D_DESC desc{}; texture->GetDesc(&desc);
+			if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) return false;
+			desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			if (FAILED(g_pd3dDevice->CreateTexture2D(&desc, nullptr, staging.GetAddressOf()))) return false;
+			g_pd3dDeviceContext->CopyResource(staging.Get(), texture.Get());
+			D3D11_MAPPED_SUBRESOURCE mapped{};
+			if (FAILED(g_pd3dDeviceContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+			try { output.resize(static_cast<std::size_t>(desc.Width) * desc.Height * 4); }
+			catch (...) { g_pd3dDeviceContext->Unmap(staging.Get(), 0); throw; }
+			for (UINT row = 0; row < desc.Height; ++row)
+				std::memcpy(output.data() + static_cast<std::size_t>(row) * desc.Width * 4,
+					static_cast<const unsigned char*>(mapped.pData) + static_cast<std::size_t>(row) * mapped.RowPitch,
+					static_cast<std::size_t>(desc.Width) * 4);
+			g_pd3dDeviceContext->Unmap(staging.Get(), 0);
+			return true;
+		};
+		// 参考实现保留原初始化逐通道规则，与生产配方转换独立核对真实资源像素。
+		const auto referencePixels = [](const SettingResourceTexture& source, float scale,
+			std::vector<unsigned char>& output)
+		{
+			Inkeys::Graphics::DibSurface surface;
+			const int width = source.scale ? static_cast<int>(source.width * scale) : 0;
+			const int height = source.scale ? static_cast<int>(source.height * scale) : 0;
+			if (!LoadSurfaceFromResource(&surface, L"PNG", source.name, width, height)) return false;
+			output.resize(surface.pixels().size() * 4);
+			for (std::size_t pixel = 0; pixel < surface.pixels().size(); ++pixel)
+			{
+				const DWORD color = surface.pixels()[pixel];
+				const unsigned char alpha = static_cast<unsigned char>((color & 0xFF000000) >> 24);
+				if (source.conversion == SettingTextureConversion::WhiteAlphaMask)
+					output[pixel * 4] = output[pixel * 4 + 1] = output[pixel * 4 + 2] = 255;
+				else
+				{
+					output[pixel * 4] = alpha ? static_cast<unsigned char>((color & 0xFF) * 255 / alpha) : 0;
+					output[pixel * 4 + 1] = alpha ? static_cast<unsigned char>(((color & 0xFF00) >> 8) * 255 / alpha) : 0;
+					output[pixel * 4 + 2] = alpha ? static_cast<unsigned char>(((color & 0xFF0000) >> 16) * 255 / alpha) : 0;
+				}
+				output[pixel * 4 + 3] = alpha;
+			}
+			return true;
+		};
+		const auto noViews = []
+		{
+			return std::ranges::all_of(TextureSettingSign, [](auto* view) { return view == nullptr; });
+		};
+		const auto pixelCapacity = []
+		{
+			std::size_t bytes = 0;
+			for (const auto& pixels : settingTexturePixels) bytes += pixels.capacity();
+			return bytes;
+		};
+		HICON icon = nullptr;
+		try
+		{
+			icon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ICON1),
+				IMAGE_ICON, 64, 64, LR_DEFAULTCOLOR));
+			check(icon != nullptr, "load actual icon without HWND");
+			for (const float scale : { 1.0F, 2.0F })
+			{
+				CleanupSettingTextures(); CleanupSettingTextureCache(); CleanupDeviceD3D();
+				Inkeys::UI::RenderPipeline::DeviceEpoch first{}, second{};
+				const auto createDevice = [](auto& epoch)
+				{
+					const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
+					return SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+						D3D11_CREATE_DEVICE_BGRA_SUPPORT, &level, 1, D3D11_SDK_VERSION,
+						epoch.d3dDevice.GetAddressOf(), nullptr, epoch.immediateContext.GetAddressOf()));
+				};
+				if (!createDevice(first) || !createDevice(second)) { check(false, "create two real WARP epochs"); break; }
+				check(AcquireDeviceLease(first), "acquire initial epoch");
+				InitializeSettingResourceTextures(scale);
+				check(LoadSettingIconTexture(icon), "upload real window icon");
+				check(std::ranges::all_of(requiredSettingTextureIndexes,
+					[](std::size_t slot) { return TextureSettingSign[slot] != nullptr; }), "all required slots uploaded");
+				check(TextureSettingSign[1] == nullptr && TextureSettingSign[2] == nullptr && TextureSettingSign[4] == nullptr,
+					"retired slots remain unused");
+				std::array<std::vector<unsigned char>, 14> reference;
+				reference[0] = settingTexturePixels[0];
+				for (const auto& source : settingResourceTextures)
+				{
+					check(referencePixels(source, scale, reference[source.slot]), "decode independent reference");
+					std::vector<unsigned char> actual;
+					check(readTexture(source.slot, actual) && actual == reference[source.slot],
+						"initial GPU bytes match original resource conversion");
+					check(settingTexturePixels[source.slot].capacity() == 0, "PNG decoded pixels are not retained");
+				}
+				check(pixelCapacity() == 64 * 64 * 4, "only 16KiB raw icon remains resident");
+				CleanupSettingTextures(); CleanupDeviceD3D();
+				check(AcquireDeviceLease(second) && RecreateSettingTextures(), "rebuild from source recipes on new epoch");
+				for (std::size_t slot = 0; slot < reference.size(); ++slot)
+				{
+					if (reference[slot].empty()) continue;
+					std::vector<unsigned char> actual;
+					check(readTexture(slot, actual) && actual == reference[slot], "new epoch GPU pixels remain identical");
+				}
+				const auto source = settingTextureRecipes[3];
+				settingTextureRecipes[3].resourceName = L"INKEYS_MISSING_TEXTURE_RECOVERY_RESOURCE";
+				check(!RecreateSettingTextures() && noViews(), "missing required resource rolls back every candidate");
+				settingTextureRecipes[3] = source;
+				check(RecreateSettingTextures(), "missing required source can retry");
+				for (const int required : { 0, 9 })
+					for (const bool failView : { false, true })
+					{
+						settingTextureTestFailSlot = required; settingTextureTestFailView = failView;
+						check(!RecreateSettingTextures() && noViews(), "required texture/view OOM rolls back all SRVs");
+						settingTextureTestFailSlot = -1;
+						check(RecreateSettingTextures(), "GPU creation failure remains retryable");
+					}
+				for (const std::size_t optional : { std::size_t{12}, std::size_t{13} })
+				{
+					settingTextureTestFailSlot = static_cast<int>(optional); settingTextureTestFailView = true;
+					check(RecreateSettingTextures() && TextureSettingSign[optional] == nullptr,
+						"optional atlas failure preserves required images");
+					settingTextureTestFailSlot = -1;
+					check(RecreateSettingTextures(), "optional atlas source retained for next retry");
+				}
+				std::printf("[setting-texture-recovery] scale=%.1f active_slots=11 resident_cpu_bytes=%zu hwnd=0\n",
+					scale, pixelCapacity());
+			}
+		}
+		catch (...) { check(false, "unexpected exception"); }
+		settingTextureTestFailSlot = -1; settingTextureTestFailView = false;
+		CleanupSettingTextures(); CleanupSettingTextureCache(); CleanupDeviceD3D();
+		if (icon) DestroyIcon(icon);
+		check(noViews() && pixelCapacity() == 0 && std::ranges::none_of(settingTextureRecipes,
+			[](const auto& source) { return source.resourceName != nullptr; }), "shutdown releases views and all recovery storage");
+		std::printf("[setting-texture-recovery] failures=%d hwnd=0\n", failures);
+		return failures ? 1 : 0;
+#else
+		return 2;
+#endif
+	}
+
     int RunFontLifecycleProductionTest() noexcept
     {
         int failures = 0;
@@ -5780,6 +5871,13 @@ namespace Inkeys::UI::Setting
             check(backend, "backend initialization");
             if (backend && I18n::load(1,L"JSON",L"zh-CN") && RebuildSettingFonts())
             {
+                const auto checkAtlasPolicy = [&] {
+                    const auto* atlas = ImGui::GetIO().Fonts;
+                    check(atlas->TexDesiredFormat == ImTextureFormat_Alpha8
+                        && (atlas->FontLoaderFlags & ImGuiFreeTypeLoaderFlags_SnapAscentToPixelGrid),
+                        "production atlas uses Alpha8 and pixel-aligned baselines");
+                };
+                checkAtlasPolicy();
                 auto draw = [&](bool expectedFailure = false)
                 {
                     ImGui_ImplDX11_NewFrame(); ImGui::NewFrame();
@@ -5835,6 +5933,7 @@ namespace Inkeys::UI::Setting
                         const auto& current = I18n::locale();
                         const bool reuse = cycle != 0 && locale.regularFont == current.regularFont && locale.boldFont == current.boldFont;
                         check(ApplyPreparedSettingLanguage(locale,next,cycle == 0),"production font decision stages or reuses and commits");
+                        checkAtlasPolicy();
                         check((ImGui::GetIO().Fonts == previousAtlas) == reuse,"same-family locale reuses atlas while rebuild replaces it");
                         draw(); draw();
                         check(GImGui==originalContext && persistent==ImGui::FindWindowByName("font-lifecycle###persistent")
@@ -5876,6 +5975,117 @@ namespace Inkeys::UI::Setting
         std::printf("[font-lifecycle] failures=%d\n",failures);
         return failures ? 1 : 0;
     }
+	namespace
+	{
+		bool RunSettingShutdownRenderingCase(bool oldOrder, bool holdCallback)
+		{
+			using namespace Inkeys::UI::RenderPipeline;
+			struct Probe
+			{
+				mutex mutex;
+				condition_variable changed;
+				SessionState session;
+				bool entered = false, release = false, unregisterEntered = false, cleanupPosted = false;
+				bool drainRan = false, afterSettingsSlot = false, resident = true, drained = false;
+				unsigned recreated = 0;
+			} probe;
+			probe.session.CommitEpoch(1);
+			probe.session.SetVisible(false);
+			Scheduler scheduler;
+			jthread stopping;
+			struct Cleanup
+			{
+				Probe& probe; Scheduler& scheduler; jthread& stopping;
+				~Cleanup()
+				{
+					{ lock_guard lock(probe.mutex); probe.release = true; }
+					probe.changed.notify_all();
+					if (stopping.joinable()) stopping.join();
+					scheduler.Stop();
+				}
+			} cleanup{ probe, scheduler, stopping };
+			if (!scheduler.Register(Client::Settings, [&](const auto&)
+				{
+					unique_lock lock(probe.mutex);
+					probe.entered = true; probe.changed.notify_all();
+					if (holdCallback && !probe.drainRan) probe.changed.wait(lock, [&] { return probe.release; });
+					// 复用真实隐藏会话决策：没有 resident 时，即使不可见也会先初始化常驻部分。
+					if (probe.session.Resolve(1, probe.resident, false).initializeResident)
+					{
+						probe.resident = true; probe.drained = false; ++probe.recreated;
+						probe.session.CommitEpoch(1);
+					}
+					return FrameResult::Idle;
+				}) || !scheduler.Register(Client::WhiteboardFreeze, [&](const auto&)
+				{
+					lock_guard lock(probe.mutex);
+					// 真实调度顺序中，此 sentinel 必须经过 Settings 的 dispatch slot 后才执行。
+					if (probe.drainRan) { probe.afterSettingsSlot = true; probe.changed.notify_all(); }
+					return FrameResult::Idle;
+				}) || !scheduler.Start()) return false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.entered; })) return false;
+			}
+			const auto drain = [&]
+			{
+				{
+					lock_guard lock(probe.mutex);
+					probe.resident = false; probe.drained = true; probe.drainRan = true;
+					probe.session.ReleaseResident();
+				}
+				// 对应最终清理后到达的 Hide/业务完成请求，不依赖 Sleep 争抢 waiter。
+				scheduler.Request(Mask(Client::Settings) | Mask(Client::WhiteboardFreeze));
+			};
+			bool queued = false;
+			if (oldOrder) queued = scheduler.PostControl(drain);
+			else
+			{
+				stopping = jthread([&]
+				{
+					queued = QueueFinalSettingDrain([&]
+						{
+							{ lock_guard lock(probe.mutex); probe.unregisterEntered = true; }
+							probe.changed.notify_all();
+							scheduler.Unregister(Client::Settings);
+						}, [&](auto task)
+						{
+							{ lock_guard lock(probe.mutex); probe.cleanupPosted = true; }
+							return scheduler.PostControl(std::move(task));
+						}, drain);
+				});
+				if (holdCallback)
+				{
+					unique_lock lock(probe.mutex);
+					if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.unregisterEntered; })
+						|| probe.cleanupPosted || probe.drainRan) return false;
+					probe.release = true; probe.changed.notify_all();
+				}
+				stopping.join();
+			}
+			if (!queued) return false;
+			bool expected = false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.afterSettingsSlot; })) return false;
+				expected = oldOrder ? probe.resident && !probe.drained && probe.recreated == 1
+					: !probe.resident && probe.drained && probe.recreated == 0;
+			}
+			if (oldOrder) scheduler.Unregister(Client::Settings);
+			return expected;
+		}
+
+		bool RunSettingShutdownRenderingTests()
+		{
+			const bool negative = RunSettingShutdownRenderingCase(true, false);
+			const bool hidden = RunSettingShutdownRenderingCase(false, false);
+			const bool active = RunSettingShutdownRenderingCase(false, true);
+			std::fprintf(stderr, "[SettingShutdownRendering] old-order-recreated=%d hidden-drained=%d active-callback-drained=%d\n",
+				negative, hidden, active);
+			return negative && hidden && active;
+		}
+	}
+
 	int RunBusinessCancellationProductionTest() noexcept
 	{
 		if (settingInitialized.load() || Inkeys::Window::GetService().Running()) return 2;
@@ -5904,6 +6114,7 @@ namespace Inkeys::UI::Setting
 		};
 		try
 		{
+			if (!RunSettingShutdownRenderingTests()) return 1;
 			SettingBusinessQueue queue(execute, &probe);
 			if (!queue.Start()) return 1;
 			SettingBusinessCommand dialog; dialog.kind = SettingBusinessKind::Information; queue.Enqueue(dialog);
@@ -5926,6 +6137,50 @@ namespace Inkeys::UI::Setting
 			{
 				Inkeys::Config savedConfig; savedConfig = Inkeys::config;
 				struct Restore { Inkeys::Config& saved; ~Restore() { Inkeys::config=saved; } } restore{savedConfig};
+				// 不创建 HWND/ImGui 帧：真实 Hide 决策和关闭排空都必须提交草稿，销毁后不再调用捕获。
+				bool pendingEditsPassed = false;
+				{
+					Design::DesktopShortcutDraft app, board(Inkeys::Business::DesktopShortcut::Kind::Whiteboard);
+					app.preset = Inkeys::Business::DesktopShortcut::Custom; app.customName = "App before hide";
+					board.preset = Inkeys::Business::DesktopShortcut::WhiteboardCustom; board.customName = "Board before hide";
+					Inkeys::UI::Setting::SessionState session;
+					session.CommitEpoch(1); session.SetVisible(true);
+					unsigned commits = 0;
+					{
+						const SettingPendingEditsScope scope{[&] {
+							++commits;
+							(void)CommitDesktopShortcutNamePreference(app, 30, &board);
+							(void)CommitDesktopShortcutNamePreference(board, 30, &app);
+						}};
+						CommitSettingEditsBeforeSuspend(session.Resolve(1, true, true));
+						const bool visibleUnchanged = commits == 0;
+						session.SetVisible(false);
+						const auto hidden = session.Resolve(1, true, true);
+						CommitSettingEditsBeforeSuspend(hidden);
+						const bool hiddenSaved = !hidden.HasPresentationWork() && commits == 1
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App before hide"
+							&& Inkeys::config.GetWhiteboardShortcutNamePreference().second == L"Board before hide";
+						session.ConsumeInputReset(session.InputResetSerial()); session.SetVisible(true);
+						app.customName = "App after quick reopen";
+						session.SetVisible(false); session.SetVisible(true);
+						const auto reopened = session.Resolve(1, true, false);
+						CommitSettingEditsBeforeSuspend(reopened);
+						const bool quickReopenSaved = reopened.resetInput && !reopened.releasePresentation
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App after quick reopen";
+						app.customName = "App before shutdown";
+						CommitPendingSettingEdits();
+						const bool shutdownSaved = Inkeys::config.GetShortcutNamePreference().second == L"App before shutdown";
+						app.customName = "CON"; board.customName = "App before shutdown";
+						CommitPendingSettingEdits();
+						pendingEditsPassed = visibleUnchanged && hiddenSaved && quickReopenSaved && shutdownSaved
+							&& Inkeys::config.GetShortcutNamePreference().second == L"App before shutdown"
+							&& Inkeys::config.GetWhiteboardShortcutNamePreference().second == L"Board before hide";
+					}
+					const auto retiredCommits = commits;
+					CommitPendingSettingEdits();
+					pendingEditsPassed &= !settingCommitPendingEdits && commits == retiredCommits;
+				}
+				if (!pendingEditsPassed) { std::fputs("[SettingPendingEdits] FAIL: hidden/reopen/shutdown commit or retirement\n", stderr); return 1; }
 				struct FrozenProbe
 				{
 					mutex mutex; condition_variable condition;

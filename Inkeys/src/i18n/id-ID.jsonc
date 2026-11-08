@@ -104,6 +104,7 @@
         "WhiteboardGridLabel": "Kisi",
         "WhiteboardUnsavedLabel": "Beberapa halaman belum disimpan",
         "FreezeLabel": "Beku",
+        "CanvasDebugLabel": "Debug visual",
         "EndPresentationLabel": "Akhiri",
         "SettingsLabel": "Setelan",
         "MoreLabel": "Lainnya"
@@ -162,8 +163,7 @@
         "ReadFailed": "Baca",
         "PresentFailed": "Tampil",
         "Failed": "Galat",
-        "Recovering": "Memulihkan",
-        "Loading": "Muat",
+        "Recovering": "Pemulihan",
         "Retry": "Coba lagi",
         "Wait": "Tunggu",
         "RetryCanvas": "Coba ulang kanvas",
@@ -699,6 +699,11 @@
           "Unavailable": "Sistem ini tidak dapat membedakan sumber input, sehingga opsi ini tidak tersedia."
         },
         "FineControl": "Kontrol terperinci",
+        "OpacitySection": "Opasitas",
+        "PenOpacity": "Opasitas kursor pena",
+        "HighlightPenFillOpacity": "Opasitas isian kursor pena (disorot)",
+        "DotOpacity": "Opasitas kursor titik kecil",
+        "HighlightDotFillOpacity": "Opasitas isian kursor titik kecil (disorot)",
         "DotHideOnContact":
         {
           "N": "Sembunyikan kursor titik kecil secara otomatis saat menyentuh",
@@ -728,7 +733,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Sambungkan goresan terputus",
-          "E": "Saat kontak sentuh hilang sesaat lalu berlanjut ke arah semula, aplikasi mencoba menyambungkan kedua bagian menjadi satu goresan untuk mengurangi celah. Saat nonaktif, setiap angkatan jari mengakhiri goresan."
+          "Touch": "Sentuh",
+          "PenTail": "Penghapus pena",
+          "E": "Saat menulis, mendeteksi putusnya sentuhan berdasarkan maksud menggambar dan memperbaikinya, serta dapat melanjutkan status menggambar."
         }
       },
       "Eraser":
@@ -800,6 +807,33 @@
           "Note": "Tidak disarankan untuk perangkat layar besar."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Posisi",
+      "DesktopSection": "Desktop",
+      "PptSection": "Presentasi",
+      "WhiteboardSection": "Papan tulis",
+      "StartupE": "Menentukan lokasi bilah muncul pada peluncuran berikutnya. Bilah atas di tengah hanya posisi awal dan tidak menempel.",
+      "TypeBottomBar": "Bilah bawah di tengah",
+      "TypeTopBar": "Bilah atas di tengah",
+      "TypeFloating": "Jendela mengambang",
+      "PositionLabel": "Posisi",
+      "ExpandRight": "Perluas ke kanan",
+      "ExpandLeft": "Perluas ke kiri",
+      "FloatBottomLeft": "Kiri bawah",
+      "FloatBottomRight": "Kanan bawah",
+      "FloatBottomCenter": "Tengah bawah",
+      "PptAutoDock": "Masuk ke mode bilah bawah di tengah saat tayangan slide dimulai",
+      "PptAutoDockE": "Jika sebelumnya bilah berada dalam keadaan yang dicentang, bilah otomatis menjadi bilah bawah di tengah yang terbuka saat tayangan dimulai dan dipulihkan setelah selesai.",
+      "WhiteboardAutoDock": "Masuk ke mode bilah bawah di tengah saat masuk ke papan tulis",
+      "WhiteboardAutoDockE": "Jika sebelumnya bilah berada dalam keadaan yang dicentang, bilah otomatis menjadi bilah bawah di tengah yang terbuka saat papan tulis dibuka dan dipulihkan setelah ditutup.",
+      "StateBottom": "Keadaan bilah bawah",
+      "StateBottomFolded": "Keadaan bilah bawah (diciutkan)",
+      "StateFloating": "Keadaan jendela mengambang",
+      "StateFloatingFolded": "Keadaan jendela mengambang (diciutkan)",
+      "MainButtonDirection": "Arah tombol utama",
+      "DirectionKeep": "Tidak diubah"
     },
     "Preset":
     {
@@ -1155,6 +1189,17 @@
       {
         "N": "Tampilkan laju bingkai",
         "E": "Perbarui rata-rata laju bingkai dan laju tanpa batas dari detik sebelumnya setiap detik."
+      },
+      "CanvasSection": "Kanvas",
+      "CanvasDebug":
+      {
+        "N": "Debug kanvas",
+        "E": "Tampilkan frame rate, beban perangkat keras, dan informasi titik input di bawah kanvas, serta tambahkan tombol debug visual pada bilah utama."
+      },
+      "DelayWaiting":
+      {
+        "N": "Tunda operasi yang menunggu",
+        "E": "Perpanjang waktu pemuatan untuk mengamati animasi."
       },
       "StatusIndicator":
       {
