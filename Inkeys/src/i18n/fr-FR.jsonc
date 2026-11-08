@@ -692,6 +692,20 @@
           "E": "Les tablettes graphiques sans Windows Ink arrivent généralement comme une « souris injectée par le pilote ». Une fois l’option activée, cette souris utilise les réglages de curseur de la tablette ; les logiciels qui injectent aussi de la souris, comme le Bureau à distance, peuvent être détectés par erreur.",
           "Unavailable": "Ce système ne peut pas distinguer la source de saisie ; l’option n’est pas disponible."
         },
+        "Eraser":
+        {
+          "N": "Curseur de la gomme",
+          "E": "La forme détermine aussi la zone réellement effacée (rectangles à angles droits) ; le motif et le mode clair/sombre ne changent que l’apparence du curseur.",
+          "Appearance": "Apparence",
+          "Light": "Clair",
+          "Dark": "Sombre",
+          "Circle": "Cercle",
+          "Rectangle": "Rectangle",
+          "Square": "Carré",
+          "Grips": "Classique",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Éclat"
+        },
         "FineControl": "Réglages fins",
         "OpacitySection": "Opacité",
         "PenOpacity": "Opacité du curseur de stylo",
@@ -706,8 +720,7 @@
           "ScreenPen": "Stylet sur écran uniquement",
           "Tablet": "Tablette graphique uniquement",
           "Both": "Stylet sur écran et tablette graphique"
-        },
-        "Note": "Avec le stylet d’écran, la tablette graphique et le tactile, « Souris » est une flèche dessinée par l’application ; les curseurs du surligneur et du pointeur laser, les outils de formes et le curseur propre à la gomme ne sont pas affectés par ces options."
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "Le dessin à plusieurs doigts est désactivé ; dessiner pendant le gommage est donc indisponible.",
           "ParallelWritingLaserMultiTouchNote": "Le laser à plusieurs doigts est désactivé ; dessiner au laser pendant le gommage est donc indisponible.",
           "ParallelWriting": "Autoriser le dessin pendant le gommage",
-          "ParallelWritingDescription": "L’activation de la gomme avec la paume n’interrompt pas les autres entrées : le dessin peut continuer. Pour écrire à plusieurs en même temps."
+          "ParallelWritingDescription": "L’activation de la gomme avec la paume n’arrête que l’écriture tactile à proximité et bloque les nouveaux contacts autour d’elle ; ailleurs, l’écriture peut continuer. Pour écrire à plusieurs en même temps.",
+          "CursorNoticeTitle": "Le thème et le motif suivent les réglages du curseur",
+          "CursorNoticeDescription": "Le curseur de la gomme avec la paume utilise le thème et le motif définis dans « Dessin › Curseur › Curseur de la gomme ». Seule la forme peut être choisie séparément ici.",
+          "Shape": "Forme de la gomme avec la paume",
+          "ShapeDescription": "La forme détermine aussi la zone réellement effacée par la paume. « Suivre la valeur par défaut » utilise la même forme que la gomme normale.",
+          "FollowDefault": "Suivre la valeur par défaut",
+          "SizeSection": "Taille de la gomme avec la paume",
+          "SizeMode": "Méthode de calcul de l’épaisseur",
+          "SizeModeDescription": "Choisissez comment calculer l’épaisseur de la gomme avec la paume.",
+          "SizeModeDynamic": "Épaisseur dynamique",
+          "SizeModeFollowDefault": "Fixe (gomme par défaut)",
+          "SizeModeFixed": "Fixe (sans gomme selon vitesse)",
+          "SizeModeDynamicNote": "Calculée à partir de la surface de contact",
+          "SizeModeFollowDefaultNote": "Utilise la taille de la gomme par défaut ; varie selon la vitesse du stylet lorsque « Taille auto » est activé",
+          "SizeModeFixedNote": "Utilise toujours la taille de la gomme par défaut",
+          "SizeMethod": "Méthode de calcul de la taille",
+          "SizeMethodDescription": "Méthode de conversion du rectangle de contact en taille de gomme.",
+          "MethodEllipseArea": "Surface ellipse inscrite",
+          "MethodRectangleArea": "Surface du rectangle",
+          "MethodInscribedCircle": "Cercle inscrit",
+          "MethodCircumscribedCircle": "Cercle circonscrit",
+          "MethodInscribedRectangle": "Rectangle inscrit",
+          "MethodCircumscribedRectangle": "Rectangle circonscrit",
+          "MethodInscribedSquare": "Carré inscrit",
+          "MethodCircumscribedSquare": "Carré circonscrit",
+          "SizeMethodShapeNote": "Forme actuelle : {}",
+          "SizeMultiplier": "Multiplicateur de taille de gommage",
+          "SizeMultiplierDescription": "Ajuste proportionnellement la longueur du côté ou le diamètre de la gomme sans modifier la détection."
         },
         "Input":
         {

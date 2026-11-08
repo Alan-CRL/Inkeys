@@ -2138,7 +2138,7 @@ namespace Inkeys::Drawing::Draw3
 					"area toggle does not reset mouse fine hover",failures);
 				const SpeedEraser::ContactLengthMetrics syntheticAxis{2,1000,0,30000,true};
 				const SpeedEraser::ContactLengthMetrics syntheticSpan{2,10000,0,30000,true};
-				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1);
+				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1,1);
 				const auto convertedArea=SpeedEraser::ConvertContactArea(300,200,areaTransform,areaTransform);
 				modeSucceeded &= Check(convertedArea.units==SpeedEraser::ContactAreaUnits::CanvasPixels &&
 					std::abs(convertedArea.widthPx-30)<0.001f && std::abs(convertedArea.heightPx-20)<0.001f,

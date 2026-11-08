@@ -692,6 +692,20 @@
           "E": "Tablet grafis tanpa Windows Ink biasanya masuk sebagai “mouse yang disuntikkan driver”. Jika diaktifkan, mouse tersebut memakai pengaturan kursor tablet; perangkat lunak lain yang juga menyuntikkan mouse, seperti desktop jarak jauh, dapat terdeteksi secara keliru.",
           "Unavailable": "Sistem ini tidak dapat membedakan sumber input, sehingga opsi ini tidak tersedia."
         },
+        "Eraser":
+        {
+          "N": "Kursor penghapus",
+          "E": "Bentuk juga menentukan area hapus sebenarnya (persegi panjang bersudut siku); pola dan terang/gelap hanya mengubah tampilan kursor.",
+          "Appearance": "Tampilan",
+          "Light": "Terang",
+          "Dark": "Gelap",
+          "Circle": "Lingkaran",
+          "Rectangle": "Persegi panjang",
+          "Square": "Persegi",
+          "Grips": "Klasik",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Kilau"
+        },
         "FineControl": "Kontrol terperinci",
         "OpacitySection": "Opasitas",
         "PenOpacity": "Opasitas kursor pena",
@@ -706,8 +720,7 @@
           "ScreenPen": "Hanya pena layar",
           "Tablet": "Hanya tablet pena",
           "Both": "Pena layar dan tablet pena"
-        },
-        "Note": "Pada pena layar, tablet grafis, dan sentuhan, “Mouse” berupa panah yang digambar sendiri oleh aplikasi; kursor penyorot dan penunjuk laser, alat bentuk, serta kursor khusus penghapus tidak terpengaruh oleh opsi ini."
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "Menggambar multisentuh nonaktif, sehingga menulis sambil menghapus tidak dapat diterapkan.",
           "ParallelWritingLaserMultiTouchNote": "Laser multisentuh nonaktif, sehingga menulis sambil menghapus tidak berlaku pada pena laser.",
           "ParallelWriting": "Aktifkan menulis sambil menghapus",
-          "ParallelWritingDescription": "Mengaktifkan penghapus telapak tangan tidak mengganggu masukan lain, sehingga menggambar dapat dilanjutkan. (Untuk dua orang atau lebih yang menulis bersama.)"
+          "ParallelWritingDescription": "Mengaktifkan penghapus telapak tangan hanya mengakhiri tulisan sentuh di dekatnya dan memblokir sentuhan baru di sekitarnya; menulis di tempat lain tetap dapat dilanjutkan. (Untuk dua orang atau lebih yang menulis bersama.)",
+          "CursorNoticeTitle": "Tema dan pola mengikuti pengaturan kursor",
+          "CursorNoticeDescription": "Kursor penghapus telapak tangan memakai tema dan pola dari “Menggambar › Kursor › Kursor penghapus”. Di sini hanya bentuknya yang dapat dipilih terpisah.",
+          "Shape": "Bentuk penghapus telapak tangan",
+          "ShapeDescription": "Bentuk juga menentukan area yang benar-benar dihapus oleh telapak tangan. “Ikuti default” memakai bentuk yang sama dengan penghapus biasa.",
+          "FollowDefault": "Ikuti default",
+          "SizeSection": "Ukuran penghapus telapak tangan",
+          "SizeMode": "Metode perhitungan ketebalan",
+          "SizeModeDescription": "Pilih cara menghitung ketebalan penghapus telapak tangan.",
+          "SizeModeDynamic": "Ketebalan dinamis",
+          "SizeModeFollowDefault": "Tetap (penghapus default)",
+          "SizeModeFixed": "Tetap(tanpa penghapus laju)",
+          "SizeModeDynamicNote": "Dihitung berdasarkan luas kontak",
+          "SizeModeFollowDefaultNote": "Gunakan ukuran penghapus default; berubah sesuai kecepatan pena saat “Ukuran otomatis” aktif",
+          "SizeModeFixedNote": "Selalu gunakan ukuran penghapus default",
+          "SizeMethod": "Metode perhitungan ukuran",
+          "SizeMethodDescription": "Cara mengubah persegi panjang kontak menjadi ukuran penghapus.",
+          "MethodEllipseArea": "Luas elips dalam",
+          "MethodRectangleArea": "Luas persegi panjang",
+          "MethodInscribedCircle": "Lingkaran dalam",
+          "MethodCircumscribedCircle": "Lingkaran luar",
+          "MethodInscribedRectangle": "Persegi panjang dalam",
+          "MethodCircumscribedRectangle": "Persegi panjang luar",
+          "MethodInscribedSquare": "Persegi dalam",
+          "MethodCircumscribedSquare": "Persegi luar",
+          "SizeMethodShapeNote": "Bentuk saat ini: {}",
+          "SizeMultiplier": "Pengali ukuran penghapusan",
+          "SizeMultiplierDescription": "Skalakan panjang sisi atau diameter penghapus tanpa memengaruhi pengenalan."
         },
         "Input":
         {

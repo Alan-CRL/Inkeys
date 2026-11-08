@@ -505,6 +505,127 @@ namespace
 		packer.pack_uint32(fallback);
 	}
 
+
+	std::vector<std::byte> PackPrivateEraser(uint8_t shape, bool withShape = true)
+	{
+		msgpack::sbuffer buffer;
+		msgpack::packer<msgpack::sbuffer> packer(buffer);
+		packer.pack_map(withShape ? 9 : 8);
+		PackKey(packer, "type"); packer.pack_fix_uint16(kInkType);
+		PackKey(packer, "contentId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "undoId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "inkType"); packer.pack_fix_int32(0);
+		PackKey(packer, "color"); PackColor(packer);
+		PackKey(packer, "opacity"); packer.pack_float(1.0f);
+		PackKey(packer, "texture"); packer.pack_fix_int32(0);
+		PackKey(packer, "points"); packer.pack_array(1);
+		packer.pack_map(3);
+		PackKey(packer, "x"); packer.pack_float(12.0f);
+		PackKey(packer, "y"); packer.pack_float(20.0f);
+		PackKey(packer, "width"); packer.pack_float(5.0f);
+		if (withShape)
+		{
+			PackKey(packer, "inkeysEraserShape"); packer.pack_uint8(shape);
+		}
+		return ToBytes(buffer);
+	}
+
+	void TestLegacyEraserPrivateField(TestState& state)
+	{
+		UInkDocument document = MakeBasicDocument(false);
+		UInkWorkspace workspace;
+		workspace.guid = Guid("30000000-0000-4000-8000-00000000b001");
+		document.headerExtension = UInkHeaderExtension{};
+		document.headerExtension->workspaces.push_back(workspace);
+		document.usesImplicitWorkspace = false;
+		document.canvases[0].workspaceGuid = workspace.guid;
+		const auto prefix = EncodeUInkDocument(document);
+		UINK_CHECK(state, prefix.status == UInkEncodeStatus::Success);
+		for (uint8_t shape : { uint8_t{ 1 }, uint8_t{ 2 } })
+		{
+			auto bytes = prefix.bytes;
+			AppendBytes(bytes, PackPrivateEraser(shape));
+			// 关闭新扩展解释，执行原 DecodeInk 路径：未知键不进入 ink.extra。
+			const auto legacy = DecodeUInk(bytes, {}, false);
+			UINK_CHECK(state, legacy.status == UInkReadStatus::Complete);
+			UINK_CHECK(state, legacy.document.has_value());
+			if (!legacy.document || legacy.document->canvases.empty() ||
+				legacy.document->canvases[0].content.empty()) continue;
+			const auto& ink = std::get<UInkInk>(legacy.document->canvases[0].content[0]);
+			UINK_CHECK(state, ink.declaredInkType == 0);
+			UINK_CHECK(state, ink.effectiveKind == UInkInkKind::Erase);
+			UINK_CHECK(state, !ink.extra && ink.eraserShape == 0);
+			UINK_CHECK(state, ink.points.size() == 1 && ink.points[0].width == 5.0f);
+			const auto imported = ImportDraw3UInkDocument(*legacy.document);
+			UINK_CHECK(state, imported.status == Draw3UInkImportStatus::Success);
+			if (!imported.snapshot || imported.snapshot->canvases.empty() ||
+				imported.snapshot->canvases[0].strokes.empty()) continue;
+			const auto& stroke = imported.snapshot->canvases[0].strokes[0];
+			UINK_CHECK(state, stroke.style.kind == Draw3UInkStrokeKind::Eraser);
+			UINK_CHECK(state, stroke.style.eraserShape == 0);
+		}
+		for (uint8_t shape : { uint8_t{ 0 }, uint8_t{ 1 }, uint8_t{ 2 } })
+		{
+			auto bytes = prefix.bytes;
+			AppendBytes(bytes, PackPrivateEraser(shape, shape != 0));
+			const auto decoded = DecodeUInk(bytes);
+			UINK_CHECK(state, decoded.status == UInkReadStatus::Complete && decoded.document);
+			if (!decoded.document || decoded.document->canvases.empty() ||
+				decoded.document->canvases[0].content.empty()) continue;
+			const auto& ink = std::get<UInkInk>(decoded.document->canvases[0].content[0]);
+			UINK_CHECK(state, ink.effectiveKind == UInkInkKind::Erase && ink.eraserShape == shape);
+			const auto imported = ImportDraw3UInkDocument(*decoded.document);
+			UINK_CHECK(state, imported.status == Draw3UInkImportStatus::Success && imported.snapshot);
+			if (!imported.snapshot || imported.snapshot->canvases.empty() ||
+				imported.snapshot->canvases[0].strokes.empty()) continue;
+			const auto& stroke = imported.snapshot->canvases[0].strokes[0];
+			UINK_CHECK(state, stroke.style.kind == Draw3UInkStrokeKind::Eraser &&
+				stroke.style.eraserShape == shape && stroke.points[0].width == 5.0f);
+			const auto exported = ExportDraw3SnapshotToUInk(*imported.snapshot);
+			UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success && exported.document);
+			if (!exported.document) continue;
+			const auto encoded = EncodeUInkDocument(*exported.document);
+			UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+			const auto legacyWritten = DecodeUInk(encoded.bytes, {}, false);
+			UINK_CHECK(state, legacyWritten.status == UInkReadStatus::Complete && legacyWritten.document);
+			if (legacyWritten.document && !legacyWritten.document->canvases.empty() &&
+				!legacyWritten.document->canvases[0].content.empty())
+			{
+				const auto* legacyInk = std::get_if<UInkInk>(&legacyWritten.document->canvases[0].content[0]);
+				UINK_CHECK(state, legacyInk && legacyInk->effectiveKind == UInkInkKind::Erase &&
+					legacyInk->eraserShape == 0);
+			}
+			else UINK_CHECK(state, false);
+			const auto reopened = DecodeUInk(encoded.bytes);
+			UINK_CHECK(state, reopened.status == UInkReadStatus::Complete && reopened.document);
+			if (reopened.document && !reopened.document->canvases.empty() &&
+				!reopened.document->canvases[0].content.empty())
+			{
+				const auto* reopenedInk = std::get_if<UInkInk>(&reopened.document->canvases[0].content[0]);
+				UINK_CHECK(state, reopenedInk && reopenedInk->eraserShape == shape);
+			}
+			else UINK_CHECK(state, false);
+
+			const std::array<UInkAppendObject, 1> objects = { ink };
+			const auto append = EncodeUInkAppendObjects(objects);
+			UINK_CHECK(state, append.status == UInkEncodeStatus::Success);
+			if (append.bytes.empty()) continue;
+			const auto packed = msgpack::unpack(reinterpret_cast<const char*>(append.bytes.data()), append.bytes.size());
+			UINK_CHECK(state, packed.get().type == msgpack::type::MAP &&
+				packed.get().via.map.size == (shape == 0 ? 8u : 9u));
+			if (shape == 0)
+			{
+				// 固定使用旧八键布局及数值宽度，逐字节比较 Circle 输出。
+				UINK_CHECK(state, append.bytes == PackPrivateEraser(0, false));
+			}
+		}
+		auto invalidBytes = prefix.bytes;
+		AppendBytes(invalidBytes, PackPrivateEraser(255));
+		const auto invalid = DecodeUInk(invalidBytes);
+		UINK_CHECK(state, invalid.document && !invalid.document->canvases.empty() &&
+			invalid.document->canvases[0].content.empty());
+	}
+
 	std::vector<std::byte> PackUnknown(uint16_t type, uint32_t nestedArrays = 0)
 	{
 		msgpack::sbuffer buffer;
@@ -3813,6 +3934,7 @@ int RunUInkTests()
 {
 	TestState state;
 	ResetUInkFileTestFaultInjection();
+	TestLegacyEraserPrivateField(state);
 	TestOfficialFixtures(state);
 	TestExactEncodingAndRichRoundTrip(state);
 	TestMalformedAndRecovery(state);

@@ -692,6 +692,20 @@
           "E": "Windows Ink を使わないペンタブレットは、通常「ドライバーが挿入したマウス」として入力されます。オンにすると、このマウスにペンタブレットのカーソル設定を適用します。リモート デスクトップなど、同様にマウスを挿入するソフトウェアも誤って識別される場合があります。",
           "Unavailable": "このシステムでは入力元を区別できないため、この設定は使用できません。"
         },
+        "Eraser":
+        {
+          "N": "消しゴムカーソル",
+          "E": "形状は実際に消える範囲も決めます（長方形は角が直角）。模様とライト/ダークはカーソルの見た目だけを変えます。",
+          "Appearance": "外観",
+          "Light": "ライト",
+          "Dark": "ダーク",
+          "Circle": "円",
+          "Rectangle": "縦長の長方形",
+          "Square": "正方形",
+          "Grips": "クラシック",
+          "Inkeys": "Inkeys",
+          "Sparkle": "きらめき"
+        },
         "FineControl": "詳細制御",
         "OpacitySection": "不透明度",
         "PenOpacity": "ペン カーソルの不透明度",
@@ -706,8 +720,7 @@
           "ScreenPen": "画面ペンのみ",
           "Tablet": "ペンタブレットのみ",
           "Both": "画面ペンとペンタブレット"
-        },
-        "Note": "画面用ペン、ペンタブレット、タッチでは、「マウス」はアプリ自身が描画する矢印です。蛍光ペンとレーザーポインターのカーソル、図形ツール、消しゴム専用のカーソルは、これらの設定の影響を受けません。"
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "複数の指での描画が無効なため、消去と描画を同時に行えません。",
           "ParallelWritingLaserMultiTouchNote": "複数の指でのレーザー操作が無効なため、レーザーでは消去と描画を同時に行えません。",
           "ParallelWriting": "消去と描画を同時に行う",
-          "ParallelWritingDescription": "手のひら消しゴム使用中も他の入力を中断せず、描画を続けられます。2人以上で同時に書く場合に適しています。"
+          "ParallelWritingDescription": "手のひら消しゴムの起動時は、その近くのタッチ書き込みだけを終了し、近くでの新しいタッチを受け付けません。他の場所では書き続けられます。2人以上で同時に書く場合に適しています。",
+          "CursorNoticeTitle": "明暗と模様はカーソル設定に従います",
+          "CursorNoticeDescription": "手のひら消しゴムのカーソルの明暗と模様は「描画 › カーソル › 消しゴムカーソル」の設定と同じになります。ここでは形だけを個別に選べます。",
+          "Shape": "手のひら消しゴムの形",
+          "ShapeDescription": "形は手のひらで実際に消える範囲も決めます。「既定に従う」では通常の消しゴムと同じ形になります。",
+          "FollowDefault": "既定に従う",
+          "SizeSection": "手のひら消しゴムの大きさ",
+          "SizeMode": "太さの計算方法",
+          "SizeModeDescription": "手のひら消しゴムの太さの計算方法を選びます。",
+          "SizeModeDynamic": "動的な太さ",
+          "SizeModeFollowDefault": "固定（既定の消しゴム）",
+          "SizeModeFixed": "固定（筆速消しゴム非対応）",
+          "SizeModeDynamicNote": "接触面積に応じて計算",
+          "SizeModeFollowDefaultNote": "既定の消しゴムの大きさを使用し、「太さ自動」が有効な場合は筆速に応じて変化",
+          "SizeModeFixedNote": "常に既定の消しゴムの大きさを使用",
+          "SizeMethod": "大きさの計算方法",
+          "SizeMethodDescription": "接触領域の長方形から消しゴムの大きさを求める方法です。",
+          "MethodEllipseArea": "内接楕円と同じ面積",
+          "MethodRectangleArea": "長方形と同じ面積",
+          "MethodInscribedCircle": "内接円",
+          "MethodCircumscribedCircle": "外接円",
+          "MethodInscribedRectangle": "内接長方形",
+          "MethodCircumscribedRectangle": "外接長方形",
+          "MethodInscribedSquare": "内接正方形",
+          "MethodCircumscribedSquare": "外接正方形",
+          "SizeMethodShapeNote": "現在の形：{}",
+          "SizeMultiplier": "消去サイズの倍率",
+          "SizeMultiplierDescription": "認識に影響を与えずに消しゴムの辺の長さまたは直径を拡大・縮小します。"
         },
         "Input":
         {

@@ -1,5 +1,7 @@
 ﻿module;
 
+#include "Draw3.SpeedEraser.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -83,6 +85,7 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t fallbackRgb = 0;
 		float opacity = 1.0f;
 		uint16_t texture = 0;
+		EraserShape eraserShape = EraserShape::Circle;
 	};
 
 	// 一条不可变的最终墨迹，只保存重放显示所需的数据。

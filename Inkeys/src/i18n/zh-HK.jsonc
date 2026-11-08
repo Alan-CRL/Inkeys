@@ -692,6 +692,20 @@
           "E": "未啟用 Windows Ink 的繪圖板通常以「驅動程式注入的滑鼠」送達。開啟後，這類滑鼠會使用繪圖板的游標設定；遠端桌面等同樣注入滑鼠的軟件可能被誤判。",
           "Unavailable": "目前系統無法區分輸入來源，此選項不可用。"
         },
+        "Eraser":
+        {
+          "N": "擦膠游標",
+          "E": "形狀同時決定實際擦除區域（矩形為直角）；紋樣與明暗只影響游標外觀。",
+          "Appearance": "外觀",
+          "Light": "淺色",
+          "Dark": "深色",
+          "Circle": "圓形",
+          "Rectangle": "豎長矩形",
+          "Square": "正方形",
+          "Grips": "經典",
+          "Inkeys": "Inkeys",
+          "Sparkle": "星光"
+        },
         "FineControl": "精細控制",
         "OpacitySection": "不透明度",
         "PenOpacity": "畫筆游標不透明度",
@@ -706,8 +720,7 @@
           "ScreenPen": "僅螢幕筆",
           "Tablet": "僅繪圖板",
           "Both": "螢幕筆和繪圖板"
-        },
-        "Note": "「滑鼠」在屏幕筆、繪圖板和觸控上由軟件自行繪製箭頭；螢光筆和激光筆的游標、圖形工具及擦膠的專用游標不受這些選項影響。"
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "多指繪圖已關閉，邊擦邊寫無法生效。",
           "ParallelWritingLaserMultiTouchNote": "多指鐳射筆已關閉，邊擦邊寫在鐳射筆下無法生效。",
           "ParallelWriting": "啟用邊擦邊寫",
-          "ParallelWritingDescription": "啟用手掌擦膠時不會中斷其他輸入，繪圖可以繼續進行。（適用於雙人或多人書寫時）"
+          "ParallelWritingDescription": "啟用手掌擦膠時只會結束其附近的觸控書寫，並阻止在其附近落筆；其他位置可繼續書寫。（適用於雙人或多人書寫時）",
+          "CursorNoticeTitle": "明暗與紋樣跟隨游標設定",
+          "CursorNoticeDescription": "手掌擦膠游標的明暗和紋樣與「繪圖 › 游標 › 擦膠游標」中的設定保持一致，這裏只能單獨選擇形狀。",
+          "Shape": "手掌擦膠形狀",
+          "ShapeDescription": "形狀同時決定手掌擦除的實際範圍。選擇「跟隨預設」時與一般擦膠相同。",
+          "FollowDefault": "跟隨預設",
+          "SizeSection": "手掌擦膠大小",
+          "SizeMode": "粗幼計算方式",
+          "SizeModeDescription": "選擇手掌擦膠粗幼的計算方式。",
+          "SizeModeDynamic": "動態粗幼",
+          "SizeModeFollowDefault": "固定（預設擦膠）",
+          "SizeModeFixed": "固定（不支援筆速擦膠）",
+          "SizeModeDynamicNote": "按接觸面積計算",
+          "SizeModeFollowDefaultNote": "使用預設擦膠大小，開啟「自動粗幼」時按筆速變化",
+          "SizeModeFixedNote": "始終使用預設擦膠大小",
+          "SizeMethod": "大小計算方式",
+          "SizeMethodDescription": "將接觸矩形換算為擦膠大小的方法。",
+          "MethodEllipseArea": "內切橢圓等面積",
+          "MethodRectangleArea": "矩形等面積",
+          "MethodInscribedCircle": "內切圓形",
+          "MethodCircumscribedCircle": "外接圓形",
+          "MethodInscribedRectangle": "內切豎長矩形",
+          "MethodCircumscribedRectangle": "外接豎長矩形",
+          "MethodInscribedSquare": "內切正方形",
+          "MethodCircumscribedSquare": "外接正方形",
+          "SizeMethodShapeNote": "目前形狀：{}",
+          "SizeMultiplier": "擦除大小倍率",
+          "SizeMultiplierDescription": "按比例縮放擦膠的邊長或直徑，不影響辨識。"
         },
         "Input":
         {

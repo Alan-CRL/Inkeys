@@ -692,6 +692,20 @@
           "E": "Windows Ink kullanmayan grafik tabletler genellikle “sürücünün enjekte ettiği fare” olarak gelir. Açıldığında bu fare, tabletin imleç ayarlarını kullanır; Uzak Masaüstü gibi fare enjekte eden diğer yazılımlar yanlışlıkla algılanabilir.",
           "Unavailable": "Bu sistem giriş kaynağını ayırt edemediği için seçenek kullanılamıyor."
         },
+        "Eraser":
+        {
+          "N": "Silgi imleci",
+          "E": "Şekil gerçek silme alanını da belirler (dikdörtgenlerin köşeleri diktir); desen ve açık/koyu yalnızca imlecin görünümünü değiştirir.",
+          "Appearance": "Görünüm",
+          "Light": "Açık",
+          "Dark": "Koyu",
+          "Circle": "Daire",
+          "Rectangle": "Dikdörtgen",
+          "Square": "Kare",
+          "Grips": "Klasik",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Pırıltı"
+        },
         "FineControl": "Hassas denetimler",
         "OpacitySection": "Opaklık",
         "PenOpacity": "Kalem imleci opaklığı",
@@ -706,8 +720,7 @@
           "ScreenPen": "Yalnızca ekran kalemi",
           "Tablet": "Yalnızca grafik tablet",
           "Both": "Ekran kalemi ve grafik tablet"
-        },
-        "Note": "Ekran kalemi, grafik tablet ve dokunmada “Fare”, uygulamanın kendisinin çizdiği bir oktur; vurgulayıcı ve lazer işaretçi imleçleri, şekil araçları ve silgiye özel imleç bu seçeneklerden etkilenmez."
+        }
       },
       "Effect":
       {
@@ -772,7 +785,34 @@
           "ParallelWritingMultiTouchNote": "Çoklu dokunmayla çizim kapalı; silerken yazma kullanılamaz.",
           "ParallelWritingLaserMultiTouchNote": "Çoklu dokunmayla lazer kapalı; lazer kalemle silerken yazma kullanılamaz.",
           "ParallelWriting": "Silerken yazmayı aç",
-          "ParallelWritingDescription": "Avuç içi silgisi etkinleştiğinde diğer girdiler kesilmez, çizim devam edebilir. (Birlikte yazan iki veya daha fazla kişi için.)"
+          "ParallelWritingDescription": "Avuç içi silgisi etkinleştiğinde yalnızca yakınındaki dokunmatik yazma sonlanır ve çevresinde yeni dokunuşlar engellenir; diğer yerlerde yazmaya devam edilebilir. (Birlikte yazan iki veya daha fazla kişi için.)",
+          "CursorNoticeTitle": "Tema ve desen imleç ayarlarını izler",
+          "CursorNoticeDescription": "Avuç içi silgisinin imleci, “Çizim › İmleç › Silgi imleci” bölümündeki tema ve deseni kullanır. Burada yalnızca şekil ayrıca seçilebilir.",
+          "Shape": "Avuç içi silgisi şekli",
+          "ShapeDescription": "Şekil, avuç içiyle gerçekten silinen alanı da belirler. “Varsayılanı izle” normal silgiyle aynı şekli kullanır.",
+          "FollowDefault": "Varsayılanı izle",
+          "SizeSection": "Avuç içi silgisi boyutu",
+          "SizeMode": "Kalınlık hesaplama yöntemi",
+          "SizeModeDescription": "Avuç içi silgisinin kalınlığının nasıl hesaplanacağını seçin.",
+          "SizeModeDynamic": "Dinamik kalınlık",
+          "SizeModeFollowDefault": "Sabit (varsayılan silgi)",
+          "SizeModeFixed": "Sabit (hıza bağlı silgi yok)",
+          "SizeModeDynamicNote": "Temas alanına göre hesaplanır",
+          "SizeModeFollowDefaultNote": "Varsayılan silgi boyutunu kullanır; “Otomatik boyut” açıkken kalem hızına göre değişir",
+          "SizeModeFixedNote": "Her zaman varsayılan silgi boyutunu kullanır",
+          "SizeMethod": "Boyut hesaplama yöntemi",
+          "SizeMethodDescription": "Temas dikdörtgeninin silgi boyutuna dönüştürülme yöntemi.",
+          "MethodEllipseArea": "İç teğet elips alanı",
+          "MethodRectangleArea": "Dikdörtgen alanı",
+          "MethodInscribedCircle": "İç teğet daire",
+          "MethodCircumscribedCircle": "Dış teğet daire",
+          "MethodInscribedRectangle": "İç teğet dikdörtgen",
+          "MethodCircumscribedRectangle": "Dış teğet dikdörtgen",
+          "MethodInscribedSquare": "İç teğet kare",
+          "MethodCircumscribedSquare": "Dış teğet kare",
+          "SizeMethodShapeNote": "Geçerli şekil: {}",
+          "SizeMultiplier": "Silme boyutu çarpanı",
+          "SizeMultiplierDescription": "Algılamayı etkilemeden silginin kenar uzunluğunu veya çapını orantılı olarak ölçeklendirir."
         },
         "Input":
         {

@@ -2245,6 +2245,92 @@ namespace Inkeys::UI::Setting::Design
 		return content;
 	}
 
+	namespace
+	{
+		struct PreviewSelectorGeometry
+		{
+			std::vector<LayoutRect> items, dividers;
+			float height = 0;
+		};
+		PreviewSelectorGeometry MeasurePreviewSelector(const std::vector<PreviewSelectorGroup>& groups, float width)
+		{
+			PreviewSelectorGeometry result;
+			const float side = Pixels(72), gap = Pixels(8), padding = Pixels(4);
+			const float available = (std::max)(side, width - padding * 2);
+			float x = 0, y = padding, rowHeight = 0;
+			for (const auto& group : groups)
+			{
+				bool first = true;
+				for (const auto& item : group.items)
+				{
+					const bool separator = first && group.separatorBefore && x > 0;
+					const float space = x > 0 ? separator ? Pixels(29) : gap : 0;
+					if (x > 0 && x + space + side > available)
+					{ x = 0; y += rowHeight + gap; rowHeight = 0; }
+					else if (x > 0)
+					{
+						if (separator) result.dividers.push_back({ padding + x + Pixels(14), y + Pixels(4),
+							padding + x + Pixels(14) + 1, y + side - Pixels(4) });
+						x += space;
+					}
+					const float height = side + Pixels(6) + TextHeight(item.label.c_str(), side, ImFluentTextStyle_Caption);
+					result.items.push_back({ padding + x, y, padding + x + side, y + height });
+					rowHeight = (std::max)(rowHeight, height); x += side; first = false;
+				}
+			}
+			result.height = y + rowHeight + padding;
+			return result;
+		}
+	}
+
+	InlineRowContent InlinePreviewSelector(const char* id, std::vector<PreviewSelectorGroup> groups)
+	{
+		InlineRowContent content;
+		content.height = [groups](float width) { return MeasurePreviewSelector(groups, width).height; };
+		content.render = [id, groups](const LayoutRect& bounds)
+		{
+			const auto geometry = MeasurePreviewSelector(groups, bounds.Width());
+			auto* draw = ImGui::GetWindowDrawList(); const auto& palette = GetPalette();
+			ImGui::PushID(id);
+			for (const auto& divider : geometry.dividers)
+				draw->AddLine({ bounds.left + divider.left, bounds.top + divider.top },
+					{ bounds.left + divider.left, bounds.top + divider.bottom }, palette.stroke, 1);
+			size_t offset = 0;
+			for (size_t groupIndex = 0; groupIndex < groups.size(); ++groupIndex)
+			{
+				const auto& group = groups[groupIndex]; ImGui::PushID(static_cast<int>(groupIndex));
+				for (size_t index = 0; index < group.items.size(); ++index, ++offset)
+				{
+					const auto& item = group.items[index]; const auto& local = geometry.items[offset];
+					const ImVec2 origin(bounds.left + local.left, bounds.top + local.top);
+					const ImVec2 end(origin.x + Pixels(72), origin.y + Pixels(72));
+					ImGui::PushID(static_cast<int>(index)); ImGui::SetCursorScreenPos(origin);
+					if (ImGui::InvisibleButton("##preview", { local.Width(), local.Height() }, ImGuiButtonFlags_EnableNav)
+						&& group.selectedIndex && *group.selectedIndex != static_cast<int>(index))
+					{
+						*group.selectedIndex = static_cast<int>(index);
+						if (group.changed) *group.changed = true;
+					}
+					const bool selected = group.selectedIndex && *group.selectedIndex == static_cast<int>(index);
+					draw->AddRectFilled(origin, end, ImGui::IsItemHovered() ? palette.rowHover : palette.cardSecondary, Pixels(8));
+					draw->AddRect(origin, end, palette.stroke, Pixels(8));
+					if (selected) draw->AddRect({ origin.x - Pixels(3), origin.y - Pixels(3) },
+						{ end.x + Pixels(3), end.y + Pixels(3) }, palette.accent, Pixels(10), 0, Pixels(2));
+					if (ImGui::IsItemFocused()) draw->AddRect({ origin.x + Pixels(2), origin.y + Pixels(2) },
+						{ end.x - Pixels(2), end.y - Pixels(2) }, palette.textPrimary, Pixels(6));
+					if (item.preview) item.preview({ origin.x, origin.y, end.x, end.y });
+					const float labelWidth = (std::min)(Pixels(72), TextWidth(item.label.c_str(), ImFluentTextStyle_Caption));
+					TextAt(item.label.c_str(), { origin.x + (Pixels(72) - labelWidth) * 0.5F, end.y + Pixels(6) },
+						labelWidth, ImFluentTextStyle_Caption, selected ? palette.textPrimary : palette.textSecondary);
+					ImGui::PopID();
+				}
+				ImGui::PopID();
+			}
+			ImGui::PopID();
+		};
+		return content;
+	}
+
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note, bool showNoteIcon)
 	{

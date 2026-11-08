@@ -150,6 +150,20 @@ namespace Inkeys::UI::Setting::Design
 	// 每项的 value/changed 指针须存活到对应行提交结束；收起期间不产生事件。
 	InlineRowContent InlineCheckboxes(const char* id, std::vector<CheckboxSpec> items,
 		const char* visibilityId = nullptr, bool visible = true);
+	struct PreviewSelectorItem
+	{
+		std::string label;
+		std::function<void(const LayoutRect&)> preview; // 物理像素区域；调用方提供并缓存预览。
+	};
+	struct PreviewSelectorGroup
+	{
+		std::vector<PreviewSelectorItem> items;
+		int* selectedIndex = nullptr;
+		bool* changed = nullptr;
+		bool separatorBefore = false;
+	};
+	// 每组独立选中索引；72 DIP 按钮与真实标签测高共同换行，可复用“跟随默认”等自定义项。
+	InlineRowContent InlinePreviewSelector(const char* id, std::vector<PreviewSelectorGroup> groups);
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true);
 	// 与 ComboRow 相同，但在下拉框左侧预留一块预览区；preview 收到该区域的物理像素矩形。

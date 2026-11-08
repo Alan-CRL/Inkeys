@@ -370,3 +370,38 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 ### Status
 
 [OK] **Completed**
+
+
+## Session 183: 手掌橡皮第一阶段：RTS坐标、面积与定尺修复
+<!-- trellis-session: v=2 fp=67516a5e42478450 -->
+
+**Date**: 2026-11-06
+**Task**: 手掌橡皮第一阶段：RTS坐标、面积与定尺修复
+**Branch**: `bugfix/hand-erase`
+
+### Summary
+
+按用户批准的A方案完成窗口HDC位置映射、接触尺寸S/C逆变换和椭圆等面积圆定尺；保留识别阈值/预览。代码未提交，任务保留待实机验收。
+
+### Main Changes
+
+- RTS从目标HWND HDC缓存ink到像素比例；补齐映射失效、取消与启动失败回传。
+- WIDTH/HEIGHT按当前context补除ink-to-digitizer倍率；Palm直径sqrt(W*H)，识别仍W*H。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过；仅清理生成.ilk恢复增量链接器内部错误，无项目配置修改。
+- [OK] Palm Headless 152/0；生产RTS 59/0；生产Palm probe PASS；沙箱外全量Headless --no-window exit0。
+- [OK] 可选DPI API无新增静态导入；diff、UTF-8/BOM/CRLF及规范审查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在Surface、异常设备、多屏和Win7 SP1 + KB2670838 x86/x64上进行实机验收；尚未授权GUI/Computer Use。

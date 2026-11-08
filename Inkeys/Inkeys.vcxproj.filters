@@ -546,6 +546,9 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.EraserCursor.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
