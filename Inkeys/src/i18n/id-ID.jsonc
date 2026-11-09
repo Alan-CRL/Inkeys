@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "Umum",
+        "CategorySolidLabel": "3D",
+        "CategoryCoordinateFunctionLabel": "Koordinat & fungsi",
+        "AuxCenterLabel": "Pusat",
+        "AuxFociLabel": "Fokus",
+        "AuxDiagonalsLabel": "Diagonal",
         "StraightLineLabel": "Garis",
         "ArrowLabel": "Panah",
         "RectangleLabel": "Psg. pjg.",

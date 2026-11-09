@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "Ogólne",
+        "CategorySolidLabel": "3D",
+        "CategoryCoordinateFunctionLabel": "Współrzędne i funkcje",
+        "AuxCenterLabel": "Środek",
+        "AuxFociLabel": "Ogniska",
+        "AuxDiagonalsLabel": "Przekątne",
         "StraightLineLabel": "Linia",
         "ArrowLabel": "Strzałka",
         "RectangleLabel": "Prostokąt",

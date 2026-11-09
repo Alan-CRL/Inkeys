@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "常规",
+        "CategorySolidLabel": "立体",
+        "CategoryCoordinateFunctionLabel": "坐标与函数",
+        "AuxCenterLabel": "中心",
+        "AuxFociLabel": "焦点",
+        "AuxDiagonalsLabel": "对角线",
         "StraightLineLabel": "直线",
         "ArrowLabel": "箭头",
         "RectangleLabel": "矩形",

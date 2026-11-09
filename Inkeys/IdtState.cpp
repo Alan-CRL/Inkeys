@@ -2373,7 +2373,8 @@ draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcep
 	{
 	case ShapeModeSelectEnum::IdtShapeArrow1: result.preset = PresetKind::Arrow; break;
 	case ShapeModeSelectEnum::IdtShapeRectangle1: result.preset = PresetKind::Rectangle; break;
-	case ShapeModeSelectEnum::IdtShapeRoundedRectangle1: result.preset = PresetKind::RoundedRectangle; break;
+	// 只归一化下一笔工具，文件中的圆角矩形枚举及展开路径仍保留。
+	case ShapeModeSelectEnum::IdtShapeRoundedRectangle1: result.preset = PresetKind::Rectangle; break;
 	case ShapeModeSelectEnum::IdtShapeCircle1: result.preset = PresetKind::Circle; break;
 	case ShapeModeSelectEnum::IdtShapeEllipse1: result.preset = PresetKind::Ellipse; break;
 	case ShapeModeSelectEnum::IdtShapeTriangle1: result.preset = PresetKind::Triangle; break;
@@ -2593,8 +2594,11 @@ int RunShapeToolStateProductionTest() noexcept
 			check(GetShapeStyle(initial).auxiliary == Auxiliary::Center,"circle defaults to visible center");
 			initial.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeEllipse1;
 			check(GetShapeStyle(initial).auxiliary == Auxiliary::Foci,"ellipse defaults to visible foci");
-			initial.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeRegularPolygon1;
-			check(GetShapeAuxiliary(initial) == Auxiliary::None,"regular polygon center initially off");
+			for (const auto mode : {ShapeModeSelectEnum::IdtShapeRegularPolygon1,ShapeModeSelectEnum::IdtShapeArc1,
+				ShapeModeSelectEnum::IdtShapeSector1,ShapeModeSelectEnum::IdtShapeRectangle1})
+			{ initial.Shape.ModeSelect = mode; check(GetShapeAuxiliary(initial) == Auxiliary::None,"other auxiliary bits initially off"); }
+			initial.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeRoundedRectangle1;
+			check(GetShapeToolSpec(initial).preset == PresetKind::Rectangle,"old rounded snapshot projects rectangle without rewriting stored mode");
 		}
 		for (unsigned i = 0; i <= static_cast<unsigned>(PresetKind::Pyramid); ++i)
 		{
@@ -2602,7 +2606,8 @@ int RunShapeToolStateProductionTest() noexcept
 			(void)SetShapeToolPresetIfRevision(preset, StateModeTransitionRevision());
 			const auto snapshot = GetStateModeVersionedSnapshot();
 			const auto bridge = Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
-			check(GetShapeToolSpec(snapshot.state).preset == preset && bridge.shapeTool == GetShapeToolSpec(snapshot.state), "all presets projected");
+			const auto projected = preset == PresetKind::RoundedRectangle ? PresetKind::Rectangle : preset;
+			check(GetShapeToolSpec(snapshot.state).preset == projected && bridge.shapeTool == GetShapeToolSpec(snapshot.state), "legacy rounded tool falls back; other presets projected");
 			check(bridge.shapeStyle == GetShapeStyle(snapshot.state), "atomic style projection");
 			const auto caps = GetToolCapabilities(preset);
 			check(caps.enabled && GetShapeToolSpec(snapshot.state).creationMode == DefaultCreationMode(preset), "enabled tool publishes correct creation mode");

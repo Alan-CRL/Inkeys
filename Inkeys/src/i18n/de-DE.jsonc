@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "Allgemein",
+        "CategorySolidLabel": "3D",
+        "CategoryCoordinateFunctionLabel": "Koordinaten & Funktionen",
+        "AuxCenterLabel": "Mittelpunkt",
+        "AuxFociLabel": "Brennpunkte",
+        "AuxDiagonalsLabel": "Diagonalen",
         "StraightLineLabel": "Linie",
         "ArrowLabel": "Pfeil",
         "RectangleLabel": "Rechteck",

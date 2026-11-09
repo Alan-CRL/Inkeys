@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "Genel",
+        "CategorySolidLabel": "3B",
+        "CategoryCoordinateFunctionLabel": "Koordinatlar ve fonksiyonlar",
+        "AuxCenterLabel": "Merkez",
+        "AuxFociLabel": "Odaklar",
+        "AuxDiagonalsLabel": "Köşegenler",
         "StraightLineLabel": "Çizgi",
         "ArrowLabel": "Ok",
         "RectangleLabel": "Dikdört.",

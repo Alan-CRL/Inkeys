@@ -1673,6 +1673,10 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		bool idleDue = false;
 		deadline = (std::min)(deadline, pptIdleDeadline.Consume(now, idleDue));
 		if (idleDue) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		bool carouselDue = false;
+		const auto carouselWake = barUISet.geometryAttribute.ConsumeCarouselWake(now,carouselDue);
+		if (carouselWake != InteractionClock::time_point{}) deadline = (std::min)(deadline,carouselWake);
+		if (carouselDue) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 		for (unsigned budget = 0; budget != 32 && ResumeMainInteraction(context, now); ++budget) {}
 		return (std::min)(deadline, context.deadline);
 	}
@@ -3276,14 +3280,6 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		if (wParam == BarBorderCursorGraceTimerId)
 		{
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
-			return 0;
-		}
-		if (wParam == Inkeys::UI::Bar::GeometryCarouselTimerId)
-		{
-			KillTimer(hWnd, Inkeys::UI::Bar::GeometryCarouselTimerId);
-			unsigned retryMs = 0;
-			if (barUISet.geometryAttribute.PollCarouselTimer(retryMs)) barUISet.UpdateRendering(false);
-			else if (retryMs) SetTimer(hWnd, Inkeys::UI::Bar::GeometryCarouselTimerId, retryMs, nullptr);
 			return 0;
 		}
 

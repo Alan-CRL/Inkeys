@@ -429,6 +429,10 @@ BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
 
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 
+BARSTEPBACK             UI                      "src\\UI\\barStepBack.svg"
+
+BARSTEPFORWARD          UI                      "src\\UI\\barStepForward.svg"
+
 BARMORE                 UI                      "src\\UI\\barMore.svg"
 BARMENU                 UI                      "src\\UI\\barMenu.svg"
 BARMINIMIZE             UI                      "src\\UI\\barMinimize.svg"

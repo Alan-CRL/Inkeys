@@ -7283,7 +7283,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
 			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
 		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
-		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline, frame.bottomDockDragActive);
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline, frame.bottomDockDragActive, frame.frameTime);
 	if (geometryChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup));
 
 	const bool eraserChanged = owner_.eraserAttribute.Advance(owner_, animationDtSeconds,

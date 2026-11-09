@@ -150,6 +150,12 @@ inline constexpr struct I18nKeyRoot
             } ShapeConstruction{};
             struct Node__UI__Bar__GeometryAttributes
             {
+                const char* CategoryRegularLabel = "UI/Bar/GeometryAttributes/CategoryRegularLabel";
+                const char* CategorySolidLabel = "UI/Bar/GeometryAttributes/CategorySolidLabel";
+                const char* CategoryCoordinateFunctionLabel = "UI/Bar/GeometryAttributes/CategoryCoordinateFunctionLabel";
+                const char* AuxCenterLabel = "UI/Bar/GeometryAttributes/AuxCenterLabel";
+                const char* AuxFociLabel = "UI/Bar/GeometryAttributes/AuxFociLabel";
+                const char* AuxDiagonalsLabel = "UI/Bar/GeometryAttributes/AuxDiagonalsLabel";
                 const char* StraightLineLabel = "UI/Bar/GeometryAttributes/StraightLineLabel";
                 const char* ArrowLabel = "UI/Bar/GeometryAttributes/ArrowLabel";
                 const char* RectangleLabel = "UI/Bar/GeometryAttributes/RectangleLabel";

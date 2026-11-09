@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "General",
+        "CategorySolidLabel": "3D",
+        "CategoryCoordinateFunctionLabel": "Coordinates & functions",
+        "AuxCenterLabel": "Center",
+        "AuxFociLabel": "Foci",
+        "AuxDiagonalsLabel": "Diagonals",
         "StraightLineLabel": "Line",
         "ArrowLabel": "Arrow",
         "RectangleLabel": "Rectangle",

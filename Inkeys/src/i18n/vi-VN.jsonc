@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "Chung",
+        "CategorySolidLabel": "3D",
+        "CategoryCoordinateFunctionLabel": "Tọa độ và hàm số",
+        "AuxCenterLabel": "Tâm",
+        "AuxFociLabel": "Tiêu điểm",
+        "AuxDiagonalsLabel": "Đường chéo",
         "StraightLineLabel": "Đường",
         "ArrowLabel": "Mũi tên",
         "RectangleLabel": "Chữ nhật",

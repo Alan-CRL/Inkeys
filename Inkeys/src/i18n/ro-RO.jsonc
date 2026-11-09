@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "General",
+        "CategorySolidLabel": "3D",
+        "CategoryCoordinateFunctionLabel": "Coordonate și funcții",
+        "AuxCenterLabel": "Centru",
+        "AuxFociLabel": "Focare",
+        "AuxDiagonalsLabel": "Diagonale",
         "StraightLineLabel": "Linie",
         "ArrowLabel": "Săgeată",
         "RectangleLabel": "Dreptun.",

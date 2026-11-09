@@ -7,6 +7,7 @@
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../resource.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
+#include "Bar.ThemeMaterial.h"
 #include <d2d1_1helper.h>
 #include <wincodec.h>
 #include <crtdbg.h>
@@ -39,6 +40,8 @@ public:
 	static bool CarouselArmed(const BarGeometryAttributePanel& p) { return p.carouselArmed_; }
 	static unsigned CarouselSides(const BarGeometryAttributePanel& p) { return p.carouselSides_; }
 	static auto Categories(const BarGeometryAttributePanel& p) { return p.categoryList_.Snapshot(); }
+	static void CategoryVisible(BarGeometryAttributePanel& p,int item,bool visible) { p.buttons_[item]->userVisible = visible; }
+	static auto CarouselDeadline(const BarGeometryAttributePanel& p) { return p.carouselDeadline_; }
 	static auto Attributes(const BarGeometryAttributePanel& p) { return p.attributeList_.Snapshot(); }
 	static auto Candidate(const BarGeometryAttributePanel& p) { return p.frame_; }
 	static auto PromptFrame(const BarConstructionPrompt& p) { return p.presented_; }
@@ -87,6 +90,7 @@ namespace
 			stroke(a.Pen.Laser, b.Pen.Laser) && std::equal(std::begin(a.Pen.Laser.widthPreset), std::end(a.Pen.Laser.widthPreset), std::begin(b.Pen.Laser.widthPreset)) &&
 			a.Shape.ModeSelect == b.Shape.ModeSelect && a.Shape.circleMode == b.Shape.circleMode && a.Shape.polygonSides == b.Shape.polygonSides &&
 			a.Shape.fillMode == b.Shape.fillMode && a.Shape.openPattern == b.Shape.openPattern && a.Shape.closedPattern == b.Shape.closedPattern &&
+			a.Shape.auxiliary == b.Shape.auxiliary && a.Shape.auxiliaryChoices == b.Shape.auxiliaryChoices &&
 			stroke(a.Shape.StraightLine1, b.Shape.StraightLine1) && stroke(a.Shape.Rectangle1, b.Shape.Rectangle1);
 	}
 	EraserAttributeRect Intersect(EraserAttributeRect a, EraserAttributeRect b)
@@ -171,10 +175,16 @@ namespace Inkeys::UI::Bar
 				owner.geometryAttribute.CommitPresented();
 			}
 		};
+		auto selectCategory = [&](ShapeToolbarCategory category)
+		{
+			BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute,owner,GeometrySegmentBegin+static_cast<int>(category),StateModeTransitionRevision()); tick(90);
+		};
 		auto preset = [&](PresetKind p)
 		{
 			const auto s = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(p, s.revision);
-			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == p && StateModeTransitionRevision() > s.revision, "tool setter accepts current revision including repeated selection"); tick(90);
+			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == p && StateModeTransitionRevision() > s.revision, "tool setter accepts current revision including repeated selection");
+			for (const auto& entry : ShapeCategoryCatalog()) if (entry.preset == p) selectCategory(entry.category);
+			tick(90);
 		};
 		bool pointerAccepted = false;
 		auto pointer = [&](USHORT type, int item, bool held, bool contact = false)
@@ -197,13 +207,14 @@ namespace Inkeys::UI::Bar
 		expect(f.visible && f.acceptsInput && f.items[GeometryStyleBegin].Width() == 0 && f.items[GeometryPatternBegin].Width() > 0, "line hides fill style and keeps stroke controls");
 		const auto list = BarGeometryAttributeTestAccess::Categories(owner.geometryAttribute);
 		const auto grid = ResolveBarButtonListLayout(list, BarButtonListLayoutKind::GeometryGrid);
-		expect(list.size() == GeometryCategoryCount && grid.subColumns == 12 && grid.totalRows == 12 && !grid.showDivider, "shape-owned list uses its independent six-column policy");
+		expect(list.size() == GeometryCategoryCount && grid.subColumns == 12 && grid.totalRows == 6 && !grid.showDivider, "shape-owned list uses its independent six-column policy");
 		expect(f.items.size() == GeometryControlCount && f.items[GeometryCloseButton].left > f.items[5].right, "close is the only side-rail entry");
 		expect(f.items[0].top == f.items[5].top && f.items[6].top > f.items[0].top && f.items[6].left == f.items[0].left,
 			"shape list keeps row-major geometry order and wraps after six categories");
-		for (const size_t count : {size_t{1}, size_t{6}, size_t{7}, size_t{11}, size_t{12}, size_t{35}, size_t{36}})
+		for (const size_t count : {size_t{1}, size_t{6}, size_t{7}, size_t{11}, size_t{12}, size_t{35}})
 		{
-			const std::vector<std::shared_ptr<BarButtonClass>> subset(list.begin(), list.begin() + count);
+			std::vector<std::shared_ptr<BarButtonClass>> subset;
+			for (size_t i = 0; i < count; ++i) { auto button = std::make_shared<BarButtonClass>(*list[i]); button->hide = false; subset.push_back(std::move(button)); }
 			const auto shapeGrid = ResolveBarButtonListLayout(subset, BarButtonListLayoutKind::GeometryGrid);
 			expect(shapeGrid.placements.size() == count && shapeGrid.subColumns <= 12 && !shapeGrid.showDivider, "shape policy bounds only its own visible categories");
 		}
@@ -211,7 +222,7 @@ namespace Inkeys::UI::Bar
 		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
 			const auto& button = *list[i];
-			expect(button.size == BarButtonSizeEnum::twoTwo && f.items[i].Width() == standard.buttonWidthDip && f.items[i].Height() == standard.buttonHeightDip,
+			expect(button.size == BarButtonSizeEnum::twoTwo && (i >= 17 || (f.items[i].Width() == standard.buttonWidthDip && f.items[i].Height() == standard.buttonHeightDip)),
 				"category dimensions follow shared list metrics");
 			expect(button.icon.y.val == standard.iconOffsetYDip && button.name.y.val == standard.primaryOffsetYDip && button.name.h.val == standard.primarySlotHeightDip,
 				"shape list retains shared standard icon and label metrics");
@@ -229,24 +240,103 @@ namespace Inkeys::UI::Bar
 		report << "Stable panel Advance CPU ms median=" << stableAdvanceMs[30] << " p95=" << stableAdvanceMs[56] << " (not presentation latency)\n";
 		const auto selectedBefore = GetShapeToolSpec(GetStateModeSnapshot());
 		const auto carouselBefore = BarGeometryAttributeTestAccess::CarouselSides(owner.geometryAttribute);
-		unsigned retry = 0;
-		expect(!owner.geometryAttribute.PollCarouselTimer(retry, std::chrono::steady_clock::now()) && retry > 0, "early timer returns remaining deadline");
-		expect(owner.geometryAttribute.PollCarouselTimer(retry, std::chrono::steady_clock::now() + std::chrono::seconds(2)), "one expired timer advances one icon");
+		const auto carouselDeadline = BarGeometryAttributeTestAccess::CarouselDeadline(owner.geometryAttribute);
+		bool carouselDue = false;
+		expect(owner.geometryAttribute.ConsumeCarouselWake(carouselDeadline-std::chrono::milliseconds(1),carouselDue) == carouselDeadline && !carouselDue,"early deadline preserves sleeping render");
+		expect(owner.geometryAttribute.ConsumeCarouselWake(carouselDeadline,carouselDue) == std::chrono::steady_clock::time_point{} && carouselDue,"deadline requests exactly one render frame");
+		expect(BarGeometryAttributeTestAccess::CarouselSides(owner.geometryAttribute) == carouselBefore,"wake owner does not advance visual state");
+		(void)owner.geometryAttribute.ConsumeCarouselWake(carouselDeadline,carouselDue); expect(!carouselDue,"deadline wake is consumed once");
+		owner.geometryAttribute.Advance(owner,GetStateModeSnapshot(),1.0/60,1,zoom,work,{},0,0,nullptr,false,carouselDeadline);
 		tick(60);
 		expect(BarGeometryAttributeTestAccess::CarouselSides(owner.geometryAttribute) != carouselBefore && GetShapeToolSpec(GetStateModeSnapshot()) == selectedBefore, "carousel does not mutate actual sides or selection");
 		expect(!owner.geometryAttribute.Active(), "content transition settles before next timer");
 
 		const auto& catalog = ShapeCategoryCatalog();
-		expect(catalog.size() == 36 && GeometryImplementedCategoryCount == 21 && GeometryControlCount == 59, "approved catalog has 36 UI tools and has twenty-one enabled business presets");
+		const auto disabledOpacity = [&] { return BarThemeMaterial::DisabledContentOpacity(owner.barStyle.darkStyle ? 0.0 : 1.0); };
+		expect(catalog.size() == 35 && GeometryImplementedCategoryCount == 20 && GeometryControlCount == 64, "35 catalog tools, 20 enabled presets and derived parameter/segment controls");
 		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
 			expect(catalog[i].key && catalog[i].resource && !ShapeCategoryLabel(i).empty(), "every catalog entry has stable UI key resource and label");
-			expect(catalog[i].preset.has_value() == (i < 15 || (i >= 18 && i < 24)), "future catalog tools do not invent business preset mappings");
+			expect(catalog[i].preset.has_value() == (i < 14 || (i >= 17 && i < 23)), "future catalog tools do not invent business preset mappings");
 			for (int j = 0; j < i; ++j) expect(std::wstring(catalog[i].key) != catalog[j].key, "catalog UI keys are unique");
 		}
+
+		std::array<int,3> categoryCounts{};
+		for (const auto& entry : catalog)
+		{
+			++categoryCounts[static_cast<int>(entry.category)];
+			expect(entry.preset != PresetKind::RoundedRectangle,"rounded rectangle is absent from toolbar catalog");
+		}
+		expect(categoryCounts == std::array<int,3>{17,6,12},"approved category membership is 17/6/12");
+		// 原业务快照保留圆角枚举，面板及下一笔只投影为普通矩形。
+		(void)SetShapeToolPresetIfRevision(PresetKind::RoundedRectangle,StateModeTransitionRevision());
+		owner.geometryAttribute.Close(owner); tick(90); owner.barState.geometryAttribute = true; tick(90);
+		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Rectangle
+			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,2).state->state == BarWidgetState::Selected,"old rounded tool opens with rectangle selected");
+		preset(PresetKind::Prism); owner.geometryAttribute.Close(owner); tick(90);
+		owner.barState.geometryAttribute = true; tick(90); f = owner.geometryAttribute.PresentationSnapshot();
+		expect(f.category == ShapeToolbarCategory::Solid && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,21).state->state == BarWidgetState::Selected,
+			"opening with solid tool selects solid category and its actual tool");
+		const auto beforeCategory = GetStateModeVersionedSnapshot();
+		const auto oldCategory = f;
+		BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute,owner,GeometrySegmentBegin,StateModeTransitionRevision()); tick(1,0);
+		const auto switchStart = owner.geometryAttribute.PresentationSnapshot();
+		expect(SameBusinessSnapshot(beforeCategory,GetStateModeVersionedSnapshot()),"category switch preserves complete tool state and revision");
+		expect(switchStart.items[17] == oldCategory.items[17] && switchStart.items[0].left >= switchStart.panel.left+4
+			&& std::abs(switchStart.items[0].top-switchStart.categoryClip.top) < 0.01,"switch first frame keeps outgoing anchor and incoming target without fly-in");
+		expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,0).icon.pct.val == 0,"new category starts transparent at its target");
+		tick(1); const auto switchMoving = owner.geometryAttribute.PresentationSnapshot();
+		expect(switchMoving.panel.Height() > oldCategory.panel.Height() && switchMoving.panel.Height() < 354.5,"category height traverses continuous batch samples");
+		tick(90);
+		// 分段可Tab聚焦、方向键在分段内移动，再以Enter切换；不改当前工具。
+		BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute,GeometryCloseButton); owner.geometryAttribute.Keyboard(owner,VK_TAB,true);
+		expect(BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) == GeometrySegmentBegin,"segments participate in Tab navigation");
+		owner.geometryAttribute.Keyboard(owner,VK_RIGHT,true); owner.geometryAttribute.Keyboard(owner,VK_RETURN,true); tick(90);
+		expect(owner.geometryAttribute.PresentationSnapshot().category == ShapeToolbarCategory::Solid && SameBusinessSnapshot(beforeCategory,GetStateModeVersionedSnapshot()),"keyboard activates segment without changing tool");
+		// 单独验证少于六项时的392DIP回落；测试结束恢复用户显隐元数据。
+		for (int i = 20; i < 23; ++i) BarGeometryAttributeTestAccess::CategoryVisible(owner.geometryAttribute,i,false);
+		selectCategory(ShapeToolbarCategory::Regular); selectCategory(ShapeToolbarCategory::Solid);
+		expect(std::abs(owner.geometryAttribute.PresentationSnapshot().panel.Width()-392) < 0.01,"fewer than six items falls back to attribute row width");
+		for (int i = 20; i < 23; ++i) BarGeometryAttributeTestAccess::CategoryVisible(owner.geometryAttribute,i,true);
+		selectCategory(ShapeToolbarCategory::Regular); selectCategory(ShapeToolbarCategory::Solid);
+		const std::array<Auxiliary,3> auxiliaryBits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
+		for (const auto& entry : catalog) if (entry.preset)
+		{
+			preset(*entry.preset); f = owner.geometryAttribute.PresentationSnapshot();
+			for (int bit = 0; bit < 3; ++bit)
+			{
+				const int item = GeometryAuxBegin+bit; const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,item);
+				const bool supported = (SupportedAuxiliary(*entry.preset) & auxiliaryBits[bit]) != Auxiliary::None;
+				expect((f.items[item].Width() > 0) == supported,"auxiliary toggle presence follows preset capability");
+				if (supported) expect(!button.name.enable.val && button.icon.enable.val && !f.accessibleNames[item].empty()
+					&& (button.state->state == BarWidgetState::Selected) == ((DefaultAuxiliary(*entry.preset) & auxiliaryBits[bit]) != Auxiliary::None),"icon-only toggles carry localized names and correct defaults");
+			}
+		}
+		for (const auto& entry : catalog) if (entry.preset && SupportedAuxiliary(*entry.preset) != Auxiliary::None)
+		{
+			preset(*entry.preset); const auto before = GetStateModeVersionedSnapshot();
+			const auto beforeStyle = GetShapeStyle(before.state); const auto beforeTool = GetShapeToolSpec(before.state);
+			const auto editorBefore = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+			const auto bit = SupportedAuxiliary(*entry.preset);
+			const int item = GeometryAuxBegin+(bit == Auxiliary::Center ? 0 : bit == Auxiliary::Foci ? 1 : 2);
+			click(item); const auto after = GetStateModeVersionedSnapshot();
+			expect((GetShapeAuxiliary(after.state) & bit) != (GetShapeAuxiliary(before.state) & bit)
+				&& after.revision == before.revision+1 && GetShapeToolSpec(after.state) == beforeTool,"auxiliary click changes only next-stroke style and its revision");
+			auto normalized = after; normalized.revision = before.revision;
+			normalized.state.Shape.auxiliary = before.state.Shape.auxiliary; normalized.state.Shape.auxiliaryChoices = before.state.Shape.auxiliaryChoices;
+			expect(SameBusinessSnapshot(before,normalized),"auxiliary toggle preserves every other business field");
+			auto expectedStyle = beforeStyle; expectedStyle.auxiliary = GetShapeAuxiliary(after.state);
+			expect(GetShapeStyle(after.state) == expectedStyle && Inkeys::Drawing::Draw3::ProductShapeUiSnapshot() == editorBefore,"auxiliary toggle leaves object snapshot and other style fields intact");
+			BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute,owner,item,before.revision);
+			expect(SameBusinessSnapshot(after,GetStateModeVersionedSnapshot()),"stale auxiliary toggle cannot overwrite newer next-stroke state");
+			click(item);
+		}
+		preset(PresetKind::Line);
+
 		for (int item = 0; item < GeometryCategoryCount; ++item)
 		{
 			if (catalog[item].preset) continue;
+			selectCategory(catalog[item].category);
 			caseContext = "disabled tool=" + std::to_string(item);
 			const auto before = GetStateModeVersionedSnapshot();
 			pointer(WM_MOUSEMOVE, item, false); tick(10);
@@ -263,8 +353,8 @@ namespace Inkeys::UI::Bar
 			owner.geometryAttribute.Keyboard(owner, VK_RETURN, true); owner.geometryAttribute.Keyboard(owner, VK_SPACE, true);
 			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "direct Execute and stale forced keyboard focus cannot activate future tool");
 			const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item);
-			expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - 0.30) < 0.000001 && std::abs(button.name.pct.val - 0.30) < 0.000001,
-				"future tools use shared disabled state and 0.30 icon label opacity");
+			expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - disabledOpacity()) < 0.000001 && std::abs(button.name.pct.val - disabledOpacity()) < 0.000001,
+				"future tools use shared theme disabled opacity");
 			expect(button.pressScale.val == 1 && !f.hits[item].enabled, "future tools do not acquire successful press feedback or action hit");
 		}
 		for (BYTE key : {static_cast<BYTE>(VK_TAB), static_cast<BYTE>(VK_LEFT), static_cast<BYTE>(VK_RIGHT)})
@@ -274,7 +364,7 @@ namespace Inkeys::UI::Bar
 				const int focus = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
 				expect(focus < 0 || focus >= GeometryCategoryCount || catalog[focus].preset.has_value(), "keyboard navigation skips all fifteen disabled categories");
 			}
-		owner.geometryAttribute.ResetPointerFeedback(); caseContext.clear(); tick(90);
+		owner.geometryAttribute.ResetPointerFeedback(); caseContext.clear(); selectCategory(ShapeToolbarCategory::Regular); tick(90);
 
 		// 真实共享按钮按压/回弹，命中几何不跟随 draw-only pressScale 收缩。
 		f = owner.geometryAttribute.PresentationSnapshot(); const auto beforeHit = f.items[1];
@@ -292,7 +382,7 @@ namespace Inkeys::UI::Bar
 		pointer(WM_LBUTTONDOWN, 2, true);
 		ExMessage cancel{}; owner.geometryAttribute.Pointer(owner, cancel, true, true); pointer(WM_LBUTTONUP, 2, false, true); tick(60);
 		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && !pointerAccepted, "capture cancellation leaves tool unchanged without accepted feedback");
-		for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].preset) { click(i, i % 2 != 0); expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == *catalog[i].preset, "every enabled category commits through normalized pointer path"); }
+		for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].preset) { selectCategory(catalog[i].category); click(i, i % 2 != 0); expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == *catalog[i].preset, "every enabled category commits through normalized pointer path"); }
 		preset(PresetKind::RegularPolygon); // 全类别遍历现在以Pyramid结束，轮播和边数用例须显式选择原目标。
 		expect(!BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "selected polygon stops carousel");
 		for (unsigned sides = 3; sides <= 12; ++sides)
@@ -328,15 +418,17 @@ namespace Inkeys::UI::Bar
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
 		{
 			expect(I18n::load(1, L"JSON", language), "all bundled languages load"); owner.spec.ConfigureLocalizedTypography();
-			for (bool dark : {false, true}) for (double scale : {0.75, 1.0, 1.5, 2.0}) for (bool below : {false, true})
+			for (bool dark : {false, true}) for (double scale : {0.75, 1.0, 1.5, 2.0}) for (bool below : {false, true}) for (const auto category : {ShapeToolbarCategory::Regular,ShapeToolbarCategory::Solid,ShapeToolbarCategory::CoordinateFunction})
 			{
 				zoom = scale; work = {0, 0, static_cast<LONG>(1200 * zoom), static_cast<LONG>(800 * zoom)};
 				owner.barStyle.zoom = zoom; owner.barStyle.darkStyle = dark; owner.barState.widgetPosition.primaryBar = below;
 				root->y.SetDirect(below ? 120 : 600); BarUiAnimationEnabled = true;
 				const auto epoch = RenderPipeline::GetDeviceEpoch();
 				expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch, work.right, work.bottom)), "DPI target resources"); owner.spec.SetFrameZoom(zoom);
-				preset(below ? PresetKind::Circle : PresetKind::RegularPolygon); tick(60);
+				preset(below ? PresetKind::Circle : PresetKind::RegularPolygon); selectCategory(category); tick(60);
 				f = owner.geometryAttribute.PresentationSnapshot();
+				const double expectedContentHeight = category == ShapeToolbarCategory::Regular ? 220 : category == ShapeToolbarCategory::Solid ? 70 : 145;
+				expect(std::abs(f.panel.Width()-492.5) < 0.01 && std::abs(f.panel.Height()-(expectedContentHeight+134.5)) < 0.01 && f.scrollMaximum == 0,"default category dimensions include fixed header and one parameter row");
 				expect(f.visible && f.acceptsInput && f.panel.left >= 0 && f.panel.top >= 0 && f.panel.right <= 1200 && f.panel.bottom <= 800, "panel and parameters fit both expansion sides");
 				for (int i = 0; i < GeometryCategoryCount; ++i)
 				{
@@ -348,7 +440,7 @@ namespace Inkeys::UI::Bar
 				owner.geometryAttribute.Draw(owner.spec, dc); const HRESULT hr = dc->EndDraw(); expect(SUCCEEDED(hr), "production panel draw completes");
 				const auto pixels = ReadPixels(dc, owner.spec.GetTargetBitmap());
 				expect(!pixels.empty() && std::any_of(pixels.begin(), pixels.end(), [](auto v) { return v != 0; }), "production panel produces actual pixels");
-				for (int i = 0; i < GeometryCategoryCount; ++i) expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i).icon.cacheBitmap != nullptr, "every category rasterizes embedded SVG");
+				for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].category == category) expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i).icon.cacheBitmap != nullptr, "visible category rasterizes embedded SVG");
 				if (scale == 1 && !dark && !below && language == std::wstring(L"zh-CN"))
 				{
 					for (int item = GeometryPatternBegin; item < GeometryCloseButton; ++item)
@@ -534,7 +626,7 @@ namespace Inkeys::UI::Bar
 		{
 			for (int i = 0; i < GeometryCategoryCount; ++i)
 			{
-				if (catalog[i].preset) continue;
+				if (catalog[i].preset || catalog[i].category != presented.category) continue;
 				const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
 				const EraserAttributeRect image{button.icon.inhX, button.icon.inhY, button.icon.inhX + button.icon.w.val, button.icon.inhY + button.icon.h.val};
 				const auto clipped = Intersect(image, presented.categoryClip);
@@ -647,8 +739,13 @@ namespace Inkeys::UI::Bar
 				presented.categoryClip.right <= presented.panel.right && presented.categoryClip.bottom <= presented.panel.bottom, "category clip remains inside panel while fixed controls stay outside its scroll content");
 			for (int i = 0; i < GeometryControlCount; ++i)
 			{
-				const bool shown = i < GeometryCategoryCount || i == GeometryCloseButton || ((i == GeometryCircleCenter || i == GeometryCircleBox) && wanted == PresetKind::Circle) ||
-					(i >= GeometrySidesBegin && i < GeometryStyleBegin && GetToolCapabilities(wanted).regularSides) || (i >= GeometryStyleBegin && i < GeometryPatternBegin && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
+				const bool auxiliaryOption = i >= GeometryAuxBegin && i < GeometryStyleBegin;
+				const std::array<Auxiliary,3> bits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
+				const bool shown = (i < GeometryCategoryCount && catalog[i].category == presented.category) || i == GeometryCloseButton || i >= GeometrySegmentBegin
+					|| ((i == GeometryCircleCenter || i == GeometryCircleBox) && wanted == PresetKind::Circle)
+					|| (i >= GeometrySidesBegin && i < GeometryAuxBegin && GetToolCapabilities(wanted).regularSides)
+					|| (auxiliaryOption && (SupportedAuxiliary(wanted) & bits[i-GeometryAuxBegin]) != Auxiliary::None)
+					|| (i >= GeometryStyleBegin && i < GeometryPatternBegin && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
 				const auto rect = presented.items[i]; const auto& hit = presented.hits[i];
 				const auto visibleRect = i < GeometryCategoryCount ? Intersect(rect, presented.categoryClip) : rect;
 				const bool actuallyVisible = shown && visibleRect.Width() > 0;
@@ -679,8 +776,8 @@ namespace Inkeys::UI::Bar
 					expect(owner.spec.MeasureText(button.name.content.GetVal(), button.name.size.val, DWRITE_FONT_WEIGHT_BOLD).width <= button.name.w.val + 0.5,
 						"actual scene localized category label fits measured shared slot");
 					if (!catalog[i].preset)
-						expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - 0.30) < 0.000001 && std::abs(button.name.pct.val - 0.30) < 0.000001,
-							"disabled future category retains shared 0.30 content without becoming selected");
+						expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - disabledOpacity()) < 0.000001 && std::abs(button.name.pct.val - disabledOpacity()) < 0.000001,
+							"disabled future category retains shared theme opacity without becoming selected");
 				}
 				if (i >= GeometryPatternBegin && i < GeometryCloseButton)
 				{
@@ -742,25 +839,38 @@ namespace Inkeys::UI::Bar
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
 		{
 			expect(I18n::load(1, L"JSON", language), "production matrix language loads"); owner.spec.ConfigureLocalizedTypography();
-			for (double scale : {0.75, 1.0, 1.5, 2.0}) for (bool smallWork : {false, true}) for (bool below : {false, true})
+			for (double scale : {0.75, 1.0, 1.5, 2.0}) for (bool smallWork : {false, true}) for (bool below : {false, true}) for (bool dark : {false,true})
 			{
 				const LONG width = smallWork ? 460 : 1200, height = smallWork ? 420 : 800;
-				owner.barStyle.darkStyle = smallWork; owner.barStyle.configZoom = 1;
+				owner.barStyle.darkStyle = dark; owner.barStyle.configZoom = 1;
 				BarGeometryAttributeTestAccess::Display(owner, static_cast<LONG>(width * scale), static_cast<LONG>(height * scale), static_cast<UINT>(96 * scale));
 				sceneTick(2);
 				BarGeometryAttributeTestAccess::MoveRoot(owner, 80, below ? 80 : height - 80); sceneTick(2);
 				expect(static_cast<bool>(owner.barState.widgetPosition.primaryBar) == below, "actual main-bar position chooses intended expansion side");
-				for (int shape = 0; shape < GeometryImplementedCategoryCount; ++shape) for (int fill = 0; fill < 3; ++fill)
+				for (const auto& entry : catalog) if (entry.preset) for (int fill = 0; fill < 3; ++fill)
 				{
+					const int shape = static_cast<int>(*entry.preset);
 					caseContext = "scene=" + std::to_string(++sceneCases) + " shape=" + std::to_string(shape) + " fill=" + std::to_string(fill) +
 						" scale=" + std::to_string(scale) + " small=" + std::to_string(smallWork) + " below=" + std::to_string(below);
 					const auto tool = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(static_cast<PresetKind>(shape), tool.revision);
 					const auto style = GetStateModeVersionedSnapshot(); SetShapeFillModeIfRevision(static_cast<draw3::shapes::FillMode>(fill), style.revision);
-					owner.barState.fold = false; owner.barState.geometryAttribute = true; owner.UpdateRendering(); sceneTick(2);
+					owner.barState.fold = false; owner.barState.geometryAttribute = true;
+					BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute,owner,GeometrySegmentBegin+static_cast<int>(entry.category),StateModeTransitionRevision());
+					owner.UpdateRendering(); sceneTick(2);
 					checkStableScene(static_cast<PresetKind>(shape), static_cast<draw3::shapes::FillMode>(fill));
 					if (language == std::wstring(L"zh-CN") && scale == 1 && shape == static_cast<int>(PresetKind::Circle) && !below && fill == 2)
 						expect(SavePng(smallWork ? L"Build/shape-p2-ui/scene-shape-small.png" : L"Build/shape-p2-ui/scene-shape-complete.png",
 							scenePixels, receipt.size.cx, receipt.size.cy), "actual cropped shape scene writes pixel evidence");
+				}
+				(void)SetShapeToolPresetIfRevision(PresetKind::Line,StateModeTransitionRevision());
+				for (const auto category : {ShapeToolbarCategory::Regular,ShapeToolbarCategory::Solid,ShapeToolbarCategory::CoordinateFunction})
+				{
+					BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute,owner,GeometrySegmentBegin+static_cast<int>(category),StateModeTransitionRevision()); sceneTick(2);
+					checkStableScene(PresetKind::Line,draw3::shapes::FillMode::Outline);
+					const auto current = owner.geometryAttribute.PresentationSnapshot();
+					const double contentHeight = category == ShapeToolbarCategory::Regular ? 220 : category == ShapeToolbarCategory::Solid ? 70 : 145;
+					expect(current.category == category && current.categoryContentHeight == contentHeight,"all three category grids have the approved row count in every theme DPI and work area");
+					if (!smallWork) expect(std::abs(current.panel.Width()-492.5) < 0.01 && std::abs(current.panel.Height()-(contentHeight+91)) < 0.01 && current.scrollMaximum == 0,"default category panel size meets exact acceptance bounds without a parameter row");
 				}
 			}
 		}
@@ -776,14 +886,16 @@ namespace Inkeys::UI::Bar
 		{
 			const auto tool = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(p, tool.revision);
 			const auto style = GetStateModeVersionedSnapshot(); SetShapeFillModeIfRevision(fill, style.revision);
-			owner.barState.fold = false; owner.barState.geometryAttribute = true; owner.UpdateRendering();
+			owner.barState.fold = false; owner.barState.geometryAttribute = true;
+			for (const auto& entry : catalog) if (entry.preset == p) BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute,owner,GeometrySegmentBegin+static_cast<int>(entry.category),StateModeTransitionRevision());
+			owner.UpdateRendering();
 		};
 		// A方案通过生产呈现/输入回放：只滚动类别，参数、属性和关闭入口保持固定。
 		caseContext = "category viewport scrolling";
 		selectScene(PresetKind::Circle, draw3::shapes::FillMode::Outline); sceneTick(2);
 		const auto spacious = owner.geometryAttribute.PresentationSnapshot();
 		expect(spacious.scrollMaximum == 0 && std::abs(spacious.categoryViewportHeight - spacious.categoryContentHeight) < 0.01,
-			"normal workspace displays all six catalog rows without a scrollbar");
+			"normal workspace displays all three regular rows without a scrollbar");
 		BarGeometryAttributeTestAccess::Display(owner, 460, 420); sceneTick(2); BarGeometryAttributeTestAccess::MoveRoot(owner, 80, 340); sceneTick(2);
 		auto scrollFrame = owner.geometryAttribute.PresentationSnapshot();
 		expect(scrollFrame.scrollMaximum > 0 && scrollFrame.categoryViewportHeight < scrollFrame.categoryContentHeight &&
@@ -791,7 +903,7 @@ namespace Inkeys::UI::Bar
 		const auto smallMain = owner.shapeMap[BarUISetShapeEnum::MainBar];
 		const EraserAttributeRect mainBounds{smallMain->inhX, smallMain->inhY, smallMain->inhX + smallMain->w.val, smallMain->inhY + smallMain->h.val};
 		expect(Intersect(scrollFrame.panel, mainBounds).Width() == 0, "restricted panel chooses an expansion region that keeps the main toolbar reachable");
-		expect(scrollFrame.pose.scale > 0.9, "ordinary restricted workspace preserves useful button size by scrolling instead of shrinking all six rows");
+		expect(scrollFrame.pose.scale > 0.9, "ordinary restricted workspace preserves useful button size while scrolling the current category");
 		auto panelPoint = [&](USHORT type, double x, double y, bool held = false, bool contact = false, short wheel = 0)
 		{
 			const auto current = owner.geometryAttribute.PresentationSnapshot(); ExMessage message{};
@@ -844,16 +956,16 @@ namespace Inkeys::UI::Bar
 			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "future tools remain inert at scrolled presentation and direct action entry");
 		}
 		// 滚到底时Tab跨过所有未来项，使首个真实工具进入视口，呈现前不能执行旧坐标。
-		BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute, GeometryCloseButton);
+		BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute, GeometryControlCount-1);
 		const auto keyboardBefore = GetStateModeVersionedSnapshot();
 		owner.geometryAttribute.Keyboard(owner, VK_TAB, true); owner.geometryAttribute.Keyboard(owner, VK_RETURN, true);
 		expect(BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) == 0 && SameBusinessSnapshot(keyboardBefore, GetStateModeVersionedSnapshot()), "Tab brings real category into view and Enter waits for a successful visible snapshot");
 		sceneTick(2); scrollFrame = owner.geometryAttribute.PresentationSnapshot();
 		expect(scrollFrame.scrollOffset == 0 && scrollFrame.hits[0].enabled && scrollFrame.hits[0].visible, "keyboard focus scrolls first implemented tool fully into view");
-		for (int i = 0; i < GeometryImplementedCategoryCount - 1; ++i) { owner.geometryAttribute.Keyboard(owner, VK_RIGHT, true); sceneTick(2); }
+		for (int i = 0; i < 14 - 1; ++i) { owner.geometryAttribute.Keyboard(owner, VK_RIGHT, true); sceneTick(2); }
 		scrollFrame = owner.geometryAttribute.PresentationSnapshot();
 		const int focused = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-		expect(focused == 23 && scrollFrame.hits[focused].enabled && scrollFrame.hits[focused].visible &&
+		expect(focused == 13 && scrollFrame.hits[focused].enabled && scrollFrame.hits[focused].visible &&
 			scrollFrame.items[focused].top >= scrollFrame.categoryClip.top - 0.01 && scrollFrame.items[focused].bottom <= scrollFrame.categoryClip.bottom + 0.01, "keyboard navigates only real tools and brings second-row focus fully inside viewport");
 		// 宽触控轨道通过公共Down/Move/Up回放，同时覆盖取消和跨代/跨工作区失效。
 		for (bool contact : {false, true})
@@ -1031,9 +1143,10 @@ namespace Inkeys::UI::Bar
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
 		{
 			expect(I18n::load(1, L"JSON", language), "main geometry label language loads"); owner.spec.ConfigureLocalizedTypography();
-			for (int i = 0; i < GeometryImplementedCategoryCount; ++i)
+			for (const auto& entry : catalog) if (entry.preset)
 			{
-				const auto s = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(static_cast<PresetKind>(i), s.revision);
+				const int i = static_cast<int>(*entry.preset);
+				const auto s = GetStateModeVersionedSnapshot(); SetShapeToolPresetIfRevision(*entry.preset, s.revision);
 				owner.UpdateRendering();
 				for (int frame = 0; frame < 50; ++frame)
 				{
@@ -1046,7 +1159,7 @@ namespace Inkeys::UI::Bar
 				auto& word = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Geometry)]->name;
 				expect(word.content.GetVal() == ShapeToolLabel(static_cast<PresetKind>(i)) &&
 					owner.spec.MeasureText(word.content.GetVal(), word.size.val, DWRITE_FONT_WEIGHT_BOLD).width <= word.w.val + 0.5,
-					"all eleven localized main labels fit original slot");
+					"all twenty localized main labels fit original slot");
 				if (std::wstring(language) == L"en-US" && i == static_cast<int>(PresetKind::Parallelogram)) saveScene(L"main-parallelogram-en.png");
 				if (std::wstring(language) == L"en-US" && i == static_cast<int>(PresetKind::RegularPolygon)) saveScene(L"main-regular-polygon-en.png");
 			}

@@ -358,14 +358,16 @@ namespace Inkeys::UI::Bar
 		std::optional<unsigned> carouselSides = std::nullopt);
 	wstring ShapeToolLabel(draw3::shapes::PresetKind preset);
 	bool ApplyBarThicknessPresetIfRevision(int preset, std::uint64_t revision, bool save = true);
-	inline constexpr UINT_PTR GeometryCarouselTimerId = 0x494B4305;
 	// 目录属于UI层；没有真实preset的未来工具只占位，不能进入业务状态或文档。
-	inline constexpr int GeometryCategoryCount = 36, GeometryImplementedCategoryCount = 21;
+	inline constexpr int GeometryCategoryCount = 35, GeometryImplementedCategoryCount = 20;
 	inline constexpr int GeometryCircleCenter = GeometryCategoryCount, GeometryCircleBox = GeometryCircleCenter + 1;
-	inline constexpr int GeometrySidesBegin = GeometryCircleBox + 1, GeometryStyleBegin = GeometrySidesBegin + 10;
+	inline constexpr int GeometrySidesBegin = GeometryCircleBox + 1, GeometryAuxBegin = GeometrySidesBegin + 10;
+	inline constexpr int GeometryStyleBegin = GeometryAuxBegin + 3;
 	inline constexpr int GeometryPatternBegin = GeometryStyleBegin + 3, GeometryThicknessBegin = GeometryPatternBegin + 4;
 	inline constexpr int GeometryThicknessCount = 3, GeometryCloseButton = GeometryThicknessBegin + GeometryThicknessCount;
-	inline constexpr int GeometryControlCount = GeometryCloseButton + 1;
+	inline constexpr int GeometrySegmentBegin = GeometryCloseButton + 1, GeometrySegmentCount = 3;
+	inline constexpr int GeometryControlCount = GeometrySegmentBegin + GeometrySegmentCount;
+	enum class ShapeToolbarCategory { Regular, Solid, CoordinateFunction };
 	struct ShapeCategoryDescriptor
 	{
 		const wchar_t* key;
@@ -373,6 +375,7 @@ namespace Inkeys::UI::Bar
 		const char* labelKey;
 		const wchar_t* fallbackLabel;
 		std::optional<draw3::shapes::PresetKind> preset;
+		ShapeToolbarCategory category = ShapeToolbarCategory::Regular;
 	};
 	const std::array<ShapeCategoryDescriptor, GeometryCategoryCount>& ShapeCategoryCatalog();
 	wstring ShapeCategoryLabel(size_t index);
@@ -387,6 +390,8 @@ namespace Inkeys::UI::Bar
 		bool visible = false, acceptsInput = false, categoriesAcceptInput = false, below = false;
 		double scrollOffset = 0, scrollMaximum = 0, categoryViewportHeight = 0, categoryContentHeight = 0;
 		draw3::shapes::ToolSpec tool{};
+		ShapeToolbarCategory category = ShapeToolbarCategory::Regular;
+		std::array<wstring,GeometryControlCount> accessibleNames{};
 	};
 }
 
@@ -437,7 +442,8 @@ class BarGeometryAttributePanel
 public:
 	bool Advance(BarUISetClass& owner, const StateModeClass& state, double dt, double speed,
 		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY,
-		const BarUiTimelineClass* parentTimeline = nullptr, bool dragPlacementLocked = false);
+		const BarUiTimelineClass* parentTimeline = nullptr, bool dragPlacementLocked = false,
+		std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now());
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
@@ -445,8 +451,8 @@ public:
 	bool ResetPointerFeedback();
 	void Close(BarUISetClass& owner);
 	void StopCarousel() noexcept;
-	bool PollCarouselTimer(unsigned& retryMs,
-		std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+	std::chrono::steady_clock::time_point ConsumeCarouselWake(
+		std::chrono::steady_clock::time_point now, bool& due);
 	RECT Bounds() const;
 	std::array<RECT,1> PresentedRegions() const;
 	Inkeys::UI::Bar::GeometryAttributePresentation PresentationSnapshot() const;
@@ -458,7 +464,7 @@ private:
 	friend class BarGeometryAttributeTestAccess;
 	void Initialize();
 	void Execute(BarUISetClass& owner, int item, std::uint64_t revision, bool* accepted = nullptr);
-	void UpdateCarousel(bool enabled);
+	void UpdateCarousel(bool enabled, std::chrono::steady_clock::time_point now);
 	mutable std::mutex presentationMutex_, carouselMutex_;
 	Inkeys::UI::Bar::GeometryAttributePresentation frame_, presented_;
 	Inkeys::UI::Bar::EraserAttributeRect previousPanel_, previousAnchor_;
@@ -466,12 +472,21 @@ private:
 	std::array<std::shared_ptr<BarButtonClass>,Inkeys::UI::Bar::GeometryControlCount> buttons_;
 	BarButtonListClass categoryList_, attributeList_;
 	Inkeys::UI::Bar::BarButtonListLayout categoryLayout_, attributeLayout_;
+	IdtAtomic<int> categoryRequest_ = 0;
+	Inkeys::UI::Bar::ShapeToolbarCategory category_ = Inkeys::UI::Bar::ShapeToolbarCategory::Regular;
+	std::array<BarUiValueClass,Inkeys::UI::Bar::GeometryCategoryCount> categoryX_, categoryY_;
+	std::array<Inkeys::UI::Bar::EraserAttributeRect,Inkeys::UI::Bar::GeometryCategoryCount> categoryAnchors_{};
+	std::array<Inkeys::UI::Bar::EraserAttributeRect,Inkeys::UI::Bar::GeometryStyleBegin-Inkeys::UI::Bar::GeometryCircleCenter> parameterAnchors_{};
+	BarUiTimelineClass layoutTimeline_;
 	std::array<std::shared_ptr<BarButtonClass>,2> attributeDividers_;
 	std::array<BarUiValueClass,12> attributeX_;
 	std::uint32_t attributeVisibility_ = ~0u;
 	double attributeMaxWidth_ = 0;
 	std::array<wstring,Inkeys::UI::Bar::GeometryControlCount> resourceTargets_, labelTargets_;
-	std::array<BarUiShapeClass,2> dividers_;
+	std::array<BarUiShapeClass,3> dividers_;
+	BarUiShapeClass auxiliaryHintSurface_;
+	BarUiWordClass auxiliaryHint_;
+	bool auxiliaryHintVisible_ = false;
 	BarUiShapeClass surface_, scrollRail_, scrollThumb_;
 	BarUiValueClass width_{0}, height_{0}, viewportHeight_{0}, scroll_{0};
 	// worker只发布滚动意图；共享动画值由唯一render owner推进。
@@ -481,7 +496,7 @@ private:
 	double scrollDragY_ = 0, scrollDragOffset_ = 0;
 	std::uint64_t scrollRevision_ = 0;
 	bool initialized_ = false, changed_ = false, active_ = false, previousBelow_ = false;
-	bool sideSwitch_ = false, hadOpen_ = false;
+	bool sideSwitch_ = false, hadOpen_ = false, requestedOpen_ = false;
 	int appliedHover_ = -1;
 	double parameterOpacity_ = 0;
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
@@ -489,13 +504,14 @@ private:
 	std::uint64_t pressRevision_ = 0;
 	IdtAtomic<bool> pressCancelled_ = false;
 	std::chrono::steady_clock::time_point carouselDeadline_{};
-	bool carouselEnabled_ = false, carouselArmed_ = false;
+	bool carouselEnabled_ = false, carouselArmed_ = false, carouselWakeRequested_ = false;
 	unsigned carouselSides_ = 3;
 	std::array<double,3> thicknessPreviewWidths_{};
 	wstring measuredFontFamily_, measuredLocale_;
 	unsigned long long measuredDeviceGeneration_ = 0;
 	std::array<double,Inkeys::UI::Bar::GeometryCategoryCount> categoryFontSizes_{};
 	std::array<double,2> circleTextWidths_{};
+	std::array<double,6> optionTextWidths_{};
 	unsigned long long deviceGeneration_ = 0;
 };
 

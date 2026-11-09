@@ -147,6 +147,12 @@
       },
       "GeometryAttributes":
       {
+        "CategoryRegularLabel": "Основні",
+        "CategorySolidLabel": "3D",
+        "CategoryCoordinateFunctionLabel": "Координати й функції",
+        "AuxCenterLabel": "Центр",
+        "AuxFociLabel": "Фокуси",
+        "AuxDiagonalsLabel": "Діагоналі",
         "StraightLineLabel": "Лінія",
         "ArrowLabel": "Стрілка",
         "RectangleLabel": "Прямок.",
