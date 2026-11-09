@@ -92,7 +92,9 @@ namespace draw3::uink
 
 		bool ValidateSnapshotStroke(const Draw3UInkStrokeSnapshot& stroke) noexcept
 		{
-			if (!IsKnownStrokeKind(stroke.style.kind) || stroke.style.texture != 0 ||
+			if (stroke.style.eraserShape > 2 ||
+				(stroke.style.eraserShape != 0 && stroke.style.kind != Draw3UInkStrokeKind::Eraser) ||
+				!IsKnownStrokeKind(stroke.style.kind) || stroke.style.texture != 0 ||
 				stroke.points.empty() || !std::isfinite(stroke.style.opacity) ||
 				stroke.style.opacity < 0.0f || stroke.style.opacity > 1.0f ||
 				stroke.style.fallbackRgb > 0xffffff) return false;
@@ -158,6 +160,7 @@ namespace draw3::uink
 					ink.effectiveKind = UInkInkKind::Pen;
 					break;
 				}
+				ink.eraserShape = source.style.eraserShape;
 				ink.color = ConvertColor(source.style.fallbackRgb);
 				ink.opacity = source.style.opacity;
 				ink.declaredTexture = 0;
@@ -351,7 +354,8 @@ namespace draw3::uink
 			const auto canvases = CanonicalCanvases(snapshot);
 			for (std::size_t canonicalIndex = 0; canonicalIndex < canvases.size(); ++canonicalIndex)
 			{
-				Draw3UInkCanvasSnapshot sourceCanvas = canvases[canonicalIndex];
+				// 规范页在本轮只读，避免再复制整页点数据与操作列表。
+				const auto& sourceCanvas = canvases[canonicalIndex];
 				if (sourceCanvas.pageGuid.IsZero() || !std::isfinite(sourceCanvas.viewport.x) ||
 					!std::isfinite(sourceCanvas.viewport.y) ||
 					!IsFinitePositive(sourceCanvas.viewport.scale) ||

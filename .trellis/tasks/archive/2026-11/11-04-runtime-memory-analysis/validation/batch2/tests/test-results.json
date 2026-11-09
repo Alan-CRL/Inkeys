@@ -1,0 +1,296 @@
+[
+  {
+    "name": "setting-texture-recovery",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--setting-texture-recovery-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 2.953,
+    "passed": true
+  },
+  {
+    "name": "laser-resources",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-laser-resources-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.453,
+    "passed": true
+  },
+  {
+    "name": "auxiliary-resources",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-auxiliary-resource-lifecycle-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.563,
+    "passed": true
+  },
+  {
+    "name": "freeze-resources",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--freeze-resource-lifecycle-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.125,
+    "passed": true
+  },
+  {
+    "name": "ui-idle-capacity",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--ui3-idle-capacity-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.125,
+    "passed": true
+  },
+  {
+    "name": "bad-setting-argc",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--setting-texture-recovery-test",
+      "--unexpected"
+    ],
+    "expected_exit": 2,
+    "exit_code": 2,
+    "timed_out": false,
+    "seconds": 0.109,
+    "passed": true
+  },
+  {
+    "name": "bad-laser-argc",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-laser-resources-test",
+      "--unexpected"
+    ],
+    "expected_exit": 2,
+    "exit_code": 2,
+    "timed_out": false,
+    "seconds": 0.094,
+    "passed": true
+  },
+  {
+    "name": "bad-auxiliary-argc",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-auxiliary-resource-lifecycle-test",
+      "--unexpected"
+    ],
+    "expected_exit": 2,
+    "exit_code": 2,
+    "timed_out": false,
+    "seconds": 0.094,
+    "passed": true
+  },
+  {
+    "name": "bad-freeze-argc",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--freeze-resource-lifecycle-test",
+      "--unexpected"
+    ],
+    "expected_exit": 2,
+    "exit_code": 2,
+    "timed_out": false,
+    "seconds": 0.109,
+    "passed": true
+  },
+  {
+    "name": "bad-ui-idle-argc",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--ui3-idle-capacity-test",
+      "--unexpected"
+    ],
+    "expected_exit": 2,
+    "exit_code": 2,
+    "timed_out": false,
+    "seconds": 0.109,
+    "passed": true
+  },
+  {
+    "name": "device-policy",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-device-policy-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.094,
+    "passed": true
+  },
+  {
+    "name": "renderer-upload",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-renderer-upload-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.656,
+    "passed": true
+  },
+  {
+    "name": "renderer-pixel-warp",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-renderer-pixel-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 2.157,
+    "passed": true
+  },
+  {
+    "name": "renderer-pixel-hardware",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-renderer-pixel-test-hardware"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 3.515,
+    "passed": true
+  },
+  {
+    "name": "renderer-map",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-renderer-map-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.141,
+    "passed": true
+  },
+  {
+    "name": "renderer-commit-failure",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-renderer-commit-failure-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.109,
+    "passed": true
+  },
+  {
+    "name": "laser-raster-failure",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-laser-raster-failure-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.188,
+    "passed": true
+  },
+  {
+    "name": "draw3-hidden",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-hidden-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 4294967295,
+    "timed_out": false,
+    "seconds": 509.703,
+    "passed": false
+  },
+  {
+    "name": "page-control-hidden",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--page-control-hidden-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 1,
+    "timed_out": false,
+    "seconds": 20.25,
+    "passed": false
+  },
+  {
+    "name": "parked-desktop-exit",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-parked-desktop-exit-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.547,
+    "passed": true
+  },
+  {
+    "name": "parked-ppt-retained",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-parked-ppt-retained-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.109,
+    "passed": true
+  },
+  {
+    "name": "loaded-retained-install",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-loaded-retained-install-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.109,
+    "passed": true
+  },
+  {
+    "name": "whiteboard-storage",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-whiteboard-storage-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 57.0,
+    "passed": true
+  },
+  {
+    "name": "startup-progress",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\InkeysHeadlessTests.exe",
+    "args": [
+      "--no-window",
+      "--startup-preview-only"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 7.985,
+    "passed": true
+  }
+]

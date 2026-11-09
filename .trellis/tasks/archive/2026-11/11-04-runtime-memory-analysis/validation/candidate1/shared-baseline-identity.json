@@ -1,0 +1,18 @@
+{
+  "machine": "0xaa64",
+  "codeview": {
+    "guid": "dec2b641-190f-41cb-a28d-6702b43dc823",
+    "age": 1,
+    "pdb_path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.pdb"
+  },
+  "pdb_identity": {
+    "guid": "dec2b641-190f-41cb-a28d-6702b43dc823",
+    "age": 1
+  },
+  "pdb_matches_exe": true,
+  "head": "e225c210a64be114ed9d83709ac0978d80feedc5",
+  "configuration": "Debug|ARM64; project uses /MT and NDEBUG",
+  "path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+  "sha256": "ba0e2e7074a47bb39f2a939ff4f095d068377faed05a7578039753627c102650",
+  "scope": "Existing shared-source test binary, before candidate1 diagnostic changes"
+}

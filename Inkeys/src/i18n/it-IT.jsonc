@@ -46,6 +46,12 @@
         "Mode": "Modalità barra inferiore",
         "Centered": "Al centro"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Presentazione",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nuova versione"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Svuota",
@@ -98,6 +104,7 @@
         "WhiteboardGridLabel": "Griglia",
         "WhiteboardUnsavedLabel": "Alcune pagine non sono state salvate",
         "FreezeLabel": "Ferma",
+        "CanvasDebugLabel": "Debug visivo",
         "EndPresentationLabel": "Termina",
         "SettingsLabel": "Impost.",
         "MoreLabel": "Altro"
@@ -157,7 +164,6 @@
         "PresentFailed": "Schermo",
         "Failed": "Errore",
         "Recovering": "Recupero",
-        "Loading": "Carica",
         "Retry": "Riprova",
         "Wait": "Attendi",
         "RetryCanvas": "Riprova la tela",
@@ -692,7 +698,26 @@
           "E": "Le tavolette grafiche senza Windows Ink arrivano di solito come «mouse inserito dal driver». Se attivata, questo mouse usa le impostazioni del puntatore della tavoletta; i software che inseriscono a loro volta il mouse, come Desktop remoto, potrebbero essere riconosciuti per errore.",
           "Unavailable": "Questo sistema non riesce a distinguere l’origine dell’input; l’opzione non è disponibile."
         },
+        "Eraser":
+        {
+          "N": "Cursore della gomma",
+          "E": "La forma determina anche l'area effettivamente cancellata (rettangoli ad angoli retti); motivo e chiaro/scuro cambiano solo l'aspetto del cursore.",
+          "Appearance": "Aspetto",
+          "Light": "Chiaro",
+          "Dark": "Scuro",
+          "Circle": "Cerchio",
+          "Rectangle": "Rettangolo",
+          "Square": "Quadrato",
+          "Grips": "Classico",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Scintilla"
+        },
         "FineControl": "Controlli di precisione",
+        "OpacitySection": "Opacità",
+        "PenOpacity": "Opacità del cursore della penna",
+        "HighlightPenFillOpacity": "Opacità di riempimento del cursore della penna (evidenziata)",
+        "DotOpacity": "Opacità del cursore del punto piccolo",
+        "HighlightDotFillOpacity": "Opacità di riempimento del cursore del punto piccolo (evidenziato)",
         "DotHideOnContact":
         {
           "N": "Nascondi automaticamente il cursore a punto piccolo al contatto",
@@ -701,8 +726,7 @@
           "ScreenPen": "Solo penna su schermo",
           "Tablet": "Solo tavoletta grafica",
           "Both": "Penna su schermo e tavoletta grafica"
-        },
-        "Note": "Con penna su schermo, tavoletta grafica e touch, «Mouse» è una freccia disegnata dall’app stessa; i puntatori di evidenziatore e puntatore laser, gli strumenti per le forme e il puntatore dedicato della gomma non sono influenzati da queste opzioni."
+        }
       },
       "Effect":
       {
@@ -722,7 +746,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Ricollega tratti interrotti",
-          "E": "Se il contatto si interrompe brevemente durante la scrittura touch e riprende nella stessa direzione, l'app tenta di unire le due parti in un solo tratto, riducendo le interruzioni. Se disattivato, ogni sollevamento del dito termina il tratto."
+          "Touch": "Touch",
+          "PenTail": "Gomma della penna",
+          "E": "Durante la scrittura rileva le interruzioni del tocco in base all’intento di disegno e le corregge, e può riprendere lo stato di disegno."
         }
       },
       "Eraser":
@@ -765,7 +791,34 @@
           "ParallelWritingMultiTouchNote": "Il disegno con più dita è disattivato: la scrittura durante la cancellazione non può funzionare.",
           "ParallelWritingLaserMultiTouchNote": "Il laser con più dita è disattivato: la scrittura durante la cancellazione non può funzionare con la penna laser.",
           "ParallelWriting": "Consenti scrittura durante la cancellazione",
-          "ParallelWritingDescription": "La gomma con il palmo non interrompe gli altri input, permettendo di continuare a disegnare. (Per due o più persone che scrivono insieme.)"
+          "ParallelWritingDescription": "Attivando la gomma con il palmo si interrompe solo la scrittura touch vicina e si bloccano nuovi tocchi nei dintorni; altrove si può continuare a scrivere. (Per due o più persone che scrivono insieme.)",
+          "CursorNoticeTitle": "Tema e motivo seguono le impostazioni del puntatore",
+          "CursorNoticeDescription": "Il cursore della gomma con il palmo usa il tema e il motivo impostati in «Disegno › Puntatore › Cursore della gomma». Qui è possibile scegliere separatamente solo la forma.",
+          "Shape": "Forma della gomma con il palmo",
+          "ShapeDescription": "La forma determina anche l’area effettivamente cancellata dal palmo. «Segui predefinito» usa la stessa forma della gomma normale.",
+          "FollowDefault": "Segui predefinito",
+          "SizeSection": "Dimensione della gomma con il palmo",
+          "SizeMode": "Metodo di calcolo dello spessore",
+          "SizeModeDescription": "Scegli come calcolare lo spessore della gomma con il palmo.",
+          "SizeModeDynamic": "Spessore dinamico",
+          "SizeModeFollowDefault": "Fisso (gomma predefinita)",
+          "SizeModeFixed": "Fisso (senza gomma per velocità)",
+          "SizeModeDynamicNote": "Calcolato in base all’area di contatto",
+          "SizeModeFollowDefaultNote": "Usa la dimensione della gomma predefinita; varia con la velocità della penna quando «Spessore auto» è attivo",
+          "SizeModeFixedNote": "Usa sempre la dimensione della gomma predefinita",
+          "SizeMethod": "Metodo di calcolo della dimensione",
+          "SizeMethodDescription": "Come convertire il rettangolo di contatto nella dimensione della gomma.",
+          "MethodEllipseArea": "Area ellisse inscritta",
+          "MethodRectangleArea": "Area del rettangolo",
+          "MethodInscribedCircle": "Cerchio inscritto",
+          "MethodCircumscribedCircle": "Cerchio circoscritto",
+          "MethodInscribedRectangle": "Rettangolo inscritto",
+          "MethodCircumscribedRectangle": "Rettangolo circoscritto",
+          "MethodInscribedSquare": "Quadrato inscritto",
+          "MethodCircumscribedSquare": "Quadrato circoscritto",
+          "SizeMethodShapeNote": "Forma attuale: {}",
+          "SizeMultiplier": "Moltiplicatore della dimensione di cancellazione",
+          "SizeMultiplierDescription": "Ridimensiona proporzionalmente il lato o il diametro della gomma senza influire sul riconoscimento."
         },
         "Input":
         {
@@ -794,6 +847,33 @@
           "Note": "Sconsigliata sui dispositivi a grande schermo."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Posizione",
+      "DesktopSection": "Desktop",
+      "PptSection": "Presentazione",
+      "WhiteboardSection": "Lavagna",
+      "StartupE": "Imposta dove compare la barra al prossimo avvio. La barra superiore centrata è solo una posizione iniziale e non si aggancia.",
+      "TypeBottomBar": "Barra inferiore centrata",
+      "TypeTopBar": "Barra superiore centrata",
+      "TypeFloating": "Finestra mobile",
+      "PositionLabel": "Posizione",
+      "ExpandRight": "Espandi a destra",
+      "ExpandLeft": "Espandi a sinistra",
+      "FloatBottomLeft": "In basso a sinistra",
+      "FloatBottomRight": "In basso a destra",
+      "FloatBottomCenter": "In basso al centro",
+      "PptAutoDock": "Passa alla barra inferiore centrata all’avvio della presentazione",
+      "PptAutoDockE": "Se prima la barra si trova in uno stato selezionato, all’avvio della presentazione diventa una barra inferiore centrata ed espansa e al termine viene ripristinata.",
+      "WhiteboardAutoDock": "Passa alla barra inferiore centrata all’ingresso nella lavagna",
+      "WhiteboardAutoDockE": "Se prima la barra si trova in uno stato selezionato, all’ingresso nella lavagna diventa una barra inferiore centrata ed espansa e all’uscita viene ripristinata.",
+      "StateBottom": "Stato barra inferiore",
+      "StateBottomFolded": "Stato barra inferiore (compressa)",
+      "StateFloating": "Stato finestra mobile",
+      "StateFloatingFolded": "Stato finestra mobile (compressa)",
+      "MainButtonDirection": "Direzione del pulsante principale",
+      "DirectionKeep": "Non modificare"
     },
     "Preset":
     {
@@ -967,8 +1047,6 @@
           "SuperTop": "Attiva SuperTop",
           "SuperTopE1": "L'app usa un avvio in tre fasi per mantenere le finestre in primo piano.\n(SuperTop attualmente attivo)",
           "SuperTopE2": "L'app usa un avvio in tre fasi per mantenere le finestre in primo piano.\n(SuperTop non attivo)",
-          "Indicator": "Indicatore SuperTop",
-          "IndicatorE": "Mostra una puntina nell'angolo superiore destro dell'icona principale quando SuperTop è attivo.",
           "SuperTopNote": "Riavvia Inkeys per applicare. L'avvio in primo piano potrebbe non riuscire."
         },
         "SupportNote": "Richiede Windows 8 o successivo."
@@ -1065,6 +1143,20 @@
       "ClassIslandProtocolNote": "Registra il protocollo di navigazione URL nelle impostazioni di ClassIsland.",
       "ClassIslandSwapNote": "Il componente non ha effetto se ClassIsland non ha caricato un orario delle lezioni."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicatore di stato",
+      "E": "Mostra sul pulsante principale stati come la modalità presentazione, SuperTop e gli aggiornamenti del software.",
+      "Enable":
+      {
+        "N": "Attiva indicatore di stato",
+        "E": "Se disattivato, il pulsante principale non mostra più alcun avviso di stato."
+      },
+      "Types": "Mostra questi stati",
+      "TypeSlideshow": "Presentazione",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nuova versione"
+    },
     "DesktopShortcut":
     {
       "N": "Collegamenti",
@@ -1137,6 +1229,25 @@
       {
         "N": "Mostra frequenza fotogrammi",
         "E": "Aggiorna ogni secondo la frequenza media e quella senza attese del secondo precedente."
+      },
+      "CanvasSection": "Tela",
+      "CanvasDebug":
+      {
+        "N": "Debug della tela",
+        "E": "Mostra sotto la tela frequenza dei fotogrammi, carico hardware e informazioni sui punti di input, e aggiunge un pulsante di debug visivo alla barra principale."
+      },
+      "DelayWaiting":
+      {
+        "N": "Ritarda le operazioni in attesa",
+        "E": "Prolunga il caricamento per osservare le animazioni."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicatore di stato",
+        "N": "Prova indicatore di stato",
+        "E": "Aggiungi o rimuovi stati di prova casuali per verificare animazione, testo lungo e anello di avanzamento.",
+        "Add": "Aggiungi stato casuale",
+        "Remove": "Rimuovi uno stato"
       },
       "ConsoleSection": "Output console",
       "CanvasInformation": "Informazioni di inizializzazione della tela",

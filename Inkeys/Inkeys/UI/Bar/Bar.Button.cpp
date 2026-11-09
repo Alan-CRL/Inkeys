@@ -324,7 +324,8 @@ void BarButtonSetClass::PresetInitialization()
 					// 真 Draw callback 第一业务写前再核当前 Up 和同一个 Pen baseline。
 					if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute,
 						Inkeys::UI::Bar::Ui3FixtureActionPoint::Callback)) { Inkeys::UI::Bar::Haptics::RejectButtonAction(); return; }
-					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
+					// 可视化期间底层借用的工具身份不算已选中：点击必须真正切换工具才能退出可视化。
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen || IsCanvasDebugVisualActive())
 					{
 						Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::UnsupportedState);
 						if (ChangeStateModeToPen())
@@ -389,7 +390,7 @@ void BarButtonSetClass::PresetInitialization()
 			obj->clickFunc = [&]() -> void
 				{
 					const auto selectedMode = GetStateModeSnapshot().StateModeSelect;
-					if (selectedMode != StateModeSelectEnum::IdtEraser)
+					if (selectedMode != StateModeSelectEnum::IdtEraser || IsCanvasDebugVisualActive())
 					{
 						// 切工具的首击不参与开合合并，下一击仍可立即展开属性栏。
 						barUISet.eraserAttribute.RememberEntryFromSelection(
@@ -437,7 +438,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape || IsCanvasDebugVisualActive())
 					{
 						// 首次只切换工具；和绘制属性一致，再次点击才展开面板。
 						if (ChangeStateModeToShape())
@@ -619,6 +620,30 @@ void BarButtonSetClass::PresetInitialization()
 		obj->clickFunc = [] { ToggleClickThroughFromButton(); };
 		obj->state = &barButtonState[(int)BarButtonPresetEnum::Pierce];
 		preset[(int)BarButtonPresetEnum::Pierce] = obj;
+	}
+
+	// 画布调试可视化：默认隐藏，画布调试开启时由统一主栏投影显示。
+	{
+		mainCanvasDebugButton = std::make_shared<BarButtonClass>();
+		auto* obj = mainCanvasDebugButton.get();
+		obj->size = BarButtonSizeEnum::twoTwo;
+		obj->preset = BarButtonPresetEnum::CanvasDebug;
+		obj->hide = true;
+		obj->userVisible = true;
+		obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+			IW(I18nKey.UI.Bar.MainButtons.CanvasDebugLabel), 0.0);
+		obj->name.enable.Initialization(true);
+		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->button.enable.Initialization(true);
+		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+		obj->icon.InitializationFromResource(L"UI", L"barCanvasDebug");
+		obj->icon.enable.Initialization(true);
+		obj->clickFunc = []
+			{
+				if (!ToggleCanvasDebugVisualFromButton()) Inkeys::UI::Bar::Haptics::RejectButtonAction();
+			};
+		obj->state = &barButtonState[(int)BarButtonPresetEnum::CanvasDebug];
+		preset[(int)BarButtonPresetEnum::CanvasDebug] = obj;
 	}
 
 	// 定格
@@ -972,6 +997,9 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	const bool compactSelection = !whiteboard && selection && !hasContent;
 	const bool freezeAvailable = Inkeys::UI::Freeze::IsAvailable();
 	const bool freezeActive = Inkeys::UI::Freeze::IsActive();
+	// 画布调试开关与可视化位均为无锁读取，不会在表现锁内嵌套模式锁。
+	const bool canvasDebugEnabled = IsCanvasDebugEnabled();
+	const bool canvasDebugVisual = IsCanvasDebugVisualActive();
 	const bool settingVisible = Inkeys::UI::Setting::IsVisible();
 	const bool fold = barUISet.barState.fold;
 	const bool hasMoreButtons = GetMoreButtonSnapshot().HasButtons();
@@ -989,18 +1017,18 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 		switch (button->preset.load())
 		{
 		case BarButtonPresetEnum::Select:
-			state = selection ? BarWidgetState::Selected : BarWidgetState::None;
+			state = selection && !canvasDebugVisual ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::Draw:
-			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen ? BarWidgetState::Selected : BarWidgetState::None;
+			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtPen ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::Eraser:
 			hide = compactSelection;
-			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? BarWidgetState::Selected : BarWidgetState::None;
+			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::Geometry:
 			hide = compactSelection;
-			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape ? BarWidgetState::Selected : BarWidgetState::None;
+			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtShape ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::Clean:
 			state = selection && !hasContent ? BarWidgetState::Disable : BarWidgetState::None;
@@ -1018,10 +1046,14 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 		case BarButtonPresetEnum::Pierce:
 			size = a2.pierceTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
 			hide = !a2.pierceVisible;
-			state = stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough ? BarWidgetState::Selected : BarWidgetState::None;
+			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::EndShow:
 			hide = !a2.endShowVisible;
+			break;
+		case BarButtonPresetEnum::CanvasDebug:
+			hide = !canvasDebugEnabled;
+			state = canvasDebugVisual ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::Recall:
 			size = recall.undoExpanded ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
@@ -1051,6 +1083,7 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	}
 	for (const auto& divider : boundaryDividers) apply(divider.get());
 	apply(moreButton.get()); apply(mainRedoButton.get()); apply(mainPierceButton.get());
+	apply(mainCanvasDebugButton.get());
 	barUISet.barState.recallAttribute = recall.popupOpen;
 	// 内容仍从当前动画值过渡；同目标不会重启文字或图标动画。
 	// 长标签换行由语言资源指定，翻译调整不再依赖英文原文匹配。
@@ -1074,6 +1107,7 @@ void BarButtonSetClass::RefreshLocalizedText()
 	if (auto* button = preset[(int)BarButtonPresetEnum::Setting]) button->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.SettingsLabel));
 	if (moreButton) moreButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.MoreLabel));
 	if (mainRedoButton) mainRedoButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.RedoLabel));
+	if (mainCanvasDebugButton) mainCanvasDebugButton->name.SetStringImmediate(IW(I18nKey.UI.Bar.MainButtons.CanvasDebugLabel));
 	drawButtonStyleKey = -1; eraserButtonStyleKey = -1; geometryButtonStyleKey = -1;
 	unique_lock registrationsLock(registrationMutex);
 	if (auto it = registrations.find("Component.ShortcutButton.Appliance.Explorer"); it != registrations.end()) {
@@ -1179,7 +1213,7 @@ void BarButtonSetClass::RefreshLocalizedText()
 void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
-	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen && !IsCanvasDebugVisualActive();
 	bool laser = stateMode.laserActive;
 	bool highlighter =
 		!laser && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
@@ -1217,7 +1251,7 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized,
 	// 每个状态使用专属图标：回到白板、返回放映、关闭白板与打开白板。
 	whiteboard->TransitionContent(resume ? L"barResumeWhiteboard"
 			: returnToShow ? L"barReturnShow"
-			: active ? L"barCloseSmall" : L"barWhiteboard",
+			: active ? L"barCloseWhiteboard" : L"barWhiteboard",
 		resume ? IW(I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel)
 			: returnToShow ? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
 			: active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
@@ -1226,7 +1260,7 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized,
 void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
-	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
+	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser && !IsCanvasDebugVisualActive();
 	int styleKey = selected ? 1 : 0;
 	if (eraserButtonStyleKey == styleKey) return;
 
@@ -1243,7 +1277,7 @@ void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode,
 void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
 	static mutex mtx;
-	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
+	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape && !IsCanvasDebugVisualActive();
 	bool rectangle = selected
 		&& stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1;
 	int styleKey = selected ? (rectangle ? 2 : 1) : 0;
@@ -1599,6 +1633,18 @@ void BarButtonSetClass::Load()
 	if (moreButton) activeButtons.push_back(moreButton);
 	AppendBoundaryDivider(activeButtons, 1); // B | A2
 	AppendFixedButtons(normalizedA2, activeButtons);
+	if (mainCanvasDebugButton)
+	{
+		// 紧跟 A1 的清空按钮；固定区被用户精简掉清空时退到最前。
+		auto insertAt = activeButtons.begin();
+		const auto clean = std::find_if(activeButtons.begin(), activeButtons.end(),
+			[](const shared_ptr<BarButtonClass>& button)
+			{
+				return button && button->preset == BarButtonPresetEnum::Clean;
+			});
+		if (clean != activeButtons.end()) insertAt = clean + 1;
+		activeButtons.insert(insertAt, mainCanvasDebugButton);
+	}
 	if (mainPierceButton)
 	{
 		const auto freeze = std::find_if(activeButtons.begin(), activeButtons.end(),
@@ -1652,13 +1698,16 @@ void BarButtonSetClass::ResetIconCaches()
 void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 {
 	// 白板内切换工具或折叠主栏时，也要收起已展开的绘制属性。
+	const bool canvasDebugVisual = IsCanvasDebugVisualActive();
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+		|| canvasDebugVisual
 		|| barUISet.barState.fold
 		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
 	{
 		barUISet.barState.drawAttribute = false;
 	}
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
+		|| canvasDebugVisual
 		|| barUISet.barState.fold
 		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible())
 	{

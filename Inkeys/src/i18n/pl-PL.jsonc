@@ -46,6 +46,12 @@
         "Mode": "Tryb dolnego paska",
         "Centered": "Na środku"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Pokaz slajdów",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nowa wersja"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Wyczyść",
@@ -98,6 +104,7 @@
         "WhiteboardGridLabel": "Siatka",
         "WhiteboardUnsavedLabel": "Niektóre strony nie są zapisane",
         "FreezeLabel": "Zamroź",
+        "CanvasDebugLabel": "Debug wizualny",
         "EndPresentationLabel": "Zakończ",
         "SettingsLabel": "Ustawienia",
         "MoreLabel": "Więcej"
@@ -156,8 +163,7 @@
         "ReadFailed": "Odczyt",
         "PresentFailed": "Ekran",
         "Failed": "Błąd",
-        "Recovering": "Przywracanie",
-        "Loading": "Wczytaj",
+        "Recovering": "Przywr.",
         "Retry": "Ponów",
         "Wait": "Czekaj",
         "RetryCanvas": "Ponów płótno",
@@ -692,7 +698,26 @@
           "E": "Tablety graficzne bez Windows Ink zwykle docierają jako „mysz wstrzyknięta przez sterownik”. Po włączeniu ta mysz używa ustawień kursora tabletu; oprogramowanie, które także wstrzykuje mysz, na przykład Pulpit zdalny, może zostać rozpoznane błędnie.",
           "Unavailable": "Ten system nie potrafi odróżnić źródła wejścia, więc opcja jest niedostępna."
         },
+        "Eraser":
+        {
+          "N": "Kursor gumki",
+          "E": "Kształt określa też rzeczywisty obszar wymazywania (prostokąty mają proste narożniki); wzór oraz jasny/ciemny zmieniają tylko wygląd kursora.",
+          "Appearance": "Wygląd",
+          "Light": "Jasny",
+          "Dark": "Ciemny",
+          "Circle": "Koło",
+          "Rectangle": "Prostokąt",
+          "Square": "Kwadrat",
+          "Grips": "Klasyczny",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Iskra"
+        },
         "FineControl": "Precyzyjne sterowanie",
+        "OpacitySection": "Krycie",
+        "PenOpacity": "Krycie kursora pióra",
+        "HighlightPenFillOpacity": "Krycie wypełnienia kursora pióra (wyróżnione)",
+        "DotOpacity": "Krycie kursora małej kropki",
+        "HighlightDotFillOpacity": "Krycie wypełnienia kursora małej kropki (wyróżniona)",
         "DotHideOnContact":
         {
           "N": "Automatycznie ukrywaj mały kursor punktowy przy kontakcie",
@@ -701,8 +726,7 @@
           "ScreenPen": "Tylko pióro ekranowe",
           "Tablet": "Tylko tablet graficzny",
           "Both": "Pióro ekranowe i tablet graficzny"
-        },
-        "Note": "W przypadku pióra ekranowego, tabletu graficznego i dotyku „Mysz” to strzałka rysowana przez samą aplikację; kursory zakreślacza i wskaźnika laserowego, narzędzia kształtów oraz osobny kursor gumki nie zależą od tych opcji."
+        }
       },
       "Effect":
       {
@@ -722,7 +746,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Łącz przerwane ślady",
-          "E": "Gdy podczas pisania dotyk na chwilę zanika i powraca w tym samym kierunku, program próbuje połączyć obie części w jeden ślad, ograniczając przerwy. Po wyłączeniu każde podniesienie palca kończy ślad."
+          "Touch": "Dotyk",
+          "PenTail": "Gumka pióra",
+          "E": "Podczas pisania wykrywa przerwy w dotyku na podstawie intencji rysowania i je koryguje, a także może kontynuować stan rysowania."
         }
       },
       "Eraser":
@@ -765,7 +791,34 @@
           "ParallelWritingMultiTouchNote": "Rysowanie wieloma palcami jest wyłączone, więc pisanie podczas wymazywania nie działa.",
           "ParallelWritingLaserMultiTouchNote": "Laser obsługiwany wieloma palcami jest wyłączony, więc pisanie podczas wymazywania nie działa ze wskaźnikiem laserowym.",
           "ParallelWriting": "Włącz pisanie podczas wymazywania",
-          "ParallelWritingDescription": "Uruchomienie gumki dłonią nie przerywa innych operacji wejściowych, więc można nadal rysować. (Dla co najmniej dwóch osób piszących jednocześnie.)"
+          "ParallelWritingDescription": "Uruchomienie gumki dłonią kończy tylko pisanie dotykiem w jej pobliżu i blokuje tam nowe dotknięcia; w innych miejscach można dalej pisać. (Dla co najmniej dwóch osób piszących jednocześnie.)",
+          "CursorNoticeTitle": "Motyw i wzór są zgodne z ustawieniami kursora",
+          "CursorNoticeDescription": "Kursor gumki dłonią używa motywu i wzoru ustawionych w „Rysowanie › Kursor › Kursor gumki”. Tutaj można osobno wybrać tylko kształt.",
+          "Shape": "Kształt gumki dłonią",
+          "ShapeDescription": "Kształt określa też obszar faktycznie wymazywany dłonią. „Zgodnie z domyślnym” używa tego samego kształtu co zwykła gumka.",
+          "FollowDefault": "Zgodnie z domyślnym",
+          "SizeSection": "Rozmiar gumki dłonią",
+          "SizeMode": "Sposób obliczania grubości",
+          "SizeModeDescription": "Wybierz sposób obliczania grubości gumki dłonią.",
+          "SizeModeDynamic": "Dynamiczna grubość",
+          "SizeModeFollowDefault": "Stała (domyślna gumka)",
+          "SizeModeFixed": "Stała (bez gumki prędkości)",
+          "SizeModeDynamicNote": "Obliczana na podstawie powierzchni kontaktu",
+          "SizeModeFollowDefaultNote": "Używa domyślnego rozmiaru gumki; zmienia się wraz z prędkością pióra, gdy włączona jest „Auto grubość”",
+          "SizeModeFixedNote": "Zawsze używa domyślnego rozmiaru gumki",
+          "SizeMethod": "Sposób obliczania rozmiaru",
+          "SizeMethodDescription": "Sposób przeliczania prostokąta kontaktu na rozmiar gumki.",
+          "MethodEllipseArea": "Pole wpisanej elipsy",
+          "MethodRectangleArea": "Pole prostokąta",
+          "MethodInscribedCircle": "Koło wpisane",
+          "MethodCircumscribedCircle": "Koło opisane",
+          "MethodInscribedRectangle": "Prostokąt wpisany",
+          "MethodCircumscribedRectangle": "Prostokąt opisany",
+          "MethodInscribedSquare": "Kwadrat wpisany",
+          "MethodCircumscribedSquare": "Kwadrat opisany",
+          "SizeMethodShapeNote": "Bieżący kształt: {}",
+          "SizeMultiplier": "Mnożnik rozmiaru wymazywania",
+          "SizeMultiplierDescription": "Skaluje długość boku lub średnicę gumki bez wpływu na rozpoznawanie."
         },
         "Input":
         {
@@ -794,6 +847,33 @@
           "Note": "Niezalecane na urządzeniach z dużym ekranem."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Położenie",
+      "DesktopSection": "Pulpit",
+      "PptSection": "Prezentacja",
+      "WhiteboardSection": "Tablica",
+      "StartupE": "Określa, gdzie pasek pojawi się przy następnym uruchomieniu. Wyśrodkowany pasek górny to tylko położenie początkowe i nie przyciąga się.",
+      "TypeBottomBar": "Wyśrodkowany pasek dolny",
+      "TypeTopBar": "Wyśrodkowany pasek górny",
+      "TypeFloating": "Okno swobodne",
+      "PositionLabel": "Położenie",
+      "ExpandRight": "Rozwijaj w prawo",
+      "ExpandLeft": "Rozwijaj w lewo",
+      "FloatBottomLeft": "Lewy dolny róg",
+      "FloatBottomRight": "Prawy dolny róg",
+      "FloatBottomCenter": "Dół, środek",
+      "PptAutoDock": "Przechodź do trybu wyśrodkowanego paska dolnego po rozpoczęciu pokazu",
+      "PptAutoDockE": "Jeśli pasek wcześniej był w zaznaczonym stanie, po rozpoczęciu pokazu stanie się rozwiniętym, wyśrodkowanym paskiem dolnym, a po zakończeniu zostanie przywrócony.",
+      "WhiteboardAutoDock": "Przechodź do trybu wyśrodkowanego paska dolnego po wejściu do tablicy",
+      "WhiteboardAutoDockE": "Jeśli pasek wcześniej był w zaznaczonym stanie, po wejściu do tablicy stanie się rozwiniętym, wyśrodkowanym paskiem dolnym, a po wyjściu zostanie przywrócony.",
+      "StateBottom": "Stan paska dolnego",
+      "StateBottomFolded": "Stan paska dolnego (zwiniętego)",
+      "StateFloating": "Stan okna swobodnego",
+      "StateFloatingFolded": "Stan okna swobodnego (zwiniętego)",
+      "MainButtonDirection": "Kierunek przycisku głównego",
+      "DirectionKeep": "Bez zmian"
     },
     "Preset":
     {
@@ -967,8 +1047,6 @@
           "SuperTop": "Włącz SuperTop",
           "SuperTopE1": "Program uruchamia się w trzech etapach, aby utrzymać okna na wierzchu.\n(SuperTop jest aktywny)",
           "SuperTopE2": "Program uruchamia się w trzech etapach, aby utrzymać okna na wierzchu.\n(SuperTop nie jest aktywny)",
-          "Indicator": "Wskaźnik SuperTop",
-          "IndicatorE": "Gdy SuperTop jest aktywny, wyświetla pinezkę w prawym górnym rogu głównej ikony.",
           "SuperTopNote": "Uruchom ponownie Inkeys, aby zastosować. Ustawienie na wierzchu podczas uruchamiania może się nie powieść."
         },
         "SupportNote": "Wymaga systemu Windows 8 lub nowszego."
@@ -1065,6 +1143,20 @@
       "ClassIslandProtocolNote": "Zarejestruj protokół nawigacji URL w ustawieniach ClassIsland.",
       "ClassIslandSwapNote": "Ten komponent nie działa, gdy ClassIsland nie ma wczytanego planu lekcji."
     },
+    "StatusIndicator":
+    {
+      "N": "Wskaźnik stanu",
+      "E": "Pokazuje na przycisku głównym stany, takie jak tryb pokazu slajdów, SuperTop i aktualizacje oprogramowania.",
+      "Enable":
+      {
+        "N": "Włącz wskaźnik stanu",
+        "E": "Po wyłączeniu przycisk główny nie pokazuje żadnych podpowiedzi stanu."
+      },
+      "Types": "Pokazuj te stany",
+      "TypeSlideshow": "Pokaz slajdów",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nowa wersja"
+    },
     "DesktopShortcut":
     {
       "N": "Skróty",
@@ -1137,6 +1229,25 @@
       {
         "N": "Pokaż liczbę klatek na sekundę",
         "E": "Co sekundę aktualizuj średnią liczbę klatek i liczbę klatek bez oczekiwania z poprzedniej sekundy."
+      },
+      "CanvasSection": "Kanwa",
+      "CanvasDebug":
+      {
+        "N": "Debugowanie kanwy",
+        "E": "Wyświetla pod kanwą liczbę klatek na sekundę, obciążenie sprzętu i informacje o punktach wejścia oraz dodaje do paska głównego przycisk debugowania wizualnego."
+      },
+      "DelayWaiting":
+      {
+        "N": "Opóźnij operacje oczekiwania",
+        "E": "Wydłuża ładowanie, aby obserwować animacje."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Wskaźnik stanu",
+        "N": "Testuj wskaźnik stanu",
+        "E": "Dodaj lub usuń losowe stany testowe, aby sprawdzić animację, długi tekst i pierścień postępu.",
+        "Add": "Dodaj losowy stan",
+        "Remove": "Usuń jeden stan"
       },
       "ConsoleSection": "Wyjście konsoli",
       "CanvasInformation": "Informacje o inicjalizacji płótna",

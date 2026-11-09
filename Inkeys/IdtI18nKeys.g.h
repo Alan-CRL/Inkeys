@@ -49,6 +49,12 @@ inline constexpr struct I18nKeyRoot
                 const char* Mode = "UI/Bar/BottomDock/Mode";
                 const char* Centered = "UI/Bar/BottomDock/Centered";
             } BottomDock{};
+            struct Node__UI__Bar__StatusIndicator
+            {
+                const char* Slideshow = "UI/Bar/StatusIndicator/Slideshow";
+                const char* SuperTop = "UI/Bar/StatusIndicator/SuperTop";
+                const char* NewVersion = "UI/Bar/StatusIndicator/NewVersion";
+            } StatusIndicator{};
             struct Node__UI__Bar__EraserAttributes
             {
                 const char* ClearCanvasLabel = "UI/Bar/EraserAttributes/ClearCanvasLabel";
@@ -101,6 +107,7 @@ inline constexpr struct I18nKeyRoot
                 const char* WhiteboardGridLabel = "UI/Bar/MainButtons/WhiteboardGridLabel";
                 const char* WhiteboardUnsavedLabel = "UI/Bar/MainButtons/WhiteboardUnsavedLabel";
                 const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
+                const char* CanvasDebugLabel = "UI/Bar/MainButtons/CanvasDebugLabel";
                 const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
                 const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
                 const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
@@ -160,7 +167,6 @@ inline constexpr struct I18nKeyRoot
                 const char* PresentFailed = "UI/Bar/CanvasRecovery/PresentFailed";
                 const char* Failed = "UI/Bar/CanvasRecovery/Failed";
                 const char* Recovering = "UI/Bar/CanvasRecovery/Recovering";
-                const char* Loading = "UI/Bar/CanvasRecovery/Loading";
                 const char* Retry = "UI/Bar/CanvasRecovery/Retry";
                 const char* Wait = "UI/Bar/CanvasRecovery/Wait";
                 const char* RetryCanvas = "UI/Bar/CanvasRecovery/RetryCanvas";
@@ -695,7 +701,26 @@ inline constexpr struct I18nKeyRoot
                     const char* E = "SettingsUI/Draw/Cursor/InjectedMouse/E";
                     const char* Unavailable = "SettingsUI/Draw/Cursor/InjectedMouse/Unavailable";
                 } InjectedMouse{};
+                struct Node__SettingsUI__Draw__Cursor__Eraser
+                {
+                    const char* N = "SettingsUI/Draw/Cursor/Eraser/N";
+                    const char* E = "SettingsUI/Draw/Cursor/Eraser/E";
+                    const char* Appearance = "SettingsUI/Draw/Cursor/Eraser/Appearance";
+                    const char* Light = "SettingsUI/Draw/Cursor/Eraser/Light";
+                    const char* Dark = "SettingsUI/Draw/Cursor/Eraser/Dark";
+                    const char* Circle = "SettingsUI/Draw/Cursor/Eraser/Circle";
+                    const char* Rectangle = "SettingsUI/Draw/Cursor/Eraser/Rectangle";
+                    const char* Square = "SettingsUI/Draw/Cursor/Eraser/Square";
+                    const char* Grips = "SettingsUI/Draw/Cursor/Eraser/Grips";
+                    const char* Inkeys = "SettingsUI/Draw/Cursor/Eraser/Inkeys";
+                    const char* Sparkle = "SettingsUI/Draw/Cursor/Eraser/Sparkle";
+                } Eraser{};
                 const char* FineControl = "SettingsUI/Draw/Cursor/FineControl";
+                const char* OpacitySection = "SettingsUI/Draw/Cursor/OpacitySection";
+                const char* PenOpacity = "SettingsUI/Draw/Cursor/PenOpacity";
+                const char* HighlightPenFillOpacity = "SettingsUI/Draw/Cursor/HighlightPenFillOpacity";
+                const char* DotOpacity = "SettingsUI/Draw/Cursor/DotOpacity";
+                const char* HighlightDotFillOpacity = "SettingsUI/Draw/Cursor/HighlightDotFillOpacity";
                 struct Node__SettingsUI__Draw__Cursor__DotHideOnContact
                 {
                     const char* N = "SettingsUI/Draw/Cursor/DotHideOnContact/N";
@@ -705,7 +730,6 @@ inline constexpr struct I18nKeyRoot
                     const char* Tablet = "SettingsUI/Draw/Cursor/DotHideOnContact/Tablet";
                     const char* Both = "SettingsUI/Draw/Cursor/DotHideOnContact/Both";
                 } DotHideOnContact{};
-                const char* Note = "SettingsUI/Draw/Cursor/Note";
             } Cursor{};
             struct Node__SettingsUI__Draw__Effect
             {
@@ -725,6 +749,8 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Draw__Touch__InterruptedStrokeReconnect
                 {
                     const char* N = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/N";
+                    const char* Touch = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/Touch";
+                    const char* PenTail = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/PenTail";
                     const char* E = "SettingsUI/Draw/Touch/InterruptedStrokeReconnect/E";
                 } InterruptedStrokeReconnect{};
             } Touch{};
@@ -769,6 +795,33 @@ inline constexpr struct I18nKeyRoot
                     const char* ParallelWritingLaserMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingLaserMultiTouchNote";
                     const char* ParallelWriting = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWriting";
                     const char* ParallelWritingDescription = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingDescription";
+                    const char* CursorNoticeTitle = "SettingsUI/Draw/Eraser/PalmEraser/CursorNoticeTitle";
+                    const char* CursorNoticeDescription = "SettingsUI/Draw/Eraser/PalmEraser/CursorNoticeDescription";
+                    const char* Shape = "SettingsUI/Draw/Eraser/PalmEraser/Shape";
+                    const char* ShapeDescription = "SettingsUI/Draw/Eraser/PalmEraser/ShapeDescription";
+                    const char* FollowDefault = "SettingsUI/Draw/Eraser/PalmEraser/FollowDefault";
+                    const char* SizeSection = "SettingsUI/Draw/Eraser/PalmEraser/SizeSection";
+                    const char* SizeMode = "SettingsUI/Draw/Eraser/PalmEraser/SizeMode";
+                    const char* SizeModeDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeDescription";
+                    const char* SizeModeDynamic = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeDynamic";
+                    const char* SizeModeFollowDefault = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFollowDefault";
+                    const char* SizeModeFixed = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFixed";
+                    const char* SizeModeDynamicNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeDynamicNote";
+                    const char* SizeModeFollowDefaultNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFollowDefaultNote";
+                    const char* SizeModeFixedNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeModeFixedNote";
+                    const char* SizeMethod = "SettingsUI/Draw/Eraser/PalmEraser/SizeMethod";
+                    const char* SizeMethodDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeMethodDescription";
+                    const char* MethodEllipseArea = "SettingsUI/Draw/Eraser/PalmEraser/MethodEllipseArea";
+                    const char* MethodRectangleArea = "SettingsUI/Draw/Eraser/PalmEraser/MethodRectangleArea";
+                    const char* MethodInscribedCircle = "SettingsUI/Draw/Eraser/PalmEraser/MethodInscribedCircle";
+                    const char* MethodCircumscribedCircle = "SettingsUI/Draw/Eraser/PalmEraser/MethodCircumscribedCircle";
+                    const char* MethodInscribedRectangle = "SettingsUI/Draw/Eraser/PalmEraser/MethodInscribedRectangle";
+                    const char* MethodCircumscribedRectangle = "SettingsUI/Draw/Eraser/PalmEraser/MethodCircumscribedRectangle";
+                    const char* MethodInscribedSquare = "SettingsUI/Draw/Eraser/PalmEraser/MethodInscribedSquare";
+                    const char* MethodCircumscribedSquare = "SettingsUI/Draw/Eraser/PalmEraser/MethodCircumscribedSquare";
+                    const char* SizeMethodShapeNote = "SettingsUI/Draw/Eraser/PalmEraser/SizeMethodShapeNote";
+                    const char* SizeMultiplier = "SettingsUI/Draw/Eraser/PalmEraser/SizeMultiplier";
+                    const char* SizeMultiplierDescription = "SettingsUI/Draw/Eraser/PalmEraser/SizeMultiplierDescription";
                 } PalmEraser{};
                 struct Node__SettingsUI__Draw__Eraser__Input
                 {
@@ -798,6 +851,33 @@ inline constexpr struct I18nKeyRoot
                 } TouchArea{};
             } Eraser{};
         } Draw{};
+        struct Node__SettingsUI__Position
+        {
+            const char* N = "SettingsUI/Position/N";
+            const char* DesktopSection = "SettingsUI/Position/DesktopSection";
+            const char* PptSection = "SettingsUI/Position/PptSection";
+            const char* WhiteboardSection = "SettingsUI/Position/WhiteboardSection";
+            const char* StartupE = "SettingsUI/Position/StartupE";
+            const char* TypeBottomBar = "SettingsUI/Position/TypeBottomBar";
+            const char* TypeTopBar = "SettingsUI/Position/TypeTopBar";
+            const char* TypeFloating = "SettingsUI/Position/TypeFloating";
+            const char* PositionLabel = "SettingsUI/Position/PositionLabel";
+            const char* ExpandRight = "SettingsUI/Position/ExpandRight";
+            const char* ExpandLeft = "SettingsUI/Position/ExpandLeft";
+            const char* FloatBottomLeft = "SettingsUI/Position/FloatBottomLeft";
+            const char* FloatBottomRight = "SettingsUI/Position/FloatBottomRight";
+            const char* FloatBottomCenter = "SettingsUI/Position/FloatBottomCenter";
+            const char* PptAutoDock = "SettingsUI/Position/PptAutoDock";
+            const char* PptAutoDockE = "SettingsUI/Position/PptAutoDockE";
+            const char* WhiteboardAutoDock = "SettingsUI/Position/WhiteboardAutoDock";
+            const char* WhiteboardAutoDockE = "SettingsUI/Position/WhiteboardAutoDockE";
+            const char* StateBottom = "SettingsUI/Position/StateBottom";
+            const char* StateBottomFolded = "SettingsUI/Position/StateBottomFolded";
+            const char* StateFloating = "SettingsUI/Position/StateFloating";
+            const char* StateFloatingFolded = "SettingsUI/Position/StateFloatingFolded";
+            const char* MainButtonDirection = "SettingsUI/Position/MainButtonDirection";
+            const char* DirectionKeep = "SettingsUI/Position/DirectionKeep";
+        } Position{};
         struct Node__SettingsUI__Preset
         {
             const char* N = "SettingsUI/Preset/N";
@@ -970,8 +1050,6 @@ inline constexpr struct I18nKeyRoot
                     const char* SuperTop = "SettingsUI/PlugIn/SuperTop/Capability/SuperTop";
                     const char* SuperTopE1 = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopE1";
                     const char* SuperTopE2 = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopE2";
-                    const char* Indicator = "SettingsUI/PlugIn/SuperTop/Capability/Indicator";
-                    const char* IndicatorE = "SettingsUI/PlugIn/SuperTop/Capability/IndicatorE";
                     const char* SuperTopNote = "SettingsUI/PlugIn/SuperTop/Capability/SuperTopNote";
                 } Capability{};
                 const char* SupportNote = "SettingsUI/PlugIn/SuperTop/SupportNote";
@@ -1068,6 +1146,20 @@ inline constexpr struct I18nKeyRoot
             const char* ClassIslandProtocolNote = "SettingsUI/Component/ClassIslandProtocolNote";
             const char* ClassIslandSwapNote = "SettingsUI/Component/ClassIslandSwapNote";
         } Component{};
+        struct Node__SettingsUI__StatusIndicator
+        {
+            const char* N = "SettingsUI/StatusIndicator/N";
+            const char* E = "SettingsUI/StatusIndicator/E";
+            struct Node__SettingsUI__StatusIndicator__Enable
+            {
+                const char* N = "SettingsUI/StatusIndicator/Enable/N";
+                const char* E = "SettingsUI/StatusIndicator/Enable/E";
+            } Enable{};
+            const char* Types = "SettingsUI/StatusIndicator/Types";
+            const char* TypeSlideshow = "SettingsUI/StatusIndicator/TypeSlideshow";
+            const char* TypeSuperTop = "SettingsUI/StatusIndicator/TypeSuperTop";
+            const char* TypeNewVersion = "SettingsUI/StatusIndicator/TypeNewVersion";
+        } StatusIndicator{};
         struct Node__SettingsUI__DesktopShortcut
         {
             const char* N = "SettingsUI/DesktopShortcut/N";
@@ -1141,6 +1233,25 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/FrameRate/N";
                 const char* E = "SettingsUI/DebugSoftware/FrameRate/E";
             } FrameRate{};
+            const char* CanvasSection = "SettingsUI/DebugSoftware/CanvasSection";
+            struct Node__SettingsUI__DebugSoftware__CanvasDebug
+            {
+                const char* N = "SettingsUI/DebugSoftware/CanvasDebug/N";
+                const char* E = "SettingsUI/DebugSoftware/CanvasDebug/E";
+            } CanvasDebug{};
+            struct Node__SettingsUI__DebugSoftware__DelayWaiting
+            {
+                const char* N = "SettingsUI/DebugSoftware/DelayWaiting/N";
+                const char* E = "SettingsUI/DebugSoftware/DelayWaiting/E";
+            } DelayWaiting{};
+            struct Node__SettingsUI__DebugSoftware__StatusIndicator
+            {
+                const char* Section = "SettingsUI/DebugSoftware/StatusIndicator/Section";
+                const char* N = "SettingsUI/DebugSoftware/StatusIndicator/N";
+                const char* E = "SettingsUI/DebugSoftware/StatusIndicator/E";
+                const char* Add = "SettingsUI/DebugSoftware/StatusIndicator/Add";
+                const char* Remove = "SettingsUI/DebugSoftware/StatusIndicator/Remove";
+            } StatusIndicator{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";

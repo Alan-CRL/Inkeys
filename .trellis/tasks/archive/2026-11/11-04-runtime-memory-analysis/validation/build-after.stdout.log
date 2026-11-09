@@ -1,0 +1,72 @@
+
+  Scanning sources for module dependencies...
+  IdtMain.cpp
+  uink_draw3_export.cpp
+  IdtImage.cpp
+  Draw3.AutoSave.cpp
+  Draw3.PresentationAutoSave.cpp
+  Draw3.DrawingController.cpp
+  Compiling...
+  IdtImage.cpp
+  IdtMain.cpp
+  uink_draw3_export.cpp
+  Draw3.DrawingController.cpp
+  Draw3.PresentationAutoSave.cpp
+  Draw3.AutoSave.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtImage.cpp')
+  
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+  (compiling source file 'IdtImage.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtImage.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8536,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8541,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8543,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8667,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3446,26): warning C4244: '=': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3446,26): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3446,26): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3446,26): warning C4244:             _Ty=float [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3446,26): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  Inkeys.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\Build\ARM64\Debug\Inkeys.exe
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  InkeysHeadlessTests.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe

@@ -15,6 +15,8 @@ import Inkeys.Display;
 #include "Inkeys/Window/Window.Legacy.hpp"
 
 #include <atomic>
+#include <cstdint>
+#include <cstdio>
 #include <mutex>
 
 int FreezeRecall;
@@ -23,6 +25,50 @@ namespace
 {
 	std::mutex freezeSurfaceMutex;
 	std::atomic_bool whiteboardFreezeSurfaceOwned = false;
+
+
+	class FreezeSurfaceResources
+	{
+	public:
+		Inkeys::Graphics::DibSurface frame, pptSign;
+
+		[[nodiscard]] bool Ensure(int width, int height) noexcept
+		{
+			return frame.resize(width, height);
+		}
+
+		void Release() noexcept
+		{
+			frame.reset();
+			pptSign.reset();
+		}
+
+		[[nodiscard]] std::uint64_t PayloadBytes() const noexcept
+		{
+			return static_cast<std::uint64_t>(frame.width()) * frame.height() * 4
+				+ static_cast<std::uint64_t>(pptSign.width()) * pptSign.height() * 4;
+		}
+
+		template<class Submit>
+		[[nodiscard]] bool RetireIfUnused(bool required, bool whiteboardOwner, Submit&& submit)
+		{
+			if (whiteboardOwner)
+			{
+				// 共享 HWND 已交给白板；只归还自有像素，不能用透明帧覆盖新 owner。
+				Release();
+				return true;
+			}
+			if (required) return false;
+			if (!frame.empty())
+			{
+				frame.clear();
+				if (!submit(frame)) return false;
+			}
+			// 每次退休依赖这次真实透明提交，不沿用跨窗口/所有权的旧证明。
+			Release();
+			return true;
+		}
+	};
 }
 
 void SetWhiteboardFreezeSurfaceOwned(bool owned) noexcept
@@ -48,7 +94,9 @@ void FreezeFrameWindow()
 {
 	Inkeys::Thread::StatusGuard guard("FreezeFrameWindow");
 
-	Inkeys::Graphics::DibSurface freeze_background, PptSign;
+	FreezeSurfaceResources surfaces;
+	auto& freeze_background = surfaces.frame;
+	auto& PptSign = surfaces.pptSign;
 	const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 	const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
 	if (!monitor)
@@ -71,7 +119,6 @@ void FreezeFrameWindow()
 	(void)Inkeys::Window::GetService().SetBounds(
 		Inkeys::Window::WindowRole::Freeze, freezeBounds);
 	freeze_background.clear();
-	LoadSurfaceFromResource(&PptSign, L"PNG", L"sign4");
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
@@ -94,12 +141,23 @@ void FreezeFrameWindow()
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
 
+
+	const auto submitSurface = [&](const Inkeys::Graphics::DibSurface& surface)
+	{
+		sizeWnd = { surface.width(), surface.height() };
+		ulwi.hdcSrc = surface.dc();
+		return SubmitFreezeSurface(freeze_window, &ulwi, false);
+	};
+
 	ulwi.hdcSrc = freeze_background.dc();
-	if (SubmitFreezeSurface(freeze_window, &ulwi, false))
+	if (submitSurface(freeze_background))
 	{
 		(void)Inkeys::Startup::Report(
 			Inkeys::Startup::Milestone::FreezeFirstFrameCommitted);
 		IdtWindowsIsVisible.freezeWindow = true;
+		// 启动首帧已经真实提交；普通静止不再持有一整屏 DIB。
+		surfaces.Release();
+		ulwi.hdcSrc = nullptr;
 	}
 	else
 		(void)Inkeys::Startup::ReportFailure(0xF001u);
@@ -113,14 +171,36 @@ void FreezeFrameWindow()
 	while (!offSignal)
 	{
 		this_thread::sleep_for(chrono::milliseconds(20));
-		if (WhiteboardFreezeSurfaceOwned()) continue;
+		const bool whiteboardOwner = WhiteboardFreezeSurfaceOwned();
+		const bool freezeActive = Inkeys::UI::Freeze::IsActive();
+		const bool pixelsRequired = freezeActive || FreezeRecall > 0 || FreezePPT;
+		if (whiteboardOwner || !pixelsRequired)
+		{
+			if (surfaces.RetireIfUnused(pixelsRequired, whiteboardOwner, submitSurface))
+			{
+				ulwi.hdcSrc = nullptr;
+				show_freeze_window = false;
+			}
+			// 同次状态判定后直接退出，不能让并发的新提示落入已经回收的 surface。
+			continue;
+		}
+		const bool recreated = freeze_background.empty();
+		if (!surfaces.Ensure(monitor->pixelWidth, freezeHeight)) continue;
+		sizeWnd = { freeze_background.width(), freeze_background.height() };
+		ulwi.hdcSrc = freeze_background.dc();
+		if (recreated && freezeActive && FreezeRecall <= 0 && !FreezePPT)
+		{
+			// 白板可能曾写过同一 HWND；新 Freeze 会话必须先提交自己的透明画面。
+			freeze_background.clear();
+			if (!submitSurface(freeze_background)) continue;
+		}
 
 		if (Inkeys::UI::Freeze::IsActive())
 		{
 			show_freeze_window = true;
 			while (!offSignal)
 			{
-				if (!Inkeys::UI::Freeze::IsActive()) break;
+				if (!Inkeys::UI::Freeze::IsActive() || WhiteboardFreezeSurfaceOwned()) break;
 
 				if (FreezeRecall > 0)
 				{
@@ -145,14 +225,14 @@ void FreezeFrameWindow()
 					graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
 
 					ulwi.hdcSrc = freeze_background.dc();
-					(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+					(void)submitSurface(freeze_background);
 
 					FreezeRecall -= 10;
 					if (FreezeRecall <= 0)
 					{
 						freeze_background.clear();
 						ulwi.hdcSrc = freeze_background.dc();
-						(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+						(void)submitSurface(freeze_background);
 						FreezeRecall = 0;
 						break;
 					}
@@ -164,23 +244,24 @@ void FreezeFrameWindow()
 		{
 			freeze_background.clear();
 			ulwi.hdcSrc = freeze_background.dc();
-			(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+			(void)submitSurface(freeze_background);
 			show_freeze_window = false;
 		}
 		if (!Inkeys::UI::Freeze::IsActive() && FreezePPT)
 		{
+			if (PptSign.empty()) (void)LoadSurfaceFromResource(&PptSign, L"PNG", L"sign4");
 			if (!show_freeze_window)
 			{
 				freeze_background.clear();
 
 				ulwi.hdcSrc = freeze_background.dc();
-				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+				(void)submitSurface(freeze_background);
 				show_freeze_window = true;
 			}
 
 			chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 			chrono::high_resolution_clock::time_point tRecord;
-			for (; FreezePPT && !offSignal; )
+			for (; FreezePPT && !offSignal && !WhiteboardFreezeSurfaceOwned(); )
 			{
 				tRecord = chrono::high_resolution_clock::now();
 
@@ -213,7 +294,7 @@ void FreezeFrameWindow()
 				}
 
 				ulwi.hdcSrc = freeze_background.dc();
-				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+				(void)submitSurface(freeze_background);
 
 				//FocusPptShow();
 
@@ -226,7 +307,7 @@ void FreezeFrameWindow()
 		}
 		if (!Inkeys::UI::Freeze::IsActive() && FreezeRecall)
 		{
-			while (!offSignal)
+			while (!offSignal && !WhiteboardFreezeSurfaceOwned())
 			{
 				freeze_background.clear();
 
@@ -249,7 +330,7 @@ void FreezeFrameWindow()
 				graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
 
 				ulwi.hdcSrc = freeze_background.dc();
-				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+				(void)submitSurface(freeze_background);
 
 				FreezeRecall -= 10;
 				this_thread::sleep_for(chrono::milliseconds(20));
@@ -259,7 +340,7 @@ void FreezeFrameWindow()
 					freeze_background.clear();
 
 					ulwi.hdcSrc = freeze_background.dc();
-					(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+					(void)submitSurface(freeze_background);
 
 					if (FreezeRecall <= 0) FreezeRecall = 0;
 					break;
@@ -269,4 +350,90 @@ void FreezeFrameWindow()
 	}
 	// 屏幕 DC 只由本线程持有，线程退出前配对释放。
 	if (hdcScreen) ReleaseDC(nullptr, hdcScreen);
+}
+
+
+int RunFreezeSurfaceResourceLifecycleTest() noexcept
+{
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	int failures = 0;
+	const auto check = [&](bool value, const char* message)
+	{
+		if (!value) { ++failures; std::fprintf(stderr, "[FreezeResources] FAIL %s\n", message); }
+	};
+	const HINSTANCE instance = GetModuleHandleW(nullptr);
+	constexpr wchar_t className[] = L"InkeysFreezeResourceLifecycle";
+	WNDCLASSW windowClass{};
+	windowClass.lpfnWndProc = DefWindowProcW;
+	windowClass.hInstance = instance;
+	windowClass.lpszClassName = className;
+	const ATOM atom = RegisterClassW(&windowClass);
+	if (!atom) return 2;
+	const HWND hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+		className, L"", WS_POPUP, -32000, -32000, 64, 47, nullptr, nullptr, instance, nullptr);
+	if (!hwnd) { UnregisterClassW(className, instance); return 2; }
+	const bool previousOwner = WhiteboardFreezeSurfaceOwned();
+	SetWhiteboardFreezeSurfaceOwned(false);
+	const DWORD baselineGdi = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+	unsigned submissions = 0;
+	bool failSubmission = false;
+	const auto submit = [&](const Inkeys::Graphics::DibSurface& surface)
+	{
+		++submissions;
+		POINT destination{ -32000, -32000 }, source{};
+		SIZE size{ surface.width(), surface.height() };
+		BLENDFUNCTION blend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+		UPDATELAYEREDWINDOWINFO info{};
+		info.cbSize = failSubmission ? 0 : sizeof(info);
+		info.pptDst = &destination; info.pptSrc = &source; info.psize = &size;
+		info.hdcSrc = surface.dc(); info.pblend = &blend; info.dwFlags = ULW_ALPHA;
+		return SubmitFreezeSurface(hwnd, &info, false);
+	};
+	FreezeSurfaceResources resources;
+	check(resources.PayloadBytes() == 0 && resources.frame.empty(), "cold owner has no pixel allocation");
+	check(resources.Ensure(64, 47), "real DIB is prepared for the first frame");
+	resources.frame.clear();
+	check(submit(resources.frame), "real transparent initial ULW succeeds");
+	resources.Release();
+	check(resources.PayloadBytes() == 0 && GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == baselineGdi,
+		"successful first frame can release its DIB and GDI objects");
+	const unsigned initialSubmissions = submissions;
+	for (unsigned repeat = 0; repeat < 8; ++repeat)
+		check(resources.RetireIfUnused(false, false, submit), "empty idle owner stays retired");
+	check(submissions == initialSubmissions, "idle does not allocate or submit again");
+	check(resources.Ensure(64, 47) && resources.pptSign.resize(16, 16), "reentry creates real frame and sign surfaces");
+	resources.frame.clear(0x80402010u);
+	check(submit(resources.frame), "colored active frame is really submitted");
+	const auto activeBytes = resources.PayloadBytes();
+	check(!resources.RetireIfUnused(true, false, submit) && resources.PayloadBytes() == activeBytes,
+		"active owner retains its pixel payload");
+	failSubmission = true;
+	check(!resources.RetireIfUnused(false, false, submit) && resources.PayloadBytes() == activeBytes,
+		"failed real transparent ULW retains payload for retry");
+	failSubmission = false;
+	check(resources.RetireIfUnused(false, false, submit) && resources.PayloadBytes() == 0,
+		"successful transparent retry releases frame and sign");
+	check(resources.Ensure(80, 55), "another session obtains current dimensions");
+	resources.frame.clear(0xFF102030u);
+	check(submit(resources.frame), "second active frame is committed");
+	SetWhiteboardFreezeSurfaceOwned(true);
+	const unsigned beforeWhiteboardRetirement = submissions;
+	check(resources.RetireIfUnused(true, true, submit) && resources.PayloadBytes() == 0
+		&& submissions == beforeWhiteboardRetirement, "whiteboard handoff frees only our pixels without a transparent submission");
+	SetWhiteboardFreezeSurfaceOwned(false);
+	check(resources.Ensure(64, 47), "new legacy owner can reenter after whiteboard");
+	resources.frame.clear();
+	check(submit(resources.frame), "new owner submits a new transparent frame instead of reusing an old proof");
+	resources.Release();
+	check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == baselineGdi, "all session DIB/DC objects return to baseline");
+	SetWhiteboardFreezeSurfaceOwned(previousOwner);
+	DestroyWindow(hwnd);
+	UnregisterClassW(className, instance);
+	std::fprintf(stderr, "[FreezeResources] failures=%d resource_bytes_active=%llu resource_bytes_idle=%llu submissions=%u\n",
+		failures, static_cast<unsigned long long>(activeBytes),
+		static_cast<unsigned long long>(resources.PayloadBytes()), submissions);
+	return failures ? 1 : 0;
+#else
+	return 2;
+#endif
 }

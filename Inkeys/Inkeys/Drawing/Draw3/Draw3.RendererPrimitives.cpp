@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.DiagnosticOutput.h"
+#include "Draw3.EraserCursor.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -15,6 +16,8 @@
 #include <DirectXMath.h>
 #include <iostream>
 #include <span>
+#include <utility>
+#include <vector>
 #include <windows.h>
 #include <wrl/client.h>
 
@@ -46,7 +49,8 @@ namespace Inkeys::Drawing::Draw3
 		// 圆角工具使用极短胶囊段生成点击圆点；平头笔由独立 primitive 路径处理。
 		dotPoints[0] = points.front();
 		InkPoint dotEnd = points.front();
-		dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
+		if (shape != StrokeShape::EraseRectSweep)
+			dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
 		dotPoints[1] = dotEnd;
 		return DrawStroke(dotPoints, color, shape, operatorKind);
 	}
@@ -159,7 +163,8 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	int InkRenderer::DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
-		ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, InkOperatorKind operatorKind)
+		ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, InkOperatorKind operatorKind,
+		ID3D11BlendState* blendStateOverride, float cornerRadiusOverride)
 	{
 		if (primitives.empty()) return 0;
 		if (!IsLineShapePrimitive(kind) && !IsRectangleShapePrimitive(kind)) return -1;
@@ -195,7 +200,8 @@ namespace Inkeys::Drawing::Draw3
 			constants->shapeType = static_cast<float>(static_cast<uint32_t>(kind));
 			constants->bufferOffset = bufferOffset;
 			constants->operatorKind = static_cast<uint32_t>(operatorKind);
-			constants->padding[0] = shapeRoundedCornerRadiusPixels_;
+			constants->padding[0] = cornerRadiusOverride >= 0.0f
+				? cornerRadiusOverride : shapeRoundedCornerRadiusPixels_;
 			constants->padding[1] = 0.0f;
 			constants->padding[2] = 0.0f;
 			context->Unmap(globalCB.Get(), 0);
@@ -209,7 +215,8 @@ namespace Inkeys::Drawing::Draw3
 			context->VSSetConstantBuffers(0, 1, constantBuffers);
 			context->PSSetShader(pixelShader.Get(), nullptr, 0);
 			context->PSSetConstantBuffers(0, 1, constantBuffers);
-			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
+			context->OMSetBlendState(blendStateOverride ? blendStateOverride
+				: strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
 			context->RSSetState(rasterState.Get());
 			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
 
@@ -240,6 +247,79 @@ namespace Inkeys::Drawing::Draw3
 		DrawShapePrimitives(primitive, ShapePrimitiveKind::FilledRectangle,
 			DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
 		context->RSSetViewports(1, &savedViewport);
+	}
+
+	void InkRenderer::InvalidateEraserCursorCache() noexcept
+	{
+		if (context)
+		{
+			ID3D11ShaderResourceView* empty[] = { nullptr };
+			context->PSSetShaderResources(15, 1, empty);
+		}
+		std::vector<EraserCursorSprite>().swap(eraserCursorSprites_);
+	}
+
+	InkRenderer::EraserCursorSprite* InkRenderer::EnsureEraserCursorSprite(
+		const DrawingCursorAppearance& appearance) noexcept
+	{
+		if (!device || !eraserCursorSampler_) return nullptr;
+		const float drawShortSide = std::min(appearance.width, appearance.height);
+		if (!std::isfinite(appearance.eraserBaseShortSide) || appearance.eraserBaseShortSide <= 0.0f ||
+			!std::isfinite(appearance.eraserDpiScale) || appearance.eraserDpiScale <= 0.0f)
+			return nullptr;
+		try
+		{
+			auto found = std::find_if(eraserCursorSprites_.begin(), eraserCursorSprites_.end(),
+				[&](const EraserCursorSprite& sprite) { return sprite.recipe.appearance == appearance.eraserCursor; });
+			const EraserCursorRecipe recipe = ResolveEraserCursorRecipe(appearance.eraserCursor,
+				appearance.eraserBaseShortSide, appearance.eraserDpiScale, drawShortSide,
+				found == eraserCursorSprites_.end() ? nullptr : &found->recipe);
+			if (found != eraserCursorSprites_.end() && found->recipe == recipe)
+				return found->srv ? &*found : nullptr;
+			if (found == eraserCursorSprites_.end())
+			{
+				eraserCursorSprites_.emplace_back();
+				found = eraserCursorSprites_.end() - 1;
+			}
+			// 先登记尝试配方；失败后等外观/尺寸/DPI或设备变化，避免逐帧重复分配。
+			found->texture.Reset();
+			found->srv.Reset();
+			found->recipe = recipe;
+			found->width = found->height = 0;
+			const auto raster = RasterizeEraserCursor(recipe.appearance, recipe.shortSidePx,
+				ResolveEraserCursorCornerRadius(recipe.baseShortSidePx, recipe.dpiScale, recipe.shortSidePx));
+			if (raster.levels.empty()) return nullptr;
+			std::vector<D3D11_SUBRESOURCE_DATA> initialData(raster.levels.size());
+			for (size_t level = 0; level < raster.levels.size(); ++level)
+			{
+				initialData[level].pSysMem = raster.levels[level].bgra.data();
+				initialData[level].SysMemPitch = raster.levels[level].width * 4;
+			}
+			D3D11_TEXTURE2D_DESC description = {};
+			description.Width = raster.levels.front().width;
+			description.Height = raster.levels.front().height;
+			description.MipLevels = static_cast<UINT>(raster.levels.size());
+			description.ArraySize = 1;
+			description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			description.SampleDesc.Count = 1;
+			description.Usage = D3D11_USAGE_IMMUTABLE;
+			description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+			// Win7 WARP 也直接上传完整 mip，不依赖共享设备或 GenerateMips。
+			if (FAILED(device->CreateTexture2D(&description, initialData.data(), texture.GetAddressOf())) ||
+				FAILED(device->CreateShaderResourceView(texture.Get(), nullptr, srv.GetAddressOf())))
+				return nullptr;
+			found->width = description.Width;
+			found->height = description.Height;
+			found->texture = std::move(texture);
+			found->srv = std::move(srv);
+			return &*found;
+		}
+		catch (...)
+		{
+			return nullptr;
+		}
 	}
 
 	void InkRenderer::DrawTransientDrawingCursor(const DrawingCursorVisual& visual)
@@ -327,15 +407,23 @@ namespace Inkeys::Drawing::Draw3
 			return;
 		}
 		const DrawingCursorAppearance& appearance = visual.appearance;
+		const bool spriteCursor = appearance.shape == DrawingCursorShape::EraserSprite;
+		EraserCursorSprite* sprite = spriteCursor ? EnsureEraserCursorSprite(appearance) : nullptr;
+		if (spriteCursor && !sprite) return;
 		const float shapeType = appearance.shape == DrawingCursorShape::Circle ? 4.0f
 			: appearance.shape == DrawingCursorShape::Rectangle ? 5.0f
 			: appearance.shape == DrawingCursorShape::PenIcon ? 21.0f
-			: appearance.shape == DrawingCursorShape::Arrow ? 22.0f : 6.0f;
-		// 只移动瞬态 quad 中心，输入/墨迹坐标仍是 visual.x/y 的笔尖热点。
+			: appearance.shape == DrawingCursorShape::Arrow ? 22.0f
+			: spriteCursor ? 24.0f : 6.0f;
+		const float spriteScale = spriteCursor
+			? std::min(appearance.width, appearance.height) / sprite->recipe.shortSidePx : 1.0f;
+		const float quadHalfWidth = spriteCursor ? sprite->width * 0.5f * spriteScale : appearance.width * 0.5f;
+		const float quadHalfHeight = spriteCursor ? sprite->height * 0.5f * spriteScale : appearance.height * 0.5f;
+		// 精灵包含透明 AA 留白，整张纹理随形状等比缩放；输入热点仍是原中心。
 		const InkPoint cursorData[2] = {
 			{ visual.x + appearance.centerOffsetX, visual.y + appearance.centerOffsetY,
-				appearance.width * 0.5f, appearance.height * 0.5f },
-			{ appearance.outlineWidth, appearance.fillAlpha, appearance.outlineOpacity + 1.0f, 0.0f }
+				quadHalfWidth, quadHalfHeight },
+			{ appearance.outlineWidth, appearance.fillAlpha, appearance.outlineOpacity + 1.0f, appearance.outerOutlineWidth }
 		};
 
 		const HRESULT inkUploadResult = UploadStructuredBuffer(inkDataBuffer.Get(), cursorData, sizeof(cursorData),
@@ -380,6 +468,13 @@ namespace Inkeys::Drawing::Draw3
 		context->VSSetConstantBuffers(0, 1, constantBuffers);
 		context->PSSetShader(pixelShader.Get(), nullptr, 0);
 		context->PSSetConstantBuffers(0, 1, constantBuffers);
+		if (spriteCursor)
+		{
+			ID3D11ShaderResourceView* spriteResources[] = { sprite->srv.Get() };
+			ID3D11SamplerState* spriteSamplers[] = { eraserCursorSampler_.Get() };
+			context->PSSetShaderResources(15, 1, spriteResources);
+			context->PSSetSamplers(1, 1, spriteSamplers);
+		}
 		// Cursor PS 直接输出 premultiplied Add 和 Retain，复用 resolve blend 叠到 backbuffer。
 		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
@@ -390,6 +485,7 @@ namespace Inkeys::Drawing::Draw3
 
 		ID3D11ShaderResourceView* nullResource[] = { nullptr };
 		context->VSSetShaderResources(0, 1, nullResource);
+		if (spriteCursor) context->PSSetShaderResources(15, 1, nullResource);
 	}
 
 }

@@ -21,7 +21,21 @@ struct SettingSignStruct
 };
 SettingSignStruct settingSign[14];
 ID3D11ShaderResourceView* TextureSettingSign[14];
+// 仅运行时窗口图标保留小幅原始像素；PNG 资源只记录可重建配方。
 std::array<std::vector<unsigned char>, 14> settingTexturePixels;
+enum class SettingTextureConversion { StraightBgra, WhiteAlphaMask };
+struct SettingTextureRecipe
+{
+	LPCWSTR resourceName = nullptr;
+	int requestedWidth = 0, requestedHeight = 0;
+	int expectedWidth = 0, expectedHeight = 0;
+	SettingTextureConversion conversion = SettingTextureConversion::StraightBgra;
+};
+std::array<SettingTextureRecipe, 14> settingTextureRecipes;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+int settingTextureTestFailSlot = -1;
+bool settingTextureTestFailView = false;
+#endif
 
 export float settingGlobalScale = 1.0f;
 
@@ -154,19 +168,19 @@ bool LoadTextureFromMemory(const unsigned char* image_data, int width, int heigh
 	if (!image_data || width <= 0 || height <= 0 || !out_texture || !g_pd3dDevice)
 		return false;
 
-	*out_texture = nullptr;
-	for (std::size_t textureIndex = 0; textureIndex < std::size(TextureSettingSign);
-		++textureIndex)
+	std::size_t textureIndex = std::size(TextureSettingSign);
+	for (std::size_t index = 0; index < std::size(TextureSettingSign); ++index)
+		if (out_texture == &TextureSettingSign[index]) { textureIndex = index; break; }
+	std::vector<unsigned char> iconPixels;
+	if (textureIndex == 0 && settingTexturePixels[0].data() != image_data)
 	{
-		if (out_texture != &TextureSettingSign[textureIndex]) continue;
-		settingSign[textureIndex] = { width, height };
-		if (settingTexturePixels[textureIndex].data() != image_data)
-		{
-			settingTexturePixels[textureIndex].assign(image_data,
-				image_data + static_cast<std::size_t>(width) * height * 4);
-		}
-		break;
+		try { iconPixels.assign(image_data, image_data + static_cast<std::size_t>(width) * height * 4); }
+		catch (...) { return false; }
 	}
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	if (settingTextureTestFailSlot == static_cast<int>(textureIndex) && !settingTextureTestFailView)
+		return false;
+#endif
 	D3D11_TEXTURE2D_DESC textureDesc = {};
 	textureDesc.Width = static_cast<UINT>(width);
 	textureDesc.Height = static_cast<UINT>(height);
@@ -190,32 +204,31 @@ bool LoadTextureFromMemory(const unsigned char* image_data, int width, int heigh
 	viewDesc.Format = textureDesc.Format;
 	viewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 	viewDesc.Texture2D.MipLevels = 1;
-	const HRESULT hr = g_pd3dDevice->CreateShaderResourceView(texture, &viewDesc, out_texture);
-	// SRV 成功后会持有 texture 引用，临时 texture 可立即释放。
+	ID3D11ShaderResourceView* candidate = nullptr;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+	const HRESULT hr = settingTextureTestFailSlot == static_cast<int>(textureIndex) && settingTextureTestFailView
+		? E_OUTOFMEMORY : g_pd3dDevice->CreateShaderResourceView(texture, &viewDesc, &candidate);
+#else
+	const HRESULT hr = g_pd3dDevice->CreateShaderResourceView(texture, &viewDesc, &candidate);
+#endif
+	// 两阶段成功后才发布 SRV、尺寸和图标备份，失败不留下半套恢复状态。
 	texture->Release();
-	if (FAILED(hr))
+	if (FAILED(hr)) return false;
+	if (*out_texture) (*out_texture)->Release();
+	*out_texture = candidate;
+	if (textureIndex < std::size(TextureSettingSign))
 	{
-		*out_texture = nullptr;
-		return false;
+		settingSign[textureIndex] = { width, height };
+		if (textureIndex == 0 && !iconPixels.empty()) settingTexturePixels[0].swap(iconPixels);
+		else if (textureIndex != 0) std::vector<unsigned char>().swap(settingTexturePixels[textureIndex]);
 	}
 	return true;
 }
 
-bool RecreateSettingTextures()
-{
-	CleanupSettingTextures();
-	for (std::size_t index = 0; index < settingTexturePixels.size(); ++index)
-	{
-		const auto& pixels = settingTexturePixels[index];
-		if (pixels.empty()) continue;
-		if (!LoadTextureFromMemory(pixels.data(), settingSign[index].width,
-			settingSign[index].height, &TextureSettingSign[index]) && index < 12)
-			return false; // 12/13 是可选演示 atlas，重建失败只降级插图。
-	}
-	return true;
-}
+bool RecreateSettingTextures();
 
 void CleanupSettingTextureCache()
 {
-	for (auto& pixels : settingTexturePixels) pixels.clear();
+	for (auto& pixels : settingTexturePixels) std::vector<unsigned char>().swap(pixels);
+	settingTextureRecipes = {};
 }

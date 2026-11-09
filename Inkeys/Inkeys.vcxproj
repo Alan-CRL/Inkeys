@@ -512,6 +512,7 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.EraserCursor.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PalmEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
@@ -1009,6 +1010,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.StatusIndicator.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RecallChrome.cppm" />
@@ -1081,6 +1083,10 @@
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -1137,6 +1143,7 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererDebugOverlay.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
@@ -1228,6 +1235,14 @@
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barAutoEraser.svg" />
+    <None Include="src\UI\barStatusSlideshow.svg" />
+    <None Include="src\UI\barStatusPin.svg" />
+    <None Include="src\UI\barStatusNewVersion.svg" />
+    <None Include="src\UI\barStatusStar.svg" />
+    <None Include="src\UI\barStatusBell.svg" />
+    <None Include="src\UI\barStatusInfo.svg" />
+    <None Include="src\UI\barStatusBolt.svg" />
+    <None Include="src\UI\barPalmEraser.svg" />
     <None Include="src\UI\barShapeStraightLine.svg" />
     <None Include="src\UI\barShapeRectangle.svg" />
     <None Include="src\UI\color\colorSun.svg" />
@@ -1265,9 +1280,11 @@
     <None Include="src\UI\barInfo.svg" />
     <None Include="src\UI\barQuestion.svg" />
     <None Include="src\UI\barCloseSmall.svg" />
+    <None Include="src\UI\barCloseWhiteboard.svg" />
     <None Include="src\UI\barThicknessAdjust.svg" />
     <None Include="src\UI\fluentCheckmark12Filled.svg" />
     <None Include="src\UI\barPierce.svg" />
+    <None Include="src\UI\barCanvasDebug.svg" />
     <None Include="src\UI\barRecall.svg" />
     <None Include="src\UI\barRedo.svg" />
     <None Include="src\UI\barSelect.svg" />

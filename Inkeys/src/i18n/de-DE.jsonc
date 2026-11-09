@@ -46,6 +46,12 @@
         "Mode": "Modus der unteren Leiste",
         "Centered": "Zentriert"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Präsentation",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Neue Version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Leeren",
@@ -98,6 +104,7 @@
         "WhiteboardGridLabel": "Raster",
         "WhiteboardUnsavedLabel": "Einige Seiten sind nicht gespeichert",
         "FreezeLabel": "Fixieren",
+        "CanvasDebugLabel": "Debug-Ansicht",
         "EndPresentationLabel": "Showende",
         "SettingsLabel": "Optionen",
         "MoreLabel": "Mehr"
@@ -156,8 +163,7 @@
         "ReadFailed": "Lesen",
         "PresentFailed": "Anzeige",
         "Failed": "Fehler",
-        "Recovering": "Wiederherst.",
-        "Loading": "Laden",
+        "Recovering": "Wiederh.",
         "Retry": "Erneut",
         "Wait": "Warten",
         "RetryCanvas": "Zeichenfläche erneut laden",
@@ -692,7 +698,26 @@
           "E": "Grafiktabletts ohne Windows Ink senden ihre Eingaben meist als vom Treiber eingespeiste Maus. Bei aktivierter Option nutzt diese Maus die Zeigereinstellungen des Grafiktabletts; Software wie Remotedesktop, die ebenfalls Mauseingaben einspeist, kann fälschlich erkannt werden.",
           "Unavailable": "Dieses System kann die Eingabequelle nicht unterscheiden; die Option ist nicht verfügbar."
         },
+        "Eraser":
+        {
+          "N": "Radierer-Cursor",
+          "E": "Die Form bestimmt auch den tatsächlichen Radierbereich (Rechtecke mit eckigen Ecken); Muster und Hell/Dunkel ändern nur das Aussehen des Cursors.",
+          "Appearance": "Darstellung",
+          "Light": "Hell",
+          "Dark": "Dunkel",
+          "Circle": "Kreis",
+          "Rectangle": "Rechteck",
+          "Square": "Quadrat",
+          "Grips": "Klassisch",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Funkeln"
+        },
         "FineControl": "Feinsteuerung",
+        "OpacitySection": "Deckkraft",
+        "PenOpacity": "Stift-Cursor-Deckkraft",
+        "HighlightPenFillOpacity": "Fülldeckkraft des Stift-Cursors (hervorgehoben)",
+        "DotOpacity": "Deckkraft des kleinen Punktcursors",
+        "HighlightDotFillOpacity": "Fülldeckkraft des kleinen Punktcursors (hervorgehoben)",
         "DotHideOnContact":
         {
           "N": "Kleinen Punktcursor beim Aufsetzen automatisch ausblenden",
@@ -701,8 +726,7 @@
           "ScreenPen": "Nur Bildschirmstift",
           "Tablet": "Nur Grafiktablett",
           "Both": "Bildschirmstift und Grafiktablett"
-        },
-        "Note": "Bei Bildschirmstift, Grafiktablett und Touch zeichnet die App „Maus“ als eigenen Pfeil; die Zeiger von Textmarker und Laserpointer, Formwerkzeuge und der spezielle Radierer-Zeiger bleiben von diesen Optionen unberührt."
+        }
       },
       "Effect":
       {
@@ -722,7 +746,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Unterbrochene Striche verbinden",
-          "E": "Setzt die Berührung kurz aus und in derselben Richtung fort, versucht die Anwendung, beide Teile zu einem Strich zu verbinden und Lücken zu verringern. Deaktiviert beendet das Abheben des Fingers den Strich."
+          "Touch": "Touch",
+          "PenTail": "Stiftradierer",
+          "E": "Erkennt Unterbrechungen der Berührung beim Schreiben anhand der Zeichenabsicht, korrigiert sie und kann den Zeichenzustand fortsetzen."
         }
       },
       "Eraser":
@@ -765,7 +791,34 @@
           "ParallelWritingMultiTouchNote": "Zeichnen mit mehreren Fingern ist aus; gleichzeitiges Schreiben und Radieren ist daher nicht verfügbar.",
           "ParallelWritingLaserMultiTouchNote": "Die Mehrfinger-Lasereingabe ist aus; gleichzeitiges Schreiben und Radieren ist mit dem Laser daher nicht verfügbar.",
           "ParallelWriting": "Schreiben während des Radierens erlauben",
-          "ParallelWritingDescription": "Der Handflächenradierer unterbricht keine anderen Eingaben, sodass weitergezeichnet werden kann. Für mehrere gleichzeitig schreibende Personen."
+          "ParallelWritingDescription": "Der Handflächenradierer beendet beim Aktivieren nur Touch-Eingaben in seiner Nähe und blockiert dort neues Aufsetzen; an anderen Stellen kann weitergeschrieben werden. Für mehrere gleichzeitig schreibende Personen.",
+          "CursorNoticeTitle": "Farbschema und Muster folgen den Zeigereinstellungen",
+          "CursorNoticeDescription": "Der Cursor des Handflächenradierers übernimmt Farbschema und Muster aus „Zeichnen › Zeiger › Radierer-Cursor“. Hier lässt sich nur die Form separat wählen.",
+          "Shape": "Form des Handflächenradierers",
+          "ShapeDescription": "Die Form bestimmt auch den tatsächlich radierten Bereich. „Standard folgen“ verwendet dieselbe Form wie der normale Radierer.",
+          "FollowDefault": "Standard folgen",
+          "SizeSection": "Größe des Handflächenradierers",
+          "SizeMode": "Methode zur Stärkeberechnung",
+          "SizeModeDescription": "Wählen, wie die Stärke des Handflächenradierers berechnet wird.",
+          "SizeModeDynamic": "Dynamische Stärke",
+          "SizeModeFollowDefault": "Fest (Standardradierer)",
+          "SizeModeFixed": "Fest (ohne Temporadierer)",
+          "SizeModeDynamicNote": "Aus der Berührungsfläche berechnet",
+          "SizeModeFollowDefaultNote": "Standardgröße des Radierers verwenden; bei aktiviertem „Autom. Größe“ abhängig von der Stiftgeschwindigkeit",
+          "SizeModeFixedNote": "Immer die Standardgröße des Radierers verwenden",
+          "SizeMethod": "Methode zur Größenberechnung",
+          "SizeMethodDescription": "Wie das Berührungsrechteck in die Radierergröße umgerechnet wird.",
+          "MethodEllipseArea": "Fläche der Innenellipse",
+          "MethodRectangleArea": "Rechteckfläche",
+          "MethodInscribedCircle": "Einbeschriebener Kreis",
+          "MethodCircumscribedCircle": "Umschriebener Kreis",
+          "MethodInscribedRectangle": "Einbeschriebenes Rechteck",
+          "MethodCircumscribedRectangle": "Umschriebenes Rechteck",
+          "MethodInscribedSquare": "Einbeschriebenes Quadrat",
+          "MethodCircumscribedSquare": "Umschriebenes Quadrat",
+          "SizeMethodShapeNote": "Aktuelle Form: {}",
+          "SizeMultiplier": "Faktor für die Radiergröße",
+          "SizeMultiplierDescription": "Seitenlänge oder Durchmesser des Radierers skalieren, ohne die Erkennung zu beeinflussen."
         },
         "Input":
         {
@@ -794,6 +847,33 @@
           "Note": "Für Großbildschirmgeräte nicht empfohlen."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Position",
+      "DesktopSection": "Desktop",
+      "PptSection": "Präsentation",
+      "WhiteboardSection": "Whiteboard",
+      "StartupE": "Legt fest, wo die Leiste beim nächsten Start erscheint. Die zentrierte obere Leiste ist nur eine Startposition und rastet nicht ein.",
+      "TypeBottomBar": "Zentrierte untere Leiste",
+      "TypeTopBar": "Zentrierte obere Leiste",
+      "TypeFloating": "Schwebendes Fenster",
+      "PositionLabel": "Position",
+      "ExpandRight": "Nach rechts aufklappen",
+      "ExpandLeft": "Nach links aufklappen",
+      "FloatBottomLeft": "Unten links",
+      "FloatBottomRight": "Unten rechts",
+      "FloatBottomCenter": "Unten mittig",
+      "PptAutoDock": "Beim Start der Präsentation in die zentrierte untere Leiste wechseln",
+      "PptAutoDockE": "Befindet sich die Leiste vorher in einem aktivierten Zustand, wird sie beim Start der Präsentation zur aufgeklappten zentrierten unteren Leiste und danach wiederhergestellt.",
+      "WhiteboardAutoDock": "Beim Öffnen des Whiteboards in die zentrierte untere Leiste wechseln",
+      "WhiteboardAutoDockE": "Befindet sich die Leiste vorher in einem aktivierten Zustand, wird sie beim Öffnen des Whiteboards zur aufgeklappten zentrierten unteren Leiste und danach wiederhergestellt.",
+      "StateBottom": "Zustand untere Leiste",
+      "StateBottomFolded": "Zustand untere Leiste (eingeklappt)",
+      "StateFloating": "Zustand schwebendes Fenster",
+      "StateFloatingFolded": "Zustand schwebendes Fenster (eingeklappt)",
+      "MainButtonDirection": "Richtung der Hauptschaltfläche",
+      "DirectionKeep": "Nicht ändern"
     },
     "Preset":
     {
@@ -967,8 +1047,6 @@
           "SuperTop": "SuperTop aktivieren",
           "SuperTopE1": "Die Anwendung nutzt einen dreistufigen Start, um ihre Fenster im Vordergrund zu halten.\n(SuperTop ist aktiv)",
           "SuperTopE2": "Die Anwendung nutzt einen dreistufigen Start, um ihre Fenster im Vordergrund zu halten.\n(SuperTop ist nicht aktiv)",
-          "Indicator": "SuperTop-Anzeige",
-          "IndicatorE": "Bei erfolgreicher Aktivierung oben rechts am Hauptsymbol eine Stecknadel anzeigen.",
           "SuperTopNote": "Zum Anwenden Inkeys neu starten. Der Start im Vordergrund kann scheitern."
         },
         "SupportNote": "Erfordert Windows 8 oder neuer."
@@ -1065,6 +1143,20 @@
       "ClassIslandProtocolNote": "Das URL-Navigationsprotokoll in den ClassIsland-Einstellungen registrieren.",
       "ClassIslandSwapNote": "Diese Komponente hat keine Wirkung, wenn in ClassIsland kein Stundenplan geladen ist."
     },
+    "StatusIndicator":
+    {
+      "N": "Statusanzeige",
+      "E": "Zeigt Laufzeitzustände wie Präsentationsmodus, SuperTop und Softwareupdates an der Hauptschaltfläche an.",
+      "Enable":
+      {
+        "N": "Statusanzeige aktivieren",
+        "E": "Wenn deaktiviert, zeigt die Hauptschaltfläche keine Statushinweise mehr an."
+      },
+      "Types": "Diese Zustände anzeigen",
+      "TypeSlideshow": "Präsentation",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Neue Version"
+    },
     "DesktopShortcut":
     {
       "N": "Verknüpfungen",
@@ -1137,6 +1229,25 @@
       {
         "N": "Bildrate anzeigen",
         "E": "Einmal pro Sekunde die durchschnittliche und unbegrenzte Bildrate der vorherigen Sekunde aktualisieren."
+      },
+      "CanvasSection": "Zeichenfläche",
+      "CanvasDebug":
+      {
+        "N": "Zeichenfläche debuggen",
+        "E": "Zeigt unter der Zeichenfläche Bildrate, Hardwarelast und Eingabepunkt-Informationen an und fügt der Hauptleiste eine Schaltfläche für die visuelle Fehlersuche hinzu."
+      },
+      "DelayWaiting":
+      {
+        "N": "Wartevorgänge verzögern",
+        "E": "Ladezeiten zum Beobachten der Animationen verlängern."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Statusanzeigen",
+        "N": "Statusanzeigen testen",
+        "E": "Zufällige Testzustände hinzufügen oder entfernen, um Animationen, lange Texte und Fortschrittsringe zu prüfen.",
+        "Add": "Zufälligen Status hinzufügen",
+        "Remove": "Einen Status entfernen"
       },
       "ConsoleSection": "Konsolenausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",

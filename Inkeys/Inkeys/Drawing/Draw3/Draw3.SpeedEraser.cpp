@@ -4,6 +4,64 @@
 #include <cmath>
 #include <limits>
 
+namespace Inkeys::Drawing::Draw3
+{
+	EraserSweepHull BuildEraserRectSweepHull(EraserShape shape,
+		float x0, float y0, float r0, float x1, float y1, float r1) noexcept
+	{
+		EraserSweepHull hull;
+		if (shape == EraserShape::Circle || !std::isfinite(x0) || !std::isfinite(y0) ||
+			!std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(r0) ||
+			!std::isfinite(r1) || r0 <= 0.0f || r1 <= 0.0f) return hull;
+		const auto a = ResolveEraserHalfSize(shape, r0), b = ResolveEraserHalfSize(shape, r1);
+		const std::array<EraserSweepPoint, 8> corners = {{
+			{ x0-a.x, y0-a.y }, { x0+a.x, y0-a.y }, { x0+a.x, y0+a.y }, { x0-a.x, y0+a.y },
+			{ x1-b.x, y1-b.y }, { x1+b.x, y1-b.y }, { x1+b.x, y1+b.y }, { x1-b.x, y1+b.y } }};
+		size_t start = 0;
+		for (size_t i = 1; i < corners.size(); ++i)
+			if (corners[i].x < corners[start].x ||
+				(corners[i].x == corners[start].x && corners[i].y < corners[start].y)) start = i;
+		size_t current = start;
+		// 两个同宽高比矩形的凸包最多六边，gift-wrap 同时处理同心包含和重复角点。
+		do
+		{
+			hull.vertices[hull.count++] = corners[current];
+			size_t next = current;
+			for (size_t i = 0; i < corners.size(); ++i)
+			{
+				const double ax = double(corners[next].x)-corners[current].x;
+				const double ay = double(corners[next].y)-corners[current].y;
+				const double bx = double(corners[i].x)-corners[current].x;
+				const double by = double(corners[i].y)-corners[current].y;
+				const double cross = ax*by-ay*bx;
+				if (next == current || cross < 0.0 ||
+					(cross == 0.0 && bx*bx+by*by > ax*ax+ay*ay)) next = i;
+			}
+			current = next;
+		} while ((corners[current].x != corners[start].x || corners[current].y != corners[start].y) &&
+			hull.count < hull.vertices.size());
+		return hull;
+	}
+
+	float EraserSweepSignedDistance(const EraserSweepHull& hull, EraserSweepPoint point) noexcept
+	{
+		if (hull.count < 3) return (std::numeric_limits<float>::infinity)();
+		double distanceSquared = (std::numeric_limits<double>::infinity)();
+		bool inside = true;
+		for (size_t i = 0; i < hull.count; ++i)
+		{
+			const auto a = hull.vertices[i], b = hull.vertices[(i+1)%hull.count];
+			const double dx = double(b.x)-a.x, dy = double(b.y)-a.y;
+			const double px = double(point.x)-a.x, py = double(point.y)-a.y;
+			inside &= dx*py-dy*px >= 0.0;
+			const double lengthSquared = dx*dx+dy*dy;
+			const double t = lengthSquared > 0.0 ? std::clamp((px*dx+py*dy)/lengthSquared, 0.0, 1.0) : 0.0;
+			distanceSquared = std::min(distanceSquared, (px-t*dx)*(px-t*dx)+(py-t*dy)*(py-t*dy));
+		}
+		return static_cast<float>((inside ? -1.0 : 1.0)*std::sqrt(distanceSquared));
+	}
+}
+
 namespace Inkeys::Drawing::Draw3::SpeedEraser
 {
 	namespace
@@ -499,7 +557,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	}
 
 	ContactLengthTransform ResolveContactLengthTransform(const ContactLengthMetrics& axis,
-		const ContactLengthMetrics& span, float positionScale) noexcept
+		const ContactLengthMetrics& span, float inkToCanvasScale, float inkToDigitizerScale) noexcept
 	{
 		ContactLengthTransform result;
 		result.logicalMin=span.logicalMin;result.logicalMax=span.logicalMax;
@@ -516,11 +574,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if(!std::isfinite(span.resolution) || span.resolution<=0)return fail(ContactAreaUnits::InvalidSpanResolution);
 		if(axis.logicalMax<=axis.logicalMin)return fail(ContactAreaUnits::InvalidAxisRange);
 		if(span.logicalMin<0 || span.logicalMax<=span.logicalMin)return fail(ContactAreaUnits::InvalidSpanRange);
-		if(!std::isfinite(positionScale) || positionScale==0)return fail(ContactAreaUnits::InvalidPositionScale);
-		// 相对长度只经过现有位置变换的线性部分：不减逻辑原点、不用平移、不再乘 contextScale。
-		// rawSpan / spanResolution * (spanCm / axisCm) * axisResolution * abs(positionScale)
+		if(!std::isfinite(inkToCanvasScale) || inkToCanvasScale==0)return fail(ContactAreaUnits::InvalidPositionScale);
+		if(!std::isfinite(inkToDigitizerScale) || inkToDigitizerScale==0)return fail(ContactAreaUnits::InvalidDigitizerScale);
+		// spanToAxis 得到设备轴计数，先除当前设备的 ink→digitizer 倍率，再映射到画布。
+		// 宽高是相对长度，不减逻辑原点、不应用位置平移；反向轴仍取正长度。
 		result.spanToAxis=static_cast<double>(axis.resolution)/span.resolution*(spanCm/axisCm);
-		result.spanToCanvas=result.spanToAxis*std::abs(static_cast<double>(positionScale));
+		result.spanToCanvas=result.spanToAxis*std::abs(static_cast<double>(inkToCanvasScale)/inkToDigitizerScale);
 		if(!std::isfinite(result.spanToCanvas) || result.spanToCanvas<=0 ||
 			result.spanToCanvas>std::numeric_limits<float>::max())
 			return fail(ContactAreaUnits::ConversionNonFinite);
@@ -559,7 +618,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		case ContactAreaUnits::UnsupportedLengthUnits:return ContactAreaReason::UnsupportedLengthUnits;
 		case ContactAreaUnits::InvalidAxisResolution:case ContactAreaUnits::InvalidSpanResolution:return ContactAreaReason::InvalidResolution;
 		case ContactAreaUnits::InvalidAxisRange:case ContactAreaUnits::InvalidSpanRange:return ContactAreaReason::InvalidRange;
-		case ContactAreaUnits::InvalidPositionScale:return ContactAreaReason::InvalidTransform;
+		case ContactAreaUnits::InvalidPositionScale:case ContactAreaUnits::InvalidDigitizerScale:return ContactAreaReason::InvalidTransform;
 		case ContactAreaUnits::ConversionNonFinite:return ContactAreaReason::NonFinite;
 		default:return ContactAreaReason::UnitsUnknown;
 		}
@@ -588,6 +647,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		case ContactAreaUnits::InvalidAxisRange:return "unverified-invalid-axis-range";
 		case ContactAreaUnits::InvalidSpanRange:return "unverified-invalid-span-range";
 		case ContactAreaUnits::InvalidPositionScale:return "unverified-invalid-position-scale";
+		case ContactAreaUnits::InvalidDigitizerScale:return "unverified-invalid-digitizer-scale";
 		case ContactAreaUnits::ConversionNonFinite:return "unverified-nonfinite-conversion";
 		default:return "missing";
 		}

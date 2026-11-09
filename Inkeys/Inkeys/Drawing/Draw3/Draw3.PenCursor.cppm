@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.EraserCursor.h"
 #include "Draw3.CursorSettings.h"
 
 #include <atomic>
@@ -21,7 +22,8 @@ export namespace Inkeys::Drawing::Draw3
 		Rectangle,
 		EraserGripCircle,
 		PenIcon,
-		Arrow
+		Arrow,
+		EraserSprite
 	};
 
 	// 描述应用内瞬态光标外观；颜色分量使用 [0,1]，尺寸使用画布像素。
@@ -36,6 +38,8 @@ export namespace Inkeys::Drawing::Draw3
 		float opacity = 1.0f;
 		float fillAlpha = 0.5f;
 		float outlineWidth = 0.5f;
+		// 仅高亮样式使用：最外圈纯黑边的物理像素宽度，向内占用原轮廓。
+		float outerOutlineWidth = 0.0f;
 		float outlineRed = 184.0f / 255.0f;
 		float outlineGreen = 184.0f / 255.0f;
 		float outlineBlue = 184.0f / 255.0f;
@@ -44,6 +48,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 图形中心相对输入热点的偏移；笔形左上尖端仍精确对应原 sample。
 		float centerOffsetX = 0.0f;
 		float centerOffsetY = 0.0f;
+		// 精灵配方与动态尺寸分开；移动和档内缩放不触发烘焙。
+		EraserCursorAppearance eraserCursor = {};
+		float eraserBaseShortSide = 0.0f;
+		float eraserDpiScale = 1.0f;
 	};
 
 	// 仅表示持久 cursor owner；Touch 只可作为事件类型，不得长期接管 owner。
@@ -266,7 +274,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 触摸接触点的软/硬笔光标；None 不生成 visual，由调用方逐接触调用，抬起后随 runtime 消失。
 	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& penAppearance, CursorStyle style,
-		float dpiScale = 1.0f) noexcept;
+		float dpiScale = 1.0f, const CursorSettings* productSettings = nullptr) noexcept;
 	// 计算包含 1px AA 和 shader quad padding 的画布内脏区。
 	RECT DrawingCursorVisualBounds(const DrawingCursorVisual& visual,
 		int canvasWidth, int canvasHeight) noexcept;

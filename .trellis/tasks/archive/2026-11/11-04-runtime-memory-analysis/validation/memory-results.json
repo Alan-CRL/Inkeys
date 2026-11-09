@@ -1,0 +1,195 @@
+{
+  "statistics": "Mean of two independent process medians over each run's last 20 samples (~5s)",
+  "configuration": "Debug|ARM64",
+  "physical_primary_pixels": [
+    2880,
+    1920
+  ],
+  "startup_runs": [
+    {
+      "run": "before-startup",
+      "pid": 55316,
+      "exit_code_after_WM_CLOSE": 6,
+      "duration_seconds": 61.015,
+      "samples": 240,
+      "gdi_handles_final": 38,
+      "tail_private_median_MiB": 570.79296875,
+      "tail_working_set_median_MiB": 585.70703125,
+      "peak_private_bytes_MiB": 586.609375,
+      "peak_working_set_bytes_MiB": 602.12109375
+    },
+    {
+      "run": "before-startup-repeat",
+      "pid": 53276,
+      "exit_code_after_WM_CLOSE": 6,
+      "duration_seconds": 60.906,
+      "samples": 240,
+      "gdi_handles_final": 38,
+      "tail_private_median_MiB": 571.7265625,
+      "tail_working_set_median_MiB": 577.4375,
+      "peak_private_bytes_MiB": 578.22265625,
+      "peak_working_set_bytes_MiB": 586.0234375
+    },
+    {
+      "run": "after-startup",
+      "pid": 4996,
+      "exit_code_after_WM_CLOSE": 6,
+      "duration_seconds": 60.672,
+      "samples": 239,
+      "gdi_handles_final": 32,
+      "tail_private_median_MiB": 510.609375,
+      "tail_working_set_median_MiB": 519.94140625,
+      "peak_private_bytes_MiB": 513.74609375,
+      "peak_working_set_bytes_MiB": 524.03125
+    },
+    {
+      "run": "after-startup-repeat",
+      "pid": 18988,
+      "exit_code_after_WM_CLOSE": 6,
+      "duration_seconds": 60.891,
+      "samples": 240,
+      "gdi_handles_final": 32,
+      "tail_private_median_MiB": 509.71484375,
+      "tail_working_set_median_MiB": 514.55078125,
+      "peak_private_bytes_MiB": 514.24609375,
+      "peak_working_set_bytes_MiB": 522.55078125
+    }
+  ],
+  "aggregate": {
+    "tail_private_median": {
+      "before_bytes": 599009280,
+      "after_bytes": 534943744,
+      "saved_bytes": 64065536,
+      "before_MiB": 571.259765625,
+      "after_MiB": 510.162109375,
+      "saved_MiB": 61.09765625,
+      "reduction_percent": 10.69524932902542
+    },
+    "tail_working_set_median": {
+      "before_bytes": 609822720,
+      "after_bytes": 542371840,
+      "saved_bytes": 67450880,
+      "before_MiB": 581.572265625,
+      "after_MiB": 517.24609375,
+      "saved_MiB": 64.326171875,
+      "reduction_percent": 11.060735815156248
+    },
+    "peak_private_bytes": {
+      "before_bytes": 610707456,
+      "after_bytes": 538963968,
+      "saved_bytes": 71743488,
+      "before_MiB": 582.416015625,
+      "after_MiB": 513.99609375,
+      "saved_MiB": 68.419921875,
+      "reduction_percent": 11.747603094598537
+    },
+    "peak_working_set_bytes": {
+      "before_bytes": 622929920,
+      "after_bytes": 548710400,
+      "saved_bytes": 74219520,
+      "before_MiB": 594.072265625,
+      "after_MiB": 523.291015625,
+      "saved_MiB": 70.78125,
+      "reduction_percent": 11.914585833347033
+    }
+  },
+  "history_digest_records_equal": 66,
+  "history_private": [
+    {
+      "scenario": "pen_10",
+      "before_private_bytes": 58298368,
+      "after_private_bytes": 41668608,
+      "saved_bytes": 16629760
+    },
+    {
+      "scenario": "mixed_eraser_10",
+      "before_private_bytes": 58298368,
+      "after_private_bytes": 41668608,
+      "saved_bytes": 16629760
+    },
+    {
+      "scenario": "pen_100",
+      "before_private_bytes": 59047936,
+      "after_private_bytes": 42414080,
+      "saved_bytes": 16633856
+    },
+    {
+      "scenario": "mixed_eraser_100",
+      "before_private_bytes": 59076608,
+      "after_private_bytes": 42438656,
+      "saved_bytes": 16637952
+    },
+    {
+      "scenario": "pen_1000",
+      "before_private_bytes": 62693376,
+      "after_private_bytes": 46039040,
+      "saved_bytes": 16654336
+    },
+    {
+      "scenario": "mixed_eraser_1000",
+      "before_private_bytes": 62070784,
+      "after_private_bytes": 45711360,
+      "saved_bytes": 16359424
+    }
+  ],
+  "regions": {
+    "before-startup": {
+      "at_seconds": 46.281,
+      "totals": {
+        "private_commit": 564346880,
+        "mapped_commit": 93130752,
+        "image_commit": 494493696,
+        "other_commit": 0,
+        "reserve_address_bytes": 4962516992
+      },
+      "private_regions_2880x1920_BGRA": 4
+    },
+    "before-startup-repeat": {
+      "at_seconds": 46.297,
+      "totals": {
+        "private_commit": 565358592,
+        "mapped_commit": 93130752,
+        "image_commit": 494493696,
+        "other_commit": 0,
+        "reserve_address_bytes": 4962816000
+      },
+      "private_regions_2880x1920_BGRA": 4
+    },
+    "after-startup": {
+      "at_seconds": 46.438,
+      "totals": {
+        "private_commit": 501534720,
+        "mapped_commit": 93130752,
+        "image_commit": 494493696,
+        "other_commit": 0,
+        "reserve_address_bytes": 4961333248
+      },
+      "private_regions_2880x1920_BGRA": 1
+    },
+    "after-startup-repeat": {
+      "at_seconds": 46.344,
+      "totals": {
+        "private_commit": 500518912,
+        "mapped_commit": 93130752,
+        "image_commit": 494493696,
+        "other_commit": 0,
+        "reserve_address_bytes": 4962349056
+      },
+      "private_regions_2880x1920_BGRA": 1
+    }
+  },
+  "correctness_tests_final_passed": 10,
+  "uink_file_fixture_retry": {
+    "name": "uink-file-retry",
+    "exit_code": 0,
+    "duration_seconds": 101.843,
+    "reason": "Missing TestResults/release-hardening fixture base was created; no source or config change",
+    "original_first_error": "CreateFile lease on missing TestResults returned ERROR_FILE_NOT_FOUND=2; missing child returned ERROR_PATH_NOT_FOUND=3"
+  },
+  "wpr": {
+    "admin": false,
+    "startExit": -2147024891,
+    "recorded": false,
+    "reason": " \tAccess is denied.   \tProfile Id: VirtualAllocation.Verbose.File \t \tError code: 0x80070005 \t \tAccess is denied.  \t \t"
+  }
+}

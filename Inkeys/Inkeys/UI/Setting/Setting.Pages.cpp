@@ -9,6 +9,7 @@
 #include <array>
 #include "imgui/imgui_internal.h"
 #include "../../Drawing/Draw3/Draw3.CursorSettings.h"
+#include "../StartupPlacement.h"
 
 import Inkeys.Conv.Text;
 
@@ -592,20 +593,57 @@ namespace Inkeys::UI::Setting::Design
 	namespace
 	{
 		// 与 Draw3 实际光标共用尺寸/描边常量；预览是近似，不替代真实绘制验收。
-		void DrawCursorPreview(const LayoutRect& rect, Inkeys::Drawing::Draw3::CursorStyle style)
+		std::array<ImVec2, 5> InsetCursorPreviewPolygon(const ImVec2 points[5], float distance)
+		{
+			const auto cross = [](ImVec2 left, ImVec2 right) { return left.x * right.y - left.y * right.x; };
+			float area = 0.0F;
+			for (int index = 0; index < 5; ++index) area += cross(points[index], points[(index + 1) % 5]);
+			const float direction = area >= 0.0F ? 1.0F : -1.0F;
+			std::array<ImVec2, 5> result{};
+			for (int index = 0; index < 5; ++index)
+			{
+				const ImVec2 previous = points[(index + 4) % 5], current = points[index], next = points[(index + 1) % 5];
+				const ImVec2 edges[2]{ { current.x - previous.x, current.y - previous.y },
+					{ next.x - current.x, next.y - current.y } };
+				ImVec2 normals[2]{};
+				for (int edge = 0; edge < 2; ++edge)
+				{
+					const float length = (std::max)(0.0001F, std::sqrt(edges[edge].x * edges[edge].x + edges[edge].y * edges[edge].y));
+					normals[edge] = { -edges[edge].y / length * direction, edges[edge].x / length * direction };
+				}
+				const ImVec2 origin{ previous.x + normals[0].x * distance, previous.y + normals[0].y * distance };
+				const ImVec2 other{ current.x + normals[1].x * distance, current.y + normals[1].y * distance };
+				const float denominator = cross(edges[0], edges[1]);
+				if (std::abs(denominator) < 0.0001F)
+					result[index] = { current.x + (normals[0].x + normals[1].x) * 0.5F * distance,
+						current.y + (normals[0].y + normals[1].y) * 0.5F * distance };
+				else
+				{
+					const float t = cross({ other.x - origin.x, other.y - origin.y }, edges[1]) / denominator;
+					result[index] = { origin.x + edges[0].x * t, origin.y + edges[0].y * t };
+				}
+			}
+			return result;
+		}
+
+		void DrawCursorPreview(const LayoutRect& rect, Inkeys::Drawing::Draw3::CursorStyle style, float opacity)
 		{
 			namespace Cursor = Inkeys::Drawing::Draw3;
 			ImDrawList* draw = ImGui::GetWindowDrawList();
 			const ImVec2 min(rect.left, rect.top), max(rect.right, rect.bottom);
 			const float corner = Pixels(4.0F);
-			draw->AddRectFilled(min, max, IM_COL32(52, 54, 60, 255), corner);
-			draw->AddRect(min, max, IM_COL32(255, 255, 255, 36), corner);
+			const bool dark = IsDarkMode();
+			draw->AddRectFilled(min, max, dark ? IM_COL32(52, 54, 60, 255) : Card, corner);
+			draw->AddRect(min, max, dark ? IM_COL32(255, 255, 255, 36) : Stroke, corner);
 			const ImVec2 center((min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F);
-			const ImU32 ink = IM_COL32(255, 15, 0, 255);
+			const int opacityByte = static_cast<int>(std::round(std::clamp(opacity, 0.25F, 1.0F) * 255.0F));
+			const ImU32 ink = IM_COL32(255, 15, 0, opacityByte);
 			const bool highlight = Cursor::IsHighlightedCursorStyle(style);
 			const float unit = Pixels(1.0F);
-			const float edgeWidth = (std::max)(1.0F, (highlight ? Cursor::kCursorHighlightEdgeDip : Cursor::kCursorPlainEdgeDip) * unit);
-			const ImU32 edge = highlight ? IM_COL32(245, 245, 245, 255) : IM_COL32(184, 184, 184, 255);
+			const float edgeWidth = style == Cursor::CursorStyle::HighlightDot
+				? Cursor::CursorHighlightDotEdgeWidthPx(10.0F * unit, unit)
+				: (std::max)(1.0F, (highlight ? Cursor::kCursorHighlightEdgeDip : Cursor::kCursorPlainEdgeDip) * unit);
+			const ImU32 edge = highlight ? IM_COL32(245, 245, 245, 255) : IM_COL32(184, 184, 184, opacityByte);
 			switch (style)
 			{
 			case Cursor::CursorStyle::Arrow:
@@ -645,8 +683,17 @@ namespace Inkeys::UI::Setting::Design
 			{
 				// 小圆点沿用实际光标的圆形预览（随笔宽，这里取常见笔宽）。
 				const float radius = 5.0F * unit;
-				draw->AddCircleFilled(center, radius, IM_COL32(255, 15, 0, 64));
-				draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				if (highlight)
+				{
+					draw->AddCircleFilled(center, radius, IM_COL32(0, 0, 0, 255));
+					draw->AddCircleFilled(center, radius - Cursor::kCursorHighlightOuterEdgePx, edge);
+					draw->AddCircleFilled(center, radius - Cursor::kCursorHighlightOuterEdgePx - edgeWidth, ink);
+				}
+				else
+				{
+					draw->AddCircleFilled(center, radius, ink);
+					draw->AddCircle(center, radius, edge, 0, edgeWidth);
+				}
 				break;
 			}
 			case Cursor::CursorStyle::Pen:
@@ -660,15 +707,26 @@ namespace Inkeys::UI::Setting::Design
 					return ImVec2(tip.x + (along * axis + across * axis) * unit, tip.y + (along * axis - across * axis) * unit);
 				};
 				const ImVec2 points[5]{ at(0, 0), at(6, 3.4F), at(30, 3.4F), at(30, -3.4F), at(6, -3.4F) };
-				draw->AddConvexPolyFilled(points, 5, ink);
-				draw->AddPolyline(points, 5, edge, ImDrawFlags_Closed, edgeWidth);
+				if (highlight)
+				{
+					const auto light = InsetCursorPreviewPolygon(points, Cursor::kCursorHighlightOuterEdgePx);
+					const auto fill = InsetCursorPreviewPolygon(points, Cursor::kCursorHighlightOuterEdgePx + edgeWidth);
+					draw->AddConvexPolyFilled(points, 5, IM_COL32(0, 0, 0, 255));
+					draw->AddConvexPolyFilled(light.data(), 5, edge);
+					draw->AddConvexPolyFilled(fill.data(), 5, ink);
+				}
+				else
+				{
+					draw->AddConvexPolyFilled(points, 5, ink);
+					draw->AddPolyline(points, 5, edge, ImDrawFlags_Closed, edgeWidth);
+				}
 				break;
 			}
 			}
 		}
 	}
 
-	CursorPageEvents RenderCursorPage(CursorPageDraft& draft)
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft, const EraserCursorPreviewPresenter& preview)
 	{
 		namespace Cursor = Inkeys::Drawing::Draw3;
 		using Cursor::CursorDevice;
@@ -688,12 +746,20 @@ namespace Inkeys::UI::Setting::Design
 			for (int value = device == CursorDevice::Touch ? 0 : 1; value <= 5; ++value) items.push_back(styleNames[value]);
 			return items;
 		};
+		const auto opacityIndex = [](CursorStyle style)
+		{
+			return style == CursorStyle::HighlightPen ? 1 : style == CursorStyle::Dot ? 2
+				: style == CursorStyle::HighlightDot ? 3 : 0;
+		};
 		const auto row = [&](const char* id, const char* title, const char* description, const char* glyph,
 			CursorDevice device, int& index)
 		{
 			index = std::clamp(index, 0, Cursor::CursorStyleItemCount(device) - 1);
 			return ComboPreviewRow(id, title, description, glyph, index, itemsFor(device),
-				[&](const LayoutRect& area) { DrawCursorPreview(area, Cursor::CursorStyleFromItemIndex(device, index)); });
+				[&](const LayoutRect& area) {
+					const auto style = Cursor::CursorStyleFromItemIndex(device, index);
+					DrawCursorPreview(area, style, draft.opacity[opacityIndex(style)]);
+				});
 		};
 
 		SectionHeader(IA(cursor.Devices).c_str());
@@ -706,32 +772,70 @@ namespace Inkeys::UI::Setting::Design
 		events.tablet = row("##cursor-tablet", IA(cursor.Tablet.N).c_str(), IA(cursor.Tablet.E).c_str(), "\ue70f",
 			CursorDevice::Tablet, draft.tablet);
 
+		// 橡皮光标为独立分类，位于“按设备设置”与“数位板识别”之间。
+		SectionHeader(IA(cursor.Eraser.N).c_str());
+		{
+			const auto& eraser = cursor.Eraser;
+			draft.eraserShape = draft.eraserShape >= 0 && draft.eraserShape <= 2 ? draft.eraserShape : 0;
+			draft.eraserPattern = draft.eraserPattern >= 0 && draft.eraserPattern <= 2 ? draft.eraserPattern : 0;
+			draft.eraserTheme = draft.eraserTheme == 1 ? 1 : 0;
+			std::vector<PreviewSelectorGroup> groups(2);
+			groups[0].selectedIndex = &draft.eraserShape; groups[0].changed = &events.eraserShape;
+			groups[1].selectedIndex = &draft.eraserPattern; groups[1].changed = &events.eraserPattern;
+			groups[1].separatorBefore = true;
+			const char* shapeLabels[]{ eraser.Circle, eraser.Rectangle, eraser.Square };
+			const char* patternLabels[]{ eraser.Grips, eraser.Inkeys, eraser.Sparkle };
+			for (int index = 0; index < 3; ++index)
+			{
+				groups[0].items.push_back({ IA(shapeLabels[index]), [&, index](const LayoutRect& area) {
+					if (preview) preview(area, { static_cast<Cursor::EraserShape>(index),
+						static_cast<Cursor::EraserCursorPattern>(draft.eraserPattern), static_cast<Cursor::EraserCursorTheme>(draft.eraserTheme) }); } });
+				groups[1].items.push_back({ IA(patternLabels[index]), [&, index](const LayoutRect& area) {
+					if (preview) preview(area, { static_cast<Cursor::EraserShape>(draft.eraserShape),
+						static_cast<Cursor::EraserCursorPattern>(index), static_cast<Cursor::EraserCursorTheme>(draft.eraserTheme) }); } });
+			}
+			const auto inlineContent = InlinePreviewSelector("##eraser-cursor-options", std::move(groups));
+			const std::vector<std::string> themes{ IA(eraser.Light), IA(eraser.Dark) };
+			const float comboWidth = (std::max)(160.0F, (std::max)(ControlTextWidth(themes[0].c_str()),
+				ControlTextWidth(themes[1].c_str())) / Pixels(1) + 48.0F);
+			SettingRow("##eraser-cursor", IA(eraser.Appearance).c_str(), IA(eraser.E).c_str(), nullptr,
+				comboWidth, ControlHeight, [&](const LayoutRect&) {
+					events.eraserTheme = ComboBox("##select", &draft.eraserTheme, themes);
+				}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineContent);
+		}
+
 		SectionHeader(IA(cursor.PenDevices).c_str());
 		ImFluent::BeginDisabled(!draft.injectedAvailable);
 		events.injectedMouse = ToggleRow("##cursor-injected-mouse", IA(cursor.InjectedMouse.N).c_str(),
 			IA(cursor.InjectedMouse.E).c_str(), "\ue946", draft.injectedMouse,
 			draft.injectedAvailable ? nullptr : IA(cursor.InjectedMouse.Unavailable).c_str());
 		ImFluent::EndDisabled();
+
+		SectionHeader(IA(cursor.OpacitySection).c_str());
+		const float opacityActionWidth = (ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F)
+			+ SliderResetExtraWidthDip;
+		const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+		const char* opacityIds[4]{ "##cursor-pen-opacity", "##cursor-highlight-pen-opacity",
+			"##cursor-dot-opacity", "##cursor-highlight-dot-opacity" };
+		const char* opacityTitles[4]{ cursor.PenOpacity, cursor.HighlightPenFillOpacity,
+			cursor.DotOpacity, cursor.HighlightDotFillOpacity };
+		constexpr CursorStyle opacityStyles[4]{ CursorStyle::Pen, CursorStyle::HighlightPen,
+			CursorStyle::Dot, CursorStyle::HighlightDot };
+		for (int index = 0; index < 4; ++index)
 		{
-			// 说明以分号分成两行：前半为标题行，后半为说明行；无分号时整句作标题。
-			const std::string note = IA(cursor.Note);
-			size_t split = std::string::npos, skip = 1;
-			// 全角分号以 UTF-8 字节转义书写，不受源文件编码转换影响。
-			for (const char* separator : { "\xEF\xBC\x9B", ";" })
+			SettingRow(opacityIds[index], IA(opacityTitles[index]).c_str(), nullptr, index < 2 ? "\ue70f" : "\ue7c9",
+				opacityActionWidth, ControlHeight, [&](const LayoutRect& bounds) {
+					events.opacityChanged[index] = SliderResetAction(bounds, draft.opacity[index], 0.25F, 1.0F,
+						events.opacityActive[index], events.opacityReset[index], resetLabel.c_str());
+				});
+			if (events.opacityChanged[index])
+				draft.opacity[index] = std::round(draft.opacity[index] * 100.0F) / 100.0F;
+			if (events.opacityReset[index])
 			{
-				const size_t found = note.find(separator);
-				if (found != std::string::npos && (split == std::string::npos || found < split))
-				{ split = found; skip = std::strlen(separator); }
+				const float value = Cursor::DefaultCursorOpacityPercent(opacityStyles[index]) / 100.0F;
+				events.opacityChanged[index] |= draft.opacity[index] != value;
+				draft.opacity[index] = value;
 			}
-			const auto trim = [](std::string text)
-			{
-				const size_t first = text.find_first_not_of(" 	");
-				const size_t last = text.find_last_not_of(" 	");
-				return first == std::string::npos ? std::string() : text.substr(first, last - first + 1);
-			};
-			const std::string title = trim(split == std::string::npos ? note : note.substr(0, split));
-			const std::string detail = split == std::string::npos ? std::string() : trim(note.substr(split + skip));
-			Notice("##cursor-note", title.c_str(), detail.c_str(), ImFluentInfoSeverity_Informational);
 		}
 		SectionHeader(IA(cursor.FineControl).c_str());
 		const auto& hide = cursor.DotHideOnContact;
@@ -741,7 +845,7 @@ namespace Inkeys::UI::Setting::Design
 		return events;
 	}
 
-	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft)
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft, const EraserCursorPreviewPresenter& preview)
 	{
 		PalmEraserEvents events;
 		const auto& palm = I18nKey.SettingsUI.Draw.Eraser.PalmEraser;
@@ -845,8 +949,9 @@ namespace Inkeys::UI::Setting::Design
 				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, Pixels(ScrollbarTrackSize));
 				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarPadding, Pixels(ScrollbarPadding));
 				ImGui::SetNextWindowContentSize({ canvasWidth, canvasHeight });
+				// 预览沿用外层卡片背景，避免子窗口再次叠加半透明底色。
 				if (ImGui::BeginChild("##palm-eraser-preview-shapes", { innerWidth, canvasHeight + scrollReserve },
-					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar))
+					ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoBackground))
 				{
 					const auto top = ImGui::GetCursorScreenPos();
 					const ImVec2 start(top.x + (std::max)(inset, (innerWidth - size.x) * .5F), top.y + inset);
@@ -865,6 +970,8 @@ namespace Inkeys::UI::Setting::Design
 			ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, previewHeight });
 		}
 		EndCard();
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
+		// 适用工具归入精细控制，位于边擦边写上方。
 		const auto& pen = I18nKey.UI.Bar.DrawAttributes;
 		CheckboxGroup("##palm-eraser-tools", IA(palm.EnabledTools).c_str(), "\uedc6", {
 			{ IA(pen.SoftPenLabel), &draft.tools[0], &events.toolsChanged[0] },
@@ -874,7 +981,6 @@ namespace Inkeys::UI::Setting::Design
 			{ IA(I18nKey.UI.Centre.Eraser), &draft.tools[4], &events.toolsChanged[4] },
 			{ IA(I18nKey.UI.Bar.MainButtons.GeometryLabel), &draft.tools[5], &events.toolsChanged[5] },
 			{ IA(pen.BrushLabel), &draft.tools[6], &events.toolsChanged[6] } });
-		SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.SpeedEraser.FineControl).c_str());
 		std::string parallelNote;
 		// 全局多指关闭时优先说明；提示不依赖手掌总开关，也不替用户修改其他偏好。
 		if (draft.parallelWriting)
@@ -884,6 +990,73 @@ namespace Inkeys::UI::Setting::Design
 		}
 		events.parallelWritingChanged = ToggleRow("##palm-eraser-parallel", IA(palm.ParallelWriting).c_str(),
 			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting, parallelNote.c_str());
+		SectionHeader(IA(palm.SizeSection).c_str());
+		draft.sizeMode = draft.sizeMode >= 0 && draft.sizeMode <= 2 ? draft.sizeMode : 0;
+		const char* sizeNotes[]{ palm.SizeModeDynamicNote, palm.SizeModeFollowDefaultNote, palm.SizeModeFixedNote };
+		events.sizeModeChanged = ComboRow("##palm-eraser-size-mode", IA(palm.SizeMode).c_str(),
+			IA(palm.SizeModeDescription).c_str(), "\ue7c9", draft.sizeMode,
+			{ IA(palm.SizeModeDynamic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+				IA(palm.SizeModeFollowDefault), IA(palm.SizeModeFixed) }, IA(sizeNotes[draft.sizeMode]).c_str());
+		if (ConditionalBlock block{ "##palm-eraser-dynamic-size", draft.sizeMode == 0 }; block)
+		{
+			const auto& eraser = I18nKey.SettingsUI.Draw.Cursor.Eraser;
+			const int defaultShape = draft.eraserShape >= 0 && draft.eraserShape <= 2 ? draft.eraserShape : 0;
+			const int shape = draft.shape >= 0 && draft.shape <= 2 ? draft.shape : defaultShape;
+			const char* methodKeys[3][4]{
+				{ palm.MethodEllipseArea, palm.MethodRectangleArea, palm.MethodInscribedCircle, palm.MethodCircumscribedCircle },
+				{ palm.MethodRectangleArea, palm.MethodEllipseArea, palm.MethodInscribedRectangle, palm.MethodCircumscribedRectangle },
+				{ palm.MethodEllipseArea, palm.MethodRectangleArea, palm.MethodInscribedSquare, palm.MethodCircumscribedSquare } };
+			std::vector<std::string> methods;
+			for (const char* key : methodKeys[shape]) methods.push_back(IA(key));
+			methods[0] += IA(I18nKey.SettingsUI.Design.RecommendedSuffix);
+			const char* shapeKeys[]{ eraser.Circle, eraser.Rectangle, eraser.Square };
+			const auto shapeName = IA(shapeKeys[shape]);
+			const auto shapeNote = std::vformat(IA(palm.SizeMethodShapeNote), std::make_format_args(shapeName));
+			// 每种形状分别记住方法；跟随默认时只编辑当前生效形状的那一项。
+			int& method = draft.sizeMethods[shape];
+			method = method >= 0 && method <= 3 ? method : 0;
+			events.sizeMethodsChanged[shape] = ComboRow("##palm-eraser-size-method", IA(palm.SizeMethod).c_str(),
+				IA(palm.SizeMethodDescription).c_str(), "\ue7c9", method, methods, shapeNote.c_str());
+			const float multiplierWidth = (ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F)
+				+ SliderResetExtraWidthDip;
+			const auto resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+			float multiplier = static_cast<float>(draft.sizeMultiplierPercent);
+			SettingRow("##palm-eraser-size-multiplier", IA(palm.SizeMultiplier).c_str(), IA(palm.SizeMultiplierDescription).c_str(),
+				"\ue7c9", multiplierWidth, ControlHeight, [&](const LayoutRect& bounds) {
+					events.sizeMultiplierChanged = SliderResetAction(bounds, multiplier, 25.0F, 300.0F,
+						events.sizeMultiplierActive, events.sizeMultiplierReset, resetLabel.c_str(), "%.0f%%"); });
+			if (events.sizeMultiplierChanged) draft.sizeMultiplierPercent = std::clamp(static_cast<int>(std::round(multiplier)), 25, 300);
+			if (events.sizeMultiplierReset)
+			{
+				events.sizeMultiplierChanged |= draft.sizeMultiplierPercent != 100;
+				draft.sizeMultiplierPercent = 100;
+			}
+		}
+		{
+			namespace Cursor = Inkeys::Drawing::Draw3;
+			const auto& eraser = I18nKey.SettingsUI.Draw.Cursor.Eraser;
+			// 明暗与纹样全局共用，这里只说明来源；手掌只能另选形状。
+			SectionHeader(IA(eraser.N).c_str());
+			Notice("##palm-eraser-cursor-note", IA(palm.CursorNoticeTitle).c_str(),
+				IA(palm.CursorNoticeDescription).c_str(), ImFluentInfoSeverity_Informational);
+			const int defaultShape = draft.eraserShape >= 0 && draft.eraserShape <= 2 ? draft.eraserShape : 0;
+			const auto pattern = static_cast<Cursor::EraserCursorPattern>(
+				draft.eraserPattern >= 0 && draft.eraserPattern <= 2 ? draft.eraserPattern : 0);
+			const auto theme = draft.eraserTheme == 1 ? Cursor::EraserCursorTheme::Dark : Cursor::EraserCursorTheme::Light;
+			// 选择器索引 0 为“跟随默认”（预览默认形状），其余依次为三种形状。
+			int selected = draft.shape >= 0 && draft.shape <= 2 ? draft.shape + 1 : 0;
+			std::vector<PreviewSelectorGroup> groups(1);
+			groups[0].selectedIndex = &selected; groups[0].changed = &events.shapeChanged;
+			const char* labels[]{ palm.FollowDefault, eraser.Circle, eraser.Rectangle, eraser.Square };
+			for (int index = 0; index < 4; ++index)
+				groups[0].items.push_back({ IA(labels[index]), [&, index](const LayoutRect& area) {
+					if (preview) preview(area, { static_cast<Cursor::EraserShape>(index == 0 ? defaultShape : index - 1),
+						pattern, theme }); } });
+			const auto inlineContent = InlinePreviewSelector("##palm-eraser-shape-options", std::move(groups));
+			SettingRow("##palm-eraser-shape", IA(palm.Shape).c_str(), IA(palm.ShapeDescription).c_str(), nullptr,
+				0, 0, [](const LayoutRect&) {}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineContent);
+			if (events.shapeChanged) draft.shape = selected - 1;
+		}
 		return events;
 	}
 
@@ -1193,9 +1366,11 @@ namespace Inkeys::UI::Setting::Design
 		// 存储页由原配置保存业务分支承载，避免在此重复提交标题或控件。
 		if (section == GeneralSection::Storage) return events;
 		const char* title = section == GeneralSection::Appearance ? I18nKey.SettingsUI.Design.GeneralAppearance
+			: section == GeneralSection::Position ? I18nKey.SettingsUI.Position.N
 			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
 			: section == GeneralSection::Shortcuts ? I18nKey.SettingsUI.HotKey.N
 			: section == GeneralSection::DesktopShortcuts ? I18nKey.SettingsUI.DesktopShortcut.N
+			: section == GeneralSection::StatusIndicator ? I18nKey.SettingsUI.StatusIndicator.N
 			: I18nKey.SettingsUI.Design.GeneralBasic;
 		PageHeader(IA(title).c_str());
 		// 仅渲染当前子页；未显示字段继续使用同一草稿，不触发写回或重置。
@@ -1235,15 +1410,91 @@ namespace Inkeys::UI::Setting::Design
 			SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
 			events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
 				IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
-			// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置。
-			events.startupPlacementChanged = ComboRow("##启动后位置",
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.N).c_str(),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.E).c_str(), "\ue707", draft.startupPlacement,
-				{ IA(I18nKey.SettingsUI.Preset.StartupPlacement.CenteredBottomBar),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomLeftFloating),
-				IA(I18nKey.SettingsUI.Preset.StartupPlacement.BottomRightFloating) },
-				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str());
+		}
+		if (section == GeneralSection::Position)
+		{
+			const auto& position = I18nKey.SettingsUI.Position;
+			SectionHeader(IA(position.DesktopSection).c_str());
+			// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置；类型与位置是同一枚举的展示拆分。
+			const auto placement = Inkeys::UI::NormalizeStartupPlacement(draft.startupPlacement);
+			int placementType = Inkeys::UI::StartupPlacementType(placement);
+			int placementPosition = Inkeys::UI::StartupPlacementPosition(placement);
+			const std::vector<std::string> typeItems{ IA(position.TypeBottomBar), IA(position.TypeTopBar), IA(position.TypeFloating) };
+			const std::vector<std::string> positionItems = placementType == 2
+				? std::vector<std::string>{ IA(position.FloatBottomLeft), IA(position.FloatBottomRight), IA(position.FloatBottomCenter) }
+				: std::vector<std::string>{ IA(position.ExpandRight), IA(position.ExpandLeft) };
+			bool typeChanged = false, positionChanged = false;
+			const std::string positionLabel = IA(position.PositionLabel);
+			const std::string startupTitle = IA(I18nKey.SettingsUI.Preset.StartupPlacement.N);
+			const std::string startupDescription = IA(position.StartupE);
+			const std::string startupNote = IA(I18nKey.SettingsUI.Design.NextStartupRequired);
+			float typeWidth = 160.0F;
+			for (const auto& item : typeItems) typeWidth = (std::max)(typeWidth, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+			const InlineRowContent positionContent = InlineCombo("startup-position", positionLabel.c_str(),
+				placementPosition, positionItems, positionChanged);
+			SettingRow("##启动后位置", startupTitle.c_str(), startupDescription.c_str(), "\ue707",
+				(std::min)(320.0F, typeWidth), ControlHeight,
+				[&](const LayoutRect&) { typeChanged = ComboBox("##select", &placementType, typeItems); },
+				Card, Stroke, 0, IM_COL32_WHITE, false, startupNote.c_str(), true, &positionContent);
+			if (typeChanged || positionChanged)
+			{
+				// 切换类型时位置回到该类型的首项，避免旧下标落到另一类选项上。
+				if (typeChanged) placementPosition = 0;
+				draft.startupPlacement = static_cast<int>(Inkeys::UI::StartupPlacementFromSelection(placementType, placementPosition));
+				events.startupPlacementChanged = true;
+			}
 
+			// PPT / 白板场景：同一布局，复选框决定进入前的哪些主栏状态会自动变成居中底栏。
+			const auto workspaceRow = [&](const char* id, const char* title, const char* description, const char* glyph,
+				int& mask, int& direction, bool& maskChanged, bool& directionChanged)
+			{
+				const std::array<std::string, 4> labels{ IA(position.StateBottom), IA(position.StateBottomFolded),
+					IA(position.StateFloating), IA(position.StateFloatingFolded) };
+				const std::vector<std::string> directions{ IA(position.DirectionKeep), IA(position.ExpandRight), IA(position.ExpandLeft) };
+				const std::string directionLabel = IA(position.MainButtonDirection);
+				float widest = 0;
+				for (const auto& label : labels) widest = (std::max)(widest, ControlTextWidth(label.c_str()) + Pixels(32));
+				const auto columnsFor = [&](float width) { return width >= (std::max)(Pixels(440), widest * 2 + Pixels(16)) ? 2 : 1; };
+				InlineRowContent content;
+				content.height = [&](float width) {
+					const int rows = (4 + columnsFor(width) - 1) / columnsFor(width);
+					return (rows + 1) * Pixels(ControlHeight) + rows * Pixels(ControlSpacing);
+				};
+				content.render = [&](const LayoutRect& bounds) {
+					const int columns = columnsFor(bounds.Width());
+					const float columnWidth = (bounds.Width() - Pixels(16) * (columns - 1)) / columns;
+					const int rows = (4 + columns - 1) / columns;
+					ImGui::PushID(id);
+					for (int index = 0; index < 4; ++index)
+					{
+						ImGui::SetCursorScreenPos({ bounds.left + (index % columns) * (columnWidth + Pixels(16)),
+							bounds.top + (index / columns) * Pixels(ControlHeight + ControlSpacing) });
+						bool checked = (mask >> index) & 1;
+						ImGui::PushID(index);
+						if (Checkbox((labels[index] + "###state").c_str(), &checked))
+						{
+							mask = checked ? (mask | (1 << index)) : (mask & ~(1 << index));
+							maskChanged = true;
+						}
+						ImGui::PopID();
+					}
+					const float top = bounds.top + rows * Pixels(ControlHeight + ControlSpacing);
+					const auto combo = InlineCombo("##direction", directionLabel.c_str(), direction, directions, directionChanged);
+					combo.render({ bounds.left, top, bounds.right, top + Pixels(ControlHeight) });
+					ImGui::PopID();
+				};
+				SettingRow(id, title, description, glyph, 0.0F, 0.0F, [](const LayoutRect&) {},
+					Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &content);
+			};
+			SectionHeader(IA(position.PptSection).c_str());
+			const std::string pptTitle = IA(position.PptAutoDock), pptDescription = IA(position.PptAutoDockE);
+			workspaceRow("##ppt-auto-dock", pptTitle.c_str(), pptDescription.c_str(), "\ue7b3",
+				draft.pptDockMask, draft.pptDockDirection, events.pptDockMaskChanged, events.pptDockDirectionChanged);
+			SectionHeader(IA(position.WhiteboardSection).c_str());
+			const std::string whiteboardTitle = IA(position.WhiteboardAutoDock), whiteboardDescription = IA(position.WhiteboardAutoDockE);
+			workspaceRow("##whiteboard-auto-dock", whiteboardTitle.c_str(), whiteboardDescription.c_str(), "\ue70f",
+				draft.whiteboardDockMask, draft.whiteboardDockDirection,
+				events.whiteboardDockMaskChanged, events.whiteboardDockDirectionChanged);
 		}
 		if (section == GeneralSection::Appearance)
 		{
@@ -1352,6 +1603,21 @@ namespace Inkeys::UI::Setting::Design
 			events.allowMultipleInstancesChanged = ToggleRow("allow-multiple-instances",
 				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.N).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.E).c_str(), "\ue7f4", draft.allowMultipleInstances);
+		}
+		if (section == GeneralSection::StatusIndicator)
+		{
+			const auto& keys = I18nKey.SettingsUI.StatusIndicator;
+			Notice("##status-indicator-notice", IA(keys.N).c_str(), IA(keys.E).c_str());
+			events.statusIndicatorChanged = ToggleRow("status-indicator", IA(keys.Enable.N).c_str(),
+				IA(keys.Enable.E).c_str(), "\uea8f", draft.statusIndicator);
+			// 显示条件只跟随本帧总开关；隐藏时保留各类勾选值。
+			if (ConditionalBlock block{ "##status-indicator-types-visibility", draft.statusIndicator }; block)
+			{
+				CheckboxGroup("##status-indicator-types", IA(keys.Types).c_str(), "\ue7c3", {
+					{ IA(keys.TypeSlideshow), &draft.statusIndicatorTypes[0], &events.statusIndicatorTypesChanged[0] },
+					{ IA(keys.TypeSuperTop), &draft.statusIndicatorTypes[1], &events.statusIndicatorTypesChanged[1] },
+					{ IA(keys.TypeNewVersion), &draft.statusIndicatorTypes[2], &events.statusIndicatorTypesChanged[2] } });
+			}
 		}
 		if (section == GeneralSection::Shortcuts)
 		{

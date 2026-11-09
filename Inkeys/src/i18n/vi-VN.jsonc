@@ -46,6 +46,12 @@
         "Mode": "Chế độ thanh dưới",
         "Centered": "Căn giữa"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Trình chiếu",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Phiên bản mới"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Xóa",
@@ -98,6 +104,7 @@
         "WhiteboardGridLabel": "Lưới",
         "WhiteboardUnsavedLabel": "Một số trang chưa được lưu",
         "FreezeLabel": "Giữ",
+        "CanvasDebugLabel": "Gỡ lỗi trực quan",
         "EndPresentationLabel": "Kết thúc",
         "SettingsLabel": "Thiết lập",
         "MoreLabel": "Thêm"
@@ -157,7 +164,6 @@
         "PresentFailed": "Hiển thị",
         "Failed": "Lỗi",
         "Recovering": "Khôi phục",
-        "Loading": "Tải",
         "Retry": "Thử lại",
         "Wait": "Chờ",
         "RetryCanvas": "Thử lại trang vẽ",
@@ -692,7 +698,26 @@
           "E": "Bảng vẽ không bật Windows Ink thường gửi dữ liệu dưới dạng “chuột do trình điều khiển chèn vào”. Khi bật, chuột này dùng thiết lập con trỏ của bảng vẽ; phần mềm cũng chèn chuột như Remote Desktop có thể bị nhận diện nhầm.",
           "Unavailable": "Hệ thống này không thể phân biệt nguồn nhập nên tùy chọn không khả dụng."
         },
+        "Eraser":
+        {
+          "N": "Con trỏ tẩy",
+          "E": "Hình dạng cũng quyết định vùng xóa thực tế (hình chữ nhật có góc vuông); họa tiết và sáng/tối chỉ thay đổi giao diện con trỏ.",
+          "Appearance": "Giao diện",
+          "Light": "Sáng",
+          "Dark": "Tối",
+          "Circle": "Tròn",
+          "Rectangle": "Chữ nhật",
+          "Square": "Vuông",
+          "Grips": "Cổ điển",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Lấp lánh"
+        },
         "FineControl": "Điều khiển chi tiết",
+        "OpacitySection": "Độ mờ",
+        "PenOpacity": "Độ mờ của con trỏ bút",
+        "HighlightPenFillOpacity": "Độ mờ phần tô của con trỏ bút (làm nổi bật)",
+        "DotOpacity": "Độ mờ của con trỏ chấm nhỏ",
+        "HighlightDotFillOpacity": "Độ mờ phần tô của con trỏ chấm nhỏ (làm nổi bật)",
         "DotHideOnContact":
         {
           "N": "Tự động ẩn con trỏ chấm nhỏ khi chạm bút",
@@ -701,8 +726,7 @@
           "ScreenPen": "Chỉ bút màn hình",
           "Tablet": "Chỉ bảng vẽ",
           "Both": "Bút màn hình và bảng vẽ"
-        },
-        "Note": "Với bút màn hình, bảng vẽ và cảm ứng, “Chuột” là mũi tên do chính ứng dụng vẽ; con trỏ của bút nhớ dòng và con trỏ laser, công cụ hình và con trỏ riêng của tẩy không bị các tùy chọn này ảnh hưởng."
+        }
       },
       "Effect":
       {
@@ -722,7 +746,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Nối nét bị ngắt",
-          "E": "Khi mất tiếp xúc ngắn rồi tiếp tục theo hướng cũ, ứng dụng sẽ thử nối hai phần thành một nét để giảm đứt đoạn. Khi tắt, mỗi lần nhấc ngón tay sẽ kết thúc nét hiện tại."
+          "Touch": "Cảm ứng",
+          "PenTail": "Đuôi bút",
+          "E": "Khi viết, nhận biết tình trạng mất tiếp xúc dựa trên ý định vẽ và hiệu chỉnh, đồng thời có thể tiếp nối trạng thái vẽ."
         }
       },
       "Eraser":
@@ -765,7 +791,34 @@
           "ParallelWritingMultiTouchNote": "Đã tắt vẽ nhiều ngón nên không thể vừa viết vừa tẩy.",
           "ParallelWritingLaserMultiTouchNote": "Đã tắt laser nhiều ngón nên không thể vừa viết vừa tẩy với bút laser.",
           "ParallelWriting": "Bật vừa viết vừa tẩy",
-          "ParallelWritingDescription": "Bật tẩy bằng lòng bàn tay không ngắt các đầu vào khác nên vẫn có thể vẽ tiếp. (Dành cho hai hoặc nhiều người cùng viết.)"
+          "ParallelWritingDescription": "Khi bật tẩy bằng lòng bàn tay, chỉ nét viết cảm ứng ở gần bị kết thúc và các lần chạm mới quanh đó bị chặn; ở vị trí khác vẫn có thể viết tiếp. (Dành cho hai hoặc nhiều người cùng viết.)",
+          "CursorNoticeTitle": "Chế độ sáng tối và họa tiết theo cài đặt con trỏ",
+          "CursorNoticeDescription": "Con trỏ tẩy bằng lòng bàn tay dùng chế độ sáng tối và họa tiết đã đặt trong “Vẽ › Con trỏ › Con trỏ tẩy”. Tại đây chỉ có thể chọn riêng hình dạng.",
+          "Shape": "Hình dạng tẩy bằng lòng bàn tay",
+          "ShapeDescription": "Hình dạng cũng quyết định vùng thực sự bị tẩy bằng lòng bàn tay. “Theo mặc định” dùng cùng hình dạng với tẩy thông thường.",
+          "FollowDefault": "Theo mặc định",
+          "SizeSection": "Cỡ tẩy bằng lòng bàn tay",
+          "SizeMode": "Cách tính độ dày",
+          "SizeModeDescription": "Chọn cách tính độ dày của tẩy bằng lòng bàn tay.",
+          "SizeModeDynamic": "Độ dày động",
+          "SizeModeFollowDefault": "Cố định (tẩy mặc định)",
+          "SizeModeFixed": "Cố định (không tẩy tốc độ)",
+          "SizeModeDynamicNote": "Tính theo diện tích tiếp xúc",
+          "SizeModeFollowDefaultNote": "Dùng cỡ tẩy mặc định; thay đổi theo tốc độ bút khi bật “Cỡ tự động”",
+          "SizeModeFixedNote": "Luôn dùng cỡ tẩy mặc định",
+          "SizeMethod": "Cách tính kích thước",
+          "SizeMethodDescription": "Cách chuyển hình chữ nhật tiếp xúc thành cỡ tẩy.",
+          "MethodEllipseArea": "Diện tích elip nội tiếp",
+          "MethodRectangleArea": "Diện tích hình chữ nhật",
+          "MethodInscribedCircle": "Hình tròn nội tiếp",
+          "MethodCircumscribedCircle": "Hình tròn ngoại tiếp",
+          "MethodInscribedRectangle": "Hình chữ nhật nội tiếp",
+          "MethodCircumscribedRectangle": "Hình chữ nhật ngoại tiếp",
+          "MethodInscribedSquare": "Hình vuông nội tiếp",
+          "MethodCircumscribedSquare": "Hình vuông ngoại tiếp",
+          "SizeMethodShapeNote": "Hình dạng hiện tại: {}",
+          "SizeMultiplier": "Hệ số cỡ vùng tẩy",
+          "SizeMultiplierDescription": "Điều chỉnh tỷ lệ độ dài cạnh hoặc đường kính của tẩy mà không ảnh hưởng đến nhận diện."
         },
         "Input":
         {
@@ -794,6 +847,33 @@
           "Note": "Không khuyên bật trên thiết bị màn hình lớn."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Vị trí",
+      "DesktopSection": "Màn hình nền",
+      "PptSection": "Trình chiếu",
+      "WhiteboardSection": "Bảng trắng",
+      "StartupE": "Chọn vị trí thanh công cụ xuất hiện ở lần khởi động tiếp theo. Thanh trên ở giữa chỉ là vị trí ban đầu và không bám dính.",
+      "TypeBottomBar": "Thanh dưới ở giữa",
+      "TypeTopBar": "Thanh trên ở giữa",
+      "TypeFloating": "Cửa sổ nổi",
+      "PositionLabel": "Vị trí",
+      "ExpandRight": "Mở rộng sang phải",
+      "ExpandLeft": "Mở rộng sang trái",
+      "FloatBottomLeft": "Góc dưới trái",
+      "FloatBottomRight": "Góc dưới phải",
+      "FloatBottomCenter": "Giữa phía dưới",
+      "PptAutoDock": "Tự động vào chế độ thanh dưới ở giữa khi bắt đầu trình chiếu",
+      "PptAutoDockE": "Nếu trước đó thanh công cụ ở trạng thái đã chọn, thanh sẽ tự chuyển thành thanh dưới ở giữa đã mở rộng khi bắt đầu trình chiếu và được khôi phục khi kết thúc.",
+      "WhiteboardAutoDock": "Tự động vào chế độ thanh dưới ở giữa khi vào bảng trắng",
+      "WhiteboardAutoDockE": "Nếu trước đó thanh công cụ ở trạng thái đã chọn, thanh sẽ tự chuyển thành thanh dưới ở giữa đã mở rộng khi vào bảng trắng và được khôi phục khi thoát.",
+      "StateBottom": "Trạng thái thanh dưới",
+      "StateBottomFolded": "Trạng thái thanh dưới (thu gọn)",
+      "StateFloating": "Trạng thái cửa sổ nổi",
+      "StateFloatingFolded": "Trạng thái cửa sổ nổi (thu gọn)",
+      "MainButtonDirection": "Hướng nút chính",
+      "DirectionKeep": "Không thay đổi"
     },
     "Preset":
     {
@@ -967,8 +1047,6 @@
           "SuperTop": "Bật SuperTop",
           "SuperTopE1": "Ứng dụng dùng quy trình khởi động ba giai đoạn để giữ cửa sổ trên cùng.\n(SuperTop đang hoạt động)",
           "SuperTopE2": "Ứng dụng dùng quy trình khởi động ba giai đoạn để giữ cửa sổ trên cùng.\n(SuperTop chưa hoạt động)",
-          "Indicator": "Chỉ báo SuperTop",
-          "IndicatorE": "Hiện biểu tượng ghim ở góc trên phải biểu tượng chính khi bật thành công.",
           "SuperTopNote": "Khởi động lại Inkeys để áp dụng. Việc đưa cửa sổ lên trên cùng có thể thất bại khi khởi động."
         },
         "SupportNote": "Yêu cầu Windows 8 trở lên."
@@ -1065,6 +1143,20 @@
       "ClassIslandProtocolNote": "Đăng ký giao thức điều hướng URL trong thiết lập ClassIsland.",
       "ClassIslandSwapNote": "Thành phần này không có tác dụng khi ClassIsland chưa tải thời khóa biểu."
     },
+    "StatusIndicator":
+    {
+      "N": "Chỉ báo trạng thái",
+      "E": "Hiển thị các trạng thái như chế độ trình chiếu, SuperTop và cập nhật phần mềm trên nút chính.",
+      "Enable":
+      {
+        "N": "Bật chỉ báo trạng thái",
+        "E": "Khi tắt, nút chính không còn hiển thị gợi ý trạng thái."
+      },
+      "Types": "Hiển thị các trạng thái sau",
+      "TypeSlideshow": "Trình chiếu",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Phiên bản mới"
+    },
     "DesktopShortcut":
     {
       "N": "Lối tắt",
@@ -1137,6 +1229,25 @@
       {
         "N": "Hiện tốc độ khung hình",
         "E": "Mỗi giây cập nhật tốc độ khung hình trung bình và không chờ của giây trước."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Gỡ lỗi canvas",
+        "E": "Hiển thị tốc độ khung hình, tải phần cứng và thông tin điểm nhập bên dưới canvas, đồng thời thêm nút gỡ lỗi trực quan vào thanh chính."
+      },
+      "DelayWaiting":
+      {
+        "N": "Trì hoãn thao tác chờ",
+        "E": "Kéo dài thời gian tải để quan sát hiệu ứng."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Chỉ báo trạng thái",
+        "N": "Kiểm tra chỉ báo trạng thái",
+        "E": "Thêm hoặc xóa trạng thái thử ngẫu nhiên để kiểm tra hoạt ảnh, văn bản dài và vòng tiến độ.",
+        "Add": "Thêm trạng thái ngẫu nhiên",
+        "Remove": "Xóa một trạng thái"
       },
       "ConsoleSection": "Đầu ra bảng điều khiển",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",

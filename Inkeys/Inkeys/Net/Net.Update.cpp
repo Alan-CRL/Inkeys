@@ -24,7 +24,8 @@ import Inkeys.Other.Config;
 
 bool mandatoryUpdate; // 强制更新符号
 bool inconsistentArchitecture;
-AutomaticUpdateStateEnum AutomaticUpdateState;
+// 下载线程发布待更新状态，重启入口据此选择是否等待旧进程退出。
+IdtAtomic<AutomaticUpdateStateEnum> AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
 namespace
 {
 	constexpr unsigned long long kMaxUpdatePackageBytes = 512ull * 1024ull * 1024ull;

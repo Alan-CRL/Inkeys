@@ -100,8 +100,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.13202";	// 程序发布版本
-wstring editionDate = L"3.0.0-20261104a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.14162";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261109a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -377,9 +377,11 @@ void SetOffSignal(int signal)
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto windowEnd = ShutdownTrace::CaptureEnd(preArmRecorder, windowTrace);
 	const auto armTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-arm");
-	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
-		signal == 2 ? Inkeys::Shutdown::Intent::Restart
-		: Inkeys::Shutdown::Intent::Close);
+	// 已确认待更新时等旧进程完整退出；普通重启在窗口隐藏后提前接力。
+	const auto shutdownIntent = signal == 1 ? Inkeys::Shutdown::Intent::Close
+		: AutomaticUpdateState.load() == AutomaticUpdateStateEnum::UpdateRestart
+		? Inkeys::Shutdown::Intent::UpdateRestart : Inkeys::Shutdown::Intent::Restart;
+	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(shutdownIntent);
 	const DWORD supervisorError = GetLastError();
 	const auto armEnd = ShutdownTrace::CaptureEnd(preArmRecorder, armTrace, "returned",
 		static_cast<long>(supervisorError));
@@ -393,9 +395,7 @@ void SetOffSignal(int signal)
 	{
 		// 首次普通owner的合法Arm已双失败，当前线程接管原截止，先于任何隐藏/日志/清理等待。
 		Inkeys::UI::RenderPipeline::WakeForStop();
-		Inkeys::Shutdown::EnforceFailedShutdownDeadline(
-			signal == 2 ? Inkeys::Shutdown::Intent::Restart
-			: Inkeys::Shutdown::Intent::Close);
+		Inkeys::Shutdown::EnforceFailedShutdownDeadline(shutdownIntent);
 	}
 	// Failed 接管仍先于任何输出；Arm 若未返回，本轮缓冲记录不会假装已经写出。
 	auto& shutdownRecorder = ShutdownTrace::DefaultRecorder();
@@ -804,6 +804,75 @@ namespace
 			Inkeys::Config restoredPolicy;
 			if (!emptyPolicy.Write() || !restoredPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
 				|| restoredPolicy.Config.AllowMultipleInstances) return 1;
+			stage = "eraser cursor configuration";
+			{
+				Inkeys::Config appearance;
+				auto& eraser = appearance.Drawing.Eraser;
+				const std::array fields{ &eraser.Shape, &eraser.CursorPattern, &eraser.CursorTheme };
+				const std::array names{ "Shape", "CursorPattern", "CursorTheme" };
+				const auto upload = appearance.GetUploadInfo();
+				for (size_t index = 0; index < fields.size(); ++index)
+				{
+					const std::string path = std::string("Drawing.Eraser.") + names[index];
+					if (fields[index]->load() != 0 || !writeBytes(mainConfig, "{}")) return 1;
+					*fields[index] = 1;
+					if (!appearance.ReadMini({path}) || fields[index]->load() != 0) return 1;
+					// 布尔/浮点/超宽整数不能经过窄化伪装成合法外观值。
+					for (const char* raw : { "0", "1", "2", "-1", "3", "99", "true", "1.0", "\"1\"", "null", "[]", "{}",
+						"4294967296", "4294967297", "18446744073709551615", "-4294967296", "-4294967295" })
+					{
+						const std::string json = std::string("{\"Drawing\":{\"Eraser\":{\"") + names[index] + "\":" + raw + "}}}";
+						const int expected = strcmp(raw,"1") == 0 ? 1 : index != 2 && strcmp(raw,"2") == 0 ? 2 : 0;
+						*fields[index] = 99;
+						if (!writeBytes(mainConfig,json) || !appearance.ReadMini({path}) || fields[index]->load() != expected) return 1;
+						*fields[index] = 99;
+						if (!appearance.ReadAll() || fields[index]->load() != expected) return 1;
+					}
+				}
+				eraser.Shape=2; eraser.CursorPattern=2; eraser.CursorTheme=1;
+				Inkeys::Config frozen; frozen=appearance;
+				eraser.Shape=0; eraser.CursorPattern=0; eraser.CursorTheme=0;
+				Inkeys::Config restored;
+				if (!frozen.Write() || !restored.ReadAll() || restored.Drawing.Eraser.Shape.load()!=2 ||
+					restored.Drawing.Eraser.CursorPattern.load()!=2 || restored.Drawing.Eraser.CursorTheme.load()!=1 ||
+					frozen.GetUploadInfo()!=upload) return 1;
+				// 手掌独立形状：缺键为 -1（跟随），只接受 -1..2 的窄整数。
+				auto& palmShape = appearance.Drawing.PalmEraser.Shape;
+				if (palmShape.load() != -1) return 1;
+				for (const char* raw : { "-1", "0", "1", "2", "3", "-2", "true", "1.0", "\"1\"", "null", "4294967297" })
+				{
+					const std::string json = std::string("{\"Drawing\":{\"PalmEraser\":{\"Shape\":") + raw + "}}}";
+					const int expected = strcmp(raw,"0") == 0 ? 0 : strcmp(raw,"1") == 0 ? 1 : strcmp(raw,"2") == 0 ? 2 : -1;
+					palmShape = 99;
+					if (!writeBytes(mainConfig,json) || !appearance.ReadMini({"Drawing.PalmEraser.Shape"}) || palmShape.load() != expected) return 1;
+				}
+				stage = "palm eraser size configuration";
+				auto& palm = appearance.Drawing.PalmEraser;
+				const std::array sizeFields{ &palm.SizeMode, &palm.SizeMethodCircle, &palm.SizeMethodRectangle,
+					&palm.SizeMethodSquare, &palm.SizeMultiplierPercent };
+				const std::array sizeNames{ "SizeMode", "SizeMethodCircle", "SizeMethodRectangle", "SizeMethodSquare", "SizeMultiplierPercent" };
+				for (size_t index = 0; index < sizeFields.size(); ++index)
+				{
+					const std::string path = std::string("Drawing.PalmEraser.") + sizeNames[index];
+					const int defaultValue = index == 4 ? 100 : 0;
+					if (sizeFields[index]->load() != defaultValue || !writeBytes(mainConfig, "{}")) return 1;
+					*sizeFields[index] = 99;
+					if (!appearance.ReadMini({path}) || sizeFields[index]->load() != defaultValue) return 1;
+					// 覆盖全部合法枚举、倍率两端和相邻越界值，以及不能窄化的原始类型。
+					for (const char* raw : { "0", "1", "2", "3", "4", "-1", "24", "25", "100", "300", "301",
+						"true", "false", "1.0", "100.0", "\"1\"", "null", "[]", "{}", "4294967296", "4294967297",
+						"4294967396", "18446744073709551615", "-4294967296", "-4294967295" })
+					{
+						const std::string json = std::string("{\"Drawing\":{\"PalmEraser\":{\"") + sizeNames[index] + "\":" + raw + "}}}";
+						const int expected = index == 4 ? (strcmp(raw,"25") == 0 ? 25 : strcmp(raw,"300") == 0 ? 300 : 100)
+							: strcmp(raw,"1") == 0 ? 1 : strcmp(raw,"2") == 0 ? 2 : index != 0 && strcmp(raw,"3") == 0 ? 3 : 0;
+						*sizeFields[index] = 99;
+						if (!writeBytes(mainConfig,json) || !appearance.ReadMini({path}) || sizeFields[index]->load() != expected) return 1;
+						*sizeFields[index] = 99;
+						if (!appearance.ReadAll() || sizeFields[index]->load() != expected) return 1;
+					}
+				}
+			}
 			stage = "touch reconnect configuration";
 			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
 			Inkeys::Config reconnectDefaults;
@@ -814,11 +883,22 @@ namespace
 				std::fputs("[ConfigBoundary] FAIL: touch reconnect default was not enabled\n", stderr);
 				return 1;
 			}
+			// 适用设备（触摸 / 笔尾）旧配置缺键时默认都开启，且各自独立往返。
+			if (!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch ||
+				!reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail)
+			{
+				std::fputs("[ConfigBoundary] FAIL: touch reconnect device defaults were not enabled\n", stderr);
+				return 1;
+			}
 			for (const bool enabled : { false, true })
 			{
 				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch = enabled;
+				reconnectDefaults.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail = !enabled;
 				Inkeys::Config restoredReconnect;
 				if (!reconnectDefaults.Write() || !restoredReconnect.ReadAll() ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch.load() != enabled ||
+					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail.load() == enabled ||
 					restoredReconnect.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect.load() != enabled)
 				{
 					std::fputs("[ConfigBoundary] FAIL: touch reconnect preference did not round-trip\n", stderr);
@@ -999,6 +1079,9 @@ namespace
 					result.enabled = saved.Enabled.load(); result.thresholdPercent = saved.ThresholdPercent.load();
 					result.recognitionWindowMs = saved.RecognitionWindowMs.load();
 					result.parallelWriting = saved.ParallelWriting.load();
+					result.sizeMode = saved.SizeMode.load();
+					result.sizeMethods = { saved.SizeMethodCircle.load(), saved.SizeMethodRectangle.load(), saved.SizeMethodSquare.load() };
+					result.sizeMultiplierPercent = saved.SizeMultiplierPercent.load();
 					result.tools = { saved.Tools.Pen.load(), saved.Tools.HardPen.load(), saved.Tools.Highlighter.load(),
 						saved.Tools.Laser.load(), saved.Tools.Eraser.load(), saved.Tools.Shape.load(), saved.Tools.Brush.load() };
 					return result;
@@ -1033,6 +1116,9 @@ namespace
 						auto& saved = fresh.Drawing.PalmEraser;
 						saved.Enabled = !largeScreen; saved.ThresholdPercent = percent;
 						saved.RecognitionWindowMs = window; saved.ParallelWriting = window != 250;
+						saved.SizeMode = window % 3;
+						saved.SizeMethodCircle = percent % 4; saved.SizeMethodRectangle = (percent + 1) % 4;
+						saved.SizeMethodSquare = (percent + 2) % 4; saved.SizeMultiplierPercent = 25 + percent % 276;
 						const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
 							&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
 						for (size_t index = 0; index < fields.size(); ++index) *fields[index] = (index + window + percent) % 2 == 0;
@@ -1707,6 +1793,63 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// 资源生命周期入口先验参并早退，关闭 harness 也不得进入普通产品启动。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--setting-texture-recovery-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::UI::Setting::RunTextureRecoveryProductionTest();
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-laser-resources-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunLaserResourceLifecycleValidation(); });
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-auxiliary-resource-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunAuxiliaryPresentationResourceLifecycleTest(); });
+#else
+			return 2;
+#endif
+		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--ui3-idle-capacity-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return Inkeys::UI::Bar::RunIdleBackingResourceLifecycleTest();
+#else
+			return 2;
+#endif
+		}
+		// 资源回收使用真实不可见 layered HWND；坏参数及关闭harness始终在普通启动前退出。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--freeze-resource-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			return RunFreezeSurfaceResourceLifecycleTest();
+#else
+			return 2;
+#endif
+		}
 		// 诊断输出自检严格早退，harness 关闭时也不能落入普通 GUI。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-diagnostic-output-test", -1, TRUE) == CSTR_EQUAL)
@@ -1757,6 +1900,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererUploadValidation(); });
+		}
+		// 画布调试板合成顺序/关闭字节一致/标记原语像素读回；仅离屏 WARP，无 HWND。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-canvas-debug-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunCanvasDebugOverlayValidation(); });
 		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
@@ -2840,12 +2991,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
 		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
+		"Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations",
 		"Experimental.Inkeys3.UI3.StartupPreview.Effect",
 		"Experimental.Inkeys3.UI3.ThemeMode",
 		"Experimental.Inkeys3.UI3.BackgroundOpacity",
 		"Experimental.Inkeys3.UI3.ContentOpacity",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
 		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
+	// 调试开关只启用慢速成功观察，不授权失败注入。
+	if (startupMiniConfig.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations)
+		startupPreviewManualDelayRequested.store(true, std::memory_order_release);
 	// Mini 读取后冻结本次启动位置，ReadAll 或设置改动只影响下次启动。
 	const auto startupPlacement = Inkeys::UI::NormalizeStartupPlacement(
 		startupMiniConfig.UI.Bar.StartupPlacement.load());
@@ -3095,12 +3250,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	// DPI初始化
 	{
-		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处只保留旧 surface resize。
-		{
-			(void)alpha_drawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			(void)tester.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			(void)pptdrawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-		}
+		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处保留原启动进度槽。
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 		ReportStartupMilestoneForManualTest(
@@ -3272,6 +3422,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			// 写回会补齐缺失键；迁移判定必须在写回前记录原文件是否已有新键。
+			const bool statusIndicatorSuperTopStored =
+				config.ReadAllHasValue("Experimental.Inkeys3.UI3.StatusIndicator.SuperTop");
 			Inkeys::UI::RenderPipeline::SetFrameRate(config.UI.FrameRate);
 			// 偏好在 Host 创建绘制线程前发布；后续每笔锁存，启动预览不改变画布参数。
 			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
@@ -3281,10 +3434,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();
 			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
+			// 画布调试开关来自配置；可视化位启动时恒为未选中。
+			PublishCanvasDebugOptions();
 			Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(
 				config.Drawing.Haptics.Drawing, config.Drawing.Haptics.Buttons);
 			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(
 				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect);
+			Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectTouch,
+				config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnectPenTail);
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();
@@ -3395,6 +3553,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			InitializePenWidthPreferences(penWidthStartupContext);
 			if (!WriteSetting() && IDTLogger)
 				IDTLogger->warn("[主线程][IdtMain] deploy.json 写回失败，保留现存配置文件");
+			{
+				// 超级置顶提示从旧 deploy.json PlugIn.SuperTop.Indicator 一次性迁到 main.json；之后旧键不再使用。
+				auto& status = config.Experimental.Inkeys3.UI3.StatusIndicator;
+				if (!statusIndicatorSuperTopStored)
+				{
+					status.SuperTop = static_cast<bool>(setlist.plugInSetting.superTop.indicator);
+					if (!config.Write() && IDTLogger)
+						IDTLogger->warn("[主线程][IdtMain] 状态指示器配置迁移写回失败");
+				}
+				Inkeys::UI::Bar::SetStatusIndicatorOptions(status.Enable, status.PptSlideshow,
+					status.SuperTop, status.NewVersion);
+			}
 		}
 
 		// 初次读取配置后的操作
@@ -3464,6 +3634,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	// 插件初始化
 	{
+		if (hasSuperTop) Inkeys::UI::Bar::PublishSuperTopStatusIndicator();
 		// 桌面快捷方式初始化
 		if (!isolatedStartupFailure) shortcutAssistant.SetShortcut();
 		// 启动 DesktopDrawpadBlocker

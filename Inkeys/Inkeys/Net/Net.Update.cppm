@@ -65,7 +65,7 @@ export enum class AutomaticUpdateStateEnum : int
 	UpdateNewer = 10, // 软件相对最新版本更新
 	UpdateNew = 11, // 发现软件新版本
 };
-export extern AutomaticUpdateStateEnum AutomaticUpdateState;
+export extern IdtAtomic<AutomaticUpdateStateEnum> AutomaticUpdateState;
 
 export class DownloadNewProgramStateClass
 {

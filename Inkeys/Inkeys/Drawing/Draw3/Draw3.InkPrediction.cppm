@@ -485,6 +485,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 落笔时锁存；设置切换与断触续接均不能改写本笔的预测和完成态修正。
 		InkPredictionMode predictionMode = kActivePredictionMode;
 		bool penTailCorrectionEnabled = true;
+		EraserShape eraserShape = EraserShape::Circle;
 		TailInputDiagnostic tailInputDiagnostic;
 		std::vector<ink::stroke_model::Result> modeledResults;
 		// stationary/terminal Update 复用该 scratch，避免累计 modeledResults 无界增长。
@@ -643,6 +644,9 @@ export namespace Inkeys::Drawing::Draw3
 	// 计算一段墨迹点覆盖的脏矩形。
 	RECT RectFromStrokePoints(std::span<const InkPoint> points, int width, int height,
 		StrokeShape shape = StrokeShape::RoundCapsule);
+	RECT RectFromEraserPoints(std::span<const InkPoint> points, EraserShape shape, int width, int height);
+	int DrawEraserStrokeOrDot(InkRenderer& renderer, std::span<const InkPoint> points,
+		EraserShape shape, DirectX::XMFLOAT4 color);
 	// Shape dirty bounds 覆盖线宽、AA、反向拖动和填充内部。
 	RECT RectFromShapePrimitive(const ShapePrimitive& primitive,
 		ShapePrimitiveKind kind, int width, int height);

@@ -46,6 +46,12 @@
         "Mode": "底栏模式",
         "Centered": "居中"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "放映模式",
+        "SuperTop": "超级置顶",
+        "NewVersion": "新版本"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "清空",
@@ -98,6 +104,7 @@
         "WhiteboardGridLabel": "网格",
         "WhiteboardUnsavedLabel": "部分页面未保存",
         "FreezeLabel": "定格",
+        "CanvasDebugLabel": "可视化调试",
         "EndPresentationLabel": "结束放映",
         "SettingsLabel": "设置",
         "MoreLabel": "更多"
@@ -156,8 +163,7 @@
         "ReadFailed": "读取",
         "PresentFailed": "显示",
         "Failed": "故障",
-        "Recovering": "恢复",
-        "Loading": "加载",
+        "Recovering": "恢复中",
         "Retry": "重试",
         "Wait": "稍候",
         "RetryCanvas": "重试画布",
@@ -692,7 +698,26 @@
           "E": "未启用 Windows Ink 的数位板通常以“驱动注入的鼠标”到达。开启后这类鼠标使用数位板的光标设置；远程桌面等同样注入鼠标的软件可能被误判。",
           "Unavailable": "当前系统无法区分输入来源，该选项不可用。"
         },
+        "Eraser":
+        {
+          "N": "橡皮光标",
+          "E": "形状同时决定实际擦除区域（矩形为直角）；纹样与明暗仅影响光标外观。",
+          "Appearance": "外观",
+          "Light": "浅色",
+          "Dark": "深色",
+          "Circle": "圆形",
+          "Rectangle": "竖长矩形",
+          "Square": "正方形",
+          "Grips": "经典",
+          "Inkeys": "Inkeys",
+          "Sparkle": "星光"
+        },
         "FineControl": "精细控制",
+        "OpacitySection": "透明度",
+        "PenOpacity": "画笔光标透明度",
+        "HighlightPenFillOpacity": "画笔（高亮）光标填充透明度",
+        "DotOpacity": "小圆点光标透明度",
+        "HighlightDotFillOpacity": "小圆点（高亮）光标填充透明度",
         "DotHideOnContact":
         {
           "N": "小圆点光标落笔后自动隐藏",
@@ -701,8 +726,7 @@
           "ScreenPen": "仅屏幕笔",
           "Tablet": "仅数位板",
           "Both": "屏幕笔和数位板"
-        },
-        "Note": "“鼠标”在屏幕笔、数位板和触摸上由软件自行绘制箭头；荧光笔和激光笔的光标、图形工具及橡皮的专用光标不受这些选项影响。"
+        }
       },
       "Effect":
       {
@@ -722,7 +746,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "断触接续",
-          "E": "触摸书写时，若屏幕短暂丢失接触后又沿原方向恢复，将尝试把两段笔迹接成一笔，减少断线。关闭后，每次抬起都会结束当前笔画。"
+          "Touch": "触摸",
+          "PenTail": "笔（笔尾）",
+          "E": "书写时根据绘制意图判断断触问题并修正，同时可以接续绘制状态。"
         }
       },
       "Eraser":
@@ -765,7 +791,34 @@
           "ParallelWritingMultiTouchNote": "多指绘图已关闭，边擦边写无法生效。",
           "ParallelWritingLaserMultiTouchNote": "多指激光笔已关闭，边擦边写在激光笔下无法生效。",
           "ParallelWriting": "启用边擦边写",
-          "ParallelWritingDescription": "激活手掌橡皮时不会中断其他的输入，绘制可以继续进行。（适用于双人或多人书写时）"
+          "ParallelWritingDescription": "激活手掌橡皮时仅结束其附近的触摸书写，并阻止在其附近落笔；其他位置可继续书写。（适用于双人或多人书写时）",
+          "CursorNoticeTitle": "明暗与纹样跟随光标设置",
+          "CursorNoticeDescription": "手掌橡皮光标的明暗和纹样与“绘制 › 光标 › 橡皮光标”中的设置保持一致，这里只能单独选择形状。",
+          "Shape": "手掌橡皮形状",
+          "ShapeDescription": "形状同时决定手掌擦除的实际区域。选择“跟随默认”时与普通橡皮相同。",
+          "FollowDefault": "跟随默认",
+          "SizeSection": "手掌橡皮大小",
+          "SizeMode": "粗细计算方式",
+          "SizeModeDescription": "选择手掌橡皮粗细的计算方式。",
+          "SizeModeDynamic": "动态粗细",
+          "SizeModeFollowDefault": "固定粗细（跟随默认橡皮）",
+          "SizeModeFixed": "固定粗细（不支持笔速橡皮）",
+          "SizeModeDynamicNote": "跟随接触面积计算",
+          "SizeModeFollowDefaultNote": "使用默认橡皮大小，开启“自动粗细”时按笔速变化",
+          "SizeModeFixedNote": "始终使用默认橡皮大小",
+          "SizeMethod": "大小计算方式",
+          "SizeMethodDescription": "将接触矩形换算为橡皮大小的方法。",
+          "MethodEllipseArea": "接触矩形内切椭圆等面积",
+          "MethodRectangleArea": "接触矩形等面积",
+          "MethodInscribedCircle": "内切圆",
+          "MethodCircumscribedCircle": "外接圆",
+          "MethodInscribedRectangle": "内切矩形",
+          "MethodCircumscribedRectangle": "外接矩形",
+          "MethodInscribedSquare": "内切正方形",
+          "MethodCircumscribedSquare": "外接正方形",
+          "SizeMethodShapeNote": "当前形状：{}",
+          "SizeMultiplier": "擦除大小倍率",
+          "SizeMultiplierDescription": "按比例缩放橡皮的边长或直径，不影响识别。"
         },
         "Input":
         {
@@ -794,6 +847,33 @@
           "Note": "不建议大屏设备启用。"
         }
       }
+    },
+    "Position":
+    {
+      "N": "位置",
+      "DesktopSection": "桌面场景",
+      "PptSection": "PPT 场景",
+      "WhiteboardSection": "白板场景",
+      "StartupE": "决定下次启动时主栏出现的位置。居中顶栏只是初始位置，不会吸附。",
+      "TypeBottomBar": "居中底栏",
+      "TypeTopBar": "居中顶栏",
+      "TypeFloating": "悬浮窗",
+      "PositionLabel": "位置",
+      "ExpandRight": "向右展开",
+      "ExpandLeft": "向左展开",
+      "FloatBottomLeft": "左下角",
+      "FloatBottomRight": "右下角",
+      "FloatBottomCenter": "底部居中",
+      "PptAutoDock": "开始放映时自动进入居中底栏模式",
+      "PptAutoDockE": "进入前的主栏处于已勾选的状态时，放映开始后自动变为居中底栏并展开；退出放映后还原。",
+      "WhiteboardAutoDock": "进入白板时自动进入居中底栏模式",
+      "WhiteboardAutoDockE": "进入前的主栏处于已勾选的状态时，进入白板后自动变为居中底栏并展开；退出白板后还原。",
+      "StateBottom": "底栏状态",
+      "StateBottomFolded": "底栏状态（折叠）",
+      "StateFloating": "悬浮窗状态",
+      "StateFloatingFolded": "悬浮窗状态（折叠）",
+      "MainButtonDirection": "主按钮方向",
+      "DirectionKeep": "不改变"
     },
     "Preset":
     {
@@ -967,8 +1047,6 @@
           "SuperTop": "超级置顶",
           "SuperTopE1": "软件通过三段式启动进行置顶。\n（当前已经超级置顶）",
           "SuperTopE2": "软件通过三段式启动进行置顶。\n（当前未超级置顶）",
-          "Indicator": "超级置顶指示器",
-          "IndicatorE": "软件成功被超级置顶时，在主图标右上角显示一个大头针。",
           "SuperTopNote": "重启软件后生效；启动过程中可能出现置顶失败。"
         },
         "SupportNote": "仅支持 Windows 8 及以上系统。"
@@ -1065,6 +1143,20 @@
       "ClassIslandProtocolNote": "需要在 ClassIsland 应用设置 中注册 Url 导航协议。",
       "ClassIslandSwapNote": "在 ClassIsland 当前没有加载课表时，此组件不起作用。"
     },
+    "StatusIndicator":
+    {
+      "N": "状态指示器",
+      "E": "在主按钮上显示放映模式、超级置顶和软件更新等运行状态。",
+      "Enable":
+      {
+        "N": "启用状态指示器",
+        "E": "关闭后，主按钮不再显示任何状态提示。"
+      },
+      "Types": "提示以下状态",
+      "TypeSlideshow": "放映模式",
+      "TypeSuperTop": "超级置顶",
+      "TypeNewVersion": "新版本"
+    },
     "DesktopShortcut":
     {
       "N": "快捷方式",
@@ -1137,6 +1229,25 @@
       {
         "N": "显示帧率",
         "E": "每秒更新上一秒平均帧率和无等待帧率。"
+      },
+      "CanvasSection": "画布",
+      "CanvasDebug":
+      {
+        "N": "画布调试",
+        "E": "在画布底层显示帧率、硬件压力与输入点信息，并在主栏提供可视化调试按钮。"
+      },
+      "DelayWaiting":
+      {
+        "N": "为等待操作延迟",
+        "E": "延长加载等待，便于观察动画。"
+      },
+      "StatusIndicator":
+      {
+        "Section": "状态指示器",
+        "N": "测试状态指示器",
+        "E": "添加或删除随机测试状态，检查动画、长文字与进度环。",
+        "Add": "添加随机状态",
+        "Remove": "删除一个状态"
       },
       "ConsoleSection": "控制台输出",
       "CanvasInformation": "画布初始化信息",

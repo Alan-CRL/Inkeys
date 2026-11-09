@@ -46,6 +46,12 @@
         "Mode": "Bottom bar mode",
         "Centered": "Centred"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Slideshow",
+        "SuperTop": "SuperTop",
+        "NewVersion": "New version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Clear",
@@ -98,6 +104,7 @@
         "WhiteboardGridLabel": "Grid",
         "WhiteboardUnsavedLabel": "Some pages are not saved",
         "FreezeLabel": "Freeze",
+        "CanvasDebugLabel": "Visual debug",
         "EndPresentationLabel": "End show",
         "SettingsLabel": "Settings",
         "MoreLabel": "More"
@@ -157,7 +164,6 @@
         "PresentFailed": "Display",
         "Failed": "Error",
         "Recovering": "Recovering",
-        "Loading": "Load",
         "Retry": "Retry",
         "Wait": "Wait",
         "RetryCanvas": "Retry canvas",
@@ -692,7 +698,26 @@
           "E": "Pen tablets without Windows Ink usually arrive as a mouse injected by the driver. When on, that mouse uses the pen tablet cursor settings; software that also injects a mouse, such as remote desktop, may be misdetected.",
           "Unavailable": "This system cannot tell input sources apart, so this option is unavailable."
         },
+        "Eraser":
+        {
+          "N": "Eraser cursor",
+          "E": "The shape also sets the actual erase area (rectangles have square corners); pattern and light/dark only change the cursor's look.",
+          "Appearance": "Appearance",
+          "Light": "Light",
+          "Dark": "Dark",
+          "Circle": "Circle",
+          "Rectangle": "Rectangle",
+          "Square": "Square",
+          "Grips": "Classic",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Sparkle"
+        },
         "FineControl": "Fine controls",
+        "OpacitySection": "Opacity",
+        "PenOpacity": "Pen cursor opacity",
+        "HighlightPenFillOpacity": "Pen (highlighted) cursor fill opacity",
+        "DotOpacity": "Small dot cursor opacity",
+        "HighlightDotFillOpacity": "Small dot (highlighted) cursor fill opacity",
         "DotHideOnContact":
         {
           "N": "Automatically hide the small dot cursor on contact",
@@ -701,8 +726,7 @@
           "ScreenPen": "Screen pen only",
           "Tablet": "Pen tablet only",
           "Both": "Screen pen and pen tablet"
-        },
-        "Note": "On screen pens, pen tablets and touch, \"Mouse\" is an arrow drawn by the app itself; the highlighter, laser pointer, shape tools and eraser keep their own cursors regardless of these options."
+        }
       },
       "Effect":
       {
@@ -722,7 +746,9 @@
         "InterruptedStrokeReconnect":
         {
           "N": "Reconnect interrupted strokes",
-          "E": "When touch briefly drops out and resumes in the same direction, the app tries to join both parts into one stroke, reducing gaps. When disabled, lifting your finger ends the stroke."
+          "Touch": "Touch",
+          "PenTail": "Pen eraser",
+          "E": "Detects touch interruptions while writing based on drawing intent and corrects them, and can resume the drawing state."
         }
       },
       "Eraser":
@@ -765,7 +791,34 @@
           "ParallelWritingMultiTouchNote": "Multi-touch drawing is off, so writing while erasing cannot take effect.",
           "ParallelWritingLaserMultiTouchNote": "Multi-touch laser input is off, so writing while erasing cannot take effect with the laser pen.",
           "ParallelWriting": "Enable writing while erasing",
-          "ParallelWritingDescription": "Activating the palm eraser leaves other input uninterrupted, so drawing can continue. (For two or more people writing together.)"
+          "ParallelWritingDescription": "Activating the palm eraser only ends touch writing near it and blocks new touches there; writing elsewhere can continue. (For two or more people writing together.)",
+          "CursorNoticeTitle": "Theme and pattern follow the cursor settings",
+          "CursorNoticeDescription": "The palm eraser cursor uses the theme and pattern set in ‘Drawing › Cursor › Eraser cursor’. Only the shape can be chosen separately here.",
+          "Shape": "Palm eraser shape",
+          "ShapeDescription": "The shape also sets the area the palm actually erases. ‘Follow default’ uses the same shape as the regular eraser.",
+          "FollowDefault": "Follow default",
+          "SizeSection": "Palm eraser size",
+          "SizeMode": "Thickness calculation method",
+          "SizeModeDescription": "Choose how the palm eraser thickness is calculated.",
+          "SizeModeDynamic": "Dynamic thickness",
+          "SizeModeFollowDefault": "Fixed (default eraser)",
+          "SizeModeFixed": "Fixed (no speed eraser)",
+          "SizeModeDynamicNote": "Calculated from the contact area",
+          "SizeModeFollowDefaultNote": "Use the default eraser size; varies with pen speed when ‘Auto size’ is enabled",
+          "SizeModeFixedNote": "Always use the default eraser size",
+          "SizeMethod": "Size calculation method",
+          "SizeMethodDescription": "How the contact rectangle is converted to eraser size.",
+          "MethodEllipseArea": "Inscribed-ellipse area",
+          "MethodRectangleArea": "Rectangle area",
+          "MethodInscribedCircle": "Inscribed circle",
+          "MethodCircumscribedCircle": "Circumscribed circle",
+          "MethodInscribedRectangle": "Inscribed rectangle",
+          "MethodCircumscribedRectangle": "Circumscribed rectangle",
+          "MethodInscribedSquare": "Inscribed square",
+          "MethodCircumscribedSquare": "Circumscribed square",
+          "SizeMethodShapeNote": "Current shape: {}",
+          "SizeMultiplier": "Erase size multiplier",
+          "SizeMultiplierDescription": "Scale the eraser side length or diameter without affecting recognition."
         },
         "Input":
         {
@@ -794,6 +847,33 @@
           "Note": "Not recommended for large-screen devices."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Position",
+      "DesktopSection": "Desktop",
+      "PptSection": "Presentation",
+      "WhiteboardSection": "Whiteboard",
+      "StartupE": "Sets where the toolbar appears on the next launch. The centered top bar is only an initial position and does not snap.",
+      "TypeBottomBar": "Centered bottom bar",
+      "TypeTopBar": "Centered top bar",
+      "TypeFloating": "Floating window",
+      "PositionLabel": "Position",
+      "ExpandRight": "Expand right",
+      "ExpandLeft": "Expand left",
+      "FloatBottomLeft": "Bottom-left corner",
+      "FloatBottomRight": "Bottom-right corner",
+      "FloatBottomCenter": "Bottom center",
+      "PptAutoDock": "Enter centered bottom bar mode when a slideshow starts",
+      "PptAutoDockE": "If the toolbar is in a checked state beforehand, it becomes an expanded centered bottom bar when the slideshow starts, and is restored when the slideshow ends.",
+      "WhiteboardAutoDock": "Enter centered bottom bar mode when entering the whiteboard",
+      "WhiteboardAutoDockE": "If the toolbar is in a checked state beforehand, it becomes an expanded centered bottom bar when the whiteboard opens, and is restored when the whiteboard closes.",
+      "StateBottom": "Bottom bar state",
+      "StateBottomFolded": "Bottom bar state (collapsed)",
+      "StateFloating": "Floating window state",
+      "StateFloatingFolded": "Floating window state (collapsed)",
+      "MainButtonDirection": "Main button direction",
+      "DirectionKeep": "No change"
     },
     "Preset":
     {
@@ -967,8 +1047,6 @@
           "SuperTop": "Enable SuperTop",
           "SuperTopE1": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is currently active)",
           "SuperTopE2": "The application uses a three-stage launch to keep its windows on top.\n(SuperTop is not active)",
-          "Indicator": "SuperTop Indicator",
-          "IndicatorE": "Displays a pin icon on the top-right corner of the main application icon when successfully enabled.",
           "SuperTopNote": "Restart Inkeys to apply. The topmost launch may fail."
         },
         "SupportNote": "Requires Windows 8 or newer."
@@ -1065,6 +1143,20 @@
       "ClassIslandProtocolNote": "Register the URL navigation protocol in ClassIsland settings.",
       "ClassIslandSwapNote": "This component has no effect when ClassIsland has no timetable loaded."
     },
+    "StatusIndicator":
+    {
+      "N": "Status indicator",
+      "E": "Shows runtime states such as slideshow mode, SuperTop and software updates on the main button.",
+      "Enable":
+      {
+        "N": "Enable status indicator",
+        "E": "When off, the main button no longer shows any status hints."
+      },
+      "Types": "Show these states",
+      "TypeSlideshow": "Slideshow",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "New version"
+    },
     "DesktopShortcut":
     {
       "N": "Shortcuts",
@@ -1137,6 +1229,25 @@
       {
         "N": "Show frame rate",
         "E": "Update the previous second’s average and uncapped frame rates once per second."
+      },
+      "CanvasSection": "Canvas",
+      "CanvasDebug":
+      {
+        "N": "Canvas debugging",
+        "E": "Show frame rate, hardware load and input point details beneath the canvas, and add a visual debug button to the main bar."
+      },
+      "DelayWaiting":
+      {
+        "N": "Delay waiting operations",
+        "E": "Extend loading waits to observe animations."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Status indicator",
+        "N": "Test status indicator",
+        "E": "Add or remove random test states to check animation, long text and the progress ring.",
+        "Add": "Add random state",
+        "Remove": "Remove a state"
       },
       "ConsoleSection": "Console output",
       "CanvasInformation": "Canvas initialisation information",

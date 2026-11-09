@@ -104,3 +104,304 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 181: Canvas debug overlay, visual mode and per-device stroke reconnect
+<!-- trellis-session: v=2 fp=9617f1f5915e6606 -->
+
+**Date**: 2026-11-06
+**Task**: Canvas debug overlay, visual mode and per-device stroke reconnect
+**Branch**: `debug/drawpad`
+
+### Summary
+
+Added the Draw3 canvas debug plate (FPS, load, 60s chart, aligned contact table with source/path/id/phase/seq/altitude/azimuth/speed/latency) and a visual debug mode exclusive with the other tools; the switch is runtime-only. Added touch / pen-tail checkboxes for interrupted stroke reconnect and reworded its description in all locales.
+## Session 172: 内存采样与首批低风险优化
+<!-- trellis-session: v=2 fp=d9bcd7710a8ffc83 -->
+
+**Date**: 2026-11-05
+**Task**: 内存采样与首批低风险优化
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+保持三层画布、UI共享WARP与Draw3独立hardware-first；停用3张无消费者全屏DIB并消除4处快照深复制。两次60秒启动Private均值571.26→510.16MiB，下降61.10MiB（10.70%）。
+
+### Main Changes
+
+- 仅6个产品源码的局部修改；保留legacy数据与启动里程碑；现有资源规格补充所有权边界。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln before/after Debug|ARM64与共享inkStrokeModelerTest.sln均退出0。
+- [OK] 10项相关回归最终全通过；UInk首次缺少测试目录，补目录后仅重跑该项通过；66条history语义记录一致。
+- [OK] 双设备/后端、L0/L1/L2与流畅度静态审查通过；4次60秒采样与EXE/PDB匹配已保存。
+## Session 176: 调试等待操作延迟开关
+<!-- trellis-session: v=2 fp=358bcd06943bea4a -->
+
+**Date**: 2026-11-05
+**Task**: 调试等待操作延迟开关
+**Branch**: `debug/wait`
+
+### Summary
+
+完成默认关闭的调试开关，启动复用慢速成功模式，主动点击白板/PPT分页以非阻塞10s观察后派发；复核修复隐藏/停机退休。国际化、diff检查、ARM64 Debug Solution（临时非增量链接）、分页离屏与启动专项均通过。代理未进行GUI验证；用户确认改动生效并授权提交，未push。
+
+### Git Commits
+
+本次功能与归档记录一并提交。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 高风险按需纹理、Freeze/Setting资源恢复、历史回收与进一步legacy去重尚未实施，等待用户确认；WPR补采需Windows管理员权限。
+
+
+## Session 173: 静止内存第二批2–5资源回收
+<!-- trellis-session: v=2 fp=91b5bceaac311c90 -->
+
+**Date**: 2026-11-05
+**Task**: 静止内存第二批2–5资源回收
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+Setting PNG配方、Laser选中/退出纹理、辅助ULW owner隐藏回执、Freeze/白板/隐藏UI回收。Private510.85→429.35MiB（-81.50MiB/-15.95%），白板返回WS残留30.12→8.01MiB。
+
+### Main Changes
+
+- 保持L0/L1/L2、UI共享WARP/Draw3独立hardware-first及画质；1/6未改。修正Laser掌擦退休和既有inputLocked确认缺口，沿真实owner ACK。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过；MSVC增量链接内部错误仅清生成ILK解决，无项目/源码绕过。
+- [OK] 25项latest适用验证全部通过；早期失败、旧binary复现和目标重跑历史完整保留；最终EXE/PDB Age7匹配。
+- [OK] 前后各两次60秒静止与真实命令管道白板往返；No Computer Use、无Office/用户文档；流畅度静态审查。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 候选1保存峰值去重与6历史缓存页策略按用户要求后续评估；未commit/push。
+
+
+## Session 174: 候选1保存快照释放调查
+<!-- trellis-session: v=2 fp=90e132b3a33366f2 -->
+
+**Date**: 2026-11-05
+**Task**: 候选1保存快照释放调查
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+在e225c210基础审计保存副本生命周期；Desktop/PPT/白板大保存缓冲可正常销毁，合法Load与Clear恢复持有单列。未改生产或候选6。
+
+### Main Changes
+
+- 仅共享测试三cpp和一个测试头新增默认关闭固定地址释放观察；真实worker门证明持有后free，记录源缓冲不外推全堆。
+- 保存/加载所有权、元数据增长和Drain析构竞态写入研究、结果与资源生命周期规格。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 共享inkStrokeModelerTest.sln Debug|ARM64最终退出0；首次新增测试作用域C2601已修正并留失败日志。
+- [OK] 释放探针16服务阶段及1容量负控通过；同一Age2二进制5项CPU回归、bad argc90通过，BOM/CRLF与source身份一致。
+- [OK] 已有产品4项离屏/CPU和共享2项保存基线通过；无Computer Use/Office，未采全堆ETW，不保证OS提交量即时归零。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 建议候选1去重/COW继续后置；候选6按用户要求不修改，本轮测试/文档未commit或push。
+
+
+## Session 175: 内存优化任务完成归档
+<!-- trellis-session: v=2 fp=99b58d623a7a2a1d -->
+
+**Date**: 2026-11-05
+**Task**: 内存优化任务完成归档
+**Branch**: `diagnostic/memery`
+
+### Summary
+
+用户确认内存优化任务完成；归档runtime-memory-analysis，保留候选1释放调查与质量门，候选6不修改；按授权随后签名提交并推送当前分支。
+
+### Main Changes
+
+- 任务移至archive/2026-11，清除活动任务指针，更新上下文清单归档路径；本机.vs缓存不纳入提交。
+
+## Session 179: Unify whiteboard/PPT page-turn loading animation
+<!-- trellis-session: v=2 fp=537fbd792b53e8bf -->
+
+**Date**: 2026-11-05
+**Task**: Unify whiteboard/PPT page-turn loading animation
+**Branch**: `debug/wait`
+
+### Summary
+
+One 500ms-gated indicator now drives status word, dimming and a non-linear inner-edge ring for whiteboard and PPT; page-slot state table, i18n width fixes, Loading key removed.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e0711662` | feat(draw3): add canvas debug overlay and visual debug mode |
+| `1565cb61` | feat(draw3): refine canvas debug plate, visual mode and contact table |
+| `0df57184` | feat(draw3): choose devices for interrupted stroke reconnect |
+| `e225c210` | perf(memory): release inactive graphics resources |
+
+### Testing
+
+- [OK] 沿用已通过的ARM64构建、释放探针和相关CPU回归；本轮仅收尾文档与归档，不重复运行。
+| `9ddb5365` | feat(bar): unify page-turn loading state for whiteboard and PPT |
+| `ad7d1302` | fix(i18n): shorten page status words and drop unused Loading key |
+| `70d5ca9a` | docs(trellis): plan unified page loading task and update rendering spec |
+| `97321dc2` | fix(bar): thicken page loading ring and match button corner radius |
+
+### Testing
+
+- [OK] ARM64 Debug solution build, InkeysHeadlessTests --no-window, Inkeys.exe --bar-eraser-offscreen-test (failures=0), --ui3-input-worker-test, i18n.ps1 check
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None; user verified visually and approved.
+
+## Session 177: 重启与设置退出修复验收归档
+<!-- trellis-session: v=2 fp=b75a4b2e55903361 -->
+
+**Date**: 2026-11-05
+**Task**: 重启与设置退出修复验收归档
+**Branch**: `chore/ui`
+
+### Summary
+
+用户接受当前修复并要求结束归档；26轮全部exit0、Settings关停均为毫秒级，默认关闭的探针继续保留，剩余退出长尾明确延后。
+
+### Main Changes
+
+- 普通R隐藏后提前交接，已知更新U及崩溃X等待旧父退出；Settings先注销并排空帧，再做最终resident清理。
+- 采集器修复其他worktree同名进程误判，14个目录范围正负例；原始18轮及6+20轮日志保留，只提交紧凑汇总。
+- 归档 .trellis/tasks/archive/2026-11/11-05-restart-shutdown-investigation；记录探针命令、版本哈希、结论和follow-up，不归档其他历史任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b0db5fc56a55610677a6838eef7670b1fc06daa` | fix(lifecycle): avoid restart and settings shutdown waits |
+| `407f91951f91c35fdbf35c627a8f8af48d399faf` | fix(diagnostics): scope shutdown collection to its installation |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64原生MSBuild exit0；完整--no-window同一PID最终exit0，初始等待超时后未重跑。
+- [OK] 设置旧顺序负例、隐藏idle及在途回调排空通过；字体生命周期、重启/单实例/监督器回归通过。
+- [OK] 用户26轮均exit0，main-setting1.0781~9.7916ms，中位总关闭观测1277.91375ms，4轮>=3秒；新版20轮完整完成。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 需要继续时从归档follow-up.md恢复：先区分系统ExitTime与观测延迟，再调查main后、PPT及窗口/Draw3长尾；C10 foreign-session reader已有单独未定位失败，Win7/UAC/跨架构不宣称通过。
+
+
+## Session 180: 完善设置绘制光标样式与透明度
+<!-- trellis-session: v=2 fp=8a89c5244b2e7f82 -->
+
+**Date**: 2026-11-06
+**Task**: 完善设置绘制光标样式与透明度
+**Branch**: `chore/ui`
+
+### Summary
+
+完成高亮光标黑边与动态白环、四类透明度配置、浅色预览及二十语言文案；通过构建、i18n 与 Draw3 无窗口验证，用户确认人工测试通过；完整 headless 的既有无关断言已在任务记录中保留说明。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c7f3f353` | feat(settings): refine cursor appearance and opacity |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 182: 位置设置页与 PPT/白板进入自动居中底栏
+<!-- trellis-session: v=2 fp=a413d270b49c1963 -->
+
+**Date**: 2026-11-06
+**Task**: 位置设置页与 PPT/白板进入自动居中底栏
+**Branch**: `chore/ui`
+
+### Summary
+
+新增通用-位置页：桌面启动位置扩展为类型+位置联动下拉（含居中顶栏、悬浮窗底栏居中），PPT/白板进入按进入前主栏状态勾选自动变为居中底栏并可选展开方向；修复折叠/悬浮接管时展开与居中互相覆盖。遗留：折叠状态进入 PPT（自动居中）动画不自然且脏区遗漏，见归档任务 followup.md。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b10c5858` | feat(bar): add position settings page with workspace auto-dock policy |
+| `fa57e5f5` | fix(bar): stop expand and centering fighting on workspace entry takeover |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 183: 手掌橡皮第一阶段：RTS坐标、面积与定尺修复
+<!-- trellis-session: v=2 fp=67516a5e42478450 -->
+
+**Date**: 2026-11-06
+**Task**: 手掌橡皮第一阶段：RTS坐标、面积与定尺修复
+**Branch**: `bugfix/hand-erase`
+
+### Summary
+
+按用户批准的A方案完成窗口HDC位置映射、接触尺寸S/C逆变换和椭圆等面积圆定尺；保留识别阈值/预览。代码未提交，任务保留待实机验收。
+
+### Main Changes
+
+- RTS从目标HWND HDC缓存ink到像素比例；补齐映射失效、取消与启动失败回传。
+- WIDTH/HEIGHT按当前context补除ink-to-digitizer倍率；Palm直径sqrt(W*H)，识别仍W*H。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过；仅清理生成.ilk恢复增量链接器内部错误，无项目配置修改。
+- [OK] Palm Headless 152/0；生产RTS 59/0；生产Palm probe PASS；沙箱外全量Headless --no-window exit0。
+- [OK] 可选DPI API无新增静态导入；diff、UTF-8/BOM/CRLF及规范审查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在Surface、异常设备、多屏和Win7 SP1 + KB2670838 x86/x64上进行实机验收；尚未授权GUI/Computer Use。

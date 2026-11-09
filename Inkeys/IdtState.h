@@ -207,6 +207,15 @@ bool ToggleClickThroughFromButton();
 int GetSelectAndClickThroughMode() noexcept;
 bool SetSelectAndClickThroughMode(int mode);
 bool ToggleFreezeFromButton();
+// 画布调试：开关由设置页写入配置，可视化位只在最近一次工具修订上有效，任何后续工具/模式变化自动退出。
+bool IsCanvasDebugEnabled() noexcept;
+bool IsCanvasDebugVisualActive() noexcept;
+// 设置页热切换：关闭时同时退出可视化模式；调用方负责 QueueConfigWrite。
+void SetCanvasDebugEnabled(bool enabled);
+// 主栏“可视化调试”按钮：未激活时进入（必要时离开选择/穿透），激活时退出，保持当前工具。
+bool ToggleCanvasDebugVisualFromButton();
+// 把开关与可视化位发布给 Draw3（启动同步及状态变化后调用；值不变时无开销）。
+void PublishCanvasDebugOptions() noexcept;
 std::uint64_t StateModeTransitionRevision() noexcept;
 // PPT 真退出额外固定工作区身份；0 保持其它 revision-only 调用的原语义。
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision,
@@ -232,6 +241,7 @@ void SyncDraw3State();
 void InitializeEraserInputPreferences();
 Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot();
 void SetGlobalEraserPreference(int baseDiameterDip = -1, int sensitivity = -1, int automatic = -1);
+void SetEraserCursorPreference(int shape = -1, int pattern = -1, int theme = -1);
 Inkeys::Drawing::Draw3::PalmEraser::Settings PalmEraserPreferencesSnapshot();
 bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings& options);
 bool AutomaticPenResponseAvailable() noexcept;

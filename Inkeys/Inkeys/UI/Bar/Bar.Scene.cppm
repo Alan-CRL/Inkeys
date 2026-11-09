@@ -36,9 +36,12 @@ export namespace Inkeys::UI::Bar
 	using BarSurfaceButtonId = std::uint32_t;
 	inline constexpr BarSurfaceButtonId BarSurfaceNoButton = 0;
 	enum class BarPageContentKind : std::uint8_t { Numeric, Status };
+	// 与 PageLoadState 数值一致；None 以外的状态都先经过同一个 500ms 门控才显示文字/变浅/环。
+	enum class BarPageLoadState : std::uint8_t { None, Loading, RetryableFailed, FinalFailed };
 	struct BarPageSurfaceContent
 	{
 		BarPageContentKind kind = BarPageContentKind::Numeric;
+		BarPageLoadState loadState = BarPageLoadState::None;
 		unsigned surface = 0;
 		std::uint64_t loadingSession = 0;
 		bool whiteboard = false, switching = false, pptActive = false;
@@ -47,7 +50,8 @@ export namespace Inkeys::UI::Bar
 		int menu = 0;
 		std::array<bool, 3> enabled{ true, true, true };
 		std::array<bool, 3> interactive{ true, true, true };
-		std::wstring currentPage, totalPage;
+		// currentPage/totalPage 恒为常态页码；statusPrimary/statusSecondary 是门控到点后替换它们的状态文字，空串表示不替换该槽。
+		std::wstring currentPage, totalPage, statusPrimary, statusSecondary;
 		std::wstring previousLabel, nextLabel, moreLabel, unsavedLabel;
 		std::array<std::wstring, 3> actionLabels;
 		std::array<std::wstring, 3> patternLabels;

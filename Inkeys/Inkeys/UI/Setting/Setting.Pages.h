@@ -4,6 +4,7 @@
 #include "Setting.HomeBrand.h"
 #include "Setting.SessionState.h"
 #include "Setting.EraserDemo.h"
+#include "../../Drawing/Draw3/Draw3.EraserCursor.h"
 #include "../../Business/DesktopShortcut.h"
 
 struct ImGuiWindow;
@@ -195,9 +196,11 @@ namespace Inkeys::UI::Setting::Design
 
 	struct SettingOpenNavigation
 	{
-		enum class Action { None, Home, SpeedEraser };
+		enum class Action { None, Home, SpeedEraser, SoftwareVersion };
 		std::uint64_t consumed = 0, showSerial = 0, hideSerial = 0;
 		bool fadeOnly = false;
+		// 最近一次直达的目标；开屏覆盖只在仍停留于该目标页时保留。
+		SettingOpenTarget target = SettingOpenTarget::Current;
 
 		Action Consume(const SettingOpenRequest& request, bool visible,
 			std::uint64_t currentShow, std::uint64_t currentHide, bool entryAllowed) noexcept
@@ -206,11 +209,11 @@ namespace Inkeys::UI::Setting::Design
 			if (request.serial == consumed) return Action::None;
 			consumed = request.serial; fadeOnly = false;
 			if (!visible || request.showSerial != currentShow || request.hideSerial != currentHide
-				|| request.target != SettingOpenTarget::SpeedEraser) return Action::None;
-			showSerial = currentShow; hideSerial = currentHide;
+				|| request.target == SettingOpenTarget::Current) return Action::None;
+			showSerial = currentShow; hideSerial = currentHide; target = request.target;
 			// 首帧就选中目标页，开屏只覆盖其上，不再等待主页动画后跳转。
 			fadeOnly = request.opening && entryAllowed;
-			return Action::SpeedEraser;
+			return request.target == SettingOpenTarget::SoftwareVersion ? Action::SoftwareVersion : Action::SpeedEraser;
 		}
 	};
 
@@ -247,6 +250,7 @@ namespace Inkeys::UI::Setting::Design
 	};
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter = {});
 
+	using EraserCursorPreviewPresenter = std::function<void(const LayoutRect&, Drawing::Draw3::EraserCursorAppearance)>;
 	struct PalmEraserDraft
 	{
 		bool enabled = false;
@@ -255,6 +259,10 @@ namespace Inkeys::UI::Setting::Design
 		// 每帧只读的多指偏好，只控制说明提示，不写回手掌设置。
 		bool multiTouchEnabled = true, laserMultiTouchEnabled = true;
 		std::array<bool, 7> tools{ true, true, true, true, true, true, true };
+		// 手掌独立形状：-1 跟随默认，0..2 为 EraserShape；明暗/纹样/默认形状只读，仅用于预览。
+		int shape = -1, eraserShape = 0, eraserPattern = 0, eraserTheme = 0;
+		int sizeMode = 0, sizeMultiplierPercent = 100;
+		std::array<int, 3> sizeMethods{};
 		// 来自绘制输出已应用标尺的 100% 面积；页面本帧调倍率即可同步预览。
 		double referenceAreaPixels = 0, referenceAreaCm2 = 0;
 		bool previewEstimated = false, physicalSizeWarning = false;
@@ -262,25 +270,32 @@ namespace Inkeys::UI::Setting::Design
 	struct PalmEraserEvents
 	{
 		bool back = false, enabledChanged = false, recognitionWindowChanged = false;
-		bool thresholdChanged = false, thresholdReset = false, parallelWritingChanged = false;
+		bool thresholdChanged = false, thresholdReset = false, parallelWritingChanged = false, shapeChanged = false;
+		bool sizeModeChanged = false, sizeMultiplierChanged = false, sizeMultiplierReset = false, sizeMultiplierActive = false;
+		std::array<bool, 3> sizeMethodsChanged{};
 		std::array<bool, 7> toolsChanged{};
 	};
-	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft);
+	PalmEraserEvents RenderPalmEraser(PalmEraserDraft& draft, const EraserCursorPreviewPresenter& preview = {});
 	// 光标专页草稿：四个设备各自的下拉项索引（触摸首项为“无光标”，其余设备首项为“鼠标”）。
 	struct CursorPageDraft
 	{
 		int mouse = 0, touch = 0, screenPen = 0, tablet = 0;
 		int dotHideOnContact = 1;
+		int eraserShape = 0, eraserPattern = 0, eraserTheme = 0;
 		bool injectedMouse = false;
 		bool injectedAvailable = true;
+		// Pen、HighlightPen、Dot、HighlightDot 的独立不透明度。
+		std::array<float, 4> opacity{ 0.50F, 0.50F, 0.25F, 0.50F };
 	};
 	struct CursorPageEvents
 	{
 		bool back = false;
 		bool mouse = false, touch = false, screenPen = false, tablet = false;
 		bool injectedMouse = false, dotHideOnContact = false;
+		bool eraserShape = false, eraserPattern = false, eraserTheme = false;
+		std::array<bool, 4> opacityChanged{}, opacityActive{}, opacityReset{};
 	};
-	CursorPageEvents RenderCursorPage(CursorPageDraft& draft);
+	CursorPageEvents RenderCursorPage(CursorPageDraft& draft, const EraserCursorPreviewPresenter& preview = {});
 
 	struct PptIdleFadeDraft
 	{
@@ -339,6 +354,12 @@ namespace Inkeys::UI::Setting::Design
 		DesktopShortcutDraft desktopShortcut;
 		DesktopShortcutDraft whiteboardShortcut{ Business::DesktopShortcut::Kind::Whiteboard };
 		int startupEffect = 0;
+		// 状态指示器：总开关 + 放映模式/超级置顶/新版本；总开关关闭时隐藏勾选但保留值。
+		bool statusIndicator = true;
+		std::array<bool, 3> statusIndicatorTypes{ true, true, true };
+		// 场景进入策略：掩码 bit0 底栏、bit1 底栏折叠、bit2 悬浮窗、bit3 悬浮窗折叠；方向 0 不改变、1 向右、2 向左。
+		int pptDockMask = 1, pptDockDirection = 0;
+		int whiteboardDockMask = 1, whiteboardDockDirection = 0;
 	};
 
 	struct GeneralEvents
@@ -363,6 +384,8 @@ namespace Inkeys::UI::Setting::Design
 		bool animationChanged = false;
 		bool dynamicEdgeLightingChanged = false;
 		bool startupPlacementChanged = false;
+		bool pptDockMaskChanged = false, pptDockDirectionChanged = false;
+		bool whiteboardDockMaskChanged = false, whiteboardDockDirectionChanged = false;
 		bool taskbarScaleBaseChanged = false;
 		bool themeModeChanged = false;
 		bool settingThemeModeChanged = false;
@@ -371,6 +394,8 @@ namespace Inkeys::UI::Setting::Design
 		bool selectModeChanged = false, iconOrderChanged = false, expansionDirectionChanged = false;
 		std::array<bool, 4> autoCollapseChanged{};
 		std::array<bool, 6> shortcutsChanged{};
+		bool statusIndicatorChanged = false;
+		std::array<bool, 3> statusIndicatorTypesChanged{};
 	};
 
 	struct CicdContent

@@ -15,6 +15,7 @@ export namespace Inkeys::UI::Setting
 	void Shutdown() noexcept;
 	int RunBusinessCancellationProductionTest() noexcept;
 	int RunFontLifecycleProductionTest() noexcept;
+	int RunTextureRecoveryProductionTest() noexcept;
 	// 复用已启动的业务FIFO，不打开设置窗口。
 	void RequestConfigWrite();
 	// 故障边沿投递既有Information FIFO，执行时复核捕获的协调版本。
@@ -24,6 +25,8 @@ export namespace Inkeys::UI::Setting
 	void Show();
 	// 从橡皮属性直达详情，仍走同一 Show、激活与开屏策略。
 	void ShowSpeedEraser();
+	// 从主栏新版本状态直达软件版本页，规则同 ShowSpeedEraser。
+	void ShowSoftwareVersion();
 	void Hide();
 	void Toggle();
 	[[nodiscard]] bool IsVisible() noexcept;

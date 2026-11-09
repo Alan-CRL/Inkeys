@@ -8,7 +8,7 @@
 
 ## 2. Signatures
 
-- `Draw3.CursorSettings.h`：`CursorStyle { None=0, Arrow=1, Pen=2, HighlightPen=3, Dot=4, HighlightDot=5 }`（界面名：无光标/鼠标/画笔/画笔（高亮）/小圆点/小圆点（高亮））、`CursorDevice { Mouse, Touch, ScreenPen, Tablet }`、`CursorSettings{mouse,touch,screenPen,tablet,injectedMouseAsTablet,dotHideOnContact}`（默认 Arrow/None/Dot/HighlightDot/false/ScreenPen）、`IsCursorStyleValueValid/RestoreCursorStyle/RestoreDeviceCursorStyle/LegacyCursorStyle`、`CursorStyleToItemIndex/FromItemIndex/ItemCount`（设置页下拉索引，触摸含“无光标”首项）、`PackCursorSettings/UnpackCursorSettings`（mouse3|touch3|screenPen3|tablet3|injected1|valid1|dotHide2 位域，有效位仍为 bit13，新模式在 bit14–15）与 `kCursor*Dip` 共用常量（渲染与设置页预览共用，避免漂移）。“小圆点”即随笔宽的圆形预览（旧“圆形”）；“鼠标”对鼠标是真实系统光标，对其它设备是 Draw3 自绘的同形状箭头。
+- `Draw3.CursorSettings.h`：`CursorStyle { None=0, Arrow=1, Pen=2, HighlightPen=3, Dot=4, HighlightDot=5 }`（界面名：无光标/鼠标/画笔/画笔（高亮）/小圆点/小圆点（高亮））、`CursorDevice { Mouse, Touch, ScreenPen, Tablet }`、`CursorSettings{mouse,touch,screenPen,tablet,injectedMouseAsTablet,dotHideOnContact,penOpacity,highlightPenFillOpacity,dotOpacity,highlightDotFillOpacity}`（默认 Arrow/None/Dot/HighlightDot/false/ScreenPen/50/50/25/50）、`IsCursorStyleValueValid/RestoreCursorStyle/RestoreDeviceCursorStyle/LegacyCursorStyle`、`CursorStyleToItemIndex/FromItemIndex/ItemCount`（设置页下拉索引，触摸含“无光标”首项）、`DefaultCursorOpacityPercent/NormalizeCursorOpacityPercent/CursorOpacityPercent`、`PackCursorSettings/UnpackCursorSettings`（`uint64_t`：低位 mouse3|touch3|screenPen3|tablet3|injected1|valid1|dotHide2 不变，有效位仍为 bit13，四种百分比从 bit16 起各占 7 位）与 `kCursor*Dip` 共用常量（渲染与设置页预览共用，避免漂移）。“小圆点”即随笔宽的圆形预览（旧“圆形”）；“鼠标”对鼠标是真实系统光标，对其它设备是 Draw3 自绘的同形状箭头。
 - `DotCursorHideMode{Off=0,ScreenPen=1,Tablet=2,Both=3}`、`RestoreDotCursorHideMode(int)`、`ShouldHideDotCursorOnContact(CursorDevice,CursorStyle,DotCursorHideMode)`：只对两种 Dot 样式与命中的笔设备返回隐藏；非法整数还原为 ScreenPen。
 - `Bridge::ProductState::cursorSettings` 是纯值快照；`Bridge::ResolveMouseCursorStyleForTool(Tool,CursorStyle)` 给出当前工具的有效鼠标样式（软/硬笔取所选，荧光笔固定为应用预览，其余回 Arrow），`Bridge::ResolveCursorSettingsForTool(Tool,CursorSettings)` 按值生成有效快照且只改 mouse；原始选择不得被该临时结果覆盖。
 - `DrawingController::SetCursorSettings(const CursorSettings&) noexcept` 只由 Host owner 消费；`ResolvePrimaryDrawingCursorVisual(..., const CursorSettings* productSettings=nullptr, bool penIconAllowed=false, float dpiScale=1.0f)` 在显式接入后应用产品规则（`penIconAllowed` 仅对软/硬笔为真，同时门控设备样式）；`MakeTouchPenDrawingCursorVisual(x,y,appearance,CursorStyle,dpi)` 生成逐接触触摸光标。
@@ -27,13 +27,15 @@
 | `Touch` | 同上，另含 `0` 无光标 | `-1` |
 | `InjectedMouseAsTablet`（bool） | 把驱动注入的鼠标当作数位板 | `false` |
 | `DotHideOnContact`（int） | `0` 关闭、`1` 仅屏幕笔、`2` 仅数位板、`3` 屏幕笔和数位板 | `1` |
+| `PenOpacity` / `HighlightPenFillOpacity` / `HighlightDotFillOpacity`（int 百分比） | `25..100` | `50` |
+| `DotOpacity`（int 百分比） | `25..100` | `25` |
 | `MouseStyle` / `PenStyle`（旧版，只读） | `0/1`，非法恢复 `0` | `0` |
 
-`DotHideOnContact` 只接受能表示为 int 的 JSON int/uint 且范围 0..3；bool、浮点、超宽、越界及其它类型回默认 1。配置→State 归一→Bridge 全值快照→Controller 单原子发布，只有模式变化也必须产生新 revision 和光标重绘。
+`DotHideOnContact` 只接受能表示为 int 的 JSON int/uint 且范围 0..3；bool、浮点、超宽、越界及其它类型回默认 1。四个透明度字段同样先验整数类型和宽度，非法输入恢复各自默认值。配置→State 归一→Bridge 全值快照→Controller 单原子发布，只有模式或任一透明度变化也必须产生新 revision 和光标重绘。
 
 设备键先验 JSON 整数类型与宽度；非整数、超宽、越界以及不属于该设备的值（非触摸的 `0`）一律读成 `-1`，不窄化。未设置的设备回落：鼠标旧 `MouseStyle=1`→画笔（高亮），否则鼠标；屏幕笔旧 `PenStyle=1`→画笔，否则小圆点；数位板旧 `PenStyle=1`→画笔（高亮），否则小圆点（高亮）；触摸→无光标。用户在专页改动某设备才写该设备键，旧键保留不写。`MouseHighlightEdge`、`ScreenPenHighlightEdge`、`DigitizerHighlightEdge` 以及已取消的 `PenHighlightMode` 不读/不输出；下一次写盘显式清理三个旧边缘键，即使 AutoClean=false，其它未知键依旧保留。
 
-设置页“绘制→光标”只有一个入口，进入 `DrawingSubpage::Cursor` 专页（`RenderCursorPage`）：四个设备行各带内联预览。鼠标、屏幕笔、数位板的下拉依次为 鼠标/画笔/画笔（高亮）/小圆点/小圆点（高亮），触摸前面多一个“无光标”；另有“识别驱动注入的数位板”开关（无 `GetCurrentInputMessageSource` 的系统上置灰）。下拉索引与样式经 `CursorStyleToItemIndex/FromItemIndex` 转换。蓝色信息条紧接数位板识别开关；随后页底“精细控制”包含“小圆点光标落笔后自动隐藏”，四项顺序与 `DotCursorHideMode` 相同，默认仅屏幕笔。来源 API 缺失只禁用识别开关，不禁用该精细控制。渲染作用域继续配置→deferred `SyncDraw3State()`→同一FIFO的冻结 `QueueConfigWrite()`，不得在 ImGui 锁内访问Controller/HWND。Product merge 必须完整复制 `cursorSettings`。
+设置页“绘制→光标”只有一个入口，进入 `DrawingSubpage::Cursor` 专页（`RenderCursorPage`）：四个设备行各带内联预览。鼠标、屏幕笔、数位板的下拉依次为 鼠标/画笔/画笔（高亮）/小圆点/小圆点（高亮），触摸前面多一个“无光标”；另有“识别驱动注入的数位板”开关（无 `GetCurrentInputMessageSource` 的系统上置灰）。下拉索引与样式经 `CursorStyleToItemIndex/FromItemIndex` 转换。蓝色信息条紧接数位板识别开关；随后“透明度”分组按 Pen/HighlightPen/Dot/HighlightDot 提供四条 25%–100%、1% 步进的滑块与无文字重置按钮，普通样式控制整体 alpha，高亮只控制填充。拖动即时同步，松手、重置或离页保存。页底“精细控制”包含“小圆点光标落笔后自动隐藏”，四项顺序与 `DotCursorHideMode` 相同，默认仅屏幕笔。来源 API 缺失只禁用识别开关，不禁用透明度或精细控制。渲染作用域继续配置→deferred `SyncDraw3State()`→同一FIFO的冻结 `QueueConfigWrite()`，不得在 ImGui 锁内访问Controller/HWND。Product merge 必须完整复制 `cursorSettings`。
 
 ### 工具、来源与外观
 
@@ -51,7 +53,7 @@
 - Host只传原始设置；Controller按实际 EffectiveDrawingCursorTool 进行生产工具投影，只改 mouse（见签名）。Window系统箭头和resolver使用同一有效策略（`mouse==Arrow` 才使用系统箭头）。活动contact锁存原工具时不能按新选择state.tool覆盖投影；抬起后重新投影，原始偏好始终保留。
 - Unknown/Conflict Pen 使用数位板行，不改输入身份或橡皮模型。笔刚进入时 Pointer 路径发布的样本无来源，`WindowController::PublishPenCursorSample` 沿用最近一次已知来源（`lastKnownPenSource_`），避免错误设备行的瞬时闪现；换设备时由随后到达的 RTS 样本纠正。
 - 数位板驱动（如 GAOMON M6 的 Windows Ink 虚拟 HID 设备）常被系统同时以 `POINTER_DEVICE_TYPE_INTEGRATED_PEN` 与 `THWC_Integrated` 报告为屏幕笔，但其 `POINTER_DEVICE_INFO.monitor` 为空；真实屏幕笔（Surface 内置笔）monitor 恒有效。`ClassifySource` 在指针设备已匹配、两路 Integrated 证据一致、已读到映射矩形且 monitor 为空时归为 `ExternalPen`；矩形读取失败、能力位与指针类型冲突或多重匹配仍按原规则（Unknown/Conflict）。依据为单机 Surface Laptop + GAOMON M6 的 2026-11-03 日志（见 11-03-tablet-recognition-investigation/research），其它数位板需设备验收。
-- 小圆点即现有随笔宽的圆形预览（热点为圆心、沿用 Pen/HardPen 的 CursorAppearance），不新增 GPU type；高亮边复用既有 1.25 DIP/0.96 灰白常量。触摸光标由 `MakeTouchPenDrawingCursorVisual` 按各 Touch runtime 的最新位置生成（缩放取该 runtime 的 visualStyle），Up/Cancel 随 runtime 消失，不改变系统触摸箭头始终隐藏与 Touch owner 合同。自绘箭头尺寸盒为 13×19.5 DIP、左上尖端为热点、白填充细黑边（`CursorArrowOutlineWidthPx(scale)=max(1px,0.5 DIP×scale)`，200%下为1物理像素）；GPU 仍用 12×19 归一化参考轮廓，设置预览按相同盒尺寸映射。该基准按 192 DPI 原生实际 bbox 25×39 px 校准（旧 GPU 实测 23×38），不额外叠加 DPI 倍率、不改变笔宽。
+- 小圆点即现有随笔宽的圆形预览（热点为圆心、沿用 Pen/HardPen 的 CursorAppearance），不新增 GPU type。普通 Pen/Dot 的灰边与填充统一使用各自整体百分比；HighlightPen/HighlightDot 只把百分比应用于填充，1 物理像素纯黑外圈与内侧白色环均不透明。黑边向内占用原轮廓，不扩大外框或移动热点；HighlightPen 白环保持 1.25 DIP，HighlightDot 白环为 `clamp(实际直径/8,1px,1.25 DIP×scale)`。触摸光标由 `MakeTouchPenDrawingCursorVisual` 按各 Touch runtime 的最新位置生成并消费同一 CursorSettings（缩放取该 runtime 的 visualStyle），Up/Cancel 随 runtime 消失，不改变系统触摸箭头始终隐藏与 Touch owner 合同。自绘箭头尺寸盒为 13×19.5 DIP、左上尖端为热点、白填充细黑边（`CursorArrowOutlineWidthPx(scale)=max(1px,0.5 DIP×scale)`，200%下为1物理像素）；GPU 仍用 12×19 归一化参考轮廓，设置预览按相同盒尺寸映射。该基准按 192 DPI 原生实际 bbox 25×39 px 校准（旧 GPU 实测 23×38），不额外叠加 DPI 倍率、不改变笔宽。
 - 非 Windows Ink 数位板以 `device=IMDT_MOUSE`、`origin=IMO_INJECTED` 的 WM_MOUSE* 到达（真鼠标为 `IMO_HARDWARE`）。仅当 `InjectedMouseAsTablet` 开启且来源 API 可用时，Window 把该样本标记 `SourceKind::ExternalPen`；resolver 据此走数位板行，`ShouldHideSystemDrawingCursor(…, mouseSampleIsTablet)` 隐藏系统箭头。默认关闭，因为远程桌面、AutoHotkey 等注入软件会被误判；Win7 无 API 时开关无效。
 - PenIcon 仍24 DIP，左上尖端为输入热点、笔尾向右下；仅笔侧/笔尾四个非尖端角做内切圆角，目标半径3 DIP并等比缩放，切线长度各不超过相邻短边2/5以保留间隔；不能整体圆化而钝化笔头。偏移仅影响瞬态中心/quad/dirty，不移动 sample、不外扩外框，复用GPU type21。
 - Highlighter矩形复用当前 `CanvasDiameterForTool` 和同一长宽比，填充有效alpha仍0.35；显式不透明高亮（outlineOpacity=1、GPU编码uv.x=2）时左右边缘为原宽度一半，上下保持原宽度，外框不动。ScreenPen非高亮与legacy默认编码0保持原公式，小尺寸inner coverage须非负且不超过outer；独立边缘alpha不改变工具墨迹。`outlineOpacity=-1` 保留旧整体opacity语义。
@@ -111,10 +113,10 @@
 - Arrow细边：共享helper的0.5/1/1.5/2/2.75/4倍率值、Touch路径与Controller独立预期；192DPI生产/guarded真实staging像素在竖直左边中段必须是1列不透明黑边后紧邻不透明白填充，旧2px实现须不满足；外框仍25×39、热点不变。不能只断言outlineWidth参数或通过缩小整个箭头制造细边。
 
 - 新模式：Config 四态默认/ReadMini/ReadAll/冻结副本/NoUpload与非法类型；Bridge仅模式变化、6000合法组合打包；resolver四态×五样式×六来源的hover/contact、专用工具和橡皮优先。设置页真实Combo键盘选取四项，各仅一次事件，不改其它偏好；20语言×1/1.5/1.875 DPI×340/780 DIP布局与蓝色信息条在精细控制上方。
-- 真实Config：四个设备键默认 -1、全部合法值与非法值（bool/float/字符串/超宽/越界/非触摸的 0）读成 -1、注入开关默认 false、往返/ReadMini/冻结副本、旧 `MouseStyle/PenStyle` 校验、旧高亮键忽略/保存清理、未知键保留与NoUpload。
-- Bridge：只改任一设备样式仍发布新revision、旧快照不变；调用生产工具helper覆盖 mouse 样式×全部Tool，不复制映射；`Pack/UnpackCursorSettings` 与设置页下拉索引对全部合法组合往返；`RestoreDeviceCursorStyle` 的旧配置回落。
-- Resolver：五种样式 × 屏幕笔/数位板/Unknown/Conflict/注入鼠标（形状、尺寸、描边）、画笔热点/边界/DPI、鼠标行（鼠标不自绘、其余可见）、荧光笔与图形不受任何设备样式影响、Touch 工厂（None 无 visual、逐接触样式、NaN 拒绝）、Contact/Eraser/Laser回归；`ShouldHideSystemDrawingCursor` 的 `mouseSampleIsTablet`。
-- 完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window`、i18n sync/check、编码/BOM/EOL与diff --check；GUI需用户明确授权。既有无窗口 `Inkeys.exe --draw3-pen-width-test` 覆盖真实未附着 Window 的活动工具锁存、选择切换与释放后原始偏好恢复，不以纯 helper 断言替代该接线验证。
+- 真实Config：四个设备键默认 -1、全部合法值与非法值（bool/float/字符串/超宽/越界/非触摸的 0）读成 -1、注入开关默认 false、往返/ReadMini/冻结副本、旧 `MouseStyle/PenStyle` 校验、旧高亮键忽略/保存清理、未知键保留与NoUpload。四个透明度另覆盖 25/50/100 边界、非法类型/超宽/越界、独立默认、重启和冻结副本。
+- Bridge：只改任一设备样式或透明度仍发布新revision、旧快照不变；调用生产工具helper覆盖 mouse 样式×全部Tool，不复制映射；`Pack/UnpackCursorSettings` 覆盖全部旧合法组合和四个高位百分比，非法百分比恢复样式默认；`RestoreDeviceCursorStyle` 的旧配置回落。
+- Resolver：五种样式 × 屏幕笔/数位板/Unknown/Conflict/注入鼠标（形状、尺寸、描边）、画笔热点/边界/DPI、鼠标行（鼠标不自绘、其余可见）、荧光笔与图形不受任何设备样式影响、Touch 工厂（None 无 visual、逐接触样式、NaN 拒绝）、Contact/Eraser/Laser回归；`ShouldHideSystemDrawingCursor` 的 `mouseSampleIsTablet`。普通灰边/填充同 alpha，高亮仅填充受控，黑/白边不透明；HighlightDot 覆盖 1px 下限、直径/8 增长和 DPI 上限。设置页以真实滑块/重置和 DrawList 验证四项独立编辑、预览透明度、深浅主题与横向布局。
+- 完整 `InkeysRepo.sln Debug|<当前设备原生架构>`、`InkeysHeadlessTests.exe --no-window`、i18n sync/check、编码/BOM/EOL与diff --check；GUI需用户明确授权。既有无窗口 `Inkeys.exe --draw3-pen-width-test` 覆盖真实未附着 Window 的活动工具锁存、选择切换与释放后原始偏好恢复，不以纯 helper 断言替代该接线验证。`--draw3-renderer-pixel-test` 对正式与完整 guarded PS 的三层高亮圆点分别读回外黑边、白环和半透明填充像素。
 - Pen→Mouse回归须使用生产filter、mailbox和visual resolver，参数化 Arrow/HighlightPen，覆盖旧Mouse→Pen Hover/Contact→清样本→约1秒/长间隔/重复系统Move仍隐藏，再覆盖真实Mouse/TouchPad/Down、新Pen恢复与API失败/Win7回退；固定tick只是测试输入，不是产品计时器。
 - DPI 尺寸先区分理论appearance与实际可见像素。现有 `--draw3-pen-width-test` 使用未附着Window连续96/144/192/264 DPI验证生产上下文→resolver一次换算；无HWND `--draw3-renderer-upload-test` 读回正式/完整guarded PS的Arrow bbox与热点。不得用仅创建相同理论参数的断言证明桌面大小已修复，也不得无证据重复乘DPI。原生cursor测量须区分透明bitmap尺寸和非透明bbox，LR_SHARED相同句柄不能冒充多DPI样本。 真实运行取证复用已有 Cursor 诊断 Enabled 与 frame变化/100ms门禁：短 `frame-scale` 行记录 cursorDpi/cursorScale/contextRevision/displayDpi/viewport，紧随原 frame/visual 日志；关闭时不新增API、锁、循环或采样，不为加字段扩大通用320字节buffer。
 - 修改光标shader数学时必须同步正式PS与完整Win7 guarded数组，并核对签名、原/还原DefaultInk尾部与正向guard；Win7实际可见行为不能沿用旧二进制或逻辑通过结论。
@@ -138,3 +140,43 @@ if (pen && sample.inContact && !contactEnabled) return {};
 if (sample.inContact && penIconAllowed &&
     ShouldHideDotCursorOnContact(device, style, settings.dotHideOnContact)) return {};
 ```
+
+## Scenario: 橡皮缓存精灵（阶段 B，2026-11-07）
+
+### 1. Scope / Trigger
+
+主/逐 Touch 橡皮（含笔速、手掌）使用整枚精灵；阶段 C 配置、设置页与主栏预览另行接入。
+
+### 2. Signatures
+
+`Draw3.EraserCursor.h` 提供 `EraserCursorAppearance{shape,pattern,theme}`、`RasterizeEraserCursor(appearance,shortSidePx,cornerRadiusPx)`、`ResolveEraserCursorRecipe(...)`。Controller owner 调用 `SetEraserCursorAppearance(...)`；Renderer 提供 `InvalidateEraserCursorCache()`。GPU type 24，PS 使用 t15/s1，早返回预乘采样色乘 opacity。
+
+### 3. Contracts
+
+默认 Circle/Grips/Light；形状读取活动笔划 Down 锁存值，纹样/明暗即时共用。全帧共用当前基准尺寸/DPI，避免不同 contact 交替重烘焙。短边档为 32..1024 的 2 次幂，绘制短边超过当前档 1.25 倍才升档；圆角为 `min(6*dpi*baked/base,baked/2)`。CPU 生成预乘 BGRA8 及完整盒式 mip，含每边 2px 透明 padding；纹样阈值以传入栅格器的烘焙短边判定，动态尺寸只缩放整枚精灵。每外观保存独立配方与 Draw3 IMMUTABLE 纹理，不跨设备共享，不用 GenerateMips，不在 RTS 工作。
+
+### 4. Validation & Error Matrix
+
+移动/档内缩放复用；基准/DPI/外观变化或设备重建使相应配方失效。上传失败保留失败配方，等配方/设备变化重试，避免逐帧分配。Sprite dirty padding 为 `max(2.5,2*drawShort/1024)`，包含升档阈值和最大档外缩放。
+
+### 5. Good/Base/Bad Cases
+
+Good：活动与 Hover 形状不同仍各自复用纹理；Base：默认浅色抓手；Bad：按移动位置重烘焙、复用图层 point sampler、将精灵加入文档历史。
+
+### 6. Tests Required
+
+Headless 检查尺寸/mip/预乘/边缘与配色/纹样阈值/圆角与配方；既有 `RunRendererUploadValidation` 检查真实纹理 identity、升档与失效；生产 Palm probe 检查形状尺寸、Touch opacity 与 dirty。修改着色器后正式 CSO 与完整 Win7 guarded PS 须构建后用 `Generate-Win7-GuardedShader.ps1` 同步，保留唯一 AA 锚点与最终 return，不能将旧字节码视为验证。
+
+### 7. Wrong vs Correct
+
+Wrong：RTS 回调栅格化，或 `Sample * opacity` 后再次乘 alpha。Correct：绘制 owner 按配方烘焙一次，PS 输出 `samplePremultiplied * opacity`，Retain 为 `1-alpha`。
+
+### 8. 阶段 C：配置、光标页与主栏预览（2026-11-07）
+
+- 配置：`Drawing.Eraser.Shape`（Circle/Rectangle/Square）、`Drawing.Eraser.CursorPattern`（Grips/Inkeys/Sparkle）、`Drawing.Eraser.CursorTheme`（Light/Dark），均 `NoUpload`、`IdtAtomic<int>`、默认 0，非法类型/超宽整数/越界回落默认；橡皮光标明暗与应用主题无关。沿普通橡皮偏好路径到 Draw3 owner，再调用 `SetEraserCursorAppearance`；新笔划 Down 锁存形状。
+- 设置“绘制 → 光标”页独立分类“橡皮光标”（位于“按设备设置”与“数位板识别”之间），其中“外观”卡：标题行明暗下拉；内联 `InlinePreviewSelector`（72 DIP 方块、8 DIP 圆角/间距、组间分割线、选中项 2 DIP 强调色环外扩 3 DIP、圆角 10 DIP、窄宽自动换行、标签按宽度换行），左三形状 | 右三纹样，无下拉。预览与主栏位图都只能调用 `RasterizeEraserCursor`，不得另写公式；按外观/尺寸/DPI/设备缓存。
+- 主栏橡皮属性：尺寸预览、命中、选中环、焦点按形状半宽高与 6 DIP 圆角。
+- 配色：所有纹样（抓手、星光、Inkeys 图标的屏幕与橡皮）统一用描边灰（浅色 207 / 深色 110），填充浅 255 / 深 40；不再使用独立纹样色或半透明屏幕色。
+- 手掌橡皮：`Drawing.PalmEraser.Shape`（`IdtAtomic<int>`，-1 跟随默认 / 0..2 形状，非法回落 -1）→ `PalmEraser::Settings::shape`；`PromotePalmRuntime` 用 `PalmEraser::ResolveShape` 覆盖笔划形状（跟随时保留 Down 锁存），光标随笔划形状。手掌页：“适用工具”在“精细控制”内、“边擦边写”上方；末尾“橡皮光标”分类为 i 信息块（明暗/纹样跟随光标页）+ 形状卡（跟随默认 + 三形状预览，跟随项预览默认形状）。屏蔽范围随生效形状（圆形 r+max(0.15r,4px)，矩形/正方形各轴外扩 max(0.15h,4px)），手掌大小自定义见 palm-eraser.md。
+- `Draw3.EraserCursor.h` 会被包含 `<windows.h>` 的 UI 代码引用：其中一律写 `(std::min)(...)` / `(std::max)(...)`，否则 `min/max` 宏导致 C2589。
+- 测试：`--config-boundary-test`；`InkeysHeadlessTests --no-window --setting-eraser-only`（含橡皮光标卡 20 语/缩放/浅深/窄宽）；`--draw3-renderer-upload-test`；全量 `--no-window`。

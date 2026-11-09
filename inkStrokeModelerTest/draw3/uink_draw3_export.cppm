@@ -29,6 +29,7 @@ export namespace draw3::uink
 		float opacity = 1.0f;
 		uint32_t fallbackRgb = 0;
 		uint32_t texture = 0;
+		uint8_t eraserShape = 0;
 	};
 
 	struct Draw3UInkPoint

@@ -6,6 +6,7 @@
 #include "../../../IdtI18nKeys.g.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
+#include "../../Drawing/Draw3/Draw3.EraserCursor.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -75,8 +76,9 @@ namespace
 
 	bool IsSize(int item) noexcept { return item>=1 && item<=3; }
 	bool IsAutomatic(int item) noexcept { return item==4 || item==5; }
+	bool IsPanelButton(int item) noexcept { return item<6 || item==10; }
 	int ButtonVisual(int item) noexcept { return item==5?4:IsSize(item)?-1:item; }
-	constexpr std::array<int,6> buttonVisuals{0,4,6,7,8,9};
+	constexpr std::array<int,7> buttonVisuals{0,4,6,7,8,9,10};
 	wstring ButtonLabel(int item)
 	{
 		const auto& t=I18nKey.UI.Bar.EraserAttributes;
@@ -87,6 +89,7 @@ namespace
 		case 6:return I18n::getWOr(t.LowLabel,L"低");
 		case 7:return I18n::getWOr(t.MediumLabel,L"中");
 		case 8:return I18n::getWOr(t.HighLabel,L"高");
+		case 10:return I18n::getWOr(I18nKey.SettingsUI.Draw.Eraser.PalmEraser.N,L"手掌橡皮");
 		default:return {};
 		}
 	}
@@ -113,14 +116,14 @@ void BarEraserAttributePanel::Initialize()
 		b.button.framePct.emplace(0);b.button.frameLightPct.emplace(0);
 		b.button.frameRendering=BarUiFrameRenderingEnum::PointLight;b.button.frameLightColor=BarUiFrameLightColorEnum::Frame;
 		b.button.framePrimaryLightEnabled=false;b.button.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
-		const bool large=i==0 || i==4;const auto label=ButtonLabel(i);
+		const bool large=i==0 || i==4 || i==10;const auto label=ButtonLabel(i);
 		b.name.Initialization(0,0,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,label,metrics.primaryFontSizeDip,
 			GetThemeColor(BarThemeColorEnum::TextPrimary));
 		b.name.enable.Initialization(!label.empty());b.name.pct.SetDirect(1);
 		b.icon.Initialization(0,0,GetThemeColor(BarThemeColorEnum::TextPrimary),std::nullopt);
 		b.icon.enable.Initialization(large || i==9);b.icon.pct.SetDirect(1);
-		// 面板图标显式映射：清空画布沿用主栏垃圾桶，自动粗细、笔速橡皮设置用专属资源。
-		const wchar_t* iconResource=i==0?L"barClean":i==4?L"barAutoEraser":i==9?L"barEraserSpeedSetting":nullptr;
+		// 面板图标显式映射：清空画布沿用主栏垃圾桶，自动粗细、手掌橡皮、笔速橡皮设置用专属资源。
+		const wchar_t* iconResource=i==0?L"barClean":i==4?L"barAutoEraser":i==10?L"barPalmEraser":i==9?L"barEraserSpeedSetting":nullptr;
 		if(iconResource)b.icon.InitializationFromResource(L"UI",iconResource);
 		b.icon.SetWH(large?metrics.iconSizeDip:20,large?metrics.iconSizeDip:20);
 		b.icon.w.SetDirect(b.icon.w.tar);b.icon.h.SetDirect(b.icon.h.tar);
@@ -128,8 +131,8 @@ void BarEraserAttributePanel::Initialize()
 	for(size_t i=0;i<circles_.size();++i)
 	{
 		auto& circle=circles_[i];
-		circle.Initialization(0,0,1,1,0.5,0.5,1,RGB(255,255,255),EraserOutlineColor());
-		circle.enable.Initialization(true);circle.pct.SetDirect(1);circle.framePct.emplace(1);circle.frameLightPct.emplace(0);
+		circle.Initialization(0,0,1,1,0.5,0.5,1,std::nullopt,EraserOutlineColor());
+		circle.enable.Initialization(true);circle.pct.SetDirect(0);circle.framePct.emplace(0);circle.frameLightPct.emplace(0);
 		circle.frameRendering=BarUiFrameRenderingEnum::PointLight;circle.frameLightColor=BarUiFrameLightColorEnum::Frame;
 		circle.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
 		auto& ring=circleSelectionRings_[i];
@@ -191,7 +194,8 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	root->UpInh(BarUiInheritClass(root->x.val-root->w.val/2,root->y.val-root->h.val/2));
 	auto main=owner.shapeMap[BarUISetShapeEnum::MainBar];main->Inherit(BarUiInheritEnum::Center,*root);
 	auto anchor=owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];anchor->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main);
-	EraserAttributeLayoutInput currentInput;
+	const auto preferences=EraserPreferencesSnapshot();
+	EraserAttributeLayoutInput currentInput;currentInput.shape=preferences.shape;
 	currentInput.main={main->inhX,main->inhY,main->inhX+main->w.val,main->inhY+main->h.val};
 	currentInput.anchor={anchor->button.inhX,anchor->button.inhY,anchor->button.inhX+anchor->button.w.val,anchor->button.inhY+anchor->button.h.val};
 	currentInput.zoom=zoom;currentInput.dpiScale=dpi/96.0;
@@ -258,6 +262,7 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	if(holdReleaseSwitchPlacement)
 		dragLayoutInput_=RebaseEraserAttributeLayoutInput(dragLayoutInput_,currentInput.anchor);
 	EraserAttributeLayoutInput input=(holdDragPlacement || holdReleaseSwitchPlacement)?dragLayoutInput_:currentInput;
+	input.shape=preferences.shape; // 直拖只锁定摆放，形状仍使用本帧完整偏好。
 	if(!holdDragPlacement && !holdReleaseSwitchPlacement)
 	{
 		input.below=previousBelow_;input.reversed=previousReversed_;input.lockedMenuSide=menuSide_;
@@ -281,7 +286,18 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		frame_.panelPose.scale!=next.panelPose.scale || frame_.menuPose.scale!=next.menuPose.scale;
 	frame_=next;zoom_=zoom;
 	const auto& g=frame_.geometry;
-	const auto preferences=EraserPreferencesSnapshot();const auto automatic=GetAutomaticState(preferences);
+	const auto automatic=GetAutomaticState(preferences);
+	std::array<float,3> diametersPx{};
+	for(size_t i=0;i<3;++i)diametersPx[i]=input.diametersDip[i]*static_cast<float>(input.dpiScale);
+	if(previewShape_!=preferences.shape || previewPattern_!=preferences.cursorPattern || previewTheme_!=preferences.cursorTheme ||
+		previewDiametersPx_!=diametersPx || previewDpiScale_!=static_cast<float>(input.dpiScale))
+	{
+		changed_=true;for(auto& bitmap:previewBitmaps_)bitmap.Reset();previewBitmapAttempted_.fill(false);
+		previewShape_=preferences.shape;previewPattern_=preferences.cursorPattern;previewTheme_=preferences.cursorTheme;
+		previewDiametersPx_=diametersPx;previewDpiScale_=static_cast<float>(input.dpiScale);
+	}
+	const bool palmEnabled=PalmEraserPreferencesSnapshot().enabled;
+	changed_|=palmEnabled!=palmEnabled_;palmEnabled_=palmEnabled;
 	changed_|=automatic!=automatic_ || selectedSize_!=static_cast<int>(preferences.baseSize) || sensitivity_!=static_cast<int>(preferences.sensitivity);
 	automatic_=automatic;selectedSize_=static_cast<int>(preferences.baseSize);sensitivity_=static_cast<int>(preferences.sensitivity);
 	changed_|=surface_.fill->val!=GetThemeColor(BarThemeColorEnum::Surface);
@@ -296,9 +312,9 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	for(int i:buttonVisuals)
 	{
 		auto& b=buttons_[i];changed_|=b.name.SetStringImmediate(ButtonLabel(i));
-		const bool selected=(i==4 && automatic_==AutomaticState::On) || (i>=6 && i<=8 && sensitivity_==i-6);
-		const bool presented=i<6?frame_.panelVisible:frame_.menuVisible;
-		const double scale=i<6?frame_.panelPose.scale:frame_.menuPose.scale;
+		const bool selected=(i==4 && automatic_==AutomaticState::On) || (i==10 && palmEnabled_) || (i>=6 && i<=8 && sensitivity_==i-6);
+		const bool presented=IsPanelButton(i)?frame_.panelVisible:frame_.menuVisible;
+		const double scale=IsPanelButton(i)?frame_.panelPose.scale:frame_.menuPose.scale;
 		b.state->state=selected?BarWidgetState::Selected:BarWidgetState::None;
 		SetBarButtonPressedVisual(b,ButtonVisual(pressed_)==i);
 
@@ -306,12 +322,12 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 			std::nullopt,true,std::nullopt,GetThemeColor(selected?BarThemeColorEnum::Accent:BarThemeColorEnum::SurfaceFrame));
 		Place(b.button,i==4?g.automatic:g.items[i]);
 		b.button.rw->SetDirect(BarButtonCornerRadiusDip*scale);b.button.rh->SetDirect(BarButtonCornerRadiusDip*scale);b.button.ft->SetDirect(BarButtonFrameThicknessDip*scale);
-		const bool large=i==0 || i==4;
+		const bool large=i==0 || i==4 || i==10;
 		const double offset=i==4?-EraserAttributeAutomaticArrowWidthDip/2:0;
 		b.icon.x.SetDirect(offset*scale);b.icon.y.SetDirect(large?metrics.iconOffsetYDip*scale:0);b.icon.contentScale=scale;
 		b.name.x.SetDirect(offset*scale);b.name.y.SetDirect(large?metrics.primaryOffsetYDip*scale:0);
 		b.name.w.SetDirect(large?metrics.primarySlotWidthDip*scale:static_cast<double>(b.button.w.val));b.name.h.SetDirect(metrics.primarySlotHeightDip*scale);b.name.size.SetDirect(metrics.primaryFontSizeDip*scale);
-		b.name.fontTargetSize=metrics.primaryFontSizeDip*(i<6?panelFrame.targetPose.scale:menuFrame.targetPose.scale);
+		b.name.fontTargetSize=metrics.primaryFontSizeDip*(IsPanelButton(i)?panelFrame.targetPose.scale:menuFrame.targetPose.scale);
 		BarButtonAnimationContext buttonFrame;
 		buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
 		buttonFrame.visible=presented;buttonFrame.hoverAllowed=!selected;
@@ -331,12 +347,16 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		const double thickness=rect.Width()*ERASER_GRIP_OUTLINE_RATIO;
 		// 橡皮本体保持原直径；选中态由外侧独立圆环承载。
 		Place(circle,{rect.left+thickness/2,rect.top+thickness/2,rect.right-thickness/2,rect.bottom-thickness/2});
-		circle.rw->SetDirect(circle.w.val/2);circle.rh->SetDirect(circle.h.val/2);circle.ft->SetDirect(thickness);
-		circle.frame->SetDirect(EraserOutlineColor());circle.frameLightPct->SetDirect(circleHover_[i].val*0.5);
+		const double corner=g.shape==Inkeys::Drawing::Draw3::EraserShape::Circle
+			?(std::min)(rect.Width(),rect.Height())/2:(std::min)(g.previewCornerRadius,(std::min)(rect.Width(),rect.Height())/2);
+		circle.rw->SetDirect((std::max)(0.0,corner-thickness/2));circle.rh->SetDirect((std::max)(0.0,corner-thickness/2));circle.ft->SetDirect(thickness);
+		circle.frame->SetDirect(previewTheme_==Inkeys::Drawing::Draw3::EraserCursorTheme::Dark?RGB(110,110,110):EraserOutlineColor());
+		circle.frameLightPct->SetDirect(circleHover_[i].val*0.5);
 		auto& ring=circleSelectionRings_[i];const double ringInset=EraserSizeSelectionGapDip*frame_.panelPose.scale+
 			EraserSizeSelectionThicknessDip*frame_.panelPose.scale/2;
-		Place(ring,{rect.left-ringInset,rect.top-ringInset,rect.right+ringInset,rect.bottom+ringInset});
-		ring.rw->SetDirect(ring.w.val/2);ring.rh->SetDirect(ring.h.val/2);
+		Place(ring,EraserAttributeSelectionOutline(rect,frame_.panelPose.scale));
+		const double ringCorner=g.shape==Inkeys::Drawing::Draw3::EraserShape::Circle?ring.w.val/2:corner+ringInset;
+		ring.rw->SetDirect(ringCorner);ring.rh->SetDirect(ringCorner);
 		ring.ft->SetDirect(EraserSizeSelectionThicknessDip*frame_.panelPose.scale);
 		ring.frame->SetDirect(GetThemeColor(BarThemeColorEnum::Accent));
 		ring.pct.SetDirect(circleSelection_[i].val);ring.framePct->SetDirect(circleSelection_[i].val);
@@ -374,30 +394,61 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 
 void BarEraserAttributePanel::DrawPreview(BarUIRendering& renderer,ID2D1DeviceContext* context,size_t index)
 {
+	using namespace Inkeys::Drawing::Draw3;
 	const auto& g=frame_.geometry;const auto rect=g.previews[index];
 	context->PushAxisAlignedClip(PixelRect(g.previewClips[index],zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-	const float d=static_cast<float>(g.previewDiameters[index]*zoom_);
 	const auto center=D2D1::Point2F(static_cast<float>(EraserRectCenterX(rect)*zoom_),static_cast<float>(EraserRectCenterY(rect)*zoom_));
 	D2D1_MATRIX_3X2_F originalTransform{};context->GetTransform(&originalTransform);
 	const float press=static_cast<float>(circlePress_[index].val);
 	if(std::abs(press-1.0f)>0.000001f)
 		context->SetTransform(D2D1::Matrix3x2F::Scale(press,press,center)*originalTransform);
 	auto& ring=circleSelectionRings_[index];renderer.Shape(context,ring,BarUiInheritClass(ring.inhX,ring.inhY));
-	auto& circle=circles_[index];renderer.Shape(context,circle,BarUiInheritClass(circle.inhX,circle.inhY));
-	// Contact实体alpha=1；不修改共享Hover的ERASER_GRIP_OPACITY。
-	brush_->SetColor(D2D1::ColorF(ERASER_GRIP_OUTLINE_CHANNEL,ERASER_GRIP_OUTLINE_CHANNEL,ERASER_GRIP_OUTLINE_CHANNEL,1));
-	for(float sign:{-1.0f,1.0f})
+	const auto half=ResolveEraserHalfSize(g.shape,previewDiametersPx_[index]/2);
+	if(!previewBitmapAttempted_[index])
 	{
-		const float x=center.x+sign*d*ERASER_GRIP_STRIPE_OFFSET_RATIO;
-		const float r=d*ERASER_GRIP_STRIPE_RADIUS_RATIO,h=d*ERASER_GRIP_STRIPE_HALF_HEIGHT_RATIO;
-		context->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x-r,center.y-h,x+r,center.y+h),r,r),brush_.Get());
+		previewBitmapAttempted_[index]=true;
+		// 位图使用实际画布尺寸；开合和按压仅变换 quad，不逐帧重烘焙。
+		const float intendedShortSide=(std::min)(half.x,half.y)*2;
+		const auto bakedSide=static_cast<uint32_t>((std::max)(1.0f,std::round(intendedShortSide)));
+		const float bakeScale=bakedSide/intendedShortSide;
+		const auto raster=RasterizeEraserCursor({g.shape,previewPattern_,previewTheme_},bakedSide,6*previewDpiScale_*bakeScale);
+		previewRasterHalfWidths_[index]=raster.halfWidthPx;
+		if(!raster.levels.empty())
+		{
+			const auto& level=raster.levels.front();
+			const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_NONE,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED),96,96);
+			context->CreateBitmap(D2D1::SizeU(level.width,level.height),level.bgra.data(),level.width*4,&properties,previewBitmaps_[index].GetAddressOf());
+		}
 	}
+	if(previewBitmaps_[index] && half.x>0)
+	{
+		const auto size=previewBitmaps_[index]->GetPixelSize();
+		const float scale=static_cast<float>(rect.Width()*zoom_)/(previewRasterHalfWidths_[index]*2);
+		const float width=size.width*scale,height=size.height*scale;
+		const auto destination=D2D1::RectF(center.x-width/2,center.y-height/2,center.x+width/2,center.y+height/2);
+		context->DrawBitmap(previewBitmaps_[index].Get(),destination,1,D2D1_INTERPOLATION_MODE_LINEAR);
+	}
+	// 仅叠加原有 PointLight 轮廓，填充和静态描边由缓存位图负责。
+	auto& hover=circles_[index];renderer.Shape(context,hover,BarUiInheritClass(hover.inhX,hover.inhY));
 	if(focused_==static_cast<int>(index+1))
 	{
-		// 白色圆上的焦点使用深色内虚线，与青色选中轮廓独立。
-		brush_->SetColor(D2D1::ColorF(0.15f,0.15f,0.15f,1));
-		const float radius=(std::max)(0.5f,d/2-static_cast<float>(circle.ft->val*zoom_)-2.0f);
-		context->DrawEllipse(D2D1::Ellipse(center,radius,radius),brush_.Get(),1,focusStroke_.Get());
+		// 焦点沿当前形状内缘，深色光标使用浅色虚线。
+		brush_->SetColor(previewTheme_==EraserCursorTheme::Dark?D2D1::ColorF(0.9f,0.9f,0.9f,1):D2D1::ColorF(0.15f,0.15f,0.15f,1));
+		auto focus=PixelRect(rect,zoom_);
+		const float inset=static_cast<float>((std::min)(rect.Width(),rect.Height())*ERASER_GRIP_OUTLINE_RATIO*zoom_)+2;
+		focus.left+=inset;focus.right-=inset;focus.top+=inset;focus.bottom-=inset;
+		if(focus.right>focus.left && focus.bottom>focus.top)
+		{
+			if(g.shape==EraserShape::Circle)
+				context->DrawEllipse(D2D1::Ellipse(center,(focus.right-focus.left)/2,(focus.bottom-focus.top)/2),brush_.Get(),1,focusStroke_.Get());
+			else
+			{
+				const float radius=(std::max)(0.0f,(std::min)(static_cast<float>(g.previewCornerRadius*zoom_)-inset,
+					(std::min)(focus.right-focus.left,focus.bottom-focus.top)/2));
+				context->DrawRoundedRectangle(D2D1::RoundedRect(focus,radius,radius),brush_.Get(),1,focusStroke_.Get());
+			}
+		}
 	}
 	if(std::abs(press-1.0f)>0.000001f)context->SetTransform(originalTransform);
 	context->PopAxisAlignedClip();
@@ -408,7 +459,8 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	if(!initialized_ || !frame_.panelVisible)return;
 	if(deviceGeneration_!=renderer.GetDeviceGeneration())
 	{
-		brush_.Reset();focusStroke_.Reset();automaticArrow_.ResetCache();for(int i:buttonVisuals)buttons_[i].icon.ResetCache();deviceGeneration_=renderer.GetDeviceGeneration();
+		brush_.Reset();focusStroke_.Reset();for(auto& bitmap:previewBitmaps_)bitmap.Reset();previewBitmapAttempted_.fill(false);
+		automaticArrow_.ResetCache();for(int i:buttonVisuals)buttons_[i].icon.ResetCache();deviceGeneration_=renderer.GetDeviceGeneration();
 	}
 	if(!brush_ && FAILED(context->CreateSolidColorBrush(D2D1::ColorF(1,1,1,1),&brush_)))return;
 	if(!focusStroke_){ComPtr<ID2D1Factory> factory;context->GetFactory(&factory);auto props=D2D1::StrokeStyleProperties();props.dashStyle=D2D1_DASH_STYLE_DOT;factory->CreateStrokeStyle(props,nullptr,0,&focusStroke_);}
@@ -423,7 +475,7 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	};
 	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),frame_.panelOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.panelPose.scale);drawSurface(surface_);
 	context->PushAxisAlignedClip(PixelRect(g.panel,zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-	drawButton(0);drawButton(4);
+	drawButton(0);drawButton(4);drawButton(10);
 	for(size_t i=0;i<3;++i)DrawPreview(renderer,context,i);
 	for(auto& d:dividers_)renderer.Shape(context,d,BarUiInheritClass(d.inhX,d.inhY));
 	// 内部分割线和箭头跟随整个90×70按钮围绕同一中心缩放。
@@ -436,7 +488,7 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	renderer.Shape(context,automaticDivider_,BarUiInheritClass(automaticDivider_.inhX,automaticDivider_.inhY));
 	renderer.Svg(context,automaticArrow_,BarUiInheritClass(automaticArrow_.x.val,automaticArrow_.y.val));
 	if(std::abs(press-1.0f)>0.000001f)context->SetTransform(originalTransform);
-	const int focus=focused_;if(focus==0 || IsAutomatic(focus))focusButton(ButtonVisual(focus));
+	const int focus=focused_;if(focus==0 || focus==10 || IsAutomatic(focus))focusButton(ButtonVisual(focus));
 	context->PopAxisAlignedClip();context->PopLayer();renderer.SetFrameDiffuseMaskGeometryScale(1);
 	if(frame_.menuVisible)
 	{
@@ -479,7 +531,7 @@ void BarEraserAttributePanel::Close(BarUISetClass& owner)
 }
 bool BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 {
-	bool performed=item>=1 && item<=9;
+	bool performed=item>=1 && item<=10;
 	if(item==0)
 	{
 		const auto snapshot=Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
@@ -501,6 +553,12 @@ bool BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 	else if(item==5){performed=owner.TryBeginToggle(BarToggleChannel::EraserSensitivity);if(performed)owner.barState.eraserSensitivityOpen=!owner.barState.eraserSensitivityOpen;}
 	else if(item>=6 && item<=8)SetGlobalEraserPreference(-1,item-6);
 	else if(item==9)Inkeys::UI::Setting::ShowSpeedEraser();
+	else if(item==10)
+	{
+		// 与设置页的手掌橡皮总开关是同一份偏好；其余识别参数保持不变。
+		auto palm=PalmEraserPreferencesSnapshot();palm.enabled=!palm.enabled;
+		SetPalmEraserPreference(palm);
+	}
 	owner.UpdateRendering(false);
 	return performed;
 }
@@ -528,13 +586,14 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 	if(inside)
 	{
 		const auto clip=overMenu?geometry.menu:geometry.panel;
-		for(int i=overMenu?6:0;i<(overMenu?10:6);++i)
+		for(int step=0;step<(overMenu?4:7);++step)
 		{
+			const int i=overMenu?6+step:(step<6?step:10);
 			if(!IntersectEraserRect(geometry.items[i],clip).Contains(x,y))continue;
 			if(IsSize(i))
 			{
 				const auto circle=geometry.previews[i-1];
-				if(!EraserAttributeCircleContains(circle,BarButtonGapDip*f.panelPose.scale,x,y))continue;
+				if(!EraserAttributePreviewContains(circle,geometry.shape,geometry.previewCornerRadius,BarButtonGapDip*f.panelPose.scale,x,y))continue;
 			}
 			hit=i;break;
 		}
@@ -579,8 +638,14 @@ bool BarEraserAttributePanel::Keyboard(BarUISetClass& owner,BYTE key,bool down)
 	if(key!=VK_TAB && key!=VK_LEFT && key!=VK_RIGHT && key!=VK_RETURN && key!=VK_SPACE)return false;
 	if(!down)return true;
 	if(key==VK_RETURN || key==VK_SPACE){if(focused_>=0)Execute(owner,focused_);return true;}
-	const int first=owner.barState.eraserSensitivityOpen?6:0,last=owner.barState.eraserSensitivityOpen?9:5;
+	// 焦点顺序即视觉顺序：主面板为 0..5 后接手掌橡皮，浮窗为 6..9。
+	static constexpr std::array<int,4> menuOrder{6,7,8,9};
+	static constexpr std::array<int,7> panelOrder{0,1,2,3,4,5,10};
+	const bool menu=owner.barState.eraserSensitivityOpen;
+	const int count=menu?4:7;
+	auto at=[&](int n){return menu?menuOrder[n]:panelOrder[n];};
 	const int delta=key==VK_LEFT || (key==VK_TAB && (GetKeyState(VK_SHIFT)&0x8000))?-1:1;
-	int focus=focused_;if(focus<first || focus>last)focus=first;else focus=first+(focus-first+delta+last-first+1)%(last-first+1);
-	focused_=focus;hovered_=-1;owner.UpdateRendering(false);return true;
+	int index=-1;for(int n=0;n<count;++n)if(at(n)==focused_)index=n;
+	index=index<0?0:(index+delta+count)%count;
+	focused_=at(index);hovered_=-1;owner.UpdateRendering(false);return true;
 }
