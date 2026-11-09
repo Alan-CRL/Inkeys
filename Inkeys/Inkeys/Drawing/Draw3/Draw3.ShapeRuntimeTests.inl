@@ -170,7 +170,11 @@ int RunShapeInteractionProductionTest()
 	const auto item = pages[0].history.LastVisibleItem();
 	if (item && editor.object)
 	{
-		const auto handles = BuildEditHandles(*editor.object); const auto handle = handles.front();
+		const auto handles = BuildEditHandles(*editor.object);
+		const auto found = std::find_if(handles.begin(),handles.end(),[](const EditHandle& h) { return h.kind == EditHandleKind::Vertex; });
+		check(found != handles.end(),"current object exposes a construction vertex rather than an eight-point frame");
+		if (found == handles.end()) throw std::runtime_error("shape edit vertex missing");
+		const auto handle = *found;
 		const auto before = *editor.object; const auto count = canvas->Strokes().size();
 		check(editor.gesture.Begin(before,handle.id,handle.position),"production edit gesture begins on current object handle");
 		const auto revision = pages[0].shapeRevisionAllocator.Next(before.id,before.revision);
@@ -190,10 +194,50 @@ int RunShapeInteractionProductionTest()
 		editor.gesture.Cancel();
 		check(!editor.gesture.Commit() && canvas->Strokes()[pages[0].history.Find(*item)->strokeIndex].Shape() == std::optional<ShapeObject>(current),
 			"cancelled edit never mutates CPU document or history");
+		const auto cursor = pages[0].operationCursor; const auto invalidPoint = ApplyTransform(current.transform,current.geometry.vertices[1]);
+		check(editor.gesture.Begin(current,handle.id,handle.position) && editor.gesture.Preview(invalidPoint,
+			pages[0].shapeRevisionAllocator.Next(current.id,current.revision)) && editor.gesture.Candidate(),
+			"degenerate polygon drag retains a clamped production preview");
+		check(!editor.gesture.Commit() && pages[0].operationCursor == cursor &&
+			canvas->Strokes()[pages[0].history.Find(*item)->strokeIndex].Shape() == std::optional<ShapeObject>(current),
+			"invalid release does not replace the item or advance the shared journal");
 		auto changedStyle = current.style; changedStyle.width += 2;
 		const auto restyled = RestyleShape(current,changedStyle,pages[0].shapeRevisionAllocator.Next(current.id,current.revision));
 		check(restyled && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,current,*restyled,allocate).has_value() && window.ProductVisualStyleSnapshot().shapeStyle == style,
 			"style edit commits current object without altering next tool snapshot");
+	}
+	// SetStyle辅助开关只替换当前对象，撤销/重做和冷历史都沿用同一journal。
+	for (auto preset : {PresetKind::Circle,PresetKind::Ellipse})
+	{
+		style.auxiliary = DefaultAuxiliary(preset);
+		auto drawn = begin({preset,DefaultCreationMode(preset)},{40,50});
+		const auto created = up(*drawn,{160,130}); check(created.has_value(),"default auxiliary drawing commits");
+		if (!created) continue;
+		const auto item = pages[0].history.LastVisibleItem(); if (!item) continue;
+		const auto before = *canvas->Strokes()[created->strokeIndex].Shape();
+		GeometryResult aux; check(BuildAuxiliaryGeometry(before,aux) && aux.parts.size() == (preset == PresetKind::Circle ? 1u : 2u),"default circle center and ellipse foci survive real Down and raw Up");
+		ShapeUiAction toggle; toggle.kind = ShapeUiActionKind::SetStyle; toggle.style = before.style; toggle.style.auxiliary = Auxiliary::None;
+		const auto candidate = BuildShapePropertyCandidate(before,toggle,pages[0].shapeRevisionAllocator.Next(before.id,before.revision));
+		const auto cursor = pages[0].operationCursor, count = canvas->Strokes().size();
+		check(candidate && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,before,*candidate,allocate) &&
+			pages[0].operationCursor == cursor + 1 && pages[0].operations.back().kind == CanvasOperationKind::Replace && canvas->Strokes().size() == count,
+			"SetStyle auxiliary toggle records exactly one Replace");
+		const auto cold = WhiteboardHistoryJson(*document.PageAt(0),pages[0]);
+		InkPage restored(pageGuid); CanvasPageRuntimeState restoredRuntime;
+		check(RestoreWhiteboardHistory(cold,restored,restoredRuntime),"auxiliary Replace cold history decodes");
+		auto* restoredCanvas = restored.FindCanvas(kDefaultDeviceKey);
+		if (restoredCanvas)
+		{
+			check(ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,false,allocate) &&
+				restoredCanvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary,"cold undo restores auxiliary before snapshot");
+			check(ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,true,allocate) &&
+				restoredCanvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == Auxiliary::None,"cold redo restores auxiliary after snapshot");
+		}
+		check(ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate) &&
+			canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary,"one undo restores object auxiliary");
+		check(ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) &&
+			canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == Auxiliary::None && window.ProductVisualStyleSnapshot().shapeStyle == style,
+			"one redo disables auxiliary without changing next stroke defaults");
 	}
 	// 复现Host先scene再实际动作的真实WindowController队列顺序，调用生产同场景门禁。
 	for (auto workspace : {Bridge::Workspace::Desktop,Bridge::Workspace::Whiteboard,Bridge::Workspace::Presentation})
@@ -255,12 +299,13 @@ int RunShapeInteractionProductionTest()
 		std::shared_ptr<const ShapeUiAction> flushed;
 		for (int index = 0; index < 64; ++index)
 		{
-			auto preview = std::make_shared<ShapeUiAction>(base); preview->point = {static_cast<float>(index),0};
+			auto preview = std::make_shared<ShapeUiAction>(base); preview->point = {static_cast<float>(index),0}; preview->angleDelta = static_cast<float>(index) * .1f;
 			if (auto flush = slot.AcceptPreview(preview)) flushed = flush;
 		}
 		check(!flushed && slot.coalesced == 63 && slot.held && slot.held->point.x == 63,"64 same-gesture previews collapse into the newest held preview");
 		auto latest = slot.AtBatchEnd();
-		check(latest && latest->point.x == 63 && !slot.held,"batch end executes only the newest preview once");
+		check(latest && latest->point.x == 63 && latest->angleDelta && std::abs(*latest->angleDelta - 6.3f) < .0001f && !slot.held,
+			"batch end executes the newest pointer and preserves the accumulated trajectory angle");
 		slot.executedThisFrame = 1;
 		slot.AcceptPreview(std::make_shared<ShapeUiAction>(base));
 		check(!slot.AtBatchEnd() && slot.held,"second preview in the same frame waits for the next frame");

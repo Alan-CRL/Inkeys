@@ -9,6 +9,11 @@ namespace
 	}
 	using ShapeMap = UInkMessagePackValue::Map;
 	using ShapeArray = UInkMessagePackValue::Array;
+	uint64_t InkeysShapeVersion(const shapes::ShapeObject& shape)
+	{
+		// 零辅助位沿用原编码（包括无construction的v1），保证旧内容字节稳定。
+		return shape.style.auxiliary != shapes::Auxiliary::None ? 4u : shape.construction ? 3u : 1u;
+	}
 	void ShapeField(ShapeMap& map, const char* name, UInkMessagePackValue value)
 	{
 		map.emplace_back(ShapeValue(std::string(name)), std::move(value));
@@ -229,7 +234,7 @@ namespace
 UInkMessagePackValue EncodeInkeysShapeMetadata(const shapes::ShapeObject& shape)
 {
 	ShapeMap map;
-	ShapeField(map, "version", ShapeValue(uint64_t{ shape.construction ? 3u : 1u }));
+	ShapeField(map, "version", ShapeValue(InkeysShapeVersion(shape)));
 	ShapeField(map, "id", ShapeValue(FormatUInkGuid(UInkGuid(shape.id))));
 	ShapeField(map, "revision", ShapeValue(shape.revision));
 	ShapeField(map, "kind", ShapeValue(uint64_t(shape.kind)));
@@ -238,6 +243,7 @@ UInkMessagePackValue EncodeInkeysShapeMetadata(const shapes::ShapeObject& shape)
 	ShapeField(map, "geometry", ShapeGeometryValue(shape.geometry));
 	ShapeField(map, "transform", ShapeTransformValue(shape.transform));
 	ShapeField(map, "style", ShapeStyleValue(shape.style));
+	if (InkeysShapeVersion(shape) == 4) ShapeField(map, "aux", ShapeValue(uint64_t(shape.style.auxiliary)));
 	ShapeArray parts;
 	for (const auto& part : shape.parts)
 	{
@@ -261,7 +267,7 @@ Draw3ShapeMetadataResult DecodeInkeysShapeMetadata(const UInkMessagePackValue& v
 		const auto* map = std::get_if<ShapeMap>(&value.value);
 		uint64_t version = 0;
 		if (!map || !ShapeUniqueKeys(*map) || !ShapeUnsigned(ShapeFind(*map, "version"), version)) return {};
-		if (version != 1 && version != 2 && version != 3) return { Draw3ShapeMetadataStatus::UnsupportedVersion, std::nullopt };
+		if (version != 1 && version != 2 && version != 3 && version != 4) return { Draw3ShapeMetadataStatus::UnsupportedVersion, std::nullopt };
 		shapes::ShapeObject shape;
 		const auto* idValue = ShapeFind(*map, "id");
 		const auto* idText = idValue ? std::get_if<std::string>(&idValue->value) : nullptr;
@@ -274,6 +280,12 @@ Draw3ShapeMetadataResult DecodeInkeysShapeMetadata(const UInkMessagePackValue& v
 			!ShapeReadTransform(ShapeFind(*map, "transform"), shape.transform) ||
 			!ShapeReadStyle(ShapeFind(*map, "style"), shape.style)) return {};
 		shape.id = id->Bytes();
+		if (version == 4)
+		{
+			uint64_t auxiliary = 0;
+			if (!ShapeUnsigned(ShapeFind(*map,"aux"),auxiliary) || auxiliary > 7) return {};
+			shape.style.auxiliary = static_cast<shapes::Auxiliary>(auxiliary);
+		}
 		const auto* partsValue = ShapeFind(*map, "parts");
 		const auto* parts = partsValue ? std::get_if<ShapeArray>(&partsValue->value) : nullptr;
 		if (!parts || parts->size() > 1000000) return {};
@@ -295,7 +307,7 @@ Draw3ShapeMetadataResult DecodeInkeysShapeMetadata(const UInkMessagePackValue& v
 			}
 			shape.parts.push_back(std::move(part));
 		}
-		if (version >= 2)
+		if (version == 2 || version == 3 || (version == 4 && ShapeFind(*map,"construction")))
 		{
 			shape.construction.emplace();
 			if (!ShapeReadConstruction(ShapeFind(*map, "construction"), *shape.construction, version)) return {};

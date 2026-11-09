@@ -48,7 +48,9 @@
 - 浮条复用标准按钮/独立SingleRow属性list及既有调色内容，只改当前对象；进入主栏工具配置结束编辑。三档宽度来自已有策略；不引入细调滑块/数字框/复制删除翻转组合。小工作区采用受限可滚动扩展区，保持按钮尺寸。主栏自身图形目录、属性list、底部5DIP留白不变。
 - 多笔创建首笔冻结工具/样式/ID/显示上下文，真实Up确认参数，预测只重建当前未确认步骤。中间态不入InkCanvas/历史/L2持久层。固定两步最后Up自动提交；折线至少2点、多边形至少3个有效简单多边形顶点后Complete闭合，首点不重复保存。Cancel/Fatal未完成步骤不能物化成圆或矩形降级对象。
 - 主栏提示是Bar场景的独立状态，复用原居中提示位置/外观/动画，包含必要Complete/Back/Cancel；不得覆盖原bottomDockIndicator状态或新增HWND。全局Undo在构造中执行Back，结束后恢复文档Undo。
+- 旧Cube解码后可能仍持有非正方形raw对角；句柄、深度锚点与编辑均使用从start沿原方向取max(|dx|,|dy|)的正方形角点，零位移不得改变可见几何。Cuboid/Cube深度手势在EditSession::Begin锁定后角；Candidate的editDepthAnchor仅供句柄视图，跨x/y零点不换角，Commit清除，不入codec或journal。
 - 控制点先改typed Construction真值，再统一生成几何/边界/命中/render。缩放保持线宽；圆/规则多边形/正方体保约束，非等比局部缩放不引入错切，退化编辑不提交。新箭头头长=3倍线宽，总宽同头长，短线不压缩；读取v2旧箭头保留旧规则。
+- 控制点模型（11-05 edit-interaction）：`BuildEditHandles(shape, options, &frameRect)` 由 `shape_interaction.inl` 的预设表驱动（布局、是否旋转钮、外框是否有角点、等比与否），取消8点框与边中点。`frameRect` 为本地坐标中含描边包围盒外扩8 DIP（按 displayScale 和对象轴向缩放换算），UI 只绘制、不自算。只有立体图形的外框四角有缩放点（id 10/12/14/16）；旋转钮（id 1）仅矩形、椭圆、三角形、平行四边形、菱形、梯形、折线、多边形和立体图形。id 约定：0 本体移动，100 中心（整体移动），101 半径，102/103 轴或角，104 深度，105 高度，106/107 椭圆焦点 F1/F2（仅对象带 Foci 辅助位时出现），1000+ 端点/顶点/角点。无效拖动在预览中钳制到最近有效状态，`EditSession::Commit` 对仍无效的释放返回空，不写历史和 journal。圆弧/扇形角度编辑按轨迹累计（`EditSession` 保存累计角，UI 意图携带 `angleDelta`，跨 latest-wins 合并保留）；外接框模式的圆首次拖半径点时转为 CenterRadius。立方体/长方体深度手势在开始时锁定后角；旧非方形 Cube 按可见正方形角点规范化。
 - 新增10模板依次追加枚举，21工具启用。Angle/Parallel/Perpendicular、坐标工具与函数15项仍禁用。圆弧扫角由真实轨迹连续展开，预测不得累积转角；空间图形只描边，可见边所选线型、隐藏边虚线，同材质段求覆盖并集。P4仍有后置条目，不能整阶段提前完成。
 
 ## 编辑历史、修订与持久化补充
@@ -85,3 +87,40 @@
   - 回退开关 `ShapeFocusLayerEnabled()`：L1 绘制或落定失败时，记录日志并按文档重放受影响的 tile。
 - 编辑浮层：控制点和外框由 UI worker 用共享核心在本地即时计算（跟手），绘制线程回传的快照只用于校正。允许画布上的图形比控制点晚 1–2 帧。拖动期间窗口只增不减（按 256 DIP 扩大），内容不变时不 Present。重写 `Bar.ShapeEditor.cpp` 时必须保留这三点。
 - 验证：`--draw3-shape-focus-hidden-test`（真实 Host、注入笔输入、整个会话零 tile 重放）；`--draw3-shape-renderer-test` 覆盖首帧和落定结果与旧路径逐字节一致，以及 4K/2000 笔基准。
+
+## 辅助显示与 v4（edit-interaction Part B）
+
+### 1. Scope / Trigger
+
+对象辅助显示、工具默认值、标准降级或冷历史修改时遵守此合同；本节为代码合同，构建和运行验证由集成方执行。
+
+### 2. Signatures
+
+`Auxiliary : uint8_t { None=0, Center=1, Foci=2, Diagonals=4 }`；`ShapeStyle::auxiliary`；`SupportedAuxiliary(PresetKind)`、`DefaultAuxiliary(PresetKind)`；`BuildAuxiliaryGeometry(object,result,options,error,registry)`。
+工具入口为 `GetShapeAuxiliary(snapshot)` / `SetShapeAuxiliaryIfRevision(bit,enabled,expectedRevision)`，经 `GetShapeStyle` 和现有 Bridge 的完整工具/样式快照锁存到新笔。
+
+### 3. Contracts
+
+- 圆支持Center且默认开；椭圆支持Foci且默认开；正多边形/圆弧/扇形支持Center且默认关；矩形/圆角矩形/平行四边形/菱形/梯形支持Diagonals且默认关。工厂屏蔽不支持的位。工具用 `auxiliaryChoices` 区分未选过与显式关闭，选择按位记忆；对象读取不应用工具默认值。
+- 辅助几何只派生给渲染/导出，`BuildGeometry.parts` 仍只含本体，bounds包含辅助范围。点为填充Circle，半径=max(画布描边宽度,2画布像素)（下限与显示比例无关，预览、重放、导出几何确定一致），焦点位置共用 `CanonicalEllipse`；对角线沿用Dashed的4w/6w。无描边时取填充颜色/透明度。辅助批次可与相邻同色同透明度的本体批次求覆盖并集，不能跨其他材质。开启矩形辅助时必须绕过旧图元路径。
+- F1/F2只读取对象Foci位，不再使用临时BuildOptions开关。对象属性经 `BuildShapePropertyCandidate` 的SetStyle路径进入原Replace journal，工具默认值不受对象编辑影响。
+- `inkeysShape` 非零aux写v4，根增加顶层无符号字段 `aux`（0..7），construction仍可选；零aux严格沿用原v1（无construction）/v3编码，不增加字段。读v1/v2/v3时aux恒为0。白板嵌套元数据共用此codec，外层冷历史版本不变。
+- 历史BuildTiles必须同时消费本体与BuildAuxiliaryGeometry：虚线可按实线保守枚举，点按填充bounds枚举，覆盖undo与composition两种tile；不能把辅助部件加回本体HitTest。渲染dirty和焦点落定使用已含辅助范围的GeometryResult.bounds；回归以大空心矩形内部tile、跨tile圆心点及撤销/重做/冷重放逐字节像素对比验证。
+- 旧四部件Cone（含0<|height|<=ry）仍按旧根的parts计数读取；标准导出先从construction生成规范对象，元数据和标准部件均取该对象，禁止用旧四部件根搭配新两部件几何。回归覆盖±ry及其内部高度的真实文件保存/重载与可见几何相等。
+- UInk10按“本体部件 + BuildAuxiliaryGeometry部件”顺序写出，共同undoId、连续contentId、根/严格六字段reference版本一致。读支持版本时使用同一派生器校验总partCount，校验id/revision/index/count/version后只恢复根对象。未知版本逐标准部件恢复；无metadata的第三方标准部件也各自恢复，允许相邻共同undoId，不猜测辅助关系。
+
+### 4. Validation & Error Matrix
+
+v4缺aux或aux>7、重复metadata字段、引用身份/版本/计数不符、缺部件：拒绝候选；未知metadata版本：标准几何回退并返回诊断；工具过期revision或不支持的辅助位：不写工具值；旧版本缺aux：有效且保持旧外观。
+
+### 5. Good / Base / Bad Cases
+
+Good：椭圆Foci经SetStyle关闭，一次撤销恢复焦点与句柄，冷页也可重做。Base：旧v3圆加载后没有圆心点。Bad：读取旧文件时补默认Center，或把v4派生点另存成独立可编辑对象。
+
+### 6. Tests Required
+
+共享核心覆盖默认值、DIP最小点径、变换、焦点句柄、对角线虚线和本体命中排除；文件测试覆盖v1–v4、真实.uink保存读取、忽略v4后标准点/线仍存在、引用损坏拒绝；生产用例覆盖Down/Up、SetStyle单Replace/Undo/Redo、白板冷历史；renderer离屏断言交点alpha不超过单次透明度及tile一致。
+
+### 7. Wrong vs Correct
+
+Wrong：`loaded.style.auxiliary = DefaultAuxiliary(preset)`。Correct：旧metadata保持零值，仅新笔通过 `GetShapeStyle(snapshot)` 取得工具默认值；v4识别成功后从aux派生显示，跳过文件中的派生部件。

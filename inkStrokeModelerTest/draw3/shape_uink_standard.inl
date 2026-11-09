@@ -77,8 +77,21 @@
 	bool AppendParametricShape(const Draw3UInkStrokeSnapshot& source, UInkCanvas& canvas,
 		Draw3UInkCapabilityReport& report)
 	{
+		if (!source.shape || !shapes::Validate(*source.shape)) return false;
+		auto normalized = *source.shape;
+		if (normalized.construction && normalized.construction->tool.preset == shapes::PresetKind::Cone)
+		{
+			// 旧四部件圆锥可读；写出时元数据与标准部件必须来自同一个切线版本。
+			auto rebuilt = shapes::MakeConstructedShape(*normalized.construction,normalized.style,normalized.id,normalized.revision);
+			if (!rebuilt) return false;
+			rebuilt->transform = normalized.transform; normalized = std::move(*rebuilt);
+		}
 		shapes::GeometryResult geometry;
-		if (!source.shape || !shapes::BuildGeometry(*source.shape, geometry)) return false;
+		if (!shapes::BuildGeometry(normalized, geometry)) return false;
+		// 与画布共用派生器，v4引用计数同时包含辅助部件；根仍只保存构造真值和aux。
+		shapes::GeometryResult auxiliary;
+		if (!shapes::BuildAuxiliaryGeometry(normalized,auxiliary)) return false;
+		geometry.parts.insert(geometry.parts.end(),auxiliary.parts.begin(),auxiliary.parts.end());
 		const auto count = geometry.parts.size();
 		if (!count || count > UINT32_MAX || canvas.content.size() > UINT32_MAX - count) return false;
 		for (size_t index = 0; index < count; ++index)
@@ -89,13 +102,13 @@
 			output.undoId = source.undoId;
 			output.renderOnlyWhenLatest = source.renderOnlyWhenLatest;
 			// 只在首部件存根对象，后续部件用引用，避免复合对象产生平方级元数据。
-			auto metadata = index == 0 ? EncodeInkeysShapeMetadata(*source.shape) : ShapeValue(ShapeMap{});
+			auto metadata = index == 0 ? EncodeInkeysShapeMetadata(normalized) : ShapeValue(ShapeMap{});
 			if (index != 0)
 			{
 				auto& reference = std::get<ShapeMap>(metadata.value);
-				ShapeField(reference, "version", ShapeValue(uint64_t{ source.shape->construction ? 3u : 1u }));
-				ShapeField(reference, "id", ShapeValue(FormatUInkGuid(UInkGuid(source.shape->id))));
-				ShapeField(reference, "revision", ShapeValue(source.shape->revision));
+				ShapeField(reference, "version", ShapeValue(InkeysShapeVersion(normalized)));
+				ShapeField(reference, "id", ShapeValue(FormatUInkGuid(UInkGuid(normalized.id))));
+				ShapeField(reference, "revision", ShapeValue(normalized.revision));
 				ShapeField(reference, "reference", ShapeValue(true));
 			}
 			auto& map = std::get<ShapeMap>(metadata.value);

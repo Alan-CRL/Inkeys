@@ -32,7 +32,7 @@ bool ArcPoints(Vec2 center, Vec2 axes, double start, double sweep, float toleran
 	return true;
 }
 bool ExpandAdvanced(const Construction& c, const ShapeStyle& style, ShapeObject& out,
-	std::string& error, float tolerance = .25f)
+	std::string& error, float tolerance = .25f, bool legacyCone = false)
 {
 	const auto p = c.tool.preset;
 	const bool points = p == PresetKind::Polyline || p == PresetKind::Polygon;
@@ -128,7 +128,15 @@ bool ExpandAdvanced(const Construction& c, const ShapeStyle& style, ShapeObject&
 		else
 		{
 			const Vec2 apex = shift(center, height);
-			edge({ l,center.y }, apex, false); edge({ r,center.y }, apex, false);
+			if (legacyCone) { edge({ l,center.y },apex,false); edge({ r,center.y },apex,false); }
+			else if (std::abs(height.y) > axes.y)
+			{
+				// 椭圆切点满足x²/rx²+y²/ry²=1及切线经过锥顶；可见性约定不变。
+				const float ratio = axes.y / height.y;
+				const float x = axes.x * std::sqrt((std::max)(0.0f,1 - ratio * ratio)), y = axes.y * ratio;
+				edge({ center.x - x,center.y + y },apex,false); edge({ center.x + x,center.y + y },apex,false);
+			}
+			// 锥顶投影在椭圆内时没有实切线，只保留底面轮廓，编辑时钳在外部。
 		}
 		return true;
 	}

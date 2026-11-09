@@ -142,6 +142,8 @@ public:
 		draw3::shapes::FillMode fillMode = draw3::shapes::FillMode::Outline;
 		draw3::shapes::LinePattern openPattern = draw3::shapes::LinePattern::Solid;
 		draw3::shapes::LinePattern closedPattern = draw3::shapes::LinePattern::Solid;
+		draw3::shapes::Auxiliary auxiliary = draw3::shapes::Auxiliary::None;
+		draw3::shapes::Auxiliary auxiliaryChoices = draw3::shapes::Auxiliary::None; // 每位首次选择前使用该模板默认值。
 
 		struct
 		{
@@ -251,6 +253,8 @@ bool SetShapeModeSelectIfRevision(ShapeModeSelectEnum shape,
 	std::uint64_t expectedRevision);
 draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcept;
 draw3::shapes::ShapeStyle GetShapeStyle(const StateModeClass& snapshot) noexcept;
+draw3::shapes::Auxiliary GetShapeAuxiliary(const StateModeClass& snapshot) noexcept;
+bool SetShapeAuxiliaryIfRevision(draw3::shapes::Auxiliary bit, bool enabled, std::uint64_t expectedRevision);
 draw3::shapes::FillMode GetShapeFillMode(const StateModeClass& snapshot) noexcept;
 bool IsOpenShapeTool(const StateModeClass& snapshot) noexcept;
 bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expectedRevision);

@@ -317,20 +317,26 @@ namespace Inkeys::Drawing::Draw3
 			}
 		} restore{ context.Get(), targets };
 		ClearOperatorLayer(shapeCompositeLayer_);
+		const bool hasAuxiliary = std::any_of(data.batches.begin(),data.batches.end(),
+			[](const ::draw3::shapes::RenderBatch& batch) { return batch.auxiliary; });
 		for (size_t first = 0; first < data.batches.size();)
 		{
 			const auto& material = data.batches[first];
 			size_t end = first + 1;
-			if (!material.fill)
+			if (!material.fill || hasAuxiliary)
 			{
 				// 同色同透明度的相邻描边共用覆盖层；每批仍保留自己的虚线相位。
-				// 不跨越填充或其他材质，保证复合图形原有 source-over 层序。
+				// 辅助显示也可与同材质填充求并集；零辅助位仍保留原来的填充屏障。
 				for (; end < data.batches.size(); ++end)
 				{
 					const auto& next = data.batches[end];
-					if (next.fill || next.style.strokeRgb != material.style.strokeRgb ||
-						next.style.strokeOpacity != material.style.strokeOpacity ||
-						next.style.width != material.style.width) break;
+					const auto rgb = material.fill ? material.style.fillRgb : material.style.strokeRgb;
+					const auto opacity = material.fill ? material.style.fillOpacity : material.style.strokeOpacity;
+					const auto nextRgb = next.fill ? next.style.fillRgb : next.style.strokeRgb;
+					const auto nextOpacity = next.fill ? next.style.fillOpacity : next.style.strokeOpacity;
+					// 辅助实心点也与描边/填充共用覆盖层，半透明交点不重复混合。
+					if (nextRgb != rgb || nextOpacity != opacity ||
+						(!hasAuxiliary && (material.fill || next.fill || next.style.width != material.style.width))) break;
 				}
 			}
 			ClearOperatorLayer(shapeMaterialLayer_);

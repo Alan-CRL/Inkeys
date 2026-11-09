@@ -87,7 +87,9 @@
 	check(std::abs(baseline[crossed]-32)<=2 && std::abs(baseline[crossed+1]-128)<=2 &&
 		std::abs(baseline[crossed+2]-64)<=2 && std::abs(baseline[crossed+3]-224)<=2,
 		"baseline contains the expected bottom/middle/top source-over order");
-	auto moved = middle; moved.transform.dx = 48; moved.revision = revisions.Next(moved.id,middle.revision);
+	const auto edited = EditShape(middle,0,{0,0},{48,0},revisions.Next(middle.id,middle.revision));
+	if (!check(edited.has_value(),"shared editor produces the same-layer move candidate")) return 1;
+	auto moved = *edited;
 	InkCanvas preview = *document; CanvasRuntimeHistory previewHistory = history;
 	ready = replace(preview,previewHistory,moved);
 	const auto affected = tilesFor(history,previewHistory);
@@ -260,6 +262,61 @@
 				materialized == directCommitted,"commit after 64 previews materializes byte-identically to the old direct commit");
 			check(CompositionRestoreCallsTotal() == restoresBefore,"materialize itself rasterizes once without tile replay");
 		}
+	}
+	// 大空心对象的内部tile只有辅助像素：直接绘制不能掩盖撤销残影或冷重放漏画。
+	{
+		std::array<uint8_t,16> auxBytes{}; auxBytes[0] = 0xC8;
+		InkPage auxPage{InkGuid(auxBytes)}; auto* auxCanvas = auxPage.GetOrCreateCanvas(kDefaultDeviceKey,{200,0,1});
+		const HistoryCanvasIdentity auxIdentity{auxPage.PageGuid(),kDefaultDeviceKey};
+		InkHistoryGpuCache auxCache;
+		if (!check(auxCanvas && auxCache.Initialize(gpu,{kUndoTileBytes,1},{0}),"auxiliary tile fixture initializes")) return 1;
+		for (bool dot : {false,true})
+		{
+			auto shape = object(); shape.kind = dot ? Kind::Circle : Kind::Rectangle;
+			shape.geometry.start = dot ? Vec2{256,64} : Vec2{-256,-512}; shape.geometry.end = {768,512}; shape.geometry.radius = dot ? 500.f : 0.f;
+			shape.style.width = 4; shape.style.auxiliary = dot ? Auxiliary::Center : Auxiliary::Diagonals;
+			auto body = shape; body.style.auxiliary = Auxiliary::None;
+			const auto bodyFootprint = BuildStrokeTileFootprint(stroke(body));
+			const auto footprint = BuildStrokeTileFootprint(stroke(shape));
+			const SignedTileCoordinate interior{1,0};
+			check(bodyFootprint && footprint && std::find(bodyFootprint->compositionTiles.begin(),bodyFootprint->compositionTiles.end(),interior) == bodyFootprint->compositionTiles.end() &&
+				std::find(footprint->compositionTiles.begin(),footprint->compositionTiles.end(),interior) != footprint->compositionTiles.end(),"only auxiliary geometry adds the hollow object's interior composition tile");
+			if (!footprint) continue;
+			check(std::find(footprint->undoTiles.begin(),footprint->undoTiles.end(),SignedTileCoordinate{2,0}) != footprint->undoTiles.end() &&
+				(!dot || std::find(footprint->undoTiles.begin(),footprint->undoTiles.end(),SignedTileCoordinate{1,0}) != footprint->undoTiles.end()),"auxiliary diagonal and tile-crossing dot cover undo tiles");
+			GeometryResult hitGeometry;
+			check(BuildGeometry(shape,hitGeometry) && HitTest(shape,hitGeometry,dot ? Vec2{256,64} : Vec2{256,0}).kind == HitKind::None,"auxiliary interior stays excluded from body hit testing");
+			const auto index = auxCanvas->AppendStroke(stroke(shape)); CanvasRuntimeHistory auxHistory;
+			const auto entry = index ? auxHistory.AppendStroke(*index,*footprint) : std::nullopt;
+			if (!check(entry.has_value(),"auxiliary object appends as one history item")) continue;
+			std::vector<unsigned char> direct,actualAux,empty;
+			if (!check(ordered(*auxCanvas,auxHistory,direct) && std::any_of(direct.begin(),direct.end(),[](unsigned char c) { return c != 0; }),"direct raster contains auxiliary pixels in the interior viewport")) continue;
+			for (uint64_t budget : {uint64_t(0),kCompositionTileBytes * 2})
+			{
+				auxCache.SetCompositionPolicy({budget}); auxCache.DiscardCompositionCache();
+				const auto restore = [&]
+				{
+					const CompositionRestoreRequest request{auxIdentity,key,auxCanvas,&auxHistory,footprint->compositionTiles,auxHistory.Items().size(),200,0,128,128,true};
+					return auxCache.RestoreComposition(request).path != CompositionRestorePath::Failed && read(actualAux,gpu.layerL2Texture.Get());
+				};
+				gpu.ClearRTV(gpu.layerL2RTV.Get(),kTransparentLayerClearColor);
+				check(restore() && actualAux == direct,"cold auxiliary replay is pixel-equal to direct raster");
+				check(auxHistory.UndoLastVisible(*entry) && ordered(*auxCanvas,auxHistory,empty),"auxiliary undo prepares empty ordered reference");
+				// 先恢复有像素的画面，再只恢复受影响tile，确保真正检查残影清除。
+				check(auxHistory.RedoLastUndone(*entry) && ordered(*auxCanvas,auxHistory,actualAux) && auxHistory.UndoLastVisible(*entry) &&
+					restore() && actualAux == empty,"auxiliary undo removes all interior pixels without ghosts");
+				check(auxHistory.RedoLastUndone(*entry) && restore() && actualAux == direct,"auxiliary redo restores pixel-equal interior pixels");
+			}
+			// 焦点层落定的dirty也须包含点和对角线，与直接提交逐字节相等。
+			gpu.ClearRTV(gpu.layerL2RTV.Get(),kTransparentLayerClearColor); gpu.ClearOperatorLayer(gpu.layerL0); gpu.ClearOperatorLayer(gpu.layerL1);
+			std::vector<InkPoint> auxPoints; HighlighterGeometry auxHighlighter;
+			const StoredStrokeRasterTarget target{&gpu.layerL1,200,0,128,128};
+			const auto drawn = DrawFocusLayerItem(auxCanvas->Strokes()[*index],&shape,gpu,target,auxPoints,auxHighlighter);
+			check(drawn.succeeded && ResolveFocusLayerToL2(gpu,gpu.layerL1,drawn.dirty) && read(actualAux,gpu.layerL2Texture.Get()) && actualAux == direct,
+				"auxiliary focus materialization bounds preserve every pixel");
+			gpu.ClearOperatorLayer(gpu.layerL1);
+		}
+		auxCache.Release();
 	}
 	#include "Draw3.ShapeRendererBenchmark.inl"
 	cache.Release(); gpu.SetScreenSize(128,128); gpu.ClearOperatorLayer(gpu.layerL0); gpu.ClearOperatorLayer(gpu.layerL1);

@@ -112,7 +112,7 @@ bool SameShapeUiContents(const ShapeUiSnapshot& a, const ShapeUiSnapshot& b)
 {
 	return a.identity.session == b.identity.session && SameShapeUiScene(a.identity,b.identity) &&
 		a.identity.objectId == b.identity.objectId && a.identity.objectRevision == b.identity.objectRevision &&
-		a.object == b.object && a.handles == b.handles && a.bounds == b.bounds &&
+		a.object == b.object && a.handles == b.handles && a.bounds == b.bounds && a.frameRect == b.frameRect &&
 		a.editGestureActive == b.editGestureActive && a.displayScale == b.displayScale &&
 		a.canvasOriginX == b.canvasOriginX && a.canvasOriginY == b.canvasOriginY &&
 		a.construction.active == b.construction.active && a.construction.step == b.construction.step &&

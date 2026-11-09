@@ -4,7 +4,7 @@
 
 namespace draw3::shapes
 {
-	enum class EditHandleKind : uint32_t { Move, Rotate, Scale, Center, Endpoint, Vertex, Radius, Axis, Angle, Depth, Height };
+	enum class EditHandleKind : uint32_t { Move, Rotate, Scale, Center, Endpoint, Vertex, Radius, Axis, Angle, Depth, Height, Focus };
 	struct EditHandle
 	{
 		uint32_t id = 0;
@@ -12,10 +12,12 @@ namespace draw3::shapes
 		Vec2 position;
 		bool operator==(const EditHandle&) const = default;
 	};
-	// id 在相同参数模板内稳定；0为本体移动，1为旋转，10..17为框缩放，1000+为顶点。
-	std::vector<EditHandle> BuildEditHandles(const ShapeObject&, const BuildOptions& = {});
+	// 0=整体移动，1=旋转；10/12/14/16=立体外框左上/右上/右下/左下。
+	// 100=中心，101=半径，102/103=轴或角，104=深度，105=高度，106/107=F1/F2；1000+=端点/顶点。
+	std::vector<EditHandle> BuildEditHandles(const ShapeObject&, const BuildOptions& = {}, Bounds* frameRect = nullptr);
 	std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleId,
-		Vec2 down, Vec2 current, uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr);
+		Vec2 down, Vec2 current, uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr,
+		std::optional<float> angleDelta = std::nullopt);
 	std::optional<ShapeObject> RestyleShape(const ShapeObject& before, const ShapeStyle&,
 		uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr);
 	std::optional<ShapeObject> SetRegularSides(const ShapeObject&, uint32_t sides,
@@ -24,7 +26,10 @@ namespace draw3::shapes
 	{
 	public:
 		bool Begin(const ShapeObject&, uint32_t handleId, Vec2 down, const BuildOptions& = {});
-		bool Preview(Vec2 current, uint64_t newRevision, std::string* error = nullptr);
+		// 无效拖动仍提供钳制后的Candidate；只有Commit返回的对象可写入历史。
+		bool Preview(Vec2 current, uint64_t newRevision, std::string* error = nullptr,
+			std::optional<float> angleDelta = std::nullopt);
+		std::optional<float> AngleDelta() const noexcept;
 		const std::optional<ShapeObject>& Candidate() const noexcept;
 		std::optional<ShapeObject> Commit();
 		void Cancel() noexcept;
@@ -33,6 +38,10 @@ namespace draw3::shapes
 		uint32_t handleId_ = 0;
 		Vec2 down_;
 		BuildOptions options_;
+		Vec2 lastValid_, anglePoint_;
+		std::optional<Vec2> depthAnchor_;
+		float lastAngle_ = 0, angleDelta_ = 0, lastValidAngle_ = 0;
+		bool angleActive_ = false, canCommit_ = false;
 	};
 	struct ConstructionStatus
 	{

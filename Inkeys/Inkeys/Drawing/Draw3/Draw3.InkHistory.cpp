@@ -422,19 +422,27 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const auto* geometry = stroke.ShapeGeometry();
 				if (!geometry) return std::nullopt;
-				for (const auto& part : geometry->parts)
+				// 辅助虚线按实线保守覆盖，辅助点使用填充边界；不改变本体命中几何。
+				draw3::shapes::GeometryResult auxiliary;
+				if (!stroke.Shape() || !draw3::shapes::BuildAuxiliaryGeometry(*stroke.Shape(),auxiliary)) return std::nullopt;
+				const auto addParts = [&](const auto& parts) -> bool
 				{
-					if (part.style.fill && part.bounds.valid && !AddRectangleTiles(
-						{part.bounds.left, part.bounds.top, part.bounds.right, part.bounds.bottom},
-						tileSize, visible, result)) return std::nullopt;
-					if (!part.style.stroke) continue;
-					const double padding = part.style.width * 0.5 + kFootprintAaPadding;
-					for (const auto& path : part.paths)
-						for (size_t i = 1; i < path.points.size(); ++i)
-							if (!AddSegmentTiles({path.points[i-1].x, path.points[i-1].y},
-								{path.points[i].x, path.points[i].y}, padding, padding,
-								tileSize, visible, visibleTiles, result)) return std::nullopt;
-				}
+					for (const auto& part : parts)
+					{
+						if (part.style.fill && part.bounds.valid && !AddRectangleTiles(
+							{part.bounds.left, part.bounds.top, part.bounds.right, part.bounds.bottom},
+							tileSize, visible, result)) return false;
+						if (!part.style.stroke) continue;
+						const double padding = part.style.width * 0.5 + kFootprintAaPadding;
+						for (const auto& path : part.paths)
+							for (size_t i = 1; i < path.points.size(); ++i)
+								if (!AddSegmentTiles({path.points[i-1].x, path.points[i-1].y},
+									{path.points[i].x, path.points[i].y}, padding, padding,
+									tileSize, visible, visibleTiles, result)) return false;
+					}
+					return true;
+				};
+				if (!addParts(geometry->parts) || !addParts(auxiliary.parts)) return std::nullopt;
 				NormalizeTiles(result);
 				return result;
 			}

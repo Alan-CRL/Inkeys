@@ -544,7 +544,7 @@ namespace
 				if (style.linePattern == draw3::shapes::LinePattern::Dashed) return Tool::DashedLine;
 			}
 			if (spec.preset == draw3::shapes::PresetKind::Rectangle &&
-				style.linePattern == draw3::shapes::LinePattern::Solid)
+				style.linePattern == draw3::shapes::LinePattern::Solid && style.auxiliary == draw3::shapes::Auxiliary::None)
 			{
 				if (style.stroke && !style.fill) return Tool::OutlineRectangle;
 				if (!style.stroke && style.fill) return Tool::FilledRectangle;
@@ -2412,10 +2412,21 @@ draw3::shapes::FillMode GetShapeFillMode(const StateModeClass& snapshot) noexcep
 		? draw3::shapes::FillMode::Outline : snapshot.Shape.fillMode;
 }
 
+draw3::shapes::Auxiliary GetShapeAuxiliary(const StateModeClass& snapshot) noexcept
+{
+	using namespace draw3::shapes;
+	const auto preset = GetShapeToolSpec(snapshot).preset;
+	const auto choices = static_cast<uint8_t>(snapshot.Shape.auxiliaryChoices);
+	const auto bits = (static_cast<uint8_t>(DefaultAuxiliary(preset)) & ~choices) |
+		(static_cast<uint8_t>(snapshot.Shape.auxiliary) & choices);
+	return static_cast<Auxiliary>(bits) & SupportedAuxiliary(preset);
+}
+
 draw3::shapes::ShapeStyle GetShapeStyle(const StateModeClass& snapshot) noexcept
 {
 	using namespace draw3::shapes;
 	ShapeStyle style;
+	style.auxiliary = GetShapeAuxiliary(snapshot);
 	const auto fill = GetShapeFillMode(snapshot);
 	style.stroke = fill != draw3::shapes::FillMode::Fill;
 	style.fill = fill != draw3::shapes::FillMode::Outline;
@@ -2446,6 +2457,21 @@ namespace
 		if (changed) SyncDraw3State();
 		return changed;
 	}
+}
+
+bool SetShapeAuxiliaryIfRevision(draw3::shapes::Auxiliary bit, bool enabled, std::uint64_t expected)
+{
+	using namespace draw3::shapes;
+	if (bit != Auxiliary::Center && bit != Auxiliary::Foci && bit != Auxiliary::Diagonals) return false;
+	return ChangeShapeProperty(expected, [&] {
+		if ((SupportedAuxiliary(GetShapeToolSpec(stateMode).preset) & bit) == Auxiliary::None) return false;
+		const auto before = stateMode.Shape.auxiliary;
+		const auto choices = stateMode.Shape.auxiliaryChoices;
+		const auto value = static_cast<uint8_t>(before), mask = static_cast<uint8_t>(bit);
+		stateMode.Shape.auxiliary = static_cast<Auxiliary>(enabled ? value | mask : value & ~mask);
+		stateMode.Shape.auxiliaryChoices = choices | bit;
+		return before != stateMode.Shape.auxiliary || choices != stateMode.Shape.auxiliaryChoices;
+	});
 }
 
 bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expected)
@@ -2560,6 +2586,16 @@ int RunShapeToolStateProductionTest() noexcept
 		const auto defaults = GetStateModeSnapshot();
 		check(defaults.Shape.circleMode == CreationMode::CenterRadius && defaults.Shape.polygonSides == 3 &&
 			defaults.Shape.fillMode == draw3::shapes::FillMode::Outline, "session defaults");
+		{
+			auto initial = defaults;
+			initial.Shape.auxiliary = initial.Shape.auxiliaryChoices = Auxiliary::None;
+			initial.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeCircle1;
+			check(GetShapeStyle(initial).auxiliary == Auxiliary::Center,"circle defaults to visible center");
+			initial.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeEllipse1;
+			check(GetShapeStyle(initial).auxiliary == Auxiliary::Foci,"ellipse defaults to visible foci");
+			initial.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeRegularPolygon1;
+			check(GetShapeAuxiliary(initial) == Auxiliary::None,"regular polygon center initially off");
+		}
 		for (unsigned i = 0; i <= static_cast<unsigned>(PresetKind::Pyramid); ++i)
 		{
 			const auto preset = static_cast<PresetKind>(i);
@@ -2579,6 +2615,21 @@ int RunShapeToolStateProductionTest() noexcept
 			check(SetPenColor(RGB(19, 37, 61), false) && GetPenColor() == RGB(19, 37, 61), "shape color uses existing slot");
 		}
 		(void)SetShapeToolPresetIfRevision(PresetKind::Circle, StateModeTransitionRevision());
+		const auto auxiliaryRevision = StateModeTransitionRevision();
+		check(SetShapeAuxiliaryIfRevision(Auxiliary::Center,false,auxiliaryRevision) && GetShapeAuxiliary(GetStateModeSnapshot()) == Auxiliary::None,"remember center off for next stroke");
+		check(!SetShapeAuxiliaryIfRevision(Auxiliary::Center,true,auxiliaryRevision) && GetShapeAuxiliary(GetStateModeSnapshot()) == Auxiliary::None,"stale auxiliary toggle rejected");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Arc, StateModeTransitionRevision());
+		check(GetShapeAuxiliary(GetStateModeSnapshot()) == Auxiliary::None,"center choice shared across supported presets");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Ellipse, StateModeTransitionRevision());
+		check(GetShapeAuxiliary(GetStateModeSnapshot()) == Auxiliary::Foci && SetShapeAuxiliaryIfRevision(Auxiliary::Foci,false,StateModeTransitionRevision()),"foci remembered independently");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Rectangle, StateModeTransitionRevision());
+		check(GetShapeAuxiliary(GetStateModeSnapshot()) == Auxiliary::None && SetShapeAuxiliaryIfRevision(Auxiliary::Diagonals,true,StateModeTransitionRevision()),"diagonals default off and remember on");
+		check(Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().tool == Tool::Shape,"rectangle auxiliary uses generic renderer instead of legacy primitive");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Rhombus, StateModeTransitionRevision());
+		check(GetShapeStyle(GetStateModeSnapshot()).auxiliary == Auxiliary::Diagonals,"next preset receives remembered diagonal bit");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Circle, StateModeTransitionRevision());
+		check(GetShapeAuxiliary(GetStateModeSnapshot()) == Auxiliary::None && !SetShapeAuxiliaryIfRevision(Auxiliary::Foci,true,StateModeTransitionRevision()),"unsupported bits masked without changing center memory");
+		check(SetShapeAuxiliaryIfRevision(Auxiliary::Center,true,StateModeTransitionRevision()),"center can be enabled again");
 		check(SetShapeCircleModeIfRevision(CreationMode::Drag, StateModeTransitionRevision()), "circle bbox selected");
 		const auto stale = StateModeTransitionRevision();
 		check(SetShapeCircleModeIfRevision(CreationMode::CenterRadius, stale), "circle center selected");

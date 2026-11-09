@@ -345,6 +345,37 @@ namespace Inkeys::Drawing::Draw3
 			check(render(sameMaterial,pixels) && std::abs(alpha(pixels,64,64) - 128) <= 1 &&
 				alpha(pixels,64,104) == 0 && std::abs(alpha(pixels,64,72) - 128) <= 1,
 				"compound mixed-dash material union retains hidden-edge gaps and half alpha");
+			// 辅助点/虚线与本体同材质求并集，交点半透明度只能混合一次。
+			{
+				auto base = object(); base.kind = Kind::Circle; base.geometry.start = {64.5f,64.5f}; base.geometry.radius = 3;
+				base.style.width = 4; base.style.strokeOpacity = .5f; base.style.auxiliary = Auxiliary::Center;
+				bool unionCoverage = render(base,pixels) && std::abs(alpha(pixels,64,64) - 128) <= 1;
+				for (size_t i = 3; i < pixels.size(); i += 4) unionCoverage &= pixels[i] <= 128;
+				check(unionCoverage,"center dot and small circle outline share one coverage union");
+				auto ellipse = object(); ellipse.kind = Kind::Ellipse; ellipse.geometry.start = {64.5f,64.5f}; ellipse.geometry.end = {30,18};
+				ellipse.style.width = .5f; ellipse.style.auxiliary = Auxiliary::Foci; ellipse.style.linePattern = LinePattern::Dotted;
+				check(render(ellipse,pixels) && alpha(pixels,40,64) > 250 && alpha(pixels,88,64) > 250 && alpha(pixels,64,64) == 0,
+					"ellipse foci remain solid filled dots on dotted outline");
+				ellipse.id = object().id; ellipse.style.stroke = false; ellipse.style.fill = true; ellipse.style.fillOpacity = .5f;
+				check(render(ellipse,pixels) && std::abs(alpha(pixels,40,64) - 128) <= 1,"fill-only ellipse foci use fill material without double blend");
+				ellipse.id = object().id; ellipse.style.stroke = true; ellipse.style.strokeRgb = ellipse.style.fillRgb; ellipse.style.strokeOpacity = .5f;
+				unionCoverage = render(ellipse,pixels) && std::abs(alpha(pixels,40,64) - 128) <= 1;
+				for (size_t i = 3; i < pixels.size(); i += 4) unionCoverage &= pixels[i] <= 128;
+				check(unionCoverage,"same-material fill outline and auxiliary dots share coverage without a fill barrier");
+				base = object(); base.style.strokeOpacity = .5f; base.style.width = 6; base.style.auxiliary = Auxiliary::Diagonals;
+				auto rectangle = MakePresetShape({PresetKind::Rectangle,CreationMode::Drag},{20.5f,20.5f},{108.5f,108.5f},base.style,base.id);
+				unionCoverage = rectangle && render(*rectangle,pixels) && std::abs(alpha(pixels,64,64) - 128) <= 1;
+				for (size_t i = 3; i < pixels.size(); i += 4) unionCoverage &= pixels[i] <= 128;
+				check(unionCoverage,"dashed diagonals cross each other and outline at half alpha");
+				if (rectangle)
+				{
+					check(render(*rectangle,reference) && render(*rectangle,pixels,32,32,64),"auxiliary tile render");
+					bool same = true;
+					for (int y = 0; y < 64; ++y) for (int x = 0; x < 64; ++x) for (int c = 0; c < 4; ++c)
+						same &= pixels[(y * 128 + x) * 4 + c] == reference[((y + 32) * 128 + x + 32) * 4 + c];
+					check(same,"auxiliary dashed phase survives tile origin");
+				}
+			}
 			// 不能跨不同颜色或填充合并相同颜色的部件，否则会改变 A/B/A 层序。
 			auto strokeBarrier = object(); strokeBarrier.kind = Kind::Compound;
 			strokeBarrier.style.strokeOpacity = 0.5f;

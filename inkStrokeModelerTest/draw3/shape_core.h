@@ -34,6 +34,13 @@ namespace draw3::shapes
 	enum class PresetKind : uint32_t { Line, Arrow, Rectangle, RoundedRectangle, Circle, Ellipse, Triangle, Parallelogram, Rhombus, Trapezoid, RegularPolygon,
 		Polyline, Polygon, Arc, Sector, Cuboid, Cube, Cylinder, Cone, Prism, Pyramid };
 	enum class FillMode : uint32_t { Outline, Fill, OutlineAndFill };
+	enum class Auxiliary : uint8_t { None = 0, Center = 1, Foci = 2, Diagonals = 4 };
+	constexpr Auxiliary operator|(Auxiliary a, Auxiliary b) noexcept
+	{ return static_cast<Auxiliary>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b)); }
+	constexpr Auxiliary operator&(Auxiliary a, Auxiliary b) noexcept
+	{ return static_cast<Auxiliary>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b)); }
+	Auxiliary SupportedAuxiliary(PresetKind) noexcept;
+	Auxiliary DefaultAuxiliary(PresetKind) noexcept;
 	struct ToolSpec
 	{
 		PresetKind preset = PresetKind::Line;
@@ -69,6 +76,7 @@ namespace draw3::shapes
 		float strokeOpacity = 1, fillOpacity = 1, width = 2;
 		LinePattern linePattern = LinePattern::Solid;
 		float dashOffset = 0;
+		Auxiliary auxiliary = Auxiliary::None;
 		bool operator==(const ShapeStyle&) const = default;
 	};
 	struct ShapePart
@@ -92,6 +100,8 @@ namespace draw3::shapes
 		std::vector<ShapePart> parts;
 		LegacyKind legacyKind = LegacyKind::None;
 		std::optional<Construction> construction;
+		// 仅供活动EditSession的句柄视图使用；提交时清除，不参与几何或持久化。
+		std::optional<Vec2> editDepthAnchor;
 		bool operator==(const ShapeObject&) const = default;
 	};
 	struct Bounds
@@ -149,6 +159,7 @@ namespace draw3::shapes
 		bool fill = false;
 		uint32_t partId = 0;
 		std::vector<GpuPrimitive> primitives;
+		bool auxiliary = false; // 派生部件与相邻同材质批次求覆盖并集。
 	};
 	struct RenderData { std::vector<RenderBatch> batches; Bounds bounds; };
 	struct ValidationResult
@@ -178,6 +189,9 @@ namespace draw3::shapes
 	bool BuildGeometry(const ShapeObject&, GeometryResult&, const BuildOptions& = {},
 		std::string* error = nullptr, const Registry& = DefaultRegistry());
 	bool BuildRenderData(const ShapeObject&, RenderData&, const BuildOptions& = {},
+		std::string* error = nullptr, const Registry& = DefaultRegistry());
+	// 渲染与标准降级共用；不加入本体部件或控制点集合。
+	bool BuildAuxiliaryGeometry(const ShapeObject&, GeometryResult&, const BuildOptions& = {},
 		std::string* error = nullptr, const Registry& = DefaultRegistry());
 	std::vector<ControlPoint> ControlPoints(const GeometryResult&);
 	enum class HitKind : uint32_t { None, Fill, Stroke };

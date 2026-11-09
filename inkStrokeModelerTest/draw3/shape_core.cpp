@@ -13,6 +13,7 @@ namespace
 {
 	constexpr double kPi = 3.14159265358979323846;
 	constexpr size_t kMaxVertices = 16384;
+	ShapeObject CanonicalEllipse(ShapeObject shape);
 	bool Finite(float v) { return std::isfinite(v) && std::abs(v) <= 1.0e9f; }
 	bool Finite(Vec2 p) { return Finite(p.x) && Finite(p.y); }
 	double Cross(Vec2 a, Vec2 b, Vec2 c)
@@ -48,7 +49,8 @@ namespace
 			Finite(s.strokeOpacity) && s.strokeOpacity >= 0 && s.strokeOpacity <= 1 &&
 			Finite(s.fillOpacity) && s.fillOpacity >= 0 && s.fillOpacity <= 1 &&
 			Finite(s.width) && s.width > 0 && Finite(s.dashOffset) &&
-			static_cast<uint32_t>(s.linePattern) <= static_cast<uint32_t>(LinePattern::DashDot);
+			static_cast<uint32_t>(s.linePattern) <= static_cast<uint32_t>(LinePattern::DashDot) &&
+			static_cast<uint8_t>(s.auxiliary) <= 7;
 	}
 	#include "shape_presets.inl"
 	bool ExpandPreset(const Construction& c, const ShapeStyle& style, ShapeObject& out, std::string& error)
@@ -437,15 +439,27 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 		std::string error;
 		if (!ExpandPreset(*object.construction, object.style, expected, error)) return { error };
 		if (object.legacyKind != LegacyKind::None || object.kind != expected.kind || object.creationMode != expected.creationMode ||
-			!SameGeometry(object.geometry, expected.geometry) || object.parts.size() != expected.parts.size())
+			!SameGeometry(object.geometry, expected.geometry) ||
+			(object.parts.size() != expected.parts.size() && object.construction->tool.preset != PresetKind::Cone))
 			return { "construction does not match derived geometry" };
 		if ((object.construction->tool.preset == PresetKind::RegularPolygon ||
 			object.construction->tool.preset == PresetKind::Cube) && !Similarity(object.transform))
 			return { "regular polygon requires uniform orthogonal transform" };
-		for (size_t i = 0; i < object.parts.size(); ++i)
+		auto sameParts = [&](const ShapeObject& derived) {
+			if (object.parts.size() != derived.parts.size()) return false;
+			for (size_t i = 0; i < object.parts.size(); ++i)
+			{
+				const auto& a = object.parts[i]; const auto& b = derived.parts[i];
+				if (a.id != b.id || a.kind != b.kind || !SameGeometry(a.geometry,b.geometry) || a.transform != b.transform || a.style != b.style) return false;
+			}
+			return true;
+		};
+		if (!sameParts(expected))
 		{
-			const auto& a = object.parts[i]; const auto& b = expected.parts[i];
-			if (a.id != b.id || a.kind != b.kind || !SameGeometry(a.geometry, b.geometry) || a.transform != b.transform || a.style != b.style)
+			// v3旧圆锥仍严格核验旧派生数据，渲染/后续编辑统一使用修正后的切线。
+			ShapeObject legacy;
+			if (object.construction->tool.preset != PresetKind::Cone ||
+				!ExpandAdvanced(*object.construction,object.style,legacy,error,.25f,true) || !sameParts(legacy))
 				return { "construction does not match derived parts" };
 		}
 	}
@@ -482,6 +496,87 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 		if (!validation) return validation;
 	}
 	return {};
+}
+Auxiliary SupportedAuxiliary(PresetKind preset) noexcept
+{
+	switch (preset)
+	{
+	case PresetKind::Circle: case PresetKind::RegularPolygon: case PresetKind::Arc: case PresetKind::Sector:
+		return Auxiliary::Center;
+	case PresetKind::Ellipse: return Auxiliary::Foci;
+	case PresetKind::Rectangle: case PresetKind::RoundedRectangle: case PresetKind::Parallelogram:
+	case PresetKind::Rhombus: case PresetKind::Trapezoid: return Auxiliary::Diagonals;
+	default: return Auxiliary::None;
+	}
+}
+Auxiliary DefaultAuxiliary(PresetKind preset) noexcept
+{
+	return preset == PresetKind::Circle ? Auxiliary::Center :
+		preset == PresetKind::Ellipse ? Auxiliary::Foci : Auxiliary::None;
+}
+bool BuildAuxiliaryGeometry(const ShapeObject& object, GeometryResult& result, const BuildOptions& options,
+	std::string* error, const Registry& registry)
+{
+	if (!Validate(object,registry) || !Finite(options.displayScale) || options.displayScale <= 0)
+	{ SetError(error,"invalid auxiliary source"); return false; }
+	const auto preset = object.construction ? object.construction->tool.preset :
+		object.kind == Kind::Circle ? PresetKind::Circle : object.kind == Kind::Ellipse ? PresetKind::Ellipse :
+		object.kind == Kind::Rectangle ? PresetKind::Rectangle : PresetKind::Line;
+	// 不支持的位只忽略，旧对象的零值绝不补上工具默认值。
+	const auto auxiliary = object.style.auxiliary & SupportedAuxiliary(preset);
+	GeometryResult next; std::string failure;
+	ShapeStyle style = object.style; style.auxiliary = Auxiliary::None;
+	if (!style.stroke) { style.strokeRgb = style.fillRgb; style.strokeOpacity = style.fillOpacity; }
+	style.fillRgb = style.strokeRgb; style.fillOpacity = style.strokeOpacity;
+	auto append = [&](Kind kind, const Geometry& g, const Transform& transform, const ShapeStyle& material)
+	{
+		GeometryPart part;
+		if (!BuildPart(0,kind,g,transform,material,options,registry,part,failure)) return false;
+		part.controls.clear(); next.bounds = UnionBounds(next.bounds,part.bounds); next.parts.push_back(std::move(part)); return true;
+	};
+	auto dot = [&](Vec2 canvasCenter)
+	{
+		Geometry g; g.start = canvasCenter;
+		// 点保持画布中的圆形；尺寸沿用描边的面积等效缩放，最小直径固定为4画布像素（不随显示比例变化，保证预览、重放、导出一致）。
+		g.radius = (std::max)(style.width * static_cast<float>(std::sqrt(std::abs(Determinant(object.transform)))),2.0f);
+		ShapeStyle material = style; material.stroke = false; material.fill = true; material.linePattern = LinePattern::Solid;
+		return append(Kind::Circle,g,{},material);
+	};
+	if ((auxiliary & Auxiliary::Center) != Auxiliary::None)
+	{
+		const auto center = object.construction && preset != PresetKind::Circle ? object.construction->start : object.geometry.start;
+		if (!dot(ApplyTransform(object.transform,center))) { SetError(error,failure); return false; }
+	}
+	if ((auxiliary & Auxiliary::Foci) != Auxiliary::None)
+	{
+		const auto ellipse = CanonicalEllipse(object); const auto& g = ellipse.geometry;
+		const float focus = std::sqrt((std::max)(0.0f,g.end.x * g.end.x - g.end.y * g.end.y));
+		// CanonicalEllipse 已把仿射椭圆化为画布长短轴，避免焦点与编辑句柄漂移。
+		for (float sign : {1.f,-1.f})
+		{
+			if (!dot(ApplyTransform(ellipse.transform,{g.start.x + sign * focus,g.start.y})))
+			{ SetError(error,failure); return false; }
+		}
+	}
+	if ((auxiliary & Auxiliary::Diagonals) != Auxiliary::None)
+	{
+		std::vector<Vec2> corners = object.geometry.vertices;
+		if (object.kind == Kind::Rectangle)
+		{
+			const auto& g = object.geometry;
+			corners = {g.start,{g.end.x,g.start.y},g.end,{g.start.x,g.end.y}};
+		}
+		if (corners.size() == 4)
+		{
+			style.stroke = true; style.fill = false; style.linePattern = LinePattern::Dashed; style.dashOffset = 0;
+			for (size_t i = 0; i < 2; ++i)
+			{
+				Geometry line; line.start = corners[i]; line.end = corners[i + 2];
+				if (!append(Kind::Line,line,object.transform,style)) { SetError(error,failure); return false; }
+			}
+		}
+	}
+	result = std::move(next); SetError(error,{}); return true;
 }
 bool BuildGeometry(const ShapeObject& object, GeometryResult& result, const BuildOptions& options,
 	std::string* error, const Registry& registry)
@@ -530,6 +625,9 @@ bool BuildGeometry(const ShapeObject& object, GeometryResult& result, const Buil
 		controls.push_back({ 0, static_cast<uint32_t>(controls.size()), ControlKind::Center,
 			ApplyTransform(sampled.transform, sampled.construction->start) });
 	}
+	GeometryResult auxiliary;
+	if (object.style.auxiliary != Auxiliary::None && !BuildAuxiliaryGeometry(object,auxiliary,options,error,registry)) return false;
+	next.bounds = UnionBounds(next.bounds,auxiliary.bounds);
 	result = std::move(next); SetError(error, {}); return true;
 }
 
@@ -538,6 +636,10 @@ bool BuildRenderData(const ShapeObject& object, RenderData& result, const BuildO
 {
 	GeometryResult geometry;
 	if (!BuildGeometry(object, geometry, options, error, registry)) return false;
+	const size_t bodyCount = geometry.parts.size();
+	GeometryResult auxiliary;
+	if (object.style.auxiliary != Auxiliary::None && !BuildAuxiliaryGeometry(object,auxiliary,options,error,registry)) return false;
+	geometry.parts.insert(geometry.parts.end(),auxiliary.parts.begin(),auxiliary.parts.end());
 	RenderData next; next.bounds = geometry.bounds;
 	for (const auto& part : geometry.parts)
 	{
@@ -549,6 +651,7 @@ bool BuildRenderData(const ShapeObject& object, RenderData& result, const BuildO
 		{
 			if (fill ? !part.style.fill : !part.style.stroke) continue;
 			RenderBatch batch{ part.style, fill, part.partId, {} };
+			batch.auxiliary = static_cast<size_t>(&part - geometry.parts.data()) >= bodyCount;
 			const bool solid = fill || part.style.linePattern == LinePattern::Solid;
 			// 椭圆距离近似在细长端部误差较大；描边复用误差受控轮廓，圆仍使用精确解析距离。
 			if (((part.kind == Kind::Ellipse && fill) || part.kind == Kind::Circle) && orthogonal && solid && sx > 0 && sy > 0 &&
@@ -648,6 +751,8 @@ std::optional<ShapeObject> MakeConstructedShape(const Construction& construction
 	const ObjectId& id, uint64_t revision, std::string* error)
 {
 	ShapeObject object; object.id = id; object.revision = revision; object.style = style;
+	// 模板不支持的辅助位不进入构造对象，也不传播到复合部件样式。
+	object.style.auxiliary = style.auxiliary & SupportedAuxiliary(construction.tool.preset);
 	object.construction = construction;
 	if (construction.tool.preset == PresetKind::Cube)
 	{
@@ -657,7 +762,7 @@ std::optional<ShapeObject> MakeConstructedShape(const Construction& construction
 			construction.start.y + (construction.end.y < construction.start.y ? -side : side)};
 	}
 	std::string failure;
-	if (!ValidStyle(style) || !ExpandPreset(*object.construction, style, object, failure))
+	if (!ValidStyle(style) || !ExpandPreset(*object.construction, object.style, object, failure))
 	{ SetError(error, failure.empty() ? "invalid construction style" : failure); return std::nullopt; }
 	const auto validation = Validate(object);
 	if (!validation) { SetError(error, validation.error); return std::nullopt; }

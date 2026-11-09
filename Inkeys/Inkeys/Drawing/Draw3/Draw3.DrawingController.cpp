@@ -8015,6 +8015,26 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
+			{
+				using namespace draw3::shapes;
+				std::array<uint8_t,16> id{}; id[0] = 93;
+				InkPage source{InkGuid(id)}; auto* canvas = source.GetOrCreateCanvas(kDefaultDeviceKey);
+				CanvasPageRuntimeState runtime; uint64_t token = 100; const auto allocate = [&] { return ++token; };
+				for (auto preset : {PresetKind::Ellipse,PresetKind::Rectangle})
+				{
+					id[1] = static_cast<uint8_t>(preset); ShapeStyle style; style.auxiliary = SupportedAuxiliary(preset);
+					const auto object = MakePresetShape({preset,DefaultCreationMode(preset)},{20,30},{140,110},style,id);
+					check(object && AppendRuntimeConstructedShapeCpu(*canvas,runtime,*object,allocate).has_value(),"auxiliary object enters whiteboard history");
+				}
+				const auto encoded = WhiteboardHistoryJson(source,runtime);
+				InkPage restored(source.PageGuid()); CanvasPageRuntimeState restoredRuntime;
+				check(RestoreWhiteboardHistory(encoded,restored,restoredRuntime),"v4 auxiliary cold page restores with shared codec");
+				const auto* restoredCanvas = restored.FindCanvas(kDefaultDeviceKey);
+				bool exact = restoredCanvas && restoredCanvas->Strokes().size() == canvas->Strokes().size();
+				for (size_t i = 0; exact && i < canvas->Strokes().size(); ++i)
+					exact = restoredCanvas->Strokes()[i].Shape() == canvas->Strokes()[i].Shape();
+				check(exact,"cold page retains focus and diagonal bits with exact identity");
+			}
 			// 真实失败完成入队与消费函数均无 HWND；正常补呈现不再进入 SetPage 分支。
 			struct FailedLoadCapture
 			{

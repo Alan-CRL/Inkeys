@@ -23,7 +23,7 @@ namespace Inkeys::Drawing::Draw3
 		ShapeUiIdentity identity;
 		std::optional<draw3::shapes::ShapeObject> object;
 		std::vector<draw3::shapes::EditHandle> handles;
-		draw3::shapes::Bounds bounds;
+		draw3::shapes::Bounds bounds, frameRect; // frameRect为共享核心给出的本地外框。
 		draw3::shapes::ConstructionStatus construction;
 		bool editGestureActive = false;
 		float displayScale = 1;
@@ -40,10 +40,22 @@ namespace Inkeys::Drawing::Draw3
 		ShapeUiIdentity identity;
 		std::uint32_t handleId = 0;
 		draw3::shapes::Vec2 down, point;
+		std::optional<float> angleDelta; // 手势累计角：latest-wins覆盖中间点时仍保留轨迹。
 		draw3::shapes::ShapeStyle style;
 		std::uint32_t sides = 3;
 		std::int64_t enqueueMicroseconds = 0; // 仅诊断：Bridge入队时刻，用于计算入队到上屏延迟。
 	};
+	// 属性候选由运行期和无窗口回归共用，提交仍走原Replace事务。
+	inline std::optional<draw3::shapes::ShapeObject> BuildShapePropertyCandidate(
+		const draw3::shapes::ShapeObject& before, const ShapeUiAction& action,
+		std::uint64_t revision, const draw3::shapes::BuildOptions& options = {})
+	{
+		if (action.kind == ShapeUiActionKind::SetStyle)
+			return draw3::shapes::RestyleShape(before,action.style,revision,options);
+		if (action.kind == ShapeUiActionKind::SetSides)
+			return draw3::shapes::SetRegularSides(before,action.sides,revision);
+		return std::nullopt;
+	}
 
 	// 同一编辑手势的预览只需最新一条；Commit携带最终点，可取代尚未执行的预览。
 	inline bool SameShapeEditGesture(const ShapeUiAction& a, const ShapeUiAction& b) noexcept

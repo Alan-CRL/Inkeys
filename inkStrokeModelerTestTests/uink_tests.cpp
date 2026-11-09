@@ -11,6 +11,7 @@
 #endif
 
 #include "../inkStrokeModelerTest/draw3/shape_core.h"
+#include "../inkStrokeModelerTest/draw3/shape_interaction.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

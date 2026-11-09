@@ -215,7 +215,6 @@ namespace Inkeys::UI::Bar
 		FrameAnimationClock clock;
 		std::shared_ptr<const ShapeUiSnapshot> snapshot;
 		GeometryResult geometry;
-		 draw3::shapes::Bounds localBounds;
 		std::array<BarUiValueClass,2> dividerX, dividerY;
 		BarUiValueClass parameterExtent{0}, colorExtent{0}, toolbarWidthValue{0}, toolbarHeightValue{0};
 		RECT work{}, bar{}, bounds{};
@@ -263,8 +262,6 @@ namespace Inkeys::UI::Bar
 		std::shared_ptr<const ShapeUiSnapshot> sourceSnapshot, sourceLocal;
 		bool tracking=false, holdingLocal=false, presentPending=true, lightingValid=false;
 		BarSurfaceSharedLighting presentedLighting{};
-		std::optional<ShapeObject> localBoundsObject;
-		float localBoundsScale=0;
 		Impl()
 		{
 			renderer.ConfigureLocalizedTypography();
@@ -329,7 +326,7 @@ namespace Inkeys::UI::Bar
 			if(localEdit.Preview(point,localBaseRevision+(++localRevision)))if(const auto& next=localEdit.Candidate())
 			{
 				local=std::make_shared<ShapeUiSnapshot>(*frame.snapshot);local->object=*next;local->editGestureActive=true;
-				local->handles=BuildEditHandles(*next,{local->displayScale,.25f});
+				local->handles=BuildEditHandles(*next,{local->displayScale,.25f},&local->frameRect);
 				world=std::make_shared<GeometryResult>();
 				if(BuildGeometry(*next,*world,{local->displayScale,.25f}))local->bounds=world->bounds;else world.reset();
 			}
@@ -367,14 +364,6 @@ namespace Inkeys::UI::Bar
 			if(body.kind!=HitKind::None){hit.occupied=true;hit.body=true;}
 			return hit;
 		}
-		void UpdateLocalBounds(const ShapeObject& object, float displayScale)
-		{
-			// 旋转拖动只改transform，本地外框几何不变时不再重建。
-			auto local=object;local.transform={};
-			if(localBoundsObject&&*localBoundsObject==local&&localBoundsScale==displayScale)return;
-			GeometryResult localGeometry;if(BuildGeometry(local,localGeometry,{displayScale}))localBounds=localGeometry.bounds;
-			localBoundsObject=std::move(local);localBoundsScale=displayScale;
-		}
 		void Configure(std::shared_ptr<const ShapeUiSnapshot> next, RECT nextWork, RECT nextBar)
 		{
 			const auto updateWidths=[&]
@@ -405,15 +394,15 @@ namespace Inkeys::UI::Bar
 			{
 				// 身份与场景沿用最新权威快照，对象/控制点/外框取本地候选；世界几何已由worker构建一次。
 				auto merged=std::make_shared<ShapeUiSnapshot>(*next);
-				merged->object=local->object;merged->handles=local->handles;merged->bounds=local->bounds;merged->editGestureActive=true;
+				merged->object=local->object;merged->handles=local->handles;merged->bounds=local->bounds;merged->frameRect=local->frameRect;merged->editGestureActive=true;
 				if(localWorld)geometry=*localWorld;else{GeometryResult built;if(BuildGeometry(*merged->object,built,{merged->displayScale}))geometry=std::move(built);}
-				UpdateLocalBounds(*merged->object,merged->displayScale);next=std::move(merged);
+				next=std::move(merged);
 			}
 			else if(next&&next->object&&(!snapshot||snapshot->object!=next->object||snapshot->displayScale!=next->displayScale||!snapshot->object))
 			{
 				GeometryResult built;if(BuildGeometry(*next->object,built,{next->displayScale}))
 				{
-					geometry=std::move(built);UpdateLocalBounds(*next->object,next->displayScale);
+					geometry=std::move(built);
 				}
 				else next.reset();
 			}
@@ -495,6 +484,18 @@ namespace Inkeys::UI::Bar
 			{
 				RECT body{static_cast<LONG>(snapshot->canvasOriginX+b.left-8*scale),static_cast<LONG>(snapshot->canvasOriginY+b.top-8*scale),static_cast<LONG>(snapshot->canvasOriginX+b.right+8*scale),static_cast<LONG>(snapshot->canvasOriginY+b.bottom+8*scale)};
 				UnionRect(&nextBounds,&nextBounds,&body);
+			}
+			if(snapshot->frameRect.valid)
+			{
+				const auto& f=snapshot->frameRect;const std::array<Vec2,4> corners{{{f.left,f.top},{f.right,f.top},{f.right,f.bottom},{f.left,f.bottom}}};
+				for(const auto local:corners)
+				{
+					const auto point=ApplyTransform(object.transform,local);
+					nextBounds.left=(std::min)(nextBounds.left,static_cast<LONG>(std::floor(snapshot->canvasOriginX+point.x-scale)));
+					nextBounds.top=(std::min)(nextBounds.top,static_cast<LONG>(std::floor(snapshot->canvasOriginY+point.y-scale)));
+					nextBounds.right=(std::max)(nextBounds.right,static_cast<LONG>(std::ceil(snapshot->canvasOriginX+point.x+scale)));
+					nextBounds.bottom=(std::max)(nextBounds.bottom,static_cast<LONG>(std::ceil(snapshot->canvasOriginY+point.y+scale)));
+				}
 			}
 			if(tracking&&initialized&&!EmptyRect(bounds))
 			{
@@ -683,9 +684,9 @@ namespace Inkeys::UI::Bar
 			renderer.PushPanelOpacity(dc,{0,0,static_cast<float>(bounds.right-bounds.left),static_cast<float>(bounds.bottom-bounds.top)},candidate.opacity);
 			// 本体只有视觉外框，空白内部仍穿透；旋转外框从本地包围盒变换生成。
 			const auto& object=*snapshot->object;
-			if(localBounds.valid&&object.kind!=Kind::Line&&object.kind!=Kind::Polyline&&object.kind!=Kind::Circle)
+			if(snapshot->frameRect.valid)
 			{
-				const auto& b=localBounds;const std::array<Vec2,4> points{{{b.left,b.top},{b.right,b.top},{b.right,b.bottom},{b.left,b.bottom}}};
+				const auto& b=snapshot->frameRect;const std::array<Vec2,4> points{{{b.left,b.top},{b.right,b.top},{b.right,b.bottom},{b.left,b.bottom}}};
 				auto* brush=renderer.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::Accent),.70);
 				if(brush)for(unsigned i=0;i<4;++i)
 				{
@@ -805,8 +806,8 @@ namespace Inkeys::UI::Bar
 			{
 				const bool up=message==WM_LBUTTONUP;std::uint64_t upGeneration=0;
 				if(up){const auto current=ProductShapeUiSnapshot();upGeneration=current?current->identity.generation:frame.snapshot->identity.generation;}
-				ShapeUiAction a;a.identity=p.gestureIdentity;a.kind=up?ShapeUiActionKind::CommitEdit:ShapeUiActionKind::PreviewEdit;a.handleId=p.handle;a.down=p.down;a.point=p.CanvasPoint(frame,point);p.Emit(a);
-				p.TrackLocal(frame,a.point,up,upGeneration);
+				ShapeUiAction a;a.identity=p.gestureIdentity;a.kind=up?ShapeUiActionKind::CommitEdit:ShapeUiActionKind::PreviewEdit;a.handleId=p.handle;a.down=p.down;a.point=p.CanvasPoint(frame,point);
+				p.TrackLocal(frame,a.point,up,upGeneration);a.angleDelta=p.localEdit.AngleDelta();p.Emit(a);
 				if(up){p.gesture=false;p.pressedHandle=UINT32_MAX;}
 			}return true;
 		}
@@ -893,8 +894,11 @@ namespace Inkeys::UI::Bar
 			expect(object.has_value(),"approved preset yields editable construction");if(!object)continue;
 			auto snapshot=std::make_shared<ShapeUiSnapshot>();snapshot->object=*object;snapshot->identity.session=1;snapshot->identity.generation=1;
 			snapshot->identity.objectId=id;snapshot->identity.objectRevision=1;snapshot->identity.documentGeneration=1;snapshot->identity.displayGeneration=1;
-			snapshot->canvasOriginX=-1200;snapshot->canvasOriginY=-300;snapshot->displayScale=scale;snapshot->handles=BuildEditHandles(*object,{scale});
+			snapshot->canvasOriginX=-1200;snapshot->canvasOriginY=-300;snapshot->displayScale=scale;snapshot->handles=BuildEditHandles(*object,{scale},&snapshot->frameRect);
 			GeometryResult geometry;expect(BuildGeometry(*object,geometry,{scale}),"production geometry builds");snapshot->bounds=geometry.bounds;
+			expect(snapshot->frameRect.valid,"every preset publishes the shared gapped frame");
+			expect(std::count_if(snapshot->handles.begin(),snapshot->handles.end(),[](const EditHandle& h){return h.kind==EditHandleKind::Scale;})==(preset>=PresetKind::Cuboid?4:0),
+				"only solids expose four frame corners; planar frames have no scale handles");
 			ShapeEditorSurface scene;std::vector<ShapeUiAction> actions;scene.SetActionSink([&](const auto& action){actions.push_back(action);});
 			const RECT work{-1200,-300,static_cast<LONG>(-1200+900*scale),static_cast<LONG>(-300+700*scale)};
 			scene.Configure(snapshot,work,{});for(int frame=0;frame<70;++frame){now+=std::chrono::milliseconds(17);scene.Advance(now);}
@@ -1029,7 +1033,7 @@ namespace Inkeys::UI::Bar
 			ObjectId id{};id[0]=7;ShapeStyle shapeStyle;shapeStyle.width=4;
 			auto shape=MakePresetShape(tool,{70,60},{140,110},shapeStyle,id);expect(shape.has_value(),"small workspace fixture creates a regular polygon");if(!shape)continue;
 			auto snapshot=std::make_shared<ShapeUiSnapshot>();snapshot->object=*shape;snapshot->identity.session=17;snapshot->identity.objectId=id;snapshot->displayScale=scale;
-			snapshot->handles=BuildEditHandles(*shape,{scale});GeometryResult geometry;BuildGeometry(*shape,geometry,{scale});snapshot->bounds=geometry.bounds;
+			snapshot->handles=BuildEditHandles(*shape,{scale},&snapshot->frameRect);GeometryResult geometry;BuildGeometry(*shape,geometry,{scale});snapshot->bounds=geometry.bounds;
 			ShapeEditorSurface scene;scene.SetActionSink([](const auto&){});const RECT work{0,0,460,420};scene.Configure(snapshot,work,{});
 			for(int f=0;f<70;++f){now+=std::chrono::milliseconds(17);scene.Advance(now);}scene.CommitPresented();
 			const auto c=scene.impl_->presented.buttons[Color].boundsDip;const auto b=scene.Bounds();const POINT entry{b.left+static_cast<LONG>((c.left+c.right)*scale/2),b.top+static_cast<LONG>((c.top+c.bottom)*scale/2)};
@@ -1092,7 +1096,7 @@ namespace Inkeys::UI::Bar
 			if(shape)
 			{
 				auto snapshot=std::make_shared<ShapeUiSnapshot>();snapshot->object=*shape;snapshot->identity.session=5;snapshot->identity.generation=1;snapshot->identity.objectId=id;
-				snapshot->identity.documentGeneration=1;snapshot->identity.displayGeneration=1;snapshot->displayScale=1;snapshot->handles=BuildEditHandles(*shape,{1.f,.25f});
+				snapshot->identity.documentGeneration=1;snapshot->identity.displayGeneration=1;snapshot->displayScale=1;snapshot->handles=BuildEditHandles(*shape,{1.f,.25f},&snapshot->frameRect);
 				GeometryResult geometry;BuildGeometry(*shape,geometry,{1.f,.25f});snapshot->bounds=geometry.bounds;
 				ShapeEditorSurface scene;std::vector<ShapeUiAction> actions;scene.SetActionSink([&](const auto& action){actions.push_back(action);});
 				const RECT work{0,0,1600,1000};
@@ -1100,8 +1104,8 @@ namespace Inkeys::UI::Bar
 					const bool needed=scene.NeedsPresent();if(needed&&SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch()))&&SUCCEEDED(scene.Present([](const auto&)->BOOL{return TRUE;})))scene.CommitPresented();return needed;};
 				for(int f=0;f<70;++f)frame();
 				expect(!frame(),"settled editor with unchanged snapshot skips readback and ULW");
-				const EditHandle* scaleHandle=nullptr;for(const auto& h:snapshot->handles)if(h.kind==EditHandleKind::Scale){scaleHandle=&h;break;}
-				expect(scaleHandle!=nullptr,"rectangle exposes a scale handle");
+				const EditHandle* scaleHandle=nullptr;for(const auto& h:snapshot->handles)if(h.kind==EditHandleKind::Vertex&&h.id==1002){scaleHandle=&h;break;}
+				expect(scaleHandle!=nullptr,"rectangle exposes its lower-right corner without a frame scale point");
 				if(scaleHandle)
 				{
 					const POINT down{static_cast<LONG>(scaleHandle->position.x),static_cast<LONG>(scaleHandle->position.y)};
@@ -1135,11 +1139,51 @@ namespace Inkeys::UI::Bar
 					if(reference.Candidate())
 					{
 						snapshot=std::make_shared<ShapeUiSnapshot>(*snapshot);snapshot->object=*reference.Candidate();snapshot->identity.generation=7;
-						snapshot->handles=BuildEditHandles(*snapshot->object,{1.f,.25f});GeometryResult g;BuildGeometry(*snapshot->object,g,{1.f,.25f});snapshot->bounds=g.bounds;
+						snapshot->handles=BuildEditHandles(*snapshot->object,{1.f,.25f},&snapshot->frameRect);GeometryResult g;BuildGeometry(*snapshot->object,g,{1.f,.25f});snapshot->bounds=g.bounds;
 					}
 					for(int f=0;f<70;++f)frame();
 					expect(scene.impl_->presented.snapshot&&scene.impl_->presented.snapshot->identity.generation==7&&!scene.impl_->tracking,"authoritative post-commit snapshot replaces the local candidate");
 					expect(!frame(),"after the gesture settles no further presentation is requested");
+				}
+			}
+		}
+		// UI先累计完整轨迹，再发送latest-wins意图；绘制线程只收到终点也不能丢圈数。
+		{
+			++scenes;constexpr float pi=3.14159265358979323846f;
+			Construction c;c.tool={PresetKind::Arc,CreationMode::MultiStage};c.start={400,300};c.end={400,420};c.parameters=ArcConstruction{pi/4};
+			ObjectId id{};id[0]=10;const auto shape=MakeConstructedShape(c,{},id);expect(shape.has_value(),"angle tracking fixture creates an arc");
+			if(shape)
+			{
+				auto state=std::make_shared<ShapeUiSnapshot>();state->object=*shape;state->identity.session=6;state->identity.objectId=id;
+				state->identity.documentGeneration=1;state->identity.displayGeneration=1;state->displayScale=1;
+				state->handles=BuildEditHandles(*shape,{},&state->frameRect);GeometryResult geometry;BuildGeometry(*shape,geometry);state->bounds=geometry.bounds;
+				ShapeEditorSurface scene;std::vector<ShapeUiAction> actions;scene.SetActionSink([&](const auto& a){actions.push_back(a);});
+				const RECT work{0,0,1600,1000};
+				auto frame=[&]{scene.Configure(state,work,{});now+=std::chrono::milliseconds(17);scene.Advance(now);
+					if(scene.NeedsPresent()&&SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch()))&&SUCCEEDED(scene.Present([](const auto&)->BOOL{return TRUE;})))scene.CommitPresented();};
+				for(int i=0;i<70;++i)frame();
+				const auto end=std::find_if(state->handles.begin(),state->handles.end(),[](const EditHandle& h){return h.id==103;});
+				expect(end!=state->handles.end(),"angle tracking finds the typed end-angle handle");
+				if(end!=state->handles.end())
+				{
+					const POINT down{static_cast<LONG>(std::lround(end->position.x)),static_cast<LONG>(std::lround(end->position.y))};
+					const auto hit=scene.Hit(down);expect(hit.occupied&&hit.handle==103,"arc endpoint remains reachable with dedicated handle priority");
+					scene.Pointer(WM_LBUTTONDOWN,down,true,scene.PresentedGeneration());POINT point=down;
+					for(int angle=140;angle<=300;angle+=5)
+					{
+						const float radians=angle*pi/180;
+						point={static_cast<LONG>(std::lround(400+120*std::cos(radians))),static_cast<LONG>(std::lround(300+120*std::sin(radians)))};
+						scene.Pointer(WM_MOUSEMOVE,point,true,scene.PresentedGeneration());frame();
+					}
+					scene.Pointer(WM_LBUTTONUP,point,true,scene.PresentedGeneration());
+					expect(!actions.empty()&&actions.back().kind==ShapeUiActionKind::CommitEdit&&actions.back().angleDelta.has_value(),"final UI intent carries the cumulative angle");
+					if(!actions.empty()&&actions.back().angleDelta)
+					{
+						EditSession drawing;expect(drawing.Begin(*shape,103,actions.front().down),"drawing-side session starts from the same Down");
+						expect(drawing.Preview(actions.back().point,2,nullptr,actions.back().angleDelta),"one surviving terminal reconstructs the full arc trajectory");
+						const auto result=drawing.Commit();
+						expect(result&&std::abs(std::get<ArcConstruction>(result->construction->parameters).sweepRadians-210*pi/180)<.02f,"UI trajectory from90 to300 keeps a210-degree sweep after coalescing");
+					}
 				}
 			}
 		}

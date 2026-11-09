@@ -167,10 +167,12 @@ namespace draw3::uink
 						if (decoded.status == Draw3ShapeMetadataStatus::Valid)
 						{
 							uint32_t partIndex = 0, partCount = 0;
+							shapes::GeometryResult auxiliary;
+							if (!shapes::BuildAuxiliaryGeometry(*decoded.shape,auxiliary)) return false;
 							if (!ShapeGroupNumber(*metadata, "partIndex", partIndex) || partIndex != 0 ||
 								!ShapeGroupNumber(*metadata, "partCount", partCount) || !partCount ||
 								partCount > canvas.content.size() - contentIndex ||
-								partCount != (decoded.shape->kind == shapes::Kind::Compound ? decoded.shape->parts.size() : 1)) return false;
+								partCount != (decoded.shape->kind == shapes::Kind::Compound ? decoded.shape->parts.size() : 1) + auxiliary.parts.size()) return false;
 							for (uint32_t index = 1; index < partCount; ++index)
 							{
 								const auto* part = std::get_if<UInkShape>(&canvas.content[contentIndex + index]);
@@ -195,6 +197,8 @@ namespace draw3::uink
 					}
 					else
 					{
+						// 无私有根的标准部件各自恢复；第三方可能仍保留共同undoId。
+						fallback = true;
 						stroke = ImportLegacyShape(*source);
 						if (stroke)
 						{

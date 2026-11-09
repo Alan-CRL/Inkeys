@@ -52,7 +52,13 @@
 			UINK_CHECK(state, static_cast<bool>(Validate(object)));
 			const auto metadata = EncodeInkeysShapeMetadata(object);
 			const auto decoded = DecodeInkeysShapeMetadata(metadata);
-			UINK_CHECK(state, decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == object);
+			UINK_CHECK(state, decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == object && decoded.shape->style.auxiliary == Auxiliary::None);
+			if (object.kind == Kind::Circle || object.kind == Kind::Ellipse)
+			{
+				auto auxiliary = object; auxiliary.style.auxiliary = object.kind == Kind::Circle ? Auxiliary::Center : Auxiliary::Foci;
+				const auto v4 = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(auxiliary));
+				UINK_CHECK(state,v4.shape == auxiliary); // 无construction的旧通用对象也能开启辅助显示。
+			}
 			auto corrupt = metadata;
 			std::get<UInkMessagePackValue::Map>(corrupt.value).push_back(
 				{ Value(std::string("revision")), Value(uint64_t{ 99 }) });
@@ -346,6 +352,183 @@
 			}
 			const auto fallbackAdvanced = ImportDraw3UInkDocument(fallbackDocument);
 			UINK_CHECK(state, fallbackAdvanced.snapshot && fallbackAdvanced.snapshot->canvases[0].strokes.size() == fallbackDocument.canvases[0].content.size());
+		}
+		// 旧锥顶在底面投影内时仍有四部件：读取兼容，保存统一成当前两部件，不能写出自拒绝文件。
+		for (float height : {-40.f,-20.f,20.f,40.f})
+		{
+			Construction c; c.tool = {PresetKind::Cone,CreationMode::MultiStage}; c.start = {20,30}; c.end = {140,110}; c.parameters = SolidConstruction{{},height};
+			const auto normal = MakeConstructedShape(c,{},Guid("70000000-0000-4000-8000-00000000f045").Bytes(),21);
+			UINK_CHECK(state,normal && normal->parts.size() == 2); if (!normal) continue;
+			auto legacy = *normal; legacy.transform = {0,1,-1,0,250,10};
+			for (float x : {20.f,140.f})
+			{
+				ShapePart edge; edge.id = static_cast<uint32_t>(legacy.parts.size() + 1); edge.kind = Kind::Polyline;
+				edge.geometry.vertices = {{x,70},{80,70 + height}}; legacy.parts.push_back(edge);
+			}
+			const auto decoded = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(legacy));
+			UINK_CHECK(state,decoded.shape == legacy && decoded.shape->parts.size() == 4); if (!decoded.shape) continue;
+			auto savedSnapshot = snapshot; savedSnapshot.canvases[0].strokes.clear();
+			Draw3UInkStrokeSnapshot stroke; stroke.style.kind = Draw3UInkStrokeKind::Shape; stroke.shape = decoded.shape;
+			savedSnapshot.canvases[0].strokes.push_back(stroke);
+			const auto saved = ExportDraw3SnapshotToUInk(savedSnapshot);
+			UINK_CHECK(state,saved.document && saved.document->canvases[0].content.size() == 2); if (!saved.document) continue;
+			// 复原旧四部件分组，确认导入计数仍以旧根为准，不因写出规范化而拒绝旧文件。
+			auto oldFile = *saved.document; auto& oldParts = oldFile.canvases[0].content;
+			oldParts.push_back(oldParts[1]); oldParts.push_back(oldParts[1]);
+			for (size_t i = 0; i < oldParts.size(); ++i)
+			{
+				auto& part = std::get<UInkShape>(oldParts[i]); part.contentId = static_cast<uint32_t>(i);
+				auto& root = part.extra->front().second;
+				if (!i)
+				{
+					root = EncodeInkeysShapeMetadata(legacy); auto& map = std::get<UInkMessagePackValue::Map>(root.value);
+					map.emplace_back(Value(std::string("partIndex")),Value(uint64_t{0})); map.emplace_back(Value(std::string("partCount")),Value(uint64_t{4}));
+				}
+				else { *field(root,"partIndex") = Value(uint64_t(i)); *field(root,"partCount") = Value(uint64_t{4}); }
+				if (i >= 2)
+				{
+					UInkLineGeometry line;
+					for (auto point : legacy.parts[i].geometry.vertices) { const auto world = ApplyTransform(legacy.transform,point); line.points.push_back({world.x,world.y}); }
+					part.declaredShapeType = 1; part.geometry = std::move(line); part.stroke->dashArray.clear();
+				}
+			}
+			const auto oldRead = ImportDraw3UInkDocument(oldFile);
+			UINK_CHECK(state,oldRead.snapshot && oldRead.snapshot->canvases[0].strokes[0].shape == legacy);
+			UInkEditingSession savedSession; savedSession.document = *saved.document;
+			const auto savedPath = temporary.File((L"legacy-small-cone-" + std::to_wstring(static_cast<int>(height)) + L".uink").c_str());
+			UINK_CHECK(state,SaveUInkFile(savedPath,savedSession,options).status == UInkSaveStatus::Committed);
+			const auto loaded = ReadUInkFile(savedPath); UINK_CHECK(state,loaded.document); if (!loaded.document) continue;
+			const auto imported = ImportDraw3UInkDocument(*loaded.document);
+			auto expected = *normal; expected.transform = legacy.transform;
+			UINK_CHECK(state,imported.snapshot && imported.snapshot->canvases[0].strokes.size() == 1 && imported.snapshot->canvases[0].strokes[0].shape == expected);
+			GeometryResult before,after;
+			UINK_CHECK(state,BuildGeometry(legacy,before) && BuildGeometry(expected,after) && before.bounds == after.bounds && before.parts.size() == after.parts.size());
+			for (size_t i = 0; i < (std::min)(before.parts.size(),after.parts.size()); ++i)
+				UINK_CHECK(state,before.parts[i].paths[0].points == after.parts[i].paths[0].points);
+		}
+		// 解码路径不经过工厂：旧Cube的raw对角可能为35x100，显示与零位移编辑仍须为100x100。
+		for (float x : {-1.f,1.f}) for (float y : {-1.f,1.f})
+		{
+			Construction c; c.tool = {PresetKind::Cube,CreationMode::MultiStage}; c.start = {20,30}; c.end = {20 + x * 35,30 + y * 100}; c.parameters = SolidConstruction{{30,-40},0};
+			auto cube = MakeConstructedShape(c,{},Guid("70000000-0000-4000-8000-00000000f046").Bytes()); UINK_CHECK(state,cube); if (!cube) continue;
+			cube->construction = c;
+			const auto decoded = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(*cube)); UINK_CHECK(state,decoded.shape == cube); if (!decoded.shape) continue;
+			const auto handles = BuildEditHandles(*decoded.shape);
+			const auto corner = std::find_if(handles.begin(),handles.end(),[](const EditHandle& h) { return h.id == 1001; });
+			UINK_CHECK(state,corner != handles.end()); if (corner == handles.end()) continue;
+			UINK_CHECK(state,corner->position == (Vec2{20 + x * 100,30 + y * 100}));
+			const auto unchanged = EditShape(*decoded.shape,1001,corner->position,corner->position,2);
+			UINK_CHECK(state,unchanged && unchanged->parts == decoded.shape->parts && unchanged->transform == decoded.shape->transform && unchanged->style == decoded.shape->style);
+			if (unchanged) UINK_CHECK(state,unchanged->construction->end == corner->position);
+		}
+		// v4辅助部件写入真实文件；根被旧读取器忽略后，标准点/虚线仍完整可见。
+		auto auxiliarySnapshot = snapshot; auxiliarySnapshot.canvases[0].strokes.clear();
+		size_t auxiliaryWireCount = 0;
+		for (auto preset : {PresetKind::Circle,PresetKind::Ellipse,PresetKind::Rectangle,PresetKind::RoundedRectangle,
+			PresetKind::Parallelogram,PresetKind::Rhombus,PresetKind::Trapezoid,PresetKind::RegularPolygon,PresetKind::Arc,PresetKind::Sector})
+		{
+			Construction c; c.tool = {preset,DefaultCreationMode(preset),5}; c.start = {20,30}; c.end = {140,110};
+			if (preset == PresetKind::Arc || preset == PresetKind::Sector) c.parameters = ArcConstruction{2.3f};
+			ShapeStyle style; style.auxiliary = SupportedAuxiliary(preset); style.width = 3; style.strokeOpacity = .4f;
+			style.stroke = preset != PresetKind::Ellipse; style.fill = !style.stroke; style.fillRgb = 0x123456;
+			auto id = Guid("70000000-0000-4000-8000-00000000f044").Bytes(); id[15] = static_cast<uint8_t>(auxiliarySnapshot.canvases[0].strokes.size());
+			auto object = MakeConstructedShape(c,style,id,23); UINK_CHECK(state,object); if (!object) continue;
+			object->transform = {0,1,-1,0,200,10};
+			const auto roundtrip = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(*object));
+			UINK_CHECK(state,roundtrip.shape == object);
+			GeometryResult auxiliary; UINK_CHECK(state,BuildAuxiliaryGeometry(*object,auxiliary));
+			auxiliaryWireCount += (object->kind == Kind::Compound ? object->parts.size() : 1) + auxiliary.parts.size();
+			Draw3UInkStrokeSnapshot stroke; stroke.style.kind = Draw3UInkStrokeKind::Shape; stroke.shape = object;
+			stroke.undoId = static_cast<uint32_t>(auxiliarySnapshot.canvases[0].strokes.size());
+			auxiliarySnapshot.canvases[0].strokes.push_back(std::move(stroke));
+		}
+		const auto auxiliaryExport = ExportDraw3SnapshotToUInk(auxiliarySnapshot);
+		UINK_CHECK(state,auxiliaryExport.document && auxiliaryExport.document->canvases[0].content.size() == auxiliaryWireCount);
+		if (auxiliaryExport.document)
+		{
+			UInkEditingSession auxiliarySession; auxiliarySession.document = *auxiliaryExport.document;
+			const auto auxiliaryPath = temporary.File(L"auxiliary-shapes-v4.uink");
+			UINK_CHECK(state,SaveUInkFile(auxiliaryPath,auxiliarySession,options).status == UInkSaveStatus::Committed);
+			const auto auxiliaryRead = ReadUInkFile(auxiliaryPath);
+			UINK_CHECK(state,auxiliaryRead.document);
+			if (auxiliaryRead.document)
+			{
+				const auto imported = ImportDraw3UInkDocument(*auxiliaryRead.document);
+				UINK_CHECK(state,imported.snapshot && imported.snapshot->canvases[0].strokes.size() == auxiliarySnapshot.canvases[0].strokes.size());
+				if (imported.snapshot && imported.snapshot->canvases[0].strokes.size() == auxiliarySnapshot.canvases[0].strokes.size())
+					for (size_t i = 0; i < auxiliarySnapshot.canvases[0].strokes.size(); ++i)
+						UINK_CHECK(state,imported.snapshot->canvases[0].strokes[i].shape == auxiliarySnapshot.canvases[0].strokes[i].shape);
+			}
+			auto standard = *auxiliaryExport.document, unknown = standard;
+			size_t dots = 0, diagonals = 0;
+			for (size_t i = 0; i < standard.canvases[0].content.size(); ++i)
+			{
+				auto& part = std::get<UInkShape>(standard.canvases[0].content[i]);
+				if (std::holds_alternative<UInkCircleGeometry>(part.geometry) && part.fill && !part.stroke) ++dots;
+				if (part.declaredShapeType == 0 && part.stroke && part.stroke->dashArray == std::vector<float>{12,18}) ++diagonals;
+				part.extra.reset(); // 不改undoId，模拟第三方只留下标准部件。
+				auto& metadata = std::get<UInkShape>(unknown.canvases[0].content[i]).extra->front().second;
+				UINK_CHECK(state,std::get<uint64_t>(field(metadata,"version")->value) == 4);
+				*field(metadata,"version") = Value(uint64_t{99}); // 模拟v3读取器不认识v4。
+			}
+			UINK_CHECK(state,dots == 6 && diagonals == 10);
+			const auto standardRead = ImportDraw3UInkDocument(standard), oldReader = ImportDraw3UInkDocument(unknown);
+			UINK_CHECK(state,standardRead.snapshot && standardRead.snapshot->canvases[0].strokes.size() == auxiliaryWireCount);
+			UINK_CHECK(state,oldReader.snapshot && oldReader.snapshot->canvases[0].strokes.size() == auxiliaryWireCount && !oldReader.diagnostics.empty());
+			if (oldReader.snapshot)
+			{
+				size_t restoredDots = 0, restoredDiagonals = 0;
+				for (const auto& part : oldReader.snapshot->canvases[0].strokes)
+				{
+					if (part.shape && part.shape->kind == Kind::Circle && part.shape->style.fill && !part.shape->style.stroke) ++restoredDots;
+					if (part.shape && part.shape->kind == Kind::Line && part.shape->style.linePattern == LinePattern::Dashed) ++restoredDiagonals;
+				}
+				UINK_CHECK(state,restoredDots == dots && restoredDiagonals == diagonals);
+			}
+			for (const char* name : {"version","revision","partCount","partIndex"})
+			{
+				auto malformed = *auxiliaryExport.document;
+				auto& reference = std::get<UInkShape>(malformed.canvases[0].content[1]).extra->front().second;
+				*field(reference,name) = Value(uint64_t{99});
+				UINK_CHECK(state,ImportDraw3UInkDocument(malformed).status != Draw3UInkImportStatus::Success);
+			}
+			for (bool missingAux : {false,true})
+			{
+				auto malformed = *auxiliaryExport.document;
+				auto& metadata = std::get<UInkShape>(malformed.canvases[0].content[0]).extra->front().second;
+				if (missingAux)
+				{
+					auto& map = std::get<UInkMessagePackValue::Map>(metadata.value);
+					map.erase(std::remove_if(map.begin(),map.end(),[](const auto& pair) { return std::get<std::string>(pair.first.value) == "aux"; }),map.end());
+				}
+				else *field(metadata,"aux") = Value(uint64_t{8});
+				UINK_CHECK(state,ImportDraw3UInkDocument(malformed).status != Draw3UInkImportStatus::Success);
+			}
+			auto missing = *auxiliaryExport.document; missing.canvases[0].content.pop_back();
+			UINK_CHECK(state,ImportDraw3UInkDocument(missing).status != Draw3UInkImportStatus::Success);
+		}
+		for (auto preset : {PresetKind::Circle,PresetKind::Ellipse})
+		{
+			const auto oldShape = MakePresetShape({preset,DefaultCreationMode(preset)},{20,30},{140,110},{},Guid("70000000-0000-4000-8000-00000000f045").Bytes());
+			UINK_CHECK(state,oldShape); if (!oldShape) continue;
+			auto v3 = EncodeInkeysShapeMetadata(*oldShape);
+			UINK_CHECK(state,std::get<uint64_t>(field(v3,"version")->value) == 3 && !field(v3,"aux"));
+			for (uint64_t version : {1u,2u,3u})
+			{
+				auto legacy = v3; *field(legacy,"version") = Value(version);
+				if (version == 1)
+				{
+					auto& map = std::get<UInkMessagePackValue::Map>(legacy.value);
+					map.erase(std::remove_if(map.begin(),map.end(),[](const auto& pair) { return std::get<std::string>(pair.first.value) == "construction"; }),map.end());
+				}
+				if (version == 2)
+				{
+					auto& map = std::get<UInkMessagePackValue::Map>(field(legacy,"construction")->value);
+					map.erase(std::remove_if(map.begin(),map.end(),[](const auto& pair) { const auto& key = std::get<std::string>(pair.first.value); return key == "parameters" || key == "legacyArrow"; }),map.end());
+				}
+				const auto decoded = DecodeInkeysShapeMetadata(legacy); GeometryResult aux;
+				UINK_CHECK(state,decoded.shape && decoded.shape->style.auxiliary == Auxiliary::None && BuildAuxiliaryGeometry(*decoded.shape,aux) && aux.parts.empty());
+			}
 		}
 		// 人工重建v2 wire，保留旧箭头公式；重存v3仍不能改变外观或根/引用版本。
 		Construction oldArrow{ { PresetKind::Arrow,CreationMode::Drag },{ 0,0 },{ 100,0 } }; oldArrow.legacyArrow = true;

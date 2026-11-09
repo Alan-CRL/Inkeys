@@ -12,11 +12,70 @@ namespace
 		return { static_cast<float>((t.m22 * p.x - t.m21 * p.y) / d),
 			static_cast<float>((t.m11 * p.y - t.m12 * p.x) / d) };
 	}
-	bool UniformPreset(const ShapeObject& shape)
+	enum class EditLayout { Endpoints, Rectangle, Circle, Ellipse, Vertices, Regular, Arc, Box, Cube, EllipticSolid, PolygonSolid, Compound };
+	struct EditModel { EditLayout layout; bool rotate = false, frameScale = false, uniform = false; };
+	EditModel ModelFor(const ShapeObject& shape)
 	{
-		return shape.kind == Kind::Circle || (shape.construction &&
-			(shape.construction->tool.preset == PresetKind::RegularPolygon || shape.construction->tool.preset == PresetKind::Rhombus || shape.construction->tool.preset == PresetKind::Cube ||
-			shape.construction->tool.preset == PresetKind::Arc || shape.construction->tool.preset == PresetKind::Sector));
+		// 顺序与持久化 preset 一致；构造位置与编辑约束共用这张表。
+		static constexpr EditModel models[] = {
+			{ EditLayout::Endpoints }, { EditLayout::Endpoints },
+			{ EditLayout::Rectangle,true }, { EditLayout::Rectangle,true },
+			{ EditLayout::Circle }, { EditLayout::Ellipse,true },
+			{ EditLayout::Vertices,true }, { EditLayout::Vertices,true },
+			{ EditLayout::Vertices,true }, { EditLayout::Vertices,true },
+			{ EditLayout::Regular }, { EditLayout::Vertices,true }, { EditLayout::Vertices,true },
+			{ EditLayout::Arc }, { EditLayout::Arc },
+			{ EditLayout::Box,true,true }, { EditLayout::Cube,true,true,true },
+			{ EditLayout::EllipticSolid,true,true }, { EditLayout::EllipticSolid,true,true },
+			{ EditLayout::PolygonSolid,true,true,true }, { EditLayout::PolygonSolid,true,true,true }
+		};
+		static_assert(sizeof(models) / sizeof(models[0]) == static_cast<size_t>(PresetKind::Pyramid) + 1);
+		if (shape.construction) return models[static_cast<size_t>(shape.construction->tool.preset)];
+		switch (shape.kind)
+		{
+		case Kind::Line: return { EditLayout::Endpoints };
+		case Kind::Rectangle: return { EditLayout::Rectangle,true };
+		case Kind::Circle: return { EditLayout::Circle };
+		case Kind::Ellipse: return { EditLayout::Ellipse,true };
+		case Kind::Polyline: case Kind::Polygon: return { EditLayout::Vertices,true };
+		default: return { EditLayout::Compound,true };
+		}
+	}
+	std::array<Vec2, 4> RectCorners(Vec2 start, Vec2 end)
+	{
+		const float l = (std::min)(start.x,end.x), r = (std::max)(start.x,end.x);
+		const float t = (std::min)(start.y,end.y), b = (std::max)(start.y,end.y);
+		return { Vec2{ l,t },Vec2{ r,t },Vec2{ r,b },Vec2{ l,b } };
+	}
+	Vec2 SquareCorner(const Construction& c)
+	{
+		// 旧文件仍可能保存非正方形raw端点；句柄和编辑必须使用可见正方形的同一角。
+		const float side = (std::max)(std::abs(c.end.x - c.start.x),std::abs(c.end.y - c.start.y));
+		return Add(c.start,{c.end.x < c.start.x ? -side : side,c.end.y < c.start.y ? -side : side});
+	}
+	Vec2 BackCorner(const Construction& c)
+	{
+		const auto corners = RectCorners(c.start,c.tool.preset == PresetKind::Cube ? SquareCorner(c) : c.end); const auto depth = std::get<SolidConstruction>(c.parameters).depth;
+		// 选择深度方向最外侧的可见后角，避免把句柄放到虚线交点上。
+		return corners[depth.x >= 0 ? (depth.y >= 0 ? 2 : 1) : (depth.y >= 0 ? 3 : 0)];
+	}
+	ShapeObject CanonicalEllipse(ShapeObject shape)
+	{
+		const auto& g = shape.geometry;
+		if (Similarity(shape.transform) && g.end.x >= g.end.y) return shape;
+		// 将旧的纵向长轴、非等比/错切导入归一化；保留画布椭圆和描边等效比例。
+		const auto t = shape.transform; const auto center = ApplyTransform(t,g.start);
+		const double ux = double(t.m11) * g.end.x, uy = double(t.m12) * g.end.x;
+		const double vx = double(t.m21) * g.end.y, vy = double(t.m22) * g.end.y;
+		const double xx = ux * ux + vx * vx, yy = uy * uy + vy * vy, xy = ux * uy + vx * vy;
+		const double angle = .5 * std::atan2(2 * xy,xx - yy), scale = std::sqrt(std::abs(Determinant(t)));
+		const double a = std::sqrt((xx + yy + std::hypot(xx - yy,2 * xy)) * .5);
+		const double b = a > 0 ? std::abs(ux * vy - uy * vx) / a : 0;
+		shape.geometry.start = {}; shape.geometry.end = { static_cast<float>(a / scale),static_cast<float>(b / scale) };
+		shape.transform = { static_cast<float>(scale * std::cos(angle)),static_cast<float>(scale * std::sin(angle)),
+			static_cast<float>(-scale * std::sin(angle)),static_cast<float>(scale * std::cos(angle)),center.x,center.y };
+		if (shape.construction) { shape.construction->start = Mul(shape.geometry.end,-1); shape.construction->end = shape.geometry.end; }
+		return shape;
 	}
 	ShapeObject PromoteShape(const ShapeObject& before, const BuildOptions& options)
 	{
@@ -49,15 +108,7 @@ namespace
 		if (!validation) { SetError(error, validation.error); return std::nullopt; }
 		SetError(error, {}); return shape;
 	}
-	void ScaleGeometry(Kind kind, Geometry& g, Vec2 anchor, float sx, float sy)
-	{
-		auto map = [&](Vec2 v) { return Vec2{ anchor.x + (v.x - anchor.x) * sx,anchor.y + (v.y - anchor.y) * sy }; };
-		g.start = map(g.start);
-		if (kind == Kind::Ellipse) g.end = { g.end.x * sx,g.end.y * sy };
-		else if (kind != Kind::Circle) g.end = map(g.end);
-		g.radius *= std::sqrt(sx * sy);
-		for (auto& v : g.vertices) v = map(v);
-	}
+
 }
 ToolCapabilities GetToolCapabilities(PresetKind preset) noexcept
 {
@@ -77,69 +128,95 @@ CreationMode DefaultCreationMode(PresetKind preset) noexcept
 	if (preset == PresetKind::Circle || preset == PresetKind::RegularPolygon) return CreationMode::CenterRadius;
 	return CreationMode::Drag;
 }
-std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOptions& options)
+std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOptions& options, Bounds* frameRect)
 {
+	if (frameRect) *frameRect = {};
 	if (!Validate(shape)) return {};
-	std::vector<EditHandle> result;
+	std::vector<EditHandle> result; const auto model = ModelFor(shape);
 	auto add = [&](uint32_t id, EditHandleKind kind, Vec2 local) { result.push_back({ id,kind,ApplyTransform(shape.transform, local) }); };
-	const auto p = shape.construction ? shape.construction->tool.preset : PresetKind::Line;
-	const auto& g = shape.geometry; bool frame = true, rotate = true;
-	if (shape.kind == Kind::Line || (shape.construction && p == PresetKind::Arrow))
+	const auto& g = shape.geometry;
+	const auto* c = shape.construction ? &*shape.construction : nullptr;
+	switch (model.layout)
 	{
-		add(1000, EditHandleKind::Endpoint, shape.construction ? shape.construction->start : g.start);
-		add(1001, EditHandleKind::Endpoint, shape.construction ? shape.construction->end : g.end); frame = false;
+	case EditLayout::Endpoints:
+		add(1000,EditHandleKind::Endpoint,c ? c->start : g.start);
+		add(1001,EditHandleKind::Endpoint,c ? c->end : g.end); break;
+	case EditLayout::Rectangle:
+	{
+		const auto corners = RectCorners(c ? c->start : g.start,c ? c->end : g.end);
+		for (uint32_t i = 0; i < 4; ++i) add(1000 + i,EditHandleKind::Vertex,corners[i]); break;
 	}
-	else if (shape.construction && (p == PresetKind::Arc || p == PresetKind::Sector))
+	case EditLayout::Circle:
 	{
-		const auto& c = *shape.construction; const auto& arc = std::get<ArcConstruction>(c.parameters); const auto v = Sub(c.end, c.start);
-		auto radial = [&](float angle) { return Add(c.start, { v.x * std::cos(angle) - v.y * std::sin(angle),v.x * std::sin(angle) + v.y * std::cos(angle) }); };
-		add(100, EditHandleKind::Center, c.start); add(101, EditHandleKind::Radius, radial(arc.sweepRadians * .5f));
-		add(102, EditHandleKind::Angle, c.end); add(103, EditHandleKind::Angle, radial(arc.sweepRadians)); frame = false;
+		// 外接圆首次编辑前取右下45°；圆心法直接使用构造半径点，不重置方向。
+		const auto radiusPoint = c && c->tool.creationMode == CreationMode::CenterRadius ? c->end :
+			Add(g.start,{ g.radius * .7071067812f,g.radius * .7071067812f });
+		add(100,EditHandleKind::Center,g.start); add(101,EditHandleKind::Radius,radiusPoint); break;
 	}
-	else if (shape.kind == Kind::Circle)
+	case EditLayout::Ellipse:
 	{
-		add(100, EditHandleKind::Center, g.start); add(101, EditHandleKind::Radius, Add(g.start, { g.radius,0 })); frame = false; rotate = false;
-	}
-	else if (shape.kind == Kind::Ellipse)
-	{
-		add(100, EditHandleKind::Center, g.start); add(102, EditHandleKind::Axis, Add(g.start, { g.end.x,0 }));
-		add(103, EditHandleKind::Axis, Add(g.start, { 0,g.end.y })); frame = false;
-	}
-	else if (shape.construction && p == PresetKind::RegularPolygon)
-	{
-		add(100, EditHandleKind::Center, shape.construction->start); add(1000, EditHandleKind::Vertex, shape.construction->end); frame = false;
-	}
-	else if (shape.kind == Kind::Polyline || shape.kind == Kind::Polygon)
-	{
-		for (size_t i = 0; i < g.vertices.size(); ++i) add(1000 + static_cast<uint32_t>(i), EditHandleKind::Vertex, g.vertices[i]);
-		if (shape.kind == Kind::Polyline) frame = false;
-	}
-	else if (shape.construction && p >= PresetKind::Cuboid)
-	{
-		const auto& c = *shape.construction; const auto& solid = std::get<SolidConstruction>(c.parameters);
-		add(1000, EditHandleKind::Endpoint, c.start); add(1001, EditHandleKind::Endpoint, c.end);
-		if (p == PresetKind::Cuboid || p == PresetKind::Cube) add(104, EditHandleKind::Depth, Add(c.end, solid.depth));
-		else
+		const auto ellipse = CanonicalEllipse(shape); const auto& e = ellipse.geometry;
+		auto axis = [&](uint32_t id, EditHandleKind kind, Vec2 point) { result.push_back({ id,kind,ApplyTransform(ellipse.transform,point) }); };
+		axis(100,EditHandleKind::Center,e.start); axis(102,EditHandleKind::Axis,Add(e.start,{ e.end.x,0 }));
+		axis(103,EditHandleKind::Axis,Add(e.start,{ 0,e.end.y }));
+		if ((shape.style.auxiliary & Auxiliary::Foci) != Auxiliary::None)
 		{
-			const Vec2 base = p == PresetKind::Prism || p == PresetKind::Pyramid ? c.start : Mul(Add(c.start, c.end), .5f);
-			add(105, EditHandleKind::Height, Add(base, { 0,solid.height }));
+			const float focus = std::sqrt((std::max)(0.0f,e.end.x * e.end.x - e.end.y * e.end.y));
+			axis(106,EditHandleKind::Focus,Add(e.start,{ focus,0 })); axis(107,EditHandleKind::Focus,Add(e.start,{ -focus,0 }));
 		}
+		break;
 	}
-	const auto bounds = LocalShapeBounds(shape, options);
+	case EditLayout::Regular:
+		add(100,EditHandleKind::Center,c->start); add(1000,EditHandleKind::Vertex,c->end); break;
+	case EditLayout::Vertices:
+	{
+		const auto* typed = c ? std::get_if<VertexConstruction>(&c->parameters) : nullptr;
+		const auto& vertices = typed ? typed->vertices : g.vertices;
+		for (size_t i = 0; i < vertices.size(); ++i) add(1000 + static_cast<uint32_t>(i),EditHandleKind::Vertex,vertices[i]); break;
+	}
+	case EditLayout::Arc:
+	{
+		const auto& arc = std::get<ArcConstruction>(c->parameters); const auto v = Sub(c->end,c->start);
+		auto radial = [&](float angle) { return Add(c->start,{ v.x * std::cos(angle) - v.y * std::sin(angle),v.x * std::sin(angle) + v.y * std::cos(angle) }); };
+		add(100,EditHandleKind::Center,c->start); add(101,EditHandleKind::Radius,radial(arc.sweepRadians * .5f));
+		add(102,EditHandleKind::Angle,c->end); add(103,EditHandleKind::Angle,radial(arc.sweepRadians)); break;
+	}
+	case EditLayout::Box: case EditLayout::Cube:
+	{
+		const auto& solid = std::get<SolidConstruction>(c->parameters);
+		if (model.layout == EditLayout::Cube) add(1001,EditHandleKind::Vertex,SquareCorner(*c));
+		else { const auto corners = RectCorners(c->start,c->end); for (uint32_t i = 0; i < 4; ++i) add(1000 + i,EditHandleKind::Vertex,corners[i]); }
+		add(104,EditHandleKind::Depth,Add(shape.editDepthAnchor.value_or(BackCorner(*c)),solid.depth)); break;
+	}
+	case EditLayout::EllipticSolid:
+	{
+		const auto& solid = std::get<SolidConstruction>(c->parameters); const auto corners = RectCorners(c->start,c->end);
+		const auto center = Mul(Add(corners[0],corners[2]),.5f);
+		add(1000,EditHandleKind::Axis,{ corners[0].x,center.y }); add(1001,EditHandleKind::Axis,{ corners[2].x,center.y });
+		add(1002,EditHandleKind::Axis,{ center.x,solid.height < 0 ? corners[2].y : corners[0].y });
+		add(105,EditHandleKind::Height,Add(center,{ 0,solid.height })); break;
+	}
+	case EditLayout::PolygonSolid:
+		add(1001,EditHandleKind::Vertex,c->end);
+		add(105,EditHandleKind::Height,Add(c->start,{ 0,std::get<SolidConstruction>(c->parameters).height })); break;
+	default: break;
+	}
+	auto local = shape; local.transform = {}; GeometryResult geometry;
+	if (!BuildGeometry(local,geometry,options)) return {};
+	auto bounds = geometry.bounds;
 	if (bounds.valid)
 	{
-		const float l = bounds.left, r = bounds.right, t = bounds.top, b = bounds.bottom;
-		const Vec2 v[] = { { l,t },{ (l + r) * .5f,t },{ r,t },{ r,(t + b) * .5f },{ r,b },{ (l + r) * .5f,b },{ l,b },{ l,(t + b) * .5f } };
-		if (frame) for (uint32_t i = 0; i < 8; ++i)
+		// 统一含描边边界与8DIP间隙；变换缩放后仍保持屏幕上的间距。
+		const float gapX = 8 * options.displayScale / std::hypot(shape.transform.m11,shape.transform.m12);
+		const float gapY = 8 * options.displayScale / std::hypot(shape.transform.m21,shape.transform.m22);
+		bounds.left -= gapX; bounds.right += gapX; bounds.top -= gapY; bounds.bottom += gapY;
+		if (frameRect) *frameRect = bounds;
+		const auto corners = RectCorners({ bounds.left,bounds.top },{ bounds.right,bounds.bottom });
+		if (model.frameScale) for (uint32_t i = 0; i < 4; ++i) add(10 + i * 2,EditHandleKind::Scale,corners[i]);
+		if (model.rotate)
 		{
-			const auto canvas = ApplyTransform(shape.transform, v[i]);
-			if (std::none_of(result.begin(), result.end(), [&](const EditHandle& h) { return Distance(h.position, canvas) < .5f; }))
-				result.push_back({ 10 + i,EditHandleKind::Scale,canvas });
-		}
-		if (rotate)
-		{
-			auto top = ApplyTransform(shape.transform, { (l + r) * .5f,t });
-			const float axis = std::hypot(shape.transform.m21, shape.transform.m22);
+			auto top = ApplyTransform(shape.transform,{ (bounds.left + bounds.right) * .5f,bounds.top });
+			const float axis = std::hypot(shape.transform.m21,shape.transform.m22);
 			top.x -= shape.transform.m21 / axis * 40 * options.displayScale; top.y -= shape.transform.m22 / axis * 40 * options.displayScale;
 			result.push_back({ 1,EditHandleKind::Rotate,top });
 		}
@@ -147,145 +224,185 @@ std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOp
 	return result;
 }
 std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleId,
-	Vec2 down, Vec2 current, uint64_t revision, const BuildOptions& options, std::string* error)
+	Vec2 down, Vec2 current, uint64_t revision, const BuildOptions& options, std::string* error, std::optional<float> angleDelta)
 {
-	auto fail = [&](const char* reason) -> std::optional<ShapeObject> { SetError(error, reason); return std::nullopt; };
+	auto fail = [&](const char* reason) -> std::optional<ShapeObject> { SetError(error,reason); return std::nullopt; };
 	if (!Validate(before) || !Finite(down) || !Finite(current) || revision <= before.revision) return fail("invalid edit identity or pointer");
-	auto shape = PromoteShape(before, options);
-	const auto localDown = InversePoint(before.transform, down), localCurrent = InversePoint(before.transform, current);
-	const auto delta = Sub(localCurrent, localDown); const auto handles = BuildEditHandles(before, options);
-	const auto found = std::find_if(handles.begin(), handles.end(), [&](const EditHandle& h) { return h.id == handleId; });
+	const auto handles = BuildEditHandles(before,options); const auto model = ModelFor(before);
+	const auto found = std::find_if(handles.begin(),handles.end(),[&](const EditHandle& h) { return h.id == handleId; });
 	if (handleId != 0 && found == handles.end()) return fail("unknown edit handle");
+	auto shape = PromoteShape(before,options);
+	if (model.layout == EditLayout::Cube) shape.construction->end = SquareCorner(*shape.construction);
+	if (model.layout == EditLayout::Ellipse && handleId != 0 && handleId != 100 && handleId != 1) shape = CanonicalEllipse(std::move(shape));
+	const auto localDown = InversePoint(shape.transform,down), localCurrent = InversePoint(shape.transform,current);
+	const auto delta = Sub(localCurrent,localDown);
+	const Vec2 pointer = found != handles.end() ? Add(InversePoint(shape.transform,found->position),delta) : localCurrent;
+	constexpr float minimum = .001f;
+	auto resize = [&](Vec2& start, Vec2& end, uint32_t index) {
+		const auto corners = RectCorners(start,end); const auto moving = Add(corners[index],delta), anchor = corners[(index + 2) % 4];
+		if ((moving.x - anchor.x) * (corners[index].x - anchor.x) <= 0 ||
+			(moving.y - anchor.y) * (corners[index].y - anchor.y) <= 0 ||
+			std::abs(moving.x - anchor.x) < minimum || std::abs(moving.y - anchor.y) < minimum) return false;
+		start = moving; end = anchor; return true;
+	};
 	if (handleId == 0 || handleId == 100)
 	{
 		shape.transform.dx += current.x - down.x; shape.transform.dy += current.y - down.y;
 	}
 	else if (handleId == 1)
 	{
-		const auto bounds = LocalShapeBounds(shape, options);
-		const Vec2 center = ApplyTransform(shape.transform, { (bounds.left + bounds.right) * .5f,(bounds.top + bounds.bottom) * .5f });
-		if (Distance(center, down) < 1e-6 || Distance(center, current) < 1e-6) return fail("undefined rotation");
-		const double angle = std::atan2(double(current.y) - center.y, double(current.x) - center.x) - std::atan2(double(down.y) - center.y, double(down.x) - center.x);
+		const auto bounds = LocalShapeBounds(shape,options);
+		const Vec2 center = ApplyTransform(shape.transform,{ (bounds.left + bounds.right) * .5f,(bounds.top + bounds.bottom) * .5f });
+		if (Distance(center,down) < minimum || Distance(center,current) < minimum) return fail("undefined rotation");
+		const double angle = std::atan2(double(current.y) - center.y,double(current.x) - center.x) - std::atan2(double(down.y) - center.y,double(down.x) - center.x);
 		Transform rotate; rotate.m11 = rotate.m22 = static_cast<float>(std::cos(angle)); rotate.m12 = static_cast<float>(std::sin(angle)); rotate.m21 = -rotate.m12;
-		const auto rotated = ApplyTransform(rotate, center); rotate.dx = center.x - rotated.x; rotate.dy = center.y - rotated.y;
-		shape.transform = ComposeTransforms(rotate, shape.transform);
+		const auto rotated = ApplyTransform(rotate,center); rotate.dx = center.x - rotated.x; rotate.dy = center.y - rotated.y;
+		shape.transform = ComposeTransforms(rotate,shape.transform);
 	}
-	else if (handleId >= 10 && handleId < 18)
+	else if (found->kind == EditHandleKind::Scale)
 	{
-		const auto bounds = LocalShapeBounds(shape, options); const uint32_t index = handleId - 10;
-		const Vec2 positions[] = { { bounds.left,bounds.top },{ (bounds.left + bounds.right) * .5f,bounds.top },{ bounds.right,bounds.top },
-			{ bounds.right,(bounds.top + bounds.bottom) * .5f },{ bounds.right,bounds.bottom },{ (bounds.left + bounds.right) * .5f,bounds.bottom },
-			{ bounds.left,bounds.bottom },{ bounds.left,(bounds.top + bounds.bottom) * .5f } };
-		const auto moving = positions[index], anchor = positions[(index + 4) % 8];
-		float sx = index == 1 || index == 5 ? 1 : (moving.x + delta.x - anchor.x) / (moving.x - anchor.x);
-		float sy = index == 3 || index == 7 ? 1 : (moving.y + delta.y - anchor.y) / (moving.y - anchor.y);
-		if (UniformPreset(shape))
+		const auto bounds = LocalShapeBounds(shape,options); const uint32_t index = (handleId - 10) / 2;
+		const auto corners = RectCorners({ bounds.left,bounds.top },{ bounds.right,bounds.bottom });
+		const auto moving = corners[index], anchor = corners[(index + 2) % 4];
+		// 间隙和线宽不参与缩放，因而外框的对角固定、拖动角与指针同步。
+		float sx = (moving.x + delta.x - anchor.x) / (moving.x - anchor.x), sy = (moving.y + delta.y - anchor.y) / (moving.y - anchor.y);
+		if (model.uniform) sx = sy = ((sx - 1) * (sx - 1) > (sy - 1) * (sy - 1) ? sx : sy);
+		if (!(sx > minimum && sy > minimum) || !Finite(sx) || !Finite(sy)) return fail("degenerate scale");
+		auto& c = *shape.construction;
+		auto map = [&](Vec2 point) { return Vec2{ anchor.x + (point.x - anchor.x) * sx,anchor.y + (point.y - anchor.y) * sy }; };
+		c.start = map(c.start); c.end = map(c.end);
+		auto& solid = std::get<SolidConstruction>(c.parameters); solid.depth.x *= sx; solid.depth.y *= sy; solid.height *= sy;
+	}
+	else if (model.layout == EditLayout::Rectangle)
+	{
+		auto& start = shape.construction ? shape.construction->start : shape.geometry.start;
+		auto& end = shape.construction ? shape.construction->end : shape.geometry.end;
+		if (!resize(start,end,handleId - 1000)) return fail("rectangle cannot flip");
+	}
+	else if (model.layout == EditLayout::Circle)
+	{
+		if (Distance(shape.geometry.start,pointer) < minimum) return fail("empty circle radius");
+		// 首次编辑外接圆时以几何圆心转换，之后方向始终来自 construction.end。
+		if (!shape.construction) shape.construction = Construction{ { PresetKind::Circle,CreationMode::CenterRadius },shape.geometry.start,pointer };
+		auto& c = *shape.construction; c.tool.creationMode = CreationMode::CenterRadius; c.start = shape.geometry.start; c.end = pointer;
+	}
+	else if (model.layout == EditLayout::Ellipse)
+	{
+		const auto center = shape.geometry.start; auto axes = shape.geometry.end;
+		if (handleId == 106 || handleId == 107)
 		{
-			const float scale = index % 2 ? (index == 1 || index == 5 ? sy : sx) : ((sx - 1) * (sx - 1) > (sy - 1) * (sy - 1) ? sx : sy);
-			sx = sy = scale;
+			const auto focus = Mul(Sub(pointer,center),handleId == 106 ? 1.0f : -1.0f); const float distance = Distance({},focus);
+			if (!(distance <= axes.x - minimum)) return fail("focus must stay inside major axis");
+			// a与中心固定；两焦点互为镜像，方向通过对象旋转保存。
+			axes.y = std::sqrt((std::max)(0.0f,axes.x * axes.x - distance * distance));
+			if (distance > minimum)
+			{
+				const float cosine = focus.x / distance, sine = focus.y / distance;
+				Transform rotate{ cosine,sine,-sine,cosine,0,0 }; const auto moved = ApplyTransform(rotate,center);
+				rotate.dx = center.x - moved.x; rotate.dy = center.y - moved.y; shape.transform = ComposeTransforms(shape.transform,rotate);
+			}
 		}
-		if (!(sx > 1e-6f && sy > 1e-6f) || !Finite(sx) || !Finite(sy)) return fail("degenerate scale");
-		if (shape.construction)
-		{
-			auto& c = *shape.construction;
-			auto map = [&](Vec2 point) { return Vec2{ anchor.x + (point.x - anchor.x) * sx,anchor.y + (point.y - anchor.y) * sy }; };
-			c.start = map(c.start); c.end = map(c.end);
-			if (auto* vertices = std::get_if<VertexConstruction>(&c.parameters)) for (auto& point : vertices->vertices) point = map(point);
-			if (auto* solid = std::get_if<SolidConstruction>(&c.parameters)) { solid->depth.x *= sx; solid->depth.y *= sy; solid->height *= sy; }
-			c.tool.rectangleCornerRadius *= std::sqrt(sx * sy);
-		}
-		else if (shape.kind == Kind::Compound)
-		{
-			// 未带模板的复合对象只变换几何；用等效比例补偿描边，保持画布线宽。
-			const Transform scale{ sx,0,0,sy,anchor.x * (1 - sx),anchor.y * (1 - sy) };
-			shape.transform = ComposeTransforms(shape.transform, scale); shape.style.width /= std::sqrt(sx * sy);
-			for (auto& part : shape.parts) if (part.style) part.style->width /= std::sqrt(sx * sy);
-		}
-		else ScaleGeometry(shape.kind, shape.geometry, anchor, sx, sy);
+		else if (handleId == 102) axes.x += delta.x; else axes.y += delta.y;
+		if (!(axes.x >= axes.y && axes.y >= minimum)) return fail("degenerate ellipse axis");
+		if (shape.construction) { shape.construction->start = Sub(center,axes); shape.construction->end = Add(center,axes); }
+		else shape.geometry.end = axes;
 	}
 	else if (shape.construction)
 	{
 		auto& c = *shape.construction; const auto p = c.tool.preset;
-		if (p == PresetKind::Circle && handleId == 101)
+		if (model.layout == EditLayout::Arc)
 		{
-			const Vec2 pointer = Add(InversePoint(shape.transform, found->position), delta);
-			c.tool.creationMode = CreationMode::CenterRadius; c.start = shape.geometry.start; c.end = pointer;
-		}
-		else if (p == PresetKind::Ellipse && (handleId == 102 || handleId == 103))
-		{
-			const auto center = shape.geometry.start; auto axes = shape.geometry.end;
-			if (handleId == 102) axes.x += delta.x; else axes.y += delta.y;
-			if (!(axes.x > 0 && axes.y > 0)) return fail("degenerate ellipse axis");
-			c.start = Sub(center, axes); c.end = Add(center, axes);
-		}
-		else if ((p == PresetKind::Arc || p == PresetKind::Sector) && handleId >= 101 && handleId <= 103)
-		{
-			auto& arc = std::get<ArcConstruction>(c.parameters); const auto point = Add(InversePoint(shape.transform, found->position), delta);
-			const float radius = Distance(c.start, c.end);
-			if (handleId == 101)
-			{
-				const float target = Distance(c.start, point); if (!(target > 0)) return fail("empty arc radius");
-				c.end = Add(c.start, Mul(Sub(c.end, c.start), target / radius));
-			}
+			auto& arc = std::get<ArcConstruction>(c.parameters); const float radius = Distance(c.start,c.end);
+			if (Distance(c.start,pointer) < minimum) return fail("undefined arc pointer");
+			if (handleId == 101) c.end = Add(c.start,Mul(Sub(c.end,c.start),Distance(c.start,pointer) / radius));
 			else
 			{
-				if (Distance(c.start, point) < 1e-6) return fail("undefined arc angle");
-				const float initial = std::atan2(c.end.y - c.start.y, c.end.x - c.start.x), angle = std::atan2(point.y - c.start.y, point.x - c.start.x);
+				const float initial = std::atan2(c.end.y - c.start.y,c.end.x - c.start.x), angle = std::atan2(pointer.y - c.start.y,pointer.x - c.start.x);
 				const float old = handleId == 102 ? initial : initial + arc.sweepRadians;
-				const float change = static_cast<float>(std::remainder(double(angle - old), 2 * kPi));
-				arc.sweepRadians += handleId == 102 ? -change : change;
-				if (handleId == 102) c.end = Add(c.start, { radius * std::cos(angle),radius * std::sin(angle) });
+				const float change = angleDelta.value_or(static_cast<float>(std::remainder(double(angle - old),2 * kPi)));
+				const float sweep = arc.sweepRadians + (handleId == 102 ? -change : change);
+				if (!Finite(change) || sweep * arc.sweepRadians <= 0 || std::abs(sweep) < 1e-5f || std::abs(sweep) > 2 * kPi + 1e-6) return fail("degenerate arc sweep");
+				arc.sweepRadians = sweep;
+				if (handleId == 102) c.end = Add(c.start,{ radius * std::cos(initial + change),radius * std::sin(initial + change) });
 			}
 		}
 		else if (handleId == 104 || handleId == 105)
 		{
 			auto& solid = std::get<SolidConstruction>(c.parameters);
-			if (handleId == 104) solid.depth = Add(solid.depth, delta); else solid.height += delta.y;
+			if (handleId == 104) solid.depth = Add(solid.depth,delta); else solid.height += delta.y;
 		}
-		else if (handleId >= 1000)
+		else if (model.layout == EditLayout::Box)
 		{
-			const uint32_t index = handleId - 1000;
-			if (p == PresetKind::Line || p == PresetKind::Arrow || p >= PresetKind::Cuboid)
+			if (!resize(c.start,c.end,handleId - 1000)) return fail("front face cannot flip");
+		}
+		else if (model.layout == EditLayout::Cube)
+		{
+			const auto diagonal = Sub(c.end,c.start); const float side = std::abs(diagonal.x);
+			// 投影到原对角线，避免factory再次取较长边造成角点跳变。
+			const float next = side + (delta.x * (diagonal.x > 0 ? 1 : -1) + delta.y * (diagonal.y > 0 ? 1 : -1)) * .5f;
+			if (next < minimum) return fail("cube cannot flip");
+			c.end = Add(c.start,{ next * (diagonal.x > 0 ? 1 : -1),next * (diagonal.y > 0 ? 1 : -1) });
+		}
+		else if (model.layout == EditLayout::EllipticSolid)
+		{
+			const auto center = Mul(Add(c.start,c.end),.5f); Vec2 axes{ std::abs(c.end.x - c.start.x) * .5f,std::abs(c.end.y - c.start.y) * .5f };
+			if (handleId == 1000) axes.x -= delta.x; else if (handleId == 1001) axes.x += delta.x;
+			else axes.y += std::get<SolidConstruction>(c.parameters).height < 0 ? delta.y : -delta.y;
+			if (axes.x < minimum || axes.y < minimum) return fail("degenerate solid base");
+			c.start = Sub(center,axes); c.end = Add(center,axes);
+		}
+		else if (model.layout == EditLayout::PolygonSolid || model.layout == EditLayout::Regular) c.end = Add(c.end,delta);
+		else if (model.layout == EditLayout::Endpoints) (handleId == 1000 ? c.start : c.end) = pointer;
+		else if (model.layout == EditLayout::Vertices)
+		{
+			const size_t index = handleId - 1000; const auto& old = before.geometry.vertices; auto vertices = old; vertices[index] = Add(vertices[index],delta);
+			if (p == PresetKind::Parallelogram)
 			{
-				if (index > 1) return fail("unknown endpoint");
-				(index == 0 ? c.start : c.end) = Add(index == 0 ? c.start : c.end, delta);
+				// 对角不动，两邻点各分担一半位移，保持对边平行。
+				vertices[(index + 1) % 4] = Add(old[(index + 1) % 4],Mul(delta,.5f));
+				vertices[(index + 3) % 4] = Add(old[(index + 3) % 4],Mul(delta,.5f));
 			}
-			else if (p == PresetKind::RegularPolygon) c.end = Add(c.end, delta);
-			else
+			else if (p == PresetKind::Trapezoid)
 			{
-				auto vertices = shape.geometry.vertices; if (index >= vertices.size()) return fail("unknown vertex"); vertices[index] = Add(vertices[index], delta);
-				if (p == PresetKind::Parallelogram) vertices[(index + 1) % 4] = Sub(Add(vertices[index], vertices[(index + 2) % 4]), vertices[(index + 3) % 4]);
-				else if (p == PresetKind::Trapezoid) vertices[index ^ 1].y = vertices[index].y;
-				else if (p == PresetKind::Rhombus)
-				{
-					const Vec2 center = Mul(Add(shape.geometry.vertices[0], shape.geometry.vertices[2]), .5f), axis = Sub(vertices[index], center);
-					const float radius = Distance({}, axis); if (!(radius > 0)) return fail("degenerate rhombus"); vertices[(index + 2) % 4] = Sub(center, axis);
-					const float other = Distance(center, shape.geometry.vertices[(index + 1) % 4]); const Vec2 side{ -axis.y / radius * other,axis.x / radius * other };
-					vertices[(index + 1) % 4] = Add(center, side); vertices[(index + 3) % 4] = Sub(center, side);
-				}
-				c.parameters = VertexConstruction{ std::move(vertices) };
+				vertices[index ^ 1].y = vertices[index].y;
+				if ((vertices[2].y - vertices[0].y) * (old[2].y - old[0].y) <= 0 ||
+					vertices[1].x - vertices[0].x < minimum || vertices[2].x - vertices[3].x < minimum) return fail("trapezoid cannot cross");
 			}
+			else if (p == PresetKind::Rhombus)
+			{
+				const auto center = Mul(Add(old[0],old[2]),.5f), axis = Sub(old[index],center); const float length = Distance({},axis);
+				const float factor = 1 + (delta.x * axis.x + delta.y * axis.y) / (length * length);
+				if (factor * length < minimum) return fail("rhombus cannot flip");
+				vertices[index] = Add(center,Mul(axis,factor)); vertices[(index + 2) % 4] = Sub(center,Mul(axis,factor));
+			}
+			c.parameters = VertexConstruction{ std::move(vertices) };
 		}
 		else return fail("unsupported parameter handle");
 	}
-	else
+	else if (model.layout == EditLayout::Endpoints) (handleId == 1000 ? shape.geometry.start : shape.geometry.end) = pointer;
+	else if (model.layout == EditLayout::Vertices) shape.geometry.vertices[handleId - 1000] = pointer;
+	else return fail("unsupported geometry handle");
+	auto result = RebuildEdited(std::move(shape),revision,error); if (!result) return result;
+	if (result->kind == Kind::Line && Distance(result->geometry.start,result->geometry.end) < minimum) return fail("empty edited line");
+	if (result->kind == Kind::Polygon && model.layout == EditLayout::Vertices)
 	{
-		if (shape.kind == Kind::Circle && handleId == 101) shape.geometry.radius = Distance(shape.geometry.start, Add(InversePoint(shape.transform, found->position), delta));
-		else if (shape.kind == Kind::Ellipse && (handleId == 102 || handleId == 103))
-			(handleId == 102 ? shape.geometry.end.x : shape.geometry.end.y) += handleId == 102 ? delta.x : delta.y;
-		else if (handleId >= 1000)
-		{
-			const size_t index = handleId - 1000;
-			if (shape.kind == Kind::Line && index < 2) (index == 0 ? shape.geometry.start : shape.geometry.end) = Add(index == 0 ? shape.geometry.start : shape.geometry.end, delta);
-			else if (index < shape.geometry.vertices.size()) shape.geometry.vertices[index] = Add(shape.geometry.vertices[index], delta);
-			else return fail("unknown vertex");
-		}
-		else return fail("unsupported geometry handle");
+		auto area = [](const std::vector<Vec2>& v) { double value = 0; for (size_t i = 1; i + 1 < v.size(); ++i) value += Cross(v[0],v[i],v[i + 1]); return value; };
+		if (area(before.geometry.vertices) * area(result->geometry.vertices) <= 0 || std::abs(area(result->geometry.vertices)) < minimum) return fail("polygon cannot flip or collapse");
 	}
-	if (!shape.construction && ((shape.kind == Kind::Circle && !(shape.geometry.radius > 0)) ||
-		(shape.kind == Kind::Ellipse && !(shape.geometry.end.x > 0 && shape.geometry.end.y > 0)) ||
-		(shape.kind == Kind::Line && !(Distance(shape.geometry.start, shape.geometry.end) > 0)))) return fail("empty edited geometry");
-	return RebuildEdited(std::move(shape), revision, error);
+	if (result->construction)
+	{
+		const auto& c = *result->construction;
+		if (const auto* solid = std::get_if<SolidConstruction>(&c.parameters))
+		{
+			const auto& old = std::get<SolidConstruction>(before.construction->parameters);
+			if (model.layout == EditLayout::Box || model.layout == EditLayout::Cube)
+			{ if (Distance({},solid->depth) < minimum) return fail("empty depth"); }
+			else if (solid->height * old.height <= 0 || std::abs(solid->height) < minimum) return fail("solid height cannot flip");
+			if (c.tool.preset == PresetKind::Cone && handleId != 0 && handleId != 1 &&
+				std::abs(solid->height) <= std::abs(c.end.y - c.start.y) * .5f + minimum) return fail("cone apex must stay outside base");
+		}
+	}
+	SetError(error,{}); return result;
 }
 std::optional<ShapeObject> RestyleShape(const ShapeObject& before, const ShapeStyle& style, uint64_t revision, const BuildOptions& options, std::string* error)
 {
@@ -301,17 +418,60 @@ std::optional<ShapeObject> SetRegularSides(const ShapeObject& before, uint32_t s
 bool EditSession::Begin(const ShapeObject& before, uint32_t handle, Vec2 down, const BuildOptions& options)
 {
 	Cancel(); if (!Validate(before) || !Finite(down)) return false;
-	if (handle != 0) { const auto handles = BuildEditHandles(before, options); if (std::none_of(handles.begin(), handles.end(), [&](const EditHandle& h) { return h.id == handle; })) return false; }
-	before_ = before; handleId_ = handle; down_ = down; options_ = options; return true;
+	const auto handles = BuildEditHandles(before,options);
+	const auto found = std::find_if(handles.begin(),handles.end(),[&](const EditHandle& h) { return h.id == handle; });
+	if (handle != 0 && found == handles.end()) return false;
+	before_ = before; handleId_ = handle; down_ = lastValid_ = down; options_ = options;
+	// 后角身份在Down锁定；跨过深度坐标轴后仍跟随同一个角，直到手势结束。
+	if (handle == 104) depthAnchor_ = before.editDepthAnchor.value_or(BackCorner(*before.construction));
+	angleActive_ = before.construction && (before.construction->tool.preset == PresetKind::Arc || before.construction->tool.preset == PresetKind::Sector) && (handle == 102 || handle == 103);
+	if (angleActive_)
+	{
+		anglePoint_ = InversePoint(before.transform,found->position); const auto center = before.construction->start;
+		lastAngle_ = std::atan2(anglePoint_.y - center.y,anglePoint_.x - center.x);
+	}
+	return true;
 }
-bool EditSession::Preview(Vec2 current, uint64_t revision, std::string* error)
+bool EditSession::Preview(Vec2 current, uint64_t revision, std::string* error, std::optional<float> angleDelta)
 {
-	if (!before_) return false;
-	candidate_ = EditShape(*before_, handleId_, down_, current, revision, options_, error); return candidate_.has_value();
+	if (!before_ || !Finite(current) || revision <= before_->revision || (angleDelta && !Finite(*angleDelta)))
+	{ canCommit_ = false; candidate_.reset(); return false; }
+	if (angleActive_)
+	{
+		const auto point = Add(anglePoint_,Sub(InversePoint(before_->transform,current),InversePoint(before_->transform,down_)));
+		const auto center = before_->construction->start;
+		if (Distance(center,point) > 1e-6)
+		{
+			const float angle = std::atan2(point.y - center.y,point.x - center.x);
+			// 每条真实编辑轨迹只累计相邻差值；外部累计值可跨过latest-wins丢弃的中间采样。
+			angleDelta_ = angleDelta.value_or(angleDelta_ + static_cast<float>(std::remainder(double(angle - lastAngle_),2 * kPi)));
+			lastAngle_ = angle;
+		}
+	}
+	candidate_ = EditShape(*before_,handleId_,down_,current,revision,options_,error,AngleDelta());
+	canCommit_ = candidate_.has_value();
+	if (canCommit_) { candidate_->editDepthAnchor = depthAnchor_; lastValid_ = current; lastValidAngle_ = angleDelta_; return true; }
+	// 从上次有效位置逼近约束边界，预览始终可见；最终原始指针无效时Commit拒绝。
+	float low = 0, high = 1; auto nearest = EditShape(*before_,handleId_,down_,lastValid_,revision,options_,nullptr,angleActive_ ? std::optional<float>(lastValidAngle_) : std::nullopt);
+	for (unsigned i = 0; i < 24; ++i)
+	{
+		const float middle = (low + high) * .5f; const auto point = Add(lastValid_,Mul(Sub(current,lastValid_),middle));
+		const auto angle = angleActive_ ? std::optional<float>(lastValidAngle_ + (angleDelta_ - lastValidAngle_) * middle) : std::nullopt;
+		auto next = EditShape(*before_,handleId_,down_,point,revision,options_,nullptr,angle);
+		if (next) { low = middle; nearest = std::move(next); } else high = middle;
+	}
+	if (nearest) candidate_ = std::move(nearest);
+	else { candidate_ = *before_; candidate_->revision = revision; }
+	candidate_->editDepthAnchor = depthAnchor_;
+	return true;
 }
+std::optional<float> EditSession::AngleDelta() const noexcept { return angleActive_ ? std::optional<float>(angleDelta_) : std::nullopt; }
 const std::optional<ShapeObject>& EditSession::Candidate() const noexcept { return candidate_; }
-std::optional<ShapeObject> EditSession::Commit() { auto result = std::move(candidate_); Cancel(); return result; }
-void EditSession::Cancel() noexcept { before_.reset(); candidate_.reset(); }
+std::optional<ShapeObject> EditSession::Commit() { auto result = canCommit_ ? std::move(candidate_) : std::nullopt; if (result) result->editDepthAnchor.reset(); Cancel(); return result; }
+void EditSession::Cancel() noexcept
+{
+	before_.reset(); candidate_.reset(); depthAnchor_.reset(); angleActive_ = canCommit_ = false; lastAngle_ = angleDelta_ = lastValidAngle_ = 0;
+}
 bool ConstructionSession::Begin(const ToolSpec& tool, const ShapeStyle& style, const ObjectId& id, uint64_t revision)
 {
 	Cancel(); const auto capabilities = GetToolCapabilities(tool.preset);

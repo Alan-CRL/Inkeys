@@ -384,12 +384,12 @@ auto publishShapeUi = [&]()
 		snapshot.identity.objectId = snapshot.object->id; snapshot.identity.objectRevision = snapshot.object->revision;
 		snapshot.editGestureActive = shapeUi.editor.gestureActive;
 		if (shapeUi.published && shapeUi.published->object == snapshot.object && shapeUi.published->displayScale == snapshot.displayScale)
-		{ snapshot.bounds = shapeUi.published->bounds; snapshot.handles = shapeUi.published->handles; }
+		{ snapshot.bounds = shapeUi.published->bounds; snapshot.frameRect = shapeUi.published->frameRect; snapshot.handles = shapeUi.published->handles; }
 		else
 		{
 			draw3::shapes::GeometryResult geometry;
 			if (draw3::shapes::BuildGeometry(*snapshot.object,geometry,{snapshot.displayScale,.25f})) snapshot.bounds = geometry.bounds;
-			snapshot.handles = draw3::shapes::BuildEditHandles(*snapshot.object,{snapshot.displayScale,.25f});
+			snapshot.handles = draw3::shapes::BuildEditHandles(*snapshot.object,{snapshot.displayScale,.25f},&snapshot.frameRect);
 		}
 	}
 	PublishShapeRuntimeSnapshot(shapeUi,std::move(snapshot));
@@ -553,13 +553,12 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 	std::optional<draw3::shapes::ShapeObject> candidate;
 	const auto revision = nextShapeRevision(shapeUi.editor.object->id,shapeUi.editor.object->revision);
 	if (!revision) return;
-	if (action.kind == ShapeUiActionKind::SetStyle && !shapeUi.editor.gestureActive)
-		candidate = draw3::shapes::RestyleShape(*shapeUi.editor.object,action.style,revision,{scene.displayScale,.25f});
-	else if (action.kind == ShapeUiActionKind::SetSides && !shapeUi.editor.gestureActive)
-		candidate = draw3::shapes::SetRegularSides(*shapeUi.editor.object,action.sides,revision);
+	if ((action.kind == ShapeUiActionKind::SetStyle || action.kind == ShapeUiActionKind::SetSides) && !shapeUi.editor.gestureActive)
+		candidate = BuildShapePropertyCandidate(*shapeUi.editor.object,action,revision,{scene.displayScale,.25f});
 	else if (inGesture && (action.kind == ShapeUiActionKind::PreviewEdit || action.kind == ShapeUiActionKind::CommitEdit))
 	{
-		if (shapeUi.editor.gesture.Preview(action.point,revision)) candidate = shapeUi.editor.gesture.Candidate();
+		if (shapeUi.editor.gesture.Preview(action.point,revision,nullptr,action.angleDelta))
+			candidate = action.kind == ShapeUiActionKind::CommitEdit ? shapeUi.editor.gesture.Commit() : shapeUi.editor.gesture.Candidate();
 	}
 	const bool commit = action.kind != ShapeUiActionKind::PreviewEdit;
 	const bool endsGesture = commit && inGesture;
