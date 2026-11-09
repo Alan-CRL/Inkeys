@@ -1,13 +1,12 @@
 # 交接：图形交互与样式整改（2026-11-09 更新）
 
-> 2026-11-09 用户要求从检查点继续、由 Codex 承担大部分修改与审阅、主 Agent 负责设计与 UI。四个剩余子任务均已实现并通过回归，**但因 Git 签名（1Password SSH agent）失败尚未提交**。下次继续先读本文。
+> 2026-11-09 用户要求从检查点继续、由 Codex 承担大部分修改与审阅、主 Agent 负责设计与 UI。四个剩余子任务均已实现并通过回归，**1Password 解锁后已按子任务拆成 4 个签名提交**。下次继续先读本文。
 
 ## 当前状态
 
-- 分支 `feature/shape`，HEAD 仍为 `c24780a8`。
-- **暂存区** = edit-interaction 完整快照（已验证，勿改动）；**工作区** = 其余三个子任务的全部改动。
-- 拆分提交：签名恢复后执行 `%LOCALAPPDATA%\Temp\inkeys-codex\shape-ux\commits\commit-shape-ux.sh`（依次提交 interaction → visual → category → prompt；补丁 `02-edit-visual.patch`、`03-toolbar-category.patch` 在同目录，已用临时索引验证可按序应用）。不要先执行 `git add`，否则会破坏暂存区快照。
-- `inkStrokeModelerTest/*.cso` 是构建产物，不提交。
+- 分支 `feature/shape`，四个提交依次为 `bebfe8d0`（edit-interaction）、`19d3f662`（edit-visual）、`88bdd0f2`（toolbar-category）、`cc52b7ab`（construction-prompt 及规格收尾）。
+- 工作区仅剩未跟踪的 `inkStrokeModelerTest/*.cso` 构建产物，不提交。
+- 尚未 push；实机验收未做。
 
 | 子任务 | 状态 | 说明 |
 |---|---|---|
