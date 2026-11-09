@@ -217,7 +217,7 @@ std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOp
 		{
 			auto top = ApplyTransform(shape.transform,{ (bounds.left + bounds.right) * .5f,bounds.top });
 			const float axis = std::hypot(shape.transform.m21,shape.transform.m22);
-			top.x -= shape.transform.m21 / axis * 40 * options.displayScale; top.y -= shape.transform.m22 / axis * 40 * options.displayScale;
+			top.x -= shape.transform.m21 / axis * 24 * options.displayScale; top.y -= shape.transform.m22 / axis * 24 * options.displayScale;
 			result.push_back({ 1,EditHandleKind::Rotate,top });
 		}
 	}

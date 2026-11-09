@@ -28,7 +28,8 @@ namespace Inkeys::UI::SelectionOverlay
 		using namespace Inkeys::UI::RenderPipeline;
 		using Inkeys::Window::WindowRole;
 		std::shared_ptr<Bar::ShapeEditorSurface> scene;
-		std::atomic_bool escapeDown=false;
+		Bar::ShapeEditorKeyboardOwnership keyboardOwnership;
+		std::atomic<HWND> keyboardForeground=nullptr;
 		std::atomic_bool running=false;
 		std::atomic_uint64_t lifecycle=0;
 		std::mutex lifecycleMutex;
@@ -36,6 +37,7 @@ namespace Inkeys::UI::SelectionOverlay
 		std::uint64_t nativeTicket=0,nextTicket=1;
 		std::uint32_t touchId=0;
 		bool translatingTouch=false,releasingCapture=false,touchActive=false;
+		bool preserveMoveSamples=false; // 原生Down先锁定，worker积压时也不会合并掉角度轨迹。
 		constexpr UINT ReleaseCaptureMessage=WM_APP+0x375;
 		void Request() noexcept {RenderPipeline::Request(Client::SelectionOverlay);}
 		// refresh回调由Draw3在同一互斥内串行调用；主栏只关心构造提示与编辑会话开闭，不随每次拖动预览重绘。
@@ -108,7 +110,7 @@ namespace Inkeys::UI::SelectionOverlay
 			const auto target=std::atomic_load(&scene);
 			if(message==ReleaseCaptureMessage)
 			{
-				if(nativeTicket&&nativeTicket==wp){nativeTicket=0;touchId=0;touchActive=false;releasingCapture=true;if(GetCapture()==hwnd)ReleaseCapture();releasingCapture=false;}return 0;
+				if(nativeTicket&&nativeTicket==wp){nativeTicket=0;touchId=0;touchActive=false;preserveMoveSamples=false;releasingCapture=true;if(GetCapture()==hwnd)ReleaseCapture();releasingCapture=false;}return 0;
 			}
 			if(message==WM_MOUSEACTIVATE)return MA_NOACTIVATE;
 			if(message==WM_TABLET_QUERYSYSTEMGESTURESTATUS)return TABLET_DISABLE_PRESSANDHOLD|TABLET_DISABLE_PENTAPFEEDBACK|TABLET_DISABLE_PENBARRELFEEDBACK|TABLET_DISABLE_FLICKS;
@@ -140,7 +142,8 @@ namespace Inkeys::UI::SelectionOverlay
 				Bar::SurfaceInputEvent e;e.window=hwnd;e.message=message;e.wParam=wp;e.lParam=lp;e.generation=lifecycle.load();
 				e.screenPoint={GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};if(message!=WM_MOUSEWHEEL)ClientToScreen(hwnd,&e.screenPoint);e.touch=translatingTouch;e.contactId=touchId;
 				if(message==WM_MOUSEMOVE){TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,hwnd,0};TrackMouseEvent(&track);}
-				if(message==WM_LBUTTONDOWN){SetCapture(hwnd);if(GetCapture()==hwnd)nativeTicket=nextTicket++;}
+				if(message==WM_LBUTTONDOWN){keyboardForeground=GetForegroundWindow();preserveMoveSamples=target&&target->PreservePointerTrajectory(e.screenPoint);SetCapture(hwnd);if(GetCapture()==hwnd)nativeTicket=nextTicket++;}
+				e.preserveMoveSamples=preserveMoveSamples;
 				e.captureTicket=nativeTicket;e.captureOwned=GetCapture()==hwnd;
 				if(target)e.presentedRevision=target->PresentedGeneration();
 				const bool accepted=Bar::SubmitSurfaceInput(e);
@@ -175,25 +178,57 @@ namespace Inkeys::UI::SelectionOverlay
 		(void)Bar::DrainInteractionSurfaceCallbacks();if(const auto target=std::atomic_load(&scene))target->CancelPointer();Bar::ClearShapeUiIntents();(void)Window::GetService().Hide(WindowRole::SelectionOverlay);std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});
 	}
 	void NotifyStateChanged() noexcept {Request();}
-	bool TryQueueKeyboard(BYTE key,bool down)
+	static bool QueueKeyboardDown(BYTE key)
 	{
-		if(key==VK_ESCAPE)
+		if (!running.load()) return false;
+		const auto target = std::atomic_load(&scene);
+		const HWND hwnd = Window::GetService().Handle(WindowRole::SelectionOverlay);
+		const HWND foreground = GetForegroundWindow();
+		DWORD process = 0;
+		if (foreground) GetWindowThreadProcessId(foreground, &process);
+		POINT point{};
+		const bool editorVisible = target && hwnd && IsWindowVisible(hwnd) && !Window::GetService().WhiteboardWindowGroupMinimized();
+		RECT editorBounds{};
+		const bool cursorInside = editorVisible && GetCursorPos(&point) && GetWindowRect(hwnd, &editorBounds) && PtInRect(&editorBounds, point);
+		if (key == VK_ESCAPE)
 		{
-			if(!down)return escapeDown.exchange(false);
-			if(escapeDown.load())return true;
-			if(!running.load())return false;
-			const auto snapshot=Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
-			if(!snapshot||(!snapshot->object&&!snapshot->construction.active))return false;
-			escapeDown=true;
-			Inkeys::Drawing::Draw3::ShapeUiAction action;action.identity=snapshot->identity;
-			action.kind=snapshot->construction.active?Inkeys::Drawing::Draw3::ShapeUiActionKind::ConstructionCancel:Inkeys::Drawing::Draw3::ShapeUiActionKind::CloseEditor;
-			(void)Bar::SubmitShapeUiIntent(action);
-			if(const HWND hwnd=Window::GetService().Handle(WindowRole::SelectionOverlay))PostMessageW(hwnd,WM_CANCELMODE,0,0);
+			// 外部放映、最小化时不能仅凭残留的编辑快照截获Esc。
+			if (process != GetCurrentProcessId() && !cursorInside) return false;
+			if (Window::GetService().WhiteboardWindowGroupMinimized()) return false;
+			const auto snapshot = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+			if (!snapshot || (!snapshot->object && !snapshot->construction.active)) return false;
+			if (snapshot->object && editorVisible)
+			{
+				Bar::SurfaceInputEvent e;
+				e.window = hwnd; e.message = WM_KEYDOWN; e.wParam = key; e.generation = lifecycle.load();
+				if (!Bar::SubmitSurfaceInput(e)) return false;
+			}
+			else
+			{
+				Inkeys::Drawing::Draw3::ShapeUiAction action;
+				action.identity = snapshot->identity;
+				action.kind = snapshot->construction.active ? Inkeys::Drawing::Draw3::ShapeUiActionKind::ConstructionCancel : Inkeys::Drawing::Draw3::ShapeUiActionKind::CloseEditor;
+				if (!Bar::SubmitShapeUiIntent(action)) return false;
+			}
 			return true;
 		}
-		if(!running.load())return false;POINT point{};const HWND hwnd=Window::GetService().Handle(WindowRole::SelectionOverlay);
-		if(!GetCursorPos(&point)||WindowFromPoint(point)!=hwnd)return false;
-		if(key!=VK_TAB&&key!=VK_LEFT&&key!=VK_RIGHT&&key!=VK_RETURN&&key!=VK_SPACE)return false;
-		Bar::SurfaceInputEvent e;e.window=hwnd;e.message=down?WM_KEYDOWN:WM_KEYUP;e.wParam=key;e.generation=lifecycle.load();return Bar::SubmitSurfaceInput(e);
+		if (key != VK_TAB && key != VK_LEFT && key != VK_RIGHT && key != VK_UP && key != VK_DOWN && key != VK_RETURN && key != VK_SPACE) return false;
+		// NOACTIVATE窗口的键盘焦点来自明确激活过的浮条内容，鼠标停在对象附近不算焦点。
+		if (!editorVisible || !target->HasKeyboardFocus() || foreground != keyboardForeground.load()) return false;
+		Bar::SurfaceInputEvent e;
+		e.window = hwnd; e.message = WM_KEYDOWN; e.wParam = key; e.generation = lifecycle.load();
+		return Bar::SubmitSurfaceInput(e);
+	}
+	bool TryQueueKeyboard(BYTE key,bool down)
+	{
+		return keyboardOwnership.Route(key, down, [&] { return QueueKeyboardDown(key); }, [&]
+		{
+			if (key == VK_ESCAPE || !running.load()) return;
+			Bar::SurfaceInputEvent e;
+			e.window = Window::GetService().Handle(WindowRole::SelectionOverlay);
+			e.message = down ? WM_KEYDOWN : WM_KEYUP; e.wParam = key; e.generation = lifecycle.load();
+			// 已接管的按压即使焦点改变或队列拒绝续包，仍消费到真实Up。
+			(void)Bar::SubmitSurfaceInput(e);
+		});
 	}
 }

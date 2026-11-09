@@ -362,6 +362,7 @@ namespace Inkeys::UI::Bar
 		// 主栏帧首应用目标值；分页表面复用同一份已应用值，需要单独唤醒。
 		barUISet.UpdateRendering(false);
 		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
 	}
 
 	void SetDebugOptions(bool enable, bool showFrameRate)

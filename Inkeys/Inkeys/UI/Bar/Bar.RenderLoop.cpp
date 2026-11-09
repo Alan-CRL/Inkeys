@@ -11857,66 +11857,29 @@ bool presetButton = button.presetIndex >= 0;
 					/ BarDrawAttributeExpandedWidth;
 				FLOAT thumbDiameter = static_cast<FLOAT>(min(
 					sliderThumb->w.val, sliderThumb->h.val) * uiZoom);
-				FLOAT thumbRadius = thumbDiameter / 2.0F;
 				D2D1_POINT_2F thumbCenter = D2D1::Point2F(
 					static_cast<FLOAT>((thumbInherit.x
 						+ sliderThumb->w.val / 2.0) * uiZoom),
 					static_cast<FLOAT>((thumbInherit.y
 						+ sliderThumb->h.val / 2.0) * uiZoom));
-				auto FillThumbCircle = [&](COLORREF color, FLOAT radius)
-					{
-						if (radius <= 0.0F) return;
-						auto brush = state.spec.GetFrameSolidColorBrush(
-							barDeviceContext, color, thumbOpacity);
-						if (!brush) return;
-						D2D1_ELLIPSE ellipse = D2D1::Ellipse(
-							thumbCenter, radius, radius);
-						(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillEllipse(&ellipse, brush);
-					};
-				COLORREF surfaceColor = panel->fill.has_value()
+				// 动画状态仍由主栏持有；显式传入旧公式依赖的表面色和动画描边厚度。
+				BarSliderThumbStyle thumbStyle;
+				thumbStyle.centerPx = thumbCenter;
+				thumbStyle.outerDiameterPx = thumbDiameter;
+				thumbStyle.frameThicknessPx = static_cast<FLOAT>(panelAnimationScale * uiZoom);
+				thumbStyle.surfaceColor = panel->fill.has_value()
 					? static_cast<COLORREF>(panel->fill.value().val)
 					: GetThemeColor(BarThemeColorEnum::Surface);
-				COLORREF accentColor = GetThemeColor(
-					BarThemeColorEnum::Accent);
-				double accentOpacity = clamp(static_cast<double>(
-					state.drawAttributeThicknessSliderAccentOpacity.val),
-					0.0, 1.0);
-				COLORREF centerColor = MixBarUiColor(
-					surfaceColor, accentColor, accentOpacity);
-				const double lightWeight = BarThemeMaterial::ClampWeight(
-					state.barLightMaterial.val);
-				const COLORREF darkOuterFillColor = MixBarUiColor(
-					GetThemeColor(BarThemeModeEnum::Dark,
-						BarThemeColorEnum::Surface),
-					GetThemeColor(BarThemeModeEnum::Dark,
-						BarThemeColorEnum::TextPrimary), 0.20);
-				// Light 端按 WinUI 3 Slider Thumb：ControlSolidFillColorDefault 纯白底，
-				// 外圈为 ControlElevationBorder 的细描边（约 6%~16% 黑，取 12% 石墨灰）。
-				const COLORREF lightOuterFillColor = RGB(255, 255, 255);
-				const COLORREF lightOuterFrameColor = MixBarUiColor(
-					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface),
-					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::TextPrimary),
-					BarThemeMaterial::LightSliderThumbBorderOpacity);
-				COLORREF outerFillColor = MixBarUiColor(
-					darkOuterFillColor, lightOuterFillColor, lightWeight);
-				const COLORREF darkOuterFrameColor = MixBarUiColor(
-					darkOuterFillColor,
-					GetThemeColor(BarThemeModeEnum::Dark,
-						BarThemeColorEnum::TextPrimary), 0.12);
-				COLORREF outerFrameColor = MixBarUiColor(
-					darkOuterFrameColor, lightOuterFrameColor, lightWeight);
-				FillThumbCircle(outerFrameColor, thumbRadius);
-				FillThumbCircle(outerFillColor,
-					max(0.0F, thumbRadius - static_cast<FLOAT>(
-						panelAnimationScale * uiZoom)));
-				FLOAT centerDiameter = static_cast<FLOAT>(
+				thumbStyle.accentColor = GetThemeColor(BarThemeColorEnum::Accent);
+				thumbStyle.accentOpacity = clamp(static_cast<double>(
+					state.drawAttributeThicknessSliderAccentOpacity.val), 0.0, 1.0);
+				thumbStyle.lightWeight = BarThemeMaterial::ClampWeight(state.barLightMaterial.val);
+				thumbStyle.opacity = thumbOpacity;
+				thumbStyle.centerDiameterPx = static_cast<FLOAT>(
 					state.drawAttributeThicknessSliderCenterDiameter.val)
 					* static_cast<FLOAT>(panelAnimationScale * max(0.0,
-						static_cast<double>(
-							state.drawAttributeThicknessSliderThumbScale.val)))
-					* uiZoom;
-				FillThumbCircle(centerColor,
-					min(thumbRadius * 0.70F, centerDiameter / 2.0F));
+						static_cast<double>(state.drawAttributeThicknessSliderThumbScale.val))) * uiZoom;
+				DrawBarSliderThumb(state.spec, barDeviceContext, thumbStyle);
 			}
 		}
 

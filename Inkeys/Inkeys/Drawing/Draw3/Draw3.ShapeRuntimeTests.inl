@@ -207,7 +207,7 @@ int RunShapeInteractionProductionTest()
 			"style edit commits current object without altering next tool snapshot");
 	}
 	// SetStyle辅助开关只替换当前对象，撤销/重做和冷历史都沿用同一journal。
-	for (auto preset : {PresetKind::Circle,PresetKind::Ellipse})
+	for (auto preset : {PresetKind::Rectangle,PresetKind::Circle,PresetKind::Ellipse})
 	{
 		style.auxiliary = DefaultAuxiliary(preset);
 		auto drawn = begin({preset,DefaultCreationMode(preset)},{40,50});
@@ -215,8 +215,8 @@ int RunShapeInteractionProductionTest()
 		if (!created) continue;
 		const auto item = pages[0].history.LastVisibleItem(); if (!item) continue;
 		const auto before = *canvas->Strokes()[created->strokeIndex].Shape();
-		GeometryResult aux; check(BuildAuxiliaryGeometry(before,aux) && aux.parts.size() == (preset == PresetKind::Circle ? 1u : 2u),"default circle center and ellipse foci survive real Down and raw Up");
-		ShapeUiAction toggle; toggle.kind = ShapeUiActionKind::SetStyle; toggle.style = before.style; toggle.style.auxiliary = Auxiliary::None;
+		GeometryResult aux; check(BuildAuxiliaryGeometry(before,aux) && aux.parts.size() == (preset == PresetKind::Rectangle ? 0u : preset == PresetKind::Circle ? 1u : 2u),"default circle center and ellipse foci survive real Down and raw Up");
+		ShapeUiAction toggle; toggle.kind = ShapeUiActionKind::SetStyle; toggle.style = before.style; toggle.style.auxiliary = preset == PresetKind::Rectangle ? Auxiliary::Diagonals : Auxiliary::None;
 		const auto candidate = BuildShapePropertyCandidate(before,toggle,pages[0].shapeRevisionAllocator.Next(before.id,before.revision));
 		const auto cursor = pages[0].operationCursor, count = canvas->Strokes().size();
 		check(candidate && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,before,*candidate,allocate) &&
@@ -231,13 +231,25 @@ int RunShapeInteractionProductionTest()
 			check(ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,false,allocate) &&
 				restoredCanvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary,"cold undo restores auxiliary before snapshot");
 			check(ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,true,allocate) &&
-				restoredCanvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == Auxiliary::None,"cold redo restores auxiliary after snapshot");
+				restoredCanvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == toggle.style.auxiliary,"cold redo restores auxiliary after snapshot");
 		}
 		check(ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate) &&
 			canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary,"one undo restores object auxiliary");
 		check(ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) &&
-			canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == Auxiliary::None && window.ProductVisualStyleSnapshot().shapeStyle == style,
+			canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == toggle.style.auxiliary && window.ProductVisualStyleSnapshot().shapeStyle == style,
 			"one redo disables auxiliary without changing next stroke defaults");
+		// 反向再切换一次，同样只能新增一条Replace，撤销与重做保留工具默认值。
+		const auto enabledBefore = *canvas->Strokes()[created->strokeIndex].Shape();
+		toggle.style.auxiliary = style.auxiliary;
+		const auto reversed = BuildShapePropertyCandidate(enabledBefore,toggle,pages[0].shapeRevisionAllocator.Next(enabledBefore.id,enabledBefore.revision));
+		const auto reverseCursor = pages[0].operationCursor;
+		check(reversed && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,enabledBefore,*reversed,allocate)
+			&& pages[0].operationCursor == reverseCursor+1 && pages[0].operations.back().kind == CanvasOperationKind::Replace,
+			"reverse auxiliary toggle records one Replace");
+		check(ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate) && canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == enabledBefore.style.auxiliary,
+			"one undo restores reverse auxiliary toggle");
+		check(ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) && canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary
+			&& window.ProductVisualStyleSnapshot().shapeStyle == style,"reverse auxiliary redo preserves next tool defaults");
 	}
 	// 复现Host先scene再实际动作的真实WindowController队列顺序，调用生产同场景门禁。
 	for (auto workspace : {Bridge::Workspace::Desktop,Bridge::Workspace::Whiteboard,Bridge::Workspace::Presentation})

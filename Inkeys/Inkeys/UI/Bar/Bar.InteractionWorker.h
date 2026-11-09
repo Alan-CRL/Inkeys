@@ -203,6 +203,7 @@ namespace Inkeys::UI::Bar
 		bool nativeCaptureReleased = false;
 		bool logicalPointValid = false;
 		bool backgroundHit = false;
+		bool preserveMoveSamples = false; // 角度手势逐点累计，仍受有界邮箱的溢出取消保护。
 	};
 	using SurfaceInputHandler = void(*)(const SurfaceInputEvent&, void*);
 	using SurfaceInputTick = std::chrono::steady_clock::time_point(*)(std::chrono::steady_clock::time_point, void*);

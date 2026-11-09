@@ -156,7 +156,7 @@ namespace
 					all.push_back({10,EditHandleKind::Scale,{frame.left,frame.top}}); all.push_back({12,EditHandleKind::Scale,{frame.right,frame.top}});
 					all.push_back({14,EditHandleKind::Scale,{frame.right,frame.bottom}}); all.push_back({16,EditHandleKind::Scale,{frame.left,frame.bottom}});
 				}
-				if (rotate) all.push_back({1,EditHandleKind::Rotate,{(frame.left + frame.right) * .5f,frame.top - 40 * displayScale}});
+				if (rotate) all.push_back({1,EditHandleKind::Rotate,{(frame.left + frame.right) * .5f,frame.top - 24 * displayScale}});
 				SHAPE_CHECK(handles.size() == all.size());
 				for (const auto& wanted : all)
 				{

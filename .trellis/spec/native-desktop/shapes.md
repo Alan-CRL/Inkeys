@@ -44,7 +44,7 @@
 
 - 仅刚完成的Shape自动进入编辑，不搜索/重选旧对象，普通墨迹不进入。多接触全部结束后采用最后真实Up的完成对象；空白下一笔直接沿画布创建。原`selectionMode`仍是电脑交互模式，不得改成对象选择开关。
 - 绘制线程唯一持有`ConstructionSession`/`EditSession`与文档，UI通过`Draw3.ShapeInteraction.h`取不可变快照、发带身份意图。会话、对象/页面、工作区、文档、显示代次均须校验。手势Down身份被冻结；Preview更换revision后仍用同一身份Commit；独立属性/Back/Complete必须匹配当前代次。取消屏障在活动接触期间也须生效，不能等最后Up提交后才处理。
-- SelectionOverlay由Window Service及已有RenderPipeline/Bar worker管理，处于Drawpad之上、Bar之下，与PPT同层；没有独立窗口线程或RTS。按成功呈现的Frame命中，零alpha热区的44DIP触达须有原生输入支撑。圆形视觉默认12DIP，旋转32.5DIP，热区至少44DIP；优先旋转、专属点、通用缩放、对象本体。
+- SelectionOverlay由Window Service及已有RenderPipeline/Bar worker管理，处于Drawpad之上、Bar之下，与PPT同层；没有独立窗口线程或RTS。按成功呈现的Frame命中，零alpha热区的44DIP触达须有原生输入支撑。控制点为共享 `DrawBarSliderThumb` 的 WinUI3 Thumb（外径20DIP，内芯12/14/10，中心类点8/10/6），旋转钮外径28DIP、距 frameRect 顶边24DIP、1.5DIP连接线；外框为 frameRect 上的2DIP、r6 圆角框；立体外框角缩放点画成沿圆角的L形角标（4/5DIP）。热区至少44DIP且不可见（alpha≤1）；优先旋转，其次专属点与外框角标取最近者（相等取专属点），最后对象本体。视觉细节以 `11-05-shape-ux-edit-visual/design.md` 为准。
 - 浮条复用标准按钮/独立SingleRow属性list及既有调色内容，只改当前对象；进入主栏工具配置结束编辑。三档宽度来自已有策略；不引入细调滑块/数字框/复制删除翻转组合。小工作区采用受限可滚动扩展区，保持按钮尺寸。主栏自身图形目录、属性list、底部5DIP留白不变。
 - 多笔创建首笔冻结工具/样式/ID/显示上下文，真实Up确认参数，预测只重建当前未确认步骤。中间态不入InkCanvas/历史/L2持久层。固定两步最后Up自动提交；折线至少2点、多边形至少3个有效简单多边形顶点后Complete闭合，首点不重复保存。Cancel/Fatal未完成步骤不能物化成圆或矩形降级对象。
 - 主栏提示是Bar场景的独立状态，复用原居中提示位置/外观/动画，包含必要Complete/Back/Cancel；不得覆盖原bottomDockIndicator状态或新增HWND。全局Undo在构造中执行Back，结束后恢复文档Undo。
@@ -124,3 +124,36 @@ Good：椭圆Foci经SetStyle关闭，一次撤销恢复焦点与句柄，冷页�
 ### 7. Wrong vs Correct
 
 Wrong：`loaded.style.auxiliary = DefaultAuxiliary(preset)`。Correct：旧metadata保持零值，仅新笔通过 `GetShapeStyle(snapshot)` 取得工具默认值；v4识别成功后从aux派生显示，跳过文件中的派生部件。
+
+## 编辑浮层 V3 输入与绘制防回归
+
+### 1. Scope / Trigger
+
+修改 SelectionOverlay 的按压归属、Move 合并或编辑器子控件绘制时适用。
+
+### 2. Signatures
+
+`ShapeEditorSurface::PreservePointerTrajectory(POINT)`、`SurfaceInputEvent::preserveMoveSamples`、`ShapeEditorKeyboardOwnership::Route`、`Impl::BracketGeometry`。
+
+### 3. Contracts
+
+- 原生 Down 按成功呈现的命中锁定角度/旋转手柄的保留采样标记，直到捕获释放；标记 Move 不合并，仍使用容量512的同一邮箱和溢出取消。普通 Move 与 Bridge PreviewEdit 继续 latest-wins。
+- 每个虚拟键首次 Down 锁定 Forward/Owned，到真实 Up 才释放；repeat/Up 不因焦点、前台或弹层变化重新判定归属。首次入队失败保持 Forward，已接管的续包拒绝也不能泄漏到前台。
+- 普通按钮省略 content override，选中图标/数字跟随 Accent；色块内容保留专用覆盖。每帧将同一 lightMaterial 写入全部按钮、分隔线、色块与取色器形状；分隔线 fill/frame 每帧使用 Divider。
+- 四角镜像/平移同一标准 L 路径，按圆角半径与显示倍率缓存；线宽独立传给 DrawGeometry，悬停不创建路径。设备 epoch 变化或 ReleaseDeviceResources 清缓存。
+
+### 4. Validation & Error Matrix
+
+积压采样跨180°：保留方向；邮箱满：现有取消流程；外部 Down 后编辑器取得焦点：repeat/Up 放行；Owned Down 后失焦：repeat/Up 消费；路径创建失败：跳过角标并在下次绘制重试。
+
+### 5. Good / Base / Bad Cases
+
+Good：角度原始采样保留、Bridge只留最新预览。Base：普通悬停 Move 合并。Bad：仅在 Pointer 内累计角度，却让其上游覆盖中间采样。
+
+### 6. Tests Required
+
+`--ui3-shape-editor-test`：暂停真实 worker 后批量提交角度采样，经 SubmitSurfaceInput/合并点重建90°至300°的210°扫角；Bridge仅余 Begin/最新Preview/Commit；Space打开真实弹层后的repeat/Up、外部Down后焦点改变；选中图标Accent、浅色按钮点光参数、原地换主题的Divider颜色及材质；稳态悬停路径创建计数不增加，资源释放后只重建一次。构建/运行须另有实际结果，源码复核不视为通过。
+
+### 7. Wrong vs Correct
+
+Wrong：每次按键消息重新判断焦点；每帧 CreatePathGeometry。Correct：首次Down锁归属到Up；缓存标准角标，仅用矩阵和描边线宽消费状态变化。

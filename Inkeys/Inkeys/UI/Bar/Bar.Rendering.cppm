@@ -356,6 +356,8 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color,
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
 		FLOAT leftOpacity, FLOAT opacity);
+	// 编辑器复用主栏既有色板渐变与双颜色保持圆环。
+public:
 	ID2D1LinearGradientBrush* GetColorPickerHueGradientBrush(
 		ID2D1DeviceContext* deviceContext,
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint);
@@ -367,6 +369,7 @@ protected:
 		D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
 		FLOAT progress, COLORREF trackColor, COLORREF progressColor,
 		FLOAT trackOpacity, FLOAT progressOpacity);
+protected:
 	ID2D1PathGeometry* GetThicknessPreviewPath();
 	ID2D1StrokeStyle1* GetThicknessPreviewStrokeStyle();
 	ID2D1StrokeStyle* GetRoundStrokeStyle();
@@ -547,3 +550,16 @@ protected:
 	friend class BarUISetClass;
 	friend class BarRenderLoopCoordinator;
 };
+
+// 输入几何均为像素；主栏保留每层独立合成，编辑器可对整枚Thumb统一淡出。
+export struct BarSliderThumbStyle
+{
+	D2D1_POINT_2F centerPx{};
+	FLOAT outerDiameterPx = 20, centerDiameterPx = 12;
+	double accentOpacity = 1, lightWeight = 0, opacity = 1;
+	FLOAT frameThicknessPx = 1;
+	COLORREF surfaceColor = RGB(0, 0, 0), accentColor = RGB(88, 255, 236);
+	bool compositeOpacity = false;
+};
+export void DrawBarSliderThumb(BarUIRendering& renderer, ID2D1DeviceContext* dc,
+	const BarSliderThumbStyle& style, BarUiSVGClass* iconSvg = nullptr, double iconScale = 1.0);

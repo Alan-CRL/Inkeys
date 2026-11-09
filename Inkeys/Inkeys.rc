@@ -403,6 +403,12 @@ BARSHAPEEXPONENTIAL     UI                      "src\\UI\\barShapeExponential.sv
 
 BARSHAPELOGARITHMIC     UI                      "src\\UI\\barShapeLogarithmic.svg"
 
+BARSHAPEAUXCENTER       UI                      "src\\UI\\barShapeAuxCenter.svg"
+
+BARSHAPEAUXFOCI         UI                      "src\\UI\\barShapeAuxFoci.svg"
+
+BARSHAPEAUXDIAGONALS    UI                      "src\\UI\\barShapeAuxDiagonals.svg"
+
 COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg"
 
 COLORCUSTOM             PNG                     "src\\UI\\color\\colorCustom.png"

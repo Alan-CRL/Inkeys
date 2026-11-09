@@ -1976,6 +1976,7 @@ namespace Inkeys::UI::Bar
 		{
 			return !previous.forMain && !next.forMain && previous.surface.window == next.surface.window
 				&& previous.surface.message == WM_MOUSEMOVE && next.surface.message == WM_MOUSEMOVE
+				&& !previous.surface.preserveMoveSamples && !next.surface.preserveMoveSamples
 				&& previous.surface.generation == next.surface.generation
 				&& previous.surface.presentedRevision == next.surface.presentedRevision
 				&& previous.surface.semanticRevision == next.surface.semanticRevision

@@ -6,6 +6,7 @@ module;
 #include <d2d1_1.h>
 #include <windows.h>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -191,6 +192,32 @@ export namespace Inkeys::UI::Bar
 	std::chrono::steady_clock::time_point RetryShapeUiIntents(std::chrono::steady_clock::time_point) noexcept;
 	void ClearShapeUiIntents() noexcept;
 	int RunShapeEditorOffscreenTest();
+	// 首次Down锁定整次按压归属；弹层、前台与生命周期变化不能泄漏repeat/Up。
+	class ShapeEditorKeyboardOwnership
+	{
+	public:
+		template<class FirstDown, class Continue> bool Route(BYTE key, bool down, FirstDown firstDown, Continue continuation)
+		{
+			auto& state = keys_[key];
+			if (!down)
+			{
+				const bool owned = state.exchange(0) == 2;
+				if (owned) continuation();
+				return owned;
+			}
+			const auto pressed = state.load();
+			if (pressed)
+			{
+				if (pressed == 2) continuation();
+				return pressed == 2;
+			}
+			const bool owned = firstDown();
+			state.store(owned ? 2 : 1);
+			return owned;
+		}
+	private:
+		std::array<std::atomic<BYTE>, 256> keys_{};
+	};
 	class ShapeEditorSurface
 	{
 	public:
@@ -209,9 +236,11 @@ export namespace Inkeys::UI::Bar
 		// 自上次成功提交后输入快照、布局、动画或光照有变化才需要回读与 ULW。
 		bool NeedsPresent() const noexcept;
 		ShapeEditorHit Hit(POINT screen) const;
+		bool PreservePointerTrajectory(POINT down) const;
 		bool Pointer(UINT message, POINT screen, bool captureOwned = true, std::uint64_t expectedPresentation = 0, short wheelDelta = 0);
 		std::uint64_t PresentedGeneration() const;
 		bool Keyboard(BYTE key, bool down);
+		bool HasKeyboardFocus() const;
 		void CancelPointer();
 		void ReleaseDeviceResources();
 		// 离屏测试与生产输入共用同一动作出口；不改业务状态。
