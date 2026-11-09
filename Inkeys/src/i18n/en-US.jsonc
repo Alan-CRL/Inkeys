@@ -143,7 +143,17 @@
         "HeightStep": "Set height",
         "Complete": "Finish",
         "Back": "Back",
-        "CancelAction": "Cancel"
+        "CancelAction": "Cancel",
+        "StepFormat": "Step {0} · {1}",
+        "PointCountFormat": "{0} points placed · {1}",
+        "BackName": "Previous step",
+        "BackTooltip": "Undo the last confirmed step",
+        "ForwardName": "Next step",
+        "ForwardTooltip": "Restore the last undone step",
+        "CompleteName": "Finish drawing",
+        "CompleteTooltip": "Finish the polyline or close the polygon",
+        "CancelName": "Cancel",
+        "CancelTooltip": "Cancel this drawing"
       },
       "GeometryAttributes":
       {

@@ -143,7 +143,17 @@
         "HeightStep": "Ustaw wysokość",
         "Complete": "Zakończ",
         "Back": "Wstecz",
-        "CancelAction": "Anuluj"
+        "CancelAction": "Anuluj",
+        "StepFormat": "Krok {0} · {1}",
+        "PointCountFormat": "Ustalono punktów: {0} · {1}",
+        "BackName": "Poprzedni krok",
+        "BackTooltip": "Cofnij ostatni zatwierdzony krok",
+        "ForwardName": "Następny krok",
+        "ForwardTooltip": "Przywróć ostatnio cofnięty krok",
+        "CompleteName": "Zakończ rysowanie",
+        "CompleteTooltip": "Zakończ łamaną lub zamknij wielokąt",
+        "CancelName": "Anuluj",
+        "CancelTooltip": "Anuluj to rysowanie"
       },
       "GeometryAttributes":
       {

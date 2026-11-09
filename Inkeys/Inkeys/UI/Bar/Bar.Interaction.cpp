@@ -9,6 +9,7 @@ module;
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "../../Drawing/Draw3/Draw3.Shortcut.h"
 #include "../../Input/KeyboardShortcuts.h"
 #include <deque>
@@ -947,6 +948,60 @@ namespace
 		return true;
 	}
 
+	// 接受起笔后的唯一策略入口；通知锁存首笔构造资格，快照补充已发布的会话状态。
+	void ApplyAcceptedStrokeAutoCollapsePolicy(const AcceptedStrokeBegin& notice, Inkeys::UI::Bar::BarBottomDockMode dockMode)
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto shapeUi = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+		const bool erasing = notice.kind == Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind::Eraser;
+		if (ShouldPauseDrawingAutoCollapse(notice.shapeConstruction || (shapeUi && shapeUi->construction.active),erasing)) return;
+		const int policy = erasing ? static_cast<int>(Inkeys::config.UI.Bar.AutoCollapse.Erasing)
+			: static_cast<int>(Inkeys::config.UI.Bar.AutoCollapse.Drawing);
+		if (ShouldAutoCollapse(policy,dockMode)) FoldBarAutomatically();
+	}
+
+}
+
+int Inkeys::UI::Bar::RunConstructionAutoCollapseProductionTest() noexcept
+{
+	try
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		const auto saved = ProductShapeUiSnapshot();
+		const bool folded = barUISet.barState.fold;
+		const int drawing = Inkeys::config.UI.Bar.AutoCollapse.Drawing, erasing = Inkeys::config.UI.Bar.AutoCollapse.Erasing;
+		struct Restore
+		{
+			std::shared_ptr<const ShapeUiSnapshot> snapshot; bool fold; int drawing, erasing;
+			~Restore(){ PublishShapeUiSnapshot(snapshot);barUISet.barState.fold=fold;Inkeys::config.UI.Bar.AutoCollapse.Drawing=drawing;Inkeys::config.UI.Bar.AutoCollapse.Erasing=erasing; }
+		} restore{saved,folded,drawing,erasing};
+		int failures=0;
+		const auto check=[&](bool ok,const char* label){if(!ok){++failures;std::fprintf(stderr,"[Construction.AutoCollapse] FAIL %s\n",label);}};
+		AcceptedStrokeBegin notice{};notice.kind=Bridge::CompletedStrokeKind::Shape;
+		for(const auto mode:{BarBottomDockMode::Floating,BarBottomDockMode::BottomDocked})for(const int policy:{1,2})
+		{
+			Inkeys::config.UI.Bar.AutoCollapse.Drawing=policy;barUISet.barState.fold=false;
+			auto snapshot=std::make_shared<ShapeUiSnapshot>();snapshot->construction.active=true;PublishShapeUiSnapshot(snapshot);
+			ApplyAcceptedStrokeAutoCollapsePolicy(notice,mode);check(!barUISet.barState.fold,"active construction pauses Drawing policy in both modes");
+			// 首笔通知可先于空快照/未激活快照到达，仍须保护构造提示。
+			notice.shapeConstruction=true;PublishShapeUiSnapshot({});ApplyAcceptedStrokeAutoCollapsePolicy(notice,mode);
+			check(!barUISet.barState.fold,"construction notice pauses Drawing before the first snapshot");
+			PublishShapeUiSnapshot(std::make_shared<ShapeUiSnapshot>());ApplyAcceptedStrokeAutoCollapsePolicy(notice,mode);
+			check(!barUISet.barState.fold,"construction notice pauses Drawing with an inactive snapshot");
+			notice.shapeConstruction=false;
+			for(const auto kind:{Bridge::CompletedStrokeKind::Shape,Bridge::CompletedStrokeKind::Drawing})
+			{
+				barUISet.barState.fold=false;notice.kind=kind;ApplyAcceptedStrokeAutoCollapsePolicy(notice,mode);
+				check(static_cast<bool>(barUISet.barState.fold)==ShouldAutoCollapse(policy,mode),"normal shapes and strokes retain the existing collapse policy");
+			}
+		}
+		barUISet.barState.fold=false;Inkeys::config.UI.Bar.AutoCollapse.Erasing=2;
+		auto snapshot=std::make_shared<ShapeUiSnapshot>();snapshot->construction.active=true;PublishShapeUiSnapshot(snapshot);
+		notice.kind=Bridge::CompletedStrokeKind::Eraser;notice.shapeConstruction=true;ApplyAcceptedStrokeAutoCollapsePolicy(notice,BarBottomDockMode::BottomDocked);
+		check(barUISet.barState.fold,"Eraser policy stays independent of construction");
+		return failures?1:0;
+	}
+	catch(...){return 1;}
 }
 
 bool BarUISetClass::IsAutoCollapsePointerHit(POINT point)
@@ -1026,11 +1081,9 @@ void BarUISetClass::PollGlobalMouseInput()
 	{
 		const auto& notice = notices[i];
 		if (offSignal || !Inkeys::Drawing::Draw3::ProductHost().IsAcceptedStrokeCurrent(notice)) continue;
-		const int policy = notice.kind == Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind::Eraser
-			? Inkeys::config.UI.Bar.AutoCollapse.Erasing : Inkeys::config.UI.Bar.AutoCollapse.Drawing;
 		// 已完成的短笔迹仍是有效起笔；只检查场景身份，不检查聚合活动计数。
-		if (ShouldAutoCollapse(policy, barUISet.bottomDockMode.load(std::memory_order_acquire)))
-			FoldBarAutomatically();
+		// 停靠模式由友元调用方读取后传入，策略函数本身不访问受保护成员。
+		ApplyAcceptedStrokeAutoCollapsePolicy(notice, barUISet.bottomDockMode.load(std::memory_order_acquire));
 	}
 }
 
@@ -1043,6 +1096,7 @@ namespace
 	{
 		SurfaceInputEvent surface{};
 		ExMessage main{};
+		BarConstructionPrompt::KeyboardMessage keyboard;
 		std::optional<BarQueuedPointerSample> pointer;
 		bool sourceObserved = false;
 		std::shared_ptr<BarButtonClass> mainButtonHit;
@@ -1086,6 +1140,7 @@ namespace
 		bool cancelled = false;
 		std::shared_ptr<BarButtonClass> currentButtonHit;
 		bool currentHitFrozen = false;
+		BarConstructionPrompt::KeyboardMessage currentKeyboard;
 		std::uint64_t currentCaptureTicket = 0, gestureCaptureTicket = 0;
 		Pointer::Touch::Identity currentTouchRoute, gestureTouchRoute;
 	};
@@ -1180,6 +1235,10 @@ namespace
 				|| message.message == WM_SYSKEYDOWN || message.message == WM_SYSKEYUP) ? EM_KEY : EM_MOUSE;
 		SharedInputEnvelope event;
 		event.forMain = true; event.main = message;
+		// ExMessage 的鼠标 shift 与 vkcode 共用 union，修饰键须独立冻结并随 FIFO 传递。
+		if (message.category == EM_KEY)
+			event.keyboard = { message.vkcode, message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN,
+				(GetKeyState(VK_SHIFT) & 0x8000) != 0 };
 		if (pointer) event.pointer = *pointer;
 		event.fixtureSource = Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled();
 		event.surface.window = window;
@@ -1246,6 +1305,7 @@ namespace
 			}
 			auto& context = *mainInteractionAwaitContext;
 			context.currentButtonHit = event.mainButtonHit; context.currentHitFrozen = event.mainHitFrozen;
+			context.currentKeyboard = event.keyboard;
 			context.currentCaptureTicket = event.surface.captureTicket;
 			context.currentTouchRoute={event.surface.window,event.surface.touchRegistration,event.surface.touchRouteGeneration};
 			return true;
@@ -2266,6 +2326,21 @@ namespace Inkeys::UI::Bar
 		{
 			if (!value) { ++failures; std::fprintf(stderr, "[UI3Input] FAIL %s\n", name); }
 		};
+		// 模拟 Shift 改变前后捕获的两条键盘消息，验证真实 FIFO/出队上下文不重采样。
+		for (const bool shift : {true, false})
+		{
+			SharedInputEnvelope queued; queued.forMain = true;
+			queued.main.category = EM_KEY; queued.main.message = WM_KEYDOWN; queued.main.vkcode = VK_TAB;
+			queued.keyboard = {VK_TAB, true, shift};
+			check(sharedInputMailbox.Push(std::move(queued), CanCoalesceMainInput), "captured keyboard enters the actual mailbox");
+			MainInteractionAwaitContext frozen; auto* previous = mainInteractionAwaitContext;
+			mainInteractionAwaitContext = &frozen; (void)PumpSharedInteraction(frozen, InteractionClock::now());
+			SharedInputEnvelope consumed; const bool received = TryReadQueuedMainInput(EM_KEY, consumed);
+			mainInteractionAwaitContext = previous;
+			check(received && consumed.main.vkcode == VK_TAB && frozen.currentKeyboard.key == VK_TAB
+				&& frozen.currentKeyboard.down && frozen.currentKeyboard.shift == shift,
+				"keyboard FIFO preserves virtual key and capture-time Shift independently");
+		}
 		{
 			const auto savedInput=SnapshotPptIdleInput();const auto savedDeadline=pptIdleDeadline.ticks.load();
 			// 真正冻结→mailbox→成功几何变化→消费：同一次 Down 的恢复命中必须与业务冻结来源一致。
@@ -5251,8 +5326,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP
 			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
 		{
-			if (barUISet.constructionPrompt.Keyboard(barUISet, msg.vkcode,
-				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
+			if (barUISet.constructionPrompt.Keyboard(barUISet, mainInteractionAwaitContext->currentKeyboard))
 				return BarInteractionStageResult::Consumed;
 			if (barUISet.geometryAttribute.Keyboard(barUISet, msg.vkcode,
 				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
@@ -10213,7 +10287,7 @@ namespace Inkeys::UI::Bar
 		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT
 			|| vkCode == VK_RIGHT || vkCode == VK_RETURN || vkCode == VK_SPACE;
 		// 撤回属性复用同一组键盘路由键（Escape/Tab/方向/回车/空格）。
-		const bool auxPanelWantsKeyboard = barUISet.constructionPrompt.Visible() || barUISet.geometryAttribute.WantsKeyboard() || barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
+		const bool auxPanelWantsKeyboard = barUISet.constructionPrompt.WantsKeyboard() || barUISet.geometryAttribute.WantsKeyboard() || barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
 		if (eraserKey && !offSignal && floating_window && auxPanelWantsKeyboard
 			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
 		{

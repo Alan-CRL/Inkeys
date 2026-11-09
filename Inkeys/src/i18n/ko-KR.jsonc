@@ -143,7 +143,17 @@
         "HeightStep": "높이를 지정하세요",
         "Complete": "완료",
         "Back": "뒤로",
-        "CancelAction": "취소"
+        "CancelAction": "취소",
+        "StepFormat": "{0}단계 · {1}",
+        "PointCountFormat": "점 {0}개 확정 · {1}",
+        "BackName": "이전 단계",
+        "BackTooltip": "마지막으로 확정한 단계 되돌리기",
+        "ForwardName": "다음 단계",
+        "ForwardTooltip": "방금 되돌린 단계 복원",
+        "CompleteName": "그리기 완료",
+        "CompleteTooltip": "꺾은선을 완료하거나 다각형 닫기",
+        "CancelName": "취소",
+        "CancelTooltip": "이 그리기 취소"
       },
       "GeometryAttributes":
       {

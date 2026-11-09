@@ -143,7 +143,17 @@
         "HeightStep": "Definisci l’altezza",
         "Complete": "Fine",
         "Back": "Indietro",
-        "CancelAction": "Annulla"
+        "CancelAction": "Annulla",
+        "StepFormat": "Passaggio {0} · {1}",
+        "PointCountFormat": "{0} punti inseriti · {1}",
+        "BackName": "Passaggio precedente",
+        "BackTooltip": "Annulla l'ultimo passaggio confermato",
+        "ForwardName": "Passaggio successivo",
+        "ForwardTooltip": "Ripristina l'ultimo passaggio annullato",
+        "CompleteName": "Termina disegno",
+        "CompleteTooltip": "Termina la polilinea o chiudi il poligono",
+        "CancelName": "Annulla",
+        "CancelTooltip": "Annulla questo disegno"
       },
       "GeometryAttributes":
       {

@@ -1448,7 +1448,7 @@ ID2D1LinearGradientBrush* BarUIRendering::GetColorPickerToneGradientBrush(
 void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 	D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
 	FLOAT progress, COLORREF trackColor, COLORREF progressColor,
-	FLOAT trackOpacity, FLOAT progressOpacity)
+	FLOAT trackOpacity, FLOAT progressOpacity, bool roundCaps)
 {
 	if (!deviceContext || radius <= 0.0F || strokeWidth <= 0.0F) return;
 	progress = clamp(progress, 0.0F, 1.0F);
@@ -1488,7 +1488,7 @@ void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 		sink->AddArc(arc);
 		sink->EndFigure(D2D1_FIGURE_END_OPEN);
 		if (SUCCEEDED(sink->Close()))
-			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(path.Get(), progressBrush, strokeWidth);
+			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(path.Get(), progressBrush, strokeWidth, roundCaps ? GetRoundStrokeStyle() : nullptr);
 	}
 }
 

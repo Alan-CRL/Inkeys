@@ -143,7 +143,17 @@
         "HeightStep": "Stabilește înălțimea",
         "Complete": "Finalizare",
         "Back": "Înapoi",
-        "CancelAction": "Anulare"
+        "CancelAction": "Anulare",
+        "StepFormat": "Pasul {0} · {1}",
+        "PointCountFormat": "{0} puncte plasate · {1}",
+        "BackName": "Pasul anterior",
+        "BackTooltip": "Anulează ultimul pas confirmat",
+        "ForwardName": "Pasul următor",
+        "ForwardTooltip": "Restabilește ultimul pas anulat",
+        "CompleteName": "Termină desenul",
+        "CompleteTooltip": "Termină linia frântă sau închide poligonul",
+        "CancelName": "Anulează",
+        "CancelTooltip": "Anulează acest desen"
       },
       "GeometryAttributes":
       {

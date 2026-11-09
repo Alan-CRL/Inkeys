@@ -260,14 +260,6 @@ enum class ThicknessFineDialRangeTransitionPhase
 	RetireOldRange,
 };
 
-enum class BarBottomDockIndicatorContentPhase
-{
-	Stable,
-	ExpandingFrame,
-	SwappingText,
-	ShrinkingFrame,
-};
-
 struct BarRenderFrameSnapshot
 {
 	std::vector<std::shared_ptr<BarButtonClass>> mainButtons;
@@ -350,6 +342,8 @@ using Inkeys::UI::Bar::BarBottomDockHorizontalMapping;
 using Inkeys::UI::Bar::BarBottomDockFeedbackAction;
 using Inkeys::UI::Bar::BarBottomDockFeedbackGeometry;
 using Inkeys::UI::Bar::BarBottomDockIndicatorContentAction;
+using Inkeys::UI::Bar::BarBottomDockIndicatorContentPhase;
+using Inkeys::UI::Bar::AdvanceBarIndicatorContent;
 using Inkeys::UI::Bar::BarBottomDockIndicatorCornerRadiusDip;
 using Inkeys::UI::Bar::BarBottomDockIndicatorHeightDip;
 using Inkeys::UI::Bar::BarPresentMappingMode;
@@ -7275,7 +7269,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 	const bool promptChanged = owner_.constructionPrompt.Advance(owner_, shapeUi, animationDtSeconds, currentAnimationSpeedRate,
 		frameZoom, state.activeWorkArea, POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
 			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y}, state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
-		state.bottomDockMapping.rigidOverlayTranslationYDip);
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline);
 	if (promptChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup));
 
 	const bool geometryChanged = owner_.geometryAttribute.Advance(owner_, state.stateModeSnapshot,
@@ -7695,70 +7689,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			const bool textMatches = state.bottomDockIndicatorWord.content.GetVal()
 				== state.bottomDockIndicatorDesiredLabel
 				&& !state.bottomDockIndicatorTextTransitionActive;
-			switch (state.bottomDockIndicatorContentPhase)
-			{
-			case BarBottomDockIndicatorContentPhase::Stable:
-				switch (ResolveBarBottomDockIndicatorContentAction(
-					currentWidthDip, desiredTextWidthDip, textMatches))
-				{
-				case BarBottomDockIndicatorContentAction::ExpandFrame:
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ExpandingFrame);
-					break;
-				case BarBottomDockIndicatorContentAction::SwapText:
-					StartIndicatorTextSwap();
-					break;
-				case BarBottomDockIndicatorContentAction::ShrinkFrame:
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
-					break;
-				case BarBottomDockIndicatorContentAction::None:
-					break;
-				}
-				break;
-			case BarBottomDockIndicatorContentPhase::ExpandingFrame:
-				if (textMatches && desiredTextWidthDip + 0.000001
-					< state.bottomDockIndicatorTextWidthDip.tar)
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
-				else if (desiredTextWidthDip
-					> state.bottomDockIndicatorTextWidthDip.tar + 0.000001)
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ExpandingFrame);
-				break;
-			case BarBottomDockIndicatorContentPhase::SwappingText:
-				if (!textMatches) StartIndicatorTextSwap();
-				else if (currentWidthDip > desiredTextWidthDip + 0.000001)
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
-				else state.bottomDockIndicatorContentPhase =
-					BarBottomDockIndicatorContentPhase::Stable;
-				break;
-			case BarBottomDockIndicatorContentPhase::ShrinkingFrame:
-				if (!textMatches)
-				{
-					if (currentWidthDip + 0.000001 < desiredTextWidthDip)
-						StartIndicatorWidth(desiredTextWidthDip,
-							BarBottomDockIndicatorContentPhase::ExpandingFrame);
-					else StartIndicatorTextSwap();
-				}
-				break;
-			}
-			if (state.bottomDockIndicatorContentPhase
-				== BarBottomDockIndicatorContentPhase::ExpandingFrame
-				&& state.bottomDockIndicatorTextWidthDip.IsSame())
-			{
-				if (state.bottomDockIndicatorWord.content.GetVal()
-					!= state.bottomDockIndicatorDesiredLabel)
-					StartIndicatorTextSwap();
-				else state.bottomDockIndicatorContentPhase =
-					BarBottomDockIndicatorContentPhase::Stable;
-			}
-			else if (state.bottomDockIndicatorContentPhase
-				== BarBottomDockIndicatorContentPhase::ShrinkingFrame
-				&& state.bottomDockIndicatorTextWidthDip.IsSame())
-				state.bottomDockIndicatorContentPhase =
-					BarBottomDockIndicatorContentPhase::Stable;
+			AdvanceBarIndicatorContent(state.bottomDockIndicatorContentPhase,
+				state.bottomDockIndicatorTextWidthDip, currentWidthDip, desiredTextWidthDip, textMatches,
+				[&] { return state.bottomDockIndicatorWord.content.GetVal() == state.bottomDockIndicatorDesiredLabel; },
+				StartIndicatorWidth, StartIndicatorTextSwap);
 		}
 		dockModeTextSize.width = static_cast<FLOAT>(max(0.0,
 			static_cast<double>(state.bottomDockIndicatorTextWidthDip.val)));

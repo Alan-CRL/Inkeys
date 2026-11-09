@@ -365,10 +365,11 @@ public:
 		ID2D1DeviceContext* deviceContext, bool darkTone,
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
 		FLOAT opacity);
+	// 构造提示复用双配色进度环；圆头可选，原有调用默认保持原样。
 	void DrawProgressRing(ID2D1DeviceContext* deviceContext,
 		D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
 		FLOAT progress, COLORREF trackColor, COLORREF progressColor,
-		FLOAT trackOpacity, FLOAT progressOpacity);
+		FLOAT trackOpacity, FLOAT progressOpacity, bool roundCaps = false);
 protected:
 	ID2D1PathGeometry* GetThicknessPreviewPath();
 	ID2D1StrokeStyle1* GetThicknessPreviewStrokeStyle();

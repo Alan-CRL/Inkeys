@@ -143,7 +143,17 @@
         "HeightStep": "Xác định chiều cao",
         "Complete": "Hoàn tất",
         "Back": "Quay lại",
-        "CancelAction": "Hủy"
+        "CancelAction": "Hủy",
+        "StepFormat": "Bước {0} · {1}",
+        "PointCountFormat": "Đã đặt {0} điểm · {1}",
+        "BackName": "Bước trước",
+        "BackTooltip": "Hoàn tác bước đã xác nhận gần nhất",
+        "ForwardName": "Bước tiếp",
+        "ForwardTooltip": "Khôi phục bước vừa hoàn tác",
+        "CompleteName": "Kết thúc vẽ",
+        "CompleteTooltip": "Hoàn tất đường gấp khúc hoặc khép kín đa giác",
+        "CancelName": "Hủy",
+        "CancelTooltip": "Hủy lần vẽ này"
       },
       "GeometryAttributes":
       {

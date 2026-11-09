@@ -47,7 +47,7 @@
 - SelectionOverlay由Window Service及已有RenderPipeline/Bar worker管理，处于Drawpad之上、Bar之下，与PPT同层；没有独立窗口线程或RTS。按成功呈现的Frame命中，零alpha热区的44DIP触达须有原生输入支撑。控制点为共享 `DrawBarSliderThumb` 的 WinUI3 Thumb（外径20DIP，内芯12/14/10，中心类点8/10/6），旋转钮外径28DIP、距 frameRect 顶边24DIP、1.5DIP连接线；外框为 frameRect 上的2DIP、r6 圆角框；立体外框角缩放点画成沿圆角的L形角标（4/5DIP）。热区至少44DIP且不可见（alpha≤1）；优先旋转，其次专属点与外框角标取最近者（相等取专属点），最后对象本体。视觉细节以 `11-05-shape-ux-edit-visual/design.md` 为准。
 - 浮条复用标准按钮/独立SingleRow属性list及既有调色内容，只改当前对象；进入主栏工具配置结束编辑。三档宽度来自已有策略；不引入细调滑块/数字框/复制删除翻转组合。小工作区采用受限可滚动扩展区，保持按钮尺寸。主栏自身图形目录、属性list、底部5DIP留白不变。
 - 多笔创建首笔冻结工具/样式/ID/显示上下文，真实Up确认参数，预测只重建当前未确认步骤。中间态不入InkCanvas/历史/L2持久层。固定两步最后Up自动提交；折线至少2点、多边形至少3个有效简单多边形顶点后Complete闭合，首点不重复保存。Cancel/Fatal未完成步骤不能物化成圆或矩形降级对象。
-- 主栏提示是Bar场景的独立状态，复用原居中提示位置/外观/动画，包含必要Complete/Back/Cancel；不得覆盖原bottomDockIndicator状态或新增HWND。全局Undo在构造中执行Back，结束后恢复文档Undo。
+- 主栏提示是Bar场景的独立状态，复用原居中提示位置/外观/动画，包含必要Complete/Back/Forward/Cancel；不得覆盖原bottomDockIndicator状态或新增HWND。全局Undo/Redo在构造中执行Back/Forward，结束后恢复文档Undo/Redo。
 - 旧Cube解码后可能仍持有非正方形raw对角；句柄、深度锚点与编辑均使用从start沿原方向取max(|dx|,|dy|)的正方形角点，零位移不得改变可见几何。Cuboid/Cube深度手势在EditSession::Begin锁定后角；Candidate的editDepthAnchor仅供句柄视图，跨x/y零点不换角，Commit清除，不入codec或journal。
 - 控制点先改typed Construction真值，再统一生成几何/边界/命中/render。缩放保持线宽；圆/规则多边形/正方体保约束，非等比局部缩放不引入错切，退化编辑不提交。新箭头头长=3倍线宽，总宽同头长，短线不压缩；读取v2旧箭头保留旧规则。
 - 控制点模型（11-05 edit-interaction）：`BuildEditHandles(shape, options, &frameRect)` 由 `shape_interaction.inl` 的预设表驱动（布局、是否旋转钮、外框是否有角点、等比与否），取消8点框与边中点。`frameRect` 为本地坐标中含描边包围盒外扩8 DIP（按 displayScale 和对象轴向缩放换算），UI 只绘制、不自算。只有立体图形的外框四角有缩放点（id 10/12/14/16）；旋转钮（id 1）仅矩形、椭圆、三角形、平行四边形、菱形、梯形、折线、多边形和立体图形。id 约定：0 本体移动，100 中心（整体移动），101 半径，102/103 轴或角，104 深度，105 高度，106/107 椭圆焦点 F1/F2（仅对象带 Foci 辅助位时出现），1000+ 端点/顶点/角点。无效拖动在预览中钳制到最近有效状态，`EditSession::Commit` 对仍无效的释放返回空，不写历史和 journal。圆弧/扇形角度编辑按轨迹累计（`EditSession` 保存累计角，UI 意图携带 `angleDelta`，跨 latest-wins 合并保留）；外接框模式的圆首次拖半径点时转为 CenterRadius。立方体/长方体深度手势在开始时锁定后角；旧非方形 Cube 按可见正方形角点规范化。
@@ -157,3 +157,35 @@ Good：角度原始采样保留、Bridge只留最新预览。Base：普通悬停
 ### 7. Wrong vs Correct
 
 Wrong：每次按键消息重新判断焦点；每帧 CreatePathGeometry。Correct：首次Down锁归属到Up；缓存标准角标，仅用矩阵和描边线宽消费状态变化。
+
+## 绘制步骤提示与恢复栈（11-05 construction-prompt）
+
+### 1. Scope / Trigger
+修改多笔构造、提示或绘制自动收起时适用；视觉参数以任务design.md最终稿为准。
+
+### 2. Signatures
+- `ConstructionStatus::totalSteps`：单笔1、固定多笔2、点工具0；`canForward`来自恢复栈。
+- `ConstructionSession::Back()/Forward()`返回回退/恢复是否成功；`ShapeUiActionKind::ConstructionForward`追加到枚举尾部。
+- `ShapeUiSnapshot::constructionContactActive`明确表达物理接触，不能从三个can字段全false反推。
+- `AdvanceBarIndicatorContent`复用底栏三阶段决策；动画值与损伤仍由各渲染owner持有。
+
+### 3. Contracts
+- Back保存确认步骤；Forward后进先出恢复；确认新步骤才清空恢复栈。点工具只存被移除顶点，固定步工具保留确认候选；未确认扫角不能随恢复复活。
+- Forward与Back校验当前完整身份；Cancel保留接触期屏障语义。接触期间全局Undo/Redo丢弃当前物理步骤，防止迟到Up重复确认；提示的全部按钮禁用。
+- 提示与手动fold独立，fold时锚定主按钮；起笔通知在当前construction active时跳过Drawing自动收起，Eraser策略独立。
+- 深浅主题沿主栏当前材质，背景和内容透明度分别消费常驻合同。提示禁用图标固定0.30；其他客户端浅色0.45不变。
+
+### 4. Validation & Error Matrix
+- 不足2个折线点/3个有效简单多边形点：Complete拒绝；不写文档或历史。
+- Forward空栈、旧身份或接触中UI动作：拒绝；预览不入历史。
+- QueueFull的Forward终结重试尚未接入：分类器位于本任务禁止修改的Bar.ShapeEditor.cpp，须解决范围冲突后补齐，不能宣称R2已全通过。
+
+### 5. Good / Base / Bad Cases
+Good：Back→Forward恢复同一步；Back→新确认→Forward拒绝。Base：取消后文档不变。Bad：恢复第二步预览积累的整圈扫角，或fold使提示消失。
+
+### 6. Tests Required
+共享核心和生产事务覆盖恢复/分支/闭合/一对象一历史；提示现有geometry离屏入口覆盖深浅×1/2倍率、圆弧两步、多边形点数、三阶段、显隐、键盘和手动fold；state-mode入口调用同源自动收起生产测试。截图打印绝对路径。本轮仅源码检查，未运行这些入口。
+
+### 7. Wrong vs Correct
+Wrong：用`!canBack && !canComplete`判定物理接触；把`fold`作为提示可见条件。
+Correct：读`constructionContactActive`禁用全部动作；可见性取多笔会话，fold仅改变锚点。

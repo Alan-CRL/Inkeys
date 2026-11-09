@@ -143,7 +143,17 @@
         "HeightStep": "Yüksekliği belirleyin",
         "Complete": "Bitir",
         "Back": "Geri",
-        "CancelAction": "İptal"
+        "CancelAction": "İptal",
+        "StepFormat": "Adım {0} · {1}",
+        "PointCountFormat": "{0} nokta yerleştirildi · {1}",
+        "BackName": "Önceki adım",
+        "BackTooltip": "Son onaylanan adımı geri al",
+        "ForwardName": "Sonraki adım",
+        "ForwardTooltip": "Son geri alınan adımı geri getir",
+        "CompleteName": "Çizimi bitir",
+        "CompleteTooltip": "Çoklu çizgiyi bitir veya çokgeni kapat",
+        "CancelName": "İptal",
+        "CancelTooltip": "Bu çizimi iptal et"
       },
       "GeometryAttributes":
       {

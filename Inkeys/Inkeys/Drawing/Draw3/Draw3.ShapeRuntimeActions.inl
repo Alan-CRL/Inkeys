@@ -375,7 +375,8 @@ auto publishShapeUi = [&]()
 		snapshot.identity.session = shapeUi.construction->identity.session;
 		snapshot.identity.objectId = shapeUi.construction->identity.objectId;
 		snapshot.construction = shapeUi.construction->session.Status();
-		if (shapeUi.construction->contactActive) { snapshot.construction.canBack = false; snapshot.construction.canComplete = false; }
+		snapshot.constructionContactActive = shapeUi.construction->contactActive;
+		if (shapeUi.construction->contactActive) { snapshot.construction.canBack = false; snapshot.construction.canForward = false; snapshot.construction.canComplete = false; }
 	}
 	else if (active.empty() && shapeUi.editor.object)
 	{
@@ -501,6 +502,13 @@ auto backShapeConstruction = [&](RECT& dirty)
 	if (shapeUi.construction->session.Back()) (void)updateConstructionPreview(*shapeUi.construction);
 	shapeUi.constructionVisualDirty = true; publishShapeUi();
 };
+auto forwardShapeConstruction = [&](RECT& dirty)
+{
+	if (!shapeUi.construction) return;
+	UnionRectInPlace(dirty,shapeBoundsRect(shapeUi.construction->renderData.bounds));
+	if (shapeUi.construction->session.Forward()) (void)updateConstructionPreview(*shapeUi.construction);
+	shapeUi.constructionVisualDirty = true; publishShapeUi();
+};
 auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 {
 	const auto scene = shapeScene();
@@ -509,11 +517,13 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 		action.identity.session == shapeUi.construction->identity.session && action.identity.objectId == shapeUi.construction->identity.objectId)
 	{ endCanvasFocus(CanvasFocusEndReason::Escape,dirty); publishShapeUi(); return; }
 	const bool constructionAction = action.kind == ShapeUiActionKind::ConstructionComplete ||
-		action.kind == ShapeUiActionKind::ConstructionBack || action.kind == ShapeUiActionKind::ConstructionCancel;
+		action.kind == ShapeUiActionKind::ConstructionBack || action.kind == ShapeUiActionKind::ConstructionForward ||
+		action.kind == ShapeUiActionKind::ConstructionCancel;
 	if (constructionAction)
 	{
 		if (!shapeUi.construction || !ShapeConstructionActionIdentityMatches(*shapeUi.construction,shapeUi.published.get(),action,scene.identity)) return;
 		if (action.kind == ShapeUiActionKind::ConstructionBack) backShapeConstruction(dirty);
+		else if (action.kind == ShapeUiActionKind::ConstructionForward) forwardShapeConstruction(dirty);
 		else if (action.kind == ShapeUiActionKind::ConstructionCancel) endCanvasFocus(CanvasFocusEndReason::Escape,dirty);
 		else
 		{
@@ -659,6 +669,16 @@ auto drainActiveShapeControlBarrier = [&](RECT& dirty)
 				for (auto* runtime : active) if (runtime && runtime->shape.construction == shapeUi.construction)
 					runtime->shape.constructionStepDiscarded = true;
 				backShapeConstruction(dirty);
+			}
+		}
+		else if (pending.type == CanvasCommandType::Redo && shapeUi.construction)
+		{
+			if (shapeUi.construction->session.Status().canForward)
+			{
+				// 与Undo对称：恢复确认步骤时丢弃本次未结束的物理接触，迟到Up不得重复确认。
+				for (auto* runtime : active) if (runtime && runtime->shape.construction == shapeUi.construction)
+					runtime->shape.constructionStepDiscarded = true;
+				forwardShapeConstruction(dirty);
 			}
 		}
 		else if (cancellingAction) processShapeUiAction(*pending.shapeAction,dirty);

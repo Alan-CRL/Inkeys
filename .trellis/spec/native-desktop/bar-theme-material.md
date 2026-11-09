@@ -39,6 +39,8 @@ namespace BarThemeMaterial {
 - 原始笔 RGB 永远只作为输入。仅 `IdtPen || IdtShape` 启用颜色指示，Selection/Eraser 等状态收回到对应默认中性色，不显示记忆笔色。Geometry 明确使用 Brush1；活动 Pen 按既有槽解析激光/荧光/普通笔。主图标保留一个 Color 动画，普通换笔/换色从 current 继续；初始化和 Geometry 接管非 Brush 颜色历史时直接回到正确源，避免串色。PointLight 的激光替换仍限定为活动 Pen/Laser。
 - 主按钮只使用一个稳定 `logo1` SVG 实例。它包含原中性笔/屏幕、4478887c 的 Frame94 渐变/笔尖/高光路径及浅色整体轮廓，通过内部属性加工实现深浅转换。Dark 端点保留原白笔底、白屏幕 `0.22` 和渐变指示，不使用整笔实色或 DisplayPenColor 提亮；Light 非绘制态笔身为 IconPrimary，屏幕为 9% 中性黑（`LightScreenOpacity=0.09`），绘制端点为真实整笔色。外轮廓（`#1A1A1A`）只给低对比笔色：`LightOutlineOpacity` 按笔色对 Surface 的对比度在 `3:1→1:1` 间给出 `0→0.55`，深色笔与非绘制态无描边。轮廓只描真正外缘，不给各个闭合笔段加 stroke；Light screen 保持中性色，Dark screen 允许原有渐变指示贡献。
 - 主图标部件颜色、原渐变 opacity、浅色轮廓及绘制态填色均由 current 材质权重、独立绘制态 Pct 和当前 Color 解析；禁止用两个完整 SVG/位图交叉淡化代替。外观改变必须同时触发 dirty 和缓存失效；外观失效重建失败不得显示旧语义，尺寸质量重建失败可保留旧位图。ResetCache/设备重建只清设备缓存，不清语义外观。单实例继续使用原点击脉冲、父继承、底栏刚性变换和窗口边界。普通 SVG 的 color1/color2、几何和缓存路径不变。
+- 图形编辑器（SelectionOverlay，11-05 edit-visual）与绘制步骤提示（11-05 construction-prompt）按常驻控件处理：表面 `themeSurface + residentSurface`，fill/frame 写 Dark 端点，pct 用 `BarMainBarFillOpacity`（常驻背景透明度只由 renderer 按 residentSurface 解析，pct 里不得再乘 `GetThemeResidentSurfaceOpacity`，否则 50% 会叠成约 31%），每帧把 `GetThemeLightWeight()` 写入所有表面和子控件（按钮、分隔线、色块）的 `lightMaterial`；内容绘制包在 `SetResidentContentOpacity(GetThemeResidentContentOpacity())` 内并在结束后恢复 1。编辑器的外框、控制点、旋转钮也乘内容透明度。编辑器的色板层与取色器层属于弹出层，固定 `BarDrawAttributeSurfaceOpacity`（0.95），不受常驻透明度影响。`SetResidentOpacity` 与主题已应用值变化必须 `RenderPipeline::Request(Client::SelectionOverlay)`，编辑器记住已应用的透明度与 lightWeight，变化时整窗重画。
+- 共享 `DrawBarSliderThumb(renderer, dc, const BarSliderThumbStyle&, icon, iconScale)` 是主栏粗细滑块与编辑器控制点/旋转钮的唯一 Thumb 绘制入口；主栏迁移要求像素不变（`--ui3-shape-editor-test` 中的旧公式对照回归保护）。
 
 ## 4. Validation & Error Matrix
 

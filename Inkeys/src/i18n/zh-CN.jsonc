@@ -143,7 +143,17 @@
         "HeightStep": "确定高度",
         "Complete": "完成",
         "Back": "回退",
-        "CancelAction": "取消"
+        "CancelAction": "取消",
+        "StepFormat": "第 {0} 步 · {1}",
+        "PointCountFormat": "已确定 {0} 个点 · {1}",
+        "BackName": "上一步",
+        "BackTooltip": "回退最近确认的一步",
+        "ForwardName": "下一步",
+        "ForwardTooltip": "恢复刚刚回退的一步",
+        "CompleteName": "结束绘制",
+        "CompleteTooltip": "完成折线或闭合多边形",
+        "CancelName": "取消",
+        "CancelTooltip": "取消本次绘制"
       },
       "GeometryAttributes":
       {

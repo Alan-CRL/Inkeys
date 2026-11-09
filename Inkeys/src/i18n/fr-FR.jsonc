@@ -143,7 +143,17 @@
         "HeightStep": "Définissez la hauteur",
         "Complete": "Terminer",
         "Back": "Retour",
-        "CancelAction": "Annuler"
+        "CancelAction": "Annuler",
+        "StepFormat": "Étape {0} · {1}",
+        "PointCountFormat": "{0} points placés · {1}",
+        "BackName": "Étape précédente",
+        "BackTooltip": "Annuler la dernière étape confirmée",
+        "ForwardName": "Étape suivante",
+        "ForwardTooltip": "Rétablir la dernière étape annulée",
+        "CompleteName": "Terminer le tracé",
+        "CompleteTooltip": "Terminer la polyligne ou fermer le polygone",
+        "CancelName": "Annuler",
+        "CancelTooltip": "Annuler ce tracé"
       },
       "GeometryAttributes":
       {

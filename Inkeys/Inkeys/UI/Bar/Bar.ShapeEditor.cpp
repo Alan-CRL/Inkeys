@@ -432,7 +432,9 @@ namespace Inkeys::UI::Bar
 			private : static bool Terminal(ShapeUiActionKind kind)
 			{
 				return kind == ShapeUiActionKind::CommitEdit || kind == ShapeUiActionKind::CancelEdit || kind == ShapeUiActionKind::CloseEditor
-					|| kind == ShapeUiActionKind::ConstructionComplete || kind == ShapeUiActionKind::ConstructionCancel;
+					|| kind == ShapeUiActionKind::ConstructionComplete || kind == ShapeUiActionKind::ConstructionCancel
+					// 下一步按 PRD R2 沿用终结意图的有界重试，队列满时不能丢失用户的前进操作。
+					|| kind == ShapeUiActionKind::ConstructionForward;
 			}
 			static bool Current(const std::shared_ptr<const ShapeUiSnapshot>& s, const ShapeUiAction& action)
 			{
@@ -441,7 +443,9 @@ namespace Inkeys::UI::Bar
 				const auto& b = s->identity;
 				if (a.session != b.session || a.documentGeneration != b.documentGeneration || a.displayGeneration != b.displayGeneration
 					|| a.workspace != b.workspace || a.pageId != b.pageId || a.pageIndex != b.pageIndex) return false;
-				if (action.kind == ShapeUiActionKind::ConstructionComplete || action.kind == ShapeUiActionKind::ConstructionCancel) return s->construction.active;
+				// 构造快照没有 object；前进与完成/取消都按同一会话及对象身份重试。
+				if (action.kind == ShapeUiActionKind::ConstructionComplete || action.kind == ShapeUiActionKind::ConstructionCancel
+					|| action.kind == ShapeUiActionKind::ConstructionForward) return s->construction.active && a.objectId == b.objectId;
 				return s->object && a.objectId == b.objectId;
 			}
 			std::mutex mutex_;
@@ -2118,14 +2122,26 @@ namespace Inkeys::UI::Bar
 			"red-blue-swapped negative color fixture is rejected");
 		// 容量为零的发布端模拟QueueFull，验证已开始手势的终结不会丢失或持续唤醒。
 		for (auto terminal : {ShapeUiActionKind::CommitEdit, ShapeUiActionKind::CancelEdit, ShapeUiActionKind::CloseEditor,
-			ShapeUiActionKind::ConstructionComplete, ShapeUiActionKind::ConstructionCancel})
+			ShapeUiActionKind::ConstructionComplete, ShapeUiActionKind::ConstructionCancel, ShapeUiActionKind::ConstructionForward})
 		{
 			auto state = std::make_shared<ShapeUiSnapshot>();
 			state->identity.session = 77;
 			state->identity.objectId[0] = 1;
-			state->object = ShapeObject{};
-			state->object->id = state->identity.objectId;
-			state->construction.active = true;
+			const bool construction = terminal == ShapeUiActionKind::ConstructionComplete || terminal == ShapeUiActionKind::ConstructionCancel
+				|| terminal == ShapeUiActionKind::ConstructionForward;
+			// 生产构造快照仅有身份和步骤状态，不包含可编辑 object。
+			if (construction)
+			{
+				state->construction.active = true;
+				state->construction.preset = PresetKind::Arc;
+				state->construction.totalSteps = 2;
+				state->construction.canForward = true;
+			}
+			else
+			{
+				state->object = ShapeObject{};
+				state->object->id = state->identity.objectId;
+			}
 			bool full = false;
 			std::vector<ShapeUiAction> accepted;
 			ShapeIntentSender sender{[&](const ShapeUiAction& action)
@@ -2137,10 +2153,14 @@ namespace Inkeys::UI::Bar
 			{
 				return state;
 			}};
-			ShapeUiAction begin;
-			begin.kind = ShapeUiActionKind::BeginEdit;
-			begin.identity = state->identity;
-			expect(sender.Send(begin), "capacity fixture first accepts BeginEdit");
+			if (!construction)
+			{
+				ShapeUiAction begin;
+				begin.kind = ShapeUiActionKind::BeginEdit;
+				begin.identity = state->identity;
+				expect(sender.Send(begin), "capacity fixture first accepts BeginEdit");
+			}
+			const std::size_t expected = construction ? 1 : 2;
 			full = true;
 			ShapeUiAction finish;
 			finish.kind = terminal;
@@ -2154,14 +2174,33 @@ namespace Inkeys::UI::Bar
 			const auto now = std::chrono::steady_clock::now();
 			expect(sender.Tick(now) != std::chrono::steady_clock::time_point::max(), "pending terminal alone requests a finite worker tick");
 			full = false;
-			expect(sender.Tick(now) == std::chrono::steady_clock::time_point::max() && accepted.size() == 2 && accepted.back().kind == terminal,
+			expect(sender.Tick(now) == std::chrono::steady_clock::time_point::max() && accepted.size() == expected && accepted.back().kind == terminal,
 				"restored capacity delivers terminal once and allows worker sleep");
 			full = true;
 			expect(sender.Send(finish), "second terminal can become pending");
 			++state->identity.session;
 			full = false;
-			expect(sender.Tick(now) == std::chrono::steady_clock::time_point::max() && accepted.size() == 2,
+			expect(sender.Tick(now) == std::chrono::steady_clock::time_point::max() && accepted.size() == expected,
 				"old-session pending terminal never crosses a new editor or construction session");
+			const auto sleeping = sender.Tick(now);
+			if (construction) for (int changed = 0; changed < 7; ++changed)
+			{
+				state->identity = finish.identity; state->construction.active = true;
+				full = true; expect(sender.Send(finish), "construction identity fixture retains pending intent");
+				switch (changed)
+				{
+				case 0: ++state->identity.documentGeneration; break;
+				case 1: ++state->identity.displayGeneration; break;
+				case 2: ++state->identity.workspace; break;
+				case 3: state->identity.pageId[0] ^= 1; break;
+				case 4: ++state->identity.pageIndex; break;
+				case 5: state->identity.objectId[0] ^= 1; break;
+				case 6: state->construction.active = false; break;
+				}
+				full = false;
+				expect(sender.Tick(now) == sleeping && accepted.size() == expected,
+					"retired construction scene, object or inactive session never receives a pending terminal");
+			}
 		}
 
 		auto now = std::chrono::steady_clock::now();

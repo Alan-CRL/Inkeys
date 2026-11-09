@@ -2840,3 +2840,21 @@ list->AddImage(ImTextureRef(&image), topLeft, bottomRight);
 // Correct：保留动态纹理身份，由backend处理创建/更新后的TexID。
 list->AddImage(image.GetTexRef(), topLeft, bottomRight);
 ```
+
+## 图形编辑浮条、颜色层级与绘制步骤提示（2026-11-09）
+
+### 1. Scope / Trigger
+
+修改 `Bar.ShapeEditor.cpp`（SelectionOverlay 内的编辑框与浮条）或 `Bar.ConstructionPrompt.cpp`（多步绘制提示）时遵守。视觉数值以 `.trellis/tasks/11-05-shape-ux-edit-visual/design.md` 与 `.trellis/tasks/11-05-shape-ux-construction-prompt/design.md` 为准。
+
+### 3. Contracts
+
+- 浮条是单行 `BarButtonListClass`（SingleRow）：[颜色入口] | [样式] | [线型] | [粗细] | [边数入口] | [辅助开关]，全部走主栏 Configure/Retarget/Advance/Draw，分隔线参数与 GeometryAttribute 单行分隔项相同（`Divider` 色）；整组隐藏时其前导分隔线一起隐藏。选中内容色走公共 helper（Selected→Accent），不得强制 TextPrimary。宽度不足时整体等比缩小，0.75 仍不够才分两行（从粗细组起），两行仍不够继续缩小，永不越出工作区。
+- 新会话先整体重置布局（成员与分隔线 SetDirect 到目标），再用 `BarAttributePanelMotion` 从 frameRect 底边中点紧凑态 0.4s EaseOutBack 展开；关闭 0.24s EaseInBack 后清空快照与布局。会话内显隐走 0.4s 批次 + CanJoin，隐藏成员锚定到前一个可见成员；禁止用随宽度动画的裁剪逐步露出内容（“从左往右加载”）。回弹过冲帧也必须钳在工作区内。拖动对象期间浮条不跟随，手势结束后 0.4s 移到新位置。
+- 同一窗口三层：浮条 < 第 1 层（色板层 / 边数层）< 第 2 层（取色器层）。输入从最上层命中；点击外部只关闭最上一层且该次点击被消费；Esc 逐层关闭后才结束编辑。取色器层按“色板外侧 → 色板右侧 → 色板左侧 → 浮条对象侧 → fit”选位，不得与浮条或色板层重叠。颜色只写当前对象（`SetStyle`，松手一条历史），不改画笔色；取色器拖动只做本地反馈。
+- 键盘：Esc 只在 Inkeys 前台或浮条可见时处理；方向键/Space/Enter/Tab 只在浮条内容拥有焦点时截获，且每个虚拟键在首次 Down 时锁存归属直到 Up，避免吞掉 PPT 放映按键。绘制提示的键盘捕获只以成功呈现的可见状态为准，Shift 随键盘消息冻结。
+- 绘制步骤提示：外观与底栏模式提示逐项一致（圆角 6、常驻材质、13 DIP Bold、0.4s Back 缩放出现/消失、扩框→换字→缩框三阶段 helper 与底栏共用）。固定步数显示环形进度与 n/N；折线/多边形显示已确定点数。按钮为上一步/下一步/结束（仅折线、多边形）/取消的 OneOne 图标按钮。多步构造期间暂停绘制自动收起：接纳通知自带构造资格（不依赖稍后发布的快照），快照 active 时同样暂停；橡皮策略不受影响。
+
+### 6. Tests Required
+
+`--ui3-shape-editor-test`（首帧位置、出现/消失、分隔线参数与颜色、层级开关与 Esc/外部点击、四角与小工作区钳制、深浅 × 1.0/1.5/2.0 截图）、`--ui3-geometry-attribute-test`（提示截图、按钮语义、键盘）、`--state-mode-production-test`（自动收起暂停）、`--draw3-shape-core-test`（Back/Forward/Complete）。

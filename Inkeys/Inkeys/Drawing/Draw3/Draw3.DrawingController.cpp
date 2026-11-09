@@ -13448,6 +13448,8 @@ namespace Inkeys::Drawing::Draw3
 					// 只在新笔划真正接纳后通知，临时橡皮用本笔 tool，续接/拒绝不重复。
 					auto accepted = acceptedStrokeScene();
 					accepted.kind = CompletedStrokeKindForTool(runtime->tool);
+					// beginShapeContact 已创建或续接会话；通知先于本帧 UI 快照发布。
+					accepted.shapeConstruction = runtime->shape.construction && runtime->shape.construction->session.Status().active;
 					observer_.acceptedStrokeBegan(observer_.context, accepted);
 				}
 				return true;
@@ -16255,6 +16257,10 @@ namespace Inkeys::Drawing::Draw3
 				if (command.type == CanvasCommandType::Undo && shapeUi.construction && shapeUi.construction->session.Status().active)
 				{
 					backShapeConstruction(frameDirty); continue;
+				}
+				if (command.type == CanvasCommandType::Redo && shapeUi.construction && shapeUi.construction->session.Status().active)
+				{
+					forwardShapeConstruction(frameDirty); continue;
 				}
 				if (command.type == CanvasCommandType::Clear || command.type == CanvasCommandType::Undo || command.type == CanvasCommandType::Redo ||
 					ShapeCommandChangesScene(command,activeWorkspace,currentPageIndex_,activePresentationTarget) || command.type == CanvasCommandType::TranslateViewport)

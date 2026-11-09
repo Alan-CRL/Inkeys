@@ -1813,6 +1813,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			// 先退出启动链；保存隔离仅用临时目录，FineDial 只检查失效/取消提交。
 			LocalFree(arguments);
 			if (count != 2) return 2;
+			const int constructionResult = Inkeys::UI::Bar::RunConstructionAutoCollapseProductionTest();
+			if (constructionResult != 0) return constructionResult;
 			const int stateResult = RunStateModeProductionTest();
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();

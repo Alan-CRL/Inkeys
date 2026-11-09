@@ -105,13 +105,17 @@ int RunShapeInteractionProductionTest()
 	}
 	for (PresetKind preset : {PresetKind::Polyline,PresetKind::Polygon})
 	{
-		const auto count = canvas->Strokes().size(); std::shared_ptr<ShapeConstructionRuntime> state;
+		const auto count = canvas->Strokes().size(), operations = pages[0].operationCursor; std::shared_ptr<ShapeConstructionRuntime> state;
 		for (Vec2 point : {Vec2{20,20},Vec2{140,20},Vec2{140,100},Vec2{20,100}})
 		{
 			auto contact = begin({preset,CreationMode::Points},point,state); state = contact->shape.construction;
 			move(*contact,point,{point.x + 5,point.y + 7}); check(!up(*contact,point),"point Up never commits document");
+			const auto status = state->session.Status();
+			check(status.canComplete == (status.confirmedSteps >= (preset == PresetKind::Polygon ? 3u : 2u)),"Complete observes actual point threshold");
 		}
 		check(state->session.CanComplete() && canvas->Strokes().size() == count,"point session waits for Complete");
+		const auto confirmed = state->session.Candidate();
+		check(state->session.Back() && state->session.Status().canForward && state->session.Forward() && state->session.Candidate() == confirmed,"Back then Forward restores exact production vertices");
 		auto object = state->session.Complete(); check(object.has_value(),"Complete returns real confirmed vertices");
 		if (object)
 		{
@@ -120,6 +124,10 @@ int RunShapeInteractionProductionTest()
 			check(AppendRuntimeConstructedShapeCpu(*canvas,pages[0],*object,allocate).has_value() && canvas->Strokes().size() == count + 1,
 				"Complete shares production append transaction");
 			check(canvas->Strokes().back().Shape()->geometry.vertices.back() == (Vec2{20,100}),"prediction does not replace final point");
+			GeometryResult outline;
+			check(BuildGeometry(*object,outline) && outline.parts[0].paths[0].closed == (preset == PresetKind::Polygon),"Complete closes only the polygon ring");
+			check(pages[0].operationCursor == operations + 1 && ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate),"Complete creates exactly one undo operation");
+			check(ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate),"one redo restores the complete object");
 		}
 	}
 	const auto beforeCancel = canvas->Strokes().size();
@@ -164,6 +172,12 @@ int RunShapeInteractionProductionTest()
 	check(ShapeConstructionActionIdentityMatches(construction,&prompt,action,prompt.identity),"current step Back is accepted");
 	++prompt.identity.generation;
 	check(!ShapeConstructionActionIdentityMatches(construction,&prompt,action,prompt.identity),"old step Back cannot mutate newer vertex state");
+	action.kind = ShapeUiActionKind::ConstructionForward;
+	check(!ShapeConstructionActionIdentityMatches(construction,&prompt,action,prompt.identity),"old Forward cannot restore a later step");
+	action.identity = prompt.identity;
+	check(ShapeConstructionActionIdentityMatches(construction,&prompt,action,prompt.identity),"current Forward validates full identity");
+	construction.contactActive = true;
+	check(!ShapeConstructionActionIdentityMatches(construction,&prompt,action,prompt.identity),"Forward waits for physical contact end");
 	action.kind = ShapeUiActionKind::ConstructionCancel; construction.contactActive = true;
 	check(ShapeConstructionActionIdentityMatches(construction,&prompt,action,prompt.identity),"cancel barrier remains valid during physical contact");
 	// 属性/几何意图经同一纯编辑器形成候选，再走运行期Replace事务与统一journal。

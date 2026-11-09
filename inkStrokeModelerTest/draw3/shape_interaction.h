@@ -46,8 +46,8 @@ namespace draw3::shapes
 	struct ConstructionStatus
 	{
 		bool active = false;
-		uint32_t step = 0, confirmedSteps = 0;
-		bool canComplete = false, canBack = false, finished = false;
+		uint32_t step = 0, confirmedSteps = 0, totalSteps = 0;
+		bool canComplete = false, canBack = false, finished = false, canForward = false;
 		PresetKind preset = PresetKind::Line;
 	};
 	class ConstructionSession
@@ -58,6 +58,7 @@ namespace draw3::shapes
 		bool PreviewDrag(Vec2 down, Vec2 end, std::string* error = nullptr);
 		bool ConfirmDrag(Vec2 rawDown, Vec2 rawUp, std::string* error = nullptr);
 		bool Back();
+		bool Forward();
 		void Cancel() noexcept;
 		bool CanComplete() const noexcept;
 		std::optional<ShapeObject> Complete();
@@ -76,6 +77,15 @@ namespace draw3::shapes
 		float lastAngle_ = 0, sweep_ = 0;
 		bool angleStarted_ = false;
 		std::optional<ShapeObject> candidate_, confirmedCandidate_;
+		struct BackedStep
+		{
+			Vec2 point, start, end;
+			uint32_t confirmed = 0;
+			float lastAngle = 0, sweep = 0;
+			bool finished = false, angleStarted = false;
+			std::optional<ShapeObject> candidate;
+		};
+		std::vector<BackedStep> redo_;
 	};
 	// 每个文档runtime独占；恢复语义快照时仍申请新号，避免缓存与分支复用旧revision。
 	class RevisionAllocator

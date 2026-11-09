@@ -113,12 +113,13 @@ bool SameShapeUiContents(const ShapeUiSnapshot& a, const ShapeUiSnapshot& b)
 	return a.identity.session == b.identity.session && SameShapeUiScene(a.identity,b.identity) &&
 		a.identity.objectId == b.identity.objectId && a.identity.objectRevision == b.identity.objectRevision &&
 		a.object == b.object && a.handles == b.handles && a.bounds == b.bounds && a.frameRect == b.frameRect &&
-		a.editGestureActive == b.editGestureActive && a.displayScale == b.displayScale &&
+		a.editGestureActive == b.editGestureActive && a.constructionContactActive == b.constructionContactActive && a.displayScale == b.displayScale &&
 		a.canvasOriginX == b.canvasOriginX && a.canvasOriginY == b.canvasOriginY &&
 		a.construction.active == b.construction.active && a.construction.step == b.construction.step &&
 		a.construction.confirmedSteps == b.construction.confirmedSteps && a.construction.preset == b.construction.preset &&
 		a.construction.canComplete == b.construction.canComplete && a.construction.canBack == b.construction.canBack &&
-		a.construction.finished == b.construction.finished;
+		a.construction.finished == b.construction.finished && a.construction.totalSteps == b.construction.totalSteps &&
+		a.construction.canForward == b.construction.canForward;
 }
 void PublishShapeRuntimeSnapshot(ShapeUiRuntime& runtime, ShapeUiSnapshot snapshot)
 {

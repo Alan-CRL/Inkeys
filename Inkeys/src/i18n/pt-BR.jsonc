@@ -143,7 +143,17 @@
         "HeightStep": "Defina a altura",
         "Complete": "Concluir",
         "Back": "Voltar",
-        "CancelAction": "Cancelar"
+        "CancelAction": "Cancelar",
+        "StepFormat": "Etapa {0} · {1}",
+        "PointCountFormat": "{0} pontos definidos · {1}",
+        "BackName": "Etapa anterior",
+        "BackTooltip": "Desfazer a última etapa confirmada",
+        "ForwardName": "Próxima etapa",
+        "ForwardTooltip": "Restaurar a última etapa desfeita",
+        "CompleteName": "Concluir desenho",
+        "CompleteTooltip": "Concluir a polilinha ou fechar o polígono",
+        "CancelName": "Cancelar",
+        "CancelTooltip": "Cancelar este desenho"
       },
       "GeometryAttributes":
       {

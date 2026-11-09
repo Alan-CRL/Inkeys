@@ -25,14 +25,14 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<draw3::shapes::EditHandle> handles;
 		draw3::shapes::Bounds bounds, frameRect; // frameRect为共享核心给出的本地外框。
 		draw3::shapes::ConstructionStatus construction;
-		bool editGestureActive = false;
+		bool editGestureActive = false, constructionContactActive = false;
 		float displayScale = 1;
 		int canvasOriginX = 0, canvasOriginY = 0;
 	};
 	enum class ShapeUiActionKind : std::uint8_t
 	{
 		BeginEdit, PreviewEdit, CommitEdit, CancelEdit, CloseEditor,
-		SetStyle, SetSides, ConstructionComplete, ConstructionBack, ConstructionCancel
+		SetStyle, SetSides, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward
 	};
 	struct ShapeUiAction
 	{

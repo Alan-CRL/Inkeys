@@ -143,7 +143,17 @@
         "HeightStep": "高さを指定",
         "Complete": "完了",
         "Back": "戻る",
-        "CancelAction": "キャンセル"
+        "CancelAction": "キャンセル",
+        "StepFormat": "ステップ {0} · {1}",
+        "PointCountFormat": "{0} 点を確定 · {1}",
+        "BackName": "前のステップ",
+        "BackTooltip": "最後に確定したステップを戻す",
+        "ForwardName": "次のステップ",
+        "ForwardTooltip": "戻したステップを復元",
+        "CompleteName": "描画を終了",
+        "CompleteTooltip": "折れ線を完了、または多角形を閉じる",
+        "CancelName": "キャンセル",
+        "CancelTooltip": "この描画をキャンセル"
       },
       "GeometryAttributes":
       {

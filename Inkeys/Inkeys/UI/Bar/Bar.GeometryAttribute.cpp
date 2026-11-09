@@ -515,7 +515,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		attributeLayout_ = ResolveBarButtonListLayout(attributeList_.Snapshot(), BarButtonListLayoutKind::SingleRow);
 		attributeVisibility_ = visibility;
 	}
-	bool attributesAcceptInput = true, parametersAcceptInput = true;
+	bool attributesAcceptInput = true, parametersAcceptInput = true, categoriesAcceptInput = true;
 	for (size_t index = 0; index < AttributeItems.size(); ++index)
 	{
 		const auto& placement = attributeLayout_.placements[index]; auto& position = attributeX_[index];
@@ -653,6 +653,8 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		const auto result = AdvanceBarButtonVisual(b, buttonContext); changed_ |= result.changed; active_ |= result.active;
 		if (i >= StyleBegin && i < CloseButton) attributesAcceptInput &= b.icon.pct.IsSame() && b.name.pct.IsSame();
 		else if (i >= CircleCenter && i < StyleBegin) parametersAcceptInput &= b.icon.pct.IsSame() && b.name.pct.IsSame();
+		else if (category) categoriesAcceptInput &= b.icon.pct.IsSame() && b.name.pct.IsSame()
+			&& (!wanted || (categoryX_[i].IsSame() && categoryY_[i].IsSame()));
 		const bool drawn = wanted || HasButtonOpacity(b); b.hide = !drawn;
 		next.items[i] = drawn ? pf.pose.Apply(slots[i]) : EraserAttributeRect{};
 		Place(b.button, next.items[i]);
@@ -667,9 +669,14 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			next.hits[i].enabled &= next.categoriesAcceptInput && next.hits[i].visible;
 		}
 	}
-	// 退场与移动控件可能暂时重叠，只给对应行加布局门禁；类别仍可响应并反向重定向动画。
-	for (int item = StyleBegin; item < CloseButton; ++item) next.hits[item].enabled &= attributesAcceptInput;
-	for (int item = CircleCenter; item < StyleBegin; ++item) next.hits[item].enabled &= parametersAcceptInput;
+	// 辅助开关让不同工具共用同高参数行；面板尺寸不变也须等待两行内容一起落定。
+	const bool rowsAcceptInput = attributesAcceptInput && parametersAcceptInput;
+	for (int item = CircleCenter; item < CloseButton; ++item) next.hits[item].enabled &= rowsAcceptInput;
+	// 稳定类别仍可重定向行动画，但分类自身移动或淡入退场时不能提交工具。
+	next.categoriesAcceptInput &= categoriesAcceptInput;
+	for (int item = 0; item < CategoryCount; ++item) next.hits[item].enabled &= next.categoriesAcceptInput;
+	for (int item = SegmentBegin; item < GeometryControlCount; ++item)
+		next.hits[item].enabled &= buttons_[item]->icon.pct.IsSame() && buttons_[item]->name.pct.IsSame();
 	for (size_t index = 0; index < attributeDividers_.size(); ++index)
 	{
 		auto& divider = *attributeDividers_[index]; const bool wanted = index == 0 ? showStyle && showStroke : showStroke;
@@ -927,8 +934,15 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 		owner.UpdateRendering(false); return true;
 	}
 	const bool scrollPending = abs((std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum)-f.scrollOffset) > 0.000001;
+	// 禁用行仍占据已呈现区域，不能让瞄准退场属性的点击穿透到重叠类别。
+	bool blockedByRow = false;
+	if (inside) for (int item = CircleCenter; item < CloseButton; ++item)
+	{
+		const auto rect = item < StyleBegin ? Intersection(f.items[item],f.parameterClip) : f.items[item];
+		blockedByRow |= f.hits[item].visible && !f.hits[item].enabled && Contains(rect,x,y);
+	}
 	int hit = -1;
-	if (inside && f.acceptsInput && categoryRequest_ == static_cast<int>(f.category)) for (size_t i = 0; i < f.hits.size(); ++i)
+	if (inside && !blockedByRow && f.acceptsInput && categoryRequest_ == static_cast<int>(f.category)) for (size_t i = 0; i < f.hits.size(); ++i)
 		if (!(i < CategoryCount && scrollPending) && HitTestBarButton(f.hits[i],x,y)) { hit = static_cast<int>(i); break; }
 	if (message.message == WM_MOUSEMOVE)
 	{

@@ -788,11 +788,26 @@ int RunShapeCoreTests()
 	SHAPE_CHECK(session.ConfirmDrag({ 0,0 }, { 0,0 }) && !session.CanComplete());
 	SHAPE_CHECK(session.PreviewDrag({ 100,0 }, { 120,0 }) && !session.CanComplete()); // 预览点不进入真实顶点。
 	SHAPE_CHECK(session.ConfirmDrag({ 100,0 }, { 100,0 }) && !session.CanComplete());
+	SHAPE_CHECK(session.Status().totalSteps == 0 && !session.Status().canForward);
+	SHAPE_CHECK(session.Back() && session.Status().canForward && session.Status().confirmedSteps == 1);
+	SHAPE_CHECK(session.Forward() && !session.Status().canForward && session.Status().confirmedSteps == 2);
 	SHAPE_CHECK(session.ConfirmDrag({ 100,100 }, { 100,100 }) && session.CanComplete());
+	const auto confirmedPolygon = session.Candidate();
+	SHAPE_CHECK(session.Back() && !session.CanComplete() && session.Status().canForward);
+	SHAPE_CHECK(session.Forward() && session.Candidate() == confirmedPolygon && session.CanComplete());
+	SHAPE_CHECK(session.Back() && session.ConfirmDrag({ 80,100 }, { 80,100 }) && !session.Status().canForward && !session.Forward());
+	SHAPE_CHECK(session.Back() && session.ConfirmDrag({ 100,100 }, { 100,100 }));
 	SHAPE_CHECK(session.PreviewDrag({ 0,100 }, { -100,100 }));
 	auto completed = session.Complete();
 	SHAPE_CHECK(completed && completed->geometry.vertices.size() == 3 && completed->geometry.vertices.back() == (Vec2{ 100,100 }));
 	SHAPE_CHECK(!session.Status().active);
+	SHAPE_CHECK(completed && BuildGeometry(*completed, geometry) && geometry.parts[0].paths[0].closed &&
+		geometry.parts[0].paths[0].points.front() == geometry.parts[0].paths[0].points.back());
+	SHAPE_CHECK(session.Begin({ PresetKind::Polyline,CreationMode::Points }, {}, Id(13)));
+	SHAPE_CHECK(session.ConfirmDrag({ 0,0 }, { 0,0 }) && !session.CanComplete());
+	SHAPE_CHECK(session.ConfirmDrag({ 100,0 }, { 100,0 }) && session.CanComplete());
+	completed = session.Complete();
+	SHAPE_CHECK(completed && BuildGeometry(*completed, geometry) && !geometry.parts[0].paths[0].closed);
 	SHAPE_CHECK(session.Begin({ PresetKind::Polygon,CreationMode::Points }, {}, Id(13)));
 	for (Vec2 v : { Vec2{ 0,0 },Vec2{ 100,100 },Vec2{ 0,100 },Vec2{ 100,0 } }) SHAPE_CHECK(session.ConfirmDrag(v, v));
 	SHAPE_CHECK(!session.CanComplete() && !session.Complete());
@@ -801,7 +816,14 @@ int RunShapeCoreTests()
 	for (PresetKind preset : { PresetKind::Arc,PresetKind::Sector }) for (float sign : { -1.0f,1.0f })
 	{
 		SHAPE_CHECK(session.Begin({ preset,CreationMode::MultiStage }, {}, Id(14)));
+		SHAPE_CHECK(session.Status().totalSteps == 2 && session.Status().step == 1);
 		SHAPE_CHECK(session.ConfirmDrag({ 0,0 }, { 100,0 }) && !session.CanComplete());
+		const auto radiusStep = session.Candidate();
+		// 未确认第二步转过整圈后回退，Forward不能恢复这段已丢弃的轨迹角。
+		for (unsigned sample = 1; sample <= 8; ++sample)
+		{ const float angle = sample * static_cast<float>(3.141592653589793 / 4); session.ObserveRaw({100 * std::cos(angle),100 * std::sin(angle)}); }
+		SHAPE_CHECK(session.Back() && session.Status().step == 1 && session.Status().canForward);
+		SHAPE_CHECK(session.Forward() && session.Status().step == 2 && session.Candidate() == radiusStep);
 		for (uint32_t i = 1; i <= 24; ++i)
 		{
 			const float angle = sign * 4.4f * i / 24;
@@ -812,6 +834,8 @@ int RunShapeCoreTests()
 		}
 		const Vec2 final{ 100 * std::cos(sign * 4.4f),100 * std::sin(sign * 4.4f) };
 		SHAPE_CHECK(session.ConfirmDrag({ 100,0 }, final) && session.Status().finished);
+		const auto sweptStep = session.Candidate();
+		SHAPE_CHECK(session.Back() && session.Forward() && session.Candidate() == sweptStep);
 		completed = session.Complete();
 		SHAPE_CHECK(completed && std::abs(std::get<ArcConstruction>(completed->construction->parameters).sweepRadians - sign * 4.4f) < .0001f);
 	}

@@ -143,7 +143,17 @@
         "HeightStep": "Höhe festlegen",
         "Complete": "Fertig",
         "Back": "Zurück",
-        "CancelAction": "Abbrechen"
+        "CancelAction": "Abbrechen",
+        "StepFormat": "Schritt {0} · {1}",
+        "PointCountFormat": "{0} Punkte gesetzt · {1}",
+        "BackName": "Vorheriger Schritt",
+        "BackTooltip": "Zuletzt bestätigten Schritt zurücknehmen",
+        "ForwardName": "Nächster Schritt",
+        "ForwardTooltip": "Zuletzt zurückgenommenen Schritt wiederherstellen",
+        "CompleteName": "Zeichnen beenden",
+        "CompleteTooltip": "Polylinie abschließen oder Polygon schließen",
+        "CancelName": "Abbrechen",
+        "CancelTooltip": "Diese Zeichnung abbrechen"
       },
       "GeometryAttributes":
       {

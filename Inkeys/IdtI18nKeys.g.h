@@ -147,6 +147,16 @@ inline constexpr struct I18nKeyRoot
                 const char* Complete = "UI/Bar/ShapeConstruction/Complete";
                 const char* Back = "UI/Bar/ShapeConstruction/Back";
                 const char* CancelAction = "UI/Bar/ShapeConstruction/CancelAction";
+                const char* StepFormat = "UI/Bar/ShapeConstruction/StepFormat";
+                const char* PointCountFormat = "UI/Bar/ShapeConstruction/PointCountFormat";
+                const char* BackName = "UI/Bar/ShapeConstruction/BackName";
+                const char* BackTooltip = "UI/Bar/ShapeConstruction/BackTooltip";
+                const char* ForwardName = "UI/Bar/ShapeConstruction/ForwardName";
+                const char* ForwardTooltip = "UI/Bar/ShapeConstruction/ForwardTooltip";
+                const char* CompleteName = "UI/Bar/ShapeConstruction/CompleteName";
+                const char* CompleteTooltip = "UI/Bar/ShapeConstruction/CompleteTooltip";
+                const char* CancelName = "UI/Bar/ShapeConstruction/CancelName";
+                const char* CancelTooltip = "UI/Bar/ShapeConstruction/CancelTooltip";
             } ShapeConstruction{};
             struct Node__UI__Bar__GeometryAttributes
             {

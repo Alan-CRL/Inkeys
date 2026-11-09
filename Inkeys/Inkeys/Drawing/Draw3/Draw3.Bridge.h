@@ -160,6 +160,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::optional<PresentationReadyIdentity> presentation;
 		std::uint64_t sceneGeneration = 0;
 		std::uint64_t hostGeneration = 0;
+		bool shapeConstruction = false; // 绘制线程锁存，首笔通知不依赖稍后发布的构造快照。
 	};
 
 	// PPT 的总页数只含真实幻灯片；结束页固定占用同文稿的附加内部页槽。

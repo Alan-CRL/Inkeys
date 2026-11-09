@@ -559,14 +559,14 @@ bool ConstructionSession::ConfirmDrag(Vec2 down, Vec2 end, std::string* error)
 	if (GetToolCapabilities(tool_.preset).points)
 	{
 		if (points_.size() >= kMaxVertices || (!points_.empty() && points_.back() == end)) return false;
-		points_.push_back(end); ++confirmed_;
+		points_.push_back(end); ++confirmed_; redo_.clear();
 		Construction c{ tool_,points_.front(),end }; c.parameters = VertexConstruction{ points_ };
 		confirmedCandidate_ = MakeConstructedShape(c, style_, id_, revision_, error); candidate_ = confirmedCandidate_;
 		return true; // 未达到最少点数/暂时自交仍可回退，只有Complete才能进入文档。
 	}
 	ObserveRaw(end);
 	auto result = Generate(down, end, true, error); if (!result) { candidate_ = confirmedCandidate_; return false; }
-	candidate_ = confirmedCandidate_ = std::move(result);
+	redo_.clear(); candidate_ = confirmedCandidate_ = std::move(result);
 	if (!confirmed_)
 	{
 		start_ = down; end_ = end; confirmed_ = 1;
@@ -579,7 +579,14 @@ bool ConstructionSession::ConfirmDrag(Vec2 down, Vec2 end, std::string* error)
 bool ConstructionSession::Back()
 {
 	if (!active_ || !confirmed_) return false;
-	if (GetToolCapabilities(tool_.preset).points)
+	// 只保存被撤回的一步；点工具不复制整条顶点链，固定步工具保留准确参数与扫角。
+	const bool points = GetToolCapabilities(tool_.preset).points;
+	BackedStep step{points ? points_.back() : Vec2{},start_,end_,confirmed_,lastAngle_,sweep_,finished_,angleStarted_,
+		points ? std::nullopt : confirmedCandidate_};
+	// 首步确认后的扫角只属于未确认预览，不能随Forward恢复到下一次真实接触。
+	if (!points && !finished_) { step.lastAngle = std::atan2(end_.y - start_.y,end_.x - start_.x); step.sweep = 0; step.angleStarted = true; }
+	redo_.push_back(std::move(step));
+	if (points)
 	{
 		points_.pop_back(); --confirmed_; candidate_.reset(); confirmedCandidate_.reset();
 		if (!points_.empty())
@@ -597,13 +604,30 @@ bool ConstructionSession::Back()
 	}
 	finished_ = false; sweep_ = 0; lastAngle_ = std::atan2(end_.y - start_.y, end_.x - start_.x); angleStarted_ = true; return true;
 }
+bool ConstructionSession::Forward()
+{
+	if (!active_ || redo_.empty()) return false;
+	auto step = std::move(redo_.back()); redo_.pop_back();
+	start_ = step.start; end_ = step.end; confirmed_ = step.confirmed; finished_ = step.finished;
+	lastAngle_ = step.lastAngle; sweep_ = step.sweep; angleStarted_ = step.angleStarted;
+	if (GetToolCapabilities(tool_.preset).points)
+	{
+		points_.push_back(step.point);
+		Construction c{tool_,points_.front(),points_.back()}; c.parameters = VertexConstruction{points_};
+		candidate_ = confirmedCandidate_ = MakeConstructedShape(c,style_,id_,revision_);
+	}
+	else candidate_ = confirmedCandidate_ = std::move(step.candidate);
+	return true;
+}
 void ConstructionSession::Cancel() noexcept
 {
-	active_ = finished_ = angleStarted_ = false; confirmed_ = 0; points_.clear(); candidate_.reset(); confirmedCandidate_.reset(); sweep_ = 0;
+	active_ = finished_ = angleStarted_ = false; confirmed_ = 0; points_.clear(); redo_.clear(); candidate_.reset(); confirmedCandidate_.reset(); sweep_ = 0;
 }
 bool ConstructionSession::CanComplete() const noexcept
 {
-	return active_ && confirmedCandidate_.has_value() && (GetToolCapabilities(tool_.preset).points || finished_);
+	const bool points = GetToolCapabilities(tool_.preset).points;
+	const uint32_t required = tool_.preset == PresetKind::Polygon ? 3u : 2u;
+	return active_ && confirmedCandidate_.has_value() && (points ? confirmed_ >= required : finished_);
 }
 std::optional<ShapeObject> ConstructionSession::Complete()
 {
@@ -613,7 +637,10 @@ std::optional<ShapeObject> ConstructionSession::Complete()
 const std::optional<ShapeObject>& ConstructionSession::Candidate() const noexcept { return candidate_; }
 ConstructionStatus ConstructionSession::Status() const noexcept
 {
-	return { active_,active_ ? (finished_ ? confirmed_ : confirmed_ + 1) : 0,confirmed_,CanComplete(),active_ && confirmed_ > 0,finished_,tool_.preset };
+	const auto capabilities = GetToolCapabilities(tool_.preset);
+	return { active_,active_ ? (finished_ ? confirmed_ : confirmed_ + 1) : 0,confirmed_,
+		capabilities.points ? 0u : capabilities.multiStage ? 2u : 1u,
+		CanComplete(),active_ && confirmed_ > 0,finished_,active_ && !redo_.empty(),tool_.preset };
 }
 uint64_t RevisionAllocator::Next(const ObjectId& id, uint64_t observed)
 {

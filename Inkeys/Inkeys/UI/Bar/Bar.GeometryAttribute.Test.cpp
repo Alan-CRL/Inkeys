@@ -46,6 +46,12 @@ public:
 	static auto Candidate(const BarGeometryAttributePanel& p) { return p.frame_; }
 	static auto PromptFrame(const BarConstructionPrompt& p) { return p.presented_; }
 	static const BarUiWordClass& PromptLabel(const BarConstructionPrompt& p) { return p.label_; }
+	static const BarUiWordClass& PromptRingLabel(const BarConstructionPrompt& p) { return p.ringLabel_; }
+	static double PromptRingProgress(const BarConstructionPrompt& p) { return p.ringProgress_.val; }
+	static auto PromptContentPhase(const BarConstructionPrompt& p) { return p.contentPhase_; }
+	static int PromptFocused(const BarConstructionPrompt& p) { return p.focused_; }
+	static void PromptFocus(BarConstructionPrompt& p,int item) { p.focused_=item; }
+	static const BarUiShapeClass& PromptSurface(const BarConstructionPrompt& p) { return p.surface_; }
 	static const BarButtonClass& PromptButton(const BarConstructionPrompt& p,int i) { return *p.buttons_[i]; }
 	static bool DockIndicatorVisible(const BarUISetClass& p) { return p.bottomDockIndicatorPresentedVisible.load(); }
 	static int Focused(const BarGeometryAttributePanel& p) { return p.focused_; }
@@ -287,7 +293,21 @@ namespace Inkeys::UI::Bar
 		expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,0).icon.pct.val == 0,"new category starts transparent at its target");
 		tick(1); const auto switchMoving = owner.geometryAttribute.PresentationSnapshot();
 		expect(switchMoving.panel.Height() > oldCategory.panel.Height() && switchMoving.panel.Height() < 354.5,"category height traverses continuous batch samples");
+		// 分类重排中的新旧目录、固定行和分段都不能借助强制焦点或新按压执行。
+		for (int item = 0; item < GeometryControlCount; ++item) if (switchMoving.hits[item].visible)
+		{
+			expect(!switchMoving.hits[item].enabled, "moving category layout disables every presented control");
+			BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute,item);
+			owner.geometryAttribute.Keyboard(owner,VK_RETURN,true); owner.geometryAttribute.Keyboard(owner,VK_SPACE,true);
+			for (bool contact : {false,true})
+			{
+				pointer(WM_LBUTTONDOWN,item,true,contact); pointer(WM_LBUTTONUP,item,false,contact);
+				expect(!pointerAccepted, "moving category layout rejects mouse and contact activation");
+			}
+			expect(SameBusinessSnapshot(beforeCategory,GetStateModeVersionedSnapshot()), "moving category controls preserve tool style and revision");
+		}
 		tick(90);
+		expect(owner.geometryAttribute.PresentationSnapshot().category == ShapeToolbarCategory::Regular, "moving segment activation cannot redirect category");
 		// 分段可Tab聚焦、方向键在分段内移动，再以Enter切换；不改当前工具。
 		BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute,GeometryCloseButton); owner.geometryAttribute.Keyboard(owner,VK_TAB,true);
 		expect(BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) == GeometrySegmentBegin,"segments participate in Tab navigation");
@@ -1085,6 +1105,34 @@ namespace Inkeys::UI::Bar
 					"actual thickness content fades in emitted pixels before leaving the list");
 			checkStableScene(nextShape, nextFill);
 		};
+		// 矩形已有辅助参数行：切到圆时面板及属性位置不变，只有参数内容淡入退场。
+		const auto rectangleRows = owner.geometryAttribute.PresentationSnapshot();
+		BarUiAnimationEnabled = true; selectScene(PresetKind::Circle,draw3::shapes::FillMode::Outline); sceneTick(2);
+		const auto fadingParameters = owner.geometryAttribute.PresentationSnapshot();
+		expect(fadingParameters.acceptsInput && fadingParameters.panel == rectangleRows.panel
+			&& fadingParameters.items[GeometryPatternBegin] == rectangleRows.items[GeometryPatternBegin],
+			"rectangle to circle regression keeps panel height and attribute rectangles unchanged");
+		const auto& incomingParameter = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryCircleCenter).icon.pct;
+		const auto& retiringAuxiliary = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryAuxBegin+2).icon.pct;
+		expect(incomingParameter.val != incomingParameter.tar && retiringAuxiliary.val != retiringAuxiliary.tar,
+			"same height regression includes incoming construction and retiring auxiliary content");
+		const auto beforeParameterInput = GetStateModeVersionedSnapshot();
+		for (int item = GeometryCircleCenter; item < GeometryCloseButton; ++item) if (fadingParameters.hits[item].visible)
+		{
+			expect(!fadingParameters.hits[item].enabled, "parameter fade gates both parameter and attribute rows despite unchanged geometry");
+			BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute,item);
+			owner.geometryAttribute.Keyboard(owner,VK_RETURN,true); owner.geometryAttribute.Keyboard(owner,VK_SPACE,true);
+			for (bool contact : {false,true})
+			{
+				const auto rect = fadingParameters.items[item];
+				panelPoint(WM_LBUTTONDOWN,EraserRectCenterX(rect),EraserRectCenterY(rect),true,contact);
+				panelPoint(WM_LBUTTONUP,EraserRectCenterX(rect),EraserRectCenterY(rect),false,contact);
+			}
+			expect(SameBusinessSnapshot(beforeParameterInput,GetStateModeVersionedSnapshot()), "same height parameter fade rejects Enter Space mouse and contact without any business mutation");
+		}
+		expect(fadingParameters.categoriesAcceptInput && fadingParameters.hits[0].enabled, "stationary categories retain row animation redirection eligibility");
+		sceneTick(90); checkStableScene(PresetKind::Circle,draw3::shapes::FillMode::Outline);
+		BarUiAnimationEnabled = false; selectScene(PresetKind::Rectangle,draw3::shapes::FillMode::Outline); sceneTick(2);
 		animateAttributes(PresetKind::Line, draw3::shapes::FillMode::Outline);
 		animateAttributes(PresetKind::Rectangle, draw3::shapes::FillMode::Outline);
 		animateAttributes(PresetKind::Circle, draw3::shapes::FillMode::OutlineAndFill);
@@ -1197,56 +1245,150 @@ namespace Inkeys::UI::Bar
 				const auto negative=ink(blank,word.color.val);expect(negative.first==0,"construction text oracle rejects actual blank panel padding");
 			};
 			checkWord(BarGeometryAttributeTestAccess::PromptLabel(owner.constructionPrompt));
-			for(int i=0;i<3;++i)if(frame.buttons[i].visible)checkWord(BarGeometryAttributeTestAccess::PromptButton(owner.constructionPrompt,i).name);
+			if(frame.ring)checkWord(BarGeometryAttributeTestAccess::PromptRingLabel(owner.constructionPrompt));
+			for(int i=0;i<4;++i)if(frame.buttons[i].visible)
+			{
+				const auto& icon=BarGeometryAttributeTestAccess::PromptButton(owner.constructionPrompt,i).icon;
+				expect(icon.w.val>0&&icon.h.val>0&&!icon.svg.GetVal().empty(),"prompt actions have real standard OneOne SVG slots");
+				const EraserAttributeRect slot{icon.inhX,icon.inhY,icon.inhX+icon.w.val,icon.inhY+icon.h.val};
+				const auto evidence=ink(clientRect(slot,coordinates),GetThemeColor(BarThemeColorEnum::TextPrimary));
+				expect(evidence.first>=3&&evidence.second>(frame.buttons[i].enabled?.35:.12),"actual prompt icon pixels include enabled and disabled content");
+				expect(!frame.accessibleNames[i].empty()&&!frame.tooltips[i].empty(),"each action publishes localized accessible name and tooltip");
+			}
 			std::filesystem::create_directories(L"Build/shape-p34-ui");
-			expect(SavePng(std::filesystem::path(L"Build/shape-p34-ui")/filename,scenePixels,receipt.size.cx,receipt.size.cy),"construction prompt PNG uses actual emitted production ULW pixels");
+			const auto path=std::filesystem::path(L"Build/shape-p34-ui")/filename;
+			expect(SavePng(path,scenePixels,receipt.size.cx,receipt.size.cy),"construction prompt PNG uses actual emitted production ULW pixels");
+			std::cout<<"Construction screenshot: "<<std::filesystem::absolute(path).string()<<'\n';
 		};
 		captureScene=true;
-		// 构造提示使用独立状态，同一完整Bar场景呈现；关闭时不污染原dock提示业务。
-		owner.barState.fold = false; owner.barState.geometryAttribute = false;
-		for (const auto presetKind : {PresetKind::Polygon, PresetKind::Arc, PresetKind::Cuboid, PresetKind::Cylinder})
+		// 构造提示读取完整生产场景：深浅主题、两档倍率及真实成功呈现几何。
+		owner.barState.fold=false;owner.barState.geometryAttribute=false;
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"prompt base language loads");owner.spec.ConfigureLocalizedTypography();
+		unsigned promptSession=80;
+		const auto publishPrompt=[&](const std::shared_ptr<Inkeys::Drawing::Draw3::ShapeUiSnapshot>& snapshot)
+		{Inkeys::Drawing::Draw3::PublishShapeUiSnapshot(snapshot);owner.UpdateRendering(false);};
+		const auto promptKey=[&](BYTE key,bool down,bool shift=false)
 		{
-			auto construction = std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
-			construction->identity.session = 71; construction->identity.generation = 1;
-			construction->construction.active = true; construction->construction.preset = presetKind;
-			construction->construction.canBack = true; construction->construction.canComplete = presetKind == PresetKind::Polygon;
-			construction->construction.confirmedSteps = 1;
-			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot(construction); owner.UpdateRendering(false); sceneTick(70);
-			expect(owner.constructionPrompt.Visible(), "multi-contact session publishes its own production Bar prompt");
-			const auto regions = owner.constructionPrompt.PresentedRegions();
-			expect(regions[0].right > regions[0].left && regions[0].bottom > regions[0].top,
-				"construction prompt participates in successful presentation and window bounds");
-			expect(!BarGeometryAttributeTestAccess::DockIndicatorVisible(owner), "construction prompt takes priority over dock feedback without overwriting its state");
-			if(presetKind==PresetKind::Polygon)
+			const BarConstructionPrompt::KeyboardMessage message{key,down,shift};
+			return owner.constructionPrompt.Keyboard(owner,message);
+		};
+		const auto screenshot=[&](const std::wstring& filename)
+		{
+			std::filesystem::create_directories(L"Build/shape-p34-ui");
+			const auto path=std::filesystem::path(L"Build/shape-p34-ui")/filename;
+			expect(SavePng(path,scenePixels,receipt.size.cx,receipt.size.cy),"prompt motion screenshot writes actual committed pixels");
+			std::cout<<"Construction screenshot: "<<std::filesystem::absolute(path).string()<<'\n';
+		};
+		// 首次呈现延迟/失败时，候选提示虽已可见也不能截获 PPT 方向键和空格。
+		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(90);BarUiAnimationEnabled=false;
+		{
+			auto construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
+			construction->identity.session=++promptSession;construction->construction.active=true;construction->construction.preset=PresetKind::Arc;
+			construction->construction.step=1;construction->construction.totalSteps=2;publishPrompt(construction);
+			expect(!owner.constructionPrompt.WantsKeyboard(),"unpresented first prompt does not capture keyboard");
+			rejectedPresent=false;rejectNextPresent=true;sceneTick(1);
+			expect(rejectedPresent&&owner.constructionPrompt.Visible()&&!owner.constructionPrompt.WantsKeyboard(),"failed first presentation keeps keyboard gate on the hidden successful frame");
+			for(const BYTE key:{BYTE(VK_LEFT),BYTE(VK_RIGHT),BYTE(VK_SPACE),BYTE(VK_TAB)})
+				expect(!promptKey(key,true)&&!promptKey(key,false),"unpresented prompt leaves PPT arrows, Space and Tab unconsumed");
+			previousPixels.clear();sceneTick(90);
+			expect(owner.constructionPrompt.WantsKeyboard()&&promptKey(VK_RIGHT,false)&&promptKey(VK_SPACE,false),"successful retry enables the same presented keyboard state");
+		}
+		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(2);BarUiAnimationEnabled=true;
+		for(const bool dark:{true,false})for(const double scale:{1.,2.})
+		{
+			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(90);
+			owner.barStyle.darkStyle=dark;owner.barStyle.configZoom=1;
+			BarGeometryAttributeTestAccess::Display(owner,static_cast<LONG>(1200*scale),static_cast<LONG>(800*scale),static_cast<UINT>(96*scale));
+			sceneTick(90);BarGeometryAttributeTestAccess::MoveRoot(owner,400,650);sceneTick(90);
+			const std::wstring suffix=std::wstring(dark?L"dark-":L"light-")+(scale==1?L"100":L"200")+L".png";
+			auto construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
+			construction->identity.session=++promptSession;construction->identity.generation=1;
+			construction->construction.active=true;construction->construction.preset=PresetKind::Arc;
+			construction->construction.step=1;construction->construction.totalSteps=2;
+			publishPrompt(construction);
+			bool rebound=false,intermediate=false;
+			for(int sample=0;sample<50;++sample)
 			{
-				checkPromptPixels(L"construction-normal.png");
-				const auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
-				const auto currentMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
-				const EraserAttributeRect mainRect{currentMain->inhX,currentMain->inhY,currentMain->inhX+currentMain->w.val,currentMain->inhY+currentMain->h.val};
-				expect(Intersect(frame.panel,mainRect).Width()==0,"normal-work construction prompt never intersects the actual main bar");
-				expect(frame.panel.bottom+5<=mainRect.top+.01,"normal-work prompt keeps the original five-DIP gap above the main bar");
+				sceneTick(1);const auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+				rebound|=frame.scale>1.0001;intermediate|=frame.scale>0.01&&frame.scale<.99;
+				expect(std::abs(frame.opacity-(std::clamp)(frame.scale,0.,1.))<.000001,"appear opacity clamps Back overshoot while scale retains rebound");
+				if(sample==10)screenshot(L"construction-appear-"+suffix);
 			}
-			const auto before = GetStateModeVersionedSnapshot();
-			owner.constructionPrompt.Keyboard(owner, VK_TAB, true); owner.constructionPrompt.Keyboard(owner, VK_RIGHT, true);
-			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "prompt keyboard only navigates construction controls, never changes next-tool style");
+			expect(rebound&&intermediate,"appearance traverses rebound and intermediate scale");sceneTick(90);
+			auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			expect(frame.visible&&frame.input&&frame.ring&&std::abs(frame.panel.Height()-42.5)<.01,"fixed-step prompt keeps final height and visible ring");
+			expect(!frame.buttons[0].enabled&&!frame.buttons[1].enabled&&!frame.buttons[2].visible&&frame.buttons[3].enabled,"arc first step exposes disabled Back/Forward and enabled Cancel");
+			expect(BarGeometryAttributeTestAccess::PromptRingLabel(owner.constructionPrompt).content.GetVal()==L"1/2"&&BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)==0,"first-step ring shows 1/2 with empty progress");
+			const auto& surface=BarGeometryAttributeTestAccess::PromptSurface(owner.constructionPrompt);
+			expect(surface.themeSurface&&surface.residentSurface&&surface.framePrimaryLightEnabled&&surface.frameCursorLightIntensityScale==1.,"prompt uses resident material and complete primary/cursor lighting");
+			checkPromptPixels((L"construction-arc-1-"+suffix).c_str());
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.step=2;construction->construction.confirmedSteps=1;construction->construction.canBack=true;publishPrompt(construction);sceneTick(120);
+			expect(BarGeometryAttributeTestAccess::PromptRingLabel(owner.constructionPrompt).content.GetVal()==L"2/2"&&std::abs(BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)-.5)<.000001,"second-step ring shows 2/2 and half completed");
+			checkPromptPixels((L"construction-arc-2-"+suffix).c_str());
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.step=1;construction->construction.confirmedSteps=0;construction->construction.canBack=false;construction->construction.canForward=true;publishPrompt(construction);sceneTick(120);
+			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			expect(!frame.buttons[0].enabled&&frame.buttons[1].enabled,"backed-out step enables only Forward and Cancel");
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.preset=PresetKind::Polygon;construction->construction.totalSteps=0;construction->construction.step=3;
+			construction->construction.confirmedSteps=2;construction->construction.canBack=true;construction->construction.canForward=false;publishPrompt(construction);sceneTick(120);
+			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			expect(!frame.ring&&frame.buttons[2].visible&&!frame.buttons[2].enabled,"polygon has no ring and Complete waits for three points");
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.step=4;construction->construction.confirmedSteps=3;construction->construction.canComplete=true;publishPrompt(construction);sceneTick(120);
+			expect(BarGeometryAttributeTestAccess::PromptLabel(owner.constructionPrompt).content.GetVal().find(L"已确定 3 个点")!=std::wstring::npos,"polygon labels confirmed points");
+			checkPromptPixels((L"construction-polygon-"+suffix).c_str());
+			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			const auto currentMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
+			const EraserAttributeRect mainRect{currentMain->inhX,currentMain->inhY,currentMain->inhX+currentMain->w.val,currentMain->inhY+currentMain->h.val};
+			expect(Intersect(frame.panel,mainRect).Width()==0&&frame.panel.bottom+5<=mainRect.top+.01,"prompt remains five DIP above visible main bar");
+			const auto before=GetStateModeVersionedSnapshot();BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,-1);
+			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"Tab starts at first enabled action");
+			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==2,"Tab skips disabled Forward");
+			promptKey(VK_TAB,true,true);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"Shift+Tab reverses action traversal");
+			promptKey(VK_TAB,true,true);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"Shift+Tab wraps to Cancel");
+			// 先捕获相反的 Shift 状态再消费：处理阶段必须逐条使用消息中的修饰键。
+			const BarConstructionPrompt::KeyboardMessage backward{VK_TAB,true,true},forward{VK_TAB,true,false};
+			BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,2);owner.constructionPrompt.Keyboard(owner,backward);
+			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"queued Shift+Tab retains capture-time reverse traversal after Shift changes");
+			BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,2);owner.constructionPrompt.Keyboard(owner,forward);
+			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"queued Tab retains capture-time forward traversal after Shift changes");
+			expect(SameBusinessSnapshot(before,GetStateModeVersionedSnapshot()),"prompt keyboard traversal never changes next-tool style");
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->constructionContactActive=true;publishPrompt(construction);sceneTick(90);
+			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);for(const auto& action:frame.buttons)expect(!action.enabled,"all actions disable during physical contact");
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->constructionContactActive=false;publishPrompt(construction);sceneTick(90);
+			// 人工收起仍展示提示，并以主按钮而非已隐藏主栏的中心定位。
+			BarGeometryAttributeTestAccess::MoveRoot(owner,600,650);sceneTick(90);owner.barState.fold=true;sceneTick(120);
+			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);const auto currentRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			expect(frame.visible&&frame.input&&std::abs((frame.panel.left+frame.panel.right)/2-(currentRoot->inhX+currentRoot->w.val/2))<.1,"manual collapse retains prompt anchored to main button");
+			screenshot(L"construction-folded-"+suffix);
+			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});bool retiring=false;
+			for(int sample=0;sample<50;++sample){sceneTick(1);const auto retiringFrame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);retiring|=retiringFrame.scale>.01&&retiringFrame.scale<.99;if(sample==12)screenshot(L"construction-disappear-"+suffix);}
+			expect(retiring&&!owner.constructionPrompt.Visible(),"disappearance traverses intermediate scale and retires fully");
+			expect(!promptKey(VK_TAB,true,false)&&!promptKey(VK_ESCAPE,true),"hidden prompt does not consume keyboard");owner.barState.fold=false;sceneTick(90);
 		}
-		BarGeometryAttributeTestAccess::Display(owner,460,420,192); owner.barStyle.configZoom=1;
-		auto smallPrompt = std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
-		smallPrompt->identity.session=72;smallPrompt->identity.generation=1;
-		smallPrompt->construction.active=true;smallPrompt->construction.preset=PresetKind::Polygon;
-		smallPrompt->construction.canBack=smallPrompt->construction.canComplete=true;smallPrompt->construction.confirmedSteps=3;
-		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot(smallPrompt);owner.UpdateRendering(false);sceneTick(90);
-		const auto prompt = BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
-		expect(prompt.visible && prompt.input, "fixed-pixel high-DPI construction prompt settles and accepts controls");
-		for(const auto& button:prompt.buttons)
-		{
-			expect(button.visible && button.enabled && button.boundsDip.left>=prompt.panel.left && button.boundsDip.right<=prompt.panel.right &&
-				button.boundsDip.top>=prompt.panel.top && button.boundsDip.bottom<=prompt.panel.bottom,
-				"Finish Back Cancel stay fully inside wrapped prompt without shrinking standard buttons");
-		}
-		checkPromptPixels(L"construction-small-200.png");
-		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({}); owner.UpdateRendering(false); sceneTick(70);
-		expect(!owner.constructionPrompt.Visible(), "finished or cancelled construction prompt retires fully");
+		// 生产换字顺序：先扩到足够宽；扩框中重定向短文案，换字后才缩框。
+		auto construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();construction->identity.session=++promptSession;construction->identity.generation=1;
+		construction->construction.active=true;construction->construction.preset=PresetKind::Polygon;construction->construction.confirmedSteps=1;construction->construction.step=2;construction->construction.canBack=true;
+		publishPrompt(construction);sceneTick(120);const auto firstLabel=BarGeometryAttributeTestAccess::PromptLabel(owner.constructionPrompt).content.GetVal();
+		construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->construction.confirmedSteps=100;publishPrompt(construction);sceneTick(3);
+		expect(BarGeometryAttributeTestAccess::PromptContentPhase(owner.constructionPrompt)==BarBottomDockIndicatorContentPhase::ExpandingFrame&&BarGeometryAttributeTestAccess::PromptLabel(owner.constructionPrompt).content.GetVal()==firstLabel,"expansion precedes any text replacement");
+		construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->construction.confirmedSteps=2;publishPrompt(construction);
+		bool swapped=false,shrunk=false;for(int sample=0;sample<180;++sample){sceneTick(1);const auto phase=BarGeometryAttributeTestAccess::PromptContentPhase(owner.constructionPrompt);if(phase==BarBottomDockIndicatorContentPhase::SwappingText)swapped=true;if(phase==BarBottomDockIndicatorContentPhase::ShrinkingFrame){expect(swapped,"shrinking follows text transition");shrunk=true;}}
+		expect(swapped&&shrunk,"shared three-phase helper completes expansion, text swap and shrink");
+		BarGeometryAttributeTestAccess::MoveRoot(owner,600,60);sceneTick(120);
+		const auto belowPrompt=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+		const auto topRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		const auto topMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
+		expect(belowPrompt.panel.top>=(std::max)(topRoot->inhY+topRoot->h.val,topMain->inhY+topMain->h.val)+4.99,"insufficient room above places prompt five DIP below visible bar");
+		BarGeometryAttributeTestAccess::Display(owner,460,420,192);owner.barStyle.configZoom=1;sceneTick(120);
+		const auto compact=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+		expect(compact.visible&&compact.input,"restricted workspace prompt settles and accepts input");
+		for(const auto& action:compact.buttons)if(action.visible)expect(action.boundsDip.left>=compact.panel.left&&action.boundsDip.right<=compact.panel.right&&action.boundsDip.top>=compact.panel.top&&action.boundsDip.bottom<=compact.panel.bottom,"wrapped prompt preserves full standard button bounds");
+		checkPromptPixels(L"construction-compact-200.png");
+		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});owner.UpdateRendering(false);sceneTick(90);
+		expect(!owner.constructionPrompt.Visible(),"finished or cancelled construction prompt retires fully");
 		scene = {}; owner.spec.DiscardDeviceResources();
 		report << "Actual scene commits=" << actualCommits << '\n';
 		globalPath = originalGlobalPath;

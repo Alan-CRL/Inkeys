@@ -143,7 +143,17 @@
         "HeightStep": "Tentukan tinggi",
         "Complete": "Selesai",
         "Back": "Kembali",
-        "CancelAction": "Batal"
+        "CancelAction": "Batal",
+        "StepFormat": "Langkah {0} · {1}",
+        "PointCountFormat": "{0} titik ditempatkan · {1}",
+        "BackName": "Langkah sebelumnya",
+        "BackTooltip": "Batalkan langkah terakhir yang dikonfirmasi",
+        "ForwardName": "Langkah berikutnya",
+        "ForwardTooltip": "Pulihkan langkah terakhir yang dibatalkan",
+        "CompleteName": "Selesai menggambar",
+        "CompleteTooltip": "Selesaikan polilini atau tutup poligon",
+        "CancelName": "Batal",
+        "CancelTooltip": "Batalkan gambar ini"
       },
       "GeometryAttributes":
       {

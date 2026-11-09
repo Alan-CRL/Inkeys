@@ -143,7 +143,17 @@
         "HeightStep": "Задайте высоту",
         "Complete": "Готово",
         "Back": "Назад",
-        "CancelAction": "Отмена"
+        "CancelAction": "Отмена",
+        "StepFormat": "Шаг {0} · {1}",
+        "PointCountFormat": "Точек задано: {0} · {1}",
+        "BackName": "Предыдущий шаг",
+        "BackTooltip": "Отменить последний подтверждённый шаг",
+        "ForwardName": "Следующий шаг",
+        "ForwardTooltip": "Восстановить последний отменённый шаг",
+        "CompleteName": "Завершить рисование",
+        "CompleteTooltip": "Завершить ломаную или замкнуть многоугольник",
+        "CancelName": "Отмена",
+        "CancelTooltip": "Отменить это рисование"
       },
       "GeometryAttributes":
       {

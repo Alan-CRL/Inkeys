@@ -401,11 +401,13 @@ class BarConstructionPrompt
 	friend class BarGeometryAttributeTestAccess;
 public:
 	bool Advance(BarUISetClass&, std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot>, double dt, double speed,
-		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY);
+		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY, const BarUiTimelineClass* parentTimeline = nullptr);
 	void Draw(BarUIRendering&, ID2D1DeviceContext*);
 	void CommitPresented();
 	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled = false);
-	bool Keyboard(BarUISetClass&, BYTE, bool down);
+	struct KeyboardMessage { BYTE key = 0; bool down = false, shift = false; };
+	bool Keyboard(BarUISetClass&, const KeyboardMessage&);
+	bool WantsKeyboard() const;
 	bool Visible() const noexcept { return visible_.load(); }
 	bool Changed() const noexcept { return changed_; }
 	RECT Bounds() const;
@@ -416,24 +418,32 @@ private:
 	{
 		Inkeys::Drawing::Draw3::ShapeUiIdentity identity;
 		Inkeys::UI::Bar::EraserAttributeRect panel;
-		std::array<Inkeys::UI::Bar::BarButtonHitSnapshot,3> buttons;
-		double zoom = 1, opacity = 0;
-		bool visible = false, input = false;
+		std::array<Inkeys::UI::Bar::BarButtonHitSnapshot,4> buttons;
+		std::array<std::wstring,4> accessibleNames, tooltips;
+		Inkeys::UI::Bar::EraserAttributeRect visualPanel;
+		double zoom = 1, opacity = 0, scale = 0;
+		bool visible = false, input = false, ring = false;
 	};
 	Frame frame_, presented_;
 	mutable std::mutex mutex_;
 	BarButtonListClass list_;
-	std::array<std::shared_ptr<BarButtonClass>,3> buttons_;
-	std::array<BarUiValueClass,3> x_, y_;
+	std::array<std::shared_ptr<BarButtonClass>,4> buttons_;
+	std::shared_ptr<BarButtonClass> divider_;
+	std::array<BarUiValueClass,4> x_, y_;
 	BarUiShapeClass surface_;
-	BarUiWordClass label_;
-	BarUiPctClass opacity_{0};
+	BarUiWordClass label_, ringLabel_;
+	BarUiValueClass opacity_{0}, ringProgress_{0}, textWidth_{0};
 	BarUiValueClass left_, top_, width_, height_;
+	BarUiTimelineClass layoutTimeline_;
+	Inkeys::UI::Bar::BarBottomDockIndicatorContentPhase contentPhase_ = Inkeys::UI::Bar::BarBottomDockIndicatorContentPhase::Stable;
+	std::wstring desiredLabel_, desiredRingLabel_;
+	unsigned buttonState_ = ~0u;
 	Inkeys::Drawing::Draw3::ShapeUiIdentity pressedIdentity_;
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
 	int appliedHover_ = -1;
 	IdtAtomic<bool> visible_ = false;
-	bool initialized_ = false, changed_ = false;
+	draw3::shapes::ConstructionStatus status_;
+	bool initialized_ = false, changed_ = false, textTransition_ = false;
 };
 
 // 图形面板仅保存拓扑和资源，按钮行为与动画交给共享 BarButton 运行时。
@@ -1487,6 +1497,7 @@ namespace Inkeys::UI::Bar
 		bool expandAfterClick = false);
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
+	export int RunConstructionAutoCollapseProductionTest() noexcept;
 	export int RunBarTouchProbeProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export int RunKeyboardShortcutWhiteboardProductionTest() noexcept;
