@@ -781,3 +781,7 @@ Correct：保留191为最小组，白板用332，并验证最终内嵌资源和�
 - 设置页:总开关 `ToggleRow` 的 `InlineRowContent` 内联区,用 `Design::InlineCheckboxes`(“触摸”、“笔（笔尾）”),`visibilityId` + `visible = 总开关` 复用控件自带的条件动画收起/展开;收起期间不可交互、不产生事件。
 - 运行态:`Host::SetInterruptedStrokeReconnectDevices(touch, penTail)` → `DrawingController::SetInterruptedStrokeReconnectDevices(mask)`(bit0 触摸、bit1 笔尾)。只在两个接管点(新 Down 的候选匹配、Up 的延迟提交)用 `reconnectDeviceAllowed(identity)` 过滤;`IsInterruptedStrokeReconnectIdentitySupported` 仍是“能力”判定,不要把用户选择写进它。
 - 自测:`Inkeys.exe --config-boundary-test` 覆盖两个键的默认值与往返。
+
+## 白板拖动惯性偏好
+
+main.json 新增 `Drawing.Whiteboard.PanInertia.{Enabled,Mouse,Touchpad,Touch,Pen,PenTail}` 六个 `IdtAtomic<bool>` / NoUpload，默认依次 `{true,false,true,true,true,false}`。缺项及非法bool按schema默认，不为旧版固定Mouse惯性迁移为true；总关不覆盖五项。启动/设置经完整options→Host去重快照→DrawingController owner应用，写盘复用冻结FIFO；设置标题、说明及五类输入七键补齐20语并由既有sync/check生成头与snapshot。2026-11-12起PTP扩展暂时停用，Touchpad字段和界面偏好保留但不会产生触控板运动，不得据此宣称该设备可用。可执行合同与测试断言统一见 [canvas-pan.md](canvas-pan.md)。

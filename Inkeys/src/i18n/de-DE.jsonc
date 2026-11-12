@@ -629,6 +629,16 @@
           "Precise": "Präzise",
           "Fast": "Schnell",
           "Disabled": "Aus"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Trägheit beim Verschieben des Whiteboards",
+          "E": "Im Verschiebemodus gleitet das Whiteboard nach dem Loslassen weiter. Für jede Eingabeart getrennt einstellbar.",
+          "Mouse": "Maus",
+          "Touchpad": "Touchpad",
+          "Touch": "Touch",
+          "Pen": "Stift",
+          "PenTail": "Stift (Radiererende)"
         }
       },
       "Laser":

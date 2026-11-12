@@ -629,6 +629,16 @@
           "Precise": "Chính xác",
           "Fast": "Nhanh",
           "Disabled": "Tắt"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Quán tính kéo bảng trắng",
+          "E": "Bảng tiếp tục trượt sau khi thả trong chế độ kéo. Có thể điều chỉnh riêng cho từng loại đầu vào.",
+          "Mouse": "Chuột",
+          "Touchpad": "Bàn di chuột",
+          "Touch": "Cảm ứng",
+          "Pen": "Bút",
+          "PenTail": "Bút (đầu tẩy)"
         }
       },
       "Laser":

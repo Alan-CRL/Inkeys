@@ -633,6 +633,16 @@ inline constexpr struct I18nKeyRoot
                     const char* Fast = "SettingsUI/Draw/General/InkPrediction/Fast";
                     const char* Disabled = "SettingsUI/Draw/General/InkPrediction/Disabled";
                 } InkPrediction{};
+                struct Node__SettingsUI__Draw__General__CanvasPanInertia
+                {
+                    const char* N = "SettingsUI/Draw/General/CanvasPanInertia/N";
+                    const char* E = "SettingsUI/Draw/General/CanvasPanInertia/E";
+                    const char* Mouse = "SettingsUI/Draw/General/CanvasPanInertia/Mouse";
+                    const char* Touchpad = "SettingsUI/Draw/General/CanvasPanInertia/Touchpad";
+                    const char* Touch = "SettingsUI/Draw/General/CanvasPanInertia/Touch";
+                    const char* Pen = "SettingsUI/Draw/General/CanvasPanInertia/Pen";
+                    const char* PenTail = "SettingsUI/Draw/General/CanvasPanInertia/PenTail";
+                } CanvasPanInertia{};
             } General{};
             struct Node__SettingsUI__Draw__Laser
             {

@@ -629,6 +629,16 @@
           "Precise": "Preciso",
           "Fast": "Rápido",
           "Disabled": "Desativado"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inércia ao arrastar o quadro branco",
+          "E": "O quadro continua deslizando após soltar no modo de arraste. Ajuste cada tipo de entrada separadamente.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Toque",
+          "Pen": "Caneta",
+          "PenTail": "Caneta (ponta da borracha)"
         }
       },
       "Laser":

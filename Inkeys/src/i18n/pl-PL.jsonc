@@ -629,6 +629,16 @@
           "Precise": "Dokładny",
           "Fast": "Szybki",
           "Disabled": "Wyłączone"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Bezwładność przesuwania tablicy",
+          "E": "Tablica przesuwa się dalej po zwolnieniu w trybie przeciągania. Ustawienia są niezależne dla każdego typu wejścia.",
+          "Mouse": "Mysz",
+          "Touchpad": "Touchpad",
+          "Touch": "Dotyk",
+          "Pen": "Pióro",
+          "PenTail": "Pióro (końcówka gumki)"
         }
       },
       "Laser":

@@ -831,6 +831,67 @@ int RunConfigMetadataTests()
 		pan.ResetToDefaults();
 		check(!pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load(), "reset disables pan diagnostics");
 	}
+	{
+		// 惯性主/子偏好均经真实 schema 和磁盘往返，不能以单独默认 struct 代替。
+		constexpr std::array<bool, 6> defaults{ true, false, true, true, true, false };
+		const std::array<const char*, 6> names{ "Enabled", "Mouse", "Touchpad", "Touch", "Pen", "PenTail" };
+		const auto values = [](const Inkeys::Config& config) {
+			const auto& options = config.Drawing.Whiteboard.PanInertia;
+			return std::array<bool, 6>{ options.Enabled.load(), options.Mouse.load(), options.Touchpad.load(),
+				options.Touch.load(), options.Pen.load(), options.PenTail.load() };
+		};
+		const auto assign = [](Inkeys::Config& config, const std::array<bool, 6>& value) {
+			auto& options = config.Drawing.Whiteboard.PanInertia;
+			options.Enabled = value[0]; options.Mouse = value[1]; options.Touchpad = value[2];
+			options.Touch = value[3]; options.Pen = value[4]; options.PenTail = value[5];
+		};
+		const auto writeDocument = [&](const Json::Value& document) {
+			std::ofstream output(file, std::ios::binary | std::ios::trunc);
+			Json::StreamWriterBuilder writer; output << Json::writeString(writer, document);
+			check(output.good(), "pan inertia fixture writes isolated configuration");
+		};
+		Inkeys::Config pan;
+		writeDocument(Json::Value(Json::objectValue));
+		check(pan.ReadAll() && values(pan) == defaults, "missing inertia preferences use all six product defaults");
+		const auto upload = pan.GetUploadInfo();
+		for (const unsigned mask : { 0u, 63u, 1u, 2u, 4u, 8u, 16u, 32u, 29u })
+		{
+			std::array<bool, 6> expected{}, opposite{};
+			for (size_t index = 0; index < expected.size(); ++index) {
+				expected[index] = (mask & (1u << index)) != 0; opposite[index] = !expected[index];
+			}
+			assign(pan, expected);
+			Inkeys::Config frozen; frozen = pan; assign(pan, opposite);
+			check(values(frozen) == expected && frozen.GetUploadInfo() == upload && frozen.Write(),
+				"inertia frozen copy preserves independent preferences and NoUpload metadata");
+			const auto saved = ReadJson(file)["Drawing"]["Whiteboard"]["PanInertia"];
+			for (size_t index = 0; index < names.size(); ++index)
+				check(saved[names[index]].isBool() && saved[names[index]].asBool() == expected[index],
+					"inertia leaves serialize as exact independent bools");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && values(restarted) == expected,
+				"inertia restart retains selected devices even while the master is off");
+			for (size_t index = 0; index < names.size(); ++index)
+			{
+				assign(restarted, opposite); restarted.UI.Bar.Zoom2 = 1.25;
+				const std::string path = std::string("Drawing.Whiteboard.PanInertia.") + names[index];
+				auto miniExpected = opposite; miniExpected[index] = expected[index];
+				check(restarted.ReadMini({ path }) && values(restarted) == miniExpected && restarted.UI.Bar.Zoom2.load() == 1.25,
+					"inertia ReadMini changes only the selected leaf and preserves unrelated state");
+			}
+		}
+		for (size_t index = 0; index < names.size(); ++index)
+			for (const auto& invalid : { Json::Value(), Json::Value(1), Json::Value(1.0),
+				Json::Value("true"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+			{
+				Json::Value document(Json::objectValue);
+				document["Drawing"]["Whiteboard"]["PanInertia"][names[index]] = invalid;
+				writeDocument(document); assign(pan, { false, true, false, false, false, true });
+				check(pan.ReadAll() && values(pan) == defaults, "invalid inertia leaf falls back without bool coercion");
+			}
+		assign(pan, { false, true, false, false, false, true }); pan.ResetToDefaults();
+		check(values(pan) == defaults, "inertia reset restores master and every device default");
+	}
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }

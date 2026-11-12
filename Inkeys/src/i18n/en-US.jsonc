@@ -629,6 +629,16 @@
           "Precise": "Precise",
           "Fast": "Fast",
           "Disabled": "Off"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Whiteboard drag inertia",
+          "E": "Keep gliding after release in whiteboard drag mode. Adjust each input type separately.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Touch",
+          "Pen": "Pen",
+          "PenTail": "Pen (eraser end)"
         }
       },
       "Laser":

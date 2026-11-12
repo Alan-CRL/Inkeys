@@ -8,6 +8,9 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <dwmapi.h>
+#include <directmanipulation.h>
+#include <wrl.h>
+#include <objbase.h>
 #include <tpcshrd.h>
 
 #include <algorithm>
@@ -25,6 +28,8 @@
 #include "Draw3.HapticRequest.h"
 #include "Draw3.HapticDiagnostics.h"
 #include "Draw3.MouseInput.h"
+#include "Draw3.TouchpadNavigation.h"
+#include "Draw3.TouchpadInput.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
 module Inkeys.Drawing.Draw3.window_control;
@@ -36,9 +41,31 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		constexpr UINT kApplySystemCursorMessage = WM_APP + 1;
+		constexpr UINT kTouchpadNavigationMessage = WM_APP + 0x3D5u;
+		// DM 与 RTS 在同一 HWND 上争用输入委托；替代触控板前端完成前不得激活这套 COM 路径。
+		constexpr bool kTouchpadDirectManipulationQuarantined = true;
+		std::atomic<UINT_PTR> nextTouchpadNavigationIdentity = 0;
 		constexpr LONG_PTR kPromotedPointerSignatureMask = 0xFFFFFF00;
 		constexpr LONG_PTR kPromotedPointerSignature = 0xFF515700;
 		constexpr uint64_t kTouchInputBarrierKnownMask = uint64_t{ 1 } << 32u;
+
+		// 发布停止证明前取得独立通知句柄；Host 的成功快路可以立即关闭原句柄。
+		class TouchpadOwnerNotification
+		{
+		public:
+			explicit TouchpadOwnerNotification(HANDLE source) noexcept
+			{
+				if (source) (void)DuplicateHandle(GetCurrentProcess(), source, GetCurrentProcess(),
+					&event_, 0, FALSE, DUPLICATE_SAME_ACCESS);
+			}
+			~TouchpadOwnerNotification() { if (event_) CloseHandle(event_); }
+			TouchpadOwnerNotification(const TouchpadOwnerNotification&) = delete;
+			TouchpadOwnerNotification& operator=(const TouchpadOwnerNotification&) = delete;
+			explicit operator bool() const noexcept { return event_ != nullptr; }
+			bool Signal() const noexcept { return event_ && SetEvent(event_) != FALSE; }
+		private:
+			HANDLE event_ = nullptr;
+		};
 
 		constexpr DWORD kTabletInputFlags =
 			TABLET_ENABLE_MULTITOUCHDATA |
@@ -313,6 +340,256 @@ namespace Inkeys::Drawing::Draw3
 	}
 #endif
 
+
+	// DM 对象和回调均留在 HWND owner；绘制线程只持纯数值 Bridge。
+	class TouchpadNavigationOwner : public std::enable_shared_from_this<TouchpadNavigationOwner>
+	{
+		class Handler final : public Microsoft::WRL::RuntimeClass<
+			Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDirectManipulationViewportEventHandler,
+			IDirectManipulationInteractionEventHandler>
+		{
+		public:
+			explicit Handler(std::weak_ptr<TouchpadNavigationOwner> owner) : owner_(std::move(owner)) {}
+			HRESULT STDMETHODCALLTYPE OnViewportStatusChanged(IDirectManipulationViewport*,
+				DIRECTMANIPULATION_STATUS current, DIRECTMANIPULATION_STATUS previous) override
+			{
+				Microsoft::WRL::ComPtr<Handler> keepAlive(this);
+				if (auto owner = owner_.lock()) owner->Status(current, previous);
+				return S_OK;
+			}
+			HRESULT STDMETHODCALLTYPE OnViewportUpdated(IDirectManipulationViewport*) override { return S_OK; }
+			HRESULT STDMETHODCALLTYPE OnContentUpdated(IDirectManipulationViewport*, IDirectManipulationContent* content) override
+			{
+				Microsoft::WRL::ComPtr<Handler> keepAlive(this);
+				if (auto owner = owner_.lock()) owner->Content(content);
+				return S_OK;
+			}
+			HRESULT STDMETHODCALLTYPE OnInteraction(IDirectManipulationViewport2*,
+				DIRECTMANIPULATION_INTERACTION_TYPE interaction) override
+			{
+				Microsoft::WRL::ComPtr<Handler> keepAlive(this);
+				if (auto owner = owner_.lock()) owner->Interaction(interaction);
+				return S_OK;
+			}
+		private:
+			std::weak_ptr<TouchpadNavigationOwner> owner_;
+		};
+	public:
+		explicit TouchpadNavigationOwner(std::shared_ptr<Detail::TouchpadNavigationBridge> bridge, ContactInputCoordinator* input)
+			: bridge_(std::move(bridge)), frontend_(*bridge_), input_(input) {}
+		bool Initialize(HWND window)
+		{
+			if (kTouchpadDirectManipulationQuarantined)
+			{
+				LogCanvasPan("touchpad-init action=quarantined reason=rts-dm-hwnd-conflict");
+				return false;
+			}
+			window_ = window;
+			const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+			if (FAILED(apartment) && apartment != RPC_E_CHANGED_MODE) return false;
+			uninitialize_ = SUCCEEDED(apartment);
+			HRESULT result = CoCreateInstance(__uuidof(DirectManipulationManager), nullptr,
+				CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&manager_));
+			if (SUCCEEDED(result)) result = manager_->GetUpdateManager(IID_PPV_ARGS(&updates_));
+			if (SUCCEEDED(result)) result = manager_->CreateViewport(nullptr, window, IID_PPV_ARGS(&viewport_));
+			if (SUCCEEDED(result)) result = Detail::ConfigureTouchpadViewport(*viewport_.Get());
+			RECT rect{};
+			if (SUCCEEDED(result) && (!GetClientRect(window, &rect) || rect.right <= 0 || rect.bottom <= 0)) result = E_FAIL;
+			if (SUCCEEDED(result)) { rect_ = rect; result = viewport_->SetViewportRect(&rect_); }
+			if (SUCCEEDED(result)) result = viewport_->GetPrimaryContent(IID_PPV_ARGS(&content_));
+			if (SUCCEEDED(result))
+			{
+				handler_ = Microsoft::WRL::Make<Handler>(weak_from_this());
+				result = handler_ ? viewport_->AddEventHandler(window, handler_.Get(), &cookie_) : E_OUTOFMEMORY;
+				retirement_.handlerRegistered = SUCCEEDED(result);
+			}
+			if (SUCCEEDED(result)) result = manager_->Activate(window);
+			if (SUCCEEDED(result)) { retirement_.managerActivated = true; result = viewport_->Enable(); }
+			if (FAILED(result))
+			{
+				LogCanvasPan("touchpad-init result=0x%08lx action=unavailable", static_cast<unsigned long>(result));
+				(void)Shutdown(); // 若清理也失败，由调用方保留 holder，等待 Host 的 owner 停止证明。
+				return false;
+			}
+			frontend_.Reset(bridge_->Epoch());
+			initialized_ = true;
+			LogCanvasPan("touchpad-init input=explicit-pass-through update=manual interaction-events=1");
+			return true;
+		}
+		bool NeedsCleanup() const noexcept
+		{ return uninitialize_ || manager_ || viewport_ || handler_; }
+		void Apply()
+		{
+			if (!initialized_ || !viewport_ || failed_) return;
+			const auto epoch = bridge_->Epoch();
+			if (bridge_->Active() && !bridge_->Running() && !bridge_->inertiaAllowed.load())
+			{ EndInertia(); return; }
+			if (bridge_->NeedsUpdate() && !Admitted()) { Cancel(); return; }
+			if (frontend_.Epoch() != epoch || !bridge_->enabled.load(std::memory_order_acquire))
+			{
+				frontend_.Reset(epoch);
+				viewport_->Stop(); viewport_->Disable();
+				RECT rect{};
+				if (GetClientRect(window_, &rect) && rect.right > 0 && rect.bottom > 0)
+				{
+					rect_ = rect;
+					if (FAILED(viewport_->SetViewportRect(&rect_))) { failed_ = true; Cancel(); return; }
+				}
+				if (!Reset()) { Cancel(); return; }
+				if (bridge_->enabled.load(std::memory_order_acquire))
+				{
+					if (FAILED(viewport_->Enable())) { failed_ = true; Cancel(); }
+				}
+			}
+		}
+		bool Contact(UINT32 pointer)
+		{
+			Apply();
+			if (!initialized_ || !viewport_ || failed_ || !bridge_->enabled.load(std::memory_order_acquire) || !input_ || input_->AdmissionBlocked()) return false;
+			// 固定配置仅在初始化设置；SetContact 的 S_OK 只证明关联，不能伪造 Running。
+			if (FAILED(viewport_->Enable())) { failed_ = true; Cancel(); return false; }
+			HRESULT associated = E_FAIL;
+			const bool accepted = frontend_.Associate(bridge_->Epoch(), input_->AdmissionRevision(), pointer,
+				[&](UINT32 id) { associated = viewport_->SetContact(id); return SUCCEEDED(associated); });
+			LogCanvasPan("touchpad-contact pointer=%u result=0x%08lx accepted=%u running=%u needs-update=%u",
+				pointer, static_cast<unsigned long>(associated), accepted ? 1u : 0u,
+				bridge_->Running() ? 1u : 0u, bridge_->NeedsUpdate() ? 1u : 0u);
+			if (!accepted)
+			{
+				if (!frontend_.Accepting()) { viewport_->Stop(); viewport_->Disable(); }
+				return false;
+			}
+			Update(); return true;
+		}
+		void Update()
+		{
+			Apply();
+			if (initialized_ && updates_ && !failed_ && bridge_->enabled.load(std::memory_order_acquire))
+			{
+				const HRESULT result = updates_->Update(nullptr);
+				if (FAILED(result)) Cancel();
+			}
+		}
+		bool Shutdown()
+		{
+			frontend_.Reset(bridge_->Epoch());
+			if (viewport_ && !retirement_.viewportAbandoned) { viewport_->Stop(); viewport_->Disable(); }
+			if (!retirement_.Complete(
+				[this]() { return !viewport_ || SUCCEEDED(viewport_->RemoveEventHandler(cookie_)); },
+				[this]() { return !viewport_ || SUCCEEDED(viewport_->Abandon()); },
+				[this]() { return !manager_ || SUCCEEDED(manager_->Deactivate(window_)); }))
+				return false; // 不释放 holder/COM apartment，不把“已请求停止”冒充停止证明。
+			initialized_ = false;
+			ReleaseResources();
+			return true;
+		}
+	private:
+		void ReleaseResources() noexcept
+		{
+			handler_.Reset(); content_.Reset(); viewport_.Reset(); updates_.Reset(); manager_.Reset();
+			if (uninitialize_) { CoUninitialize(); uninitialize_ = false; }
+		}
+		bool Admitted() const noexcept
+		{ return input_ && !input_->AdmissionBlocked() && input_->AdmissionRevision() == frontend_.AdmissionRevision(); }
+		bool Reset()
+		{
+			resetting_ = true;
+			const HRESULT result = viewport_ ? viewport_->ZoomToRect(0.0f, 0.0f,
+				static_cast<float>(rect_.right), static_cast<float>(rect_.bottom), FALSE) : E_FAIL;
+			resetting_ = false;
+			if (FAILED(result)) { failed_ = true; return false; }
+			x_ = y_ = 0.0;
+			return true;
+		}
+		void Cancel()
+		{
+			frontend_.Cancel();
+			if (viewport_) { viewport_->Stop(); viewport_->Disable(); }
+		}
+		void EndInertia()
+		{
+			// 不提升 epoch/清空队列：禁惯性不能吞掉尚未消费的 Running 末点。
+			Publish(TouchpadNavigationPhase::Cancelled);
+			if (viewport_) { viewport_->Stop(); viewport_->Disable(); if (!Reset()) Cancel(); }
+		}
+		void Publish(TouchpadNavigationPhase phase)
+		{
+			if (!frontend_.Accepting() || resetting_) return;
+			if (!Admitted()) { Cancel(); return; }
+			if (phase == TouchpadNavigationPhase::Inertia && !bridge_->inertiaAllowed.load()) { EndInertia(); return; }
+			LARGE_INTEGER qpc{}; QueryPerformanceCounter(&qpc);
+			if (!frontend_.PublishStatus(phase, x_, y_, qpc.QuadPart))
+			{ viewport_->Stop(); viewport_->Disable(); }
+		}
+		void Interaction(DIRECTMANIPULATION_INTERACTION_TYPE interaction)
+		{
+			if (!frontend_.Accepting() || resetting_) return;
+			if (!Admitted()) { Cancel(); return; }
+			if (interaction != DIRECTMANIPULATION_INTERACTION_BEGIN && interaction != DIRECTMANIPULATION_INTERACTION_END) return;
+			frontend_.Interaction(interaction == DIRECTMANIPULATION_INTERACTION_BEGIN);
+			LogCanvasPan("touchpad-interaction type=%s accepted=%u running=%u needs-update=%u",
+				interaction == DIRECTMANIPULATION_INTERACTION_BEGIN ? "begin" : "end",
+				frontend_.Accepting() ? 1u : 0u, bridge_->Running() ? 1u : 0u, bridge_->NeedsUpdate() ? 1u : 0u);
+		}
+		void Status(DIRECTMANIPULATION_STATUS current, DIRECTMANIPULATION_STATUS previous)
+		{
+			if (!frontend_.Accepting() || resetting_ || (current == previous && current != DIRECTMANIPULATION_READY)) return;
+			// Enable/初始化 READY 可能在关联后异步到达，不能提前结束尚待识别的真实 interaction。
+			if ((current == DIRECTMANIPULATION_READY && !frontend_.CanPublishStatus(TouchpadNavigationPhase::Ready)) ||
+				(current == DIRECTMANIPULATION_INERTIA && !frontend_.CanPublishStatus(TouchpadNavigationPhase::Inertia))) return;
+			LogCanvasPan("touchpad-status previous=%u current=%u accepted=1", static_cast<unsigned>(previous), static_cast<unsigned>(current));
+			if (current == DIRECTMANIPULATION_RUNNING) Publish(TouchpadNavigationPhase::Running);
+			else if (current == DIRECTMANIPULATION_INERTIA)
+			{
+				// 阶段边沿可先于合并的 content 通知；按 Running 结清最后累计变换再决定尾滑。
+				Content(content_.Get());
+				if (!frontend_.Accepting()) return;
+				if (!bridge_->inertiaAllowed.load(std::memory_order_acquire))
+				{
+					Publish(TouchpadNavigationPhase::Ready);
+					viewport_->Stop(); viewport_->Disable(); if (!Reset()) Cancel(); return;
+				}
+				Publish(TouchpadNavigationPhase::Inertia);
+			}
+			else if (current == DIRECTMANIPULATION_READY)
+			{
+				Content(content_.Get());
+				if (!frontend_.Accepting()) return;
+				Publish(TouchpadNavigationPhase::Ready);
+				if (!Reset()) Cancel();
+			}
+		}
+		void Content(IDirectManipulationContent* content)
+		{
+			if (!frontend_.Accepting() || resetting_ || !content) return;
+			float transform[6]{};
+			if (FAILED(content->GetContentTransform(transform, 6))) { Cancel(); return; }
+			for (float value : transform) if (!std::isfinite(value)) { Cancel(); return; }
+			// 本模式只有平移；拒绝意外缩放/旋转，不从无效矩阵制造画布跳变。
+			if (std::abs(transform[0] - 1.0f) > 0.0001f || std::abs(transform[3] - 1.0f) > 0.0001f ||
+				std::abs(transform[1]) > 0.0001f || std::abs(transform[2]) > 0.0001f) { Cancel(); return; }
+			if (x_ == transform[4] && y_ == transform[5]) return;
+			x_ = transform[4]; y_ = transform[5];
+			// 内容可先于状态到达；先缓存累计值，确认 Running/Inertia 后才发布几何和持有。
+			if (frontend_.HasConfirmedPhase()) Publish(frontend_.Phase());
+		}
+		std::shared_ptr<Detail::TouchpadNavigationBridge> bridge_;
+		Detail::TouchpadNavigationFrontend frontend_;
+		ContactInputCoordinator* input_ = nullptr; // Host 保留直到 owner Stop 确认。
+		Microsoft::WRL::ComPtr<IDirectManipulationManager> manager_;
+		Microsoft::WRL::ComPtr<IDirectManipulationUpdateManager> updates_;
+		Microsoft::WRL::ComPtr<IDirectManipulationViewport> viewport_;
+		Microsoft::WRL::ComPtr<IDirectManipulationContent> content_;
+		Microsoft::WRL::ComPtr<Handler> handler_;
+		HWND window_ = nullptr;
+		RECT rect_{};
+		DWORD cookie_ = 0;
+		double x_ = 0.0, y_ = 0.0;
+		Detail::TouchpadNavigationRetirement retirement_;
+		bool uninitialize_ = false;
+		bool resetting_ = false, failed_ = false, initialized_ = false;
+	};
+
 	WindowController::~WindowController()
 	{
 		// HWND 生命周期由 Window Service 管理；这里只解绑外部附着状态。
@@ -325,6 +602,10 @@ namespace Inkeys::Drawing::Draw3
 		if (!window || !IsWindow(window)) return false;
 		if (externalWindow_.load(std::memory_order_acquire)) return false;
 		mouseSelectionMode_.ResetWorkspace();
+		touchpadNavigationIdentity_.store(nextTouchpadNavigationIdentity.fetch_add(1, std::memory_order_acq_rel) + 1);
+		touchpadNavigationAllowed_.store(true, std::memory_order_release);
+		touchpadNavigationStoppedEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		if (!touchpadNavigationStoppedEvent_) return false;
 		{
 			// Host generation 之间不得继承上一代异步 completion 或画布命令。
 			const std::scoped_lock lock(canvasCommandMutex_);
@@ -333,7 +614,8 @@ namespace Inkeys::Drawing::Draw3
 			commandsBeforePresentationCompletion_ = 0;
 		}
 		RECT client = {};
-		if (!GetClientRect(window, &client)) return false;
+		if (!GetClientRect(window, &client))
+		{ CloseHandle(touchpadNavigationStoppedEvent_); touchpadNavigationStoppedEvent_ = nullptr; return false; }
 		for (HANDLE& event : mouseOwnerControlEvents_)
 		{
 			event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -344,6 +626,7 @@ namespace Inkeys::Drawing::Draw3
 					if (created) CloseHandle(created);
 					created = nullptr;
 				}
+				CloseHandle(touchpadNavigationStoppedEvent_); touchpadNavigationStoppedEvent_ = nullptr;
 				return false;
 			}
 		}
@@ -385,6 +668,9 @@ namespace Inkeys::Drawing::Draw3
 
 	void WindowController::DetachExternal() noexcept
 	{
+		// Host 已先证明 producer 停止；不能先断消息入口再等待 owner 释放 COM。
+		if (!StopTouchpadNavigation()) return;
+		touchpadNavigationBridge_->SetWake(nullptr, nullptr);
 		// 先关闭新消息入口，再清理 HWND 属性和输入状态。
 		const bool wasAttached = externalWindow_.exchange(false, std::memory_order_acq_rel);
 		mouseSelectionMode_.ResetWorkspace();
@@ -396,6 +682,8 @@ namespace Inkeys::Drawing::Draw3
 			commandsBeforePresentationCompletion_ = 0;
 		}
 		if (!wasAttached) return;
+		if (touchpadNavigationStoppedEvent_) CloseHandle(touchpadNavigationStoppedEvent_);
+		touchpadNavigationStoppedEvent_ = nullptr;
 		RestoreTabletInputProperty(window_.load(std::memory_order_acquire));
 		inputCoordinator_.store(nullptr, std::memory_order_release);
 		activationAllowed_.store(false, std::memory_order_release);
@@ -437,6 +725,215 @@ namespace Inkeys::Drawing::Draw3
 			window_.load(std::memory_order_acquire) != window)
 			return DefWindowProcW(window, message, wParam, lParam);
 		return HandleWindowMessage(window, message, wParam, lParam);
+	}
+
+
+	int RunTouchpadIngressProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (!condition) { ++failures; std::fprintf(stderr, "[Draw3TouchpadIngress] FAIL: %s\n", name); }
+		};
+		try
+		{
+			check(kTouchpadDirectManipulationQuarantined,
+				"DM initialization remains quarantined from the RTS canvas HWND");
+			struct Viewport
+			{
+				unsigned configured = 0, options = 0;
+				HRESULT ActivateConfiguration(DIRECTMANIPULATION_CONFIGURATION) { ++configured; return S_OK; }
+				HRESULT SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS value) { options = value; return S_OK; }
+				bool AutomaticallyAssociates() const { return !(options & DIRECTMANIPULATION_VIEWPORT_OPTIONS_EXPLICITHITTEST); }
+				bool InputVisible() const { return (options & DIRECTMANIPULATION_VIEWPORT_OPTIONS_INPUT) != 0; }
+			} viewport;
+			check(SUCCEEDED(Detail::ConfigureTouchpadViewport(viewport)), "production viewport setup succeeds");
+			unsigned associated = 0;
+			for (const auto type : { PT_MOUSE, PT_TOUCH, PT_PEN, PT_POINTER })
+			{
+				const bool claimed = Detail::DispatchTouchpadHitTest(true, true, type, 41,
+					[&](UINT32) { ++associated; return true; });
+				check(!claimed && !associated && !viewport.AutomaticallyAssociates() && viewport.InputVisible(),
+					"non-touchpad hit test preserves normal input without automatic DM association");
+			}
+			check(Detail::DispatchTouchpadHitTest(true, true, PT_TOUCHPAD, 42,
+				[&](UINT32 id) { ++associated; return id == 42; }) && associated == 1,
+				"only explicit touchpad reaches SetContact");
+			Viewport oldPolicy; oldPolicy.options = DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE;
+			check(oldPolicy.AutomaticallyAssociates() && !oldPolicy.InputVisible(),
+				"negative control detects the previous manual-update-only policy");
+
+			Detail::TouchpadNavigationBridge bridge; bridge.enabled.store(true);
+			Detail::TouchpadNavigationFrontend frontend(bridge);
+			const auto epoch = bridge.Epoch();
+			check(frontend.Associate(epoch, 7, 42, [](UINT32) { return true; }) &&
+				!bridge.Active() && !bridge.RunningAt(20, 7) && !bridge.NeedsUpdate(),
+				"SetContact success in READY is not a held gesture or a permanent frame subscription");
+			check(!frontend.PublishStatus(TouchpadNavigationPhase::Ready, 99, 0, 10) && frontend.Accepting(),
+				"initial READY cannot retire an associated candidate before BEGIN");
+			frontend.Interaction(true);
+			check(!frontend.PublishStatus(TouchpadNavigationPhase::Ready, 99, 0, 12) && bridge.NeedsUpdate(),
+				"repeated READY does not cut an unrecognized interaction");
+			check(bridge.NeedsUpdate() && !bridge.RunningAt(20, 7), "interaction BEGIN pumps without blocking other devices");
+			frontend.Interaction(false);
+			check(!bridge.NeedsUpdate() && !frontend.Accepting(), "unrecognized BEGIN/END closes without timeout");
+			check(frontend.Associate(epoch, 7, 42, [&](UINT32)
+				{ frontend.Interaction(true); return true; }), "synchronous BEGIN is retained");
+			check(frontend.PublishStatus(TouchpadNavigationPhase::Running, 0, 0, 30) && bridge.RunningAt(31, 7),
+				"only confirmed RUNNING acquires native ownership");
+			check(frontend.PublishStatus(TouchpadNavigationPhase::Inertia, 12, 0, 40), "confirmed inertia is published");
+			frontend.Interaction(false);
+			check(bridge.Active() && bridge.NeedsUpdate(), "interaction END does not cut active native inertia");
+			check(frontend.PublishStatus(TouchpadNavigationPhase::Ready, 14, 0, 50) &&
+				!bridge.NeedsUpdate() && !frontend.Accepting(), "READY retires the frame subscription");
+			check(frontend.Associate(epoch, 7, 42, [&](UINT32)
+				{ frontend.Interaction(true); frontend.PublishStatus(TouchpadNavigationPhase::Running, 0, 0, 59);
+				  frontend.PublishStatus(TouchpadNavigationPhase::Ready, 0, 0, 60); return true; }) &&
+				!bridge.NeedsUpdate() && !frontend.Accepting(), "S_OK tail cannot resurrect synchronous READY");
+			const auto beforeCancel = bridge.Epoch();
+			check(!frontend.Associate(beforeCancel, 7, 42, [&](UINT32)
+				{ bridge.Cancel(); return true; }) && !bridge.NeedsUpdate() && !frontend.Accepting(),
+				"S_OK tail cannot resurrect reentrant epoch cancellation");
+			check(!frontend.Associate(bridge.Epoch(), 7, 42, [&](UINT32)
+				{ frontend.Interaction(true); return false; }) && !bridge.NeedsUpdate() && !frontend.Accepting(),
+				"association failure retires pending interaction");
+			check(viewport.configured == 1, "contacts never reconfigure a system viewport already processing input");
+		}
+		catch (...) { check(false, "frontend probe exception"); }
+		if (!failures) std::fprintf(stderr, "[Draw3TouchpadIngress] PASS: explicit input isolation and real association/interaction/status routines; no HWND\n");
+		return failures;
+	}
+
+	int RunTouchpadOwnerNotificationProductionProbe() noexcept
+	{
+		const HANDLE original = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		if (!original) return 1;
+		HANDLE observer = nullptr;
+		if (!DuplicateHandle(GetCurrentProcess(), original, GetCurrentProcess(), &observer,
+			0, FALSE, DUPLICATE_SAME_ACCESS)) { CloseHandle(original); return 1; }
+		TouchpadOwnerNotification notification(original);
+		CloseHandle(original); // 模拟 Host 在 stopped=true 快路中立即关闭原句柄。
+		const bool independent = notification && notification.Signal() &&
+			WaitForSingleObject(observer, 0) == WAIT_OBJECT_0;
+		CloseHandle(observer);
+		TouchpadOwnerNotification unavailable(nullptr);
+		return independent && !unavailable && !unavailable.Signal() ? 0 : 1;
+	}
+
+	void WindowController::FinishTouchpadNavigationDispatch(HWND window) noexcept
+	{
+		if (--touchpadDispatchDepth_) return;
+		const auto operation = std::exchange(touchpadDeferredOperation_, 0u);
+		if (touchpadStopCompletionPending_)
+		{
+			const HANDLE completed = touchpadNavigationStoppedEvent_;
+			TouchpadOwnerNotification notification(completed);
+			// 复制失败时不发布成功，Host 保留对象；失败通知仍可安全使用尚未退休的原句柄。
+			const bool succeeded = touchpadStopSucceeded_ && static_cast<bool>(notification);
+			touchpadStopCompletionPending_ = false;
+			touchpadNavigationOwnerStopped_.store(succeeded, std::memory_order_release);
+			// 此后 Host 可能立即销毁 self/关闭原 HANDLE；只使用独立拥有的局部通知，不再读成员。
+			if (notification) (void)notification.Signal();
+			else if (completed) SetEvent(completed);
+			return;
+		}
+		if (operation == 1)
+		{
+			// 普通更新交还消息队列，不能沿 COM 的嵌套 pump 递归 Update 直至占满 owner 堆栈。
+			touchpadNavigationPosted_.store(false, std::memory_order_release);
+			RequestTouchpadNavigationUpdate();
+			return;
+		}
+		if (operation == 2) HandleExternalMessage(window, kTouchpadNavigationMessage,
+			(touchpadNavigationIdentity_.load() << 1u) | 1u, reinterpret_cast<LPARAM>(this));
+	}
+
+	void WindowController::SetTouchpadNavigationEnabled(bool enabled, bool inertiaAllowed) noexcept
+	{
+		enabled = enabled && touchpadNavigationAllowed_.load(std::memory_order_acquire);
+		const bool changed = touchpadNavigationEnabled_.exchange(enabled, std::memory_order_acq_rel) != enabled;
+		const bool inertiaChanged = touchpadNavigationInertia_.exchange(inertiaAllowed, std::memory_order_acq_rel) != inertiaAllowed;
+		touchpadNavigationBridge_->enabled.store(enabled, std::memory_order_release);
+		touchpadNavigationBridge_->inertiaAllowed.store(inertiaAllowed, std::memory_order_release);
+		if (!changed && !inertiaChanged) return;
+		if (!enabled) touchpadNavigationBridge_->Cancel();
+		RequestTouchpadNavigationUpdate();
+	}
+
+	void WindowController::CancelTouchpadNavigation(std::int64_t takeoverQpc) noexcept
+	{
+		touchpadNavigationBridge_->Cancel(takeoverQpc); // 先作废累计值，owner 未处理 Stop 时也不能再移动画布。
+		RequestTouchpadNavigationUpdate();
+	}
+
+	void WindowController::RequestTouchpadNavigationUpdate() noexcept
+	{
+		if (!touchpadNavigationAllowed_.load(std::memory_order_acquire)) return;
+		const HWND window = Handle();
+		if (!window || touchpadNavigationPosted_.exchange(true, std::memory_order_acq_rel)) return;
+		touchpadNavigationOwnerStopped_.store(false, std::memory_order_release);
+		if (!PostMessageW(window, kTouchpadNavigationMessage, touchpadNavigationIdentity_.load() << 1u, reinterpret_cast<LPARAM>(this)))
+			touchpadNavigationPosted_.store(false, std::memory_order_release);
+	}
+
+	bool WindowController::StopTouchpadNavigation() noexcept
+	{
+		// 本 attach 代永久封口；drawing 尚未退出时逐帧 SetEnabled 也不能重新开 producer。
+		touchpadNavigationAllowed_.store(false, std::memory_order_release);
+		touchpadNavigationEnabled_.store(false, std::memory_order_release);
+		touchpadNavigationBridge_->enabled.store(false, std::memory_order_release);
+		touchpadNavigationBridge_->Cancel();
+		if (touchpadNavigationOwnerStopped_.load(std::memory_order_acquire)) return true;
+		const HWND window = Handle();
+		if (!window || !IsWindow(window)) return false;
+		if (GetWindowThreadProcessId(window, nullptr) == GetCurrentThreadId())
+		{
+			if (touchpadDispatchDepth_) return false;
+			return HandleExternalMessage(window, kTouchpadNavigationMessage, (touchpadNavigationIdentity_.load() << 1u) | 1u, reinterpret_cast<LPARAM>(this)) == 1;
+		}
+		const HANDLE completed = touchpadNavigationStoppedEvent_;
+		if (!completed || !ResetEvent(completed)) return false;
+		if (!PostMessageW(window, kTouchpadNavigationMessage, (touchpadNavigationIdentity_.load() << 1u) | 1u, reinterpret_cast<LPARAM>(this))) return false;
+		// 超时不是释放证明；Host 沿既有 unproven producer stop 合同保留本对象。
+		return WaitForSingleObject(completed, 5000) == WAIT_OBJECT_0 &&
+			touchpadNavigationOwnerStopped_.load(std::memory_order_acquire);
+	}
+
+	std::uint64_t WindowController::DrainTouchpadNavigation(std::vector<TouchpadNavigationSample>& samples)
+	{ return touchpadNavigationBridge_->Drain(samples); }
+	std::uint64_t WindowController::TouchpadNavigationEpoch() const noexcept
+	{ return touchpadNavigationBridge_->Epoch(); }
+	bool WindowController::TouchpadNavigationActive() const noexcept
+	{ return touchpadNavigationBridge_->Active(); }
+	bool WindowController::TouchpadNavigationNeedsUpdate() const noexcept
+	{ return touchpadNavigationBridge_->NeedsUpdate(); }
+	bool WindowController::TouchpadNavigationRunning() const noexcept
+	{ return touchpadNavigationBridge_->Running(); }
+	bool WindowController::TouchpadNavigationRunningAt(std::int64_t qpc) const noexcept
+	{
+		const auto* input = inputCoordinator_.load(std::memory_order_acquire);
+		return touchpadNavigationBridge_->RunningAt(qpc, input ? input->AdmissionRevision() : 0);
+	}
+	std::int64_t WindowController::TouchpadNavigationStartQpc() const noexcept
+	{ return touchpadNavigationBridge_->StartQpc(); }
+	void WindowController::PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase phase,
+		double x, double y, std::int64_t qpc) noexcept
+	{
+		if (!touchpadNavigationBridge_->enabled.load(std::memory_order_acquire)) return;
+		const auto* input = inputCoordinator_.load(std::memory_order_acquire);
+		const auto revision = input ? input->AdmissionRevision() : 0;
+		touchpadNavigationBridge_->Publish(TouchpadNavigationEpoch(), phase, x, y, qpc, revision);
+		if (phase == TouchpadNavigationPhase::Inertia && !touchpadNavigationBridge_->inertiaAllowed.load())
+			touchpadNavigationBridge_->Publish(TouchpadNavigationEpoch(), TouchpadNavigationPhase::Cancelled, x, y, qpc, revision);
+	}
+
+	void WindowController::PublishHiddenTestTouchpadInteraction(bool begin) noexcept
+	{
+		const auto* input = inputCoordinator_.load(std::memory_order_acquire);
+		Detail::TouchpadNavigationFrontend frontend(*touchpadNavigationBridge_);
+		frontend.Associate(TouchpadNavigationEpoch(), input ? input->AdmissionRevision() : 0, 1,
+			[](UINT32) { return true; });
+		frontend.Interaction(begin);
 	}
 
 	void WindowController::CloseMouseInputAdmission() noexcept
@@ -623,6 +1120,8 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::SetInputCoordinator(ContactInputCoordinator* coordinator)
 	{
 		inputCoordinator_.store(coordinator, std::memory_order_release);
+		touchpadNavigationBridge_->SetWake(coordinator ? +[](void* context)
+			{ (void)static_cast<ContactInputCoordinator*>(context)->PublishControlWake(); } : nullptr, coordinator);
 		if (coordinator) coordinator->PublishControlWake(); // 接线前已产生的窗口请求也不能漏唤醒。
 	}
 
@@ -1123,7 +1622,10 @@ namespace Inkeys::Drawing::Draw3
 			lastCursorTracePointerTypeKnown_.load(std::memory_order_acquire));
 		#endif
 		// 接触期间由活动绘制帧读取 mailbox，避免每个 Pen 包额外唤醒。
-		if (!sample.inContact) RequestDrawingCursorRender();
+		const bool stateChanged = previous.valid != sample.valid || previous.inContact != sample.inContact ||
+			previous.inverted != sample.inverted;
+		// 移动模式用系统箭头，持续悬停不能逐包打断正在推进的画布惯性。
+		if (stateChanged || (!sample.inContact && !CanvasPanMode())) RequestDrawingCursorRender();
 		if (previous.valid != sample.valid || previous.inContact != sample.inContact ||
 			previous.inverted != sample.inverted) QueueSystemCursorRefresh();
 	}
@@ -1607,6 +2109,93 @@ namespace Inkeys::Drawing::Draw3
 			mouseOwnerControlSucceeded_[operationIndex].store(succeeded, std::memory_order_release);
 			if (mouseOwnerControlEvents_[operationIndex]) SetEvent(mouseOwnerControlEvents_[operationIndex]);
 			return succeeded ? 1 : 0;
+		}
+		if (message == kTouchpadNavigationMessage)
+		{
+			if (lParam != reinterpret_cast<LPARAM>(this) ||
+				(wParam >> 1u) != touchpadNavigationIdentity_.load(std::memory_order_acquire)) return 0;
+			const bool stop = (wParam & 1u) != 0;
+			if (touchpadDispatchDepth_)
+			{
+				// DM 的 COM 调用可泵消息；确认必须等外层调用退栈，不能在嵌套 Stop 中释放自己。
+				touchpadDeferredOperation_ = (std::max)(touchpadDeferredOperation_, stop ? 2u : 1u);
+				return 0;
+			}
+			touchpadNavigationPosted_.store(false, std::memory_order_release);
+			++touchpadDispatchDepth_;
+			struct Scope
+			{
+				WindowController& self; HWND window;
+				~Scope() { self.FinishTouchpadNavigationDispatch(window); }
+			} scope{ *this, window };
+			if (stop || !touchpadNavigationAllowed_.load(std::memory_order_acquire))
+			{
+				const bool succeeded = !touchpadNavigationOwner_ || touchpadNavigationOwner_->Shutdown();
+				if (succeeded) touchpadNavigationOwner_.reset();
+				touchpadStopSucceeded_ = succeeded;
+				touchpadStopCompletionPending_ = true;
+				return succeeded ? 1 : 0;
+			}
+			if (!touchpadNavigationOwner_ && touchpadNavigationEnabled_.load(std::memory_order_acquire))
+			{
+				auto owner = std::make_shared<TouchpadNavigationOwner>(touchpadNavigationBridge_, inputCoordinator_.load(std::memory_order_acquire));
+				const bool initialized = owner->Initialize(window);
+				if (initialized || owner->NeedsCleanup()) touchpadNavigationOwner_ = std::move(owner);
+			}
+			if (auto owner = touchpadNavigationOwner_) owner->Update();
+			return 1;
+		}
+		if (message == DM_POINTERHITTEST)
+		{
+			POINTER_INPUT_TYPE type = PT_POINTER;
+			const auto getType = ResolveGetPointerType();
+			const UINT32 pointer = GET_POINTERID_WPARAM(wParam);
+			const auto* input = inputCoordinator_.load(std::memory_order_acquire);
+			const bool admitted = !touchpadDispatchDepth_ && CanvasPanMode() &&
+				touchpadNavigationAllowed_.load(std::memory_order_acquire) &&
+				touchpadNavigationEnabled_.load(std::memory_order_acquire) && input && !input->AdmissionBlocked();
+			const bool typeKnown = admitted && getType && getType(pointer, &type);
+			const bool accepted = Detail::DispatchTouchpadHitTest(admitted, typeKnown, type, pointer, [&](UINT32 id)
+			{
+				++touchpadDispatchDepth_;
+				struct Scope
+				{
+					WindowController& self; HWND window;
+					~Scope() { self.FinishTouchpadNavigationDispatch(window); }
+				} scope{ *this, window };
+				if (!touchpadNavigationOwner_)
+				{
+					auto owner = std::make_shared<TouchpadNavigationOwner>(touchpadNavigationBridge_, inputCoordinator_.load(std::memory_order_acquire));
+					const bool initialized = owner->Initialize(window);
+					if (initialized || owner->NeedsCleanup()) touchpadNavigationOwner_ = std::move(owner);
+				}
+				const auto owner = touchpadNavigationOwner_;
+				const bool associated = owner && owner->Contact(id);
+				if (associated) NotifyCanvasContactDown();
+				return associated;
+			});
+			LogCanvasPan("touchpad-hit-test pointer=%u type=%u admitted=%u accepted=%u reason=%s",
+				pointer, static_cast<unsigned>(type), admitted ? 1u : 0u, accepted ? 1u : 0u,
+				accepted ? "touchpad-associated" : !admitted ? "gate-closed" : !typeKnown ? "type-unknown" :
+				type != PT_TOUCHPAD ? "other-input-preserved" : "association-failed");
+			return 0; // 不允许非触控板经默认处理自动进入正在运行的 DM viewport。
+		}
+		// SetContact 造成的 pointer capture 改变是 DM 接管，不是整手势取消。
+		if (message == WM_CANCELMODE || message == WM_KILLFOCUS || message == WM_DESTROY ||
+			message == WM_SIZE || (message == WM_SHOWWINDOW && !wParam) ||
+			(message == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE) ||
+			(message == WM_WINDOWPOSCHANGED && lParam &&
+				(reinterpret_cast<const WINDOWPOS*>(lParam)->flags & SWP_HIDEWINDOW)))
+		{
+			CancelTouchpadNavigation();
+			if (message == WM_DESTROY)
+			{
+				touchpadNavigationAllowed_.store(false, std::memory_order_release);
+				if (touchpadDispatchDepth_) touchpadDeferredOperation_ = 2;
+				else HandleExternalMessage(window, kTouchpadNavigationMessage,
+					(touchpadNavigationIdentity_.load() << 1u) | 1u, reinterpret_cast<LPARAM>(this));
+				return DefWindowProcW(window, message, wParam, lParam); // Stop 确认后只使用局部参数。
+			}
 		}
 		const bool compatibility = mouseCompatibilitySelected_.load(std::memory_order_acquire);
 		if (compatibility)

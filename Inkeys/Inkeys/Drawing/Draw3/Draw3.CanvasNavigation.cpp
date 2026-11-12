@@ -323,6 +323,7 @@ namespace Inkeys::Drawing::Draw3
 		case CanvasPanReleaseReason::WithinSlop: return "within-slop";
 		case CanvasPanReleaseReason::EmptyViewport: return "empty-viewport";
 		case CanvasPanReleaseReason::DirectionConflict: return "direction-conflict";
+		case CanvasPanReleaseReason::Disabled: return "disabled";
 		default: return "none";
 		}
 	}
@@ -911,6 +912,7 @@ namespace Inkeys::Drawing::Draw3
 	CanvasPanFrameOutput CanvasPanDynamics::Snapshot(int64_t frequency) const noexcept
 	{
 		CanvasPanFrameOutput out;
+		out.sourceKey = lastSourceKey_;
 		out.heldContacts = out.pointerCount = HeldContactCount(); out.phase = Phase();
 		out.scrolling = detector_.Scrolling(); out.contentVelocity = velocity_;
 		std::array<CanvasPanPointer, kCanvasPanMaximumContacts> pointers = {};
@@ -1082,6 +1084,8 @@ namespace Inkeys::Drawing::Draw3
 				const double scale = speed > limit ? limit / speed : 1.0;
 				selected.x *= gate * scale; selected.y *= gate * scale;
 				if (cancelled) { selected = {}; booster_.Reset(); }
+				// 非末指仍保留方向仲裁证据；禁止惯性只清最终释放与旧残余。
+				if (!sample.allowInertia) { if (last) selected = {}; booster_.Reset(); }
 				if (last)
 				{
 					lastSourceKey_ = sample.sourceKey;
@@ -1095,6 +1099,7 @@ namespace Inkeys::Drawing::Draw3
 					events.releaseSpanSeconds = releaseTracker_.SampleSpanSeconds(sample.key, input.qpcFrequency);
 					events.releaseReason = invalidTerminalTime ? CanvasPanReleaseReason::TimingRejected :
 						cancelled ? CanvasPanReleaseReason::Cancelled :
+						!sample.allowInertia ? CanvasPanReleaseReason::Disabled :
 						age >= kCanvasPanReleaseZeroAgeSeconds ? CanvasPanReleaseReason::Stale :
 						releaseTracker_.Reason(sample.key, input.qpcFrequency);
 					if (events.releaseReason == CanvasPanReleaseReason::Ready && !raw.valid)

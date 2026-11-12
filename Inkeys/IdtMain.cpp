@@ -3370,6 +3370,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
 				config.Drawing.MultiTouchEnabled, config.Drawing.PenTailCorrectionEnabled,
 				config.Drawing.InkPredictionMode.load());
+			const auto& panInertia = config.Drawing.Whiteboard.PanInertia;
+			Inkeys::Drawing::Draw3::ProductHost().SetCanvasPanInertiaOptions({
+				panInertia.Enabled.load(), panInertia.Mouse.load(), panInertia.Touchpad.load(),
+				panInertia.Touch.load(), panInertia.Pen.load(), panInertia.PenTail.load() });
 			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(
 				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
 			InitializeEraserInputPreferences();

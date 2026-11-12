@@ -3,6 +3,8 @@
 #endif
 
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TouchpadNavigation.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TouchpadInput.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1965,11 +1967,13 @@ namespace
 	void TestNavigationHistory(int& failures)
 	{
 		const auto check = [&](bool value, const char* message) { if (!Expect(value, message)) ++failures; };
-		for (const auto device : { InputDeviceType::Touch, InputDeviceType::MouseLeft })
+		for (int inputCase = 0; inputCase < 4; ++inputCase)
 		{
+			const auto device = inputCase == 0 ? InputDeviceType::Touch : inputCase == 1 ? InputDeviceType::MouseLeft : InputDeviceType::Pen;
+			const bool inverted = inputCase == 3;
 			ContactInputCoordinator input;
-			const auto sample = [](float x, int64_t qpc, ContactPhase phase)
-			{ auto value = MakeSnapshot(x, 0, phase); value.qpc = qpc; return value; };
+			const auto sample = [inverted](float x, int64_t qpc, ContactPhase phase)
+			{ auto value = MakeSnapshot(x, 0, phase); value.qpc = qpc; value.isInvertedCursor = inverted; return value; };
 			check(input.PublishDown(71, 1, device, sample(0, 1, ContactPhase::Down)), "navigation Down published");
 			ContactRecord* first = nullptr;
 			check(input.TryDequeue(first) && first, "navigation Down dequeued");
@@ -1983,9 +1987,13 @@ namespace
 			const auto status = input.DrainNavigationHistory(events);
 			check(events.size() == 5 && status.dropped == 0, "navigation preserves all callback samples through Up");
 			if (events.size() == 5)
+			{
+				check(events.front().snapshot.isInvertedCursor == inverted && events.back().snapshot.isInvertedCursor == inverted,
+					"navigation preserves actual tip/tail identity from Down through terminal");
 				check(events[3].snapshot.phase == ContactPhase::Move && events[3].snapshot.position.x == 72 &&
 					events[4].snapshot.phase == ContactPhase::Up && events[3].ordinal < events[4].ordinal,
 					"terminal cannot overwrite final reverse Move");
+			}
 			ContactSnapshot latest;
 			check(input.TryReadSnapshot(handle, latest) && latest.phase == ContactPhase::Up && latest.position.x == 48,
 				"drawing latest mailbox still keeps original terminal contract");
@@ -2058,11 +2066,231 @@ namespace
 		if (!Expect(GetTickCount64() - moveWait >= 80, "ordinary Move wake does not bypass active frame budget")) ++failures;
 	}
 
+	void TestTouchpadIngressInputIsolation(int& failures)
+	{
+		struct Viewport
+		{
+			unsigned options = 0, configured = 0, contacts = 0;
+			HRESULT ActivateConfiguration(DIRECTMANIPULATION_CONFIGURATION) { ++configured; return S_OK; }
+			HRESULT SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS value) { options = value; return S_OK; }
+		};
+		Viewport viewport;
+		failures += !Expect(SUCCEEDED(Detail::ConfigureTouchpadViewport(viewport)), "production touchpad setup succeeds");
+		struct InputCase { InputDeviceType device; POINTER_INPUT_TYPE pointer; bool inverted; };
+		for (const auto& source : { InputCase{InputDeviceType::MouseLeft, PT_MOUSE, false},
+			InputCase{InputDeviceType::Touch, PT_TOUCH, false}, InputCase{InputDeviceType::Pen, PT_PEN, false},
+			InputCase{InputDeviceType::Pen, PT_PEN, true} })
+		{
+			ContactInputCoordinator input;
+			bool delivered = false;
+			const auto ordinary = [&]()
+			{
+				auto down = MakeSnapshot(10, 20, ContactPhase::Down); down.qpc = 10; down.isInvertedCursor = source.inverted;
+				auto move = down; move.phase = ContactPhase::Move; move.qpc = 20; move.position.x = 50;
+				auto up = move; up.phase = ContactPhase::Up; up.qpc = 30;
+				delivered = input.PublishDown(0xAB21, 1, source.device, down) &&
+					input.PublishMove(0xAB21, 1, move) && input.PublishUp(0xAB21, 1, up);
+			};
+			const bool associated = Detail::DispatchTouchpadHitTest(true, true, source.pointer, 1,
+				[&](UINT32) { ++viewport.contacts; return true; });
+			// 负对照模拟文档定义的自动命中：缺少 explicit 时，已有 DM 手势会先关联别类 Down。
+			const auto deliverThroughPolicy = [&](unsigned options)
+			{
+				if (options & DIRECTMANIPULATION_VIEWPORT_OPTIONS_EXPLICITHITTEST)
+					if (options & DIRECTMANIPULATION_VIEWPORT_OPTIONS_INPUT) ordinary();
+			};
+			deliverThroughPolicy(DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE);
+			failures += !Expect(!delivered, "negative control catches automatic viewport stealing ordinary input");
+			deliverThroughPolicy(viewport.options);
+			failures += !Expect(!associated && !viewport.contacts && delivered, "configured viewport preserves ordinary input into real coordinator");
+			ContactRecord* record = nullptr;
+			if (!Expect(input.TryDequeue(record) && record, "preserved source Down is dequeued")) { ++failures; continue; }
+			const ContactHandle handle{ record, record->Generation() };
+			std::vector<ContactNavigationEvent> history;
+			const auto status = input.DrainNavigationHistory(history);
+			failures += !Expect(status.pending == 0 && record->DeviceType() == source.device && history.size() == 3 &&
+				history.front().snapshot.isInvertedCursor == source.inverted && history.back().snapshot.phase == ContactPhase::Up,
+				"mouse touch pen and tail preserve real navigation history through DM setup boundary");
+			input.Recycle(handle);
+		}
+		failures += !Expect(Detail::DispatchTouchpadHitTest(true, true, PT_TOUCHPAD, 7,
+			[&](UINT32 id) { ++viewport.contacts; return id == 7; }) && viewport.contacts == 1 && viewport.configured == 1,
+			"only explicit touchpad is associated without per-contact reconfiguration");
+		failures += !Expect(!Detail::DispatchTouchpadHitTest(false, true, PT_TOUCHPAD, 7, [](UINT32) { return true; }) &&
+			!Detail::DispatchTouchpadHitTest(true, false, PT_TOUCHPAD, 7, [](UINT32) { return true; }),
+			"closed admission and unknown source never associate native contacts");
+	}
+
+	void TestTouchpadFrontendLifecycle(int& failures)
+	{
+		Detail::TouchpadNavigationBridge bridge; bridge.enabled.store(true);
+		Detail::TouchpadNavigationFrontend frontend(bridge);
+		std::vector<TouchpadNavigationSample> samples;
+		const auto epoch = bridge.Epoch();
+		failures += !Expect(frontend.Associate(epoch, 5, 7, [](UINT32) { return true; }) &&
+			!bridge.Active() && !bridge.NeedsUpdate() && !frontend.HasConfirmedPhase() && !bridge.RunningAt(15, 5),
+			"SetContact success without recognition cannot hold other devices or subscribe frames forever");
+		failures += !Expect(!frontend.PublishStatus(TouchpadNavigationPhase::Ready, 99, 0, 10) && frontend.Accepting(),
+			"initial READY before recognition does not retire the association");
+		frontend.Interaction(true);
+		failures += !Expect(!frontend.PublishStatus(TouchpadNavigationPhase::Ready, 99, 0, 12) && frontend.Accepting(),
+			"repeated READY leaves real pending interaction alive until END or recognized motion");
+		failures += !Expect(bridge.NeedsUpdate() && !bridge.Active() && !bridge.RunningAt(15, 5),
+			"BEGIN schedules manual updates before a gesture is recognized without acquiring ownership");
+		bridge.Drain(samples);
+		failures += !Expect(samples.empty(), "pending interaction does not manufacture native Running samples");
+		frontend.Interaction(false);
+		failures += !Expect(!bridge.NeedsUpdate() && !frontend.Accepting(), "unrecognized interaction END closes pending without timeout");
+
+		frontend.Associate(epoch, 5, 7, [&](UINT32) { frontend.Interaction(true); return true; });
+		failures += !Expect(frontend.PublishStatus(TouchpadNavigationPhase::Running, 0, 0, 20) && bridge.RunningAt(21, 5),
+			"actual Running starts native interval and ownership");
+		frontend.PublishStatus(TouchpadNavigationPhase::Running, 12.5, -2.5, 22);
+		frontend.PublishStatus(TouchpadNavigationPhase::Inertia, 16.5, -3.5, 24);
+		frontend.Interaction(false);
+		failures += !Expect(bridge.NeedsUpdate() && bridge.Active() && !bridge.Running(), "END does not truncate native inertia");
+		frontend.PublishStatus(TouchpadNavigationPhase::Ready, 18.5, -4.5, 26);
+		bridge.Drain(samples);
+		failures += !Expect(samples.size() == 3 && samples.front().cumulativeX == 12.5 &&
+			samples.back().cumulativeX == 18.5 && !bridge.NeedsUpdate() && !frontend.Accepting(),
+			"confirmed lifecycle retains geometry and closes activity at READY");
+
+		const auto activeEpoch = bridge.Epoch();
+		frontend.Associate(activeEpoch, 5, 7, [&](UINT32) { frontend.Interaction(true); return true; });
+		bridge.Cancel(28); // 真实其他来源 Down 取消等待识别的 native association。
+		frontend.Interaction(true);
+		failures += !Expect(!frontend.Accepting() && !bridge.NeedsUpdate() && !bridge.RunningAt(29, 5),
+			"physical takeover cancels pending and late callbacks do not revive it");
+		const auto currentEpoch = bridge.Epoch();
+		failures += !Expect(frontend.Associate(currentEpoch, 5, 7, [&](UINT32)
+			{ frontend.Interaction(true); frontend.PublishStatus(TouchpadNavigationPhase::Running, 0, 0, 29);
+			  frontend.PublishStatus(TouchpadNavigationPhase::Ready, 0, 0, 30); return true; }) &&
+			!frontend.Accepting() && !bridge.NeedsUpdate(), "synchronous READY remains ended after SetContact returns S_OK");
+		failures += !Expect(!frontend.Associate(bridge.Epoch(), 5, 7, [&](UINT32)
+			{ bridge.Cancel(32); return true; }) && !frontend.Accepting(), "S_OK cannot overwrite synchronous epoch cancellation");
+		failures += !Expect(!frontend.Associate(bridge.Epoch(), 5, 7, [&](UINT32)
+			{ frontend.Interaction(true); return false; }) && !bridge.NeedsUpdate() && !bridge.Active(),
+			"failed association retires the interaction rather than leaving a phantom hold");
+	}
+
+	void TestTouchpadNavigationRetirement(int& failures)
+	{
+		Detail::TouchpadNavigationRetirement retirement;
+		retirement.handlerRegistered = retirement.managerActivated = true;
+		unsigned removes = 0, abandons = 0, deactivates = 0;
+		bool removeOk = false, abandonOk = false, deactivateOk = false;
+		auto complete = [&]()
+		{
+			return retirement.Complete([&]() { ++removes; return removeOk; },
+				[&]() { ++abandons; return abandonOk; }, [&]() { ++deactivates; return deactivateOk; });
+		};
+		failures += !Expect(!complete() && retirement.handlerRegistered && abandons == 0 && deactivates == 0,
+			"touchpad failed handler removal retains owner and defers later COM retirement");
+		removeOk = true;
+		failures += !Expect(!complete() && !retirement.handlerRegistered && !retirement.viewportAbandoned && deactivates == 0,
+			"touchpad failed Abandon does not prove viewport retirement");
+		abandonOk = true;
+		failures += !Expect(!complete() && retirement.viewportAbandoned && retirement.managerActivated,
+			"touchpad failed Deactivate retains remaining manager responsibility");
+		const auto previousRemoves = removes, previousAbandons = abandons;
+		deactivateOk = true;
+		failures += !Expect(complete() && !retirement.managerActivated && removes == previousRemoves && abandons == previousAbandons,
+			"touchpad retry completes only unretired COM step");
+		const auto previousDeactivates = deactivates;
+		failures += !Expect(complete() && deactivates == previousDeactivates,
+			"touchpad completed retirement is idempotent");
+	}
+
+	void TestTouchpadNavigationBridge(int& failures)
+	{
+		Detail::TouchpadNavigationBridge bridge;
+		unsigned wakes = 0;
+		bridge.SetWake(+[](void* context) { ++*static_cast<unsigned*>(context); }, &wakes);
+		const auto firstEpoch = bridge.Epoch();
+		bridge.Publish(firstEpoch, TouchpadNavigationPhase::Running, 0, 0, 10);
+		for (int i = 1; i <= 1000; ++i)
+			bridge.Publish(firstEpoch, TouchpadNavigationPhase::Running, i * 0.125, -i * 0.25, 10 + i);
+		failures += !Expect(wakes == 1 && bridge.Running() && bridge.StartQpc() == 10,
+			"touchpad cumulative moves keep first contact time and only wake on begin");
+		bridge.Publish(firstEpoch, TouchpadNavigationPhase::Inertia, 128, -252, 1011);
+		bridge.Publish(firstEpoch, TouchpadNavigationPhase::Ready, 130, -254, 1012);
+		std::vector<TouchpadNavigationSample> samples;
+		failures += !Expect(bridge.Drain(samples) == firstEpoch && samples.size() == 3 &&
+			samples[0].cumulativeX == 125 && samples[0].cumulativeY == -250 &&
+			samples[1].phase == TouchpadNavigationPhase::Inertia && samples[2].cumulativeX == 130 && !bridge.Active(),
+			"touchpad coalesces cumulative geometry but retains inertia and final ready");
+		bridge.Publish(firstEpoch, TouchpadNavigationPhase::Running, 0, 0, 1020);
+		const auto secondEpoch = bridge.Cancel();
+		const unsigned afterCancel = wakes;
+		failures += !Expect(!bridge.Publish(firstEpoch, TouchpadNavigationPhase::Inertia, 999, 999, 1021),
+			"touchpad cancelled epoch rejects delayed callback");
+		bridge.Publish(secondEpoch, TouchpadNavigationPhase::Running, 0, 0, 1022);
+		failures += !Expect(wakes == afterCancel + 1 && bridge.Running() && bridge.StartQpc() == 1022,
+			"touchpad new running after cancel wakes and starts fresh baseline");
+		bridge.Publish(secondEpoch, TouchpadNavigationPhase::Running, std::numeric_limits<double>::infinity(), 0, 1023);
+		failures += !Expect(bridge.Drain(samples) == secondEpoch && samples.size() == 1 && samples[0].cumulativeX == 0,
+			"touchpad rejects nonfinite transform without replacing valid geometry");
+		for (int i = 0; i != 65; ++i)
+			bridge.Publish(secondEpoch, i % 2 ? TouchpadNavigationPhase::Inertia : TouchpadNavigationPhase::Running, i, i, 2000 + i);
+		const auto overflowEpoch = bridge.Drain(samples);
+		failures += !Expect(overflowEpoch != secondEpoch && samples.empty() && !bridge.Active(),
+			"touchpad phase overflow cancels batch rather than losing terminal boundary");
+		const unsigned beforeRestart = wakes;
+		bridge.Publish(overflowEpoch, TouchpadNavigationPhase::Running, 0, 0, 3000);
+		failures += !Expect(wakes == beforeRestart + 1, "touchpad first begin after overflow wakes");
+		bridge.SetWake(nullptr, nullptr);
+		Detail::TouchpadNavigationBridge history;
+		const auto epoch = history.Epoch();
+		history.Publish(epoch, TouchpadNavigationPhase::Running, 0, 0, 12);
+		history.Publish(epoch, TouchpadNavigationPhase::Ready, 20, 0, 22);
+		failures += !Expect(!history.Running() && history.RunningAt(20) && history.RunningAt(22) &&
+			!history.RunningAt(11) && !history.RunningAt(23),
+			"touchpad historical running overlap includes terminal QPC after latest ready");
+		history.Publish(epoch, TouchpadNavigationPhase::Running, 0, 0, 30);
+		history.Publish(epoch, TouchpadNavigationPhase::Inertia, 10, 0, 34);
+		history.Publish(epoch, TouchpadNavigationPhase::Ready, 15, 0, 40);
+		failures += !Expect(history.RunningAt(20) && history.RunningAt(32) && history.RunningAt(34) &&
+			!history.RunningAt(28) && !history.RunningAt(35),
+			"touchpad retains multiple running intervals and excludes inertial tail");
+		history.Drain(samples);
+		Detail::TouchpadNavigationBridge revisionHistory;
+		const auto revisionEpoch = revisionHistory.Epoch();
+		revisionHistory.Publish(revisionEpoch, TouchpadNavigationPhase::Running, 0, 0, 12, 2);
+		revisionHistory.Publish(revisionEpoch, TouchpadNavigationPhase::Ready, 20, 0, 22, 4);
+		revisionHistory.Drain(samples);
+		failures += !Expect(samples.size() == 2 && samples[0].admissionRevision == 2 && samples[1].admissionRevision == 2 &&
+			revisionHistory.RunningAt(20, 2) && !revisionHistory.RunningAt(20, 4),
+			"touchpad locks begin admission revision through terminal and scopes historical ownership");
+		Detail::TouchpadNavigationBridge takeover;
+		const auto takeoverEpoch = takeover.Epoch();
+		takeover.Publish(takeoverEpoch, TouchpadNavigationPhase::Running, 0, 0, 10);
+		takeover.Publish(takeoverEpoch, TouchpadNavigationPhase::Ready, 5, 0, 14);
+		takeover.Publish(takeoverEpoch, TouchpadNavigationPhase::Running, 0, 0, 18);
+		takeover.Publish(takeoverEpoch, TouchpadNavigationPhase::Ready, 10, 0, 22);
+		const auto afterTakeover = takeover.Cancel(16);
+		failures += !Expect(takeover.RunningAt(12) && !takeover.RunningAt(20) &&
+			takeover.Publish(afterTakeover, TouchpadNavigationPhase::Running, 0, 0, 21),
+			"touchpad takeover trims future ownership but preserves earlier overlap and accepts fresh epoch");
+		for (int i = 0; i != 64; ++i)
+		{
+			const auto begin = 100 + i * 4;
+			history.Publish(epoch, TouchpadNavigationPhase::Running, 0, 0, begin);
+			history.Publish(epoch, TouchpadNavigationPhase::Ready, 1, 0, begin + 1);
+			history.Drain(samples);
+		}
+		failures += !Expect(history.RunningAt(11) && !history.RunningAt(50) && history.RunningAt(352),
+			"touchpad discarded history is conservatively unknown while retained gaps stay non-overlapping");
+	}
+
 }
 
 int RunDraw3ContactInputTests()
 {
 	int failures = 0;
+	TestTouchpadIngressInputIsolation(failures);
+	TestTouchpadFrontendLifecycle(failures);
+	TestTouchpadNavigationRetirement(failures);
+	TestTouchpadNavigationBridge(failures);
 	TestContactLifecycle(failures);
 	TestNavigationHistory(failures);
 	TestNavigationHistoryOverflow(failures);

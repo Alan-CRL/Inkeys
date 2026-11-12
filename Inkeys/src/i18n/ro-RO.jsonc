@@ -629,6 +629,16 @@
           "Precise": "Precis",
           "Fast": "Rapid",
           "Disabled": "Dezactivat"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inerția glisării tablei albe",
+          "E": "Tabla continuă să alunece după eliberare în modul de glisare. Se poate regla separat pentru fiecare tip de intrare.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Atingere",
+          "Pen": "Stilou",
+          "PenTail": "Stilou (capătul cu radieră)"
         }
       },
       "Laser":

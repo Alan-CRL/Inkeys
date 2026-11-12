@@ -1,20 +1,14 @@
-{"file": ".trellis/spec/native-desktop/canvas-pan.md", "reason": "本轮产品导航权威合同，替代历史Chrome精确复刻；小文档避免大spec注入截断"}
-{"file": ".trellis/tasks/11-08-chromium-touch-fling/implementation-scope.md", "reason": "最新用户批准范围，优先于历史Chromium精确复刻和待评审提案；设备尺度延后"}
-{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "Free Canvas Navigation 惯性契约（本任务要改写的现状规范）"}
-{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "RTS/Pointer/Mouse 输入、contact 生命周期与设备分类约束"}
-{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 集成合同，约束控制器改动"}
-{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板平移门禁与页级视口合同"}
-{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 构建与兼容合同"}
-{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 模块、命名与注释风格"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "输入→导航→渲染的跨层数据流检查"}
-{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/chromium-fling-model.md", "reason": "Chromium 触摸滚动/fling 模型的精确常量与行为"}
-{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/inertia-root-cause.md", "reason": "前置任务的惯性根因与旧模型数值证据"}
-{"file": ".trellis/tasks/11-06-whiteboard-canvas-pan-inertia/research/move-mode-input-routing.md", "reason": "各设备输入路径、丢弃点、模式切换钩子与测试接入方式"}
-{"file":".trellis/tasks/11-08-chromium-touch-fling/research/sim/chromium_fling.py","reason":"S1独立标准库公式参考：LSQ2/多指边界/Bezier/Physics/Legacy/booster；Python未运行，由主Agent复算"}
-{"file":".trellis/tasks/11-08-chromium-touch-fling/research/sim/results_chromium.txt","reason":"黄金值运行状态与主Agent回填要求，当前明确未运行"}
-{"file":".trellis/tasks/11-08-chromium-touch-fling/research/stage1-static-review.md","reason":"本轮完整符号核对、静态检查、适配/待决A–E与主Agent构建运行交接"}
-{"file": ".trellis/tasks/11-08-chromium-touch-fling/repair-plan.md", "reason": "2026-11-08续接修复候选方案：待用户评审，不能按旧S6自动实施"}
-{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/input-pipeline-audit-2026-11-08.md", "reason": "三层丢点、Up覆盖、跨帧拓扑顺序、等待与真实传输测试"}
-{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/history-audit-2026-11-08.md", "reason": "708/7b与8月历史、估速曲线差异和测试盲区"}
-{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/display-scale-audit-2026-11-08.md", "reason": "DPI/物理标尺/Chromium单位链与跨设备适配边界"}
-{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/numeric-audit-2026-11-08.md", "reason": "本轮已执行独立Python公式复算，非C++产品实测"}
+{"file": ".trellis/tasks/11-08-chromium-touch-fling/multi-input-regression-scope.md", "reason": "当前用户已授权的真机回归修复范围与生产前端测试要求；优先于前轮已完成状态"}
+{"file": ".trellis/tasks/11-08-chromium-touch-fling/multi-input-stage-plan.md", "reason": "当前阶段最终摘要，待用户审批；覆盖旧 Chromium/尺度实施清单，不扩大本轮范围"}
+{"file": ".trellis/spec/native-desktop/canvas-pan.md", "reason": "已确认961ffdf8导航/释放/节拍基线；本阶段仅按新PRD覆盖设备准入、hover及惯性策略"}
+{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/multi-input-roaming.md", "reason": "真实Pen/尾准入与mailbox拦点；Win10/11 PTP原生惯性、DM稳定接线/线程/坐标/epoch证据及待验证项"}
+{"file": ".trellis/tasks/11-08-chromium-touch-fling/research/multi-input-settings.md", "reason": "设置位置/内联控件、六bool默认、真实配置/Host发布、热切换、国际化与测试锚点"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "真实RTS/ContactInput与Pointer/Mouse光标分工、来源/终态与兼容边界"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板Selection准入、页面视口/工作区/Freeze合同；旧hover约束按本轮PRD覆盖"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "唯一Host及Drawpad输入owner、独立呈现树/辅助窗不新增producer"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "main.json schema、NoUpload、冻结写盘与二十语言生成合同"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "绘制通用页面结构、启动发布与运行时设置合同"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "内联条件行显隐/测高/禁交互，不新增页面或改共享控件"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小diff、模块/线程所有权、中文注释与原BOM/CRLF"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64完整solution、旧平台降级与实际验证证据边界；根AGENTS优先"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "输入→owner适配→绘制→Present及设置→配置→Host跨层检查"}

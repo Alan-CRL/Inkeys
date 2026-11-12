@@ -629,6 +629,16 @@
           "Precise": "Presisi",
           "Fast": "Cepat",
           "Disabled": "Nonaktif"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inersia seret papan tulis",
+          "E": "Terus meluncur setelah dilepas dalam mode seret papan tulis. Atur setiap jenis input secara terpisah.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Sentuhan",
+          "Pen": "Pena",
+          "PenTail": "Pena (ujung penghapus)"
         }
       },
       "Laser":

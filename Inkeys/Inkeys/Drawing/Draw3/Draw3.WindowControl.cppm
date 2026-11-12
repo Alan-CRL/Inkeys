@@ -10,6 +10,8 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <vector>
+#include "Draw3.TouchpadNavigation.h"
 #include <windows.h>
 #include "Draw3.Bridge.h"
 #include "Draw3.HapticRequest.h"
@@ -24,8 +26,13 @@ import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.pen_cursor;
 export import Inkeys.Drawing.Draw3.presentation_auto_save;
 
+namespace Inkeys::Drawing::Draw3 { class TouchpadNavigationOwner; }
+
 export namespace Inkeys::Drawing::Draw3
 {
+	// 无 HWND：关闭停止握手的原句柄后，独立通知仍可唤醒同一内核事件。
+	int RunTouchpadOwnerNotificationProductionProbe() noexcept;
+	int RunTouchpadIngressProductionProbe() noexcept;
 	// 表示当前选择或活动 contact 锁定的绘制工具。
 	enum class DrawingTool
 	{
@@ -152,6 +159,23 @@ export namespace Inkeys::Drawing::Draw3
 		// mode 启闭通过 HWND owner 同步确认；返回前旧鼠标 producer 已停止。
 		bool SetMouseCompatibilityEnabled(bool enabled) noexcept;
 		void CloseMouseInputAdmission() noexcept;
+		// DM 仅由 HWND owner 调用，绘制线程只交换带 epoch 的累计位移。
+		void SetTouchpadNavigationEnabled(bool enabled, bool inertiaAllowed) noexcept;
+		void CancelTouchpadNavigation(std::int64_t takeoverQpc = 0) noexcept;
+		void RequestTouchpadNavigationUpdate() noexcept;
+		bool StopTouchpadNavigation() noexcept;
+		std::uint64_t DrainTouchpadNavigation(std::vector<TouchpadNavigationSample>& samples);
+		std::uint64_t TouchpadNavigationEpoch() const noexcept;
+		bool TouchpadNavigationActive() const noexcept;
+		bool TouchpadNavigationNeedsUpdate() const noexcept;
+		bool TouchpadNavigationRunning() const noexcept;
+		bool TouchpadNavigationRunningAt(std::int64_t qpc) const noexcept;
+		std::int64_t TouchpadNavigationStartQpc() const noexcept;
+		// 无 HWND 探针与真实 DM 回调共用同一有界发布通道。
+		void PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase phase,
+			double x, double y, std::int64_t qpc) noexcept;
+		void PublishHiddenTestTouchpadInteraction(bool begin) noexcept;
+
 		// 返回窗口句柄。
 		HWND Handle() const;
 		// 返回当前客户区尺寸。
@@ -308,6 +332,21 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic_bool mouseOwnerControlSucceeded_[2] = {};
 		unsigned mouseDispatchDepth_ = 0; // 仅 owner；直接停止不能等待自己的外层输入回调。
 		DWORD mouseStartTick_ = 0; // 仅 owner 读写，拒绝模式就绪前已经排队的 Down。
+		std::shared_ptr<Detail::TouchpadNavigationBridge> touchpadNavigationBridge_ =
+			std::make_shared<Detail::TouchpadNavigationBridge>();
+		// 以下 COM holder 只由 owner 创建/清理，Host 必须取得 Stop 确认后才能销毁本对象。
+		std::shared_ptr<TouchpadNavigationOwner> touchpadNavigationOwner_;
+		std::atomic_bool touchpadNavigationAllowed_ = true;
+		std::atomic_bool touchpadNavigationEnabled_ = false;
+		std::atomic_bool touchpadNavigationInertia_ = true;
+		std::atomic_bool touchpadNavigationPosted_ = false;
+		std::atomic_bool touchpadNavigationOwnerStopped_ = true;
+		HANDLE touchpadNavigationStoppedEvent_ = nullptr;
+		std::atomic<UINT_PTR> touchpadNavigationIdentity_ = 0;
+		unsigned touchpadDeferredOperation_ = 0;
+		bool touchpadStopCompletionPending_ = false, touchpadStopSucceeded_ = false;
+		void FinishTouchpadNavigationDispatch(HWND window) noexcept;
+		unsigned touchpadDispatchDepth_ = 0; // 仅 owner，避免在 COM 嵌套回调中提前确认停止。
 		std::atomic<HWND> window_ = nullptr;
 		// 外部 HWND 的消息来自 Window Service 线程，绘制线程也会读取该状态。
 		std::atomic<bool> externalWindow_ = false;

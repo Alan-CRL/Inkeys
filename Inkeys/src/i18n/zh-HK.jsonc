@@ -629,6 +629,16 @@
           "Precise": "精準",
           "Fast": "快速",
           "Disabled": "關閉"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "白板拖曳慣性",
+          "E": "在白板拖曳模式下，放開後繼續滑動。可按輸入類型個別調整。",
+          "Mouse": "滑鼠",
+          "Touchpad": "觸控板",
+          "Touch": "觸控",
+          "Pen": "筆",
+          "PenTail": "筆（筆尾）"
         }
       },
       "Laser":

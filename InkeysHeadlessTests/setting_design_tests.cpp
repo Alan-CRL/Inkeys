@@ -2632,6 +2632,104 @@ namespace
 		checks.Expect(pixels, "bundled fonts generate CPU atlas pixels");
 	}
 
+	void CheckCanvasPanInertia(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons,
+		float scale, bool exerciseInput)
+	{
+		using namespace Design;
+		using Inkeys::Drawing::Draw3::CanvasPanInertiaOptions;
+		BindTextFonts(regular, strong); ImFluent::SetIconFont(icons);
+		auto& io = ImGui::GetIO(); const auto oldFlags = io.ConfigFlags; const auto oldSize = io.DisplaySize;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; io.ConfigInputTrickleEventQueue = false;
+		const ImVec2 outside(-100, -100);
+		for (const bool dark : { false, true }) for (const float width : { 360.0F, 900.0F })
+		{
+			ApplyPalette(dark); CanvasPanInertiaOptions options;
+			checks.Expect(options.Encode() == 29u, "pan inertia starts with mouse/tail off and other input types on");
+			ImGuiWindow* page = nullptr; int masterChanges = 0; std::array<int, 5> deviceChanges{};
+			struct Frame { CanvasPanInertiaEvents events; float height = 0; bool devices = false; };
+			auto draw = [&](ImVec2 mouse, bool down) {
+				io.DisplaySize = { (width + 32) * scale, 1200 * scale };
+				io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+				ImGui::NewFrame(); ConfigureRowAnimations(0, false, 1);
+				ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+				ImGui::Begin("##canvas-pan-inertia-cpu", nullptr,
+					ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+				page = ImGui::GetCurrentWindow(); ImFluent::PushFont(ImFluentTextStyle_Body);
+				Frame frame; frame.events = RenderCanvasPanInertia(options); frame.height = ImGui::GetCursorPosY();
+				ImGui::PushID("##canvas-pan-inertia"); ImGui::PushID("##canvas-pan-devices");
+				frame.devices = ImGui::GetStateStorage()->GetInt(ImGui::GetID("##description-frame"), -1) == ImGui::GetFrameCount();
+				ImGui::PopID(); ImGui::PopID();
+				masterChanges += frame.events.enabledChanged ? 1 : 0;
+				for (int index = 0; index < 5; ++index) deviceChanges[index] += frame.events.devicesChanged[index] ? 1 : 0;
+				ImFluent::PopFont(); ImGui::End(); ImGui::Render(); return frame;
+			};
+			auto focusRect = [&](int index) {
+				ImGuiID id = ImHashStr("##canvas-pan-inertia", 0, page->ID);
+				if (index < 0) id = ImHashStr("##toggle", 0, id);
+				else {
+					id = ImHashStr("##canvas-pan-devices", 0, id); id = ImHashData(&index, sizeof(index), id);
+					id = ImHashStr("###inline-checkbox", 0, id);
+				}
+				ImGui::FocusWindow(page); ImGui::SetNavID(id, ImGuiNavLayer_Main, page->NavRootFocusScopeId, ImRect{});
+				GImGui->NavCursorVisible = true; draw(outside, false);
+				checks.Expect(GImGui->NavId == id && GImGui->NavIdIsAlive, "real inertia control registers its distinct navigation ID");
+				return ImGui::WindowRectRelToAbs(page, page->NavRectRel[ImGuiNavLayer_Main]);
+			};
+			auto click = [&](const ImRect& rect) {
+				const auto point = rect.GetCenter(); draw(point, false); draw(point, true);
+				const auto result = draw(point, false); draw(outside, false); return result;
+			};
+			for (int pass = 0; pass < 3; ++pass)
+				checks.Expect(!draw(outside, false).events.Changed(), "idle inertia row never emits preference writes");
+			checks.Expect(draw(outside, false).devices, "master on exposes all five inline input types");
+			std::array<ImRect, 5> choices;
+			for (int index = 0; index < 5; ++index) choices[index] = focusRect(index);
+			for (int index = 0; index < 5; ++index)
+			{
+				const auto& rect = choices[index];
+				checks.Expect(rect.GetWidth() > 0 && rect.GetHeight() > 0 && rect.Min.x >= page->Pos.x
+					&& rect.Max.x <= page->Pos.x + page->Size.x && rect.Min.y >= page->Pos.y
+					&& rect.Max.y <= page->Pos.y + page->Size.y,
+					"localized inertia checkbox and hit rectangle fit the page");
+				for (int other = index + 1; other < 5; ++other)
+					checks.Expect(!rect.Overlaps(choices[other]), "five inertia checkboxes have disjoint hit areas");
+			}
+			checks.Expect(width < 500 ? Near(choices[0].Min.x, choices[1].Min.x, 1) && choices[0].Max.y < choices[1].Min.y
+				: Near(choices[0].Min.y, choices[1].Min.y, 1) && choices[0].Max.x < choices[1].Min.x,
+				"inertia inline devices reflow from one column to two at the available width");
+			const auto saved = options; const float expandedHeight = draw(outside, false).height;
+			options.enabled = false; const auto hidden = draw(outside, false);
+			checks.Expect(!hidden.devices && !hidden.events.Changed() && hidden.height < expandedHeight - scale
+				&& (options.Encode() & ~1u) == (saved.Encode() & ~1u),
+				"master off collapses inline choices without erasing device preferences");
+			const auto hiddenClick = click(choices[0]);
+			checks.Expect(!hiddenClick.events.Changed() && options.Encode() == (saved.Encode() & ~1u),
+				"collapsed devices cannot be edited through their previous hit areas");
+			options = saved; draw(outside, false); CheckDrawData(checks);
+			if (!exerciseInput || dark || width < 500) continue;
+			// 实际鼠标点击五项，事件和偏好必须一一对应，而不是只检查渲染数据。
+			for (int index = 0; index < 5; ++index)
+			{
+				const auto before = options.Encode(); const auto clicked = click(focusRect(index));
+				checks.Expect((before ^ options.Encode()) == (1u << (index + 1))
+					&& clicked.events.devicesChanged[index] && deviceChanges[index] == 1 && !clicked.events.enabledChanged,
+					"one device click changes only that preference and emits exactly one event");
+				for (int other = 0; other < 5; ++other) if (other != index)
+					checks.Expect(!clicked.events.devicesChanged[other], "device edit does not emit another input type event");
+			}
+			const auto preferences = options.Encode() & ~1u;
+			click(focusRect(-1));
+			checks.Expect(!options.enabled && masterChanges == 1 && (options.Encode() & ~1u) == preferences,
+				"master click disables inertia and preserves all five selected preferences");
+			const auto off = draw(outside, false); checks.Expect(!off.devices, "master click hides the inline region");
+			click(focusRect(-1));
+			checks.Expect(options.enabled && masterChanges == 2 && (options.Encode() & ~1u) == preferences
+				&& draw(outside, false).devices, "re-enabling the master restores the original input choices");
+		}
+		io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle; io.DisplaySize = oldSize;
+	}
+
 	void CheckSpeedEraserPage(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons,
 		float scale, bool exerciseInput)
 	{
@@ -7945,6 +8043,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				checks.Expect(LoadNavigationLabels(fontDirectory, locale.codeUtf8), "general-only tests load actual language resources");
 				const auto fontIndex = localeFontIndex(locale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckCanvasPanInertia(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
 				CheckPptIdleFadeScopes(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 			}
 			CheckBelowComboPopup(checks,fonts[0],fonts[1],fonts.back(),scale);
@@ -8045,6 +8144,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 				CheckLocalizedComponentAndPluginRows(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckCursorPageControls(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckGeneralSections(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
+				CheckCanvasPanInertia(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
 				CheckPptIdleFadeScopes(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale);
 				CheckSpeedEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);
 				CheckPalmEraserPage(checks, localeFonts[fontIndex], localeFonts[fontIndex + 1], fonts.back(), scale, scale == 1.0F);

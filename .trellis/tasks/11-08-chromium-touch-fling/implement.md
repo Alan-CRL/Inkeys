@@ -1,3 +1,57 @@
+> 2026-11-12 当前执行项（用户已选择暂停 PTP）：
+> 1. [x] 在 WindowControl 的 DM 初始化边界执行 quarantine，禁止同 RTS HWND 的 COM/Activate；保留其它设备及下游数值测试。
+> 2. [x] 完整 ARM64 Solution、control-fence、pan-feel、Headless pan/contact及完整 --no-window均exit0；diff/编码通过。真机 Mouse/Touch/Pen/PenTail 拖动→回绘制仍由用户验收，PTP 明确不再验收为本轮可用。
+> 3. [x] 同步 canvas-pan/input-and-ink/cross-layer 规范及验证记录；本轮已获 commit 授权，不 push/archive。
+>
+> 当前续接为真机回归修复：用户报告所有接触设备拖不动、PTP仅偶尔可用，修复范围与验证见 [multi-input-regression-scope.md](multi-input-regression-scope.md)。前轮无窗口PASS不代表本轮实际输入正常；按已批准功能直接修复，任务继续in_progress。
+
+# 当前阶段执行计划：多设备漫游与惯性设置
+
+状态：用户已批准最终方案并要求实施。已授权当前清单实现；未授权 GUI/commit/push，task 继续 in_progress，不归档。执行前按 implement.jsonl → prd.md → design.md → 本文件读取，旧 S1–S6 不作为当前待办。
+
+## 顺序与交付
+
+1. [x] 触控板稳定接线验证：依据 research/multi-input-roaming.md 的稳定 API/primary implementation，核对 PT_TOUCHPAD hit-test → DM viewport/contact → owner manual Update → 累计变换/status/epoch 的真实生产接线和坐标方向；不建立另一 DComp 树，不调用 GUI。以可替换数值输出/假回调测试生命周期，OS 真实消息验证另列未完成。
+2. [x] 策略/配置：增加五类惯性策略与六个 NoUpload bool，默认/序列化/启动发布/Host 同代快照/只有变化唤醒；加入缺项、非法类型、冻结 copy、ReadMini、Reset、子偏好保留测试。保持旧惯性常量。
+3. [x] 笔/笔尾：扩展 Selection 准入和 Down 来源锁存，修正 suppressed 判定与持续 mailbox 自我 Stop；拖动模式关闭全部 hover brake。新 Down、Touch 持有互斥、Up 后持续 hover、源切换全部通过真实生产 route/probe。
+4. [x] 触控板整合：只支持双指，DM 仅发布数值，由唯一 Draw3 owner 应用；系统 INERTIA 独占该来源并驱动同一导航活动帧/高精度计时器，开关同步、取消/页/模式/尺寸/失败/重入、旧 epoch 与重复 wheel/pointer 不双算。不可用时保留原功能，不伪造普通 wheel 生命周期。
+5. [x] 设置与国际化：绘制 → 通用增加 ToggleRow+InlineCheckboxes，五项顺序 Mouse/Touchpad/Touch/Pen/PenTail；父关闭收起保留偏好；接既有异步写盘。补二十语言与生成产物。
+6. [x] 回归：适用无窗口专项、完整 Headless、生产探针、i18n check、编码/EOL/最小 diff，trellis-check 后按事实更新 spec。用户未授权前不 commit/push/finish-work/archive。
+
+## 最小文件范围与责任
+
+- 输入/策略：Draw3.DrawingController.cpp/.cppm、Draw3.CanvasNavigation.cpp/.cppm；WindowControl.cpp/.cppm 用于 DM owner 生命周期及 Pen hover/触控板调度。优先现有文件或小型私有 helper，只有实际需要新增编译单元时登记项目项。
+- 配置发布：Other.Config.cppm、IdtMain.cpp、Draw3.Host.h/.cpp。启动和设置一致，owner 不重复发 wake。
+- 设置：Setting.cpp、必要的小型 Setting.Pages.h/.cpp helper；不改共享控件或橡皮逻辑。
+- 文案：Inkeys/src/i18n/*.jsonc、生成 IdtI18nKeys.g.h 和 scripts/i18n.zh-CN.snapshot.jsonc。
+- 测试：现有 draw3_canvas_pan_tests.cpp、draw3_contact_tests.cpp（若适用）、config_metadata_tests.cpp、setting_design_tests.cpp、DrawingController 生产 control-fence/pan-feel probes。避免仅测镜像 helper。
+
+## 必须守住的验证
+
+- 惯性关：最后 Move/Up 的几何与终态不丢、无 residual/boost 复活；热关闭/重开、五类切换与多源互斥。
+- Pen/尾：真实倒置元数据准入，不借橡皮开关；合法 Pen 不被 suppressed 假阳性；持续接触不自我 Stop。所有来源 coast 遇 hover 不停，真实 Down 取消旧运动。
+- 节拍：保留真实 Mouse publisher burst/持续流与状态边沿回归；加 Pen hover 连续流及触控板累计更新，普通变化不提前结束活动 deadline，控制/终态仍及时唤醒。
+- Touchpad：RUNNING→INERTIA→READY、重入/重接触、同帧取消/页切换/迟到回调、总/子开关停止系统 tail、无重复运动、初始化失败/旧系统缺 API、像素/DIP/方向与累计基线。
+- 设置：真实 ImGui 回放，单击一次事件、稳定 ID、master 子值保留/收起禁交互、窄宽/多 DPI/主题/语言；真实 Config 默认/持久化/非法类型/Reset/NoUpload。
+
+## 命令与构建约束
+
+- 先复用已有脚本和命令，不新增构建系统/依赖。修改后用 scripts/i18n.ps1 sync/check（填全翻译后 check）。
+- 通过 vswhere 动态定位 ARM64 原生 MSBuild，同一 PowerShell invocation 先 Remove-Item Env:PATH -ErrorAction SilentlyContinue 和 MSBUILDDISABLENODEREUSE=1；构建 InkeysRepo.sln Debug|ARM64，/m:1 /nr:false，超时至少 5 分钟，正常预算 30 分钟。不能单构建 Inkeys.vcxproj。
+- InkeysHeadlessTests.exe --no-window --canvas-pan-only；--no-window --setting-general-only；完整 --no-window；产品 --config-boundary-test、--draw3-control-fence-test、--draw3-canvas-pan-feel-test；本阶段若动诊断传递，再补 --draw3-diagnostic-output-test。命令均走现有 GUI 前提前返回路径，使用无窗口进程方式。
+- 检查退出码和首个有意义错误，不改项目/SDK 来掩盖环境故障；签名/SSH失败不绕过。完整 Headless 允许至少 10 分钟。
+- git diff --check --ignore-submodules、逐文件差异与编码/BOM/CRLF 检查。新文件也用相邻原格式。构建/探针证据写本任务验证文档，不把模拟数据或 Present 返回称光学/真机验收。
+
+## 当前规划检查
+
+本阶段已按用户批准实现并通过最终完整ARM64构建、全部专项及完整Headless无窗口回归，源/产物哈希冻结。实际结果见multi-input-validation.md，独立审查见research/multi-input-review.md；真实PTP/笔硬件/RTS共存/光学未验。任务继续in_progress，不自动GUI/commit/push/归档；屏幕尺度及历史Chromium仅作后续参考。
+
+---
+
+# 历史阶段记录（仅参考，不作为当前实施清单）
+
+> 当前续接进入屏幕尺度阶段方案评审，见 [scale-stage-plan.md](scale-stage-plan.md)。4b4edb91是已确认的手感基线；本轮未修改生产代码，原implementation-scope.md保留为已完成阶段。
+
 > 本轮实现与无窗口验证已完成，结果和环境问题处理见 [validation.md](validation.md)。用户真机手感及后续屏幕尺度仍待进行；未提交、未归档。
 
 > 当前实施以 [implementation-scope.md](implementation-scope.md) 为准：用户已批准本轮修复鼠标/触摸手感并接通诊断，屏幕尺度延后；以下阶段1及先前调查记录保留为历史。

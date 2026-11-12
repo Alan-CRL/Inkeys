@@ -20,6 +20,7 @@ module;
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
+#include "Draw3.CanvasPanSettings.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
@@ -127,6 +128,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
 		// 通用偏好成组发布，仅由之后开始的独立笔画锁存。
+		void SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
 			InkPredictionMode predictionMode) noexcept;
 		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
@@ -196,6 +198,7 @@ export namespace Inkeys::Drawing::Draw3
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		// 位0/1为多指/尾修正，位2..3为预测模式；默认开/开/Kalman。
 		std::atomic<uint32_t> generalDrawingOptions_ = 11;
+		std::atomic<uint32_t> canvasPanInertiaOptions_ = CanvasPanInertiaOptions{}.Encode();
 		PalmEraser::Settings palmEraserOptions_;
 		// 位0=画布调试开关，位1=可视化模式；关闭时绘制线程只多一次原子读取。
 		std::atomic<uint32_t> canvasDebugOptions_ = 0;

@@ -3885,6 +3885,23 @@ SettingSessionCoroutine RunSettingSession()
 						QueueConfigWrite();
 					}
 
+					auto& panPreferences = drawingOptions.Whiteboard.PanInertia;
+					Inkeys::Drawing::Draw3::CanvasPanInertiaOptions panInertia{
+						panPreferences.Enabled.load(), panPreferences.Mouse.load(), panPreferences.Touchpad.load(),
+						panPreferences.Touch.load(), panPreferences.Pen.load(), panPreferences.PenTail.load() };
+					if (Design::RenderCanvasPanInertia(panInertia).Changed())
+					{
+						// 隐藏内联区仅改变有效惯性，保存全部设备偏好以便重新启用。
+						panPreferences.Enabled = panInertia.enabled;
+						panPreferences.Mouse = panInertia.mouse;
+						panPreferences.Touchpad = panInertia.touchpad;
+						panPreferences.Touch = panInertia.touch;
+						panPreferences.Pen = panInertia.pen;
+						panPreferences.PenTail = panInertia.penTail;
+						Inkeys::Drawing::Draw3::ProductHost().SetCanvasPanInertiaOptions(panInertia);
+						QueueConfigWrite();
+					}
+
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
 					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 

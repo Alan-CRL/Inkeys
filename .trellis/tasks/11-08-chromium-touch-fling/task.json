@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "用户已确认当前版本没问题；本轮手感与诊断修复提交，任务继续。后续设备尺度/桌面大屏profile与RTS硬件时间见handoff.md；不得归档或push。",
+  "notes": "2026-11-12已用同HWND及合成PTP探针定位RTS/DM输入委托冲突；独立DM HWND跨窗SetContact亦失败。用户选择暂停PTP，WindowControl在任何COM/Activate前quarantine，保留RTS和其它设备。完整ARM64 build及专项/完整Headless均exit0。未来重开须至少评估Win10，路线见research/touchpad-future-options.md。真机拖动→绘制待用户验收；本轮已获commit授权，任务保持in_progress，不push/archive。",
   "meta": {}
 }

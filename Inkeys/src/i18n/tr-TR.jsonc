@@ -629,6 +629,16 @@
           "Precise": "Hassas",
           "Fast": "Hızlı",
           "Disabled": "Kapalı"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Beyaz tahta sürükleme eylemsizliği",
+          "E": "Beyaz tahta sürükleme modunda bırakıldıktan sonra kaymaya devam eder. Her giriş türü ayrı ayrı ayarlanabilir.",
+          "Mouse": "Fare",
+          "Touchpad": "Dokunmatik yüzey",
+          "Touch": "Dokunma",
+          "Pen": "Kalem",
+          "PenTail": "Kalem (silgi ucu)"
         }
       },
       "Laser":

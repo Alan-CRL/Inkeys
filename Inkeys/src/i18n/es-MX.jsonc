@@ -629,6 +629,16 @@
           "Precise": "Precisa",
           "Fast": "Rápida",
           "Disabled": "Desactivada"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inercia al arrastrar la pizarra",
+          "E": "La pizarra sigue deslizándose al soltar en el modo de arrastre. Se puede ajustar por tipo de entrada.",
+          "Mouse": "Mouse",
+          "Touchpad": "Panel táctil",
+          "Touch": "Toque",
+          "Pen": "Lápiz",
+          "PenTail": "Lápiz (extremo borrador)"
         }
       },
       "Laser":

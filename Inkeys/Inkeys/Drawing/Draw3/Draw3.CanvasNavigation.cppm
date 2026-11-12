@@ -165,7 +165,7 @@ export namespace Inkeys::Drawing::Draw3
 	enum class CanvasPanReleaseReason : uint8_t
 	{
 		None, Ready, InsufficientSamples, InsufficientSpan, TimingRejected,
-		Stationary, Stale, Cancelled, WithinSlop, EmptyViewport, DirectionConflict
+		Stationary, Stale, Cancelled, WithinSlop, EmptyViewport, DirectionConflict, Disabled
 	};
 	const char* CanvasPanReleaseReasonName(CanvasPanReleaseReason reason) noexcept;
 	enum class CanvasPanSampleDisposition : uint8_t { Accepted, Reversed, TimingRejected, Rejected };
@@ -214,6 +214,7 @@ export namespace Inkeys::Drawing::Draw3
 		double y = 0.0;
 		CanvasPanContactPhase phase = CanvasPanContactPhase::Move;
 		uint64_t sourceKey = 0; // 调用方提供设备类别/来源身份，内核不依赖平台类型。
+		bool allowInertia = true; // 只门控释放，不丢弃真实跟手与终态。
 	};
 
 	enum class CanvasPanGestureType : uint8_t { ScrollBegin, ScrollUpdate, ScrollEnd, FlingStart, FlingCancel };
@@ -361,6 +362,7 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasVector contentDelta = {};
 		CanvasVector contentVelocity = {};
 		CanvasPanPhase phase = CanvasPanPhase::Idle;
+		uint64_t sourceKey = 0; // 动力学实际接受的最后来源；不从 producer 出队顺序推测惯性归属。
 		size_t heldContacts = 0;
 		CanvasVector handVelocity = {};
 		bool handVelocityKnown = false;

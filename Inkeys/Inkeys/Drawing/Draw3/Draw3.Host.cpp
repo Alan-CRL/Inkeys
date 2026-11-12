@@ -459,6 +459,8 @@ namespace Inkeys::Drawing::Draw3
 		// 一份原子快照保存通用偏好；绘制 owner 应用，不能跨线程借用 Controller。
 		std::atomic_uint32_t generalDrawingOptions = 3u | (2u << 2);
 		std::atomic_uint32_t laserOptions = 0;
+		std::atomic_uint32_t canvasPanInertiaOptions = CanvasPanInertiaOptions{}.Encode();
+		uint32_t appliedCanvasPanInertiaOptions = UINT32_MAX;
 		uint32_t appliedGeneralDrawingOptions = UINT32_MAX;
 		uint32_t appliedLaserOptions = UINT32_MAX;
 		mutable std::mutex palmEraserOptionsMutex;
@@ -1769,6 +1771,12 @@ namespace Inkeys::Drawing::Draw3
 					drawing->SetCanvasDebugInputMode(static_cast<uint8_t>(inputPath));
 					appliedCanvasDebugInputMode = inputPath;
 				}
+				const uint32_t panInertia = canvasPanInertiaOptions.load(std::memory_order_acquire);
+				if (panInertia != appliedCanvasPanInertiaOptions)
+				{
+					drawing->SetCanvasPanInertiaOptions(CanvasPanInertiaOptions::Decode(panInertia));
+					appliedCanvasPanInertiaOptions = panInertia;
+				}
 				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
 				if (general != appliedGeneralDrawingOptions)
 				{
@@ -2288,7 +2296,7 @@ namespace Inkeys::Drawing::Draw3
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
-							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
+							appliedGeneralDrawingOptions = appliedLaserOptions = appliedCanvasPanInertiaOptions = UINT32_MAX;
 							appliedPalmEraserOptions.reset();
 							appliedCanvasDebugOptions = UINT32_MAX;
 							appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
@@ -2560,6 +2568,12 @@ namespace Inkeys::Drawing::Draw3
 		void StopInputProducer() noexcept
 		{
 			CloseInputAdmission();
+			// DM 对象与回调由窗口 owner 释放；未确认停产时不能继续拆除 HWND。
+			if (!window.StopTouchpadNavigation())
+			{
+				startOptions.failedCleanup.BeginKnownFailure();
+				startOptions.failedCleanup.FailUnprovenProducerStop();
+			}
 			if (!window.SetMouseCompatibilityEnabled(false))
 			{
 				startOptions.failedCleanup.BeginKnownFailure();
@@ -2972,6 +2986,13 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t mode = predictionMode >= 0 && predictionMode <= 2 ? static_cast<uint32_t>(predictionMode) : 2u;
 		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (penTailCorrectionEnabled ? 2u : 0u) | (mode << 2);
 		if (impl_->generalDrawingOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept
+	{
+		// 六个偏好同代交给绘制 owner；总开关不清子项，等值发布不打断帧节拍。
+		if (impl_->canvasPanInertiaOptions.exchange(options.Encode(), std::memory_order_acq_rel) != options.Encode())
 			(void)impl_->input.PublishControlWake();
 	}
 

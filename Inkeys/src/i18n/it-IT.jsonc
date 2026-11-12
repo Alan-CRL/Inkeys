@@ -629,6 +629,16 @@
           "Precise": "Precisa",
           "Fast": "Rapida",
           "Disabled": "Disattivata"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inerzia del trascinamento della lavagna",
+          "E": "La lavagna continua a scorrere dopo il rilascio in modalità trascinamento. Regolabile per ogni tipo di input.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Tocco",
+          "Pen": "Penna",
+          "PenTail": "Penna (estremità gomma)"
         }
       },
       "Laser":

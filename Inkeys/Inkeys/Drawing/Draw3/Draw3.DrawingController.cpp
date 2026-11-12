@@ -47,6 +47,8 @@ module;
 
 #include "Draw3.Bridge.h"
 #include "Draw3.Host.h"
+#include "Draw3.CanvasPanSettings.h"
+#include "Draw3.TouchpadNavigation.h"
 #include "Draw3.Recovery.h"
 #include "Draw3.HapticRequest.h"
 #include "Draw3.HapticDiagnostics.h"
@@ -2526,8 +2528,20 @@ namespace Inkeys::Drawing::Draw3
 			appearance.outlineWidth = diameter * ERASER_GRIP_OUTLINE_RATIO;
 		}
 
-		// 白板移动模式的平移持有设备类别：触摸与鼠标左键互斥，笔与鼠标右键不是拖动设备。
-		enum class CanvasPanDeviceClass : uint8_t { None, Touch, Mouse };
+		// 导航归属独立于 RTS 设备数字；笔尖/笔尾在真实 Down 时锁存，不能随 hover 翻转。
+		enum class CanvasPanDeviceClass : uint8_t { None, Touch, Mouse, Pen, PenTail };
+
+		constexpr CanvasPanInputKind CanvasPanKindOf(CanvasPanDeviceClass device) noexcept
+		{
+			switch (device)
+			{
+			case CanvasPanDeviceClass::Touch: return CanvasPanInputKind::Touch;
+			case CanvasPanDeviceClass::Mouse: return CanvasPanInputKind::Mouse;
+			case CanvasPanDeviceClass::Pen: return CanvasPanInputKind::Pen;
+			case CanvasPanDeviceClass::PenTail: return CanvasPanInputKind::PenTail;
+			default: return CanvasPanInputKind::None;
+			}
+		}
 
 		// 画布手势接触的归属：移动模式下参与平移，或只跟踪到终态（笔抑制、已作废批次）。
 		enum class CanvasTouchDisposition : uint8_t { Pan, Suppressed };
@@ -2592,23 +2606,24 @@ namespace Inkeys::Drawing::Draw3
 			std::vector<uint64_t> keys_;
 		};
 
-		constexpr CanvasPanDeviceClass CanvasPanClassOf(InputDeviceType device) noexcept
+		constexpr CanvasPanDeviceClass CanvasPanClassOf(InputDeviceType device, bool inverted = false) noexcept
 		{
 			return device == InputDeviceType::Touch ? CanvasPanDeviceClass::Touch
 				: device == InputDeviceType::MouseLeft ? CanvasPanDeviceClass::Mouse
+				: device == InputDeviceType::Pen ? (inverted ? CanvasPanDeviceClass::PenTail : CanvasPanDeviceClass::Pen)
 				: CanvasPanDeviceClass::None;
 		}
 
 		enum class SelectionDownRoute : uint8_t { Stroke, Pan, Discard };
 
-		// Selection 下新 Down 的唯一分流：白板移动模式的 Touch/鼠标左键（且未被另一类设备占有）
-		// 成为平移触点；笔、鼠标右键、另一类设备以及桌面/PPT 的 Selection 一律丢弃到终态。
+		// Selection 下新 Down 的唯一分流：白板移动模式的触摸、鼠标左键和笔/笔尾
+		// 成为平移触点；不同来源不混合，鼠标右键以及桌面/PPT 的 Selection 丢弃到终态。
 		constexpr SelectionDownRoute RouteSelectionDown(bool selectionMode,
 			Bridge::Workspace workspace, InputDeviceType device,
-			CanvasPanDeviceClass latchedClass) noexcept
+			CanvasPanDeviceClass latchedClass, bool inverted = false) noexcept
 		{
 			if (!selectionMode) return SelectionDownRoute::Stroke;
-			const CanvasPanDeviceClass deviceClass = CanvasPanClassOf(device);
+			const CanvasPanDeviceClass deviceClass = CanvasPanClassOf(device, inverted);
 			return Bridge::MoveModePansCanvas(selectionMode, workspace) &&
 				deviceClass != CanvasPanDeviceClass::None &&
 				(latchedClass == CanvasPanDeviceClass::None || latchedClass == deviceClass)
@@ -2667,6 +2682,55 @@ namespace Inkeys::Drawing::Draw3
 				navigationEvents_.reserve(kContactNavigationHistoryCapacity);
 			}
 
+			void BindTouchpad(WindowController& window)
+			{
+				touchpadWindow_ = &window;
+				touchpadSamples_.reserve(64);
+			}
+			void SetNativeAdmission(bool allowed) noexcept { nativeAdmission_ = allowed; }
+			bool NativeRunning(int64_t atQpc = 0) const noexcept
+			{
+				return touchpadWindow_ && (atQpc > 0 ? touchpadWindow_->TouchpadNavigationRunningAt(atQpc)
+					: touchpadWindow_->TouchpadNavigationRunning());
+			}
+			void CancelNative(int64_t beforeDownQpc = 0) noexcept
+			{
+				if (touchpadWindow_)
+				{
+					// 新来源接手时保留此前尚未呈现的真实跟手尾段；排队的自由滑行则立即作废。
+					if (beforeDownQpc > 0)
+					{
+						const auto epoch = touchpadWindow_->DrainTouchpadNavigation(touchpadSamples_);
+						if (epoch != nativeEpoch_) { nativeX_ = nativeY_ = 0; nativeInertia_ = false; nativeGesture_ = false; }
+						for (const auto& sample : touchpadSamples_)
+						{
+							if (sample.epoch != epoch || sample.qpc > beforeDownQpc ||
+								(input_ && (sample.admissionRevision != input_->AdmissionRevision() || input_->AdmissionBlocked()))) continue;
+							if (sample.phase == TouchpadNavigationPhase::Running) { nativeGesture_ = true; nativeInertia_ = false; }
+							else if (sample.phase == TouchpadNavigationPhase::Inertia) nativeInertia_ = true;
+							if (nativeGesture_ && !nativeInertia_ && sample.phase != TouchpadNavigationPhase::Cancelled)
+							{
+								handoffDelta_.x += static_cast<float>(sample.cumulativeX - nativeX_);
+								handoffDelta_.y += static_cast<float>(sample.cumulativeY - nativeY_);
+							}
+							nativeX_ = sample.cumulativeX; nativeY_ = sample.cumulativeY;
+							if (sample.phase == TouchpadNavigationPhase::Ready || sample.phase == TouchpadNavigationPhase::Cancelled)
+								{ nativeX_ = nativeY_ = 0; nativeGesture_ = false; }
+						}
+					}
+					else handoffDelta_ = {};
+					touchpadWindow_->CancelTouchpadNavigation(beforeDownQpc);
+				}
+				nativeX_ = nativeY_ = 0.0; nativeInertia_ = false; nativeGesture_ = false;
+				nativeSequence_ = 0;
+			}
+			void SetInertiaOptions(CanvasPanInertiaOptions options) noexcept
+			{
+				inertiaOptions_ = options;
+				if (!options.Allows(lastInertiaKind_)) dynamics_.StopFling();
+			}
+			void StopFling() noexcept { dynamics_.StopFling(); }
+
 			// 当前持有平移的设备类别；没有任何平移触点（含已作废批次的残留指）时为 None。
 			CanvasPanDeviceClass OwnerClass() const noexcept
 			{
@@ -2683,7 +2747,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				for (const CanvasGestureContactRuntime& contact : contacts_)
 				{
-					if (!contact.panManaged) continue;
+					if (!contact.panManaged || (!deadBatch_ && contact.disposition == CanvasTouchDisposition::Suppressed) ||
+						(atQpc > 0 && contact.handle.record->DownSnapshot().qpc > atQpc)) continue;
 					ContactSnapshot latest = contact.snapshot;
 					input.TryReadSnapshot(contact.handle, latest);
 					if ((latest.phase != ContactPhase::Up && latest.phase != ContactPhase::Cancelled) ||
@@ -2711,12 +2776,34 @@ namespace Inkeys::Drawing::Draw3
 				return std::any_of(contacts_.begin(), contacts_.end(),
 					[&](const CanvasGestureContactRuntime& contact)
 					{
-						if (!contact.handle.record || contact.handle.record->DeviceType() != InputDeviceType::Pen)
+						if (!contact.handle.record || contact.handle.record->DeviceType() != InputDeviceType::Pen ||
+							(contact.panManaged && contact.disposition == CanvasTouchDisposition::Pan))
 							return false;
 						ContactSnapshot latest = contact.snapshot;
 						input.TryReadSnapshot(contact.handle, latest);
 						return latest.phase != ContactPhase::Up && latest.phase != ContactPhase::Cancelled;
 					});
+			}
+			void SuppressLaterPendingContacts(const ContactInputCoordinator& input,
+				ContactHandle incomingHandle, CanvasPanDeviceClass incoming) noexcept
+			{
+				if (incoming == CanvasPanDeviceClass::None || !incomingHandle.record) return;
+				const auto down = incomingHandle.record->DownSnapshot();
+				ContactSnapshot latest = down;
+				input.TryReadSnapshot(incomingHandle, latest);
+				const bool ended = latest.phase == ContactPhase::Up || latest.phase == ContactPhase::Cancelled;
+				// 只退休生命周期重叠的未来 Down。较早接触已在它之前结束时，两段都必须保留。
+				// 同 QPC 仍按 Down 先于 Up，不能把相等终态当作无重叠。
+				for (auto& contact : contacts_)
+				{
+					const int64_t futureDown = contact.handle.record->DownSnapshot().qpc;
+					if (contact.panDownPending && contact.panClass != incoming && futureDown > down.qpc &&
+						(!ended || latest.qpc >= futureDown))
+					{
+						contact.disposition = CanvasTouchDisposition::Suppressed;
+						contact.panDownPending = false;
+					}
+				}
 			}
 			void TrackSuppressedPenDown(ContactHandle handle)
 			{
@@ -2728,7 +2815,8 @@ namespace Inkeys::Drawing::Draw3
 			// 绘制线程应保持活动帧与高精度计时器。
 			bool Active() const noexcept
 			{
-				return dynamics_.Active() || std::any_of(contacts_.begin(), contacts_.end(),
+				return dynamics_.Active() || (touchpadWindow_ && touchpadWindow_->TouchpadNavigationNeedsUpdate()) ||
+					std::any_of(contacts_.begin(), contacts_.end(),
 					[](const CanvasGestureContactRuntime& contact)
 					{ return contact.panManaged && contact.disposition == CanvasTouchDisposition::Pan; });
 			}
@@ -2778,7 +2866,7 @@ namespace Inkeys::Drawing::Draw3
 					? CanvasTouchDisposition::Suppressed : CanvasTouchDisposition::Pan;
 				contact.panManaged = true;
 				contact.panDownPending = !deadBatch_ && !invalidHistory;
-				contact.panClass = CanvasPanClassOf(handle.record->DeviceType());
+				contact.panClass = CanvasPanClassOf(handle.record->DeviceType(), down.isInvertedCursor);
 				contact.panKey = ++nextPanKey_;
 				contacts_.push_back(contact);
 				LogCanvasPan("pan-register key=%llu class=%u dead-batch=%u down=(%.1f,%.1f) qpc=%lld dip-per-pixel=(%.4f,%.4f)",
@@ -2793,6 +2881,7 @@ namespace Inkeys::Drawing::Draw3
 			// 已登记的触点只跟踪到终态，直到全部抬起前不再重新进入平移。
 			void Stop() noexcept
 			{
+				CancelNative();
 				if (input_) stopSequence_ = input_->NavigationHistoryStatus().published;
 				++navigationEpoch_;
 				dynamics_.Stop();
@@ -2809,6 +2898,7 @@ namespace Inkeys::Drawing::Draw3
 			// 准入封口已清空并 Discard 全部触点之后调用。
 			void Reset() noexcept
 			{
+				CancelNative();
 				dynamics_.Stop();
 				touchPanHeld_ = false;
 				deadBatch_ = false;
@@ -2867,7 +2957,10 @@ namespace Inkeys::Drawing::Draw3
 							static_cast<long long>(event.snapshot.qpc), static_cast<long long>(nowQpc), static_cast<long long>(consumedAt.QuadPart),
 							qpcFrequency > 0 ? 1000.0 * static_cast<double>(consumedAt.QuadPart - event.snapshot.qpc) / qpcFrequency : 0.0,
 							live ? "consume" : "suppressed");
-					if (live) Push(contact, event.snapshot, static_cast<CanvasPanContactPhase>(event.snapshot.phase), newestSampleQpc);
+					if (live)
+					{
+						Push(contact, event.snapshot, static_cast<CanvasPanContactPhase>(event.snapshot.phase), newestSampleQpc);
+					}
 				}
 				for (auto& contact : contacts_)
 				{
@@ -2894,6 +2987,8 @@ namespace Inkeys::Drawing::Draw3
 						if (a.qpc != b.qpc) return a.qpc < b.qpc;
 						return static_cast<unsigned>(a.phase) < static_cast<unsigned>(b.phase);
 					});
+				Frame nativeFrame;
+				ConsumeTouchpad(nativeFrame); // 系统首个 Running（即使零位移）先取消旧 fling，再推进本帧。
 				if (dynamics_.Active() || !samples_.empty())
 				{
 					CanvasPanFrameInput in;
@@ -2901,11 +2996,13 @@ namespace Inkeys::Drawing::Draw3
 					in.frameQpc = (std::max)(nowQpc, newestSampleQpc);
 					in.qpcFrequency = qpcFrequency;
 					in.contacts = std::span<const CanvasPanContactSample>(samples_);
-					in.penHover = penHover;
+					in.penHover = false; // 拖动模式下靠近不刹停，真实 Down 仍由有序事件取消旧惯性。
 					// 曲线距离上限使用当前客户区尺寸，入口统一从物理像素换算为 DIP。
 					in.viewportSizeDip = { static_cast<float>(viewportSizePixels.x * scale_.dipPerPixelX),
 						static_cast<float>(viewportSizePixels.y * scale_.dipPerPixelY) };
 					frame.dynamics = dynamics_.Step(in);
+					// QPC 排序/准入只由动力学执行；热开关依据其实际末来源，不复刻另一套排序。
+					lastInertiaKind_ = CanvasPanKindOf(static_cast<CanvasPanDeviceClass>(frame.dynamics.sourceKey >> 32));
 				}
 				touchPanHeld_ = TouchPanHeld(input);
 				frame.touchPanHeld = touchPanHeld_;
@@ -2920,11 +3017,17 @@ namespace Inkeys::Drawing::Draw3
 				frame.contentDeltaPixels = {
 					static_cast<float>(frame.dynamics.contentDelta.x / scale_.dipPerPixelX),
 					static_cast<float>(frame.dynamics.contentDelta.y / scale_.dipPerPixelY) };
+				frame.contentDeltaPixels.x += handoffDelta_.x + nativeFrame.contentDeltaPixels.x;
+				frame.contentDeltaPixels.y += handoffDelta_.y + nativeFrame.contentDeltaPixels.y;
+				handoffDelta_ = {};
+				frame.diagnosticSampleQpc = nativeFrame.diagnosticSampleQpc;
+				if (touchpadWindow_) touchpadWindow_->SetTouchpadNavigationEnabled(
+					moveModeApplied_ && nativeAdmission_ && !HasContacts(), inertiaOptions_.Allows(CanvasPanInputKind::Touchpad));
 				frame.phaseChanged = previousPhase != dynamics_.Phase();
 				if (previousPhase == CanvasPanPhase::Coasting && dynamics_.Phase() == CanvasPanPhase::Idle)
-					LogCanvasPan("navigation-stop reason=%s epoch=%llu", penHover ? "pen-hover" : "fling-complete-or-cancel",
+					LogCanvasPan("navigation-stop reason=%s epoch=%llu", "fling-complete-or-cancel",
 						static_cast<unsigned long long>(navigationEpoch_));
-				if (traceInput) frame.diagnosticSampleQpc = newestSampleQpc;
+				if (traceInput) frame.diagnosticSampleQpc = (std::max)(frame.diagnosticSampleQpc, newestSampleQpc);
 				frame.velocityDip = frame.dynamics.contentVelocity;
 				frame.velocityPixels = {
 					static_cast<float>(frame.dynamics.contentVelocity.x / scale_.dipPerPixelX),
@@ -2952,6 +3055,55 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 		private:
+			void ConsumeTouchpad(Frame& frame)
+			{
+				if (!touchpadWindow_) return;
+				auto& window = *touchpadWindow_;
+				window.SetTouchpadNavigationEnabled(moveModeApplied_ && nativeAdmission_ && !HasContacts(),
+					inertiaOptions_.Allows(CanvasPanInputKind::Touchpad));
+				// 真实 interaction BEGIN 可抓停旧自由滑行，但待识别不等于 Running，不占用其它设备。
+				if (moveModeApplied_ && nativeAdmission_ && !HasContacts() &&
+					window.TouchpadNavigationNeedsUpdate() && !window.TouchpadNavigationActive()) dynamics_.StopFling();
+				const uint64_t epoch = window.DrainTouchpadNavigation(touchpadSamples_);
+				if (epoch != nativeEpoch_)
+				{
+					nativeEpoch_ = epoch; nativeSequence_ = 0; nativeX_ = nativeY_ = 0.0; nativeInertia_ = false; nativeGesture_ = false;
+				}
+				for (const auto& sample : touchpadSamples_)
+				{
+					if (sample.epoch != epoch || sample.sequence <= nativeSequence_) continue;
+					nativeSequence_ = sample.sequence;
+					// 已排队的 READY 也必须服从手势开始时的准入代，不能用当前重新开放状态套用旧净位移。
+					if (input_ && (sample.admissionRevision != input_->AdmissionRevision() || input_->AdmissionBlocked()))
+					{ nativeX_ = nativeY_ = 0.0; nativeGesture_ = false; nativeInertia_ = false; continue; }
+					if (!moveModeApplied_ || !nativeAdmission_ || HasContacts() || sample.phase == TouchpadNavigationPhase::Cancelled)
+					{
+						nativeX_ = nativeY_ = 0.0; nativeGesture_ = false;
+						continue;
+					}
+					// READY 的最后累计值仍可能含惯性尾段；关闭时不能在终态补回已拒绝的尾滑。
+					if (sample.phase == TouchpadNavigationPhase::Running) { nativeInertia_ = false; nativeGesture_ = true; }
+					else if (!nativeGesture_) continue; // 取消/identity重置后的重复 READY 不属于新手势。
+					else if (sample.phase == TouchpadNavigationPhase::Inertia) nativeInertia_ = true;
+					// 原生变换已经包含系统惯性；只消费累计差，不再次生成自有 fling。
+					if (!nativeInertia_ || inertiaOptions_.Allows(CanvasPanInputKind::Touchpad))
+					{
+						dynamics_.StopFling();
+						frame.contentDeltaPixels.x += static_cast<float>(sample.cumulativeX - nativeX_);
+						frame.contentDeltaPixels.y += static_cast<float>(sample.cumulativeY - nativeY_);
+						frame.diagnosticSampleQpc = (std::max)(frame.diagnosticSampleQpc, sample.qpc);
+					}
+					nativeX_ = sample.cumulativeX; nativeY_ = sample.cumulativeY;
+					if (CanvasPanDiagnosticsEnabled())
+						LogCanvasPan("touchpad phase=%u epoch=%llu sequence=%llu cumulative-px=(%.3f,%.3f) sample-qpc=%lld",
+							static_cast<unsigned>(sample.phase), static_cast<unsigned long long>(epoch),
+							static_cast<unsigned long long>(sample.sequence), sample.cumulativeX, sample.cumulativeY,
+							static_cast<long long>(sample.qpc));
+					if (sample.phase == TouchpadNavigationPhase::Ready)
+					{ nativeX_ = nativeY_ = 0.0; nativeInertia_ = false; nativeGesture_ = false; }
+				}
+				if (window.TouchpadNavigationNeedsUpdate()) window.RequestTouchpadNavigationUpdate();
+			}
 			void Push(const CanvasGestureContactRuntime& contact, const ContactSnapshot& snapshot,
 				CanvasPanContactPhase phase, int64_t& newestSampleQpc,
 				std::vector<CanvasPanContactSample>* queued = nullptr)
@@ -2959,7 +3111,8 @@ namespace Inkeys::Drawing::Draw3
 				(queued ? *queued : samples_).push_back({ contact.panKey, snapshot.qpc,
 					static_cast<double>(snapshot.position.x) * scale_.dipPerPixelX,
 					static_cast<double>(snapshot.position.y) * scale_.dipPerPixelY, phase,
-					(static_cast<uint64_t>(contact.panClass) << 32) | contact.handle.record->TabletContextId() });
+					(static_cast<uint64_t>(contact.panClass) << 32) | contact.handle.record->TabletContextId(),
+					inertiaOptions_.Allows(CanvasPanKindOf(contact.panClass)) });
 				newestSampleQpc = (std::max)(newestSampleQpc, snapshot.qpc);
 			}
 
@@ -2969,6 +3122,14 @@ namespace Inkeys::Drawing::Draw3
 			ContactInputCoordinator* input_ = nullptr;
 			uint64_t historyEpoch_ = 0, stopSequence_ = 0, navigationEpoch_ = 1;
 			CanvasPanDynamics dynamics_;
+			WindowController* touchpadWindow_ = nullptr;
+			std::vector<TouchpadNavigationSample> touchpadSamples_;
+			uint64_t nativeEpoch_ = 0, nativeSequence_ = 0;
+			double nativeX_ = 0.0, nativeY_ = 0.0;
+			CanvasVector handoffDelta_ = {};
+			bool nativeInertia_ = false, nativeAdmission_ = true, nativeGesture_ = false;
+			CanvasPanInertiaOptions inertiaOptions_;
+			CanvasPanInputKind lastInertiaKind_ = CanvasPanInputKind::None;
 			CanvasPanScale scale_;
 			uint64_t nextPanKey_ = 0;
 			bool deadBatch_ = false;
@@ -2982,19 +3143,47 @@ namespace Inkeys::Drawing::Draw3
 			const CanvasPanScale& scale, bool* suppressPenUntilRelease = nullptr)
 		{
 			if (!handle.record) return false;
+			if (selectionMode && pan.NativeRunning(handle.record->DownSnapshot().qpc))
+			{
+				LogCanvasPan("pan-reject device=%u inverted=%u qpc=%lld reason=native-running",
+					static_cast<unsigned>(handle.record->DeviceType()), handle.record->DownSnapshot().isInvertedCursor ? 1u : 0u,
+					static_cast<long long>(handle.record->DownSnapshot().qpc));
+				input.DiscardUntilTerminal(handle);
+				return true;
+			}
 			if (selectionMode && handle.record->DeviceType() == InputDeviceType::Pen)
 			{
 				const bool suppressed = pan.TouchPanHeld(input, handle.record->DownSnapshot().qpc) ||
 					pan.HasLiveSuppressedPenContact(input);
 				if (suppressPenUntilRelease) *suppressPenUntilRelease = suppressed;
-				if (suppressed) { pan.TrackSuppressedPenDown(handle); return true; }
+				if (suppressed)
+				{
+					LogCanvasPan("pan-reject device=%u inverted=%u qpc=%lld reason=touch-or-suppressed-pen",
+						static_cast<unsigned>(handle.record->DeviceType()), handle.record->DownSnapshot().isInvertedCursor ? 1u : 0u,
+						static_cast<long long>(handle.record->DownSnapshot().qpc));
+					pan.TrackSuppressedPenDown(handle); return true;
+				}
 			}
 			const SelectionDownRoute route = RouteSelectionDown(selectionMode, workspace,
-				handle.record->DeviceType(), pan.OwnerClass(input, handle.record->DownSnapshot().qpc));
+				handle.record->DeviceType(), pan.OwnerClass(input, handle.record->DownSnapshot().qpc),
+				handle.record->DownSnapshot().isInvertedCursor);
 			if (route == SelectionDownRoute::Stroke) return false;
-			if (route == SelectionDownRoute::Pan) pan.Register(input, handle, scale);
+			if (route == SelectionDownRoute::Pan)
+			{
+				// 只有最终获准的新来源才能退休未来重叠接触；被 native/已有来源拒绝的 Down 无此权限。
+				pan.SuppressLaterPendingContacts(input, handle,
+					CanvasPanClassOf(handle.record->DeviceType(), handle.record->DownSnapshot().isInvertedCursor));
+				pan.CancelNative(handle.record->DownSnapshot().qpc);
+				pan.Register(input, handle, scale);
+			}
 			// 三工作区的选择都是电脑操作；被丢弃的接触（含 RTS 鼠标）不得初始化笔迹。
-			else input.DiscardUntilTerminal(handle);
+			else
+			{
+				LogCanvasPan("pan-reject device=%u inverted=%u qpc=%lld workspace=%u reason=selection-owner-or-mode",
+					static_cast<unsigned>(handle.record->DeviceType()), handle.record->DownSnapshot().isInvertedCursor ? 1u : 0u,
+					static_cast<long long>(handle.record->DownSnapshot().qpc), static_cast<unsigned>(workspace));
+				input.DiscardUntilTerminal(handle);
+			}
 			return true;
 		}
 
@@ -6446,6 +6635,8 @@ namespace Inkeys::Drawing::Draw3
 		CanvasPanProbeRig()
 		{
 			input.EnableDiagnostics(true);
+			CanvasPanInertiaOptions feelOptions; feelOptions.mouse = true; pan.SetInertiaOptions(feelOptions);
+			pan.BindTouchpad(window);
 			window.SetSelectionMode(true);
 			(void)TryAppendBlankPage(document);
 		}
@@ -6458,9 +6649,10 @@ namespace Inkeys::Drawing::Draw3
 		float ViewportX() noexcept { InkCanvas* c = Canvas(activePage); return c ? c->Viewport().x : 0.0f; }
 		float ViewportY() noexcept { InkCanvas* c = Canvas(activePage); return c ? c->Viewport().y : 0.0f; }
 
-		bool Down(uint32_t tablet, uint32_t id, InputDeviceType device, double x, double y, double ms)
+		bool Down(uint32_t tablet, uint32_t id, InputDeviceType device, double x, double y, double ms, bool inverted = false)
 		{
-			return input.PublishDown(tablet, id, device, Snap(ContactPhase::Down, x, y, ms));
+			auto sample = Snap(ContactPhase::Down, x, y, ms); sample.isInvertedCursor = inverted;
+			return input.PublishDown(tablet, id, device, sample);
 		}
 		bool Move(uint32_t tablet, uint32_t id, double x, double y, double ms)
 		{
@@ -6499,7 +6691,7 @@ namespace Inkeys::Drawing::Draw3
 			const CanvasPanPenMailbox pen = ObserveCanvasPanPenMailbox(window, input, pan,
 				suppressPenUntilRelease, suppressedPenTerminalQpc);
 			navigationPenSuppressed = suppressPenUntilRelease;
-			if (pen.inContact && !suppressPenUntilRelease) pan.Stop();
+			if (pen.inContact && !suppressPenUntilRelease && !pan.HasContacts()) pan.StopFling();
 			last = pan.Step(input, Qpc(ms), kFrequency, penHover || (pen.inRange && !suppressPenUntilRelease),
 				{ 1920.0f, 1080.0f });
 			suppressedPenTerminalQpc = (std::max)(suppressedPenTerminalQpc, last.penTerminalQpc);
@@ -6525,7 +6717,8 @@ namespace Inkeys::Drawing::Draw3
 			using Rig = CanvasPanProbeRig;
 			for (bool tied : { false, true })
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
 				rig.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 200, 100, 4.0);
 				rig.Frame(8.0);
@@ -6569,7 +6762,8 @@ namespace Inkeys::Drawing::Draw3
 			for (const auto device : { InputDeviceType::Touch, InputDeviceType::MouseLeft })
 			{
 				const uint32_t tablet = device == InputDeviceType::Touch ? Rig::kTouchTablet : Rig::kMouseTablet;
-				Rig reverse;
+				auto reverseStorage = std::make_unique<Rig>();
+				Rig& reverse = *reverseStorage;
 				reverse.Down(tablet, 1, device, 0, 0, 100); reverse.Frame(100);
 				for (int i = 1; i <= 3; ++i) reverse.Move(tablet, 1, 30 * i, 0, 100 + 10 * i);
 				reverse.Frame(130);
@@ -6581,7 +6775,8 @@ namespace Inkeys::Drawing::Draw3
 				check(std::abs(reverse.last.contentDeltaPixels.x + 90.0f) < 0.001f,
 					"release frame applies real reverse movement without historical fling catch-up");
 
-				Rig shortReverse;
+				auto shortReverseStorage = std::make_unique<Rig>();
+				Rig& shortReverse = *shortReverseStorage;
 				shortReverse.Down(tablet, 1, device, 0, 0, 100); shortReverse.Frame(100);
 				for (int i = 1; i <= 4; ++i) shortReverse.Move(tablet, 1, 30 * i, 0, 100 + 10 * i);
 				shortReverse.Frame(140); shortReverse.Move(tablet, 1, 105, 0, 145);
@@ -6590,7 +6785,8 @@ namespace Inkeys::Drawing::Draw3
 					"insufficient short reverse cannot revive old-direction fling");
 
 				// 原来 drain 到 Step 之间的合法 producer 交错：第二个 Down 尚未登记。
-				Rig ordered;
+				auto orderedStorage = std::make_unique<Rig>();
+				Rig& ordered = *orderedStorage;
 				ordered.Down(tablet, 1, device, 0, 0, 100); ordered.Frame(100);
 				ordered.Move(tablet, 1, 30, 0, 110); ordered.Frame(112);
 				ordered.Down(tablet, 2, device, 100, 0, 120);
@@ -6605,7 +6801,8 @@ namespace Inkeys::Drawing::Draw3
 				check(ordered.last.contentDeltaPixels.x > 0, "new hand continues movement after deferred topology");
 
 				// 旧 Up 与另一来源的新 Down/甩动在同一消费批；不能在 Register 时清一次就结束。
-				Rig switched;
+				auto switchedStorage = std::make_unique<Rig>();
+				Rig& switched = *switchedStorage;
 				switched.Down(tablet, 1, device, 0, 0, 100); switched.Frame(100);
 				for (int i = 1; i <= 3; ++i) switched.Move(tablet, 1, 30 * i, 0, 100 + 10 * i);
 				switched.Up(tablet, 1, 90, 0, 131);
@@ -6621,7 +6818,8 @@ namespace Inkeys::Drawing::Draw3
 				// 同一120Hz原始轨迹，不同呈现频率必须选出相同释放速度。
 				for (const int fps : {30, 60, 120, 240})
 				{
-					Rig replay; replay.Down(tablet, 1, device, 0, 0, 100); replay.Frame(100);
+					auto replayStorage = std::make_unique<Rig>();
+					Rig& replay = *replayStorage; replay.Down(tablet, 1, device, 0, 0, 100); replay.Frame(100);
 					double nextFrame = 100.0 + 1000.0 / fps;
 					for (int i = 1; i <= 36; ++i)
 					{
@@ -6635,7 +6833,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
-			Rig beforeRegistration;
+			auto beforeRegistrationStorage = std::make_unique<Rig>();
+			Rig& beforeRegistration = *beforeRegistrationStorage;
 			beforeRegistration.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 0, 0, 100);
 			beforeRegistration.pan.Stop(); // 尚无 Register/Step 也必须截断已经发布的 Down。
 			beforeRegistration.Frame(110);
@@ -6646,7 +6845,8 @@ namespace Inkeys::Drawing::Draw3
 			beforeRegistration.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 0, 0, 160); beforeRegistration.Frame(170);
 			check(beforeRegistration.pan.Active() && !beforeRegistration.pan.BatchDead(), "fresh Down allowed after pre-registration Stop batch closes");
 
-			Rig overflow;
+			auto overflowStorage = std::make_unique<Rig>();
+			Rig& overflow = *overflowStorage;
 			overflow.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 0, 0, 100); overflow.Frame(100);
 			for (size_t i = 1; i <= kContactNavigationHistoryCapacity + 1; ++i)
 				overflow.Move(Rig::kTouchTablet, 1, static_cast<double>(i), 0, 100.0 + i);
@@ -6658,7 +6858,8 @@ namespace Inkeys::Drawing::Draw3
 			overflow.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 0, 0, 2330); overflow.Frame(2330);
 			check(!overflow.pan.BatchDead() && overflow.pan.Active(), "fresh Down works after invalid epoch closes");
 
-			Rig unregisteredOverflow;
+			auto unregisteredOverflowStorage = std::make_unique<Rig>();
+			Rig& unregisteredOverflow = *unregisteredOverflowStorage;
 			unregisteredOverflow.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 0, 0, 100);
 			for (size_t i = 1; i <= kContactNavigationHistoryCapacity + 1; ++i)
 				unregisteredOverflow.Move(Rig::kTouchTablet, 1, static_cast<double>(i), 0, 100.0 + i);
@@ -6667,7 +6868,8 @@ namespace Inkeys::Drawing::Draw3
 			check(unregisteredOverflow.pan.BatchDead() && !unregisteredOverflow.pan.Active(),
 				"lost pre-registration Down suppresses whole overlapping batch until terminals");
 
-			Rig fresh;
+			auto freshStorage = std::make_unique<Rig>();
+			Rig& fresh = *freshStorage;
 			fresh.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 0, 0, 100); fresh.Frame(100);
 			for (int i = 1; i <= 6; ++i) fresh.Move(Rig::kTouchTablet, 1, i * 30, 0, 100 + i * 10);
 			fresh.Up(Rig::kTouchTablet, 1, 180, 0, 161); fresh.Frame(170);
@@ -6696,7 +6898,9 @@ namespace Inkeys::Drawing::Draw3
 			uint32_t tablet = CanvasPanProbeRig::kTouchTablet, id = 0;
 			double x = 0.0, y = 0.0, previousX = 0.0, previousY = 0.0;
 		};
-		CanvasPanProbeRig rig;
+		// 夹具含固定容量动力学历史；/Od 不复用局部栈槽，矩阵与对照实例均放堆上。
+		std::unique_ptr<CanvasPanProbeRig> rigStorage = std::make_unique<CanvasPanProbeRig>();
+		CanvasPanProbeRig& rig = *rigStorage;
 		std::array<Hand, 6> hands{};
 		const char* scenario;
 		int fps, subdivisions, failures = 0, nonfinite = 0;
@@ -7226,9 +7430,10 @@ namespace Inkeys::Drawing::Draw3
 					r.Seed(); CanvasPanFeelRun control("hover-free-control", fps, scale, subframe); control.Seed();
 					const double before = r.rig.ViewportX();
 					r.rig.PenMailbox(r.now + 0.1, false); r.Advance(1); control.Advance(1);
-					r.Check(control.failures == 0 && !r.rig.navigationPenSuppressed && r.Speed() == 0.0 &&
-						r.rig.ViewportX() == before && !r.rig.pan.Active() && r.rig.last.dynamics.boosterStartingVelocity.x == 0.0f,
-						"real-hover-mailbox-immediately-stops-and-clears-boost");
+					r.Check(control.failures == 0 && !r.rig.navigationPenSuppressed && r.Speed() > 0.0 &&
+						r.rig.ViewportX() < before && r.rig.pan.Active() &&
+						std::abs(r.rig.ViewportX() - control.rig.ViewportX()) < 0.01,
+						"real-hover-mailbox-preserves-the-same-free-motion");
 					r.Coast();
 				});
 				for (bool touchFirst : { false, true }) for (bool sameFrame : { false, true })
@@ -7291,7 +7496,8 @@ namespace Inkeys::Drawing::Draw3
 			using Rig = CanvasPanProbeRig;
 			// 真正的窗口 publisher -> coordinator 接线：普通高频位置不能伪装成控制工作。
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.window.SetInputCoordinator(&rig.input);
 				rig.Frame(0.0);
 				const auto settle = [&]()
@@ -7390,6 +7596,53 @@ namespace Inkeys::Drawing::Draw3
 				before = rig.input.CaptureWakeGeneration();
 				sample.x += 1.0f; rig.window.PublishHiddenTestMouseCursor(sample);
 				checkUrgent(before, "non-whiteboard Selection retains its original Mouse cursor wake");
+				rig.window.SetCanvasPanWorkspace(true); settle();
+				DrawingCursorSample penSample;
+				penSample.valid = true; penSample.x = 100; penSample.y = 100; penSample.qpc = Rig::Qpc(2000);
+				before = rig.input.CaptureWakeGeneration();
+				rig.window.PublishPenCursorSample(penSample);
+				checkUrgent(before, "Pen enter remains an urgent state edge in move mode");
+				const auto penWakes = rig.input.DiagnosticsSnapshot().controlWakes;
+				before = rig.input.CaptureWakeGeneration();
+				for (int i = 1; i <= 1000; ++i)
+				{
+					penSample.x = static_cast<float>(i); penSample.qpc = Rig::Qpc(2000 + i);
+					rig.window.PublishPenCursorSample(penSample);
+				}
+				check(rig.window.ReadPenCursorSample(latest) && latest.x == 1000 &&
+					rig.input.CaptureWakeGeneration() == before && !rig.input.HasPendingWork() &&
+					!rig.window.ConsumeDrawingCursorRenderRequest(), "Pan Pen hover burst only updates the latest mailbox");
+				started.store(false); stop.store(false); moves.store(0);
+				std::thread penMover([&]()
+				{
+					auto moving = penSample; started.store(true, std::memory_order_release);
+					while (!stop.load(std::memory_order_acquire))
+					{
+						moving.x += 1; moving.qpc += Rig::Qpc(1);
+						rig.window.PublishPenCursorSample(moving);
+						moves.fetch_add(1, std::memory_order_release); Sleep(1);
+					}
+				});
+				while (!started.load(std::memory_order_acquire) || !moves.load(std::memory_order_acquire)) std::this_thread::yield();
+				const auto penMovesBefore = moves.load(std::memory_order_acquire);
+				const double penWaitStart = GetQpcTimeMilliseconds(); rig.input.WaitForFrameDeadline(100);
+				const double penWaited = GetQpcTimeMilliseconds() - penWaitStart;
+				const auto penMovesAfter = moves.load(std::memory_order_acquire);
+				stop.store(true, std::memory_order_release); penMover.join();
+				check(penWaited >= 80 && penMovesAfter > penMovesBefore &&
+					rig.input.CaptureWakeGeneration() == before && !rig.input.HasPendingWork() &&
+					rig.input.DiagnosticsSnapshot().controlWakes == penWakes && !rig.window.ConsumeDrawingCursorRenderRequest(),
+					"continuous Pan Pen hover preserves the active frame deadline");
+				penSample.inContact = true; rig.window.PublishPenCursorSample(penSample);
+				checkUrgent(before, "Pen Down remains urgent after the continuous hover flow");
+				before = rig.input.CaptureWakeGeneration(); penSample.inContact = false; rig.window.PublishPenCursorSample(penSample);
+				checkUrgent(before, "Pen Up remains urgent in move mode");
+				before = rig.input.CaptureWakeGeneration(); penSample.inverted = true; rig.window.PublishPenCursorSample(penSample);
+				checkUrgent(before, "Pen tip/tail identity edge remains urgent");
+				rig.window.SetSelectionMode(false); settle();
+				before = rig.input.CaptureWakeGeneration(); penSample.x += 1; rig.window.PublishPenCursorSample(penSample);
+				checkUrgent(before, "non-Pan Pen hover retains application cursor rendering");
+
 			}
 			const auto closeTo = [](double a, double b, double tolerance) { return std::fabs(a - b) <= tolerance; };
 			struct Finger { uint32_t tablet; uint32_t id; double x0; double y0; };
@@ -7414,21 +7667,304 @@ namespace Inkeys::Drawing::Draw3
 				routeOf(true, kWb, InputDeviceType::Touch, CanvasPanDeviceClass::None) == SelectionDownRoute::Pan &&
 				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::None) == SelectionDownRoute::Pan &&
 				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::Mouse) == SelectionDownRoute::Pan &&
-				routeOf(true, kWb, InputDeviceType::Pen, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
+				routeOf(true, kWb, InputDeviceType::Pen, CanvasPanDeviceClass::None) == SelectionDownRoute::Pan &&
 				routeOf(true, kWb, InputDeviceType::MouseRight, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
 				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::Touch) == SelectionDownRoute::Discard &&
 				routeOf(true, kWb, InputDeviceType::Touch, CanvasPanDeviceClass::Mouse) == SelectionDownRoute::Discard &&
 				routeOf(true, Bridge::Workspace::Desktop, InputDeviceType::Touch, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
 				routeOf(true, Bridge::Workspace::Presentation, InputDeviceType::MouseLeft, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard,
-				"selection routing: only whiteboard Touch/MouseLeft pan, latched class is exclusive");
+				"selection routing: whiteboard Touch/MouseLeft/Pen pan, latched class is exclusive");
 			check(SelectionReleasesTimerPeriod(true, false) && !SelectionReleasesTimerPeriod(true, true) &&
 				!SelectionReleasesTimerPeriod(false, false) && !SelectionReleasesTimerPeriod(false, true),
 				"Selection keeps the 1 ms timer period while a pan or inertia is active");
 
+			// 五类产品策略通过真实 Coordinator/Selection adapter 验证，默认和旧手感探针显式分开。
+			for (int source = 0; source < 4; ++source)
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
+				CanvasPanInertiaOptions options;
+				rig.pan.SetInertiaOptions(options);
+				const auto device = source == 0 ? InputDeviceType::MouseLeft : source == 1 ?
+					InputDeviceType::Touch : InputDeviceType::Pen;
+				const bool inverted = source == 3;
+				const bool expectedCoast = source == 1 || source == 2;
+				rig.Down(0xE0 + source, 1, device, 100, 100, 4, inverted);
+				rig.Frame(8);
+				check(rig.pan.HasContacts() && !rig.pan.HasLiveSuppressedPenContact(rig.input),
+					"Mouse/Touch/Pen/PenTail Down is a legal pan, never a suppressed Pen false positive");
+				for (int n = 1; n <= 5; ++n)
+				{
+					rig.Move(0xE0 + source, 1, 100 + n * 30, 100, 2 + n * 10);
+					if (device == InputDeviceType::Pen) rig.PenMailbox(2 + n * 10, true);
+					rig.Frame(4 + n * 10);
+				}
+				const float before = rig.ViewportX();
+				rig.Move(0xE0 + source, 1, 265, 100, 57);
+				rig.Up(0xE0 + source, 1, 265, 100, 58);
+				if (device == InputDeviceType::Pen) rig.PenMailbox(58, false);
+				rig.Frame(60, true);
+				check(closeTo(before - rig.ViewportX(), 15, 1e-3) && !rig.pan.HasContacts(),
+					"all product sources preserve the final real Move and recycle Up once");
+				check((rig.pan.Phase() == CanvasPanPhase::Coasting) == expectedCoast,
+					"product defaults: Mouse/PenTail stop at release, Touch/Pen coast even under hover");
+				if (expectedCoast)
+				{
+					options.enabled = false; rig.pan.SetInertiaOptions(options);
+					const float stopped = rig.ViewportX(); rig.Frame(68, true);
+					check(!rig.pan.Active() && rig.ViewportX() == stopped,
+						"hot master disable stops current coast without one extra tail frame");
+					options.enabled = true; rig.pan.SetInertiaOptions(options); rig.Frame(76, true);
+					check(!rig.pan.Active() && rig.ViewportX() == stopped,
+						"re-enabling inertia cannot restore the old motion");
+				}
+			}
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
+				CanvasPanInertiaOptions options; rig.pan.SetInertiaOptions(options);
+				for (int gesture = 0; gesture < 2; ++gesture)
+				{
+					const auto device = gesture ? InputDeviceType::MouseLeft : InputDeviceType::Touch;
+					const double start = 4 + gesture * 40;
+					rig.Down(0xF0 + gesture, 1, device, 100, 100, start);
+					for (int n = 1; n <= 3; ++n) rig.Move(0xF0 + gesture, 1, 100 + n * 30, 100, start + n * 10);
+					rig.Up(0xF0 + gesture, 1, 190, 100, start + 31);
+				}
+				rig.Frame(80);
+				check(closeTo(-rig.ViewportX(), 150, 1e-3) && rig.pan.Phase() == CanvasPanPhase::Idle &&
+					rig.last.dynamics.releaseReason == CanvasPanReleaseReason::Disabled,
+					"one production frame uses Touch's enabled release then Mouse's disabled release without losing either drag");
+			}
+			// 两路 producer 的 Down 出队顺序可以与 QPC 相反；只按实际生命周期重叠裁决。
+			for (const double mouseDown : { 20.0, 35.0, 36.0, 60.0 })
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
+				CanvasPanInertiaOptions options; options.enabled = false; rig.pan.SetInertiaOptions(options);
+				// 时间较晚的 Mouse 全生命周期先入队，时间较早的 Touch 随后才发布。
+				rig.Down(Rig::kMouseTablet, 1, InputDeviceType::MouseLeft, 100, 100, mouseDown);
+				for (int n = 1; n <= 3; ++n) rig.Move(Rig::kMouseTablet, 1, 100 + n * 30, 100, mouseDown + n * 10);
+				rig.Up(Rig::kMouseTablet, 1, 190, 100, mouseDown + 31);
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4);
+				for (int n = 1; n <= 3; ++n) rig.Move(Rig::kTouchTablet, 1, 100 + n * 30, 100, 4 + n * 10);
+				rig.Up(Rig::kTouchTablet, 1, 190, 100, 35);
+				rig.Frame(100);
+				const bool overlaps = mouseDown <= 35;
+				check(closeTo(-rig.ViewportX(), overlaps ? 75.0 : 150.0, 1e-3),
+					"reversed Down queue keeps both non-overlapping drag geometries and suppresses only a real/tied overlap");
+				check(rig.last.dynamics.sampleCount == (overlaps ? 5u : 10u) && rig.contacts.empty() &&
+					!rig.pan.Active() && rig.input.DiagnosticsSnapshot().recycled == 2 && !rig.input.HasQuarantinedContacts(),
+					"overlapped future contacts stay suppressed through later Moves/Up, while both real lifetimes recycle once");
+			}
+
+			for (bool lastIsMouse : { false, true })
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
+				CanvasPanInertiaOptions options; options.mouse = true; rig.pan.SetInertiaOptions(options);
+				const auto laterDevice = lastIsMouse ? InputDeviceType::MouseLeft : InputDeviceType::Touch;
+				const auto earlierDevice = lastIsMouse ? InputDeviceType::Touch : InputDeviceType::MouseLeft;
+				for (int queued = 0; queued < 2; ++queued)
+				{
+					const double down = queued ? 4.0 : 60.0;
+					rig.Down(0xFA + queued, 1, queued ? earlierDevice : laterDevice, 100, 100, down);
+					for (int n = 1; n <= 3; ++n) rig.Move(0xFA + queued, 1, 100 + n * 30, 100, down + n * 10);
+					rig.Up(0xFA + queued, 1, 190, 100, down + 31);
+				}
+				rig.Frame(100);
+				check(rig.pan.Phase() == CanvasPanPhase::Coasting && closeTo(-rig.ViewportX(), 150, 1e-3),
+					"reversed queued sources create the last chronological source's real fling");
+				if (lastIsMouse) options.touch = false; else options.mouse = false;
+				rig.pan.SetInertiaOptions(options);
+				const float beforeOther = rig.ViewportX(); rig.Frame(108);
+				check(rig.pan.Phase() == CanvasPanPhase::Coasting && rig.ViewportX() < beforeOther,
+					"disabling the earlier source cannot stop the actual last source's coast");
+				if (lastIsMouse) options.mouse = false; else options.touch = false;
+				rig.pan.SetInertiaOptions(options);
+				const float beforeActual = rig.ViewportX(); rig.Frame(116);
+				check(!rig.pan.Active() && rig.ViewportX() == beforeActual,
+					"hot disabling the actual final QPC-ordered source stops its coast with no extra tail");
+			}
+
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4);
+				rig.Frame(8); rig.Move(Rig::kTouchTablet, 1, 140, 100, 12); rig.Frame(16);
+				CanvasPanInertiaOptions options; options.enabled = false; rig.pan.SetInertiaOptions(options);
+				const float before = rig.ViewportX();
+				rig.Move(Rig::kTouchTablet, 1, 170, 100, 22); rig.Frame(24);
+				check(closeTo(before - rig.ViewportX(), 30, 1e-3) && rig.pan.HasContacts(),
+					"hot disable leaves a held pan's exact geometry and ownership intact");
+				rig.Up(Rig::kTouchTablet, 1, 170, 100, 25); rig.Frame(28);
+				check(!rig.pan.Active(), "held gesture disabled before Up never starts free motion");
+			}
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				auto& rig = *rigStorage;
+				rig.window.SetInputCoordinator(&rig.input);
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4);
+				for (int n = 1; n <= 3; ++n) rig.Move(Rig::kTouchTablet, 1, 100 + n * 30, 100, 4 + n * 10);
+				rig.Up(Rig::kTouchTablet, 1, 190, 100, 35); rig.Frame(40);
+				check(rig.pan.Phase() == CanvasPanPhase::Coasting, "pending native interaction probe starts from a real own fling");
+				// 关联本身不产生 Running/BEGIN，也不刹停；真实 BEGIN 由同一前端 routine 发布。
+				const float beforeAssociation = rig.ViewportX(); rig.Frame(48);
+				check(rig.ViewportX() < beforeAssociation && rig.pan.Phase() == CanvasPanPhase::Coasting,
+					"no native BEGIN leaves the own curve advancing normally");
+				rig.window.PublishHiddenTestTouchpadInteraction(true);
+				check(rig.window.TouchpadNavigationNeedsUpdate() && !rig.window.TouchpadNavigationRunningAt(Rig::Qpc(52)),
+					"real frontend BEGIN owns a pump but not the contact latch");
+				const float beforeBegin = rig.ViewportX(); rig.Frame(56);
+				check(rig.ViewportX() == beforeBegin && rig.pan.Phase() == CanvasPanPhase::Idle,
+					"BEGIN catches the old own coast with zero extra drift before recognition");
+				rig.Down(Rig::kPenTablet, 2, InputDeviceType::Pen, 300, 300, 60); rig.Frame(64);
+				rig.Move(Rig::kPenTablet, 2, 330, 300, 68); rig.Frame(72);
+				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Pen &&
+					closeTo(rig.ViewportX(), beforeBegin - 15, 1e-3) && !rig.input.HasQuarantinedContacts(),
+					"pending unrecognized native interaction does not block real Pen geometry");
+				rig.Up(Rig::kPenTablet, 2, 330, 300, 76); rig.Frame(80);
+				check(!rig.pan.HasContacts() && !rig.window.TouchpadNavigationNeedsUpdate(),
+					"physical takeover closes pending native update responsibility");
+			}
+
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage; rig.Frame(8);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(12));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 22.5, -9.25, Rig::Qpc(16));
+				rig.Frame(20);
+				check(closeTo(rig.ViewportX(), -22.5, 1e-4) && closeTo(rig.ViewportY(), 9.25, 1e-4) && rig.pan.Active(),
+					"native pad cumulative coalescing keeps both subpixel axes and navigation activity");
+				rig.PenMailbox(22, false); rig.Frame(24);
+				check(rig.pan.Active() && closeTo(rig.ViewportX(), -22.5, 1e-4), "Pen hover does not stop a held native pad gesture");
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Inertia, 30, -11, Rig::Qpc(28));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 32, -12, Rig::Qpc(30));
+				rig.Frame(32);
+				check(closeTo(rig.ViewportX(), -32, 1e-4) && closeTo(rig.ViewportY(), 12, 1e-4) && !rig.pan.Active(),
+					"native inertia and final READY delta are applied once without an own fling");
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 0, 0, Rig::Qpc(34)); rig.Frame(36);
+				check(closeTo(rig.ViewportX(), -32, 1e-4), "identity reset and duplicate READY cannot pull the canvas back");
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(40));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 12, 0, Rig::Qpc(44)); rig.Frame(48);
+				CanvasPanInertiaOptions options; options.touchpad = false; rig.pan.SetInertiaOptions(options); rig.Frame(52);
+				const float before = rig.ViewportX();
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Inertia, 30, 0, Rig::Qpc(54));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 35, 0, Rig::Qpc(56)); rig.Frame(60);
+				check(rig.ViewportX() == before && !rig.pan.Active(),
+					"disabled native inertia cannot reappear as a READY tail delta");
+			}
+
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4); rig.Frame(8);
+				for (int n = 1; n <= 4; ++n) rig.Move(Rig::kTouchTablet, 1, 100 + n * 30, 100, 4 + n * 10);
+				rig.Up(Rig::kTouchTablet, 1, 220, 100, 45); rig.Frame(48);
+				check(rig.pan.Phase() == CanvasPanPhase::Coasting, "native grab probe starts with a real Touch fling");
+				const float before = rig.ViewportX();
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(50));
+				rig.Frame(56);
+				check(rig.pan.Active() && !rig.pan.DynamicsActive() && rig.ViewportX() == before,
+					"zero-delta native Running cancels own inertia before that frame can advance");
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Inertia, 0, 0, Rig::Qpc(58));
+				rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 200, 100, 60); rig.PenMailbox(60, true); rig.Frame(64);
+				check(!rig.window.TouchpadNavigationActive() && rig.pan.OwnerClass() == CanvasPanDeviceClass::Pen &&
+					rig.pan.Phase() == CanvasPanPhase::Locked && rig.ViewportX() == before,
+					"real Pen Down stops native coast and becomes a new pan without residual displacement");
+			}
+			for (const double readyQpc : { 18.0, 20.0, 22.0 })
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage; rig.Frame(8);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(12));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 25, -5, Rig::Qpc(16));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 30, -6, Rig::Qpc(readyQpc));
+				rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 200, 100, 20); rig.Frame(24);
+				const bool overlaps = readyQpc >= 20;
+				check(closeTo(rig.ViewportX(), -30, 1e-4) && closeTo(rig.ViewportY(), 6, 1e-4) &&
+					rig.pan.HasContacts() == !overlaps && rig.input.HasQuarantinedContacts() == overlaps,
+					"native Running interval includes a tied/later READY at Pen Down, but retains the tail before a non-overlapping Down");
+				rig.Up(Rig::kPenTablet, 1, 200, 100, 28); rig.Frame(32);
+				check(!rig.pan.HasContacts() && !rig.input.HasQuarantinedContacts(),
+					"native-overlapped Pen remains discarded until its actual terminal and cannot restart");
+			}
+			for (const double penQpc : { 12.0, 16.0, 20.0 })
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage; rig.Frame(8);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(10));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 5, 0, Rig::Qpc(14));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(18));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 30, 0, Rig::Qpc(22));
+				rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 200, 100, penQpc); rig.Frame(24);
+				const bool inGap = penQpc == 16;
+				check(closeTo(-rig.ViewportX(), inGap ? 5.0 : 35.0, 1e-4) &&
+					rig.pan.HasContacts() == inGap && rig.input.HasQuarantinedContacts() == !inGap,
+					"multiple native intervals in one frame preserve earlier overlap and the genuine gap instead of using only latest status");
+				rig.Up(Rig::kPenTablet, 1, 200, 100, 28); rig.Frame(32);
+				check(!rig.pan.HasContacts() && !rig.input.HasQuarantinedContacts(), "multi-interval rejected Pen closes exactly once");
+			}
+
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
+				CanvasPanInertiaOptions options; options.touchpad = false; rig.pan.SetInertiaOptions(options); rig.Frame(8);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(12));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 12, 0, Rig::Qpc(16)); rig.Frame(20);
+				check(closeTo(rig.ViewportX(), -12, 1e-4) && rig.pan.Active(),
+					"disabled native inertia still allows the running gesture's real geometry");
+				options.touchpad = true; rig.pan.SetInertiaOptions(options); rig.Frame(24);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Inertia, 24, 0, Rig::Qpc(28)); rig.Frame(32);
+				check(closeTo(rig.ViewportX(), -24, 1e-4) && rig.window.TouchpadNavigationActive() && !rig.pan.DynamicsActive(),
+					"held false-to-true reaches the real Window policy and permits this native release's inertia");
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 30, 0, Rig::Qpc(34)); rig.Frame(40);
+				check(closeTo(rig.ViewportX(), -30, 1e-4) && !rig.pan.Active(),
+					"enabled native release completes once after an in-gesture policy change");
+			}
+
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage; rig.window.SetInputCoordinator(&rig.input); rig.Frame(8);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(12));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 25, 0, Rig::Qpc(16));
+				check(!rig.window.TouchpadNavigationActive(), "admission probe has an already-ended native batch pending consumption");
+				rig.input.SetAdmissionBlocked(true); rig.input.SetAdmissionBlocked(false);
+				rig.Frame(20);
+				check(rig.ViewportX() == 0 && !rig.pan.Active(),
+					"gate close-and-reopen rejects old Running/Ready geometry even when latest native Active is false");
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(24));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 10, 0, Rig::Qpc(28));
+				rig.Frame(32);
+				check(closeTo(rig.ViewportX(), -10, 1e-4) && !rig.pan.Active(),
+					"fresh native begin in the current admission generation remains usable after old-tail rejection");
+			}
+
+			{
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage; rig.Frame(8);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(10));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 5, 0, Rig::Qpc(14));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 0, 0, Rig::Qpc(18));
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Ready, 30, 0, Rig::Qpc(22));
+				rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 200, 100, 16);
+				rig.Up(Rig::kPenTablet, 1, 200, 100, 19);
+				rig.Down(Rig::kMouseTablet, 1, InputDeviceType::MouseLeft, 200, 100, 20);
+				rig.Move(Rig::kMouseTablet, 1, 230, 100, 30); rig.Up(Rig::kMouseTablet, 1, 230, 100, 35);
+				// 迟到早期 Touch 仍落在被保留的 native10..14 区间，且不得退休先前已获准的 Pen/Mouse。
+				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 12);
+				rig.Up(Rig::kTouchTablet, 1, 100, 100, 40);
+				rig.Frame(44);
+				check(closeTo(-rig.ViewportX(), 20, 1e-4) && rig.last.dynamics.sampleCount == 5 && !rig.pan.HasContacts() &&
+					!rig.pan.Active() && !rig.input.HasQuarantinedContacts(),
+					"gap takeover clips cancelled future pad intervals, preserves earlier overlap history, and cannot let a rejected Down retire accepted contacts");
+			}
+
 			// ---- 单指 Touch 与鼠标左键：Locked 后内容 1:1 跟手 ----
 			for (const InputDeviceType device : { InputDeviceType::Touch, InputDeviceType::MouseLeft })
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				const uint32_t tablet = device == InputDeviceType::Touch ? Rig::kTouchTablet : Rig::kMouseTablet;
 				const Finger finger{ tablet, 1, 500.0, 400.0 };
 				check(rig.Down(tablet, 1, device, finger.x0, finger.y0, 4.0), "pan Down published");
@@ -7473,7 +8009,8 @@ namespace Inkeys::Drawing::Draw3
 
 			// ---- 多指：任意触点数按质心平移，加减指不跳变 ----
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				const Finger fingers[] = { { Rig::kTouchTablet, 1, 400, 400 }, { Rig::kTouchTablet, 2, 600, 420 },
 					{ Rig::kTouchTablet, 3, 800, 440 } };
 				for (const Finger& f : fingers)
@@ -7491,7 +8028,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			// ---- 释放 -> 惯性；第一指按下即取消 fling ----
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
 				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
 				rig.Frame(8.0);
@@ -7519,12 +8057,13 @@ namespace Inkeys::Drawing::Draw3
 					"tap-and-release on a grabbed canvas leaves no phantom inertia");
 			}
 
-			// ---- 向量摩擦 fling 有界结束；笔 hover 在下一消费帧零位移急停 ----
+			// ---- 向量摩擦 fling 有界结束；拖动模式 hover 不改变自由滑行 ----
 			{
 				double freeTravel = 0.0, brakedTravel = 0.0, expectedTravel = 0.0;
 				for (const bool hover : { false, true })
 				{
-					Rig rig;
+					auto rigStorage = std::make_unique<Rig>();
+					Rig& rig = *rigStorage;
 					const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
 					rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
 					rig.Frame(8.0);
@@ -7547,13 +8086,14 @@ namespace Inkeys::Drawing::Draw3
 				// 摩擦曲线按实际时间闭式积分并补齐终点，不因帧率丢失尾巴。
 				check(freeTravel > 0.0 && std::abs(freeTravel - expectedTravel) < 0.5,
 					"free fling matches independent friction remaining distance");
-				check(brakedTravel == 0.0, "pen hover cancels fling with zero additional content displacement");
+				check(std::abs(brakedTravel - freeTravel) < 0.5, "pen hover preserves the full free fling distance in move mode");
 
 			}
 
 			// ---- DIP 换算：0.75 DIP/px 下像素位移仍 1:1，惯性距离按 DIP 计算 ----
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.scale = { 0.75, 0.75 };
 				const Finger finger{ Rig::kTouchTablet, 1, 300.0, 300.0 };
 				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
@@ -7577,22 +8117,25 @@ namespace Inkeys::Drawing::Draw3
 			}
 			// ---- 设备互斥与不可拖动设备 ----
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				check(rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 100, 100, 4.0) &&
 					rig.Down(Rig::kMouseTablet, 2, InputDeviceType::MouseRight, 120, 120, 4.0),
 					"Pen and MouseRight Downs published");
 				rig.Frame(8.0);
-				check(!rig.pan.HasContacts() && rig.strokeDowns.empty() && rig.input.HasQuarantinedContacts(),
-					"Pen and MouseRight are discarded to terminal in Move mode");
+				check(rig.pan.HasContacts() && rig.strokeDowns.empty() && rig.input.HasQuarantinedContacts(),
+					"Pen pans while MouseRight remains discarded to terminal in Move mode");
 				rig.Move(Rig::kPenTablet, 1, 400, 100, 12.0);
 				rig.Move(Rig::kMouseTablet, 2, 400, 120, 12.0);
 				rig.Frame(16.0);
-				check(rig.ViewportX() == 0.0f && rig.ViewportY() == 0.0f && !rig.pan.Active(),
-					"discarded Pen/MouseRight Moves never pan");
+				check(closeTo(rig.ViewportX(), -285.0, 1e-3) && rig.ViewportY() == 0.0f && rig.pan.Active(),
+					"Pen Move applies its actual 300-pixel drag minus slop without accepting the MouseRight contact");
 				rig.Up(Rig::kPenTablet, 1, 400, 100, 20.0);
 				rig.Up(Rig::kMouseTablet, 2, 400, 120, 20.0);
 				rig.Frame(24.0);
 				check(!rig.input.HasQuarantinedContacts(), "discarded routes drain at their real terminal");
+				// 前段合法 Pen 已改变视口；后续拒收设备只能证明保持这份基线，不能假定仍在原点。
+				const CanvasVector afterPen{ rig.ViewportX(), rig.ViewportY() };
 
 				rig.Down(Rig::kTouchTablet, 5, InputDeviceType::Touch, 300, 300, 28.0);
 				rig.Frame(32.0);
@@ -7602,7 +8145,7 @@ namespace Inkeys::Drawing::Draw3
 					"Mouse Down is discarded while Touch owns the pan");
 				rig.Move(Rig::kMouseTablet, 6, 900, 300, 44.0);
 				rig.Frame(48.0);
-				check(rig.ViewportX() == 0.0f, "other-class Move cannot move the canvas");
+				check(rig.ViewportX() == afterPen.x && rig.ViewportY() == afterPen.y, "other-class Move cannot move the canvas");
 				rig.Up(Rig::kMouseTablet, 6, 900, 300, 52.0);
 				rig.Up(Rig::kTouchTablet, 5, 300, 300, 52.0);
 				rig.Frame(56.0);
@@ -7624,7 +8167,8 @@ namespace Inkeys::Drawing::Draw3
 			// 最新物理样本仲裁：不通过额外帧提前消费终态。
 			for (bool cancelled : { false, true })
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
 				rig.Frame(8.0);
 				check(rig.pan.TouchPanHeld(rig.input), "fresh Touch is held before terminal");
@@ -7652,7 +8196,8 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(128.0);
 			}
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
 				ContactRecord* record = nullptr;
 				while (rig.input.TryDequeue(record))
@@ -7680,7 +8225,8 @@ namespace Inkeys::Drawing::Draw3
 			// 同帧 Pen/Touch 终态：必须经优先级与导航两次真实 mailbox 仲裁，不能只测布尔判定。
 			for (double penDownMs : { 95.0, 100.0, 105.0 })
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				const Finger finger{ Rig::kTouchTablet, 1, 100.0, 100.0 };
 				rig.Down(finger.tablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
 				rig.Frame(8.0);
@@ -7713,16 +8259,15 @@ namespace Inkeys::Drawing::Draw3
 					{
 						rig.Frame(124.0);
 						check(!rig.suppressPenUntilRelease && rig.last.penTerminalQpc == Rig::Qpc(120.0) &&
-							rig.pan.Phase() == CanvasPanPhase::Idle && rig.last.contentDeltaPixels.x == 0.0f &&
-							rig.last.dynamics.boosterStartingVelocity.x == 0.0f,
-							"Selection Pen terminal clears suppression and its hover stops fling");
+							rig.pan.Phase() == CanvasPanPhase::Coasting && rig.last.contentDeltaPixels.x > 0.0f,
+							"Selection Pen terminal clears suppression without hover braking the fling");
 					}
 					// Pen95 分支不插入 hover 帧：旧 Up 与新 Down 同帧仍须解除旧抑制。
 					const float beforeNewPen = rig.ViewportX();
 					rig.Down(Rig::kPenTablet, 2, InputDeviceType::Pen, 400, 100, 128.0);
 					rig.PenMailbox(128.0, true);
 					rig.Frame(132.0);
-					check(!rig.navigationPenSuppressed && rig.pan.Phase() == CanvasPanPhase::Idle &&
+					check(!rig.navigationPenSuppressed && rig.pan.Phase() == CanvasPanPhase::Locked &&
 						rig.ViewportX() == beforeNewPen, "later fresh Pen contact brakes the remaining inertia immediately");
 					rig.Up(Rig::kPenTablet, 2, 400, 100, 136.0);
 					rig.PenMailbox(136.0, false);
@@ -7730,9 +8275,9 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else
 				{
-					check(rig.pan.Phase() == CanvasPanPhase::Idle && !rig.pan.Active() &&
-						rig.ViewportX() == before && rig.last.contentDeltaPixels.x == 0.0f,
-						"Pen105 after TouchUp100 stops before Step with zero residual displacement");
+					check(rig.pan.Phase() == CanvasPanPhase::Locked && rig.pan.Active() &&
+						closeTo(rig.last.contentDeltaPixels.x, 12.0, 1e-3) && rig.ViewportX() < before,
+						"Pen105 after TouchUp100 preserves the actual Touch tail then grabs the canvas");
 					rig.Up(Rig::kPenTablet, 1, 400, 100, 112.0);
 					rig.PenMailbox(112.0, false);
 					rig.Frame(116.0);
@@ -7741,14 +8286,15 @@ namespace Inkeys::Drawing::Draw3
 			}
 			for (bool touchFirst : { true, false })
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				// 两个 Down 均未出队；逆序 QPC 还验证未来 Touch 不能追溯抑制先前 Pen。
 				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, touchFirst ? 4.0 : 8.0);
 				rig.Down(Rig::kPenTablet, 1, InputDeviceType::Pen, 400, 100, 6.0);
 				rig.PenMailbox(6.0, true);
 				rig.Frame(12.0);
 				check(!rig.priorityPenSuppressed && rig.navigationPenSuppressed == touchFirst &&
-					rig.pan.Phase() == (touchFirst ? CanvasPanPhase::Locked : CanvasPanPhase::Idle),
+					rig.pan.Phase() == CanvasPanPhase::Locked,
 					"first-frame ingress suppresses Pen only when Touch Down is earlier");
 				rig.Move(Rig::kTouchTablet, 1, 130, 100, 16.0);
 				rig.Frame(20.0);
@@ -7765,7 +8311,8 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(28.0);
 			}
 			{
-				Rig free, hover;
+				auto freeStorage = std::make_unique<Rig>(), hoverStorage = std::make_unique<Rig>();
+				Rig& free = *freeStorage; Rig& hover = *hoverStorage;
 				for (Rig* rig : { &free, &hover })
 				{
 					const Finger finger{ Rig::kTouchTablet, 1, 100.0, 100.0 };
@@ -7777,16 +8324,17 @@ namespace Inkeys::Drawing::Draw3
 				}
 				hover.PenMailbox(108.0, false);
 				free.Frame(112.0); hover.Frame(112.0);
-				check(!hover.navigationPenSuppressed && hover.pan.VelocityDip().x == 0.0f &&
-					hover.pan.Phase() == CanvasPanPhase::Idle && hover.last.contentDeltaPixels.x == 0.0f &&
-					hover.last.dynamics.boosterStartingVelocity.x == 0.0f && free.pan.VelocityDip().x > 0.0f,
-					"real Pen hover mailbox immediately stops inertia and clears booster");
+				check(!hover.navigationPenSuppressed && hover.pan.VelocityDip().x > 0.0f &&
+					hover.pan.Phase() == CanvasPanPhase::Coasting &&
+					closeTo(hover.ViewportX(), free.ViewportX(), 1e-3),
+					"real Pen hover mailbox leaves inertia identical to the free control");
 			}
 
 			// ---- 桌面/PPT Selection 与绘制工具：绝不平移 ----
 			for (const auto ws : { Bridge::Workspace::Desktop, Bridge::Workspace::Presentation })
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.workspace = ws;
 				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
 				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
@@ -7799,7 +8347,8 @@ namespace Inkeys::Drawing::Draw3
 				check(!rig.input.HasQuarantinedContacts(), "desktop/PPT discarded route drains");
 			}
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.window.SetSelectionMode(false); // 绘制工具
 				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
 				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
@@ -7813,7 +8362,8 @@ namespace Inkeys::Drawing::Draw3
 			// ---- 终止：离开移动模式 / 工作区切换 / 显式 Stop 都零残余位移，触点只跟踪到终态 ----
 			for (int reason = 0; reason < 4; ++reason)
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
 				rig.Down(finger.tablet, 1, InputDeviceType::Touch, finger.x0, finger.y0, 4.0);
 				rig.Frame(8.0);
@@ -7854,7 +8404,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			{
 				// 离开后重新进入移动模式：新手指可以重新平移（批次不会永久作废）。
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				rig.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4.0);
 				rig.Frame(8.0);
 				rig.window.SetSelectionMode(false);
@@ -7871,7 +8422,8 @@ namespace Inkeys::Drawing::Draw3
 
 			// ---- 硬限位：触限轴清零速度，不再被惯性推动 ----
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				InkCanvas* canvas = rig.Canvas(0);
 				check(canvas && canvas->SetViewport({ -1048570.0f, 0.0f, 1.0f }), "viewport near the hard limit");
 				const Finger finger{ Rig::kTouchTablet, 1, 200.0, 300.0 };
@@ -7886,7 +8438,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			// ---- 每页视角：翻页保持、冷页重载恢复、新页 (0,0)、不改文档内容 ----
 			{
-				Rig rig;
+				auto rigStorage = std::make_unique<Rig>();
+				Rig& rig = *rigStorage;
 				WhiteboardViewportMemory memory;
 				std::vector<CanvasPageRuntimeState> runtimes;
 				runtimes.emplace_back();
@@ -7962,6 +8515,8 @@ namespace Inkeys::Drawing::Draw3
 			++failures;
 			std::fprintf(stderr, "[Draw3ControlFence] FAIL: %s\n", name);
 		};
+		check(RunTouchpadOwnerNotificationProductionProbe() == 0, "native owner completion notification keeps a valid duplicated event after sender teardown");
+		check(RunTouchpadIngressProductionProbe() == 0, "native frontend separates associated interaction from confirmed manipulation and preserves other inputs");
 		CheckTailInputDiagnosticContract(check);
 		failures += RunReconnectContactIdentityProductionProbe();
 		failures += RunEraserIdleWakeProductionProbe();
@@ -8091,8 +8646,8 @@ namespace Inkeys::Drawing::Draw3
 				bool boundary = false;
 				std::vector<CanvasGestureContactRuntime> selectionContacts;
 				CanvasPanInput selectionPan(selectionContacts, selectionInput);
-				const bool expectPan = workspace == Bridge::Workspace::Whiteboard && !source.inverted &&
-					(source.device == InputDeviceType::Touch || source.device == InputDeviceType::MouseLeft);
+				const bool expectPan = workspace == Bridge::Workspace::Whiteboard &&
+					(source.device == InputDeviceType::Touch || source.device == InputDeviceType::MouseLeft || source.device == InputDeviceType::Pen);
 				const auto consume = [&](ContactRecord* record)
 				{
 					if (!record) { selectionInput.AcknowledgeControlWake(); return; }
@@ -8123,7 +8678,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					check(!rejected && rejectedDowns == 0 && passedDowns == 0 &&
 						selectionPan.HasContacts() && !selectionInput.HasQuarantinedContacts() &&
-						selectionPan.OwnerClass() == CanvasPanClassOf(source.device),
+						selectionPan.OwnerClass() == CanvasPanClassOf(source.device, source.inverted),
 						"whiteboard Move mode registers Touch/MouseLeft as a pan contact, not a discard");
 					check(selectionInput.PublishUp(tablet, 1, snapshot(ContactPhase::Up)),
 						"pan contact accepts its real Up");
@@ -12342,6 +12897,11 @@ namespace Inkeys::Drawing::Draw3
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
 
+	void DrawingController::SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept
+	{
+		canvasPanInertiaOptions_.store(options.Encode(), std::memory_order_release);
+	}
+
 	void DrawingController::SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
 		InkPredictionMode predictionMode) noexcept
 	{
@@ -13348,6 +13908,7 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<CanvasGestureContactRuntime> gestureContacts;
 		gestureContacts.reserve(kPreheatedStrokeCount);
 		CanvasPanInput canvasPan(gestureContacts, input_);
+		canvasPan.BindTouchpad(window_);
 		bool publishedDrawingActivity = false;
 		auto reconcileDrawingActivity = [&]() noexcept
 		{
@@ -15513,13 +16074,15 @@ namespace Inkeys::Drawing::Draw3
 				suppressPenUntilRelease, suppressedPenTerminalQpc);
 			const bool penInRange = pen.inRange;
 			const bool penInContact = pen.inContact;
-			if (penInContact && !suppressPenUntilRelease)
+			if (penInContact && !suppressPenUntilRelease && !canvasPan.HasContacts())
 			{
-				// Pen mailbox 不受 Touch-to-Mouse 提升影响，惯性阶段可在 contact 出队前刹停。
-				stopCanvasNavigation("pen-mailbox-contact");
+				// mailbox 可提前取消自由滑行，不能把合法笔的持续接触每帧解释为新 Down。
+				canvasPan.StopFling();
 			}
 
-			// 有序真实样本 -> DIP 内核 -> 像素位移；hover 仅急停 fling。
+			// 有序真实样本 -> DIP 内核 -> 像素位移；白板拖动模式的 hover 不急停。
+			canvasPan.SetInertiaOptions(CanvasPanInertiaOptions::Decode(canvasPanInertiaOptions_.load(std::memory_order_acquire)));
+			canvasPan.SetNativeAdmission(!input_.AdmissionBlocked() && !whiteboardLoading);
 			const WindowSize panSize = window_.Size();
 			const CanvasPanInput::Frame frame = canvasPan.Step(input_, nowQpc, qpcFrequency,
 				penInRange && !suppressPenUntilRelease,

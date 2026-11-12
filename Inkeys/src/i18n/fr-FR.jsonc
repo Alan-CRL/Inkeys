@@ -629,6 +629,16 @@
           "Precise": "Précise",
           "Fast": "Rapide",
           "Disabled": "Désactivée"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inertie du déplacement du tableau blanc",
+          "E": "Le tableau continue de glisser après le relâchement en mode déplacement. Réglable pour chaque type de saisie.",
+          "Mouse": "Souris",
+          "Touchpad": "Pavé tactile",
+          "Touch": "Tactile",
+          "Pen": "Stylet",
+          "PenTail": "Stylet (extrémité gomme)"
         }
       },
       "Laser":

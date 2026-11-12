@@ -77,7 +77,8 @@ namespace Inkeys::Drawing::Draw3
 
 		bool IsNavigationDevice(InputDeviceType device) noexcept
 		{
-			return device == InputDeviceType::Touch || device == InputDeviceType::MouseLeft;
+			// Pen/倒置笔共用真实有序历史；是否漫游仍由唯一消费者的 Selection 准入决定。
+			return device == InputDeviceType::Touch || device == InputDeviceType::MouseLeft || device == InputDeviceType::Pen;
 		}
 
 		bool HasFinitePosition(const ContactSnapshot& snapshot) noexcept

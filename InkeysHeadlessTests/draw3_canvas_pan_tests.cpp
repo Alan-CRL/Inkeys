@@ -1048,6 +1048,52 @@ namespace
 		return primitives;
 	}
 
+	void TestPerSourceInertiaGate(Checks& check)
+	{
+		for (bool firstAllowed : { false, true }) for (bool secondAllowed : { false, true })
+		{
+			CanvasPanDynamics motion;
+			std::vector<CanvasPanContactSample> samples;
+			for (int gesture = 0; gesture < 2; ++gesture)
+			{
+				const double begin = gesture * 40.0;
+				const double origin = gesture * 1000.0;
+				const bool allowed = gesture ? secondAllowed : firstAllowed;
+				samples.push_back(Contact(gesture + 1, begin, origin, 0, CanvasPanContactPhase::Down));
+				for (int n = 1; n <= 3; ++n)
+					samples.push_back(Contact(gesture + 1, begin + n * 10, origin + n * 30));
+				samples.push_back(Contact(gesture + 1, begin + 31, origin + 90, 0, CanvasPanContactPhase::Up));
+				for (auto& sample : samples)
+					if (sample.key == static_cast<uint64_t>(gesture + 1))
+					{ sample.sourceKey = gesture + 1; sample.allowInertia = allowed; }
+			}
+			const auto out = StepAt(motion, 100, samples);
+			check.Near(out.contentDelta.x, 150, 1e-4,
+				"per-source release gates preserve both complete same-frame drag geometries");
+			check(out.heldContacts == 0 && (out.phase == CanvasPanPhase::Coasting) == secondAllowed,
+				"same-frame source changes use each terminal's gate instead of one frame-wide choice");
+			if (!secondAllowed)
+				check(out.releaseReason == CanvasPanReleaseReason::Disabled &&
+					out.boosterStartingVelocity.x == 0 && out.contentVelocity.x == 0,
+					"disabled release closes normally and leaves no residual booster or free velocity");
+		}
+		CanvasPanDynamics disabled;
+		auto down = Contact(1, 0, 0, 0, CanvasPanContactPhase::Down);
+		down.allowInertia = false;
+		StepAt(disabled, 0, { down });
+		for (int n = 1; n <= 4; ++n)
+		{
+			auto move = Contact(1, n * 10, n * 30); move.allowInertia = false;
+			const auto out = StepAt(disabled, n * 10, { move });
+			check(out.heldContacts == 1 && out.phase == CanvasPanPhase::Locked,
+				"disabled inertia never cancels the held gesture");
+		}
+		auto up = Contact(1, 41, 120, 0, CanvasPanContactPhase::Up); up.allowInertia = false;
+		StepAt(disabled, 41, { up });
+		check(StepAt(disabled, 100).contentDelta.x == 0 && !disabled.Active(),
+			"disabled release does not restart on later empty frames");
+	}
+
 	void TestWhiteboardPatternGeometry(Checks& check)
 	{
 		const WhiteboardTheme light{ 0xF5F1E6, WhiteboardPattern::Dots };
@@ -1416,6 +1462,7 @@ int RunDraw3CanvasPanTests()
 	TestInvalidSamplesAndTranslation(check);
 	TestReliableProductRelease(check);
 	TestProductFrictionAndResidual(check);
+	TestPerSourceInertiaGate(check);
 	TestWhiteboardPatternGeometry(check);
 	TestWhiteboardFreezePatternFollow(check);
 	if (check.failures == 0)
