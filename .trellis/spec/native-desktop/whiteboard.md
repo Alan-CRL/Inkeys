@@ -179,7 +179,7 @@ Correct：实际当前页主题生成完整token；有效样式应用确认匹�
 
 ## 移动模式的画布平移与每页视角（2026-11-06）
 
-任务依据 `.trellis/tasks/11-06-whiteboard-canvas-pan-inertia/`（输入/视口/背景）及 `.trellis/tasks/11-08-chromium-touch-fling/`（替代动力学）；完整可执行合同（状态机、估速器、常量意图、终止原因、验证矩阵与未验证项）见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)，本节只记录白板侧边界。
+任务依据 `.trellis/tasks/archive/2026-11/11-06-whiteboard-canvas-pan-inertia/`（输入/视口/背景）及 `.trellis/tasks/archive/2026-11/11-08-chromium-touch-fling/`（替代动力学）；完整可执行合同（状态机、估速器、常量意图、终止原因、验证矩阵与未验证项）见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)，本节只记录白板侧边界。
 
 - 白板的"选择"按钮显示为"移动"，不新增 UI。平移只存在于"白板工作区 + 移动（Selection）模式"（`Bridge::MoveModePansCanvas`）；桌面/PPT 的 Selection 仍是穿透的电脑操作，绘制工具下不平移，绘制模式没有双指/手势触发。白板 Selection 的输出仍是 `PrimaryDrawpad`，Drawpad 不穿透。
 - 输入：触摸（任意指数，按质心）、鼠标左键、笔尖和笔尾可成为平移触点；鼠标右键仍丢弃。2026-11-12起PTP双指扩展暂停：DM与RTS同HWND输入委托冲突已由系统探针复现，当前禁止DM Activate落到主画布；保留的触控板配置不产生运动。按压拖动不新增独立识别。同一时刻一类接触持有，按Down及保留的native Running历史区间互斥。Win32 鼠标兜底路径（RTS 不可用）同样在白板移动模式放行左键，触摸被系统提升为单点鼠标，因此只有单点平移，属已知降级。用户的多指书写开关不影响移动模式的多指平移。
@@ -193,7 +193,7 @@ Correct：实际当前页主题生成完整token；有效样式应用确认匹�
 
 ### 1. Scope / Trigger
 
-修改白板点阵/网格的绘制位置、`kWhiteboardPatternOwner`、Freeze `RenderBackground` 的重画规划、`PublishCanvasViewport`/`WhiteboardViewportSample` 视口通道、主题纹理失效规则、预览纹理，或 Draw3 后备 under pass 时应用。依据 `.trellis/tasks/11-06-whiteboard-canvas-pan-inertia/`（PRD R6/AC5/D3 修订、`research/freeze-pattern-follow-design.md`、`research/background-pattern-ownership.md`）。
+修改白板点阵/网格的绘制位置、`kWhiteboardPatternOwner`、Freeze `RenderBackground` 的重画规划、`PublishCanvasViewport`/`WhiteboardViewportSample` 视口通道、主题纹理失效规则、预览纹理，或 Draw3 后备 under pass 时应用。依据 `.trellis/tasks/archive/2026-11/11-06-whiteboard-canvas-pan-inertia/`（PRD R6/AC5/D3 修订、`research/freeze-pattern-follow-design.md`、`research/background-pattern-ownership.md`）。
 
 D3 修订：用户原需求没有要求用 HLSL。纹理默认由 Freeze 窗口（D2D/WARP）绘制并随画布视口重画位置，不占用画布 GPU、UI 层不打扰画布；先前实现的 Draw3 shader under pass 保留为编译期开关后备，真机体验不佳时再切换。后备合同见 [cpu-gpu-contracts.md](../shaders/cpu-gpu-contracts.md#scenario-whiteboard-pattern-under-pass-draw3-后备归属)。
 

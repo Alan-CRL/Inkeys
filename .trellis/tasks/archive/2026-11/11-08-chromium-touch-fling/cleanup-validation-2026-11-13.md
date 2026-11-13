@@ -54,3 +54,7 @@
 ## 静态与文档门禁
 
 独立全范围review、删除API引用闭环、26个保留常量定义、三源码SHA冻结、BOM/CRLF、git diff --check与任务context验证均通过。原有大spec超32768字节的context截断告警仍保留，未改全局阈值；当前收尾摘要先行注入并按需直接读正文。
+
+## 归档结果
+
+工作提交 `4706ec0e1226aaaf3549b5aaa719eeaf749aa293`；`11-06-whiteboard-canvas-pan-inertia` 与 `11-08-chromium-touch-fling` 均已归档到 `.trellis/tasks/archive/2026-11/`，状态 `completed`，日期2026-11-13。当前会话任务指针已清理；尺度适配任务尚未创建，研究资料与上传未来路线图随档保存。未push，未GUI。

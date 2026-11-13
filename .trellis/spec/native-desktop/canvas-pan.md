@@ -128,3 +128,7 @@ Correct：同一producer predicate贯通Pen历史；按实际时间区间/真值
 
 Wrong：把MANUALUPDATE当输入隔离，把SetContact S_OK当Running，或只有桥接器注入测试就声称设备链已通。
 Correct：当前在任何DM COM/Activate之前执行quarantine，保留RTS接触；未来只有在真实注册与接触探针证明共存后才能启用替代前端，不能把flags、SetContact或无窗口模型当作系统级修复。
+
+## 8. 已完成交付与后续任务入口
+
+2026-11-13用户确认当前机惯性合适，旧参考模型清理与有序输入优化已完成；完整构建及七项无窗口回归、2240条场景和整份探针输出等价检查见[归档收尾记录](../../tasks/archive/2026-11/11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)。两个拖动任务均已completed；归档不表示其它硬件/系统/光学性能已全部实测。尺度适配留下一独立Trellis任务，先重审归档的`scale-stage-plan.md`与逐来源/每轴物理标尺研究；触控板及新输入后端仍按[未来路线](../../tasks/archive/2026-11/11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md)延期，不解除quarantine。

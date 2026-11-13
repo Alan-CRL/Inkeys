@@ -22,6 +22,6 @@
 - [x] 原生 ARM64 MSBuild 动态定位；同一 PowerShell 先规范 Path/PATH、禁 node reuse；完整 InkeysRepo.sln Debug|ARM64，至少5分钟（本轮1800秒）预算。
 - [x] Headless pan、control-fence、pan-feel、配置边界/设置、诊断及完整 --no-window 通过；pan-feel 全部实际2240条scenario数值与清理前一致（末行汇总2112）。
 - [x] 独立 trellis-check；更新当前 spec，旧曲线只留 Git/历史任务证据。
-- [ ] 将用户当前机手感确认、其它真机/多系统/纹理性能未验边界和未来路线写入收尾记录，完成两项相关任务归档及 commit，不 push。
+- [x] 将用户当前机手感确认、其它真机/多系统/纹理性能未验边界和未来路线写入收尾记录，完成两项相关任务归档及 commit，不 push。
 
 本轮不启动主程序或任何交互GUI，不通过更改SDK/工程/工具链或关闭签名绕过环境问题。没有计时基准，性能收益仅以去掉的确定性工作描述。

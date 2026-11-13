@@ -851,7 +851,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 ### 1. Scope / Trigger
 
-修改 Canvas 坐标变换、`CanvasCommand::TranslateViewport`、白板移动模式的 Selection Down 分流、平移触点与设备互斥、`CanvasPanDynamics` 产品手势/fling 与速度估计、Win32 鼠标兜底的移动模式隔离、Pen 接管、每页视角、composition tile 恢复或可信 L2 快照时，必须同步应用本节与 [CPU/GPU Contracts](../shaders/cpu-gpu-contracts.md)。当前 `scale` 固定为 `1`；本契约不包含缩放、旋转、EDID 物理距离、边界阻力/拉伸/回弹、桌面/PPT 平移，以及绘制模式下的任何手势。2026-11-06 起平移只属于"白板工作区 + 移动（Selection）模式"，整体替代此前"普通 Touch 双指 180 ms 窗口 + 不叠加惯性"的契约；任务依据见 `.trellis/tasks/11-06-whiteboard-canvas-pan-inertia/`。
+修改 Canvas 坐标变换、`CanvasCommand::TranslateViewport`、白板移动模式的 Selection Down 分流、平移触点与设备互斥、`CanvasPanDynamics` 产品手势/fling 与速度估计、Win32 鼠标兜底的移动模式隔离、Pen 接管、每页视角、composition tile 恢复或可信 L2 快照时，必须同步应用本节与 [CPU/GPU Contracts](../shaders/cpu-gpu-contracts.md)。当前 `scale` 固定为 `1`；本契约不包含缩放、旋转、EDID 物理距离、边界阻力/拉伸/回弹、桌面/PPT 平移，以及绘制模式下的任何手势。2026-11-06 起平移只属于"白板工作区 + 移动（Selection）模式"，整体替代此前"普通 Touch 双指 180 ms 窗口 + 不叠加惯性"的契约；任务依据见 `.trellis/tasks/archive/2026-11/11-06-whiteboard-canvas-pan-inertia/`。
 
 ### 2. Signatures
 
