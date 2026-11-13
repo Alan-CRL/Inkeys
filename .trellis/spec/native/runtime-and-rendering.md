@@ -858,10 +858,10 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - `InkViewport { float x, y, scale }`，`InkCanvas::SetViewport(InkViewport) -> bool`
 - `CanvasCommand { CanvasCommandType type; float deltaX; float deltaY; }`，其中 `TranslateViewport` 的 delta 是可见内容屏幕位移 DIP
 - `ScreenToCanvas(screen, viewport)` / `CanvasToScreen(canvas, viewport)` / `ApplyCanvasContentTranslation(viewport, contentDelta)` / `ApplyCanvasContentTranslationChecked`
-- 门禁与路由：`Bridge::MoveModePansCanvas(selectionMode, workspace)`；`RouteSelectionDown(selectionMode, workspace, device, latchedClass) -> SelectionDownRoute{Stroke, Pan, Discard}` 与 `HandleSelectionDown`；`CanvasPanDeviceClass{None, Touch, Mouse}` / `CanvasPanClassOf`；`WindowController::{CanvasPanMode, SetCanvasPanWorkspace}`、`Detail::MouseSelectionIsolates(selectionMode, canvasPanMode)`、`PublishCanvasPanMode`
+- 门禁与路由：`Bridge::MoveModePansCanvas(selectionMode, workspace)`；`RouteSelectionDown(selectionMode, workspace, device, latchedClass) -> SelectionDownRoute{Stroke, Pan, Discard}` 与 `HandleSelectionDown`；`CanvasPanDeviceClass{None, Touch, Mouse, Pen, PenTail}` / `CanvasPanClassOf`；`WindowController::{CanvasPanMode, SetCanvasPanWorkspace}`、`Detail::MouseSelectionIsolates(selectionMode, canvasPanMode)`、`PublishCanvasPanMode`
 - 输入侧：`CanvasPanInput::{Register, Step, Stop, Reset, ObserveMoveMode, ApplyToCanvas, OwnerClass, HasContacts, Active, TouchPanHeld, VelocityDip, VelocityPixels}`；`Run()` 内统一终止入口 `stopCanvasNavigation(reason)`；`SelectionReleasesTimerPeriod(selectionMode, canvasPanActive)`；`CanvasPanScaleFromDisplay`
-- 动力学（模块 `Inkeys.Drawing.Draw3.canvas_navigation`，纯 CPU，无窗口/D3D 依赖）：`CanvasPanDynamics::{Step, Stop, StopFling, ClearAxis, Phase, Active, ContentVelocity, HeldContactCount, SeedContactHistory}`、`CanvasPanPhase{Idle, Coasting, Locked}`；`CanvasPanFrameInput` 保留 QPC/contacts/penHover/penContact 并增加 `viewportSizeDip`；`CanvasPanFrameOutput` 保留位移/速度/释放诊断，增加 `focus/span/pointerCount/scaleDelta=1`、各指样本数/估速、booster 起滑/当前速度与cutoff、fling累计offset。
-- Chromium 组件：共享多指 `CanvasPanVelocityTracker::{AddMovement, Clear, ClearPointer, PointerUp, Estimate, SampleCount}`、`CanvasPanGestureDetector::{Down, Move, Up}`、`CanvasPanFlingBooster`、`CanvasPanFlingCurve::{Start, Advance, Duration, Distance, P1}`、`CanvasPanFlingController::{Start, Progress, Cancel, StopFling}` 与 `SolveCanvasPanCubicBezier`。手感常量集中在 `.cppm` 顶部并注明源码来源；`kCanvasPanFlingCurveKind` 默认 `PhysicsBased`，可单点切 `Legacy`（Chromium 旧版 `FlingCurve`）。
+- 动力学（模块 `Inkeys.Drawing.Draw3.canvas_navigation`，纯 CPU，无窗口/D3D 依赖）：`CanvasPanDynamics::{Step, Stop, StopFling, ClearAxis, Phase, Active, ContentVelocity, HeldContactCount}`、`CanvasPanPhase{Idle, Coasting, Locked}`；`CanvasPanFrameInput` 保留 QPC/contacts/penHover/penContact 并增加 `viewportSizeDip`；`CanvasPanFrameOutput` 保留位移/速度/释放诊断，增加 `focus/span/pointerCount/scaleDelta=1`、各指样本数/估速、booster 起滑/当前速度与cutoff、fling累计offset。
+- 产品组件：`CanvasPanReleaseVelocityTracker`逐指维护可靠尾段；`CanvasPanGestureDetector::{Down, Move, Up}`仅负责几何/门限/拓扑，Up显式接受可靠释放估计；`CanvasPanFlingBooster`只续接当前残余正投影；`CanvasPanFlingCurve::{Start, Advance, Duration, Distance}`只保留向量摩擦闭式；`CanvasPanFlingController::{Start, Progress, Cancel, StopFling}`负责动画生命周期。2026-11-13收尾移除旧LSQ2、PhysicsBased/Legacy、贝塞尔、未接产品的history seed与曲线选择开关；参数值与当前产品手感不变。
 - 每页视角：`WhiteboardViewportMemory::{Remember, Recall, Restore}`（`Run()` 内与 `whiteboardPages` 并列）
 - `PlanCanvasRenderTiles` / `ComputeCanvasRenderBudget` / `ComputeCanvasSnapshotScreenIntersection` / `ComputeCanvasPredictionOffset` / `CanvasPanFallbackBlurDip`
 - `CompositionRestoreRequest::{tiles, viewportX, viewportY, canvasWidth, canvasHeight}`
@@ -881,7 +881,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 #### 3.2 白板产品手势与惯性（2026-11-08 手感修复）
 
-当前产品合同见 [白板可靠输入、释放与诊断](../native-desktop/canvas-pan.md)。统一导航事件历史、逐指真实尾段线性估速、反向失效、30–70ms年龄衰减、向量摩擦与当前残余投影替代阶段1的快照/共享LSQ2/逐轴Physics曲线/历史初速boost。Chromium原组件仅保留参考数值测试，不作为产品门面行为要求。接触Down立即停、15DIP首次slop扣除和多指几何基线保持；本阶段新增笔/笔尾导航，移动模式取消hover急停，五类惯性开关以该规范为准。2026-11-12起PTP双指因DM/RTS同HWND输入委托冲突暂时停用，保留的DM/Bridge实现不代表当前能力。
+当前产品合同见 [白板可靠输入、释放与诊断](../native-desktop/canvas-pan.md)。统一导航事件历史、逐指真实尾段线性估速、反向失效、30–70ms年龄衰减、向量摩擦与当前残余投影替代阶段1的快照/共享LSQ2/逐轴Physics曲线/历史初速boost。2026-11-13收尾已移除这些旧参考实现与专属黄金值测试；当前只保留产品算法及几何/多指/释放/摩擦/boost回归。接触Down立即停、15DIP首次slop扣除和多指几何基线保持；本阶段新增笔/笔尾导航，移动模式取消hover急停，五类惯性开关以该规范为准。2026-11-12起PTP双指因DM/RTS同HWND输入委托冲突暂时停用，保留的DM/Bridge实现不代表当前能力。
 
 #### 3.3 终止、计时器与预测
 
@@ -935,7 +935,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 | 最后一指UP | 取该指可靠尾段速度，30–70ms年龄软衰减，无证据/取消不fling |
 | Cancelled / 倒退终态 | 部分Cancel只移除该指，最后Cancel不fling；倒退输入忽略，不凭迟到事件复活触点 |
 | 触点数量变化 | 重算focus并重置位移基线，不产生拓扑位移；反向POINTER_UP清全部tracker；静止时contentDelta=0且视口不变，focus按质心重算，速度绝对容差<0.01 DIP/s |
-| 估速样本不足/非法输入 | 产品至少3点/20ms，异常时间与非有限坐标拒绝，最终模长限12000；参考LSQ2降阶仅用于参考测试 |
+| 估速样本不足/非法输入 | 产品至少3点/20ms，异常时间与非有限坐标拒绝，最终模长限12000；没有旧LSQ2降阶回退 |
 | 无新Move的渲染帧（有手） | 内容位移为0；释放时按真实最后样本年龄衰减 |
 | 移动模式任意来源coast遇笔hover | 不急停；持续hover不吞Pen刚释放的惯性 |
 | 笔尖/笔尾真实Down | 允许接管时停旧coast并开始新导航；活动Touch/native Running中的后来笔按互斥保护跟踪到终态 |
@@ -948,7 +948,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 | Touch Up 与 Pen contact 同帧到达 | 按 Pen 开始时间裁决是否重叠，重叠则抑制到终态 |
 | 仅剩 Suppressed / 忽略到终态触点 | 继续跟踪回收，不单独维持导航活动帧/1 ms 计时器 |
 | HWND 控制器附着/解绑 | 重置已确认白板门禁，旧 Host 不影响新工作区 |
-| `--draw3-canvas-pan-feel-test` | 历史旧摩擦模型曾实跑PASS failures=0 rows=2112；本轮探针预期已随Chromium规则同步，尚未运行，不能沿用旧PASS作验收 |
+| `--draw3-canvas-pan-feel-test` | 必须运行当前生产路径并记录退出码；收尾清理还需与清理前全量scenario记录对比，不能只检查历史PASS或末行计数 |
 | `--draw3-hidden-test` 的 S8 增量 | `CheckCompatibilityMouseWindow` 验证真实 WndProc；`CheckHiddenControllerMousePan` 验证隐藏控制器，保留后端/归属条件导致的 SKIP |
 | `--page-control-hidden-test` 的 S8 增量 | `Whiteboard.cpp:RunFollowStream` 验证 Freeze 跟随、落定像素精确、无相位候选取消、回 Idle、代次/翻页/主题/Blank，并输出 M1/M2 |
 | 正常模式（未开 CanvasPan diagnostics） | 不输出 `LogCanvasPan` |

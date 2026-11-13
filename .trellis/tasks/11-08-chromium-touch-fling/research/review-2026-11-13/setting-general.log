@@ -1,0 +1,34 @@
+[FrameSubmission] snapshot-budget=1048576 exact-fields=17 invalidation-keys=12
+[HomeOffscreen] driver=warp adapter=Microsoft Basic Render Driver vendor=5140 device=140 feature-level=11.0 width=1000 height=1100
+[NotoNegativeControl] design=0 weight=0 language=0 scale=1 oldratio=0.857143
+[NotoNegativeControl] design=0 weight=0 language=1 scale=1 oldratio=0.857143
+[NotoNegativeControl] design=0 weight=1 language=0 scale=1 oldratio=0.848958
+[NotoNegativeControl] design=0 weight=1 language=1 scale=1 oldratio=0.848958
+[NotoNegativeControl] design=1 weight=0 language=0 scale=1 oldratio=0.736364
+[NotoNegativeControl] design=1 weight=0 language=1 scale=1 oldratio=0.736364
+[NotoNegativeControl] design=1 weight=1 language=0 scale=1 oldratio=0.740909
+[NotoNegativeControl] design=1 weight=1 language=1 scale=1 oldratio=0.740909
+[NotoCalibration] scale=1 output=D:\Project\Inkeys\Repo\Inkeys\Build/setting-fonts\noto-calibration-100.png failures=0
+[HomeOffscreen] driver=warp adapter=Microsoft Basic Render Driver vendor=5140 device=140 feature-level=11.0 width=1000 height=1100
+[NotoNegativeControl] design=0 weight=0 language=0 scale=1.5 oldratio=0.841849
+[NotoNegativeControl] design=0 weight=0 language=1 scale=1.5 oldratio=0.841849
+[NotoNegativeControl] design=0 weight=1 language=0 scale=1.5 oldratio=0.840964
+[NotoNegativeControl] design=0 weight=1 language=1 scale=1.5 oldratio=0.840964
+[NotoNegativeControl] design=1 weight=0 language=0 scale=1.5 oldratio=0.725367
+[NotoNegativeControl] design=1 weight=0 language=1 scale=1.5 oldratio=0.725367
+[NotoNegativeControl] design=1 weight=1 language=0 scale=1.5 oldratio=0.718107
+[NotoNegativeControl] design=1 weight=1 language=1 scale=1.5 oldratio=0.718107
+[NotoCalibration] scale=1.5 output=D:\Project\Inkeys\Repo\Inkeys\Build/setting-fonts\noto-calibration-150.png failures=0
+[HomeOffscreen] driver=warp adapter=Microsoft Basic Render Driver vendor=5140 device=140 feature-level=11.0 width=1000 height=1100
+[NotoNegativeControl] design=0 weight=0 language=0 scale=2 oldratio=0.843137
+[NotoNegativeControl] design=0 weight=0 language=1 scale=2 oldratio=0.843137
+[NotoNegativeControl] design=0 weight=1 language=0 scale=2 oldratio=0.845517
+[NotoNegativeControl] design=0 weight=1 language=1 scale=2 oldratio=0.845517
+[NotoNegativeControl] design=1 weight=0 language=0 scale=2 oldratio=0.714964
+[NotoNegativeControl] design=1 weight=0 language=1 scale=2 oldratio=0.714964
+[NotoNegativeControl] design=1 weight=1 language=0 scale=2 oldratio=0.719484
+[NotoNegativeControl] design=1 weight=1 language=1 scale=2 oldratio=0.719484
+[NotoCalibration] scale=2 output=D:\Project\Inkeys\Repo\Inkeys\Build/setting-fonts\noto-calibration-200.png failures=0
+[BelowComboPopup] scale=1 changes=6 underlying-clicks=1
+[BelowComboPopup] scale=1.5 changes=6 underlying-clicks=1
+[BelowComboPopup] scale=1.875 changes=6 underlying-clicks=1

@@ -1,3 +1,9 @@
+> 2026-11-13 收尾质量门禁已完成：用户确认当前机惯性合适；旧曲线/无用实现已清理，有序输入免复制排序，保留全部当前手感参数。完整ARM64 solution及七项无窗口验证通过，全部2240条生产场景和整份探针输出与清理前一致。结果与环境边界见 [收尾验证](cleanup-validation-2026-11-13.md)。当前按用户授权提交并归档，不push；尺度适配下一个独立任务，PTP继续延期。
+
+> 2026-11-13 最新收尾授权：用户确认当前机惯性合适，要求清理旧曲线/无用实现及静态可证性能优化，验证后结束、归档并 commit，不 push。当前范围与验收以 [收尾计划](cleanup-closeout-2026-11-13.md) 为准，优先于下文旧“只读/不归档/不提交”限制。尺度适配留给下一个独立任务；触控板仍延期，当前手感参数不改。
+
+> 2026-11-13 调查结论：本轮只审查及更新 Trellis，不修改产品/测试代码。当前四类输入（Mouse/Touch/Pen/PenTail）实现与无窗口专项已完成，修复后的真机拖动→绘制仍待验收；PTP 全平台明确延期，旧触控板勾选项仅保留偏好。下文“当前续接修复”、五类可用、旧阶段待办及历史 commit 授权均须按此处理解，不构成本轮实施/提交授权。完成矩阵、问题与验证见 [状态审查](research/status-review-2026-11-13.md)；未来按上传文档记录的 P0–P4 双后端路线见 [未来规划](research/input-backend-future-plan-2026-11-13.md)，尚未实施。任务保持 `in_progress`，不归档。
+
 > 2026-11-12 最新回归裁决：本机探针已复现 RTS 与 DM 在同一 HWND 的 Activate/Enable 冲突；独立 DM 窗口也无法跨 HWND SetContact。用户明确选择“先禁用触控板扩展”：本轮禁止在主 RTS HWND 上创建/激活 DM，恢复 Mouse/Touch/Pen/PenTail 拖动与绘制；PTP 双指及其系统惯性在所有平台暂时停用，配置和其它设备行为不变。证据见 research/dm-rts-coexistence-probe.md。下文保留此前方案与历史，不代表本轮仍启用 DM。
 >
 > 用户要求未来仍可重新考虑触控板，且兼容评估至少覆盖 Win10。Win11 Pointer/Interaction Context、Win10 DM 输入所有权切换、降级 wheel 的边界和重新启用验收门槛见 research/touchpad-future-options.md；这些是候选路线，不是当前已实现能力或解除 quarantine 的授权。

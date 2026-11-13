@@ -2,7 +2,7 @@
   "id": "chromium-touch-fling",
   "name": "chromium-touch-fling",
   "title": "白板画布触摸平移复刻 Chromium fling",
-  "description": "将白板移动模式的触摸/鼠标平移与惯性整体替换为 Chromium(Windows 触摸) 模型：LSQ2 估速、15 DIP 起滑门限、按下即停、PhysicsBasedFlingCurve、FlingBooster 连甩累加、多指质心与触点增减规则；笔出现/落笔立即停止；阶段 2 提升 RTS 全样本与帧等待提前唤醒。",
+  "description": "白板Mouse/Touch/Pen/PenTail拖动、可靠尾段释放、向量摩擦及独立惯性设置；清理未用参考模型并优化有序输入消费，保持已确认手感；尺度适配和PTP延期。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-11-12已用同HWND及合成PTP探针定位RTS/DM输入委托冲突；独立DM HWND跨窗SetContact亦失败。用户选择暂停PTP，WindowControl在任何COM/Activate前quarantine，保留RTS和其它设备。完整ARM64 build及专项/完整Headless均exit0。未来重开须至少评估Win10，路线见research/touchpad-future-options.md。真机拖动→绘制待用户验收；本轮已获commit授权，任务保持in_progress，不push/archive。",
+  "notes": "2026-11-13用户确认当前机惯性合适并授权收尾/归档/commit。三文件净删547行旧LSQ2/Physics/Legacy/Bezier/seed；有序span免复制排序，26个保留常量不变。完整ARM64 solution与七项无窗口验证均exit0，2240条场景及整份pan-feel输出完全一致。默认输出链接LNK1104，实际成功产物位于Build/ARM64/Debug/PanCleanupValidation；详见cleanup-validation-2026-11-13.md。准备提交归档；尺度适配下一独立任务，PTP与双后端路线仍延期，不push。",
   "meta": {}
 }

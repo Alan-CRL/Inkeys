@@ -1,3 +1,7 @@
+> 2026-11-13 当前收尾：用户确认本机惯性合适，并授权清理、验证、归档和提交；本基础任务与后续拖动任务一并收尾。当前结果见 [后续任务收尾验证](../11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)；下文旧未勾选项、in_progress及不提交限制为历史记录。尺度适配另开下一任务，PTP/其它平台与背景性能证据边界按收尾记录保留，不push。
+
+> 2026-11-13 状态核对：本任务的基础平移、每页视角与背景跟随已实现；动力学、设备准入/hover 与输入调度以 [后续任务状态审查](../11-08-chromium-touch-fling/research/status-review-2026-11-13.md) 为当前依据。S6/S7 未勾选清单与 S8 已验证记录并存，不能据此认为基础功能均未实现，也不能将旧摩擦耦合验收直接用于当前代码。真机设备/纹理/性能仍未全部验收，任务保留 `in_progress`；触控板及新输入后端按后续任务 [未来规划](../11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md) 延期，不在本轮实现。
+
 # Implementation Plan
 
 约束：保持原编码与行尾；不 commit/push；不启动 GUI（真机手感与视觉验收由用户另行执行）。

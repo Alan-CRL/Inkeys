@@ -149,164 +149,6 @@ namespace Inkeys::Drawing::Draw3
 
 		bool PanZero(CanvasVector value) noexcept { return value.x == 0.0f && value.y == 0.0f; }
 
-		// 对应 SolveLeastSquares 的无权 LSQ2；float 运算和 QR 退化阈值沿用 Chromium。
-		bool PanLeastSquares(const std::array<float, kCanvasPanTrackerCapacity>& time,
-			const std::array<float, kCanvasPanTrackerCapacity>& value, size_t m, size_t n,
-			std::array<float, 3>& coefficients) noexcept
-		{
-			std::array<std::array<float, kCanvasPanTrackerCapacity>, 3> a = {}, q = {};
-			std::array<std::array<float, 3>, 3> r = {};
-			for (size_t h = 0; h < m; ++h)
-			{
-				a[0][h] = 1.0f;
-				for (size_t i = 1; i < n; ++i) a[i][h] = a[i - 1][h] * time[h];
-			}
-			for (size_t j = 0; j < n; ++j)
-			{
-				q[j] = a[j];
-				for (size_t i = 0; i < j; ++i)
-				{
-					float dot = 0.0f;
-					for (size_t h = 0; h < m; ++h) dot += q[i][h] * q[j][h];
-					for (size_t h = 0; h < m; ++h) q[j][h] -= dot * q[i][h];
-				}
-				float norm = 0.0f;
-				for (size_t h = 0; h < m; ++h) norm += q[j][h] * q[j][h];
-				norm = std::sqrt(norm);
-				if (norm < 0.000001f) return false;
-				const float invNorm = 1.0f / norm;
-				for (size_t h = 0; h < m; ++h) q[j][h] *= invNorm;
-				for (size_t i = j; i < n; ++i)
-					for (size_t h = 0; h < m; ++h) r[j][i] += q[j][h] * a[i][h];
-			}
-			for (size_t i = n; i-- != 0;)
-			{
-				for (size_t h = 0; h < m; ++h) coefficients[i] += q[i][h] * value[h];
-				for (size_t j = n - 1; j > i; --j) coefficients[i] -= r[i][j] * coefficients[j];
-				coefficients[i] /= r[i][i];
-			}
-			return true;
-		}
-
-		double PanLegacyPosition(double t) noexcept
-		{
-			return kCanvasPanLegacyAlpha * std::exp(-kCanvasPanLegacyGamma * t) -
-				kCanvasPanLegacyBeta * t - kCanvasPanLegacyAlpha;
-		}
-		double PanLegacyVelocity(double t) noexcept
-		{
-			return -kCanvasPanLegacyAlpha * kCanvasPanLegacyGamma *
-				std::exp(-kCanvasPanLegacyGamma * t) - kCanvasPanLegacyBeta;
-		}
-		double PanLegacyTime(double v) noexcept
-		{
-			return -std::log((v + kCanvasPanLegacyBeta) /
-				(-kCanvasPanLegacyAlpha * kCanvasPanLegacyGamma)) / kCanvasPanLegacyGamma;
-		}
-	}
-
-	bool CanvasPanVelocityTracker::AddMovement(int64_t qpc,
-		std::span<const CanvasPanPointer> pointers, int64_t frequency) noexcept
-	{
-		if (frequency <= 0 || qpc <= 0 || pointers.empty() ||
-			pointers.size() > kCanvasPanMaximumContacts || qpc < lastEventQpc_) return false;
-		for (const auto& pointer : pointers)
-			if (!std::isfinite(pointer.x) || !std::isfinite(pointer.y)) return false;
-		bool overlap = false;
-		if (count_)
-			for (const auto& pointer : pointers)
-				overlap |= PanPointerAt(std::span(movements_[index_].pointers).first(movements_[index_].count), pointer.key) != nullptr;
-		if (overlap && PanSecondsBetween(qpc, lastEventQpc_, frequency) >= kCanvasPanTrackerGapSeconds)
-			Clear();
-		lastEventQpc_ = qpc;
-		index_ = (index_ + 1) % kCanvasPanTrackerCapacity;
-		auto& movement = movements_[index_];
-		movement.qpc = qpc;
-		movement.count = pointers.size();
-		std::copy(pointers.begin(), pointers.end(), movement.pointers.begin());
-		count_ = (std::min)(count_ + 1, kCanvasPanTrackerCapacity);
-		return true;
-	}
-
-	void CanvasPanVelocityTracker::Clear() noexcept
-	{
-		index_ = 0; count_ = 0; lastEventQpc_ = 0;
-		movements_[0].count = 0;
-	}
-	void CanvasPanVelocityTracker::Reset() noexcept { Clear(); }
-
-	void CanvasPanVelocityTracker::ClearPointer(uint64_t key) noexcept
-	{
-		if (!count_) return;
-		auto& newest = movements_[index_];
-		for (size_t i = 0; i < newest.count; ++i)
-			if (newest.pointers[i].key == key)
-			{
-				std::move(newest.pointers.begin() + i + 1, newest.pointers.begin() + newest.count,
-					newest.pointers.begin() + i);
-				--newest.count;
-				return;
-			}
-	}
-
-	void CanvasPanVelocityTracker::PointerUp(int64_t qpc, int64_t frequency) noexcept
-	{
-		if (frequency > 0 && count_ &&
-			PanSecondsBetween(qpc, lastEventQpc_, frequency) >= kCanvasPanTrackerUpGapSeconds) Clear();
-	}
-
-	CanvasPanVelocityEstimate CanvasPanVelocityTracker::Estimate(uint64_t key, int64_t frequency) const noexcept
-	{
-		if (frequency <= 0 || !count_) return {};
-		std::array<float, kCanvasPanTrackerCapacity> time = {}, x = {}, y = {};
-		size_t m = 0;
-		for (size_t back = 0; back < count_; ++back)
-		{
-			const auto& movement = movements_[(index_ + kCanvasPanTrackerCapacity - back) % kCanvasPanTrackerCapacity];
-			const auto* pointer = PanPointerAt(std::span(movement.pointers).first(movement.count), key);
-			if (!pointer) break;
-			const double age = PanSecondsBetween(movements_[index_].qpc, movement.qpc, frequency);
-			if (age > kCanvasPanTrackerWindowSeconds) break;
-			time[m] = -static_cast<float>(age); x[m] = static_cast<float>(pointer->x);
-			y[m++] = static_cast<float>(pointer->y);
-		}
-		if (m < 2) return {};
-		std::array<float, 3> bx = {}, by = {};
-		const size_t n = (std::min)(size_t{3}, m);
-		if (!PanLeastSquares(time, x, m, n, bx) || !PanLeastSquares(time, y, m, n, by)) return {};
-		// GestureDetector::ComputeCurrentVelocity 按轴封顶，不按向量模长缩放。
-		return { true, std::clamp(static_cast<double>(bx[1]), -kCanvasPanVelocityLimitDipPerSecond,
-			kCanvasPanVelocityLimitDipPerSecond), std::clamp(static_cast<double>(by[1]),
-			-kCanvasPanVelocityLimitDipPerSecond, kCanvasPanVelocityLimitDipPerSecond) };
-	}
-
-	size_t CanvasPanVelocityTracker::SampleCount(uint64_t key) const noexcept
-	{
-		size_t count = 0;
-		for (size_t back = 0; back < count_; ++back)
-		{
-			const auto& movement = movements_[(index_ + kCanvasPanTrackerCapacity - back) % kCanvasPanTrackerCapacity];
-			if (!PanPointerAt(std::span(movement.pointers).first(movement.count), key)) break;
-			++count;
-		}
-		return count;
-	}
-	int64_t CanvasPanVelocityTracker::LastSampleQpc() const noexcept { return count_ ? lastEventQpc_ : 0; }
-
-	void CanvasPanVelocityTracker::ClearAxis(bool x, bool y) noexcept
-	{
-		if (!count_ || (!x && !y)) return;
-		const auto& newest = movements_[index_];
-		for (size_t back = 0; back < count_; ++back)
-		{
-			auto& movement = movements_[(index_ + kCanvasPanTrackerCapacity - back) % kCanvasPanTrackerCapacity];
-			for (size_t i = 0; i < movement.count; ++i)
-				if (const auto* current = PanPointerAt(std::span(newest.pointers).first(newest.count), movement.pointers[i].key))
-				{
-					if (x) movement.pointers[i].x = current->x;
-					if (y) movement.pointers[i].y = current->y;
-				}
-		}
 	}
 
 	const char* CanvasPanReleaseReasonName(CanvasPanReleaseReason reason) noexcept
@@ -507,7 +349,7 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	CanvasPanGestureBatch CanvasPanGestureDetector::Down(int64_t qpc,
-		std::span<const CanvasPanPointer> pointers, uint64_t key, int64_t frequency, bool trackVelocity) noexcept
+		std::span<const CanvasPanPointer> pointers, int64_t frequency) noexcept
 	{
 		CanvasPanGestureBatch batch;
 		if (pointers.size() == 1)
@@ -517,23 +359,20 @@ namespace Inkeys::Drawing::Draw3
 		}
 		else
 		{
-			tracker_.ClearPointer(key);
 			maximumPointerCount_ = (std::max)(maximumPointerCount_, pointers.size());
 			if (pointers.size() == 2)
 			{
 				std::copy(pointers.begin(), pointers.end(), secondaryDown_.begin()); secondaryCount_ = 2;
 			}
 		}
-		if (trackVelocity) tracker_.AddMovement(qpc, pointers, frequency);
 		lastFocus_ = PanFocus(pointers);
 		return batch;
 	}
 
 	CanvasPanGestureBatch CanvasPanGestureDetector::Move(int64_t qpc,
-		std::span<const CanvasPanPointer> pointers, int64_t frequency, bool trackVelocity) noexcept
+		std::span<const CanvasPanPointer> pointers, int64_t frequency) noexcept
 	{
 		CanvasPanGestureBatch batch;
-		if (trackVelocity) tracker_.AddMovement(qpc, pointers, frequency);
 		const CanvasVector focus = PanFocus(pointers);
 		bool within = maximumPointerCount_ <= 2;
 		for (const auto& pointer : pointers)
@@ -589,30 +428,17 @@ namespace Inkeys::Drawing::Draw3
 
 	CanvasPanGestureBatch CanvasPanGestureDetector::Up(int64_t qpc,
 		std::span<const CanvasPanPointer> pointers, uint64_t key, bool cancelled, int64_t frequency,
-		std::optional<CanvasPanVelocityEstimate> releaseOverride) noexcept
+		CanvasPanVelocityEstimate releaseVelocity) noexcept
 	{
 		CanvasPanGestureBatch batch;
-		tracker_.PointerUp(qpc, frequency);
 		if (pointers.size() > 1)
 		{
 			lastFocus_ = PanFocus(pointers, key);
-			if (cancelled) tracker_.ClearPointer(key);
-			else if (!releaseOverride)
-			{
-				const auto lifted = tracker_.Estimate(key, frequency);
-				for (const auto& pointer : pointers)
-				{
-					if (pointer.key == key) continue;
-					const auto remaining = tracker_.Estimate(pointer.key, frequency);
-					if (lifted.x * remaining.x + lifted.y * remaining.y < 0.0) { tracker_.Clear(); break; }
-				}
-			}
 			return batch;
 		}
-		const auto velocity = releaseOverride.value_or(tracker_.Estimate(key, frequency));
+		const auto velocity = releaseVelocity;
 		if (!cancelled && !withinSlop_ &&
-			(releaseOverride ? std::hypot(velocity.x, velocity.y) > kCanvasPanMinimumFlingVelocity :
-			(std::abs(velocity.x) > kCanvasPanMinimumFlingVelocity || std::abs(velocity.y) > kCanvasPanMinimumFlingVelocity)))
+			std::hypot(velocity.x, velocity.y) > kCanvasPanMinimumFlingVelocity)
 		{
 			// Provider 在 GFS 后不再紧跟 GSE；无 GFS 的终态才发送 GSE。
 			if (!scrollSent_)
@@ -623,18 +449,15 @@ namespace Inkeys::Drawing::Draw3
 		}
 		else if (scrollSent_)
 			batch.events[batch.count++] = { CanvasPanGestureType::ScrollEnd, static_cast<double>(qpc) / frequency };
-		tracker_.Clear(); maximumPointerCount_ = 0; scrollSent_ = false;
+		maximumPointerCount_ = 0; scrollSent_ = false;
 		return batch;
 	}
 	void CanvasPanGestureDetector::Reset() noexcept
 	{
-		tracker_.Clear(); lastFocus_ = {}; primaryDown_ = {}; secondaryDown_ = {};
+		lastFocus_ = {}; primaryDown_ = {}; secondaryDown_ = {};
 		secondaryCount_ = maximumPointerCount_ = 0; withinSlop_ = true; scrollSent_ = false;
 	}
 	bool CanvasPanGestureDetector::Scrolling() const noexcept { return scrollSent_; }
-	CanvasPanVelocityTracker& CanvasPanGestureDetector::Tracker() noexcept { return tracker_; }
-	const CanvasPanVelocityTracker& CanvasPanGestureDetector::Tracker() const noexcept { return tracker_; }
-
 	bool CanvasPanFlingBooster::ShouldBoostFling(const CanvasPanGestureEvent& event) const noexcept
 	{
 		return !PanZero(startingVelocity_) && event.sourceDevice == sourceDevice_ &&
@@ -643,23 +466,19 @@ namespace Inkeys::Drawing::Draw3
 			PanDot(currentVelocity_, currentVelocity_) >= kCanvasPanBoostMinimumFlingSpeedSquared &&
 			PanDot(event.velocity, event.velocity) >= kCanvasPanBoostMinimumFlingSpeedSquared;
 	}
-	CanvasVector CanvasPanFlingBooster::GetVelocityForFlingStart(const CanvasPanGestureEvent& event, bool projectCurrentResidual) noexcept
+	CanvasVector CanvasPanFlingBooster::GetVelocityForFlingStart(const CanvasPanGestureEvent& event) noexcept
 	{
 		CanvasVector velocity = event.velocity;
-		if (projectCurrentResidual)
+		const double speed = std::hypot(velocity.x, velocity.y);
+		if (speed > 0.0)
 		{
-			const double speed = std::hypot(velocity.x, velocity.y);
-			if (speed > 0.0)
-			{
-				// 旧动画已停止；仅投影当前残余，不能恢复历史初速或带入旧横向分量。
-				const double ux = velocity.x / speed, uy = velocity.y / speed;
-				const double residual = ShouldBoostFling(event) ?
-					(std::max)(0.0, currentVelocity_.x * ux + currentVelocity_.y * uy) : 0.0;
-				const double bounded = (std::min)(speed + residual, kCanvasPanProductVelocityLimit);
-				velocity = ToCanvasVector(ux * bounded, uy * bounded);
-			}
+			// 旧动画已停止；仅投影当前残余，不能恢复历史初速或带入旧横向分量。
+			const double ux = velocity.x / speed, uy = velocity.y / speed;
+			const double residual = ShouldBoostFling(event) ?
+				(std::max)(0.0, currentVelocity_.x * ux + currentVelocity_.y * uy) : 0.0;
+			const double bounded = (std::min)(speed + residual, kCanvasPanProductVelocityLimit);
+			velocity = ToCanvasVector(ux * bounded, uy * bounded);
 		}
-		else if (ShouldBoostFling(event)) { velocity.x += startingVelocity_.x; velocity.y += startingVelocity_.y; }
 		Reset(); startingVelocity_ = currentVelocity_ = velocity;
 		sourceDevice_ = event.sourceDevice; modifiers_ = event.modifiers;
 		return velocity;
@@ -709,99 +528,17 @@ namespace Inkeys::Drawing::Draw3
 	CanvasVector CanvasPanFlingBooster::CurrentVelocity() const noexcept { return currentVelocity_; }
 	double CanvasPanFlingBooster::CutoffSeconds() const noexcept { return cutoff_.value_or(0.0); }
 
-	double SolveCanvasPanCubicBezier(double x, double p1x, double p1y, double p2x, double p2y) noexcept
+	void CanvasPanFlingCurve::Start(CanvasVector velocity, CanvasVector viewport) noexcept
 	{
-		const double cx = 3.0 * p1x, bx = 3.0 * (p2x - p1x) - cx, ax = 1.0 - cx - bx;
-		const double cy = 3.0 * p1y, by = 3.0 * (p2y - p1y) - cy, ay = 1.0 - cy - by;
-		const auto sx = [&](double t) { return ((ax * t + bx) * t + cx) * t; };
-		const auto sy = [&](double t) { return ((ay * t + by) * t + cy) * t; };
-		const auto finite = [](double value) { return std::isinf(value) ?
-			std::copysign((std::numeric_limits<double>::max)(), value) : value; };
-		if (x < 0.0)
-		{
-			const double gradient = p1x > 0 ? p1y / p1x : (!p1y && p2x > 0 ? p2y / p2x : (!p1y && !p2y ? 1 : 0));
-			return finite(gradient * x);
-		}
-		if (x > 1.0)
-		{
-			const double gradient = p2x < 1 ? (p2y - 1) / (p2x - 1) :
-				(p2y == 1 && p1x < 1 ? (p1y - 1) / (p1x - 1) : (p2y == 1 && p1y == 1 ? 1 : 0));
-			return finite(1.0 + gradient * (x - 1.0));
-		}
-		// Chromium CubicBezier::InitSpline/SolveCurveX：11点初猜、4轮Newton，最后二分。
-		std::array<double, 11> spline = {};
-		for (size_t i = 0; i < spline.size(); ++i) spline[i] = sx(i * 0.1);
-		double t0 = 0.0, t1 = 1.0, t2 = x, error = 0.0;
-		for (size_t i = 1; i < spline.size(); ++i)
-			if (x <= spline[i])
-			{
-				t1 = 0.1 * i; t0 = t1 - 0.1;
-				t2 = t0 + (t1 - t0) * (x - spline[i - 1]) / (spline[i] - spline[i - 1]); break;
-			}
-		for (int i = 0; i < 4; ++i)
-		{
-			error = sx(t2) - x;
-			if (std::abs(error) < kCanvasPanBezierEpsilon) return finite(sy(t2));
-			const double derivative = (3.0 * ax * t2 + 2.0 * bx) * t2 + cx;
-			if (std::abs(derivative) < kCanvasPanBezierEpsilon) break;
-			t2 -= error / derivative;
-		}
-		if (std::abs(error) < kCanvasPanBezierEpsilon) return finite(sy(t2));
-		while (t0 < t1)
-		{
-			const double value = sx(t2);
-			if (std::abs(value - x) < kCanvasPanBezierEpsilon) return finite(sy(t2));
-			if (x > value) t0 = t2; else t1 = t2;
-			t2 = (t1 + t0) * 0.5;
-		}
-		return finite(sy(t2));
-	}
-
-	void CanvasPanFlingCurve::Start(CanvasVector velocity, CanvasVector viewport,
-		float boost, CanvasPanFlingCurveKind kind) noexcept
-	{
-		*this = CanvasPanFlingCurve{}; kind_ = kind;
+		*this = CanvasPanFlingCurve{};
 		const float vmax = (std::max)(std::abs(velocity.x), std::abs(velocity.y));
 		if (!(vmax > 0.0f) || !std::isfinite(vmax) || viewport.x <= 0.0f || viewport.y <= 0.0f) return;
-		if (kind == CanvasPanFlingCurveKind::Friction)
-		{
-			frictionInitialSpeed_ = std::hypot(velocity.x, velocity.y);
-			frictionDirection_ = ToCanvasVector(velocity.x / frictionInitialSpeed_, velocity.y / frictionInitialSpeed_);
-			const double scale = kCanvasPanFrictionDeceleration * kCanvasPanFrictionTauSeconds;
-			duration_ = kCanvasPanFrictionTauSeconds * std::log1p(frictionInitialSpeed_ / scale);
-			const double distance = frictionInitialSpeed_ * kCanvasPanFrictionTauSeconds - scale * duration_;
-			distance_ = ToCanvasVector(frictionDirection_.x * distance, frictionDirection_.y * distance);
-			return;
-		}
-		if (kind == CanvasPanFlingCurveKind::Legacy)
-		{
-			const float start = (std::min)(vmax, static_cast<float>(PanLegacyVelocity(0.0)));
-			legacyRatio_ = { velocity.x / start, velocity.y / start };
-			legacyTimeOffset_ = PanLegacyTime(start);
-			legacyPositionOffset_ = PanLegacyPosition(legacyTimeOffset_);
-			duration_ = PanLegacyTime(0.0) - legacyTimeOffset_;
-			const double end = PanLegacyPosition(PanLegacyTime(0.0)) - legacyPositionOffset_;
-			distance_ = ToCanvasVector(legacyRatio_.x * end, legacyRatio_.y * end);
-			return;
-		}
-		const float a = kCanvasPanPixelsPerInch * kCanvasPanPhysicalDeceleration;
-		const auto endpoint = [&](float v, float size)
-		{
-			const float millisecondsVelocity = v * (1.0f / 1000.0f);
-			const float t = std::abs(millisecondsVelocity / a);
-			const float d = static_cast<float>(std::copysign((std::abs(millisecondsVelocity) - a * t * 0.5) * t, static_cast<double>(v)));
-			const float bound = std::floor(size * boost * kCanvasPanFlingBoundsMultiplier);
-			return std::clamp(d, -bound, bound);
-		};
-		distance_ = { endpoint(velocity.x, viewport.x), endpoint(velocity.y, viewport.y) };
-		const float duration = (std::min)(kCanvasPanMaximumFlingSeconds, vmax / kCanvasPanPixelDeceleration);
-		duration_ = duration; p1_ = { kCanvasPanBezierP1X, kCanvasPanBezierP1Y };
-		const float dominantDistance = std::abs(velocity.y) == vmax ? distance_.y : distance_.x;
-		const float dominantVelocity = std::abs(velocity.y) == vmax ? velocity.y : velocity.x;
-		// 空/不足1 DIP视口经取整可能产生零距离；保护斜率，不制造 NaN 控制点。
-		const float slope = dominantDistance != 0.0f ? std::abs(dominantVelocity * duration / dominantDistance) :
-			(std::numeric_limits<float>::infinity)();
-		if (slope * p1_.x < 1.0f) p1_.y = p1_.x * slope; else p1_.x = p1_.y / slope;
+		frictionInitialSpeed_ = std::hypot(velocity.x, velocity.y);
+		frictionDirection_ = ToCanvasVector(velocity.x / frictionInitialSpeed_, velocity.y / frictionInitialSpeed_);
+		const double scale = kCanvasPanFrictionDeceleration * kCanvasPanFrictionTauSeconds;
+		duration_ = kCanvasPanFrictionTauSeconds * std::log1p(frictionInitialSpeed_ / scale);
+		const double distance = frictionInitialSpeed_ * kCanvasPanFrictionTauSeconds - scale * duration_;
+		distance_ = ToCanvasVector(frictionDirection_.x * distance, frictionDirection_.y * distance);
 	}
 
 	bool CanvasPanFlingCurve::Advance(double elapsed, CanvasVector& offset, CanvasVector& velocity) noexcept
@@ -809,62 +546,36 @@ namespace Inkeys::Drawing::Draw3
 		offset = {}; velocity = {};
 		if (elapsed < 0.0) return true;
 		if (!(duration_ > 0.0) || elapsed >= duration_) { offset = distance_; return false; }
-		if (kind_ == CanvasPanFlingCurveKind::Friction)
-		{
-			const double tau = kCanvasPanFrictionTauSeconds;
-			const double scale = kCanvasPanFrictionDeceleration * tau;
-			const double decay = std::exp(-elapsed / tau);
-			const double distance = (frictionInitialSpeed_ + scale) * tau * -std::expm1(-elapsed / tau) - scale * elapsed;
-			const double speed = (std::max)(0.0, (frictionInitialSpeed_ + scale) * decay - scale);
-			offset = ToCanvasVector(frictionDirection_.x * distance, frictionDirection_.y * distance);
-			velocity = ToCanvasVector(frictionDirection_.x * speed, frictionDirection_.y * speed);
-		}
-		else if (kind_ == CanvasPanFlingCurveKind::Legacy)
-		{
-			const double t = elapsed + legacyTimeOffset_;
-			const float position = static_cast<float>(PanLegacyPosition(t) - legacyPositionOffset_);
-			const float speed = static_cast<float>(PanLegacyVelocity(t));
-			offset = { legacyRatio_.x * position, legacyRatio_.y * position };
-			velocity = { legacyRatio_.x * speed, legacyRatio_.y * speed };
-		}
-		else
-		{
-			const double progress = SolveCanvasPanCubicBezier(elapsed / duration_, p1_.x, p1_.y);
-			offset = ToCanvasVector(distance_.x * progress, distance_.y * progress);
-			const double dt = elapsed - previousSeconds_;
-			if (dt != 0.0) velocity = ToCanvasVector((offset.x - previousOffset_.x) / dt, (offset.y - previousOffset_.y) / dt);
-			previousOffset_ = offset; previousSeconds_ = elapsed;
-		}
+		const double tau = kCanvasPanFrictionTauSeconds;
+		const double scale = kCanvasPanFrictionDeceleration * tau;
+		const double decay = std::exp(-elapsed / tau);
+		const double distance = (frictionInitialSpeed_ + scale) * tau * -std::expm1(-elapsed / tau) - scale * elapsed;
+		const double speed = (std::max)(0.0, (frictionInitialSpeed_ + scale) * decay - scale);
+		offset = ToCanvasVector(frictionDirection_.x * distance, frictionDirection_.y * distance);
+		velocity = ToCanvasVector(frictionDirection_.x * speed, frictionDirection_.y * speed);
 		return true;
 	}
 	void CanvasPanFlingCurve::ClearAxis(bool x, bool y) noexcept
 	{
-		if (x) { distance_.x = previousOffset_.x = legacyRatio_.x = frictionDirection_.x = 0.0f; }
-		if (y) { distance_.y = previousOffset_.y = legacyRatio_.y = frictionDirection_.y = 0.0f; }
+		if (x) { distance_.x = frictionDirection_.x = 0.0f; }
+		if (y) { distance_.y = frictionDirection_.y = 0.0f; }
 	}
 	double CanvasPanFlingCurve::Duration() const noexcept { return duration_; }
 	CanvasVector CanvasPanFlingCurve::Distance() const noexcept { return distance_; }
-	CanvasVector CanvasPanFlingCurve::P1() const noexcept { return p1_; }
-
 	void CanvasPanFlingController::Start(const CanvasPanGestureEvent& event, double lastScroll,
-		CanvasVector viewport, CanvasPanFlingBooster& booster, CanvasPanFlingCurveKind kind) noexcept
+		CanvasVector viewport, CanvasPanFlingBooster& booster) noexcept
 	{
 		Cancel();
-		productFriction_ = kind == CanvasPanFlingCurveKind::Friction;
-		velocity_ = booster.GetVelocityForFlingStart(event, productFriction_);
+		velocity_ = booster.GetVelocityForFlingStart(event);
 		if (PanZero(velocity_) || viewport.x <= 0.0f || viewport.y <= 0.0f)
 		{ StopFling(booster); return; }
-		const float raw = (std::max)(std::abs(event.velocity.x), std::abs(event.velocity.y));
-		const float boosted = (std::max)(std::abs(velocity_.x), std::abs(velocity_.y));
-		curve_.Start(velocity_, viewport, raw > 0.0f ? boosted / raw : 1.0f, kind);
+		curve_.Start(velocity_, viewport);
 		startSeconds_ = lastScroll;
 		active_ = true;
 	}
 	CanvasVector CanvasPanFlingController::Progress(double now, CanvasPanFlingBooster& booster) noexcept
 	{
 		if (!active_) return {};
-		if (!productFriction_ && !firstUpdateSent_ && now >= startSeconds_ + 2.0 * kCanvasPanFlingFrameSeconds)
-			startSeconds_ = now - kCanvasPanFlingFrameSeconds;
 		if (now < lastProgressSeconds_ || now <= startSeconds_) return {};
 		CanvasVector offset, velocity;
 		const bool active = curve_.Advance(now - startSeconds_, offset, velocity);
@@ -874,25 +585,15 @@ namespace Inkeys::Drawing::Draw3
 		if (clearY_) delta.y = velocity_.y = 0.0f;
 		if (!active)
 		{
-			if (productFriction_)
-			{
-				// 闭式曲线终帧补齐实际剩余位移，不能随呈现帧率丢掉不同的尾巴。
-				StopFling(booster); return delta;
-			}
-			// Chromium 在曲线 inactive 时立即结束，终点剩余 delta 不派发。
-			StopFling(booster); return {};
+			// 闭式曲线终帧补齐实际剩余位移，不能随呈现帧率丢掉不同的尾巴。
+			StopFling(booster); return delta;
 		}
-		if (productFriction_ || std::abs(delta.x) > kCanvasPanScrollEpsilonDip || std::abs(delta.y) > kCanvasPanScrollEpsilonDip)
-		{
-			firstUpdateSent_ = true; lastProgressSeconds_ = now;
-			booster.ObserveProgressFling(velocity_); return delta;
-		}
-		// 与 WebGestureCurve::Advance 一致：小增量虽不派发，cumulative 已前进，不累计补发。
-		return {};
+		lastProgressSeconds_ = now;
+		booster.ObserveProgressFling(velocity_); return delta;
 	}
 	void CanvasPanFlingController::Cancel() noexcept
 	{
-		active_ = firstUpdateSent_ = clearX_ = clearY_ = false;
+		active_ = clearX_ = clearY_ = false;
 		velocity_ = cumulative_ = {}; startSeconds_ = lastProgressSeconds_ = 0.0;
 	}
 	void CanvasPanFlingController::StopFling(CanvasPanFlingBooster& booster) noexcept { Cancel(); booster.Reset(); }
@@ -907,8 +608,6 @@ namespace Inkeys::Drawing::Draw3
 	bool CanvasPanFlingController::Active() const noexcept { return active_; }
 	CanvasVector CanvasPanFlingController::Velocity() const noexcept { return velocity_; }
 	CanvasVector CanvasPanFlingController::Offset() const noexcept { return cumulative_; }
-	double CanvasPanFlingController::StartSeconds() const noexcept { return startSeconds_; }
-
 	CanvasPanFrameOutput CanvasPanDynamics::Snapshot(int64_t frequency) const noexcept
 	{
 		CanvasPanFrameOutput out;
@@ -961,23 +660,19 @@ namespace Inkeys::Drawing::Draw3
 			{
 			case CanvasPanGestureType::FlingCancel:
 				// 落指先停动画；booster中的当前残余仅作为后续同向释放候选。
-				fling_.Cancel(); lastScrollSeconds_.reset(); velocity_ = {};
-				break;
-			case CanvasPanGestureType::ScrollBegin:
-				lastScrollSeconds_.reset();
+				fling_.Cancel(); velocity_ = {};
 				break;
 			case CanvasPanGestureType::ScrollEnd:
-				lastScrollSeconds_.reset(); booster_.Reset();
+				booster_.Reset();
 				break;
 			case CanvasPanGestureType::ScrollUpdate:
 				out.contentDelta.x += event.delta.x; out.contentDelta.y += event.delta.y;
-				lastScrollSeconds_ = event.timeSeconds;
 				break;
 			case CanvasPanGestureType::FlingStart:
 				out.released = true; out.releaseSpeed = std::hypot(event.velocity.x, event.velocity.y);
 				// 输入释放时间只决定样本时效；动画从本次呈现起步，不追补排队时间。
 				fling_.Start(event, static_cast<double>(input.frameQpc) / input.qpcFrequency,
-					input.viewportSizeDip, booster_, CanvasPanFlingCurveKind::Friction);
+					input.viewportSizeDip, booster_);
 				out.boostedReleaseVelocity = fling_.Velocity();
 				break;
 			default: break;
@@ -992,12 +687,20 @@ namespace Inkeys::Drawing::Draw3
 			(lastFrameQpc_ && input.frameQpc <= lastFrameQpc_)) return Snapshot(input.qpcFrequency);
 		lastFrameQpc_ = input.frameQpc;
 		CanvasPanFrameOutput events;
-		std::vector<CanvasPanContactSample> samples(input.contacts.begin(), input.contacts.end());
-		std::stable_sort(samples.begin(), samples.end(), [](const auto& a, const auto& b)
+		const auto orderedBefore = [](const auto& a, const auto& b)
 		{
 			if (a.qpc != b.qpc) return a.qpc < b.qpc;
 			return static_cast<unsigned>(a.phase) < static_cast<unsigned>(b.phase);
-		});
+		};
+		std::span<const CanvasPanContactSample> samples = input.contacts;
+		std::vector<CanvasPanContactSample> sortedSamples;
+		// 生产控制器已排序，直接消费原 span；乱序调用才复制，且保留同时间/阶段的原顺序。
+		if (!std::is_sorted(samples.begin(), samples.end(), orderedBefore))
+		{
+			sortedSamples.assign(samples.begin(), samples.end());
+			std::stable_sort(sortedSamples.begin(), sortedSamples.end(), orderedBefore);
+			samples = sortedSamples;
+		}
 		std::array<CanvasPanPointer, kCanvasPanMaximumContacts> pointers = {};
 		const auto currentPointers = [&]()
 		{
@@ -1009,7 +712,7 @@ namespace Inkeys::Drawing::Draw3
 		const auto flushMove = [&]()
 		{
 			if (!moveQpc) return;
-			Dispatch(detector_.Move(moveQpc, currentPointers(), input.qpcFrequency, false), input, events);
+			Dispatch(detector_.Move(moveQpc, currentPointers(), input.qpcFrequency), input, events);
 			moveQpc = 0;
 		};
 		for (const auto& sample : samples)
@@ -1031,7 +734,7 @@ namespace Inkeys::Drawing::Draw3
 					else ++events.timingResetCount;
 				}
 				found->pointer = { sample.key, sample.x, sample.y }; found->lastQpc = sample.qpc;
-				moveQpc = sample.qpc; lastInputQpc_ = (std::max)(lastInputQpc_, sample.qpc);
+				moveQpc = sample.qpc;
 				++events.sampleCount; continue;
 			}
 			// 拓扑事件先结清此前真实Move；新Down不能因另一指更晚的采样时间而丢失。
@@ -1048,18 +751,9 @@ namespace Inkeys::Drawing::Draw3
 				*found = { true, { sample.key, sample.x, sample.y }, sample.qpc };
 				if (first) releaseTracker_.Clear();
 				releaseTracker_.ClearPointer(sample.key);
-				Dispatch(detector_.Down(sample.qpc, currentPointers(), sample.key, input.qpcFrequency, false), input, events);
-				if (first && seedKey_ == sample.key && !seedSamples_.empty())
-				{
-					for (const auto& history : seedSamples_)
-					{
-						if (history.qpc >= sample.qpc) break;
-						releaseTracker_.AddSample(sample.key, history, input.qpcFrequency);
-					}
-					seedSamples_.clear();
-				}
+				Dispatch(detector_.Down(sample.qpc, currentPointers(), input.qpcFrequency), input, events);
 				releaseTracker_.AddSample(sample.key, { sample.qpc, sample.x, sample.y }, input.qpcFrequency);
-				lastInputQpc_ = (std::max)(lastInputQpc_, sample.qpc); ++events.sampleCount;
+				++events.sampleCount;
 			}
 			else
 			{
@@ -1129,7 +823,7 @@ namespace Inkeys::Drawing::Draw3
 							CanvasPanReleaseReason::EmptyViewport : CanvasPanReleaseReason::WithinSlop;
 				}
 				releaseTracker_.ClearPointer(sample.key);
-				found->held = false; lastInputQpc_ = (std::max)(lastInputQpc_, sample.qpc); ++events.sampleCount;
+				found->held = false; ++events.sampleCount;
 			}
 		}
 		flushMove();
@@ -1154,7 +848,7 @@ namespace Inkeys::Drawing::Draw3
 	void CanvasPanDynamics::Stop() noexcept
 	{
 		contacts_ = {}; detector_.Reset(); releaseTracker_.Clear(); fling_.StopFling(booster_); velocity_ = {};
-		lastFrameQpc_ = lastInputQpc_ = 0; lastSourceKey_ = 0; lastScrollSeconds_.reset(); seedSamples_.clear(); seedKey_ = 0;
+		lastFrameQpc_ = 0; lastSourceKey_ = 0;
 	}
 	void CanvasPanDynamics::StopFling() noexcept { fling_.StopFling(booster_); velocity_ = {}; }
 	void CanvasPanDynamics::ClearAxis(bool x, bool y) noexcept
@@ -1172,20 +866,6 @@ namespace Inkeys::Drawing::Draw3
 		return static_cast<size_t>(std::count_if(contacts_.begin(), contacts_.end(), [](const Contact& contact) { return contact.held; }));
 	}
 	const CanvasPanReleaseVelocityTracker& CanvasPanDynamics::VelocityTracker() const noexcept { return releaseTracker_; }
-	bool CanvasPanDynamics::SeedContactHistory(uint64_t key,
-		std::span<const CanvasPanVelocitySample> samples, int64_t frequency) noexcept
-	{
-		// 多指历史没有定义缺失id的补位规则，先只开放首指，避免伪造其余触点轨迹。
-		if (frequency <= 0 || HeldContactCount() || samples.empty()) return false;
-		int64_t previous = 0;
-		for (const auto& sample : samples)
-		{
-			if (sample.qpc <= previous || !std::isfinite(sample.x) || !std::isfinite(sample.y)) return false;
-			previous = sample.qpc;
-		}
-		seedKey_ = key; seedSamples_.assign(samples.begin(), samples.end()); return true;
-	}
-
 	CanvasRenderBudget ComputeCanvasRenderBudget(
 		const CanvasRenderBudgetInput& input) noexcept
 	{

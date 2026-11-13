@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-适用于Draw3白板Selection移动模式的MouseLeft、Touch、Pen/PenTail。接触输入保留用户确认的708/961ffdf8产品手感和节拍，Chromium组件仅作参考。2026-11-12起PTP双指扩展暂时停用：本机探针证明RTS与DM在同一HWND的Activate/Enable存在输入委托冲突，独立DM HWND也无法跨窗SetContact；`TouchpadNavigationOwner::Initialize`必须在任何COM/Activate之前按quarantine返回，不得只Disable viewport或盲目重建RTS。下文Touchpad/DM类型、Owner和数值测试是保留的停用实现与未来前端参考，不是当前真实输入能力；配置字段及设置偏好保持，但不产生PTP运动。设备物理尺度/profile、触控板按压拖动独立识别、绘制模式漫游和缩放延后。绘制latest mailbox、页面存储、Freeze/背景与呈现树保持。
+适用于Draw3白板Selection移动模式的MouseLeft、Touch、Pen/PenTail。接触输入保留用户确认的产品手感和节拍；2026-11-13收尾移除未被产品使用的Chromium参考估速器与PhysicsBased/Legacy曲线，当前只保留可靠尾段估速和向量摩擦。2026-11-12起PTP双指扩展暂时停用：本机探针证明RTS与DM在同一HWND的Activate/Enable存在输入委托冲突，独立DM HWND也无法跨窗SetContact；`TouchpadNavigationOwner::Initialize`必须在任何COM/Activate之前按quarantine返回，不得只Disable viewport或盲目重建RTS。下文Touchpad/DM类型、Owner和数值测试是保留的停用实现与未来前端参考，不是当前真实输入能力；配置字段及设置偏好保持，但不产生PTP运动。设备物理尺度/profile、触控板按压拖动独立识别、绘制模式漫游和缩放延后。绘制latest mailbox、页面存储、Freeze/背景与呈现树保持。
 
 ## 2. Signatures
 
@@ -13,8 +13,8 @@
 - `CanvasPanInputKind::{None,Mouse,Touchpad,Touch,Pen,PenTail}`；`CanvasPanInertiaOptions::{Allows,Encode,Decode}`及`Host/DrawingController::SetCanvasPanInertiaOptions(options)`。`Drawing.Whiteboard.PanInertia.{Enabled,Mouse,Touchpad,Touch,Pen,PenTail}`六bool默认`{true,false,true,true,true,false}`，NoUpload。
 - `TouchpadNavigationSample {epoch,sequence,qpc,cumulativeX,cumulativeY,phase,admissionRevision}`；phase为Running/Inertia/Ready/Cancelled。`WindowController::{SetTouchpadNavigationEnabled,CancelTouchpadNavigation(takeoverQpc=0),RequestTouchpadNavigationUpdate,StopTouchpadNavigation,DrainTouchpadNavigation,TouchpadNavigationRunningAt}`。
 - `WindowController::TouchpadNavigationNeedsUpdate()`表示interaction待识别或实际动画所需调度，不能用于判held；`TouchpadNavigationFrontend::{Associate,Interaction,CanPublishStatus,PublishStatus,Reset}`供真实Owner与无窗口测试共用。`ConfigureTouchpadViewport`及`DispatchTouchpadHitTest`约束实际初始化和来源选择。
-- `CanvasPanReleaseVelocityTracker::{AddSample,Estimate,Reason,SampleCount,SampleSpanSeconds,ClearPointer,ClearAxis}`：逐指真实采样，产品释放与参考共享LSQ2分离。
-- `CanvasPanFlingCurveKind::Friction`，`CanvasPanFlingController`复用推进/取消/限位接口。
+- `CanvasPanReleaseVelocityTracker::{AddSample,Estimate,Reason,SampleCount,SampleSpanSeconds,ClearPointer,ClearAxis}`：逐指真实采样，当前唯一释放估速为可靠同向尾段线性拟合。
+- `CanvasPanFlingCurve`仅保留向量摩擦闭式；`CanvasPanFlingController`负责推进/取消/限位，不再提供曲线选择枚举或旧曲线入口。
 - `CanvasPanFrameOutput`额外记录raw/selected/boosted release向量、releaseReason/count/span、rejectedSamples/reversalCount/timingResetCount。
 - `SetCanvasPanDiagnosticsEnabled(bool)` / `CanvasPanDiagnosticsEnabled()` / `LogCanvasPan(...)`；配置`Experimental.Inkeys3.ConsoleOutput.CanvasPan`（bool，false，NoUpload）。
 
@@ -29,13 +29,14 @@
 - 本轮RTS仍每回调一个批末点，时间为callback arrival QPC；不宣称批内硬件保真，不生成伪240Hz时间。相同轨迹在绘制帧内可以合并呈现，但不能合并丢掉估速历史。
 - 异步多指只更新真实上报那一指的估速；其他指latest-known位置仅供focus几何。加/减指重置focus基线不产生跳变；相反方向抬指清剩余释放历史。
 - Pen/PenTail分类在真实Down按倒置元数据锁存，与笔尾橡皮开关无关；合法panManaged Pen不计入suppressed，持续Pen mailbox contact不每帧Stop自身。晚到跨类接触按实际生命周期重叠仲裁，同QPC仍重叠；不因publication/QPC逆序吞不重叠手势。
+- `CanvasPanDynamics::Step`用与原稳定排序相同的QPC/phase比较器检查输入；已排序span直接只读消费，仅乱序才复制并stable_sort。同QPC/phase保持原输入次序；不得跳过乱序兼容或修改终态/拓扑顺序来省排序。静态收益仅指正常有序输入去掉临时分配、复制和重复排序，不承诺未经测量的时延/功耗改善。
 - 普通Move保持呈现节拍；Down/终态/控制wake的独立generation允许提前结束活动等待，覆盖工作阶段已到达的事件；idle阻塞语义保持。
 - `WindowController::PublishMouseCursorSample`在`CanvasPanMode()`且`valid/inContact`均未变化时，仅更新latest mailbox，不调用`RequestDrawingCursorRender`；移动模式使用系统箭头，逐位置控制wake会抢占tile恢复并打断`WaitForFrameDeadline`。Down/Up状态边沿、clear/leave/cancel、owner/suppression和模式变化维持既有唤醒，非Pan应用光标保持重绘。不得在下游忽略全部control命令来补救。
 
 ### 几何、释放与连续滑动
 
 - 几何仍在统一DIP边界与像素互转；15DIP slop及首次径向扣slop保留。手按住时旧惯性不推动画布。Down立刻取消旧动画；拖动模式所有来源的运动均不因笔尖/笔尾hover停止，真实允许接管的Down取消旧coast，持续接触继续跟手。活动Touch/native Running持有时的后来Pen按互斥保护跟踪到终态，不混focus。
-- 产品释放取最近同向50ms尾段线性拟合；保留窗口左侧一个真实锚点以兼容低报点率，至少3点且跨度20ms。每指容量64；参考LSQ2的20点/100ms规则不能替代产品释放合同。
+- 产品释放取最近同向50ms尾段线性拟合；保留窗口左侧一个真实锚点以兼容低报点率，至少3点且跨度20ms。每指容量64；不得恢复旧LSQ2的20点/100ms规则替代产品释放合同。
 - 反向沿原可靠方向累计达到1DIP才确认，零点/细碎噪声不反复重置；确认即切断旧方向和boost。新尾段不够时释放0，不回退旧窗口。小于2ms且段位移超过12000DIP/s允许距离（包含1个QPC tick与两端float坐标量化误差界）作为可检测异常重置证据，几何仍跟手；仅arrival无法识别所有时间压缩。
 - 拟合方向与最新可靠方向冲突时以DirectionConflict拒绝释放，raw值仍可诊断；已准入Up即使时间异常也必须闭合并取消惯性，不能留下永久held。
 - 释放selected速度还受最新可靠同向段的速度上限约束（真实点累计至少2ms与1DIP），防减速时50ms拟合残留旧快速度；raw诊断保留，不能用单个量化点强制限速。
@@ -102,7 +103,7 @@
 ## 6. Tests Required
 
 - ARM64原生MSBuild构建`InkeysRepo.sln Debug|ARM64`，同次PowerShell规范Path/PATH并禁node reuse，至少5分钟预算。
-- Headless `--no-window --canvas-pan-only`及完整`--no-window`：参考组件黄金值与产品尾段/方向/摩擦/boost/帧率测试分开。
+- Headless `--no-window --canvas-pan-only`及完整`--no-window`：覆盖产品尾段/方向/摩擦/boost/帧率与有序/乱序输入等价；不为已移除旧曲线保留参考测试。
 - `--draw3-control-fence-test` / `--draw3-canvas-pan-feel-test`必须经过真实ContactInput→CanvasPanInput；覆盖末反向+Up、跨帧Down、overflow、短反拖、hitch后立即释放、stop与设备轮换。
 - Mouse唤醒回归通过真实`PublishHiddenTestMouseCursor`→生产publisher→Coordinator接线；1000次burst及持续位置流检查mailbox、pending/control wake与frame deadline（Sleep(1)不代表实测1kHz），另验Down/Up/clear/模式变化及非Pan cursor render。纯动力学/MouseInputState测试不能替代此接线。
 - `--draw3-diagnostic-output-test`验证生产gate启用/关闭、文件sink字节与LastError；config测试验证默认、往返、copy、ReadMini、非法bool、reset与NoUpload；i18n check覆盖20语。

@@ -19,7 +19,7 @@
 
 import Inkeys.Drawing.Draw3.canvas_navigation;
 
-// 白板产品手感与 Chromium 参考数值测试；背景/Freeze 回归保留在本文件末尾。
+// 白板产品手感与有序输入回归；背景/Freeze 回归保留在本文件末尾。
 namespace
 {
 	using namespace Inkeys::Drawing::Draw3;
@@ -85,13 +85,6 @@ namespace
 		return StepAt(dynamics, ms, std::span<const CanvasPanContactSample>(contacts.begin(), contacts.size()), hover, pen, viewport);
 	}
 
-	bool Movement(CanvasPanVelocityTracker& tracker, double ms,
-		std::initializer_list<CanvasPanPointer> pointers)
-	{
-		return tracker.AddMovement(QpcMs(ms),
-			std::span<const CanvasPanPointer>(pointers.begin(), pointers.size()), kFreq);
-	}
-
 	CanvasPanFrameOutput StartFling(CanvasPanDynamics& dynamics, double startMs = 0.0,
 		uint64_t key = 1, double vx = 3000.0, double vy = 0.0)
 	{
@@ -101,158 +94,6 @@ namespace
 				{ Contact(key, startMs + n * 8.0, vx * n * 0.008, vy * n * 0.008) });
 		return StepAt(dynamics, startMs + 33.0,
 			{ Contact(key, startMs + 33.0, vx * 0.032, vy * 0.032, CanvasPanContactPhase::Up) });
-	}
-
-	void TestChromiumVelocityTracker(Checks& check)
-	{
-		CanvasPanVelocityTracker tracker;
-		check(Movement(tracker, 0.0, { { 1, 0.0, 0.0 } }), "tracker accepts first movement");
-		check(!tracker.Estimate(1, kFreq).valid, "one point has no velocity");
-		Movement(tracker, 1.0, { { 1, 2.0, -3.0 } });
-		const auto two = tracker.Estimate(1, kFreq);
-		check(two.valid, "two points one millisecond apart produce linear velocity");
-		check.Near(two.x, 2000.0, 0.05, "two point x derivative");
-		check.Near(two.y, -3000.0, 0.05, "two point y derivative");
-
-		tracker.Clear();
-		for (int n = 0; n <= 8; ++n)
-		{
-			const double t = n * 0.010;
-			Movement(tracker, n * 10.0, { { 1, 100.0 * t + 2000.0 * t * t, -300.0 * t } });
-		}
-		const auto quadratic = tracker.Estimate(1, kFreq);
-		check(quadratic.valid, "quadratic least squares is valid");
-		check.Near(quadratic.x, 420.0, 0.1, "LSQ2 derivative is evaluated at newest sample");
-		check.Near(quadratic.y, -300.0, 0.1, "LSQ2 preserves signed linear y velocity");
-
-		// 折返仍拟合整窗；若重置为两点差分会误得 -3000，而非 -6000。
-		tracker.Clear();
-		Movement(tracker, 0.0, { { 1, 0.0, 0.0 } });
-		Movement(tracker, 10.0, { { 1, 30.0, 0.0 } });
-		Movement(tracker, 20.0, { { 1, 0.0, 0.0 } });
-		const auto reverse = tracker.Estimate(1, kFreq);
-		check(reverse.valid && tracker.SampleCount(1) == 3, "direction reversal retains all samples");
-		check.Near(reverse.x, -6000.0, 0.2, "three point reversal LSQ2 golden derivative");
-
-		tracker.Clear();
-		constexpr std::array<double, 9> reversePositions{ 0, 30, 60, 90, 120, 90, 60, 30, 0 };
-		constexpr std::array<double, 4> reverseGolden{ -535.7142857143, -3000.0, -4428.5714285714, -5194.8051948052 };
-		for (size_t n = 0; n < reversePositions.size(); ++n)
-		{
-			Movement(tracker, n * 10.0, { { 1, reversePositions[n], 0.0 } });
-			if (n >= 5) check.Near(tracker.Estimate(1, kFreq).x, reverseGolden[n - 5], 0.5,
-				"reversal stream matches independent LSQ2 golden values");
-		}
-
-		tracker.Clear();
-		for (int n = 0; n <= 6; ++n)
-			Movement(tracker, n * 20.0, { { 1, n == 0 ? 10000.0 : n * 20.0, 0.0 } });
-		check.Near(tracker.Estimate(1, kFreq).x, 1000.0, 0.2, "sample older than 100ms is excluded");
-		tracker.Clear();
-		for (int n = 0; n < 30; ++n) Movement(tracker, n * 2.0, { { 1, n * 2.0, 0.0 } });
-		check(tracker.SampleCount(1) == 20, "shared movement ring retains at most twenty samples");
-		check.Near(tracker.Estimate(1, kFreq).x, 1000.0, 0.2, "ring wrap keeps correct derivative");
-
-		CanvasPanVelocityTracker gap;
-		Movement(gap, 0.0, { { 1, 0.0, 0.0 } });
-		Movement(gap, 10.0, { { 1, 10.0, 0.0 } });
-		Movement(gap, 49.9, { { 1, 49.9, 0.0 } });
-		check(gap.Estimate(1, kFreq).valid, "gap below forty milliseconds preserves history");
-		Movement(gap, 89.9, { { 1, 89.9, 0.0 } });
-		check(gap.SampleCount(1) == 1 && !gap.Estimate(1, kFreq).valid,
-			"gap exactly forty milliseconds clears all strategy history");
-		Movement(gap, 99.9, { { 1, 99.9, 0.0 } });
-		gap.PointerUp(QpcMs(179.8), kFreq);
-		check(gap.Estimate(1, kFreq).valid, "up age below eighty milliseconds retains velocity");
-		gap.PointerUp(QpcMs(179.9), kFreq);
-		check(!gap.Estimate(1, kFreq).valid, "up age exactly eighty milliseconds clears history");
-
-		CanvasPanVelocityTracker tiedTopology;
-		Movement(tiedTopology, 0.0, { { 1, 0.0, 0.0 } });
-		check(Movement(tiedTopology, 0.0, { { 1, 0.0, 0.0 }, { 2, 20.0, 0.0 } }) &&
-			tiedTopology.SampleCount(1) == 2 && tiedTopology.SampleCount(2) == 1,
-			"tracker permits equal-QPC pointer topology events while facade rejects duplicate Move");
-
-		CanvasPanVelocityTracker multi;
-		Movement(multi, 0.0, { { 1, 0.0, 0.0 } });
-		Movement(multi, 10.0, { { 1, 10.0, 0.0 }, { 2, 100.0, 0.0 } });
-		Movement(multi, 20.0, { { 1, 20.0, 0.0 }, { 2, 120.0, 0.0 } });
-		check(multi.SampleCount(1) == 3 && multi.SampleCount(2) == 2, "new pointer does not erase older pointer history");
-		check.Near(multi.Estimate(2, kFreq).x, 2000.0, 0.1, "each pointer has its own fitted velocity");
-		Movement(multi, 30.0, { { 2, 140.0, 0.0 } });
-		Movement(multi, 40.0, { { 1, 40.0, 0.0 }, { 2, 160.0, 0.0 } });
-		check(!multi.Estimate(1, kFreq).valid && multi.SampleCount(1) == 1,
-			"missing id in an intervening movement interrupts LSQ history");
-		check(multi.Estimate(2, kFreq).valid, "missing other id does not interrupt this pointer");
-		multi.ClearPointer(2);
-		check(!multi.Estimate(2, kFreq).valid, "ClearPointer prevents history reuse for a newly admitted id");
-
-		// 输入适配沿用严格时间与有限坐标拒绝契约，拒绝时不污染整组多指历史。
-		const auto count = tracker.SampleCount(1);
-		const auto last = tracker.LastSampleQpc();
-		const auto before = tracker.Estimate(1, kFreq);
-		check(!tracker.AddMovement(last - 1, std::array<CanvasPanPointer, 1>{ { { 1, 999.0, 0.0 } } }, kFreq), "backwards tracker movement timestamp is rejected");
-		check(!Movement(tracker, 70.0, { { 1, std::numeric_limits<double>::quiet_NaN(), 0.0 } }), "NaN movement is rejected");
-		check(tracker.SampleCount(1) == count && tracker.LastSampleQpc() == last && tracker.Estimate(1, kFreq).x == before.x,
-			"rejected movement keeps tracker state unchanged");
-	}
-
-	void TestChromiumCurves(Checks& check)
-	{
-		// research/sim/chromium_fling.py 的同一输入；本处数值由独立 double 公式复算。
-		constexpr std::array<double, 5> xs{ 0.1, 0.25, 0.5, 0.75, 0.9 };
-		constexpr std::array<double, 5> ys{ 0.3860045993729, 0.7064875396339, 0.9309030376973, 0.9927210391553, 0.9995721627041 };
-		for (size_t i = 0; i < xs.size(); ++i)
-			check.Near(SolveCanvasPanCubicBezier(xs[i], 0.2, 1.0, 0.55, 1.0), ys[i], 5e-7,
-				"CubicBezier Solve matches independent golden root");
-		check.Near(SolveCanvasPanCubicBezier(-0.1, 0.2, 1.0), -0.5, 1e-7, "Bezier extrapolates start tangent");
-		check.Near(SolveCanvasPanCubicBezier(1.1, 0.2, 1.0), 1.0, 1e-7, "Bezier extrapolates end tangent");
-		check.Near(SolveCanvasPanCubicBezier(0.5, 0.0, 0.0, 0.0, 0.0), 0.5, 5e-7, "flat start Bezier uses reliable root solving");
-
-		CanvasPanFlingCurve curve;
-		curve.Start({ 3000.0f, -1500.0f }, { 1000.0f, 800.0f });
-		check.Near(curve.Duration(), 1.304347826087, 2e-6, "physics duration is vmax divided by 2300");
-		check.Near(curve.Distance().x, 1700.8962589354, 0.003, "physics x endpoint is v squared over twice physical deceleration");
-		check.Near(curve.Distance().y, -425.2240647338, 0.001, "physics signed y endpoint uses its own squared speed");
-		check.Near(curve.P1().x, 0.2, 1e-7, "low slope retains P1 x");
-		check.Near(curve.P1().y, 0.4601154782609, 2e-6, "low slope adjusts P1 y");
-		CanvasVector offset, velocity;
-		check(curve.Advance(-0.01, offset, velocity) && offset.x == 0.0f && velocity.x == 0.0f,
-			"negative elapsed time returns zero without finishing");
-		check(curve.Advance(curve.Duration() * 0.25, offset, velocity), "quarter-duration curve is active");
-		check.Near(offset.x, 793.5462667481, 0.005, "quarter-duration physics offset golden");
-		check.Near(velocity.x, offset.x / (curve.Duration() * 0.25), 0.02, "physics velocity is finite difference from previous offset");
-		const CanvasVector previous = offset;
-		check(curve.Advance(curve.Duration() * 0.5, offset, velocity), "half-duration curve is active");
-		check.Near(offset.x, 1309.8418399298, 0.005, "half-duration physics offset golden");
-		check.Near(velocity.x, (offset.x - previous.x) / (curve.Duration() * 0.25), 0.02,
-			"physics current velocity uses adjacent evaluations");
-		check(!curve.Advance(curve.Duration() + 0.001, offset, velocity) && offset.x == curve.Distance().x &&
-			offset.y == curve.Distance().y && velocity.x == 0.0f && velocity.y == 0.0f,
-			"independent physics curve returns exact terminal endpoint and zero velocity");
-
-		CanvasPanFlingCurve bounded;
-		bounded.Start({ 10000.0f, 5000.0f }, { 1000.0f, 800.0f });
-		check(bounded.Duration() == 2.0 && bounded.Distance().x == 3000.0f && bounded.Distance().y == 2400.0f,
-			"duration and each axis distance obey Chromium caps");
-		check.Near(bounded.P1().x, 0.15, 1e-7, "high slope adjusts P1 x");
-		check(bounded.P1().y == 1.0f, "high slope retains P1 y");
-		bounded.Start({ 10000.0f, 5000.0f }, { 1000.0f, 800.0f }, 2.0f);
-		check(bounded.Distance().x == 6000.0f, "boost multiplier expands the distance cap");
-		check.Near(bounded.Distance().y, 4724.711830376, 0.01, "boost cap still keeps shorter physical endpoint");
-		bounded.Start({ -10000.0f, 5000.0f }, { 1000.25f, 800.25f });
-		check(bounded.Distance().x == -3000.0f && bounded.Distance().y == 2400.0f,
-			"bounds are floored before signed axis clamping");
-
-		CanvasPanFlingCurve legacy;
-		legacy.Start({ 3000.0f, -1500.0f }, { 1000.0f, 800.0f }, 1.0f, CanvasPanFlingCurveKind::Legacy);
-		check.Near(legacy.Duration(), 0.7877359745787, 2e-6, "Legacy duration excludes velocity time offset");
-		check(legacy.Advance(0.1, offset, velocity), "Legacy curve is active at 100ms");
-		check.Near(offset.x, 247.9326224914, 0.003, "Legacy exponential offset golden");
-		check.Near(velocity.x, 2019.0092967817, 0.02, "Legacy exponential velocity golden");
-		check.Near(offset.y, -offset.x * 0.5, 0.001, "Legacy direction ratio is preserved");
-		check(!legacy.Advance(2.0, offset, velocity), "Legacy eventually finishes");
-		check.Near(offset.x, 675.3202231833, 0.005, "Legacy terminal endpoint golden");
 	}
 
 	CanvasPanGestureEvent Gesture(CanvasPanGestureType type, double seconds,
@@ -275,7 +116,7 @@ namespace
 		return booster;
 	}
 
-	void TestChromiumFlingBooster(Checks& check)
+	void TestFlingBooster(Checks& check)
 	{
 		const auto next = Gesture(CanvasPanGestureType::FlingStart, 1.020, { 500, 0 });
 		CanvasPanFlingBooster empty;
@@ -302,12 +143,12 @@ namespace
 		changed.velocity = { 350, 0 }; changed.timeSeconds = booster.CutoffSeconds();
 		check(booster.ShouldBoostFling(changed), "350 thresholds and exact fifty millisecond cutoff are inclusive");
 		const auto boosted = booster.GetVelocityForFlingStart(changed);
-		check(boosted.x == 1350.0f && booster.StartingVelocity().x == 1350.0f,
-			"boost adds previous starting velocity rather than decayed current velocity");
+		check(boosted.x == 700.0f && booster.StartingVelocity().x == 700.0f,
+			"boost adds the current residual rather than historical starting velocity");
 		check(booster.CutoffSeconds() == 0.0, "starting a fling resets cutoff");
 		booster.ObserveGestureEvent(Gesture(CanvasPanGestureType::FlingCancel, 1.070));
-		check(booster.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.080, { 500, 0 })).x == 1850.0f,
-			"consecutive boosts accumulate previously boosted starting velocity");
+		check(booster.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.080, { 500, 0 })).x == 1200.0f,
+			"consecutive boosts use the latest current residual");
 
 		for (const float delta : { 1.49f, 1.5f })
 		{
@@ -337,60 +178,43 @@ namespace
 		check(booster.StartingVelocity().x == 0.0f, "timeout is checked before event dispatch");
 	}
 
-	void TestChromiumFlingController(Checks& check)
+	void TestFlingController(Checks& check)
 	{
 		CanvasPanFlingController fling;
 		CanvasPanFlingBooster booster;
 		fling.Start(Gesture(CanvasPanGestureType::FlingStart, 1.010, { 3000, -1500 }), 1.0, { 1000, 800 }, booster);
-		check(fling.Active() && fling.StartSeconds() == 1.0, "fling starts at last ScrollUpdate timestamp");
+		check(fling.Active(), "nonzero reliable velocity starts the product curve");
 		const auto wait = fling.Progress(1.0, booster);
-		check(wait.x == 0 && wait.y == 0 && fling.Active(), "no progress before or at fling start time");
+		check(wait.x == 0 && wait.y == 0 && fling.Active(), "no progress before or at presentation start time");
 		const auto first = fling.Progress(1.100, booster);
-		check(first.x > 0 && first.y < 0, "late first progress has the content-following sign");
-		check.Near(fling.StartSeconds(), 1.100 - 1.0 / 60.0, 1e-12, "late first progress rebases start to one frame before now");
-		check.Near(booster.CurrentVelocity().x, fling.Velocity().x, 1e-6, "dispatched progress updates booster current velocity");
-		const auto offset = fling.Offset();
+		CanvasPanFlingCurve curve;
+		curve.Start({ 3000, -1500 }, { 1000, 800 });
+		CanvasVector offset, velocity;
+		curve.Advance(0.100, offset, velocity);
+		check.Near(first.x, offset.x, .0002, "late product progress keeps the actual elapsed animation time");
+		check(first.y < 0 && booster.CurrentVelocity().x == fling.Velocity().x,
+			"progress preserves direction and publishes the current residual");
+		const auto before = fling.Offset();
 		const auto backwards = fling.Progress(1.090, booster);
-		check(backwards.x == 0 && backwards.y == 0 && fling.Offset().x == offset.x,
+		check(backwards.x == 0 && backwards.y == 0 && fling.Offset().x == before.x,
 			"backwards progress does not advance cumulative offset");
 		fling.Cancel();
-		check(!fling.Active() && booster.StartingVelocity().x == 3000.0f, "FlingCancel preserves booster");
+		check(!fling.Active() && booster.StartingVelocity().x == 3000.0f, "contact cancellation preserves the boost candidate");
 		fling.StopFling(booster);
-		check(!fling.Active() && booster.StartingVelocity().x == 0.0f, "StopFling resets booster");
+		check(!fling.Active() && booster.StartingVelocity().x == 0.0f, "program stop clears the boost candidate");
 		fling.Start(Gesture(CanvasPanGestureType::FlingStart, 2.0, { 3000, 0 }), 2.0, {}, booster);
 		check(!fling.Active() && booster.StartingVelocity().x == 0.0f, "empty viewport cannot start a fling");
-
 		fling.Start(Gesture(CanvasPanGestureType::FlingStart, 3.0, { 31, 0 }), 3.0, { 1000, 800 }, booster);
-		check(fling.Progress(3.000001, booster).x == 0.0f && fling.Offset().x > 0.0f,
-			"sub-epsilon inertial delta is discarded after cumulative offset advances");
-		const double discarded = fling.Offset().x;
-		const auto dispatched = fling.Progress(3.005, booster);
-		CanvasPanFlingCurve reference;
-		reference.Start({ 31, 0 }, { 1000, 800 });
-		CanvasVector absolute, velocity;
-		reference.Advance(0.005, absolute, velocity);
-		check.Near(dispatched.x, absolute.x - discarded, 1e-6, "discarded tiny delta is not accumulated into next dispatched event");
-		// 结束帧不补发：累计派发量截止最后活跃帧，尾差就是该帧到曲线终点的剩余。
-		fling.StopFling(booster);
-		fling.Start(Gesture(CanvasPanGestureType::FlingStart, 4.0, { 3000, 0 }), 4.0, { 1000, 800 }, booster);
-		reference.Start({ 3000, 0 }, { 1000, 800 });
-		double total = fling.Progress(4.001, booster).x;
-		for (int n = 1; n <= 3; ++n) total += fling.Progress(4.0 + reference.Duration() * n * 0.25, booster).x;
-		reference.Advance(reference.Duration() * 0.75, absolute, velocity);
-		check.Near(total, absolute.x, 0.0002, "controller dispatches the cumulative offset through last active frame");
-		const auto terminal = fling.Progress(4.0 + reference.Duration() + 0.001, booster);
-		check(!fling.Active() && terminal.x == 0.0f && terminal.y == 0.0f && booster.StartingVelocity().x == 0.0f,
-			"inactive curve ends controller and resets booster without terminal delta");
-		check(total <= reference.Distance().x, "dispatched total never exceeds curve distance");
-		check.Near(reference.Distance().x - total, reference.Distance().x - absolute.x, 0.0002,
-			"tail deficit equals distance remaining after last active frame");
+		const auto tiny = fling.Progress(3.000001, booster);
+		check(tiny.x > 0 && tiny.x < .1f && tiny.x == fling.Offset().x,
+			"product curve preserves sub-epsilon inertial increments");
 	}
 
 	void TestGestureDispatchAndSlop(Checks& check)
 	{
 		CanvasPanGestureDetector detector;
 		const std::array<CanvasPanPointer, 1> down{ { { 1, 0.0, 0.0 } } };
-		detector.Down(QpcMs(0.0), down, 1, kFreq);
+		detector.Down(QpcMs(0.0), down, kFreq);
 		const std::array<CanvasPanPointer, 1> inside{ { { 1, 15.05, 0.0 } } };
 		check(detector.Move(QpcMs(8.0), inside, kFreq).count == 0 && !detector.Scrolling(),
 			"15.05 DIP remains at inclusive slop boundary");
@@ -404,15 +228,15 @@ namespace
 		check(start.events[0].delta.x == 1.0f && start.events[1].delta.x == 1.0f,
 			"first scroll removes fifteen DIP slop without detector epsilon");
 		CanvasPanGestureDetector diagonal;
-		diagonal.Down(QpcMs(0.0), down, 1, kFreq);
+		diagonal.Down(QpcMs(0.0), down, kFreq);
 		const std::array<CanvasPanPointer, 1> diagonalMove{ { { 1, 18.0, 24.0 } } };
 		const auto diagonalStart = diagonal.Move(QpcMs(8.0), diagonalMove, kFreq);
 		check(diagonalStart.count == 2 && diagonalStart.events[1].delta.x == 9.0f && diagonalStart.events[1].delta.y == 12.0f,
 			"first diagonal scroll radially subtracts fifteen from length thirty");
 		CanvasPanGestureDetector pairSlop;
-		pairSlop.Down(QpcMs(0.0), down, 1, kFreq);
+		pairSlop.Down(QpcMs(0.0), down, kFreq);
 		const std::array<CanvasPanPointer, 2> pairDown{ { { 1, 0.0, 0.0 }, { 2, 100.0, 100.0 } } };
-		pairSlop.Down(QpcMs(1.0), pairDown, 2, kFreq);
+		pairSlop.Down(QpcMs(1.0), pairDown, kFreq);
 		const std::array<CanvasPanPointer, 2> pairMove{ { { 1, 18.0, 24.0 }, { 2, 100.0, 120.0 } } };
 		const auto pairStart = pairSlop.Move(QpcMs(8.0), pairMove, kFreq);
 		check(pairStart.count == 2 && pairStart.events[1].delta.x == 4.5f && pairStart.events[1].delta.y == 8.5f,
@@ -428,7 +252,7 @@ namespace
 
 		CanvasPanGestureDetector exactEpsilon;
 		const std::array<CanvasPanPointer, 1> negativeDown{ { { 1, -20.0, 0.0 } } };
-		exactEpsilon.Down(QpcMs(0.0), negativeDown, 1, kFreq);
+		exactEpsilon.Down(QpcMs(0.0), negativeDown, kFreq);
 		exactEpsilon.Move(QpcMs(8.0), down, kFreq);
 		const std::array<CanvasPanPointer, 1> exactTenth{ { { 1, 0.1, 0.0 } } };
 		check(exactEpsilon.Move(QpcMs(16.0), exactTenth, kFreq).count == 0,
@@ -442,8 +266,8 @@ namespace
 		CanvasPanGestureDetector zeroFocus;
 		const std::array<CanvasPanPointer, 1> zeroDown{ { { 1, -20.0, 0.0 } } };
 		const std::array<CanvasPanPointer, 2> zeroPair{ { { 1, -20.0, 0.0 }, { 2, 20.0, 0.0 } } };
-		zeroFocus.Down(QpcMs(0.0), zeroDown, 1, kFreq);
-		zeroFocus.Down(QpcMs(1.0), zeroPair, 2, kFreq);
+		zeroFocus.Down(QpcMs(0.0), zeroDown, kFreq);
+		zeroFocus.Down(QpcMs(1.0), zeroPair, kFreq);
 		const std::array<CanvasPanPointer, 2> opposedPair{ { { 1, -40.0, 0.0 }, { 2, 40.0, 0.0 } } };
 		check(zeroFocus.Move(QpcMs(8.0), opposedPair, kFreq).count == 0 && !zeroFocus.Scrolling(),
 			"zero focus displacement does not dispatch Begin or Update after crossing pointer slop");
@@ -454,16 +278,15 @@ namespace
 			"first nonzero Provider scroll recomputes slop-subtracted pointer average");
 
 		CanvasPanGestureDetector flingDetector;
-		flingDetector.Down(QpcMs(0.0), down, 1, kFreq);
+		flingDetector.Down(QpcMs(0.0), down, kFreq);
 		const std::array<CanvasPanPointer, 1> move1{ { { 1, 30.0, 0.0 } } };
 		const std::array<CanvasPanPointer, 1> move2{ { { 1, 60.0, 0.0 } } };
 		flingDetector.Move(QpcMs(10.0), move1, kFreq);
 		flingDetector.Move(QpcMs(20.0), move2, kFreq);
-		const auto up = flingDetector.Up(QpcMs(21.0), move2, 1, false, kFreq);
+		const auto up = flingDetector.Up(QpcMs(21.0), move2, 1, false, kFreq, { true, 3000.0, 0.0 });
 		check(up.count == 1 && up.events[0].type == CanvasPanGestureType::FlingStart,
 			"FlingStart ends touch scrolling without an additional ScrollEnd");
-		check.Near(up.events[0].velocity.x, 3000.0, 0.2, "UP ignores terminal position and uses last movement velocity");
-		check(!flingDetector.Tracker().Estimate(1, kFreq).valid, "final UP clears tracker");
+		check.Near(up.events[0].velocity.x, 3000.0, 0.2, "UP dispatches the supplied reliable release velocity");
 
 		CanvasPanDynamics perAxis;
 		const auto fast = StartFling(perAxis, 0.0, 1, 30000.0, 40000.0);
@@ -614,7 +437,7 @@ namespace
 			"rule 15: late and unannounced Move samples cannot create contacts");
 	}
 
-	void TestFrameSynthesisAndHistory(Checks& check)
+	void TestFrameEventOrdering(Checks& check)
 	{
 		CanvasPanDynamics merged;
 		StepAt(merged, 0.0, { Contact(1, 0.0, 0.0, 0.0, CanvasPanContactPhase::Down) });
@@ -666,28 +489,61 @@ namespace
 		check(out.heldContacts == 0 && out.phase == CanvasPanPhase::Idle,
 			"rule 9: same QPC events are stably ordered Down then Move then Up");
 
-		CanvasPanDynamics seeded;
-		const std::array<CanvasPanVelocitySample, 3> history{ {
-			{ QpcMs(0.0), 0.0, 0.0 }, { QpcMs(8.0), 24.0, 0.0 }, { QpcMs(16.0), 48.0, 0.0 } } };
-		check(seeded.SeedContactHistory(7, history, kFreq), "history entry accepts ordered first-pointer samples");
-		out = StepAt(seeded, 24.0, { Contact(7, 24.0, 72.0, 0.0, CanvasPanContactPhase::Down) });
-		check(out.contentDelta.x == 0.0f && !out.scrolling && seeded.VelocityTracker().Estimate(7, kFreq).valid,
-			"seeded samples establish velocity but do not generate scroll events");
-		check.Near(seeded.VelocityTracker().Estimate(7, kFreq).x, 3000.0, 0.5,
-			"admitted first pointer inherits its own reliable linear tail");
-		out = StepAt(seeded, 32.0, { Contact(7, 32.0, 96.0) });
-		check(out.scrolling, "history does not replace current Down as slop baseline");
-		const auto seededCount = seeded.VelocityTracker().SampleCount(7);
-		check(!seeded.SeedContactHistory(8, history, kFreq) && seeded.HeldContactCount() == 1 &&
-			seeded.VelocityTracker().SampleCount(7) == seededCount,
-			"stage one rejects multi-pointer history admission without changing active gesture");
+	}
+
+	void TestOrderedInputEquivalence(Checks& check)
+	{
+		// 同阶段重复 Down/Move 故意保留不同坐标，稳定次序必须决定第一个有效样本。
+		const std::array<CanvasPanContactSample, 13> ordered{ {
+			Contact(1, 0, 0, 0, CanvasPanContactPhase::Down),
+			Contact(1, 0, 1000, 0, CanvasPanContactPhase::Down),
+			Contact(1, 8, 24), Contact(1, 8, 9000),
+			Contact(2, 9, 300, 0, CanvasPanContactPhase::Down),
+			Contact(1, 16, 48), Contact(2, 16, 324),
+			Contact(1, 24, 72), Contact(1, 24, 9999), Contact(2, 24, 348),
+			Contact(2, 25, 348, 0, CanvasPanContactPhase::Up),
+			Contact(1, 32, 96), Contact(1, 33, 96, 0, CanvasPanContactPhase::Up) } };
+		// 手工排列不同时间的组，不交换同时间/阶段组内顺序；不复制生产排序充当 oracle。
+		const std::array<size_t, 13> permutation{ 12, 10, 4, 0, 1, 2, 3, 11, 5, 6, 7, 8, 9 };
+		std::array<CanvasPanContactSample, 13> unordered;
+		for (size_t i = 0; i < permutation.size(); ++i) unordered[i] = ordered[permutation[i]];
+		CanvasPanDynamics direct, sorted;
+		const auto compare = [&](const CanvasPanFrameOutput& a, const CanvasPanFrameOutput& b)
+		{
+			check(a.phase == b.phase && a.sourceKey == b.sourceKey && a.heldContacts == b.heldContacts &&
+				a.scrolling == b.scrolling && a.released == b.released && a.releaseReason == b.releaseReason &&
+				a.rejectedSamples == b.rejectedSamples && a.sampleCount == b.sampleCount &&
+				a.reversalCount == b.reversalCount && a.timingResetCount == b.timingResetCount,
+				"ordered span and stable-sort fallback keep identical state and event accounting");
+			const auto same = [](CanvasVector x, CanvasVector y) { return x.x == y.x && x.y == y.y; };
+			check(same(a.contentDelta, b.contentDelta) && same(a.contentVelocity, b.contentVelocity) &&
+				same(a.handVelocity, b.handVelocity) && a.handVelocityKnown == b.handVelocityKnown &&
+				same(a.rawReleaseVelocity, b.rawReleaseVelocity) && same(a.selectedReleaseVelocity, b.selectedReleaseVelocity) &&
+				same(a.boostedReleaseVelocity, b.boostedReleaseVelocity) && same(a.boosterStartingVelocity, b.boosterStartingVelocity) &&
+				same(a.boosterCurrentVelocity, b.boosterCurrentVelocity) && same(a.flingOffset, b.flingOffset) &&
+				a.releaseSpeed == b.releaseSpeed && a.releaseAgeSeconds == b.releaseAgeSeconds &&
+				a.releaseSampleCount == b.releaseSampleCount && a.releaseSpanSeconds == b.releaseSpanSeconds &&
+				a.releaseTailSpeedLimit == b.releaseTailSpeedLimit && a.releaseTailSpeedLimited == b.releaseTailSpeedLimited &&
+				a.boosterCutoffSeconds == b.boosterCutoffSeconds && same(a.focus, b.focus) &&
+				a.span == b.span && a.pointerCount == b.pointerCount && a.scaleDelta == b.scaleDelta,
+				"ordered span and fallback preserve exact geometry, release and every subsequent friction sample");
+		};
+		const auto a = StepAt(direct, 40, ordered), b = StepAt(sorted, 40, unordered);
+		compare(a, b);
+		check(a.contentDelta.x == 81 && a.contentDelta.y == 0 && a.rejectedSamples == 2 &&
+			a.phase == CanvasPanPhase::Coasting && a.heldContacts == 0,
+			"stable duplicate rejection and topology rebases retain the independently expected 81 DIP drag");
+		check.Near(a.selectedReleaseVelocity.x, 3000, .01,
+			"ordered fast path retains the last pointer's real 3000 DIP/s release");
+		for (int ms = 48; ms <= 1000; ms += 8) compare(StepAt(direct, ms), StepAt(sorted, ms));
+		check(!direct.Active() && !sorted.Active(), "both event orders reach the same idle endpoint");
 	}
 
 	void TestCancelPenAndStop(Checks& check)
 	{
 		CanvasPanDynamics grab;
 		auto out = StartFling(grab);
-		check(out.phase == CanvasPanPhase::Coasting && out.boosterStartingVelocity.x > 0.0f, "setup: release starts physics fling");
+		check(out.phase == CanvasPanPhase::Coasting && out.boosterStartingVelocity.x > 0.0f, "setup: release starts product friction fling");
 		const float starting = out.boosterStartingVelocity.x;
 		out = StepAt(grab, 40.0, { Contact(2, 40.0, 900.0, 0.0, CanvasPanContactPhase::Down) });
 		check(out.contentDelta.x == 0 && out.contentDelta.y == 0 && out.contentVelocity.x == 0 && out.contentVelocity.y == 0,
@@ -935,7 +791,7 @@ namespace
 	void TestProductFrictionAndResidual(Checks& check)
 	{
 		CanvasPanFlingCurve curve;
-		curve.Start({ 3000, 1500 }, { 1920, 1080 }, 1, CanvasPanFlingCurveKind::Friction);
+		curve.Start({ 3000, 1500 }, { 1920, 1080 });
 		check.Near(curve.Distance().x / curve.Distance().y, 2.0, 1e-6,
 			"vector friction preserves two-dimensional release direction");
 		const double speed = std::hypot(3000.0, 1500.0);
@@ -946,8 +802,7 @@ namespace
 		{
 			CanvasPanFlingBooster booster;
 			CanvasPanFlingController fling;
-			fling.Start(Gesture(CanvasPanGestureType::FlingStart, 1, { 3000, 1500 }), 2, { 1920, 1080 }, booster,
-				CanvasPanFlingCurveKind::Friction);
+			fling.Start(Gesture(CanvasPanGestureType::FlingStart, 1, { 3000, 1500 }), 2, { 1920, 1080 }, booster);
 			check(fling.Progress(2, booster).x == 0, "product animation begins at presentation without backdated offset");
 			double x = 0, y = 0;
 			for (int n = 1; fling.Active() && n < 2000; ++n)
@@ -977,17 +832,16 @@ namespace
 
 		CanvasPanFlingBooster projected = BoostCandidate(3000);
 		projected.ObserveProgressFling({ 400, 200 });
-		const auto boosted = projected.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.03, { 1000, 0 }), true);
+		const auto boosted = projected.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.03, { 1000, 0 }));
 		check(boosted.x == 1400 && boosted.y == 0, "residual projection cannot introduce an old transverse component");
 		projected = BoostCandidate(12000);
 		projected.ObserveProgressFling({ 12000, 0 });
-		const auto capped = projected.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.03, { 9000, 9000 }), true);
+		const auto capped = projected.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.03, { 9000, 9000 }));
 		check.Near(std::hypot(capped.x, capped.y), 12000, .01, "boost is limited by vector norm after adding residual");
 
 		CanvasPanFlingController limited;
 		CanvasPanFlingBooster limitedBooster;
-		limited.Start(Gesture(CanvasPanGestureType::FlingStart, 1, { 3000, 1500 }), 1, { 1920, 1080 }, limitedBooster,
-			CanvasPanFlingCurveKind::Friction);
+		limited.Start(Gesture(CanvasPanGestureType::FlingStart, 1, { 3000, 1500 }), 1, { 1920, 1080 }, limitedBooster);
 		limited.ClearAxis(true, false, limitedBooster);
 		check(limitedBooster.CurrentVelocity().x == 0 && limitedBooster.CurrentVelocity().y == 1500,
 			"axis clamp clears residual booster velocity before a following Down can observe it");
@@ -1451,13 +1305,12 @@ namespace
 int RunDraw3CanvasPanTests()
 {
 	Checks check;
-	TestChromiumVelocityTracker(check);
-	TestChromiumCurves(check);
-	TestChromiumFlingBooster(check);
-	TestChromiumFlingController(check);
+	TestFlingBooster(check);
+	TestFlingController(check);
 	TestGestureDispatchAndSlop(check);
 	TestPointerTopology(check);
-	TestFrameSynthesisAndHistory(check);
+	TestFrameEventOrdering(check);
+	TestOrderedInputEquivalence(check);
 	TestCancelPenAndStop(check);
 	TestInvalidSamplesAndTranslation(check);
 	TestReliableProductRelease(check);
@@ -1466,6 +1319,6 @@ int RunDraw3CanvasPanTests()
 	TestWhiteboardPatternGeometry(check);
 	TestWhiteboardFreezePatternFollow(check);
 	if (check.failures == 0)
-		std::cout << "PASS Draw3 product canvas pan, Chromium reference, whiteboard pattern geometry and Freeze pattern follow\n";
+		std::cout << "PASS Draw3 product canvas pan, whiteboard pattern geometry and Freeze pattern follow\n";
 	return check.failures;
 }

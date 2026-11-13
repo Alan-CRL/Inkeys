@@ -17,42 +17,20 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr float kCanvasPanSharpSpeedThresholdDipPerSecond = 300.0f;
 	inline constexpr float kCanvasPanMaximumFallbackBlurDip = 12.0f;
 
-	// Chromium 阈值：ui/events/gesture_detection/{gesture_detector.cc,gesture_configuration.h}。
-	// LSQ2/连甩：ui/events/{velocity_tracker/velocity_tracker.cc,blink/fling_booster.cc}。
-	// 曲线：ui/events/gestures/{physics_based_fling_curve,fling_curve}.cc；贝塞尔：ui/gfx/geometry/cubic_bezier.cc。
-	// 推进时序：components/input/fling_controller.cc。
-	// 单位为 DIP、DIP/s、秒；ppi=96 是本模块 DIP 输入的适配，不是物理屏幕 PPI。
-	inline constexpr double kCanvasPanVelocityLimitDipPerSecond = 17000.0;
+	// 起步与连甩门限沿用已确认手感；运动单位为 DIP、DIP/s、秒。
 	inline constexpr double kCanvasPanMinimumFlingVelocity = 30.0;
 	inline constexpr float kCanvasPanTouchSlopDip = 15.0f;
 	inline constexpr float kCanvasPanSlopEpsilonDip = 0.05f;
 	inline constexpr float kCanvasPanExpandSlopFactor = 1.0f;
 	inline constexpr float kCanvasPanScrollEpsilonDip = 0.1f;
-	inline constexpr double kCanvasPanTrackerWindowSeconds = 0.100;
-	inline constexpr size_t kCanvasPanTrackerCapacity = 20;
 	inline constexpr size_t kCanvasPanMaximumContacts = 16;
 	inline constexpr double kCanvasPanTrackerGapSeconds = 0.040;
-	inline constexpr double kCanvasPanTrackerUpGapSeconds = 0.080;
-	inline constexpr float kCanvasPanPixelsPerInch = 96.0f;
-	inline constexpr float kCanvasPanPixelDeceleration = 2300.0f;
-	inline constexpr float kCanvasPanPhysicalDeceleration = 2.7559e-5f;
-	inline constexpr float kCanvasPanMaximumFlingSeconds = 2.0f;
-	inline constexpr float kCanvasPanFlingBoundsMultiplier = 3.0f;
-	inline constexpr float kCanvasPanBezierP1X = 0.2f;
-	inline constexpr float kCanvasPanBezierP1Y = 1.0f;
-	inline constexpr float kCanvasPanBezierP2X = 0.55f;
-	inline constexpr float kCanvasPanBezierP2Y = 1.0f;
-	inline constexpr double kCanvasPanBezierEpsilon = 1e-7;
 	inline constexpr double kCanvasPanBoostTimeoutSeconds = 0.050;
 	inline constexpr double kCanvasPanBoostMinimumFlingSpeedSquared = 350.0 * 350.0;
 	inline constexpr double kCanvasPanBoostMinimumScrollSpeedSquared = 150.0 * 150.0;
 	inline constexpr double kCanvasPanBoostMinimumIntervalSeconds = 0.001;
-	inline constexpr double kCanvasPanFlingFrameSeconds = 1.0 / 60.0;
-	inline constexpr float kCanvasPanLegacyAlpha = -5.70762e3f;
-	inline constexpr float kCanvasPanLegacyBeta = 1.72e2f;
-	inline constexpr float kCanvasPanLegacyGamma = 3.7f;
 
-	// 白板产品策略使用真实逐指尾段与向量摩擦；上方 Chromium 常量仅保留数值参考。
+	// 产品释放使用真实逐指尾段与向量摩擦，不随输入类型切换曲线。
 	inline constexpr double kCanvasPanReleaseWindowSeconds = 0.050;
 	inline constexpr double kCanvasPanReleaseMinimumSpanSeconds = 0.020;
 	inline constexpr size_t kCanvasPanReleaseMinimumSamples = 3;
@@ -64,9 +42,6 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr double kCanvasPanProductVelocityLimit = 12000.0;
 	inline constexpr double kCanvasPanFrictionTauSeconds = 0.30;
 	inline constexpr double kCanvasPanFrictionDeceleration = 1000.0;
-
-	enum class CanvasPanFlingCurveKind : uint8_t { PhysicsBased, Legacy, Friction };
-	inline constexpr CanvasPanFlingCurveKind kCanvasPanFlingCurveKind = CanvasPanFlingCurveKind::PhysicsBased;
 
 	struct CanvasVector
 	{
@@ -120,7 +95,6 @@ export namespace Inkeys::Drawing::Draw3
 		bool penInContact, bool mouseInContact) noexcept;
 	float CanvasPanFallbackBlurDip(float speedDipPerSecond) noexcept;
 
-	// Chromium LSQ2：一个多指 tracker，共享 movement 环；遇到缺失 id 的 movement 即停止回溯。
 	struct CanvasPanVelocityEstimate
 	{
 		bool valid = false;
@@ -133,33 +107,6 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t key = 0;
 		double x = 0.0;
 		double y = 0.0;
-	};
-
-	class CanvasPanVelocityTracker
-	{
-	public:
-		bool AddMovement(int64_t qpc, std::span<const CanvasPanPointer> pointers,
-			int64_t qpcFrequency) noexcept;
-		void Clear() noexcept;
-		void Reset() noexcept;
-		void ClearPointer(uint64_t key) noexcept;
-		void PointerUp(int64_t qpc, int64_t qpcFrequency) noexcept;
-		void ClearAxis(bool x, bool y) noexcept;
-		CanvasPanVelocityEstimate Estimate(uint64_t key, int64_t qpcFrequency) const noexcept;
-		size_t SampleCount(uint64_t key) const noexcept;
-		int64_t LastSampleQpc() const noexcept;
-
-	private:
-		struct Movement
-		{
-			int64_t qpc = 0;
-			size_t count = 0;
-			std::array<CanvasPanPointer, kCanvasPanMaximumContacts> pointers = {};
-		};
-		std::array<Movement, kCanvasPanTrackerCapacity> movements_ = {};
-		size_t index_ = 0;
-		size_t count_ = 0;
-		int64_t lastEventQpc_ = 0;
 	};
 
 	enum class CanvasPanReleaseReason : uint8_t
@@ -240,19 +187,16 @@ export namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		CanvasPanGestureBatch Down(int64_t qpc, std::span<const CanvasPanPointer> pointers,
-			uint64_t actionKey, int64_t frequency, bool trackVelocity = true) noexcept;
+			int64_t frequency) noexcept;
 		CanvasPanGestureBatch Move(int64_t qpc, std::span<const CanvasPanPointer> pointers,
-			int64_t frequency, bool trackVelocity = true) noexcept;
+			int64_t frequency) noexcept;
 		CanvasPanGestureBatch Up(int64_t qpc, std::span<const CanvasPanPointer> pointers,
 			uint64_t actionKey, bool cancelled, int64_t frequency,
-			std::optional<CanvasPanVelocityEstimate> releaseOverride = {}) noexcept;
+			CanvasPanVelocityEstimate releaseVelocity) noexcept;
 		void Reset() noexcept;
 		bool Scrolling() const noexcept;
-		CanvasPanVelocityTracker& Tracker() noexcept;
-		const CanvasPanVelocityTracker& Tracker() const noexcept;
 
 	private:
-		CanvasPanVelocityTracker tracker_;
 		CanvasVector lastFocus_ = {};
 		CanvasPanPointer primaryDown_ = {};
 		std::array<CanvasPanPointer, 2> secondaryDown_ = {};
@@ -265,8 +209,7 @@ export namespace Inkeys::Drawing::Draw3
 	class CanvasPanFlingBooster
 	{
 	public:
-		CanvasVector GetVelocityForFlingStart(const CanvasPanGestureEvent& event,
-			bool projectCurrentResidual = false) noexcept;
+		CanvasVector GetVelocityForFlingStart(const CanvasPanGestureEvent& event) noexcept;
 		bool ShouldBoostFling(const CanvasPanGestureEvent& event) const noexcept;
 		void ObserveGestureEvent(const CanvasPanGestureEvent& event) noexcept;
 		void ObserveProgressFling(CanvasVector velocity) noexcept;
@@ -284,30 +227,18 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t modifiers_ = 0;
 	};
 
-	double SolveCanvasPanCubicBezier(double x, double p1x, double p1y,
-		double p2x = kCanvasPanBezierP2X, double p2y = kCanvasPanBezierP2Y) noexcept;
-
 	class CanvasPanFlingCurve
 	{
 	public:
-		void Start(CanvasVector velocity, CanvasVector viewportSizeDip, float boostMultiplier = 1.0f,
-			CanvasPanFlingCurveKind kind = kCanvasPanFlingCurveKind) noexcept;
+		void Start(CanvasVector velocity, CanvasVector viewportSizeDip) noexcept;
 		bool Advance(double elapsedSeconds, CanvasVector& offset, CanvasVector& velocity) noexcept;
 		void ClearAxis(bool x, bool y) noexcept;
 		double Duration() const noexcept;
 		CanvasVector Distance() const noexcept;
-		CanvasVector P1() const noexcept;
 
 	private:
-		CanvasPanFlingCurveKind kind_ = kCanvasPanFlingCurveKind;
 		CanvasVector distance_ = {};
-		CanvasVector p1_ = {};
-		CanvasVector previousOffset_ = {};
-		CanvasVector legacyRatio_ = {};
 		double duration_ = 0.0;
-		double previousSeconds_ = 0.0;
-		double legacyTimeOffset_ = 0.0;
-		double legacyPositionOffset_ = 0.0;
 		double frictionInitialSpeed_ = 0.0;
 		CanvasVector frictionDirection_ = {};
 	};
@@ -316,8 +247,7 @@ export namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		void Start(const CanvasPanGestureEvent& event, double lastScrollSeconds,
-			CanvasVector viewportSizeDip, CanvasPanFlingBooster& booster,
-			CanvasPanFlingCurveKind kind = kCanvasPanFlingCurveKind) noexcept;
+			CanvasVector viewportSizeDip, CanvasPanFlingBooster& booster) noexcept;
 		CanvasVector Progress(double nowSeconds, CanvasPanFlingBooster& booster) noexcept;
 		void Cancel() noexcept;
 		void StopFling(CanvasPanFlingBooster& booster) noexcept;
@@ -325,17 +255,14 @@ export namespace Inkeys::Drawing::Draw3
 		bool Active() const noexcept;
 		CanvasVector Velocity() const noexcept;
 		CanvasVector Offset() const noexcept;
-		double StartSeconds() const noexcept;
 
 	private:
 		CanvasPanFlingCurve curve_;
-		bool productFriction_ = false;
 		CanvasVector cumulative_ = {};
 		CanvasVector velocity_ = {};
 		double startSeconds_ = 0.0;
 		double lastProgressSeconds_ = 0.0;
 		bool active_ = false;
-		bool firstUpdateSent_ = false;
 		bool clearX_ = false;
 		bool clearY_ = false;
 	};
@@ -405,9 +332,6 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasVector ContentVelocity() const noexcept;
 		size_t HeldContactCount() const noexcept;
 		const CanvasPanReleaseVelocityTracker& VelocityTracker() const noexcept;
-		// 预置首触点的历史，只供估速/基线，不派发 scroll；本任务不接生产输入。
-		bool SeedContactHistory(uint64_t key, std::span<const CanvasPanVelocitySample> samples,
-			int64_t qpcFrequency) noexcept;
 
 	private:
 		struct Contact
@@ -426,11 +350,7 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasPanFlingController fling_;
 		CanvasVector velocity_ = {};
 		int64_t lastFrameQpc_ = 0;
-		int64_t lastInputQpc_ = 0;
 		uint64_t lastSourceKey_ = 0;
-		std::optional<double> lastScrollSeconds_;
-		uint64_t seedKey_ = 0;
-		std::vector<CanvasPanVelocitySample> seedSamples_;
 	};
 
 	struct CanvasRenderBudgetInput

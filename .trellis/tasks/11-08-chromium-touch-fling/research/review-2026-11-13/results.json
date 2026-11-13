@@ -1,0 +1,95 @@
+[
+  {
+    "name": "headless-pan",
+    "command": [
+      "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\InkeysHeadlessTests.exe",
+      "--no-window",
+      "--canvas-pan-only"
+    ],
+    "status": "completed",
+    "exit_code": 0,
+    "seconds": 0.781,
+    "sha256": "658462f08ac14615cc91b89da04ee249720dbb400bcbc21febff6ccf53f309f4",
+    "log": ".trellis\\tasks\\11-08-chromium-touch-fling\\research\\review-2026-11-13\\headless-pan.log",
+    "stdout_sha256": "aa88e32ad30ecfba5be585f63eb583b7c8b710473d359b6e0aae41798d7387d8",
+    "stdout_bytes": 176,
+    "log_is_excerpt": false
+  },
+  {
+    "name": "control-fence",
+    "command": [
+      "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+      "--draw3-control-fence-test"
+    ],
+    "status": "completed",
+    "exit_code": 0,
+    "seconds": 0.703,
+    "sha256": "f12e5853586cd0be65f128b9b0df57d0151fe749fe797daa87e692bc4d0dd339",
+    "log": ".trellis\\tasks\\11-08-chromium-touch-fling\\research\\review-2026-11-13\\control-fence.log",
+    "stdout_sha256": "6dfaa378bb47602d2524ef071ee728540e870a79fdd7c524fd98397d52ad4ef9",
+    "stdout_bytes": 3558,
+    "log_is_excerpt": false
+  },
+  {
+    "name": "pan-feel",
+    "command": [
+      "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+      "--draw3-canvas-pan-feel-test"
+    ],
+    "status": "completed",
+    "exit_code": 0,
+    "seconds": 2.563,
+    "sha256": "f12e5853586cd0be65f128b9b0df57d0151fe749fe797daa87e692bc4d0dd339",
+    "log": ".trellis\\tasks\\11-08-chromium-touch-fling\\research\\review-2026-11-13\\pan-feel.log",
+    "stdout_sha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df",
+    "stdout_bytes": 708090,
+    "log_is_excerpt": true,
+    "full_output_path": "C:\\Users\\alan-\\AppData\\Local\\Packages\\openai.codex_2p2nqsd0c76g0\\AC\\#!sandbox.{90fb340e-3490-4c4b-afb5-7f340b8416c9}\\Temp\\inkeys-pan-review-2026-11-13-h9j271x8\\pan-feel.log"
+  },
+  {
+    "name": "config-boundary",
+    "command": [
+      "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+      "--config-boundary-test"
+    ],
+    "status": "completed",
+    "exit_code": 0,
+    "seconds": 1.766,
+    "sha256": "f12e5853586cd0be65f128b9b0df57d0151fe749fe797daa87e692bc4d0dd339",
+    "log": ".trellis\\tasks\\11-08-chromium-touch-fling\\research\\review-2026-11-13\\config-boundary.log",
+    "stdout_sha256": "b19713cdb4bbde5d028df04698187c9204424df04ab99cbfe5bac30c8b0a0216",
+    "stdout_bytes": 117,
+    "log_is_excerpt": false
+  },
+  {
+    "name": "setting-general",
+    "command": [
+      "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\InkeysHeadlessTests.exe",
+      "--no-window",
+      "--setting-general-only"
+    ],
+    "status": "completed",
+    "exit_code": 0,
+    "seconds": 36.375,
+    "sha256": "658462f08ac14615cc91b89da04ee249720dbb400bcbc21febff6ccf53f309f4",
+    "log": ".trellis\\tasks\\11-08-chromium-touch-fling\\research\\review-2026-11-13\\setting-general.log",
+    "stdout_sha256": "7b97a1f528b354f173efbdc31d3f15c31454671fbdaf3713d46ca9f0bd244e51",
+    "stdout_bytes": 2903,
+    "log_is_excerpt": false
+  },
+  {
+    "name": "diagnostic-output",
+    "command": [
+      "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+      "--draw3-diagnostic-output-test"
+    ],
+    "status": "completed",
+    "exit_code": 0,
+    "seconds": 1.829,
+    "sha256": "f12e5853586cd0be65f128b9b0df57d0151fe749fe797daa87e692bc4d0dd339",
+    "log": ".trellis\\tasks\\11-08-chromium-touch-fling\\research\\review-2026-11-13\\diagnostic-output.log",
+    "stdout_sha256": "bb5136b50f295e6f79fae8e0687453b97902583b32415c54bb85d58844a100d7",
+    "stdout_bytes": 312,
+    "log_is_excerpt": false
+  }
+]
