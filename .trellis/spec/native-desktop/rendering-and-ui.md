@@ -2850,7 +2850,7 @@ list->AddImage(image.GetTexRef(), topLeft, bottomRight);
 ### 3. Contracts
 
 - 浮条是单行 `BarButtonListClass`（SingleRow）：[颜色入口] | [样式] | [线型] | [粗细] | [边数入口] | [辅助开关]，全部走主栏 Configure/Retarget/Advance/Draw，分隔线参数与 GeometryAttribute 单行分隔项相同（`Divider` 色）；整组隐藏时其前导分隔线一起隐藏。选中内容色走公共 helper（Selected→Accent），不得强制 TextPrimary。宽度不足时整体等比缩小，0.75 仍不够才分两行（从粗细组起），两行仍不够继续缩小，永不越出工作区。
-- 新会话先整体重置布局（成员与分隔线 SetDirect 到目标），再用 `BarAttributePanelMotion` 从 frameRect 底边中点紧凑态 0.4s EaseOutBack 展开；关闭 0.24s EaseInBack 后清空快照与布局。会话内显隐走 0.4s 批次 + CanJoin，隐藏成员锚定到前一个可见成员；禁止用随宽度动画的裁剪逐步露出内容（“从左往右加载”）。回弹过冲帧也必须钳在工作区内。拖动对象期间浮条不跟随，手势结束后 0.4s 移到新位置。
+- 新会话先整体重置布局（成员与分隔线 SetDirect 到目标），再用 `BarAttributePanelMotion` 从 frameRect 底边中点紧凑态 0.4s EaseOutBack 展开；关闭 0.24s EaseInBack 后清空快照与布局。会话内显隐走 0.4s 批次 + CanJoin，隐藏成员锚定到前一个可见成员；禁止用随宽度动画的裁剪逐步露出内容（“从左往右加载”）。回弹过冲帧也必须钳在工作区内。浮条逐 Move 直接跟随变换后 frameRect 当前顶/底边中心，不在抬手后追赶。新会话默认底部；仅当前侧空间不足且对侧完整可用时换边并锁存，两侧不足时保持侧并稳定 fit。
 - 同一窗口三层：浮条 < 第 1 层（色板层 / 边数层）< 第 2 层（取色器层）。输入从最上层命中；点击外部只关闭最上一层且该次点击被消费；Esc 逐层关闭后才结束编辑。取色器层按“色板外侧 → 色板右侧 → 色板左侧 → 浮条对象侧 → fit”选位，不得与浮条或色板层重叠。颜色只写当前对象（`SetStyle`，松手一条历史），不改画笔色；取色器拖动只做本地反馈。
 - 键盘：Esc 只在 Inkeys 前台或浮条可见时处理；方向键/Space/Enter/Tab 只在浮条内容拥有焦点时截获，且每个虚拟键在首次 Down 时锁存归属直到 Up，避免吞掉 PPT 放映按键。绘制提示的键盘捕获只以成功呈现的可见状态为准，Shift 随键盘消息冻结。
 - 绘制步骤提示：外观与底栏模式提示逐项一致（圆角 6、常驻材质、13 DIP Bold、0.4s Back 缩放出现/消失、扩框→换字→缩框三阶段 helper 与底栏共用）。固定步数显示环形进度与 n/N；折线/多边形显示已确定点数。按钮为上一步/下一步/结束（仅折线、多边形）/取消的 OneOne 图标按钮。多步构造期间暂停绘制自动收起：接纳通知自带构造资格（不依赖稍后发布的快照），快照 active 时同样暂停；橡皮策略不受影响。
@@ -2858,3 +2858,33 @@ list->AddImage(image.GetTexRef(), topLeft, bottomRight);
 ### 6. Tests Required
 
 `--ui3-shape-editor-test`（首帧位置、出现/消失、分隔线参数与颜色、层级开关与 Esc/外部点击、四角与小工作区钳制、深浅 × 1.0/1.5/2.0 截图）、`--ui3-geometry-attribute-test`（提示截图、按钮语义、键盘）、`--state-mode-production-test`（自动收起暂停）、`--draw3-shape-core-test`（Back/Forward/Complete）。
+
+## 图形续轮 UI 与完成沿（2026-11-13）
+
+### 1. Scope / Trigger
+修改图形目录、属性浮条、首次字号或多步完成提示时适用。
+
+### 2. Signatures
+ShapeUiSnapshot::completedConstructionSession 保留成功构造的 session；ShapeUiRuntime 在文档提交及首次绘制成功后保存原构造 session，并随 finished 快照发布。BarConstructionPrompt 只消费与当前提示原 session 相同的完成沿。
+
+### 3. Contracts
+- 浮条放置使用 frameRect 变换后的边中心；fit 分别处理宽、高，不能因工作区高度不足改变普通跟手缩放。只隐藏 Line/Arrow/Rectangle 圆角框，frameRect、命中、旋转连接线仍保留。
+- 主栏与浮条只有 Outline/Fill 入口；旧混合对象可同时选中两项，点击后才转换。纯填充隐藏线型、粗细和辅助控件；构造方式、约束和边数仍可见。
+- 专属辅助符号、三角形三种模式、梯形等腰均用实际字体测宽的常驻图标+文字。目录顺序 RegularPolygon、Polygon、Polyline；数字层覆盖 3–14，三行布局/背景/边界/命中一致。
+- 追加数字按钮后，后续控件 ID 从 Sides+GeometrySidesCount 派生，避免 13/14 与色板冲突。分组分隔线按 ToolbarItems 顺序判断可见，不能按 ID 数值区间判断。测宽缓存 0–2 用于辅助、3–5 用于分段、6–9 用于约束，不交叉覆盖。
+- Shape/More 文本的 fontTargetSize 使用最终 pose，不使用当前回弹倍率；实际字号仍跟随动画；窄屏还须把最终工作区 fit 乘入目标字号。
+- 进行中固定两步用 (step-1)/N。正常完成时按原构造 session 消费完成沿并锁存到退场结束，进度从 .5→1 与收缩并行；新构造重新取 active 状态，取消/工具切换/旧会话完成不得走满。随后编辑器可使用不同 session，不能覆盖完成沿身份。
+
+共享 FitEraserSurfacePose 只平移：实际尺寸在工作区尺寸 + 1e-6 内仍须钳制，并用 max(lower,upper) 保证 clamp 区间有序。缩放贴边的浮点尾差不能跳过整轴钳制，真正过大的对象仍由调用方缩放。
+
+### 4. Validation & Error Matrix
+当前侧可用→保持；仅对侧可用→换一次；两侧不足→当前侧 fit。13/14 点击→SetSides，不能发颜色动作。取消或跨 session 完成→不走满。Fill→隐藏辅助控件但不清模型状态。
+
+### 5. Good / Base / Bad Cases
+Good：连续 Move 下浮条与边中心偏移恒定，Up 不追赶。Base：旧混合对象先原样显示。Bad：重用已完成提示锁存覆盖恢复中的新构造，或只改数字循环不改 ID/层高度。
+
+### 6. Tests Required
+ui3-shape-editor-test 覆盖真实命中、12 个数字字形、小工作区、旋转跟手、深浅与 DPI；ui3-geometry-attribute-test 覆盖模式、字号和完成/取消逐帧进度；bar-eraser-offscreen-test 覆盖 More 生产路径。细线像素断言应考虑抗锯齿覆盖，隐藏负例仍要求无可见描边；拖动夹具须避开浮条覆盖及工作区钳制。Headless 使用 nextafter(.5,1) 覆盖贴边尺寸尾差、负屏坐标和真正过大不平移；完整生产窗口裁剪须覆盖英文正多边形的窄屏场景。
+
+### 7. Wrong vs Correct
+Wrong：用 id>=begin && id<end 判断非连续目录的分组；关闭提示仅使用最后 active 快照。Correct：按目录位置判断组；以原构造身份接受成功完成沿，并在退场期间锁存。

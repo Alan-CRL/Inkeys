@@ -8,3 +8,5 @@
 {"file": ".trellis/tasks/11-05-shape-ux-rework/research/edit-interaction.md", "reason": "控制点现状与问题"}
 {"file": ".trellis/tasks/11-05-shape-ux-rework/research/toolbar-category.md", "reason": "面板分类"}
 {"file": ".trellis/tasks/11-05-shape-ux-rework/research/construction-prompt.md", "reason": "绘制提示"}
+{"file": ".trellis/tasks/11-05-shape-ux-rework/research/ui-continuation-2026-11-13.md", "reason": "续轮UI验收与回归依据"}
+{"file": ".trellis/tasks/11-05-shape-ux-rework/research/geometry-continuation-2026-11-13.md", "reason": "续轮几何/兼容验收与回归依据"}

@@ -1,3 +1,17 @@
+# 2026-11-13 续轮最新交接
+
+C1–C14 代码及自动验证收尾完成，当前分支仍为 feature/shape，用户已授权提交全部续轮改动；任务继续保持 in_progress，不归档、不 push。
+
+- 两个 solution 的 Debug|ARM64 完整 Rebuild 和最终增量构建均通过，0 error。
+- 共享核心、生产动作、renderer、UInk 文件/演示/自动保存、白板存储、工具/模式/笔宽、两组 UI 矩阵、橡皮/More、Headless --no-window 与 i18n 全部通过。
+- 几何属性：5760 场景、1626442 检查，0 failure；浮条：544 场景、232101 检查，0 failure。
+- 最终验证及本次补修详见 `research/continuation-verification-2026-11-13.md`；日志/截图在忽略目录 Build/shape-continuation、shape-p2-ui、shape-p34-ui。
+- UInk 文件测试须先有 TestResults/release-hardening，并在正常权限环境运行其目录租约/硬链接清理用例；无源码绕过。
+- 待用户实机验收：触屏/笔手感、屏幕边缘与遮挡观感、深浅主题以及 PPT 交互。本次无 GUI 测试；任务保持 in_progress，不自动归档。
+- 既有未跟踪 cso 是构建产物，不纳入源码提交。
+
+---
+
 # 交接：图形交互与样式整改（2026-11-09 更新）
 
 > 2026-11-09 用户要求从检查点继续、由 Codex 承担大部分修改与审阅、主 Agent 负责设计与 UI。四个剩余子任务均已实现并通过回归，**1Password 解锁后已按子任务拆成 4 个签名提交**。下次继续先读本文。

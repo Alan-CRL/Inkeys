@@ -41,3 +41,73 @@ Scripts/i18n.ps1 check
 
 - [ ] 用户批准最终规划摘要。
 - [ ] 确定执行顺序中第一个子任务后，`task.py start` 到对应子任务。
+
+---
+
+# 2026-11-13 实机验收续轮执行计划
+
+本轮已获用户明确实施批准，直接延续父任务，不再新增确认门。所有实现都在当前 `feature/shape`，严格串行修改共享文件。
+
+## A. 共享模型、构造与持久化
+
+1. 增加平面约束与 Solid baseProjection，更新工厂、Validate、构造会话白名单和默认工具状态。
+2. 实现三角形/梯形转换及持续顶点约束，接入 SetConstraint 属性候选与 Replace/journal。
+3. 修点工具单击/首拖、单点可见、开放预览与完成闭合，保证 Back/Forward 一致。
+4. 将边数上限同步到 14，更新 codec、状态、UI 常量和资源。
+5. 实现棱柱/棱锥底面投影控制点与面朝向遮挡；完成 v5 编码、旧版核验/规范化和标准降级。
+6. 实现弧/扇形虚线首步与跨端点连续编辑。
+7. 每组同步更新现有 core/runtime/renderer/uink 测试，先跑共享核心小门禁再进入 UI。
+
+## B. 主栏与选中浮条
+
+1. 浮条实时跟随 frameRect 边中心，实现会话级换边粘性和双边不足稳定 fit；更新旧冻结行为测试。
+2. 仅 Line/Arrow/Rectangle 隐藏外框；保留旋转连接线、frameRect 与立体角标。
+3. 主栏/浮条增加常驻图标+文字、三角形模式和梯形等腰控件；更新控件索引、键盘、hint 和命中。
+4. 两处删除混合模式入口，Fill 隐藏线型/粗细/辅助控件和辅助视觉；保留旧混合状态兼容展示。
+5. Center 控制柄增加 0.5 视觉透明度；调整目录顺序、14 边数字层、SVG/RC 和二十语文案。
+
+## C. 字体与完成提示
+
+1. 形状属性文本使用最终 pose 的 fontTargetSize；通过真实生产离屏路径复现并修 More 首次展开。
+2. 保留并发布 construction finished 完成沿，进度环在退出时从 1/2 到 1，与收缩并行；取消负例不走满。
+
+## D. 分阶段验证
+
+每阶段运行与其改动对应的现有入口，失败先修再扩大范围：
+
+```
+Build/ARM64/Debug/inkStrokeModelerTestTests.exe --shape-core-only
+Build/ARM64/Debug/inkStrokeModelerTestTests.exe --uink-file-only
+Build/ARM64/Debug/inkStrokeModelerTestTests.exe --uink-presentation-only
+Build/ARM64/Debug/inkStrokeModelerTestTests.exe --desktop-autosave-only
+Build/ARM64/Debug/Inkeys.exe --draw3-shape-core-test
+Build/ARM64/Debug/Inkeys.exe --draw3-shape-renderer-test
+Build/ARM64/Debug/Inkeys.exe --draw3-whiteboard-storage-test
+Build/ARM64/Debug/Inkeys.exe --shape-tool-state-test
+Build/ARM64/Debug/Inkeys.exe --state-mode-production-test
+Build/ARM64/Debug/Inkeys.exe --ui3-geometry-attribute-test
+Build/ARM64/Debug/Inkeys.exe --ui3-shape-editor-test
+Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window
+Scripts/i18n.ps1 check
+```
+
+实际可执行文件目录以当次 Solution 输出为准，不盲目沿用示例路径。使用 vswhere 找到 ARM64 MSBuild，设置 `MSBUILDDISABLENODEREUSE=1`：
+
+```
+MSBuild InkeysRepo.sln /m /nr:false /p:Configuration=Debug /p:Platform=ARM64 /p:LinkIncremental=false
+MSBuild inkStrokeModelerTest.sln /t:inkStrokeModelerTestTests /p:Configuration=Debug /p:Platform=ARM64
+```
+
+## E. 最终全范围检查
+
+1. 加载 `trellis-check`，按 native 与 native-desktop 的 Quality Check 审核全部续轮差异、跨层数据流和旧文件兼容。
+2. 从头构建两个 Solution 的 Debug|ARM64，运行上述完整回归和基线中的 `--bar-eraser-offscreen-test`、`--pen-width-production-test`；记录既有环境失败，不能冒充通过。
+3. 检查截图/日志/cso 等新生文件，仅保留任务需要的源码、资源与 artifacts。
+4. 加载 `trellis-update-spec`，同步 shapes.md、rendering-and-ui.md、bar-theme-material.md 中被本轮改变的稳定合同。
+5. 实机触控、笔、屏幕边缘、遮挡观感和 PPT 交互最终由用户验收；离屏通过不冒充实机通过。
+
+## 2026-11-13 接续收尾结果
+
+A–C 实现和 D/E 自动验证已完成；两个 ARM64 solution 构建与全部计划回归通过。共享 fit 的浮点贴边问题、控件 ID/测宽缓存遗漏、完成沿消费和倾斜梯形关闭约束均已补回归，详见 `research/continuation-verification-2026-11-13.md`。
+
+用户已授权提交本轮改动；不结束或归档父任务、不 push，实机验收清单保留待用户确认。

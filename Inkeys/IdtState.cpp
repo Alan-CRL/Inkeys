@@ -2394,7 +2394,12 @@ draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcep
 	case ShapeModeSelectEnum::IdtShapePyramid1: result.preset = PresetKind::Pyramid; break;
 	default: result.preset = PresetKind::Line; break;
 	}
+	if (result.preset == PresetKind::Triangle) result.constraint = snapshot.Shape.triangleConstraint;
+	else if (result.preset == PresetKind::Trapezoid) result.constraint = snapshot.Shape.trapezoidConstraint;
+	if (static_cast<uint32_t>(result.constraint) > static_cast<uint32_t>(PlanarConstraint::Equilateral) ||
+		(result.preset == PresetKind::Trapezoid && result.constraint == PlanarConstraint::Equilateral)) result.constraint = PlanarConstraint::Free;
 	result.creationMode = result.preset == PresetKind::Circle ? snapshot.Shape.circleMode :
+		result.preset == PresetKind::Triangle && result.constraint == PlanarConstraint::Equilateral ? CreationMode::CenterRadius :
 		DefaultCreationMode(result.preset);
 	result.sides = snapshot.Shape.polygonSides;
 	return result;
@@ -2541,9 +2546,22 @@ bool SetShapeCircleModeIfRevision(draw3::shapes::CreationMode mode, std::uint64_
 		stateMode.Shape.circleMode = mode; return changed;
 	});
 }
+bool SetShapePlanarConstraintIfRevision(draw3::shapes::PlanarConstraint constraint, std::uint64_t expected)
+{
+	using namespace draw3::shapes;
+	if (static_cast<uint32_t>(constraint) > static_cast<uint32_t>(PlanarConstraint::Equilateral)) return false;
+	return ChangeShapeProperty(expected, [&] {
+		const auto preset = GetShapeToolSpec(stateMode).preset;
+		auto* current = preset == PresetKind::Triangle ? &stateMode.Shape.triangleConstraint :
+			preset == PresetKind::Trapezoid ? &stateMode.Shape.trapezoidConstraint : nullptr;
+		if (!current || (preset == PresetKind::Trapezoid && constraint == PlanarConstraint::Equilateral)) return false;
+		const bool changed = *current != constraint;
+		*current = constraint; return changed;
+	});
+}
 bool SetShapePolygonSidesIfRevision(std::uint32_t sides, std::uint64_t expected)
 {
-	if (sides < 3 || sides > 12) return false;
+	if (sides < draw3::shapes::kMinRegularSides || sides > draw3::shapes::kMaxRegularSides) return false;
 	return ChangeShapeProperty(expected, [&] {
 		if (!draw3::shapes::GetToolCapabilities(GetShapeToolSpec(stateMode).preset).regularSides) return false;
 		const bool changed = stateMode.Shape.polygonSides != sides;
@@ -2586,6 +2604,7 @@ int RunShapeToolStateProductionTest() noexcept
 		ChangeStateModeToShape();
 		const auto defaults = GetStateModeSnapshot();
 		check(defaults.Shape.circleMode == CreationMode::CenterRadius && defaults.Shape.polygonSides == 3 &&
+			defaults.Shape.triangleConstraint == PlanarConstraint::Free && defaults.Shape.trapezoidConstraint == PlanarConstraint::Free &&
 			defaults.Shape.fillMode == draw3::shapes::FillMode::Outline, "session defaults");
 		{
 			auto initial = defaults;
@@ -2640,18 +2659,33 @@ int RunShapeToolStateProductionTest() noexcept
 		check(SetShapeCircleModeIfRevision(CreationMode::CenterRadius, stale), "circle center selected");
 		check(!SetShapeCircleModeIfRevision(CreationMode::Drag, stale) && GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius,
 			"stale mode cannot overwrite new mode");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Triangle, StateModeTransitionRevision());
+		check(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Free &&
+			SetShapePlanarConstraintIfRevision(PlanarConstraint::Isosceles,StateModeTransitionRevision()) &&
+			GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::Drag,"triangle isosceles keeps bounding construction");
+		const auto constraintStale = StateModeTransitionRevision();
+		check(SetShapePlanarConstraintIfRevision(PlanarConstraint::Equilateral,constraintStale) &&
+			GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius &&
+			!SetShapePlanarConstraintIfRevision(PlanarConstraint::Free,constraintStale),"triangle equilateral uses center construction and rejects stale mode");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Trapezoid, StateModeTransitionRevision());
+		check(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Free &&
+			!SetShapePlanarConstraintIfRevision(PlanarConstraint::Equilateral,StateModeTransitionRevision()) &&
+			SetShapePlanarConstraintIfRevision(PlanarConstraint::Isosceles,StateModeTransitionRevision()),"trapezoid supports only free and isosceles");
+		(void)SetShapeToolPresetIfRevision(PresetKind::Triangle, StateModeTransitionRevision());
+		check(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Equilateral,"triangle and trapezoid remember independent constraints");
+		(void)SetShapePlanarConstraintIfRevision(PlanarConstraint::Free,StateModeTransitionRevision());
 		(void)SetShapeToolPresetIfRevision(PresetKind::RegularPolygon, StateModeTransitionRevision());
-		for (unsigned n = 3; n <= 12; ++n)
+		for (unsigned n = 3; n <= 14; ++n)
 		{
 			(void)SetShapePolygonSidesIfRevision(n, StateModeTransitionRevision());
-			check(GetShapeToolSpec(GetStateModeSnapshot()).sides == n, "3 to12 sides");
+			check(GetShapeToolSpec(GetStateModeSnapshot()).sides == n, "3 to14 sides");
 		}
 		// 空间正多边形复用同一份边数状态，描边限制不应覆盖平面图形记住的填充。
 		(void)SetShapeFillModeIfRevision(draw3::shapes::FillMode::OutlineAndFill, StateModeTransitionRevision());
 		for (const auto solid : { PresetKind::Prism, PresetKind::Pyramid })
 		{
 			(void)SetShapeToolPresetIfRevision(solid, StateModeTransitionRevision());
-			for (unsigned sides = 3; sides <= 12; ++sides)
+			for (unsigned sides = 3; sides <= 14; ++sides)
 			{
 				(void)SetShapePolygonSidesIfRevision(sides, StateModeTransitionRevision());
 				check(GetShapeToolSpec(GetStateModeSnapshot()).sides == sides, "solid base sides projected");
@@ -2664,7 +2698,7 @@ int RunShapeToolStateProductionTest() noexcept
 		check(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::OutlineAndFill,
 			"solid outline restriction retains closed fill memory");
 		const auto before = GetStateModeVersionedSnapshot();
-		check(!SetShapePolygonSidesIfRevision(2, before.revision) && !SetShapePolygonSidesIfRevision(13, before.revision) &&
+		check(!SetShapePolygonSidesIfRevision(2, before.revision) && !SetShapePolygonSidesIfRevision(15, before.revision) &&
 			StateModeTransitionRevision() == before.revision, "invalid parameters do not mutate state");
 		for (unsigned p = 0; p <= static_cast<unsigned>(LinePattern::DashDot); ++p)
 		{

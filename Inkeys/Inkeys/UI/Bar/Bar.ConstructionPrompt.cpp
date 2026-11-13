@@ -108,6 +108,9 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 		if(frame_.identity.session!=snapshot->identity.session){hovered_=pressed_=focused_=-1;}
 		status_=snapshot->construction;
 	}
+	// 完成后快照会切到编辑会话；先按原构造身份接收完成沿，再锁存到退场结束。
+	if(!open&&snapshot&&snapshot->construction.finished
+		&&snapshot->completedConstructionSession==frame_.identity.session)status_.finished=true;
 	const auto status=status_;
 	const bool points=GetToolCapabilities(status.preset).points;
 	if(open){desiredLabel_=PromptLabel(status);desiredRingLabel_=status.totalSteps?std::to_wstring(status.step)+L"/"+std::to_wstring(status.totalSteps):L"";}
@@ -187,10 +190,11 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 	ringLabel_.x.SetDirect(21);ringLabel_.y.SetDirect(21.25);ringLabel_.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
 	join(AdvanceBarWordVisual(label_,{dt,speed,static_cast<bool>(BarUiAnimationEnabled)}));join(AdvanceBarWordVisual(ringLabel_,{dt,speed,static_cast<bool>(BarUiAnimationEnabled)}));
 	const double progress=status.totalSteps?static_cast<double>(status.step?status.step-1:0)/status.totalSteps:0.;
-	if(open)
+	const double ringTarget=!open&&status.finished?1.:progress;
+	if(open||ringTarget!=ringProgress_.tar)
 	{
-		if(hidden)ringProgress_.SetDirect(progress);
-		else ringProgress_.SetTar(progress,.4,std::nullopt,false,{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0,false});
+		if(hidden&&open)ringProgress_.SetDirect(ringTarget);
+		else ringProgress_.SetTar(ringTarget,!open&&status.finished?.24:.4,std::nullopt,false,{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0,false});
 	}
 	advance(ringProgress_);
 	const auto& keys=I18nKey.UI.Bar.ShapeConstruction;

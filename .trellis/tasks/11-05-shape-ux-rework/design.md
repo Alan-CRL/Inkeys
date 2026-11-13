@@ -71,3 +71,108 @@ Commit ──────► 更新 CPU 文档和 journal（与现有相同）�
 - 文件：v4 只是新增字段。旧版本读取 v4 文件时，走标准几何降级，能看到辅助元素；新版本能读 v1–v3。圆角矩形的枚举保留。
 - 每个子任务各自独立提交。edit-performance 可以单独回滚（预览槽和轻量预览有开关，可退回现有路径）。主栏 Thumb helper 的迁移出问题时，可单独回退主栏调用点。
 - spec 更新：`shapes.md`（P3 合同的控制点、外框、辅助显示、v4、Forward）、`rendering-and-ui.md`（分类面板、浮条、颜色层级、提示）、`bar-theme-material.md`（编辑器的常驻透明度）。
+
+---
+
+# 2026-11-13 实机验收续轮技术设计
+
+## 8. 变更边界与最小行为差
+
+当前差距不是单一绘制问题：浮条刻意冻结、点工具把开放预览与最终闭合候选混用、三角形/梯形没有约束真值、棱柱/棱锥投影固定且部件虚实规则不含完整面朝向、完成沿没有保留给提示。修改必须落在这些事实源，不在抬手回调或 renderer 末端遮盖症状。
+
+预期修改边界：
+
+- 共享模型与几何：`shape_core.h/.cpp`、`shape_presets.inl`、`shape_interaction.h/.inl`，负责约束、构造/编辑、开放预览、底面投影、遮挡和弧跨端点。
+- 文件与历史：`shape_uink_metadata.inl`、`shape_uink_standard.inl` 及必要的导入核验，负责 v5 和旧部件规范化；不改变既有 PresetKind/FillMode 数值。
+- 产品动作与状态：`Draw3.ShapeInteraction.h`、`Draw3.ShapeRuntimeActions.inl`、`Draw3.DrawingController.cpp`、`IdtState.h/.cpp`，负责当前对象约束动作、下一笔会话状态和完成沿。
+- UI：`Bar.ShapeEditor.cpp`、`Bar.GeometryAttribute.cpp`、`Bar.Main.cppm`、`Bar.ConstructionPrompt.cpp`，以及确有首次展开问题时的 `Bar.RenderLoop.cpp`；负责布局、视觉和输入，不复制几何算法。
+- 资源与测试：必要的新 SVG、RC、二十语 JSONC/生成头，以及现有 core/runtime/renderer/UI/storage 测试文件。不新增测试系统，不新增 HWND/线程，不修改普通笔路径，不处理 handoff 中无关遗留。
+
+## 9. 约束真值与 v5
+
+### 9.1 模型
+
+在 `ToolSpec` 增加独立的平面约束枚举字段，默认 Free：Triangle 支持 Free/Isosceles/Equilateral，Trapezoid 支持 Free/Isosceles，其余 preset 必须 Free。自由与等腰三角形均使用 Drag；等边使用 CenterRadius。`ConstructionSession::Begin` 接受这些合法组合，拒绝其他 preset 的非 Free 值。
+
+在 `SolidConstruction` 增加 `baseProjection`，默认 0.5；仅 Prism/Pyramid 可非默认。它是本地未旋转正多边形 y 坐标的乘数，不是绝对像素 ry，因此外框等比缩放时不变。共享一个投影 helper 供首步预览和最终展开使用；Axis 点位于投影后的底面前端，拖动只改比例并钳到非退化范围。
+
+### 9.2 三角形转换与持续约束
+
+规范顶点顺序保持当前的 apex=0、底边右/左=1/2；对象旋转留在 transform，转换在本地构造空间进行。
+
+- 转 Free：仅解除约束，顶点不动。
+- 转 Isosceles：固定 v1/v2；保留 v0 相对底边的有符号高度，将 v0 移到 `baseMidpoint + normal * signedHeight`。
+- 转 Equilateral：固定 v1/v2；v0 移到 `baseMidpoint + normal * sign * sqrt(3)/2 * baseLength`。
+- Isosceles 拖 apex：固定底边，指针投影到底边垂直平分线；拖底边端点时另一端固定，保留之前有符号高度并随新底边重建 apex。
+- Equilateral 拖底边端点：另一端固定，按新底边重建等边 apex；拖 apex 时固定底边中点和方向，按指针在底边法线上的目标高度等比更新底边两半长，再重建 apex。
+- 所有约束编辑沿用最近有效状态钳制；共线、零底边、非有限值不提交。
+
+### 9.3 梯形转换与持续约束
+
+顶点顺序保持 top-left/top-right/bottom-right/bottom-left。开启 Isosceles 时固定 v2/v3、上底长度和高度，将 v0/v1 对称放在下底中垂线两侧；关闭仅解除约束。等腰模式下拖上底一点时对称更新另一端，拖下底一点时保留下底另一端、上底长度和高度并重居中；禁止底边交叉与退化。
+
+共享核心提供 `SetPlanarConstraint` 候选函数，UI 经新增 `ShapeUiActionKind::SetConstraint` 调用，沿用 BuildShapePropertyCandidate、Replace、journal、Undo/Redo 与 revision 校验。下一笔状态仅存会话内，不新增启动配置。
+
+### 9.4 编解码与旧文件
+
+`inkeysShape v5` 的 tool map 增加 constraint；Solid 参数在 v5 增加 baseProjection。v5 继续写 aux。以下对象写 v5：非 Free 约束、sides>12、Prism/Pyramid 非默认投影，以及使用新遮挡派生规则的 Prism/Pyramid。其他对象保持最低可用版本。
+
+旧版本读取：constraint=Free、baseProjection=0.5、sides 仍按旧上限。新版接受 3–14 并拒绝 15。v5 对旧读取器是未知版本，走标准部件降级，不把 13/14 塞进 v3/v4 后让旧读取器判 Invalid。
+
+旧 v3/v4 Prism/Pyramid 的 parts 来自旧虚实算法：保留旧派生核验用于验证持久化部件，核验通过后替换为当前构造派生 parts，再执行完整 Validate；不得直接忽略 parts 不匹配。标准导出、冷历史与自动保存复用同一构造真值和当前派生结果。
+
+## 10. 点工具、弧和立体几何
+
+### 10.1 折线/自由多边形
+
+点工具首次 ConfirmDrag 区分单击和实际拖动：单击追加 rawDown 一点，拖动追加 rawDown/rawUp 两点。Back/Forward 以完整 points_ 序列为准，首拖回退/恢复也一致。
+
+一点时用临时零长度 Line 作为可见起点；填充样式下临时预览强制可见描边并复用现有颜色 fallback。已确认点列始终产生开放 Polyline 候选，即使新点导致最终 Polygon 暂时无效也不清空旧路径。Polygon 另存通过最终校验的 confirmedCandidate_ 供 CanComplete/Complete；仅 Complete 返回闭合 Polygon。临时预览不改变最终 preset、填充、撤销条数或文件构造。
+
+### 10.2 弧/扇形
+
+第一步 Circle 预览复制样式并使用 Dashed；纯填充扇形临时补可见描边，最终对象恢复原 style。
+
+角度编辑继续使用 EditSession 的累计 angleDelta。候选扫角跨过零并变号时交换 construction.start/end 所代表的起止角，同时把 sweep 变为对应相反表示，使被拖点连续跟随、另一端和原绕向保持；往回跨越可逆。恰好零扫角仍钳在最近有效状态，|sweep| 上限仍为 2π。活动 Angle 手柄的按压视觉在角色交换时跟随当前实际端点，Commit 使用同一最终意图，禁止抬手回跳。
+
+### 10.3 棱柱/棱锥可见性
+
+用共享构造参数建立一致的局部三维投影模型：底面点由未压缩正多边形和 baseProjection 还原，高度向量与底面投影共用同一视图方向。对每个底面/侧面求有符号朝向；一条边只有在所有相邻面都背向观察方向时才为隐藏虚线，否则为实线。锥顶高度和底面角度因此都会影响棱锥侧棱。临界共面使用统一 epsilon，避免浮点导致相邻帧抖动。
+
+该规则只改共享 ExpandAdvanced 的部件 style 和必要几何，不增加 shader 分支。棱柱与棱锥使用同一可见性定义，但测试分别记录行为，不顺带改圆柱/圆锥既有教学约定。
+
+## 11. UI 布局、模式与样式
+
+### 11.1 浮条位置与外框
+
+ShapeEditor 在新会话锁存 placementSide=Below。每帧从本地/权威候选的 transform+frameRect 求当前侧边中心；只有当前侧不能完整容纳浮条或与主栏冲突时才试另一侧，换边后锁存。原侧恢复空间不反向切换。两侧都不足时保持当前侧并复用 FitEditorPose，不在每帧重置为 Below。普通 Move 对锚点 SetDirect；仅实际换边可复用既有位置过渡，抬手不新增追赶。
+
+浮条、回弹锚点、色板/边数/取色器方向共享同一 placementSide。frameRect 始终发布。外框绘制增加 UI 谓词，仅 Line/Arrow/Rectangle（含旧对象对应构造）不画圆角框；旋转连接线和立体角标独立判断。
+
+### 11.2 常驻文字和约束控件
+
+提取主栏辅助标签映射供主栏/浮栏共用，按钮使用真实字体测量后的图标+文字槽，而不是悬停 hint。Triangle 增加自由/等腰/等边，Trapezoid 增加等腰文字开关；当前对象与下一笔分别走 SetConstraint 和 IdtState 会话状态。纯 Fill 下隐藏辅助项，但保留构造方式、约束和边数等真正几何参数。
+
+浮条新增常驻文字后仍走 SingleRow 与既有 fit/两行策略；主栏参数行按实际项数计算宽高和 hint。新文案先改 zh-CN，再用既有 i18n sync/check 更新二十语和生成头。
+
+### 11.3 填充与辅助显示
+
+主栏 AttributeItems 和浮条 ToolbarItems 删除 OutlineAndFill 入口，保留按钮 ID/枚举兼容。Outline 表示 stroke=true/fill=false，Fill 表示 stroke=false/fill=true；旧混合状态在两个保留按钮上同时 Selected，点击其中一个才写单一模式。
+
+辅助开关 wanted 与 showStroke 联动。共享 BuildAuxiliaryGeometry 在纯 Fill 时不派生辅助视觉，但 ShapeStyle.auxiliary 位不变；历史 bounds、dirty、导出和重载因此一致。Center 编辑柄在对象支持且启用 Center 辅助时，Thumb 整体 opacity 额外乘 0.5；命中热区和常驻内容透明度公式不变。
+
+### 11.4 边数与目录
+
+只交换 UI 目录中的 Polygon/Polyline，使 RegularPolygon 与 Polygon 相邻。所有 3–12 硬编码改为共享上限 14，主栏和浮条边数层排布 12 个实际按钮（3–14）；新增 13/14 SVG 和 RC 映射，轮播/文字/命中/键盘同步。
+
+## 12. 首次字体与完成环
+
+Shape/More 文本把最终 `targetPose.scale` 下的字号写入 `fontTargetSize`，当前字号仍随动画绘制。Shape 覆盖类别、分段、圆/三角形构造文字并保留长标签拟合。More 先走真实 RenderLoop 冷启动回归；若生产路径仍有目标缺失，在所属最终布局计算处补齐，不新增异步字体等待。
+
+固定步数进行中仍显示 `(step-1)/N`。正常 Complete 时利用现有 `ConstructionStatus::finished` 发布可区分的终态，并在后续 inactive 快照保留完成锁存直到新构造/取消/工具切换；ConstructionPrompt 在 open→false 且收到同会话完成沿时将 ringProgress 定向到 1，与既有 0.4 秒收缩并行。Cancel/失败/工具切换不得设置完成锁存，避免把末步取消误当完成。
+
+## 13. 回滚与验证边界
+
+- 约束、投影、遮挡和 v5 是共享核心单源；UI 不包含第二份几何公式。需要回滚时可按 core→runtime→UI 的提交边界逆向恢复，旧文件兼容路径不能单独删除。
+- 离屏/无头测试覆盖算法与真实生产动作入口；截图验证 UI 视觉，不能用 imports/编译代替。触屏/笔手感、真实屏幕遮挡和观感仍需用户实机验收。
+- 既有未跟踪 `inkStrokeModelerTest/*.cso` 是构建产物，不属于本任务提交；完整构建后检查并清理仅由本轮测试新建的多余输出。

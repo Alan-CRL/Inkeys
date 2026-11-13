@@ -67,8 +67,8 @@ namespace
 			if (shape->style.fill)
 			{
 				shape->style.fillRgb = 0xabcdef; shape->style.fillOpacity = .2f;
-				SHAPE_CHECK(BuildAuxiliaryGeometry(*shape,aux));
-				for (const auto& part : aux.parts) SHAPE_CHECK((diagonal ? part.style.strokeRgb : part.style.fillRgb) == 0xabcdef);
+				SHAPE_CHECK(BuildAuxiliaryGeometry(*shape,aux) && aux.parts.empty());
+				SHAPE_CHECK(shape->style.auxiliary == SupportedAuxiliary(preset) && BuildGeometry(*shape,body));
 			}
 		}
 		for (auto preset : {PresetKind::Circle,PresetKind::Ellipse})
@@ -141,7 +141,7 @@ namespace
 				add(1000,EditHandleKind::Axis,{20,70}); add(1001,EditHandleKind::Axis,{140,70}); add(1002,EditHandleKind::Axis,{80,110});
 				add(105,EditHandleKind::Height,{80,-50}); break;
 			case PresetKind::Prism: case PresetKind::Pyramid:
-				add(1001,EditHandleKind::Vertex,{140,110}); add(105,EditHandleKind::Height,{20,-90}); break;
+				add(1001,EditHandleKind::Vertex,{140,110}); add(102,EditHandleKind::Axis,{20,130}); add(105,EditHandleKind::Height,{20,-90}); break;
 			}
 			GeometryResult geometry; SHAPE_CHECK(BuildGeometry(*object,geometry));
 			for (float displayScale : {1.f,2.f})
@@ -359,6 +359,23 @@ namespace
 			SHAPE_CHECK(!overflow.Commit());
 			const auto full = EditShape(*arc,103,end->position,end->position,revision + 2,{},nullptr,sign * (2 * pi - pi / 180));
 			SHAPE_CHECK(full && near(std::abs(std::get<ArcConstruction>(full->construction->parameters).sweepRadians),2 * pi));
+			const float crossedAngle = pi * .5f - sign * pi * .5f;
+			const Vec2 crossedPoint{100 * std::cos(crossedAngle),100 * std::sin(crossedAngle)};
+			const auto crossed = EditShape(*arc,103,end->position,crossedPoint,revision + 3,{},nullptr,-sign * 91 * pi / 180);
+			SHAPE_CHECK(crossed && Validate(*crossed)); if (crossed)
+			{
+				const auto& crossedConstruction = *crossed->construction;
+				const auto& crossedSweep = std::get<ArcConstruction>(crossedConstruction.parameters).sweepRadians;
+				SHAPE_CHECK(near(crossedSweep,sign * pi * .5f));
+				SHAPE_CHECK(pointNear(crossedConstruction.end,crossedPoint));
+				const auto newEnd = getHandle(BuildEditHandles(*crossed),103);
+				SHAPE_CHECK(newEnd && pointNear(newEnd->position,{0,100}));
+			}
+			EditSession crossing;
+			SHAPE_CHECK(crossing.Begin(*arc,103,end->position));
+			SHAPE_CHECK(crossing.Preview(crossedPoint,revision + 4,nullptr,-sign * 91 * pi / 180));
+			const auto committedCross = crossing.Commit();
+			SHAPE_CHECK(committedCross && crossed && committedCross->construction == crossed->construction);
 		}
 		for (float height : {-120.f,120.f})
 		{
@@ -377,6 +394,167 @@ namespace
 			SHAPE_CHECK(BuildGeometry(legacy,oldGeometry) && BuildGeometry(*cone,newGeometry));
 			SHAPE_CHECK(oldGeometry.parts.size() == newGeometry.parts.size() && oldGeometry.parts[2].paths[0].points == newGeometry.parts[2].paths[0].points);
 			legacy.parts[2].geometry.vertices[0].x += 1; SHAPE_CHECK(!Validate(legacy));
+		}
+		ToolSpec triangleTool{ PresetKind::Triangle,CreationMode::Drag };
+		const auto freeTriangle = MakePresetShape(triangleTool,{20,30},{140,110},{},Id(40));
+		SHAPE_CHECK(freeTriangle && freeTriangle->construction->tool.constraint == PlanarConstraint::Free);
+		if (freeTriangle)
+		{
+			const auto& initial = freeTriangle->geometry.vertices;
+			SHAPE_CHECK(near(length(initial[0],initial[1]),length(initial[0],initial[2])));
+			const auto moved = EditShape(*freeTriangle,1000,initial[0],{95,55},2);
+			SHAPE_CHECK(moved && moved->construction->tool.constraint == PlanarConstraint::Free);
+			if (moved)
+			{
+				const auto iso = SetPlanarConstraint(*moved,PlanarConstraint::Isosceles,3);
+				SHAPE_CHECK(iso && Validate(*iso)); if (iso)
+				{
+					const auto& old = moved->geometry.vertices; const auto& v = iso->geometry.vertices;
+					SHAPE_CHECK(v[1] == old[1] && v[2] == old[2] && near(length(v[0],v[1]),length(v[0],v[2])));
+					SHAPE_CHECK(iso->construction->tool.creationMode == CreationMode::Drag);
+					for (uint32_t id = 1000; id <= 1002; ++id)
+					{
+						const auto handle = getHandle(BuildEditHandles(*iso),id); SHAPE_CHECK(handle);
+						if (handle)
+						{
+							std::string reason; const auto edited = EditShape(*iso,id,handle->position,{handle->position.x + 3,handle->position.y + 2},4,{},&reason);
+							if (!edited) std::cerr << "isosceles edit " << id << ": " << reason << '\n';
+							SHAPE_CHECK(edited && Validate(*edited));
+						}
+					}
+					const auto equilateral = SetPlanarConstraint(*iso,PlanarConstraint::Equilateral,5);
+					SHAPE_CHECK(equilateral && Validate(*equilateral)); if (equilateral)
+					{
+						const auto& before = iso->geometry.vertices; const auto& v3 = equilateral->geometry.vertices;
+						SHAPE_CHECK(v3[1] == before[1] && v3[2] == before[2]);
+						SHAPE_CHECK(near(length(v3[0],v3[1]),length(v3[1],v3[2])) && near(length(v3[0],v3[2]),length(v3[1],v3[2])));
+						SHAPE_CHECK(equilateral->construction->tool.creationMode == CreationMode::CenterRadius);
+						for (uint32_t id = 1000; id <= 1002; ++id)
+						{
+							const auto handle = getHandle(BuildEditHandles(*equilateral),id); SHAPE_CHECK(handle);
+							if (handle)
+							{
+								std::string reason; const auto edited = EditShape(*equilateral,id,handle->position,{handle->position.x + 2,handle->position.y + 1},6,{},&reason);
+								if (!edited) std::cerr << "equilateral edit " << id << ": " << reason << '\n';
+								SHAPE_CHECK(edited && Validate(*edited));
+							}
+						}
+						std::string reason; const auto restored = SetPlanarConstraint(*equilateral,PlanarConstraint::Free,7,&reason);
+						if (!restored) std::cerr << "free restore: " << reason << '\n';
+						SHAPE_CHECK(restored && restored->geometry == equilateral->geometry && restored->construction->tool.creationMode == CreationMode::Drag);
+					}
+				}
+			}
+		}
+		triangleTool.creationMode = CreationMode::CenterRadius; triangleTool.constraint = PlanarConstraint::Equilateral;
+		const auto centeredTriangle = MakePresetShape(triangleTool,{40,50},{140,50},{},Id(41));
+		SHAPE_CHECK(centeredTriangle && centeredTriangle->geometry.vertices.size() == 3);
+		if (centeredTriangle)
+		{
+			const auto& v = centeredTriangle->geometry.vertices;
+			SHAPE_CHECK(near(length(v[0],v[1]),length(v[1],v[2])) && near(length(v[0],v[2]),length(v[1],v[2])));
+			SHAPE_CHECK(pointNear({(v[0].x + v[1].x + v[2].x) / 3,(v[0].y + v[1].y + v[2].y) / 3},{40,50}));
+		}
+		const auto trapezoid = fixture(PresetKind::Trapezoid);
+		SHAPE_CHECK(trapezoid && trapezoid->construction->tool.constraint == PlanarConstraint::Free);
+		if (trapezoid)
+		{
+			const auto& initial = trapezoid->geometry.vertices;
+			SHAPE_CHECK(near(length(initial[0],initial[3]),length(initial[1],initial[2])));
+			const auto moved = EditShape(*trapezoid,1000,initial[0],{65,45},2);
+			SHAPE_CHECK(moved && moved->construction->tool.constraint == PlanarConstraint::Free);
+			if (moved)
+			{
+				const auto iso = SetPlanarConstraint(*moved,PlanarConstraint::Isosceles,3);
+				SHAPE_CHECK(iso && Validate(*iso)); if (iso)
+				{
+					const auto& old = moved->geometry.vertices; const auto& v = iso->geometry.vertices;
+					SHAPE_CHECK(v[2] == old[2] && v[3] == old[3] && near(length(v[0],v[1]),length(old[0],old[1])));
+					SHAPE_CHECK(near((v[0].x + v[1].x) * .5f,(v[2].x + v[3].x) * .5f));
+					SHAPE_CHECK(near(length(v[0],v[3]),length(v[1],v[2])));
+					for (uint32_t id = 1000; id <= 1003; ++id)
+					{
+						const auto handle = getHandle(BuildEditHandles(*iso),id); SHAPE_CHECK(handle);
+						if (handle)
+						{
+							const auto edited = EditShape(*iso,id,handle->position,{handle->position.x + 2,handle->position.y + 1},4);
+							SHAPE_CHECK(edited && Validate(*edited));
+							if (edited)
+							{
+								const auto free = SetPlanarConstraint(*edited,PlanarConstraint::Free,5);
+								SHAPE_CHECK(free && Validate(*free));
+								if (free) for (size_t i=0;i<v.size();++i)
+									SHAPE_CHECK(pointNear(ApplyTransform(free->transform,free->geometry.vertices[i]),
+										ApplyTransform(edited->transform,edited->geometry.vertices[i])));
+							}
+						}
+					}
+					const auto restored = SetPlanarConstraint(*iso,PlanarConstraint::Free,5);
+					SHAPE_CHECK(restored && restored->geometry == iso->geometry);
+				}
+			}
+		}
+		for (PresetKind preset : {PresetKind::Prism,PresetKind::Pyramid})
+		{
+			const auto solid = fixture(preset); SHAPE_CHECK(solid); if (!solid) continue;
+			const auto axis = getHandle(BuildEditHandles(*solid),102); SHAPE_CHECK(axis); if (!axis) continue;
+			const auto& c = *solid->construction;
+			const float radius = std::hypot(c.end.x-c.start.x,2*(c.end.y-c.start.y));
+			const auto projected = EditShape(*solid,102,axis->position,{c.start.x,c.start.y+.75f*radius},2);
+			SHAPE_CHECK(projected && Validate(*projected)); if (!projected) continue;
+			SHAPE_CHECK(near(std::get<SolidConstruction>(projected->construction->parameters).baseProjection,.75f));
+			const auto first = getHandle(BuildEditHandles(*projected),1001);
+			SHAPE_CHECK(first && pointNear(first->position,projected->parts.front().geometry.vertices.front()));
+			if (first)
+			{
+				const Vec2 target{first->position.x + 5,first->position.y + 10};
+				const auto moved = EditShape(*projected,1001,first->position,target,3);
+				SHAPE_CHECK(moved && Validate(*moved)); if (moved)
+				{
+					const auto actual = getHandle(BuildEditHandles(*moved),1001);
+					SHAPE_CHECK(actual && pointNear(actual->position,target) && pointNear(actual->position,moved->parts.front().geometry.vertices.front()));
+				}
+			}
+		}
+		// 水平首顶点也必须保留独立底面轴，改投影不能移动首顶点的横向位置。
+		for (PresetKind preset : {PresetKind::Prism,PresetKind::Pyramid})
+		{
+			Construction c{{preset,CreationMode::MultiStage,5},{20,100},{120,100}}; c.parameters = SolidConstruction{{},-80};
+			const auto solid = MakeConstructedShape(c,{},Id(43)); SHAPE_CHECK(solid); if (!solid) continue;
+			const auto axis = getHandle(BuildEditHandles(*solid),102); SHAPE_CHECK(axis && pointNear(axis->position,{20,150}));
+			if (!axis) continue;
+			const auto projected = EditShape(*solid,102,axis->position,{20,175},2);
+			SHAPE_CHECK(projected && near(std::get<SolidConstruction>(projected->construction->parameters).baseProjection,.75f));
+			const auto first = getHandle(BuildEditHandles(*solid),1001); SHAPE_CHECK(first);
+			if (first) SHAPE_CHECK(EditShape(*solid,1001,first->position,{130,100},2));
+		}
+		for (PresetKind preset : {PresetKind::Line,PresetKind::Rectangle,PresetKind::Ellipse,PresetKind::Triangle})
+			for (CreationMode mode : {CreationMode::CenterRadius,CreationMode::Parameters})
+				SHAPE_CHECK(!MakePresetShape({preset,mode},{0,0},{100,100},{},Id(44)));
+		ConstructionSession points;
+		SHAPE_CHECK(points.Begin({PresetKind::Polyline,CreationMode::Points},{},Id(42)));
+		SHAPE_CHECK(points.ConfirmDrag({0,0},{0,0}) && points.Candidate() && points.Candidate()->kind == Kind::Line);
+		if (points.Candidate())
+		{
+			RenderData pointRender; SHAPE_CHECK(BuildRenderData(*points.Candidate(),pointRender) && !pointRender.batches.empty());
+		}
+		SHAPE_CHECK(points.Back() && !points.Candidate() && points.Forward() && points.Candidate());
+		SHAPE_CHECK(points.Begin({PresetKind::Polyline,CreationMode::Points},{},Id(42)));
+		SHAPE_CHECK(points.ConfirmDrag({0,0},{100,0}) && points.Status().confirmedSteps == 2 && points.CanComplete());
+		SHAPE_CHECK(points.Candidate() && points.Candidate()->kind == Kind::Polyline && points.Candidate()->geometry.vertices.size() == 2);
+		SHAPE_CHECK(points.Back() && !points.Candidate() && points.Forward() && points.Status().confirmedSteps == 2 && points.CanComplete());
+		SHAPE_CHECK(points.Begin({PresetKind::Polygon,CreationMode::Points},{},Id(42)));
+		for (Vec2 point : {Vec2{0,0},Vec2{100,0},Vec2{100,100}}) SHAPE_CHECK(points.ConfirmDrag(point,point));
+		SHAPE_CHECK(points.Candidate() && points.Candidate()->kind == Kind::Polyline && points.CanComplete());
+		if (points.Candidate())
+		{
+			GeometryResult openGeometry; SHAPE_CHECK(BuildGeometry(*points.Candidate(),openGeometry) && !openGeometry.parts.front().paths.front().closed);
+		}
+		const auto closed = points.Complete();
+		SHAPE_CHECK(closed && closed->kind == Kind::Polygon);
+		if (closed)
+		{
+			GeometryResult closedGeometry; SHAPE_CHECK(BuildGeometry(*closed,closedGeometry) && closedGeometry.parts.front().paths.front().closed);
 		}
 		const auto rectangle = fixture(PresetKind::Rectangle);
 		if (rectangle)
@@ -666,7 +844,7 @@ int RunShapeCoreTests()
 		}
 		SHAPE_CHECK(!MakePresetShape(tool, { 0,0 }, { 100,0 }, {}, Id(9)));
 	}
-	for (uint32_t sides = 3; sides <= 12; ++sides)
+	for (uint32_t sides = 3; sides <= 14; ++sides)
 	{
 		const ToolSpec tool{ PresetKind::RegularPolygon,CreationMode::CenterRadius,sides };
 		const auto regular = MakePresetShape(tool, { 25,50 }, { 140,87 }, {}, Id(10));
@@ -713,7 +891,7 @@ int RunShapeCoreTests()
 	SHAPE_CHECK(!MakePresetShape({}, { 0,0 }, { 20,30 }, {}, Id(9), 0, &error));
 	SHAPE_CHECK(!MakePresetShape({ static_cast<PresetKind>(99),CreationMode::Drag,3 }, { 0,0 }, { 20,30 }, {}, Id(9)));
 	SHAPE_CHECK(!MakePresetShape({ PresetKind::RegularPolygon,CreationMode::CenterRadius,2 }, { 0,0 }, { 20,30 }, {}, Id(9)));
-	SHAPE_CHECK(!MakePresetShape({ PresetKind::RegularPolygon,CreationMode::CenterRadius,13 }, { 0,0 }, { 20,30 }, {}, Id(9)));
+	SHAPE_CHECK(!MakePresetShape({ PresetKind::RegularPolygon,CreationMode::CenterRadius,15 }, { 0,0 }, { 20,30 }, {}, Id(9)));
 	SHAPE_CHECK(!MakePresetShape({ PresetKind::Circle,CreationMode::Points,3 }, { 0,0 }, { 20,30 }, {}, Id(9)));
 	SHAPE_CHECK(!MakePresetShape({}, { std::numeric_limits<float>::quiet_NaN(),0 }, { 20,30 }, {}, Id(9)));
 	// P3/P4：所有高级参数走同一工厂、编辑、渲染与快照，不另建运行期历史。
@@ -819,6 +997,7 @@ int RunShapeCoreTests()
 		SHAPE_CHECK(session.Status().totalSteps == 2 && session.Status().step == 1);
 		SHAPE_CHECK(session.ConfirmDrag({ 0,0 }, { 100,0 }) && !session.CanComplete());
 		const auto radiusStep = session.Candidate();
+		SHAPE_CHECK(radiusStep && radiusStep->style.linePattern == LinePattern::Dashed && radiusStep->style.stroke);
 		// 未确认第二步转过整圈后回退，Forward不能恢复这段已丢弃的轨迹角。
 		for (unsigned sample = 1; sample <= 8; ++sample)
 		{ const float angle = sample * static_cast<float>(3.141592653589793 / 4); session.ObserveRaw({100 * std::cos(angle),100 * std::sin(angle)}); }

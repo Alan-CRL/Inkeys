@@ -357,12 +357,16 @@ namespace Inkeys::UI::Bar
 	wstring ShapeToolIconResource(const draw3::shapes::ToolSpec& tool,
 		std::optional<unsigned> carouselSides = std::nullopt);
 	wstring ShapeToolLabel(draw3::shapes::PresetKind preset);
+	wstring ShapeAuxiliaryLabel(draw3::shapes::Auxiliary auxiliary);
+	wstring ShapePlanarConstraintLabel(draw3::shapes::PlanarConstraint constraint);
 	bool ApplyBarThicknessPresetIfRevision(int preset, std::uint64_t revision, bool save = true);
 	// 目录属于UI层；没有真实preset的未来工具只占位，不能进入业务状态或文档。
 	inline constexpr int GeometryCategoryCount = 35, GeometryImplementedCategoryCount = 20;
 	inline constexpr int GeometryCircleCenter = GeometryCategoryCount, GeometryCircleBox = GeometryCircleCenter + 1;
-	inline constexpr int GeometrySidesBegin = GeometryCircleBox + 1, GeometryAuxBegin = GeometrySidesBegin + 10;
-	inline constexpr int GeometryStyleBegin = GeometryAuxBegin + 3;
+	inline constexpr int GeometrySidesBegin = GeometryCircleBox + 1, GeometrySidesCount = 12;
+	inline constexpr int GeometryAuxBegin = GeometrySidesBegin + GeometrySidesCount;
+	inline constexpr int GeometryTriangleModeBegin = GeometryAuxBegin + 3, GeometryTrapezoidMode = GeometryTriangleModeBegin + 3;
+	inline constexpr int GeometryStyleBegin = GeometryTrapezoidMode + 1;
 	inline constexpr int GeometryPatternBegin = GeometryStyleBegin + 3, GeometryThicknessBegin = GeometryPatternBegin + 4;
 	inline constexpr int GeometryThicknessCount = 3, GeometryCloseButton = GeometryThicknessBegin + GeometryThicknessCount;
 	inline constexpr int GeometrySegmentBegin = GeometryCloseButton + 1, GeometrySegmentCount = 3;
@@ -489,7 +493,7 @@ private:
 	std::array<Inkeys::UI::Bar::EraserAttributeRect,Inkeys::UI::Bar::GeometryStyleBegin-Inkeys::UI::Bar::GeometryCircleCenter> parameterAnchors_{};
 	BarUiTimelineClass layoutTimeline_;
 	std::array<std::shared_ptr<BarButtonClass>,2> attributeDividers_;
-	std::array<BarUiValueClass,12> attributeX_;
+	std::array<BarUiValueClass,11> attributeX_;
 	std::uint32_t attributeVisibility_ = ~0u;
 	double attributeMaxWidth_ = 0;
 	std::array<wstring,Inkeys::UI::Bar::GeometryControlCount> resourceTargets_, labelTargets_;
@@ -521,7 +525,7 @@ private:
 	unsigned long long measuredDeviceGeneration_ = 0;
 	std::array<double,Inkeys::UI::Bar::GeometryCategoryCount> categoryFontSizes_{};
 	std::array<double,2> circleTextWidths_{};
-	std::array<double,6> optionTextWidths_{};
+	std::array<double,10> optionTextWidths_{};
 	unsigned long long deviceGeneration_ = 0;
 };
 

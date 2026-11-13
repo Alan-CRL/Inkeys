@@ -18829,6 +18829,13 @@ namespace Inkeys::Drawing::Draw3
 									shapeUi.pendingObject = *storedStroke.Shape(); shapeUi.pendingItem = committed->renderItem;
 									shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
 									shapeUi.pendingCompletedQpc = runtime->lastInputSnapshot.qpc;
+									// 文档提交及首次绘制成功后才发布完成沿，构造成功但提交/渲染失败不能让环走满。
+									if (runtime->shape.construction && runtime->shape.construction->completed)
+									{
+										shapeUi.completedConstruction = runtime->shape.construction->session.Status();
+										shapeUi.completedConstructionSession = runtime->shape.construction->identity.session;
+										shapeUi.completedConstruction.active = false; shapeUi.completedConstruction.finished = true;
+									}
 								}
 								if (!(submitted && deferToFocusLayer)) pageRuntime.rasterState = afterState; // 焦点层项：L2 仍是 before 状态。
 								if (metricsState_)

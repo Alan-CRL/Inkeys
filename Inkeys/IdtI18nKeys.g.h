@@ -166,6 +166,9 @@ inline constexpr struct I18nKeyRoot
                 const char* AuxCenterLabel = "UI/Bar/GeometryAttributes/AuxCenterLabel";
                 const char* AuxFociLabel = "UI/Bar/GeometryAttributes/AuxFociLabel";
                 const char* AuxDiagonalsLabel = "UI/Bar/GeometryAttributes/AuxDiagonalsLabel";
+                const char* ConstraintFreeLabel = "UI/Bar/GeometryAttributes/ConstraintFreeLabel";
+                const char* ConstraintIsoscelesLabel = "UI/Bar/GeometryAttributes/ConstraintIsoscelesLabel";
+                const char* ConstraintEquilateralLabel = "UI/Bar/GeometryAttributes/ConstraintEquilateralLabel";
                 const char* StraightLineLabel = "UI/Bar/GeometryAttributes/StraightLineLabel";
                 const char* ArrowLabel = "UI/Bar/GeometryAttributes/ArrowLabel";
                 const char* RectangleLabel = "UI/Bar/GeometryAttributes/RectangleLabel";

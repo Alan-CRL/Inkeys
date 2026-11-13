@@ -13,6 +13,17 @@ int RunEraserAttributeTests()
 	using namespace Inkeys::UI::Bar;
 	int failures=0;
 	auto expect=[&](bool value,const char* message){if(!value){++failures;std::cerr<<"[EraserAttribute] "<<message<<'\n';}};
+	// 比可用尺寸大一个浮点尾差时仍须钳制位置，覆盖缩放后贴边和负屏坐标。
+	for(const EraserAttributeRect work: {EraserAttributeRect{0,0,100,50},EraserAttributeRect{-1200,-300,-1100,-250}})
+	{
+		const EraserAttributeRect shell{0,0,200,100};
+		const auto fitted=FitEraserSurfacePose({std::nextafter(.5,1.),80,120},shell,work);
+		const auto actual=fitted.Apply(shell);
+		expect(std::abs(actual.left-work.left)<1e-6&&std::abs(actual.top-work.top)<1e-6
+			&&actual.right<=work.right+1e-6&&actual.bottom<=work.bottom+1e-6,"fitted edge rounding cannot skip translation clamping");
+		const EraserSurfacePose oversized{.6,80,120};
+		expect(FitEraserSurfacePose(oversized,shell,work)==oversized,"translation-only fit preserves genuinely oversized poses");
+	}
 	// 方案B已确认：以下断言先在af22b4a6实现上运行，定位旧预设/锚点/菜单差异。
 	expect(static_cast<int>(BaseSize::Small)==24 && static_cast<int>(BaseSize::Large)==40,"B presets are24/32/40");
 	for(const auto pair:{std::pair{16,24},std::pair{24,24},std::pair{32,32},std::pair{64,40},std::pair{40,40}})

@@ -68,7 +68,7 @@
 - Host每条scene-stamped动作都会前导/恢复场景；重复SetWorkspace/SetPresentationTarget/SetPage是声明，不能无条件结束会话或增加documentGeneration。绑定PPT→isolated即使workspace相同也是真实切换。活动接触取消屏障与正常命令共用同一真实场景判断。
 - Redo Clear不能仅看`LastRedoItem()`：还有待重做的Replace时必须先重做编辑，operation cursor到尾才允许Clear continuation。冷历史actual strokes的Shape ID必须唯一，RenderItem到strokeIndex必须一一覆盖；operation before/after中重复同一ID则是合法语义快照。
 - Commit/Cancel/Close等终结意图被QueueFull拒绝时不能静默丢失。UI在既有surface tick中只在pending期间续接重试，按场景/session/种类有界合并，跨页面/会话清理旧意图。Close可在同session对象的后续generation执行；Begin/属性/Back/Complete仍严格验证当前状态。
-- 标准按钮应先加载SVG并启用，再Configure公共布局；否则icon槽可保持0宽高。StandardOneOne默认没有文字槽，3–12边数需明确启用正常字体/尺寸的文字槽。控件使用BarButtonPressScale/PressCurve/ReleaseCurve，不能另写局部按压比例。
+- 标准按钮应先加载SVG并启用，再Configure公共布局；否则icon槽可保持0宽高。StandardOneOne默认没有文字槽，3–14边数需明确启用正常字体/尺寸的文字槽。控件使用BarButtonPressScale/PressCurve/ReleaseCurve，不能另写局部按压比例。
 - Shape颜色为0xRRGGBB，UI调色组件/ContentSolidBrush使用COLORREF，跨适配层显式转换。ContentSolidBrush返回共享缓存画刷：取下一种颜色前须完成上一种绘制，不能保存两个同源指针后才Fill/Stroke。选中沿用已有colorSelect徽标而非修改共享资源。
 - 离屏fixture必须像生产一样每次呈现前Ensure当前bounds的device resources，并核ULW receipt与target像素尺寸；打开扩展区后沿用旧target会把颜色/文字裁掉。成功alpha/几何命中不证明SVG或文字可见，须检查实际内容像素并有空白/选中底块负例。固定颜色SVG的抗锯齿测试采用资源自身的真实背景，不能拿父按钮底色套混色公式。
 - 构造提示沿原pill水平锚点，但新面板高度不等于旧12pt提示高度；正常工作区须按实际panelHeight留主栏上方5DIP间距，不能直接沿旧pill的top/center混用产生重叠。小空间动作正常尺寸换行，参数扩展区可滚动。
@@ -102,7 +102,7 @@
 ### 3. Contracts
 
 - 圆支持Center且默认开；椭圆支持Foci且默认开；正多边形/圆弧/扇形支持Center且默认关；矩形/圆角矩形/平行四边形/菱形/梯形支持Diagonals且默认关。工厂屏蔽不支持的位。工具用 `auxiliaryChoices` 区分未选过与显式关闭，选择按位记忆；对象读取不应用工具默认值。
-- 辅助几何只派生给渲染/导出，`BuildGeometry.parts` 仍只含本体，bounds包含辅助范围。点为填充Circle，半径=max(画布描边宽度,2画布像素)（下限与显示比例无关，预览、重放、导出几何确定一致），焦点位置共用 `CanonicalEllipse`；对角线沿用Dashed的4w/6w。无描边时取填充颜色/透明度。辅助批次可与相邻同色同透明度的本体批次求覆盖并集，不能跨其他材质。开启矩形辅助时必须绕过旧图元路径。
+- 辅助几何只派生给渲染/导出，`BuildGeometry.parts` 仍只含本体，bounds包含辅助范围。点为填充Circle，半径=max(画布描边宽度,2画布像素)（下限与显示比例无关，预览、重放、导出几何确定一致），焦点位置共用 `CanonicalEllipse`；对角线沿用Dashed的4w/6w。纯填充时不派生辅助几何，但保留 auxiliary 位；切回描边恢复。辅助批次可与相邻同色同透明度的本体批次求覆盖并集，不能跨其他材质。开启矩形辅助时必须绕过旧图元路径。
 - F1/F2只读取对象Foci位，不再使用临时BuildOptions开关。对象属性经 `BuildShapePropertyCandidate` 的SetStyle路径进入原Replace journal，工具默认值不受对象编辑影响。
 - `inkeysShape` 非零aux写v4，根增加顶层无符号字段 `aux`（0..7），construction仍可选；零aux严格沿用原v1（无construction）/v3编码，不增加字段。读v1/v2/v3时aux恒为0。白板嵌套元数据共用此codec，外层冷历史版本不变。
 - 历史BuildTiles必须同时消费本体与BuildAuxiliaryGeometry：虚线可按实线保守枚举，点按填充bounds枚举，覆盖undo与composition两种tile；不能把辅助部件加回本体HitTest。渲染dirty和焦点落定使用已含辅助范围的GeometryResult.bounds；回归以大空心矩形内部tile、跨tile圆心点及撤销/重做/冷重放逐字节像素对比验证。
@@ -189,3 +189,39 @@ Good：Back→Forward恢复同一步；Back→新确认→Forward拒绝。Base�
 ### 7. Wrong vs Correct
 Wrong：用`!canBack && !canComplete`判定物理接触；把`fold`作为提示可见条件。
 Correct：读`constructionContactActive`禁用全部动作；可见性取多笔会话，fold仅改变锚点。
+
+## 实机续轮：约束、开放构造与 v5（2026-11-13）
+
+### 1. Scope / Trigger
+修改 Triangle/Trapezoid 约束、点工具、棱柱/棱锥投影/遮挡、弧跨端点或文件元数据时适用。
+
+### 2. Signatures
+- ToolSpec::constraint：PlanarConstraint { Free, Isosceles, Equilateral }；SetPlanarConstraint(before,constraint,revision,error) 产生候选，产品 SetConstraint 沿既有 Replace/journal。
+- kMinRegularSides=3、kMaxRegularSides=14；SolidConstruction::baseProjection 默认 .5，有效域 [.05,1]。
+- NormalizeLegacyPolygonSolid(object,error) 严格核验旧派生 parts 后返回当前规范对象。
+
+### 3. Contracts
+- 三角形默认 Free，Free/Isosceles 使用 Drag，Equilateral 使用 CenterRadius。切换固定 v1/v2 底边，只投影 apex 到中垂线；等边高度为有符号 sqrt(3)/2×底边长。后续顶点编辑持续保约束。梯形默认 Free，开启等腰固定下底、上底长度和高度并居中上底；关闭只解除约束。若编辑后局部底边倾斜，解除时把旋转归入 transform、保持所有画布顶点，并规范化回旧格式所需的局部水平底边。
+- 点工具 ConfirmDrag 首拖确认 down/end 两点，首击显示零长 Line 起点；candidate 始终开放，confirmedCandidate 只承担最终校验。暂时自交不清空开放路径，Polygon 仅 Complete 闭合。Back/Forward 以物理步骤恢复首拖的两点。
+- 底面投影采用未投影正多边形的局部 y 比例；Axis 位于外接椭圆前端，半径为 hypot(end.x-start.x,2×(end.y-start.y))，不能使用首顶点的纵分量，否则水平首顶点失效。改投影不改变外接圆，首顶点编辑反解投影坐标。
+- 棱柱/棱锥一条边只有全部相邻面背向观察方向才用隐藏虚线；共面阈值内按可见。高度符号、大小、底面投影均进入朝向计算；不改变圆柱/圆锥约定。
+- 弧/扇形首步圆周强制临时 Dashed，最终样式保留。累计角跨另一端时交换起止表示并保留原绕向；跨回可逆，Commit 消费同一累计角，零扫角/超整圆不提交。
+- 非 Free 约束、13/14 边或 Prism/Pyramid 写 inkeysShape v5：tool 增 constraint，Solid 参数增 baseProjection，根仍含 aux。旧 v1–v4 默认 Free/.5；旧 v3/v4 棱柱/棱锥先按旧算法核验 parts 再规范化。未知版本仍标准几何降级；持久化枚举不重排。
+
+### 4. Validation & Error Matrix
+| 条件 | 结果 |
+|---|---|
+| 3–14 边、合法约束/投影 | 可创建、编辑、保存重载 |
+| 15 边、跨 preset 约束、不支持的 creationMode、投影越界 | 拒绝候选 |
+| 旧立体 parts 被篡改 | 拒绝，不能借规范化放宽损坏校验 |
+| 点工具尚不足最小点数/暂时自交 | 开放预览保留，Complete 拒绝 |
+| Fill 与辅助位同时存在 | 隐藏辅助视觉并保留位；旧混合模式仍兼容 |
+
+### 5. Good / Base / Bad Cases
+Good：自由三角形切等腰只移动 apex；水平首顶点仍可调底面轴。Base：旧三角形保持自由编辑。Bad：由初始几何恰好等腰反推模式，或直接忽略旧 parts 不匹配。
+
+### 6. Tests Required
+shape-core-only 覆盖转换/持续约束、水平底面轴、单击/首拖/开放闭合、弧跨端点和非法模式；shape renderer 实际像素覆盖起点；uink 文件/演示/自动保存覆盖 v5、旧立体规范化及标准降级；生产 shape core 覆盖单 Replace、Undo/Redo、工具默认值隔离。
+
+### 7. Wrong vs Correct
+Wrong：radiusY=2×(end.y-start.y)，或把 sides=14 写入 v3。Correct：外接圆半径派生 Axis；新增语义写 v5，旧支持版本严格核验后规范化。

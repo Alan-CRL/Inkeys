@@ -208,6 +208,16 @@ namespace Inkeys::UI::Bar
 		};
 		expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 1200, 800)), "offscreen target setup");
 		owner.spec.SetFrameZoom(1); preset(PresetKind::Line);
+		for (int item = 0; item < GeometryCategoryCount; ++item)
+		{
+			const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,item);
+			expect(std::abs(button.name.fontTargetSize-button.name.size.val)<.000001,"first shape expansion freezes final category font target");
+		}
+		for (int item : {GeometryCircleCenter,GeometryCircleBox,GeometryTriangleModeBegin,GeometryTrapezoidMode})
+		{
+			const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,item);
+			expect(std::abs(button.name.fontTargetSize-button.name.size.val)<.000001,"first parameter expansion freezes final option font target");
+		}
 		expect(!owner.geometryAttribute.Active(), "stable panel sleeps between carousel deadlines");
 		auto f = owner.geometryAttribute.PresentationSnapshot();
 		expect(f.visible && f.acceptsInput && f.items[GeometryStyleBegin].Width() == 0 && f.items[GeometryPatternBegin].Width() > 0, "line hides fill style and keeps stroke controls");
@@ -215,8 +225,11 @@ namespace Inkeys::UI::Bar
 		const auto grid = ResolveBarButtonListLayout(list, BarButtonListLayoutKind::GeometryGrid);
 		expect(list.size() == GeometryCategoryCount && grid.subColumns == 12 && grid.totalRows == 6 && !grid.showDivider, "shape-owned list uses its independent six-column policy");
 		expect(f.items.size() == GeometryControlCount && f.items[GeometryCloseButton].left > f.items[5].right, "close is the only side-rail entry");
+		const auto& catalog = ShapeCategoryCatalog();
 		expect(f.items[0].top == f.items[5].top && f.items[6].top > f.items[0].top && f.items[6].left == f.items[0].left,
 			"shape list keeps row-major geometry order and wraps after six categories");
+		expect(catalog[9].preset == PresetKind::RegularPolygon && catalog[10].preset == PresetKind::Polygon && catalog[11].preset == PresetKind::Polyline,
+			"regular and free polygons stay adjacent before polyline");
 		for (const size_t count : {size_t{1}, size_t{6}, size_t{7}, size_t{11}, size_t{12}, size_t{35}})
 		{
 			std::vector<std::shared_ptr<BarButtonClass>> subset;
@@ -257,9 +270,8 @@ namespace Inkeys::UI::Bar
 		expect(BarGeometryAttributeTestAccess::CarouselSides(owner.geometryAttribute) != carouselBefore && GetShapeToolSpec(GetStateModeSnapshot()) == selectedBefore, "carousel does not mutate actual sides or selection");
 		expect(!owner.geometryAttribute.Active(), "content transition settles before next timer");
 
-		const auto& catalog = ShapeCategoryCatalog();
 		const auto disabledOpacity = [&] { return BarThemeMaterial::DisabledContentOpacity(owner.barStyle.darkStyle ? 0.0 : 1.0); };
-		expect(catalog.size() == 35 && GeometryImplementedCategoryCount == 20 && GeometryControlCount == 64, "35 catalog tools, 20 enabled presets and derived parameter/segment controls");
+		expect(catalog.size() == 35 && GeometryImplementedCategoryCount == 20 && GeometryControlCount == 70, "35 catalog tools, 20 enabled presets and derived parameter/segment controls");
 		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
 			expect(catalog[i].key && catalog[i].resource && !ShapeCategoryLabel(i).empty(), "every catalog entry has stable UI key resource and label");
@@ -313,10 +325,10 @@ namespace Inkeys::UI::Bar
 		expect(BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) == GeometrySegmentBegin,"segments participate in Tab navigation");
 		owner.geometryAttribute.Keyboard(owner,VK_RIGHT,true); owner.geometryAttribute.Keyboard(owner,VK_RETURN,true); tick(90);
 		expect(owner.geometryAttribute.PresentationSnapshot().category == ShapeToolbarCategory::Solid && SameBusinessSnapshot(beforeCategory,GetStateModeVersionedSnapshot()),"keyboard activates segment without changing tool");
-		// 单独验证少于六项时的392DIP回落；测试结束恢复用户显隐元数据。
+		// 少于六项且只有辅助项时，面板宽度由真实辅助文字槽决定。
 		for (int i = 20; i < 23; ++i) BarGeometryAttributeTestAccess::CategoryVisible(owner.geometryAttribute,i,false);
 		selectCategory(ShapeToolbarCategory::Regular); selectCategory(ShapeToolbarCategory::Solid);
-		expect(std::abs(owner.geometryAttribute.PresentationSnapshot().panel.Width()-392) < 0.01,"fewer than six items falls back to attribute row width");
+		expect(owner.geometryAttribute.PresentationSnapshot().panel.Width() >= 354.5,"fewer than six items falls back to the measured attribute row width");
 		for (int i = 20; i < 23; ++i) BarGeometryAttributeTestAccess::CategoryVisible(owner.geometryAttribute,i,true);
 		selectCategory(ShapeToolbarCategory::Regular); selectCategory(ShapeToolbarCategory::Solid);
 		const std::array<Auxiliary,3> auxiliaryBits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
@@ -328,8 +340,10 @@ namespace Inkeys::UI::Bar
 				const int item = GeometryAuxBegin+bit; const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,item);
 				const bool supported = (SupportedAuxiliary(*entry.preset) & auxiliaryBits[bit]) != Auxiliary::None;
 				expect((f.items[item].Width() > 0) == supported,"auxiliary toggle presence follows preset capability");
-				if (supported) expect(!button.name.enable.val && button.icon.enable.val && !f.accessibleNames[item].empty()
-					&& (button.state->state == BarWidgetState::Selected) == ((DefaultAuxiliary(*entry.preset) & auxiliaryBits[bit]) != Auxiliary::None),"icon-only toggles carry localized names and correct defaults");
+				if (supported) expect(button.name.enable.val && button.icon.enable.val && !f.accessibleNames[item].empty()
+					&& button.name.content.GetVal() == ShapeAuxiliaryLabel(auxiliaryBits[bit])
+					&& owner.spec.MeasureText(button.name.content.GetVal(),button.name.size.val).width <= button.name.w.val+0.5
+					&& (button.state->state == BarWidgetState::Selected) == ((GetShapeAuxiliary(GetStateModeSnapshot()) & auxiliaryBits[bit]) != Auxiliary::None),"auxiliary toggles keep measured localized labels beside icons and correct defaults");
 			}
 		}
 		for (const auto& entry : catalog) if (entry.preset && SupportedAuxiliary(*entry.preset) != Auxiliary::None)
@@ -405,18 +419,33 @@ namespace Inkeys::UI::Bar
 		for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].preset) { selectCategory(catalog[i].category); click(i, i % 2 != 0); expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == *catalog[i].preset, "every enabled category commits through normalized pointer path"); }
 		preset(PresetKind::RegularPolygon); // 全类别遍历现在以Pyramid结束，轮播和边数用例须显式选择原目标。
 		expect(!BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "selected polygon stops carousel");
-		for (unsigned sides = 3; sides <= 12; ++sides)
+		for (unsigned sides = 3; sides <= 14; ++sides)
 		{
 			click(GeometrySidesBegin + sides - 3); const auto tool = GetShapeToolSpec(GetStateModeSnapshot());
 			expect(tool.sides == sides && ShapeToolIconResource(tool) == L"barShapePolygon" + std::to_wstring(sides), "numeric sides select exact centered polygon icon");
 		}
+		preset(PresetKind::Triangle); f = owner.geometryAttribute.PresentationSnapshot();
+		expect(f.items[GeometryTriangleModeBegin].Width() > 0 && f.items[GeometryTriangleModeBegin+2].Width() > 0 && f.items[GeometryTrapezoidMode].Width() == 0,"triangle exposes three construction constraints");
+		click(GeometryTriangleModeBegin+2); expect(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Equilateral && GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius,"triangle equilateral selects center construction");
+		preset(PresetKind::Trapezoid); f = owner.geometryAttribute.PresentationSnapshot();
+		expect(f.items[GeometryTrapezoidMode].Width() > 0 && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryTrapezoidMode).state->state != BarWidgetState::Selected,"trapezoid is unconstrained by default");
+		click(GeometryTrapezoidMode); expect(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Isosceles,"trapezoid isosceles toggles through production action");
 		preset(PresetKind::Circle); f = owner.geometryAttribute.PresentationSnapshot();
 		expect(f.items[GeometryCircleCenter].Width() > 0 && f.items[GeometrySidesBegin].Width() == 0, "circle displays two mode options only");
 		click(GeometryCircleBox); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::Drag, "bounding square mode");
 		click(GeometryCircleCenter); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius, "center radius mode");
 		click(GeometryStyleBegin + 1); f = owner.geometryAttribute.PresentationSnapshot();
-		expect(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::Fill && f.items[GeometryPatternBegin].Width() == 0 && f.items[GeometryThicknessBegin].Width() == 0, "fill-only hides line and width groups");
-		click(GeometryStyleBegin + 2); for (int pattern = 0; pattern < 4; ++pattern) { click(GeometryPatternBegin + pattern); expect(static_cast<int>(GetShapeStyle(GetStateModeSnapshot()).linePattern) == pattern, "line pattern current revision setter"); }
+		expect(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::Fill && f.items[GeometryStyleBegin+2].Width() == 0
+			&& f.items[GeometryPatternBegin].Width() == 0 && f.items[GeometryThicknessBegin].Width() == 0 && f.items[GeometryAuxBegin].Width() == 0
+			&& f.items[GeometryCircleCenter].Width() > 0, "fill-only removes mixed entry and hides line width and auxiliary controls while retaining construction");
+		{ const auto legacy = GetStateModeVersionedSnapshot(); SetShapeFillModeIfRevision(draw3::shapes::FillMode::OutlineAndFill,legacy.revision); }
+		tick(90); f = owner.geometryAttribute.PresentationSnapshot();
+		expect(f.items[GeometryStyleBegin+2].Width() == 0
+			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryStyleBegin).state->state == BarWidgetState::Selected
+			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryStyleBegin+1).state->state == BarWidgetState::Selected,
+			"legacy mixed style selects both retained entries without exposing a third button");
+		click(GeometryStyleBegin); expect(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::Outline,"clicking legacy mixed state converts explicitly to outline only");
+		for (int pattern = 0; pattern < 4; ++pattern) { click(GeometryPatternBegin + pattern); expect(static_cast<int>(GetShapeStyle(GetStateModeSnapshot()).linePattern) == pattern, "line pattern current revision setter"); }
 		preset(PresetKind::Line); expect(GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::Solid, "open and closed line memories independent");
 		preset(PresetKind::Rectangle); expect(GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::DashDot, "closed shape pattern persists across tools");
 		for (int presetIndex = 0; presetIndex < 3; ++presetIndex)
@@ -448,7 +477,9 @@ namespace Inkeys::UI::Bar
 				preset(below ? PresetKind::Circle : PresetKind::RegularPolygon); selectCategory(category); tick(60);
 				f = owner.geometryAttribute.PresentationSnapshot();
 				const double expectedContentHeight = category == ShapeToolbarCategory::Regular ? 220 : category == ShapeToolbarCategory::Solid ? 70 : 145;
-				expect(std::abs(f.panel.Width()-492.5) < 0.01 && std::abs(f.panel.Height()-(expectedContentHeight+134.5)) < 0.01 && f.scrollMaximum == 0,"default category dimensions include fixed header and one parameter row");
+				const double expectedWidth = (std::max)(492.5,f.items[GeometryAuxBegin].right+5-f.panel.left);
+				report << "GeometrySize width=" << f.panel.Width() << " expected=" << expectedWidth << " height=" << f.panel.Height() << " scale=" << scale << '\n';
+				expect(std::abs(f.panel.Width()-expectedWidth) < 0.01 && std::abs(f.panel.Height()-(expectedContentHeight+134.5)) < 0.01 && f.scrollMaximum == 0,"default category dimensions include fixed header and one parameter row");
 				expect(f.visible && f.acceptsInput && f.panel.left >= 0 && f.panel.top >= 0 && f.panel.right <= 1200 && f.panel.bottom <= 800, "panel and parameters fit both expansion sides");
 				for (int i = 0; i < GeometryCategoryCount; ++i)
 				{
@@ -746,6 +777,10 @@ namespace Inkeys::UI::Bar
 			expect(presented.visible && presented.acceptsInput && !owner.geometryAttribute.Active(), "complete production scene settles and enables input");
 			const auto mapping = owner.BottomDockPresentedSnapshot();
 			const auto panel = clientRect(presented.panel, presented);
+			if(panel.left < -1 || panel.top < -1 || panel.right > receipt.size.cx+1 || panel.bottom > receipt.size.cy+1)
+				report << "PanelCropDiagnostic panel=" << panel.left << "," << panel.top << "," << panel.right << "," << panel.bottom
+					<< " receipt=" << receipt.destination.x << "," << receipt.destination.y << "," << receipt.size.cx << "," << receipt.size.cy
+					<< " zoom=" << presented.zoom << " pose=" << presented.pose.scale << " commits=" << actualCommits << " [" << caseContext << "]\n";
 			expect(panel.left >= -1 && panel.top >= -1 && panel.right <= receipt.size.cx + 1 && panel.bottom <= receipt.size.cy + 1,
 				"complete production panel lies within its committed ULW crop");
 			expect(presented.panel.Width() * presented.zoom <= mapping.workArea.right - mapping.workArea.left + 1 &&
@@ -759,13 +794,15 @@ namespace Inkeys::UI::Bar
 				presented.categoryClip.right <= presented.panel.right && presented.categoryClip.bottom <= presented.panel.bottom, "category clip remains inside panel while fixed controls stay outside its scroll content");
 			for (int i = 0; i < GeometryControlCount; ++i)
 			{
-				const bool auxiliaryOption = i >= GeometryAuxBegin && i < GeometryStyleBegin;
+				const bool auxiliaryOption = i >= GeometryAuxBegin && i < GeometryTriangleModeBegin;
+				const bool constraintOption = i >= GeometryTriangleModeBegin && i <= GeometryTrapezoidMode;
 				const std::array<Auxiliary,3> bits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
 				const bool shown = (i < GeometryCategoryCount && catalog[i].category == presented.category) || i == GeometryCloseButton || i >= GeometrySegmentBegin
 					|| ((i == GeometryCircleCenter || i == GeometryCircleBox) && wanted == PresetKind::Circle)
 					|| (i >= GeometrySidesBegin && i < GeometryAuxBegin && GetToolCapabilities(wanted).regularSides)
-					|| (auxiliaryOption && (SupportedAuxiliary(wanted) & bits[i-GeometryAuxBegin]) != Auxiliary::None)
-					|| (i >= GeometryStyleBegin && i < GeometryPatternBegin && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
+					|| (auxiliaryOption && stroke && (SupportedAuxiliary(wanted) & bits[i-GeometryAuxBegin]) != Auxiliary::None)
+					|| (constraintOption && ((wanted == PresetKind::Triangle && i < GeometryTrapezoidMode) || (wanted == PresetKind::Trapezoid && i == GeometryTrapezoidMode)))
+					|| (i >= GeometryStyleBegin && i < GeometryStyleBegin+2 && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
 				const auto rect = presented.items[i]; const auto& hit = presented.hits[i];
 				const auto visibleRect = i < GeometryCategoryCount ? Intersect(rect, presented.categoryClip) : rect;
 				const bool actuallyVisible = shown && visibleRect.Width() > 0;
@@ -776,6 +813,9 @@ namespace Inkeys::UI::Bar
 					expect(visibleRect.left >= presented.panel.left - 0.01 && visibleRect.top >= presented.panel.top - 0.01 &&
 						visibleRect.right <= presented.panel.right + 0.01 && visibleRect.bottom <= presented.panel.bottom + 0.01,
 						"visible category clips parameters and attributes fit actual panel bounds");
+					const auto& word=BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,i).name;
+					if(word.enable.val&&word.fontTargetSize>=0)expect(std::abs(word.fontTargetSize-word.size.val)<.00001,
+						"settled shape text target matches final fitted font size in the production scene");
 					const auto emitted = clientRect(visibleRect, presented);
 					expect(emitted.left >= -1 && emitted.top >= -1 && emitted.right <= receipt.size.cx + 1 && emitted.bottom <= receipt.size.cy + 1,
 						"all visible shape control pixels survive complete production crop");
@@ -897,8 +937,11 @@ namespace Inkeys::UI::Bar
 		for (int i = 0; i < GeometryCategoryCount; ++i) if (!catalog[i].preset) expect(futurePixelCases[i] > 0, "all fifteen future resources have real emitted pixel evidence");
 		report << "Complete production scene configurations=" << sceneCases << " AA pixel cases=" << antialiasAccepted << '\n'; caseContext = "animated attributes";
 		const auto attributes = BarGeometryAttributeTestAccess::Attributes(owner.geometryAttribute);
-		expect(attributes.size() == 12 && attributes[3]->preset == BarButtonPresetEnum::Divider && attributes[8]->preset == BarButtonPresetEnum::Divider,
-			"attributes own a shared single-row list with independent group dividers");
+		expect(attributes.size() == 11 && attributes[2]->preset == BarButtonPresetEnum::Divider && attributes[7]->preset == BarButtonPresetEnum::Divider,
+			"attributes retain two style entries with synchronized divider slots");
+		expect(std::find_if(attributes.begin(),attributes.end(),[&](const auto& item)
+		{ return item.get() == &BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryStyleBegin+2); }) == attributes.end(),
+			"legacy mixed mode has no attribute list entry");
 		BarGeometryAttributeTestAccess::Display(owner, 1200, 800); sceneTick(2);
 		BarGeometryAttributeTestAccess::MoveRoot(owner, 80, 650); sceneTick(2);
 		owner.barStyle.darkStyle = false;
@@ -1327,6 +1370,32 @@ namespace Inkeys::UI::Bar
 			expect(BarGeometryAttributeTestAccess::PromptRingLabel(owner.constructionPrompt).content.GetVal()==L"2/2"&&std::abs(BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)-.5)<.000001,"second-step ring shows 2/2 and half completed");
 			checkPromptPixels((L"construction-arc-2-"+suffix).c_str());
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.active=false;construction->construction.finished=true;
+			construction->completedConstructionSession=construction->identity.session;++construction->identity.session;publishPrompt(construction);
+			bool filledDuringClose=false,fullWhileVisible=false;
+			for(int sample=0;sample<45;++sample)
+			{
+				sceneTick(1);const auto closing=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+				const double value=BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt);
+				if(value>.51&&value<1)filledDuringClose|=closing.visible;
+				fullWhileVisible|=value==1&&closing.visible;
+				if(sample<12)expect(closing.visible,"completed ring remains visible while the panel contracts");
+			}
+			expect(filledDuringClose&&fullWhileVisible&&std::abs(BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)-1)<.000001,"normal completion fills the ring from one half during contraction");
+			sceneTick(60);
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.active=true;construction->construction.finished=false;publishPrompt(construction);sceneTick(60);
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.active=false;publishPrompt(construction);sceneTick(60);
+			expect(BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)<1,"cancel at the last step never fills the ring");
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.active=true;publishPrompt(construction);sceneTick(60);
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.active=false;construction->construction.finished=true;
+			construction->completedConstructionSession=construction->identity.session+1;publishPrompt(construction);sceneTick(60);
+			expect(BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)<1,"completion from another construction session never fills the ring");
+			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
+			construction->construction.active=true;construction->construction.finished=false;
 			construction->construction.step=1;construction->construction.confirmedSteps=0;construction->construction.canBack=false;construction->construction.canForward=true;publishPrompt(construction);sceneTick(120);
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 			expect(!frame.buttons[0].enabled&&frame.buttons[1].enabled,"backed-out step enables only Forward and Cancel");

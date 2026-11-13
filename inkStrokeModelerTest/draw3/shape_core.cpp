@@ -57,21 +57,23 @@ namespace
 	{
 		const auto& tool = c.tool;
 		if (static_cast<uint32_t>(tool.preset) > static_cast<uint32_t>(PresetKind::Pyramid) ||
-			tool.sides < 3 || tool.sides > 12 || !Finite(tool.rectangleCornerRadius) || tool.rectangleCornerRadius < 0 ||
-			!Finite(c.start) || !Finite(c.end) || (c.legacyArrow && tool.preset != PresetKind::Arrow))
+			tool.sides < kMinRegularSides || tool.sides > kMaxRegularSides || !Finite(tool.rectangleCornerRadius) || tool.rectangleCornerRadius < 0 ||
+			!Finite(c.start) || !Finite(c.end) || (c.legacyArrow && tool.preset != PresetKind::Arrow) || !ValidPlanarConstraint(tool))
 		{ error = "invalid construction parameters"; return false; }
 		if (tool.preset >= PresetKind::Polyline) return ExpandAdvanced(c, style, out, error);
 		if (!std::holds_alternative<std::monostate>(c.parameters) && !std::holds_alternative<VertexConstruction>(c.parameters))
 		{ error = "unexpected planar parameters"; return false; }
 		const bool center = tool.creationMode == CreationMode::CenterRadius;
 		if (tool.preset == PresetKind::Circle ? !center && tool.creationMode != CreationMode::Drag :
-			tool.preset == PresetKind::RegularPolygon ? !center : tool.creationMode != CreationMode::Drag)
+			tool.preset == PresetKind::RegularPolygon ? !center :
+			tool.preset == PresetKind::Triangle && tool.constraint == PlanarConstraint::Equilateral ? !center : tool.creationMode != CreationMode::Drag)
 		{ error = "unsupported preset creation mode"; return false; }
 		out.creationMode = tool.creationMode;
 		const Vec2 start = c.start, end = c.end;
 		const float length = Distance(start, end);
+		const bool centeredTriangle = tool.preset == PresetKind::Triangle && tool.constraint == PlanarConstraint::Equilateral;
 		if (tool.preset == PresetKind::Line || tool.preset == PresetKind::Arrow ||
-			tool.preset == PresetKind::RegularPolygon || (tool.preset == PresetKind::Circle && center))
+			tool.preset == PresetKind::RegularPolygon || (tool.preset == PresetKind::Circle && center) || centeredTriangle)
 		{
 			if (!(length > 0)) { error = "empty construction"; return false; }
 		}
@@ -79,7 +81,8 @@ namespace
 		const float t = std::min(start.y, end.y), b = std::max(start.y, end.y);
 		const float w = r - l, h = b - t, cx = l + w * .5f, cy = t + h * .5f;
 		if (tool.preset != PresetKind::Line && tool.preset != PresetKind::Arrow &&
-			tool.preset != PresetKind::Circle && tool.preset != PresetKind::RegularPolygon && !(w > 0 && h > 0))
+			tool.preset != PresetKind::Circle && tool.preset != PresetKind::RegularPolygon && !centeredTriangle &&
+			!std::holds_alternative<VertexConstruction>(c.parameters) && !(w > 0 && h > 0))
 		{ error = "empty construction"; return false; }
 		switch (tool.preset)
 		{
@@ -122,7 +125,9 @@ namespace
 		case PresetKind::Ellipse:
 			out.kind = Kind::Ellipse; out.geometry.start = { cx,cy }; out.geometry.end = { w * .5f,h * .5f }; break;
 		case PresetKind::Triangle:
-			out.kind = Kind::Polygon; out.geometry.vertices = { { cx,t }, { r,b }, { l,b } }; break;
+			out.kind = Kind::Polygon;
+			out.geometry.vertices = centeredTriangle ? RegularPolygonVertices(start,end,3) : std::vector<Vec2>{ { cx,t }, { r,b }, { l,b } };
+			break;
 		case PresetKind::Parallelogram:
 			out.kind = Kind::Polygon; out.geometry.vertices = { { l + w * .25f,t }, { r,t }, { r - w * .25f,b }, { l,b } }; break;
 		case PresetKind::Rhombus:
@@ -130,15 +135,7 @@ namespace
 		case PresetKind::Trapezoid:
 			out.kind = Kind::Polygon; out.geometry.vertices = { { l + w * .25f,t }, { r - w * .25f,t }, { r,b }, { l,b } }; break;
 		case PresetKind::RegularPolygon:
-			out.kind = Kind::Polygon; out.geometry.vertices.reserve(tool.sides);
-			out.geometry.vertices.push_back(end);
-			for (uint32_t i = 1; i < tool.sides; ++i)
-			{
-				const double angle = 2 * kPi * i / tool.sides, x = double(end.x) - start.x, y = double(end.y) - start.y;
-				out.geometry.vertices.push_back({ static_cast<float>(start.x + x * std::cos(angle) - y * std::sin(angle)),
-					static_cast<float>(start.y + x * std::sin(angle) + y * std::cos(angle)) });
-			}
-			break;
+			out.kind = Kind::Polygon; out.geometry.vertices = RegularPolygonVertices(start,end,tool.sides); break;
 		}
 		if (const auto* vertices = std::get_if<VertexConstruction>(&c.parameters))
 		{
@@ -146,7 +143,7 @@ namespace
 				tool.preset != PresetKind::Rhombus && tool.preset != PresetKind::Trapezoid)
 			{ error = "unexpected vertex parameters"; return false; }
 			out.geometry.vertices = vertices->vertices;
-			if (!ValidPlanarVertices(tool.preset, vertices->vertices))
+			if (!ValidPlanarVertices(tool, vertices->vertices))
 			{ error = "planar constraint violated"; return false; }
 		}
 		return true;
@@ -158,6 +155,16 @@ namespace
 		auto point = [&](Vec2 x, Vec2 y) { return scalar(x.x, y.x) && scalar(x.y, y.y); };
 		if (!point(a.start, b.start) || !point(a.end, b.end) || !scalar(a.radius, b.radius) || a.vertices.size() != b.vertices.size()) return false;
 		for (size_t i = 0; i < a.vertices.size(); ++i) if (!point(a.vertices[i], b.vertices[i])) return false;
+		return true;
+	}
+	bool SameParts(const ShapeObject& a, const ShapeObject& b)
+	{
+		if (a.parts.size() != b.parts.size()) return false;
+		for (size_t i = 0; i < a.parts.size(); ++i)
+		{
+			const auto& x = a.parts[i]; const auto& y = b.parts[i];
+			if (x.id != y.id || x.kind != y.kind || !SameGeometry(x.geometry,y.geometry) || x.transform != y.transform || x.style != y.style) return false;
+		}
 		return true;
 	}
 	bool OnSegment(Vec2 a, Vec2 b, Vec2 p)
@@ -445,21 +452,12 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 		if ((object.construction->tool.preset == PresetKind::RegularPolygon ||
 			object.construction->tool.preset == PresetKind::Cube) && !Similarity(object.transform))
 			return { "regular polygon requires uniform orthogonal transform" };
-		auto sameParts = [&](const ShapeObject& derived) {
-			if (object.parts.size() != derived.parts.size()) return false;
-			for (size_t i = 0; i < object.parts.size(); ++i)
-			{
-				const auto& a = object.parts[i]; const auto& b = derived.parts[i];
-				if (a.id != b.id || a.kind != b.kind || !SameGeometry(a.geometry,b.geometry) || a.transform != b.transform || a.style != b.style) return false;
-			}
-			return true;
-		};
-		if (!sameParts(expected))
+		if (!SameParts(object,expected))
 		{
 			// v3旧圆锥仍严格核验旧派生数据，渲染/后续编辑统一使用修正后的切线。
 			ShapeObject legacy;
 			if (object.construction->tool.preset != PresetKind::Cone ||
-				!ExpandAdvanced(*object.construction,object.style,legacy,error,.25f,true) || !sameParts(legacy))
+				!ExpandAdvanced(*object.construction,object.style,legacy,error,.25f,true) || !SameParts(object,legacy))
 				return { "construction does not match derived parts" };
 		}
 	}
@@ -497,6 +495,21 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 	}
 	return {};
 }
+std::optional<ShapeObject> NormalizeLegacyPolygonSolid(const ShapeObject& object, std::string* error)
+{
+	auto fail = [&](const char* reason) -> std::optional<ShapeObject> { SetError(error,reason); return std::nullopt; };
+	if (!object.construction || (object.construction->tool.preset != PresetKind::Prism && object.construction->tool.preset != PresetKind::Pyramid))
+		return fail("not a legacy polygon solid");
+	ShapeObject legacy; std::string failure;
+	if (!ExpandAdvanced(*object.construction,object.style,legacy,failure,.25f,false,true) || object.legacyKind != LegacyKind::None ||
+		object.kind != legacy.kind || object.creationMode != legacy.creationMode || !SameGeometry(object.geometry,legacy.geometry) || !SameParts(object,legacy))
+		return fail("legacy polygon solid parts do not match old derivation");
+	auto normalized = MakeConstructedShape(*object.construction,object.style,object.id,object.revision,error);
+	if (!normalized) return std::nullopt;
+	normalized->transform = object.transform; normalized->editDepthAnchor = object.editDepthAnchor;
+	if (!Validate(*normalized)) return fail("normalized polygon solid is invalid");
+	SetError(error,{}); return normalized;
+}
 Auxiliary SupportedAuxiliary(PresetKind preset) noexcept
 {
 	switch (preset)
@@ -519,6 +532,8 @@ bool BuildAuxiliaryGeometry(const ShapeObject& object, GeometryResult& result, c
 {
 	if (!Validate(object,registry) || !Finite(options.displayScale) || options.displayScale <= 0)
 	{ SetError(error,"invalid auxiliary source"); return false; }
+	// 纯Fill保留辅助位，但不派生画布辅助视觉；切回描边后原位恢复。
+	if (!object.style.stroke && object.style.fill) { result = {}; SetError(error,{}); return true; }
 	const auto preset = object.construction ? object.construction->tool.preset :
 		object.kind == Kind::Circle ? PresetKind::Circle : object.kind == Kind::Ellipse ? PresetKind::Ellipse :
 		object.kind == Kind::Rectangle ? PresetKind::Rectangle : PresetKind::Line;

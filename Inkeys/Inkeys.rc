@@ -353,6 +353,10 @@ BARSHAPEPOLYGON11        UI                      "src\\UI\\barShapePolygon11.svg
 
 BARSHAPEPOLYGON12        UI                      "src\\UI\\barShapePolygon12.svg"
 
+BARSHAPEPOLYGON13        UI                      "src\\UI\\barShapePolygon13.svg"
+
+BARSHAPEPOLYGON14        UI                      "src\\UI\\barShapePolygon14.svg"
+
 BARSHAPEPOLYLINE        UI                      "src\\UI\\barShapePolyline.svg"
 
 BARSHAPEPOLYGON         UI                      "src\\UI\\barShapePolygon.svg"

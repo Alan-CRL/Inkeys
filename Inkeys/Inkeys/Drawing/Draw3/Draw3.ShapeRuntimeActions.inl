@@ -331,6 +331,7 @@ endCanvasFocus = [&](CanvasFocusEndReason reason,RECT& dirty)
 	}
 	// 新接触只结束编辑框；进行中的多笔构造由接触本身继续。
 	closeShapeEditor(dirty,ResolveCanvasFocusEnd(reason),reason != CanvasFocusEndReason::NewContact);
+	if (reason != CanvasFocusEndReason::NewContact) shapeUi.completedConstruction = {};
 };
 closeShapeSessions = [&](RECT& dirty,bool restore)
 {
@@ -372,25 +373,34 @@ auto publishShapeUi = [&]()
 	}
 	if (shapeUi.construction && shapeUi.construction->session.Status().active)
 	{
+		shapeUi.completedConstruction = {};
 		snapshot.identity.session = shapeUi.construction->identity.session;
 		snapshot.identity.objectId = shapeUi.construction->identity.objectId;
 		snapshot.construction = shapeUi.construction->session.Status();
 		snapshot.constructionContactActive = shapeUi.construction->contactActive;
 		if (shapeUi.construction->contactActive) { snapshot.construction.canBack = false; snapshot.construction.canForward = false; snapshot.construction.canComplete = false; }
 	}
-	else if (active.empty() && shapeUi.editor.object)
+	else
 	{
-		snapshot.object = shapeUi.editor.preview ? shapeUi.editor.preview : shapeUi.editor.object;
-		snapshot.identity.session = shapeUi.editor.identity.session;
-		snapshot.identity.objectId = snapshot.object->id; snapshot.identity.objectRevision = snapshot.object->revision;
-		snapshot.editGestureActive = shapeUi.editor.gestureActive;
-		if (shapeUi.published && shapeUi.published->object == snapshot.object && shapeUi.published->displayScale == snapshot.displayScale)
-		{ snapshot.bounds = shapeUi.published->bounds; snapshot.frameRect = shapeUi.published->frameRect; snapshot.handles = shapeUi.published->handles; }
-		else
+		if (shapeUi.completedConstruction.finished)
 		{
-			draw3::shapes::GeometryResult geometry;
-			if (draw3::shapes::BuildGeometry(*snapshot.object,geometry,{snapshot.displayScale,.25f})) snapshot.bounds = geometry.bounds;
-			snapshot.handles = draw3::shapes::BuildEditHandles(*snapshot.object,{snapshot.displayScale,.25f},&snapshot.frameRect);
+			snapshot.construction = shapeUi.completedConstruction;
+			snapshot.completedConstructionSession = shapeUi.completedConstructionSession;
+		}
+		if (active.empty() && shapeUi.editor.object)
+		{
+			snapshot.object = shapeUi.editor.preview ? shapeUi.editor.preview : shapeUi.editor.object;
+			snapshot.identity.session = shapeUi.editor.identity.session;
+			snapshot.identity.objectId = snapshot.object->id; snapshot.identity.objectRevision = snapshot.object->revision;
+			snapshot.editGestureActive = shapeUi.editor.gestureActive;
+			if (shapeUi.published && shapeUi.published->object == snapshot.object && shapeUi.published->displayScale == snapshot.displayScale)
+			{ snapshot.bounds = shapeUi.published->bounds; snapshot.frameRect = shapeUi.published->frameRect; snapshot.handles = shapeUi.published->handles; }
+			else
+			{
+				draw3::shapes::GeometryResult geometry;
+				if (draw3::shapes::BuildGeometry(*snapshot.object,geometry,{snapshot.displayScale,.25f})) snapshot.bounds = geometry.bounds;
+				snapshot.handles = draw3::shapes::BuildEditHandles(*snapshot.object,{snapshot.displayScale,.25f},&snapshot.frameRect);
+			}
 		}
 	}
 	PublishShapeRuntimeSnapshot(shapeUi,std::move(snapshot));
@@ -471,6 +481,7 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 		shapeUi.construction->tool != runtime.shape.tool))
 	{
 		shapeUi.construction->session.Cancel(); shapeUi.construction->cancelled = true; shapeUi.construction.reset();
+		shapeUi.completedConstruction = {};
 	}
 	if (!shapeUi.construction)
 	{
@@ -479,6 +490,7 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 		state->tool = runtime.shape.tool; state->style = runtime.shape.style; state->workspaceGuid = runtime.ownerWorkspaceGuid;
 		state->viewport = runtime.viewport;
 		if (!state->session.Begin(state->tool,state->style,runtime.shape.id)) return false;
+		shapeUi.completedConstruction = {};
 		shapeUi.construction = std::move(state);
 	}
 	auto& state = *shapeUi.construction;
@@ -492,7 +504,10 @@ finishShapeContact = [&](RuntimeStroke& runtime)
 	if (!runtime.shape.construction) return;
 	ConfirmRuntimeConstructionContact(runtime);
 	if (runtime.shape.construction->cancelled || runtime.shape.construction->completed)
-		if (shapeUi.construction == runtime.shape.construction) shapeUi.construction.reset();
+		if (shapeUi.construction == runtime.shape.construction)
+		{
+			shapeUi.construction.reset();
+		}
 	shapeUi.constructionVisualDirty = true;
 };
 auto backShapeConstruction = [&](RECT& dirty)
@@ -530,7 +545,12 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 			const auto saved = shapeUi.construction->session;
 			if (auto object = shapeUi.construction->session.Complete())
 			{
-				if (commitShapeConstruction(std::move(*object),dirty)) { shapeUi.construction.reset(); shapeUi.constructionVisualDirty = true; }
+				if (commitShapeConstruction(std::move(*object),dirty))
+				{
+					shapeUi.completedConstruction = shapeUi.construction->session.Status();
+					shapeUi.completedConstruction.active = false; shapeUi.completedConstruction.finished = true;
+					shapeUi.construction.reset(); shapeUi.constructionVisualDirty = true;
+				}
 				else shapeUi.construction->session = saved;
 			}
 		}
@@ -563,7 +583,8 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 	std::optional<draw3::shapes::ShapeObject> candidate;
 	const auto revision = nextShapeRevision(shapeUi.editor.object->id,shapeUi.editor.object->revision);
 	if (!revision) return;
-	if ((action.kind == ShapeUiActionKind::SetStyle || action.kind == ShapeUiActionKind::SetSides) && !shapeUi.editor.gestureActive)
+	if ((action.kind == ShapeUiActionKind::SetStyle || action.kind == ShapeUiActionKind::SetSides ||
+		action.kind == ShapeUiActionKind::SetConstraint) && !shapeUi.editor.gestureActive)
 		candidate = BuildShapePropertyCandidate(*shapeUi.editor.object,action,revision,{scene.displayScale,.25f});
 	else if (inGesture && (action.kind == ShapeUiActionKind::PreviewEdit || action.kind == ShapeUiActionKind::CommitEdit))
 	{

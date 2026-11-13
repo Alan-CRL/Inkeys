@@ -202,7 +202,7 @@
 			if (preset == PresetKind::Rectangle) tools.back().rectangleCornerRadius = 6; // 150% 屏幕已捕获的 4 DIP。
 		}
 		tools.push_back({ PresetKind::Circle,CreationMode::Drag,3 });
-		for (uint32_t sides = 4; sides <= 12; ++sides) tools.push_back({ PresetKind::RegularPolygon,CreationMode::CenterRadius,sides });
+		for (uint32_t sides = 4; sides <= 14; ++sides) tools.push_back({ PresetKind::RegularPolygon,CreationMode::CenterRadius,sides });
 		size_t wireCount = 0;
 		for (const auto& tool : tools)
 		{
@@ -213,7 +213,8 @@
 				style.strokeOpacity = .55f; style.fillOpacity = .3f; style.stroke = fill != 1; style.fill = fill != 0;
 				style.linePattern = static_cast<LinePattern>(pattern); style.dashOffset = 2;
 				auto id = Guid("70000000-0000-4000-8000-00000000f041").Bytes();
-				id[15] = static_cast<uint8_t>(canvas.strokes.size());
+				const uint32_t serial = static_cast<uint32_t>(canvas.strokes.size());
+				for (size_t byte = 0; byte < 4; ++byte) id[12 + byte] = static_cast<uint8_t>(serial >> ((3 - byte) * 8));
 				const auto object = MakePresetShape(tool, { 20,30 }, { 140,110 }, style, id, 17);
 				UINK_CHECK(state, object);
 				if (!object) continue;
@@ -254,7 +255,7 @@
 			return nullptr;
 		};
 		const auto metadata = EncodeInkeysShapeMetadata(*canvas.strokes.back().shape);
-		for (uint64_t sides : { 2u,13u,7u })
+		for (uint64_t sides : { 2u,15u,7u })
 		{
 			auto malformed = metadata;
 			*field(*field(*field(malformed, "construction"), "tool"), "sides") = Value(sides);
@@ -299,12 +300,12 @@
 		const auto fallback = ImportDraw3UInkDocument(unknown);
 		UINK_CHECK(state, fallback.snapshot && !fallback.diagnostics.empty() && fallback.snapshot->canvases[0].strokes.size() == wireCount);
 		UINK_CHECK(state, ImportDraw3UInkDocument(standard).status == Draw3UInkImportStatus::Success);
-		// v3参数覆盖曲线、逐点与全部空间模板；标准降级仍能被无扩展读取器显示。
+		// v3–v5参数覆盖曲线、逐点与全部空间模板；标准降级仍能被无扩展读取器显示。
 		auto advancedSnapshot = snapshot; advancedSnapshot.canvases[0].strokes.clear();
 		for (uint32_t value = uint32_t(PresetKind::Polyline); value <= uint32_t(PresetKind::Pyramid); ++value)
 		{
 			const auto preset = static_cast<PresetKind>(value);
-			for (uint32_t sides : { 3u,5u,12u }) for (float sign : { -1.0f,1.0f })
+			for (uint32_t sides : { 3u,5u,12u,14u }) for (float sign : { -1.0f,1.0f })
 			{
 				Construction c; c.tool = { preset,preset == PresetKind::Polyline || preset == PresetKind::Polygon ? CreationMode::Points : CreationMode::MultiStage,sides };
 				c.start = { 30,70 }; c.end = { 130,110 };
@@ -352,6 +353,104 @@
 			}
 			const auto fallbackAdvanced = ImportDraw3UInkDocument(fallbackDocument);
 			UINK_CHECK(state, fallbackAdvanced.snapshot && fallbackAdvanced.snapshot->canvases[0].strokes.size() == fallbackDocument.canvases[0].content.size());
+		}
+		std::vector<ShapeObject> v5Objects;
+		auto v5Id = [&](uint8_t seed) { auto id = Guid("70000000-0000-4000-8000-00000000f046").Bytes(); id[15] = seed; return id; };
+		const auto regular14 = MakePresetShape({PresetKind::RegularPolygon,CreationMode::CenterRadius,14},{30,70},{130,110},{},v5Id(1));
+		UINK_CHECK(state,regular14); if (regular14) v5Objects.push_back(*regular14);
+		const auto freeTriangle = MakePresetShape({PresetKind::Triangle,CreationMode::Drag},{20,30},{140,110},{},v5Id(2));
+		UINK_CHECK(state,freeTriangle);
+		if (freeTriangle)
+		{
+			const auto iso = SetPlanarConstraint(*freeTriangle,PlanarConstraint::Isosceles,2);
+			UINK_CHECK(state,iso); if (iso) v5Objects.push_back(*iso);
+			const auto equilateral = iso ? SetPlanarConstraint(*iso,PlanarConstraint::Equilateral,3) : std::nullopt;
+			UINK_CHECK(state,equilateral); if (equilateral) v5Objects.push_back(*equilateral);
+		}
+		const auto trapezoid = MakePresetShape({PresetKind::Trapezoid,CreationMode::Drag},{20,30},{140,110},{},v5Id(3));
+		UINK_CHECK(state,trapezoid);
+		if (trapezoid)
+		{
+			const auto iso = SetPlanarConstraint(*trapezoid,PlanarConstraint::Isosceles,2);
+			UINK_CHECK(state,iso); if (iso) v5Objects.push_back(*iso);
+			if (iso)
+			{
+				const auto point = iso->geometry.vertices[2];
+				const auto tilted = EditShape(*iso,1002,point,{point.x+10,point.y+20},3);
+				const auto free = tilted ? SetPlanarConstraint(*tilted,PlanarConstraint::Free,4) : std::nullopt;
+				UINK_CHECK(state,free); if (free)
+				{
+					auto wire = EncodeInkeysShapeMetadata(*free); const auto decoded = DecodeInkeysShapeMetadata(wire);
+					UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==3 && decoded.shape==free);
+				}
+			}
+		}
+		for (auto preset : {PresetKind::Prism,PresetKind::Pyramid})
+		{
+			Construction c; c.tool = {preset,CreationMode::MultiStage,14}; c.start = {30,70}; c.end = {130,110};
+			c.parameters = SolidConstruction{{},-80,.75f};
+			const auto object = MakeConstructedShape(c,{},v5Id(static_cast<uint8_t>(v5Objects.size() + 1)),4);
+			UINK_CHECK(state,object); if (object) v5Objects.push_back(*object);
+		}
+		for (const auto& object : v5Objects)
+		{
+			auto encoded = EncodeInkeysShapeMetadata(object);
+			UINK_CHECK(state,std::get<uint64_t>(field(encoded,"version")->value) == 5);
+			const auto decoded = DecodeInkeysShapeMetadata(encoded);
+			UINK_CHECK(state,decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == object);
+		}
+		auto legacyWire = [&](const ShapeObject& object,uint64_t version)
+		{
+			auto wire = EncodeInkeysShapeMetadata(object); *field(wire,"version") = Value(version);
+			auto& tool = std::get<UInkMessagePackValue::Map>(field(*field(wire,"construction"),"tool")->value);
+			tool.erase(std::remove_if(tool.begin(),tool.end(),[](const auto& pair)
+			{ return std::get<std::string>(pair.first.value) == "constraint"; }),tool.end());
+			auto& parameters = std::get<UInkMessagePackValue::Array>(field(*field(wire,"construction"),"parameters")->value);
+			auto& fields = std::get<UInkMessagePackValue::Array>(parameters[1].value);
+			if (fields.size() == 3) fields.pop_back();
+			if (version == 3)
+			{
+				auto& map = std::get<UInkMessagePackValue::Map>(wire.value);
+				map.erase(std::remove_if(map.begin(),map.end(),[](const auto& pair) { return std::get<std::string>(pair.first.value) == "aux"; }),map.end());
+			}
+			return wire;
+		};
+		for (auto preset : {PresetKind::Prism,PresetKind::Pyramid})
+		{
+			Construction c; c.tool = {preset,CreationMode::MultiStage,5}; c.start = {30,70}; c.end = {130,110};
+			c.parameters = SolidConstruction{{},-60};
+			const auto current = MakeConstructedShape(c,{},v5Id(20 + uint8_t(preset)),21); UINK_CHECK(state,current); if (!current) continue;
+			std::vector<Vec2> base; const double dx = c.end.x - c.start.x, dy = 2 * (c.end.y - c.start.y);
+			for (uint32_t i = 0; i < c.tool.sides; ++i)
+			{
+				const double angle = 6.28318530717958647692 * i / c.tool.sides;
+				base.push_back({static_cast<float>(c.start.x + dx * std::cos(angle) - dy * std::sin(angle)),
+					static_cast<float>(c.start.y + (dx * std::sin(angle) + dy * std::cos(angle)) * .5)});
+			}
+			ShapeObject legacy = *current; legacy.parts.clear(); std::vector<bool> hidden(base.size());
+			auto edge = [&](Vec2 a,Vec2 b,bool dashed)
+			{
+				ShapePart part; part.id = static_cast<uint32_t>(legacy.parts.size() + 1); part.kind = Kind::Polyline;
+				part.geometry.vertices = {a,b}; if (dashed) { part.style = legacy.style; part.style->linePattern = LinePattern::Dashed; }
+				legacy.parts.push_back(std::move(part));
+			};
+			const bool above = std::get<SolidConstruction>(c.parameters).height < 0;
+			for (size_t i = 0; i < base.size(); ++i)
+			{
+				const auto next = (i + 1) % base.size(); hidden[i] = above ? base[next].x > base[i].x : base[next].x < base[i].x;
+				edge(base[i],base[next],hidden[i]);
+				if (preset == PresetKind::Prism) edge({base[i].x,base[i].y - 60},{base[next].x,base[next].y - 60},false);
+			}
+			for (size_t i = 0; i < base.size(); ++i)
+				edge(base[i],{preset == PresetKind::Prism ? base[i].x : c.start.x,preset == PresetKind::Prism ? base[i].y - 60 : c.start.y - 60},
+					hidden[i] && hidden[(i + base.size() - 1) % base.size()]);
+			for (uint64_t version : {3u,4u})
+			{
+				const auto decoded = DecodeInkeysShapeMetadata(legacyWire(legacy,version));
+				UINK_CHECK(state,decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == current);
+				auto corrupt = legacy; corrupt.parts[0].geometry.vertices[0].x += 1;
+				UINK_CHECK(state,DecodeInkeysShapeMetadata(legacyWire(corrupt,version)).status == Draw3ShapeMetadataStatus::Invalid);
+			}
 		}
 		// 旧锥顶在底面投影内时仍有四部件：读取兼容，保存统一成当前两部件，不能写出自拒绝文件。
 		for (float height : {-40.f,-20.f,20.f,40.f})
@@ -471,7 +570,7 @@
 				UINK_CHECK(state,std::get<uint64_t>(field(metadata,"version")->value) == 4);
 				*field(metadata,"version") = Value(uint64_t{99}); // 模拟v3读取器不认识v4。
 			}
-			UINK_CHECK(state,dots == 6 && diagonals == 10);
+			UINK_CHECK(state,dots == 4 && diagonals == 10); // 纯Fill的椭圆不导出辅助点，但保留aux位。
 			const auto standardRead = ImportDraw3UInkDocument(standard), oldReader = ImportDraw3UInkDocument(unknown);
 			UINK_CHECK(state,standardRead.snapshot && standardRead.snapshot->canvases[0].strokes.size() == auxiliaryWireCount);
 			UINK_CHECK(state,oldReader.snapshot && oldReader.snapshot->canvases[0].strokes.size() == auxiliaryWireCount && !oldReader.diagnostics.empty());

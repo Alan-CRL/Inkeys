@@ -138,6 +138,21 @@ namespace Inkeys::Drawing::Draw3
 				std::snprintf(name, sizeof(name), "pre-generic nonempty baseline: %s", legacyNames[tool]);
 				if (!check(rendered && hasCoverage && alpha(legacyBaselines[tool], 2, 2) == 0, name)) return 1;
 			}
+			// 点工具的单击起点必须经过真实shader留下像素，不能只验证有RenderData。
+			for (const auto preset : {PresetKind::Polyline,PresetKind::Polygon}) for (bool fill : {false,true})
+			{
+				auto base = object(); base.style.stroke = !fill; base.style.fill = fill; base.style.width = 6;
+				ConstructionSession session;
+				if (fill && !GetToolCapabilities(preset).fill)
+				{
+					check(!session.Begin({preset,CreationMode::Points},base.style,base.id),"polyline rejects unsupported fill-only construction");
+					continue;
+				}
+				const bool ready = session.Begin({preset,CreationMode::Points},base.style,base.id)
+					&& session.ConfirmDrag({64,64},{64,64}) && session.Candidate();
+				const bool rendered = ready && render(*session.Candidate(),pixels);
+				check(rendered && alpha(pixels,64,64)>0 && alpha(pixels,2,2)==0,"single-click point preview emits visible pixels for outline and fill tools");
+			}
 			// 三种样式、四条线型以及圆/椭圆/圆角矩形均调用真实几何与 shader。
 			for (Kind kind : { Kind::Circle, Kind::Ellipse, Kind::Rectangle })
 				for (unsigned appearance = 0; appearance < 3; ++appearance)

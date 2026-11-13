@@ -3,7 +3,7 @@
   "name": "shape-ux-rework",
   "title": "图形交互与样式整改",
   "description": "修复P3/P4过快推进遗留的大问题：主栏图形面板分类、编辑拖动性能、编辑框/浮条/提示样式与动画、各图形控制点交互，适配深浅主题",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-11-05",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/shape",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -28,6 +28,6 @@
   ],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-11-13 续轮 C1–C14 实现及自动回归收尾完成，见 research/continuation-verification-2026-11-13.md。用户已授权提交本轮改动；不结束任务、不归档、不 push，待用户实机触控/笔/PPT 验收，保留 in_progress。",
   "meta": {}
 }

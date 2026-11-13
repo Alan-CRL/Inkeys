@@ -265,6 +265,24 @@ int RunShapeInteractionProductionTest()
 		check(ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) && canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary
 			&& window.ProductVisualStyleSnapshot().shapeStyle == style,"reverse auxiliary redo preserves next tool defaults");
 	}
+	for (auto preset : {PresetKind::Triangle,PresetKind::Trapezoid})
+	{
+		auto drawn = begin({preset,DefaultCreationMode(preset)},{40,50});
+		const auto created = up(*drawn,{160,130}); check(created.has_value(),"constraint fixture commits");
+		if (!created) continue;
+		const auto item = pages[0].history.LastVisibleItem(); if (!item) continue;
+		const auto before = *canvas->Strokes()[created->strokeIndex].Shape();
+		ShapeUiAction action; action.kind = ShapeUiActionKind::SetConstraint;
+		action.constraint = preset == PresetKind::Triangle ? PlanarConstraint::Equilateral : PlanarConstraint::Isosceles;
+		const auto candidate = BuildShapePropertyCandidate(before,action,pages[0].shapeRevisionAllocator.Next(before.id,before.revision));
+		const auto cursor = pages[0].operationCursor;
+		check(candidate && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,before,*candidate,allocate) &&
+			pages[0].operationCursor == cursor+1 && pages[0].operations.back().kind == CanvasOperationKind::Replace,"constraint change records one Replace");
+		check(ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate) &&
+			canvas->Strokes()[created->strokeIndex].Shape()->construction->tool.constraint == PlanarConstraint::Free,"constraint undo restores free mode");
+		check(ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) &&
+			canvas->Strokes()[created->strokeIndex].Shape()->construction->tool.constraint == action.constraint,"constraint redo restores selected mode");
+	}
 	// 复现Host先scene再实际动作的真实WindowController队列顺序，调用生产同场景门禁。
 	for (auto workspace : {Bridge::Workspace::Desktop,Bridge::Workspace::Whiteboard,Bridge::Workspace::Presentation})
 	{

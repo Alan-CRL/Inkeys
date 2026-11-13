@@ -22,6 +22,8 @@ namespace draw3::shapes
 		uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr);
 	std::optional<ShapeObject> SetRegularSides(const ShapeObject&, uint32_t sides,
 		uint64_t newRevision, std::string* error = nullptr);
+	std::optional<ShapeObject> SetPlanarConstraint(const ShapeObject&, PlanarConstraint,
+		uint64_t newRevision, std::string* error = nullptr);
 	class EditSession
 	{
 	public:
@@ -66,12 +68,14 @@ namespace draw3::shapes
 		ConstructionStatus Status() const noexcept;
 	private:
 		std::optional<ShapeObject> Generate(Vec2 down, Vec2 end, bool confirm, std::string* error);
+		bool RebuildPoints(std::string* error = nullptr);
 		ToolSpec tool_;
 		ShapeStyle style_;
 		ObjectId id_ = {};
 		uint64_t revision_ = 1;
 		bool active_ = false, finished_ = false;
 		std::vector<Vec2> points_;
+		std::vector<uint32_t> pointSteps_;
 		Vec2 start_, end_;
 		uint32_t confirmed_ = 0;
 		float lastAngle_ = 0, sweep_ = 0;
@@ -79,8 +83,9 @@ namespace draw3::shapes
 		std::optional<ShapeObject> candidate_, confirmedCandidate_;
 		struct BackedStep
 		{
-			Vec2 point, start, end;
-			uint32_t confirmed = 0;
+			std::vector<Vec2> points;
+			Vec2 start, end;
+			uint32_t confirmed = 0, pointCount = 0;
 			float lastAngle = 0, sweep = 0;
 			bool finished = false, angleStarted = false;
 			std::optional<ShapeObject> candidate;

@@ -33,7 +33,9 @@ namespace draw3::shapes
 	enum class CreationMode : uint32_t { Drag, CenterRadius, Points, MultiStage, Parameters };
 	enum class PresetKind : uint32_t { Line, Arrow, Rectangle, RoundedRectangle, Circle, Ellipse, Triangle, Parallelogram, Rhombus, Trapezoid, RegularPolygon,
 		Polyline, Polygon, Arc, Sector, Cuboid, Cube, Cylinder, Cone, Prism, Pyramid };
+	inline constexpr uint32_t kMinRegularSides = 3, kMaxRegularSides = 14;
 	enum class FillMode : uint32_t { Outline, Fill, OutlineAndFill };
+	enum class PlanarConstraint : uint32_t { Free, Isosceles, Equilateral };
 	enum class Auxiliary : uint8_t { None = 0, Center = 1, Foci = 2, Diagonals = 4 };
 	constexpr Auxiliary operator|(Auxiliary a, Auxiliary b) noexcept
 	{ return static_cast<Auxiliary>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b)); }
@@ -47,14 +49,18 @@ namespace draw3::shapes
 		CreationMode creationMode = CreationMode::Drag;
 		uint32_t sides = 3;
 		float rectangleCornerRadius = 4; // Bridge 使用 DIP；构造参数和工厂使用局部画布像素。
+		PlanarConstraint constraint = PlanarConstraint::Free;
 		bool operator==(const ToolSpec&) const = default;
 	};
 	struct VertexConstruction { std::vector<Vec2> vertices; bool operator==(const VertexConstruction&) const = default; };
 	struct ArcConstruction { float sweepRadians = 0; bool operator==(const ArcConstruction&) const = default; };
+	inline constexpr float kDefaultSolidBaseProjection = .5f;
+	inline constexpr float kMinSolidBaseProjection = .05f, kMaxSolidBaseProjection = 1.0f;
 	struct SolidConstruction
 	{
 		Vec2 depth; // 长方体/正方体的投影向量，不冒充真实边长。
 		float height = 0; // 圆柱/圆锥/棱柱/棱锥的局部竖直高度。
+		float baseProjection = kDefaultSolidBaseProjection; // 棱柱/棱锥未旋转底面的局部 y 投影比。
 		bool operator==(const SolidConstruction&) const = default;
 	};
 	using ConstructionParameters = std::variant<std::monostate, VertexConstruction, ArcConstruction, SolidConstruction>;
@@ -201,6 +207,8 @@ namespace draw3::shapes
 	Bounds UnionBounds(Bounds, Bounds) noexcept;
 	std::optional<ShapeObject> MakeConstructedShape(const Construction&, const ShapeStyle&,
 		const ObjectId&, uint64_t revision = 1, std::string* error = nullptr);
+	// v3/v4棱柱/棱锥先严格匹配旧parts，再恢复为当前面朝向派生。
+	std::optional<ShapeObject> NormalizeLegacyPolygonSolid(const ShapeObject&, std::string* error = nullptr);
 	struct ToolCapabilities
 	{
 		bool enabled = false, multiStage = false, points = false, fill = false, regularSides = false;

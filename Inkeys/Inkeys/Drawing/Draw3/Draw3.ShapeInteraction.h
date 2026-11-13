@@ -25,6 +25,7 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<draw3::shapes::EditHandle> handles;
 		draw3::shapes::Bounds bounds, frameRect; // frameRect为共享核心给出的本地外框。
 		draw3::shapes::ConstructionStatus construction;
+		std::uint64_t completedConstructionSession = 0; // 完成沿保留原构造身份，不能借用随后打开的编辑会话。
 		bool editGestureActive = false, constructionContactActive = false;
 		float displayScale = 1;
 		int canvasOriginX = 0, canvasOriginY = 0;
@@ -32,7 +33,7 @@ namespace Inkeys::Drawing::Draw3
 	enum class ShapeUiActionKind : std::uint8_t
 	{
 		BeginEdit, PreviewEdit, CommitEdit, CancelEdit, CloseEditor,
-		SetStyle, SetSides, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward
+		SetStyle, SetSides, SetConstraint, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward
 	};
 	struct ShapeUiAction
 	{
@@ -43,6 +44,7 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<float> angleDelta; // 手势累计角：latest-wins覆盖中间点时仍保留轨迹。
 		draw3::shapes::ShapeStyle style;
 		std::uint32_t sides = 3;
+		draw3::shapes::PlanarConstraint constraint = draw3::shapes::PlanarConstraint::Free;
 		std::int64_t enqueueMicroseconds = 0; // 仅诊断：Bridge入队时刻，用于计算入队到上屏延迟。
 	};
 	// 属性候选由运行期和无窗口回归共用，提交仍走原Replace事务。
@@ -54,6 +56,8 @@ namespace Inkeys::Drawing::Draw3
 			return draw3::shapes::RestyleShape(before,action.style,revision,options);
 		if (action.kind == ShapeUiActionKind::SetSides)
 			return draw3::shapes::SetRegularSides(before,action.sides,revision);
+		if (action.kind == ShapeUiActionKind::SetConstraint)
+			return draw3::shapes::SetPlanarConstraint(before,action.constraint,revision);
 		return std::nullopt;
 	}
 
