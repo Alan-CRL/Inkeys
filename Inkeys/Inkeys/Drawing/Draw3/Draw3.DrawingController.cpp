@@ -2529,7 +2529,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		// 导航归属独立于 RTS 设备数字；笔尖/笔尾在真实 Down 时锁存，不能随 hover 翻转。
-		enum class CanvasPanDeviceClass : uint8_t { None, Touch, Mouse, Pen, PenTail };
+		using CanvasPanDeviceClass = CanvasPanSourceClass;
 
 		constexpr CanvasPanInputKind CanvasPanKindOf(CanvasPanDeviceClass device) noexcept
 		{
@@ -2544,7 +2544,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		// 画布手势接触的归属：移动模式下参与平移，或只跟踪到终态（笔抑制、已作废批次）。
-		enum class CanvasTouchDisposition : uint8_t { Pan, Suppressed };
+		enum class CanvasTouchDisposition : uint8_t { Pan, Suppressed, Pending };
 
 		struct CanvasGestureContactRuntime
 		{
@@ -2557,11 +2557,11 @@ namespace Inkeys::Drawing::Draw3
 			bool terminalPending = false;
 			// 新平移路径（CanvasPanInput）登记的触点；Pen 抑制等旧登记保持 false，只跟踪到终态。
 			bool panManaged = false;
-			// 登记后尚未向动力学提交 Down 样本。
-			bool panDownPending = false;
 			CanvasPanDeviceClass panClass = CanvasPanDeviceClass::None;
 			// 动力学内部身份：单调唯一，不依赖可被生产者复用的 contact key。
 			uint64_t panKey = 0;
+			CanvasPanMotionContext motionContext;
+			uint64_t penFeedbackToken = 0;
 		};
 
 		// 画布调试可视化模式下的探测接触：只持有 handle 并跟踪最新快照，不建笔。
@@ -2623,10 +2623,10 @@ namespace Inkeys::Drawing::Draw3
 			CanvasPanDeviceClass latchedClass, bool inverted = false) noexcept
 		{
 			if (!selectionMode) return SelectionDownRoute::Stroke;
+			(void)latchedClass;
 			const CanvasPanDeviceClass deviceClass = CanvasPanClassOf(device, inverted);
 			return Bridge::MoveModePansCanvas(selectionMode, workspace) &&
-				deviceClass != CanvasPanDeviceClass::None &&
-				(latchedClass == CanvasPanDeviceClass::None || latchedClass == deviceClass)
+				deviceClass != CanvasPanDeviceClass::None
 				? SelectionDownRoute::Pan : SelectionDownRoute::Discard;
 		}
 
@@ -2635,16 +2635,91 @@ namespace Inkeys::Drawing::Draw3
 		{
 			double dipPerPixelX = 1.0;
 			double dipPerPixelY = 1.0;
+			SpeedEraser::DisplayScale display;
+			SpeedEraser::DeviceMode mode = SpeedEraser::DeviceMode::Laptop;
 		};
 
-		CanvasPanScale CanvasPanScaleFromDisplay(const SpeedEraser::DisplayScale& display) noexcept
+		CanvasPanScale CanvasPanScaleFromDisplay(const SpeedEraser::DisplayScale& display,
+			SpeedEraser::DeviceMode mode = SpeedEraser::DeviceMode::Laptop) noexcept
 		{
 			const auto usable = [](float value) noexcept
 			{ return std::isfinite(value) && value > 0.0f; };
 			CanvasPanScale scale;
+			scale.display = display; scale.mode = mode;
 			if (usable(display.dipPerPixelX)) scale.dipPerPixelX = display.dipPerPixelX;
 			if (usable(display.dipPerPixelY)) scale.dipPerPixelY = display.dipPerPixelY;
 			return scale;
+		}
+
+
+		CanvasPanScale CanvasPanScaleFromSnapshot(const CanvasPanDisplaySnapshot& snapshot) noexcept
+		{
+			return CanvasPanScaleFromDisplay(snapshot.display, snapshot.mode);
+		}
+
+		bool SameCanvasPanGeometry(const CanvasPanScale& a, const CanvasPanScale& b) noexcept
+		{
+			return a.dipPerPixelX == b.dipPerPixelX && a.dipPerPixelY == b.dipPerPixelY &&
+				a.display.monitor == b.display.monitor && a.display.pixelWidth == b.display.pixelWidth &&
+				a.display.pixelHeight == b.display.pixelHeight && a.display.desktopLeft == b.display.desktopLeft &&
+				a.display.desktopTop == b.display.desktopTop && a.display.orientation == b.display.orientation &&
+				a.display.logicalOutputKnown == b.display.logicalOutputKnown;
+		}
+
+		struct ResolvedCanvasPanMotion
+		{
+			CanvasPanMotionContext context;
+			const char* reason = "indirect";
+		};
+
+		ResolvedCanvasPanMotion ResolveCanvasPanMotion(const CanvasPanScale& scale,
+			const SpeedEraser::InputSource& source, CanvasPanDeviceClass device, uint64_t outputKey) noexcept
+		{
+			using namespace SpeedEraser;
+			const auto& d = scale.display;
+			const bool touch = device == CanvasPanDeviceClass::Touch;
+			const bool screenPen = (device == CanvasPanDeviceClass::Pen || device == CanvasPanDeviceClass::PenTail) &&
+				source.kind == SourceKind::IntegratedPen;
+			const bool mapped = d.logicalOutputKnown && source.mappedMonitor != 0 &&
+				source.mappedMonitor == d.monitor && source.mappedLeft == d.desktopLeft &&
+				source.mappedTop == d.desktopTop && source.mappedWidth == d.pixelWidth && source.mappedHeight == d.pixelHeight;
+			const bool conflict = d.logicalOutputKnown && source.mappedMonitor != 0 && !mapped;
+			const double mx = 10.0 * d.cmPerPixelX / scale.dipPerPixelX;
+			const double my = 10.0 * d.cmPerPixelY / scale.dipPerPixelY;
+			const bool axes = std::isfinite(mx) && std::isfinite(my) && mx >= .01 && mx <= 10 && my >= .01 && my <= 10;
+			// 只消费业务物理尺寸与真实来源；橡皮的强制响应/手动标定等调测配置不参与。
+			const bool systemDpiValid = std::isfinite(d.dipPerPixelX) && d.dipPerPixelX > 0 &&
+				std::isfinite(d.dipPerPixelY) && d.dipPerPixelY > 0;
+			const bool physical = (screenPen || (touch && source.kind == SourceKind::Touch)) &&
+				source.recognition != SourceRecognition::Conflict && systemDpiValid &&
+				mapped && d.physicalAvailable && d.pixelWidth > 0 && d.pixelHeight > 0 && axes;
+			const auto profile = touch ? (physical ? CanvasPanMotionProfile::TouchPhysical : CanvasPanMotionProfile::TouchFallback)
+				: screenPen ? (physical ? CanvasPanMotionProfile::ScreenPenPhysical : CanvasPanMotionProfile::ScreenPenFallback)
+				: CanvasPanMotionProfile::IndirectDip;
+			ResolvedCanvasPanMotion result;
+			result.context = MakeCanvasPanMotionContext(profile, physical ? mx : 1.0, physical ? my : 1.0);
+			result.context.outputKey = outputKey;
+			result.context.sourceGeneration = source.generation;
+			result.context.inputMapped = mapped;
+			result.context.mappingConflict = conflict;
+			result.context.largeScreen = touch && scale.mode == DeviceMode::LargeScreen;
+			if (physical && touch)
+			{
+				const double longEdge = std::max(10.0 * d.cmPerPixelX * d.pixelWidth, 10.0 * d.cmPerPixelY * d.pixelHeight);
+				const double t = std::clamp((longEdge - 320.0) / 880.0, 0.0, 1.0);
+				const double measured = t * t * (3.0 - 2.0 * t);
+				result.context.touchWeight = result.context.largeScreen ? std::max(measured, .25) : std::min(measured, .25);
+			}
+			if (touch && !physical && d.logicalOutputKnown && d.pixelWidth > 0 && d.pixelHeight > 0)
+			{
+				const double x = d.pixelWidth * scale.dipPerPixelX, y = d.pixelHeight * scale.dipPerPixelY;
+				result.context.intentGain = 1.0 / std::clamp(std::min(std::max(x,y)/1920.0, std::min(x,y)/1080.0), .5, 4.0);
+			}
+			result.reason = physical ? "trusted-physical" : !touch && !screenPen ? "indirect" :
+				!d.logicalOutputKnown ? "output-unknown" : source.recognition == SourceRecognition::Conflict ? "source-conflict" :
+				touch && source.kind != SourceKind::Touch ? "source-not-direct-touch" : !mapped ? "source-unmapped" :
+				!d.physicalAvailable ? "physical-unavailable" : !systemDpiValid ? "system-dpi-invalid" : "density-axis-invalid";
+			return result;
 		}
 
 		struct CanvasPanViewportApply
@@ -2657,7 +2732,7 @@ namespace Inkeys::Drawing::Draw3
 
 		// 白板移动模式的有序输入侧：平移触点集合、设备互斥、批次作废与动力学驱动。
 		// 触点登记复用 Run() 的 gestureContacts（同一份快照序号消费与终态回收），
-		// 动力学只在 DIP 内运算；本类不触碰 D3D、文档历史或 revision。
+		// 运动域由有序Down锁存，公共输入/输出仍是系统DIP；本类不触碰D3D或文档历史。
 		class CanvasPanInput
 		{
 		public:
@@ -2680,11 +2755,14 @@ namespace Inkeys::Drawing::Draw3
 			{
 				samples_.reserve(kContactNavigationHistoryCapacity);
 				navigationEvents_.reserve(kContactNavigationHistoryCapacity);
+				motionContexts_.reserve(kContactNavigationHistoryCapacity + 1);
+				admissionDecisions_.resize(kContactNavigationHistoryCapacity);
 			}
 
 			void BindTouchpad(WindowController& window)
 			{
 				touchpadWindow_ = &window;
+				window.SetNavigationPenFeedbackEpoch(navigationEpoch_);
 				touchpadSamples_.reserve(64);
 			}
 			void SetNativeAdmission(bool allowed) noexcept { nativeAdmission_ = allowed; }
@@ -2731,23 +2809,24 @@ namespace Inkeys::Drawing::Draw3
 			}
 			void StopFling() noexcept { dynamics_.StopFling(); }
 
-			// 当前持有平移的设备类别；没有任何平移触点（含已作废批次的残留指）时为 None。
+			// 只报告有序内核已准入的归属；Pending和只等终态者不能冒充owner。
 			CanvasPanDeviceClass OwnerClass() const noexcept
 			{
 				for (const CanvasGestureContactRuntime& contact : contacts_)
-					if (contact.panManaged) return contact.panClass;
+					if (contact.panManaged && contact.disposition == CanvasTouchDisposition::Pan) return contact.panClass;
 				return CanvasPanDeviceClass::None;
 			}
+			// 物理生命周期仍须完整跟踪，Stop/模式退出不能丢掉Pending或Rejected的终态。
 			bool HasContacts() const noexcept
 			{
-				return OwnerClass() != CanvasPanDeviceClass::None;
+				return std::any_of(contacts_.begin(), contacts_.end(), [](const auto& c) { return c.panManaged; });
 			}
 			// 仲裁读取最新物理终态，不等 Step 回收；同 QPC 按 Down 先于 Up，仍算重叠。
 			CanvasPanDeviceClass OwnerClass(const ContactInputCoordinator& input, int64_t atQpc = 0) const noexcept
 			{
 				for (const CanvasGestureContactRuntime& contact : contacts_)
 				{
-					if (!contact.panManaged || (!deadBatch_ && contact.disposition == CanvasTouchDisposition::Suppressed) ||
+					if (!contact.panManaged || contact.disposition != CanvasTouchDisposition::Pan ||
 						(atQpc > 0 && contact.handle.record->DownSnapshot().qpc > atQpc)) continue;
 					ContactSnapshot latest = contact.snapshot;
 					input.TryReadSnapshot(contact.handle, latest);
@@ -2761,7 +2840,7 @@ namespace Inkeys::Drawing::Draw3
 				if (deadBatch_) return false;
 				for (const CanvasGestureContactRuntime& contact : contacts_)
 				{
-					if (!contact.panManaged || contact.panClass != CanvasPanDeviceClass::Touch) continue;
+					if (!contact.panManaged || contact.disposition != CanvasTouchDisposition::Pan || contact.panClass != CanvasPanDeviceClass::Touch) continue;
 					// 只判断笔到达时已经按下的手指，后来的 Touch 不追溯抑制笔。
 					if (atQpc > 0 && contact.handle.record->DownSnapshot().qpc > atQpc) continue;
 					ContactSnapshot latest = contact.snapshot;
@@ -2777,39 +2856,17 @@ namespace Inkeys::Drawing::Draw3
 					[&](const CanvasGestureContactRuntime& contact)
 					{
 						if (!contact.handle.record || contact.handle.record->DeviceType() != InputDeviceType::Pen ||
-							(contact.panManaged && contact.disposition == CanvasTouchDisposition::Pan))
+							(contact.panManaged && contact.disposition != CanvasTouchDisposition::Suppressed))
 							return false;
 						ContactSnapshot latest = contact.snapshot;
 						input.TryReadSnapshot(contact.handle, latest);
 						return latest.phase != ContactPhase::Up && latest.phase != ContactPhase::Cancelled;
 					});
 			}
-			void SuppressLaterPendingContacts(const ContactInputCoordinator& input,
-				ContactHandle incomingHandle, CanvasPanDeviceClass incoming) noexcept
+			bool HasSuppressedContacts() const noexcept
 			{
-				if (incoming == CanvasPanDeviceClass::None || !incomingHandle.record) return;
-				const auto down = incomingHandle.record->DownSnapshot();
-				ContactSnapshot latest = down;
-				input.TryReadSnapshot(incomingHandle, latest);
-				const bool ended = latest.phase == ContactPhase::Up || latest.phase == ContactPhase::Cancelled;
-				// 只退休生命周期重叠的未来 Down。较早接触已在它之前结束时，两段都必须保留。
-				// 同 QPC 仍按 Down 先于 Up，不能把相等终态当作无重叠。
-				for (auto& contact : contacts_)
-				{
-					const int64_t futureDown = contact.handle.record->DownSnapshot().qpc;
-					if (contact.panDownPending && contact.panClass != incoming && futureDown > down.qpc &&
-						(!ended || latest.qpc >= futureDown))
-					{
-						contact.disposition = CanvasTouchDisposition::Suppressed;
-						contact.panDownPending = false;
-					}
-				}
-			}
-			void TrackSuppressedPenDown(ContactHandle handle)
-			{
-				const ContactSnapshot down = handle.record->DownSnapshot();
-				// 保留 Producing 路由直到真实终态，Selection 提前返回也不能丢掉笔抑制身份。
-				contacts_.push_back({ handle, CanvasTouchKey(handle), down, down.position, down.sequence });
+				return std::any_of(contacts_.begin(), contacts_.end(), [](const auto& c)
+				{ return c.panManaged && c.disposition == CanvasTouchDisposition::Suppressed; });
 			}
 			bool DynamicsActive() const noexcept { return dynamics_.Active(); }
 			// 绘制线程应保持活动帧与高精度计时器。
@@ -2834,6 +2891,33 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<float>(velocity.y / scale_.dipPerPixelY) };
 			}
 
+			void ObserveDisplay(const CanvasPanScale& next) noexcept
+			{
+				const bool geometryChanged = !SameCanvasPanGeometry(scale_, next);
+				bool physicalChanged = false;
+				if (dynamics_.Active() && dynamics_.MotionContext().unit == CanvasPanMotionUnit::Millimeters)
+				{
+					const auto resolved = ResolveCanvasPanMotion(next, activeSource_, activeClass_, outputKey_);
+					const auto& current = dynamics_.MotionContext();
+					physicalChanged = resolved.context.unit != current.unit ||
+						resolved.context.motionPerDipX != current.motionPerDipX || resolved.context.motionPerDipY != current.motionPerDipY;
+				}
+				// Pending尚未进入动力学，但其Down标尺已锁存；失效后也不能沿旧毫米候选准入。
+				for (const auto& contact : contacts_)
+				{
+					if (!contact.panManaged || contact.disposition != CanvasTouchDisposition::Pending ||
+						contact.motionContext.unit != CanvasPanMotionUnit::Millimeters) continue;
+					const auto resolved = ResolveCanvasPanMotion(next, contact.handle.record->DownSnapshot().source,
+						contact.panClass, outputKey_);
+					physicalChanged |= resolved.context.unit != contact.motionContext.unit ||
+						resolved.context.motionPerDipX != contact.motionContext.motionPerDipX ||
+						resolved.context.motionPerDipY != contact.motionContext.motionPerDipY;
+				}
+				if ((geometryChanged || physicalChanged) && (HasContacts() || dynamics_.Active())) Stop();
+				if (geometryChanged) ++outputKey_;
+				scale_ = next;
+			}
+
 			// 登记刚出队且已通过准入的 Down。批次已被作废（Stop 后手指未全部抬起）时登记为
 			// 只跟踪终态的忽略触点。
 			void Register(ContactInputCoordinator& input, ContactHandle handle,
@@ -2841,6 +2925,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!handle.record) return;
 				input_ = &input;
+				ObserveDisplay(scale);
 				const auto history = input.NavigationHistoryStatus();
 				if (!HasContacts() && historyEpoch_ && history.epoch != historyEpoch_)
 				{
@@ -2863,12 +2948,21 @@ namespace Inkeys::Drawing::Draw3
 				contact.velocityPosition = down.position;
 				contact.lastConsumedSequence = down.sequence;
 				contact.disposition = (deadBatch_ || invalidHistory)
-					? CanvasTouchDisposition::Suppressed : CanvasTouchDisposition::Pan;
+					? CanvasTouchDisposition::Suppressed : CanvasTouchDisposition::Pending;
 				contact.panManaged = true;
-				contact.panDownPending = !deadBatch_ && !invalidHistory;
 				contact.panClass = CanvasPanClassOf(handle.record->DeviceType(), down.isInvertedCursor);
 				contact.panKey = ++nextPanKey_;
+				const auto resolved = ResolveCanvasPanMotion(scale, down.source, contact.panClass, outputKey_);
+				contact.motionContext = resolved.context;
+				if (touchpadWindow_ && handle.record->DeviceType() == InputDeviceType::Pen)
+					contact.penFeedbackToken = touchpadWindow_->NavigationPenFeedbackToken(handle.record->TabletContextId(),
+						handle.record->ContactId(), down.source.generation, down.qpc);
 				contacts_.push_back(contact);
+				LogCanvasPan("pan-context key=%llu profile=%u unit=%u mapped=%u reason=%s mode=%u dip-per-pixel=(%.8g,%.8g) motion-per-dip=(%.8g,%.8g) w=%.6g G=%.6g version=1",
+					static_cast<unsigned long long>(contact.panKey), static_cast<unsigned>(resolved.context.profile),
+					static_cast<unsigned>(resolved.context.unit), resolved.context.inputMapped ? 1u : 0u, resolved.reason,
+					static_cast<unsigned>(scale.mode), scale.dipPerPixelX, scale.dipPerPixelY,
+					resolved.context.motionPerDipX, resolved.context.motionPerDipY, resolved.context.touchWeight, resolved.context.intentGain);
 				LogCanvasPan("pan-register key=%llu class=%u dead-batch=%u down=(%.1f,%.1f) qpc=%lld dip-per-pixel=(%.4f,%.4f)",
 					static_cast<unsigned long long>(contact.panKey),
 					static_cast<unsigned>(contact.panClass), deadBatch_ ? 1u : 0u,
@@ -2884,13 +2978,14 @@ namespace Inkeys::Drawing::Draw3
 				CancelNative();
 				if (input_) stopSequence_ = input_->NavigationHistoryStatus().published;
 				++navigationEpoch_;
+				if (touchpadWindow_) touchpadWindow_->SetNavigationPenFeedbackEpoch(navigationEpoch_);
 				dynamics_.Stop();
+				lastStepFrameQpc_ = 0;
 				touchPanHeld_ = false;
 				for (CanvasGestureContactRuntime& contact : contacts_)
 				{
 					if (!contact.panManaged) continue;
 					contact.disposition = CanvasTouchDisposition::Suppressed;
-					contact.panDownPending = false;
 				}
 				deadBatch_ = HasContacts();
 			}
@@ -2899,7 +2994,10 @@ namespace Inkeys::Drawing::Draw3
 			void Reset() noexcept
 			{
 				CancelNative();
+				++navigationEpoch_;
+				if (touchpadWindow_) touchpadWindow_->SetNavigationPenFeedbackEpoch(navigationEpoch_);
 				dynamics_.Stop();
+				lastStepFrameQpc_ = 0;
 				touchPanHeld_ = false;
 				deadBatch_ = false;
 			}
@@ -2918,8 +3016,22 @@ namespace Inkeys::Drawing::Draw3
 			{
 				Frame frame;
 				const CanvasPanPhase previousPhase = dynamics_.Phase();
+				if (qpcFrequency <= 0 || nowQpc <= 0 || (lastStepFrameQpc_ && nowQpc <= lastStepFrameQpc_))
+				{
+					// 在Drain前拒绝重复/逆帧；否则已取出的Down/终态会被误丢或提前回收。
+					samples_.clear();
+					CanvasPanFrameInput snapshot; snapshot.frameQpc = nowQpc; snapshot.qpcFrequency = qpcFrequency;
+					frame.dynamics = dynamics_.Step(snapshot);
+					frame.velocityDip = frame.dynamics.contentVelocity;
+					frame.velocityPixels = { static_cast<float>(frame.velocityDip.x / scale_.dipPerPixelX),
+						static_cast<float>(frame.velocityDip.y / scale_.dipPerPixelY) };
+					frame.touchPanHeld = touchPanHeld_;
+					return frame;
+				}
 				input_ = &input;
 				samples_.clear();
+				motionContexts_.clear();
+				motionContexts_.emplace_back(); // 保持生产严格准入；Move无需复制整份context。
 				int64_t newestSampleQpc = 0;
 				const auto history = input.DrainNavigationHistory(navigationEvents_);
 				if (historyEpoch_ && history.epoch != historyEpoch_)
@@ -2943,11 +3055,12 @@ namespace Inkeys::Drawing::Draw3
 					contact.snapshot = event.snapshot;
 					contact.lastConsumedSequence = event.snapshot.sequence;
 					contact.terminalPending = false;
-					contact.panDownPending = false;
 					const bool terminal = event.snapshot.phase == ContactPhase::Up || event.snapshot.phase == ContactPhase::Cancelled;
+					if (terminal && (contact.panClass == CanvasPanDeviceClass::Pen || contact.panClass == CanvasPanDeviceClass::PenTail))
+						frame.penTerminalQpc = (std::max)(frame.penTerminalQpc, event.snapshot.qpc);
 					if (terminal && contact.panClass == CanvasPanDeviceClass::Touch)
 						frame.touchPanEndQpc = (std::max)(frame.touchPanEndQpc, event.snapshot.qpc);
-					const bool live = contact.disposition == CanvasTouchDisposition::Pan && event.ordinal > stopSequence_;
+					const bool live = (contact.disposition != CanvasTouchDisposition::Suppressed || terminal) && event.ordinal > stopSequence_;
 					if (traceInput)
 						LogCanvasPan("input ordinal=%llu epoch=%llu key=%llu class=%u context=%u cursor=%u phase=%u pos-px=(%.3f,%.3f) sample-qpc=%lld frame-qpc=%lld consume-qpc=%lld delay-ms=%.3f action=%s timestamp=callback-arrival",
 							static_cast<unsigned long long>(event.ordinal), static_cast<unsigned long long>(navigationEpoch_),
@@ -2965,7 +3078,7 @@ namespace Inkeys::Drawing::Draw3
 				for (auto& contact : contacts_)
 				{
 					// 有效导航只读历史；latest 仅用于笔抑制/已作废批次的可靠终态回收。
-					if (contact.panManaged && contact.disposition == CanvasTouchDisposition::Pan) continue;
+					if (contact.panManaged && (!deadBatch_ || contact.disposition != CanvasTouchDisposition::Suppressed)) continue;
 					ContactSnapshot snapshot = contact.snapshot;
 					if (!input.TryReadSnapshot(contact.handle, snapshot) && !contact.terminalPending) continue;
 					contact.snapshot = snapshot;
@@ -2996,14 +3109,41 @@ namespace Inkeys::Drawing::Draw3
 					in.frameQpc = (std::max)(nowQpc, newestSampleQpc);
 					in.qpcFrequency = qpcFrequency;
 					in.contacts = std::span<const CanvasPanContactSample>(samples_);
+					in.motionContexts = motionContexts_;
+					in.admissionDecisions = admissionDecisions_;
 					in.penHover = false; // 拖动模式下靠近不刹停，真实 Down 仍由有序事件取消旧惯性。
 					// 曲线距离上限使用当前客户区尺寸，入口统一从物理像素换算为 DIP。
 					in.viewportSizeDip = { static_cast<float>(viewportSizePixels.x * scale_.dipPerPixelX),
 						static_cast<float>(viewportSizePixels.y * scale_.dipPerPixelY) };
 					frame.dynamics = dynamics_.Step(in);
+					lastStepFrameQpc_ = in.frameQpc;
+					if (frame.dynamics.admissionFailed)
+					{ Stop(); frame.dynamics = {}; frame.dynamics.admissionFailed = true; }
+					else for (size_t i = 0; i < frame.dynamics.admissionDecisionCount; ++i)
+					{
+						const auto& decision = admissionDecisions_[i];
+						auto found = std::find_if(contacts_.begin(), contacts_.end(), [&](const auto& c) { return c.panKey == decision.key; });
+						if (found == contacts_.end()) continue;
+						found->disposition = decision.accepted ? CanvasTouchDisposition::Pan : CanvasTouchDisposition::Suppressed;
+						if (touchpadWindow_ && found->penFeedbackToken != 0)
+							touchpadWindow_->ApplyNavigationPenDecision(found->penFeedbackToken, found->panKey,
+								found->handle.generation, navigationEpoch_, decision.accepted);
+						if (decision.accepted) { activeSource_ = found->handle.record->DownSnapshot().source; activeClass_ = found->panClass; }
+						LogCanvasPan("pan-admission key=%llu accepted=%u reason=%s qpc=%lld", static_cast<unsigned long long>(decision.key),
+							decision.accepted ? 1u : 0u, CanvasPanAdmissionReasonName(decision.reason), static_cast<long long>(decision.downQpc));
+					}
+
 					// QPC 排序/准入只由动力学执行；热开关依据其实际末来源，不复刻另一套排序。
 					lastInertiaKind_ = CanvasPanKindOf(static_cast<CanvasPanDeviceClass>(frame.dynamics.sourceKey >> 32));
 				}
+				else lastStepFrameQpc_ = nowQpc;
+				// 只有已准入Touch的真实终态可成为后续绘制笔的历史屏障。
+				frame.touchPanEndQpc = 0;
+				for (const auto& contact : contacts_)
+					if (contact.panManaged && contact.disposition == CanvasTouchDisposition::Pan &&
+						contact.panClass == CanvasPanDeviceClass::Touch &&
+						(contact.snapshot.phase == ContactPhase::Up || contact.snapshot.phase == ContactPhase::Cancelled))
+						frame.touchPanEndQpc = (std::max)(frame.touchPanEndQpc, contact.snapshot.qpc);
 				touchPanHeld_ = TouchPanHeld(input);
 				frame.touchPanHeld = touchPanHeld_;
 				std::erase_if(contacts_, [&](CanvasGestureContactRuntime& contact)
@@ -3108,19 +3248,31 @@ namespace Inkeys::Drawing::Draw3
 				CanvasPanContactPhase phase, int64_t& newestSampleQpc,
 				std::vector<CanvasPanContactSample>* queued = nullptr)
 			{
+				size_t contextIndex = 0;
+				if (phase == CanvasPanContactPhase::Down)
+				{
+					contextIndex = motionContexts_.size();
+					motionContexts_.push_back(contact.motionContext);
+				}
 				(queued ? *queued : samples_).push_back({ contact.panKey, snapshot.qpc,
 					static_cast<double>(snapshot.position.x) * scale_.dipPerPixelX,
 					static_cast<double>(snapshot.position.y) * scale_.dipPerPixelY, phase,
 					(static_cast<uint64_t>(contact.panClass) << 32) | contact.handle.record->TabletContextId(),
-					inertiaOptions_.Allows(CanvasPanKindOf(contact.panClass)) });
+					inertiaOptions_.Allows(CanvasPanKindOf(contact.panClass)), contextIndex });
 				newestSampleQpc = (std::max)(newestSampleQpc, snapshot.qpc);
 			}
 
 			std::vector<CanvasGestureContactRuntime>& contacts_;
 			std::vector<CanvasPanContactSample> samples_;
 			std::vector<ContactNavigationEvent> navigationEvents_;
+			std::vector<CanvasPanMotionContext> motionContexts_;
+			std::vector<CanvasPanAdmissionDecision> admissionDecisions_;
+			uint64_t outputKey_ = 1;
+			SpeedEraser::InputSource activeSource_;
+			CanvasPanDeviceClass activeClass_ = CanvasPanDeviceClass::None;
 			ContactInputCoordinator* input_ = nullptr;
 			uint64_t historyEpoch_ = 0, stopSequence_ = 0, navigationEpoch_ = 1;
+			int64_t lastStepFrameQpc_ = 0;
 			CanvasPanDynamics dynamics_;
 			WindowController* touchpadWindow_ = nullptr;
 			std::vector<TouchpadNavigationSample> touchpadSamples_;
@@ -3151,28 +3303,12 @@ namespace Inkeys::Drawing::Draw3
 				input.DiscardUntilTerminal(handle);
 				return true;
 			}
-			if (selectionMode && handle.record->DeviceType() == InputDeviceType::Pen)
-			{
-				const bool suppressed = pan.TouchPanHeld(input, handle.record->DownSnapshot().qpc) ||
-					pan.HasLiveSuppressedPenContact(input);
-				if (suppressPenUntilRelease) *suppressPenUntilRelease = suppressed;
-				if (suppressed)
-				{
-					LogCanvasPan("pan-reject device=%u inverted=%u qpc=%lld reason=touch-or-suppressed-pen",
-						static_cast<unsigned>(handle.record->DeviceType()), handle.record->DownSnapshot().isInvertedCursor ? 1u : 0u,
-						static_cast<long long>(handle.record->DownSnapshot().qpc));
-					pan.TrackSuppressedPenDown(handle); return true;
-				}
-			}
 			const SelectionDownRoute route = RouteSelectionDown(selectionMode, workspace,
-				handle.record->DeviceType(), pan.OwnerClass(input, handle.record->DownSnapshot().qpc),
+				handle.record->DeviceType(), CanvasPanDeviceClass::None,
 				handle.record->DownSnapshot().isInvertedCursor);
 			if (route == SelectionDownRoute::Stroke) return false;
 			if (route == SelectionDownRoute::Pan)
 			{
-				// 只有最终获准的新来源才能退休未来重叠接触；被 native/已有来源拒绝的 Down 无此权限。
-				pan.SuppressLaterPendingContacts(input, handle,
-					CanvasPanClassOf(handle.record->DeviceType(), handle.record->DownSnapshot().isInvertedCursor));
 				pan.CancelNative(handle.record->DownSnapshot().qpc);
 				pan.Register(input, handle, scale);
 			}
@@ -3204,8 +3340,13 @@ namespace Inkeys::Drawing::Draw3
 			state.inContact = state.inRange && IsPenContactSampleFresh(
 				sample.inContact, sample.qpc, suppressedPenTerminalQpc);
 			const bool liveSuppressedPen = pan.HasLiveSuppressedPenContact(input);
+			const auto owner = pan.OwnerClass(input, sample.qpc);
+			if (window.CanvasPanMode() && !liveSuppressedPen &&
+				(owner == CanvasPanDeviceClass::Pen || owner == CanvasPanDeviceClass::PenTail))
+				suppressPenUntilRelease = false; // 唯一有序准入已确认新笔，旧接触的局部flag不可锁住它。
+
 			if (ShouldBeginSuppressingPenContactDuringTouchPan(
-				pan.TouchPanHeld(input, sample.qpc) || liveSuppressedPen, state.inContact))
+				liveSuppressedPen || (!window.CanvasPanMode() && pan.TouchPanHeld(input, sample.qpc)), state.inContact))
 			{
 				suppressPenUntilRelease = true;
 				window.SuppressPenContactForTouchPan();
@@ -6649,9 +6790,9 @@ namespace Inkeys::Drawing::Draw3
 		float ViewportX() noexcept { InkCanvas* c = Canvas(activePage); return c ? c->Viewport().x : 0.0f; }
 		float ViewportY() noexcept { InkCanvas* c = Canvas(activePage); return c ? c->Viewport().y : 0.0f; }
 
-		bool Down(uint32_t tablet, uint32_t id, InputDeviceType device, double x, double y, double ms, bool inverted = false)
+		bool Down(uint32_t tablet, uint32_t id, InputDeviceType device, double x, double y, double ms, bool inverted = false, const SpeedEraser::InputSource& source = {})
 		{
-			auto sample = Snap(ContactPhase::Down, x, y, ms); sample.isInvertedCursor = inverted;
+			auto sample = Snap(ContactPhase::Down, x, y, ms); sample.isInvertedCursor = inverted; sample.source = source;
 			return input.PublishDown(tablet, id, device, sample);
 		}
 		bool Move(uint32_t tablet, uint32_t id, double x, double y, double ms)
@@ -6672,6 +6813,7 @@ namespace Inkeys::Drawing::Draw3
 
 		CanvasPanInput::Frame Frame(double ms, bool penHover = false)
 		{
+			pan.ObserveDisplay(scale);
 			// 对应 Run 的优先级 Pen 检查：发生在本帧 ingress 再次出队之前。
 			(void)ObserveCanvasPanPenMailbox(window, input, pan, suppressPenUntilRelease, suppressedPenTerminalQpc);
 			priorityPenSuppressed = suppressPenUntilRelease;
@@ -6695,6 +6837,8 @@ namespace Inkeys::Drawing::Draw3
 			last = pan.Step(input, Qpc(ms), kFrequency, penHover || (pen.inRange && !suppressPenUntilRelease),
 				{ 1920.0f, 1080.0f });
 			suppressedPenTerminalQpc = (std::max)(suppressedPenTerminalQpc, last.penTerminalQpc);
+			(void)ObserveCanvasPanPenMailbox(window, input, pan, suppressPenUntilRelease, suppressedPenTerminalQpc);
+			navigationPenSuppressed = suppressPenUntilRelease;
 			window.SetTouchPanActive(last.touchPanHeld);
 			lastApply = {};
 			if (InkCanvas* canvas = Canvas(activePage))
@@ -6703,6 +6847,299 @@ namespace Inkeys::Drawing::Draw3
 		}
 	};
 
+
+	// 真实Coordinator→适配器→数值内核：标尺、混源与准入的生产CPU回归。
+	int RunCanvasPanScaleProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool value, const char* name)
+		{ if (!value) { ++failures; std::fprintf(stderr, "[Draw3PanScale] FAIL=%s\n", name); } };
+		try
+		{
+			using Rig = CanvasPanProbeRig;
+			using namespace SpeedEraser;
+			const auto display = [](double dip = .5)
+			{
+				DisplayScale d; d.monitor = 1; d.pixelWidth = 2880; d.pixelHeight = 1920;
+				d.dipPerPixelX = d.dipPerPixelY = static_cast<float>(dip);
+				d.cmPerPixelX = 28.0f / 2880; d.cmPerPixelY = 19.0f / 1920;
+				d.logicalOutputKnown = d.physicalAvailable = true;
+				return d;
+			};
+			const auto source = [](SourceKind kind)
+			{
+				InputSource value; value.kind = kind;
+				value.contextId = kind == SourceKind::IntegratedPen ? Rig::kPenTablet : 1;
+				value.cursorId = kind == SourceKind::IntegratedPen ? 3 : 1; value.generation = 1;
+				value.mappedMonitor = 1; value.mappedWidth = 2880; value.mappedHeight = 1920;
+				return value;
+			};
+			const auto d = display(); const auto touch = source(SourceKind::Touch), pen = source(SourceKind::IntegratedPen);
+			const auto scale = CanvasPanScaleFromDisplay(d);
+			const auto physical = ResolveCanvasPanMotion(scale, touch, CanvasPanDeviceClass::Touch, 1);
+			check(physical.context.profile == CanvasPanMotionProfile::TouchPhysical && physical.context.inputMapped &&
+				std::abs(physical.context.motionPerDipX - 10.0*d.cmPerPixelX/.5) < 1e-8, "trusted-touch-mm-axis");
+			check(ResolveCanvasPanMotion(scale, pen, CanvasPanDeviceClass::Pen, 1).context.profile == CanvasPanMotionProfile::ScreenPenPhysical,
+				"known-screen-pen-physical");
+			for (auto kind : { SourceKind::Mouse, SourceKind::ExternalPen, SourceKind::Unknown })
+				check(ResolveCanvasPanMotion(scale, source(kind), CanvasPanDeviceClass::Pen, 1).context.profile == CanvasPanMotionProfile::IndirectDip,
+					"indirect-does-not-borrow-display-mm");
+			const char* expectedFallbackReasons[] = { "physical-unavailable", "output-unknown", "source-unmapped",
+				"source-unmapped", "source-unmapped", "density-axis-invalid", "density-axis-invalid",
+				"source-not-direct-touch", "system-dpi-invalid", "source-conflict" };
+			for (int fault = 0; fault < 10; ++fault)
+			{
+				auto badDisplay = d; auto badSource = touch;
+				if (fault == 0) badDisplay.physicalAvailable = false;
+				if (fault == 1) badDisplay.logicalOutputKnown = false;
+				if (fault == 2) badSource.mappedMonitor = 2;
+				if (fault == 3) ++badSource.mappedLeft;
+				if (fault == 4) --badSource.mappedWidth;
+				if (fault == 5) badDisplay.cmPerPixelX = NAN;
+				if (fault == 6) { badDisplay.cmPerPixelX = 100; badDisplay.cmPerPixelY = .00000001f; }
+				if (fault == 7) badSource.kind = SourceKind::Unknown;
+				if (fault == 8) badDisplay.dipPerPixelX = NAN;
+				if (fault == 9) badSource.recognition = SourceRecognition::Conflict;
+				const auto resolved = ResolveCanvasPanMotion(CanvasPanScaleFromDisplay(badDisplay), badSource, CanvasPanDeviceClass::Touch, 1);
+				check(resolved.context.profile == CanvasPanMotionProfile::TouchFallback && resolved.context.unit == CanvasPanMotionUnit::SystemDip,
+					"untrusted-source-physical-and-axis-fallback");
+				check(std::strcmp(resolved.reason, expectedFallbackReasons[fault]) == 0,
+					"fallback-diagnostic-identifies-exact-failed-contract");
+			}
+			auto overridden = d; overridden.development.response = ResponseOverride::IndirectDip;
+			overridden.development.scale = ScaleOverride::ForceUnavailable; overridden.development.penBeta = 0;
+			check(ResolveCanvasPanMotion(CanvasPanScaleFromDisplay(overridden), touch, CanvasPanDeviceClass::Touch, 1).context == physical.context,
+				"eraser-debug-does-not-change-navigation");
+			auto unavailable = d; unavailable.physicalAvailable = false;
+			const auto laptop = ResolveCanvasPanMotion(CanvasPanScaleFromDisplay(unavailable), touch, CanvasPanDeviceClass::Touch, 1).context;
+			const auto large = ResolveCanvasPanMotion(CanvasPanScaleFromDisplay(unavailable, DeviceMode::LargeScreen), touch, CanvasPanDeviceClass::Touch, 1).context;
+			check(!laptop.largeScreen && large.largeScreen && std::abs(large.intentGain - 4.0/3.0) < 1e-8 &&
+				ResolveCanvasPanFriction(large, 3000).tauSeconds > ResolveCanvasPanFriction(laptop, 3000).tauSeconds,
+				"dpi-fallback-still-uses-selected-mode");
+
+			{
+				auto rotated = d; std::swap(rotated.pixelWidth, rotated.pixelHeight);
+				std::swap(rotated.cmPerPixelX, rotated.cmPerPixelY); rotated.orientation = 1;
+				auto rotatedSource = touch; std::swap(rotatedSource.mappedWidth, rotatedSource.mappedHeight);
+				const auto resolved = ResolveCanvasPanMotion(CanvasPanScaleFromDisplay(rotated), rotatedSource, CanvasPanDeviceClass::Touch, 1).context;
+				check(resolved.unit == CanvasPanMotionUnit::Millimeters && resolved.motionPerDipX == physical.context.motionPerDipY &&
+					resolved.motionPerDipY == physical.context.motionPerDipX && resolved.touchWeight == physical.context.touchWeight,
+					"rotation-keeps-independent-density-axes-and-long-edge-profile");
+				auto classroom = d; classroom.pixelWidth = 1920; classroom.pixelHeight = 1080;
+				classroom.cmPerPixelX = 139.0f/1920; classroom.cmPerPixelY = 78.0f/1080;
+				auto classroomSource = touch; classroomSource.mappedWidth = 1920; classroomSource.mappedHeight = 1080;
+				const auto smallMode = ResolveCanvasPanMotion(CanvasPanScaleFromDisplay(classroom), classroomSource, CanvasPanDeviceClass::Touch, 1).context;
+				const auto largeMode = ResolveCanvasPanMotion(CanvasPanScaleFromDisplay(classroom, DeviceMode::LargeScreen), classroomSource, CanvasPanDeviceClass::Touch, 1).context;
+				check(smallMode.touchWeight == .25 && largeMode.touchWeight == 1 &&
+					smallMode.motionPerDipX == largeMode.motionPerDipX && smallMode.motionPerDipY == largeMode.motionPerDipY,
+					"mode-selects-response-without-changing-real-mm");
+			}
+
+			// 同一RTS Down的token/精确QPC贯穿真实适配器，窗口旧Touch bool只产生可纠正反馈。
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4, false, touch); r.Frame(8);
+				auto bad = touch; bad.mappedMonitor = 2;
+				r.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 100, 100, 20, false, bad);
+				r.Up(Rig::kTouchTablet, 1, 100, 100, 30);
+				PenFeedbackContact identity{ 1001, Rig::kPenTablet, 3, pen.generation, Rig::Qpc(40), PenFeedbackPhase::Down };
+				r.window.NotifyPenFeedbackContact(identity);
+				DrawingCursorSample cursor; cursor.valid = cursor.inContact = true; cursor.qpc = Rig::Qpc(40); cursor.source = pen;
+				r.window.PublishPenCursorSampleForContact(cursor, identity.token);
+				r.Down(Rig::kPenTablet, 3, InputDeviceType::Pen, 100, 100, 40, false, pen);
+				r.Frame(48);
+				check(r.pan.OwnerClass() == CanvasPanDeviceClass::Pen && !r.suppressPenUntilRelease &&
+					!r.window.PenContactSuppressedForTouchPan(), "accepted-pen-corrects-provisional-old-touch-feedback");
+				identity.phase = PenFeedbackPhase::Up; r.window.NotifyPenFeedbackContact(identity);
+				r.window.ClearPenCursorSampleForContact(identity.token);
+				r.Up(Rig::kPenTablet, 3, 100, 100, 52); r.Up(Rig::kTouchTablet, 2, 100, 100, 56); r.Frame(60);
+			}
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4, false, touch); r.Frame(8);
+				PenFeedbackContact old{ 2001, Rig::kPenTablet, 3, pen.generation, Rig::Qpc(12), PenFeedbackPhase::Down };
+				r.window.NotifyPenFeedbackContact(old);
+				DrawingCursorSample cursor; cursor.valid = cursor.inContact = true; cursor.qpc = old.downQpc; cursor.source = pen;
+				r.window.PublishPenCursorSampleForContact(cursor, old.token);
+				r.Down(Rig::kPenTablet, 3, InputDeviceType::Pen, 100, 100, 12, false, pen); r.Frame(16);
+				check(r.pan.HasLiveSuppressedPenContact(r.input) && r.window.PenContactSuppressedForTouchPan(),
+					"overlapping-pen-rejection-keeps-real-token-suppressed");
+				r.Up(Rig::kTouchTablet, 1, 100, 100, 20); r.Frame(24);
+				check(r.window.PenContactSuppressedForTouchPan(), "touch-up-does-not-revive-rejected-pen");
+				old.phase = PenFeedbackPhase::Up; r.window.NotifyPenFeedbackContact(old); r.window.ClearPenCursorSampleForContact(old.token);
+				r.Up(Rig::kPenTablet, 3, 100, 100, 28); r.Frame(32);
+				PenFeedbackContact current{ 2002, Rig::kPenTablet, 3, pen.generation, Rig::Qpc(36), PenFeedbackPhase::Down };
+				r.window.NotifyPenFeedbackContact(current); cursor.qpc = current.downQpc;
+				r.window.PublishPenCursorSampleForContact(cursor, current.token);
+				r.Down(Rig::kPenTablet, 3, InputDeviceType::Pen, 100, 100, 36, false, pen); r.Frame(40);
+				r.window.ApplyNavigationPenDecision(old.token, 2, 1, 1, false);
+				check(r.pan.OwnerClass() == CanvasPanDeviceClass::Pen && !r.window.PenContactSuppressedForTouchPan(),
+					"old-ended-token-ack-cannot-suppress-new-contact");
+				current.phase = PenFeedbackPhase::Up; r.window.NotifyPenFeedbackContact(current); r.window.ClearPenCursorSampleForContact(current.token);
+				r.Up(Rig::kPenTablet, 3, 100, 100, 44); r.Frame(48);
+			}
+
+			// 两个实际publisher并发：样本标记与抑制通道必须是同一提交截面。
+			{
+				auto owned = std::make_unique<Rig>(); auto& window = owned->window;
+				window.SetTouchPanActive(true);
+				DrawingCursorSample pointer; pointer.valid = pointer.inContact = true; pointer.x = 222;
+				window.PublishPenCursorSample(pointer); // 未证实桥接的Pointer保留自己的临时抑制。
+				PenFeedbackContact identity{ 3001, pen.contextId, pen.cursorId, pen.generation, Rig::Qpc(12), PenFeedbackPhase::Down };
+				window.NotifyPenFeedbackContact(identity);
+				DrawingCursorSample rts = pointer; rts.x = 111; rts.source = pen;
+				window.PublishPenCursorSampleForContact(rts, identity.token);
+				window.SetNavigationPenFeedbackEpoch(77);
+				window.ApplyNavigationPenDecision(identity.token, 1, 1, 77, true);
+				window.SetTouchPanActive(false);
+				std::atomic<bool> start = false, mismatch = false;
+				std::atomic<unsigned> done = 0;
+				const auto observe = [&]()
+				{
+					DrawingCursorSample sample; bool suppressed = false;
+					if (window.ReadPenCursorSample(sample, &suppressed) && sample.valid &&
+						((sample.x == 111 && suppressed) || (sample.x == 222 && !suppressed)))
+						mismatch.store(true, std::memory_order_release);
+				};
+				const auto publish = [&](bool isRts)
+				{
+					while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+					for (int i = 0; i < 2000; ++i)
+					{
+						if (isRts) window.PublishPenCursorSampleForContact(rts, identity.token);
+						else window.PublishPenCursorSample(pointer);
+						observe();
+					}
+					done.fetch_add(1, std::memory_order_release);
+				};
+				std::thread rtsWriter(publish, true), pointerWriter;
+				try { pointerWriter = std::thread(publish, false); }
+				catch (...) { start.store(true, std::memory_order_release); rtsWriter.join(); throw; }
+				start.store(true, std::memory_order_release);
+				do { observe(); std::this_thread::yield(); } while (done.load(std::memory_order_acquire) != 2);
+				rtsWriter.join(); pointerWriter.join();
+				check(!mismatch.load(std::memory_order_acquire), "concurrent-pen-sample-and-feedback-share-one-publication");
+				identity.phase = PenFeedbackPhase::Up; window.NotifyPenFeedbackContact(identity);
+				window.ClearPenCursorSampleForContact(identity.token);
+			}
+
+			// 相同真实像素路径改变系统DPI；独立几何期望为28mm真实拖动扣2.5mm起步。
+			double expectedEnd = 0;
+			for (double dip : { 1.0, 2.0/3.0, .5, 1.0/3.0 })
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned;
+				r.scale = CanvasPanScaleFromDisplay(display(dip));
+				const double mmPerPx = 10.0 * r.scale.display.cmPerPixelX;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 300, 300, 4, false, touch);
+				for (double t : { 12.0, 24.0, 36.0, 48.0, 60.0 }) r.Move(Rig::kTouchTablet, 1, 300 + (t-4)*.5/mmPerPx, 300, t);
+				r.Up(Rig::kTouchTablet, 1, 300 + 28/mmPerPx, 300, 64); r.Frame(68);
+				check(std::abs(r.last.contentDeltaPixels.x*mmPerPx - 25.5) < .002 && r.last.dynamics.released,
+					"physical-slop-and-pixel-closed-loop");
+				check(std::abs(r.last.dynamics.frictionParameters.deceleration - 200) < 1e-8 &&
+					r.last.dynamics.releaseMotionContext.unit == CanvasPanMotionUnit::Millimeters,
+					"physical-release-keeps-own-diagnostic-unit");
+				for (double t = 76; t < 1800 && r.pan.Active(); t += 8) r.Frame(t);
+				const double end = -r.ViewportX()*mmPerPx;
+				if (expectedEnd == 0) expectedEnd = end;
+				check(std::abs(end - expectedEnd) < .01 && !r.pan.Active(), "dpi-invariant-physical-flight");
+			}
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				r.Down(Rig::kMouseTablet, 2, InputDeviceType::MouseLeft, 100, 100, 32);
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4, false, touch);
+				r.Move(Rig::kTouchTablet, 1, 200, 100, 12); r.Move(Rig::kTouchTablet, 1, 300, 100, 24);
+				r.Up(Rig::kTouchTablet, 1, 300, 100, 28);
+				r.Move(Rig::kMouseTablet, 2, 150, 100, 40); r.Move(Rig::kMouseTablet, 2, 180, 100, 52);
+				r.Frame(56);
+				const double expected = 200 - 2.5/(10*d.cmPerPixelX) + 80 - 15/.5;
+				check(std::abs(r.last.contentDeltaPixels.x - expected) < .01 && r.pan.OwnerClass() == CanvasPanDeviceClass::Mouse,
+					"mixed-motion-domains-convert-each-event-before-accumulating");
+			}
+			for (bool reversePublication : { false, true })
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				auto bad = touch; bad.mappedMonitor = 2;
+				if (reversePublication) r.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 100, 100, 20, false, bad);
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4, false, touch);
+				if (!reversePublication) r.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 100, 100, 20, false, bad);
+				r.Up(Rig::kTouchTablet, 1, 100, 100, 30);
+				r.Down(Rig::kPenTablet, 3, InputDeviceType::Pen, 100, 100, 40, false, pen); r.Frame(48);
+				check(r.pan.OwnerClass() == CanvasPanDeviceClass::Pen && !r.pan.TouchPanHeld() && r.pan.HasSuppressedContacts(),
+					"rejected-incompatible-touch-does-not-block-later-pen");
+				r.Up(Rig::kPenTablet, 3, 100, 100, 52); r.Up(Rig::kTouchTablet, 2, 100, 100, 56); r.Frame(60);
+				check(!r.pan.HasContacts() && r.input.DiagnosticsSnapshot().occupiedSlots == 0, "ignored-contact-terminal-recycles");
+			}
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4, false, touch); r.Frame(8);
+				++r.scale.display.revision; r.scale.display.development.scale = ScaleOverride::ForceUnavailable; r.Frame(12);
+				check(r.pan.Active(), "unrelated-revision-and-eraser-override-do-not-stop");
+				r.scale.mode = DeviceMode::LargeScreen; r.Frame(16);
+				check(r.pan.Active(), "mode-change-is-latched-for-next-gesture");
+				r.scale.display.physicalAvailable = false; r.Frame(20);
+				check(!r.pan.Active() && r.pan.BatchDead(), "physical-loss-stops-old-motion-and-discards-until-terminal");
+				r.Up(Rig::kTouchTablet, 1, 100, 100, 24); r.Frame(28);
+				check(!r.pan.HasContacts(), "invalidated-context-terminal-closes");
+			}
+			// 无效呈现帧不取走真实历史：排队Down/Up必须在下一有效帧完整消费。
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4, false, touch); r.Frame(8);
+				r.Move(Rig::kTouchTablet, 1, 150, 100, 12); r.Frame(16);
+				const float before = r.ViewportX();
+				r.Up(Rig::kTouchTablet, 1, 150, 100, 20);
+				r.Down(Rig::kPenTablet, 3, InputDeviceType::Pen, 200, 100, 24, false, pen);
+				r.Up(Rig::kPenTablet, 3, 200, 100, 28);
+				const auto pending = r.input.NavigationHistoryStatus().pending;
+				for (double invalidFrame : { 16.0, 12.0, 0.0 })
+				{
+					r.Frame(invalidFrame);
+					check(!r.last.dynamics.admissionFailed && r.last.dynamics.heldContacts == 1 &&
+						r.ViewportX() == before && !r.pan.BatchDead() && r.input.NavigationHistoryStatus().pending == pending,
+						"repeat-reverse-or-zero-frame-preserves-queued-down-and-terminals");
+				}
+				r.Frame(32);
+				check(!r.pan.HasContacts() && !r.pan.BatchDead() && r.last.dynamics.heldContacts == 0 &&
+					r.last.dynamics.admissionDecisionCount == 1 && r.input.NavigationHistoryStatus().pending == 0,
+					"next-valid-frame-consumes-queued-lifecycle-once-and-recycles");
+			}
+
+			// Register与Step之间的事实变化：Pending也要验证旧毫米资格，DIP升级/模式偏好只锁存。
+			for (int change = 0; change < 5; ++change)
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				if (change == 4) r.scale.display.physicalAvailable = false;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 4, false, touch);
+				DrainIngressBatch(r.input, r.window, r.boundary, [&](ContactRecord* record)
+				{
+					if (!record) { r.input.AcknowledgeControlWake(); return; }
+					const ContactHandle handle{ record, record->Generation() };
+					if (!r.input.ContactAdmitted(handle)) { r.input.DiscardUntilTerminal(handle); return; }
+					check(HandleSelectionDown(r.input, handle, true, r.workspace, r.pan, r.scale), "pending-scale-production-route");
+				});
+				check(r.contacts.size() == 1 && r.contacts.front().disposition == CanvasTouchDisposition::Pending &&
+					!r.pan.DynamicsActive(), "registered-scale-candidate-is-pending-before-step");
+				if (change == 0) r.scale.display.physicalAvailable = false;
+				if (change == 1) r.scale.display.cmPerPixelX *= 1.1f;
+				if (change == 2) r.scale.mode = DeviceMode::LargeScreen;
+				if (change == 3) { ++r.scale.display.revision; r.scale.display.development.scale = ScaleOverride::ForceUnavailable; }
+				if (change == 4) r.scale.display.physicalAvailable = true;
+				r.pan.ObserveDisplay(r.scale); r.Frame(8);
+				if (change < 2)
+					check(r.pan.BatchDead() && !r.pan.Active() && r.last.dynamics.heldContacts == 0 && !r.last.dynamics.released,
+						"pending-physical-loss-or-density-change-stops-before-admission");
+				else
+					check(!r.pan.BatchDead() && r.last.dynamics.heldContacts == 1 &&
+						(change != 4 || r.contacts.front().motionContext.unit == CanvasPanMotionUnit::SystemDip),
+						"pending-mode-revision-or-physical-gain-preserves-latched-context");
+				r.Up(Rig::kTouchTablet, 1, 100, 100, 12); r.Frame(16);
+				check(!r.pan.HasContacts() && !r.pan.BatchDead(), "pending-scale-change-terminal-still-recycles");
+			}
+
+		}
+		catch (...) { ++failures; std::fprintf(stderr, "[Draw3PanScale] exception\n"); }
+		return failures;
+	}
 
 	// 验证适配器真正提交的批次；不能用直接调用动力学的有序样本替代此回归。
 	int RunCanvasPanAdapterOrderingProbe() noexcept
@@ -7148,7 +7585,7 @@ namespace Inkeys::Drawing::Draw3
 
 	int RunCanvasPanFeelProductionProbe() noexcept
 	{
-		int failures = RunCanvasPanAdapterOrderingProbe() + RunCanvasPanStreamProbe(), rows = 0;
+		int failures = RunCanvasPanScaleProductionProbe() + RunCanvasPanAdapterOrderingProbe() + RunCanvasPanStreamProbe(), rows = 0;
 		try
 		{
 			const std::array<CanvasPanScale, 4> scales{ CanvasPanScale{ 1.0, 1.0 },
@@ -7484,7 +7921,7 @@ namespace Inkeys::Drawing::Draw3
 
 	int RunCanvasPanProductionProbe() noexcept
 	{
-		int failures = RunCanvasPanAdapterOrderingProbe();
+		int failures = RunCanvasPanScaleProductionProbe() + RunCanvasPanAdapterOrderingProbe();
 		const auto check = [&failures](bool condition, const char* name)
 		{
 			if (condition) return;
@@ -7669,11 +8106,11 @@ namespace Inkeys::Drawing::Draw3
 				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::Mouse) == SelectionDownRoute::Pan &&
 				routeOf(true, kWb, InputDeviceType::Pen, CanvasPanDeviceClass::None) == SelectionDownRoute::Pan &&
 				routeOf(true, kWb, InputDeviceType::MouseRight, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
-				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::Touch) == SelectionDownRoute::Discard &&
-				routeOf(true, kWb, InputDeviceType::Touch, CanvasPanDeviceClass::Mouse) == SelectionDownRoute::Discard &&
+				routeOf(true, kWb, InputDeviceType::MouseLeft, CanvasPanDeviceClass::Touch) == SelectionDownRoute::Pan &&
+				routeOf(true, kWb, InputDeviceType::Touch, CanvasPanDeviceClass::Mouse) == SelectionDownRoute::Pan &&
 				routeOf(true, Bridge::Workspace::Desktop, InputDeviceType::Touch, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard &&
 				routeOf(true, Bridge::Workspace::Presentation, InputDeviceType::MouseLeft, CanvasPanDeviceClass::None) == SelectionDownRoute::Discard,
-				"selection routing: whiteboard Touch/MouseLeft/Pen pan, latched class is exclusive");
+				"static selection routing registers candidates; ordered kernel owns class arbitration");
 			check(SelectionReleasesTimerPeriod(true, false) && !SelectionReleasesTimerPeriod(true, true) &&
 				!SelectionReleasesTimerPeriod(false, false) && !SelectionReleasesTimerPeriod(false, true),
 				"Selection keeps the 1 ms timer period while a pan or inertia is active");
@@ -8141,7 +8578,7 @@ namespace Inkeys::Drawing::Draw3
 				rig.Frame(32.0);
 				rig.Down(Rig::kMouseTablet, 6, InputDeviceType::MouseLeft, 600, 300, 36.0);
 				rig.Frame(40.0);
-				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Touch && rig.input.HasQuarantinedContacts(),
+				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Touch && rig.pan.HasSuppressedContacts(),
 					"Mouse Down is discarded while Touch owns the pan");
 				rig.Move(Rig::kMouseTablet, 6, 900, 300, 44.0);
 				rig.Frame(48.0);
@@ -8156,7 +8593,7 @@ namespace Inkeys::Drawing::Draw3
 				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Mouse, "the other class pans once the latch is free");
 				rig.Down(Rig::kTouchTablet, 9, InputDeviceType::Touch, 500, 300, 68.0);
 				rig.Frame(72.0);
-				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Mouse && rig.input.HasQuarantinedContacts() &&
+				check(rig.pan.OwnerClass() == CanvasPanDeviceClass::Mouse && rig.pan.HasSuppressedContacts() &&
 					!rig.pan.TouchPanHeld(), "Touch is discarded while Mouse owns the pan and never raises Touch Pan");
 				rig.Up(Rig::kMouseTablet, 8, 300, 300, 76.0);
 				rig.Up(Rig::kTouchTablet, 9, 500, 300, 76.0);
@@ -8206,8 +8643,8 @@ namespace Inkeys::Drawing::Draw3
 					HandleSelectionDown(rig.input, { record, record->Generation() }, true,
 						rig.workspace, rig.pan, rig.scale);
 				}
-				check(ShouldBeginSuppressingPenContactDuringTouchPan(rig.pan.TouchPanHeld(rig.input), true),
-					"new Touch Down suppresses Pen before the first Step");
+				check(!rig.pan.TouchPanHeld(rig.input) && !rig.pan.Active(),
+					"pending Touch is not authoritative held before ordered Step");
 				rig.pan.Stop();
 				rig.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 200, 100, 12.0);
 				rig.Frame(16.0);
@@ -8241,8 +8678,8 @@ namespace Inkeys::Drawing::Draw3
 				check(rig.pan.TouchPanHeld(rig.input, Rig::Qpc(penDownMs)) == overlaps,
 					"Touch physical interval includes Pen before/equal Up, excludes Pen after Up");
 				rig.Frame(108.0);
-				check(rig.priorityPenSuppressed == overlaps && rig.navigationPenSuppressed == overlaps,
-					"both production mailbox sites arbitrate Pen95/100/105 against TouchUp100");
+				check(rig.navigationPenSuppressed == overlaps,
+					"ordered production admission arbitrates Pen95/100/105 against TouchUp100");
 				if (overlaps)
 				{
 					check(rig.last.dynamics.released && rig.pan.Phase() == CanvasPanPhase::Coasting &&
@@ -8394,7 +8831,7 @@ namespace Inkeys::Drawing::Draw3
 				if (holding)
 				{
 					check(rig.pan.HasContacts() && rig.pan.BatchDead() &&
-						rig.pan.OwnerClass() == CanvasPanDeviceClass::Touch,
+						rig.pan.OwnerClass() == CanvasPanDeviceClass::None && !rig.pan.TouchPanHeld(rig.input) && !rig.pan.Active(),
 						"a held finger stays registered but dead until it lifts");
 					rig.Up(finger.tablet, 1, finger.x0 + 1300.0, finger.y0, t + 4.0);
 					rig.Frame(t + 8.0);
@@ -8678,8 +9115,8 @@ namespace Inkeys::Drawing::Draw3
 				{
 					check(!rejected && rejectedDowns == 0 && passedDowns == 0 &&
 						selectionPan.HasContacts() && !selectionInput.HasQuarantinedContacts() &&
-						selectionPan.OwnerClass() == CanvasPanClassOf(source.device, source.inverted),
-						"whiteboard Move mode registers Touch/MouseLeft as a pan contact, not a discard");
+						selectionPan.OwnerClass() == CanvasPanDeviceClass::None && !selectionPan.Active(),
+						"whiteboard Move mode registers a Pending candidate before ordered admission");
 					check(selectionInput.PublishUp(tablet, 1, snapshot(ContactPhase::Up)),
 						"pan contact accepts its real Up");
 					(void)selectionPan.Step(selectionInput, 2, 1000, false);
@@ -15995,7 +16432,7 @@ namespace Inkeys::Drawing::Draw3
 				// Selection：白板移动模式的 Touch/鼠标左键成为平移触点（不经建笔、不受多指书写开关限制）；
 				// 笔、鼠标右键、另一类设备及桌面/PPT 的 Selection 丢弃到终态。
 				if (window_.SelectionMode() && HandleSelectionDown(input_, handle, true, activeWorkspace,
-					canvasPan, CanvasPanScaleFromDisplay(window_.SpeedEraserDisplayScaleSnapshot()),
+					canvasPan, CanvasPanScaleFromSnapshot(window_.CanvasPanDisplayContextSnapshot()),
 					&suppressPenUntilRelease))
 					return;
 				if (canvasDebugOptions_.load(std::memory_order_acquire) == 3u)
@@ -16070,6 +16507,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 命令可能在本帧早些时候切换了工作区或选择模式：先发布移动模式并处理“刚离开”。
 			refreshCanvasPanMode();
+			canvasPan.ObserveDisplay(CanvasPanScaleFromSnapshot(window_.CanvasPanDisplayContextSnapshot()));
 			const CanvasPanPenMailbox pen = ObserveCanvasPanPenMailbox(window_, input_, canvasPan,
 				suppressPenUntilRelease, suppressedPenTerminalQpc);
 			const bool penInRange = pen.inRange;
@@ -16080,7 +16518,7 @@ namespace Inkeys::Drawing::Draw3
 				canvasPan.StopFling();
 			}
 
-			// 有序真实样本 -> DIP 内核 -> 像素位移；白板拖动模式的 hover 不急停。
+			// 有序真实样本 -> 本批运动域内核 -> 系统DIP/像素出口；移动模式hover不急停。
 			canvasPan.SetInertiaOptions(CanvasPanInertiaOptions::Decode(canvasPanInertiaOptions_.load(std::memory_order_acquire)));
 			canvasPan.SetNativeAdmission(!input_.AdmissionBlocked() && !whiteboardLoading);
 			const WindowSize panSize = window_.Size();
@@ -16093,6 +16531,7 @@ namespace Inkeys::Drawing::Draw3
 			if (frame.touchPanEndQpc > 0)
 				lastTouchPanEndQpc = (std::max)(lastTouchPanEndQpc, frame.touchPanEndQpc);
 			// 仅触摸持有且仍有手按住时才进入窗口层的 Touch Pan 态；鼠标拖动保持系统箭头。
+			(void)ObserveCanvasPanPenMailbox(window_, input_, canvasPan, suppressPenUntilRelease, suppressedPenTerminalQpc);
 			window_.SetTouchPanActive(frame.touchPanHeld);
 
 			// 独立平移诊断只记录活动/输入/结束帧，关闭时不格式化，空闲不刷屏。
@@ -16115,6 +16554,19 @@ namespace Inkeys::Drawing::Draw3
 						out.releaseSpanSeconds * 1000.0, out.releaseAgeSeconds * 1000.0,
 						out.rejectedSamples, out.reversalCount, out.timingResetCount,
 						out.releaseTailSpeedLimit, out.releaseTailSpeedLimited ? 1u : 0u, frame.phaseChanged ? 1u : 0u);
+				if (out.released)
+				{
+					const auto& context = out.releaseMotionContext;
+					const double speed = std::hypot(out.boostedReleaseVelocity.x * context.motionPerDipX,
+						out.boostedReleaseVelocity.y * context.motionPerDipY);
+					const auto parameters = out.frictionParameters;
+					const double duration = parameters.tauSeconds * std::log1p(speed / (parameters.deceleration * parameters.tauSeconds));
+					LogCanvasPan("release-profile source=%llu profile=%u unit=%s selected-motion=(%.8g,%.8g) tau=%.8g c=%.8g target-distance=%.8g duration-s=%.8g",
+						static_cast<unsigned long long>(out.releaseSourceKey), static_cast<unsigned>(context.profile),
+						context.unit == CanvasPanMotionUnit::Millimeters ? "mm" : "system-DIP",
+						out.releaseMotionVelocity.x, out.releaseMotionVelocity.y, parameters.tauSeconds, parameters.deceleration,
+						parameters.tauSeconds * speed - parameters.deceleration * parameters.tauSeconds * duration, duration);
+				}
 				for (size_t i = 0; i < out.pointerCount; ++i)
 				{
 					const auto& pointer = out.pointerDiagnostics[i];
@@ -16174,8 +16626,9 @@ namespace Inkeys::Drawing::Draw3
 				leftMouseSpeedEraser.CancelVisual();rightMouseSpeedEraser.CancelVisual();
 			}
 			DrawingCursorSample penSample,mouseSample;
-			window_.ReadPenCursorSample(penSample);window_.ReadMouseCursorSample(mouseSample);
-			if(window_.TouchPanActive() || suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan())penSample.valid=false;
+			bool penFeedbackSuppressed = false;
+			window_.ReadPenCursorSample(penSample, &penFeedbackSuppressed);window_.ReadMouseCursorSample(mouseSample);
+			if(window_.TouchPanActive() || suppressPenUntilRelease || penFeedbackSuppressed)penSample.valid=false;
 			const auto selected=window_.ActiveTool();
 			const auto policy=selected==DrawingTool::Eraser?observedEraserPolicy:SpeedEraser::EraserToolPolicy::ByEntry;
 			const double now=AbsoluteQpcSeconds(nowQpc,qpcFrequency);
@@ -16229,10 +16682,10 @@ namespace Inkeys::Drawing::Draw3
 			}
 			DrawingCursorSample penSample;
 			DrawingCursorSample mouseSample;
-			window_.ReadPenCursorSample(penSample);
+			bool penFeedbackSuppressed = false;
+			window_.ReadPenCursorSample(penSample, &penFeedbackSuppressed);
 			window_.ReadMouseCursorSample(mouseSample);
-			if (window_.TouchPanActive() || suppressPenUntilRelease ||
-				window_.PenContactSuppressedForTouchPan())
+			if (window_.TouchPanActive() || suppressPenUntilRelease || penFeedbackSuppressed)
 				penSample.valid = false;
 
 			if (mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds))

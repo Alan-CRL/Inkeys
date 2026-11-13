@@ -9,6 +9,7 @@
 #include <initializer_list>
 #include <span>
 #include <limits>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -948,6 +949,330 @@ namespace
 			"disabled release does not restart on later empty frames");
 	}
 
+	struct AdaptedPan
+	{
+		std::unique_ptr<CanvasPanDynamics> dynamics = std::make_unique<CanvasPanDynamics>();
+		std::array<CanvasPanMotionContext, 4> contexts = {};
+		size_t contextCount = 1;
+		std::array<CanvasPanAdmissionDecision, 128> decisions = {};
+		CanvasPanFrameOutput Step(double ms, std::span<const CanvasPanContactSample> contacts = {})
+		{
+			CanvasPanFrameInput input;
+			input.frameQpc = QpcMs(ms); input.qpcFrequency = kFreq; input.contacts = contacts;
+			input.viewportSizeDip = { 1920, 1080 };
+			input.motionContexts = std::span(contexts).first(contextCount); input.admissionDecisions = decisions;
+			return dynamics->Step(input);
+		}
+		CanvasPanFrameOutput Step(double ms, std::initializer_list<CanvasPanContactSample> contacts)
+		{ return Step(ms, std::span<const CanvasPanContactSample>(contacts.begin(), contacts.size())); }
+	};
+
+	CanvasPanContactSample AdaptedContact(uint64_t key, CanvasPanSourceClass kind, size_t context,
+		double ms, double x, double y = 0, CanvasPanContactPhase phase = CanvasPanContactPhase::Move)
+	{
+		auto c = Contact(key, ms, x, y, phase);
+		c.sourceKey = (static_cast<uint64_t>(kind) << 32) | 1; c.motionContextIndex = context; return c;
+	}
+	CanvasPanMotionContext PhysicalContext(CanvasPanMotionProfile profile, double x = .2, double y = .3)
+	{
+		auto c = MakeCanvasPanMotionContext(profile, x, y); c.inputMapped = true; c.outputKey = 7; return c;
+	}
+	CanvasPanFrameOutput AdaptedFling(AdaptedPan& pan, double vx, double vy = 0)
+	{
+		const auto& c = pan.contexts[0];
+		const auto kind = c.profile == CanvasPanMotionProfile::ScreenPenPhysical ? CanvasPanSourceClass::Pen : CanvasPanSourceClass::Touch;
+		pan.Step(0, { AdaptedContact(1, kind, 0, 0, 0, 0, CanvasPanContactPhase::Down) });
+		for (int n = 1; n <= 4; ++n)
+			pan.Step(n * 8, { AdaptedContact(1, kind, 0, n * 8, vx * n * .008 / c.motionPerDipX, vy * n * .008 / c.motionPerDipY) });
+		return pan.Step(33, { AdaptedContact(1, kind, 0, 33, vx * .032 / c.motionPerDipX, vy * .032 / c.motionPerDipY, CanvasPanContactPhase::Up) });
+	}
+
+	void TestMotionProfilesAndFriction(Checks& check)
+	{
+		Info("motion profiles: physical units, bounded mode response and final boost cap");
+		auto touch = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+		auto pen = PhysicalContext(CanvasPanMotionProfile::ScreenPenPhysical);
+		check(touch.touchSlop == 2.5 && pen.touchSlop == 1.5 && touch.velocityLimit == 2400 && pen.velocityLimit == 1800,
+			"physical profiles use independently specified space and speed thresholds");
+		for (const auto profile : { CanvasPanMotionProfile::IndirectDip, CanvasPanMotionProfile::TouchFallback,
+			CanvasPanMotionProfile::ScreenPenFallback, CanvasPanMotionProfile::TouchPhysical, CanvasPanMotionProfile::ScreenPenPhysical })
+			check(IsCanvasPanMotionContextValid(MakeCanvasPanMotionContext(profile, .2, .3)), "all profile factories yield finite numeric contexts");
+		auto bad = touch; bad.motionPerDipX = .001;
+		check(!IsCanvasPanMotionContextValid(bad), "individual density axis cannot hide behind a valid geometric mean");
+		bad = touch; bad.motionPerDipY = std::numeric_limits<double>::quiet_NaN();
+		check(!IsCanvasPanMotionContextValid(bad), "nonfinite physical axis is rejected");
+		bad = touch; bad.unit = CanvasPanMotionUnit::SystemDip;
+		check(!IsCanvasPanMotionContextValid(bad), "motion label cannot disagree with profile units");
+		touch.touchWeight = 1;
+		auto params = ResolveCanvasPanFriction(touch, 600);
+		check.Near(params.tauSeconds, .30, 1e-12, "classroom response has no fast amplification at 600 mm/s");
+		params = ResolveCanvasPanFriction(touch, 1500);
+		check.Near(params.tauSeconds, .42, 1e-12, "classroom fast response reaches .42s tau");
+		check.Near(params.deceleration, 150, 1e-12, "classroom fast response reaches 150 mm/s squared");
+		auto fallback = MakeCanvasPanMotionContext(CanvasPanMotionProfile::TouchFallback);
+		fallback.largeScreen = true;
+		params = ResolveCanvasPanFriction(fallback, 2250);
+		check.Near(params.tauSeconds, .36, 1e-12, "large-screen fallback has a smaller maximum tau increase");
+		check.Near(params.deceleration, 875, 1e-12, "fallback response keeps DIP deceleration units");
+		fallback.largeScreen = false;
+		check.Near(ResolveCanvasPanFriction(fallback, 12000).tauSeconds, .3, 1e-12, "desktop fallback stays neutral at all speeds");
+
+		for (const double speed : { 100.0, 500.0, 600.0, 750.0, 1000.0, 1500.0, 2400.0 })
+		{
+			CanvasPanFlingCurve base, shorter;
+			base.Start({ static_cast<float>(speed), 0 }, { 1000, 1000 }, { .3, 200 });
+			shorter.Start({ static_cast<float>(speed), 0 }, { 1000, 1000 }, { .2, 350 });
+			check(shorter.Distance().x < base.Distance().x && shorter.Duration() < base.Duration(), "same-effective-speed screen pen is shorter in distance and time");
+			double previousDistance = base.Distance().x;
+			for (const double weight : { 0.0, .25, .5, .75, 1.0 })
+			{
+				touch.touchWeight = weight;
+				CanvasPanFlingCurve curve; curve.Start({ static_cast<float>(speed), 0 }, { 1000, 1000 }, ResolveCanvasPanFriction(touch, speed));
+				check(curve.Distance().x + 1e-4 >= previousDistance, "physical response is monotonic in surface weight");
+				check(curve.Distance().x <= base.Distance().x * 1.4 + 1e-3 && curve.Duration() <= base.Duration() * 1.4 + 1e-9,
+					"equal-effective-v0 single physical coast obeys forty-percent bound");
+				previousDistance = curve.Distance().x;
+			}
+		}
+		for (const auto profile : { CanvasPanMotionProfile::TouchPhysical, CanvasPanMotionProfile::ScreenPenPhysical,
+			CanvasPanMotionProfile::TouchFallback, CanvasPanMotionProfile::ScreenPenFallback })
+		{
+			const auto c = MakeCanvasPanMotionContext(profile, .2, .3);
+			CanvasPanFlingBooster booster; booster.Configure(c);
+			booster.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1, { static_cast<float>(c.velocityLimit), 0 }));
+			booster.ObserveProgressFling({ static_cast<float>(c.velocityLimit), 0 });
+			booster.ObserveGestureEvent(Gesture(CanvasPanGestureType::FlingCancel, 1.01));
+			const auto v = booster.GetVelocityForFlingStart(Gesture(CanvasPanGestureType::FlingStart, 1.02, { static_cast<float>(c.velocityLimit), 0 }));
+			check.Near(std::hypot(v.x, v.y), c.velocityLimit, .001, "profile vector cap applies after residual addition");
+		}
+	}
+
+	void TestMotionReleaseQuality(Checks& check)
+	{
+		for (const double gain : { .25, 1.0, 2.0 })
+		{
+			auto c = MakeCanvasPanMotionContext(CanvasPanMotionProfile::TouchFallback);
+			c.largeScreen = true; c.intentGain = gain;
+			for (const double speed : { 100.0, 750.0, 2250.0, 6000.0, 12000.0 })
+			{
+				CanvasPanFlingCurve base, curve;
+				base.Start({ static_cast<float>(speed), 0 }, { 1920, 1080 });
+				curve.Start({ static_cast<float>(speed), 0 }, { 1920, 1080 }, ResolveCanvasPanFriction(c, speed));
+				check(curve.Distance().x >= base.Distance().x - 1e-4 && curve.Distance().x <= base.Distance().x * 1.2 + .001 &&
+					curve.Duration() <= base.Duration() * 1.2 + 1e-9, "DIP intent gain selects bounded response without changing initial speed");
+			}
+		}
+		AdaptedPan continued;
+		continued.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+		continued.contexts[0].touchWeight = 1;
+		AdaptedFling(continued, 1500);
+		const auto coast = continued.Step(90);
+		continued.Step(91, { AdaptedContact(2, CanvasPanSourceClass::Touch, 0, 91, 1000, 0, CanvasPanContactPhase::Down) });
+		for (int n = 1; n <= 4; ++n)
+			continued.Step(91 + n * 8, { AdaptedContact(2, CanvasPanSourceClass::Touch, 0, 91 + n * 8, 1000 + 900 * n * .008 / .2) });
+		auto out = continued.Step(124, { AdaptedContact(2, CanvasPanSourceClass::Touch, 0, 124, 1000 + 900 * .032 / .2, 0, CanvasPanContactPhase::Up) });
+		check.Near(out.boostedReleaseVelocity.x, out.selectedReleaseVelocity.x + coast.contentVelocity.x, .1,
+			"physical same-direction continuation adds actual residual in the same metric");
+		check.Near(out.releaseMotionVelocity.x, 900, .05, "physical pre-boost speed is independently diagnosed");
+		check.Near(out.frictionParameters.tauSeconds, .331111111111, 1e-5,
+			"boost cannot promote its own friction selection to the full fast-response tier");
+		continued.Step(160, { AdaptedContact(3, CanvasPanSourceClass::Touch, 0, 160, 2000, 0, CanvasPanContactPhase::Down) });
+		for (int n = 1; n <= 4; ++n)
+			continued.Step(160 + n * 8, { AdaptedContact(3, CanvasPanSourceClass::Touch, 0, 160 + n * 8, 2000 - 900 * n * .008 / .2) });
+		out = continued.Step(193, { AdaptedContact(3, CanvasPanSourceClass::Touch, 0, 193, 2000 - 900 * .032 / .2, 0, CanvasPanContactPhase::Up) });
+		check(out.boostedReleaseVelocity.x < 0 && out.selectedReleaseVelocity.x < 0,
+			"physical reversal does not restore old positive residual direction");
+
+		AdaptedPan generation;
+		generation.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical); generation.contexts[0].sourceGeneration = 1;
+		AdaptedFling(generation, 1500); generation.Step(90);
+		generation.contexts[0].sourceGeneration = 2;
+		out = generation.Step(91);
+		check(out.phase == CanvasPanPhase::Coasting && generation.dynamics->MotionContext().sourceGeneration == 1,
+			"source generation publication alone does not replace the owned active coast context");
+		generation.Step(92, { AdaptedContact(2, CanvasPanSourceClass::Touch, 0, 92, 1000, 0, CanvasPanContactPhase::Down) });
+		for (int n = 1; n <= 4; ++n)
+			generation.Step(92 + n * 8, { AdaptedContact(2, CanvasPanSourceClass::Touch, 0, 92 + n * 8, 1000 + 500 * n * .008 / .2) });
+		out = generation.Step(125, { AdaptedContact(2, CanvasPanSourceClass::Touch, 0, 125, 1080, 0, CanvasPanContactPhase::Up) });
+		check.Near(out.boostedReleaseVelocity.x, out.selectedReleaseVelocity.x, .01,
+			"a new producer generation cannot inherit the old generation's residual despite reusing tablet context ID");
+
+		AdaptedPan rapid; rapid.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+		std::vector<CanvasPanContactSample> samples{ AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 1000, 0, CanvasPanContactPhase::Down) };
+		for (int n = 1; n <= 96; ++n)
+		{
+			const double t = n / 960.0;
+			const float inputDip = static_cast<float>(1000 + 2400 * t / .2);
+			samples.push_back(AdaptedContact(1, CanvasPanSourceClass::Touch, 0, t * 1000, inputDip));
+		}
+		samples.push_back(AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 101, 2200, 0, CanvasPanContactPhase::Up));
+		out = rapid.Step(150, samples);
+		check(out.timingResetCount == 0 && out.releaseReason == CanvasPanReleaseReason::Ready,
+			"960Hz float DIP samples at physical cap survive transformed coordinate and QPC quantization guards");
+		check.Near(out.releaseMotionVelocity.x, 2400, .1, "high-frequency physical cap remains a reliable positive release");
+	}
+
+	void TestPhysicalMotionCanonicalOutput(Checks& check)
+	{
+		Info("motion units: anisotropic canonical DIP output, lifetime and physical equivalence");
+		for (const double ratio : { .1, .2, .4 })
+		{
+			AdaptedPan pan; pan.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical, ratio, ratio * 1.5);
+			const auto release = AdaptedFling(pan, 300, 400);
+			check.Near(release.releaseMotionVelocity.x, 300, .01, "physical selected velocity retains millimeters per second");
+			check.Near(release.selectedReleaseVelocity.x, 300 / ratio, .05, "public release velocity is canonical system DIP per second");
+			check.Near(release.selectedReleaseVelocity.y, 400 / (ratio * 1.5), .05, "each public velocity axis uses its own inverse metric");
+			check(release.releaseMotionContext.unit == CanvasPanMotionUnit::Millimeters, "release has its own motion unit identity");
+			pan.contexts[0].motionPerDipX = std::numeric_limits<double>::quiet_NaN(); // 帧数组可立即被复用。
+			const auto terminal = pan.Step(1000);
+			const double xMm = terminal.contentDelta.x * ratio, yMm = terminal.contentDelta.y * ratio * 1.5;
+			check.Near(std::hypot(xMm, yMm), 109.795269, .002, "same physical release has the same endpoint across DPI/resolution metrics");
+			check.Near(xMm / yMm, .75, 1e-5, "anisotropic inverse transform preserves physical direction");
+			check(terminal.phase == CanvasPanPhase::Idle, "fling owns its context after caller storage is overwritten");
+		}
+		AdaptedPan geometry; geometry.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+		auto out = geometry.Step(0, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down) });
+		out = geometry.Step(8, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 8, 20) });
+		check.Near(out.contentDelta.x, 7.5, .0001, "physical slop is deducted once before one-to-one DIP tracking");
+		out = geometry.Step(16, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 16, 40) });
+		check.Near(out.contentDelta.x, 20, .0001, "held content remains one-to-one after starting physical pan");
+
+		AdaptedPan pair; pair.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+		pair.Step(0, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down) });
+		out = pair.Step(1, { AdaptedContact(2, CanvasPanSourceClass::Touch, 0, 1, 30, 40, CanvasPanContactPhase::Down) });
+		check.Near(out.focus.x, 15, .0001, "anisotropic two-finger focus is public DIP");
+		check.Near(out.focus.y, 20, .0001, "two-finger focus restores the y metric independently");
+		check.Near(out.span, 25, .0001, "span is recomputed after restoring pointers rather than dividing an average scale");
+		pair.Step(10, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 10, 15) });
+		out = pair.Step(20, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 20, 30) });
+		check.Near(out.pointerDiagnostics[0].velocity.x, 1500, .01, "per-pointer public diagnostics are DIP velocity");
+		check.Near(pair.dynamics->ContentVelocity().x, 750, .01, "held velocity is not inverse-transformed twice via Snapshot");
+	}
+
+	void TestMotionAdmissionAndMixedFrames(Checks& check)
+	{
+		Info("motion admission: ordered mixed units, rejected contacts and terminal barriers");
+		for (const bool reversePublication : { false, true })
+		{
+			AdaptedPan pan; pan.contextCount = 2;
+			pan.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical, .25, .5);
+			pan.contexts[1] = {}; pan.contexts[1].outputKey = 7;
+			std::vector<CanvasPanContactSample> samples{
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down),
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 10, 20),
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 20, 40),
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 30, 60),
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 31, 60, 0, CanvasPanContactPhase::Up),
+				AdaptedContact(2, CanvasPanSourceClass::Mouse, 1, 32, 100, 0, CanvasPanContactPhase::Down),
+				AdaptedContact(2, CanvasPanSourceClass::Mouse, 1, 42, 120) };
+			if (reversePublication) std::reverse(samples.begin(), samples.end());
+			const auto out = pan.Step(50, samples);
+			check.Near(out.contentDelta.x, 55, .0001, "same frame sums 50 DIP physical Touch plus 5 DIP Mouse independently");
+			check(out.sourceKey >> 32 == static_cast<uint64_t>(CanvasPanSourceClass::Mouse) &&
+				out.releaseSourceKey >> 32 == static_cast<uint64_t>(CanvasPanSourceClass::Touch), "release identity is independent of later accepted Down source");
+			check(out.releaseMotionContext.unit == CanvasPanMotionUnit::Millimeters && pan.dynamics->MotionContext().unit == CanvasPanMotionUnit::SystemDip,
+				"release and current context do not borrow one another's units");
+			check(out.admissionDecisionCount == 2 && pan.decisions[0].accepted && pan.decisions[1].accepted, "ordered admission decisions follow actual QPC order");
+		}
+		AdaptedPan ties; ties.contextCount = 2;
+		ties.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical); ties.contexts[1] = {}; ties.contexts[1].outputKey = 7;
+		auto out = ties.Step(40, {
+			AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down),
+			AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 30, 20, 0, CanvasPanContactPhase::Up),
+			AdaptedContact(2, CanvasPanSourceClass::Mouse, 1, 30, 0, 0, CanvasPanContactPhase::Down) });
+		check(out.admissionDecisionCount == 2 && !ties.decisions[1].accepted && ties.decisions[1].reason == CanvasPanAdmissionReason::ClassConflict,
+			"same QPC Mouse Down precedes Touch Up and remains overlapping");
+
+		for (const bool reversePublication : { false, true })
+		{
+			AdaptedPan pan; pan.contextCount = 3;
+			pan.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+			pan.contexts[1] = MakeCanvasPanMotionContext(CanvasPanMotionProfile::TouchFallback); pan.contexts[1].outputKey = 7;
+			pan.contexts[2] = PhysicalContext(CanvasPanMotionProfile::ScreenPenPhysical);
+			std::vector<CanvasPanContactSample> events{
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down),
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 30, 0, 0, CanvasPanContactPhase::Up),
+				AdaptedContact(2, CanvasPanSourceClass::Touch, 1, 20, 100, 0, CanvasPanContactPhase::Down),
+				AdaptedContact(3, CanvasPanSourceClass::Pen, 2, 40, 0, 0, CanvasPanContactPhase::Down) };
+			if (reversePublication) std::reverse(events.begin(), events.end());
+			out = pan.Step(50, events);
+			check(pan.decisions[0].accepted && !pan.decisions[1].accepted && pan.decisions[2].accepted && out.heldContacts == 1,
+				"rejected incompatible Touch cannot bridge an ended gesture and block a later Pen");
+		}
+		AdaptedPan barrier; barrier.contextCount = 2;
+		barrier.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+		barrier.contexts[1] = PhysicalContext(CanvasPanMotionProfile::ScreenPenPhysical);
+		barrier.Step(0, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down) });
+		barrier.Step(10, { AdaptedContact(2, CanvasPanSourceClass::Pen, 1, 10, 0, 0, CanvasPanContactPhase::Down) });
+		barrier.Step(20, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 20, 0, 0, CanvasPanContactPhase::Up) });
+		out = barrier.Step(30, { AdaptedContact(3, CanvasPanSourceClass::Pen, 1, 30, 0, 0, CanvasPanContactPhase::Down) });
+		check(!barrier.decisions[0].accepted && out.heldContacts == 0, "rejected Pen remains a barrier across frames until its real terminal");
+		barrier.Step(40, { AdaptedContact(2, CanvasPanSourceClass::Pen, 1, 40, 0, 0, CanvasPanContactPhase::Up) });
+		barrier.Step(50, { AdaptedContact(3, CanvasPanSourceClass::Pen, 1, 50, 0, 0, CanvasPanContactPhase::Cancelled) });
+		out = barrier.Step(60, { AdaptedContact(4, CanvasPanSourceClass::Pen, 1, 60, 0, 0, CanvasPanContactPhase::Down) });
+		check(barrier.decisions[0].accepted && out.heldContacts == 1, "all true rejected terminals release the Pen barrier");
+		barrier.dynamics->Stop();
+		barrier.Step(70, { AdaptedContact(5, CanvasPanSourceClass::Touch, 0, 70, 0, 0, CanvasPanContactPhase::Down) });
+		barrier.Step(71, { AdaptedContact(6, CanvasPanSourceClass::Pen, 1, 71, 0, 0, CanvasPanContactPhase::Down) });
+		barrier.dynamics->Stop(); // 新导航 epoch 必须同时撤销旧拒收身份。
+		out = barrier.Step(72, { AdaptedContact(7, CanvasPanSourceClass::Pen, 1, 72, 0, 0, CanvasPanContactPhase::Down) });
+		check(barrier.decisions[0].accepted, "Stop/new epoch clears rejected identities instead of permanently suppressing Pen");
+
+		AdaptedPan malformed; malformed.contextCount = 2;
+		malformed.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+		malformed.contexts[1] = PhysicalContext(CanvasPanMotionProfile::ScreenPenPhysical);
+		malformed.Step(0, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down) });
+		malformed.Step(10, { AdaptedContact(2, CanvasPanSourceClass::Pen, 1, 10, 0, 0, CanvasPanContactPhase::Down) });
+		auto badTouchUp = AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 20, std::numeric_limits<double>::quiet_NaN(), 0, CanvasPanContactPhase::Up);
+		badTouchUp.qpc = 0;
+		out = malformed.Step(20, { badTouchUp });
+		check(out.heldContacts == 0 && out.phase == CanvasPanPhase::Idle && out.releaseReason == CanvasPanReleaseReason::TimingRejected,
+			"accepted terminal with invalid time and coordinates closes contact without fabricating release speed");
+		auto badPenUp = AdaptedContact(2, CanvasPanSourceClass::Pen, 1, 30, std::numeric_limits<double>::infinity(), 0, CanvasPanContactPhase::Cancelled);
+		badPenUp.qpc = -1;
+		malformed.Step(30, { badPenUp });
+		out = malformed.Step(40, { AdaptedContact(3, CanvasPanSourceClass::Pen, 1, 40, 0, 0, CanvasPanContactPhase::Down) });
+		check(malformed.decisions[0].accepted && out.heldContacts == 1,
+			"rejected Pen terminal retires its barrier even if payload clock or position is invalid");
+
+		for (const int64_t badQpc : { int64_t{0}, QpcMs(5) })
+		{
+			AdaptedPan sameFrame; sameFrame.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+			auto earlyUp = AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 20, 0, 0, CanvasPanContactPhase::Up); earlyUp.qpc = badQpc;
+			out = sameFrame.Step(30, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 10, 0, 0, CanvasPanContactPhase::Down), earlyUp });
+			check(out.heldContacts == 0 && out.phase == CanvasPanPhase::Idle && out.releaseReason == CanvasPanReleaseReason::TimingRejected,
+				"same-frame terminal sorted before its Down closes identity without leaving held or fling");
+			AdaptedPan rejected; rejected.contextCount = 2;
+			rejected.contexts[0] = PhysicalContext(CanvasPanMotionProfile::TouchPhysical);
+			rejected.contexts[1] = PhysicalContext(CanvasPanMotionProfile::ScreenPenPhysical);
+			rejected.Step(0, { AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 0, 0, 0, CanvasPanContactPhase::Down) });
+			auto earlyPenUp = AdaptedContact(2, CanvasPanSourceClass::Pen, 1, 20, 0, 0, CanvasPanContactPhase::Cancelled); earlyPenUp.qpc = badQpc;
+			rejected.Step(30, { AdaptedContact(2, CanvasPanSourceClass::Pen, 1, 10, 0, 0, CanvasPanContactPhase::Down), earlyPenUp,
+				AdaptedContact(1, CanvasPanSourceClass::Touch, 0, 20, 0, 0, CanvasPanContactPhase::Up) });
+			out = rejected.Step(40, { AdaptedContact(3, CanvasPanSourceClass::Pen, 1, 40, 0, 0, CanvasPanContactPhase::Down) });
+			check(rejected.decisions[0].accepted, "early malformed terminal also prevents a same-frame rejected Pen barrier from lingering");
+		}
+
+		AdaptedPan many; std::vector<CanvasPanContactSample> samples;
+		for (int n = 0; n < 40; ++n)
+		{
+			samples.push_back(AdaptedContact(n + 1, CanvasPanSourceClass::Mouse, 0, n * 2, 0, 0, CanvasPanContactPhase::Down));
+			samples.push_back(AdaptedContact(n + 1, CanvasPanSourceClass::Mouse, 0, n * 2 + 1, 0, 0, CanvasPanContactPhase::Up));
+		}
+		out = many.Step(100, samples);
+		check(out.admissionDecisionCount == 40 && out.heldContacts == 0 &&
+			std::all_of(many.decisions.begin(), many.decisions.begin() + 40, [](const auto& d) { return d.accepted; }),
+			"one frame reports more than sixteen sequential Down admissions without truncation");
+		AdaptedPan shortage; CanvasPanFrameInput insufficient;
+		const std::array one{ AdaptedContact(1, CanvasPanSourceClass::Mouse, 0, 0, 0, 0, CanvasPanContactPhase::Down) };
+		insufficient.frameQpc = QpcMs(1); insufficient.qpcFrequency = kFreq; insufficient.contacts = one;
+		insufficient.motionContexts = std::span(shortage.contexts).first(1);
+		out = shortage.dynamics->Step(insufficient);
+		check(out.admissionFailed && out.heldContacts == 0, "decision shortage fails before installing any contact or changing frame time");
+		out = shortage.Step(1, one);
+		check(shortage.decisions[0].accepted && out.heldContacts == 1, "same frame can be retried with sufficient admission storage");
+	}
+
 	void TestWhiteboardPatternGeometry(Checks& check)
 	{
 		const WhiteboardTheme light{ 0xF5F1E6, WhiteboardPattern::Dots };
@@ -1315,6 +1640,10 @@ int RunDraw3CanvasPanTests()
 	TestInvalidSamplesAndTranslation(check);
 	TestReliableProductRelease(check);
 	TestProductFrictionAndResidual(check);
+	TestMotionProfilesAndFriction(check);
+	TestMotionReleaseQuality(check);
+	TestPhysicalMotionCanonicalOutput(check);
+	TestMotionAdmissionAndMixedFrames(check);
 	TestPerSourceInertiaGate(check);
 	TestWhiteboardPatternGeometry(check);
 	TestWhiteboardFreezePatternFollow(check);

@@ -1,0 +1,58 @@
+{
+  "id": "whiteboard-pan-scale-device",
+  "name": "whiteboard-pan-scale-device",
+  "title": "白板惯性尺寸与输入设备适配",
+  "description": "按已批准v1方案实现白板惯性尺寸与设备适配，保护连续手势正确性，接入可信EDID/mm、DPI模式回退与笔短尾。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "draw3",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": "feature/whiteboard3",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户授权提交当前实现，任务保持in_progress，不归档、不push。随后屏幕笔惯性与默认光标问题先只读调查，不修改产品代码。",
+  "meta": {
+    "planning": {
+      "version": "v1",
+      "status": "approved",
+      "productDecisions": [
+        "R6",
+        "R7",
+        "R8",
+        "R9",
+        "R10"
+      ],
+      "productQuestions": [],
+      "researchCompleted": true,
+      "implementationApproved": true,
+      "approvalText": "批准并开始实现"
+    },
+    "implementation": {
+      "status": "implemented-awaiting-device-validation",
+      "automatedValidation": "passed",
+      "finalDefaultBuild": "build-5-default",
+      "fullSuite": "headless-all-r3",
+      "finalSourceComparedToFullSuite": "diagnostic-labels-comments-and-associated-fixture-assertions-only",
+      "guiTested": false,
+      "validation": "validation.md",
+      "nextAction": "manual device feedback or explicitly authorized wrap-up"
+    },
+    "commitAuthorization": {
+      "approved": true,
+      "scope": "current validated implementation and Trellis records",
+      "keepTaskActive": true,
+      "push": false
+    }
+  }
+}

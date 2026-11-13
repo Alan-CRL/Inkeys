@@ -145,6 +145,17 @@ export namespace Inkeys::Drawing::Draw3
 			DrawingCursorDiagnosticVisualReason::None;
 	};
 
+	// 每个真实 RTS Down 独立凭据；不与设备代次或 WM_POINTER pointerId 混用。
+	enum class PenFeedbackPhase : uint8_t { Down, Up, Cancelled };
+	struct PenFeedbackContact
+	{
+		uint64_t token = 0;
+		uint32_t tabletContextId = 0, cursorId = 0;
+		uint64_t sourceGeneration = 0;
+		int64_t downQpc = 0;
+		PenFeedbackPhase phase = PenFeedbackPhase::Down;
+	};
+
 	// RTS 通过窄接口发布完整 Pen 光标样本，避免输入模块依赖窗口实现。
 	class DrawingCursorEventSink
 	{
@@ -157,6 +168,11 @@ export namespace Inkeys::Drawing::Draw3
 		virtual void NotifyTouchContactEnd() noexcept = 0;
 		virtual void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept = 0;
 		virtual void ClearPenCursorSample() noexcept = 0;
+		// 旧 sink 默认沿用 latest 语义；窗口实现可按真实 token 隔离笔划反馈。
+		virtual void NotifyPenFeedbackContact(const PenFeedbackContact&) noexcept {}
+		virtual void PublishPenCursorSampleForContact(const DrawingCursorSample& sample,
+			uint64_t) noexcept { PublishPenCursorSample(sample); }
+		virtual void ClearPenCursorSampleForContact(uint64_t) noexcept { ClearPenCursorSample(); }
 	};
 
 	bool IsValidDrawingCursorAppearance(const DrawingCursorAppearance& appearance) noexcept;

@@ -17,20 +17,21 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr float kCanvasPanSharpSpeedThresholdDipPerSecond = 300.0f;
 	inline constexpr float kCanvasPanMaximumFallbackBlurDip = 12.0f;
 
-	// 起步与连甩门限沿用已确认手感；运动单位为 DIP、DIP/s、秒。
+	// 默认/间接输入兼容门限；直接输入由 MotionContext 选择空间单位与参数。
 	inline constexpr double kCanvasPanMinimumFlingVelocity = 30.0;
 	inline constexpr float kCanvasPanTouchSlopDip = 15.0f;
 	inline constexpr float kCanvasPanSlopEpsilonDip = 0.05f;
 	inline constexpr float kCanvasPanExpandSlopFactor = 1.0f;
 	inline constexpr float kCanvasPanScrollEpsilonDip = 0.1f;
 	inline constexpr size_t kCanvasPanMaximumContacts = 16;
+	inline constexpr size_t kCanvasPanMaximumRejectedContacts = 2048;
 	inline constexpr double kCanvasPanTrackerGapSeconds = 0.040;
 	inline constexpr double kCanvasPanBoostTimeoutSeconds = 0.050;
 	inline constexpr double kCanvasPanBoostMinimumFlingSpeedSquared = 350.0 * 350.0;
 	inline constexpr double kCanvasPanBoostMinimumScrollSpeedSquared = 150.0 * 150.0;
 	inline constexpr double kCanvasPanBoostMinimumIntervalSeconds = 0.001;
 
-	// 产品释放使用真实逐指尾段与向量摩擦，不随输入类型切换曲线。
+	// 产品释放使用真实逐指尾段与唯一向量摩擦；设备只选择参数。
 	inline constexpr double kCanvasPanReleaseWindowSeconds = 0.050;
 	inline constexpr double kCanvasPanReleaseMinimumSpanSeconds = 0.020;
 	inline constexpr size_t kCanvasPanReleaseMinimumSamples = 3;
@@ -70,6 +71,53 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasViewportState& viewport, CanvasVector contentDelta) noexcept;
 	CanvasVector ScreenToCanvas(CanvasVector screen, CanvasViewportState viewport) noexcept;
 	CanvasVector CanvasToScreen(CanvasVector canvas, CanvasViewportState viewport) noexcept;
+
+	enum class CanvasPanSourceClass : uint8_t { None, Touch, Mouse, Pen, PenTail };
+	enum class CanvasPanMotionUnit : uint8_t { SystemDip, Millimeters };
+	enum class CanvasPanMotionProfile : uint8_t
+	{ IndirectDip, TouchPhysical, TouchFallback, ScreenPenPhysical, ScreenPenFallback };
+
+	// 输入/公共输出始终为系统 DIP；只有批次内部采用下列运动度量。
+	struct CanvasPanMotionContext
+	{
+		CanvasPanMotionUnit unit = CanvasPanMotionUnit::SystemDip;
+		CanvasPanMotionProfile profile = CanvasPanMotionProfile::IndirectDip;
+		double motionPerDipX = 1.0, motionPerDipY = 1.0;
+		uint64_t outputKey = 0; // 前端分配的有效输出/几何签名，不使用原始 revision。
+		uint64_t sourceGeneration = 0; // 新 producer 代的首指隔离旧残余，不中断本批。
+		bool inputMapped = false, mappingConflict = false, largeScreen = false;
+		double touchWeight = 0.0, intentGain = 1.0;
+		double touchSlop = kCanvasPanTouchSlopDip;
+		double slopEpsilon = kCanvasPanSlopEpsilonDip;
+		double scrollEpsilon = kCanvasPanScrollEpsilonDip;
+		double reversalDistance = kCanvasPanReleaseReversalDip;
+		double minimumFlingVelocity = kCanvasPanMinimumFlingVelocity;
+		double boostMinimumFlingVelocity = 350.0;
+		double boostMinimumScrollVelocity = 150.0;
+		double velocityLimit = kCanvasPanProductVelocityLimit;
+		friend bool operator==(const CanvasPanMotionContext&, const CanvasPanMotionContext&) = default;
+	};
+	CanvasPanMotionContext MakeCanvasPanMotionContext(CanvasPanMotionProfile profile,
+		double motionPerDipX = 1.0, double motionPerDipY = 1.0) noexcept;
+	bool IsCanvasPanMotionContextValid(const CanvasPanMotionContext& context) noexcept;
+	struct CanvasPanFrictionParameters
+	{
+		double tauSeconds = kCanvasPanFrictionTauSeconds;
+		double deceleration = kCanvasPanFrictionDeceleration;
+	};
+	CanvasPanFrictionParameters ResolveCanvasPanFriction(const CanvasPanMotionContext& context,
+		double selectedMotionSpeed) noexcept;
+	enum class CanvasPanAdmissionReason : uint8_t
+	{ Accepted, ClassConflict, MetricConflict, InvalidContext, Capacity };
+	const char* CanvasPanAdmissionReasonName(CanvasPanAdmissionReason reason) noexcept;
+	struct CanvasPanAdmissionDecision
+	{
+		uint64_t key = 0;
+		int64_t downQpc = 0;
+		uint64_t sourceKey = 0;
+		bool accepted = false;
+		CanvasPanAdmissionReason reason = CanvasPanAdmissionReason::InvalidContext;
+	};
 
 	struct CanvasPanVelocitySample
 	{
@@ -121,6 +169,7 @@ export namespace Inkeys::Drawing::Draw3
 	class CanvasPanReleaseVelocityTracker
 	{
 	public:
+		void Configure(const CanvasPanMotionContext& context) noexcept;
 		CanvasPanSampleDisposition AddSample(uint64_t key, CanvasPanVelocitySample sample,
 			int64_t frequency) noexcept;
 		void Clear() noexcept;
@@ -148,6 +197,8 @@ export namespace Inkeys::Drawing::Draw3
 		};
 		const History* Find(uint64_t key) const noexcept;
 		std::array<History, kCanvasPanMaximumContacts> histories_ = {};
+		double reversalDistance_ = kCanvasPanReleaseReversalDip;
+		double velocityLimit_ = kCanvasPanProductVelocityLimit;
 	};
 
 	enum class CanvasPanPhase : uint8_t { Idle, Coasting, Locked };
@@ -162,6 +213,7 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasPanContactPhase phase = CanvasPanContactPhase::Move;
 		uint64_t sourceKey = 0; // 调用方提供设备类别/来源身份，内核不依赖平台类型。
 		bool allowInertia = true; // 只门控释放，不丢弃真实跟手与终态。
+		size_t motionContextIndex = 0; // 仅 Down 读取，索引只在本次 Step 有效。
 	};
 
 	enum class CanvasPanGestureType : uint8_t { ScrollBegin, ScrollUpdate, ScrollEnd, FlingStart, FlingCancel };
@@ -186,6 +238,7 @@ export namespace Inkeys::Drawing::Draw3
 	class CanvasPanGestureDetector
 	{
 	public:
+		void Configure(const CanvasPanMotionContext& context) noexcept;
 		CanvasPanGestureBatch Down(int64_t qpc, std::span<const CanvasPanPointer> pointers,
 			int64_t frequency) noexcept;
 		CanvasPanGestureBatch Move(int64_t qpc, std::span<const CanvasPanPointer> pointers,
@@ -204,11 +257,16 @@ export namespace Inkeys::Drawing::Draw3
 		size_t maximumPointerCount_ = 0;
 		bool withinSlop_ = true;
 		bool scrollSent_ = false;
+		float touchSlop_ = kCanvasPanTouchSlopDip;
+		float slopEpsilon_ = kCanvasPanSlopEpsilonDip;
+		float scrollEpsilon_ = kCanvasPanScrollEpsilonDip;
+		double minimumFlingVelocity_ = kCanvasPanMinimumFlingVelocity;
 	};
 
 	class CanvasPanFlingBooster
 	{
 	public:
+		void Configure(const CanvasPanMotionContext& context) noexcept;
 		CanvasVector GetVelocityForFlingStart(const CanvasPanGestureEvent& event) noexcept;
 		bool ShouldBoostFling(const CanvasPanGestureEvent& event) const noexcept;
 		void ObserveGestureEvent(const CanvasPanGestureEvent& event) noexcept;
@@ -225,12 +283,16 @@ export namespace Inkeys::Drawing::Draw3
 		std::optional<double> previousScrollTime_;
 		uint32_t sourceDevice_ = 0;
 		uint32_t modifiers_ = 0;
+		double minimumFlingSpeedSquared_ = kCanvasPanBoostMinimumFlingSpeedSquared;
+		double minimumScrollSpeedSquared_ = kCanvasPanBoostMinimumScrollSpeedSquared;
+		double velocityLimit_ = kCanvasPanProductVelocityLimit;
 	};
 
 	class CanvasPanFlingCurve
 	{
 	public:
-		void Start(CanvasVector velocity, CanvasVector viewportSizeDip) noexcept;
+		void Start(CanvasVector velocity, CanvasVector viewportSizeDip,
+			CanvasPanFrictionParameters parameters = {}) noexcept;
 		bool Advance(double elapsedSeconds, CanvasVector& offset, CanvasVector& velocity) noexcept;
 		void ClearAxis(bool x, bool y) noexcept;
 		double Duration() const noexcept;
@@ -241,13 +303,15 @@ export namespace Inkeys::Drawing::Draw3
 		double duration_ = 0.0;
 		double frictionInitialSpeed_ = 0.0;
 		CanvasVector frictionDirection_ = {};
+		CanvasPanFrictionParameters parameters_ = {};
 	};
 
 	class CanvasPanFlingController
 	{
 	public:
 		void Start(const CanvasPanGestureEvent& event, double lastScrollSeconds,
-			CanvasVector viewportSizeDip, CanvasPanFlingBooster& booster) noexcept;
+			CanvasVector viewportSizeDip, CanvasPanFlingBooster& booster,
+			CanvasPanFrictionParameters parameters = {}) noexcept;
 		CanvasVector Progress(double nowSeconds, CanvasPanFlingBooster& booster) noexcept;
 		void Cancel() noexcept;
 		void StopFling(CanvasPanFlingBooster& booster) noexcept;
@@ -275,6 +339,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool penHover = false; // 仅 fling 中立即停止并清 booster；不打断手按住的拖动。
 		bool penContact = false;
 		CanvasVector viewportSizeDip = {}; // 由调用方传入客户区 DIP 尺寸；空视口不启动 fling。
+		std::span<const CanvasPanMotionContext> motionContexts = {};
+		std::span<CanvasPanAdmissionDecision> admissionDecisions = {};
 	};
 
 	struct CanvasPanPointerDiagnostic
@@ -318,6 +384,12 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasVector boosterCurrentVelocity = {};
 		double boosterCutoffSeconds = 0.0;
 		CanvasVector flingOffset = {};
+		size_t admissionDecisionCount = 0;
+		bool admissionFailed = false; // 新生产调用缓冲不足时，消费前失败，由前端 Stop。
+		uint64_t releaseSourceKey = 0;
+		CanvasPanMotionContext releaseMotionContext = {};
+		CanvasVector releaseMotionVelocity = {};
+		CanvasPanFrictionParameters frictionParameters = {};
 	};
 
 	class CanvasPanDynamics
@@ -331,7 +403,9 @@ export namespace Inkeys::Drawing::Draw3
 		bool Active() const noexcept;
 		CanvasVector ContentVelocity() const noexcept;
 		size_t HeldContactCount() const noexcept;
+		// 调试 tracker 保留运动域单位；其它公共速度均为系统 DIP/s。
 		const CanvasPanReleaseVelocityTracker& VelocityTracker() const noexcept;
+		const CanvasPanMotionContext& MotionContext() const noexcept;
 
 	private:
 		struct Contact
@@ -340,7 +414,7 @@ export namespace Inkeys::Drawing::Draw3
 			CanvasPanPointer pointer = {};
 			int64_t lastQpc = 0;
 		};
-		CanvasPanFrameOutput Snapshot(int64_t frequency) const noexcept;
+		CanvasPanFrameOutput Snapshot(int64_t frequency, CanvasVector* handMotion = nullptr) const noexcept;
 		void Dispatch(const CanvasPanGestureBatch& batch, const CanvasPanFrameInput& input,
 			CanvasPanFrameOutput& output) noexcept;
 		std::array<Contact, kCanvasPanMaximumContacts> contacts_ = {};
@@ -351,6 +425,15 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasVector velocity_ = {};
 		int64_t lastFrameQpc_ = 0;
 		uint64_t lastSourceKey_ = 0;
+		CanvasPanMotionContext motionContext_ = {};
+		struct RejectedContact
+		{
+			uint64_t key = 0;
+			CanvasPanAdmissionReason reason = CanvasPanAdmissionReason::InvalidContext;
+			bool suppressesPen = false;
+		};
+		std::vector<RejectedContact> rejectedContacts_;
+		std::vector<uint64_t> earlyTerminalKeys_; // 只记录本帧排到 Down 前的坏终态身份。
 	};
 
 	struct CanvasRenderBudgetInput

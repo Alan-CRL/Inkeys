@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-适用于Draw3白板Selection移动模式的MouseLeft、Touch、Pen/PenTail。接触输入保留用户确认的产品手感和节拍；2026-11-13收尾移除未被产品使用的Chromium参考估速器与PhysicsBased/Legacy曲线，当前只保留可靠尾段估速和向量摩擦。2026-11-12起PTP双指扩展暂时停用：本机探针证明RTS与DM在同一HWND的Activate/Enable存在输入委托冲突，独立DM HWND也无法跨窗SetContact；`TouchpadNavigationOwner::Initialize`必须在任何COM/Activate之前按quarantine返回，不得只Disable viewport或盲目重建RTS。下文Touchpad/DM类型、Owner和数值测试是保留的停用实现与未来前端参考，不是当前真实输入能力；配置字段及设置偏好保持，但不产生PTP运动。设备物理尺度/profile、触控板按压拖动独立识别、绘制模式漫游和缩放延后。绘制latest mailbox、页面存储、Freeze/背景与呈现树保持。
+适用于Draw3白板Selection移动模式的MouseLeft、Touch、Pen/PenTail。接触输入保留已修复的连续手势正确性和呈现节拍；Surface Pro 11触摸正常不表示旧距离/时长最优。2026-11-13收尾移除未被产品使用的Chromium参考估速器与PhysicsBased/Legacy曲线，当前只保留可靠尾段估速和向量摩擦。2026-11-12起PTP双指扩展暂时停用：本机探针证明RTS与DM在同一HWND的Activate/Enable存在输入委托冲突，独立DM HWND也无法跨窗SetContact；`TouchpadNavigationOwner::Initialize`必须在任何COM/Activate之前按quarantine返回，不得只Disable viewport或盲目重建RTS。下文Touchpad/DM类型、Owner和数值测试是保留的停用实现与未来前端参考，不是当前真实输入能力；配置字段及设置偏好保持，但不产生PTP运动。2026-11-13起接入可信物理尺度及设备profile；触控板按压拖动独立识别、绘制模式漫游和缩放继续延后。绘制latest mailbox、页面存储、Freeze/背景与呈现树保持。
 
 ## 2. Signatures
 
@@ -16,6 +16,9 @@
 - `CanvasPanReleaseVelocityTracker::{AddSample,Estimate,Reason,SampleCount,SampleSpanSeconds,ClearPointer,ClearAxis}`：逐指真实采样，当前唯一释放估速为可靠同向尾段线性拟合。
 - `CanvasPanFlingCurve`仅保留向量摩擦闭式；`CanvasPanFlingController`负责推进/取消/限位，不再提供曲线选择枚举或旧曲线入口。
 - `CanvasPanFrameOutput`额外记录raw/selected/boosted release向量、releaseReason/count/span、rejectedSamples/reversalCount/timingResetCount。
+- `CanvasPanSourceClass{None,Touch,Mouse,Pen,PenTail}`保持0..4，高32位仍在sourceKey；`CanvasPanMotionContext`含unit/profile、两轴motionPerDip、outputKey/sourceGeneration、映射事实及空间阈值；`MakeCanvasPanMotionContext`/`ResolveCanvasPanFriction`是纯数值入口。
+- `CanvasPanFrameInput::{motionContexts,admissionDecisions}`由caller持有；Down的`motionContextIndex`仅本次Step有效，核心复制选中值。`CanvasPanFrameOutput::{admissionDecisionCount,admissionFailed,releaseSourceKey,releaseMotionContext,releaseMotionVelocity,frictionParameters}`区分准入结果与释放自身标签。
+- `WindowController::CanvasPanDisplayContextSnapshot()`同锁读取display+mode；`DrawingCursorEventSink::{NotifyPenFeedbackContact,PublishPenCursorSampleForContact,ClearPenCursorSampleForContact}`旁路真实RTS token；窗口`NavigationPenFeedbackToken`/`SetNavigationPenFeedbackEpoch`/`ApplyNavigationPenDecision`应用权威反馈；`ReadPenCursorSample(sample,bool* suppressed=nullptr)`一次取配对样本与抑制状态。
 - `SetCanvasPanDiagnosticsEnabled(bool)` / `CanvasPanDiagnosticsEnabled()` / `LogCanvasPan(...)`；配置`Experimental.Inkeys3.ConsoleOutput.CanvasPan`（bool，false，NoUpload）。
 
 ## 3. Contracts
@@ -23,7 +26,7 @@
 ### 输入与所有权
 
 - `IsNavigationDevice`在Down/Move/Close/容量检查的同一入口接受Touch、MouseLeft、Pen（倒置仍是Pen），MouseRight不参与。只放开Controller准入而遗漏此predicate会导致Pen永久held；绘制latest语义不变。导航固定2048事件环从producer Down开始保留回调级样本；Move和Up不再覆盖尚未消费的导航Move。原绘制latest语义保持。producer不分配历史内存、不做日志IO；consumer锁外reserve，锁内仅有界复制。
-- Down成功入原队列及发布导航Down在同一navigation截面；每事件记录当时成功入队Down水位。consumer只提取Down已由唯一consumer出队的连续前缀，先同步完成准入，再Step。不能在drain后用latest读到更晚Up并越过未准入Down。
+- Down成功入原队列及发布导航Down在同一navigation截面；每事件记录当时成功入队Down水位。consumer只提取Down已由唯一consumer出队的连续前缀，先完成静态路由并登记Pending，再由同一Step的有序Down最终准入。不能在drain后用latest读到更晚Up并越过未准入Down。
 - 锁序为Down navigation→ingress、Move/Close record writer→navigation；consumer只持navigation复制，不持其执行业务或回收。Close导航终态可能先于ConsumerOwned可见，Recycle必须保持既有ClosingDiscarded→producer唯一释放合同。
 - 溢出清旧历史并推进epoch，旧导航手势取消、无fling，残留触点吞到终态；完整新epoch Down可开始新手势，不继承旧fling。程序性Stop保存publication截止，未登记的旧Down同样不可复活。
 - 本轮RTS仍每回调一个批末点，时间为callback arrival QPC；不宣称批内硬件保真，不生成伪240Hz时间。相同轨迹在绘制帧内可以合并呈现，但不能合并丢掉估速历史。
@@ -35,15 +38,37 @@
 
 ### 几何、释放与连续滑动
 
-- 几何仍在统一DIP边界与像素互转；15DIP slop及首次径向扣slop保留。手按住时旧惯性不推动画布。Down立刻取消旧动画；拖动模式所有来源的运动均不因笔尖/笔尾hover停止，真实允许接管的Down取消旧coast，持续接触继续跟手。活动Touch/native Running持有时的后来Pen按互斥保护跟踪到终态，不混focus。
+- 公共输入/输出仍为系统DIP并与像素互转；内部按MotionContext使用mm或DIP，首次径向扣该profile的slop。手按住时旧惯性不推动画布。Down立刻取消旧动画；拖动模式所有来源的运动均不因笔尖/笔尾hover停止，真实允许接管的Down取消旧coast，持续接触继续跟手。活动Touch/native Running持有时的后来Pen按互斥保护跟踪到终态，不混focus。
 - 产品释放取最近同向50ms尾段线性拟合；保留窗口左侧一个真实锚点以兼容低报点率，至少3点且跨度20ms。每指容量64；不得恢复旧LSQ2的20点/100ms规则替代产品释放合同。
-- 反向沿原可靠方向累计达到1DIP才确认，零点/细碎噪声不反复重置；确认即切断旧方向和boost。新尾段不够时释放0，不回退旧窗口。小于2ms且段位移超过12000DIP/s允许距离（包含1个QPC tick与两端float坐标量化误差界）作为可检测异常重置证据，几何仍跟手；仅arrival无法识别所有时间压缩。
+- 反向沿原可靠方向累计达到context.reversalDistance才确认（间接基准1DIP），零点/细碎噪声不反复重置；确认即切断旧方向和boost。新尾段不够时释放0，不回退旧窗口。小于2ms且段位移超过本profile模长上限允许距离（包含1个QPC tick与两端float坐标量化误差界）作为可检测异常重置证据，几何仍跟手；仅arrival无法识别所有时间压缩。
 - 拟合方向与最新可靠方向冲突时以DirectionConflict拒绝释放，raw值仍可诊断；已准入Up即使时间异常也必须闭合并取消惯性，不能留下永久held。
-- 释放selected速度还受最新可靠同向段的速度上限约束（真实点累计至少2ms与1DIP），防减速时50ms拟合残留旧快速度；raw诊断保留，不能用单个量化点强制限速。
+- 释放selected速度还受最新可靠同向段的速度上限约束（真实点累计至少2ms与context.reversalDistance），防减速时50ms拟合残留旧快速度；raw诊断保留，不能用单个量化点强制限速。
 - 最后有效样本距Up≤30ms保持速度，30–70ms线性衰减，≥70ms为0；取消/无有效速度不fling。不得恢复250DIP/s硬台阶。
-- 自由运动沿释放向量统一闭式减速：s=|v|，ds/dt=−s/.30−1000；总距`.30*s−90*log1p(s/300)`，停止时长`.30*log1p(s/300)`。不得逐轴平方改变斜向方向，不恢复Slipping。
-- 连甩使用当前残余在新方向上的正投影，最终模长≤12000DIP/s；保留50ms合格滚动续期窗口（不是整个Down→Up必须≤50ms）。反向、弱证据、程序Stop、取消、超时或来源变化清候选，不重新累加历史初速。
+- 自由运动沿释放向量统一闭式减速：`ds/dt=−s/tau−c`；`T=tau*log1p(s/(c*tau))`、`D=tau*s−c*tau*T`。间接基准仍tau=.30秒、c=1000DIP/s²，其它profile按下节选定并锁存。不得逐轴平方改变斜向方向，不恢复Slipping。
+- 连甩使用当前残余在新方向上的正投影，boost加法后最终模长≤本profile上限（间接基准12000DIP/s）；保留50ms合格滚动续期窗口（不是整个Down→Up必须≤50ms）。反向、弱证据、程序Stop、取消、超时或来源变化清候选，不重新累加历史初速。
 - inputReleaseTime用于时效；动画以首次消费Up的呈现帧为起点，首帧不追补fling但照常提交真实Move位移。ClearAxis同步booster当前残余并归一化剩余方向，避免下一Down恢复已限位轴。之后按同一动画时钟推进；不保证消除渲染长帧自身的视觉停顿。
+
+### 尺度、设备响应与唯一有序准入
+
+- 真实来源与显示输出一起判毫米资格：Display业务physicalAvailable、logicalOutputKnown、精确monitor/完整rect匹配、有限正两轴密度；motionPerDip各轴[.01,10]mm/DIP。复制/未知映射/无物理回退DIP；External/Unknown Pen不借显示器毫米。橡皮开发override、尺寸/灵敏度不改变惯性；不新增硬件枚举或手动标尺。
+- 五profile初值见下表，速度/加速度按对应动作单位。时间窗口不缩放。公共contentDelta/velocity、focus/span、释放/booster诊断均是真系统DIP；每个ScrollUpdate先按当时context逆变换再累计，异向span逐指还原后求值，内部velocity不能从已转DIP的Snapshot回填。`VelocityTracker()`调试入口明确为运动域。
+
+| Profile | 单位 | slop / 反向距离 | 最小释放 | boost新旧 / 滚动 | 模长cap | tau / c基础 |
+| --- | --- | --- | ---: | --- | ---: | --- |
+| IndirectDip | DIP | 15 / 1 | 30 | 350 / 150 | 12000 | .30 / 1000 |
+| TouchPhysical | mm | 2.5 / .25 | 10 | 70 / 30 | 2400 | .30 / 200 |
+| ScreenPenPhysical | mm | 1.5 / .15 | 15 | 100 / 45 | 1800 | .20 / 350 |
+| TouchFallback | DIP | 15 / 1 | 30 | 350 / 150 | 12000 | .30 / 1000 |
+| ScreenPenFallback | DIP | 8 / .75 | 60 | 500 / 225 | 9000 | .20 / 1750 |
+
+- TouchPhysical：`w=S((长边mm−320)/880)`，Laptop取min(w,.25)、LargeScreen取max(w,.25)；`a=w*S((可靠boost前手速−600)/900)`，tau=.30+.12a、c=200(1−.25a)。ScreenPen不套触摸增强；笔尾跟随实际笔关系且不改变开关。
+- TouchFallback：逻辑完整输出的`G=1/clamp(min(longDip/1920,shortDip/1080),.5,4)`，未知输出G=1；LargeScreen的`a=.5*S((手速DIP/s*G−750)/1500)`，Laptop为0；tau=.30+.12a、c=1000(1−.25a)。G只选响应，不乘几何、真实初速、残余或输出，不标mm。S为夹0..1的smoothstep。
+- 每条curve按boost前可靠手速选参并锁存，不在coast中降档。等有效v0、同单位的单条自由曲线额外距离/时长≤40%（物理）/20%（回退）；不同旧残余的连续手势不受此比率约束。cap后理论单次停时<1.6s，不是排队/呈现/整个交互的墙钟保证。独立轻放、仍过boost门的低速接力、主动减速和反向分别验收。
+- Register只Pending；静态路由保留非白板/设备/native历史资格，动态class/metric最终权限仅在Dynamics现有稳定QPC/phase Down分支。Pending/Suppressed不算owner/held/活动；HasContacts仍跟踪物理终态。同QPC Down先于Up仍重叠。拒收不能改sourceKey/残余，真实Touch期间拒收Pen锁到终态；兼容第二指继承首指度量，mm批次映射未知/冲突的附加指拒收，DIP批次不半途升级。
+- caller决策缓冲须覆盖本帧全部Down，不是同时持有的16个；不足消费前失败，前端Stop/吞旧指。正常有序span无复制；异常终态即使排序在同key Down之前也按身份可靠取消闭合，不造速度。重复/倒退frame是no-op，Controller在Drain前延后消费，不能误当admissionFailed去Stop或提前回收排队Up。
+- 真输出/DPI/正在用的物理资格/密度变更清旧运动；Pending毫米候选也必须以其Down source重验，不只检查Active。DIP→可信及纯模式偏好留到下一手势；无害revision、别屏和橡皮调测不误停。新producer sourceGeneration隔离旧残余，帧内index/每次手速选参变化不作为新来源。
+- RTS每Down进程内唯一token随binding直到Up/Cancel/重置/失败发布/OutOfRange/Shutdown。窗口精确唯一查询{raw tcid,cid,sourceGeneration,原样DownQPC}，碰撞/缺失/表满保守不纠正但不丢core输入；旧token/epoch/key/handle不能清新笔。Pointer cursor/range不证明同一次Down，RTS裁决不全局清Pointer-local latch。
+- 身份选择与mailbox Publish/Clear在同一短锁截面；实际光标/橡皮通过组合读取取配对抑制状态。UI/触觉/wake在锁外，普通Move不分配、不新增control wake；旧sink默认转发不改变latest样本格式。
 
 ### 配置与已停用的触控板 DM 前端
 
@@ -93,11 +118,15 @@
 | Mouse状态边沿/退出Pan | 仍及时唤醒；非Pan应用光标恢复既有位置重绘 |
 | 关闭诊断 | 无CanvasPan记录，不增加高频格式化 |
 | 开启诊断 | 设置/启动gate连通；真实sink可读，输出丢弃可诊断 |
+| 同帧毫米Touch Up→DIP Mouse Down | 按真实有序Down切context，每段恢复系统DIP，不混旧residual |
+| Pending毫米候选随后EDID失效 | Step前取消旧批，终态可回收，不以旧毫米资格准入 |
+| 重复/倒退frame含排队终态 | 零位移且不Drain，下一有效frame仅消费一次并闭合 |
+| RTS/Pointer并发发布或旧token清除 | 身份/样本/抑制配对，旧确认不清新笔，双publisher回归无错通道 |
 
 ## 5. Good / Base / Bad Cases
 
 - Good：真实Move序列→本指尾段→可靠释放→方向保持的摩擦曲线；新接触先停，反向不带回旧速度。
-- Base：绘制mailbox/页面视口与存储不变；移动模式笔准入/hover按本合同更新；设备尺度继续DIP适配，未知硬件timer诚实标注。
+- Base：绘制mailbox/页面视口与存储不变；移动模式笔准入/hover按本合同更新；可信直接输入用mm，失效/间接输入用明确DIP回退；未知硬件timer诚实标注。
 - Bad：保留RTS末点后又在adapter按整帧合一、把Up当高速Move补速度、用未交付Down之后的latest推进内核、只修公式测试并把真实传输旁路掉。
 
 ## 6. Tests Required
@@ -110,6 +139,7 @@
 - Pen/尾真实生产入环与生命周期、五类默认/同帧混源release门控、逆序非重叠/热禁真实末源、native历史/interval gap/同QPC/旧admission/接手裁剪及held热开必须经过生产probe；真实Event DuplicateHandle与retirement失败重试使用同一生产routine。Debug大型Rig用堆持有，不通过改工程栈或少测来绕过溢出。
 - 设置`--no-window --setting-general-only`及真实Config元数据覆盖六bool默认/往返/非法/ReadMini/Reset/NoUpload、父关保留子项/单击ID/显隐禁交互/窄宽布局；二十语言全部校验。
 - 当前前端回归必须由`RunTouchpadIngressProductionProbe`断言DM quarantine仍启用，并保留停用实现的setup/关联/interaction/状态测试及四类真实Coordinator接触回归；这些只防止隔离被无意撤销，不证明PTP可用。未来重新启用前必须执行真实RTS/DM注册与接触探针；独立HWND初始化、直接PublishHiddenTestTouchpadNavigation或只断言选项位均不够。
+- 新增真实resolver/ContactInput→Pending→有序决策→窗口token路径回归：各轴/DPI/旋转、>16顺序Down、坏终态/重复逆frame、排队物理失效、双publisher配对及ABA。不能只测公式或空样本的否定断言。
 - GUI/真机测试需要用户明确授权或用户手动执行；自动测试不等于手感验收。实际运行结果写当前task验证记录，规范不冒称PASS。
 
 ## 7. Wrong vs Correct
@@ -131,4 +161,7 @@ Correct：当前在任何DM COM/Activate之前执行quarantine，保留RTS接触
 
 ## 8. 已完成交付与后续任务入口
 
-2026-11-13用户确认当前机惯性合适，旧参考模型清理与有序输入优化已完成；完整构建及七项无窗口回归、2240条场景和整份探针输出等价检查见[归档收尾记录](../../tasks/archive/2026-11/11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)。两个拖动任务均已completed；归档不表示其它硬件/系统/光学性能已全部实测。尺度适配留下一独立Trellis任务，先重审归档的`scale-stage-plan.md`与逐来源/每轴物理标尺研究；触控板及新输入后端仍按[未来路线](../../tasks/archive/2026-11/11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md)延期，不解除quarantine。
+2026-11-13用户确认当前机惯性合适，旧参考模型清理与有序输入优化已完成；完整构建及七项无窗口回归、2240条场景和整份探针输出等价检查见[归档收尾记录](../../tasks/archive/2026-11/11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)。两个拖动任务均已completed；归档不表示其它硬件/系统/光学性能已全部实测。尺度适配已在独立任务[11-13-whiteboard-pan-scale-device](../../tasks/11-13-whiteboard-pan-scale-device/prd.md)获批实现，验证状态见其[记录](../../tasks/11-13-whiteboard-pan-scale-device/validation.md)；旧scale-stage草案“精确保留本机距离”和“笔不平移”已失效。触控板及新输入后端仍按[未来路线](../../tasks/archive/2026-11/11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md)延期，不解除quarantine。
+
+Wrong：按Register/publication先选整帧单位，或重复frame走admissionFailed清零；Pointer继承lastKnownSource就当同一次RTS Down。
+Correct：有序Down唯一准入、逐段canonical DIP；重复帧在Drain前no-op；真实token精确身份确认，无法桥接的Pointer保守独立。

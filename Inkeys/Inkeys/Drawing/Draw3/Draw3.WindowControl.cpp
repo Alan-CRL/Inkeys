@@ -1287,6 +1287,12 @@ namespace Inkeys::Drawing::Draw3
 		return speedEraserDeviceMode_;
 	}
 
+	CanvasPanDisplaySnapshot WindowController::CanvasPanDisplayContextSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);
+		return { speedEraserDisplayScale_, speedEraserDeviceMode_ };
+	}
+
 	void WindowController::SetProductVisualStyle(
 		uint32_t colorRgba, double widthDip,
 		const Inkeys::Business::PenWidth::Context& context) noexcept
@@ -1417,9 +1423,14 @@ namespace Inkeys::Drawing::Draw3
 			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire));
 	}
 
-	bool WindowController::ReadPenCursorSample(DrawingCursorSample& sample) const noexcept
+	bool WindowController::ReadPenCursorSample(DrawingCursorSample& sample, bool* suppressed) const noexcept
 	{
-		return penCursorSample_.Read(sample);
+		// 样本与抑制通道同截面读取，避免跨 API 发布后拼成不同笔的反馈。
+		std::scoped_lock lock(penFeedbackMutex_);
+		const bool read = penCursorSample_.Read(sample);
+		if (suppressed) *suppressed = penCursorFromRts_ ? penRtsFeedbackSuppressed_ :
+			penContactSuppressedForTouchPan_.load(std::memory_order_acquire);
+		return read;
 	}
 
 	bool WindowController::ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept
@@ -1485,8 +1496,105 @@ namespace Inkeys::Drawing::Draw3
 
 	bool WindowController::PenContactSuppressedForTouchPan() const noexcept
 	{
-		return penContactSuppressedForTouchPan_.load(std::memory_order_acquire);
+		std::scoped_lock lock(penFeedbackMutex_);
+		// Pointer 本地锁存不能反向否决已被导航接纳的 RTS contact。
+		return penCursorFromRts_ ? penRtsFeedbackSuppressed_ :
+			penContactSuppressedForTouchPan_.load(std::memory_order_acquire);
 	}
+
+	void WindowController::NotifyPenFeedbackContact(const PenFeedbackContact& contact) noexcept
+	{
+		if (!contact.token || contact.downQpc <= 0) return;
+		std::scoped_lock lock(penFeedbackMutex_);
+		auto found = std::find_if(penFeedbackContacts_.begin(), penFeedbackContacts_.end(),
+			[&](const auto& state) { return state.contact.token == contact.token; });
+		if (contact.phase == PenFeedbackPhase::Down)
+		{
+			if (found != penFeedbackContacts_.end()) return; // 重复元数据不得重开已终止 token。
+			for (auto& state : penFeedbackContacts_)
+				if (!state.terminal && state.contact.tabletContextId == contact.tabletContextId &&
+					state.contact.cursorId == contact.cursorId) state.terminal = true;
+			constexpr size_t maximumContacts = 4096;
+			if (penFeedbackContacts_.size() == maximumContacts)
+			{
+				const auto closed = std::find_if(penFeedbackContacts_.begin(), penFeedbackContacts_.end(),
+					[](const auto& state) { return state.terminal; });
+				if (closed == penFeedbackContacts_.end()) return;
+				// 淘汰后拒绝更早的精确时间键，不能把旧队列 Down 误配给重用键。
+				penFeedbackRetiredDownQpc_ = (std::max)(penFeedbackRetiredDownQpc_, closed->contact.downQpc);
+				penFeedbackContacts_.erase(closed);
+			}
+			try
+			{
+				PenFeedbackState state;
+				state.contact = contact;
+				state.suppressed = touchPanActive_.load(std::memory_order_acquire);
+				penFeedbackContacts_.push_back(state); // 只在 Down 分配，Move 不扩容。
+			}
+			catch (...) { return; } // 可选反馈凭据不足不能丢弃真实导航输入。
+		}
+		else if (found != penFeedbackContacts_.end() &&
+			found->contact.tabletContextId == contact.tabletContextId &&
+			found->contact.cursorId == contact.cursorId &&
+			found->contact.sourceGeneration == contact.sourceGeneration &&
+			found->contact.downQpc == contact.downQpc)
+		{
+			found->terminal = true;
+			if (penCursorFromRts_ && penCursorFeedbackToken_ == contact.token)
+				penRtsFeedbackSuppressed_ = false;
+		}
+	}
+
+	uint64_t WindowController::NavigationPenFeedbackToken(uint32_t tabletContextId,
+		uint32_t cursorId, uint64_t sourceGeneration, int64_t downQpc) const noexcept
+	{
+		std::scoped_lock lock(penFeedbackMutex_);
+		if (downQpc <= penFeedbackRetiredDownQpc_) return 0;
+		uint64_t token = 0;
+		for (const auto& state : penFeedbackContacts_)
+			if (state.contact.tabletContextId == tabletContextId && state.contact.cursorId == cursorId &&
+				state.contact.sourceGeneration == sourceGeneration && state.contact.downQpc == downQpc)
+			{
+				if (token) return 0; // 精确键碰撞也不能选择“最近一笔”。
+				token = state.contact.token;
+			}
+		return token;
+	}
+
+	void WindowController::SetNavigationPenFeedbackEpoch(uint64_t navigationEpoch) noexcept
+	{
+		std::scoped_lock lock(penFeedbackMutex_);
+		penFeedbackNavigationEpoch_ = navigationEpoch;
+	}
+
+	void WindowController::ApplyNavigationPenDecision(uint64_t token, uint64_t panKey,
+		uint64_t handleGeneration, uint64_t navigationEpoch, bool accepted) noexcept
+	{
+		bool changed = false;
+		{
+			std::scoped_lock lock(penFeedbackMutex_);
+			if (!token || !panKey || !handleGeneration || !navigationEpoch ||
+				navigationEpoch != penFeedbackNavigationEpoch_) return;
+			const auto found = std::find_if(penFeedbackContacts_.begin(), penFeedbackContacts_.end(),
+				[&](const auto& state) { return state.contact.token == token; });
+			if (found == penFeedbackContacts_.end() || found->terminal) return;
+			// 一笔的最终权限不反复改写；旧 handle/key 不能认领同一个 token。
+			if (found->decided && (found->panKey != panKey || found->handleGeneration != handleGeneration ||
+				found->suppressed != !accepted)) return;
+			found->panKey = panKey; found->handleGeneration = handleGeneration;
+			found->decided = true; found->suppressed = !accepted;
+			if (penCursorFromRts_ && penCursorFeedbackToken_ == token)
+			{
+				changed = penRtsFeedbackSuppressed_ != !accepted;
+				penRtsFeedbackSuppressed_ = !accepted;
+			}
+		}
+		if (!changed) return;
+		if (!accepted) RequestHapticPointerLeave();
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+	}
+
 
 	void WindowController::NotifyTouchContactBegin() noexcept
 	{
@@ -1547,8 +1655,15 @@ namespace Inkeys::Drawing::Draw3
 		#endif
 	}
 
-	void WindowController::SetPenContactSuppressedForTouchPan(bool suppressed) noexcept
+	void WindowController::SetPenContactSuppressedForTouchPan(bool suppressed, bool updateRts) noexcept
 	{
+		{
+			std::scoped_lock lock(penFeedbackMutex_);
+			if (updateRts && suppressed && penCursorFromRts_ && penCursorFeedbackToken_)
+				for (auto& state : penFeedbackContacts_)
+					if (state.contact.token == penCursorFeedbackToken_ && !state.terminal && !state.decided)
+						state.suppressed = penRtsFeedbackSuppressed_ = true;
+		}
 		const bool changed = penContactSuppressedForTouchPan_.exchange(
 			suppressed, std::memory_order_acq_rel) != suppressed;
 		if (!changed) return;
@@ -1568,48 +1683,107 @@ namespace Inkeys::Drawing::Draw3
 		QueueSystemCursorRefresh();
 	}
 
-	void WindowController::PublishPenCursorSample(
-		const DrawingCursorSample& inputSample) noexcept
+	void WindowController::SetPointerPenContactSuppressed(bool suppressed) noexcept
+	{
+		pointerPenContactSuppressed_.store(suppressed, std::memory_order_release);
+		SetPenContactSuppressedForTouchPan(suppressed, false);
+	}
+
+	void WindowController::PublishPenCursorSample(const DrawingCursorSample& sample) noexcept
+	{
+		PublishPenCursorSampleImpl(sample, 0, false);
+	}
+
+	void WindowController::PublishPenCursorSampleForContact(const DrawingCursorSample& sample,
+		uint64_t token) noexcept
+	{
+		PublishPenCursorSampleImpl(sample, token, true);
+	}
+
+	void WindowController::ClearPenCursorSampleForContact(uint64_t token) noexcept
+	{
+		bool changed = false;
+		{
+			std::scoped_lock lock(penFeedbackMutex_);
+			if (!penCursorFromRts_ || (token && token != penCursorFeedbackToken_)) return;
+			if (!token && penCursorFeedbackToken_)
+				for (const auto& state : penFeedbackContacts_)
+					if (state.contact.token == penCursorFeedbackToken_ && !state.terminal) return;
+			penCursorFromRts_ = false;
+			penCursorFeedbackToken_ = 0;
+			penRtsFeedbackSuppressed_ = false;
+			if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0)
+				changed = penContactSuppressedForTouchPan_.exchange(false, std::memory_order_acq_rel);
+			// 身份校验与 plain mailbox Clear 必须原子化；旧终态不能越过新笔发布。
+			changed = penCursorSample_.Clear() || changed;
+		}
+		FinishPenCursorClear(changed);
+	}
+
+	void WindowController::PublishPenCursorSampleImpl(const DrawingCursorSample& inputSample,
+		uint64_t token, bool fromRts) noexcept
 	{
 		DrawingCursorSample sample = inputSample;
-		if (sample.valid)
+		DrawingCursorSample previous;
+		bool suppressed = false, suppressionChanged = false, changed = false;
 		{
-			// Pointer 路径发布的首批悬停样本没有来源；沿用最近一次已知来源，避免进入时短暂套用错误设备行。
-			const bool sourceKnown = sample.source.kind != SpeedEraser::SourceKind::Unknown ||
-				sample.source.recognition != SpeedEraser::SourceRecognition::Unknown;
-			DrawingCursorSample known;
-			const bool hasKnown = lastKnownPenSource_.Read(known) && known.valid;
-			if (sourceKnown)
+			std::scoped_lock lock(penFeedbackMutex_);
+			if (fromRts && token)
 			{
-				if (!hasKnown || !(known.source == sample.source))
+				const auto found = std::find_if(penFeedbackContacts_.rbegin(), penFeedbackContacts_.rend(),
+					[&](const auto& state) { return state.contact.token == token; });
+				if (found != penFeedbackContacts_.rend())
 				{
-					known.valid = true;
-					known.source = sample.source;
-					lastKnownPenSource_.Publish(known);
+					if (found->terminal || found->contact.tabletContextId != inputSample.source.contextId ||
+						found->contact.cursorId != inputSample.source.cursorId ||
+						found->contact.sourceGeneration != inputSample.source.generation) return;
+					suppressed = found->suppressed;
 				}
+				else suppressed = touchPanActive_.load(std::memory_order_acquire) && inputSample.inContact;
 			}
-			else if (hasKnown) sample.source = known.source;
+			else if (fromRts) suppressed = touchPanActive_.load(std::memory_order_acquire) && inputSample.inContact;
+			else suppressed = ShouldSuppressPenFeedbackForTouchPan(touchPanActive_.load(std::memory_order_acquire),
+				pointerPenContactSuppressed_.load(std::memory_order_acquire) ||
+				penContactSuppressedForTouchPan_.load(std::memory_order_acquire) ||
+				penCompatibilityMouseContactSuppressed_.load(std::memory_order_acquire), true, sample.inContact);
+			if (!fromRts && suppressed)
+				suppressionChanged = !penContactSuppressedForTouchPan_.exchange(true, std::memory_order_acq_rel);
+			if (sample.valid)
+			{
+				// 沿用来源只供视觉策略，不能作为 RTS/Pointer 同笔身份凭据。
+				const bool sourceKnown = sample.source.kind != SpeedEraser::SourceKind::Unknown ||
+					sample.source.recognition != SpeedEraser::SourceRecognition::Unknown;
+				DrawingCursorSample known;
+				const bool hasKnown = lastKnownPenSource_.Read(known) && known.valid;
+				if (sourceKnown)
+				{
+					if (!hasKnown || !(known.source == sample.source))
+					{
+						known.valid = true;
+						known.source = sample.source;
+						lastKnownPenSource_.Publish(known);
+					}
+				}
+				else if (hasKnown) sample.source = known.source;
+			}
+			penCursorFromRts_ = fromRts;
+			penCursorFeedbackToken_ = fromRts ? token : 0;
+			penRtsFeedbackSuppressed_ = fromRts && suppressed;
+			penCursorSample_.Read(previous);
+			// 身份/抑制投影与样本发布同锁；Mutex 内不执行窗口、触觉或唤醒。
+			changed = penCursorSample_.Publish(sample);
 		}
 		if (sample.valid) SetTouchCursorSuppressed(false);
 		const bool touchPanActive = touchPanActive_.load(std::memory_order_acquire);
-		const bool realMouseTakeover = realMouseTakeoverDuringTouchPan_.load(
-			std::memory_order_acquire);
+		const bool realMouseTakeover = realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire);
 		if (sample.valid && (!touchPanActive || !realMouseTakeover))
 			SetDrawingCursorOwner(DrawingCursorPointerAuthority::Pen);
-		const bool suppressForTouchPan = ShouldSuppressPenFeedbackForTouchPan(
-			touchPanActive,
-			penContactSuppressedForTouchPan_.load(std::memory_order_acquire) ||
-				penCompatibilityMouseContactSuppressed_.load(std::memory_order_acquire),
-			true, sample.inContact);
-		if (suppressForTouchPan)
+		if (suppressionChanged)
 		{
-			SetPenContactSuppressedForTouchPan(true);
-			penCursorSample_.Publish(sample);
-			return;
+			RequestHapticPointerLeave(); RequestControlWake();
+			RequestDrawingCursorRender(); QueueSystemCursorRefresh();
 		}
-		DrawingCursorSample previous;
-		penCursorSample_.Read(previous);
-		if (!penCursorSample_.Publish(sample)) return;
+		if (suppressed || !changed) return;
 		RecordCursorDiagnostic("pen-sample contact=%u inverted=%u x=%.1f y=%.1f qpc=%lld owner=%u",
 			sample.inContact ? 1u : 0u, sample.inverted ? 1u : 0u,
 			sample.x, sample.y, static_cast<long long>(sample.qpc),
@@ -1632,20 +1806,26 @@ namespace Inkeys::Drawing::Draw3
 
 	void WindowController::ClearPenCursorSample() noexcept
 	{
-		// 没有 WM_POINTER 生命周期的设备以 RTS Clear 作为本次抑制终态。
-		if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0)
-			SetPenContactSuppressedForTouchPan(false);
-		const bool changed = penCursorSample_.Clear();
-		// Up 后 OutOfRange 可再次 Clear；即使 mailbox 已空，也要请求 owner 线程重应用策略。
+		bool changed = false;
+		{
+			std::scoped_lock lock(penFeedbackMutex_);
+			penCursorFromRts_ = false; penCursorFeedbackToken_ = 0; penRtsFeedbackSuppressed_ = false;
+			if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0)
+				changed = penContactSuppressedForTouchPan_.exchange(false, std::memory_order_acq_rel);
+			changed = penCursorSample_.Clear() || changed;
+		}
+		FinishPenCursorClear(changed);
+	}
+
+	void WindowController::FinishPenCursorClear(bool changed) noexcept
+	{
+		// Up 后 OutOfRange 可再次 Clear；即使 mailbox 已空，也要重应用策略。
 		QueueSystemCursorRefresh();
 		if (!changed) return;
-		RecordCursorDiagnostic("pen-clear owner=%u",
-			static_cast<unsigned>(CursorOwner()));
+		RecordCursorDiagnostic("pen-clear owner=%u", static_cast<unsigned>(CursorOwner()));
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
-		TraceCursorState("pen-sample-clear", lastCursorTracePointerId_.load(
-			std::memory_order_acquire),
-			static_cast<POINTER_INPUT_TYPE>(lastCursorTracePointerType_.load(
-				std::memory_order_acquire)),
+		TraceCursorState("pen-sample-clear", lastCursorTracePointerId_.load(std::memory_order_acquire),
+			static_cast<POINTER_INPUT_TYPE>(lastCursorTracePointerType_.load(std::memory_order_acquire)),
 			lastCursorTracePointerTypeKnown_.load(std::memory_order_acquire));
 		#endif
 		RequestDrawingCursorRender();
@@ -1784,8 +1964,7 @@ namespace Inkeys::Drawing::Draw3
 			std::memory_order_acquire);
 		const bool realMouseTakeover = realMouseTakeoverDuringTouchPan_.load(
 			std::memory_order_acquire);
-		const bool suppression = penContactSuppressedForTouchPan_.load(
-			std::memory_order_acquire);
+		const bool suppression = PenContactSuppressedForTouchPan();
 		const uint32_t suppressedPointerId = suppressedPenPointerId_.load(
 			std::memory_order_acquire);
 		const auto hapticState = hapticPointers_.Inspect();
@@ -2022,8 +2201,7 @@ namespace Inkeys::Drawing::Draw3
 					lastCursorTracePointerType_.load(std::memory_order_acquire),
 					static_cast<unsigned>(authority),
 					touchPanActive ? 1u : 0u, realMouseTakeover ? 1u : 0u,
-					penContactSuppressedForTouchPan_.load(
-						std::memory_order_acquire) ? 1u : 0u,
+					PenContactSuppressedForTouchPan() ? 1u : 0u,
 					suppressedPenPointerId_.load(std::memory_order_acquire),
 					hapticState.pending.pointerId,
 					hapticState.pending.pointerId ? 1u : 0u,
@@ -2401,18 +2579,18 @@ namespace Inkeys::Drawing::Draw3
 					suppressedPenPointerId_.load(std::memory_order_relaxed) == pointerId)
 				{
 					suppressedPenPointerId_.store(0, std::memory_order_release);
-					SetPenContactSuppressedForTouchPan(false);
+					SetPointerPenContactSuppressed(false);
 				}
 			}
 			else if (details.type == PT_PEN && details.positionKnown)
 			{
 				if (ShouldSuppressPenFeedbackForTouchPan(
 					touchPanActive_.load(std::memory_order_acquire),
-					penContactSuppressedForTouchPan_.load(std::memory_order_acquire),
+					pointerPenContactSuppressed_.load(std::memory_order_acquire),
 					true, penInContact))
 				{
 					suppressedPenPointerId_.store(pointerId, std::memory_order_release);
-					SetPenContactSuppressedForTouchPan(true);
+					SetPointerPenContactSuppressed(true);
 				}
 				POINT clientPosition = details.screenPosition;
 				if (ScreenToClient(window, &clientPosition))
@@ -2442,7 +2620,7 @@ namespace Inkeys::Drawing::Draw3
 			if (message != WM_POINTERUP && pointerId != 0 && details.typeKnown &&
 				details.type == PT_PEN && details.penInfoKnown && !details.cancelled &&
 				!(hapticPan = touchPanActive_.load(std::memory_order_acquire)) &&
-				!(hapticSuppressed = penContactSuppressedForTouchPan_.load(std::memory_order_acquire)))
+				!(hapticSuppressed = pointerPenContactSuppressed_.load(std::memory_order_acquire)))
 			{
 				// 进入范围时保留 tablet cursor，RTS 普通抬笔不销毁范围身份。
 				const auto previousHapticRevision = hapticPointers_.Revision();
@@ -2536,6 +2714,7 @@ namespace Inkeys::Drawing::Draw3
 			touchPanActive_.store(false, std::memory_order_release);
 			realMouseTakeoverDuringTouchPan_.store(false, std::memory_order_release);
 			penContactSuppressedForTouchPan_.store(false, std::memory_order_release);
+			pointerPenContactSuppressed_.store(false, std::memory_order_release);
 			penCompatibilityMouseContactSuppressed_.store(false,
 				std::memory_order_release);
 			suppressedPenPointerId_.store(0, std::memory_order_release);
