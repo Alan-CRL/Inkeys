@@ -287,3 +287,39 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 ### Next Steps
 
 - None; user verified visually and approved.
+
+
+## Session 184: 白板拖动收尾：移除旧曲线并保留当前手感
+<!-- trellis-session: v=2 fp=42b39d3c73dc8a80 -->
+
+**Date**: 2026-11-13
+**Task**: 白板拖动收尾：移除旧曲线并保留当前手感
+**Branch**: `feature/whiteboard3`
+
+### Summary
+
+移除旧LSQ2/Physics/Legacy/Bezier与未用seed，优化有序输入免复制排序；保持当前手感。完成两项拖动任务归档，尺度适配留下一独立任务，PTP继续延期。
+
+### Main Changes
+
+- 三个源/测试文件净删547行；同步产品规范与未来路线图交接，两个拖动任务均completed。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4706ec0e1226aaaf3549b5aaa719eeaf749aa293` | refactor(draw3): remove obsolete canvas pan models |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64独立OutDir构建通过；七项无窗口验证通过，完整Headless498.469秒。
+- [OK] 2240条实际场景及整份pan-feel输出与清理前逐字节一致；独立check、26个常量与BOM/CRLF检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 尺度适配另建独立Trellis任务；先重新评审归档尺度研究与当前四类输入合同。
+- PTP/双输入后端按归档用户路线图推进，本轮不启用；受限环境C1902、默认输出链接LNK1104及成功验证产物路径已记录。
