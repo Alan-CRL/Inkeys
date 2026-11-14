@@ -406,9 +406,16 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 			}
 			else if (p == PresetKind::Parallelogram)
 			{
-				// 对角不动，两邻点各分担一半位移，保持对边平行。
-				vertices[(index + 1) % 4] = Add(old[(index + 1) % 4],Mul(delta,.5f));
-				vertices[(index + 3) % 4] = Add(old[(index + 3) % 4],Mul(delta,.5f));
+				// 锁定手势参考的两条边方向；有符号基坐标过零才翻向，不能只比较屏幕X。
+				const size_t opposite=(index+2)%4, next=(index+1)%4, previous=(index+3)%4;
+				const auto u=Sub(old[next],old[opposite]), v=Sub(old[previous],old[opposite]);
+				const auto q=Sub(vertices[index],old[opposite]);
+				const double determinant=double(u.x)*v.y-double(u.y)*v.x;
+				if(std::abs(determinant)<minimum) return fail("degenerate parallelogram basis");
+				const float a=static_cast<float>((double(q.x)*v.y-double(q.y)*v.x)/determinant);
+				const float b=static_cast<float>((double(u.x)*q.y-double(u.y)*q.x)/determinant);
+				vertices[next]=Add(old[opposite],Mul(u,a));
+				vertices[previous]=Add(old[opposite],Mul(v,b));
 			}
 			else if (p == PresetKind::Trapezoid && c.tool.constraint == PlanarConstraint::Isosceles)
 			{
@@ -479,12 +486,23 @@ Construction MakeSolidConstruction(const ToolSpec& tool, Vec2 down, Vec2 end, fl
 	const bool box=tool.preset==PresetKind::Cuboid || tool.preset==PresetKind::Cube;
 	if(box)
 	{
-		const float y=std::abs(end.y-down.y)/.3535533906f;
-		// 四象限都让手势对应短对角线；向上拖等价于交换两个端点。
-		s.mirrored=(end.x-down.x)*(end.y-down.y)<0;
-		const float x=std::abs(end.x-down.x);
-		s.baseSize={x+std::abs(end.y-down.y),y}; c.start=Mul(Add(down,end),.5f);
-		if(tool.preset==PresetKind::Cube)s.baseSize.x=s.baseSize.y=(std::max)(x,y);
+		constexpr float projection=.3535533906f;
+		const float width=std::abs(end.x-down.x), height=std::abs(end.y-down.y);
+		// 手势限定屏幕外接框；仅越过按下点竖线才切换斜轴方向。
+		s.mirrored=end.x<down.x;
+		float fittedWidth=width, fittedHeight=height;
+		if(tool.preset==PresetKind::Cube)
+		{
+			const float side=(std::min)(width/(1+projection),height/projection);
+			s.baseSize={side,side}; fittedWidth=side*(1+projection); fittedHeight=side*projection;
+		}
+		else
+		{
+			// 过窄框压缩深度，保留有效水平边；零宽/高仍由既有校验拒绝。
+			fittedHeight=(std::min)(height,(std::max)(0.f,width-.001f));
+			s.baseSize={width-fittedHeight,fittedHeight/projection};
+		}
+		c.start={down.x+std::copysign(fittedWidth*.5f,end.x-down.x),down.y+std::copysign(fittedHeight*.5f,end.y-down.y)};
 	}
 	else { const float radius=Distance(down,end); s.baseSize={radius,radius}; }
 	s.height=tool.preset==PresetKind::Cube ? std::copysign(s.baseSize.x,height) : height;

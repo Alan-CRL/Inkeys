@@ -282,3 +282,22 @@ Wrong：以屏幕深度向量冒充立方体真实边长；每个圆底细分段
 
 ### Wrong vs Correct
 错误：仅测试BeginPointEdit即认定触控可拖点。正确：UI呈现命中→Bridge保序→同一构造会话→实际预览→继续加点逐层断言。
+
+## 第四轮平面方向与箱体手势（2026-11-14，替代冲突条款）
+
+### Scope / Trigger
+平行四边形首笔/拖角、箱体底面首笔、圆底投影验证。
+### Signatures
+沿用MakeSolidConstruction、EditShape、SolidConstruction和v7编码；无新增持久化字段。
+### Contracts
+- 平行四边形首末点为长对角线，上下边水平，初始水平偏斜为dx/4。拖角固定对角点，从手势before锁定两边基向量，逆对象transform后解有符号基坐标；不以屏幕X判定跨边。退化帧不替换手势参考。
+- 箱体down/end是屏幕外接框角点。k=1/(2sqrt(2))；长方体水平模型边=W-H、深度=H/k；过窄框令H=min(H,max(0,W-.001))。Cube边长=min(W/(1+k),H/k)，拟合框锚定down。mirrored只取end.x<down.x，完成后底面缩放/Z旋转不变。
+- 圆柱/圆锥仍使用既有半长斜二测。水平共轭直径原长，另一条45度半长；仿射后椭圆主轴倾斜本身不是错误。
+### Validation & Error Matrix
+零宽/零高/零面积不提交；手势继续后可恢复。Cube三边模型长度相等。窄框拟合不越出手势矩形，所有四象限相同。
+### Good / Base / Bad Cases
+Good：同一X在不同Y跨斜对边结果不同；Base：绕Z旋转后的立体编辑不改变；Bad：把箱体手势角点直接当内部短对角线端点。
+### Tests Required
+核心四象限内接/窄框/Cube等边，旋转后平行四边形两轴方向/过零回返，圆底实际折线的逆投影圆方程及共轭直径，生产renderer与保存重载。
+### Wrong vs Correct
+Wrong：看到椭圆长轴倾斜就强行调平。Correct：对实际轮廓验证模型圆经斜二测矩阵映射后的共轭直径。

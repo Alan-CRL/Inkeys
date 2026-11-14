@@ -1330,21 +1330,24 @@ namespace Inkeys::UI::Bar
 			construction->construction.step=4;construction->construction.confirmedSteps=3;construction->construction.canComplete=true;publishPrompt(construction);sceneTick(120);
 			expect(BarGeometryAttributeTestAccess::PromptLabel(owner.constructionPrompt).content.GetVal().find(L"已确定 3 个点")!=std::wstring::npos,"polygon labels confirmed points");
 			checkPromptPixels((L"construction-polygon-"+suffix).c_str());
+			const auto& cancelButton=BarGeometryAttributeTestAccess::PromptButton(owner.constructionPrompt,3).button;
+			const auto& completeButton=BarGeometryAttributeTestAccess::PromptButton(owner.constructionPrompt,2).button;
+			expect(cancelButton.inhX<completeButton.inhX&&std::abs(cancelButton.inhY-completeButton.inhY)<.01,"Cancel stays left of Complete on the same row");
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 			const auto currentMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
 			const EraserAttributeRect mainRect{currentMain->inhX,currentMain->inhY,currentMain->inhX+currentMain->w.val,currentMain->inhY+currentMain->h.val};
 			expect(Intersect(frame.panel,mainRect).Width()==0&&frame.panel.bottom+5<=mainRect.top+.01,"prompt remains five DIP above visible main bar");
 			const auto before=GetStateModeVersionedSnapshot();BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,-1);
 			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"Tab starts at first enabled action");
-			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==2,"Tab skips disabled Forward");
+			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"Tab skips disabled Forward and reaches Cancel before Complete");
 			promptKey(VK_TAB,true,true);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"Shift+Tab reverses action traversal");
-			promptKey(VK_TAB,true,true);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"Shift+Tab wraps to Cancel");
+			promptKey(VK_TAB,true,true);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==2,"Shift+Tab wraps to rightmost Complete");
 			// 先捕获相反的 Shift 状态再消费：处理阶段必须逐条使用消息中的修饰键。
 			const BarConstructionPrompt::KeyboardMessage backward{VK_TAB,true,true},forward{VK_TAB,true,false};
 			BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,2);owner.constructionPrompt.Keyboard(owner,backward);
-			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"queued Shift+Tab retains capture-time reverse traversal after Shift changes");
+			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"queued Shift+Tab retains capture-time reverse traversal after Shift changes");
 			BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,2);owner.constructionPrompt.Keyboard(owner,forward);
-			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"queued Tab retains capture-time forward traversal after Shift changes");
+			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"queued Tab retains capture-time forward traversal after Shift changes");
 			expect(SameBusinessSnapshot(before,GetStateModeVersionedSnapshot()),"prompt keyboard traversal never changes next-tool style");
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->constructionContactActive=true;publishPrompt(construction);sceneTick(90);
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);for(const auto& action:frame.buttons)expect(!action.enabled,"all actions disable during physical contact");
@@ -1358,6 +1361,19 @@ namespace Inkeys::UI::Bar
 			for(int sample=0;sample<50;++sample){sceneTick(1);const auto retiringFrame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);retiring|=retiringFrame.scale>.01&&retiringFrame.scale<.99;if(sample==12)screenshot(L"construction-disappear-"+suffix);}
 			expect(retiring&&!owner.constructionPrompt.Visible(),"disappearance traverses intermediate scale and retires fully");
 			expect(!promptKey(VK_TAB,true,false)&&!promptKey(VK_ESCAPE,true),"hidden prompt does not consume keyboard");owner.barState.fold=false;sceneTick(90);
+		}
+		// 窄屏提示改成双列换行，叉勾仍必须同排；动作索引不随视觉顺序变动。
+		for(const auto preset:{draw3::shapes::PresetKind::Polygon,draw3::shapes::PresetKind::Polyline})for(const LONG width:{90L,140L,200L})
+		{
+			BarConstructionPrompt narrow;
+			auto construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
+			construction->identity.session=++promptSession;construction->construction.active=true;construction->construction.preset=preset;
+			construction->construction.confirmedSteps=3;construction->construction.canBack=true;construction->construction.canComplete=true;
+			for(int i=0;i<180;++i)narrow.Advance(owner,construction,.017,1,1,{0,0,width,800},{},0,0,nullptr);
+			narrow.CommitPresented();
+			const auto& cancel=BarGeometryAttributeTestAccess::PromptButton(narrow,3).button;
+			const auto& complete=BarGeometryAttributeTestAccess::PromptButton(narrow,2).button;
+			expect(cancel.inhX<complete.inhX&&std::abs(cancel.inhY-complete.inhY)<.01,"narrow polygon/polyline prompt keeps Cancel left of Complete on same row");
 		}
 		// 生产换字顺序：先扩到足够宽；扩框中重定向短文案，换字后才缩框。
 		auto construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();construction->identity.session=++promptSession;construction->identity.generation=1;

@@ -82,7 +82,7 @@ namespace
 		const float t = std::min(start.y, end.y), b = std::max(start.y, end.y);
 		const float w = r - l, h = b - t, cx = l + w * .5f, cy = t + h * .5f;
 		if (tool.preset != PresetKind::Line && tool.preset != PresetKind::Arrow &&
-			tool.preset != PresetKind::Circle && tool.preset != PresetKind::RegularPolygon && tool.preset != PresetKind::Parallelogram && !centeredTriangle &&
+			tool.preset != PresetKind::Circle && tool.preset != PresetKind::RegularPolygon && !centeredTriangle &&
 			!std::holds_alternative<VertexConstruction>(c.parameters) && !(w > 0 && h > 0))
 		{ error = "empty construction"; return false; }
 		switch (tool.preset)
@@ -131,10 +131,9 @@ namespace
 			break;
 		case PresetKind::Parallelogram:
 			{
-			// 固定模板的长对角线与手势重合，允许任意方向起笔。
-			const Vec2 d{end.x-start.x,end.y-start.y}, m{(start.x+end.x)*.5f,(start.y+end.y)*.5f};
-			const Vec2 q{-d.x*.125f-d.y*.375f,-d.y*.125f+d.x*.375f};
-			out.kind = Kind::Polygon; out.geometry.vertices = {start,{m.x+q.x,m.y+q.y},end,{m.x-q.x,m.y-q.y}}; break;
+			// 起止点仍是长对角线端点；上下边沿局部水平轴，倾斜交给整体旋转。
+			const float skew = (end.x-start.x)*.25f;
+			out.kind = Kind::Polygon; out.geometry.vertices = {start,{end.x-skew,start.y},end,{start.x+skew,end.y}}; break;
 			}
 		case PresetKind::Rhombus:
 			out.kind = Kind::Polygon; out.geometry.vertices = { { cx,t }, { r,cy }, { cx,b }, { l,cy } }; break;

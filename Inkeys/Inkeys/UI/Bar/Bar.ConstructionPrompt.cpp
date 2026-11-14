@@ -22,6 +22,8 @@ extern const double BarUiDividerRadius;
 extern const double BarUiDividerCursorLightIntensity;
 namespace
 {
+	// 只调整视觉/键盘顺序，动作索引继续保持稳定。
+	constexpr std::array<int,4> PromptOrder{0,1,3,2};
 	constexpr std::array<ShapeUiActionKind,4> PromptActions{ShapeUiActionKind::ConstructionBack,
 		ShapeUiActionKind::ConstructionForward,ShapeUiActionKind::ConstructionComplete,ShapeUiActionKind::ConstructionCancel};
 	std::wstring PromptStepDescription(const ConstructionStatus& status)
@@ -80,8 +82,9 @@ void BarConstructionPrompt::Initialize()
 		p->icon.Initialization(0,0,GetThemeColor(BarThemeColorEnum::TextPrimary),GetThemeColor(BarThemeColorEnum::TextPrimary));p->icon.enable.Initialization(true);p->icon.InitializationFromResource(L"UI",resources[i]);
 		p->name.Initialization(0,0,0,0,L"",13,GetThemeColor(BarThemeColorEnum::TextPrimary));p->name.enable.Initialization(false);
 		// SVG载荷准备后再解析OneOne槽，避免首次图标宽高为零。
-		ConfigureBarButtonVisualTargets(*p,BarButtonVisualLayoutKind::StandardOneOne,0,1,true);list.push_back(p);
+		ConfigureBarButtonVisualTargets(*p,BarButtonVisualLayoutKind::StandardOneOne,0,1,true);
 	}
+	for(const auto i:PromptOrder)list.push_back(buttons_[i]);
 	list_.Replace(std::move(list));initialized_=true;
 }
 bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const ShapeUiSnapshot> snapshot,double dt,double speed,double zoom,RECT workArea,POINT origin,double rigidX,double rigidY,const BarUiTimelineClass* parentTimeline)
@@ -122,7 +125,9 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 	unsigned state=points?1u:0u;for(size_t i=0;i<4;++i){buttons_[i]->hide=!wanted[i];if(enabled[i])state|=2u<<i;}
 	const auto layout=ResolveBarButtonListLayout(list_.Snapshot(),BarButtonListLayoutKind::SingleRow);
 	const bool stacked=textLeft+measured+5+layout.width>available;
-	const int columns=(std::max)(1,(std::min)(4,static_cast<int>((available-5)/(BarButtonOneSideDip+5))));
+	const int capacity=(std::max)(1,(std::min)(4,static_cast<int>((available-5)/(BarButtonOneSideDip+5))));
+	// 两个终结按钮作为一对换行，窄窗口也不能把勾移到叉的下一行。
+	const int columns=points?(capacity>=4?4:2):capacity;
 	const double desiredTextWidth=(std::min)(measured,(std::max)(0.,available-textLeft-(stacked?5.:5+layout.width)));
 	const double targetChrome=stacked?available-desiredTextWidth:textLeft+5+layout.width;
 	const double targetHeight=stacked?42.5+std::ceil((points?4.:3.)/columns)*37.5:42.5;
@@ -199,10 +204,11 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 	next.accessibleNames={IW(keys.BackName),IW(keys.ForwardName),IW(keys.CompleteName),IW(keys.CancelName)};
 	next.tooltips={IW(keys.BackTooltip),IW(keys.ForwardTooltip),IW(keys.CompleteTooltip),IW(keys.CancelTooltip)};
 	int visibleIndex=0;const int hoverTarget=hovered_>=0?static_cast<int>(hovered_):static_cast<int>(focused_);
-	for(int i=0;i<4;++i)
+	for(int order=0;order<4;++order)
 	{
+		const int i=PromptOrder[order];
 		auto& b=*buttons_[i];b.name.SetStringImmediate(next.accessibleNames[i]);b.state->state=enabled[i]?BarWidgetState::None:BarWidgetState::Disable;
-		const auto& placement=layout.placements[i+1];
+		const auto& placement=layout.placements[order+1];
 		const double targetX=stacked?5+BarButtonOneSideDip/2+(visibleIndex%columns)*37.5:placement.x;
 		const double targetY=stacked?42.5+BarButtonOneSideDip/2+(visibleIndex/columns)*37.5:21.25;
 		if(wanted[i])++visibleIndex;
@@ -302,8 +308,8 @@ bool BarConstructionPrompt::Keyboard(BarUISetClass& owner,const KeyboardMessage&
 		if(down)
 		{
 			const int delta=key==VK_LEFT||(key==VK_TAB&&message.shift)?-1:1;
-			int candidate=focused_;if(candidate<0)candidate=delta>0?3:0;focused_=-1;
-			for(int k=0;k<4;++k){candidate=(candidate+4+delta)%4;if(f.buttons[candidate].visible&&f.buttons[candidate].enabled){focused_=candidate;break;}}
+			int candidate=focused_<0?(delta>0?3:0):static_cast<int>(std::find(PromptOrder.begin(),PromptOrder.end(),focused_)-PromptOrder.begin());focused_=-1;
+			for(int k=0;k<4;++k){candidate=(candidate+4+delta)%4;const int item=PromptOrder[candidate];if(f.buttons[item].visible&&f.buttons[item].enabled){focused_=item;break;}}
 			owner.UpdateRendering(false);
 		}return true;
 	}

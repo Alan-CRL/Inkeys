@@ -591,6 +591,8 @@ namespace Inkeys::UI::Bar
 		double pickerDragX = 0, pickerDragY = 0;
 		ShapeUiIdentity gestureIdentity;
 		Vec2 down, pointerOffset{};
+		unsigned handleDockSide = 0;
+		Vec2 handleDock{}, handleTangent{1,0}, handleEdge{}, dockFitOffset{};
 		std::uint32_t handle = 0;
 		std::function<void(const ShapeUiAction&)> actionSink;
 		struct HandleVisual
@@ -768,7 +770,7 @@ namespace Inkeys::UI::Bar
 		ShapeEditorHit Hit(const Frame& frame, POINT p) const
 		{
 			ShapeEditorHit hit;
-			if (!frame.visible || !frame.snapshot || !frame.snapshot->object || frame.snapshot->drawingPreview || PtInRect(&frame.mainBar,p)) return hit;
+			if (!frame.visible || !frame.snapshot || !frame.snapshot->object || frame.snapshot->drawingPreview) return hit;
 			hit.identity = frame.snapshot->identity;
 			const double lx = (p.x-frame.bounds.left)/frame.scale, ly = (p.y-frame.bounds.top)/frame.scale;
 			// 弹层同时充当输入屏障；外部按下只关闭最上层，不继续命中浮条或对象。
@@ -932,7 +934,7 @@ namespace Inkeys::UI::Bar
 			{
 				handles.clear();
 				initialized = false;
-				toolbarBelow = true;
+				toolbarBelow = true; handleDockSide = 0;
 				memberWanted.fill(false); dividerWanted.fill(false);
 				memberBatch.Restart(0);
 				toolbarMotion = {}; paletteMotion = {}; sidesMotion = {}; pickerMotion = {};
@@ -1134,9 +1136,42 @@ namespace Inkeys::UI::Bar
 				ApplyTransform(object.transform,{f.right,f.bottom}),ApplyTransform(object.transform,{f.left,f.bottom})};
 			float minX=corners[0].x,maxX=minX,minY=corners[0].y,maxY=minY;
 			for (const auto& p : corners) { minX=(std::min)(minX,p.x); maxX=(std::max)(maxX,p.x); minY=(std::min)(minY,p.y); maxY=(std::max)(maxY,p.y); }
+			// 控件停靠仅在闲置且当前边超屏时换边；手势期间沿同一外框边跟随。
+			const bool dockCapsule = std::any_of(snapshot->handles.begin(),snapshot->handles.end(),[](const auto& h){return h.kind==EditHandleKind::Rotate;});
+			const bool hasDock = dockCapsule || std::any_of(snapshot->handles.begin(),snapshot->handles.end(),[](const auto& h){return h.kind==EditHandleKind::Move;});
+			const auto previousDock=handleDock,previousTangent=handleTangent;
+			if(hasDock && f.valid) {
+				std::array<Vec2,4> centers{}, tangents{}, edges{}; std::array<double,4> overflow{};
+				const Vec2 middle{(corners[0].x+corners[2].x)/2,(corners[0].y+corners[2].y)/2};
+				for(unsigned side=0;side<4;++side) {
+					const auto a=corners[side],b=corners[(side+1)%4]; const double length=(std::max)(1.,static_cast<double>(std::hypot(b.x-a.x,b.y-a.y)));
+					tangents[side]={static_cast<float>((b.x-a.x)/length),static_cast<float>((b.y-a.y)/length)};
+					edges[side]={(a.x+b.x)/2,(a.y+b.y)/2}; Vec2 normal{tangents[side].y,-tangents[side].x};
+					if((edges[side].x-middle.x)*normal.x+(edges[side].y-middle.y)*normal.y<0) {normal.x=-normal.x;normal.y=-normal.y;}
+					centers[side]={edges[side].x+static_cast<float>(30*scale)*normal.x,edges[side].y+static_cast<float>(30*scale)*normal.y};
+					const double rx=(10+(dockCapsule?10*std::abs(tangents[side].x):0))*scale,ry=(10+(dockCapsule?10*std::abs(tangents[side].y):0))*scale;
+					const double x=centers[side].x+snapshot->canvasOriginX,y=centers[side].y+snapshot->canvasOriginY;
+					overflow[side]=(std::max)(0.,work.left+rx-x)+(std::max)(0.,x+rx-work.right)+(std::max)(0.,work.top+ry-y)+(std::max)(0.,y+ry-work.bottom);
+				}
+				if(!tracking && pressedHandle==UINT32_MAX && overflow[handleDockSide]>0) {
+					unsigned best=handleDockSide; double distance=0;
+					for(unsigned side=0;side<4;++side) { const double d=std::hypot(centers[side].x-centers[handleDockSide].x,centers[side].y-centers[handleDockSide].y);
+						if(overflow[side]<overflow[best] || (overflow[side]==overflow[best] && d<distance)) {best=side;distance=d;} }
+					handleDockSide=best;
+				}
+				handleDock=centers[handleDockSide];handleTangent=tangents[handleDockSide];handleEdge=edges[handleDockSide];
+				if(tracking || pressedHandle!=UINT32_MAX) {handleDock.x+=dockFitOffset.x;handleDock.y+=dockFitOffset.y;} else dockFitOffset={};
+				if(!tracking && pressedHandle==UINT32_MAX && overflow[handleDockSide]>0) {
+					const float rx=static_cast<float>((10+(dockCapsule?10*std::abs(handleTangent.x):0))*scale),ry=static_cast<float>((10+(dockCapsule?10*std::abs(handleTangent.y):0))*scale);
+					handleDock.x=std::clamp(handleDock.x,work.left-snapshot->canvasOriginX+rx,(std::max)(work.left-snapshot->canvasOriginX+rx,work.right-snapshot->canvasOriginX-rx));
+					handleDock.y=std::clamp(handleDock.y,work.top-snapshot->canvasOriginY+ry,(std::max)(work.top-snapshot->canvasOriginY+ry,work.bottom-snapshot->canvasOriginY-ry));
+					dockFitOffset={handleDock.x-centers[handleDockSide].x,handleDock.y-centers[handleDockSide].y};
+				}
+			}
+			changed|=previousDock!=handleDock || previousTangent!=handleTangent;
 			float topDockY=minY,bottomDockY=maxY;
 			// 旋转钮伸出外框，顶部停靠须在其外再留间距，否则浮条会遮住可操作区域。
-			for (const auto& h : snapshot->handles) if(h.kind==EditHandleKind::Rotate || h.kind==EditHandleKind::Move) { topDockY=(std::min)(topDockY,h.position.y-static_cast<float>(14*scale)); bottomDockY=(std::max)(bottomDockY,h.position.y+static_cast<float>(14*scale)); }
+			for (const auto& h : snapshot->handles) if(h.kind==EditHandleKind::Rotate || h.kind==EditHandleKind::Move) { topDockY=(std::min)(topDockY,handleDock.y-static_cast<float>(20*scale)); bottomDockY=(std::max)(bottomDockY,handleDock.y+static_cast<float>(20*scale)); }
 			const Vec2 topAnchor{(minX+maxX)/2,topDockY}, bottomAnchor{(minX+maxX)/2,bottomDockY};
 			const double fittedWidth = toolbarWidth*toolbarFit, fittedHeight = toolbarHeight*toolbarFit;
 			const EraserAttributeRect safeWork{work.left/scale+5, work.top/scale+5, work.right/scale-5, work.bottom/scale-5};
@@ -1224,6 +1259,9 @@ namespace Inkeys::UI::Bar
 				if (EmptyRect(nextBounds)) nextBounds = pixels; else UnionRect(&nextBounds, &nextBounds, &pixels);
 			};
 			include(barRect);
+			if(hasDock) include({(snapshot->canvasOriginX+handleDock.x)/scale-24,(snapshot->canvasOriginY+handleDock.y)/scale-24,(snapshot->canvasOriginX+handleDock.x)/scale+24,(snapshot->canvasOriginY+handleDock.y)/scale+24});
+			// 退场点仍在绘制，窗口不能只按新快照中的点收缩。
+			for(const auto& v:handles) if(v->opacity.val>0) include({(snapshot->canvasOriginX+v->position.x)/scale-18,(snapshot->canvasOriginY+v->position.y)/scale-18,(snapshot->canvasOriginX+v->position.x)/scale+18,(snapshot->canvasOriginY+v->position.y)/scale+18});
 			if (sidesMotion.Visible()) include(poses[1].Apply({0, 0, sidesPanelWidth, sidesPanelHeight}));
 			if (paletteMotion.Visible()) include(paletteRect);
 			if (pickerMotion.Visible()) include(poses[3].Apply({0, 0, 300, 209}));
@@ -1250,10 +1288,10 @@ namespace Inkeys::UI::Bar
 				for (const auto local : corners)
 				{
 					const auto point = ApplyTransform(object.transform, local);
-					nextBounds.left = (std::min)(nextBounds.left, static_cast<LONG>(std::floor(snapshot->canvasOriginX+point.x-scale)));
-					nextBounds.top = (std::min)(nextBounds.top, static_cast<LONG>(std::floor(snapshot->canvasOriginY+point.y-scale)));
-					nextBounds.right = (std::max)(nextBounds.right, static_cast<LONG>(std::ceil(snapshot->canvasOriginX+point.x+scale)));
-					nextBounds.bottom = (std::max)(nextBounds.bottom, static_cast<LONG>(std::ceil(snapshot->canvasOriginY+point.y+scale)));
+					nextBounds.left = (std::min)(nextBounds.left, static_cast<LONG>(std::floor(snapshot->canvasOriginX+point.x-(2.5*scale+1))));
+					nextBounds.top = (std::min)(nextBounds.top, static_cast<LONG>(std::floor(snapshot->canvasOriginY+point.y-(2.5*scale+1))));
+					nextBounds.right = (std::max)(nextBounds.right, static_cast<LONG>(std::ceil(snapshot->canvasOriginX+point.x+(2.5*scale+1))));
+					nextBounds.bottom = (std::max)(nextBounds.bottom, static_cast<LONG>(std::ceil(snapshot->canvasOriginY+point.y+(2.5*scale+1))));
 				}
 			}
 			if (tracking && initialized && !EmptyRect(bounds))
@@ -1396,6 +1434,28 @@ namespace Inkeys::UI::Bar
 			auto uiHandles = snapshot->handles;
 			for (const auto& h : snapshot->handles) if (h.kind == EditHandleKind::Rotate) { uiHandles.push_back({0,EditHandleKind::Move,h.position}); break; }
 			const bool capsule = std::any_of(uiHandles.begin(),uiHandles.end(),[](const auto& h){return h.kind==EditHandleKind::Rotate;});
+			// 焦点成对选位：短轴镜像优先，不能因逐点贪心使左右落在任意两侧。
+			std::array<Vec2,2> focusOffsets{};std::vector<EditHandle> focusPair;bool focusPairFits=false;
+			for(const auto& h:uiHandles)if(h.kind==EditHandleKind::Focus)focusPair.push_back(h);
+			if(focusPair.size()==2) {
+				Vec2 axis{focusPair[0].position.x-focusPair[1].position.x,focusPair[0].position.y-focusPair[1].position.y};
+				double length=std::hypot(axis.x,axis.y);if(length<.001){axis={object.transform.m11,object.transform.m12};length=(std::max)(.001,static_cast<double>(std::hypot(axis.x,axis.y)));}
+				axis={static_cast<float>(axis.x/length),static_cast<float>(axis.y/length)};const Vec2 normal{-axis.y,axis.x};
+				double best=std::numeric_limits<double>::max();
+				for(float side:{-1.f,1.f})for(float outward:{1.f,-1.f}) {
+					std::array<Vec2,2> offsets{};double penalty=0;
+					for(unsigned i=0;i<2;++i) {
+						const float sign=i? -outward:outward;offsets[i]={static_cast<float>(17*scale)*(axis.x*sign+normal.x*side),static_cast<float>(17*scale)*(axis.y*sign+normal.y*side)};
+						const Vec2 q{focusPair[i].position.x+offsets[i].x,focusPair[i].position.y+offsets[i].y};const double x=q.x+snapshot->canvasOriginX,y=q.y+snapshot->canvasOriginY;
+						if(x<work.left+12*scale||x>work.right-12*scale||y<work.top+12*scale||y>work.bottom-12*scale)penalty+=1000000;
+						if(x/scale>barRect.left-12&&x/scale<barRect.right+12&&y/scale>barRect.top-12&&y/scale<barRect.bottom+12)penalty+=1000000;
+						for(const auto& other:uiHandles)if(other.id!=focusPair[i].id)penalty+=(std::max)(0.,30*scale-std::hypot(q.x-other.position.x,q.y-other.position.y))*100;
+						for(const auto& old:handles)if(old->id==focusPair[i].id)penalty+=std::hypot(offsets[i].x-old->offsetX.tar,offsets[i].y-old->offsetY.tar);
+					}
+					penalty+=(std::max)(0.,24*scale-std::hypot(focusPair[0].position.x+offsets[0].x-focusPair[1].position.x-offsets[1].x,focusPair[0].position.y+offsets[0].y-focusPair[1].position.y-offsets[1].y))*100;
+					if(penalty<best){best=penalty;focusOffsets=offsets;focusPairFits=penalty<1000000;}
+				}
+			}
 			for (const auto& h : uiHandles)
 			{
 				if(snapshot->drawingPreview) continue;
@@ -1421,7 +1481,7 @@ namespace Inkeys::UI::Bar
 					|| (h.kind == EditHandleKind::Focus && (object.style.auxiliary&Auxiliary::Foci) != Auxiliary::None));
 				// 显示点时将拖动柄移到旁边；几何位置与视觉偏移分别保存。
 				Vec2 offset{};
-				if (capsule && (h.kind==EditHandleKind::Rotate || h.kind==EditHandleKind::Move)) offset.x=static_cast<float>((h.kind==EditHandleKind::Rotate?-14:14)*scale);
+				if (h.kind==EditHandleKind::Rotate || h.kind==EditHandleKind::Move) { const float shift=static_cast<float>(capsule?(h.kind==EditHandleKind::Rotate?-10:10)*scale:0); offset={handleDock.x+shift*handleTangent.x-h.position.x,handleDock.y+shift*handleTangent.y-h.position.y}; }
 				if (auxiliary) {
 					const std::array<Vec2,8> offsets{{{17,-17},{-17,-17},{17,17},{-17,17},{0,-24},{0,24},{24,0},{-24,0}}};
 					double best=std::numeric_limits<double>::max();
@@ -1439,6 +1499,7 @@ namespace Inkeys::UI::Bar
 						if(penalty<best) {best=penalty; offset={static_cast<float>(candidateOffset.x*scale),static_cast<float>(candidateOffset.y*scale)};}
 					}
 				}
+				if(auxiliary && h.kind==EditHandleKind::Focus && focusPair.size()==2 && focusPairFits) offset=focusOffsets[h.id==focusPair[0].id?0:1];
 				if (h.kind==EditHandleKind::Rotate || h.kind==EditHandleKind::Move) { v.offsetX.SetDirect(offset.x);v.offsetY.SetDirect(offset.y); } else { v.offsetX.SetTar(offset.x,.24); v.offsetY.SetTar(offset.y,.24); }
 				if (h.kind==EditHandleKind::Center || h.kind==EditHandleKind::Focus || h.kind==EditHandleKind::Move) {
 					const std::wstring resource=(auxiliary || h.kind==EditHandleKind::Move) ? L"barShapeMove" : h.kind==EditHandleKind::Focus ? L"barShapeAuxFoci" : L"barShapeAuxCenter";
@@ -1467,6 +1528,12 @@ namespace Inkeys::UI::Bar
 				step(v->accent);
 				step(v->iconScale);
 				step(v->bracketThickness);
+			}
+			// 胶囊整体入场缩放时，两半中心和命中也使用相同的当前缩放。
+			if(capsule)for(auto& v:handles)if(v->kind==EditHandleKind::Rotate||v->kind==EditHandleKind::Move) {
+				const float offset=static_cast<float>((v->kind==EditHandleKind::Rotate?-10:10)*scale*v->scale.val);
+				v->position={handleDock.x+offset*handleTangent.x,handleDock.y+offset*handleTangent.y};
+				for(auto& h:next.visualHandles)if(h.id==v->id)h.position=v->position;
 			}
 			std::erase_if(handles, [](const auto& v)
 			{
@@ -1675,33 +1742,27 @@ namespace Inkeys::UI::Bar
 				if (auto* brush = renderer.ContentSolidBrush(RGB(0, 0, 0), 1./255)) dc->FillRectangle({static_cast<FLOAT>(work.left-bounds.left), static_cast<FLOAT>(work.top-bounds.top), static_cast<FLOAT>(work.right-bounds.left), static_cast<FLOAT>(work.bottom-bounds.top)}, brush);
 				dc->SetPrimitiveBlend(blend);
 			}
-			// 同一屏幕矩形同时排除像素和命中，退场残影也不能挡住主栏撤回。
-			const auto clearMainBar = [&] {
-				if (EmptyRect(candidate.mainBar)) return;
-				const auto& b=candidate.mainBar;
-				dc->PushAxisAlignedClip({static_cast<FLOAT>(b.left-bounds.left),static_cast<FLOAT>(b.top-bounds.top),static_cast<FLOAT>(b.right-bounds.left),static_cast<FLOAT>(b.bottom-bounds.top)},D2D1_ANTIALIAS_MODE_ALIASED);
-				dc->Clear(D2D1::ColorF(0,0));dc->PopAxisAlignedClip();
-			};
 			const auto& object = *snapshot->object;
+			const auto accent = MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Accent),
+				GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Accent), appliedLightWeight);
 			// 两腰提示仅属于编辑层，不进入文档和导出几何。
 			if (object.construction && object.construction->tool.preset == PresetKind::Triangle && object.construction->tool.constraint == PlanarConstraint::Isosceles)
 			{
 				std::array<Vec2,3> points{}; unsigned count=0;
 				for (const auto& h : snapshot->handles) if (h.kind == EditHandleKind::Vertex && count<3) points[count++]=h.position;
-				if (count==3) if (auto* brush=renderer.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::TextPrimary),.75*appliedContentOpacity*editOpacity.val)) {
+				if (count==3) if (auto* brush=renderer.ContentSolidBrush(accent,.90*appliedContentOpacity*editOpacity.val)) {
 					const auto apex=object.construction->tool.constraintVertex%3;
 					for (unsigned i=0;i<3;++i) if (i!=apex) {
 						const double dx=points[i].x-points[apex].x,dy=points[i].y-points[apex].y,length=std::hypot(dx,dy); if(length<1) continue;
 						const double tx=dx/length,ty=dy/length,cx=snapshot->canvasOriginX+(points[i].x+points[apex].x)/2-bounds.left,cy=snapshot->canvasOriginY+(points[i].y+points[apex].y)/2-bounds.top;
 						// 两条固定屏幕尺度的斜杠只属于编辑提示，随边方向旋转。
-						for(double shift:{-2.5,2.5}) { const double x=cx+shift*scale*tx,y=cy+shift*scale*ty,sx=(tx-ty)*3*scale,sy=(ty+tx)*3*scale;
+						for(double shift:{-2.5,2.5}) { const double x=cx+shift*scale*tx,y=cy+shift*scale*ty,sx=(tx-(i==(apex+1)%3?1:-1)*ty)*3*scale,sy=(ty+(i==(apex+1)%3?1:-1)*tx)*3*scale;
 							dc->DrawLine({static_cast<FLOAT>(x-sx),static_cast<FLOAT>(y-sy)},{static_cast<FLOAT>(x+sx),static_cast<FLOAT>(y+sy)},brush,static_cast<FLOAT>(1.5*scale),connectorStyle.Get()); }
 					}
 				}
 			}
-			if(snapshot->drawingPreview) { clearMainBar(); return; }
-			const auto accent = MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Accent),
-				GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Accent), appliedLightWeight);
+			if(snapshot->drawingPreview) return;
+
 			const double frameOpacity = .90 * appliedContentOpacity * editOpacity.val;
 			if (!connectorStyle)
 			{
@@ -1724,36 +1785,55 @@ namespace Inkeys::UI::Bar
 					dc->GetTransform(&original);
 					dc->SetTransform(visual.transform * original);
 					if (auto* brush = renderer.ContentSolidBrush(accent, 1.0)) dc->DrawRoundedRectangle(visual.rounded, brush, visual.thickness);
+					// 没有整体缩放柄的平面图形也使用相同角标，仅补视觉不扩大命中。
+					if(!std::any_of(snapshot->handles.begin(),snapshot->handles.end(),[](const auto& h){return h.kind==EditHandleKind::Scale;})) {
+						const auto& r=visual.rounded.rect; const FLOAT radius=(std::min)({visual.rounded.radiusX,(r.right-r.left)/2,(r.bottom-r.top)/2});
+						if(auto* path=BracketGeometry(dc,radius)) for(unsigned i=0;i<4;++i) {
+							const bool left=i==0||i==3,top=i<2; dc->SetTransform(D2D1::Matrix3x2F(left?1.f:-1.f,0,0,top?1.f:-1.f,left?r.left:r.right,top?r.top:r.bottom)*visual.transform*original);
+							if(auto* brush=renderer.ContentSolidBrush(accent,1))dc->DrawGeometry(path,brush,static_cast<FLOAT>(4*scale),connectorStyle.Get());
+						}
+					}
 					dc->SetTransform(original);
 				}
 				for (const auto& h : snapshot->handles) if (h.kind == EditHandleKind::Rotate)
 				{
-					const auto& f = snapshot->frameRect;
-					const auto top = ApplyTransform(object.transform, {(f.left + f.right) / 2, f.top});
-					const double axis = std::hypot(object.transform.m21, object.transform.m22);
-					const auto rotateVisual = std::find_if(handles.begin(), handles.end(), [&](const auto& v)
-					{
-						return v->id == h.id;
-					});
-					const double radius = 14 * scale * (rotateVisual == handles.end() ? 1.0 : static_cast<double>((*rotateVisual)->scale.val));
+					const auto top = handleEdge;
 					const D2D1_POINT_2F start{static_cast<FLOAT>(snapshot->canvasOriginX + top.x - bounds.left),
 						static_cast<FLOAT>(snapshot->canvasOriginY + top.y - bounds.top)};
-					const D2D1_POINT_2F end{static_cast<FLOAT>(snapshot->canvasOriginX + h.position.x - bounds.left + object.transform.m21 / axis * radius), static_cast<FLOAT>(snapshot->canvasOriginY + h.position.y - bounds.top + object.transform.m22 / axis * radius)};
+					const D2D1_POINT_2F end{static_cast<FLOAT>(snapshot->canvasOriginX + handleDock.x - bounds.left), static_cast<FLOAT>(snapshot->canvasOriginY + handleDock.y - bounds.top)};
 					if (auto* brush = renderer.ContentSolidBrush(accent, 1.0)) dc->DrawLine(start, end, brush, static_cast<FLOAT>(1.5 * scale), connectorStyle.Get());
 				}
 			}
 			const auto rotateHandle=std::find_if(handles.begin(),handles.end(),[](const auto& h){return h->kind==EditHandleKind::Rotate;});
-			if(rotateHandle!=handles.end()) {
-				const auto& v=**rotateHandle; const FLOAT x=static_cast<FLOAT>(snapshot->canvasOriginX+v.position.x-bounds.left),y=static_cast<FLOAT>(snapshot->canvasOriginY+v.position.y-bounds.top),r=static_cast<FLOAT>(14*scale);
-				const auto surface=MixBarUiColor(MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::Surface),GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::TextPrimary),.20),RGB(255,255,255),appliedLightWeight);
-				const auto capsule=D2D1::RoundedRect({x-r,y-r,x+3*r,y+r},r,r);
-				if(auto* brush=renderer.ContentSolidBrush(surface,1)) dc->FillRoundedRectangle(capsule,brush);
-				if(auto* brush=renderer.ContentSolidBrush(accent,.6)) {dc->DrawRoundedRectangle(capsule,brush,static_cast<FLOAT>(scale));dc->DrawLine({x+r,y-r*.6f},{x+r,y+r*.6f},brush,static_cast<FLOAT>(scale));}
-			}
+			const auto drawCapsule = [&] {
+				if(rotateHandle==handles.end())return;const auto& v=**rotateHandle;
+				D2D1_MATRIX_3X2_F original;dc->GetTransform(&original);
+				const FLOAT x=static_cast<FLOAT>(snapshot->canvasOriginX+handleDock.x-bounds.left),y=static_cast<FLOAT>(snapshot->canvasOriginY+handleDock.y-bounds.top),r=static_cast<FLOAT>(10*scale*v.scale.val),half=static_cast<FLOAT>(10*scale*v.scale.val);
+				// 与普通圆柄复用相同材质公式，独立于外框透明层，不叠加青色边框。
+				const auto darkFill=MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::Surface),GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::TextPrimary),.20);
+				const auto fill=MixBarUiColor(darkFill,RGB(255,255,255),appliedLightWeight);
+				const auto darkFrame=MixBarUiColor(darkFill,GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::TextPrimary),.12);
+				const auto lightFrame=MixBarUiColor(GetThemeColor(BarThemeModeEnum::Light,BarThemeColorEnum::Surface),GetThemeColor(BarThemeModeEnum::Light,BarThemeColorEnum::TextPrimary),BarThemeMaterial::LightSliderThumbBorderOpacity);
+				renderer.PushPanelOpacity(dc,{0,0,static_cast<FLOAT>(bounds.right-bounds.left),static_cast<FLOAT>(bounds.bottom-bounds.top)},appliedContentOpacity*v.opacity.val);
+				dc->SetTransform(D2D1::Matrix3x2F(handleTangent.x,handleTangent.y,-handleTangent.y,handleTangent.x,x,y)*original);
+				if(auto* brush=renderer.ContentSolidBrush(MixBarUiColor(darkFrame,lightFrame,appliedLightWeight),1))dc->FillRoundedRectangle(D2D1::RoundedRect({-half-r,-r,half+r,r},r,r),brush);
+				const FLOAT inner=(std::max)(0.f,r-static_cast<FLOAT>(scale));
+				if(auto* brush=renderer.ContentSolidBrush(fill,1))dc->FillRoundedRectangle(D2D1::RoundedRect({-half-inner,-inner,half+inner,inner},inner,inner),brush);
+				dc->SetTransform(original);
+				for(const auto& h:handles)if(h->kind==EditHandleKind::Rotate||h->kind==EditHandleKind::Move) {
+					const bool rotate=h->kind==EditHandleKind::Rotate;const FLOAT cx=static_cast<FLOAT>(snapshot->canvasOriginX+h->position.x-bounds.left),cy=static_cast<FLOAT>(snapshot->canvasOriginY+h->position.y-bounds.top);
+					if(rotate)PlaceShape(buttons[Rotate]->button,cx/scale-10,cy/scale-10,20,20);
+					auto& icon=rotate?buttons[Rotate]->icon:h->glyph;const double d=16*h->iconScale.val*h->scale.val;const auto color=MixBarUiColor(fill,accent,h->accent.val);
+					icon.w.SetDirect(d);icon.h.SetDirect(d);icon.pct.SetDirect(1);if(icon.color1)icon.color1->SetDirect(color);if(icon.color2)icon.color2->SetDirect(color);
+					dc->SetTransform(D2D1::Matrix3x2F::Translation(-cx,-cy)*D2D1::Matrix3x2F(handleTangent.x,handleTangent.y,-handleTangent.y,handleTangent.x,cx,cy)*original);
+					renderer.Svg(dc,icon,icon.UpInh({cx/scale-d/2,cy/scale-d/2}));
+				}
+				dc->SetTransform(original);dc->PopLayer();
+			};
 			// 外框角点先画，专属点覆盖其上，整体移动中心点最后画。
 			for (int layer = 0; layer < 3; ++layer)
 			{
-				if (layer == 1) dc->PopLayer();
+				if (layer == 1) {dc->PopLayer();drawCapsule();}
 				for (const auto& v : handles)
 				{
 					const int rank = v->kind == EditHandleKind::Scale ? 0 : v->kind == EditHandleKind::Center ? 2 : 1;
@@ -1788,7 +1868,7 @@ namespace Inkeys::UI::Bar
 					dc->GetTransform(&original);
 					BarSliderThumbStyle thumbStyle;
 					thumbStyle.centerPx = center;
-					thumbStyle.outerDiameterPx = static_cast<FLOAT>(((rotate || v->kind==EditHandleKind::Move) ? 28 : 20) * scale * v->scale.val);
+					thumbStyle.outerDiameterPx = static_cast<FLOAT>(20 * scale * v->scale.val);
 					const bool movePoint = v->kind == EditHandleKind::Center || v->kind == EditHandleKind::Focus || v->kind == EditHandleKind::Move;
 					thumbStyle.centerDiameterPx = movePoint ? 0 : static_cast<FLOAT>(v->centerDiameter.val * scale * v->scale.val);
 					thumbStyle.accentOpacity = v->accent.val;
@@ -1799,12 +1879,8 @@ namespace Inkeys::UI::Bar
 						GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface), appliedLightWeight);
 					thumbStyle.accentColor = accent;
 					thumbStyle.compositeOpacity = true;
-					if (rotateHandle!=handles.end() && (rotate || v->kind==EditHandleKind::Move)) {
-						if(rotate) PlaceShape(buttons[Rotate]->button,center.x/scale-14,center.y/scale-14,28,28);
-						auto& icon=rotate ? buttons[Rotate]->icon : v->glyph; const double d=16*v->iconScale.val;
-						icon.w.SetDirect(d);icon.h.SetDirect(d);icon.pct.SetDirect(thumbStyle.opacity);if(icon.color1)icon.color1->SetDirect(accent);if(icon.color2)icon.color2->SetDirect(accent);
-						renderer.Svg(dc,icon,icon.UpInh({center.x/scale-d/2,center.y/scale-d/2}));
-					} else DrawBarSliderThumb(renderer, dc, thumbStyle, movePoint ? &v->glyph : nullptr, v->iconScale.val * v->scale.val);
+					if (rotateHandle==handles.end() || (!rotate && v->kind!=EditHandleKind::Move))
+						DrawBarSliderThumb(renderer, dc, thumbStyle, movePoint ? &v->glyph : nullptr, v->iconScale.val * v->scale.val);
 					dc->SetTransform(original);
 				}
 			}
@@ -1839,7 +1915,6 @@ namespace Inkeys::UI::Bar
 				renderer.SetResidentContentOpacity(1); renderer.SetFrameDiffuseMaskGeometryScale(1);
 				dc->SetTransform(original); dc->PopLayer();
 			}
-			clearMainBar();
 		}
 
 		bool CloseTopLayer()
@@ -1987,6 +2062,7 @@ namespace Inkeys::UI::Bar
 		auto* dc = p.renderer.GetDeviceContext();
 		auto* gdi = p.renderer.GetGdiInteropRenderTarget();
 		if (!dc || !gdi || !sink) return E_UNEXPECTED;
+		dc->SetTransform(D2D1::Matrix3x2F::Identity());
 		p.renderer.BeginFrameDraw(dc, {0, 0, static_cast<float>(p.bounds.right-p.bounds.left), static_cast<float>(p.bounds.bottom-p.bounds.top)});
 		p.Draw();
 		p.renderer.FinishFrameDrawCommands(dc);
@@ -2163,7 +2239,7 @@ namespace Inkeys::UI::Bar
 			if (p.handle) {
 				const auto real = std::find_if(frame.snapshot->handles.begin(),frame.snapshot->handles.end(),[&](const auto& h){return h.id == p.handle;});
 				const auto visual = std::find_if(frame.visualHandles.begin(),frame.visualHandles.end(),[&](const auto& h){return h.id == p.handle;});
-				if (real != frame.snapshot->handles.end() && visual != frame.visualHandles.end()) { p.pointerOffset = {visual->position.x-real->position.x,visual->position.y-real->position.y}; p.down.x -= p.pointerOffset.x; p.down.y -= p.pointerOffset.y; }
+				if (real != frame.snapshot->handles.end() && visual != frame.visualHandles.end() && real->kind != EditHandleKind::Rotate) { p.pointerOffset = {visual->position.x-real->position.x,visual->position.y-real->position.y}; p.down.x -= p.pointerOffset.x; p.down.y -= p.pointerOffset.y; }
 			}
 			p.pressedHandle = p.handle;
 			ShapeUiAction a;
@@ -2699,12 +2775,6 @@ namespace Inkeys::UI::Bar
 							expect(blank.x>=0 && blank.y>=0 && blank.x<receipt.cx && blank.y<receipt.cy && pixels[(static_cast<size_t>(blank.y)*receipt.cx+blank.x)*4+3]>1,"occluding popup has actual rendered coverage above the rotation handle"); return;
 						}
 					}
-					const RECT glyphPixels{static_cast<LONG>(std::floor(rect.left))+candidate.bounds.left,static_cast<LONG>(std::floor(rect.top))+candidate.bounds.top,static_cast<LONG>(std::ceil(rect.right))+candidate.bounds.left,static_cast<LONG>(std::ceil(rect.bottom))+candidate.bounds.top};
-					RECT excluded{};
-					if(IntersectRect(&excluded,&glyphPixels,&candidate.mainBar)) {
-						bool transparent=true; for(LONG y=excluded.top;y<excluded.bottom;++y) for(LONG x=excluded.left;x<excluded.right;++x) {const LONG px=x-candidate.bounds.left,py=y-candidate.bounds.top;if(px>=0&&py>=0&&px<receipt.cx&&py<receipt.cy) transparent &= pixels[(static_cast<size_t>(py)*receipt.cx+px)*4+3]==0;}
-						expect(transparent,"main bar deliberately removes every overlapping glyph pixel; normal frames retain foreground oracle");return;
-					}
 					const auto evidence = InspectEditorGlyph(pixels, receipt, rect, blank, expected, badgeBase);
 					if (id==Rotate && scenes==322 && !(evidence.pixels>=2 && evidence.peak>.30)) {
 						report<<"ROTATE_DIAGNOSTIC bounds="<<candidate.bounds.left<<','<<candidate.bounds.top<<" toolbar="<<candidate.toolbar.left<<','<<candidate.toolbar.top<<','<<candidate.toolbar.right<<','<<candidate.toolbar.bottom<<" colors="<<candidate.colors.left<<','<<candidate.colors.top<<','<<candidate.colors.right<<','<<candidate.colors.bottom<<" picker="<<candidate.picker.left<<','<<candidate.picker.top<<','<<candidate.picker.right<<','<<candidate.picker.bottom<<" opacity="<<candidate.opacity<<" edit="<<scene.impl_->editOpacity.val<<" glyph="<<button.icon.inhX<<','<<button.icon.inhY<<" transform="<<candidate.snapshot->object->transform.m11<<','<<candidate.snapshot->object->transform.m12<<'\n';
@@ -2780,12 +2850,73 @@ namespace Inkeys::UI::Bar
 				const double cx=(snapshot->canvasOriginX+h.position.x-frame.bounds.left)/scale,cy=(snapshot->canvasOriginY+h.position.y-frame.bounds.top)/scale;
 				expect(frame.toolbar.right<=cx-14 || frame.toolbar.left>=cx+14 || frame.toolbar.bottom<=cy-14 || frame.toolbar.top>=cy+14,"settled toolbar leaves the full rotation control visible and operable");
 			}
+			if(preset==PresetKind::Circle && scale==1 && dark && std::wstring(language)==L"zh-CN") {
+				const auto visual=ResolveEditorFrame(*snapshot,scene.Bounds(),scale);const auto& rect=visual.rounded.rect;
+				bool covered=true;for(const D2D1_POINT_2F q:std::array<D2D1_POINT_2F,4>{{{rect.left,rect.top},{rect.right,rect.top},{rect.right,rect.bottom},{rect.left,rect.bottom}}}) {
+					const auto v=visual.transform.TransformPoint(q);covered&=v.x>=3&&v.y>=3&&v.x+3<=receipt.cx&&v.y+3<=receipt.cy;
+				}
+				expect(covered,"circle frame bounds include thick decorative corner stroke and antialias fringe");
+			}
+			if(preset==PresetKind::Rectangle && scale==1 && dark && std::wstring(language)==L"zh-CN") {
+				// 换边只改变UI起点；旋转必须围绕真实中心跟随指针，不能减去原顶部偏移。
+				const auto& f=snapshot->frameRect;const auto center=ApplyTransform(snapshot->object->transform,{(f.left+f.right)/2,(f.top+f.bottom)/2});
+				for(unsigned side:{1u,2u,3u}) {
+					scene.impl_->handleDockSide=side;scene.Configure(snapshot,work,{});now+=std::chrono::milliseconds(17);scene.Advance(now);expect(SUCCEEDED(present()),"side dock rotation frame presents");scene.CommitPresented();
+					const auto& hs=scene.impl_->presented.visualHandles;const auto r=std::find_if(hs.begin(),hs.end(),[](const auto& h){return h.kind==EditHandleKind::Rotate;});if(r==hs.end())continue;
+					const POINT down{static_cast<LONG>(snapshot->canvasOriginX+r->position.x),static_cast<LONG>(snapshot->canvasOriginY+r->position.y)};
+					const Vec2 localDown{static_cast<float>(down.x-snapshot->canvasOriginX),static_cast<float>(down.y-snapshot->canvasOriginY)};
+					const POINT end{snapshot->canvasOriginX+static_cast<LONG>(center.x-(localDown.y-center.y)),snapshot->canvasOriginY+static_cast<LONG>(center.y+(localDown.x-center.x))};
+					const auto priorSink=scene.impl_->actionSink;std::vector<ShapeUiAction> trajectory;scene.SetActionSink([&](const auto& action){trajectory.push_back(action);});
+					scene.Pointer(WM_LBUTTONDOWN,down,true,scene.PresentedGeneration());scene.Pointer(WM_MOUSEMOVE,end,true,scene.PresentedGeneration());
+					expect(!trajectory.empty()&&std::hypot(trajectory.front().down.x-localDown.x,trajectory.front().down.y-localDown.y)<.01,"side-docked rotate starts at actual visual pointer");
+					EditSession turn;if(!trajectory.empty()&&turn.Begin(*snapshot->object,r->id,trajectory.front().down)&&turn.Preview(trajectory.back().point,2)) {
+						const auto result=turn.Candidate();expect(result&&std::abs(std::atan2(result->transform.m12,result->transform.m11)-std::atan2(snapshot->object->transform.m12,snapshot->object->transform.m11)-1.57079632679)<.03,"side-docked quarter circle produces quarter turn");
+					}
+					scene.CancelPointer();scene.SetActionSink(priorSink);
+				}
+				scene.impl_->handleDockSide=0;scene.Configure(snapshot,work,{});now+=std::chrono::milliseconds(17);scene.Advance(now);expect(SUCCEEDED(present()),"restore dock after rotation trajectory");scene.CommitPresented();
+			}
+			if(preset==PresetKind::Ellipse && scale==1 && dark && std::wstring(language)==L"zh-CN") {
+				auto foci=std::make_shared<ShapeUiSnapshot>(*snapshot);foci->object->style.auxiliary=foci->object->style.auxiliary|Auxiliary::Foci;++foci->identity.generation;
+				scene.Configure(foci,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"paired auxiliary foci render");scene.CommitPresented();
+				std::vector<EditHandle> real,visual;for(const auto& h:foci->handles)if(h.kind==EditHandleKind::Focus)real.push_back(h);for(const auto& h:scene.impl_->presented.visualHandles)if(h.kind==EditHandleKind::Focus)visual.push_back(h);
+				if(real.size()==2&&visual.size()==2) {
+					const double ax=real[0].position.x-real[1].position.x,ay=real[0].position.y-real[1].position.y,len=(std::max)(1.,std::hypot(ax,ay));
+					const double x0=visual[0].position.x-real[0].position.x,y0=visual[0].position.y-real[0].position.y,x1=visual[1].position.x-real[1].position.x,y1=visual[1].position.y-real[1].position.y;
+					expect(std::abs(((x0+x1)*ax+(y0+y1)*ay)/len)<.1&&std::abs((-(x0-x1)*ay+(y0-y1)*ax)/len)<.1,"unobstructed focus controls mirror across ellipse short axis");
+				}
+				scene.Configure(snapshot,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"restore auxiliary setting after paired regression");scene.CommitPresented();
+			}
+			if(preset==PresetKind::Polyline && scale==1 && dark && std::wstring(language)==L"zh-CN") {
+				auto points=std::make_shared<ShapeUiSnapshot>(*snapshot);const Vec2 departingPoint{static_cast<float>(scene.Bounds().right-snapshot->canvasOriginX+200),static_cast<float>(scene.Bounds().bottom-snapshot->canvasOriginY+200)};
+				points->handles.push_back({9999,EditHandleKind::Vertex,departingPoint});++points->identity.generation;
+				scene.Configure(points,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"outlying confirmed point enters full window");scene.CommitPresented();
+				auto removed=std::make_shared<ShapeUiSnapshot>(*points);removed->handles.pop_back();++removed->identity.generation;
+				scene.Configure(removed,work,{});now+=std::chrono::milliseconds(17);scene.Advance(now);expect(SUCCEEDED(present()),"removed point exit frame renders");scene.CommitPresented();
+				const auto pixels=ReadEditorPixels(scene.Renderer(),receipt);const int x=static_cast<int>(snapshot->canvasOriginX+departingPoint.x-scene.Bounds().left),y=static_cast<int>(snapshot->canvasOriginY+departingPoint.y-scene.Bounds().top);
+				bool complete=x>=12&&y>=12&&x+12<receipt.cx&&y+12<receipt.cy;
+				if(complete)for(const POINT d:std::array<POINT,4>{{{-5,0},{5,0},{0,-5},{0,5}}})complete&=pixels[(static_cast<size_t>(y+d.y)*receipt.cx+x+d.x)*4+3]>1;
+				expect(complete,"undo point exit retains all four sides of its circle inside actual ULW bitmap");
+				scene.Configure(snapshot,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"removed point fully retires");scene.CommitPresented();
+			}
+			if (preset==PresetKind::Rectangle && scale==1 && dark && std::wstring(language)==L"zh-CN") {
+				const auto originalDock=scene.impl_->handleDock;RECT clipped=work;clipped.top=static_cast<LONG>(snapshot->canvasOriginY+originalDock.y+1);
+				scene.impl_->pressedHandle=1;scene.Configure(snapshot,clipped,{});now+=std::chrono::milliseconds(17);scene.Advance(now);
+				expect(scene.impl_->handleDockSide==0,"pressed control retains docking edge even when it leaves work area");
+				scene.impl_->pressedHandle=UINT32_MAX;now+=std::chrono::milliseconds(17);scene.Advance(now);
+				const auto chosen=scene.impl_->handleDockSide;expect(chosen!=0,"idle overflowing top control moves to another frame side");
+				scene.Configure(snapshot,work,{});now+=std::chrono::milliseconds(17);scene.Advance(now);expect(scene.impl_->handleDockSide==chosen,"restored space does not return sticky control to top");
+				const auto& t=scene.impl_->handleTangent;const auto& hs=scene.impl_->candidate.visualHandles;
+				const auto r=std::find_if(hs.begin(),hs.end(),[](const auto& h){return h.kind==EditHandleKind::Rotate;}),m=std::find_if(hs.begin(),hs.end(),[](const auto& h){return h.kind==EditHandleKind::Move;});
+				if(r!=hs.end()&&m!=hs.end())expect(std::abs((m->position.x-r->position.x)*t.y-(m->position.y-r->position.y)*t.x)<.01,"capsule halves follow selected edge tangent");
+				scene.impl_->handleDockSide=0;now+=std::chrono::milliseconds(17);scene.Advance(now);expect(SUCCEEDED(present()),"restore top control after docking regression");scene.CommitPresented();
+			}
 			if (preset==PresetKind::Rectangle && scale==1 && dark && std::wstring(language)==L"zh-CN") {
 				const auto h=scene.impl_->presented.visualHandles.back(); const POINT point{snapshot->canvasOriginX+static_cast<LONG>(h.position.x),snapshot->canvasOriginY+static_cast<LONG>(h.position.y)};
 				const RECT main{point.x-30,point.y-30,point.x+30,point.y+30};
 				scene.Configure(snapshot,work,main); for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);} expect(SUCCEEDED(present()),"main bar overlap renders");scene.CommitPresented();
 				const auto pixels=ReadEditorPixels(scene.Renderer(),receipt);const int x=point.x-scene.Bounds().left,y=point.y-scene.Bounds().top;
-				expect(!scene.Hit(point).occupied&&x>=0&&y>=0&&x<receipt.cx&&y<receipt.cy&&!pixels.empty()&&pixels[(static_cast<size_t>(y)*receipt.cx+x)*4+3]==0,"main bar has zero overlay alpha and no shape hit even where an opaque handle overlaps");
+				expect(scene.Hit(point).occupied&&x>=0&&y>=0&&x<receipt.cx&&y<receipt.cy&&!pixels.empty()&&pixels[(static_cast<size_t>(y)*receipt.cx+x)*4+3]>0,"transparent main window bounds do not cut editor pixels or hit testing");
 				scene.Configure(snapshot,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"restore editor after main bar exclusion");scene.CommitPresented();
 			}
 			if(preset==PresetKind::Triangle && scale==1 && dark && std::wstring(language)==L"zh-CN") {
@@ -3137,7 +3268,7 @@ namespace Inkeys::UI::Bar
 			const auto& uiHandles=scene.impl_->presented.visualHandles;
 			const auto uiRotate=std::find_if(uiHandles.begin(),uiHandles.end(),[](const auto& h){return h.kind==EditHandleKind::Rotate;});
 			const auto uiMove=std::find_if(uiHandles.begin(),uiHandles.end(),[](const auto& h){return h.kind==EditHandleKind::Move;});
-			if(uiRotate!=uiHandles.end()) expect(uiMove!=uiHandles.end()&&std::abs(uiMove->position.x-uiRotate->position.x-28*scale)<.01&&uiMove->position.y==uiRotate->position.y,"planar capsule has separate aligned rotate and move halves");
+			if(uiRotate!=uiHandles.end()) expect(uiMove!=uiHandles.end()&&std::abs(std::hypot(uiMove->position.x-uiRotate->position.x,uiMove->position.y-uiRotate->position.y)-20*scale)<.01,"planar capsule has separate aligned rotate and move halves");
 			if(preset>=PresetKind::Cuboid) expect(uiRotate==uiHandles.end()&&uiMove!=uiHandles.end(),"fixed projection solid exposes movement without two-dimensional rotation");
 			const auto visibleHandles = scene.impl_->presented.visualHandles;
 			for (const auto& h : visibleHandles)

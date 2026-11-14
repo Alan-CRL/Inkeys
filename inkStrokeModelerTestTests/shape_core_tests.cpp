@@ -123,7 +123,7 @@ namespace
 				add(100,EditHandleKind::Center,{80,70}); add(102,EditHandleKind::Axis,{140,70}); add(103,EditHandleKind::Axis,{80,110});
 				add(106,EditHandleKind::Focus,{80+std::sqrt(2000.f),70}); add(107,EditHandleKind::Focus,{80-std::sqrt(2000.f),70}); break;
 			case PresetKind::Triangle: vertices({{80,30},{140,110},{20,110}}); break;
-			case PresetKind::Parallelogram: vertices({{20,30},{35,105},{140,110},{125,35}}); break;
+			case PresetKind::Parallelogram: vertices({{20,30},{110,30},{140,110},{50,110}}); break;
 			case PresetKind::Rhombus: vertices({{80,30},{140,70},{80,110},{20,70}}); break;
 			case PresetKind::Trapezoid: vertices({{50,30},{110,30},{140,110},{20,110}}); break;
 			case PresetKind::RegularPolygon:
@@ -198,7 +198,10 @@ namespace
 				{
 					const auto& old = object->geometry.vertices; const auto& v = std::get<VertexConstruction>(next.parameters).vertices; const size_t i = h.id - 1000;
 					SHAPE_CHECK(pointNear(v[(i + 2) % 4],old[(i + 2) % 4]));
-					for (size_t j : {(i + 1) % 4,(i + 3) % 4}) SHAPE_CHECK(pointNear(v[j],{old[j].x + 1.5f,old[j].y + 1}));
+					for (size_t j : {(i + 1) % 4,(i + 3) % 4}) {
+						const auto o=(i+2)%4; const Vec2 a{old[j].x-old[o].x,old[j].y-old[o].y},b{v[j].x-v[o].x,v[j].y-v[o].y};
+						SHAPE_CHECK(std::abs(a.x*b.y-a.y*b.x)<.01f);
+					}
 					SHAPE_CHECK(pointNear({v[0].x + v[2].x,v[0].y + v[2].y},{v[1].x + v[3].x,v[1].y + v[3].y}));
 				}
 				if (h.kind == EditHandleKind::Vertex && preset == PresetKind::Rhombus)
@@ -981,9 +984,14 @@ int RunShapeCoreTests()
 		const Vec2 down{20,30}, end{20+x*100,30+y*35};
 		auto c=MakeSolidConstruction({PresetKind::Cuboid,CreationMode::MultiStage},down,end,-80);
 		const auto& solid=std::get<SolidConstruction>(c.parameters);
-		SHAPE_CHECK(solid.mirrored==(x*y<0));
+		SHAPE_CHECK(solid.mirrored==(x<0));
 		const auto preview=SolidBasePreview(c.tool,down,end,{},Id(18),1); SHAPE_CHECK(preview);
-		if(preview)for(auto target:{down,end})SHAPE_CHECK(std::any_of(preview->geometry.vertices.begin(),preview->geometry.vertices.end(),[&](Vec2 v){return std::hypot(v.x-target.x,v.y-target.y)<.001f;}));
+		if(preview) {
+			float l=1e9f,r=-1e9f,t=1e9f,b=-1e9f;
+			for(auto v:preview->geometry.vertices){l=std::min(l,v.x);r=std::max(r,v.x);t=std::min(t,v.y);b=std::max(b,v.y);}
+			SHAPE_CHECK(std::abs(l-std::min(down.x,end.x))<.001f && std::abs(r-std::max(down.x,end.x))<.001f);
+			SHAPE_CHECK(std::abs(t-std::min(down.y,end.y))<.001f && std::abs(b-std::max(down.y,end.y))<.001f);
+		}
 	}
 
 	// 固定教材投影和合并柄：尺寸与Z转向同一逆投影手势，侧向偏移跟随旋转。
@@ -1035,10 +1043,10 @@ int RunShapeCoreTests()
 		EditSession edit;SHAPE_CHECK(edit.Begin(*object,h.id,h.position));SHAPE_CHECK(edit.Preview(zero,2) && edit.Candidate());SHAPE_CHECK(edit.Preview(target,3));SHAPE_CHECK(edit.Commit());
 		if(preset==PresetKind::Trapezoid)SHAPE_CHECK(!EditShape(*object,1000,h.position,{90,10},4));
 	}
-	for(auto target:{Vec2{100,0},Vec2{-100,0},Vec2{0,100},Vec2{30,-90}})
+	for(auto target:{Vec2{100,80},Vec2{-100,80},Vec2{-100,-80},Vec2{30,-90}})
 	{
 		const auto object=MakePresetShape({PresetKind::Parallelogram,CreationMode::Drag},{0,0},target,{},Id(23));SHAPE_CHECK(object);
-		if(object)SHAPE_CHECK(object->geometry.vertices.front()==Vec2{} && object->geometry.vertices[2]==target);
+		if(object){const auto& v=object->geometry.vertices;SHAPE_CHECK(v.front()==Vec2{} && v[2]==target);SHAPE_CHECK(v[0].y==v[1].y && v[2].y==v[3].y);}
 	}
 
 	{
@@ -1053,6 +1061,50 @@ int RunShapeCoreTests()
 				iso=SetPlanarConstraint(*iso,PlanarConstraint::Isosceles,2+step);
 				SHAPE_CHECK(iso && iso->construction->tool.constraintVertex==(old+1)%3);
 			}
+		}
+	}
+
+
+	// 同一X在不同高度位于倾斜对边两侧，旋转后也按手势原始基底连续翻向。
+	for(float angle:{0.f,.7f}) {
+		auto object=MakePresetShape({PresetKind::Parallelogram,CreationMode::Drag},{0,0},{100,80},{},Id(24));SHAPE_CHECK(object);if(!object)continue;
+		object->transform={std::cos(angle),std::sin(angle),-std::sin(angle),std::cos(angle),30,20};
+		const auto down=ApplyTransform(object->transform,{0,0}); EditSession edit;SHAPE_CHECK(edit.Begin(*object,1000,down));
+		for(Vec2 target:{Vec2{80,0},Vec2{80,16},Vec2{80,40},Vec2{-10,-20}}) {
+			SHAPE_CHECK(edit.Preview(ApplyTransform(object->transform,target),2));
+			const auto& result=edit.Candidate();SHAPE_CHECK(result);if(!result || target.y==16)continue;
+			const auto& v=result->geometry.vertices;
+			SHAPE_CHECK(std::abs(v[0].x-target.x)<.001f && std::abs(v[0].y-target.y)<.001f);
+			SHAPE_CHECK(v[2]==object->geometry.vertices[2]);
+			SHAPE_CHECK(std::abs(v[0].y-v[1].y)<.001f && std::abs(v[2].y-v[3].y)<.001f);
+			if(target.x==80) SHAPE_CHECK(target.y==0 ? v[1].x<v[0].x : v[1].x>v[0].x);
+		}
+		SHAPE_CHECK(edit.Commit());
+	}
+	for(auto preset:{PresetKind::Cuboid,PresetKind::Cube}) for(float x:{-1.f,1.f}) for(float y:{-1.f,1.f}) for(Vec2 size:{Vec2{120,35},Vec2{20,100}}) {
+		const Vec2 down{50,60},end{down.x+x*size.x,down.y+y*size.y};const ToolSpec tool{preset,CreationMode::MultiStage};
+		const auto c=MakeSolidConstruction(tool,down,end,-50);const auto& solid=std::get<SolidConstruction>(c.parameters);
+		const auto base=SolidBasePreview(tool,down,end,{},Id(25),1);SHAPE_CHECK(base);if(!base)continue;
+		float l=1e9f,r=-1e9f,t=1e9f,b=-1e9f;
+		for(auto v:base->geometry.vertices){l=std::min(l,v.x);r=std::max(r,v.x);t=std::min(t,v.y);b=std::max(b,v.y);}
+		SHAPE_CHECK(l>=std::min(down.x,end.x)-.001f && r<=std::max(down.x,end.x)+.001f && t>=std::min(down.y,end.y)-.001f && b<=std::max(down.y,end.y)+.001f);
+		SHAPE_CHECK(std::abs((x>0?l:r)-down.x)<.001f && std::abs((y>0?t:b)-down.y)<.001f);
+		if(preset==PresetKind::Cube)SHAPE_CHECK(solid.baseSize.x==solid.baseSize.y && std::abs(solid.height)==solid.baseSize.x);
+	}
+	// 两条共轭直径都落在实际圆底轮廓上；不以椭圆长轴的屏幕方向代替投影合同。
+	for(auto preset:{PresetKind::Cylinder,PresetKind::Cone}) for(bool mirrored:{false,true}) {
+		auto c=MakeSolidConstruction({preset,CreationMode::MultiStage},{0,0},{100,0},-300);
+		std::get<SolidConstruction>(c.parameters).mirrored=mirrored;
+		const auto object=MakeConstructedShape(c,{},Id(26));SHAPE_CHECK(object);if(!object)continue;
+		const float k=mirrored?-.3535533906f:.3535533906f;
+		for(Vec2 target:{Vec2{100,0},Vec2{-100,0},Vec2{100*k,-35.355339f},Vec2{-100*k,35.355339f}}) {
+			double distance=1e9;
+			for(const auto& part:object->parts)if(part.kind==Kind::Polyline)for(size_t i=1;i<part.geometry.vertices.size();++i){
+				const auto a=part.geometry.vertices[i-1],b=part.geometry.vertices[i];const double dx=b.x-a.x,dy=b.y-a.y;
+				const auto t=std::clamp(((target.x-a.x)*dx+(target.y-a.y)*dy)/(dx*dx+dy*dy),0.,1.);
+				distance=std::min(distance,std::hypot(a.x+t*dx-target.x,a.y+t*dy-target.y));
+			}
+			SHAPE_CHECK(distance<=.251);
 		}
 	}
 
