@@ -109,7 +109,7 @@ Pen后的5条profile缺失，不当作零距离。key5在首次使用Pen之前�
 - `Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp:274–337`：当前无cap清窗，真实gap/逐raw反向及尾窗；`:378–445`最近末段限制和质量A支持界；`:447–490`独立资格/拟合；`:1030–1130`释放选速、真实多指Up反向清窗、最后终态起滑。
 - `Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp:3177`：Coasting→Idle的泛化stop；`:16548`独立Pen mailbox停止原因；后面的pan-step/release/release-quality/render输出是本次实际证据。输入/held delta保持1:1，没有将Snapshot质量限速乘入跟手几何。
 - `.trellis/spec/native-desktop/canvas-pan.md`：已更新质量A、独立真实锚点、支持界、真实Down抓停和软件呈现证据边界。
-- `.trellis/tasks/11-13-whiteboard-pan-scale-device/overspeed-history-plan-2026-11-14.md`：用户批准的输入超速保留历史与质量保护范围。
+- `.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/overspeed-history-plan-2026-11-14.md`：用户批准的输入超速保留历史与质量保护范围。
 - 本目录 `overspeed-quality-design-2026-11-14.py`：独立A研究函数，用于双指边界数值核对；不是原生测试。
 
 ## External References

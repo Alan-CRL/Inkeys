@@ -42,7 +42,7 @@
 - 产品释放取最近同向50ms尾段线性拟合；保留窗口左侧一个真实锚点以兼容低报点率，标准充分估速分支至少3点且跨度20ms；Touch另有ShortSupported/ResidualOnly/DistanceBounded分级决策。raw与Touch progress每指各≤64；不得恢复旧LSQ2的20点/100ms规则替代产品释放合同。
 - 反向沿原可靠方向累计达到context.reversalDistance才确认（间接基准1DIP），零点/细碎噪声不反复重置；确认即切断旧方向和boost。新尾段不足且无合法Touch组候选/有限退化时释放0，不借旧方向复活。合法超速不清历史、方向或续甩资格，不能用profile输出cap证明输入时间无效。
 - ScreenPen Physical/Fallback从最新真实Move向前取间隔≥2ms锚点拟合；Touch Physical/Fallback改用真实位置进展点及运动年龄，重复raw仍保留停止观察，详见[释放质量规范](canvas-pan-release-quality.md)。Indirect保留原raw拟合；充分估速仍需真实多段；Touch短强证据/组决策与有限退化按释放质量规范，不统一用个人20ms归零，不补Up速度或伪造时间。
-- 已移除输出cap判坏时间因果。前轮实机Touch末坐标平台曾被双段支持压成1–3mm短尾，现已改为集中释放决策；Ready仍不代表体验验收，重复位置的物理原因未定。见[复测](../../tasks/11-13-whiteboard-pan-scale-device/research/device-feedback-summary-2026-11-14.md)。
+- 已移除输出cap判坏时间因果。前轮实机Touch末坐标平台曾被双段支持压成1–3mm短尾，现已改为集中释放决策；Ready仍不代表体验验收，重复位置的物理原因未定。见[复测](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/research/device-feedback-summary-2026-11-14.md)。
 - 拟合方向与最新可靠方向冲突时以DirectionConflict拒绝释放，raw值仍可诊断；已准入Up即使时间异常也必须闭合并取消惯性，不能留下永久held。
 - 释放selected速度还受最新可靠同向段的速度上限约束（真实点累计至少2ms与context.reversalDistance），防减速时50ms拟合残留旧快速度；raw诊断保留，不能用单个量化点强制限速。
 - 原raw新鲜度门仍≤30ms全速、30–70ms衰减、≥70ms为0；Touch平台/确认停止另由纯决策处理，不把motion-age直接套同一减速门；取消或最终决策无可用seed时不fling。不得恢复250DIP/s硬台阶。
@@ -172,7 +172,7 @@ Correct：当前在任何DM COM/Activate之前执行quarantine，保留RTS接触
 
 ## 8. 已完成交付与后续任务入口
 
-2026-11-13用户确认当前机惯性合适，旧参考模型清理与有序输入优化已完成；完整构建及七项无窗口回归、2240条场景和整份探针输出等价检查见[归档收尾记录](../../tasks/archive/2026-11/11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)。两个拖动任务均已completed；归档不表示其它硬件/系统/光学性能已全部实测。尺度适配已在独立任务[11-13-whiteboard-pan-scale-device](../../tasks/11-13-whiteboard-pan-scale-device/prd.md)获批实现，验证状态见其[记录](../../tasks/11-13-whiteboard-pan-scale-device/validation.md)；旧scale-stage草案“精确保留本机距离”和“笔不平移”已失效。触控板及新输入后端仍按[未来路线](../../tasks/archive/2026-11/11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md)延期，不解除quarantine。
+2026-11-13用户确认当前机惯性合适，旧参考模型清理与有序输入优化已完成；完整构建及七项无窗口回归、2240条场景和整份探针输出等价检查见[归档收尾记录](../../tasks/archive/2026-11/11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)。两个拖动任务均已completed；归档不表示其它硬件/系统/光学性能已全部实测。尺度适配已在独立任务[11-13-whiteboard-pan-scale-device](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/prd.md)获批实现，验证状态见其[记录](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/validation.md)；旧scale-stage草案“精确保留本机距离”和“笔不平移”已失效。触控板及新输入后端仍按[未来路线](../../tasks/archive/2026-11/11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md)延期，不解除quarantine。
 
 Wrong：按Register/publication先选整帧单位，或重复frame走admissionFailed清零；Pointer继承lastKnownSource就当同一次RTS Down。
 Correct：有序Down唯一准入、逐段canonical DIP；重复帧在Drain前no-op；真实token精确身份确认，无法桥接的Pointer保守独立。

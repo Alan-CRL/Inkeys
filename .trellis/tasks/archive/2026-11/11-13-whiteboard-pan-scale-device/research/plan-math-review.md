@@ -6,9 +6,9 @@
 
 ## 审查对象与快照
 
-- [evaluate-pan-profiles.py](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/11-13-whiteboard-pan-scale-device/research/evaluate-pan-profiles.py)：proposal-v1公式和有限网格断言。
-- [proposed-profile-analysis.json](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/11-13-whiteboard-pan-scale-device/research/proposed-profile-analysis.json)：脚本已有离线结果，非C++运行或设备试验。
-- [prd.md](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/11-13-whiteboard-pan-scale-device/prd.md)：已确认的Touch漫游、屏幕笔定位、间接输入基准、整条手势尺度和DIP回退要求。
+- [evaluate-pan-profiles.py](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/research/evaluate-pan-profiles.py)：proposal-v1公式和有限网格断言。
+- [proposed-profile-analysis.json](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/research/proposed-profile-analysis.json)：脚本已有离线结果，非C++运行或设备试验。
+- [prd.md](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/prd.md)：已确认的Touch漫游、屏幕笔定位、间接输入基准、整条手势尺度和DIP回退要求。
 - [Draw3.CanvasNavigation.cpp:461](D:/Project/Inkeys/Repo/Inkeys/Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp:461)：当前booster资格、正投影和限速；531起为向量摩擦；650起为Down取消/保留候选及释放派发。
 - [Draw3.CanvasNavigation.cppm:21](D:/Project/Inkeys/Repo/Inkeys/Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm:21)：当前固定DIP阈值。未来单位参数以本任务方案为准，不能把这些旧数值直接当mm。
 
@@ -163,8 +163,8 @@ T、D均为有限非负数；v₀>0时为正。随v₀严格增加；τ越大或
 ## 相关规范
 
 - [当前白板惯性合同](D:/Project/Inkeys/Repo/Inkeys/.trellis/spec/native-desktop/canvas-pan.md)
-- [当前橡皮策略研究](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/11-13-whiteboard-pan-scale-device/research/speed-eraser-current.md)
-- [本任务惯性候选](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/11-13-whiteboard-pan-scale-device/research/pan-scale-and-device-candidates.md)
+- [当前橡皮策略研究](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/research/speed-eraser-current.md)
+- [本任务惯性候选](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/research/pan-scale-and-device-candidates.md)
 
 ## Caveats / Not Found
 

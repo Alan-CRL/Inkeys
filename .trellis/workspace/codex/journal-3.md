@@ -323,3 +323,25 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 
 - 尺度适配另建独立Trellis任务；先重新评审归档尺度研究与当前四类输入合同。
 - PTP/双输入后端按归档用户路线图推进，本轮不启用；受限环境C1902、默认输出链接LNK1104及成功验证产物路径已记录。
+
+
+## Session 186: Close whiteboard input inertia task
+<!-- trellis-session: v=2 fp=96abd9031793a232 -->
+
+**Date**: 2026-11-14
+**Task**: Close whiteboard input inertia task
+**Branch**: `feature/whiteboard3`
+
+### Summary
+
+User final device test accepted. Touch release decisions, bounded fallback, cursor and input-device handling verified; archived task. Full-suite version reuse and final targeted checks recorded.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b861d464` | fix(draw3): stabilize touch release and bounded gesture handoff |
+
+### Status
+
+[OK] **Completed**

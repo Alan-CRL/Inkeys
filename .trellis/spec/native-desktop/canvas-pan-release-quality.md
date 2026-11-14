@@ -19,7 +19,7 @@
 - age前基准为min(rawSpeed,既有RecentSpeedLimit,profileOutputCap)，再应用supportUpper；只有支持界实际压低这个cap后基准才标support-limited并取消本次旧residual boost。cap-only不否定输入或boost。releaseOutputLimited/output-limited专指boost前支持后的手速被profilecap裁剪，不含旧residual相加后才触发的最终cap；后者需结合boosted与当前cap判断，不能由output-limited=0推断所有阶段未限幅。FlingBooster后仍有最终向量cap；不叠历史初速，不逐轴裁剪。
 - 共用基础支持界；Snapshot呈现估计与Touch释放决策分别保持其时间职责，预取/blur有界，held实际contentDelta仍1:1。固定≤64点scratch、O(n)扫描，不增per-Move heap或全点对拟合。
 - 代价：一个新运动区间可能保守0，持续加速需多区间确认。单jump不足两正向区间不能声称可靠速度；已停住contact不得借距离降级复活；已有运动后的jump/平台仍可能有noiseBudget/dt尾流，2ms预算约Pen75/Touch125mm/s，不保证精确停笔。B变体因新增6/448量化误拒未采用。
-- 算法、对照和验收见[执行计划](../../tasks/11-13-whiteboard-pan-scale-device/overspeed-history-plan-2026-11-14.md)及[质量研究](../../tasks/11-13-whiteboard-pan-scale-device/research/overspeed-quality-design-2026-11-14.md)，不由规范宣称硬件PASS。
+- 算法、对照和验收见[执行计划](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/overspeed-history-plan-2026-11-14.md)及[质量研究](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/research/overspeed-quality-design-2026-11-14.md)，不由规范宣称硬件PASS。
 
 ### Touch集中释放决策
 
@@ -43,7 +43,7 @@ Controller在真实ApplyToCanvas/SetViewport成功后，以限位后`-viewportDe
 - `release-quality`明确support-scope=local-contact和support-evaluated；弱末指未评估的0不等同组没移动。多指实际候选以touch-decision为准。同帧后续坏终态必须清release专属Decision/tag/age，不串用前一正常释放；帧级motionFeedback单独保留归属。
 - RTS仅在现有gate记录当前实际GUID/metrics、timer/serial未请求/是否返回/未验证，以及终态原始值；desired列表、pressure/tilt、producer与正式arrival时钟不改。未返回未请求属性不等于设备不支持。未知硬件时间不用于导航。
 - 当前修复不预测Up前未交付的位置、不在held时自行惯性、不倒回曲线起点补位移。短平台与真实短暂停手不可完美区分；明确停住约0.1秒仍需无惯性。距离降级只提供有限尾滑，不保证所有极短数据都等同完整快甩。
-- 历史native对照与本轮验收见[修复计划](../../tasks/11-13-whiteboard-pan-scale-device/touch-release-repair-plan-2026-11-14.md)和任务validation；旧7b虽然短拖可滑，却有过大/错向，禁止整套回滚。
+- 历史native对照与本轮验收见[修复计划](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/touch-release-repair-plan-2026-11-14.md)和任务validation；旧7b虽然短拖可滑，却有过大/错向，禁止整套回滚。
 
 ## 4. Validation / Error Matrix
 

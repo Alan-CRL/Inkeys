@@ -160,7 +160,7 @@ Window 单独维护 `PointerRangeKey={pointerId, rangeEpoch, apiCursorId}`，必
 ## Related specs
 
 - [pen-haptics.md](D:/Project/Inkeys/Repo/Inkeys/.trellis/spec/native-desktop/pen-haptics.md)：Pointer 范围与 RTS 笔划分离、未知/多笔保守、禁止把 contactId 当 pointerId、迟到终态隔离。
-- [plan-integration-review.md](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/11-13-whiteboard-pan-scale-device/research/plan-integration-review.md)：Pending→有序 Dynamics 唯一裁决、窗口反馈是可纠正投影。
+- [plan-integration-review.md](D:/Project/Inkeys/Repo/Inkeys/.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/research/plan-integration-review.md)：Pending→有序 Dynamics 唯一裁决、窗口反馈是可纠正投影。
 
 ## Caveats / Not Found
 

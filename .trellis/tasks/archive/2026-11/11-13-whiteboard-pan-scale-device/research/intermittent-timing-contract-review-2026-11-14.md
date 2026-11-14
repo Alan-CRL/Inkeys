@@ -51,7 +51,7 @@ RTS的state gate失败可不发布该回调，属于已有保守生命周期策�
 
 真实时间源的后续能力探测已有历史入口，并非要立即更换后端。安装的Windows SDK `msinkaut.h:633–634`声明TIMER_TICK与SERIAL_NUMBER GUID；Microsoft说明TIMER_TICK表示packet生成时间，SERIAL_NUMBER用于识别packet。[官方PacketProperty GUIDs](https://learn.microsoft.com/en-us/windows/win32/tablet/packetproperty-guids)。本次仅为核实这一API含义浏览该官方页面；它没有证明目标Surface/Touch设备支持、计数分辨率、单位、回卷、重置、epoch或与QPC同步方式。
 
-此前[11-08修复计划P2](../../archive/2026-11/11-08-chromium-touch-fling/repair-plan.md)已提出能力探测；当前实现仍未接入。若未来可用，必须保留生成时间与arrivalQpc两个事实、验证转换与代次、处理缺失/重复/倒退/回卷，不能按固定240Hz均分批内时间。只保留更多位置但给它们相同或均分的伪QPC，会把本问题换一种形式复现。
+此前[11-08修复计划P2](../../11-08-chromium-touch-fling/repair-plan.md)已提出能力探测；当前实现仍未接入。若未来可用，必须保留生成时间与arrivalQpc两个事实、验证转换与代次、处理缺失/重复/倒退/回卷，不能按固定240Hz均分批内时间。只保留更多位置但给它们相同或均分的伪QPC，会把本问题换一种形式复现。
 
 ## 4. 候选方向、最小范围与风险
 

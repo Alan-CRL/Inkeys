@@ -47,6 +47,6 @@ key75确定的清窗点在附件行371：当前QPC63344834415，相对最近≥2
 
 ## 5. 知识落盘与下一项判别证据
 
-已更新[canvas-pan已知限制及后续红例](../../../spec/native-desktop/canvas-pan.md)。仓库不存在src/templates/markdown/spec，未创建模板副本；本轮无commit授权，未提交规范或其它修改。
+已更新[canvas-pan已知限制及后续红例](../../../../../spec/native-desktop/canvas-pan.md)。仓库不存在src/templates/markdown/spec，未创建模板副本；本轮无commit授权，未提交规范或其它修改。
 
 触摸下一步需要一段对应实际动作的class1 Down→Move→Up、release及随后帧；若没有class1，则需同时间的Touch ingress/准入记录区分未送达与未准入。应记录具体清窗源和停止触发者，不能凭当前旧touch缓存猜测。无需用户重新解释“笔是否靠近”，该事实已明确记录。

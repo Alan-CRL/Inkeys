@@ -2,7 +2,7 @@ from pathlib import Path
 import json,re,statistics,hashlib
 from collections import Counter,defaultdict
 ROOT=Path.cwd()
-TASK=ROOT/'.trellis/tasks/11-13-whiteboard-pan-scale-device'
+TASK=ROOT/'.trellis/tasks/archive/2026-11/11-13-whiteboard-pan-scale-device'
 LOG=ROOT/'Build/Logs/pan-touch-feedback-2026-11-14/console.snapshot.log'
 FREQ=10_000_000
 OV=json.loads((LOG.parent/'overview.json').read_text(encoding='utf-8'))

@@ -1,6 +1,6 @@
 # 白板惯性尺寸与输入设备适配：设计 v1
 
-> 2026-11-14修正：用户日志证明屏幕笔到达簇被短dt保护反复清窗；本轮边界见[反馈计划](feedback-2026-11-14.md)，ScreenPen可靠性合同以当前[canvas-pan规范](../../spec/native-desktop/canvas-pan.md)为准。曲线参数和设备分工不变。
+> 2026-11-14修正：用户日志证明屏幕笔到达簇被短dt保护反复清窗；本轮边界见[反馈计划](feedback-2026-11-14.md)，ScreenPen可靠性合同以当前[canvas-pan规范](../../../../spec/native-desktop/canvas-pan.md)为准。曲线参数和设备分工不变。
 
 状态：in_progress，用户已在完整规划v1摘要后批准并要求开始实现（2026-11-13）。需求以 prd.md R1–R10 为准。首版数值是可验证的设计初值，未宣称经真机达到最佳；Surface Pro 11 仅是连续手势正确性的回归设备。
 
