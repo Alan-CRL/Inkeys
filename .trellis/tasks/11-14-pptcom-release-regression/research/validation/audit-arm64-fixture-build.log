@@ -1,0 +1,5 @@
+Fixture compiler: C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\Hostarm64\arm64\cl.exe
+Fixture toolset=v143, SDK=10.0.26100.0, target=arm64
+NativeDispatchFixture.cpp
+   Creating library D:\Project\Inkeys\Repo\Inkeys-draw\Build\pptcom-dispatch-fixture\arm64\NativeDispatchFixture.lib and object D:\Project\Inkeys\Repo\Inkeys-draw\Build\pptcom-dispatch-fixture\arm64\NativeDispatchFixture.exp
+Fixture DLL: D:\Project\Inkeys\Repo\Inkeys-draw\Build\pptcom-dispatch-fixture\arm64\NativeDispatchFixture.dll

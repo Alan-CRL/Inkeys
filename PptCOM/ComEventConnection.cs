@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Threading;
@@ -100,26 +101,41 @@ namespace PptCOM
                 var container = application as IConnectionPointContainer;
                 if (container == null) throw new InvalidCastException("Connection point unavailable");
                 Guid iid = EventInterface;
-                container.FindConnectionPoint(ref iid, out point);
+                long findCall = PptComDiagnostics.BeginCall(application, "FindConnectionPoint");
+                try { container.FindConnectionPoint(ref iid, out point); }
+                catch (Exception error) { PptComDiagnostics.CallFailed(findCall, application, "FindConnectionPoint", error); throw; }
+                PptComDiagnostics.Acquired(point, "event.FindConnectionPoint", application, findCall);
                 IConnectionPoint ownedPoint = point;
                 connection = new ComEventConnection(0,
                     value => { ownedPoint.Unadvise(value); return 0; },
-                    () => Marshal.ReleaseComObject(ownedPoint), notify);
+                    () => PptComDiagnostics.Release(ownedPoint, "event.point"), notify);
                 int cookie;
+                connection.Trace("cp.advise.begin");
                 point.Advise(connection.sink, out cookie);
                 connection.cookie = cookie;
+                PptComDiagnostics.Transfer(ownedPoint, "event.connection");
+                connection.Trace("cp.advise.end");
                 point = null; // FindConnectionPoint 的唯一取得转移给 connection，cast/闭包只借用。
                 return connection;
             }
-            catch
+            catch (Exception error)
             {
+                PptComDiagnostics.CallFailed(0, point, "Advise", error);
                 if (connection != null) connection.Deactivate();
                 throw;
             }
             finally
             {
-                if (point != null) Marshal.ReleaseComObject(point);
+                if (point != null) PptComDiagnostics.Release(point, "event.connect-cleanup");
             }
+        }
+
+        private void Trace(string stage, int error = 0, long elapsedTicks = -1)
+        {
+            if (PptComDiagnostics.Enabled)
+                PptComDiagnostics.Event(stage, "connection=" + PptComDiagnostics.Reference(this) +
+                    " cookie=" + cookie + " hr=0x" + error.ToString("X8") +
+                    (elapsedTicks < 0 ? string.Empty : " elapsed_ticks=" + elapsedTicks + " frequency=" + Stopwatch.Frequency));
         }
 
         public void Deactivate() { sink.Deactivate(); }
@@ -138,21 +154,27 @@ namespace PptCOM
             if (disconnected) return true;
             Deactivate();
             int error;
+            Trace("cp.unadvise.begin");
+            long started = PptComDiagnostics.Enabled ? Stopwatch.GetTimestamp() : 0;
             try { error = unadvise(cookie); }
             catch (COMException exception) { error = exception.ErrorCode; }
             catch (Exception exception)
             {
                 LastError = ComFailure.ErrorCode(exception);
+                Trace("cp.unadvise.fail", LastError, started == 0 ? -1 : Stopwatch.GetTimestamp() - started);
                 return false;
             }
+            Trace("cp.unadvise.end", error, started == 0 ? -1 : Stopwatch.GetTimestamp() - started);
             if (error < 0 && !IsDisconnected(error)) { LastError = error; return false; }
             // Unadvise 成功或服务器明确断连后，才消费 CP 的取得。失败保留原 cookie 供 owner 重试。
             try { release(); }
             catch (Exception exception)
             {
                 LastError = ComFailure.ErrorCode(exception);
+                Trace("cp.release.fail", LastError);
                 return false;
             }
+            Trace("cp.released");
             disconnected = true;
             LastError = 0;
             return true;
@@ -169,6 +191,8 @@ namespace PptCOM
         {
             connection.Deactivate();
             lock (gate) { connections.Add(connection); }
+            if (PptComDiagnostics.Enabled)
+                PptComDiagnostics.Event("cp.retired", "pending=" + PendingCount);
         }
         public static void Retry()
         {
@@ -179,6 +203,8 @@ namespace PptCOM
                 connections.Clear();
                 inFlight += pending.Length;
             }
+            if (PptComDiagnostics.Enabled && pending.Length != 0)
+                PptComDiagnostics.Event("cp.retry", "count=" + pending.Length);
             // CP/cookie 的所有权转给当前 owner；锁外 COM。旧 server 被 native reset 后也不会失主。
             foreach (var connection in pending)
             {
