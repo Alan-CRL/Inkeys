@@ -74,6 +74,45 @@
 		result.geometry = std::move(path);
 		return result;
 	}
+	std::vector<UInkShape> StandardShapeParts(const shapes::GeometryPart& part)
+	{
+		if (!part.style.stroke || part.style.linePattern == shapes::LinePattern::Solid || part.paths.empty() ||
+			!part.paths.front().closed || !(part.paths.front().lengths.back() > 0)) return { StandardShapePart(part) };
+		std::vector<UInkShape> result;
+		if (part.style.fill)
+		{
+			auto filled = part; filled.style.stroke = false;
+			result.push_back(StandardShapePart(filled));
+		}
+		const auto& path = part.paths.front(); const float perimeter = path.lengths.back();
+		auto pointAt = [&](float distance)
+		{
+			const auto next = std::upper_bound(path.lengths.begin(),path.lengths.end(),distance);
+			if (next == path.lengths.end()) return path.points.back();
+			const size_t i = static_cast<size_t>(next-path.lengths.begin());
+			if (!i) return path.points.front();
+			const float f = (distance-path.lengths[i-1]) / (path.lengths[i]-path.lengths[i-1]);
+			return shapes::Vec2{ path.points[i-1].x+f*(path.points[i].x-path.points[i-1].x),
+				path.points[i-1].y+f*(path.points[i].y-path.points[i-1].y) };
+		};
+		// 标准格式用八个单调半段表达镜像相位，不把每条短虚线展开成对象。
+		for (unsigned sector = 0; sector < 8; ++sector)
+		{
+			const float begin = perimeter * (sector / 8.f), end = perimeter * ((sector+1) / 8.f);
+			auto output = StandardShapePart(part); output.fill.reset();
+			UInkLineGeometry line;
+			auto append = [&](shapes::Vec2 p) { line.points.push_back({p.x,p.y}); };
+			append(pointAt(begin));
+			for (size_t i=1; i<path.points.size(); ++i)
+				if (path.lengths[i] > begin && path.lengths[i] < end) append(path.points[i]);
+			append(pointAt(end));
+			if (sector & 1) std::reverse(line.points.begin(),line.points.end());
+			output.declaredShapeType = 1; output.geometry = std::move(line);
+			output.stroke->dashOffset = part.style.dashOffset + shapes::ClosedDashCoordinate(0,perimeter,part.style);
+			result.push_back(std::move(output));
+		}
+		return result;
+	}
 	bool AppendParametricShape(const Draw3UInkStrokeSnapshot& source, UInkCanvas& canvas,
 		Draw3UInkCapabilityReport& report)
 	{
@@ -92,12 +131,18 @@
 		shapes::GeometryResult auxiliary;
 		if (!shapes::BuildAuxiliaryGeometry(normalized,auxiliary)) return false;
 		geometry.parts.insert(geometry.parts.end(),auxiliary.parts.begin(),auxiliary.parts.end());
-		const auto count = geometry.parts.size();
+		std::vector<UInkShape> standard;
+		for (const auto& part : geometry.parts)
+		{
+			if (part.paths.empty()) return false;
+			for (auto& output : StandardShapeParts(part)) standard.push_back(std::move(output));
+		}
+		const auto count = standard.size();
+		const auto metadataVersion = InkeysShapeVersion(normalized);
 		if (!count || count > UINT32_MAX || canvas.content.size() > UINT32_MAX - count) return false;
 		for (size_t index = 0; index < count; ++index)
 		{
-			if (geometry.parts[index].paths.empty()) return false;
-			auto output = StandardShapePart(geometry.parts[index]);
+			auto output = std::move(standard[index]);
 			output.contentId = static_cast<uint32_t>(canvas.content.size());
 			output.undoId = source.undoId;
 			output.renderOnlyWhenLatest = source.renderOnlyWhenLatest;
@@ -106,7 +151,7 @@
 			if (index != 0)
 			{
 				auto& reference = std::get<ShapeMap>(metadata.value);
-				ShapeField(reference, "version", ShapeValue(InkeysShapeVersion(normalized)));
+				ShapeField(reference, "version", ShapeValue(metadataVersion));
 				ShapeField(reference, "id", ShapeValue(FormatUInkGuid(UInkGuid(normalized.id))));
 				ShapeField(reference, "revision", ShapeValue(normalized.revision));
 				ShapeField(reference, "reference", ShapeValue(true));

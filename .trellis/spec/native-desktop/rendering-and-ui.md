@@ -2888,3 +2888,31 @@ ui3-shape-editor-test 覆盖真实命中、12 个数字字形、小工作区、�
 
 ### 7. Wrong vs Correct
 Wrong：用 id>=begin && id<end 判断非连续目录的分组；关闭提示仅使用最后 active 快照。Correct：按目录位置判断组；以原构造身份接受成功完成沿，并在退场期间锁存。
+
+
+## 第二轮形状浮条与控件（2026-11-14）
+
+### 1. Scope / Trigger
+修改ShapeEditor、GeometryAttribute的布局/动画/命中时适用，替代上一轮直接跟手和按工作区压缩形状面板的规则。
+
+### 2. Signatures
+ShapeUiActionKind::CloseEditor由浮条末尾Finish触发；SetRightSolid与SetConstraint分别修改当前对象约束。构造快照的object/handles可用于只绘制控制点，不可误当已完成编辑器拦截画布输入。
+
+### 3. Contracts
+浮条锚点取frameRect四角变换后的屏幕AABB上下中心，16DIP间隔、默认下方、空间不足才粘性换边。动画每帧从当前值追踪目标，不可下一帧SetDirect截断。完成勾选关闭全部子层并走既有焦点落定。
+辅助点显示时柄动画偏移且不遮挡真实点；隐藏时归位；输入按显示柄命中、几何按真实点偏移计算。椭圆焦点始终可编辑。图文按钮对称内边距、固定间距、实测文字宽度；移除辅助hover提示，保留可访问文案。
+形状主面板尺寸由内容和用户倍率确定，允许超屏、只换向；不改变其他属性面板。Close右边与最右图形列对齐。
+
+### 4. Validation & Error Matrix
+连续换边后下一帧→继续动画；旋转对象→浮条目标水平居中而非局部底边中点；勾选→失焦、图形保留；语言变化→重新测宽；构造控制点→输入仍到绘制线程。
+
+### 5. Good / Base / Bad Cases
+Good：显示柄与命中矩形共用当前动画值，按下不拉动几何点。Base：旧混合填充仍原样显示。Bad：用目标位置命中仍在运动的柄，或切换辅助显示改变构造坐标。
+
+### 6. Tests Required
+ui3-shape-editor-test逐帧验证换边、AABB、失焦、避让；geometry attribute验证自然尺寸和长标签；主题/DPI/多语离屏与既有完成环/首次字号回归。无窗口验证不替代实机触控观感。
+
+### 7. Wrong vs Correct
+Wrong：只有sideChanged时推进位置动画，下一帧SetDirect。Correct：初始化才SetDirect，其余帧持续推进动画，绘制与命中都用当前值。
+
+第二轮补充：横向钳制先于上下空间判断，不能因左/右越界误触发换边；停靠边对框外旋转钮额外留出16DIP，确保浮条不遮挡旋转输入。辅助点偏移候选也避开当前样式栏。椭圆焦点与中心重合时Focus优先于中心移动，图形整体仍可通过本体移动。

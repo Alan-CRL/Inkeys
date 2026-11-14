@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "Free",
         "ConstraintIsoscelesLabel": "Isosceles",
         "ConstraintEquilateralLabel": "Equilateral",
+        "RightPrismLabel": "Right prism",
+        "RightPyramidLabel": "Right pyramid",
         "StraightLineLabel": "Line",
         "ArrowLabel": "Arrow",
         "RectangleLabel": "Rect.",

@@ -710,6 +710,10 @@ bool BuildRenderData(const ShapeObject& object, RenderData& result, const BuildO
 					GpuPrimitive p; p.kind = static_cast<uint32_t>(PrimitiveKind::Segment);
 					p.p0 = path.points[i - 1]; p.p1 = path.points[i]; p.pathStart = path.lengths[i - 1];
 					p.pathLength = path.lengths[i] - path.lengths[i - 1]; p.halfWidth = part.style.width * .5f;
+					if (path.closed && part.style.linePattern != LinePattern::Solid)
+					{
+						p.flags |= 32; p.padding[0] = path.lengths.back(); // 与CPU命中共用闭合相位。
+					}
 					batch.primitives.push_back(p);
 				}
 			}
@@ -734,6 +738,14 @@ std::vector<ControlPoint> ControlPoints(const GeometryResult& geometry)
 	for (const auto& part : geometry.parts) controls.insert(controls.end(), part.controls.begin(), part.controls.end());
 	return controls;
 }
+float ClosedDashCoordinate(float distance, float perimeter, const ShapeStyle& style) noexcept
+{
+	if (!(perimeter > 0) || !Finite(distance) || !Finite(perimeter)) return distance;
+	// 四个对称锚点向两侧展开，周长变化分散到八个半段；虚线尺度始终不变。
+	const float quarter = perimeter * .25f;
+	const float centered = distance - quarter * std::floor(distance / quarter + .5f);
+	return std::abs(centered) + (style.linePattern == LinePattern::Dotted ? 0.f : 2 * style.width);
+}
 bool IsDashVisible(float distance, const ShapeStyle& style) noexcept
 { return Finite(distance) && ValidStyle(style) && DashDistance(distance, style) <= style.width * .5f; }
 HitResult HitTest(const ShapeObject& object, const GeometryResult& geometry, Vec2 point, float tolerance)
@@ -753,7 +765,7 @@ HitResult HitTest(const ShapeObject& object, const GeometryResult& geometry, Vec
 				const Vec2 nearest{ a.x + fraction * static_cast<float>(dx), a.y + fraction * static_cast<float>(dy) };
 				const float distance = Distance(point, nearest);
 				const float along = path.lengths[i - 1] + fraction * (path.lengths[i] - path.lengths[i - 1]);
-				const float dash = DashDistance(along, part->style);
+				const float dash = DashDistance(path.closed ? ClosedDashCoordinate(along,path.lengths.back(),part->style) : along, part->style);
 				const float radius = part->style.width * .5f + tolerance;
 				if (std::hypot(distance, dash) <= radius) return { object.id, part->partId, HitKind::Stroke, distance };
 			}
@@ -769,7 +781,8 @@ std::optional<ShapeObject> MakeConstructedShape(const Construction& construction
 	// 模板不支持的辅助位不进入构造对象，也不传播到复合部件样式。
 	object.style.auxiliary = style.auxiliary & SupportedAuxiliary(construction.tool.preset);
 	object.construction = construction;
-	if (construction.tool.preset == PresetKind::Cube)
+	const auto* solid = std::get_if<SolidConstruction>(&construction.parameters);
+	if (construction.tool.preset == PresetKind::Cube && (!solid || !solid->oblique))
 	{
 		// 正面方形角也是参数真值，避免控制点仍落在未投影的raw矩形内。
 		const float side = std::max(std::abs(construction.end.x - construction.start.x),std::abs(construction.end.y - construction.start.y));

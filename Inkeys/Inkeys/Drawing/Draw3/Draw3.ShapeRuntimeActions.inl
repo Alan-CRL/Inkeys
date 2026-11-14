@@ -378,6 +378,14 @@ auto publishShapeUi = [&]()
 		snapshot.identity.objectId = shapeUi.construction->identity.objectId;
 		snapshot.construction = shapeUi.construction->session.Status();
 		snapshot.constructionContactActive = shapeUi.construction->contactActive;
+		if (draw3::shapes::GetToolCapabilities(shapeUi.construction->tool.preset).points)
+		{
+			snapshot.object = shapeUi.construction->preview;
+			snapshot.bounds = shapeUi.construction->renderData.bounds;
+			const auto& points = shapeUi.construction->session.Points();
+			for (size_t i = 0; i < points.size(); ++i)
+				snapshot.handles.push_back({1000u + static_cast<uint32_t>(i),draw3::shapes::EditHandleKind::Vertex,points[i]});
+		}
 		if (shapeUi.construction->contactActive) { snapshot.construction.canBack = false; snapshot.construction.canForward = false; snapshot.construction.canComplete = false; }
 	}
 	else
@@ -496,6 +504,7 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 	auto& state = *shapeUi.construction;
 	if (state.contactActive || state.cancelled) return false; // 一个构造会话只接受一根正在绘制的物理接触。
 	state.contactActive = true; runtime.shape.construction = shapeUi.construction;
+	PrepareRuntimeConstructionContact(runtime,scene.displayScale);
 	runtime.shape.id = state.identity.objectId; runtime.shape.tool = state.tool; runtime.shape.style = state.style;
 	runtime.shape.revision = state.revision; return true;
 };
@@ -584,7 +593,7 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 	const auto revision = nextShapeRevision(shapeUi.editor.object->id,shapeUi.editor.object->revision);
 	if (!revision) return;
 	if ((action.kind == ShapeUiActionKind::SetStyle || action.kind == ShapeUiActionKind::SetSides ||
-		action.kind == ShapeUiActionKind::SetConstraint) && !shapeUi.editor.gestureActive)
+		action.kind == ShapeUiActionKind::SetConstraint || action.kind == ShapeUiActionKind::SetRightSolid) && !shapeUi.editor.gestureActive)
 		candidate = BuildShapePropertyCandidate(*shapeUi.editor.object,action,revision,{scene.displayScale,.25f});
 	else if (inGesture && (action.kind == ShapeUiActionKind::PreviewEdit || action.kind == ShapeUiActionKind::CommitEdit))
 	{

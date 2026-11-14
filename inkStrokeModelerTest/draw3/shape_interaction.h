@@ -22,6 +22,9 @@ namespace draw3::shapes
 		uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr);
 	std::optional<ShapeObject> SetRegularSides(const ShapeObject&, uint32_t sides,
 		uint64_t newRevision, std::string* error = nullptr);
+	Construction MakeSolidConstruction(const ToolSpec&, Vec2, Vec2, float);
+	std::optional<ShapeObject> SolidBasePreview(const ToolSpec&, Vec2, Vec2, const ShapeStyle&, const ObjectId&, uint64_t, std::string* error = nullptr);
+	std::optional<ShapeObject> SetRightSolid(const ShapeObject&, bool, uint64_t, std::string* error = nullptr);
 	std::optional<ShapeObject> SetPlanarConstraint(const ShapeObject&, PlanarConstraint,
 		uint64_t newRevision, std::string* error = nullptr);
 	class EditSession
@@ -59,6 +62,10 @@ namespace draw3::shapes
 		void ObserveRaw(Vec2 point) noexcept; // 真实轨迹累计角度，预测端点不得改变圈数。
 		bool PreviewDrag(Vec2 down, Vec2 end, std::string* error = nullptr);
 		bool ConfirmDrag(Vec2 rawDown, Vec2 rawUp, std::string* error = nullptr);
+		// 已确认顶点优先命中；调整期间不追加新点。
+		bool BeginPointEdit(Vec2 down, float radius);
+		bool CancelPointEdit();
+		const std::vector<Vec2>& Points() const noexcept { return points_; }
 		bool Back();
 		bool Forward();
 		void Cancel() noexcept;
@@ -75,7 +82,10 @@ namespace draw3::shapes
 		uint64_t revision_ = 1;
 		bool active_ = false, finished_ = false;
 		std::vector<Vec2> points_;
-		std::vector<uint32_t> pointSteps_;
+		std::vector<std::vector<Vec2>> pointUndo_;
+		std::optional<size_t> pointEdit_;
+		std::vector<Vec2> pointEditBefore_;
+		Vec2 pointEditDown_;
 		Vec2 start_, end_;
 		uint32_t confirmed_ = 0;
 		float lastAngle_ = 0, sweep_ = 0;
@@ -85,7 +95,7 @@ namespace draw3::shapes
 		{
 			std::vector<Vec2> points;
 			Vec2 start, end;
-			uint32_t confirmed = 0, pointCount = 0;
+			uint32_t confirmed = 0;
 			float lastAngle = 0, sweep = 0;
 			bool finished = false, angleStarted = false;
 			std::optional<ShapeObject> candidate;

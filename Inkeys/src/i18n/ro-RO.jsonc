@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "Liber",
         "ConstraintIsoscelesLabel": "Isoscel",
         "ConstraintEquilateralLabel": "Echilateral",
+        "RightPrismLabel": "Prismă dreaptă",
+        "RightPyramidLabel": "Piramidă dreaptă",
         "StraightLineLabel": "Linie",
         "ArrowLabel": "Săgeată",
         "RectangleLabel": "Dreptun.",

@@ -43,7 +43,15 @@ ShapeOutput main(ShapePixelInput input)
         float crossDistance = abs(ShapeCross(relative, tangent));
         float endpoint = abs(projection - clamped);
         // 箭头头部与箭杆共用覆盖批次，但头部始终为实线。
-        float gap = (flags & 16) != 0 ? 0 : DashDistance(input.c.x + clamped, halfWidth * 2);
+        float along = input.c.x + clamped;
+        // Closed contours grow symmetrically from four anchors without stretching dashes.
+        if ((flags & 32) != 0 && input.d.z > 0)
+        {
+            float quarter = input.d.z * .25;
+            along = abs(along - quarter * floor(along / quarter + .5));
+            if (shapeDashKind != 2) along += halfWidth * 4;
+        }
+        float gap = (flags & 16) != 0 ? 0 : DashDistance(along, halfWidth * 2);
         distance = length(float2(max(endpoint, gap), crossDistance)) - halfWidth;
     }
     else if (kind == 1)

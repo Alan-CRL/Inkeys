@@ -169,10 +169,24 @@ namespace draw3::uink
 							uint32_t partIndex = 0, partCount = 0;
 							shapes::GeometryResult auxiliary;
 							if (!shapes::BuildAuxiliaryGeometry(*decoded.shape,auxiliary)) return false;
+							size_t expectedParts = (decoded.shape->kind == shapes::Kind::Compound ? decoded.shape->parts.size() : 1) + auxiliary.parts.size();
+							uint32_t metadataVersion = 0;
+							if (!ShapeGroupNumber(*metadata,"version",metadataVersion)) return false;
+							if (metadataVersion >= 6)
+							{
+								shapes::GeometryResult body;
+								if (!shapes::BuildGeometry(*decoded.shape,body)) return false;
+								body.parts.insert(body.parts.end(),auxiliary.parts.begin(),auxiliary.parts.end());
+								expectedParts = 0;
+								for (const auto& part : body.parts)
+									expectedParts += part.style.stroke && part.style.linePattern != shapes::LinePattern::Solid &&
+										!part.paths.empty() && part.paths.front().closed && part.paths.front().lengths.back() > 0 ?
+										8 + (part.style.fill ? 1 : 0) : 1;
+							}
 							if (!ShapeGroupNumber(*metadata, "partIndex", partIndex) || partIndex != 0 ||
 								!ShapeGroupNumber(*metadata, "partCount", partCount) || !partCount ||
 								partCount > canvas.content.size() - contentIndex ||
-								partCount != (decoded.shape->kind == shapes::Kind::Compound ? decoded.shape->parts.size() : 1) + auxiliary.parts.size()) return false;
+								partCount != expectedParts) return false;
 							for (uint32_t index = 1; index < partCount; ++index)
 							{
 								const auto* part = std::get_if<UInkShape>(&canvas.content[contentIndex + index]);

@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "자유",
         "ConstraintIsoscelesLabel": "이등변",
         "ConstraintEquilateralLabel": "정삼각형",
+        "RightPrismLabel": "직각기둥",
+        "RightPyramidLabel": "직각뿔",
         "StraightLineLabel": "직선",
         "ArrowLabel": "화살표",
         "RectangleLabel": "사각형",

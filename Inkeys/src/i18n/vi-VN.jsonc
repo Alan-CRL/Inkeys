@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "Tự do",
         "ConstraintIsoscelesLabel": "Cân",
         "ConstraintEquilateralLabel": "Đều",
+        "RightPrismLabel": "Lăng trụ đứng",
+        "RightPyramidLabel": "Hình chóp đứng",
         "StraightLineLabel": "Đường",
         "ArrowLabel": "Mũi tên",
         "RectangleLabel": "Chữ nhật",

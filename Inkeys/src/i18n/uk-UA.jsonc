@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "Довільно",
         "ConstraintIsoscelesLabel": "Рівнобедрений",
         "ConstraintEquilateralLabel": "Рівносторонній",
+        "RightPrismLabel": "Пряма призма",
+        "RightPyramidLabel": "Пряма піраміда",
         "StraightLineLabel": "Лінія",
         "ArrowLabel": "Стрілка",
         "RectangleLabel": "Прямок.",

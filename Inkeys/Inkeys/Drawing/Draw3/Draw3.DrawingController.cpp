@@ -2968,6 +2968,21 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
+		void PrepareRuntimeConstructionContact(RuntimeStroke& runtime, float displayScale)
+		{
+			auto& state = *runtime.shape.construction;
+			state.session.BeginPointEdit({runtime.shape.primitive.start.x,runtime.shape.primitive.start.y},22.f * displayScale);
+			if (!state.preview && draw3::shapes::GetToolCapabilities(state.tool.preset).points)
+			{
+				const draw3::shapes::Vec2 down{runtime.shape.primitive.start.x,runtime.shape.primitive.start.y};
+				state.session.PreviewDrag(down,down);
+				auto first = state.session.Candidate(); draw3::shapes::RenderData data;
+				if (first && draw3::shapes::BuildRenderData(*first,data)) { state.preview = std::move(first); state.renderData = std::move(data); }
+			}
+			// Down 与首次 Move 之间继续显示已确认路径，不让共享层出现空帧。
+			runtime.shape.object = state.preview; runtime.shape.renderData = state.renderData;
+			runtime.shape.visualChanged = true;
+		}
 		bool RefreshConstructionRuntimePreview(ShapeConstructionRuntime& state,
 			const std::function<uint64_t(const draw3::shapes::ObjectId&,uint64_t)>& allocate)
 		{
@@ -2989,6 +3004,12 @@ namespace Inkeys::Drawing::Draw3
 			{ runtime.shape.constructionStepOnly = true; RefreshConstructionRuntimePreview(state,runtime.shape.nextRevision); return false; }
 			if (runtime.cancelled || state.cancelled || !state.session.Status().active)
 			{
+				// 单次顶点拖动被取消时回到按下前，保留尚未完成的整个点工具。
+				if (runtime.cancelled && !state.cancelled && state.session.CancelPointEdit())
+				{
+					runtime.shape.constructionStepOnly = true;
+					RefreshConstructionRuntimePreview(state,runtime.shape.nextRevision); return false;
+				}
 				state.session.Cancel(); state.cancelled = true; runtime.shape.constructionStepOnly = true; return false;
 			}
 			const bool confirmed = state.session.ConfirmDrag({runtime.shape.primitive.start.x,runtime.shape.primitive.start.y},

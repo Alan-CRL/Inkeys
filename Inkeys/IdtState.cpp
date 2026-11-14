@@ -2394,6 +2394,7 @@ draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcep
 	case ShapeModeSelectEnum::IdtShapePyramid1: result.preset = PresetKind::Pyramid; break;
 	default: result.preset = PresetKind::Line; break;
 	}
+	result.rightSolid = result.preset == PresetKind::Prism ? snapshot.Shape.prismRight : result.preset == PresetKind::Pyramid ? snapshot.Shape.pyramidRight : false;
 	if (result.preset == PresetKind::Triangle) result.constraint = snapshot.Shape.triangleConstraint;
 	else if (result.preset == PresetKind::Trapezoid) result.constraint = snapshot.Shape.trapezoidConstraint;
 	if (static_cast<uint32_t>(result.constraint) > static_cast<uint32_t>(PlanarConstraint::Equilateral) ||
@@ -2544,6 +2545,16 @@ bool SetShapeCircleModeIfRevision(draw3::shapes::CreationMode mode, std::uint64_
 		if (GetShapeToolSpec(stateMode).preset != draw3::shapes::PresetKind::Circle) return false;
 		const bool changed = stateMode.Shape.circleMode != mode;
 		stateMode.Shape.circleMode = mode; return changed;
+	});
+}
+bool SetShapeRightSolidIfRevision(bool right, std::uint64_t expected)
+{
+	using namespace draw3::shapes;
+	return ChangeShapeProperty(expected, [&] {
+		const auto preset = GetShapeToolSpec(stateMode).preset;
+		auto* current = preset == PresetKind::Prism ? &stateMode.Shape.prismRight : preset == PresetKind::Pyramid ? &stateMode.Shape.pyramidRight : nullptr;
+		if (!current || *current == right) return false;
+		*current = right; return true;
 	});
 }
 bool SetShapePlanarConstraintIfRevision(draw3::shapes::PlanarConstraint constraint, std::uint64_t expected)

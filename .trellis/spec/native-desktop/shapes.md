@@ -225,3 +225,31 @@ shape-core-only 覆盖转换/持续约束、水平底面轴、单击/首拖/开�
 
 ### 7. Wrong vs Correct
 Wrong：radiusY=2×(end.y-start.y)，或把 sides=14 写入 v3。Correct：外接圆半径派生 Axis；新增语义写 v5，旧支持版本严格核验后规范化。
+
+
+## 第二轮构造、编辑与 v6（2026-11-14）
+
+### 1. Scope / Trigger
+修改形状约束、构造中移点、斜二测或闭合虚线时适用；本节替代前轮相冲突的固定顶角和新建立体投影约定。
+
+### 2. Signatures
+ToolSpec新增constraintVertex/rightSolid；SolidConstruction新增oblique/baseSize/baseRotation/projectionAngle/projectionScale/offset。MakeSolidConstruction、SolidBasePreview建立新构造；SetRightSolid走对象Replace事务。ConstructionSession::BeginPointEdit、Points发布已确认顶点。ClosedDashCoordinate(distance,perimeter,style)供CPU与标准导出共用。
+
+### 3. Contracts
+- 新立体斜二测x水平、y斜45度半长、z竖直，首笔锁定投影；模型边长与投影长度分开。Cube模型三边相等，高度只选符号。旧oblique=false不因加载改变投影。
+- 三角形首次约束选择对顶点位移最小的底边，并记住constraintVertex；重复等腰循环顶角，辅助青色边仅在UI。
+- 构造点编辑不增点，撤回恢复存点序列快照；物理接触取消恢复编辑前点列，不取消整个构造。每次Down从已有preview/renderData初始化，首笔Down也有可见点。
+- GpuPrimitive保持64字节；flags位32表示闭合对称虚线，padding[0]为周长。四个等弧长锚点双向展开，不改变虚线周期；CPU命中与GPU相同。标准降级分八个单调半段，混合填充单独输出，根/引用partCount取实际导出数。
+- v6持久化新字段及闭合虚线降级分组；v1-v5读取保留旧分组计数与严格几何核验。不能仅更新writer而遗留reader的旧partCount公式。
+
+### 4. Validation & Error Matrix
+新立体参数非有限或退化→拒绝；正形偏移非零→拒绝；Cube高宽不等→拒绝。点编辑导致非法最终多边形→保留开放预览但禁用完成。取消编辑→恢复点列；跨会话动作→拒绝。v6引用数不符→拒绝。
+
+### 5. Good / Base / Bad Cases
+Good：真实Down/Move/Up全帧有预览，最终一图形一创建历史。Base：旧立体继续按旧投影显示。Bad：只有核心Candidate非空就宣称上屏不闪；圆弧每个细分小段独立虚线相位。
+
+### 6. Tests Required
+shape-core-only、生产shape core、renderer像素、UInk/冷历史/自动保存；覆盖四侧虚线相位、GPU/CPU命中、三顶角轮换、斜形回正、Cube翻向、点编辑撤回恢复。实际执行结果见任务验证记录，不以本节作为通过证据。
+
+### 7. Wrong vs Correct
+Wrong：以屏幕深度向量冒充立方体真实边长；每个圆底细分段重新起虚线。Correct：使用模型边长派生投影；连续可见性圆弧聚合后统一计算弧长。

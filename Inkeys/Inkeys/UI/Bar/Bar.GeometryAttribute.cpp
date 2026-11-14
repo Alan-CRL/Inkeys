@@ -336,7 +336,8 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const auto tool = GetShapeToolSpec(state); const auto style = GetShapeStyle(state);
 	const bool showStyle = !OpenPreset(tool.preset), showStroke = !showStyle || style.stroke;
 	const bool circle = tool.preset == PresetKind::Circle, polygon = GetToolCapabilities(tool.preset).regularSides;
-	const bool triangle = tool.preset == PresetKind::Triangle, trapezoid = tool.preset == PresetKind::Trapezoid;
+	const bool triangle = tool.preset == PresetKind::Triangle, rightSolid = tool.preset == PresetKind::Prism || tool.preset == PresetKind::Pyramid, trapezoid = tool.preset == PresetKind::Trapezoid || rightSolid;
+	const auto constraintLabel = [&](int item) { return item == GeometryTrapezoidMode && rightSolid ? I18n::getWOr(tool.preset == PresetKind::Prism ? "UI/Bar/GeometryAttributes/RightPrismLabel" : "UI/Bar/GeometryAttributes/RightPyramidLabel", tool.preset == PresetKind::Prism ? L"正棱柱" : L"正棱锥") : ItemLabel(item); };
 	const auto supportedAuxiliary = SupportedAuxiliary(tool.preset), auxiliary = GetShapeAuxiliary(state);
 	const double disabledOpacity = BarThemeMaterial::DisabledContentOpacity(owner.barStyle.darkStyle ? 0.0 : 1.0);
 	if (opening)
@@ -365,7 +366,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			optionTextWidths_[i] = ceil(owner.spec.MeasureText(ItemLabel(AuxBegin+i),12).width);
 		if (hasAuxiliary)
 		{
-			auxiliaryWidth += optionTextWidths_[i] + 32 + (auxiliaryCount ? BarButtonGapDip : 0);
+			auxiliaryWidth += optionTextWidths_[i] + 48 + (auxiliaryCount ? BarButtonGapDip : 0);
 			++auxiliaryCount;
 		}
 	}
@@ -375,8 +376,8 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	{
 		// 0–2辅助，3–5分类分段，6–9约束，测字缓存不能交叉覆盖。
 		const int index = item-GeometryTriangleModeBegin+6;
-		if (typographyChanged || optionTextWidths_[index] == 0) optionTextWidths_[index] = ceil(owner.spec.MeasureText(ItemLabel(item),12).width);
-		return optionTextWidths_[index]+32;
+		if (typographyChanged || optionTextWidths_[index] == 0 || labelTargets_[item] != constraintLabel(item)) optionTextWidths_[index] = ceil(owner.spec.MeasureText(constraintLabel(item),12).width);
+		return optionTextWidths_[index]+48;
 	};
 	if (triangle) for (int item = GeometryTriangleModeBegin; item < GeometryTrapezoidMode; ++item)
 		constraintWidth += measureConstraint(item)+(item == GeometryTriangleModeBegin ? 0 : g);
@@ -388,11 +389,11 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const double separationWidth = parameterDivider ? 1 + g * 2 : 0;
 	const double fixedConstructionWidth = polygon ? buttonSide * GeometrySidesCount + g * (GeometrySidesCount-1) : constraintWidth;
 	const double parameterWidth = circle || polygon || hasConstraint || hasAuxiliary ? fixedConstructionWidth + auxiliaryWidth + separationWidth + g * 2 : 0;
-	const double targetWidth = (std::max)({categoryLayout_.width + g * 3 + buttonSide, attributeMaxWidth_, parameterWidth});
+	const double targetWidth = (std::max)({categoryLayout_.width + g * 2, attributeMaxWidth_, parameterWidth});
 	const double parameterHeight = circle || polygon || hasConstraint || hasAuxiliary ? buttonSide + g * 2 + 1 : 0;
 	const double headerHeight = buttonSide + g;
 	const double fixedHeight = headerHeight + g * 4 + 1 + buttonSide;
-	const double widthFit = (std::min)(1.0, work.Width() / targetWidth);
+	const double widthFit = 1.0;
 	const double aboveSpace = (std::max)(0.0, (std::min)(main->inhY - gap, work.bottom) - work.top);
 	const double belowSpace = (std::max)(0.0, work.bottom - (std::max)(main->inhY + main->h.val + gap, work.top));
 	bool below = owner.barState.widgetPosition.primaryBar;
@@ -401,8 +402,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	if (dragPlacementLocked && hadOpen_) below = previousBelow_;
 	const double availableHeight = below ? belowSpace : aboveSpace;
 	// 不足一整行才沿用极小工作区fit；正常分类保留标准文字和属性尺寸。
-	const double targetViewport = (std::clamp)(availableHeight / (std::max)(0.001, widthFit) - fixedHeight - parameterHeight,
-		BarButtonTwoSideDip, categoryLayout_.height);
+	const double targetViewport = categoryLayout_.height; // 屏幕不足只换向，不压缩内容。
 	const double targetHeight = targetViewport + fixedHeight + parameterHeight;
 	const bool initializeLayout = !hadOpen_;
 	const BarUiAnimationAdvanceContextClass context{dt, speed, static_cast<bool>(BarUiAnimationEnabled), false};
@@ -459,22 +459,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	if (previousBelow_) sideWork.top = (std::clamp)(main->inhY + main->h.val + gap, work.top, work.bottom);
 	else sideWork.bottom = (std::clamp)(main->inhY - gap, work.top, work.bottom);
 	if (sideWork.Height() <= 0) sideWork = work;
-	// 回弹姿态也限制在所选侧；fit只影响本次面板，不写回用户倍率。
-	const double fit = (std::min)({1.0, work.Width() / width, sideWork.Height() / height});
-	if (fit > 0 && fit < 1)
-	{
-		const double cx = EraserRectCenterX(panel), cy = EraserRectCenterY(panel);
-		pf.pose.x = cx + (pf.pose.x - cx) * fit; pf.pose.y = cy + (pf.pose.y - cy) * fit; pf.pose.scale *= fit;
-	}
-	const double boundedScale = (std::min)({pf.pose.scale, work.Width() / width, sideWork.Height() / height});
-	if (boundedScale > 0 && boundedScale < pf.pose.scale)
-	{
-		const auto current = pf.pose.Apply(panel); const double cx = EraserRectCenterX(current), cy = EraserRectCenterY(current);
-		pf.pose.scale = boundedScale; pf.pose.x = cx - EraserRectCenterX(panel) * boundedScale; pf.pose.y = cy - EraserRectCenterY(panel) * boundedScale;
-	}
-	pf.pose = FitEraserSurfacePose(pf.pose, panel, sideWork);
-	// 字体修正使用最终布局的fit，不能把极小工作区的当前回弹倍率当作目标。
-	const double fontTargetScale = pf.targetPose.scale * (std::min)({1.0, work.Width()/targetWidth, sideWork.Height()/targetHeight});
+	const double fontTargetScale = pf.targetPose.scale;
 	const double viewport = (std::clamp)(static_cast<double>(viewportHeight_.val), 1.0, (std::max)(1.0,height - fixedHeight));
 	const double baseHeight = viewport + fixedHeight;
 	const double scrollMaximum = (std::max)(0.0, categoryLayout_.height - viewport);
@@ -492,7 +477,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	next.scrollOffset = offset; next.scrollMaximum = scrollMaximum; next.categoryViewportHeight = viewport; next.categoryContentHeight = categoryLayout_.height;
 	next.panel = pf.pose.Apply(panel);
 	const double gridTop = top + g + headerHeight;
-	next.categoryClip = pf.pose.Apply({left+g,gridTop,left+width-g-buttonSide-g,gridTop+viewport});
+	next.categoryClip = pf.pose.Apply({left+g,gridTop,left+width-g,gridTop+viewport});
 	if (scrollMaximum > 0.000001)
 	{
 		const EraserAttributeRect track{left+width-g-buttonSide,gridTop,left+width-g,gridTop+viewport};
@@ -522,8 +507,9 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		const double itemLeft = gridLeft + x.val - item.width / 2, itemTop = gridTop + y.val - item.height / 2 - offset;
 		slots[index] = {itemLeft,itemTop,itemLeft+item.width,itemTop+item.height}; categoryAnchors_[index] = slots[index];
 	}
-	slots[CloseButton] = {left + width - g - buttonSide, top + g, left + width - g, top + g + buttonSide};
-	const double segmentWidth = (width - buttonSide - g * 6) / GeometrySegmentCount;
+	const double headerRight = gridLeft + categoryLayout_.width;
+	slots[CloseButton] = {headerRight - buttonSide, top + g, headerRight, top + g + buttonSide};
+	const double segmentWidth = (categoryLayout_.width - buttonSide - g * 4) / GeometrySegmentCount;
 	for (int i = 0; i < GeometrySegmentCount; ++i) slots[SegmentBegin+i] =
 		{left+g+i*(segmentWidth+g),top+g,left+g+i*(segmentWidth+g)+segmentWidth,top+g+buttonSide};
 	double y = gridTop + viewport + g;
@@ -540,14 +526,14 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	double constraintLeft = parameterLeft;
 	for (int item = GeometryTriangleModeBegin; item <= GeometryTrapezoidMode; ++item) if ((triangle && item < GeometryTrapezoidMode) || (trapezoid && item == GeometryTrapezoidMode))
 	{
-		const double itemWidth = optionTextWidths_[item-GeometryTriangleModeBegin+6]+32;
+		const double itemWidth = optionTextWidths_[item-GeometryTriangleModeBegin+6]+48;
 		slots[item] = {constraintLeft,y,constraintLeft+itemWidth,y+buttonSide}; constraintLeft += itemWidth+g;
 	}
 	if (parameterDivider) lines[2] = {parameterLeft+constructionWidth+g,y+2,parameterLeft+constructionWidth+g+1,y+buttonSide-2};
 	double auxiliaryLeft = parameterLeft + constructionWidth + separationWidth;
 	for (int i = 0; i < 3; ++i) if (hasAuxiliary && (supportedAuxiliary & AuxiliaryBits[i]) != Auxiliary::None)
 	{
-		const double itemWidth = optionTextWidths_[i]+32;
+		const double itemWidth = optionTextWidths_[i]+48;
 		slots[AuxBegin+i] = {auxiliaryLeft,y,auxiliaryLeft+itemWidth,y+buttonSide};
 		auxiliaryLeft += itemWidth+g;
 	}
@@ -617,13 +603,14 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			: i == CircleBox ? tool.creationMode == CreationMode::Drag
 			: i >= SidesBegin && i < AuxBegin ? tool.sides == static_cast<unsigned>(i - SidesBegin + 3)
 			: auxiliaryOption ? (auxiliary & AuxiliaryBits[i-AuxBegin]) != Auxiliary::None
-			: constraintOption ? tool.constraint == (i == GeometryTrapezoidMode ? PlanarConstraint::Isosceles : static_cast<PlanarConstraint>(i-GeometryTriangleModeBegin))
+			: constraintOption && rightSolid ? tool.rightSolid : constraintOption ? tool.constraint == (i == GeometryTrapezoidMode ? PlanarConstraint::Isosceles : static_cast<PlanarConstraint>(i-GeometryTriangleModeBegin))
 			: segment ? i-SegmentBegin == static_cast<int>(category_)
 			: i >= StyleBegin && i < PatternBegin ? static_cast<int>(shapeFillMode) == i - StyleBegin
 				|| (shapeFillMode == draw3::shapes::FillMode::OutlineAndFill && i < StyleBegin+2)
 			: i >= PatternBegin && i < ThicknessBegin ? static_cast<int>(style.linePattern) == i - PatternBegin
 			: i >= ThicknessBegin && i < ThicknessBegin + ThicknessCount ? IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, i - ThicknessBegin, owner.barStyle.dpiZoom, state) : false;
-		wstring resource = ItemResource(i), label = ItemLabel(i);
+		wstring resource = ItemResource(i), label = constraintLabel(i);
+		if (i == GeometryTrapezoidMode && rightSolid) resource = tool.preset == PresetKind::Prism ? L"barShapePrism" : L"barShapePyramid";
 		next.accessibleNames[i] = label;
 		if (i < CategoryCount && available)
 		{
@@ -697,7 +684,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		{
 			const bool labeledOption = circleOption || auxiliaryOption || constraintOption;
 			const double textWidth = circleOption ? circleTextWidths_[i - CircleCenter] : segment ? slots[i].Width()-4
-				: auxiliaryOption ? optionTextWidths_[i-AuxBegin]+4 : constraintOption ? optionTextWidths_[i-GeometryTriangleModeBegin+6]+4 : buttonSide;
+				: auxiliaryOption ? optionTextWidths_[i-AuxBegin] : constraintOption ? optionTextWidths_[i-GeometryTriangleModeBegin+6] : buttonSide;
 			b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale);
 			b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);
 			b.icon.x.SetDirect(labeledOption ? -(textWidth + 8) * scale / 2 : 0); b.icon.y.SetDirect(0);
@@ -758,24 +745,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		divider.button.rw->SetDirect(BarUiDividerRadius * pf.pose.scale); divider.button.rh->SetDirect(BarUiDividerRadius * pf.pose.scale);
 		divider.button.ft->SetDirect(BarButtonFrameThicknessDip * pf.pose.scale);
 	}
-	const int hintItem = hovered_ >= AuxBegin && hovered_ < StyleBegin ? hovered_.load() : focused_.load();
-	const bool hintVisible = hintItem >= AuxBegin && hintItem < StyleBegin && next.hits[hintItem].enabled;
-	changed_ |= auxiliaryHintVisible_ != hintVisible; auxiliaryHintVisible_ = hintVisible;
-	if (hintVisible)
-	{
-		changed_ |= auxiliaryHint_.SetStringImmediate(next.accessibleNames[hintItem]);
-		const double hintWidth = (optionTextWidths_[hintItem-AuxBegin]+g*2)*pf.pose.scale;
-		const double hintHeight = buttonSide*pf.pose.scale;
-		const double hintLeft = (std::clamp)(EraserRectCenterX(next.items[hintItem])-hintWidth/2,next.panel.left+g*pf.pose.scale,next.panel.right-hintWidth-g*pf.pose.scale);
-		const double hintTop = next.items[hintItem].top-hintHeight-g*pf.pose.scale;
-		Place(auxiliaryHintSurface_,{hintLeft,hintTop,hintLeft+hintWidth,hintTop+hintHeight});
-		auxiliaryHintSurface_.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface)); auxiliaryHintSurface_.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-		auxiliaryHintSurface_.rw->SetDirect(BarButtonCornerRadiusDip*pf.pose.scale); auxiliaryHintSurface_.rh->SetDirect(BarButtonCornerRadiusDip*pf.pose.scale);
-		auxiliaryHintSurface_.ft->SetDirect(BarButtonFrameThicknessDip*pf.pose.scale);
-		auxiliaryHint_.x.SetDirect(hintLeft+hintWidth/2); auxiliaryHint_.y.SetDirect(hintTop+hintHeight/2);
-		auxiliaryHint_.w.SetDirect(hintWidth); auxiliaryHint_.h.SetDirect(hintHeight); auxiliaryHint_.size.SetDirect(12*pf.pose.scale);
-		auxiliaryHint_.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-	}
+	auxiliaryHintVisible_ = false; // 常驻说明不再重复弹出提示。
 	measuredFontFamily_ = owner.spec.GetFontFamily(); measuredLocale_ = owner.spec.GetTextLocale();
 	measuredDeviceGeneration_ = owner.spec.GetDeviceGeneration();
 	Place(surface_, next.panel); const double scale = pf.pose.scale;
@@ -935,7 +905,12 @@ void BarGeometryAttributePanel::Execute(BarUISetClass& owner, int item, std::uin
 		SetShapeAuxiliaryIfRevision(bit,(GetShapeAuxiliary(current.state) & bit) == Auxiliary::None,revision);
 	}
 	else if (item >= GeometryTriangleModeBegin && item <= GeometryTrapezoidMode)
-		SetShapePlanarConstraintIfRevision(item == GeometryTrapezoidMode ? PlanarConstraint::Isosceles : static_cast<PlanarConstraint>(item-GeometryTriangleModeBegin),revision);
+	{
+		const auto current = GetStateModeVersionedSnapshot(); if (current.revision != revision) return;
+		const auto tool = GetShapeToolSpec(current.state);
+		if (item == GeometryTrapezoidMode && (tool.preset == PresetKind::Prism || tool.preset == PresetKind::Pyramid)) SetShapeRightSolidIfRevision(!tool.rightSolid,revision);
+		else SetShapePlanarConstraintIfRevision(item == GeometryTrapezoidMode ? (tool.constraint == PlanarConstraint::Isosceles ? PlanarConstraint::Free : PlanarConstraint::Isosceles) : static_cast<PlanarConstraint>(item-GeometryTriangleModeBegin),revision);
+	}
 	else if (item >= SegmentBegin)
 	{
 		categoryRequest_ = item-SegmentBegin; scrollRequest_ = 0; ResetPointerFeedback(); StopCarousel();

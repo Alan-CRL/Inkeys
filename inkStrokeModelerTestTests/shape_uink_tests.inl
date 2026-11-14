@@ -73,9 +73,9 @@
 		const auto exported = ExportDraw3SnapshotToUInk(snapshot);
 		UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success && exported.document);
 		if (!exported.document) return;
-		UINK_CHECK(state, exported.capabilities.shapeCount == 7 && exported.document->canvases[0].content.size() == 8);
+		UINK_CHECK(state, exported.capabilities.shapeCount == 7 && exported.document->canvases[0].content.size() == 48);
 		const auto& wire = exported.document->canvases[0].content;
-		UINK_CHECK(state, std::get<UInkShape>(wire[6]).undoId == 6 && std::get<UInkShape>(wire[7]).undoId == 6);
+		UINK_CHECK(state, std::get<UInkShape>(wire[38]).undoId == 6 && std::get<UInkShape>(wire[47]).undoId == 6);
 		const auto& rotated = std::get<UInkRectangleGeometry>(std::get<UInkShape>(wire[1]).geometry);
 		UINK_CHECK(state, NearlyEqual(rotated.rotation, 1.57079632679f));
 		const auto encoded = EncodeUInkDocument(*exported.document);
@@ -119,6 +119,9 @@
 			auto rectangleDocument = *exported.document;
 			auto rectangle = std::get<UInkShape>(rectangleDocument.canvases[0].content[1]);
 			rectangle.extra.reset(); rectangle.fill.reset(); rectangle.contentId = rectangle.undoId = 0;
+			// v6 混合矩形首部件仅填充；描边属性来自后续标准虚线部件。
+			rectangle.stroke = std::get<UInkShape>(rectangleDocument.canvases[0].content[2]).stroke;
+			UINK_CHECK(state,rectangle.stroke); if(!rectangle.stroke) continue;
 			rectangle.stroke->dashArray.clear(); rectangle.stroke->dashOffset = 0;
 			auto& g = std::get<UInkRectangleGeometry>(rectangle.geometry);
 			g.rotation = 0; g.cornerRadiusX = g.cornerRadiusY = radius;
@@ -168,7 +171,7 @@
 		UINK_CHECK(state, ExportDraw3SnapshotToUInk(duplicated).status == Draw3UInkExportStatus::InvalidSourceStroke);
 		auto duplicateWire = *exported.document;
 		auto duplicateShape = std::get<UInkShape>(duplicateWire.canvases[0].content[0]);
-		duplicateShape.contentId = 8; duplicateShape.undoId = 7;
+		duplicateShape.contentId = 48; duplicateShape.undoId = 7;
 		duplicateWire.canvases[0].content.emplace_back(std::move(duplicateShape));
 		UINK_CHECK(state, ImportDraw3UInkDocument(duplicateWire).status != Draw3UInkImportStatus::Success);
 
@@ -177,7 +180,7 @@
 		for (auto stroke : snapshot.canvases[0].strokes) snapshot.canvases[0].operations.emplace_back(std::move(stroke));
 		snapshot.canvases[0].operations.emplace_back(Draw3UInkClearSnapshot{ 7 });
 		const auto cleared = ExportDraw3SnapshotToUInk(snapshot);
-		UINK_CHECK(state, cleared.document && std::get<UInkClear>(cleared.document->canvases[0].content.back()).contentId == 8);
+		UINK_CHECK(state, cleared.document && std::get<UInkClear>(cleared.document->canvases[0].content.back()).contentId == 48);
 		if (cleared.document)
 		{
 			const auto recovered = ImportDraw3UInkDocument(*cleared.document);
@@ -224,7 +227,9 @@
 				Draw3UInkStrokeSnapshot stroke; stroke.style.kind = Draw3UInkStrokeKind::Shape;
 				stroke.shape = *object; stroke.undoId = static_cast<uint32_t>(canvas.strokes.size());
 				canvas.strokes.push_back(std::move(stroke));
-				wireCount += object->kind == Kind::Compound ? object->parts.size() : 1;
+				// 以夹具输入语义计数：闭合虚线固定八段，混合模式另有一个填充部件。
+				wireCount += !open && pattern && style.stroke ? (style.fill ? 9u : 8u) :
+					object->kind == Kind::Compound ? object->parts.size() : 1;
 			}
 		}
 		snapshot.canvases.push_back(canvas);
@@ -661,6 +666,25 @@
 				}
 				const auto oldImport = ImportDraw3UInkDocument(*oldExport.document);
 				UINK_CHECK(state, oldImport.snapshot && oldImport.snapshot->canvases[0].strokes[0].shape == old);
+			}
+		}
+
+		// v6 构造参数与等腰顶角必须完整往返，不借标准部件重猜编辑约束。
+		for (auto preset : {PresetKind::Cuboid,PresetKind::Cube,PresetKind::Cylinder,PresetKind::Cone,PresetKind::Prism,PresetKind::Pyramid})
+		{
+			ToolSpec tool{preset,CreationMode::MultiStage}; tool.sides=7;
+			auto construction=MakeSolidConstruction(tool,{80,80},{180,130},-150);
+			auto& solid=std::get<SolidConstruction>(construction.parameters);
+			solid.baseRotation=.3f;solid.projectionAngle=.9f;
+			if(preset==PresetKind::Prism || preset==PresetKind::Pyramid)solid.offset={20,15};
+			const auto object=MakeConstructedShape(construction,{},Guid("70000000-0000-4000-8000-00000000f044").Bytes(),3);
+			UINK_CHECK(state,object);
+			if(object)
+			{
+				auto wire=EncodeInkeysShapeMetadata(*object);
+				UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==6);
+				auto decoded=DecodeInkeysShapeMetadata(wire);
+				UINK_CHECK(state,decoded.shape==object);
 			}
 		}
 		std::cout << "Constructed shape UInk cases: " << canvas.strokes.size() << " objects / " << wireCount << " standard parts" << std::endl;

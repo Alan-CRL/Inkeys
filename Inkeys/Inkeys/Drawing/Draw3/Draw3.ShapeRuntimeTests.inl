@@ -41,6 +41,7 @@ int RunShapeInteractionProductionTest()
 		}
 		runtime->shape.construction = state; state->contactActive = true; runtime->shape.id = state->identity.objectId;
 		runtime->shape.tool = state->tool; runtime->shape.style = state->style;
+		PrepareRuntimeConstructionContact(*runtime,1.5f);
 		runtime->shape.nextRevision = [&](const ObjectId& id,uint64_t observed) { return pages[0].shapeRevisionAllocator.Next(id,observed); };
 		return runtime;
 	};
@@ -105,6 +106,13 @@ int RunShapeInteractionProductionTest()
 	}
 	for (PresetKind preset : {PresetKind::Polyline,PresetKind::Polygon})
 	{
+		{
+			auto firstDrag = begin({preset,CreationMode::Points},{10,10});
+			check(firstDrag->shape.object.has_value() && !firstDrag->shape.renderData.batches.empty(),"first point is visible on Down");
+			move(*firstDrag,{90,60},{95,65});
+			check(firstDrag->shape.object && firstDrag->shape.object->geometry.vertices.size() == 2,"first edge is visible while dragging before Up");
+			up(*firstDrag,{90,60},true);
+		}
 		const auto count = canvas->Strokes().size(), operations = pages[0].operationCursor; std::shared_ptr<ShapeConstructionRuntime> state;
 		for (Vec2 point : {Vec2{20,20},Vec2{140,20},Vec2{140,100},Vec2{20,100}})
 		{
@@ -114,6 +122,21 @@ int RunShapeInteractionProductionTest()
 			check(status.canComplete == (status.confirmedSteps >= (preset == PresetKind::Polygon ? 3u : 2u)),"Complete observes actual point threshold");
 		}
 		check(state->session.CanComplete() && canvas->Strokes().size() == count,"point session waits for Complete");
+		const auto beforeMove = state->session.Points();
+		auto edit = begin({preset,CreationMode::Points},{20,20},state);
+		check(edit->shape.object == state->preview && !edit->shape.renderData.batches.empty(),"point Down retains drawable preview before first Move");
+		move(*edit,{30,35},{33,38});
+		check(!up(*edit,{30,35}) && state->session.Points().size() == beforeMove.size() && state->session.Points().front() == (Vec2{30,35}),
+			"existing point contact moves vertex without adding or completing");
+		check(state->session.Back() && state->session.Points() == beforeMove && state->session.Forward() && state->session.Points().front() == (Vec2{30,35}),
+			"point adjustment participates in construction undo redo");
+		auto cancelledEdit = begin({preset,CreationMode::Points},{30,35},state);
+		move(*cancelledEdit,{45,45},{48,48});
+		check(!up(*cancelledEdit,{45,45},true) && state->session.Status().active && state->session.Points().front() == (Vec2{30,35}),
+			"cancel point edit restores vertex and retains construction");
+		auto added = begin({preset,CreationMode::Points},{0,60},state);
+		check(!up(*added,{0,60}) && state->session.Points().size() == beforeMove.size()+1,"add point after adjusting existing vertex");
+		check(state->session.Back() && state->session.Points().size() == beforeMove.size(),"undo addition retains adjusted vertices");
 		const auto confirmed = state->session.Candidate();
 		check(state->session.Back() && state->session.Status().canForward && state->session.Forward() && state->session.Candidate() == confirmed,"Back then Forward restores exact production vertices");
 		auto object = state->session.Complete(); check(object.has_value(),"Complete returns real confirmed vertices");

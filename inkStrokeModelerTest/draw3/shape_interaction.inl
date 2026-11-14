@@ -170,7 +170,19 @@ std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOp
 	auto add = [&](uint32_t id, EditHandleKind kind, Vec2 local) { result.push_back({ id,kind,ApplyTransform(shape.transform, local) }); };
 	const auto& g = shape.geometry;
 	const auto* c = shape.construction ? &*shape.construction : nullptr;
-	switch (model.layout)
+
+	const auto* projected = c ? std::get_if<SolidConstruction>(&c->parameters) : nullptr;
+	if (projected && projected->oblique)
+	{
+		const auto& s=*projected; const auto offset=ObliquePoint(s,s.offset);
+		add(105,EditHandleKind::Height,Add(c->start,{offset.x,offset.y+s.height}));
+		if(c->tool.preset==PresetKind::Prism || c->tool.preset==PresetKind::Pyramid)add(106,EditHandleKind::Vertex,c->start);
+		const auto base=ObliqueBase(*c,.25f);add(1001,EditHandleKind::Vertex,Add(c->start,ObliquePoint(s,base.front())));
+		// 方向控制点放在上下底面中心之间，留在编辑框内。
+		add(102,EditHandleKind::Axis,Add(c->start,{offset.x*.35f,(offset.y+s.height)*.35f}));
+		add(103,EditHandleKind::Axis,Add(c->start,{offset.x*.65f,(offset.y+s.height)*.65f}));
+	}
+	else switch (model.layout)
 	{
 	case EditLayout::Endpoints:
 		add(1000,EditHandleKind::Endpoint,c ? c->start : g.start);
@@ -193,7 +205,7 @@ std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOp
 		auto axis = [&](uint32_t id, EditHandleKind kind, Vec2 point) { result.push_back({ id,kind,ApplyTransform(ellipse.transform,point) }); };
 		axis(100,EditHandleKind::Center,e.start); axis(102,EditHandleKind::Axis,Add(e.start,{ e.end.x,0 }));
 		axis(103,EditHandleKind::Axis,Add(e.start,{ 0,e.end.y }));
-		if ((shape.style.auxiliary & Auxiliary::Foci) != Auxiliary::None)
+		if (true) // 焦点编辑与辅助点显示独立。
 		{
 			const float focus = std::sqrt((std::max)(0.0f,e.end.x * e.end.x - e.end.y * e.end.y));
 			axis(106,EditHandleKind::Focus,Add(e.start,{ focus,0 })); axis(107,EditHandleKind::Focus,Add(e.start,{ -focus,0 }));
@@ -236,7 +248,7 @@ std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOp
 		// 底面轴取未投影外接圆半径，首顶点水平或旋转时也能调节压扁程度。
 		const float radiusY = std::hypot(c->end.x - c->start.x,2 * (c->end.y - c->start.y));
 		add(1001,EditHandleKind::Vertex,PolygonSolidBase(c->start,c->end,c->tool.sides,solid.baseProjection).front());
-		add(102,EditHandleKind::Axis,Add(c->start,{ 0,radiusY * solid.baseProjection }));
+		add(102,EditHandleKind::Axis,Add(c->start,{ 0,solid.height * .35f }));
 		add(105,EditHandleKind::Height,Add(c->start,{ 0,solid.height })); break;
 	}
 	default: break;
@@ -272,7 +284,7 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 	const auto found = std::find_if(handles.begin(),handles.end(),[&](const EditHandle& h) { return h.id == handleId; });
 	if (handleId != 0 && found == handles.end()) return fail("unknown edit handle");
 	auto shape = PromoteShape(before,options);
-	if (model.layout == EditLayout::Cube) shape.construction->end = SquareCorner(*shape.construction);
+	if (model.layout == EditLayout::Cube && !std::get<SolidConstruction>(shape.construction->parameters).oblique) shape.construction->end = SquareCorner(*shape.construction);
 	if (model.layout == EditLayout::Ellipse && handleId != 0 && handleId != 100 && handleId != 1) shape = CanonicalEllipse(std::move(shape));
 	const auto localDown = InversePoint(shape.transform,down), localCurrent = InversePoint(shape.transform,current);
 	const auto delta = Sub(localCurrent,localDown);
@@ -306,12 +318,13 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 		const auto moving = corners[index], anchor = corners[(index + 2) % 4];
 		// 间隙和线宽不参与缩放，因而外框的对角固定、拖动角与指针同步。
 		float sx = (moving.x + delta.x - anchor.x) / (moving.x - anchor.x), sy = (moving.y + delta.y - anchor.y) / (moving.y - anchor.y);
-		if (model.uniform) sx = sy = ((sx - 1) * (sx - 1) > (sy - 1) * (sy - 1) ? sx : sy);
+		if (model.uniform || std::get<SolidConstruction>(shape.construction->parameters).oblique) sx = sy = ((sx - 1) * (sx - 1) > (sy - 1) * (sy - 1) ? sx : sy);
 		if (!(sx > minimum && sy > minimum) || !Finite(sx) || !Finite(sy)) return fail("degenerate scale");
 		auto& c = *shape.construction;
 		auto map = [&](Vec2 point) { return Vec2{ anchor.x + (point.x - anchor.x) * sx,anchor.y + (point.y - anchor.y) * sy }; };
 		c.start = map(c.start); c.end = map(c.end);
 		auto& solid = std::get<SolidConstruction>(c.parameters); solid.depth.x *= sx; solid.depth.y *= sy; solid.height *= sy;
+		if(solid.oblique){solid.baseSize=Mul(solid.baseSize,sx);solid.offset=Mul(solid.offset,sx);}
 	}
 	else if (model.layout == EditLayout::Rectangle)
 	{
@@ -376,6 +389,33 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 				}
 			}
 		}
+
+		else if (auto* solid = std::get_if<SolidConstruction>(&c.parameters); solid && solid->oblique)
+		{
+			auto& s=*solid;
+			const float co=std::cos(s.baseRotation),si=std::sin(s.baseRotation);
+			auto unproject=[&](Vec2 v){const float y=v.y/(s.projectionScale*std::sin(s.projectionAngle));const float x=v.x-s.projectionScale*std::cos(s.projectionAngle)*y;return Vec2{co*x+si*y,-si*x+co*y};};
+			if(handleId==102)s.projectionAngle=std::clamp(s.projectionAngle+delta.x/100.f,.1f,3.04f);
+			else if(handleId==103)s.baseRotation+=delta.x/100.f;
+			else if(handleId==105)
+			{
+				if(!c.tool.rightSolid && (p==PresetKind::Prism || p==PresetKind::Pyramid))s.offset=Add(s.offset,unproject({delta.x,0}));
+				if(p==PresetKind::Cube)s.height=std::copysign(s.baseSize.x,pointer.y-c.start.y); else s.height+=delta.y;
+			}
+			else if(handleId==106)
+			{
+				c.start=Add(c.start,delta);c.end=Add(c.end,delta);
+				if(c.tool.rightSolid)s.height-=delta.y;
+				else s.offset=Sub(s.offset,unproject(delta));
+			}
+			else if(handleId==1001)
+			{
+				const auto q=unproject(Sub(pointer,c.start));
+				if(p==PresetKind::Cuboid)s.baseSize={2*std::abs(q.x),2*std::abs(q.y)};
+				else {const float size=(p==PresetKind::Cube ? 2*(std::max)(std::abs(q.x),std::abs(q.y)) : Distance({},q));s.baseSize={size,size};if(p==PresetKind::Cube)s.height=std::copysign(size,s.height);}
+			}
+			else return fail("unsupported solid handle");
+		}
 		else if (handleId == 104 || handleId == 105)
 		{
 			auto& solid = std::get<SolidConstruction>(c.parameters);
@@ -405,7 +445,7 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 		{
 			const float radiusY = std::hypot(c.end.x - c.start.x,2 * (c.end.y - c.start.y)); if (radiusY < minimum) return fail("degenerate polygon base");
 			auto& solid = std::get<SolidConstruction>(c.parameters);
-			solid.baseProjection = std::clamp((pointer.y - c.start.y) / radiusY,kMinSolidBaseProjection,kMaxSolidBaseProjection);
+			solid.baseProjection = std::clamp(solid.baseProjection + delta.y / radiusY,kMinSolidBaseProjection,kMaxSolidBaseProjection);
 		}
 		else if (model.layout == EditLayout::PolygonSolid && handleId == 1001)
 		{
@@ -419,31 +459,32 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 			const size_t index = handleId - 1000; const auto& old = before.geometry.vertices; auto vertices = old; vertices[index] = Add(vertices[index],delta);
 			if (p == PresetKind::Triangle && c.tool.constraint != PlanarConstraint::Free)
 			{
-				const auto oldBase = MakeBaseFrame(old[2],old[1]);
-				const float oldHeight = static_cast<float>(Dot(Sub(old[0],oldBase.midpoint),oldBase.normal));
+				const auto a = c.tool.constraintVertex, b = (a + 1) % 3, d = (a + 2) % 3;
+				const auto oldBase = MakeBaseFrame(old[d],old[b]);
+				const float oldHeight = static_cast<float>(Dot(Sub(old[a],oldBase.midpoint),oldBase.normal));
 				if (oldBase.length < minimum || std::abs(oldHeight) < minimum) return fail("degenerate triangle base");
-				if (index == 0)
+				if (index == a)
 				{
 					const float height = static_cast<float>(Dot(Sub(pointer,oldBase.midpoint),oldBase.normal));
 					if (height * oldHeight <= 0 || std::abs(height) < minimum) return fail("triangle cannot collapse");
 					if (c.tool.constraint == PlanarConstraint::Isosceles)
 					{
-						vertices[0] = Add(oldBase.midpoint,Mul(oldBase.normal,height)); vertices[1] = old[1]; vertices[2] = old[2];
+						vertices[a] = Add(oldBase.midpoint,Mul(oldBase.normal,height)); vertices[b] = old[b]; vertices[d] = old[d];
 					}
 					else
 					{
 						const float half = std::abs(height) / std::sqrt(3.0f);
-						vertices[0] = Add(oldBase.midpoint,Mul(oldBase.normal,height));
-						vertices[1] = Add(oldBase.midpoint,Mul(oldBase.unit,half));
-						vertices[2] = Sub(oldBase.midpoint,Mul(oldBase.unit,half));
+						vertices[a] = Add(oldBase.midpoint,Mul(oldBase.normal,height));
+						vertices[b] = Add(oldBase.midpoint,Mul(oldBase.unit,half));
+						vertices[d] = Sub(oldBase.midpoint,Mul(oldBase.unit,half));
 					}
 				}
 				else
 				{
-					const auto base = MakeBaseFrame(vertices[2],vertices[1]); if (base.length < minimum) return fail("degenerate triangle base");
+					const auto base = MakeBaseFrame(vertices[d],vertices[b]); if (base.length < minimum) return fail("degenerate triangle base");
 					const float height = c.tool.constraint == PlanarConstraint::Equilateral ?
 						std::copysign(std::sqrt(3.0f) * .5f * base.length,oldHeight) : oldHeight;
-					vertices[0] = Add(base.midpoint,Mul(base.normal,height));
+					vertices[a] = Add(base.midpoint,Mul(base.normal,height));
 				}
 			}
 			else if (p == PresetKind::Parallelogram)
@@ -511,10 +552,10 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 		if (const auto* solid = std::get_if<SolidConstruction>(&c.parameters))
 		{
 			const auto& old = std::get<SolidConstruction>(before.construction->parameters);
-			if (model.layout == EditLayout::Box || model.layout == EditLayout::Cube)
+			if (!solid->oblique && (model.layout == EditLayout::Box || model.layout == EditLayout::Cube))
 			{ if (Distance({},solid->depth) < minimum) return fail("empty depth"); }
-			else if (solid->height * old.height <= 0 || std::abs(solid->height) < minimum) return fail("solid height cannot flip");
-			if (c.tool.preset == PresetKind::Cone && handleId != 0 && handleId != 1 &&
+			else if ((c.tool.preset != PresetKind::Cube && solid->height * old.height <= 0) || std::abs(solid->height) < minimum) return fail("solid height cannot flip");
+			if (!solid->oblique && c.tool.preset == PresetKind::Cone && handleId != 0 && handleId != 1 &&
 				std::abs(solid->height) <= std::abs(c.end.y - c.start.y) * .5f + minimum) return fail("cone apex must stay outside base");
 		}
 	}
@@ -524,6 +565,46 @@ std::optional<ShapeObject> RestyleShape(const ShapeObject& before, const ShapeSt
 {
 	if (!Validate(before) || revision <= before.revision || !ValidStyle(style)) { SetError(error, "invalid restyle"); return std::nullopt; }
 	auto shape = PromoteShape(before, options); shape.style = style; return RebuildEdited(std::move(shape), revision, error);
+}
+
+Construction MakeSolidConstruction(const ToolSpec& tool, Vec2 down, Vec2 end, float height)
+{
+	Construction c{tool,down,end}; SolidConstruction s; s.oblique=true;
+	const bool box=tool.preset==PresetKind::Cuboid || tool.preset==PresetKind::Cube;
+	if(box)
+	{
+		const float y=std::abs(end.y-down.y)/(.5f*std::sin(s.projectionAngle));
+		const float x=std::abs(end.x-down.x);
+		s.baseSize={x,y}; c.start=Mul(Add(down,end),.5f);
+		if(tool.preset==PresetKind::Cube)s.baseSize.x=s.baseSize.y=(std::max)(x,y);
+	}
+	else { const float radius=Distance(down,end); s.baseSize={radius,radius}; }
+	s.height=tool.preset==PresetKind::Cube ? std::copysign(s.baseSize.x,height) : height;
+	c.parameters=s; return c;
+}
+std::optional<ShapeObject> SolidBasePreview(const ToolSpec& tool, Vec2 down, Vec2 end, const ShapeStyle& style, const ObjectId& id, uint64_t revision, std::string* error)
+{
+	const auto c=MakeSolidConstruction(tool,down,end,1); const auto& s=std::get<SolidConstruction>(c.parameters);
+	if(!(s.baseSize.x>0 && s.baseSize.y>0)){SetError(error,"empty solid base");return std::nullopt;}
+	ShapeObject result; result.id=id;result.revision=revision;result.kind=Kind::Polygon;result.style=style;
+	for(auto v:ObliqueBase(c,.25f))result.geometry.vertices.push_back(Add(c.start,ObliquePoint(s,v)));
+	if(!Validate(result)){SetError(error,"invalid solid base preview");return std::nullopt;}return result;
+}
+std::optional<ShapeObject> SetRightSolid(const ShapeObject& before, bool right, uint64_t revision, std::string* error)
+{
+	if(!before.construction || revision<=before.revision || (before.construction->tool.preset!=PresetKind::Prism && before.construction->tool.preset!=PresetKind::Pyramid))
+	{SetError(error,"unsupported solid constraint");return std::nullopt;}
+	auto shape=before;auto& c=*shape.construction;auto& s=std::get<SolidConstruction>(c.parameters);
+	// 旧正多边形投影可精确转换为垂直投影轴，编辑时不强制换成新建的45度视角。
+	if(!s.oblique)
+	{
+		s.oblique=true;
+		const auto v=Sub(c.end,c.start);
+		const float radius=std::hypot(v.x,2*v.y);
+		s.baseSize={radius,radius};s.baseRotation=std::atan2(2*v.y,v.x);
+		s.projectionAngle=static_cast<float>(kPi*.5);s.projectionScale=s.baseProjection;
+	}
+	c.tool.rightSolid=right;if(right)s.offset={};return RebuildEdited(std::move(shape),revision,error);
 }
 std::optional<ShapeObject> SetRegularSides(const ShapeObject& before, uint32_t sides, uint64_t revision, std::string* error)
 {
@@ -548,12 +629,28 @@ std::optional<ShapeObject> SetPlanarConstraint(const ShapeObject& before, Planar
 		if (vertices.size() != 3) return fail("invalid triangle vertices");
 		if (constraint != PlanarConstraint::Free)
 		{
-			const auto base = MakeBaseFrame(vertices[2],vertices[1]);
-			const float height = static_cast<float>(Dot(Sub(vertices[0],base.midpoint),base.normal));
+			// 首次约束选择顶点位移最小的底边；重复等腰点击轮换三种身份。
+			if (before.construction->tool.constraint == PlanarConstraint::Free)
+			{
+				double best = std::numeric_limits<double>::max();
+				for (uint32_t i = 0; i < 3; ++i)
+				{
+					const auto f = MakeBaseFrame(vertices[(i+2)%3],vertices[(i+1)%3]);
+					const float h = static_cast<float>(Dot(Sub(vertices[i],f.midpoint),f.normal));
+					const float target = constraint == PlanarConstraint::Equilateral ? std::copysign(std::sqrt(3.f)*.5f*f.length,h) : h;
+					const double cost = Distance(vertices[i],Add(f.midpoint,Mul(f.normal,target)));
+					if (cost < best - 1e-5) { best = cost; c.tool.constraintVertex = i; }
+				}
+			}
+			else if (constraint == PlanarConstraint::Isosceles && before.construction->tool.constraint == constraint)
+				c.tool.constraintVertex = (c.tool.constraintVertex + 1) % 3;
+			const auto a = c.tool.constraintVertex, b = (a+1)%3, d = (a+2)%3;
+			const auto base = MakeBaseFrame(vertices[d],vertices[b]);
+			const float height = static_cast<float>(Dot(Sub(vertices[a],base.midpoint),base.normal));
 			if (base.length < minimum || std::abs(height) < minimum) return fail("degenerate triangle base");
 			const float nextHeight = constraint == PlanarConstraint::Equilateral ?
 				std::copysign(std::sqrt(3.0f) * .5f * base.length,height) : height;
-			vertices[0] = Add(base.midpoint,Mul(base.normal,nextHeight));
+			vertices[a] = Add(base.midpoint,Mul(base.normal,nextHeight));
 		}
 	}
 	else
@@ -673,8 +770,8 @@ std::optional<ShapeObject> ConstructionSession::Generate(Vec2 down, Vec2 end, bo
 	const auto capabilities = GetToolCapabilities(tool_.preset);
 	if (capabilities.points)
 	{
-		if (points_.empty()) { SetError(error,"no confirmed point"); return std::nullopt; }
 		auto vertices = points_;
+		if (vertices.empty()) vertices.push_back(down);
 		if (!confirm && vertices.back() != end) vertices.push_back(end);
 		// 无论最终Polygon是否暂时有效，已确认路径始终用开放Polyline显示。
 		return OpenPointCandidate(vertices,style_,id_,revision_,error);
@@ -682,24 +779,10 @@ std::optional<ShapeObject> ConstructionSession::Generate(Vec2 down, Vec2 end, bo
 	if (!capabilities.multiStage) return MakePresetShape(tool_, down, end, style_, id_, revision_, error);
 	if (!confirmed_)
 	{
+		if (tool_.preset >= PresetKind::Cuboid) return SolidBasePreview(tool_,down,end,style_,id_,revision_,error);
 		ToolSpec base = tool_;
-		base.preset = tool_.preset == PresetKind::Arc || tool_.preset == PresetKind::Sector ? PresetKind::Circle :
-			tool_.preset == PresetKind::Cylinder || tool_.preset == PresetKind::Cone ? PresetKind::Ellipse :
-			tool_.preset == PresetKind::Prism || tool_.preset == PresetKind::Pyramid ? PresetKind::RegularPolygon : PresetKind::Rectangle;
+		base.preset = PresetKind::Circle;
 		base.creationMode = DefaultCreationMode(base.preset); base.rectangleCornerRadius = 0;
-		if (tool_.preset == PresetKind::Cube)
-		{
-			const float side = std::max(std::abs(end.x - down.x), std::abs(end.y - down.y));
-			end = { down.x + (end.x < down.x ? -side : side),down.y + (end.y < down.y ? -side : side) };
-		}
-		if (tool_.preset == PresetKind::Prism || tool_.preset == PresetKind::Pyramid)
-		{
-			ShapeObject object; object.id = id_; object.revision = revision_; object.kind = Kind::Polygon;
-			object.creationMode = CreationMode::MultiStage; object.style = style_;
-			object.geometry.vertices = PolygonSolidBase(down,end,tool_.sides,kDefaultSolidBaseProjection);
-			if (!Validate(object)) { SetError(error,"invalid polygon solid preview"); return std::nullopt; }
-			SetError(error,{}); return object;
-		}
 		auto previewStyle = style_;
 		if (tool_.preset == PresetKind::Arc || tool_.preset == PresetKind::Sector)
 		{
@@ -715,16 +798,16 @@ std::optional<ShapeObject> ConstructionSession::Generate(Vec2 down, Vec2 end, bo
 			sweep += static_cast<float>(std::remainder(double(std::atan2(end.y - start_.y, end.x - start_.x) - lastAngle_), 2 * kPi));
 		c.parameters = ArcConstruction{ sweep };
 	}
-	else if (tool_.preset == PresetKind::Cuboid || tool_.preset == PresetKind::Cube)
-		c.parameters = SolidConstruction{ Sub(end, down),0 };
-	else c.parameters = SolidConstruction{ {},end.y - down.y };
+	else c = MakeSolidConstruction(tool_,start_,end_,end.y - down.y);
 	return MakeConstructedShape(c, style_, id_, revision_, error);
 }
 bool ConstructionSession::RebuildPoints(std::string* error)
 {
-	candidate_.reset(); confirmedCandidate_.reset();
-	if (points_.empty()) { SetError(error,{}); return true; }
-	candidate_ = OpenPointCandidate(points_,style_,id_,revision_,error);
+	confirmedCandidate_.reset();
+	if (points_.empty()) { candidate_.reset(); SetError(error,{}); return true; }
+	auto next = OpenPointCandidate(points_,style_,id_,revision_,error);
+	if (!next) return false;
+	candidate_ = std::move(next);
 	Construction final{ tool_,points_.front(),points_.back() }; final.parameters = VertexConstruction{ points_ };
 	confirmedCandidate_ = MakeConstructedShape(final,style_,id_,revision_);
 	if (candidate_) SetError(error,{});
@@ -732,20 +815,55 @@ bool ConstructionSession::RebuildPoints(std::string* error)
 }
 bool ConstructionSession::PreviewDrag(Vec2 down, Vec2 end, std::string* error)
 {
-	candidate_ = Generate(down, end, false, error); return candidate_.has_value();
+	if (pointEdit_)
+	{
+		if (!Finite(end)) return false;
+		const auto previous = points_[*pointEdit_];
+		points_[*pointEdit_] = Add(pointEditBefore_[*pointEdit_],Sub(end,pointEditDown_));
+		if (RebuildPoints(error)) return true;
+		points_[*pointEdit_] = previous; RebuildPoints(); return false;
+	}
+	auto next = Generate(down, end, false, error);
+	// 无效的临时新边不能抹掉已经确认的路径。
+	if (next || !GetToolCapabilities(tool_.preset).points) candidate_ = std::move(next);
+	return candidate_.has_value();
+}
+bool ConstructionSession::BeginPointEdit(Vec2 down, float radius)
+{
+	if (!active_ || finished_ || pointEdit_ || !GetToolCapabilities(tool_.preset).points || !Finite(down) || !Finite(radius) || !(radius > 0)) return false;
+	float nearest = radius;
+	for (size_t i = 0; i < points_.size(); ++i)
+	{
+		const float distance = Distance(points_[i],down);
+		if (distance <= nearest) { nearest = distance; pointEdit_ = i; }
+	}
+	if (!pointEdit_) return false;
+	pointEditBefore_ = points_; pointEditDown_ = down; return true;
+}
+bool ConstructionSession::CancelPointEdit()
+{
+	if (!pointEdit_) return false;
+	points_ = std::move(pointEditBefore_); pointEdit_.reset(); return RebuildPoints();
 }
 bool ConstructionSession::ConfirmDrag(Vec2 down, Vec2 end, std::string* error)
 {
 	if (!active_ || finished_ || !Finite(down) || !Finite(end)) return false;
 	if (GetToolCapabilities(tool_.preset).points)
 	{
+		if (pointEdit_)
+		{
+			PreviewDrag(down,end,error);
+			if (points_ != pointEditBefore_) { pointUndo_.push_back(pointEditBefore_); ++confirmed_; redo_.clear(); }
+			pointEdit_.reset(); pointEditBefore_.clear(); return RebuildPoints(error);
+		}
 		if (points_.size() >= kMaxVertices || (!points_.empty() && points_.back() == end)) return false;
 		const bool firstDrag = points_.empty() && down != end;
 		const uint32_t added = firstDrag ? 2u : 1u;
 		if (points_.size() > kMaxVertices - added) return false;
+		pointUndo_.push_back(points_);
 		if (firstDrag) points_.push_back(down);
 		points_.push_back(firstDrag ? end : points_.empty() ? down : end);
-		++confirmed_; pointSteps_.push_back(added); redo_.clear();
+		++confirmed_; redo_.clear();
 		return RebuildPoints(error); // 暂时自交只影响Complete，不能清空已确认的开放路径。
 	}
 	ObserveRaw(end);
@@ -764,18 +882,18 @@ bool ConstructionSession::Back()
 {
 	if (!active_ || !confirmed_) return false;
 	const bool points = GetToolCapabilities(tool_.preset).points;
-	if (points && (pointSteps_.empty() || pointSteps_.back() > points_.size())) return false;
-	const uint32_t removed = points ? pointSteps_.back() : 0;
+	if (points && pointUndo_.empty()) return false;
+	if (pointEdit_) { points_ = pointEditBefore_; pointEdit_.reset(); pointEditBefore_.clear(); }
 	BackedStep step; step.start = start_; step.end = end_; step.confirmed = confirmed_; step.lastAngle = lastAngle_;
 	step.sweep = sweep_; step.finished = finished_; step.angleStarted = angleStarted_;
-	if (points) { step.points = points_; step.pointCount = removed; }
+	if (points) step.points = points_;
 	else step.candidate = confirmedCandidate_;
 	// 首步确认后的扫角只属于未确认预览，不能随Forward恢复到下一次真实接触。
 	if (!points && !finished_) { step.lastAngle = std::atan2(end_.y - start_.y,end_.x - start_.x); step.sweep = 0; step.angleStarted = true; }
 	redo_.push_back(std::move(step));
 	if (points)
 	{
-		points_.resize(points_.size() - removed); pointSteps_.pop_back(); --confirmed_;
+		points_ = std::move(pointUndo_.back()); pointUndo_.pop_back(); --confirmed_;
 		return RebuildPoints();
 	}
 	if (confirmed_ == 1) { confirmed_ = 0; candidate_.reset(); confirmedCandidate_.reset(); }
@@ -789,12 +907,13 @@ bool ConstructionSession::Back()
 bool ConstructionSession::Forward()
 {
 	if (!active_ || redo_.empty()) return false;
+	CancelPointEdit();
 	auto step = std::move(redo_.back()); redo_.pop_back();
 	start_ = step.start; end_ = step.end; confirmed_ = step.confirmed; finished_ = step.finished;
 	lastAngle_ = step.lastAngle; sweep_ = step.sweep; angleStarted_ = step.angleStarted;
 	if (GetToolCapabilities(tool_.preset).points)
 	{
-		points_ = std::move(step.points); pointSteps_.push_back(step.pointCount);
+		pointUndo_.push_back(points_); points_ = std::move(step.points);
 		return RebuildPoints();
 	}
 	else candidate_ = confirmedCandidate_ = std::move(step.candidate);
@@ -802,7 +921,7 @@ bool ConstructionSession::Forward()
 }
 void ConstructionSession::Cancel() noexcept
 {
-	active_ = finished_ = angleStarted_ = false; confirmed_ = 0; points_.clear(); pointSteps_.clear(); redo_.clear(); candidate_.reset(); confirmedCandidate_.reset(); sweep_ = 0;
+	active_ = finished_ = angleStarted_ = false; confirmed_ = 0; points_.clear(); pointUndo_.clear(); pointEdit_.reset(); pointEditBefore_.clear(); redo_.clear(); candidate_.reset(); confirmedCandidate_.reset(); sweep_ = 0;
 }
 bool ConstructionSession::CanComplete() const noexcept
 {
@@ -822,7 +941,7 @@ ConstructionStatus ConstructionSession::Status() const noexcept
 	const bool points = capabilities.points;
 	return { active_,active_ ? (finished_ ? confirmed_ : confirmed_ + 1) : 0,points ? static_cast<uint32_t>(points_.size()) : confirmed_,
 		points ? 0u : capabilities.multiStage ? 2u : 1u,
-		CanComplete(),active_ && (points ? !pointSteps_.empty() : confirmed_ > 0),finished_,active_ && !redo_.empty(),tool_.preset };
+		CanComplete(),active_ && (points ? !pointUndo_.empty() : confirmed_ > 0),finished_,active_ && !redo_.empty(),tool_.preset };
 }
 uint64_t RevisionAllocator::Next(const ObjectId& id, uint64_t observed)
 {

@@ -7,14 +7,16 @@ bool ValidPlanarVertices(const ToolSpec& tool, const std::vector<Vec2>& v)
 	auto near = [](double a, double b) { return std::abs(a - b) < 1e-4 * std::max({ 1.0, std::abs(a), std::abs(b) }); };
 	if (preset == PresetKind::Triangle)
 	{
+		if (tool.constraintVertex > 2) return false;
+		const auto a = tool.constraintVertex, b = (a + 1) % 3, d = (a + 2) % 3;
 		if (tool.constraint == PlanarConstraint::Free) return true;
-		const Vec2 base{ v[1].x - v[2].x,v[1].y - v[2].y };
+		const Vec2 base{ v[b].x - v[d].x,v[b].y - v[d].y };
 		const double length = std::hypot(base.x,base.y);
 		if (!(length > 0)) return false;
-		const Vec2 midpoint{ (v[1].x + v[2].x) * .5f,(v[1].y + v[2].y) * .5f };
-		const double lateral = double(v[0].x - midpoint.x) * base.x + double(v[0].y - midpoint.y) * base.y;
+		const Vec2 midpoint{ (v[b].x + v[d].x) * .5f,(v[b].y + v[d].y) * .5f };
+		const double lateral = double(v[a].x - midpoint.x) * base.x + double(v[a].y - midpoint.y) * base.y;
 		return near(lateral / length,0) && (tool.constraint != PlanarConstraint::Equilateral ||
-			near(Distance(v[0],v[1]),length) && near(Distance(v[0],v[2]),length));
+			near(Distance(v[a],v[b]),length) && near(Distance(v[a],v[d]),length));
 	}
 	if (preset == PresetKind::Trapezoid)
 	{
@@ -37,6 +39,8 @@ bool ValidPlanarVertices(const ToolSpec& tool, const std::vector<Vec2>& v)
 }
 bool ValidPlanarConstraint(const ToolSpec& tool)
 {
+	if (tool.constraintVertex > 2 || (tool.preset != PresetKind::Triangle && tool.constraintVertex != 0) ||
+		(tool.rightSolid && tool.preset != PresetKind::Prism && tool.preset != PresetKind::Pyramid)) return false;
 	if (static_cast<uint32_t>(tool.constraint) > static_cast<uint32_t>(PlanarConstraint::Equilateral)) return false;
 	if (tool.preset == PresetKind::Triangle)
 		return tool.constraint == PlanarConstraint::Equilateral ? tool.creationMode == CreationMode::CenterRadius : tool.creationMode == CreationMode::Drag;
@@ -80,6 +84,91 @@ bool ArcPoints(Vec2 center, Vec2 axes, double start, double sweep, float toleran
 			static_cast<float>(center.y + axes.y * std::sin(angle)) });
 	}
 	return true;
+}
+Vec2 ObliquePoint(const SolidConstruction& s, Vec2 p)
+{
+	const float co = std::cos(s.baseRotation), si = std::sin(s.baseRotation);
+	const float x = co*p.x-si*p.y, y = si*p.x+co*p.y;
+	return {x+s.projectionScale*std::cos(s.projectionAngle)*y,s.projectionScale*std::sin(s.projectionAngle)*y};
+}
+std::vector<Vec2> ObliqueBase(const Construction& c, float tolerance)
+{
+	const auto& s = std::get<SolidConstruction>(c.parameters);
+	const auto p = c.tool.preset;
+	if (p == PresetKind::Cube || p == PresetKind::Cuboid)
+		return {{-s.baseSize.x*.5f,-s.baseSize.y*.5f},{s.baseSize.x*.5f,-s.baseSize.y*.5f},{s.baseSize.x*.5f,s.baseSize.y*.5f},{-s.baseSize.x*.5f,s.baseSize.y*.5f}};
+	const bool round = p == PresetKind::Cylinder || p == PresetKind::Cone;
+	// 斜投影含剪切，最大奇异值可能大于1；模型空间细分必须计入投影放大。
+	const Transform projection{1,0,s.projectionScale*std::cos(s.projectionAngle),s.projectionScale*std::sin(s.projectionAngle),0,0};
+	const double radius = double(s.baseSize.x) * MaxScale(projection);
+	const double required = round ? std::max(32.0,std::ceil(2*kPi/std::max(1e-8,2*std::acos(std::clamp(1.0-double(tolerance)/radius,-1.0,1.0))))) : c.tool.sides;
+	if (required > 16000) return {}; // 精度预算超限不能静默降低精度。
+	const auto count = static_cast<uint32_t>(required);
+	return RegularPolygonVertices({}, {s.baseSize.x,0},count);
+}
+bool ExpandOblique(const Construction& c, const ShapeStyle& style, ShapeObject& out, std::string& error, float tolerance)
+{
+	const auto& s = std::get<SolidConstruction>(c.parameters); const auto p=c.tool.preset;
+	if (!Finite(s.baseSize) || !Finite(s.offset) || !Finite(s.baseRotation) || !Finite(s.projectionAngle) || !Finite(s.projectionScale) ||
+		!(s.baseSize.x>0 && s.baseSize.y>0 && std::abs(s.height)>0 && s.projectionAngle>.01f && s.projectionAngle<3.13f && s.projectionScale>.01f && s.projectionScale<=1) ||
+		(c.tool.rightSolid && s.offset!=Vec2{}) || (p==PresetKind::Cube && (s.baseSize.x!=s.baseSize.y || std::abs(s.height)!=s.baseSize.x)))
+	{ error="invalid oblique solid"; return false; }
+	const auto base=ObliqueBase(c,tolerance); if (base.size()<3) { error="solid curve exceeds precision budget"; return false; }
+	const bool cone=p==PresetKind::Cone || p==PresetKind::Pyramid;
+	const bool round=p==PresetKind::Cone || p==PresetKind::Cylinder;
+	const auto project=[&](Vec2 v,float h) { const auto q=ObliquePoint(s,v); return Vec2{c.start.x+q.x,c.start.y+q.y+h}; };
+	struct V { double x,y,z; };
+	auto sub=[](V a,V b){return V{a.x-b.x,a.y-b.y,a.z-b.z};};
+	auto cross=[](V a,V b){return V{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};};
+	auto dot=[](V a,V b){return a.x*b.x+a.y*b.y+a.z*b.z;};
+	const double kx=s.projectionScale*std::cos(s.projectionAngle), ky=s.projectionScale*std::sin(s.projectionAngle);
+	const double co=std::cos(s.baseRotation),si=std::sin(s.baseRotation);
+	// 斜二测的视线取投影核向量；面法线与该视线共同决定隐藏边。
+	const V view{-kx*co+si,kx*si+co,-ky};
+	const V interior{s.offset.x*.5,s.offset.y*.5,s.height*.5};
+	auto back=[&](V a,V b,V d){auto n=cross(sub(b,a),sub(d,a)); if(dot(n,sub(a,interior))<0)n={-n.x,-n.y,-n.z};return dot(n,view)<-1e-6*std::sqrt(dot(n,n));};
+	auto lower=[&](size_t i){return V{base[i].x,base[i].y,0};};
+	auto upper=[&](size_t i){return V{base[i].x+s.offset.x,base[i].y+s.offset.y,s.height};};
+	const V apex{s.offset.x,s.offset.y,s.height};
+	const bool bottomBack=back(lower(0),lower(1),lower(2)), topBack=!cone&&back(upper(0),upper(1),upper(2));
+	std::vector<bool> side(base.size());
+	for(size_t i=0;i<base.size();++i)side[i]=back(lower(i),lower((i+1)%base.size()),cone?apex:upper(i));
+	auto edge=[&](Vec2 a,Vec2 b,bool hidden){ShapePart q; q.id=static_cast<uint32_t>(out.parts.size()+1);q.kind=Kind::Line;q.geometry.start=a;q.geometry.end=b;if(hidden){q.style=style;q.style->linePattern=LinePattern::Dashed;}out.parts.push_back(std::move(q));};
+	out.kind=Kind::Compound;
+	for(size_t i=0;i<base.size();++i)
+	{
+		const auto j=(i+1)%base.size(), prev=(i+base.size()-1)%base.size();
+		const auto a=project(base[i],0),b=project(base[j],0);
+		if(!round)edge(a,b,bottomBack&&side[i]);
+		const Vec2 u{base[i].x+s.offset.x,base[i].y+s.offset.y},v{base[j].x+s.offset.x,base[j].y+s.offset.y};
+		if(!cone && !round)edge(project(u,s.height),project(v,s.height),topBack&&side[i]);
+		if(!round || side[i]!=side[prev])edge(a,project(cone?s.offset:u,s.height),side[i]&&side[prev]);
+	}
+
+ if(round)
+ {
+  // 合并同一可见性的连续圆弧，虚线相位不能在细分弦上反复归零。
+  auto ring=[&](bool top)
+  {
+   const bool face=top?topBack:bottomBack;
+   size_t begin=0;
+   for(size_t i=0;i<base.size();++i)if((face&&side[i])!=(face&&side[(i+base.size()-1)%base.size()])){begin=i;break;}
+   size_t consumed=0;
+   while(consumed<base.size())
+   {
+    const bool hidden=face&&side[(begin+consumed)%base.size()];
+    ShapePart q;q.id=static_cast<uint32_t>(out.parts.size()+1);q.kind=Kind::Polyline;
+    auto point=[&](size_t i){auto v=base[i%base.size()];if(top){v.x+=s.offset.x;v.y+=s.offset.y;}return project(v,top?s.height:0);};
+    q.geometry.vertices.push_back(point(begin+consumed));
+    do {++consumed;q.geometry.vertices.push_back(point(begin+consumed));}
+    while(consumed<base.size() && (face&&side[(begin+consumed)%base.size()])==hidden);
+    if(hidden){q.style=style;q.style->linePattern=LinePattern::Dashed;}
+    out.parts.push_back(std::move(q));
+   }
+  };
+  ring(false);if(!cone)ring(true);
+ }
+ return true;
 }
 bool ExpandAdvanced(const Construction& c, const ShapeStyle& style, ShapeObject& out,
 	std::string& error, float tolerance = .25f, bool legacyCone = false, bool legacyPolygonSolid = false)
@@ -127,6 +216,7 @@ bool ExpandAdvanced(const Construction& c, const ShapeStyle& style, ShapeObject&
 		(polygonSolid ? solid->baseProjection < kMinSolidBaseProjection || solid->baseProjection > kMaxSolidBaseProjection :
 			solid->baseProjection != kDefaultSolidBaseProjection))
 	{ error = "solid requires valid stroke-only parameters"; return false; }
+	if (solid->oblique) return ExpandOblique(c,style,out,error,tolerance);
 	out.kind = Kind::Compound;
 	auto path = [&](std::vector<Vec2> vertices, bool hidden)
 	{

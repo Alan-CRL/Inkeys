@@ -11,9 +11,15 @@ namespace
 	using ShapeArray = UInkMessagePackValue::Array;
 	uint64_t InkeysShapeVersion(const shapes::ShapeObject& shape)
 	{
+		shapes::GeometryResult geometry;
+		if(shapes::BuildGeometry(shape,geometry))
+			for(const auto& part:geometry.parts) if(part.style.stroke && part.style.linePattern!=shapes::LinePattern::Solid)
+				for(const auto& path:part.paths) if(path.closed) return 6;
 		if (shape.construction)
 		{
 			const auto& tool = shape.construction->tool;
+			const auto* solid = std::get_if<shapes::SolidConstruction>(&shape.construction->parameters);
+			if(tool.constraintVertex || tool.rightSolid || (solid && solid->oblique)) return 6;
 			if (tool.constraint != shapes::PlanarConstraint::Free || tool.sides > 12 ||
 				tool.preset == shapes::PresetKind::Prism || tool.preset == shapes::PresetKind::Pyramid) return 5;
 		}
@@ -123,6 +129,7 @@ namespace
 		ShapeField(tool, "sides", ShapeValue(uint64_t(construction.tool.sides)));
 		ShapeField(tool, "rectangleCornerRadius", ShapeValue(construction.tool.rectangleCornerRadius));
 		if (version >= 5) ShapeField(tool, "constraint", ShapeValue(uint64_t(construction.tool.constraint)));
+		if(version>=6) {ShapeField(tool,"constraintVertex",ShapeValue(uint64_t(construction.tool.constraintVertex)));ShapeField(tool,"rightSolid",ShapeValue(construction.tool.rightSolid));}
 		ShapeMap map;
 		ShapeField(map, "tool", ShapeValue(std::move(tool)));
 		ShapeField(map, "start", ShapePointValue(construction.start));
@@ -140,6 +147,7 @@ namespace
 		{
 			ShapeArray fields{ ShapePointValue(solid->depth),ShapeValue(solid->height) };
 			if (version >= 5) fields.push_back(ShapeValue(solid->baseProjection));
+			if(version>=6) {fields.push_back(ShapeValue(solid->oblique));fields.push_back(ShapePointValue(solid->baseSize));fields.push_back(ShapeValue(solid->baseRotation));fields.push_back(ShapeValue(solid->projectionAngle));fields.push_back(ShapeValue(solid->projectionScale));fields.push_back(ShapePointValue(solid->offset));}
 			parameters.push_back(ShapeValue(std::move(fields)));
 		}
 		ShapeField(map, "parameters", ShapeValue(std::move(parameters)));
@@ -153,7 +161,7 @@ namespace
 		const auto* toolValue = ShapeFind(*map, "tool");
 		const auto* tool = toolValue ? std::get_if<ShapeMap>(&toolValue->value) : nullptr;
 		uint64_t sides = 0;
-		if (!tool || tool->size() != (version >= 5 ? 5u : 4u) || !ShapeUniqueKeys(*tool) ||
+		if (!tool || tool->size() != (version>=6 ? 7u : version >= 5 ? 5u : 4u) || !ShapeUniqueKeys(*tool) ||
 			!ShapeEnum(*tool, "preset", construction.tool.preset, uint64_t(version == 2 ? shapes::PresetKind::RegularPolygon : shapes::PresetKind::Pyramid)) ||
 			!ShapeEnum(*tool, "creationMode", construction.tool.creationMode, uint64_t(shapes::CreationMode::Parameters)) ||
 			!ShapeUnsigned(ShapeFind(*tool, "sides"), sides) || sides < shapes::kMinRegularSides ||
@@ -163,6 +171,7 @@ namespace
 			!ShapeReadPoint(ShapeFind(*map, "start"), construction.start) ||
 			!ShapeReadPoint(ShapeFind(*map, "end"), construction.end)) return false;
 		construction.tool.sides = static_cast<uint32_t>(sides);
+		if(version>=6) {uint64_t apex=0;if(!ShapeUnsigned(ShapeFind(*tool,"constraintVertex"),apex)||apex>2||!ShapeBool(ShapeFind(*tool,"rightSolid"),construction.tool.rightSolid))return false;construction.tool.constraintVertex=static_cast<uint32_t>(apex);}
 		if (version == 2)
 		{
 			construction.legacyArrow = construction.tool.preset == shapes::PresetKind::Arrow;
@@ -193,8 +202,9 @@ namespace
 		{
 			const auto* fields = std::get_if<ShapeArray>(&(*parameters)[1].value);
 			shapes::SolidConstruction solid;
-			if (!fields || fields->size() != (version >= 5 ? 3u : 2u) || !ShapeReadPoint(&(*fields)[0], solid.depth) ||
+			if (!fields || fields->size() != (version>=6 ? 9u : version >= 5 ? 3u : 2u) || !ShapeReadPoint(&(*fields)[0], solid.depth) ||
 				!ShapeFloat(&(*fields)[1], solid.height) || (version >= 5 && !ShapeFloat(&(*fields)[2], solid.baseProjection))) return false;
+			if(version>=6 && (!ShapeBool(&(*fields)[3],solid.oblique)||!ShapeReadPoint(&(*fields)[4],solid.baseSize)||!ShapeFloat(&(*fields)[5],solid.baseRotation)||!ShapeFloat(&(*fields)[6],solid.projectionAngle)||!ShapeFloat(&(*fields)[7],solid.projectionScale)||!ShapeReadPoint(&(*fields)[8],solid.offset)))return false;
 			construction.parameters = solid;
 		}
 		return true;
@@ -281,7 +291,7 @@ Draw3ShapeMetadataResult DecodeInkeysShapeMetadata(const UInkMessagePackValue& v
 		const auto* map = std::get_if<ShapeMap>(&value.value);
 		uint64_t version = 0;
 		if (!map || !ShapeUniqueKeys(*map) || !ShapeUnsigned(ShapeFind(*map, "version"), version)) return {};
-		if (version < 1 || version > 5) return { Draw3ShapeMetadataStatus::UnsupportedVersion, std::nullopt };
+		if (version < 1 || version > 6) return { Draw3ShapeMetadataStatus::UnsupportedVersion, std::nullopt };
 		shapes::ShapeObject shape;
 		const auto* idValue = ShapeFind(*map, "id");
 		const auto* idText = idValue ? std::get_if<std::string>(&idValue->value) : nullptr;

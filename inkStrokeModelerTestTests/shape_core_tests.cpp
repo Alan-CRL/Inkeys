@@ -121,7 +121,8 @@ namespace
 			case PresetKind::Circle:
 				add(100,EditHandleKind::Center,{20,30}); add(101,EditHandleKind::Radius,{140,110}); rotate = false; break;
 			case PresetKind::Ellipse:
-				add(100,EditHandleKind::Center,{80,70}); add(102,EditHandleKind::Axis,{140,70}); add(103,EditHandleKind::Axis,{80,110}); break;
+				add(100,EditHandleKind::Center,{80,70}); add(102,EditHandleKind::Axis,{140,70}); add(103,EditHandleKind::Axis,{80,110});
+				add(106,EditHandleKind::Focus,{80+std::sqrt(2000.f),70}); add(107,EditHandleKind::Focus,{80-std::sqrt(2000.f),70}); break;
 			case PresetKind::Triangle: vertices({{80,30},{140,110},{20,110}}); break;
 			case PresetKind::Parallelogram: vertices({{50,30},{140,30},{110,110},{20,110}}); break;
 			case PresetKind::Rhombus: vertices({{80,30},{140,70},{80,110},{20,70}}); break;
@@ -141,7 +142,7 @@ namespace
 				add(1000,EditHandleKind::Axis,{20,70}); add(1001,EditHandleKind::Axis,{140,70}); add(1002,EditHandleKind::Axis,{80,110});
 				add(105,EditHandleKind::Height,{80,-50}); break;
 			case PresetKind::Prism: case PresetKind::Pyramid:
-				add(1001,EditHandleKind::Vertex,{140,110}); add(102,EditHandleKind::Axis,{20,130}); add(105,EditHandleKind::Height,{20,-90}); break;
+				add(1001,EditHandleKind::Vertex,{140,110}); add(102,EditHandleKind::Axis,{20,-12}); add(105,EditHandleKind::Height,{20,-90}); break;
 			}
 			GeometryResult geometry; SHAPE_CHECK(BuildGeometry(*object,geometry));
 			for (float displayScale : {1.f,2.f})
@@ -299,7 +300,7 @@ namespace
 			}
 			SHAPE_CHECK(session.Commit());
 		}
-		// 对象焦点开关同时控制句柄；旧纵向/仿射椭圆也以真实画布长短轴生成句柄。
+		// 对象焦点开关只控制辅助显示，焦点始终可编辑；旧纵向/仿射椭圆也以真实画布长短轴生成句柄。
 		for (bool vertical : {false,true}) for (bool affine : {false,true})
 		{
 			auto ellipse = MakePresetShape({PresetKind::Ellipse,CreationMode::Drag},{20,30},vertical ? Vec2{100,150} : Vec2{140,110},{},Id(27));
@@ -307,7 +308,8 @@ namespace
 			if (affine) ellipse->transform = {1.5f,.3f,.4f,1.1f,15,25};
 			const BuildOptions options{1,.25f}; const auto normal = BuildEditHandles(*ellipse,options);
 			ellipse->style.auxiliary = Auxiliary::Foci; const auto handles = BuildEditHandles(*ellipse);
-			SHAPE_CHECK(normal.size() == 4 && handles.size() == 6 && !getHandle(normal,106) && !getHandle(normal,107));
+			SHAPE_CHECK(normal.size() == 6 && handles.size() == 6 && getHandle(normal,106) && getHandle(normal,107));
+			SHAPE_CHECK(pointNear(getHandle(normal,106)->position,getHandle(handles,106)->position) && pointNear(getHandle(normal,107)->position,getHandle(handles,107)->position));
 			const auto center = getHandle(handles,100), major = getHandle(handles,102), f1 = getHandle(handles,106), f2 = getHandle(handles,107);
 			SHAPE_CHECK(center && major && f1 && f2); if (!center || !major || !f1 || !f2) continue;
 			const float a = length(center->position,major->position);
@@ -410,7 +412,8 @@ namespace
 				SHAPE_CHECK(iso && Validate(*iso)); if (iso)
 				{
 					const auto& old = moved->geometry.vertices; const auto& v = iso->geometry.vertices;
-					SHAPE_CHECK(v[1] == old[1] && v[2] == old[2] && near(length(v[0],v[1]),length(v[0],v[2])));
+					const auto apex = iso->construction->tool.constraintVertex, left = (apex+1)%3, right = (apex+2)%3;
+					SHAPE_CHECK(v[left] == old[left] && v[right] == old[right] && near(length(v[apex],v[left]),length(v[apex],v[right])));
 					SHAPE_CHECK(iso->construction->tool.creationMode == CreationMode::Drag);
 					for (uint32_t id = 1000; id <= 1002; ++id)
 					{
@@ -426,7 +429,7 @@ namespace
 					SHAPE_CHECK(equilateral && Validate(*equilateral)); if (equilateral)
 					{
 						const auto& before = iso->geometry.vertices; const auto& v3 = equilateral->geometry.vertices;
-						SHAPE_CHECK(v3[1] == before[1] && v3[2] == before[2]);
+						SHAPE_CHECK(v3[left] == before[left] && v3[right] == before[right]);
 						SHAPE_CHECK(near(length(v3[0],v3[1]),length(v3[1],v3[2])) && near(length(v3[0],v3[2]),length(v3[1],v3[2])));
 						SHAPE_CHECK(equilateral->construction->tool.creationMode == CreationMode::CenterRadius);
 						for (uint32_t id = 1000; id <= 1002; ++id)
@@ -500,7 +503,7 @@ namespace
 			const auto axis = getHandle(BuildEditHandles(*solid),102); SHAPE_CHECK(axis); if (!axis) continue;
 			const auto& c = *solid->construction;
 			const float radius = std::hypot(c.end.x-c.start.x,2*(c.end.y-c.start.y));
-			const auto projected = EditShape(*solid,102,axis->position,{c.start.x,c.start.y+.75f*radius},2);
+			const auto projected = EditShape(*solid,102,axis->position,{axis->position.x,axis->position.y+.25f*radius},2);
 			SHAPE_CHECK(projected && Validate(*projected)); if (!projected) continue;
 			SHAPE_CHECK(near(std::get<SolidConstruction>(projected->construction->parameters).baseProjection,.75f));
 			const auto first = getHandle(BuildEditHandles(*projected),1001);
@@ -521,9 +524,9 @@ namespace
 		{
 			Construction c{{preset,CreationMode::MultiStage,5},{20,100},{120,100}}; c.parameters = SolidConstruction{{},-80};
 			const auto solid = MakeConstructedShape(c,{},Id(43)); SHAPE_CHECK(solid); if (!solid) continue;
-			const auto axis = getHandle(BuildEditHandles(*solid),102); SHAPE_CHECK(axis && pointNear(axis->position,{20,150}));
+			const auto axis = getHandle(BuildEditHandles(*solid),102); SHAPE_CHECK(axis && pointNear(axis->position,{20,72}));
 			if (!axis) continue;
-			const auto projected = EditShape(*solid,102,axis->position,{20,175},2);
+			const auto projected = EditShape(*solid,102,axis->position,{20,97},2);
 			SHAPE_CHECK(projected && near(std::get<SolidConstruction>(projected->construction->parameters).baseProjection,.75f));
 			const auto first = getHandle(BuildEditHandles(*solid),1001); SHAPE_CHECK(first);
 			if (first) SHAPE_CHECK(EditShape(*solid,1001,first->position,{130,100},2));
@@ -943,7 +946,7 @@ int RunShapeCoreTests()
 		const auto handles = BuildEditHandles(*object);
 		if (preset == PresetKind::Circle) SHAPE_CHECK(handles.size() == 2 && handles[0].kind == EditHandleKind::Center);
 		if (preset == PresetKind::Line || preset == PresetKind::Arrow || preset == PresetKind::RegularPolygon) SHAPE_CHECK(handles.size() == 2);
-		if (preset == PresetKind::Ellipse) SHAPE_CHECK(handles.size() == 4);
+		if (preset == PresetKind::Ellipse) SHAPE_CHECK(handles.size() == 6);
 		for (const auto& handle : handles)
 		{
 			const auto edited = EditShape(*object, handle.id, handle.position, { handle.position.x + 4,handle.position.y + 3 }, 8);
@@ -1032,7 +1035,7 @@ int RunShapeCoreTests()
 		if (completed)
 		{
 			const auto& solid = std::get<SolidConstruction>(completed->construction->parameters);
-			SHAPE_CHECK(value <= uint32_t(PresetKind::Cube) ? solid.depth == (Vec2{ 30,-60 }) : solid.height == -60);
+			SHAPE_CHECK(solid.oblique && (value == uint32_t(PresetKind::Cube) ? std::abs(solid.height) == solid.baseSize.x : solid.height == -60));
 		}
 	}
 	const auto legacyEdit = MakeLegacyShape(LegacyKind::OutlineRectangle, { 0,0 }, { 100,100 }, 4, 0, 1, Id(15));
@@ -1059,6 +1062,124 @@ int RunShapeCoreTests()
 			const auto edited = EditShape(*object,1001,corner->position,{corner->position.x + x * 15,corner->position.y + y * 5},2);
 			SHAPE_CHECK(edited && std::abs(edited->construction->end.x - edited->construction->start.x) ==
 				std::abs(edited->construction->end.y - edited->construction->start.y));
+		}
+	}
+
+	// 新斜二测构造：首笔投影固定、立方体高度固定、隐藏圆弧相位连续。
+	for(auto preset:{PresetKind::Cuboid,PresetKind::Cube,PresetKind::Cylinder,PresetKind::Cone,PresetKind::Prism,PresetKind::Pyramid})
+	{
+		ToolSpec tool{preset,CreationMode::MultiStage};tool.sides=5;
+		auto c=MakeSolidConstruction(tool,{100,100},{180,140},-120);
+		auto object=MakeConstructedShape(c,{},Id(19));
+		SHAPE_CHECK(object);
+		if(!object)continue;
+		const auto& solid=std::get<SolidConstruction>(object->construction->parameters);
+		SHAPE_CHECK(solid.oblique && std::abs(solid.projectionAngle-.7853981634f)<1e-6 && solid.projectionScale==.5f);
+		if(preset==PresetKind::Cube)SHAPE_CHECK(std::abs(solid.height)==solid.baseSize.x && solid.baseSize.x==solid.baseSize.y);
+		if(preset==PresetKind::Cube)
+		{
+			for(const auto& h:BuildEditHandles(*object))if(h.id==105)
+			{
+				const auto flipped=EditShape(*object,h.id,h.position,{h.position.x,object->construction->start.y+10},2);
+				SHAPE_CHECK(flipped && std::get<SolidConstruction>(flipped->construction->parameters).height==solid.baseSize.x);
+			}
+		}
+		for(const auto& h:BuildEditHandles(*object))
+		{
+			if(h.id!=102 && h.id!=103 && h.id!=105 && h.id!=1001)continue;
+			auto changed=EditShape(*object,h.id,h.position,{h.position.x+5,h.position.y-3},2);
+			SHAPE_CHECK(changed);
+		}
+		if(preset==PresetKind::Cylinder || preset==PresetKind::Cone)
+		{
+			bool hiddenArc=false;
+			for(const auto& part:object->parts)if(part.kind==Kind::Polyline && part.style && part.style->linePattern==LinePattern::Dashed && part.geometry.vertices.size()>3)hiddenArc=true;
+			SHAPE_CHECK(hiddenArc && object->parts.size()<12);
+		}
+		if(preset==PresetKind::Prism || preset==PresetKind::Pyramid)
+		{
+			auto& tilted=std::get<SolidConstruction>(c.parameters);tilted.offset={25,15};
+			object=MakeConstructedShape(c,{},Id(19));SHAPE_CHECK(object);
+			if(object)
+			{
+				Bounds bounds;const auto handles=BuildEditHandles(*object,{},&bounds);
+				for(const auto& h:handles)if(h.id==102 || h.id==103)
+					SHAPE_CHECK(h.position.x>=bounds.left && h.position.x<=bounds.right && h.position.y>=bounds.top && h.position.y<=bounds.bottom);
+				for(const auto& h:handles)if(h.id==106)
+				{
+					const auto shifted=EditShape(*object,h.id,h.position,{h.position.x+5,h.position.y+7},2);
+					SHAPE_CHECK(shifted);
+					if(shifted)
+					{
+						const auto after=BuildEditHandles(*shifted);
+						const auto topBefore=std::find_if(handles.begin(),handles.end(),[](auto h){return h.id==105;});
+						const auto topAfter=std::find_if(after.begin(),after.end(),[](auto h){return h.id==105;});
+						SHAPE_CHECK(topBefore!=handles.end() && topAfter!=after.end() && std::hypot(topBefore->position.x-topAfter->position.x,topBefore->position.y-topAfter->position.y)<.001f);
+					}
+				}
+			}
+			if(object)
+			{
+				auto right=SetRightSolid(*object,true,2);SHAPE_CHECK(right);
+				if(right)
+				{
+					SHAPE_CHECK(std::get<SolidConstruction>(right->construction->parameters).offset==Vec2{});
+					auto free=SetRightSolid(*right,false,3);SHAPE_CHECK(free && free->parts==right->parts);
+					// 正形底面移动保持约束，竖直拖动不移动顶面高度。
+					for(const auto& h:BuildEditHandles(*right))if(h.id==106)
+					{
+						const auto moved=EditShape(*right,h.id,h.position,{h.position.x+4,h.position.y+8},3);
+						SHAPE_CHECK(moved);
+						if(moved)
+						{
+							const auto& beforeSolid=std::get<SolidConstruction>(right->construction->parameters);
+							const auto& afterSolid=std::get<SolidConstruction>(moved->construction->parameters);
+							SHAPE_CHECK(afterSolid.offset==Vec2{} && moved->construction->tool.rightSolid);
+							SHAPE_CHECK(std::abs((moved->construction->start.y+afterSolid.height)-(right->construction->start.y+beforeSolid.height))<.001f);
+						}
+					}
+				}
+			}
+		}
+	}
+	{
+		ToolSpec tool{PresetKind::Triangle,CreationMode::Drag};
+		auto triangle=MakePresetShape(tool,{0,0},{100,80},{},Id(20));
+		if(triangle)
+		{
+			auto iso=SetPlanarConstraint(*triangle,PlanarConstraint::Isosceles,2);SHAPE_CHECK(iso);
+			for(uint32_t step=1;iso && step<=3;++step)
+			{
+				const auto old=iso->construction->tool.constraintVertex;
+				iso=SetPlanarConstraint(*iso,PlanarConstraint::Isosceles,2+step);
+				SHAPE_CHECK(iso && iso->construction->tool.constraintVertex==(old+1)%3);
+			}
+		}
+	}
+
+	// 在强剪切投影下，真实圆弧中点到细分弦中点的偏差仍不超过 .25px。
+	{
+		auto c=MakeSolidConstruction({PresetKind::Cylinder,CreationMode::MultiStage},{0,0},{1000,0},-1500);
+		auto& solid=std::get<SolidConstruction>(c.parameters);solid.projectionScale=1;solid.projectionAngle=.2f;solid.baseRotation=.7f;
+		const auto object=MakeConstructedShape(c,{},Id(21));SHAPE_CHECK(object);
+		if(object)
+		{
+			const double kx=std::cos(.2),ky=std::sin(.2);
+			for(const auto& part:object->parts)if(part.kind==Kind::Polyline)
+			{
+				const auto& v=part.geometry.vertices;
+				// 圆柱上下环共享轮廓，只需从首点反投影的长度选择高度。
+				auto unproject=[&](Vec2 p,double h){const double y=(p.y-h)/ky;return Vec2{static_cast<float>(p.x-kx*y),static_cast<float>(y)};};
+				const auto lower=unproject(v.front(),0),upper=unproject(v.front(),-1500);
+				const double h=std::abs(std::hypot(lower.x,lower.y)-1000)<std::abs(std::hypot(upper.x,upper.y)-1000)?0:-1500;
+				for(size_t i=1;i<v.size();++i)
+				{
+					const auto a=unproject(v[i-1],h),b=unproject(v[i],h);
+					const double x=(a.x+b.x)*.5,y=(a.y+b.y)*.5,scale=1000/std::hypot(x,y);
+					const double actualX=(v[i-1].x+v[i].x)*.5,actualY=(v[i-1].y+v[i].y)*.5;
+					SHAPE_CHECK(std::hypot((x+kx*y)*scale-actualX,ky*y*scale+h-actualY)<=.251);
+				}
+			}
 		}
 	}
 	RunAuxiliaryTests(failures);

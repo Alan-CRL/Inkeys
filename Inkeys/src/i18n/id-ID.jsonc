@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "Bebas",
         "ConstraintIsoscelesLabel": "Sama kaki",
         "ConstraintEquilateralLabel": "Sama sisi",
+        "RightPrismLabel": "Prisma tegak",
+        "RightPyramidLabel": "Limas tegak",
         "StraightLineLabel": "Garis",
         "ArrowLabel": "Panah",
         "RectangleLabel": "Psg. pjg.",

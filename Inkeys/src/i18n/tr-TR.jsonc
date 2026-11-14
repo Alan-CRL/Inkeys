@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "Serbest",
         "ConstraintIsoscelesLabel": "İkizkenar",
         "ConstraintEquilateralLabel": "Eşkenar",
+        "RightPrismLabel": "Dik prizma",
+        "RightPyramidLabel": "Dik piramit",
         "StraightLineLabel": "Çizgi",
         "ArrowLabel": "Ok",
         "RectangleLabel": "Dikdört.",

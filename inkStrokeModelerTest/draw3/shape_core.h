@@ -50,6 +50,8 @@ namespace draw3::shapes
 		uint32_t sides = 3;
 		float rectangleCornerRadius = 4; // Bridge 使用 DIP；构造参数和工厂使用局部画布像素。
 		PlanarConstraint constraint = PlanarConstraint::Free;
+		uint32_t constraintVertex = 0; // 三角形约束顶角身份，不随屏幕旋转改变。
+		bool rightSolid = false;
 		bool operator==(const ToolSpec&) const = default;
 	};
 	struct VertexConstruction { std::vector<Vec2> vertices; bool operator==(const VertexConstruction&) const = default; };
@@ -61,6 +63,10 @@ namespace draw3::shapes
 		Vec2 depth; // 长方体/正方体的投影向量，不冒充真实边长。
 		float height = 0; // 圆柱/圆锥/棱柱/棱锥的局部竖直高度。
 		float baseProjection = kDefaultSolidBaseProjection; // 棱柱/棱锥未旋转底面的局部 y 投影比。
+		bool oblique = false; // 旧对象保留原投影；新对象显式使用斜二测。
+		Vec2 baseSize;
+		float baseRotation = 0, projectionAngle = .7853981634f, projectionScale = .5f;
+		Vec2 offset; // 顶面相对底面的模型空间偏移。
 		bool operator==(const SolidConstruction&) const = default;
 	};
 	using ConstructionParameters = std::variant<std::monostate, VertexConstruction, ArcConstruction, SolidConstruction>;
@@ -122,6 +128,7 @@ namespace draw3::shapes
 		float maxErrorPixels = 0.25f;
 		bool operator==(const BuildOptions&) const = default;
 	};
+	float ClosedDashCoordinate(float distance, float perimeter, const ShapeStyle&) noexcept;
 	struct Path
 	{
 		std::vector<Vec2> points;

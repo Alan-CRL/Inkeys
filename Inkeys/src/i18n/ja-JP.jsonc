@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "自由",
         "ConstraintIsoscelesLabel": "二等辺",
         "ConstraintEquilateralLabel": "正三角形",
+        "RightPrismLabel": "直角柱",
+        "RightPyramidLabel": "直角錐",
         "StraightLineLabel": "直線",
         "ArrowLabel": "矢印",
         "RectangleLabel": "長方形",

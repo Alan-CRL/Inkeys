@@ -33,7 +33,7 @@ namespace Inkeys::Drawing::Draw3
 	enum class ShapeUiActionKind : std::uint8_t
 	{
 		BeginEdit, PreviewEdit, CommitEdit, CancelEdit, CloseEditor,
-		SetStyle, SetSides, SetConstraint, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward
+		SetStyle, SetSides, SetConstraint, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward, SetRightSolid
 	};
 	struct ShapeUiAction
 	{
@@ -44,6 +44,7 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<float> angleDelta; // 手势累计角：latest-wins覆盖中间点时仍保留轨迹。
 		draw3::shapes::ShapeStyle style;
 		std::uint32_t sides = 3;
+		bool rightSolid = false;
 		draw3::shapes::PlanarConstraint constraint = draw3::shapes::PlanarConstraint::Free;
 		std::int64_t enqueueMicroseconds = 0; // 仅诊断：Bridge入队时刻，用于计算入队到上屏延迟。
 	};
@@ -58,6 +59,8 @@ namespace Inkeys::Drawing::Draw3
 			return draw3::shapes::SetRegularSides(before,action.sides,revision);
 		if (action.kind == ShapeUiActionKind::SetConstraint)
 			return draw3::shapes::SetPlanarConstraint(before,action.constraint,revision);
+		if (action.kind == ShapeUiActionKind::SetRightSolid)
+			return draw3::shapes::SetRightSolid(before,action.rightSolid,revision);
 		return std::nullopt;
 	}
 

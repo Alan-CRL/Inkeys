@@ -111,3 +111,17 @@ MSBuild inkStrokeModelerTest.sln /t:inkStrokeModelerTestTests /p:Configuration=D
 A–C 实现和 D/E 自动验证已完成；两个 ARM64 solution 构建与全部计划回归通过。共享 fit 的浮点贴边问题、控件 ID/测宽缓存遗漏、完成沿消费和倾斜梯形关闭约束均已补回归，详见 `research/continuation-verification-2026-11-13.md`。
 
 用户已授权提交本轮改动；不结束或归档父任务、不 push，实机验收清单保留待用户确认。
+
+# 2026-11-14 第二轮执行记录
+
+用户已明确批准实施。不新建任务、不归档、不commit/push。
+1. 共享构造与v6、三角形、斜二测和约束；同步旧格式兼容。
+2. 构造中点编辑与预览连续性；产品动作与状态。
+3. 编辑条/控件/面板/本地化及虚线分布。
+4. 完整solution Debug ARM64构建及现有无窗口专项；记录实际退出码、未验证范围。
+5. Trellis check与spec补充，BOM/换行及最小diff审计。
+
+
+## 2026-11-14 第二轮交付
+
+已实现批准的15项第二轮需求，两套ARM64 solution、核心/运行期/renderer/UInk/白板/自动保存/Headless和两项完整UI离屏回归通过。具体统计及环境问题见 research/round2-verification.md。验证后的程序已回填 Build/ARM64/Debug/Inkeys.exe，未commit/push、未GUI实测、任务继续保留in_progress等待实机验收。

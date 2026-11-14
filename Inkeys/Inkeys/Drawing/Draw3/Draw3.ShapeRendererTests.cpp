@@ -86,6 +86,34 @@ namespace Inkeys::Drawing::Draw3
 			const auto alpha = [](const std::vector<unsigned char>& pixels, int x, int y)
 				{ return pixels[(y * 128 + x) * 4 + 3]; };
 			std::vector<unsigned char> pixels, reference;
+			// 连续半径序列验证四侧相位一致，且CPU命中与生产GPU虚线覆盖相符。
+			for (const auto pattern : {LinePattern::Dashed,LinePattern::Dotted,LinePattern::DashDot})
+				for (float radius : {19.f,27.f,35.f,43.f})
+				{
+					auto circle = object(); circle.kind = Kind::Circle; circle.geometry.start = {63.5f,63.5f};
+					circle.geometry.radius = radius; circle.style.linePattern = pattern; circle.style.width = 3;
+					GeometryResult geometry; RenderData data;
+					if (!check(BuildGeometry(circle,geometry) && BuildRenderData(circle,data) && render(circle,pixels),"closed dash sequence renders")) continue;
+					const auto& path = geometry.parts.front().paths.front(); const float length = path.lengths.back();
+					bool symmetric = true, gpuMatches = true, tagged = true;
+					for (const auto& primitive : data.batches.front().primitives)
+						tagged &= (primitive.flags & 32) && primitive.padding[0] == length;
+					for (unsigned sector=0; sector<4; ++sector)
+						for (float offset : {-5.f,-2.f,0.f,2.f,5.f})
+							symmetric &= std::abs(ClosedDashCoordinate(sector*length/4+offset,length,circle.style)-
+								ClosedDashCoordinate(offset,length,circle.style)) < .0001f;
+					for (size_t i=1; i<path.points.size(); ++i)
+					{
+						const Vec2 point{(path.points[i-1].x+path.points[i].x)*.5f,(path.points[i-1].y+path.points[i].y)*.5f};
+						const Vec2 pixel{std::floor(point.x)+.5f,std::floor(point.y)+.5f};
+						const auto coverage = alpha(pixels,static_cast<int>(pixel.x),static_cast<int>(pixel.y));
+						const bool hit = HitTest(circle,geometry,pixel).kind == HitKind::Stroke;
+						if (coverage > 230) gpuMatches &= hit;
+						if (coverage < 10) gpuMatches &= !hit;
+					}
+					check(tagged && symmetric,"closed dash fixed-size symmetric phase");
+					check(gpuMatches,"closed dash GPU and CPU agree away from antialias edge");
+				}
 			const std::array<const char*, 7> legacyNames = { "legacy solid line", "legacy dashed line",
 				"legacy outline rectangle", "legacy filled rectangle", "ordinary pen", "highlighter", "Laser" };
 			std::array<std::vector<unsigned char>, 7> legacyBaselines;

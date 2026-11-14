@@ -166,6 +166,8 @@
         "ConstraintFreeLabel": "Dowolny",
         "ConstraintIsoscelesLabel": "Równoramienny",
         "ConstraintEquilateralLabel": "Równoboczny",
+        "RightPrismLabel": "Graniastosłup prosty",
+        "RightPyramidLabel": "Ostrosłup prosty",
         "StraightLineLabel": "Linia",
         "ArrowLabel": "Strzałka",
         "RectangleLabel": "Prostokąt",

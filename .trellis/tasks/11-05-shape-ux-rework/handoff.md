@@ -57,3 +57,8 @@ C1–C14 代码及自动验证收尾完成，当前分支仍为 feature/shape，
 - `--draw3-hidden-test` HEAD 上约 50 项既有失败，未处理。
 - 取色器拖动的对象实时预览（需要 Draw3 样式预览事务）。
 - `CanvasFocusEndReason::PresentationAction/WindowHidden` 未使用；L1 只清脏区的性能优化未做。
+
+
+## 2026-11-14 第二轮交付
+
+已实现批准的15项第二轮需求，两套ARM64 solution、核心/运行期/renderer/UInk/白板/自动保存/Headless和两项完整UI离屏回归通过。具体统计及环境问题见 research/round2-verification.md。验证后的程序已回填 Build/ARM64/Debug/Inkeys.exe，未commit/push、未GUI实测、任务继续保留in_progress等待实机验收。
