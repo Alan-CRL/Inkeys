@@ -11,8 +11,9 @@
 ## 背景与已确认事实
 
 - 初始用户报告 POWERPNT.exe 残留且认为 Inkeys2 1019a 无此问题；最新同机复测 Inkeys2 也延迟，完全不启动 Inkeys 仍延迟，并确认进程驻留时新文稿可打开。最初的回归归属不再成立，需区分后台驻留与联动阻塞。
-- 当前源码 `PptCOM/PptCOM.cs:501` 的 FullCleanup 最终路径只做单次 Release；`:525–545` 不再保留原 final FinalRelease 和 GC 收尾。
-- `0eb1c7c5`（2026-10-18）删除了上述两项策略；`20261019a` 属另一分支，保留它们。后续清理计时提交没有恢复这两项。
+- 调查前基线 `e73673f7b1c91fd13cc5a4a946960d7b9934c646` 的 `PptCOM/PptCOM.cs:501` FullCleanup 只逐笔单次 Release，未保留原 final FinalRelease 或 GC 三步收尾；这是恢复 GC 前的历史状态。
+- 当前回退版本的 `FullCleanup` 位于 `PptCOM/PptCOM.cs:523`，`:570–572` 已恢复 `GC.Collect()` → `GC.WaitForPendingFinalizers()` → `GC.Collect()`；没有恢复 FinalRelease，逐笔 Release 策略不变。
+- `0eb1c7c5`（2026-10-18）删除了上述两项策略；`20261019a` 属另一分支，保留它们。调查前的后续清理计时提交尚未恢复它们；本轮仅恢复 GC 收尾。
 - 已有最后文稿关闭检测和临时对象 finally 释放；未确认具体现场仍残留哪一笔引用。真实 Office 退出不能由已有 fake/in-proc fixture 通过推定。
 - 用户后续明确确认恢复 Collect → WaitForPendingFinalizers → Collect；其他对象审计与现有原生夹具 43 项通过结果见 research/ownership-audit.md。
 - 历史证据、候选原因和旧验证缺口记录在 research/release-regression.md。
@@ -79,3 +80,9 @@ COM ABI 改造、全量包装器重写、无关线程/渲染改动、依赖/工�
 ## 收尾与归档授权
 
 用户明确要求归档此次调查/回退任务，保存全部发现、未来多线程动态绑定方向及修改PptCOM后必须手动同步DLL的规范；完成commit并push、保持工作区干净。本次收尾范围不包括架构实施，不将仍存在的联动阻塞或结束放映未响应标为已修复。最终复盘见research/closure-retrospective.md。
+
+## PR #270 审阅跟进
+
+- [历史文案建议](https://github.com/Alan-CRL/Inkeys/pull/270#discussion_r4571375143)成立：已明确区分调查前基线与当前恢复GC的回退版本，并保留未恢复FinalRelease的事实。
+- [日志归因建议](https://github.com/Alan-CRL/Inkeys/pull/270#discussion_r4571375147)成立：Advise失败只在实际point.Advise异常边界记录，FindConnectionPoint或缺少容器不再被重复误报为Advise失败。没有改变清理、绑定或回退策略。
+- 复用既有测试：托管与47项原生COM夹具通过，完整Debug|ARM64 solution通过；DLL已手动同步，EXE内嵌哈希一致，TLB未变化。此跟进不涉及旧清理阻塞或多线程架构修复，未GUI测试。

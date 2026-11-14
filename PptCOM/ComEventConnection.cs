@@ -111,16 +111,17 @@ namespace PptCOM
                     () => PptComDiagnostics.Release(ownedPoint, "event.point"), notify);
                 int cookie;
                 connection.Trace("cp.advise.begin");
-                point.Advise(connection.sink, out cookie);
+                // 只给实际执行的订阅归因；连接点查找失败由前面的边界记录。
+                try { point.Advise(connection.sink, out cookie); }
+                catch (Exception error) { PptComDiagnostics.CallFailed(0, point, "Advise", error); throw; }
                 connection.cookie = cookie;
                 PptComDiagnostics.Transfer(ownedPoint, "event.connection");
                 connection.Trace("cp.advise.end");
                 point = null; // FindConnectionPoint 的唯一取得转移给 connection，cast/闭包只借用。
                 return connection;
             }
-            catch (Exception error)
+            catch
             {
-                PptComDiagnostics.CallFailed(0, point, "Advise", error);
                 if (connection != null) connection.Deactivate();
                 throw;
             }
