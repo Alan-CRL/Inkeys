@@ -378,13 +378,18 @@ namespace Inkeys::Shutdown
 				&& trellis != INVALID_FILE_ATTRIBUTES && (trellis & FILE_ATTRIBUTE_DIRECTORY);
 		}
 
+		std::wstring RestartTestEventName(const std::wstring& directory, const wchar_t* suffix)
+		{
+			return L"Local\\" + Launch::PresenceName(directory) + suffix;
+		}
+
 		[[nodiscard]] ArmResult ArmCore(Intent intent, DWORD deadlineMilliseconds,
 			const wchar_t* testDirectory, bool invalidPidForTest = false,
 			bool simulateCreateFailureForTest = false,
 			bool simulateEarlyExitForTest = false,
 			bool simulateLateDeathForTest = false,
 			bool simulateFallbackCreateFailureForTest = false,
-			DWORD simulateFailureDelayForTest = 0) noexcept
+			DWORD simulateFailureDelayForTest = 0, bool waitForHideTest = false) noexcept
 		{
 			int expected = 0;
 			if (!g_armState.compare_exchange_strong(expected, 1, std::memory_order_acq_rel))
@@ -399,10 +404,10 @@ namespace Inkeys::Shutdown
 			{
 				if (deadlineMilliseconds == 0 || deadlineMilliseconds > 60000
 					|| (intent != Intent::Close && intent != Intent::Restart
-						&& intent != Intent::CrashRestart)
+						&& intent != Intent::UpdateRestart && intent != Intent::CrashRestart)
 					|| ((invalidPidForTest || simulateCreateFailureForTest
 						|| simulateEarlyExitForTest || simulateLateDeathForTest
-						|| simulateFallbackCreateFailureForTest || simulateFailureDelayForTest) && !testDirectory)
+						|| simulateFallbackCreateFailureForTest || simulateFailureDelayForTest || waitForHideTest) && !testDirectory)
 					|| simulateFailureDelayForTest > 17000
 					|| (simulateFailureDelayForTest && (!simulateFallbackCreateFailureForTest
 						|| !simulateCreateFailureForTest))
@@ -462,11 +467,12 @@ namespace Inkeys::Shutdown
 												+ L" " + std::to_wstring(reinterpret_cast<uintptr_t>(childAcknowledge.value))
 												+ L" " + std::to_wstring(deadline)
 												+ (intent == Intent::CrashRestart ? L" X"
-													: (intent == Intent::Restart ? L" R" : L" C"));
+													: (intent == Intent::Restart ? L" R" : (intent == Intent::UpdateRestart ? L" U" : L" C")));
 											if (relayLease)
 												arguments += L" --instance-lease=" + std::to_wstring(reinterpret_cast<uintptr_t>(childLease.value))
 													+ L" " + Quote(Launch::logicalRoot);
 											if (testDirectory) arguments += L" " + Quote(testDirectory);
+											if (waitForHideTest) arguments += L" --test-windows-hidden";
 											if (simulateEarlyExitForTest) arguments += L" --test-ack-exit";
 											if (simulateLateDeathForTest) arguments += L" --test-delayed-parent-exit";
 											PROCESS_INFORMATION process{};
@@ -518,9 +524,35 @@ namespace Inkeys::Shutdown
 			return fallbackArmed ? ArmResult::FallbackArmed : ArmResult::Failed;
 		}
 
+		struct VisibleParentWindows
+		{
+			DWORD processId;
+			bool found = false;
+		};
+
+		BOOL CALLBACK FindVisibleParentWindow(HWND window, LPARAM parameter)
+		{
+			auto& search = *reinterpret_cast<VisibleParentWindows*>(parameter);
+			DWORD processId = 0;
+			if (GetWindowThreadProcessId(window, &processId) && processId == search.processId
+				&& IsWindowVisible(window))
+			{
+				search.found = true;
+				return FALSE;
+			}
+			return TRUE;
+		}
+
+		[[nodiscard]] bool ParentWindowsHidden(DWORD processId) noexcept
+		{
+			// 包括启动占位及 owned popup；枚举失败不能误当成所有界面已隐藏。
+			VisibleParentWindows search{ processId };
+			return EnumWindows(FindVisibleParentWindow, reinterpret_cast<LPARAM>(&search)) && !search.found;
+		}
+
 		[[nodiscard]] int RunSupervisorChild(int argc, wchar_t* const argv[])
 		{
-			if (argc != 7 && argc != 8 && argc != 9 && argc != 10) return 21;
+			if (argc != 7 && argc != 8 && argc != 9 && argc != 10 && argc != 11) return 21;
 			unsigned long long pidValue = 0, parentValue = 0, acknowledgeValue = 0, deadlineValue = 0;
 			if (!ParseUnsigned(argv[2], pidValue) || pidValue == 0 || pidValue > MAXDWORD
 				|| !ParseUnsigned(argv[3], parentValue) || parentValue == 0
@@ -529,11 +561,13 @@ namespace Inkeys::Shutdown
 				|| acknowledgeValue > std::numeric_limits<uintptr_t>::max()
 				|| !ParseUnsigned(argv[5], deadlineValue) || deadlineValue == 0
 				|| (wcscmp(argv[6], L"C") != 0 && wcscmp(argv[6], L"R") != 0
-					&& wcscmp(argv[6], L"X") != 0)) return 22;
+					&& wcscmp(argv[6], L"U") != 0 && wcscmp(argv[6], L"X") != 0)) return 22;
 			constexpr wchar_t leasePrefix[] = L"--instance-lease=";
 			const bool relayLease = argc >= 9 && wcsncmp(argv[7], leasePrefix, ARRAYSIZE(leasePrefix) - 1) == 0;
-			const std::wstring testDirectory = relayLease ? (argc == 10 ? argv[9] : L"") : (argc >= 8 ? argv[7] : L"");
-			if (argc == 10 && !relayLease) return 23;
+			const std::wstring testDirectory = relayLease ? (argc >= 10 ? argv[9] : L"") : (argc >= 8 ? argv[7] : L"");
+			if (argc >= 10 && !relayLease) return 23;
+			const bool waitForHideTest = argc == 11;
+			if (waitForHideTest && (wcscmp(argv[10], L"--test-windows-hidden") != 0 || wcscmp(argv[6], L"R") != 0)) return 23;
 			if (!testDirectory.empty() && !IsTestDirectory(testDirectory)) return 23;
 			if (argc == 9 && !relayLease && (testDirectory.empty()
 				|| (wcscmp(argv[8], L"--test-ack-exit") != 0
@@ -566,13 +600,75 @@ namespace Inkeys::Shutdown
 					|| !Launch::IsPresence(lease, Launch::PresenceName(root))) return 24;
 				Launch::presence.Reset(lease); Launch::logicalRoot = root;
 			}
+			Handle hiddenForTest;
+			if (waitForHideTest)
+			{
+				// 仅私有 copied EXE 可延迟“已隐藏”回执，正式路径始终检查真实 HWND。
+				if (!Launch::Equal(ImageDirectory(ownImage), testDirectory)) return 24;
+				hiddenForTest.value = OpenEventW(SYNCHRONIZE, FALSE,
+					RestartTestEventName(testDirectory, L".TestWindowsHidden").c_str());
+				if (!hiddenForTest.Valid()) return 24;
+			}
 			if (!SetEvent(acknowledge)) return 26;
 			if (argc == 9 && !relayLease && !delayedParentExitTest)
 				{ Sleep(500); return 31; } // 仅测试：握手后 supervisor 自己提前退出。
-			const ULONGLONG waitStart = GetTickCount64();
-			const DWORD waitMilliseconds = deadlineValue <= waitStart ? 0 :
-				static_cast<DWORD>(deadlineValue - waitStart);
-			DWORD wait = WaitForSingleObject(parent, waitMilliseconds);
+			const bool ordinaryRestart = wcscmp(argv[6], L"R") == 0;
+			// 带租约时 v2 提前交接要求本进程物理目录等于逻辑根（同 Handoff::Publish）；否则改走旧进程退出后的 v1。
+			const bool earlyHandoff = ordinaryRestart && (!relayLease
+				|| Launch::PresenceName(Launch::Directory(Launch::Image())) == Launch::PresenceName(Launch::logicalRoot));
+			bool launchAttempted = false;
+			int restartResult = 0;
+			const auto launchReplacement = [&](bool beforeParentExit) -> int
+			{
+				const bool crashRestart = wcscmp(argv[6], L"X") == 0;
+				std::wstring arguments = crashRestart ? L"-CrashTry" : L"-Restart";
+				if (!testDirectory.empty())
+				{
+					arguments = std::wstring(kTestRestartedMode) + L" " + Quote(testDirectory)
+						+ L" " + std::to_wstring(static_cast<DWORD>(pidValue));
+					if (crashRestart) arguments += L" -CrashTry";
+				}
+				// 只改变普通重启的接任门；更新/提权/崩溃仍使用原 v1 父退出合同。
+				Launch::Handoff handoff(GetCurrentProcess(), beforeParentExit
+					? Launch::HandoffMode::RestartHidden : Launch::HandoffMode::ParentExit);
+				if (relayLease && !handoff.Valid()) return 30;
+				if (relayLease) arguments += L" " + handoff.Arguments();
+				PROCESS_INFORMATION restarted{};
+				if (!StartSameExecutable(ownImage, arguments, false, relayLease ? CREATE_SUSPENDED : 0, nullptr, restarted)) return 30;
+				Handle restartedProcess(restarted.hProcess), restartedThread(restarted.hThread);
+				const ULONGLONG handshakeStart = GetTickCount64();
+				const DWORD handshakeBudget = !beforeParentExit ? 10000u : deadlineValue <= handshakeStart
+					? 0u : static_cast<DWORD>((std::min)(deadlineValue - handshakeStart, 10000ull));
+				if (relayLease && (!handoff.Publish(restartedProcess.value)
+					|| ResumeThread(restartedThread.value) == static_cast<DWORD>(-1)
+					|| !handoff.Wait(restartedProcess.value, handshakeBudget)))
+				{
+					TerminateProcess(restartedProcess.value, ERROR_CANCELLED);
+					// 提前启动失败也先守住旧进程原截止，不能为了等 child 死亡再额外阻塞5秒。
+					if (!beforeParentExit) (void)WaitForSingleObject(restartedProcess.value, kDeathWaitMilliseconds);
+					return 30;
+				}
+				return 0;
+			};
+			DWORD wait = WAIT_TIMEOUT;
+			for (;;)
+			{
+				wait = WaitForSingleObject(parent, 0);
+				if (wait != WAIT_TIMEOUT) break;
+				const ULONGLONG current = GetTickCount64();
+				if (current >= deadlineValue) break;
+				if (earlyHandoff && !launchAttempted && ParentWindowsHidden(static_cast<DWORD>(pidValue))
+					&& (!hiddenForTest.Valid() || WaitForSingleObject(hiddenForTest.value, 0) == WAIT_OBJECT_0))
+				{
+					launchAttempted = true;
+					restartResult = launchReplacement(true);
+					continue;
+				}
+				// 轮询的对象始终是已握手的精确父句柄；隐藏后立即交接，后台清理仍受原截止监督。
+				const DWORD remaining = static_cast<DWORD>(deadlineValue - current);
+				wait = WaitForSingleObject(parent, earlyHandoff && !launchAttempted ? (std::min<DWORD>)(remaining, 20) : remaining);
+				if (wait != WAIT_TIMEOUT || GetTickCount64() >= deadlineValue) break;
+			}
 			if (wait == WAIT_TIMEOUT)
 			{
 				if (WaitForSingleObject(parent, 0) != WAIT_OBJECT_0)
@@ -593,31 +689,8 @@ namespace Inkeys::Shutdown
 			}
 			else if (wait != WAIT_OBJECT_0) return 29;
 			if (wcscmp(argv[6], L"C") == 0) return 0;
-			// 新实例在旧进程真正终止后由此唯一 launcher 创建，不继承任何旧句柄。
-			const bool crashRestart = wcscmp(argv[6], L"X") == 0;
-			std::wstring arguments = crashRestart ? L"-CrashTry" : L"-Restart";
-			if (!testDirectory.empty())
-			{
-				arguments = std::wstring(kTestRestartedMode) + L" " + Quote(testDirectory)
-					+ L" " + std::to_wstring(static_cast<DWORD>(pidValue));
-				if (crashRestart) arguments += L" -CrashTry";
-			}
-			// 合法替换接力已有占位；即使关闭多开后还有别的实例，也不会误拦这一份重启。
-			Launch::Handoff handoff;
-			if (relayLease && !handoff.Valid()) return 30;
-			if (relayLease) arguments += L" " + handoff.Arguments();
-			PROCESS_INFORMATION restarted{};
-			if (!StartSameExecutable(ownImage, arguments, false, relayLease ? CREATE_SUSPENDED : 0, nullptr, restarted)) return 30;
-			Handle restartedProcess(restarted.hProcess), restartedThread(restarted.hThread);
-			if (relayLease && (!handoff.Publish(restartedProcess.value)
-				|| ResumeThread(restartedThread.value) == static_cast<DWORD>(-1)
-				|| !handoff.Wait(restartedProcess.value)))
-			{
-				TerminateProcess(restartedProcess.value, ERROR_CANCELLED);
-				(void)WaitForSingleObject(restartedProcess.value, kDeathWaitMilliseconds);
-				return 30;
-			}
-			return 0;
+			// 提前交接成功后不在旧进程死亡时再拉起第二份；失败也只尝试一次。
+			return launchAttempted ? restartResult : launchReplacement(false);
 		}
 
 		[[nodiscard]] std::wstring MarkerPath(const std::wstring& directory,
@@ -676,7 +749,9 @@ namespace Inkeys::Shutdown
 		{
 			if (argc != 4 || !IsTestDirectory(argv[3])) return 41;
 			const wchar_t* scenario = argv[2];
-			if (EqualNoCase(scenario, L"restart-lease"))
+			const bool earlyRestart = EqualNoCase(scenario, L"restart-hidden-natural")
+				|| EqualNoCase(scenario, L"restart-hidden-forced") || EqualNoCase(scenario, L"restart-hidden-handshake");
+			if (EqualNoCase(scenario, L"restart-lease") || earlyRestart)
 			{
 				std::wstring image;
 				if (!CurrentImagePath(image) || !IsTestDirectory(ImageDirectory(image))
@@ -707,7 +782,9 @@ namespace Inkeys::Shutdown
 			bool duplicate = false;
 			if (EqualNoCase(scenario, L"close-natural")) natural = true;
 			else if (EqualNoCase(scenario, L"restart-natural") || EqualNoCase(scenario, L"restart-lease")) { intent = Intent::Restart; natural = true; }
-			else if (EqualNoCase(scenario, L"crash-natural")) { intent = Intent::CrashRestart; natural = true; }
+			else if (earlyRestart) { intent = Intent::Restart; deadline = 3000; natural = EqualNoCase(scenario, L"restart-hidden-natural"); }
+			else if (EqualNoCase(scenario, L"update-held")) { intent = Intent::UpdateRestart; natural = true; }
+			else if ((EqualNoCase(scenario, L"crash-natural") || EqualNoCase(scenario, L"crash-held"))) { intent = Intent::CrashRestart; natural = true; }
 			else if (EqualNoCase(scenario, L"close-hung15")) {}
 			else if (EqualNoCase(scenario, L"restart-hung-short")) { intent = Intent::Restart; deadline = 3000; }
 			else if (EqualNoCase(scenario, L"crash-hung-short")) { intent = Intent::CrashRestart; deadline = 3000; }
@@ -717,7 +794,7 @@ namespace Inkeys::Shutdown
 			else if (EqualNoCase(scenario, L"create-fail-close")) { deadline = 3000; }
 			else if (EqualNoCase(scenario, L"create-fail-restart")) { intent = Intent::Restart; deadline = 3000; }
 			else if (EqualNoCase(scenario, L"helper-early-exit")) { intent = Intent::Restart; deadline = 3000; }
-			else if (EqualNoCase(scenario, L"late-death-restart")) { intent = Intent::Restart; deadline = 3000; }
+			else if (EqualNoCase(scenario, L"late-death-restart")) { intent = Intent::UpdateRestart; deadline = 3000; }
 			else return 42;
 			const bool badPid = EqualNoCase(scenario, L"bad-pid")
 				|| EqualNoCase(scenario, L"bad-pid-hung");
@@ -726,7 +803,7 @@ namespace Inkeys::Shutdown
 			const bool earlyExit = EqualNoCase(scenario, L"helper-early-exit");
 			const bool lateDeath = EqualNoCase(scenario, L"late-death-restart");
 			const ArmResult first = ArmCore(intent, deadline, argv[3], badPid,
-				createFailure, earlyExit, lateDeath);
+				createFailure, earlyExit, lateDeath, earlyRestart, 0, earlyRestart);
 			const ArmResult second = duplicate ? ArmCore(Intent::Restart, deadline, argv[3]) : ArmResult::Armed;
 			if (!WriteMarker(MarkerPath(argv[3], L"parent", GetCurrentProcessId()),
 				static_cast<DWORD>(first), static_cast<DWORD>(second))) return 43;
@@ -745,7 +822,14 @@ namespace Inkeys::Shutdown
 			}
 			if (first != ArmResult::Armed || second != (duplicate ? ArmResult::AlreadyArmed : ArmResult::Armed))
 				return 44;
-			if (natural) { Sleep(100); return 77; }
+			if (earlyRestart && natural)
+			{
+				Handle release(OpenEventW(SYNCHRONIZE, FALSE,
+					RestartTestEventName(argv[3], L".TestParentRelease").c_str()));
+				if (!release.Valid() || WaitForSingleObject(release.value, INFINITE) != WAIT_OBJECT_0) return 48;
+				return 77;
+			}
+			if (natural) { Sleep(EqualNoCase(scenario, L"update-held") || EqualNoCase(scenario, L"crash-held") ? 600 : 100); return 77; }
 			Sleep(INFINITE); // 只在本次测试刚创建的进程内等待，交给精确 HANDLE 超时处理。
 			return 45;
 		}
@@ -760,14 +844,22 @@ namespace Inkeys::Shutdown
 			const bool handoff = argc > 4 && wcsncmp(argv[argc-1], Launch::HandoffPrefix,
 				ARRAYSIZE(Launch::HandoffPrefix)-1) == 0;
 			if (!handoff && argc == 6) return 51;
+			Handle stall(OpenEventW(SYNCHRONIZE, FALSE, RestartTestEventName(argv[2], L".TestStallHandoff").c_str()));
+			if (stall.Valid())
+			{
+				if (!WriteMarker(MarkerPath(argv[2], L"handoff", static_cast<DWORD>(oldPid)), GetCurrentProcessId(), 0)) return 55;
+				(void)WaitForSingleObject(stall.value, INFINITE); // 只在 copied/exact-parent 无窗口截止测试内阻塞。
+			}
 			if (handoff && Launch::Adopt() != 1) return 54;
 			if (handoff) --argc;
 			// 测试子进程把 helper 真正选出的启动参数写入 marker。
 			const int argumentKind = argc == 4 ? 1
 				: (wcscmp(argv[4], L"-CrashTry") == 0 ? 2 : 0);
 			if (!argumentKind) return 53;
-			return WriteMarker(MarkerPath(argv[2], L"restart", GetCurrentProcessId()),
-				GetCurrentProcessId(), static_cast<DWORD>(oldPid), argumentKind) ? 0 : 52;
+			if (!WriteMarker(MarkerPath(argv[2], L"restart", GetCurrentProcessId()),
+				GetCurrentProcessId(), static_cast<DWORD>(oldPid), argumentKind)) return 52;
+			Handle release(OpenEventW(SYNCHRONIZE, FALSE, RestartTestEventName(argv[2], L".TestRestartRelease").c_str()));
+			return !release.Valid() || WaitForSingleObject(release.value, 15000) == WAIT_OBJECT_0 ? 0 : 56;
 		}
 
 		void PrintTestResult(const char* name, bool passed) noexcept
@@ -895,6 +987,13 @@ namespace Inkeys::Shutdown
 			Handle otherInstance(leaseCase ? OpenMutexW(SYNCHRONIZE, FALSE,
 				(L"Local\\" + Launch::PresenceName(directory)).c_str()) : nullptr);
 			if (leaseCase && !otherInstance.Valid()) passed = false;
+			if (EqualNoCase(scenario, L"update-held") || EqualNoCase(scenario, L"crash-held"))
+			{
+				Sleep(150);
+				bool identity = true;
+				passed = WaitForSingleObject(child.value, 0) == WAIT_TIMEOUT
+					&& CountRestartMarkers(directory, process.dwProcessId, EqualNoCase(scenario, L"crash-held") ? 2 : 1, identity) == 0 && passed;
+			}
 			const ULONGLONG armedObserved = GetTickCount64();
 			const DWORD wait = WaitForSingleObject(child.value,
 				deadline + (EqualNoCase(scenario, L"late-death-restart") ? 10000 : 5000));
@@ -918,7 +1017,7 @@ namespace Inkeys::Shutdown
 			bool identityCorrect = true;
 			DWORD restartCount = 0;
 			const DWORD expectedArgumentKind = EqualNoCase(scenario, L"crash-natural")
-				|| EqualNoCase(scenario, L"crash-hung-short") ? 2 : 1;
+				|| EqualNoCase(scenario, L"crash-hung-short") || EqualNoCase(scenario, L"crash-held") ? 2 : 1;
 			if (restart)
 			{
 				const ULONGLONG restartWaitStart = GetTickCount64();
@@ -943,6 +1042,84 @@ namespace Inkeys::Shutdown
 			PrintCaseObservation(process.dwProcessId, exitCode, elapsed, restartCount);
 			if (leaseCase) DeleteFileW(copiedImage.c_str());
 			RemoveTestDirectory(directory, process.dwProcessId);
+			return passed;
+		}
+
+		[[nodiscard]] bool RunEarlyRestartCase(const std::wstring& image, const wchar_t* scenario)
+		{
+			std::wstring directory;
+			if (!MakeTestDirectory(scenario, directory)) return false;
+			const std::wstring copiedImage = directory + L"\\Inkeys.exe";
+			if (!CopyFileW(image.c_str(), copiedImage.c_str(), TRUE)) return false;
+			Handle hidden(CreateEventW(nullptr, TRUE, FALSE, RestartTestEventName(directory, L".TestWindowsHidden").c_str()));
+			Handle parentRelease(CreateEventW(nullptr, TRUE, FALSE, RestartTestEventName(directory, L".TestParentRelease").c_str()));
+			Handle restartRelease(CreateEventW(nullptr, TRUE, FALSE, RestartTestEventName(directory, L".TestRestartRelease").c_str()));
+			const bool stalled = EqualNoCase(scenario, L"restart-hidden-handshake");
+			Handle stall(stalled ? CreateEventW(nullptr, TRUE, FALSE, RestartTestEventName(directory, L".TestStallHandoff").c_str()) : nullptr);
+			if (!hidden.Valid() || !parentRelease.Valid() || !restartRelease.Valid() || (stalled && !stall.Valid())) return false;
+			PROCESS_INFORMATION created{};
+			const auto arguments = std::wstring(kTestParentMode) + L" " + scenario + L" " + Quote(directory);
+			if (!StartSameExecutable(copiedImage, arguments, false, CREATE_NO_WINDOW, nullptr, created)) return false;
+			Handle parent(created.hProcess), thread(created.hThread);
+			TestChildGuard parentGuard(parent.value);
+			DWORD first = MAXDWORD, second = MAXDWORD;
+			const ULONGLONG started = GetTickCount64();
+			while (!ReadMarker(MarkerPath(directory, L"parent", created.dwProcessId), first, second)
+				&& WaitForSingleObject(parent.value, 0) == WAIT_TIMEOUT && GetTickCount64() - started < 2000) Sleep(10);
+			bool identity = true;
+			bool passed = first == static_cast<DWORD>(ArmResult::Armed);
+			// 真实 helper 已握手，但隐藏回执未放行，不允许凭“父仍活着/无可见窗”抢跑。
+			Sleep(150);
+			passed = CountRestartMarkers(directory, created.dwProcessId, 1, identity) == 0
+				&& WaitForSingleObject(parent.value, 0) == WAIT_TIMEOUT && passed;
+			SetEvent(hidden.value);
+			DWORD count = 0, replacementPid = 0, ignored = 0;
+			const ULONGLONG hiddenTick = GetTickCount64();
+			if (stalled)
+			{
+				while (!ReadMarker(MarkerPath(directory, L"handoff", created.dwProcessId), replacementPid, ignored)
+					&& WaitForSingleObject(parent.value, 0) == WAIT_TIMEOUT && GetTickCount64() - hiddenTick < 2000) Sleep(10);
+				passed = replacementPid != 0 && passed;
+			}
+			else
+			{
+				while (!(count = CountRestartMarkers(directory, created.dwProcessId, 1, identity))
+					&& WaitForSingleObject(parent.value, 0) == WAIT_TIMEOUT && GetTickCount64() - hiddenTick < 2000) Sleep(10);
+				passed = count == 1 && identity && WaitForSingleObject(parent.value, 0) == WAIT_TIMEOUT && passed;
+				// 旧实例与 helper 仍活着时，新 child 已完成真正 Adopt 并进入业务 marker。
+				WIN32_FIND_DATAW found{};
+				const HANDLE find = FindFirstFileW((directory + L"\\restart-*.txt").c_str(), &found);
+				if (find != INVALID_HANDLE_VALUE)
+				{
+					DWORD kind = 0;
+					(void)ReadMarker(directory + L"\\" + found.cFileName, replacementPid, ignored, &kind);
+					FindClose(find);
+				}
+			}
+			Handle replacement(replacementPid ? OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, replacementPid) : nullptr);
+			if (EqualNoCase(scenario, L"restart-hidden-natural")) SetEvent(parentRelease.value);
+			const bool oldDead = WaitForSingleObject(parent.value, 5000) == WAIT_OBJECT_0;
+			DWORD oldExit = 0;
+			passed = oldDead && GetExitCodeProcess(parent.value, &oldExit) && passed;
+			const bool natural = EqualNoCase(scenario, L"restart-hidden-natural");
+			passed = (natural ? oldExit == 77 : oldExit == kForcedExitCode) && passed;
+			if (!natural) passed = GetTickCount64() - started >= 2500 && GetTickCount64() - started < 4500 && passed;
+			if (stalled)
+				passed = replacement.Valid() && WaitForSingleObject(replacement.value, 2000) == WAIT_OBJECT_0 && passed;
+			else
+			{
+				passed = replacement.Valid() && WaitForSingleObject(replacement.value, 0) == WAIT_TIMEOUT && passed;
+				SetEvent(restartRelease.value);
+				passed = replacement.Valid() && WaitForSingleObject(replacement.value, 2000) == WAIT_OBJECT_0 && passed;
+			}
+			SetEvent(parentRelease.value); SetEvent(restartRelease.value); SetEvent(hidden.value);
+			Sleep(100);
+			count = CountRestartMarkers(directory, created.dwProcessId, 1, identity);
+			passed = count == (stalled ? 0u : 1u) && identity && passed;
+			PrintCaseObservation(created.dwProcessId, oldExit, GetTickCount64() - started, count);
+			DeleteFileW(MarkerPath(directory, L"handoff", created.dwProcessId).c_str());
+			DeleteFileW(copiedImage.c_str());
+			RemoveTestDirectory(directory, created.dwProcessId);
 			return passed;
 		}
 
@@ -2738,7 +2915,7 @@ namespace Inkeys::Shutdown
 			if (now >= deadline) break; // 已耗/已过期都沿用原始截止，不重新加15秒。
 			Sleep(static_cast<DWORD>(deadline - now));
 		}
-		const DWORD exitCode = intent == Intent::Restart
+		const DWORD exitCode = (intent == Intent::Restart || intent == Intent::UpdateRestart)
 			? kFailedArmRestartForcedExitCode : kFailedArmCloseForcedExitCode;
 		for (;;)
 		{
@@ -2850,6 +3027,23 @@ namespace Inkeys::Shutdown
 					{
 						std::wstring image;
 						exitCode = CurrentImagePath(image) && RunProcessCase(image, L"restart-lease", 15000, true, true) ? 0 : 62;
+					}
+					else if (argc == 3 && EqualNoCase(argv[2], L"--ordinary-restart-only"))
+					{
+						std::wstring image;
+						bool passed = CurrentImagePath(image);
+						for (const wchar_t* scenario : { L"restart-hidden-natural", L"restart-hidden-forced", L"restart-hidden-handshake" })
+						{
+							const bool result = RunEarlyRestartCase(image, scenario);
+							PrintTestResult(EqualNoCase(scenario, L"restart-hidden-natural") ? "early-restart-natural"
+								: EqualNoCase(scenario, L"restart-hidden-forced") ? "early-restart-deadline" : "early-restart-handshake-deadline", result);
+							passed = result && passed;
+						}
+						const bool update = RunProcessCase(image, L"update-held", 15000, true, true);
+						PrintTestResult("known-update-restart", update);
+						const bool crash = RunProcessCase(image, L"crash-held", 15000, true, true);
+						PrintTestResult("crash-restart-still-after-exit", crash);
+						exitCode = passed && update && crash ? 0 : 62;
 					}
 					else if (argc == 3 && EqualNoCase(argv[2], L"--startup-failure-only")) exitCode = RunStartupFailureTests();
 					else if (argc == 4 && EqualNoCase(argv[2], L"--startup-failure-only")

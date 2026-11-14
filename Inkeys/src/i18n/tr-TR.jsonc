@@ -46,6 +46,12 @@
         "Mode": "Alt çubuk modu",
         "Centered": "Ortala"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Slayt gösterisi",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Yeni sürüm"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Temizle",
@@ -702,7 +708,26 @@
           "E": "Windows Ink kullanmayan grafik tabletler genellikle “sürücünün enjekte ettiği fare” olarak gelir. Açıldığında bu fare, tabletin imleç ayarlarını kullanır; Uzak Masaüstü gibi fare enjekte eden diğer yazılımlar yanlışlıkla algılanabilir.",
           "Unavailable": "Bu sistem giriş kaynağını ayırt edemediği için seçenek kullanılamıyor."
         },
+        "Eraser":
+        {
+          "N": "Silgi imleci",
+          "E": "Şekil gerçek silme alanını da belirler (dikdörtgenlerin köşeleri diktir); desen ve açık/koyu yalnızca imlecin görünümünü değiştirir.",
+          "Appearance": "Görünüm",
+          "Light": "Açık",
+          "Dark": "Koyu",
+          "Circle": "Daire",
+          "Rectangle": "Dikdörtgen",
+          "Square": "Kare",
+          "Grips": "Klasik",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Pırıltı"
+        },
         "FineControl": "Hassas denetimler",
+        "OpacitySection": "Opaklık",
+        "PenOpacity": "Kalem imleci opaklığı",
+        "HighlightPenFillOpacity": "Kalem (vurgulu) imleci dolgu opaklığı",
+        "DotOpacity": "Küçük nokta imleci opaklığı",
+        "HighlightDotFillOpacity": "Küçük nokta (vurgulu) imleci dolgu opaklığı",
         "DotHideOnContact":
         {
           "N": "Küçük nokta imlecini temas sırasında otomatik gizle",
@@ -711,8 +736,7 @@
           "ScreenPen": "Yalnızca ekran kalemi",
           "Tablet": "Yalnızca grafik tablet",
           "Both": "Ekran kalemi ve grafik tablet"
-        },
-        "Note": "Ekran kalemi, grafik tablet ve dokunmada “Fare”, uygulamanın kendisinin çizdiği bir oktur; vurgulayıcı ve lazer işaretçi imleçleri, şekil araçları ve silgiye özel imleç bu seçeneklerden etkilenmez."
+        }
       },
       "Effect":
       {
@@ -777,7 +801,34 @@
           "ParallelWritingMultiTouchNote": "Çoklu dokunmayla çizim kapalı; silerken yazma kullanılamaz.",
           "ParallelWritingLaserMultiTouchNote": "Çoklu dokunmayla lazer kapalı; lazer kalemle silerken yazma kullanılamaz.",
           "ParallelWriting": "Silerken yazmayı aç",
-          "ParallelWritingDescription": "Avuç içi silgisi etkinleştiğinde diğer girdiler kesilmez, çizim devam edebilir. (Birlikte yazan iki veya daha fazla kişi için.)"
+          "ParallelWritingDescription": "Avuç içi silgisi etkinleştiğinde yalnızca yakınındaki dokunmatik yazma sonlanır ve çevresinde yeni dokunuşlar engellenir; diğer yerlerde yazmaya devam edilebilir. (Birlikte yazan iki veya daha fazla kişi için.)",
+          "CursorNoticeTitle": "Tema ve desen imleç ayarlarını izler",
+          "CursorNoticeDescription": "Avuç içi silgisinin imleci, “Çizim › İmleç › Silgi imleci” bölümündeki tema ve deseni kullanır. Burada yalnızca şekil ayrıca seçilebilir.",
+          "Shape": "Avuç içi silgisi şekli",
+          "ShapeDescription": "Şekil, avuç içiyle gerçekten silinen alanı da belirler. “Varsayılanı izle” normal silgiyle aynı şekli kullanır.",
+          "FollowDefault": "Varsayılanı izle",
+          "SizeSection": "Avuç içi silgisi boyutu",
+          "SizeMode": "Kalınlık hesaplama yöntemi",
+          "SizeModeDescription": "Avuç içi silgisinin kalınlığının nasıl hesaplanacağını seçin.",
+          "SizeModeDynamic": "Dinamik kalınlık",
+          "SizeModeFollowDefault": "Sabit (varsayılan silgi)",
+          "SizeModeFixed": "Sabit (hıza bağlı silgi yok)",
+          "SizeModeDynamicNote": "Temas alanına göre hesaplanır",
+          "SizeModeFollowDefaultNote": "Varsayılan silgi boyutunu kullanır; “Otomatik boyut” açıkken kalem hızına göre değişir",
+          "SizeModeFixedNote": "Her zaman varsayılan silgi boyutunu kullanır",
+          "SizeMethod": "Boyut hesaplama yöntemi",
+          "SizeMethodDescription": "Temas dikdörtgeninin silgi boyutuna dönüştürülme yöntemi.",
+          "MethodEllipseArea": "İç teğet elips alanı",
+          "MethodRectangleArea": "Dikdörtgen alanı",
+          "MethodInscribedCircle": "İç teğet daire",
+          "MethodCircumscribedCircle": "Dış teğet daire",
+          "MethodInscribedRectangle": "İç teğet dikdörtgen",
+          "MethodCircumscribedRectangle": "Dış teğet dikdörtgen",
+          "MethodInscribedSquare": "İç teğet kare",
+          "MethodCircumscribedSquare": "Dış teğet kare",
+          "SizeMethodShapeNote": "Geçerli şekil: {}",
+          "SizeMultiplier": "Silme boyutu çarpanı",
+          "SizeMultiplierDescription": "Algılamayı etkilemeden silginin kenar uzunluğunu veya çapını orantılı olarak ölçeklendirir."
         },
         "Input":
         {
@@ -806,6 +857,33 @@
           "Note": "Büyük ekranlı cihazlarda önerilmez."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Konum",
+      "DesktopSection": "Masaüstü",
+      "PptSection": "Sunu",
+      "WhiteboardSection": "Beyaz tahta",
+      "StartupE": "Araç çubuğunun bir sonraki açılışta nerede görüneceğini belirler. Ortalanmış üst çubuk yalnızca başlangıç konumudur ve yapışmaz.",
+      "TypeBottomBar": "Ortalanmış alt çubuk",
+      "TypeTopBar": "Ortalanmış üst çubuk",
+      "TypeFloating": "Yüzen pencere",
+      "PositionLabel": "Konum",
+      "ExpandRight": "Sağa aç",
+      "ExpandLeft": "Sola aç",
+      "FloatBottomLeft": "Sol alt köşe",
+      "FloatBottomRight": "Sağ alt köşe",
+      "FloatBottomCenter": "Alt orta",
+      "PptAutoDock": "Slayt gösterisi başlarken ortalanmış alt çubuk moduna geç",
+      "PptAutoDockE": "Çubuk öncesinde işaretli bir durumdaysa, slayt gösterisi başlarken açık ve ortalanmış alt çubuğa dönüşür; gösteri bitince eski haline getirilir.",
+      "WhiteboardAutoDock": "Beyaz tahtaya girerken ortalanmış alt çubuk moduna geç",
+      "WhiteboardAutoDockE": "Çubuk öncesinde işaretli bir durumdaysa, beyaz tahtaya girerken açık ve ortalanmış alt çubuğa dönüşür; çıkınca eski haline getirilir.",
+      "StateBottom": "Alt çubuk durumu",
+      "StateBottomFolded": "Alt çubuk durumu (daraltılmış)",
+      "StateFloating": "Yüzen pencere durumu",
+      "StateFloatingFolded": "Yüzen pencere durumu (daraltılmış)",
+      "MainButtonDirection": "Ana düğme yönü",
+      "DirectionKeep": "Değiştirme"
     },
     "Preset":
     {
@@ -984,8 +1062,6 @@
           "SuperTop": "SuperTop'ı aç",
           "SuperTopE1": "Uygulama, pencerelerini üstte tutmak için üç aşamalı başlatma kullanır.\n(SuperTop etkin)",
           "SuperTopE2": "Uygulama, pencerelerini üstte tutmak için üç aşamalı başlatma kullanır.\n(SuperTop etkin değil)",
-          "Indicator": "SuperTop göstergesi",
-          "IndicatorE": "Başarıyla etkinleştirildiğinde ana simgenin sağ üst köşesinde raptiye gösterir.",
           "SuperTopNote": "Uygulamak için Inkeys'i yeniden başlatın. Başlangıçta üste getirme işlemi başarısız olabilir."
         },
         "SupportNote": "Windows 8 veya üzeri gerektirir."
@@ -1082,6 +1158,20 @@
       "ClassIslandProtocolNote": "ClassIsland ayarlarında URL gezinme protokolünü kaydedin.",
       "ClassIslandSwapNote": "ClassIsland'da ders programı yüklü değilken bu bileşen çalışmaz."
     },
+    "StatusIndicator":
+    {
+      "N": "Durum göstergesi",
+      "E": "Slayt gösterisi modu, SuperTop ve yazılım güncellemeleri gibi durumları ana düğmede gösterir.",
+      "Enable":
+      {
+        "N": "Durum göstergesini aç",
+        "E": "Kapalıyken ana düğme hiçbir durum ipucu göstermez."
+      },
+      "Types": "Bu durumları göster",
+      "TypeSlideshow": "Slayt gösterisi",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Yeni sürüm"
+    },
     "DesktopShortcut":
     {
       "N": "Kısayollar",
@@ -1165,6 +1255,14 @@
       {
         "N": "Bekleyen işlemleri geciktir",
         "E": "Animasyonları gözlemlemek için yükleme süresini uzatır."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Durum göstergesi",
+        "N": "Durum göstergesini test et",
+        "E": "Animasyonu, uzun metni ve ilerleme halkasını denetlemek için rastgele test durumları ekleyin veya kaldırın.",
+        "Add": "Rastgele durum ekle",
+        "Remove": "Bir durumu kaldır"
       },
       "ConsoleSection": "Konsol çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",

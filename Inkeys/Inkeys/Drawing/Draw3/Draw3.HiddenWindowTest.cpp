@@ -2450,7 +2450,7 @@ namespace Inkeys::Drawing::Draw3
 					"area toggle does not reset mouse fine hover",failures);
 				const SpeedEraser::ContactLengthMetrics syntheticAxis{2,1000,0,30000,true};
 				const SpeedEraser::ContactLengthMetrics syntheticSpan{2,10000,0,30000,true};
-				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1);
+				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1,1);
 				const auto convertedArea=SpeedEraser::ConvertContactArea(300,200,areaTransform,areaTransform);
 				modeSucceeded &= Check(convertedArea.units==SpeedEraser::ContactAreaUnits::CanvasPixels &&
 					std::abs(convertedArea.widthPx-30)<0.001f && std::abs(convertedArea.heightPx-20)<0.001f,
@@ -3066,7 +3066,7 @@ namespace Inkeys::Drawing::Draw3
 		unsigned matrixCases = 0, matrixFailures = 0;
 		unsigned guardedCases = 0, guardedFailures = 0, referenceUnavailable = 0;
 		const char* driverName = driver == D3D_DRIVER_TYPE_HARDWARE ? "hardware" : "warp";
-		std::fprintf(stderr, "[Draw3PixelTest] probe_schema=guarded-20261008 driver=%s expected_cases=105 matrix_expected=69 guarded_expected=18\n",
+		std::fprintf(stderr, "[Draw3PixelTest] probe_schema=guarded-20261008 driver=%s expected_cases=106 matrix_expected=69 guarded_expected=18\n",
 			driver == D3D_DRIVER_TYPE_HARDWARE ? "Hardware" : "WARP");
 		std::fprintf(stderr, "[Draw3PixelTest] driver=%s requested=%s\n", driverName, driverName);
 		const auto logResult = [&](const char* stage, HRESULT result)
@@ -3374,7 +3374,8 @@ namespace Inkeys::Drawing::Draw3
 				visual.appearance.outlineRed = visual.appearance.outlineGreen = visual.appearance.outlineBlue = 184.0f / 255.0f;
 				const auto drawProbe = [&](const char* name, ID3D11Texture2D* texture,
 					ID3D11RenderTargetView* rtv, bool comparison, ID3D11PixelShader* overrideShader = nullptr,
-					PixelExpectation expectation = PixelExpectation::Cursor, bool emitResult = true) -> bool
+					PixelExpectation expectation = PixelExpectation::Cursor, bool emitResult = true,
+					std::vector<unsigned char>* captured = nullptr) -> bool
 				{
 					if (!comparison && !overrideShader) ++productionCases;
 					if (!texture || !rtv || (comparison && !noBlend))
@@ -3405,7 +3406,7 @@ namespace Inkeys::Drawing::Draw3
 						name, viewportCount, viewport.TopLeftX, viewport.TopLeftY, viewport.Width,
 						viewport.Height, viewport.MinDepth, viewport.MaxDepth,
 						renderer.viewportWidth, renderer.viewportHeight, comparison, static_cast<void*>(renderer.pixelShader.Get()));
-					const bool passed = readPixels(name, texture, rtv, expectation, emitResult);
+					const bool passed = readPixels(name, texture, rtv, expectation, emitResult, captured);
 					if (!passed && !comparison && !overrideShader) ++failures;
 					if (statistics)
 					{
@@ -3801,6 +3802,42 @@ namespace Inkeys::Drawing::Draw3
 					Draw3Win7GuardedShader::Sha256, sizeof(Draw3Win7GuardedShader::Bytecode));
 				logResult("CreateGuardedCompletePS", device->CreatePixelShader(Draw3Win7GuardedShader::Bytecode,
 					sizeof(Draw3Win7GuardedShader::Bytecode), nullptr, guardedShader.GetAddressOf()));
+
+				const auto savedCursorAppearance = visual.appearance;
+				visual.appearance.red = 1.0f;
+				visual.appearance.green = visual.appearance.blue = 0.0f;
+				visual.appearance.opacity = 1.0f;
+				visual.appearance.fillAlpha = 0.5f;
+				visual.appearance.outlineWidth = 1.25f;
+				visual.appearance.outerOutlineWidth = 1.0f;
+				visual.appearance.outlineOpacity = 1.0f;
+				visual.appearance.outlineRed = visual.appearance.outlineGreen = visual.appearance.outlineBlue = 0.96f;
+				const auto checkHighlightPixels = [&](const char* name, const std::vector<unsigned char>& pixels)
+				{
+					if (pixels.size() != size * size * 4) { ++failures; return; }
+					const auto at = [&](UINT x, UINT y) { return pixels.data() + (y * size + x) * 4; };
+					const auto* outer = at(48, 64);
+					const auto* light = at(49, 64);
+					const auto* fill = at(64, 64);
+					const bool passed = outer[0] == 0 && outer[1] == 0 && outer[2] == 0 && outer[3] >= 250 &&
+						std::abs(static_cast<int>(light[0]) - 245) <= 2 &&
+						std::abs(static_cast<int>(light[1]) - 245) <= 2 &&
+						std::abs(static_cast<int>(light[2]) - 245) <= 2 && light[3] == 255 &&
+						fill[0] == 0 && fill[1] == 0 && std::abs(static_cast<int>(fill[2]) - 128) <= 1 &&
+						std::abs(static_cast<int>(fill[3]) - 128) <= 1;
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s outer_bgra=(%u,%u,%u,%u) light_bgra=(%u,%u,%u,%u) fill_bgra=(%u,%u,%u,%u) result=%s\n",
+						name, outer[0], outer[1], outer[2], outer[3], light[0], light[1], light[2], light[3],
+						fill[0], fill[1], fill[2], fill[3], passed ? "PASS" : "FAIL");
+					if (!passed) ++failures;
+				};
+				std::vector<unsigned char> highlightProduction, highlightGuarded;
+				drawProbe("offscreen.cursor.highlight.production", offscreen.Get(), offscreenRtv.Get(), false,
+					nullptr, PixelExpectation::Capture, true, &highlightProduction);
+				checkHighlightPixels("offscreen.cursor.highlight.production.pixels", highlightProduction);
+				drawProbe("offscreen.cursor.highlight.guarded", offscreen.Get(), offscreenRtv.Get(), false,
+					guardedShader.Get(), PixelExpectation::Capture, true, &highlightGuarded);
+				checkHighlightPixels("offscreen.cursor.highlight.guarded.pixels", highlightGuarded);
+				visual.appearance = savedCursorAppearance;
 				const auto originalStrokeBlend = renderer.strokeOperatorBlendState;
 				enum class GuardedScenario { Cursor, CursorNoBlend, CursorRetain, Round, Thin, Varying, Highlighter, EraseRetain, DrawRetain };
 				struct GuardedCase { const char* name; GuardedScenario kind; };
@@ -3996,8 +4033,8 @@ namespace Inkeys::Drawing::Draw3
 			logResult("GetDeviceRemovedReason", removed);
 			if (FAILED(removed)) ++failures;
 			std::fprintf(stderr, "[Draw3PixelTest] production_cases=%u failures=%d result=%s\n",
-				productionCases, failures, failures == 0 && productionCases == 4 ? "PASS" : "FAIL");
-			return failures == 0 && productionCases == 4 && guardedCases == 18 && guardedFailures == 0 ? 0 : 1;
+				productionCases, failures, failures == 0 && productionCases == 5 ? "PASS" : "FAIL");
+			return failures == 0 && productionCases == 5 && guardedCases == 18 && guardedFailures == 0 ? 0 : 1;
 		}
 		catch (...)
 		{

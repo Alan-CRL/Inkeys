@@ -1,0 +1,15 @@
+{
+  "managed_build_exit": 0,
+  "managed_and_native_fixture_test_exit": 0,
+  "native_fixture_cases": 47,
+  "native_fixture_failures": 0,
+  "solution_build_exit": 0,
+  "solution_configuration": "Debug|ARM64",
+  "dll_sha256": "AD2C5E69FFEB20CA1302DB939BD8D9FA7DAE79104FA3D5C8492016090215C70C",
+  "dll_mvid": "f9290ae8-fb4c-408c-bcd8-67f8f81b9b4b",
+  "embedded_dll_verified": true,
+  "tlb_unchanged": true,
+  "tlb_sha256": "C652B5DD0603576033B2E0D15869BE103F23FFDCAA2A1984E53F3B6A14DBA606",
+  "gui_test_performed": false,
+  "multithreaded_dynamic_binding_implemented": false
+}

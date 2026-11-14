@@ -1,0 +1,399 @@
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+  Process Name Check Failed: Process with an Id of 7140 is not running.
+fixture-0.pptx: 2
+fixture-1.pptx: 3
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+Loop Error: fixture failure
+try CLEAN
+CLEAN!
+Loop Error: fixture failure
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+[PptCOM] events=0 polling=1 hr=0x00000000
+[PptCOM] events=0 polling=1
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+fixture-0.pptx: 3
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+[PptCOM] events=0 polling=1 hr=0x00000000
+[PptCOM] events=0 polling=1
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+[PptCOM] event-cleanup-pending=1 hr=0x80004005
+[PptCOM] event-cleanup-pending=1 hr=0x80004005
+[PptCOM] event-cleanup-pending=1 hr=0x80004005
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=0 hr=0x800706BA
+FAIL disconnected root requests cleanup instead of indefinite Unknown
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=0 hr=0x800706BA
+FAIL RPC unavailable during window observation ends the binding: application.SlideShowWindows
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=0 hr=0x800706BA
+FAIL RPC unavailable during window observation ends the binding: windows.Count
+try CLEAN
+CLEAN!
+FAIL close hint checks zero document count before querying the old object graph: 2025
+try CLEAN
+CLEAN!
+FAIL positive count defers only this closing observation without dropping roots: 2025
+try CLEAN
+CLEAN!
+FAIL close hint checks zero document count before querying the old object graph: 2004
+try CLEAN
+CLEAN!
+FAIL positive count defers only this closing observation without dropping roots: 2004
+try CLEAN
+CLEAN!
+FAIL close event during ActivePresentation return rejects the stale window query and releases its temporary
+FAIL owner confirms the reentrant close on its next observation
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+FAIL independent zero documents can end an ActivePresentation busy binding: -2147417846
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x800AC472
+FAIL independent zero documents can end an ActivePresentation busy binding: -2146777998
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x80010001
+FAIL independent zero documents can end an ActivePresentation busy binding: -2147418111
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+[PptCOM] show-observation=0 busy=0 hr=0x800706BA
+[PptCOM] show-observation=0 busy=0 hr=0x800706BA
+[PptCOM] show-observation=0 busy=0 hr=0x800706BA
+[PptCOM] show-observation=0 busy=0 hr=0x800706BA
+try CLEAN
+CLEAN!
+FAIL unavailable service and CP clean themselves once without an Inkeys stop signal
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=0 hr=0x00000000
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=0 hr=0x00000000
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=0 hr=0x80004005
+try CLEAN
+CLEAN!
+[PptCOM] show-observation=0 busy=0 hr=0x80004005
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+try CLEAN
+CLEAN!
+PPT Monitor ReStarted
+try CLEAN
+CLEAN!
+try CLEAN
+CLEAN!
+FAILED count=13

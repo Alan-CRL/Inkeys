@@ -133,6 +133,63 @@ namespace
 	FrameResult settingFrameResult = FrameResult::Idle;
 	bool settingNavigationClockIdle = true; // 仅共享渲染线程访问，跳过恢复帧的隐藏/移动耗时。
 	uint64_t settingSessionEpoch = 0;
+	struct SettingEraserCursorCache
+	{
+		struct Entry
+		{
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture;
+			ImVec2 size{};
+			bool attempted = false;
+		};
+		std::array<Entry, 18> entries;
+		float scale = 0;
+		bool dark = false;
+		void Reset() { for (auto& entry : entries) entry = {}; scale = 0; }
+		void Draw(const Inkeys::UI::Setting::LayoutRect& bounds, Inkeys::Drawing::Draw3::EraserCursorAppearance appearance)
+		{
+			using namespace Inkeys::Drawing::Draw3;
+			const float unit = Design::Pixels(1);
+			if (scale != unit || dark != Design::IsDarkMode())
+			{ Reset(); scale = unit; dark = Design::IsDarkMode(); }
+			const size_t slot = static_cast<size_t>(appearance.shape) * 6 + static_cast<size_t>(appearance.pattern) * 2 + static_cast<size_t>(appearance.theme);
+			auto& entry = entries[slot];
+			if (!entry.attempted && g_pd3dDevice)
+			{
+				entry.attempted = true;
+				const auto half = ResolveEraserHalfSize(appearance.shape, 24 * unit);
+				const float intendedShortSide = (std::min)(half.x, half.y) * 2;
+				const auto bakedSide = static_cast<uint32_t>((std::max)(1.0F, std::round(intendedShortSide)));
+				const float bakeScale = bakedSide / intendedShortSide;
+				auto raster = RasterizeEraserCursor(appearance, bakedSide, 6 * unit * bakeScale);
+				if (!raster.levels.empty())
+				{
+					auto& level = raster.levels.front();
+					// Draw3/D2D 使用预乘图；ImGui 默认混合要求直通 alpha，上传前仅转换通道。
+					for (size_t pixel = 0; pixel < level.bgra.size(); pixel += 4)
+					{
+						const unsigned alpha = level.bgra[pixel + 3];
+						for (size_t channel = 0; channel < 3; ++channel)
+							level.bgra[pixel + channel] = alpha ? static_cast<uint8_t>((std::min)(255u,
+								(level.bgra[pixel + channel] * 255u + alpha / 2) / alpha)) : 0;
+					}
+					D3D11_TEXTURE2D_DESC desc{};
+					desc.Width = level.width; desc.Height = level.height; desc.MipLevels = desc.ArraySize = 1;
+					desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; desc.SampleDesc.Count = 1;
+					desc.Usage = D3D11_USAGE_IMMUTABLE; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+					const D3D11_SUBRESOURCE_DATA data{ level.bgra.data(), level.width * 4, 0 };
+					Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+					if (SUCCEEDED(g_pd3dDevice->CreateTexture2D(&desc, &data, texture.GetAddressOf())))
+						g_pd3dDevice->CreateShaderResourceView(texture.Get(), nullptr, entry.texture.GetAddressOf());
+					entry.size = { level.width / bakeScale, level.height / bakeScale };
+				}
+			}
+			if (!entry.texture) return;
+			const ImVec2 origin((bounds.left + bounds.right - entry.size.x) * 0.5F,
+				(bounds.top + bounds.bottom - entry.size.y) * 0.5F);
+			ImGui::GetWindowDrawList()->AddImage(reinterpret_cast<ImTextureID>(entry.texture.Get()), origin,
+				{ origin.x + entry.size.x, origin.y + entry.size.y });
+		}
+	} settingEraserCursors;
 	Design::EraserDemoPlayer settingEraserDemo; // 与设置共享设备和线程，演示只播放预计算帧。
 	Design::HomeEntryPageCache settingHomeEntryCache; // 唯一共享渲染线程的临时 GPU 页面快照。
 	Design::FrameSubmissionCache settingFrameSubmission; // 有界的上次成功呈现值快照，不持有 GPU 资源。
@@ -149,7 +206,7 @@ namespace
 	FrameResult ResolveSettingResourceFailure(const char* stage, HRESULT result = E_FAIL)
 	{
 		// 先保存失败与设备原因，再清理 lease；泛化 OOM/E_FAIL 也可能来自已移除的设备。
-		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingFrameSubmission.Reset();
+		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset(); settingFrameSubmission.Reset();
 		if (SUCCEEDED(result)) result = E_FAIL;
 		const HRESULT removedReason = g_pd3dDevice ? g_pd3dDevice->GetDeviceRemovedReason() : S_OK;
 		if (result != settingLastResourceFailure || removedReason != settingLastRemovedReason
@@ -1254,6 +1311,8 @@ namespace
 
 	SettingBusinessQueue settingBusinessQueue;
 	mutex configWriteQueueMutex;
+	// 拖动透明度期间只合并保存请求；窗口隐藏或关闭时由 Hide/Shutdown 补写。
+	atomic<bool> cursorOpacitySavePending{ false };
 	thread_local bool settingRenderingOnCurrentThread = false;
 
 	struct SettingRenderScope
@@ -2258,7 +2317,7 @@ SettingSessionCoroutine RunSettingSession()
 		if (!AcquireDeviceLease(settingFrameContext.epoch))
 		{
 			settingFrameResult = ResolveSettingResourceFailure("AcquireDeviceLease");
-			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -2273,7 +2332,7 @@ SettingSessionCoroutine RunSettingSession()
 				settingFrameResult = ResolveSettingResourceFailure("ResidentTextures");
 				CleanupSettingTextures();
 				CleanupSettingTextureCache();
-				settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+				settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 				CleanupDeviceD3D();
 				co_return;
 			}
@@ -2304,7 +2363,7 @@ SettingSessionCoroutine RunSettingSession()
 			io.Fonts->Clear();
 			ImFluent::ResetContext();
 			ImGui::DestroyContext();
-			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 			CleanupDeviceD3D();
 			co_return;
 		}
@@ -2627,6 +2686,11 @@ SettingSessionCoroutine RunSettingSession()
 				Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 				settingFrameSubmission.Reset();
 			}
+			if (openAction == Design::SettingOpenNavigation::Action::SoftwareVersion)
+			{
+				navigateTo({ Design::PageId::Version });
+				settingFrameSubmission.Reset();
+			}
 			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
 			ImFluent::PushFluentStyle();
@@ -2702,8 +2766,9 @@ SettingSessionCoroutine RunSettingSession()
 					navigationDelta,Experimental.Inkeys3.AnimationEnable,Experimental.Inkeys3.AnimationSpeedRate,
 					!navigationState.BlockContentInput() && settingWindowActive.load(memory_order_acquire),
 					Inkeys::UI::Setting::ShouldPlaySettingEntryAnimation(setlist.settingEntryAnimation, showSerial),
-					openNavigation.fadeOnly && destination.page==Design::PageId::Draw
-					&& drawingSubpage==Design::DrawingSubpage::SpeedEraser);
+					openNavigation.fadeOnly && (openNavigation.target==Inkeys::UI::Setting::SettingOpenTarget::SoftwareVersion
+						? destination.page==Design::PageId::Version
+						: destination.page==Design::PageId::Draw && drawingSubpage==Design::DrawingSubpage::SpeedEraser));
 				const bool entryInputBlock=Design::CancelHomeEntryOnInput(homeMotion);
 				const bool optionalChromeVisible = !entryInputBlock && Design::HomeEntryChromeVisible(homeMotion);
 				{
@@ -2946,6 +3011,9 @@ SettingSessionCoroutine RunSettingSession()
 				const int contentPage = destination.page == Design::PageId::General
 					&& destination.section == Design::GeneralSection::Storage
 					? settingTabEnum::tabConfiguration : settingTab;
+				if ((contentPage != settingTabEnum::tab3 || drawingSubpage != Design::DrawingSubpage::Cursor) &&
+					cursorOpacitySavePending.exchange(false))
+					QueueConfigWrite();
 				switch (contentPage)
 				{
 					// 主页
@@ -3396,6 +3464,18 @@ SettingSessionCoroutine RunSettingSession()
 					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
 						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
+					{
+						auto& status = Inkeys::config.Experimental.Inkeys3.UI3.StatusIndicator;
+						draft.statusIndicator = status.Enable;
+						draft.statusIndicatorTypes = { static_cast<bool>(status.PptSlideshow),
+							static_cast<bool>(status.SuperTop), static_cast<bool>(status.NewVersion) };
+						using Inkeys::UI::Bar::NormalizeBarWorkspaceAutoDockMask;
+						const auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						draft.pptDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Ppt.AutoDockMask.load());
+						draft.whiteboardDockMask = NormalizeBarWorkspaceAutoDockMask(workspace.Whiteboard.AutoDockMask.load());
+						draft.pptDockDirection = std::clamp(workspace.Ppt.Direction.load(), 0, 2);
+						draft.whiteboardDockDirection = std::clamp(workspace.Whiteboard.Direction.load(), 0, 2);
+					}
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
 					draft.settingThemeMode = setlist.settingDarkMode ? 0 : 1;
 					// 背景未自定义时显示当前主栏主题的默认值；内容透明度直接显示保存值。
@@ -3490,6 +3570,17 @@ SettingSessionCoroutine RunSettingSession()
 					if (events.startupPlacementChanged)
 					{
 						Inkeys::config.UI.Bar.StartupPlacement = draft.startupPlacement;
+						QueueConfigWrite();
+					}
+					if (events.pptDockMaskChanged || events.pptDockDirectionChanged
+						|| events.whiteboardDockMaskChanged || events.whiteboardDockDirectionChanged)
+					{
+						// 场景进入策略只在下次进入 PPT/白板时由渲染线程读取，立即保存即可。
+						auto& workspace = Inkeys::config.UI.Bar.Workspace;
+						if (events.pptDockMaskChanged) workspace.Ppt.AutoDockMask = draft.pptDockMask;
+						if (events.pptDockDirectionChanged) workspace.Ppt.Direction = draft.pptDockDirection;
+						if (events.whiteboardDockMaskChanged) workspace.Whiteboard.AutoDockMask = draft.whiteboardDockMask;
+						if (events.whiteboardDockDirectionChanged) workspace.Whiteboard.Direction = draft.whiteboardDockDirection;
 						QueueConfigWrite();
 					}
 					if (destination.section == Design::GeneralSection::Appearance)
@@ -3624,6 +3715,18 @@ SettingSessionCoroutine RunSettingSession()
 							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
 					}
+					if (events.statusIndicatorChanged || std::ranges::any_of(events.statusIndicatorTypesChanged, std::identity{}))
+					{
+						auto& status = Inkeys::config.Experimental.Inkeys3.UI3.StatusIndicator;
+						status.Enable = draft.statusIndicator;
+						status.PptSlideshow = draft.statusIndicatorTypes[0];
+						status.SuperTop = draft.statusIndicatorTypes[1];
+						status.NewVersion = draft.statusIndicatorTypes[2];
+						// 先发布到主栏 owner，再落盘；过滤不注销状态，重新开启时以收起态恢复。
+						Inkeys::UI::Bar::SetStatusIndicatorOptions(draft.statusIndicator,
+							draft.statusIndicatorTypes[0], draft.statusIndicatorTypes[1], draft.statusIndicatorTypes[2]);
+						QueueConfigWrite();
+					}
 					if (events.allowMultipleInstancesChanged)
 					{
 						// 只保存后续启动的准入偏好，不影响或关闭已经运行的实例。
@@ -3684,11 +3787,28 @@ SettingSessionCoroutine RunSettingSession()
 						draft.tablet = Cursor::CursorStyleToItemIndex(CursorDevice::Tablet, deviceStyle(CursorDevice::Tablet, cursor.Tablet.load()));
 						draft.injectedMouse = cursor.InjectedMouseAsTablet.load();
 						draft.dotHideOnContact = static_cast<int>(Cursor::RestoreDotCursorHideMode(cursor.DotHideOnContact.load()));
+						// 与 PublishDraw3StateLocked 同口径规范化，越界配置不让滑块与实际渲染不一致。
+						draft.opacity = {
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Pen, cursor.PenOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightPen, cursor.HighlightPenFillOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::Dot, cursor.DotOpacity.load()) / 100.0F,
+							Cursor::NormalizeCursorOpacityPercent(Cursor::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load()) / 100.0F };
 						draft.injectedAvailable = injectedSourceAvailable;
-						const auto events = Design::RenderCursorPage(draft);
+						const auto eraser = EraserPreferencesSnapshot();
+						draft.eraserShape = static_cast<int>(eraser.shape);
+						draft.eraserPattern = static_cast<int>(eraser.cursorPattern);
+						draft.eraserTheme = static_cast<int>(eraser.cursorTheme);
+						const auto events = Design::RenderCursorPage(draft, [&](const Inkeys::UI::Setting::LayoutRect& bounds, Cursor::EraserCursorAppearance appearance) {
+							settingEraserCursors.Draw(bounds, appearance);
+						});
+						if (events.eraserShape || events.eraserPattern || events.eraserTheme)
+							SetEraserCursorPreference(events.eraserShape ? draft.eraserShape : -1,
+								events.eraserPattern ? draft.eraserPattern : -1, events.eraserTheme ? draft.eraserTheme : -1);
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
-						if (events.mouse || events.touch || events.screenPen || events.tablet || events.injectedMouse || events.dotHideOnContact)
+						const bool deviceChanged = events.mouse || events.touch || events.screenPen || events.tablet ||
+							events.injectedMouse || events.dotHideOnContact;
+						if (deviceChanged)
 						{
 							// 只写被改动的设备；未改动的设备继续沿用旧版配置或默认值。
 							const auto styleValue = [](CursorDevice device, int index) { return static_cast<int>(Cursor::CursorStyleFromItemIndex(device, index)); };
@@ -3698,9 +3818,28 @@ SettingSessionCoroutine RunSettingSession()
 							if (events.tablet) cursor.Tablet = styleValue(CursorDevice::Tablet, draft.tablet);
 							if (events.injectedMouse) cursor.InjectedMouseAsTablet = draft.injectedMouse;
 							if (events.dotHideOnContact) cursor.DotHideOnContact = draft.dotHideOnContact;
-							SyncDraw3State();
-							QueueConfigWrite();
 						}
+						bool opacityChanged = false, opacityActive = false;
+						IdtAtomic<int>* opacityFields[4]{ &cursor.PenOpacity, &cursor.HighlightPenFillOpacity,
+							&cursor.DotOpacity, &cursor.HighlightDotFillOpacity };
+						for (int index = 0; index < 4; ++index)
+						{
+							if (events.opacityChanged[index])
+							{
+								*opacityFields[index] = static_cast<int>(std::lround(draft.opacity[index] * 100.0F));
+								opacityChanged = true;
+							}
+							opacityActive |= events.opacityActive[index];
+						}
+						if (deviceChanged || opacityChanged) SyncDraw3State();
+						if (deviceChanged)
+						{
+							QueueConfigWrite();
+							cursorOpacitySavePending = false;
+						}
+						else if (opacityChanged) cursorOpacitySavePending = true;
+						if (!opacityActive && cursorOpacitySavePending.exchange(false))
+							QueueConfigWrite();
 						break;
 					}
 					if (drawingSubpage == Design::DrawingSubpage::PalmEraser)
@@ -3718,6 +3857,14 @@ SettingSessionCoroutine RunSettingSession()
 						draft.multiTouchEnabled = Inkeys::config.Drawing.MultiTouchEnabled.load();
 						draft.laserMultiTouchEnabled = Inkeys::config.Drawing.Laser.MultiTouchEnabled.load();
 						draft.tools = preferences.tools;
+						draft.shape = preferences.shape;
+						draft.sizeMode = preferences.sizeMode;
+						draft.sizeMethods = preferences.sizeMethods;
+						draft.sizeMultiplierPercent = preferences.sizeMultiplierPercent;
+						const auto eraser = EraserPreferencesSnapshot();
+						draft.eraserShape = static_cast<int>(eraser.shape);
+						draft.eraserPattern = static_cast<int>(eraser.cursorPattern);
+						draft.eraserTheme = static_cast<int>(eraser.cursorTheme);
 						// 预览与识别读取同一已应用绘图输出，不使用设置窗口所在屏幕的 DPI。
 						draft.referenceAreaPixels = Palm::ThresholdAreaPixels(reference, scale);
 						// 仅可信物理映射可显示厘米；DPI 回退仍只显示像素，避免把估算当实尺。
@@ -3725,17 +3872,26 @@ SettingSessionCoroutine RunSettingSession()
 							draft.referenceAreaCm2 = draft.referenceAreaPixels * scale.mmPerPixelX * scale.mmPerPixelY / 100.0;
 						draft.previewEstimated = scale.estimated;
 						draft.physicalSizeWarning = display.monitor != 0 && scale.available && scale.estimated;
-						const auto events = Design::RenderPalmEraser(draft);
+						const auto events = Design::RenderPalmEraser(draft, [&](const Inkeys::UI::Setting::LayoutRect& bounds,
+							Inkeys::Drawing::Draw3::EraserCursorAppearance appearance) {
+							settingEraserCursors.Draw(bounds, appearance);
+						});
 						if (events.back)
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Overview);
 						if (events.enabledChanged || events.recognitionWindowChanged || events.thresholdChanged
-							|| events.parallelWritingChanged || std::any_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool changed) { return changed; }))
+							|| events.parallelWritingChanged || events.shapeChanged || events.sizeModeChanged || events.sizeMultiplierChanged
+							|| std::any_of(events.sizeMethodsChanged.begin(), events.sizeMethodsChanged.end(), [](bool changed) { return changed; })
+							|| std::any_of(events.toolsChanged.begin(), events.toolsChanged.end(), [](bool changed) { return changed; }))
 						{
 							preferences.enabled = draft.enabled;
 							preferences.recognitionWindowMs = draft.recognitionWindowMs;
 							preferences.thresholdPercent = draft.thresholdPercent;
 							preferences.parallelWriting = draft.parallelWriting;
 							preferences.tools = draft.tools;
+							preferences.shape = draft.shape;
+							preferences.sizeMode = draft.sizeMode;
+							preferences.sizeMethods = draft.sizeMethods;
+							preferences.sizeMultiplierPercent = draft.sizeMultiplierPercent;
 							// 偏好入口统一发布 Host 并冻结写盘，页面不重复排队保存。
 							SetPalmEraserPreference(preferences);
 						}
@@ -4045,11 +4201,6 @@ SettingSessionCoroutine RunSettingSession()
 								setlist.plugInSetting.superTop.enable = value;
 								WriteSetting();
 							}, IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopNote).c_str());
-						// 指示器继续使用已有配置，只展示说明，不在此改写实际值。
-						Design::SettingRow("##super-top-indicator",
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.IndicatorE).c_str(),
-							"\ue841", 0.0F, 0.0F, [](const auto&) {});
 						break;
 					}
 
@@ -4723,6 +4874,17 @@ SettingSessionCoroutine RunSettingSession()
 						// 热生效且不持久化：每次启动都需要重新打开；同步 Draw3 与主栏按钮，不需要重启。
 						SetCanvasDebugEnabled(Experimental.Inkeys3.CanvasDebug);
 					}
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Section).c_str());
+					// 只发布调试命令；条目和动画由主栏渲染线程独占，计数读取其原子快照。
+					const int statusAction = Design::ButtonGroupRow("##status-indicator-debug",
+						IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.E).c_str(), "\ue946", {
+							{ "add", IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Add), false,
+								Inkeys::UI::Bar::StatusIndicatorCount() >= 25 },
+							{ "remove", IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Remove), false,
+								Inkeys::UI::Bar::DebugStatusIndicatorCount() == 0 } });
+					if (statusAction == 0) Inkeys::UI::Bar::DebugAddRandomStatusIndicator();
+					else if (statusAction == 1) Inkeys::UI::Bar::DebugRemoveStatusIndicator();
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)
@@ -5149,7 +5311,7 @@ SettingSessionCoroutine RunSettingSession()
 		io.Fonts->Clear();
 		ImFluent::ResetContext();
 		ImGui::DestroyContext();
-		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingFrameSubmission.Reset();
+		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset(); settingFrameSubmission.Reset();
 		CleanupDeviceD3D();
 	settingSessionEpoch = 0;
 	#undef CloseProgram
@@ -5163,6 +5325,15 @@ SettingSessionCoroutine RunSettingSession()
 
 namespace
 {
+	// 先注销并排空帧回调，再排空常驻会话；否则迟到的隐藏请求会在最终清理后重新创建会话。
+	template<class Unregister, class PostControl>
+	bool QueueFinalSettingDrain(Unregister unregister, PostControl postControl,
+		Inkeys::UI::RenderPipeline::ControlTask drain)
+	{
+		unregister();
+		return postControl(std::move(drain));
+	}
+
 	void DrainSettingSessionOnRenderThread() noexcept
 	{
 		settingNavigationClockIdle = true; settingFrameSubmission.Reset();
@@ -5218,7 +5389,7 @@ namespace
 		if (decision.releasePresentation || decision.rebuildDeviceResources || decision.rebuildFonts || decision.resize)
 		{ settingHomeEntryCache.Reset(); settingFrameSubmission.Reset(); }
 		// 预览自行按画布宽度分桶调整目标纹理，普通窗口缩放不重编译播放着色器。
-		if (decision.rebuildDeviceResources) settingEraserDemo.Reset();
+		if (decision.rebuildDeviceResources) { settingEraserDemo.Reset(); settingEraserCursors.Reset(); }
 		if (decision.releasePresentation)
 		{
 			// Hide 只撤销呈现而保留同 epoch 的预览缓存；恢复时不追赶隐藏期间的时间。
@@ -5280,7 +5451,7 @@ namespace
 			if (ImGui::GetIO().BackendRendererUserData)
 				ImGui_ImplDX11_Shutdown();
 			CleanupSettingTextures();
-			settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+			settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 			CleanupDeviceD3D();
 			const bool acquired = AcquireDeviceLease(context.epoch);
 			long backendInitResult = E_FAIL;
@@ -5294,7 +5465,7 @@ namespace
 					backendInitialized ? ImGui_ImplDX11_GetLastResult() : backendInitResult);
 				if (backendInitialized) ImGui_ImplDX11_Shutdown();
 				CleanupSettingTextures();
-				settingHomeEntryCache.Reset(); settingEraserDemo.Reset();
+				settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset();
 				CleanupDeviceD3D();
 				return pauseNavigationClock(failure);
 			}
@@ -5537,8 +5708,11 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
-		const bool drainPosted = Inkeys::UI::RenderPipeline::PostControl([]
+		const bool drainPosted = QueueFinalSettingDrain(
+			[] { Inkeys::UI::RenderPipeline::Unregister(Inkeys::UI::RenderPipeline::Client::Settings); },
+			[](auto drain) { return Inkeys::UI::RenderPipeline::PostControl(std::move(drain)); }, []
 			{
 				DrainSettingSessionOnRenderThread();
 				lock_guard stateLock(settingStateMutex);
@@ -5554,14 +5728,13 @@ namespace Inkeys::UI::Setting
 			IDTLogger->error(
 				"[Setting] 渲染管线已停止，无法在线程内排空设置会话");
 		}
-		Inkeys::UI::RenderPipeline::Unregister(
-			Inkeys::UI::RenderPipeline::Client::Settings);
 		settingBusinessQueue.Stop();
 	}
 
 	void Show() { ShowSetting(SettingOpenTarget::Current); }
 
 	void ShowSpeedEraser() { ShowSetting(SettingOpenTarget::SpeedEraser); }
+	void ShowSoftwareVersion() { ShowSetting(SettingOpenTarget::SoftwareVersion); }
 
 	void Hide()
 	{
@@ -5573,6 +5746,7 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		if (cursorOpacitySavePending.exchange(false)) QueueConfigWrite();
 		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
@@ -5905,6 +6079,117 @@ namespace Inkeys::UI::Setting
         std::printf("[font-lifecycle] failures=%d\n",failures);
         return failures ? 1 : 0;
     }
+	namespace
+	{
+		bool RunSettingShutdownRenderingCase(bool oldOrder, bool holdCallback)
+		{
+			using namespace Inkeys::UI::RenderPipeline;
+			struct Probe
+			{
+				mutex mutex;
+				condition_variable changed;
+				SessionState session;
+				bool entered = false, release = false, unregisterEntered = false, cleanupPosted = false;
+				bool drainRan = false, afterSettingsSlot = false, resident = true, drained = false;
+				unsigned recreated = 0;
+			} probe;
+			probe.session.CommitEpoch(1);
+			probe.session.SetVisible(false);
+			Scheduler scheduler;
+			jthread stopping;
+			struct Cleanup
+			{
+				Probe& probe; Scheduler& scheduler; jthread& stopping;
+				~Cleanup()
+				{
+					{ lock_guard lock(probe.mutex); probe.release = true; }
+					probe.changed.notify_all();
+					if (stopping.joinable()) stopping.join();
+					scheduler.Stop();
+				}
+			} cleanup{ probe, scheduler, stopping };
+			if (!scheduler.Register(Client::Settings, [&](const auto&)
+				{
+					unique_lock lock(probe.mutex);
+					probe.entered = true; probe.changed.notify_all();
+					if (holdCallback && !probe.drainRan) probe.changed.wait(lock, [&] { return probe.release; });
+					// 复用真实隐藏会话决策：没有 resident 时，即使不可见也会先初始化常驻部分。
+					if (probe.session.Resolve(1, probe.resident, false).initializeResident)
+					{
+						probe.resident = true; probe.drained = false; ++probe.recreated;
+						probe.session.CommitEpoch(1);
+					}
+					return FrameResult::Idle;
+				}) || !scheduler.Register(Client::WhiteboardFreeze, [&](const auto&)
+				{
+					lock_guard lock(probe.mutex);
+					// 真实调度顺序中，此 sentinel 必须经过 Settings 的 dispatch slot 后才执行。
+					if (probe.drainRan) { probe.afterSettingsSlot = true; probe.changed.notify_all(); }
+					return FrameResult::Idle;
+				}) || !scheduler.Start()) return false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.entered; })) return false;
+			}
+			const auto drain = [&]
+			{
+				{
+					lock_guard lock(probe.mutex);
+					probe.resident = false; probe.drained = true; probe.drainRan = true;
+					probe.session.ReleaseResident();
+				}
+				// 对应最终清理后到达的 Hide/业务完成请求，不依赖 Sleep 争抢 waiter。
+				scheduler.Request(Mask(Client::Settings) | Mask(Client::WhiteboardFreeze));
+			};
+			bool queued = false;
+			if (oldOrder) queued = scheduler.PostControl(drain);
+			else
+			{
+				stopping = jthread([&]
+				{
+					queued = QueueFinalSettingDrain([&]
+						{
+							{ lock_guard lock(probe.mutex); probe.unregisterEntered = true; }
+							probe.changed.notify_all();
+							scheduler.Unregister(Client::Settings);
+						}, [&](auto task)
+						{
+							{ lock_guard lock(probe.mutex); probe.cleanupPosted = true; }
+							return scheduler.PostControl(std::move(task));
+						}, drain);
+				});
+				if (holdCallback)
+				{
+					unique_lock lock(probe.mutex);
+					if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.unregisterEntered; })
+						|| probe.cleanupPosted || probe.drainRan) return false;
+					probe.release = true; probe.changed.notify_all();
+				}
+				stopping.join();
+			}
+			if (!queued) return false;
+			bool expected = false;
+			{
+				unique_lock lock(probe.mutex);
+				if (!probe.changed.wait_for(lock, chrono::seconds(2), [&] { return probe.afterSettingsSlot; })) return false;
+				expected = oldOrder ? probe.resident && !probe.drained && probe.recreated == 1
+					: !probe.resident && probe.drained && probe.recreated == 0;
+			}
+			if (oldOrder) scheduler.Unregister(Client::Settings);
+			return expected;
+		}
+
+		bool RunSettingShutdownRenderingTests()
+		{
+			const bool negative = RunSettingShutdownRenderingCase(true, false);
+			const bool hidden = RunSettingShutdownRenderingCase(false, false);
+			const bool active = RunSettingShutdownRenderingCase(false, true);
+			std::fprintf(stderr, "[SettingShutdownRendering] old-order-recreated=%d hidden-drained=%d active-callback-drained=%d\n",
+				negative, hidden, active);
+			return negative && hidden && active;
+		}
+	}
+
 	int RunBusinessCancellationProductionTest() noexcept
 	{
 		if (settingInitialized.load() || Inkeys::Window::GetService().Running()) return 2;
@@ -5933,6 +6218,7 @@ namespace Inkeys::UI::Setting
 		};
 		try
 		{
+			if (!RunSettingShutdownRenderingTests()) return 1;
 			SettingBusinessQueue queue(execute, &probe);
 			if (!queue.Start()) return 1;
 			SettingBusinessCommand dialog; dialog.kind = SettingBusinessKind::Information; queue.Enqueue(dialog);

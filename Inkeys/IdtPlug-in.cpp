@@ -997,6 +997,8 @@ void PptInfo()
 			expectedPptUiTarget.reset();
 		}
 		Inkeys::UI::Ppt::PublishSession(session.localSession, false, nullptr);
+		// 真正结束放映才注销；打开白板不经过此处，状态保留。
+		Inkeys::UI::Bar::RetirePptStatusIndicator(session.localSession);
 		Inkeys::UI::Freeze::SetPresentationActive(false);
 		pptTakeoverConsumedInCurrentShow = false;
 		ppt_show = nullptr;
@@ -1194,6 +1196,8 @@ void PptInfo()
 					pptComSetlist.showLoadingScreen) FreezePPT = true;
 				pptTakeoverConsumedInCurrentShow = false;
 				Inkeys::UI::Ppt::PublishSession(session.localSession, true, ppt_show);
+				// 只在新场次开始边沿发布；同场窗口重新锚定不算新出现。
+				Inkeys::UI::Bar::PublishPptStatusIndicator(session.localSession, ppt_software == L"WPS");
 				Inkeys::UI::Freeze::SetPresentationActive(true);
 				barUISet.UpdateRendering();
 				focusAfterStart = descriptorWindowMatches;

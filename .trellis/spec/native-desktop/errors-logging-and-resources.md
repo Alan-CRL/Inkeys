@@ -374,6 +374,7 @@ LogFailure(); JoinOwner(); failure.BeginKnownFailure();
 ### 2. Signatures
 
 - 开关沿用进程启动 `INKEYS_PPT_PERF=1`，默认关闭。
+- `Scripts/Start-ShutdownDiagnostic.cmd` 默认20轮；对应PS1支持 `-Rounds 1..100`、`-PromptForNotes`、互斥的 `-PrepareOnly` / `-SelfTest`。前者不启动进程，后者仅固定两轮无窗口模拟child。
 - native独立前缀 `[ShutdownTrace] v=1 source=native pid tid qpc frequency span event=begin|end stage result error`；`Inkeys::Shutdown::ProgressTrace`复用公开PptPerf POD/Recorder core，但有独立跨TU inline Recorder/序号与formatter/rawstderr，不动导航TLS。
 - managed沿用PptPerf协议，阶段为`shutdown-managed-finally/mailbox-stop/retired-events/retired-event-retry/retired-event-wait`及`cleanup-final/cleanup-rebind`，子项`cleanup-invalidate/annotation-reset/unbind/event-deactivate/event-disconnect/event-retire/release-window/release-presentation/release-application/reset-roots/reset-pages/message-before/message-after`，各词使用完整shutdown-或cleanup-前缀。
 
@@ -386,6 +387,9 @@ LogFailure(); JoinOwner(); failure.BeginKnownFailure();
 - 仅原生stderr小型数字输出，不依赖可能已停用的IDTLogger，不创建可见控制台，不关闭借用标准句柄。输出失败不抛、不增加COM/窗口查询。
 - native阶段覆盖set-off、main-shutdown及原join/组件/COM卸载、PPTLinkage/info/PptShutdown/原GetPptState等待与服务槽reset；managed只包原finally、事件断连/退役和window→presentation→application逐笔释放，actualdynamic、借用/转移、IErrorInfo与所有finally保持，无GC/FinalRelease。
 - stage end只说明被包裹步骤返回，不说明进程已正常退出。必须同时核对采集manifest exit_code/exitstatus；日志缺失或未结束只能作为定位证据，不据此自动归因某资源。
+- 逐轮采集并行排空stdout/stderr，先记录精确进程退出观测QPC，再有界等待流排空和离线分析；关闭耗时从该PID首个set-off开始，不等于点击时刻/程序总生命周期。main-shutdown结束后至观测退出的间隔不能直接当成某个析构或PPT阻塞。
+- 进程守卫只包括归一化后本安装目录及精确installer子目录；其他worktree/类似前缀排除，空/不可读/非完全限定路径按unknown阻止启动。采集器不关闭现有进程，不改永久环境/配置，版本变化、后继实例或无关闭marker会保留本轮并停止衔接。
+- 每轮保留原始流/manifest/native快照，会话更新summary.json/csv；以namespace+PID+span及QPC配对，缺段/逆序/频率不符显式标不完整，managed final可略早于native Capture且须按窗口重叠归因，旧rebind不冒充退出。原始历史记录不为修正守卫误判而改写。
 
 ### 4. Validation & Error Matrix
 
@@ -396,6 +400,8 @@ LogFailure(); JoinOwner(); failure.BeginKnownFailure();
 | sink抛错/标准错误句柄无效 | 不穿透业务或改变错误码，缺记录不冒充完成 |
 | managed CP busy/永久拒绝 | 原退役lease/重试/返回保持，不能为日志强制释放 |
 | 退出码E1430016 | 退出验收失败，分别查最后native/managed阶段，不推断helper或GC |
+| 其他安装目录的同名进程 | 不阻断本目录采集；未知路径仍保守阻止启动 |
+| 无set-off或进程观察句柄丢失 | 耗时/退出码未知，不能以0或shell成功冒充 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -407,7 +413,47 @@ LogFailure(); JoinOwner(); failure.BeginKnownFailure();
 
 Native无窗口helper覆盖cold flag/Recorder准备、未预热空capture、禁用零clock/sink、嵌套/异常闭合、原始错误A→业务B→析构仍B、throwingsink/invalidstderr；原PPT定向回归须通过。Managed final/rebind与servicefinally、CP成功/busy/保留lease、六种trace on/off原操作/释放/状态等价、throwingwriter/IErrorInfo/配对。完整Debug|ARM64、TLB/内嵌DLL核对、PrepareOnly无GUI不改配置；真实正常退出另由用户同一路径复测。
 
+采集器 `-SelfTest` 覆盖14个目录范围正负例、首轮非零后第二轮继续、双路大输出、恰好两轮、PID/namespace/QPC/managed-final异常配对；PowerShell7运行与5.1语法分开验，不绕过Restricted执行策略。采集器或文档单独改动不要求重建C++，产品改动仍按原solution入口验证。
+
 ### 7. Wrong vs Correct
 
 - Wrong：为定位Arm先输出begin，或借新诊断改变15秒超时以让采集显示exit0。
 - Correct：预热后的POD捕获先留内存，原监督返回后输出，依原退出码和完整阶段链判断。
+
+## Scenario: 隐藏设置会话退出时先停帧再排空（2026-11-05）
+
+### 1. Scope / Trigger
+
+从白板或其他界面退出时，设置窗口即使隐藏也有常驻会话。`main-setting` 未返回并触发15秒兜底时，须检查最终清理与待处理 Settings 帧的先后关系，不能仅因操作来自白板而归因墨迹保存。
+
+### 2. Signatures
+
+`Inkeys::UI::Setting::Shutdown() noexcept`、`Scheduler::Unregister(Client::Settings)`、`PostControl(ControlTask)`、`DrainSettingSessionOnRenderThread()`。
+
+### 3. Contracts
+
+- 最终会话清理投递前，先注销 Settings 帧回调并等待在途回调返回；注销后到达的 Hide/业务完成请求不能重新创建 resident。
+- ImGui/D3D/草稿提交及协程销毁仍在渲染线程执行；主线程等待实际排空，再停止并排空业务 FIFO。共享调度器在此期间保持运行，不能把注销客户端当作停止整个管线。
+- 不得在等待 `settingSessionDrained` 之后才注销回调：调度器先执行 control，随后仍可执行同批待处理帧；重建会话会将该布尔量重新置为 false，使主线程永久等待。
+- 不得直接以 `!settingInitialized` 拦截首帧；Initialize 本来就要等首帧预热成功后才发布 initialized。原15秒监督和探针保持，不以增加超时掩盖竞态。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须结果 |
+| --- | --- |
+| 最终清理后仍有 Settings 请求 | 不再进入帧回调，不重建会话，drained 不回到 false |
+| Settings 回调正在执行 | 先等待该回调完成，再投递最终清理 |
+| 隐藏且调度器空闲 | control 仍能唤醒并完成排空，不要求创建可见窗口 |
+
+### 5. Good / Base / Bad Cases
+
+Good：先停 Settings 帧再清常驻资源；Base：正常初始化和隐藏缓存保留；Bad：清理通知完成后，迟到帧又将 drained 置回 false。
+
+### 6. Tests Required
+
+`Inkeys.exe --setting-business-cancellation-test` 覆盖真实 Scheduler/SessionState 的迟到请求与在途帧排空；旧顺序负例必须能重建 resident，生产顺序必须阻止重建。门和 sentinel 强制交错，不靠重复运行或固定 sleep 猜时序。完整 Debug|ARM64 Solution 及相关无窗口回归通过后，由用户复测白板退出；无窗口回归不替代实机退出验收。
+
+### 7. Wrong vs Correct
+
+Wrong：PostControl(final drain) → wait(drained) → Unregister(Settings)。
+Correct：Unregister(Settings) 并排空在途帧 → PostControl(final drain) → wait(drained) → 业务 FIFO Stop。

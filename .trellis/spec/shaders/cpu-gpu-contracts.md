@@ -145,7 +145,7 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 
 这些数值虽然部分未暴露在 enum 中，但已经是 CPU/GPU 协议；不要任意复用。
 
-Cursor `InkData[0]` 使用 `pos=center, r=halfWidth, time=halfHeight`；`InkData[1].pos` 使用 `x=outlineWidth, y=fillAlpha`。`globalColor` 保存 fill RGB 与整体 opacity，`globalPadding` 保存 outline RGB。Cursor shape 不写 operator texture，而是对 backbuffer 使用 `operatorResolveBlendState` 直接计算 `premultiplied Add + Retain * Destination`。
+Cursor `InkData[0]` 使用 `pos=center, r=halfWidth, time=halfHeight`；`InkData[1].pos` 使用 `x=outlineWidth, y=fillAlpha`，`r=outlineOpacity+1`，`time=outerOutlineWidth`（仅高亮 Pen/Dot 为 1 物理像素，其它光标为 0）。VS 将后两者映射为 `uv.x/uv.y`；PS 依次合成外黑边、灰色/白色环和彩色填充，外黑边与高亮白环不透明。`globalColor` 保存 fill RGB 与整体 opacity，`globalPadding` 保存 outline RGB。Cursor shape 不写 operator texture，而是对 backbuffer 使用 `operatorResolveBlendState` 直接计算 `premultiplied Add + Retain * Destination`。
 
 ## Scenario: Whiteboard Pattern Under Pass (Draw3 后备归属)
 

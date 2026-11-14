@@ -46,6 +46,12 @@
         "Mode": "Mod bară inferioară",
         "Centered": "Centrat"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Prezentare",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Versiune nouă"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Golire",
@@ -702,7 +708,26 @@
           "E": "Tabletele grafice fără Windows Ink ajung de obicei ca „mouse injectat de driver”. Dacă este activată, acest mouse folosește setările de cursor ale tabletei; programele care injectează și ele mouse, precum Remote Desktop, pot fi detectate greșit.",
           "Unavailable": "Acest sistem nu poate distinge sursa intrării, deci opțiunea nu este disponibilă."
         },
+        "Eraser":
+        {
+          "N": "Cursorul radierei",
+          "E": "Forma stabilește și zona ștearsă efectiv (dreptunghiurile au colțuri drepte); modelul și modul luminos/întunecat schimbă doar aspectul cursorului.",
+          "Appearance": "Aspect",
+          "Light": "Luminos",
+          "Dark": "Întunecat",
+          "Circle": "Cerc",
+          "Rectangle": "Dreptunghi",
+          "Square": "Pătrat",
+          "Grips": "Clasic",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Sclipire"
+        },
         "FineControl": "Control fin",
+        "OpacitySection": "Opacitate",
+        "PenOpacity": "Opacitatea cursorului creionului",
+        "HighlightPenFillOpacity": "Opacitatea umplerii cursorului creionului (evidențiat)",
+        "DotOpacity": "Opacitatea cursorului cu punct mic",
+        "HighlightDotFillOpacity": "Opacitatea umplerii cursorului cu punct mic (evidențiat)",
         "DotHideOnContact":
         {
           "N": "Ascunde automat cursorul cu punct mic la contact",
@@ -711,8 +736,7 @@
           "ScreenPen": "Doar creion pe ecran",
           "Tablet": "Doar tabletă grafică",
           "Both": "Creion pe ecran și tabletă grafică"
-        },
-        "Note": "La creionul de ecran, tableta grafică și atingere, „Mouse” este o săgeată desenată chiar de aplicație; cursoarele evidențiatorului și ale pointerului laser, instrumentele de forme și cursorul dedicat radierei nu sunt afectate de aceste opțiuni."
+        }
       },
       "Effect":
       {
@@ -777,7 +801,34 @@
           "ParallelWritingMultiTouchNote": "Desenarea cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu poate funcționa.",
           "ParallelWritingLaserMultiTouchNote": "Intrarea laser cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu funcționează pentru laser.",
           "ParallelWriting": "Activare scriere în timpul ștergerii",
-          "ParallelWritingDescription": "Activarea radierei cu palma nu întrerupe alte intrări, astfel că desenarea poate continua. (Pentru două sau mai multe persoane care scriu împreună.)"
+          "ParallelWritingDescription": "Activarea radierei cu palma încheie doar scrierea tactilă din apropiere și blochează atingerile noi în jurul ei; în alte zone se poate scrie în continuare. (Pentru două sau mai multe persoane care scriu împreună.)",
+          "CursorNoticeTitle": "Tema și modelul urmează setările cursorului",
+          "CursorNoticeDescription": "Cursorul radierei cu palma folosește tema și modelul setate în „Desen › Cursor › Cursorul radierei”. Aici se poate alege separat doar forma.",
+          "Shape": "Forma radierei cu palma",
+          "ShapeDescription": "Forma stabilește și zona ștearsă efectiv cu palma. „Urmează implicitul” folosește aceeași formă ca radiera obișnuită.",
+          "FollowDefault": "Urmează implicitul",
+          "SizeSection": "Dimensiunea radierei cu palma",
+          "SizeMode": "Metoda de calcul al grosimii",
+          "SizeModeDescription": "Alegeți cum se calculează grosimea radierei cu palma.",
+          "SizeModeDynamic": "Grosime dinamică",
+          "SizeModeFollowDefault": "Fixă (radiera implicită)",
+          "SizeModeFixed": "Fixă (fără viteză)",
+          "SizeModeDynamicNote": "Calculată în funcție de suprafața de contact",
+          "SizeModeFollowDefaultNote": "Folosește dimensiunea radierei implicite; variază în funcție de viteza stiloului când „Dim. automată” este activată",
+          "SizeModeFixedNote": "Folosește întotdeauna dimensiunea radierei implicite",
+          "SizeMethod": "Metoda de calcul al dimensiunii",
+          "SizeMethodDescription": "Metoda de conversie a dreptunghiului de contact în dimensiunea radierei.",
+          "MethodEllipseArea": "Aria elipsei înscrise",
+          "MethodRectangleArea": "Aria dreptunghiului",
+          "MethodInscribedCircle": "Cerc înscris",
+          "MethodCircumscribedCircle": "Cerc circumscris",
+          "MethodInscribedRectangle": "Dreptunghi înscris",
+          "MethodCircumscribedRectangle": "Dreptunghi circumscris",
+          "MethodInscribedSquare": "Pătrat înscris",
+          "MethodCircumscribedSquare": "Pătrat circumscris",
+          "SizeMethodShapeNote": "Forma curentă: {}",
+          "SizeMultiplier": "Multiplicatorul dimensiunii de ștergere",
+          "SizeMultiplierDescription": "Scalează latura sau diametrul radierei fără a afecta recunoașterea."
         },
         "Input":
         {
@@ -806,6 +857,33 @@
           "Note": "Nerecomandat pentru dispozitive cu ecran mare."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Poziție",
+      "DesktopSection": "Desktop",
+      "PptSection": "Prezentare",
+      "WhiteboardSection": "Tablă",
+      "StartupE": "Stabilește unde apare bara la următoarea pornire. Bara de sus centrată este doar o poziție inițială și nu se lipește.",
+      "TypeBottomBar": "Bară de jos centrată",
+      "TypeTopBar": "Bară de sus centrată",
+      "TypeFloating": "Fereastră flotantă",
+      "PositionLabel": "Poziție",
+      "ExpandRight": "Extinde spre dreapta",
+      "ExpandLeft": "Extinde spre stânga",
+      "FloatBottomLeft": "Colțul din stânga jos",
+      "FloatBottomRight": "Colțul din dreapta jos",
+      "FloatBottomCenter": "Jos, centru",
+      "PptAutoDock": "Intră în modul bară de jos centrată la începutul prezentării",
+      "PptAutoDockE": "Dacă înainte bara se află într-o stare bifată, la începutul prezentării devine o bară de jos centrată și extinsă, iar la final este restaurată.",
+      "WhiteboardAutoDock": "Intră în modul bară de jos centrată la intrarea în tablă",
+      "WhiteboardAutoDockE": "Dacă înainte bara se află într-o stare bifată, la intrarea în tablă devine o bară de jos centrată și extinsă, iar la ieșire este restaurată.",
+      "StateBottom": "Starea barei de jos",
+      "StateBottomFolded": "Starea barei de jos (restrânsă)",
+      "StateFloating": "Starea ferestrei flotante",
+      "StateFloatingFolded": "Starea ferestrei flotante (restrânsă)",
+      "MainButtonDirection": "Direcția butonului principal",
+      "DirectionKeep": "Fără modificare"
     },
     "Preset":
     {
@@ -984,8 +1062,6 @@
           "SuperTop": "Activare SuperTop",
           "SuperTopE1": "Programul folosește o pornire în trei etape pentru a rămâne deasupra celorlalte ferestre.\n(SuperTop este activ)",
           "SuperTopE2": "Programul folosește o pornire în trei etape pentru a rămâne deasupra celorlalte ferestre.\n(SuperTop nu este activ)",
-          "Indicator": "Indicator SuperTop",
-          "IndicatorE": "Afișează o pioneză în colțul din dreapta sus al pictogramei principale când SuperTop se activează cu succes.",
           "SuperTopNote": "Reporniți Inkeys pentru aplicare; activarea SuperTop poate eșua la pornire."
         },
         "SupportNote": "Necesită Windows 8 sau mai nou."
@@ -1082,6 +1158,20 @@
       "ClassIslandProtocolNote": "Înregistrați protocolul de navigare URL din setările ClassIsland.",
       "ClassIslandSwapNote": "Componenta nu are efect dacă în ClassIsland nu este încărcat un orar."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicator de stare",
+      "E": "Afișează pe butonul principal stări precum modul prezentare, SuperTop și actualizările software.",
+      "Enable":
+      {
+        "N": "Activează indicatorul de stare",
+        "E": "Când este dezactivat, butonul principal nu mai afișează indicații de stare."
+      },
+      "Types": "Afișează aceste stări",
+      "TypeSlideshow": "Prezentare",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Versiune nouă"
+    },
     "DesktopShortcut":
     {
       "N": "Comenzi rapide",
@@ -1165,6 +1255,14 @@
       {
         "N": "Întârzie operațiile în așteptare",
         "E": "Prelungește încărcarea pentru observarea animațiilor."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicator de stare",
+        "N": "Testează indicatorul de stare",
+        "E": "Adaugă sau elimină stări de test aleatorii pentru a verifica animația, textul lung și inelul de progres.",
+        "Add": "Adaugă o stare aleatorie",
+        "Remove": "Elimină o stare"
       },
       "ConsoleSection": "Ieșire în consolă",
       "CanvasInformation": "Informații despre inițializarea pânzei",

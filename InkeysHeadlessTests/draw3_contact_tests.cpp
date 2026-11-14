@@ -1242,7 +1242,10 @@ namespace
 			return ResolvePrimaryDrawingCursorVisual(pen, mouse, owner, appearance, eraser,
 				erases, contactVisible, false, effective.mouse == CursorStyle::Arrow, &effective, penIconAllowed, scale);
 		};
-		const auto highlighted = [](const DrawingCursorVisual& v) { return Near(v.appearance.outlineWidth, 1.25f); };
+		const auto highlighted = [](const DrawingCursorVisual& v) {
+			return Near(v.appearance.outlineOpacity, 1.0f) &&
+				(v.appearance.shape == DrawingCursorShape::Rectangle || Near(v.appearance.outerOutlineWidth, 1.0f));
+		};
 		const auto plain = [](const DrawingCursorVisual& v) { return Near(v.appearance.outlineWidth, 0.5f); };
 		const auto setScreen = [&] {
 			pen.source = { SpeedEraser::SourceKind::IntegratedPen, SpeedEraser::SourceRecognition::RtsCapabilities };
@@ -1290,6 +1293,43 @@ namespace
 						"each style renders its own shape and edge on screen pen, tablet, unknown and conflict rows")) ++failures;
 				}
 			}
+		}
+
+		setScreen();
+		settings.screenPen = CursorStyle::Pen;
+		settings.penOpacity = 75;
+		const auto plainPenOpacity = resolve(penOwner, penAppearance);
+		settings = {}; setScreen(); settings.screenPen = CursorStyle::Dot; settings.dotOpacity = 40;
+		const auto plainDotOpacity = resolve(penOwner, penAppearance);
+		settings = {}; setScreen(); settings.screenPen = CursorStyle::HighlightPen; settings.highlightPenFillOpacity = 80;
+		const auto highlightPenOpacity = resolve(penOwner, penAppearance);
+		settings = {}; setScreen(); settings.screenPen = CursorStyle::HighlightDot; settings.highlightDotFillOpacity = 35;
+		const auto highlightDotOpacity = resolve(penOwner, penAppearance);
+		if (!Expect(Near(plainPenOpacity.appearance.opacity, 0.75f) &&
+			Near(plainPenOpacity.appearance.fillAlpha, 1.0f) && Near(plainPenOpacity.appearance.outlineOpacity, 0.75f) &&
+			Near(plainDotOpacity.appearance.opacity, 0.40f) && Near(plainDotOpacity.appearance.fillAlpha, 1.0f) &&
+			Near(plainDotOpacity.appearance.outlineOpacity, 0.40f) &&
+			Near(plainDotOpacity.appearance.outerOutlineWidth, 0.0f) &&
+			Near(highlightPenOpacity.appearance.opacity, 1.0f) && Near(highlightPenOpacity.appearance.fillAlpha, 0.80f) &&
+			Near(highlightPenOpacity.appearance.outlineOpacity, 1.0f) &&
+			Near(highlightPenOpacity.appearance.outerOutlineWidth, 1.0f) &&
+			Near(highlightDotOpacity.appearance.opacity, 1.0f) && Near(highlightDotOpacity.appearance.fillAlpha, 0.35f) &&
+			Near(highlightDotOpacity.appearance.outlineOpacity, 1.0f) &&
+			Near(highlightDotOpacity.appearance.outerOutlineWidth, 1.0f),
+			"plain styles unify edge and fill opacity while highlights change only their fill")) ++failures;
+
+		struct RingCase { float diameter; float scale; float edge; };
+		for (const auto& test : { RingCase{ 3.0f, 1.0f, 1.0f }, RingCase{ 8.0f, 1.0f, 1.0f },
+			RingCase{ 10.0f, 1.0f, 1.25f }, RingCase{ 12.0f, 1.0f, 1.25f },
+			RingCase{ 16.0f, 2.0f, 2.0f }, RingCase{ 20.0f, 2.0f, 2.5f } })
+		{
+			DrawingCursorAppearance sized = penAppearance;
+			sized.width = sized.height = test.diameter;
+			settings = {}; setScreen(); settings.screenPen = CursorStyle::HighlightDot;
+			const auto ring = resolve(penOwner, sized, Bridge::Tool::Pen, true, test.scale);
+			if (!Expect(ring.visible && Near(ring.appearance.outlineWidth, test.edge) &&
+				Near(ring.appearance.outerOutlineWidth, 1.0f) && Near(ring.appearance.width, test.diameter),
+				"highlight dot ring follows diameter/8 with physical-pixel minimum and DIP maximum")) ++failures;
 		}
 
 		// 屏幕笔与数位板互相独立；未知/冲突沿用数位板行。
@@ -1495,6 +1535,14 @@ namespace
 			touchHighDot.visible && highlighted(touchHighDot) &&
 			!MakeTouchPenDrawingCursorVisual(NAN, 0.0f, penAppearance, CursorStyle::Dot, 1.0f).visible,
 			"touch pen cursors follow the selected style at each contact")) ++failures;
+		settings = {};
+		settings.highlightDotFillOpacity = 85;
+		const auto touchConfigured = MakeTouchPenDrawingCursorVisual(
+			15.0f, 25.0f, penAppearance, CursorStyle::HighlightDot, 1.0f, &settings);
+		if (!Expect(touchConfigured.visible && Near(touchConfigured.appearance.fillAlpha, 0.85f) &&
+			Near(touchConfigured.appearance.opacity, 1.0f) &&
+			Near(touchConfigured.appearance.outerOutlineWidth, 1.0f),
+			"touch highlight cursor consumes the same independent fill opacity and opaque outer edge")) ++failures;
 
 		// 配置值、旧配置回落、设置页下拉索引与打包往返。
 		bool packedOk = true;
@@ -1503,13 +1551,27 @@ namespace
 			{
 				const CursorSettings expected{ static_cast<CursorStyle>(m), static_cast<CursorStyle>(t),
 					static_cast<CursorStyle>(u), static_cast<CursorStyle>(v), i != 0, static_cast<DotCursorHideMode>(mode) };
-				const uint32_t bits = PackCursorSettings(expected);
+				const uint64_t bits = PackCursorSettings(expected);
 				packedOk = packedOk && UnpackCursorSettings(bits) == expected && (bits & kCursorSettingsValidBit) != 0;
 			}
 		bool indexOk = true;
 		for (const auto device : { CursorDevice::Mouse, CursorDevice::Touch, CursorDevice::ScreenPen, CursorDevice::Tablet })
 			for (int index = 0; index < CursorStyleItemCount(device); ++index)
 				indexOk = indexOk && CursorStyleToItemIndex(device, CursorStyleFromItemIndex(device, index)) == index;
+		CursorSettings customOpacity;
+		customOpacity.penOpacity = 25;
+		customOpacity.highlightPenFillOpacity = 100;
+		customOpacity.dotOpacity = 75;
+		customOpacity.highlightDotFillOpacity = 50;
+		const auto unpackedCustom = UnpackCursorSettings(PackCursorSettings(customOpacity));
+		const auto unpackedEmpty = UnpackCursorSettings(0);
+		if (!Expect(unpackedCustom == customOpacity &&
+			unpackedEmpty.penOpacity == 50 && unpackedEmpty.highlightPenFillOpacity == 50 &&
+			unpackedEmpty.dotOpacity == 25 && unpackedEmpty.highlightDotFillOpacity == 50 &&
+			NormalizeCursorOpacityPercent(CursorStyle::Pen, 24) == 50 &&
+			NormalizeCursorOpacityPercent(CursorStyle::Dot, 101) == 25 &&
+			CursorOpacityPercent(customOpacity, CursorStyle::HighlightPen) == 100,
+			"cursor opacity percentages round-trip through high bits and invalid values restore style defaults")) ++failures;
 		const CursorSettings defaults;
 		if (!Expect(packedOk && indexOk && defaults.mouse == CursorStyle::Arrow && defaults.touch == CursorStyle::None &&
 			defaults.screenPen == CursorStyle::Dot && defaults.tablet == CursorStyle::HighlightDot &&

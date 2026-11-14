@@ -47,7 +47,10 @@ namespace draw3::uink
 			}
 			result.style.opacity = ink.opacity;
 			result.style.fallbackRgb = ink.color.fallbackRgb;
+			if (ink.eraserShape > 2 ||
+				(ink.eraserShape != 0 && ink.effectiveKind != UInkInkKind::Erase)) return std::nullopt;
 			result.style.texture = 0;
+			result.style.eraserShape = ink.eraserShape;
 			result.undoId = ink.undoId;
 			for (const UInkInkPoint& point : ink.points)
 			{

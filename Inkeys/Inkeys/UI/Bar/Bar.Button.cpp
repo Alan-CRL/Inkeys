@@ -1251,7 +1251,7 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized,
 	// 每个状态使用专属图标：回到白板、返回放映、关闭白板与打开白板。
 	whiteboard->TransitionContent(resume ? L"barResumeWhiteboard"
 			: returnToShow ? L"barReturnShow"
-			: active ? L"barCloseSmall" : L"barWhiteboard",
+			: active ? L"barCloseWhiteboard" : L"barWhiteboard",
 		resume ? IW(I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel)
 			: returnToShow ? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
 			: active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)

@@ -1,0 +1,48 @@
+Dispatch fixture machine=0x8664
+try CLEAN
+CLEAN!
+final=False node=Application refs_before_fixture_owner_release=1
+final=False node=Presentation refs_before_fixture_owner_release=1
+final=False node=Window refs_before_fixture_owner_release=1
+final=False node=View refs_before_fixture_owner_release=1
+final=False node=Slides refs_before_fixture_owner_release=1
+final=False node=Slide1 refs_before_fixture_owner_release=1
+final=False node=Slide2 refs_before_fixture_owner_release=1
+final=False node=Slide3 refs_before_fixture_owner_release=1
+final=False node=Navigation refs_before_fixture_owner_release=1
+final=False node=ShowWindows refs_before_fixture_owner_release=1
+PASS production FullCleanup, real event connection and 100 getter/observation cycles; final=False
+Dispatch fixture machine=0x8664
+try CLEAN
+CLEAN!
+final=True node=Application refs_before_fixture_owner_release=1
+final=True node=Presentation refs_before_fixture_owner_release=1
+final=True node=Window refs_before_fixture_owner_release=1
+final=True node=View refs_before_fixture_owner_release=1
+final=True node=Slides refs_before_fixture_owner_release=1
+final=True node=Slide1 refs_before_fixture_owner_release=1
+final=True node=Slide2 refs_before_fixture_owner_release=1
+final=True node=Slide3 refs_before_fixture_owner_release=1
+final=True node=Navigation refs_before_fixture_owner_release=1
+final=True node=ShowWindows refs_before_fixture_owner_release=1
+PASS production FullCleanup, real event connection and 100 getter/observation cycles; final=True
+Dispatch fixture machine=0x8664
+try CLEAN
+CLEAN!
+after FullCleanup including GC: injected_Unadvise_busy pending=1 application_refs=5 active_connections=1
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+[PptCOM] event-cleanup-pending=1 hr=0x8001010A
+after three explicitly injected busy retries: pending=1; provider remains referenced
+PASS explicit retry clears same CP acquisition after busy; GC did not clear it
+final=True node=Application refs_before_fixture_owner_release=1
+final=True node=Presentation refs_before_fixture_owner_release=1
+final=True node=Window refs_before_fixture_owner_release=1
+final=True node=View refs_before_fixture_owner_release=1
+final=True node=Slides refs_before_fixture_owner_release=1
+final=True node=Slide1 refs_before_fixture_owner_release=1
+final=True node=Slide2 refs_before_fixture_owner_release=1
+final=True node=Slide3 refs_before_fixture_owner_release=1
+final=True node=Navigation refs_before_fixture_owner_release=1
+final=True node=ShowWindows refs_before_fixture_owner_release=1
+PASS production FullCleanup, real event connection and 100 getter/observation cycles; final=True

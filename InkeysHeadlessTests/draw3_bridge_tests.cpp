@@ -153,6 +153,19 @@ namespace
 				beforeMode.cursorSettings.dotHideOnContact != afterMode.cursorSettings.dotHideOnContact,
 				"dot contact hide mode alone publishes a new immutable cursor revision")) ++failures;
 		}
+		const auto beforeOpacity = bridge.Snapshot();
+		auto opacityOnly = beforeOpacity;
+		opacityOnly.cursorSettings.penOpacity = 75;
+		bridge.PublishState(opacityOnly);
+		const auto afterOpacity = bridge.Snapshot();
+		if (!Expect(beforeOpacity.cursorSettings.penOpacity == 50 &&
+			beforeOpacity.cursorSettings.highlightPenFillOpacity == 50 &&
+			beforeOpacity.cursorSettings.dotOpacity == 25 &&
+			beforeOpacity.cursorSettings.highlightDotFillOpacity == 50 &&
+			afterOpacity.revision == beforeOpacity.revision + 1 &&
+			afterOpacity.cursorSettings == opacityOnly.cursorSettings &&
+			afterOpacity.cursorSettings.dotOpacity == beforeOpacity.cursorSettings.dotOpacity,
+			"cursor opacity uses independent defaults and publishes an immutable single-field revision")) ++failures;
 	}
 
 	void TestMouseCursorToolProjection(int& failures)

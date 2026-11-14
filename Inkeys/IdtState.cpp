@@ -94,6 +94,10 @@ namespace
 		result.thresholdPercent = saved.ThresholdPercent.load();
 		result.recognitionWindowMs = saved.RecognitionWindowMs.load();
 		result.parallelWriting = saved.ParallelWriting.load();
+		result.shape = saved.Shape.load();
+		result.sizeMode = saved.SizeMode.load();
+		result.sizeMethods = { saved.SizeMethodCircle.load(), saved.SizeMethodRectangle.load(), saved.SizeMethodSquare.load() };
+		result.sizeMultiplierPercent = saved.SizeMultiplierPercent.load();
 		const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
 			&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
 		for (size_t index = 0; index < fields.size(); ++index) result.tools[index] = fields[index]->load();
@@ -109,6 +113,11 @@ namespace
 		result.automaticPenSupported=AutomaticPenResponseAvailable();
 		result.baseSize=RestoreBaseSize(saved.BaseDiameterDip.load());
 		result.sensitivity=RestoreSensitivity(saved.Sensitivity.load());
+		using namespace Inkeys::Drawing::Draw3;
+		const int shape = saved.Shape.load(), pattern = saved.CursorPattern.load(), theme = saved.CursorTheme.load();
+		result.shape = static_cast<EraserShape>(shape >= 0 && shape <= 2 ? shape : 0);
+		result.cursorPattern = static_cast<EraserCursorPattern>(pattern >= 0 && pattern <= 2 ? pattern : 0);
+		result.cursorTheme = static_cast<EraserCursorTheme>(theme >= 0 && theme <= 1 ? theme : 0);
 		for(size_t i=0;i<fields.size();++i)
 			result.entries[i].kind=RestoreEraserKind(fields[i]->load(),-1,static_cast<InputEntry>(i));
 		result.entries[3].penResponse=RestorePenResponse(saved.PenTipResponse.load(),result.automaticPenSupported);
@@ -615,6 +624,14 @@ namespace
 			CursorModel::CursorDevice::Tablet, cursor.Tablet.load(), legacyMouseStyle, legacyPenStyle);
 		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
 		state.cursorSettings.dotHideOnContact = CursorModel::RestoreDotCursorHideMode(cursor.DotHideOnContact.load());
+		state.cursorSettings.penOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::Pen, cursor.PenOpacity.load());
+		state.cursorSettings.highlightPenFillOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::HighlightPen, cursor.HighlightPenFillOpacity.load());
+		state.cursorSettings.dotOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::Dot, cursor.DotOpacity.load());
+		state.cursorSettings.highlightDotFillOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load());
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.whiteboardStyle = whiteboardStyleToken;
@@ -1289,6 +1306,29 @@ void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automat
 	barUISet.UpdateRendering(false);
 }
 
+void SetEraserCursorPreference(int shape, int pattern, int theme)
+{
+	bool changed = false;
+	{
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved = Inkeys::config.Drawing.Eraser;
+		const std::array fields{ &saved.Shape, &saved.CursorPattern, &saved.CursorTheme };
+		const std::array values{ shape, pattern, theme };
+		for (size_t index = 0; index < fields.size(); ++index)
+		{
+			if (values[index] == -1) continue;
+			const int value = values[index] >= 0 && values[index] <= (index == 2 ? 1 : 2) ? values[index] : 0;
+			changed |= fields[index]->load() != value;
+			*fields[index] = value;
+		}
+		// 与普通橡皮偏好同一冻结保存队列，页面不再重复排队。
+		if (changed) Inkeys::UI::Setting::RequestConfigWrite();
+	}
+	if (!changed) return;
+	SyncDraw3State();
+	barUISet.UpdateRendering(false);
+}
+
 Inkeys::Drawing::Draw3::PalmEraser::Settings PalmEraserPreferencesSnapshot()
 {
 	std::scoped_lock lock(palmEraserPreferencesMutex);
@@ -1305,6 +1345,12 @@ bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings&
 		saved.ThresholdPercent = normalized.thresholdPercent;
 		saved.RecognitionWindowMs = normalized.recognitionWindowMs;
 		saved.ParallelWriting = normalized.parallelWriting;
+		saved.Shape = normalized.shape;
+		saved.SizeMode = normalized.sizeMode;
+		saved.SizeMethodCircle = normalized.sizeMethods[0];
+		saved.SizeMethodRectangle = normalized.sizeMethods[1];
+		saved.SizeMethodSquare = normalized.sizeMethods[2];
+		saved.SizeMultiplierPercent = normalized.sizeMultiplierPercent;
 		const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
 			&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
 		for (size_t index = 0; index < fields.size(); ++index) *fields[index] = normalized.tools[index];

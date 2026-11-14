@@ -526,11 +526,11 @@ namespace Inkeys::Drawing::Draw3
 
 		void PrepareAreaTransforms(RtsContextDecoder& decoder) noexcept
 		{
-			// 与该代位置使用同一线性映射；只有面积属性经物理单位/分辨率比例换算。
+			// 宽高先还原为当前设备轴计数，再除该 context 的 ink→digitizer 倍率，最后乘同代位置倍率。
 			decoder.widthTransform=SpeedEraser::ResolveContactLengthTransform(
-				LengthMetrics(decoder.xAxis),LengthMetrics(decoder.width),decoder.positionScaleX);
+				LengthMetrics(decoder.xAxis),LengthMetrics(decoder.width),decoder.positionScaleX,decoder.contactScaleX);
 			decoder.heightTransform=SpeedEraser::ResolveContactLengthTransform(
-				LengthMetrics(decoder.yAxis),LengthMetrics(decoder.height),decoder.positionScaleY);
+				LengthMetrics(decoder.yAxis),LengthMetrics(decoder.height),decoder.positionScaleY,decoder.contactScaleY);
 		}
 
 		struct RtsActiveContactBinding
@@ -2520,7 +2520,7 @@ namespace Inkeys::Drawing::Draw3
 		return decoder && DecodeSnapshot(*decoder, 4, packet.data(), ContactPhase::Move, 1, snapshot) &&
 			snapshot.position.x == 10.0f && snapshot.position.y == 10.0f &&
 			snapshot.contactAreaUnits == SpeedEraser::ContactAreaUnits::CanvasPixels &&
-			snapshot.contactSize.width == 1.25f && snapshot.contactSize.height == 2.0f;
+			snapshot.contactSize.width == 0.625f && std::abs(snapshot.contactSize.height - 2.0f / 3.0f) < 0.00001f;
 	}
 
 	bool RtsErrorPreservesDecoderLifecycleForTesting() noexcept
@@ -3064,7 +3064,7 @@ namespace Inkeys::Drawing::Draw3
 				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,
 				requested.contextId?"same-cursor-source":"awaiting-touch-cursor");
 			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
-				"[TouchAreaDevice] tcid=%u gen=%llu contextScale=%.9gx%.9g contextMeaning=ink-to-digitizer positionScale=%.9gx%.9g positionMeaning=canvasPx=packetXY*sharedPositionScale lengthMeaning=span/resolution->axis-units->position-linear-part translationApplied=0 extraContextScaleApplied=0\n",
+				"[TouchAreaDevice] tcid=%u gen=%llu contextScale=%.9gx%.9g contextMeaning=ink-to-digitizer positionScale=%.9gx%.9g positionMeaning=canvasPx=packetXY*sharedPositionScale lengthMeaning=span/resolution->digitizer-axis->divide-context-scale->ink->position-linear-part translationApplied=0 contextInverseApplied=1\n",
 				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),
 				d.contactScaleX,d.contactScaleY,d.positionScaleX,d.positionScaleY);
 			const std::array<const PacketPropertyMetadata*,4> properties={&d.xAxis,&d.yAxis,&d.width,&d.height};

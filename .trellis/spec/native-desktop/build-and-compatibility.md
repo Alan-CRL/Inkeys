@@ -10,7 +10,7 @@
 - 使用 `Debug | 当前设备原生架构`；
 - 使用当前设备原生架构对应的 host `MSBuild.exe`（例如 x64 设备用 x64 host，ARM64 设备用 ARM64 host）；
 - 构建超时至少 5 分钟；
-- 这是本机整体开发验证入口；本次发布流水线任务已明确授权独立构建。`PptCOM` 与 native 工程不再有项目依赖或自动复制，接口变更时必须另行同步同次生成的 DLL/TLB 后再验证 native。
+- 这是本机整体开发验证入口；本次发布流水线任务已明确授权独立构建。`PptCOM` 与 native 工程不再有项目依赖或自动复制，`PptCOM.cs` 等托管源码的实现或接口变化后，都必须另行手动同步新 DLL；TLB 变化时同步同次生成的 TLB，再验证 native。
 
 等价参数形式为：
 
@@ -61,7 +61,7 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=<NativePlatform>
 
 ## PptCOM 构建链
 
-`【直接确认】` `PptCOM/PptCOM.csproj` 是 .NET Framework 4.0、AnyCPU class library，引用 `Package/` 下的 Office/PowerPoint Interop。其 `ExportTlb` 构建后目标调用 SDK 4.0 的 `TlbExp.exe`，仅在自身输出目录生成 TLB，不复制 DLL/TLB。`Inkeys/PptCOM.dll` 与 TLB 均继续 Git 跟踪，维护者在 PptCOM 源码变化后手动同步；CI 必须下载同次构建的两者并覆盖现有资源与 `#import` 位置。
+`【直接确认】` `PptCOM/PptCOM.csproj` 是 .NET Framework 4.0、AnyCPU class library，引用 `Package/` 下的 Office/PowerPoint Interop。其 `ExportTlb` 构建后目标调用 SDK 4.0 的 `TlbExp.exe`，仅在自身输出目录生成 TLB，不复制 DLL/TLB。`Inkeys/PptCOM.dll` 与 TLB 均继续 Git 跟踪。修改 `PptCOM/PptCOM.cs` 或其他托管源码后（包括仅实现变化），必须先重建，再手动将 `PptCOM/bin/Release/PptCOM.dll` 拷贝到 `Inkeys/PptCOM.dll`；TLB 有变化时同步同次生成的 TLB。native 构建前核对源/目标 DLL 哈希；拷贝保留旧时间戳时要触发资源重编译，构建后运行 `.github/scripts/release-artifacts.ps1::Assert-EmbeddedPptCom` 核对 EXE 内嵌内容。CI 必须下载同次构建的两者并覆盖现有资源与 `#import` 位置。
 
 ## Scenario: Harness 发布边界与独立构建
 

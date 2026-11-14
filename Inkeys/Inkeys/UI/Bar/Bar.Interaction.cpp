@@ -3050,6 +3050,7 @@ namespace
 	}
 	void ProcessBarPointerLeave()
 	{
+		barUISet.statusIndicator.ResetPointerFeedback();
 		const auto idle = Inkeys::UI::Bar::SnapshotPptIdleInput();
 		UpdatePptIdleInput(false, idle.pressed);
 		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
@@ -5191,6 +5192,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		geometry.straightLinePress = geometry.rectanglePress = geometry.closePress = false;
 		geometry.thicknessFinePress = geometry.thicknessMediumPress = geometry.thicknessCoarsePress = false;
 		barState.moreClosePress = false; BarColorPickerEntryPressed = false;
+		barUISet.statusIndicator.ResetPointerFeedback();
 		barUISet.eraserAttribute.ResetPointerFeedback(); barUISet.recallAttribute.ResetPointerFeedback();
 		CancelThicknessFineDialSelection();
 		CloseThicknessSlider(true); CloseColorPicker(true); ClosePenTypeMenu();
@@ -8470,6 +8472,15 @@ public:
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
 
+			bool statusAccepted=false;
+			if(barUISet.statusIndicator.Pointer(barUISet,msg,IsBarPointerCancelMessage(msg),IsBarTouchPointerMessage(msg),&statusAccepted))
+			{
+				if(statusAccepted){AcceptBarButtonFeedback();SuppressHoverUntilPointerMove();}
+				if(hoveredMainBarButton){StopMainBarButtonHover(hoveredMainBarButton,true);hoveredMainBarButton=nullptr;}
+				if(hoveredIndependentButton!=IndependentHoverTargetEnum::None)
+				{StopIndependentHover(hoveredIndependentButton,true);hoveredIndependentButton=IndependentHoverTargetEnum::None;}
+				continue;
+			}
 			bool auxiliaryButtonAccepted = false;
 			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg), &auxiliaryButtonAccepted))
 			{
@@ -8669,6 +8680,7 @@ void BarUISetClass::Interact()
 			const auto observed = sharedInputMailbox.Revision();
 			PollGlobalMouseInput();
 			auto deadline = PumpSharedInteraction(context, InteractionClock::now());
+			deadline=(std::min)(deadline,statusIndicator.PollDeadline(InteractionClock::now()));
 			if (routine.Done()) continue;
 			// Hook 保留 250ms 安全租约，100ms 仅续租/收包，不请求渲染；Raw/桌面检查仅活动手势轮询。
 			deadline = (std::min)(deadline, InteractionClock::now() + std::chrono::milliseconds(

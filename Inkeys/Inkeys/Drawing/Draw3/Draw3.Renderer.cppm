@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.EraserCursor.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
@@ -55,7 +57,8 @@ export namespace Inkeys::Drawing::Draw3
 	// 表示渲染器支持的墨迹几何形状。
 	enum class StrokeShape : uint32_t
 	{
-		RoundCapsule = 0
+		RoundCapsule = 0,
+		EraseRectSweep = 23 // 与 HLSL 共用编号；临时点 r/time 为矩形半宽/半高。
 	};
 
 	// 描述几何覆盖率要写入绘制墨水还是擦除墨水。
@@ -268,6 +271,8 @@ export namespace Inkeys::Drawing::Draw3
 		void WarmUpShapeShaders() noexcept;
 		// 在当前 backbuffer 最上层绘制一枚瞬态应用光标，不修改 L0/L1/L2。
 		void DrawTransientDrawingCursor(const DrawingCursorVisual& visual);
+		// 仅绘制 owner 调用；外观切换与设备重建释放精灵，位置和档内尺寸不失效。
+		void InvalidateEraserCursorCache() noexcept;
 		// 把可变压力胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
 		int DrawLaserCoverage(std::span<const InkPoint> points, RECT scissorRect = {});
 		// 将单笔 coverage 解析为材质，并按 source-over 叠加到目标。
@@ -391,6 +396,18 @@ export namespace Inkeys::Drawing::Draw3
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 		bool failLaserPreparationAfterColor_ = false;
 #endif
+		struct EraserCursorSprite
+		{
+			EraserCursorRecipe recipe = {};
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+			UINT width = 0;
+			UINT height = 0;
+		};
+		std::vector<EraserCursorSprite> eraserCursorSprites_;
+		Microsoft::WRL::ComPtr<ID3D11SamplerState> eraserCursorSampler_;
+		EraserCursorSprite* EnsureEraserCursorSprite(
+			const DrawingCursorAppearance& appearance) noexcept;
 		bool useDefaultStructuredUpload_ = false;
 		bool CreateFixedResources(D3D_DRIVER_TYPE driver);
 		HRESULT UploadStructuredBuffer(ID3D11Buffer* buffer, const void* data, UINT bytes,

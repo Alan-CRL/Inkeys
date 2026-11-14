@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "../StartupPlacement.h"
 
 export module Inkeys.UI.Bar:Zoom;
 
@@ -177,7 +178,7 @@ export namespace Inkeys::UI::Bar::Zoom
 	{
 		if (!barUISet.barStyle.initialZoomFitPending.exchange(false)) return;
 		// 角落只显示 80 DIP 按钮，不能按尚未展开的整栏缩小启动轮廓。
-		if (barUISet.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar) return;
+		if (Inkeys::UI::StartupPlacementIsFolded(barUISet.startupPlacement)) return;
 
 		auto mainButton = GetMainButton(barUISet);
 		auto mainBar = GetMainBar(barUISet);

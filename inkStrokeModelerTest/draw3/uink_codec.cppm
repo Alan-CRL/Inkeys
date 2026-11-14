@@ -27,8 +27,9 @@ export namespace draw3::uink
 	};
 
 	// 从连续 MessagePack 对象流读取 UInk 10；资源限额超出时不返回部分文档。
+	// readInkeysPrivateFields=false 保留旧解析路径，用于兼容验证。
 	UInkReadResult DecodeUInk(std::span<const std::byte> bytes,
-		const UInkReadLimits& limits = {});
+		const UInkReadLimits& limits = {}, bool readInkeysPrivateFields = true);
 
 	// 写出规范化宽度的完整 Header/Extension/Canvas 对象流。
 	UInkEncodeResult EncodeUInkDocument(const UInkDocument& document);

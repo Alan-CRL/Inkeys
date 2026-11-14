@@ -14,6 +14,9 @@
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "Bar.StatusIndicator.h"
+#include <deque>
+#include <map>
 #include "Bar.InteractionWorker.h"
 #include "../../Input/UiTouchRouting.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
@@ -87,6 +90,65 @@ protected:
 class BarUISetClass;
 class BarRenderLoopCoordinator;
 
+// 渲染线程唯一持有模型；交互线程只读已呈现几何并发布命令。
+class BarStatusIndicatorPanel
+{
+public:
+	// dragLocked：主栏拖动中锁存倒转方向，松手后再以弹簧换边。
+	bool Advance(BarUISetClass&, double dt, double speed, double zoom, bool drawing, bool dragLocked);
+	void Layout(Inkeys::UI::Bar::StatusIndicatorLayoutInput, double zoom);
+	void Draw(BarUIRendering&, ID2D1DeviceContext*, const BarUiSuperellipseClass&, double lightMaterial);
+	void CommitPresented();
+	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled, bool contactPointer, bool* accepted);
+	bool ResetPointerFeedback();
+	std::chrono::steady_clock::time_point PollDeadline(std::chrono::steady_clock::time_point);
+	RECT Bounds() const;
+	RECT OverflowBounds() const;
+	bool Active() const noexcept { return model_.NeedsFrames() || feedbackActive_; }
+	bool Changed() const noexcept { return changed_; }
+	int RunOffscreenTest(BarUISetClass&);
+private:
+	Inkeys::UI::Bar::StatusIndicatorModel model_;
+	Inkeys::UI::Bar::StatusIndicatorLayout layout_;
+	Inkeys::UI::Bar::StatusIndicatorLayoutInput input_;
+	struct Presented
+	{
+	 std::vector<Inkeys::UI::Bar::StatusIndicatorEntryLayout> entries; // 仅可命中项
+	 Inkeys::UI::Bar::StatusIndicatorLayoutInput main; // 同帧主按钮几何：主按钮内部让给主按钮命中
+	 double zoom=1;
+	};
+	mutable std::mutex presentedMutex_;
+	Presented presented_;
+	Inkeys::UI::Bar::ButtonPointerState pointer_;
+	std::atomic<std::int64_t> deadlineTicks_{0};
+	std::uint64_t hovered_=0,pressed_=0;
+	struct HoverVisual
+	{
+		BarUiPctClass pct{0};BarUiColorClass fill{RGB(127,127,127)};
+		IdtAtomic<BarButtonHoverStageEnum> stage=BarButtonHoverStageEnum::None;
+		bool entered=false;
+	};
+	std::map<std::uint64_t,HoverVisual> hover_;
+	std::map<std::uint64_t,BarUiValueClass> press_;
+	std::array<BarUiSVGClass,7> icons_;
+	std::map<std::uint64_t,BarUiWordClass> words_;
+	std::vector<std::pair<std::uint64_t,double>> simulated_;
+	Microsoft::WRL::ComPtr<ID2D1PathGeometry> ringGeometry_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	std::array<double,3> ringKey_{};
+	unsigned long long deviceGeneration_=0;
+	double zoom_=1,simulatedSampleAt_=0;
+	Inkeys::UI::Bar::StatusIndicatorSpring orientation_;
+	// 新版本轮询只在交互 worker 上推进（PollDeadline），下载中 10Hz、其余 1Hz。
+	Inkeys::UI::Bar::StatusIndicatorUpdateTracker updateTracker_;
+	std::chrono::steady_clock::time_point nextUpdatePoll_{};
+	std::chrono::steady_clock::time_point PollUpdateSource(std::chrono::steady_clock::time_point now);
+	bool belowTarget_=false,orientationInitialized_=false;
+	bool initialized_=false,feedbackActive_=false,changed_=false;
+	void DrawRing(BarUIRendering&, ID2D1DeviceContext*, const BarUiSuperellipseClass&, double material, double content);
+	void DrawStroke(BarUIRendering&, ID2D1DeviceContext*, ID2D1Geometry*, COLORREF, double opacity, double material, int variant);
+};
+
 class BarEraserAttributePanel
 {
 	friend class BarUISetClass; // 仅 render owner 在候选命中事务中读取当前 frame_。
@@ -131,7 +193,7 @@ private:
 	IdtAtomic<bool> visible_ = false;
 	bool returnToSelectionOnClear_ = false;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
-	std::array<BarButtonClass,10> buttons_;
+	std::array<BarButtonClass,11> buttons_;
 	std::array<BarUiShapeClass,2> dividers_;
 	BarUiShapeClass automaticDivider_;
 	BarUiSVGClass automaticArrow_;
@@ -141,8 +203,16 @@ private:
 	BarUiWordClass title_;
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	std::array<Microsoft::WRL::ComPtr<ID2D1Bitmap1>,3> previewBitmaps_;
+	std::array<bool,3> previewBitmapAttempted_{};
+	std::array<float,3> previewDiametersPx_{}, previewRasterHalfWidths_{};
+	float previewDpiScale_ = 1;
+	Inkeys::Drawing::Draw3::EraserShape previewShape_ = Inkeys::Drawing::Draw3::EraserShape::Circle;
+	Inkeys::Drawing::Draw3::EraserCursorPattern previewPattern_ = Inkeys::Drawing::Draw3::EraserCursorPattern::Grips;
+	Inkeys::Drawing::Draw3::EraserCursorTheme previewTheme_ = Inkeys::Drawing::Draw3::EraserCursorTheme::Light;
 	unsigned long long deviceGeneration_ = 0;
 	int selectedSize_ = 32, sensitivity_ = 1;
+	bool palmEnabled_ = false;
 	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
 };
@@ -457,6 +527,13 @@ enum class BarUISetSvgEnum : int
 	GeometryAttributeBar_StraightLine,
 	GeometryAttributeBar_Rectangle,
 	GeometryAttributeBar_Close,
+	StatusSlideshow,
+	StatusPin,
+	StatusNewVersion,
+	StatusStar,
+	StatusBell,
+	StatusInfo,
+	StatusBolt,
 };
 enum class BarUISetPngEnum : int
 {
@@ -634,6 +711,7 @@ public:
 	BarStateClass barState;
 	BarStyleClass barStyle;
 	BarEraserAttributePanel eraserAttribute;
+	BarStatusIndicatorPanel statusIndicator;
 	BarRecallAttributePanel recallAttribute;
 	// 锁存布局和保护期；命令可用性读取 Draw3 真值，不写入按钮配置。
 	std::mutex recallChromeMutex;
@@ -1336,6 +1414,24 @@ namespace Inkeys::UI::Bar
 	export void SetThemeMode(int themeMode) noexcept;
 	// 背景百分比 0 表示跟随主题默认；调用方负责先按配置规则归一。
 	export void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept;
+	export using ::Inkeys::UI::Bar::StatusIndicatorKind;
+	export using ::Inkeys::UI::Bar::StatusIndicatorLifetime;
+	export using ::Inkeys::UI::Bar::StatusIndicatorAction;
+	export using ::Inkeys::UI::Bar::StatusIndicatorIcon;
+	export using ::Inkeys::UI::Bar::StatusIndicatorSpec;
+	export void PublishStatusIndicator(const StatusIndicatorSpec&);
+	// 超级置顶在启动时确定、运行中不变：启动成功后发布一次，常驻到退出。
+	export void PublishSuperTopStatusIndicator();
+	// PPT/WPS 放映场次的开始与结束边沿（PptInfo 线程）。
+	export void PublishPptStatusIndicator(std::uint64_t session, bool wps);
+	export void RetirePptStatusIndicator(std::uint64_t session);
+	export void RetireStatusIndicator(std::uint64_t key);
+	export void PublishStatusIndicatorProgress(std::uint64_t key,float progress,bool complete);
+	export void SetStatusIndicatorOptions(bool enable,bool ppt,bool superTop,bool newVersion);
+	export void DebugAddRandomStatusIndicator();
+	export void DebugRemoveStatusIndicator();
+	export std::size_t StatusIndicatorCount() noexcept;
+	export std::size_t DebugStatusIndicatorCount() noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;

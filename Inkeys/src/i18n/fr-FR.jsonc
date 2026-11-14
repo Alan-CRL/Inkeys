@@ -46,6 +46,12 @@
         "Mode": "Mode barre inférieure",
         "Centered": "Centrée"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "Diaporama",
+        "SuperTop": "SuperTop",
+        "NewVersion": "Nouvelle version"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "Effacer",
@@ -702,7 +708,26 @@
           "E": "Les tablettes graphiques sans Windows Ink arrivent généralement comme une « souris injectée par le pilote ». Une fois l’option activée, cette souris utilise les réglages de curseur de la tablette ; les logiciels qui injectent aussi de la souris, comme le Bureau à distance, peuvent être détectés par erreur.",
           "Unavailable": "Ce système ne peut pas distinguer la source de saisie ; l’option n’est pas disponible."
         },
+        "Eraser":
+        {
+          "N": "Curseur de la gomme",
+          "E": "La forme détermine aussi la zone réellement effacée (rectangles à angles droits) ; le motif et le mode clair/sombre ne changent que l’apparence du curseur.",
+          "Appearance": "Apparence",
+          "Light": "Clair",
+          "Dark": "Sombre",
+          "Circle": "Cercle",
+          "Rectangle": "Rectangle",
+          "Square": "Carré",
+          "Grips": "Classique",
+          "Inkeys": "Inkeys",
+          "Sparkle": "Éclat"
+        },
         "FineControl": "Réglages fins",
+        "OpacitySection": "Opacité",
+        "PenOpacity": "Opacité du curseur de stylo",
+        "HighlightPenFillOpacity": "Opacité de remplissage du curseur de stylo (en surbrillance)",
+        "DotOpacity": "Opacité du curseur de petit point",
+        "HighlightDotFillOpacity": "Opacité de remplissage du curseur de petit point (en surbrillance)",
         "DotHideOnContact":
         {
           "N": "Masquer automatiquement le petit point au contact",
@@ -711,8 +736,7 @@
           "ScreenPen": "Stylet sur écran uniquement",
           "Tablet": "Tablette graphique uniquement",
           "Both": "Stylet sur écran et tablette graphique"
-        },
-        "Note": "Avec le stylet d’écran, la tablette graphique et le tactile, « Souris » est une flèche dessinée par l’application ; les curseurs du surligneur et du pointeur laser, les outils de formes et le curseur propre à la gomme ne sont pas affectés par ces options."
+        }
       },
       "Effect":
       {
@@ -777,7 +801,34 @@
           "ParallelWritingMultiTouchNote": "Le dessin à plusieurs doigts est désactivé ; dessiner pendant le gommage est donc indisponible.",
           "ParallelWritingLaserMultiTouchNote": "Le laser à plusieurs doigts est désactivé ; dessiner au laser pendant le gommage est donc indisponible.",
           "ParallelWriting": "Autoriser le dessin pendant le gommage",
-          "ParallelWritingDescription": "L’activation de la gomme avec la paume n’interrompt pas les autres entrées : le dessin peut continuer. Pour écrire à plusieurs en même temps."
+          "ParallelWritingDescription": "L’activation de la gomme avec la paume n’arrête que l’écriture tactile à proximité et bloque les nouveaux contacts autour d’elle ; ailleurs, l’écriture peut continuer. Pour écrire à plusieurs en même temps.",
+          "CursorNoticeTitle": "Le thème et le motif suivent les réglages du curseur",
+          "CursorNoticeDescription": "Le curseur de la gomme avec la paume utilise le thème et le motif définis dans « Dessin › Curseur › Curseur de la gomme ». Seule la forme peut être choisie séparément ici.",
+          "Shape": "Forme de la gomme avec la paume",
+          "ShapeDescription": "La forme détermine aussi la zone réellement effacée par la paume. « Suivre la valeur par défaut » utilise la même forme que la gomme normale.",
+          "FollowDefault": "Suivre la valeur par défaut",
+          "SizeSection": "Taille de la gomme avec la paume",
+          "SizeMode": "Méthode de calcul de l’épaisseur",
+          "SizeModeDescription": "Choisissez comment calculer l’épaisseur de la gomme avec la paume.",
+          "SizeModeDynamic": "Épaisseur dynamique",
+          "SizeModeFollowDefault": "Fixe (gomme par défaut)",
+          "SizeModeFixed": "Fixe (sans gomme selon vitesse)",
+          "SizeModeDynamicNote": "Calculée à partir de la surface de contact",
+          "SizeModeFollowDefaultNote": "Utilise la taille de la gomme par défaut ; varie selon la vitesse du stylet lorsque « Taille auto » est activé",
+          "SizeModeFixedNote": "Utilise toujours la taille de la gomme par défaut",
+          "SizeMethod": "Méthode de calcul de la taille",
+          "SizeMethodDescription": "Méthode de conversion du rectangle de contact en taille de gomme.",
+          "MethodEllipseArea": "Surface ellipse inscrite",
+          "MethodRectangleArea": "Surface du rectangle",
+          "MethodInscribedCircle": "Cercle inscrit",
+          "MethodCircumscribedCircle": "Cercle circonscrit",
+          "MethodInscribedRectangle": "Rectangle inscrit",
+          "MethodCircumscribedRectangle": "Rectangle circonscrit",
+          "MethodInscribedSquare": "Carré inscrit",
+          "MethodCircumscribedSquare": "Carré circonscrit",
+          "SizeMethodShapeNote": "Forme actuelle : {}",
+          "SizeMultiplier": "Multiplicateur de taille de gommage",
+          "SizeMultiplierDescription": "Ajuste proportionnellement la longueur du côté ou le diamètre de la gomme sans modifier la détection."
         },
         "Input":
         {
@@ -806,6 +857,33 @@
           "Note": "Déconseillé sur les appareils à grand écran."
         }
       }
+    },
+    "Position":
+    {
+      "N": "Position",
+      "DesktopSection": "Bureau",
+      "PptSection": "Présentation",
+      "WhiteboardSection": "Tableau blanc",
+      "StartupE": "Définit l’emplacement de la barre au prochain lancement. La barre supérieure centrée n’est qu’une position initiale et ne s’aimante pas.",
+      "TypeBottomBar": "Barre inférieure centrée",
+      "TypeTopBar": "Barre supérieure centrée",
+      "TypeFloating": "Fenêtre flottante",
+      "PositionLabel": "Position",
+      "ExpandRight": "Déployer vers la droite",
+      "ExpandLeft": "Déployer vers la gauche",
+      "FloatBottomLeft": "Coin inférieur gauche",
+      "FloatBottomRight": "Coin inférieur droit",
+      "FloatBottomCenter": "Bas au centre",
+      "PptAutoDock": "Passer en barre inférieure centrée au début du diaporama",
+      "PptAutoDockE": "Si la barre se trouve dans un état coché avant le diaporama, elle devient une barre inférieure centrée et déployée au début, puis est restaurée à la fin.",
+      "WhiteboardAutoDock": "Passer en barre inférieure centrée à l’entrée du tableau blanc",
+      "WhiteboardAutoDockE": "Si la barre se trouve dans un état coché avant l’entrée, elle devient une barre inférieure centrée et déployée à l’ouverture du tableau blanc, puis est restaurée à sa fermeture.",
+      "StateBottom": "État barre inférieure",
+      "StateBottomFolded": "État barre inférieure (repliée)",
+      "StateFloating": "État fenêtre flottante",
+      "StateFloatingFolded": "État fenêtre flottante (repliée)",
+      "MainButtonDirection": "Sens du bouton principal",
+      "DirectionKeep": "Ne pas modifier"
     },
     "Preset":
     {
@@ -984,8 +1062,6 @@
           "SuperTop": "Activer SuperTop",
           "SuperTopE1": "L’application utilise un démarrage en trois étapes pour rester au premier plan.\n(SuperTop est actif)",
           "SuperTopE2": "L’application utilise un démarrage en trois étapes pour rester au premier plan.\n(SuperTop n’est pas actif)",
-          "Indicator": "Indicateur SuperTop",
-          "IndicatorE": "Afficher une épingle en haut à droite de l’icône principale lorsque SuperTop est actif.",
           "SuperTopNote": "Redémarrez Inkeys pour appliquer. Le maintien au premier plan peut échouer au démarrage."
         },
         "SupportNote": "Nécessite Windows 8 ou ultérieur."
@@ -1082,6 +1158,20 @@
       "ClassIslandProtocolNote": "Enregistrer le protocole de navigation URL dans les paramètres de ClassIsland.",
       "ClassIslandSwapNote": "Ce composant est sans effet si aucun emploi du temps n’est chargé dans ClassIsland."
     },
+    "StatusIndicator":
+    {
+      "N": "Indicateur d'état",
+      "E": "Affiche sur le bouton principal des états tels que le mode diaporama, SuperTop et les mises à jour du logiciel.",
+      "Enable":
+      {
+        "N": "Activer l'indicateur d'état",
+        "E": "Désactivé, le bouton principal n'affiche plus aucun indicateur d'état."
+      },
+      "Types": "Afficher ces états",
+      "TypeSlideshow": "Diaporama",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "Nouvelle version"
+    },
     "DesktopShortcut":
     {
       "N": "Raccourcis",
@@ -1165,6 +1255,14 @@
       {
         "N": "Prolonger les opérations en attente",
         "E": "Prolonge le chargement pour observer les animations."
+      },
+      "StatusIndicator":
+      {
+        "Section": "Indicateurs d’état",
+        "N": "Tester les indicateurs d’état",
+        "E": "Ajoutez ou supprimez des états de test aléatoires pour vérifier les animations, les textes longs et les anneaux de progression.",
+        "Add": "Ajouter un état aléatoire",
+        "Remove": "Supprimer un état"
       },
       "ConsoleSection": "Sortie console",
       "CanvasInformation": "Informations d’initialisation du canevas",

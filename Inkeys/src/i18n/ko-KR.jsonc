@@ -46,6 +46,12 @@
         "Mode": "하단 도구 모음",
         "Centered": "가운데"
       },
+      "StatusIndicator":
+      {
+        "Slideshow": "슬라이드 쇼",
+        "SuperTop": "SuperTop",
+        "NewVersion": "새 버전"
+      },
       "EraserAttributes":
       {
         "ClearCanvasLabel": "지우기",
@@ -702,7 +708,26 @@
           "E": "Windows Ink를 사용하지 않는 펜 태블릿은 보통 ‘드라이버가 주입한 마우스’로 입력됩니다. 켜면 이 마우스에 펜 태블릿의 커서 설정을 적용합니다. 원격 데스크톱처럼 마우스를 주입하는 소프트웨어도 잘못 인식될 수 있습니다.",
           "Unavailable": "이 시스템에서는 입력 출처를 구분할 수 없어 이 옵션을 사용할 수 없습니다."
         },
+        "Eraser":
+        {
+          "N": "지우개 커서",
+          "E": "모양은 실제로 지워지는 영역도 결정합니다(직사각형은 모서리가 직각). 무늬와 밝게/어둡게는 커서 모양만 바꿉니다.",
+          "Appearance": "모양",
+          "Light": "밝게",
+          "Dark": "어둡게",
+          "Circle": "원형",
+          "Rectangle": "세로형",
+          "Square": "정사각형",
+          "Grips": "클래식",
+          "Inkeys": "Inkeys",
+          "Sparkle": "반짝임"
+        },
         "FineControl": "세부 제어",
+        "OpacitySection": "불투명도",
+        "PenOpacity": "펜 커서 불투명도",
+        "HighlightPenFillOpacity": "펜(강조) 커서 채우기 불투명도",
+        "DotOpacity": "작은 점 커서 불투명도",
+        "HighlightDotFillOpacity": "작은 점(강조) 커서 채우기 불투명도",
         "DotHideOnContact":
         {
           "N": "펜이 닿으면 작은 점 커서를 자동으로 숨기기",
@@ -711,8 +736,7 @@
           "ScreenPen": "화면 펜만",
           "Tablet": "펜 태블릿만",
           "Both": "화면 펜 및 펜 태블릿"
-        },
-        "Note": "화면용 펜, 펜 태블릿, 터치에서 ‘마우스’는 앱이 직접 그리는 화살표입니다. 형광펜과 레이저 포인터의 커서, 도형 도구, 지우개 전용 커서는 이 옵션의 영향을 받지 않습니다."
+        }
       },
       "Effect":
       {
@@ -777,7 +801,34 @@
           "ParallelWritingMultiTouchNote": "여러 손가락 그리기가 꺼져 있어 지우면서 동시에 쓸 수 없습니다.",
           "ParallelWritingLaserMultiTouchNote": "여러 손가락 레이저가 꺼져 있어 레이저에서는 지우면서 동시에 쓸 수 없습니다.",
           "ParallelWriting": "지우면서 동시에 쓰기",
-          "ParallelWritingDescription": "손바닥 지우개를 사용하는 동안에도 다른 입력을 중단하지 않아 계속 그릴 수 있습니다. 두 명 이상이 동시에 쓸 때 적합합니다."
+          "ParallelWritingDescription": "손바닥 지우개를 켜면 근처의 터치 쓰기만 끝나고 근처에서 새로 닿는 입력은 막힙니다. 다른 위치에서는 계속 쓸 수 있습니다. 두 명 이상이 동시에 쓸 때 적합합니다.",
+          "CursorNoticeTitle": "밝기와 무늬는 커서 설정을 따릅니다",
+          "CursorNoticeDescription": "손바닥 지우개 커서의 밝기와 무늬는 “그리기 › 커서 › 지우개 커서” 설정과 같습니다. 여기서는 모양만 따로 선택할 수 있습니다.",
+          "Shape": "손바닥 지우개 모양",
+          "ShapeDescription": "모양은 손바닥으로 실제로 지워지는 영역도 결정합니다. “기본값 따르기”를 선택하면 일반 지우개와 같은 모양을 사용합니다.",
+          "FollowDefault": "기본값 따르기",
+          "SizeSection": "손바닥 지우개 크기",
+          "SizeMode": "굵기 계산 방식",
+          "SizeModeDescription": "손바닥 지우개의 굵기를 계산하는 방식을 선택합니다.",
+          "SizeModeDynamic": "동적 굵기",
+          "SizeModeFollowDefault": "고정 (기본 지우개)",
+          "SizeModeFixed": "고정 (필속 지우개 미지원)",
+          "SizeModeDynamicNote": "접촉 면적에 따라 계산",
+          "SizeModeFollowDefaultNote": "기본 지우개 크기를 사용하며 “자동 굵기”가 켜져 있으면 필기 속도에 따라 변경",
+          "SizeModeFixedNote": "항상 기본 지우개 크기 사용",
+          "SizeMethod": "크기 계산 방식",
+          "SizeMethodDescription": "접촉 직사각형을 지우개 크기로 변환하는 방식입니다.",
+          "MethodEllipseArea": "내접 타원과 같은 면적",
+          "MethodRectangleArea": "직사각형과 같은 면적",
+          "MethodInscribedCircle": "내접 원형",
+          "MethodCircumscribedCircle": "외접 원형",
+          "MethodInscribedRectangle": "내접 직사각형",
+          "MethodCircumscribedRectangle": "외접 직사각형",
+          "MethodInscribedSquare": "내접 정사각형",
+          "MethodCircumscribedSquare": "외접 정사각형",
+          "SizeMethodShapeNote": "현재 모양: {}",
+          "SizeMultiplier": "지우기 크기 배율",
+          "SizeMultiplierDescription": "인식에 영향을 주지 않고 지우개의 변 길이 또는 지름을 비율에 따라 조절합니다."
         },
         "Input":
         {
@@ -806,6 +857,33 @@
           "Note": "대형 화면에서는 사용을 권장하지 않습니다."
         }
       }
+    },
+    "Position":
+    {
+      "N": "위치",
+      "DesktopSection": "바탕 화면",
+      "PptSection": "프레젠테이션",
+      "WhiteboardSection": "화이트보드",
+      "StartupE": "다음 실행 시 도구 모음이 나타나는 위치를 정합니다. 가운데 상단 바는 초기 위치일 뿐이며 달라붙지 않습니다.",
+      "TypeBottomBar": "가운데 하단 바",
+      "TypeTopBar": "가운데 상단 바",
+      "TypeFloating": "플로팅 창",
+      "PositionLabel": "위치",
+      "ExpandRight": "오른쪽으로 펼치기",
+      "ExpandLeft": "왼쪽으로 펼치기",
+      "FloatBottomLeft": "왼쪽 아래",
+      "FloatBottomRight": "오른쪽 아래",
+      "FloatBottomCenter": "하단 가운데",
+      "PptAutoDock": "슬라이드 쇼 시작 시 가운데 하단 바 모드로 자동 전환",
+      "PptAutoDockE": "진입 전 도구 모음이 선택한 상태이면 슬라이드 쇼가 시작될 때 펼쳐진 가운데 하단 바로 자동 전환되고, 종료하면 원래대로 복원됩니다.",
+      "WhiteboardAutoDock": "화이트보드 진입 시 가운데 하단 바 모드로 자동 전환",
+      "WhiteboardAutoDockE": "진입 전 도구 모음이 선택한 상태이면 화이트보드에 들어갈 때 펼쳐진 가운데 하단 바로 자동 전환되고, 종료하면 원래대로 복원됩니다.",
+      "StateBottom": "하단 바 상태",
+      "StateBottomFolded": "하단 바 상태(접힘)",
+      "StateFloating": "플로팅 상태",
+      "StateFloatingFolded": "플로팅 상태(접힘)",
+      "MainButtonDirection": "메인 버튼 방향",
+      "DirectionKeep": "변경 안 함"
     },
     "Preset":
     {
@@ -984,8 +1062,6 @@
           "SuperTop": "SuperTop 사용",
           "SuperTopE1": "3단계 시작 과정으로 창을 맨 위에 유지합니다.\n(현재 활성)",
           "SuperTopE2": "3단계 시작 과정으로 창을 맨 위에 유지합니다.\n(현재 비활성)",
-          "Indicator": "SuperTop 상태 표시",
-          "IndicatorE": "SuperTop이 활성화되면 주 아이콘 오른쪽 위에 핀을 표시합니다.",
           "SuperTopNote": "다시 시작한 후 적용됩니다. 시작 중 맨 위로 올리기가 실패할 수 있습니다."
         },
         "SupportNote": "Windows 8 이상에서만 지원합니다."
@@ -1082,6 +1158,20 @@
       "ClassIslandProtocolNote": "ClassIsland 앱 설정에서 URL 탐색 프로토콜을 등록해야 합니다.",
       "ClassIslandSwapNote": "ClassIsland에 시간표가 로드되지 않은 경우 이 구성 요소는 작동하지 않습니다."
     },
+    "StatusIndicator":
+    {
+      "N": "상태 표시기",
+      "E": "슬라이드 쇼, SuperTop, 소프트웨어 업데이트 등의 상태를 메인 버튼에 표시합니다.",
+      "Enable":
+      {
+        "N": "상태 표시기 사용",
+        "E": "끄면 메인 버튼에 상태 알림을 표시하지 않습니다."
+      },
+      "Types": "표시할 상태",
+      "TypeSlideshow": "슬라이드 쇼",
+      "TypeSuperTop": "SuperTop",
+      "TypeNewVersion": "새 버전"
+    },
     "DesktopShortcut":
     {
       "N": "바로 가기",
@@ -1165,6 +1255,14 @@
       {
         "N": "대기 작업 지연",
         "E": "로딩 대기를 연장하여 애니메이션을 확인합니다."
+      },
+      "StatusIndicator":
+      {
+        "Section": "상태 표시기",
+        "N": "상태 표시기 테스트",
+        "E": "무작위 테스트 상태를 추가하거나 삭제하여 애니메이션, 긴 텍스트 및 진행률 링을 확인합니다.",
+        "Add": "무작위 상태 추가",
+        "Remove": "상태 하나 삭제"
       },
       "ConsoleSection": "콘솔 출력",
       "CanvasInformation": "캔버스 초기화 정보",

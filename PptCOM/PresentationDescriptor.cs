@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -106,6 +107,21 @@ namespace PptCOM
 
         public object GetProperty(object target, string name)
         {
+            if (!PptComDiagnostics.Enabled) return GetPropertyCore(target, name);
+            string member = "get:" + name;
+            long call = PptComDiagnostics.BeginCall(target, member);
+            long started = Stopwatch.GetTimestamp();
+            try
+            {
+                object result = GetPropertyCore(target, name);
+                long elapsed = Stopwatch.GetTimestamp() - started;
+                return PptComDiagnostics.Returned(call, target, member, result, elapsed);
+            }
+            catch (Exception error) { PptComDiagnostics.CallFailed(call, target, member, error, Stopwatch.GetTimestamp() - started); throw; }
+        }
+
+        private object GetPropertyCore(object target, string name)
+        {
             if (target == null) throw new ArgumentNullException("target");
             if (name == "HWND")
             {
@@ -144,10 +160,34 @@ namespace PptCOM
 
         public object GetItem(object collection, int oneBasedIndex)
         {
-            return ((dynamic)collection).Item(oneBasedIndex);
+            if (!PptComDiagnostics.Enabled) return ((dynamic)collection).Item(oneBasedIndex);
+            long call = PptComDiagnostics.BeginCall(collection, "Item");
+            long started = Stopwatch.GetTimestamp();
+            try
+            {
+                object result = ((dynamic)collection).Item(oneBasedIndex);
+                long elapsed = Stopwatch.GetTimestamp() - started;
+                return PptComDiagnostics.Returned(call, collection, "Item", result, elapsed);
+            }
+            catch (Exception error) { PptComDiagnostics.CallFailed(call, collection, "Item", error, Stopwatch.GetTimestamp() - started); throw; }
         }
 
         public void SetProperty(object target, string name, object value)
+        {
+            if (!PptComDiagnostics.Enabled) { SetPropertyCore(target, name, value); return; }
+            string member = "set:" + name;
+            long call = PptComDiagnostics.BeginCall(target, member);
+            long started = Stopwatch.GetTimestamp();
+            try
+            {
+                SetPropertyCore(target, name, value);
+                long elapsed = Stopwatch.GetTimestamp() - started;
+                PptComDiagnostics.Returned(call, target, member, null, elapsed);
+            }
+            catch (Exception error) { PptComDiagnostics.CallFailed(call, target, member, error, Stopwatch.GetTimestamp() - started); throw; }
+        }
+
+        private void SetPropertyCore(object target, string name, object value)
         {
             dynamic instance = target;
             switch (name)
@@ -162,6 +202,20 @@ namespace PptCOM
         }
 
         public void InvokeMethod(object target, string name)
+        {
+            if (!PptComDiagnostics.Enabled) { InvokeMethodCore(target, name); return; }
+            long call = PptComDiagnostics.BeginCall(target, name);
+            long started = Stopwatch.GetTimestamp();
+            try
+            {
+                InvokeMethodCore(target, name);
+                long elapsed = Stopwatch.GetTimestamp() - started;
+                PptComDiagnostics.Returned(call, target, name, null, elapsed);
+            }
+            catch (Exception error) { PptComDiagnostics.CallFailed(call, target, name, error, Stopwatch.GetTimestamp() - started); throw; }
+        }
+
+        private void InvokeMethodCore(object target, string name)
         {
             dynamic value = target;
             switch (name)
@@ -184,7 +238,7 @@ namespace PptCOM
             if (!IsComObject(value)) return;
             try
             {
-                Marshal.ReleaseComObject(value);
+                PptComDiagnostics.Release(value, "accessor");
             }
             catch
             {

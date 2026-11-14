@@ -58,6 +58,12 @@
 无窗口测试必须覆盖两个字段的默认值与归一、主题默认 80%/92%、绝对值在任意材质权重下对展开主栏成立、收起主按钮比例与非法覆盖值回退。
 PPT 闲置淡化不改写这两个正常偏好；三范围配置与 30%/60% 独立上限见 [PPT 闲置淡化合同](ppt-idle-fade.md)。
 
+## Draw3 光标透明度配置合同（2026-11-05）
+
+`Drawing.Cursor.PenOpacity`、`HighlightPenFillOpacity`、`DotOpacity`、`HighlightDotFillOpacity` 是 `main.json` 中的 NoUpload 整数百分比，合法范围均为 25..100，默认依次为 50/50/25/50。缺项、非整数、超宽和越界值恢复对应字段默认，不影响设备样式或旧 `MouseStyle/PenStyle` 回落。
+
+四项经 Config→State→Bridge→Controller 的完整值快照发布；普通 Pen/Dot 控制整体 alpha，高亮变体只控制填充。设置页复用 `SliderResetAction` 和 FIFO 冻结保存，拖动即时同步，松手、重置或离页写盘。视觉与打包细节见 [Draw3 产品光标合同](draw3-cursors.md)。
+
 ## 启动加载效果选择合同（2026-11-04）
 
 ### 1. Scope / Trigger
@@ -103,6 +109,47 @@ const int candidate = static_cast<int>(jsonValue.asInt64());
 // Correct：先验证原始整数类型与可表示范围，再归一。
 const int candidate = integerType && jsonValue.isInt() ? jsonValue.asInt() : -1;
 value = static_cast<int>(NormalizeStartupPreviewEffect(candidate));
+```
+
+## UI3 状态指示器配置合同（2026-11-05）
+
+### 1. Scope / Trigger
+修改主栏状态指示器总开关、类型勾选、旧超级置顶提示迁移或设置“常规 → 状态指示器”子页时适用。
+
+### 2. Signatures
+- `main.json`：`Experimental.Inkeys3.UI3.StatusIndicator.{Enable,PptSlideshow,SuperTop,NewVersion}`，均为 bool，默认 true。
+- `Inkeys::Config::ReadAllHasValue(dottedPath)`：最近一次 `ReadAll` 读到的原文件是否含该键（区分缺失与默认值）。
+- 运行时发布：`Inkeys::UI::Bar::SetStatusIndicatorOptions(enable, ppt, superTop, newVersion)`。
+- 设置：`GeneralSection::StatusIndicator`（常规导航子页，排在最后）；`GeneralDraft::{statusIndicator,statusIndicatorTypes}` / `GeneralEvents::{statusIndicatorChanged,statusIndicatorTypesChanged}`。
+
+### 3. Contracts
+- 启动：`ReadAll` 后、`config.Write()` 补齐缺失键之前记录 `StatusIndicator.SuperTop` 是否已存在；`ReadSetting()` 读完 deploy.json 后，若原先缺失，用旧 `PlugIn.SuperTop.Indicator` 初始化一次并写回 main.json，此后旧键只为文件兼容保留，不再读取或展示。随后调用 `SetStatusIndicatorOptions`。
+- 设置页先改 `Inkeys::config`，再发布到主栏 owner，最后 `QueueConfigWrite()`；总开关关闭只隐藏勾选行，不改写各类型值。插件页不再显示超级置顶指示器行（相关 i18n 键已删除）。
+- 过滤不注销状态：关闭类型/总开关时条目保留注册并淡出，重新开启直接以收起方块恢复，不重放胶囊。
+
+### 4. Validation & Error Matrix
+| 条件 | 结果 |
+| --- | --- |
+| main.json 无 `StatusIndicator.SuperTop`，deploy.json `Indicator=false` | 迁移为 false 并写回 |
+| main.json 已有新键 | 不读旧键，用户新值优先 |
+| main.json 与 deploy.json 均缺失 | 默认 true |
+| 迁移写回失败 | 只记日志，本次运行仍按内存值生效 |
+
+### 5. Good / Base / Bad Cases
+- Good：在写回前记录键存在性，再在读取旧文件后迁移。
+- Base：新用户全部默认开启，不触发迁移写盘之外的副作用。
+- Bad：在 `config.Write()` 之后判断键缺失（写回已补齐默认值，迁移永远不发生）。
+
+### 6. Tests Required
+- `setting_design_tests` 常规子页循环包含 `StatusIndicator` 且空闲不产生编辑；完整构建与 20 语言 `i18n.ps1 check`。
+- 迁移三种组合在真实启动中人工确认（无旧键 / 旧键 false / 已有新键）。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：写回后再判断，缺失键已被默认值补齐。
+config.Write(); if (!config.ReadAllHasValue(path)) Migrate();
+// Correct：先记录，读完旧文件后迁移。
+const bool stored = config.ReadAllHasValue(path); /* ... ReadSetting() ... */ if (!stored) Migrate();
 ```
 
 ## 设置页废弃配置清理合同
@@ -614,8 +661,8 @@ H(true, true, "ch", std::string, UpdateChannel,
 - 验证：无 HWND ImGui 回放覆盖下拉双向选择、三语/缩放卡片布局；另以生产调度边界的线程回归覆盖锁内提交与 FIFO 顺序。只把 Sync 替换为计数器的控件回放不能验证卡死修复。
 
 ## 启动位置预设配置合同
-- UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏展开、1左角主按钮、2右角主按钮。读盘仅接受JSON int/uint且isInt()可表示的0..2；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。
-- 启动后位置说明和现有combo位于通用→基本的启动行为分类，不提供Preset导航页。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
+- UI.Bar.StartupPlacement 属于main.json，IdtAtomic<int>默认0；0居中底栏（向右展开）、1左下角主按钮、2右下角主按钮；2026-11-06 追加3居中底栏（向左展开）、4居中顶栏（向右展开）、5居中顶栏（向左展开）、6悬浮窗底栏居中，0..2 旧值含义不变。居中顶栏是展开的 Floating+Free 初始落点（上沿贴工作区上沿、水平居中），不引入顶栏模式或吸附。读盘仅接受JSON int/uint且isInt()可表示的0..6；浮点、超宽整数及其他类型直接回退0，不能先窄化后Normalize。NormalizeStartupPlacement统一非法回退0，Mini/正式UI使用同一冻结值。
+- 启动后位置位于“通用 → 位置”页的桌面场景分类，拆成“类型（居中底栏/居中顶栏/悬浮窗）+位置（底/顶栏：向右/向左展开；悬浮窗：左下角/右下角/底栏居中）”两个联动下拉，仍是同一个枚举（`StartupPlacementType/Position/FromSelection`）；不提供Preset导航页。同页 PPT/白板场景分类写 `UI.Bar.Workspace.{Ppt,Whiteboard}.AutoDockMask`（int，仅 0..15，默认1）与 `.Direction`（int 0..2，默认0），非法类型/越界回默认；复选框为 bit0 底栏（含居中）、bit1 底栏折叠、bit2 悬浮、bit3 悬浮折叠。进入策略见 rendering-and-ui.md 场景入口条目。旧deploy.json的Preset与画笔记忆继续退休，不恢复读写或旧条目；启动动画开关仍常规。
 - 下拉仅更新偏好并QueueConfigWrite冻结副本，明确下次启动生效，不触发本次Bar移动/折叠或锁内窗口同步。
 - 所有新标题/说明/三选项为zh-CN/zh-TW/en-US，通过i18n sync/check生成头与快照。
 - 新增导航必须检测整个侧栏与固定页脚/分隔线边界，不以单个新页面回放替代整体布局验证。

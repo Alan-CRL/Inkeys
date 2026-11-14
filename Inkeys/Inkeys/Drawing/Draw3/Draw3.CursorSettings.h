@@ -36,6 +36,10 @@ namespace Inkeys::Drawing::Draw3
 		// 非 Windows Ink 数位板以“驱动注入的鼠标”到达；开启后按数位板行处理。
 		bool injectedMouseAsTablet = false;
 		DotCursorHideMode dotHideOnContact = DotCursorHideMode::ScreenPen;
+		int penOpacity = 50;
+		int highlightPenFillOpacity = 50;
+		int dotOpacity = 25;
+		int highlightDotFillOpacity = 50;
 		friend bool operator==(const CursorSettings&, const CursorSettings&) = default;
 	};
 
@@ -54,6 +58,16 @@ namespace Inkeys::Drawing::Draw3
 	}
 	inline constexpr float kCursorHighlightEdgeDip = 1.25f;
 	inline constexpr float kCursorPlainEdgeDip = 0.5f;
+	inline constexpr float kCursorHighlightOuterEdgePx = 1.0f;
+
+	constexpr float CursorHighlightDotEdgeWidthPx(float diameter, float scale) noexcept
+	{
+		const float scaledMaximum = kCursorHighlightEdgeDip * scale;
+		const float maximum = scaledMaximum < kCursorHighlightOuterEdgePx ? kCursorHighlightOuterEdgePx : scaledMaximum;
+		const float proportional = diameter / 8.0f;
+		return proportional < kCursorHighlightOuterEdgePx ? kCursorHighlightOuterEdgePx
+			: proportional > maximum ? maximum : proportional;
+	}
 
 	constexpr bool IsPenCursorStyle(CursorStyle style) noexcept
 	{
@@ -75,6 +89,28 @@ namespace Inkeys::Drawing::Draw3
 	constexpr bool IsHighlightedCursorStyle(CursorStyle style) noexcept
 	{
 		return style == CursorStyle::HighlightPen || style == CursorStyle::HighlightDot;
+	}
+
+	constexpr int DefaultCursorOpacityPercent(CursorStyle style) noexcept
+	{
+		if (style == CursorStyle::Dot) return 25;
+		if (style == CursorStyle::Pen || IsHighlightedCursorStyle(style)) return 50;
+		return 100;
+	}
+
+	constexpr int NormalizeCursorOpacityPercent(CursorStyle style, int value) noexcept
+	{
+		return value >= 25 && value <= 100 ? value : DefaultCursorOpacityPercent(style);
+	}
+
+	constexpr int CursorOpacityPercent(const CursorSettings& settings, CursorStyle style) noexcept
+	{
+		const int value = style == CursorStyle::Pen ? settings.penOpacity
+			: style == CursorStyle::HighlightPen ? settings.highlightPenFillOpacity
+			: style == CursorStyle::Dot ? settings.dotOpacity
+			: style == CursorStyle::HighlightDot ? settings.highlightDotFillOpacity
+			: DefaultCursorOpacityPercent(style);
+		return NormalizeCursorOpacityPercent(style, value);
 	}
 
 	constexpr CursorStyle DefaultCursorStyle(CursorDevice device) noexcept
@@ -135,21 +171,25 @@ namespace Inkeys::Drawing::Draw3
 		return device == CursorDevice::Touch ? 6 : 5;
 	}
 
-	// Controller 用一个原子字发布完整设置：mouse3 | touch3 | screenPen3 | tablet3 | injected1 | valid1 | dotHide2。
-	inline constexpr std::uint32_t kCursorSettingsValidBit = 1u << 13;
+	// 低位保持设备样式合同；bit16 起以四个 7-bit 字段保存 Pen/HighlightPen/Dot/HighlightDot 百分比。
+	inline constexpr std::uint64_t kCursorSettingsValidBit = std::uint64_t{ 1 } << 13;
 
-	constexpr std::uint32_t PackCursorSettings(const CursorSettings& s) noexcept
+	constexpr std::uint64_t PackCursorSettings(const CursorSettings& s) noexcept
 	{
-		return static_cast<std::uint32_t>(s.mouse)
-			| (static_cast<std::uint32_t>(s.touch) << 3)
-			| (static_cast<std::uint32_t>(s.screenPen) << 6)
-			| (static_cast<std::uint32_t>(s.tablet) << 9)
-			| (s.injectedMouseAsTablet ? 1u << 12 : 0u)
-			| (static_cast<std::uint32_t>(s.dotHideOnContact) << 14)
+		return static_cast<std::uint64_t>(s.mouse)
+			| (static_cast<std::uint64_t>(s.touch) << 3)
+			| (static_cast<std::uint64_t>(s.screenPen) << 6)
+			| (static_cast<std::uint64_t>(s.tablet) << 9)
+			| (s.injectedMouseAsTablet ? std::uint64_t{ 1 } << 12 : 0u)
+			| (static_cast<std::uint64_t>(s.dotHideOnContact) << 14)
+			| (static_cast<std::uint64_t>(NormalizeCursorOpacityPercent(CursorStyle::Pen, s.penOpacity)) << 16)
+			| (static_cast<std::uint64_t>(NormalizeCursorOpacityPercent(CursorStyle::HighlightPen, s.highlightPenFillOpacity)) << 23)
+			| (static_cast<std::uint64_t>(NormalizeCursorOpacityPercent(CursorStyle::Dot, s.dotOpacity)) << 30)
+			| (static_cast<std::uint64_t>(NormalizeCursorOpacityPercent(CursorStyle::HighlightDot, s.highlightDotFillOpacity)) << 37)
 			| kCursorSettingsValidBit;
 	}
 
-	constexpr CursorSettings UnpackCursorSettings(std::uint32_t bits) noexcept
+	constexpr CursorSettings UnpackCursorSettings(std::uint64_t bits) noexcept
 	{
 		return CursorSettings{
 			RestoreCursorStyle(CursorDevice::Mouse, static_cast<int>(bits & 7u)),
@@ -157,6 +197,10 @@ namespace Inkeys::Drawing::Draw3
 			RestoreCursorStyle(CursorDevice::ScreenPen, static_cast<int>((bits >> 6) & 7u)),
 			RestoreCursorStyle(CursorDevice::Tablet, static_cast<int>((bits >> 9) & 7u)),
 			((bits >> 12) & 1u) != 0,
-			RestoreDotCursorHideMode(static_cast<int>((bits >> 14) & 3u)) };
+			RestoreDotCursorHideMode(static_cast<int>((bits >> 14) & 3u)),
+			NormalizeCursorOpacityPercent(CursorStyle::Pen, static_cast<int>((bits >> 16) & 0x7fu)),
+			NormalizeCursorOpacityPercent(CursorStyle::HighlightPen, static_cast<int>((bits >> 23) & 0x7fu)),
+			NormalizeCursorOpacityPercent(CursorStyle::Dot, static_cast<int>((bits >> 30) & 0x7fu)),
+			NormalizeCursorOpacityPercent(CursorStyle::HighlightDot, static_cast<int>((bits >> 37) & 0x7fu)) };
 	}
 }

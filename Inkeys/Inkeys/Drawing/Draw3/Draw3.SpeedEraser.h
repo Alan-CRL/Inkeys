@@ -4,6 +4,28 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace Inkeys::Drawing::Draw3
+{
+	enum class EraserShape : uint8_t { Circle = 0, Rectangle = 1, Square = 2 };
+	enum class EraserCursorPattern : uint8_t { Grips, Inkeys, Sparkle };
+	enum class EraserCursorTheme : uint8_t { Light, Dark };
+	struct EraserHalfSize { float x = 0.0f, y = 0.0f; };
+	// r 保留等面积圆半径语义，形状仅在笔划层锁存。
+	constexpr EraserHalfSize ResolveEraserHalfSize(EraserShape shape, float r) noexcept
+	{
+		if (shape == EraserShape::Rectangle)
+			return { r * 0.7236012545582677f, r * 1.0854018818374016f };
+		if (shape == EraserShape::Square)
+			return { r * 0.8862269254527580f, r * 0.8862269254527580f };
+		return { r, r };
+	}
+	struct EraserSweepPoint { float x = 0.0f, y = 0.0f; };
+	struct EraserSweepHull { std::array<EraserSweepPoint, 6> vertices{}; std::size_t count = 0; };
+	EraserSweepHull BuildEraserRectSweepHull(EraserShape shape,
+		float x0, float y0, float r0, float x1, float y1, float r1) noexcept;
+	float EraserSweepSignedDistance(const EraserSweepHull& hull, EraserSweepPoint point) noexcept;
+}
+
 namespace Inkeys::Drawing::Draw3::SpeedEraser
 {
 	enum class DeviceMode { LargeScreen, Laptop, Automatic };
@@ -77,6 +99,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool automaticPenSupported = true;
 		BaseSize baseSize = BaseSize::Medium;
 		Sensitivity sensitivity = Sensitivity::Medium;
+		EraserShape shape = EraserShape::Circle;
+		EraserCursorPattern cursorPattern = EraserCursorPattern::Grips;
+		EraserCursorTheme cursorTheme = EraserCursorTheme::Light;
 		friend bool operator==(const InputSettings&,const InputSettings&) = default;
 	};
 	AutomaticState GetAutomaticState(const InputSettings& settings) noexcept;
@@ -137,7 +162,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		Missing, Unverified, OutsideMetrics, CanvasPixels,
 		MissingAxis, AxisUnitsMissing, SpanUnitsMissing, UnsupportedLengthUnits,
 		InvalidAxisResolution, InvalidSpanResolution, InvalidAxisRange, InvalidSpanRange,
-		InvalidPositionScale, ConversionNonFinite
+		InvalidPositionScale, ConversionNonFinite, InvalidDigitizerScale
 	};
 	enum class ContactAreaReason { Disabled, NotScreenTouch, MappingUnknown, Missing, UnitsUnknown,
 		OutsideMetrics, NonFinite, NonPositive, TooSmall, TooLarge, AspectRatio, Outlier, WaitingForMove, Confirming, Ready, Expired,
@@ -188,7 +213,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool unitConverted = false, resolutionAdjusted = false;
 	};
 	ContactLengthTransform ResolveContactLengthTransform(const ContactLengthMetrics& axis,
-		const ContactLengthMetrics& span, float positionScale) noexcept;
+		const ContactLengthMetrics& span, float inkToCanvasScale, float inkToDigitizerScale) noexcept;
 	ContactAreaSample ConvertContactArea(float rawWidth, float rawHeight,
 		const ContactLengthTransform& width, const ContactLengthTransform& height) noexcept;
 	ContactAreaReason ContactAreaMetadataReason(ContactAreaUnits units) noexcept;

@@ -990,7 +990,7 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 - 手动恢复统一使用顶边偏移弹簧与独立形状弹簧：held Docked 的形状误差相对稳定世界底端目标，释放后重基到规范 baseBottom；Floating 是高度相对 baseHeight 偏移，不依抓点位置分支。正高度保护只推开底端并返回 `constrained`，重基形状弹簧及其速度，不能上推顶边。Floating 顶边偏移非零时 rigidGrip、rigidOverlay、绘制/dirty/光源/命中也使用该偏移，不能仍沿旧固定 baseTop 的零刚性偏移。成功快照 `dragActive` 只记录真实成功帧；Up/取消与其不同即先原样接住成功形状，两弹簧速度清零，下一成功帧后才恢复，失败重试不消费该交接。
 - 纵向脱离仅由最后成功的 BottomDocked -> Floating 触发 `SeedBarBottomDockDetach`，按成功屏幕顶/底和候选 base 反推普通/底端弹簧位置，保留当前指针正常平移后的完整高度。首个脱离候选不积分任一弹簧，失败/跳帧仍从同一成功形状重新播种；Recovering 的成功初值可用 `preserveElasticOffset` 超过 24 DIP，既有频率/阻尼及普通输入保护不变，真实范围进入容量预测。
 - 释放吸收将布局移动 A 像素、实际 residual translation 减去 A，成功快照必须同步移动两轴 base/visual/grip 绝对 DIP 端点 A/其成功 zoom。indicatorBounds 是布局像素，按钮/shape hit bounds 是绝对 DIP，二者随吸收平移；scale 和相对弹性/刚性 offset 不平移。吸收不改变屏幕中心；真实 `screenDelta` 才移动 main/raw/body/visual center。保持既有奇偶 serial 和几何锁到命中发布的事务，不用真实 HWND 移动补偿内部坐标。
-- 场景入口由渲染线程的 `BarWorkspaceSceneState` 统一处理：首次布局完成后，Desktop 首次进入 PPT/Whiteboard 才捕获位置、显示器、两种展开方向、fold、dock 和 center 基线。仅已展开 BottomDocked 贴目标屏幕底边 `5 DIP`，保留 Centered/Free；浮动或折叠不改变形态。PPT↔Whiteboard 不覆盖桌面基线，最终离开恢复基线；Y 从最后成功屏幕位置沿既有 0.4 秒动画返回，关闭动画则当帧归位。返回期间复用场景动画所有权，禁止普通底栏归位截断 Y；返回尚未完成又进入工作区时不能把中间位置覆盖为新的桌面基线。原屏幕消失时按显示快照回退并钳制可见目标。此合同替代旧 PPT 进入/退出强制居中以及白板强制展开/退出折叠策略，用户拖动的水平捕获规则不变。
+- 场景入口由渲染线程的 `BarWorkspaceSceneState` 统一处理：首次布局完成后，Desktop 首次进入 PPT/Whiteboard 才捕获位置、显示器、两种展开方向、fold、dock 和 center 基线。进入前主栏状态（底栏含居中底栏 / 底栏折叠 / 悬浮 / 悬浮折叠）由“通用 → 位置”的场景策略（`UI.Bar.Workspace.{Ppt,Whiteboard}.AutoDockMask` bit0..3，默认仅底栏）决定：命中则变为居中底栏、水平居中于目标屏、底沿距屏底 `5 DIP`，折叠态同时展开，`Direction`（0 不改变/1 向右展开/2 向左展开）改写展开方向并同步 `mainBarLayoutSide`；未命中沿用旧行为（仅已展开 BottomDocked 贴底并保留 Centered/Free，浮动或折叠不改变形态）。策略只在 Desktop→PPT/Whiteboard 的 Enter 边沿评估，PPT↔白板互切与 Leave 不重新套用，桌面基线先于接管捕获，退出整体还原。接管前若不是“展开的居中底栏”（折叠/悬浮/普通底栏）或展开方向被翻转，渲染线程置 `workspaceEntryRootTween`：根 X 只由 0.4 秒放置动画持有，期间暂停按当前宽度实时居中（`ShouldDeriveBarBottomDockCenteredRoot` 两处调用都以其作 farEdge 门禁），动画结束或下次场景边沿清除，否则展开宽度动画与放置动画每帧互相覆盖导致根 X 往返、主栏偏离中心。`--ui3-workspace-centering-test` 的进入矩阵断言进入动画期间根 X 无往返。纯函数 `ShouldTakeOverBarWorkspaceEntry` / `ResolveBarWorkspaceEntrySide` 位于 `Bar.BottomDock.h`。PPT↔Whiteboard 不覆盖桌面基线，最终离开恢复基线；Y 从最后成功屏幕位置沿既有 0.4 秒动画返回，关闭动画则当帧归位。返回期间复用场景动画所有权，禁止普通底栏归位截断 Y；返回尚未完成又进入工作区时不能把中间位置覆盖为新的桌面基线。原屏幕消失时按显示快照回退并钳制可见目标。此合同替代旧 PPT 进入/退出强制居中以及白板强制展开/退出折叠策略，用户拖动的水平捕获规则不变。
 - 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于 40 DIP 阈值内时无提示捕获。桌面首次放置必须在首次方向分类前初始化为向右展开（主按钮居左），白板入口保持既有方向。稳定居中展开时保持渲染线程当前布局方向，不得因动态 HWND 包络重新换边；离开居中后普通换向仍按既有关键帧执行。
 - 底栏 `PositionUpdate()` 只能把最后成功呈现的水平模式作为方向分类门禁：`Centered` 时保持当前布局方向；非居中时遵守 `UI.Bar.ExpandDirectionAdjustment`，中轴线模式只有有限且大于零的显示参考宽度才可按中轴分类，空间不足模式在完整稳定目标宽度可用后由主栏布局策略判定。首帧零宽、无效宽度或动态 HWND 包络都不得自行产生新方向。
 - `BottomDocked + Centered + Stable + Expanded` 且无拖拽、水平弹簧或普通显示环境切换时，主按钮 X 是稳定居中的唯一根位置。渲染线程必须在主栏、主按钮和按钮动画值推进后，同时在 Popup、颜色面板、粗细面板等下游绝对几何派生前，以主按钮、主栏及两者当前可见描边的联合外框反推 `mainButton.x`，同步 `displayCenterX`，再重新执行 `MainBar.Inherit(Center, MainButton)`；整个既有继承树必须在同一帧消费新根节点。主栏动画不得因每帧居中派生而重启，属性面板、More、Popup 和提示框不得参与中心计算。实际新的主栏布局批次必须同步重定向在途子按钮的位置动画，即使该子按钮目标未变，也不能继续旧批次的进度或曲线而与新父布局叠加成往返；独立按压、悬停与内容动画仍保持各自所有权。PPT/Whiteboard Enter/Switch/Leave 的竖直过渡由既有 `whiteboardDockAnimationActive` 识别，只把 Y 留给 `displayCenterY`；X 继续按当前联合几何反推。实际根反推和 viewport 根范围共用 `ShouldDeriveBarBottomDockCenteredRoot(..., displayTransitionActive, workspacePlacementActive)` 的完整门禁。捕获、拖拽、脱离、恢复、Free、浮动、折叠和普通显示切换继续由原状态机持有根位置；最终 Leave 保留既有独立恢复路径。
@@ -2764,8 +2764,65 @@ Good：真实 worker deadline 唤醒；环、文字、变浅像素 partial 与 f
 `page_control_tests.cpp::TestPageLoadingRingClock`（门控、三轨道、终态失败、弧连续性）；`bar-eraser-offscreen-test`（真实 Scene 像素：门控、环仅在页码按钮内、变浅、四表面/三倍率、设备重建、同帧重启、禁动画、状态文字过渡、20 语言槽宽）；`i18n.ps1 check/sync`。
 
 ### 7. Wrong vs Correct
+Wrong：用动画dt数满1秒、沿共享Animated标记让窗口不退场，或借装饰初始化失败修改页面状态。
+Correct：绝对deadline+原worker唤醒，独立视觉需求/本地缓存资源/实际像素和生命周期验证，所有业务门保持。
 Wrong：把“Loading”写进左槽；让白板与 PPT 各用一套延迟/环；文字先切换、环/变浅走另一个门。
 Correct：`AssignLoadState` 单一映射 + 单一 500ms 指示器，三个输出（文字/变浅/环）共用同一截止。
+
+## 主栏状态指示器发布与呈现合同（2026-11-02 阶段 1–3，2026-11-04 v2 视觉重设计）
+
+### 1. Scope / Trigger
+UI3 主按钮的状态胶囊、停靠方块轨道、同心弧展开、指示环/进度环及设置调试入口适用。纯策略在 `Bar.StatusIndicator.h`，生产接线在同名 `.cpp`；正式 PPT/WPS、超级置顶、更新源、配置迁移和版本页直达均已接入。
+
+### 2. Signatures
+- `PublishStatusIndicator(const StatusIndicatorSpec&)`、`RetireStatusIndicator(uint64_t)`、`PublishStatusIndicatorProgress(uint64_t,float,bool)`、`SetStatusIndicatorOptions(bool,bool,bool,bool)`；均经 Bar Main 分区导出。
+- `DebugAddRandomStatusIndicator()`、`DebugRemoveStatusIndicator()`、`StatusIndicatorCount()`、`DebugStatusIndicatorCount()`；计数为原子快照，删除计数只含未退场的持久调试项。
+- `StatusIndicatorModel::{Advance,NeedsFrames,WakeDeadline}`；`BarStatusIndicatorPanel::{Advance,Layout,Draw,CommitPresented,Pointer,PollDeadline}`。
+
+### 3. Contracts
+- 任意发布线程只把值型命令加入 mutex 队列并唤醒；渲染线程消费命令，独占模型、文本/图标和 D2D 缓存；输入 worker 只读成功呈现的几何快照并发布命令，不直接写模型/设备。
+- 同 key 更新不重放出现；最多 25 项，调试添加必须在 render drain 再核对容量。关闭类型时保留持久注册，重新启用直接以收起态出现；通知不进入常驻轨道。
+- 仅最前展开项计真实 3s，队尾不偷跑计时；动画关闭/速率仅影响过渡。v2 外形全部为主栏材质圆角矩形：胶囊同“底栏模式”指示器（高 30、圆角 6、13 DIP 粗体、左侧 18 DIP 图标、宽上限 160），竖直中心压在主按钮上边框（倒转压下边框）；停靠方块 18 DIP/圆角 4，中心落在超椭圆边框右端；同心弧方块 28 DIP 紧挨、以正上/正下对称。测量与绘制使用同一字体，长文在 3s 内滚完并两端渐隐。
+- 环为单通道：可读队首独占其真实 3s，颜色为队首 accent，自身 progress.active 时显示实时进度段，否则显示普通环；队列空后恢复可见、未退场的进行中进度，多进度沿用 idleProgress，直到该周期结束再选择另一项。绘制模式目标为空、双层淡出但保留状态。进度逐条目持有，后台 display 也持续平滑追随 target，同周期单调不减、回零被吸收、失败结束周期但条目保留。确认完成时仅当前目标源的可见层正在显示该进度才满环停留 ProgressCompleteLinger（3s）；后台完成或停留中被新队首接走立即 active=false，未确认完成的 100% 段继续呼吸。普通环/进度段/颜色/owner 切换统一用 rings[0] 旧层淡出（RingOut=.20s）、rings[1] 新层延迟 RingGap=.12s×旧层剩余 opacity 后淡入（RingIn=.30s），短暂重叠、逐层保留原色与独立 breathStart，禁止颜色插值；快速换主只保留更显眼的一层淡出，animations=false 直接切换。淡出层冻结 argb/value，条目删除仍能画完；Advance 先进度后环，使完成周期在让位当帧结束。模拟下载逐项推进各自周期，绘制模式只影响环目标。
+- 停靠方块夹在不含指示器贡献的 baseBounds（着陆轻弹短暂探出时计 overflow）；胶囊、飞行中方块与同心弧允许越界，`reserveBounds` 从首帧预留出现回弹峰值、飞行弧线与选中胶囊包络，并遵守既有 viewport/capacity/dirty 事务，收起尾段清除旧像素。
+- 收起为弹簧驱动：morph 收进图标 → 延迟 0.1s 后 flight 沿三次贝塞尔先向内（正常向下、倒转向上）离开展开胶囊区域，内侧横移后竖直回到槽 0；层级只在方块完全离开胶囊区域（`FlightPath::clearAt`）时从胶囊之上切到胶囊之下，往返对称，弧上方块同处胶囊之下，任何过渡都不允许相交时换层。新状态发布时立即收回重新展开胶囊或同心弧（`DismissSelection`）；越过 0.97 才着陆占槽（其余方块此刻才让位）并轻弹。延迟在帧内到期只推进剩余时间，几何与帧率无关。单个停靠方块点击按逆过程就地重新展开，再点/点外部/3s 收回；新版本方块仍执行动作。
+- 组合成：上层外形以几何遮罩遮挡下层，整项 opacity（停靠 0.5、出现/退场）用一次 PushLayer 合成；禁止逐元素半透明叠加或“看不见就不画”。表面走 themeSurface+residentSurface（用户背景透明度、PPT 闲置淡化），强调色边框/图标/文字乘常驻内容透明度；强调色按材质在 OKLCH 中校正明度。环/进度环 1.5 DIP，仅开启光影时有强调色几何预模糊光晕。
+- Fan 内注销/过滤/驱逐持久状态时，先冻结旧弧容量与各项槽位并启动收起，归零后再释放；不能先用新数量重算离散角度而瞬移。普通圆形轨道继续使用实时补位弹簧。
+- 停靠方块压在主按钮边框上：命中时伸进主按钮超椭圆内部超过 `MainButtonYield`（3 DIP）的部分让给主按钮，避免点击主按钮误展开同心弧。
+- 过滤单方块重新展开态时归一回停靠并清除选择；更新源完成后再次进入 Downloading 清除上周期缓存，由首次正进度经 SetProgress 开启新周期；停靠与着陆层内按当前 dockTarget 排名（0 最新）分配有界 Z 序，禁止对累计 dockSerial 取模。
+- 正式状态源：PPT/WPS 在 `IdtPlug-in.cpp` 新场次开始边沿发布、`EndSession` 注销（同场重新锚定与白板往返不触发）；超级置顶在 I18n 就绪后按 `hasSuperTop` 发布一次；新版本由交互 worker 的 `PollDeadline` 以 `StatusIndicatorUpdateTracker` 读取 `AutomaticUpdateState` 与字节进度（下载中 10Hz、其余 1Hz），点击执行 `Setting::ShowSoftwareVersion()`。正式状态文案在绘制时按当前语言取。
+- 指示器和主按钮使用同一 Grip 变换，命中做同源逆映射；只有完整呈现成功才 CommitPresented。hover/press 复用既有按钮曲线、驻留淡出与抬手后等待移动的抑制，笔反馈只在真实接受点发送。
+- NeedsFrames 只为仍在变化/滚动/呼吸的视觉续帧；绝对截止经已有交互 worker 唤醒，不增线程。发布后首帧前就被过滤/收起的项，必须清掉未初始化槽位标记，避免永久续帧。
+
+### 4. Validation & Error Matrix
+| 条件 | 必须结果 |
+| --- | --- |
+| 同 key 发布 / 类型关闭再打开 | 更新字段但不重放；恢复为圆形 |
+| 首帧前过滤或点击收起 | 动画落定后 NeedsFrames=false，无永久忙循环 |
+| 新圆形加入/旧项删除 | 新右旧左、按收起顺序堆叠，空位动画补齐 |
+| 两条模拟下载重叠 / 线路进度回零 | 单一 owner 正常推进；同周期显示不回退 |
+| Fan 打开/关闭、呈现失败 | 首帧包络足够；旧命中快照保留至成功 |
+| 仅有稳态圆形 | 不持续请求帧，仅等待真实事件或截止 |
+
+### 5. Good / Base / Bad Cases
+- Good：设置页只入队，渲染 owner 在同帧更新布局/dirty，完整成功后发布命中。
+- Base：没有状态时不扩大窗口、不维持动画帧。
+- Bad：设置线程改模型；以布局候选提前确认命中；给多个 key 每帧写单个进度状态；把 snapStack 留在已隐藏条目上。
+
+### 6. Tests Required
+- `status_indicator_tests.cpp` 直接覆盖生产纯模型的去重、过滤、25 上限、队首计时、轨道补位、正常边界/Fan 镜像、滚动、进度、绘制门禁与首帧前取消后的 idle。
+- 完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window`、生产 Bar 离屏专项、20 语言 `i18n.ps1 check`、原编码/EOL 与 `git diff --check`。
+- 鼠标/笔/触摸、真实桌面透明度/光影和动画观感仍需人工验收；离屏通过不能替代设备与 HWND 视觉证据。
+
+### 7. Wrong vs Correct
+```cpp
+// Wrong：输入线程直接修改渲染模型，候选布局即成为可点击区域。
+model.ClickDocked(key, now);
+presented = candidate;
+// Correct：输入发布值型命令；渲染 owner 推进，完整呈现成功后才确认快照。
+Queue(clickCommand);
+if (completePresentationSucceeded) statusIndicator.CommitPresented();
+```
 
 ## Setting FreeType 动态字体与单通道图集（2026-11-02）
 

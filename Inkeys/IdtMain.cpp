@@ -100,8 +100,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #endif
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.13203";	// 程序发布版本
-wstring editionDate = L"3.0.0-20261104a";		// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.14163";	// 程序发布版本
+wstring editionDate = L"3.0.0-20261109a";		// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -377,9 +377,11 @@ void SetOffSignal(int signal)
 	Inkeys::Window::GetService().BeginShutdown();
 	const auto windowEnd = ShutdownTrace::CaptureEnd(preArmRecorder, windowTrace);
 	const auto armTrace = ShutdownTrace::Capture(preArmRecorder, "set-off-arm");
-	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
-		signal == 2 ? Inkeys::Shutdown::Intent::Restart
-		: Inkeys::Shutdown::Intent::Close);
+	// 已确认待更新时等旧进程完整退出；普通重启在窗口隐藏后提前接力。
+	const auto shutdownIntent = signal == 1 ? Inkeys::Shutdown::Intent::Close
+		: AutomaticUpdateState.load() == AutomaticUpdateStateEnum::UpdateRestart
+		? Inkeys::Shutdown::Intent::UpdateRestart : Inkeys::Shutdown::Intent::Restart;
+	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(shutdownIntent);
 	const DWORD supervisorError = GetLastError();
 	const auto armEnd = ShutdownTrace::CaptureEnd(preArmRecorder, armTrace, "returned",
 		static_cast<long>(supervisorError));
@@ -393,9 +395,7 @@ void SetOffSignal(int signal)
 	{
 		// 首次普通owner的合法Arm已双失败，当前线程接管原截止，先于任何隐藏/日志/清理等待。
 		Inkeys::UI::RenderPipeline::WakeForStop();
-		Inkeys::Shutdown::EnforceFailedShutdownDeadline(
-			signal == 2 ? Inkeys::Shutdown::Intent::Restart
-			: Inkeys::Shutdown::Intent::Close);
+		Inkeys::Shutdown::EnforceFailedShutdownDeadline(shutdownIntent);
 	}
 	// Failed 接管仍先于任何输出；Arm 若未返回，本轮缓冲记录不会假装已经写出。
 	auto& shutdownRecorder = ShutdownTrace::DefaultRecorder();
@@ -804,6 +804,75 @@ namespace
 			Inkeys::Config restoredPolicy;
 			if (!emptyPolicy.Write() || !restoredPolicy.ReadMini({"Config.AllowMultipleInstances"},true)
 				|| restoredPolicy.Config.AllowMultipleInstances) return 1;
+			stage = "eraser cursor configuration";
+			{
+				Inkeys::Config appearance;
+				auto& eraser = appearance.Drawing.Eraser;
+				const std::array fields{ &eraser.Shape, &eraser.CursorPattern, &eraser.CursorTheme };
+				const std::array names{ "Shape", "CursorPattern", "CursorTheme" };
+				const auto upload = appearance.GetUploadInfo();
+				for (size_t index = 0; index < fields.size(); ++index)
+				{
+					const std::string path = std::string("Drawing.Eraser.") + names[index];
+					if (fields[index]->load() != 0 || !writeBytes(mainConfig, "{}")) return 1;
+					*fields[index] = 1;
+					if (!appearance.ReadMini({path}) || fields[index]->load() != 0) return 1;
+					// 布尔/浮点/超宽整数不能经过窄化伪装成合法外观值。
+					for (const char* raw : { "0", "1", "2", "-1", "3", "99", "true", "1.0", "\"1\"", "null", "[]", "{}",
+						"4294967296", "4294967297", "18446744073709551615", "-4294967296", "-4294967295" })
+					{
+						const std::string json = std::string("{\"Drawing\":{\"Eraser\":{\"") + names[index] + "\":" + raw + "}}}";
+						const int expected = strcmp(raw,"1") == 0 ? 1 : index != 2 && strcmp(raw,"2") == 0 ? 2 : 0;
+						*fields[index] = 99;
+						if (!writeBytes(mainConfig,json) || !appearance.ReadMini({path}) || fields[index]->load() != expected) return 1;
+						*fields[index] = 99;
+						if (!appearance.ReadAll() || fields[index]->load() != expected) return 1;
+					}
+				}
+				eraser.Shape=2; eraser.CursorPattern=2; eraser.CursorTheme=1;
+				Inkeys::Config frozen; frozen=appearance;
+				eraser.Shape=0; eraser.CursorPattern=0; eraser.CursorTheme=0;
+				Inkeys::Config restored;
+				if (!frozen.Write() || !restored.ReadAll() || restored.Drawing.Eraser.Shape.load()!=2 ||
+					restored.Drawing.Eraser.CursorPattern.load()!=2 || restored.Drawing.Eraser.CursorTheme.load()!=1 ||
+					frozen.GetUploadInfo()!=upload) return 1;
+				// 手掌独立形状：缺键为 -1（跟随），只接受 -1..2 的窄整数。
+				auto& palmShape = appearance.Drawing.PalmEraser.Shape;
+				if (palmShape.load() != -1) return 1;
+				for (const char* raw : { "-1", "0", "1", "2", "3", "-2", "true", "1.0", "\"1\"", "null", "4294967297" })
+				{
+					const std::string json = std::string("{\"Drawing\":{\"PalmEraser\":{\"Shape\":") + raw + "}}}";
+					const int expected = strcmp(raw,"0") == 0 ? 0 : strcmp(raw,"1") == 0 ? 1 : strcmp(raw,"2") == 0 ? 2 : -1;
+					palmShape = 99;
+					if (!writeBytes(mainConfig,json) || !appearance.ReadMini({"Drawing.PalmEraser.Shape"}) || palmShape.load() != expected) return 1;
+				}
+				stage = "palm eraser size configuration";
+				auto& palm = appearance.Drawing.PalmEraser;
+				const std::array sizeFields{ &palm.SizeMode, &palm.SizeMethodCircle, &palm.SizeMethodRectangle,
+					&palm.SizeMethodSquare, &palm.SizeMultiplierPercent };
+				const std::array sizeNames{ "SizeMode", "SizeMethodCircle", "SizeMethodRectangle", "SizeMethodSquare", "SizeMultiplierPercent" };
+				for (size_t index = 0; index < sizeFields.size(); ++index)
+				{
+					const std::string path = std::string("Drawing.PalmEraser.") + sizeNames[index];
+					const int defaultValue = index == 4 ? 100 : 0;
+					if (sizeFields[index]->load() != defaultValue || !writeBytes(mainConfig, "{}")) return 1;
+					*sizeFields[index] = 99;
+					if (!appearance.ReadMini({path}) || sizeFields[index]->load() != defaultValue) return 1;
+					// 覆盖全部合法枚举、倍率两端和相邻越界值，以及不能窄化的原始类型。
+					for (const char* raw : { "0", "1", "2", "3", "4", "-1", "24", "25", "100", "300", "301",
+						"true", "false", "1.0", "100.0", "\"1\"", "null", "[]", "{}", "4294967296", "4294967297",
+						"4294967396", "18446744073709551615", "-4294967296", "-4294967295" })
+					{
+						const std::string json = std::string("{\"Drawing\":{\"PalmEraser\":{\"") + sizeNames[index] + "\":" + raw + "}}}";
+						const int expected = index == 4 ? (strcmp(raw,"25") == 0 ? 25 : strcmp(raw,"300") == 0 ? 300 : 100)
+							: strcmp(raw,"1") == 0 ? 1 : strcmp(raw,"2") == 0 ? 2 : index != 0 && strcmp(raw,"3") == 0 ? 3 : 0;
+						*sizeFields[index] = 99;
+						if (!writeBytes(mainConfig,json) || !appearance.ReadMini({path}) || sizeFields[index]->load() != expected) return 1;
+						*sizeFields[index] = 99;
+						if (!appearance.ReadAll() || sizeFields[index]->load() != expected) return 1;
+					}
+				}
+			}
 			stage = "touch reconnect configuration";
 			// 旧配置缺键默认开启；关闭及重新开启都必须经真实 main.json 写入/读取恢复。
 			Inkeys::Config reconnectDefaults;
@@ -1010,6 +1079,9 @@ namespace
 					result.enabled = saved.Enabled.load(); result.thresholdPercent = saved.ThresholdPercent.load();
 					result.recognitionWindowMs = saved.RecognitionWindowMs.load();
 					result.parallelWriting = saved.ParallelWriting.load();
+					result.sizeMode = saved.SizeMode.load();
+					result.sizeMethods = { saved.SizeMethodCircle.load(), saved.SizeMethodRectangle.load(), saved.SizeMethodSquare.load() };
+					result.sizeMultiplierPercent = saved.SizeMultiplierPercent.load();
 					result.tools = { saved.Tools.Pen.load(), saved.Tools.HardPen.load(), saved.Tools.Highlighter.load(),
 						saved.Tools.Laser.load(), saved.Tools.Eraser.load(), saved.Tools.Shape.load(), saved.Tools.Brush.load() };
 					return result;
@@ -1044,6 +1116,9 @@ namespace
 						auto& saved = fresh.Drawing.PalmEraser;
 						saved.Enabled = !largeScreen; saved.ThresholdPercent = percent;
 						saved.RecognitionWindowMs = window; saved.ParallelWriting = window != 250;
+						saved.SizeMode = window % 3;
+						saved.SizeMethodCircle = percent % 4; saved.SizeMethodRectangle = (percent + 1) % 4;
+						saved.SizeMethodSquare = (percent + 2) % 4; saved.SizeMultiplierPercent = 25 + percent % 276;
 						const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
 							&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
 						for (size_t index = 0; index < fields.size(); ++index) *fields[index] = (index + window + percent) % 2 == 0;
@@ -2646,7 +2721,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 			}
 
-			if (flag && (tedition > editionDate || mandatoryUpdate) && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (Inkeys::Launch::CommandPipe::TryStartupUpdate(
+				flag && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256,
+				tedition, editionDate, mandatoryUpdate, LaunchState::openWhiteboard, [&]()
 			{
 				//符合条件，开始替换版本
 
@@ -2713,13 +2790,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				if (flag)
 				{
-					if (StartWhiteboardReplacement(globalPath + path)) return 0;
+					if (StartWhiteboardReplacement(globalPath + path)) return true;
 					flag = false;
 				}
-			}
-			else flag = false;
-
-			if (!flag) Inkeys::Launch::CommandPipe::DiscardIntent(LaunchState::openWhiteboard);
+				return false;
+			})) return 0;
 			// 无效或发布失败的指令不清理未知文件，也不覆盖最后一次有效更新点。
 		}
 	}
@@ -3365,6 +3440,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			// 写回会补齐缺失键；迁移判定必须在写回前记录原文件是否已有新键。
+			const bool statusIndicatorSuperTopStored =
+				config.ReadAllHasValue("Experimental.Inkeys3.UI3.StatusIndicator.SuperTop");
 			Inkeys::UI::RenderPipeline::SetFrameRate(config.UI.FrameRate);
 			// 偏好在 Host 创建绘制线程前发布；后续每笔锁存，启动预览不改变画布参数。
 			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
@@ -3499,6 +3577,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			InitializePenWidthPreferences(penWidthStartupContext);
 			if (!WriteSetting() && IDTLogger)
 				IDTLogger->warn("[主线程][IdtMain] deploy.json 写回失败，保留现存配置文件");
+			{
+				// 超级置顶提示从旧 deploy.json PlugIn.SuperTop.Indicator 一次性迁到 main.json；之后旧键不再使用。
+				auto& status = config.Experimental.Inkeys3.UI3.StatusIndicator;
+				if (!statusIndicatorSuperTopStored)
+				{
+					status.SuperTop = static_cast<bool>(setlist.plugInSetting.superTop.indicator);
+					if (!config.Write() && IDTLogger)
+						IDTLogger->warn("[主线程][IdtMain] 状态指示器配置迁移写回失败");
+				}
+				Inkeys::UI::Bar::SetStatusIndicatorOptions(status.Enable, status.PptSlideshow,
+					status.SuperTop, status.NewVersion);
+			}
 		}
 
 		// 初次读取配置后的操作
@@ -3568,6 +3658,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	// 插件初始化
 	{
+		if (hasSuperTop) Inkeys::UI::Bar::PublishSuperTopStatusIndicator();
 		// 桌面快捷方式初始化
 		if (!isolatedStartupFailure) shortcutAssistant.SetShortcut();
 		// 启动 DesktopDrawpadBlocker

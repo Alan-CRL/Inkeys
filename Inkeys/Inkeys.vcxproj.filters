@@ -546,6 +546,9 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.EraserCursor.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -2399,6 +2402,9 @@
     <None Include="src\UI\barAutoEraser.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barPalmEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barClean.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -2735,6 +2741,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barCloseSmall.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barCloseWhiteboard.svg">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

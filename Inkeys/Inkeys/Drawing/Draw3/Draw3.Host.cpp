@@ -1838,6 +1838,12 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
 				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
 			window.SetEraserInputs(state.eraserInputs);
+			if (drawing)
+			{
+				// 仅绘制 owner 消费 Window 的整表快照；形状由 Controller 在 Down 锁存。
+				const auto eraser = window.EraserInputsSnapshot();
+				drawing->SetEraserCursorAppearance({ eraser.shape, eraser.cursorPattern, eraser.cursorTheme });
+			}
 			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext);
@@ -2303,6 +2309,8 @@ namespace Inkeys::Drawing::Draw3
 							appliedCanvasDebugInputMode = UINT32_MAX;
 							// 创建前已消费过 Bridge revision，首帧前显式补齐新 Controller 的光标偏好。
 							drawing->SetCursorSettings(bridge.Snapshot().cursorSettings);
+							const auto eraser = window.EraserInputsSnapshot();
+							drawing->SetEraserCursorAppearance({ eraser.shape, eraser.cursorPattern, eraser.cursorTheme });
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
 								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
 								<< std::dec << std::endl;

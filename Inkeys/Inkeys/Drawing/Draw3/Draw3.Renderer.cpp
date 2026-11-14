@@ -9,6 +9,7 @@
 #include "../../../IdtStart.h"
 #include "Draw3.ShaderCompatibility.h"
 #include "Draw3.CursorSettings.h"
+#include "Draw3.EraserCursor.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.Win7GuardedShader.h"
 
@@ -522,6 +523,8 @@ namespace Inkeys::Drawing::Draw3
 		highlighterPrimitiveBuffer.Reset();
 		highlighterPrimitiveSRV.Reset();
 		operatorSampler.Reset();
+		InvalidateEraserCursorCache();
+		eraserCursorSampler_.Reset();
 		ReleaseTrustedL2SnapshotPipeline();
 		ReleaseDebugOverlayResources();
 		whiteboardPatternUnderBlendState_.Reset();
@@ -741,6 +744,10 @@ namespace Inkeys::Drawing::Draw3
 		samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
 		samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
 		if (FAILED(device->CreateSamplerState(&samplerDescription, operatorSampler.ReleaseAndGetAddressOf()))) return false;
+		// 精灵独占线性 clamp 采样器，不能改变操作层的 point 采样。
+		samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		if (FAILED(device->CreateSamplerState(&samplerDescription,
+			eraserCursorSampler_.ReleaseAndGetAddressOf()))) return false;
 		CreateTrustedL2SnapshotPipeline(); // 可选 pass 失败时仅禁用动态快照兜底。
 		return LoadShaders(driver);
 	}
@@ -1254,6 +1261,101 @@ namespace Inkeys::Drawing::Draw3
 				highlights.back() = highlighter.front();
 				check(renderer.DrawHighlighterPrimitives(highlights, green) == 0, "multi-batch highlighter");
 				readBytes(renderer.highlighterPrimitiveBuffer.Get(), 0, &highlights.back(), sizeof(HighlighterPrimitive), "final highlighter batch");
+				if (mode == 0)
+				{
+					// 走真实绘制入口检查 D3D 纹理身份；持有旧 ComPtr，避免地址复用造成假阳性。
+					DrawingCursorVisual eraser;
+					eraser.visible = true; eraser.x = eraser.y = 32;
+					auto& appearance = eraser.appearance;
+					appearance.shape = DrawingCursorShape::EraserSprite;
+					appearance.width = appearance.height = appearance.eraserBaseShortSide = 32;
+					appearance.eraserDpiScale = 1;
+					renderer.InvalidateEraserCursorCache();
+					renderer.DrawTransientDrawingCursor(eraser);
+					if (!check(renderer.eraserCursorSprites_.size() == 1 &&
+						renderer.eraserCursorSprites_.front().texture && renderer.eraserCursorSprites_.front().srv,
+						"eraser drawing creates a real cached texture and SRV")) return 1;
+					const auto firstTexture = renderer.eraserCursorSprites_.front().texture;
+					D3D11_TEXTURE2D_DESC spriteDescription = {};
+					firstTexture->GetDesc(&spriteDescription);
+					check(spriteDescription.Width == 36 && spriteDescription.Height == 36 &&
+						spriteDescription.MipLevels == 6 && spriteDescription.Format == DXGI_FORMAT_B8G8R8A8_UNORM &&
+						spriteDescription.Usage == D3D11_USAGE_IMMUTABLE && spriteDescription.MiscFlags == 0 &&
+						spriteDescription.BindFlags == D3D11_BIND_SHADER_RESOURCE,
+						"eraser uploads immutable BGRA with complete CPU mip chain and no shared flags");
+					renderer.DrawTransientDrawingCursor(eraser);
+					eraser.x = 40; eraser.y = 28;
+					renderer.DrawTransientDrawingCursor(eraser);
+					appearance.width = appearance.height = 40;
+					renderer.DrawTransientDrawingCursor(eraser);
+					check(renderer.eraserCursorSprites_.size() == 1 &&
+						renderer.eraserCursorSprites_.front().texture.Get() == firstTexture.Get(),
+						"same appearance, movement and exact 1.25 scale reuse the same GPU texture");
+					appearance.width = appearance.height = 40.01f;
+					renderer.DrawTransientDrawingCursor(eraser);
+					const auto enlargedTexture = renderer.eraserCursorSprites_.front().texture;
+					if (!check(enlargedTexture && enlargedTexture.Get() != firstTexture.Get(),
+						"crossing 1.25 scale replaces the real GPU texture")) return 1;
+					enlargedTexture->GetDesc(&spriteDescription);
+					check(spriteDescription.Width == 68 && spriteDescription.Height == 68 && spriteDescription.MipLevels == 7,
+						"scale upgrade uploads the next power-of-two bucket and complete mip chain");
+					appearance.width = appearance.height = 32;
+					renderer.DrawTransientDrawingCursor(eraser);
+					check(renderer.eraserCursorSprites_.front().texture.Get() == enlargedTexture.Get(),
+						"shrinking a dynamic eraser retains its upgraded GPU texture");
+					appearance.eraserCursor.shape = EraserShape::Rectangle;
+					appearance.height = 48;
+					renderer.DrawTransientDrawingCursor(eraser);
+					check(renderer.eraserCursorSprites_.size() == 2 &&
+						renderer.eraserCursorSprites_.front().texture.Get() == enlargedTexture.Get() &&
+						renderer.eraserCursorSprites_.back().texture &&
+						renderer.eraserCursorSprites_.back().texture.Get() != enlargedTexture.Get(),
+						"normal and independent palm appearances hold distinct simultaneous GPU textures");
+					appearance.eraserCursor.shape = EraserShape::Circle;
+					appearance.height = 32;
+					appearance.eraserBaseShortSide = 64;
+					renderer.DrawTransientDrawingCursor(eraser);
+					const auto rebasedTexture = renderer.eraserCursorSprites_.front().texture;
+					check(rebasedTexture && rebasedTexture.Get() != enlargedTexture.Get(),
+						"base size change recreates GPU texture even within the same bucket");
+					appearance.eraserDpiScale = 2;
+					renderer.DrawTransientDrawingCursor(eraser);
+					const auto dpiTexture = renderer.eraserCursorSprites_.front().texture;
+					check(dpiTexture && dpiTexture.Get() != rebasedTexture.Get(),
+						"DPI change recreates the GPU texture");
+					ID3D11ShaderResourceView* boundSprite[] = { renderer.eraserCursorSprites_.front().srv.Get() };
+					testContext->PSSetShaderResources(15, 1, boundSprite);
+					renderer.InvalidateEraserCursorCache();
+					Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> staleSprite;
+					testContext->PSGetShaderResources(15, 1, staleSprite.GetAddressOf());
+					check(renderer.eraserCursorSprites_.empty() && !staleSprite,
+						"explicit eraser invalidation clears all appearances and unbinds SRV");
+					renderer.DrawTransientDrawingCursor(eraser);
+					if (!check(renderer.eraserCursorSprites_.size() == 1 &&
+						renderer.eraserCursorSprites_.front().texture &&
+						renderer.eraserCursorSprites_.front().texture.Get() != dpiTexture.Get(),
+						"first drawing after invalidation rebuilds the GPU cache")) return 1;
+					const auto beforeRecoveryTexture = renderer.eraserCursorSprites_.front().texture;
+					renderer.ReleaseResources();
+					check(renderer.eraserCursorSprites_.empty() && !renderer.eraserCursorSampler_,
+						"device release retires every eraser sprite and sampler");
+					Microsoft::WRL::ComPtr<ID3D11Device> recoveredDevice;
+					Microsoft::WRL::ComPtr<ID3D11DeviceContext> recoveredContext;
+					if (!check(SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+						D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, ARRAYSIZE(levels), D3D11_SDK_VERSION,
+						recoveredDevice.GetAddressOf(), &actualLevel, recoveredContext.GetAddressOf())),
+						"eraser recovery creates an independent WARP device epoch")) return 1;
+					InkRenderer recovered;
+					recovered.device = recoveredDevice; recovered.context = recoveredContext;
+					if (!check(recovered.CreateFixedResources(D3D_DRIVER_TYPE_WARP), "recovered eraser fixed resources")) return 1;
+					const auto* restoredSprite = recovered.EnsureEraserCursorSprite(appearance);
+					if (!check(restoredSprite && restoredSprite->texture.Get() != beforeRecoveryTexture.Get(),
+						"recovered eraser prepares a new texture instead of sharing the old device resource")) return 1;
+					Microsoft::WRL::ComPtr<ID3D11Device> textureDevice;
+					restoredSprite->texture->GetDevice(textureDevice.GetAddressOf());
+					check(textureDevice.Get() == recoveredDevice.Get(), "recovered eraser texture belongs to the new device");
+					recovered.ReleaseResources();
+				}
 				testContext->ClearState();
 				renderer.ReleaseResources();
 				std::fprintf(stderr, "[Draw3Upload] mode=%s completed\n", mode == 2 ? "DEFAULT" : mode == 1 ? "dynamic_append" : "dynamic_discard");

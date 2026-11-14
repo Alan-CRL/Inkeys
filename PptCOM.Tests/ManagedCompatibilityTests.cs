@@ -380,6 +380,44 @@ namespace PptCOM.Tests
             }
         }
 
+        private sealed class RefillingOfficeEventWriter : System.IO.StringWriter
+        {
+            internal int Writes;
+            public override void WriteLine(string value)
+            {
+                base.WriteLine(value);
+                if (value.Contains("event=office.event") && ++Writes < 128)
+                    PptComDiagnostics.QueueOfficeEvent(1, 1, 2013);
+            }
+        }
+
+        private static void TestLifetimeEventDiagnostics()
+        {
+            using (var h = new ServerHarness())
+            using (var output = new System.IO.StringWriter())
+            {
+                System.IO.TextWriter previous = Console.Out;
+                try
+                {
+                    Console.SetOut(output); PptComDiagnostics.SetEnabled(true);
+                    h.Call("DispatchBoundEvent", 1L, 2004);
+                    Check(output.ToString().Length == 0, "raw close callback cannot write to the console");
+                    PptComDiagnostics.FlushOfficeEvents();
+                    string text = output.ToString();
+                    Check(text.Contains("event=office.event") && text.Contains("event_qpc=") && text.Contains("event_tid="),
+                        "owner output preserves the callback's original timestamp and thread");
+                    using (var refilling = new RefillingOfficeEventWriter())
+                    {
+                        Console.SetOut(refilling);
+                        PptComDiagnostics.QueueOfficeEvent(1, 1, 2013);
+                        PptComDiagnostics.FlushOfficeEvents();
+                        Check(refilling.Writes == 64, "continuously arriving event logs cannot starve the owner in an unbounded flush");
+                    }
+                }
+                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(previous); PptComDiagnostics.FlushOfficeEvents(); }
+            }
+        }
+
         private static void TestWindowEvidence()
         {
             var show = new SlideShowWindowEvidence { Handle = new IntPtr(100), ProcessId = 10,
@@ -466,6 +504,17 @@ namespace PptCOM.Tests
                     "pure diagnostic preserves external HRESULT and explicitly reports unknown managed code");
                 using (PptPerfTrace.UseTestOutput(true, new System.IO.StringWriter()))
                 using (PptPerfTrace.Begin("error-info-test")) { }
+                System.IO.TextWriter lifetimePrevious = Console.Out;
+                try
+                {
+                    Console.SetOut(new System.IO.StringWriter());
+                    PptComDiagnostics.SetEnabled(true);
+                    PptComDiagnostics.Event("error-info-test", "value=1");
+                    PptComDiagnostics.QueueOfficeEvent(1, 1, 2004);
+                    PptComDiagnostics.FlushOfficeEvents();
+                    PptComDiagnostics.Summary("error-info-test");
+                }
+                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(lifetimePrevious); }
                 Check(GetErrorInfo(0, out observed) == 0 && observed == marker,
                     "diagnostic neither replaces nor clears existing thread IErrorInfo");
                 if (observed != IntPtr.Zero) { Marshal.Release(observed); observed = IntPtr.Zero; }
@@ -1758,6 +1807,7 @@ namespace PptCOM.Tests
             TestEventCleanupOwnership();
             TestCleanupSurvivesDiagnosticFailure();
             TestDisconnectedAndLastDocumentClose();
+            TestLifetimeEventDiagnostics();
             TestWindowEvidence();
             TestDiagnosticPreservesErrorInfo();
             TestNavigationPerfDiagnostics();

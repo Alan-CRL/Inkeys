@@ -60,6 +60,7 @@ module;
 #include "Draw3.PalmEraser.h"
 #include "Draw3.WhiteboardPattern.h"
 #include "Draw3.MouseInput.h"
+#include "Draw3.EraserCursor.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -578,6 +579,9 @@ namespace Inkeys::Drawing::Draw3
 			value["rgb"] = stroke.Style().fallbackRgb;
 			value["opacity"] = stroke.Style().opacity;
 			value["texture"] = stroke.Style().texture;
+			if (stroke.Style().inkType == StoredInkType::Eraser &&
+				stroke.Style().eraserShape != EraserShape::Circle)
+				value["eraserShape"] = static_cast<unsigned>(stroke.Style().eraserShape);
 			value["points"] = Json::Value(Json::arrayValue);
 			for (const auto& point : stroke.Points())
 			{
@@ -593,6 +597,13 @@ namespace Inkeys::Drawing::Draw3
 				!value["texture"].isUInt() || value["texture"].asUInt() > 65535) return {};
 			StoredInkStyle style{ static_cast<StoredInkType>(value["type"].asUInt()), value["rgb"].asUInt(),
 				value["opacity"].asFloat(), static_cast<uint16_t>(value["texture"].asUInt()) };
+			// 样式可选，旧历史默认圆形；点数组仍严格保持三项。
+			if (value.isMember("eraserShape"))
+			{
+				if (style.inkType != StoredInkType::Eraser || !value["eraserShape"].isUInt() ||
+					value["eraserShape"].asUInt() > 2) return {};
+				style.eraserShape = static_cast<EraserShape>(value["eraserShape"].asUInt());
+			}
 			std::vector<StoredInkPoint> points;
 			for (const auto& p : value["points"])
 			{
@@ -630,7 +641,8 @@ namespace Inkeys::Drawing::Draw3
 					std::vector<StoredInkPoint> points;
 					for (const auto& p : stroke.points) points.push_back({p.x,p.y,p.width});
 					InkStroke stored({static_cast<StoredInkType>(stroke.style.kind), stroke.style.fallbackRgb,
-						stroke.style.opacity, static_cast<uint16_t>(stroke.style.texture)}, std::move(points));
+						stroke.style.opacity, static_cast<uint16_t>(stroke.style.texture),
+						static_cast<EraserShape>(stroke.style.eraserShape)}, std::move(points));
 					value["boundary"].append(WhiteboardStrokeJson(stored));
 				}
 			}
@@ -696,7 +708,8 @@ namespace Inkeys::Drawing::Draw3
 					auto stroke = WhiteboardStrokeFromJson(v); if (!stroke) return false;
 					draw3::uink::Draw3UInkStrokeSnapshot s;
 					s.style = {static_cast<draw3::uink::Draw3UInkStrokeKind>(stroke->Style().inkType),
-						stroke->Style().opacity, stroke->Style().fallbackRgb, stroke->Style().texture};
+						stroke->Style().opacity, stroke->Style().fallbackRgb, stroke->Style().texture,
+						static_cast<uint8_t>(stroke->Style().eraserShape)};
 					for (const auto& p : stroke->Points()) s.points.push_back({p.x,p.y,p.width});
 					boundary.strokes.push_back(std::move(s));
 				}
@@ -1576,7 +1589,8 @@ namespace Inkeys::Drawing::Draw3
 					if (!kind) return false;
 					draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
 					outputStroke.style = { *kind, stroke.Style().opacity,
-						stroke.Style().fallbackRgb, stroke.Style().texture };
+						stroke.Style().fallbackRgb, stroke.Style().texture,
+						static_cast<uint8_t>(stroke.Style().eraserShape) };
 					outputStroke.undoId =
 						static_cast<std::uint32_t>(outputCanvas.strokes.size());
 					outputStroke.points.reserve(stroke.Points().size());
@@ -1671,7 +1685,8 @@ namespace Inkeys::Drawing::Draw3
 						if (!kind) return std::nullopt;
 						draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
 						outputStroke.style = { *kind, stroke.Style().opacity,
-							stroke.Style().fallbackRgb, stroke.Style().texture };
+							stroke.Style().fallbackRgb, stroke.Style().texture,
+							static_cast<uint8_t>(stroke.Style().eraserShape) };
 						outputStroke.undoId = static_cast<std::uint32_t>(output.strokes.size());
 						for (const StoredInkPoint& point : stroke.Points())
 							outputStroke.points.push_back({ point.x, point.y, point.width });
@@ -1902,7 +1917,8 @@ namespace Inkeys::Drawing::Draw3
 							points.push_back({ point.x, point.y, point.width });
 						InkStroke stroke({ inkType, sourceStroke.style.fallbackRgb,
 							sourceStroke.style.opacity,
-							static_cast<std::uint16_t>(sourceStroke.style.texture) },
+							static_cast<std::uint16_t>(sourceStroke.style.texture),
+							static_cast<EraserShape>(sourceStroke.style.eraserShape) },
 							std::move(points));
 						const auto strokeIndex = canvas->AppendStroke(std::move(stroke));
 						if (!strokeIndex) return std::nullopt;
@@ -2070,6 +2086,7 @@ namespace Inkeys::Drawing::Draw3
 			// 每个 contact 保存批次快照，清屏和回收后不会遗留全局批次配置。
 			SpeedEraser::DisplayScale speedEraserDisplayScale = {};
 			PalmEraser::State palm;
+			float palmDefaultDiameterPx = 32.0f;
 			bool palmObservationOnly = false;
 			SpeedEraser::DeviceMode speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 			SpeedEraserOcController speedEraserOc;
@@ -2356,7 +2373,7 @@ namespace Inkeys::Drawing::Draw3
 						std::abs(anchor.r-interval.startDiameter*0.5f)<0.001f;
 					const auto points=std::span<const InkPoint>(runtime.stroke.realPoints).subspan(
 						inserted?previousCount:previousCount-1);
-					const RECT bounds=RectFromStrokePoints(points,(std::numeric_limits<int>::max)(),(std::numeric_limits<int>::max)());
+					const RECT bounds=RectFromEraserPoints(points,runtime.stroke.eraserShape,(std::numeric_limits<int>::max)(),(std::numeric_limits<int>::max)());
 					auto& d=runtime.eraserDiagnostics;
 					d.resumedWithAnchor=inserted;
 					d.boundaryPoints={old.x,old.y,old.r*2,anchor.x,anchor.y,anchor.r*2,
@@ -2399,30 +2416,123 @@ namespace Inkeys::Drawing::Draw3
 				runtime.lastInputSnapshot.phase != ContactPhase::Cancelled;
 		}
 
+		float PalmRuntimeDiameter(const RuntimeStroke& runtime) noexcept
+		{
+			return runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser
+				? runtime.eraserSize.effectiveDiameterPx : runtime.palm.diameterPx;
+		}
+
+		bool PalmExclusionContains(const PalmEraser::State& palm, PointF center, PointF point, float currentDiameterPx = 0) noexcept
+		{
+			const float diameter = currentDiameterPx > 0 ? currentDiameterPx : palm.diameterPx;
+			if (palm.shape == EraserShape::Circle)
+			{
+				const double radius = PalmEraser::ExclusionRadius(diameter);
+				return std::hypot(point.x - center.x, point.y - center.y) <= radius;
+			}
+			const auto half = ResolveEraserHalfSize(palm.shape, diameter * 0.5f);
+			// 每个轴独立外扩，窄边同样保留至少 4px 的碎触点屏蔽。
+			return std::abs(point.x - center.x) <= half.x + std::max(half.x * 0.15f, 4.0f) &&
+				std::abs(point.y - center.y) <= half.y + std::max(half.y * 0.15f, 4.0f);
+		}
+
 		bool PalmNeighborBlocked(const std::vector<RuntimeStroke*>& active, PointF position,
-			int64_t qpc, const RuntimeStroke* self = nullptr) noexcept
+			int64_t qpc, const RuntimeStroke* self = nullptr, bool parallelOnly = false) noexcept
 		{
 			for (const RuntimeStroke* other : active)
 			{
 				if (!other || other == self || other->ended || !other->palm.active) continue;
+				if (parallelOnly && !other->palm.settings.parallelWriting) continue;
 				if (other->awaitingReconnect && qpc > other->reconnectDeadlineQpc) continue;
 				const auto& sample = other->awaitingReconnect ? other->deferredUpSnapshot : other->lastInputSnapshot;
-				const double radius = PalmEraser::ExclusionRadius(other->palm.diameterPx);
-				if (std::hypot(position.x - sample.position.x, position.y - sample.position.y) <= radius) return true;
+				if (PalmExclusionContains(other->palm, sample.position, position, PalmRuntimeDiameter(*other))) return true;
 			}
 			return false;
 		}
 
-		bool PromotePalmRuntime(RuntimeStroke& runtime, const PalmEraser::State& candidate,
+		struct PalmActivation
+		{
+			RuntimeStroke* runtime;
+			PalmEraser::State palm;
+			PointF center;
+		};
+
+		void RecordPalmActivation(std::vector<PalmActivation>& activations, RuntimeStroke& runtime,
+			const ContactSnapshot& sample, bool wasActive)
+		{
+			// 冻结激活时的范围，同帧后续移动、增长或 Up 不改变这次抬笔判定。
+			if (!wasActive && runtime.palm.settings.parallelWriting)
+			{
+				auto palm = runtime.palm;
+				palm.diameterPx = PalmRuntimeDiameter(runtime);
+				activations.push_back({ &runtime, palm, sample.position });
+			}
+		}
+
+		template<class Finish>
+		void FinishActivatedPalmNeighbors(std::vector<PalmActivation>& activations,
+			const std::vector<RuntimeStroke*>& active, Finish&& finish)
+		{
+			for (const auto& activation : activations)
+				for (RuntimeStroke* other : active)
+				{
+					if (!other || other == activation.runtime || other->ended || other->palm.active ||
+						other->palmObservationOnly || other->metricDeviceType != InputDeviceType::Touch) continue;
+					const auto& sample = other->awaitingReconnect ? other->deferredUpSnapshot : other->lastModelSnapshot;
+					if (PalmExclusionContains(activation.palm, activation.center, sample.position)) finish(*other);
+				}
+			activations.clear(); // 只在激活帧截断，不随手掌移动反复结束旧笔。
+		}
+
+		bool PalmReconnectCandidateAllowed(const RuntimeStroke& candidate, bool neighborBlocked) noexcept
+		{
+			return candidate.awaitingReconnect && !candidate.ended && (!neighborBlocked || candidate.palm.active);
+		}
+
+		bool PromotePalmRuntime(RuntimeStroke& runtime, PalmEraser::State candidate,
 			const ContactSnapshot& sample, const StrokeModelConfiguration& configuration,
 			int64_t qpcFrequency)
 		{
+			// 活动橡皮保留 Down 形状，避免固化/重放时改写旧擦除；定尺也使用同一形状。
+			if (runtime.tool == DrawingTool::Eraser && !runtime.palmObservationOnly && candidate.shape != runtime.stroke.eraserShape)
+			{
+				candidate.shape = runtime.stroke.eraserShape;
+				const auto area = ContactAreaFromSnapshot(sample);
+				if (candidate.settings.sizeMode == 0) candidate.diameterPx = static_cast<float>(PalmEraser::ContactEraserDiameter(
+					candidate.shape, candidate.settings.sizeMethods[static_cast<size_t>(candidate.shape)], area.widthPx, area.heightPx, candidate.settings.sizeMultiplierPercent));
+			}
 			if (!candidate.active || candidate.diameterPx <= 0 || qpcFrequency <= 0) return false;
 			const double time = std::max(0.0, static_cast<double>(sample.qpc - runtime.qpcOrigin) / qpcFrequency);
+			if (runtime.palm.active && candidate.settings.sizeMode != 0)
+			{
+				// 接触面积只更新识别状态，不能反复重置已启动的笔速控制器或固定尺寸。
+				const float diameter = PalmRuntimeDiameter(runtime);
+				runtime.palm = candidate;
+				runtime.palm.diameterPx = diameter;
+				return true;
+			}
+			const bool speed = candidate.settings.sizeMode == 1 && runtime.eraserInputs.automaticEnabled;
+			const auto widthMode = speed ? StrokeWidthMode::SpeedEraser : StrokeWidthMode::Fixed;
+			float diameter = candidate.settings.sizeMode == 0 ? candidate.diameterPx : runtime.palmDefaultDiameterPx;
+			auto resolved = runtime.resolvedEraser;
+			auto preparedSpeed = runtime.speedEraserOc;
+			const double seconds = static_cast<double>(sample.qpc) / qpcFrequency;
+			if (speed)
+			{
+				resolved = SpeedEraser::ResolveInput(runtime.speedEraserDisplayScale, runtime.speedEraserDeviceMode,
+					runtime.resolvedEraser.config.inputSource, SpeedEraser::InputEntry::Touch,
+					runtime.eraserInputs, SpeedEraser::EraserToolPolicy::Speed);
+				resolved.config.touchContactAreaAssistance = false;
+				// 默认大小起步，后续完整复用 Touch 笔速动态；不引入面积辅助的第二套定尺。
+				resolved.config.sizes.touchStartDiameterDip = resolved.config.sizes.fixedDiameterDip;
+				preparedSpeed.Reset(sample.position.x, sample.position.y, seconds, SpeedEraser::StartKind::Touch, resolved.config);
+				diameter = preparedSpeed.Diameter();
+			}
+			if (!std::isfinite(diameter) || diameter <= 0) return false;
 			if (runtime.tool != DrawingTool::Eraser || runtime.palmObservationOnly)
 			{
 				// 先在局部模型准备起点；失败时原笔迹、Shape 和 Laser 所有权保持完整。
-				ActiveStroke prepared(candidate.diameterPx, configuration.expectedSpeed, StrokeWidthMode::Fixed, false);
+				ActiveStroke prepared(diameter, configuration.expectedSpeed, widthMode, false);
 				auto parameters = configuration.modelParams;
 				parameters.prediction_params = ink::stroke_model::DisabledPredictorParams{};
 				if (!prepared.modeler.Reset(parameters).ok()) return false;
@@ -2432,7 +2542,8 @@ namespace Inkeys::Drawing::Draw3
 					.time = ink::stroke_model::Time(time), .pressure = 1.0f, .tilt = 0.0f, .orientation = 0.0f };
 				if (!prepared.modeler.Update(down, prepared.modeledResults).ok()) return false;
 				prepared.predictionMode = InkPredictionMode::Disabled;
-				prepared.inputStartPoint = { sample.position.x, sample.position.y, candidate.diameterPx * 0.5f, static_cast<float>(time) };
+				prepared.eraserShape = runtime.stroke.eraserShape; // 工具转换沿用原 Down 的样式。
+				prepared.inputStartPoint = { sample.position.x, sample.position.y, diameter * 0.5f, static_cast<float>(time) };
 				prepared.hasInputStartPoint = true;
 				AppendNewModeledPoints(prepared, -1.0f);
 				runtime.stroke = std::move(prepared);
@@ -2452,20 +2563,28 @@ namespace Inkeys::Drawing::Draw3
 				if (runtime.stroke.realPoints.empty() || (sample.position.x == runtime.lastModelSnapshot.position.x &&
 					sample.position.y == runtime.lastModelSnapshot.position.y))
 					runtime.stroke.realPoints.push_back({ sample.position.x, sample.position.y,
-						candidate.diameterPx * 0.5f, pointTime });
+						diameter * 0.5f, pointTime });
 			}
+			// 定尺、光标和屏蔽范围共用 Begin 时锁存的生效形状。
+			runtime.stroke.eraserShape = candidate.shape;
 			runtime.tool = DrawingTool::Eraser;
-			runtime.stroke.widthMode = StrokeWidthMode::Fixed;
-			runtime.eraserWidthMode = EraserWidthMode::Fixed;
-			runtime.resolvedEraser.kind = SpeedEraser::EraserKind::Fixed;
-			runtime.stroke.widthEstimator.baseDiameter = candidate.diameterPx;
+			runtime.stroke.widthMode = widthMode;
+			runtime.eraserWidthMode = speed ? EraserWidthMode::Speed : EraserWidthMode::Fixed;
+			runtime.resolvedEraser = resolved;
+			runtime.resolvedEraser.kind = speed ? SpeedEraser::EraserKind::Speed : SpeedEraser::EraserKind::Fixed;
+			runtime.stroke.widthEstimator.baseDiameter = diameter;
+			if (speed) runtime.speedEraserOc = std::move(preparedSpeed);
+			runtime.touchContactAreaAssistance = false;
 			runtime.stroke.predictedResults.clear();
 			runtime.stroke.predictedPoints.clear();
-			runtime.eraserSize.Reset(candidate.diameterPx, static_cast<double>(sample.qpc) / qpcFrequency);
-			runtime.speedEraserModelDiameter = candidate.diameterPx;
+			runtime.eraserSize.Reset(diameter, seconds);
+			runtime.speedEraserModelDiameter = diameter;
+			runtime.speedEraserModelTime = time;
+			runtime.eraserTimeOrigin = static_cast<double>(runtime.qpcOrigin) / qpcFrequency;
 			runtime.stationaryModelAdvanceBlocked = false;
 			runtime.stroke.idleFrozen = false;
 			runtime.palm = candidate;
+			runtime.palm.diameterPx = diameter;
 			runtime.palmObservationOnly = false;
 			return true;
 		}
@@ -2523,9 +2642,21 @@ namespace Inkeys::Drawing::Draw3
 			DrawingCursorAppearance& appearance, float diameter) noexcept
 		{
 			if (!std::isfinite(diameter) || diameter <= 0.0f) return;
-			appearance.width = diameter;
-			appearance.height = diameter;
-			appearance.outlineWidth = diameter * ERASER_GRIP_OUTLINE_RATIO;
+			const auto half = ResolveEraserHalfSize(appearance.eraserCursor.shape, diameter * 0.5f);
+			appearance.width = half.x * 2.0f;
+			appearance.height = half.y * 2.0f;
+			appearance.outlineWidth = std::min(appearance.width, appearance.height) * ERASER_GRIP_OUTLINE_RATIO;
+		}
+
+		void ConfigureEraserSprite(DrawingCursorAppearance& appearance,
+			EraserCursorAppearance cursor, float baseDiameter, float dpiScale) noexcept
+		{
+			appearance.shape = DrawingCursorShape::EraserSprite;
+			appearance.eraserCursor = cursor;
+			appearance.eraserDpiScale = dpiScale;
+			const auto baseHalf = ResolveEraserHalfSize(cursor.shape, baseDiameter * 0.5f);
+			appearance.eraserBaseShortSide = 2.0f * std::min(baseHalf.x, baseHalf.y);
+			ApplySpeedEraserCursorDiameter(appearance, baseDiameter);
 		}
 
 		// 导航归属独立于 RTS 设备数字；笔尖/笔尾在真实 Down 时锁存，不能随 hover 翻转。
@@ -3413,6 +3544,15 @@ namespace Inkeys::Drawing::Draw3
 		private:
 			std::vector<InkViewport> viewports_;
 		};
+
+		bool RejectPalmNeighborTouch(ContactInputCoordinator& input, TouchContactRegistry& contacts,
+			ContactHandle handle, InputDeviceType deviceType, bool neighborBlocked)
+		{
+			if (deviceType != InputDeviceType::Touch || !neighborBlocked) return false;
+			contacts.Release(CanvasTouchKey(handle));
+			input.DiscardUntilTerminal(handle);
+			return true;
+		}
 
 		void AdoptReconnectedContact(RuntimeStroke& runtime, ContactHandle handle) noexcept
 		{
@@ -5044,7 +5184,7 @@ namespace Inkeys::Drawing::Draw3
 			downIdentity.widthMode = candidate.stroke.widthMode;
 			if (candidate.palm.active)
 			{
-				// 旧手掌以实际 Eraser/Fixed 继续匹配，仍严验真实设备与原始选定工具。
+				// 旧手掌以实际 Eraser 与锁存宽度模式继续匹配，仍严验设备与原始选定工具。
 				downIdentity.tool = static_cast<uint32_t>(candidate.tool);
 			}
 			if (!AreInterruptedStrokeReconnectIdentitiesCompatible(ReconnectIdentity(candidate), downIdentity))
@@ -5082,11 +5222,12 @@ namespace Inkeys::Drawing::Draw3
 		bool EraserContactsIdle(const std::vector<RuntimeStroke*>& active,
 			bool navigationActive, double seconds) noexcept
 		{
+			// 动态笔速手掌仍需推进回缩动画，只有 Fixed 手掌可直接进入输入等待。
 			return HasPhysicalContact(active) && !navigationActive &&
 				std::all_of(active.begin(), active.end(), [&](const RuntimeStroke* runtime)
 				{
 					return runtime && (runtime->ended || runtime->awaitingReconnect ||
-						(runtime->palmObservationOnly || runtime->palm.active ||
+						(runtime->palmObservationOnly || (runtime->palm.active && runtime->stroke.widthMode != StrokeWidthMode::SpeedEraser) ||
 						(runtime->stroke.widthMode == StrokeWidthMode::SpeedEraser &&
 						 !runtime->speedEraserOc.NeedsAnimation(seconds) &&
 						 runtime->speedEraserOc.SecondsSinceMovement(seconds) >=
@@ -5314,6 +5455,12 @@ namespace Inkeys::Drawing::Draw3
 				stablePoints = std::span<const InkPoint>(stroke.realPoints).first(pointCount);
 			}
 			renderer.SetOperatorTarget(renderer.layerL1);
+			if (runtime.tool == DrawingTool::Eraser && stroke.eraserShape != EraserShape::Circle)
+			{
+				if (DrawEraserStrokeOrDot(renderer, stablePoints, stroke.eraserShape,
+					ColorForTool(runtime.tool, runtime.visualStyle)) < 0) return { {}, false };
+				return { RectFromEraserPoints(stablePoints, stroke.eraserShape, width, height), true };
+			}
 			const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
 				? InkOperatorKind::Erase : InkOperatorKind::Draw;
 			if (renderer.DrawStrokeOrDot(stablePoints,
@@ -6516,6 +6663,45 @@ namespace Inkeys::Drawing::Draw3
 				(void)input.PublishUp(0xFC52, 2, down); input.Recycle(laser.handle);
 			}
 
+			for (auto eraserShape : { EraserShape::Circle, EraserShape::Rectangle, EraserShape::Square })
+			{
+				ActiveStroke stroke(40, configuration.expectedSpeed, StrokeWidthMode::Fixed);
+				stroke.eraserShape = eraserShape;
+				stroke.realPoints = { { 100, 100, 20, 0 }, { 130, 110, 8, .1f } };
+				StoredInkStyle style; style.inkType = StoredInkType::Eraser;
+				std::vector<InkPoint> scratch;
+				const auto stored = FinalizeStoredStroke(stroke, style, 0, scratch);
+				check(stored && stored->Style().eraserShape == eraserShape && stored->Points().size() == 2 &&
+					stored->Points()[0].width == 40 && stored->Points()[1].width == 16,
+					"finalization stores latched shape with unchanged scalar point widths");
+				if (!stored) continue;
+				const auto footprint = BuildStrokeTileFootprint(*stored);
+				const auto half = ResolveEraserHalfSize(eraserShape, 20);
+				check(footprint && std::abs(footprint->pixelBounds.top - (100-half.y-2)) < 0.0001f &&
+					!footprint->undoTiles.empty() && !footprint->compositionTiles.empty(),
+					"history footprint uses shape half height and AA padding");
+				const RECT bounds = RectFromEraserPoints(stroke.realPoints, eraserShape, 512, 512);
+				check(bounds.top == static_cast<LONG>(std::floor(100-half.y-3)), "live dirty uses shape bounds");
+				DrawingCursorAppearance cursor;
+				ConfigureEraserSprite(cursor, { eraserShape, EraserCursorPattern::Grips, EraserCursorTheme::Light }, 40, 2);
+				ApplySpeedEraserCursorDiameter(cursor, 80);
+				check(cursor.shape == DrawingCursorShape::EraserSprite &&
+					std::abs(cursor.width - half.x * 4) < 0.0001f &&
+					std::abs(cursor.height - half.y * 4) < 0.0001f &&
+					std::abs(cursor.eraserBaseShortSide - std::min(half.x, half.y) * 2) < 0.0001f,
+					"sprite scales latched shape and preserves the base-size recipe");
+				cursor.opacity = 0.5f;
+				const auto touchCursor = MakeTouchEraserDrawingCursorVisual(100, 100, cursor);
+				const auto cursorBounds = DrawingCursorVisualBounds(touchCursor, 512, 512);
+				check(touchCursor.visible && touchCursor.appearance.opacity == 1.0f &&
+					cursorBounds.top <= 100 - cursor.height * 0.5f - 2.5f &&
+					cursorBounds.bottom >= 100 + cursor.height * 0.5f + 2.5f,
+					"Touch sprite is opaque and dirty bounds include scaled AA");
+				auto changedCursor = touchCursor;
+				changedCursor.appearance.eraserCursor.pattern = EraserCursorPattern::Inkeys;
+				check(!AreDrawingCursorVisualsEquivalent(touchCursor, changedCursor),
+					"sprite appearance-only changes invalidate the visual comparison");
+			}
 			RuntimeStroke other(configuration.expectedSpeed);
 			seed(other, DrawingTool::HardPen);
 			for (const auto tool : { DrawingTool::Pen, DrawingTool::HardPen, DrawingTool::Highlighter,
@@ -6524,6 +6710,10 @@ namespace Inkeys::Drawing::Draw3
 			{
 				RuntimeStroke runtime(configuration.expectedSpeed);
 				seed(runtime, tool);
+				runtime.stroke.eraserShape = EraserShape::Rectangle;
+				auto followed = preferences;
+				followed.sizeMethods[1] = 1; // 此旧转换用例保留椭圆等面积数值，默认新方法另行验证。
+				runtime.palm.Begin(followed, scale, PalmToolCategory(tool), 1000, 1000, false, EraserShape::Rectangle);
 				auto candidate = runtime.palm;
 				check(candidate.Observe(ContactAreaFromSnapshot(sample), sample.qpc) && candidate.active, "real snapshot area makes a candidate");
 				if (tool != DrawingTool::Eraser)
@@ -6543,6 +6733,36 @@ namespace Inkeys::Drawing::Draw3
 					layers.push_back({ .id = 11, .runtime = &other, .bounds = {50, 60, 70, 80} });
 				}
 				check(PromotePalmRuntime(runtime, candidate, sample, configuration, 1000), "production promotion prepares and commits a real model");
+				check(runtime.stroke.eraserShape == EraserShape::Rectangle, "palm promotion retains Down eraser shape");
+				{
+					// 活动橡皮保留 Down 形状，其他工具采用手掌形状；越界值规范化为跟随。
+					RuntimeStroke custom(configuration.expectedSpeed);
+					seed(custom, tool);
+					custom.stroke.eraserShape = EraserShape::Rectangle;
+					auto squareSettings = preferences;
+					squareSettings.shape = static_cast<int>(EraserShape::Square);
+					squareSettings.sizeMethods[1] = 2; // 矩形与正方形选不同方法，防止形状错误被相同直径掩盖。
+					custom.palm.Begin(squareSettings, scale, PalmToolCategory(tool), 1000, 1000, false, EraserShape::Rectangle);
+					auto squareCandidate = custom.palm;
+					const auto expectedShape = tool == DrawingTool::Eraser ? EraserShape::Rectangle : EraserShape::Square;
+					check(squareCandidate.Observe(ContactAreaFromSnapshot(sample), sample.qpc) &&
+						PromotePalmRuntime(custom, squareCandidate, sample, configuration, 1000) &&
+						custom.stroke.eraserShape == expectedShape && custom.palm.shape == custom.stroke.eraserShape,
+						"active eraser retains Down shape; other tools use palm shape consistently");
+					check(custom.palm.diameterPx == static_cast<float>(PalmEraser::ContactEraserDiameter(
+						expectedShape, squareSettings.sizeMethods[static_cast<size_t>(expectedShape)], 100, 100, squareSettings.sizeMultiplierPercent)),
+						"palm sizing uses the retained stroke shape");
+					PalmEraser::Settings invalid; invalid.shape = 7;
+					check(PalmEraser::NormalizeSettings(invalid).shape == -1 &&
+						PalmEraser::ResolveShape(PalmEraser::NormalizeSettings(invalid), EraserShape::Rectangle) == EraserShape::Rectangle,
+						"invalid palm shape normalizes to follow default");
+				}
+				// 同一生产尺寸同时送入光标与新增擦除点，旧半径的保留在下方单独验证。
+				DrawingCursorAppearance palmAppearance{};
+				ApplySpeedEraserCursorDiameter(palmAppearance,runtime.stroke.widthEstimator.baseDiameter);
+				check(runtime.palm.diameterPx == 100 && palmAppearance.width == 100 && palmAppearance.height == 100 &&
+					!runtime.stroke.realPoints.empty() && runtime.stroke.realPoints.back().r == 50,
+					"100 square contact yields matching 100 pixel cursor and 50 pixel erasure radius");
 				check(runtime.palm.active && runtime.tool == DrawingTool::Eraser && runtime.selectedTool == tool &&
 					runtime.stroke.widthMode == StrokeWidthMode::Fixed && !runtime.shape.active && runtime.qpcOrigin == 1000,
 					"promotion keeps original selected tool and time origin with local fixed eraser");
@@ -6567,10 +6787,132 @@ namespace Inkeys::Drawing::Draw3
 				auto larger = sample; larger.qpc = 1100; larger.contactSize = {200, 200};
 				check(grown.Observe(ContactAreaFromSnapshot(larger), larger.qpc) &&
 					PromotePalmRuntime(runtime, grown, larger, configuration, 1000), "stationary maximum growth uses the production fixed-size path");
+				ApplySpeedEraserCursorDiameter(palmAppearance,runtime.stroke.widthEstimator.baseDiameter);
+				check(runtime.palm.diameterPx == 200 && palmAppearance.width == 200 && palmAppearance.height == 200 &&
+					!runtime.stroke.realPoints.empty() && runtime.stroke.realPoints.back().r == 100,
+					"grown palm cursor and new geometry share the ellipse-area diameter");
 				check(runtime.stroke.realPoints.size() > oldPoints.size() &&
 					std::equal(oldPoints.begin(), oldPoints.end(), runtime.stroke.realPoints.begin(),
 						[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }),
 					"size anchor never rewrites old erasure radii");
+			}
+
+			// 三种方式共用面积识别；固定方式忽略接触定尺，只有方式 1 受自动粗细总开关控制。
+			for (int mode : { 0, 1, 2 }) for (bool automatic : { false, true })
+				for (const auto tool : { DrawingTool::Pen, DrawingTool::Laser, DrawingTool::Eraser })
+				{
+					RuntimeStroke sized(configuration.expectedSpeed);
+					seed(sized, tool);
+					sized.stroke.eraserShape = EraserShape::Rectangle; // 模拟 Down 锁存，活动橡皮保留该形状。
+					if (tool == DrawingTool::Eraser)
+					{
+						auto parameters = configuration.modelParams;
+						parameters.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+						check(sized.stroke.modeler.Reset(parameters).ok(), "original eraser model is initialized before palm conversion");
+						const ink::stroke_model::Input down{ .event_type = ink::stroke_model::Input::EventType::kDown,
+							.position = {sample.position.x, sample.position.y}, .time = ink::stroke_model::Time(0),
+							.pressure = 1, .tilt = 0, .orientation = 0 };
+						check(sized.stroke.modeler.Update(down, sized.stroke.modeledResults).ok(), "original eraser receives real model Down");
+					}
+					sized.eraserInputs.automaticEnabled = automatic;
+					sized.eraserInputs.baseSize = SpeedEraser::BaseSize::Large;
+					sized.speedEraserDisplayScale.dipPerPixelX = sized.speedEraserDisplayScale.dipPerPixelY = 0.5f;
+					sized.speedEraserDisplayScale.development.touchContactAreaAssistance = true;
+					sized.resolvedEraser = SpeedEraser::ResolveInput(sized.speedEraserDisplayScale, sized.speedEraserDeviceMode,
+						SpeedEraser::InputSource{SpeedEraser::SourceKind::Touch}, SpeedEraser::InputEntry::Touch,
+						sized.eraserInputs, SpeedEraser::EraserToolPolicy::Fixed);
+					sized.palmDefaultDiameterPx = SpeedEraser::FixedDiameterPx(
+						sized.resolvedEraser.config.sizes.fixedDiameterDip, sized.speedEraserDisplayScale);
+					auto options = preferences; options.sizeMode = mode; options.sizeMultiplierPercent = 300;
+					options.shape = static_cast<int>(EraserShape::Square);
+					sized.palm.Begin(options, scale, PalmToolCategory(tool), 1000, 1000, false, EraserShape::Rectangle);
+					options.sizeMode = 2; options.shape = 0; // Down 后修改外部偏好不改变当前笔。
+					auto accepted = sized.palm;
+					check(accepted.Observe(ContactAreaFromSnapshot(sample), sample.qpc) &&
+						PromotePalmRuntime(sized, accepted, sample, configuration, 1000), "all width modes promote each original tool through the real model");
+					const bool speed = mode == 1 && automatic;
+					const auto expectedShape = tool == DrawingTool::Eraser ? EraserShape::Rectangle : EraserShape::Square;
+					const float expected = mode == 0 ? static_cast<float>(PalmEraser::ContactEraserDiameter(
+						expectedShape, sized.palm.settings.sizeMethods[static_cast<size_t>(expectedShape)], 100, 100, sized.palm.settings.sizeMultiplierPercent)) : 80.0f;
+					check(sized.stroke.widthMode == (speed ? StrokeWidthMode::SpeedEraser : StrokeWidthMode::Fixed) &&
+						sized.resolvedEraser.kind == (speed ? SpeedEraser::EraserKind::Speed : SpeedEraser::EraserKind::Fixed) &&
+						std::abs(PalmRuntimeDiameter(sized) - expected) < .001f && sized.palm.settings.sizeMode == mode &&
+						sized.stroke.eraserShape == expectedShape && sized.palm.shape == expectedShape &&
+						sized.selectedTool == tool,
+						"mode and global automatic gate select dynamic or Down-latched DIP default size with one shape");
+					if (speed)
+						check(!sized.speedEraserOc.Configuration().touchContactAreaAssistance &&
+							sized.speedEraserOc.Configuration().response == SpeedEraser::ResponseModel::DirectTouch &&
+							sized.eraserTimeOrigin == 1.0, "palm reuses Touch speed dynamics without area assist and keeps the original absolute clock");
+					const double speedTime = sized.speedEraserOc.AcceptedSeconds();
+					auto larger = sample; larger.qpc = 1100; larger.contactSize = {200, 200};
+					auto grown = sized.palm;
+					const float grownExpected = mode == 0 ? static_cast<float>(PalmEraser::ContactEraserDiameter(
+						expectedShape, sized.palm.settings.sizeMethods[static_cast<size_t>(expectedShape)], 200, 200, sized.palm.settings.sizeMultiplierPercent)) : expected;
+					check(grown.Observe(ContactAreaFromSnapshot(larger), larger.qpc) &&
+						PromotePalmRuntime(sized, grown, larger, configuration, 1000) &&
+						std::abs(PalmRuntimeDiameter(sized) - grownExpected) < .001f &&
+						(!speed || sized.speedEraserOc.AcceptedSeconds() == speedTime),
+						"larger contact updates dynamic sizing without resetting a fixed or running speed eraser");
+					if (speed)
+					{
+						for (int index = 1; index <= 40; ++index)
+						{
+							const double seconds = 1.1 + index * .01;
+							const float x = sample.position.x + index * 100.0f;
+							sized.speedEraserOc.UpdatePosition(x, sample.position.y, seconds);
+							sized.eraserSize.Update(sized.speedEraserOc.Diameter(), seconds, false);
+							const ink::stroke_model::Input move{ .event_type = ink::stroke_model::Input::EventType::kMove,
+								.position = {x, sample.position.y}, .time = ink::stroke_model::Time(seconds - 1),
+								.pressure = 1, .tilt = 0, .orientation = 0 };
+							check(sized.stroke.modeler.Update(move, sized.stroke.modeledResults).ok(), "speed palm consumes real movement model input");
+							AppendRuntimeModeledPoints(sized, -1, seconds - 1);
+						}
+						check(PalmRuntimeDiameter(sized) > expected && !sized.stroke.realPoints.empty() &&
+							sized.stroke.realPoints.back().r * 2 > expected &&
+							sized.stroke.realPoints.back().r * 2 <= sized.speedEraserOc.Diameter() + .01f,
+							"mode one speed growth reaches the shared eraser geometry path");
+						check(sized.speedEraserOc.NeedsAnimation(1.5) &&
+							!EraserContactsIdle(std::vector<RuntimeStroke*>{&sized}, false, 1.5),
+							"animating speed palm remains awake after the recognition window");
+						sized.lastInputSnapshot.position = {0, 0};
+						const auto half = ResolveEraserHalfSize(sized.palm.shape, PalmRuntimeDiameter(sized) * .5f);
+						const float boundary = half.x + std::max(half.x * .15f, 4.0f);
+						check(PalmNeighborBlocked(std::vector<RuntimeStroke*>{&sized}, {boundary, 0}, 1500) &&
+							!PalmNeighborBlocked(std::vector<RuntimeStroke*>{&sized}, {boundary + .01f, 0}, 1500) &&
+							PalmRuntimeDiameter(sized) > sized.palm.diameterPx,
+							"mode one exclusion uses current speed size rather than activation size");
+						sized.speedEraserOc.Advance(3.0);
+						sized.eraserSize.Update(sized.speedEraserOc.Diameter(), 3.0, true);
+						const auto interval = sized.eraserSize.MakeInterval(sized.speedEraserModelTime, 2.01,
+							sized.speedEraserModelDiameter, sized.speedEraserOc.Diameter(), sized.eraserTimeOrigin + 2.01,
+							sized.speedEraserOc.Configuration());
+						check(interval.reanchor, "stationary speed shrink reanchors with the original Down absolute clock");
+						const float beforeReconnect = sized.speedEraserOc.Diameter();
+						sized.speedEraserOc.PauseForReconnect(3.0);
+						sized.speedEraserOc.ResumeFromReconnect(5000, 200, 3.1);
+						check(std::abs(sized.speedEraserOc.Diameter() - beforeReconnect) < .001f &&
+							sized.stroke.eraserShape == expectedShape, "speed palm reconnect preserves accepted diameter and latched shape");
+					}
+					sized.palm.End();
+					check(!sized.palm.Observe(ContactAreaFromSnapshot(larger), 1200) && sized.palm.locked,
+						"each width mode retains the physical Up recognition lock");
+				}
+
+			for (const auto shape : { EraserShape::Rectangle, EraserShape::Square }) for (float diameter : { 40.0f, 200.0f })
+			{
+				PalmEraser::State boundary; boundary.shape = shape; boundary.diameterPx = diameter;
+				const auto half = ResolveEraserHalfSize(shape, diameter * .5f);
+				const float x = half.x + std::max(half.x * .15f, 4.0f), y = half.y + std::max(half.y * .15f, 4.0f);
+				for (float sign : { -1.0f, 1.0f })
+				{
+					check(PalmExclusionContains(boundary, {0, 0}, {sign * x, 0}) &&
+						!PalmExclusionContains(boundary, {0, 0}, {sign * (x + .01f), 0}), "rectangle exclusion includes both x boundaries and excludes outside");
+					check(PalmExclusionContains(boundary, {0, 0}, {0, sign * y}) &&
+						!PalmExclusionContains(boundary, {0, 0}, {0, sign * (y + .01f)}), "rectangle exclusion includes both y boundaries and excludes outside");
+				}
+				check(PalmExclusionContains(boundary, {0, 0}, {x, y}), "rectangle exclusion includes expanded corners");
+				if (diameter == 40) check(x == half.x + 4 && y == half.y + 4, "small rectangle exclusion pads each axis by at least four canvas pixels");
 			}
 
 			for (const auto profile : { StrokeTimingProfileId::Fps30, StrokeTimingProfileId::Fps60,
@@ -6670,6 +7012,171 @@ namespace Inkeys::Drawing::Draw3
 				interruptedLifecycle.phase == LaserTrailPhase::Inactive,
 				"synthetically ended Laser batch can fade completely without another physical Up");
 
+			// 激活范围只处理当时邻近的 Touch，冻结位置/尺寸且只消费一次。
+			{
+				RuntimeStroke hand(configuration.expectedSpeed), nearTouch(configuration.expectedSpeed), farTouch(configuration.expectedSpeed),
+					pendingNear(configuration.expectedSpeed), pendingFar(configuration.expectedSpeed), pen(configuration.expectedSpeed),
+					mouse(configuration.expectedSpeed), observing(configuration.expectedSpeed), ended(configuration.expectedSpeed);
+				seed(hand, DrawingTool::Pen);
+				auto accepted = hand.palm;
+				accepted.Observe(ContactAreaFromSnapshot(sample), sample.qpc);
+				check(PromotePalmRuntime(hand, accepted, sample, configuration, 1000), "activation neighborhood uses real palm promotion");
+				hand.palm.diameterPx = 40;
+				std::vector<PalmActivation> activations;
+				RecordPalmActivation(activations, hand, sample, false);
+				check(activations.empty(), "nonparallel promotion keeps the existing global interruption path");
+				hand.palm.settings.parallelWriting = true;
+				RecordPalmActivation(activations, hand, sample, false);
+				RecordPalmActivation(activations, hand, sample, true);
+				check(activations.size() == 1, "only first successful parallel promotion records activation");
+				for (auto* contact : { &nearTouch, &farTouch, &pendingNear, &pendingFar, &pen, &mouse, &observing, &ended })
+				{
+					seed(*contact, DrawingTool::HardPen);
+					contact->lastModelSnapshot.position = {124, 200};
+				}
+				farTouch.lastModelSnapshot.position = {125, 200};
+				pendingNear.awaitingReconnect = pendingFar.awaitingReconnect = true;
+				pendingNear.deferredUpSnapshot.position = {124, 200}; pendingNear.lastModelSnapshot.position = {500, 200};
+				pendingFar.deferredUpSnapshot.position = {125, 200};
+				pen.metricDeviceType = InputDeviceType::Pen; mouse.metricDeviceType = InputDeviceType::MouseLeft;
+				observing.palmObservationOnly = true; ended.ended = true;
+				std::vector<RuntimeStroke*> contacts{ &hand, &nearTouch, &farTouch, &pendingNear, &pendingFar, &pen, &mouse, &observing, &ended };
+				hand.lastInputSnapshot.position = {500, 200}; hand.palm.diameterPx = 200;
+				hand.palm.End(); hand.ended = true; // 激活后同帧 Up 仍应消费已登记的范围。
+				std::vector<RuntimeStroke*> interrupted;
+				const auto finish = [&](RuntimeStroke& contact) { interrupted.push_back(&contact); contact.ended = true; };
+				FinishActivatedPalmNeighbors(activations, contacts, finish);
+				check(interrupted.size() == 2 && interrupted[0] == &nearTouch && interrupted[1] == &pendingNear && activations.empty(),
+					"activation survives same-frame Up and uses frozen boundary/Up position with device and lifecycle exclusions");
+				hand.ended = false;
+				hand.lastInputSnapshot.position = farTouch.lastModelSnapshot.position;
+				RecordPalmActivation(activations, hand, hand.lastInputSnapshot, true);
+				FinishActivatedPalmNeighbors(activations, contacts, finish);
+				check(interrupted.size() == 2 && !farTouch.ended, "later palm movement and growth do not interrupt existing writing");
+				check(PalmExclusionContains(hand.palm, {0, 0}, {115, 0}) &&
+					!PalmExclusionContains(hand.palm, {0, 0}, {115.01f, 0}), "large circular exclusion keeps fifteen percent canvas-pixel padding");
+			}
+
+			// 同一生产拒收接缝验证真实 mailbox 和手势清理，移出范围也必须等物理终态。
+			for (const auto device : { InputDeviceType::Touch, InputDeviceType::Pen, InputDeviceType::MouseLeft })
+				for (const bool parallel : { false, true }) for (const bool inside : { false, true })
+					for (const bool cancelled : { false, true })
+			{
+				ContactInputCoordinator input; input.EnableDiagnostics(true);
+				TouchContactRegistry contactsRegistry;
+				RuntimeStroke hand(configuration.expectedSpeed);
+				seed(hand, DrawingTool::Eraser);
+				hand.palm.active = true; hand.palm.diameterPx = 40; hand.palm.settings.parallelWriting = parallel;
+				std::vector<RuntimeStroke*> contacts{ &hand };
+				auto down = sample; down.position.x = inside ? 124.0f : 125.0f;
+				ContactRecord* record = nullptr;
+				check(input.PublishDown(0xFC61, 1, device, down) && input.TryDequeue(record) && record,
+					"neighborhood admission owns a real physical Down");
+				if (!record) continue;
+				const ContactHandle handle{ record, record->Generation() };
+				if (device == InputDeviceType::Touch)
+					contactsRegistry.TryRegister(CanvasTouchKey(handle));
+				const bool blocked = PalmNeighborBlocked(contacts, down.position, down.qpc, nullptr, true);
+				const bool rejected = RejectPalmNeighborTouch(input, contactsRegistry, handle, device, blocked);
+				check(rejected == (device == InputDeviceType::Touch && parallel && inside),
+					"only nearby Touch Down is rejected with parallel palm active");
+				if (rejected)
+				{
+					down.position = {500, 200}; down.qpc += 10;
+					ContactSnapshot latest;
+					check(!input.PublishMove(0xFC61, 1, down) && !input.TryReadSnapshot(handle, latest) && contactsRegistry.Count() == 0,
+						"rejected Touch cannot ink after moving outside and retires its gesture key");
+				}
+				check(cancelled ? input.PublishCancelled(0xFC61, 1, down) : input.PublishUp(0xFC61, 1, down),
+					"physical Up or Cancel still closes rejected or admitted route");
+				if (!rejected) input.Recycle(handle);
+				check(input.DiagnosticsSnapshot().occupiedSlots == 0, "physical Up reclaims neighborhood admission route");
+			}
+
+			// 普通 Up 的真实模型、存储与物理路由组合，不创建 Host 或窗口。
+			for (const bool pending : { false, true })
+			{
+				ContactInputCoordinator input; input.EnableDiagnostics(true);
+				TouchContactRegistry contactsRegistry;
+				RuntimeStroke writing(configuration.expectedSpeed), hand(configuration.expectedSpeed);
+				writing.inUse = true; writing.metricDeviceType = InputDeviceType::Touch;
+				writing.selectedTool = writing.tool = DrawingTool::HardPen; writing.qpcOrigin = 1000;
+				ResetNominalStroke(writing, 5, configuration, StrokeWidthMode::Fixed);
+				auto parameters = configuration.modelParams;
+				parameters.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+				check(writing.stroke.modeler.Reset(parameters).ok(), "interrupted writer owns a real model");
+				const auto model = [](ink::stroke_model::Input::EventType event, float x, double time)
+				{
+					return ink::stroke_model::Input{ .event_type = event, .position = { x, 0 },
+						.time = ink::stroke_model::Time(time), .pressure = 1, .tilt = 0, .orientation = 0 };
+				};
+				check(writing.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kDown, 0, 0),
+					writing.stroke.modeledResults).ok(), "interrupted writer accepts Down");
+				for (int i = 1; i <= 12; ++i)
+					check(writing.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kMove, i * 5.0f, i * .01),
+						writing.stroke.modeledResults).ok(), "interrupted writer accepts real Move history");
+				AppendNewModeledPoints(writing.stroke);
+				const auto acceptedPoints = writing.stroke.realPoints;
+				ContactSnapshot down; down.position = {0, 0}; down.qpc = 1000;
+				ContactRecord* record = nullptr;
+				check(input.PublishDown(0xFC62, 1, InputDeviceType::Touch, down) && input.TryDequeue(record) && record,
+					"interrupted writer has a real route");
+				if (!record) continue;
+				writing.handle = {record, record->Generation()}; writing.touchGestureKey = CanvasTouchKey(writing.handle);
+				contactsRegistry.TryRegister(writing.touchGestureKey);
+				ContactSnapshot last; last.position = {60, 0}; last.qpc = 1120; last.phase = ContactPhase::Move;
+				writing.lastModelSnapshot = last;
+				if (pending)
+				{
+					check(input.PublishUp(0xFC62, 1, last) && input.TryReadSnapshot(writing.handle, last), "pending writer owns frozen physical Up");
+					writing.awaitingReconnect = true; writing.deferredUpSnapshot = last; writing.reconnectDeadlineQpc = 1200;
+				}
+				hand.palm.active = true; hand.palm.diameterPx = 40; hand.palm.settings.parallelWriting = true;
+				std::vector<PalmActivation> activations;
+				RecordPalmActivation(activations, hand, last, false);
+				std::vector<RuntimeStroke*> contacts{ &hand, &writing };
+				FinishActivatedPalmNeighbors(activations, contacts, [&](RuntimeStroke& runtime)
+				{
+					const auto terminal = runtime.awaitingReconnect ? runtime.deferredUpSnapshot : runtime.lastModelSnapshot;
+					check(runtime.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kUp, terminal.position.x, .13),
+						runtime.stroke.modeledResults).ok(), "neighborhood interruption uses normal model Up");
+					AppendNewModeledPoints(runtime.stroke);
+					runtime.ended = true; runtime.cancelled = false; runtime.awaitingReconnect = false; runtime.reconnectDeadlineQpc = 0;
+					contactsRegistry.Release(runtime.touchGestureKey);
+				});
+				check(writing.ended && !writing.cancelled && !PalmReconnectCandidateAllowed(writing, false) &&
+					writing.stroke.realPoints.size() >= acceptedPoints.size() &&
+					std::equal(acceptedPoints.begin(), acceptedPoints.end(), writing.stroke.realPoints.begin(),
+						[](const InkPoint& a, const InkPoint& b) { return a.x == b.x && a.y == b.y && a.r == b.r && a.time == b.time; }),
+					"normal interruption retains accepted ink and cannot reconnect");
+				std::array<uint8_t, 16> workspaceBytes{}, pageBytes{};
+				workspaceBytes[0] = 0xC3; pageBytes[0] = 0xC4;
+				InkCanvasCollection document{ InkGuid(workspaceBytes) };
+				const auto pageIndex = document.AppendPage(InkGuid(pageBytes));
+				InkPage* page = pageIndex ? document.PageAt(*pageIndex) : nullptr;
+				InkCanvas* canvas = page ? page->GetOrCreateCanvas(kDefaultDeviceKey) : nullptr;
+				check(canvas != nullptr, "interrupted writer owns a CPU canvas");
+				if (canvas)
+				{
+					writing.ownerWorkspaceGuid = document.WorkspaceGuid(); writing.ownerPageGuid = page->PageGuid();
+					writing.ownerPageIndex = 0; writing.viewport = canvas->Viewport();
+					std::vector<CanvasPageRuntimeState> runtimes(1); InkRasterStateToken token = 1;
+					const auto committed = CommitRuntimeStoredStrokeCpu(writing, document, runtimes, 0, 0,
+						StoredStrokeCommitMode::NormalUp, [&] { return token++; });
+					check(committed && canvas->Strokes().size() == 1 && runtimes[0].history.Items().size() == 1,
+						"interrupted writer persists as one normal history stroke");
+					if (committed) check(runtimes[0].history.UndoLastVisible(committed->renderItem) &&
+						runtimes[0].history.RedoLastUndone(committed->renderItem), "interrupted writer remains independently undoable");
+				}
+				input.DiscardUntilTerminal(writing.handle);
+				const auto retainedCount = writing.stroke.realPoints.size();
+				last.position = {500, 0}; last.qpc = 1140;
+				check(!input.PublishMove(0xFC62, 1, last) && writing.stroke.realPoints.size() == retainedCount && contactsRegistry.Count() == 0,
+					"interrupted route cannot publish new Move ink");
+				if (!pending) check(input.PublishUp(0xFC62, 1, last), "real Up terminates synthetically ended writer");
+				check(input.DiagnosticsSnapshot().occupiedSlots == 0, "live and pending interrupted routes are fully reclaimed");
+			}
+
 			RuntimeStroke palm(configuration.expectedSpeed), observer(configuration.expectedSpeed);
 			seed(palm, DrawingTool::Pen);
 			auto candidate = palm.palm;
@@ -6683,6 +7190,13 @@ namespace Inkeys::Drawing::Draw3
 			palm.awaitingReconnect = true; palm.deferredUpSnapshot = sample; palm.reconnectDeadlineQpc = 1200;
 			check(!PalmBlocksDrawing(palm) && PalmNeighborBlocked(active, sample.position, 1200) &&
 				!PalmNeighborBlocked(active, sample.position, 1201), "pending handoff keeps finite exclusion without physical writing block");
+			palm.palm.settings.parallelWriting = true;
+			check(PalmNeighborBlocked(active, sample.position, 1200, nullptr, true) &&
+				!PalmNeighborBlocked(active, sample.position, 1201, nullptr, true),
+				"parallel Down exclusion reserves frozen Up through inclusive reconnect deadline");
+			palm.palm.settings.parallelWriting = false;
+			check(!PalmNeighborBlocked(active, sample.position, 1200, nullptr, true),
+				"nonparallel reconnect wait retains its previous independent admission behavior");
 			observer.inUse = true; observer.palmObservationOnly = true;
 			observer.qpcOrigin = 1000; observer.lastModelSnapshot = sample;
 			observer.palm.Begin(preferences, scale, PalmEraser::ToolCategory::Pen, 1000, 1000);
@@ -6700,14 +7214,18 @@ namespace Inkeys::Drawing::Draw3
 				"expired observer is discarded through normal ended lifecycle without phantom history");
 
 			for (const bool isPalm : { false, true }) for (const bool failModel : { false, true })
+				for (const bool speedPalm : { false, true })
 			{
+				if (speedPalm && !isPalm) continue;
 				ContactInputCoordinator input;
 				RuntimeStroke continued(configuration.expectedSpeed);
 				continued.inUse = true; continued.metricDeviceType = InputDeviceType::Touch;
 				continued.selectedTool = isPalm ? DrawingTool::Laser : DrawingTool::Pen;
 				continued.tool = isPalm ? DrawingTool::Eraser : DrawingTool::Pen;
 				continued.qpcOrigin = 1000;
-				continued.palm.Begin(preferences, scale, PalmEraser::ToolCategory::Pen, 1000, 1000);
+				auto reconnectPreferences = preferences;
+				if (speedPalm) { reconnectPreferences.sizeMode = 1; reconnectPreferences.shape = static_cast<int>(EraserShape::Square); }
+				continued.palm.Begin(reconnectPreferences, scale, PalmEraser::ToolCategory::Pen, 1000, 1000);
 				if (isPalm) continued.palm.Observe(ContactAreaFromSnapshot(sample), 1050);
 				ResetNominalStroke(continued, isPalm ? continued.palm.diameterPx : 5.0f, configuration, StrokeWidthMode::Fixed);
 				auto parameters = configuration.modelParams;
@@ -6724,6 +7242,15 @@ namespace Inkeys::Drawing::Draw3
 					check(continued.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kMove, index * 5.0f, index * .01),
 						continued.stroke.modeledResults).ok(), "continuation trains normal real Move history");
 				AppendNewModeledPoints(continued.stroke);
+				if (speedPalm)
+				{
+					// 用真实转换建立 Speed 手掌，再复用下方相同的模型成功/失败和 route 交接。
+					auto candidate = continued.palm;
+					continued.palm.active = false; continued.tool = DrawingTool::Laser;
+					auto activation = sample; activation.position = {60, 0}; activation.qpc = 1120;
+					check(PromotePalmRuntime(continued, candidate, activation, configuration, 1000) &&
+						continued.stroke.widthMode == StrokeWidthMode::SpeedEraser, "coordinator reconnect starts with a production-promoted speed palm");
+				}
 				ContactSnapshot down; down.qpc = 1000;
 				ContactRecord* oldRecord = nullptr;
 				check(input.PublishDown(0xFA11, 1, InputDeviceType::Touch, down) && input.TryDequeue(oldRecord) && oldRecord,
@@ -6746,6 +7273,14 @@ namespace Inkeys::Drawing::Draw3
 				identity.tool = static_cast<uint32_t>(continued.selectedTool);
 				check(EvaluateRuntimeReconnectCandidate(continued, identity, incoming, 1000, 1).matched,
 					"same original selection matches old actual tool without relaxing motion criteria");
+				RuntimeStroke blockingHand(configuration.expectedSpeed);
+				blockingHand.palm.active = true; blockingHand.palm.settings.parallelWriting = true;
+				blockingHand.palm.diameterPx = 100; blockingHand.lastInputSnapshot = incoming;
+				std::vector<RuntimeStroke*> neighborhood{ &blockingHand };
+				const bool blocked = PalmNeighborBlocked(neighborhood, incoming.position, incoming.qpc, nullptr, true);
+				check(blocked && PalmReconnectCandidateAllowed(continued, blocked) == isPalm &&
+					PalmReconnectCandidateAllowed(continued, false),
+					"blocked Down filters ordinary reconnect while retaining palm handoff priority");
 				const auto oldHandle = continued.handle;
 				const float oldDiameter = continued.palm.diameterPx;
 				const auto status = continued.stroke.modeler.Update(model(ink::stroke_model::Input::EventType::kMove, 70,
@@ -6763,6 +7298,8 @@ namespace Inkeys::Drawing::Draw3
 					continued.palm.active == isPalm && continued.palm.diameterPx == oldDiameter && continued.palm.locked &&
 					!continued.palm.Observe(ContactAreaFromSnapshot(incoming), incoming.qpc),
 					"handoff commits only on model success and neither ordinary nor palm continuation reopens recognition");
+				if (speedPalm) check(continued.stroke.widthMode == StrokeWidthMode::SpeedEraser && continued.palm.settings.sizeMode == 1 &&
+					continued.stroke.eraserShape == EraserShape::Square, "real coordinator handoff retains speed palm width identity and custom shape");
 				incoming.qpc = 1150; input.PublishUp(0xFA11, 2, incoming);
 				input.Recycle(newHandle); if (failModel) input.Recycle(oldHandle);
 			}
@@ -10262,6 +10799,26 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
+			for (const auto shape : { EraserShape::Circle, EraserShape::Rectangle, EraserShape::Square })
+			{
+				StoredInkStyle style; style.inkType = StoredInkType::Eraser; style.eraserShape = shape;
+				const InkStroke stroke(style, { { 20.0f, 30.0f, 24.0f }, { 25.0f, 35.0f, 40.0f } });
+				const auto json = WhiteboardStrokeJson(stroke);
+				const auto restored = WhiteboardStrokeFromJson(json);
+				check(json["points"][0].size() == 3 && json["points"][1].size() == 3 && restored &&
+					restored->Style().eraserShape == shape && restored->Points()[1].width == 40.0f,
+					"eraser shape history roundtrip preserves scalar three-item points");
+				check(json.isMember("eraserShape") == (shape != EraserShape::Circle),
+					"circle history stays byte compatible without the optional field");
+				auto oldJson = json; oldJson.removeMember("eraserShape");
+				const auto oldStroke = WhiteboardStrokeFromJson(oldJson);
+				check(oldStroke && oldStroke->Style().eraserShape == EraserShape::Circle,
+					"old history defaults to circle");
+				auto invalidJson = json; invalidJson["eraserShape"] = 256;
+				check(!WhiteboardStrokeFromJson(invalidJson), "invalid eraser history shape is rejected");
+				invalidJson["eraserShape"] = 1.5;
+				check(!WhiteboardStrokeFromJson(invalidJson), "fractional eraser history shape is rejected");
+			}
 			// 真实失败完成入队与消费函数均无 HWND；正常补呈现不再进入 SetPage 分支。
 			struct FailedLoadCapture
 			{
@@ -10422,7 +10979,12 @@ namespace Inkeys::Drawing::Draw3
 					auto* page = document.PageAt(index); auto* canvas = page->FindCanvas(kDefaultDeviceKey);
 					for (int strokeIndex = 0; strokeIndex < 3; ++strokeIndex)
 					{
-						InkStroke stroke({}, {{float(index),float(strokeIndex),2.0f},{float(index+10),float(strokeIndex+10),2.0f}});
+						StoredInkStyle style;
+						if (strokeIndex != 0)
+						{
+							style.inkType = StoredInkType::Eraser; style.eraserShape = static_cast<EraserShape>(strokeIndex);
+						}
+						InkStroke stroke(style, {{float(index),float(strokeIndex),2.0f},{float(index+10),float(strokeIndex+10),2.0f}});
 						auto footprint = BuildStrokeTileFootprint(stroke);
 						auto added = canvas->AppendStroke(std::move(stroke));
 						if (!footprint || !added || !runtime[index].history.AppendStroke(*added,std::move(*footprint))) return 1;
@@ -10453,6 +11015,7 @@ namespace Inkeys::Drawing::Draw3
 						draw3::uink::Draw3UInkCanvasSnapshot boundary;
 						boundary.pageGuid = ordered[index];
 						draw3::uink::Draw3UInkStrokeSnapshot stroke;
+						stroke.style.kind = draw3::uink::Draw3UInkStrokeKind::Eraser; stroke.style.eraserShape = 2;
 						stroke.points = {{0,0,2},{10,10,2}}; boundary.strokes.push_back(stroke);
 						runtime[index].boundaryFallback = std::move(boundary);
 						runtime[index].clearRedoContinuation = CaptureClearRedoContinuation(*page,runtime[index]);
@@ -10472,6 +11035,9 @@ namespace Inkeys::Drawing::Draw3
 					for (const auto& item : runtime[index].history.Items()) if (item.visible)
 					{
 						draw3::uink::Draw3UInkStrokeSnapshot stroke;
+						const auto& style = canvas->Strokes()[item.strokeIndex].Style();
+						stroke.style = { *UInkKindForStoredType(style.inkType), style.opacity, style.fallbackRgb,
+							style.texture, static_cast<uint8_t>(style.eraserShape) };
 						stroke.undoId=static_cast<uint32_t>(saved.strokes.size());
 						for (const auto& point : canvas->Strokes()[item.strokeIndex].Points()) stroke.points.push_back({point.x,point.y,point.width});
 						saved.strokes.push_back(std::move(stroke));
@@ -10594,6 +11160,10 @@ namespace Inkeys::Drawing::Draw3
 					if (!store.Take(result) || !result.success || !result.document) { check(false,"cold read succeeds"); break; }
 					const auto& canvas=result.document->canvases.front();
 					check(canvas.content.size()==2,"standard content excludes hidden redo stroke");
+					check(canvas.content.size() == 2 && std::holds_alternative<draw3::uink::UInkInk>(canvas.content[1]) &&
+						std::get<draw3::uink::UInkInk>(canvas.content[1]).effectiveKind == draw3::uink::UInkInkKind::Erase &&
+						std::get<draw3::uink::UInkInk>(canvas.content[1]).eraserShape == 1,
+						"cold UInk page retains visible rectangle eraser");
 					const auto* encoded=canvas.extra ? std::get_if<std::string>(&canvas.extra->front().second.value) : nullptr;
 					Json::CharReaderBuilder builder; std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
 					Json::Value history; std::string error;
@@ -10601,6 +11171,13 @@ namespace Inkeys::Drawing::Draw3
 					InkPage restored(InkGuid(ordered[index].Bytes())); CanvasPageRuntimeState state;
 					const auto firstFreshToken = nextHistoryRasterStateToken;
 					check(RestoreWhiteboardHistory(history,restored,state,allocateHistoryRasterStateToken),"cold history restored");
+					const auto* restoredCanvas = restored.FindCanvas(kDefaultDeviceKey);
+					check(restoredCanvas && restoredCanvas->Strokes().size() == 3 &&
+						restoredCanvas->Strokes()[1].Style().eraserShape == EraserShape::Rectangle &&
+						restoredCanvas->Strokes()[2].Style().eraserShape == EraserShape::Square,
+						"cold history retains visible and redo eraser shapes");
+					if (index == 0) check(state.boundaryFallback && !state.boundaryFallback->strokes.empty() &&
+						state.boundaryFallback->strokes[0].style.eraserShape == 2, "Clear boundary retains square eraser");
 					check(state.rasterState >= firstFreshToken && state.rasterState < nextHistoryRasterStateToken,
 						"restored page receives fresh runtime tokens instead of serialized item ordinals");
 					if (index == 0) check(state.boundaryFallback && state.boundaryFallback->strokes.size() == 1 &&
@@ -13308,7 +13885,7 @@ namespace Inkeys::Drawing::Draw3
 			SpeedEraser::ResolveSizes(window_.EraserInputsSnapshot().baseSize).fixedDiameterDip,
 			window_.SpeedEraserDisplayScaleSnapshot());
 		DrawingCursorAppearance eraserAppearance = {
-			DrawingCursorShape::EraserGripCircle,
+			DrawingCursorShape::EraserSprite,
 			eraserCursorDiameter,
 			eraserCursorDiameter,
 			1.0f, 1.0f, 1.0f
@@ -13319,6 +13896,8 @@ namespace Inkeys::Drawing::Draw3
 		eraserAppearance.outlineRed = ERASER_GRIP_OUTLINE_CHANNEL;
 		eraserAppearance.outlineGreen = ERASER_GRIP_OUTLINE_CHANNEL;
 		eraserAppearance.outlineBlue = ERASER_GRIP_OUTLINE_CHANNEL;
+		ConfigureEraserSprite(eraserAppearance, eraserCursorAppearance_, eraserCursorDiameter,
+			ProductTargetScale(currentProductVisualStyle));
 		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
 		ConfigureLaserRendererStyle(renderer_, currentProductVisualStyle,
 			configuration_.dpiScale);
@@ -13410,7 +13989,7 @@ namespace Inkeys::Drawing::Draw3
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
 		window_.SetInjectedMouseAsTablet(settings.injectedMouseAsTablet);
-		const uint32_t packed = PackCursorSettings(settings);
+		const uint64_t packed = PackCursorSettings(settings);
 		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
 			!systemChanged) window_.RequestDrawingCursorRender();
 	}
@@ -13431,6 +14010,27 @@ namespace Inkeys::Drawing::Draw3
 	void DrawingController::SetPalmEraserOptions(const PalmEraser::Settings& options) noexcept
 	{
 		palmEraserOptions_ = PalmEraser::NormalizeSettings(options);
+	}
+
+	void DrawingController::SetEraserShape(EraserShape shape) noexcept
+	{
+		auto appearance = eraserCursorAppearance_;
+		appearance.shape = shape;
+		SetEraserCursorAppearance(appearance);
+	}
+
+	void DrawingController::SetEraserCursorAppearance(EraserCursorAppearance appearance) noexcept
+	{
+		if (appearance.shape != EraserShape::Rectangle && appearance.shape != EraserShape::Square)
+			appearance.shape = EraserShape::Circle;
+		if (appearance.pattern != EraserCursorPattern::Inkeys && appearance.pattern != EraserCursorPattern::Sparkle)
+			appearance.pattern = EraserCursorPattern::Grips;
+		if (appearance.theme != EraserCursorTheme::Dark) appearance.theme = EraserCursorTheme::Light;
+		if (eraserCursorAppearance_ == appearance) return;
+		eraserCursorAppearance_ = appearance;
+		eraserShape_.store(appearance.shape, std::memory_order_release);
+		renderer_.InvalidateEraserCursorCache();
+		window_.RequestDrawingCursorRender();
 	}
 
 	void DrawingController::SetLaserParticlesEnabled(bool /*enabled*/) noexcept
@@ -14121,7 +14721,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!kind) return std::nullopt;
 				draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
 				outputStroke.style = { *kind, stroke.Style().opacity,
-					stroke.Style().fallbackRgb, stroke.Style().texture };
+					stroke.Style().fallbackRgb, stroke.Style().texture,
+					static_cast<uint8_t>(stroke.Style().eraserShape) };
 				outputStroke.undoId = static_cast<std::uint32_t>(output.strokes.size());
 				for (const StoredInkPoint& point : stroke.Points())
 					outputStroke.points.push_back({ point.x, point.y, point.width });
@@ -15097,6 +15698,7 @@ namespace Inkeys::Drawing::Draw3
 		RECT pendingPalmDirty = {};
 		bool palmLayersNeedRebuild = false;
 		int64_t palmInterruptQpc = 0;
+		std::vector<PalmActivation> palmActivations;
 		auto hasBlockingPalm = [&]()
 		{
 			return std::any_of(active.begin(), active.end(), [&](const RuntimeStroke* runtime)
@@ -15129,6 +15731,7 @@ namespace Inkeys::Drawing::Draw3
 			UnionRectInPlace(oldDirty, runtime.stroke.currentL0Rect);
 			UnionRectInPlace(oldDirty, runtime.stroke.lastL0Rect);
 			if (!PromotePalmRuntime(runtime, candidate, sample, configuration_, qpcFrequency)) return false;
+			RecordPalmActivation(palmActivations, runtime, sample, wasActive);
 			if (!wasActive && !candidate.settings.parallelWriting)
 				palmInterruptQpc = std::max(palmInterruptQpc, sample.qpc);
 			if (!wasActive && oldTool != DrawingTool::Eraser)
@@ -15157,6 +15760,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
+				const EraserShape downEraserShape = eraserShape_.load(std::memory_order_acquire);
 				const InputDeviceType deviceType = handle.record->DeviceType();
 				const auto generalOptions = DecodeGeneralDrawingOptions(
 					generalDrawingOptions_.load(std::memory_order_acquire));
@@ -15349,6 +15953,9 @@ namespace Inkeys::Drawing::Draw3
 					suppressPressure
 				};
 
+				// 先保留手掌自身续接；范围内普通笔划不得通过续接绕过落笔拒收。
+				const bool palmNeighborBlocked = deviceType == InputDeviceType::Touch &&
+					PalmNeighborBlocked(active, down.position, down.qpc, nullptr, true);
 				RuntimeStroke* reconnectRuntime = nullptr;
 				InterruptedStrokeReconnectResult reconnectResult;
 				RuntimeStroke* diagnosticRuntime = nullptr;
@@ -15359,9 +15966,11 @@ namespace Inkeys::Drawing::Draw3
 				{
 					for (RuntimeStroke* candidate : active)
 					{
-						if (!candidate || !candidate->awaitingReconnect || candidate->ended) continue;
+						if (!candidate || !PalmReconnectCandidateAllowed(*candidate, palmNeighborBlocked)) continue;
 						if (!candidate->palm.active && palmInterruptQpc > 0 && candidate->qpcOrigin <= palmInterruptQpc) continue;
 						if (!candidate->palm.active && (tool == DrawingTool::Laser || IsShapeDrawingTool(tool))) continue;
+						// 普通橡皮仍按形状筛选；手掌续接完整继承旧笔已锁存的形状。
+						if (!candidate->palm.active && candidate->tool == DrawingTool::Eraser && candidate->stroke.eraserShape != downEraserShape) continue;
 						const auto result = EvaluateRuntimeReconnectCandidate(*candidate, downIdentity,
 							down, qpcFrequency, reconnectDpiScale);
 						if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
@@ -15434,6 +16043,13 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
+				// Discard 后 record 可能被复用；提前保存本次登记的 metrics 身份供两处拒收退休。
+				const auto registeredMetricKey = MetricKey(handle);
+				if (!reconnectRuntime && RejectPalmNeighborTouch(input_, touchContacts, handle, deviceType, palmNeighborBlocked))
+				{
+					if (metricsState_) metricsState_->Invalidate(registeredMetricKey, ContentMetricInvalidationReason::InitRejected);
+					return false;
+				}
 				if (reconnectRuntime)
 				{
 					const float reconnectPreviousRawSpeed = reconnectRuntime->filteredInputSpeed;
@@ -15624,6 +16240,12 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
+				// 手掌模型续接失败后仍须拒收邻近 Down，不能转成普通独立笔。
+				if (RejectPalmNeighborTouch(input_, touchContacts, handle, deviceType, palmNeighborBlocked))
+				{
+					if (metricsState_) metricsState_->Invalidate(registeredMetricKey, ContentMetricInvalidationReason::InitRejected);
+					return false;
+				}
 				// 真实匹配且模型接续成功已在上方接管返回；失败/不匹配才按新独立笔判定。
 				if (RejectIndependentTouch(input_, touchContacts, handle, deviceType,
 					hasActiveTouch, generalOptions.multiTouchEnabled))
@@ -15641,7 +16263,7 @@ namespace Inkeys::Drawing::Draw3
 				PalmEraser::State newPalm;
 				if (deviceType == InputDeviceType::Touch)
 					newPalm.Begin(palmEraserOptions_, PalmEraser::ResolveScale(observedSpeedEraserDisplayScale, down.source),
-						PalmToolCategory(tool), down.qpc, qpcFrequency, PalmNeighborBlocked(active, down.position, down.qpc));
+						PalmToolCategory(tool), down.qpc, qpcFrequency, PalmNeighborBlocked(active, down.position, down.qpc), downEraserShape);
 				const bool palmObservationOnly = hasBlockingPalm();
 				if (palmObservationOnly && !newPalm.eligible)
 				{
@@ -15685,6 +16307,9 @@ namespace Inkeys::Drawing::Draw3
 				runtime->touchContactAreaAssistance=batchTouchArea;
 				runtime->eraserInputs=batchEraserInputs;runtime->eraserPolicy=batchEraserPolicy;
 				runtime->resolvedEraser=resolvedEraser;runtime->firstEraserCursorFrame=true;
+				// 与普通 Fixed 橡皮使用同一 DIP→画布像素路径，在独立 Down 锁存默认大小。
+				runtime->palmDefaultDiameterPx = SpeedEraser::FixedDiameterPx(
+					runtime->resolvedEraser.config.sizes.fixedDiameterDip, runtime->speedEraserDisplayScale);
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
 				// 产品样式与工具一样在 Down 时锁存，活动笔划和断触续接不读取后续修改。
@@ -15743,6 +16368,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->speedEraserModelTime = 0.0;
 				runtime->speedEraserModelDiameter = baseDiameter;
 				ResetNominalStroke(*runtime, baseDiameter, configuration_, widthMode);
+				runtime->stroke.eraserShape = downEraserShape; // 同一笔与手掌转换保持 Down 时形状。
 				runtime->stroke.useDisplayTime = (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen);
 				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
 				// 成功断触接续已在上方返回，只有真正新笔才锁存此时偏好。
@@ -16809,7 +17435,7 @@ namespace Inkeys::Drawing::Draw3
 				if (AbsoluteQpcSeconds(mouseSample.qpc, qpcFrequency) <= mouseSpeedEraser().LastEventSeconds())
 					mouseSample.inContact = false;
 			}
-			const uint32_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
+			const uint64_t cursorSettingsBits = cursorSettings_.load(std::memory_order_acquire);
 			CursorSettings cursorSettings = UnpackCursorSettings(cursorSettingsBits);
 			const bool cursorSettingsValid = (cursorSettingsBits & kCursorSettingsValidBit) != 0;
 			DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
@@ -16831,6 +17457,20 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			if(primaryRuntime)cursorTool=primaryRuntime->tool;
+			auto configureEraser = [&](DrawingCursorAppearance& appearance, const RuntimeStroke* runtime)
+			{
+				auto cursor = eraserCursorAppearance_;
+				// 活动笔划只读 Down 锁存的形状，手掌也可与 Hover 使用不同缓存。
+				if (runtime) cursor.shape = runtime->stroke.eraserShape;
+				// 基准/DPI 是本帧统一配方，避免新旧 contact 在同一外观上交替重建。
+				const float baseDiameter = SpeedEraser::FixedDiameterPx(
+					SpeedEraser::ResolveSizes(observedEraserInputs.baseSize).fixedDiameterDip, observedSpeedEraserDisplayScale);
+				ConfigureEraserSprite(appearance, cursor, baseDiameter,
+					ProductTargetScale(currentProductVisualStyle));
+			};
+			DrawingCursorAppearance eraserAppearance = window_.CursorAppearanceForTool(DrawingTool::Eraser);
+			configureEraser(eraserAppearance, primaryRuntime && primaryRuntime->tool == DrawingTool::Eraser
+				? primaryRuntime : nullptr);
 			if (cursorSettingsValid)
 			{
 				// 同一实际工具投影同时控制系统箭头和应用预览，不能用新选择覆盖活动笔画。
@@ -16863,7 +17503,7 @@ namespace Inkeys::Drawing::Draw3
 				DrawingCursorVisual primary = ResolvePrimaryDrawingCursorVisual(
 					penSample, mouseSample, window_.CursorOwner(),
 					window_.CursorAppearanceForTool(cursorTool),
-					window_.CursorAppearanceForTool(DrawingTool::Eraser),
+					eraserAppearance,
 					cursorTool == DrawingTool::Eraser,
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
@@ -16872,7 +17512,7 @@ namespace Inkeys::Drawing::Draw3
 					cursorTool == DrawingTool::Pen || cursorTool == DrawingTool::HardPen,
 					ProductTargetScale(currentProductVisualStyle));
 				if (primary.visible &&
-					primary.appearance.shape == DrawingCursorShape::EraserGripCircle)
+					primary.appearance.shape == DrawingCursorShape::EraserSprite)
 				{
 					float dynamicDiameter = -1.0f;
 					if (primaryRuntime && primaryRuntime->tool == DrawingTool::Eraser &&
@@ -16917,8 +17557,6 @@ namespace Inkeys::Drawing::Draw3
 
 			const size_t primaryCursorCount = currentCursorVisuals.size();
 			const size_t primaryLaserTipCount = laserTipVisuals.size();
-			const DrawingCursorAppearance eraserAppearance =
-				window_.CursorAppearanceForTool(DrawingTool::Eraser);
 			for (const RuntimeStroke* runtime : active)
 			{
 				if (runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
@@ -16946,7 +17584,7 @@ namespace Inkeys::Drawing::Draw3
 					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
 						snapshot.position.x, snapshot.position.y,
 						window_.CursorAppearanceForTool(runtime->tool), cursorSettings.touch,
-						ProductTargetScale(runtime->visualStyle));
+						ProductTargetScale(runtime->visualStyle), &cursorSettings);
 					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
 					continue;
 				}
@@ -16955,6 +17593,7 @@ namespace Inkeys::Drawing::Draw3
 					runtime->tool != DrawingTool::Eraser) continue;
 				const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
 				DrawingCursorAppearance touchAppearance = eraserAppearance;
+				configureEraser(touchAppearance, runtime);
 				if (runtime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
 					ApplySpeedEraserCursorDiameter(
 						touchAppearance, RuntimeSpeedEraserContactDiameter(*runtime));
@@ -17171,6 +17810,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					// 诊断必须取当前 contact 的最终 Touch 光标，不能读取列表首项的鼠标/其他手指。
 					auto appearance=eraserAppearance;
+					configureEraser(appearance, r);
 					ApplySpeedEraserCursorDiameter(appearance,r->stroke.widthMode==StrokeWidthMode::SpeedEraser?
 						RuntimeSpeedEraserContactDiameter(*r):r->stroke.widthEstimator.baseDiameter);
 					const auto& position=r->lastModelSnapshot.position;
@@ -17710,7 +18350,8 @@ namespace Inkeys::Drawing::Draw3
 					points.push_back({ point.x, point.y, point.width });
 				const auto strokeIndex = canvas->AppendStroke(InkStroke({ inkType,
 					sourceStroke.style.fallbackRgb, sourceStroke.style.opacity,
-					static_cast<std::uint16_t>(sourceStroke.style.texture) },
+					static_cast<std::uint16_t>(sourceStroke.style.texture),
+					static_cast<EraserShape>(sourceStroke.style.eraserShape) },
 					std::move(points)));
 				if (!strokeIndex) return std::nullopt;
 				const auto footprint = BuildStrokeTileFootprint(
@@ -20161,6 +20802,28 @@ namespace Inkeys::Drawing::Draw3
 					touchContacts.Release(runtime->touchGestureKey);
 				}
 			}
+			auto finishInterrupted = [&](RuntimeStroke& runtime)
+			{
+				// 等待续接的笔划在物理 Up 时已退休手势；再次退休会误伤复用同一 key 的新手指。
+				const bool gestureAlreadyRetired = runtime.awaitingReconnect;
+				ContactSnapshot terminal = runtime.awaitingReconnect ? runtime.deferredUpSnapshot : runtime.lastModelSnapshot;
+				terminal.phase = ContactPhase::Up;
+				runtime.stroke.predictedResults.clear();
+				runtime.stroke.predictedPoints.clear();
+				completeModelUp(runtime, terminal, false);
+				if (runtime.tool == DrawingTool::Laser)
+				{
+					const WindowSize laserSize = window_.Size();
+					FinalizeLaserRuntime(laserStrokeLayers, runtime, laserLifecycle,
+						terminal.qpc, false, configuration_.dpiScale, laserSize.width, laserSize.height);
+				}
+				runtime.lastInputSnapshot = terminal;
+				finishMouseSpeedEraser(runtime);
+				if (runtime.touchGestureKey && !gestureAlreadyRetired) touchContacts.Release(runtime.touchGestureKey);
+				if (runtime.metricDeviceType == InputDeviceType::Pen && haptics_ &&
+					window_.EndHapticContact(runtime.handle.record->ContactId(), runtime.handle.generation, false,
+						runtime.handle.record->TabletContextId())) haptics_->StopFeedback();
+			};
 			const bool blockingPalm = hasBlockingPalm();
 			if (blockingPalm || palmInterruptQpc > 0)
 			{
@@ -20168,25 +20831,10 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (!runtime || runtime->ended || runtime->palm.active || runtime->palmObservationOnly) continue;
 					if (!blockingPalm && runtime->qpcOrigin > palmInterruptQpc) continue;
-					ContactSnapshot terminal = runtime->awaitingReconnect ? runtime->deferredUpSnapshot : runtime->lastModelSnapshot;
-					terminal.phase = ContactPhase::Up;
-					runtime->stroke.predictedResults.clear();
-					runtime->stroke.predictedPoints.clear();
-					completeModelUp(*runtime, terminal, false);
-					if (runtime->tool == DrawingTool::Laser)
-					{
-						const WindowSize laserSize = window_.Size();
-						FinalizeLaserRuntime(laserStrokeLayers, *runtime, laserLifecycle,
-							terminal.qpc, false, configuration_.dpiScale, laserSize.width, laserSize.height);
-					}
-					runtime->lastInputSnapshot = terminal;
-					finishMouseSpeedEraser(*runtime);
-					if (runtime->touchGestureKey) touchContacts.Release(runtime->touchGestureKey);
-					if (runtime->metricDeviceType == InputDeviceType::Pen && haptics_ &&
-						window_.EndHapticContact(runtime->handle.record->ContactId(), runtime->handle.generation, false,
-							runtime->handle.record->TabletContextId())) haptics_->StopFeedback();
+					finishInterrupted(*runtime);
 				}
 			}
+			FinishActivatedPalmNeighbors(palmActivations, active, finishInterrupted);
 			palmInterruptQpc = 0;
 			hasEndedStroke = hasEndedStroke || std::any_of(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime) { return runtime && runtime->ended; });
@@ -21116,7 +21764,9 @@ namespace Inkeys::Drawing::Draw3
 					}
 					else if (!runtime->stroke.realPoints.empty())
 					{
-						realBounds = RectFromStrokePoints(runtime->stroke.realPoints, size.width, size.height);
+						realBounds = runtime->tool == DrawingTool::Eraser
+							? RectFromEraserPoints(runtime->stroke.realPoints, runtime->stroke.eraserShape, size.width, size.height)
+							: RectFromStrokePoints(runtime->stroke.realPoints, size.width, size.height);
 						realContribution = true;
 					}
 					else if (runtime->stroke.hasInputStartPoint && !runtime->stroke.l0DrawPoints.empty())

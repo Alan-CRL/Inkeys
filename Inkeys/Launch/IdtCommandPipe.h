@@ -245,6 +245,20 @@ namespace Inkeys::Launch::CommandPipe
 	inline void DiscardIntent(bool& launchIntent) noexcept
 	{ (void)server.TakePending(); launchIntent = false; }
 
+	template<class Apply>
+	inline bool TryStartupUpdate(bool valid, std::wstring_view stagedEdition, std::wstring_view currentEdition,
+		bool mandatoryUpdate, bool& launchIntent, Apply&& apply)
+	{
+		if (valid)
+		{
+			// 同版或旧版暂存指令无需更新，不能当作交接失败清除本地或排队的白板请求。
+			if (stagedEdition <= currentEdition && !mandatoryUpdate) return false;
+			if (apply()) return true;
+		}
+		DiscardIntent(launchIntent);
+		return false;
+	}
+
 	inline Result SendBytes(const std::wstring& root, void* request, DWORD size, DWORD retryMissing = 0)
 	{
 		const auto prefix = Prefix(root); if (prefix.empty()) return Result::Failed;
@@ -328,6 +342,54 @@ namespace Inkeys::Launch::CommandPipe
 		if (args) LocalFree(args); return result;
 	}
 	inline int RunTests();
+	inline int RunStartupUpdateTests()
+	{
+		int failures = 0;
+		struct Case { const char* name; const wchar_t* edition; bool mandatory, valid, apply; };
+		const Case cases[]{
+			{"same", L"20261109a", false, true, false},
+			{"older", L"20261104a", false, true, false},
+			{"newer", L"20261110a", false, true, true},
+			{"forced-same", L"20261109a", true, true, true},
+			{"forced-older", L"20261104a", true, true, true},
+			{"invalid-same", L"20261109a", false, false, false},
+			{"invalid-newer", L"20261110a", false, false, false},
+		};
+		// 不启动产品或管道线程；走生产更新判断与真实意图槽，覆盖本地、排队及合并请求。
+		for (const auto& test : cases) for (unsigned source = 1; source <= 3; ++source)
+			for (bool succeeds : {false, true})
+			{
+				const auto check = [&](bool value, const char* label)
+				{
+					if (!value) { ++failures; std::fprintf(stderr, "[WhiteboardStartupUpdate] FAIL %s source=%u success=%d %s\n",
+						test.name, source, succeeds, label); }
+				};
+				const bool local = (source & 1) != 0, queued = (source & 2) != 0;
+				bool launchIntent = local, handedOff = false; unsigned attempts = 0;
+				if (queued) server.Queue();
+				const bool started = TryStartupUpdate(test.valid, test.edition, L"20261109a", test.mandatory,
+					launchIntent, [&]
+					{
+						++attempts;
+						if (succeeds) handedOff = TakeHandoffIntent(launchIntent);
+						return succeeds;
+					});
+				check(attempts == (test.apply ? 1u : 0u) && started == (test.apply && succeeds), "update eligibility/result");
+				if (test.valid && !test.apply)
+				{
+					check(launchIntent == local && server.TakePending() == queued && !server.TakePending(), "no update preserves each intent once");
+					check(TakeHandoffIntent(launchIntent) == local && !TakeHandoffIntent(launchIntent), "preserved local intent is consumed once");
+				}
+				else
+				{
+					check(handedOff == (test.apply && succeeds), "successful update hands off merged intent");
+					check(!launchIntent && !server.TakePending() && !TakeHandoffIntent(launchIntent), "failed or handed-off intent cannot replay");
+				}
+				DiscardIntent(launchIntent);
+			}
+		std::fprintf(stderr, "[WhiteboardStartupUpdate] failures=%d\n", failures);
+		return failures ? 1 : 0;
+	}
 	inline bool TryRunTests(int& result)
 	{
 		int count = 0; auto raw = CommandLineToArgvW(GetCommandLineW(), &count);
@@ -348,7 +410,12 @@ namespace Inkeys::Launch::CommandPipe
 		}
 		if (count < 2) return false;
 		const auto mode = args[1];
-		if (mode == L"--whiteboard-command-tests") { result = count == 2 ? RunTests() : 2; return true; }
+		if (mode == L"--whiteboard-command-tests")
+		{
+			result = count == 2 ? RunTests()
+				: count == 3 && args[2] == L"--startup-update-only" ? RunStartupUpdateTests() : 2;
+			return true;
+		}
 		const bool listening = mode == L"--whiteboard-command-test-server", silent = mode == L"--whiteboard-command-test-silent",
 			client = mode == L"--whiteboard-command-test-client", handoff = mode == L"--whiteboard-command-test-handoff",
 			retry = mode == L"--whiteboard-command-test-retry", spoof = mode == L"--whiteboard-command-test-spoof",
@@ -460,6 +527,7 @@ namespace Inkeys::Launch::CommandPipe
 
 	inline int RunTests()
 	{
+		if (RunStartupUpdateTests() != 0) return 1;
 		wchar_t temporary[32768]{}; if (!GetTempPathW(ARRAYSIZE(temporary), temporary)) return 1;
 		const auto root = std::wstring(temporary) + L"Inkeys Instance Test " + std::to_wstring(GetCurrentProcessId())
 			+ L"-pipe-" + std::to_wstring(GetTickCount64());

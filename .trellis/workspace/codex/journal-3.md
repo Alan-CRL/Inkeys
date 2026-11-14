@@ -303,6 +303,22 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 ### Main Changes
 
 - 三个源/测试文件净删547行；同步产品规范与未来路线图交接，两个拖动任务均completed。
+## Session 177: 重启与设置退出修复验收归档
+<!-- trellis-session: v=2 fp=b75a4b2e55903361 -->
+
+**Date**: 2026-11-05
+**Task**: 重启与设置退出修复验收归档
+**Branch**: `chore/ui`
+
+### Summary
+
+用户接受当前修复并要求结束归档；26轮全部exit0、Settings关停均为毫秒级，默认关闭的探针继续保留，剩余退出长尾明确延后。
+
+### Main Changes
+
+- 普通R隐藏后提前交接，已知更新U及崩溃X等待旧父退出；Settings先注销并排空帧，再做最终resident清理。
+- 采集器修复其他worktree同名进程误判，14个目录范围正负例；原始18轮及6+20轮日志保留，只提交紧凑汇总。
+- 归档 .trellis/tasks/archive/2026-11/11-05-restart-shutdown-investigation；记录探针命令、版本哈希、结论和follow-up，不归档其他历史任务。
 
 ### Git Commits
 
@@ -314,6 +330,14 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 
 - [OK] 完整InkeysRepo.sln Debug|ARM64独立OutDir构建通过；七项无窗口验证通过，完整Headless498.469秒。
 - [OK] 2240条实际场景及整份pan-feel输出与清理前逐字节一致；独立check、26个常量与BOM/CRLF检查通过。
+| `1b0db5fc56a55610677a6838eef7670b1fc06daa` | fix(lifecycle): avoid restart and settings shutdown waits |
+| `407f91951f91c35fdbf35c627a8f8af48d399faf` | fix(diagnostics): scope shutdown collection to its installation |
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64原生MSBuild exit0；完整--no-window同一PID最终exit0，初始等待超时后未重跑。
+- [OK] 设置旧顺序负例、隐藏idle及在途回调排空通过；字体生命周期、重启/单实例/监督器回归通过。
+- [OK] 用户26轮均exit0，main-setting1.0781~9.7916ms，中位总关闭观测1277.91375ms，4轮>=3秒；新版20轮完整完成。
 
 ### Status
 
@@ -335,13 +359,125 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 ### Summary
 
 User final device test accepted. Touch release decisions, bounded fallback, cursor and input-device handling verified; archived task. Full-suite version reuse and final targeted checks recorded.
+- 需要继续时从归档follow-up.md恢复：先区分系统ExitTime与观测延迟，再调查main后、PPT及窗口/Draw3长尾；C10 foreign-session reader已有单独未定位失败，Win7/UAC/跨架构不宣称通过。
+
+
+## Session 180: 完善设置绘制光标样式与透明度
+<!-- trellis-session: v=2 fp=8a89c5244b2e7f82 -->
+
+**Date**: 2026-11-06
+**Task**: 完善设置绘制光标样式与透明度
+**Branch**: `chore/ui`
+
+### Summary
+
+完成高亮光标黑边与动态白环、四类透明度配置、浅色预览及二十语言文案；通过构建、i18n 与 Draw3 无窗口验证，用户确认人工测试通过；完整 headless 的既有无关断言已在任务记录中保留说明。
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
 | `b861d464` | fix(draw3): stabilize touch release and bounded gesture handoff |
+| `c7f3f353` | feat(settings): refine cursor appearance and opacity |
 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 182: 位置设置页与 PPT/白板进入自动居中底栏
+<!-- trellis-session: v=2 fp=a413d270b49c1963 -->
+
+**Date**: 2026-11-06
+**Task**: 位置设置页与 PPT/白板进入自动居中底栏
+**Branch**: `chore/ui`
+
+### Summary
+
+新增通用-位置页：桌面启动位置扩展为类型+位置联动下拉（含居中顶栏、悬浮窗底栏居中），PPT/白板进入按进入前主栏状态勾选自动变为居中底栏并可选展开方向；修复折叠/悬浮接管时展开与居中互相覆盖。遗留：折叠状态进入 PPT（自动居中）动画不自然且脏区遗漏，见归档任务 followup.md。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b10c5858` | feat(bar): add position settings page with workspace auto-dock policy |
+| `fa57e5f5` | fix(bar): stop expand and centering fighting on workspace entry takeover |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 183: 手掌橡皮第一阶段：RTS坐标、面积与定尺修复
+<!-- trellis-session: v=2 fp=67516a5e42478450 -->
+
+**Date**: 2026-11-06
+**Task**: 手掌橡皮第一阶段：RTS坐标、面积与定尺修复
+**Branch**: `bugfix/hand-erase`
+
+### Summary
+
+按用户批准的A方案完成窗口HDC位置映射、接触尺寸S/C逆变换和椭圆等面积圆定尺；保留识别阈值/预览。代码未提交，任务保留待实机验收。
+
+### Main Changes
+
+- RTS从目标HWND HDC缓存ink到像素比例；补齐映射失效、取消与启动失败回传。
+- WIDTH/HEIGHT按当前context补除ink-to-digitizer倍率；Palm直径sqrt(W*H)，识别仍W*H。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过；仅清理生成.ilk恢复增量链接器内部错误，无项目配置修改。
+- [OK] Palm Headless 152/0；生产RTS 59/0；生产Palm probe PASS；沙箱外全量Headless --no-window exit0。
+- [OK] 可选DPI API无新增静态导入；diff、UTF-8/BOM/CRLF及规范审查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在Surface、异常设备、多屏和Win7 SP1 + KB2670838 x86/x64上进行实机验收；尚未授权GUI/Computer Use。
+
+
+## Session 185: PptCOM联动阻塞调查、回退与归档
+<!-- trellis-session: v=2 fp=f245934587134035 -->
+
+**Date**: 2026-11-14
+**Task**: PptCOM联动阻塞调查、回退与归档
+**Branch**: `bugfix/pptcom`
+
+### Summary
+
+保存旧COM同步清理阻塞新联动的证据，回退至三行GC并保留诊断，归档任务及后续多线程方向。
+
+### Main Changes
+
+- 实机捕获Unadvise55.578秒和CP Release33.458秒；旧POWERPNT仍驻留时重启Inkeys可立即新联动，修正最初泄漏/版本回归归因。
+- 撤回关闭延后、2031直接退休、ROT关闭让出和RPC分类候选；业务仅保留三行GC及生命周期诊断，失败候选作为历史研究保留。
+- 规范明确任意PptCOM.cs实现变更均须重建、手动同步DLL，TLB变化时同步，再主solution构建及EXE内嵌哈希校验。
+- 任务归档到.trellis/tasks/archive/2026-11/11-14-pptcom-release-regression，保存复盘、日志、所有权审计与未来架构验收边界。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `10c8be73` | fix(pptcom): restore cleanup GC and add lifetime diagnostics |
+| `533c95fc` | chore(task): archive PptCOM lifecycle investigation |
+
+### Testing
+
+- [OK] 托管测试和47项真实IDispatch夹具通过；完整InkeysRepo.sln Debug|ARM64构建通过。
+- [OK] 随附DLL与EXE内嵌SHA256一致，TLB未变；源码与文档保持原编码/BOM/CRLF；未GUI/Computer Use。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 未来采用多线程动态绑定：旧Unadvise/Release被闸门阻塞时，新绑定仍可Active，且旧回调/命令/页码不污染新session；本轮未实现。
+- 同步清理阻塞仍待后续架构处理；两次结束放映后未响应需对应现场，不能视作已修复。
