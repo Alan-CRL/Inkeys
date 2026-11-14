@@ -162,9 +162,9 @@ std::vector<EditHandle> BuildEditHandles(const ShapeObject& shape, const BuildOp
 	const auto* projected = c ? std::get_if<SolidConstruction>(&c->parameters) : nullptr;
 	if (projected)
 	{
-		const auto& s=*projected; const auto offset=ObliquePoint(s,s.offset);
+		const auto& s=*projected; const auto offset=ObliquePoint(*c,s.offset);
 		add(105,EditHandleKind::Height,Add(c->start,{offset.x,offset.y+s.height}));
-		const auto base=ObliqueBase(*c,.25f);add(1001,EditHandleKind::Vertex,Add(c->start,ObliquePoint(s,base.front())));
+		const auto base=ObliqueBase(*c,.25f);add(1001,EditHandleKind::Vertex,Add(c->start,ObliquePoint(*c,base.front())));
 	}
 	else switch (model.layout)
 	{
@@ -351,7 +351,8 @@ std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleI
 		{
 			auto& s=*solid;
 			const float co=std::cos(s.baseRotation),si=std::sin(s.baseRotation);
-			auto unproject=[&](Vec2 v){const float y=v.y/-.3535533906f;const float x=v.x-(s.mirrored ? -.3535533906f : .3535533906f)*y;return Vec2{co*x+si*y,-si*x+co*y};};
+			const auto k=SolidProjection(c);
+			auto unproject=[&](Vec2 v){const float y=v.y/k.y;const float x=v.x-k.x*y;return Vec2{co*x+si*y,-si*x+co*y};};
 			if(handleId==105)
 			{
 				if(!c.tool.rightSolid && (p==PresetKind::Prism || p==PresetKind::Pyramid))s.offset=Add(s.offset,unproject({delta.x,0}));
@@ -486,23 +487,12 @@ Construction MakeSolidConstruction(const ToolSpec& tool, Vec2 down, Vec2 end, fl
 	const bool box=tool.preset==PresetKind::Cuboid || tool.preset==PresetKind::Cube;
 	if(box)
 	{
-		constexpr float projection=.3535533906f;
-		const float width=std::abs(end.x-down.x), height=std::abs(end.y-down.y);
-		// 手势限定屏幕外接框；仅越过按下点竖线才切换斜轴方向。
-		s.mirrored=end.x<down.x;
-		float fittedWidth=width, fittedHeight=height;
-		if(tool.preset==PresetKind::Cube)
-		{
-			const float side=(std::min)(width/(1+projection),height/projection);
-			s.baseSize={side,side}; fittedWidth=side*(1+projection); fittedHeight=side*projection;
-		}
-		else
-		{
-			// 过窄框压缩深度，保留有效水平边；零宽/高仍由既有校验拒绝。
-			fittedHeight=(std::min)(height,(std::max)(0.f,width-.001f));
-			s.baseSize={width-fittedHeight,fittedHeight/projection};
-		}
-		c.start={down.x+std::copysign(fittedWidth*.5f,end.x-down.x),down.y+std::copysign(fittedHeight*.5f,end.y-down.y)};
+		const float y=std::abs(end.y-down.y)/.3535533906f;
+		// 四象限都让手势对应短对角线；向上拖等价于交换两个端点。
+		s.mirrored=(end.x-down.x)*(end.y-down.y)<0;
+		const float x=std::abs(end.x-down.x);
+		s.baseSize={x+std::abs(end.y-down.y),y}; c.start=Mul(Add(down,end),.5f);
+		if(tool.preset==PresetKind::Cube)s.baseSize.x=s.baseSize.y=(std::max)(x,y);
 	}
 	else { const float radius=Distance(down,end); s.baseSize={radius,radius}; }
 	s.height=tool.preset==PresetKind::Cube ? std::copysign(s.baseSize.x,height) : height;
@@ -513,7 +503,7 @@ std::optional<ShapeObject> SolidBasePreview(const ToolSpec& tool, Vec2 down, Vec
 	const auto c=MakeSolidConstruction(tool,down,end,1); const auto& s=std::get<SolidConstruction>(c.parameters);
 	if(!(s.baseSize.x>0 && s.baseSize.y>0)){SetError(error,"empty solid base");return std::nullopt;}
 	ShapeObject result; result.id=id;result.revision=revision;result.kind=Kind::Polygon;result.style=style;
-	for(auto v:ObliqueBase(c,.25f))result.geometry.vertices.push_back(Add(c.start,ObliquePoint(s,v)));
+	for(auto v:ObliqueBase(c,.25f))result.geometry.vertices.push_back(Add(c.start,ObliquePoint(c,v)));
 	if(!Validate(result)){SetError(error,"invalid solid base preview");return std::nullopt;}return result;
 }
 std::optional<ShapeObject> SetRightSolid(const ShapeObject& before, bool right, uint64_t revision, std::string* error)

@@ -984,14 +984,9 @@ int RunShapeCoreTests()
 		const Vec2 down{20,30}, end{20+x*100,30+y*35};
 		auto c=MakeSolidConstruction({PresetKind::Cuboid,CreationMode::MultiStage},down,end,-80);
 		const auto& solid=std::get<SolidConstruction>(c.parameters);
-		SHAPE_CHECK(solid.mirrored==(x<0));
+		SHAPE_CHECK(solid.mirrored==(x*y<0));
 		const auto preview=SolidBasePreview(c.tool,down,end,{},Id(18),1); SHAPE_CHECK(preview);
-		if(preview) {
-			float l=1e9f,r=-1e9f,t=1e9f,b=-1e9f;
-			for(auto v:preview->geometry.vertices){l=std::min(l,v.x);r=std::max(r,v.x);t=std::min(t,v.y);b=std::max(b,v.y);}
-			SHAPE_CHECK(std::abs(l-std::min(down.x,end.x))<.001f && std::abs(r-std::max(down.x,end.x))<.001f);
-			SHAPE_CHECK(std::abs(t-std::min(down.y,end.y))<.001f && std::abs(b-std::max(down.y,end.y))<.001f);
-		}
+		if(preview)for(auto target:{down,end})SHAPE_CHECK(std::any_of(preview->geometry.vertices.begin(),preview->geometry.vertices.end(),[&](Vec2 v){return std::hypot(v.x-target.x,v.y-target.y)<.001f;}));
 	}
 
 	// 固定教材投影和合并柄：尺寸与Z转向同一逆投影手势，侧向偏移跟随旋转。
@@ -1084,20 +1079,20 @@ int RunShapeCoreTests()
 	for(auto preset:{PresetKind::Cuboid,PresetKind::Cube}) for(float x:{-1.f,1.f}) for(float y:{-1.f,1.f}) for(Vec2 size:{Vec2{120,35},Vec2{20,100}}) {
 		const Vec2 down{50,60},end{down.x+x*size.x,down.y+y*size.y};const ToolSpec tool{preset,CreationMode::MultiStage};
 		const auto c=MakeSolidConstruction(tool,down,end,-50);const auto& solid=std::get<SolidConstruction>(c.parameters);
-		const auto base=SolidBasePreview(tool,down,end,{},Id(25),1);SHAPE_CHECK(base);if(!base)continue;
-		float l=1e9f,r=-1e9f,t=1e9f,b=-1e9f;
-		for(auto v:base->geometry.vertices){l=std::min(l,v.x);r=std::max(r,v.x);t=std::min(t,v.y);b=std::max(b,v.y);}
-		SHAPE_CHECK(l>=std::min(down.x,end.x)-.001f && r<=std::max(down.x,end.x)+.001f && t>=std::min(down.y,end.y)-.001f && b<=std::max(down.y,end.y)+.001f);
-		SHAPE_CHECK(std::abs((x>0?l:r)-down.x)<.001f && std::abs((y>0?t:b)-down.y)<.001f);
-		if(preset==PresetKind::Cube)SHAPE_CHECK(solid.baseSize.x==solid.baseSize.y && std::abs(solid.height)==solid.baseSize.x);
+		const float depth=size.y/.3535533906f;
+		SHAPE_CHECK((c.start==Vec2{(down.x+end.x)*.5f,(down.y+end.y)*.5f}));
+		SHAPE_CHECK(solid.mirrored==(x*y<0));
+		if(preset==PresetKind::Cube)SHAPE_CHECK(solid.baseSize.x==std::max(size.x,depth) && solid.baseSize.x==solid.baseSize.y && std::abs(solid.height)==solid.baseSize.x);
+		else SHAPE_CHECK(std::abs(solid.baseSize.x-size.x-size.y)<.001f && std::abs(solid.baseSize.y-depth)<.001f);
 	}
-	// 两条共轭直径都落在实际圆底轮廓上；不以椭圆长轴的屏幕方向代替投影合同。
-	for(auto preset:{PresetKind::Cylinder,PresetKind::Cone}) for(bool mirrored:{false,true}) {
+
+	// 模型底面仍是圆，显示轮廓的水平/竖直直径固定3:1，镜像不改变圆底外观。
+	for(auto preset:{PresetKind::Cylinder,PresetKind::Cone}) for(bool mirrored:{false,true}) for(float rotation:{0.f,.3f}) {
 		auto c=MakeSolidConstruction({preset,CreationMode::MultiStage},{0,0},{100,0},-300);
 		std::get<SolidConstruction>(c.parameters).mirrored=mirrored;
+		std::get<SolidConstruction>(c.parameters).baseRotation=rotation;
 		const auto object=MakeConstructedShape(c,{},Id(26));SHAPE_CHECK(object);if(!object)continue;
-		const float k=mirrored?-.3535533906f:.3535533906f;
-		for(Vec2 target:{Vec2{100,0},Vec2{-100,0},Vec2{100*k,-35.355339f},Vec2{-100*k,35.355339f}}) {
+		for(Vec2 target:{Vec2{100,0},Vec2{-100,0},Vec2{0,-100.f/3},Vec2{0,100.f/3}}) {
 			double distance=1e9;
 			for(const auto& part:object->parts)if(part.kind==Kind::Polyline)for(size_t i=1;i<part.geometry.vertices.size();++i){
 				const auto a=part.geometry.vertices[i-1],b=part.geometry.vertices[i];const double dx=b.x-a.x,dy=b.y-a.y;
@@ -1108,14 +1103,14 @@ int RunShapeCoreTests()
 		}
 	}
 
-	// 在固定斜二测投影下，真实圆弧中点到细分弦中点的偏差仍不超过 .25px。
+	// 水平圆底投影下，真实圆弧中点到细分弦中点的偏差仍不超过 .25px。
 	{
 		auto c=MakeSolidConstruction({PresetKind::Cylinder,CreationMode::MultiStage},{0,0},{1000,0},-1500);
 		auto& solid=std::get<SolidConstruction>(c.parameters);solid.baseRotation=.7f;
 		const auto object=MakeConstructedShape(c,{},Id(21));SHAPE_CHECK(object);
 		if(object)
 		{
-			const double kx=.3535533906,ky=-.3535533906;
+			const double kx=0,ky=-1./3;
 			for(const auto& part:object->parts)if(part.kind==Kind::Polyline)
 			{
 				const auto& v=part.geometry.vertices;
@@ -1132,6 +1127,25 @@ int RunShapeCoreTests()
 				}
 			}
 		}
+	}
+	// 圆底的预览、半径编辑及正负高度共享同一投影；母线与真实椭圆相切。
+	for(auto preset:{PresetKind::Cylinder,PresetKind::Cone})for(float height:{-300.f,300.f}) {
+		const ToolSpec tool{preset,CreationMode::MultiStage};
+		auto c=MakeSolidConstruction(tool,{0,0},{100,0},height);
+		auto shape=MakeConstructedShape(c,{},Id(27));SHAPE_CHECK(shape);if(!shape)continue;
+		const auto preview=SolidBasePreview(tool,{0,0},{100,0},{},Id(28),1);SHAPE_CHECK(preview);
+		if(preview)for(auto p:preview->geometry.vertices)SHAPE_CHECK(std::abs(p.x*p.x+9*p.y*p.y-10000)<.02);
+		unsigned sides=0;
+		for(const auto& part:shape->parts)if(part.kind==Kind::Line){
+			++sides;const auto p=part.geometry.start,q=part.geometry.end;
+			if(preset==PresetKind::Cylinder)SHAPE_CHECK(std::abs(std::abs(p.x)-100)<.001 && std::abs(p.y)<.001 && p.x==q.x);
+			else SHAPE_CHECK(std::abs(p.y-10000/(9*height))<.001 && std::abs(p.x*p.x+9*p.y*p.y-10000)<.02);
+		}
+		SHAPE_CHECK(sides==2);
+		const auto handles=BuildEditHandles(*shape);const auto h=*std::find_if(handles.begin(),handles.end(),[](auto h){return h.id==1001;});
+		const auto edited=EditShape(*shape,h.id,h.position,{200,0},2);SHAPE_CHECK(edited);
+		if(edited){const auto& model=std::get<SolidConstruction>(edited->construction->parameters);SHAPE_CHECK(model.baseSize.x==model.baseSize.y && std::abs(model.baseSize.x-200)<.001);}
+		std::get<SolidConstruction>(c.parameters).baseSize.y=101;SHAPE_CHECK(!MakeConstructedShape(c,{},Id(29)));
 	}
 	RunAuxiliaryTests(failures);
 	RunEditInteractionTests(failures);

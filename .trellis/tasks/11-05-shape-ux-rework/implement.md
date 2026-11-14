@@ -156,3 +156,9 @@ A–C 实现和 D/E 自动验证已完成；两个 ARM64 solution 构建与全�
 4. trellis-check全范围审查，更新spec，diff编码换行检查；父任务继续进行中，不提交推送归档。
 
 第四轮批准范围已实现并通过计划自动验证，详见 research/round4-verification.md。实机观感/触控与真实重叠窗口投递仍待用户验收；任务保持in_progress，本轮未提交或推送。
+
+## 2026-11-14 第五轮
+
+第五轮已批准：先共享几何和核心回归，再集成UInk实际轮廓往返断言。复用ARM64原生MSBuild完整两个solution，运行shape-core/UInk/renderer/白板冷历史/自动保存/隐藏Host测试；UI代码未改不无条件重复第四轮完整UI矩阵。保持BOM/CRLF，最终记录结果并继续in_progress。
+
+第五轮两项改动及自动验证已完成，详见research/round5-verification.md。任务继续in_progress，未提交/推送，实机观感待用户验收。

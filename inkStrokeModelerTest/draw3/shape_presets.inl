@@ -79,11 +79,19 @@ bool ArcPoints(Vec2 center, Vec2 axes, double start, double sweep, float toleran
 	}
 	return true;
 }
-Vec2 ObliquePoint(const SolidConstruction& s, Vec2 p)
+Vec2 SolidProjection(const Construction& c)
 {
+	// 圆底保留模型正圆，只在显示投影压缩纵轴；其他立体仍采用45度半长斜轴。
+	if(c.tool.preset==PresetKind::Cylinder || c.tool.preset==PresetKind::Cone)return {0,-1.f/3};
+	const auto& s=std::get<SolidConstruction>(c.parameters);
+	return {s.mirrored ? -.3535533906f : .3535533906f,-.3535533906f};
+}
+Vec2 ObliquePoint(const Construction& c, Vec2 p)
+{
+	const auto& s=std::get<SolidConstruction>(c.parameters);const auto k=SolidProjection(c);
 	const float co = std::cos(s.baseRotation), si = std::sin(s.baseRotation);
 	const float x = co*p.x-si*p.y, y = si*p.x+co*p.y;
-	return {x+(s.mirrored ? -.3535533906f : .3535533906f)*y,-.3535533906f*y};
+	return {x+k.x*y,k.y*y};
 }
 std::vector<Vec2> ObliqueBase(const Construction& c, float tolerance)
 {
@@ -93,32 +101,51 @@ std::vector<Vec2> ObliqueBase(const Construction& c, float tolerance)
 		return {{-s.baseSize.x*.5f,-s.baseSize.y*.5f},{s.baseSize.x*.5f,-s.baseSize.y*.5f},{s.baseSize.x*.5f,s.baseSize.y*.5f},{-s.baseSize.x*.5f,s.baseSize.y*.5f}};
 	const bool round = p == PresetKind::Cylinder || p == PresetKind::Cone;
 	// 斜投影含剪切，最大奇异值可能大于1；模型空间细分必须计入投影放大。
-	const Transform projection{1,0,s.mirrored ? -.3535533906f : .3535533906f,-.3535533906f,0,0};
+	const auto k=SolidProjection(c);const Transform projection{1,0,k.x,k.y,0,0};
 	const double radius = double(s.baseSize.x) * MaxScale(projection);
 	const double required = round ? std::max(32.0,std::ceil(2*kPi/std::max(1e-8,2*std::acos(std::clamp(1.0-double(tolerance)/radius,-1.0,1.0))))) : c.tool.sides;
 	if (required > 16000) return {}; // 精度预算超限不能静默降低精度。
-	const auto count = static_cast<uint32_t>(required);
-	return RegularPolygonVertices({}, {s.baseSize.x,0},count);
+	const auto count = round ? (static_cast<uint32_t>(required)+3)/4*4 : static_cast<uint32_t>(required);
+	// 圆没有朝向语义；补偿模型Z转角，使采样的四个轴端点始终落在显示椭圆极值。
+	const Vec2 first=round ? Vec2{s.baseSize.x*std::cos(s.baseRotation),-s.baseSize.x*std::sin(s.baseRotation)} : Vec2{s.baseSize.x,0};
+	return RegularPolygonVertices({},first,count);
 }
 bool ExpandOblique(const Construction& c, const ShapeStyle& style, ShapeObject& out, std::string& error, float tolerance)
 {
 	const auto& s = std::get<SolidConstruction>(c.parameters); const auto p=c.tool.preset;
 	if (!Finite(s.baseSize) || !Finite(s.offset) || !Finite(s.baseRotation) ||
 		!(s.baseSize.x>0 && s.baseSize.y>0 && std::abs(s.height)>0) ||
+		((p==PresetKind::Cylinder || p==PresetKind::Cone) && s.baseSize.x!=s.baseSize.y) ||
 		(c.tool.rightSolid && s.offset!=Vec2{}) || (p==PresetKind::Cube && (s.baseSize.x!=s.baseSize.y || std::abs(s.height)!=s.baseSize.x)))
 	{ error="invalid oblique solid"; return false; }
-	const auto base=ObliqueBase(c,tolerance); if (base.size()<3) { error="solid curve exceeds precision budget"; return false; }
+	auto base=ObliqueBase(c,tolerance); if (base.size()<3) { error="solid curve exceeds precision budget"; return false; }
 	const bool cone=p==PresetKind::Cone || p==PresetKind::Pyramid;
 	const bool round=p==PresetKind::Cone || p==PresetKind::Cylinder;
-	const auto project=[&](Vec2 v,float h) { const auto q=ObliquePoint(s,v); return Vec2{c.start.x+q.x,c.start.y+q.y+h}; };
+	const auto project=[&](Vec2 v,float h) { const auto q=ObliquePoint(c,v); return Vec2{c.start.x+q.x,c.start.y+q.y+h}; };
 	struct V { double x,y,z; };
 	auto sub=[](V a,V b){return V{a.x-b.x,a.y-b.y,a.z-b.z};};
 	auto cross=[](V a,V b){return V{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};};
 	auto dot=[](V a,V b){return a.x*b.x+a.y*b.y+a.z*b.z;};
-	const double kx=s.mirrored ? -.3535533906 : .3535533906, ky=-.3535533906;
+	const auto k=SolidProjection(c);const double kx=k.x,ky=k.y;
 	const double co=std::cos(s.baseRotation),si=std::sin(s.baseRotation);
 	// 斜二测的视线取投影核向量；面法线与该视线共同决定隐藏边。
 	const V view{kx*co-si,-kx*si-co,ky};
+	if(round)
+	{
+		// 轮廓母线使用圆的真实切点；不能用细分多边形的相邻面翻向点近似切点。
+		const double a=view.x-view.z*s.offset.x/s.height,b=view.y-view.z*s.offset.y/s.height;
+		const double magnitude=std::hypot(a,b),value=cone ? -view.z*s.baseSize.x/s.height : 0;
+		if(magnitude>0 && std::abs(value)<magnitude)
+		{
+			const double phase=std::atan2(b,a),delta=std::acos(value/magnitude);
+			for(double angle:{phase-delta,phase+delta})
+			{
+				const Vec2 point{static_cast<float>(s.baseSize.x*std::cos(angle)),static_cast<float>(s.baseSize.x*std::sin(angle))};
+				if(std::none_of(base.begin(),base.end(),[&](Vec2 p){return std::hypot(p.x-point.x,p.y-point.y)<1e-4f;}))base.push_back(point);
+			}
+			std::sort(base.begin(),base.end(),[](Vec2 a,Vec2 b){return std::atan2(a.y,a.x)<std::atan2(b.y,b.x);});
+		}
+	}
 	const V interior{s.offset.x*.5,s.offset.y*.5,s.height*.5};
 	auto back=[&](V a,V b,V d){auto n=cross(sub(b,a),sub(d,a)); if(dot(n,sub(a,interior))<0)n={-n.x,-n.y,-n.z};return dot(n,view)<-1e-6*std::sqrt(dot(n,n));};
 	auto lower=[&](size_t i){return V{base[i].x,base[i].y,0};};

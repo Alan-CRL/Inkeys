@@ -522,6 +522,19 @@
 				UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==7);
 				auto decoded=DecodeInkeysShapeMetadata(wire);
 				UINK_CHECK(state,decoded.shape==object);
+				if(decoded.shape && (preset==PresetKind::Cylinder || preset==PresetKind::Cone))
+				{
+					// 存储往返后的实际圆环仍是水平3:1，不能只验证参数或私有版本号。
+					const auto& restored=std::get<SolidConstruction>(decoded.shape->construction->parameters);
+					UINK_CHECK(state,restored.baseSize.x==restored.baseSize.y);
+					for(const auto& part:decoded.shape->parts)if(part.kind==Kind::Polyline)for(const auto point:part.geometry.vertices)
+					{
+						const double x=(point.x-construction.start.x)/restored.baseSize.x;
+						const double y=(point.y-construction.start.y)*3/restored.baseSize.x;
+						const double topY=(point.y-construction.start.y-restored.height)*3/restored.baseSize.x;
+						UINK_CHECK(state,std::min(std::abs(x*x+y*y-1),std::abs(x*x+topY*topY-1))<.0001);
+					}
+				}
 			}
 		}
 		std::cout << "Constructed shape UInk cases: " << canvas.strokes.size() << " objects / " << wireCount << " standard parts" << std::endl;

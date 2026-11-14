@@ -301,3 +301,21 @@ Good：同一X在不同Y跨斜对边结果不同；Base：绕Z旋转后的立体
 核心四象限内接/窄框/Cube等边，旋转后平行四边形两轴方向/过零回返，圆底实际折线的逆投影圆方程及共轭直径，生产renderer与保存重载。
 ### Wrong vs Correct
 Wrong：看到椭圆长轴倾斜就强行调平。Correct：对实际轮廓验证模型圆经斜二测矩阵映射后的共轭直径。
+
+## 第五轮圆底显示与箱体首笔（2026-11-14，替代冲突条款）
+
+### Scope / Trigger
+用户已通过可视化确认圆柱/圆锥水平长轴椭圆，短长轴比固定1/3；模型底面必须保持正圆。
+### Signatures
+内部SolidProjection(Construction)统一按preset返回横向剪切/纵向比例；ObliquePoint、细分、逆投影编辑、面朝向都消费同一映射。v7字段和枚举不变。
+### Contracts
+圆柱/圆锥先模型Z旋转，再x'=x、y'=-y/3+height；其他立体保持45度半长。圆底baseSize.x==baseSize.y；改变显示投影不改变模型圆。预览、编辑柄、隐藏边与保存重载必须一致。
+箱体MakeSolidConstruction恢复e8eb2f1b短对角线首笔：x=abs(dx)，y=abs(dy)/(1/(2sqrt(2)))；baseSize=(x+abs(dy),y)，中心=(down+end)/2，mirrored=(dx*dy<0)；Cube两维=max(x,y)，height绝对值为边长。其他第四轮修复保留。
+### Validation & Error Matrix
+不等模型圆半径拒绝；非法/退化形状仍按现有校验拒绝。正负高度都按当前投影核判定面向，不保留旧开发期圆底投影迁移。
+### Good / Base / Bad Cases
+Good：实际环线满足水平3:1椭圆方程，模型半径相等；Base：棱柱/棱锥斜二测不变；Bad：把模型baseSize.y缩小以伪造水平椭圆。
+### Tests Required
+核心首笔/完成/半径编辑/高度/隐藏边与轮廓相切、箱体四象限旧公式；产品renderer；v7私有构造与标准部件导出重载、冷历史和自动保存。
+### Wrong vs Correct
+Wrong：只改ObliquePoint而仍用旧剪切逆映射或旧视线算虚线。Correct：显示/交互/可见性统一消费按preset选择的投影。
