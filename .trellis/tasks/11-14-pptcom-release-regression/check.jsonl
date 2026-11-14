@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/ppt-interop/com-contract.md", "reason": "既有 COM 所有权、ABI 与清理合同；本次用户要求优先于旧禁止 GC 的表述"}
-{"file": ".trellis/tasks/11-14-pptcom-release-regression/research/release-regression.md", "reason": "当前清理路径、0eb1c7c5 回归证据和真实 Office 验证边界"}
-{"file": ".trellis/tasks/11-14-pptcom-release-regression/research/ownership-audit.md", "reason": "其他 COM 对象逐类释放核对、已有真实 IDispatch 测试结果及生产最终清理覆盖缺口"}
-{"file": ".trellis/tasks/11-14-pptcom-release-regression/research/lifetime-diagnostics.md", "reason": "现有 PptCOM 控制台开关、生命周期诊断字段语义及用户实机日志采集步骤"}
