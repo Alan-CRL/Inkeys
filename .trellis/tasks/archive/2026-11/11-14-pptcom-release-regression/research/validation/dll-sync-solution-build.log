@@ -1,0 +1,94 @@
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  Scanning sources for module dependencies...
+  Inkeys.vcxproj -> D:\Project\Inkeys\Repo\Inkeys-draw\Build\ARM64\Debug\Inkeys.exe
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM\bin\Release\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  Bar.Animation.cppm
+  PageControl.cppm
+  RenderPipeline.cppm
+  Bar.ToggleClickCoalescer.cppm
+  RenderPipeline.cpp
+  Ppt.cppm
+  Other.Config.cpp
+  StartupPreview.cpp
+  StartupPreview.cppm
+  Bar.Scene.cppm
+  Other.Config.cppm
+  MessageBox.Window.cpp
+  Draw3.Presentation.cpp
+  Draw3.Bridge.cpp
+  Draw3.ContactInput.cppm
+  PptSession.cpp
+  ppt_session_tests.cpp
+  Draw3.CanvasDebug.cpp
+  Draw3.PenCursor.cpp
+  Draw3.CanvasDebug.cppm
+  Draw3.PenCursor.cppm
+  Window.cppm
+  Window.cpp
+  setting_home_warp_tests.cpp
+  imgui_impl_dx11.cpp
+  Setting.Controls.cpp
+  Setting.EraserDemoGpu.cpp
+  auto_collapse_tests.cpp
+  Setting.Pages.cpp
+  animation_tests.cpp
+  Setting.Shell.cpp
+  ui_pointer_tests.cpp
+  auto_collapse_interaction_tests.cpp
+  status_indicator_tests.cpp
+  dirty_region_tests.cpp
+  window_geometry_tests.cpp
+  config_metadata_tests.cpp
+  toggle_click_coalescer_tests.cpp
+  startup_preview_state_tests.cpp
+  setting_session_state_tests.cpp
+  setting_design_tests.cpp
+  setting_font_benchmark_tests.cpp
+  draw3_contact_tests.cpp
+  draw3_bridge_tests.cpp
+  page_control_tests.cpp
+  bar_bottom_dock_tests.cpp
+  draw3_mouse_input_tests.cpp
+  speed_eraser_tests.cpp
+  eraser_attribute_tests.cpp
+  palm_eraser_tests.cpp
+  canvas_debug_tests.cpp
+  Bar.EraserAttributeLayout.cppm
+  Bar.EraserAttributeMotion.cppm
+  Draw3.SpeedEraser.cpp
+  Draw3.PalmEraser.cpp
+  presentation_descriptor_tests.cpp
+  message_box_tests.cpp
+  ui3_input_tests.cpp
+  Compiling...
+  Other.Config.cppm
+  Ppt.cppm
+  PptSession.cpp
+  StartupPreview.cppm
+  Bar.Animation.cppm
+  Draw3.Presentation.cpp
+  Bar.ToggleClickCoalescer.cppm
+  Draw3.Bridge.cpp
+  ppt_session_tests.cpp
+  Draw3.ContactInput.cppm
+  MessageBox.Window.cpp
+  RenderPipeline.cppm
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\Other\Other.Config.cppm(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Ppt\Ppt.cppm(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\Business\PptSession.cpp(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cppm(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Bar\Bar.Animation.cppm(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.cpp(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\ppt_session_tests.cpp(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\MessageBox\MessageBox.Window.cpp(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cppm(1,1): error C1902: Program database manager mismatch; please check your installation [D:\Project\Inkeys\Repo\Inkeys-draw\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]

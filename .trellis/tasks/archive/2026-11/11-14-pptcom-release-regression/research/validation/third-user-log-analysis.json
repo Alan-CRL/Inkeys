@@ -1,0 +1,28 @@
+{
+  "source": "C:\\Users\\alan-\\.codex\\attachments\\8cf35729-b59e-4b59-935e-8ec43fdf296d\\已粘贴的文本.txt",
+  "sha256": "b7f45204f57a1e437a72252a8ee70053fab888ee1d761aa356ab2619785d07d5",
+  "lines": 2640,
+  "module": "230cb63b-1639-4077-bf63-257114a882e5",
+  "missing_seq": [],
+  "slowest_actual_call": {
+    "v": "1",
+    "seq": "2377",
+    "pid": "7640",
+    "tid": "21748",
+    "qpc": "99821147088",
+    "event": "release.end",
+    "call": "2376",
+    "obj": "43",
+    "source": "event.point",
+    "counted": "1",
+    "acquired": "1",
+    "released": "1",
+    "balance": "0",
+    "remaining": "0",
+    "elapsed_ticks": "334575715",
+    "frequency": "10000000",
+    "line": 2499
+  },
+  "duration_seconds": 33.4575715,
+  "user_baseline": "完全不启动 Inkeys 也延迟退出；Inkeys 保持开启时后台进程尚在仍可打开新 PPT，联动恢复时点待用户确认。"
+}

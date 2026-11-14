@@ -2703,7 +2703,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 			}
 
-			if (flag && (tedition > editionDate || mandatoryUpdate) && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (Inkeys::Launch::CommandPipe::TryStartupUpdate(
+				flag && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256,
+				tedition, editionDate, mandatoryUpdate, LaunchState::openWhiteboard, [&]()
 			{
 				//符合条件，开始替换版本
 
@@ -2770,13 +2772,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 				if (flag)
 				{
-					if (StartWhiteboardReplacement(globalPath + path)) return 0;
+					if (StartWhiteboardReplacement(globalPath + path)) return true;
 					flag = false;
 				}
-			}
-			else flag = false;
-
-			if (!flag) Inkeys::Launch::CommandPipe::DiscardIntent(LaunchState::openWhiteboard);
+				return false;
+			})) return 0;
 			// 无效或发布失败的指令不清理未知文件，也不覆盖最后一次有效更新点。
 		}
 	}

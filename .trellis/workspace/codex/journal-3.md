@@ -405,3 +405,43 @@ One 500ms-gated indicator now drives status word, dimming and a non-linear inner
 ### Next Steps
 
 - 在Surface、异常设备、多屏和Win7 SP1 + KB2670838 x86/x64上进行实机验收；尚未授权GUI/Computer Use。
+
+
+## Session 185: PptCOM联动阻塞调查、回退与归档
+<!-- trellis-session: v=2 fp=f245934587134035 -->
+
+**Date**: 2026-11-14
+**Task**: PptCOM联动阻塞调查、回退与归档
+**Branch**: `bugfix/pptcom`
+
+### Summary
+
+保存旧COM同步清理阻塞新联动的证据，回退至三行GC并保留诊断，归档任务及后续多线程方向。
+
+### Main Changes
+
+- 实机捕获Unadvise55.578秒和CP Release33.458秒；旧POWERPNT仍驻留时重启Inkeys可立即新联动，修正最初泄漏/版本回归归因。
+- 撤回关闭延后、2031直接退休、ROT关闭让出和RPC分类候选；业务仅保留三行GC及生命周期诊断，失败候选作为历史研究保留。
+- 规范明确任意PptCOM.cs实现变更均须重建、手动同步DLL，TLB变化时同步，再主solution构建及EXE内嵌哈希校验。
+- 任务归档到.trellis/tasks/archive/2026-11/11-14-pptcom-release-regression，保存复盘、日志、所有权审计与未来架构验收边界。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `10c8be73` | fix(pptcom): restore cleanup GC and add lifetime diagnostics |
+| `533c95fc` | chore(task): archive PptCOM lifecycle investigation |
+
+### Testing
+
+- [OK] 托管测试和47项真实IDispatch夹具通过；完整InkeysRepo.sln Debug|ARM64构建通过。
+- [OK] 随附DLL与EXE内嵌SHA256一致，TLB未变；源码与文档保持原编码/BOM/CRLF；未GUI/Computer Use。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 未来采用多线程动态绑定：旧Unadvise/Release被闸门阻塞时，新绑定仍可Active，且旧回调/命令/页码不污染新session；本轮未实现。
+- 同步清理阻塞仍待后续架构处理；两次结束放映后未响应需对应现场，不能视作已修复。

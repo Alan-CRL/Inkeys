@@ -1,0 +1,14 @@
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  Scanning sources for module dependencies...
+  Inkeys.vcxproj -> D:\Project\Inkeys\Repo\Inkeys-draw\Build\ARM64\Debug\Inkeys.exe
+  'pwsh.exe' is not recognized as an internal or external command,
+  operable program or batch file.
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM\bin\Release\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  InkeysHeadlessTests.vcxproj -> D:\Project\Inkeys\Repo\Inkeys-draw\Build\ARM64\Debug\InkeysHeadlessTests.exe
