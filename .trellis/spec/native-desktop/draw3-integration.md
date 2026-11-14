@@ -537,3 +537,20 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 - 实现细节与探测接触合同见 `native/runtime-and-rendering.md` 同名场景。
 - 调试板接触表读取的是绘制线程的 `ContactSnapshot`:`source.kind` → `Src`,`record->TabletContextId()/ContactId()` → `Id`,整体输入通路取自 Host 的 `HostInputMode`(经 `SetCanvasDebugInputMode` 下发,数值 1/2/3 = RTS 扩展/RTS 基础 X/Y/Win32 鼠标)。鼠标兼容通路的 contact 没有 RTS 编号。速度在 Overlay 内由相邻快照测得,不是管线里的估计值。
 - 调试板位置:锚点为“最大板子(全部列、满行数)在画布内居中”的左上角,`left = max(0, (canvasW - capacityW) / 2)`、`top = max(0, (canvasH - capacityH) / 2)`;内容变化只改右端、下端,不要再按当前尺寸居中(否则每次增减行整块板子会跳动并扩大脏区)。输入到上屏延迟在 `Present` 成功且非调试自刷新帧之后用 `OnPresented(QPC)` 结算。
+
+## 产品停机时的导航 owner 握手（2026-11-14）
+
+### Scope / Trigger
+修改 StopProduct、窗口消息转发或导航 owner 退休路径时适用。
+### Signatures
+Draw3.TouchpadNavigation.h 的 Detail::kTouchpadNavigationMessage 与 IsTouchpadNavigationStopMessage(message, operation)；WindowController::StopTouchpadNavigation。
+### Contracts
+StopProduct 先关闭普通产品调用，但 DrawpadMsgCallback 和 ForwardProductMessage 两层都必须放行精确的 MouseInputOwner Stop / TouchpadNavigation Stop。触控板仅低 Stop 位为1的对应消息放行；owner继续校验目标 HWND、this 和 attach identity，退栈后发出停止确认。DM隔离不等于可以跳过排队 owner 消息退休。
+### Validation & Error Matrix
+普通 update/其他消息仍经过停止门；旧身份不能确认新 attach；实际未收到停产证明仍沿原超时和 FailUnprovenProducerStop，不能将超时当成功。
+### Good / Base / Bad Cases
+Good：关闭产品准入后，合法 Stop 仍到 owner并确认。Base：普通运行更新不变。Bad：以 ProductRunning=false 为由吞掉停止自身需要的确认请求。
+### Tests Required
+分类正反例加真实隐藏 Host 的 StopProduct 返回后证明（SF48）。只检查 ProductRunning=false 或功能断言完成，不能证明资源已经安全停止。
+### Wrong vs Correct
+错误：放行所有导航消息或延长超时掩盖丢消息。正确：只放行精确 Stop，保持 owner 身份和失败保护。

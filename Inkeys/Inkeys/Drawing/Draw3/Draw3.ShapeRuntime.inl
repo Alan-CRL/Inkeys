@@ -12,7 +12,15 @@ struct ShapeConstructionRuntime
 	std::optional<ShapeUiAction> pointGesture; // 覆盖层控件手势，不伪造物理画布接触。
 	std::optional<draw3::shapes::ShapeObject> preview;
 	draw3::shapes::RenderData renderData;
+	std::vector<draw3::shapes::Vec2> visualPoints; // 与预览同帧，真实点仍由 session 持有。
 };
+std::vector<draw3::shapes::EditHandle> ConstructionPreviewHandles(const ShapeConstructionRuntime& state)
+{
+	std::vector<draw3::shapes::EditHandle> handles;
+	for (size_t i = 0; i < state.visualPoints.size(); ++i)
+		handles.push_back({1000u + static_cast<uint32_t>(i),draw3::shapes::EditHandleKind::Vertex,state.visualPoints[i]});
+	return handles;
+}
 struct ShapeEditorRuntime
 {
 	std::optional<RenderItemId> item;
@@ -21,6 +29,7 @@ struct ShapeEditorRuntime
 	draw3::shapes::EditSession gesture;
 	draw3::shapes::Vec2 down;
 	uint32_t handleId = 0;
+	std::uint64_t toolEntryEpoch = 0;
 	bool gestureActive = false;
 	// legacyPreview：本编辑不在焦点层（回退开关或已在 L2），沿用旧的权威重放预览路径。
 	bool legacyPreview = false;
@@ -88,6 +97,8 @@ struct CanvasFocusSession
 };
 struct ShapeUiRuntime
 {
+	std::uint64_t finishedEditingSession = 0, finishedEditingEntryEpoch = 0;
+	std::uint8_t finishedEditingWorkspace = 0;
 	CanvasFocusSession focus;
 	std::array<uint64_t,static_cast<std::size_t>(CanvasFocusEndReason::Count)> focusEndCounts{};
 	ShapeEditorRuntime editor;
@@ -117,6 +128,8 @@ bool SameShapeUiContents(const ShapeUiSnapshot& a, const ShapeUiSnapshot& b)
 		a.identity.objectId == b.identity.objectId && a.identity.objectRevision == b.identity.objectRevision &&
 		a.object == b.object && a.handles == b.handles && a.bounds == b.bounds && a.frameRect == b.frameRect &&
 		a.completedConstructionSession == b.completedConstructionSession &&
+		a.finishedEditingSession == b.finishedEditingSession && a.finishedEditingEntryEpoch == b.finishedEditingEntryEpoch && a.finishedEditingWorkspace == b.finishedEditingWorkspace &&
+		a.predictionMode == b.predictionMode && a.timingProfile == b.timingProfile &&
 		a.drawingPreview == b.drawingPreview && a.editGestureActive == b.editGestureActive && a.constructionContactActive == b.constructionContactActive && a.displayScale == b.displayScale &&
 		a.canvasOriginX == b.canvasOriginX && a.canvasOriginY == b.canvasOriginY &&
 		a.construction.active == b.construction.active && a.construction.step == b.construction.step &&

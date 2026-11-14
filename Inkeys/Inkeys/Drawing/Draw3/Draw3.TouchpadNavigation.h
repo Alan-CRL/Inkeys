@@ -23,6 +23,11 @@ namespace Inkeys::Drawing::Draw3
 
 	namespace Detail
 	{
+		inline constexpr unsigned kTouchpadNavigationMessage = 0x8000u + 0x3D5u;
+		// 仅 Stop 位允许穿过产品停止闸门；owner 仍核验 this 和 attach identity。
+		constexpr bool IsTouchpadNavigationStopMessage(unsigned message, std::uintptr_t operation) noexcept
+		{ return message == kTouchpadNavigationMessage && (operation & 1u) != 0; }
+
 		// 真正的 COM 停止和无窗口故障注入共用同一退休顺序；失败保留未完成的 owner 责任。
 		struct TouchpadNavigationRetirement
 		{

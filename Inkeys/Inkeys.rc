@@ -418,6 +418,8 @@ BARSHAPEEXPONENTIAL     UI                      "src\\UI\\barShapeExponential.sv
 BARSHAPELOGARITHMIC     UI                      "src\\UI\\barShapeLogarithmic.svg"
 
 BARSHAPEMOVE            UI                      "src\\UI\\barShapeMove.svg"
+BARSHAPEFLIPHORIZONTAL            UI                      "src\\UI\\barShapeFlipHorizontal.svg"
+BARSHAPEFLIPVERTICAL            UI                      "src\\UI\\barShapeFlipVertical.svg"
 BARSHAPEAUXCENTER       UI                      "src\\UI\\barShapeAuxCenter.svg"
 
 BARSHAPEAUXFOCI         UI                      "src\\UI\\barShapeAuxFoci.svg"

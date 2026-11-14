@@ -174,6 +174,8 @@
         "ConstraintFreeLabel": "自由",
         "ConstraintIsoscelesLabel": "等腰",
         "ConstraintEquilateralLabel": "等邊",
+        "FlipHorizontalLabel": "水平翻轉",
+        "FlipVerticalLabel": "垂直翻轉",
         "RightPrismLabel": "正稜柱",
         "RightPyramidLabel": "正稜錐",
         "StraightLineLabel": "直線",

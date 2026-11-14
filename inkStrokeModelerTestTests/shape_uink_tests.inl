@@ -518,6 +518,25 @@
 			UINK_CHECK(state,object);
 			if(object)
 			{
+				for(bool horizontal:{false,true})
+				{
+					const auto flipped=FlipShape(*object,horizontal,4); UINK_CHECK(state,flipped);
+					if(!flipped)continue;
+					const auto gesture=TransformShapeGesture(*flipped,{100,100},{20,-10},1.25f,.7f,5);
+					UINK_CHECK(state,gesture);
+					if(gesture)
+					{
+						UINK_CHECK(state,DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(*gesture)).shape==gesture);
+						auto one=snapshot; one.canvases.front().strokes.clear();
+						Draw3UInkStrokeSnapshot stroke; stroke.style.kind=Draw3UInkStrokeKind::Shape; stroke.shape=*gesture; stroke.undoId=0;
+						one.canvases.front().strokes.push_back(stroke);
+						const auto wire=ExportDraw3SnapshotToUInk(one); UINK_CHECK(state,wire.document);
+						if(wire.document) {
+							const auto restored=ImportDraw3UInkDocument(*wire.document);
+							UINK_CHECK(state,restored.snapshot && restored.snapshot->canvases.front().strokes.size()==1 && restored.snapshot->canvases.front().strokes.front().shape==gesture);
+						}
+					}
+				}
 				auto wire=EncodeInkeysShapeMetadata(*object);
 				UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==7);
 				auto decoded=DecodeInkeysShapeMetadata(wire);

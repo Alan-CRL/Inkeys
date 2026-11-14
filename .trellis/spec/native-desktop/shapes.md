@@ -319,3 +319,34 @@ Good：实际环线满足水平3:1椭圆方程，模型半径相等；Base：棱
 核心首笔/完成/半径编辑/高度/隐藏边与轮廓相切、箱体四象限旧公式；产品renderer；v7私有构造与标准部件导出重载、冷历史和自动保存。
 ### Wrong vs Correct
 Wrong：只改ObliquePoint而仍用旧剪切逆映射或旧视线算虚线。Correct：显示/交互/可见性统一消费按preset选择的投影。
+
+
+## 第六轮翻转、预测与多指编辑（2026-11-14，替代冲突条款）
+
+### 1. Scope / Trigger
+适用于完成对象的两行样式栏、翻转、多指变换、编辑预测及结束编辑恢复工具。第五轮投影、短对角线和 v7 构造保持；未完成点工具继续加点，不把下一笔当作框外退出。
+
+### 2. Signatures
+- `FlipShape(before,horizontal,revision,options,error)`；`TransformShapeGesture(before,pivot,translation,scale,rotation,revision,options,error)`。
+- `EditSession::PreviewTransform(pivot,translation,scale,rotation,revision,error)`只用于整体移动柄 0/100，沿已有 Begin/Commit/Cancel。
+- `ShapeUiAction::{gestureTransform,predictedGestureTransform,predictedPoint}`；`ShapeEditorSurface::Contact(message,screen,source,contactId,touch,pen,seconds,captureOwned,presentedRevision)`；`ShapeContactGesture::Key{source,id}`。
+- `ShapeWidthScale(object)=sqrt(abs(det(object.transform)))`；`RestoreToolAfterShapeEditing(workspace,entryEpoch)`与`ShapeToolEntryEpoch()`防止迟到完成通知恢复新一轮工具。
+
+### 3. Contracts
+- 翻转围绕屏幕轮廓包围盒中心，水平/竖直轴明确；模型构造不变，外层 transform 承担反射。立体允许绝对值相等的有符号对角缩放，仍拒绝 m12/m21 非零；翻转后控制点继续逆同一 transform，不能重猜模型。
+- 多指变换始终相对 Begin 的 before：围绕 pivot 等比缩放、平面旋转，再平移；3D 丢弃旋转分量。模型圆、正多边形和立方体约束不变；style.width 除以本次 scale，补偿渲染变换放大。浮条比较粗细用 `style.width*ShapeWidthScale`，设置预设用 `screenWidth/ShapeWidthScale`，不能把模型宽度当屏幕宽度。
+- 首个有效中心区 Down 开启唯一编辑事务；额外触指只能加入该中心手势，按钮与专属控制点仍首指独占。鼠标、笔及触摸的身份不可混用，压力不参与几何或线宽。增减指重置参考，保留累计变换；非末指 Up 只预览，最后 Up 真实坐标提交一次 Replace，取消回滚且没有惯性。
+- 预测继承绘制选项，真实会话先消费 raw；预测只在 EditSession/构造副本求候选，不累计真实角度，不写历史或存储。Up 清预测字段；预测到期回退真实候选，新指加入前收回旧预测。局部控件和画布使用相同预测候选。
+- 点勾/已成形图形框外退出才恢复入口工具，最后绘制 Up 保留编辑；直线/箭头连续绘制。入口从穿透映射绘制；进入几何后切换类别不覆盖来源。完成通知必须匹配工作区、entryEpoch 和当前几何模式，不能覆盖用户新选工具。
+
+### 4. Validation & Error Matrix
+旧 revision、非有限变换、scale<=.001、非法构造拒绝。PreviewTransform 非 0/100 柄拒绝；退化帧可保留上个显示候选但不可 Commit。过期对象/会话/文档/显示身份取消，旧接触不能接管新手势。预测失败退回真实样本；旧入口完成通知不恢复新工具。
+
+### 5. Good / Base / Bad Cases
+Good：两指缩放后首指抬起，余指无跳变继续平移，末指 Up 仅产生一次历史；翻转后的圆底仍可调半径并保存重载。Base：预测禁用时仍正常真实拖动。Bad：第一指 Up 就提交、将预测角写入真实累计角、缩放后样式栏再次把描边放大。
+
+### 6. Tests Required
+21 预设单次镜像坐标、双次还原、翻转后控制点编辑；真实 GPU halfWidth 恒定；3D 旋转输入无效但缩放有效；完整 UInk 导出/导入保持翻转及缩放。生产动作测试覆盖预测副本/raw Up、构造移点续画、取消与单 Replace；真实 Contact/呈现接缝覆盖增减指、首指离开/末指提交、过期输入和禁用预测。工具测试覆盖选择/穿透来源及旧 epoch 通知。自动结果见第六轮验证记录，不代替真实屏幕触控验收。
+
+### 7. Wrong vs Correct
+Wrong：`style.width=screenWidth`，每指各自 Begin/Commit，或直接把 predictedPoint 传进真实会话。Correct：`style.width=screenWidth/ShapeWidthScale(object)`，整组共享一个事务，预测会话复制后只发布临时几何。

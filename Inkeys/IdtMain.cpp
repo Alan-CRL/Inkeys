@@ -1955,6 +1955,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest(); });
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--shape-editor-native-input-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::SelectionOverlay::RunNativeInputRoutingTests();
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--ui3-shape-editor-test") == 0)
 		{
 			LocalFree(arguments);

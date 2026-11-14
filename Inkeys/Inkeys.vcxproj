@@ -1264,6 +1264,8 @@
     <None Include="src\UI\barStatusBolt.svg" />
     <None Include="src\UI\barPalmEraser.svg" />
     <None Include="src\UI\barShapeStraightLine.svg" />
+    <None Include="src\UI\barShapeFlipHorizontal.svg" />
+    <None Include="src\UI\barShapeFlipVertical.svg" />
     <None Include="src\UI\barShapeRectangle.svg" />
     <None Include="src\UI\color\colorSun.svg" />
     <None Include="src\UI\color\colorMoon.svg" />

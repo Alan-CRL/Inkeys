@@ -174,6 +174,8 @@
         "ConstraintFreeLabel": "Serbest",
         "ConstraintIsoscelesLabel": "İkizkenar",
         "ConstraintEquilateralLabel": "Eşkenar",
+        "FlipHorizontalLabel": "Yatay çevir",
+        "FlipVerticalLabel": "Dikey çevir",
         "RightPrismLabel": "Dik prizma",
         "RightPyramidLabel": "Dik piramit",
         "StraightLineLabel": "Çizgi",

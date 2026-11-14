@@ -1147,6 +1147,58 @@ int RunShapeCoreTests()
 		if(edited){const auto& model=std::get<SolidConstruction>(edited->construction->parameters);SHAPE_CHECK(model.baseSize.x==model.baseSize.y && std::abs(model.baseSize.x-200)<.001);}
 		std::get<SolidConstruction>(c.parameters).baseSize.y=101;SHAPE_CHECK(!MakeConstructedShape(c,{},Id(29)));
 	}
+	// 翻转与多指变换必须覆盖真实预设几何，保留可编辑构造和显示线宽。
+	for (unsigned value = 0; value <= static_cast<unsigned>(PresetKind::Pyramid); ++value)
+	{
+		const auto preset = static_cast<PresetKind>(value);
+		Construction c{{preset,DefaultCreationMode(preset),6},{20,30},{140,110}};
+		if (preset == PresetKind::Polyline || preset == PresetKind::Polygon)
+			c.parameters = VertexConstruction{{{20,30},{140,30},{100,110}}};
+		else if (preset == PresetKind::Arc || preset == PresetKind::Sector) c.parameters = ArcConstruction{1.5f};
+		else if (preset >= PresetKind::Cuboid) c = MakeSolidConstruction(c.tool,c.start,c.end,-180);
+		auto original = MakeConstructedShape(c,{},Id(61)); SHAPE_CHECK(original); if (!original) continue;
+		GeometryResult base; SHAPE_CHECK(BuildGeometry(*original,base));
+		for (bool horizontal : {false,true})
+		{
+			auto flipped = FlipShape(*original,horizontal,2); SHAPE_CHECK(flipped); if (!flipped) continue;
+			GeometryResult mirror; SHAPE_CHECK(BuildGeometry(*flipped,mirror));
+			const auto a=base.parts.front().paths.front().points.front(), b=mirror.parts.front().paths.front().points.front();
+			SHAPE_CHECK(horizontal ? std::abs(a.y-b.y)<.001 && std::abs(a.x+b.x-base.bounds.left-base.bounds.right)<.001
+				: std::abs(a.x-b.x)<.001 && std::abs(a.y+b.y-base.bounds.top-base.bounds.bottom)<.001);
+			auto restored = FlipShape(*flipped,horizontal,3); SHAPE_CHECK(restored); if (!restored) continue;
+			SHAPE_CHECK(restored->construction == original->construction);
+			GeometryResult actual; SHAPE_CHECK(BuildGeometry(*restored,actual));
+			SHAPE_CHECK(actual.parts.size() == base.parts.size());
+			for (size_t i=0;i<actual.parts.size() && i<base.parts.size();++i)
+				for (size_t j=0;j<actual.parts[i].paths.size();++j)
+					for(size_t k=0;k<actual.parts[i].paths[j].points.size();++k)
+					{
+						const auto a=actual.parts[i].paths[j].points[k],b=base.parts[i].paths[j].points[k];
+						SHAPE_CHECK(std::hypot(a.x-b.x,a.y-b.y)<.001);
+					}
+			const auto handles=BuildEditHandles(*flipped);
+			for(const auto& h:handles) if(h.id>=1000)
+			{
+				const auto edited=EditShape(*flipped,h.id,h.position,{h.position.x+8,h.position.y+5},4);
+				SHAPE_CHECK(edited && Validate(*edited)); break;
+			}
+		}
+		const Vec2 pivot{80,70}, delta{15,-20};
+		EditSession session; SHAPE_CHECK(session.Begin(*original,0,pivot));
+		SHAPE_CHECK(session.PreviewTransform(pivot,delta,1.5f,.4f,4));
+		auto transformed=session.Commit(); SHAPE_CHECK(transformed); if(!transformed)continue;
+		GeometryResult actual; SHAPE_CHECK(BuildGeometry(*transformed,actual));
+		SHAPE_CHECK(std::abs(actual.parts.front().style.width-base.parts.front().style.width)<.001);
+		RenderData gpu; SHAPE_CHECK(BuildRenderData(*transformed,gpu));
+		SHAPE_CHECK(!gpu.batches.empty() && !gpu.batches.front().primitives.empty());
+		if(!gpu.batches.empty() && !gpu.batches.front().primitives.empty())
+			SHAPE_CHECK(std::abs(gpu.batches.front().primitives.front().halfWidth-base.parts.front().style.width*.5f)<.001);
+		SHAPE_CHECK(transformed->construction==original->construction);
+		if(preset>=PresetKind::Cuboid) SHAPE_CHECK(transformed->transform.m12==0 && transformed->transform.m21==0);
+		else SHAPE_CHECK(std::abs(transformed->transform.m12-1.5f*std::sin(.4f))<.001);
+		SHAPE_CHECK(session.Begin(*original,0,pivot));
+		SHAPE_CHECK(!session.PreviewTransform(pivot,delta,0,0,5) && !session.Commit());
+	}
 	RunAuxiliaryTests(failures);
 	RunEditInteractionTests(failures);
 	std::cout << "Shape core tests: " << failures << " failure(s)\n";

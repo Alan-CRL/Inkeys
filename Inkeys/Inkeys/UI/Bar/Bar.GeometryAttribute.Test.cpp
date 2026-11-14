@@ -432,6 +432,9 @@ namespace Inkeys::UI::Bar
 		click(GeometryTrapezoidMode); expect(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Isosceles,"trapezoid isosceles toggles through production action");
 		preset(PresetKind::Circle); f = owner.geometryAttribute.PresentationSnapshot();
 		expect(f.items[GeometryCircleCenter].Width() > 0 && f.items[GeometrySidesBegin].Width() == 0, "circle displays two mode options only");
+		selectCategory(ShapeToolbarCategory::Solid); f = owner.geometryAttribute.PresentationSnapshot();
+		expect(f.items[GeometryCircleCenter].Width()==0 && f.items[GeometryAuxBegin].Width()==0 && GetShapeToolSpec(GetStateModeSnapshot()).preset==PresetKind::Circle,"browsing another category hides circle parameters without changing the current tool");
+		selectCategory(ShapeToolbarCategory::Regular);
 		click(GeometryCircleBox); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::Drag, "bounding square mode");
 		click(GeometryCircleCenter); expect(GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius, "center radius mode");
 		click(GeometryStyleBegin + 1); f = owner.geometryAttribute.PresentationSnapshot();
@@ -479,7 +482,10 @@ namespace Inkeys::UI::Bar
 				const double expectedContentHeight = category == ShapeToolbarCategory::Regular ? 220 : category == ShapeToolbarCategory::Solid ? 70 : 145;
 				const double expectedWidth = (std::max)(455.0,f.items[GeometryAuxBegin].right+5-f.panel.left);
 				report << "GeometrySize width=" << f.panel.Width() << " expected=" << expectedWidth << " height=" << f.panel.Height() << " scale=" << scale << '\n';
-				expect(std::abs(f.panel.Width()-expectedWidth) < 0.01 && std::abs(f.panel.Height()-(expectedContentHeight+134.5)) < 0.01 && f.scrollMaximum == 0,"default category dimensions include fixed header and one parameter row");
+				// 此矩阵选择的圆/正多边形均属于常规分类；浏览其他分类不应保留其43.5 DIP参数行。
+				const double expectedParameterHeight = category == ShapeToolbarCategory::Regular ? 43.5 : 0.0;
+				expect(std::abs(f.panel.Width()-expectedWidth) < 0.01 && std::abs(f.panel.Height()-(expectedContentHeight+91.0+expectedParameterHeight)) < 0.01 && f.scrollMaximum == 0,"category dimensions preserve fixed header and include parameters only for the selected tool category");
+				expect((f.items[below ? GeometryCircleCenter : GeometrySidesBegin].Width()>0)==(category==ShapeToolbarCategory::Regular),"parameter-row space agrees with presented circle or polygon controls");
 				expect(f.visible && f.acceptsInput && f.panel.left >= 0 && f.panel.top >= 0 && f.panel.right <= 1200 && f.panel.bottom <= 800, "panel and parameters fit both expansion sides");
 				for (int i = 0; i < GeometryCategoryCount; ++i)
 				{
@@ -802,11 +808,12 @@ namespace Inkeys::UI::Bar
 				const bool auxiliaryOption = i >= GeometryAuxBegin && i < GeometryTriangleModeBegin;
 				const bool constraintOption = i >= GeometryTriangleModeBegin && i <= GeometryTrapezoidMode;
 				const std::array<Auxiliary,3> bits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
+				const bool matchingCategory = std::any_of(catalog.begin(),catalog.end(),[&](const auto& entry){return entry.preset==wanted && entry.category==presented.category;});
 				const bool shown = (i < GeometryCategoryCount && catalog[i].category == presented.category) || i == GeometryCloseButton || i >= GeometrySegmentBegin
-					|| ((i == GeometryCircleCenter || i == GeometryCircleBox) && wanted == PresetKind::Circle)
-					|| (i >= GeometrySidesBegin && i < GeometrySidesBegin+(wanted == PresetKind::RegularPolygon ? GeometrySidesCount : 6) && GetToolCapabilities(wanted).regularSides)
-					|| (auxiliaryOption && stroke && (SupportedAuxiliary(wanted) & bits[i-GeometryAuxBegin]) != Auxiliary::None)
-					|| (constraintOption && ((wanted == PresetKind::Triangle && i < GeometryTrapezoidMode) || ((wanted == PresetKind::Trapezoid || wanted == PresetKind::Prism || wanted == PresetKind::Pyramid) && i == GeometryTrapezoidMode)))
+					|| ((i == GeometryCircleCenter || i == GeometryCircleBox) && matchingCategory && wanted == PresetKind::Circle)
+					|| (i >= GeometrySidesBegin && i < GeometrySidesBegin+(wanted == PresetKind::RegularPolygon ? GeometrySidesCount : 6) && matchingCategory && GetToolCapabilities(wanted).regularSides)
+					|| (auxiliaryOption && matchingCategory && stroke && (SupportedAuxiliary(wanted) & bits[i-GeometryAuxBegin]) != Auxiliary::None)
+					|| (constraintOption && matchingCategory && ((wanted == PresetKind::Triangle && i < GeometryTrapezoidMode) || ((wanted == PresetKind::Trapezoid || wanted == PresetKind::Prism || wanted == PresetKind::Pyramid) && i == GeometryTrapezoidMode)))
 					|| (i >= GeometryStyleBegin && i < GeometryStyleBegin+2 && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);
 				const auto rect = presented.items[i]; const auto& hit = presented.hits[i];
 				const auto visibleRect = i < GeometryCategoryCount ? Intersect(rect, presented.categoryClip) : rect;

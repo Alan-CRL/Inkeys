@@ -18,9 +18,12 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t pageIndex = 0;
 		bool operator==(const ShapeUiIdentity&) const = default;
 	};
+	inline std::atomic<std::uint64_t>& ShapeToolEntryEpoch() noexcept { static std::atomic<std::uint64_t> value{0}; return value; }
 	struct ShapeUiSnapshot
 	{
 		ShapeUiIdentity identity;
+		std::uint64_t finishedEditingSession = 0, finishedEditingEntryEpoch = 0;
+		std::uint8_t finishedEditingWorkspace = 0;
 		std::optional<draw3::shapes::ShapeObject> object;
 		std::vector<draw3::shapes::EditHandle> handles;
 		draw3::shapes::Bounds bounds, frameRect; // frameRect为共享核心给出的本地外框。
@@ -28,6 +31,7 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t completedConstructionSession = 0; // 完成沿保留原构造身份，不能借用随后打开的编辑会话。
 		bool editGestureActive = false, constructionContactActive = false;
 		bool drawingPreview = false; // 首笔约束提示的只读快照，不是构造会话或可编辑对象。
+		std::uint8_t predictionMode = 2, timingProfile = 2;
 		float displayScale = 1;
 		int canvasOriginX = 0, canvasOriginY = 0;
 	};
@@ -35,7 +39,12 @@ namespace Inkeys::Drawing::Draw3
 	{
 		BeginEdit, PreviewEdit, CommitEdit, CancelEdit, CloseEditor,
 		SetStyle, SetSides, SetConstraint, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward, SetRightSolid,
-		ConstructionBeginPointEdit, ConstructionPreviewPointEdit, ConstructionCommitPointEdit, ConstructionCancelPointEdit
+		ConstructionBeginPointEdit, ConstructionPreviewPointEdit, ConstructionCommitPointEdit, ConstructionCancelPointEdit, FlipHorizontal, FlipVertical
+	};
+	struct ShapeGestureTransform
+	{
+		draw3::shapes::Vec2 pivot, translation;
+		float scale = 1, rotation = 0;
 	};
 	struct ShapeUiAction
 	{
@@ -43,9 +52,12 @@ namespace Inkeys::Drawing::Draw3
 		ShapeUiIdentity identity;
 		std::uint32_t handleId = 0;
 		draw3::shapes::Vec2 down, point;
+		std::optional<draw3::shapes::Vec2> predictedPoint;
+		std::optional<ShapeGestureTransform> gestureTransform, predictedGestureTransform;
 		std::optional<float> angleDelta; // 手势累计角：latest-wins覆盖中间点时仍保留轨迹。
 		draw3::shapes::ShapeStyle style;
 		std::uint32_t sides = 3;
+		bool finishEditing = false; // 仅完成勾；普通程序性失焦不恢复工具。
 		bool rightSolid = false;
 		draw3::shapes::PlanarConstraint constraint = draw3::shapes::PlanarConstraint::Free;
 		std::int64_t enqueueMicroseconds = 0; // 仅诊断：Bridge入队时刻，用于计算入队到上屏延迟。
@@ -63,6 +75,8 @@ namespace Inkeys::Drawing::Draw3
 			return draw3::shapes::SetPlanarConstraint(before,action.constraint,revision);
 		if (action.kind == ShapeUiActionKind::SetRightSolid)
 			return draw3::shapes::SetRightSolid(before,action.rightSolid,revision);
+		if (action.kind == ShapeUiActionKind::FlipHorizontal || action.kind == ShapeUiActionKind::FlipVertical)
+			return draw3::shapes::FlipShape(before,action.kind == ShapeUiActionKind::FlipHorizontal,revision,options);
 		return std::nullopt;
 	}
 

@@ -481,6 +481,43 @@ std::optional<ShapeObject> RestyleShape(const ShapeObject& before, const ShapeSt
 	auto shape = PromoteShape(before, options); shape.style = style; return RebuildEdited(std::move(shape), revision, error);
 }
 
+std::optional<ShapeObject> FlipShape(const ShapeObject& before, bool horizontal, uint64_t revision,
+	const BuildOptions& options, std::string* error)
+{
+	if (!Validate(before) || revision <= before.revision) { SetError(error,"invalid flip identity"); return std::nullopt; }
+	GeometryResult geometry;
+	if (!BuildGeometry(before,geometry,options,error)) return std::nullopt;
+	Bounds bounds;
+	for (const auto& part : geometry.parts) for (const auto& path : part.paths)
+		for (const auto point : path.points) Include(bounds,point);
+	// 屏幕轴翻转由外层变换承担，构造真值及模型约束保持，编辑仍走同一逆变换。
+	Transform flip;
+	if (horizontal) { flip.m11 = -1; flip.dx = bounds.left + bounds.right; }
+	else { flip.m22 = -1; flip.dy = bounds.top + bounds.bottom; }
+	auto shape = PromoteShape(before,options);
+	shape.transform = ComposeTransforms(flip,shape.transform);
+	return RebuildEdited(std::move(shape),revision,error);
+}
+std::optional<ShapeObject> TransformShapeGesture(const ShapeObject& before, Vec2 pivot, Vec2 translation,
+	float scale, float rotation, uint64_t revision, const BuildOptions& options, std::string* error)
+{
+	if (!Validate(before) || revision <= before.revision || !Finite(pivot) || !Finite(translation) ||
+		!Finite(scale) || scale <= .001f || !Finite(rotation))
+	{ SetError(error,"invalid gesture transform"); return std::nullopt; }
+	if (before.construction && before.construction->tool.preset >= PresetKind::Cuboid) rotation = 0;
+	Transform motion;
+	motion.m11 = motion.m22 = scale * std::cos(rotation);
+	motion.m12 = scale * std::sin(rotation); motion.m21 = -motion.m12;
+	const auto moved = ApplyTransform(motion,pivot);
+	motion.dx = pivot.x + translation.x - moved.x; motion.dy = pivot.y + translation.y - moved.y;
+	auto shape = PromoteShape(before,options);
+	shape.transform = ComposeTransforms(motion,shape.transform);
+	// 渲染会乘外层变换尺度；反向补偿线宽，压力和双指距离都不改变描边粗细。
+	shape.style.width /= scale;
+	for (auto& part : shape.parts) if (part.style) part.style->width /= scale;
+	return RebuildEdited(std::move(shape),revision,error);
+}
+
 Construction MakeSolidConstruction(const ToolSpec& tool, Vec2 down, Vec2 end, float height)
 {
 	Construction c{tool,down,end}; SolidConstruction s;
@@ -644,6 +681,15 @@ bool EditSession::Preview(Vec2 current, uint64_t revision, std::string* error, s
 	if (nearest) candidate_ = std::move(nearest);
 	else { candidate_ = *before_; candidate_->revision = revision; }
 	return true;
+}
+bool EditSession::PreviewTransform(Vec2 pivot, Vec2 translation, float scale, float rotation,
+	uint64_t revision, std::string* error)
+{
+	if (!before_ || (handleId_ != 0 && handleId_ != 100)) { canCommit_ = false; return false; }
+	auto next = TransformShapeGesture(*before_,pivot,translation,scale,rotation,revision,options_,error);
+	canCommit_ = next.has_value();
+	if (next) candidate_ = std::move(next); // 退化帧保留上个可呈现候选，但不可提交。
+	return canCommit_;
 }
 std::optional<float> EditSession::AngleDelta() const noexcept { return angleActive_ ? std::optional<float>(angleDelta_) : std::nullopt; }
 const std::optional<ShapeObject>& EditSession::Candidate() const noexcept { return candidate_; }

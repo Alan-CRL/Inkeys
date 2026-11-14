@@ -336,8 +336,9 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		(workArea.right - origin.x) / zoom - rigidX, (workArea.bottom - origin.y) / zoom - rigidY};
 	const auto tool = GetShapeToolSpec(state); const auto style = GetShapeStyle(state);
 	const bool showStyle = !OpenPreset(tool.preset), showStroke = !showStyle || style.stroke;
-	const bool circle = tool.preset == PresetKind::Circle, polygon = GetToolCapabilities(tool.preset).regularSides;
-	const bool triangle = tool.preset == PresetKind::Triangle, rightSolid = tool.preset == PresetKind::Prism || tool.preset == PresetKind::Pyramid, trapezoid = tool.preset == PresetKind::Trapezoid || rightSolid;
+	const bool toolInCategory = std::any_of(ShapeCategoryCatalog().begin(),ShapeCategoryCatalog().end(),[&](const auto& entry) { return entry.preset == tool.preset && (opening || static_cast<int>(entry.category) == categoryRequest_.load()); });
+	const bool circle = toolInCategory && tool.preset == PresetKind::Circle, polygon = toolInCategory && GetToolCapabilities(tool.preset).regularSides;
+	const bool triangle = toolInCategory && tool.preset == PresetKind::Triangle, rightSolid = toolInCategory && (tool.preset == PresetKind::Prism || tool.preset == PresetKind::Pyramid), trapezoid = toolInCategory && (tool.preset == PresetKind::Trapezoid || rightSolid);
 	const auto constraintLabel = [&](int item) { if(item>=AuxBegin && item<GeometryTriangleModeBegin) return ShapeAuxiliaryLabel(AuxiliaryBits[item-AuxBegin],tool.preset); return item == GeometryTrapezoidMode && rightSolid ? I18n::getWOr(tool.preset == PresetKind::Prism ? "UI/Bar/GeometryAttributes/RightPrismLabel" : "UI/Bar/GeometryAttributes/RightPyramidLabel", tool.preset == PresetKind::Prism ? L"正棱柱" : L"正棱锥") : ItemLabel(item); };
 	const auto supportedAuxiliary = SupportedAuxiliary(tool.preset), auxiliary = GetShapeAuxiliary(state);
 	const double disabledOpacity = BarThemeMaterial::DisabledContentOpacity(owner.barStyle.darkStyle ? 0.0 : 1.0);
@@ -358,7 +359,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const auto standard = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
 	const bool typographyChanged = measuredFontFamily_ != owner.spec.GetFontFamily() || measuredLocale_ != owner.spec.GetTextLocale()
 		|| measuredDeviceGeneration_ != owner.spec.GetDeviceGeneration();
-	const bool hasAuxiliary = showStroke && supportedAuxiliary != Auxiliary::None;
+	const bool hasAuxiliary = toolInCategory && showStroke && supportedAuxiliary != Auxiliary::None;
 	double auxiliaryWidth = 0;
 	unsigned auxiliaryCount = 0;
 	for (int i = 0; i < 3; ++i) if ((supportedAuxiliary & AuxiliaryBits[i]) != Auxiliary::None)
@@ -645,7 +646,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		if (resourceTargets_[i] != resource || labelTargets_[i] != label)
 		{
 			// 同一资源不重复读取/解码；只有真实语义切换才进入共享内容转换。
-			changed_ |= b.TransitionContent(resource, label);
+			changed_ |= b.TransitionContent(resource, label, opening || initializeLayout || !b.name.pct.val);
 			resourceTargets_[i] = resource; labelTargets_[i] = label;
 		}
 		if (!wanted && focused_ == i) focused_ = -1;

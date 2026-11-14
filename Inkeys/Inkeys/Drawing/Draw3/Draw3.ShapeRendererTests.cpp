@@ -145,6 +145,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else
 				{
+					// dev 将 Laser 改为选用时分配；夹具也必须经过正式资源准备入口。
+					if (!renderer.EnsureLaserResources(128,128)) return false;
 					renderer.ConfigureLaserStyle(1, {1,0.125f,0.25f,1});
 					renderer.ClearLaserCoverage(renderer.laserStrokeCoverage);
 					renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);

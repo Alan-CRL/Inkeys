@@ -27,7 +27,8 @@
     "11-05-shape-ux-icons",
     "11-14-shape-round3-interaction",
     "11-14-shape-round3-planar",
-    "11-14-shape-round3-solid-storage"
+    "11-14-shape-round3-solid-storage",
+    "11-14-shape-round6-interaction"
   ],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],

@@ -9,6 +9,8 @@ module;
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "Bar.InteractionWorker.h"
+#include "Bar.ShapeGesture.h"
+#include <ink_stroke_modeler/stroke_modeler.h>
 #include "Bar.ThemeMaterial.h"
 #include <d2d1_1helper.h>
 #include <wincodec.h>
@@ -33,6 +35,7 @@ import :Theme;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.Bar.EraserAttributeMotion;
 import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.ink_prediction;
 extern const double BarUiDividerRadius;
 extern const double BarUiDividerCursorLightIntensity;
 extern const double BarDrawAttributeSurfaceOpacity;
@@ -46,15 +49,20 @@ namespace Inkeys::UI::Bar
 	{
 		constexpr unsigned Color = 1, Style = 2, Pattern = 5, Thickness = 9, Sides = 12, Swatch = Sides+GeometrySidesCount, Tone = Swatch+11, Rotate = Tone+1;
 		constexpr unsigned SidesEntry = Rotate+1, Aux = SidesEntry+1, Custom = Aux+3, PickerClose = Custom+1;
-		constexpr unsigned TriangleMode = PickerClose+1, TrapezoidMode = TriangleMode+3, Finish = TrapezoidMode+1, Count = Finish+1;
+		constexpr unsigned TriangleMode = PickerClose+1, TrapezoidMode = TriangleMode+3, Finish = TrapezoidMode+1, FlipHorizontal = Finish+1, FlipVertical = FlipHorizontal+1, Count = FlipVertical+1;
 		constexpr unsigned PaletteHit = 100, OutsideLayerHit = 101;
 		constexpr std::array<Auxiliary, 3> AuxiliaryBits{Auxiliary::Center, Auxiliary::Foci, Auxiliary::Diagonals};
-		constexpr std::array<unsigned, 19> ToolbarItems{Color, Style, Style+1, Pattern, Pattern+1, Pattern+2, Pattern+3,
-			Thickness, Thickness+1, Thickness+2, SidesEntry, TriangleMode, TriangleMode+1, TriangleMode+2, TrapezoidMode, Aux, Aux+1, Aux+2, Finish};
+		constexpr std::array<unsigned, 21> ToolbarItems{Color, Style, Style+1, Pattern, Pattern+1, Pattern+2, Pattern+3,
+			Thickness, Thickness+1, Thickness+2, SidesEntry, TriangleMode, TriangleMode+1, TriangleMode+2, TrapezoidMode, Aux, Aux+1, Aux+2, FlipHorizontal, FlipVertical, Finish};
 		constexpr std::array<unsigned, 8> GroupStarts{Style, Pattern, Thickness, SidesEntry, TriangleMode, TrapezoidMode, Aux, Finish};
 		unsigned EditorPanel(unsigned id)
 		{
 			return id >= Sides && id<Swatch ? 1 : (id >= Swatch && id<Tone) || id == Custom ? 2 : id == Tone || id == PickerClose ? 3 : 0;
+		}
+		double ShapeWidthScale(const ShapeObject& object)
+		{
+			const auto& t = object.transform;
+			return std::sqrt(std::abs(static_cast<double>(t.m11)*t.m22-static_cast<double>(t.m12)*t.m21));
 		}
 		D2D1_RECT_F EditorRect(EraserAttributeRect r)
 		{
@@ -353,6 +361,15 @@ namespace Inkeys::UI::Bar
 				static_cast<FLOAT>(snapshot.canvasOriginY+b.top-bounds.top-3*scale),
 				static_cast<FLOAT>(snapshot.canvasOriginX+b.right-bounds.left+3*scale),
 				static_cast<FLOAT>(snapshot.canvasOriginY+b.bottom-bounds.top+3*scale)}, brush);
+			if (snapshot.object && !snapshot.construction.active && snapshot.frameRect.valid
+				&& EditorPreset(*snapshot.object)!=PresetKind::Line && EditorPreset(*snapshot.object)!=PresetKind::Arrow)
+			{
+				const auto& t=snapshot.object->transform; const auto& f=snapshot.frameRect;
+				D2D1_MATRIX_3X2_F original; dc->GetTransform(&original);
+				dc->SetTransform(D2D1::Matrix3x2F(t.m11,t.m12,t.m21,t.m22,
+					t.dx+snapshot.canvasOriginX-bounds.left,t.dy+snapshot.canvasOriginY-bounds.top)*original);
+				dc->FillRectangle({f.left,f.top,f.right,f.bottom},brush); dc->SetTransform(original);
+			}
 			for (const auto& h : snapshot.handles) dc->FillEllipse({{static_cast<FLOAT>(snapshot.canvasOriginX+h.position.x-bounds.left),
 				static_cast<FLOAT>(snapshot.canvasOriginY+h.position.y-bounds.top)}, static_cast<FLOAT>(22*scale), static_cast<FLOAT>(22*scale)}, brush);
 			dc->SetAntialiasMode(aa);
@@ -368,6 +385,8 @@ namespace Inkeys::UI::Bar
 			if (id >= TriangleMode && id<TriangleMode+3) return L"barShapeTriangle";
 			if (id == TrapezoidMode) return L"barShapeTrapezoid";
 			if (id == Finish) return L"fluentCheckmark12Filled";
+			if (id == FlipHorizontal) return L"barShapeFlipHorizontal";
+			if (id == FlipVertical) return L"barShapeFlipVertical";
 			if (id == Rotate) return L"barShapeRotate";
 			if (id == Tone) return L"colorSun";
 			if ((id >= Swatch && id<Tone) || id == Custom) return L"colorSelect";
@@ -511,6 +530,50 @@ namespace Inkeys::UI::Bar
 		IntentSender().Clear();
 	}
 
+	// 沿用绘制的建模参数与预测模式；输入为真实接触时间，压力固定且不会进入图形样式。
+	struct ShapeDragPredictor
+	{
+		ShapeContactGesture::Key key;
+		ink::stroke_model::StrokeModeler model;
+		ink::stroke_model::StrokeModelParams params;
+		std::vector<ink::stroke_model::Result> output, prediction;
+		double start = 0, last = 0;
+		Vec2 previous{};
+		bool ready = false;
+		void Begin(ShapeContactGesture::Key identity, Vec2 point, double seconds, const ShapeUiSnapshot& snapshot)
+		{
+			key=identity; start=last=seconds; previous=point;
+			const auto config=CreateStrokeModelConfiguration(static_cast<int>(snapshot.displayScale*96),static_cast<StrokeTimingProfileId>(snapshot.timingProfile));
+			params=config.modelParams;
+			ApplyPredictionMode(params,config.kalmanPredictorParams,static_cast<InkPredictionMode>(snapshot.predictionMode));
+			ready=snapshot.predictionMode!=0 && model.Reset(params).ok();
+			if (ready) ready=model.Update({.event_type=ink::stroke_model::Input::EventType::kDown,
+				.position={point.x,point.y},.time=ink::stroke_model::Time(0),.pressure=1},output).ok();
+		}
+		std::optional<Vec2> Move(Vec2 point, double seconds)
+		{
+			if (!ready) return {};
+			// 重复/倒退时钟不补造采样；长时间无输入后清空旧速度，避免停笔后突然外推。
+			if (!std::isfinite(seconds) || seconds<=last) return {};
+			if (seconds-last>.1)
+			{
+				start=last=seconds; previous=point; output.clear(); prediction.clear();
+				ready=model.Reset(params).ok() && model.Update({.event_type=ink::stroke_model::Input::EventType::kDown,
+					.position={point.x,point.y},.time=ink::stroke_model::Time(0),.pressure=1},output).ok();
+				return {};
+			}
+			const Vec2 delta{point.x-previous.x,point.y-previous.y}; previous=point; last=seconds;
+			output.clear(); prediction.clear();
+			if (!model.Update({.event_type=ink::stroke_model::Input::EventType::kMove,.position={point.x,point.y},
+				.time=ink::stroke_model::Time(seconds-start),.pressure=1},output).ok() || !model.Predict(prediction).ok()) { ready=false; return {}; }
+			if (prediction.empty()) return {};
+			const auto end=prediction.back().position;
+			// 模型的平滑追赶可能落后于原始指针；编辑始终至少显示真实位置，不新增拖动迟滞。
+			if (!std::isfinite(end.x) || !std::isfinite(end.y) || (end.x-point.x)*delta.x+(end.y-point.y)*delta.y<=0) return {};
+			return Vec2{end.x,end.y};
+		}
+	};
+
 	struct ShapeEditorSurface::Impl
 	{
 		BarUIRendering renderer;
@@ -609,6 +672,13 @@ namespace Inkeys::UI::Bar
 		std::vector<std::unique_ptr<HandleVisual>> handles;
 		std::atomic_uint32_t hoveredHandle = UINT32_MAX, pressedHandle = UINT32_MAX;
 		// 拖动跟手：交互worker用共享核心EditSession先行计算候选，绘制线程快照只用于校正与收尾。
+		ShapeContactGesture contacts;
+		std::vector<std::unique_ptr<ShapeDragPredictor>> predictors;
+		std::optional<ShapeContactGesture::Key> contactOwner;
+		bool contactTouch=false, contactPen=false;
+		std::optional<Vec2> inputPrediction;
+		std::optional<ShapeUiAction> predictionAction;
+		std::chrono::steady_clock::time_point predictionDeadline{};
 		EditSession localEdit;
 		bool localEditActive = false;
 		std::uint64_t localRevision = 0;
@@ -733,12 +803,21 @@ namespace Inkeys::UI::Bar
 
 		std::uint64_t localBaseRevision = 0;
 		// 与绘制线程同一EditSession算法：本地候选只驱动控制点/外框显示，不进入文档。
-		void TrackLocal(const Frame& frame, Vec2 point, bool up, std::uint64_t upGeneration)
+		void TrackLocal(const Frame& frame, Vec2 point, bool up, std::uint64_t upGeneration,
+			std::optional<Vec2> predicted = {}, const ShapeGestureTransform* transform = nullptr, const ShapeGestureTransform* predictedTransform = nullptr)
 		{
 			if (!localEditActive || !frame.snapshot) return;
 			std::shared_ptr<ShapeUiSnapshot> local;
 			std::shared_ptr<GeometryResult> world;
-			if (localEdit.Preview(point, localBaseRevision+(++localRevision))) if (const auto& next = localEdit.Candidate())
+			const auto revision=localBaseRevision+(++localRevision);
+			const bool valid=transform ? localEdit.PreviewTransform(transform->pivot,transform->translation,transform->scale,transform->rotation,revision) : localEdit.Preview(point,revision);
+			auto visual=localEdit; // 预测不能累计真实旋转角或成为下一次真实输入的基准。
+			if (!up && valid)
+			{
+				if (predictedTransform) visual.PreviewTransform(predictedTransform->pivot,predictedTransform->translation,predictedTransform->scale,predictedTransform->rotation,revision);
+				else if (predicted) visual.Preview(*predicted,revision);
+			}
+			if (valid) if (const auto& next = visual.Candidate())
 			{
 				local = std::make_shared<ShapeUiSnapshot>(*frame.snapshot);
 				local->object = *next;
@@ -829,7 +908,15 @@ namespace Inkeys::UI::Bar
 			}
 			if (hit.occupied) return hit;
 			const auto body = HitTest(*frame.snapshot->object, frame.geometry, point, static_cast<float>(3*frame.scale));
-			if (body.kind != HitKind::None)
+			const auto preset=EditorPreset(*frame.snapshot->object);
+			const auto& t=frame.snapshot->object->transform;
+			const float determinant=t.m11*t.m22-t.m12*t.m21;
+			const Vec2 delta{point.x-t.dx,point.y-t.dy};
+			const Vec2 local{(t.m22*delta.x-t.m21*delta.y)/determinant,(-t.m12*delta.x+t.m11*delta.y)/determinant};
+			const auto& box=frame.snapshot->frameRect;
+			const bool centerArea=preset!=PresetKind::Line && preset!=PresetKind::Arrow && box.valid
+				&& local.x>=box.left && local.x<=box.right && local.y>=box.top && local.y<=box.bottom;
+			if (centerArea || body.kind != HitKind::None)
 			{
 				hit.occupied = true;
 				hit.body = true;
@@ -1035,12 +1122,16 @@ namespace Inkeys::UI::Bar
 				p.icon.x.SetDirect(-(textWidth+4)/2-(mode==1?6:0)); p.icon.y.SetDirect(0); p.icon.SetWH(20,20);
 				p.icon.w.SetDirect(p.icon.w.tar); p.icon.h.SetDirect(p.icon.h.tar);
 			}
+			for (unsigned id : {FlipHorizontal,FlipVertical}) {
+				buttons[id]->name.SetStringImmediate(I18n::getWOr(id == FlipHorizontal ? "UI/Bar/GeometryAttributes/FlipHorizontalLabel" : "UI/Bar/GeometryAttributes/FlipVerticalLabel",id == FlipHorizontal ? L"水平翻转" : L"竖直翻转"));
+				buttons[id]->name.enable.Initialization(false); // 保留语义名称，按钮仅显示专属图标。
+			}
 			auxiliaryFontFamily = renderer.GetFontFamily(); auxiliaryLocale = renderer.GetTextLocale();
 			auxiliaryFontGeneration = renderer.GetDeviceGeneration();
 			std::array<bool, Count> wanted{};
 			for (unsigned id : ToolbarItems) if (id)
 			{
-				wanted[id] = id == Color || id == Finish || (id >= Style && id<Pattern && showStyle) || (id >= Pattern && id<Sides && showStroke)
+				wanted[id] = id == Color || id == Finish || id == FlipHorizontal || id == FlipVertical || (id >= Style && id<Pattern && showStyle) || (id >= Pattern && id<Sides && showStroke)
 					|| (id == SidesEntry && capabilities.regularSides) || (id >= Aux && id<Aux+3 && showStroke && (SupportedAuxiliary(preset)&AuxiliaryBits[id-Aux]) != Auxiliary::None)
 					|| (id >= TriangleMode && id<TriangleMode+3 && preset == PresetKind::Triangle) || (id == TrapezoidMode && (preset == PresetKind::Trapezoid || preset == PresetKind::Prism || preset == PresetKind::Pyramid));
 				buttons[id]->hide = !wanted[id];
@@ -1069,30 +1160,32 @@ namespace Inkeys::UI::Bar
 			}
 			layout.width += widthShift;
 			const double available = (std::max)(1., (work.right-work.left)/scale-10);
-			const bool nextTwoRows = layout.width*.75>available;
-			// 仅在0.75整体缩放仍放不下时从粗细组分行，不逐枚按钮手动折行。
-			if (nextTwoRows) { nextDividers[2] = false; dividers[2]->hide = true; }
+			const bool nextTwoRows = true;
+			// 两行按目录语义分组，不按非连续的按钮 ID 大小判断所在行。
+			const std::array<unsigned, 10> firstRow{Color, Style, Style+1, Pattern, Pattern+1, Pattern+2, Pattern+3, Thickness, Thickness+1, Thickness+2};
+			const auto rowOf = [&](unsigned id) { return std::find(firstRow.begin(),firstRow.end(),id) != firstRow.end() ? 0u : 1u; };
 			std::array<double, Count> targetX{}, targetY{};
 			std::array<double, GroupStarts.size()> targetDividerX{}, targetDividerY{};
-			double split = 0, firstWidth = layout.width, secondWidth = 0;
-			if (nextTwoRows)
-			{
-				for (const auto& p : layout.placements) if (p.button == dividers[2]) split = p.x-p.width/2;
-				firstWidth = split;
-				for (const auto& p : layout.placements) if (p.button == buttons[Thickness]) split = p.x-p.width/2-5;
-				secondWidth = layout.width-split;
-			}
+			std::array<double,2> rowWidth{5,5};
+			std::array<bool,2> rowHasButton{};
 			for (const auto& p : layout.placements)
 			{
 				unsigned id = 0; size_t divider = dividers.size();
-				for (unsigned k : ToolbarItems) if (k && buttons[k] == p.button) { id = k; break; }
+				for (unsigned k : ToolbarItems) if (buttons[k] == p.button) { id = k; break; }
 				for (size_t k = 0; k<dividers.size(); ++k) if (dividers[k] == p.button) { divider = k; break; }
-				const bool second = nextTwoRows && id >= Thickness;
-				const bool secondDivider = nextTwoRows && divider >= 2 && divider<dividers.size();
-				const double px = p.x-((second || secondDivider) ? split : 0), py = p.y+((second || secondDivider) ? BarButtonOneSideDip+5 : 0);
-				if (id) { targetX[id] = px; targetY[id] = py; }
-				else if (divider<dividers.size()) { targetDividerX[divider] = px; targetDividerY[divider] = py; }
+				if (!id && divider == dividers.size()) continue;
+				const unsigned row = rowOf(id ? id : GroupStarts[divider]);
+				const bool visible = id ? wanted[id] : nextDividers[divider] && rowHasButton[row];
+				if (!id) { nextDividers[divider] = visible; dividers[divider]->hide = !visible; }
+				const double px = rowWidth[row]+p.width/2, py = 5+BarButtonOneSideDip/2+row*(BarButtonOneSideDip+5);
+				if (id) { targetX[id] = px; targetY[id] = py; if (visible) rowHasButton[row] = true; }
+				else { targetDividerX[divider] = px; targetDividerY[divider] = py; }
+				if (visible) rowWidth[row] += p.width+5;
 			}
+			const double firstWidth = rowWidth[0], secondWidth = rowWidth[1];
+			// 完成按钮始终靠右下角；其分隔线随按钮一起对齐。
+			const double finishShift = (std::max)(firstWidth,secondWidth)-secondWidth;
+			targetX[Finish] += finishShift; targetDividerX.back() += finishShift;
 			// 隐藏成员收向本帧前一可见成员；不存在前项时才使用后一项。
 			for (size_t i = 0; i<ToolbarItems.size(); ++i) if (const unsigned id = ToolbarItems[i]; id && !wanted[id])
 			{
@@ -1104,7 +1197,7 @@ namespace Inkeys::UI::Bar
 			for (size_t di = 0; di<dividers.size(); ++di) if (!nextDividers[di])
 			{
 				unsigned anchor = Color;
-				for (unsigned id : ToolbarItems) if (id && id<GroupStarts[di] && wanted[id]) anchor = id;
+				for (unsigned id : ToolbarItems) { if (id == GroupStarts[di]) break; if (wanted[id]) anchor = id; }
 				targetDividerX[di] = targetX[anchor]; targetDividerY[di] = targetY[anchor];
 			}
 			const double targetWidth = nextTwoRows ? (std::max)(firstWidth, secondWidth) : layout.width;
@@ -1344,7 +1437,7 @@ namespace Inkeys::UI::Bar
 					: id == Custom ? !IsBarPresetColor(currentColor) : id >= Style && id<Pattern ? (id == Style ? object.style.stroke
 						: id == Style+1 ? object.style.fill : object.style.stroke && object.style.fill)
 					: id >= Pattern && id<Thickness ? static_cast<unsigned>(object.style.linePattern) == id-Pattern
-					: id >= Thickness && id<Sides ? std::abs(object.style.width-widths[id-Thickness])<.01
+					: id >= Thickness && id<Sides ? std::abs(object.style.width*ShapeWidthScale(object)-widths[id-Thickness])<.01
 					: id >= Sides && id<Swatch ? object.construction && object.construction->tool.sides == id-Sides+3 : false;
 				p.state->state = selected ? BarWidgetState::Selected : BarWidgetState::None;
 				const bool badge = (id >= Swatch && id<Tone) || id == Custom;
@@ -1951,7 +2044,7 @@ namespace Inkeys::UI::Bar
 			if (id == SidesEntry) { sidesOpen = !sidesOpen.load(); colorOpen = pickerOpen = false; return; }
 			if (id == Custom) { pickerOpen = true; return; }
 			if (id == PickerClose) { pickerOpen = false; return; }
-			if (id == Finish) { ShapeUiAction a; a.identity = frame.snapshot->identity; a.kind = ShapeUiActionKind::CloseEditor; colorOpen = sidesOpen = pickerOpen = false; Emit(a); return; }
+			if (id == Finish) { ShapeUiAction a; a.identity = frame.snapshot->identity; a.kind = ShapeUiActionKind::CloseEditor; a.finishEditing = true; colorOpen = sidesOpen = pickerOpen = false; Emit(a); return; }
 			if (id == Tone)
 			{
 				std::scoped_lock lock(inputMutex);
@@ -1967,8 +2060,9 @@ namespace Inkeys::UI::Bar
 				a.style.stroke = id != Style+1;
 				a.style.fill = id != Style;
 			}
+			else if (id == FlipHorizontal || id == FlipVertical) a.kind = id == FlipHorizontal ? ShapeUiActionKind::FlipHorizontal : ShapeUiActionKind::FlipVertical;
 			else if (id >= Pattern && id<Thickness) a.style.linePattern = static_cast<LinePattern>(id-Pattern);
-			else if (id >= Thickness && id<Sides) a.style.width = frame.widths[id-Thickness];
+			else if (id >= Thickness && id<Sides) a.style.width = static_cast<float>(frame.widths[id-Thickness]/ShapeWidthScale(*frame.snapshot->object));
 			else if (id >= Sides && id<Swatch)
 			{
 				a.kind = ShapeUiActionKind::SetSides;
@@ -2198,8 +2292,11 @@ namespace Inkeys::UI::Bar
 				a.handleId = p.handle;
 				a.down = p.down;
 				a.point = p.CanvasPoint(frame, point); a.point.x -= p.pointerOffset.x; a.point.y -= p.pointerOffset.y;
-				if (!p.constructionGesture) { p.TrackLocal(frame, a.point, up, upGeneration); a.angleDelta = p.localEdit.AngleDelta(); }
+				if (!up) a.predictedPoint=p.inputPrediction;
+				if (!p.constructionGesture) { p.TrackLocal(frame, a.point, up, upGeneration,a.predictedPoint); a.angleDelta = p.localEdit.AngleDelta(); }
 				p.Emit(a);
+				p.predictionAction = a.predictedPoint ? std::optional<ShapeUiAction>(a) : std::nullopt;
+				p.predictionDeadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(30);
 				if (up)
 				{
 					p.gesture = false;
@@ -2288,10 +2385,114 @@ namespace Inkeys::UI::Bar
 		return hit.occupied;
 	}
 
+	bool ShapeEditorSurface::Contact(UINT message, POINT screen, std::uint64_t source, std::uint32_t contactId,
+		bool touch, bool pen, double seconds, bool captureOwned, std::uint64_t presentedRevision)
+	{
+		auto& p=*impl_;
+		const ShapeContactGesture::Key key{source,contactId};
+		// 捕获中的 Leave 只是悬停边界，不是取消；无接触的鼠标仍走普通按钮悬停。
+		if (message==WM_MOUSELEAVE) return p.contactOwner ? true : Pointer(message,screen,captureOwned,presentedRevision);
+		if (message==WM_MOUSEMOVE && !p.contactOwner) return Pointer(message,screen,captureOwned,presentedRevision);
+		if (message==WM_CANCELMODE || message==WM_CAPTURECHANGED || !captureOwned) { CancelPointer(); return true; }
+		Impl::Frame frame;
+		{ std::scoped_lock lock(p.inputMutex); frame=p.presented; }
+		if (!frame.snapshot || !frame.snapshot->object) { CancelPointer(); return false; }
+		if (p.gesture && (frame.snapshot->identity.session!=p.gestureIdentity.session
+			|| frame.snapshot->identity.documentGeneration!=p.gestureIdentity.documentGeneration
+			|| frame.snapshot->identity.displayGeneration!=p.gestureIdentity.displayGeneration)) { CancelPointer(); return true; }
+		const auto rawPoint=p.CanvasPoint(frame,screen);
+		const auto addPredictor=[&](Vec2 point)
+		{
+			auto predictor=std::make_unique<ShapeDragPredictor>(); predictor->Begin(key,point,seconds,*frame.snapshot);
+			p.predictors.push_back(std::move(predictor));
+		};
+		if (message==WM_LBUTTONDOWN)
+		{
+			if (p.contactOwner)
+			{
+				// 控件/按钮仍由首指独占；只有中心区域的同源触摸可组成多指变换。
+				if (!touch || pen || !p.contactTouch || p.contactPen || !p.gesture || !p.contacts.Count()) return true;
+				const auto hit=Hit(screen);
+				if (!hit.occupied || hit.button || (!hit.body && hit.handle!=100)) return true;
+				// 新指加入前先收回旧预测，静止的新接触也不能让外推位置滞留。
+				TickPrediction(std::chrono::steady_clock::time_point::max());
+				if (p.contacts.Add(key,rawPoint,true)) addPredictor(rawPoint);
+				return true;
+			}
+			p.inputPrediction.reset(); p.predictionAction.reset(); p.contacts.Reset(); p.predictors.clear();
+			const bool accepted=Pointer(message,screen,captureOwned,presentedRevision);
+			if (!accepted) return false;
+			p.contactOwner=key; p.contactTouch=touch; p.contactPen=pen;
+			if (p.gesture)
+			{
+				if (!p.constructionGesture && (p.handle==0 || p.handle==100))
+				{
+					const auto preset=EditorPreset(*frame.snapshot->object);
+					p.contacts.Add(key,rawPoint,preset<PresetKind::Cuboid || preset>PresetKind::Pyramid);
+					addPredictor(rawPoint);
+				}
+				else addPredictor({rawPoint.x-p.pointerOffset.x,rawPoint.y-p.pointerOffset.y});
+			}
+			return true;
+		}
+		if (!p.contactOwner) return false;
+		if (touch!=p.contactTouch || pen!=p.contactPen) return true;
+		const bool up=message==WM_LBUTTONUP;
+		if (message!=WM_MOUSEMOVE && !up) return Pointer(message,screen,captureOwned,presentedRevision);
+		if (p.contacts.Count())
+		{
+			if (!p.contacts.Contains(key)) return true;
+			p.contacts.Update(key,rawPoint);
+			std::optional<ShapeGestureTransform> predicted;
+			if (!up) for (const auto& predictor:p.predictors) if (predictor->key==key)
+				if (const auto point=predictor->Move(rawPoint,seconds)) predicted=p.contacts.Predicted(key,*point);
+			const auto transform=p.contacts.Current();
+			if (up) { p.contacts.Remove(key); std::erase_if(p.predictors,[&](const auto& value){return value->key==key;}); }
+			const bool final=up && !p.contacts.Count();
+			ShapeUiAction action; action.identity=p.gestureIdentity; action.handleId=p.handle; action.down=p.down;
+			action.point=rawPoint; action.kind=final?ShapeUiActionKind::CommitEdit:ShapeUiActionKind::PreviewEdit;
+			action.gestureTransform=transform; action.predictedGestureTransform=predicted;
+			const auto current=ProductShapeUiSnapshot();
+			p.TrackLocal(frame,rawPoint,final,current?current->identity.generation:frame.snapshot->identity.generation,
+				{},&transform,predicted?&*predicted:nullptr);
+			p.Emit(action);
+			p.predictionAction=predicted?std::optional<ShapeUiAction>(action):std::nullopt;
+			p.predictionDeadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(30);
+			if (final) { p.gesture=false; p.pressedHandle=UINT32_MAX; p.contactOwner.reset(); p.contacts.Reset(); p.predictors.clear(); }
+			return true;
+		}
+		if (key!=*p.contactOwner) return true;
+		p.inputPrediction.reset();
+		if (!up && p.gesture) for (const auto& predictor:p.predictors) if (predictor->key==key)
+			p.inputPrediction=predictor->Move({rawPoint.x-p.pointerOffset.x,rawPoint.y-p.pointerOffset.y},seconds);
+		const bool accepted=Pointer(message,screen,captureOwned,presentedRevision);
+		p.inputPrediction.reset();
+		if (up) { p.contactOwner.reset(); p.predictors.clear(); p.predictionAction.reset(); }
+		return accepted;
+	}
+
+	std::chrono::steady_clock::time_point ShapeEditorSurface::TickPrediction(std::chrono::steady_clock::time_point now)
+	{
+		auto& p=*impl_;
+		if (!p.predictionAction) return std::chrono::steady_clock::time_point::max();
+		if (now<p.predictionDeadline) return p.predictionDeadline;
+		auto action=*p.predictionAction; p.predictionAction.reset();
+		Impl::Frame frame; { std::scoped_lock lock(p.inputMutex); frame=p.presented; }
+		if (p.gesture && frame.snapshot && frame.snapshot->identity.session==action.identity.session)
+		{
+			// 停指后预测只能存活一个有限窗口，回到最后真实位置，不向历史追加一笔。
+			action.predictedPoint.reset(); action.predictedGestureTransform.reset();
+			if (!p.constructionGesture) p.TrackLocal(frame,action.point,false,0,{},action.gestureTransform?&*action.gestureTransform:nullptr);
+			p.Emit(action);
+		}
+		return std::chrono::steady_clock::time_point::max();
+	}
+
 	void ShapeEditorSurface::CancelPointer()
 	{
 		auto& p = *impl_;
 		const bool dragging = p.gesture;
+		p.contacts.Reset(); p.predictors.clear(); p.contactOwner.reset(); p.inputPrediction.reset(); p.predictionAction.reset();
 		if (p.gesture)
 		{
 			ShapeUiAction a;
@@ -2404,6 +2605,31 @@ namespace Inkeys::UI::Bar
 				report<<"FAIL "<<why<<" case="<<scenes<<'\n';
 			}
 		};
+		{
+			ShapeContactGesture gesture;
+			const ShapeContactGesture::Key first{1,7}, second{2,7};
+			expect(gesture.Add(first,{0,0},true) && gesture.Add(second,{100,0},true),"same contact id on different sources is independent");
+			gesture.Update(second,{0,200});
+			expect(std::abs(gesture.Current().scale-2)<.001f && std::abs(gesture.Current().rotation-1.5707963f)<.001f,"two contacts resolve uniform scale and rotation");
+			const auto before=gesture.Current(); gesture.Remove(first);
+			expect(gesture.Current().translation==before.translation && gesture.Current().scale==before.scale,"lifting first finger does not jump");
+			gesture.Update(second,{20,220});
+			expect(std::abs(gesture.Current().translation.x-before.translation.x-20)<.001f && std::abs(gesture.Current().translation.y-before.translation.y-20)<.001f,"remaining finger continues panning after topology change");
+			gesture.Reset(); gesture.Add(first,{0,0},false); gesture.Add(second,{100,0},false); gesture.Update(second,{0,200});
+			expect(gesture.Current().rotation==0 && std::abs(gesture.Current().scale-2)<.001f,"3D contact transform rejects rotation but permits scale");
+			const auto raw=gesture.Current(); (void)gesture.Predicted(second,{20,220});
+			expect(gesture.Current().translation==raw.translation && gesture.Current().scale==raw.scale,"forecast copy cannot alter real contact transform");
+			ShapeUiSnapshot state; state.predictionMode=2;
+			ShapeDragPredictor predictor; predictor.Begin(first,{0,0},10,state);
+			bool predicted=false; for(int i=1;i<40;++i) predicted|=predictor.Move({static_cast<float>(i*8),0},10+i*.008).has_value();
+			expect(predicted,"editor uses drawing model to forecast a real moving contact");
+			(void)predictor.Move({312,0},10.312); expect(predictor.ready,"duplicate timestamp does not poison future prediction");
+			(void)predictor.Move({312,0},11); predicted=false;
+			for(int i=1;i<40;++i) predicted|=predictor.Move({static_cast<float>(312+i*8),0},11+i*.008).has_value();
+			expect(predicted,"prediction resumes after a genuine stationary pause");
+			state.predictionMode=0; predictor.Begin(first,{0,0},20,state);
+			expect(!predictor.Move({100,0},20.01),"disabled drawing prediction also disables editor prediction");
+		}
 		// 复用现有无窗口CPU事务测试，UI3命令同时验证辅助开关真实的一条Replace及撤销/重做。
 		expect(RunShapeDocumentProductionTest() == 0, "production shape journal auxiliary toggles, undo and redo pass");
 		expect(ShapeRgbToUiColor(0x1E8CDCu) == RGB(30, 140, 220) && UiColorToShapeRgb(RGB(30, 140, 220)) == 0x1E8CDCu,
@@ -3392,6 +3618,12 @@ namespace Inkeys::UI::Bar
 			expect(!actions.empty() && actions.back().kind == ShapeUiActionKind::CloseEditor, "next Escape closes the editor after the palette");
 			actions.clear(); scene.impl_->Activate(Finish,scene.impl_->presented,{});
 			expect(actions.size()==1 && actions.back().kind==ShapeUiActionKind::CloseEditor && scene.impl_->memberWanted[Finish],"finish check is available and closes the current editor through the terminal action");
+			for (unsigned id : {FlipHorizontal,FlipVertical}) {
+				actions.clear(); scene.impl_->Activate(id,scene.impl_->presented,{});
+				expect(actions.size()==1 && actions.back().kind==(id==FlipHorizontal ? ShapeUiActionKind::FlipHorizontal : ShapeUiActionKind::FlipVertical),"flip button publishes its distinct object action");
+				expect(!scene.impl_->buttons[id]->icon.svg.GetVal().empty(),"flip button uses embedded dedicated icon");
+			}
+			expect(scene.impl_->twoRows && scene.impl_->y[Finish].tar>scene.impl_->y[Color].tar && scene.impl_->x[Finish].tar>scene.impl_->x[FlipVertical].tar,"two-row toolbar places finish after both flips on the bottom row");
 			scene.ReleaseDeviceResources();
 			expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())), "editor device resources rebuild");
 			expect(SUCCEEDED(present()), "rebuilt resources still present actual SVG controls");
@@ -3983,6 +4215,50 @@ namespace Inkeys::UI::Bar
 							"UI trajectory from90 to300 keeps a210-degree sweep after coalescing");
 					}
 				}
+			}
+		}
+
+		{
+			ObjectId id{}; id[0]=234;
+			auto object=MakePresetShape({PresetKind::Rectangle,CreationMode::Drag},{200,200},{600,500},{},id);
+			expect(object.has_value(),"round6 native contact fixture creates rectangle");
+			if(object)
+			{
+				auto state=std::make_shared<ShapeUiSnapshot>(); state->object=*object; state->identity.session=991;
+				state->identity.objectId=id; state->identity.objectRevision=1; state->predictionMode=0;
+				GeometryResult geometry; BuildGeometry(*object,geometry); state->bounds=geometry.bounds;
+				state->handles=BuildEditHandles(*object,{},&state->frameRect);
+				ShapeEditorSurface scene; std::vector<ShapeUiAction> actions;
+				scene.SetActionSink([&](const ShapeUiAction& action){actions.push_back(action);});
+				auto now=std::chrono::steady_clock::now();
+				for(int i=0;i<75;++i)
+				{
+					scene.Configure(state,{0,0,1400,1000},{}); now+=std::chrono::milliseconds(17); scene.Advance(now);
+					if(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())) && SUCCEEDED(scene.Present([](const auto&)->BOOL{return TRUE;}))) scene.CommitPresented();
+				}
+				expect(scene.Hit({340,350}).body && scene.Hit({480,350}).body,"unfilled rectangle interior is a movable editor region");
+				const auto send=[&](UINT message,POINT point,unsigned finger,double time,bool touch=true,bool pen=false)
+				{ return scene.Contact(message,point,42,finger,touch,pen,time,true,scene.PresentedGeneration()); };
+				send(WM_LBUTTONDOWN,{340,350},1,1); send(WM_LBUTTONDOWN,{480,350},2,1.01);
+				send(WM_MOUSEMOVE,{480,430},2,1.02); const auto transform=scene.impl_->contacts.Current();
+				scene.Contact(WM_MOUSELEAVE,{1500,1100},0,0,false,false,1.025,false,scene.PresentedGeneration());
+				expect(scene.impl_->gesture && scene.impl_->contacts.Count()==2,"mouse leave during capture does not cancel a multi-contact drag");
+				send(WM_LBUTTONUP,{340,350},1,1.03);
+				expect(scene.impl_->gesture && scene.impl_->contacts.Count()==1 && actions.back().kind==ShapeUiActionKind::PreviewEdit,"first finger Up does not commit or end body gesture");
+				expect(scene.impl_->contacts.Current().translation==transform.translation,"first finger Up preserves displayed transform");
+				send(WM_MOUSEMOVE,{500,450},2,1.04); send(WM_LBUTTONUP,{500,450},2,1.05);
+				expect(std::count_if(actions.begin(),actions.end(),[](const auto& a){return a.kind==ShapeUiActionKind::BeginEdit;})==1
+					&& std::count_if(actions.begin(),actions.end(),[](const auto& a){return a.kind==ShapeUiActionKind::CommitEdit;})==1,"complete multi-finger gesture emits one Begin and one Commit");
+				expect(actions.back().gestureTransform && !actions.back().predictedGestureTransform && !scene.impl_->contactOwner,"last Up commits real transform and retires contact owner");
+				for(bool pen:{false,true})
+				{
+					scene.CancelPointer(); actions.clear(); send(WM_LBUTTONDOWN,{340,350},1,2,false,pen);
+					send(WM_MOUSEMOVE,{360,370},1,2.02,false,pen); send(WM_LBUTTONUP,{360,370},1,2.03,false,pen);
+					expect(!actions.empty() && actions.back().kind==ShapeUiActionKind::CommitEdit && actions.back().gestureTransform
+						&& actions.back().gestureTransform->translation==Vec2{20,20},"mouse and screen pen body gestures translate without pressure");
+				}
+				scene.CancelPointer(); actions.clear(); send(WM_LBUTTONDOWN,{340,350},1,3); send(WM_MOUSEMOVE,{380,390},1,3.02);
+				scene.CancelPointer(); expect(!scene.impl_->contactOwner && scene.impl_->contacts.Count()==0 && actions.back().kind==ShapeUiActionKind::CancelEdit,"cancellation retires every contact and rolls back the transaction");
 			}
 		}
 

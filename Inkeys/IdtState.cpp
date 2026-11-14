@@ -1,3 +1,4 @@
+#include "Inkeys/Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "IdtState.h"
 
 #include "IdtConfiguration.h"
@@ -42,6 +43,9 @@ namespace
 	using Inkeys::Drawing::Draw3::Bridge::Workspace;
 	std::mutex draw3PresentationMutex;
 	std::mutex stateModeTransitionMutex;
+	std::optional<StateModeSelectEnum> shapeReturnMode;
+	Workspace shapeReturnWorkspace = Workspace::Desktop;
+	std::uint64_t shapeReturnEntryEpoch = 0;
 	Workspace stateModeWorkspace = Workspace::Desktop;
 	std::array<std::optional<StateModeClass>, 3> workspaceStateModes;
 	// 工具身份按工作区保存，样式独立拥有；旧工作区不得反写全局宽色。
@@ -2451,6 +2455,12 @@ bool ChangeStateModeToShape()
 {
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
+		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
+		{
+			shapeReturnMode = stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough ? StateModeSelectEnum::IdtPen : stateMode.StateModeSelect;
+			shapeReturnWorkspace = stateModeWorkspace;
+			shapeReturnEntryEpoch = Inkeys::Drawing::Draw3::ShapeToolEntryEpoch().fetch_add(1,std::memory_order_acq_rel)+1;
+		}
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
 		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
@@ -2459,6 +2469,28 @@ bool ChangeStateModeToShape()
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 	}
 	SyncDraw3State();
+	return true;
+}
+
+bool RestoreToolAfterShapeEditing(std::uint8_t workspace, std::uint64_t entryEpoch)
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		// 旧编辑完成通知不能覆盖新工作区、新一轮几何或用户主动选择的新工具。
+		if (!shapeReturnMode || entryEpoch != shapeReturnEntryEpoch || workspace != static_cast<std::uint8_t>(shapeReturnWorkspace) ||
+			stateModeWorkspace != shapeReturnWorkspace || stateMode.StateModeSelect != StateModeSelectEnum::IdtShape) return false;
+		const auto mode = *shapeReturnMode; shapeReturnMode.reset();
+		if (mode == StateModeSelectEnum::IdtSelection) ApplySelectionTransitionLocked();
+		else
+		{
+			stateMode.StateModeSelect = stateMode.StateModeSelectTarget = stateMode.StateModeSelectEcho = mode;
+			stateMode.lastAnnotationMode = mode;
+			BackgroundColorMode = mode == StateModeSelectEnum::IdtEraser ? 0 : computeContrast(GetPenColor(stateMode),RGB(255,255,255)) >= 3 ? 0 : 1;
+			stateModeTransitionRevision.fetch_add(1,std::memory_order_release);
+		}
+	}
+	SyncDraw3State();
+	Inkeys::UI::Bar::RefreshToolState();
 	return true;
 }
 
@@ -3725,6 +3757,19 @@ int RunStateModeProductionTest() noexcept
 			bridge.Snapshot().revision == shapeBridgeRevision, "repeated-shape-intent-no-publication");
 		require(ChangeStateModeToSelectionIfRevision(StateModeTransitionRevision()), "valid-selection-accepted");
 		checkProjection(Bridge::Tool::Pen);
+
+		stage = "shape-finish-restores-entry-tool";
+		ChangeStateModeToSelection(); ChangeStateModeToShape();
+		const auto shapeEntry = Inkeys::Drawing::Draw3::ShapeToolEntryEpoch().load();
+		ChangeStateModeToShape(); // 重开几何属性不覆盖来源。
+		require(RestoreToolAfterShapeEditing(static_cast<std::uint8_t>(stateModeWorkspace),shapeEntry) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,"shape-finish-restores-selection");
+		ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen); ChangeStateModeToShape();
+		const auto nextShapeEntry = Inkeys::Drawing::Draw3::ShapeToolEntryEpoch().load();
+		require(!RestoreToolAfterShapeEditing(static_cast<std::uint8_t>(stateModeWorkspace),shapeEntry),"old-shape-finish-does-not-restore-new-entry");
+		require(RestoreToolAfterShapeEditing(static_cast<std::uint8_t>(stateModeWorkspace),nextShapeEntry) &&
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen && GetStateModeSnapshot().Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen,
+			"shape-finish-retains-original-pen-subtype");
 
 		stage = "laser-memory-and-top-level-mode";
 		ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);

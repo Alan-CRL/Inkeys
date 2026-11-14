@@ -3,9 +3,12 @@ auto shapeScene = [&]()
 {
 	ShapeUiSnapshot snapshot; const auto visual = window_.ProductVisualStyleSnapshot();
 	snapshot.identity.documentGeneration = shapeUi.documentGeneration;
+	snapshot.finishedEditingSession = shapeUi.finishedEditingSession; snapshot.finishedEditingEntryEpoch = shapeUi.finishedEditingEntryEpoch; snapshot.finishedEditingWorkspace = shapeUi.finishedEditingWorkspace;
 
 	snapshot.identity.workspace = static_cast<uint8_t>(activeWorkspace); snapshot.identity.pageIndex = currentPageIndex_;
 	snapshot.displayScale = ProductTargetScale(visual);
+	snapshot.predictionMode = static_cast<uint8_t>(DecodeGeneralDrawingOptions(generalDrawingOptions_.load(std::memory_order_acquire)).predictionMode);
+	snapshot.timingProfile = configuration_.timingProfile.target_fps <= 30 ? 0 : configuration_.timingProfile.target_fps <= 60 ? 1 : configuration_.timingProfile.target_fps <= 120 ? 2 : 3;
 	POINT origin{}; if (window_.Handle()) ClientToScreen(window_.Handle(),&origin);
 	if (document_) if (const auto* page = document_->PageAt(currentPageIndex_))
 	{
@@ -321,6 +324,15 @@ auto closeShapeEditor = [&](RECT& dirty,std::optional<CanvasFocusEndAction> focu
 		dropFocusLayer(dirty);
 	}
 };
+auto finishShapeEditing = [&]()
+{
+	if (!shapeUi.editor.object || shapeUi.editor.toolSpec.preset == draw3::shapes::PresetKind::Line ||
+		shapeUi.editor.toolSpec.preset == draw3::shapes::PresetKind::Arrow) return false;
+	shapeUi.finishedEditingSession = shapeUi.editor.identity.session;
+	shapeUi.finishedEditingEntryEpoch = shapeUi.editor.toolEntryEpoch;
+	shapeUi.finishedEditingWorkspace = shapeUi.editor.identity.workspace;
+	return true;
+};
 // 唯一的失焦入口：任何其他操作都先经此关闭编辑框并落定（或丢弃）L1，再执行该操作。
 endCanvasFocus = [&](CanvasFocusEndReason reason,RECT& dirty)
 {
@@ -366,6 +378,7 @@ auto publishShapeUi = [&]()
 		if (page && page->PageGuid() == shapeUi.pendingPage && currentPageIndex_ == shapeUi.pendingPageIndex)
 		{
 			shapeUi.editor = {}; shapeUi.editor.item = shapeUi.pendingItem; shapeUi.editor.object = shapeUi.pendingObject;
+			shapeUi.editor.toolEntryEpoch = ShapeToolEntryEpoch().load(std::memory_order_acquire);
 			shapeUi.editor.identity = snapshot.identity; shapeUi.editor.identity.session = shapeUi.nextSession++;
 			shapeUi.editor.tool = window_.ActiveTool(); shapeUi.editor.toolSpec = window_.ProductVisualStyleSnapshot().shapeTool;
 		}
@@ -382,9 +395,7 @@ auto publishShapeUi = [&]()
 		{
 			snapshot.object = shapeUi.construction->preview;
 			snapshot.bounds = shapeUi.construction->renderData.bounds;
-			const auto& points = shapeUi.construction->session.Points();
-			for (size_t i = 0; i < points.size(); ++i)
-				snapshot.handles.push_back({1000u + static_cast<uint32_t>(i),draw3::shapes::EditHandleKind::Vertex,points[i]});
+			snapshot.handles = ConstructionPreviewHandles(*shapeUi.construction);
 		}
 		if (snapshot.constructionContactActive) { snapshot.construction.canBack = false; snapshot.construction.canForward = false; snapshot.construction.canComplete = false; }
 	}
@@ -485,11 +496,13 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 };
 beginShapeContact = [&](RuntimeStroke& runtime)
 {
-	// 空白落笔直接交给原画布；只关闭当前编辑，不搜索任何旧对象。
+	// 已成形的非直线/箭头：框外首个接触只结束编辑并吞到终态；直线/箭头继续起笔。
 	// 新落笔会占用 L1/L0：先让编辑框失焦并把待落定图形落定到 L2。
 	if (shapeUi.editor.object || shapeUi.focus.Active())
 	{
+		const bool finished = finishShapeEditing();
 		RECT ignored{}; endCanvasFocus(CanvasFocusEndReason::NewContact,ignored); window_.RequestFullPresent();
+		if (finished) { publishShapeUi(); return false; }
 	}
 	if (active.empty()) { shapeUi.pendingObject.reset(); shapeUi.pendingItem.reset(); shapeUi.pendingCompletedQpc = 0; }
 	if (runtime.shape.generic) runtime.shape.nextRevision = nextShapeRevision;
@@ -599,7 +612,7 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 		action.kind == ShapeUiActionKind::CommitEdit || action.kind == ShapeUiActionKind::CancelEdit);
 	if (!ShapeEditorActionIdentityMatches(shapeUi.editor,shapeUi.published.get(),action,scene.identity)) return;
 	if (action.kind == ShapeUiActionKind::CloseEditor)
-	{ endCanvasFocus(CanvasFocusEndReason::Escape,dirty); publishShapeUi(); return; }
+	{ if (action.finishEditing) finishShapeEditing(); endCanvasFocus(CanvasFocusEndReason::Escape,dirty); publishShapeUi(); return; }
 	if (action.kind == ShapeUiActionKind::BeginEdit)
 	{
 		if (shapeUi.editor.gestureActive) return;
@@ -622,12 +635,27 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 	const auto revision = nextShapeRevision(shapeUi.editor.object->id,shapeUi.editor.object->revision);
 	if (!revision) return;
 	if ((action.kind == ShapeUiActionKind::SetStyle || action.kind == ShapeUiActionKind::SetSides ||
-		action.kind == ShapeUiActionKind::SetConstraint || action.kind == ShapeUiActionKind::SetRightSolid) && !shapeUi.editor.gestureActive)
+		action.kind == ShapeUiActionKind::SetConstraint || action.kind == ShapeUiActionKind::SetRightSolid ||
+		action.kind == ShapeUiActionKind::FlipHorizontal || action.kind == ShapeUiActionKind::FlipVertical) && !shapeUi.editor.gestureActive)
 		candidate = BuildShapePropertyCandidate(*shapeUi.editor.object,action,revision,{scene.displayScale,.25f});
 	else if (inGesture && (action.kind == ShapeUiActionKind::PreviewEdit || action.kind == ShapeUiActionKind::CommitEdit))
 	{
-		if (shapeUi.editor.gesture.Preview(action.point,revision,nullptr,action.angleDelta))
+		auto preview = [&](draw3::shapes::EditSession& session, bool predicted)
+		{
+			const auto& transform = predicted && action.predictedGestureTransform ? action.predictedGestureTransform : action.gestureTransform;
+			if (transform) return session.PreviewTransform(transform->pivot,transform->translation,transform->scale,transform->rotation,revision);
+			return session.Preview(predicted && action.predictedPoint ? *action.predictedPoint : action.point,revision,nullptr,predicted ? std::nullopt : action.angleDelta);
+		};
+		if (preview(shapeUi.editor.gesture,false))
+		{
 			candidate = action.kind == ShapeUiActionKind::CommitEdit ? shapeUi.editor.gesture.Commit() : shapeUi.editor.gesture.Candidate();
+			// 预测只作用于副本，不能污染真实累计角或最终 Up 的几何。
+			if (action.kind == ShapeUiActionKind::PreviewEdit && (action.predictedPoint || action.predictedGestureTransform))
+			{
+				auto predicted = shapeUi.editor.gesture;
+				if (preview(predicted,true)) candidate = predicted.Candidate();
+			}
+		}
 	}
 	const bool commit = action.kind != ShapeUiActionKind::PreviewEdit;
 	const bool endsGesture = commit && inGesture;

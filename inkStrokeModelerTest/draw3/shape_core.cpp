@@ -457,7 +457,7 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 		if ((object.construction->tool.preset == PresetKind::RegularPolygon ||
 			object.construction->tool.preset == PresetKind::Cube) && !Similarity(object.transform))
 			return { "regular polygon requires uniform orthogonal transform" };
-		if (object.construction->tool.preset >= PresetKind::Cuboid && (object.transform.m12 != 0 || object.transform.m21 != 0 || object.transform.m11 != object.transform.m22 || object.transform.m11 <= 0)) return { "solid requires fixed textbook projection" };
+		if (object.construction->tool.preset >= PresetKind::Cuboid && (object.transform.m12 != 0 || object.transform.m21 != 0 || std::abs(object.transform.m11) != std::abs(object.transform.m22))) return { "solid requires fixed textbook projection" };
 		if (!SameParts(object,expected)) return { "construction does not match derived parts" };
 	}
 	if (object.legacyKind != LegacyKind::None)

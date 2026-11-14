@@ -2764,6 +2764,12 @@
     <None Include="src\UI\barShapeStraightLine.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barShapeFlipHorizontal.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeFlipVertical.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barShapeRectangle.svg">
       <Filter>资源文件</Filter>
     </None>

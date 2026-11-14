@@ -1,5 +1,6 @@
 #include "Draw3.HiddenWindowTest.h"
 #include "Draw3.Product.h"
+#include "Draw3.TouchpadNavigation.h"
 #include "Draw3.Presentation.h"
 #include "Draw3.PresentationState.h"
 #include "Draw3.PixelDiagnosticShaders.h"
@@ -4807,6 +4808,10 @@ namespace Inkeys::Drawing::Draw3
 		_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
 		_CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
 		int failures = 0;
+		Check(Detail::IsTouchpadNavigationStopMessage(Detail::kTouchpadNavigationMessage,7) &&
+			!Detail::IsTouchpadNavigationStopMessage(Detail::kTouchpadNavigationMessage,6) &&
+			!Detail::IsTouchpadNavigationStopMessage(Detail::kMouseInputOwnerMessage,7),
+			"SF00 stop gate classifies only touchpad stop, not ordinary update or another message",failures);
 		try
 		{
 			Inkeys::Window::Service service(64);
@@ -4863,7 +4868,9 @@ namespace Inkeys::Drawing::Draw3
 			const auto editorOpen = []
 			{
 				const auto shape = ProductShapeUiSnapshot();
-				return shape && shape->object && !shape->editGestureActive && !ProductHost().RuntimeSnapshot().pen.active;
+				// 逐点构造也有 object，必须等待 Complete 真正消费后再认定普通编辑器已打开。
+				return shape && shape->object && !shape->construction.active && !shape->drawingPreview &&
+					!shape->editGestureActive && !ProductHost().RuntimeSnapshot().pen.active;
 			};
 			const auto editorClosed = []
 			{
@@ -4990,12 +4997,21 @@ namespace Inkeys::Drawing::Draw3
 				Check(CompositionRestoreCallsTotal() == restores && ProductHost().RuntimeSnapshot().currentPageHasContent,
 					"SF10 materialize rasterizes into L2 without tile replay and keeps document content", failures);
 			}
-			// 下一笔 Down：先落定旧图形，再开始新图形；新图形随后进入焦点层。
+			// 第六轮：框外第一下只结束编辑，下一次独立接触才可新建图形。
 			drawShape(150, 40, "SF11 second rectangle opens a new editor");
 			{
 				const auto before = SnapshotShapePreviewMetrics();
-				drawShape(150, 140, "SF12 next Down materializes the previous shape first, then opens the new one");
-				Check(SnapshotShapePreviewMetrics().materializations == before.materializations + 1, "SF12 exactly one materialization for the replaced editor", failures);
+				const auto previous = ProductShapeUiSnapshot();
+				const auto contentRevision = ProductHost().RuntimeSnapshot().contentRevision;
+				send(HiddenTestContactPhase::Down,150,140); send(HiddenTestContactPhase::Move,220,190); send(HiddenTestContactPhase::Up,220,190);
+				Check(WaitUntil(editorClosed,3s),"SF12 outside contact closes editor without creating another shape",failures);
+				const auto finished = ProductShapeUiSnapshot();
+				Check(previous && finished && finished->finishedEditingSession == previous->identity.session &&
+					ProductHost().RuntimeSnapshot().contentRevision == contentRevision,
+					"SF12 outside contact publishes tool-restoration identity and no replacement focus object",failures);
+				Check(SnapshotShapePreviewMetrics().materializations == before.materializations + 1, "SF12 exactly one materialization for the closed editor", failures);
+				// 此 fixture 直接发布 Bridge 工具，不运行主栏恢复队列；显式保留 Shape 工具以继续事务回归。
+				drawShape(150,140,"SF12b subsequent independent contact opens a new editor");
 			}
 			// 编辑中撤销该对象：丢弃 L1，L2 不动（不重放、不落定）。
 			{
@@ -5094,8 +5110,27 @@ namespace Inkeys::Drawing::Draw3
 				const auto ready=ProductShapeUiSnapshot();ShapeUiAction finish;finish.identity=ready->identity;finish.kind=ShapeUiActionKind::ConstructionComplete;publish(finish);
 				Check(WaitUntil(editorOpen,3s),"SF44 completed adjusted polygon enters ordinary editor",failures);
 			}
-			send(HiddenTestContactPhase::Down,80,80);
-			Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&s->construction.active&&s->constructionContactActive;},3s),"SF44b new construction becomes current command target",failures);
+			// 后续检查针对零步骤构造；先按正式完成路径结束前一多边形，不能把失焦 Down 当新构造 Down。
+			if (const auto previous = ProductShapeUiSnapshot(); previous && previous->object && !previous->construction.active)
+			{
+				ShapeUiAction close; close.identity=previous->identity; close.kind=ShapeUiActionKind::CloseEditor; close.finishEditing=true;
+				Check(publish(close) && WaitUntil(editorClosed,3s),"SF44a completed polygon explicitly finishes before next construction",failures);
+			}
+			const auto beforeConstruction = ProductHost().RuntimeSnapshot();
+			const bool downAccepted = send(HiddenTestContactPhase::Down,80,80);
+			const bool constructionOpened = WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&s->construction.active&&s->constructionContactActive;},3s);
+			if (!Check(downAccepted && constructionOpened,"SF44b new construction becomes current command target",failures))
+			{
+				const auto ui = ProductShapeUiSnapshot(); const auto host = ProductHost().RuntimeSnapshot();
+				std::fprintf(stderr,"[Draw3Hidden] SF44diagnostic accepted=%d ui=%d object=%d construct=%d contact=%d finished=%d session=%llu tool=%u selection=%d undo=%d fatal=%d inputReady=%d down=%llu/%llu terminal=%llu recycled=%llu pen=%d\n",
+					downAccepted,int(bool(ui)),ui?int(ui->object.has_value()):0,ui?ui->construction.active:0,ui?ui->constructionContactActive:0,ui?ui->construction.finished:0,
+					static_cast<unsigned long long>(ui?ui->identity.session:0),unsigned(host.appliedTool),host.selectionMode,host.canUndo,host.consumerFatal,host.presentationInputReady,
+					static_cast<unsigned long long>(host.inputDownPublished),static_cast<unsigned long long>(beforeConstruction.inputDownPublished),static_cast<unsigned long long>(host.inputTerminalPublished),static_cast<unsigned long long>(host.inputRecycled),host.pen.active);
+				// 失败也闭合已注入的真实接触，再让既有停产保护执行，不能留下 held Down。
+				send(HiddenTestContactPhase::Cancelled,80,80);
+				WaitUntil([]{return !ProductHost().RuntimeSnapshot().pen.active;},2s);
+				return 1;
+			}
 			Check(!ProductHost().RuntimeSnapshot().canUndo,"SF44c zero-step construction cannot accidentally Undo earlier document object",failures);
 			send(HiddenTestContactPhase::Cancelled,80,80);
 			Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&!s->construction.active&&ProductHost().RuntimeSnapshot().canUndo;},3s),"SF44d construction cancel immediately restores document Undo availability",failures);
@@ -5109,7 +5144,12 @@ namespace Inkeys::Drawing::Draw3
 			Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&s->object&&!s->drawingPreview&&!s->construction.active&&s->frameRect.valid&&std::any_of(s->handles.begin(),s->handles.end(),[](const auto& h){return h.kind==draw3::shapes::EditHandleKind::Rotate;});},3s),"SF47 same-position triangle Up restores completed editor frame and rotation handle",failures);
 			Check(availabilityProbe.observedEditors>0 && availabilityProbe.missingUndo==0,"SF33 every initial editor publication already has Undo in Host snapshot",failures);
 			Check(!IsWindowVisible(drawpad)&&!IsWindowVisible(presentation),"SF34 fixture windows remain invisible",failures);
+			const auto stopping = ProductHost().RuntimeSnapshot();
+			std::fprintf(stderr,"[Draw3Hidden] SF48 before-stop running=%d pen=%d down=%llu terminal=%llu recycled=%llu\n",stopping.running,stopping.pen.active,
+				static_cast<unsigned long long>(stopping.inputDownPublished),static_cast<unsigned long long>(stopping.inputTerminalPublished),static_cast<unsigned long long>(stopping.inputRecycled));
 			StopProduct();
+			Check(!ProductRunning(),"SF48 real Host completes touchpad and mouse producer stop handshakes",failures);
+			Report("PASS","SF48 owner stop acknowledgement returned before hidden HWND teardown");
 		}
 		catch (...)
 		{

@@ -18,6 +18,10 @@ namespace draw3::shapes
 	std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleId,
 		Vec2 down, Vec2 current, uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr,
 		std::optional<float> angleDelta = std::nullopt);
+	std::optional<ShapeObject> FlipShape(const ShapeObject&, bool horizontal, uint64_t newRevision,
+		const BuildOptions& = {}, std::string* error = nullptr);
+	std::optional<ShapeObject> TransformShapeGesture(const ShapeObject&, Vec2 pivot, Vec2 translation,
+		float scale, float rotation, uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr);
 	std::optional<ShapeObject> RestyleShape(const ShapeObject& before, const ShapeStyle&,
 		uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr);
 	std::optional<ShapeObject> SetRegularSides(const ShapeObject&, uint32_t sides,
@@ -34,6 +38,8 @@ namespace draw3::shapes
 		// 无效拖动仍提供钳制后的Candidate；只有Commit返回的对象可写入历史。
 		bool Preview(Vec2 current, uint64_t newRevision, std::string* error = nullptr,
 			std::optional<float> angleDelta = std::nullopt);
+		bool PreviewTransform(Vec2 pivot, Vec2 translation, float scale, float rotation,
+			uint64_t newRevision, std::string* error = nullptr);
 		std::optional<float> AngleDelta() const noexcept;
 		const std::optional<ShapeObject>& Candidate() const noexcept;
 		std::optional<ShapeObject> Commit();

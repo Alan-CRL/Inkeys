@@ -3953,6 +3953,9 @@ namespace Inkeys::Drawing::Draw3
 				shape.object = shape.construction->preview; shape.renderData = shape.construction->renderData;
 				shape.revision = shape.construction->revision; shape.visualChanged = true; return true;
 			}
+			// 即使预测端点未变，真实输入仍需推进构造轨迹（尤其是圆弧累计角）。
+			if (shape.construction && !shape.construction->cancelled)
+				shape.construction->session.PreviewDrag({shape.primitive.start.x,shape.primitive.start.y},{shape.rawEndpoint.x,shape.rawEndpoint.y});
 			if (shape.primitive.end.x == endpoint.x &&
 				shape.primitive.end.y == endpoint.y) return false;
 			if (shape.generic)
@@ -3965,8 +3968,12 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (shape.construction->cancelled)
 					{ shape.object.reset(); shape.renderData = {}; shape.visualChanged = true; return true; }
-					shape.construction->session.PreviewDrag({shape.primitive.start.x,shape.primitive.start.y},{endpoint.x,endpoint.y});
-					candidate = shape.construction->session.Candidate();
+					const draw3::shapes::Vec2 down{shape.primitive.start.x,shape.primitive.start.y};
+					// 构造的真实轨迹与预测端点分开，弧累计角和逐点拖动不得吃入预测。
+					auto predicted = shape.construction->session;
+					predicted.PreviewDrag(down,{endpoint.x,endpoint.y});
+					candidate = predicted.Candidate();
+					shape.construction->visualPoints = predicted.Points();
 					if (candidate) candidate->revision = revision;
 				}
 				else candidate = draw3::shapes::MakePresetShape(shape.tool,
@@ -4015,7 +4022,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!object->revision || !draw3::shapes::BuildRenderData(*object,data)) return false;
 				state.revision = object->revision;
 			}
-			state.preview = std::move(object); state.renderData = std::move(data); return true;
+			state.preview = std::move(object); state.renderData = std::move(data); state.visualPoints = state.session.Points(); return true;
 		}
 		bool ApplyConstructionPointAction(ShapeConstructionRuntime& state, const ShapeUiSnapshot* published,
 			const ShapeUiAction& action, const ShapeUiIdentity& scene,
@@ -4033,7 +4040,15 @@ namespace Inkeys::Drawing::Draw3
 			else if (action.kind == ShapeUiActionKind::ConstructionCommitPointEdit) state.session.ConfirmDrag(action.down,action.point);
 			else state.session.PreviewDrag(action.down,action.point);
 			if (action.kind != ShapeUiActionKind::ConstructionPreviewPointEdit) state.pointGesture.reset();
-			return RefreshConstructionRuntimePreview(state,allocate);
+			const bool refreshed = RefreshConstructionRuntimePreview(state,allocate);
+			if (refreshed && action.kind == ShapeUiActionKind::ConstructionPreviewPointEdit && action.predictedPoint)
+			{
+				auto predicted = state;
+				predicted.session.PreviewDrag(action.down,*action.predictedPoint);
+				if (RefreshConstructionRuntimePreview(predicted,allocate))
+				{ state.preview = std::move(predicted.preview); state.renderData = std::move(predicted.renderData); state.visualPoints = std::move(predicted.visualPoints); state.revision = predicted.revision; }
+			}
+			return refreshed;
 		}
 		// Run和无窗口生产测试共用：真实Up只确认当前阶段，最后一步才允许普通创建提交。
 		bool ConfirmRuntimeConstructionContact(RuntimeStroke& runtime)

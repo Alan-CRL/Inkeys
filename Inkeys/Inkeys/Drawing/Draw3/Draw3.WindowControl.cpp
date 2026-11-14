@@ -41,7 +41,7 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		constexpr UINT kApplySystemCursorMessage = WM_APP + 1;
-		constexpr UINT kTouchpadNavigationMessage = WM_APP + 0x3D5u;
+		using Detail::kTouchpadNavigationMessage;
 		// DM 与 RTS 在同一 HWND 上争用输入委托；替代触控板前端完成前不得激活这套 COM 路径。
 		constexpr bool kTouchpadDirectManipulationQuarantined = true;
 		std::atomic<UINT_PTR> nextTouchpadNavigationIdentity = 0;

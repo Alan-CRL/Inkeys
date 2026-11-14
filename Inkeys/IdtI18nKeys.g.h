@@ -177,6 +177,8 @@ inline constexpr struct I18nKeyRoot
                 const char* ConstraintFreeLabel = "UI/Bar/GeometryAttributes/ConstraintFreeLabel";
                 const char* ConstraintIsoscelesLabel = "UI/Bar/GeometryAttributes/ConstraintIsoscelesLabel";
                 const char* ConstraintEquilateralLabel = "UI/Bar/GeometryAttributes/ConstraintEquilateralLabel";
+                const char* FlipHorizontalLabel = "UI/Bar/GeometryAttributes/FlipHorizontalLabel";
+                const char* FlipVerticalLabel = "UI/Bar/GeometryAttributes/FlipVerticalLabel";
                 const char* RightPrismLabel = "UI/Bar/GeometryAttributes/RightPrismLabel";
                 const char* RightPyramidLabel = "UI/Bar/GeometryAttributes/RightPyramidLabel";
                 const char* StraightLineLabel = "UI/Bar/GeometryAttributes/StraightLineLabel";

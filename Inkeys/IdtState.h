@@ -262,6 +262,7 @@ bool ChangeStateModeToPenTool(PenToolSelectionEnum tool);
 enum class PptAnnotationTool : int { Pen = 1, Laser = 2, Highlighter = 3 };
 bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expectedRevision);
 bool ChangeStateModeToShape();
+bool RestoreToolAfterShapeEditing(std::uint8_t workspace, std::uint64_t entryEpoch);
 bool SetShapeModeSelect(ShapeModeSelectEnum shape);
 bool SetShapeModeSelectIfRevision(ShapeModeSelectEnum shape,
 	std::uint64_t expectedRevision);

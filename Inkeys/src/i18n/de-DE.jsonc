@@ -174,6 +174,8 @@
         "ConstraintFreeLabel": "Frei",
         "ConstraintIsoscelesLabel": "Gleichschenklig",
         "ConstraintEquilateralLabel": "Gleichseitig",
+        "FlipHorizontalLabel": "Horizontal spiegeln",
+        "FlipVerticalLabel": "Vertikal spiegeln",
         "RightPrismLabel": "Gerades Prisma",
         "RightPyramidLabel": "Gerade Pyramide",
         "StraightLineLabel": "Linie",

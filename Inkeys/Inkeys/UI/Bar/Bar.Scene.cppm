@@ -242,6 +242,9 @@ export namespace Inkeys::UI::Bar
 		ShapeEditorHit Hit(POINT screen) const;
 		bool PreservePointerTrajectory(POINT down) const;
 		bool Pointer(UINT message, POINT screen, bool captureOwned = true, std::uint64_t expectedPresentation = 0, short wheelDelta = 0);
+		bool Contact(UINT message, POINT screen, std::uint64_t source, std::uint32_t contactId,
+			bool touch, bool pen, double seconds, bool captureOwned, std::uint64_t presentedRevision);
+		std::chrono::steady_clock::time_point TickPrediction(std::chrono::steady_clock::time_point);
 		std::uint64_t PresentedGeneration() const;
 		bool Keyboard(BYTE key, bool down);
 		bool HasKeyboardFocus() const;

@@ -143,6 +143,12 @@ int RunShapeInteractionProductionTest()
 			check(bridge.TryConsume(command) && ApplyConstructionPointAction(*state,&published,*command.shapeAction,scene,{}),"preview retains Down ticket across snapshot publication");
 			check(state->session.Points().front() == (Vec2{45,45}) && state->session.Points().size() == beforeMove.size() && !state->renderData.batches.empty(),
 				"overlay point drag updates live render data without adding vertex");
+			drag.predictedPoint = Vec2{90,90};
+			check(ApplyConstructionPointAction(*state,&published,drag,scene,{}) && state->session.Points().front() == (Vec2{45,45}),
+				"predicted point preview does not change authoritative construction points");
+			published.handles = ConstructionPreviewHandles(*state);
+			check(!published.handles.empty() && published.handles.front().position == (Vec2{86,87}) && state->session.Points().front() == (Vec2{45,45}),
+				"published construction handle follows predicted geometry without altering real points");
 			drag.kind = ShapeUiActionKind::ConstructionCommitPointEdit; drag.point = {54,53};
 			check(bridge.PublishShapeAction(drag) == Bridge::CommandResult::Accepted && bridge.TryConsume(command) &&
 				ApplyConstructionPointAction(*state,&published,*command.shapeAction,scene,{}),"overlay Up commits final point through production dispatcher");
